@@ -326,6 +326,8 @@ test("listCommits returns history with hash/message/author/time + branch filter"
   const service = new ProjectGitDiffService(root);
   const result = await service.listCommits("demo");
   expect(result.branch).toBe("HEAD");
+  // total = rev-list 全量计数（03t meta「共 N 次提交」+ loadMore 终止判断，M4）。
+  expect(result.total).toBe(2);
   expect(result.commits).toHaveLength(2);
   // log 默认倒序（最新在前）。
   expect(result.commits[0].message).toBe("second");
@@ -501,6 +503,83 @@ const initRepository = async (projectPath: string) => {
   await git(projectPath, ["config", "user.email", "test@example.com"]);
   await git(projectPath, ["config", "user.name", "Test User"]);
 };
+
+test("getCommitDetail returns meta and numstat file list (R7a)", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "one\n");
+  await writeFile(join(projectPath, "b.txt"), "two\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  await writeFile(join(projectPath, "a.txt"), "one changed\n");
+  await writeFile(join(projectPath, "new.txt"), "brand new\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "second commit"]);
+
+  const service = new ProjectGitDiffService(root);
+  const log = await service.listCommits("demo");
+  const head = log.commits[0];
+
+  const detail = await service.getCommitDetail("demo", head.hash);
+  if (!detail.repository) throw new Error("expected repository");
+  expect(detail.projectName).toBe("demo");
+  expect(detail.meta.message).toBe("second commit");
+  expect(detail.meta.hash).toBe(head.hash);
+  expect(detail.meta.isoDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(detail.meta.relativeTime.length).toBeGreaterThan(0);
+  expect(detail.files.map((f) => f.path).sort()).toEqual(["a.txt", "new.txt"]);
+  const added = detail.files.find((f) => f.path === "new.txt");
+  expect(added).toMatchObject({ status: "added", addedLines: 1, removedLines: 0 });
+  const modified = detail.files.find((f) => f.path === "a.txt");
+  expect(modified).toMatchObject({ status: "modified", addedLines: 1, removedLines: 1 });
+});
+
+test("getCommitFileDiff returns patch against commit parent (R7b)", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "one\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  await writeFile(join(projectPath, "a.txt"), "one changed\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "second"]);
+
+  const service = new ProjectGitDiffService(root);
+  const log = await service.listCommits("demo");
+  const head = log.commits[0];
+
+  const result = await service.getCommitFileDiff("demo", head.hash, "a.txt");
+  expect(result.repository).toBe(true);
+  if (!result.repository) return;
+  expect(result.base).toBe(`${head.hash}^`);
+  expect(result.compare).toBe(head.hash);
+  expect(result.status).toBe("modified");
+  expect(result.diff).toContain("+one changed");
+  expect(result.diff).toContain("-one");
+});
+
+test("getCommitDetail/getCommitFileDiff reject bad hash and unchanged path", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "one\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+
+  const service = new ProjectGitDiffService(root);
+
+  await expect(service.getCommitDetail("demo", "not-a-hash")).rejects.toMatchObject({
+    code: "PROJECT_GIT_SCOPE_INVALID",
+  });
+  await expect(service.getCommitDetail("demo", "../escape")).rejects.toMatchObject({
+    code: "PROJECT_GIT_SCOPE_INVALID",
+  });
+
+  const log = await service.listCommits("demo");
+  const head = log.commits[0];
+  await expect(service.getCommitFileDiff("demo", head.hash, "missing.txt")).rejects.toMatchObject({
+    code: "PROJECT_GIT_FILE_NOT_CHANGED",
+  });
+});
 
 // branch 测试需要可预测的分支名：init 后强制 rename 为 main（兼容 git 默认 main/master）。
 const initMainRepository = async (projectPath: string) => {

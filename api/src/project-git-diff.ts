@@ -4,6 +4,9 @@ import type {
   GitBranch,
   GitBranchListResponse,
   GitBranchStatus,
+  GitCommitDetailMeta,
+  GitCommitDetailResponse,
+  GitCommitFileDiffResponse,
   GitCommitLogItem,
   GitCommitLogResponse,
   GitCompareDiffResponse,
@@ -58,6 +61,18 @@ const sanitizeBranchRef = (input: string | null | undefined): string | undefined
   // `..` 是 git range 歧义（A..B），即使字符合法也必须拒。
   if (input.includes("\0") || input.includes("..") || !BRANCH_REF_RE.test(input)) {
     throw new ProjectGitDiffError("PROJECT_GIT_SCOPE_INVALID", "Invalid branch ref");
+  }
+  return input;
+};
+
+/**
+ * commit hash 白名单（M4 R7）：十六进制缩写/全 hash（git 允许 ≥4 位，这里要求 ≥7 降歧义风险）。
+ * 与 BRANCH_REF_RE 分开——`hash~1`/`hash^` 等 range 语法只在服务端内部拼接，不收客户端传入。
+ */
+const COMMIT_HASH_RE = /^[0-9a-fA-F]{7,40}$/;
+const sanitizeCommitHash = (input: string | null | undefined): string => {
+  if (input === null || input === undefined || !COMMIT_HASH_RE.test(input)) {
+    throw new ProjectGitDiffError("PROJECT_GIT_SCOPE_INVALID", "Invalid commit hash");
   }
   return input;
 };
@@ -210,6 +225,7 @@ export class ProjectGitDiffService {
     projectName: string,
     branch?: string,
     limit = 50,
+    offset = 0,
   ): Promise<GitCommitLogResponse> {
     const project = await this.resolveProject(projectName);
     if (!(await this.isRepository(project.path))) {
@@ -220,15 +236,143 @@ export class ProjectGitDiffService {
     }
 
     const ref = sanitizeBranchRef(branch) ?? "HEAD";
-    const output = await this.git(project.path, [
-      "log",
-      "-z",
-      "--format=%h%x00%an%x00%ar%x00%s",
-      `-${limit}`,
-      ref,
+    const [output, countOutput] = await Promise.all([
+      this.git(project.path, [
+        "log",
+        "-z",
+        "--format=%h%x00%an%x00%ar%x00%ci%x00%s",
+        `--skip=${offset}`,
+        `-${limit}`,
+        ref,
+      ]),
+      // total = 该 ref 全量提交数（03t meta「共 N 次提交」+ loadMore 终止判断）。
+      this.git(project.path, ["rev-list", "--count", ref]),
     ]);
 
-    return { branch: ref, commits: parseCommits(output) };
+    return {
+      branch: ref,
+      total: Number.parseInt(countOutput.trim(), 10) || 0,
+      commits: parseCommits(output),
+    };
+  }
+
+  /**
+   * R7a commit 详情（M4 03u）：元信息（git show -s）+ 变更文件列表（diff-tree numstat/name-status
+   * 并行，合并模式同 listDiff）。merge commit 默认无 diff 输出 → files 空（v1 裁决，03u 场景
+   * 以普通 commit 为主）。hash 经 sanitizeCommitHash 白名单。
+   */
+  async getCommitDetail(
+    projectName: string,
+    hashInput: string | null,
+  ): Promise<GitCommitDetailResponse> {
+    const hash = sanitizeCommitHash(hashInput);
+    const project = await this.resolveProject(projectName);
+    if (!(await this.isRepository(project.path))) {
+      return {
+        repository: false,
+        projectName: project.name,
+        reason: "not_git_repository",
+      };
+    }
+
+    // show 用 gitRaw：hash 不存在时 git() 会统一抛 UNAVAILABLE，这里要语义化的
+    // SCOPE_INVALID（"Unknown commit"）—— 先探测再并行取文件列表。
+    const show = await this.gitRaw(project.path, [
+      "show",
+      "-s",
+      "--format=%h%x00%an%x00%ar%x00%ci%x00%s",
+      hash,
+    ]);
+    if (show.exitCode !== 0) {
+      throw new ProjectGitDiffError("PROJECT_GIT_SCOPE_INVALID", "Unknown commit");
+    }
+    const [nameStatus, numstat] = await Promise.all([
+      this.git(project.path, [
+        "diff-tree",
+        "-r",
+        "--root",
+        "--no-commit-id",
+        "--name-status",
+        "-M",
+        hash,
+      ]),
+      this.git(project.path, [
+        "diff-tree",
+        "-r",
+        "--root",
+        "--no-commit-id",
+        "--numstat",
+        "-M",
+        hash,
+      ]),
+    ]);
+
+    const tokens = show.stdout.split("\0").filter((token) => token.length > 0);
+    const meta: GitCommitDetailMeta = {
+      hash: tokens[0] ?? hash,
+      author: tokens[1] ?? "",
+      relativeTime: tokens[2] ?? "",
+      isoDate: (tokens[3] ?? "").slice(0, 10),
+      message: (tokens[4] ?? "").replace(/\n+$/, ""),
+    };
+
+    const files = parseCommitFileList(parseCommitNameStatus(nameStatus), parseNumstat(numstat));
+    return { repository: true, projectName: project.name, meta, files };
+  }
+
+  /**
+   * R7b commit 内单文件 diff（M4 03u「点文件 → 对比基准 = 本次提交」）：range `${hash}^..hash`
+   * 在服务端内部拼接（客户端只传 hash + path，`^`/`~` 不进白名单的原因）。root commit 走
+   * --root（diff-tree -p 对 root 输出 against 空树的 patch）。rename 文件传 new path（diff
+   * pathspec 命中任一端）。merge commit 无 patch → PROJECT_GIT_FILE_NOT_CHANGED。
+   */
+  async getCommitFileDiff(
+    projectName: string,
+    hashInput: string | null,
+    path: string | null,
+  ): Promise<GitCommitFileDiffResponse> {
+    const hash = sanitizeCommitHash(hashInput);
+    if (!path || path.includes("\0") || path.startsWith("/") || path.split("/").includes("..")) {
+      throw new ProjectGitDiffError("PROJECT_GIT_FILE_NOT_CHANGED", "Git file is not changed");
+    }
+
+    const detail = await this.getCommitDetail(projectName, hash);
+    if (!detail.repository) {
+      throw new ProjectGitDiffError(
+        "PROJECT_GIT_NOT_REPOSITORY",
+        "Project is not a Git repository",
+      );
+    }
+    const file = detail.files.find((entry) => entry.path === path);
+    if (!file) {
+      throw new ProjectGitDiffError("PROJECT_GIT_FILE_NOT_CHANGED", "Git file is not changed");
+    }
+
+    const project = await this.resolveProject(projectName);
+    const diff = await this.git(project.path, [
+      "diff-tree",
+      "-p",
+      "-r",
+      "--root",
+      "--no-commit-id",
+      "--no-color",
+      "-M",
+      hash,
+      "--",
+      path,
+    ]);
+
+    return {
+      repository: true,
+      projectName: project.name,
+      hash,
+      base: `${hash}^`,
+      compare: hash,
+      path,
+      ...(file.previousPath ? { previousPath: file.previousPath } : {}),
+      status: file.status,
+      diff,
+    };
   }
 
   /**
@@ -256,7 +400,8 @@ export class ProjectGitDiffService {
     }
     const upstream = upstreamRaw.stdout.trim();
 
-    const logFormat = ["log", "-z", "--format=%h%x00%an%x00%ar%x00%s"];
+    // 与 listCommits 同一 5 段 format（parseCommits 按此解析；R4 与 R6 保持单一 parser）。
+    const logFormat = ["log", "-z", "--format=%h%x00%an%x00%ar%x00%ci%x00%s"];
     const [counts, aheadLog, behindLog] = await Promise.all([
       this.gitRaw(project.path, ["rev-list", "--left-right", "--count", `${upstream}...${ref}`]),
       this.git(project.path, [...logFormat, `${upstream}..${ref}`]),
@@ -509,18 +654,21 @@ const parseTrack = (track: string): { ahead?: number; behind?: number } => {
 };
 
 /**
- * git log -z 输出 → GitCommitLogItem[]。format `%h%x00%an%x00%ar%x00%s` 每 commit 4 段，
- * -z 在 commit 间也插 \0，split("\0") 后每 4 段一组（末尾空串 filter 掉）。
+ * git log -z 输出 → GitCommitLogItem[]。format `%h%x00%an%x00%ar%x00%ci%x00%s` 每 commit 5 段
+ *（M4 R6 增强：isoDate 供客户端日期分组），-z 在 commit 间也插 \0，split("\0") 后每 5 段一组
+ *（末尾空串 filter 掉）。%ci = ISO 8601 本地时间，截取日期段。
  */
 const parseCommits = (output: string): GitCommitLogItem[] => {
   const tokens = output.split("\0").filter((token) => token.length > 0);
   const commits: GitCommitLogItem[] = [];
-  for (let index = 0; index + 3 < tokens.length; index += 4) {
+  for (let index = 0; index + 4 < tokens.length; index += 5) {
     commits.push({
       hash: tokens[index],
       author: tokens[index + 1],
       relativeTime: tokens[index + 2],
-      message: tokens[index + 3],
+      isoDate: tokens[index + 3].slice(0, 10),
+      // %s 是 format 末段，git 输出尾部换行贴在 message 上。
+      message: tokens[index + 4].replace(/\n+$/, ""),
     });
   }
   return commits;
@@ -652,6 +800,46 @@ const mapGitStatus = (code: string): GitDiffFileStatus | undefined => {
 
   return undefined;
 };
+
+/**
+ * diff-tree --name-status（非 -z，\n 分隔）行 → R7 commit 文件项。每行 `<status>\t<path>`，
+ * rename 行 `<status>\t<old>\t<new>`。含 tab 的特殊路径与 -z 一样不解析（与 parseNumstat 同水平）。
+ */
+const parseCommitNameStatus = (
+  output: string,
+): { status: GitDiffFileStatus; path: string; previousPath?: string }[] => {
+  const files: { status: GitDiffFileStatus; path: string; previousPath?: string }[] = [];
+  for (const line of output.split("\n")) {
+    if (!line) continue;
+    const parts = line.split("\t");
+    const status = mapGitStatus(parts[0]);
+    if (!status) continue;
+    if (status === "renamed" && parts.length >= 3) {
+      files.push({ status, previousPath: parts[1], path: parts[parts.length - 1] });
+    } else {
+      files.push({ status, path: parts.slice(1).join("\t") });
+    }
+  }
+  return files;
+};
+
+/** commit 文件项（name-status）+ numstat 行数 → GitCompareFileSummary[]（path 排序，与 R5 同形）。 */
+const parseCommitFileList = (
+  entries: { status: GitDiffFileStatus; path: string; previousPath?: string }[],
+  numstat: Map<string, NumstatEntry>,
+): GitCompareFileSummary[] =>
+  entries
+    .map((entry) => {
+      const counts = numstat.get(entry.path);
+      return {
+        path: entry.path,
+        ...(entry.previousPath ? { previousPath: entry.previousPath } : {}),
+        status: entry.status,
+        addedLines: counts ? counts.added : null,
+        removedLines: counts ? counts.deleted : null,
+      };
+    })
+    .sort((left, right) => left.path.localeCompare(right.path));
 
 const dedupeGitFiles = (files: GitDiffFileSummary[]) => {
   const seen = new Set<string>();

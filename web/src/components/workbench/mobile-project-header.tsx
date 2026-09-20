@@ -48,6 +48,13 @@ type MobileProjectHeaderProps = {
   activeTabId?: string;
   /** 项目工具原位（?tab 维度）。undefined = 实例主体。 */
   tool?: MobileProjectTool;
+  /** 工具态 pills 区替换 chip（03m gitchip / 03o crumb / 03p wsearch）——数据与交互
+   * （gitchip 计数、crumb 路径导航、wsearch 查询输入）在调用方装配，header 只呈现。 */
+  toolChip?: ReactNode;
+  /** L3 详情页 nav 形态（03q/03r/03u/03s）：非空时 header 只渲染 nav 行——back 显示
+   * backLabel（父目录/Git 检视/提交历史/分组名）、标题切 L3 标题（文件名/commit hash/页名）、
+   * 右侧 actions（03q ⋯ 菜单）。row2/chips 行不渲染（L3 是内容区替换的独立页面）。 */
+  l3?: { backLabel: string; title: string; onClick: () => void; actions?: ReactNode };
   onBack: () => void;
   onSelectInstance: (sessionId: string) => void;
   onSelectTab: (leafId: string, tabId: string) => void;
@@ -84,6 +91,8 @@ export function MobileProjectHeader({
   skillTabs,
   activeTabId,
   tool,
+  toolChip,
+  l3,
   onBack,
   onSelectInstance,
   onSelectTab,
@@ -134,134 +143,146 @@ export function MobileProjectHeader({
 
   return (
     <>
-      {/* nav 行（原型 .nav：back + 标题 + ℹ⋯；safe-area 顶带由外层 wrapper 消费） */}
+      {/* nav 行（原型 .nav：back + 标题 + ℹ⋯；safe-area 顶带由外层 wrapper 消费）。
+        L3 态（03q/03r/03u/03s）：back 换语义 label、标题换 L3 标题（mono 14px，原型规格）。 */}
       <div className="nav shrink-0">
         <button
           className="back cursor-pointer touch:px-2 touch:py-2"
-          onClick={onBack}
+          onClick={l3 ? l3.onClick : onBack}
           type="button"
         >
-          {t("nav.projects")}
+          {l3 ? l3.backLabel : t("nav.projects")}
         </button>
-        <h1 className="nv-t min-w-0">
-          <span className="block truncate">{projectName}</span>
+        <h1 className={`nv-t min-w-0${l3 ? " font-mono text-[14px]" : ""}`}>
+          <span className="block truncate">{l3 ? l3.title : projectName}</span>
         </h1>
-        {focusActions}
+        {l3 ? l3.actions : focusActions}
       </div>
-
-      {/* row2 行（原型 .row2：实例 pills + ＋ + sep + 工具 ticon） */}
-      <div className="row2 shrink-0">
-        {hasPills ? (
-          <div
-            className="pills overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            ref={scrollRef}
-          >
-            {instances.map((entry) => {
-              const active = entry.session.id === activePillId;
-              return (
+      {l3 ? null : (
+        <>
+          {/* row2 行（原型 .row2：实例 pills + ＋ + sep + 工具 ticon）。
+        工具态 pills 区替换为工具 chip（03m gitchip / 03o crumb / 03p wsearch——调用方装配，
+        原型 row2 工具态 pills 隐藏只留当前工具 chip）；chip 超宽横滑（crumb 多级路径）。 */}
+          <div className="row2 shrink-0">
+            {toolChip ? (
+              <div className="flex min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {toolChip}
+              </div>
+            ) : hasPills ? (
+              <div
+                className="pills overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                ref={scrollRef}
+              >
+                {instances.map((entry) => {
+                  const active = entry.session.id === activePillId;
+                  return (
+                    <button
+                      className={`pill cursor-pointer${active ? " on" : ""}`}
+                      data-active={active ? "true" : undefined}
+                      key={entry.session.id}
+                      onClick={() => onSelectInstance(entry.session.id)}
+                      type="button"
+                    >
+                      {entry.type === "agent" ? (
+                        <span className={statusToV2DotClass(entry.session.status)} />
+                      ) : null}
+                      {/* terminal/skill pill 11px mono（03 原型内联规格，叠层覆盖原语 12px） */}
+                      <span
+                        className={entry.type === "terminal" ? "font-mono text-[11px]" : undefined}
+                      >
+                        {entry.type === "terminal"
+                          ? `>_ ${entry.session.displayName}`
+                          : entry.session.displayName}
+                      </span>
+                    </button>
+                  );
+                })}
+                {skillTabs.map((st) => {
+                  const active = st.tabId === activePillId;
+                  return (
+                    <button
+                      className={`pill cursor-pointer font-mono text-[11px]${active ? " on" : ""}`}
+                      data-active={active ? "true" : undefined}
+                      key={st.tabId}
+                      onClick={() => onSelectTab(st.leafId, st.tabId)}
+                      type="button"
+                    >
+                      ✦ {st.name}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              // 03h：无实例不渲染 pill 条，「项目工具」lb 占位（工具是项目级仍可用）。
+              <span className="min-w-0 flex-1 text-micro text-ink-3">
+                {t("workbench.projectTools")}
+              </span>
+            )}
+            <ActionMenu
+              align="end"
+              cancelLabel={t("cancel")}
+              items={createMenuItems}
+              trigger={
                 <button
-                  className={`pill cursor-pointer${active ? " on" : ""}`}
-                  data-active={active ? "true" : undefined}
-                  key={entry.session.id}
-                  onClick={() => onSelectInstance(entry.session.id)}
+                  aria-label={t("workbench.createSessionAria")}
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center text-primary transition hover:bg-ink-1/5 active:bg-ink-1/10"
+                  disabled={create.isCreating}
                   type="button"
                 >
-                  {entry.type === "agent" ? (
-                    <span className={statusToV2DotClass(entry.session.status)} />
-                  ) : null}
-                  {/* terminal/skill pill 11px mono（03 原型内联规格，叠层覆盖原语 12px） */}
-                  <span className={entry.type === "terminal" ? "font-mono text-[11px]" : undefined}>
-                    {entry.type === "terminal"
-                      ? `>_ ${entry.session.displayName}`
-                      : entry.session.displayName}
-                  </span>
+                  {/* 裸＋字形（iOS 惯例，.plus::before/after 画笔画） */}
+                  <span className="plus" />
                 </button>
-              );
-            })}
-            {skillTabs.map((st) => {
-              const active = st.tabId === activePillId;
-              return (
-                <button
-                  className={`pill cursor-pointer font-mono text-[11px]${active ? " on" : ""}`}
-                  data-active={active ? "true" : undefined}
-                  key={st.tabId}
-                  onClick={() => onSelectTab(st.leafId, st.tabId)}
-                  type="button"
-                >
-                  ✦ {st.name}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          // 03h：无实例不渲染 pill 条，「项目工具」lb 占位（工具是项目级仍可用）。
-          <span className="min-w-0 flex-1 text-micro text-ink-3">
-            {t("workbench.projectTools")}
-          </span>
-        )}
-        <ActionMenu
-          align="end"
-          cancelLabel={t("cancel")}
-          items={createMenuItems}
-          trigger={
-            <button
-              aria-label={t("workbench.createSessionAria")}
-              className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center text-primary transition hover:bg-ink-1/5 active:bg-ink-1/10"
-              disabled={create.isCreating}
-              type="button"
-            >
-              {/* 裸＋字形（iOS 惯例，.plus::before/after 画笔画） */}
-              <span className="plus" />
-            </button>
-          }
-        />
-        <span className="sep" />
-        {(
-          [
-            { id: "files", icon: "project", label: t("workbench.tabFiles") },
-            { id: "git", icon: "git-nav", label: t("workbench.tabGit") },
-            { id: "wiki", icon: "book", label: t("workbench.tabWiki") },
-          ] as const
-        ).map((item) => (
-          <button
-            aria-label={item.label}
-            className="ticon cursor-pointer p-1 touch:h-9 touch:w-9"
-            key={item.id}
-            onClick={() => onToolChange(tool === item.id ? null : item.id)}
-            title={item.label}
-            type="button"
-          >
-            {/* 19×19 = 原型 .ticon svg 规格（components.css 单源）；ShellIcon svg size-full
+              }
+            />
+            <span className="sep" />
+            {(
+              [
+                { id: "files", icon: "project", label: t("workbench.tabFiles") },
+                { id: "git", icon: "git-nav", label: t("workbench.tabGit") },
+                { id: "wiki", icon: "book", label: t("workbench.tabWiki") },
+              ] as const
+            ).map((item) => (
+              <button
+                aria-label={item.label}
+                className={`ticon cursor-pointer p-1 touch:h-9 touch:w-9${tool === item.id ? " hl" : ""}`}
+                key={item.id}
+                onClick={() => onToolChange(tool === item.id ? null : item.id)}
+                title={item.label}
+                type="button"
+              >
+                {/* 19×19 = 原型 .ticon svg 规格（components.css 单源）；ShellIcon svg size-full
               跟随外层 span，span 由 utility 定尺寸（utility 层胜 .ticon svg components 层）。 */}
-            <ShellIcon className="h-[19px] w-[19px]" name={item.icon} />
-          </button>
-        ))}
-      </div>
+                <ShellIcon className="h-[19px] w-[19px]" name={item.icon} />
+              </button>
+            ))}
+          </div>
 
-      {/* chips 行（原型 .chips：随聚焦实例类型切换——agent = 运行摘要 ② + 自动重试；
+          {/* chips 行（原型 .chips：随聚焦实例类型切换——agent = 运行摘要 ② + 自动重试；
         terminal = tmux 会话 chip（03f 编号①「只剩 tmux 会话选择，无模型/权限/effort」；
         终端实例 1:1 绑定 tmux 会话无切换能力，chip 静态展示不画 ▾）；工具态/skill 无 chips 行） */}
-      {focusedAgent ? (
-        <div className="chips shrink-0">
-          <span className="chip">
-            ✦{" "}
-            {[focusedAgent.modelAlias, focusedAgent.permissionMode, focusedAgent.effort]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-          {/* 摘要 chip 与重试开关间分隔（03 原型 chips 行 chip + sep + 重试区） */}
-          <span className="sep" />
-          <AutoRetryHeaderButton
-            projectName={focusedAgent.projectName}
-            sessionId={focusedAgent.id}
-            variant="chip"
-          />
-        </div>
-      ) : focusedTerminal ? (
-        <div className="chips shrink-0">
-          <span className="chip font-mono">tmux · {focusedTerminal.displayName}</span>
-        </div>
-      ) : null}
+          {focusedAgent ? (
+            <div className="chips shrink-0">
+              <span className="chip">
+                ✦{" "}
+                {[focusedAgent.modelAlias, focusedAgent.permissionMode, focusedAgent.effort]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+              {/* 摘要 chip 与重试开关间分隔（03 原型 chips 行 chip + sep + 重试区） */}
+              <span className="sep" />
+              <AutoRetryHeaderButton
+                projectName={focusedAgent.projectName}
+                sessionId={focusedAgent.id}
+                variant="chip"
+              />
+            </div>
+          ) : focusedTerminal ? (
+            <div className="chips shrink-0">
+              <span className="chip font-mono">tmux · {focusedTerminal.displayName}</span>
+            </div>
+          ) : null}
+        </>
+      )}
     </>
   );
 }

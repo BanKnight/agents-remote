@@ -966,4 +966,484 @@
     color: var(--ink-3);
     text-align: center;
   }
+
+  /* ---- M4 工具与深度页原语（v2 M4；03m/03o/03p/03q/03r/03s/03t/03u/03v「仅本页样式」随工具页与 L3 落地入单源）----
+     header 工具 chip：.gitchip 03m / .crumb 03o / .wsearch 03p；列表原语 .frow/.crow/.tgrp/.wpg；
+     L3 元信息行 .meta/.csub/.dlg/.loadmore；03t 历史页 .cmsg/.by/.dstat；03v 分支页 .bcur/.brow/.bsub/.rocard；
+     03s wiki reader .readbtn/.wmeta/.wlink/.rel。 */
+  .ticon.hl {
+    background: var(--bg-elevated3);
+    border-radius: 6px;
+    padding: 4px;
+  }
+  .ticon.hl svg {
+    stroke: var(--ink-1);
+  }
+  .gitchip {
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    border-radius: 15px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    padding: 0 12px;
+  }
+  .gitchip b {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--ink-1);
+  }
+  .gitchip span {
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+  .crumb {
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    border-radius: 15px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    padding: 0 12px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 11.5px;
+    color: var(--ink-2);
+    max-width: 100%;
+    overflow: hidden;
+  }
+  .crumb b {
+    font-family: inherit;
+    font-weight: 400;
+    color: var(--ink-1);
+    white-space: nowrap;
+  }
+  .crumb button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .crumb button:not(:last-child)::after {
+    content: "/";
+    margin: 0 4px;
+    color: var(--ink-3);
+  }
+  .wsearch {
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    border-radius: 15px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    padding: 0 10px;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--ink-2);
+  }
+  .wsearch svg {
+    width: 13px;
+    height: 13px;
+    flex: none;
+  }
+  .sect {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+    margin: 14px 16px 4px;
+  }
+  .links {
+    display: flex;
+    gap: 24px;
+    margin: 12px 16px 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .links button {
+    font: inherit;
+    color: var(--c-primary);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+  .frow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 16px;
+    font-size: 13.5px;
+  }
+  /* 相邻选择器（原型语义）：sect 后首个 frow / 列表首行无线。 */
+  .frow + .frow {
+    border-top: 1px solid var(--sep-row);
+  }
+
+  .frow .ic {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    color: var(--ink-2);
+  }
+  .frow .p {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 12.5px;
+    color: var(--ink-1);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .frow .p.dir {
+    font-family: inherit;
+    font-size: 14px;
+  }
+  .frow .tm {
+    font-size: 11px;
+    color: var(--ink-2);
+    flex: none;
+  }
+  .frow .ar {
+    flex: none;
+    color: var(--c-primary);
+  }
+  .frow .ar svg {
+    width: 14px;
+    height: 14px;
+  }
+  .badge.lg {
+    height: 19px;
+    min-width: 22px;
+    border-radius: 4px;
+    font-size: 10.5px;
+  }
+  .badge.D {
+    background: var(--tint-red);
+    color: var(--c-danger);
+  }
+  .badge.R {
+    background: var(--tint-purple);
+    color: var(--c-pin);
+  }
+  .crow {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 16px 0;
+    font-size: 13px;
+  }
+  .crow .h {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    color: var(--term-ink);
+  }
+  .crow .m {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-1);
+  }
+  .crow .t {
+    font-size: 11px;
+    color: var(--ink-2);
+    flex: none;
+  }
+  .tgrp {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px 4px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .tgrp .tw {
+    width: 12px;
+    color: var(--ink-3);
+    font-size: 11px;
+    font-weight: 400;
+    flex: none;
+  }
+  .tgrp .c {
+    margin-left: auto;
+    font-size: 10.5px;
+    font-weight: 400;
+    color: var(--ink-2);
+  }
+  .wpg {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 16px 9px 38px;
+    font-size: 13.5px;
+    border-top: 1px solid var(--sep-row);
+    color: var(--ink-1);
+  }
+  .wpg .st {
+    margin-left: auto;
+    font-size: 10.5px;
+    color: var(--ink-2);
+  }
+  .wpg .ref {
+    width: 14px;
+    height: 14px;
+    border-radius: 7px;
+    background: var(--tint-purple);
+    color: var(--c-pin);
+    font-size: 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+  .wpg.sel {
+    font-weight: 600;
+  }
+  .wpg .refnote {
+    flex-basis: 100%;
+    font-size: 11px;
+    color: var(--ink-2);
+    margin-top: 2px;
+  }
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    font-size: 11.5px;
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--sep-row);
+  }
+  .meta .diff {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--c-primary);
+  }
+  .csub {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 16px 10px 40px;
+    font-size: 11px;
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--sep-row);
+  }
+  .dlg {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+    margin: 14px 16px 2px;
+  }
+  .loadmore {
+    display: block;
+    margin: 16px auto 0;
+    font-size: 11px;
+    color: var(--ink-3);
+    background: none;
+    border: none;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .cmsg {
+    padding: 10px 16px 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--ink-title);
+  }
+  .by {
+    padding: 6px 16px 0;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .dstat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px 10px;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .dstat .add {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--c-success-text);
+  }
+  .dstat .del {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--c-danger);
+  }
+  .bcur {
+    margin: 0 16px;
+    border-radius: 12px;
+    background: var(--tint-blue);
+    border: 1px solid color-mix(in srgb, var(--c-primary) 40%, transparent);
+    padding: 10px 14px;
+  }
+  .bcur .r1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .bcur .r1 .st {
+    margin-left: auto;
+    font-size: 11.5px;
+    color: var(--c-success-text);
+  }
+  .bcur .d2 {
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+  .brow {
+    display: flex;
+    align-items: center;
+    padding: 9px 16px 0 38px;
+    font-size: 13.5px;
+  }
+  .brow .n {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .brow .st {
+    margin-left: auto;
+    font-size: 11.5px;
+    text-align: right;
+    color: var(--ink-2);
+  }
+  .bsub {
+    padding: 2px 16px 9px 38px;
+    font-size: 11px;
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--sep-row);
+  }
+  .rocard {
+    margin: 12px 16px 0;
+    border-radius: 12px;
+    background: var(--tint-orange);
+    border: 1px solid color-mix(in srgb, var(--c-warning) 40%, transparent);
+    padding: 10px 12px;
+  }
+  .rocard .t {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--c-warning-text);
+  }
+  .rocard .d {
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+  .readbtn {
+    margin: 10px 16px 0;
+    height: 32px;
+    border-radius: 16px;
+    background: var(--tint-purple);
+    border: 1px solid color-mix(in srgb, var(--c-pin) 50%, transparent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--c-pin);
+    cursor: pointer;
+  }
+  .readbtn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  /* 03q 文本预览只读行号渲染（meta 行下方代码区；.kw 关键字高亮 v1 未做——预览以
+     原文呈现，语法高亮随桌面编辑器收敛统一处理）。 */
+  .code {
+    background: var(--bg-codeblock);
+    margin: 0;
+    padding: 10px 0;
+    overflow-x: auto;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 20px;
+  }
+  .code .ln {
+    display: flex;
+  }
+  .code .no {
+    width: 34px;
+    flex: none;
+    text-align: right;
+    padding-right: 10px;
+    color: var(--ink-3);
+    user-select: none;
+  }
+  .code .tx {
+    color: var(--term-ink);
+    white-space: pre;
+    padding-right: 16px;
+  }
+  .wmeta {
+    padding: 6px 16px 0;
+    font-size: 11.5px;
+    color: var(--ink-2);
+  }
+  .wlink {
+    display: block;
+    margin-left: auto;
+    padding: 8px 16px 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--c-primary);
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+  .rel {
+    margin: 14px 16px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--c-primary);
+  }
+  /* 流顶 wiki 引用卡（D13：客户端 wikiRefs atom 驱动；✕ 移除）。 */
+  .wikiref {
+    margin: 10px 16px 0;
+    border-radius: 12px;
+    background: var(--tint-purple);
+    border: 1px solid color-mix(in srgb, var(--c-pin) 40%, transparent);
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .wikiref .wr-t {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--c-pin);
+  }
+  .wikiref .wr-r {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--ink-1);
+  }
+  .wikiref .wr-r .x {
+    margin-left: auto;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
 }

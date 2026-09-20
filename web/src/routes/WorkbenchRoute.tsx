@@ -205,6 +205,18 @@ function WorkbenchContent({
   // 解析项目名走现有 project preview API）。git 仍 gate project scope（git 是项目内概念，不统一）。
   useEffect(() => {
     if (!focusId) return;
+    // M4 L3 详情页（03t/03v/03u/03s）是**不写 layout 的显式子路由**：githistory/gitbranches 为
+    // 字面量 focusId，gitcommit_/wiki_ 由子路由 _splat 派生。这些 focusId 不开 tab（渲染层在
+    // MobileWorkbench 按 focusId 直渲 L3 组件），在此提前 return 防止落入 default 分支被误开成
+    // session tab（未匹配 projectName 的兜底会开 session tab → 无效 tab 进保活层）。
+    if (
+      focusId === "githistory" ||
+      focusId === "gitbranches" ||
+      focusId.startsWith("gitcommit_") ||
+      focusId.startsWith("wiki_")
+    ) {
+      return;
+    }
     update((prev) => {
       const found = findLeafBySessionId(prev, focusId);
       if (found) return setActiveTabInLeaf(prev, found.leafId, focusId);
@@ -764,7 +776,6 @@ function WorkbenchContent({
         leftMode={leftMode}
         mode={mode}
         onOpenFile={onOpenFile}
-        onOpenGitCompareFile={onOpenGitCompareFile}
         onOpenGitFile={onOpenGitFile}
         onSelectTab={onSelectTab}
         onToolChange={onTabChange}

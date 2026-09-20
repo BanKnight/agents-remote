@@ -39,8 +39,22 @@ test("listFiles hides only blocklisted entries (.git); other dot items visible",
     entries: [
       { name: ".config", path: ".config", type: "directory", hidden: false, size: null },
       { name: "z-dir", path: "z-dir", type: "directory", hidden: false, size: null },
-      { name: ".env", path: ".env", type: "file", hidden: false, size: 14 },
-      { name: "beta.txt", path: "beta.txt", type: "file", hidden: false, size: 4 },
+      {
+        name: ".env",
+        path: ".env",
+        type: "file",
+        hidden: false,
+        size: 14,
+        mtimeMs: expect.any(Number),
+      },
+      {
+        name: "beta.txt",
+        path: "beta.txt",
+        type: "file",
+        hidden: false,
+        size: 4,
+        mtimeMs: expect.any(Number),
+      },
     ],
   });
 });
@@ -63,8 +77,22 @@ test("listRootFiles hides only blocklisted entries (.git); other dot items visib
       { name: ".config", path: ".config", type: "directory", hidden: false, size: null },
       { name: "alpha", path: "alpha", type: "directory", hidden: false, size: null },
       { name: "demo", path: "demo", type: "directory", hidden: false, size: null },
-      { name: ".env", path: ".env", type: "file", hidden: false, size: 14 },
-      { name: "README.md", path: "README.md", type: "file", hidden: false, size: 11 },
+      {
+        name: ".env",
+        path: ".env",
+        type: "file",
+        hidden: false,
+        size: 14,
+        mtimeMs: expect.any(Number),
+      },
+      {
+        name: "README.md",
+        path: "README.md",
+        type: "file",
+        hidden: false,
+        size: 11,
+        mtimeMs: expect.any(Number),
+      },
     ],
   });
 });
@@ -270,6 +298,39 @@ test("renameFile renames a file and returns updated entry", async () => {
       type: "file",
     },
   });
+});
+
+test("renameFile with targetDir moves a file across directories", async () => {
+  await mkdir(join(root, "demo", "dest"));
+  await writeFile(join(root, "demo", "moved.txt"), "payload");
+  const service = new ProjectFilesService(root);
+
+  await expect(
+    service.renameFile("demo", "moved.txt", "renamed.txt", "dest"),
+  ).resolves.toMatchObject({
+    entry: {
+      name: "renamed.txt",
+      path: "dest/renamed.txt",
+      type: "file",
+    },
+  });
+});
+
+test("renameFile with targetDir rejects missing or non-directory target", async () => {
+  await writeFile(join(root, "demo", "file.txt"), "x");
+  const service = new ProjectFilesService(root);
+
+  await expect(
+    service.renameFile("demo", "file.txt", "x.txt", "no-such-dir"),
+  ).rejects.toMatchObject({
+    code: "PROJECT_FILE_NOT_FOUND",
+  });
+
+  await expect(service.renameFile("demo", "file.txt", "x.txt", "../outside")).rejects.toMatchObject(
+    {
+      code: "PROJECT_PATH_OUTSIDE_ROOT",
+    },
+  );
 });
 
 test("renameFile renames a directory", async () => {

@@ -22,6 +22,33 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // ── sanitizeWikiSlug ───────────────────────────────────────────────
 
+test("searchPages matches title and body lines case-insensitively", async () => {
+  const service = new ProjectWikiService(root);
+  await service.writePage("demo", "passkey", {
+    slug: "passkey",
+    title: "passkey 迁移计划",
+    content: "第一行背景\n使用 webauthn verify\n最后一行",
+  });
+  await service.writePage("demo", "unrelated", {
+    slug: "unrelated",
+    title: "别的页面",
+    content: "完全无关",
+  });
+
+  const result = await service.searchPages("demo", "WEBAUTHN");
+  expect(result.query).toBe("WEBAUTHN");
+  expect(result.matches).toHaveLength(1);
+  expect(result.matches[0]).toMatchObject({ slug: "passkey", title: "passkey 迁移计划" });
+  expect(result.matches[0].lines).toContain("使用 webauthn verify");
+
+  const byTitle = await service.searchPages("demo", "迁移");
+  expect(byTitle.matches).toHaveLength(1);
+  expect(byTitle.matches[0].slug).toBe("passkey");
+
+  const empty = await service.searchPages("demo", "");
+  expect(empty.matches).toEqual([]);
+});
+
 test("sanitizeWikiSlug accepts legal slugs", () => {
   expect(sanitizeWikiSlug("my-page")).toBe("my-page");
   expect(sanitizeWikiSlug("my.page")).toBe("my.page");

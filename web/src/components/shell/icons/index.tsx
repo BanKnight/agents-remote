@@ -14,6 +14,7 @@ import folderPlus from "./folder-plus.svg?raw";
 import gitNav from "./git-nav.svg?raw";
 import info from "./info.svg?raw";
 import maximize from "./maximize.svg?raw";
+import magnifyingglass from "./magnifyingglass.svg?raw";
 import menu from "./menu.svg?raw";
 import minus from "./minus.svg?raw";
 import openai from "./openai.svg?raw";
@@ -48,6 +49,7 @@ const svgMap: Record<string, string> = {
   "git-nav": gitNav,
   info,
   maximize,
+  magnifyingglass,
   menu,
   minus,
   openai, // provider 品牌 logo（fill 型，非设计包 SF Symbols 件；anthropic 同理）

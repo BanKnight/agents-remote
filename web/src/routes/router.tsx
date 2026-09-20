@@ -133,6 +133,36 @@ const projectSkillFocusRoute = createRoute({
   validateSearch: validateWorkbenchSearch,
 });
 
+// ── M4 移动 L3 详情页（redesign-v2 §6 M4；对标 03t/03v/03u/03s）──────────────────
+// 四个显式子路由，**不写 layout tab**（focus effect 对这四种 focusId 提前 return——L3 是内容区
+// 替换的独立页面，不进保活层；移动端由 MobileWorkbench 按 focusId 直渲 L3 组件）。字面量段
+// history/branches/commit 优先于 projectGitFocusRoute 的 splat `/projects/$key/git/$` 匹配，
+// 深链/刷新直入。deriveWorkbenchRouteContext 各 case 派生 focusId（githistory/gitbranches 字面量、
+// gitcommit_<hash>/wiki_<slug> 由 _splat 拼前缀）。
+const projectGitHistoryRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/projects/$key/git/history",
+  validateSearch: validateWorkbenchSearch,
+});
+
+const projectGitBranchesRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/projects/$key/git/branches",
+  validateSearch: validateWorkbenchSearch,
+});
+
+const projectGitCommitRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/projects/$key/git/commit/$",
+  validateSearch: validateWorkbenchSearch,
+});
+
+const projectWikiPageRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/projects/$key/wiki/$",
+  validateSearch: validateWorkbenchSearch,
+});
+
 // global scope 路由（设计 activity-bar-redesign §6 决策 22）：`/global` 重命名为 `/projects`
 //（语义=项目总览，[项目] 导航）。scope kind `global` 类型保留，只改 URL path 段。与
 // `/projects/$key`（project scope）不冲突——TanStack Router 字面量段 `session` 优先于参数 `$key`。
@@ -305,6 +335,10 @@ const routeTree = rootRoute.addChildren([
     projectFileFocusRoute,
     projectGitFocusRoute,
     projectSkillFocusRoute,
+    projectGitHistoryRoute,
+    projectGitBranchesRoute,
+    projectGitCommitRoute,
+    projectWikiPageRoute,
     globalScopeRoute,
     globalFocusRoute,
     globalFileFocusRoute,

@@ -2,7 +2,9 @@ import {
   type ApiErrorCode,
   type WikiPage,
   type WikiPageFrontmatter,
+  type WikiPageSearchMatch,
   type WikiPageSummary,
+  type WikiSearchResponse,
 } from "@agents-remote/shared";
 import matter from "gray-matter";
 import { chmod, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
@@ -17,6 +19,9 @@ import {
 // wiki 目录相对项目根(flat markdown 目录,起步态;后续按类型子目录见 plan 后续打磨)。
 const WIKI_DIR_RELATIVE = "wiki";
 const WIKI_PAGE_SUFFIX = ".md";
+/** 全文搜索每页最多返回匹配行数与单行截断长度（03p 搜索结果摘要）。 */
+const WIKI_SEARCH_LINES_PER_PAGE = 3;
+const WIKI_SEARCH_LINE_MAX = 120;
 
 export type ProjectWikiErrorCode = Extract<
   ApiErrorCode,
@@ -174,6 +179,42 @@ export class ProjectWikiService {
       throw new ProjectWikiError("PROJECT_FS_ERROR", "Unable to read wiki page");
     }
     return buildWikiPage(slug, raw, Number(fileStat.mtimeMs));
+  }
+
+  /**
+   * 全文搜索（M4 03p pills 搜索）：标题或正文行命中（大小写不敏感），每页最多 3 条匹配行
+   *（截 120 字符）。首期页面少，全量 readPage 可接受（与 listPages 同模式）。
+   */
+  async searchPages(projectName: string, query: string): Promise<WikiSearchResponse> {
+    const q = query.trim().toLowerCase();
+    if (q.length === 0) return { query, matches: [] };
+    const summaries = await this.listPages(projectName);
+    const matches: WikiPageSearchMatch[] = [];
+    for (const summary of summaries) {
+      const page = await this.readPage(projectName, summary.slug);
+      const lines: string[] = [];
+      if (page.frontmatter.title.toLowerCase().includes(q)) {
+        const firstLine = page.body.split("\n").find((line) => line.trim().length > 0);
+        lines.push((firstLine ?? page.frontmatter.title).trim().slice(0, WIKI_SEARCH_LINE_MAX));
+      }
+      for (const rawLine of page.body.split("\n")) {
+        if (lines.length >= WIKI_SEARCH_LINES_PER_PAGE) break;
+        const trimmed = rawLine.trim();
+        if (trimmed.length === 0 || lines.includes(trimmed)) continue;
+        if (trimmed.toLowerCase().includes(q)) {
+          lines.push(trimmed.slice(0, WIKI_SEARCH_LINE_MAX));
+        }
+      }
+      if (lines.length > 0) {
+        matches.push({
+          slug: page.slug,
+          title: page.frontmatter.title,
+          updated: page.frontmatter.updated,
+          lines,
+        });
+      }
+    }
+    return { query, matches };
   }
 
   /**

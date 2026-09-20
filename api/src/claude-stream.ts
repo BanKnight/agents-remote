@@ -1,4 +1,8 @@
-import type { ClaudeStreamClientMessage, SessionStreamServerMessage } from "@agents-remote/shared";
+import type {
+  ClaudeStreamClientMessage,
+  SessionPromptInjectResponse,
+  SessionStreamServerMessage,
+} from "@agents-remote/shared";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, type RuntimeResources, type RuntimeStream } from "./session-registry";
@@ -17,6 +21,11 @@ export type ClaudeWebSocketData = {
   runtimeKey: string;
   status: AgentSessionStatus;
 };
+
+/** injectUserPrompt 的 discriminated result（controller 层不构造 Response，路由层 map）。 */
+export type SessionPromptInjectResult =
+  | SessionPromptInjectResponse
+  | { delivered: false; reason: "session_not_found" | "empty_text" };
 
 type StreamSocket = {
   data?: unknown;
@@ -392,6 +401,57 @@ export class ClaudeStreamController {
         message: "Failed to write to Claude stream",
       });
     }
+  }
+
+  /**
+   * D13 Wiki 注入（M4）：REST 触发一次 user prompt——与 WS `user` 帧完全同一管道
+   *（ensureRunning → stdin write → live echo），仅入口不同（会话未打开也能注入，落地
+   * 「让 Agent 读这篇」后台注入语义；CLI 侧运行中 turn 排队，已停下则直接处理）。校验同
+   * handleClaudeStreamUpgrade（claude provider + 会话存在）。返回 discriminated result
+   *（纯数据，路由层 map 到 jsonError——controller 层不构造 Response）。
+   */
+  async injectUserPrompt(
+    projectName: string,
+    sessionId: string,
+    text: string,
+  ): Promise<SessionPromptInjectResult> {
+    const metadata = await this.sessionRegistry.getAgentMetadata(projectName, sessionId);
+    if (!metadata || metadata.provider !== "claude") {
+      return { delivered: false, reason: "session_not_found" };
+    }
+    if (text.trim().length === 0) {
+      return { delivered: false, reason: "empty_text" };
+    }
+
+    const runtimeKey = metadata.runtimeKey;
+    // 与 WS open() 同参——CLI 未运行时按 metadata 重拉（--resume），运行中则 no-op 补字段。
+    await this.claudeRuntime.ensureRunning(
+      runtimeKey,
+      metadata.projectPath ?? "",
+      projectName,
+      sessionId,
+      metadata.claudeSessionId,
+      metadata.modelAlias ?? metadata.model,
+      metadata.permissionMode,
+      metadata.effort,
+    );
+
+    const frame: ClaudeStreamClientMessage = {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text }] },
+    };
+    console.log(`[claude-stream] inject dialog: ${runtimeKey}`);
+    await this.claudeRuntime.write(runtimeKey, JSON.stringify(frame) + "\n");
+    // 与 WS message() user 分支同款：活动时间戳 + live echo（当前与未来订阅者都看得到这条
+    // 注入消息——JSONL 由 CLI 自己写，此处不伪造历史）。
+    void this.sessionRegistry.recordActivity(sessionId);
+    const echo = JSON.stringify({
+      ...frame,
+      isUserInput: true,
+      uuid: `injected-${crypto.randomUUID()}`,
+    });
+    this.claudeRuntime.injectLiveLine(runtimeKey, echo);
+    return { delivered: true, projectName, sessionId };
   }
 
   close(socket: StreamSocket) {

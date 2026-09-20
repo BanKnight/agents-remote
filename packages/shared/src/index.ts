@@ -14,6 +14,8 @@ export type ProjectFileEntry = {
   type: ProjectFileEntryType;
   hidden: boolean;
   size: number | null;
+  /** 文件修改时间（epoch ms；目录恒缺省）——移动文件工具 03o 行尾相对时间（M4）。 */
+  mtimeMs?: number;
 };
 
 export type ProjectFileListResponse = {
@@ -39,6 +41,8 @@ export type ProjectTextFilePreview = {
   name: string;
   size: number;
   content: string;
+  /** 文件修改时间（epoch ms）——移动预览 03q meta「更新 …」（M4）。 */
+  mtimeMs: number;
 };
 
 export type ProjectImageFilePreview = {
@@ -164,17 +168,21 @@ export type GitBranchListResponse = {
   branches: GitBranch[];
 };
 
-/** R4/R6 共享 commit 项（git log %h/%an/%ar/%s）。 */
+/** R4/R6 共享 commit 项（git log %h/%an/%ar/%s；isoDate = %ci 日期段，客户端日期分组用，M4 R6 增强可选字段）。 */
 export type GitCommitLogItem = {
   hash: string;
   message: string;
   author: string;
   relativeTime: string;
+  /** ISO 8601 提交时间（%ci，如 2026-09-21 10:30:00 +0800 截取的本地日期）；M4 起提供。 */
+  isoDate?: string;
 };
 
-/** R6 commit 历史（branch = "" 表示 HEAD/默认）。 */
+/** R6 commit 历史（branch = "" 表示 HEAD/默认）。offset = 分页偏移（"加载更早"，与 limit 配合）；
+ * total = 该 ref 全量提交数（rev-list --count，M4：03t meta「共 N 次提交」+ loadMore 终止判断）。 */
 export type GitCommitLogResponse = {
   branch: string;
+  total: number;
   commits: GitCommitLogItem[];
 };
 
@@ -223,6 +231,56 @@ export type GitCompareFileDiffResponse = {
   previousPath?: string;
   status: GitDiffFileStatus;
   diff: string;
+};
+
+/** R7a 单 commit 元信息（03u 提交详情头部）。 */
+export type GitCommitDetailMeta = {
+  hash: string;
+  message: string;
+  author: string;
+  relativeTime: string;
+  /** ISO 8601 提交时间（%ci）。 */
+  isoDate: string;
+};
+
+/** R7a commit 详情（元信息 + 变更文件 numstat 列表；文件项复用 R5 GitCompareFileSummary，无 scope 概念）。 */
+export type GitCommitDetailResponse =
+  | {
+      repository: true;
+      projectName: string;
+      meta: GitCommitDetailMeta;
+      files: GitCompareFileSummary[];
+    }
+  | {
+      repository: false;
+      projectName: string;
+      reason: "not_git_repository";
+    };
+
+/** R7b commit 内单文件 diff（`git diff-tree -p --root <hash> -- path`；base/compare 回填 `${hash}^`/hash 供客户端展示）。 */
+export type GitCommitFileDiffResponse = {
+  repository: true;
+  projectName: string;
+  hash: string;
+  base: string;
+  compare: string;
+  path: string;
+  previousPath?: string;
+  status: GitDiffFileStatus;
+  diff: string;
+};
+
+/** D13 Wiki 注入（M4）：REST 触发一次 user prompt（与 claude-stream WS `user` 帧同一管道
+ *  ensureRunning → stdin write → live echo），供 wiki 阅读页「让 Agent 读这篇」在会话未打开
+ *  时后台注入。text 为最终 prompt 全文（客户端模板 wiki.injectPrompt + 页面正文拼装）。 */
+export type SessionPromptInjectRequest = {
+  text: string;
+};
+
+export type SessionPromptInjectResponse = {
+  delivered: true;
+  projectName: string;
+  sessionId: string;
 };
 
 export type ProjectListResponse = {
@@ -295,6 +353,8 @@ export type CreateFolderResponse = {
 export type RenameFileRequest = {
   path: string;
   name: string;
+  /** 目标目录（project-relative，可选；缺省 = 原目录）。传即「移动到」（D 决策：移动 = rename 带路径）。 */
+  targetDir?: string;
 };
 
 export type RenameFileResponse = {
@@ -651,6 +711,21 @@ export type WikiPage = {
 };
 
 export type WikiIndexResponse = { pages: WikiPageSummary[] };
+
+/** wiki 全文搜索单条匹配（页级命中 + 匹配行摘要，03p pills 搜索用）。 */
+export type WikiPageSearchMatch = {
+  slug: string;
+  title: string;
+  updated: string;
+  /** 命中行原文（去 frontmatter 正文内，截断 120 字符）；标题命中时为首行。 */
+  lines: string[];
+};
+
+/** wiki 全文搜索响应（GET /api/projects/$key/wiki/search?q=）。 */
+export type WikiSearchResponse = {
+  query: string;
+  matches: WikiPageSearchMatch[];
+};
 export type WikiPageResponse = { page: WikiPage };
 export type AddSkillSourceResponse = { source: SkillSource };
 export type RemoveSkillSourceResponse = { deleted: true; id: string };

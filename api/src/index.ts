@@ -10,6 +10,7 @@ import type {
   ProjectListResponse,
   UpdatePagesConfigResponse,
   WikiIndexResponse,
+  WikiSearchResponse,
 } from "@agents-remote/shared";
 import { AgentRuntime } from "./agent-runtime";
 import { AcpRuntime, resolveAcpCredentials } from "./acp-runtime";
@@ -30,6 +31,7 @@ import { ProjectPagesError, ProjectPagesService } from "./project-pages";
 import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
 import { ProjectWikiError, ProjectWikiService } from "./project-wiki";
 import { ProjectService, ProjectServiceError } from "./projects";
+import { resolveProjectPath } from "./project-paths";
 import { readFile, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
@@ -273,6 +275,52 @@ export const createFetchHandler =
         if (claudeUpgrade.matched) {
           return withRefresh(claudeUpgrade.response);
         }
+
+        // D13 Wiki 注入（M4）：POST /api/projects/$key/sessions/$id/message —— REST 触发一次
+        // user prompt（与 claude-stream WS user 帧同一管道，见 controller.injectUserPrompt）。
+        // 项目名先过 resolveProjectPath（PROJECTS_ROOT 不逃逸，与 upgrade 同款守卫）。
+        const injectMatch = url.pathname.match(
+          /^\/api\/projects\/([^/]+)\/sessions\/(.+)\/message$/,
+        );
+        if (injectMatch && request.method === "POST") {
+          const body = (await request.json().catch(() => null)) as {
+            text?: unknown;
+          } | null;
+          const text = typeof body?.text === "string" ? body.text : "";
+          if (text.trim().length === 0) {
+            return withRefresh(
+              jsonError("SESSION_TYPE_INVALID", "Prompt text must not be empty", 400),
+            );
+          }
+          let project;
+          try {
+            project = await resolveProjectPath(
+              options.projectsRoot,
+              decodeURIComponent(injectMatch[1]!),
+            );
+          } catch {
+            return withRefresh(jsonError("PROJECT_NOT_FOUND", "Project not found", 404));
+          }
+          const result = await options.claudeStreamController.injectUserPrompt(
+            project.name,
+            decodeURIComponent(injectMatch[2]!),
+            text,
+          );
+          if (!result.delivered) {
+            return withRefresh(
+              jsonError(
+                result.reason === "session_not_found"
+                  ? "SESSION_NOT_FOUND"
+                  : "SESSION_TYPE_INVALID",
+                result.reason === "session_not_found"
+                  ? "Session not found"
+                  : "Prompt text must not be empty",
+                result.reason === "session_not_found" ? 404 : 400,
+              ),
+            );
+          }
+          return withRefresh(Response.json(result));
+        }
       }
 
       if (options.acpStreamController) {
@@ -459,25 +507,42 @@ const handleProjects = async (
       const compare = url.searchParams.get("compare");
       const path = url.searchParams.get("path");
       const context = url.searchParams.get("context");
+      const hash = url.searchParams.get("hash");
       const response =
-        kind === "file"
-          ? await projectGitDiffService.fileDiff(
-              projectName,
-              url.searchParams.get("scope"),
-              path,
-              context,
-            )
-          : kind === "compareFile"
-            ? await projectGitDiffService.compareFileDiff(projectName, base, compare, path, context)
-            : kind === "compare"
-              ? await projectGitDiffService.compareDiff(projectName, base, compare)
-              : kind === "branches"
-                ? await projectGitDiffService.listBranches(projectName)
-                : kind === "log"
-                  ? await projectGitDiffService.listCommits(projectName, branch)
-                  : kind === "aheadBehind"
-                    ? await projectGitDiffService.listAheadBehind(projectName, branch)
-                    : await projectGitDiffService.listDiff(projectName);
+        kind === "commit"
+          ? path
+            ? await projectGitDiffService.getCommitFileDiff(projectName, hash, path)
+            : await projectGitDiffService.getCommitDetail(projectName, hash)
+          : kind === "file"
+            ? await projectGitDiffService.fileDiff(
+                projectName,
+                url.searchParams.get("scope"),
+                path,
+                context,
+              )
+            : kind === "compareFile"
+              ? await projectGitDiffService.compareFileDiff(
+                  projectName,
+                  base,
+                  compare,
+                  path,
+                  context,
+                )
+              : kind === "compare"
+                ? await projectGitDiffService.compareDiff(projectName, base, compare)
+                : kind === "branches"
+                  ? await projectGitDiffService.listBranches(projectName)
+                  : kind === "log"
+                    ? await projectGitDiffService.listCommits(
+                        projectName,
+                        branch,
+                        // limit/offset 透传（M4：03m 最近提交 limit=3、03t 分页 limit=30）。
+                        Number.parseInt(url.searchParams.get("limit") ?? "", 10) || undefined,
+                        Number.parseInt(url.searchParams.get("offset") ?? "", 10) || 0,
+                      )
+                    : kind === "aheadBehind"
+                      ? await projectGitDiffService.listAheadBehind(projectName, branch)
+                      : await projectGitDiffService.listDiff(projectName);
       return Response.json(response);
     }
 
@@ -506,7 +571,11 @@ const handleProjects = async (
       projectFilesMatch.rename &&
       projectFilesService
     ) {
-      const body = (await request.json()) as { path?: string; name?: string };
+      const body = (await request.json()) as {
+        path?: string;
+        name?: string;
+        targetDir?: string;
+      };
 
       if (typeof body.path !== "string" || body.path.length === 0) {
         return jsonError("PROJECT_TARGET_INVALID", "File path is required", 400);
@@ -520,6 +589,7 @@ const handleProjects = async (
         projectFilesMatch.projectName,
         body.path,
         body.name,
+        typeof body.targetDir === "string" ? body.targetDir : undefined,
       );
       return Response.json(response);
     }
@@ -831,6 +901,14 @@ const handleWikiRoute = async (
       const pages = await projectWikiService.listPages(match.projectName);
       return Response.json({ pages } satisfies WikiIndexResponse);
     }
+    // /wiki/search?q= → 全文搜索（先于 slug 读取，防 "search" 被当 slug 404）。
+    if (match.slug === "search") {
+      const response = await projectWikiService.searchPages(
+        match.projectName,
+        url.searchParams.get("q") ?? "",
+      );
+      return Response.json(response satisfies WikiSearchResponse);
+    }
     const page = await projectWikiService.readPage(match.projectName, match.slug);
     return Response.json(page);
   } catch (error) {
@@ -843,7 +921,7 @@ const handleWikiRoute = async (
 
 type ProjectGitDiffPathMatch = {
   projectName: string;
-  kind: "file" | "diff" | "branches" | "log" | "aheadBehind" | "compare" | "compareFile";
+  kind: "file" | "diff" | "branches" | "log" | "aheadBehind" | "compare" | "compareFile" | "commit";
 };
 
 const matchProjectGitDiffPath = (pathname: string): ProjectGitDiffPathMatch | undefined => {
@@ -858,6 +936,7 @@ const matchProjectGitDiffPath = (pathname: string): ProjectGitDiffPathMatch | un
   const suffixes: { suffix: string; kind: ProjectGitDiffPathMatch["kind"] }[] = [
     { suffix: "/git/compare/file", kind: "compareFile" },
     { suffix: "/git/compare", kind: "compare" },
+    { suffix: "/git/commit", kind: "commit" },
     { suffix: "/git/diff/file", kind: "file" },
     { suffix: "/git/diff", kind: "diff" },
     { suffix: "/git/branches", kind: "branches" },

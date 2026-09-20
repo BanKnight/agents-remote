@@ -219,6 +219,18 @@ export const workbenchMobileProjectFilesPathAtom = atomWithLocalOnlyStorage<Reco
 );
 
 /**
+ * D13 Wiki 注入记忆（M4，03s）：项目 → session → 已注入 wiki 页列表。localStorage 持久化——
+ * wiki 阅读页「让 Agent 读这篇」注入成功后写入；session 流顶引用卡（可移除）与 wiki 面板
+ * refnote 反查此表呈现「已注入」状态。移除引用 = 删该 slug 条目。key 分层与文件 cwd 记忆
+ * 同款（按项目/session 隔离，切项目/会话不串）。
+ */
+export type WorkbenchWikiRef = { slug: string; title: string };
+
+export const workbenchWikiRefsAtom = atomWithLocalOnlyStorage<
+  Record<string, Record<string, WorkbenchWikiRef[]>>
+>("workbenchWikiRefs", {});
+
+/**
  * 移动端 `/files` 全局页（rootBrowse 文件树）cwd 记忆。路径格式 = `${projectName}/${relative}`
  *（与 resolveRootBrowseTarget 解析格式一致），空串 = 根目录。持久化让后台被杀/重开停留在上次
  * 目录；进入项目子目录后切可写 files，记忆随之更新。
@@ -312,6 +324,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
   gitCompare?: string;
+  branch?: string;
   leftMode?: "auto" | "files" | "plugins";
   mode?: WorkbenchMode;
 } {
@@ -320,6 +333,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
     gitCompare?: string;
+    branch?: string;
     leftMode?: "auto" | "files" | "plugins";
     mode?: WorkbenchMode;
   } = {};
@@ -348,6 +362,10 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   // R5 compare 模式：gitCompare 编码 `${base}~${compare}`（合法 ref 不含 `~`），与 gitScope 互斥。
   if (typeof search.gitCompare === "string" && search.gitCompare.length > 0) {
     result.gitCompare = search.gitCompare;
+  }
+  // 03t 提交历史页分支维度（分支页 → 历史页带 branch；省略 = 当前分支）。
+  if (typeof search.branch === "string" && search.branch.length > 0) {
+    result.branch = search.branch;
   }
   if (search.leftMode === "auto" || search.leftMode === "files" || search.leftMode === "plugins") {
     result.leftMode = search.leftMode;
@@ -537,10 +555,45 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
         ...s,
       };
     }
+    case "/projects/$key/git/history":
+      // 03t 提交历史页（M4 L3）：不写 layout 的显式子路由。focusId 字面量 `githistory`，
+      // branch search 可选（分支页跳转携带）；WorkbenchRoute focus effect 对这些 L3 focusId
+      // 提前 return（不开 tab、不写 layout）。
+      return { scope: { kind: "project", key: p.key ?? "" }, focusId: "githistory", ...s };
+    case "/projects/$key/git/branches":
+      // 03v 分支页（M4 L3）：同上，focusId 字面量 `gitbranches`。
+      return { scope: { kind: "project", key: p.key ?? "" }, focusId: "gitbranches", ...s };
+    case "/projects/$key/git/commit/$": {
+      // 03u 提交详情页（M4 L3）：_splat = commit hash，focusId=`gitcommit_${hash}`。
+      const hash = p._splat ? decodeURIComponent(p._splat) : "";
+      return {
+        scope: { kind: "project", key: p.key ?? "" },
+        focusId: hash ? `gitcommit_${hash}` : undefined,
+        ...s,
+      };
+    }
+    case "/projects/$key/wiki/$": {
+      // 03s wiki 阅读页（M4 L3）：_splat = 页面 slug，focusId=`wiki_${slug}`。
+      const slug = p._splat ? decodeURIComponent(p._splat) : "";
+      return {
+        scope: { kind: "project", key: p.key ?? "" },
+        focusId: slug ? `wiki_${slug}` : undefined,
+        ...s,
+      };
+    }
     default:
       // 非 workbench 路由（理论上 layout 不应被非 workbench 子路由命中）；回退 global 空态。
       return { scope: { kind: "global" }, focusId: undefined, ...s };
   }
+}
+
+/** M4 L3 focusId 反解（03u/03s）：`gitcommit_${hash}` / `wiki_${slug}` 取参数段，非本族前缀返回 undefined。 */
+export function parseGitCommitFocusId(focusId: string): string | undefined {
+  return focusId.startsWith("gitcommit_") ? focusId.slice("gitcommit_".length) : undefined;
+}
+
+export function parseWikiFocusId(focusId: string): string | undefined {
+  return focusId.startsWith("wiki_") ? focusId.slice("wiki_".length) : undefined;
 }
 
 /**

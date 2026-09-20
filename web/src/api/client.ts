@@ -16,6 +16,8 @@ import type {
   DeleteProjectResponse,
   GitAheadBehindResponse,
   GitBranchListResponse,
+  GitCommitDetailResponse,
+  GitCommitFileDiffResponse,
   GitCommitLogResponse,
   GitDiffListResponse,
   GitDiffScope,
@@ -47,6 +49,8 @@ import type {
   UpdateAutoRetryResponse,
   SaveFileRequest,
   SaveFileResponse,
+  SessionPromptInjectRequest,
+  SessionPromptInjectResponse,
   SlashCommandDescriptionsResponse,
   TerminalSessionDetailResponse,
   UploadFileResponse,
@@ -94,6 +98,7 @@ import type {
   UpdateSkillResponse,
   WikiIndexResponse,
   WikiPage,
+  WikiSearchResponse,
   ChatSession,
   ListChatSessionsResponse,
   CreateChatSessionRequest,
@@ -216,11 +221,12 @@ export async function renameFile(
   projectName: string,
   path: string,
   name: string,
+  targetDir?: string,
 ): Promise<RenameFileResponse> {
   return fetchJson(projectFileRenamePath(projectName), "api.projectFileRenameFailed", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, name }),
+    body: JSON.stringify({ path, name, ...(targetDir ? { targetDir } : {}) }),
   });
 }
 
@@ -297,6 +303,14 @@ export async function getWikiPage(projectName: string, slug: string): Promise<Wi
   return fetchJson(wikiPagePath(projectName, slug), "api.wikiPageFailed");
 }
 
+/** wiki 全文搜索（M4 03p：标题/正文行命中，每页 ≤3 条匹配行）。 */
+export async function searchWiki(projectName: string, query: string): Promise<WikiSearchResponse> {
+  return fetchJson(
+    `${wikiIndexPath(projectName)}/search?q=${encodeURIComponent(query)}`,
+    "api.wikiSearchFailed",
+  );
+}
+
 /**
  * pages serve 的对外干净 URL（/p/{name}{urlPath}）。web vite proxy 把 /p/{name}{urlPath}
  * rewrite 到 /api/projects/{name}/pages{urlPath}（见 web/vite.config.ts）。浏览器直访新标签页:
@@ -328,8 +342,36 @@ export async function listProjectGitBranches(projectName: string): Promise<GitBr
 export async function getProjectGitLog(
   projectName: string,
   branch?: string,
+  offset = 0,
+  limit?: number,
 ): Promise<GitCommitLogResponse> {
-  return fetchJson(projectGitLogPath(projectName, branch), "api.projectGitDiffFailed");
+  const base = projectGitLogPath(projectName, branch);
+  const params = new URLSearchParams();
+  if (offset > 0) params.set("offset", String(offset));
+  if (limit !== undefined) params.set("limit", String(limit));
+  const qs = params.toString();
+  const url = qs ? `${base}${base.includes("?") ? "&" : "?"}${qs}` : base;
+  return fetchJson(url, "api.projectGitDiffFailed");
+}
+
+/**
+ * D13 Wiki 注入（M4）：POST 一次 user prompt 到指定 agent 会话（与 claude-stream WS user 帧
+ * 同一服务端管道——会话未打开也能注入）。供 wiki 阅读页「让 Agent 读这篇」选会话注入。
+ */
+export async function sendProjectSessionMessage(
+  projectName: string,
+  sessionId: string,
+  text: string,
+): Promise<SessionPromptInjectResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/sessions/${encodeURIComponent(sessionId)}/message`,
+    "api.projectSessionMessageFailed",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text } satisfies SessionPromptInjectRequest),
+    },
+  );
 }
 
 export async function getProjectGitAheadBehind(
@@ -359,6 +401,29 @@ export async function getProjectGitCompareFileDiff(
 ): Promise<GitCompareFileDiffResponse> {
   return fetchJson(
     projectGitCompareFileDiffPath(projectName, base, compare, path, context),
+    "api.projectGitDiffFailed",
+  );
+}
+
+/** R7a commit 详情（03u：元信息 + 变更文件 numstat 列表）。 */
+export async function getProjectGitCommitDetail(
+  projectName: string,
+  hash: string,
+): Promise<GitCommitDetailResponse> {
+  return fetchJson(
+    `${projectGitCommitPath(projectName)}?hash=${encodeURIComponent(hash)}`,
+    "api.projectGitDiffFailed",
+  );
+}
+
+/** R7b commit 内单文件 diff（03u 点文件 → 对比基准 = 本次提交）。 */
+export async function getProjectGitCommitFileDiff(
+  projectName: string,
+  hash: string,
+  path: string,
+): Promise<GitCommitFileDiffResponse> {
+  return fetchJson(
+    `${projectGitCommitPath(projectName)}?hash=${encodeURIComponent(hash)}&path=${encodeURIComponent(path)}`,
     "api.projectGitDiffFailed",
   );
 }
@@ -813,6 +878,9 @@ const projectGitLogPath = (projectName: string, branch?: string) => {
   const base = `/api/projects/${encodeURIComponent(projectName)}/git/log`;
   return branch ? `${base}?branch=${encodeURIComponent(branch)}` : base;
 };
+
+const projectGitCommitPath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/git/commit`;
 
 const projectGitAheadBehindPath = (projectName: string, branch?: string) => {
   const base = `/api/projects/${encodeURIComponent(projectName)}/git/ahead-behind`;

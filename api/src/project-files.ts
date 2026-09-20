@@ -210,6 +210,8 @@ export class ProjectFilesService {
         name,
         size,
         content: text,
+        // 移动预览 03q meta「更新 …」（M4）。
+        mtimeMs: targetStat.mtimeMs,
       };
     }
 
@@ -357,6 +359,7 @@ export class ProjectFilesService {
     projectName: string,
     relativePath: string,
     newName: string,
+    targetDir?: string,
   ): Promise<RenameFileResponse> {
     const resolved = await this.resolvePath(projectName, relativePath);
     await this.statPath(resolved.path);
@@ -370,7 +373,23 @@ export class ProjectFilesService {
       throw new ProjectFilesError("PROJECT_NAME_INVALID", "Invalid file name");
     }
 
-    const parent = dirname(resolved.path);
+    // 目标目录（M4 03w「移动到」= rename 带路径）：提供时过同款 resolver（PROJECTS_ROOT 不逃逸
+    // + realpath 拦越界 symlink）且必须是已存在目录；缺省 = 原父目录（纯重命名）。
+    let parent: string;
+    let targetDirRelative: string;
+    if (targetDir !== undefined && targetDir.length > 0) {
+      const resolvedDir = await this.resolvePath(projectName, targetDir);
+      const dirStat = await this.statPath(resolvedDir.path);
+      if (!dirStat.isDirectory()) {
+        throw new ProjectFilesError("PROJECT_NAME_INVALID", "Target is not a directory");
+      }
+      parent = resolvedDir.path;
+      targetDirRelative = targetDir.replace(/\/+$/, "");
+    } else {
+      parent = dirname(resolved.path);
+      const sourceParent = dirname(relativePath);
+      targetDirRelative = sourceParent === "." ? "" : sourceParent;
+    }
     const targetPath = join(parent, newName);
 
     try {
@@ -395,11 +414,7 @@ export class ProjectFilesService {
     }
 
     const entryStat = await this.statPath(targetPath);
-    const newRelativePath = dirname(relativePath);
-    const entryPath =
-      newRelativePath === "." || newRelativePath.length === 0
-        ? newName
-        : `${newRelativePath}/${newName}`;
+    const entryPath = targetDirRelative.length === 0 ? newName : `${targetDirRelative}/${newName}`;
 
     return {
       entry: {
@@ -486,6 +501,8 @@ export class ProjectFilesService {
       type: entry.isDirectory() ? "directory" : "file",
       hidden: FILE_LIST_BLOCKLIST.has(entry.name),
       size: entryStat?.size ?? null,
+      // 移动文件工具 03o 行尾相对时间（M4）；目录行无 mtime。
+      ...(entry.isFile() && entryStat ? { mtimeMs: entryStat.mtimeMs } : {}),
     };
   }
 

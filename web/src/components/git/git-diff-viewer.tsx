@@ -38,11 +38,13 @@ import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-s
 /** 中栏 git tab 的 file diff query-key 隔离段（PanelRouter GitFileDiffPanel 默认）。 */
 const WORKBENCH_GIT_TAB_QUERY_SCOPE = "git-tab";
 /** 左栏 git middle tab 的 list diff query-key 隔离段（GitChangesList 专用）。 */
-const WORKBENCH_GIT_LEFT_QUERY_SCOPE = "workbench-git-left";
+/** Git 左栏 diff 查询 scope——移动端 header gitchip 复用同 key 共享缓存（M4）。 */
+export const WORKBENCH_GIT_LEFT_QUERY_SCOPE = "workbench-git-left";
 
 // ── Helpers ───────────────────────────────────────────────────────
 
-const statusShortLabel = (status: GitDiffFileStatus) => {
+/** badge 短字符（M/A/D/R）——移动 03m/03o frow badge 复用（M4）。 */
+export const statusShortLabel = (status: GitDiffFileStatus) => {
   switch (status) {
     case "added":
       return "A";
@@ -55,7 +57,8 @@ const statusShortLabel = (status: GitDiffFileStatus) => {
   }
 };
 
-const gitStatusTone = (status: GitDiffFileStatus): ShellTone => {
+/** badge 色调（ShellTone）——移动 frow badge 映射 tint badge class（M4）。 */
+export const gitStatusTone = (status: GitDiffFileStatus): ShellTone => {
   switch (status) {
     case "added":
       return "success";
@@ -501,7 +504,8 @@ const diffLineClasses: Record<DiffLineType, string> = {
   context: "text-on-surface-soft",
 };
 
-function DiffContent({ diff, filePath }: { diff: string; filePath: string }) {
+/** diff 统一渲染器（含 sticky hunk 导航）——移动 L3 diff 页（03r）与提交页（03u）内嵌展开复用（M4）。 */
+export function DiffContent({ diff, filePath }: { diff: string; filePath: string }) {
   const { t } = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const hunkRowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());

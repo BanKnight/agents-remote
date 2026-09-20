@@ -7,11 +7,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import type { AgentSession, TerminalSession } from "@agents-remote/shared";
+import { listProjectGitBranches, listProjectGitDiff } from "../../api/client";
+import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { MobilePageHeader, ModeTabGroup, shellSurfaceClasses } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { ActionMenu } from "../ui/action-menu";
@@ -28,7 +31,9 @@ import {
   type WorkbenchMiddleTab,
   inferSessionTypeFromId,
   parseFileTabId,
+  parseGitCommitFocusId,
   parseSkillTabId,
+  parseWikiFocusId,
   projectTabStrip,
   type ProjectTabStripItem,
   removeTabFromLeaf,
@@ -39,6 +44,7 @@ import {
   workbenchMobileFocusTabAtom,
   workbenchMobileGlobalFilesPathAtom,
   workbenchMobileProjectFilesPathAtom,
+  workbenchWikiRefsAtom,
 } from "../../routes/workbench-model";
 
 import {
@@ -58,11 +64,18 @@ import {
   type MobileProjectTool,
   useCreateSessionMenuItems,
 } from "./mobile-project-header";
-import { FilesLeftPanel } from "../files/files-left-panel";
-import { GitChangesList } from "../git/git-diff-viewer";
-import { WikiPanel } from "../wiki/wiki-panel";
 import { FileTabPreview } from "../files/file-preview-panel";
+import { WORKBENCH_GIT_LEFT_QUERY_SCOPE } from "../git/git-diff-viewer";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
+import {
+  L3GitBranches,
+  L3GitCommit,
+  L3GitHistory,
+  L3WikiReader,
+  MobileL3FilePreview,
+  MobileL3GitDiff,
+} from "./mobile-l3";
+import { MobileFilesTool, MobileGitTool, MobileWikiTool } from "./mobile-project-tools";
 import { useMeasuredBottomNav } from "../shell/shell-layout";
 
 type MobileWorkbenchProps = {
@@ -91,8 +104,6 @@ type MobileWorkbenchProps = {
   onOpenFile: (projectName: string, path: string) => void;
   /** git 变更点文件 → 开 git diff tab + focus（WorkbenchContent 注入）。 */
   onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
-  /** 分支 compare 点文件 → 开 git compare tab + focus（WorkbenchContent 注入）。 */
-  onOpenGitCompareFile: (projectName: string, base: string, compare: string, path: string) => void;
   /** 关闭实例（confirm → close API → 删 tab，WorkbenchContent 注入）。 */
   closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
   /** 创建会话（useCreateSession，WorkbenchContent 注入；promptHolder 同源）。 */
@@ -118,7 +129,6 @@ export function MobileWorkbench({
   leftMode,
   mode,
   onOpenFile,
-  onOpenGitCompareFile,
   onOpenGitFile,
   onSelectTab,
   onToolChange,
@@ -154,7 +164,6 @@ export function MobileWorkbench({
           createPromptHolder={createPromptHolder}
           focusId={focusId}
           onOpenFile={onOpenFile}
-          onOpenGitCompareFile={onOpenGitCompareFile}
           onOpenGitFile={onOpenGitFile}
           onSelectTab={onSelectTab}
           onToolChange={onToolChange}
@@ -585,7 +594,6 @@ type MobileProjectWorkbenchProps = {
   onSelectTab: (leafId: string, tabId: string) => void;
   onOpenFile: (projectName: string, path: string) => void;
   onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
-  onOpenGitCompareFile: (projectName: string, base: string, compare: string, path: string) => void;
   closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
   create: CreateSessionApi;
   /** create promptHolder（useCreateSession 同源 holder，统一渲染）。 */
@@ -620,7 +628,6 @@ function MobileProjectWorkbench({
   createPromptHolder,
   focusId,
   onOpenFile,
-  onOpenGitCompareFile,
   onOpenGitFile,
   onSelectTab,
   onToolChange,
@@ -746,12 +753,23 @@ function MobileProjectWorkbench({
   // 是独立存活的维度，进 focus 的导航入口多（files 树点文件 / git 点文件 / skill pill），
   // 以 focusId 变化为信号统一退工具（03o 工具态是浏览态的主体替身，不与实例面板并存；
   // 保活铁律只要求不销毁、不豁免可见性）。点当前 focus 的 pill 时 focusId 不变，由
-  // focusInstance 显式退兜底。
+  // focusInstance 显式退兜底。M4：L3 focusId（githistory/gitbranches/gitcommit_/wiki_）是
+  // 内容区替换的显式子路由，不是 focus 语义——退工具会经 onToolChange("overview") 把 L3
+  // focusId 透传进 session 路由（实测 /session/githistory 破坏 URL），故 L3 跳过。
   const prevFocusRef = useRef(focusId);
   useEffect(() => {
     if (focusId !== prevFocusRef.current) {
       prevFocusRef.current = focusId;
-      if (focusId && activeTool) handleToolChange(null);
+      if (
+        focusId &&
+        activeTool &&
+        focusId !== "githistory" &&
+        focusId !== "gitbranches" &&
+        !focusId.startsWith("gitcommit_") &&
+        !focusId.startsWith("wiki_")
+      ) {
+        handleToolChange(null);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusId]);
@@ -761,7 +779,8 @@ function MobileProjectWorkbench({
   const setFilesPath = (path: string) =>
     setProjectFilesPaths((prev) => ({ ...prev, [scope.key]: path }));
 
-  // file/git 预览 focus 的关闭（v2 M3-c：pills/工具 ticon 均无切回入口，✕ 是唯一关闭路径）。
+  // file/git 预览 focus 的关闭（v2 M4：back 胶囊承担——l3.backLabel 显示来源层级，动作仍是
+  // 删 tab + 回浏览态；M3-c 的 ✕ 按钮被 l3.actions 取代）。
   const closeTransientFocus =
     focusRef?.kind === "file" || focusRef?.kind === "git"
       ? () => {
@@ -771,6 +790,143 @@ function MobileProjectWorkbench({
           void navigateWorkbench(scope);
         }
       : null;
+
+  // ── M4 L3 深度页路由态（显式子路由，不写 layout）──────────────────────────────
+  // focusId 只认显式 URL（autoFocusId 是 session 维度，不会是 L3 值）。4 种 focusId 由
+  // deriveWorkbenchRouteContext 派生（workbench-model），此处仅解析渲染形态。
+  const l3Route = useMemo(() => {
+    if (!focusId) return null;
+    if (focusId === "githistory") return { kind: "history" as const };
+    if (focusId === "gitbranches") return { kind: "branches" as const };
+    if (focusId.startsWith("gitcommit_"))
+      return { kind: "commit" as const, hash: parseGitCommitFocusId(focusId) ?? "" };
+    if (focusId.startsWith("wiki_"))
+      return { kind: "wiki" as const, slug: parseWikiFocusId(focusId) ?? "" };
+    return null;
+  }, [focusId]);
+  // L3 back = focusId=undefined 导航 + ?tab 记忆（onTabChange 保留 focusId，不能复用）。
+  const l3BackTo = (tab: WorkbenchMiddleTab) => {
+    void navigateWorkbench(scope, undefined, { tab });
+  };
+  // wiki L3 的 back 反查（分组名）与标题（页名）：同 key wiki-index/page 缓存共享。
+  const l3WikiSlug = l3Route?.kind === "wiki" ? l3Route.slug : null;
+  const wikiIndex = useWikiIndex(scope.key, WIKI_QUERY_SCOPE);
+  const l3WikiPage = useWikiPage(scope.key, l3WikiSlug ?? null, WIKI_QUERY_SCOPE);
+  // 工具 chip（03m gitchip / 03o crumb / 03p wsearch）数据与交互在此装配，header 只呈现。
+  // git chip 计数与工具面板/桌面左栏同 key（缓存共享，桌面开着时零成本）。
+  const gitDiffForChip = useQuery({
+    queryKey: ["projects", scope.key, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
+    queryFn: () => listProjectGitDiff(scope.key),
+  });
+  // 03o crumb 段（filesPath 目录链，每段可点回跳；项目名 b 不可点）。
+  const crumbSegments = filesPath ? filesPath.split("/") : [];
+  // 分支页标题计数（与 MobileGitTool / 分支页同 key 缓存共享）。
+  const branchesForTitle = useQuery({
+    queryKey: ["projects", scope.key, "git", "branches"],
+    queryFn: () => listProjectGitBranches(scope.key),
+  });
+  // gitchip 计数（worktree/staged 分 scope 计数；非 repository 恒 0）。
+  const { worktree: chipWorktree, staged: chipStaged } = useMemo(() => {
+    const files = gitDiffForChip.data?.repository === true ? gitDiffForChip.data.files : [];
+    const count = (s: string) => files.filter((f) => f.scope === s).length;
+    return { worktree: count("worktree"), staged: count("staged") };
+  }, [gitDiffForChip.data]);
+  // 03m gitchip b = 分支名 + ahead/behind（spec §4.4 `main ↑1 ↓0`）；detached 降级工具名。
+  const chipBranch =
+    gitDiffForChip.data?.repository === true ? gitDiffForChip.data.branch : undefined;
+  // 03p wsearch：chip 点击展开输入（query 提升共享给 MobileWikiTool；非 wiki 态点 chip 进 wiki）。
+  const [wikiSearchOpen, setWikiSearchOpen] = useState(false);
+  const [wikiSearchQuery, setWikiSearchQuery] = useState("");
+  const updateWikiSearch = (next: string) => {
+    setWikiSearchQuery(next);
+    if (!activeTool) handleToolChange("wiki");
+  };
+
+  // L3 nav 装配（03q/03r/03u/03t/03v/03s）。l3Route 优先；file/git focus 由保活层 ref 派生。
+  const l3WikiMeta =
+    l3Route?.kind === "wiki"
+      ? (wikiIndex.data?.pages.find((p) => p.slug === l3Route.slug) ?? null)
+      : null;
+  const l3 = l3Route
+    ? l3Route.kind === "history"
+      ? {
+          backLabel: t("git.toolTitle"),
+          title: t("git.historyTitle"),
+          onClick: () => l3BackTo("git"),
+        }
+      : l3Route.kind === "branches"
+        ? {
+            backLabel: t("git.toolTitle"),
+            title: t("git.branchesTitle", { n: branchesForTitle.data?.branches.length ?? 0 }),
+            onClick: () => l3BackTo("git"),
+          }
+        : l3Route.kind === "commit"
+          ? {
+              backLabel: t("git.historyTitle"),
+              title: l3Route.hash.slice(0, 7),
+              onClick: () => l3BackTo("git"),
+            }
+          : {
+              backLabel: l3WikiMeta
+                ? l3WikiMeta.tags[0] || t("wiki.groupUngrouped")
+                : t("wiki.groupUngrouped"),
+              title: l3WikiPage.data?.frontmatter.title ?? l3Route.slug,
+              onClick: () => l3BackTo("wiki"),
+            }
+    : null;
+
+  // file/git focus（保活层 ref 派生，非 L3 路由）：back=来源层级、title=文件名、动作=删 tab 回浏览态。
+  const l3Transient = (() => {
+    if (l3Route || !effectiveFocusId || !closeTransientFocus) return undefined;
+    if (focusRef?.kind === "file") {
+      const { projectName: fp, path: relPath } = splitFilePath(focusRef.path);
+      const lastSlash = relPath.lastIndexOf("/");
+      const backLabel = lastSlash === -1 ? fp : relPath.slice(0, lastSlash).split("/").pop() || fp;
+      return {
+        backLabel,
+        title: relPath.split("/").pop() || focusRef.path,
+        onClick: closeTransientFocus,
+        actions: (
+          <ActionMenu
+            align="end"
+            cancelLabel={t("cancel")}
+            items={[
+              {
+                label: t("files.menuCopyPath"),
+                icon: <ShellIcon name="edit" />,
+                onSelect: () => {
+                  void navigator.clipboard.writeText(focusRef.path);
+                },
+              },
+              {
+                label: t("files.menuViewDiff"),
+                icon: <ShellIcon name="git-nav" />,
+                onSelect: () => onOpenGitFile(fp, "worktree", relPath),
+              },
+            ]}
+            trigger={
+              <button
+                aria-label={t("workbench.moreActions")}
+                className="ic cursor-pointer"
+                type="button"
+              >
+                <ShellIcon name="ellipsis" />
+              </button>
+            }
+          />
+        ),
+      };
+    }
+    if (focusRef?.kind === "git" && focusRef.mode === "scope") {
+      return {
+        backLabel: t("git.toolTitle"),
+        title: focusRef.path.split("/").pop() || focusRef.path,
+        onClick: closeTransientFocus,
+      };
+    }
+    return undefined;
+  })();
+  const headerL3 = l3 ?? l3Transient;
 
   return (
     <>
@@ -793,17 +949,6 @@ function MobileProjectWorkbench({
                 }
                 projectName={scope.key}
               />
-            ) : effectiveFocusId && closeTransientFocus ? (
-              <div className="flex shrink-0 items-center gap-1" role="group">
-                <button
-                  aria-label={t("session.close")}
-                  className="ic cursor-pointer touch:h-9 touch:w-9"
-                  onClick={closeTransientFocus}
-                  type="button"
-                >
-                  <ShellIcon name="close" />
-                </button>
-              </div>
             ) : undefined
           }
           focusedAgent={focusedAgent}
@@ -822,6 +967,54 @@ function MobileProjectWorkbench({
           projectName={scope.key}
           skillTabs={skillTabs}
           tool={activeTool}
+          l3={headerL3}
+          toolChip={
+            activeTool === "git" ? (
+              <div className="gitchip">
+                <b>
+                  {chipBranch ? chipBranch.name : t("git.toolTitle")}
+                  {chipBranch?.ahead || chipBranch?.behind
+                    ? ` ↑${chipBranch?.ahead ?? 0} ↓${chipBranch?.behind ?? 0}`
+                    : ""}
+                </b>
+                <span>{t("git.chipCounts", { worktree: chipWorktree, staged: chipStaged })}</span>
+              </div>
+            ) : activeTool === "files" ? (
+              <div className="crumb">
+                <b>{scope.key}</b>
+                {crumbSegments.map((seg, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setFilesPath(crumbSegments.slice(0, i + 1).join("/"))}
+                    type="button"
+                  >
+                    {seg}
+                  </button>
+                ))}
+              </div>
+            ) : activeTool === "wiki" ? (
+              <div className="wsearch">
+                {wikiSearchOpen ? (
+                  <input
+                    autoFocus
+                    className="h-6 flex-1 bg-transparent text-[13px] text-ink-1 outline-none placeholder:text-ink-3"
+                    onChange={(e) => updateWikiSearch(e.target.value)}
+                    placeholder={t("wiki.searchPlaceholder")}
+                    value={wikiSearchQuery}
+                  />
+                ) : (
+                  <button
+                    className="flex items-center gap-1.5 cursor-pointer"
+                    onClick={() => setWikiSearchOpen(true)}
+                    type="button"
+                  >
+                    <ShellIcon className="h-[13px] w-[13px] text-ink-2" name="magnifyingglass" />
+                    <span>{t("wiki.searchPlaceholder")}</span>
+                  </button>
+                )}
+              </div>
+            ) : undefined
+          }
         />
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* 保活面板层（2026-08-17 用户决策「全保活 + 聚焦过即可」；v2 M3-b 起工具态也保持
@@ -834,48 +1027,139 @@ function MobileProjectWorkbench({
             return (
               <div
                 className={
-                  !activeTool && item.tabId === effectiveFocusId
+                  !activeTool && !l3Route && item.tabId === effectiveFocusId
                     ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                     : "hidden"
                 }
                 data-tab-id={item.tabId}
                 key={item.tabId}
               >
-                <PanelRouter embeddedHeader panelRef={item.ref} />
+                {/* D13 流顶引用卡：可见 session 面板顶部（wikiRefs atom 非空才渲染）。 */}
+                {!activeTool &&
+                !l3Route &&
+                item.tabId === effectiveFocusId &&
+                item.ref.kind === "session" ? (
+                  <MobileWikiRefBar projectName={scope.key} sessionId={item.ref.sessionId} />
+                ) : null}
+                {item.ref.kind === "file" ? (
+                  (() => {
+                    const { projectName: fp, path: relPath } = splitFilePath(item.ref.path);
+                    return (
+                      <MobileL3FilePreview
+                        onViewDiff={() => onOpenGitFile(fp, "worktree", relPath)}
+                        path={relPath}
+                        projectName={fp}
+                      />
+                    );
+                  })()
+                ) : item.ref.kind === "git" && item.ref.mode === "scope" ? (
+                  <MobileL3GitDiff
+                    path={item.ref.path}
+                    projectName={item.ref.projectName}
+                    scope={item.ref.scope}
+                  />
+                ) : (
+                  <PanelRouter embeddedHeader panelRef={item.ref} />
+                )}
               </div>
             );
           })}
+          {/* M4 L3 深度页（显式子路由）：nav l3 形态 + L3 主体；保活层 hidden 保持挂载（WS 不断）。 */}
+          {l3Route ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-role="l3-page">
+              {l3Route.kind === "history" ? (
+                <L3GitHistory
+                  onOpenCommit={(hash) => {
+                    void navigate({
+                      params: { key: scope.key, _splat: hash },
+                      search: { tab: "git" },
+                      to: "/projects/$key/git/commit/$",
+                    });
+                  }}
+                  projectName={scope.key}
+                />
+              ) : l3Route.kind === "branches" ? (
+                <L3GitBranches
+                  onOpenHistory={(b) => {
+                    void navigate({
+                      params: { key: scope.key },
+                      search: { branch: b, tab: "git" },
+                      to: "/projects/$key/git/history",
+                    });
+                  }}
+                  projectName={scope.key}
+                />
+              ) : l3Route.kind === "commit" ? (
+                <L3GitCommit projectName={scope.key} hash={l3Route.hash} />
+              ) : (
+                <L3WikiReader
+                  onOpenPage={(slug) => {
+                    void navigate({
+                      params: { key: scope.key, _splat: slug },
+                      search: { tab: "wiki" },
+                      to: "/projects/$key/wiki/$",
+                    });
+                  }}
+                  projectName={scope.key}
+                  slug={l3Route.slug}
+                />
+              )}
+            </div>
+          ) : null}
           {/* 工具态主体（v2 M3-b，?tab=files/git/wiki）：项目工具面板原位（与桌面 ProjectLeftPanel
             middle tab 同构）。file 树点文件仍走 onOpenFile 开 file tab focus（→ 实例主体层）。 */}
-          {activeTool === "files" ? (
-            <div
-              className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)]"
-              data-mobile-tool="files"
-            >
-              <FilesLeftPanel
-                currentPath={filesPath}
+          {activeTool === "files" && !l3Route ? (
+            <div className="min-h-0 flex-1 overflow-hidden" data-mobile-tool="files">
+              <MobileFilesTool
                 onOpenFile={onOpenFile}
+                onOpenGitFile={(f) => onOpenGitFile(scope.key, f.scope, f.path)}
                 onPathChange={setFilesPath}
+                path={filesPath}
                 projectName={scope.key}
               />
             </div>
-          ) : tool === "git" ? (
-            <div
-              className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)]"
-              data-mobile-tool="git"
-            >
-              <GitChangesList
-                onOpenGitCompareFile={onOpenGitCompareFile}
-                onSelectGitFile={(file) => onOpenGitFile(scope.key, file.scope, file.path)}
+          ) : activeTool === "git" && !l3Route ? (
+            <div className="min-h-0 flex-1 overflow-hidden" data-mobile-tool="git">
+              <MobileGitTool
+                onOpenCommit={(hash) => {
+                  void navigate({
+                    params: { key: scope.key, _splat: hash },
+                    search: { tab: "git" },
+                    to: "/projects/$key/git/commit/$",
+                  });
+                }}
+                onOpenGitFile={(f) => onOpenGitFile(scope.key, f.scope, f.path)}
+                onOpenHistory={() => {
+                  void navigate({
+                    params: { key: scope.key },
+                    search: { tab: "git" },
+                    to: "/projects/$key/git/history",
+                  });
+                }}
+                onOpenBranches={() => {
+                  void navigate({
+                    params: { key: scope.key },
+                    search: { tab: "git" },
+                    to: "/projects/$key/git/branches",
+                  });
+                }}
                 projectName={scope.key}
               />
             </div>
-          ) : tool === "wiki" ? (
-            <div
-              className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)]"
-              data-mobile-tool="wiki"
-            >
-              <WikiPanel projectName={scope.key} />
+          ) : activeTool === "wiki" && !l3Route ? (
+            <div className="min-h-0 flex-1 overflow-hidden" data-mobile-tool="wiki">
+              <MobileWikiTool
+                onOpenPage={(slug) => {
+                  void navigate({
+                    params: { key: scope.key, _splat: slug },
+                    search: { tab: "wiki" },
+                    to: "/projects/$key/wiki/$",
+                  });
+                }}
+                onQueryChange={setWikiSearchQuery}
+                projectName={scope.key}
+                query={wikiSearchQuery}
+              />
             </div>
           ) : null}
           {/* 实例主体层（非工具态）：聚焦未入 layout（focus effect 同步前瞬态）或查询 pending
@@ -899,6 +1183,46 @@ function MobileProjectWorkbench({
       {closeHolder}
       {createPromptHolder}
     </>
+  );
+}
+
+/**
+ * 流顶 wiki 引用卡（v2 M4，D13）：session focus 流顶显示该会话被注入的 wiki 页。数据源 =
+ * 客户端 workbenchWikiRefsAtom（L3WikiReader 注入成功写入；纯客户端记忆，不依赖服务端）。
+ * 每页一行 title + ✕ 移除（写 atom）。
+ */
+function MobileWikiRefBar({ projectName, sessionId }: { projectName: string; sessionId: string }) {
+  const { t } = useT();
+  const refs = useAtomValue(workbenchWikiRefsAtom);
+  const setWikiRefs = useSetAtom(workbenchWikiRefsAtom);
+  const perSession = refs[projectName]?.[sessionId] ?? [];
+  if (perSession.length === 0) return null;
+  return (
+    <div className="wikiref" data-role="wiki-ref-bar">
+      <div className="wr-t">{t("wiki.refCardTitle")}</div>
+      {perSession.map((r) => (
+        <div className="wr-r" key={r.slug}>
+          <span className="flex-1 truncate">{r.title}</span>
+          <button
+            aria-label={t("wiki.refCardRemove")}
+            className="x cursor-pointer"
+            onClick={() =>
+              setWikiRefs((prev) => {
+                const perProject = prev[projectName] ?? {};
+                const next = (perProject[sessionId] ?? []).filter((x) => x.slug !== r.slug);
+                const nextProject = { ...perProject };
+                if (next.length === 0) delete nextProject[sessionId];
+                else nextProject[sessionId] = next;
+                return { ...prev, [projectName]: nextProject };
+              })
+            }
+            type="button"
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 

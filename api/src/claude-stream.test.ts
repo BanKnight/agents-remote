@@ -189,6 +189,8 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
 
   const makeController = (opts?: {
     resolveControlModel?: (model: string | undefined) => Promise<string | undefined>;
+    /** override getAgentMetadata 返回值（部分字段，如 provider）——injectUserPrompt 校验路径用。 */
+    metadataOverride?: Record<string, unknown>;
   }) => {
     const writes: string[] = [];
     const injections: Array<{ key: string; line: string }> = [];
@@ -219,6 +221,10 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
         model: "sonnet",
         permissionMode: "default",
         effort: "high",
+        // injectUserPrompt 校验/寻址用（M4 D13）；WS message 路径不读。
+        provider: "claude",
+        runtimeKey: "ar-claude-claude-demo-sess-1",
+        ...opts?.metadataOverride,
       }),
       setEffort: async (sessionId: string, effort: string) => {
         effortUpdates.push({ sessionId, effort });
@@ -351,6 +357,39 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     }
     expect(writes).toEqual(cases.map((c) => `${JSON.stringify(c)}\n`));
     expect(injections).toEqual([]);
+  });
+
+  describe("injectUserPrompt (D13 REST 注入)", () => {
+    test("writes user frame to stdin + echoes into live cache (same pipe as WS user)", async () => {
+      const { controller, writes, injections } = makeController();
+      const text = "请阅读以下 wiki 页面并纳入上下文：";
+      const result = await controller.injectUserPrompt("demo", "sess-1", text);
+      expect(result.delivered).toBe(true);
+      // 与 WS sendMessage 同款帧形状（content = text block 数组）。
+      expect(writes).toHaveLength(1);
+      const forwarded = JSON.parse(writes[0]!) as {
+        type: string;
+        message: { role: string; content: unknown[] };
+      };
+      expect(forwarded.type).toBe("user");
+      expect(forwarded.message).toEqual({
+        role: "user",
+        content: [{ type: "text", text }],
+      });
+      // live echo 与 WS user 帧同款（isUserInput + injected- uuid），订阅者可渲染。
+      expect(injections).toHaveLength(1);
+      const echoed = JSON.parse(injections[0]!.line) as Record<string, unknown>;
+      expect(echoed.isUserInput).toBe(true);
+      expect(typeof echoed.uuid).toBe("string");
+    });
+
+    test("unknown or non-claude session → session_not_found", async () => {
+      const { controller } = makeController({
+        metadataOverride: { provider: "acp" },
+      });
+      const result = await controller.injectUserPrompt("demo", "sess-1", "hi");
+      expect(result).toEqual({ delivered: false, reason: "session_not_found" });
+    });
   });
 
   test("set_runtime_effort persists effort, kills the CLI, and closes the requesting socket", async () => {
