@@ -895,4 +895,75 @@
     background: var(--fill-selected);
     border-radius: 8px;
   }
+
+  /* ---- 流内容终态原语（v2 M3-d；03c/03d/03i「仅本页样式」随流内容落地入单源）----
+     .done 03c 完成横幅 / .errcard 03d 错误红卡 / .count 03d 自动重试倒计时条 /
+     .cap 03i 流内离线分隔。 */
+  .done {
+    border-radius: 12px;
+    background: var(--tint-green);
+    border: 1px solid color-mix(in srgb, var(--c-success) 40%, transparent);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--c-success-text);
+  }
+  .done .tm {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--ink-2);
+  }
+  .errcard {
+    border-radius: 12px;
+    background: var(--tint-red);
+    border: 1px solid color-mix(in srgb, var(--c-danger) 50%, transparent);
+    padding: 10px 12px;
+  }
+  .errcard .e1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    color: var(--c-danger);
+  }
+  .errcard .e2 {
+    font-size: 11px;
+    color: var(--ink-2);
+    margin-top: 4px;
+  }
+  .count {
+    border-radius: 12px;
+    background: var(--tint-red);
+    border: 1px solid color-mix(in srgb, var(--c-danger) 40%, transparent);
+    padding: 9px 12px;
+  }
+  .count .r1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--c-danger);
+  }
+  .count .r2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--c-warning-text);
+  }
+  .count .r2 .tm {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  }
+  .cap {
+    font-size: 11px;
+    color: var(--ink-3);
+    text-align: center;
+  }
 }

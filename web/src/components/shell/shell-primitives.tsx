@@ -232,7 +232,9 @@ export function statusToTone(
   return "muted";
 }
 
-const statusDotToneBg: Record<ShellTone, string> = {
+/** status → dot 底色 utility（statusToTone 的渲染投影）。导出供 v2 页面直接消费
+ * （如 MobileProjectsHome 活动行 dot），避免私设第二套 status→色映射。 */
+export const statusDotToneBg: Record<ShellTone, string> = {
   default: "bg-on-surface-muted",
   accent: "bg-primary",
   success: "bg-success",
@@ -240,6 +242,19 @@ const statusDotToneBg: Record<ShellTone, string> = {
   danger: "bg-error",
   muted: "bg-on-surface-muted",
 };
+
+/**
+ * status → v2 原语 dot class（v2-primitives.css 的 .dot run/idle/err，03 系列原型语义：
+ * 绿=运行 红=出错 灰=闲置/closed）。与 statusToTone 的 idle→warning（琥珀）刻意不同——
+ * v2 页面圆点状态一律消费本映射（.dot 原语自带 7×7 圆），禁私设第二套 status→色。
+ */
+export function statusToV2DotClass(
+  status: AgentSession["status"] | TerminalSession["status"],
+): string {
+  if (status === "running") return "dot run";
+  if (status === "error") return "dot err";
+  return "dot idle";
+}
 
 const STATUS_DOT_SIZE_CLASS = "h-2 w-2";
 

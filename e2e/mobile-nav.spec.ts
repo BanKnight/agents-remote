@@ -35,22 +35,18 @@ test("mobile primary nav has four items: projects / workbench / files / plugins"
   await expect(bottomNav.getByRole("link", { name: /设置|Settings/ })).toHaveCount(0);
 });
 
-test("mobile landing renders overview header with mode tabs and create button", async ({
+test("mobile landing renders projects home with large title and create button", async ({
   page,
 }) => {
-  // 落地页（`/` → D4 跳板 → `/projects`）header = MobilePageHeader（标题为 SessionModeTabs
-  // Agent/Chat，右侧 + 新建项目 icon 按钮，2026-08-16 FAB 迁 header 后入 header.actions）。
-  const header = page.locator("header").first();
-  await expect(header).toBeVisible();
-  // 标题（workbench.modeAria = 会话模式切换 / Session mode switch）内含 Agent/Chat 两 tab。
-  const modeTabs = header.getByRole("group", { name: /会话模式切换|Session mode switch/ });
-  await expect(modeTabs).toBeVisible();
-  await expect(modeTabs.getByRole("button", { name: "Agent" })).toBeVisible();
-  await expect(modeTabs.getByRole("button", { name: "Chat" })).toBeVisible();
-  // + 新建项目按钮（aria-label = home.createProjectAria，header.actions 内）。
+  // 落地页（`/` → D4 跳板 → `/projects`）= M3-a 项目 Tab（02 原型）：Large title h1 +
+  // 右侧 ➕（home.createProjectAria）/ ⚙（nav.settings）图标组（02 原型 .h-row，无 <header>）。
+  await expect(page.getByRole("heading", { level: 1, name: /项目|Projects/ })).toBeVisible();
+  // + 新建项目按钮（aria-label = home.createProjectAria）。
   await expect(
     page.getByRole("button", { name: /创建或采用项目|Create or adopt Project/ }),
   ).toBeVisible();
+  // ⚙ 设置入口（D21：自底 nav 移除，M3-a 起在项目 Tab 标题行）。
+  await expect(page.getByRole("button", { name: /设置|Settings/ }).first()).toBeVisible();
 });
 
 test("mobile [files] nav opens rootBrowse file tree at /files", async ({ page }) => {

@@ -594,6 +594,7 @@ export function ClaudeChat({
                         loading={loading}
                         retryInfo={retryInfo}
                         scrollerApi={scrollerApiRef}
+                        offlineCap={!connected}
                       />
 
                       <CompactIndicator />
@@ -952,7 +953,7 @@ function OptionPreview({ text, className }: { text: string; className?: string }
   );
 }
 
-// tone → localized status word (shown first, colored) for the turn-end footer.
+// tone → localized status word (shown first) for the turn-end footer.
 const TURN_STATUS_LABEL: Record<TurnStatusTone, TranslationKey> = {
   completed: "claude.turnStatus.completed",
   interrupted: "claude.turnStatus.interrupted",
@@ -963,20 +964,11 @@ const TURN_STATUS_LABEL: Record<TurnStatusTone, TranslationKey> = {
   toolDeferred: "claude.turnStatus.toolDeferred",
 };
 
-// tone → status-word color. Cost/tokens/duration stay muted slate.
-const TURN_STATUS_COLOR: Record<TurnStatusTone, string> = {
-  completed: "text-success",
-  interrupted: "text-warning",
-  maxTurns: "text-warning",
-  error: "text-error",
-  rateLimited: "text-warning",
-  hookStopped: "text-warning",
-  toolDeferred: "text-on-surface-muted",
-};
-
 // Compact caption under the turn's final assistant bubble summarizing what the
 // turn cost: [status word] · N turns · $cost · tokens↓/↑ · duration. Sourced
 // from the `result` message's turnStats (live-only — result isn't in JSONL).
+// v2 M3-d：tone=completed → .done 绿横幅（03c 完成横幅，✓ + 状态词 + 统计 + .tm 时长）；
+// 其余 tone → .stat 中性统计行（03d——错误细节由 ApiError 红卡承担，统计保持灰）。
 function TurnStatsFooter({ stats }: { stats: TurnStats }) {
   const { t } = useT();
   const tone = mapTurnStatusTone(stats.terminalReason, stats.subtype);
@@ -991,21 +983,26 @@ function TurnStatsFooter({ stats }: { stats: TurnStats }) {
   if (typeof stats.outputTokens === "number")
     tokenBits.push(`${formatTokenCount(stats.outputTokens)}↑`);
   if (tokenBits.length > 0) tailParts.push(tokenBits.join(" "));
-  if (typeof stats.durationMs === "number") tailParts.push(formatDuration(stats.durationMs));
+  const durationText =
+    typeof stats.durationMs === "number" ? formatDuration(stats.durationMs) : null;
 
-  if (!tone && tailParts.length === 0) return null;
+  if (!tone && tailParts.length === 0 && !durationText) return null;
 
-  return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[0.6rem] text-on-surface-muted">
-      {tone ? <span className={TURN_STATUS_COLOR[tone]}>{t(TURN_STATUS_LABEL[tone])}</span> : null}
-      {tailParts.map((p, i) => (
-        <Fragment key={i}>
-          <span aria-hidden>·</span>
-          <span>{p}</span>
-        </Fragment>
-      ))}
-    </div>
+  if (tone === "completed") {
+    return (
+      <div className="done mt-2" role="status">
+        <span className="min-w-0 flex-1 truncate">
+          ✓ {t(TURN_STATUS_LABEL[tone])}
+          {tailParts.length > 0 ? ` · ${tailParts.join(" · ")}` : ""}
+        </span>
+        {durationText ? <span className="tm">{durationText}</span> : null}
+      </div>
+    );
+  }
+  const parts = [tone ? t(TURN_STATUS_LABEL[tone]) : null, ...tailParts, durationText].filter(
+    (p): p is string => p !== null,
   );
+  return <div className="stat mt-1.5">{parts.join(" · ")}</div>;
 }
 
 function AssistantChatBubble() {
@@ -1266,6 +1263,9 @@ function ApiErrorAttachments() {
   );
 }
 
+// API 错误行（v2 M3-d，对标 03d .errcard：tint-red 卡 + e1 mono 红行 + 详情展开）。
+// 折叠交互保留（原始错误全文在展开区）；原型 e2 静态建议文案（「可降低并发或稍后重试」）
+// 无真实数据来源不画，e1 右端放真实 retry 元数据（attempt N/M · Ns）。
 function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
   const { t } = useT();
   const [expanded, setExpanded] = useState(false);
@@ -1274,31 +1274,20 @@ function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
   const retry = extractRetryInfo(attachment);
 
   return (
-    <div>
+    <div className="errcard my-1.5">
       <button
         type="button"
-        className="flex w-full items-center gap-1.5 px-1 py-0.5 text-left hover:bg-error/5 rounded transition cursor-pointer min-w-0"
+        className="e1 w-full cursor-pointer text-left"
         onClick={() => setExpanded(!expanded)}
       >
-        <span className="text-on-surface-muted text-[0.55rem] shrink-0 leading-none">
+        <span aria-hidden className="shrink-0">
           {expanded ? "▾" : "▸"}
         </span>
-        <svg
-          className="h-3 w-3 shrink-0 text-error/70"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-          <path
-            d="M12 8v4M12 16h.01"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          />
-        </svg>
-        <span className="text-[0.65rem] text-error/80 truncate min-w-0">{label}</span>
-        <span className="text-[0.6rem] text-error/50 ml-auto shrink-0 whitespace-nowrap">
+        <span aria-hidden className="shrink-0">
+          ✕
+        </span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <span className="shrink-0 whitespace-nowrap">
           {retry
             ? retry.seconds
               ? t("claude.retry.attemptSeconds", {
@@ -1308,11 +1297,10 @@ function ApiErrorRow({ attachment }: { attachment: ApiErrorAttachment }) {
                 })
               : t("claude.retry.attempt", { attempt: retry.attempt, max: retry.max })
             : null}
-          {!expanded ? " ▸" : null}
         </span>
       </button>
       {expanded && (
-        <div className="ml-7 pl-2 border-l-2 border-error/20">
+        <div className="mt-2 pl-2 border-l-2 border-error/20">
           <pre className="text-[0.6rem] whitespace-pre-wrap break-all leading-relaxed text-error/50">
             {detail}
           </pre>
@@ -2067,15 +2055,17 @@ function ApprovalTray({
   }, [toolCallIdSignature]);
   const locateToolCall = (toolCallId: string): number | null => locateIndex.get(toolCallId) ?? null;
   return (
+    // v2 M3-d .tray 原语（03/04/05 三端同源：tint-orange + w 警示行 + c mono 摘要 +
+    // btn ghost/ok）。utility 覆盖原型 margin（挂载点在 composer 区，间距由布局层管）。
     <div
       aria-label={t("claude.approval.trayAriaLabel")}
-      className="mb-1 rounded-lg border border-assistant/25 bg-assistant/10 px-2 py-1"
+      className="tray mx-0 mb-1 flex-wrap gap-y-1.5"
     >
       {approvals.map((item) => {
         const firstArg = Object.values(item.args)[0];
         const argSummary = typeof firstArg === "string" ? firstArg.slice(0, 80) : item.toolName;
         return (
-          <div key={item.controlRequestId} className="flex min-w-0 items-center gap-2 px-1 py-1">
+          <div key={item.controlRequestId} className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               onClick={() => {
@@ -2085,34 +2075,33 @@ function ApprovalTray({
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
               title={t("claude.permission.awaiting")}
             >
-              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-assistant" />
+              <ShellIcon
+                className="h-[15px] w-[14px] shrink-0 text-warning-text"
+                name="warning-triangle"
+              />
               {item.owner?.subagentType ? (
-                <span className="shrink-0 rounded bg-neutral-line/60 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-on-surface-soft">
+                <span className="shrink-0 rounded bg-ink-1/10 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-ink-2">
                   {item.owner.subagentType}
                 </span>
               ) : null}
               {item.owner?.description ? (
-                <span className="shrink-0 truncate text-[0.65rem] font-medium text-assistant/70">
+                <span className="shrink-0 truncate text-[0.65rem] font-medium text-ink-2">
                   {item.owner.description}
                 </span>
               ) : null}
-              <span className="shrink-0 text-[0.65rem] font-semibold text-assistant">
-                {item.toolName}
-              </span>
-              <span className="min-w-0 truncate text-[0.65rem] text-on-surface-muted">
-                {argSummary}
-              </span>
+              <span className="w shrink-0 truncate">{item.toolName}</span>
+              <span className="c min-w-0 truncate">{argSummary}</span>
             </button>
             <button
               type="button"
-              className="shrink-0 cursor-pointer rounded-md bg-assistant/10 px-3 py-1 text-xs font-semibold text-assistant hover:bg-assistant/15 active:bg-assistant/20 transition"
+              className="btn ok shrink-0 cursor-pointer"
               onClick={() => bridge?.respondToControlRequest(item.controlRequestId, item.args)}
             >
               {t("claude.permission.allow")}
             </button>
             <button
               type="button"
-              className="shrink-0 cursor-pointer rounded-md bg-surface-raised/50 px-3 py-1 text-xs font-medium text-on-surface-muted hover:bg-surface-raised/50 hover:text-on-surface-soft transition"
+              className="btn ghost shrink-0 cursor-pointer"
               onClick={() => bridge?.cancelControlRequest(item.controlRequestId)}
             >
               {t("claude.permission.deny")}
@@ -3264,11 +3253,14 @@ export function VirtualizedThreadContent({
   loading,
   retryInfo,
   scrollerApi,
+  offlineCap = false,
 }: {
   loading: boolean;
   retryInfo: RetryInfo | null;
   /** 命令式跳转句柄（route 层审批托盘定位用）：scrollToMessage(unpin + 定位到所在 turn)。 */
   scrollerApi?: MutableRefObject<{ scrollToMessage: (messageIndex: number) => void } | null>;
+  /** 03i 流内离线分隔（.cap「离线中 · 此后内容将在重连后补齐」），断线且已有内容时显示。 */
+  offlineCap?: boolean;
 }) {
   const { t } = useT();
   // ── Turn builder ──────────────────────────────────────────────────
@@ -3468,6 +3460,8 @@ export function VirtualizedThreadContent({
 
   return (
     <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden">
+      {/* 03d 自动重试倒计时条：流上方（编号②位置），不随滚动（sticky 语义——瞬态、一眼可见） */}
+      <RetryIndicator retryInfo={retryInfo} />
       {runningAgents.length > 0 ? (
         <div
           aria-label={t("claude.agent.runningAriaLabel")}
@@ -3529,7 +3523,11 @@ export function VirtualizedThreadContent({
             })}
           </div>
         </div>
-        <RetryIndicator retryInfo={retryInfo} />
+        {offlineCap && turns.length > 0 ? (
+          <div className="cap px-3 pb-2 sm:px-5" role="status">
+            {t("claude.offlineCap")}
+          </div>
+        ) : null}
         <div aria-hidden style={{ height: "var(--composer-float-inset, 1rem)" }} />
       </div>
       {showScrollButton && (
@@ -4207,6 +4205,10 @@ function ComposerWithInterrupt({
   );
 }
 
+// 自动重试倒计时条（v2 M3-d，对标 03d .count：tint-red 底 + r1 错误行 + r2 mono 倒计时）。
+// 挂流上方（03d 编号②位置）。原型的「取消 / 立即重试」按钮不画：服务端无控制端点
+// （用户插话即隐式取消注入），能力边界约定记 redesign-v2.md。挂载位置由调用方决定——
+// 移动在流上方、桌面同位（共享组件流顶）。
 function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
   const { t } = useT();
   const [countdown, setCountdown] = useState<number>(0);
@@ -4231,19 +4233,26 @@ function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
 
   const errorText =
     retryInfo.error ?? (retryInfo.errorStatus ? `HTTP ${retryInfo.errorStatus}` : "error");
+  const mmss = `${String(Math.floor(countdown / 60)).padStart(2, "0")}:${String(countdown % 60).padStart(2, "0")}`;
   return (
-    <div className="shrink-0 flex justify-center px-3 py-1">
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-assistant/10 px-3 py-1 text-[0.65rem] text-assistant">
-        <span className="h-2 w-2 shrink-0 animate-spin rounded-full border border-assistant/40 border-t-assistant" />
-        {retryInfo.maxRetries > 1
-          ? t("claude.retry.bannerMulti", {
+    <div className="shrink-0 px-3 pt-1.5 sm:px-5">
+      <div className="count" role="status">
+        <div className="r1">
+          <ShellIcon className="h-[15px] w-[14px] shrink-0" name="warning-triangle" />
+          <span className="min-w-0 flex-1 truncate">
+            {t("claude.retry.countTitle", { error: errorText })}
+          </span>
+        </div>
+        <div className="r2">
+          <span className="tm">
+            {t("claude.retry.countSchedule", {
+              time: mmss,
               attempt: retryInfo.attempt,
               max: retryInfo.maxRetries,
-              error: errorText,
-              seconds: countdown,
-            })
-          : t("claude.retry.bannerSingle", { error: errorText, seconds: countdown })}
-      </span>
+            })}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

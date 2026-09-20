@@ -5,9 +5,10 @@
 ## @ui-v2（项目卡：projects/ui-redesign-v2.md；总纲：docs/design/redesign-v2.md）
 
 - [x] **M0 设计基座**（2026-09-20 完成）：①v1→v2 token 映射表（总纲附录）②`scripts/ar-verify-tokens.mjs`（report 基线 HEX 15/色阶 0，全为已知 M1 项）③e2e 基线 29/29 绿（cgroup 2G）
-- [ ] M1 组件化层（token 换底 + components.css 原语 + 图标移植 + data-theme 双主题 + 移除 Geist）
-- [ ] M2 IA 骨架（移动 4 Tab + 桌面 Sidebar + L0 登录 + 深度模型 + 工作台 3 行骨架）
-- [ ] M3–M10（范围见总纲 §6，随进度逐个展开成动作）
+- [x] **M1 组件化层**（2026-09-20 完成，commit `ba8ddca`）：v2 token 底座（:root dark 基准 + data-theme 双主题 + v1 桥接）+ `v2-primitives.css` 原语 1:1（`.grow`→`.growrow`）+ 29 图标重绘 + Geist 移除；探针 61/61、e2e 29/29、design-reviewer 复审通过（首轮 2 高 2 中 4 低全修）
+- [x] **M2 IA 骨架**（2026-09-20 完成，commit `2a4d9e1`）：移动 4 Tab（D21）+ 桌面 Sidebar 换代（ActivityBar→`sidebar.tsx` 250px）+ L0 登录页对齐 06 原型 + D4「直达上次位置」跳板；深度模型判定现有路由树已满足；3 行骨架留 M3。**e2e 基线修复**（登录文案 + D21 IA 变更曾致 29/29 全红 → 适配后 29/29 绿）。探针 20/20 + 61/61；四门禁全绿
+- [ ] **M3 主页对齐**：①项目 Tab（Large title + 搜索 + 活动卡 + 审批入口 + 置顶紫标，对标 `02-tab-projects.html`）②工作台逐状态（agent/idle/error/offline/terminal/chat）③工作台 3 行骨架（nav 行 / row2 实例 pills + 工具图标 / chips 运行摘要，对标 `03-*`）。验收：对照原型逐页 + reviewer 过
+- [ ] M4–M10（范围见总纲 §6，随进度逐个展开成动作）
 
 ## @harness
 

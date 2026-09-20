@@ -132,7 +132,7 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
           </span>
         </ActionButton>
       </div>
-      {/* 移动新建入口统一在项目 drawer 顶部行右上角（按段切换，mobile-project-drawer.tsx），
+      {/* 移动新建入口统一在项目工作台 row2 ＋（v2 M3-b，mobile-project-header.tsx），
           PagesPanel 不再内嵌移动 header 行。 */}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
         {roots.length === 0 ? (

@@ -1132,8 +1132,8 @@ export function FilesPanel({
               FilesLeftPanel 纯导航树（enablePreview=false）不挂写操作——窄左栏（256px）actions 文字
               + breadcrumb 会溢出覆盖 breadcrumb button（click intercept），且写操作语义属中栏 file
               tab（Save）+ 右栏 files inspection（Phase 3 后 project scope 右栏始终有 files inspection）。
-              移动端新建文件夹/上传入口统一在项目 drawer 顶部行右上角（按段切换，见
-              mobile-project-drawer.tsx），FilesPanel 不再内嵌移动入口（聚焦态 tab 内容是查看语义）。 */}
+              ⚠️ v2 M3-b 起 drawer 已删，移动端文件工具（row2 folder ticon）暂无写操作入口
+              （本按钮 lg:flex 桌面 only）——M4 落 03o-files-tool 原型时按原型补移动端 actions。 */}
           {readOnly || !enablePreview ? null : (
             <div className="hidden shrink-0 items-center gap-2 lg:flex">
               {upload.error instanceof Error || mkdir.error instanceof Error ? (

@@ -761,17 +761,15 @@ function WorkbenchContent({
         create={create}
         createPromptHolder={create.promptHolder}
         focusId={focusId}
-        layout={layout}
         leftMode={leftMode}
         mode={mode}
-        onCloseTab={onCloseTab}
         onOpenFile={onOpenFile}
         onOpenGitCompareFile={onOpenGitCompareFile}
         onOpenGitFile={onOpenGitFile}
         onSelectTab={onSelectTab}
-        renameHolder={renameHolder}
-        renameInstance={renameInstance}
+        onToolChange={onTabChange}
         scope={scope}
+        tool={tab}
       />
     );
   }

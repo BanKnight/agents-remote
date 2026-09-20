@@ -377,6 +377,10 @@ body {
   --color-tint-diff-green: var(--tint-diff-green);
   --color-scrim: var(--scrim);
   --color-on-accent: var(--on-accent);
+  /* 状态文字色（-text 变体：深底亮色/浅底深色两态各自校准过对比度，见 :root 与
+     data-theme="light" 两段；原型 sec .r / ap-row .tx / tchip.live 消费）。 */
+  --color-success-text: var(--c-success-text);
+  --color-warning-text: var(--c-warning-text);
 
   /* ===== v1 过渡桥接（v1 语义 utility → v2 var；随 M2/M3 页面重写消亡，勿在新代码用）=====
      映射依据：docs/design/redesign-v2.md 附录「颜色映射」。*/

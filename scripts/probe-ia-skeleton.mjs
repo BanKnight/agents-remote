@@ -107,10 +107,14 @@ if (key) {
     new URL(page.url()).pathname === `/projects/${key}`,
     `记忆后 \`/\` → /projects/${key}（实际 ${new URL(page.url()).pathname}）`,
   );
-  ok(
-    await page.locator("nav[aria-label]").first().isVisible(),
-    "进入项目后一级导航仍在（shell 未卸载）",
+  // v2 M3-b：project scope 是 push 二级页（03 原型），底 nav 只在全局一级页；
+  // 工作台由 .back「项目」承担返回。
+  const hasBack = await page.evaluate(
+    () =>
+      !!document.querySelector(".nav .back") &&
+      [...document.querySelectorAll(".nav .back")].some((b) => b.textContent.trim() === "项目"),
   );
+  ok(hasBack, "进入项目后是工作台二级页（.back「项目」在，底 nav 收起 = push 形态）");
 } else {
   ok(false, "无项目数据，D4 记忆路径未验证（跳过）");
 }

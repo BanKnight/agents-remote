@@ -35,7 +35,7 @@ export function useCreateProject() {
 
 /**
  * create 入口 dialog 单一来源（设计文档 §3）。GlobalProjectsOverview 桌面「+ 新建项目」
- * header 按钮与移动 MobileGlobalOverview 的 MobilePageHeader.actions「+」按钮共用此 hook：
+ * header 按钮与移动 MobileProjectsHome Large title 行「+」按钮共用此 hook：
  * 收敛 useCreateProject + Dialog open 态 + ProjectSetupPanel，调用方只拿 { openCreate, dialog }。
  * 成功后 invalidate ["projects"] + ["overview"] 并 navigate 到新项目（useCreateProject 内）。
  */

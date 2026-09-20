@@ -2,33 +2,36 @@ import {
   Fragment,
   type CSSProperties,
   type ReactNode,
-  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
+import type { AgentSession, TerminalSession } from "@agents-remote/shared";
 import { MobilePageHeader, ModeTabGroup, shellSurfaceClasses } from "../shell/shell-primitives";
-import { useCreateProjectDialog } from "../shell/project-setup";
-import { ActionMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
+import { ActionMenu } from "../ui/action-menu";
 import { GlobalFilesOverview } from "../files/global-files-overview";
-import { GlobalProjectsOverview } from "./global-projects-overview";
+import { MobileProjectsHome } from "./mobile-projects-home";
 import { ChatOverview } from "./chat-overview";
 import { MobilePluginsOverview, SkillTabPreview } from "../../routes/PluginsRoute";
 import {
+  collectLeaves,
   findTabRefLeaf,
-  type WorkbenchLayoutV3,
   type WorkbenchMobileFocusTab,
   type WorkbenchScope,
   type WorkbenchMode,
+  type WorkbenchMiddleTab,
   inferSessionTypeFromId,
   parseFileTabId,
   parseSkillTabId,
   projectTabStrip,
+  type ProjectTabStripItem,
+  removeTabFromLeaf,
   splitFilePath,
   useWorkbenchLayout,
   useWorkbenchNavigate,
@@ -41,20 +44,23 @@ import {
 import {
   CardGridSkeleton,
   type CreateSessionApi,
-  type GridItemCallbacks,
   AutoRetryHeaderButton,
-  InstanceGrid,
-  instanceToGridItem,
   PanelRouter,
+  type ProjectInstanceEntry,
   useCloseSession,
-  useGlobalInstanceCandidates,
   useInstanceInfoActions,
   useProjectInstances,
   useScopeInstanceOrder,
 } from "./instance-area";
 import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
-import { MobileProjectDrawer } from "./mobile-project-drawer";
-import { MobileTabStrip } from "./mobile-tab-strip";
+import {
+  MobileProjectHeader,
+  type MobileProjectTool,
+  useCreateSessionMenuItems,
+} from "./mobile-project-header";
+import { FilesLeftPanel } from "../files/files-left-panel";
+import { GitChangesList } from "../git/git-diff-viewer";
+import { WikiPanel } from "../wiki/wiki-panel";
 import { FileTabPreview } from "../files/file-preview-panel";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 import { useMeasuredBottomNav } from "../shell/shell-layout";
@@ -65,21 +71,22 @@ type MobileWorkbenchProps = {
   /**
    * 左栏模式（设计 workbench-stable-refactor review 收口）：移动端 `scope=global` 下 leftMode 有意义
    *——leftMode="files"（/files 全局文件总览）→ MobileFilesOverview；leftMode="plugins"（/plugins 插件市场）
-   * → MobilePluginsOverview；leftMode="auto" → MobileGlobalOverview。project scope 无视 leftMode 走
-   * MobileProjectWorkbench（drawer + tab 带）。桌面端 leftMode 由 WorkbenchContent 左栏逻辑消费，移动端在此分支消费。
+   * → MobilePluginsOverview；leftMode="auto" → MobileProjectsHome。project scope 无视 leftMode 走
+   * MobileProjectWorkbench（v2 三行头部 + 工具原位）。桌面端 leftMode 由 WorkbenchContent 左栏逻辑消费，
+   * 移动端在此分支消费。
    */
   leftMode?: "auto" | "files" | "plugins";
+  /** 项目工具原位（v2 M3-b：?tab=files/git/wiki，与桌面 middle tab 同构；WorkbenchRoute 注入 ctx.tab）。 */
+  tool?: WorkbenchMiddleTab;
+  /** 工具切换（WorkbenchRoute 注入 onTabChange：写 URL ?tab + atom 记忆）。 */
+  onToolChange?: (next: WorkbenchMiddleTab) => void;
   /**
    * 一级会话页模式（设计 workbench-views §3.1）：mode=chat 时 global 列表态（leftMode=auto
    * 无 focus）渲染 MobileChatOverview（mode tab + 搜索/新建/列表）。仅 global scope 有意义。
    */
   mode?: WorkbenchMode;
-  /** 布局（workbenchLayoutV4，桌面/移动共享打开集合）。project scope tab 带投影数据源。 */
-  layout: WorkbenchLayoutV3;
   /** tab 点选 = setActiveTabInLeaf + navigate focus（WorkbenchContent 注入）。 */
   onSelectTab: (leafId: string, tabId: string) => void;
-  /** tab ✕ = 最小化（removeTabFromLeaf + focus 回退，WorkbenchContent 注入）。 */
-  onCloseTab: (leafId: string, tabId: string) => void;
   /** 左栏/抽屉文件树点文件 → 开 file tab + focus（WorkbenchContent 注入）。 */
   onOpenFile: (projectName: string, path: string) => void;
   /** git 变更点文件 → 开 git diff tab + focus（WorkbenchContent 注入）。 */
@@ -88,27 +95,19 @@ type MobileWorkbenchProps = {
   onOpenGitCompareFile: (projectName: string, base: string, compare: string, path: string) => void;
   /** 关闭实例（confirm → close API → 删 tab，WorkbenchContent 注入）。 */
   closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
-  /** 改名实例（prompt → rename API，WorkbenchContent 注入）。 */
-  renameInstance: (
-    sessionId: string,
-    type: "agent" | "terminal",
-    currentName: string,
-    projectName: string,
-  ) => void;
   /** 创建会话（useCreateSession，WorkbenchContent 注入；promptHolder 同源）。 */
   create: CreateSessionApi;
   /** create promptHolder（useCreateSession 同源，统一渲染）。 */
   createPromptHolder: ReactNode;
-  /** close/rename confirm-prompt holders（WorkbenchContent 注入统一渲染）。 */
+  /** close confirm-prompt holder（WorkbenchContent 注入统一渲染）。 */
   closeHolder: ReactNode;
-  renameHolder: ReactNode;
 };
 
 /**
- * 移动端工作台（设计文档 §7 / §7.7，2026-08-16 重设计）。project scope = 侧边栏 drawer
- *（左栏投影）+ header 内容 tab 带（中栏投影，`MobileProjectWorkbench`）；global scope 保持
- * 「列表态 → 全屏聚焦态」线性模型（MobileGlobalOverview / MobileFilesOverview /
- * MobilePluginsOverview / MobileFocusBody / MobileFileFocus / MobileSkillFocus）。
+ * 移动端工作台（v2 M3，对标 03-* 原型）。project scope = 三行头部（`MobileProjectHeader`）
+ * + 单面板主体（`MobileProjectWorkbench`）；global scope 保持「列表态 → 全屏聚焦态」线性模型
+ *（MobileProjectsHome / MobileFilesOverview / MobilePluginsOverview / MobileFocusBody /
+ * MobileFileFocus / MobileSkillFocus）。
  */
 export function MobileWorkbench({
   closeHolder,
@@ -116,17 +115,15 @@ export function MobileWorkbench({
   create,
   createPromptHolder,
   focusId,
-  layout,
   leftMode,
   mode,
-  onCloseTab,
   onOpenFile,
   onOpenGitCompareFile,
   onOpenGitFile,
   onSelectTab,
-  renameHolder,
-  renameInstance,
+  onToolChange,
   scope,
+  tool,
 }: MobileWorkbenchProps) {
   // workbench 不走 ShellLayout，这里自行测量一级底部 nav 高度并注入
   // `--shell-mobile-bottom-nav-space`，让 workbench 内用 var 的滚动容器（文件列表、
@@ -141,11 +138,9 @@ export function MobileWorkbench({
     "--shell-mobile-bottom-nav-space": `${bottomNavHeight}px`,
   } as CSSProperties;
 
-  // project scope（含聚焦态）统一走 drawer + tab 带工作台。
-  // ⚠️ 本分支 main 不吃 pt-safe-area（其余分支保留）：drawer 要全高覆盖（旧覆盖式
-  // inset-y-0 语义，2026-08-17 用户反馈「高度缺一块/顶上漏底色」），safe-area 顶带避让
-  // 下放到平移行两侧各自消费——页面成员 pt（tab 带仍在刘海下）+ drawer 壳 pt（bg 延伸
-  // 进刘海带、内容避让）。
+  // project scope（含聚焦态）统一走 v2 三行头部工作台。
+  // ⚠️ 本分支 main 不吃 pt-safe-area（其余分支保留）：safe-area 顶带在 MobileProjectWorkbench
+  // 根容器单点消费（v2 三行头部整体在安全区下；背景仍延伸进刘海带）。
   if (scope.kind === "project") {
     return (
       <main
@@ -158,15 +153,13 @@ export function MobileWorkbench({
           create={create}
           createPromptHolder={createPromptHolder}
           focusId={focusId}
-          layout={layout}
-          onCloseTab={onCloseTab}
           onOpenFile={onOpenFile}
           onOpenGitCompareFile={onOpenGitCompareFile}
           onOpenGitFile={onOpenGitFile}
           onSelectTab={onSelectTab}
-          renameHolder={renameHolder}
-          renameInstance={renameInstance}
+          onToolChange={onToolChange}
           scope={scope}
+          tool={tool}
         />
       </main>
     );
@@ -185,7 +178,7 @@ export function MobileWorkbench({
         ) : mode === "chat" ? (
           <MobileChatOverview />
         ) : (
-          <MobileGlobalOverview />
+          <MobileProjectsHome />
         )}
         {measuredBottomNav}
       </main>
@@ -585,38 +578,40 @@ function MobileTabHeader<TabId extends string>({
 type MobileProjectWorkbenchProps = {
   scope: { kind: "project"; key: string };
   focusId?: string;
-  layout: WorkbenchLayoutV3;
+  /** 项目工具原位（v2 M3-b：?tab 维度 files/git/wiki，与桌面 ProjectLeftPanel middle tab 同构）。 */
+  tool?: WorkbenchMiddleTab;
+  /** 工具切换（WorkbenchRoute 注入 onTabChange：写 URL ?tab + atom 记忆）。 */
+  onToolChange?: (next: WorkbenchMiddleTab) => void;
   onSelectTab: (leafId: string, tabId: string) => void;
-  onCloseTab: (leafId: string, tabId: string) => void;
   onOpenFile: (projectName: string, path: string) => void;
   onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
   onOpenGitCompareFile: (projectName: string, base: string, compare: string, path: string) => void;
   closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
-  renameInstance: (
-    sessionId: string,
-    type: "agent" | "terminal",
-    currentName: string,
-    projectName: string,
-  ) => void;
   create: CreateSessionApi;
   /** create promptHolder（useCreateSession 同源 holder，统一渲染）。 */
   createPromptHolder: ReactNode;
   closeHolder: ReactNode;
-  renameHolder: ReactNode;
 };
 
 /**
- * 移动项目工作台（设计 workbench-views §7.7，2026-08-16 重设计）＝桌面三栏的前两栏在窄屏的
- * 投影：侧边栏 drawer（左栏投影，`MobileProjectDrawer`）+ header 内容 tab 带（中栏投影，
- * `MobileTabStrip` 消费 `projectTabStrip(layout, key)`）。
+ * 移动项目工作台（v2 M3-b/c，对标 03-workspace-* 原型）＝三行头部（`MobileProjectHeader`：
+ * nav / row2 pills+工具 ticon / chips 运行摘要）+ 单面板主体。
  *
- * - **无 focusId（浏览态）**：tab 带 + InstanceGrid 浏览 + header 右上角新建按钮。
- * - **有 focusId（聚焦态）**：tab 带 + `<PanelRouter embeddedHeader>`——与桌面中栏主体同一
- *   渲染源（session 含底部输入；file/git/skill 只读预览），聚焦瞬态（focus effect 同步前 tab
- *   尚未入 layout）渲染骨架不闪浏览态。
- * - **进入项目默认展开 drawer（总览段）**；drawer 开合 state 在本组件（`key={scope.key}` 切
- *   项目重挂 → 默认展开），浏览↔聚焦切换不重置。
- * - tab 带只显示当前项目 tab（skill 全局包含）；active = `focusId === tabId`。
+ * - **工具原位（?tab=files/git/wiki）**：主体区切换渲染项目工具面板（FilesLeftPanel /
+ *   GitChangesList / WikiPanel，与桌面 ProjectLeftPanel middle tab 同构）；再点同 ticon 退出
+ *   回实例主体。工具态不改 focusId、不卸载已打开 session 面板（保活层 hidden 挂载）。
+ * - **实例聚焦**：`<PanelRouter embeddedHeader>`——与桌面中栏主体同一渲染源（session 含底部
+ *   输入；file/git/skill 只读预览），聚焦瞬态（focus effect 同步前 tab 尚未入 layout）渲染
+ *   骨架不闪空态。effectiveFocusId = 显式 ?session ?? 自动聚焦（见下）。
+ * - **浏览态收敛（v2 M3-c）**：03 系列原型无「实例网格浏览态」——工作台页 = 聚焦态或空态卡。
+ *   无显式 ?session 时渲染层回退聚焦「上次位置」（layout 中 active tab 属本项目的第一个
+ *   leaf，D4 直达语义延伸；否则第一个实例）；完全无实例才渲染 03h 空态卡。回退不写 URL
+ *  （显式点击 pill 才落 ?session），避免 back 回「浏览态」再自动聚焦的循环。
+ * - **file/git focus**（files/git 工具点文件进的一次性预览）：nav 右侧 ✕ = removeTabFromLeaf
+ *   关闭预览 tab（v2 pills/工具 ticon 均无它的切回入口，✕ 是唯一关闭路径；M4 L3 preview
+ *   形态落地时再收敛交互）。
+ * - **保活纪律不变**（2026-08-17 用户决策「全保活 + 聚焦过即可」）：聚焦过的已打开 tab 保持
+ *   挂载 hidden，切 tab/进出工具态 WS 不断。
  */
 function MobileProjectWorkbench({
   closeHolder,
@@ -624,271 +619,337 @@ function MobileProjectWorkbench({
   create,
   createPromptHolder,
   focusId,
-  layout,
-  onCloseTab,
   onOpenFile,
   onOpenGitCompareFile,
   onOpenGitFile,
   onSelectTab,
-  renameHolder,
-  renameInstance,
+  onToolChange,
   scope,
+  tool,
 }: MobileProjectWorkbenchProps) {
   const { t } = useT();
+  // 工具原位归一化：?tab 维度还含 overview 等非工具值，`?tab` 缺省时 WorkbenchRoute 回退
+  // rememberedMiddleTab（默认 "overview"）——tool prop 恒 truthy，不能直接当布尔用。
+  const activeTool = tool === "files" || tool === "git" || tool === "wiki" ? tool : undefined;
   const navigateWorkbench = useWorkbenchNavigate();
-  // tab 带 ◄ 返回项目列表（与 drawer 左上角返回等价，设计 workbench-views §7.7）。
+  // nav 行 ◄「项目」push 回项目 Tab（v2 03 原型 .back；替代 v1 ☰ drawer 开关——v2 无 drawer，
+  // 实例切换 = pills、文件/Git/Wiki = 工具 ticon、新建 = row2 ＋）。
   const navigate = useNavigate();
-  // 进入项目 drawer 默认态：浏览态（无 focusId）= 展开总览段（设计决策 ①「进入项目默认展开侧边栏」，
-  // 会话列表即入口）；聚焦态（带 focusId，如从 global 总览点会话卡进入）= 收起——用户已明确要看
-  // 会话，drawer 总览段是多余遮挡（2026-08-16 迭代）。key={scope.key} 切项目重挂才重新评估；
-  // 同项目内浏览↔聚焦切换保留 state（Material 保留 drawer 状态，设计 §7.7）。
-  const [drawerOpen, setDrawerOpen] = useState(() => focusId == null);
-  // 聚焦后 drawer 收起（2026-08-17 问题 1）：drawer 总览段「新建」/点会话行 navigate 后 focusId
-  // 变化 → 自动关 drawer，新激活 tab 立即可见（覆盖 focusInstance 已手关之外的路径，如 drawer
-  // 顶部新建）。focusId 为空（回浏览态）不动 drawer（Material 保留 state）。
-  useEffect(() => {
-    if (focusId) setDrawerOpen(false);
-  }, [focusId]);
+  // layout 读写（单一 V4 atom，与 WorkbenchRoute 同源）：file/git 预览 ✕ 用 removeTabFromLeaf。
+  const [layout, updateLayout] = useWorkbenchLayout();
+  const { instances, isLoading } = useProjectInstances(scope.key);
+
+  // tab 带（中栏投影）：projectTabStrip 过滤当前项目 tab（skill 全局包含）。v2 起 pills 只装
+  // 实例（+skill 兼职 pill）；file/git tab 由工具 ticon 承载，skillTabs 派生给 header pills。
+  const stripItems = useMemo(() => projectTabStrip(layout, scope.key), [layout, scope.key]);
+  // flatMap 三元 narrow（filter 谓词不带 type guard 不收窄 ref union）。
+  const skillTabs = useMemo(
+    () =>
+      stripItems.flatMap((item) =>
+        item.ref.kind === "skill"
+          ? [{ tabId: item.tabId, leafId: item.leafId, name: item.ref.name }]
+          : [],
+      ),
+    [stripItems],
+  );
+
+  // 浏览态收敛（v2 M3-c）：自动聚焦「上次位置」。layout 中 active tab 属本项目 session/skill
+  // 的第一个 leaf 优先（桌面最后操作的 leaf 大概率排前），否则第一个实例。isLoading 时不选
+  //（instances 未到就选会闪空态）；focusId 显式时无需回退。
+  const autoFocusId = useMemo(() => {
+    if (isLoading) return null;
+    const projectTabIds = new Set(
+      stripItems
+        .filter((s) => s.ref.kind === "session" || s.ref.kind === "skill")
+        .map((s) => s.tabId),
+    );
+    for (const leaf of collectLeaves(layout.root)) {
+      if (leaf.activeTabId && projectTabIds.has(leaf.activeTabId)) return leaf.activeTabId;
+    }
+    return instances[0]?.session.id ?? null;
+  }, [instances, isLoading, layout, stripItems]);
+  const effectiveFocusId = focusId ?? autoFocusId ?? undefined;
+
   // 保活集合（2026-08-17 问题 3，用户决策「全保活 + 聚焦过即可」）：本会话「聚焦过」（含当前
-  // 激活）的已打开 tab。移动端单面板不照搬桌面全挂载——刷新重进 layout 恢复 N tab 只挂载当前
-  // 激活的（focusedTabIds 初始仅 focusId），随切换逐步纳入保活。切 tab 再切回不重连（WS 不断）。
+  // 激活，含自动聚焦回退）的已打开 tab。移动端单面板不照搬桌面全挂载——刷新重进 layout 恢复
+  // N tab 只挂载当前激活的，随切换逐步纳入保活。切 tab 再切回不重连（WS 不断）。
   const [focusedTabIds, setFocusedTabIds] = useState<Set<string>>(
     () => new Set(focusId ? [focusId] : []),
   );
   useEffect(() => {
-    if (!focusId) return;
+    const target = focusId ?? autoFocusId;
+    if (!target) return;
     setFocusedTabIds((prev) => {
-      if (prev.has(focusId)) return prev;
+      if (prev.has(target)) return prev;
       const next = new Set(prev);
-      next.add(focusId);
+      next.add(target);
       return next;
     });
-  }, [focusId]);
+  }, [focusId, autoFocusId]);
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
-  const { instances, isLoading } = useProjectInstances(scope.key);
 
   const focusInstance = (sessionId: string) => {
-    // 从 drawer/浏览态点实例卡片进 focus → 重置 Output（同 MobileGlobalOverview，避免继承
-    // Files/Git 记忆落到项目文件）。
+    // 点 pill 进 focus → 重置 Output tab（同 MobileProjectsHome.focusInstance，避免继承
+    // Files/Git 记忆落到项目文件）。显式退工具态：点当前 focus 的 pill 时 focusId 不变，
+    // focus 变化裁决兜不到（H1）。
+    if (activeTool) handleToolChange(null);
     setFocusTab("output");
     void navigateWorkbench(scope, sessionId);
   };
 
-  // tab ✕ = 最小化（removeTabFromLeaf，session 存活）：从保活集合移除该 tab（stripItems 已不含
-  // 它不再渲染；显式移除防 Set 无限增长），再走 WorkbenchContent 的 onCloseTab 删 tab + focus 回退。
-  const handleCloseTab = useCallback(
-    (leafId: string, tabId: string) => {
-      setFocusedTabIds((prev) => {
-        if (!prev.has(tabId)) return prev;
-        const next = new Set(prev);
-        next.delete(tabId);
-        return next;
-      });
-      onCloseTab(leafId, tabId);
-    },
-    [onCloseTab],
-  );
+  // 自动聚焦回退项（instances[0]）可能不在 layout（项目从未打开过 tab）——注入临时投影让
+  // 保活层能渲染它（不写 layout：显式点击 pill 才由 WorkbenchRoute focus effect ensure 入）。
+  // 用户切走（点别的 pill）后它未入 layout 即卸载——「打开」语义边界（未打开的实例无保活）。
+  const renderItems = useMemo(() => {
+    if (!autoFocusId || stripItems.some((s) => s.tabId === autoFocusId)) return stripItems;
+    const entry = instances.find((e) => e.session.id === autoFocusId);
+    if (!entry) return stripItems;
+    const injected: ProjectTabStripItem = {
+      leafId: "auto-focus",
+      tabId: autoFocusId,
+      ref: { kind: "session", projectName: scope.key, sessionId: autoFocusId },
+    };
+    return [...stripItems, injected];
+  }, [autoFocusId, instances, scope.key, stripItems]);
+  // 聚焦态主体 ref：layout 权威优先；自动聚焦注入项（不在 layout）用注入 ref 兜底——否则
+  // 回退态 chips/ℹ✕ 全部 gate 在 layout 命中上而缺失、骨架与面板双渲染（design-reviewer
+  // M3-c #1）。仍未命中（focus effect 同步前瞬态 / 已最小化但 URL 未清）→ 骨架承接。
+  const focusRef = effectiveFocusId
+    ? (findTabRefLeaf(layout, effectiveFocusId) ??
+      renderItems.find((s) => s.tabId === effectiveFocusId)?.ref ??
+      null)
+    : null;
+  // chips 行数据源：聚焦实例的类型分派（M3-c 逐状态——agent = 摘要+自动重试、terminal = tmux
+  // chip；file/git/skill focus 无 chips 行）。type predicate 收窄 session union
+  //（ProjectInstanceEntry 非 discriminated union）。
+  const focusedAgent =
+    effectiveFocusId && focusRef?.kind === "session"
+      ? (instances.find(
+          (e): e is ProjectInstanceEntry & { session: AgentSession } =>
+            e.type === "agent" && e.session.id === effectiveFocusId,
+        )?.session ?? null)
+      : null;
+  const focusedTerminal =
+    effectiveFocusId && focusRef?.kind === "session"
+      ? (instances.find(
+          (e): e is ProjectInstanceEntry & { session: TerminalSession } =>
+            e.type === "terminal" && e.session.id === effectiveFocusId,
+        )?.session ?? null)
+      : null;
 
-  // tab 带（中栏投影）：projectTabStrip 过滤当前项目 tab（skill 全局包含）。label/marker 由
-  // MobileTabChip 内 usePanelMeta 派生（与桌面 TabChip 同一渲染源）。
-  const stripItems = useMemo(() => projectTabStrip(layout, scope.key), [layout, scope.key]);
-
-  // 聚焦态主体：findTabRefLeaf 命中 → PanelRouter（与桌面中栏同源）；未命中（focus effect
-  // 同步前瞬态 / 已最小化但 URL 未清）→ 骨架。
-  const focusRef = focusId ? findTabRefLeaf(layout, focusId) : null;
-  const isSessionFocus = focusId ? inferSessionTypeFromId(focusId) !== null : false;
-
-  const gridCallbacks: GridItemCallbacks = {
-    onClose: closeInstance,
-    onRename: (sessionId, type, currentName) => {
-      renameInstance(sessionId, type, currentName, scope.key);
-    },
-    onSelect: (sessionId) => {
-      setDrawerOpen(false);
-      focusInstance(sessionId);
-    },
-    t,
+  // 工具态（?tab=files/git/wiki）：主体切换渲染项目工具面板；退出 = onToolChange("overview")。
+  // header 的 toggle 语义（再点同 ticon 退出）在 MobileProjectHeader 内判定。
+  const handleToolChange = (next: MobileProjectTool | null) => {
+    onToolChange?.(next ?? "overview");
   };
-  const gridItems = useMemo(
-    () => instances.map((entry) => instanceToGridItem(entry, gridCallbacks, scope.key)),
+  // H1 修复（design-reviewer 运行时实证）：focus 导航与工具态互斥。?tab 记忆/URL 与 focusId
+  // 是独立存活的维度，进 focus 的导航入口多（files 树点文件 / git 点文件 / skill pill），
+  // 以 focusId 变化为信号统一退工具（03o 工具态是浏览态的主体替身，不与实例面板并存；
+  // 保活铁律只要求不销毁、不豁免可见性）。点当前 focus 的 pill 时 focusId 不变，由
+  // focusInstance 显式退兜底。
+  const prevFocusRef = useRef(focusId);
+  useEffect(() => {
+    if (focusId !== prevFocusRef.current) {
+      prevFocusRef.current = focusId;
+      if (focusId && activeTool) handleToolChange(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [instances, scope.key, t],
-  );
+  }, [focusId]);
+  // 文件工具 cwd 记忆（按项目 key 分组 atom，与 MobileFocusBody 同一 atom 同一语义）。
+  const [projectFilesPaths, setProjectFilesPaths] = useAtom(workbenchMobileProjectFilesPathAtom);
+  const filesPath = projectFilesPaths[scope.key] ?? "";
+  const setFilesPath = (path: string) =>
+    setProjectFilesPaths((prev) => ({ ...prev, [scope.key]: path }));
+
+  // file/git 预览 focus 的关闭（v2 M3-c：pills/工具 ticon 均无切回入口，✕ 是唯一关闭路径）。
+  const closeTransientFocus =
+    focusRef?.kind === "file" || focusRef?.kind === "git"
+      ? () => {
+          const leafId = stripItems.find((s) => s.tabId === effectiveFocusId)?.leafId;
+          if (!leafId || !effectiveFocusId) return;
+          updateLayout((prev) => removeTabFromLeaf(prev, leafId, effectiveFocusId));
+          void navigateWorkbench(scope);
+        }
+      : null;
 
   return (
     <>
-      {/* Reddit 式 push 刚体联动（2026-08-17 三次修正：① drawer 要有动画非静态避让；② 关闭时
-       不得两页叠加）。结构 = 裁剪窗口 + 单一平移行：drawer 与页面并排在同一 flex 行（永不
-       重叠），行整体 translate-x 平移——打开 = 0（drawer 在窗口左、页面在右并排可见）；
-       关闭 = -min(88vw,340px)（drawer 移出窗口左缘、页面正好填满窗口）。两者作为刚体一起
-       动（drawer 从左滑入 + 页面同步被推右，同速同向），页面保持视口宽不压缩（transform
-       不改 layout 宽度，零重排）。 */}
-      <div className="relative min-h-0 flex-1 overflow-hidden" key={scope.key}>
-        <div
-          className={`flex h-full w-full transition-transform duration-300 ease-in-out ${
-            drawerOpen ? "translate-x-0" : "-translate-x-[min(88vw,340px)]"
-          }`}
-        >
-          <div className="h-full shrink-0 basis-[min(88vw,340px)]">
-            <MobileProjectDrawer
-              create={create}
-              onCloseInstance={closeInstance}
-              onFocusInstance={focusInstance}
-              onOpenChange={setDrawerOpen}
-              onOpenFile={onOpenFile}
-              onOpenGitCompareFile={onOpenGitCompareFile}
-              onOpenGitFile={onOpenGitFile}
-              onRenameInstance={(sessionId, type, currentName) =>
-                renameInstance(sessionId, type, currentName, scope.key)
-              }
-              open={drawerOpen}
-              scope={scope}
-            />
-          </div>
-          <div className="relative h-full w-full shrink-0 pt-[var(--shell-safe-area-top)]">
-            {/* 透明点击拦截层：drawer 打开时盖住页面，点击关闭（替代 scrim；透明不遮视觉）。
-              关闭时不渲染，不拦截交互。 */}
-            {drawerOpen ? (
-              <div
-                aria-hidden
-                className="absolute inset-0 z-10"
-                onClick={() => setDrawerOpen(false)}
-              />
-            ) : null}
-            {/* 页面侧 safe-area 顶带避让在此单点消费（main 已不吃 pt，2026-08-17 drawer 全高
-              修正）；页面视觉与 push 改造前一致（tab 带在刘海下）。 */}
-            <div className="flex h-full min-h-0 flex-col">
-              <MobileTabStrip
-                activeTabId={focusId}
-                onClose={handleCloseTab}
-                onBack={() => {
-                  void navigate({ to: "/" });
-                }}
-                onSelect={onSelectTab}
-                onToggleSidebar={() => setDrawerOpen(true)}
-                tabs={stripItems}
-                trailing={
-                  focusId && isSessionFocus && focusRef?.kind === "session" ? (
-                    <MobileFocusActions
-                      focusId={focusId}
-                      onClose={() =>
-                        closeInstance(
-                          focusRef.sessionId,
-                          inferSessionTypeFromId(focusId) ?? "terminal",
-                        )
-                      }
-                      projectName={scope.key}
-                    />
-                  ) : !focusId ? (
-                    // 浏览态（无 focus）：header 右上角新建按钮（icon 方按钮，与 ☰ 对称），
-                    // 取代旧右下角 FAB（二级页无底部 nav，让位语义失效，见 workbench-views §7.7）。
-                    <MobileCreateButton create={create} />
-                  ) : undefined
-                }
-              />
-              <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                {/* 保活面板层（2026-08-17 问题 3，用户决策「全保活 + 聚焦过即可」）：本会话「聚焦过」
-                  的已打开 tab（含当前激活）保持挂载，visible 由 focusId 用 hidden class 切换——
-                  切 tab 再切回 WS 不断（对齐桌面 WorkspaceTree 扁平化保活；移动端单面板只保活
-                  聚焦过的，刷新重进 layout 恢复 N tab 只挂载当前激活的，随切换逐步纳入）。
-                  file/git/skill 同规则。浏览态（无 focusId）保活面板保持 hidden 挂载——回聚焦态
-                  零重连。 */}
-                {stripItems.map((item) => {
-                  if (item.tabId !== focusId && !focusedTabIds.has(item.tabId)) return null;
-                  return (
-                    <div
-                      className={
-                        item.tabId === focusId
-                          ? "flex min-h-0 flex-1 flex-col overflow-hidden"
-                          : "hidden"
-                      }
-                      data-tab-id={item.tabId}
-                      key={item.tabId}
-                    >
-                      <PanelRouter embeddedHeader panelRef={item.ref} />
-                    </div>
-                  );
-                })}
-                {/* 主体层：无 focus = 浏览态实例 grid；focus 未入 layout（focus effect 同步前瞬态）
-                   = 骨架承接（effect 立即补齐）。 */}
-                {focusId ? (
-                  focusRef ? null : (
-                    <div className="min-h-0 flex-1 overflow-y-auto">
-                      <div className="px-3 py-2">
-                        <CardGridSkeleton plain />
-                      </div>
-                    </div>
+      <div
+        className="relative flex h-full min-h-0 flex-col pt-[var(--shell-safe-area-top)]"
+        key={scope.key}
+      >
+        <MobileProjectHeader
+          activeTabId={effectiveFocusId}
+          create={create}
+          focusActions={
+            effectiveFocusId && focusRef?.kind === "session" ? (
+              <MobileFocusActions
+                focusId={effectiveFocusId}
+                onClose={() =>
+                  closeInstance(
+                    focusRef.sessionId,
+                    inferSessionTypeFromId(effectiveFocusId) ?? "terminal",
                   )
-                ) : (
-                  // 浏览态滚动容器：pb-safe-area 对齐 drawer 段主体避让（项目 scope 无底部 nav，
-                  // PWA standalone 下 main=100vh 延伸进 home indicator 区，最后一张卡不被 chin 遮挡）。
-                  <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
-                    {isLoading && gridItems.length === 0 ? (
-                      <div className="px-3 py-2">
-                        <CardGridSkeleton plain />
-                      </div>
-                    ) : gridItems.length > 0 ? (
-                      <div className="px-3 py-2">
-                        <InstanceGrid items={gridItems} plain />
-                      </div>
-                    ) : (
-                      <p className="px-3 py-6 text-center text-sm text-on-surface-muted">
-                        {t("workbench.emptyInstanceHint")}
-                      </p>
-                    )}
-                  </div>
-                )}
+                }
+                projectName={scope.key}
+              />
+            ) : effectiveFocusId && closeTransientFocus ? (
+              <div className="flex shrink-0 items-center gap-1" role="group">
+                <button
+                  aria-label={t("session.close")}
+                  className="ic cursor-pointer touch:h-9 touch:w-9"
+                  onClick={closeTransientFocus}
+                  type="button"
+                >
+                  <ShellIcon name="close" />
+                </button>
               </div>
+            ) : undefined
+          }
+          focusedAgent={focusedAgent}
+          focusedTerminal={focusedTerminal}
+          instances={instances}
+          onBack={() => {
+            void navigate({ to: "/projects" });
+          }}
+          onSelectInstance={focusInstance}
+          onSelectTab={(leafId, tabId) => {
+            // skill pill 显式退工具（点当前已 focus 的 skill 时 focusId 不变，effect 兜不到）。
+            if (activeTool) handleToolChange(null);
+            onSelectTab(leafId, tabId);
+          }}
+          onToolChange={handleToolChange}
+          projectName={scope.key}
+          skillTabs={skillTabs}
+          tool={activeTool}
+        />
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          {/* 保活面板层（2026-08-17 用户决策「全保活 + 聚焦过即可」；v2 M3-b 起工具态也保持
+            hidden 挂载——进出文件/Git/Wiki 工具不卸载 session 面板，WS 不断）。本会话「聚焦过」
+            的已打开 tab 保持挂载，visible = 非工具态且 tabId===effectiveFocusId 用 hidden class
+            切换。对齐桌面 WorkspaceTree 扁平化保活；刷新重进 layout 恢复 N tab 只挂载当前聚焦的
+           （显式 ?session 或自动聚焦回退）。 */}
+          {renderItems.map((item) => {
+            if (item.tabId !== effectiveFocusId && !focusedTabIds.has(item.tabId)) return null;
+            return (
+              <div
+                className={
+                  !activeTool && item.tabId === effectiveFocusId
+                    ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+                    : "hidden"
+                }
+                data-tab-id={item.tabId}
+                key={item.tabId}
+              >
+                <PanelRouter embeddedHeader panelRef={item.ref} />
+              </div>
+            );
+          })}
+          {/* 工具态主体（v2 M3-b，?tab=files/git/wiki）：项目工具面板原位（与桌面 ProjectLeftPanel
+            middle tab 同构）。file 树点文件仍走 onOpenFile 开 file tab focus（→ 实例主体层）。 */}
+          {activeTool === "files" ? (
+            <div
+              className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)]"
+              data-mobile-tool="files"
+            >
+              <FilesLeftPanel
+                currentPath={filesPath}
+                onOpenFile={onOpenFile}
+                onPathChange={setFilesPath}
+                projectName={scope.key}
+              />
             </div>
-          </div>
+          ) : tool === "git" ? (
+            <div
+              className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)]"
+              data-mobile-tool="git"
+            >
+              <GitChangesList
+                onOpenGitCompareFile={onOpenGitCompareFile}
+                onSelectGitFile={(file) => onOpenGitFile(scope.key, file.scope, file.path)}
+                projectName={scope.key}
+              />
+            </div>
+          ) : tool === "wiki" ? (
+            <div
+              className="min-h-0 flex-1 overflow-hidden pb-[env(safe-area-inset-bottom)]"
+              data-mobile-tool="wiki"
+            >
+              <WikiPanel projectName={scope.key} />
+            </div>
+          ) : null}
+          {/* 实例主体层（非工具态）：聚焦未入 layout（focus effect 同步前瞬态）或查询 pending
+            （autoFocus 未定，避免空态卡与 pills 自相矛盾闪烁——reviewer M3-c #2）= 骨架承接；
+            加载完且完全无可聚焦对象（无实例无 skill tab）= 03h 空态卡。 */}
+          {!activeTool ? (
+            focusRef ? null : effectiveFocusId || isLoading ? (
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <div className="px-3 py-2">
+                  <CardGridSkeleton plain />
+                </div>
+              </div>
+            ) : (
+              <EmptyProjectState create={create} onBrowseTools={() => handleToolChange("files")} />
+            )
+          ) : null}
         </div>
       </div>
-      {/* holders 提升到顶层（2026-08-17 修复）：此前只在浏览态分支渲染，聚焦态 ✕（closeInstance
-        confirm）/ rename / create prompt 永不挂载 → 「点击无响应」。顶层常驻，浏览/聚焦都挂载。 */}
+      {/* holders 提升到顶层（2026-08-17 修复）：聚焦态 ✕（closeInstance confirm）/ create prompt
+        永不挂载 → 「点击无响应」。顶层常驻。 */}
       {closeHolder}
-      {renameHolder}
       {createPromptHolder}
     </>
   );
 }
 
-/** 项目浏览态 tab 带 trailing：新建按钮（icon 方按钮，与 ☰ 对称同款 className；ActionMenu
- * Claude/Terminal 移动端底部 sheet）。取代旧右下角 FAB——二级页无底部 nav，FAB「落 nav 带、
- * nav 收缩让位」语义锚点消失（见 workbench-views §7.7 / DESIGN.md floating-action-button 例外）。 */
-function MobileCreateButton({ create }: { create: CreateSessionApi }) {
+/**
+ * 03h 空态卡（v2 M3-c，对标 docs/design/03h-workspace-empty.html）：项目无可聚焦实例时主体 =
+ * .empty 卡（大图标容器 + 标题/副文 + CTA「新建 Agent」）+ 项目工具引导 link。CTA 复用 row2 ＋
+ * 的同一 ActionMenu items（03h 编号②「主按钮 → 新建实例 sheet」，单一装配来源防漂移）；
+ * link 进 files 工具态（03h 编号③「工具是项目级，仍可用」）。
+ */
+function EmptyProjectState({
+  create,
+  onBrowseTools,
+}: {
+  create: CreateSessionApi;
+  onBrowseTools: () => void;
+}) {
   const { t } = useT();
+  const createMenuItems = useCreateSessionMenuItems(create);
   return (
-    <ActionMenu
-      align="end"
-      cancelLabel={t("cancel")}
-      items={[
-        {
-          label: t("workbench.createClaude"),
-          icon: <ShellIcon name="anthropic" />,
-          onSelect: () => create.createAgent("claude"),
-        },
-        {
-          label: t("workbench.createOmp"),
-          icon: <ShellIcon name="agent-nav" />,
-          onSelect: () => create.createAgent("omp"),
-        },
-        {
-          label: t("workbench.createTerminal"),
-          icon: <ShellIcon name="terminal" />,
-          onSelect: create.createTerminal,
-        },
-      ]}
-      trigger={
-        <button
-          aria-label={t("workbench.createSessionAria")}
-          className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-          disabled={create.isCreating}
-          type="button"
-        >
-          <ShellIcon className="h-5 w-5" name="plus" />
-        </button>
-      }
-    />
+    // 滚动容器：pb-safe-area 避让（项目 scope 无底部 nav，PWA standalone 下 main=100vh 延伸进
+    // home indicator 区）；pt-60px = 原型 .empty margin-top。
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[env(safe-area-inset-bottom)] pt-[60px]">
+      <div className="empty-card rounded-xl border border-sep bg-elevated px-6 pb-8 pt-10 text-center">
+        <div className="empty-big mx-auto mb-5 flex size-16 items-center justify-center rounded-xl bg-elevated2">
+          <ShellIcon className="h-10 w-10 text-ink-3" name="terminal" />
+        </div>
+        <h2 className="mb-2 text-base font-semibold text-ink-1">{t("workbench.emptyTitle")}</h2>
+        <p className="mb-[22px] text-[12.5px] text-ink-2">{t("workbench.emptyDesc")}</p>
+        <ActionMenu
+          align="center"
+          cancelLabel={t("cancel")}
+          items={createMenuItems}
+          trigger={
+            <button
+              className="empty-cta mx-auto block h-10 w-[200px] cursor-pointer rounded-full bg-primary text-sm font-semibold text-on-primary transition active:opacity-80 disabled:cursor-default disabled:opacity-60"
+              disabled={create.isCreating}
+              type="button"
+            >
+              {t("workbench.emptyCta")}
+            </button>
+          }
+        />
+      </div>
+      <button
+        className="empty-link block w-full cursor-pointer pt-4 text-center text-[13px] text-primary"
+        onClick={onBrowseTools}
+        type="button"
+      >
+        {t("workbench.emptyBrowse")} ›
+      </button>
+    </div>
   );
 }
 
@@ -913,25 +974,23 @@ function MobileFocusActions({
   } = useInstanceInfoActions(panelRef, sessionType, projectName);
   return (
     <>
-      <div
-        className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
-        role="group"
-      >
+      {/* v2 nav 行右侧（03 原型 .ic ×2）：ℹ = info sheet、✕ = 关实例。裸图标无胶囊框。 */}
+      <div className="flex shrink-0 items-center gap-1" role="group">
         <button
           aria-label={t("session.instanceInfo.title")}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+          className="ic cursor-pointer touch:h-9 touch:w-9"
           onClick={openInfo}
           type="button"
         >
-          <ShellIcon className="h-4 w-4" name="info" />
+          <ShellIcon name="info" />
         </button>
         <button
           aria-label={t("session.close")}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
+          className="ic cursor-pointer touch:h-9 touch:w-9"
           onClick={onClose}
           type="button"
         >
-          <ShellIcon className="h-4 w-4" name="close" />
+          <ShellIcon name="close" />
         </button>
       </div>
       {/* info sheet holder（2026-08-17 修复：此前漏渲染 → ℹ 点击 sheet 永不挂载，对齐桌面
@@ -939,64 +998,6 @@ function MobileFocusActions({
       {infoHolder}
       {autoRetryEditorHolder}
     </>
-  );
-}
-
-/**
- * 移动 [项目] 总览（设计文档 §5/§7/决策 25/28）：跨项目活跃实例聚合 + 项目入口。一级页面，
- * header = MobilePageHeader 标题。单一融合视图（2026-08-05）：mergeProjectsWithCandidates +
- * listProjects 按项目分段，**含无实例空项目**（决策 33：空项目只名行，无空状态文案）；**项目名行 =
- * 名+› 整体 button 进项目**（navigate `/projects/$key`，热区 min-h-11 ≥44px），**最右 ⋯ ActionMenu
- * 删除项目**（deleteProject + useConfirm confirm，destructive）；实例区 InstanceGrid 单列连续卡片。
- * 点卡片进 `/projects/session/$focusId` 聚焦。删 inspection tab 行 + 插件分支（[项目] 总览是纯
- * 实例聚合 + 项目入口，inspection 归 [文件]/[设置] 一级导航 + 项目内 MobileProjectOverview）。
- * close 复用 useCloseSession。
- */
-function MobileGlobalOverview() {
-  const { t } = useT();
-  const navigateWorkbench = useWorkbenchNavigate();
-  const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
-  // 新建项目 dialog（useCreateProjectDialog 单一来源，与桌面 GlobalProjectsOverview header
-  // 按钮共用同一 hook）；入口 = MobilePageHeader.actions 右上角 + icon 按钮（2026-08-16：
-  // FAB 全部迁 header 右上角，对齐「新建会话」按钮语言）。
-  const { openCreate, dialog: createProjectDialog } = useCreateProjectDialog();
-  // [项目] 总览共享主体（批 F / 决策 29）：桌面/移动同一实现。移动端只提供外壳
-  //（MobilePageHeader 标题；底部胶囊避让由 GlobalProjectsOverview 消费 CSS var），
-  // 实例聚焦/新建/删除全在共享组件内（批 J 折叠废弃）。
-  // global 点会话卡 → 进该会话所属项目的 project scope 工作台（drawer + tab 带，2026-08-16
-  // 迭代）：旧实现硬编码 `navigateWorkbench({ kind: "global" }, sessionId)` → global focus URL
-  // `/projects/session/$id` → 旧 MobileFocusBody 全屏聚焦态（无 tab 无 drawer）。candidates 由
-  // useGlobalInstanceCandidates 提供（与 GlobalProjectsOverview 同 queryKey ["overview"]，React
-  // Query dedupe 无额外请求），resolve sessionId → projectName。
-  const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
-  const focusInstance = (sessionId: string) => {
-    // 从总观点实例卡片进 focus → 重置 Output（不继承上次切到的 Files/Git 记忆，避免落到
-    // 项目文件造成「进错地方」误会）。
-    setFocusTab("output");
-    const projectName = candidates.find((c) => c.ref.sessionId === sessionId)?.ref.projectName;
-    if (!projectName) return;
-    void navigateWorkbench({ kind: "project", key: projectName }, sessionId);
-  };
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <MobilePageHeader
-        actions={
-          <button
-            aria-label={t("home.createProjectAria")}
-            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-            onClick={openCreate}
-            type="button"
-          >
-            <ShellIcon className="h-5 w-5" name="plus" />
-          </button>
-        }
-        title={<SessionModeTabs mode="agent" />}
-      />
-      <div className="min-h-0 flex-1">
-        <GlobalProjectsOverview onFocusInstance={focusInstance} renderCreateEntry={false} />
-      </div>
-      {createProjectDialog}
-    </div>
   );
 }
 

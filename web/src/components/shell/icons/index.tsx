@@ -1,6 +1,7 @@
 import agentNav from "./agent-nav.svg?raw";
 import anthropic from "./anthropic.svg?raw";
 import archive from "./archive.svg?raw";
+import book from "./book.svg?raw";
 import check from "./check.svg?raw";
 import chat from "./chat.svg?raw";
 import closeIcon from "./close.svg?raw";
@@ -28,11 +29,13 @@ import skillsNav from "./skills-nav.svg?raw";
 import terminal from "./terminal.svg?raw";
 import trash from "./trash.svg?raw";
 import upload from "./upload.svg?raw";
+import warningTriangle from "./warning-triangle.svg?raw";
 
 const svgMap: Record<string, string> = {
   archive,
   "agent-nav": agentNav,
   anthropic,
+  book,
   check,
   chat,
   close: closeIcon,
@@ -60,6 +63,7 @@ const svgMap: Record<string, string> = {
   terminal,
   trash,
   upload,
+  "warning-triangle": warningTriangle,
 };
 
 export type ShellIconName = keyof typeof svgMap;

@@ -240,7 +240,8 @@ test.describe("ACP mobile create entry", () => {
     await page.goto("/");
     await page.getByLabel("Password").fill(password);
     await page.getByRole("button", { name: "Sign in" }).click();
-    await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible({
+    // M3-a 项目 Tab：项目行 button label = 名称 + 活动副标题（如 "demo Idle —"），非 exact。
+    await expect(page.getByRole("button", { name: projectName })).toBeVisible({
       timeout: 15_000,
     });
 

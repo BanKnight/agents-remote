@@ -1,45 +1,53 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-20（M1 组件化层完成并过 design-reviewer 复审，commit `ba8ddca`；下一步 M2 IA 骨架。触发：里程碑完成）。
+> 最后更新：2026-09-21（M3 主页对齐 a–d 全部完成；下一步 M4 工具与深度页。触发：里程碑完成）。
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-UI v2 重构 M1（组件化层）已完成：v2 token 底座（:root dark 基准 + data-theme 双主题）+ v2-primitives.css 原语层 + 29 图标移植 + Geist 移除；四门禁全绿 + 探针 61/61 + e2e 29/29 + design-reviewer 复审通过（commit `ba8ddca`）。下一步 M2 IA 骨架（移动 4 Tab + 桌面 Sidebar + 深度模型 + L0 登录）。
+UI v2 重构 M3（主页对齐）已完成：M3-a 项目 Tab + M3-b 三行骨架 + M3-c 工作台逐状态 + M3-d 流内容（turn 终态四件套 .count/.done/.stat/.errcard/.cap + .tray）；design-reviewer M3-c 审查「修复后通过」并已全修；探针 23+21+24 全绿；四门禁 + CSS 硬闸 + e2e 29/29。**全部改动未 commit**（M3 一个 commit 待提）。范围裁决与补记已写入 `docs/design/redesign-v2.md` §6.1。下一步 M4 工具与深度页。
 
 ## 本 session 焦点
 
-M2：①移动 4 Tab（D21：项目/工作台/文件/插件）②桌面 Sidebar（ActivityBar→Sidebar 换代）③L0 登录页对齐 04 系列 ④深度模型 L1→L2→L3（中栏多 tab → push 导航）⑤工作台 3 行骨架 ⑥`/`=上次项目（D4 localStorage 记忆）。验收：路由切换零会话销毁 + 四门禁。
+M4：Git/文件/Wiki 三工具原位高亮切换；L3 详情（preview/diff/wiki reader/git history/commit/branches，对标 03m/03o/03p/03q/03r/03s/03t/03u/03v）；03o 移动文件写操作入口；Wiki 注入协议 D13 落地（§7 待定项，M4 摊牌）；L3 preview 形态收敛 file/git 交互。
 
 ## 关键决策（本阶段不可丢）
 
-- 全部 23 条决策见 `docs/design/redesign-v2.md` §2（D1–D23），里程碑状态见其 §6——**决策以总纲为准，本文件不重复**。
-- M1 落地机制（写新代码前必读 `web/src/styles/index.css` 头注释）：新代码一律 v2 语义 utility（`bg-elevated`/`text-ink-1`/`border-sep`/`bg-tint-blue`…）；v1 桥接 utility（bg-surface 族/text-on-surface 族/border-neutral-line）随 M2/M3 页面重写消亡，勿再用。
-- 图标入口 `web/src/components/shell/icons/`：20 中心坐标系 viewBox="-10 -10 20 20" + stroke-width 2 + currentColor；新增图标照此规格 + svgMap 注册；anthropic/openai 是品牌 fill logo 例外。
-- 主题双轨：`data-theme` 承载 v2 语义 token + `.dark` class 承载 shadcn `dark:` variant，theme.ts 同步落两轨；偏离记档在 redesign-v2.md 附录「主题切换机制」。
-- v2-primitives.css 原语类（.nav/.row2/.pills/.pill/.card/.tray/.btn/.tabbar/.side/.pane…）可直接在页面用；`.grow` 已改名 `.growrow`（避让 Tailwind utility）。
-- 待定项：Wiki 注入协议（M4 前）、iPad/Mac 细节（M9 前与用户确认）。
+- 全部 23 条决策见 `docs/design/redesign-v2.md` §2（D1–D23），里程碑状态见 §6 + **§6.1 M3 收口补记（本次新增，含范围裁决 5 条）**。
+- **「气泡流 → 卡片流」是架构级范式差异，留专项裁决**（§6.1 裁决 1）：工具卡 .card 化 + composer .input 化牵动 tool-ui-registry 30+ 渲染器 / virtualizer 测量 / assistant-ui 集成，开工前需 perf-reviewer + design-reviewer 联审；M3-d 只落地了 bubble 外流级元素（turn 终态四件套 + .tray）。
+- M3-c 自动聚焦机制：`effectiveFocusId = focusId ?? autoFocusId`；**focusRef 解析 = `findTabRefLeaf(layout)` 优先 + `renderItems` 注入投影兜底**（design-reviewer #1 修复——回退态 chips/ℹ✕ 靠它恢复）；显式点 pill 才写 layout/URL。
+- .count（自动重试倒计时条）无取消/立即重试按钮——服务端无控制端点（用户插话即隐式取消）；若做归 M8 服务端加端点。
+- OfflineBanner（navigator.onLine 全局近似）与 session WS 断线呈现（panel 内 .cap + composer 禁用）是两层语义，勿合并。
+- v2-primitives.css 新增流终态原语：`.done/.errcard/.count/.cap`（03c/03d/03i 本页样式入单源）；`.tray .w/.c`、`.btn ghost/ok` 直接可用。
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ 沉淀批次 + M0 设计基座（commit `b669b57`/`742ed83`/`3bd16cb`/`f386325`）：总纲 D1-D23、token 映射表（附录）、机检脚本（report 模式）、e2e 基线 29/29
-- ✅ M1 组件化层（commit `ba8ddca`，42 文件 +1778/-476）：①index.css 重写 = v2 token 底座（:root dark 基准 + data-theme="light" 覆盖 + shadcn 单份映射 + v1 桥接 ~250 处零改动换新外观）②v2-primitives.css 原语 1:1 移植（@layer components；.grow→.growrow）③29 图标重绘（20 中心系 + data-symbol 锚点）④双主题双轨 + FOUC + Geist 移除 + manifest dark 基准。验证：探针 61/61、机检 HEX 11<基线 15、e2e 29/29、**design-reviewer 复审通过**（首轮 2 高 2 中 4 低全修复：openai 悬挂引用恢复、.growrow 改名、manifest 旧色、主题机制偏离记档 3 条、对比度已知限制、tokens.json 措辞、--on-accent 去重、字号行高）
-- ⬜ M2 IA 骨架 → M10（总纲 §6 状态列滚动更新）
+- ✅ 沉淀批次 + M0（`b669b57`…）+ M1（`ba8ddca`）+ M2（`2a4d9e1`）
+- ✅ **M3 主页对齐（本 session 完成，未 commit）**：
+  - M3-a 项目 Tab（`mobile-projects-home.tsx` 新建）：Large title + ➕/⚙ + 搜索 + 活动卡 + 置顶紫标
+  - M3-b 三行骨架（`mobile-project-header.tsx` 新建）：nav 行 / row2（ticon ×3 + ＋ + pills）/ chips 运行摘要；删 `mobile-tab-strip.tsx` + `mobile-project-drawer.tsx`（浏览态 grid 一并删）
+  - M3-c 逐状态：03h 空态卡 / 自动聚焦（renderItems 注入投影）/ file-git ✕ / OfflineBanner v2 / 03f tmux chip；design-reviewer 审查 6 findings 全修或记档
+  - M3-d 流内容：.count（RetryIndicator 迁流顶）+ .done/.stat（TurnStatsFooter）+ .errcard（ApiErrorRow）+ .cap（offlineCap prop）+ .tray（ApprovalTray）；v2-primitives 移植 4 原语；i18n `countTitle/countSchedule/offlineCap`（删孤儿 bannerMulti/bannerSingle）
+  - e2e 基线适配 2 处（mobile-nav landing / acp 项目行 exact）
+- ⬜ M4 工具与深度页 → M10（总纲 §6 滚动）
 
 ## 阻塞 / 风险
 
-- 无阻塞。观察项：ar-dev api 曾被外部 SIGTERM 终止一次（18:32，来源不明；respawn 恢复后正常，e2e 清理逻辑已排查非肇事者）——若复现查 `journalctl --user` 与同机其他项目。
-- M2 风险：IA 骨架是路由层大改（mobile-primary-nav/activity-bar/workbench-model），「路由切换零会话销毁」验收要靠 pathless layout 保活机制，动 IA 前先读 frontend-notes §3（结构关系是 state）与总纲 §5 现状锚点。
+- 无阻塞。subagent 通道本 session 恢复（design-reviewer 44 tool uses 跑完 M3-c 审查）。
+- **大段 JSX 的 Edit 工具调用多次注入乱码**（本 session 5+ 次：OfflineBanner 三连、EmptyProjectState、探针、ApiErrorRow 两连）——大段替换改用 python 脚本锚点定位整段替换（本轮成功范式）；写完必读回确认。此教训值得沉淀进 `.claude/rules/`（/evolve）。
+- 工具卡/composer 形态收敛（气泡流范式）是 M4 开工前要摊牌的专项（§6.1 裁决 1）——M4 若涉及 L3 详情页渲染会碰到，先裁决再动。
 
 ## 易丢的关键上下文
 
-- **v1 机制文档结论仍有效**（message-replay/agent-session-model 等在 design-v1），引用时注意区分「视觉已废、机制有效」。
-- 用户 Q17 约定：**所有里程碑完成后跑新 e2e 才交用户验证**；期间每里程碑 reviewer + 四门禁，不要中途找用户验收单点。
-- 旧 e2e 断言会随重构大面积失效——基线已在 M0 记录（29/29），新 e2e 在 M10 写，中途不修旧 e2e（以基线记录为准判断回归）。
-- 机检脚本 M1 后收紧 `--strict` 的前置：white/black 色阶 + 行尾注释内 HEX（当前 report 模式 11 处，全部已知：theme.ts 2 + SessionDetailRoute 9）。
-- commit 用标准 `git add && git commit`；md 不进 format 门禁（别跑 prettier）。
-- e2e 内存限制用 cgroup（`systemd-run --scope --user -p MemoryMax=2G bun run e2e`），ulimit -v 会 rolldown WASM OOM（dev-environment.md）。
+- **未 commit 的 M3 改动清单**（`git status` 全量）：M= mobile-workbench / mobile-project-header(new) / mobile-projects-home(new) / WorkbenchRoute / OfflineBanner / icons/index / zh / en / v2-primitives.css / ClaudeSessionDetailRoute / file-browser / pages-panel / project-setup / shell-primitives / instance-area / index.css / e2e 两 spec / probe-ia-skeleton / next-actions.md / handoff / redesign-v2.md；D= mobile-tab-strip / mobile-project-drawer / 两旧探针；??= warning-triangle.svg / book.svg / 3 新探针。**commit 拆分建议**：①M3-a+b（项目 Tab + 骨架 + 删除项）②M3-c+d（逐状态 + 流内容 + reviewer 修复 + e2e 适配）；docs/handoff 随 ②。标准 `git add && git commit`，禁 --only/--git-dir。
+- e2e 基线纪律：UI 重构破旧断言当场适配（memory「基线 harness 必须绿」优先）。
+- 用户 Q17 约定：所有里程碑完成后跑新 e2e 才交用户验证；期间每里程碑 reviewer + 四门禁。
+- 机检 `--strict` 收紧前置：white/black 色阶 + 行尾注释 HEX（当前 report 模式基线 11 处）。
+- md 不进 format 门禁（别跑 prettier）；e2e 用 cgroup（`systemd-run --scope --user -p MemoryMax=2G bun run e2e`）；探针 `bun scripts/probe-*.mjs`；改 web 包后必跑 `node scripts/ar-verify-css.mjs`。
+- rounded-full computed = `3.35544e+07px`（断言 parseFloat>20）；v2 radius 档 sm8/md10/lg12/xl16(card)/2xl20(sheet)。
+- run-e2e.ts 只透传 spec 路径（argv[2]），不支持 -g；失败详情读 `test-results/e2e/playwright-results/*/error-context.md`。
 
 ## 提醒
+
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
