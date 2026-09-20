@@ -130,7 +130,7 @@ test("Chat: session list + detail render pi stream frames with firecrawl tool-ca
 
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   // Desktop workbench (Phase 1+) — gate on the workbench being interactive
   // before navigating to the chat list route.
   await expect(page.getByRole("button", { name: "Agent", exact: true })).toBeVisible({

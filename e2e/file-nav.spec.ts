@@ -15,7 +15,7 @@ test("file nav: middle tab [文件] → 树点文件 → 中栏 file tab + 可�
 }) => {
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
 
   // 进项目工作台（桌面）。
   await page.getByRole("button", { name: projectName, exact: true }).click();
@@ -71,7 +71,7 @@ test("file nav: 活动栏 [文件] 全局树点文件 → 中栏 file tab + /fil
 }) => {
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
 
   // 活动栏 [文件] → /files 全局文件视图（rootBrowse 根目录列项目目录）。
   await page

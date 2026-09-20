@@ -61,8 +61,8 @@ const dump = async (label) => {
 
 // ── login ──
 await page.goto(`${WEB}/`);
-await page.getByLabel("App password").fill("dev123");
-await page.getByRole("button", { name: "Unlock console" }).click();
+await page.getByLabel("Access password").fill("dev123");
+await page.getByRole("button", { name: "Sign in" }).click();
 await page.waitForFunction(() => localStorage.getItem("auth_ok") === "1", null, {
   timeout: 5000,
 });

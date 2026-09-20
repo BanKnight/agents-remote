@@ -210,7 +210,7 @@ async function runViewport(label, viewport, isMobile) {
     await setupMocks(page);
     await page.goto(`${WEB_ORIGIN}/`);
     await page.getByLabel("Password").fill(await readAppPassword());
-    await page.getByRole("button", { name: "Unlock console" }).click();
+    await page.getByRole("button", { name: "Sign in" }).click();
     await page.goto(`${WEB_ORIGIN}/files`);
     await page.waitForTimeout(800);
 

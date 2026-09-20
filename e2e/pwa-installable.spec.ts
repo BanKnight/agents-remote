@@ -32,7 +32,7 @@ test("PWA manifest and service worker meet installability criteria", async ({ pa
 
   // Service worker is registered
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   // Desktop workbench renders the global project list as buttons in the left
   // panel (no "Projects" heading after the Phase 1 desktop shell rework);
   // gate on the project node being visible instead.

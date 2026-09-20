@@ -9,7 +9,7 @@ test("authenticated user can browse Project files and preview text and images", 
   await page.goto("/");
 
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
 
   // Desktop workbench: enter the project, then drive the Files **middle tab**
   // via the URL-visible ?tab=files state. Phase 3: middle tab [文件] renders

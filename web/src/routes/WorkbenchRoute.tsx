@@ -19,7 +19,7 @@ import { ChatOverview } from "../components/workbench/chat-overview";
 import { MobileWorkbench, SessionModeTabs } from "../components/workbench/mobile-workbench";
 import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
-import { ActivityBar } from "../components/shell/activity-bar";
+import { Sidebar } from "../components/shell/sidebar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { ProjectSwitcher } from "../components/workbench/project-switcher";
@@ -54,6 +54,7 @@ import {
   useWorkbenchNavigate,
   useWorkbenchRouteContext,
   workbenchMiddleLeftWidthAtom,
+  workbenchLastProjectAtom,
   workbenchMiddleTabAtom,
   workbenchRightCollapsedAtom,
 } from "./workbench-model";
@@ -113,6 +114,11 @@ function WorkbenchContent({
   const isDesktop = useIsDesktopViewport();
   const navigateWorkbench = useWorkbenchNavigate();
   const navigate = useNavigate();
+  // D4「直达上次位置」：进入 project scope 即记忆 key，`/`（工作台 Tab）据此恢复。
+  const [, setLastProjectKey] = useAtom(workbenchLastProjectAtom);
+  useEffect(() => {
+    if (scope.kind === "project") setLastProjectKey(scope.key);
+  }, [scope, setLastProjectKey]);
   // project scope 左栏 header 返回入口（回 /projects 全局项目列表）。粘性透传 search（含
   // mode）——用户离开会话页时的模式在返回后保持。
   const backToProjects = () =>
@@ -859,7 +865,7 @@ function WorkbenchContent({
   );
   return (
     <WorkbenchShell
-      activityBar={<ActivityBar />}
+      sidebar={<Sidebar />}
       leftPanel={leftPanel}
       leftPanelTitle={
         scope.kind === "project" ? (

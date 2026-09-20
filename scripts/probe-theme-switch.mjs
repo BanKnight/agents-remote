@@ -226,8 +226,8 @@ ok(true, "dark:meta theme-color → #000000（ThemeSync 根 effect）");
 // ── Part 3:登录 + 设置弹窗三态切换 ─────────────────────────────────────────────
 console.log("Part 3: 设置弹窗三态切换");
 await page.goto(`${ORIGIN}/`);
-await page.getByLabel("App password").fill(await readAppPassword());
-await page.getByRole("button", { name: "Unlock console" }).click();
+await page.getByLabel("Access password").fill(await readAppPassword());
+await page.getByRole("button", { name: "Sign in" }).click();
 await page.waitForSelector("nav[aria-label]", { timeout: 10000 });
 
 // 桌面 ActivityBar 设置按钮（aria-label = nav.settings = "Settings"）→ 居中 SettingsDialog。

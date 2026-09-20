@@ -13,7 +13,7 @@ import {
  * 设置页（移动端全屏路由，决策 44 + 48）。两层结构（Apple 设置范式）：root = 3 个入口
  * 胶囊，detail = 该项具体配置。`activeSection` 组件内 state（不进 URL），MobilePageHeader
  * 据 state 渲染 back（detail 态）/ 无 back（root 态）。切走 unmount 自然回 root。
- * 桌面端不走此路由——`ActivityBar` 设置按钮开 `SettingsDialog` 居中弹窗。
+ * 桌面端不走此路由——`Sidebar` footnav 设置按钮开 `SettingsDialog` 居中弹窗。
  *
  * 底部一级胶囊：root 态测量高度注入 `--shell-mobile-bottom-nav-space`，滚动区消费 var 避让
  * （与 MobileWorkbench / ShellLayout 同构）；detail 态无 nav → height=0 → 无额外 pb。

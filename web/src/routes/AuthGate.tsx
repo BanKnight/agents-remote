@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { getAuthStatus, login } from "../api/client";
 import { OfflineBanner } from "../components/OfflineBanner";
+import { ShellIcon } from "../components/shell/icons";
 import { useT } from "../i18n";
 
 type BeforeInstallPromptEvent = Event & {
@@ -22,6 +23,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [installDismissed, setInstallDismissed] = useState(false);
   const [password, setPassword] = useState("");
   const passwordId = useId();
+  const serverId = useId();
+  // 部署地址（06 原型 ①「服务器」）。单部署模型下即当前 origin 的 host；多服务器历史留 M7。
+  const serverLabel = window.location.host;
   const [authOk] = useState(() => localStorage.getItem(AUTH_OK_KEY) === "1");
   const auth = useQuery({
     queryKey: ["auth", "me"],
@@ -153,27 +157,41 @@ export function AuthGate({ children }: { children: ReactNode }) {
     <>
       <OfflineBanner />
       <AuthFrame title={t("auth.loginTitle")} description={t("auth.loginDesc")}>
-        <form className="mt-5" onSubmit={handleSubmit}>
-          <label className="block text-sm font-medium text-on-surface-soft" htmlFor={passwordId}>
+        <form onSubmit={handleSubmit}>
+          {/* 服务器 field：只读展示当前部署地址（06 原型 ①：点 › 切历史记录——多服务器历史
+              留 M7，当前单部署取 window.location.host）。等宽字体对齐原型 .field。 */}
+          <label className="mt-4 block text-caption text-ink-2" htmlFor={serverId}>
+            {t("auth.serverLabel")}
+          </label>
+          <div
+            className="mt-1.5 flex h-11 items-center justify-between rounded-xl border border-sep bg-elevated px-4 font-mono text-subhead text-ink-1"
+            id={serverId}
+          >
+            <span className="min-w-0 truncate">{serverLabel}</span>
+            <span className="text-ink-3">›</span>
+          </div>
+          <label className="mt-4 block text-caption text-ink-2" htmlFor={passwordId}>
             {t("auth.passwordLabel")}
           </label>
           <input
             autoComplete="current-password"
-            className="mt-2 w-full rounded-2xl border border-neutral-line bg-surface-inset px-4 py-3 text-sm text-on-surface outline-none transition placeholder:text-on-surface-muted focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className="mt-1.5 h-11 w-full rounded-xl border border-sep bg-elevated px-4 font-mono text-subhead text-ink-1 outline-none transition placeholder:text-ink-3 focus:border-primary focus:ring-2 focus:ring-primary/20"
             id={passwordId}
+            placeholder="••••••••"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
           <button
-            className="mt-4 w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-on-primary transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-surface-raised disabled:text-on-surface-muted"
+            className="mt-5 h-[46px] w-full cursor-pointer rounded-full bg-primary text-body font-semibold text-on-accent transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-elevated3 disabled:text-ink-2"
             disabled={password.trim().length === 0 || loginMutation.isPending}
             type="submit"
           >
             {loginMutation.isPending ? t("auth.unlocking") : t("auth.unlock")}
           </button>
+          <p className="mt-3 text-center text-caption text-ink-2">{t("auth.hint")}</p>
           {loginMutation.error instanceof Error ? (
-            <p className="mt-3 rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+            <p className="mt-3 rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-footnote text-error">
               {loginMutation.error.message}
             </p>
           ) : null}
@@ -223,18 +241,42 @@ type AuthFrameProps = {
   title: string;
 };
 
+/**
+ * L0 登录/检查帧（redesign-v2.md M2，对标 06-login 原型）。整屏单列：logo 徽章（72px 圆角
+ * 18px 主色底 + terminal 白描边图标）+ 品牌名 + tagline + 内容区 + 底部语言条（PWA 提示仅
+ * 非 standalone 显示）。无 Tab Bar——L0 无导航概念（06 原型注释 ③）。
+ *
+ * `title`/`description` 承载检查中/错误态的文案（登录态另走 children 表单），品牌区恒定。
+ */
 function AuthFrame({ children, description, title }: AuthFrameProps) {
-  const { t } = useT();
+  const { lang, setLang, t } = useT();
+  const [standalone] = useState(() => isStandaloneDisplay());
   return (
-    <main className="flex min-h-screen items-center justify-center bg-canvas px-4 text-on-surface">
-      <section className="w-full max-w-md rounded-2xl border border-sep bg-elevated p-6 shadow-2xl shadow-black/30">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">
-          {t("auth.brand")}
-        </p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">{title}</h1>
-        <p className="mt-2 text-sm leading-6 text-on-surface-muted">{description}</p>
-        {children}
-      </section>
+    <main className="relative flex h-[var(--app-viewport-height)] flex-col overflow-y-auto bg-canvas px-5 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] text-on-surface">
+      <div className="mx-auto flex w-full max-w-sm flex-1 flex-col">
+        <div className="mx-auto mt-[clamp(48px,18vh,150px)] flex size-[72px] items-center justify-center rounded-[18px] bg-primary">
+          <ShellIcon className="size-10 text-on-accent" name="terminal" />
+        </div>
+        <div className="mt-[18px] text-center">
+          <h1 className="text-[22px] font-bold text-ink-title">{t("auth.brand")}</h1>
+          <p className="mt-1 text-footnote text-ink-2">{t("auth.tagline")}</p>
+        </div>
+        <section className="mt-14">
+          <h2 className="sr-only">{title}</h2>
+          <p className="text-footnote text-ink-2">{description}</p>
+          {children}
+        </section>
+        <div className="mt-auto flex items-center justify-between pb-[max(20px,env(safe-area-inset-bottom))] pt-6 text-footnote">
+          <button
+            type="button"
+            className="cursor-pointer font-semibold text-primary"
+            onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+          >
+            {t("auth.langLabel")} ›
+          </button>
+          {standalone ? null : <span className="text-ink-2">{t("auth.pwaHint")}</span>}
+        </div>
+      </div>
     </main>
   );
 }

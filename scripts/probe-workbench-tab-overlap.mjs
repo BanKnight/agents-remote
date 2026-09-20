@@ -109,7 +109,7 @@ async function probeHeight(browser, height) {
   await setupMocks(page);
   await page.goto(`${WEB_ORIGIN}/`);
   await page.getByLabel("Password").fill(await readAppPassword());
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   // 工作台 focus 路由（focus session → layout 建 leaf → WorkspaceTree 渲染 GroupShell + panel）。
   await page.goto(`${WEB_ORIGIN}/projects/${projectName}/session/${fakeSessionId}`);
   await page.waitForSelector("[data-drop-group]", { timeout: 15000 }).catch(() => {});

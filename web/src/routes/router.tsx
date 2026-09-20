@@ -9,14 +9,19 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { AuthGate } from "./AuthGate";
-import { parseWorkbenchScope, validateWorkbenchSearch } from "./workbench-model";
+import {
+  parseWorkbenchScope,
+  validateWorkbenchSearch,
+  WORKBENCH_LAST_PROJECT_KEY,
+} from "./workbench-model";
 
-// 无效 URL（无任何路由匹配）→ 静默重定向到 `/`（工作台，有完整导航）。
+// 无效 URL（无任何路由匹配）→ 静默重定向到 `/`（工作台 Tab 落点，D4：直达上次项目）。
 // 旧方案是 TanStack 默认裸「Not Found」页：整页 0 个可点元素、无 shell，登录后被锁死；
 // 移动 PWA（standalone 无地址栏）重开还会恢复坏 URL 反复回到该死页。自动重定向让坏 URL
-// 自愈——落到 `/` 即有路可走。body 自带深色 radial 背景（见 index.html），`return null`
-// 不闪白。未登录时 AuthGate 先显示登录表单，本组件在 children 内、登录后才挂载触发。
-// `/` 恒命中 indexRoute，NotFound 卸载，无环路。
+// 自愈——落到 `/` 即经其 beforeLoad 去上次项目（或项目列表），即「直达上次位置」。
+// body 自带 v2 纯色背景（见 index.html），`return null` 不闪白。未登录时 AuthGate 先显示
+// 登录表单，本组件在 children 内、登录后才挂载触发。`/` 恒命中 indexRoute，NotFound
+// 卸载，无环路。
 const NotFoundRedirect = () => {
   const navigate = useNavigate();
   useEffect(() => {
@@ -51,12 +56,26 @@ const workbenchLayoutRoute = createRoute({
   component: lazyRouteComponent(() => import("./WorkbenchRoute"), "WorkbenchLayoutShell"),
 });
 
-// `/` 入口路由（设计文档 §11）：桌面渲染 global 工作台 / 移动渲染项目列表，由 WorkbenchLayoutShell
-// + useIsDesktopViewport 在组件层分流（非 redirect——beforeLoad 不知视口，跨端同 URL）。
+// `/` 入口路由（redesign-v2.md D4）：`/` = 工作台 Tab 落点 = 上次项目工作台（铁律「直达上次
+// 位置」）。beforeLoad 读 localStorage 上次项目 key：有 → replace 跳 `/projects/$key`（仍在本
+// workbench pathless layout 内，WorkbenchLayoutShell 不卸载、session/WS 保活）；无（首次使用）
+// → replace 跳 `/projects`（项目列表，冷启动从项目开始）。`/` 自身不渲染内容——纯跳板，
+// 故无 validateSearch（sticky search 由各入口自带，跳板不承载视图状态）。
 const indexRoute = createRoute({
   getParentRoute: () => workbenchLayoutRoute,
   path: "/",
-  validateSearch: validateWorkbenchSearch,
+  beforeLoad: () => {
+    let lastKey = "";
+    try {
+      lastKey = JSON.parse(localStorage.getItem(WORKBENCH_LAST_PROJECT_KEY) ?? '""');
+    } catch {
+      /* 旧值非合法 JSON（atomWithLocalOnlyStorage 写入格式），按无记忆处理 */
+    }
+    if (typeof lastKey === "string" && lastKey.length > 0) {
+      throw redirect({ to: "/projects/$key", params: { key: lastKey }, replace: true });
+    }
+    throw redirect({ to: "/projects", replace: true });
+  },
 });
 
 // ── workbench 子路由（中栏语义命名，去 /workbench 前缀，设计文档 §7）──────────────

@@ -175,7 +175,7 @@ try {
 
   await page.goto(`${WEB_ORIGIN}/`);
   await page.getByLabel("Password").fill(await readAppPassword());
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   await page.goto(`${WEB_ORIGIN}/projects/${PROJECT}/session/${created.id}`);
 
   // 发送真实 prompt → echo 气泡（acp_user_echo 注入）→ running（Stop 出现）→ ended（Stop 消失）。

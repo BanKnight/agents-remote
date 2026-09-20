@@ -53,8 +53,8 @@ async function run() {
 
     console.log("Part 1: 登录 + 打开设置弹窗");
     await page.goto(`${WEB_ORIGIN}/`);
-    await page.getByLabel("App password").fill(await readAppPassword());
-    await page.getByRole("button", { name: "Unlock console" }).click();
+    await page.getByLabel("Access password").fill(await readAppPassword());
+    await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForSelector("nav[aria-label]", { timeout: 10000 });
 
     // ActivityBar 设置按钮 → 居中 SettingsDialog（root view = 3 胶囊）。

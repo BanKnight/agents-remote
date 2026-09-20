@@ -21,7 +21,7 @@ test("drag-source: 文件行拖到中栏 → onDrop 开 file tab + URL（dropInt
 }) => {
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   await page.getByRole("button", { name: projectName, exact: true }).click();
   await page
     .getByRole("navigation", { name: "Projects", exact: true })

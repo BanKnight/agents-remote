@@ -52,7 +52,7 @@ async function setupMocks(page) {
     await setupMocks(page);
     await page.goto(`${WEB_ORIGIN}/`);
     await page.getByLabel("Password").fill(await readAppPassword());
-    await page.getByRole("button", { name: "Unlock console" }).click();
+    await page.getByRole("button", { name: "Sign in" }).click();
     await page.goto(`${WEB_ORIGIN}/skills`);
     // 切到管理 tab（中文/英文 label 兼容）。
     const manageTab = page

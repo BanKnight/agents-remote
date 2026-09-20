@@ -13,17 +13,22 @@ import {
 } from "../../routes/workbench-model";
 import { shellSurfaceClasses } from "./shell-primitives";
 
-/** 活动栏列宽（rem）= ActivityBar `w-12`（48px）。固定不折叠、不 resize（一级导航常驻）。 */
-const ACTIVITY_COLUMN_REM = 3;
+/**
+ * Sidebar 列宽 = 250px（设计包 `05-mac-workspace.html` `.side` 内联 250px，components.css
+ * 注释「宽度页自定：Mac 250 / iPad 260」）。用 px 而非 rem——标尺是像素值，rem 换算会随根字号
+ * 漂移。固定不折叠、不 resize（一级导航常驻；内容自身 overflow-y-auto）。
+ */
+const SIDEBAR_WIDTH = "250px";
 
 type WorkbenchShellProps = {
   /** 中栏：实例区（Stage 1 的 InstanceArea 接入）。工作台主体，不可收起。 */
   children: ReactNode;
   /**
-   * 活动栏：一级导航（项目/文件/设置），grid 第 0 列。常驻——不读 leftCollapsed，
-   * 折叠左栏时活动栏列宽不变（一级导航进入项目后也在）。Phase 1 接入 `<ActivityBar/>`。
+   * 桌面 Sidebar（v2 IA：4 目的地导航 项目/工作台/文件/插件 + footnav 设置），grid 第 0 列。
+   * 常驻——不读 leftCollapsed，折叠左栏时 Sidebar 列宽不变（一级导航进入项目后也在）。
+   * M2 前是 ActivityBar（48px 图标竖条），v2 换代为 250px Sidebar（redesign-v2.md M2）。
    */
-  activityBar?: ReactNode;
+  sidebar?: ReactNode;
   /** 左栏：项目 + 实例树（Stage 2 接入）。 */
   leftPanel?: ReactNode;
   /**
@@ -52,12 +57,12 @@ type WorkbenchShellProps = {
  * 三栏内容由 props 注入（Stage 1/2/3 分别接入）。
  */
 export function WorkbenchShell({
-  activityBar,
   children,
   leftPanel,
   leftPanelTitle,
   rightPanel,
   rightPanelCollapsible,
+  sidebar,
 }: WorkbenchShellProps) {
   const { t } = useT();
   const [leftCollapsed, setLeftCollapsed] = useAtom(workbenchLeftCollapsedAtom);
@@ -97,14 +102,15 @@ export function WorkbenchShell({
         className={`grid h-full min-h-0 w-full min-w-0 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-activity-col)_var(--workbench-left-col)_minmax(0,1fr)_var(--workbench-right-col)] ${shellSurfaceClasses.shell}`}
         style={
           {
-            "--workbench-activity-col": `${ACTIVITY_COLUMN_REM}rem`,
+            "--workbench-activity-col": SIDEBAR_WIDTH,
             "--workbench-left-col": leftColumn,
             "--workbench-right-col": rightColumn,
           } as CSSProperties
         }
       >
-        {/* 活动栏（第 0 列）：极简容器，视觉由 ActivityBar 自带（bg-surface + border-r + h-full）。 */}
-        <aside className="hidden min-h-0 min-w-0 lg:block">{activityBar}</aside>
+        {/* Sidebar（第 0 列）：v2 一级导航（项目/工作台/文件/插件 + 设置 footnav）。
+            视觉由 Sidebar 自带（.side/.sidewin：bg-sidebar + border-r + h-full）。 */}
+        <aside className="hidden min-h-0 min-w-0 lg:block">{sidebar}</aside>
         <aside
           className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-line/80 lg:flex ${shellSurfaceClasses.sidebar}`}
         >

@@ -169,7 +169,7 @@ test("ACP: session detail renders omp stream (echo bubble, chunk text, tool call
 
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible({
     timeout: 15_000,
   });
@@ -239,7 +239,7 @@ test.describe("ACP mobile create entry", () => {
 
     await page.goto("/");
     await page.getByLabel("Password").fill(password);
-    await page.getByRole("button", { name: "Unlock console" }).click();
+    await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible({
       timeout: 15_000,
     });

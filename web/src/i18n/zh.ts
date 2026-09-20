@@ -8,15 +8,22 @@ export const zh: Record<TranslationKey, string> = {
   "offline.message": "当前处于离线状态，请检查网络连接。",
 
   // ── Auth ──────────────────────────────────────────────────────
-  "auth.brand": "Agents Remote",
+
+  "auth.brand": "agents-remote",
+  "auth.tagline": "远程调度与观察你的 AI Agent",
   "auth.checkingTitle": "正在验证访问权限",
   "auth.checkingDesc": "正在恢复本地会话。",
   "auth.errorTitle": "无法验证访问权限",
-  "auth.loginTitle": "私有访问",
+  "auth.loginTitle": "agents-remote",
   "auth.loginDesc": "输入部署密码以打开项目控制台。",
-  "auth.passwordLabel": "应用密码",
-  "auth.unlock": "解锁控制台",
+  "auth.serverLabel": "服务器",
+  "auth.serverHint": "部署地址（点 › 切换历史）",
+  "auth.passwordLabel": "访问密码",
+  "auth.unlock": "登录",
   "auth.unlocking": "正在解锁...",
+  "auth.hint": "登录一次后本机免密 · 直达上次位置",
+  "auth.langLabel": "中文",
+  "auth.pwaHint": "添加到主屏幕获得全屏体验",
   "auth.installTitle": "安装 Agents Remote",
   "auth.installDesc": "将此控制平面安装为设备上的独立应用。",
   "auth.dismiss": "忽略",
@@ -234,7 +241,8 @@ export const zh: Record<TranslationKey, string> = {
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "返回",
-  "nav.projects": "会话",
+  "nav.workbench": "工作台",
+  "nav.projects": "项目",
   "nav.files": "文件",
   "nav.primaryAria": "主导航",
   "nav.primaryMobileAria": "移动端主导航",

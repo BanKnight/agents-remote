@@ -107,7 +107,7 @@ test("Claude: session detail renders with mocked REST data", async ({ page }) =>
 
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   // Desktop workbench (Phase 1+) has no "Projects" heading; gate on the
   // project node button being visible before navigating to the session route.
   await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();

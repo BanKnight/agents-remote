@@ -73,7 +73,7 @@ async function probe(browser, label, contextOptions) {
   const pw = await readAppPasswordSource(); // 只用 source 标记，不取 value 进日志
   await page.goto(`${WEB_ORIGIN}/`);
   await page.getByLabel("Password").fill(await readAppPassword());
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
   await page.goto(`${WEB_ORIGIN}/projects/${projectName}/agent-sessions/${fakeSessionId}/claude`);
 
   const textarea = page.locator("[data-composer-float] textarea").first();

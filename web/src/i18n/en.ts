@@ -6,15 +6,22 @@ export const en = {
   "offline.message": "You are offline. Check your network connection.",
 
   // ── Auth ──────────────────────────────────────────────────────
-  "auth.brand": "Agents Remote",
+
+  "auth.brand": "agents-remote",
+  "auth.tagline": "Dispatch and watch your AI agents remotely",
   "auth.checkingTitle": "Checking private access",
   "auth.checkingDesc": "Restoring local session.",
   "auth.errorTitle": "Unable to check access",
-  "auth.loginTitle": "Private access",
+  "auth.loginTitle": "agents-remote",
   "auth.loginDesc": "Enter the single deployment password to open the Project console.",
-  "auth.passwordLabel": "App password",
-  "auth.unlock": "Unlock console",
+  "auth.serverLabel": "Server",
+  "auth.serverHint": "Deployment address (tap › to switch)",
+  "auth.passwordLabel": "Access password",
+  "auth.unlock": "Sign in",
   "auth.unlocking": "Unlocking...",
+  "auth.hint": "Stay signed in on this device · resumes where you left off",
+  "auth.langLabel": "English",
+  "auth.pwaHint": "Add to Home Screen for a full-screen experience",
   "auth.installTitle": "Install Agents Remote",
   "auth.installDesc": "Open this control plane as a standalone app from your device.",
   "auth.dismiss": "Dismiss",
@@ -234,7 +241,8 @@ export const en = {
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.back": "Back",
-  "nav.projects": "Sessions",
+  "nav.workbench": "Workbench",
+  "nav.projects": "Projects",
   "nav.files": "Files",
   "nav.primaryAria": "Primary navigation",
   "nav.primaryMobileAria": "Primary mobile navigation",

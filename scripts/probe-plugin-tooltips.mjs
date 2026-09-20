@@ -19,7 +19,7 @@ function check(name, cond, detail = "") {
 async function login(page) {
   await page.goto(`${WEB_ORIGIN}/`);
   await page.getByLabel("Password").fill(await readAppPassword());
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
 }
 
 // ── 段 A：全局 /plugins（user scope，覆盖 Discover/Manage/Sources/MCP 全按钮）──

@@ -194,6 +194,19 @@ export const workbenchMobileOverviewTabAtom = atomWithLocalOnlyStorage<Workbench
 );
 
 /**
+ * 上次进入的项目 key（redesign-v2.md D4）。`/`（工作台 Tab）据此直达上次项目工作台——
+ * 铁律「直达上次位置」：PWA 重开/刷新后工作台 Tab 恢复到离开时的项目，不回列表。
+ * 写入点在 WorkbenchContent（scope.kind === "project" 的 effect）；`/` 的 beforeLoad
+ * 读 localStorage 原值（不经过 atom 实例，router 层可直接读）。
+ */
+export const workbenchLastProjectAtom = atomWithLocalOnlyStorage<string>(
+  "workbench.lastProjectKey",
+  "",
+);
+/** localStorage 原始 key（router beforeLoad / 探针读原始值用，与 atom 同源）。 */
+export const WORKBENCH_LAST_PROJECT_KEY = "workbench.lastProjectKey";
+
+/**
  * 移动端项目文件树 cwd 记忆（按项目 key 分组）。localStorage 持久化，后台被杀/重开/刷新后
  * 文件树停留在上次打开的目录（用户 2026-08-04 反馈：A→B→C→D 放置后台重开回 A）。桌面端
  * 不走此 atom（ProjectLeftPanel 内存 state 保持现状）。key 按项目隔离，天然避免「项目 A 子目录

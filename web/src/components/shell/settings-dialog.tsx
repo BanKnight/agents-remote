@@ -275,7 +275,7 @@ function GeneralSection() {
 }
 
 /**
- * 桌面设置弹窗（决策 44）：`ActivityBar` 设置按钮 `useState` 触发，居中 modal。
+ * 桌面设置弹窗（决策 44）：`Sidebar` footnav 设置按钮 `useState` 触发，居中 modal。
  * `ui/dialog.tsx` 的 `DialogContent` 只提供 Portal + Overlay（模糊背景）+ Content 容器
  * + Radix dismiss/focus-trap——**不内置卡片视觉与关闭按钮**，调用方在 Content 内自行
  * 包一层卡片 div（对齐 `confirm-dialog` 桌面态 / DESIGN.md `dialog` 条目居中形态）。

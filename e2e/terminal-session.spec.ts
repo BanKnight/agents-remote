@@ -7,7 +7,7 @@ test("authenticated user can create and interact with a Terminal Session", async
   await page.goto("/");
 
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Unlock console" }).click();
+  await page.getByRole("button", { name: "Sign in" }).click();
 
   // Desktop workbench (Phase 1+): project nodes are buttons in the left panel,
   // not links, and there is no "Projects" heading. Enter the project by
