@@ -1,38 +1,39 @@
-/* Design system: v1 tokens（docs/design-v1/DESIGN.md）— 当前实现基线，v2 重构迁移中。
-   新设计权威 = docs/design/（design_spec.md + tokens.json + assets/components.css），
-   迁移总纲见 docs/design/redesign-v2.md（M1 换底后本文件改为物化 v2 token）。
-   v1 tokens materialized here: colors (surface, on-surface, neutral-line, code,
-   secondary violet, success, warning, error), radius (DESIGN scale + shell-desktop
-   and shell-mobile), font-mono. shadcn theme vars (:root and .dark) hex-aligned to
-   DESIGN semantics. See DESIGN.md "Migration & Mapping" 节. */
+/* Design system: v2 tokens（docs/design/tokens.json 唯一数值源；设计包 assets/tokens.css
+   同源）。迁移总纲与 v1→v2 映射表见 docs/design/redesign-v2.md 附录。
+   主题机制：:root = 深色（产品主主题基准），html[data-theme="light"] = 浅色覆盖；
+   语义名两态一致（换值不换名）。html 同时挂 .dark class（兼容 shadcn 组件内部 dark:
+   variant，双轨过渡）。
+   组件层过渡桥接：v1 语义 utility（bg-surface 族 / text-on-surface 族 / border-neutral-line 等）
+   在 @theme inline 桥接到 v2 var——旧页面立即获得 v2 双主题视觉，随 M2/M3 页面重写
+   自然消亡；新代码一律用 v2 语义 utility（bg-elevated/text-ink-1/border-sep/…）。
+   禁止散写 HEX/裸色阶（scripts/ar-verify-tokens.mjs 把关）。 */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+@import "./v2-primitives.css";
 
 @custom-variant dark (&:is(.dark *));
 
 /** 鼠标/精确指针设备（hover: hover + pointer: fine）：支持 hover。用于"hover 才显示
  *  操作按钮"的降噪——仅在能 hover 的设备上把按钮默认隐藏 + hover 唤醒。与视口断点
  *  （sm:/max-sm:）正交：iPad 横屏（宽屏 + 触屏）不匹配本 variant、走 touch 分支，
- *  不被 sm: 误判成鼠标。见 DESIGN.md「移动触摸目标 44px」、frontend-notes.md §7。 */
+ *  不被 sm: 误判成鼠标。见 frontend-notes.md §7。 */
 @custom-variant hover-capable (@media (hover: hover) and (pointer: fine));
 
 /** 触屏设备（hover: none + pointer: coarse）：无 hover。操作按钮必须常显才可达；
  *  点击区放大到 ≥40px 触屏标准。 */
 @custom-variant touch (@media (hover: none) and (pointer: coarse));
 
+/* ===== v2 语义 token — 深色基准（tokens.json $extensions["mode.dark"]）===== */
 :root {
-  color-scheme: light;
-  color: var(--on-surface);
+  color-scheme: dark;
+  color: var(--ink-1);
   --shell-safe-area-top: env(safe-area-inset-top, 0px);
   --shell-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --app-viewport-height: 100dvh;
   /* Motion design tokens — single source of truth; mirrors EASE/DURATION in
      motion/tokens.ts. Plain :root vars (NOT @theme) so var(--ease-standard)
-     resolves everywhere: @theme inline would inline values into utilities and
-     drop the variable (verified — --ease-* never reached the built CSS),
-     breaking var() refs in keyframes and arbitrary-value utilities. */
+     resolves everywhere（详见 v1 时代验证注释，机制不变）. */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
@@ -40,48 +41,200 @@
   --duration-base: 180ms;
   --duration-slow: 280ms;
   font-family:
-    Inter,
-    ui-sans-serif,
     system-ui,
     -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
+    "SF Pro Text",
+    "PingFang SC",
+    Roboto,
+    "Noto Sans SC",
+    "Microsoft YaHei",
     sans-serif;
-  /* DESIGN semantic color vars — LIGHT theme（docs/design-v1/DESIGN.md「Light theme tokens」）。
-     :root = light，.dark 覆盖 dark 值。@theme inline 用 var() 引用这些 vars，使
-     bg-surface-* / text-on-surface-* / border-neutral-line 等 utility 按 <html>.dark
-     class cascade 切换（与 shadcn :root/.dark 同机制，in-repo 已验证）。*/
-  --primary: #0284c7; /* cyan 加深（sky-600），白底 WCAG AA；dark=#7dd3fc */
-  --surface-base: #eef2f7;
-  --surface: #f6f8fb;
-  --surface-raised: #ffffff;
-  --surface-inset: #e2e8f0;
-  --on-surface: #0f1520;
-  --on-surface-soft: #344056;
-  --on-surface-muted: #64748b;
-  --on-primary: #ffffff;
-  --on-error: #ffffff;
-  --neutral-line: #d7deea;
-  --code-text: #1e293b;
-  --code-muted: #64748b;
-  --secondary: #8b5cf6; /* violet 加深（violet-500）；dark=#a78bfa */
-  --success: #059669;
-  --warning: #d97706;
-  --error: #e11d48;
-  --assistant: #b45309; /* amber-700（比 warning amber-600 再深一档，浅底 badge 文字达 WCAG；见 DESIGN.md 琥珀上限）*/
+
+  /* brand / semantic（tokens.json color.brand + color.semantic）*/
+  --c-primary: #0a84ff; /* 主蓝：链接/激活 Tab/主按钮/光标/选中 */
+  --c-primary-pressed: #0a84ff;
+  --c-success: #30d158; /* 运行/完成/允许 */
+  --c-success-text: #30d158;
+  --c-warning: #ff9f0a; /* 待审批/警示衬底 */
+  --c-warning-text: #ff9f0a;
+  --c-danger: #ff453a; /* 错误/删除/中断 */
+  --c-pin: #bf5af2; /* 置顶/Agent 引用/思考标记 */
+  --scrim: rgb(0 0 0 / 0.45); /* 浮层底压暗 */
+
+  /* neutral 底（tokens.json color.neutral，命名 = 设计包 tokens.css kebab-case）*/
+  --bg-base: #000000; /* 页面分组底 */
+  --bg-canvas: #000000; /* 工作区/输出流底 */
+  --bg-elevated: #1c1c1e; /* 卡片/列表/sheet */
+  --bg-elevated2: #2c2c2e; /* 嵌套卡/chips/表单字段 */
+  --bg-elevated3: #3a3a3c; /* 分段控件容器/禁用钮 */
+  --bg-tabbar: #1c1c1e;
+  --bg-sidebar: #1c1c1f;
+  --bg-inspector: #101013;
+  --bg-codeblock: #0d0d0f;
+  --bg-tabstrip: #141417;
+  --menu: #2c2c2e; /* 上下文菜单/弹出面板底 */
+
+  /* ink（文字墨色三级 + 大标题）*/
+  --ink-title: #ffffff;
+  --ink-1: #f2f2f7; /* 一级正文/行文字 */
+  --ink-2: #98989f; /* 辅助/未激活 Tab/占位 */
+  --ink-3: #48484a; /* 极弱提示/分组符 */
+
+  /* 分隔与填充 */
+  --sep: #38383a; /* 卡片描边/通用发丝分隔 */
+  --sep-strong: #48484a; /* 强分隔/输入描边 */
+  --sep-row: #2c2c2e; /* 行内分隔 */
+  --fill-search: #1c1c1e;
+  --fill-segmented: #1c1c1e;
+  --segmented-thumb: #3a3a3c;
+  --seg-track: var(--fill-segmented); /* components.css seg4 容器底别名（tokens.css 同值）*/
+  --seg-thumb: var(--segmented-thumb); /* 同上别名 */
+  --fill-selected: rgb(10 132 255 / 0.22); /* Sidebar 选中行 */
+
+  /* 彩色衬底（低透明 tint）*/
+  --tint-blue: rgb(10 132 255 / 0.16);
+  --tint-green: rgb(48 209 88 / 0.1);
+  --tint-orange: rgb(255 159 10 / 0.13);
+  --tint-purple: rgb(191 90 242 / 0.14);
+  --tint-red: rgb(255 69 58 / 0.12);
+  --tint-diff-green: rgb(48 209 88 / 0.1);
+
+  /* 派生（不在 tokens.json，实现侧渲染值）*/
+  --on-accent: #ffffff; /* 实心主色钮上的文字 */
+  --on-success: #0a0a0a; /* 实心成功钮文字（绿底黑字两态皆可读，tokens.css 同值）*/
+  --sb-ink: #f2f2f7; /* 状态栏/顶部墨色（= ink-1，语义独立保留）*/
+  --term-ink: #d8d8dc; /* 终端正文（tokens.css；非 ANSI 16 色，xterm 前景色走 --ink-1）*/
+  --home-indicator: rgb(255 255 255 / 0.8);
+
+  /* ===== 过渡遗留（M3 页面重写时废除，勿在新代码使用）===== */
+  /* Claude 消息角色色（v1 设计语言；v2 消息流走中性 ink + --c-pin/tint-*）*/
+  --assistant: #fbbf24;
+  --assistant-soft: #fde68a;
+  --assistant-deep: #92400e;
+  --user: #22d3ee;
+  --user-soft: #67e8f9;
+  --user-deep: #0e7490;
+  --permission: #a78bfa;
+  --permission-soft: #c4b5fd;
+  /* Terminal ANSI 16 色（xterm 独立体系，设计包未覆盖；M1 后按需校准）*/
+  --terminal-black: #0f172a;
+  --terminal-bright-black: #334155;
+  --terminal-red: #f87171;
+  --terminal-bright-red: #fca5a5;
+  --terminal-green: #4ade80;
+  --terminal-bright-green: #86efac;
+  --terminal-yellow: #fbbf24;
+  --terminal-bright-yellow: #fde68a;
+  --terminal-blue: #60a5fa;
+  --terminal-bright-blue: #93c5fd;
+  --terminal-magenta: #c084fc;
+  --terminal-bright-magenta: #d8b4fe;
+  --terminal-cyan: #22d3ee;
+  --terminal-bright-cyan: #67e8f9;
+  --terminal-white: #cbd5e1;
+  --terminal-bright-white: #f1f5f9;
+  /* hover/active 叠层 + skeleton shimmer + scrollbar（实现侧补充，灰阶无品牌色相）*/
+  --hover-overlay: rgb(255 255 255 / 0.05);
+  --active-overlay: rgb(255 255 255 / 0.08);
+  --shimmer-base: rgb(255 255 255 / 0.04);
+  --shimmer-sweep: rgb(255 255 255 / 0.09);
+  --scrollbar-thumb: oklch(0.3 0 0);
+  --scrollbar-thumb-hover: oklch(0.4 0 0);
+
+  /* ===== shadcn theme vars（引用 v2 语义 var，一份映射两态自动跟随）===== */
+  --background: var(--bg-base);
+  --foreground: var(--ink-1);
+  --card: var(--bg-elevated);
+  --card-foreground: var(--ink-1);
+  --popover: var(--menu);
+  --popover-foreground: var(--ink-1);
+  --primary: var(--c-primary);
+  --primary-foreground: var(--on-accent);
+  --muted: var(--bg-elevated2);
+  --muted-foreground: var(--ink-2);
+  --accent: var(--bg-elevated2);
+  --accent-foreground: var(--ink-1);
+  --destructive: var(--c-danger);
+  --border: var(--sep);
+  --input: var(--sep);
+  --ring: var(--c-primary);
+  --chart-1: oklch(0.87 0 0); /* 低优先，保留 oklch（业务零消费）*/
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: var(--bg-sidebar);
+  --sidebar-foreground: var(--ink-1);
+  --sidebar-primary: var(--c-primary);
+  --sidebar-primary-foreground: var(--on-accent);
+  --sidebar-accent: var(--fill-selected);
+  --sidebar-accent-foreground: var(--ink-1);
+  --sidebar-border: var(--sep);
+  --sidebar-ring: var(--c-primary);
+}
+
+/* ===== v2 语义 token — 浅色覆盖（tokens.json $value）===== */
+html[data-theme="light"] {
+  color-scheme: light;
+  --c-primary: #007aff;
+  --c-primary-pressed: #0a66c2;
+  --c-success: #34c759;
+  --c-success-text: #28a745; /* 浅底成功文字对比度修正 */
+  --c-warning: #ff9f0a;
+  --c-warning-text: #e08600;
+  --c-danger: #ff3b30;
+  --c-pin: #af52de;
+  --scrim: rgb(0 0 0 / 0.4);
+
+  --bg-base: #f2f2f7;
+  --bg-canvas: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-elevated2: #f2f2f7;
+  --bg-elevated3: #e9e9eb;
+  --bg-tabbar: #f8f8f8;
+  --bg-sidebar: #f2f2f4;
+  --bg-inspector: #fafafb;
+  --bg-codeblock: #f6f6f8;
+  --bg-tabstrip: #ececf0;
+  --menu: #ffffff;
+
+  --ink-title: #000000;
+  --ink-1: #1c1c1e;
+  --ink-2: #8e8e93;
+  --ink-3: #c7c7cc;
+
+  --sep: #e5e5ea;
+  --sep-strong: #d1d1d6;
+  --sep-row: #f0f0f2;
+  --fill-search: #e9e9eb;
+  --fill-segmented: #e9e9eb;
+  --segmented-thumb: #ffffff;
+  --fill-selected: #dcedff;
+
+  --on-accent: #ffffff;
+  --on-success: #0a0a0a;
+  --sb-ink: #1c1c1e;
+  --term-ink: #1c1c1e;
+
+  --tint-blue: rgb(0 122 255 / 0.12);
+  --tint-green: rgb(52 199 89 / 0.12);
+  --tint-orange: rgb(255 159 10 / 0.12);
+  --tint-purple: rgb(175 82 222 / 0.12);
+  --tint-red: rgb(255 59 48 / 0.1);
+  --tint-diff-green: rgb(52 199 89 / 0.12);
+
+  --home-indicator: rgb(0 0 0 / 0.85);
+
+  /* 过渡遗留角色色 — 浅色档（M3 废除）*/
+  --assistant: #b45309;
   --assistant-soft: #f59e0b;
-  --assistant-deep: #fef3c7; /* 明主题「deep bg」=浅气泡（语义翻转，见 DESIGN.md）*/
+  --assistant-deep: #fef3c7;
   --user: #0891b2;
   --user-soft: #06b6d4;
   --user-deep: #cffafe;
   --permission: #8b5cf6;
   --permission-soft: #a78bfa;
-  /* Terminal ANSI 16 色（xterm 外壳随主题，DESIGN.md「Terminal theme」节）：
-     亮色档 = Tailwind 深档保证浅底可读（dark=#4ade80 这类 400 档在浅底对比不足）；
-     bright-blue 亮色=blue-700（比 normal blue-600 更深——浅底上 bright 若用浅档 500 对比不足，
-     ls 目录/prompt 蓝字发糊，改深一档保证清晰，浅色终端通行做法）。white 亮色=slate-500
-     （浅底上「白」应为中灰）、bright-white=on-surface（浅底上最亮文字=最深的 on-surface）。
-     暗色档值见 .dark 覆盖（原 xterm 硬编码值零回归）。*/
+  /* Terminal ANSI 16 色 — 浅色档 = 深档保证浅底可读（v1 校准结论沿用）*/
   --terminal-black: #1e293b;
   --terminal-bright-black: #64748b;
   --terminal-red: #dc2626;
@@ -98,50 +251,12 @@
   --terminal-bright-cyan: #06b6d4;
   --terminal-white: #64748b;
   --terminal-bright-white: #0f1520;
-  /* hover/active 叠层：明主题=黑叠层（浅底上微暗）、暗主题=白叠层（深底上微亮）。
-     interactive-row / skeleton 消费，避免白叠层在白底不可见。*/
   --hover-overlay: rgb(0 0 0 / 0.05);
   --active-overlay: rgb(0 0 0 / 0.08);
-  /* 全屏氛围光背景（html/body radial-gradient）：明=浅蓝灰、暗=teal 深色。*/
-  --bg-base: #eef2f7;
-  --bg-glow: #dde7f3;
-  /* skeleton shimmer：base 静态底 + sweep 高光横移。明主题 base=微黑、sweep=白高光。*/
   --shimmer-base: rgb(0 0 0 / 0.04);
   --shimmer-sweep: rgb(255 255 255 / 0.55);
-  /* scrollbar 拇指（oklch 灰度，与 surface hex 不同体系）：明=浅灰、暗=深灰。*/
   --scrollbar-thumb: oklch(0.7 0 0);
   --scrollbar-thumb-hover: oklch(0.55 0 0);
-  /* shadcn theme vars — light（按 DESIGN token 映射，引用上方 semantic vars 保持单一真相）。
-     chart-* 低优先保留 oklch（业务零消费）。DESIGN secondary 走 @theme inline --color-secondary。*/
-  --background: var(--surface-base);
-  --foreground: var(--on-surface);
-  --card: var(--surface-raised);
-  --card-foreground: var(--on-surface);
-  --popover: var(--surface-raised);
-  --popover-foreground: var(--on-surface);
-  --primary-foreground: var(--on-primary);
-  --muted: var(--surface-raised);
-  --muted-foreground: var(--on-surface-muted);
-  --accent: var(--surface-raised);
-  --accent-foreground: var(--on-surface);
-  --destructive: var(--error);
-  --border: var(--neutral-line);
-  --input: var(--neutral-line);
-  --ring: var(--primary);
-  --chart-1: oklch(0.87 0 0); /* 低优先，保留 oklch（业务零消费）*/
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem; /* 10px = DESIGN md 基准 */
-  --sidebar: var(--surface-raised);
-  --sidebar-foreground: var(--on-surface);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--on-primary);
-  --sidebar-accent: var(--surface-raised);
-  --sidebar-accent-foreground: var(--on-surface);
-  --sidebar-border: var(--neutral-line);
-  --sidebar-ring: var(--primary);
 }
 
 /* PWA standalone 下 100dvh 会扣 home indicator chin (~34px), 100vh 不扣;
@@ -162,14 +277,10 @@ body,
   overscroll-behavior: none;
 }
 
-html {
-  background-image: radial-gradient(circle at top, var(--bg-glow) 0, var(--bg-base) 34rem);
-  background-color: var(--bg-base);
-}
-
+/* v2 Apple 风纯色底（v1 radial 氛围光废除，redesign-v2.md 附录）。*/
+html,
 body {
-  background: radial-gradient(circle at top, var(--bg-glow) 0, var(--bg-base) 34rem);
-  background-attachment: fixed;
+  background-color: var(--bg-base);
 }
 
 body {
@@ -179,11 +290,33 @@ body {
 
 @theme inline {
   --breakpoint-sm: 1024px;
+  /* v2 字体栈（typography.web-stack / mono-stack，禁捆绑字体 D15）*/
   --font-heading: var(--font-sans);
-  --font-sans: "Geist Variable", sans-serif;
-  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  /* shadcn theme color mappings — values driven by :root/.dark above.
-     --color-secondary 已从此处移除，改由下方 DESIGN 块直写紫（gradient 终点）。*/
+  --font-sans:
+    system-ui, -apple-system, "SF Pro Text", "PingFang SC", Roboto, "Noto Sans SC",
+    "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  /* v2 字号档（tokens.json typography）— 每档绑定 line-height 1.4（typography.line-height-ui，
+     UI 文本默认）。正文编辑区 2.0（line-height-body，16px/32px）由具体组件显式设，不进全局档。*/
+  --text-large-title: 1.875rem; /* 30px/800 iOS Large Title */
+  --text-large-title--line-height: 1.4;
+  --text-title: 1.0625rem; /* 17px/600-700 Headline */
+  --text-title--line-height: 1.4;
+  --text-body: 1rem; /* 16px Body */
+  --text-body--line-height: 1.4;
+  --text-callout: 0.9375rem; /* 15px Callout */
+  --text-callout--line-height: 1.4;
+  --text-subhead: 0.875rem; /* 14px Subheadline */
+  --text-subhead--line-height: 1.4;
+  --text-footnote: 0.8125rem; /* 13px Footnote */
+  --text-footnote--line-height: 1.4;
+  --text-caption: 0.75rem; /* 12px Caption */
+  --text-caption--line-height: 1.4;
+  --text-micro: 0.65625rem; /* 10.5px Caption 2 */
+  --text-micro--line-height: 1.4;
+
+  /* shadcn theme color mappings — values driven by :root/[data-theme="light"] above. */
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -213,31 +346,57 @@ body {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  /* DESIGN.md semantic color namespace — var() 引用 :root(light)/.dark(dark) 的 semantic
-     vars（docs/design-v1/DESIGN.md「Light theme tokens」）。@theme inline 内联 var() 引用，
-     使 bg-surface-* / text-on-surface-* / border-neutral-line / bg-secondary(violet) 等
-     utility 按 <html>.dark cascade 切换。新代码用这些 utility，勿散写裸 Tailwind。
-     primary 走 shadcn 映射（--color-primary: var(--primary)），不在此重复。*/
-  --color-surface-base: var(--surface-base);
-  --color-surface: var(--surface);
-  --color-surface-raised: var(--surface-raised);
-  --color-surface-inset: var(--surface-inset);
-  --color-on-surface: var(--on-surface);
-  --color-on-surface-soft: var(--on-surface-soft);
-  --color-on-surface-muted: var(--on-surface-muted);
-  --color-on-primary: var(--on-primary);
-  --color-on-error: var(--on-error);
-  --color-neutral-line: var(--neutral-line);
-  --color-code-text: var(--code-text);
-  --color-code-muted: var(--code-muted);
-  --color-secondary: var(--secondary);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-error: var(--error);
-  /* Content role colors — Claude session 消息角色色（docs/design-v1/DESIGN.md Colors 节
-     「Content role colors」）。与 primary 操作色正交：区分 assistant / user / permission
-     三种消息角色，不承担操作语义。assistant/warning 同 hex、permission/secondary 同 hex
-     是刻意——语义独立，分开 token 以便未来按角色独立调色相。*/
+
+  /* ===== v2 语义 utility（新代码用这组：bg-elevated / text-ink-1 / border-sep / bg-tint-blue …）===== */
+  --color-canvas: var(--bg-canvas);
+  --color-elevated: var(--bg-elevated);
+  --color-elevated2: var(--bg-elevated2);
+  --color-elevated3: var(--bg-elevated3);
+  --color-ink-title: var(--ink-title);
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-sep: var(--sep);
+  --color-sep-strong: var(--sep-strong);
+  --color-sep-row: var(--sep-row);
+  --color-pin: var(--c-pin);
+  --color-menu: var(--menu);
+  --color-tabbar: var(--bg-tabbar);
+  --color-inspector: var(--bg-inspector);
+  --color-codeblock: var(--bg-codeblock);
+  --color-tabstrip: var(--bg-tabstrip);
+  --color-fill-search: var(--fill-search);
+  --color-fill-selected: var(--fill-selected);
+  --color-fill-segmented: var(--fill-segmented);
+  --color-segmented-thumb: var(--segmented-thumb);
+  --color-tint-blue: var(--tint-blue);
+  --color-tint-green: var(--tint-green);
+  --color-tint-orange: var(--tint-orange);
+  --color-tint-purple: var(--tint-purple);
+  --color-tint-red: var(--tint-red);
+  --color-tint-diff-green: var(--tint-diff-green);
+  --color-scrim: var(--scrim);
+  --color-on-accent: var(--on-accent);
+
+  /* ===== v1 过渡桥接（v1 语义 utility → v2 var；随 M2/M3 页面重写消亡，勿在新代码用）=====
+     映射依据：docs/design/redesign-v2.md 附录「颜色映射」。*/
+  --color-surface-base: var(--bg-base);
+  --color-surface: var(--bg-canvas);
+  --color-surface-raised: var(--bg-elevated);
+  --color-surface-inset: var(--bg-elevated2);
+  --color-on-surface: var(--ink-1);
+  --color-on-surface-soft: var(--ink-1);
+  --color-on-surface-muted: var(--ink-2);
+  --color-neutral-line: var(--sep);
+  --color-code-text: var(--ink-1);
+  --color-code-muted: var(--ink-2);
+  --color-success: var(--c-success);
+  --color-warning: var(--c-warning);
+  --color-error: var(--c-danger);
+  --color-secondary: var(--c-pin); /* v1 violet 渐变终点 → v2 pin 紫 */
+  --color-on-primary: var(--on-accent);
+  --color-on-error: var(--on-accent);
+  /* v1 角色色桥接（过渡遗留，M3 废除）*/
   --color-assistant: var(--assistant);
   --color-assistant-soft: var(--assistant-soft);
   --color-assistant-deep: var(--assistant-deep);
@@ -246,97 +405,14 @@ body {
   --color-user-deep: var(--user-deep);
   --color-permission: var(--permission);
   --color-permission-soft: var(--permission-soft);
-  /* Radius — DESIGN scale（docs/design-v1/DESIGN.md Shapes）。方案 A：覆写衍生比例
-     对齐 DESIGN 档；移除无对应档的 3xl/4xl（业务无 rounded-3xl，badge 4xl→full）；
-     新增 frame 专用 shell-*。*/
-  --radius-sm: calc(var(--radius) * 0.6); /* 6px */
-  --radius-md: var(--radius); /* 10px */
-  --radius-lg: calc(var(--radius) * 1.4); /* 14px */
-  --radius-xl: calc(var(--radius) * 2); /* 20px */
-  --radius-2xl: calc(var(--radius) * 2.4); /* 24px */
-  --radius-shell-desktop: 28px;
-  --radius-shell-mobile: 38px;
-}
 
-.dark {
-  color-scheme: dark;
-  /* DESIGN semantic color vars — DARK theme（docs/design-v1/DESIGN.md frontmatter normative 基准）。
-     覆盖 :root light 值；@theme inline utility 经 var() 引用自动跟随。*/
-  --primary: #7dd3fc; /* Glacier Cyan */
-  --surface-base: #080b10;
-  --surface: #0f1520;
-  --surface-raised: #141b28;
-  --surface-inset: #05080d;
-  --on-surface: #eef4ff;
-  --on-surface-soft: #c1cad8;
-  --on-surface-muted: #8d99aa;
-  --on-primary: #041019;
-  --on-error: #041019;
-  --neutral-line: #263245;
-  --code-text: #d6e4f7;
-  --code-muted: #728197;
-  --secondary: #a78bfa; /* Periwinkle */
-  --success: #34d399;
-  --warning: #fbbf24;
-  --error: #fb7185;
-  --assistant: #fbbf24;
-  --assistant-soft: #fde68a;
-  --assistant-deep: #92400e;
-  --user: #22d3ee;
-  --user-soft: #67e8f9;
-  --user-deep: #0e7490;
-  --permission: #a78bfa;
-  --permission-soft: #c4b5fd;
-  /* Terminal ANSI 16 色 — dark 档 = 原 xterm 硬编码暗色调色板（零回归，见 :root 注释）。*/
-  --terminal-black: #0f172a;
-  --terminal-bright-black: #334155;
-  --terminal-red: #f87171;
-  --terminal-bright-red: #fca5a5;
-  --terminal-green: #4ade80;
-  --terminal-bright-green: #86efac;
-  --terminal-yellow: #fbbf24;
-  --terminal-bright-yellow: #fde68a;
-  --terminal-blue: #60a5fa;
-  --terminal-bright-blue: #93c5fd;
-  --terminal-magenta: #c084fc;
-  --terminal-bright-magenta: #d8b4fe;
-  --terminal-cyan: #22d3ee;
-  --terminal-bright-cyan: #67e8f9;
-  --terminal-white: #cbd5e1;
-  --terminal-bright-white: #f1f5f9;
-  --hover-overlay: rgb(255 255 255 / 0.05);
-  --active-overlay: rgb(255 255 255 / 0.08);
-  --bg-base: #020617;
-  --bg-glow: #0f2d3a;
-  --shimmer-base: rgb(255 255 255 / 0.04);
-  --shimmer-sweep: rgb(255 255 255 / 0.09);
-  --scrollbar-thumb: oklch(0.3 0 0);
-  --scrollbar-thumb-hover: oklch(0.4 0 0);
-  /* shadcn theme vars — dark（引用 semantic vars，与 :root light 同映射；
-     chart-* 继承 :root oklch，业务零消费不覆盖）。*/
-  --background: var(--surface-base);
-  --foreground: var(--on-surface);
-  --card: var(--surface-raised);
-  --card-foreground: var(--on-surface);
-  --popover: var(--surface-raised);
-  --popover-foreground: var(--on-surface);
-  --primary-foreground: var(--on-primary);
-  --muted: var(--surface-raised);
-  --muted-foreground: var(--on-surface-muted);
-  --accent: var(--surface-raised);
-  --accent-foreground: var(--on-surface);
-  --destructive: var(--error);
-  --border: var(--neutral-line);
-  --input: var(--neutral-line);
-  --ring: var(--primary);
-  --sidebar: var(--surface-raised);
-  --sidebar-foreground: var(--on-surface);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--on-primary);
-  --sidebar-accent: var(--surface-raised);
-  --sidebar-accent-foreground: var(--on-surface);
-  --sidebar-border: var(--neutral-line);
-  --sidebar-ring: var(--primary);
+  /* Radius — v2 语义档（tokens.json radius；映射见 redesign-v2.md 附录）。
+     旧档值换新：sm=segmentedThumb 8 / md=segmented 10 / lg=input 12 / xl=card 16 / 2xl=sheet 20。*/
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
 }
 
 @layer base {

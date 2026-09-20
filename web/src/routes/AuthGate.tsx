@@ -226,8 +226,8 @@ type AuthFrameProps = {
 function AuthFrame({ children, description, title }: AuthFrameProps) {
   const { t } = useT();
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#0f2d3a_0,#020617_34rem)] px-4 text-on-surface">
-      <section className="w-full max-w-md rounded-[2rem] border border-white/10 bg-surface-raised/85 p-6 shadow-2xl shadow-black/30 backdrop-blur">
+    <main className="flex min-h-screen items-center justify-center bg-canvas px-4 text-on-surface">
+      <section className="w-full max-w-md rounded-2xl border border-sep bg-elevated p-6 shadow-2xl shadow-black/30">
         <p className="text-xs font-semibold uppercase tracking-[0.28em] text-primary">
           {t("auth.brand")}
         </p>

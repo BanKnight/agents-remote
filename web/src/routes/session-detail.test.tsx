@@ -31,11 +31,11 @@ function setTokens(values: Record<string, string>) {
   for (const [k, v] of Object.entries(values)) el.style.setProperty(k, v);
 }
 
-/** 与 index.css :root（light）一致的设计值。 */
+/** 与 index.css html[data-theme="light"] 一致的设计值（v2 语义 token）。 */
 const LIGHT: Record<string, string> = {
-  "--code-text": "#1e293b",
-  "--primary": "#0284c7",
-  "--surface": "#f6f8fb",
+  "--ink-1": "#1c1c1e",
+  "--c-primary": "#007aff",
+  "--bg-codeblock": "#f6f6f8",
   "--terminal-black": "#1e293b",
   "--terminal-bright-black": "#64748b",
   "--terminal-red": "#dc2626",
@@ -54,11 +54,11 @@ const LIGHT: Record<string, string> = {
   "--terminal-bright-white": "#0f1520",
 };
 
-/** 与 index.css .dark 一致的设计值（原 xterm 硬编码暗色调色板）。 */
+/** 与 index.css :root（dark 基准）一致的设计值。 */
 const DARK: Record<string, string> = {
-  "--code-text": "#d6e4f7",
-  "--primary": "#7dd3fc",
-  "--surface-inset": "#05080d",
+  "--ink-1": "#f2f2f7",
+  "--c-primary": "#0a84ff",
+  "--bg-codeblock": "#0d0d0f",
   "--terminal-black": "#0f172a",
   "--terminal-bright-black": "#334155",
   "--terminal-red": "#f87171",
@@ -78,16 +78,15 @@ const DARK: Record<string, string> = {
 };
 
 describe("readTerminalTheme", () => {
-  test("light：CSS 变量 → ITheme 映射 + selectionBackground=primary@25% + background=surface 实色", () => {
+  test("light：CSS 变量 → ITheme 映射 + selectionBackground=primary@25% + background=codeblock 实色", () => {
     setTokens(LIGHT);
     const theme = readTerminalTheme("light");
-    // 亮色 background ← --surface #f6f8fb 浅蓝灰（续十二恢复：续九曾改纯白衬托字重清晰度，
-    // 续十 DOM 渲染器根治模糊 + 续十一删字重后纯白衬托不再需要，回浅蓝灰底）。
-    expect(theme.background).toBe("#f6f8fb");
+    // 亮色 background ← --bg-codeblock #f6f6f8（浅色终端要干净浅底；v2 双主题同 var 换值）。
+    expect(theme.background).toBe("#f6f6f8");
     expect(theme.brightBlue).toBe("#1d4ed8");
-    expect(theme.foreground).toBe("#1e293b");
-    expect(theme.cursor).toBe("#0284c7");
-    expect(theme.selectionBackground).toBe("rgba(2, 132, 199, 0.25)");
+    expect(theme.foreground).toBe("#1c1c1e");
+    expect(theme.cursor).toBe("#007aff");
+    expect(theme.selectionBackground).toBe("rgba(0, 122, 255, 0.25)");
     expect(theme.black).toBe("#1e293b");
     expect(theme.brightBlack).toBe("#64748b");
     expect(theme.red).toBe("#dc2626");
@@ -109,31 +108,34 @@ describe("readTerminalTheme", () => {
     expect(theme.extendedAnsi?.[0]).toBe("");
   });
 
-  test("dark：映射 dark 值 + 读后恢复调用前 .dark class", () => {
+  test("dark：映射 dark 值 + 读后恢复调用前 data-theme 与 .dark class", () => {
     setTokens(DARK);
+    document.documentElement.dataset.theme = "dark";
     document.documentElement.classList.add("dark");
     const theme = readTerminalTheme("dark");
-    expect(theme.background).toBe("#05080d");
-    expect(theme.foreground).toBe("#d6e4f7");
-    expect(theme.cursor).toBe("#7dd3fc");
-    expect(theme.selectionBackground).toBe("rgba(125, 211, 252, 0.25)");
+    expect(theme.background).toBe("#0d0d0f");
+    expect(theme.foreground).toBe("#f2f2f7");
+    expect(theme.cursor).toBe("#0a84ff");
+    expect(theme.selectionBackground).toBe("rgba(10, 132, 255, 0.25)");
     expect(theme.black).toBe("#0f172a");
     expect(theme.green).toBe("#4ade80");
     expect(theme.brightWhite).toBe("#f1f5f9");
     // 续十一：暗色不挂 extendedAnsi（undefined → xterm 走默认 256 调色板，#afd7ff 深底高对比）。
     expect(theme.extendedAnsi).toBeUndefined();
-    // finally 恢复调用前的 .dark class（不残留）
+    // finally 恢复调用前的 data-theme + .dark class（不残留）
+    expect(document.documentElement.dataset.theme).toBe("dark");
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
-  test("调用前无 .dark 时读 dark 不残留 class", () => {
+  test("调用前无 data-theme/.dark 时读 dark 后两轨都不残留", () => {
     setTokens(DARK);
     readTerminalTheme("dark");
+    expect(document.documentElement.dataset.theme).toBeUndefined();
     expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
 
   test("selectionBackground：非 #rrggbb primary 原样兜底", () => {
-    setTokens({ ...LIGHT, "--primary": "oklch(0.7 0.1 220)" });
+    setTokens({ ...LIGHT, "--c-primary": "oklch(0.7 0.1 220)" });
     const theme = readTerminalTheme("light");
     expect(theme.selectionBackground).toBe("rgba(oklch(0.7 0.1 220), 0.25)");
   });
@@ -150,12 +152,12 @@ describe("useTerminalTheme", () => {
       ({ resolved }: { resolved: "light" | "dark" }) => useTerminalTheme(ref, resolved),
       { initialProps: { resolved: "light" } },
     );
-    expect(ref.current?.options.theme?.foreground).toBe("#1e293b");
+    expect(ref.current?.options.theme?.foreground).toBe("#1c1c1e");
     // 续九：minimumContrastRatio 实测有害（算法把鲜艳 256 色推成暗沉灰蓝）已关掉，亮暗都 1。
     expect(ref.current?.options.minimumContrastRatio).toBe(1);
     setTokens(DARK);
     rerender({ resolved: "dark" });
-    expect(ref.current?.options.theme?.foreground).toBe("#d6e4f7");
+    expect(ref.current?.options.theme?.foreground).toBe("#f2f2f7");
     expect(ref.current?.options.minimumContrastRatio).toBe(1);
   });
 

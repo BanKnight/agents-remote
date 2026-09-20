@@ -6,8 +6,8 @@ export type Theme = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 
 const THEME_STORAGE_KEY = "theme";
-const DARK_THEME_COLOR = "#020617";
-const LIGHT_THEME_COLOR = "#eef2f7";
+const DARK_THEME_COLOR = "#000000";
+const LIGHT_THEME_COLOR = "#f2f2f7";
 
 /** 主题偏好（用户选择）。`system` = 跟随系统 prefers-color-scheme。持久化到 localStorage，
  * 与 `index.html` FOUC inline script 读同一 key（首帧前注入 `<html>.dark` class 避免 FOUC）。*/
@@ -25,6 +25,9 @@ export function resolveTheme(theme: Theme): ResolvedTheme {
 
 function applyResolvedTheme(resolved: ResolvedTheme) {
   const el = document.documentElement;
+  // v2 双轨（见 styles/index.css 头注）：data-theme 承载 v2 语义 token（:root = dark 基准，
+  // [data-theme="light"] 浅色覆盖）；.dark class 兼容 shadcn 组件内部 dark: variant（过渡并存）。
+  el.dataset.theme = resolved;
   el.classList.toggle("dark", resolved === "dark");
   // 清除 index.html FOUC script 设的 inline backgroundColor，让 index.css
   // `html { background-color: var(--bg-base) }` 接管（否则 inline style 会阻碍切换）。

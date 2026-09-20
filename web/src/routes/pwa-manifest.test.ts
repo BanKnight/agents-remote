@@ -21,8 +21,9 @@ test("PWA manifest exposes installable standalone shell fields", () => {
   expect(manifest.short_name).toBe("智控");
   expect(manifest.start_url).toBe("/");
   expect(manifest.display).toBe("standalone");
-  expect(manifest.theme_color).toBe("#020617");
-  expect(manifest.background_color).toBe("#020617");
+  // v2 token dark 基准（:root）——manifest 是安装定格的静态值，取产品主主题。
+  expect(manifest.theme_color).toBe("#000000");
+  expect(manifest.background_color).toBe("#000000");
   expect(manifest.prefer_related_applications).toBe(false);
 });
 

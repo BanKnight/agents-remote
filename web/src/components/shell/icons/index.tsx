@@ -47,7 +47,7 @@ const svgMap: Record<string, string> = {
   maximize,
   menu,
   minus,
-  openai,
+  openai, // provider 品牌 logo（fill 型，非设计包 SF Symbols 件；anthropic 同理）
   "pages-nav": pagesNav,
   pin,
   plus,

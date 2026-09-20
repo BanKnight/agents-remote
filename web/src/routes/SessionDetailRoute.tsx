@@ -906,10 +906,7 @@ function DetailWorkspace({
         onSendInput={onSendInput}
       />
       {showFiles ? (
-        <div
-          className="absolute inset-0 z-20 flex flex-col"
-          style={{ background: "radial-gradient(circle at top, #0f2d3a 0, #020617 34rem)" }}
-        >
+        <div className="absolute inset-0 z-20 flex flex-col bg-canvas">
           <div className="flex shrink-0 items-center border-b border-neutral-line/40 bg-surface-inset/60 px-3.5 py-2.5">
             <button
               className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-on-surface-muted transition hover:text-on-surface-soft"
@@ -934,10 +931,7 @@ function DetailWorkspace({
         </div>
       ) : null}
       {showGit ? (
-        <div
-          className="absolute inset-0 z-20 flex flex-col"
-          style={{ background: "radial-gradient(circle at top, #0f2d3a 0, #020617 34rem)" }}
-        >
+        <div className="absolute inset-0 z-20 flex flex-col bg-canvas">
           <div className="flex shrink-0 items-center border-b border-neutral-line/40 bg-surface-inset/60 px-3.5 py-2.5">
             <button
               className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-on-surface-muted transition hover:text-on-surface-soft"
@@ -984,27 +978,28 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 /**
- * 从 CSS 变量读取 xterm theme（DESIGN.md「Terminal theme」节）。显式按 resolved 临时切
- * `<html>.dark` class 读 token 再恢复原态——不依赖调用方 class 落盘时序（ThemeSync 兄弟 effect
- * 先于本组件，但防御起见不赌），同 resolved 恒返回同套值：foreground ← --code-text、
- * cursor/selection ← --primary（selection @25%）、ANSI 16 色 ← --terminal-*、
- * background 亮色 ← --surface（#f6f8fb 浅蓝灰，比 surface-inset 灰底干净）/ 暗色 ←
- * --surface-inset（#05080d 近黑，零变化）——分主题取不同层级：浅色终端要干净浅底、
- * 深色要近黑。注意不能用 "transparent"——xterm 的 css.toColor 只支持 #hex / rgb() /
+ * 从 CSS 变量读取 xterm theme（设计包 tokens.json「terminal」缺口，实现侧补充）。显式按
+ * resolved 临时落 `<html data-theme>` + `.dark` 读 token 再恢复原态——不依赖调用方落盘时序
+ * （ThemeSync 兄弟 effect 先于本组件，但防御起见不赌），同 resolved 恒返回同套值：
+ * foreground ← --ink-1、cursor/selection ← --c-primary（selection @25%）、
+ * ANSI 16 色 ← --terminal-*、background ← --bg-codeblock（双主题同档，v2 无分主题取层）。
+ * 注意不能用 "transparent"——xterm 的 css.toColor 只支持 #hex / rgb() /
  * rgba()，canvas 解析路径要求 alpha=0xFF，否则 parseColor fallback 成
  * DEFAULT_BACKGROUND 纯黑 #000，背景永不随主题。
  */
 export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
   const el = document.documentElement;
+  const themeBefore = el.dataset.theme; // 缺省态为 undefined（:root 即 dark 基准，无需属性）
   const darkBefore = el.classList.contains("dark");
+  el.dataset.theme = resolved;
   el.classList.toggle("dark", resolved === "dark");
   try {
     const cs = getComputedStyle(el);
     const v = (name: string) => cs.getPropertyValue(name).trim();
-    const primary = v("--primary");
+    const primary = v("--c-primary");
     return {
-      background: resolved === "dark" ? v("--surface-inset") : v("--surface"),
-      foreground: v("--code-text"),
+      background: v("--bg-codeblock"),
+      foreground: v("--ink-1"),
       cursor: primary,
       selectionBackground: hexToRgba(primary, 0.25),
       black: v("--terminal-black"),
@@ -1028,13 +1023,16 @@ export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
       ...(resolved === "light" ? { extendedAnsi: LIGHT_EXTENDED_ANSI } : {}),
     };
   } finally {
+    // 还原：dataset 赋值会把 undefined 落成字符串 "undefined"（反使 :root 基准失效），单列处理。
+    if (themeBefore === undefined) delete el.dataset.theme;
+    else el.dataset.theme = themeBefore;
     el.classList.toggle("dark", darkBefore);
   }
 }
 
 /**
  * 亮色 256 色精准映射（续十一单色 → 续十二扩为 9 色）。pty 抓 claude 启动+对话 raw ANSI，
- * 列出 `#f6f8fb` 底（--surface，luminance 0.9369）对比度 < 4.5（WCAG AA 不达标）的 claude
+ * 列出 `#f6f6f8` 底（--bg-codeblock，luminance ≈0.94，与 v1 #f6f8fb 同亮度带）对比度 < 4.5（WCAG AA 不达标）的 claude
  * 前景 256 色，逐色映射到达标深色。稀疏数组：目标位填映射色、其余空串 → parseColor 空串
  * fallback DEFAULT_ANSI_COLORS 保留原色（ThemeService._setTheme L129-134），故只动这 9 色、
  * 其余 256 色不动。暗色不挂（浅色在深底高对比，零变化）。
@@ -1164,7 +1162,7 @@ function XtermOutput({
     const term = new Terminal({
       theme: readTerminalTheme(resolvedRef.current),
       minimumContrastRatio: minimumContrastRatioFor(resolvedRef.current),
-      fontFamily: '"Geist Mono", "Fira Code", "Cascadia Code", monospace',
+      fontFamily: 'ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace',
       fontSize: 12,
       // 字重用 xterm 默认 normal(400)（续十一）：续九曾加 500 缓解 WebGL 模糊下笔画偏细，但续十
       // 把桌面端切到 DOM 渲染器（原生字体抗锯齿）、移动端 WebGL 整数 DPR 本就不模糊——两种渲染器
