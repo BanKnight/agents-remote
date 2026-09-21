@@ -18,7 +18,6 @@ import {
   ListGroup,
   ListRow,
   ListRowSkeleton,
-  MobilePageHeader,
   SegmentedControl,
   ShellInput,
 } from "../components/shell/shell-primitives";
@@ -205,28 +204,6 @@ export function PluginsPanel({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * 移动插件一级页面外壳（仿 MobileFilesOverview）：MobilePageHeader title 无 back（一级页面，
- * 底部胶囊切换）+ PluginsPanel 主体。
- */
-export function MobilePluginsOverview() {
-  const { t } = useT();
-  const navigate = useNavigate();
-  // 移动无中栏 tab 树：点已装 skill 行 → navigate /plugins/skill/$name 开 focus 主体
-  //（MobileSkillFocus，对标 MobileFileFocus）。桌面 WorkbenchContent 注入的开中栏 tab 实现不适用。
-  const onOpenSkill = (name: string) => {
-    void navigate({ to: "/plugins/skill/$", params: { _splat: name } });
-  };
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <MobilePageHeader title={t("plugins.title")} />
-      <div className="min-h-0 flex-1">
-        <PluginsPanel onOpenSkill={onOpenSkill} />
-      </div>
     </div>
   );
 }

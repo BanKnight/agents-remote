@@ -215,6 +215,31 @@ const pluginsSkillFocusRoute = createRoute({
   validateSearch: validateWorkbenchSearch,
 });
 
+// 全局 MCP 详情深度页（v2 M6 13，同 /plugins/skill/$ 范式）：/plugins/mcp/$ splat 捕获 server
+// name，deriveWorkbenchRouteContext 派生 focusId=`pluginmcp_${name}`（移动直渲 MobileMcpDetail；
+// 桌面 update effect 提前 return 不开 tab，M9 前桌面无入口）。
+const pluginsMcpFocusRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/plugins/mcp/$",
+  validateSearch: validateWorkbenchSearch,
+});
+
+// M6 插件深度页（redesign-v2 §6.6 / §3.5）：18 技能市场 + 15 市场源管理。workbench layout 子
+//（无 component，layout 渲染——同 /plugins/skill/$ 范式）；deriveWorkbenchRouteContext 派生
+// pluginView="market"/"sources"（移动 MobileWorkbench 分流；桌面 M9 前忽略）。无 focusId——
+// 不进保活 tab 体系。
+const pluginsMarketRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/plugins/market",
+  validateSearch: validateWorkbenchSearch,
+});
+
+const pluginsSourcesRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/plugins/sources",
+  validateSearch: validateWorkbenchSearch,
+});
+
 // 全局文件总览入口（设计 §6 决策 24 / workbench-stable-refactor review 收口）：`/files` 作为
 // workbench layout 子路由（非 rootRoute 平级）——桌面渲染 global 工作台 leftMode="files"（左栏
 // GlobalFilesOverview），移动经 MobileWorkbench 渲染 MobileFilesOverview（GlobalFilesOverview 主体）。
@@ -345,6 +370,9 @@ const routeTree = rootRoute.addChildren([
     filesRoute,
     pluginsRoute,
     pluginsSkillFocusRoute,
+    pluginsMcpFocusRoute,
+    pluginsMarketRoute,
+    pluginsSourcesRoute,
   ]),
   settingsRoute,
   chatSessionDetailRoute,

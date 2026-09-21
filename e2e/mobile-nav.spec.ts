@@ -66,8 +66,8 @@ test("mobile [plugins] nav opens plugins page at /plugins", async ({ page }) => 
   const bottomNav = page.getByRole("navigation", { name: /primary|项目|主/i });
   await bottomNav.getByRole("link", { name: /插件|Plugins/ }).click();
   await expect(page).toHaveURL(/\/plugins$/);
-  // MobilePluginsOverview 渲染（MobilePageHeader title = nav.plugins，用 header 内 text 断言）。
-  await expect(page.locator("header").first()).toContainText(/插件|Plugins/);
+  // MobilePluginsOverview 渲染（v2 09 大标题行 h1 = plugins.title，无 MobilePageHeader）。
+  await expect(page.getByRole("heading", { level: 1, name: /插件|Plugins/ })).toBeVisible();
 });
 
 test("mobile [settings] deep link still renders settings page (D21: entry moved, route kept)", async ({

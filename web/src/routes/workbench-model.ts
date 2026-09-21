@@ -441,6 +441,12 @@ export type WorkbenchRouteContext = {
    * 继承透传值——中栏 tab 切换不改左栏（VSCode 式，左栏模式只由活动栏控制）。
    */
   leftMode?: "auto" | "files" | "plugins";
+  /**
+   * 插件 Tab 深度页视图（v2 M6，§3.5）：home = 09 插件 Tab 主页；market = 18 技能市场；
+   * sources = 15 市场源管理。仅 /plugins/market、/plugins/sources 两个 URL 派生非 home 值，
+   * 移动端 MobileWorkbench 按此分流渲染（桌面 M9 前忽略此维度，leftMode=plugins 左栏不变）。
+   */
+  pluginView?: "home" | "market" | "sources";
   rightTab?: WorkbenchInspectionTab;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
@@ -487,6 +493,25 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
       // PluginsPanel / 移动 MobilePluginsOverview）。无 focusId（插件管理整页，skill 装/卸 + MCP
       // 增删在左栏内完成）。
       return { scope: { kind: "global" }, focusId: undefined, ...s, leftMode: "plugins" };
+    case "/plugins/market":
+      // 18 技能市场（M6 深度页）：scope=global + leftMode 强制 "plugins" + pluginView="market"
+      //（移动渲染市场页；桌面 M9 前忽略 pluginView）。无 focusId——市场页不进保活 tab 体系。
+      return {
+        scope: { kind: "global" },
+        focusId: undefined,
+        ...s,
+        leftMode: "plugins",
+        pluginView: "market",
+      };
+    case "/plugins/sources":
+      // 15 市场源管理（M6 深度页）：同 /plugins/market，pluginView="sources"。
+      return {
+        scope: { kind: "global" },
+        focusId: undefined,
+        ...s,
+        leftMode: "plugins",
+        pluginView: "sources",
+      };
     case "/plugins/skill/$": {
       // 全局 skill 详情 tab focus（对标 /files/file/$，同构）：_splat = skill name。scope=global；
       // leftMode **不强制**，继承 ...s 透传值——从 /plugins 进来透传 plugins 保插件管理左栏
@@ -495,6 +520,17 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
       return {
         scope: { kind: "global" },
         focusId: skillName ? `skill_${skillName}` : undefined,
+        ...s,
+      };
+    }
+    case "/plugins/mcp/$": {
+      // 全局 MCP 详情深度页（v2 M6 13，对标 /plugins/skill/$ 同构）：_splat = server name。
+      // scope=global + leftMode 继承；focusId=`pluginmcp_${name}` 前缀互斥（不进桌面 tab 体系——
+      // MCP 无中栏 tab 类型，update effect 提前 return，渲染层移动直渲 MobileMcpDetail）。
+      const serverName = p._splat ? decodeURIComponent(p._splat) : "";
+      return {
+        scope: { kind: "global" },
+        focusId: serverName ? `pluginmcp_${serverName}` : undefined,
         ...s,
       };
     }
@@ -768,6 +804,14 @@ export function parseFileTabId(tabId: string): string | null {
 /** 从 skill tab id（`skill_${name}`）反解 skill name；非 skill tab id 返 null（路由 skill focus 用）。 */
 export function parseSkillTabId(tabId: string): string | null {
   return tabId.startsWith("skill_") ? tabId.slice("skill_".length) : null;
+}
+
+/**
+ * 从 MCP 详情 focus id（`pluginmcp_${name}`）反解 server name；非该前缀返 null（移动 MCP 深度页
+ * 用，v2 M6 13）。与 skill_ 前缀互斥——`pluginmcp_` 以 `plugin` 开头但不以 `skill_` 开头，无歧义。
+ */
+export function parsePluginMcpTabId(tabId: string): string | null {
+  return tabId.startsWith("pluginmcp_") ? tabId.slice("pluginmcp_".length) : null;
 }
 
 /**

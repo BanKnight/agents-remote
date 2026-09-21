@@ -1797,4 +1797,547 @@
   .acard.off {
     opacity: 0.45;
   }
+
+  /* ---- M6 插件与市场（09 插件 Tab 主页 / 12 技能详情 / 13 MCP 详情 / 14 添加 MCP /
+     15 源管理 / 16 安装审计 / 18 技能市场；17 MCP 市场无数据源不实现，见 §6.6）----
+     原型各页内嵌 style 同名类值有漂移（.sect 三套 margin、.kbtns 两态），按页拆类消歧：
+     .psect=09 主页 13px / .dsect=12/13 详情页 12px（sheet 内组标题复用 M4 .sect）；
+     .kbtns 取 14 添加表单版，16 审计的实底主钮用 .kbtns .p.solid 变体。 ---- */
+
+  /* 09 作用域分段（全局 / 本项目 · <名> ▾） */
+  .segc {
+    display: flex;
+    margin: 14px 16px 0;
+    height: 32px;
+    border-radius: 10px;
+    background: var(--fill-segmented);
+    padding: 3px;
+  }
+  .segc > * {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .segc .on {
+    background: var(--segmented-thumb);
+    color: var(--ink-1);
+    font-weight: 600;
+    border-radius: 8px;
+  }
+  .segc .caret {
+    font-size: 9px;
+    /* 触区扩（role=button 可达性）：负 margin 抵消 padding，视觉零变化、命中区扩到 ~22px。 */
+    padding: 8px 6px;
+    margin: -8px -6px;
+  }
+
+  /* 09 分组小标题（组名 · N + .r 右侧动作） */
+  .psect {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-2);
+    margin: 16px 16px 6px;
+    display: flex;
+    align-items: center;
+  }
+  .psect .r {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--c-primary);
+    font-weight: 600;
+    /* 触区扩：负 margin 抵消 padding（margin-left:auto 保留，分写其余分量）。 */
+    padding: 6px 8px;
+    margin-top: -6px;
+    margin-right: -8px;
+    margin-bottom: -6px;
+  }
+
+  /* 09 卡片（服务器/技能；r1 名称行 + upd 尾标 + d2 副行） */
+  .pcard {
+    margin: 0 16px 10px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    border-radius: 16px;
+    padding: 10px 16px;
+  }
+  .pcard .r1 {
+    display: flex;
+    align-items: center;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .pcard .upd {
+    margin-left: auto;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--c-primary);
+    background: var(--tint-blue);
+    border-radius: 9px;
+    padding: 2px 10px;
+  }
+  .pcard .d2 {
+    font-size: 11.5px;
+    color: var(--ink-2);
+    margin-top: 3px;
+  }
+
+  /* 09 市场入口行 */
+  .mrow {
+    margin: 0 16px 10px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    border-radius: 16px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    cursor: pointer;
+  }
+  .mrow .n {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .mrow .ar {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-left: 6px;
+  }
+
+  /* 12/13 详情头：mono 名称 + 状态 chips（up 橙=有更新）+ 元信息 + 描述 */
+  .dtitle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px 0;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--ink-1);
+  }
+  .dchips {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .dchip {
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 10px;
+    padding: 3px 10px;
+  }
+  .dchip.up {
+    background: var(--tint-orange);
+    color: var(--c-warning-text);
+  }
+  .dmeta {
+    padding: 4px 16px 0;
+    font-size: 11.5px;
+    color: var(--ink-2);
+  }
+  .ddesc {
+    padding: 12px 16px 0;
+    font-size: 13px;
+    color: var(--term-ink);
+    line-height: 1.7;
+  }
+
+  /* 12/13 详情页组标题（12px；sheet 内组标题复用 M4 .sect） */
+  .dsect {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-2);
+    margin: 16px 16px 6px;
+  }
+
+  /* 13 配置键值卡（相邻行分隔线；值右对齐 mono） */
+  .cfg {
+    margin: 0 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    border-radius: 14px;
+    padding: 2px 14px;
+  }
+  .cfg .krow {
+    display: flex;
+    align-items: center;
+    padding: 10px 0;
+    font-size: 13px;
+  }
+  .cfg .krow + .krow {
+    border-top: 1px solid var(--sep-row);
+  }
+  .cfg .k {
+    color: var(--ink-2);
+  }
+  .cfg .v {
+    margin-left: auto;
+    color: var(--ink-1);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+
+  /* 13 注入范围行 */
+  .scope {
+    margin: 0 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    border-radius: 12px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--ink-1);
+    display: flex;
+    align-items: center;
+  }
+  /* 12/13 主行动钮（确认更新）+ 说明 + 危险动作（描边钮）+ 说明 */
+  .cta {
+    display: block;
+    margin: 16px 16px 0;
+    height: 44px;
+    border-radius: 22px;
+    background: var(--c-primary);
+    line-height: 44px;
+    text-align: center;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--on-accent);
+    cursor: pointer;
+  }
+  .ctanote {
+    margin: 8px 16px 0;
+    text-align: center;
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+  .rm {
+    display: block;
+    margin: 16px 16px 0;
+    height: 42px;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--c-danger) 60%, transparent);
+    line-height: 40px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--c-danger);
+    cursor: pointer;
+  }
+  .rmnote {
+    margin: 8px 16px 0;
+    text-align: center;
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+
+  /* 15 源卡（r1 + tag（内置=蓝/官方=绿）+ url） */
+  .scard {
+    margin: 12px 16px 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    border-radius: 14px;
+    padding: 10px 14px;
+  }
+  .scard .r1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .scard .d {
+    font-size: 11.5px;
+    color: var(--ink-2);
+    margin-top: 4px;
+  }
+  .scard .tag {
+    font-size: 10px;
+    font-weight: 600;
+    border-radius: 9px;
+    padding: 2px 9px;
+  }
+  .scard .tag.builtin {
+    background: var(--tint-blue);
+    color: var(--c-primary);
+  }
+  .scard .tag.official {
+    background: var(--tint-green);
+    color: var(--c-success-text);
+  }
+  .scard .url {
+    font-size: 11.5px;
+    color: var(--ink-2);
+    font-family: var(--font-mono);
+    margin-top: 5px;
+  }
+
+  /* 15 添加源虚线钮 + 顶部说明 + 内网模式橙卡 */
+  .addsrc {
+    margin: 12px 16px 0;
+    border: 1.5px dashed var(--sep-strong);
+    border-radius: 14px;
+    height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 13.5px;
+    color: var(--c-primary);
+    cursor: pointer;
+  }
+  .hint {
+    margin: 0 16px;
+    font-size: 11.5px;
+    color: var(--ink-2);
+  }
+  /* 18 来源 chips（选中 = 主色实底；改名避开 M3 行3 运行摘要 .chips）+ 右侧管理源 */
+  .mchips {
+    display: flex;
+    gap: 8px;
+    margin: 12px 16px 0;
+    align-items: center;
+  }
+  .chip2 {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 14px;
+    border-radius: 15px;
+    cursor: pointer;
+    border: 1px solid var(--sep);
+    color: var(--ink-2);
+    background: var(--bg-elevated);
+  }
+  .chip2.on {
+    background: var(--c-primary);
+    border-color: var(--c-primary);
+    color: var(--on-accent);
+  }
+  .mchips .mg {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--c-primary);
+    /* 触区扩：负 margin 抵消 padding（margin-left:auto 保留，分写其余分量）。 */
+    padding: 6px 8px;
+    margin-top: -6px;
+    margin-right: -8px;
+    margin-bottom: -6px;
+  }
+
+  /* 18 市场搜索 */
+  .msearch {
+    margin: 12px 16px 0;
+    height: 38px;
+    border-radius: 12px;
+    background: var(--fill-search);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+
+  /* 18 市场卡（mono 名 + src 章 + 副行 + 右对齐动作/进度） */
+  .mcard {
+    margin: 10px 16px 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    border-radius: 14px;
+    padding: 10px 14px;
+  }
+  .mcard .r1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .mcard .src {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--ink-2);
+    background: var(--bg-elevated2);
+    border-radius: 9px;
+    padding: 3px 10px;
+  }
+  .mcard .installed {
+    margin-left: auto;
+    font-size: 11.5px;
+    color: var(--c-success-text);
+    font-weight: 600;
+  }
+  .mcard .d2 {
+    font-size: 11.5px;
+    color: var(--ink-2);
+    margin-top: 5px;
+  }
+  .mcard .r3 {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 2px;
+  }
+  .btn2 {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 18px;
+    border-radius: 13px;
+    cursor: pointer;
+    background: var(--c-primary);
+    color: var(--on-accent);
+  }
+  .mcard .prog {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--bg-elevated3);
+    margin-top: 10px;
+    overflow: hidden;
+  }
+  .mcard .prog i {
+    display: block;
+    height: 100%;
+    background: var(--c-primary);
+  }
+  .mcard .pct {
+    font-size: 11px;
+    color: var(--c-primary);
+    text-align: right;
+    margin-top: 4px;
+  }
+  .mfoot {
+    margin: 14px 16px 0;
+    text-align: center;
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+
+  /* 14 sheet 内传输类型分段（bg-elevated2 底 + elevated3 选中，与 18 页面版不同） */
+  .stabseg {
+    display: flex;
+    border-radius: 10px;
+    background: var(--bg-elevated2);
+    padding: 3px;
+    margin-top: 12px;
+  }
+  .stabseg > * {
+    flex: 1;
+    text-align: center;
+    padding: 6px 0;
+    font-size: 13px;
+    color: var(--ink-2);
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .stabseg .on {
+    background: var(--bg-elevated3);
+    color: var(--ink-1);
+    font-weight: 600;
+  }
+
+  /* 14/16 sheet 表单：klabel / kfield（primary 60% 描边；mono/plain 变体）/ 键值行（.skrow，避开 03k 实例信息 .krow）/
+     按钮组（14 = 描边取消 + 文字主钮；16 审计 = 实底 .p.solid）/ 脚注。
+     无横向 margin——sheet 容器自带 padding。 */
+  .klabel {
+    font-size: 12px;
+    color: var(--ink-2);
+    margin: 14px 0 6px;
+  }
+  .kfield {
+    height: 38px;
+    border-radius: 10px;
+    background: var(--bg-elevated2);
+    border: 1px solid color-mix(in srgb, var(--c-primary) 60%, transparent);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    font-size: 14px;
+    color: var(--ink-1);
+  }
+  .kfield input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    outline: none;
+    border: none;
+    font: inherit;
+    color: inherit;
+  }
+  .kfield.mono {
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  .kfield.plain {
+    border-color: var(--sep);
+    color: var(--ink-2);
+  }
+  .skrow {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    color: var(--ink-2);
+    margin-top: 14px;
+  }
+  .skrow .v {
+    margin-left: auto;
+    font-size: 12.5px;
+    color: var(--ink-1);
+  }
+  .kbtns {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+  }
+  .kbtns .c {
+    width: 110px;
+    height: 34px;
+    border-radius: 17px;
+    border: 1px solid var(--sep-strong);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13.5px;
+    color: var(--ink-1);
+    cursor: pointer;
+  }
+  .kbtns .p {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--c-primary);
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  /* 16 审计变体：主钮实底占满（14 的 .p 是纯文字） */
+  .kbtns .p.solid {
+    flex: 1;
+    margin-left: 10px;
+    height: 36px;
+    border-radius: 18px;
+    background: var(--c-primary);
+    justify-content: center;
+    color: var(--on-accent);
+  }
+  .kbtns .p.solid:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  /* 确认 sheet 的危险主钮变体（12 卸载 / 13 移除确认；实底 danger） */
+  .kbtns .p.solid.danger {
+    background: var(--c-danger);
+  }
+  .snote {
+    margin-top: 10px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--ink-2);
+  }
 }

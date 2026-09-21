@@ -79,6 +79,7 @@ export function WorkbenchLayoutShell() {
       focusId={ctx.focusId}
       leftMode={ctx.leftMode}
       mode={ctx.mode}
+      pluginView={ctx.pluginView}
       rightTab={ctx.rightTab}
       scope={ctx.scope}
       tab={ctx.tab}
@@ -92,6 +93,7 @@ function WorkbenchContent({
   scope,
   tab: tabFromUrl,
   leftMode = "auto",
+  pluginView,
   mode = "agent",
 }: {
   focusId?: string;
@@ -105,6 +107,9 @@ function WorkbenchContent({
   //（见 workbench-model.ts deriveWorkbenchRouteContext），由各 navigate 粘性透传——活动栏入口
   // 强制，中栏 tab focus 透传不改（VSCode 式）。
   leftMode?: "auto" | "files" | "plugins";
+  // 插件深度页维度（v2 M6，redesign-v2.md §3.5）：/plugins/market、/plugins/sources 派生非
+  // home 值，移动端 MobileWorkbench 分流渲染；无 focusId（不进保活 tab 体系）；桌面忽略。
+  pluginView?: "home" | "market" | "sources";
   // 一级会话页模式（设计 workbench-views.md §3.1）：agent = 现有三栏会话网格；chat = 全局
   // 会话列表（不绑项目，pi SDK 嵌入，Phase 1 列表 CRUD + 占位 detail）。URL `?mode=` 维度，
   // 默认 agent。仅 global scope 一级会话页有意义。
@@ -213,7 +218,9 @@ function WorkbenchContent({
       focusId === "githistory" ||
       focusId === "gitbranches" ||
       focusId.startsWith("gitcommit_") ||
-      focusId.startsWith("wiki_")
+      focusId.startsWith("wiki_") ||
+      // MCP 详情（v2 M6 13）：无桌面 tab 类型（M9 前桌面无入口），防落 default 分支误开 session tab。
+      focusId.startsWith("pluginmcp_")
     ) {
       return;
     }
@@ -774,6 +781,7 @@ function WorkbenchContent({
         createPromptHolder={create.promptHolder}
         focusId={focusId}
         leftMode={leftMode}
+        pluginView={pluginView}
         mode={mode}
         onOpenFile={onOpenFile}
         onOpenGitFile={onOpenGitFile}

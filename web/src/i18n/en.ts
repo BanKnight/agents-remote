@@ -843,9 +843,41 @@ export const en = {
 
   // Plugins（插件入口：skill + mcp 两层作用域，导航重命名为 /plugins）
   "plugins.title": "Plugins",
-  "plugins.backToPlugins": "Back to plugins",
+  "plugins.switchProject": "Switch project",
   "plugins.skillTab": "Skills",
   "plugins.mcpTab": "MCP",
+  // v2 09 plugins tab (scope segment + search + MCP/skills groups + market; §3.5)
+  "plugins.scopeGlobal": "Global",
+  "plugins.scopeProject": "This project · {{name}}",
+  "plugins.scopeProjectEmpty": "This project",
+  "plugins.scopeAria": "Plugins scope",
+  "plugins.pickProject": "Pick a project in the workbench",
+  "plugins.pickProjectHint":
+    "Pick a project to manage skills and MCP servers injected into its agent sessions",
+  "plugins.searchPlaceholder": "Search skills and MCP",
+  "plugins.mcpGroup": "MCP servers · {{n}}",
+  "plugins.skillsGroup": "Installed skills · {{n}}",
+  "plugins.market": "Market",
+  "plugins.manageSources": "Manage sources ›",
+  "plugins.skillMarket": "Skill market",
+  "plugins.marketTitle": "Skill market",
+  "plugins.sourcesTitle": "Market sources",
+  "plugins.sourcesHint":
+    "Sources are catalogs for the skill market; skills install and update through them",
+  "plugins.officialCurated": "Official curated",
+  "plugins.builtinTag": "Built-in",
+  "plugins.officialTag": "✓ Official",
+  "plugins.curatedDesc": "Human curated · ships with releases · works offline",
+  "plugins.skillsShDesc": "skills.sh skill catalog",
+  "plugins.customSourceTag": "Custom",
+  "plugins.addCustomSource": "＋ Add custom source",
+  "plugins.emptyMarket": "Type at least 2 characters to search skills",
+  "plugins.emptyMcp": "No MCP servers yet — tap + to add one",
+  "plugins.emptySkills": "No installed skills yet — install from the market",
+  "plugins.marketFoot":
+    "Sources and types are bound: the skill market has no MCP sources, and vice versa",
+  "plugins.scopeField": "Scope",
+  "skills.installedChip": "Installed",
 
   // Skills（市场发现 / 管理 / 来源）
   "skills.tabDiscover": "Discover",
@@ -885,6 +917,15 @@ export const en = {
   "skills.updating": "Updating…",
   "skills.upToDate": "Up to date",
   "skills.local": "Local",
+  "skills.hasUpdate": "Has update",
+  "skills.installedTitle": "Installed Skills",
+  "skills.skillMdSection": "SKILL.md",
+  "skills.updateNote":
+    "Updates run in the background without interrupting sessions; the new version applies on next run",
+  "skills.uninstallConfirmTitle": "Uninstall Skill",
+  "skills.uninstallConfirmBody":
+    "Uninstalling deletes the local skill files; agents will no longer load it",
+  "skills.auditTitle": "Confirm before install",
   "skills.bringUnderManagement": "Bring under management",
   // 操作按钮 hover tooltip（原生 title=，*Tooltip key 命名；描述性完整句）
   "skills.installTooltip": "Install this skill",
@@ -931,6 +972,15 @@ export const en = {
   "mcp.saveTooltip": "Save MCP server config",
   "mcp.editTooltip": "Edit this server config",
   "mcp.removeTooltip": "Remove this server",
+  "mcp.detailConfig": "Configuration",
+  "mcp.detailScope": "Injection scope",
+  "mcp.scopeGlobalValue": "Global · all agent sessions",
+  "mcp.scopeProjectValue": "This project · {{name}}",
+  "mcp.envMasked": "•••••• (masked)",
+  "mcp.removeNote":
+    "Sessions using this server will lose its tools; new sessions will no longer load it",
+  "mcp.addSheetNote":
+    "MCP servers can access local resources and run commands; changes apply to new sessions",
   "pages.panelAria": "Pages roots",
   "pages.emptyTitle": "No pages roots",
   "pages.emptyDesc": "Map a project directory to a URL path to serve it as a static site.",

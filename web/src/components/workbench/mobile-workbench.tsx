@@ -21,7 +21,9 @@ import { ActionMenu } from "../ui/action-menu";
 import { GlobalFilesOverview } from "../files/global-files-overview";
 import { MobileProjectsHome } from "./mobile-projects-home";
 import { ChatOverview } from "./chat-overview";
-import { MobilePluginsOverview, SkillTabPreview } from "../../routes/PluginsRoute";
+import { MobileMcpDetail, MobileSkillDetail } from "./mobile-plugins-detail";
+import { MobilePluginsOverview } from "./mobile-plugins-home";
+import { MobileMarketSources, MobileSkillMarket } from "./mobile-plugins-market";
 import {
   collectLeaves,
   findTabRefLeaf,
@@ -32,6 +34,7 @@ import {
   inferSessionTypeFromId,
   parseFileTabId,
   parseGitCommitFocusId,
+  parsePluginMcpTabId,
   parseSkillTabId,
   parseWikiFocusId,
   projectTabStrip,
@@ -95,6 +98,8 @@ type MobileWorkbenchProps = {
    * 移动端在此分支消费。
    */
   leftMode?: "auto" | "files" | "plugins";
+  /** 插件 Tab 深度页视图（v2 M6 §3.5，WorkbenchRoute 注入 ctx.pluginView；见 workbench-model）。 */
+  pluginView?: "home" | "market" | "sources";
   /** 项目工具原位（v2 M3-b：?tab=files/git/wiki，与桌面 middle tab 同构；WorkbenchRoute 注入 ctx.tab）。 */
   tool?: WorkbenchMiddleTab;
   /** 工具切换（WorkbenchRoute 注入 onTabChange：写 URL ?tab + atom 记忆）。 */
@@ -133,6 +138,7 @@ export function MobileWorkbench({
   createPromptHolder,
   focusId,
   leftMode,
+  pluginView,
   mode,
   onOpenFile,
   onOpenGitFile,
@@ -187,7 +193,13 @@ export function MobileWorkbench({
         style={mainStyle}
       >
         {leftMode === "plugins" ? (
-          <MobilePluginsOverview />
+          pluginView === "market" ? (
+            <MobileSkillMarket />
+          ) : pluginView === "sources" ? (
+            <MobileMarketSources />
+          ) : (
+            <MobilePluginsOverview />
+          )
         ) : leftMode === "files" ? (
           <MobileFilesOverview />
         ) : mode === "chat" ? (
@@ -215,8 +227,8 @@ export function MobileWorkbench({
     );
   }
 
-  // skill focus（focusId 形如 skill_tdd，name=skill 名）：global scope（/plugins/skill/$）用
-  // MobileSkillFocus 浮窗式只读预览；project scope skill 走 tab 带（上方 project 分支）。
+  // skill focus（focusId 形如 skill_tdd，name=skill 名）：global scope（/plugins/skill/$）直渲
+  // MobileSkillDetail（v2 M6 12 详情形态）；project scope skill 走 tab 带（上方 project 分支）。
   const skillName = parseSkillTabId(focusId);
   if (skillName !== null) {
     return (
@@ -224,7 +236,22 @@ export function MobileWorkbench({
         className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
         style={mainStyle}
       >
-        <MobileSkillFocus name={skillName} />
+        <MobileSkillDetail name={skillName} />
+      </main>
+    );
+  }
+
+  // MCP 详情（focusId 形如 pluginmcp_ctx7，v2 M6 13）：global scope（/plugins/mcp/$）直渲
+  // MobileMcpDetail（13 详情形态：配置段 + 注入范围 + 移除）。必须在 skillName 分支后（前缀互斥，
+  // 顺序无关）、MobileFocusBody 兜底前拦截，防落进未知 focus 分支。
+  const mcpServerName = parsePluginMcpTabId(focusId);
+  if (mcpServerName !== null) {
+    return (
+      <main
+        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
+        style={mainStyle}
+      >
+        <MobileMcpDetail name={mcpServerName} />
       </main>
     );
   }
@@ -282,50 +309,6 @@ function MobileFileFocus({ path }: { path: string }) {
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <FileTabPreview path={path} />
-      </div>
-    </div>
-  );
-}
-
-/**
- * 移动端 skill 聚焦浮窗（对标 MobileFileFocus，设计 §6 决策 3 同款范式）：`/plugins/skill/$name`
- * URL 在移动端用此组件打开。单行 header（◄ 返回 /plugins + skill name + ✕）+ SkillTabPreview
- * 只读 SKILL.md 预览（详情只读，区别于 FileTabPreview 可编辑）。返回 / ✕ = navigate 回 `/plugins`
- * 插件管理列表（对标 MobileFileFocus 回文件树）。复用 MobileTabHeader 保持同款 header 结构。
- */
-function MobileSkillFocus({ name }: { name: string }) {
-  const { t } = useT();
-  const navigate = useNavigate();
-  const back = () => {
-    void navigate({ to: "/plugins" });
-  };
-  return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <MobileTabHeader
-        activeTabId="skill"
-        back={{ ariaLabelKey: "plugins.backToPlugins", onClick: back }}
-        onTabSelect={() => {
-          /* skill focus 单 tab，无切换 */
-        }}
-        tabs={[{ id: "skill" as const, label: name }]}
-        trailing={
-          <div
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
-            role="group"
-          >
-            <button
-              aria-label={t("session.close")}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
-              onClick={back}
-              type="button"
-            >
-              <ShellIcon className="h-4 w-4" name="close" />
-            </button>
-          </div>
-        }
-      />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <SkillTabPreview name={name} />
       </div>
     </div>
   );

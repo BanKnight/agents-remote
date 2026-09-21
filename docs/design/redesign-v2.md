@@ -96,9 +96,9 @@
 | M1 | 组件化层 | tokens.css 语义变量做 `@theme inline` 新基座（shadcn vars 对齐新语义名）；components.css 原语重建（pill/chip/sheet/seg4/side/pane…）；30+ 图标内嵌 path 移植注册；`data-theme` 双主题机制；移除 Geist | 双主题全成立；门禁全绿；design-reviewer 过 | ✅ 2026-09-20：①`index.css` 重写 = v2 token 底座（`:root` dark 基准 + `data-theme="light"` 覆盖 + shadcn 单份映射 + v1 桥接 ~250 处旧 utility 零改动换新外观）②`v2-primitives.css` 新建（components.css 原语 1:1，`@layer components`；`.grow`→`.growrow` 避让 Tailwind utility）③29 图标重绘（20 中心坐标系 viewBox=-10 -10 20 20 + `data-symbol` SF Symbols 命名锚点；anthropic/openai 品牌 fill logo 例外保留）④双主题机制（theme.ts `applyResolvedTheme` 双轨：data-theme + .dark class；FOUC inline script；Geist 移除→系统字体栈）⑤偏离记档 3 条 + 对比度已知限制（附录「主题切换机制」节）。验证：探针 61/61（token 两态/桥接换值/双轨/FOUC/实时切换）；机检 HEX 11 < 基线 15；e2e 29/29；**design-reviewer 复审通过**（首轮 2 高 2 中 4 低全修复） |
 | M2 | IA 骨架 | 移动 4 Tab（D21）+ 桌面 Sidebar；L0 登录页；深度模型 L1→L2→L3；工作台 3 行骨架；`/`=上次项目（D4） | 路由切换零会话销毁；门禁全绿 | ✅ 2026-09-20：①移动 4 Tab（`mobile-primary-nav.tsx`：项目/工作台/文件/插件；[设置] 自底 nav 移除，D21 移到项目页 ⚙ push——M7；`/settings` 路由保留深度链接不破）②桌面 Sidebar 换代（`sidebar.tsx` 新建，ActivityBar 48px 图标条 → 250px 竖排列表；与移动 4 Tab 同构：同 label 键 + 同图标语义 + 同 active 判定；`workbench-shell.tsx` prop `activityBar`→`sidebar`，`SIDEBAR_WIDTH = "250px"` 对齐 `05-mac-workspace.html` `.side{width:250px}`；`activity-bar.tsx` + 其测试 `git rm`——我的改动造成的零消费孤儿）③L0 登录页对齐 `06-login.html`（logo 徽章 72×72/圆角 18/主色底/`size-10` on-accent 图标、品牌名 22px bold、tagline footnote、服务器 field `h-11 rounded-xl` 等宽 + ›、密码 field、胶囊钮 `h-[46px] rounded-full`、hint、底部语言条 + PWA 提示仅非 standalone）④深度模型 L1→L2→L3 判定现有路由树已满足（pathless layout + `/projects/$key` push + 工具子路由），未新增路由 ⑤工作台 3 行骨架**有意留 M3** ⑥D4「直达上次位置」（`/` = beforeLoad 跳板读 `workbench.lastProjectKey` → replace 跳 `/projects/$key` 或 `/projects`；`WorkbenchRoute` project scope effect 写入；try/catch + 类型守卫 + `replace: true` 防历史污染）。**e2e 基线修复**：登录文案改版（`Unlock console`→`Sign in`）+ D21 IA 变更破 100% 旧断言（29/29 全红）—— 按 memory「基线 harness 必须绿」不等 M10 修，当场适配 21 处按钮定位器 + `mobile-nav.spec` 重写 v2 IA + `middle-tab-left.spec` 活动栏 [会话]→[项目] + 探针登录文案，**恢复 29/29 绿**。验证：探针 20/20（IA 骨架）+ 61/61（双主题无回归）；四门禁全绿（api 781 / shared 9 / web 670，web −3 = 删 activity-bar.test）；CSS 落盘硬闸过；token 机检 HEX 11 无新增 |
 | M3 | 主页对齐 | 项目 Tab（Large title+搜索+活动卡+审批入口+置顶紫标）+ 工作台逐状态（agent/idle/error/offline/terminal/chat） | 对照 02/03 系列逐页；design-reviewer 过 | ✅ 2026-09-21：a–d 全部完成，详记 §6.1「M3 收口补记」 |
-| M4 | 工具与深度页 | Git/文件/Wiki 原位高亮切换；L3 详情（preview/diff/wiki reader/git history/commit/branches）；Wiki 注入协议落地（D13） | 只读边界成立 | ⬜ |
-| M5 | 浮层与审批 | sheet/popover 体系；审批中心服务端聚合（D8/D23） | security-reviewer 必过 | ⬜ |
-| M6 | 插件与市场 | 插件 Tab（作用域分段+MCP 组+技能+市场四页） | 对照 09/12/13/14/15/16/17/18 | ⬜ |
+| M4 | 工具与深度页 | Git/文件/Wiki 原位高亮切换；L3 详情（preview/diff/wiki reader/git history/commit/branches）；Wiki 注入协议落地（D13） | 只读边界成立 | ✅ 2026-09-21（`1891a43`）：详记 §6.2 开工摊牌 + §6.3 收口补记；探针 41/41；design-reviewer 修复后通过 |
+| M5 | 浮层与审批 | sheet/popover 体系；审批中心服务端聚合（D8/D23） | security-reviewer 必过 | ✅ 2026-09-21（`1814270`）：详记 §6.4 开工摊牌 + §6.5 收口补记；探针 45+26；三份 reviewer 均修复后通过（security 五红线全过） |
+| M6 | 插件与市场 | 插件 Tab（作用域分段+MCP 组+技能+市场四页） | 对照 09/12/13/14/15/16/17/18 | ⬜（进行中） |
 | M7 | 设置与登录 | 设置页（通用/Runtime/自动重试/服务器/退出）；登录完整态 | 对照 06/07 | ⬜ |
 | M8 | 缺口功能 | 文件搜索/移动到/上传冲突三选/拖拽上传/采用项目自动/全局文件写边界/子 agent 概览条 | security-reviewer 必过 | ⬜ |
 | M9 | 多端 | iPad 三栏；Mac 分屏+Inspector+状态栏审批+⌘ 快捷键；触屏/hover 正交 | 细节先与用户确认（§7） | ⬜ |
@@ -229,6 +229,58 @@ M5 = 浮层体系 + 审批中心（总纲 §6），基于现状盘点拍板：
   - **P2-3 已修**：respond 失败静默（无 `onError`、respondAll 无条件清确认态、共享 isPending）→ mutation `isError` 行内提示（`text-error`，SessionDetailRoute 先例）+ `respondAll` 改 `allSettled` 后清确认态。**记档**：按钮 pending 粒度不细化（并发下 isPending 跟踪最新一次）。
   - **P3 已修 2 项**：`parsed.response.request_id` 补可选链；approval-center 帧构造抽 `frame()` 单源 + `sendSnapshot` 挂 catch（对齐 claude-stream open 纪律）。**P3 记档 5 项**：并发 respond 同 requestId 双写（CLI 按 id 去重无害）、`resolveSessionNames` 串行 IO、`summarizeControlInput` 先 stringify 后截断、hot 启发跑在截断后摘要上（假阴性/假阳性，仅颜色）、approvals WS 无重连心跳（15s refetch 兜底）。
 - **security-reviewer（M5-b 服务端）**：**五条红线全过**（鉴权覆盖 / PROJECTS_ROOT 不逃逸 / 注入面 / 密钥 / 回调装配），无 P1。P2-1 = code-reviewer P2-2 同一处（close 注销缺口，两方独立发现互相印证），已修。P3-1 = code 的 P2-1（input null，已修）；P3-2/P3-3 已修。**关键核验**：`validateProjectName` 拒绝 `/\`/`\0`/`.`/`..`，respond 的 projectName 仅作 registry 匹配键不入文件系统路径；整帧 `JSON.stringify` 保证单帧边界，无用户可控字符串拼接；完整 input 只存服务端内存，协议只出 80 字符摘要。
+
+## §6.6 M6 开工摊牌（2026-09-21）
+
+M6 = 插件 Tab + 市场体系（原型 09/12/13/14/15/16/17/18）。基于现状盘点（`PluginsRoute.tsx` 1014 行现有三 tab：Discover/Manage/Sources + `McpPanel`；后端 `/api/skills/{search,installed,preview,install,uninstall,updates,update,sources,task/:id/events}` + `/api/mcp{,/add,/remove,/update}`）逐条对齐：
+
+1. **能力边界裁定（核心，决定每页画什么）**——spec §214 定义 `McpServer { id, scope, name, status, tools[], secret_ref }`，但**现有后端 `McpServerEntry` 只有 `{name, type, command, args, env, url, headers}`**：不 connect、不 list tools、无运行时状态。故：
+   - **13 MCP 详情**：配置段（命令/args/url/env 脱敏）**有数据源**→ 画；「● 已连接 · 运行中 / 启动于 N 小时前 / 注入工具 · N / 重启」**无数据源**→ 不画（诚实呈现，补后端归 M8 缺口批次）。
+   - **14 添加 MCP**：表单字段（名称/类型/命令/args/env/作用域）**全部有数据源**（`AddMcpServerRequest`）→ 完整实现，含 stdio/URL 类型联动、密钥输入走 `env` 键值行、作用域 user/project 分段。
+   - **16 安装审计**：校验和（sha256）与权限声明（manifest）**无数据源**（skills.sh search 只回 name/installs/source，无详情端点）→ 审计 sheet 保留结构但只画有据字段（名称/来源分级/安装量 + 作用域选择 + 注入工具预览降级为「技能名 + 来源」）；校验和/权限声明行不画。
+   - **17 MCP 市场**：**无 MCP registry 数据源**（无远端目录 API）→ 页面不实现；入口在 09 市场段标注为「技能市场」单入口（MCP 市场行不画）。**记档**：若后续接入 registry.modelcontextprotocol.io，归独立批次。
+   - **18 技能市场**：`/api/skills/search`（skills.sh）**有数据源**→ 完整实现（源 chips + 搜索 + 卡 + 安装 → 审计 → 进度 → 已安装）。
+   - **15 市场源管理**：`/api/skills/sources` CRUD **有数据源**→ 实现（源卡 + 开关 + 添加自定义源 + 内置/官方 tag）；「上次同步 N 分钟前」无数据源不画。
+2. **作用域双通道**（spec §3.5 编号①/②）：skill 侧 `scope: "project" | "global"`（`InstalledSkill.scope`）+ MCP 侧 `McpScope: "user" | "project"`——两套命名（历史），UI 统一呈现为「全局 / 本项目」分段；「本项目 · <项目名> ▾」点 ▾ 复用 03l 切换器换项目；未选项目时本项目段空态引导（编号⑥）。
+3. **深度页路由**（L2/L3）：09 = L1 插件 Tab（移动 4 Tab 之一，已有）；12/13/14/15/16/17/18 = push 子路由（`/plugins/skill/$name`、`/plugins/mcp/$name`、`/plugins/sources`、`/plugins/market`）；14/16 = sheet（复用 M5 `MobileSheet`，桌面 = Dialog）。
+4. **技能更新流**（12）：「有更新」chips 来自 `/api/skills/updates`（手动触发，避 GitHub 限速）；更新确认 → `POST /api/skills/update`（202 + SSE task 流，`waitForSkillTask` 既有）；卸载 → `POST /api/skills/uninstall` 需确认。
+5. **与工作台去重**（spec §3.5 规则）：项目工作台**不放**技能管理——M6 不新增工作台入口，只做 Tab + 深度页。
+6. **桌面/iPad**：09m/17/18 桌面版归 M9（多端），本里程碑只做移动形态 + 数据层（与 M4 同口径）。
+
+## §6.7 M6 收口补记（2026-09-21）
+
+**落地清单**：
+- **M6-a（09/18/15 + 体系）**：`pluginView` 路由维度（`WorkbenchRouteContext.pluginView: "home"|"market"|"sources"`，`/plugins/market`、`/plugins/sources` 派生非 home 值；无 focusId 不进保活 tab 体系；桌面 M9 前忽略）；09 主页（大标题 + `.segc` 作用域分段 + 搜索 + MCP 组 + 技能组 + 市场段）；18 技能市场；15 源管理；组件文件 `mobile-plugins-home.tsx` / `mobile-plugins-market.tsx`。
+- **M6-b（12/13/14/16 + 接线）**：12 技能详情（`mobile-plugins-detail.tsx`）；13 MCP 详情；14 添加 MCP sheet；16 安装审计 sheet（替换 M6-a 的 v1 `InstallConfirmDialog` 过渡）；新路由 `/plugins/mcp/$`（focusId=`pluginmcp_${name}`，同 `/plugins/skill/$` 范式；桌面 update effect 提前 return 防误开 tab，M9 前桌面无入口）；09 接线：MCP 卡（global → 点击进 13；project → 静态卡记档）＋ 添加入口（14 sheet，scope 随段）；技能卡 project scope 分流 `/projects/$key/skill/$`（global 走 12）；`MobileSkillFocus` 旧浮窗删除换 12 形态。
+- **CSS 消歧（M6-a 定，M6-b 修正）**：同名类冲突拆名——`.psect`（09 主页 13px）/ `.dsect`（12/13 详情 12px）/ `.mchips`（市场 chips）/ `.skrow`（sheet 键值行；M6-b 修正 `.skrow .v` 后代选择器 M6-a 漏改）/ `.stabseg`（14 sheet 内三段）/ `.kbtns .p.solid`（16 实底主钮）；M6-b 新增 `.kbtns .p.solid.danger`（确认 sheet 危险主钮）。M6 段 CSS 全部在 `@layer components` 内（第 1459 行起 M5 段内追加）。
+
+**记档项（能力边界与实现取舍）**：
+1. 09 搜索 = 本地过滤已装两组列表；市场远端搜索在 18 页内（原型编号③语义拆分）。
+2. 技能卡 d2=path（`InstalledSkill` 无 description）；12 详情 ddesc 用 `preview.description`（frontmatter，有据）。
+3. MCP 卡 d2=`类型 · command/args|url`（有据字段）；不画「● 已连接 / N 个工具」（§6.6）。
+4. 「有更新」chip 仅手动「检查更新」出结果后显示（避 GitHub 限速）；09 `.r` 钮、12 chip + CTA 三处同源（updates 缓存；update 完成后 hook 乐观置 false，chip/CTA 消失）。
+5. 12 不画 upcard changelog / arow「注入能力」/「已启用」chip / 版本号——均无数据源（`SkillUpdateStatus` 只有 hasUpdate/manageable/source*；skill 无 capabilities；npx skills 不回版本）；更新 CTA 文案不带版本号。
+6. 12 的 SKILL.md 正文段为实现扩展（有据：`useSkillPreview` 读本地文件），原型 12 无此段——保留 v1 起的只读预览能力不删功能。
+7. 13 env 脱敏：键名可见、值恒 `••••••（脱敏）`，真值不进 DOM（探针硬断言）；「编辑」入口不画（原型 ⋯ 菜单无移动容器，记档）。
+8. 14 传输类型 `.stabseg` 画三段（原型两段 stdio/SSE——真实 `McpServerType` 有 http 第三值，字段同为 URL）；主钮 = `.p` 文字钮「添加 ›」（原型同），「自动连接并列出工具」不画（后端 spawn 时 `--mcp-config` 注入，无独立 connect 生命周期），snote 说明真实生效时机（新会话加载）。
+9. 14/16 的信任确认为一段式（sheet 内 snote 保留桌面 Dialog 同款警告文案，表单提交即确认）——桌面为常驻表单才需二段确认；security-review 意见见下。
+10. 16 只画名称/来源章/安装量/作用域行；sha256、权限声明、注入工具预览不画（§6.6）。
+11. 15 不画源 toggle/「上次同步」/offcard/MCP Registry 卡（§6.6）；自定义源移除 = 卡内 danger 文字钮（原型无移除操作，但 `removeSource` 能力存在需出口）。
+12. 03l 切换器在插件页点会话行降级为只切项目（插件页无会话上下文，激活会话是工作台语义）。
+13. project scope MCP 卡暂无详情入口（`/plugins/mcp/$` 只承载 global；project scope 无 MCP 深度页历史缺口，扩张归 M8/M9 评估）。
+14. 12/13 的卸载/移除确认最终形态 = `useConfirm()` Alert（spec §5：删除类确认走 Alert 不走 sheet；移动形态 = iOS action sheet 红字 destructive）——design-reviewer P2-3 修正初版 M5 sheet 确认卡（「sheet=表单/内容承载，Alert=确认」分工）；`.kbtns .p.solid.danger` CSS 保留（16 实底钮族备用）；失败 error 行渲染在 rmnote 下方可重试（与 12 的 update.error 行同模式）。
+15. 18 安装进度 = pulse 动画无百分比（`SkillTaskFrame` 两态状态机）；原型 tabseg 双段不画（17 不实现，单段无意义）。
+16. e2e `mobile-nav.spec.ts` plugins 断言改 h1 大标题（09 页无 MobilePageHeader）。
+
+**验证**：探针 `scripts/probe-v2-m6-plugins.mjs` 59 断言全绿（6 Part：09 几何与过滤/12 详情与卸载确认 Alert/13 env 脱敏硬断言/14 stabseg 切换 + POST payload/18+16 安装全流/15 三态卡；reviewer 修复后复跑，新增 `.back` 可见文字断言）；四门禁 + CSS 落盘硬闸 + token 机检（基线 11 处存量零新增）；e2e 全套 29/29（reviewer 修复后终验）。
+
+**reviewer 结果**（三份报告，全部「修复后通过」；P1 零）：
+
+- **security-reviewer：通过**。信任确认为一段式（14/16 sheet 内 snote 保留桌面同款警告文案，表单提交即确认）评估可接受；2 P3 记录：① 12 SKILL.md 正文段是攻击面扩大（渲染安装技能的任意 markdown——`MarkdownString` 沿用 v1 既有的 sanitize 面，移动页与桌面同源，无新面）；② 13 env 脱敏为内存既有面（后端 API 本就回传 env 真值，移动端只是渲染层脱敏，真值不进 DOM 由探针硬断言）。
+- **code-reviewer：1 P2 + 5 P3，全部已修并复验**。P2 = `MobileAddMcpSheet` busy 期 `onOpenChange` 无守卫（scrim/Esc 关闭会让迟到 settle 的 error 残留到下次打开）→ 加 `!addServer.isPending` 守卫。P3 = ① 技能卡 chip 收敛条件冗余（`{!projectName && hasUpdateNames.has(...)}`）；② 09 `describeMcpTarget` 与 detail 的 `mcpTypeLabel` 重复实现 → 复用单一实现；③ `PluginsRoute` 的 `InstallConfirmDialog` 过渡期 export 已失消费者 → 撤 export 回 `function`；④ 15 `removeSource.mutate` 失败静默 + unhandled rejection → 改 `mutateAsync` + error 渲染行 + `.catch` 留表单；⑤ 添加源表单 `.then` 无条件关表单 → 成功才清字段关表单。
+- **design-reviewer：3 P2 + 6 P3，全部已修并复验**。P2-1 = M6 新文件混用 v1 过渡桥接 utility（`text-on-surface*`/`bg-surface*`/`border-neutral-line`）→ 全量清扫换 v2 语义（`text-ink-1/2`、`bg-elevated/elevated2`、`border-sep`），rg 机检零残留。P2-2 = `PluginNav` 返回键自绘图标钮偏离原型 `.back` 设计语言 → 重构为 `.back` 类 + `backLabel` 可见文字（12=「已安装技能」、13/15/18=「插件」；对齐 mobile-project-header 同款）。P2-3 = 12/13 删除类确认用 sheet 违反 spec §5「删除/关闭确认=Alert」→ 改 `useConfirm()`（confirm-dialog.tsx，移动形态 iOS action sheet 红字 destructive），记档项 14 同步改写，探针 Part 2 断言同步换 Alert 形态。P3-4 = 09 ＋ 钮改裸 ＋ 字形 + `aria-label`（mcp.add）。P3-5 = v2-primitives.css ~227 行零消费死码删除（`.pcard .live`/`.dchip.en`/`.upcard`/`.arow`/`.trow`/`.stcard`/`.scard .toggle`+散写 #fff/`.scard .tm`/`.offcard`/`.tabseg`/`.mcard .ver`/`.perm`/`.tools`/`.tool`/`.mrow .c`/`.scope .ar`/`.kfield .add`，14 块逐块 rg 机检零消费后 python 删；`.tree .trow` 是 tree 组件活代码不动；M8 补后端面时按需重落）。P3-6 = 09 segc ▾ 补 `tabIndex`+`aria-label`（plugins.switchProject）+ Enter/Space 键盘路径。P3-7 = `skills.installedTitle` 保留（P2-2 修复后作 12 backLabel 消费）；`plugins.backToPlugins` 失去消费者删除。P3-8 = 12 dtitle 名称包 `min-w-0 truncate`（长技能名防溢出）。P3-9 = `.psect .r`/`.mchips .mg`/`.segc .caret` 触区扩（负 margin 抵消 padding，视觉零变化；`.psect .r`/`.mchips .mg` 的 `margin-left:auto` 分写保留）。
+
+**待定项汇总（M6 记档 + reviewer P3 记录）**：SKILL.md beacon 面（security P3①）、env 内存既有面（security P3②）、project scope MCP 详情入口（记档 13）、死码 CSS 按需重落（P3-5）——均已记入 M8 缺口清单跟踪。
 
 ## §7 待定项跟踪
 
