@@ -436,6 +436,18 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
   - **〔低〕已修两条**：⌘F 计数器 atom remount 重放自动聚焦（effect 只判 `>0`，切页回来弹焦点）→ `lastFocusRequest` 只响应递增沿；leftPanel 末分支注释归因（实为 /files/file/$ 深链透传 leftMode=files + focusId 的可达路径，非不可达兜底）。
   - **〔低〕记档不修**：移动 leftMode=settings 深链首帧闪 MobileProjectsHome 再跳 /settings（仅深链可达，正常导航不产生该 URL）；filter 两次 trim/toLowerCase（列表量级小）；mainPage 切换卸载中栏 tab → xterm/WS 重挂数百 ms（§6.10-9 拍板语义：会话服务端不销毁、与移动切 Tab 同语义，高频切换成本已知取舍）；settings 模块并入主 chunk ~4-5KB gzip（SettingsRoute 本就静态 import 同模块，lazy 拆分早已低效）；10m 列表 pcard 分组 vs FilesPanel 扁平列表 + 工具行（M4/M8 既有组件承载）；09m main 三段分组 vs ManageTab 文字 tab（M6 已审形制）；sidewin 项目/实例树 + footnav 三项 vs 4 主导航 + footnav 设置（M2 D21 既定 IA）；MobileMcpDetail back 不带 sticky search（显式返回列表语义）；10m 搜索行内「⌘F」角标未还原。
 
+**批次 e 落地补记（2026-09-22，安全与键盘杂项收尾）**：
+- **resolveCreateTarget realpath 复核（security P3②）**：词法 relative 检查看不到 symlink 目标——PROJECTS_ROOT 顶层 symlink 目录在采用语义下会让后续 readdir/stat 带出根。realpath(target) 后 relative(rootPath, targetReal) 复核（rootPath 已由 resolveProjectsRoot realpath 化）；ENOENT = 全新目录放行（mkdir 语义），词法层已兜住。新增测试：顶层 symlink 指向根外 → PROJECT_PATH_OUTSIDE_ROOT。根内 symlink 放行（不逃逸，「采用 a 即 b 的内容」边界安全）。
+- **searchFiles 遍历总量上限（security P3①）**：结果上限 FILE_SEARCH_LIMIT 只兜「命中多」，兜不住「匹配少但目录树巨大」（全树 walk 无上界）。新增 FILE_SEARCH_VISIT_LIMIT=20000，visited 计数达限置 truncated（语义一致：结果可能不完整）；options.visitLimit 供测试注入小上限。新增测试：visitLimit=2 + 3 文件 → truncated=true。
+- **project-files.ts rg binary 附带修复**：751 行正则把控制字符写成**字面字节**（含 NUL）→ rg 判 binary 全文件检索失灵（须 -a）。改 \uXXXX 转义序列（语义等价）；oxlint no-control-regex 因此可见化——加 eslint-disable-next-line（该函数职责就是检测二进制控制字符，非输入校验）。教训：**字面控制字节写成转义序列，否则检索工具判 binary**；format hook 排版可能把箭头函数体换行，eslint-disable-next-line 要放在正则所在行的紧邻上一行。
+- **focus-visible 统一环**：v2-primitives.css 新增 .setrow/.logout/.srow2/.footnav button/.seg4 span 五类 :focus-visible 规则（outline 2px solid --c-primary + offset -2px 内嵌防裁切）——浏览器默认 outline 深浅主题各一套、与 token 体系脱节。探针 I 段实测：Tab 激活键盘启发式 → el.focus() → matches(":focus-visible") + outline 2px solid。
+- **.ar 对比度（M9 遗留收口）**：.setrow .ar「›」ink-3 深浅 1.86/1.68 < WCAG 3:1 UI 下限 → 提 ink-2（5.94/3.26 两态达标）。CSS 注释内嵌机检数据。
+- **seg4 aria-controls**：作用域 seg4 span 补 aria-controls=instance-scope-panel + 内容容器 id/role=tabpanel——role="tab" 语义闭环（键盘 Enter/Space 批次 b 已有）。
+- **w-[52px] 静态核对 ✓**：SettingsRoute 返回占位 w-[52px] = 原型 07 固定 52px 对齐居中标题（代码按原型保持）。**真机项交用户**（M10 总验收时一并验证）。
+- **批次 e 验证**：探针 probe-v2-m9-e-focus-a11y 14/14 三连；api 816（+2 新测试）全过；四门禁 + CSS 硬闸 + token 机检（11 处既有零新增）过。reviewer：security/code/design 三份（perf 无渲染热路径改动跳过）。
+
+- **批次 e reviewer 三份处理（2026-09-22，security/code/design 一次通过 → 0 高 0 中 9 低）**：security 确认三层防线闭环（词法 relative → realpath → real-relative；rootPath realpath 化假设成立；错误码零路径泄漏；visitLimit 用户不可达；TOCTOU 窗口毫秒级且在信任边界内记档——若加固 = mkdir EEXIST 分支二次 realpath 复验一行）；code 确认 real 层有意不做一级限制（symlink 指根内深层内容仍在根内）、visitLimit: 0 fail-closed 自洽、探针键盘启发式假设三连验证；design 确认 --c-primary 两态与 tokens.json 逐值一致、outline 随圆角、「值 ›」同灰阶为 iOS/macOS 惯例非倒挂。**已顺手修**：.ar 内嵌注释挪规则块上方（formatter 不再折行三行 value）。**记档不修**：TOCTOU 毫秒窗口；visitLimit NaN 未 clamp（路由层不透传，暴露时先数值校验）；ARIA tabs pattern 完整形态（tab id + aria-labelledby + roving tabindex）；focus-visible 环未覆盖 .pcard/.plus（默认 outline 仍在非缺口）；根内 symlink 放行对照测试；原生行 outline vs shadcn ring 两套焦点语言并存（分层形态不同，不强制合并）。
+
 **记档不做**：iPad 竖屏专用布局（沿用移动拉宽）；iPad 竖屏分屏（触屏分屏交互成本高，桌面独占）；画中画/多窗口；PWA 桌面安装形态。
 
 ## §7 待定项跟踪

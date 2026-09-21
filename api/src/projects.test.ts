@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ProjectService } from "./projects";
@@ -86,6 +86,18 @@ test("createProject rejects root, nested, outside, empty, and file targets", asy
   });
   await expect(service.createProject("file")).rejects.toMatchObject({
     code: "PROJECT_TARGET_INVALID",
+  });
+});
+
+test("createProject rejects a first-level symlink pointing outside PROJECTS_ROOT", async () => {
+  await mkdir(join(outside, "elsewhere"), { recursive: true });
+  await symlink(join(outside, "elsewhere"), join(root, "evil"));
+
+  const service = new ProjectService(root);
+
+  // 词法 relative 检查对 symlink 透明（root/evil 一级通过），realpath 复核是唯一防线。
+  await expect(service.createProject(join(root, "evil"))).rejects.toMatchObject({
+    code: "PROJECT_PATH_OUTSIDE_ROOT",
   });
 });
 

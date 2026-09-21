@@ -6,7 +6,7 @@ import type {
   TerminalSession,
 } from "@agents-remote/shared";
 import { basename, isAbsolute, relative, resolve } from "node:path";
-import { mkdir, readdir, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, realpath, rm, stat } from "node:fs/promises";
 import {
   ProjectPathError,
   resolveProjectPath,
@@ -221,6 +221,29 @@ export class ProjectService {
         "PROJECT_TARGET_INVALID",
         "Project target must be a first-level directory",
       );
+    }
+
+    // 已存在目标（采用语义）必须 realpath 复核：词法 relative 检查看不到 symlink 目标——
+    // PROJECTS_ROOT 顶层 symlink 目录会让后续 readdir/stat 带出根（security review P3②，
+    // M8 采用语义扩大使用面后必须补）。rootPath 已由 resolveProjectsRoot realpath 化，
+    // 与 targetReal 直接 relative 即可。ENOENT = 全新目录（mkdir 语义允许），词法检查已兜住。
+    try {
+      const targetReal = await realpath(targetPath);
+      const realRelation = relative(rootPath, targetReal);
+      if (realRelation === "" || realRelation.startsWith("..") || isAbsolute(realRelation)) {
+        throw new ProjectServiceError(
+          "PROJECT_PATH_OUTSIDE_ROOT",
+          "Project path must stay inside PROJECTS_ROOT",
+        );
+      }
+    } catch (error) {
+      if (error instanceof ProjectServiceError) {
+        throw error;
+      }
+
+      if (!isNotFoundError(error)) {
+        throw new ProjectServiceError("PROJECT_FS_ERROR", "Unable to inspect project target");
+      }
     }
 
     return {

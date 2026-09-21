@@ -2449,9 +2449,10 @@
     font-family: var(--font-mono);
     font-size: 13px;
   }
+  /* 批次 e：ink-3 双主题 1.86/1.68 < WCAG 3:1 UI 下限，提 ink-2（5.94/3.26） */
   .setrow .ar {
     font-size: 12px;
-    color: var(--ink-3);
+    color: var(--ink-2);
     margin-left: 2px;
   }
   /* 退出登录（原型 .logout：elevated 底 + 描边 + 居中红字） */
@@ -2468,6 +2469,17 @@
     font-weight: 600;
     color: var(--c-danger);
     cursor: pointer;
+  }
+  /* ---- 键盘焦点可见（批次 e）：原生 button 行类统一 token 环 ----
+     浏览器默认 outline 与 token 体系脱节（深浅主题各一套默认色）；outline-offset 内嵌
+     避免行组件溢出卡片/列表容器被 overflow 裁切。 */
+  .setrow:focus-visible,
+  .logout:focus-visible,
+  .srow2:focus-visible,
+  .footnav button:focus-visible,
+  .seg4 span:focus-visible {
+    outline: 2px solid var(--c-primary);
+    outline-offset: -2px;
   }
 
   /* ---- M8 缺口功能（redesign-v2.md §6.9：03d/03e/03x/03z/08「仅本页样式」随功能落地入单源）----

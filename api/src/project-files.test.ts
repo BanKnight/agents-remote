@@ -514,6 +514,20 @@ test("searchFiles truncates at FILE_SEARCH_LIMIT and reports truncated flag", as
   expect(response.truncated).toBe(true);
 });
 
+test("searchFiles reports truncated when traversal exceeds visit limit", async () => {
+  await mkdir(join(root, "demo", "d"), { recursive: true });
+  // 文件名全不含 needle（结果上限不触发），visitLimit=2 时第三个条目触发遍历上限。
+  for (const name of ["a.txt", "b.txt", "c.txt"]) {
+    await writeFile(join(root, "demo", "d", name), "x");
+  }
+
+  const service = new ProjectFilesService(root);
+  const response = await service.searchFiles("demo", "zzz-no-match", { visitLimit: 2 });
+
+  expect(response.matches).toHaveLength(0);
+  expect(response.truncated).toBe(true);
+});
+
 test("uploadFile conflict=overwrite replaces existing file content", async () => {
   await writeFile(join(root, "demo", "a.txt"), "old");
   const service = new ProjectFilesService(root);

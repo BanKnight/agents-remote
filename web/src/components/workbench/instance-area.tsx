@@ -481,6 +481,7 @@ function InstanceLeftOverviewBase({
       <div className="shrink-0 px-2 pt-2">
         <div aria-label={t("workbench.instancesAria")} className="seg4 mini mx-0" role="tablist">
           <span
+            aria-controls="instance-scope-panel"
             aria-selected={scopeSegment === "project"}
             className={`cursor-pointer ${scopeSegment === "project" ? "on" : ""}`}
             onClick={() => setScopeSegment("project")}
@@ -496,6 +497,7 @@ function InstanceLeftOverviewBase({
             {t("workbench.scopeSegmentProject")}
           </span>
           <span
+            aria-controls="instance-scope-panel"
             aria-selected={scopeSegment === "all"}
             className={`cursor-pointer ${scopeSegment === "all" ? "on" : ""}`}
             onClick={() => setScopeSegment("all")}
@@ -524,7 +526,9 @@ function InstanceLeftOverviewBase({
           open={createMenuOpen}
         />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">{leftOverviewContent}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto" id="instance-scope-panel" role="tabpanel">
+        {leftOverviewContent}
+      </div>
     </div>
   );
 }

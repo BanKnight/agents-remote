@@ -25,6 +25,12 @@ export const IMAGE_PREVIEW_LIMIT_BYTES = 5 * 1024 * 1024;
 
 /** 03x 文件搜索：结果上限（达到即 truncated，客户端提示「仅显示前 N 个」）。 */
 export const FILE_SEARCH_LIMIT = 200;
+/**
+ * 03x 文件搜索：遍历条目总量上限（security review P3①）——结果上限只兜「命中多」，
+ * 兜不住「匹配少但目录树巨大」（超大项目全树 walk 才返回，CPU/IO 无上界）；visited 达限
+ * 同样置 truncated（语义一致：结果可能不完整）。
+ */
+export const FILE_SEARCH_VISIT_LIMIT = 20_000;
 /** 03x 搜索递归跳过的目录名（仓库元数据 / 依赖体积黑洞——遍历既慢又无业务意义）。 */
 const FILE_SEARCH_SKIP = new Set([".git", "node_modules"]);
 
@@ -155,9 +161,14 @@ export class ProjectFilesService {
   /**
    * 03x 文件搜索（M8）：项目内文件名子串匹配（大小写不敏感），递归 walk 跳过
    * `.git`/`node_modules`，symlink 不进结果（防循环出根）；命中达 FILE_SEARCH_LIMIT 截断。
-   * 结果 path 为项目内相对路径（03x ②「结果显示相对路径」）。
+   * 结果 path 为项目内相对路径（03x ②「结果显示相对路径」）。遍历条目总量另受
+   * FILE_SEARCH_VISIT_LIMIT 约束（security review P3①，options.visitLimit 供测试注入小上限）。
    */
-  async searchFiles(projectName: string, query: string): Promise<ProjectFileSearchResponse> {
+  async searchFiles(
+    projectName: string,
+    query: string,
+    options?: { visitLimit?: number },
+  ): Promise<ProjectFileSearchResponse> {
     const trimmed = query.trim();
     if (trimmed.length === 0) {
       return { projectName, query: trimmed, matches: [], truncated: false };
@@ -167,12 +178,19 @@ export class ProjectFilesService {
     const needle = trimmed.toLowerCase();
     const matches: ProjectFileSearchMatch[] = [];
     let truncated = false;
+    let visited = 0;
+    const visitLimit = options?.visitLimit ?? FILE_SEARCH_VISIT_LIMIT;
 
     const walk = async (dirPath: string): Promise<void> => {
       if (truncated) return;
       const entries = await readdir(dirPath, { withFileTypes: true });
       for (const entry of entries) {
         if (truncated) return;
+        visited += 1;
+        if (visited > visitLimit) {
+          truncated = true;
+          return;
+        }
         // symlink 两态皆 false（readdir Dirent 不跟随）→ 天然过滤，不会循出项目根。
         if (!entry.isFile() && !entry.isDirectory()) continue;
         if (FILE_SEARCH_SKIP.has(entry.name)) continue;
@@ -748,7 +766,10 @@ const decodeText = (content: Buffer) => {
   }
 };
 
-const containsBinaryControlCharacters = (text: string) => /[ --]/.test(text);
+// 有意匹配控制字符（检测二进制预览内容，非输入校验）——no-control-regex 是该函数的职责本身。
+const containsBinaryControlCharacters = (text: string) =>
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text);
 
 const unsupportedPreview = (
   projectName: string,
