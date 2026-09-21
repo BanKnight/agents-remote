@@ -120,12 +120,12 @@ export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT
 };
 
 /**
- * 设置内容（桌面 `SettingsDialog` / 移动 `SettingsRoute` 共享，决策 44 + 48）。
+ * 设置内容（桌面 `SettingsMainPage` / 移动 `SettingsRoute` 共享，决策 44 + 48）。
  * 两层结构（Apple 设置范式）：root = 2 个入口胶囊（Claude 运行时 / 通用），
  * 点入 detail = 该项具体配置（不再有胶囊）。`activeSection` 由外壳持有、本组件接 props
  * 单向流——桌面弹窗 header / 移动 MobilePageHeader 据同一 state 渲染返回。
  * 不含外壳——由调用方包：移动端 `SettingsRoute` = main + MobilePageHeader + 本组件 +
- * MobilePrimaryNav；桌面端 `SettingsDialog` = Dialog + DialogContent + 本组件。
+ * MobilePrimaryNav；桌面端 `SettingsMainPage` = main 整页（mhead + 560px col）+ 本组件。
  */
 export function SettingsContent({
   activeSection = "root",
@@ -419,65 +419,49 @@ function useLogout() {
 }
 
 /**
- * 桌面设置弹窗（决策 44）：`Sidebar` footnav 设置按钮 `useState` 触发，居中 modal。
- * `ui/dialog.tsx` 的 `DialogContent` 只提供 Portal + Overlay（模糊背景）+ Content 容器
- * + Radix dismiss/focus-trap——**不内置卡片视觉与关闭按钮**，调用方在 Content 内自行
- * 包一层卡片 div（对齐 `confirm-dialog` 桌面态 / DESIGN.md `dialog` 条目居中形态）。
- * 卡片限高 `max-h-[85vh] overflow-hidden` 保持圆角，内容区 `overflow-y-auto` 承载两段。
- * 嵌套 `PresetDialog` / confirm Dialog 走受控 open（非 trigger asChild），Radix 支持嵌套。
+ * 桌面设置 main 整页（07m 原型，v2 M9 批次 d）：并入 mainPage 体系取代 SettingsDialog——
+ * side 恒定 sidewin（footnav 设置项 .on 激活由 Sidebar 判定），main = mhead 标题 +
+ * 560px 居中 col（对齐原型 .col width:560px margin:0 auto）。两层结构契约同移动
+ * SettingsRoute（决策 48：activeSection 外壳持 state，切走 unmount 自然回 root）；
+ * detail 态 mhead 加返回箭头、无关闭钮（离开 = footnav 导航别处）。
  */
-export function SettingsDialog({ onClose }: { onClose: () => void }) {
+export function SettingsMainPage() {
   const { t } = useT();
-  // 两层结构（决策 48）：state 在外壳，header 与 SettingsContent 共享。Dialog 关闭即 unmount
-  // → 下次打开自然回 root（不停在 detail）。
   const [activeSection, setActiveSection] = useState<SettingsSection>("root");
   const isRoot = activeSection === "root";
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <div
-          className={`flex h-[75vh] flex-col overflow-hidden rounded-2xl shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
-        >
-          <header className="flex shrink-0 items-center gap-2 px-5 pt-5">
-            {isRoot ? null : (
-              <button
-                type="button"
-                aria-label={t("settings.back")}
-                onClick={() => setActiveSection("root")}
-                className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-              >
-                <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path
-                    d="M10 3L5 8l5 5"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-            )}
-            <DialogTitle className="min-w-0 flex-1 truncate text-base font-semibold text-on-surface">
-              {isRoot ? t("settings.title") : sectionTitle(activeSection, t)}
-            </DialogTitle>
-            <button
-              type="button"
-              aria-label={t("session.close")}
-              onClick={onClose}
-              className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-            >
-              <ShellIcon className="h-4 w-4" name="close" />
-            </button>
-          </header>
-          <DialogDescription className="sr-only">{t("settings.title")}</DialogDescription>
-          {/* root 态内容自带 16px 边距（.sect/.sgroup margin，对齐 07 原型）→ 容器不再叠
-              padding；detail 态 Card 无自带外边距，走 px-5。 */}
-          <div className={`min-h-0 flex-1 overflow-y-auto pb-5 ${isRoot ? "" : "px-5"}`}>
-            <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
-          </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex shrink-0 items-center gap-2 px-5 pt-2.5">
+        {isRoot ? null : (
+          <button
+            type="button"
+            aria-label={t("settings.back")}
+            onClick={() => setActiveSection("root")}
+            className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+          >
+            <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M10 3L5 8l5 5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        )}
+        <h1 className="min-w-0 flex-1 truncate text-[17px] font-bold text-ink-1">
+          {isRoot ? t("settings.title") : sectionTitle(activeSection, t)}
+        </h1>
+      </header>
+      {/* root 态内容自带 16px 边距（.sect/.sgroup margin，对齐 07/07m 原型）→ 容器不再叠
+          padding；detail 态 Card 无自带外边距，走 px-5。 */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={`mx-auto w-full max-w-[560px] pb-6 ${isRoot ? "pt-2.5" : "px-5 pt-3"}`}>
+          <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }
 

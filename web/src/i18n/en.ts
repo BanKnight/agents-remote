@@ -322,6 +322,7 @@ export const en = {
   "nav.workbench": "Workbench",
   "nav.projects": "Projects",
   "nav.files": "Files",
+  "nav.globalFiles": "All Files",
   "nav.primaryAria": "Primary navigation",
   "nav.primaryMobileAria": "Primary mobile navigation",
   "nav.projectWorkspaceAria": "Project workspace navigation",

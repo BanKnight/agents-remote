@@ -100,6 +100,7 @@ const pluginsQueryAtom = atom("");
  */
 export function PluginsPanel({
   projectName,
+  onOpenMcp,
   onOpenSkill,
   onCardDragStart,
   openSkillSearch,
@@ -116,6 +117,9 @@ export function PluginsPanel({
   /** 项目 scope navigate /projects/$key/skill/$ 保留的 search（?tab/?rightTab/?leftMode 不丢；
    *  WorkbenchRoute 组装。移动端不传 → 行为不变）。 */
   openSkillSearch?: Partial<WorkbenchSearch>;
+  /** 全局 scope 打开 MCP server 详情（13，v2 M9 批次 d 桌面入口：navigate /plugins/mcp/$ 开中栏
+   *  pluginmcp tab）。不传 → 列表行不可点（移动 /plugins main 维持纯管理语义，行为不变）。 */
+  onOpenMcp?: (name: string) => void;
 }) {
   const { t } = useT();
   const navigate = useNavigate();
@@ -200,7 +204,10 @@ export function PluginsPanel({
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto bg-surface-raised max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
           <div className="p-3">
-            <McpPanel projectName={projectName} />
+            <McpPanel
+              onOpenDetail={projectName ? undefined : onOpenMcp}
+              projectName={projectName}
+            />
           </div>
         </div>
       )}
@@ -646,7 +653,14 @@ function SourcesTab() {
  * url）+ 删除。增删前弹信任确认 Dialog（外部 MCP 可访问本机资源并执行命令，是引入第三方工具的
  * 主要安全面——对称 InstallConfirmDialog）。agent 实例由 CLI 原生合并生效（下次 spawn 读配置）。
  */
-function McpPanel({ projectName }: { projectName?: string }) {
+function McpPanel({
+  onOpenDetail,
+  projectName,
+}: {
+  projectName?: string;
+  /** 全局 scope 行点击 → 详情（13）。undefined = 行不可点（维持纯管理语义）。 */
+  onOpenDetail?: (name: string) => void;
+}) {
   const { t } = useT();
   const scope: McpScope = projectName ? "project" : "user";
   const servers = useMcpServers(scope, projectName);
@@ -817,6 +831,9 @@ function McpPanel({ projectName }: { projectName?: string }) {
         <ListGroup ariaLabel={t("mcp.title")}>
           {list.map((s) => (
             <ListRow
+              {...(onOpenDetail
+                ? { onClick: () => onOpenDetail(s.name), style: { cursor: "pointer" as const } }
+                : {})}
               actions={
                 <>
                   <ActionButton compact onClick={() => fillForm(s)} title={t("mcp.editTooltip")}>

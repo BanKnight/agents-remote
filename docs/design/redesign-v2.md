@@ -419,6 +419,23 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 - **⌘1..9 真机项**（并入 M9 遗留清单）：真实浏览器多 tab 场景 Ctrl/Meta+数字可能被 browser 层 tab 切换抢占，headless 单 tab 探针证不了，交用户真机验证。
 - **探针 mock 铁律补两条**（与批次 b「形状对齐」同族）：① mock 须**完备覆盖 prune 依赖的数据源**——overview candidates 必须含分屏新建的终端（真实 overview 聚合必含运行中终端；缺它 → 切走焦点后 prune 判 stale 删 tab，⌘2 空窗，业务代码零责）；② 探针必须**隔离真实环境的 WS 推送**——m9b 曾漏 mock `/api/approvals/stream`，真实 api 的空快照经 `setQueryData` 整体覆盖 REST mock → 「待审批」chip 偶发消失（即批次 b 记录的「复跑绿」偶发真因，竞速：WS 帧先到则红、失败/慢则绿）。修法 = stream route abort，REST fallback 维持 mock 快照。另甄别一处**基线既有 flaky**（claude-auto-retry.test「pending 存在时重复 error」单跑稳定、全量偶发红，与 web 改动无关）。
 
+**批次 d 落地补记（2026-09-22，实现与拍板的差异 + 教训）**：
+- **07m 设置并入 mainPage 体系（IA 拍板）**：07-mac-settings.html 原型即标尺——side 恒定 sidewin + main 整页（mhead h1 17px/700 + .col max-w-[560px] 居中 + grplabel/scard/setrow/logout），footnav「设置」项 .on 激活。据此 M7 的居中 SettingsDialog 被 SettingsMainPage 取代（同文件复用 SettingsContent 单源），挂 desktopMainPage 的 settings 分支；删除的是壳（Dialog + Suspense lazy），设置内容零分叉。⌘N global scope 确认项闭环：**拍板不改**——mainPage 原型无创建语义，ghead plus 已是项目创建入口，project scope 开创建菜单、global 忽略。
+- **mainPageActive 三条件（语义教训）**：`scope.kind==="global" && !focusId && (leftMode==="files" || leftMode==="plugins" || leftMode==="settings")`——必须**正面枚举**：leftMode 类型可选（undefined 语义 = auto），若写 `!== "auto"` 则 undefined 也判真，窄态被误判成 mainPage（TS2367 揪出的真 bug）。`!focusId` 保证 tab focus 优先：中栏焦点路由（/files/file/$ 等）继承 leftMode 透传也必须回工作台渲染 tab，不能落 mainPage。
+- **导航闭环两坑**：① `/` 是纯跳板——indexRoute beforeLoad redirect 到 /projects/$key 或 /projects 且**丢 search**，footnav 设置必须 navigate to `/projects` + stickyWorkbenchSearch（to "/" 会静默丢 leftMode=settings）；② deriveWorkbenchRouteContext 的 /projects case 原本强制 leftMode:"auto"（活动栏 [项目] 防中栏 tab 透传污染左栏），会连 settings 一起抹掉——加例外 `s.leftMode === "settings" ? "settings" : "auto"`：URL 显式深链保留、[项目] 自然导航仍 auto。
+- **移动端 leftMode=settings 投影**：MobileWorkbench effect 重定向 `navigate({ to: "/settings", replace: true })`——同一 URL 真相，两端 IA 各自正确呈现（桌面 main 整页 / 移动一级路由），replace 不在历史栈留壳。
+- **⌘F 接线（10m pin④，批次 c 挪入项）**：`workbenchFilesSearchFocusRequestAtom` 计数器信号 → GlobalFilesOverview effect focus；gate = mainPageActive && leftMode==="files"（工作台内不劫持）。GlobalFilesOverview 同时内联 .wsearch 过滤框（filter state 本地，不进 URL）。
+- **桌面预览只读化（§6.10-8 双端一致）**：FileTabPreview 去编辑链——saveToggle={null}、editValue 传 previewTextContent 但不传 onEditChange、保存按钮不渲；CodeEditor 加 `editable?: boolean`（默认 true）→ CodeMirror editable/readOnly；PreviewBody 以 `onEditChange !== undefined` 判可编辑。saveFileContent API 保留（移动 inspection 路径仍用），仅桌面 file tab UI 入口移除。
+- **MCP 详情入口（13 pluginmcp）**：McpPanel ListRow 加 onOpenDetail 行点击 → `pluginmcp_${name}` tab 开 MobileMcpDetail（桌面中栏渲同一详情组件，与 13 原型「详情页」形态一致）；prune 跳过 pluginmcp（MCP 无 instance refs 对应物，不参与 globalRefs staleness 判定）。
+- **.wsearch 复用取舍**：10m 全局文件搜索框复用 .wsearch 单源（30px）而非原型 .search 34px——与 /files 页同款组件单源收敛优先，同 seg4 mini「落位差异自然子集」逻辑。
+- **探针 mock 铁律第④条**：preview mock 响应的 `name` 字段决定 md/html render 分支（name=README.md → render 模式不渲 CodeMirror）——探针断言 CodeMirror 必须 mock `.txt` 名。另记：**dist 半新半旧回归假红甄别**——m9b 复跑 16/1 红真因是 rebuild 时序（touch main.tsx + sleep 25-30s 不稳定），探针跑到半新半旧产物；甄别 = `rg -l "新符号" web/dist/assets/` + 源码恢复后复跑；**git stash 二分实验对探针无效**（探针跑 43012 的 dist，stash 源码不影响 dist 反而触发 rebuild 干扰）。
+
+- **批次 d reviewer 三份处理（2026-09-22，code/design/perf 一次通过 → 1 高 3 中 6 低已闭环）**：
+  - **〔高〕快捷键 deps stale closure（perf）**：use-workbench-shortcuts keydown effect deps 缺 `options.onFocusFilesSearch`——SPA 内 /projects→/files（leftMode auto→files）deps 全不变不重绑，闭包滞留 undefined → ⌘F 无响应；反向则 gate 失效劫持浏览器查找。探针 23/23 绿系 `page.goto` 整页加载掩盖（首绑即正确），SPA 转换路径未覆盖——**探针导航要含 SPA 内路由转换场景**。已修：deps 补回调。
+  - **〔中〕三条已修**：① CodeEditor `onChange={onEditChange ?? (() => {})}` 每渲染新引用 → @uiw/react-codemirror reconfigure effect 全量重配（parse 树丢弃重解析）→ 模块级 `NOOP` 常量；② 09m/10m mainPage 缺 mhead h1（同批次 07m 已落，口径不一致）→ `MainPageShell` 壳补齐（与 SettingsMainPage header 同形态；mhead 内 seg4/plus 不还原——seg4「全局/本项目」语义由导航承载，plus 在 FilesPanel 工具行/ManageTab 承载）；③ 本补记 .wsearch 34/30px 方向写反 → 已按代码注释修正。
+  - **〔低〕已修两条**：⌘F 计数器 atom remount 重放自动聚焦（effect 只判 `>0`，切页回来弹焦点）→ `lastFocusRequest` 只响应递增沿；leftPanel 末分支注释归因（实为 /files/file/$ 深链透传 leftMode=files + focusId 的可达路径，非不可达兜底）。
+  - **〔低〕记档不修**：移动 leftMode=settings 深链首帧闪 MobileProjectsHome 再跳 /settings（仅深链可达，正常导航不产生该 URL）；filter 两次 trim/toLowerCase（列表量级小）；mainPage 切换卸载中栏 tab → xterm/WS 重挂数百 ms（§6.10-9 拍板语义：会话服务端不销毁、与移动切 Tab 同语义，高频切换成本已知取舍）；settings 模块并入主 chunk ~4-5KB gzip（SettingsRoute 本就静态 import 同模块，lazy 拆分早已低效）；10m 列表 pcard 分组 vs FilesPanel 扁平列表 + 工具行（M4/M8 既有组件承载）；09m main 三段分组 vs ManageTab 文字 tab（M6 已审形制）；sidewin 项目/实例树 + footnav 三项 vs 4 主导航 + footnav 设置（M2 D21 既定 IA）；MobileMcpDetail back 不带 sticky search（显式返回列表语义）；10m 搜索行内「⌘F」角标未还原。
+
 **记档不做**：iPad 竖屏专用布局（沿用移动拉宽）；iPad 竖屏分屏（触屏分屏交互成本高，桌面独占）；画中画/多窗口；PWA 桌面安装形态。
 
 ## §7 待定项跟踪

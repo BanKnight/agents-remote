@@ -31,9 +31,11 @@ export type CodeEditorProps = {
   value: string;
   name: string;
   onChange: (value: string) => void;
+  /** 只读展示（v2 §6.10-8 file tab 预览只读化）。默认 true（可编辑，FilesPanel 编辑路径不变）。 */
+  editable?: boolean;
 };
 
-export function CodeEditor({ value, name, onChange }: CodeEditorProps) {
+export function CodeEditor({ editable = true, name, onChange, value }: CodeEditorProps) {
   const { resolved } = useTheme();
   const isDark = resolved === "dark";
   // theme 按 resolved 切：dark = "none"（阻止 @uiw 默认 light 白底）+ oneDark 语法色板；
@@ -58,6 +60,8 @@ export function CodeEditor({ value, name, onChange }: CodeEditorProps) {
       <CodeMirror
         value={value}
         onChange={onChange}
+        editable={editable}
+        readOnly={!editable}
         height="100%"
         theme={isDark ? "none" : "light"}
         extensions={extensions}

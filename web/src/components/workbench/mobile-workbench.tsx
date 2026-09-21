@@ -91,12 +91,13 @@ type MobileWorkbenchProps = {
   focusId?: string;
   /**
    * 左栏模式（设计 workbench-stable-refactor review 收口）：移动端 `scope=global` 下 leftMode 有意义
-   *——leftMode="files"（/files 全局文件总览）→ MobileFilesOverview；leftMode="plugins"（/plugins 插件市场）
-   * → MobilePluginsOverview；leftMode="auto" → MobileProjectsHome。project scope 无视 leftMode 走
+   *——leftMode="files"（/files 全局文件文件总览）→ MobileFilesOverview；leftMode="plugins"（/plugins 插件市场）
+   * → MobilePluginsOverview；leftMode="settings"（桌面 mainPage 维度）→ 重定向移动 /settings 一级路由
+   *（v2 M9 批次 d：两端 IA 各自投影同一 URL 真相）；leftMode="auto" → MobileProjectsHome。project scope 无视 leftMode 走
    * MobileProjectWorkbench（v2 三行头部 + 工具原位）。桌面端 leftMode 由 WorkbenchContent 左栏逻辑消费，
    * 移动端在此分支消费。
    */
-  leftMode?: "auto" | "files" | "plugins";
+  leftMode?: "auto" | "files" | "plugins" | "settings";
   /** 插件 Tab 深度页视图（v2 M6 §3.5，WorkbenchRoute 注入 ctx.pluginView；见 workbench-model）。 */
   pluginView?: "home" | "market" | "sources";
   /** 项目工具原位（v2 M3-b：?tab=files/git/wiki，与桌面 middle tab 同构；WorkbenchRoute 注入 ctx.tab）。 */
@@ -146,6 +147,15 @@ export function MobileWorkbench({
   scope,
   tool,
 }: MobileWorkbenchProps) {
+  const navigate = useNavigate();
+  // leftMode="settings" 是桌面 mainPage 维度（07m 设置整页）；移动端投影 = 移动 /settings
+  // 一级路由（v2 M9 批次 d：同一 URL 真相，两端 IA 各自正确呈现）。replace：设置非移动
+  // IA 的合法深链，历史栈不留壳。
+  useEffect(() => {
+    if (leftMode === "settings") {
+      void navigate({ to: "/settings", replace: true });
+    }
+  }, [leftMode, navigate]);
   // workbench 不走 ShellLayout，这里自行测量一级底部 nav 高度并注入
   // `--shell-mobile-bottom-nav-space`，让 workbench 内用 var 的滚动容器（文件列表、
   // Git diff 等）底部正确避让胶囊（参考 ShellLayout 同款 useMeasuredBottomNav）。

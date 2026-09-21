@@ -1,8 +1,8 @@
 import type { GitDiffScope } from "@agents-remote/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtom, useAtomValue } from "jotai";
-import { type PointerEvent, useCallback, useEffect, useState } from "react";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { type PointerEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import {
   type DragSourceAdapter,
   InstanceArea,
@@ -23,6 +23,7 @@ import { MobileWorkbench, SessionModeTabs } from "../components/workbench/mobile
 import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { StatusBar } from "../components/workbench/status-bar";
+import { SettingsMainPage } from "../components/shell/settings-dialog";
 import { Sidebar } from "../components/shell/sidebar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
@@ -46,6 +47,7 @@ import {
   inferSessionTypeFromId,
   parseFileTabId,
   parseGitTabId,
+  parsePluginMcpTabId,
   parseSkillTabId,
   removeTabFromLeaf,
   resizeSplitChildren,
@@ -57,6 +59,7 @@ import {
   useWorkbenchLayout,
   useWorkbenchNavigate,
   useWorkbenchRouteContext,
+  workbenchFilesSearchFocusRequestAtom,
   workbenchMiddleLeftWidthAtom,
   workbenchLastProjectAtom,
   workbenchMiddleTabAtom,
@@ -110,7 +113,7 @@ function WorkbenchContent({
   // ProjectLeftPanel(global overview=GlobalProjectsOverview)。leftMode 是 URL search 维度
   //（见 workbench-model.ts deriveWorkbenchRouteContext），由各 navigate 粘性透传——活动栏入口
   // 强制，中栏 tab focus 透传不改（VSCode 式）。
-  leftMode?: "auto" | "files" | "plugins";
+  leftMode?: "auto" | "files" | "plugins" | "settings";
   // 插件深度页维度（v2 M6，redesign-v2.md §3.5）：/plugins/market、/plugins/sources 派生非
   // home 值，移动端 MobileWorkbench 分流渲染；无 focusId（不进保活 tab 体系）；桌面忽略。
   pluginView?: "home" | "market" | "sources";
@@ -223,9 +226,7 @@ function WorkbenchContent({
       focusId === "githistory" ||
       focusId === "gitbranches" ||
       focusId.startsWith("gitcommit_") ||
-      focusId.startsWith("wiki_") ||
-      // MCP 详情（v2 M6 13）：无桌面 tab 类型（M9 前桌面无入口），防落 default 分支误开 session tab。
-      focusId.startsWith("pluginmcp_")
+      focusId.startsWith("wiki_")
     ) {
       return;
     }
@@ -239,6 +240,11 @@ function WorkbenchContent({
       const skillName = parseSkillTabId(focusId);
       if (skillName !== null) {
         return ensureTabOpenLeaf(prev, { kind: "skill", name: skillName });
+      }
+      // MCP 详情（v2 M9 批次 d，13 桌面入口）：与 skill 同范式开 tab（M6 记档「M9 评估」落地）。
+      const mcpName = parsePluginMcpTabId(focusId);
+      if (mcpName !== null) {
+        return ensureTabOpenLeaf(prev, { kind: "pluginmcp", name: mcpName });
       }
       const gitParsed = parseGitTabId(focusId);
       if (gitParsed !== null) {
@@ -297,6 +303,7 @@ function WorkbenchContent({
           t.kind === "file" ||
           t.kind === "git" ||
           t.kind === "skill" ||
+          t.kind === "pluginmcp" ||
           t.kind === "chat" ||
           t.kind === "render"
         )
@@ -436,6 +443,15 @@ function WorkbenchContent({
   // - 全局/跨项目文件（scope=global 或 projectName≠scope.key）→ /files/file/$，splat=全路径
   //   （含项目名前缀，focus effect 直接 file_${fullPath}）。全局/项目点同一文件 → 同一 tabId 去重。
   // search 传 URL 原始值（rightTab/tab/view，与 navigateWorkbench 同模式，避免把 atom 回退值写进 URL）。
+  // 桌面 main 整页态（09m/10m，§6.10-9）：global scope + leftMode≠auto。内容行点击（file/skill/
+  // mcp）= 跳回工作台开 tab，navigate sticky search 据此把 leftMode 重置 auto（见各 navigate）。
+  // mainPage 激活判定必须**正面枚举**（leftMode 可选，undefined 语义 = auto；若写
+  // `leftMode !== "auto"` 则 undefined 也判真——窄态被误判成 mainPage）。focusId 优先于
+  // mainPage：中栏 tab focus（/files/file/$ 等继承 leftMode 透传）必须回工作台渲染 tab。
+  const mainPageActive =
+    scope.kind === "global" &&
+    !focusId &&
+    (leftMode === "files" || leftMode === "plugins" || leftMode === "settings");
   const navigateToFile = useCallback(
     (projectName: string, path: string) => {
       const fullPath = `${projectName}/${path}`;
@@ -450,10 +466,17 @@ function WorkbenchContent({
       void navigate({
         to: "/files/file/$",
         params: { _splat: fullPath },
-        search: stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+        // mainPage 态（09m/10m 整页）点文件 = 跳回工作台看 tab：leftMode 重置 auto 退出整页
+        //（sticky 只在非 mainPage 态保留——工作台内 tab 切换不改左栏的原语义不变）。
+        search: stickyWorkbenchSearch({
+          leftMode: mainPageActive ? "auto" : leftMode,
+          rightTab,
+          tab: tabFromUrl,
+          mode,
+        }),
       });
     },
-    [navigate, scope, rightTab, tabFromUrl, leftMode, mode],
+    [navigate, scope, rightTab, tabFromUrl, leftMode, mode, mainPageActive],
   );
   // 左栏文件树点文件 → 中栏开/激活 file tab + focus 到该文件（设计 §6 决策 16）。file ref 用全路径
   //（kind:"file", path=全路径，无 projectName 字段），全局/项目点同一文件复用同一 tab。复用已测纯函数
@@ -536,10 +559,16 @@ function WorkbenchContent({
       void navigate({
         to: "/plugins/skill/$",
         params: { _splat: name },
-        search: stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+        // mainPage 态同 navigateToFile：leftMode 重置 auto，退出插件整页进工作台看 tab。
+        search: stickyWorkbenchSearch({
+          leftMode: mainPageActive ? "auto" : leftMode,
+          rightTab,
+          tab: tabFromUrl,
+          mode,
+        }),
       });
     },
-    [navigate, scope, rightTab, tabFromUrl, leftMode, mode],
+    [navigate, scope, rightTab, tabFromUrl, leftMode, mode, mainPageActive],
   );
   // Manage tab 点已装 skill 行 → 中栏开/激活 skill tab + focus（对标 onOpenFile）。skill ref
   //（kind:"skill", name）全局去重（tabId=skill_${name}），无 project scope gate（同 file）。
@@ -549,6 +578,23 @@ function WorkbenchContent({
       void navigateToSkill(name);
     },
     [update, navigateToSkill],
+  );
+  // MCP 详情 focus URL（v2 M9 批次 d，13 桌面入口）：/plugins/mcp/$ 的 focusId=pluginmcp_${name}
+  // 走 update effect 开 pluginmcp tab（与 skill 同范式）。mainPage 态同样重置 leftMode=auto。
+  const onOpenMcp = useCallback(
+    (name: string) => {
+      void navigate({
+        to: "/plugins/mcp/$",
+        params: { _splat: name },
+        search: stickyWorkbenchSearch({
+          leftMode: mainPageActive ? "auto" : leftMode,
+          rightTab,
+          tab: tabFromUrl,
+          mode,
+        }),
+      });
+    },
+    [navigate, rightTab, tabFromUrl, leftMode, mode, mainPageActive],
   );
   // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活；file tab
   // 移除（file 无生命周期，✕ 即从布局消失）。focusId 被关后回退到新 active tab 的 focus URL。
@@ -717,11 +763,17 @@ function WorkbenchContent({
   );
 
   // 桌面快捷键（spec §10.2）：⌘N/⌘1..9/⌘\/⌘R（⌘F 随批次 d 10m 接线，Esc 交 Radix）。
+  const setFilesSearchFocusRequest = useSetAtom(workbenchFilesSearchFocusRequestAtom);
   useWorkbenchShortcuts({
     focusId: focusId ?? null,
     onSplit: onSplitLeaf,
     onSelectTab,
     scopeKind: scope.kind,
+    // ⌘F 只在全局文件整页态绑（10m pin④「聚焦搜索框」；其他态不劫持浏览器查找）。
+    onFocusFilesSearch:
+      mainPageActive && leftMode === "files"
+        ? () => setFilesSearchFocusRequest((v) => v + 1)
+        : undefined,
   });
 
   // ── Phase B 拖放分屏（设计 §7.2/§7.4）──────────────────────────────────────────
@@ -863,6 +915,26 @@ function WorkbenchContent({
   // leftMode="auto"（活动栏 [会话] 入口或其粘性透传态）→ 一级会话页：按 mode 切 Agent/Chat body。
   // 左总览：global scope → 共享 GlobalProjectsOverview（桌面/移动同一实现，批 F / 决策 29）；
   // project scope → InstanceLeftOverview（CreateSessionBar + 本项目实例总览）。
+  // 桌面 §6.10-9（M9 批次 d，对齐 09m/10m 原型 IA）：global scope 且 leftMode=plugins/files 时，
+  // 插件/全局文件是 **main 整页**（原型 side sidewin 恒定不随导航切换、main 切内容），实例区让位
+  //——tab 布局在 localStorage atom 持久化，切回 auto 原样恢复；会话服务端不销毁，重挂重连
+  //（与移动端切 Tab 同语义）。仅桌面生效：中档/窄屏走 MobileWorkbench，此分支不渲染。
+  const desktopMainPage = !mainPageActive ? null : leftMode === "plugins" ? (
+    <MainPageShell title={t("nav.plugins")}>
+      <PluginsPanel
+        onCardDragStart={onCardDragStart}
+        onOpenMcp={onOpenMcp}
+        onOpenSkill={onOpenSkill}
+      />
+    </MainPageShell>
+  ) : leftMode === "settings" ? (
+    // 07m：设置并入 mainPage 体系（side 恒定 sidewin + main 整页），取代 M7 的居中 Dialog。
+    <SettingsMainPage />
+  ) : (
+    <MainPageShell title={t("nav.globalFiles")}>
+      <GlobalFilesOverview onCardDragStart={onCardDragStart} onOpenFile={onOpenFile} />
+    </MainPageShell>
+  );
   const leftOverview =
     scope.kind === "global" ? (
       <GlobalProjectsOverview dragAdapter={dragAdapter} onFocusInstance={focusInstance} />
@@ -878,33 +950,35 @@ function WorkbenchContent({
         scope={scope}
       />
     );
-  const leftPanel =
-    scope.kind === "project" || (leftMode === "auto" && !chatMode) ? (
-      <ProjectLeftPanel
-        focusId={focusId}
-        onCardDragStart={onCardDragStart}
-        onOpenFile={onOpenFile}
-        onOpenGitCompareFile={onOpenGitCompareFile}
-        onOpenGitFile={onOpenGitFile}
-        onTabChange={onTabChange}
-        openSkillSearch={{
-          rightTab,
-          tab: tabFromUrl,
-          ...(leftMode !== "auto" ? { leftMode } : {}),
-        }}
-        overview={leftOverview}
-        scope={scope}
-        tab={tab}
-      />
-    ) : chatMode ? (
-      // 一级会话页 chat 模式：左栏 body = ChatOverview（绕过 ProjectLeftPanel——global scope 下它
-      // 只是 overview 的纯 wrapper，chat 不需要 middle tab bar，直接渲染列表）。
-      <ChatOverview />
-    ) : leftMode === "plugins" ? (
-      <PluginsPanel onCardDragStart={onCardDragStart} onOpenSkill={onOpenSkill} />
-    ) : (
-      <GlobalFilesOverview onCardDragStart={onCardDragStart} onOpenFile={onOpenFile} />
-    );
+  const leftPanel = mainPageActive ? (
+    // 09m/10m 原型：main 切插件/文件整页时左栏保持 sidewin 项目总览（§6.10-9 拍板记档）。
+    leftOverview
+  ) : scope.kind === "project" || (leftMode === "auto" && !chatMode) ? (
+    <ProjectLeftPanel
+      focusId={focusId}
+      onCardDragStart={onCardDragStart}
+      onOpenFile={onOpenFile}
+      onOpenGitCompareFile={onOpenGitCompareFile}
+      onOpenGitFile={onOpenGitFile}
+      onTabChange={onTabChange}
+      openSkillSearch={{
+        rightTab,
+        tab: tabFromUrl,
+        ...(leftMode !== "auto" ? { leftMode } : {}),
+      }}
+      overview={leftOverview}
+      scope={scope}
+      tab={tab}
+    />
+  ) : chatMode ? (
+    // 一级会话页 chat 模式：左栏 body = ChatOverview（绕过 ProjectLeftPanel——global scope 下它
+    // 只是 overview 的纯 wrapper，chat 不需要 middle tab bar，直接渲染列表）。
+    <ChatOverview />
+  ) : (
+    // global scope 非会话残余态（可达路径：/files/file/$ 等焦点深链透传 leftMode=files +
+    // focusId——focusId 让 mainPageActive 失效，左栏保持 GlobalFilesOverview 文件语境）。
+    <GlobalFilesOverview onCardDragStart={onCardDragStart} onOpenFile={onOpenFile} />
+  );
   const instanceArea = (
     <InstanceArea
       activeZone={activeZone}
@@ -934,10 +1008,6 @@ function WorkbenchContent({
       leftPanelTitle={
         scope.kind === "project" ? (
           <ProjectScopeHeaderTitle onBack={backToProjects} projectName={scope.key} />
-        ) : leftMode === "plugins" ? (
-          t("nav.plugins")
-        ) : leftMode === "files" ? (
-          t("nav.files")
         ) : sessionPage ? (
           // 一级会话页（§3.1）：左栏标题区 = Agent/Chat mode tab（对齐移动 MobilePageHeader
           // title），取代原「会话」文案标题。两种模式都显示（切回入口常驻）。
@@ -946,15 +1016,32 @@ function WorkbenchContent({
           t("nav.projects")
         )
       }
-      rightPanel={rightPanel}
-      rightPanelCollapsible={rightPanelCollapsible}
+      rightPanel={desktopMainPage ? null : rightPanel}
+      rightPanelCollapsible={desktopMainPage ? false : rightPanelCollapsible}
       statusBar={<StatusBar />}
     >
-      {instanceArea}
+      {desktopMainPage ?? instanceArea}
       {closeHolder}
       {renameHolder}
       {create.promptHolder}
     </WorkbenchShell>
+  );
+}
+
+/**
+ * 09m/10m main 整页 header 壳（M9 批次 d design review）：h1 17px/700 标题行 + 内容区，
+ * 与 SettingsMainPage 的 header（07m）同批次同形态。原型 mhead 里的 seg4/plus 未还原——
+ * seg4「全局/本项目」语义已由导航承载（全局 mainPage ↔ 点项目回工作台）、plus 功能在
+ * FilesPanel 工具行 / ManageTab 内承载（§6.10 批次 d 补记 design review 段）。
+ */
+function MainPageShell({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex shrink-0 items-center gap-2 px-5 pt-2.5">
+        <h1 className="min-w-0 flex-1 truncate text-[17px] font-bold text-ink-1">{title}</h1>
+      </header>
+      <div className="min-h-0 flex-1">{children}</div>
+    </div>
   );
 }
 

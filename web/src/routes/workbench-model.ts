@@ -298,7 +298,7 @@ export function useWorkbenchNavigate() {
     search?: {
       rightTab?: WorkbenchInspectionTab;
       tab?: WorkbenchMiddleTab;
-      leftMode?: "auto" | "files" | "plugins";
+      leftMode?: "auto" | "files" | "plugins" | "settings";
       mode?: WorkbenchMode;
     },
   ) => {
@@ -333,7 +333,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   gitScope?: GitDiffScope;
   gitCompare?: string;
   branch?: string;
-  leftMode?: "auto" | "files" | "plugins";
+  leftMode?: "auto" | "files" | "plugins" | "settings";
   mode?: WorkbenchMode;
   /** M5-b 审批中心：/projects?approvals=1 → 项目 Tab 挂载即开审批 sheet（tray 标题入口②）。 */
   approvals?: boolean;
@@ -344,7 +344,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     gitScope?: GitDiffScope;
     gitCompare?: string;
     branch?: string;
-    leftMode?: "auto" | "files" | "plugins";
+    leftMode?: "auto" | "files" | "plugins" | "settings";
     mode?: WorkbenchMode;
     approvals?: boolean;
   } = {};
@@ -382,7 +382,12 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   if (typeof search.branch === "string" && search.branch.length > 0) {
     result.branch = search.branch;
   }
-  if (search.leftMode === "auto" || search.leftMode === "files" || search.leftMode === "plugins") {
+  if (
+    search.leftMode === "auto" ||
+    search.leftMode === "files" ||
+    search.leftMode === "plugins" ||
+    search.leftMode === "settings"
+  ) {
     result.leftMode = search.leftMode;
   }
   if (search.mode === "agent" || search.mode === "chat") {
@@ -409,7 +414,7 @@ export type WorkbenchSearch = ReturnType<typeof validateWorkbenchSearch>;
 export function stickyWorkbenchSearch(input: {
   rightTab?: WorkbenchInspectionTab;
   tab?: WorkbenchMiddleTab;
-  leftMode?: "auto" | "files" | "plugins";
+  leftMode?: "auto" | "files" | "plugins" | "settings";
   mode?: WorkbenchMode;
 }): WorkbenchSearch {
   return {
@@ -449,7 +454,7 @@ export type WorkbenchRouteContext = {
    * "files"、`/projects` 强制 "auto"；中栏 tab focus（`/files/file/$`、`/projects/session/$id`）
    * 继承透传值——中栏 tab 切换不改左栏（VSCode 式，左栏模式只由活动栏控制）。
    */
-  leftMode?: "auto" | "files" | "plugins";
+  leftMode?: "auto" | "files" | "plugins" | "settings";
   /**
    * 插件 Tab 深度页视图（v2 M6，§3.5）：home = 09 插件 Tab 主页；market = 18 技能市场；
    * sources = 15 市场源管理。仅 /plugins/market、/plugins/sources 两个 URL 派生非 home 值，
@@ -484,7 +489,7 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
     gitCompare?: string;
-    leftMode?: "auto" | "files" | "plugins";
+    leftMode?: "auto" | "files" | "plugins" | "settings";
     mode?: WorkbenchMode;
   };
   switch (leaf.fullPath) {
@@ -492,7 +497,14 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
     case "/projects":
       // 活动栏 [项目] 入口：leftMode 强制 "auto"（放 ...s 后覆盖任何透传的 files 残留），
       // 确保点活动栏 [项目] 后左栏恒为项目列表，不被中栏 tab 透传的 leftMode=files 污染。
-      return { scope: { kind: "global" }, focusId: undefined, ...s, leftMode: "auto" };
+      // settings 例外（v2 M9 批次 d 07m）：URL 显式 ?leftMode=settings 时保留——footnav 设置
+      // 深链 /projects?leftMode=settings 渲染设置 mainPage；[项目] 按钮不带 search 自然 auto。
+      return {
+        scope: { kind: "global" },
+        focusId: undefined,
+        ...s,
+        leftMode: s.leftMode === "settings" ? "settings" : "auto",
+      };
     case "/files":
       // 全局文件总览（review 收口）：scope=global + leftMode 强制 "files"（放 ...s 后，左栏
       // GlobalFilesOverview）。无 focusId（文件树整页，点文件 → /files/file/$ 开 file tab focus）。
@@ -758,6 +770,16 @@ export type SkillPanelRef = {
 };
 
 /**
+ * MCP server 详情面板引用（v2 M9 批次 d，对标 SkillPanelRef）。name = server 名，tabId =
+ * `pluginmcp_${name}`（与移动深度页 /plugins/mcp/$ 的 focusId 同前缀互斥共用）。渲染复用
+ * MobileMcpDetail（静态配置详情，无桌面专属形态——§6.6 能力边界两端一致）。
+ */
+export type PluginMcpPanelRef = {
+  kind: "pluginmcp";
+  name: string;
+};
+
+/**
  * HTML 渲染面板引用（聊天流富媒体，2026-09-10）。id = tabId 本身（`render_${uuid}`）。
  * 瞬态内容：html 存内存 atom（workbenchRenderContentAtom），不持久化——normalizeRef 不识别
  * render（刷新丢弃，focus 回原 session 自洽），stale prune 同款跳过。无 URL focus 路由。
@@ -779,6 +801,7 @@ export type WorkbenchPanelRef =
   | FilePanelRef
   | GitPanelRef
   | SkillPanelRef
+  | PluginMcpPanelRef
   | RenderPanelRef;
 
 /** V1/V2 历史布局的面板引用（迁移源，无 kind —— 仅 session，= 旧 WorkbenchPanelRef）。 */
@@ -800,6 +823,7 @@ export function tabIdOf(ref: WorkbenchPanelRef): string {
   if (ref.kind === "render") return ref.id;
   if (ref.kind === "file") return `file_${ref.path}`;
   if (ref.kind === "skill") return `skill_${ref.name}`;
+  if (ref.kind === "pluginmcp") return `pluginmcp_${ref.name}`;
   return ref.mode === "compare"
     ? `gitcmp_${ref.base}~${ref.compare}/${ref.path}`
     : `git_${ref.scope}/${ref.path}`;
@@ -894,6 +918,7 @@ export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef | null {
         };
   }
   if (ref.kind === "skill") return { kind: "skill", name: ref.name };
+  if (ref.kind === "pluginmcp") return { kind: "pluginmcp", name: ref.name };
   if (ref.kind === "chat") return { kind: "chat", sessionId: ref.sessionId };
   if (ref.kind === "render") return null;
   return { kind: "session", projectName: ref.projectName, sessionId: ref.sessionId };
@@ -1947,6 +1972,9 @@ export const workbenchCreateMenuOpenAtom = atom(false);
  * 时消费（bump reconnectKey 重连）——未断线按 ⌘R 不打断现有 WS。
  */
 export const workbenchReconnectRequestAtom = atom<Record<string, number>>({});
+/** ⌘F（spec §10.2）聚焦全局文件页搜索框（10m pin④）：计数器信号，消费方 effect 监听递增
+ * 即 focus input。无 per-target 维度（全局文件页单实例），纯计数即可。 */
+export const workbenchFilesSearchFocusRequestAtom = atom(0);
 
 /**
  * 读写 workbench 布局（V4 单一 layout，VSCode 式跨 scope 稳定）。中栏 group+tab 跨项目切换稳定不动，

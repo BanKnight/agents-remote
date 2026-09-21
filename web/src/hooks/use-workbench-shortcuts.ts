@@ -40,6 +40,8 @@ export function useWorkbenchShortcuts(options: {
   onSplit: (leafId: string) => void;
   onSelectTab: (groupId: string, tabId: string) => void;
   scopeKind: "project" | "global";
+  /** ⌘F（spec §10.2，10m pin④）：聚焦全局文件页搜索框。调用方 gate 全局文件整页态后 bump 信号 atom。 */
+  onFocusFilesSearch?: () => void;
 }) {
   const { focusId, onSplit, onSelectTab, scopeKind } = options;
   const isDesktop = useIsDesktopViewport();
@@ -79,6 +81,12 @@ export function useWorkbenchShortcuts(options: {
         return;
       }
 
+      // ⌘F 聚焦全局文件页搜索框（gate 在调用方：仅 10m 整页态回调非空）。
+      if (key === "f" && options.onFocusFilesSearch) {
+        e.preventDefault();
+        options.onFocusFilesSearch();
+        return;
+      }
       // ⌘1..9 切窗格/实例：聚焦第 N 个 leaf（flatten 顺序），跟随其 active tab 导航。
       if (/^[1-9]$/.test(key)) {
         const leaf = collectLeaves(layout.root)[Number(key) - 1];
@@ -99,5 +107,8 @@ export function useWorkbenchShortcuts(options: {
     scopeKind,
     setCreateMenuOpen,
     setReconnectRequest,
+    // 回调进 deps：SPA 内 leftMode auto↔files 切换时 options.onFocusFilesSearch 从
+    // undefined ↔ 函数翻转，deps 不含它则 keydown 闭包滞留旧值（⌘F gate 失效，perf review 2026-09-22）。
+    options.onFocusFilesSearch,
   ]);
 }

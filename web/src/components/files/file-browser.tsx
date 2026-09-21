@@ -42,6 +42,10 @@ import { formatBytes } from "@/lib/format";
 // CodeMirror 体积较大，只在用户打开文本文件 source 预览时按需加载，避免进首屏 chunk。
 const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
 
+// 只读预览的占位 onChange：引用必须稳定——@uiw/react-codemirror 的 reconfigure effect
+// 依赖 onChange，每渲染新箭头函数会触发 CodeMirror 全量 reconfigure（perf review 2026-09-22）。
+const NOOP = () => {};
+
 // ── Utilities ────────────────────────────────────────────────────
 
 export const parentProjectPath = (path: string) => {
@@ -355,7 +359,8 @@ export type FilePreviewPanelProps = {
   isMarkdown: boolean;
   fileName?: string;
   editValue: string;
-  onEditChange: (value: string) => void;
+  /** 只读预览（file tab）不传 → PreviewBody 以只读模式渲 CodeEditor。 */
+  onEditChange?: (value: string) => void;
   /** 移动端关闭预览（inspection 浮窗用）；file tab 不提供（close 走 tab ✕）→ 不渲染 close 按钮。 */
   onClose?: () => void;
   /** 手动刷新预览（invalidate preview query 拉最新内容）。提供时 header 渲染 refresh 按钮。 */
@@ -574,7 +579,7 @@ export type PreviewBodyProps = {
   preview: ProjectFilePreviewResponse;
   renderMode: "source" | "render";
   editValue: string;
-  onEditChange: (value: string) => void;
+  onEditChange?: (value: string) => void;
 };
 
 export function PreviewBody({ preview, renderMode, editValue, onEditChange }: PreviewBodyProps) {
@@ -671,7 +676,12 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
     return (
       <div className="flex min-h-0 flex-1 flex-col p-3">
         <Suspense fallback={<CodeEditorFallback />}>
-          <CodeEditor value={editValue} name={preview.name} onChange={onEditChange} />
+          <CodeEditor
+            value={editValue}
+            name={preview.name}
+            onChange={onEditChange ?? NOOP}
+            editable={onEditChange !== undefined}
+          />
         </Suspense>
       </div>
     );
@@ -760,6 +770,8 @@ export type FilesPanelProps = {
   onOpenFile?: (projectName: string, path: string) => void;
   /** 拖动源启动（文件行拖到中栏开 file tab，透传 FileEntryList）。undefined 退纯点击（inspection/移动）。 */
   onCardDragStart?: CardDragStartHandler;
+  /** 名称过滤（大小写不敏感的 includes；10m 桌面整页搜索框用）。undefined/空 = 不过滤。 */
+  filter?: string;
 };
 
 export function FilesPanel({
@@ -773,6 +785,7 @@ export function FilesPanel({
   onMobilePreviewChange,
   onOpenFile,
   onCardDragStart,
+  filter,
 }: FilesPanelProps) {
   const { t } = useT();
   const [internalPath, setInternalPath] = useState(initialPath);
@@ -1107,7 +1120,13 @@ export function FilesPanel({
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-3 pb-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
         <UploadQueueCard />
         <FileEntryList
-          entries={files.data?.entries ?? []}
+          entries={
+            filter?.trim()
+              ? (files.data?.entries ?? []).filter((entry) =>
+                  entry.name.toLowerCase().includes(filter.trim().toLowerCase()),
+                )
+              : (files.data?.entries ?? [])
+          }
           error={files.error}
           filesClickable={enablePreview || onOpenFile !== undefined}
           readOnly={readOnly}

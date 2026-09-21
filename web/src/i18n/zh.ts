@@ -320,6 +320,7 @@ export const zh: Record<TranslationKey, string> = {
   "nav.workbench": "工作台",
   "nav.projects": "项目",
   "nav.files": "文件",
+  "nav.globalFiles": "全局文件",
   "nav.primaryAria": "主导航",
   "nav.primaryMobileAria": "移动端主导航",
   "nav.projectWorkspaceAria": "项目工作区导航",
