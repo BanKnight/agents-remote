@@ -1,6 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AUTO_RETRY_DEFAULT,
   EFFORT_LEVELS,
   PI_PROVIDER_APIS,
   type AcpCredentialsMasked,
@@ -12,6 +13,7 @@ import {
   type CreateClaudePresetRequest,
   type CreatePiPresetRequest,
   type EffortLevel,
+  type GetSettingsResponse,
   type ListProviderModelsResponse,
   type PiPresetMasked,
   type PiProviderApi,
@@ -24,10 +26,11 @@ import {
 
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
+import { clearAuthOk } from "../../lib/auth-storage";
+import { isStandaloneDisplay } from "../../lib/display-mode";
 import { useTheme } from "../../theme";
 import {
   ActionButton,
-  IconMarker,
   ListGroup,
   ListRow,
   SegmentedControl,
@@ -50,6 +53,7 @@ import {
   fetchAgentProviders,
   getSettings,
   listPiProviders,
+  logout,
   listPresetModels,
   testPresetModels,
   updateAcpRuntime,
@@ -181,7 +185,7 @@ export function SettingsContent({
       body = <GeneralSection />;
       break;
     default:
-      body = <SettingsRootView onNavigate={onNavigate} />;
+      body = <SettingsRootView settings={settings} onNavigate={onNavigate} />;
   }
 
   return body;
@@ -192,65 +196,170 @@ export function SettingsContent({
  * 复用 DESIGN.md `list` grouped 契约（与预设列表同款）。title-only + 右 chevron
  * （Apple 设置一级项范式）。
  */
-function SettingsRootView({ onNavigate }: { onNavigate: (section: SettingsSection) => void }) {
-  const { t } = useT();
-  const sections: {
-    section: SettingsSection;
-    title: string;
-    icon: "anthropic" | "info";
-    tone: "warning" | "muted";
-  }[] = [
-    { section: "claude", title: t("settings.section.claude"), icon: "anthropic", tone: "warning" },
-    { section: "pi", title: t("settings.section.pi"), icon: "info", tone: "muted" },
-    { section: "acp", title: t("settings.section.acp"), icon: "info", tone: "muted" },
-    { section: "general", title: t("settings.section.general"), icon: "info", tone: "muted" },
-  ];
+function SettingsRootView({
+  settings,
+  onNavigate,
+}: {
+  settings: GetSettingsResponse["settings"] | undefined;
+  onNavigate: (section: SettingsSection) => void;
+}) {
+  const { t, pref: langPref } = useT();
+  const { theme } = useTheme();
+  const [standalone] = useState(() => isStandaloneDisplay());
+  const { confirm, holder: confirmHolder } = useConfirm();
+  const logoutMutation = useLogout();
+
+  /** 值行：整行点击进 detail（无 detail 的行不传 onClick，渲染为静态行）。
+   *  可点行的值内缀 `.ar` ›（07 原型：通用/RUNTIME 行有 chevron、自动重试/PWA 静态行无）。 */
+  const row = (label: ReactNode, value: ReactNode, onClick?: () => void, valueClass?: string) => {
+    const content = (
+      <>
+        {label}
+        {value === null ? null : (
+          <span className={`v${valueClass ? ` ${valueClass}` : ""}`}>
+            {value}
+            {onClick ? (
+              <span aria-hidden="true" className="ar">
+                ›
+              </span>
+            ) : null}
+          </span>
+        )}
+      </>
+    );
+    return onClick ? (
+      <button className="setrow cursor-pointer" onClick={onClick} type="button">
+        {content}
+      </button>
+    ) : (
+      <div className="setrow">{content}</div>
+    );
+  };
+
+  const claudeActive = settings?.runtimes.claude.activePresetId
+    ? (settings.runtimes.claude.presets.find(
+        (p) => p.id === settings.runtimes.claude.activePresetId,
+      )?.label ?? t("settings.activePresetNone"))
+    : t("settings.activePresetNone");
+  const piActive = settings?.runtimes.pi.activePresetId
+    ? (settings.runtimes.pi.presets.find((p) => p.id === settings.runtimes.pi.activePresetId)
+        ?.label ?? t("settings.piActivePresetNone"))
+    : t("settings.piActivePresetNone");
+  const hasFirecrawl = Boolean(settings?.runtimes.pi.firecrawlApiKeyMasked);
+  // ACP 已配置 provider 数（有据：acp 掩码配置里 hasApiKey 的项）。
+  const acpConfiguredCount = Object.values(settings?.runtimes.acp ?? {}).filter(
+    (c) => c?.hasApiKey,
+  ).length;
+
+  const themeLabel =
+    theme === "system" ? t("theme.system") : theme === "light" ? t("theme.light") : t("theme.dark");
+  const langLabel =
+    langPref === "system"
+      ? t("theme.system")
+      : langPref === "zh"
+        ? t("settings.langZh")
+        : t("settings.langEn");
+
+  const handleLogout = () => {
+    void confirm({
+      title: t("settings.logout"),
+      message: t("settings.logoutConfirm"),
+      confirmLabel: t("settings.logout"),
+      cancelLabel: t("cancel"),
+      tone: "danger",
+    }).then((ok) => {
+      if (ok) logoutMutation.mutate();
+    });
+  };
+
   return (
-    <Card className="gap-0 border border-neutral-line bg-surface py-0 ring-0">
-      <CardContent className="p-0">
-        <ListGroup ariaLabel={t("settings.title")}>
-          {sections.map(({ section, title, icon, tone }) => (
-            <ListRow
-              key={section}
-              title={title}
-              onClick={() => onNavigate(section)}
-              marker={
-                <IconMarker size="sm" tone={tone}>
-                  <ShellIcon className="h-4 w-4" name={icon} />
-                </IconMarker>
-              }
-              meta={<SettingsChevron />}
-            />
-          ))}
-        </ListGroup>
-      </CardContent>
-    </Card>
+    <div className="flex flex-col">
+      {/* 通用（07 第一组）：外观 / 语言 —— 值行 + › 进 general detail */}
+      <div className="sect">{t("settings.section.general")}</div>
+      <div className="sgroup">
+        {row(t("theme.label"), <>{themeLabel}</>, () => onNavigate("general"))}
+        {row(t("settings.lang"), <>{langLabel}</>, () => onNavigate("general"))}
+      </div>
+
+      {/* RUNTIME 预设（07 第二组）：新建实例时可选；全局默认，会话 ℹ 可覆盖 */}
+      <div className="sect">{t("settings.runtimePresets")}</div>
+      <div className="sgroup">
+        {row(t("settings.claudePreset"), <>{claudeActive}</>, () => onNavigate("claude"))}
+        {row(t("settings.piProvider"), <>{piActive}</>, () => onNavigate("pi"))}
+        {row(
+          t("settings.firecrawlKey"),
+          hasFirecrawl ? t("settings.keySet") : t("settings.keyUnset"),
+          () => onNavigate("pi"),
+          hasFirecrawl ? "ok" : undefined,
+        )}
+        {/* ACP 段入口（07 原型只画 3 行，但 ACP 是真实 runtime——无入口则配置能力被割裂，
+            且与 §6.8 自述「四行含 ACP」一致）。值 = 已配置 provider 数（有据：acp 掩码配置）。 */}
+        {row(
+          t("settings.section.acp"),
+          <>
+            {acpConfiguredCount > 0
+              ? t("settings.acpConfiguredCount", { n: acpConfiguredCount })
+              : t("settings.acpNotConfigured")}
+          </>,
+          () => onNavigate("acp"),
+          acpConfiguredCount > 0 ? "ok" : undefined,
+        )}
+      </div>
+
+      {/* 自动重试默认（07 第三组）：真实默认值静态展示（会话 ℹ 可覆盖） */}
+      <div className="sect">{t("settings.autoRetryDefaults")}</div>
+      <div className="sgroup">
+        {row(
+          t("settings.retryMaxLabel"),
+          <>{t("settings.retryMaxValue", { n: AUTO_RETRY_DEFAULT.maxPerWindow })}</>,
+        )}
+        {row(
+          t("settings.retryDelay"),
+          <>
+            {t("settings.retryDelayValue", {
+              s: Math.round(AUTO_RETRY_DEFAULT.delayMs / 1000),
+              m: Math.round(AUTO_RETRY_DEFAULT.windowMs / 60_000),
+            })}
+          </>,
+        )}
+        {row(
+          t("settings.retryMessage"),
+          <>{`「${t("session.autoRetry.defaultMessage")}」`}</>,
+          undefined,
+          "mono",
+        )}
+      </div>
+
+      {/* 服务器（07 第四组）：地址 + PWA 安装态；连接状态/版本无数据源不画（§6.8） */}
+      <div className="sect">{t("settings.section.server")}</div>
+      <div className="sgroup">
+        {row(<span className="font-mono">{window.location.host}</span>, null)}
+        {row(
+          t("settings.pwa"),
+          <>{standalone ? t("settings.pwaInstalled") : t("settings.pwaBrowser")}</>,
+          undefined,
+          standalone ? "ok" : undefined,
+        )}
+      </div>
+
+      <button className="logout" onClick={handleLogout} type="button">
+        {t("settings.logout")}
+      </button>
+      {logoutMutation.error ? (
+        <p className="mx-4 mt-3 text-center text-caption text-error">{t("api.logoutFailed")}</p>
+      ) : null}
+      {confirmHolder}
+    </div>
   );
 }
 
-/** 设置 root 胶囊右侧的进入指示 chevron（Apple 设置范式，区别于 PresetRow actions 的 ⋯ 动作）。 */
-function SettingsChevron() {
-  return (
-    <svg
-      className="h-4 w-4 text-on-surface-muted"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M6 4l4 4-4 4"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** 通用段（决策 48）：诚实占位——无伪造配置，后续版本补充只读系统信息。 */
+/**
+ * 通用段 detail（决策 48 + 07 原型「外观 / 语言」两行）：外观三态（跟随系统/明亮/暗黑，
+ * `themeAtom` 持久化）+ 语言三态（跟随系统/中文/English，偏好写 i18n localStorage）。
+ * 两者同构：都是「全局默认、覆盖系统偏好」的三态选择。
+ */
 function GeneralSection() {
-  const { t } = useT();
+  const { t, pref: langPref, setLang } = useT();
   const { theme, setTheme } = useTheme();
   return (
     <Card className="border border-neutral-line bg-surface ring-0">
@@ -269,9 +378,44 @@ function GeneralSection() {
           ]}
           value={theme}
         />
+        <div className="mt-2 flex flex-col gap-1">
+          <p className="text-sm font-semibold text-on-surface-soft">{t("settings.lang")}</p>
+          <p className="text-xs leading-5 text-on-surface-muted">{t("settings.langHint")}</p>
+        </div>
+        <SegmentedControl
+          ariaLabel={t("settings.lang")}
+          onChange={(value) => setLang(value)}
+          options={[
+            { value: "system", label: t("theme.system") },
+            { value: "zh", label: t("settings.langZh") },
+            { value: "en", label: t("settings.langEn") },
+          ]}
+          value={langPref}
+        />
       </CardContent>
     </Card>
   );
+}
+
+/** PWA standalone（已安装）检测——见 `lib/display-mode.ts`（AuthGate 共用同实现）。 */
+
+/**
+ * 退出登录（07 pin ④）：调 POST /api/auth/logout 清 HttpOnly cookie + 本地免登标记，
+ * 随后失效 auth query（AuthGate 立即回登录帧）。服务端数据与会话不受影响。
+ * onSettled（成败都失效）：成功 → 回登录帧；失败 → 与服务端真实状态对齐
+ *（cookie 未清则如实留在应用），错误经调用方行内提示可见（security review P2）。
+ */
+function useLogout() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: logout,
+    onSuccess: () => {
+      clearAuthOk();
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+    },
+  });
 }
 
 /**
@@ -326,7 +470,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
             </button>
           </header>
           <DialogDescription className="sr-only">{t("settings.title")}</DialogDescription>
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+          {/* root 态内容自带 16px 边距（.sect/.sgroup margin，对齐 07 原型）→ 容器不再叠
+              padding；detail 态 Card 无自带外边距，走 px-5。 */}
+          <div className={`min-h-0 flex-1 overflow-y-auto pb-5 ${isRoot ? "" : "px-5"}`}>
             <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
           </div>
         </div>

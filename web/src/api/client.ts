@@ -30,6 +30,7 @@ import type {
   ListTerminalSessionsResponse,
   LoginRequest,
   LoginResponse,
+  LogoutResponse,
   OverviewResponse,
   OverviewSubtitlesResponse,
   PagesConfigResponse,
@@ -149,6 +150,19 @@ export async function login(password: string): Promise<LoginResponse> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ password } satisfies LoginRequest),
   });
+}
+
+/**
+ * 退出登录（POST /api/auth/logout）：服务端下发过期 Set-Cookie 清 HttpOnly token，
+ * 仅清本设备登录态、服务端数据不受影响。不经 fetchJson——鉴权层对 401 会 dispatch
+ * auth:unauthenticated 并重定向，登出语义自己处理响应。
+ */
+export async function logout(): Promise<LogoutResponse> {
+  const response = await fetch("/api/auth/logout", { method: "POST" });
+  if (!response.ok) {
+    throw fail("api.logoutFailed", response.status);
+  }
+  return response.json();
 }
 
 export async function listProjects(): Promise<ProjectListResponse> {

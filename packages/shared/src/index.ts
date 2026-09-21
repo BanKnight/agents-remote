@@ -2311,3 +2311,7 @@ export type LoginResponse = {
 export type AuthMeResponse = {
   authenticated: true;
 };
+
+export type LogoutResponse = {
+  ok: true;
+};

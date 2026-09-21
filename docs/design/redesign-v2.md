@@ -282,6 +282,45 @@ M6 = 插件 Tab + 市场体系（原型 09/12/13/14/15/16/17/18）。基于现�
 
 **待定项汇总（M6 记档 + reviewer P3 记录）**：SKILL.md beacon 面（security P3①）、env 内存既有面（security P3②）、project scope MCP 详情入口（记档 13）、死码 CSS 按需重落（P3-5）——均已记入 M8 缺口清单跟踪。
 
+## §6.8 M7 开工摊牌（2026-09-21）
+
+M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）。基于现状盘点（`settings-dialog.tsx` SettingsContent 两层结构 root→claude/pi/acp/general + 移动 `SettingsRoute` + 桌面 `SettingsDialog` 共享；`AuthGate.tsx` 登录帧 M2 已基本完整；后端 settings API 全套 + auth login/me；**无 logout 端点**）逐条对齐：
+
+1. **⚙ 入口已存在**（M3 落地）：`mobile-projects-home.tsx` 头部右侧 ⚙ → `/settings`（D21 裁定），本里程碑零改动；桌面入口 = Sidebar footnav（`SettingsDialog`），07m 对齐归 M9。
+2. **SettingsRootView 按 07 五组重构**：通用（外观+语言两行，值 + ›→general detail）／RUNTIME 预设·新建实例时可选（Claude 模型预设/Pi Provider/Firecrawl API Key/ACP Agent 四行）／自动重试默认·会话 ℹ 可覆盖（3 静态行）／服务器（地址 mono + PWA 安装态）／退出登录（独立红钮）。root 组 = 纯移动 CSS（`.sgroup`/`.setrow`/`.logout` 入 v2-primitives.css `@layer components`；`.setrow` 避让 M5 03j `.srow`、`.crow` 已被 M4 wiki 占用；组标题复用 M4 `.sect`）。**桌面 SettingsDialog 同 Content 自动获得新分组**（决策 44+48 共享契约不变，07m 视觉对齐归 M9）。
+3. **自动重试默认 = 真实值不伪造**：原型示意「3 次/45 秒（指数退避）/请继续」与实现不符——真实默认 `AUTO_RETRY_DEFAULT`（shared）= 3 次 / 60 秒延迟（固定间隔 + 30 分钟滚动窗口，无指数退避机制）/ 默认文案 i18n「刚刚网络错误，请继续」。设置页静态三行 import 常量显示真实值（`60 秒（窗口 30 分钟）`），禁编造 45 秒/指数退避字样。
+4. **服务器组取舍**：地址 = `window.location.host`（mono，无 ›——多服务器历史不做，D 系摊牌延续）；PWA 行 = 安装态检测（standalone → 「已安装」ok 绿 / 浏览器 → 「浏览器中运行」）；「连接状态」行不画（auth 即连接，无独立状态源）；版本号不画（无数据源，web/package.json 0.0.0 无构建注入）。
+5. **退出登录**：后端新增 `POST /api/auth/logout`（无鉴权幂等清 cookie：Set-Cookie Max-Age=0 + `{ok:true}`；HttpOnly cookie 前端清不掉，必须后端配合）；前端 = `useConfirm` danger 确认（「清 token 不清服务端数据」）→ 调 API → 清 `AUTH_OK_KEY` + invalidate auth query → 回登录帧。shared 增 `LogoutResponse`。
+6. **语言三态（LanguagePref）**：i18n 现状 zh/en 二态 + `detectLanguage`（未存储时按 `navigator.language`）——「跟随系统」语义已存在但不可回选。引入 `LanguagePref = "system" | "zh" | "en"`：context 存 pref、`lang` = resolve 结果（system → navigator.language）；localStorage 已存 zh/en 视为显式选择（无缝迁移），无存储 = system；GeneralSection 增语言 SegmentedControl（跟随系统/中文/English）；AuthGate 底部快捷切换行为不变（写显式语言）。
+7. **登录页完整态（spec §3.1 两缺口）**：① 密码错误 = 输入框描红（`loginMutation.error` → border-error）+ 行内提示（已有）；② 断网 = 按钮变「重试连接」——`auth.error`（网络层，getAuthStatus 401 返 false 不抛）时登录帧按钮变「重试连接」点击 refetch（现状是整页换错误帧无出口）。
+8. **MobilePageHeader back 升级 `.back` 设计语言**（‹ + 可见文字，M6 P2-2 定稿延续）：当前全仓只有 SettingsRoute 传 back（零波及）；root 态新增 back=「项目」→ `/projects`（07 原型 ①），detail 态 back=「设置」。
+9. **通用组交互记档**：原型外观/语言为纯值行；实现 = root 行值展示 + 点入 general detail 用 SegmentedControl（与现有实现一致，交互增强记档）。Firecrawl 行点入 pi detail（key 在 pi 段内，独立 detail 不新增）；行值 = 已设置/未设置（`firecrawlApiKeyMasked` 推导）。
+
+## §6.8b M7 收口补记（2026-09-21）
+
+**落地清单**：
+- **后端**：`shared` 新增 `LogoutResponse`；`api/src/http-auth.ts` 新增 `handleLogout`（幂等清 cookie，注释记档 CSRF 防线 = SameSite=Strict）；`api/src/index.ts` 新增 `POST /api/auth/logout` 路由（无鉴权，位于鉴权中间件前）。
+- **前端**：`web/src/api/client.ts` 新增 `logout()`（不走 fetchJson——避开 401 拦截器的重定向语义）；`web/src/lib/auth-storage.ts`（新，`auth_ok` 键读写）；`web/src/i18n/{types,translate,context,index}` 三态偏好改造（`LanguagePref`、`resolveLangPref`/`resolveLanguage`、`languagechange` + `storage` 双监听）；`web/src/styles/v2-primitives.css` M7 段（`.sgroup`/`.setrow`/`.logout`，`.setrow` 避让 M5 `.srow` 与 M4 `.crow`）；`settings-dialog.tsx` SettingsRootView 五组 + `GeneralSection` 语言三态 + `useLogout`；`AuthGate.tsx` 描红与断网态；`SettingsRoute.tsx` 原型 `.nav` header。
+
+**reviewer 修复（design P1×2 + P2×5 + P3×3；security P2×1、P3 记档）**：
+1. **design P1-1（真根因）**：滚动容器底原用 `bg-surface-raised`（= `--bg-elevated`），与 `.sgroup` 卡片**同色** → 卡片隐形只剩描边（硬数据修复前 浅 `rgb(255,255,255)` 双同、深 `rgb(28,28,30)` 双同）。改 `bg-surface-base`（07 原型舞台底：深 `#000` / 浅 `#F2F2F7`）；探针加「卡片底 ≠ 页面底」硬断言（修复后 白 vs `rgb(242,242,247)`）。
+2. **design P1-2**：断网态原做成**独立错误帧**（密码框消失）→ 与 spec §3.1「断网 = 按钮变『重试连接』」不符。改为**保留登录帧**、仅主按钮换文案 + `refetch`（`offline` 分支内两个按钮形态）；探针 Part 4 改写为「密码框仍在 + 重试按钮 → 点击后回主按钮」。
+3. **design P2-3**：`bg-error/10` → `bg-tint-red`（v2 语义 tint）；`border-error`/`text-error` 经核 `--color-error` 已映射 `--c-danger`，语义正确保留。
+4. **design P2-6**：`.back` 触区补 `touch:px-2 touch:py-2`（与 `mobile-project-header` 同款；原几何 46×22.5 < 44）。
+5. **design P2-7（ACP 孤儿裁决）**：原型 RUNTIME 只画 3 行，但 ACP 是真实 runtime（`AcpRuntimeSection` 存活），无入口则配置能力被割裂、且与 §6.8-2 自述「四行含 ACP」不一致 → **补第 4 行**「ACP Agent」（值 = 已配置 provider 数，有据 `hasApiKey` 计数；未配置 → 「未配置」）。
+6. **design P2-8 / P3-9**：设置页「次数上限」原复用 `session.autoRetry.maxLabel`（「窗口内最多（次）」）→ 新增专属 `settings.retryMaxLabel`「次数上限」（对齐原型）；重试间隔值补真实窗口时长 `{{s}} 秒（{{m}} 分钟滚动窗口）` → 「60 秒（30 分钟滚动窗口）」。
+7. **design P2-5 / P3-10 / P3-11（记档）**：`.setrow`/`.logout` 无 `focus-visible` 样式（暗底键盘焦点弱，桌面键盘面归 M9 多端）；`.ar` 12px/`--ink-3` 对比度偏低（**原型即此值，保持一致**）；`w-[52px]` 为原型示意占位值（真机惯例待 M9）。
+8. **security P2-1**：登出失败原**完全静默**（弱网点确认 → 请求失败无反馈 → 用户误以为已登出，共享设备留有效凭证）→ `useLogout` 改 `onSuccess`（仅 `clearAuthOk`）+ `onSettled`（invalidate 对齐服务端真实态），`SettingsRootView` 加行内错误提示（`api.logoutFailed`，`mx-4 text-caption text-error`）；探针 Part 3 加失败路径三断言（提示可见 / 保留 auth_ok / 留在设置页）。
+9. **security P3 记档**：① CSRF 防线 = `SameSite=Strict`（跨站不接受非 None Set-Cookie）——写入 `handleLogout` 注释防退化；② 登出 ≠ token 吊销（无状态 HMAC 30 天 TTL，无 denylist；已建 WS 升级后不复检）——单用户部署可接受，多设备威胁模型需引入吊销；③ cookie 未加 `Secure`（签发与清除成对一致，部署走 HTTPS tunnel 建议成对补）；④ 登出后 `workbench.lastProjectKey`（项目名元数据，非凭证）保留。
+
+**验证**：探针 `scripts/probe-v2-m7-settings-auth.mjs` **68 断言全绿**（4 Part：07 root 五组结构与值行 + `.ar` 分布 + 几何/样式硬数据(radius/字号/字重/danger 色/卡片底≠页底) / detail 语言三态真实切换 / 退出登录含失败路径 / 06 描红与断网重试）；四门禁全绿（format / lint 0-0 / web+api+shared typecheck / test 798+670+9 = 1477 全 pass）；CSS 落盘硬闸 ✓；token 机检基线 11 处存量零新增；e2e 29/29。
+
+**待定项汇总**：`focus-visible` 键盘面 / `.ar` 对比度 / `w-[52px]` 真机值 → M9 多端；security P3② token 吊销 → 多设备威胁模型时评估。
+
+**code-reviewer：通过（P0/P1 零，2 P2 + 3 P3）**。核对确认无正确性缺陷：Q1 三态偏好无 bug（storage 事件只发其他窗口，`setLang("system")` 删 key 不重复处理；`e.newValue === null → system` 语义正确）、Q2 `useLogout` 时序方向正确无错误窗口（`authOk` 是挂载时读一次的 useState，回登录帧由 invalidate → 401 → `data=false` 驱动）、Q3 `.ar` 位置正确且静态 children 无 key 警告、Q4 重提交时 mutation 重置 error 故描红无残留。**P2 修复**：① `isStandaloneDisplay()` 在 AuthGate 与 settings-dialog 逐字重复 → 抽 `web/src/lib/display-mode.ts` 单一实现两处复用；② `STORAGE_KEY = "lang"` 在 translate.ts 与 context.tsx 各定义一份 → 改由 translate.ts 导出 `LANG_STORAGE_KEY` 单一来源。**P3 修复**：跨窗口 storage handler 回 system 时一并 `setSystemLang(resolveLanguage("system"))`（原仅刷 `pref`，另一窗口切回 system 未必伴随 `languagechange`）。**P3 记档**：单位换算裸数字（`/ 1000`、`60_000`）——仓库既有约定即内联写法（`utils.ts`/`hooks/*.ts` 同款），不新增 `MS_PER_*` 常量以免偏离周围代码。
+
+**reviewer 三份齐（security 通过 / code 通过 / design 修复后通过）**：design 修完两项 P1（卡片同色隐形、断网态偏离 spec）+ 5 P2（tint-red/`.back` 触区/ACP 孤儿补行/「次数上限」专属键/窗口时长）后复验通过。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

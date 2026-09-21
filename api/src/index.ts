@@ -25,6 +25,7 @@ import {
   applyAuthRefresh,
   handleAuthMe,
   handleLogin,
+  handleLogout,
   jsonError,
   requireHttpAuth,
 } from "./http-auth";
@@ -138,6 +139,10 @@ export const createFetchHandler =
 
     if (url.pathname === "/api/auth/me" && request.method === "GET") {
       return handleAuthMe(request, auth);
+    }
+
+    if (url.pathname === "/api/auth/logout" && request.method === "POST") {
+      return handleLogout();
     }
 
     if (url.pathname === "/api/ws/echo") {

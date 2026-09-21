@@ -4,6 +4,7 @@ import type {
   AuthMeResponse,
   LoginRequest,
   LoginResponse,
+  LogoutResponse,
 } from "@agents-remote/shared";
 import { AuthError, AuthService, type TokenIssue } from "./auth";
 
@@ -134,5 +135,21 @@ export const handleAuthMe = (request: Request, auth: AuthService) => {
     setTokenCookie(headers, authResult.refreshToken);
   }
 
+  return new Response(body, { status: 200, headers });
+};
+
+// 退出登录：幂等清 cookie（HttpOnly 前端清不掉，必须后端下发过期指令）。
+// 无鉴权——未登录态调用也返回 200（语义 = 确保本设备登出），不泄露任何信息；
+// 仅清本设备 token，服务端数据与会话不受影响（07 原型 pin ④）。
+// CSRF 防线 = SameSite=Strict（security review P3-1 记档）：跨站上下文中浏览器拒绝接受
+// 非 None 的 Set-Cookie，强制登出清不掉 cookie；勿在抄写时去掉 SameSite 造成防线退化。
+export const handleLogout = () => {
+  const body = JSON.stringify({ ok: true } satisfies LogoutResponse);
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    // Max-Age=0 立即过期（Expires 兼容写法双保险）；Path=/ 对齐签发时的作用域。
+    "Set-Cookie":
+      "agents_remote_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+  });
   return new Response(body, { status: 200, headers });
 };

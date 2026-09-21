@@ -20,6 +20,8 @@ export const en = {
   "auth.unlock": "Sign in",
   "auth.unlocking": "Unlocking...",
   "auth.hint": "Stay signed in on this device · resumes where you left off",
+  "auth.retryConnect": "Retry connection",
+  "auth.retrying": "Reconnecting...",
   "auth.langLabel": "English",
   "auth.pwaHint": "Add to Home Screen for a full-screen experience",
   "auth.installTitle": "Install Agents Remote",
@@ -358,6 +360,7 @@ export const en = {
   "api.healthCheckFailed": "Health check failed",
   "api.authCheckFailed": "Auth check failed",
   "api.loginFailed": "Login failed",
+  "api.logoutFailed": "Logout failed",
   "api.projectListFailed": "Project list failed",
   "api.projectCreationFailed": "Project creation failed",
   "api.projectDetailFailed": "Project detail failed",
@@ -810,6 +813,8 @@ export const en = {
     "Optional. A custom Anthropic-compatible endpoint. Clear and save to fall back to the official endpoint.",
   "settings.acpApiKeyBlank": "Not configured",
   "settings.acpEnvHint": "Injected env:",
+  "settings.acpConfiguredCount": "{{n}} configured",
+  "settings.acpNotConfigured": "Not configured",
 
   // ── Settings: protocol & model discovery ──────────────────────
   "settings.testConnection": "Test connection",
@@ -840,6 +845,30 @@ export const en = {
   "settings.activePresetHint":
     "The active preset's base URL, API key, and model mapping apply when newly creating sessions. Already-open sessions are not affected.",
   "settings.activePresetNone": "None (use server env)",
+
+  // v2 07 settings page (five groups: general / runtime presets / auto-retry defaults / server / sign out)
+  "settings.lang": "Language",
+  "settings.langHint":
+    "Overrides the system language preference; Follow system uses the device language.",
+  "settings.langZh": "中文",
+  "settings.langEn": "English",
+  "settings.runtimePresets": "RUNTIME PRESETS (selectable for new instances)",
+  "settings.claudePreset": "Claude model preset",
+  "settings.keySet": "Set",
+  "settings.keyUnset": "Not set",
+  "settings.autoRetryDefaults": "AUTO-RETRY DEFAULTS (overridable per session in ℹ)",
+  "settings.retryMaxLabel": "Max attempts",
+  "settings.retryMaxValue": "{{n}} times",
+  "settings.retryDelay": "Retry delay",
+  "settings.retryDelayValue": "{{s}} seconds ({{m}}-min rolling window)",
+  "settings.retryMessage": "Retry message",
+  "settings.section.server": "Server",
+  "settings.pwa": "PWA",
+  "settings.pwaInstalled": "Installed",
+  "settings.pwaBrowser": "Running in browser",
+  "settings.logout": "Sign out…",
+  "settings.logoutConfirm":
+    "Clears the sign-in credential on this device. Server data and agent sessions are unaffected; sign in again to restore access.",
 
   // Plugins（插件入口：skill + mcp 两层作用域，导航重命名为 /plugins）
   "plugins.title": "Plugins",

@@ -1,2 +1,8 @@
 export { I18nProvider, useT } from "./context";
-export type { Language, TranslationKey, TranslateFn, I18nContextValue } from "./types";
+export type {
+  Language,
+  LanguagePref,
+  TranslationKey,
+  TranslateFn,
+  I18nContextValue,
+} from "./types";

@@ -2340,4 +2340,58 @@
     font-size: 11px;
     color: var(--ink-2);
   }
+
+  /* ---- M7 设置（07-settings.html；组标题复用 M4 .sect = 12px ink-2 margin 14/16/4）----
+     命名避让：03j 新建实例已占 `.srow`、M4 wiki 已占 `.crow`，本节行用 `.setrow`。 */
+  .sgroup {
+    margin: 0 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    border-radius: 16px;
+    padding: 0 16px;
+  }
+  .setrow {
+    display: flex;
+    align-items: center;
+    height: 44px;
+    font-size: 14.5px;
+    color: var(--ink-1);
+    width: 100%;
+    text-align: left;
+  }
+  .setrow + .setrow {
+    border-top: 1px solid var(--sep-row);
+  }
+  .setrow .v {
+    margin-left: auto;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .setrow .v.ok {
+    color: var(--c-success-text);
+  }
+  .setrow .v.mono {
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+  .setrow .ar {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-left: 2px;
+  }
+  /* 退出登录（原型 .logout：elevated 底 + 描边 + 居中红字） */
+  .logout {
+    margin: 14px 16px 0;
+    height: 44px;
+    border-radius: 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--c-danger);
+    cursor: pointer;
+  }
 }

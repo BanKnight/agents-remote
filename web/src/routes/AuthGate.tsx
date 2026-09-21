@@ -4,17 +4,13 @@ import { getAuthStatus, login } from "../api/client";
 import { OfflineBanner } from "../components/OfflineBanner";
 import { ShellIcon } from "../components/shell/icons";
 import { useT } from "../i18n";
+import { readAuthOk, setAuthOk, clearAuthOk } from "../lib/auth-storage";
+import { isStandaloneDisplay } from "../lib/display-mode";
 
 type BeforeInstallPromptEvent = Event & {
   prompt(): Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
-
-const isStandaloneDisplay = () =>
-  window.matchMedia("(display-mode: standalone)").matches ||
-  ("standalone" in window.navigator && window.navigator.standalone === true);
-
-const AUTH_OK_KEY = "auth_ok";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { t } = useT();
@@ -26,7 +22,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const serverId = useId();
   // 部署地址（06 原型 ①「服务器」）。单部署模型下即当前 origin 的 host；多服务器历史留 M7。
   const serverLabel = window.location.host;
-  const [authOk] = useState(() => localStorage.getItem(AUTH_OK_KEY) === "1");
+  const [authOk] = useState(readAuthOk);
   const auth = useQuery({
     queryKey: ["auth", "me"],
     queryFn: getAuthStatus,
@@ -37,7 +33,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     mutationFn: login,
     onSuccess: async () => {
       setPassword("");
-      localStorage.setItem(AUTH_OK_KEY, "1");
+      setAuthOk();
       await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
@@ -69,7 +65,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const handleUnauthenticated = () => {
-      localStorage.removeItem(AUTH_OK_KEY);
+      clearAuthOk();
       queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
     };
     window.addEventListener("auth:unauthenticated", handleUnauthenticated);
@@ -102,6 +98,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     loginMutation.mutate(trimmedPassword);
   };
 
+  // 密码错误（spec §3.1）：输入框描红 + 行内提示（提示行见表单尾部）。
+  const loginFailed = loginMutation.error instanceof Error;
+
   const installBanner =
     installPrompt && !installDismissed ? (
       <InstallPromptBanner
@@ -130,19 +129,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (auth.error instanceof Error) {
-    return (
-      <>
-        <OfflineBanner />
-        <AuthFrame title={t("auth.errorTitle")} description={auth.error.message} />
-        {installBanner}
-      </>
-    );
-  }
+  // 断网 / 服务不可达（auth 查询抛错，非 401——401 走 data=false 的登录帧）：
+  // spec §3.1「断网 = 按钮变『重试连接』」——保留登录帧，仅主按钮换文案 + refetch
+  //（不是独立错误帧：密码框不能消失，否则用户连重试入口都找不到）。
+  const offline = auth.error instanceof Error;
 
   if (auth.data) {
     if (!authOk) {
-      localStorage.setItem(AUTH_OK_KEY, "1");
+      setAuthOk();
     }
     return (
       <>
@@ -156,7 +150,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
   return (
     <>
       <OfflineBanner />
-      <AuthFrame title={t("auth.loginTitle")} description={t("auth.loginDesc")}>
+      <AuthFrame
+        description={auth.error instanceof Error ? auth.error.message : t("auth.loginDesc")}
+        title={offline ? t("auth.errorTitle") : t("auth.loginTitle")}
+      >
         <form onSubmit={handleSubmit}>
           {/* 服务器 field：只读展示当前部署地址（06 原型 ①：点 › 切历史记录——多服务器历史
               留 M7，当前单部署取 window.location.host）。等宽字体对齐原型 .field。 */}
@@ -174,25 +171,41 @@ export function AuthGate({ children }: { children: ReactNode }) {
             {t("auth.passwordLabel")}
           </label>
           <input
+            aria-invalid={loginFailed}
             autoComplete="current-password"
-            className="mt-1.5 h-11 w-full rounded-xl border border-sep bg-elevated px-4 font-mono text-subhead text-ink-1 outline-none transition placeholder:text-ink-3 focus:border-primary focus:ring-2 focus:ring-primary/20"
+            className={`mt-1.5 h-11 w-full rounded-xl border bg-elevated px-4 font-mono text-subhead text-ink-1 outline-none transition placeholder:text-ink-3 focus:ring-2 ${
+              loginFailed
+                ? "border-error focus:border-error focus:ring-error/20"
+                : "border-sep focus:border-primary focus:ring-primary/20"
+            }`}
             id={passwordId}
             placeholder="••••••••"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
-          <button
-            className="mt-5 h-[46px] w-full cursor-pointer rounded-full bg-primary text-body font-semibold text-on-accent transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-elevated3 disabled:text-ink-2"
-            disabled={password.trim().length === 0 || loginMutation.isPending}
-            type="submit"
-          >
-            {loginMutation.isPending ? t("auth.unlocking") : t("auth.unlock")}
-          </button>
+          {offline ? (
+            <button
+              className="mt-5 h-[46px] w-full cursor-pointer rounded-full bg-primary text-body font-semibold text-on-accent transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-elevated3 disabled:text-ink-2"
+              disabled={auth.isFetching}
+              onClick={() => void auth.refetch()}
+              type="button"
+            >
+              {auth.isFetching ? t("auth.retrying") : t("auth.retryConnect")}
+            </button>
+          ) : (
+            <button
+              className="mt-5 h-[46px] w-full cursor-pointer rounded-full bg-primary text-body font-semibold text-on-accent transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-elevated3 disabled:text-ink-2"
+              disabled={password.trim().length === 0 || loginMutation.isPending}
+              type="submit"
+            >
+              {loginMutation.isPending ? t("auth.unlocking") : t("auth.unlock")}
+            </button>
+          )}
           <p className="mt-3 text-center text-caption text-ink-2">{t("auth.hint")}</p>
-          {loginMutation.error instanceof Error ? (
-            <p className="mt-3 rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-footnote text-error">
-              {loginMutation.error.message}
+          {loginFailed ? (
+            <p className="mt-3 rounded-xl border border-error/30 bg-tint-red px-4 py-3 text-footnote text-error">
+              {loginMutation.error?.message}
             </p>
           ) : null}
         </form>
