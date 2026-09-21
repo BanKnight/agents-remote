@@ -87,6 +87,8 @@ async function setupMocks(page) {
       body: JSON.stringify({ approvals: [{ id: "a1" }, { id: "a2" }] }),
     }),
   );
+  // approvals-stream WS 一并隔离（真环境空快照会整体覆盖 REST mock → chip 偶发消失）。
+  await page.route(/\/api\/approvals\/stream$/, (r) => r.abort());
   await page.route(new RegExp(`/api/projects/proj1/agent-sessions(?:\\?.*)?$`), (r) =>
     r.fulfill({
       status: 200,

@@ -39,6 +39,7 @@ import {
   rankGlobalInstances,
   tabIdOf,
   useIsDesktopViewport,
+  workbenchCreateMenuOpenAtom,
   workbenchRenderContentAtom,
 } from "../../routes/workbench-model";
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
@@ -391,6 +392,10 @@ function InstanceLeftOverviewBase({
   dragAdapter,
 }: InstanceLeftOverviewProps) {
   const { t } = useT();
+  // ⌘N（新建实例）受控：快捷键 handler set workbenchCreateMenuOpenAtom true → 本 header 的
+  // 创建菜单程序化打开；菜单关闭归零（ActionMenu 半受控，见 action-menu.tsx props 注释）。
+  const createMenuOpen = useAtomValue(workbenchCreateMenuOpenAtom);
+  const setCreateMenuOpen = useSetAtom(workbenchCreateMenuOpenAtom);
 
   // 作用域 seg4（§6.10-7，05 原型 side `seg4 mini scope`「项目/全部」）：「项目」= 本项目实例
   //（默认），「全部」= 所有项目实例平铺（candidateToGridItem 卡片带 projectName 区分归属）。
@@ -514,6 +519,8 @@ function InstanceLeftOverviewBase({
           isCreating={create.isCreating}
           onCreateAgent={create.createAgent}
           onCreateTerminal={create.createTerminal}
+          onOpenChange={setCreateMenuOpen}
+          open={createMenuOpen}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">{leftOverviewContent}</div>
@@ -1679,6 +1686,9 @@ type CreateSessionBarProps = {
   onCreateTerminal: () => void;
   /** trigger 额外 className（如全宽 "w-full justify-center"）。默认 inline 紧凑（h-7 px-2）。 */
   triggerClassName?: string;
+  /** 半受控开合（可选）：传 open 即完全受控（左栏 header 处接 ⌘N atom，见 workbench-model）。 */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 /**
@@ -1692,12 +1702,16 @@ export function CreateSessionBar({
   onCreateAgent,
   onCreateTerminal,
   triggerClassName,
+  open,
+  onOpenChange,
 }: CreateSessionBarProps) {
   const { t } = useT();
   return (
     <ActionMenu
       align="end"
       cancelLabel={t("cancel")}
+      open={open}
+      onOpenChange={onOpenChange}
       items={[
         {
           label: t("workbench.createClaude"),

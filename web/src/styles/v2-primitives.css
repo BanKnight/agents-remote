@@ -1798,6 +1798,54 @@
     padding-bottom: 4px;
   }
 
+  /* 05f 审批 Popover（Mac，M9 批次 c）——锚于 sbar 待审批 chip。与 11 移动审批中心共用
+     .acard/.cnt/.all/.cmd/.dot 单源；此处只补 Popover 壳与 05f 紧凑单行（.ar1 行内按钮）。 */
+  .apop {
+    width: 378px;
+    padding: 12px 14px;
+  }
+  .ahd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+  }
+  .apop .acard {
+    background: var(--bg-elevated3);
+  }
+  .apop .acard.off {
+    opacity: 0.55;
+  }
+  .apop .acard .ar1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .apop .acard .abtns {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+  }
+  .apop .acard .abtns .ghost {
+    font-size: 11px;
+    padding: 3px 12px;
+    border-radius: 11px;
+    border: 1px solid var(--ink-2);
+    color: var(--ink-1);
+    background: none;
+  }
+  .apop .acard .abtns .okb {
+    font-size: 11px;
+    padding: 3px 12px;
+    border-radius: 11px;
+    background: var(--c-success);
+    color: var(--on-success);
+    font-weight: 600;
+  }
+
   /* 02 原型 .ap-row（M5-b 入口①：项目 Tab 全局活动卡顶部的审批行，pending=0 隐藏） */
   .ap-row {
     display: flex;

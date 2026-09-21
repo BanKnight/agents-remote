@@ -54,6 +54,12 @@ type ActionMenuProps = {
    */
   contextMenuPoint?: { x: number; y: number } | null;
   onContextMenuClose?: () => void;
+  /**
+   * 半受控开合（可选）：传 `open` 即完全受控（快捷键 ⌘N 程序化打开创建菜单），不传为
+   * 非受控（trigger 自管）。onOpenChange 在两端形态（Dialog/DropdownMenu）统一回调。
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 /**
@@ -72,9 +78,16 @@ export function ActionMenu({
   cancelLabel,
   contextMenuPoint = null,
   onContextMenuClose,
+  open: openProp,
+  onOpenChange,
 }: ActionMenuProps) {
   const isMobile = useIsMobile();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = openProp ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    setInternalOpen(next);
+    onOpenChange?.(next);
+  };
 
   if (isMobile) {
     return (
@@ -157,7 +170,7 @@ export function ActionMenu({
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
         <DropdownMenuContent align={align}>{renderItems()}</DropdownMenuContent>
       </DropdownMenu>

@@ -410,6 +410,15 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 - **seg 视图偏好不持久化**：作用域选择为组件内 state（默认「项目」），刷新回落默认——低价值状态不入 localStorage。
 - **prune 时序教训**：create/resume navigate 先行 + `focusId` 保护已是既有约定（WorkbenchRoute prune effect 注释）；分屏新增第三条路径（POST → navigate → dropIntoLeaf）同样遵守。调试中真正的红因是**探针 mock 数据形状错**（overview candidate 用了 `id`，shared OverviewCandidate 实为 `sessionId`+`type`）→ globalRefs 派生出 `{undefined}` → prune 把非聚焦 tab 全判 stale。教训：**探针 mock 必须严格对齐 shared 类型字段名**（OverviewCandidate=sessionId / AgentSession=id 两套形状不可混用一个对象）。
 
+**批次 c 落地补记（2026-09-22，实现与拍板的差异 + 教训）**：
+- **快捷键六条落地形态**（spec §10.2）：⌘F 挪批次 d（10m 全局文件页接线时一并绑，不绑到尚不存在的入口）；Esc 关浮层 = Radix 内建（DropdownMenu/Dialog/Popover 的 onOpenChange 统一入口），无全局 handler；⌘N = 受控打开左栏创建菜单（ActionMenu 半受控化：可选 `open`/`onOpenChange`，受控值存 `workbenchCreateMenuOpenAtom`，移动 Dialog 分支不受影响）；⌘R = jotai 信号 atom（`workbenchReconnectRequestAtom`，`Record<sessionId, number>` 递增计数）→ SessionDetail 仅 `connectionStatus==="error"` 时消费 bump reconnectKey，**消费即清零**防后续 error 误触发自动重连。绑定条件 = `useIsDesktopViewport()`（≥1024）+ `(hover: hover) and (pointer: fine)`（frontend-notes §7 触屏/指针正交，Chromium 无法模拟、真机交用户）；hook 兼容 metaKey||ctrlKey（探针/非 Mac 平台用 Ctrl 系）。⌘1..9 = `collectLeaves(layout.root)[N-1]` → `onSelectTab(leaf.id, leaf.activeTabId)`（复用既有回调，零新导航管道）。
+- **05f 审批 Popover 与移动同源**：同数据同逻辑（useApprovals 单订阅 ["approvals"] + respond 逐个 allSettled + 全部允许两段确认 + runtimeAlive 冻结），仅形态按 05f 紧凑单行（.ar1 行内 .abtns）；样式复用 .acard/.cnt/.all/.cmd 单源，新增 .apop/.ahd/.ar1/.abtns 四类。
+- **⌘R 语义拍板（code review 2026-09-22）**：hook 层不知 connectionStatus，⌘R 在聚焦会话存在时无条件 preventDefault（含连接正常态）= 接受「工作台内 ⌘R = 重连聚焦会话」语义（spec「断线时」为推荐态）；正常态信号由 SessionDetail 消费端过期清零（非 error 态同样 delete），杜绝信号残留致后续自然 error 误触发自动重连。真机若反馈「⌘R 想刷新页面被劫持」再收窄。
+- **05f Popover 视觉差异记档（design review 2026-09-22，均〔低〕）**：①圆角随 `ui/popover` 基类 `rounded-xl`=12px（原型 14px；基础组件一致性优先）；②无向下 caret（Radix Popover 无内建箭头，shadcn 标准形态不带）；③`.ar1` 内 projectName 用 `text-ink-2`（原型继承 ink-1；次级信息次级色的层级化）。字号已下沉 CSS 单源（.ahd 14px / .ar1 继承 12px），JSX 不散写任意值字号。
+- **⌘N global scope 批次 d 确认项**：⌘N 在 global scope 静默不响应（spec 未限定 scope）；批次 d 落 10m 全局文件页时一并确认 global 创建入口形态。
+- **⌘1..9 真机项**（并入 M9 遗留清单）：真实浏览器多 tab 场景 Ctrl/Meta+数字可能被 browser 层 tab 切换抢占，headless 单 tab 探针证不了，交用户真机验证。
+- **探针 mock 铁律补两条**（与批次 b「形状对齐」同族）：① mock 须**完备覆盖 prune 依赖的数据源**——overview candidates 必须含分屏新建的终端（真实 overview 聚合必含运行中终端；缺它 → 切走焦点后 prune 判 stale 删 tab，⌘2 空窗，业务代码零责）；② 探针必须**隔离真实环境的 WS 推送**——m9b 曾漏 mock `/api/approvals/stream`，真实 api 的空快照经 `setQueryData` 整体覆盖 REST mock → 「待审批」chip 偶发消失（即批次 b 记录的「复跑绿」偶发真因，竞速：WS 帧先到则红、失败/慢则绿）。修法 = stream route abort，REST fallback 维持 mock 快照。另甄别一处**基线既有 flaky**（claude-auto-retry.test「pending 存在时重复 error」单跑稳定、全量偶发红，与 web 改动无关）。
+
 **记档不做**：iPad 竖屏专用布局（沿用移动拉宽）；iPad 竖屏分屏（触屏分屏交互成本高，桌面独占）；画中画/多窗口；PWA 桌面安装形态。
 
 ## §7 待定项跟踪

@@ -1935,6 +1935,20 @@ export const workbenchLayoutAtom = atomWithStorage<WorkbenchLayoutV3>(
 );
 
 /**
+ * ⌘N（新建实例）→ 左栏 InstanceLeftOverview header 的 CreateSessionBar 菜单受控开合。
+ * 会话级 atom（不持久化）：快捷键 handler set true，菜单 onOpenChange(false) 归零。
+ * CreateSessionBar 其余调用点（EmptyInstanceArea/ProjectInstances）不接 atom，保持非受控。
+ */
+export const workbenchCreateMenuOpenAtom = atom(false);
+
+/**
+ * ⌘R（重连，断线时）请求信号：sessionId → 递增计数。快捷键 handler 对当前聚焦 session
+ * 递增；SessionDetail effect 监听自己 sessionId 的计数变化，且仅 connectionStatus === "error"
+ * 时消费（bump reconnectKey 重连）——未断线按 ⌘R 不打断现有 WS。
+ */
+export const workbenchReconnectRequestAtom = atom<Record<string, number>>({});
+
+/**
  * 读写 workbench 布局（V4 单一 layout，VSCode 式跨 scope 稳定）。中栏 group+tab 跨项目切换稳定不动，
  * 接受「项目 A 的实例 tab 在项目 B 中栏也可见」（VSCode 语义）。写：`update(fn)` 直接改单一 layout。
  */

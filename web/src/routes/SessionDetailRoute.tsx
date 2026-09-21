@@ -10,7 +10,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { type FormEvent, type RefObject, useCallback, useEffect, useRef, useState } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
@@ -44,6 +44,7 @@ import { ShellIcon } from "../components/shell/icons";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { ActionMenu, type ActionMenuItem } from "../components/ui/action-menu";
 import { optimisticallyRemoveSession } from "../components/workbench/instance-area";
+import { workbenchReconnectRequestAtom } from "./workbench-model";
 
 type SessionDetailProps = {
   projectName: string;
@@ -94,6 +95,29 @@ export function SessionDetail({
   const [reconnectKey, setReconnectKey] = useState(0);
   const reconnectAttemptsRef = useRef(0);
   const [connectionStatus, setConnectionStatus] = useState<StreamConnectionStatus>("connecting");
+  // ⌘R（重连，断线时）请求信号（use-workbench-shortcuts）：仅 error 态消费——bump
+  // reconnectKey 重连后「消费即清零」；非 error 态的信号同样清零（连接正常时按的 ⌘R
+  // 已无意义），防信号残留到之后自然 error 误触发「用户未按键」的自动重连。
+  const reconnectRequest = useAtomValue(workbenchReconnectRequestAtom)[sessionId];
+  const setReconnectRequest = useSetAtom(workbenchReconnectRequestAtom);
+  useEffect(() => {
+    if (!reconnectRequest) return;
+    if (connectionStatus !== "error") {
+      setReconnectRequest((prev) => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+      return;
+    }
+    terminalDataRef.current = null;
+    setReconnectKey((value) => value + 1);
+    setReconnectRequest((prev) => {
+      const next = { ...prev };
+      delete next[sessionId];
+      return next;
+    });
+  }, [reconnectRequest, connectionStatus, sessionId, setReconnectRequest]);
   // Only shown for unrecoverable failures (protocol error, session ended)
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);

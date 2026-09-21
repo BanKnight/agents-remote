@@ -17,6 +17,7 @@ import {
 } from "../components/workbench/instance-area";
 import { GlobalProjectsOverview } from "../components/workbench/global-projects-overview";
 import { createTerminalSession } from "../api/client";
+import { useWorkbenchShortcuts } from "../hooks/use-workbench-shortcuts";
 import { ChatOverview } from "../components/workbench/chat-overview";
 import { MobileWorkbench, SessionModeTabs } from "../components/workbench/mobile-workbench";
 import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
@@ -714,6 +715,14 @@ function WorkbenchContent({
       navigateSession,
     ],
   );
+
+  // 桌面快捷键（spec §10.2）：⌘N/⌘1..9/⌘\/⌘R（⌘F 随批次 d 10m 接线，Esc 交 Radix）。
+  useWorkbenchShortcuts({
+    focusId: focusId ?? null,
+    onSplit: onSplitLeaf,
+    onSelectTab,
+    scopeKind: scope.kind,
+  });
 
   // ── Phase B 拖放分屏（设计 §7.2/§7.4）──────────────────────────────────────────
   // dragState = 拖动源 ref + 起始/当前 pointer；activeZone = elementFromPoint hit-test 结果。

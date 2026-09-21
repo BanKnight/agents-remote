@@ -1,12 +1,13 @@
 import { useApprovals } from "../../hooks/use-approvals";
 import { useT } from "../../i18n";
 import { useIsDesktopViewport } from "../../routes/workbench-model";
+import { ApprovalPopover } from "./approval-popover";
 import { useGlobalInstanceCandidates } from "./instance-area";
 
 /**
  * Mac 状态栏（§6.10-4，05 原型 `.sbar`）：连接点 + 「N 实例运行中」+「N 项待审批 ›」
- *（warning 色，点击行为 = 批次 c 审批 Popover）。仅桌面渲染（useIsDesktopViewport 与
- * 挂载容器 lg:block 同分界），移动端 return null 且不订阅（approvals WS 单实例，与移动
+ *（warning 色，点击 = 05f 审批 Popover，见 approval-popover.tsx）。仅桌面渲染（useIsDesktopViewport
+ * 与挂载容器 lg:block 同分界），移动端 return null 且不订阅（approvals WS 单实例，与移动
  * 审批 tray 不并存双订阅）。
  *
  * 落地与拍板差异（记 §6.10 批次 b 补记，铁律「不得伪造数据」）：
@@ -34,12 +35,14 @@ export function StatusBar() {
       <span aria-hidden="true">·</span>
       <span>{t("workbench.statusInstancesRunning", { count: runningCount })}</span>
       {approvals.length > 0 ? (
-        <button
-          className="flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 font-semibold text-warning transition hover:bg-warning/10"
-          type="button"
-        >
-          {t("workbench.statusPendingApprovals", { count: approvals.length })}
-        </button>
+        <ApprovalPopover approvals={approvals}>
+          <button
+            className="flex cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 font-semibold text-warning transition hover:bg-warning/10"
+            type="button"
+          >
+            {t("workbench.statusPendingApprovals", { count: approvals.length })}
+          </button>
+        </ApprovalPopover>
       ) : null}
     </div>
   );
