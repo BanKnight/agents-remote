@@ -4,7 +4,12 @@ import { type ReactNode, useEffect, useRef } from "react";
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
 import { statusToV2DotClass } from "../shell/shell-primitives";
-import { ActionMenu } from "../ui/action-menu";
+import {
+  type ActionMenuItem,
+  ActionMenu,
+  useLongPressActions,
+  useRowContextMenu,
+} from "../ui/action-menu";
 import {
   type CreateSessionApi,
   AutoRetryHeaderButton,
@@ -14,29 +19,6 @@ import {
 /** row2 尾部工具入口（原型 .ticon ×3：folder/branch/book）。工具原位主体 = 同名 ?tab 维度
  * （与桌面 ProjectLeftPanel middle tab 同构，v2 IA 两端同构约定）。 */
 export type MobileProjectTool = "files" | "git" | "wiki";
-
-/** row2 ＋ 与 03h 空态卡 CTA 共用的新建实例菜单项（单一装配来源防漂移——design-reviewer
- * M3-c #5；review 指出当时已有 5 处 createClaude 菜单声明，本收口覆盖移动两处）。 */
-export function useCreateSessionMenuItems(create: CreateSessionApi) {
-  const { t } = useT();
-  return [
-    {
-      label: t("workbench.createClaude"),
-      icon: <ShellIcon name="anthropic" />,
-      onSelect: () => create.createAgent("claude"),
-    },
-    {
-      label: t("workbench.createOmp"),
-      icon: <ShellIcon name="agent-nav" />,
-      onSelect: () => create.createAgent("omp"),
-    },
-    {
-      label: t("workbench.createTerminal"),
-      icon: <ShellIcon name="terminal" />,
-      onSelect: create.createTerminal,
-    },
-  ];
-}
 
 type MobileProjectHeaderProps = {
   projectName: string;
@@ -61,8 +43,18 @@ type MobileProjectHeaderProps = {
   /** 工具切换；再点同工具由调用方传 null 退出（回实例主体）。 */
   onToolChange: (tool: MobileProjectTool | null) => void;
   create: CreateSessionApi;
+  /** row2 ＋ 点击（03j 新建实例 sheet；M5-a 起取代 ActionMenu 菜单形态，与 03h 空态卡
+   * CTA 同一 sheet——编号②「主按钮 → 新建实例 sheet」）。 */
+  onCreateInstance: () => void;
+  /** 02c pill 长按/右键菜单项（置顶/重命名/关闭；数据与交互在调用方装配）。缺省 = pill
+   * 无长按菜单。 */
+  pillMenuItems?: (entry: ProjectInstanceEntry) => ActionMenuItem[];
   /** 聚焦 session 态 nav 右侧 ℹ/✕（info/confirm holder 由调用方渲染）。 */
   focusActions?: ReactNode;
+  /** nav 标题点击（03l 切换 sheet 入口；undefined = 标题不可点）。 */
+  onSwitchProjects?: () => void;
+  /** nav ⋯ 更多菜单（03n「会话历史」等；调用方装配 ActionMenu）。 */
+  moreMenu?: ReactNode;
   /** 聚焦 agent 实例（chips 运行摘要行数据源；工具态无 chips 行）。 */
   focusedAgent: AgentSession | null;
   /** 聚焦 terminal 实例（03f：chips 行只剩 tmux 会话 chip，无模型/权限/effort）。 */
@@ -98,13 +90,19 @@ export function MobileProjectHeader({
   onSelectTab,
   onToolChange,
   create,
+  onCreateInstance,
+  pillMenuItems,
   focusActions,
+  moreMenu,
+  onSwitchProjects,
   focusedAgent,
   focusedTerminal,
 }: MobileProjectHeaderProps) {
   const { t } = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const createMenuItems = useCreateSessionMenuItems(create);
+  // 02c pill 长按/右键菜单：共享 long-press hook（03w 同源）+ per-pill 坐标菜单容器。
+  const pillCtx = useRowContextMenu();
+  const lp = useLongPressActions(pillCtx.openAt);
   const hasPills = instances.length > 0 || skillTabs.length > 0;
   const activePillId =
     instances.some((entry) => entry.session.id === activeTabId) ||
@@ -154,9 +152,27 @@ export function MobileProjectHeader({
           {l3 ? l3.backLabel : t("nav.projects")}
         </button>
         <h1 className={`nv-t min-w-0${l3 ? " font-mono text-[14px]" : ""}`}>
-          <span className="block truncate">{l3 ? l3.title : projectName}</span>
+          {l3 || !onSwitchProjects ? (
+            <span className="block truncate">{l3 ? l3.title : projectName}</span>
+          ) : (
+            <button
+              className="flex w-full h-full cursor-pointer items-center justify-center gap-1.5"
+              onClick={onSwitchProjects}
+              type="button"
+            >
+              <span className="block truncate">{projectName}</span>
+              <span className="sw" />
+            </button>
+          )}
         </h1>
-        {l3 ? l3.actions : focusActions}
+        {l3 ? (
+          l3.actions
+        ) : (
+          <>
+            {focusActions}
+            {moreMenu}
+          </>
+        )}
       </div>
       {l3 ? null : (
         <>
@@ -175,13 +191,19 @@ export function MobileProjectHeader({
               >
                 {instances.map((entry) => {
                   const active = entry.session.id === activePillId;
+                  const bound = !!pillMenuItems;
                   return (
                     <button
-                      className={`pill cursor-pointer${active ? " on" : ""}`}
+                      className={`pill cursor-pointer select-none${active ? " on" : ""}`}
                       data-active={active ? "true" : undefined}
                       key={entry.session.id}
-                      onClick={() => onSelectInstance(entry.session.id)}
+                      onClick={() => {
+                        if (lp.guardClick()) return;
+                        onSelectInstance(entry.session.id);
+                      }}
+                      onContextMenu={bound ? (e) => pillCtx.openAt(entry.session.id, e) : undefined}
                       type="button"
+                      {...(bound ? lp.bind(entry.session.id) : {})}
                     >
                       {entry.type === "agent" ? (
                         <span className={statusToV2DotClass(entry.session.status)} />
@@ -197,11 +219,27 @@ export function MobileProjectHeader({
                     </button>
                   );
                 })}
+                {/* 02c pill 长按/右键菜单容器（单一；items 按 ctx 命中行计算——pointFor 只对
+                  命中行非空）。长按绑定走 useLongPressActions（03w 同款计时/slop/guardClick）。 */}
+                {pillMenuItems
+                  ? (() => {
+                      const menuEntry = instances.find((e) => pillCtx.pointFor(e.session.id));
+                      return menuEntry ? (
+                        <ActionMenu
+                          cancelLabel={t("cancel")}
+                          contextMenuPoint={pillCtx.pointFor(menuEntry.session.id)}
+                          items={pillMenuItems(menuEntry)}
+                          onContextMenuClose={pillCtx.close}
+                          trigger={<span className="hidden" />}
+                        />
+                      ) : null;
+                    })()
+                  : null}
                 {skillTabs.map((st) => {
                   const active = st.tabId === activePillId;
                   return (
                     <button
-                      className={`pill cursor-pointer font-mono text-[11px]${active ? " on" : ""}`}
+                      className={`pill cursor-pointer select-none font-mono text-[11px]${active ? " on" : ""}`}
                       data-active={active ? "true" : undefined}
                       key={st.tabId}
                       onClick={() => onSelectTab(st.leafId, st.tabId)}
@@ -218,22 +256,16 @@ export function MobileProjectHeader({
                 {t("workbench.projectTools")}
               </span>
             )}
-            <ActionMenu
-              align="end"
-              cancelLabel={t("cancel")}
-              items={createMenuItems}
-              trigger={
-                <button
-                  aria-label={t("workbench.createSessionAria")}
-                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center text-primary transition hover:bg-ink-1/5 active:bg-ink-1/10"
-                  disabled={create.isCreating}
-                  type="button"
-                >
-                  {/* 裸＋字形（iOS 惯例，.plus::before/after 画笔画） */}
-                  <span className="plus" />
-                </button>
-              }
-            />
+            <button
+              aria-label={t("workbench.createSessionAria")}
+              className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center text-primary transition hover:bg-ink-1/5 active:bg-ink-1/10"
+              disabled={create.isCreating}
+              onClick={onCreateInstance}
+              type="button"
+            >
+              {/* 裸＋字形（iOS 惯例，.plus::before/after 画笔画） */}
+              <span className="plus" />
+            </button>
             <span className="sep" />
             {(
               [

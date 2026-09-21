@@ -327,6 +327,8 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   branch?: string;
   leftMode?: "auto" | "files" | "plugins";
   mode?: WorkbenchMode;
+  /** M5-b 审批中心：/projects?approvals=1 → 项目 Tab 挂载即开审批 sheet（tray 标题入口②）。 */
+  approvals?: boolean;
 } {
   const result: {
     rightTab?: WorkbenchInspectionTab;
@@ -336,7 +338,11 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     branch?: string;
     leftMode?: "auto" | "files" | "plugins";
     mode?: WorkbenchMode;
+    approvals?: boolean;
   } = {};
+  if (search.approvals === "1" || search.approvals === true) {
+    result.approvals = true;
+  }
   if (
     search.rightTab === "files" ||
     search.rightTab === "git" ||

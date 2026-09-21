@@ -1,6 +1,6 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
@@ -9,6 +9,8 @@ import { useCreateProjectDialog } from "../shell/project-setup";
 import { relativeTime } from "./history-list";
 import { useGlobalInstanceCandidates } from "./instance-area";
 import { usePinnedSessions } from "../../hooks/pinned-sessions";
+import { useApprovals } from "../../hooks/use-approvals";
+import { MobileApprovalSheet } from "./mobile-sheets";
 import {
   rankGlobalInstances,
   workbenchMobileFocusTabAtom,
@@ -47,6 +49,25 @@ export function MobileProjectsHome() {
   const { pinned } = usePinnedSessions();
   const [query, setQuery] = useState("");
   const [showAllActivity, setShowAllActivity] = useState(false);
+  // M5-b 审批中心：ap-row 入口（原型 02 .ap-row，pending=0 隐藏）+ 11 sheet。?approvals=1
+  //（tray 标题入口②）→ 挂载即开；关闭时清参避免返回键死循环。
+  const { approvals } = useApprovals(true);
+  const search = useSearch({ strict: false });
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
+  useEffect(() => {
+    if (search.approvals === true) setApprovalsOpen(true);
+  }, [search.approvals]);
+  const closeApprovals = () => {
+    setApprovalsOpen(false);
+    if (search.approvals === true) {
+      // 函数式只清 approvals 参数，保留 search schema 其他维度（reviewer P3）。
+      void navigate({
+        to: "/projects",
+        search: (prev) => ({ ...prev, approvals: undefined }),
+      });
+    }
+  };
+  const openApprovals = () => setApprovalsOpen(true);
 
   // 活动行 = 全局候选按 needs-interaction > running > terminal 排序（与全局面板同序），
   // 搜索时按实例名/副行过滤。时间戳 fallback updatedAt → createdAt。
@@ -167,8 +188,17 @@ export function MobileProjectsHome() {
               ) : null}
             </div>
             <div className="mx-4 rounded-xl border border-sep bg-elevated px-3 py-1">
-              {/* 审批行（原型 .ap-row tint-orange）留 M5：D8 审批中心服务端聚合落地时在此
-                  渲染（pending=0 隐藏整行，不渲染无数据的假入口）。 */}
+              {/* 审批行（原型 02 .ap-row tint-orange，pending=0 隐藏）：入口①（§6.4）。 */}
+              {approvals.length > 0 ? (
+                <button
+                  className="ap-row w-full cursor-pointer"
+                  onClick={openApprovals}
+                  type="button"
+                >
+                  <ShellIcon className="h-[15px] w-[14px] flex-none" name="warning-triangle" />
+                  <span className="tx">{t("approvals.rowLabel", { count: approvals.length })}</span>
+                </button>
+              ) : null}
               {activityRows.length === 0 ? (
                 <p className="py-3 text-center text-footnote text-ink-2">{t("home.noActivity")}</p>
               ) : (
@@ -288,6 +318,20 @@ export function MobileProjectsHome() {
         ) : null}
       </div>
       {createProjectDialog}
+      <MobileApprovalSheet
+        approvals={approvals}
+        onOpenChange={(next) => {
+          if (!next) closeApprovals();
+        }}
+        onOpenSession={(projectName, sessionId) => {
+          void navigate({
+            from: "/projects",
+            params: { key: projectName, id: sessionId },
+            to: "/projects/$key/session/$id",
+          });
+        }}
+        open={approvalsOpen}
+      />
     </div>
   );
 }

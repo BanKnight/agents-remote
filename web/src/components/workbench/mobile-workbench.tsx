@@ -59,11 +59,8 @@ import {
   useScopeInstanceOrder,
 } from "./instance-area";
 import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
-import {
-  MobileProjectHeader,
-  type MobileProjectTool,
-  useCreateSessionMenuItems,
-} from "./mobile-project-header";
+import { MobileProjectHeader, type MobileProjectTool } from "./mobile-project-header";
+import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
 import { FileTabPreview } from "../files/file-preview-panel";
 import { WORKBENCH_GIT_LEFT_QUERY_SCOPE } from "../git/git-diff-viewer";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
@@ -76,6 +73,15 @@ import {
   MobileL3GitDiff,
 } from "./mobile-l3";
 import { MobileFilesTool, MobileGitTool, MobileWikiTool } from "./mobile-project-tools";
+import {
+  MobileCreateInstanceSheet,
+  MobileProjectSwitchSheet,
+  MobileSessionHistorySheet,
+} from "./mobile-sheets";
+import { useResumeAgentSession } from "./history-list";
+import { useRenameSession } from "./instance-area";
+import type { ActionMenuItem } from "../ui/action-menu";
+import { useCreateProjectDialog } from "../shell/project-setup";
 import { useMeasuredBottomNav } from "../shell/shell-layout";
 
 type MobileWorkbenchProps = {
@@ -837,6 +843,56 @@ function MobileProjectWorkbench({
   // 03p wsearch：chip 点击展开输入（query 提升共享给 MobileWikiTool；非 wiki 态点 chip 进 wiki）。
   const [wikiSearchOpen, setWikiSearchOpen] = useState(false);
   const [wikiSearchQuery, setWikiSearchQuery] = useState("");
+  // M5-a 浮层（03j/03l/03n/08）：row2 ＋ 新建实例、nav 标题 ▾ 项目切换、nav ⋯ 菜单会话历史、
+  // 切换 sheet 内新建项目。
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
+  const [switchSheetOpen, setSwitchSheetOpen] = useState(false);
+  const [historySheetOpen, setHistorySheetOpen] = useState(false);
+  const createProjectDialog = useCreateProjectDialog();
+  // 03n 已结束会话恢复（与桌面 history tab 同一 mutation 管道）。
+  const { resume: resumeSession } = useResumeAgentSession(scope.key);
+  // 02c pill 长按/右键菜单（置顶/重命名/关闭）。pin 数据管道 = usePinnedSessions 单源（乐观
+  // 更新）；rename/close 复用既有业务 hook（与 MobileFocusActions ℹ✕ 同源）。
+  const { pinned } = usePinnedSessions();
+  const pinIt = usePinSession();
+  const unpinIt = useUnpinSession();
+  const renameSession = useRenameSession();
+  const pillMenuItems = (entry: ProjectInstanceEntry): ActionMenuItem[] => {
+    const id = entry.session.id;
+    const pinnedNow = pinned.has(id);
+    return [
+      ...(entry.type === "agent"
+        ? [
+            {
+              label: pinnedNow ? t("workbench.unpin") : t("workbench.pin"),
+              icon: <ShellIcon name="pin" />,
+              onSelect: () => (pinnedNow ? unpinIt.mutate(id) : pinIt.mutate(id)),
+            },
+          ]
+        : []),
+      {
+        label: t("session.rename"),
+        icon: <ShellIcon name="edit" />,
+        onSelect: () => {
+          void renameSession.rename(
+            {
+              kind: "session",
+              projectName: entry.session.projectName,
+              sessionId: entry.session.id,
+            },
+            entry.type,
+            entry.session.displayName,
+          );
+        },
+      },
+      {
+        label: t("workbench.pillCloseSession"),
+        icon: <ShellIcon name="close" />,
+        onSelect: () => closeInstance(id, entry.type),
+        variant: "destructive" as const,
+      },
+    ];
+  };
   const updateWikiSearch = (next: string) => {
     setWikiSearchQuery(next);
     if (!activeTool) handleToolChange("wiki");
@@ -954,6 +1010,31 @@ function MobileProjectWorkbench({
           focusedAgent={focusedAgent}
           focusedTerminal={focusedTerminal}
           instances={instances}
+          onCreateInstance={() => setCreateSheetOpen(true)}
+          pillMenuItems={pillMenuItems}
+          moreMenu={
+            <ActionMenu
+              align="end"
+              cancelLabel={t("cancel")}
+              items={[
+                {
+                  label: t("workbench.menuHistory"),
+                  icon: <ShellIcon name="restore" />,
+                  onSelect: () => setHistorySheetOpen(true),
+                },
+              ]}
+              trigger={
+                <button
+                  aria-label={t("workbench.moreActions")}
+                  className="ic cursor-pointer"
+                  type="button"
+                >
+                  <ShellIcon name="ellipsis" />
+                </button>
+              }
+            />
+          }
+          onSwitchProjects={() => setSwitchSheetOpen(true)}
           onBack={() => {
             void navigate({ to: "/projects" });
           }}
@@ -1173,7 +1254,11 @@ function MobileProjectWorkbench({
                 </div>
               </div>
             ) : (
-              <EmptyProjectState create={create} onBrowseTools={() => handleToolChange("files")} />
+              <EmptyProjectState
+                create={create}
+                onBrowseTools={() => handleToolChange("files")}
+                onCreateInstance={() => setCreateSheetOpen(true)}
+              />
             )
           ) : null}
         </div>
@@ -1182,6 +1267,49 @@ function MobileProjectWorkbench({
         永不挂载 → 「点击无响应」。顶层常驻。 */}
       {closeHolder}
       {createPromptHolder}
+      {/* 02c pill 菜单「重命名」的命名 prompt holder（useRenameSession 自带，portal 渲染）。 */}
+      {renameSession.holder}
+      {/* M5-a 浮层（portal 渲染，位置无谓，随 holders 常驻顶层）：03j 新建实例 / 03l 切换 /
+        03n 历史 / 08 新建项目（03l newp 行入口）。 */}
+      {createProjectDialog.dialog}
+      <MobileCreateInstanceSheet
+        create={create}
+        onOpenChange={setCreateSheetOpen}
+        open={createSheetOpen}
+        projectName={scope.key}
+      />
+      <MobileProjectSwitchSheet
+        currentSessionId={focusRef?.kind === "session" ? effectiveFocusId : undefined}
+        onCreateProject={createProjectDialog.openCreate}
+        onOpenChange={setSwitchSheetOpen}
+        onSwitchProject={(name) => {
+          void navigateWorkbench({ kind: "project", key: name });
+        }}
+        onSwitchSession={(name, sessionId) => {
+          void navigateWorkbench({ kind: "project", key: name }, sessionId);
+        }}
+        open={switchSheetOpen}
+      />
+      <MobileSessionHistorySheet
+        onFocusExisting={(sessionId) => {
+          // 活跃态行（running/idle/error）：聚焦既有实例，不新建（P1 守卫，与切换 sheet 同语义）。
+          void navigateWorkbench({ kind: "project", key: scope.key }, sessionId);
+        }}
+        onOpenChange={setHistorySheetOpen}
+        onResume={(session) => {
+          // codex 无 CLI resume 通道（createAgentSession 仅 claudeSessionId/acpSessionId），
+          // narrowing 后静默忽略（现状 create 菜单也无 codex，数据不会出现）。
+          if (session.provider === "claude" || session.provider === "omp") {
+            resumeSession({
+              acpSessionId: session.acpSessionId,
+              claudeSessionId: session.claudeSessionId,
+              provider: session.provider,
+            });
+          }
+        }}
+        open={historySheetOpen}
+        projectName={scope.key}
+      />
     </>
   );
 }
@@ -1228,19 +1356,20 @@ function MobileWikiRefBar({ projectName, sessionId }: { projectName: string; ses
 
 /**
  * 03h 空态卡（v2 M3-c，对标 docs/design/03h-workspace-empty.html）：项目无可聚焦实例时主体 =
- * .empty 卡（大图标容器 + 标题/副文 + CTA「新建 Agent」）+ 项目工具引导 link。CTA 复用 row2 ＋
- * 的同一 ActionMenu items（03h 编号②「主按钮 → 新建实例 sheet」，单一装配来源防漂移）；
+ * .empty 卡（大图标容器 + 标题/副文 + CTA「新建 Agent」）+ 项目工具引导 link。CTA 与 row2 ＋
+ * 同一入口（M5-a：03j 新建实例 sheet，编号②「主按钮 → 新建实例 sheet」）；
  * link 进 files 工具态（03h 编号③「工具是项目级，仍可用」）。
  */
 function EmptyProjectState({
   create,
   onBrowseTools,
+  onCreateInstance,
 }: {
   create: CreateSessionApi;
   onBrowseTools: () => void;
+  onCreateInstance: () => void;
 }) {
   const { t } = useT();
-  const createMenuItems = useCreateSessionMenuItems(create);
   return (
     // 滚动容器：pb-safe-area 避让（项目 scope 无底部 nav，PWA standalone 下 main=100vh 延伸进
     // home indicator 区）；pt-60px = 原型 .empty margin-top。
@@ -1251,20 +1380,14 @@ function EmptyProjectState({
         </div>
         <h2 className="mb-2 text-base font-semibold text-ink-1">{t("workbench.emptyTitle")}</h2>
         <p className="mb-[22px] text-[12.5px] text-ink-2">{t("workbench.emptyDesc")}</p>
-        <ActionMenu
-          align="center"
-          cancelLabel={t("cancel")}
-          items={createMenuItems}
-          trigger={
-            <button
-              className="empty-cta mx-auto block h-10 w-[200px] cursor-pointer rounded-full bg-primary text-sm font-semibold text-on-primary transition active:opacity-80 disabled:cursor-default disabled:opacity-60"
-              disabled={create.isCreating}
-              type="button"
-            >
-              {t("workbench.emptyCta")}
-            </button>
-          }
-        />
+        <button
+          className="empty-cta mx-auto block h-10 w-[200px] cursor-pointer rounded-full bg-primary text-sm font-semibold text-on-primary transition active:opacity-80 disabled:cursor-default disabled:opacity-60"
+          disabled={create.isCreating}
+          onClick={onCreateInstance}
+          type="button"
+        >
+          {t("workbench.emptyCta")}
+        </button>
       </div>
       <button
         className="empty-link block w-full cursor-pointer pt-4 text-center text-[13px] text-primary"

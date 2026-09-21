@@ -2054,6 +2054,13 @@ function ApprovalTray({
     return map;
   }, [toolCallIdSignature]);
   const locateToolCall = (toolCallId: string): number | null => locateIndex.get(toolCallId) ?? null;
+  // 入口②（§6.4 / 03 原型 pin ④「标题点击 = 审批中心」）：tray 标题行点击 → /projects?approvals=1
+  //（移动端；桌面状态栏入口归 M9）。
+  const isMobile = useIsMobile();
+  const navigate = useNavigate();
+  const navigateToCenter = () => {
+    void navigate({ to: "/projects", search: { approvals: true } });
+  };
   return (
     // v2 M3-d .tray 原语（03/04/05 三端同源：tint-orange + w 警示行 + c mono 摘要 +
     // btn ghost/ok）。utility 覆盖原型 margin（挂载点在 composer 区，间距由布局层管）。
@@ -2061,6 +2068,19 @@ function ApprovalTray({
       aria-label={t("claude.approval.trayAriaLabel")}
       className="tray mx-0 mb-1 flex-wrap gap-y-1.5"
     >
+      {isMobile ? (
+        <button
+          className="w w-full cursor-pointer text-left"
+          onClick={navigateToCenter}
+          type="button"
+        >
+          ⚠ {t("claude.approval.trayTitle", { count: approvals.length })} ›
+        </button>
+      ) : (
+        <span className="w w-full">
+          ⚠ {t("claude.approval.trayTitle", { count: approvals.length })}
+        </span>
+      )}
       {approvals.map((item) => {
         const firstArg = Object.values(item.args)[0];
         const argSummary = typeof firstArg === "string" ? firstArg.slice(0, 80) : item.toolName;

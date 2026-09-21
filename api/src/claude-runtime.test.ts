@@ -604,3 +604,64 @@ test("resolveControlModel passes model through when settingsStore absent", async
   expect(await runtime.resolveControlModel("opus")).toBe("opus");
   expect(await runtime.resolveControlModel(undefined)).toBeUndefined();
 });
+
+test("captureApprovalRequestFromLine：登记 can_use_tool，input 非对象/为 null 一律忽略", () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  const calls: Array<{ runtimeKey: string; sessionId: string; projectName: string }> = [];
+  runtime.setOnApprovalRequest((info) => calls.push(info));
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string; projectName: string }>;
+    captureApprovalRequestFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+  };
+  internal.processes.set("rt-key", { projectName: "demo", sessionId: "agent_1" });
+
+  internal.captureApprovalRequestFromLine("rt-key", {
+    type: "control_request",
+    request_id: "req-1",
+    request: { subtype: "can_use_tool", tool_name: "Bash", input: { command: "ls" } },
+  });
+  expect(calls).toEqual([{ runtimeKey: "rt-key", projectName: "demo", sessionId: "agent_1" }]);
+
+  // input: null 时 typeof 仍是 "object"——必须显式排除，否则摘要处 TypeError 炸掉整条
+  // stdout reader（reviewer P2）。非 can_use_tool / 非对象 input / 未知 runtime 同样忽略。
+  internal.captureApprovalRequestFromLine("rt-key", {
+    type: "control_request",
+    request_id: "req-null",
+    request: { subtype: "can_use_tool", tool_name: "Bash", input: null },
+  });
+  internal.captureApprovalRequestFromLine("rt-key", {
+    type: "control_request",
+    request_id: "req-other",
+    request: { subtype: "set_model", input: {} },
+  });
+  internal.captureApprovalRequestFromLine("rt-key", {
+    type: "control_request",
+    request_id: "req-str",
+    request: { subtype: "can_use_tool", input: "oops" },
+  });
+  internal.captureApprovalRequestFromLine("gone", {
+    type: "control_request",
+    request_id: "req-gone",
+    request: { subtype: "can_use_tool", input: {} },
+  });
+  expect(calls).toHaveLength(1);
+});
+
+test("close 路径显式收口审批（exited 回调被 generation 守卫挡下）", async () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  const settled: string[] = [];
+  runtime.setOnApprovalRuntimeSettled((runtimeKey) => settled.push(runtimeKey));
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string; projectName: string; proc: { kill(): void } }>;
+  };
+  internal.processes.set("rt-key", {
+    projectName: "demo",
+    sessionId: "agent_1",
+    proc: { kill: () => {} },
+  });
+
+  await runtime.close("rt-key");
+  // close 先 delete 再 kill → exited 回调的 isCurrentGeneration 恒 false，收口只能在此显式触发。
+  expect(settled).toEqual(["rt-key"]);
+  expect(internal.processes.has("rt-key")).toBe(false);
+});

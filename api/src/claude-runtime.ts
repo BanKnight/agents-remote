@@ -2,6 +2,7 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   type ClaudeAutoRetryConfig,
+  type ClaudeControlRequest,
   type ClaudePreset,
   type EffortLevel,
 } from "@agents-remote/shared";
@@ -125,11 +126,19 @@ type ClaudeProcess = {
   generation: number;
   projectPath: string;
   sessionId: string;
+  projectName: string;
   claudeSessionId?: string;
   model?: string;
   modelAlias?: string;
   permissionMode?: string;
   effort?: EffortLevel;
+};
+
+/** 审批中心登记上下文：ClaudeProcess 已有字段，can_use_tool 登记时随行（registry 无需反查）。 */
+export type ClaudeApprovalRequestInfo = {
+  runtimeKey: string;
+  projectName: string;
+  sessionId: string;
 };
 
 // 纯函数：构造 spawn env——继承父进程 + 注入 effort + provider 凭证 + model alias 解析 env。
@@ -202,6 +211,12 @@ export class ClaudeRuntime implements RuntimeResources {
   // 真实新 stdout 行 = session 活动 → bump updatedAt。只在 processStdoutLine（真实新行入口）
   // 触发，不在 onRealtimeRow/relay 回放触发（回放的 session_init/seedInit 会误刷新 updatedAt）。
   private onActivity: ((sessionId: string) => void) | null = null;
+  // 审批中心挂钩（M5-b）：can_use_tool control_request 登记 + runtime 收口（result/退出）。
+  // registry 本体在 approval-registry.ts——runtime 只广播事件，不反向依赖（无回调时零开销）。
+  private onApprovalRequest:
+    | ((info: ClaudeApprovalRequestInfo, request: ClaudeControlRequest) => void)
+    | null = null;
+  private onApprovalRuntimeSettled: ((runtimeKey: string) => void) | null = null;
   // 自动重试注入配置源（index.ts 从 SessionRegistry metadata 读 autoRetry config）。
   private autoRetryConfigProvider:
     | ((
@@ -246,6 +261,16 @@ export class ClaudeRuntime implements RuntimeResources {
 
   setOnActivity(cb: (sessionId: string) => void) {
     this.onActivity = cb;
+  }
+
+  setOnApprovalRequest(
+    cb: (info: ClaudeApprovalRequestInfo, request: ClaudeControlRequest) => void,
+  ) {
+    this.onApprovalRequest = cb;
+  }
+
+  setOnApprovalRuntimeSettled(cb: (runtimeKey: string) => void) {
+    this.onApprovalRuntimeSettled = cb;
   }
 
   setAutoRetryConfigProvider(
@@ -304,6 +329,9 @@ export class ClaudeRuntime implements RuntimeResources {
     if (proc) {
       proc.proc.kill();
       this.processes.delete(sessionName);
+      // close 路径的审批收口：exited 回调带 isCurrentGeneration 守卫，processes 已 delete 后
+      // 守卫恒 false 不触发——在此显式清 registry，否则残留「存活」僵尸卡片（reviewer P2）。
+      this.onApprovalRuntimeSettled?.(sessionName);
     }
     this.autoRetry.destroySession(sessionName);
 
@@ -484,6 +512,7 @@ export class ClaudeRuntime implements RuntimeResources {
       generation,
       projectPath,
       sessionId,
+      projectName,
       claudeSessionId,
       model,
       modelAlias: model,
@@ -519,6 +548,7 @@ export class ClaudeRuntime implements RuntimeResources {
       if (this.isCurrentGeneration(sessionName, generation)) {
         this.processes.delete(sessionName);
         this.autoRetry.destroySession(sessionName);
+        this.onApprovalRuntimeSettled?.(sessionName);
       }
     });
   }
@@ -676,6 +706,8 @@ export class ClaudeRuntime implements RuntimeResources {
     this.capturePermissionModeFromLine(sessionName, parsed);
     this.captureModelFromLine(sessionName, parsed);
     this.captureSkillReloadFromLine(sessionName, parsed);
+    this.captureApprovalRequestFromLine(sessionName, parsed);
+    this.captureApprovalSettledFromLine(sessionName, parsed);
     this.autoRetry.handleStdoutLine(
       sessionName,
       this.processes.get(sessionName)?.sessionId ?? "",
@@ -717,6 +749,47 @@ export class ClaudeRuntime implements RuntimeResources {
         typeof parsed.model === "string" ? parsed.model : "unknown",
       );
     }
+  }
+
+  // 审批中心登记点（M5-b §6.4）：真实 stdout 的 can_use_tool control_request。set_model 等
+  // 客户端发起的控制请求不走审批中心。本函数只在真实新 stdout 行入口（processStdoutLine）
+  // 被调，relay 回放不经过 → 重连/回放不会误登记。
+  private captureApprovalRequestFromLine(
+    sessionName: string,
+    parsed: Record<string, unknown> | null,
+  ): void {
+    if (!parsed || parsed.type !== "control_request" || typeof parsed.request_id !== "string") {
+      return;
+    }
+    const request = parsed.request as ClaudeControlRequest["request"] | undefined;
+    // input 为 null 时 typeof 仍返回 "object"，须显式排除（否则 registry 摘要处 TypeError
+    // 会炸掉整条 stdout reader——reviewer P2）。
+    if (
+      !request ||
+      request.subtype !== "can_use_tool" ||
+      !request.input ||
+      typeof request.input !== "object"
+    ) {
+      return;
+    }
+    const state = this.processes.get(sessionName);
+    if (!state) return;
+    this.onApprovalRequest?.(
+      { runtimeKey: sessionName, projectName: state.projectName, sessionId: state.sessionId },
+      {
+        type: "control_request",
+        request_id: parsed.request_id,
+        request,
+      },
+    );
+  }
+
+  // result 帧 = turn 收口：该 runtime 的 pending 审批全部作废（如 interrupt 打断未决审批）。
+  private captureApprovalSettledFromLine(
+    sessionName: string,
+    parsed: Record<string, unknown> | null,
+  ): void {
+    if (parsed?.type === "result") this.onApprovalRuntimeSettled?.(sessionName);
   }
 
   // Fold current permissionMode from live stdout so the replay seed init carries

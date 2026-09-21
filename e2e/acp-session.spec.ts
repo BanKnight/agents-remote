@@ -246,11 +246,11 @@ test.describe("ACP mobile create entry", () => {
     });
 
     await page.goto(`/projects/${projectName}`);
-    // 移动项目页有两个同 aria 入口（浏览态 tab ➕ + drawer 顶行 ➕），两处菜单都已含 omp 项
-    //（显示名 = CLI 名 "omp"——provider 粒度正名后不再带协议前缀）。
+    // v2 M5-a：row2 ＋ 与 03h 空态卡 CTA 均打开 03j 新建实例 sheet（srow 富行，取代 ActionMenu
+    // 菜单形态）——omp 行文案 =「＋ omp」（sheet 行是 button 非 menuitem）。
     const createButton = page.getByRole("button", { name: "New session" }).first();
     await expect(createButton).toBeVisible({ timeout: 15_000 });
     await createButton.click();
-    await expect(page.getByRole("menuitem", { name: "omp", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "＋ omp" })).toBeVisible();
   });
 });

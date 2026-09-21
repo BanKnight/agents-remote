@@ -2048,6 +2048,48 @@ export type SDKPermissionResult =
       message: string;
     };
 
+// ── Approval center（M5-b，服务端聚合；docs/design/redesign-v2.md §6.4）──────────
+
+/** 审批中心快照里的一张审批卡。完整 input（args）只在服务端内存，不进序列化协议。 */
+export type ApprovalSummary = {
+  projectName: string;
+  sessionId: string;
+  /** 会话显示名（原型 11 acard 主标题）。 */
+  sessionName: string;
+  /** 运行时键（sessionName）。respond 不依赖它（走 projectName/sessionId），仅排障用。 */
+  runtimeKey: string;
+  controlRequestId: string;
+  toolName: string;
+  /** input 一行摘要（截断），对应原型 11 acard .cmd。 */
+  inputSummary: string;
+  createdAt: string;
+  /** runtime 存活；false = 断线冻结（卡片置灰禁响应）。 */
+  runtimeAlive: boolean;
+};
+
+export type ApprovalsSnapshotResponse = {
+  approvals: ApprovalSummary[];
+};
+
+export type ApprovalDecision = "allow" | "deny";
+
+export type ApprovalRespondRequest = {
+  projectName: string;
+  sessionId: string;
+  controlRequestId: string;
+  decision: ApprovalDecision;
+};
+
+export type ApprovalRespondResponse =
+  | { delivered: true }
+  | { delivered: false; reason: "not_found" | "runtime_dead" };
+
+/** approvals-stream WS（服务端→客户端）：任何变更推全量快照。 */
+export type ApprovalsStreamServerMessage = {
+  type: "approvals";
+  approvals: ApprovalSummary[];
+};
+
 export type SessionStreamClientMessage =
   | {
       type: "input";

@@ -108,6 +108,9 @@ import type {
   RenameChatSessionResponse,
   CloseChatSessionResponse,
   UpdateChatSessionResponse,
+  ApprovalRespondRequest,
+  ApprovalRespondResponse,
+  ApprovalsSnapshotResponse,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
 import { resolveTranslation } from "../i18n/translate";
@@ -166,6 +169,22 @@ export async function fetchOverview(): Promise<OverviewResponse> {
  */
 export async function fetchOverviewSubtitles(): Promise<OverviewSubtitlesResponse> {
   return fetchJson("/api/overview/subtitles", "api.projectListFailed");
+}
+
+// ── M5-b 审批中心（§6.4）：全局聚合快照 + 应答（初值；实时由 approvals-stream WS 推送）──
+
+export async function fetchApprovals(): Promise<ApprovalsSnapshotResponse> {
+  return fetchJson("/api/approvals", "api.approvalsFailed");
+}
+
+export async function respondApproval(
+  request: ApprovalRespondRequest,
+): Promise<ApprovalRespondResponse> {
+  return fetchJson("/api/approvals/respond", "api.approvalsRespondFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(request),
+  });
 }
 
 export async function createProject(path: string): Promise<CreateProjectResponse> {
@@ -686,6 +705,12 @@ export function acpStreamUrl(projectName: string, sessionId: string) {
 export function piChatStreamUrl(chatId: string) {
   const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${globalThis.location.host}/api/chat-sessions/${encodeURIComponent(chatId)}/stream`;
+}
+
+/** M5-b 全局审批流（§6.4）：变更推全量快照，sheet 打开期订阅。 */
+export function approvalsStreamUrl() {
+  const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${globalThis.location.host}/api/approvals/stream`;
 }
 
 export function createEchoSocket() {

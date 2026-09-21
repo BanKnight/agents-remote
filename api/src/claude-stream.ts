@@ -214,12 +214,20 @@ export class ClaudeStreamController {
   // reconnect ALL clients of a session to respawn the CLI) can close every
   // socket even if multiple clients stream the same session.
   private readonly socketsByRuntimeKey = new Map<string, Set<StreamSocket>>();
+  // M5-b 审批中心：客户端 control_response 经本控制器转发（会话内托盘应答路径）时通知
+  // registry 注销——审批中心卡片即时消失，不等 turn result。index.ts 装配，控制器不反向依赖。
+  private onControlResponseForwarded: ((runtimeKey: string, requestId: string) => void) | null =
+    null;
 
   constructor(
     private readonly claudeRuntime: ClaudeRuntime,
     private readonly runtime: RuntimeResources,
     private readonly sessionRegistry: SessionRegistry,
   ) {}
+
+  setOnControlResponseForwarded(cb: (runtimeKey: string, requestId: string) => void) {
+    this.onControlResponseForwarded = cb;
+  }
 
   private registerSocket(runtimeKey: string, socket: StreamSocket): void {
     let set = this.socketsByRuntimeKey.get(runtimeKey);
@@ -376,6 +384,11 @@ export class ClaudeStreamController {
         await this.claudeRuntime.write(data.runtimeKey, JSON.stringify(forwarded) + "\n");
         // 用户消息 / 权限响应 / 控制请求都算 session 活动 → bump updatedAt（分钟截断，同分钟短路）。
         void this.sessionRegistry.recordActivity(data.sessionId);
+        // 会话内托盘/快捷键应答路径：转发成功 → 审批中心该卡注销（§6.4 注销点之一）。
+        // response 缺 request_id 的垃圾帧 → undefined → registry 无匹配不注销（安全 no-op）。
+        if (parsed.type === "control_response") {
+          this.onControlResponseForwarded?.(data.runtimeKey, parsed.response?.request_id);
+        }
 
         // The CLI never echoes user input on stream-json stdout (live capture:
         // 0 user-type stdout lines, for both plain text and slash commands).

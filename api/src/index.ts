@@ -1,4 +1,5 @@
 import type {
+  ApprovalRespondRequest,
   CreateProjectRequest,
   CreateProjectResponse,
   DeleteProjectResponse,
@@ -16,6 +17,7 @@ import { AgentRuntime } from "./agent-runtime";
 import { AcpRuntime, resolveAcpCredentials } from "./acp-runtime";
 import { AcpStreamController, handleAcpStreamUpgrade } from "./acp-stream";
 import { AuthService } from "./auth";
+import { ApprovalCenter } from "./approval-center";
 import { ClaudeRuntime } from "./claude-runtime";
 import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
 import { ClaudeStreamController, handleClaudeStreamUpgrade } from "./claude-stream";
@@ -69,6 +71,7 @@ type UpgradeServer = {
 type FetchHandlerOptions = {
   claudeRuntime?: ClaudeRuntime;
   claudeStreamController?: ClaudeStreamController;
+  approvalCenter?: ApprovalCenter;
   acpStreamController?: AcpStreamController;
   piStreamController?: PiStreamController;
   projectFilesService?: ProjectFilesService;
@@ -86,6 +89,9 @@ type FetchHandlerOptions = {
 type WebSocketData =
   | {
       kind: "echo";
+    }
+  | {
+      kind: "approvals-stream";
     }
   | {
       kind: "session-stream";
@@ -262,7 +268,67 @@ export const createFetchHandler =
       }
     }
 
+    // approvals-stream upgrade（approvals 频道全局无项目作用域，鉴权同 /api/ws/echo）。
+    if (options.approvalCenter) {
+      const approvalsUpgrade = options.approvalCenter.handleUpgrade(request, auth, server);
+      if (approvalsUpgrade.matched) {
+        return withRefresh(approvalsUpgrade.response);
+      }
+    }
+
     if (options.projectsRoot && options.sessionRegistry) {
+      if (options.approvalCenter) {
+        // M5-b 审批中心（docs/design/redesign-v2.md §6.4）：全局快照 + 应答。respond 的项目名
+        // 先过 resolveProjectPath（PROJECTS_ROOT 不逃逸，与 upgrade 同款守卫）——注册表内记录
+        // 只信 metadata 落下的 projectName，外部输入不作为查询键的信任来源。
+        if (url.pathname === "/api/approvals" && request.method === "GET") {
+          return withRefresh(Response.json({ approvals: await options.approvalCenter.snapshot() }));
+        }
+        if (url.pathname === "/api/approvals/respond" && request.method === "POST") {
+          const body = (await request
+            .json()
+            .catch(() => null)) as Partial<ApprovalRespondRequest> | null;
+          const projectName = typeof body?.projectName === "string" ? body.projectName : "";
+          const sessionId = typeof body?.sessionId === "string" ? body.sessionId : "";
+          const controlRequestId =
+            typeof body?.controlRequestId === "string" ? body.controlRequestId : "";
+          const decision = body?.decision;
+          if (
+            projectName.length === 0 ||
+            sessionId.length === 0 ||
+            controlRequestId.length === 0 ||
+            (decision !== "allow" && decision !== "deny")
+          ) {
+            return withRefresh(
+              jsonError("PROJECT_NAME_INVALID", "Invalid approval response payload", 400),
+            );
+          }
+          try {
+            await resolveProjectPath(options.projectsRoot, projectName);
+          } catch {
+            return withRefresh(jsonError("PROJECT_NOT_FOUND", "Project not found", 404));
+          }
+          const result = await options.approvalCenter.respond({
+            projectName,
+            sessionId,
+            controlRequestId,
+            decision,
+          });
+          if (!result.delivered) {
+            return withRefresh(
+              jsonError(
+                result.reason === "not_found" ? "SESSION_NOT_FOUND" : "SESSION_RUNTIME_MISSING",
+                result.reason === "not_found"
+                  ? "Approval request not found"
+                  : "Session runtime is not running",
+                result.reason === "not_found" ? 404 : 409,
+              ),
+            );
+          }
+          return withRefresh(Response.json(result));
+        }
+      }
+
       if (options.claudeStreamController) {
         const claudeUpgrade = await handleClaudeStreamUpgrade(
           request,
@@ -1286,6 +1352,18 @@ export const startApi = async () => {
   claudeRuntime.setOnActivity((sessionId) => {
     void sessionRegistry.recordActivity(sessionId);
   });
+  // M5-b 审批中心（§6.4）：runtime 广播 can_use_tool 登记 + turn 收口；会话内托盘应答经
+  // 控制器转发时同步注销（同一 stdin 管道的两条应答入口共用一个登记表）。
+  const approvalCenter = new ApprovalCenter(claudeRuntime, sessionRegistry);
+  claudeRuntime.setOnApprovalRequest((info, request) =>
+    approvalCenter.registerFromRuntime(info, request),
+  );
+  claudeRuntime.setOnApprovalRuntimeSettled((runtimeKey) =>
+    approvalCenter.clearRuntime(runtimeKey),
+  );
+  claudeStreamController.setOnControlResponseForwarded((runtimeKey, requestId) =>
+    approvalCenter.unregisterForwarded(runtimeKey, requestId),
+  );
   // 自动重试注入配置源：调度时刻从 metadata fresh 读 config（缺省/enabled:false=不调度）。
   claudeRuntime.setAutoRetryConfigProvider((sessionId) =>
     sessionRegistry.getAgentAutoRetryConfig(sessionId),
@@ -1328,6 +1406,7 @@ export const startApi = async () => {
     port: config.apiPort,
     idleTimeout: SKILL_REQUEST_IDLE_TIMEOUT_SECONDS,
     fetch: createFetchHandler(auth, {
+      approvalCenter,
       claudeRuntime,
       claudeStreamController,
       acpStreamController,
@@ -1352,6 +1431,9 @@ export const startApi = async () => {
           claudeStreamController.open(ws).catch((err) => {
             console.error("[claude-stream] open handler error", err);
           });
+        }
+        if (ws.data?.kind === "approvals-stream") {
+          approvalCenter.open(ws);
         }
         if (ws.data?.kind === "acp-stream") {
           acpStreamController.open(ws).catch((err) => {
@@ -1392,6 +1474,9 @@ export const startApi = async () => {
         }
         if (ws.data?.kind === "claude-stream") {
           claudeStreamController.close(ws);
+        }
+        if (ws.data?.kind === "approvals-stream") {
+          approvalCenter.close(ws);
         }
         if (ws.data?.kind === "acp-stream") {
           acpStreamController.close(ws);

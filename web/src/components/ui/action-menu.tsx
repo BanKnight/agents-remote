@@ -1,10 +1,13 @@
 import {
   useCallback,
+  useRef,
   useState,
   type ButtonHTMLAttributes,
   type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactElement,
   type ReactNode,
+  useEffect,
 } from "react";
 
 import { useIsMobile } from "@/lib/use-is-mobile";
@@ -198,6 +201,53 @@ export function useRowContextMenu() {
     [point],
   );
   return { openAt, close, pointFor };
+}
+
+/** 触屏长按触发阈值与位移 slop（03w 定值：iOS Safari 无 contextmenu，必须计时触发）。 */
+export const LONG_PRESS_MS = 500;
+export const LONG_PRESS_SLOP_PX = 10;
+
+/**
+ * 触屏长按 → `useRowContextMenu().openAt`（02c pill / 03w 文件行共享）。移动超 slop 或提前
+ * 松手取消；触发后 `guardClick()` 返回 true 一次——消费侧行/ pill 的 onClick 首行先查它，
+ * 抑制长按后紧随的合成 click（否则长按 pill 会同时切实例/进目录）。桌面右键走 `onContextMenu`
+ * 独立路径，不经此 hook。
+ */
+export function useLongPressActions(openAt: (key: string, e: MouseEvent) => void) {
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const suppressClick = useRef(false);
+  const clearPress = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+    pressStart.current = null;
+  };
+  useEffect(() => clearPress, []);
+  const bind = (key: string) => ({
+    onPointerDown: (e: ReactPointerEvent) => {
+      suppressClick.current = false;
+      if (e.pointerType !== "touch") return;
+      pressStart.current = { x: e.clientX, y: e.clientY };
+      pressTimer.current = setTimeout(() => {
+        pressTimer.current = null;
+        suppressClick.current = true;
+        openAt(key, e);
+      }, LONG_PRESS_MS);
+    },
+    onPointerMove: (e: ReactPointerEvent) => {
+      const s = pressStart.current;
+      if (s && Math.hypot(e.clientX - s.x, e.clientY - s.y) > LONG_PRESS_SLOP_PX) clearPress();
+    },
+    onPointerUp: clearPress,
+    onPointerCancel: clearPress,
+    onPointerLeave: clearPress,
+  });
+  const guardClick = () => {
+    if (!suppressClick.current) return false;
+    suppressClick.current = false;
+    return true;
+  };
+  return { bind, guardClick };
 }
 
 /**

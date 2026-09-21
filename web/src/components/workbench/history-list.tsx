@@ -48,29 +48,29 @@ function HistoryListSkeleton() {
   return <ListRowSkeleton count={HISTORY_SKELETON_ROW_COUNT} />;
 }
 
+/** resume「这条会话」的语义单元（provider + 原生 session id + 可选显示名）。 */
+export type ResumeAgentSessionInput = {
+  provider?: "claude" | "omp";
+  claudeSessionId?: string;
+  acpSessionId?: string;
+  displayName?: string;
+};
+
 /**
- * 项目历史 session 数据管道（单一来源，设计文档 §3/§4）。桌面 + 移动中栏 history tab 消费
- * 历史都走此 hook：`listAgentHistory` 查询 + resume mutation（claudeSessionId
- * → 新活跃实例 + invalidate agent-sessions/agent-history + navigate 聚焦）。resume onSuccess
- * 的 navigate 固定到 `/projects/$key/...`，故本 hook 仅适用于 project scope（history 是
- * project-scoped 数据，global 不可见）。
+ * 恢复会话为活跃实例（单一管道，桌面 history tab 与移动 03n 会话历史 sheet 共用）：
+ * claude → claudeSessionId（--resume）；omp → acpSessionId（session/load 全量回放）。成功后
+ * navigate 聚焦新实例（detail route 用 sessionId 直查，不依赖列表）+ invalidate
+ * sessions/history/overview。navigate 固定 `/projects/$key/...`，故仅适用于 project scope。
  */
-export function useHistorySessions(projectName: string, range: AgentHistoryRange = "week") {
+export function useResumeAgentSession(projectName: string) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const history = useQuery({
-    queryKey: ["projects", projectName, "agent-history", range],
-    queryFn: () => listAgentHistory(projectName, range),
-    staleTime: 5_000,
-  });
   const resumeSession = useMutation({
-    // 输入 = 一条历史条目的语义单元（resume「这条历史」），provider 差异收敛在内部：
-    // claude → claudeSessionId（--resume）；omp → acpSessionId（session/load 全量回放）。
-    mutationFn: ({ entry, displayName }: { entry: AgentHistoryEntry; displayName: string }) =>
-      createAgentSession(projectName, entry.provider ?? "claude", {
-        claudeSessionId: entry.claudeSessionId,
-        acpSessionId: entry.acpSessionId,
-        displayName: displayName || undefined,
+    mutationFn: (input: ResumeAgentSessionInput) =>
+      createAgentSession(projectName, input.provider ?? "claude", {
+        claudeSessionId: input.claudeSessionId,
+        acpSessionId: input.acpSessionId,
+        displayName: input.displayName,
       }),
     onSuccess: async (data) => {
       // navigate 优先：detail route 用 sessionId 直查 per-session detail query，不依赖列表。
@@ -91,11 +91,32 @@ export function useHistorySessions(projectName: string, range: AgentHistoryRange
       ]);
     },
   });
+  return { isResuming: resumeSession.isPending, resume: resumeSession.mutate };
+}
+
+/**
+ * 项目历史 session 数据管道（单一来源，设计文档 §3/§4）。桌面 + 移动中栏 history tab 消费
+ * 历史都走此 hook：`listAgentHistory` 查询 + resume mutation（见 `useResumeAgentSession`）。
+ * history 是 project-scoped 数据，global 不可见。
+ */
+export function useHistorySessions(projectName: string, range: AgentHistoryRange = "week") {
+  const history = useQuery({
+    queryKey: ["projects", projectName, "agent-history", range],
+    queryFn: () => listAgentHistory(projectName, range),
+    staleTime: 5_000,
+  });
+  const { isResuming, resume } = useResumeAgentSession(projectName);
   return {
     entries: history.data?.entries ?? [],
     isLoading: history.isLoading,
-    isResuming: resumeSession.isPending,
-    resume: resumeSession.mutate,
+    isResuming,
+    resume: (entry: AgentHistoryEntry, displayName: string) =>
+      resume({
+        acpSessionId: entry.acpSessionId,
+        claudeSessionId: entry.claudeSessionId,
+        displayName: displayName || undefined,
+        provider: entry.provider ?? "claude",
+      }),
   };
 }
 
@@ -153,7 +174,7 @@ export function HistoryList({
       title: t("session.namePrompt.resumeTitle"),
     }).then((name) => {
       if (name !== null) {
-        resume({ entry, displayName: name });
+        resume(entry, name);
       }
     });
   };

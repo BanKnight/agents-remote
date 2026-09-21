@@ -419,6 +419,11 @@
     font-weight: 600;
     color: var(--ink-1);
   }
+  .shd .aside {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
 
   /* ---- 桌面共享（Mac/iPad = 同一 UI 的响应式；页面只留列宽与页私布局） ---- */
   .sidewin {
@@ -1445,5 +1450,351 @@
     margin-left: auto;
     color: var(--ink-2);
     cursor: pointer;
+  }
+}
+
+/* ---- M5 浮层族（03j/03k/03l/03n/08/11 行级原语入单源；容器真实 app 用 .msheet
+    fixed 定位版 + Radix Dialog，上方 .sheet 为 stage 演示坐标版）——与上方段落同层
+    @layer components（reviewer P2-3：unlayered 样式会反超 utilities，静默失效隐患）---- */
+@layer components {
+  .msheet {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    z-index: 50;
+    max-height: 76dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    border-radius: 20px;
+    padding: 0 20px 12px;
+  }
+  /* 03j 新建实例 */
+  .slabel {
+    font-size: 11px;
+    color: var(--ink-2);
+    margin: 14px 0 2px;
+  }
+  .srow {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 9px 0;
+  }
+  .tile {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+  .tile svg {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .srow .tx {
+    flex: 1;
+    min-width: 0;
+  }
+  .srow .n {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .srow .d {
+    display: block;
+    font-size: 12px;
+    color: var(--ink-2);
+    margin-top: 2px;
+  }
+  .srow .ar {
+    font-size: 14px;
+    color: var(--ink-3);
+  }
+
+  /* 03k 实例信息 */
+  .krow {
+    display: flex;
+    align-items: center;
+    padding: 11px 0;
+    font-size: 13px;
+  }
+  .krow + .krow {
+    border-top: 1px solid var(--sep-row);
+  }
+  .krow .k {
+    color: var(--ink-2);
+  }
+  .krow .v {
+    margin-left: auto;
+    color: var(--ink-1);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .krow .v .ar {
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .krow .v.mono {
+    font-family: var(--font-mono, ui-monospace, "SF Mono", Consolas, monospace);
+    font-size: 12px;
+  }
+  .krow .v .ok {
+    color: var(--c-success-text);
+  }
+  .acts {
+    display: flex;
+    justify-content: space-between;
+    padding: 14px 0 4px;
+    margin-top: 6px;
+    border-top: 1px solid var(--sep-row);
+  }
+  .acts span {
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .kfoot {
+    font-size: 11px;
+    color: var(--ink-2);
+    padding-top: 6px;
+  }
+
+  /* 03l 项目切换 */
+  .grp {
+    display: flex;
+    align-items: center;
+    margin-top: 12px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-1);
+    cursor: pointer;
+  }
+  .grp .c {
+    margin-left: auto;
+    font-size: 10.5px;
+  }
+  .sess {
+    margin: 6px 0 0 0;
+    padding: 6px 10px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .sess.on {
+    background: var(--tint-blue);
+    color: var(--ink-1);
+    font-weight: 600;
+  }
+  .sess.off {
+    color: var(--ink-2);
+  }
+  .sess .d2 {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .sess .d2.run {
+    background: var(--c-success);
+  }
+  .sess .d2.err {
+    background: var(--c-danger);
+  }
+  .sess .d2.idle {
+    border: 1.4px solid var(--ink-2);
+  }
+  .gempty {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin: 6px 0 0 -16px;
+    padding-left: 10px;
+  }
+  .newp {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--sep-row);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--c-primary);
+    cursor: pointer;
+  }
+  .newp svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--c-primary);
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+  }
+
+  /* 03n 会话历史 */
+  .filters {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .fc {
+    padding: 5px 14px;
+    border-radius: 15px;
+    font-size: 12px;
+    color: var(--ink-2);
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+  .fc.on {
+    color: var(--c-primary);
+    font-weight: 600;
+  }
+  .fc.seg {
+    background: var(--bg-elevated3);
+    color: var(--ink-1);
+  }
+  .fc.ghost {
+    border-color: var(--sep-strong);
+  }
+  .hrow {
+    padding: 10px 0;
+  }
+  .hrow + .hrow {
+    border-top: 1px solid var(--sep-row);
+  }
+  .hrow .r1 {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .hrow.idle .r1,
+  .hrow.end .r1 {
+    font-weight: 400;
+  }
+  .hrow .st {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+  .hrow .st.run {
+    color: var(--c-success-text);
+  }
+  .hrow .d2 {
+    font-size: 11px;
+    color: var(--ink-2);
+    margin-top: 3px;
+  }
+  .hfoot {
+    margin-top: 10px;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--ink-2);
+  }
+
+  /* 11 审批中心（M5-b sheet） */
+  .cnt {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--c-warning-text);
+    background: var(--tint-orange);
+    border-radius: 11px;
+    padding: 3px 10px;
+  }
+  .all {
+    margin-left: auto;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--c-primary);
+    cursor: pointer;
+  }
+  .acard {
+    margin-top: 10px;
+    background: var(--bg-elevated2);
+    border-radius: 12px;
+    padding: 10px 12px;
+  }
+  .acard .r1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .acard .pj {
+    margin-left: auto;
+    font-size: 9.5px;
+    color: var(--ink-2);
+    background: var(--bg-elevated);
+    border-radius: 8.5px;
+    padding: 3px 10px;
+    white-space: nowrap;
+  }
+  .acard .cmd {
+    margin-top: 8px;
+    font-family: var(--font-mono, ui-monospace, "SF Mono", Consolas, monospace);
+    font-size: 11.5px;
+    color: var(--term-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .acard .cmd.hot {
+    color: var(--c-danger);
+  }
+  .acard .r3 {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .sfoot {
+    margin-top: 12px;
+    text-align: center;
+    font-size: 10.5px;
+    color: var(--ink-2);
+    padding-bottom: 4px;
+  }
+
+  /* 02 原型 .ap-row（M5-b 入口①：项目 Tab 全局活动卡顶部的审批行，pending=0 隐藏） */
+  .ap-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+    border-radius: 10px;
+    background: var(--tint-orange);
+    padding: 9px 10px;
+  }
+  .ap-row .tx {
+    flex: 1;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--c-warning-text);
+  }
+  .ap-row .tx::after {
+    content: "›";
+    float: right;
+    font-weight: 700;
+  }
+  /* 11 acard 断线冻结置灰（spec 验收：runtimeAlive=false 禁响应） */
+  .acard.off {
+    opacity: 0.45;
   }
 }

@@ -1,6 +1,7 @@
 import agentNav from "./agent-nav.svg?raw";
 import anthropic from "./anthropic.svg?raw";
 import archive from "./archive.svg?raw";
+import bolt from "./bolt.svg?raw";
 import book from "./book.svg?raw";
 import check from "./check.svg?raw";
 import chat from "./chat.svg?raw";
@@ -27,6 +28,7 @@ import restore from "./restore.svg?raw";
 import rotate from "./rotate.svg?raw";
 import settings from "./settings.svg?raw";
 import skillsNav from "./skills-nav.svg?raw";
+import sparkles from "./sparkles.svg?raw";
 import terminal from "./terminal.svg?raw";
 import trash from "./trash.svg?raw";
 import upload from "./upload.svg?raw";
@@ -36,6 +38,7 @@ const svgMap: Record<string, string> = {
   archive,
   "agent-nav": agentNav,
   anthropic,
+  bolt,
   book,
   check,
   chat,
@@ -62,6 +65,7 @@ const svgMap: Record<string, string> = {
   rotate,
   settings,
   "skills-nav": skillsNav,
+  sparkles,
   terminal,
   trash,
   upload,

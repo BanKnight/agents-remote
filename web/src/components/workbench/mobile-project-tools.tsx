@@ -7,7 +7,7 @@ import type {
 } from "@agents-remote/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
-import { useMemo, useRef, useState, type PointerEvent } from "react";
+import { useMemo, useState } from "react";
 
 import {
   deleteFile,
@@ -24,13 +24,9 @@ import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
 import type { TranslateFn } from "../../i18n/types";
 import { ShellIcon } from "../shell/icons";
 import { WORKBENCH_GIT_LEFT_QUERY_SCOPE, statusShortLabel } from "../git/git-diff-viewer";
-import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
+import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 import type { MobileProjectTool } from "./mobile-project-header";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
-
-/** 03w 触屏长按参数：iOS Safari 长按不派发 contextmenu，pointer 计时补路径。 */
-const LONG_PRESS_MS = 500;
-const LONG_PRESS_SLOP_PX = 10;
 
 /** frow badge 状态 → .badge 变体字符（M/A/D/R 与 statusShortLabel 同源；D/R 变体 M4 新增）。 */
 function gitBadgeVariant(status: GitDiffFileSummary["status"]): string {
@@ -240,35 +236,9 @@ export function MobileFilesTool({
   // 03w 复制路径反馈（sheet 关闭后行下 cap 短暂显示「已复制」）。
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const ctx = useRowContextMenu();
-  // 03w 触屏可达（design-reviewer M4 P2-5）：touch 长按计时触发同款 ctx 菜单；移动超 slop
-  // 或提前松手取消；触发后抑制紧随的合成 click（否则长按会同时进目录/开文件）。
-  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pressStart = useRef<{ x: number; y: number } | null>(null);
-  const suppressClick = useRef(false);
-  const clearPress = () => {
-    if (pressTimer.current) clearTimeout(pressTimer.current);
-    pressTimer.current = null;
-    pressStart.current = null;
-  };
-  const longPressHandlers = (path: string) => ({
-    onPointerDown: (e: PointerEvent) => {
-      suppressClick.current = false;
-      if (e.pointerType !== "touch") return;
-      pressStart.current = { x: e.clientX, y: e.clientY };
-      pressTimer.current = setTimeout(() => {
-        pressTimer.current = null;
-        suppressClick.current = true;
-        ctx.openAt(path, e);
-      }, LONG_PRESS_MS);
-    },
-    onPointerMove: (e: PointerEvent) => {
-      const s = pressStart.current;
-      if (s && Math.hypot(e.clientX - s.x, e.clientY - s.y) > LONG_PRESS_SLOP_PX) clearPress();
-    },
-    onPointerUp: clearPress,
-    onPointerCancel: clearPress,
-    onPointerLeave: clearPress,
-  });
+  // 03w 触屏可达（design-reviewer M4 P2-5）：共享 touch 长按 hook（02c pill 同款，抽自本处
+  // 内联实现）；移动超 slop 或提前松手取消；guardClick 抑制长按后紧随的合成 click。
+  const lp = useLongPressActions(ctx.openAt);
 
   // 写操作公共失败/成功：失效 files 列表 + git diff（rename/move/delete 都可能改两者）。
   const invalidate = () => {
@@ -377,16 +347,13 @@ export function MobileFilesTool({
             className="frow w-full cursor-pointer select-none text-left"
             key={entry.path}
             onClick={() => {
-              if (suppressClick.current) {
-                suppressClick.current = false;
-                return;
-              }
+              if (lp.guardClick()) return;
               if (isDir) onPathChange(entry.path);
               else onOpenFile(projectName, entry.path);
             }}
             onContextMenu={(e) => ctx.openAt(entry.path, e)}
             type="button"
-            {...longPressHandlers(entry.path)}
+            {...lp.bind(entry.path)}
           >
             {isDir ? (
               <span className="ic">
