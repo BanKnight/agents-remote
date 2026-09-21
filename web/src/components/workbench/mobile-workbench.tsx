@@ -81,7 +81,6 @@ import {
   MobileProjectSwitchSheet,
   MobileSessionHistorySheet,
 } from "./mobile-sheets";
-import { useResumeAgentSession } from "./history-list";
 import { useRenameSession } from "./instance-area";
 import type { ActionMenuItem } from "../ui/action-menu";
 import { useCreateProjectDialog } from "../shell/project-setup";
@@ -826,14 +825,15 @@ function MobileProjectWorkbench({
   // 03p wsearch：chip 点击展开输入（query 提升共享给 MobileWikiTool；非 wiki 态点 chip 进 wiki）。
   const [wikiSearchOpen, setWikiSearchOpen] = useState(false);
   const [wikiSearchQuery, setWikiSearchQuery] = useState("");
+  // 03x 文件搜索：chip 两态（面包屑 ↔ .wsearch 输入），query 提升共享给 MobileFilesTool。
+  const [filesSearchOpen, setFilesSearchOpen] = useState(false);
+  const [filesSearchQuery, setFilesSearchQuery] = useState("");
   // M5-a 浮层（03j/03l/03n/08）：row2 ＋ 新建实例、nav 标题 ▾ 项目切换、nav ⋯ 菜单会话历史、
   // 切换 sheet 内新建项目。
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [switchSheetOpen, setSwitchSheetOpen] = useState(false);
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
   const createProjectDialog = useCreateProjectDialog();
-  // 03n 已结束会话恢复（与桌面 history tab 同一 mutation 管道）。
-  const { resume: resumeSession } = useResumeAgentSession(scope.key);
   // 02c pill 长按/右键菜单（置顶/重命名/关闭）。pin 数据管道 = usePinnedSessions 单源（乐观
   // 更新）；rename/close 复用既有业务 hook（与 MobileFocusActions ℹ✕ 同源）。
   const { pinned } = usePinnedSessions();
@@ -1044,18 +1044,51 @@ function MobileProjectWorkbench({
                 <span>{t("git.chipCounts", { worktree: chipWorktree, staged: chipStaged })}</span>
               </div>
             ) : activeTool === "files" ? (
-              <div className="crumb">
-                <b>{scope.key}</b>
-                {crumbSegments.map((seg, i) => (
+              filesSearchOpen ? (
+                // 03x ①「行2 内容头变搜索框（同 Wiki）」：单源复用 .wsearch（§6.9），
+                // 聚焦态描边由 .wsearch:focus-within 承载（不再另立 .sfield 一套值）。
+                <div className="wsearch">
+                  <input
+                    autoFocus
+                    className="h-6 flex-1 bg-transparent text-[13px] text-ink-1 outline-none placeholder:text-ink-3"
+                    onChange={(e) => setFilesSearchQuery(e.target.value)}
+                    placeholder={t("files.searchPlaceholder")}
+                    value={filesSearchQuery}
+                  />
                   <button
-                    key={i}
-                    onClick={() => setFilesPath(crumbSegments.slice(0, i + 1).join("/"))}
+                    className="flex cursor-pointer items-center text-ink-2"
+                    onClick={() => {
+                      setFilesSearchOpen(false);
+                      setFilesSearchQuery("");
+                    }}
                     type="button"
+                    aria-label={t("cancel")}
                   >
-                    {seg}
+                    <ShellIcon className="h-[13px] w-[13px]" name="close" />
                   </button>
-                ))}
-              </div>
+                </div>
+              ) : (
+                <div className="crumb">
+                  <b>{scope.key}</b>
+                  {crumbSegments.map((seg, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setFilesPath(crumbSegments.slice(0, i + 1).join("/"))}
+                      type="button"
+                    >
+                      {seg}
+                    </button>
+                  ))}
+                  <button
+                    className="flex cursor-pointer items-center gap-1 text-ink-2"
+                    onClick={() => setFilesSearchOpen(true)}
+                    type="button"
+                    aria-label={t("files.searchPlaceholder")}
+                  >
+                    <ShellIcon className="h-[13px] w-[13px]" name="magnifyingglass" />
+                  </button>
+                </div>
+              )
             ) : activeTool === "wiki" ? (
               <div className="wsearch">
                 {wikiSearchOpen ? (
@@ -1180,6 +1213,7 @@ function MobileProjectWorkbench({
                 onPathChange={setFilesPath}
                 path={filesPath}
                 projectName={scope.key}
+                searchQuery={filesSearchQuery}
               />
             </div>
           ) : activeTool === "git" && !l3Route ? (
@@ -1275,21 +1309,10 @@ function MobileProjectWorkbench({
       />
       <MobileSessionHistorySheet
         onFocusExisting={(sessionId) => {
-          // 活跃态行（running/idle/error）：聚焦既有实例，不新建（P1 守卫，与切换 sheet 同语义）。
+          // 活跃态行：聚焦既有实例，不新建（P1 守卫，与切换 sheet 同语义）。
           void navigateWorkbench({ kind: "project", key: scope.key }, sessionId);
         }}
         onOpenChange={setHistorySheetOpen}
-        onResume={(session) => {
-          // codex 无 CLI resume 通道（createAgentSession 仅 claudeSessionId/acpSessionId），
-          // narrowing 后静默忽略（现状 create 菜单也无 codex，数据不会出现）。
-          if (session.provider === "claude" || session.provider === "omp") {
-            resumeSession({
-              acpSessionId: session.acpSessionId,
-              claudeSessionId: session.claudeSessionId,
-              provider: session.provider,
-            });
-          }
-        }}
         open={historySheetOpen}
         projectName={scope.key}
       />

@@ -1,11 +1,11 @@
 // M5-a 浮层族 sheet 页（§6.4 摊牌：03l 切换 / 03n 会话历史 / 03j 新建实例）。原语消费
 // v2-primitives M5 段（grp/sess/fc/hrow…）；容器 = `MobileSheet`（Radix modal + .msheet）。
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 
-import type { AgentSession, ApprovalSummary } from "@agents-remote/shared";
+import type { ApprovalSummary } from "@agents-remote/shared";
 
-import { listAgentSessions } from "../../api/client";
+import { useHistorySessions } from "./history-list";
+import { usePromptDialog } from "../shell/prompt-dialog";
 import { useRespondApproval } from "../../hooks/use-approvals";
 import { useT } from "../../i18n";
 import { MobileSheet } from "../shell/mobile-sheet";
@@ -112,7 +112,7 @@ export function MobileProjectSwitchSheet({
                 }}
                 type="button"
               >
-                <span className={`d2 ${sessDotClass(candidate.status)}`} />
+                <span className={`sd ${sessDotClass(candidate.status)}`} />
                 {candidate.displayName}
               </button>
             ))
@@ -140,56 +140,57 @@ export function MobileProjectSwitchSheet({
 /** 03n 过滤维度（全部 / 进行中 / 已结束）。 */
 const HISTORY_FILTERS = ["all", "running", "closed"] as const;
 
-/** 03n 状态行文案（运行中/空闲/已结束 · 相对时间）。 */
-function historyStatusText(
-  status: "running" | "idle" | "closed" | "error",
-  time: string,
-  t: ReturnType<typeof useT>["t"],
-): string {
-  if (status === "running") return t("workbench.historyRunning", { time });
-  if (status === "closed") return t("workbench.historyClosed", { time });
-  return t("workbench.historyIdle", { time });
-}
-
 /**
  * 03n 会话历史 sheet（nav ⋯ →「会话历史」入口，编号①：pill 条只放活跃实例，历史不占常驻位）：
- * filters 三态 + hrow 列表（dot + 名 + st 状态·时间）；已结束（closed）行点击 = 恢复（重开同
- * 一会话，resume 复用同 id，编号④）；活跃态行（running/idle/error）点击 = 聚焦既有实例——
- * resume 对活跃会话会新建重复实例（design-reviewer P1，违反铁律 2 单实例）。end 行 d2 轮次/
- * 费用原型数据无来源不画（诚实呈现，hfoot 承载恢复语义说明）。
+ * filters 三态 + hrow 列表（dot + 名 + st 状态·时间）。数据走 agent-history 单一管道
+ *（useHistorySessions，与桌面 history tab 同源——M8 §6.9 消除 listAgentSessions 并行管道）。
+ * hasActiveSession 行点击 = 聚焦既有实例（activeSessionId，不新建）；closed 行 = prompt 命名
+ * （预填 title，桌面 history-list 同语义）→ resume 复用同 id。end 行 d2 轮次/费用原型数据
+ * 无来源不画（诚实呈现，hfoot 承载恢复语义说明）。
  */
 export function MobileSessionHistorySheet({
   onFocusExisting,
   onOpenChange,
-  onResume,
   open,
   projectName,
 }: {
   /** 活跃态行点击：关闭 sheet 聚焦既有实例（不新建）。 */
   onFocusExisting: (sessionId: string) => void;
   onOpenChange: (open: boolean) => void;
-  /** closed 行点击：传完整 session（resume 需 claudeSessionId/acpSessionId，见
-   * `useResumeAgentSession`），调用方装配恢复 mutation。 */
-  onResume: (session: AgentSession) => void;
   open: boolean;
   projectName: string;
 }) {
   const { t } = useT();
   const [filter, setFilter] = useState<(typeof HISTORY_FILTERS)[number]>("all");
-  const sessions = useQuery({
-    enabled: open,
-    queryKey: ["projects", projectName, "agent-sessions"],
-    queryFn: () => listAgentSessions(projectName),
-  });
-  const rows = (sessions.data?.sessions ?? [])
-    .filter((s) =>
+  // open gate：sheet 常驻挂载（open 只控显隐），不打开不发 agent-history 查询。
+  const { entries, resume } = useHistorySessions(projectName, "week", open);
+  const renameDialog = usePromptDialog();
+  const rows = entries
+    .filter((entry) =>
       filter === "all"
         ? true
         : filter === "running"
-          ? s.status === "running"
-          : s.status === "closed",
+          ? entry.hasActiveSession
+          : !entry.hasActiveSession,
     )
-    .sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt));
+    .sort((a, b) =>
+      (b.lastActivityAt ?? b.startedAt ?? "").localeCompare(a.lastActivityAt ?? a.startedAt ?? ""),
+    );
+  const openClosedEntry = (entry: (typeof entries)[number]) => {
+    void renameDialog
+      .prompt({
+        title: t("session.namePrompt.resumeTitle"),
+        placeholder: t("session.namePrompt.placeholder"),
+        initialValue: entry.title ?? entry.firstMessage ?? "",
+        confirmLabel: t("session.namePrompt.confirm"),
+        cancelLabel: t("cancel"),
+        tone: "default",
+      })
+      .then((displayName) => {
+        if (displayName === null) return;
+        resume(entry, displayName.trim());
+      });
+  };
   return (
     <MobileSheet
       aside={projectName}
@@ -217,36 +218,48 @@ export function MobileSessionHistorySheet({
         {rows.length === 0 ? (
           <p className="py-3 text-center text-footnote text-ink-2">{t("workbench.historyEmpty")}</p>
         ) : (
-          rows.map((s) => (
-            <button
-              className={`hrow${
-                s.status === "running" ? "" : s.status === "idle" ? " idle" : " end"
-              } block w-full cursor-pointer text-left`}
-              key={s.id}
-              onClick={() => {
-                onOpenChange(false);
-                // closed = 无实例可聚焦，恢复复用同 id；活跃态聚焦既有实例（P1 守卫）。
-                if (s.status === "closed") {
-                  onResume(s);
-                } else {
-                  onFocusExisting(s.id);
+          rows.map((entry) => {
+            const running = entry.hasActiveSession;
+            const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
+            return (
+              <button
+                className={`hrow${running ? "" : " end"} block w-full cursor-pointer text-left`}
+                key={
+                  entry.claudeSessionId ??
+                  entry.acpSessionId ??
+                  entry.title ??
+                  entry.firstMessage ??
+                  time
                 }
-              }}
-              type="button"
-            >
-              <span className="r1">
-                {/* 已结束行无 dot（原型 03n end 行只有文字，reviewer P2-6）。 */}
-                {s.status === "closed" ? null : <span className={statusToV2DotClass(s.status)} />}
-                <span className="min-w-0 flex-1 truncate">{s.displayName}</span>
-                <span className={`st${s.status === "running" ? " run" : ""}`}>
-                  {historyStatusText(s.status, relativeTime(s.updatedAt ?? s.createdAt, t), t)}
+                onClick={() => {
+                  onOpenChange(false);
+                  if (running && entry.activeSessionId) {
+                    onFocusExisting(entry.activeSessionId);
+                  } else if (!running) {
+                    openClosedEntry(entry);
+                  }
+                }}
+                type="button"
+              >
+                <span className="r1">
+                  {/* 已结束行无 dot（原型 03n end 行只有文字，reviewer P2-6）。 */}
+                  {running ? <span className={statusToV2DotClass("running")} /> : null}
+                  <span className="min-w-0 flex-1 truncate">
+                    {entry.title ?? entry.firstMessage ?? time}
+                  </span>
+                  <span className={`st${running ? " run" : ""}`}>
+                    {running
+                      ? t("workbench.historyRunning", { time })
+                      : t("workbench.historyClosed", { time })}
+                  </span>
                 </span>
-              </span>
-            </button>
-          ))
+              </button>
+            );
+          })
         )}
       </div>
       <p className="hfoot">{t("workbench.historyFoot")}</p>
+      {renameDialog.holder}
     </MobileSheet>
   );
 }

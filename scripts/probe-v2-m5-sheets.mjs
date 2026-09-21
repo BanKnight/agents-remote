@@ -102,6 +102,37 @@ async function setupM5Mocks(page) {
   await page.route(/\/api\/projects$/, (r) =>
     r.fulfill(json({ project: { name: "proj-new", path: "/tmp/proj-new" } })),
   );
+  // 03n 数据源 = agent-history 单一管道（M8：MobileSessionHistorySheet 弃 listAgentSessions，
+  // 与桌面 history tab 同源）。running 条目 = hasActiveSession + activeSessionId。
+  await page.route(new RegExp(`/api/projects/${projectName}/agent-history(?:\\?.*)?$`), (r) =>
+    r.fulfill(
+      json({
+        entries: [
+          {
+            provider: "claude",
+            claudeSessionId: "c1aude-uuid-a",
+            title: "Probe Agent A",
+            firstMessage: "hello",
+            startedAt: "2026-09-20T09:00:00.000Z",
+            lastActivityAt: "2026-09-20T10:00:00.000Z",
+            fileSize: 1024,
+            hasActiveSession: true,
+            activeSessionId: "agent_probe-1",
+          },
+          {
+            provider: "claude",
+            claudeSessionId: "c1aude-uuid-b",
+            title: "Probe Agent B",
+            firstMessage: "world",
+            startedAt: "2026-09-19T08:00:00.000Z",
+            lastActivityAt: "2026-09-19T09:00:00.000Z",
+            fileSize: 2048,
+            hasActiveSession: false,
+          },
+        ],
+      }),
+    ),
+  );
   // 03n closed 行 resume = createAgentSession POST（记录次数：P1 守卫断言用）。
   await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions$`), (r) => {
     if (r.request().method() === "POST") {
@@ -238,11 +269,19 @@ ok(runningWeight === "600", `running 行 r1 字重 600（实测 ${runningWeight}
 ok(closedWeight === "400", `closed 行 r1 字重 400（实测 ${closedWeight}，P2-5 生效）`);
 ok((await runningRow.locator(".r1 .dot").count()) === 1, "running 行有 dot");
 ok((await closedRow.locator(".r1 .dot").count()) === 0, "closed 行无 dot（P2-6）");
-// P2-6/P1：closed 行点击 = resume（唯一允许 resume 的态）。
+// P2-6/P1：closed 行点击 = 命名 prompt（M8：与桌面 history-list 同语义，预填 title）
+// → 确认后 resume（唯一允许 resume 的态）。
 resumePosts = [];
 await closedRow.click();
+await page.waitForSelector("[data-prompt-input]", { timeout: 5000 });
+ok(
+  (await page.locator("[data-prompt-input]").inputValue()) === "Probe Agent B",
+  "closed 行 prompt 预填 title",
+);
+// 输入框 Enter = 确认（prompt-dialog onKeyDown；避开底部 sheet 进出动画期的 click 稳定性）。
+await page.locator("[data-prompt-input]").press("Enter");
 await page.waitForTimeout(600);
-ok(resumePosts.length === 1, `closed 行点击 resume（POST 数 ${resumePosts.length}）`);
+ok(resumePosts.length === 1, `closed 行确认后 resume（POST 数 ${resumePosts.length}）`);
 ok(resumePosts[0]?.claudeSessionId === "c1aude-uuid-b", "resume 带 claudeSessionId");
 // 重新打开供后续 Part 断言（Esc 关）。
 await page.locator('.nav button[aria-label="更多操作"]').click();

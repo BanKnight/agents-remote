@@ -7,17 +7,22 @@ import type {
 } from "@agents-remote/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import {
+  createFolder,
   deleteFile,
   getProjectGitLog,
   listProjectFiles,
   listProjectGitBranches,
   listProjectGitDiff,
   renameFile,
+  searchProjectFiles,
   searchWiki,
 } from "../../api/client";
+import { enqueueUploads, UploadQueueCard } from "../files/upload-queue";
+import { useConfirm } from "../shell/confirm-dialog";
+import { usePromptDialog } from "../shell/prompt-dialog";
 import { relativeTime } from "./history-list";
 import { useT } from "../../i18n";
 import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
@@ -194,6 +199,8 @@ type MobileFilesToolProps = {
   projectName: string;
   /** cwd 记忆（受控，workbenchMobileProjectFilesPathAtom；§13 回退语义由调用方守）。 */
   path: string;
+  /** 03x header 搜索框的查询（提升共享：chip 与面板结果列表同 query state）。 */
+  searchQuery: string;
   onPathChange: (path: string) => void;
   onOpenFile: (projectName: string, path: string) => void;
   /** 03w「在 Git 中查看 diff」→ git file focus（scope 取该文件的 worktree/staged）。 */
@@ -209,6 +216,7 @@ type MobileFilesToolProps = {
 export function MobileFilesTool({
   projectName,
   path,
+  searchQuery,
   onPathChange,
   onOpenFile,
   onOpenGitFile,
@@ -236,6 +244,40 @@ export function MobileFilesTool({
   // 03w 复制路径反馈（sheet 关闭后行下 cap 短暂显示「已复制」）。
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const ctx = useRowContextMenu();
+  // 03x 搜索态（query 提升在 mobile-workbench header chip，非空 → 面板渲染结果列表）。
+  const trimmedQuery = searchQuery.trim();
+  const search = useQuery({
+    queryKey: ["projects", projectName, "files", "search", trimmedQuery],
+    queryFn: () => searchProjectFiles(projectName, trimmedQuery),
+    enabled: trimmedQuery.length > 0,
+  });
+  // 03z 上传/03y 新建入口：hidden input + 目标目录 ref（菜单 onSelect → click 时序安全）。
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetDirRef = useRef("");
+  const openUploadPicker = (targetDir: string) => {
+    uploadTargetDirRef.current = targetDir;
+    uploadInputRef.current?.click();
+  };
+  const openCreatePrompt = () => {
+    void createDialog
+      .prompt({
+        title: t("files.linkCreate"),
+        placeholder: t("files.newFolder"),
+        confirmLabel: t("files.create"),
+        cancelLabel: t("cancel"),
+      })
+      .then((value) => {
+        if (value === null) return;
+        const name = value.trim();
+        if (name.length === 0) return;
+        createFolderMutation.mutate({ parentPath: path, name });
+      });
+  };
+  // 03y 语义：rename/move/新建 prompt 与删除 confirm 走 Radix 对话框（弃 window.prompt/confirm）。
+  const renameDialog = usePromptDialog();
+  const moveDialog = usePromptDialog();
+  const createDialog = usePromptDialog();
+  const { confirm, holder: confirmHolder } = useConfirm();
   // 03w 触屏可达（design-reviewer M4 P2-5）：共享 touch 长按 hook（02c pill 同款，抽自本处
   // 内联实现）；移动超 slop 或提前松手取消；guardClick 抑制长按后紧随的合成 click。
   const lp = useLongPressActions(ctx.openAt);
@@ -261,6 +303,11 @@ export function MobileFilesTool({
   });
   const deleteMutation = useMutation({
     mutationFn: (entryPath: string) => deleteFile(projectName, entryPath),
+    onSuccess: invalidate,
+  });
+  const createFolderMutation = useMutation({
+    mutationFn: ({ parentPath, name }: { parentPath: string; name: string }) =>
+      createFolder(projectName, parentPath, name),
     onSuccess: invalidate,
   });
 
@@ -295,19 +342,47 @@ export function MobileFilesTool({
       label: t("files.rename"),
       icon: <ShellIcon name="edit" />,
       onSelect: () => {
-        const newName = window.prompt(t("files.renamePrompt"), entry.name);
-        if (newName && newName !== entry.name) {
-          renameMutation.mutate({ entry, newName });
-        }
+        void renameDialog
+          .prompt({
+            title: t("files.rename"),
+            placeholder: t("files.renamePrompt"),
+            initialValue: entry.name,
+            confirmLabel: t("files.rename"),
+            cancelLabel: t("cancel"),
+          })
+          .then((value) => {
+            if (value === null) return;
+            const newName = value.trim();
+            if (newName.length === 0 || newName === entry.name) return;
+            renameMutation.mutate({ entry, newName });
+          });
       },
     },
     {
       label: t("files.menuMove"),
-      icon: <ShellIcon name="folder-plus" />,
+      icon: <ShellIcon name="folder" />, // 与桌面「移动到…」同 icon（design-reviewer M8 P3：同一动作两端一致）
       onSelect: () => {
-        const targetDir = window.prompt(t("files.movePrompt"), path);
-        if (targetDir === null) return;
-        renameMutation.mutate({ entry, newName: entry.name, targetDir: targetDir || undefined });
+        const currentDir = entry.path.includes("/")
+          ? entry.path.slice(0, entry.path.lastIndexOf("/"))
+          : "";
+        void moveDialog
+          .prompt({
+            title: t("files.menuMove"),
+            placeholder: t("files.movePrompt"),
+            initialValue: currentDir,
+            confirmLabel: t("files.move"),
+            cancelLabel: t("cancel"),
+          })
+          .then((targetDir) => {
+            if (targetDir === null) return;
+            const trimmed = targetDir.trim();
+            if (trimmed === currentDir) return;
+            renameMutation.mutate({
+              entry,
+              newName: entry.name,
+              targetDir: trimmed.length > 0 ? trimmed : undefined,
+            });
+          });
       },
     },
     {
@@ -316,15 +391,92 @@ export function MobileFilesTool({
       variant: "destructive" as const,
       onSelect: () => {
         const warn = dirty.has(entry.path) ? `\n\n${t("files.deleteDirtyWarn")}` : "";
-        if (window.confirm(`${t("files.deleteConfirm", { name: entry.name })}${warn}`)) {
-          deleteMutation.mutate(entry.path);
-        }
+        void confirm({
+          title: t("files.delete"),
+          message: `${t("files.deleteConfirm", { name: entry.name })}${warn}`,
+          cancelLabel: t("cancel"),
+          confirmLabel: t("files.delete"),
+          tone: "danger",
+        }).then((ok) => {
+          if (ok) deleteMutation.mutate(entry.path);
+        });
       },
+    },
+  ];
+
+  // 03z pin①「长按文件夹行 → 上传到此」+ 03o pin④「增=新建」：目录行菜单（进入/新建到此/上传到此）。
+  const dirMenuItems = (entry: ProjectFileEntry) => [
+    {
+      label: t("files.menuCreateHere"),
+      icon: <ShellIcon name="folder-plus" />,
+      onSelect: () => {
+        void createDialog
+          .prompt({
+            title: t("files.linkCreate"),
+            placeholder: t("files.newFolder"),
+            confirmLabel: t("files.create"),
+            cancelLabel: t("cancel"),
+          })
+          .then((value) => {
+            if (value === null) return;
+            const name = value.trim();
+            if (name.length === 0) return;
+            createFolderMutation.mutate({ parentPath: entry.path, name });
+          });
+      },
+    },
+    {
+      label: t("files.menuUploadHere"),
+      icon: <ShellIcon name="upload" />,
+      onSelect: () => openUploadPicker(entry.path),
     },
   ];
 
   const entries = listing.data?.entries ?? [];
   const parentPath = listing.data?.parentPath ?? null;
+
+  // 03x 搜索态：非空 query → 结果列表（.res 计数 + .hrow 行，点击 → 预览）。面板早退分支。
+  if (trimmedQuery.length > 0) {
+    const matches = search.data?.matches ?? [];
+    return (
+      <ToolPanel tool="files">
+        <div className="res">
+          {search.data?.truncated === true
+            ? t("files.searchTruncated", { n: matches.length })
+            : t("files.searchCount", { n: matches.length })}
+        </div>
+        {matches.map((m) => (
+          <button
+            className="xrow w-full cursor-pointer text-left"
+            key={m.path}
+            onClick={() => {
+              onOpenFile(projectName, m.path);
+            }}
+            type="button"
+          >
+            <span className="ic">
+              <ShellIcon
+                name={m.type === "directory" ? "project" : "file"}
+                className="h-[17px] w-[17px]"
+              />
+            </span>
+            <span className="p">{m.path}</span>
+            {dirty.has(m.path) ? (
+              <span className={`badge lg ${gitBadgeVariant(dirty.get(m.path)!.status)}`}>
+                {statusShortLabel(dirty.get(m.path)!.status)}
+              </span>
+            ) : null}
+          </button>
+        ))}
+        {search.isLoading ? (
+          <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("files.loading")}</div>
+        ) : null}
+        {!search.isLoading && matches.length === 0 ? (
+          <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("files.searchEmpty")}</div>
+        ) : null}
+      </ToolPanel>
+    );
+  }
 
   return (
     <ToolPanel tool="files">
@@ -355,6 +507,7 @@ export function MobileFilesTool({
             type="button"
             {...lp.bind(entry.path)}
           >
+            {/* 03z pin①：目录行长按/右键 = 上传到此（+ 新建到此）。 */}
             {isDir ? (
               <span className="ic">
                 <ShellIcon name="project" className="h-[17px] w-[17px]" />
@@ -380,18 +533,47 @@ export function MobileFilesTool({
             <ActionMenu
               cancelLabel={t("cancel")}
               contextMenuPoint={ctx.pointFor(entry.path)}
-              items={menuItems(entry)}
+              items={isDir ? dirMenuItems(entry) : menuItems(entry)}
               onContextMenuClose={ctx.close}
               trigger={<span className="hidden" />}
             />
           </button>
         );
       })}
+      {/* 03z 上传队列卡（.upcard，与桌面 FilesPanel 双端单源）。 */}
+      <UploadQueueCard />
+      {/* 03o pin④「增=新建/上传（到当前作用域）」：底部 .links 行（03m Git 工具同款）。 */}
+      <div className="links">
+        <button onClick={openCreatePrompt} type="button">
+          {t("files.linkCreate")}
+        </button>
+        <button onClick={() => openUploadPicker(path)} type="button">
+          {t("files.linkUpload")}
+        </button>
+        <input
+          ref={uploadInputRef}
+          className="hidden"
+          type="file"
+          multiple
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              enqueueUploads(projectName, uploadTargetDirRef.current, Array.from(e.target.files));
+            }
+            e.target.value = "";
+          }}
+        />
+      </div>
       {copiedPath ? (
         <div className="cap mt-2 px-4">{t("files.copied")}</div>
       ) : (
         <div className="cap mt-4 px-4">{t("files.capBreadcrumb")}</div>
       )}
+      {/* 03y/03w 对话框 holder（rename/move/新建 prompt + 删除 confirm）：usePromptDialog 的
+        holder 必须挂载才渲染——否则 item.onSelect 里 prompt() 的 promise 永不 resolve。 */}
+      {renameDialog.holder}
+      {moveDialog.holder}
+      {createDialog.holder}
+      {confirmHolder}
     </ToolPanel>
   );
 }

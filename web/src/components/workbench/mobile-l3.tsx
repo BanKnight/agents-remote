@@ -395,8 +395,8 @@ export type L3GitBranchesProps = {
 
 /**
  * 03v 分支页：bcur 当前分支卡（tint-blue）+ 其他本地分支 brow/bsub（aheadBehindSub）+ rocard
- * 只读边界卡 + 远程分支组。merged 置灰不做（GitBranch 无 merged 数据，记档 M8
- * `git branch --merged`）。点本地分支 → 历史页。
+ * 只读边界卡 + 远程分支组。merged 行置灰（M8 已落：listBranches `--merged HEAD` 派生
+ * GitBranch.merged，解析失败 undefined 不标不阻塞）。点本地分支 → 历史页。
  */
 export function L3GitBranches({ projectName, onOpenHistory }: L3GitBranchesProps) {
   const { t } = useT();
@@ -465,23 +465,27 @@ export function L3GitBranches({ projectName, onOpenHistory }: L3GitBranchesProps
   );
 }
 
-/** 03v 分支行：brow（name + ahead/behind）+ bsub（branchAheadBehindSub；无 upstream 省略）。 */
+/** 03v 分支行：brow（name + ahead/behind）+ bsub（branchAheadBehindSub；无 upstream 省略）。
+ * merged 行（原型 pin③）置灰：n 降 ink-2/400 + st 换「已合并」缀注（不显示 ↑↓）。 */
 function BranchRow({ branch, onClick }: { branch: GitBranch; onClick: () => void }) {
   const { t } = useT();
   const hasUpstream = branch.upstream !== undefined;
+  const merged = branch.merged === true;
   return (
     <button className="block w-full cursor-pointer text-left" onClick={onClick} type="button">
-      <span className="brow">
+      <span className={merged ? "brow merged" : "brow"}>
         <span className="n">{branch.name}</span>
-        <span className="st">
-          {!hasUpstream
-            ? t("git.noUpstream")
-            : (branch.ahead ?? 0) === 0 && (branch.behind ?? 0) === 0
-              ? t("git.upToDate")
-              : `↑${branch.ahead ?? 0} ↓${branch.behind ?? 0}`}
+        <span className={merged ? "st mg" : "st"}>
+          {merged
+            ? t("git.merged")
+            : !hasUpstream
+              ? t("git.noUpstream")
+              : (branch.ahead ?? 0) === 0 && (branch.behind ?? 0) === 0
+                ? t("git.upToDate")
+                : `↑${branch.ahead ?? 0} ↓${branch.behind ?? 0}`}
         </span>
       </span>
-      <span className="bsub">
+      <span className={merged ? "bsub mg" : "bsub"}>
         {hasUpstream
           ? t("git.branchAheadBehindSub", {
               base: branch.upstream ?? "",

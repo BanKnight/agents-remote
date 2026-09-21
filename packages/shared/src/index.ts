@@ -25,6 +25,30 @@ export type ProjectFileListResponse = {
   entries: ProjectFileEntry[];
 };
 
+/** GET files/search 命中项（03x 文件搜索）：相对路径 + 目录/文件 + 元数据（hrow 行渲染）。 */
+export type ProjectFileSearchMatch = {
+  /** 项目内相对路径（03x ②「结果显示相对路径」）。 */
+  path: string;
+  name: string;
+  type: ProjectFileEntryType;
+  size: number | null;
+  mtimeMs?: number;
+};
+
+/**
+ * GET /api/projects/:name/files/search?q= 响应（M8 03x）：项目内文件名子串匹配（大小写不敏感），
+ * 递归跳过 `.git`/`node_modules`；`truncated` = 命中数达到上限截断（客户端提示「仅显示前 N 个」）。
+ */
+export type ProjectFileSearchResponse = {
+  projectName: string;
+  query: string;
+  matches: ProjectFileSearchMatch[];
+  truncated: boolean;
+};
+
+/** 上传同名冲突处置（03z 三选）：缺省 = 维持 409 硬拒；overwrite = 覆盖；keepBoth = 派生 `name(1).ext`。 */
+export type UploadConflictPolicy = "overwrite" | "keepBoth";
+
 export type ProjectFilePreviewMediaType =
   | "image/png"
   | "image/jpeg"
@@ -151,11 +175,12 @@ export type GitFileDiffResponse = {
   diff: string;
 };
 
-/** R3 分支列表项。name = refname:short（main / origin/main）。 */
+/** R3 分支列表项。name = refname:short（main / origin/main）。merged = 已并入当前分支（03v 置灰）。 */
 export type GitBranch = {
   name: string;
   type: "local" | "remote";
   isCurrent?: boolean;
+  merged?: boolean;
   upstream?: string;
   ahead?: number;
   behind?: number;
@@ -1101,6 +1126,19 @@ export type UpdateAutoRetryRequest = {
 
 export type UpdateAutoRetryResponse = {
   session: AgentSession;
+};
+
+/**
+ * GET auto-retry/status 响应（M8 03d `.count` 取消/立即重试）：待发注入快照。
+ * `scheduled:false` = 当前无待发定时器（未配置 / 已注入 / 已取消 / 已被正常回复作废）。
+ * fireAt = epoch ms 预计注入时刻（客户端倒计时）；attempt = 本次将是窗口内第几次注入。
+ */
+export type AutoRetryStatusResponse = {
+  scheduled: boolean;
+  fireAt?: number;
+  delayMs?: number;
+  attempt?: number;
+  max?: number;
 };
 
 export type RenameAgentSessionResponse = {

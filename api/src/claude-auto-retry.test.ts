@@ -366,3 +366,70 @@ test("生产默认常量：延迟 60s / 窗口 30min / 上限 3 次（AUTO_RETRY
   expect(AUTO_RETRY_WINDOW_MS).toBe(30 * 60_000);
   expect(AUTO_RETRY_MAX_PER_WINDOW).toBe(3);
 });
+
+// ── M8：03d `.count` 取消/立即重试（fireNow + pendingStatus）──
+
+test("pendingStatus：error 后快照 fireAt/attempt/max；正常 assistant 到达后清空", async () => {
+  const h = harness(config({ delayMs: 60_000 }));
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  // schedule 走 async getConfig（同步返回也要让出一个微任务），sleep 1ms 等调度落地。
+  await Bun.sleep(1);
+  const pending = h.watch.pendingStatus("s1");
+  expect(pending).not.toBeNull();
+  expect(pending?.fireAt).toBe(1_000_000 + 60_000);
+  expect(pending?.delayMs).toBe(60_000);
+  expect(pending?.attempt).toBe(1);
+  expect(pending?.max).toBe(AUTO_RETRY_MAX_PER_WINDOW);
+
+  h.watch.handleStdoutLine("s1", "sess1", { type: "assistant", model: "claude-sonnet-4-6" });
+  expect(h.watch.pendingStatus("s1")).toBeNull();
+});
+
+test("pendingStatus：无 pending / 未配置 → null", () => {
+  const h = harness(undefined);
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  expect(h.watch.pendingStatus("s1")).toBeNull();
+});
+
+test("fireNow：有待发时立即注入（不等延迟）+ 记账 + pending 清空", async () => {
+  const h = harness(config({ delayMs: 60_000 }));
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  await Bun.sleep(1);
+  expect(h.watch.pendingStatus("s1")).not.toBeNull();
+
+  const fired = await h.watch.fireNow("s1");
+  expect(fired).toBe(true);
+  expect(h.injections).toHaveLength(1);
+  expect(h.watch.pendingStatus("s1")).toBeNull();
+  // 注入即记账（滚动窗口计数），awaitingSuccess 等正常 assistant。
+  expect(h.watch["states"].get("s1")?.injectionTimestamps).toEqual([1_000_000]);
+  expect(h.watch["states"].get("s1")?.awaitingSuccess).toBe(true);
+});
+
+test("fireNow：无 pending → false（幂等，双击/竞态无害）", async () => {
+  const h = harness(config({ delayMs: 60_000 }));
+  expect(await h.watch.fireNow("s1")).toBe(false);
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  expect(await h.watch.fireNow("s2")).toBe(false);
+  expect(h.injections).toHaveLength(0);
+});
+
+test("fireNow：窗口满时拒绝（与定时 fire 同 canInject 校验）+ cancelPending 后 fireNow 失效", async () => {
+  const h = harness(config({ delayMs: 60_000, maxPerWindow: 1 }));
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  await Bun.sleep(1);
+  // 模拟窗口内已有一次注入：pending 应显示 attempt=2 且 canInject 拒 → fireNow false。
+  const state = h.watch["states"].get("s1")!;
+  state.injectionTimestamps = [999_000];
+  expect(h.watch.pendingStatus("s1")?.attempt).toBe(2);
+  expect(await h.watch.fireNow("s1")).toBe(false);
+  // 定时器已被 fireNow 消费（返回 false 前已 clearTimeout）→ pending 不复存在。
+  expect(h.watch.pendingStatus("s1")).toBeNull();
+
+  // cancelPending 后 fireNow 无 pending → false。
+  h.watch.handleStdoutLine("s1", "sess1", { type: "assistant", model: "claude-sonnet-4-6" });
+  h.watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  h.watch.cancelPending("s1");
+  expect(await h.watch.fireNow("s1")).toBe(false);
+  expect(h.injections).toHaveLength(0);
+});

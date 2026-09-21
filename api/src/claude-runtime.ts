@@ -425,6 +425,24 @@ export class ClaudeRuntime implements RuntimeResources {
     }
   }
 
+  // ── 自动重试待发注入的控制桥（M8 03d `.count` 取消/立即重试）──────────────
+  // sessionName = metadata.runtimeKey（SessionRegistry 的 session.runtimeKey）。
+
+  /** 待发注入快照（03d `.count` 倒计时条数据源）；无 pending 返回 null。 */
+  autoRetryPending(sessionName: string) {
+    return this.autoRetry.pendingStatus(sessionName);
+  }
+
+  /** 取消待发注入（03d「取消」）。 */
+  cancelAutoRetry(sessionName: string): void {
+    this.autoRetry.cancelPending(sessionName);
+  }
+
+  /** 立即注入（03d「立即重试」）：提前 fire，返回是否真的注入。 */
+  fireAutoRetryNow(sessionName: string): Promise<boolean> {
+    return this.autoRetry.fireNow(sessionName);
+  }
+
   // Broadcast a server-synthesized line to CURRENT subscribers only (no buffering
   // into liveLines/history). Used for transient notifications like
   // skill_catalog_changed that must not replay on reconnect — reconnects re-fetch

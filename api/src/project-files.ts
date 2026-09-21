@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import type {
   ApiErrorCode,
@@ -7,9 +8,12 @@ import type {
   ProjectFileListResponse,
   ProjectFilePreviewMediaType,
   ProjectFilePreviewResponse,
+  ProjectFileSearchMatch,
+  ProjectFileSearchResponse,
   ProjectUnsupportedFilePreviewReason,
   RenameFileResponse,
   SaveFileResponse,
+  UploadConflictPolicy,
   UploadFileResponse,
 } from "@agents-remote/shared";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -18,6 +22,11 @@ import { ProjectPathError, resolveProjectRelativePath, resolveProjectsRoot } fro
 
 export const TEXT_PREVIEW_LIMIT_BYTES = 256 * 1024;
 export const IMAGE_PREVIEW_LIMIT_BYTES = 5 * 1024 * 1024;
+
+/** 03x 文件搜索：结果上限（达到即 truncated，客户端提示「仅显示前 N 个」）。 */
+export const FILE_SEARCH_LIMIT = 200;
+/** 03x 搜索递归跳过的目录名（仓库元数据 / 依赖体积黑洞——遍历既慢又无业务意义）。 */
+const FILE_SEARCH_SKIP = new Set([".git", "node_modules"]);
 
 export type RawFileResult = {
   content: Buffer;
@@ -143,6 +152,65 @@ export class ProjectFilesService {
     }
   }
 
+  /**
+   * 03x 文件搜索（M8）：项目内文件名子串匹配（大小写不敏感），递归 walk 跳过
+   * `.git`/`node_modules`，symlink 不进结果（防循环出根）；命中达 FILE_SEARCH_LIMIT 截断。
+   * 结果 path 为项目内相对路径（03x ②「结果显示相对路径」）。
+   */
+  async searchFiles(projectName: string, query: string): Promise<ProjectFileSearchResponse> {
+    const trimmed = query.trim();
+    if (trimmed.length === 0) {
+      return { projectName, query: trimmed, matches: [], truncated: false };
+    }
+
+    const resolved = await this.resolvePath(projectName, "");
+    const needle = trimmed.toLowerCase();
+    const matches: ProjectFileSearchMatch[] = [];
+    let truncated = false;
+
+    const walk = async (dirPath: string): Promise<void> => {
+      if (truncated) return;
+      const entries = await readdir(dirPath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (truncated) return;
+        // symlink 两态皆 false（readdir Dirent 不跟随）→ 天然过滤，不会循出项目根。
+        if (!entry.isFile() && !entry.isDirectory()) continue;
+        if (FILE_SEARCH_SKIP.has(entry.name)) continue;
+        const isDir = entry.isDirectory();
+        if (entry.name.toLowerCase().includes(needle)) {
+          if (matches.length >= FILE_SEARCH_LIMIT) {
+            truncated = true;
+            return;
+          }
+          const absPath = join(dirPath, entry.name);
+          const entryStat = isDir ? undefined : await this.statEntry(absPath);
+          matches.push({
+            name: entry.name,
+            path: relative(resolved.path, absPath),
+            type: isDir ? "directory" : "file",
+            size: entryStat?.size ?? null,
+            ...(isDir || !entryStat ? {} : { mtimeMs: entryStat.mtimeMs }),
+          });
+        }
+        if (isDir) {
+          await walk(join(dirPath, entry.name));
+        }
+      }
+    };
+
+    try {
+      await walk(resolved.path);
+    } catch (error) {
+      if (error instanceof ProjectFilesError) {
+        throw error;
+      }
+
+      throw new ProjectFilesError("PROJECT_FS_ERROR", "Unable to search project files");
+    }
+
+    return { projectName: resolved.project.name, query: trimmed, matches, truncated };
+  }
+
   async previewFile(projectName: string, relativePath = ""): Promise<ProjectFilePreviewResponse> {
     const resolved = await this.resolvePath(projectName, relativePath);
     const targetStat = await this.statPath(resolved.path);
@@ -238,11 +306,16 @@ export class ProjectFilesService {
     return { content, mimeType };
   }
 
+  /**
+   * 上传文件到项目内目录。同名冲突（03z 三选）按 `conflict` 处置：缺省维持 409 硬拒
+   *（兼容旧调用方）；"overwrite" = 覆盖既有文件；"keepBoth" = 派生 `name(1).ext` 落盘。
+   */
   async uploadFile(
     projectName: string,
     directoryPath: string,
     fileName: string,
     content: Buffer,
+    conflict?: UploadConflictPolicy,
   ): Promise<UploadFileResponse> {
     const resolved = await this.resolvePath(projectName, directoryPath);
     const dirStat = await this.statPath(resolved.path);
@@ -254,6 +327,32 @@ export class ProjectFilesService {
       );
     }
 
+    return this.writeUpload(resolved.path, directoryPath, fileName, content, conflict);
+  }
+
+  /**
+   * 上传文件到 PROJECTS_ROOT 根层（10 pin④「上传到当前作用域」，M8 全局文件写边界）。
+   * 根层无项目上下文：resolveProjectsRoot（realpath 校验）+ 文件名/大小同款校验 +
+   * 同名冲突同款三选语义；返回 entry.path = 根相对（即文件名本身）。
+   */
+  async uploadRootFile(
+    fileName: string,
+    content: Buffer,
+    conflict?: UploadConflictPolicy,
+  ): Promise<UploadFileResponse> {
+    const rootPath = await resolveProjectsRoot(this.projectsRoot);
+    return this.writeUpload(rootPath, "", fileName, content, conflict);
+  }
+
+  // uploadFile / uploadRootFile 共用落盘段：入参校验（文件名 / 大小上限）→ 冲突处置 → 写入。
+  // dirDisplayPath = 客户端视角的目标目录（项目相对 or "" 根层），仅用于构造 entry.path。
+  private async writeUpload(
+    dirPath: string,
+    dirDisplayPath: string,
+    fileName: string,
+    content: Buffer,
+    conflict?: UploadConflictPolicy,
+  ): Promise<UploadFileResponse> {
     if (fileName.includes("/") || fileName.includes("\\") || fileName.includes("\0")) {
       throw new ProjectFilesError("PROJECT_NAME_INVALID", "Invalid file name");
     }
@@ -265,16 +364,22 @@ export class ProjectFilesService {
       );
     }
 
-    const targetPath = join(resolved.path, fileName);
+    let finalName = fileName;
+    const targetPath = join(dirPath, fileName);
 
     try {
       const existingStat = await stat(targetPath);
 
       if (existingStat.isFile()) {
-        throw new ProjectFilesError(
-          "PROJECT_FILE_TARGET_EXISTS",
-          "A file with this name already exists",
-        );
+        if (!conflict) {
+          throw new ProjectFilesError(
+            "PROJECT_FILE_TARGET_EXISTS",
+            "A file with this name already exists",
+          );
+        }
+        if (conflict === "keepBoth") {
+          finalName = this.deriveKeepBothName(dirPath, fileName);
+        }
       }
     } catch (error) {
       if (!isNotFoundError(error)) {
@@ -283,22 +388,35 @@ export class ProjectFilesService {
     }
 
     try {
-      await writeFile(targetPath, content);
+      await writeFile(join(dirPath, finalName), content);
     } catch {
       throw new ProjectFilesError("PROJECT_FILE_UPLOAD_FAILED", "Unable to write uploaded file");
     }
 
-    const entryStat = await this.statPath(targetPath);
+    const entryStat = await this.statPath(join(dirPath, finalName));
 
     return {
       entry: {
-        name: fileName,
-        path: directoryPath.length > 0 ? `${directoryPath}/${fileName}` : fileName,
+        name: finalName,
+        path: dirDisplayPath.length > 0 ? `${dirDisplayPath}/${finalName}` : finalName,
         type: "file",
         hidden: false,
         size: entryStat.size,
       },
     };
+  }
+
+  // 03z「保留两者」：`name(1).ext` 起找第一个不冲突的候选（上限 999 防恶意塞满目录时死循环）。
+  private deriveKeepBothName(dirPath: string, fileName: string): string {
+    const ext = extname(fileName);
+    const stem = ext.length > 0 ? fileName.slice(0, fileName.length - ext.length) : fileName;
+    for (let i = 1; i <= 999; i++) {
+      const candidate = `${stem}(${i})${ext}`;
+      if (!existsSync(join(dirPath, candidate))) {
+        return candidate;
+      }
+    }
+    throw new ProjectFilesError("PROJECT_FILE_UPLOAD_FAILED", "Unable to derive unique name");
   }
 
   async createFolder(
@@ -531,6 +649,15 @@ export class ProjectFilesService {
       }
 
       throw new ProjectFilesError("PROJECT_FS_ERROR", "Unable to inspect project file path");
+    }
+  }
+
+  // 搜索 walk 内的单文件 stat：文件可能在遍历间隙被删（ENOENT）——返回 undefined 不中断整个搜索。
+  private async statEntry(path: string) {
+    try {
+      return await stat(path);
+    } catch {
+      return undefined;
     }
   }
 

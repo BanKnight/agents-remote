@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  FILE_SEARCH_LIMIT,
   IMAGE_PREVIEW_LIMIT_BYTES,
   ProjectFilesService,
   TEXT_PREVIEW_LIMIT_BYTES,
@@ -457,4 +458,115 @@ test("saveFile rejects oversized content", async () => {
   await expect(service.saveFile("demo", "big.txt", large)).rejects.toMatchObject({
     code: "PROJECT_FILE_UPLOAD_TOO_LARGE",
   });
+});
+
+// ── M8：03x 文件搜索 + 03z 上传冲突三选 + 根层上传 ─────────────────────────
+
+test("searchFiles matches names case-insensitively and returns relative paths", async () => {
+  await mkdir(join(root, "demo", "src", "auth"), { recursive: true });
+  await writeFile(join(root, "demo", "src", "auth", "Passkey.ts"), "export {}");
+  await writeFile(join(root, "demo", "passkey-notes.md"), "notes");
+
+  const service = new ProjectFilesService(root);
+  const response = await service.searchFiles("demo", "PASSKEY");
+
+  expect(response.projectName).toBe("demo");
+  expect(response.query).toBe("PASSKEY");
+  expect(response.truncated).toBe(false);
+  expect(response.matches.map((m) => m.path).sort()).toEqual([
+    "passkey-notes.md",
+    join("src", "auth", "Passkey.ts"),
+  ]);
+  const fileMatch = response.matches.find((m) => m.name === "Passkey.ts");
+  expect(fileMatch?.type).toBe("file");
+  expect(fileMatch?.size).toBe("export {}".length);
+  expect(fileMatch?.mtimeMs).toEqual(expect.any(Number));
+});
+
+test("searchFiles skips .git/node_modules and symlinks, matches directories", async () => {
+  await mkdir(join(root, "demo", ".git"), { recursive: true });
+  await mkdir(join(root, "demo", "node_modules", "pkg"), { recursive: true });
+  await mkdir(join(root, "demo", "src"), { recursive: true });
+  await writeFile(join(root, "demo", ".git", "target.txt"), "x");
+  await writeFile(join(root, "demo", "node_modules", "pkg", "target.txt"), "x");
+  await writeFile(join(root, "demo", "src", "target.ts"), "x");
+  // symlink（目录型/文件型）：Dirent.isFile/isDirectory 对 symlink 均 false → 不进结果不递归。
+  await symlink(join(outside), join(root, "demo", "target-link"));
+  await symlink(join(outside, "x.txt"), join(root, "demo", "target-symlink.txt"));
+
+  const service = new ProjectFilesService(root);
+  const response = await service.searchFiles("demo", "target");
+
+  expect(response.matches.map((m) => m.path)).toEqual([join("src", "target.ts")]);
+});
+
+test("searchFiles truncates at FILE_SEARCH_LIMIT and reports truncated flag", async () => {
+  await mkdir(join(root, "demo", "d"), { recursive: true });
+  const total = FILE_SEARCH_LIMIT + 1;
+  for (let i = 0; i < total; i++) {
+    await writeFile(join(root, "demo", "d", `hit-${String(i).padStart(3, "0")}.txt`), "x");
+  }
+
+  const service = new ProjectFilesService(root);
+  const response = await service.searchFiles("demo", "hit-");
+
+  expect(response.matches).toHaveLength(FILE_SEARCH_LIMIT);
+  expect(response.truncated).toBe(true);
+});
+
+test("uploadFile conflict=overwrite replaces existing file content", async () => {
+  await writeFile(join(root, "demo", "a.txt"), "old");
+  const service = new ProjectFilesService(root);
+
+  const response = await service.uploadFile("demo", "", "a.txt", Buffer.from("new"), "overwrite");
+
+  expect(response.entry.name).toBe("a.txt");
+  const saved = await readFile(join(root, "demo", "a.txt"), "utf8");
+  expect(saved).toBe("new");
+});
+
+test("uploadFile conflict=keepBoth derives name(1).ext instead of 409", async () => {
+  await writeFile(join(root, "demo", "a.txt"), "existing");
+  const service = new ProjectFilesService(root);
+
+  const response = await service.uploadFile(
+    "demo",
+    "",
+    "a.txt",
+    Buffer.from("incoming"),
+    "keepBoth",
+  );
+
+  expect(response.entry.name).toBe("a(1).txt");
+  expect(response.entry.path).toBe("a(1).txt");
+  const existing = await readFile(join(root, "demo", "a.txt"), "utf8");
+  expect(existing).toBe("existing");
+  const both = await readFile(join(root, "demo", "a(1).txt"), "utf8");
+  expect(both).toBe("incoming");
+});
+
+test("uploadFile without conflict keeps 409 on existing name (backward compat)", async () => {
+  await writeFile(join(root, "demo", "a.txt"), "old");
+  const service = new ProjectFilesService(root);
+
+  await expect(service.uploadFile("demo", "", "a.txt", Buffer.from("new"))).rejects.toMatchObject({
+    code: "PROJECT_FILE_TARGET_EXISTS",
+  });
+});
+
+test("uploadRootFile writes into PROJECTS_ROOT top level with same conflict semantics", async () => {
+  await writeFile(join(root, "loose.txt"), "old");
+  const service = new ProjectFilesService(root);
+
+  const keep = await service.uploadRootFile("loose.txt", Buffer.from("incoming"), "keepBoth");
+  expect(keep.entry.name).toBe("loose(1).txt");
+  expect(keep.entry.path).toBe("loose(1).txt");
+  expect(keep.entry.hidden).toBe(false);
+
+  await expect(service.uploadRootFile("loose.txt", Buffer.from("new"))).rejects.toMatchObject({
+    code: "PROJECT_FILE_TARGET_EXISTS",
+  });
+
+  const over = await service.uploadRootFile("loose.txt", Buffer.from("new"), "overwrite");
+  expect(over.entry.name).toBe("loose.txt");
 });

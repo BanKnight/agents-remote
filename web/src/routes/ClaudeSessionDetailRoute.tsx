@@ -35,7 +35,14 @@ import {
 } from "@assistant-ui/react";
 import { MarkdownString } from "../components/markdown/MarkdownString";
 import { MarkdownText } from "../components/markdown/MarkdownText";
-import { closeAgentSession, getAgentSession, getSkillSlashCatalog } from "../api/client";
+import {
+  cancelAutoRetry,
+  closeAgentSession,
+  fetchAutoRetryStatus,
+  fireAutoRetryNow,
+  getAgentSession,
+  getSkillSlashCatalog,
+} from "../api/client";
 import { useT, type TranslationKey } from "../i18n";
 import { formatDuration, formatTokenCount } from "../lib/utils";
 import { isDebugButtonEnabled, isPerfTraceEnabled } from "../lib/debug-flags";
@@ -591,9 +598,12 @@ export function ClaudeChat({
 
                     <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                       <VirtualizedThreadContent
+                        autoRetryEnabled
                         loading={loading}
+                        projectName={projectName}
                         retryInfo={retryInfo}
                         scrollerApi={scrollerApiRef}
+                        sessionId={sessionId}
                         offlineCap={!connected}
                       />
 
@@ -3270,15 +3280,22 @@ const CHAT_SCROLL_UP_EPS = 2;
 const CHAT_BOTTOM_THRESHOLD = 32;
 
 export function VirtualizedThreadContent({
+  autoRetryEnabled = false,
   loading,
+  projectName = "",
   retryInfo,
   scrollerApi,
+  sessionId = "",
   offlineCap = false,
 }: {
+  /** 服务端 auto-retry pending 轮询开关：仅 claude 会话（有 runtimeKey）开启，ACP/Chat 恒 false。 */
+  autoRetryEnabled?: boolean;
   loading: boolean;
+  /** auto-retry 状态轮询目标（仅 autoRetryEnabled 时需要）。 */
+  projectName?: string;
   retryInfo: RetryInfo | null;
-  /** 命令式跳转句柄（route 层审批托盘定位用）：scrollToMessage(unpin + 定位到所在 turn)。 */
   scrollerApi?: MutableRefObject<{ scrollToMessage: (messageIndex: number) => void } | null>;
+  sessionId?: string;
   /** 03i 流内离线分隔（.cap「离线中 · 此后内容将在重连后补齐」），断线且已有内容时显示。 */
   offlineCap?: boolean;
 }) {
@@ -3480,24 +3497,31 @@ export function VirtualizedThreadContent({
 
   return (
     <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden">
-      {/* 03d 自动重试倒计时条：流上方（编号②位置），不随滚动（sticky 语义——瞬态、一眼可见） */}
+      {/* 03d 自动重试倒计时条：流上方（编号②位置），不随滚动（sticky 语义——瞬态、一眼可见）。
+        RetryIndicator = CLI 内部 api_retry（只读倒计时）；AutoRetryBanner = 服务端 auto-retry
+        pending 状态机（可取消/立即重试，M8 §6.9 双语义厘清）。 */}
       <RetryIndicator retryInfo={retryInfo} />
+      <AutoRetryBanner
+        enabled={autoRetryEnabled && !offlineCap}
+        projectName={projectName}
+        sessionId={sessionId}
+      />
       {runningAgents.length > 0 ? (
         <div
           aria-label={t("claude.agent.runningAriaLabel")}
-          className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-neutral-line/40 bg-surface/80 px-3 py-1.5 sm:px-5"
+          className="subbar flex shrink-0 flex-wrap items-center gap-1.5 px-3 py-1.5 sm:px-5"
         >
           {runningAgents.map((agent) => (
             <button
               key={agent.index}
               type="button"
               onClick={() => scrollToMessage(agent.index)}
-              className="inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-full bg-user/10 px-2 py-0.5 text-[0.65rem] text-user transition hover:bg-user/15"
+              className="inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.65rem] transition hover:brightness-105"
             >
-              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-user" />
+              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-current" />
               <span className="shrink-0 font-semibold">{agent.subagentType}</span>
               {agent.description ? (
-                <span className="min-w-0 truncate text-user/70">{agent.description}</span>
+                <span className="min-w-0 truncate opacity-70">{agent.description}</span>
               ) : null}
             </button>
           ))}
@@ -4226,9 +4250,105 @@ function ComposerWithInterrupt({
 }
 
 // 自动重试倒计时条（v2 M3-d，对标 03d .count：tint-red 底 + r1 错误行 + r2 mono 倒计时）。
-// 挂流上方（03d 编号②位置）。原型的「取消 / 立即重试」按钮不画：服务端无控制端点
-// （用户插话即隐式取消注入），能力边界约定记 redesign-v2.md。挂载位置由调用方决定——
-// 移动在流上方、桌面同位（共享组件流顶）。
+// 挂流上方（03d 编号②位置）。M8 起待发态由下方 AutoRetryBanner（.count）承载取消/立即重试
+// 控制端点；本组件只负责错误转注入中的只读倒计时（CLI 内部 api_retry，服务端无控制面）。
+// 挂载位置由调用方决定——移动在流上方、桌面同位（共享组件流顶）。
+// ── AutoRetryBanner（M8 03d `.count` 取消/立即重试）──────────────────────────
+// 服务端 ClaudeAutoRetryWatch 的待发注入快照（GET auto-retry/status）。pending 是
+// 纯内存态且无 WS 广播（redesign-v2 §6.9 裁决）：连接期间 5s 轮询，scheduled=false
+// 不渲染；注入发生时流内本就有 isUserInput echo 可见，状态条随 refetch 消失。
+// attempt/max 与设置页 ClaudeAutoRetryConfig 同源（03d pin②「次数/间隔/文案在 ℹ 配置」）。
+
+const AUTO_RETRY_POLL_MS = 5000;
+
+function AutoRetryBanner({
+  enabled,
+  projectName,
+  sessionId,
+}: {
+  enabled: boolean;
+  projectName: string;
+  sessionId: string;
+}) {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+  const status = useQuery({
+    enabled,
+    queryFn: () => fetchAutoRetryStatus(projectName, sessionId),
+    queryKey: ["projects", projectName, "agent-sessions", sessionId, "auto-retry-status"],
+    refetchInterval: AUTO_RETRY_POLL_MS,
+  });
+  const invalidate = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["projects", projectName, "agent-sessions", sessionId, "auto-retry-status"],
+    });
+  };
+  const cancel = useMutation({
+    mutationFn: () => cancelAutoRetry(projectName, sessionId),
+    onSuccess: invalidate,
+  });
+  const fire = useMutation({
+    mutationFn: () => fireAutoRetryNow(projectName, sessionId),
+    onSuccess: invalidate,
+  });
+
+  const pending = status.data?.scheduled === true ? status.data : null;
+  const fireAt = pending?.fireAt;
+  const [remainMs, setRemainMs] = useState(0);
+  useEffect(() => {
+    if (fireAt === undefined) {
+      setRemainMs(0);
+      return;
+    }
+    const tick = () => setRemainMs(Math.max(0, fireAt - Date.now()));
+    tick();
+    const timer = setInterval(tick, 250);
+    return () => clearInterval(timer);
+  }, [fireAt]);
+
+  if (pending === null || fireAt === undefined) return null;
+
+  const totalSeconds = Math.ceil(remainMs / 1000);
+  const mmss = `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`;
+  return (
+    <div className="shrink-0 px-3 pt-1.5 sm:px-5">
+      <div className="count" role="status">
+        <div className="r1">
+          <ShellIcon className="h-[15px] w-[14px] shrink-0" name="warning-triangle" />
+          <span className="min-w-0 flex-1 truncate">{t("claude.autoRetryPending.title")}</span>
+          <span className="btns">
+            <button
+              className="btn ghost"
+              disabled={cancel.isPending}
+              onClick={() => cancel.mutate()}
+              type="button"
+            >
+              {t("cancel")}
+            </button>
+            <button
+              className="btn blue"
+              disabled={fire.isPending}
+              onClick={() => fire.mutate()}
+              type="button"
+            >
+              {t("claude.autoRetryPending.retryNow")}
+            </button>
+          </span>
+        </div>
+        <div className="r2">
+          <span className="tm">
+            {t("claude.retry.countSchedule", {
+              attempt: pending.attempt ?? 1,
+              max: pending.max ?? 1,
+              time: mmss,
+            })}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
   const { t } = useT();
   const [countdown, setCountdown] = useState<number>(0);

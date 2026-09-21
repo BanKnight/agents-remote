@@ -192,6 +192,8 @@ export class ProjectGitDiffService {
    * R3 分支列表（local + remote）。for-each-ref 一次拿 refname/upstream/track/objectname，
    * 按 committerdate 倒序。current 来自 rev-parse HEAD（detached = "HEAD"）。track 字段
    *（`[ahead 2, behind 1]` / `[gone]`）解析为 per-branch ahead/behind。
+   * merged（M8 03v 置灰）= 已并入当前分支的本地分支（`for-each-ref --merged HEAD`；
+   * 失败降级为无 merged 标，不阻塞列表）。
    */
   async listBranches(projectName: string): Promise<GitBranchListResponse> {
     const project = await this.resolveProject(projectName);
@@ -202,7 +204,7 @@ export class ProjectGitDiffService {
       );
     }
 
-    const [eachRef, head] = await Promise.all([
+    const [eachRef, head, mergedOutput] = await Promise.all([
       this.git(project.path, [
         "for-each-ref",
         "--sort=-committerdate",
@@ -211,10 +213,26 @@ export class ProjectGitDiffService {
         "refs/remotes",
       ]),
       this.gitRaw(project.path, ["rev-parse", "--abbrev-ref", "HEAD"]),
+      this.gitRaw(project.path, [
+        "for-each-ref",
+        "--format=%(refname)",
+        "--merged",
+        "HEAD",
+        "refs/heads",
+      ]),
     ]);
 
     const current = head.exitCode === 0 ? head.stdout.trim() : "HEAD";
-    return { current, branches: parseBranches(eachRef, current) };
+    const mergedNames =
+      mergedOutput.exitCode === 0
+        ? new Set(
+            mergedOutput.stdout
+              .split("\n")
+              .filter(Boolean)
+              .map((line) => line.replace(/^refs\/heads\//, "")),
+          )
+        : undefined;
+    return { current, branches: parseBranches(eachRef, current, mergedNames) };
   }
 
   /**
@@ -622,8 +640,9 @@ export class ProjectGitDiffService {
  * for-each-ref 输出 → GitBranch[]。每行 `refname|short|upstream|track|objectname`（| 分隔，
  * ref 不含 |）。type 由 refname 前缀判（refs/heads → local / refs/remotes → remote）。
  * track（`[ahead 2, behind 1]` / `[gone]`）解析为 ahead/behind。local 分支 == current 标 isCurrent。
+ * mergedNames（`--merged HEAD` 的本地分支集合）内的 local 分支标 merged（03v 置灰）；undefined = 解析失败降级不标。
  */
-const parseBranches = (output: string, current: string): GitBranch[] =>
+const parseBranches = (output: string, current: string, mergedNames?: Set<string>): GitBranch[] =>
   output
     .split("\n")
     .filter((line) => line.length > 0)
@@ -632,6 +651,7 @@ const parseBranches = (output: string, current: string): GitBranch[] =>
       const type: GitBranch["type"] = refname.startsWith("refs/remotes/") ? "remote" : "local";
       const upstream = upstreamRaw && upstreamRaw.length > 0 ? upstreamRaw : undefined;
       const isCurrent = type === "local" && name === current && current !== "HEAD";
+      const merged = type === "local" && mergedNames?.has(name) === true && !isCurrent;
       return {
         name,
         type,
@@ -639,6 +659,7 @@ const parseBranches = (output: string, current: string): GitBranch[] =>
         lastCommitShort,
         ...parseTrack(track),
         ...(isCurrent ? { isCurrent: true } : {}),
+        ...(merged ? { merged: true } : {}),
       };
     });
 

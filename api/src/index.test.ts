@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AuthService } from "./auth";
+import { ClaudeRuntime } from "./claude-runtime";
 import { createFetchHandler } from "./index";
 import { ProjectFilesService } from "./project-files";
 import { ProjectGitDiffService } from "./project-git-diff";
@@ -58,6 +59,80 @@ const createTestHandler = () => {
 
 const authHeader = (auth: AuthService) => ({
   authorization: `Bearer ${auth.login("secret").token}`,
+});
+
+// ── M8：03x 搜索端点 + 根层上传 + auto-retry 控制端点 ──────────────────────
+
+test("POST /api/root/files/upload writes PROJECTS_ROOT top-level file with keepBoth", async () => {
+  await writeFile(join(root, "loose.txt"), "old");
+  const { handler, auth } = createTestHandler();
+
+  const formData = new FormData();
+  formData.append("file", new File(["incoming"], "loose.txt"));
+  formData.append("conflict", "keepBoth");
+  const response = await handler(
+    new Request("http://localhost/api/root/files/upload", {
+      method: "POST",
+      headers: authHeader(auth),
+      body: formData,
+    }),
+    { upgrade: () => false },
+  );
+  const body = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(body.entry.name).toBe("loose(1).txt");
+  expect(body.entry.path).toBe("loose(1).txt");
+});
+
+test("GET files/search returns relative-path matches within a project", async () => {
+  await mkdir(join(root, "demo", "src"), { recursive: true });
+  await writeFile(join(root, "demo", "src", "passkey.ts"), "export {}");
+  const { handler, auth } = createTestHandler();
+
+  const response = await handler(
+    new Request(
+      `http://localhost/api/projects/${encodeURIComponent("demo")}/files/search?q=passkey`,
+      { headers: authHeader(auth) },
+    ),
+    { upgrade: () => false },
+  );
+  const body = await response.json();
+
+  expect(response.status).toBe(200);
+  expect(body.truncated).toBe(false);
+  expect(body.matches).toHaveLength(1);
+  expect(body.matches[0].path).toBe(join("src", "passkey.ts"));
+  expect(body.matches[0].type).toBe("file");
+});
+
+test("auto-retry status/cancel/fire return 404 for unknown sessions", async () => {
+  const auth = new AuthService({
+    appPassword: "secret",
+    tokenSecret: "test-secret",
+    now: () => new Date("2026-05-24T00:00:00.000Z"),
+  });
+  const sessionRegistry = new SessionRegistry({
+    runDir,
+    now: () => new Date("2026-05-25T00:00:00.000Z"),
+    createId: (type) => (type === "agent" ? "agent_test123456" : "terminal_test123456"),
+  });
+  const claudeRuntime = new ClaudeRuntime(runDir);
+  // auto-retry 控制端点在 projectsRoot + sessionRegistry 外层守卫内，projectsRoot 必传。
+  const handler = createFetchHandler(auth, { claudeRuntime, projectsRoot: root, sessionRegistry });
+
+  for (const action of ["status", "cancel", "fire"]) {
+    const response = await handler(
+      new Request(
+        `http://localhost/api/projects/${encodeURIComponent("demo")}/agent-sessions/agent_missing/auto-retry/${action}`,
+        { method: action === "status" ? "GET" : "POST", headers: authHeader(auth) },
+      ),
+      { upgrade: () => false },
+    );
+    const body = (await response.json()) as { error?: { code?: string } };
+    expect(response.status).toBe(404);
+    expect(body.error?.code).toBe("SESSION_NOT_FOUND");
+  }
 });
 
 test("api smoke paths stay under /api", () => {

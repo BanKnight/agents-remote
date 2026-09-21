@@ -313,6 +313,37 @@ test("listBranches reports local + remote branches with current + track", async 
   expect(result.branches.some((b) => b.name === "origin/main" && b.type === "remote")).toBe(true);
 });
 
+test("listBranches marks merged local branches (03v 置灰)；unmerged 不标", async () => {
+  const projectPath = join(root, "demo");
+  await initMainRepository(projectPath);
+  await writeFile(join(projectPath, "a.txt"), "a\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "initial"]);
+  // done：已并入 main 的分支。
+  await git(projectPath, ["checkout", "-b", "done"]);
+  await writeFile(join(projectPath, "done.txt"), "d\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "done"]);
+  await git(projectPath, ["checkout", "main"]);
+  await git(projectPath, ["merge", "--no-ff", "done", "-m", "merge done"]);
+  // wip：未并入 main 的分支。
+  await git(projectPath, ["checkout", "-b", "wip"]);
+  await writeFile(join(projectPath, "wip.txt"), "w\n");
+  await git(projectPath, ["add", "."]);
+  await git(projectPath, ["commit", "-m", "wip"]);
+  await git(projectPath, ["checkout", "main"]);
+
+  const service = new ProjectGitDiffService(root);
+  const result = await service.listBranches("demo");
+  const done = result.branches.find((b) => b.name === "done");
+  const wip = result.branches.find((b) => b.name === "wip");
+  expect(done?.merged).toBe(true);
+  expect(wip?.merged).toBeUndefined();
+  // 当前分支不标 merged（自身恒在 --merged 集内，置灰无意义）。
+  const main = result.branches.find((b) => b.name === "main");
+  expect(main?.merged).toBeUndefined();
+});
+
 test("listCommits returns history with hash/message/author/time + branch filter", async () => {
   const projectPath = join(root, "demo");
   await initMainRepository(projectPath);

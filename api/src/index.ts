@@ -1,5 +1,6 @@
 import type {
   ApprovalRespondRequest,
+  AutoRetryStatusResponse,
   CreateProjectRequest,
   CreateProjectResponse,
   DeleteProjectResponse,
@@ -13,6 +14,7 @@ import type {
   WikiIndexResponse,
   WikiSearchResponse,
 } from "@agents-remote/shared";
+import type { UploadConflictPolicy } from "@agents-remote/shared";
 import { AgentRuntime } from "./agent-runtime";
 import { AcpRuntime, resolveAcpCredentials } from "./acp-runtime";
 import { AcpStreamController, handleAcpStreamUpgrade } from "./acp-stream";
@@ -444,6 +446,53 @@ export const createFetchHandler =
         }
       }
 
+      // 自动重试待发注入控制（M8 03d `.count` 取消/立即重试）。Direct match，不走
+      // session-routes 白名单——需要 claudeRuntime（registry 不持 runtime）。terminal/omp
+      // session 无 claude runtimeKey → 404，与 close/rename 的白名单语义一致。
+      const autoRetryControlMatch = url.pathname.match(
+        /^\/api\/projects\/(.+)\/agent-sessions\/(.+)\/auto-retry\/(status|cancel|fire)$/,
+      );
+      if (
+        autoRetryControlMatch &&
+        options.sessionRegistry &&
+        options.claudeRuntime &&
+        (request.method === "GET" || request.method === "POST")
+      ) {
+        const projectName = decodeURIComponent(autoRetryControlMatch[1]);
+        const sessionId = decodeURIComponent(autoRetryControlMatch[2]);
+        const action = autoRetryControlMatch[3];
+        const runtimeKey = await options.sessionRegistry.getAgentRuntimeKey(projectName, sessionId);
+
+        if (!runtimeKey) {
+          return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+        }
+
+        const runtime = options.claudeRuntime;
+        if (action === "status") {
+          const pending = runtime.autoRetryPending(runtimeKey);
+          const response: AutoRetryStatusResponse =
+            pending === null
+              ? { scheduled: false }
+              : {
+                  scheduled: true,
+                  fireAt: pending.fireAt,
+                  delayMs: pending.delayMs,
+                  attempt: pending.attempt,
+                  max: pending.max,
+                };
+          return withRefresh(Response.json(response));
+        }
+        if (request.method === "POST" && action === "cancel") {
+          runtime.cancelAutoRetry(runtimeKey);
+          return withRefresh(Response.json({ scheduled: false } satisfies AutoRetryStatusResponse));
+        }
+        if (request.method === "POST" && action === "fire") {
+          const fired = await runtime.fireAutoRetryNow(runtimeKey);
+          const response: AutoRetryStatusResponse = { scheduled: !fired };
+          return withRefresh(Response.json(response));
+        }
+      }
+
       const sessionResponse = await handleSessionRoutes(
         request,
         url,
@@ -634,6 +683,26 @@ const handleProjects = async (
       return Response.json(response);
     }
 
+    // 根层上传（POST /api/root/files/upload，M8 10 pin④「上传到当前作用域」）：全局写边界
+    // 仅此一路 + mkdir（= 创建项目，走 /api/projects）——rename/delete 等结构操作仍限项目内。
+    if (
+      url.pathname === "/api/root/files/upload" &&
+      request.method === "POST" &&
+      projectFilesService
+    ) {
+      const formData = await request.formData();
+      const file = formData.get("file");
+
+      if (!file || !(file instanceof File)) {
+        return jsonError("PROJECT_TARGET_INVALID", "File is required", 400);
+      }
+
+      const conflict = normalizeUploadConflict(formData.get("conflict"));
+      const content = Buffer.from(await file.arrayBuffer());
+      const response = await projectFilesService.uploadRootFile(file.name, content, conflict);
+      return Response.json(response);
+    }
+
     const projectFilesMatch = matchProjectFilesPath(url.pathname);
 
     if (
@@ -741,12 +810,29 @@ const handleProjects = async (
         return jsonError("PROJECT_TARGET_INVALID", "File is required", 400);
       }
 
+      // 03z 同名冲突三选（M8）：缺省维持 409 硬拒；overwrite/keepBoth 由队列行选择后带上。
+      const conflict = normalizeUploadConflict(formData.get("conflict"));
       const content = Buffer.from(await file.arrayBuffer());
       const response = await projectFilesService.uploadFile(
         projectFilesMatch.projectName,
         url.searchParams.get("path") ?? "",
         file.name,
         content,
+        conflict,
+      );
+      return Response.json(response);
+    }
+
+    // 03x 文件搜索（M8）：项目内文件名子串匹配。q 缺省 = 空结果（前端 enabled gate）。
+    if (
+      projectFilesMatch &&
+      request.method === "GET" &&
+      projectFilesMatch.search &&
+      projectFilesService
+    ) {
+      const response = await projectFilesService.searchFiles(
+        projectFilesMatch.projectName,
+        url.searchParams.get("q") ?? "",
       );
       return Response.json(response);
     }
@@ -1042,6 +1128,7 @@ type ProjectFilesPathMatch = {
   preview: boolean;
   rename: boolean;
   save: boolean;
+  search: boolean;
   upload: boolean;
 };
 
@@ -1059,6 +1146,7 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
   const uploadSuffix = "/files/upload";
   const previewSuffix = "/files/preview";
   const saveSuffix = "/files/save";
+  const searchSuffix = "/files/search";
   const filesSuffix = "/files";
   const encodedName = suffix.endsWith(renameSuffix)
     ? suffix.slice(0, -renameSuffix.length)
@@ -1072,9 +1160,11 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
             ? suffix.slice(0, -previewSuffix.length)
             : suffix.endsWith(saveSuffix)
               ? suffix.slice(0, -saveSuffix.length)
-              : suffix.endsWith(filesSuffix)
-                ? suffix.slice(0, -filesSuffix.length)
-                : undefined;
+              : suffix.endsWith(searchSuffix)
+                ? suffix.slice(0, -searchSuffix.length)
+                : suffix.endsWith(filesSuffix)
+                  ? suffix.slice(0, -filesSuffix.length)
+                  : undefined;
 
   if (encodedName === undefined || encodedName.length === 0 || encodedName.includes("/")) {
     return undefined;
@@ -1093,6 +1183,7 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
     preview: suffix.endsWith(previewSuffix),
     rename: suffix.endsWith(renameSuffix),
     save: suffix.endsWith(saveSuffix),
+    search: suffix.endsWith(searchSuffix),
     upload: suffix.endsWith(uploadSuffix),
   };
 };
@@ -1101,6 +1192,12 @@ type ProjectFilesRawPathMatch = {
   projectName: string;
   filePath: string;
 };
+
+// 03z 冲突三选的表单字段归一：非法/缺省值 → undefined（维持 409 硬拒语义）。
+const normalizeUploadConflict = (
+  raw: FormDataEntryValue | null,
+): UploadConflictPolicy | undefined =>
+  raw === "overwrite" || raw === "keepBoth" ? raw : undefined;
 
 const matchProjectFilesRawPath = (pathname: string): ProjectFilesRawPathMatch | undefined => {
   const prefix = "/api/projects/";

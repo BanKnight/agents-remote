@@ -321,6 +321,63 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 **reviewer 三份齐（security 通过 / code 通过 / design 修复后通过）**：design 修完两项 P1（卡片同色隐形、断网态偏离 spec）+ 5 P2（tint-red/`.back` 触区/ACP 孤儿补行/「次数上限」专属键/窗口时长）后复验通过。
 
+## §6.9 M8 开工摊牌（2026-09-21）
+
+**范围（总纲 §6 M8 行）**：文件搜索 / 移动到 / 上传队列冲突三选 / 拖拽上传 / 采用项目自动 / 全局文件写边界（PROJECTS_ROOT 内）/ 子 agent 概览条；验收 = security-reviewer 必过。累积小项一并收口（⑤e）。
+
+**七大缺口现状（开工盘点）**：
+1. **文件搜索**：完全缺失——服务端无递归搜索端点（ProjectFilesService 只有目录级 listFiles/previewFile 等），03x 语义（工具行2 内容头变搜索框 + 项目内文件名子串过滤 + 相对路径结果）零实现。03x `.sfield` 与 `.wsearch` 同语义（h30/r15/bg-elevated）→ 单源收敛复用 `.wsearch`，聚焦描边用 focus-within（03x 注释原话「同 Wiki 样式」）。
+2. **移动到…**：移动端 menuItems 有项但 `window.prompt` 手输路径（03w 应为位置选择）；桌面 FileEntryList 菜单只有 rename+delete。服务端 renameFile 已带 targetDir，能力在、UI 缺。
+3. **上传**：单文件 input、无队列/进度/速度/取消；服务端 uploadFile 遇同名抛 `PROJECT_FILE_TARGET_EXISTS`（409 硬拒），无冲突三选；fetch FormData 无上传进度。上限 `UPLOAD_FILE_LIMIT_BYTES = 50MiB`（spec 写 100MB → **取真实上限 50MiB**，文案不虚标）。
+4. **拖拽**：`handleFileDrop` 只取 `dataTransfer.files[0]`——单文件、无队列、无冲突处理。
+5. **采用项目自动**：D11 已满足——listProjects readdir 自动发现 + createProject mkdir EEXIST 容错即采用；缺的是 08 原型 segc 二段 UI「新建目录 | 采用已有目录」+ pin②「采用=列出候选勾选纳管」。
+6. **全局文件写边界**：根层 `readOnly = isRootListing` 全只读，根下散目录/文件无任何写端点；项目内写已齐。安全范式 = resolveProjectPath 的 realpath 双重校验（root-scope 端点同款加固）。
+7. **子 agent 概览条**：现状 `bg-user/10 text-user` chips + animate-pulse——非 03e `.sub` 形态（绿 tint、整条可点、「▸ N 个子 agent 运行中 · 点按跳转 ›」）。`--tint-green`/`--color-tint-green` token 已备。
+
+**批次范围**：
+- **a. 文件工具完整化（03x/03w/03y/03z）**：新端点 `GET /api/projects/:name/files/search?q=`（递归 walk、跳 `.git`/`node_modules`、子串匹配、结果上限截断）+ 移动端搜索两态（复用 .wsearch 范式）；移动端 rename/move 弃 window.prompt 改 sheet 表单（03y kfield/krow 语义）；桌面菜单补「移动到…」；上传队列 hook + UploadQueueCard **双端单源**（桌面 FilesPanel 与移动 MobileFilesTool 共用）；拖拽多文件进队列。
+- **b. 08 segc 二段**：项目创建 sheet 加「新建目录 | 采用已有目录」——新建 = 现行为；采用 = readdir 求 PROJECTS_ROOT 未纳管目录差集列出候选勾选（数据有据，纯前端分组）。
+- **c. 全局文件写边界**：root-scope 新增 mkdir/upload 两写端点（`resolveProjectsRoot` + realpath 双重校验；新建目录名过 validateProjectName 同款语义）。**项目目录级 rename/delete 不做**：重命名破坏以项目名为键的会话状态（sessions/workbench atom/文件 cwd 记忆），删除已有项目级出口（项目删除流程）——记档。
+- **d. 子 agent 概览条 v2 化**：改 03e `.sub` 绿 tint 形态，整条可点 `scrollToMessage`，多子 agent 逐条或聚合按数据形态定（有 parent_tool_use_id 可定位）。
+- **e. 累积小项**：merged 分支置灰（project-git-diff.ts listBranches 补 `git branch --merged` 解析）；`.count` 取消（复用 cancelPending）+「立即重试」（新增 fireNow 走完整 canInject 校验 + injectionTimestamps 记账，公开方法）；03n `MobileSessionHistorySheet` 改 `useHistorySessions`（消灭 agent-sessions/agent-history 双管道，data-flow 铁律）；MobileSheet 补 Radix Description（`aria-describedby={undefined}` 显式声明）；`.sess .d2` 状态点改名 `.sess .sd`（`.d2` 双义消歧）；`.msheet` `76dvh` 改 `calc(var(--app-viewport-height)*0.76)` 派生。
+
+**关键技术裁决**：
+- 上传进度用 `XMLHttpRequest` `upload.onprogress`（fetch 无上传进度通道；仓库无 XHR 先例，**记档**）；队列 state 收敛共享 hook（单源），队列行 = 进度条 + 速度 + 百分比 + 取消（03z `.upcard`）。
+- 冲突三选行内展开：入队时 HEAD 探测同名 → 队列行呈三选（覆盖 / 保留两者 / 取消）；服务端 uploadFile 加 `conflict=overwrite|keepBoth` 参数（缺省维持 409，兼容旧调用）；keepBoth 服务端派生 `name(1).ext`。
+- 搜索输入即查（debounce），结果显示相对路径（mono）+ 点击进预览；清空 ✕ 回目录。
+- 内容编辑不在工具内（spec §4.5 验收机检项）——M4 saveFile 是 Git diff 场景能力，文件工具不提供编辑入口。
+
+**记档不做**：✦ 提交来源标注（D12）；wiki 服务端元数据化（D13 客户端 atom 已满足 spec 可见行为）；SKILL.md beacon / env 内存面（security 记档维持）；project scope MCP 详情入口（M9 评估）；M6 死码 CSS（无消费者不重落）；「>100MB 建议终端 rsync」阈值文案（真实上限 50MiB，按真实值走）。
+
+## §6.9b M8 收口补记（2026-09-22）
+
+**落地清单（a–e 批次全落）**：
+- **a 文件工具**：服务端 `GET /api/projects/:name/files/search?q=`（递归 walk、跳 `.git`/`node_modules`、子串匹配、`FILE_SEARCH_LIMIT=200` 截断、Dirent 不跟随 symlink）；移动端搜索两态（复用 `.wsearch`，面包屑/搜索互斥，`.res` 计数 + `.xrow` 相对路径 + 点击进预览 + ✕ 清空）；移动端 rename/move 弃 `window.prompt` 改 `usePromptDialog`；`upload-queue.tsx`（新，双端单源）：串行 pump + `.upcard`（role=status）+ 409 行内三选（覆盖/保留两者/取消）+ 单行 ✕ + r1 清空 + 失败重试；服务端 `uploadFile` 加 `conflict=overwrite|keepBoth`（`normalizeUploadConflict` 白名单，缺省维持 409；keepBoth 派生 `name(1).ext`，999 上限）；拖拽多文件进队列（`file-browser.tsx`）。
+- **b 08 采用**：`project-setup.tsx` `.segc` 二段（新建/采用）；采用候选 = `/api/root/files` 一级目录 − `/api/projects` 已纳管（客户端差集），勾选 + 计数按钮 + 逐个 `createProject` POST。
+- **c 全局写边界**：`POST /api/root/files/upload`（`resolveProjectsRoot` + realpath 双重校验，index.ts:686 注释记档边界=上传仅此一路）；**root mkdir 未另立端点**——复用创建项目 `POST /api/projects`（偏离裁决，见下）。
+- **d 子 agent 概览条**：`.subbar` 绿 tint（tint-green + c-success-text）整条可点 `scrollToMessage`；数据源 = claude-adapter 的 Agent tool_use + parent_tool_use_id 派生（hasAgentBody）。
+- **e 累积小项**：merged 置灰（`listBranches --merged HEAD` 派生 `GitBranch.merged`，解析失败 undefined 不标；`.brow.merged .n` ink-2/400 + `.st.mg`「已合并」+ `.bsub.mg` ink-3）；`.count` 取消（复用 cancelPending）+ 立即重试（`fireNow` 走完整 canInject + injectionTimestamps 记账）；03n `MobileSessionHistorySheet` 改 `useHistorySessions` 单一管道（`enabled: open` gate——open 才拉）；MobileSheet `aria-describedby={undefined}` 显式声明；`.d2` → `.sess .sd` 消歧；`76dvh` → `calc(var(--app-viewport-height)*0.76)`。
+
+**实现与裁决偏离（记档）**：
+1. **上传进度**：裁决 XHR `upload.onprogress` 字节粒度 → 实现 fetch + **文件粒度**（prog = doneCount/(doneCount+items.length)，`.d` 行显示当前文件名/大小）。fetch 保持 abort/依赖单源；字节级进度无消费场景（单文件均 <50MiB、串行泵），不引 XHR 双通道。
+2. **冲突三选触发**：裁决入队时 HEAD 探测同名 → 实现服务端 409（`PROJECT_FILE_TARGET_EXISTS`）触发行内三选。**无 TOCTOU 窗口**（探测与上传之间同名文件仍可出现），且少一次往返；代价是首传浪费一次上传请求体（可接受）。
+3. **root mkdir**：裁决 root-scope 新增 mkdir/upload 两写端点 → mkdir 复用创建项目端点（`POST /api/projects` 自带 validateProjectName + 一级限制），根层「新建」语义 = 纳管新目录，两 UI 入口一个能力面，少一个端点少一分攻击面。
+
+**探针发现的真 bug（修复记录）**：
+1. **`?path=` vs `?q=`**（client.ts）：`withPathQuery` 生成 `?path=`，服务端读 `searchParams.get("q")` → 搜索恒空查询。改显式 `?q=`。
+2. **`.sfield` 无 CSS**：组件用了不存在的类（实测 h38 ≠ 原型 30）→ §6.9 拍板单源 `.wsearch`，聚焦描边 `.wsearch:focus-within`（primary 55%，03x ①）。
+3. **usePromptDialog holder 未挂载**：mobile-project-tools 三个 dialog holder 从未渲染 → 重命名/移动到/新建弹窗永不出现。补挂 ToolPanel 尾部。
+4. **ActionMenu 长按路径双 bug**（action-menu.tsx，探针 fiber/dump 实证）：① menuitem（portal）click 按 **fiber 树冒泡**到行 onClick → 误导航进预览、行 pointerdown 又重置 suppressClick 使 guardClick 失效（frontend-notes §4 新实证：`{...lp.bind()}` 与 portal menu 组合）；② 长按 open 受控于 `contextMenuPoint`，`setOpen(false)` 关不掉 → sheet 残留与 onSelect 对话框层叠抢焦点。修：menuitem/取消 onClick 首行 `e.stopPropagation()` + `onContextMenuClose?.()` 先清受控 point 再 onSelect。
+5. **jotai store 读写分裂**（main.tsx，upload 队列整体失效真根因）：无 prop `<Provider>` 私建 store，组件 `useAtomValue` 读私有 store，而 upload-queue 模块级 `getDefaultStore()` 写 default store → `.upcard` 永远空。修：`<JotaiProvider store={getDefaultStore()}>` 显式挂 default store（hook 与 imperative 写入同源）。
+6. **pump 单行取消停整条泵**（code-reviewer P2）：两处 `aborted break` → `continue`（单行 ✕ 只跳过该行；清空靠 items 清空自然退出）。
+
+**reviewer 结果**：
+- **security：通过**（P1/P2 零）。逐项核对：search/rename.targetDir/upload/root upload 全走 `resolveProjectRelativePath`（`\0`/绝对路径拒绝 + isInsideOrSelf + realpath 二次校验拦越界 symlink）；conflict 白名单；root/files 只读一级 + blocklist + 不跟随 symlink；auto-retry status/cancel/fire 在统一鉴权后 + `getAgentRuntimeKey` 归属校验 + fireNow 不绕滚动窗口；argv 数组无拼接；错误文案不泄内部路径。**P3 记档**：① searchFiles 无遍历总量上限（limit 只限命中数，超大树慢查询——单用户自管低危）；② `resolveCreateTarget` 无 realpath（**既有代码**，M8 采用扩大使用面，后续补）；③ keepBoth `existsSync`→write TOCTOU（单用户低危，999 防死循环已到位）。
+- **code：修复后通过**。P2-1 pump break→continue（已修，见上）；P3 已修：formatBytes 抽 `web/src/lib/format.ts` 解 upload-queue↔file-browser 循环 import、useHistorySessions 补 enabled gate（03n sheet 常驻挂载不再开场即拉）、ClaudeSessionDetailRoute 过时注释改写（「取消/立即重试不画」与 M8 新增 AutoRetryBanner 矛盾 → 改为 RetryIndicator 只读倒计时定位说明）；P3 记档：adopt for..of 部分成功不回滚（单用户低频、错误可见）。
+- **design：修复后通过**。P1（reviewer 直接修）：`.btn.blue` 引用未定义变量 `--on-primary`（IACVT 回退继承 `.count .r1` 的 danger 红 → 「立即重试」蓝底红字）→ `var(--on-accent)`（03d 原型同款）+ 探针补 computed color 断言；P2 拍板**记档**：`.subbar` 取通栏 wrap 泛化形态（03e 原型 `.sub` 为单 chip 浮动圆角条，多子 agent 并行时浮动条溢出——颜色语义 tint-green/c-success-text 与原型一致，形态参数放弃记档于此）；P3 已修：移动端「移动到…」icon folder-plus → folder（与桌面一致）；P3 记档：files 搜索 input 13px（Wiki 同款，「同 Wiki」单源优先于原型 11.5px，M5 存量）。
+
+**验证**：探针 `scripts/probe-v2-m8-gaps.mjs` **65 断言全绿**（7 Part：03x 搜索两态/几何/q 参数/计数/预览导航 + 03y 移动到 CDP 长按→prompt 预填→rename targetDir + 03z 队列三选/重传 conflict=overwrite/prog 前进 + 08 采用 segc/差集/逐个纳管/sheet 关闭 + 03d .count pending/fire/cancel + 03e .subbar 绿 tint/可点 + 03v merged 置灰主题无关 var 对比）；回归：M4 41/41、M5 46/46、M6 59/59、M7 68/68、e2e 29/29；四门禁（format/lint 0-0/typecheck/test 814+670+9）；CSS 硬闸 ✓；token 机检零新增。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

@@ -1057,6 +1057,11 @@
     height: 13px;
     flex: none;
   }
+  /* 03x ①聚焦态：输入框变搜索框时描边转主色（原型 .sfield 的 --c-primary 55% 边框；
+     落在 .wsearch 单源，files 与 wiki 两处搜索共用）。 */
+  .wsearch:focus-within {
+    border-color: color-mix(in srgb, var(--c-primary) 55%, transparent);
+  }
   .sect {
     font-size: 12px;
     font-weight: 600;
@@ -1337,6 +1342,15 @@
     color: var(--ink-2);
     border-bottom: 1px solid var(--sep-row);
   }
+  /* merged 行置灰（03v pin③：n 降 ink-2/400 + 「已合并」缀注与 bsub 降 ink-3）。 */
+  .brow.merged .n {
+    color: var(--ink-2);
+    font-weight: 400;
+  }
+  .brow .st.mg,
+  .bsub.mg {
+    color: var(--ink-3);
+  }
   .rocard {
     margin: 12px 16px 0;
     border-radius: 12px;
@@ -1463,7 +1477,8 @@
     right: 10px;
     bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     z-index: 50;
-    max-height: 76dvh;
+    /* 76dvh → 变量：PWA 态 --app-viewport-height = vh 基线（frontend-notes §1 dvh 双倍坑）。 */
+    max-height: calc(var(--app-viewport-height, 100dvh) * 0.76);
     overflow-y: auto;
     overscroll-behavior: contain;
     background: var(--bg-elevated);
@@ -1601,19 +1616,19 @@
   .sess.off {
     color: var(--ink-2);
   }
-  .sess .d2 {
+  .sess .sd {
     width: 6px;
     height: 6px;
     border-radius: 50%;
     flex: none;
   }
-  .sess .d2.run {
+  .sess .sd.run {
     background: var(--c-success);
   }
-  .sess .d2.err {
+  .sess .sd.err {
     background: var(--c-danger);
   }
-  .sess .d2.idle {
+  .sess .sd.idle {
     border: 1.4px solid var(--ink-2);
   }
   .gempty {
@@ -2393,5 +2408,156 @@
     font-weight: 600;
     color: var(--c-danger);
     cursor: pointer;
+  }
+
+  /* ---- M8 缺口功能（redesign-v2.md §6.9：03d/03e/03x/03z/08「仅本页样式」随功能落地入单源）----
+
+  /* 03e 子 agent 概览条：tint-green 条（原型 .sub；多 chip wrap 形态，点按跳转对应 agent）。 */
+  .subbar {
+    background: var(--tint-green);
+    border-bottom: 1px solid var(--sep);
+    color: var(--c-success-text);
+  }
+  /* 03d `.count` 取消/立即重试按钮组（r1 右侧）+ 蓝色主按钮。 */
+  .count .btns {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .count .btns .btn {
+    border-radius: 7px;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    flex: none;
+  }
+  .btn.blue {
+    background: var(--c-primary);
+    color: var(--on-accent);
+  }
+  /* 03x 搜索结果行（03x 原型 .hrow；与 03n .hrow 历史行同名双义 → 落单源改名 .xrow）+ 计数行。 */
+  .res {
+    font-size: 11.5px;
+    color: var(--ink-2);
+    margin: 10px 0 4px;
+  }
+  .xrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 0;
+    font-size: 13.5px;
+    border-top: 1px solid var(--sep-row);
+  }
+  .xrow:first-of-type {
+    border-top: none;
+  }
+  .xrow .ic {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    color: var(--ink-2);
+  }
+  .xrow .p {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    color: var(--ink-1);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* 03z 上传队列卡（.upcard）+ 队列行（.urow；与 03z 原型 .frow 同名双义 → 落单源改名）。 */
+  .upcard {
+    margin: 12px 0 4px;
+    border-radius: 12px;
+    background: var(--tint-blue);
+    border: 1px solid color-mix(in srgb, var(--c-primary) 35%, transparent);
+    padding: 10px 14px;
+  }
+  .upcard .r1 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .upcard .r1 .x,
+  .upcard .urow .x {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    color: var(--ink-2);
+    cursor: pointer;
+    flex: none;
+  }
+  .upcard .prog {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--bg-elevated3);
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .upcard .prog i {
+    display: block;
+    height: 100%;
+    background: var(--c-primary);
+    transition: width 0.2s ease;
+  }
+  .upcard .d {
+    font-size: 11px;
+    color: var(--ink-2);
+    margin-top: 6px;
+  }
+  .upcard .qlist {
+    margin: 2px 0 0;
+  }
+  .upcard .urow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 0;
+    font-size: 13px;
+    border-top: 1px solid var(--sep-row);
+  }
+  .upcard .urow .p {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    color: var(--ink-1);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .upcard .urow-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    font-size: 11px;
+  }
+  .upcard .urow-actions .hint {
+    color: var(--ink-2);
+  }
+  .upcard .urow-actions .hint.danger {
+    color: var(--c-danger);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .upcard .urow-actions button {
+    border: 1px solid var(--sep);
+    border-radius: 7px;
+    padding: 3px 8px;
+    font-size: 11px;
+    color: var(--ink-1);
+    cursor: pointer;
+    flex: none;
   }
 }

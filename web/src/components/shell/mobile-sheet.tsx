@@ -40,6 +40,7 @@ export function MobileSheet({
           )}
         />
         <DialogPrimitive.Content
+          aria-describedby={undefined}
           className={cn(
             "msheet outline-none",
             "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4 data-[state=open]:duration-200",

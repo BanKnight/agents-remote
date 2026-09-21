@@ -116,6 +116,10 @@ type AutoRetryState = {
   sessionId: string;
   injectionTimestamps: number[];
   pendingTimer: ReturnType<typeof setTimeout> | null;
+  /** 调度时捕获的 config（fireNow / pendingStatus 用——setTimeout 闭包外的权威副本）。 */
+  pendingConfig: ClaudeAutoRetryConfig | null;
+  /** 预计注入时刻（epoch ms）——03d `.count` 倒计时数据源。 */
+  pendingFireAt: number | null;
   /** 调度防重：getConfig 为 async，await 间隙内重复 error 不叠加调度。 */
   scheduling: boolean;
   /** 调度代数：重置事件（正常 assistant / 用户介入 / 销毁）递增，作废 in-flight 调度。 */
@@ -159,6 +163,8 @@ export class ClaudeAutoRetryWatch {
       if (state.pendingTimer) {
         clearTimeout(state.pendingTimer);
         state.pendingTimer = null;
+        state.pendingConfig = null;
+        state.pendingFireAt = null;
       }
       if (state.awaitingSuccess) {
         state.injectionTimestamps = [];
@@ -183,7 +189,51 @@ export class ClaudeAutoRetryWatch {
     if (state?.pendingTimer) {
       clearTimeout(state.pendingTimer);
       state.pendingTimer = null;
+      state.pendingConfig = null;
+      state.pendingFireAt = null;
     }
+  }
+
+  /**
+   * 03d `.count`「立即重试」（M8）：有待发定时器时提前 fire。与定时触发同路径——
+   * 走完整 canInject 校验 + injectionTimestamps 记账（防绕过滚动窗口上限）。
+   * 返回是否真的注入（无 pending / 出窗口上限 / config 已关 = false）。
+   */
+  async fireNow(sessionName: string): Promise<boolean> {
+    const state = this.states.get(sessionName);
+    if (!state?.pendingTimer || !state.pendingConfig) return false;
+    clearTimeout(state.pendingTimer);
+    state.pendingTimer = null;
+    state.pendingFireAt = null;
+    const config = state.pendingConfig;
+    state.pendingConfig = null;
+    // 等待中配置被关掉/清空 → 不注入（与定时 fire 同语义，下一轮 error 重新调度）。
+    if (!config.enabled || !config.message.trim()) return false;
+    if (!canInject(state.injectionTimestamps, this.now(), config.maxPerWindow, config.windowMs)) {
+      return false;
+    }
+    await this.fire(sessionName, state, config);
+    return true;
+  }
+
+  /**
+   * 待发注入快照（GET auto-retry/status，03d `.count` 倒计时条数据源）。
+   * attempt = 本次将是窗口内第几次注入（窗口内已注入数 + 1，与 canInject 同源裁剪）。
+   */
+  pendingStatus(
+    sessionName: string,
+  ): { fireAt: number; delayMs: number; attempt: number; max: number } | null {
+    const state = this.states.get(sessionName);
+    if (!state?.pendingTimer || !state.pendingConfig || state.pendingFireAt === null) {
+      return null;
+    }
+    const config = state.pendingConfig;
+    return {
+      fireAt: state.pendingFireAt,
+      delayMs: config.delayMs,
+      attempt: pruneWindow(state.injectionTimestamps, this.now(), config.windowMs).length + 1,
+      max: config.maxPerWindow,
+    };
   }
 
   // 生命周期清理（close / ensureRunning respawn / proc.exited）：定时器 + 状态全清。
@@ -216,6 +266,8 @@ export class ClaudeAutoRetryWatch {
       state.pendingTimer = setTimeout(() => {
         void this.fire(sessionName, state, config);
       }, config.delayMs);
+      state.pendingConfig = config;
+      state.pendingFireAt = this.now() + config.delayMs;
     } finally {
       state.scheduling = false;
     }
@@ -227,6 +279,8 @@ export class ClaudeAutoRetryWatch {
     config: ClaudeAutoRetryConfig,
   ): Promise<void> {
     state.pendingTimer = null;
+    state.pendingConfig = null;
+    state.pendingFireAt = null;
     // 等待中配置被关掉/清空 → 不注入（下一轮 error 重新走 schedule fresh 读）。
     if (!config.enabled || !config.message.trim()) return;
 
@@ -246,6 +300,8 @@ export class ClaudeAutoRetryWatch {
         sessionId,
         injectionTimestamps: [],
         pendingTimer: null,
+        pendingConfig: null,
+        pendingFireAt: null,
         scheduling: false,
         gen: 0,
         awaitingSuccess: false,

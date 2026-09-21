@@ -18,11 +18,12 @@ import {
   listRootFiles,
   previewProjectFile,
   saveFileContent,
-  uploadFile,
   createFolder,
   renameFile,
   deleteFile,
 } from "../../api/client";
+import { enqueueUploads, UploadQueueCard } from "./upload-queue";
+import { usePromptDialog } from "../shell/prompt-dialog";
 import { useConfirm } from "../shell/confirm-dialog";
 import {
   ActionButton,
@@ -36,6 +37,7 @@ import { ShellIcon } from "../shell/icons";
 import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
 import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
 import { ImageViewer } from "./image-viewer";
+import { formatBytes } from "@/lib/format";
 
 // CodeMirror 体积较大，只在用户打开文本文件 source 预览时按需加载，避免进首屏 chunk。
 const CodeEditor = lazy(() => import("./CodeEditor").then((m) => ({ default: m.CodeEditor })));
@@ -47,12 +49,6 @@ export const parentProjectPath = (path: string) => {
   const parts = path.split("/").filter(Boolean);
   parts.pop();
   return parts.length === 0 ? "" : parts.join("/");
-};
-
-export const formatBytes = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 };
 
 // 有渲染能力的文件（markdown / html）默认展示渲染结果，其余文本默认 source。
@@ -165,6 +161,8 @@ type FileEntryListProps = {
   selectedFilePath: string | undefined;
   onCancelRename: () => void;
   onDelete: (path: string) => void;
+  /** 行菜单「移动到…」（M8）：触发 prompt 输入目标目录 → rename 带 targetDir。undefined = 无移动入口。 */
+  onMove?: (path: string) => void;
   onOpenDirectory: (path: string) => void;
   onPreviewFile: (path: string) => void;
   onRenameSubmit: (path: string, name: string) => void;
@@ -188,6 +186,7 @@ export function FileEntryList({
   selectedFilePath,
   onCancelRename,
   onDelete,
+  onMove,
   onOpenDirectory,
   onPreviewFile,
   onRenameSubmit,
@@ -220,6 +219,15 @@ export function FileEntryList({
             icon: <ShellIcon name="edit" />,
             onSelect: () => onStartRename(entry.path, entry.name),
           },
+          ...(onMove
+            ? [
+                {
+                  label: t("files.menuMove"),
+                  icon: <ShellIcon name="folder" />,
+                  onSelect: () => onMove?.(entry.path),
+                },
+              ]
+            : []),
           {
             label: t("files.delete"),
             icon: <ShellIcon name="trash" />,
@@ -241,7 +249,7 @@ export function FileEntryList({
         onContextMenuClose={ctx.close}
       />
     ),
-    [t, onDelete, onStartRename, ctx.pointFor, ctx.close],
+    [t, onDelete, onStartRename, onMove, ctx.pointFor, ctx.close],
   );
 
   // 结构已知（ListRow 网格），用骨架 mirror loaded 网格，padding 由外层 p-3 提供。
@@ -882,14 +890,19 @@ export function FilesPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const upload = useMutation({
-    mutationFn: (file: File) => uploadFile(effectiveProjectName ?? "", effectiveRelativePath, file),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["projects", effectiveProjectName, queryScope, effectiveRelativePath],
-      });
+  // 上传统一走全局队列（03z .upcard：串行 + 冲突三选 + 失败重试），组件不再持 upload mutation。
+  const uploadFiles = useCallback(
+    (fileList: FileList | File[]) => {
+      const files = Array.from(fileList);
+      if (files.length === 0) return;
+      if (isRootListing) {
+        enqueueUploads("", "", files);
+        return;
+      }
+      enqueueUploads(effectiveProjectName ?? "", effectiveRelativePath, files);
     },
-  });
+    [isRootListing, effectiveProjectName, effectiveRelativePath],
+  );
 
   const [folderNameInput, setFolderNameInput] = useState("");
   const [showFolderInput, setShowFolderInput] = useState(false);
@@ -919,10 +932,34 @@ export function FilesPanel({
   }, [queryClient, effectiveProjectName, queryScope, effectiveRelativePath]);
 
   const rename = useMutation({
-    mutationFn: ({ path, name }: { path: string; name: string }) =>
-      renameFile(effectiveProjectName ?? "", path, name),
+    mutationFn: ({ path, name, targetDir }: { path: string; name: string; targetDir?: string }) =>
+      renameFile(effectiveProjectName ?? "", path, name, targetDir),
     onSuccess: () => invalidateFiles(),
   });
+
+  // 移动到…（M8）：行菜单触发，prompt 输入目标目录（项目内相对路径）→ rename 带 targetDir。
+  const moveDialog = usePromptDialog();
+  const handleMove = useCallback(
+    (path: string) => {
+      const fileName = path.split("/").pop() ?? path;
+      const currentDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+      void moveDialog
+        .prompt({
+          title: t("files.menuMove"),
+          placeholder: t("files.movePrompt"),
+          initialValue: currentDir,
+          confirmLabel: t("files.move"),
+          cancelLabel: t("cancel"),
+        })
+        .then((targetDir) => {
+          if (targetDir === null) return;
+          const trimmed = targetDir.trim();
+          if (trimmed === currentDir) return;
+          rename.mutate({ path, name: fileName, targetDir: trimmed });
+        });
+    },
+    [moveDialog, rename, t],
+  );
 
   const del = useMutation({
     mutationFn: (path: string) => deleteFile(effectiveProjectName ?? "", path),
@@ -995,11 +1032,10 @@ export function FilesPanel({
   }, [isDirty, selectedFilePath, editContent, save]);
 
   const handleFileDrop = useCallback(
-    (file: File) => {
-      if (upload.isPending) return;
-      upload.mutate(file);
+    (fileList: FileList | File[]) => {
+      uploadFiles(fileList);
     },
-    [upload],
+    [uploadFiles],
   );
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -1019,8 +1055,7 @@ export function FilesPanel({
       e.preventDefault();
       e.stopPropagation();
       setDragOver(false);
-      const file = e.dataTransfer.files[0];
-      if (file) handleFileDrop(file);
+      if (e.dataTransfer.files.length > 0) handleFileDrop(e.dataTransfer.files);
     },
     [handleFileDrop],
   );
@@ -1070,11 +1105,13 @@ export function FilesPanel({
       className={`min-h-0 min-w-0 flex-1 ${enablePreview ? "sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60" : "sm:flex-1"} ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
     >
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-3 pb-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
+        <UploadQueueCard />
         <FileEntryList
           entries={files.data?.entries ?? []}
           error={files.error}
           filesClickable={enablePreview || onOpenFile !== undefined}
           readOnly={readOnly}
+          onMove={handleMove}
           isLoading={files.isLoading}
           renamingName={renamingName}
           renamingPath={renamingPath}
@@ -1134,28 +1171,22 @@ export function FilesPanel({
               tab（Save）+ 右栏 files inspection（Phase 3 后 project scope 右栏始终有 files inspection）。
               ⚠️ v2 M3-b 起 drawer 已删，移动端文件工具（row2 folder ticon）暂无写操作入口
               （本按钮 lg:flex 桌面 only）——M4 落 03o-files-tool 原型时按原型补移动端 actions。 */}
-          {readOnly || !enablePreview ? null : (
+          {!enablePreview ? null : (
             <div className="hidden shrink-0 items-center gap-2 lg:flex">
-              {upload.error instanceof Error || mkdir.error instanceof Error ? (
-                <p className="text-xs text-error hidden sm:block">
-                  {upload.error instanceof Error
-                    ? upload.error.message
-                    : mkdir.error instanceof Error
-                      ? mkdir.error.message
-                      : null}
-                </p>
+              {mkdir.error instanceof Error ? (
+                <p className="text-xs text-error hidden sm:block">{mkdir.error.message}</p>
               ) : null}
               <input
                 ref={fileInputRef}
                 className="hidden"
                 type="file"
+                multiple
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFileDrop(file);
+                  if (e.target.files && e.target.files.length > 0) handleFileDrop(e.target.files);
                   e.target.value = "";
                 }}
               />
-              {showFolderInput ? (
+              {readOnly ? null : showFolderInput ? (
                 <div className="flex items-center gap-1.5">
                   <input
                     className="h-8 w-28 rounded-xl border border-neutral-line/60 bg-surface-inset/70 px-2.5 text-xs font-semibold text-on-surface placeholder:text-on-surface-muted focus:border-primary/40 focus:outline-none"
@@ -1183,7 +1214,7 @@ export function FilesPanel({
                     </span>
                   </ActionButton>
                 </div>
-              ) : (
+              ) : readOnly ? null : (
                 <ActionButton
                   compact
                   title={t("files.newFolderTooltip")}
@@ -1197,14 +1228,11 @@ export function FilesPanel({
               <ActionButton
                 compact
                 title={t("files.uploadTooltip")}
-                disabled={upload.isPending}
                 tone="accent"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <ShellIcon name="upload" className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline pr-0.5">
-                  {upload.isPending ? t("files.uploading") : t("files.upload")}
-                </span>
+                <span className="hidden sm:inline pr-0.5">{t("files.upload")}</span>
               </ActionButton>
             </div>
           )}
@@ -1223,14 +1251,8 @@ export function FilesPanel({
             </p>
           </div>
         ) : null}
-        {upload.error instanceof Error || mkdir.error instanceof Error ? (
-          <p className="text-xs text-error sm:hidden px-3 pt-2">
-            {upload.error instanceof Error
-              ? upload.error.message
-              : mkdir.error instanceof Error
-                ? mkdir.error.message
-                : null}
-          </p>
+        {mkdir.error instanceof Error ? (
+          <p className="text-xs text-error sm:hidden px-3 pt-2">{mkdir.error.message}</p>
         ) : null}
         {browserPanel}
         {enablePreview ? (
@@ -1255,6 +1277,7 @@ export function FilesPanel({
         ) : null}
       </div>
       {confirmHolder}
+      {moveDialog.holder}
     </div>
   );
 }

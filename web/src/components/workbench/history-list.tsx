@@ -4,7 +4,7 @@ import type { AgentHistoryEntry, AgentHistoryRange } from "@agents-remote/shared
 import { createAgentSession, listAgentHistory } from "../../api/client";
 import { useT } from "../../i18n";
 import type { TranslateFn } from "../../i18n/types";
-import { formatBytes } from "../files/file-browser";
+import { formatBytes } from "@/lib/format";
 import {
   ListGroup,
   ListRow,
@@ -99,8 +99,14 @@ export function useResumeAgentSession(projectName: string) {
  * 历史都走此 hook：`listAgentHistory` 查询 + resume mutation（见 `useResumeAgentSession`）。
  * history 是 project-scoped 数据，global 不可见。
  */
-export function useHistorySessions(projectName: string, range: AgentHistoryRange = "week") {
+export function useHistorySessions(
+  projectName: string,
+  range: AgentHistoryRange = "week",
+  /** false 时不发查询（常驻挂载的浮层消费方传「打开才拉」，如 03n 移动 sheet）。 */
+  enabled = true,
+) {
   const history = useQuery({
+    enabled,
     queryKey: ["projects", projectName, "agent-history", range],
     queryFn: () => listAgentHistory(projectName, range),
     staleTime: 5_000,

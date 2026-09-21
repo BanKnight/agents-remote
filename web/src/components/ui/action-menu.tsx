@@ -105,7 +105,14 @@ export function ActionMenu({
                 role="menuitem"
                 disabled={item.disabled}
                 className={mobileSheetItemClasses(item.variant)}
-                onClick={() => {
+                onClick={(e) => {
+                  // portal 合成事件按 fiber 树冒泡（frontend-notes §4）：menuitem 的 click
+                  // 会冒到行/卡 onClick（如文件行 onOpenFile 导航），必须拦；否则 onSelect
+                  // 开的对话框随导航卸载、行又同步执行了导航。
+                  e.stopPropagation();
+                  // 长按路径 open 受控于 contextMenuPoint，setOpen(false) 关不掉——
+                  // 必须同时清（否则 sheet 残留与 onSelect 打开的对话框层叠抢焦点）。
+                  onContextMenuClose?.();
                   item.onSelect();
                   setOpen(false);
                 }}
@@ -119,7 +126,11 @@ export function ActionMenu({
               type="button"
               role="menuitem"
               className={mobileSheetItemClasses("default")}
-              onClick={() => setOpen(false)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onContextMenuClose?.();
+                setOpen(false);
+              }}
             >
               <span className="w-full text-center text-on-surface-muted">
                 {cancelLabel ?? "取消"}

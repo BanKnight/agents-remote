@@ -479,6 +479,16 @@ export class SessionRegistry {
     return metadata ? agentSessionFromMetadata(metadata) : undefined;
   }
 
+  /**
+   * agent session 的 runtimeKey（M8 auto-retry 控制端点用：claude pending 态挂在
+   * ClaudeRuntime.autoRetry watch 的 runtimeKey 上）。非 claude provider / session
+   * 不存在 → undefined（调用方 404）。
+   */
+  async getAgentRuntimeKey(projectName: string, sessionId: string): Promise<string | undefined> {
+    const metadata = await this.getLiveMetadata(projectName, "agent", sessionId);
+    return metadata?.provider === "claude" ? metadata.runtimeKey : undefined;
+  }
+
   async getTerminalSession(
     projectName: string,
     sessionId: string,

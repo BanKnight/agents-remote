@@ -1,6 +1,7 @@
 import type {
   AgentHistoryRange,
   AgentProvider,
+  AutoRetryStatusResponse,
   AgentSessionDetailResponse,
   AuthMeResponse,
   CloseAgentSessionResponse,
@@ -38,6 +39,7 @@ import type {
   ProjectDetailResponse,
   ProjectFileListResponse,
   ProjectFilePreviewResponse,
+  ProjectFileSearchResponse,
   ProjectListResponse,
   UpdatePagesConfigRequest,
   UpdatePagesConfigResponse,
@@ -54,6 +56,7 @@ import type {
   SessionPromptInjectResponse,
   SlashCommandDescriptionsResponse,
   TerminalSessionDetailResponse,
+  UploadConflictPolicy,
   UploadFileResponse,
   ClaudePresetResponse,
   CreateClaudePresetRequest,
@@ -234,6 +237,14 @@ export async function listRootFiles(): Promise<ProjectFileListResponse> {
   return fetchJson("/api/root/files", "api.projectFilesFailed");
 }
 
+/** 03x 文件搜索：项目内文件名大小写不敏感子串匹配，结果为项目内相对路径。 */
+export async function searchProjectFiles(
+  projectName: string,
+  query: string,
+): Promise<ProjectFileSearchResponse> {
+  return fetchJson(projectFileSearchPath(projectName, query), "api.projectFileSearchFailed");
+}
+
 export async function createFolder(
   projectName: string,
   parentPath: string,
@@ -283,23 +294,47 @@ export async function deleteFile(projectName: string, path: string): Promise<Del
   });
 }
 
-export async function uploadFile(
-  projectName: string,
-  directoryPath: string,
+/** 上传目标同名冲突（服务端 409，03z 行内三选的数据信号）。 */
+export class UploadConflictError extends Error {
+  readonly code = "PROJECT_FILE_TARGET_EXISTS";
+}
+
+/** FormData 上传（fetch 无上传进度回调，进度展示走队列行状态而非字节级 .prog——记档）。 */
+const uploadFormData = async (
+  url: string,
   file: File,
-): Promise<UploadFileResponse> {
+  conflict?: UploadConflictPolicy,
+): Promise<UploadFileResponse> => {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(projectFileUploadPath(projectName, directoryPath), {
-    method: "POST",
-    body: formData,
-  });
+  if (conflict) formData.append("conflict", conflict);
+  const response = await fetch(url, { method: "POST", body: formData });
 
+  if (response.status === 409) {
+    throw new UploadConflictError(resolveTranslation("api.projectFileUploadFailed"));
+  }
   if (!response.ok) {
     throw new Error(`${resolveTranslation("api.projectFileUploadFailed")}: ${response.status}`);
   }
 
   return response.json();
+};
+
+export async function uploadFile(
+  projectName: string,
+  directoryPath: string,
+  file: File,
+  conflict?: UploadConflictPolicy,
+): Promise<UploadFileResponse> {
+  return uploadFormData(projectFileUploadPath(projectName, directoryPath), file, conflict);
+}
+
+/** 上传到 PROJECTS_ROOT 根层（03o pin④「增=新建/上传到当前作用域」，M8 全局文件写边界）。 */
+export async function rootUploadFile(
+  file: File,
+  conflict?: UploadConflictPolicy,
+): Promise<UploadFileResponse> {
+  return uploadFormData("/api/root/files/upload", file, conflict);
 }
 
 export async function previewProjectFile(
@@ -563,6 +598,40 @@ export async function updateAutoRetryConfig(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ config } satisfies UpdateAutoRetryRequest),
     },
+  );
+}
+
+// ── auto-retry 待发注入控制（M8 03d `.count`：取消 / 立即重试）──
+
+export async function fetchAutoRetryStatus(
+  projectName: string,
+  sessionId: string,
+): Promise<AutoRetryStatusResponse> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/auto-retry/status`,
+    "api.agentSessionAutoRetryFailed",
+  );
+}
+
+export async function cancelAutoRetry(
+  projectName: string,
+  sessionId: string,
+): Promise<AutoRetryStatusResponse> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/auto-retry/cancel`,
+    "api.agentSessionAutoRetryFailed",
+    { method: "POST" },
+  );
+}
+
+export async function fireAutoRetryNow(
+  projectName: string,
+  sessionId: string,
+): Promise<AutoRetryStatusResponse> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/auto-retry/fire`,
+    "api.agentSessionAutoRetryFailed",
+    { method: "POST" },
   );
 }
 
@@ -881,6 +950,11 @@ const projectFilesPath = (projectName: string, path: string) =>
 
 const projectFileUploadPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/upload`, path);
+
+// 搜索参数名与前缀同源的其它搜索端点一致（`?q=`，见 searchWiki / searchSkills）；服务端
+// 读 url.searchParams.get("q")（api/src/index.ts 03x 分支）。
+const projectFileSearchPath = (projectName: string, query: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/files/search?q=${encodeURIComponent(query)}`;
 
 const projectFileMkdirPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/mkdir`, path);
