@@ -24,9 +24,13 @@ export type WorkbenchScope = { kind: "project"; key: string } | { kind: "global"
 /**
  * 工作台 inspection tab 标识。V1 两个第一方 tab（设计文档 §6）：
  * `files` / `git`；pages 为 per-project 静态托管根配置（与 files/git 同构 inspection）。
- * Stage 3 以 WorkbenchTabPlugin 契约落地注册表。
+ * Stage 3 以 WorkbenchTabPlugin 契约落地注册表。M9 批次 b 起（redesign-v2 §6.10-6）
+ * 值域加 `history`：桌面 Inspector 四段 = 文件/Git/Wiki/历史（05 原型 seg4）。history
+ * **不进** WORKBENCH_TAB_PLUGINS 注册表（buildOverviewTabs 已单独 push history middle
+ * tab，进注册表会在中栏 tab 列表重复）——由 RightPanelTabs 局部追加；pages 桌面右栏
+ * 隐藏（RightPanelTabs 过滤，per-project middle tab 语义）。
  */
-export type WorkbenchInspectionTab = "files" | "git" | "pages" | "wiki";
+export type WorkbenchInspectionTab = "files" | "git" | "pages" | "wiki" | "history";
 
 /**
  * 中栏二级导航 tab（设计文档 workbench-views.md）。overview=实例总览（global 按项目分段
@@ -66,7 +70,11 @@ export const WORKBENCH_RIGHT_PANEL_DEFAULT_REM = 22;
  */
 export const WORKBENCH_LEFT_PANEL_MIN_REM = 9;
 export const WORKBENCH_LEFT_PANEL_MAX_REM = 24;
-/** 右栏宽度钳制范围（rem）：FilesPanel browser 最小宽度 / 不吃掉中栏的上限。 */
+/**
+ * 右栏（Inspector）宽度钳制范围（rem）。M9 批次 a 起（§6.10-2）右栏列 = minmax(atom,1fr)，
+ * atom 语义 = inspector 最小宽（gutter 拖拽调下限、实际宽吃视口剩余）；MIN/MAX 继续钳制
+ * 该下限（FilesPanel browser 最小宽度 / 防下限拖到吞掉中栏）。
+ */
 export const WORKBENCH_RIGHT_PANEL_MIN_REM = 16;
 export const WORKBENCH_RIGHT_PANEL_MAX_REM = 40;
 
@@ -347,7 +355,8 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     search.rightTab === "files" ||
     search.rightTab === "git" ||
     search.rightTab === "pages" ||
-    search.rightTab === "wiki"
+    search.rightTab === "wiki" ||
+    search.rightTab === "history"
   ) {
     result.rightTab = search.rightTab;
   }

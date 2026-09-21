@@ -1,7 +1,12 @@
 import { useAtom } from "jotai";
 import { useT } from "../../i18n";
 import { type WorkbenchInspectionTab, workbenchRightTabAtom } from "../../routes/workbench-model";
-import { type WorkbenchTabPluginContext, type WorkbenchTabPlugin } from "./workbench-tab-plugin";
+import { HistoryList } from "./history-list";
+import {
+  WORKBENCH_TAB_PLUGINS,
+  type WorkbenchTabPluginContext,
+  type WorkbenchTabPlugin,
+} from "./workbench-tab-plugin";
 
 type RightPanelTabsProps = {
   activeTab?: WorkbenchInspectionTab;
@@ -18,12 +23,27 @@ type RightPanelTabsProps = {
 export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsProps) {
   const { t } = useT();
   const [rememberedTab, setRememberedTab] = useAtom(workbenchRightTabAtom);
-  // 桌面右栏 inspection 暂停：files/git 已移至左栏 middle tab（[文件]/[git]）+ 中栏点文件
-  // 开的 diff tab，右栏内部留空待未来扩展。visiblePlugins 留空数组骨架——find/render
-  // 分支静态保留（lint 仍认其在用、无 unused），恢复 inspection 只需把这行改回
-  // `WORKBENCH_TAB_PLUGINS.filter((plugin) => plugin.when(ctx))` 并恢复 import。
-  // 移动端 MobileFocusBody + 左栏 buildOverviewTabs 仍直接消费 WORKBENCH_TAB_PLUGINS。
-  const visiblePlugins: WorkbenchTabPlugin[] = [];
+  // §6.10-6 Inspector 四段（05 原型 seg4）：文件 / Git / Wiki / 历史。pages 不进右栏
+  //（per-project middle tab 语义，05 原型 inspector 无 pages 段）；history 不进
+  // WORKBENCH_TAB_PLUGINS 注册表（buildOverviewTabs 已单独 push history middle tab，进注册表
+  // 会在中栏 tab 列表重复）——在此局部追加。注册表仍是移动 MobileFocusBody / 左栏
+  // buildOverviewTabs 的单一可见性来源（plugin.when）。
+  const visiblePlugins: WorkbenchTabPlugin[] = [
+    ...WORKBENCH_TAB_PLUGINS.filter((plugin) => plugin.id !== "pages" && plugin.when(ctx)),
+    {
+      id: "history",
+      labelKey: "workbench.tabHistory",
+      render: (pluginCtx) =>
+        pluginCtx.projectKey ? (
+          <HistoryList
+            focusId={pluginCtx.focusId}
+            projectName={pluginCtx.projectKey}
+            showLabel={false}
+          />
+        ) : null,
+      when: (pluginCtx) => pluginCtx.projectKey !== null,
+    },
+  ];
   const preferred = activeTab ?? rememberedTab;
   const current = visiblePlugins.find((plugin) => plugin.id === preferred) ?? visiblePlugins[0];
 

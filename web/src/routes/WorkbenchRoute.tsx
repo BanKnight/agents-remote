@@ -1,4 +1,5 @@
 import type { GitDiffScope } from "@agents-remote/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue } from "jotai";
 import { type PointerEvent, useCallback, useEffect, useState } from "react";
@@ -15,10 +16,12 @@ import {
   useScopeInstanceOrder,
 } from "../components/workbench/instance-area";
 import { GlobalProjectsOverview } from "../components/workbench/global-projects-overview";
+import { createTerminalSession } from "../api/client";
 import { ChatOverview } from "../components/workbench/chat-overview";
 import { MobileWorkbench, SessionModeTabs } from "../components/workbench/mobile-workbench";
 import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
+import { StatusBar } from "../components/workbench/status-bar";
 import { Sidebar } from "../components/shell/sidebar";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
@@ -195,6 +198,7 @@ function WorkbenchContent({
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
   const [layout, update] = useWorkbenchLayout();
+  const queryClient = useQueryClient();
   const { candidates } = useGlobalInstanceCandidates(scope);
   const create = useCreateSession(ctx.projectKey);
   const projectInstances = useProjectInstances(ctx.projectKey);
@@ -391,6 +395,39 @@ function WorkbenchContent({
       update((prev) => resizeSplitChildren(prev, splitId, leftChildId, rightChildId, deltaFlex));
     },
     [update],
+  );
+  // 分屏按钮（§6.10-3）：一键「分屏并新建终端窗格」（05 原型分屏产物 = pterm）。不走
+  // useCreateSession——分屏需要先拿 ref 做布局 split。顺序敏感（对齐 useCreateSession 的
+  // 「await navigate 先行」时序）：await navigateWorkbench 让 URL focusId 先生效 → prune
+  // effect 的 focusId 保护覆盖新终端 tab（refs 尚未收录它），再 update(dropIntoLeaf
+  // zone=right，复用拖放分屏完整语义：预处理/split/激活/退出最大化)。invalidate 与
+  // useCreateSession 同 keys（列表自愈）。失败静默（与 useCreateSession 同纪律）。
+  const onSplitLeaf = useCallback(
+    async (leafId: string) => {
+      if (scope.kind !== "project") return;
+      try {
+        const data = await createTerminalSession(scope.key);
+        const ref: WorkbenchPanelRef = {
+          kind: "session",
+          projectName: scope.key,
+          sessionId: data.session.id,
+        };
+        await navigateWorkbench(
+          scope,
+          ref.sessionId,
+          stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+        );
+        update((prev) => dropIntoLeaf(prev, ref, leafId, "right"));
+        void queryClient.invalidateQueries({ queryKey: ["projects", scope.key] });
+        void queryClient.invalidateQueries({ queryKey: ["overview"] });
+      } catch {
+        // 创建失败：UI 不额外提示。
+      }
+    },
+    // 闭包依赖（rightTab/tabFromUrl/leftMode/mode）已被 deps 覆盖：stickyWorkbenchSearch
+    // 必须带回当前 search 值，deps 缺失会把旧值回写 URL（切右栏 tab 后立即分屏的窗口）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scope, update, queryClient, rightTab, tabFromUrl, leftMode, mode],
   );
   // file tab focus URL（设计 §6 决策 2 / workbench-stable-refactor Phase 3）：
   // - 项目文件（projectName === scope.key，scope=project）→ /projects/$key/file/$，splat=项目相对路径
@@ -874,6 +911,7 @@ function WorkbenchContent({
       onResizeSplit={onResizeSplit}
       onSelectTab={onSelectTab}
       onSetDragPointer={onSetDragPointer}
+      onSplitLeaf={onSplitLeaf}
       onToggleMaximize={onToggleMaximize}
       projectName={ctx.projectKey}
       refsCount={globalRefs.length}
@@ -901,6 +939,7 @@ function WorkbenchContent({
       }
       rightPanel={rightPanel}
       rightPanelCollapsible={rightPanelCollapsible}
+      statusBar={<StatusBar />}
     >
       {instanceArea}
       {closeHolder}

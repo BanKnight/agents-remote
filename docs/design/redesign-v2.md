@@ -378,13 +378,47 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 **验证**：探针 `scripts/probe-v2-m8-gaps.mjs` **65 断言全绿**（7 Part：03x 搜索两态/几何/q 参数/计数/预览导航 + 03y 移动到 CDP 长按→prompt 预填→rename targetDir + 03z 队列三选/重传 conflict=overwrite/prog 前进 + 08 采用 segc/差集/逐个纳管/sheet 关闭 + 03d .count pending/fire/cancel + 03e .subbar 绿 tint/可点 + 03v merged 置灰主题无关 var 对比）；回归：M4 41/41、M5 46/46、M6 59/59、M7 68/68、e2e 29/29；四门禁（format/lint 0-0/typecheck/test 814+670+9）；CSS 硬闸 ✓；token 机检零新增。
 
+## §6.10 M9 开工摊牌（2026-09-22）
+
+**范围（总纲 §6 M9 行 + §7 待定项）**：iPad 三栏断点；Mac 分屏 + Inspector + 状态栏审批 + ⌘ 快捷键；触屏/hover 正交（frontend-notes §7）；桌面遗留收敛（M4 记档的桌面预览只读化、M6 记档的 09m/10m/07m 桌面版、security P3①②）。原「iPad/Mac 细节先与用户确认」**按 Q17 约定改为原型+最佳实践拍板并记档**（原型 04/05 系列即标尺，无需用户二次输入）。
+
+**现状盘点（关键基础设施已在）**：
+- 断点二档：`useIsMobile`（<640）+ `useIsDesktopViewport`（lg=1024，WorkbenchShell 三栏/单列分界）——**640–1023 中档（iPad 竖屏 820）当前落「非移动非桌面」空档**，行为待定义。
+- 桌面三栏已在：左 ProjectLeftPanel（sidebar.tsx）+ 中 n 叉树 tab（WorkbenchLayoutV3：split/leaf/maximized，VSCode 式跨项目 tab）+ 右 RightPanelTabs（可折叠、rightCollapsed atom）。
+- 分屏基础设施已在：WorkbenchLayoutV3 的 split/resize/maximized + onResizeSplit/ensureTabOpenLeaf 全套纯函数（含测试）——Mac 分屏 = 消费这些能力 + 补原型入口。
+
+**拍板（原型 + 最佳实践）**：
+1. **断点三档**：移动 <640（现有 4 Tab）；**中档 640–1023（iPad 竖屏）= 沿用移动布局拉宽**（4 Tab + 工作台内容区自适应，Apple 自家竖屏单列惯例；不另立一套）；**桌面 ≥1024 = 三栏**（iPad 横屏 1180 与 Mac 同构，04/05 差异只在列宽）。
+2. **iPad 三栏列宽（04 原型值）**：side 260px / center 600px flex-none / inspector flex-1 min-width:0。Mac（05）：side 250 / pcenter 360 / pterm 300 / pinsp flex-1——**Mac 多一列终端窗格（分屏结果）**，基础态 = 三栏 + 终端经分屏开启。
+3. **Mac 分屏入口（05 pin①）**：窗格 tab 条右侧分屏按钮（`rect+分隔线` icon）+ 分隔条拖拽手柄（grip ⋮⋮）——拖拽已有（onResizeSplit），补按钮与 grip 视觉。
+4. **状态栏 sbar（05）**：底部固定条 = 连接点 + 「已连接 srv-01 · N 实例运行中」+ **「N 项待审批 ›」（warning 色，点击 → 审批中心 05f Popover）** + 右侧「今日 $X · N tok」。数据源：连接态（socket）+ 实例计数（refs）+ 待审批计数（M5 审批注册表）+ 费用/token（overview subtitle 同源）。
+5. **快捷键全集（spec §10.2 原文，无增删）**：⌘N 新建实例 · ⌘1..9 切窗格/实例 · ⌘\ 分屏 · ⌘F 文件搜索（聚焦搜索框，10m pin④）· Esc 关浮层 · ⌘R 重连（断线时）。仅桌面（≥1024 + pointer:fine）绑定；输入框聚焦时 ⌘ 系仍可触发（Esc 交 Radix）。
+6. **Inspector 四段（04/05）**：文件/Git/Wiki/历史 seg4——桌面现有 RightPanelTabs 的 tab 集对齐（rightTab 维度已有），补「历史」段（05c 历史 Sidebar 同数据：useHistorySessions）。
+7. **Sidebar 作用域（04/05 pin②）**：seg4 mini「项目/全部」——项目 = 本项目实例组；全部 = 跨项目分组列表（05g）。现桌面 Sidebar 已有 scope 概念（leftMode/global overview），对齐原型交互形态。
+8. **桌面预览只读化（M4 记档落地）**：桌面 file tab 预览去编辑（saveFileContent API 保留，UI 入口移除）——03q 铁律 7「内容编辑器不存在」双端一致。
+9. **桌面版页面**：09m 插件 / 10m 全局文件（含 ⌘F）/ 07m 设置（Mac 设置 = 07 同构宽版）/ 13 MCP 详情桌面入口（M6 记档「M9 评估」→ 做：pluginmcp_ focusId 开 tab）。
+10. **触屏/hover 正交核对（frontend-notes §7）**：iPad 触屏 + 宽屏组合全量核对 hover-capable/touch 变体——hover 显隐功能在 iPad 上必须常显可达。
+11. **安全/杂项收尾**：security P3② `resolveCreateTarget` 补 realpath（M8 采用扩大使用面）；P3① searchFiles 遍历总量上限；`.setrow`/`.logout` 等键盘 `focus-visible`；`w-[52px]` 真机值验证（真机项交用户，代码按原型保持）。
+
+**批次**：a 断点三档 + iPad 列宽对齐 → b Mac 工作台（分屏按钮/状态栏/Inspector 四段/Sidebar 作用域）→ c 快捷键 + 05f 审批 Popover → d 桌面版页面（09m/10m/07m/13 入口/预览只读化）→ e 安全与键盘杂项。每批次探针断言 + 批次末 reviewer 三份 + 四门禁。
+
+**批次 b 落地补记（2026-09-22，实现与拍板的差异 + 教训）**：
+- **seg4 作用域落位**：拍板写「Sidebar 作用域」，实际落在左栏 InstanceLeftOverview 顶部（桌面左栏 = 项目/实例树两列结构，作用域分段属于实例总览区域而非 Sidebar 本体）——原型 04/05 的 side 区域在实现中由左侧两列共同承载。
+  - seg4 mini 左右间距随左栏容器体系（px-2=8px）而非单源 margin 14px——与左栏 GroupHeader/卡片内容对齐优先，属落位差异自然子集（design review 2026-09-22）。
+- **分屏语义**：05 原型分屏产物 = pterm（终端窗格），实现对齐「分屏并新建终端窗格」语义（POST terminal-sessions → dropIntoLeaf right），非空分屏。
+- **sbar 数据源收敛**：费用/token 段不做（OverviewResponse 无费用字段，铁律不伪造数据）；服务器名无数据源 → 连接态简化为「已连接/连接中」。待审批 chip 批次 c 接 05f Popover（本批仅计数展示）。
+- **seg 视图偏好不持久化**：作用域选择为组件内 state（默认「项目」），刷新回落默认——低价值状态不入 localStorage。
+- **prune 时序教训**：create/resume navigate 先行 + `focusId` 保护已是既有约定（WorkbenchRoute prune effect 注释）；分屏新增第三条路径（POST → navigate → dropIntoLeaf）同样遵守。调试中真正的红因是**探针 mock 数据形状错**（overview candidate 用了 `id`，shared OverviewCandidate 实为 `sessionId`+`type`）→ globalRefs 派生出 `{undefined}` → prune 把非聚焦 tab 全判 stale。教训：**探针 mock 必须严格对齐 shared 类型字段名**（OverviewCandidate=sessionId / AgentSession=id 两套形状不可混用一个对象）。
+
+**记档不做**：iPad 竖屏专用布局（沿用移动拉宽）；iPad 竖屏分屏（触屏分屏交互成本高，桌面独占）；画中画/多窗口；PWA 桌面安装形态。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
 | --- | --- | --- |
 | Wiki「让 Agent 读这篇」注入协议 | ~~stdin 指令 vs attachment/引用卡；引用卡状态归属~~ ✅ 已摊牌（D13，§6.2）：stdin prompt + 客户端 per-session 引用 atom | ~~M4 开工前~~ 2026-09-21 |
-| iPad 三栏细节 | 断点值（1180×820 基准）、Sidebar/中/右宽度分配 | M9 开工前与用户确认 |
-| Mac 专属件取舍 | 分屏多窗格保留度、Inspector 形态、快捷键全集 | M9 开工前与用户确认 |
+| iPad 三栏细节 | ✅ 已拍板（§6.10-1/2）：三档断点（<640 移动 / 640–1023 移动拉宽 / ≥1024 三栏），iPad 列宽 side 260 / center 600 / inspector flex-1 | 2026-09-22（Q17：原型+最佳实践拍板） |
+| Mac 专属件取舍 | ✅ 已拍板（§6.10-3..9）：分屏复用 V3 树 + tabstrip 按钮；Inspector 四段（文件/Git/Wiki/历史）；快捷键 = spec §10.2 原文六条 | 2026-09-22（Q17：spec 原文即全集，无增删） |
 | Git ✦ 来源标注 | 关联数据面（会话提交映射表 vs commit message heuristic） | 暂不做（D12），重开需用户发起 |
 
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）

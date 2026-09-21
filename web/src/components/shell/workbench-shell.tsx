@@ -20,6 +20,14 @@ import { shellSurfaceClasses } from "./shell-primitives";
  */
 const SIDEBAR_WIDTH = "250px";
 
+/**
+ * 中栏（会话窗格）定宽上限（§6.10-2：04 原型 `.center{width:600px;flex:none}`）。落成
+ * `minmax(0, 600px)` 而非死 600px——四列现状（Sidebar+左栏并立）下视口 <~1458px 时放不下
+ * 600，minmax 下限 0 让中栏让位（grid 顺序：左右栏先保底、中栏吃剩余、封顶 600）；大屏
+ * （≥1458）中栏恒 600、剩余全给 inspector，即原型的「center flex-none + inspector flex-1」。
+ */
+const WORKBENCH_CENTER_MAX = "600px";
+
 type WorkbenchShellProps = {
   /** 中栏：实例区（Stage 1 的 InstanceArea 接入）。工作台主体，不可收起。 */
   children: ReactNode;
@@ -44,6 +52,11 @@ type WorkbenchShellProps = {
    * project scope 传 true（非聚焦态唤出看 project-scoped inspection）；global 传 false。
    */
   rightPanelCollapsible?: boolean;
+  /**
+   * 窗口底部状态栏（§6.10-4，M9 批次 b StatusBar）。Shell 纯布局挂载点——数据 hooks 在
+   * StatusBar 内部（自身 useIsDesktopViewport 控制渲染与订阅），移动端 null 零挂载。
+   */
+  statusBar?: ReactNode;
 };
 
 /**
@@ -51,7 +64,7 @@ type WorkbenchShellProps = {
  *
  * 桌面常驻三栏 grid：左栏（项目树）/ 中栏（实例区）/ 右栏（inspection tab）。
  * 左右栏可收起（atom 持久化），收起后该侧消失、中栏对应边缘出现唤出按钮；
- * 中栏是工作台主体，恒占 minmax(0,1fr)，不可收起。
+ * 中栏是工作台主体，minmax(0,600px) 定宽上限（§6.10-2 center flex-none），不可收起。
  *
  * 纯布局容器，不持业务 state：栏折叠态 + 宽度来自 workbench-model.ts 的 atom，
  * 三栏内容由 props 注入（Stage 1/2/3 分别接入）。
@@ -63,6 +76,7 @@ export function WorkbenchShell({
   rightPanel,
   rightPanelCollapsible,
   sidebar,
+  statusBar,
 }: WorkbenchShellProps) {
   const { t } = useT();
   const [leftCollapsed, setLeftCollapsed] = useAtom(workbenchLeftCollapsedAtom);
@@ -75,9 +89,16 @@ export function WorkbenchShell({
 
   // grid 列宽：栏收起 → 0px（栏 aside display none + 列塌缩）；展开 → atom 记忆宽度。
   const leftColumn = leftCollapsed ? "0px" : `${leftWidth}rem`;
-  // 右栏列宽：收起 / 不可唤出 → 0px；展开 → atom 记忆宽度。rightPanel null 不决定列宽
-  //（由 rightCollapsible 决定）—— 收起态 rightPanel=null 但列保持唤出能力（RailButton 占位）。
-  const rightColumn = rightCollapsed || !rightCollapsible ? "0px" : `${rightWidth}rem`;
+  // 右栏列宽（变量值 = 完整轨道定义，模板裸引用 var()——若模板再包 minmax(var(...)) 会嵌套
+  // 非法整条声明被丢、退化为单列全宽，探针实测）：收起 / 不可唤出 → 0px；展开 →
+  // minmax(atom, 1fr)（§6.10-2 `.pinsp{flex:1}`）：atom 语义 = inspector 最小宽，gutter
+  // 拖拽调下限、实际宽吃视口剩余。rightPanel null 不决定列宽（由 rightCollapsible 决定）。
+  const rightColumn = rightCollapsed || !rightCollapsible ? "0px" : `minmax(${rightWidth}rem, 1fr)`;
+  // 中栏列宽：右栏展开 → minmax(0, 600px)（§6.10-2 `.center{width:600px;flex:none}`：
+  // 左右栏保底后中栏吃剩余、封顶 600）；右栏收起/不可唤出 → minmax(0, 1fr)——原型
+  // inspector 常驻无「收起」态，M2 拍板右栏可收，收起后中栏顶上吃满剩余（回 1fr 行为）。
+  const centerColumn =
+    rightCollapsed || !rightCollapsible ? "minmax(0, 1fr)" : `minmax(0, ${WORKBENCH_CENTER_MAX})`;
 
   // 栏 resize gutter：拖拽改宽度 atom（clamp 到 MIN/MAX，防压溃自身或吃掉中栏）。
   // 右栏翻转方向 —— 向左拖（−delta）才增宽。
@@ -97,13 +118,14 @@ export function WorkbenchShell({
     );
 
   return (
-    <main className="relative h-[var(--app-viewport-height)] overflow-hidden text-on-surface">
+    <main className="relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden text-on-surface">
       <div
-        className={`grid h-full min-h-0 w-full min-w-0 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-activity-col)_var(--workbench-left-col)_minmax(0,1fr)_var(--workbench-right-col)] ${shellSurfaceClasses.shell}`}
+        className={`grid min-h-0 w-full min-w-0 flex-1 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-activity-col)_var(--workbench-left-col)_var(--workbench-center-col)_var(--workbench-right-col)] ${shellSurfaceClasses.shell}`}
         style={
           {
             "--workbench-activity-col": SIDEBAR_WIDTH,
             "--workbench-left-col": leftColumn,
+            "--workbench-center-col": centerColumn,
             "--workbench-right-col": rightColumn,
           } as CSSProperties
         }
@@ -156,6 +178,7 @@ export function WorkbenchShell({
           </aside>
         ) : null}
       </div>
+      {statusBar}
     </main>
   );
 }

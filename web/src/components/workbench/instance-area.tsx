@@ -218,6 +218,8 @@ type InstanceAreaProps = {
     deltaFlex: number,
   ) => void;
   onSelectTab: (groupId: string, tabId: string) => void;
+  /** 分屏按钮（§6.10-3，WorkbenchContent：创建终端 ref → dropIntoLeaf right → navigate）。 */
+  onSplitLeaf: (groupId: string) => void;
   /** 关闭实例（contextMenu onKillTab 用，WorkbenchContent closeInstance）。 */
   closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
 };
@@ -249,6 +251,7 @@ export function InstanceArea({
   onToggleMaximize,
   onResizeSplit,
   onSelectTab,
+  onSplitLeaf,
   closeInstance,
 }: InstanceAreaProps) {
   const { t } = useT();
@@ -295,6 +298,7 @@ export function InstanceArea({
       onCloseLeafTab={onCloseTab}
       onResizeSplit={onResizeSplit}
       onSelectTab={onSelectTab}
+      onSplitLeaf={onSplitLeaf}
       onTabContextMenu={onTabContextMenu}
       onTabDragStart={onCardDragStart}
       onToggleMaximize={onToggleMaximize}
@@ -388,7 +392,18 @@ function InstanceLeftOverviewBase({
 }: InstanceLeftOverviewProps) {
   const { t } = useT();
 
-  // grid 数据源：project scope 用 useProjectInstances（本项目全览，WorkbenchContent 注入）。
+  // 作用域 seg4（§6.10-7，05 原型 side `seg4 mini scope`「项目/全部」）：「项目」= 本项目实例
+  //（默认），「全部」= 所有项目实例平铺（candidateToGridItem 卡片带 projectName 区分归属）。
+  // global 候选与桌面 useGlobalInstanceRefs（prune effect）共用 queryKey ["overview"]，React
+  // Query dedupe 零额外请求。视图偏好不持久化（useState）：项目作用域是主要工作形态，重开
+  // 回「项目」符合直觉（批次 b 拍板，记 §6.10 补记）。
+  const [scopeSegment, setScopeSegment] = useState<"project" | "all">("project");
+  const { candidates, isLoaded: candidatesLoaded } = useGlobalInstanceCandidates({
+    kind: "global",
+  });
+
+  // grid 数据源：seg「项目」用 useProjectInstances（本项目全览，WorkbenchContent 注入）；
+  // seg「全部」用全局候选（全局总览同源管道 candidateToGridItem，无并行过滤分支）。
   const gridCallbacks: GridItemCallbacks = {
     onClose: onCloseInstance,
     onRename: onRenameInstance,
@@ -397,18 +412,27 @@ function InstanceLeftOverviewBase({
   };
   const gridItems = useMemo<InstanceGridItem[]>(
     () =>
-      projectInstances.instances.map((entry) =>
-        instanceToGridItem(entry, gridCallbacks, ctx.projectKey ?? ""),
-      ),
-    // gridCallbacks 闭包依赖 t；projectInstances.instances 引用由 hook 内 dataKey fingerprint 稳定
-    //（data 不变时不新建数组）。
+      scopeSegment === "all"
+        ? candidates.map((candidate) => candidateToGridItem(candidate, gridCallbacks))
+        : projectInstances.instances.map((entry) =>
+            instanceToGridItem(entry, gridCallbacks, ctx.projectKey ?? ""),
+          ),
+    // gridCallbacks 闭包依赖 t；candidates/projectInstances 引用由 hook 内 dataKey fingerprint
+    // 稳定（data 不变时不新建数组）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectInstances.instances, t],
+    [scopeSegment, candidates, projectInstances.instances, t],
   );
 
-  // grid view dragRefs：project 用 projectInstances（sessionId → ref）。
+  // grid view dragRefs：seg「项目」用 projectInstances（sessionId → ref，projectName=scope.key）；
+  // seg「全部」直接用候选自带 ref（projectName 已编码在内，跨项目拖放/激活语义正确）。
   const gridDragRefs = useMemo(() => {
     const m = new Map<string, WorkbenchPanelRef>();
+    if (scopeSegment === "all") {
+      for (const candidate of candidates) {
+        m.set(candidate.ref.sessionId, candidate.ref);
+      }
+      return m;
+    }
     for (const entry of projectInstances.instances) {
       m.set(entry.session.id, {
         kind: "session",
@@ -417,16 +441,26 @@ function InstanceLeftOverviewBase({
       });
     }
     return m;
-  }, [scope, projectInstances.instances]);
+  }, [scope, scopeSegment, candidates, projectInstances.instances]);
+
   // 左总览 overview 内容（设计 §5）：grid 单视图（project scope 无视图切换）。
   // 加载态（设计 §5）：pending 且数据仍空时显示 CardGridSkeleton，替代 EmptyInstanceArea。
-  const overviewLoading = projectInstances.isLoading && projectInstances.instances.length === 0;
+  const overviewLoading =
+    scopeSegment === "all"
+      ? !candidatesLoaded && candidates.length === 0
+      : projectInstances.isLoading && projectInstances.instances.length === 0;
   const leftOverviewContent = overviewLoading ? (
     <div className="px-3 py-2">
       <CardGridSkeleton plain />
     </div>
   ) : gridItems.length === 0 ? (
-    <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
+    scopeSegment === "all" ? (
+      <div className="flex flex-1 items-center justify-center p-6 text-center">
+        <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
+      </div>
+    ) : (
+      <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
+    )
   ) : (
     <div className="px-3 py-2">
       <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} plain />
@@ -435,8 +469,46 @@ function InstanceLeftOverviewBase({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* 左总览顶部 header：project scope = CreateSessionBar（创建实例）。project 单 grid 视图，
-          无 ViewSwitcher。（global scope header 已随 GlobalProjectsOverview 抽离。） */}
+      {/* 作用域 seg4（§6.10-7）：05 原型 side `seg4 mini scope` 在实例组上方——实现中项目+实例
+          树在左栏两列（Sidebar 只有一级导航），seg 落左栏总览顶部（批次 b 补记差异）。span
+          键盘可达（Enter/Space），focus-visible 样式批次 e 统一补。 */}
+      <div className="shrink-0 px-2 pt-2">
+        <div aria-label={t("workbench.instancesAria")} className="seg4 mini mx-0" role="tablist">
+          <span
+            aria-selected={scopeSegment === "project"}
+            className={`cursor-pointer ${scopeSegment === "project" ? "on" : ""}`}
+            onClick={() => setScopeSegment("project")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setScopeSegment("project");
+              }
+            }}
+            role="tab"
+            tabIndex={0}
+          >
+            {t("workbench.scopeSegmentProject")}
+          </span>
+          <span
+            aria-selected={scopeSegment === "all"}
+            className={`cursor-pointer ${scopeSegment === "all" ? "on" : ""}`}
+            onClick={() => setScopeSegment("all")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setScopeSegment("all");
+              }
+            }}
+            role="tab"
+            tabIndex={0}
+          >
+            {t("workbench.scopeSegmentAll")}
+          </span>
+        </div>
+      </div>
+      {/* 左总览 header：project scope = CreateSessionBar（创建实例；两 seg 共用——seg「全部」
+          下创建仍归当前项目，与原型 ghead plus 常驻一致）。project 单 grid 视图，无 ViewSwitcher。
+          （global scope header 已随 GlobalProjectsOverview 抽离。） */}
       <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
         <CreateSessionBar
           isCreating={create.isCreating}
@@ -2050,6 +2122,7 @@ function GroupHeader({
   isMaximized,
   onCloseTab,
   onSelectTab,
+  onSplit,
   onTabContextMenu,
   onTabDragStart,
   onToggleMaximize,
@@ -2072,6 +2145,18 @@ function GroupHeader({
           />
         ))}
       </div>
+      {/* 分屏按钮（§6.10-3，05 原型 tabstrip 右侧 rect+分隔线 icon）：一键「分屏并新建终端
+          窗格」——WorkbenchContent onSplitLeaf 创建终端 ref 后 dropIntoLeaf right split（05
+          原型分屏产物 = pterm）。语义与拍板差异见 WorkbenchRoute.onSplitLeaf 注释。 */}
+      <button
+        aria-label={t("workbench.splitPane")}
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+        onClick={onSplit}
+        title={t("workbench.splitPane")}
+        type="button"
+      >
+        <ShellIcon className="h-3 w-3" name="split" />
+      </button>
       <button
         aria-label={t(maximizeLabelKey)}
         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
@@ -2090,6 +2175,8 @@ type GroupHeaderProps = {
   isMaximized: boolean;
   onCloseTab: (tabId: string) => void;
   onSelectTab: (tabId: string) => void;
+  /** 分屏按钮（§6.10-3）：在此 group 右侧分屏并新建终端窗格（WorkbenchContent 实现）。 */
+  onSplit: () => void;
   onTabContextMenu: (tabId: string, event: MouseEvent<HTMLDivElement>) => void;
   onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onToggleMaximize: () => void;
@@ -2299,7 +2386,20 @@ function SplitGutter({ orientation, rect, splitRect, onResize }: SplitGutterProp
               width: "4px",
             }
       }
-    />
+    >
+      {/* 拖拽手柄视觉（§6.10-3，05 原型 `.grip` ⋮⋮ 块压分隔线中点；row 方向旋转 90°）。
+          纯视觉——事件由父 gutter 统一接（grip 凸出部分也冒泡到 gutter handler）。 */}
+      <div
+        className="grip"
+        style={
+          isRow
+            ? { left: "50%", top: "50%", transform: "translate(-50%, -50%) rotate(90deg)" }
+            : { left: "50%", top: "50%", transform: "translate(-50%, -50%)" }
+        }
+      >
+        ⋮⋮
+      </div>
+    </div>
   );
 }
 
@@ -2316,6 +2416,8 @@ type WorkspaceTreeHandlers = {
     deltaFlex: number,
   ) => void;
   onSelectTab: (leafId: string, tabId: string) => void;
+  /** 分屏按钮（§6.10-3）：在 leafId 右侧分屏并新建终端窗格（WorkbenchContent 实现）。 */
+  onSplitLeaf: (leafId: string) => void;
   onTabContextMenu: (leafId: string, tabId: string, x: number, y: number) => void;
   onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onToggleMaximize: (leafId: string) => void;
@@ -2405,6 +2507,7 @@ export function WorkspaceTree({
           key={g.id}
           onCloseTab={(tabId) => handlers.onCloseLeafTab(g.id, tabId)}
           onSelectTab={(tabId) => handlers.onSelectTab(g.id, tabId)}
+          onSplit={() => handlers.onSplitLeaf(g.id)}
           onTabContextMenu={(tabId, event) =>
             handlers.onTabContextMenu(g.id, tabId, event.clientX, event.clientY)
           }
@@ -2456,6 +2559,8 @@ type GroupShellProps = {
   group: FlatGroup;
   onCloseTab: (tabId: string) => void;
   onSelectTab: (tabId: string) => void;
+  /** 分屏按钮（§6.10-3）：在此 group 右侧分屏并新建终端窗格。 */
+  onSplit: () => void;
   onTabContextMenu: (tabId: string, event: MouseEvent<HTMLDivElement>) => void;
   onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   onToggleMaximize: () => void;
@@ -2476,6 +2581,7 @@ function GroupShell({
   group,
   onCloseTab,
   onSelectTab,
+  onSplit,
   onTabContextMenu,
   onTabDragStart,
   onToggleMaximize,
@@ -2495,6 +2601,7 @@ function GroupShell({
         isMaximized={group.isMaximized}
         onCloseTab={onCloseTab}
         onSelectTab={onSelectTab}
+        onSplit={onSplit}
         onTabContextMenu={onTabContextMenu}
         onTabDragStart={onTabDragStart}
         onToggleMaximize={onToggleMaximize}

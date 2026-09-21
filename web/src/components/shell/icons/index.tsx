@@ -28,6 +28,7 @@ import restore from "./restore.svg?raw";
 import rotate from "./rotate.svg?raw";
 import settings from "./settings.svg?raw";
 import skillsNav from "./skills-nav.svg?raw";
+import split from "./split.svg?raw";
 import sparkles from "./sparkles.svg?raw";
 import terminal from "./terminal.svg?raw";
 import trash from "./trash.svg?raw";
@@ -65,6 +66,7 @@ const svgMap: Record<string, string> = {
   rotate,
   settings,
   "skills-nav": skillsNav,
+  split,
   sparkles,
   terminal,
   trash,

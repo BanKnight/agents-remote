@@ -1,44 +1,43 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-22（M8 缺口功能完成，待 commit；下一步 M9 多端。触发：里程碑完成）。
+> 最后更新：2026-09-22（M9 批次 b 实现完成，探针 17/17 + 回归全绿，等 reviewer 三份 → commit。触发：批次 b 收尾）。
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-UI v2 重构 M8（缺口功能）已完成：a–e 批次全落（文件搜索 / 移动到 / 上传队列冲突三选 / 拖拽多文件 / 08 采用已有目录 / root 上传写边界 / 子 agent 概览条 / merged 置灰 / .count 取消+fire / 03n 单一管道 / MobileSheet Description / .sd 消歧 / 76dvh 派生）。探针抓到 5 个真 bug 并修复（`?q=` 参数、`.sfield` 无 CSS、prompt holder 未挂载、ActionMenu 长按 fiber 冒泡+contextMenuPoint 双 bug、jotai store 读写分裂）+ code-reviewer P2（pump break→continue）。三 reviewer：security 通过（3 P3 记档）、code 修复后通过、design 修复后通过（P1 `.btn.blue` 未定义变量已修）。M8 探针 65/65、回归 M4 41/M5 46/M6 59/M7 68、e2e 29/29、四门禁全绿（api 814+web 670+shared 9）、CSS 硬闸、token 零新增。§6.9b 收口补记已写。**下一步：commit M8 → M9 多端（iPad 三栏 / Mac 分屏+Inspector+状态栏审批+快捷键；开工前 iP细节先与用户确认——总纲 §6 约定）。**
+UI v2 重构 M9 批次 b（Mac 工作台四件）实现完成：①tabstrip 分屏按钮（GroupHeader icon → onSplitLeaf：POST terminal → await navigate → dropIntoLeaf right）+ SplitGutter grip ⋮⋮ ②状态栏 .sbar 28px（已连接 · N 实例运行中 · 待审批 chip，费用段不做记档）③Inspector 四段（文件/Git/Wiki/历史）④左栏 seg4 mini 作用域「项目/全部」。探针 `probe-v2-m9-b-mac-workbench.mjs` **17/17**；回归全绿（M2 20/M4 41/M5 26+46/M6 59/M7 68/M8 65/M9a 13/e2e 29）；四门禁+CSS 硬闸过（format 修 1 文件）。§6.10 批次 b 补记已落。**reviewer 三份（fork）后台跑中，通过后 commit。下一步批次 c（快捷键 + 05f 审批 Popover）。**
 
 ## 本 session 焦点
 
-M8 收口全程：探针 7 Part 编写与迭代（Part 2 卡 prompt 引出 ActionMenu fiber 冒泡双 bug——CDP 长按→fiber 采样→body dump 三轮定位；Part 3 卡 .upcard 引出 jotai store 分裂——409 POST 出现但卡片空的矛盾一路收窄到 main.tsx Provider）→ M5 探针回归修复（agent-history mock + prompt Enter 确认）→ 四门禁 + reviewer 三份 + 修复 → §6.9b 补记。
+批次 b 全程 + **分屏树 bug 排查（已解）**：探针「分屏后双窗格」断言红，树塌成 `leaf(全新UUID,[T1])`（A tab 丢）。三层排查：先怀疑 prune 时序（onSplitLeaf 改 await navigate 先行——本身是对的、保留），加源码日志重跑抓到铁证 `activeIds=[]`+`stale=[A]`——**真因是探针 mock 形状错**：overview candidate 用了 `id` 字段，shared `OverviewCandidate` 实为 `sessionId`+`type` → `useGlobalInstanceRefs` 派生 ref.sessionId=undefined → activeIds={undefined} → prune 把非聚焦 tab 全判 stale 删光 → focus effect root-null 分支重建（全新 UUID 铁证）。修法=mock 拆两套形状对象（OV 用 sessionId / S 项目内用 id），业务代码零改动。
 
 ## 关键决策（本阶段不可丢）
 
-- 全部决策见 `docs/design/redesign-v2.md` §2（D1–D23）+ **§6.9 M8 开工摊牌** + **§6.9b M8 收口补记**（落地清单 / 三处偏离记档 / 6 个 bug 修复 / reviewer 结果 / 验证证据）。
-- **偏离记档三处**：上传进度 = fetch 文件粒度（非 XHR 字节）；冲突三选 = 服务端 409 触发（无 TOCTOU，非入队 HEAD 探测）；root mkdir = 复用创建项目端点（不另立 mkdir）。
-- **ActionMenu 教训（§4 新实证）**：portal 内 menuitem 的 click 按 **fiber 树**冒泡到行 onClick；行 `{...lp.bind()}` 的 onPointerDown 会被 menuitem pointerdown 冒泡重置 suppressClick → guardClick 失效。修法 = menuitem onClick 首行 `stopPropagation` + `onContextMenuClose?.()`（受控 point 先清再 onSelect，防层叠抢焦点）。
-- **jotai 纪律**：无 prop `<Provider>` 私建 store——模块级 imperative API 用 `getDefaultStore()` 写入的组件树必须 `<JotaiProvider store={getDefaultStore()}>` 显式挂 default store（main.tsx 已修，勿回退）。
-- **`.subbar` 形态拍板（design P2）**：取通栏 wrap 泛化（多子 agent 并行），放弃 03e 原型单 chip 浮动圆角条；颜色语义与原型一致。
-- **探针方法沉淀**：fiber 上读 `__reactProps.onClick.toString()` / `pendingProps.items[].onSelect` 验证「实际运行的代码」；body.children dump 一眼看穿导航/portal 残留；颜色断言用「临时元素读 var 计算值」做主题无关对比。
+- 全部决策见 `docs/design/redesign-v2.md` §2（D1–D23）+ §6.10 摊牌（11 条拍板）+ **§6.10 批次 b 落地补记**（本批新增 5 条：seg4 落左栏 InstanceLeftOverview 顶部非 Sidebar 本体；分屏=分屏并新建终端窗格语义；sbar 费用段不做（OverviewResponse 无费用字段，不伪造）+服务器名无数据源→「已连接」；seg 偏好不持久化；prune 时序教训+mock 形状教训）。
+- **探针 mock 铁律（新教训）**：mock 数据必须严格对齐 shared 类型字段名——`OverviewCandidate`=sessionId/type，项目内 `AgentSession`/`TerminalSession`=id，**两套形状不可混用一个对象**（spread 复用也要拆）。已写进 §6.10 补记。
+- **prune 时序约定（三条路径统一）**：create/resume/split 都必须 `await navigateWorkbench` 先行再 update layout——prune effect 的 `if (t.sessionId === focusId) continue` 保护依赖 focusId 已切到新 session。
+- 桌面 prune 用 globalRefs（overview 聚合，useGlobalInstanceRefs），移动用 refs（项目内查询）——WorkbenchRoute 286 行 `isDesktop ? globalRefs : refs`。
+- reviewer 用 `subagent_type: "fork"`（继承上下文，M8/M9 两批全一次成功）。
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ M0（`3bd16cb`）→ M1 → M2 → M3 → M4 → M5 → M6（`fb49dde`）→ M7 → **M8（本 commit）**
-- ⬜ **M9 多端** → M10 总验收（新 e2e 全套 + spec §9 逐项机检 + 用户总验证，Q17 约定）
-- **M9 遗留清单（§6.9b 累积）**：iPad/Mac 细节开工前与用户确认；`.setrow`/`.logout`/`.subbar` 等 `focus-visible` 键盘面；`.ar` 12px/ink-3 对比度（原型即此值）；`w-[52px]` 原型示意值真机化；security P3②（resolveCreateTarget 补 realpath——既有代码）、P3①（searchFiles 遍历总量上限）、P3③（keepBoth TOCTOU 记档）；project scope MCP 详情入口；token 吊销（多设备威胁模型时）。
+- ✅ M0–M7 → M8（`4ae8098`）→ M9 批次 a（未 commit）→ **M9 批次 b（本批，未 commit，等 reviewer）**
+- ⏳ reviewer 三份（code/design/perf，fork）跑中 → 通过后 commit 批次 a+b（或分两 commit）
+- ⬜ **M9 批次 c**（快捷键 ⌘N/⌘1..9/⌘\/⌘F/Esc/⌘R 仅桌面 pointer:fine + 05f 审批 Popover：sbar 待审批 chip 点击弹出）→ 批次 d（09m/10m/07m/13 桌面入口/预览只读化）→ 批次 e（resolveCreateTarget realpath / searchFiles 上限 / focus-visible / w-[52px]）→ 批次末四门禁+commit → M10 总验收（新 e2e 全套 + spec §9 逐项机检 + 用户总验证，Q17 约定）
+- **M9 遗留清单**：`.setrow`/`.logout` focus-visible；`.ar` 对比度；`w-[52px]` 真机项；iPad 触屏 hover 正交真机验证（批次 e 静态核对 + 交用户）
 
 ## 阻塞 / 风险
 
-- 无阻塞。
-- reviewer 反复 EOF → 直接 `subagent_type: "fork"`（继承上下文免冷启动），本 session 三份 fork 全部一次成功。
-- 大段生成垃圾行注入仍是高危：≥15 行用 python 锚点整段替换 + rg 机检（`verification.md`）。
+- 无阻塞。reviewer 结果未回（后台），回来后按清单处理再 commit。
+- 大段生成垃圾行注入仍是高危：本批 Edit 注入零次（python 锚点纪律生效），但 python heredoc 内嵌 JS 正则转义层级（`\\?`）连续 3 次 anchor 断言失败——**改用 index 定界切片替换**（`src.index(起点)`/`src.index(终点)` 之间整段换）绕开转义问题，此法已验证稳定。
+- 探针偶发：approvals query fetch 时序曾致「待审批」断言单次红，复跑绿（isDesktop 翻转后 enabled 才 true）；断言消息已带实际值输出便于定位。
 
 ## 易丢的关键上下文
 
-- **M8 关键文件**：`api/src/project-files.ts`（search/rename targetDir/upload conflict/keepBoth/root upload）、`api/src/index.ts`（/files/search、/root/files/upload 路由，686 行注释）、`api/src/claude-auto-retry.ts`（fireNow/pendingStatus）、`web/src/components/files/upload-queue.tsx`（新，队列单源）、`web/src/components/shell/project-setup.tsx`（08 segc）、`web/src/components/ui/action-menu.tsx`（mobile menuitem 修复）、`web/src/main.tsx`（Provider store）、`web/src/lib/format.ts`（新，formatBytes 单源）、`web/src/components/workbench/mobile-project-tools.tsx`（搜索两态+菜单+holder）、探针 `scripts/probe-v2-m8-gaps.mjs`（65 断言 7 Part）。
-- **M8 段 CSS 在 v2-primitives.css**：`.wsearch:focus-within`（03x 聚焦描边）、`.brow.merged/.st.mg/.bsub.mg`（03v）、`.upcard` 族、`.count`（.btn.blue 已修 on-accent）、`.subbar`（通栏 wrap）。
-- **探针调试经验**：mock FormData 判定用精确 regex（`name="conflict"\r?\n\r?\n`），`includes('name="conflict"')` 会误命中 `name="conflict-a.txt"`；Part 4 sheet 关闭等待用 `waitForSelector(state:"detached")`（受控关闭 ~200ms 动画后才卸载）；`page.evaluate` 里 console.log 不转发 Node 端，用 window 变量带回。
-- **dev 服务纪律**：web=prod build+watch，改 web 后 mtime 核对（dist 晚于源码）或 touch main.tsx 强制 rebuild；探针用 bun 跑；e2e 用 cgroup 2G 且输出别接 tail。
-- e2e 纪律：md 不进 format 门禁；改 web 包后必跑 `node scripts/ar-verify-css.mjs`；token 机检基线 11 处 HEX（存量）。
+- **批次 b 改动文件**（8 源文件 + 1 探针 + 1 文档）：`workbench-model.ts`（WorkbenchInspectionTab 类型 + rightTab 白名单加 history）、`WorkbenchRoute.tsx`（onSplitLeaf ~405 行 + statusBar 挂载 + queryClient invalidate ["projects",key]/["overview"]）、`right-panel-tabs.tsx`（visiblePlugins 数组 filter pages + 内联 history 插件，projectKey gate）、`instance-area.tsx`（InstanceLeftOverviewBase seg4 + candidateToGridItem 导出复用 + GroupHeader onSplit + SplitGutter grip + useGlobalInstanceRefs 已有）、`workbench-shell.tsx`（statusBar prop，main 后渲染）、`status-bar.tsx`（新建）、`icons/split.svg`+`icons/index.tsx`、i18n zh/en（scopeSegmentProject/All、statusBarAria、statusConnected/Connecting、statusInstancesRunning、statusPendingApprovals、splitPane 七 key）、`v2-primitives.css`（.sbar）。
+- **探针结构**：mock 双形状（*_OV/*_S）；Part1 桌面 1600（sbar 4 断言 → seg4 4 断言 → Inspector 2 → 分屏 5：先点 Probe Agent A 卡片开窗格再点分屏按钮）、Part2 820 无 sbar；terminal-sessions GET route **动态返回 createdTerminals 数组**（POST 后 GET 忠实含新终端——prune refs 依赖此追上）。
+- **调试手段沉淀**：源码临时 console.log（prune-diag/focus-diag）+ 诊断脚本挂 `m.text().includes("-diag")` 过滤器抓 log 级输出（page.on("console") 默认只看 error 会漏）；dist 含日志验证 `rg -l "prune-diag" web/dist/assets/`。
+- **dev 服务纪律**：改 web 后 touch main.tsx（新 utility 必须）+ `node scripts/ar-verify-css.mjs`；探针 bun 跑；e2e cgroup 2G。
 - 用户 Q17 约定：所有里程碑完成后跑新 e2e 才交用户验证；期间每里程碑 reviewer + 四门禁。
 
 ## 提醒
