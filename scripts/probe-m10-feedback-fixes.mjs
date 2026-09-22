@@ -683,26 +683,76 @@ async function run() {
     record((await moveItem.locator("svg").count()) > 0, "「移动到…」菜单项 svg 图标可见");
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
-    // H3：插件页长名 http server 卡 → r1 anywhere、doc 无溢出。
+    // H3：插件页可点卡（button.pcard）宽度语义——此前 w-full(100%) 叠 .pcard 横向 margin
+    // 右侧溢出 32px（用户 iPhone 真机「MCP 服务开始超出右边」），且溢出发生在内层滚动容器
+    //（overflow-y:auto 连带 overflow-x:auto）内部，doc 层测不到——断言必须量滚动容器层。
     await page.goto(`${WEB_ORIGIN}/plugins`);
     await page.waitForTimeout(900);
     const h3 = await page.evaluate(() => {
+      const vw = window.innerWidth;
       const r1 = [...document.querySelectorAll(".pcard .r1")].find((el) =>
         (el.textContent ?? "").includes("probe-very-long-server-name"),
       );
+      const btnCard = document.querySelector("button.pcard");
+      const card = [...document.querySelectorAll("button.pcard")].find((el) =>
+        (el.textContent ?? "").includes("probe-very-long-server-name"),
+      );
+      // 从卡向上找第一个 overflow 滚动容器，量其内部横向溢出（真溢出所在层）。
+      let scroller = card;
+      while (scroller && scroller !== document.body) {
+        const ov = getComputedStyle(scroller).overflowY;
+        if (ov === "auto" || ov === "scroll") break;
+        scroller = scroller.parentElement;
+      }
+      const mrow = document.querySelector("button.mrow");
       return {
         r1Wrap: r1 ? getComputedStyle(r1).overflowWrap : null,
-        docOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        cardRight: card ? Math.round(card.getBoundingClientRect().right) : null,
+        cardW: card ? Math.round(card.getBoundingClientRect().width) : null,
+        btnW: btnCard ? Math.round(btnCard.getBoundingClientRect().width) : null,
+        scOverflow: scroller ? scroller.scrollWidth - scroller.clientWidth : null,
+        mrowW: mrow ? Math.round(mrow.getBoundingClientRect().width) : null,
+        vw,
       };
     });
     record(h3.r1Wrap === "anywhere", `pcard r1 anywhere（got ${h3.r1Wrap}）`);
-    record(h3.docOverflow <= 1, `插件页无横向溢出（doc 溢出 ${h3.docOverflow}px）`);
+    if (record(h3.cardRight !== null, "button.pcard 渲染")) {
+      record(h3.cardRight <= h3.vw + 1, `卡右缘不出屏（got ${h3.cardRight} / vw ${h3.vw}）`);
+      record(h3.cardW <= h3.vw - 32 + 1, `卡宽被 margin 扣减（got ${h3.cardW}）`);
+      record(h3.scOverflow <= 1, `滚动容器无横向溢出（got ${h3.scOverflow}px）`);
+    }
+    if (record(h3.mrowW !== null, "button.mrow 渲染")) {
+      record(h3.mrowW <= h3.vw - 32 + 1, `mrow 撑满非 fit-content（got ${h3.mrowW}）`);
+    }
+    // H3b：/plugins/sources 的 button.addsrc 同族修正（fit-content → 撑满）。
+    await page.goto(`${WEB_ORIGIN}/plugins/sources`);
+    await page.waitForTimeout(700);
+    const h3b = await page.evaluate(() => {
+      const el = document.querySelector("button.addsrc");
+      return el ? Math.round(el.getBoundingClientRect().width) : null;
+    });
+    if (record(h3b !== null, "button.addsrc 渲染")) {
+      record(h3b <= h3.vw - 32 + 1, `addsrc 撑满非 fit-content（got ${h3b}）`);
+    }
     // H4：搜索框放大镜 svg 存在（name="search" 未注册渲染空白，×3 处）。
+    // H3b 停在 /plugins/sources（无搜索框），回 /plugins 再测。
+    await page.goto(`${WEB_ORIGIN}/plugins`);
+    await page.waitForTimeout(700);
     const h4 = await page.evaluate(() => {
       const box = document.querySelector("input[type=search]")?.parentElement;
       return box ? box.querySelector("svg") !== null : false;
     });
     record(h4, "搜索框放大镜 svg 可见");
+    // H5：MCP 组 ＋ = 20×20 图标（原型 .plus 形态），非 11px 文字「＋」。
+    const h5 = await page.evaluate(() => {
+      const btn = document.querySelector(".psect .r");
+      const svg = btn?.querySelector("svg");
+      const r = svg?.getBoundingClientRect();
+      return r ? Math.round(r.width) : null;
+    });
+    if (record(h5 !== null, "MCP 组 ＋ 图标渲染")) {
+      record(h5 >= 18 && h5 <= 22, `＋ 为 20px 图标（got ${h5}px）`);
+    }
   } finally {
     await browser.close();
   }

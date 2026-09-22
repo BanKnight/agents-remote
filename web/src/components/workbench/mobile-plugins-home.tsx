@@ -158,13 +158,14 @@ export function MobilePluginsOverview() {
             {/* MCP 服务器组（编号④；＋ = 14 添加 sheet，scope 随当前段） */}
             <div className="psect">
               <span>{t("plugins.mcpGroup", { n: mcpList.length })}</span>
+              {/* 原型 .plus = 20×20 裸＋字形（09 内联 style width/height 20），非 .r 的 11px 文字钮形态。 */}
               <button
                 aria-label={t("mcp.add")}
-                className="r cursor-pointer"
+                className="r flex cursor-pointer items-center"
                 onClick={() => setAddMcpOpen(true)}
                 type="button"
               >
-                ＋
+                <ShellIcon className="size-5" name="plus" />
               </button>
             </div>
             {mcpList.map((s) =>
@@ -175,8 +176,10 @@ export function MobilePluginsOverview() {
                   <div className="d2">{describeMcpTarget(s)}</div>
                 </div>
               ) : (
+                /* 可点卡 = button：宽度由 .pcard 内 width:stretch 填满（勿加 w-full——100% 不扣
+                   margin，叠 .pcard 横向 margin 即右侧溢出 32px，M10 第五轮用户真机复验）。 */
                 <button
-                  className="pcard block w-full cursor-pointer text-left"
+                  className="pcard block cursor-pointer text-left"
                   key={s.name}
                   onClick={() => {
                     void navigate({ to: "/plugins/mcp/$", params: { _splat: s.name } });
@@ -208,7 +211,7 @@ export function MobilePluginsOverview() {
             </div>
             {skillList.map((s) => (
               <button
-                className="pcard block w-full cursor-pointer text-left"
+                className="pcard block cursor-pointer text-left"
                 key={s.name}
                 onClick={() => {
                   // 技能卡点入详情（编号③）：global → /plugins/skill/$（12）；project → 项目

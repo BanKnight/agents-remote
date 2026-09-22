@@ -2042,6 +2042,14 @@
   /* 09 卡片（服务器/技能；r1 名称行 + upd 尾标 + d2 副行） */
   .pcard {
     margin: 0 16px 10px;
+    /* button 实例（可点卡）width:auto = fit-content（button 固有，同 .crow 家族）：
+       显式拉伸到「包含块减横向 margin」；div 实例 auto 本就是 fill，声明等价无害。
+       三连渐进：-moz-available（Firefox）/ -webkit-fill-available（Safari 17-）/ stretch
+      （Chrome 129+/Safari 18+）。勿用 w-full——width:100% 不扣 margin，叠 margin 即右侧
+       溢出 32px（M10 第五轮用户真机复验）。 */
+    width: -moz-available;
+    width: -webkit-fill-available;
+    width: stretch;
     background: var(--bg-elevated);
     border: 1px solid var(--sep);
     border-radius: 16px;
@@ -2077,6 +2085,10 @@
   /* 09 市场入口行 */
   .mrow {
     margin: 0 16px 10px;
+    /* button 实例 fit-content 修正：同 .pcard（width 三连注释）。 */
+    width: -moz-available;
+    width: -webkit-fill-available;
+    width: stretch;
     background: var(--bg-elevated);
     border: 1px solid var(--sep);
     border-radius: 16px;
@@ -2268,6 +2280,10 @@
   /* 15 添加源虚线钮 + 顶部说明 + 内网模式橙卡 */
   .addsrc {
     margin: 12px 16px 0;
+    /* button 实例 fit-content 修正：同 .pcard（width 三连注释）。 */
+    width: -moz-available;
+    width: -webkit-fill-available;
+    width: stretch;
     border: 1.5px dashed var(--sep-strong);
     border-radius: 14px;
     height: 46px;
