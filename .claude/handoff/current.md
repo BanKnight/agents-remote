@@ -1,49 +1,47 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-23（**第七轮反馈修复完成**：MCP 官方市场接入 + 技能详情去重，四 commit `a62bf2a`/`f6f8155`/`2e700e4`/`2b1f1c9`，新探针 53/53 + m6 66/66 + e2e 29/29 + 四门禁 + CSS 硬闸。触发：第七轮收口）。
+> 最后更新：2026-09-23（**第八轮反馈修复完成**：插件详情退出 tab 体系 + 会话浮层置顶与运行配置选择面，三 commit `762a9c5`/`bd14731`/`153407a`，m10 探针扩展全过 + m6 66/66 + m9-d 24/24 + e2e 29/29 + 四门禁 + CSS 硬闸。触发：第八轮收口）。
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-第七轮（市场缺 MCP + 技能详情重复）全部修复并 commit：批次 1 后端发现层（shared 类型 + 翻译函数 + registry 代理 + headers 链路）`a62bf2a`；批次 2 市场页双 tab（`.tabseg`「MCP 服务器｜技能」+ McpMarketTab + McpInstallAuditSheet + 09 双 mrow）`f6f8155`；批次 3 技能详情去重三对（FrontmatterCard excludeKeys / dtitle 条件化 / rmnote 换键）`2e700e4`；探针 + §6.12g 记档 `2b1f1c9`。**下一步：交用户复验。**
+第八轮（插件详情泄漏成工作台 tab + 浮层缺会话名/effort/chevron）三批次全部修复并 commit：批次 1 插件详情 pluginView 化（两条全局 URL 不再写 layout + 存量清洗 + m9-d 修正 + 两个旧探针废弃删除）`762a9c5`；批次 2a 浮层会话名置顶 + effort 行 `bd14731`；批次 2b 三设置行 chevron + RuntimeConfigDialog（bridge registry + 选项数据零复制）`153407a`。**下一步：交用户复验。**
 
 ## 本 session 焦点
 
-第七轮两个问题的三批次实施。核心裁定：用户推翻 §6.6 摊牌 17「MCP 市场不画」，指定官方 registry（registry.modelcontextprotocol.io）为数据源——原型 17 本就是 MCP 市场整页，属补齐漏移植非新功能。
+第八轮两个问题的三批次实施。核心裁定：①插件详情迁移对齐 market/sources pluginView 范式（focusId=undefined 不进保活 tab 体系），project scope skill tab 保留（既成语义与 file/git 同构）；②浮层三设置行可点 = bridge registry 架构（ℹ 不在 ClaudeBridgeContext Provider 内而切换协议只走 WS）。
 
 ## 关键决策（本阶段不可丢）
 
-- **翻译规则**（shared `mcpMarketEntryToInstallRequest` JSDoc）：name = reverse-domain 末段（非法名整条 skip）；remotes[0] 优先 → http/sse 直连；npm → `npx -y <identifier>`；pypi/oci/mcpb 不翻译（双无 → 禁装态）；多 package 取第一个；只并入实填键。
-- **`claude mcp add -H "K: V"`**：http/sse 用 `-H`（stdio 用 `-e`）；`-H` 是全局 flag 必须在位置参数 url **之前**（避 variadic 吞参）。`AddMcpServerRequest` += `headers?`，手工表单仍不设。
-- **marketTab 不用 `tab`**：撞 validateWorkbenchSearch 已有 `tab?: WorkbenchMiddleTab` union；`marketTab?: "mcp"|"skill"` 路由特定维度不进 stickyWorkbenchSearch（gitScope 同款）。
-- **诚实口径**：registry 无认证徽标/工具数/安装量/总量/百分比——一律不画；安装是同步 POST 无 task 流，卡内「添加中…」disabled。
-- **12 详情视觉变化**：name 只在 nav h1 单点显示（dtitle 仅 hasUpdate 时承载 chip）；FrontmatterCard 排除 name/description（`excludeKeys` prop，桌面 SkillTabPreview 同传）。
-- **FrontmatterCard 过滤口径**：通用组件 `excludeKeys` + MarkdownString `frontmatterExclude` 透传（JSDoc 注明唯一合法场景：页面已在别处单点展示对应字段）。
+- **pluginView 深度页范式**（§6.12h）：`/plugins/skill/$`、`/plugins/mcp/$` derive 改 `focusId=undefined + pluginView + pluginName + leftMode 强制 plugins`；URL 路径形态保留（deep link）；渲染层按 pluginView 分流（桌面 MainPageShell 包 SkillTabPreview/MobileMcpDetail，移动并入 pluginView 分流链）。
+- **存量清洗双机制**：skill tab 一次性剥离（标记 `workbenchLayoutV4PluginTabCleaned` 防重入）；pluginmcp 存量经 normalizeRef session 兜底分支**防御剔除残缺 ref**（缺 projectName/sessionId → null）——strip 跑在 normalize 之后滤不到，必须在 normalizeRef 拦。
+- **bridge registry**：claude-adapter module Map（`claudeBridgeKey/registerClaudeBridge/getClaudeBridge`），ClaudeChat 挂载注册/卸载注销；ℹ 浮层/项目 tab/桌面 TabChip 三入口共用 useInstanceInfoActions 装配，打开时同步取用（非响应式）。
+- **RuntimeConfigDialog 诚实取舍**：无会话页 selector 的 spinner/回滚状态机——点选即切换收起，值由 detail invalidate 回填；effort running 复用 `claude.effort.restart*` confirm；选项数据零复制（detail 查询同 queryKey 缓存 + modelDisplayLabel/PERMISSION_MODE_LABELS export + resolveCurrentModelAlias 提取）。
+- **effort 行口径**：label「推理 effort」（03k:67 原文），值原样不 i18n（CLI 标识符），缺省 high（对齐 EffortSelector）。
+- **旧探针处置先例**：探针断言的 UI 形态已不存在（旧 IA/v1 结构）→ git rm 记档废弃不修；仅 login 选择器过时而功能仍存在 → 修 login 复活（desktop-instance-info 先例）。
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ M0–M10 → 用户总验证 → 七轮反馈修复全闭环（1~6 轮见 snapshots；第七轮四 commit 如上）
-- ✅ 探针：新 `probe-v2-m6c-mcp-market.mjs` 53/53；`probe-v2-m6-plugins.mjs` 修正后 66/66；e2e 29/29
+- ✅ M0–M10 → 用户总验证 → 八轮反馈修复全闭环（1~7 轮见 snapshots；§6.12h 记档）
+- ✅ 探针：m10 全过（C 段 +7 断言：displayName/无名称行/effort 行/三行 chevron/双层 dialog/check 选中/收起）；m6 66/66；m9-d 24/24（B3 改恰 1）；e2e 29/29
 - ⬜ **交用户复验**，真机项清单：
-  - **MCP 市场**：09 插件页市场段两条入口（MCP 市场/技能市场）→ MCP 段搜索官方 registry（真数据源，需外网）→ 条目卡（名/来源章/描述·版本）→ 安装审计 sheet（必填 env/headers 输入，isSecret 密文）→ 提交后 ✓；pypi 等不可装条目 disabled + 说明行
-  - **技能详情**：name 不再三处重复（nav 单点）；SKILL.md 卡不再列 name/description；卸载说明 ≠ 确认弹窗文案（含「重载」）
-  - **12 详情 dtitle 视觉变化需向用户说明**：技能名只在顶部 nav 单点展示，「有更新」chip 单独一行（仅检测出更新时出现）
+  - **插件详情**：全局技能/MCP 详情打开后工作台 tab 不再累积（存量 tab 已自动清洗，老用户首刷剥离）；项目内技能 tab 机制不变（预期保留）
+  - **会话浮层**：顶部 = 会话名；模型/权限/推理 effort 三行带 › 可点，点开选择面即选即切（effort 切换 running 中会弹重启确认）；名称不再出现在行里
+  - **模型选择面**：选项 = settings 映射的 alias 集，选中行带 ✓；无 spinner（切完收起，值稍后回填）
   - 遗留（历史轮）：②时间刷新节奏、⑥gf 卡形态、⑫浮层穿透、⑬ticon 间距、iPad 触屏 hover 正交、W4 chip-Popover 形态
 
 ## 阻塞 / 风险
 
 - 无阻塞。dev 服务 tmux ar-dev 存活，43011/43012 均 200，dist 已 rebuild（CSS 硬闸 + content-type text/css 均过）。
-- 真机验证 MCP 市场需服务器可达 registry.modelcontextprotocol.io（公网出口）；registry 不可达时 UI 显示 502 错误行（不崩，属预期降级）。
 
 ## 易丢的关键上下文
 
-- **探针 mock 铁律**：Playwright route glob **不匹配带 query 的 URL**——`**/api/mcp/search` 命不中 `?q=`，必须尾带 `*`；mock「翻译后形态」按消费端契约构造（pypi 条目翻译层 package=null，mock 给 package 对象会测错层）。
-- **探针跑法**：`bun scripts/probe-*.mjs`（bun 不用 node）；密码自读不进 agent 上下文。
+- **探针跑法**：`bun scripts/probe-*.mjs`（bun 不用 node）+ systemd-run 2G；旧探针 login 选择器是「密码/解锁」，新 UI 是「访问密码/登录」——复活旧探针先修 login。
+- **探针 mock 铁律**：route glob 带查询尾 `*`；mock「翻译后形态」按消费端契约。
 - **e2e 纪律**：`systemd-run --scope --user -p MemoryMax=2G bun run e2e`。
-- **CSS 落盘流程**：改 web 后 touch main.tsx → sleep 12+ → ar-verify-css；交付前 curl content-type 必须 text/css。
-- **写入纪律**：大段生成（≥15 行）heredoc 写补丁脚本 + python 锚点整段替换 + rg 机检；format 写入只用 `bun run format`。
-- **行高纪律**（第六轮起）：v2-primitives 新增带 font-size 的块必须同步 `line-height: var(--line-height-ui)`。
-- **button width:auto = fit-content**（四/五轮）：行类 max-width:100% 护栏；卡片类 width 三连；勿用 w-full。
+- **CSS 落盘流程**：改 web 后 touch main.tsx → sleep 16 → ar-verify-css；交付前 curl content-type 必须 text/css。
+- **写入纪律**：大段生成 heredoc + python 锚点 + rg 机检；本 session python heredoc 的 new 字符串两次混入垃圾内容（`spread: 0`/`components: 1`）靠 assert/rg 拦截——**长 new 字符串写完必须 rg 机检异常标识符**；Edit 小步（≤5 行）在 Bash 分类器不可用时是可靠替代。
+- **行高纪律**：v2-primitives 新增带 font-size 的块必须同步 `line-height: var(--line-height-ui)`。
 - contains 防护 idiom：`if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node)) return;`
 
 ## 提醒
