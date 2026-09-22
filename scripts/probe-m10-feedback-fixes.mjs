@@ -753,6 +753,27 @@ async function run() {
     if (record(h5 !== null, "MCP 组 ＋ 图标渲染")) {
       record(h5 >= 18 && h5 <= 22, `＋ 为 20px 图标（got ${h5}px）`);
     }
+    // H6：行高基准 = tokens.json typography.line-height-ui 1.4（用户拍板方案 A）。
+    // v2-primitives 裸字号类统一 var(--line-height-ui)；终端/代码区固定行高（.tterm 22px
+    // 等 9 块）不参与，由 rg 机检保证未被覆盖。
+    const h6 = await page.evaluate(() => {
+      const cs = (sel, prop) => {
+        const el = document.querySelector(sel);
+        return el ? getComputedStyle(el)[prop] : null;
+      };
+      return {
+        r1Fs: cs(".pcard .r1", "fontSize"),
+        r1Lh: cs(".pcard .r1", "lineHeight"),
+        d2Lh: cs(".pcard .d2", "lineHeight"),
+        psectLh: cs(".psect", "lineHeight"),
+      };
+    });
+    if (record(h6.r1Lh !== null, "pcard r1 渲染")) {
+      record(h6.r1Fs === "14.5px", `r1 字号 14.5px（got ${h6.r1Fs}）`);
+      record(h6.r1Lh === "20.3px", `r1 行高 1.4→20.3px（got ${h6.r1Lh}）`);
+      record(h6.d2Lh === "16.1px", `d2 行高 1.4→16.1px（got ${h6.d2Lh}）`);
+      record(h6.psectLh === "18.2px", `psect 行高 1.4→18.2px（got ${h6.psectLh}）`);
+    }
   } finally {
     await browser.close();
   }

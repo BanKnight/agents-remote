@@ -19,11 +19,15 @@
   .nav h1,
   .nv-t {
     font-size: 17px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
   }
   .back {
     color: var(--c-primary);
     font-size: 15px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     display: flex;
     align-items: center;
     gap: 2px;
@@ -96,6 +100,8 @@
     background: var(--bg-elevated);
     border: 1px solid var(--sep);
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     white-space: nowrap;
   }
@@ -186,6 +192,8 @@
     background: var(--bg-elevated);
     border: 1px solid var(--sep);
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
   }
 
@@ -204,6 +212,8 @@
     border: 1px solid color-mix(in srgb, var(--c-primary) 30%, transparent);
     padding: 10px 12px;
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
   }
   .card {
@@ -215,6 +225,8 @@
     align-items: center;
     gap: 8px;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .card .t {
     flex: 1;
@@ -223,6 +235,8 @@
   }
   .card .m {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .ok {
@@ -231,12 +245,16 @@
   }
   .think {
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-style: italic;
     color: var(--ink-2);
     padding: 0 4px;
   }
   .stat {
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     padding: 0 4px;
   }
@@ -254,12 +272,16 @@
   }
   .tray .w {
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-warning-text);
   }
   .tray .c {
     flex: 1;
     font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-family: ui-monospace, Consolas, monospace;
     color: var(--ink-2);
   }
@@ -267,6 +289,8 @@
     border-radius: 13px;
     padding: 5px 12px;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     cursor: pointer;
     flex: none;
   }
@@ -297,6 +321,8 @@
     align-items: center;
     padding: 0 46px 0 14px;
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   } /* 右留 46px 给叠入的发送键 */
   .stop {
@@ -358,6 +384,8 @@
     align-items: center;
     gap: 3px;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     cursor: pointer;
   } /* 移动端 Tab Bar；桌面 .tabstrip .tb 覆写 flex-direction:row */
@@ -416,12 +444,16 @@
   }
   .shd h2 {
     font-size: 17px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
   .shd .aside {
     margin-left: auto;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
 
@@ -438,11 +470,15 @@
   }
   .glabel {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-2);
   }
   .microlabel {
     font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-3);
     letter-spacing: 0.3px;
   }
@@ -456,6 +492,8 @@
   }
   .ghead .tt {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-2);
   }
@@ -522,6 +560,8 @@
     align-items: center;
     justify-content: center;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     border-radius: 8px;
   }
@@ -534,9 +574,13 @@
     height: 26px;
     border: 0;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   } /* Sidebar 内轻量变体：视图切换用，无描边 */
   .seg4.mini span {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     border-radius: 6px;
   }
 
@@ -565,11 +609,15 @@
     height: 34px;
     padding: 0 8px;
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
   } /* 侧栏行用主文字色；term-ink 仅限终端正文 */
   .srow2 .live {
     margin-left: auto;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-success-text);
   }
@@ -580,6 +628,8 @@
   .srow2.inst {
     height: 34px;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .dot2 {
     width: 7px;
@@ -589,6 +639,8 @@
   }
   .otherlbl {
     font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-warning-text);
     margin: 10px 6px 2px;
@@ -600,11 +652,15 @@
     height: 30px;
     padding: 0 8px;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
   }
   .others .ar {
     margin-left: auto;
     font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-3);
   }
   .footnav {
@@ -612,6 +668,8 @@
     left: 10px;
     bottom: 12px;
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
     display: flex;
     flex-direction: column;
@@ -638,6 +696,8 @@
     flex: none;
     padding: 0 14px;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .tabstrip {
@@ -656,6 +716,8 @@
     align-items: center;
     gap: 6px;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     height: 100%;
     position: relative;
@@ -698,6 +760,8 @@
   .badge2 {
     margin-left: auto;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-warning-text);
     background: var(--tint-orange);
@@ -706,11 +770,15 @@
   }
   .plain {
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--term-ink);
     padding: 0 2px;
   }
   .stat2 {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     padding: 0 2px;
   }
@@ -728,6 +796,8 @@
     justify-content: center;
     color: var(--ink-2);
     font-size: 9px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     letter-spacing: -1.5px;
     z-index: 5;
   }
@@ -755,12 +825,16 @@
   }
   .tfoot {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-3);
     font-family: ui-monospace, Consolas, monospace;
     padding: 0 14px 8px;
   }
   .glabel2 {
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-2);
     padding: 10px 14px 2px;
@@ -772,6 +846,8 @@
     color: var(--c-primary);
     font-weight: 700;
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .badge {
     width: 18px;
@@ -781,6 +857,8 @@
     align-items: center;
     justify-content: center;
     font-size: 9.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     flex: none;
     font-family: ui-monospace, Consolas, monospace;
@@ -806,6 +884,8 @@
     gap: 8px;
     padding: 7px 14px;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .growrow .p {
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
@@ -818,6 +898,8 @@
     padding: 10px 14px 6px;
     font-family: ui-monospace, Consolas, monospace;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .diffhead .add {
@@ -879,12 +961,16 @@
     justify-content: center;
     gap: 6px;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-primary);
   }
   .tree {
     margin: 12px 14px 0;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
   } /* 作用域限定：移动端 .trow/.frow 是另一种列表行组件 */
   .tree .trow {
@@ -896,12 +982,16 @@
   .tree .tw {
     color: var(--ink-3);
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     width: 12px;
     flex: none;
   }
   .tree .frow {
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--term-ink);
     padding: 6px 8px 6px 30px;
     display: flex;
@@ -925,12 +1015,16 @@
     align-items: center;
     gap: 8px;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-success-text);
   }
   .done .tm {
     margin-left: auto;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 400;
     color: var(--ink-2);
   }
@@ -945,11 +1039,15 @@
     align-items: center;
     gap: 8px;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     color: var(--c-danger);
   }
   .errcard .e2 {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-top: 4px;
   }
@@ -964,6 +1062,8 @@
     align-items: center;
     gap: 8px;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-danger);
   }
@@ -973,6 +1073,8 @@
     gap: 8px;
     margin-top: 4px;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--c-warning-text);
   }
   .count .r2 .tm {
@@ -980,6 +1082,8 @@
   }
   .cap {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-3);
     text-align: center;
   }
@@ -1008,11 +1112,15 @@
   .gitchip b {
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 500;
     color: var(--ink-1);
   }
   .gitchip span {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .crumb {
@@ -1025,6 +1133,8 @@
     padding: 0 12px;
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     max-width: 100%;
     overflow: hidden;
@@ -1062,6 +1172,8 @@
     padding: 0 10px;
     gap: 6px;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .wsearch svg {
@@ -1076,6 +1188,8 @@
   }
   .sect {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-2);
     margin: 14px 16px 4px;
@@ -1085,6 +1199,8 @@
     gap: 24px;
     margin: 12px 16px 0;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
   }
   .links button {
@@ -1101,6 +1217,8 @@
     gap: 10px;
     padding: 9px 16px;
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     /* button width:auto = fit-content（非 block 的 fill）——不设上限时内容宽先撑开按钮，
        内部 min-width:0 的收缩/ellipsis 全部失效（M10 用户反馈：Git 面板 commit 行横向溢出）。
        .crow/.xrow/.hrow 同族 button 行同护栏。 */
@@ -1120,6 +1238,8 @@
   .frow .p {
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
     flex: 1;
     min-width: 0;
@@ -1130,9 +1250,13 @@
   .frow .p.dir {
     font-family: inherit;
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .frow .tm {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     flex: none;
   }
@@ -1194,6 +1318,8 @@
   .gfrow .n {
     display: block;
     font-size: 14.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
     overflow: hidden;
@@ -1203,6 +1329,8 @@
   .gfrow .d {
     display: block;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-top: 2px;
     overflow: hidden;
@@ -1212,6 +1340,8 @@
   .gfrow .live {
     flex: none;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-success-text);
   }
@@ -1234,6 +1364,8 @@
   .gfile .p {
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
     min-width: 0;
     overflow: hidden;
@@ -1242,6 +1374,8 @@
   }
   .gfile .tm {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     flex: none;
   }
@@ -1250,6 +1384,8 @@
     min-width: 22px;
     border-radius: 4px;
     font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .badge.D {
     background: var(--tint-red);
@@ -1265,6 +1401,8 @@
     gap: 8px;
     padding: 8px 16px 0;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     max-width: 100%; /* button fit-content 护栏（见 .frow 注释） */
   }
   .crow .h {
@@ -1281,6 +1419,8 @@
   }
   .crow .t {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     flex: none;
   }
@@ -1290,6 +1430,8 @@
     gap: 10px;
     padding: 10px 16px 4px;
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
@@ -1297,12 +1439,16 @@
     width: 12px;
     color: var(--ink-3);
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 400;
     flex: none;
   }
   .tgrp .c {
     margin-left: auto;
     font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 400;
     color: var(--ink-2);
   }
@@ -1312,12 +1458,16 @@
     gap: 10px;
     padding: 9px 16px 9px 38px;
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     border-top: 1px solid var(--sep-row);
     color: var(--ink-1);
   }
   .wpg .st {
     margin-left: auto;
     font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .wpg .ref {
@@ -1327,6 +1477,8 @@
     background: var(--tint-purple);
     color: var(--c-pin);
     font-size: 9px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -1338,6 +1490,8 @@
   .wpg .refnote {
     flex-basis: 100%;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-top: 2px;
   }
@@ -1347,12 +1501,16 @@
     gap: 8px;
     padding: 8px 16px;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     border-bottom: 1px solid var(--sep-row);
   }
   .meta .diff {
     margin-left: auto;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-primary);
   }
@@ -1362,11 +1520,15 @@
     gap: 8px;
     padding: 3px 16px 10px 40px;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     border-bottom: 1px solid var(--sep-row);
   }
   .dlg {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-2);
     margin: 14px 16px 2px;
@@ -1375,6 +1537,8 @@
     display: block;
     margin: 16px auto 0;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-3);
     background: none;
     border: none;
@@ -1384,12 +1548,16 @@
   .cmsg {
     padding: 10px 16px 0;
     font-size: 16px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 700;
     color: var(--ink-title);
   }
   .by {
     padding: 6px 16px 0;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .dstat {
@@ -1398,15 +1566,21 @@
     gap: 8px;
     padding: 8px 16px 10px;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .dstat .add {
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-success-text);
   }
   .dstat .del {
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-danger);
   }
@@ -1423,17 +1597,23 @@
     gap: 8px;
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     font-size: 15px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
   .bcur .r1 .st {
     margin-left: auto;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--c-success-text);
   }
   .bcur .d2 {
     margin-top: 3px;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .brow {
@@ -1441,22 +1621,30 @@
     align-items: center;
     padding: 9px 16px 0 38px;
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .brow .n {
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
   .brow .st {
     margin-left: auto;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     text-align: right;
     color: var(--ink-2);
   }
   .bsub {
     padding: 2px 16px 9px 38px;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     border-bottom: 1px solid var(--sep-row);
   }
@@ -1478,6 +1666,8 @@
   }
   .rocard .t {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-warning-text);
   }
@@ -1498,6 +1688,8 @@
     justify-content: center;
     gap: 8px;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-pin);
     cursor: pointer;
@@ -1536,6 +1728,8 @@
   .wmeta {
     padding: 6px 16px 0;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .wlink {
@@ -1543,6 +1737,8 @@
     margin-left: auto;
     padding: 8px 16px 0;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-primary);
     background: none;
@@ -1552,6 +1748,8 @@
   .rel {
     margin: 14px 16px 0;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-primary);
   }
@@ -1568,6 +1766,8 @@
   }
   .wikiref .wr-t {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-pin);
   }
@@ -1576,6 +1776,8 @@
     align-items: center;
     gap: 8px;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
   }
   .wikiref .wr-r .x {
@@ -1607,6 +1809,8 @@
   /* 03j 新建实例 */
   .slabel {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin: 14px 0 2px;
   }
@@ -1639,17 +1843,23 @@
   }
   .srow .n {
     font-size: 15px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
   .srow .d {
     display: block;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-top: 2px;
   }
   .srow .ar {
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-3);
   }
 
@@ -1659,6 +1869,8 @@
     align-items: center;
     padding: 11px 0;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .krow + .krow {
     border-top: 1px solid var(--sep-row);
@@ -1675,11 +1887,15 @@
   }
   .krow .v .ar {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-3);
   }
   .krow .v.mono {
     font-family: var(--font-mono, ui-monospace, "SF Mono", Consolas, monospace);
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .krow .v .ok {
     color: var(--c-success-text);
@@ -1693,11 +1909,15 @@
   }
   .acts span {
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     cursor: pointer;
   }
   .kfoot {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     padding-top: 6px;
   }
@@ -1708,6 +1928,8 @@
     align-items: center;
     margin-top: 12px;
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
     cursor: pointer;
@@ -1715,6 +1937,8 @@
   .grp .c {
     margin-left: auto;
     font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .sess {
     margin: 6px 0 0 0;
@@ -1724,6 +1948,8 @@
     align-items: center;
     gap: 9px;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     cursor: pointer;
   }
   .sess.on {
@@ -1751,6 +1977,8 @@
   }
   .gempty {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-3);
     margin: 6px 0 0 -16px;
     padding-left: 10px;
@@ -1763,6 +1991,8 @@
     padding-top: 12px;
     border-top: 1px solid var(--sep-row);
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-primary);
     cursor: pointer;
@@ -1786,6 +2016,8 @@
     padding: 5px 14px;
     border-radius: 15px;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     border: 1px solid transparent;
     cursor: pointer;
@@ -1813,6 +2045,8 @@
     align-items: center;
     gap: 9px;
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
@@ -1823,6 +2057,8 @@
   .hrow .st {
     margin-left: auto;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .hrow .st.run {
@@ -1830,6 +2066,8 @@
   }
   .hrow .d2 {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-top: 3px;
   }
@@ -1837,12 +2075,16 @@
     margin-top: 10px;
     text-align: center;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
 
   /* 11 审批中心（M5-b sheet） */
   .cnt {
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-warning-text);
     background: var(--tint-orange);
@@ -1852,6 +2094,8 @@
   .all {
     margin-left: auto;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-primary);
     cursor: pointer;
@@ -1867,12 +2111,16 @@
     align-items: center;
     gap: 8px;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
   .acard .pj {
     margin-left: auto;
     font-size: 9.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     background: var(--bg-elevated);
     border-radius: 8.5px;
@@ -1883,6 +2131,8 @@
     margin-top: 8px;
     font-family: var(--font-mono, ui-monospace, "SF Mono", Consolas, monospace);
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--term-ink);
     white-space: nowrap;
     overflow: hidden;
@@ -1901,6 +2151,8 @@
     margin-top: 12px;
     text-align: center;
     font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     padding-bottom: 4px;
   }
@@ -1916,6 +2168,8 @@
     align-items: center;
     gap: 8px;
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .apop .acard {
     background: var(--bg-elevated3);
@@ -1928,6 +2182,8 @@
     align-items: center;
     gap: 8px;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
@@ -1938,6 +2194,8 @@
   }
   .apop .acard .abtns .ghost {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     padding: 3px 12px;
     border-radius: 11px;
     border: 1px solid var(--ink-2);
@@ -1946,6 +2204,8 @@
   }
   .apop .acard .abtns .okb {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     padding: 3px 12px;
     border-radius: 11px;
     background: var(--c-success);
@@ -1967,6 +2227,8 @@
     flex: 1;
     text-align: left;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-warning-text);
   }
@@ -2002,6 +2264,8 @@
     justify-content: center;
     gap: 4px;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     cursor: pointer;
   }
@@ -2013,6 +2277,8 @@
   }
   .segc .caret {
     font-size: 9px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     /* 触区扩（role=button 可达性）：负 margin 抵消 padding，视觉零变化、命中区扩到 ~22px。 */
     padding: 8px 6px;
     margin: -8px -6px;
@@ -2021,6 +2287,8 @@
   /* 09 分组小标题（组名 · N + .r 右侧动作） */
   .psect {
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-2);
     margin: 16px 16px 6px;
@@ -2030,6 +2298,8 @@
   .psect .r {
     margin-left: auto;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--c-primary);
     font-weight: 600;
     /* 触区扩：负 margin 抵消 padding（margin-left:auto 保留，分写其余分量）。 */
@@ -2059,6 +2329,8 @@
     display: flex;
     align-items: center;
     font-size: 14.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
     /* 名称极长（无空格长串）防撑破：与 .d2 anywhere 同款（实现层防溢出非原型偏差）。 */
@@ -2067,6 +2339,8 @@
   .pcard .upd {
     margin-left: auto;
     font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-primary);
     background: var(--tint-blue);
@@ -2075,6 +2349,8 @@
   }
   .pcard .d2 {
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-top: 3px;
     /* 原型示意数据短；真实 stdio 命令/技能路径含无空格长串会横向撑破（M10 用户反馈⑦）——
@@ -2100,11 +2376,15 @@
   }
   .mrow .n {
     font-size: 14.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
   .mrow .ar {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-3);
     margin-left: 6px;
   }
@@ -2116,6 +2396,8 @@
     gap: 8px;
     padding: 6px 16px 0;
     font-size: 17px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 700;
     color: var(--ink-1);
   }
@@ -2126,6 +2408,8 @@
   }
   .dchip {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     border-radius: 10px;
     padding: 3px 10px;
@@ -2137,6 +2421,8 @@
   .dmeta {
     padding: 4px 16px 0;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .ddesc {
@@ -2149,6 +2435,8 @@
   /* 12/13 详情页组标题（12px；sheet 内组标题复用 M4 .sect） */
   .dsect {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-2);
     margin: 16px 16px 6px;
@@ -2167,6 +2455,8 @@
     align-items: center;
     padding: 10px 0;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .cfg .krow + .krow {
     border-top: 1px solid var(--sep-row);
@@ -2179,6 +2469,8 @@
     color: var(--ink-1);
     font-family: var(--font-mono);
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     overflow-wrap: anywhere;
     text-align: right;
   }
@@ -2191,6 +2483,8 @@
     border-radius: 12px;
     padding: 12px 14px;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
     display: flex;
     align-items: center;
@@ -2213,6 +2507,8 @@
     margin: 8px 16px 0;
     text-align: center;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .rm {
@@ -2232,6 +2528,8 @@
     margin: 8px 16px 0;
     text-align: center;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
 
@@ -2248,16 +2546,22 @@
     align-items: center;
     gap: 8px;
     font-size: 14.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
   .scard .d {
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-top: 4px;
   }
   .scard .tag {
     font-size: 10px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     border-radius: 9px;
     padding: 2px 9px;
@@ -2272,6 +2576,8 @@
   }
   .scard .url {
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     font-family: var(--font-mono);
     margin-top: 5px;
@@ -2292,12 +2598,16 @@
     justify-content: center;
     gap: 8px;
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--c-primary);
     cursor: pointer;
   }
   .hint {
     margin: 0 16px;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   /* 18 来源 chips（选中 = 主色实底；改名避开 M3 行3 运行摘要 .chips）+ 右侧管理源 */
@@ -2309,6 +2619,8 @@
   }
   .chip2 {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     padding: 5px 14px;
     border-radius: 15px;
@@ -2325,6 +2637,8 @@
   .mchips .mg {
     margin-left: auto;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--c-primary);
     /* 触区扩：负 margin 抵消 padding（margin-left:auto 保留，分写其余分量）。 */
     padding: 6px 8px;
@@ -2344,6 +2658,8 @@
     gap: 8px;
     padding: 0 12px;
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
 
@@ -2361,12 +2677,16 @@
     gap: 8px;
     font-family: var(--font-mono);
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
   .mcard .src {
     margin-left: auto;
     font-size: 10px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     background: var(--bg-elevated2);
     border-radius: 9px;
@@ -2375,11 +2695,15 @@
   .mcard .installed {
     margin-left: auto;
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--c-success-text);
     font-weight: 600;
   }
   .mcard .d2 {
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-top: 5px;
   }
@@ -2390,6 +2714,8 @@
   }
   .btn2 {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     padding: 5px 18px;
     border-radius: 13px;
@@ -2411,6 +2737,8 @@
   }
   .mcard .pct {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--c-primary);
     text-align: right;
     margin-top: 4px;
@@ -2419,6 +2747,8 @@
     margin: 14px 16px 0;
     text-align: center;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-3);
   }
 
@@ -2435,6 +2765,8 @@
     text-align: center;
     padding: 6px 0;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     border-radius: 8px;
     cursor: pointer;
@@ -2450,6 +2782,8 @@
      无横向 margin——sheet 容器自带 padding。 */
   .klabel {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin: 14px 0 6px;
   }
@@ -2462,6 +2796,8 @@
     align-items: center;
     padding: 0 14px;
     font-size: 14px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
   }
   .kfield input {
@@ -2476,6 +2812,8 @@
   .kfield.mono {
     font-family: var(--font-mono);
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .kfield.plain {
     border-color: var(--sep);
@@ -2485,12 +2823,16 @@
     display: flex;
     align-items: center;
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-top: 14px;
   }
   .skrow .v {
     margin-left: auto;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
   }
   .kbtns {
@@ -2508,11 +2850,15 @@
     align-items: center;
     justify-content: center;
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
     cursor: pointer;
   }
   .kbtns .p {
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-primary);
     display: flex;
@@ -2541,6 +2887,8 @@
     margin-top: 10px;
     text-align: center;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
 
@@ -2558,6 +2906,8 @@
     align-items: center;
     height: 44px;
     font-size: 14.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
     width: 100%;
     text-align: left;
@@ -2568,6 +2918,8 @@
   .setrow .v {
     margin-left: auto;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
   .setrow .v.ok {
@@ -2576,10 +2928,14 @@
   .setrow .v.mono {
     font-family: var(--font-mono);
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   /* 批次 e：ink-3 双主题 1.86/1.68 < WCAG 3:1 UI 下限，提 ink-2（5.94/3.26） */
   .setrow .ar {
     font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-left: 2px;
   }
@@ -2594,6 +2950,8 @@
     align-items: center;
     justify-content: center;
     font-size: 14.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--c-danger);
     cursor: pointer;
@@ -2628,6 +2986,8 @@
     border-radius: 7px;
     padding: 3px 10px;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     cursor: pointer;
     flex: none;
   }
@@ -2638,6 +2998,8 @@
   /* 03x 搜索结果行（03x 原型 .hrow；与 03n .hrow 历史行同名双义 → 落单源改名 .xrow）+ 计数行。 */
   .res {
     font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin: 10px 0 4px;
   }
@@ -2647,6 +3009,8 @@
     gap: 10px;
     padding: 9px 0;
     font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     border-top: 1px solid var(--sep-row);
     max-width: 100%; /* button fit-content 护栏（见 .frow 注释） */
   }
@@ -2683,6 +3047,8 @@
     align-items: center;
     gap: 6px;
     font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     font-weight: 600;
     color: var(--ink-1);
   }
@@ -2693,6 +3059,8 @@
     align-items: center;
     gap: 3px;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     cursor: pointer;
     flex: none;
@@ -2712,6 +3080,8 @@
   }
   .upcard .d {
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     margin-top: 6px;
   }
@@ -2724,6 +3094,8 @@
     gap: 8px;
     padding: 7px 0;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     border-top: 1px solid var(--sep-row);
   }
   .upcard .urow .p {
@@ -2741,6 +3113,8 @@
     gap: 6px;
     flex-wrap: wrap;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
   }
   .upcard .urow-actions .hint {
     color: var(--ink-2);
@@ -2757,6 +3131,8 @@
     border-radius: 7px;
     padding: 3px 8px;
     font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
     color: var(--ink-1);
     cursor: pointer;
     flex: none;

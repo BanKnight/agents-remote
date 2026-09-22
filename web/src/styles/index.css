@@ -299,6 +299,9 @@ body {
 
   /* v2 字号档（tokens.json typography）— 每档绑定 line-height 1.4（typography.line-height-ui，
      UI 文本默认）。正文编辑区 2.0（line-height-body，16px/32px）由具体组件显式设，不进全局档。*/
+  /* v2-primitives 裸字号原语类统一引用（M10 第五轮用户拍板方案 A：对齐 tokens 档，
+     纠正 Tailwind preflight 的 1.5 继承——原型无行高设定，tokens 1.4 是唯一数值源）。 */
+  --line-height-ui: 1.4;
   --text-large-title: 1.875rem; /* 30px/800 iOS Large Title */
   --text-large-title--line-height: 1.4;
   --text-title: 1.0625rem; /* 17px/600-700 Headline */
