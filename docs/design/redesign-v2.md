@@ -542,6 +542,17 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 用户 iPhone 真机复验推翻上轮「插件页溢出系 Git 面板连带」结论：「搜索之下 MCP 服务开始超出右边」+「整个页面排版和原设计不一致」。根因实锤：**可点卡 button.pcard 带 w-full（width:100% 不扣 margin）叠 `.pcard` 横向 margin 0 16px → 右侧溢出 32px**；且溢出在内层滚动容器（overflow-y:auto 连带 overflow-x:auto）内部，doc 层探针测不到——**探针教训：横向溢出必须量滚动容器层，不能只测 documentElement**（H3 断言层已修正：卡右缘 ≤vw、卡宽 = vw−32、滚动容器 scrollWidth）。修法 = `.pcard/.mrow/.addsrc` width 三连渐进（-moz-available / -webkit-fill-available / stretch）——button 的 width:auto=fit-content 固有语义（同 §6.12d .crow 家族）在**卡片类**上的延伸：mrow/addsrc 此前无 width 呈 fit-content 窄条、button.pcard 靠 w-full 撑但叠 margin 即溢出；div 实例声明等价 fill 无害。连带对齐 09 原型：MCP 组 ＋ = 20×20 ShellIcon plus（原型 `.plus` 裸＋字形，非 `.psect .r` 的 11px 文字钮形态）。**对照方法论记档**：并排渲染原型 HTML 与实现页、逐元素量几何 + 逐类比对 CSS 规则——几何/CSS 数值全对齐后，剩余差异分三类：①真实移植偏差（＋形态，已修）②系统性基准差异待用户拍板：**行高**——原型无行高设定（浏览器 normal），我们被 Tailwind preflight 强制 1.5，v2-primitives 裸字号类（.r1 14.5px/.d2 11.5px 等）绕过 tokens.json 字号档（1.4 档只绑在 text-* 上），实测卡高 64 vs 原型 57；修法选项 A=裸字号类补 1.4（对齐 tokens 档）/ B=对齐 normal（像素还原）③能力边界摊牌项（§6.6：● 已连接 / mrow 计数列 / MCP 市场行 / d2 描述形态——无数据源不画，维持）。探针 63/63；e2e 29/29。
 
+### §6.12f 第六轮：行高基准拍板落地（同日，commit `76ed3ab`）
+
+行高系统性基准差异（§6.12e 差异②）用户拍板 **A = 对齐 tokens.json typography.line-height-ui = 1.4 档**（原型 normal 无数值可维护，tokens 1.4 是设计包唯一行高数值源；且 index.css 的 text-* 字号档本就绑定 1.4，裸 px 字号类对齐同档即全站一致）。落地：
+
+- `index.css` @theme 物化 `--line-height-ui: 1.4`（token 变量，禁魔法数字）。
+- `v2-primitives.css` 全量扫描（197 个含 font-size 的块）：188 个无行高块补 `line-height: var(--line-height-ui)`；**9 个已有明确行高意图的块不动**——终端/代码区 `.tterm` 22px / `.dcode` 18px / `.code` 20px / `.rocard .d` / `.ddesc`（紧凑列表行距惯例），单字符伪元素 `.send::before` / `.rtry` =1 等。
+- 效果：`.r1` 行框 22→20.3px、`.d2` 17.25→16.1px，卡高 64→≈58（原型 57，差 1px 来自 padding 取整），整页垂直节奏收敛。
+- 探针 H6 组（+4 断言）：`.r1`/`.d2`/`.psect` computed lineHeight = 字号×1.4 硬数据；9 个跳过块由 rg 机检保证未被覆盖。67/67；e2e 29/29。
+
+**补丁脚本教训**：批量 CSS 补丁的「块内已有声明」判定必须以 `{` 到配对 `}` 的完整块文本为准——首版误用「上一个 `}` 到 `{` 之间的选择器段」判空，9 个已有行高块被双重插入（后声明覆盖原值）；git checkout 恢复重跑修正版，rg 总数复核（197 = 188+9）兜底。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
