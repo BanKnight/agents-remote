@@ -3,8 +3,11 @@
 // block code 的样式由 CodeBlock 自带（容器背景 / 语言标签 / 复制按钮 / Prism 渲染），
 // 故这里不再挂 [&_pre] 选择器；只保留 inline code（行内 `code`）的浅背景，并用
 // [&_pre_code] 把 CodeBlock 内的 code 重置为透明，避免行内样式污染 Prism 输出。
+// [overflow-wrap:anywhere]（第九轮）：容器级长词断行——无空格超长 URL 等串不撑破容器。
+// overflow-wrap 可继承，一处声明覆盖全部后代；anywhere 把断点计入 min-content（比 break-word
+// 在嵌套约束链下更稳）。仅词超容器宽时介入，正常文本零视觉变化。
 export const MARKDOWN_CLASS =
-  "text-sm leading-relaxed text-on-surface " +
+  "text-sm leading-relaxed text-on-surface [overflow-wrap:anywhere] " +
   "[&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-bold " +
   "[&_h2]:mt-3 [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-bold " +
   "[&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold " +

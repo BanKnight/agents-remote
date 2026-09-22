@@ -2424,12 +2424,14 @@
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
     color: var(--ink-2);
+    overflow-wrap: anywhere;
   }
   .ddesc {
     padding: 12px 16px 0;
     font-size: 13px;
     color: var(--term-ink);
     line-height: 1.7;
+    overflow-wrap: anywhere;
   }
 
   /* 12/13 详情页组标题（12px；sheet 内组标题复用 M4 .sect） */

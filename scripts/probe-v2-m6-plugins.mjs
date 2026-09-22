@@ -109,7 +109,7 @@ async function setupM6Mocks(page) {
         name: "code-review",
         description: "提交前自动审查代码变更：风格、潜在缺陷、测试覆盖建议。",
         content:
-          "---\nname: code-review\ndescription: 提交前自动审查代码变更\nlicense: MIT\n---\n\n# Code Review\n\n正文内容段落。",
+          "---\nname: code-review\ndescription: 提交前自动审查代码变更\nlicense: MIT\n---\n\n# Code Review\n\n正文内容段落。\n\n参考文档：https://example.com/docs/very-long-path/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/cccccccccccccccccccccccccccccccc/dddddddddddddddddddddddddddddddd/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee。",
         source: "anthropics/skills",
       }),
     ),
@@ -246,6 +246,22 @@ ok((await page.locator(".cta").count()) === 1, "更新 CTA（hasUpdate 驱动）
 ok(
   (await page.locator("body").textContent())?.includes("secret-value-123") === false,
   "技能详情页不泄露 env 真值（安全基线）",
+);
+// 第九轮：正文超长 URL 不撑破容器（MARKDOWN_CLASS overflow-wrap:anywhere 断词）。
+// 量滚动容器层不只 doc——§6.12e 教训（内层溢出 doc 层测不到）。
+const mdOverflow = await page.evaluate(() => {
+  const wide = [...document.querySelectorAll(".overflow-y-auto, .overflow-x-auto")].filter(
+    (el) => el.scrollWidth > el.clientWidth + 1,
+  );
+  return {
+    docSw: document.documentElement.scrollWidth,
+    vw: window.innerWidth,
+    wideCount: wide.length,
+  };
+});
+ok(
+  mdOverflow.docSw <= mdOverflow.vw && mdOverflow.wideCount === 0,
+  `正文超长 URL 无横向溢出（doc ${mdOverflow.docSw} ≤ vw ${mdOverflow.vw}，宽滚动容器 ${mdOverflow.wideCount}）`,
 );
 // 卸载确认 Alert（spec §5：删除类确认走 useConfirm 的 Dialog，非 sheet；移动形态 = iOS action sheet）。
 await page.locator(".rm").click();
