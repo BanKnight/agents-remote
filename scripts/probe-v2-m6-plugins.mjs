@@ -263,6 +263,19 @@ ok(
   mdOverflow.docSw <= mdOverflow.vw && mdOverflow.wideCount === 0,
   `正文超长 URL 无横向溢出（doc ${mdOverflow.docSw} ≤ vw ${mdOverflow.vw}，宽滚动容器 ${mdOverflow.wideCount}）`,
 );
+// 第九轮：行动钮整宽（button 实例 width:auto = fit-content 塌宽——.cta/.rm width 三连修正，
+// 同 .pcard/.addsrc 先例；左右 margin 16×2，整宽 = vw-32）。
+const btnGeo = await page.evaluate(() => {
+  const w = (sel) => {
+    const el = document.querySelector(sel);
+    return el ? Math.round(el.getBoundingClientRect().width) : null;
+  };
+  return { vw: window.innerWidth, cta: w(".cta"), rm: w(".rm") };
+});
+ok(
+  btnGeo.cta === btnGeo.vw - 32 && btnGeo.rm === btnGeo.vw - 32,
+  `.cta/.rm 整宽 = vw-32（cta ${btnGeo.cta} / rm ${btnGeo.rm} / vw ${btnGeo.vw}）`,
+);
 // 卸载确认 Alert（spec §5：删除类确认走 useConfirm 的 Dialog，非 sheet；移动形态 = iOS action sheet）。
 await page.locator(".rm").click();
 await page.waitForSelector('[data-slot="dialog-content"]', { timeout: 5000 });

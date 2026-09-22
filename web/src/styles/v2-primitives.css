@@ -1679,6 +1679,10 @@
   }
   .readbtn {
     margin: 10px 16px 0;
+    /* button 实例 fit-content 修正：同 .pcard（width 三连注释）。 */
+    width: -moz-available;
+    width: -webkit-fill-available;
+    width: stretch;
     height: 32px;
     border-radius: 16px;
     background: var(--tint-purple);
@@ -2495,6 +2499,10 @@
   .cta {
     display: block;
     margin: 16px 16px 0;
+    /* button 实例 fit-content 修正：同 .pcard（width 三连注释）。 */
+    width: -moz-available;
+    width: -webkit-fill-available;
+    width: stretch;
     height: 44px;
     border-radius: 22px;
     background: var(--c-primary);
@@ -2516,6 +2524,10 @@
   .rm {
     display: block;
     margin: 16px 16px 0;
+    /* button 实例 fit-content 修正：同 .pcard（width 三连注释）。 */
+    width: -moz-available;
+    width: -webkit-fill-available;
+    width: stretch;
     height: 42px;
     border-radius: 14px;
     border: 1px solid color-mix(in srgb, var(--c-danger) 60%, transparent);
@@ -2974,6 +2986,10 @@
   /* 退出登录（原型 .logout：elevated 底 + 描边 + 居中红字） */
   .logout {
     margin: 14px 16px 0;
+    /* button 实例 fit-content 修正：同 .pcard（width 三连注释）。 */
+    width: -moz-available;
+    width: -webkit-fill-available;
+    width: stretch;
     height: 44px;
     border-radius: 16px;
     background: var(--bg-elevated);
