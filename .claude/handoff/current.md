@@ -1,11 +1,11 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-23（**第八轮反馈修复完成**：插件详情退出 tab 体系 + 会话浮层置顶与运行配置选择面，三 commit `762a9c5`/`bd14731`/`153407a`，m10 探针扩展全过 + m6 66/66 + m9-d 24/24 + e2e 29/29 + 四门禁 + CSS 硬闸。触发：第八轮收口）。
+> 最后更新：2026-09-23（**第八轮收口 + 第九轮进行中**。第八轮三 commit `762a9c5`/`bd14731`/`153407a`；第九轮第 1 条「技能详情超长 URL 横向溢出」已修 `052832a`——MARKDOWN_CLASS 容器级 overflow-wrap:anywhere + .dmeta/.ddesc 断词，m6 67/67。继续等用户复验报数）。
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-第八轮（插件详情泄漏成工作台 tab + 浮层缺会话名/effort/chevron）三批次全部修复并 commit：批次 1 插件详情 pluginView 化（两条全局 URL 不再写 layout + 存量清洗 + m9-d 修正 + 两个旧探针废弃删除）`762a9c5`；批次 2a 浮层会话名置顶 + effort 行 `bd14731`；批次 2b 三设置行 chevron + RuntimeConfigDialog（bridge registry + 选项数据零复制）`153407a`。**下一步：交用户复验。**
+第八轮三批次 `762a9c5`/`bd14731`/`153407a` 全部落地；第九轮第 1 条（技能详情超长 URL 横向溢出）已修 `052832a`：MARKDOWN_CLASS 容器级 `[overflow-wrap:anywhere]`（可继承，10 消费方全站 markdown 受益）+ `.dmeta/.ddesc` 断词，m6 探针 +1 断言 67/67。**下一步：等用户继续报第九轮问题/复验。**
 
 ## 本 session 焦点
 
@@ -19,6 +19,7 @@
 - **RuntimeConfigDialog 诚实取舍**：无会话页 selector 的 spinner/回滚状态机——点选即切换收起，值由 detail invalidate 回填；effort running 复用 `claude.effort.restart*` confirm；选项数据零复制（detail 查询同 queryKey 缓存 + modelDisplayLabel/PERMISSION_MODE_LABELS export + resolveCurrentModelAlias 提取）。
 - **effort 行口径**：label「推理 effort」（03k:67 原文），值原样不 i18n（CLI 标识符），缺省 high（对齐 EffortSelector）。
 - **旧探针处置先例**：探针断言的 UI 形态已不存在（旧 IA/v1 结构）→ git rm 记档废弃不修；仅 login 选择器过时而功能仍存在 → 修 login 复活（desktop-instance-info 先例）。
+- **heredoc 转义链（第九轮教训）**：JSON→bash→python 三层转义——command 里写 `\\n` 到 python 源码才剩 `\n`（曾写 `\\n` 实际到 python 是换行符导致锚点不中）；js 文件里的字面 `\n` 锚点用 `chr(92)+"n"` 构造最稳；python 括号包裹表达式的**尾随逗号会变单元素 tuple**（count() TypeError 的真因）。长 new 字符串写完必须 rg 机检。
 
 ## 进度（已完成 / 进行中 / 待办）
 
