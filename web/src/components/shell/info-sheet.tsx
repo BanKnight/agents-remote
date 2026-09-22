@@ -10,6 +10,9 @@ import { shellSurfaceClasses } from "./shell-primitives";
  * mono=true → .v.mono（monospace 小号，ID/路径类值，如 resume id）；wrap=true 时 value 不
  * truncate、break-all 完整换行（与 mono 常配合）。value 与 action 互斥；action 行（如自动重试
  * 的开关+编辑按钮）value 为空时渲染。
+ * onSelect（第八轮批次 2b）：行可点下钻（03k:65-67 模型/权限/推理 effort 三设置行带 › chevron，
+ * 点开运行配置选择面）——有则整行可点（cursor + active 态）+ value 侧渲染 › 右 chevron
+ *（对齐会话页 selector trigger 的内联 chevron 风格）；无则纯展示行。
  */
 export type InfoField = {
   label: string;
@@ -18,6 +21,8 @@ export type InfoField = {
   mono?: boolean;
   /** action 行内容（开关/按钮等交互元素）；渲染在 dd 位置，value 被忽略。 */
   action?: ReactNode;
+  /** 行可点下钻（渲染 › chevron affordance）；缺省纯展示。 */
+  onSelect?: () => void;
 };
 
 /** 信息弹窗形态：sheet = 移动端底部滑出；modal = 桌面端居中卡片。 */
@@ -104,16 +109,41 @@ function InfoSheetDialog({
       <div className="mt-2.5 border-t border-sep-row" />
       <dl className="divide-y divide-sep-row">
         {fields.map((field) => (
-          <div className="flex items-center py-[11px] text-footnote" key={field.label}>
+          <div
+            className={
+              field.onSelect
+                ? "flex cursor-pointer items-center py-[11px] text-footnote transition active:opacity-60"
+                : "flex items-center py-[11px] text-footnote"
+            }
+            key={field.label}
+            onClick={field.onSelect}
+            role={field.onSelect ? "button" : undefined}
+          >
             <dt className="text-ink-2">{field.label}</dt>
             <dd
               className={cn(
                 "ml-auto flex min-w-0 items-center gap-[2px] text-ink-1",
                 field.mono ? "font-mono text-caption" : "",
-                field.wrap ? "break-all" : "truncate",
+                field.wrap ? "break-all" : field.onSelect ? "max-w-[60%] truncate" : "truncate",
               )}
             >
               {field.action ?? field.value}
+              {field.onSelect ? (
+                <svg
+                  aria-hidden="true"
+                  className="h-3 w-3 shrink-0 text-ink-3"
+                  fill="none"
+                  viewBox="0 0 16 16"
+                >
+                  <path
+                    d="M6 4l4 4-4 4"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="1.5"
+                  />
+                </svg>
+              ) : null}
             </dd>
           </div>
         ))}

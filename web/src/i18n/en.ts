@@ -137,6 +137,7 @@ export const en = {
   "session.instanceInfo.model": "Model",
   "session.instanceInfo.permission": "Permission",
   "session.instanceInfo.effort": "Effort",
+  "session.runtimeConfig.unavailable": "Session not connected",
   "session.instanceInfo.createdAt": "Created",
   "session.instanceInfo.resumeId": "Resume ID",
   "session.autoRetry.label": "Auto-retry",

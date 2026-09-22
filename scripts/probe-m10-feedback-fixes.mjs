@@ -436,6 +436,54 @@ async function run() {
         geo.rowsText.includes("推理 effort") && geo.rowsText.includes("high"),
         "effort 行存在（label 推理 effort，值兜底 high）",
       );
+      // 第八轮批次 2b：三设置行可点下钻（role=button + › chevron affordance，03k:65-67）。
+      const chev = await page.evaluate(() => {
+        const dialog = [...document.querySelectorAll("[role=dialog]")].pop();
+        const rows = [...(dialog?.querySelectorAll("dl > div[role=button]") ?? [])];
+        return rows.map((r) => ({
+          label: r.querySelector("dt")?.textContent ?? "",
+          chevron: r.querySelector("dd svg") !== null,
+        }));
+      });
+      record(
+        chev.length === 3 &&
+          chev[0]?.label === "模型" &&
+          chev[1]?.label === "权限" &&
+          chev[2]?.label === "推理 effort" &&
+          chev.every((r) => r.chevron),
+        `模型/权限/effort 三行 role=button + chevron（got ${JSON.stringify(chev)}）`,
+      );
+      // 点模型行 → RuntimeConfigDialog 叠出（Radix 嵌套第二层 dialog，h2=字段名 + 选项行）。
+      await page.locator("[role=dialog] dl > div[role=button]").first().click();
+      await page.waitForTimeout(400);
+      const cfg = await page.evaluate(() => {
+        const dialogs = [...document.querySelectorAll("[role=dialog]")];
+        const top = dialogs[dialogs.length - 1];
+        if (!top) return null;
+        return {
+          layers: dialogs.length,
+          h2: top.querySelector("h2")?.textContent ?? "",
+          opts: [...top.querySelectorAll("button")].map((b) => ({
+            text: b.textContent?.trim(),
+            check: b.querySelector("svg") !== null,
+          })),
+        };
+      });
+      record(
+        cfg !== null && cfg.layers === 2 && cfg.h2 === "模型",
+        `点模型行 → 选择面叠出（dialog 层数 ${cfg?.layers}，h2="${cfg?.h2}"）`,
+      );
+      record(
+        (cfg?.opts ?? []).some((o) => o.text === "Opus" && o.check),
+        `选项行 Opus 带 check 选中态（got ${JSON.stringify(cfg?.opts)}）`,
+      );
+      // 点选即收起（切换无 spinner 状态机，值由 detail 刷新回填）→ 回到 info sheet 层。
+      await page.locator("[role=dialog]").last().getByRole("button", { name: "Opus" }).click();
+      await page.waitForTimeout(400);
+      const after = await page.evaluate(
+        () => [...document.querySelectorAll("[role=dialog]")].length,
+      );
+      record(after === 1, `点选后选择面收起（dialog 层数 ${after}）`);
     }
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);

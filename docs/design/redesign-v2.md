@@ -516,7 +516,7 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 - **gf 前缀消歧**：10-tab 原型 `.frow`/`.fcard` 与既有 03o files 工具 `.frow`（17px 图标 + mono 路径行）同名不同物——新类 `.gfcard`/`.gfrow`/`.gfile`（`.psect`/`.dsect` 按页拆类先例）。`.gfrow`/`.gfile` 容器带 `group` 类（design review 2026-09-22）：为行内 ⋯（hover-capable 显隐，frontend-notes §7）预留 hover 载体——当前根层 readOnly 恒 true 时 actions 不渲染，属 M8 写边界演进时的预留。
 - **10-tab 卡形态仅移动分化 + 仅根层**：globalCard 仅 useIsMobile 分支装配（移动 /files mainPage）且仅根层（`(currentPath ?? "") === ""`）——10-tab 卡形态只描述根层总览；子目录层与桌面保持 ListRow 通用行（行内 rename input 所在路径；首版 rootLevel=false「简形态」是原型不存在的自创形态且卡分支无编辑 UI，code review 2026-09-22 修 rename 回归）。
 - **用户否决原型文案**：git.capToolReplace（「工具为内容去替换」）为原型内开发注释性质文案，用户裁定不入产品 UI——同类文案甄别标准：操作提示（capBreadcrumb）/ 边界提示（wiki.readOnlyCap）保留，开发说明删除。
-- **03k 细节取舍**：krow chevron ›（行内编辑 affordance）未加——当前行不可点，加了即伪造 affordance；kfoot「关闭需二次确认」未加——closeInstance 无确认流程，补确认流属独立功能项。
+- **03k 细节取舍**：~~krow chevron ›（行内编辑 affordance）未加~~——**第八轮批次 2b 已回退**：model/permission/effort 三设置行带 onSelect + › chevron（真实可点，见 §6.12h），其余纯展示行仍不加（语义同前）；kfoot「关闭需二次确认」未加——closeInstance 无确认流程，补确认流属独立功能项。
 - **info-sheet footer 委托关闭**：03k `.acts` 操作行「动作即收起」语义下沉到 sheet 自身（footer 容器 onClick 判 `closest("button")` → onClose），调用方装配 footer 无需感知 close。
 - **状态行时间后缀语义分叉**（design review 2026-09-22）：running = 「已 X」存续时长（time.ranMinutes/Hours/Days）；其余状态 = 「X 前」（relativeTime）。03k 原型「已 12 分钟」语义是运行时长，但 AgentSession 无 run-start 时间戳——running 用 createdAt 近似（中断恢复后读作自创建总时长），取舍记档。
 - **gfile 数值微差**（design review 记档）：10-tab 原型 `.file` padding 10px 16px / 字号 13.5px / gap 12px，实现 `.gfile` padding 9px 0 / `.p` 12.5px / gap 10px——沿 03o `.frow .p` 12.5px 单源收敛取舍；原型 `.file` 左右 16px 叠加 fcard 16px 疑似原型自身冗余。视觉 ~1px 级。
@@ -567,6 +567,18 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 - 验证：新探针 `probe-v2-m6c-mcp-market.mjs` 53/53（含外域 mock 形态——UI 只见自家 `/api/mcp/search` 翻译后形态，翻译逻辑由 api 层 17 单测覆盖）；`probe-v2-m6-plugins.mjs` 修正后 66/66；e2e 29/29；四门禁 + CSS 硬闸。
 
 **探针教训**：① Playwright route glob 不匹配带 query 的 URL——`**/api/mcp/search` 命不中 `/api/mcp/search?q=x`，须尾带 `*`（同 `**/api/skills/search*` 惯例）。② mock「翻译后形态」的数据必须按消费端契约构造——pypi 条目在翻译层 package=null，mock 里给它 package 对象会让 UI 显示可安装，测的不是真实链路。
+
+### §6.12h 第八轮：插件详情退出 tab 体系 + 会话浮层置顶与运行配置选择面（2026-09-23，commit `762a9c5`/`bd14731`/批次 2b）
+
+用户 iPhone 复验两问题：①「在插件中打开技能详情，工作台却多了几个 tab——在多个端都不成立，这是旧设计了」；②「会话详情浮层顶部应显示会话名称，还缺乏 effort，模型+权限+effort 理应带箭头可点设置」。
+
+**批次 1 — 插件详情 pluginView 化**：根因 = `/plugins/skill/$`、`/plugins/mcp/$` 解析 focusId 写 layout **无 isDesktop gate**（移动端也写 localStorage），且 skill/pluginmcp tab 不参与 stale prune，多端累积只能手动 ✕。迁移对齐 market/sources 的 pluginView 范式：两条全局 URL 改 `focusId=undefined + pluginView "skill"/"mcp" + pluginName`（splat 名）+ leftMode 强制 plugins，URL 路径形态保留（deep link 兼容）；pluginmcp tab kind 全链退役（唯一来源即 /plugins/mcp/$）；**project scope `/projects/$key/skill/$` 保留 tab 机制**（移动项目 tab 带 pills 与桌面中栏 tab 是 2026-08-16 既成语义，与 file/git 同构，用户抱怨的是全局入口泄漏）；skill tab kind 保留。存量清洗双机制：skill tab 一次性剥离（迁移标记 `workbenchLayoutV4PluginTabCleaned` 防重入）；pluginmcp 存量由 `normalizeRef` session 兜底分支**防御剔除残缺 ref**（缺 projectName/sessionId → null——union 已删但运行时 JSON 仍含该 kind，不防御会产出无效 session tab）。探针 m9-d B3 改「恰 1 + .cfg 详情容器」（tab chip 消失）；probe-plugins-page.mjs（旧 IA）与 probe-mobile-focus-actions.mjs（v1 聚焦态结构）记档废弃删除——后者已被 m10 接棒。
+
+**批次 2a — 浮层会话名置顶 + effort 行**：`useInstanceInfoActions` 标题改 displayName（terminal 无名回退 i18n title），name krow 删除（三入口一处改全生效）；effort 行进 krow（label「推理 effort」对齐 03k:67 原文，值原样不 i18n 与 EffortSelector 同口径，缺省 high）。死键 instanceInfo.name/.status 删除。
+
+**批次 2b — 三设置行 chevron + 运行配置选择面**：`InfoField` += `onSelect`（行可点 + › 右 chevron affordance，对齐 03k:65-67——§6.12:519「chevron 未加」记档随之回退）；点开 `RuntimeConfigDialog`（单字段下钻面，双形态 sheet|modal 跟随 info sheet，Radix 嵌套 dialog 官方支持）。**架构点：per-session bridge registry**——ℹ 浮层由 tab 带/移动 header 装配，不在 ClaudeBridgeContext Provider 内，而切换协议只走 WS bridge（control_request / set_runtime_effort 无 REST 路由）：claude-adapter 加 module Map（`claudeBridgeKey/registerClaudeBridge/getClaudeBridge`），ClaudeChat 挂载注册/卸载注销（bridge 引用 useMemo 稳定），选择面打开时同步取用（非响应式，无需订阅）。选项数据零复制：detail 查询同 queryKey 缓存 + 共用映射函数（`modelDisplayLabel`/`PERMISSION_MODE_LABELS` 改 export，currentAlias 反查提取为 `resolveCurrentModelAlias`——ModelSelector 同步改用防双实现漂移；effort 用 shared EFFORT_LEVELS）。**诚实取舍记档**：选择面无会话页 selector 的 spinner/回滚状态机（modelSwitchVersion/currentResolved 联动）——切换即收起，值由 detail invalidate 重取回填（effort 同款语义）；effort running 切换复用 `claude.effort.restart*` danger confirm；bridge 未挂载显示不可用空态不伪装可点。i18n 仅新增 `session.runtimeConfig.unavailable`，行/标题复用 instanceInfo.* 键。
+
+- 验证：workbench-model 单测 97（深度页派生断言重写+新增+残缺 ref 清洗）；m10 探针 C 段 +6 断言（h2=displayName / 无名称行 / effort 行 / 三行 role=button+chevron / 点模型行双层 dialog / Opus check 选中态 / 点选收起）全过；desktop-instance-info 复活（旧 login 选择器修新）ALL PASS；m6 66/66；e2e 29/29；四门禁 + CSS 硬闸。
 
 ## §7 待定项跟踪
 

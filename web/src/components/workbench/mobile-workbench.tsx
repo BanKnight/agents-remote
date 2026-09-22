@@ -346,6 +346,7 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
     openInfo,
     holder: infoHolder,
     autoRetryEditorHolder,
+    runtimeDialogHolder,
   } = useInstanceInfoActions(panelRef, sessionType, projectName);
   const { close, holder: closeHolder } = useCloseSession();
   // files tab 当前目录（localStorage 记忆，按项目 key 分组）：后台被杀/重开停留在上次目录。
@@ -416,6 +417,7 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
       </div>
       {infoHolder}
       {autoRetryEditorHolder}
+      {runtimeDialogHolder}
       {closeHolder}
     </div>
   );
@@ -1478,6 +1480,7 @@ function MobileFocusActions({
     openInfo,
     holder: infoHolder,
     autoRetryEditorHolder,
+    runtimeDialogHolder,
   } = useInstanceInfoActions(panelRef, sessionType, projectName, "sheet", acts);
   return (
     <>
@@ -1493,6 +1496,7 @@ function MobileFocusActions({
       {infoHolder}
       {renameSession.holder}
       {autoRetryEditorHolder}
+      {runtimeDialogHolder}
     </>
   );
 }

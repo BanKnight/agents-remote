@@ -327,6 +327,27 @@ export type ClaudeBridge = {
 
 export const ClaudeBridgeContext = createContext<ClaudeBridge | null>(null);
 
+// Per-session bridge registry（第八轮批次 2b）：ℹ 实例信息浮层的运行配置选择面不在
+// ClaudeBridgeContext Provider 内——浮层由 tab 带 / 移动 header 装配（instance-area），与
+// chat 主体平行，拿不到 context。切换协议只走 WS bridge（control_request / set_runtime_effort，
+// 无 REST 路由），故 ClaudeChat 创建 bridge 后按 `${projectName}/${sessionId}` 注册、卸载时
+// 注销；选择面打开时同步取用（ℹ sheet 必然晚于 chat 主体挂载，bridge 必已注册）。非响应式：
+// 取用方是打开瞬间的闭包，不需要订阅注册变化。
+const claudeBridgeRegistry = new Map<string, ClaudeBridge>();
+
+export function claudeBridgeKey(projectName: string, sessionId: string): string {
+  return `${projectName}/${sessionId}`;
+}
+
+export function registerClaudeBridge(key: string, bridge: ClaudeBridge | null): void {
+  if (bridge) claudeBridgeRegistry.set(key, bridge);
+  else claudeBridgeRegistry.delete(key);
+}
+
+export function getClaudeBridge(key: string): ClaudeBridge | null {
+  return claudeBridgeRegistry.get(key) ?? null;
+}
+
 const _SKILL_CONTENT_PREFIX = "Base directory for this skill:";
 
 const _extractUserTextBlocks = (content: unknown): string[] => {

@@ -137,6 +137,7 @@ export const zh: Record<TranslationKey, string> = {
   "session.instanceInfo.model": "模型",
   "session.instanceInfo.permission": "权限",
   "session.instanceInfo.effort": "推理 effort",
+  "session.runtimeConfig.unavailable": "会话未连接，暂不可配置",
   "session.instanceInfo.createdAt": "创建时间",
   "session.instanceInfo.resumeId": "恢复 ID",
   "session.autoRetry.label": "自动重试",

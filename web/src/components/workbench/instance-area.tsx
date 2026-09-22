@@ -63,6 +63,8 @@ import {
 import { useConfirm } from "../shell/confirm-dialog";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { useT } from "../../i18n";
+import { claudeBridgeKey, getClaudeBridge } from "../../routes/claude-adapter";
+import { RuntimeConfigDialog, type RuntimeConfigField } from "./runtime-config-dialog";
 import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
@@ -999,6 +1001,8 @@ export function useInstanceInfoActions(
 ) {
   const { t } = useT();
   const infoSheet = useInstanceInfoSheet();
+  // 运行配置选择面（第八轮批次 2b）：model/permission/effort 行 onSelect 打开的下钻字段。
+  const [runtimeField, setRuntimeField] = useState<RuntimeConfigField | null>(null);
   const autoRetryEditor = useAutoRetryEditor(panelRef);
   const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
   const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
@@ -1018,6 +1022,14 @@ export function useInstanceInfoActions(
         ? formatRanSuffix(createdAt, t)
         : ` · ${relativeTime(createdAt, t)}`;
     const statusLine = statusNow ? `● ${t(sessionStatusLabel(statusNow))}${ageSuffix}` : undefined;
+    // 运行配置三设置行（仅 claude；bridge 未挂载不伪装可点——选面打开时 registry 必有 bridge，
+    // 但防御性取用）。onSelect 打开 RuntimeConfigDialog（03k 三行 › chevron 的第二层）。
+    const runtimeBridge = getClaudeBridge(
+      claudeBridgeKey(panelRef.projectName, panelRef.sessionId),
+    );
+    const isClaude = sessionType === "agent" && agentSession?.provider === "claude";
+    const configOnSelect = (field: RuntimeConfigField): { onSelect: () => void } | undefined =>
+      isClaude && runtimeBridge ? { onSelect: () => setRuntimeField(field) } : undefined;
     // 会话名在浮层标题位单点展示（第八轮批次 2a，对齐 03k:61 h2=会话名），不再进 fields。
     const displayName = agentSession?.displayName ?? terminalSession?.displayName;
     if (projectName) {
@@ -1029,18 +1041,24 @@ export function useInstanceInfoActions(
         value: providerDisplayName(agentSession.provider),
       });
       if (agentSession.model) {
-        fields.push({ label: t("session.instanceInfo.model"), value: agentSession.model });
+        fields.push({
+          label: t("session.instanceInfo.model"),
+          value: agentSession.model,
+          ...configOnSelect("model"),
+        });
       }
       if (agentSession.permissionMode) {
         fields.push({
           label: t("session.instanceInfo.permission"),
           value: agentSession.permissionMode,
+          ...configOnSelect("permission"),
         });
       }
       if (agentSession.provider === "claude") {
         fields.push({
           label: t("session.instanceInfo.effort"),
           value: agentSession.effort ?? "high",
+          ...configOnSelect("effort"),
         });
       }
       if (agentSession.createdAt) {
@@ -1090,7 +1108,24 @@ export function useInstanceInfoActions(
       statusLine,
     );
   };
-  return { openInfo, holder: infoSheet.holder, autoRetryEditorHolder: autoRetryEditor.holder };
+  const runtimeDialogHolder =
+    runtimeField !== null && (panelRef.kind === "session" ? panelRef : null) ? (
+      <RuntimeConfigDialog
+        field={runtimeField}
+        onOpenChange={(open) => {
+          if (!open) setRuntimeField(null);
+        }}
+        projectName={panelRef.projectName}
+        sessionId={panelRef.sessionId}
+        variant={variant}
+      />
+    ) : null;
+  return {
+    openInfo,
+    holder: infoSheet.holder,
+    autoRetryEditorHolder: autoRetryEditor.holder,
+    runtimeDialogHolder,
+  };
 }
 
 /** 状态行运行时长（03k「· 已 12 分钟」）：agent 有 createdAt（近似运行起点），terminal 无 → 空串。 */
@@ -2287,6 +2322,7 @@ function TabChip({
     openInfo,
     holder: infoHolder,
     autoRetryEditorHolder,
+    runtimeDialogHolder,
   } = useInstanceInfoActions(
     panelRef.kind === "session" ? panelRef : { kind: "session", projectName: "", sessionId: "" },
     sessionType,
@@ -2357,6 +2393,7 @@ function TabChip({
       </div>
       {infoHolder}
       {autoRetryEditorHolder}
+      {runtimeDialogHolder}
     </DragSourceCard>
   );
 }

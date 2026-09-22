@@ -76,6 +76,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
 import {
   ClaudeBridgeContext,
+  claudeBridgeKey,
+  registerClaudeBridge,
   useClaudeSession,
   deriveStatus,
   mapTurnStatusTone,
@@ -164,7 +166,7 @@ const PermissionModesContext = createContext<readonly string[]>([]);
 // ours to set, so it flows through context.
 const LiveThinkingTokensContext = createContext<number | null>(null);
 
-function modelDisplayLabel(modelId: string): string {
+export function modelDisplayLabel(modelId: string): string {
   // CLI 原生 alias [1m] 后缀机制：剥离 [1m] 得到基础 alias，给友好名后再标回 [1m]。
   const has1m = modelId.endsWith(MODEL_1M_SUFFIX);
   const base = has1m ? modelId.slice(0, -MODEL_1M_SUFFIX.length) : modelId;
@@ -200,6 +202,20 @@ function resolveDisplayModelId(
       ? `${permissionMode === "plan" ? "opus" : "sonnet"}${has1m ? MODEL_1M_SUFFIX : ""}`
       : alias;
   return resolved?.[tierKey];
+}
+
+// currentModel → 菜单项 alias 的归一（ModelSelector 与 ℹ 浮层运行配置选择面共用）：
+// currentModel 来源混杂——switchModel 乐观更新给 alias，system.init/seed_init 回填具体 ID
+//（CLI 内部把 alias 解析成具体 ID 后上报）。菜单项是 alias，需统一成 alias 才能命中选中态。
+// 具体 ID 反查 resolved 映射的 value 得 alias；找不到（老数据/未知）原样保留。
+export function resolveCurrentModelAlias(
+  current: string | undefined,
+  resolved: Record<string, string> | undefined,
+): string | undefined {
+  if (!current) return current;
+  if (resolved?.[current]) return current;
+  const entry = Object.entries(resolved ?? {}).find(([, v]) => v === current);
+  return entry?.[0] ?? current;
 }
 
 function TaskPanel({
@@ -494,6 +510,13 @@ export function ClaudeChat({
       return () => clearTimeout(timer);
     }
   }, [compactStatus]);
+
+  // 注册 per-session bridge（第八轮批次 2b）：ℹ 浮层运行配置选择面经 registry 取用。
+  // bridge 引用稳定（useMemo [sendToSocket]），effect 随挂载注册/卸载注销。
+  useEffect(() => {
+    registerClaudeBridge(claudeBridgeKey(projectName, sessionId), bridge);
+    return () => registerClaudeBridge(claudeBridgeKey(projectName, sessionId), null);
+  }, [bridge, projectName, sessionId]);
 
   // Bridge from the WebSocket compact lifecycle to the route's compact state.
   //   phase:"start"        → "compacting" + stage "running" → inline CompactProgress
@@ -3700,16 +3723,7 @@ function ModelSelector({
   if (availableModels.length === 0) return null;
 
   const current = currentModel ?? availableModels[0];
-  // currentModel 来源混杂：switchModel 乐观更新给 alias，system.init/seed_init 回填给
-  // 具体 ID（CLI 内部把 alias 解析成具体 ID 后上报）。菜单项是 alias，需统一成 alias
-  // 才能命中 checkmark + 给友好 label。opusplan 不在 availableModelResolved（无 resolved），
-  // 原样保留。具体 ID 反查 resolved 映射的 value 得 alias；找不到（老数据/未知）原样保留。
-  const currentAlias = (() => {
-    if (!current) return current;
-    if (availableModelResolved?.[current]) return current;
-    const entry = Object.entries(availableModelResolved ?? {}).find(([, v]) => v === current);
-    return entry?.[0] ?? current;
-  })();
+  const currentAlias = resolveCurrentModelAlias(current, availableModelResolved);
   // checkmark 停在用户选择的 alias（opusplan/sonnet/...），不随运行态移动。
   // trigger 标签显示「解析后的映射 model ID」（对齐 CLI 状态栏渲染 runtimeModel）：
   // opusplan + plan → opus 映射、opusplan + 非 plan → sonnet 映射、普通 tier → 自身映射。
@@ -3720,7 +3734,7 @@ function ModelSelector({
     availableModelResolved,
     opusplanActive,
   );
-  const label = displayModelId ?? modelDisplayLabel(currentAlias);
+  const label = displayModelId ?? (currentAlias ? modelDisplayLabel(currentAlias) : "");
 
   if (switchingTo) {
     return (
@@ -3775,7 +3789,8 @@ function ModelSelector({
   );
 }
 
-const PERMISSION_MODE_LABELS: Record<string, string> = {
+// 供运行配置选择面（ℹ 浮层 RuntimeConfigDialog）共用——枚举标签单源，不复制。
+export const PERMISSION_MODE_LABELS: Record<string, string> = {
   default: "Default",
   acceptEdits: "Accept Edits",
   bypassPermissions: "Bypass",
