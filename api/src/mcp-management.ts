@@ -160,7 +160,16 @@ function buildAddArgs(name: string, req: AddMcpServerRequest, scope: McpScope): 
   if (typeof req.url !== "string" || req.url.length === 0) {
     throw new McpError("MCP_ADD_FAILED", `${req.type} MCP server requires a url`);
   }
-  return ["--transport", req.type, "-s", scope, name, req.url];
+  const args = ["--transport", req.type, "-s", scope, name];
+  // 自定义请求头（市场远程条目带鉴权 header；`-H` 是全局 flag，须在位置参数 url 之前）。
+  if (req.headers) {
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (k.length === 0) continue;
+      args.push("-H", `${k}: ${v}`);
+    }
+  }
+  args.push(req.url);
+  return args;
 }
 
 function entryFromRequest(name: string, req: AddMcpServerRequest): McpServerEntry {
@@ -169,6 +178,7 @@ function entryFromRequest(name: string, req: AddMcpServerRequest): McpServerEntr
   if (req.args && req.args.length) entry.args = req.args;
   if (req.env && Object.keys(req.env).length) entry.env = req.env;
   if (typeof req.url === "string") entry.url = req.url;
+  if (req.headers && Object.keys(req.headers).length) entry.headers = req.headers;
   return entry;
 }
 
@@ -337,6 +347,8 @@ function mcpErrorStatus(code: McpErrorCode): number {
   switch (code) {
     case "MCP_CONFIG_INVALID":
       return 400;
+    case "MCP_MARKET_FETCH_FAILED":
+      return 502; // 上游 registry 失败，非本服务错误
     default:
       return 500;
   }

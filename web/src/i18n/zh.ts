@@ -442,6 +442,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.presetDeleteFailed": "删除预设失败",
   "api.presetModelsFailed": "获取预设模型列表失败",
   "api.skillMarketFetchFailed": "搜索技能市场失败",
+  "api.mcpMarketFetchFailed": "搜索 MCP 市场失败",
   "api.skillInstallFailed": "安装技能失败",
   "api.skillUninstallFailed": "卸载技能失败",
   "api.skillPreviewFailed": "加载技能预览失败",

@@ -62,6 +62,7 @@ import { handleSkillRoutes } from "./skill-market";
 import { handleSkillUpdateRoutes } from "./skill-update";
 import { handleSkillTaskEvents } from "./skill-tasks";
 import { handleMcpRoutes } from "./mcp-management";
+import { handleMcpMarketRoutes } from "./mcp-market";
 import { startMcpHubServer } from "./mcp-hub-server";
 import { canUpgradeWebSocket } from "./ws-auth";
 
@@ -246,6 +247,11 @@ export const createFetchHandler =
     const taskEventsResponse = await handleSkillTaskEvents(request, url, server);
     if (taskEventsResponse) {
       return withRefresh(taskEventsResponse);
+    }
+
+    const mcpMarketResponse = await handleMcpMarketRoutes(request, url);
+    if (mcpMarketResponse) {
+      return withRefresh(mcpMarketResponse);
     }
 
     const mcpResponse = await handleMcpRoutes(request, url, { projectsRoot: options.projectsRoot });

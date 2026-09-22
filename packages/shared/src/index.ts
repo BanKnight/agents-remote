@@ -577,6 +577,80 @@ export type SkillMarketSearchResponse = {
   count: number;
 };
 
+// ── MCP marketplace（官方 registry.modelcontextprotocol.io）────────────────
+// registry 只发元数据不分发：安装 = 把条目翻译成 AddMcpServerRequest 走既有
+// /api/mcp/add（claude mcp add）。翻译规则（api/src/mcp-market.ts normalize +
+// 下方 toInstallRequest 共同遵守）：
+//   1. name = reverse-domain registryName 末段（io.github.user/pkg → pkg），
+//      不满足 sanitizeMcpName 口径的条目在 normalize 层整条跳过。
+//   2. remote（remotes[0]）优先 → http/sse 直连（无本地 runtime 依赖）；
+//      否则 npm package → stdio `npx -y <identifier>`；
+//      pypi/oci/mcpb 无据假设宿主 runner，不翻译（package = null → 前端禁装态）。
+//   3. 多 packages 取第一个（registry 返回序 = 作者声明序）。
+export type McpMarketPackage = {
+  registryType: string;
+  identifier: string;
+  version?: string;
+  /** environmentVariables 中 required=true 的子集（安装时需用户填写）。 */
+  requiredEnv: { name: string; isSecret?: boolean }[];
+};
+export type McpMarketRemote = {
+  transport: "http" | "sse";
+  url: string;
+  /** headers 中 isRequired=true 的子集（安装时需用户填写）。 */
+  requiredHeaders: { name: string; isSecret?: boolean }[];
+};
+export type McpMarketEntry = {
+  /** registry reverse-domain 全名，保真展示与去重依据。 */
+  registryName: string;
+  /** 安装名 = registryName 末段（normalize 层已保证过 sanitizeMcpName 口径）。 */
+  name: string;
+  title?: string;
+  description?: string;
+  version?: string;
+  /** repository.source（"github" 等）→ 市场卡来源章。 */
+  repositorySource?: string;
+  /** remotes[0]；无可远程直连方式时 null。 */
+  remote: McpMarketRemote | null;
+  /** packages[0]（仅 registryType==="npm" 保留）；无 npm 包时 null。 */
+  package: McpMarketPackage | null;
+};
+export type McpMarketSearchResponse = {
+  query: string;
+  servers: McpMarketEntry[];
+  count: number;
+};
+
+/**
+ * 市场条目 → 既有 /api/mcp/add 请求体。remote 优先；两者皆无 → null（不可一键安装，
+ * 前端呈现手动配置指引）。values 只并入用户实填的键（非必填变量不预填、不伪造默认值）。
+ */
+export function mcpMarketEntryToInstallRequest(
+  entry: McpMarketEntry,
+  values: { env?: Record<string, string>; headers?: Record<string, string> },
+): AddMcpServerRequest | null {
+  if (entry.remote) {
+    return {
+      name: entry.name,
+      type: entry.remote.transport,
+      url: entry.remote.url,
+      ...(values.headers && Object.keys(values.headers).length > 0
+        ? { headers: values.headers }
+        : {}),
+    };
+  }
+  if (entry.package) {
+    return {
+      name: entry.name,
+      type: "stdio",
+      command: "npx",
+      args: ["-y", entry.package.identifier],
+      ...(values.env && Object.keys(values.env).length > 0 ? { env: values.env } : {}),
+    };
+  }
+  return null;
+}
+
 // `npx skills list --json` 结果项（已实测 schema：name/path/scope/agents）。
 export type InstalledSkill = {
   name: string;
@@ -685,7 +759,7 @@ export type McpServerEntry = {
   env?: Record<string, string>;
   /** sse/http：server URL。 */
   url?: string;
-  /** http：自定义请求头（读保真；首版 add 表单不设，直接 CLI 配的 server 仍能完整列出）。 */
+  /** http：自定义请求头（读保真；add 链路经 -H 落盘——手工表单不设，市场远程条目安装会带）。 */
   headers?: Record<string, string>;
 };
 
@@ -697,6 +771,8 @@ export type AddMcpServerRequest = {
   args?: string[];
   env?: Record<string, string>;
   url?: string;
+  /** http：自定义请求头（`claude mcp add -H "K: V"`；市场远程条目安装消费，手工表单仍不设）。 */
+  headers?: Record<string, string>;
 };
 export type AddMcpServerResponse = { ok: true; server: McpServerEntry };
 export type RemoveMcpServerResponse = { ok: true; name: string };
@@ -2326,6 +2402,7 @@ export type ApiErrorCode =
   | "MCP_ADD_FAILED"
   | "MCP_REMOVE_FAILED"
   | "MCP_UPDATE_FAILED"
+  | "MCP_MARKET_FETCH_FAILED"
   | "WIKI_SLUG_INVALID"
   | "SESSION_NOT_CONFIGURED";
 

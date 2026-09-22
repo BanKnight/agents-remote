@@ -444,6 +444,7 @@ export const en = {
   "api.presetDeleteFailed": "Failed to delete preset",
   "api.presetModelsFailed": "Failed to fetch preset models",
   "api.skillMarketFetchFailed": "Failed to search skills marketplace",
+  "api.mcpMarketFetchFailed": "Failed to search MCP marketplace",
   "api.skillInstallFailed": "Failed to install skill",
   "api.skillUninstallFailed": "Failed to uninstall skill",
   "api.skillPreviewFailed": "Failed to load skill preview",

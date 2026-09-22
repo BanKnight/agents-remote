@@ -170,6 +170,34 @@ describe("addMcpServer", () => {
     ]);
   });
 
+  it("builds http argv with -H headers before url (market remote entries)", async () => {
+    runCliTool.mockResolvedValue(ok());
+    const res = await addMcpServer(
+      {
+        name: "h",
+        type: "http",
+        url: "https://x.io/mcp",
+        headers: { Authorization: "Bearer t" },
+      },
+      "user",
+      {},
+    );
+    expect(runCliTool.mock.calls[0][0]).toEqual([
+      "claude",
+      "mcp",
+      "add",
+      "--transport",
+      "http",
+      "-s",
+      "user",
+      "h",
+      "-H",
+      "Authorization: Bearer t",
+      "https://x.io/mcp",
+    ]);
+    expect(res.server.headers).toEqual({ Authorization: "Bearer t" });
+  });
+
   it("passes project path as cwd for project scope", async () => {
     const dir = await makeProject("p1");
     runCliTool.mockResolvedValue(ok());

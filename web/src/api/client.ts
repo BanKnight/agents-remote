@@ -86,6 +86,7 @@ import type {
   InstallSkillResponse,
   InstalledSkillsResponse,
   ListMcpServersResponse,
+  McpMarketSearchResponse,
   McpScope,
   RemoveMcpServerResponse,
   RemoveSkillSourceResponse,
@@ -1249,6 +1250,11 @@ export async function waitForSkillTask(
 
 // ── MCP（外部 server 管理：user scope ~/.claude.json / project scope .mcp.json）──
 // agent 实例由 CLI 原生合并生效，这里只管配置。project scope 走 /api/projects/{name}/mcp。
+
+/** MCP 官方市场（registry.modelcontextprotocol.io）搜索（api server 代理，无缓存）。 */
+export async function searchMcpMarket(query: string): Promise<McpMarketSearchResponse> {
+  return fetchJson(`/api/mcp/search?q=${encodeURIComponent(query)}`, "api.mcpMarketFetchFailed");
+}
 
 export async function listMcpServers(
   scope: McpScope,
