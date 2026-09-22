@@ -497,7 +497,11 @@ export function MobileFilesTool({
           <button
             className="frow w-full cursor-pointer select-none text-left"
             key={entry.path}
-            onClick={() => {
+            onClick={(e) => {
+              // §4:行内 ActionMenu（长按菜单）scrim 点击按 fiber 冒泡到行,target 在 body 不在
+              // 行内 → 忽略,否则关菜单点空白会误进目录/误开预览(用户实测复现)。
+              if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node))
+                return;
               if (lp.guardClick()) return;
               if (isDir) onPathChange(entry.path);
               else onOpenFile(projectName, entry.path);

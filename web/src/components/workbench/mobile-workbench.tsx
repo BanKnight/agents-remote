@@ -102,8 +102,9 @@ type MobileWorkbenchProps = {
   pluginView?: "home" | "market" | "sources";
   /** 项目工具原位（v2 M3-b：?tab=files/git/wiki，与桌面 middle tab 同构；WorkbenchRoute 注入 ctx.tab）。 */
   tool?: WorkbenchMiddleTab;
-  /** 工具切换（WorkbenchRoute 注入 onTabChange：写 URL ?tab + atom 记忆）。 */
-  onToolChange?: (next: WorkbenchMiddleTab) => void;
+  /** 工具切换（WorkbenchRoute 注入 onToolTabChange：写 URL ?tab 但不写 rememberedMiddleTab；
+   * null = 退工具态，URL 去 tab 维度解析回退 remembered——M10 用户反馈：回进工具前的 tab） */
+  onToolChange?: (next: WorkbenchMiddleTab | null) => void;
   /**
    * 一级会话页模式（设计 workbench-views §3.1）：mode=chat 时 global 列表态（leftMode=auto
    * 无 focus）渲染 MobileChatOverview（mode tab + 搜索/新建/列表）。仅 global scope 有意义。
@@ -587,8 +588,9 @@ type MobileProjectWorkbenchProps = {
   focusId?: string;
   /** 项目工具原位（v2 M3-b：?tab 维度 files/git/wiki，与桌面 ProjectLeftPanel middle tab 同构）。 */
   tool?: WorkbenchMiddleTab;
-  /** 工具切换（WorkbenchRoute 注入 onTabChange：写 URL ?tab + atom 记忆）。 */
-  onToolChange?: (next: WorkbenchMiddleTab) => void;
+  /** 工具切换（WorkbenchRoute 注入 onToolTabChange：写 URL ?tab 但不写 rememberedMiddleTab；
+   * null = 退工具态，URL 去 tab 维度解析回退 remembered——M10 用户反馈：回进工具前的 tab） */
+  onToolChange?: (next: WorkbenchMiddleTab | null) => void;
   onSelectTab: (leafId: string, tabId: string) => void;
   onOpenFile: (projectName: string, path: string) => void;
   onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
@@ -742,17 +744,19 @@ function MobileProjectWorkbench({
         )?.session ?? null)
       : null;
 
-  // 工具态（?tab=files/git/wiki）：主体切换渲染项目工具面板；退出 = onToolChange("overview")。
-  // header 的 toggle 语义（再点同 ticon 退出）在 MobileProjectHeader 内判定。
+  // 工具态（?tab=files/git/wiki）：主体切换渲染项目工具面板；退出 = onToolChange(null)（URL 去
+  // tab 维度，WorkbenchRoute 解析回退 rememberedMiddleTab——M10 用户反馈：取消工具回进工具前的
+  // tab，不再恒回第一个 overview）。header 的 toggle 语义（再点同 ticon 退出）在
+  // MobileProjectHeader 内判定。
   const handleToolChange = (next: MobileProjectTool | null) => {
-    onToolChange?.(next ?? "overview");
+    onToolChange?.(next);
   };
   // H1 修复（design-reviewer 运行时实证）：focus 导航与工具态互斥。?tab 记忆/URL 与 focusId
   // 是独立存活的维度，进 focus 的导航入口多（files 树点文件 / git 点文件 / skill pill），
   // 以 focusId 变化为信号统一退工具（03o 工具态是浏览态的主体替身，不与实例面板并存；
   // 保活铁律只要求不销毁、不豁免可见性）。点当前 focus 的 pill 时 focusId 不变，由
   // focusInstance 显式退兜底。M4：L3 focusId（githistory/gitbranches/gitcommit_/wiki_）是
-  // 内容区替换的显式子路由，不是 focus 语义——退工具会经 onToolChange("overview") 把 L3
+  // 内容区替换的显式子路由，不是 focus 语义——退工具会经 onToolChange(null) 把 L3
   // focusId 透传进 session 路由（实测 /session/githistory 破坏 URL），故 L3 跳过。
   const prevFocusRef = useRef(focusId);
   useEffect(() => {
@@ -930,7 +934,9 @@ function MobileProjectWorkbench({
     if (focusRef?.kind === "file") {
       const { projectName: fp, path: relPath } = splitFilePath(focusRef.path);
       const lastSlash = relPath.lastIndexOf("/");
-      const backLabel = lastSlash === -1 ? fp : relPath.slice(0, lastSlash).split("/").pop() || fp;
+      // back = 完整父目录相对路径（03q 原型 `src/auth`；M10 用户反馈「路径位置显示不正确」——
+      // 此前 .split("/").pop() 只取最后一段显示 auth）。根文件（无父目录）back = 项目名。
+      const backLabel = lastSlash === -1 ? fp : relPath.slice(0, lastSlash);
       return {
         backLabel,
         title: relPath.split("/").pop() || focusRef.path,
@@ -1470,7 +1476,7 @@ function MobileFocusActions({
         </button>
       ) : null}
       <button
-        className={`${actClass} text-error-text`}
+        className={`${actClass} text-error`}
         onClick={() => closeInstance(focusId, sessionType ?? "terminal")}
         type="button"
       >

@@ -276,14 +276,17 @@ export function MobileProjectHeader({
             ).map((item) => (
               <button
                 aria-label={item.label}
-                className={`ticon cursor-pointer p-1 touch:h-9 touch:w-9${tool === item.id ? " hl" : ""}`}
+                className={`ticon relative cursor-pointer after:absolute after:-inset-2 after:content-['']${tool === item.id ? " hl" : ""}`}
                 key={item.id}
                 onClick={() => onToolChange(tool === item.id ? null : item.id)}
                 title={item.label}
                 type="button"
               >
                 {/* 19×19 = 原型 .ticon svg 规格（components.css 单源）；ShellIcon svg size-full
-              跟随外层 span，span 由 utility 定尺寸（utility 层胜 .ticon svg components 层）。 */}
+              跟随外层 span，span 由 utility 定尺寸（utility 层胜 .ticon svg components 层）。
+              热区扩展（after -inset-2 = 35×35 触屏可达，frontend-notes §7）不占布局盒——此前
+              p-1/touch:w-9 把点击区做进布局，ticon 间距被撑到 14–23px（M10 用户反馈：间距应
+              为原型 .row2 gap 6px）。 */}
                 <ShellIcon className="h-[19px] w-[19px]" name={item.icon} />
               </button>
             ))}
@@ -291,8 +294,10 @@ export function MobileProjectHeader({
 
           {/* chips 行（原型 .chips：随聚焦实例类型切换——agent = 运行摘要 ② + 自动重试；
         terminal = tmux 会话 chip（03f 编号①「只剩 tmux 会话选择，无模型/权限/effort」；
-        终端实例 1:1 绑定 tmux 会话无切换能力，chip 静态展示不画 ▾）；工具态/skill 无 chips 行） */}
-          {focusedAgent ? (
+        终端实例 1:1 绑定 tmux 会话无切换能力，chip 静态展示不画 ▾）；工具态/skill 无 chips 行
+        ——M10 用户反馈：工具态（tool 非空）chips 必须隐藏，本注释原就写了此语义但渲染
+        此前只 gate 聚焦实例类型漏了 tool） */}
+          {!tool && focusedAgent ? (
             <div className="chips shrink-0">
               <span className="chip">
                 ✦{" "}
@@ -308,7 +313,7 @@ export function MobileProjectHeader({
                 variant="chip"
               />
             </div>
-          ) : focusedTerminal ? (
+          ) : !tool && focusedTerminal ? (
             <div className="chips shrink-0">
               <span className="chip font-mono">tmux · {focusedTerminal.displayName}</span>
             </div>

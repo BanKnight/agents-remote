@@ -175,25 +175,41 @@ async function setupMocks(page) {
       }),
     }),
   );
-  await page.route(/\/api\/projects\/proj1\/files\?.*$/, (r) =>
-    r.fulfill({
+  await page.route(/\/api\/projects\/proj1\/files(\?.*)?$/, (r) => {
+    // 动态分流：根层 = src 目录 + index.ts；src 子层 = src/deep.ts（F 组路径断言 fixture）。
+    const path = new URL(r.request().url()).searchParams.get("path") ?? "";
+    const entries =
+      path === "src"
+        ? [
+            {
+              name: "deep.ts",
+              path: "src/deep.ts",
+              type: "file",
+              hidden: false,
+              size: 12,
+              mtimeMs: Date.now() - 3600000,
+            },
+          ]
+        : [
+            { name: "src", path: "src", type: "directory", hidden: false, size: null },
+            {
+              name: "index.ts",
+              path: "index.ts",
+              type: "file",
+              hidden: false,
+              size: 12,
+              mtimeMs: Date.now() - 86400000,
+            },
+          ];
+    return r.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        entries: [
-          { name: "src", path: "src", type: "directory", hidden: false, size: null },
-          {
-            name: "index.ts",
-            path: "index.ts",
-            type: "file",
-            hidden: false,
-            size: 12,
-            mtimeMs: Date.now() - 86400000,
-          },
-        ],
+        entries,
+        parentPath: path ? path.split("/").slice(0, -1).join("/") || null : null,
       }),
-    }),
-  );
+    });
+  });
 }
 
 async function login(page) {
@@ -290,6 +306,7 @@ async function run() {
           text: b.textContent?.trim(),
           fs: getComputedStyle(b).fontSize,
           fw: getComputedStyle(b).fontWeight,
+          color: getComputedStyle(b).color,
         })),
       };
     });
@@ -319,6 +336,12 @@ async function run() {
           geo.btns[2]?.text === "关闭会话…" &&
           geo.btns.every((b) => b.fs === "14px" && b.fw === "600"),
         `acts 三动作 14px/600（got ${JSON.stringify(geo.btns)}）`,
+      );
+      // 关闭会话… = --c-danger（03k 原型 var(--c-danger)；此前 text-error-text 无效类，用户
+      // 实测颜色没对齐——修复后应为 danger 红（深 #ff453a / 浅 #ff3b30）而非继承前景色）。
+      record(
+        geo.btns[2]?.color === "rgb(255, 69, 58)" || geo.btns[2]?.color === "rgb(255, 59, 48)",
+        `关闭会话 danger 色（got ${geo.btns[2]?.color}）`,
       );
     }
     await page.keyboard.press("Escape");
@@ -415,6 +438,51 @@ async function run() {
       record(fgeo.liveText === "● 2", `live ● running 数（got "${fgeo.liveText}"）`);
       record(fgeo.scrollW <= fgeo.innerW + 1, `无横向溢出（${fgeo.scrollW} ≤ ${fgeo.innerW}）`);
     }
+    // ── F 问题⑨⑩⑪⑬：项目工作台（chips 工具态/取消回 tab/路径/ticon 间距）─────────
+    console.log("F. 项目工作台（问题⑨⑩⑪⑬）");
+    await page.goto(`${WEB_ORIGIN}/projects/proj1`);
+    await page.waitForTimeout(900);
+    const ticon = page.locator('button[aria-label="文件"]');
+    // F4 问题⑬：ticon 视觉盒 19×19（.ticon svg 原型规格）+ 相邻间距 6px（.row2 gap）——
+    // 此前 p-1/touch:w-9 把点击区做进布局盒，触屏下间距被撑到 ~23px。
+    const tgeo = await page.evaluate(() => {
+      const icons = [...document.querySelectorAll("button.ticon")];
+      const rects = icons.map((b) => b.getBoundingClientRect());
+      return {
+        count: icons.length,
+        w: rects[0]?.width,
+        gap: rects.length >= 2 ? rects[1].left - (rects[0].left + rects[0].width) : null,
+      };
+    });
+    if (record(tgeo.count === 3, `ticon ×3（got ${tgeo.count}）`)) {
+      record(tgeo.w !== null && Math.abs(tgeo.w - 19) < 1.5, `ticon 视觉盒 19px（got ${tgeo.w}）`);
+      record(
+        tgeo.gap !== null && Math.abs(tgeo.gap - 6) < 1.5,
+        `ticon 间距 6px（got ${tgeo.gap}）`,
+      );
+    }
+    // F1 问题⑨：聚焦 agent 的 chips 行在进文件工具后隐藏（此前只 gate 聚焦实例类型漏 tool）。
+    await ticon.click();
+    await page.waitForTimeout(500);
+    record((await page.locator(".chips").count()) === 0, "工具态 chips 隐藏（问题⑨）");
+    // F2 问题⑩：取消工具（再点同 ticon）→ URL 无 tab 维度（解析回退 rememberedMiddleTab），
+    // chips 恢复 = 回实例主体。
+    await ticon.click();
+    await page.waitForTimeout(500);
+    record(!page.url().includes("tab="), `取消工具 URL 无 tab（got ${page.url()}）`);
+    record((await page.locator(".chips").count()) > 0, "取消工具 chips 恢复");
+    // F3 问题⑪：文件工具 → src 目录 → deep.ts → header back = 完整父目录 "src"（03q 原型；
+    // 此前 .split("/").pop() 只取最后一段）。
+    await ticon.click();
+    await page.waitForTimeout(500);
+    await page.locator("button.frow", { hasText: "src" }).first().click();
+    await page.waitForTimeout(500);
+    await page.locator("button.frow", { hasText: "deep.ts" }).first().click();
+    await page.waitForTimeout(700);
+    const backLabel = await page.evaluate(
+      () => document.querySelector(".nav .back")?.textContent?.trim() ?? "",
+    );
+    record(backLabel === "src", `file L3 back = 完整父目录（got "${backLabel}"）`);
   } finally {
     await browser.close();
   }
