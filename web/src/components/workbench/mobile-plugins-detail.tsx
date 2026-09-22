@@ -17,8 +17,9 @@ import { MobileSheet } from "../shell/mobile-sheet";
 import { PluginNav } from "./mobile-plugins-market";
 
 /**
- * 12 技能详情移动页（v2 M6，spec §3.5）：nav（‹ 已安装技能 / mono 名）→ dtitle（名 + 「有更新」
- * chip）→ dmeta（来源 · 作用域）→ ddesc（frontmatter description）→ SKILL.md 正文段 → 更新
+ * 12 技能详情移动页（v2 M6，spec §3.5）：nav（‹ 已安装技能 / mono 名 = name 单点展示）→
+ * dtitle（仅「有更新」时承载 chip）→ dmeta（来源 · 作用域）→ ddesc（frontmatter description）→
+ * SKILL.md 正文段（FrontmatterCard 排除 name/description，第七轮去重）→ 更新
  * CTA（有更新时）→ 卸载 → 卸载确认 Alert(spec §5:删除类确认走 useConfirm,不走 sheet)。
  *
  * 能力边界（§6.6 摊牌 + M6-b 记档）：原型 12 的 upcard（更新内容 changelog）与「注入给 Agent 的
@@ -48,14 +49,14 @@ export function MobileSkillDetail({ name }: { name: string }) {
     <div className="flex h-full min-h-0 flex-col">
       <PluginNav backLabel={t("skills.installedTitle")} mono onBack={back} title={name} />
       <div className="min-h-0 flex-1 overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
-        <div className="dtitle">
-          <span className="min-w-0 truncate">{name}</span>
-          {hasUpdate ? (
+        {/* name 已在 nav h1 单点展示（第七轮去重）；dtitle 仅在「有更新」时承载 chip。 */}
+        {hasUpdate ? (
+          <div className="dtitle">
             <span className="dchips">
               <span className="dchip up">{t("skills.hasUpdate")}</span>
             </span>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
         <div className="dmeta">
           {[preview.data?.source, t("plugins.scopeGlobal")].filter(Boolean).join(" · ")}
         </div>
@@ -73,7 +74,10 @@ export function MobileSkillDetail({ name }: { name: string }) {
           </p>
         ) : preview.data ? (
           <div className="mx-4 mb-2 rounded-[10px] border border-sep bg-elevated p-3">
-            <MarkdownString text={preview.data.content} />
+            <MarkdownString
+              frontmatterExclude={["name", "description"]}
+              text={preview.data.content}
+            />
           </div>
         ) : null}
 
@@ -126,7 +130,7 @@ export function MobileSkillDetail({ name }: { name: string }) {
         >
           {t("skills.uninstall")}…
         </button>
-        <div className="rmnote">{t("skills.uninstallConfirmBody")}</div>
+        <div className="rmnote">{t("skills.uninstallNote")}</div>
         {uninstall.error ? (
           <p className="mx-4 mt-2 rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
             {uninstall.error.message}

@@ -1002,6 +1002,8 @@ export const en = {
   "skills.uninstallConfirmTitle": "Uninstall Skill",
   "skills.uninstallConfirmBody":
     "Uninstalling deletes the local skill files; agents will no longer load it",
+  "skills.uninstallNote":
+    "A confirmation appears first; after uninstall, active sessions reload immediately and stop loading the skill",
   "skills.auditTitle": "Confirm before install",
   "skills.bringUnderManagement": "Bring under management",
   // 操作按钮 hover tooltip（原生 title=，*Tooltip key 命名；描述性完整句）

@@ -3,8 +3,15 @@
 // + neutral-line 边框；key 用 mono + on-surface-muted（metadata 色），value 用 on-surface +
 // break-words（超长 description 自然换行）。用 dl/dt/dd 而非 p/div，避免触发 MARKDOWN_CLASS 的
 // [&_p]:mb-2 等后代选择器，卡片样式独立。
-export function FrontmatterCard({ data }: { data: Record<string, string> }) {
-  const entries = Object.entries(data);
+export function FrontmatterCard({
+  data,
+  excludeKeys,
+}: {
+  data: Record<string, string>;
+  /** 不渲染的 frontmatter key（页面已在别处单点展示时排除，避免重复）。 */
+  excludeKeys?: readonly string[];
+}) {
+  const entries = Object.entries(data).filter(([key]) => !excludeKeys?.includes(key));
   if (entries.length === 0) return null;
   return (
     <dl className="mb-4 space-y-2 rounded-lg border border-neutral-line/40 bg-surface-inset/60 p-3">

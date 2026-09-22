@@ -983,6 +983,7 @@ export const zh: Record<TranslationKey, string> = {
   "skills.updateNote": "更新后台进行，进行中的会话不受影响；新版本下次运行生效",
   "skills.uninstallConfirmTitle": "卸载技能",
   "skills.uninstallConfirmBody": "卸载将删除本地技能文件，Agent 不再加载该技能",
+  "skills.uninstallNote": "卸载前将弹出确认；卸载后活跃会话立即重载，不再加载该技能",
   "skills.auditTitle": "安装前请确认",
   "skills.bringUnderManagement": "纳入管理",
   // 操作按钮 hover tooltip（原生 title=，*Tooltip key 命名；描述性完整句）

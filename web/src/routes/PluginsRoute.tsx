@@ -551,7 +551,11 @@ export function SkillTabPreview({ name, projectName }: { name: string; projectNa
           </div>
         ) : preview.data ? (
           <div className="p-4">
-            <MarkdownString text={preview.data.content} />
+            {/* name 与 tab 标签重复（第七轮去重），description 同口径排除。 */}
+            <MarkdownString
+              frontmatterExclude={["name", "description"]}
+              text={preview.data.content}
+            />
           </div>
         ) : null}
       </div>
