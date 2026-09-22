@@ -359,7 +359,7 @@ export function MobileFilesTool({
     },
     {
       label: t("files.menuMove"),
-      icon: <ShellIcon name="folder" />, // 与桌面「移动到…」同 icon（design-reviewer M8 P3：同一动作两端一致）
+      icon: <ShellIcon name="project" />, // folder 形状（目录行同款）；name="folder" 未注册渲染空白（M10 用户反馈）
       onSelect: () => {
         const currentDir = entry.path.includes("/")
           ? entry.path.slice(0, entry.path.lastIndexOf("/"))

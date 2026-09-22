@@ -145,6 +145,11 @@ async function setupMocks(page) {
               "server.js",
             ],
           },
+          {
+            name: "probe-very-long-server-name-without-any-spaces-for-overflow",
+            type: "http",
+            url: "https://mcp.example.com/very/long/path/segment/that/keeps/going/on/endpoint",
+          },
         ],
       }),
     }),
@@ -234,6 +239,34 @@ async function setupMocks(page) {
             removedLines: null,
           },
         ],
+      }),
+    }),
+  );
+  // git log/branches（H1）：超长 commit message fixture（crow 溢出回归）。
+  const LONG_MSG =
+    "fix(web): 超长提交消息回归 fixture——中文与英文 mixed with long-path words like web/src/components/workbench/mobile-project-tools.tsx 需要在移动端 ellipsis 而不是横向撑破面板";
+  await page.route(/\/api\/projects\/proj1\/git\/log$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        branch: "main",
+        total: 3,
+        commits: [
+          { hash: "abc1234", message: LONG_MSG, author: "probe", relativeTime: "5小时前" },
+          { hash: "def5678", message: LONG_MSG, author: "probe", relativeTime: "1天前" },
+          { hash: "ghi9012", message: LONG_MSG, author: "probe", relativeTime: "3天前" },
+        ],
+      }),
+    }),
+  );
+  await page.route(/\/api\/projects\/proj1\/git\/branches$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        current: "main",
+        branches: [{ name: "main", type: "local", isCurrent: true }],
       }),
     }),
   );
@@ -612,6 +645,64 @@ async function run() {
         record((await page.locator("[role=dialog]").count()) > 0, "慢速 40px 回弹不关闭");
       }
     }
+
+    // ── H 第四轮：git 面板溢出（crow 护栏）/ 移动到图标 / 插件页溢出 / 搜索图标 ──
+    console.log("H. 第四轮（git 溢出/移动到图标/插件页/搜索图标）");
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+    // H1：git 工具面板超长 commit message → crow 被父约束、.m ellipsis、doc 无溢出
+    //（此前 button width:auto=fit-content 被内容撑破，.m 的 min-width:0/ellipsis 全失效）。
+    await page.locator('button[aria-label="Git"]').click();
+    await page.waitForTimeout(700);
+    const h1 = await page.evaluate(() => {
+      const crow = document.querySelector("button.crow");
+      const m = crow?.querySelector(".m");
+      return {
+        docOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        crowW: crow ? Math.round(crow.getBoundingClientRect().width) : null,
+        mEllipsis: m ? getComputedStyle(m).textOverflow : "",
+        mClip: m ? m.clientWidth < m.scrollWidth : false,
+      };
+    });
+    if (record(h1.crowW !== null, "crow 行渲染")) {
+      record(h1.docOverflow <= 1, `git 面板无横向溢出（doc 溢出 ${h1.docOverflow}px）`);
+      record(h1.crowW <= 393, `crow 被父约束 <=393（got ${h1.crowW}）`);
+      record(h1.mEllipsis === "ellipsis", `.m ellipsis（got ${h1.mEllipsis}）`);
+      record(h1.mClip === true, ".m 实际截断生效（clientWidth < scrollWidth）");
+    }
+    // H2：文件行右键 → 03w 菜单「移动到…」图标 svg 存在（name="folder" 未注册渲染空白）。
+    await page.locator('button[aria-label="文件"]').click();
+    await page.waitForTimeout(500);
+    await page
+      // G1 之后 files cwd 记忆停在 src（§13 持久化语义在探针进程内同样生效），src 下是 deep.ts。
+      .locator("button.frow", { hasText: "deep.ts" })
+      .first()
+      .click({ button: "right" });
+    await page.waitForTimeout(400);
+    const moveItem = page.locator("[role=menuitem]", { hasText: "移动到" }).first();
+    record((await moveItem.locator("svg").count()) > 0, "「移动到…」菜单项 svg 图标可见");
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+    // H3：插件页长名 http server 卡 → r1 anywhere、doc 无溢出。
+    await page.goto(`${WEB_ORIGIN}/plugins`);
+    await page.waitForTimeout(900);
+    const h3 = await page.evaluate(() => {
+      const r1 = [...document.querySelectorAll(".pcard .r1")].find((el) =>
+        (el.textContent ?? "").includes("probe-very-long-server-name"),
+      );
+      return {
+        r1Wrap: r1 ? getComputedStyle(r1).overflowWrap : null,
+        docOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+    record(h3.r1Wrap === "anywhere", `pcard r1 anywhere（got ${h3.r1Wrap}）`);
+    record(h3.docOverflow <= 1, `插件页无横向溢出（doc 溢出 ${h3.docOverflow}px）`);
+    // H4：搜索框放大镜 svg 存在（name="search" 未注册渲染空白，×3 处）。
+    const h4 = await page.evaluate(() => {
+      const box = document.querySelector("input[type=search]")?.parentElement;
+      return box ? box.querySelector("svg") !== null : false;
+    });
+    record(h4, "搜索框放大镜 svg 可见");
   } finally {
     await browser.close();
   }

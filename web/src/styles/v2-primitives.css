@@ -1101,6 +1101,10 @@
     gap: 10px;
     padding: 9px 16px;
     font-size: 13.5px;
+    /* button width:auto = fit-content（非 block 的 fill）——不设上限时内容宽先撑开按钮，
+       内部 min-width:0 的收缩/ellipsis 全部失效（M10 用户反馈：Git 面板 commit 行横向溢出）。
+       .crow/.xrow/.hrow 同族 button 行同护栏。 */
+    max-width: 100%;
   }
   /* 相邻选择器（原型语义）：sect 后首个 frow / 列表首行无线。 */
   .frow + .frow {
@@ -1261,6 +1265,7 @@
     gap: 8px;
     padding: 8px 16px 0;
     font-size: 13px;
+    max-width: 100%; /* button fit-content 护栏（见 .frow 注释） */
   }
   .crow .h {
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
@@ -1798,6 +1803,7 @@
   }
   .hrow {
     padding: 10px 0;
+    max-width: 100%; /* button fit-content 护栏（见 .frow 注释） */
   }
   .hrow + .hrow {
     border-top: 1px solid var(--sep-row);
@@ -2047,6 +2053,8 @@
     font-size: 14.5px;
     font-weight: 600;
     color: var(--ink-1);
+    /* 名称极长（无空格长串）防撑破：与 .d2 anywhere 同款（实现层防溢出非原型偏差）。 */
+    overflow-wrap: anywhere;
   }
   .pcard .upd {
     margin-left: auto;
@@ -2624,6 +2632,7 @@
     padding: 9px 0;
     font-size: 13.5px;
     border-top: 1px solid var(--sep-row);
+    max-width: 100%; /* button fit-content 护栏（见 .frow 注释） */
   }
   .xrow:first-of-type {
     border-top: none;

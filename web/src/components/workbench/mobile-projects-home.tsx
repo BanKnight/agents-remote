@@ -165,7 +165,7 @@ export function MobileProjectsHome() {
 
       {/* 搜索框（原型 .search：h 38 / r 12 / bg fill-search / 15px placeholder） */}
       <div className="mx-4 mt-2 flex h-[38px] flex-none items-center gap-2 rounded-[12px] bg-fill-search px-3">
-        <ShellIcon className="size-4 flex-none text-ink-2" name="search" />
+        <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
         <input
           aria-label={t("home.searchPlaceholder")}
           className="w-full bg-transparent text-callout text-ink-1 outline-none placeholder:text-ink-2"

@@ -236,7 +236,7 @@ export function FileEntryList({
             ? [
                 {
                   label: t("files.menuMove"),
-                  icon: <ShellIcon name="folder" />,
+                  icon: <ShellIcon name="project" />,
                   onSelect: () => onMove?.(entry.path),
                 },
               ]

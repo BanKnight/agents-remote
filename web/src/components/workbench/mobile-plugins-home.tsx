@@ -135,7 +135,7 @@ export function MobilePluginsOverview() {
 
       {/* 搜索（原型 .search）：本地过滤两组已装列表 */}
       <div className="mx-4 mt-3 flex h-[38px] flex-none items-center gap-2 rounded-[12px] bg-fill-search px-3">
-        <ShellIcon className="size-4 flex-none text-ink-2" name="search" />
+        <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
         <input
           aria-label={t("plugins.searchPlaceholder")}
           className="w-full bg-transparent text-callout text-ink-1 outline-none placeholder:text-ink-2"

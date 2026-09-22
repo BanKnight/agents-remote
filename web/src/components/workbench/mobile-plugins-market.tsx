@@ -114,7 +114,7 @@ export function MobileSkillMarket() {
 
       {/* 搜索（原型 .msearch） */}
       <div className="msearch">
-        <ShellIcon className="size-4 flex-none" name="search" />
+        <ShellIcon className="size-4 flex-none" name="magnifyingglass" />
         <input
           aria-label={t("skills.searchPlaceholder")}
           className="w-full bg-transparent text-callout text-ink-1 outline-none placeholder:text-ink-2"
