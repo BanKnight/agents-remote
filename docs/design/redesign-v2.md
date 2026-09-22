@@ -553,6 +553,21 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 **补丁脚本教训**：批量 CSS 补丁的「块内已有声明」判定必须以 `{` 到配对 `}` 的完整块文本为准——首版误用「上一个 `}` 到 `{` 之间的选择器段」判空，9 个已有行高块被双重插入（后声明覆盖原值）；git checkout 恢复重跑修正版，rg 总数复核（197 = 188+9）兜底。
 
+### §6.12g 第七轮：MCP 官方市场接入 + 技能详情去重（2026-09-23，commit `a62bf2a`/`f6f8155`/`2e700e4`）
+
+用户推翻 §6.6 摊牌 17 的「MCP 市场不画」裁定（「新设计里面是有包含这部分的」），指定数据源 = **registry.modelcontextprotocol.io 官方 Registry**（`GET /v0/servers?search=&version=latest`，公开无鉴权，只发元数据不分发）。三批次落地：
+
+- **翻译裁定**（shared `mcpMarketEntryToInstallRequest` JSDoc 记档）：name = reverse-domain 末段（不满足 sanitizeMcpName 口径整条 skip）；remotes[0] 优先 → http/sse 直连；npm package → `npx -y <identifier>` stdio；pypi/oci/mcpb 不翻译（package=null → 禁装态「请在 MCP 服务器组手动添加」）；多 package 取第一个；表单值只并入实填键。
+- **诚实口径**（registry 无这些字段，一律不画）：「✓ 认证」徽标、工具数、安装量、总量计数（09 市场行无 `.c` 列）、进度百分比——安装是同步 POST（`/api/mcp/add` 无 task 流），卡内降级「添加中…」disabled。新探针含 body 不含「认证/安装量/工具数/%」硬断言。
+- **headers 链路闭环**（M6-b「首版表单不设 headers」记档）：`AddMcpServerRequest` += `headers?`；`buildAddArgs` http/sse 用 `claude mcp add -H "K: V"`（实测存在；全局 flag 必须在位置参数 url 之前，避 variadic 吞参）；手工表单仍不设，仅市场远程条目消费。
+- **marketTab 命名裁定**：不能用 `tab`——撞 validateWorkbenchSearch 已有 `tab?: WorkbenchMiddleTab`（stickyWorkbenchSearch 全局 union 污染）；`marketTab?: "mcp"|"skill"` 路由特定维度不进 sticky 搜索（gitScope 同款口径）。
+- **市场页单页双 tab**（原型 17/18 同页结构）：`.tabseg`「MCP 服务器｜技能」（数值源 17:18-20，span→button），navigate 整体替换 search（该路由无其他 search 维度）；tab 切换卸载另一 tab、搜索词不保留（不引 jotai）。缺省 skill 段。
+- **registry 502 错误态**：列表行 text-error（页面不崩，可切 tab 恢复）；`ApiErrorCode` += `MCP_MARKET_FETCH_FAILED`。
+- **12 详情去重三对**：name ×3 / description ×2 / 卸载文案 ×2。`FrontmatterCard` 加 `excludeKeys`（通用组件，消费方排查 = 唯一入口 MarkdownString，仅技能两处传）；dtitle 改 `hasUpdate ?` 才渲染且只剩 chip（**视觉变化：name 只在 nav h1 单点显示**）；rmnote 换 `skills.uninstallNote`（卸载前将弹出确认；卸载后活跃会话立即重载——有据 reloadAliveSessions）。
+- 验证：新探针 `probe-v2-m6c-mcp-market.mjs` 53/53（含外域 mock 形态——UI 只见自家 `/api/mcp/search` 翻译后形态，翻译逻辑由 api 层 17 单测覆盖）；`probe-v2-m6-plugins.mjs` 修正后 66/66；e2e 29/29；四门禁 + CSS 硬闸。
+
+**探针教训**：① Playwright route glob 不匹配带 query 的 URL——`**/api/mcp/search` 命不中 `/api/mcp/search?q=x`，须尾带 `*`（同 `**/api/skills/search*` 惯例）。② mock「翻译后形态」的数据必须按消费端契约构造——pypi 条目在翻译层 package=null，mock 里给它 package 对象会让 UI 显示可安装，测的不是真实链路。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

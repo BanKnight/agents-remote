@@ -108,7 +108,8 @@ async function setupM6Mocks(page) {
       json({
         name: "code-review",
         description: "提交前自动审查代码变更：风格、潜在缺陷、测试覆盖建议。",
-        content: "# Code Review\n\n正文内容段落。",
+        content:
+          "---\nname: code-review\ndescription: 提交前自动审查代码变更\nlicense: MIT\n---\n\n# Code Review\n\n正文内容段落。",
         source: "anthropics/skills",
       }),
     ),
@@ -189,10 +190,9 @@ ok(
   (await page.locator(".psect").first().textContent())?.includes("MCP 服务器 · 2") === true,
   "MCP 组标题含计数",
 );
-ok(
-  (await page.locator(".mrow").textContent())?.includes("技能市场") === true,
-  "市场段 mrow「技能市场」",
-);
+ok((await page.locator(".mrow").count()) === 2, "市场段 mrow = 2（MCP 市场 + 技能市场）");
+ok((await page.locator(".mrow", { hasText: "MCP 市场" }).count()) === 1, "市场段 mrow「MCP 市场」");
+ok((await page.locator(".mrow", { hasText: "技能市场" }).count()) === 1, "市场段 mrow「技能市场」");
 // 搜索本地过滤：命中 tdd（1 张技能卡）+ MCP 全滤掉。
 await page.getByRole("searchbox").first().fill("tdd");
 await page.waitForTimeout(300);
@@ -222,10 +222,17 @@ await page.locator(".pcard", { hasText: "code-review" }).click();
 await page.waitForSelector(".dtitle", { timeout: 5000 });
 ok(page.url().includes("/plugins/skill/code-review"), `URL /plugins/skill/code-review`);
 ok(
-  (await page.locator(".dtitle").textContent())?.includes("code-review") === true,
-  "dtitle 含技能名",
+  (await page.locator(".dtitle").textContent())?.includes("code-review") === false,
+  "dtitle 不含技能名（第七轮去重：name 归 nav h1 单点）",
 );
 ok((await page.locator(".dchip.up").count()) === 1, "「有更新」dchip 恰 1（检测缓存同源）");
+// SKILL.md 正文段 FrontmatterCard：name/description 已排除（与 nav/ddesc 重复），license 保留。
+const fmCard = (await page.locator("dl").textContent()) ?? "";
+ok(fmCard.includes("license") && fmCard.includes("MIT"), "metadata 卡保留非重复键（license: MIT）");
+ok(
+  fmCard.includes("code-review") === false && fmCard.includes("提交前自动审查") === false,
+  "metadata 卡不含 name/description（排除硬断言）",
+);
 ok(
   (await page.locator(".dmeta").textContent())?.includes("anthropics/skills") === true,
   "dmeta 含来源（preview.source）",
@@ -254,6 +261,14 @@ const alertConfirm = page
 ok(
   (await alertConfirm.getAttribute("class"))?.includes("text-error") === true,
   "Alert 确认钮红字（action sheet destructive）",
+);
+ok(
+  (await page.locator(".rmnote").textContent())?.includes("重载") === true,
+  "rmnote = uninstallNote（含「重载」，非 Alert 同文案）",
+);
+ok(
+  (await page.locator(".rmnote").textContent())?.includes("卸载将删除") === false,
+  "rmnote ≠ 卸载确认 Alert 文案（第七轮去重）",
 );
 const rmBox = await page.locator(".rm").boundingBox();
 const dangerBox = await alertConfirm.boundingBox();
@@ -340,9 +355,15 @@ ok((await page.locator(".msheet").count()) === 0, "提交成功后 sheet 关闭"
 
 // ── Part 5: 18 市场 + 16 审计 sheet ────────────────────────────────────────
 console.log("Part 5: 18 技能市场 + 16 安装审计 sheet");
-await page.locator(".mrow").click();
+await page.locator(".mrow", { hasText: "技能市场" }).click();
 await page.waitForTimeout(600);
-ok(page.url().endsWith("/plugins/market"), "URL /plugins/market");
+ok(page.url().endsWith("/plugins/market?marketTab=skill"), "URL /plugins/market?marketTab=skill");
+ok(
+  (await page.locator(".tabseg button", { hasText: "技能" }).getAttribute("class"))?.includes(
+    "on",
+  ) === true,
+  "tabseg 默认选中「技能」段",
+);
 ok(
   (await page.locator(".mchips .chip2.on").textContent())?.includes("skills.sh") === true,
   "来源 chip「✓ 官方 skills.sh」恒 on",
