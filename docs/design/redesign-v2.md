@@ -534,6 +534,10 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 用户复验追加 4 项（⑭ + 历史 sheet 三项）：**⑭文件/Git 预览 back = 返回上一层**——`closeTransientFocus` 此前是 M4 旧设计「删 tab 回实例主体」，与 l3Transient backLabel 显示脱节；修为 file → 删 tab + `?tab=files` + cwd 同步父目录（03q back「src/auth」语义）、git → 删 tab + `?tab=git`（03r back「Git 检视」语义）。**历史 sheet 三项**（用户 mid-turn 补充，先看真实数据再修）：①无加载态——`isLoading` 骨架行（`[role=status]` + .hrow 几何灰条）区分加载与空态，与桌面 HistoryListSkeleton 同语义；②「标题除了最新的几个都不对」根因 = **CLI 空壳 session 文件**（启动即写 last-prompt/atis-latch、从未发消息，~207B，title/firstMessage/startedAt 三者全空）被历史管道照列——修在服务端 `extractEntry` 三者全空返 null 过滤（管道根因处，桌面/移动三消费点一起修好），单测补空壳 case；③不可下滑收起——MobileSheet 加 drag-dismiss：grab+shd 热区（`touch-none` 须在手势前生效故挂热区元素）、pointer 状态机 idle→pending→dragging（6px slop 保热区按钮 click 合成）、≥96px 或 ≥24px+0.5px/ms 惯性 → `onOpenChange(false)` 交 Radix exit 动画、否则 200ms 回弹；切换/新建/历史/审批全部 sheet 同享。探针扩 G 组 10 断言（47/47）。**方法论记档**：②类「显示不对」先跑真实管道看输出形态（`listAgentHistory` 直跑发现 12 条空壳）再定位根因，不猜；探针 G4 下拉两路径（距离收起/慢速回弹）断言手势状态机而非仅终态。
 
+### §6.12d 第四轮反馈修复（同日，commit `2aa1672`）
+
+用户复验 3 项，根因两类：**①Git 工具面板横向溢出（根因类）**——button 上 flex 原语行类 `.crow/.frow/.xrow/.hrow` 的 `width:auto` = **fit-content（非 block 的 fill）**，内容宽先撑开按钮，内部 `min-width:0` 的收缩/ellipsis 链（`.crow .m` 本有完整链）全部失效——修法 = CSS 单源 `max-width:100%` 护栏 ×4（不逐处补 w-full，护栏覆盖未来同族行）。**方法论记档**：诊断要区分 scrollWidth 假象（ticon after -inset-2 / psect .r margin-right:-8px 触区扩展）与真溢出；/plugins 页测到的 425px 溢出容器是保活层项目工作台的连带读数，源头在 Git 面板——修根因后「插件页溢出」即消失，不逐页打补丁。**②图标缺失（ShellIcon 未注册 = return null 渲染空白）**——「移动到…」菜单与桌面「移动到…」的 `name="folder"` 未注册，`project.svg` 本身就是 folder 形状（viewBox 带 tab 轮廓）→ 引用修正 `name="project"` 零新增资产；连带机检发现 `name="search"` 未注册 ×3（项目/插件/市场搜索框放大镜全空白）→ `name="magnifyingglass"`。**③预防性**：`.pcard .r1` 加 `overflow-wrap:anywhere`（长名无空格串防撑破，与 `.d2` 同款）。探针扩 H 组 10 断言（超长 commit message fixture 下 crow ≤393/ellipsis/截断生效/doc 溢出 0px；右键菜单「移动到…」svg；长名 http server 卡 anywhere；搜索框放大镜）→ 57/57；e2e 29/29。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
