@@ -530,6 +530,10 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 **教训记档**：委托排查报告必须现场核对后采纳——本轮 fork 排查报告 6 项中 4 项误报（file-browser ListRow、chat-overview、shell-primitives、settings-dialog 均已有 contains/stopPropagation 防护，报告读取时漏看），真实缺口仅 1 处。
 
+### §6.12c 第三轮反馈修复（同日，commit `e55da72`）
+
+用户复验追加 4 项（⑭ + 历史 sheet 三项）：**⑭文件/Git 预览 back = 返回上一层**——`closeTransientFocus` 此前是 M4 旧设计「删 tab 回实例主体」，与 l3Transient backLabel 显示脱节；修为 file → 删 tab + `?tab=files` + cwd 同步父目录（03q back「src/auth」语义）、git → 删 tab + `?tab=git`（03r back「Git 检视」语义）。**历史 sheet 三项**（用户 mid-turn 补充，先看真实数据再修）：①无加载态——`isLoading` 骨架行（`[role=status]` + .hrow 几何灰条）区分加载与空态，与桌面 HistoryListSkeleton 同语义；②「标题除了最新的几个都不对」根因 = **CLI 空壳 session 文件**（启动即写 last-prompt/atis-latch、从未发消息，~207B，title/firstMessage/startedAt 三者全空）被历史管道照列——修在服务端 `extractEntry` 三者全空返 null 过滤（管道根因处，桌面/移动三消费点一起修好），单测补空壳 case；③不可下滑收起——MobileSheet 加 drag-dismiss：grab+shd 热区（`touch-none` 须在手势前生效故挂热区元素）、pointer 状态机 idle→pending→dragging（6px slop 保热区按钮 click 合成）、≥96px 或 ≥24px+0.5px/ms 惯性 → `onOpenChange(false)` 交 Radix exit 动画、否则 200ms 回弹；切换/新建/历史/审批全部 sheet 同享。探针扩 G 组 10 断言（47/47）。**方法论记档**：②类「显示不对」先跑真实管道看输出形态（`listAgentHistory` 直跑发现 12 条空壳）再定位根因，不猜；探针 G4 下拉两路径（距离收起/慢速回弹）断言手势状态机而非仅终态。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
