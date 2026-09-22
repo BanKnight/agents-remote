@@ -538,6 +538,10 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 用户复验 3 项，根因两类：**①Git 工具面板横向溢出（根因类）**——button 上 flex 原语行类 `.crow/.frow/.xrow/.hrow` 的 `width:auto` = **fit-content（非 block 的 fill）**，内容宽先撑开按钮，内部 `min-width:0` 的收缩/ellipsis 链（`.crow .m` 本有完整链）全部失效——修法 = CSS 单源 `max-width:100%` 护栏 ×4（不逐处补 w-full，护栏覆盖未来同族行）。**方法论记档**：诊断要区分 scrollWidth 假象（ticon after -inset-2 / psect .r margin-right:-8px 触区扩展）与真溢出；/plugins 页测到的 425px 溢出容器是保活层项目工作台的连带读数，源头在 Git 面板——修根因后「插件页溢出」即消失，不逐页打补丁。**②图标缺失（ShellIcon 未注册 = return null 渲染空白）**——「移动到…」菜单与桌面「移动到…」的 `name="folder"` 未注册，`project.svg` 本身就是 folder 形状（viewBox 带 tab 轮廓）→ 引用修正 `name="project"` 零新增资产；连带机检发现 `name="search"` 未注册 ×3（项目/插件/市场搜索框放大镜全空白）→ `name="magnifyingglass"`。**③预防性**：`.pcard .r1` 加 `overflow-wrap:anywhere`（长名无空格串防撑破，与 `.d2` 同款）。探针扩 H 组 10 断言（超长 commit message fixture 下 crow ≤393/ellipsis/截断生效/doc 溢出 0px；右键菜单「移动到…」svg；长名 http server 卡 anywhere；搜索框放大镜）→ 57/57；e2e 29/29。
 
+### §6.12e 第五轮反馈修复（同日，commit `4bb596e`）
+
+用户 iPhone 真机复验推翻上轮「插件页溢出系 Git 面板连带」结论：「搜索之下 MCP 服务开始超出右边」+「整个页面排版和原设计不一致」。根因实锤：**可点卡 button.pcard 带 w-full（width:100% 不扣 margin）叠 `.pcard` 横向 margin 0 16px → 右侧溢出 32px**；且溢出在内层滚动容器（overflow-y:auto 连带 overflow-x:auto）内部，doc 层探针测不到——**探针教训：横向溢出必须量滚动容器层，不能只测 documentElement**（H3 断言层已修正：卡右缘 ≤vw、卡宽 = vw−32、滚动容器 scrollWidth）。修法 = `.pcard/.mrow/.addsrc` width 三连渐进（-moz-available / -webkit-fill-available / stretch）——button 的 width:auto=fit-content 固有语义（同 §6.12d .crow 家族）在**卡片类**上的延伸：mrow/addsrc 此前无 width 呈 fit-content 窄条、button.pcard 靠 w-full 撑但叠 margin 即溢出；div 实例声明等价 fill 无害。连带对齐 09 原型：MCP 组 ＋ = 20×20 ShellIcon plus（原型 `.plus` 裸＋字形，非 `.psect .r` 的 11px 文字钮形态）。**对照方法论记档**：并排渲染原型 HTML 与实现页、逐元素量几何 + 逐类比对 CSS 规则——几何/CSS 数值全对齐后，剩余差异分三类：①真实移植偏差（＋形态，已修）②系统性基准差异待用户拍板：**行高**——原型无行高设定（浏览器 normal），我们被 Tailwind preflight 强制 1.5，v2-primitives 裸字号类（.r1 14.5px/.d2 11.5px 等）绕过 tokens.json 字号档（1.4 档只绑在 text-* 上），实测卡高 64 vs 原型 57；修法选项 A=裸字号类补 1.4（对齐 tokens 档）/ B=对齐 normal（像素还原）③能力边界摊牌项（§6.6：● 已连接 / mrow 计数列 / MCP 市场行 / d2 描述形态——无数据源不画，维持）。探针 63/63；e2e 29/29。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

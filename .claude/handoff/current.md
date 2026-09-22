@@ -1,19 +1,21 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-22（**M10 用户反馈第四轮修复完成**：git 面板横向溢出 + 图标缺失修正，commit `2aa1672`，探针 57/57 + e2e 29/29 + 四门禁。触发：第四轮收口）。
+> 最后更新：2026-09-22（**M10 用户反馈第五轮修复完成**：插件页真机横向溢出根因——button 卡片类 width 语义，commit `4bb596e`，探针 63/63 + e2e 29/29 + 四门禁。触发：第五轮收口）。
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-用户真机反馈四轮全部修复并 commit：第一轮 8 问题 `1dc5172`；第二轮 6 项 `8cdc21b`；第三轮 4 项 `e55da72`；第四轮 3 项（①Git 面板横向溢出——button fit-content 撑破，.crow/.frow/.xrow/.hrow 四族加 max-width:100% 护栏；②「移动到…」图标空白——ShellIcon name="folder" 未注册→name="project"，连带修 name="search" 未注册 ×3→magnifyingglass；③插件页溢出——系 Git 面板溢出经保活层连带，修①即消失 + 预防性 .pcard .r1 anywhere）`2aa1672`。**下一步：交用户复验（真机项清单见下）。**
+用户真机反馈五轮全部修复并 commit：一轮 `1dc5172`；二轮 `8cdc21b`；三轮 `e55da72`；四轮 `2aa1672`；五轮（插件页 button.pcard w-full 叠 margin 右溢 32px——真机「MCP 服务开始超出右边」根因；.pcard/.mrow/.addsrc width:stretch 三连 + JSX 去 w-full；MCP 组 ＋ 改 20px 图标对齐原型 .plus）`4bb596e`。**待用户拍板：行高系统性基准（原型 normal vs preflight 1.5 vs tokens 1.4 档，卡高 64 vs 57）**；**下一步：交用户复验。**
 
 ## 本 session 焦点
 
-第三、四轮真机反馈修复 + redesign-v2.md §6.12c/§6.12d 补记。第四轮方法论：scrollWidth 假象（触区负 margin 扩展）vs 真溢出要区分；多页同症溢出先找单点根因（Git 面板 crow）不逐页打补丁。
+三~五轮真机反馈修复 + §6.12c/d/e 补记。五轮方法论：并排渲染原型 HTML 与实现页逐元素量几何 + 逐类比对 CSS——数值全对齐后差异归三类（移植偏差修 / 系统基准差异请拍板 / 能力边界维持）；**横向溢出探针必须量滚动容器层**（overflow-y:auto 连带 overflow-x:auto，doc 层测不到内部溢出）。
 
 ## 关键决策（本阶段不可丢）
 
-- **button width:auto = fit-content 语义**（第四轮根因）：`<button>` 上 flex 原语类（.crow/.frow/.xrow/.hrow），width:auto 是 fit-content 不是 block 的 fill——内容宽先撑开按钮，内部 min-width:0 的收缩/ellipsis 全部失效。修法 = CSS 单源 `max-width:100%` 护栏 ×4。
+- **button width:auto = fit-content 语义**（四/五轮根因家族）：行类（.crow/.frow/.xrow/.hrow）内容撑破 → max-width:100% 护栏；**卡片类**（.pcard/.mrow/.addsrc）→ width 三连渐进（-moz-available/-webkit-fill-available/stretch）；button 上**勿用 w-full**——width:100% 不扣 margin，叠类内横向 margin 即右溢（utilities 层还压过类内 width）。
+- **溢出探针测滚动容器层**：overflow-y:auto 使 overflow-x 计算为 auto，溢出在内层，documentElement.scrollWidth 测不到。
+- **行高系统性基准差异（待用户拍板）**：原型无行高设定（normal），我们 preflight 1.5，tokens.json 字号档 1.4 只绑 text-*——v2-primitives 裸字号类（.r1/.d2 等）绕过档，实测卡高 64 vs 原型 57。选项 A 裸字号类补 1.4（对齐 tokens 档）/ B 对齐 normal（像素还原）。
 - **scrollWidth 假象**：触区扩展（ticon after -inset-2、psect .r margin-right:-8px）让 scrollWidth > clientWidth 但视觉正常——诊断区分假象与真溢出。
 - **ShellIcon 未注册 name → return null 渲染空白**：folder、search 曾缺（已修）；新增图标 = 加 .svg + svgMap 注册。
 - **l3 双轨语义**（第三轮定案）：L3 显式子路由 l3BackTo 回对应 tab；file/git transient focus back=删 tab+回来源工具+cwd 同步父目录。
@@ -23,11 +25,13 @@
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ M0–M10 → 用户总验证 → 四轮反馈修复 `1dc5172` + `8cdc21b` + `e55da72` + `2aa1672`（探针 57/57、e2e 29/29、四门禁 + CSS 硬闸 + token 机检零新增）
+- ✅ M0–M10 → 用户总验证 → 五轮反馈修复 `1dc5172` + `8cdc21b` + `e55da72` + `2aa1672` + `4bb596e`（探针 63/63、e2e 29/29、四门禁 + CSS 硬闸）
 - ⬜ **交用户复验**，真机项清单：
-  - 第四轮：git 面板不再横向拖动（commit 行 ellipsis）/「移动到…」有文件夹图标/插件页不再横向溢出/项目页·插件页·市场页搜索框放大镜恢复
-  - 第三轮：⑭ 文件/Git 预览 back 返回上一层；历史浮层 ①加载骨架 ②空壳标题行消失 ③下拉收起
+  - 第五轮：插件页卡片不再右溢（MCP/技能卡/mrow/addsrc 全宽对齐 16px 边距）/ MCP 组 ＋ 为 20px 图标
+  - 第四轮：git 面板不再横向拖动 /「移动到…」有文件夹图标 / 搜索框放大镜恢复（×3 页）
+  - 第三轮：⑭ 预览 back 返回上一层；历史浮层 ①加载骨架 ②空壳标题行消失 ③下拉收起
   - 遗留：②时间刷新节奏、⑥gf 卡形态、⑫浮层穿透、⑬ticon 间距、iPad 触屏 hover 正交、W4 chip-Popover 形态
+  - ⬜ 待拍板：行高系统性基准（A tokens 1.4 档 / B 原型 normal）
 
 ## 阻塞 / 风险
 
