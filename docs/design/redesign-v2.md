@@ -524,6 +524,12 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 **真机复核项（交用户）**：②时间刷新节奏（30s ticker / 10s overview 轮询实际观感）、⑥gf 卡形态真机观感、iPad 触屏 hover 正交（frontend-notes §7 自动化不可达）。
 
+### §6.12b 第二轮反馈修复（同日，commit `8cdc21b`）
+
+用户复验追加 6 项：info sheet「关闭会话…」颜色（`text-error-text` 无物化无效类 → `text-error`，与原型 `var(--c-danger)` 逐值一致；「加粗」核实原型 `.acts span` 本就是 600，实现一致不动）、⑨工具态 chips 行隐藏（chips 渲染补 `!tool` gate——注释写了此语义但实现漏 gate）、⑩取消工具回原 tab（`onToolChange` 拆语义：工具打开不写 `rememberedMiddleTab`，退出 URL 去 tab 维度回退 remembered——remembered 语义收敛为「用户最后一次主动选的非工具 tab」；桌面左栏 middle tab 照旧）、⑪文件 L3 back = 完整父目录（03q 原型 `src/auth`；此前只取最后一段）、⑫浮层穿透（MobileFilesTool 文件行 onClick 首行 contains 判断，§4 fiber 冒泡；**全项目排查：其余调用点均已有防护**——ListRow primitive actions 容器 stopPropagation / chat-overview、shell-primitives 行卡片 contains / 桌面 popover outside 点击为「点到什么是什么」语义；ClaudeSessionDetailRoute 手写 scrim 低项无实害记档不动）、⑬ticon 间距 6px（视觉盒回原型 19×19，点击区改 after 伪元素 -inset-2 扩展 35×35 触屏可达不占布局）。探针扩至 37 断言（F 组 + C 组 danger 色双主题）。
+
+**教训记档**：委托排查报告必须现场核对后采纳——本轮 fork 排查报告 6 项中 4 项误报（file-browser ListRow、chat-overview、shell-primitives、settings-dialog 均已有 contains/stopPropagation 防护，报告读取时漏看），真实缺口仅 1 处。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
