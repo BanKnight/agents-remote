@@ -36,6 +36,7 @@ import {
 import { ShellIcon } from "../shell/icons";
 import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
 import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
+import { relativeTime } from "../workbench/history-list";
 import { ImageViewer } from "./image-viewer";
 import { formatBytes } from "@/lib/format";
 
@@ -177,6 +178,13 @@ type FileEntryListProps = {
   /** 文件所属项目名（构造 fileRef.path 全路径 = `${fileProjectName}/${entry.path}`）。
    *  undefined（rootBrowse 根目录层）→ 文件行不可拖（无对应 file tab）。与 selectFile 的 effectiveProjectName gate 一致。 */
   fileProjectName?: string;
+  /** 10-tab 全局文件总览卡形态（移动 /files mainPage 根层，M10 用户反馈⑥）：项目目录行 = ic 徽章 +
+   *  统计副行 + live 尾标；散文件行 = mono 名 + tm 相对时间。10-tab 原型描述的就是根层总览——卡形态
+   *  仅根层装配；子目录层不传 → 退 ListRow 通用行（行内 rename input 所在路径；卡分支无编辑 UI，
+   *  code review 2026-09-22 修 rename 回归）。缺省 = ListRow 通用行（桌面 / 检视保持现状）。 */
+  globalCard?: {
+    overview: Record<string, { instances: number; running: number; latestLabel: string }>;
+  };
 };
 
 export function FileEntryList({
@@ -198,6 +206,7 @@ export function FileEntryList({
   onStartRename,
   onCardDragStart,
   fileProjectName,
+  globalCard,
 }: FileEntryListProps) {
   const { t } = useT();
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -255,6 +264,93 @@ export function FileEntryList({
     ),
     [t, onDelete, onStartRename, onMove, ctx.pointFor, ctx.close],
   );
+
+  // 10-tab 全局文件总览卡形态（移动 /files mainPage 根层，M10 用户反馈⑥）：项目目录行 gfrow
+  //（ic 徽章 + 统计副行 + live）+ 散文件行 gfile（mono 名 + tm），分组双卡（原型结构）。
+  // overview 按项目名聚合，仅根层有意义——调用方只在根层传 globalCard，子目录层走下方 ListRow
+  //（行内 rename input 所在路径）。写操作 actions 保留（M8 全局写边界不受形态影响）。
+  if (globalCard) {
+    if (isLoading) return <ListRowSkeleton count={5} />;
+    if (error)
+      return (
+        <ResourceStatePanel tone="danger" title={t("files.errorTitle")} message={error.message} />
+      );
+    const dirs = entries.filter((e) => e.type === "directory");
+    const plainFiles = entries.filter((e) => e.type === "file");
+    if (dirs.length === 0 && plainFiles.length === 0)
+      return (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-start pt-6">
+          <ResourceStatePanel title={t("files.emptyTitle")} message={t("files.emptyDesc")} />
+        </div>
+      );
+    const rowActions = (entry: ProjectFileEntry) =>
+      entry.path === renamingPath || readOnly ? null : (
+        <span className="flex flex-none items-center">{renderActions(entry)}</span>
+      );
+    return (
+      <div aria-label="Project files">
+        {dirs.length > 0 ? (
+          <div className="gfcard">
+            {dirs.map((entry) => {
+              const stat = globalCard.overview[entry.name];
+              const active = (stat?.running ?? 0) > 0;
+              return (
+                <div className="gfrow group" key={`${entry.type}:${entry.path}`}>
+                  <button
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                    onClick={() => onOpenDirectory(entry.path)}
+                    type="button"
+                  >
+                    <span className={active ? "ic" : "ic off"}>
+                      <ShellIcon name="project" />
+                    </span>
+                    <span className="tx">
+                      <span className="n">{entry.name}</span>
+                      {stat ? (
+                        <span className="d">
+                          {stat.latestLabel
+                            ? active
+                              ? t("files.projectMetaActive", {
+                                  count: stat.instances,
+                                  time: stat.latestLabel,
+                                })
+                              : t("files.projectMetaIdle", { time: stat.latestLabel })
+                            : t("home.idle")}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                  <span className={active ? "live" : "live off"}>
+                    {active ? `● ${stat?.running}` : "—"}
+                  </span>
+                  {rowActions(entry)}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+        {plainFiles.length > 0 ? (
+          <div className="gfcard" style={{ marginTop: 10 }}>
+            {plainFiles.map((entry) => (
+              <div className="gfile group" key={`${entry.type}:${entry.path}`}>
+                <button
+                  className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2.5 text-left"
+                  onClick={() => (filesClickable ? onPreviewFile(entry.path) : undefined)}
+                  type="button"
+                >
+                  <span className="p">{entry.name}</span>
+                  <span className="tm">
+                    {entry.mtimeMs ? relativeTime(new Date(entry.mtimeMs).toISOString(), t) : ""}
+                  </span>
+                </button>
+                {rowActions(entry)}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   // 结构已知（ListRow 网格），用骨架 mirror loaded 网格，padding 由外层 p-3 提供。
   if (isLoading) return <ListRowSkeleton count={5} />;
@@ -760,6 +856,10 @@ export type FilesPanelProps = {
    * 进入项目子目录后切换为该项目的可写 files（复用 project API）。默认 false（项目作用域）。
    */
   rootBrowse?: boolean;
+  /** 10-tab 卡形态透传 FileEntryList（移动 /files mainPage 根层专用，见 FileEntryListProps 注释）。 */
+  globalCard?: {
+    overview: Record<string, { instances: number; running: number; latestLabel: string }>;
+  };
   onPathChange?: (path: string) => void;
   onMobilePreviewChange?: (open: boolean) => void;
   /**
@@ -781,6 +881,7 @@ export function FilesPanel({
   enablePreview = true,
   queryScope = "files",
   rootBrowse = false,
+  globalCard,
   onPathChange,
   onMobilePreviewChange,
   onOpenFile,
@@ -1144,6 +1245,7 @@ export function FilesPanel({
           onStartRename={startRename}
           onCardDragStart={onCardDragStart}
           fileProjectName={effectiveProjectName}
+          globalCard={globalCard}
         />
       </div>
     </aside>

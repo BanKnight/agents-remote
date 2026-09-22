@@ -23,7 +23,6 @@ const ACTIVITY_PREVIEW_COUNT = 3;
 type ActivityRow = {
   candidate: GlobalInstanceCandidate;
   pinned: boolean;
-  time: string;
 };
 
 /**
@@ -69,8 +68,16 @@ export function MobileProjectsHome() {
   };
   const openApprovals = () => setApprovalsOpen(true);
 
-  // 活动行 = 全局候选按 needs-interaction > running > terminal 排序（与全局面板同序），
-  // 搜索时按实例名/副行过滤。时间戳 fallback updatedAt → createdAt。
+  // 相对时间 ticker：「N 分钟前」要随时间流逝重算——time 字段已移出 useMemo（渲染时实时算），
+  // ticker 只负责触发重渲染。数据源新鲜度由 overview query 的 10s refetchInterval 补（M10 用户反馈②）。
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick((v) => v + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // 活动行 = 全局候选按 needs-interaction > running > terminal 排序（与全局面板同序），置顶恒排
+  // 最前，搜索时按实例名/副行过滤。时间戳（fallback updatedAt → createdAt）不进 memo，渲染时实时算。
   const activityRows = useMemo<ActivityRow[]>(() => {
     const q = query.trim().toLowerCase();
     const ranked = rankGlobalInstances(candidates)
@@ -83,13 +90,15 @@ export function MobileProjectsHome() {
           (c.subtitle ?? "").toLowerCase().includes(q) ||
           c.ref.projectName.toLowerCase().includes(q)
         );
-      });
-    return ranked.map((candidate) => ({
-      candidate,
-      pinned: pinned.has(candidate.ref.sessionId),
-      time: relativeTime(candidate.updatedAt ?? candidate.createdAt ?? "", t),
-    }));
-  }, [candidates, pinned, query, t]);
+      })
+      .map((candidate) => ({
+        candidate,
+        pinned: pinned.has(candidate.ref.sessionId),
+      }));
+    // 置顶行恒排最前（M10 用户反馈①「真正置顶」）：紫标之外补排序语义；sort 稳定（ES2019+），
+    // 置顶组内保持 rank 序。
+    return ranked.sort((a, b) => Number(b.pinned) - Number(a.pinned));
+  }, [candidates, pinned, query]);
 
   const runningCount = useMemo(
     () => candidates.filter((c) => c.status === "running").length,
@@ -155,7 +164,7 @@ export function MobileProjectsHome() {
       </div>
 
       {/* 搜索框（原型 .search：h 38 / r 12 / bg fill-search / 15px placeholder） */}
-      <div className="mx-4 mt-2 flex h-[38px] flex-none items-center gap-2 rounded-lg bg-fill-search px-3">
+      <div className="mx-4 mt-2 flex h-[38px] flex-none items-center gap-2 rounded-[12px] bg-fill-search px-3">
         <ShellIcon className="size-4 flex-none text-ink-2" name="search" />
         <input
           aria-label={t("home.searchPlaceholder")}
@@ -224,7 +233,12 @@ export function MobileProjectsHome() {
                             {t("workbench.pin")}
                           </span>
                         ) : null}
-                        <span className="flex-none text-caption text-ink-2">{row.time}</span>
+                        <span className="flex-none text-caption text-ink-2">
+                          {relativeTime(
+                            row.candidate.updatedAt ?? row.candidate.createdAt ?? "",
+                            t,
+                          )}
+                        </span>
                       </span>
                       {/* 副行（D14：现有 subtitle=lastCommand/lastAssistantMessage + 项目 chip；
                           原型 .act-row 下方 11.5px 行，缩进 25px 对齐 dot 后文字） */}

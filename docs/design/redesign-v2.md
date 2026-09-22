@@ -490,6 +490,40 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 | T2 | 双主题切换全屏正确（对比度抽查） | probe-theme-switch.mjs（双轨同步）+ `node scripts/analyze-contrast.mjs` + probe-v2-m9-e（G 段 .ar 对比度，批次 e 修复 1.86/1.68 → 5.94/3.26） |
 | T3 | 深浅同名语义 token；SVG 示意值差异已备案 | tokens.json `$value` / `$extensions["mode.dark"]` 两态结构 + 本附录「浅色对比度已知限制」备案节 |
 
+## §6.12 M10 用户反馈修复批次（2026-09-22）
+
+> 用户 iPhone 总验证（Q17 兑现后第一轮真机反馈）报 8 问题，全部修复。证据：scripts/probe-m10-feedback-fixes.mjs（35 断言全绿，mobile 393×852 zh-CN，mock 会话 id 带 `agent_` 前缀过 inferSessionTypeFromId）+ 四门禁 + CSS 硬闸 + token 机检零新增 + e2e 29/29（globalCard 仅移动分化，桌面 viewport 不受影响）。
+
+| # | 反馈 | 修复 | 证据（探针组） |
+| --- | --- | --- | --- |
+| ① | 全局活动置顶未真正置顶 | activityRows 排序链尾 `sort((a,b) => Number(b.pinned) - Number(a.pinned))` 稳定置顶——置顶组恒最前、组内保 rankGlobalInstances 序（agent 非跑/agent 跑/terminal/其他） | A：首行=置顶会话、组后 rank 序、紫标可见 |
+| ② | 活动时间非实时（显示 1 小时前实则在跑） | 三层：relativeTime 移出 useMemo 改渲染时算 + 30s ticker 触发重渲染 + overview query `refetchInterval: 10_000`（服务端 recordActivity 本就分钟级截断 touch updatedAt，轮询不放大写盘） | 逻辑层保证 + 手动 checklist（节奏观感交用户） |
+| ③ | 详情页右上 3 按钮应为「详情+更多」 | 删 nav 独立 ✕；moreMenu 收编「关闭会话…」；右上回归 ℹ+⋯ 两图标（082c/03k） | B：ℹ 可见、无独立「关闭」、⋯ 菜单含「关闭会话…」 |
+| ④ | 文件工具版面未对齐 + 开发说明外漏 | 删 git.capToolReplace（见下方决策记档）；files.capBreadcrumb / wiki.readOnlyCap 保留（操作/边界提示非开发说明） | i18n 键删除 + 机检 |
+| ⑤ | 会话信息浮层未对齐设计 | info-sheet 全量重写对齐 03k：grab 40×5 r3 / h2 text-title 17px 600 / 状态行 text-caption 600（● 状态 · formatAgeSuffix 时长后缀，TerminalSession 无 createdAt 不加后缀）/ krow 行分隔 divide-y sep-row / acts 三动作 text-subhead 600（重命名 primary · 置顶 pin · 关闭会话… danger）/ mono 字段（resumeId）/ footer 委托关闭（`closest("button")` 判断，动作已触发即收起） | C：grab/h2/状态行/分隔线/acts 三动作 5 断言 |
+| ⑥ | 全局文件未对齐设计 | 对齐 10-tab：Large title 头 + gfcard 卡形态（项目行 = 徽章 30×30 r8 + 统计副行 files.projectMetaActive/Idle + live ● 徽章；散文件行 = mono 名 + relativeTime(mtime)） | E：7 断言（h1 30px/800、gfcard r16、徽章 30×30 r8、n 14.5px/600、副行统计、live ● N、无溢出） |
+| ⑦ | 插件页内容溢出 | `.pcard .d2` 加 `overflow-wrap: anywhere`（真实 stdio 命令/技能路径长串；原型示意数据短，实现层防溢出非原型偏差） | D：长命令 fixture 下 scrollW ≤ innerW |
+| ⑧ | 插件页未对齐设计 | 搜索框 `rounded-[12px]`（09 原型）；h1/segc/pcard/mrow/psect 此前已对齐 | D：h1 30px/800、搜索 38px r12、segc 32px |
+
+**过程记录（review 闭环 + 一次探针挂诊断）**：
+
+1. **code review**（1 中 1 低）：〔中〕globalCard 分支子目录层 rename 无编辑 UI（首版 rootLevel=false 简形态是原型不存在的自创形态且卡分支无行内 input）→ 修法 = 卡形态仅根层装配，子目录层退 ListRow（见决策记档）；〔低〕gfile onClick 死分支已删。
+2. **design review**（1 中 3 低，无高）：〔中〕gfrow/gfile 容器补 `group` 类（行内 ⋯ 的 hover-capable 显隐载体，当前根层只读不渲染属预留）；〔低〕状态行后缀语义分叉（running「已 X」/其余「X 前」，见决策记档）；〔低〕gfile 数值微差与 projectMetaActive 副行重设计记档。
+3. **探针 C 组挂诊断（vite 增量 build JS chunk 半新半旧实证）**：状态行语义分叉改动后探针恒挂 `TypeError: undefined.replace`——dist 实锤 `WorkbenchRoute` chunk 已含新调用点 `time.ranMinutes` 而 i18n 词典 chunk（icons-*.js）仍是旧 `time.age*` → t() 查无 key 返回 undefined → 插值 `.replace` 爆炸。ar-verify-css 硬闸只探 CSS 一致性，探不到 JS chunk 间不一致；处置同 §10 兜底（touch main.tsx 完整 rebuild 后 chunk 一致、35/35 绿）。**改 i18n 等跨 chunk 共享模块后，CSS 硬闸之外必要时对 dist 全量 rg 新旧 key 验证一致性。**
+
+**决策记档**：
+
+- **gf 前缀消歧**：10-tab 原型 `.frow`/`.fcard` 与既有 03o files 工具 `.frow`（17px 图标 + mono 路径行）同名不同物——新类 `.gfcard`/`.gfrow`/`.gfile`（`.psect`/`.dsect` 按页拆类先例）。`.gfrow`/`.gfile` 容器带 `group` 类（design review 2026-09-22）：为行内 ⋯（hover-capable 显隐，frontend-notes §7）预留 hover 载体——当前根层 readOnly 恒 true 时 actions 不渲染，属 M8 写边界演进时的预留。
+- **10-tab 卡形态仅移动分化 + 仅根层**：globalCard 仅 useIsMobile 分支装配（移动 /files mainPage）且仅根层（`(currentPath ?? "") === ""`）——10-tab 卡形态只描述根层总览；子目录层与桌面保持 ListRow 通用行（行内 rename input 所在路径；首版 rootLevel=false「简形态」是原型不存在的自创形态且卡分支无编辑 UI，code review 2026-09-22 修 rename 回归）。
+- **用户否决原型文案**：git.capToolReplace（「工具为内容去替换」）为原型内开发注释性质文案，用户裁定不入产品 UI——同类文案甄别标准：操作提示（capBreadcrumb）/ 边界提示（wiki.readOnlyCap）保留，开发说明删除。
+- **03k 细节取舍**：krow chevron ›（行内编辑 affordance）未加——当前行不可点，加了即伪造 affordance；kfoot「关闭需二次确认」未加——closeInstance 无确认流程，补确认流属独立功能项。
+- **info-sheet footer 委托关闭**：03k `.acts` 操作行「动作即收起」语义下沉到 sheet 自身（footer 容器 onClick 判 `closest("button")` → onClose），调用方装配 footer 无需感知 close。
+- **状态行时间后缀语义分叉**（design review 2026-09-22）：running = 「已 X」存续时长（time.ranMinutes/Hours/Days）；其余状态 = 「X 前」（relativeTime）。03k 原型「已 12 分钟」语义是运行时长，但 AgentSession 无 run-start 时间戳——running 用 createdAt 近似（中断恢复后读作自创建总时长），取舍记档。
+- **gfile 数值微差**（design review 记档）：10-tab 原型 `.file` padding 10px 16px / 字号 13.5px / gap 12px，实现 `.gfile` padding 9px 0 / `.p` 12.5px / gap 10px——沿 03o `.frow .p` 12.5px 单源收敛取舍；原型 `.file` 左右 16px 叠加 fcard 16px 疑似原型自身冗余。视觉 ~1px 级。
+- **projectMetaActive 副行重设计**（design review 记档）：10-tab 原型 active 副行「5 实例 · 项目根目录」（静态位置）→ 实现「N 实例 · 最近 X前」（时间）——更有用且呼应反馈②活动时间实时，属 i18n 层重设计非偏差回退点。
+
+**真机复核项（交用户）**：②时间刷新节奏（30s ticker / 10s overview 轮询实际观感）、⑥gf 卡形态真机观感、iPad 触屏 hover 正交（frontend-notes §7 自动化不可达）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

@@ -197,6 +197,8 @@ export const zh: Record<TranslationKey, string> = {
   "files.root": "根目录",
   "files.goRoot": "转到根目录",
   "files.hidden": "隐藏",
+  "files.projectMetaActive": "{{count}} 实例 · 最近 {{time}}",
+  "files.projectMetaIdle": "空闲 · 最近 {{time}}",
   "files.dirMarker": "DR",
   "files.fileMarker": "FL",
   "files.imageZoomIn": "放大",
@@ -289,7 +291,6 @@ export const zh: Record<TranslationKey, string> = {
   "git.sectRecent": "最近提交",
   "git.linkHistory": "全部历史",
   "git.linkBranches": "分支 ({{n}})",
-  "git.capToolReplace": "工具为内容区替换：会话仍在后台运行",
   "git.toolTitle": "Git 检视",
   "git.historyTitle": "提交历史",
   "git.historyMeta": "{{branch}} · 共 {{n}} 次提交",
@@ -459,6 +460,9 @@ export const zh: Record<TranslationKey, string> = {
   "time.minutesAgo": "{{count}}分钟前",
   "time.hoursAgo": "{{count}}小时前",
   "time.daysAgo": "{{count}}天前",
+  "time.ranMinutes": "已 {{count}}分钟",
+  "time.ranHours": "已 {{count}}小时",
+  "time.ranDays": "已 {{count}}天",
 
   // ── Claude ────────────────────────────────────────────────────
   "claude.inputPlaceholder": "向 Claude 提问...",

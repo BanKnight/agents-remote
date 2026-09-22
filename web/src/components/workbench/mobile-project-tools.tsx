@@ -182,7 +182,6 @@ export function MobileGitTool({
           {t("git.linkBranches", { n: branchCount })}
         </button>
       </div>
-      <div className="cap mt-4 px-4">{t("git.capToolReplace")}</div>
     </ToolPanel>
   );
 }

@@ -81,7 +81,7 @@ import {
   MobileProjectSwitchSheet,
   MobileSessionHistorySheet,
 } from "./mobile-sheets";
-import { useRenameSession } from "./instance-area";
+import { useAgentDetail, useRenameSession, useTerminalDetail } from "./instance-area";
 import type { ActionMenuItem } from "../ui/action-menu";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { useMeasuredBottomNav } from "../shell/shell-layout";
@@ -845,7 +845,7 @@ function MobileProjectWorkbench({
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
   const createProjectDialog = useCreateProjectDialog();
   // 02c pill 长按/右键菜单（置顶/重命名/关闭）。pin 数据管道 = usePinnedSessions 单源（乐观
-  // 更新）；rename/close 复用既有业务 hook（与 MobileFocusActions ℹ✕ 同源）。
+  // 更新）；rename/close 复用既有业务 hook（与 MobileFocusActions .acts 行同源）。
   const { pinned } = usePinnedSessions();
   const pinIt = usePinSession();
   const unpinIt = useUnpinSession();
@@ -989,13 +989,8 @@ function MobileProjectWorkbench({
           focusActions={
             effectiveFocusId && focusRef?.kind === "session" ? (
               <MobileFocusActions
+                closeInstance={closeInstance}
                 focusId={effectiveFocusId}
-                onClose={() =>
-                  closeInstance(
-                    focusRef.sessionId,
-                    inferSessionTypeFromId(effectiveFocusId) ?? "terminal",
-                  )
-                }
                 projectName={scope.key}
               />
             ) : undefined
@@ -1010,6 +1005,20 @@ function MobileProjectWorkbench({
               align="end"
               cancelLabel={t("cancel")}
               items={[
+                // M10 用户反馈③：关实例收进 ⋯ 菜单（nav 右上回归原型 ℹ+⋯ 两图标）。
+                ...(effectiveFocusId && focusRef?.kind === "session"
+                  ? [
+                      {
+                        label: t("workbench.pillCloseSession"),
+                        icon: <ShellIcon name="close" />,
+                        onSelect: () =>
+                          closeInstance(
+                            focusRef.sessionId,
+                            inferSessionTypeFromId(effectiveFocusId) ?? "terminal",
+                          ),
+                      },
+                    ]
+                  : []),
                 {
                   label: t("workbench.menuHistory"),
                   icon: <ShellIcon name="restore" />,
@@ -1416,49 +1425,77 @@ function EmptyProjectState({
   );
 }
 
-/** 项目聚焦态 tab 带 trailing：ℹ✕ 胶囊（复用 MobileFocusHeader 同款；ℹ = info sheet、✕ = 关实例）。
- * info 字段装配走共享 useInstanceInfoActions（与 MobileFocusBody 同源，单一装配来源）。 */
+/** 项目聚焦态 tab trailing：ℹ 图标（03 原型 nav 右上两图标之一；M10 用户反馈③：✕ 关实例已收进
+ * ⋯ moreMenu）。info sheet 对齐 03k：.acts 操作行（重命名/置顶/关闭会话）由本组件装配为 footer
+ *（handler 与 pillMenuItems 同源 hook，单一管道；sheet 关闭由 info-sheet footer 委托）；displayName
+ * 自取 detail（与装配层同 query key，React Query dedupe 零额外网络）。 */
 function MobileFocusActions({
-  onClose,
+  closeInstance,
   focusId,
   projectName,
 }: {
-  onClose: () => void;
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
   focusId: string;
   projectName: string;
 }) {
   const { t } = useT();
   const sessionType = inferSessionTypeFromId(focusId);
   const panelRef: SessionPanelRef = { kind: "session", projectName, sessionId: focusId };
+  const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
+  const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
+  const displayName =
+    agentDetail.data?.session.displayName ?? terminalDetail.data?.session.displayName ?? "";
+  const { pinned } = usePinnedSessions();
+  const pinIt = usePinSession();
+  const unpinIt = useUnpinSession();
+  const renameSession = useRenameSession();
+  const pinnedNow = pinned.has(focusId);
+  const actClass = "cursor-pointer text-subhead font-semibold";
+  const acts = (
+    <div className="flex items-center justify-between border-t border-sep-row pb-1 pt-3.5">
+      <button
+        className={`${actClass} text-primary`}
+        onClick={() => void renameSession.rename(panelRef, sessionType ?? "terminal", displayName)}
+        type="button"
+      >
+        {t("session.rename")}
+      </button>
+      {sessionType === "agent" ? (
+        <button
+          className={`${actClass} text-pin`}
+          onClick={() => (pinnedNow ? unpinIt : pinIt).mutate(focusId)}
+          type="button"
+        >
+          {pinnedNow ? t("workbench.unpin") : t("workbench.pin")}
+        </button>
+      ) : null}
+      <button
+        className={`${actClass} text-error-text`}
+        onClick={() => closeInstance(focusId, sessionType ?? "terminal")}
+        type="button"
+      >
+        {t("workbench.pillCloseSession")}
+      </button>
+    </div>
+  );
   const {
     openInfo,
     holder: infoHolder,
     autoRetryEditorHolder,
-  } = useInstanceInfoActions(panelRef, sessionType, projectName);
+  } = useInstanceInfoActions(panelRef, sessionType, projectName, "sheet", acts);
   return (
     <>
-      {/* v2 nav 行右侧（03 原型 .ic ×2）：ℹ = info sheet、✕ = 关实例。裸图标无胶囊框。 */}
-      <div className="flex shrink-0 items-center gap-1" role="group">
-        <button
-          aria-label={t("session.instanceInfo.title")}
-          className="ic cursor-pointer touch:h-9 touch:w-9"
-          onClick={openInfo}
-          type="button"
-        >
-          <ShellIcon name="info" />
-        </button>
-        <button
-          aria-label={t("session.close")}
-          className="ic cursor-pointer touch:h-9 touch:w-9"
-          onClick={onClose}
-          type="button"
-        >
-          <ShellIcon name="close" />
-        </button>
-      </div>
-      {/* info sheet holder（2026-08-17 修复：此前漏渲染 → ℹ 点击 sheet 永不挂载，对齐桌面
-          MobileFocusHeader {infoSheet.holder}）。 */}
+      <button
+        aria-label={t("session.instanceInfo.title")}
+        className="ic cursor-pointer touch:h-9 touch:w-9"
+        onClick={openInfo}
+        type="button"
+      >
+        <ShellIcon name="info" />
+      </button>
+      {/* info sheet holder + rename prompt holder（useRenameSession 自带，portal 渲染）。 */}
       {infoHolder}
+      {renameSession.holder}
       {autoRetryEditorHolder}
     </>
   );
@@ -1529,7 +1566,13 @@ function MobileFilesOverview() {
   };
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <MobilePageHeader title={t("nav.files")} />
+      {/* Large title 行（10-tab 原型 .h-row h1 30px/800；M10 用户反馈⑥：紧凑 MobilePageHeader
+          换 Large title，与项目/插件 Tab 同款页头） */}
+      <div className="px-4 pt-1">
+        <h1 className="text-large-title font-extrabold leading-tight text-ink-title">
+          {t("nav.files")}
+        </h1>
+      </div>
       <div className="flex min-h-0 flex-1 flex-col">
         <GlobalFilesOverview
           currentPath={globalFilesPath}

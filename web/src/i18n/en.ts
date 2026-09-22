@@ -197,6 +197,8 @@ export const en = {
   "files.root": "root",
   "files.goRoot": "Go to root",
   "files.hidden": "hidden",
+  "files.projectMetaActive": "{{count}} instances · active {{time}}",
+  "files.projectMetaIdle": "Idle · active {{time}}",
   "files.dirMarker": "DR",
   "files.fileMarker": "FL",
   "files.imageZoomIn": "Zoom in",
@@ -290,7 +292,6 @@ export const en = {
   "git.sectRecent": "Recent commits",
   "git.linkHistory": "All history",
   "git.linkBranches": "Branches ({{n}})",
-  "git.capToolReplace": "Tools replace the content area: sessions keep running",
   "git.toolTitle": "Git",
   "git.historyTitle": "Commit history",
   "git.historyMeta": "{{branch}} · {{n}} commits",
@@ -461,6 +462,9 @@ export const en = {
   "time.minutesAgo": "{{count}}m ago",
   "time.hoursAgo": "{{count}}h ago",
   "time.daysAgo": "{{count}}d ago",
+  "time.ranMinutes": "ran {{count}}m",
+  "time.ranHours": "ran {{count}}h",
+  "time.ranDays": "ran {{count}}d",
 
   // ── Claude ────────────────────────────────────────────────────
   "claude.inputPlaceholder": "Ask Claude...",

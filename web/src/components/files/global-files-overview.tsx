@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 
+import { useIsMobile } from "../../lib/use-is-mobile";
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
 import { workbenchFilesSearchFocusRequestAtom } from "../../routes/workbench-model";
+import { useGlobalInstanceCandidates } from "../workbench/instance-area";
+import { relativeTime } from "../workbench/history-list";
 import { FilesPanel } from "./file-browser";
 import { type CardDragStartHandler } from "../workbench/drag-source";
 
@@ -17,6 +20,11 @@ import { type CardDragStartHandler } from "../workbench/drag-source";
  *
  * 点文件透出 `onOpenFile(projectName, path)`（FilesPanel 内部 effectiveProjectName 派生）→ 调用方开
  * file tab（桌面中栏 / 移动浮窗 /files/file/$，Phase 3 全路径 tabId 去重）。
+ *
+ * M10 用户反馈⑥：移动端对齐 10-tab-files-global——根层 FilesPanel 走 globalCard 卡形态（项目行 =
+ * 徽章 + 统计副行 + live 尾标；散文件行 = mono 名 + tm），统计从 overview candidates 按项目聚合
+ * （与项目 Tab 同 query key，dedupe 零额外网络）；子目录层与桌面保持 ListRow 通用行（10-tab 卡形态
+ * 只描述根层总览；桌面原型 10-mac 是另一形态）。
  */
 export function GlobalFilesOverview({
   currentPath,
@@ -32,6 +40,9 @@ export function GlobalFilesOverview({
   onCardDragStart?: CardDragStartHandler;
 }) {
   const { t } = useT();
+  const isMobile = useIsMobile();
+  // 卡形态统计源：与项目 Tab 同 ["overview"] query（dedupe 零额外网络；10s refetchInterval 同步受益）。
+  const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
   const [filter, setFilter] = useState("");
   // ⌘F（spec §10.2，10m pin④）聚焦搜索框：计数器信号递增即 focus（桌面 main 整页态由
   // use-workbench-shortcuts gate 后 bump；移动/其他入口不 bump）。
@@ -46,6 +57,11 @@ export function GlobalFilesOverview({
       searchInputRef.current?.focus();
     }
   }, [searchFocusRequest]);
+
+  // 10-tab 卡形态的项目统计（仅移动）：instances/running + 最近活动 label（按项目聚合）。
+  const globalOverview = useMemo(() => {
+    return isMobile ? buildGlobalOverview(candidates, t) : undefined;
+  }, [isMobile, candidates, t]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -74,7 +90,39 @@ export function GlobalFilesOverview({
         onOpenFile={onOpenFile}
         onCardDragStart={onCardDragStart}
         rootBrowse
+        // 卡形态仅根层（10-tab 原型描述的就是根层总览）：子目录层不传 → FilesPanel 退 ListRow
+        //（行内 rename input 所在路径；卡分支无编辑 UI，code review 2026-09-22 修 rename 回归）。
+        globalCard={
+          globalOverview && (currentPath ?? "") === "" ? { overview: globalOverview } : undefined
+        }
       />
     </div>
+  );
+}
+
+/** 10-tab 项目统计聚合：instances/running 计数 + 最新活动相对时间 label（副行/live 数据源）。 */
+function buildGlobalOverview(
+  candidates: ReturnType<typeof useGlobalInstanceCandidates>["candidates"],
+  t: ReturnType<typeof useT>["t"],
+): Record<string, { instances: number; running: number; latestLabel: string }> {
+  const stats = new Map<string, { instances: number; running: number; latestAt: string }>();
+  for (const c of candidates) {
+    const name = c.ref.projectName;
+    const stat = stats.get(name) ?? { instances: 0, running: 0, latestAt: "" };
+    stat.instances += 1;
+    if (c.status === "running") stat.running += 1;
+    const at = c.updatedAt ?? c.createdAt ?? "";
+    if (at > stat.latestAt) stat.latestAt = at;
+    stats.set(name, stat);
+  }
+  return Object.fromEntries(
+    [...stats].map(([name, s]) => [
+      name,
+      {
+        instances: s.instances,
+        running: s.running,
+        latestLabel: s.latestAt ? relativeTime(s.latestAt, t) : "",
+      },
+    ]),
   );
 }

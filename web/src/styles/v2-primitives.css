@@ -1140,6 +1140,107 @@
     width: 14px;
     height: 14px;
   }
+
+  /* 10 全局文件总览（移动 /files mainPage；10-tab-files-global.html）。与 03o .frow 同名不同物
+     → gf 前缀消歧（.psect/.dsect 先例）。项目目录行 = ic 徽章 + 名 + 副行 + live；散文件行 =
+     mono 名 + tm 相对时间。n/d 加 truncate（原型无，真实长名防溢出，实现层补非原型偏差）。 */
+  .gfcard {
+    margin: 14px 16px 0;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    border-radius: 16px;
+    padding: 2px 16px;
+  }
+  .gfrow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 0;
+    text-align: left;
+  }
+  .gfrow + .gfrow {
+    border-top: 1px solid var(--sep-row);
+  }
+  .gfrow .ic {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: var(--tint-blue);
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .gfrow .ic svg {
+    width: 17px;
+    height: 17px;
+    color: var(--c-primary);
+  }
+  .gfrow .ic.off {
+    background: color-mix(in srgb, var(--ink-2) 12%, transparent);
+  }
+  .gfrow .ic.off svg {
+    color: var(--ink-2);
+  }
+  .gfrow .tx {
+    flex: 1;
+    min-width: 0;
+  }
+  .gfrow .n {
+    display: block;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--ink-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gfrow .d {
+    display: block;
+    font-size: 11px;
+    color: var(--ink-2);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gfrow .live {
+    flex: none;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--c-success-text);
+  }
+  .gfrow .live.off {
+    color: var(--ink-2);
+    font-weight: 400;
+  }
+  .gfile {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 0;
+    text-align: left;
+  }
+  .gfile + .gfile {
+    border-top: 1px solid var(--sep-row);
+  }
+  .gfile .p {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 12.5px;
+    color: var(--ink-1);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .gfile .tm {
+    font-size: 11px;
+    color: var(--ink-2);
+    flex: none;
+  }
   .badge.lg {
     height: 19px;
     min-width: 22px;
@@ -1960,6 +2061,9 @@
     font-size: 11.5px;
     color: var(--ink-2);
     margin-top: 3px;
+    /* 原型示意数据短；真实 stdio 命令/技能路径含无空格长串会横向撑破（M10 用户反馈⑦）——
+       长词断行，属实现层防溢出非原型偏差。 */
+    overflow-wrap: anywhere;
   }
 
   /* 09 市场入口行 */

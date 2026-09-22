@@ -1007,13 +1007,16 @@ function cachedSessionFromLists(
  * 同 hook 同 query key（React Query dedupe 零额外网络），装配单一来源——此前移动端两处逐字重复，
  * detail 字段增删须双改。projectName 非必填：global 聚焦可能 undefined（不 push project 行）；
  * 项目聚焦恒 truthy（无条件 push）。terminal 无 model/permissionMode/createdAt，不伪造占位行。
- * variant 默认 sheet（移动端底部滑出）；桌面 TabChip 传 "modal"（居中卡片）。
+ * variant 默认 sheet（移动端底部滑出）；桌面 TabChip 传 "modal"（居中卡片）。footer 透传为
+ * 03k .acts 操作行 slot（调用方装配样式）。状态行（03k 标题下 success 小字）由 status 字段派生，
+ * 不再进 krow fields。
  */
 export function useInstanceInfoActions(
   panelRef: SessionPanelRef,
   sessionType: "agent" | "terminal" | null | undefined,
   projectName?: string,
   variant: "sheet" | "modal" = "sheet",
+  footer?: ReactNode,
 ) {
   const { t } = useT();
   const infoSheet = useInstanceInfoSheet();
@@ -1024,6 +1027,18 @@ export function useInstanceInfoActions(
   const terminalSession = sessionType === "terminal" ? terminalDetail.data?.session : undefined;
   const openInfo = () => {
     const fields: InfoField[] = [];
+    // 状态行（03k：「● 运行中 · 已 12 分钟」）——时间后缀语义分叉（design review 2026-09-22）：
+    // running = 存续时长「已 X」（createdAt 近似运行起点，AgentSession 无 run-start 时间戳，中断
+    // 恢复读作自创建总时长，§6.12 记档取舍）；其余状态 = 「X 前」（relativeTime）。
+    // TerminalSession 无 createdAt → 后缀空。openInfo 闭包每次打开实时装配 → 随打开时点计算。
+    const statusNow = agentSession?.status ?? terminalSession?.status;
+    const createdAt = agentSession?.createdAt;
+    const ageSuffix = !createdAt
+      ? ""
+      : statusNow === "running"
+        ? formatRanSuffix(createdAt, t)
+        : ` · ${relativeTime(createdAt, t)}`;
+    const statusLine = statusNow ? `● ${t(sessionStatusLabel(statusNow))}${ageSuffix}` : undefined;
     const displayName = agentSession?.displayName ?? terminalSession?.displayName;
     if (displayName) {
       fields.push({ label: t("session.instanceInfo.name"), value: displayName });
@@ -1051,15 +1066,13 @@ export function useInstanceInfoActions(
           value: formatCreatedAt(agentSession.createdAt),
         });
       }
-      fields.push({
-        label: t("session.instanceInfo.status"),
-        value: t(sessionStatusLabel(agentSession.status)),
-      });
-      // resume id（claudeSessionId，CLI --resume 用）——用户核对/手动恢复用，完整展示不 truncate。
+      // resume id（claudeSessionId，CLI --resume 用）——用户核对/手动恢复用，完整展示不 truncate
+      //（mono 对齐 03k .v.mono 的 ID 类值形态）。
       if (agentSession.claudeSessionId) {
         fields.push({
           label: t("session.instanceInfo.resumeId"),
           value: agentSession.claudeSessionId,
+          mono: true,
           wrap: true,
         });
       }
@@ -1084,15 +1097,22 @@ export function useInstanceInfoActions(
         label: t("session.instanceInfo.type"),
         value: t("session.instanceInfo.terminal"),
       });
-      fields.push({
-        label: t("session.instanceInfo.status"),
-        value: t(sessionStatusLabel(terminalSession.status)),
-      });
     }
     // claude 的编辑入口已并入自动重试行内（编辑按钮）；terminal/其他 provider 纯展示无 footer。
-    infoSheet.open(t("session.instanceInfo.title"), fields, variant);
+    infoSheet.open(t("session.instanceInfo.title"), fields, variant, footer, statusLine);
   };
   return { openInfo, holder: infoSheet.holder, autoRetryEditorHolder: autoRetryEditor.holder };
+}
+
+/** 状态行运行时长（03k「· 已 12 分钟」）：agent 有 createdAt（近似运行起点），terminal 无 → 空串。 */
+function formatRanSuffix(iso: string, t: TranslateFn): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return "";
+  const mins = Math.max(1, Math.floor(ms / 60000));
+  if (mins < 60) return ` · ${t("time.ranMinutes", { count: mins })}`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return ` · ${t("time.ranHours", { count: hours })}`;
+  return ` · ${t("time.ranDays", { count: Math.floor(hours / 24) })}`;
 }
 
 /**
@@ -1805,6 +1825,10 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
     queryFn: fetchOverview,
     enabled: isGlobal,
     staleTime: 5_000,
+    // 端点毫秒级（内存索引+批量探活），10s 轮询让停留页时活动时间戳/置顶/排序跟随刷新——
+    // 服务端 recordActivity 本就分钟级截断 touch updatedAt（同分钟短路不写盘），轮询不放大写盘。
+    //（M10 用户反馈②「1 小时前但其实在跑」）。
+    refetchInterval: 10_000,
   });
   // overview 第二阶段：subtitle（terminal lastCommand）走独立端点慢填充，不 gate isLoaded——
   // 核心卡片先渲染（overview.data 就绪即 isLoaded），subtitle 到达后 patch 进第二行（缺则不显）。
