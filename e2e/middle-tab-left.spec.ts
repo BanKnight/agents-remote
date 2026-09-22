@@ -37,6 +37,12 @@ const activityBar = (page: Page) =>
 const leftPanelFiles = (page: Page) =>
   page.getByRole("complementary").nth(1).getByLabel("Project files");
 
+// /files mainPage（v2 IA，redesign-v2.md §6.10-9，M9 批次 d）：global scope + leftMode=files 时
+// GlobalFilesOverview 渲染在 **main 整页**（MainPageShell），左栏保持 sidewin 项目总览——rootBrowse
+// 文件树不再在左栏 aside。该态左栏=项目列表（无 "Project files"）、global scope 无右栏 →
+// "Project files" 全局唯一命中 main 区文件树。
+const mainRootBrowse = (page: Page) => page.getByLabel("Project files");
+
 test("project scope: middle tab bar (Overview/History/Files/Git) in left panel", async ({
   page,
 }) => {
@@ -110,23 +116,24 @@ test("global scope: no middle tab bar in left panel", async ({ page }) => {
   await expect(nav.getByRole("button", { name: "Git", exact: true })).toHaveCount(0);
 });
 
-test("activity bar [Files] navigates to /files global rootBrowse, not project-local files", async ({
+test("activity bar [Files] navigates to /files mainPage global rootBrowse, not project-local files", async ({
   page,
 }) => {
   await page.getByRole("button", { name: projectName, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
   // 活动栏 [文件]（ActivityBar nav "Primary navigation" 内，aria-label = nav.files = "Files"）。
-  // 设计 workbench-stable-refactor Phase 2：[文件] navigate("/files") 独立路由入口（不再 setNav
-  // atom 不换路由）。点击后离开项目 scope，跳 /files 全局文件视图。
+  // 设计 workbench-stable-refactor Phase 2：[文件] navigate("/files") 独立路由入口。点击后离开
+  // 项目 scope，跳 /files 全局文件视图（v2 批次 d 后为 main 整页 mainPage）。
   await activityBar(page).getByRole("button", { name: "Files", exact: true }).click();
 
   // URL 切到 /files（独立路由，进 URL 不再是 atom）。
   await expect(page).toHaveURL(/\/files$/);
 
-  // 左栏 = FilesLeftPanel rootBrowse 全局根目录（PROJECTS_ROOT 根）。根目录列一级项目目录
-  //（demo），**不含** 项目内文件（src/README.md）—— 与 middle tab [文件]（项目内文件）作用域互斥。
-  const rootFiles = leftPanelFiles(page);
+  // main 整页 = GlobalFilesOverview rootBrowse 全局根目录（PROJECTS_ROOT 根）。根目录列一级项目
+  // 目录（demo），**不含** 项目内文件（src/README.md）—— 与 middle tab [文件]（项目内文件）
+  // 作用域互斥。左栏保持 sidewin 项目总览（§6.10-9），文件树在 main 区。
+  const rootFiles = mainRootBrowse(page);
   await expect(rootFiles.getByRole("button", { name: projectName, exact: true })).toBeVisible();
   await expect(rootFiles.getByRole("button", { name: /README\.md/ })).toHaveCount(0);
   await expect(rootFiles.getByRole("button", { name: /^src$/ })).toHaveCount(0);
@@ -135,10 +142,10 @@ test("activity bar [Files] navigates to /files global rootBrowse, not project-lo
 test("entering project keeps ProjectLeftPanel (scope priority over activity bar [Files])", async ({
   page,
 }) => {
-  // 先点 [文件] 进 /files 全局文件视图（左栏 FilesLeftPanel rootBrowse）。
+  // 先点 [文件] 进 /files 全局文件视图（v2 批次 d：main 整页 mainPage rootBrowse）。
   await activityBar(page).getByRole("button", { name: "Files", exact: true }).click();
   await expect(page).toHaveURL(/\/files$/);
-  await expect(leftPanelFiles(page)).toBeVisible();
+  await expect(mainRootBrowse(page)).toBeVisible();
 
   // 回全局项目总览再进项目：[项目] → /projects → 点项目卡片 → /projects/$key。设计 Phase 2：
   // project scope 左栏恒走 ProjectLeftPanel（scope 优先），用户诉求"进项目左栏不再不变"——
@@ -152,8 +159,8 @@ test("entering project keeps ProjectLeftPanel (scope priority over activity bar 
   await expect(
     projectsNav(page).getByRole("button", { name: "Overview", exact: true }),
   ).toBeVisible();
-  // 全局文件树（rootBrowse，列项目名按钮）从左栏消失。
-  await expect(leftPanelFiles(page)).toHaveCount(0);
+  // 全局文件树（rootBrowse，列项目名按钮）随 mainPage 退出消失（project scope 回 InstanceArea）。
+  await expect(mainRootBrowse(page)).toHaveCount(0);
 });
 
 test("project ↔ /files: WorkbenchShell <main> stays mounted (review 收口, no WS reconnect)", async ({

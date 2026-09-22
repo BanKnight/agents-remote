@@ -450,6 +450,46 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 **记档不做**：iPad 竖屏专用布局（沿用移动拉宽）；iPad 竖屏分屏（触屏分屏交互成本高，桌面独占）；画中画/多窗口；PWA 桌面安装形态。
 
+## §6.11 M10 总验收（2026-09-22）
+
+> 形式：spec §9 验收清单 25 项逐项 ↔ 证据映射。证据物 = probe-v2 探针 ×11（M4–M9）+ v1 时代仍有效探针（M2/M3 证据）+ e2e ×13 spec（29 测试）+ 机检脚本三件（ar-verify-css / ar-verify-tokens / analyze-contrast）。标注 [真机] 的项按 Q17 约定交用户总验证。
+
+**M10 过程记录**：
+
+1. **e2e 基线甄别与对齐**：全套首跑 26 passed / 2 failed，失败两条（middle-tab-left「activity bar [Files]」）为**断言假设过时**——旧 IA 断言 /files = 左栏 aside 内 rootBrowse 文件树；批次 d 后 /files = main 整页 mainPage（GlobalFilesOverview），左栏保持 sidewin 项目总览（§6.10-9）。断言对齐 v2 IA（新定位 main 区文件树；「scope 优先」断言语义保持）后该 spec 9/9 绿。同 spec「<main> stays mounted」首跑即绿——佐证 mainPage 渲染在同一 WorkbenchShell `<main>` 内，保活语义未回归。同款第三处（file-nav「活动栏 [文件] 全局树」限定左栏 aside）一并修正；file-nav 上轮通过属 runners 时序差异，本轮恒挂复现后甄别同款修正。终态全套 **29 passed / 0 failed**。
+2. **emoji 机检收口**：UI 渲染面扫描发现 ⚠/✓/✕/✎ 文本符号。⚠ 两处为原型偏差（原型 03 `.w` 行 = warning 三角 SVG，非文本符号）——已修：ClaudeSessionDetailRoute 审批托盘 mobile/desktop 两分支改 `<ShellIcon name="warning-triangle">` + flex 行，色走 `.tray .w` var(--c-warning-text)。✓/✕ 经对照为原型自有文本符号（03 `.ok` 状态、`.stat` 统计行、多页关闭钮）非偏差；✎ 三处（plan 面板反馈/选中标记）无原型对照页（plan UI 为 M3 实现侧补设计），记档保留。注释内 ⚠️ 非 UI 渲染不属机检面。
+3. **静态核对**：字体 = system-ui 系栈（D15，dist 无捆绑字体文件、无 CJK webfont）；字号 rem 化 = M1 `--text-*` 语义档；路由深度证据引 M2（probe-ia-skeleton.mjs）。
+4. **W4 形态偏差记档（M10 design review）**：spec 要求「运行摘要 chip 点开 = 运行配置 Popover」——实现为**静态摘要 chip**（mobile-project-header chips 行；同注释形态先例：terminal chip 因「1:1 绑 tmux 无切换」已记静态展示），运行配置切换能力在会话页 ModelSelector/PermissionModeSelector（▾ 按钮）。属 M3 范围遗留非 M10 新增缺口；是否补 chip-Popover 形态交用户总验证定。低项记档：托盘 warning SVG 14×14 vs 原型 14×13（viewBox 正方形等比无变形）；gap-1 4px vs 原型 5px（4px 为网格值）。
+
+### §9 验收矩阵（25 项）
+
+| # | 清单项 | 证据 |
+| --- | --- | --- |
+| A1 | 任意路径深度 ≤3；工作台内切换不加深度 | probe-ia-skeleton.mjs（M2 骨架）+ e2e mobile-nav / notfound-redirect；中栏 tab/leftMode 均为 search 维（workbench-model.ts），不加深 |
+| A2 | 切 Tab/开 sheet/断线重连运行实例零丢失 | e2e middle-tab-left（InstanceArea stays mounted / `<main>` no WS reconnect）+ e2e claude-windowing（消息序号对拍） |
+| A3 | 恢复后同一 Instance id | e2e terminal-session（resume 同 id）+ e2e claude-ask-question + §2 拍板「session 升格语义（closed 恢复复用同 id）」 |
+| W1 | 工作台常驻仅 3 行；子 agent 条/托盘按需 | probe-mobile-workbench-states.mjs（M3 逐状态）+ probe-v2-m8-gaps（子 agent 概览条按需挂载）+ probe-v2-m5-approvals（托盘按需） |
+| W2 | ＋ 常驻 pill 尾；标题 ▾ 切项目；上次项目记忆 | probe-v2-m5-sheets（03l 切换 sheet + pill 结构）+ e2e mobile-nav（landing create）+ workbenchLastProjectAtom（D4） |
+| W3 | pill 状态点绿/灰/红与状态机一致；中断不改色 | probe-mobile-workbench-states.mjs（agent/idle/error/offline 逐态断言） |
+| W4 | 运行摘要 chip = 运行配置（与 ℹ 同数据） | **数据同源半边成立**：probe-desktop-instance-info.mjs（ℹ 面板含 model/permissionMode/effort）。**chip 点开 Popover 未实现（M3 遗留偏差，见过程记录 4）**：摘要 chip 为静态展示，运行配置切换入口在会话页 ModelSelector/PermissionModeSelector（▾）；是否补 chip-Popover 形态交用户总验证拍板 |
+| W5 | 工具图标原位高亮、再点返回；内容编辑器不存在 | probe-v2-m4-tools-l3（ticon .hl 高亮）+ probe-v2-m9-d（预览只读化 §6.10-8）+ e2e file-browser |
+| W6 | 审批托盘聚合/逐条/批量/跳转；断线冻结 | probe-v2-m5-approvals（26 断言，REST+WS 双路径 + stream abort 隔离）+ probe-v2-m9-c（05f 审批 Popover）+ e2e claude-ask-question |
+| W7 | 历史过滤三态、已结束恢复回放；✦ 来源 | probe-v2-m5-sheets（03n）+ probe-v2-m8-gaps（03n 单一管道）+ e2e claude-windowing；✦ 来源 = D12 已拍板不做 |
+| G1 | 登录错误行内提示；token 免登直达上次位置 | probe-v2-m7-settings-auth（06 登录页完整态 + 错误行内）+ auth token 直达（e2e notfound-redirect 登录链） |
+| G2 | 项目 Tab 全局活动列表 + 置顶紫标；项目行摘要 | probe-overview-pinned-nojump.mjs（置顶紫标不跳变）+ probe-overview-agent-subtitle.mjs（活动摘要）+ e2e mobile-nav（landing large title） |
+| G3 | 插件作用域切换生效；更新需确认 | probe-v2-m6-plugins（作用域分段 + 更新确认流）+ probe-v2-m9-d（pluginmcp tab 桌面入口） |
+| G4 | 文件 Tab 全局作用域；点项目文件夹进工作台 | probe-v2-m9-d（10m 全局文件 mainPage）+ e2e file-nav（全局树点文件全路径 tab）+ e2e mobile-nav [files] |
+| D1 | iPhone Tab ×4 ↔ 桌面 Sidebar 一一对应 | e2e mobile-nav（four items）+ probe-v2-m9-multi-device（三档断点 nav 结构）+ probe-v2-m9-b（Mac Sidebar） |
+| D2 | 未捆绑字体；无 CJK webfont；rem 化字号 | M10 静态核对（dist 无字体文件）+ M1 字体栈换底（D15）+ `--text-*` 语义档 |
+| D3 | 界面零 emoji；iPad 常显大点击区；Mac hover 显隐 | M10 emoji 机检（⚠ 已修，见过程记录 2）+ probe-v2-m9-multi-device（iPad 常显）+ probe-pointer-variants.mjs（hover 正交，frontend-notes §7）[iPad/Mac 真机复核交用户] |
+| D4 | 上传移动选择器、Mac 拖拽；冲突三选 | probe-v2-m8-gaps（03z 冲突三选 + 拖拽多文件）+ e2e file-browser（上传链） |
+| D5 | 作用域切换生效；行带项目限定符；置顶最前；重名 tab 加后缀 | probe-v2-m6-plugins（作用域分段生效）+ probe-v2-m9-d（pluginmcp_${name} tab 后缀）+ probe-overview-pinned-nojump.mjs |
+| D6 | footnav 文件/插件/设置仅遮盖主区；点会话行回工作台；零销毁 | probe-v2-m9-d（07m/09m/10m mainPage + sidewin 恒定 + 内容行点击回工作台）+ e2e middle-tab-left（`<main>` stays mounted） |
+| D7 | Mac 页 07m/09m/10m 数据与 iPhone 同源 | probe-v2-m9-d（桌面 mainPage 与移动同 mock 数据源断言）+ probe-v2-m9-b（Inspector 四段同源） |
+| T1 | 业务代码无散落 HEX（机检） | `bun scripts/ar-verify-tokens.mjs`（report 模式：存活违例仅 SessionDetailRoute.tsx v1 遗留测试常量 9 处；v2 重写面零散落） |
+| T2 | 双主题切换全屏正确（对比度抽查） | probe-theme-switch.mjs（双轨同步）+ `node scripts/analyze-contrast.mjs` + probe-v2-m9-e（G 段 .ar 对比度，批次 e 修复 1.86/1.68 → 5.94/3.26） |
+| T3 | 深浅同名语义 token；SVG 示意值差异已备案 | tokens.json `$value` / `$extensions["mode.dark"]` 两态结构 + 本附录「浅色对比度已知限制」备案节 |
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

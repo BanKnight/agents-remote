@@ -2084,11 +2084,16 @@ function ApprovalTray({
           onClick={navigateToCenter}
           type="button"
         >
-          ⚠ {t("claude.approval.trayTitle", { count: approvals.length })} ›
+          {/* 原型 03 .w 行 = warning 三角 SVG + 文本（非 warning 文本符号；M10 emoji 机检偏差收口）。 */}
+          <span className="flex items-center gap-1">
+            <ShellIcon aria-hidden="true" className="h-3.5 w-3.5" name="warning-triangle" />
+            {t("claude.approval.trayTitle", { count: approvals.length })} ›
+          </span>
         </button>
       ) : (
-        <span className="w w-full">
-          ⚠ {t("claude.approval.trayTitle", { count: approvals.length })}
+        <span className="w flex w-full items-center gap-1">
+          <ShellIcon aria-hidden="true" className="h-3.5 w-3.5" name="warning-triangle" />
+          {t("claude.approval.trayTitle", { count: approvals.length })}
         </span>
       )}
       {approvals.map((item) => {

@@ -80,8 +80,12 @@ test("file nav: 活动栏 [文件] 全局树点文件 → 中栏 file tab + /fil
     .click();
   await expect(page).toHaveURL(/\/files$/);
 
-  // 左栏全局文件树（FilesLeftPanel rootBrowse，aria-label "Project files"）。
-  const files = page.getByRole("complementary").nth(1).getByLabel("Project files");
+  // 全局文件树（v2 IA 批次 d §6.10-9：/files = main 整页 mainPage 的 GlobalFilesOverview，
+  // 左栏保持 sidewin 项目总览）。mainPage 态 "Project files" 全局唯一在 main 区，不限 aside。
+  // ⚠️ 点文件后 focusId 生效、mainPage 失效，leftMode=files 粘性让左栏变回 GlobalFilesOverview
+  //（WorkbenchRoute leftPanel 末分支）→ 页面出现第二棵 "Project files"；此测试后续不再消费
+  // files locator，追加断言须重新限定区域防 strict violation。
+  const files = page.getByLabel("Project files");
   await expect(files.getByRole("button", { name: projectName, exact: true })).toBeVisible();
 
   // 进项目目录 → 进 src → 点 index.ts。
