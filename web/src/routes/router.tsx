@@ -204,20 +204,17 @@ const pluginsRoute = createRoute({
   validateSearch: validateWorkbenchSearch,
 });
 
-// 全局 skill 详情 tab focus（对标 /files/file/$，同构）：/plugins/skill/$ splat 捕获 skill name。
-// layout 解析 _splat 为 focusId=`skill_${name}`（useWorkbenchRouteContext，与 tabIdOf 一致）；
-// leftMode 继承 ?leftMode 透传值（从 /plugins 进来=plugins 保插件管理左栏，中栏 tab 切换不改左栏）。
-// 子路由不设 component——layout 渲染（桌面中栏 skill tab / 移动 MobileSkillFocus 主体），与其它
-// focus 子路由一致。
+// 全局 skill 详情深度页（第八轮 pluginView 化，对标 market/sources）：/plugins/skill/$ splat
+// 捕获 skill name，deriveWorkbenchRouteContext 派生 pluginView="skill" + pluginName（无 focusId
+// ——不进保活 tab 体系，§6.12h）。子路由不设 component——layout 按 pluginView 分流渲染详情。
 const pluginsSkillFocusRoute = createRoute({
   getParentRoute: () => workbenchLayoutRoute,
   path: "/plugins/skill/$",
   validateSearch: validateWorkbenchSearch,
 });
 
-// 全局 MCP 详情深度页（v2 M6 13，同 /plugins/skill/$ 范式）：/plugins/mcp/$ splat 捕获 server
-// name，deriveWorkbenchRouteContext 派生 focusId=`pluginmcp_${name}`（移动直渲 MobileMcpDetail；
-// 桌面 update effect 提前 return 不开 tab，M9 前桌面无入口）。
+// 全局 MCP 详情深度页（v2 M6 13；第八轮 pluginView 化同 /plugins/skill/$）：splat 捕获 server
+// name，派生 pluginView="mcp" + pluginName（不进保活 tab 体系）。
 const pluginsMcpFocusRoute = createRoute({
   getParentRoute: () => workbenchLayoutRoute,
   path: "/plugins/mcp/$",

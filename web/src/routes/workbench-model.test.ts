@@ -247,24 +247,53 @@ test("deriveWorkbenchRouteContext: /files 全局文件总览 → scope global + 
   });
 });
 
-test("deriveWorkbenchRouteContext: skill focus /plugins/skill/$ → focusId=skill_${name} + leftMode 继承 search（对标 /files/file/$）", () => {
-  // _splat = skill name，focusId = skill_${name}（与 tabIdOf 一致）。scope=global。
-  // leftMode 继承 search（从 /plugins 进来=plugins 保插件管理左栏，中栏 tab 切换不改左栏，VSCode 式）。
+test("deriveWorkbenchRouteContext: 全局 skill 详情 /plugins/skill/$ → pluginView 深度页（无 focusId，不进 tab 体系）", () => {
+  // 第八轮迁移（§6.12h）：focusId=skill_ 开 tab 范式退役——splat → pluginName，
+  // leftMode 强制 plugins（deep link 无 leftMode 也渲染插件域详情）。
   expect(deriveWorkbenchRouteContext(routeLeaf("/plugins/skill/$", { _splat: "tdd" }))).toEqual({
     scope: { kind: "global" },
-    focusId: "skill_tdd",
+    focusId: undefined,
+    pluginView: "skill",
+    pluginName: "tdd",
+    leftMode: "plugins",
   });
-  // 空 splat → 无 focus
+  // 空 splat → 无 pluginName（pluginView 仍 skill，渲染层兜底）
   expect(deriveWorkbenchRouteContext(routeLeaf("/plugins/skill/$", { _splat: "" }))).toEqual({
     scope: { kind: "global" },
     focusId: undefined,
+    pluginView: "skill",
+    pluginName: undefined,
+    leftMode: "plugins",
   });
-  // 透传 leftMode=plugins（从 /plugins 进来）→ leftMode plugins（左栏保插件管理）
+  // search 透传值不覆盖强制的 leftMode（derive 层 ...s 后覆盖）
   expect(
     deriveWorkbenchRouteContext(
-      routeLeaf("/plugins/skill/$", { _splat: "tdd" }, { leftMode: "plugins" }),
+      routeLeaf("/plugins/skill/$", { _splat: "tdd" }, { leftMode: "files" }),
     ),
-  ).toEqual({ scope: { kind: "global" }, focusId: "skill_tdd", leftMode: "plugins" });
+  ).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+    pluginView: "skill",
+    pluginName: "tdd",
+    leftMode: "plugins",
+  });
+});
+
+test("deriveWorkbenchRouteContext: 全局 MCP 详情 /plugins/mcp/$ → pluginView 深度页（无 focusId）", () => {
+  expect(deriveWorkbenchRouteContext(routeLeaf("/plugins/mcp/$", { _splat: "sentry" }))).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+    pluginView: "mcp",
+    pluginName: "sentry",
+    leftMode: "plugins",
+  });
+  expect(deriveWorkbenchRouteContext(routeLeaf("/plugins/mcp/$", { _splat: "" }))).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+    pluginView: "mcp",
+    pluginName: undefined,
+    leftMode: "plugins",
+  });
 });
 
 test("splitFilePath: 全路径拆 projectName + 项目相对路径", () => {
@@ -1006,4 +1035,17 @@ test("normalizeRef: render ref → null（瞬态内容不落盘，持久化恢�
   // 其余 kind 原样保留（session 抽样对照）。
   expect(normalizeRef({ kind: "render", id: "render_x" })).toBeNull();
   expect(normalizeRef(ref("p", "a"))).toEqual(ref("p", "a"));
+});
+
+test("normalizeRef: 已退役 pluginmcp ref / 残缺 session ref → null（存量清洗兜底，§6.12h）", () => {
+  // V4 存量 JSON 仍含 pluginmcp kind（union 已删、运行时数据残留）：session 兜底分支若不
+  // 防御，会产出 {kind:"session", projectName:undefined, sessionId:undefined} 无效 tab——
+  // 凡走兜底分支但缺 projectName/sessionId 一律剔除（与 render 同属「恢复坏状态不如丢弃」）。
+  const pluginmcp = {
+    kind: "pluginmcp",
+    name: "sentry",
+  } as unknown as Parameters<typeof normalizeRef>[0];
+  expect(normalizeRef(pluginmcp)).toBeNull();
+  const broken = { kind: "session" } as unknown as Parameters<typeof normalizeRef>[0];
+  expect(normalizeRef(broken)).toBeNull();
 });

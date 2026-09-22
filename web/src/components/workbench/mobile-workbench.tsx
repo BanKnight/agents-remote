@@ -34,8 +34,6 @@ import {
   inferSessionTypeFromId,
   parseFileTabId,
   parseGitCommitFocusId,
-  parsePluginMcpTabId,
-  parseSkillTabId,
   parseWikiFocusId,
   projectTabStrip,
   type ProjectTabStripItem,
@@ -99,7 +97,9 @@ type MobileWorkbenchProps = {
    */
   leftMode?: "auto" | "files" | "plugins" | "settings";
   /** 插件 Tab 深度页视图（v2 M6 §3.5，WorkbenchRoute 注入 ctx.pluginView；见 workbench-model）。 */
-  pluginView?: "home" | "market" | "sources";
+  pluginView?: "home" | "market" | "sources" | "skill" | "mcp";
+  /** 插件详情深度页条目名（第八轮）：pluginView="skill"/"mcp" 时为 skill/server 名。 */
+  pluginName?: string;
   /** 项目工具原位（v2 M3-b：?tab=files/git/wiki，与桌面 middle tab 同构；WorkbenchRoute 注入 ctx.tab）。 */
   tool?: WorkbenchMiddleTab;
   /** 工具切换（WorkbenchRoute 注入 onToolTabChange：写 URL ?tab 但不写 rememberedMiddleTab；
@@ -130,7 +130,7 @@ type MobileWorkbenchProps = {
  * 移动端工作台（v2 M3，对标 03-* 原型）。project scope = 三行头部（`MobileProjectHeader`）
  * + 单面板主体（`MobileProjectWorkbench`）；global scope 保持「列表态 → 全屏聚焦态」线性模型
  *（MobileProjectsHome / MobileFilesOverview / MobilePluginsOverview / MobileFocusBody /
- * MobileFileFocus / MobileSkillFocus）。
+ * MobileFileFocus / MobileFocusBody 兜底）。
  */
 export function MobileWorkbench({
   closeHolder,
@@ -139,6 +139,7 @@ export function MobileWorkbench({
   createPromptHolder,
   focusId,
   leftMode,
+  pluginName,
   pluginView,
   mode,
   onOpenFile,
@@ -207,6 +208,13 @@ export function MobileWorkbench({
             <MobileMarket />
           ) : pluginView === "sources" ? (
             <MobileMarketSources />
+          ) : pluginView === "skill" && pluginName ? (
+            // 12 技能详情深度页（第八轮 pluginView 化：原 focusId=skill_ 直渲分支退役，
+            // /plugins/skill/$ 不再写保活 tab 体系）。
+            <MobileSkillDetail name={pluginName} />
+          ) : pluginView === "mcp" && pluginName ? (
+            // 13 MCP 详情深度页（同上，原 focusId=pluginmcp_ 分支与 tab kind 一并退役）。
+            <MobileMcpDetail name={pluginName} />
           ) : (
             <MobilePluginsOverview />
           )
@@ -233,35 +241,6 @@ export function MobileWorkbench({
         style={mainStyle}
       >
         <MobileFileFocus path={filePath} />
-      </main>
-    );
-  }
-
-  // skill focus（focusId 形如 skill_tdd，name=skill 名）：global scope（/plugins/skill/$）直渲
-  // MobileSkillDetail（v2 M6 12 详情形态）；project scope skill 走 tab 带（上方 project 分支）。
-  const skillName = parseSkillTabId(focusId);
-  if (skillName !== null) {
-    return (
-      <main
-        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
-        style={mainStyle}
-      >
-        <MobileSkillDetail name={skillName} />
-      </main>
-    );
-  }
-
-  // MCP 详情（focusId 形如 pluginmcp_ctx7，v2 M6 13）：global scope（/plugins/mcp/$）直渲
-  // MobileMcpDetail（13 详情形态：配置段 + 注入范围 + 移除）。必须在 skillName 分支后（前缀互斥，
-  // 顺序无关）、MobileFocusBody 兜底前拦截，防落进未知 focus 分支。
-  const mcpServerName = parsePluginMcpTabId(focusId);
-  if (mcpServerName !== null) {
-    return (
-      <main
-        className={`relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden pt-[var(--shell-safe-area-top)] text-on-surface ${shellSurfaceClasses.shell}`}
-        style={mainStyle}
-      >
-        <MobileMcpDetail name={mcpServerName} />
       </main>
     );
   }

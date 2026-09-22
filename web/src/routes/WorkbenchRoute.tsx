@@ -29,7 +29,8 @@ import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { ProjectSwitcher } from "../components/workbench/project-switcher";
 import { GlobalFilesOverview } from "../components/files/global-files-overview";
-import { PluginsPanel } from "./PluginsRoute";
+import { MobileMcpDetail } from "../components/workbench/mobile-plugins-detail";
+import { PluginsPanel, SkillTabPreview } from "./PluginsRoute";
 import { useT } from "../i18n";
 import {
   type DropZone,
@@ -47,7 +48,6 @@ import {
   inferSessionTypeFromId,
   parseFileTabId,
   parseGitTabId,
-  parsePluginMcpTabId,
   parseSkillTabId,
   removeTabFromLeaf,
   resizeSplitChildren,
@@ -86,6 +86,7 @@ export function WorkbenchLayoutShell() {
       focusId={ctx.focusId}
       leftMode={ctx.leftMode}
       mode={ctx.mode}
+      pluginName={ctx.pluginName}
       pluginView={ctx.pluginView}
       rightTab={ctx.rightTab}
       scope={ctx.scope}
@@ -100,6 +101,7 @@ function WorkbenchContent({
   scope,
   tab: tabFromUrl,
   leftMode = "auto",
+  pluginName,
   pluginView,
   mode = "agent",
 }: {
@@ -114,9 +116,12 @@ function WorkbenchContent({
   //（见 workbench-model.ts deriveWorkbenchRouteContext），由各 navigate 粘性透传——活动栏入口
   // 强制，中栏 tab focus 透传不改（VSCode 式）。
   leftMode?: "auto" | "files" | "plugins" | "settings";
-  // 插件深度页维度（v2 M6，redesign-v2.md §3.5）：/plugins/market、/plugins/sources 派生非
-  // home 值，移动端 MobileWorkbench 分流渲染；无 focusId（不进保活 tab 体系）；桌面忽略。
-  pluginView?: "home" | "market" | "sources";
+  // 插件深度页维度（v2 M6，redesign-v2.md §3.5）：/plugins/market、/plugins/sources、
+  // /plugins/skill/$、/plugins/mcp/$ 派生非 home 值，移动端 MobileWorkbench 与桌面 mainPage
+  // 分流渲染；无 focusId（不进保活 tab 体系）。skill/mcp 配套 pluginName（详情条目名）。
+  pluginView?: "home" | "market" | "sources" | "skill" | "mcp";
+  // 插件深度页条目名（第八轮）：pluginView="skill"/"mcp" 时为 skill/server 名。
+  pluginName?: string;
   // 一级会话页模式（设计 workbench-views.md §3.1）：agent = 现有三栏会话网格；chat = 全局
   // 会话列表（不绑项目，pi SDK 嵌入，Phase 1 列表 CRUD + 占位 detail）。URL `?mode=` 维度，
   // 默认 agent。仅 global scope 一级会话页有意义。
@@ -254,11 +259,6 @@ function WorkbenchContent({
       if (skillName !== null) {
         return ensureTabOpenLeaf(prev, { kind: "skill", name: skillName });
       }
-      // MCP 详情（v2 M9 批次 d，13 桌面入口）：与 skill 同范式开 tab（M6 记档「M9 评估」落地）。
-      const mcpName = parsePluginMcpTabId(focusId);
-      if (mcpName !== null) {
-        return ensureTabOpenLeaf(prev, { kind: "pluginmcp", name: mcpName });
-      }
       const gitParsed = parseGitTabId(focusId);
       if (gitParsed !== null) {
         if (scope.kind !== "project") return prev;
@@ -316,7 +316,6 @@ function WorkbenchContent({
           t.kind === "file" ||
           t.kind === "git" ||
           t.kind === "skill" ||
-          t.kind === "pluginmcp" ||
           t.kind === "chat" ||
           t.kind === "render"
         )
@@ -583,17 +582,15 @@ function WorkbenchContent({
     },
     [navigate, scope, rightTab, tabFromUrl, leftMode, mode, mainPageActive],
   );
-  // Manage tab 点已装 skill 行 → 中栏开/激活 skill tab + focus（对标 onOpenFile）。skill ref
-  //（kind:"skill", name）全局去重（tabId=skill_${name}），无 project scope gate（同 file）。
+  // Manage tab 点已装 skill 行 → 导航到详情 URL（第八轮：全局入口不再 ensureTabOpenLeaf 写
+  // layout——/plugins/skill/$ 已 pluginView 化为深度页；project scope 仍走 focusId 开 tab 带）。
   const onOpenSkill = useCallback(
     (name: string) => {
-      update((prev) => ensureTabOpenLeaf(prev, { kind: "skill", name }));
       void navigateToSkill(name);
     },
-    [update, navigateToSkill],
+    [navigateToSkill],
   );
-  // MCP 详情 focus URL（v2 M9 批次 d，13 桌面入口）：/plugins/mcp/$ 的 focusId=pluginmcp_${name}
-  // 走 update effect 开 pluginmcp tab（与 skill 同范式）。mainPage 态同样重置 leftMode=auto。
+  // MCP 详情深度页 URL（v2 M6 13 桌面入口；第八轮 pluginView 化，不写 layout）。
   const onOpenMcp = useCallback(
     (name: string) => {
       void navigate({
@@ -892,6 +889,7 @@ function WorkbenchContent({
         createPromptHolder={create.promptHolder}
         focusId={focusId}
         leftMode={leftMode}
+        pluginName={pluginName}
         pluginView={pluginView}
         mode={mode}
         onOpenFile={onOpenFile}
@@ -933,13 +931,25 @@ function WorkbenchContent({
   //——tab 布局在 localStorage atom 持久化，切回 auto 原样恢复；会话服务端不销毁，重挂重连
   //（与移动端切 Tab 同语义）。仅桌面生效：中档/窄屏走 MobileWorkbench，此分支不渲染。
   const desktopMainPage = !mainPageActive ? null : leftMode === "plugins" ? (
-    <MainPageShell title={t("nav.plugins")}>
-      <PluginsPanel
-        onCardDragStart={onCardDragStart}
-        onOpenMcp={onOpenMcp}
-        onOpenSkill={onOpenSkill}
-      />
-    </MainPageShell>
+    // 插件域 mainPage 按深度页分流（第八轮）：skill/mcp 详情 = main 整页渲染详情面板
+    //（复用 tab 时代同款组件；不写 layout、无 tabstrip chip），home = 插件管理整页。
+    pluginView === "skill" && pluginName ? (
+      <MainPageShell title={t("nav.plugins")}>
+        <SkillTabPreview name={pluginName} />
+      </MainPageShell>
+    ) : pluginView === "mcp" && pluginName ? (
+      <MainPageShell title={t("nav.plugins")}>
+        <MobileMcpDetail name={pluginName} />
+      </MainPageShell>
+    ) : (
+      <MainPageShell title={t("nav.plugins")}>
+        <PluginsPanel
+          onCardDragStart={onCardDragStart}
+          onOpenMcp={onOpenMcp}
+          onOpenSkill={onOpenSkill}
+        />
+      </MainPageShell>
+    )
   ) : leftMode === "settings" ? (
     // 07m：设置并入 mainPage 体系（side 恒定 sidewin + main 整页），取代 M7 的居中 Dialog。
     <SettingsMainPage />

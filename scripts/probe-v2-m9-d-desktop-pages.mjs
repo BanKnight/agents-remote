@@ -229,7 +229,7 @@ async function sideOverviewVisible(page) {
       "A1 无实例区窗格（mainPage 态不渲染工作台实例区）",
     );
 
-    // ── B. 13 入口：MCP 列表行点击开 pluginmcp tab ──
+    // ── B. 13 入口：MCP 列表行点击进深度页（第八轮 pluginView 化，不进 tab 体系）──
     await page.getByRole("button", { name: "MCP" }).click();
     await page.waitForTimeout(800);
     const mcpRow = page.getByText("probe-mcp", { exact: true }).first();
@@ -242,10 +242,11 @@ async function sideOverviewVisible(page) {
       "B2 URL 命中 pluginmcp_probe-mcp（focusId 或深度路由）",
     );
     ok(
-      (await page.getByText("probe-mcp").count()) >= 2,
-      "B3 中栏 tab chip + 详情主体均渲染 probe-mcp（MobileMcpDetail 复用）",
+      (await page.getByText("probe-mcp").count()) === 1,
+      "B3 详情主体渲染 probe-mcp 且无 tab chip（pluginView 化：详情不进 tab 体系，仅 nav 单点）",
     );
-    ok(await sideOverviewVisible(page), "B4 开 tab 后左栏仍 sidewin 项目总览");
+    ok((await page.locator(".cfg").count()) > 0, "B3b MobileMcpDetail 配置容器渲染（.cfg 键值段）");
+    ok(await sideOverviewVisible(page), "B4 进深度页后左栏仍 sidewin 项目总览");
 
     // ── A2. /files mainPage ──
     await page.goto(`${WEB_ORIGIN}/files`);

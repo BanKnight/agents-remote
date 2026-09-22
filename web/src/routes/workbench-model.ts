@@ -463,10 +463,16 @@ export type WorkbenchRouteContext = {
   leftMode?: "auto" | "files" | "plugins" | "settings";
   /**
    * 插件 Tab 深度页视图（v2 M6，§3.5）：home = 09 插件 Tab 主页；market = 18 技能市场；
-   * sources = 15 市场源管理。仅 /plugins/market、/plugins/sources 两个 URL 派生非 home 值，
-   * 移动端 MobileWorkbench 按此分流渲染（桌面 M9 前忽略此维度，leftMode=plugins 左栏不变）。
+   * sources = 15 市场源管理；skill / mcp = 12/13 详情深度页（第八轮迁移：/plugins/skill/$、
+   * /plugins/mcp/$ 从 focusId 开 tab 改 pluginView，不进保活 tab 体系）。非 home 值由对应
+   * URL 派生，MobileWorkbench / 桌面 mainPage 按此分流渲染。深度页配套 `pluginName`。
    */
-  pluginView?: "home" | "market" | "sources";
+  pluginView?: "home" | "market" | "sources" | "skill" | "mcp";
+  /**
+   * 插件深度页条目名（第八轮）：pluginView="skill"/"mcp" 时为 skill/server 名（原 URL _splat），
+   * 渲染层据此取详情数据；market/sources/home 为 undefined。
+   */
+  pluginName?: string;
   rightTab?: WorkbenchInspectionTab;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
@@ -540,25 +546,32 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
         pluginView: "sources",
       };
     case "/plugins/skill/$": {
-      // 全局 skill 详情 tab focus（对标 /files/file/$，同构）：_splat = skill name。scope=global；
-      // leftMode **不强制**，继承 ...s 透传值——从 /plugins 进来透传 plugins 保插件管理左栏
-      //（中栏 tab 切换不改左栏，VSCode 式，同 /files/file/$）。focusId=`skill_${name}`（与 tabIdOf 一致）。
+      // 全局 skill 详情深度页（第八轮迁移，对齐 market/sources pluginView 范式）：_splat = skill
+      // name → pluginName。**无 focusId**（不进保活 tab 体系——旧版 focusId=skill_ 会往工作台
+      // layout 持久化塞 tab，多端都不成立，§6.12h）；leftMode 强制 "plugins"（深度页属插件域，
+      // deep link 无 leftMode 也渲染插件详情）。项目内 skill 走 /projects/$key/skill/$ 保留 tab 机制。
       const skillName = p._splat ? decodeURIComponent(p._splat) : "";
       return {
         scope: { kind: "global" },
-        focusId: skillName ? `skill_${skillName}` : undefined,
+        focusId: undefined,
+        pluginView: "skill",
+        pluginName: skillName || undefined,
         ...s,
+        leftMode: "plugins",
       };
     }
     case "/plugins/mcp/$": {
-      // 全局 MCP 详情深度页（v2 M6 13，对标 /plugins/skill/$ 同构）：_splat = server name。
-      // scope=global + leftMode 继承；focusId=`pluginmcp_${name}` 前缀互斥（不进桌面 tab 体系——
-      // MCP 无中栏 tab 类型，update effect 提前 return，渲染层移动直渲 MobileMcpDetail）。
+      // 全局 MCP 详情深度页（v2 M6 13；第八轮迁移同上）：_splat = server name → pluginName。
+      // **无 focusId**（workbench-model 原 focusId=pluginmcp_ 的「不进桌面 tab 体系」意图在 M9
+      // 批次 d 被开 tab 落歪，本次纠偏，pluginmcp tab kind 全链退役）。
       const serverName = p._splat ? decodeURIComponent(p._splat) : "";
       return {
         scope: { kind: "global" },
-        focusId: serverName ? `pluginmcp_${serverName}` : undefined,
+        focusId: undefined,
+        pluginView: "mcp",
+        pluginName: serverName || undefined,
         ...s,
+        leftMode: "plugins",
       };
     }
     case "/projects/session/$id": {
@@ -776,16 +789,6 @@ export type SkillPanelRef = {
 };
 
 /**
- * MCP server 详情面板引用（v2 M9 批次 d，对标 SkillPanelRef）。name = server 名，tabId =
- * `pluginmcp_${name}`（与移动深度页 /plugins/mcp/$ 的 focusId 同前缀互斥共用）。渲染复用
- * MobileMcpDetail（静态配置详情，无桌面专属形态——§6.6 能力边界两端一致）。
- */
-export type PluginMcpPanelRef = {
-  kind: "pluginmcp";
-  name: string;
-};
-
-/**
  * HTML 渲染面板引用（聊天流富媒体，2026-09-10）。id = tabId 本身（`render_${uuid}`）。
  * 瞬态内容：html 存内存 atom（workbenchRenderContentAtom），不持久化——normalizeRef 不识别
  * render（刷新丢弃，focus 回原 session 自洽），stale prune 同款跳过。无 URL focus 路由。
@@ -807,7 +810,6 @@ export type WorkbenchPanelRef =
   | FilePanelRef
   | GitPanelRef
   | SkillPanelRef
-  | PluginMcpPanelRef
   | RenderPanelRef;
 
 /** V1/V2 历史布局的面板引用（迁移源，无 kind —— 仅 session，= 旧 WorkbenchPanelRef）。 */
@@ -829,7 +831,6 @@ export function tabIdOf(ref: WorkbenchPanelRef): string {
   if (ref.kind === "render") return ref.id;
   if (ref.kind === "file") return `file_${ref.path}`;
   if (ref.kind === "skill") return `skill_${ref.name}`;
-  if (ref.kind === "pluginmcp") return `pluginmcp_${ref.name}`;
   return ref.mode === "compare"
     ? `gitcmp_${ref.base}~${ref.compare}/${ref.path}`
     : `git_${ref.scope}/${ref.path}`;
@@ -843,14 +844,6 @@ export function parseFileTabId(tabId: string): string | null {
 /** 从 skill tab id（`skill_${name}`）反解 skill name；非 skill tab id 返 null（路由 skill focus 用）。 */
 export function parseSkillTabId(tabId: string): string | null {
   return tabId.startsWith("skill_") ? tabId.slice("skill_".length) : null;
-}
-
-/**
- * 从 MCP 详情 focus id（`pluginmcp_${name}`）反解 server name；非该前缀返 null（移动 MCP 深度页
- * 用，v2 M6 13）。与 skill_ 前缀互斥——`pluginmcp_` 以 `plugin` 开头但不以 `skill_` 开头，无歧义。
- */
-export function parsePluginMcpTabId(tabId: string): string | null {
-  return tabId.startsWith("pluginmcp_") ? tabId.slice("pluginmcp_".length) : null;
 }
 
 /**
@@ -902,7 +895,10 @@ export function parseGitTabId(
 /** localStorage 兼容：V3 多态前的持久化 ref 无 kind（运行时 undefined）→ 默认 session 分支补全。
  *  git ref 保留 mode（旧 V3 数据有 scope 无 mode → 视为 scope 模式补全 mode:"scope"）。
  *  render ref **不识别 → null 丢弃**：瞬态内容（html 在内存 atom），刷新后消失，
- *  focus 回原 session 自洽——持久化恢复一个空 render tab 反而是坏状态。 */
+ *  focus 回原 session 自洽——持久化恢复一个空 render tab 反而是坏状态。
+ *  session 兜底分支**防御剔除残缺 ref**：运行时 JSON 可能含已退役 kind（pluginmcp，第八轮
+ *  §6.12h 退役，union 已删但存量数据仍在）或残缺 V3 前 session ref——缺 projectName/sessionId
+ *  补全只会产出无效 tab（点开空面板），同样 null 丢弃。 */
 export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef | null {
   if (ref.kind === "file") return { kind: "file", path: ref.path };
   if (ref.kind === "git") {
@@ -924,10 +920,11 @@ export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef | null {
         };
   }
   if (ref.kind === "skill") return { kind: "skill", name: ref.name };
-  if (ref.kind === "pluginmcp") return { kind: "pluginmcp", name: ref.name };
   if (ref.kind === "chat") return { kind: "chat", sessionId: ref.sessionId };
   if (ref.kind === "render") return null;
-  return { kind: "session", projectName: ref.projectName, sessionId: ref.sessionId };
+  const legacy = ref as { projectName?: unknown; sessionId?: unknown };
+  if (typeof legacy.projectName !== "string" || typeof legacy.sessionId !== "string") return null;
+  return { kind: "session", projectName: legacy.projectName, sessionId: legacy.sessionId };
 }
 
 /**
@@ -1875,6 +1872,24 @@ function normalizeLayoutV3(layout: WorkbenchLayoutV3): WorkbenchLayoutV3 {
   return { ...layout, root: normalizeTree(layout.root) };
 }
 
+/**
+ * 第八轮一次性迁移标记：V4 存量布局中的 skill tab 来自旧「全局插件详情开 tab」机制（2026-08-16
+ * 范式，第八轮已退役为 pluginView 深度页，§6.12h）——旧机制下 /plugins/skill/$ 无差别写 layout
+ * 且不参与 stale prune，多端累积成「工作台多了几个 tab」。迁移 = 首次读 V4 布局时剥离全部
+ * skill tab 并写回（pluginmcp 已由 normalizeRef 永久剔除兜底），标记 key 防重入；新机制下
+ * project scope 的 skill tab 在标记写入后正常持久化，不受影响。
+ */
+const WORKBENCH_LAYOUT_V4_PLUGIN_TAB_CLEAN_KEY = "workbenchLayoutV4PluginTabCleaned";
+
+function stripLegacyPluginSkillTabs(layout: WorkbenchLayoutV3): WorkbenchLayoutV3 {
+  if (!layout.root) return layout;
+  const strip = (node: TreeNode): TreeNode =>
+    node.kind === "leaf"
+      ? { ...node, tabs: node.tabs.filter((t) => t.kind !== "skill") }
+      : { ...node, children: node.children.map(strip) };
+  return { ...layout, root: strip(layout.root) };
+}
+
 /** 递归遍历 TreeNode，规范化所有 leaf 的 tabs（split 节点不含 ref）；normalizeRef 返 null
  *  （瞬态 render tab）→ 从持久化恢复中剔除。 */
 function normalizeTree(node: TreeNode): TreeNode {
@@ -1905,7 +1920,13 @@ const workbenchLayoutStorage = {
     const raw = localStorage.getItem(key);
     if (raw) {
       try {
-        return normalizeLayoutV3(JSON.parse(raw) as WorkbenchLayoutV3);
+        let layout = normalizeLayoutV3(JSON.parse(raw) as WorkbenchLayoutV3);
+        if (!localStorage.getItem(WORKBENCH_LAYOUT_V4_PLUGIN_TAB_CLEAN_KEY)) {
+          layout = stripLegacyPluginSkillTabs(layout);
+          localStorage.setItem(key, JSON.stringify(layout));
+          localStorage.setItem(WORKBENCH_LAYOUT_V4_PLUGIN_TAB_CLEAN_KEY, "1");
+        }
+        return layout;
       } catch {
         return initialValue;
       }

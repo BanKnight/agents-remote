@@ -117,8 +117,8 @@ export function PluginsPanel({
   /** 项目 scope navigate /projects/$key/skill/$ 保留的 search（?tab/?rightTab/?leftMode 不丢；
    *  WorkbenchRoute 组装。移动端不传 → 行为不变）。 */
   openSkillSearch?: Partial<WorkbenchSearch>;
-  /** 全局 scope 打开 MCP server 详情（13，v2 M9 批次 d 桌面入口：navigate /plugins/mcp/$ 开中栏
-   *  pluginmcp tab）。不传 → 列表行不可点（移动 /plugins main 维持纯管理语义，行为不变）。 */
+  /** 全局 scope 打开 MCP server 详情（13，v2 M9 批次 d 桌面入口：navigate /plugins/mcp/$ 深度页，
+   *  第八轮起不再写 layout tab）。不传 → 列表行不可点（移动 /plugins main 维持纯管理语义）。 */
   onOpenMcp?: (name: string) => void;
 }) {
   const { t } = useT();
@@ -516,11 +516,11 @@ function ManageTab({
 }
 
 /**
- * skill 详情预览面板（中栏 skill tab + 移动 MobileSkillFocus body 共用，对标 FileTabPreview）。
+ * skill 详情预览面板（中栏 skill tab / 全局插件详情深度页共用，对标 FileTabPreview）。
  * 只读渲染本地 SKILL.md（useSkillPreview → MarkdownString）——无编辑无保存（区别于 FileTabPreview
  * 可编辑）。**不带 h4 标题栏**：SKILL.md 正文自带 `# H1` 标题，再加 h4 会重复（区别于 FilePreviewPanel
  * 保留 h4——文件正文不带 `# 标题` 不重复）；section 直接从 loading/error/内容态开始。桌面由
- * PanelRouter 渲染、移动由 MobileSkillFocus 包 header 后渲染 body。顶层组件
+ * PanelRouter 渲染、移动由插件详情深度页（mobile-workbench pluginView 分流）渲染 body。顶层组件
  *（rerender-no-inline-components），不嵌套定义。
  */
 export function SkillTabPreview({ name, projectName }: { name: string; projectName?: string }) {

@@ -78,7 +78,6 @@ import { AgentTerminalPanel, AcpPanel, ChatPanel, TerminalPanel } from "./instan
 import { ChatSessionDetailBody } from "../../routes/ChatSessionDetailRoute";
 import { FileTabPreview } from "../files/file-preview-panel";
 import { SkillTabPreview } from "../../routes/PluginsRoute";
-import { MobileMcpDetail } from "./mobile-plugins-detail";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
 import { type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
@@ -582,12 +581,6 @@ function PanelRouterBase({ panelRef, embeddedHeader }: PanelRouterProps) {
   if (panelRef.kind === "skill") {
     return <SkillTabPreview name={panelRef.name} />;
   }
-  // MCP 详情 tab 渲染 MobileMcpDetail（v2 M9 批次 d 桌面入口）：静态配置详情无桌面专属
-  // 形态，直接复用移动组件（PluginNav 返回 = navigate /plugins；移动 bottom-nav padding
-  // 变量在桌面为 0 无副作用）。
-  if (panelRef.kind === "pluginmcp") {
-    return <MobileMcpDetail name={panelRef.name} />;
-  }
   // git tab 渲染 GitFileDiffPanel（自带 file diff query，设计 workbench-layout-fix 阶段 3）。
   // projectName/scope/path 来自 tab ref 固定；不传 onClose（中栏 tab 关闭走 tab ✕，非移动浮层）。
   if (panelRef.kind === "git") {
@@ -825,20 +818,6 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
   if (panelRef.kind === "skill") {
     // skill tab marker 对齐 file/git（h-4 w-4 裸 icon）；label = skill name（SKILL.md 详情只读预览，
     // 无 session 生命周期，无 statusDot）。
-    return {
-      label: panelRef.name,
-      marker: (
-        <span
-          aria-hidden="true"
-          className="inline-flex shrink-0 items-center text-on-surface-muted"
-        >
-          <ShellIcon className="h-4 w-4" name="file" />
-        </span>
-      ),
-    };
-  }
-  if (panelRef.kind === "pluginmcp") {
-    // MCP 详情 tab marker 对齐 skill（h-4 w-4 裸 icon）；label = server name。无 session 生命周期。
     return {
       label: panelRef.name,
       marker: (
@@ -2282,7 +2261,7 @@ function TabChip({
     meta?.label ??
     (panelRef.kind === "session"
       ? panelRef.sessionId.slice(0, 12)
-      : panelRef.kind === "skill" || panelRef.kind === "pluginmcp"
+      : panelRef.kind === "skill"
         ? panelRef.name
         : panelRef.kind === "chat"
           ? panelRef.sessionId.slice(0, 12)
@@ -2909,7 +2888,7 @@ function DragGhost({
     meta?.label ??
     (panelRef.kind === "session"
       ? panelRef.sessionId.slice(0, 12)
-      : panelRef.kind === "skill" || panelRef.kind === "pluginmcp"
+      : panelRef.kind === "skill"
         ? panelRef.name
         : panelRef.kind === "chat"
           ? panelRef.sessionId.slice(0, 12)
