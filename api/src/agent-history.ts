@@ -365,6 +365,11 @@ async function extractEntry(
     }
   }
 
+  // 空壳 session 过滤（M10 第三轮用户反馈「历史标题除了最新的几个都不对」）：CLI 启动即写
+  // last-prompt/atis-latch 占位、未发过任何消息就被关掉的 session（实测 ~207 字节），title/
+  // firstMessage/startedAt 三者全空——列进历史只会显示成无标题怪行。有任一字段即保留。
+  if (!customTitle && !aiTitle && !firstMessage && !startedAt) return null;
+
   return {
     claudeSessionId,
     title: customTitle ?? aiTitle ?? null,

@@ -726,6 +726,7 @@ export const en = {
   "workbench.historyIdle": "Idle · {{time}}",
   "workbench.historyClosed": "Ended · {{time}}",
   "workbench.historyEmpty": "No sessions",
+  "workbench.historyLoading": "Loading…",
   "workbench.historyFoot": "Resume reopens the same session · full replay · keep chatting",
   "approvals.title": "Approval Center",
   "approvals.rowLabel": "{{count}} approvals · review together",

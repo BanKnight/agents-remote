@@ -163,7 +163,7 @@ export function MobileSessionHistorySheet({
   const { t } = useT();
   const [filter, setFilter] = useState<(typeof HISTORY_FILTERS)[number]>("all");
   // open gate：sheet 常驻挂载（open 只控显隐），不打开不发 agent-history 查询。
-  const { entries, resume } = useHistorySessions(projectName, "week", open);
+  const { entries, isLoading, resume } = useHistorySessions(projectName, "week", open);
   const renameDialog = usePromptDialog();
   const rows = entries
     .filter((entry) =>
@@ -215,7 +215,27 @@ export function MobileSessionHistorySheet({
         ))}
       </div>
       <div className="mt-1.5">
-        {rows.length === 0 ? (
+        {isLoading ? (
+          // 加载态（M10 第三轮用户反馈「缺少加载态提示」）：isLoading 区分加载与空态（与桌面
+          // HistoryListSkeleton 同语义），避免打开即闪「暂无会话」误导。骨架行复用 .hrow 原语
+          // 保持 03n 行几何（r1 内名/状态两条灰条），aria-hidden 装饰不进读屏。
+          <div aria-label={t("workbench.historyLoading")} role="status">
+            {[0, 1].map((i) => (
+              <div aria-hidden="true" className="hrow" key={i}>
+                <span className="r1">
+                  <span
+                    className="min-w-0 flex-1 animate-pulse rounded-md bg-ink-1/70"
+                    style={{ height: 14 }}
+                  />
+                  <span
+                    className="st animate-pulse rounded-md bg-ink-1/70"
+                    style={{ height: 10 }}
+                  />
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
           <p className="py-3 text-center text-footnote text-ink-2">{t("workbench.historyEmpty")}</p>
         ) : (
           rows.map((entry) => {

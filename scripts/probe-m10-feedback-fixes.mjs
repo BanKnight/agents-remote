@@ -7,6 +7,12 @@
 //   D 问题⑦⑧ 插件页——h1 30px-800 / 搜索框 38px r12 / segc 32px / d2 overflow-wrap:anywhere /
 //     长命令 fixture 下 document 无横向溢出。
 //   E 问题⑥ 全局文件 sanity——/files mainPage 树可见 + 首行几何对照数据输出（换皮前 baseline）。
+//   F 问题⑨⑩⑪⑬ 项目工作台——chips 工具态隐藏/取消工具回原 tab/file L3 完整父路径/ticon 间距。
+//   G 第三轮（预览 back=上一层 / 历史浮层加载态 / 下拉收起）：
+//     G1 file 预览 back → ?tab=files + crumb 在父目录层（03q back 语义）
+//     G2 git 预览 back = 「Git 检视」→ 点后 ?tab=git（03r back 语义）
+//     G3 历史 sheet 打开先见加载骨架（[role=status]）再见数据行
+//     G4 sheet 下拉 ≥96px 收起关闭；慢速小位移回弹不关闭
 // 密码由脚本自读（readAppPassword），不进 agent 上下文。用法：bun scripts/probe-m10-feedback-fixes.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
@@ -207,6 +213,50 @@ async function setupMocks(page) {
       body: JSON.stringify({
         entries,
         parentPath: path ? path.split("/").slice(0, -1).join("/") || null : null,
+      }),
+    });
+  });
+  // git diff（G2）：repository + worktree 改动 src/deep.ts（badge M 行 fixture）。
+  await page.route(/\/api\/projects\/proj1\/git\/diff$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        repository: true,
+        projectName: "proj1",
+        branch: { name: "main", ahead: 0, behind: 0 },
+        files: [
+          {
+            path: "src/deep.ts",
+            status: "modified",
+            scope: "worktree",
+            addedLines: 1,
+            removedLines: null,
+          },
+        ],
+      }),
+    }),
+  );
+  // agent-history（G3/G4）：延迟 400ms 返回 1 条（加载窗口内可断言加载骨架）。
+  await page.route(/\/api\/projects\/proj1\/agent-history\?range=week$/, async (r) => {
+    await new Promise((res) => setTimeout(res, 400));
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        entries: [
+          {
+            provider: "claude",
+            claudeSessionId: "uuid-aaaa",
+            title: "probe-history-entry",
+            firstMessage: null,
+            startedAt: "2026-09-22T03:00:00.000Z",
+            lastActivityAt: new Date().toISOString(),
+            fileSize: 123,
+            hasActiveSession: true,
+            activeSessionId: "agent_a",
+          },
+        ],
       }),
     });
   });
@@ -483,6 +533,85 @@ async function run() {
       () => document.querySelector(".nav .back")?.textContent?.trim() ?? "",
     );
     record(backLabel === "src", `file L3 back = 完整父目录（got "${backLabel}"）`);
+
+    // ── G 第三轮：预览 back = 返回上一层（⑭）+ 历史浮层加载态（①）+ 下拉收起（③）──
+    console.log("G. 第三轮（back=上一层/加载态/下拉收起）");
+    // G1 问题⑭：file 预览 back → 删 tab + ?tab=files，文件树落在父目录（crumb 含 src）。
+    await page.locator(".nav .back").click();
+    await page.waitForTimeout(500);
+    record(page.url().includes("tab=files"), `file back → ?tab=files（got ${page.url()}）`);
+    const crumbText = await page.evaluate(
+      () => document.querySelector(".crumb")?.textContent ?? "",
+    );
+    record(crumbText.includes("src"), `file back crumb 在父目录层（got "${crumbText}"）`);
+
+    // G2 问题⑭：git 预览 back = 「Git 检视」（03r 原型）→ 点后 ?tab=git 回工具面板。
+    await page.locator('button[aria-label="Git"]').click();
+    await page.waitForTimeout(500);
+    await page.locator("button.frow", { hasText: "deep.ts" }).first().click();
+    await page.waitForTimeout(700);
+    const gitBack = await page.evaluate(
+      () => document.querySelector(".nav .back")?.textContent?.trim() ?? "",
+    );
+    record(gitBack === "Git 检视", `git L3 back = 「Git 检视」（got "${gitBack}"）`);
+    await page.locator(".nav .back").click();
+    await page.waitForTimeout(500);
+    record(page.url().includes("tab=git"), `git back → ?tab=git（got ${page.url()}）`);
+
+    // G3 问题①：历史 sheet 打开先见加载骨架（[role=status]）再见数据行。
+    await page.goto(`${WEB_ORIGIN}/projects/proj1`);
+    await page.waitForTimeout(700);
+    await page
+      .getByRole("button", { name: /AAA-running/ })
+      .first()
+      .click();
+    await page.waitForTimeout(600);
+    await page.getByRole("button", { name: "更多操作" }).click();
+    await page.waitForTimeout(300);
+    await page.getByText("会话历史", { exact: true }).click();
+    await page.waitForTimeout(120); // mock 延迟 400ms 的加载窗口内
+    const loadVisible = await page
+      .locator("[role=status]")
+      .last()
+      .isVisible()
+      .catch(() => false);
+    record(loadVisible, "历史 sheet 加载骨架可见（问题①）");
+    await page.waitForTimeout(700);
+    const histRows = await page.locator("button.hrow").count();
+    record(histRows >= 1, `历史行渲染（got ${histRows}）`);
+
+    // G4 问题③：sheet 下拉收起（grab 条热区拖 120px ≥ 阈值 → 关闭）+ 慢速小位移回弹不关。
+    const grab = page.locator("[role=dialog] .grab").last();
+    const gb = await grab.boundingBox();
+    if (record(gb !== null, "grab 条可定位")) {
+      const cx = gb.x + gb.width / 2;
+      const cy = gb.y + gb.height / 2;
+      await page.mouse.move(cx, cy);
+      await page.mouse.down();
+      await page.mouse.move(cx, cy + 120, { steps: 8 });
+      await page.mouse.up();
+      await page.waitForTimeout(500);
+      record((await page.locator("[role=dialog]").count()) === 0, "下拉 120px 收起关闭");
+      // 回弹：重开 sheet（mock history 已缓存，直出行），慢速拖 40px（v≈0.11px/ms < 阈值）。
+      await page.getByRole("button", { name: "更多操作" }).click();
+      await page.waitForTimeout(300);
+      await page.getByText("会话历史", { exact: true }).click();
+      await page.waitForTimeout(500);
+      const gb2 = await page.locator("[role=dialog] .grab").last().boundingBox();
+      if (record(gb2 !== null, "重开 sheet grab 可定位")) {
+        const cx2 = gb2.x + gb2.width / 2;
+        const cy2 = gb2.y + gb2.height / 2;
+        await page.mouse.move(cx2, cy2);
+        await page.mouse.down();
+        for (let i = 1; i <= 4; i++) {
+          await page.mouse.move(cx2, cy2 + i * 10);
+          await page.waitForTimeout(90);
+        }
+        await page.mouse.up();
+        await page.waitForTimeout(500);
+        record((await page.locator("[role=dialog]").count()) > 0, "慢速 40px 回弹不关闭");
+      }
+    }
   } finally {
     await browser.close();
   }

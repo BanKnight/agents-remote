@@ -625,3 +625,37 @@ test("cache: range-filtered (still-on-disk) entries are retained, not purged", a
 
   await rm(realDir, { recursive: true, force: true });
 });
+
+// 空壳 session 文件（CLI 启动即写 last-prompt/atis-latch 占位、从未发消息）三者全空 → 过滤，
+// 不列进历史（M10 用户反馈「历史标题除了最新的几个都不对」的真实数据形态）。
+test("filters out placeholder-only sessions (no title, no user line)", async () => {
+  const realSlug = projectToSlug(TEST_PROJECT);
+  const realDir = join(homedir(), ".claude", "projects", realSlug);
+  await rm(realDir, { recursive: true, force: true }).catch(() => {});
+  await mkdir(realDir, { recursive: true });
+  // 空壳：CLI 启动即写 last-prompt/atis-latch 占位、从未发消息（真实数据 ~207 字节）。
+  await writeFile(
+    join(realDir, "bbb-222.jsonl"),
+    [
+      JSON.stringify({ type: "last-prompt", leafUuid: "u1", sessionId: "bbb-222" }),
+      JSON.stringify({ type: "atis-latch", atis: "", sessionId: "bbb-222" }),
+    ].join("\n"),
+  );
+  // 对照：同目录有真实首条 prompt 的 session 仍正常列出。
+  await writeFile(
+    join(realDir, "ccc-333.jsonl"),
+    [
+      JSON.stringify({ type: "last-prompt", leafUuid: "u2", sessionId: "ccc-333" }),
+      JSON.stringify({
+        type: "user",
+        message: { content: [{ type: "text", text: "real prompt" }] },
+        timestamp: "2026-06-01T00:00:00Z",
+      }),
+    ].join("\n"),
+  );
+
+  const entries = await listAgentHistory(TEST_PROJECT, new Map(), "all");
+  expect(entries.map((e) => e.claudeSessionId)).toEqual(["ccc-333"]);
+
+  await rm(realDir, { recursive: true, force: true });
+});

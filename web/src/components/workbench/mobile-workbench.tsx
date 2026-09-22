@@ -781,15 +781,26 @@ function MobileProjectWorkbench({
   const setFilesPath = (path: string) =>
     setProjectFilesPaths((prev) => ({ ...prev, [scope.key]: path }));
 
-  // file/git 预览 focus 的关闭（v2 M4：back 胶囊承担——l3.backLabel 显示来源层级，动作仍是
-  // 删 tab + 回浏览态；M3-c 的 ✕ 按钮被 l3.actions 取代）。
+  // file/git 预览 focus 的返回（M10 第三轮用户反馈：back = 返回上一层，与 backLabel 语义
+  // 对齐——文件预览回文件树父目录（03q back「src/auth」），git diff 回 Git 工具面板（03r
+  // back「Git 检视」）。此前动作是 v2 M4 旧设计「删 tab + 回实例主体」，backLabel 显示的
+  // 是来源层级、动作却回实例主体，显示与行为脱节。预览 tab 仍是一次性（删），返回导航落在
+  // 来源工具层（handleToolChange 写 URL ?tab=files/git，cwd 同步到父目录）。
   const closeTransientFocus =
     focusRef?.kind === "file" || focusRef?.kind === "git"
       ? () => {
           const leafId = stripItems.find((s) => s.tabId === effectiveFocusId)?.leafId;
           if (!leafId || !effectiveFocusId) return;
           updateLayout((prev) => removeTabFromLeaf(prev, leafId, effectiveFocusId));
-          void navigateWorkbench(scope);
+          if (focusRef?.kind === "file") {
+            const { path: relPath } = splitFilePath(focusRef.path);
+            const lastSlash = relPath.lastIndexOf("/");
+            // 根文件（无父目录）back = 项目名（l3Transient 同款）→ cwd 回根目录。
+            setFilesPath(lastSlash === -1 ? "" : relPath.slice(0, lastSlash));
+            handleToolChange("files");
+          } else {
+            handleToolChange("git");
+          }
         }
       : null;
 

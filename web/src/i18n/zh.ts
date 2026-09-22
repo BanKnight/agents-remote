@@ -722,6 +722,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.historyIdle": "空闲 · {{time}}",
   "workbench.historyClosed": "已结束 · {{time}}",
   "workbench.historyEmpty": "暂无会话",
+  "workbench.historyLoading": "加载中…",
   "workbench.historyFoot": "恢复 = 重开同一会话 · 完整回放 · 可继续对话",
   "approvals.title": "审批中心",
   "approvals.rowLabel": "{{count}} 项待审批 · 集中处理",
