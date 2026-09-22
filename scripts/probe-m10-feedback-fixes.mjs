@@ -381,6 +381,8 @@ async function run() {
         grab: grab
           ? { w: grab.getBoundingClientRect().width, h: grab.getBoundingClientRect().height }
           : null,
+        h2Text: h2?.textContent ?? "",
+        rowsText: rows.map((r) => r.textContent ?? "").join("|"),
         h2: style(h2),
         status: style(statusLine),
         statusText: statusLine?.textContent ?? "",
@@ -425,6 +427,14 @@ async function run() {
       record(
         geo.btns[2]?.color === "rgb(255, 69, 58)" || geo.btns[2]?.color === "rgb(255, 59, 48)",
         `关闭会话 danger 色（got ${geo.btns[2]?.color}）`,
+      );
+      // 第八轮批次 2a：标题 = 会话 displayName（03k:61 h2=会话名），名称不进 krow；effort 行存在
+      //（mock 无 effort 字段 → 兜底 "high"，与 EffortSelector 同口径；值不 i18n，CLI 标识符直通）。
+      record(geo.h2Text === "AAA-running", `h2 = displayName（got "${geo.h2Text}"）`);
+      record(!geo.rowsText.includes("名称"), "krow 无「名称」行（displayName 已上移标题位）");
+      record(
+        geo.rowsText.includes("推理 effort") && geo.rowsText.includes("high"),
+        "effort 行存在（label 推理 effort，值兜底 high）",
       );
     }
     await page.keyboard.press("Escape");

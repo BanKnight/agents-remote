@@ -75,11 +75,9 @@ async function setupMocks(page) {
 
 async function login(page) {
   await page.goto(`${WEB_ORIGIN}/`);
-  await page
-    .getByLabel("密码")
-    .or(page.getByLabel("Password"))
-    .fill(await readAppPassword());
-  await page.getByRole("button", { name: /解锁|Unlock/ }).click();
+  await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+  await page.getByLabel("访问密码").fill(await readAppPassword());
+  await page.getByRole("button", { name: "登录" }).click();
   await page.waitForTimeout(700);
 }
 

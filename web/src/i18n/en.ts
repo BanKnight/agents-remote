@@ -131,13 +131,12 @@ export const en = {
 
   // ── Mobile focus instance info sheet (ℹ) ───────────────────
   "session.instanceInfo.title": "Instance info",
-  "session.instanceInfo.name": "Name",
   "session.instanceInfo.project": "Project",
   "session.instanceInfo.type": "Type",
   "session.instanceInfo.terminal": "Terminal",
-  "session.instanceInfo.status": "Status",
   "session.instanceInfo.model": "Model",
   "session.instanceInfo.permission": "Permission",
+  "session.instanceInfo.effort": "Effort",
   "session.instanceInfo.createdAt": "Created",
   "session.instanceInfo.resumeId": "Resume ID",
   "session.autoRetry.label": "Auto-retry",

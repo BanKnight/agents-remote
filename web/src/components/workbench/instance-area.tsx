@@ -1018,10 +1018,8 @@ export function useInstanceInfoActions(
         ? formatRanSuffix(createdAt, t)
         : ` · ${relativeTime(createdAt, t)}`;
     const statusLine = statusNow ? `● ${t(sessionStatusLabel(statusNow))}${ageSuffix}` : undefined;
+    // 会话名在浮层标题位单点展示（第八轮批次 2a，对齐 03k:61 h2=会话名），不再进 fields。
     const displayName = agentSession?.displayName ?? terminalSession?.displayName;
-    if (displayName) {
-      fields.push({ label: t("session.instanceInfo.name"), value: displayName });
-    }
     if (projectName) {
       fields.push({ label: t("session.instanceInfo.project"), value: projectName });
     }
@@ -1037,6 +1035,12 @@ export function useInstanceInfoActions(
         fields.push({
           label: t("session.instanceInfo.permission"),
           value: agentSession.permissionMode,
+        });
+      }
+      if (agentSession.provider === "claude") {
+        fields.push({
+          label: t("session.instanceInfo.effort"),
+          value: agentSession.effort ?? "high",
         });
       }
       if (agentSession.createdAt) {
@@ -1078,7 +1082,13 @@ export function useInstanceInfoActions(
       });
     }
     // claude 的编辑入口已并入自动重试行内（编辑按钮）；terminal/其他 provider 纯展示无 footer。
-    infoSheet.open(t("session.instanceInfo.title"), fields, variant, footer, statusLine);
+    infoSheet.open(
+      displayName ?? t("session.instanceInfo.title"),
+      fields,
+      variant,
+      footer,
+      statusLine,
+    );
   };
   return { openInfo, holder: infoSheet.holder, autoRetryEditorHolder: autoRetryEditor.holder };
 }

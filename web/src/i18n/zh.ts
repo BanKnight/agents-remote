@@ -131,13 +131,12 @@ export const zh: Record<TranslationKey, string> = {
 
   // ── 移动聚焦态实例信息浮窗 (ℹ) ──────────────────────────────
   "session.instanceInfo.title": "实例信息",
-  "session.instanceInfo.name": "名称",
   "session.instanceInfo.project": "项目",
   "session.instanceInfo.type": "类型",
   "session.instanceInfo.terminal": "终端",
-  "session.instanceInfo.status": "状态",
   "session.instanceInfo.model": "模型",
   "session.instanceInfo.permission": "权限",
+  "session.instanceInfo.effort": "推理 effort",
   "session.instanceInfo.createdAt": "创建时间",
   "session.instanceInfo.resumeId": "恢复 ID",
   "session.autoRetry.label": "自动重试",
