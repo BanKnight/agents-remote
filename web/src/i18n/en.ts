@@ -929,6 +929,14 @@ export const en = {
   "plugins.market": "Market",
   "plugins.manageSources": "Manage sources ›",
   "plugins.skillMarket": "Skill market",
+  "plugins.mcpMarket": "MCP marketplace",
+  "plugins.mcpMarketTitle": "MCP marketplace",
+  "plugins.marketTabMcp": "MCP Servers",
+  "plugins.marketTabSkill": "Skills",
+  "plugins.mcpSearchPlaceholder": "Search MCP servers",
+  "plugins.officialRegistry": "✓ Official Registry",
+  "plugins.mcpManualConfigNote":
+    "This entry doesn't support one-click install; add it manually under MCP servers",
   "plugins.marketTitle": "Skill market",
   "plugins.sourcesTitle": "Market sources",
   "plugins.sourcesHint":
@@ -1045,6 +1053,8 @@ export const en = {
   "mcp.detailScope": "Injection scope",
   "mcp.scopeGlobalValue": "Global · all agent sessions",
   "mcp.scopeProjectValue": "This project · {{name}}",
+  "mcp.marketEnvField": "Environment variable {{name}}",
+  "mcp.marketHeaderField": "Header {{name}}",
   "mcp.envMasked": "•••••• (masked)",
   "mcp.removeNote":
     "Sessions using this server will lose its tools; new sessions will no longer load it",

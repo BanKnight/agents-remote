@@ -337,6 +337,8 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   mode?: WorkbenchMode;
   /** M5-b 审批中心：/projects?approvals=1 → 项目 Tab 挂载即开审批 sheet（tray 标题入口②）。 */
   approvals?: boolean;
+  /** M6-c 市场页双段（17/18 同页 tabseg）：/plugins/market?marketTab=mcp|skill；缺省 skill。 */
+  marketTab?: "mcp" | "skill";
 } {
   const result: {
     rightTab?: WorkbenchInspectionTab;
@@ -347,9 +349,13 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     leftMode?: "auto" | "files" | "plugins" | "settings";
     mode?: WorkbenchMode;
     approvals?: boolean;
+    marketTab?: "mcp" | "skill";
   } = {};
   if (search.approvals === "1" || search.approvals === true) {
     result.approvals = true;
+  }
+  if (search.marketTab === "mcp" || search.marketTab === "skill") {
+    result.marketTab = search.marketTab;
   }
   if (
     search.rightTab === "files" ||

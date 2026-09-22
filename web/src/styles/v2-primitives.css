@@ -2610,6 +2610,36 @@
     line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
+  /* 17/18 市场页双段切换（MCP 服务器｜技能；原型 span 升 button，a11y + 焦点管理同 .stabseg） */
+  .tabseg {
+    display: flex;
+    margin: 0 16px;
+    height: 34px;
+    border-radius: 10px;
+    background: var(--fill-segmented);
+    padding: 3px;
+  }
+  .tabseg > * {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-2);
+    cursor: pointer;
+    border: none;
+    background: none;
+    padding: 0;
+  }
+  .tabseg .on {
+    background: var(--segmented-thumb);
+    color: var(--ink-1);
+    font-weight: 600;
+    border-radius: 8px;
+  }
+
   /* 18 来源 chips（选中 = 主色实底；改名避开 M3 行3 运行摘要 .chips）+ 右侧管理源 */
   .mchips {
     display: flex;

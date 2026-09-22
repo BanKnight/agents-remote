@@ -1,10 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AddMcpServerRequest, McpScope, UpdateMcpServerRequest } from "@agents-remote/shared";
-import { addMcpServer, listMcpServers, removeMcpServer, updateMcpServer } from "../api/client";
+import {
+  addMcpServer,
+  listMcpServers,
+  removeMcpServer,
+  searchMcpMarket,
+  updateMcpServer,
+} from "../api/client";
 
 const MCP_KEY = ["mcp"] as const;
 /** MCP list 缓存新鲜期：claude mcp / 直读配置在增删后由 mutation invalidate；staleTime 内切换秒回。 */
 const MCP_STALE_MS = 60_000;
+
+/** MCP 官方市场搜索（17 页）：与 useSkillSearch 同口径（≥2 字符才发查询，60s 新鲜期）。 */
+export function useMcpMarketSearch(query: string) {
+  return useQuery({
+    queryKey: ["mcp-market", query] as const,
+    queryFn: () => searchMcpMarket(query),
+    enabled: query.trim().length >= 2,
+    staleTime: MCP_STALE_MS,
+  });
+}
 
 export function useMcpServers(scope: McpScope, projectName?: string) {
   return useQuery({

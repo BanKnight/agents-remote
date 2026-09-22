@@ -23,7 +23,7 @@ import { MobileProjectsHome } from "./mobile-projects-home";
 import { ChatOverview } from "./chat-overview";
 import { MobileMcpDetail, MobileSkillDetail } from "./mobile-plugins-detail";
 import { MobilePluginsOverview } from "./mobile-plugins-home";
-import { MobileMarketSources, MobileSkillMarket } from "./mobile-plugins-market";
+import { MobileMarket, MobileMarketSources } from "./mobile-plugins-market";
 import {
   collectLeaves,
   findTabRefLeaf,
@@ -204,7 +204,7 @@ export function MobileWorkbench({
       >
         {leftMode === "plugins" ? (
           pluginView === "market" ? (
-            <MobileSkillMarket />
+            <MobileMarket />
           ) : pluginView === "sources" ? (
             <MobileMarketSources />
           ) : (

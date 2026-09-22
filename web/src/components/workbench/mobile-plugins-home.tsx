@@ -241,7 +241,10 @@ export function MobilePluginsOverview() {
               <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptySkills")}</p>
             ) : null}
 
-            {/* 市场段（编号⑤）：MCP 市场行不画（§6.6：无 registry 数据源）；管理源仅全局 scope */}
+            {/* 市场段（编号⑤）：两条 mrow（原型 09:79-80「MCP 市场/技能市场」，M6-c 接入官方
+                registry 后补齐）；无 .c 计数列（registry/skills.sh 均无总量数据源，§6.12g）；
+                管理源仅全局 scope。marketTab 路由特定维度不进 stickyWorkbenchSearch（gitScope
+                同款口径），调用点手写传参。 */}
             <div className="psect">
               <span>{t("plugins.market")}</span>
               {projectName ? null : (
@@ -256,7 +259,17 @@ export function MobilePluginsOverview() {
             </div>
             <button
               className="mrow cursor-pointer"
-              onClick={() => void navigate({ to: "/plugins/market" })}
+              onClick={() => void navigate({ to: "/plugins/market", search: { marketTab: "mcp" } })}
+              type="button"
+            >
+              <span className="n">{t("plugins.mcpMarket")}</span>
+              <span className="ar">›</span>
+            </button>
+            <button
+              className="mrow cursor-pointer"
+              onClick={() =>
+                void navigate({ to: "/plugins/market", search: { marketTab: "skill" } })
+              }
               type="button"
             >
               <span className="n">{t("plugins.skillMarket")}</span>
