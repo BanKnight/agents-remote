@@ -32,7 +32,7 @@ export const zh: Record<TranslationKey, string> = {
   "auth.installApp": "安装应用",
 
   // ── Home（保留键，前缀遗留）─────────────────────────────────
-  // HomeRoute 已删（Phase 4 Step 3）；下列 home.* 键被 ProjectLeftPanel（createProjectAria）
+  // HomeRoute 已删（Phase 4 Step 3）；下列 home.* 键被 WorkbenchSide（createProjectAria）
   // 与 ProjectSetupPanel（setup* 系列）复用，语义已通用化为「创建项目表单」，home. 前缀
   // 为历史遗留，待后续统一重命名为 project.setup* / project.createProjectAria。
   "home.createProjectAria": "创建或采用项目",
@@ -633,12 +633,8 @@ export const zh: Record<TranslationKey, string> = {
   "claude.offlineCap": "—— 离线中 · 此后内容将在重连后补齐 ——",
 
   // ── Workbench（三栏工作台外壳）──────────────────────────────
-  "workbench.collapseLeft": "收起左栏",
   "workbench.collapseRight": "收起右栏",
-  "workbench.expandLeft": "展开左栏",
   "workbench.expandRight": "展开右栏",
-  "workbench.backToProjects": "返回项目列表",
-  "workbench.switchProject": "切换项目",
   "workbench.createMenu": "+ 新建",
   "workbench.createSessionAria": "新建会话",
   "workbench.createClaude": "Claude",
@@ -646,8 +642,6 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.createOmp": "omp",
   "workbench.createTerminal": "终端",
   "workbench.instancesAria": "实例",
-  "workbench.noInstances": "暂无实例，用上方按钮创建。",
-  "workbench.backToList": "实例列表",
   "workbench.global": "会话",
   "workbench.projectsAria": "项目",
   "workbench.projectsSection": "项目",
@@ -655,6 +649,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.scopeSegmentAll": "全部",
   "workbench.allSessionsGroupLabel": "{{name}} · {{count}}",
   "workbench.noActiveSessions": "暂无活跃会话",
+  "workbench.backToList": "实例列表",
   "workbench.approvalRow": "审批 · {{count}} ›",
   "workbench.instancesGroupTitle": "实例 · {{name}}",
   "workbench.historyGroupTitle": "会话历史 · {{name}}",

@@ -42,7 +42,6 @@ import {
   useIsDesktopViewport,
   useWorkbenchNavigate,
   useWorkbenchRouteContext,
-  workbenchCreateMenuOpenAtom,
   workbenchRenderContentAtom,
 } from "../../routes/workbench-model";
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
@@ -86,7 +85,6 @@ import { FileTabPreview } from "../files/file-preview-panel";
 import { SkillTabPreview } from "../../routes/PluginsRoute";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
-import { type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 import { Dialog, DialogContent } from "../ui/dialog";
 import {
@@ -97,7 +95,6 @@ import {
 } from "../ui/dropdown-menu";
 import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
-import { usePinnedSessions } from "../../hooks/pinned-sessions";
 
 /** InstanceCard 内容最小可读宽度（左总览 MIN_REM 的设计依据：放得下一张 220px 卡）。 */
 export const MIN_CARD_WIDTH_PX = 220;
@@ -234,7 +231,7 @@ type InstanceAreaProps = {
 
 /**
  * 中栏右工作区（Phase 2a 方案 X 瘦身 + Phase 3 进一步精简）。左总览已搬到 WorkbenchShell `leftPanel`
- *（InstanceLeftOverview）；Phase 3 tab bar（overview/history/files/git）+ history/inspection 内容
+（左栏多视图列表）；tab bar（overview/history/files/git）+ history/inspection 内容
  * 也移到 `ProjectLeftPanel` 左栏（project scope middle tab 切**左栏主体**）。本组件仅保留：右工作区
  *（WorkspaceTree group+tab 常驻分屏）+ DropZoneOverlay（拖放目标）+ tab 右键菜单。
  *
@@ -467,194 +464,6 @@ export function AllSessionsGroupedList({
   );
 }
 
-type InstanceLeftOverviewProps = {
-  /** project 作用域（global 作用域由 GlobalProjectsOverview 承载，不进此组件）。 */
-  scope: { kind: "project"; key: string };
-  /** inspection 插件上下文；本组件仅用 ctx.projectKey（CreateSessionBar/EmptyInstanceArea/projectName）。 */
-  ctx: WorkbenchTabPluginContext;
-  /** 创建实例 API（useCreateSession，project scope projectName=scope.key）。 */
-  create: CreateSessionApi;
-  /** project scope 活跃实例（useProjectInstances）。 */
-  projectInstances: { instances: ProjectInstanceEntry[]; isLoading: boolean };
-  /** 单击实例 → 进聚焦态（navigateWorkbench）。 */
-  onFocusInstance: (sessionId: string) => void;
-  /** 关闭实例（useCloseSession，confirm → close API → 失效缓存）。 */
-  onCloseInstance: (sessionId: string, type: "agent" | "terminal") => void;
-  /** 改名实例（useRenameSession，prompt → rename API）。 */
-  onRenameInstance: (
-    sessionId: string,
-    type: "agent" | "terminal",
-    currentName: string,
-    projectName: string,
-  ) => void;
-  /** 拖放源适配器（onDragStart=启动拖动态，onSelect=单击激活）。WorkbenchContent 创建单一实例。 */
-  dragAdapter: DragSourceAdapter;
-};
-
-function InstanceLeftOverviewBase({
-  scope,
-  ctx,
-  create,
-  projectInstances,
-  onFocusInstance,
-  onCloseInstance,
-  onRenameInstance,
-  dragAdapter,
-}: InstanceLeftOverviewProps) {
-  const { t } = useT();
-  // ⌘N（新建实例）受控：快捷键 handler set workbenchCreateMenuOpenAtom true → 本 header 的
-  // 创建菜单程序化打开；菜单关闭归零（ActionMenu 半受控，见 action-menu.tsx props 注释）。
-  const createMenuOpen = useAtomValue(workbenchCreateMenuOpenAtom);
-  const setCreateMenuOpen = useSetAtom(workbenchCreateMenuOpenAtom);
-
-  // 作用域 seg4（§6.10-7，05 原型 side `seg4 mini scope`「项目/全部」）：「项目」= 本项目实例
-  //（默认），「全部」= 05g 分组列表（AllSessionsGroupedList，§6.12j 批次 5；改前为全局候选
-  // 平铺卡）。global 候选与桌面 useGlobalInstanceRefs（prune effect）共用 queryKey ["overview"]，
-  // React Query dedupe 零额外请求。视图偏好不持久化（useState）：项目作用域是主要工作形态，
-  // 重开回「项目」符合直觉（批次 b 拍板，记 §6.10 补记）。
-  const [scopeSegment, setScopeSegment] = useState<"project" | "all">("project");
-  const {
-    candidates,
-    projectNames,
-    isLoaded: candidatesLoaded,
-  } = useGlobalInstanceCandidates({
-    kind: "global",
-  });
-  // 「全部」段置顶数据（pin③ 置顶仍最前，与手机 02 全局活动同一条数据）。置顶组是结构性插入，
-  // 与 GlobalProjectsOverview 同 gate 口径：settled 才渲染，避 pinned 后到从顶部插入跳变。
-  const { pinned, isLoaded: pinnedLoaded } = usePinnedSessions();
-  const allSettled = candidatesLoaded && pinnedLoaded;
-
-  // grid 数据源（seg「项目」）：useProjectInstances 本项目全览（WorkbenchContent 注入）。
-  // seg「全部」已换 AllSessionsGroupedList（行列表），不再消费 grid 管道。
-  const gridCallbacks: GridItemCallbacks = {
-    onClose: onCloseInstance,
-    onRename: onRenameInstance,
-    onSelect: onFocusInstance,
-    t,
-  };
-  const gridItems = useMemo<InstanceGridItem[]>(
-    () =>
-      projectInstances.instances.map((entry) =>
-        instanceToGridItem(entry, gridCallbacks, ctx.projectKey ?? ""),
-      ),
-    // gridCallbacks 闭包依赖 t；projectInstances 引用由 hook 内 dataKey fingerprint
-    // 稳定（data 不变时不新建数组）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projectInstances.instances, t],
-  );
-
-  // grid view dragRefs：projectInstances（sessionId → ref，projectName=scope.key）。
-  const gridDragRefs = useMemo(() => {
-    const m = new Map<string, WorkbenchPanelRef>();
-    for (const entry of projectInstances.instances) {
-      m.set(entry.session.id, {
-        kind: "session",
-        projectName: scope.key,
-        sessionId: entry.session.id,
-      });
-    }
-    return m;
-  }, [scope, projectInstances.instances]);
-
-  // 左总览 overview 内容（设计 §5）：seg「项目」grid 单视图 / seg「全部」05g 分组列表。
-  // 加载态（设计 §5）：pending 且数据仍空时显示 CardGridSkeleton，替代 EmptyInstanceArea。
-  const overviewLoading =
-    scopeSegment === "all"
-      ? !allSettled && candidates.length === 0
-      : projectInstances.isLoading && projectInstances.instances.length === 0;
-  const leftOverviewContent = overviewLoading ? (
-    <div className="px-3 py-2">
-      <CardGridSkeleton plain />
-    </div>
-  ) : scopeSegment === "all" ? (
-    !allSettled ? (
-      <div className="px-3 py-2">
-        <CardGridSkeleton plain />
-      </div>
-    ) : candidates.length === 0 && projectNames.length === 0 ? (
-      <div className="flex flex-1 items-center justify-center p-6 text-center">
-        <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
-      </div>
-    ) : (
-      <AllSessionsGroupedList candidates={candidates} pinned={pinned} projectNames={projectNames} />
-    )
-  ) : gridItems.length === 0 ? (
-    <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
-  ) : (
-    <div className="px-3 py-2">
-      <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} plain />
-    </div>
-  );
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* 作用域 seg4（§6.10-7）：05 原型 side `seg4 mini scope` 在实例组上方——实现中项目+实例
-          树在左栏两列（Sidebar 只有一级导航），seg 落左栏总览顶部（批次 b 补记差异）。span
-          键盘可达（Enter/Space），focus-visible 样式批次 e 统一补。 */}
-      <div className="shrink-0 px-2 pt-2">
-        <div aria-label={t("workbench.instancesAria")} className="seg4 mini mx-0" role="tablist">
-          <span
-            aria-controls="instance-scope-panel"
-            aria-selected={scopeSegment === "project"}
-            className={`cursor-pointer ${scopeSegment === "project" ? "on" : ""}`}
-            onClick={() => setScopeSegment("project")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setScopeSegment("project");
-              }
-            }}
-            role="tab"
-            tabIndex={0}
-          >
-            {t("workbench.scopeSegmentProject")}
-          </span>
-          <span
-            aria-controls="instance-scope-panel"
-            aria-selected={scopeSegment === "all"}
-            className={`cursor-pointer ${scopeSegment === "all" ? "on" : ""}`}
-            onClick={() => setScopeSegment("all")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                setScopeSegment("all");
-              }
-            }}
-            role="tab"
-            tabIndex={0}
-          >
-            {t("workbench.scopeSegmentAll")}
-          </span>
-        </div>
-      </div>
-      {/* 左总览 header：project scope = CreateSessionBar（创建实例；两 seg 共用——seg「全部」
-          下创建仍归当前项目，与原型 ghead plus 常驻一致）。project 单 grid 视图，无 ViewSwitcher。
-          （global scope header 已随 GlobalProjectsOverview 抽离。） */}
-      <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-2 py-1.5">
-        <CreateSessionBar
-          isCreating={create.isCreating}
-          onCreateAgent={create.createAgent}
-          onCreateTerminal={create.createTerminal}
-          onOpenChange={setCreateMenuOpen}
-          open={createMenuOpen}
-        />
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto" id="instance-scope-panel" role="tabpanel">
-        {leftOverviewContent}
-      </div>
-    </div>
-  );
-}
-
-/**
- * `memo` 包裹：dragState 不进 InstanceLeftOverview props（拖动期间 WorkbenchContent 的 dragState
- * 变化不触发本组件重渲染），仅 scope/ctx/create/projectInstances/回调/dragAdapter 变化才重渲染。
- * 回调由 WorkbenchContent 用 useCallback 稳定，projectInstances 由 hook fingerprint 稳定
- * → 拖动高频 setDragState 不波及左总览。（global scope 已迁 GlobalProjectsOverview。）
- */
-export const InstanceLeftOverview = memo(InstanceLeftOverviewBase);
-
 type PanelRouterProps = {
   panelRef: WorkbenchPanelRef;
   /**
@@ -682,7 +491,7 @@ type PanelRouterProps = {
  * 只在自身 props（panelRef/embeddedHeader）变化时重渲染——桌面 p.ref 引用稳定
  * （flattenLayout 是纯投影，ref 字段指向 state 树同一节点，切无关 group 的 tab 不变），
  * 故跳过重渲染 → 滚动保持。panel 自身查询/hook 驱动的更新不受影响（memo 只拦父级重渲染）。
- * 对齐 InstanceLeftOverview = memo(InstanceLeftOverviewBase) 惯例（本文件 L495）。
+（memo 惯例，原 InstanceLeftOverview 同款——§6.12k 后已退役）。
  */
 function PanelRouterBase({ panelRef, embeddedHeader }: PanelRouterProps) {
   // file tab 渲染 FileTabPreview（可编辑预览，queryScope="file-nav"，设计 §6 决策 16/18）。
@@ -1803,7 +1612,7 @@ export function useCreateSession(projectName: string | null): CreateSessionApi &
       createAgentSession(safeName, provider, { displayName: displayName || undefined }),
     onSuccess: async (data) => {
       // navigate 优先：detail route 用 sessionId 直查 per-session detail query，不依赖列表。
-      // invalidate 后台 fire-and-forget 刷新左栏 InstanceLeftOverview（返回 project 时见新 session）。
+      // invalidate 后台 fire-and-forget 刷新实例列表（返回 project 时见新 session）。
       await navigate({
         to: "/projects/$key/session/$id",
         params: { key: safeName, id: data.session.id },
@@ -1815,7 +1624,7 @@ export function useCreateSession(projectName: string | null): CreateSessionApi &
     mutationFn: (displayName: string) => createTerminalSession(safeName, displayName || undefined),
     onSuccess: async (data) => {
       // navigate 优先：detail route 用 sessionId 直查 per-session detail query，不依赖列表。
-      // invalidate 后台 fire-and-forget 刷新左栏 InstanceLeftOverview（返回 project 时见新 session）。
+      // invalidate 后台 fire-and-forget 刷新实例列表（返回 project 时见新 session）。
       await navigate({
         to: "/projects/$key/session/$id",
         params: { key: safeName, id: data.session.id },

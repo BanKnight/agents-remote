@@ -30,7 +30,7 @@ export const en = {
   "auth.installApp": "Install app",
 
   // ── Home（保留键，前缀遗留）─────────────────────────────────
-  // HomeRoute 已删（Phase 4 Step 3）；下列 home.* 键被 ProjectLeftPanel（createProjectAria）
+  // HomeRoute 已删（Phase 4 Step 3）；下列 home.* 键被 WorkbenchSide（createProjectAria）
   // 与 ProjectSetupPanel（setup* 系列）复用，语义已通用化为「创建项目表单」，home. 前缀
   // 为历史遗留，待后续统一重命名为 project.setup* / project.createProjectAria。
   "home.createProjectAria": "Create or adopt Project",
@@ -635,12 +635,8 @@ export const en = {
   "claude.offlineCap": "—— Offline · new content will backfill after reconnect ——",
 
   // ── Workbench（三栏工作台外壳）──────────────────────────────
-  "workbench.collapseLeft": "Collapse left panel",
   "workbench.collapseRight": "Collapse right panel",
-  "workbench.expandLeft": "Expand left panel",
   "workbench.expandRight": "Expand right panel",
-  "workbench.backToProjects": "Back to projects",
-  "workbench.switchProject": "Switch project",
   "workbench.createMenu": "+ Create",
   "workbench.createSessionAria": "New session",
   "workbench.createClaude": "Claude",
@@ -648,8 +644,6 @@ export const en = {
   "workbench.createOmp": "omp",
   "workbench.createTerminal": "Terminal",
   "workbench.instancesAria": "Instances",
-  "workbench.noInstances": "No instances yet — create one above.",
-  "workbench.backToList": "Instances",
   "workbench.global": "Sessions",
   "workbench.projectsAria": "Projects",
   "workbench.projectsSection": "Projects",
@@ -657,6 +651,7 @@ export const en = {
   "workbench.scopeSegmentAll": "All",
   "workbench.allSessionsGroupLabel": "{{name}} · {{count}}",
   "workbench.noActiveSessions": "No active sessions",
+  "workbench.backToList": "Instances",
   "workbench.approvalRow": "Approvals · {{count}} ›",
   "workbench.instancesGroupTitle": "Instances · {{name}}",
   "workbench.historyGroupTitle": "Session history · {{name}}",

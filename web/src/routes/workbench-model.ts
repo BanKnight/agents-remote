@@ -54,22 +54,11 @@ export type WorkbenchMiddleTab =
 export type WorkbenchMode = "agent" | "chat";
 
 /**
- * 左右栏宽度基线（rem）。左栏（项目树）沿用 ShellLayout project sidebar 的 13.125rem。
- * 右栏需容纳 FilesPanel browser（19.375rem）+ padding，故宽于左栏；Stage 4 resize
- * gutter 落地后用户可单点调整（MIN/MAX 钳制，避免压溃中栏或自身）。
+ * 右栏宽度基线（rem）。M9 批次 a 起（§6.10-2）右栏列 = minmax(atom,1fr)，atom 语义 =
+ * inspector 最小宽（gutter 拖拽调下限、实际宽吃视口剩余）。side 固定 250/260px
+ *（§6.12k 三列化后无左栏宽度体系），中栏 minmax(0,600px) 不再可调。
  */
-/**
- * @deprecated Phase 2a 起左栏复用 `workbenchMiddleLeftWidthAtom`（16rem），本组常量仅
- * 供废弃的 `workbenchLeftWidthAtom` 引用、维持 localStorage 迁移源，Phase 5 删除。
- */
-export const WORKBENCH_LEFT_PANEL_DEFAULT_REM = 13.125;
 export const WORKBENCH_RIGHT_PANEL_DEFAULT_REM = 22;
-/**
- * 左栏宽度钳制范围（rem）。@deprecated Phase 2a 起改用 `WORKBENCH_MIDDLE_LEFT_*_REM`，
- * Phase 5 删除。
- */
-export const WORKBENCH_LEFT_PANEL_MIN_REM = 9;
-export const WORKBENCH_LEFT_PANEL_MAX_REM = 24;
 /**
  * 右栏（Inspector）宽度钳制范围（rem）。M9 批次 a 起（§6.10-2）右栏列 = minmax(atom,1fr)，
  * atom 语义 = inspector 最小宽（gutter 拖拽调下限、实际宽吃视口剩余）；MIN/MAX 继续钳制
@@ -114,44 +103,16 @@ const atomWithLocalOnlyStorage = <T>(key: string, initialValue: T) => {
   return atomWithStorage(key, initialValue, storage);
 };
 
-/** 左栏（项目 + 实例树）折叠态。 */
-export const workbenchLeftCollapsedAtom = atomWithLocalOnlyStorage("workbenchLeftCollapsed", false);
-
 /** 右栏（inspection tab）折叠态，默认折叠（对齐 §3 非聚焦态收起）。 */
 export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
   "workbenchRightCollapsed",
   true,
 );
 
-/**
- * 左栏宽度（rem）。@deprecated Phase 2a 起左栏复用 `workbenchMiddleLeftWidthAtom`
- *（16rem，容量更大适配 InstanceLeftOverview 单列卡片）。本 atom 仅保留作 localStorage
- * 一次性迁移源（WorkbenchContent mount 时把 `workbenchLeftWidth` 迁到
- * `workbenchMiddleLeftWidth`，保用户已调宽度），Phase 5 删除。不再被任何组件消费。
- */
-export const workbenchLeftWidthAtom = atomWithLocalOnlyStorage(
-  "workbenchLeftWidth",
-  WORKBENCH_LEFT_PANEL_DEFAULT_REM,
-);
-
 /** 右栏宽度（rem），Stage 0② WorkbenchShell 构造 grid template，Stage 4 resize 单点更新。 */
 export const workbenchRightWidthAtom = atomWithLocalOnlyStorage(
   "workbenchRightWidth",
   WORKBENCH_RIGHT_PANEL_DEFAULT_REM,
-);
-
-/**
- * 中栏左总览宽度（rem）。中栏左右结构（workbench-views.md §3）：左总览固定单列卡片
- *（贴合 InstanceGrid `minmax(220px,1fr)` 单列，MIN=14rem 放得下一张 220px 卡），
- * 右工作区 flex-1。gutter 单点拖拽更新（Phase A），MIN/DEFAULT/MAX 钳制。
- */
-export const WORKBENCH_MIDDLE_LEFT_MIN_REM = 14;
-export const WORKBENCH_MIDDLE_LEFT_DEFAULT_REM = 16;
-export const WORKBENCH_MIDDLE_LEFT_MAX_REM = 30;
-
-export const workbenchMiddleLeftWidthAtom = atomWithLocalOnlyStorage(
-  "workbenchMiddleLeftWidth",
-  WORKBENCH_MIDDLE_LEFT_DEFAULT_REM,
 );
 
 /**
@@ -247,14 +208,6 @@ export const workbenchMobileGlobalFilesPathAtom = atomWithLocalOnlyStorage<strin
   "workbenchMobileGlobalFilesPath",
   "",
 );
-
-/**
- * 全局总览项目手风琴折叠态（Record<projectName, true=折叠>）。key=projectName，缺省/undefined=展开。
- * localStorage 按项目记忆，刷新/重开保留（用户 2026-08-05 反馈页面零散，折叠可收束）。
- */
-export const workbenchProjectGroupsCollapsedAtom = atomWithLocalOnlyStorage<
-  Record<string, boolean>
->("workbenchProjectGroupsCollapsed", {});
 
 /**
  * 解析旧 scope 段字符串：`global` → 全局作用域；其余 → project 作用域（key = project name）。
@@ -2004,7 +1957,7 @@ export const workbenchLayoutAtom = atomWithStorage<WorkbenchLayoutV3>(
 );
 
 /**
- * ⌘N（新建实例）→ 左栏 InstanceLeftOverview header 的 CreateSessionBar 菜单受控开合。
+ * ⌘N（新建实例）→ side 实例组头 plus 的创建菜单受控开合（§6.12k）。
  * 会话级 atom（不持久化）：快捷键 handler set true，菜单 onOpenChange(false) 归零。
  * CreateSessionBar 其余调用点（EmptyInstanceArea/ProjectInstances）不接 atom，保持非受控。
  */
