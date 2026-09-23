@@ -11,23 +11,22 @@ test("authenticated user can browse Project files and preview text and images", 
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  // Desktop workbench: enter the project, then drive the Files **middle tab**
-  // via the URL-visible ?tab=files state. Phase 3: middle tab [文件] renders
-  // the project-local file tree in the **left panel** (FilesLeftPanel). The
-  // desktop right panel inspection is currently empty (files/git moved to
-  // left middle tab + center tab), so "Project files" renders only in the
-  // left panel; all file-tree selectors are scoped to the left panel aside
-  // (DOM 第 2 个 complementary: 活动栏=0/左栏=1/右栏=2) for precise targeting. File preview 用 getByRole("region")
-  //（visibility-aware）：中栏 keep-alive 多 file tab 时，inactive tab 的 FileTabPreview
-  // 仍挂载（display:none 保 WebSocket/relay 长连 §7.4），DOM 内多个 <section aria-label=
-  // "File preview">；getByLabel 不过滤 hidden 会命中多个（strict mode），而 getByRole
-  //("region") 默认排除 hidden → 只命中活动 tab 的可见预览。
+  // Desktop workbench: enter the project, then drive the Files inspection via
+  // the URL-visible ?rightTab=files state. §6.12j 批次 3 检视 IA 收敛：左栏 middle tab
+  // [文件] 已删，文件检视归右栏 Inspector（唯一检视入口，FilesPanel enablePreview=true
+  // 预览语义，不开中栏 tab）；file-tree 选择器 scoped 到右栏 aside（DOM 第 3 个
+  // complementary: 活动栏=0/左栏=1/右栏=2）。File preview 用 getByRole("region")
+  //（visibility-aware）：预览面板 <section aria-label="File preview">，getByRole 默认
+  // 排除 hidden；防御性保持（未来 keep-alive 多 file tab 场景 getByLabel 会 strict 冲突）。
   await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
   await page.getByRole("button", { name: projectName, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
-  await page.goto(`/projects/${projectName}?tab=files`);
-  const files = page.getByRole("complementary").nth(1).getByLabel("Project files");
+  await page.goto(`/projects/${projectName}?rightTab=files`);
+  // 右栏默认收起（workbenchRightCollapsedAtom 默认 true，RailButton 唤出）——先展开再取 aside
+  //（折叠态右栏 aside 不渲染，展开后才是 DOM 第 3 个 complementary）。
+  await page.getByRole("button", { name: "Expand right panel" }).click();
+  const files = page.getByRole("complementary").nth(2).getByLabel("Project files");
   await expect(files).toBeVisible();
 
   await expect(files.getByRole("button", { name: /src/ }).first()).toBeVisible();
@@ -60,7 +59,7 @@ test("authenticated user can browse Project files and preview text and images", 
     .click();
   await expect(page.getByRole("region", { name: "File preview" })).toContainText("fileBrowserE2e");
 
-  await page.getByRole("complementary").nth(1).getByRole("button", { name: "Root" }).click();
+  await page.getByRole("complementary").nth(2).getByRole("button", { name: "Root" }).click();
   await files
     .getByRole("button", { name: /README\.md/ })
     .first()

@@ -4,68 +4,14 @@ const password = process.env.E2E_PASSWORD ?? "secret";
 const projectName = process.env.E2E_PROJECT_NAME ?? "demo";
 
 /**
- * file nav（设计 §4.2 决策 16 + Phase 3 决策 26）：桌面工作台点 middle tab [文件] → 左栏项目内
- * 文件树 → 点文件 → 中栏开 file tab（与 session tab 同 group+tab）→ FileTabPreview 可编辑预览 →
- * URL 切到 /projects/$key/file/$path splat。Phase 3：项目局部文件走 middle tab [文件]（左栏
- * FilesLeftPanel scope=project）；活动栏 [文件] = 全局 rootBrowse（作用域互斥，由 middle-tab-left
- * spec test 7 覆盖）。回归 session tab 不受影响由其他 spec 覆盖。
+ * file nav（设计 §4.2 决策 16 + workbench-stable-refactor Phase 3）。
+ *
+ * §6.12j 批次 3 检视 IA 收敛：左栏 middle tab [文件] 已删除（左栏只留 实例/历史/插件），项目内
+ * 文件检视归右栏 Inspector（FilesPanel，只读浏览语义，不开中栏 tab）；「点文件开中栏 file tab」
+ * 桌面链路改走全局文件页（下方 test 2，rootBrowse 进项目）。原「middle tab [文件] → 左栏树 →
+ * 中栏 tab」链路测试随收敛移除（收敛裁定记 redesign-v2.md §6.12j）。
  */
-test("file nav: middle tab [文件] → 树点文件 → 中栏 file tab + 可编辑预览 + /file/$ URL", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
 
-  // 进项目工作台（桌面）。
-  await page.getByRole("button", { name: projectName, exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
-
-  // middle tab [文件]（projectsNav 内）→ 左栏项目内文件树（FilesLeftPanel scope=project，
-  // enablePreview=false 纯树，点文件→中栏开 file tab）。Phase 3：项目局部文件走 middle tab [文件]。
-  await page
-    .getByRole("navigation", { name: "Projects", exact: true })
-    .getByRole("button", { name: "Files", exact: true })
-    .click();
-
-  // 左栏文件树渲染（与 inspection 同源 FileEntryList，aria-label "Project files"）。限定左栏
-  // aside（DOM 第 2 个 complementary：活动栏=0/左栏=1/右栏=2）；桌面右栏 inspection 当前留空，
-  // "Project files" 全局唯一在左栏，nth(1) 精准定位并防右栏未来恢复时歧义。
-  const files = page.getByRole("complementary").nth(1).getByLabel("Project files");
-  await expect(files).toBeVisible();
-  await expect(files.getByRole("button", { name: /src/ }).first()).toBeVisible();
-
-  // 进 src 目录。
-  await files.getByRole("button", { name: /src/ }).first().click();
-  await expect(files.getByRole("button", { name: /index\.ts/ }).first()).toBeVisible();
-
-  // 点 index.ts → onOpenFile → 中栏开 file tab + focus /file/$path。
-  await files
-    .getByRole("button", { name: /index\.ts/ })
-    .first()
-    .click();
-
-  // URL 切到 file focus splat（_splat = src/index.ts）。middle tab [文件] 的 ?tab=files 进 URL
-  // 后被 onOpenFile navigate 保留，故 file focus URL = .../file/src/index.ts?tab=files，pattern
-  // 需容许 ?query 后缀（`(\?|$)` 锚定 index.ts 后跟 query 或结尾）。
-  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}/file/src/index\\.ts(\\?|$)`));
-
-  // 中栏 FileTabPreview 渲染（复用 FilePreviewPanel，aria-label "File preview"）。
-  // file tab 已被激活（focus effect ensureTabOpenLeaf + setActiveTab），PanelRouter file
-  // 分支渲染 FileTabPreview —— 预览可见即证明 tab 开 + active + 面板挂载三态闭环。
-  await expect(page.getByLabel("File preview")).toContainText("fileBrowserE2e");
-
-  // file tab 出现在 group tab 栏：TabChip 的 minimize 按钮（aria-label "Minimize"，
-  // workbench.tabMinimize 仅 TabChip 使用）。首次点文件只开一个 tab，其可见即证明 tab 已渲染
-  //（session tab 此时尚未创建，不会误判）。
-  await expect(page.getByRole("button", { name: /^Minimize$/ })).toBeVisible();
-});
-
-/**
- * 全局文件 tab（设计 workbench-stable-refactor Phase 3）：活动栏 [文件] → /files 全局文件树 →
- * 点文件 → 中栏开 file tab（全路径 tabId）→ URL 切到 /files/file/$ 全路径 splat。FileTabPreview
- * 内部 resolveRootBrowseTarget 解析项目名走 project preview API（无需新 endpoint）。
- */
 test("file nav: 活动栏 [文件] 全局树点文件 → 中栏 file tab + /files/file/$ 全路径 URL", async ({
   page,
 }) => {

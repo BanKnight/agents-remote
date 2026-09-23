@@ -534,6 +534,8 @@ function WorkbenchContent({
     [navigate, rightTab, tabFromUrl, leftMode, mode],
   );
   // 左栏 git 变更列表点文件 → 中栏开/激活 git diff tab + focus（设计 workbench-layout-fix 阶段 3）。
+  // §6.12j 批次 3 后桌面消费方仅剩移动工作台（mobile-workbench 工具态）；ProjectLeftPanel 的
+  // git middle tab 已收敛删除（检视归右栏 Inspector）。
   const onOpenGitFile = useCallback(
     (projectName: string, scope: GitDiffScope, path: string) => {
       update((prev) =>
@@ -542,16 +544,6 @@ function WorkbenchContent({
       void navigateToGitFile(projectName, scope, path);
     },
     [update, navigateToGitFile],
-  );
-  // 分支视图双选 compare 文件 → 中栏开/激活 git diff tab（compare 模式）+ focus。
-  const onOpenGitCompareFile = useCallback(
-    (projectName: string, base: string, compare: string, path: string) => {
-      update((prev) =>
-        ensureTabOpenLeaf(prev, { kind: "git", mode: "compare", projectName, base, compare, path }),
-      );
-      void navigateToGitCompareFile(projectName, base, compare, path);
-    },
-    [update, navigateToGitCompareFile],
   );
   // skill tab focus URL（对标 navigateToFile 的 project/global 分流，2026-08-16 scope-aware 化）：
   // - 项目 scope → /projects/$key/skill/$（skill 停在项目内，与 file/git 同语义；focus effect 全局
@@ -979,10 +971,6 @@ function WorkbenchContent({
   ) : scope.kind === "project" || (leftMode === "auto" && !chatMode) ? (
     <ProjectLeftPanel
       focusId={focusId}
-      onCardDragStart={onCardDragStart}
-      onOpenFile={onOpenFile}
-      onOpenGitCompareFile={onOpenGitCompareFile}
-      onOpenGitFile={onOpenGitFile}
       onTabChange={onTabChange}
       openSkillSearch={{
         rightTab,

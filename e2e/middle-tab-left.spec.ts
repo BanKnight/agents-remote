@@ -5,14 +5,14 @@ import { expect, test, type Page } from "@playwright/test";
  * 切换**左栏主体**内容，中栏 group+tab 常驻不随 middle tab 变（设计 activity-bar-redesign
  * §4.2 进入项目层 / §6 决策 26）。
  *
- * 桌面视口（≥lg=1024）下：project scope（/projects/$key）→ ProjectLeftPanel 左栏顶部 middle tab bar
- *（Overview/History/Files/Git）切左栏主体；global scope（/projects）无 middle tab bar；活动栏 [文件]
- * = 全局 rootBrowse（PROJECTS_ROOT 根目录），与 middle tab [文件]（项目内文件）作用域互斥。
- * e2e 默认 en-US → 英文 label（Overview/History/Files/Git/Projects/Primary navigation）。
+ * §6.12j 批次 3 检视 IA 收敛：左栏 middle tab 只留 **Overview/History/Plugins**（用户拍板
+ * 「左栏只留实例+历史+插件」）——文件/Git 检视归右栏 Inspector（唯一检视入口），本 spec
+ * 同步收敛断言。
  *
- * selector 注意：桌面右栏 inspection 当前留空（files/git 移至左栏 middle tab + 中栏 tab），
- * `getByLabel("Project files")` 全局唯一命中左栏。所有左栏文件树断言用 leftPanelFiles
- *（限定左栏 aside = DOM 第 2 个 complementary：活动栏=0/左栏=1/右栏=2）精准定位，并防右栏未来恢复时歧义。
+ * 桌面视口（≥lg=1024）下：project scope（/projects/$key）→ ProjectLeftPanel 左栏顶部 middle tab bar
+ *（Overview/History/Plugins）切左栏主体；global scope（/projects）无 middle tab bar；活动栏 [文件]
+ * = 全局 rootBrowse（PROJECTS_ROOT 根目录）。e2e 默认 en-US → 英文 label
+ *（Overview/History/Plugins/Projects/Primary navigation）。
  */
 
 const password = process.env.E2E_PASSWORD ?? "secret";
@@ -32,63 +32,55 @@ const projectsNav = (page: Page) => page.getByRole("navigation", { name: "Projec
 const activityBar = (page: Page) =>
   page.getByRole("navigation", { name: "Primary navigation", exact: true });
 
-// 左栏 aside（DOM 第 2 个 complementary：活动栏=0/左栏=1/右栏=2）。桌面右栏 inspection 当前留空，
-// Project files 全局唯一在左栏；nth(1) 精准定位左栏 aside，并防右栏未来恢复 inspection 时歧义。
-const leftPanelFiles = (page: Page) =>
-  page.getByRole("complementary").nth(1).getByLabel("Project files");
-
 // /files mainPage（v2 IA，redesign-v2.md §6.10-9，M9 批次 d）：global scope + leftMode=files 时
 // GlobalFilesOverview 渲染在 **main 整页**（MainPageShell），左栏保持 sidewin 项目总览——rootBrowse
 // 文件树不再在左栏 aside。该态左栏=项目列表（无 "Project files"）、global scope 无右栏 →
 // "Project files" 全局唯一命中 main 区文件树。
 const mainRootBrowse = (page: Page) => page.getByLabel("Project files");
 
-test("project scope: middle tab bar (Overview/History/Files/Git) in left panel", async ({
-  page,
-}) => {
+test("project scope: middle tab bar (Overview/History/Plugins) in left panel", async ({ page }) => {
   await page.getByRole("button", { name: projectName, exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
   const nav = projectsNav(page);
-  // 4 个 middle tab 按钮（workbench.tabOverview/History/Files/Git）。
+  // §6.12j 收敛后 3 个 middle tab 按钮（workbench.tabOverview/History/Plugins）；
+  // 文件/Git 已归右栏 Inspector，不再出现在左栏。
   await expect(nav.getByRole("button", { name: "Overview", exact: true })).toBeVisible();
   await expect(nav.getByRole("button", { name: "History", exact: true })).toBeVisible();
-  await expect(nav.getByRole("button", { name: "Files", exact: true })).toBeVisible();
-  await expect(nav.getByRole("button", { name: "Git", exact: true })).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Plugins", exact: true })).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Files", exact: true })).toHaveCount(0);
+  await expect(nav.getByRole("button", { name: "Git", exact: true })).toHaveCount(0);
 });
 
-test("middle tab [Files] switches left body to project file tree", async ({ page }) => {
+test("middle tab [Plugins] switches left body to PluginsPanel", async ({ page }) => {
   await page.getByRole("button", { name: projectName, exact: true }).click();
-  await projectsNav(page).getByRole("button", { name: "Files", exact: true }).click();
+  await projectsNav(page).getByRole("button", { name: "Plugins", exact: true }).click();
 
-  // 左栏主体 = FilesLeftPanel scope=project（FilesPanel ListGroup aria-label="Project files"）。
-  // 项目内文件树含 README.md / src（run-e2e demo 项目结构）。
-  const files = leftPanelFiles(page);
-  await expect(files.getByRole("button", { name: /README\.md/ }).first()).toBeVisible();
-  await expect(files.getByRole("button", { name: /src/ }).first()).toBeVisible();
+  // 左栏主体 = PluginsPanel（SegmentedControl role=group aria-label=plugins.title="Plugins"，
+  // skill/MCP 两段）。限定左栏 aside 防与 middle tab 按钮 "Plugins" 同名歧义。
+  await expect(
+    page.getByRole("complementary").nth(1).getByRole("group", { name: "Plugins", exact: true }),
+  ).toBeVisible();
 });
 
-test("middle tab [Git] switches left body to GitDiffPanel", async ({ page }) => {
-  await page.getByRole("button", { name: projectName, exact: true }).click();
-  await projectsNav(page).getByRole("button", { name: "Git", exact: true }).click();
-
-  // 左栏主体 = GitChangesList（GitFileList ListGroup aria-label="Git changed files"）。桌面右栏
-  // inspection 当前留空，故 Git changed files 全局唯一（仅左栏），无需左栏限定。
-  await expect(page.getByLabel("Git changed files")).toBeVisible();
-});
-
-test("switching middle tabs swaps left body (Files body unmounts on History)", async ({ page }) => {
+test("switching middle tabs swaps left body (Plugins body unmounts on History)", async ({
+  page,
+}) => {
   await page.getByRole("button", { name: projectName, exact: true }).click();
   const nav = projectsNav(page);
 
-  // 切 [文件] → 左栏 FilesLeftPanel（Project files）出现。
-  await nav.getByRole("button", { name: "Files", exact: true }).click();
-  await expect(leftPanelFiles(page)).toBeVisible();
+  // 切 [插件] → 左栏 PluginsPanel（group "Plugins"）出现。
+  await nav.getByRole("button", { name: "Plugins", exact: true }).click();
+  const pluginsSeg = page
+    .getByRole("complementary")
+    .nth(1)
+    .getByRole("group", { name: "Plugins", exact: true });
+  await expect(pluginsSeg).toBeVisible();
 
-  // 切 [历史] → 左栏主体切到 HistoryList（demo 无历史 session → 空态 null），FilesLeftPanel 卸载
-  // → 左栏 Project files 消失。验证 middle tab 切换确实换左栏主体（左栏限定，不受右栏 files 影响）。
+  // 切 [历史] → 左栏主体切到 HistoryList（demo 无历史 session → 空态 null），PluginsPanel 卸载
+  // → 左栏 group 消失。验证 middle tab 切换确实换左栏主体。
   await nav.getByRole("button", { name: "History", exact: true }).click();
-  await expect(leftPanelFiles(page)).toHaveCount(0);
+  await expect(pluginsSeg).toHaveCount(0);
 });
 
 test("middle column InstanceArea stays mounted across middle tab switches", async ({ page }) => {
@@ -99,10 +91,12 @@ test("middle column InstanceArea stays mounted across middle tab switches", asyn
   const emptyHint = page.getByText("No active sessions");
   await expect(emptyHint).toHaveCount(2);
 
-  // 切 middle tab [文件] → 左栏主体换 FilesLeftPanel（emptyHint 在左栏消失）；中栏 InstanceArea 不变
+  // 切 middle tab [插件] → 左栏主体换 PluginsPanel（emptyHint 在左栏消失）；中栏 InstanceArea 不变
   //（emptyHint 保留）→ 1 处。count 2→1 精确刻画"左栏换主体 + 中栏 group+tab 常驻不随 tab 变"。
-  await projectsNav(page).getByRole("button", { name: "Files", exact: true }).click();
-  await expect(leftPanelFiles(page)).toBeVisible();
+  await projectsNav(page).getByRole("button", { name: "Plugins", exact: true }).click();
+  await expect(
+    page.getByRole("complementary").nth(1).getByRole("group", { name: "Plugins", exact: true }),
+  ).toBeVisible();
   await expect(emptyHint).toHaveCount(1);
 });
 

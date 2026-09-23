@@ -590,6 +590,19 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 - 验证：m6 68/68（+2 断言）；四门禁全绿；CSS 硬闸 + content-type text/css。
 
+### §6.12j 第十轮：移动底部导航恒显 + 多端整体对齐设计包（2026-09-23 起，批次 1 `79e68e7` / 批次 2 `052feda`）
+
+用户 iPhone 复验两问题：①「工作台理应和原型一样显示底部导航」；②「其他端没有对齐到设计，差距蛮大的——目前 iPhone 对齐最好，其他端并没有」（用户澄清：非单指插件页，是**端级整体对齐**，全量修，除数据依赖项）。
+
+**批次 1（移动 nav 恒显 + 通栏，`79e68e7`）**：原型规则 = 移动端除登录外恒显 tabbar（02/03 全系含 L3 与聚焦态共 22 页、仅 06-login 无）；旧实现只在 global 一级页显示。ShellMobileBottomNavigation 浮岛 → 通栏（对齐 components.css .tabbar 单源）；nav 恒显三分支 main 渲染；避让链（--composer-gap 注入 navH+4px−env，消息 spacer 自动跟随；键盘弹出盖 nav 属 iOS 原生同款预期）。新探针 m11 14 断言。详见 commit 正文。
+
+**批次 2（桌面形制统一，`052feda`）**：
+- **tabstrip（用户拍板「改向原型 tabstrip」）**：GroupHeader 胶囊 tab 条 → v2-primitives `.tabstrip` 单源形制（32px + bg-tabstrip + border-b sep + gap 16px）；WORKBENCH_TAB_BAR_PX 36→32 联动（flatten-layout 面板顶部 calc 下推）。TabChip → `.tb` 形态：胶囊底色/provider marker/font-bold 退役，12.5px 文本 + on 态 ink-1 600 + ::after 2.5px 主色下划线 + 6px 状态点（statusDotToneBg 单源，session/terminal 有、其余纯文本与原型非 session tab 一致）。条上「＋」= 新建实例入口（05d 锚点语义），与左栏 CreateSessionBar 共用 createSessionMenuItems 单源。DragSourceCard 拖动/右键菜单/ℹ RuntimeConfigDialog/AutoRetry 接线全保留（DragGhost 仍消费 marker）。
+- **检视 seg4**：右栏 Inspector 胶囊 TabButton → glabel2「检视 · 只读」+ 标准 .seg4（32px 四段，span role=tab 键盘可达）；TabButton 保留 export 给批次 3/4 收敛对象。
+- m9-d 探针 +Part F 14 断言（tabstrip 几何/token bg/下划线 2.5px 主色/状态点 6px/＋/seg4 32px/glabel2）；m9-b 适配 seg4 选择器。
+
+**批次 3（检视 IA 收敛，用户拍板「左栏只留实例+历史+插件」）**：ProjectLeftPanel middleTabs 按 LEFT_PANEL_TAB_IDS（overview/history/plugins）过滤 buildOverviewTabs（移动端共用源不动）；files/git/wiki/pages 分支与面板删除，相应 props（onOpenFile/onOpenGitFile/onOpenGitCompareFile/onCardDragStart）从 ProjectLeftPanel 卸下（WorkbenchRoute 注入同步删；onOpenGitFile/navigateToGitCompareFile 因移动/恢复链路仍消费保留）。URL ?tab=files 等旧直链落集合外回退 overview。**右栏 Inspector 四段成为唯一检视入口**；e2e middle-tab-left（Files/Git tests → Plugins）、drag-source（拖源换 /files 全局链路）、file-nav（删 middle tab 链路 test）同步适配。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

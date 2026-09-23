@@ -1,42 +1,35 @@
 import { useMemo, useState, type ReactNode } from "react";
-import type { AgentHistoryRange, GitDiffScope } from "@agents-remote/shared";
+import type { AgentHistoryRange } from "@agents-remote/shared";
 import { useT } from "../../i18n";
 import {
   type WorkbenchMiddleTab,
   type WorkbenchScope,
   type WorkbenchSearch,
-  parseGitTabId,
 } from "../../routes/workbench-model";
 import { buildOverviewTabs } from "./workbench-tab-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { HistoryList, HistoryRangeControl } from "./history-list";
-import { FilesLeftPanel } from "../files/files-left-panel";
-import { GitChangesList } from "../git/git-diff-viewer";
-import { PagesPanel } from "../pages/pages-panel";
-import { WikiPanel } from "../wiki/wiki-panel";
 import { PluginsPanel } from "../../routes/PluginsRoute";
-import { type CardDragStartHandler } from "./drag-source";
+
+/**
+ * 左栏 middle tab 收敛集合（§6.12j 批次 3，用户拍板「左栏只留实例+历史+插件」）：
+ * 文件/Git/wiki/pages 检视全部归右栏 Inspector（唯一检视入口），左栏不再重复。
+ * buildOverviewTabs 是移动端共用源（MobileProjectOverview 消费全集），过滤在本组件做。
+ */
+const LEFT_PANEL_TAB_IDS: ReadonlySet<string> = new Set(["overview", "history", "plugins"]);
 
 type ProjectLeftPanelProps = {
   scope: WorkbenchScope;
   /** [项目] 左栏主体：实例总览（InstanceLeftOverview，WorkbenchContent 构造后注入）。global scope
    *  主体恒为 overview（纯多视图列表，无项目列表，新建项目入口在 InstanceLeftOverview
-   *  header）；project scope 主体随 middle tab 切（实例=overview / 历史=HistoryList / 文件=项目内文件树
-   *  / git=GitDiffPanel）。 */
+   *  header）；project scope 主体随 middle tab 切（实例=overview / 历史=HistoryList /
+   *  插件=PluginsPanel）。 */
   overview: ReactNode;
-  // ── Phase 3 middle tab（仅 project scope + nav=projects 用；global scope 不渲染）──
+  // ── middle tab（仅 project scope + nav=projects 用；global scope 不渲染）──
   /** 中栏二级导航 tab（URL `?tab` + atom 回退）；project scope 左栏顶部 middle tab bar 切主体。 */
   tab?: WorkbenchMiddleTab;
   /** 切换 middle tab（写 URL + atom，WorkbenchContent 注入）。 */
   onTabChange?: (next: WorkbenchMiddleTab) => void;
-  /** middle tab [文件] 点文件 → 中栏开 file tab（WorkbenchContent onOpenFile）。 */
-  onOpenFile: (projectName: string, path: string) => void;
-  /** middle tab [git] 点变更文件 → 中栏开 git diff tab（WorkbenchContent onOpenGitFile）。 */
-  onOpenGitFile: (projectName: string, scope: GitDiffScope, path: string) => void;
-  /** R5 分支视图双选 compare 文件 → 中栏开 git diff tab（compare 模式，WorkbenchContent onOpenGitCompareFile）。 */
-  onOpenGitCompareFile?: (projectName: string, base: string, compare: string, path: string) => void;
-  /** 拖动源启动（文件树/git 行拖到中栏开 tab，WorkbenchContent onCardDragStart）。undefined 退纯点击。 */
-  onCardDragStart?: CardDragStartHandler;
   /** middle tab [历史] HistoryList 聚焦态（URL focusId）。 */
   focusId?: string;
   /** middle tab [插件] 项目 skill navigate 保留的 search（?tab/?rightTab/?leftMode 不丢，WorkbenchRoute 组装，透传 PluginsPanel）。 */
@@ -44,72 +37,47 @@ type ProjectLeftPanelProps = {
 };
 
 /**
- * [项目] 活动栏左栏内容源（Phase 2a 方案 X + Phase 3 middle tab + 左栏重设计，设计 §4.2 / §8.4）。
+ * [项目] 活动栏左栏内容源（Phase 2a 方案 X + Phase 3 middle tab + 左栏重设计，设计 §4.2 / §8.4；
+ * §6.12j 批次 3 检视 IA 收敛）。
  *
  * - global scope：仅渲染 InstanceLeftOverview 主体（多视图列表）。新建项目入口在
  *   InstanceLeftOverview header（ViewSwitcher 左侧），项目级导航走活动栏 [项目]（本身已选中）。
  * - project scope：项目名 header + 返回 /projects 在 WorkbenchShell PanelHeader（WorkbenchRoute
- *   leftPanelTitle 注入，阶段 1）；本组件只渲染 middle tab bar（实例/历史/文件/git，Phase 3 从
- *   InstanceArea 中栏移此切**左栏主体**）+ 主体随 tab 切（实例=InstanceLeftOverview / 历史=
- *   HistoryList / 文件=项目内文件树 FilesLeftPanel scope=project / git=GitDiffPanel）。不显项目列表
- *   （设计 §6 决策 1）。
+ *   leftPanelTitle 注入）；本组件渲染 middle tab bar（实例/历史/插件，收敛集合见
+ *   LEFT_PANEL_TAB_IDS）+ 主体随 tab 切（实例=InstanceLeftOverview / 历史=HistoryList /
+ *   插件=PluginsPanel）。文件/Git/wiki/pages 检视归右栏 Inspector，不在此重复。
  *
- * middle tab bar 复用 TabButton + buildOverviewTabs（includeHistory=true）。
+ * middle tab bar 复用 TabButton + buildOverviewTabs（includeHistory=true，本地收敛过滤）。
  */
 export function ProjectLeftPanel({
   scope,
   overview,
   tab,
   onTabChange,
-  onOpenFile,
-  onOpenGitFile,
-  onOpenGitCompareFile,
-  onCardDragStart,
   focusId,
   openSkillSearch,
 }: ProjectLeftPanelProps) {
   const { t } = useT();
   // history tab 时间范围（受控，父级持有避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
   const [range, setRange] = useState<AgentHistoryRange>("week");
-  // files tab 当前目录（受控，父级持有避免 middle tab 切换 unmount FilesLeftPanel 丢 cwd）。
-  const [filesPath, setFilesPath] = useState("");
-  // 切项目重置 cwd：ProjectLeftPanel 无 key 隔离（WorkbenchRoute 按 scope 复用同实例），
-  // scope.key 变化时若不重置，项目 A 的子目录会泄漏到项目 B。React 官方 derived-state 模式
-  //（adjusting state when a prop changes）——渲染期同步，无需 effect。
-  const filesScopeKey = scope.kind === "project" ? scope.key : null;
-  const [rememberedFilesScope, setRememberedFilesScope] = useState(filesScopeKey);
-  if (filesScopeKey !== rememberedFilesScope) {
-    setRememberedFilesScope(filesScopeKey);
-    setFilesPath("");
-  }
 
-  // Phase 3 middle tab（仅 project scope）：tab 列表（实例/历史/文件/git，includeHistory=true）+
-  // resolvedTab。global scope middleTabs=[]（无 tab bar）。ctx 由 scope 决定，scope/t 变才重算。
+  // middle tab（仅 project scope）：buildOverviewTabs 全集（含移动端共用源）按收敛集合过滤 +
+  // resolvedTab。global scope middleTabs=[]（无 tab bar）。URL ?tab=files 等直链（旧书签/持久化）
+  // 落在收敛集合外时 resolvedTab 回退 "overview"。ctx 由 scope 决定，scope/t 变才重算。
   const middleTabs = useMemo(
-    () => (scope.kind === "project" ? buildOverviewTabs(t, { projectKey: scope.key }, true) : []),
+    () =>
+      scope.kind === "project"
+        ? buildOverviewTabs(t, { projectKey: scope.key }, true).filter((opt) =>
+            LEFT_PANEL_TAB_IDS.has(opt.id),
+          )
+        : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [scope, t],
   );
-  // middle tab [git] 当前选中文件（高亮当前 git tab，从 URL focusId parseGitTabId 派生）。
-  const selectedGitFile = useMemo(() => {
-    if (!focusId) return undefined;
-    const parsed = parseGitTabId(focusId);
-    return parsed?.mode === "scope" ? { path: parsed.path, scope: parsed.scope } : undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusId]);
-  // R5 compare 模式当前选中文件路径（高亮 GitCompareFileList 行，从 focusId compare 模式派生）。
-  const selectedCompareFile = useMemo(() => {
-    if (!focusId) return undefined;
-    const parsed = parseGitTabId(focusId);
-    return parsed?.mode === "compare" ? parsed.path : undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusId]);
   const resolvedTab: WorkbenchMiddleTab =
     tab !== undefined && middleTabs.some((opt) => opt.id === tab) ? tab : "overview";
 
   // project scope middle tab 主体内容（设计 §4.2 进入项目层）。global scope 主体恒为 overview。
-  // [文件] = 项目内文件树（FilesLeftPanel projectName，点文件→中栏开 file tab）；[git] = git plugin
-  // render（GitDiffPanel，与移动端 MobileProjectOverview 同源 WORKBENCH_TAB_PLUGINS）。
   let middleBody: ReactNode = overview;
   if (scope.kind === "project") {
     if (resolvedTab === "history") {
@@ -122,31 +90,6 @@ export function ProjectLeftPanel({
           showLabel={false}
         />
       );
-    } else if (resolvedTab === "files") {
-      middleBody = (
-        <FilesLeftPanel
-          currentPath={filesPath}
-          onPathChange={setFilesPath}
-          onCardDragStart={onCardDragStart}
-          onOpenFile={onOpenFile}
-          projectName={scope.key}
-        />
-      );
-    } else if (resolvedTab === "git") {
-      middleBody = (
-        <GitChangesList
-          onCardDragStart={onCardDragStart}
-          onOpenGitCompareFile={onOpenGitCompareFile}
-          onSelectGitFile={(file) => onOpenGitFile(scope.key, file.scope, file.path)}
-          projectName={scope.key}
-          selectedCompareFile={selectedCompareFile}
-          selectedFile={selectedGitFile}
-        />
-      );
-    } else if (resolvedTab === "pages") {
-      middleBody = <PagesPanel projectName={scope.key} />;
-    } else if (resolvedTab === "wiki") {
-      middleBody = <WikiPanel projectName={scope.key} />;
     } else if (resolvedTab === "plugins") {
       middleBody = <PluginsPanel openSkillSearch={openSkillSearch} projectName={scope.key} />;
     }
@@ -156,7 +99,7 @@ export function ProjectLeftPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {scope.kind === "project" ? (
-        // Phase 3 middle tab bar（实例/历史/文件/git，project scope，从中栏移此切左栏主体）。
+        // middle tab bar（实例/历史/插件，project scope，切左栏主体）。
         // 项目名 header + 返回 /projects 在 WorkbenchShell PanelHeader（WorkbenchRoute leftPanelTitle 注入）。
         // nav landmark（aria-label=workbench.projectsAria="Projects"）：view 切换是项目内导航语义，
         // 给 middle tab bar 一个独立 navigation 地标，与活动栏 nav "Primary navigation" 区分（后者
