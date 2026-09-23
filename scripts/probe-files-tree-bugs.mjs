@@ -27,6 +27,30 @@ async function setupMocks(page) {
     }),
   );
   // 根目录(rootBrowse):30 个假目录,够溢出移动视口 + 提供目录行进入项目。
+  // 隔离真实环境 overview 数据（批次 3/4 后桌面 sidewin 项目总览会穿透真实 api，
+  // 污染滚动容器查找与根层点击定位——IA 重排后补的 mock）。
+  await page.route(/\/api\/overview$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ projectNames: ["proj1"], candidates: [] }),
+    }),
+  );
+  await page.route(/\/api\/overview\/subtitles$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ subtitles: {} }),
+    }),
+  );
+  await page.route(/\/api\/approvals$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ approvals: [] }),
+    }),
+  );
+  await page.route(/\/api\/approvals\/stream$/, (r) => r.abort());
   const rootDirs = Array.from({ length: 30 }, (_, i) => ({
     name: `dir-${String(i).padStart(2, "0")}`,
     path: `dir-${String(i).padStart(2, "0")}`,
@@ -57,7 +81,11 @@ async function setupMocks(page) {
 // Bug 1 几何:找 overflow-y-auto 滚动容器,测可滚性;失败时沿父链打印断点(便于诊断)。
 async function measureScroll(page, label) {
   const m = await page.evaluate(() => {
-    const scroll = Array.from(document.querySelectorAll("div")).find((el) => {
+    // 限定 10m mainPage 主体（.wsearch 所在 section）内的滚动容器——桌面还有 sidewin/
+    // Inspector 等多个 overflow-y-auto 容器，全局第一个匹配会选错目标（IA 重排后教训）。
+    const wsearch = document.querySelector(".wsearch");
+    const scope = wsearch ? (wsearch.closest("section") ?? document) : document;
+    const scroll = Array.from(scope.querySelectorAll("div")).find((el) => {
       const s = getComputedStyle(el);
       return (
         (s.overflowY === "auto" || s.overflowY === "scroll") &&
@@ -143,6 +171,31 @@ async function probeDotsClick(page, label) {
   await dots.click({ force: true });
   await page.waitForTimeout(250);
   const hasMenu = await page.evaluate(() => !!document.querySelector('[role="menu"]'));
+  // 批次 6（§6.12j）：05e 菜单 5 项结构断言——文件行菜单项文本序 = 预览/重命名/移动/上传/删除。
+  if (hasMenu) {
+    const itemTexts = await page.evaluate(() =>
+      [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map(
+        (el) => el.textContent?.trim() ?? "",
+      ),
+    );
+    // 05e 菜单五项序（批次 6）：预览/重命名/移动/上传/删除；中英双语（探针无 locale → en）
+    // + 过滤移动 sheet 形态的 Cancel 项。
+    const expect5 = [
+      ["Open Preview", "打开预览"],
+      ["Rename", "重命名"],
+      ["Move to…", "移动到…"],
+      ["Upload File…", "上传文件…"],
+      ["Delete", "删除"],
+    ];
+    const filtered = itemTexts.filter((s) => s !== "Cancel" && s !== "取消");
+    const itemsOk =
+      filtered.length === expect5.length &&
+      expect5.every(([en, zh], i) => filtered[i] === en || filtered[i] === zh);
+    console.log(
+      `  菜单项(${filtered.length}/${itemTexts.length}): ${JSON.stringify(itemTexts)} → ${itemsOk ? "✓ 05e 五项序" : "✗ 不符 05e 五项序"}`,
+    );
+    record(itemsOk, `${label} 批次 6 文件行菜单 05e 五项（预览/重命名/移动/上传/删除）`);
+  }
   // 点菜单外(body 左上角,header 区域)关闭 → 看是否 navigate。
   const bodyBox = await page.evaluate(() => {
     const r = document.body.getBoundingClientRect();
@@ -219,7 +272,7 @@ async function runViewport(label, viewport, isMobile) {
 
     // 进入项目(点第一个目录行)→ 文件行(readOnly=false)有 ⋯ 菜单 + 右键。
     await page
-      .locator("[data-list-row-title]")
+      .getByText("dir-00", { exact: true })
       .first()
       .click({ force: true })
       .catch(() => {});

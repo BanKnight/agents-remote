@@ -168,6 +168,9 @@ type FileEntryListProps = {
   onDelete: (path: string) => void;
   /** 行菜单「移动到…」（M8）：触发 prompt 输入目标目录 → rename 带 targetDir。undefined = 无移动入口。 */
   onMove?: (path: string) => void;
+  /** 行菜单「上传文件…」（05e 菜单 5 项 pin②，§6.12j 批次 6）：触发 FilesPanel fileInput。
+   *  undefined = 无上传入口（只读/检视场景——上传语义属编辑态）。 */
+  onUploadClick?: () => void;
   onOpenDirectory: (path: string) => void;
   onPreviewFile: (path: string) => void;
   onRenameSubmit: (path: string, name: string) => void;
@@ -199,6 +202,7 @@ export function FileEntryList({
   onCancelRename,
   onDelete,
   onMove,
+  onUploadClick,
   onOpenDirectory,
   onPreviewFile,
   onRenameSubmit,
@@ -227,6 +231,17 @@ export function FileEntryList({
         align="end"
         cancelLabel={t("cancel")}
         items={[
+          // 05e 菜单 5 项顺序（§6.12j 批次 6）：预览/重命名/移动/上传/删除。目录行无预览语义
+          //（预览 = 文件），只读场景无上传（onUploadClick undefined 不渲染）。
+          ...(entry.type !== "directory"
+            ? [
+                {
+                  label: t("files.menuPreview"),
+                  icon: <ShellIcon name="file" />,
+                  onSelect: () => onPreviewFile(entry.path),
+                },
+              ]
+            : []),
           {
             label: t("files.rename"),
             icon: <ShellIcon name="edit" />,
@@ -238,6 +253,15 @@ export function FileEntryList({
                   label: t("files.menuMove"),
                   icon: <ShellIcon name="project" />,
                   onSelect: () => onMove?.(entry.path),
+                },
+              ]
+            : []),
+          ...(onUploadClick
+            ? [
+                {
+                  label: t("files.menuUpload"),
+                  icon: <ShellIcon name="plus" />,
+                  onSelect: () => onUploadClick?.(),
                 },
               ]
             : []),
@@ -1246,6 +1270,7 @@ export function FilesPanel({
           onCardDragStart={onCardDragStart}
           fileProjectName={effectiveProjectName}
           globalCard={globalCard}
+          onUploadClick={readOnly ? undefined : () => fileInputRef.current?.click()}
         />
       </div>
     </aside>

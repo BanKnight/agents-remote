@@ -212,6 +212,8 @@ export const zh: Record<TranslationKey, string> = {
   "files.copied": "已复制",
   "files.menuOpenPreview": "打开预览",
   "files.menuMove": "移动到…",
+  "files.menuPreview": "打开预览",
+  "files.menuUpload": "上传文件…",
   "files.movePrompt": "输入目标目录（项目内相对路径，留空 = 当前目录）",
   "files.moving": "正在移动…",
   "files.move": "移动",

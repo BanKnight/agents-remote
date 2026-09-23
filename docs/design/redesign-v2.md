@@ -590,7 +590,7 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 - 验证：m6 68/68（+2 断言）；四门禁全绿；CSS 硬闸 + content-type text/css。
 
-### §6.12j 第十轮：移动底部导航恒显 + 多端整体对齐设计包（2026-09-23 起，批次 1 `79e68e7` / 批次 2 `052feda` / 批次 3 `848a04a` / 批次 4 `bf31c1b`）
+### §6.12j 第十轮：移动底部导航恒显 + 多端整体对齐设计包（2026-09-23 起，批次 1 `79e68e7` / 批次 2 `052feda` / 批次 3 `848a04a` / 批次 4 `bf31c1b` / 批次 5 `1c99f26`）
 
 用户 iPhone 复验两问题：①「工作台理应和原型一样显示底部导航」；②「其他端没有对齐到设计，差距蛮大的——目前 iPhone 对齐最好，其他端并没有」（用户澄清：非单指插件页，是**端级整体对齐**，全量修，除数据依赖项）。
 
@@ -616,6 +616,11 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 - **i18n 插值语法**：本项目 translate 实现 = `{{count}}` 双花括号（home.nRunning 先例），批次 5 误写单花括号致插值失效（microlabel/aprow 原样输出模板）；探针 G9/G3/G4 断言拦住。
 - m9-d 探针 +G1-G16（05g 分组结构/置顶限定符/跨项目激活/aprow tint-orange computed·30px·Popover/250-260 分档 + Part 2 1100×800 iPad 档）= 62 断言全绿；四门禁 + e2e 27/27。
 - **教训：dist JS 半更新态**——CSS 落盘硬闸 ≠ JS chunk 落盘稳定：vite build --watch 增量改多个 chunk 时中途跑探针会载到新旧混合 chunk（错误边界 "Something went wrong" + asides=0 假象，二分 mock 误导向「approvals 非空即崩」）；同代码稳定 dist 下复跑即过。跑探针前 touch main.tsx 完整 rebuild 再等 16s 落稳。
+
+**批次 6（零散补齐）**：
+- **文件行菜单 05e 五项**（05e-mac-inspector-file-menu.html :68-72 原文序）：打开预览（file 图标，仅文件行——目录无预览语义）/ 重命名 / 移动到… / 上传文件…（plus 图标，`onUploadClick` 新 prop → FilesPanel fileInput，readOnly 不传——上传语义属编辑态）/ 删除。FileEntryList.renderActions items 重排，rootBrowse 根层只读口径不变（isRootListing → 无 ⋯）。
+- **宽屏中栏 360px 评估后不做**：批次 2 tabstrip 落地时 WORKBENCH_TAB_BAR_PX 联动 flatten-layout 刚落，中栏宽度模型再动会牵动分屏树/拖放/resize 全链路回归面；宽屏信息密度收益低（中栏 flex-1 已自然占宽），多 tab 分屏时 360px 反而挤压工作区。
+- **probe-files-tree-bugs IA 适配**（批次 3/4 重排欠账，本批补齐 ALL PASS）：①setupMocks 补 overview/subtitles/approvals 隔离 mock——桌面 sidewin 项目总览穿透真实 api 曾污染滚动容器查找（measureScroll 选到 sidewin 容器）与根层点击定位；②measureScroll 滚动容器限定 .wsearch 所在 section（桌面多 overflow-y-auto 容器全局首个匹配会选错）；③进入项目点击从 `[data-list-row-title]` 改 getByText("dir-00")（mainPage 根层卡形态无 ListRow）；④新增批次 6 断言：文件行菜单 05e 五项序（中英双语 + 过滤移动 sheet Cancel 项）。
 
 ## §7 待定项跟踪
 

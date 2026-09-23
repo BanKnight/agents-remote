@@ -212,6 +212,8 @@ export const en = {
   "files.copied": "Copied",
   "files.menuOpenPreview": "Open preview",
   "files.menuMove": "Move to…",
+  "files.menuPreview": "Open Preview",
+  "files.menuUpload": "Upload File…",
   "files.movePrompt": "Target directory (project-relative, empty = current)",
   "files.moving": "Moving…",
   "files.move": "Move",
