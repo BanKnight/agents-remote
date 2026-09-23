@@ -719,6 +719,23 @@ export function useIsDesktopViewport() {
 }
 
 /**
+ * 视口 ≥ minPx 检测（useIsDesktopViewport 的参数化泛化，§6.12j 批次 5 侧栏分档消费）。
+ * 同款 CSR 无 hydrate mismatch + `?? true` jsdom fallback 口径。
+ */
+export function useMinViewport(minPx: number) {
+  const query = `(min-width: ${minPx}px)`;
+  const [matches, setMatches] = useState(() => window.matchMedia?.(query).matches ?? true);
+  useEffect(() => {
+    const media = window.matchMedia?.(query);
+    if (!media) return;
+    const handler = () => setMatches(media.matches);
+    media.addEventListener("change", handler);
+    return () => media.removeEventListener("change", handler);
+  }, [query]);
+  return matches;
+}
+
+/**
  * 从 sessionId 前缀推断 session 类型。
  *
  * workbench 用统一 focusId（`/projects/$key/session/$id` / `/projects/session/$id`），

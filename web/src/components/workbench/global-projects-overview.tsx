@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
@@ -20,6 +20,7 @@ import { useCreateProjectDialog } from "../shell/project-setup";
 import { ActionMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
 import {
+  AllSessionsGroupedList,
   candidateToGridItem,
   CardGridSkeleton,
   type DragSourceAdapter,
@@ -60,6 +61,10 @@ export function GlobalProjectsOverview({
   renderCreateEntry = true,
 }: GlobalProjectsOverviewProps) {
   const { t } = useT();
+  // 05g 作用域 seg4（§6.12j 批次 5，pin①「项目/全部」）——iPad/Mac 专属（pin①：iPhone 维持
+  // 项目→会话层级），仅 ≥lg 渲染（hidden lg:flex）；视图偏好不持久化（InstanceLeftOverview
+  // seg 同口径：项目作用域是主要工作形态）。
+  const [view, setView] = useState<"projects" | "all">("projects");
   const { close, holder: closeHolder } = useCloseSession();
   const { rename, holder: renameHolder } = useRenameSession();
   const { candidates, projectNames, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
@@ -98,6 +103,8 @@ export function GlobalProjectsOverview({
     <div className="flex flex-1 items-center justify-center p-6 text-center">
       <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
     </div>
+  ) : view === "all" ? (
+    <AllSessionsGroupedList candidates={candidates} pinned={pinned} projectNames={projectNames} />
   ) : (
     <GroupedProjectsList
       candidates={candidates}
@@ -112,6 +119,46 @@ export function GlobalProjectsOverview({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* 05g 作用域 seg4（§6.12j 批次 5，pin①「项目/全部」）：iPad/Mac 专属——iPhone 维持
+          项目→会话层级（05g pin① 原文），移动端不渲染（hidden lg:flex）。span 键盘可达
+         （Enter/Space），与 InstanceLeftOverview seg4 同构。「项目」= 现状手风琴树，「全部」=
+          05g 分组列表（AllSessionsGroupedList，instance-area 单源）。 */}
+      <div className="hidden shrink-0 px-2 pt-2 lg:block">
+        <div aria-label={t("workbench.instancesAria")} className="seg4 mini mx-0" role="tablist">
+          <span
+            aria-controls="global-projects-view-panel"
+            aria-selected={view === "projects"}
+            className={`cursor-pointer ${view === "projects" ? "on" : ""}`}
+            onClick={() => setView("projects")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setView("projects");
+              }
+            }}
+            role="tab"
+            tabIndex={0}
+          >
+            {t("workbench.scopeSegmentProject")}
+          </span>
+          <span
+            aria-controls="global-projects-view-panel"
+            aria-selected={view === "all"}
+            className={`cursor-pointer ${view === "all" ? "on" : ""}`}
+            onClick={() => setView("all")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setView("all");
+              }
+            }}
+            role="tab"
+            tabIndex={0}
+          >
+            {t("workbench.scopeSegmentAll")}
+          </span>
+        </div>
+      </div>
       {/* 桌面专用 header（移动端无 header 行，零残留空条零分割线；移动新建入口在外壳
           MobilePageHeader.actions，dialog 由外壳 useCreateProjectDialog 提供——2026-08-17
           review：移动端 renderCreateEntry=false 时双 dialog 挂载隐患，这里整体不渲染）。

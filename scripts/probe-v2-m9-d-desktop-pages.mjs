@@ -7,6 +7,9 @@
 //   C. ⌘F（10m pin④）：全局文件页聚焦搜索框 + 客户端 filter 过滤文件行。
 //   D. 预览只读化：file tab 无保存钮 + CodeMirror contenteditable=false（双端一致）。
 //   E. 07m：设置 = main 整页（mhead h1 + 560px col）+ footnav .on + 无 Dialog overlay。
+//   G. 批次 5（§6.12j）：05g 全部会话分组列表（置顶/项目分组/空组/限定符/点行激活）+
+//      aprow 审批橙行（tint-orange computed + 点击开审批中心）+ 侧栏分档（Mac 250 / iPad 260）。
+//      Part 2 = 1100×800 iPad 档 context（260px + global seg4）。
 //
 // mock 三铁律：形状对齐 shared；overview candidates 完备（prune activeIds 源）；
 // approvals/stream abort（铁律③，隔离真实环境 WS 推送）。用法：
@@ -26,6 +29,16 @@ const AGENT_A_OV = {
   status: "running",
   createdAt: "2026-07-26T00:00:00.000Z",
   updatedAt: "2026-07-26T00:00:00.000Z",
+};
+const AGENT_B_OV = {
+  type: "agent",
+  sessionId: "agent_m9d-2",
+  projectName: "proj2",
+  provider: "claude",
+  displayName: "Probe Agent B",
+  status: "idle",
+  createdAt: "2026-07-26T01:00:00.000Z",
+  updatedAt: "2026-07-26T01:00:00.000Z",
 };
 const TERM_T_OV = {
   type: "terminal",
@@ -87,8 +100,8 @@ async function setupMocks(page) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        projectNames: ["proj1"],
-        candidates: [AGENT_A_OV, TERM_T_OV],
+        projectNames: ["proj1", "proj2", "proj3"],
+        candidates: [AGENT_A_OV, AGENT_B_OV, TERM_T_OV],
       }),
     }),
   );
@@ -103,7 +116,29 @@ async function setupMocks(page) {
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ approvals: [] }),
+      body: JSON.stringify({
+        approvals: [
+          {
+            projectName: "proj1",
+            sessionId: "agent_m9d-1",
+            sessionName: "Probe Agent A",
+            runtimeKey: "Probe Agent A",
+            controlRequestId: "cr_probe_1",
+            toolName: "Bash",
+            inputSummary: "git push --force origin main",
+            createdAt: "2026-07-26T00:00:00.000Z",
+            runtimeAlive: true,
+          },
+        ],
+      }),
+    }),
+  );
+  // 05g 置顶段数据源（pin③；§6.12j 批次 5）：置顶 agent_m9d-1。
+  await page.route(/\/api\/state\/overview\/pinned-sessions$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ sessions: ["agent_m9d-1"] }),
     }),
   );
   // 铁律③：拒掉真实环境 approvals WS，防空快照竞速覆盖 REST mock。
@@ -239,6 +274,7 @@ async function sideOverviewVisible(page) {
       locale: "zh-CN",
     });
     const page = await ctx.newPage();
+    page.on("pageerror", (err) => console.error("PAGEERROR:", err.message.slice(0, 400)));
     await setupMocks(page);
     await login(page);
 
@@ -283,7 +319,16 @@ async function sideOverviewVisible(page) {
     ok(await sideOverviewVisible(page), "A2 左栏恒 sidewin 项目总览");
 
     // ── A3. 10m 页面形态断言（§6.12j 批次 4）──
-    ok((await page.locator(".seg4").count()) === 1, "A3a 10m 作用域 seg4 恰 1（全局/本项目分段）");
+    // §6.12j 批次 5 起 /projects 左栏（GlobalProjectsOverview）恒有 seg4 mini「项目/全部」，
+    // .seg4 全页计数为 2——10m 断言限定 main section（.wsearch 所在 section）。
+    ok(
+      (await page
+        .locator("section")
+        .filter({ has: page.locator(".wsearch") })
+        .locator(".seg4")
+        .count()) === 1,
+      "A3a 10m 作用域 seg4 恰 1（main section 内，左栏 global seg4 另计）",
+    );
     ok(
       (await page.getByRole("tab", { name: "全局", exact: true }).isVisible()) &&
         (await page
@@ -412,7 +457,31 @@ async function sideOverviewVisible(page) {
     // 只读」+ 标准 .seg4（32px）。全部 DOM 几何/computed 硬数据。
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
     await page.waitForTimeout(1200);
-    await page.locator("main > div > aside").nth(1).getByText("Probe Agent A").click();
+    try {
+      await page
+        .locator("main > div > aside")
+        .nth(1)
+        .getByText("Probe Agent A")
+        .click({ timeout: 5000 });
+    } catch {
+      const dbg = await page.evaluate(() => ({
+        url: location.href,
+        asides: document.querySelectorAll("main > div > aside").length,
+        rootLen: document.getElementById("root")?.innerHTML.length ?? -1,
+        body: document.body.innerText.replace(/\s+/g, " ").slice(0, 250),
+      }));
+      console.error(
+        await page.evaluate(() => {
+          const btn = [...document.querySelectorAll("button")].find((b) =>
+            b.textContent?.includes("Show Error"),
+          );
+          btn?.click();
+          return document.body.innerText.replace(/\s+/g, " ").slice(0, 900);
+        }),
+      );
+      console.error("F 段现场:", JSON.stringify(dbg));
+      throw new Error("F 段点击超时（现场已打印）");
+    }
     await page.waitForFunction(() => document.querySelectorAll("[data-drop-group]").length >= 1, {
       timeout: 5000,
     });
@@ -490,6 +559,113 @@ async function sideOverviewVisible(page) {
         `F14 四段顺序（实际 ${JSON.stringify(insp.segSpans)}）`,
       );
     }
+
+    // ── G. 05g 全部会话分组 + aprow 审批橙行 + 侧栏分档（§6.12j 批次 5）──
+    // 当前在 /projects/proj1（F 段）。左栏 aside = nth(1)（0=Sidebar，2=右栏 Inspector）。
+    const leftAside = page.locator("main > div > aside").nth(1);
+    const leftSeg = leftAside.locator(".seg4.mini");
+    ok(await leftSeg.isVisible(), "G1 project 左栏 seg4 mini（项目/全部）在");
+    await leftSeg.getByText("全部", { exact: true }).click();
+    await page.waitForTimeout(500);
+    const microLabels = await leftAside.locator(".microlabel").allTextContents();
+    ok(
+      microLabels.some((s) => s.includes("置顶")),
+      "G2 05g 置顶组头在（pinned mock）",
+    );
+    ok(
+      microLabels.some((s) => s.includes("proj2 · 1")),
+      "G3 proj2 分组组头「proj2 · 1」在",
+    );
+    ok(
+      microLabels.some((s) => s.includes("proj3 · 0")),
+      "G4 proj3 空组组头「proj3 · 0」在",
+    );
+    ok(
+      (await leftAside.getByText("暂无活跃会话").count()) === 1,
+      "G5 proj3 空组「暂无活跃会话」引导行在",
+    );
+    const pinnedLive = await leftAside.locator(".srow2 .live.off").first().textContent();
+    ok(pinnedLive === "proj1", "G6 置顶行 live off 项目限定符 = proj1");
+    // pin⑤：点行 → 中栏开 tab 并激活（跨项目 proj2）。
+    await leftAside.getByText("Probe Agent B", { exact: true }).click();
+    await page.waitForTimeout(800);
+    ok(
+      page.url().includes("/projects/proj2/session/agent_m9d-2"),
+      "G7 点分组行 → 跨项目激活（/projects/proj2/session/agent_m9d-2）",
+    );
+    await page.goto(`${WEB_ORIGIN}/projects/proj1`);
+    await page.waitForTimeout(1200);
+
+    // aprow（04 审批橙行）：左栏底部 approval 橙行 + tint-orange computed + 点击开审批中心。
+    const aprow = page.locator(".aprow");
+    ok(await aprow.isVisible(), "G8 aprow 审批橙行渲染（approvals>0）");
+    const aprowText = await aprow.textContent();
+    ok((aprowText ?? "").includes("审批 · 1"), "G9 aprow 文本「审批 · 1 ›」");
+    const aprowStyle = await aprow.evaluate((el) => {
+      const rootStyle = getComputedStyle(document.documentElement);
+      return {
+        bg: getComputedStyle(el).backgroundColor,
+        token: rootStyle.getPropertyValue("--tint-orange").trim(),
+        h: Math.round(el.getBoundingClientRect().height),
+      };
+    });
+    // tint 类 token 源码是现代语法（index.css:221 深色 `rgb(255 159 10 / 0.12)`），dist minify
+    // 转写为 8 位 hex（#ff9f0a1f）→ computed rgba 四段。alpha 0x1f=31, 31/255≈0.12。
+    const t8 = aprowStyle.token.replace("#", "");
+    const expectA = t8.length === 8 ? (Number.parseInt(t8.slice(6, 8), 16) / 255).toFixed(2) : "-1";
+    ok(
+      t8.length === 8 &&
+        aprowStyle.bg ===
+          `rgba(${parseInt(t8.slice(0, 2), 16)}, ${parseInt(t8.slice(2, 4), 16)}, ${parseInt(t8.slice(4, 6), 16)}, ${expectA})`,
+      `G10 aprow bg = --tint-orange（bg=${aprowStyle.bg} / token=${aprowStyle.token}）`,
+    );
+    ok(aprowStyle.h === 30, `G11 aprow 高 30px（实际 ${aprowStyle.h}）`);
+    await aprow.click();
+    await page.waitForTimeout(500);
+    ok((await page.locator(".apop").count()) === 1, "G12 aprow 点击开审批中心 Popover（.apop）");
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+
+    // 侧栏分档 Mac 档（1600 ≥ 1180 → 250px；Part 2 为 iPad 档 260px）。
+    const firstCol = await page.evaluate(() => {
+      const grid = document.querySelector("main > div");
+      return grid ? getComputedStyle(grid).gridTemplateColumns.split(" ")[0] : "";
+    });
+    ok(firstCol === "250px", `G13 Mac 档（1600px）侧栏首列 250px（实际 ${firstCol}）`);
+
+    // Part 2：1100×800 iPad 档 context——260px 分档 + global scope 左栏 05g seg4。
+    console.log("Part 2: 1100×800 iPad 档 → 侧栏 260px / global seg4");
+    const ctx2 = await browser.newContext({
+      viewport: { width: 1100, height: 800 },
+      locale: "zh-CN",
+    });
+    const page2 = await ctx2.newPage();
+    page2.on("pageerror", (err) => console.error("PAGEERROR:", err.message.slice(0, 400)));
+    await setupMocks(page2);
+    await login(page2);
+    await page2.goto(`${WEB_ORIGIN}/projects`);
+    await page2.waitForTimeout(1500);
+    const firstColPad = await page2.evaluate(() => {
+      const grid = document.querySelector("main > div");
+      return grid ? getComputedStyle(grid).gridTemplateColumns.split(" ")[0] : "";
+    });
+    ok(firstColPad === "260px", `G14 iPad 档（1100px）侧栏首列 260px（实际 ${firstColPad}）`);
+    ok(
+      await page2.locator("main > div > aside").nth(1).locator(".seg4.mini").isVisible(),
+      "G15 /projects 左栏 global seg4（项目/全部）在",
+    );
+    await page2
+      .locator("main > div > aside")
+      .nth(1)
+      .locator(".seg4.mini")
+      .getByText("全部", { exact: true })
+      .click();
+    await page2.waitForTimeout(500);
+    ok(
+      (await page2.locator("main > div > aside").nth(1).locator(".microlabel").count()) >= 1,
+      "G16 global「全部」= 05g 分组列表（microlabel 分组在）",
+    );
+    await ctx2.close();
 
     await ctx.close();
   } finally {

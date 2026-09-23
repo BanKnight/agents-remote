@@ -6,6 +6,7 @@ import {
   WORKBENCH_MIDDLE_LEFT_MIN_REM,
   WORKBENCH_RIGHT_PANEL_MAX_REM,
   WORKBENCH_RIGHT_PANEL_MIN_REM,
+  useMinViewport,
   workbenchLeftCollapsedAtom,
   workbenchMiddleLeftWidthAtom,
   workbenchRightCollapsedAtom,
@@ -14,11 +15,15 @@ import {
 import { shellSurfaceClasses } from "./shell-primitives";
 
 /**
- * Sidebar 列宽 = 250px（设计包 `05-mac-workspace.html` `.side` 内联 250px，components.css
- * 注释「宽度页自定：Mac 250 / iPad 260」）。用 px 而非 rem——标尺是像素值，rem 换算会随根字号
- * 漂移。固定不折叠、不 resize（一级导航常驻；内容自身 overflow-y-auto）。
+ * Sidebar 列宽分档（§6.12j 批次 5，components.css 注释「宽度页自定：Mac 250 / iPad 260」）：
+ * iPad 档（视口 1024–1179，04 原型 `.side` 260px）/ Mac 档（≥1180，05 原型 `.side` 250px）。
+ * 用 px 而非 rem——标尺是像素值，rem 换算会随根字号漂移。固定不折叠、不 resize（一级导航
+ * 常驻；内容自身 overflow-y-auto）。分档断点 1180 = MAC_SIDEBAR_MIN_VIEWPORT_PX。
  */
-const SIDEBAR_WIDTH = "250px";
+const SIDEBAR_WIDTH_IPAD = "260px";
+const SIDEBAR_WIDTH_MAC = "250px";
+/** Mac 档（250px 侧栏）最低视口：04/05 原型分档的工程化落点（iPad 档 = 1024–1179）。 */
+const MAC_SIDEBAR_MIN_VIEWPORT_PX = 1180;
 
 /**
  * 中栏（会话窗格）定宽上限（§6.10-2：04 原型 `.center{width:600px;flex:none}`）。落成
@@ -117,13 +122,17 @@ export function WorkbenchShell({
       ),
     );
 
+  // 侧栏分档：iPad 档（1024–1179）260px / Mac 档（≥1180）250px（§6.12j 批次 5）。
+  const macWide = useMinViewport(MAC_SIDEBAR_MIN_VIEWPORT_PX);
+  const sidebarWidth = macWide ? SIDEBAR_WIDTH_MAC : SIDEBAR_WIDTH_IPAD;
+
   return (
     <main className="relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden text-on-surface">
       <div
         className={`grid min-h-0 w-full min-w-0 flex-1 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-activity-col)_var(--workbench-left-col)_var(--workbench-center-col)_var(--workbench-right-col)] ${shellSurfaceClasses.shell}`}
         style={
           {
-            "--workbench-activity-col": SIDEBAR_WIDTH,
+            "--workbench-activity-col": sidebarWidth,
             "--workbench-left-col": leftColumn,
             "--workbench-center-col": centerColumn,
             "--workbench-right-col": rightColumn,

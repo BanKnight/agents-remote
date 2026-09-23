@@ -36,9 +36,12 @@ import {
   deriveZone,
   inferSessionTypeFromId,
   instanceNameMemoAtom,
+  mergeProjectsWithCandidates,
   rankGlobalInstances,
   tabIdOf,
   useIsDesktopViewport,
+  useWorkbenchNavigate,
+  useWorkbenchRouteContext,
   workbenchCreateMenuOpenAtom,
   workbenchRenderContentAtom,
 } from "../../routes/workbench-model";
@@ -94,6 +97,7 @@ import {
 } from "../ui/dropdown-menu";
 import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
+import { usePinnedSessions } from "../../hooks/pinned-sessions";
 
 /** InstanceCard 内容最小可读宽度（左总览 MIN_REM 的设计依据：放得下一张 220px 卡）。 */
 export const MIN_CARD_WIDTH_PX = 220;
@@ -360,6 +364,109 @@ export function InstanceArea({
  * 与 InstanceArea（瘦身后的右工作区）互补：本组件出拖放源（dragAdapter），InstanceArea 收拖放
  * 目标（DropZoneOverlay）。onCardDragStart 单一实例由 WorkbenchContent 创建，卡片源 + tab 源共享。
  */
+/**
+ * 05g「全部会话」分组列表（§6.12j 批次 5）：microlabel 按项目分组 + 置顶段最前 + 行带项目限定
+ * 符（pin②③）。行 = srow2.inst（dot2 状态点：running 实心 c-success、其余 1.4px 空心 ink-2）；
+ * 置顶行 = pin 图标 + live off 徽章显项目名（防重名限定符）；空项目组 = 「暂无活跃会话」引导行
+ *（05g「DOCS-WIKI · 0」段）。点行 = 中栏开 tab 并激活（pin⑤，组件内导航——行自身 candidate.ref
+ * 构造 URL，project scope 下不被 scope.key 捷径覆盖，WorkbenchRoute focusInstance 的
+ * resolveProjectName 对跨项目行会生成错乱 URL）；当前
+ * focusId 命中行 selrow 高亮。行不可拖（05g 无拖放语义）：拖源仍由项目树卡片 + 中栏 tab 承担。
+ * 组头大写 = uppercase utility（原型 AGENTS-WEB · 2 手写大写，实现交给 CSS）。
+ */
+export function AllSessionsGroupedList({
+  candidates,
+  pinned,
+  projectNames,
+}: {
+  candidates: GlobalInstanceCandidate[];
+  pinned: Set<string>;
+  projectNames: string[];
+}) {
+  const { t } = useT();
+  const { focusId, leftMode, rightTab, tab, mode } = useWorkbenchRouteContext();
+  const navigate = useWorkbenchNavigate();
+  // pin⑤ 点行激活：导航用行自身 ref（session 自身 projectName 构造 URL——WorkbenchRoute
+  // focusPanel 注释 :366 铁律）；sticky search 维透传对齐 navigateSession（漏带即从 URL 丢状态）。
+  const focusRow = (c: GlobalInstanceCandidate) => {
+    void navigate({ kind: "project", key: c.ref.projectName }, c.ref.sessionId, {
+      leftMode,
+      rightTab,
+      tab,
+      mode,
+    });
+  };
+  const groups = useMemo(
+    () => mergeProjectsWithCandidates(projectNames, candidates),
+    [projectNames, candidates],
+  );
+  const pinnedCandidates = useMemo(
+    () => candidates.filter((c) => pinned.has(c.ref.sessionId)),
+    [candidates, pinned],
+  );
+  const rowClasses = (c: GlobalInstanceCandidate) =>
+    `srow2 inst w-full cursor-pointer text-left ${c.ref.sessionId === focusId ? "selrow" : ""} ${
+      c.status === "running" ? "font-semibold" : "text-ink-2"
+    }`;
+  return (
+    <div className="pb-2">
+      {pinnedCandidates.length > 0 ? (
+        <>
+          <div className="microlabel mx-1.5 mb-0.5 mt-2.5 uppercase">
+            {t("workbench.pinnedGroup")}
+          </div>
+          {pinnedCandidates.map((c) => (
+            <button
+              className={rowClasses(c)}
+              key={c.ref.sessionId}
+              onClick={() => focusRow(c)}
+              type="button"
+            >
+              <ShellIcon aria-hidden="true" className="size-3 flex-none text-ink-2" name="pin" />
+              <span className="min-w-0 truncate">{c.displayName}</span>
+              <span className="live off">{c.ref.projectName}</span>
+            </button>
+          ))}
+        </>
+      ) : null}
+      {groups.map((group) => (
+        <div key={group.projectName}>
+          <div className="microlabel mx-1.5 mb-0.5 mt-2.5 uppercase">
+            {t("workbench.allSessionsGroupLabel", {
+              count: group.candidates.length,
+              name: group.projectName,
+            })}
+          </div>
+          {group.candidates.length === 0 ? (
+            <div className="px-2 py-1 text-[12px] text-ink-3">
+              {t("workbench.noActiveSessions")}
+            </div>
+          ) : (
+            group.candidates.map((c) => (
+              <button
+                className={rowClasses(c)}
+                key={c.ref.sessionId}
+                onClick={() => focusRow(c)}
+                type="button"
+              >
+                <span
+                  aria-hidden="true"
+                  className={`dot2 ${
+                    c.status === "running"
+                      ? "bg-success"
+                      : "border-[1.4px] border-ink-2 bg-transparent"
+                  }`}
+                />
+                <span className="min-w-0 truncate">{c.displayName}</span>
+              </button>
+            ))
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type InstanceLeftOverviewProps = {
   /** project 作用域（global 作用域由 GlobalProjectsOverview 承载，不进此组件）。 */
   scope: { kind: "project"; key: string };
@@ -401,17 +508,25 @@ function InstanceLeftOverviewBase({
   const setCreateMenuOpen = useSetAtom(workbenchCreateMenuOpenAtom);
 
   // 作用域 seg4（§6.10-7，05 原型 side `seg4 mini scope`「项目/全部」）：「项目」= 本项目实例
-  //（默认），「全部」= 所有项目实例平铺（candidateToGridItem 卡片带 projectName 区分归属）。
-  // global 候选与桌面 useGlobalInstanceRefs（prune effect）共用 queryKey ["overview"]，React
-  // Query dedupe 零额外请求。视图偏好不持久化（useState）：项目作用域是主要工作形态，重开
-  // 回「项目」符合直觉（批次 b 拍板，记 §6.10 补记）。
+  //（默认），「全部」= 05g 分组列表（AllSessionsGroupedList，§6.12j 批次 5；改前为全局候选
+  // 平铺卡）。global 候选与桌面 useGlobalInstanceRefs（prune effect）共用 queryKey ["overview"]，
+  // React Query dedupe 零额外请求。视图偏好不持久化（useState）：项目作用域是主要工作形态，
+  // 重开回「项目」符合直觉（批次 b 拍板，记 §6.10 补记）。
   const [scopeSegment, setScopeSegment] = useState<"project" | "all">("project");
-  const { candidates, isLoaded: candidatesLoaded } = useGlobalInstanceCandidates({
+  const {
+    candidates,
+    projectNames,
+    isLoaded: candidatesLoaded,
+  } = useGlobalInstanceCandidates({
     kind: "global",
   });
+  // 「全部」段置顶数据（pin③ 置顶仍最前，与手机 02 全局活动同一条数据）。置顶组是结构性插入，
+  // 与 GlobalProjectsOverview 同 gate 口径：settled 才渲染，避 pinned 后到从顶部插入跳变。
+  const { pinned, isLoaded: pinnedLoaded } = usePinnedSessions();
+  const allSettled = candidatesLoaded && pinnedLoaded;
 
-  // grid 数据源：seg「项目」用 useProjectInstances（本项目全览，WorkbenchContent 注入）；
-  // seg「全部」用全局候选（全局总览同源管道 candidateToGridItem，无并行过滤分支）。
+  // grid 数据源（seg「项目」）：useProjectInstances 本项目全览（WorkbenchContent 注入）。
+  // seg「全部」已换 AllSessionsGroupedList（行列表），不再消费 grid 管道。
   const gridCallbacks: GridItemCallbacks = {
     onClose: onCloseInstance,
     onRename: onRenameInstance,
@@ -420,27 +535,18 @@ function InstanceLeftOverviewBase({
   };
   const gridItems = useMemo<InstanceGridItem[]>(
     () =>
-      scopeSegment === "all"
-        ? candidates.map((candidate) => candidateToGridItem(candidate, gridCallbacks))
-        : projectInstances.instances.map((entry) =>
-            instanceToGridItem(entry, gridCallbacks, ctx.projectKey ?? ""),
-          ),
-    // gridCallbacks 闭包依赖 t；candidates/projectInstances 引用由 hook 内 dataKey fingerprint
+      projectInstances.instances.map((entry) =>
+        instanceToGridItem(entry, gridCallbacks, ctx.projectKey ?? ""),
+      ),
+    // gridCallbacks 闭包依赖 t；projectInstances 引用由 hook 内 dataKey fingerprint
     // 稳定（data 不变时不新建数组）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scopeSegment, candidates, projectInstances.instances, t],
+    [projectInstances.instances, t],
   );
 
-  // grid view dragRefs：seg「项目」用 projectInstances（sessionId → ref，projectName=scope.key）；
-  // seg「全部」直接用候选自带 ref（projectName 已编码在内，跨项目拖放/激活语义正确）。
+  // grid view dragRefs：projectInstances（sessionId → ref，projectName=scope.key）。
   const gridDragRefs = useMemo(() => {
     const m = new Map<string, WorkbenchPanelRef>();
-    if (scopeSegment === "all") {
-      for (const candidate of candidates) {
-        m.set(candidate.ref.sessionId, candidate.ref);
-      }
-      return m;
-    }
     for (const entry of projectInstances.instances) {
       m.set(entry.session.id, {
         kind: "session",
@@ -449,26 +555,32 @@ function InstanceLeftOverviewBase({
       });
     }
     return m;
-  }, [scope, scopeSegment, candidates, projectInstances.instances]);
+  }, [scope, projectInstances.instances]);
 
-  // 左总览 overview 内容（设计 §5）：grid 单视图（project scope 无视图切换）。
+  // 左总览 overview 内容（设计 §5）：seg「项目」grid 单视图 / seg「全部」05g 分组列表。
   // 加载态（设计 §5）：pending 且数据仍空时显示 CardGridSkeleton，替代 EmptyInstanceArea。
   const overviewLoading =
     scopeSegment === "all"
-      ? !candidatesLoaded && candidates.length === 0
+      ? !allSettled && candidates.length === 0
       : projectInstances.isLoading && projectInstances.instances.length === 0;
   const leftOverviewContent = overviewLoading ? (
     <div className="px-3 py-2">
       <CardGridSkeleton plain />
     </div>
-  ) : gridItems.length === 0 ? (
-    scopeSegment === "all" ? (
+  ) : scopeSegment === "all" ? (
+    !allSettled ? (
+      <div className="px-3 py-2">
+        <CardGridSkeleton plain />
+      </div>
+    ) : candidates.length === 0 && projectNames.length === 0 ? (
       <div className="flex flex-1 items-center justify-center p-6 text-center">
         <p className="text-sm text-on-surface-muted">{t("workbench.globalOverviewEmpty")}</p>
       </div>
     ) : (
-      <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
+      <AllSessionsGroupedList candidates={candidates} pinned={pinned} projectNames={projectNames} />
     )
+  ) : gridItems.length === 0 ? (
+    <EmptyInstanceArea create={create} projectName={ctx.projectKey} />
   ) : (
     <div className="px-3 py-2">
       <InstanceGrid dragAdapter={dragAdapter} dragRefs={gridDragRefs} items={gridItems} plain />

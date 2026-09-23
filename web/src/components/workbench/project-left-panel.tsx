@@ -10,7 +10,8 @@ import { buildOverviewTabs } from "./workbench-tab-plugin";
 import { TabButton } from "./right-panel-tabs";
 import { HistoryList, HistoryRangeControl } from "./history-list";
 import { PluginsPanel } from "../../routes/PluginsRoute";
-
+import { useApprovals } from "../../hooks/use-approvals";
+import { ApprovalPopover } from "./approval-popover";
 /**
  * 左栏 middle tab 收敛集合（§6.12j 批次 3，用户拍板「左栏只留实例+历史+插件」）：
  * 文件/Git/wiki/pages 检视全部归右栏 Inspector（唯一检视入口），左栏不再重复。
@@ -60,6 +61,11 @@ export function ProjectLeftPanel({
   const { t } = useT();
   // history tab 时间范围（受控，父级持有避免 tab 切换丢失；range 进 queryKey → 切档重拉）。
   const [range, setRange] = useState<AgentHistoryRange>("week");
+
+  // 04 iPad 审批橙行（05f pin①：实例区下审批中心入口，§6.12j 批次 5）。approvals>0 才渲染
+  //（与 StatusBar 同口径同数据），点击 = ApprovalPopover（05f 审批中心，卡片/应答全复用）。
+  // ProjectLeftPanel 仅桌面渲染（WorkbenchShell lg 分栏才挂 leftPanel），无需视口 gate。
+  const { approvals } = useApprovals(true);
 
   // middle tab（仅 project scope）：buildOverviewTabs 全集（含移动端共用源）按收敛集合过滤 +
   // resolvedTab。global scope middleTabs=[]（无 tab bar）。URL ?tab=files 等直链（旧书签/持久化）
@@ -128,6 +134,13 @@ export function ProjectLeftPanel({
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {scope.kind === "global" ? overview : middleBody}
       </div>
+      {scope.kind === "project" && approvals.length > 0 ? (
+        <ApprovalPopover approvals={approvals}>
+          <button className="aprow cursor-pointer" type="button">
+            {t("workbench.approvalRow", { count: approvals.length })}
+          </button>
+        </ApprovalPopover>
+      ) : null}
     </div>
   );
 }

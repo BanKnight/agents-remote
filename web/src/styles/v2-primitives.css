@@ -637,6 +637,22 @@
     border-radius: 50%;
     flex: none;
   }
+  /* 04 iPad 审批橙行（05f pin①：实例区下审批中心入口，§6.12j 批次 5）。左栏满宽贴边色块
+     （原型 margin:12px 0 10px），tint-orange 衬底 + warning-text 前景。 */
+  .aprow {
+    display: flex;
+    align-items: center;
+    height: 30px;
+    margin: 12px 0 10px;
+    padding: 0 12px;
+    border-radius: 9px;
+    background: var(--tint-orange);
+    font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 600;
+    color: var(--c-warning-text);
+  }
   .otherlbl {
     font-size: 10.5px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */

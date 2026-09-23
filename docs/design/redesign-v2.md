@@ -590,7 +590,7 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 - 验证：m6 68/68（+2 断言）；四门禁全绿；CSS 硬闸 + content-type text/css。
 
-### §6.12j 第十轮：移动底部导航恒显 + 多端整体对齐设计包（2026-09-23 起，批次 1 `79e68e7` / 批次 2 `052feda`）
+### §6.12j 第十轮：移动底部导航恒显 + 多端整体对齐设计包（2026-09-23 起，批次 1 `79e68e7` / 批次 2 `052feda` / 批次 3 `848a04a` / 批次 4 `bf31c1b`）
 
 用户 iPhone 复验两问题：①「工作台理应和原型一样显示底部导航」；②「其他端没有对齐到设计，差距蛮大的——目前 iPhone 对齐最好，其他端并没有」（用户澄清：非单指插件页，是**端级整体对齐**，全量修，除数据依赖项）。
 
@@ -608,6 +608,14 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 - **插件页 09m 单页**：桌面 mainPage = MobilePluginsOverview（09 单页三段：MCP 服务器组 + 已安装技能组 + 市场组，作用域 segc + 本地搜索）替代 PluginsPanel skill/mcp 大段切；新增 hideTitle prop——标题由 MainPageShell 17px h1 承担（09m .mhead 形态），segc 限宽 290px 对齐 09m seg4。PluginsPanel 保留（项目内左栏 plugins tab，批次 3 拍板口径）。MCP 卡「● 已连接/N 工具」live 徽章数据依赖不画（McpServerEntry 无运行时状态，§6.6 摊牌同口径，D 批）。
 - **文件页 10m**：GlobalFilesOverview 新增 variant="page"（桌面 mainPage）——seg4「全局/本项目 · <名>」作用域（=workbenchLastProjectAtom，页内切 rootBrowse cwd 不进 URL）+ .wsearch 补 ⌘F 角标（11px ink-3）+ 根层 gfcard 分组卡（与移动 10-tab 卡形态同源）；variant="panel"（默认）= 左栏粘性文件语境通用树不变，移动不传 variant 走 isMobile 卡形态分支。10m plus「新建/上传」不实现——语义已在 FilesPanel 工具行承载（MainPageShell 注释既有口径）。
 - m9-d 探针扩展：A1 改 09m 结构断言（psect MCP 组 + segc）+ A3a-d 10m（seg4 恰 1/双段 tab/⌘F 恰 1/gfcard ≥1）+ B5-B7 market/sources 桌面可达；46 断言全绿。
+
+**批次 5（05g「全部」分组列表 + iPad 项）**：
+- **05g 分组列表**：`AllSessionsGroupedList`（instance-area.tsx，InstanceLeftOverview「全部」段与 GlobalProjectsOverview「全部」视图共用）——microlabel 置顶段（pin 图标 + 名 + `.live.off` 项目限定符）+ 项目分组（microlabel「{{NAME}} · {{N}}」uppercase + srow2.inst 行 dot2 状态点：running 实心 c-success/其余 1.4px 空心 ink-2，running 行 600 ink-1）+ 空项目组「暂无活跃会话」引导行。置顶段 settled gate 沿用 GlobalProjectsOverview 口径（pinned 后到不跳变）。**点行导航组件内化**（验证期发现并修复的实质 bug）：行点击 = 组件内 useWorkbenchNavigate，行自身 candidate.ref 构造 URL——project scope 下 WorkbenchRoute focusInstance 的 resolveProjectName 走 scope.key 捷径，跨项目行会生成错乱 URL（/projects/proj1/session/<proj2-id>，与 focusPanel 注释 :366 铁律同源）；sticky search 维（leftMode/rightTab/tab/mode）透传对齐 navigateSession。seg4 mini（项目/全部）仅 ≥lg 渲染（05g pin① iPad/Mac 专属，iPhone 维持层级）。行不可拖（05g 无拖放语义）。
+- **aprow 审批橙行**：ProjectLeftPanel 根底部（04 原型「实例区下」语义，**非** sidebar.tsx——ProjectLeftPanel 是桌面左栏统一容器，project scope 恒显含三 tab）；project scope + approvals>0 才渲染，点击 = ApprovalPopover（05f 审批中心复用，卡片/应答/两段确认全同）；useApprovals 与 StatusBar 双订阅同 queryKey dedupe 零额外请求。`.aprow` 类入 v2-primitives.css（30px + tint-orange 衬底 + c-warning-text 前景，原型 04:12 数值原文）。
+- **侧栏分档**：SIDEBAR_WIDTH_IPAD 260px（1024–1179，04:12）/ SIDEBAR_WIDTH_MAC 250px（≥1180，05）——`useMinViewport(1180)`（workbench-model，matchMedia）二档切换，--workbench-activity-col 注入。
+- **i18n 插值语法**：本项目 translate 实现 = `{{count}}` 双花括号（home.nRunning 先例），批次 5 误写单花括号致插值失效（microlabel/aprow 原样输出模板）；探针 G9/G3/G4 断言拦住。
+- m9-d 探针 +G1-G16（05g 分组结构/置顶限定符/跨项目激活/aprow tint-orange computed·30px·Popover/250-260 分档 + Part 2 1100×800 iPad 档）= 62 断言全绿；四门禁 + e2e 27/27。
+- **教训：dist JS 半更新态**——CSS 落盘硬闸 ≠ JS chunk 落盘稳定：vite build --watch 增量改多个 chunk 时中途跑探针会载到新旧混合 chunk（错误边界 "Something went wrong" + asides=0 假象，二分 mock 误导向「approvals 非空即崩」）；同代码稳定 dist 下复跑即过。跑探针前 touch main.tsx 完整 rebuild 再等 16s 落稳。
 
 ## §7 待定项跟踪
 
