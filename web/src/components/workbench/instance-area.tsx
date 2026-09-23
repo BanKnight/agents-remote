@@ -74,6 +74,7 @@ import {
   sessionMarker,
   shellSurfaceClasses,
   type ShellTone,
+  statusDotToneBg,
   statusToTone,
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, AcpPanel, ChatPanel, TerminalPanel } from "./instance-panel";
@@ -83,7 +84,7 @@ import { SkillTabPreview } from "../../routes/PluginsRoute";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
 import { type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
-import { ActionMenu } from "../ui/action-menu";
+import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 import { Dialog, DialogContent } from "../ui/dialog";
 import {
   DropdownMenu,
@@ -1761,6 +1762,30 @@ type CreateSessionBarProps = {
 };
 
 /**
+ * 创建实例菜单 items 单源（§6.12j）：CreateSessionBar 与 GroupHeader tabstrip「＋」共用同一
+ * 菜单数据源（Claude/OMP/终端三行）。presentational——分派走 CreateSessionApi。
+ */
+function createSessionMenuItems(create: CreateSessionApi, t: TranslateFn): ActionMenuItem[] {
+  return [
+    {
+      label: t("workbench.createClaude"),
+      icon: <ShellIcon name="anthropic" />,
+      onSelect: () => create.createAgent("claude"),
+    },
+    {
+      label: t("workbench.createOmp"),
+      icon: <ShellIcon name="agent-nav" />,
+      onSelect: () => create.createAgent("omp"),
+    },
+    {
+      label: t("workbench.createTerminal"),
+      icon: <ShellIcon name="terminal" />,
+      onSelect: create.createTerminal,
+    },
+  ];
+}
+
+/**
  * 创建实例 dropdown（Claude/Codex/Terminal，2c-2 从 left-rail LeftRailCreateBar 改名迁此
  * export）。presentational——消费 useCreateSession 的 createAgent/createTerminal/isCreating。
  * 三处复用：InstanceArea tab bar（inline）、EmptyInstanceArea（inline）、ProjectInstances
@@ -1781,23 +1806,10 @@ export function CreateSessionBar({
       cancelLabel={t("cancel")}
       open={open}
       onOpenChange={onOpenChange}
-      items={[
-        {
-          label: t("workbench.createClaude"),
-          icon: <ShellIcon name="anthropic" />,
-          onSelect: () => onCreateAgent("claude"),
-        },
-        {
-          label: t("workbench.createOmp"),
-          icon: <ShellIcon name="agent-nav" />,
-          onSelect: () => onCreateAgent("omp"),
-        },
-        {
-          label: t("workbench.createTerminal"),
-          icon: <ShellIcon name="terminal" />,
-          onSelect: onCreateTerminal,
-        },
-      ]}
+      items={createSessionMenuItems(
+        { createAgent: onCreateAgent, createTerminal: onCreateTerminal, isCreating },
+        t,
+      )}
       trigger={
         <button
           className={actionButtonClasses({
@@ -2205,6 +2217,7 @@ function PlaceholderPanel({ focusId }: { focusId: string }) {
  * 从实例 detail query 派生（与 PanelRouter 同源 query key，React Query dedupe）。
  */
 function GroupHeader({
+  create,
   group,
   isMaximized,
   onCloseTab,
@@ -2217,9 +2230,14 @@ function GroupHeader({
   const { t } = useT();
   const maximizeLabelKey = isMaximized ? "workbench.panelRestore" : "workbench.panelMaximize";
   return (
-    // h-9=36px 须与 WORKBENCH_TAB_BAR_PX 对齐：表现层靠此固定值把面板顶部 calc 下推避让 tab 栏。
-    <div className="flex h-9 shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5">
-      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
+    // tabstrip 单源形制（§6.12j，v2-primitives .tabstrip：高 32px + bg-tabstrip + border-b
+    // sep + gap 16px）。高度 32px 须与 WORKBENCH_TAB_BAR_PX 对齐：表现层靠此固定值把面板顶部
+    // calc 下推避让 tab 栏。右侧「＋」= 新建实例入口（05d 原型 tabstrip plus 锚点语义），与
+    // 左栏 CreateSessionBar 共用 createSessionMenuItems（桌面左栏创建入口保留不动）。
+    <div className="tabstrip">
+      {/* h-full 拉满条高（stretch 链：容器 → DragSourceCard → .tb height:100%），active 的
+          ::after 下划线才能贴条底。 */}
+      <div className="flex h-full min-w-0 flex-1 gap-4 overflow-x-auto">
         {group.tabs.map((tab) => (
           <TabChip
             isActive={tabIdOf(tab) === group.activeTabId}
@@ -2232,6 +2250,20 @@ function GroupHeader({
           />
         ))}
       </div>
+      {create ? (
+        <ActionMenu
+          align="end"
+          items={createSessionMenuItems(create, t)}
+          trigger={
+            <button
+              aria-label={t("workbench.createMenu")}
+              className="plus cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={create.isCreating}
+              type="button"
+            />
+          }
+        />
+      ) : null}
       {/* 分屏按钮（§6.10-3，05 原型 tabstrip 右侧 rect+分隔线 icon）：一键「分屏并新建终端
           窗格」——WorkbenchContent onSplitLeaf 创建终端 ref 后 dropIntoLeaf right split（05
           原型分屏产物 = pterm）。语义与拍板差异见 WorkbenchRoute.onSplitLeaf 注释。 */}
@@ -2258,6 +2290,8 @@ function GroupHeader({
 }
 
 type GroupHeaderProps = {
+  /** 新建实例菜单（tabstrip「＋」）；null 时不渲染（EmptyInstanceArea 承担空态创建）。 */
+  create: CreateSessionApi | null;
   group: WorkbenchGroup;
   isMaximized: boolean;
   onCloseTab: (tabId: string) => void;
@@ -2279,11 +2313,10 @@ type TabChipProps = {
 };
 
 /**
- * group 内单个 tab chip（设计 §7.1，§9 批 6b）：xs 裸 icon marker + 实例名（点击 = 切活动 tab）
- * + ℹ（实例信息，仅 session tab）+ ✕（最小化）。active tab ✕ 常显，非 active hover 才显（减少
- * 视觉噪音）。usePanelMeta 派生 marker（xs 裸 icon）+ label。样式对齐 NavItemContent 设计语言
- * （DESIGN nav-item 三态）：active 用 `bg-primary/10 text-primary` 品牌色，gap/px/py 对齐
- * nav-item horizontal。
+ * group 内单个 tab chip（设计 §7.1，§9 批 6b；§6.12j 起对齐原型 tabstrip .tb 形制）：实例名
+ * （点击 = 切活动 tab）+ 6px 状态点（session/terminal tab）+ ℹ（实例信息，仅 session tab）+
+ * ✕（最小化）。active = ink-1 600 + 2.5px 主色下划线；非 active hover 才显动作钮（hover
+ * 环境）。usePanelMeta 派生 label + statusDot。
  *
  * 外层 DragSourceCard 启用拖动（设计 §7.3 tab 跨 group 拖动）：pointermove 超阈值 →
  * onCardDragStart → dragState → DropZoneOverlay 显示 drop zone。单击（未超阈值）select/close
@@ -2331,27 +2364,35 @@ function TabChip({
   );
   return (
     <DragSourceCard dragRef={panelRef} onDragStart={onDragStart} onSelect={onSelect}>
-      {/* 对齐 NavItemContent 设计语言（DESIGN nav-item 三态）：active 用 primary 品牌色
-          （非旧 bg-on-surface/10 中性灰胶囊）、gap/px/py 对齐 nav-item horizontal。marker 用
-          xs 裸 icon（usePanelMeta 已传 xs）与 label 同高，✕ 是 tab 特有最小化动作（nav-item 无）。 */}
+      {/* tabstrip .tb 单源形制（§6.12j，v2-primitives .tabstrip .tb）：12.5px 文本 + on 态
+          ink-1 600 + ::after 2.5px 主色下划线（absolute bottom，随 .tb on 类自动来）。旧胶囊
+          底色/provider marker/font-bold 退役——原型 05 tab = 6px 状态点 + 文本（状态点 tone
+          消费 statusDotToneBg 禁私设映射；session/terminal tab 有，file/git/skill/chat/render
+          无 → 纯文本，与原型非 session tab 一致）。✕/ℹ/AutoRetry 是 tab 特有动作保留接线
+          （触屏常显、hover 环境显隐，frontend-notes §7；DragGhost 仍消费 meta.marker）。
+          group/tab 供 AutoRetry tab variant 的 hover-capable:group-hover/tab 显隐。 */}
       <div
-        className={`group/tab flex shrink-0 cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition ${
-          isActive
-            ? "bg-primary/10 text-primary"
-            : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-        }`}
+        className={`tb group/tab shrink-0 cursor-pointer ${isActive ? "on" : ""}`}
         onContextMenu={(event) => {
           event.preventDefault();
           onContextMenu(event);
         }}
       >
+        {meta?.statusDot ? (
+          <span
+            aria-label={meta.statusDot.label}
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotToneBg[meta.statusDot.tone]}${
+              meta.statusDot.pulse ? " animate-pulse" : ""
+            }`}
+            role="img"
+          />
+        ) : null}
         <button
-          className="flex min-w-0 cursor-pointer items-center gap-2"
+          className="flex min-w-0 cursor-pointer items-center"
           onClick={onSelect}
           type="button"
         >
-          {meta?.marker ?? null}
-          <span className="block max-w-[8rem] truncate text-xs font-bold sm:text-sm">{label}</span>
+          <span className="block max-w-[8rem] truncate">{label}</span>
         </button>
         {panelRef.kind === "session" ? (
           <>
@@ -2525,12 +2566,13 @@ function pct(n: number): string {
   return `${n * 100}%`;
 }
 
-/** group tab 栏（GroupHeader）固定高度 px，与 GroupHeader 的 `h-9`（=2.25rem=36px）对齐。
+/** group tab 栏（GroupHeader）固定高度 px，与 GroupHeader 的 tabstrip 形制对齐
+ *（§6.12j：v2-primitives `.tabstrip` height:32px）。
  *
  *  flatten-layout 的 contentRect 不含 tab 栏偏移（归一化比例无法精确表达固定 px，矮容器下会偏），
- *  改由 `rectStyle` 的 insetTopPx 用 CSS calc 把面板顶部下推固定 36px——无论容器多高都精确对齐
+ *  改由 `rectStyle` 的 insetTopPx 用 CSS calc 把面板顶部下推固定 32px——无论容器多高都精确对齐
  *  GroupHeader 底，不再"矮容器下 tab 下半被面板遮挡"。改 GroupHeader 高度时必须同步改此常量。 */
-const WORKBENCH_TAB_BAR_PX = 36;
+const WORKBENCH_TAB_BAR_PX = 32;
 
 /** 归一化 rect → React absolute 定位 style（left/top/width/height 百分比）。
  *
@@ -2591,6 +2633,7 @@ export function WorkspaceTree({
       {flat.groups.map((g) => (
         <GroupShell
           activeZone={handlers.activeZone}
+          create={create}
           dragRef={handlers.draggingRef}
           group={g}
           key={g.id}
@@ -2643,6 +2686,8 @@ export function WorkspaceTree({
  */
 type GroupShellProps = {
   activeZone: { targetGroupId: string | null; zone: DropZone } | null;
+  /** 透传 GroupHeader tabstrip「＋」新建实例菜单（§6.12j）。 */
+  create: CreateSessionApi | null;
   dragRef: WorkbenchPanelRef | null;
   /** flattenLayout 投影出的 group（含 rect / contentRect / isMaximized / tabs）。 */
   group: FlatGroup;
@@ -2666,6 +2711,7 @@ type GroupShellProps = {
  */
 function GroupShell({
   activeZone,
+  create,
   dragRef,
   group,
   onCloseTab,
@@ -2686,6 +2732,7 @@ function GroupShell({
       style={rectStyle(group.rect)}
     >
       <GroupHeader
+        create={create}
         group={group}
         isMaximized={group.isMaximized}
         onCloseTab={onCloseTab}

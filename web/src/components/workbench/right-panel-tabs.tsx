@@ -57,32 +57,54 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1 border-b border-on-surface/5 px-1.5 py-1.5">
-        {visiblePlugins.map((plugin) => (
-          <TabButton
-            active={plugin.id === current.id}
-            key={plugin.id}
-            label={t(plugin.labelKey)}
-            onClick={() => {
-              setRememberedTab(plugin.id);
-              onTabChange(plugin.id);
-            }}
-          />
-        ))}
+      {/* 检视标头 + seg4 分段（§6.12j 对齐 05:99 原型：glabel2「检视 · 只读」+ 标准 .seg4，
+          替代旧胶囊 TabButton）。只读语义固定——检视面板全部是只读视图；原型折叠 »（clps）
+          未实现，不设假入口。span 键盘可达（Enter/Space），与左栏作用域 seg4 先例同构。 */}
+      <div className="glabel2 shrink-0">{t("workbench.inspectorTitle")}</div>
+      <div className="shrink-0 px-3.5 pb-2">
+        <div aria-label={t("workbench.inspectorAria")} className="seg4" role="tablist">
+          {visiblePlugins.map((plugin) => (
+            <span
+              aria-controls="inspector-tab-panel"
+              aria-selected={plugin.id === current.id}
+              className={`cursor-pointer ${plugin.id === current.id ? "on" : ""}`}
+              key={plugin.id}
+              onClick={() => {
+                setRememberedTab(plugin.id);
+                onTabChange(plugin.id);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setRememberedTab(plugin.id);
+                  onTabChange(plugin.id);
+                }
+              }}
+              role="tab"
+              tabIndex={0}
+            >
+              {t(plugin.labelKey)}
+            </span>
+          ))}
+        </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden" key={ctx.projectKey ?? "none"}>
+      <div
+        className="min-h-0 flex-1 overflow-hidden"
+        id="inspector-tab-panel"
+        key={ctx.projectKey ?? "none"}
+        role="tabpanel"
+      >
         {current.render(ctx)}
       </div>
     </div>
   );
 }
 
-type TabButtonProps = {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-};
-
+/**
+ * 胶囊 tab 钮（右栏 Inspector 已迁 seg4，§6.12j 不再内部使用）。存量消费方：
+ * project-left-panel middle tabs（批次 3 收敛对象）与 PluginsRoute 子 tab（批次 4 重排对象），
+ * 迁移完成后随之删除。
+ */
 export function TabButton({ active, label, onClick }: TabButtonProps) {
   return (
     <button
@@ -94,3 +116,9 @@ export function TabButton({ active, label, onClick }: TabButtonProps) {
     </button>
   );
 }
+
+type TabButtonProps = {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+};

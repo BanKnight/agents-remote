@@ -67,6 +67,20 @@ function ok(cond, msg) {
   }
 }
 
+/** hex (#rgb/#rrggbb) → "r, g, b"（token hex ↔ computed backgroundColor rgb 字符串对照用）。 */
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  const full =
+    h.length === 3
+      ? h
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : h;
+  const n = parseInt(full, 16);
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+}
+
 async function setupMocks(page) {
   await page.route(/\/api\/overview$/, (r) =>
     r.fulfill({
@@ -106,6 +120,18 @@ async function setupMocks(page) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ sessions: [TERM_T_S] }),
+    }),
+  );
+  // F7 状态点依赖 usePanelMeta 的 detail（列表缓存预填兜底也在，detail mock 消除真实 api 噪音）。
+  await page.route(/\/api\/projects\/proj1\/agent-sessions\/agent_m9d-1$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        session: AGENT_A_S,
+        availableModels: ["opus"],
+        availablePermissionModes: ["plan"],
+      }),
     }),
   );
   await page.route(/\/api\/projects\/proj1\/agent-history\?.*$/, (r) =>
@@ -346,6 +372,91 @@ async function sideOverviewVisible(page) {
       )),
       "E8 非设置页 footnav 无 .on（active 判定随 leftMode）",
     );
+
+    // ── F. 工作台 tabstrip 形制（§6.12j 批次 2）──
+    // 05 原型 tabstrip：32px 条（bg-tabstrip + border-b sep）+ .tb 文本 tab（on=ink-1 600 +
+    // ::after 2.5px 主色下划线）+ 6px 状态点 + 条上「＋」；右栏 Inspector = glabel2「检视 ·
+    // 只读」+ 标准 .seg4（32px）。全部 DOM 几何/computed 硬数据。
+    await page.goto(`${WEB_ORIGIN}/projects/proj1`);
+    await page.waitForTimeout(1200);
+    await page.locator("main > div > aside").nth(1).getByText("Probe Agent A").click();
+    await page.waitForFunction(() => document.querySelectorAll("[data-drop-group]").length >= 1, {
+      timeout: 5000,
+    });
+    const strip = await page.evaluate(() => {
+      const el = document.querySelector(".tabstrip");
+      if (!el) return null;
+      const rootStyle = getComputedStyle(document.documentElement);
+      const style = getComputedStyle(el);
+      const active = el.querySelector(".tb.on");
+      const after = active ? getComputedStyle(active, "::after") : null;
+      const dot = el.querySelector('.tb span[role="img"]');
+      const plus = el.querySelector(".tabstrip .plus");
+      return {
+        h: Math.round(el.getBoundingClientRect().height),
+        bg: style.backgroundColor,
+        tabstripToken: rootStyle.getPropertyValue("--bg-tabstrip").trim(),
+        borderBottom: style.borderBottomWidth,
+        underlineH: after ? after.height : null,
+        underlineBg: after ? after.backgroundColor : null,
+        primaryToken: rootStyle.getPropertyValue("--c-primary").trim(),
+        dotSize: dot ? Math.round(dot.getBoundingClientRect().width) : null,
+        dotLabel: dot ? dot.getAttribute("aria-label") : null,
+        plusTag: plus ? plus.tagName : null,
+        plusLabel: plus ? plus.getAttribute("aria-label") : null,
+      };
+    });
+    ok(strip !== null, "F1 GroupHeader tabstrip 渲染（.tabstrip）");
+    if (strip) {
+      ok(strip.h === 32, `F2 tabstrip 高 32px（实际 ${strip.h}）`);
+      ok(
+        strip.bg === `rgb(${hexToRgb(strip.tabstripToken)})`,
+        `F3 tabstrip bg = --bg-tabstrip token（${strip.bg}）`,
+      );
+      ok(strip.borderBottom === "1px", `F4 border-b 1px（实际 ${strip.borderBottom}）`);
+      ok(strip.underlineH === "2.5px", `F5 active 下划线 2.5px（实际 ${strip.underlineH}）`);
+      ok(
+        strip.underlineBg === `rgb(${hexToRgb(strip.primaryToken)})`,
+        `F6 下划线 = --c-primary（${strip.underlineBg}）`,
+      );
+      ok(strip.dotSize === 6, `F7 状态点 6px（实际 ${strip.dotSize}）`);
+      ok(!!strip.dotLabel, `F8 状态点 aria-label 在（${strip.dotLabel}）`);
+      ok(strip.plusTag === "BUTTON", `F9 「＋」= button.plus（实际 ${strip.plusTag}）`);
+      ok(
+        (strip.plusLabel ?? "").includes("新建"),
+        `F10 ＋ aria-label 含「新建」（${strip.plusLabel}）`,
+      );
+    }
+
+    // 右栏 Inspector：glabel2「检视 · 只读」+ 标准 seg4（32px，§6.12j）。
+    await page.getByRole("button", { name: "展开右栏" }).click();
+    await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 3, {
+      timeout: 5000,
+    });
+    const insp = await page.evaluate(() => {
+      const aside = document.querySelectorAll("main > div > aside")[2];
+      if (!aside) return null;
+      const label = aside.querySelector(".glabel2");
+      const seg = aside.querySelector(".seg4");
+      return {
+        label: label
+          ? label.textContent.trim()
+          : aside.textContent.includes("检视")
+            ? "检视"
+            : null,
+        segH: seg ? Math.round(seg.getBoundingClientRect().height) : null,
+        segSpans: seg ? [...seg.querySelectorAll("span")].map((s) => s.textContent.trim()) : [],
+      };
+    });
+    ok(insp !== null, "F11 右栏 Inspector 渲染");
+    if (insp) {
+      ok(insp.label === "检视 · 只读", `F12 glabel2「检视 · 只读」（实际 ${insp.label}）`);
+      ok(insp.segH === 32, `F13 标准 seg4 高 32px（实际 ${insp.segH}）`);
+      ok(
+        insp.segSpans.join(",") === "文件,Git,Wiki,历史",
+        `F14 四段顺序（实际 ${JSON.stringify(insp.segSpans)}）`,
+      );
+    }
 
     await ctx.close();
   } finally {

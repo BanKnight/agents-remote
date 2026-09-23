@@ -213,10 +213,8 @@ async function login(page) {
     const rightTabs = await page.evaluate(() => {
       const aside = document.querySelectorAll("main > div > aside")[2];
       if (!aside) return null;
-      // TabButton 特征类（rounded-lg px-2.5 py-1 text-xs），排除 FilesPanel 等内容区按钮。
-      return [...aside.querySelectorAll("button.rounded-lg.px-2\\.5")].map((b) =>
-        b.textContent.trim(),
-      );
+      // §6.12j 起 Inspector 四段 = .seg4 分段（span role=tab），不再是胶囊 button。
+      return [...aside.querySelectorAll(".seg4 span")].map((b) => b.textContent.trim());
     });
     ok(
       rightTabs !== null && rightTabs.join(",") === "文件,Git,Wiki,历史",
@@ -225,19 +223,17 @@ async function login(page) {
     await page
       .locator("main > div > aside")
       .nth(2)
-      .getByRole("button", { name: "历史", exact: true })
+      .getByRole("tab", { name: "历史", exact: true })
       .click();
     await page.waitForTimeout(400);
     const historyActive = await page.evaluate(() => {
       const aside = document.querySelectorAll("main > div > aside")[2];
-      const btn = aside
-        ? [...aside.querySelectorAll("button.rounded-lg.px-2\\.5")].find(
-            (b) => b.textContent.trim() === "历史",
-          )
+      const seg = aside
+        ? [...aside.querySelectorAll(".seg4 span")].find((b) => b.textContent.trim() === "历史")
         : null;
-      return btn ? btn.className.includes("bg-primary/10") : false;
+      return seg ? seg.getAttribute("aria-selected") === "true" : false;
     });
-    ok(historyActive, "历史段可激活（bg-primary/10 active 态）");
+    ok(historyActive, "历史段可激活（seg4 aria-selected active 态）");
 
     // ── 分屏按钮 ──
     const leafCount = () =>

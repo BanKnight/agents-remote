@@ -703,6 +703,8 @@ export const zh: Record<TranslationKey, string> = {
   "wiki.noSessions": "没有可注入的 Agent 会话",
   "workbench.viewSplit": "分屏",
   "workbench.rightPanelEmpty": "暂无内容",
+  "workbench.inspectorTitle": "检视 · 只读",
+  "workbench.inspectorAria": "检视面板分段",
   "workbench.panelClose": "关闭面板",
   "workbench.panelMaximize": "最大化面板",
   "workbench.panelRestore": "恢复面板",

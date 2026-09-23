@@ -707,6 +707,8 @@ export const en = {
   "wiki.injectFailed": "Inject failed",
   "workbench.viewSplit": "Split",
   "workbench.rightPanelEmpty": "No content",
+  "workbench.inspectorTitle": "Inspector · Read-only",
+  "workbench.inspectorAria": "Inspector sections",
   "workbench.panelClose": "Close panel",
   "workbench.panelMaximize": "Maximize panel",
   "workbench.panelRestore": "Restore panel",
