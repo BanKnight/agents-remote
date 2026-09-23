@@ -56,7 +56,6 @@ import {
   useWorkbenchRouteContext,
   workbenchFilesSearchFocusRequestAtom,
   workbenchLastProjectAtom,
-  workbenchMiddleTabAtom,
   workbenchRightCollapsedAtom,
 } from "./workbench-model";
 
@@ -129,7 +128,6 @@ function WorkbenchContent({
   useEffect(() => {
     if (scope.kind === "project") setLastProjectKey(scope.key);
   }, [scope, setLastProjectKey]);
-  const rememberedMiddleTab = useAtomValue(workbenchMiddleTabAtom);
   // 10m 文件 mainPage 的受控 cwd（§6.12j 批次 4）：作用域 seg4「本项目」= rootBrowse 进项目
   // 目录（currentPath = 项目名），页面内态不进 URL（刷新回全局根，与 FilesPanel 内部态同语义）。
   const [globalFilesPath, setGlobalFilesPath] = useState("");
@@ -137,7 +135,9 @@ function WorkbenchContent({
   // 写入由 WorkbenchShell（RailButton 唤出 / onCollapse 收起）负责。纯手动控制，持久化到
   // localStorage，focusId 变化不覆盖。
   const rightCollapsed = useAtomValue(workbenchRightCollapsedAtom);
-  const tab = tabFromUrl ?? rememberedMiddleTab;
+  // tab 回退恒 overview：「记住上次 tab」atom 已随桌面左栏 middle tab 退役删除（写点
+  // onTabChange 在 §6.12k 批次 1 退役，只残留无写点读者——review 清理；URL 省略 = overview）。
+  const tab = tabFromUrl ?? "overview";
   const ctx: WorkbenchTabPluginContext = {
     projectKey: scope.kind === "project" ? scope.key : null,
     focusId,
@@ -153,10 +153,10 @@ function WorkbenchContent({
       stickyWorkbenchSearch({ rightTab: rightTabNext, tab: tabFromUrl, leftMode, mode }),
     );
   };
-  // 工具 ticon 打开/退出（移动 row2 ticon，M10 用户反馈）：打开工具 ≠ 选 tab——不写
-  // rememberedMiddleTab（它的语义 = 用户最后一次主动选的非工具 tab），URL ?tab 进工具值；
-  // 退出（null）= URL 去 tab 维度，tab = tabFromUrl ?? rememberedMiddleTab 解析回退到
-  // 进工具前的 tab，不再恒回第一个 overview。桌面左栏 middle tab 仍走 onTabChange 照旧。
+  // 工具 ticon 打开/退出（移动 row2 ticon，M10 用户反馈）：打开工具 ≠ 选 tab——URL ?tab 进
+  // 工具值；退出（null）= URL 去 tab 维度，回中栏默认 overview（原「回进工具前的 tab」依赖
+  // rememberedMiddleTab，写点随 §6.12k 批次 1 桌面左栏 middle tab 退役而断链，atom 已删——
+  // 见 §6.12k code review #1）。
   const onToolTabChange = (next: WorkbenchMiddleTab | null) => {
     void navigateWorkbench(
       scope,
@@ -841,9 +841,10 @@ function WorkbenchContent({
     // §6.12j 批次 4（10m 文件页）：variant="page" 开桌面 mainPage 形态——作用域 seg4（全局 /
     // 本项目）+ ⌘F 角标 + 项目根目录分组卡（10m:61-78）；cwd 受控供 seg4 页内切作用域。
     <MainPageShell title={t("nav.globalFiles")}>
+      {/* 不接 onCardDragStart（§6.12k review：mainPage 态唯一落点 instanceArea 已被
+          desktopMainPage ?? 互斥卸载，拖源激活无 zone 可落——有源无落点的死线）。 */}
       <GlobalFilesOverview
         currentPath={globalFilesPath}
-        onCardDragStart={onCardDragStart}
         onOpenFile={onOpenFile}
         onPathChange={setGlobalFilesPath}
         variant="page"

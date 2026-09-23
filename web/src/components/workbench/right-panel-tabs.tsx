@@ -61,7 +61,9 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
           替代旧胶囊 TabButton）。只读语义固定——检视面板全部是只读视图；原型折叠 »（clps）
           未实现，不设假入口。span 键盘可达（Enter/Space），与左栏作用域 seg4 先例同构。 */}
       <div className="glabel2 shrink-0">{t("workbench.inspectorTitle")}</div>
-      <div className="shrink-0 px-3.5 pb-2">
+      {/* 水平缩进由 .seg4 自带 margin:10px 14px 0 承担（不另加 px——双重 14px = 28px 错位，
+          §6.12k design review P2⑥）。 */}
+      <div className="shrink-0 pb-2">
         <div aria-label={t("workbench.inspectorAria")} className="seg4" role="tablist">
           {visiblePlugins.map((plugin) => (
             <span

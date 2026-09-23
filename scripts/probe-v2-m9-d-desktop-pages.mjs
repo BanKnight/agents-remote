@@ -658,8 +658,14 @@ async function sideOverviewVisible(page) {
       "G15 /projects global scope side = 05g 分组列表（microlabel 分组在）",
     );
     ok(
-      !(await page2.locator("main > div > aside").nth(0).locator(".seg4.mini").isVisible()),
-      "G16 global scope 无 seg4（恒「全部」视图——05g）",
+      await page2.locator("main > div > aside").nth(0).locator(".seg4.mini").isVisible(),
+      "G16 global scope seg4 mini 在（05g:32 原文——「全部」on + 项目段回上次项目，§6.12k review P2④）",
+    );
+    ok(
+      (
+        await page2.locator("main > div > aside").nth(0).locator(".seg4.mini .on").innerText()
+      ).includes("全部"),
+      "G17 global scope seg4「全部」on（05g 语境）",
     );
     await ctx2.close();
 

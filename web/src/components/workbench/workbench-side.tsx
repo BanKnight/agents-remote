@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { AgentHistoryRange } from "@agents-remote/shared";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 
 import { useApprovals } from "../../hooks/use-approvals";
@@ -11,6 +11,7 @@ import {
   useWorkbenchNavigate,
   useWorkbenchRouteContext,
   workbenchCreateMenuOpenAtom,
+  workbenchLastProjectAtom,
 } from "../../routes/workbench-model";
 import { ShellIcon } from "../shell/icons";
 import { useCreateProjectDialog } from "../shell/project-setup";
@@ -66,14 +67,20 @@ export function WorkbenchSide() {
   // 「全部」视图置顶数据（与 candidates 同级并发，settled gate 防置顶组后到跳变——
   // GlobalProjectsOverview 同口径）。
   const { pinned, isLoaded: pinnedLoaded } = usePinnedSessions();
-  // aprow（04 pin④ 全局聚合）：桌面任何 scope approvals>0 渲染。桌面挂点无移动端并存问题
-  //（useApprovals WS 单实例纪律同 StatusBar）。
+  // aprow（04 pin④ 全局聚合）：桌面任何 scope approvals>0 渲染。⚠️ useApprovals 每实例各自
+  // 开 WS：桌面 StatusBar 与本组件 = 2 条 /api/approvals/stream 订阅（承接 ProjectLeftPanel
+  // 时代现状，非「单实例纪律」；收敛单一订阅点待办——§6.12k review 记档）。
   const { approvals } = useApprovals(true);
 
   const isProject = scope.kind === "project";
-  const projectName = isProject ? scope.key : null;
-  const create = useCreateSession(projectName);
-  const projectInstances = useProjectInstances(projectName);
+  // mainPage 态（global + 文件/插件/设置 + 无 focus）side 恒定项目视图（07m/09m/10m「side
+  // 仅遮盖主区」，§6.12k design review P2③）：由 workbenchLastProjectAtom 驱动，当前 scope
+  // 只决定 main 内容与 footnav .on；无记忆项目时退 05g 会话视图。
+  const mainPage = scope.kind === "global" && !focusId && leftMode !== "auto";
+  const [lastProject] = useAtom(workbenchLastProjectAtom);
+  const sideProjectName = isProject ? scope.key : mainPage ? lastProject : null;
+  const create = useCreateSession(sideProjectName);
+  const projectInstances = useProjectInstances(sideProjectName);
 
   // seg4（仅 project scope）：项目=本项目实例分组（默认）/ 全部=05g 分组列表。
   const [scopeSegment, setScopeSegment] = useState<"project" | "all">("project");
@@ -109,13 +116,30 @@ export function WorkbenchSide() {
       stickyWorkbenchSearch({ rightTab, tab, leftMode, mode }),
     );
   };
-  // 实例试点行 → 中栏开 tab（project scope 行 projectName=scope.key 自身，无跨项目歧义）。
+  // 实例试点行 → 中栏开 tab（行仅 sideProject 分支渲染；guard 使 TS narrow 显式化，
+  // 不留 "  " 死分支——坏状态早暴露）。
   const focusRow = (sessionId: string) => {
+    if (sideProjectName === null) return;
     void navigate(
-      { kind: "project", key: isProject ? scope.key : "" },
+      { kind: "project", key: sideProjectName },
       sessionId,
       stickyWorkbenchSearch({ rightTab, tab, leftMode, mode }),
     );
+  };
+  // seg4「项目」段：sideProject 语境 = 切回本项目实例分组；global 会话页 = 回上次项目
+  //（05g seg4「全部」on 的对侧）。均退出历史态（seg4 与时钟历史互斥——否则高亮切换而
+  // 内容仍是历史列表，控件失灵）。
+  const selectProjectSeg = () => {
+    setHistoryOpen(false);
+    if (sideProjectName !== null) {
+      setScopeSegment("project");
+    } else if (lastProject) {
+      void navigate(
+        { kind: "project", key: lastProject },
+        undefined,
+        stickyWorkbenchSearch({ rightTab, tab, leftMode, mode }),
+      );
+    }
   };
 
   const agentEntries = projectInstances.instances.filter((entry) => entry.type === "agent");
@@ -124,21 +148,25 @@ export function WorkbenchSide() {
 
   // ── 实例区主体 ──────────────────────────────────────────────────────────────
   let body = null;
-  if (isProject && historyOpen) {
-    // 05c 历史列表态（时钟切入；HistoryList 空 = null 自然空态，不伪造占位）。
+  if (sideProjectName !== null && historyOpen) {
+    // 05c 历史列表态（时钟切入；HistoryList 空 = null 自然空态，不伪造占位）。包 min-h-0
+    // flex-1 wrapper：容器 flex-col 化后 HistoryList（根 h-full）才吃到剩余高、列表自身滚
+    //（§6.12k code review：历史态高度链断链——容器非 flex 时 h-full 恒溢出组头高）。
     body = (
-      <HistoryList
-        focusId={focusId}
-        onRangeChange={setRange}
-        projectName={scope.key}
-        range={range}
-        showLabel={false}
-      />
+      <div className="flex min-h-0 flex-1 flex-col">
+        <HistoryList
+          focusId={focusId}
+          onRangeChange={setRange}
+          projectName={sideProjectName}
+          range={range}
+          showLabel={false}
+        />
+      </div>
     );
   } else if (chatMode) {
     // Chat 模式（global scope 深链语境）：全局会话列表（原左栏 body 迁入 side）。
     body = <ChatOverview />;
-  } else if (isProject && scopeSegment === "project") {
+  } else if (sideProjectName !== null && scopeSegment === "project") {
     // 本项目实例分组（microlabel AGENT 会话 / TERMINAL；全空 = 引导行）。
     body =
       projectInstances.isLoading && projectInstances.instances.length === 0 ? (
@@ -146,7 +174,7 @@ export function WorkbenchSide() {
           <CardGridSkeleton plain />
         </div>
       ) : projectInstances.instances.length === 0 ? (
-        <div className="px-2 py-1 text-[12px] text-ink-3">{t("workbench.noActiveSessions")}</div>
+        <div className="px-2 py-1 text-caption text-ink-3">{t("workbench.noActiveSessions")}</div>
       ) : (
         <>
           {agentEntries.length > 0 ? (
@@ -188,51 +216,54 @@ export function WorkbenchSide() {
         <CardGridSkeleton plain />
       </div>
     ) : candidates.length === 0 && projectNames.length === 0 ? (
-      <div className="px-2 py-1 text-[12px] text-ink-3">{t("workbench.globalOverviewEmpty")}</div>
+      <div className="px-2 py-1 text-caption text-ink-3">{t("workbench.globalOverviewEmpty")}</div>
     ) : (
       <AllSessionsGroupedList candidates={candidates} pinned={pinned} projectNames={projectNames} />
     );
   }
 
-  // 实例组头（project scope）：「实例 · <项目名>」（历史态 = 「会话历史 · <项目名>」05c）
-  // + 时钟 + plus。global scope：「会话」（05g）。
-  const groupHeader = isProject ? (
-    <div className="ghead">
-      <span className={`tt ${historyOpen ? "text-primary" : ""}`}>
-        {historyOpen
-          ? t("workbench.historyGroupTitle", { name: scope.key })
-          : t("workbench.instancesGroupTitle", { name: scope.key })}
-      </span>
-      <button
-        aria-label={t("workbench.historyToggleAria")}
-        aria-pressed={historyOpen}
-        className="dicon ml-auto cursor-pointer"
-        onClick={() => setHistoryOpen((prev) => !prev)}
-        type="button"
-      >
-        <ShellIcon className="clk" name="clock" />
-      </button>
-      <ActionMenu
-        align="start"
-        cancelLabel={t("cancel")}
-        items={createSessionMenuItems(create, t)}
-        onOpenChange={setCreateMenuOpen}
-        open={createMenuOpen}
-        trigger={
-          <button
-            aria-label={t("workbench.createSessionAria")}
-            className="plus cursor-pointer"
-            disabled={create.isCreating}
-            type="button"
-          />
-        }
-      />
-    </div>
-  ) : sessionPage ? null : (
-    <div className="ghead">
-      <span className="tt">{t("workbench.sessionsGroupTitle")}</span>
-    </div>
-  );
+  // 实例组头两态：sideProject = 「实例 · <项目名>」（历史态 = 「会话历史 · <项目名>」05c）
+  // + 时钟 + plus；否则（global 会话页 / mainPage 无记忆项目）= 「会话」（05g 原文——
+  // review P2④：sessionPage 不再裸 null）。时钟 text-primary：.dicon svg 直击 currentColor
+  //（specificity 压过 .ghead .clk 继承链），主色须经 color 传入。
+  const groupHeader =
+    sideProjectName !== null ? (
+      <div className="ghead">
+        <span className={`tt ${historyOpen ? "text-primary" : ""}`}>
+          {historyOpen
+            ? t("workbench.historyGroupTitle", { name: sideProjectName })
+            : t("workbench.instancesGroupTitle", { name: sideProjectName })}
+        </span>
+        <button
+          aria-label={t("workbench.historyToggleAria")}
+          aria-pressed={historyOpen}
+          className="dicon ml-auto cursor-pointer text-primary"
+          onClick={() => setHistoryOpen((prev) => !prev)}
+          type="button"
+        >
+          <ShellIcon className="clk" name="clock" />
+        </button>
+        <ActionMenu
+          align="start"
+          cancelLabel={t("cancel")}
+          items={createSessionMenuItems(create, t)}
+          onOpenChange={setCreateMenuOpen}
+          open={createMenuOpen}
+          trigger={
+            <button
+              aria-label={t("workbench.createSessionAria")}
+              className="plus cursor-pointer"
+              disabled={create.isCreating}
+              type="button"
+            />
+          }
+        />
+      </div>
+    ) : (
+      <div className="ghead">
+        <span className="tt">{t("workbench.sessionsGroupTitle")}</span>
+      </div>
+    );
 
   return (
     <nav aria-label={t("nav.primaryAria")} className="side sidewin flex h-full w-full flex-col">
@@ -276,19 +307,20 @@ export function WorkbenchSide() {
         })}
       </div>
       <div className="dsep shrink-0" />
-      {/* ── seg4 mini（仅 project scope；global 恒「全部」视图——05g） ── */}
-      {isProject ? (
+      {/* ── seg4 mini（sideProject = 项目 on；global 会话页 = 全部 on、项目段回上次项目——
+          05g「全部」视图同画作用域分段，review P2④） ── */}
+      {sideProjectName !== null || sessionPage ? (
         <div className="shrink-0 px-2 pt-2">
           <div aria-label={t("workbench.instancesAria")} className="seg4 mini mx-0" role="tablist">
             <span
               aria-controls="side-instance-panel"
-              aria-selected={scopeSegment === "project"}
-              className={`cursor-pointer ${scopeSegment === "project" ? "on" : ""}`}
-              onClick={() => setScopeSegment("project")}
+              aria-selected={sideProjectName !== null}
+              className={`cursor-pointer ${sideProjectName !== null ? "on" : ""}`}
+              onClick={selectProjectSeg}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  setScopeSegment("project");
+                  selectProjectSeg();
                 }
               }}
               role="tab"
@@ -298,12 +330,16 @@ export function WorkbenchSide() {
             </span>
             <span
               aria-controls="side-instance-panel"
-              aria-selected={scopeSegment === "all"}
-              className={`cursor-pointer ${scopeSegment === "all" ? "on" : ""}`}
-              onClick={() => setScopeSegment("all")}
+              aria-selected={sideProjectName === null}
+              className={`cursor-pointer ${sideProjectName === null ? "on" : ""}`}
+              onClick={() => {
+                setHistoryOpen(false);
+                setScopeSegment("all");
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
+                  setHistoryOpen(false);
                   setScopeSegment("all");
                 }
               }}
@@ -321,10 +357,15 @@ export function WorkbenchSide() {
           <SessionModeTabs mode={mode ?? "agent"} />
         </div>
       ) : null}
-      {/* ── 实例区（组头 + 主体同滚，原型 side 整列滚动） ── */}
-      <div className="min-h-0 flex-1 overflow-y-auto" id="side-instance-panel" role="tabpanel">
+      {/* ── 实例区（flex-col：HistoryList 分支列表自身滚，行列表分支容器 overflow 兜底滚——
+          纯 overflow 容器 + HistoryList h-full 恒溢出组头高，§8 同族断链 review 修复） ── */}
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        id="side-instance-panel"
+        role="tabpanel"
+      >
         {groupHeader}
-        {isProject && historyOpen ? (
+        {sideProjectName !== null && historyOpen ? (
           <div className="px-2 pb-1">
             <HistoryRangeControl onChange={setRange} value={range} />
           </div>
@@ -333,7 +374,7 @@ export function WorkbenchSide() {
       </div>
       {/* ── aprow 审批橙行（04 pin④：实例区下，全局聚合） ── */}
       {approvals.length > 0 ? (
-        <div className="shrink-0 px-2">
+        <div className="shrink-0">
           <ApprovalPopover approvals={approvals}>
             <button className="aprow w-full cursor-pointer" type="button">
               {t("workbench.approvalRow", { count: approvals.length })}
@@ -342,9 +383,9 @@ export function WorkbenchSide() {
         </div>
       ) : null}
       {/* ── footnav 三项（07m/09m/10m：全局文件/插件/设置，active .on） ── */}
-      <div className="footnav flex-none">
+      <div className="footnav footnav--flow flex-none">
         <button
-          className={`cursor-pointer ${scope.kind === "global" && leftMode === "files" ? "on" : ""}`}
+          className={`cursor-pointer ${scope.kind === "global" && leftMode === "files" && !focusId ? "on" : ""}`}
           onClick={() => void navigateRoute({ to: "/files" })}
           type="button"
         >
@@ -354,7 +395,7 @@ export function WorkbenchSide() {
           {t("nav.globalFiles")}
         </button>
         <button
-          className={`cursor-pointer ${scope.kind === "global" && leftMode === "plugins" ? "on" : ""}`}
+          className={`cursor-pointer ${scope.kind === "global" && leftMode === "plugins" && !focusId ? "on" : ""}`}
           onClick={() => void navigateRoute({ to: "/plugins" })}
           type="button"
         >
@@ -364,7 +405,7 @@ export function WorkbenchSide() {
           {t("nav.plugins")}
         </button>
         <button
-          className={`cursor-pointer ${scope.kind === "global" && leftMode === "settings" ? "on" : ""}`}
+          className={`cursor-pointer ${scope.kind === "global" && leftMode === "settings" && !focusId ? "on" : ""}`}
           onClick={() =>
             void navigateRoute({
               to: "/projects",
@@ -384,8 +425,9 @@ export function WorkbenchSide() {
 }
 
 /**
- * project scope 实例试点行（srow2 inst + dot2 状态点）：running 实心 c-success + 600，
- * 其余空心 ink-2（05 inst 行形制，AllSessionsGroupedList rowClasses 同款）。
+ * 实例试点行（srow2 inst）。agent 行 = dot2 状态点（running 实心 c-success + 600，其余空心
+ * ink-2，05 inst 行形制，AllSessionsGroupedList rowClasses 同款）；terminal 行 = dicon 终端
+ * 图标 + mono 12px ink-2、无状态点（05:42——dot 状态语言属 agent 会话状态机，review P3⑦）。
  */
 function SideInstanceRow({
   active,
@@ -397,18 +439,26 @@ function SideInstanceRow({
   onSelect: (sessionId: string) => void;
 }) {
   const running = entry.session.status === "running";
+  const isTerminal = entry.type === "terminal";
   return (
     <button
+      aria-current={active ? "true" : undefined}
       className={`srow2 inst w-full cursor-pointer text-left ${active ? "selrow" : ""} ${
-        running ? "font-semibold" : "text-ink-2"
+        isTerminal ? "font-mono text-caption text-ink-2" : running ? "font-semibold" : "text-ink-2"
       }`}
       onClick={() => onSelect(entry.session.id)}
       type="button"
     >
-      <span
-        aria-hidden="true"
-        className={`dot2 ${running ? "bg-success" : "border-[1.4px] border-ink-2 bg-transparent"}`}
-      />
+      {isTerminal ? (
+        <span className="dicon">
+          <ShellIcon className="h-3.5 w-3.5" name="terminal" />
+        </span>
+      ) : (
+        <span
+          aria-hidden="true"
+          className={`dot2 ${running ? "bg-success" : "border-[1.4px] border-ink-2 bg-transparent"}`}
+        />
+      )}
       <span className="min-w-0 truncate">{entry.session.displayName}</span>
     </button>
   );

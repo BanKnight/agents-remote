@@ -26,8 +26,8 @@ type DragSourceHandlers<T extends Element> = {
 };
 
 /**
- * 拖动源 pointer sequence（设计 §7.2）。从原 DragSourceCard 抽出，供卡片包装（DragSourceCard）
- * 与行（DraggableListRow）共用同一拖动状态机。
+ * 拖动源 pointer sequence（设计 §7.2）。供 tab chip 包装（DragSourceCard，中栏 tabstrip）
+ * 与行（DraggableListRow）共用同一拖动状态机——InstanceGrid 卡片源已随 §6.12k 4→3 列退役。
  *
  * pointerdown 挂 window pointermove/pointerup：累计位移 ≥ DRAG_THRESHOLD_PX → onDragStart（进
  * 拖动态，DropZoneOverlay 接管 hit-test/onDrop）；未超阈值 + pointerup → onSelect（单击激活，
@@ -42,8 +42,7 @@ type DragSourceHandlers<T extends Element> = {
  * onSelect，让按钮自身 onClick 走原生 click 路径（其 onClick 内 stopPropagation 阻止源根 onClick，
  * 不重复触发 select）。touch pointerType 直接 return（移动端无拖放，MobileWorkbench 不渲染 InstanceArea）。
  *
- * 泛型 T = 挂 handler 的元素类型（DragSourceCard=HTMLDivElement，DraggableListRow=HTMLButtonElement
- * 对齐 ListRow 签名）。onDragStart 的 event 类型固定 PointerEvent<HTMLDivElement>（与 WorkbenchContent
+ * 泛型 T = 挂 handler 的元素类型（DraggableListRow=HTMLButtonElement 对齐 ListRow 签名）。onDragStart 的 event 类型固定 PointerEvent<HTMLDivElement>（与 WorkbenchContent
  * onCardDragStart 签名一致，event 只用 clientX/clientY，target 类型无关）。
  */
 export function useDragSource<T extends Element>(
@@ -138,9 +137,9 @@ type DragSourceCardProps = {
 };
 
 /**
- * 拖动源卡片包装（设计 §7.2）。包装 InstanceCard（不展开 props 的复杂组件），用 div 包裹挂
- * useDragSource 的 onMouseDown/onPointerDown。touch-action: pan-y 保留触摸纵向滚动（overview
- * 列表可滚动），仅鼠标拖放场景生效（touch pointerType 早 return）。仅桌面左总览 InstanceGrid 启用。
+ * 拖动源包装（设计 §7.2）。用 div 包裹挂 useDragSource 的 onMouseDown/onPointerDown。
+ * touch-action: pan-y 保留触摸纵向滚动，仅鼠标拖放场景生效（touch pointerType 早 return）。
+ * §6.12k 后仅中栏 tabstrip tab chip 源启用（InstanceGrid 卡片源随 4→3 列退役）。
  */
 export function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSourceCardProps) {
   const { onMouseDown, onPointerDown } = useDragSource<HTMLDivElement>(

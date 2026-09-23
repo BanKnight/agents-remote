@@ -73,11 +73,12 @@ test("footnav 三项导航 + active .on 跟随（All Files→/files、Plugins→
 }) => {
   const footnav = side(page).locator(".footnav button");
 
-  // All Files → /files，.on 跟随；global scope 无 seg4（05g「全部」视图语义）。
+  // All Files → /files，.on 跟随。§6.12k review P2③：mainPage 态 side 恒定（07m/09m/10m
+  // 「side 仅遮盖主区」）——由 workbenchLastProjectAtom 驱动，seg4（Project on）仍在。
   await footnav.filter({ hasText: "All Files" }).click();
   await expect(page).toHaveURL(/\/files$/);
   await expect(footnav.filter({ hasText: "All Files" })).toHaveClass(/on/);
-  await expect(side(page).getByRole("tab", { name: "Project", exact: true })).toHaveCount(0);
+  await expect(side(page).getByRole("tab", { name: "Project", exact: true })).toBeVisible();
 
   // Plugins → /plugins。
   await footnav.filter({ hasText: "Plugins" }).click();

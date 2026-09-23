@@ -467,7 +467,8 @@
   } /* Sidebar 选中行 */
   .dsep {
     border-top: 1px solid var(--sep-row);
-  }
+    margin: 8px 0;
+  } /* 原型 05:35 统一上下 8px */
   .glabel {
     font-size: 12px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
@@ -537,6 +538,14 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+  /* 实现的 footnav 项是原生 button（可访问性），单源 span 规则不命中——补 button 同款行内
+     布局（原型 05:45 = 图标 + 8px gap + 左对齐；UA 默认 text-align 居中需 reset）。 */
+  .footnav button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
   }
   .footnav {
     border-top: 1px solid var(--sep-row);
@@ -690,6 +699,13 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+  /* 合并 side 变体（§6.12k design review P1①）：实例区 flex-1 通到列底后，absolute footnav
+     会盖住滚动行（aprow 必然相撞；原型 absolute 成立依赖静态短内容）。flow 化保持原型位置
+     语义（左右 10px、上下 12px）由 margin 承担。 */
+  .footnav--flow {
+    position: static;
+    margin: 12px 10px;
   }
   .footnav .on {
     color: var(--c-primary);

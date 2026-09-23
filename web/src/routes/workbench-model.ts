@@ -125,13 +125,10 @@ export const workbenchRightTabAtom = atomWithLocalOnlyStorage<WorkbenchInspectio
 );
 
 /**
- * 中栏二级导航 tab（设计文档 workbench-views.md）。URL `tab` 优先，此 atom 作「记忆上次 tab」
- * 回退。默认 overview（实例总览）。
+ * 中栏二级导航 tab（设计文档 workbench-views.md）。URL `?tab` 是唯一真相（省略 = overview）；
+ * 「记住上次 tab」atom 已随 §6.12k 批次 1 桌面左栏 middle tab 退役删除（写点 onTabChange
+ * 消失后 atom 只剩无意义读者，review #1 清理）。
  */
-export const workbenchMiddleTabAtom = atomWithLocalOnlyStorage<WorkbenchMiddleTab>(
-  "workbenchMiddleTab",
-  "overview",
-);
 
 /**
  * 移动端聚焦态 header tab（设计文档 §7）。窄屏无法像桌面那样「实例常驻中栏 + inspection
@@ -532,18 +529,15 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
       // 数据不变式）。URL mode 键因故丢失（手工构造 URL / 旧入口漏透传）时左栏仍保持 chat
       // 语境——派生层兜底而非渲染层 per-type 特判。
       const chatFallback = p.id?.startsWith("chat_") ? ("chat" as const) : undefined;
-      // leftMode 兜底（§6.12k 批次 2 chat 语境收敛）：global scope chat focus 时 leftMode
-      // 缺省即 auto（URL 省略 = 默认），显式化为 "auto" 让 side 的 sessionPage derive
-      // （leftMode === "auto"）成立——chat 列表仅在 global 一级会话页渲染，聚焦 chat 会话
-      // 后 side 必须保持 SessionModeTabs + ChatOverview 语境（stickyWorkbenchSearch 按
-      // 「URL 省略 = 默认」约定省略 leftMode=auto，故需派生层显式化）。
-      const leftModeFallback = p.id?.startsWith("chat_") ? ("auto" as const) : undefined;
+      // leftMode 不在此兜底：undefined = auto 语义由消费方解构默认承担（WorkbenchRoute /
+      // WorkbenchSide 均 leftMode = "auto"）——派生层显式化 "auto" 会被 raw search 直传方
+      // （AllSessionsGroupedList.focusRow）写回 URL ?leftMode=auto，违背「URL 省略 = 默认」
+      //（§6.12k code review #4；chatFallback 兜的是 "chat" ≠ 渲染默认，语义不同保留）。
       return {
         scope: { kind: "global" },
         focusId: p.id,
         ...s,
         mode: s.mode ?? chatFallback,
-        leftMode: s.leftMode ?? leftModeFallback,
       };
     }
     case "/projects/$key":

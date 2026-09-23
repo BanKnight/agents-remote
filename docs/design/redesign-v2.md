@@ -651,6 +651,14 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **能力收窄与 IA 缺口记档**：①项目行操作（重命名/删除/置顶）随手风琴退役；②实例卡拖放源退役（点行开 tab 替代）；③文件树拖到中栏桌面不可达（mainPage 树点击开 tab 为主路径；onCardDragStart 代码链保留，需要时从 Inspector FilesPanel 接线，待产品拍板）；④**pages（静态根）桌面无入口**——Inspector 四段无 pages 段（原型无此页），当前仅移动聚焦态 tab 行可达；桌面 pages 归属（10m mainPage 段或 Inspector 第五段）等用户反馈再定。
 
+**批次 4（review 修复，2026-09-24）**：门禁全绿 + 全套 e2e 23/23 后按用户「每里程碑必 review」惯例并行跑 code-reviewer（8 条）+ design-reviewer（14 条，对照原型逐类比对含 dist CSS 实测），消化后修复（`63c64bd` 为 file-nav 假绿修正 + §6.12k 初版记档）：
+
+- **正确性**：①workbenchMiddleTabAtom 删除——写点 onTabChange 随批次 1 桌面左栏退役，只剩无写点读者（移动端 localStorage 残留值会错乱回退，如残留 "git" 使退出文件工具直接进 git 态）；URL `?tab` 唯一真相，省略 = overview；②WorkbenchSide seg4 与历史态互斥（否则历史态下点「全部」高亮切换而内容不变 = 控件失灵）；③历史态高度链 §8 同族断链修复（实例区容器 flex-col 化 + HistoryList 包 min-h-0 flex-1——纯 overflow 容器 + h-full 恒溢出组头高）；④derive leftModeFallback 删除（兜底值 = 渲染默认，物化 "auto" 会被 raw search 直传写回 URL 违背「URL 省略 = 默认」；chatFallback 兜 "chat" ≠ 默认保留）；⑤mainPage 文件拖源死线删除（落点 instanceArea 已被 `desktopMainPage ??` 互斥卸载，拖源激活无 zone 可落）。
+- **原型形制（design review）**：⑥**side 恒定**（P2③）：mainPage 态 side 由 workbenchLastProjectAtom 驱动项目视图（07m/09m/10m「side 仅遮盖主区」），无记忆项目退 05g 会话视图；⑦global 会话页补「会话」ghead + seg4 mini（05g:32 原文「全部」on + 项目段回上次项目；时钟/plus 无 global 数据源不伪造）；⑧footnav flow 化 `.footnav--flow`（P1①：实例区 flex-1 通到列底后 absolute footnav 盖滚动行、aprow 必撞）+ `.footnav button` 行内布局（P2②：单源 span 选择器不命中 button 子元素，图标 0 间距 + UA 居中）；⑨实例组头时钟 text-primary（P2⑤：.dicon svg 直击 currentColor specificity 压过 .ghead .clk 继承，主色须经 color 传入）；⑩terminal 行形制对齐 05:42（P3⑦：dicon terminal 图标 + mono 12px ink-2、无状态点——dot 状态语言属 agent 会话状态机）；⑪Inspector seg4 双重缩进修复（P2⑥：删 wrapper px-3.5，.seg4 自带 margin 14px）；⑫footnav .on gate `!focusId`（P3⑪：/files/file/$ 等深链是工作台态，0 项 active）；⑬aprow 删 wrapper px-2 满宽贴边（P3⑨）；⑭SideInstanceRow active 补 aria-current（P3⑭）；⑮text-[12px] → text-caption ×2（P3⑫）。
+- **死代码清理**：InstanceGrid 拖源链整链删除（批次 2 只退役了用途没删码：DragSourceAdapter/GridItemCallbacks/InstanceGrid/instanceToGridItem/candidateToGridItem/InstanceGridItem/MIN_CARD_WIDTH_PX + shell-primitives InstanceCard 连锁孤儿 ~350 行）；INSTANCE_GRID_STYLE 保留（CardGridSkeleton 活消费）；DragSourceCard 保留（中栏 tabstrip tab chip 源，曾误判零消费后恢复）；useApprovals「WS 单实例纪律」注释修正（实际 StatusBar + WorkbenchSide 双订阅，收敛 provider 待办）。
+- **e2e order-dependence 教训**：file-nav 根层项目行断言 exact → substring（10m 卡形态可访问名 = 名 + overview 统计副行，同套前序 spec 泄漏实例使后缀浮动——单跑干净环境恰好命中是 order-dependent 假绿）；desktop-side 断言适配 side 恒定新语义（mainPage 态 seg4 Project 在）；m9-d G16 改断言 global seg4 在 + 新增 G17「全部」on（63/63）。
+- **不修记档**：历史态头部形制与 05c 独立行差异（P3⑧，重构 seg4 顺序收益低等真机反馈）；右栏渐变底 v1 残留（P3⑬，M2 存量随 token 收敛批一并清）；useApprovals 双 WS 订阅收敛（改动面大，单独立项）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

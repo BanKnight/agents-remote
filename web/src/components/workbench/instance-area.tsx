@@ -71,8 +71,6 @@ import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
   actionButtonClasses,
-  InstanceCard,
-  type InstanceCardProps,
   sessionMarker,
   shellSurfaceClasses,
   type ShellTone,
@@ -96,8 +94,6 @@ import {
 import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
-/** InstanceCard 内容最小可读宽度（左总览 MIN_REM 的设计依据：放得下一张 220px 卡）。 */
-export const MIN_CARD_WIDTH_PX = 220;
 /**
  * InstanceCard 固定单列网格 inline style（桌面左总览 / 移动总览共用同源）。设计 §5：左总览
  * 固定单列卡片清单，`gridTemplateColumns: 1fr` 让卡片宽度始终 = 容器宽，拖宽左总览只让卡片
@@ -166,20 +162,6 @@ export function CardGridSkeleton({
     </div>
   );
 }
-
-/** InstanceGrid 项 = InstanceCard props + React key（卡片在网格中的稳定标识）。 */
-type InstanceGridItem = InstanceCardProps & { key: string };
-
-/**
- * 拖动源适配器：左总览卡片（桌面）传 onDragStart + onSelect 让 InstanceGrid 包 DragSourceCard；
- * 移动端 / left-rail 不传 → 退化纯 InstanceCard（零回归）。每卡片 ref 由 InstanceGrid 的
- * `dragRefs` map 按 sessionId 查；onDragStart = 启动拖动态；onSelect = 单击激活（透传给
- * DragSourceCard，避免走 DOM .click() 误触 close 按钮）。
- */
-export type DragSourceAdapter = {
-  onDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
-  onSelect: (sessionId: string) => void;
-};
 
 type InstanceAreaProps = {
   /** 项目名（WorkspaceTree projectName）。null = global scope。Phase 3 原 ctx/scope/focusId/tab/onTabChange
@@ -1971,152 +1953,6 @@ function EmptyInstanceArea({
       </div>
     </div>
   );
-}
-
-/**
- * grid 卡片回调集合：onSelect/onClose 按 sessionId+type 重建，t 翻译 status label + relativeTime。
- * `t` 用 TranslateFn（带 params）——卡片 meta 行的 activity（relativeTime）内部
- * `t("time.minutesAgo", {count})` 需要第二参数。调用方 `useT().t` 已是 TranslateFn。
- */
-export type GridItemCallbacks = {
-  onClose?: (sessionId: string, type: "agent" | "terminal") => void;
-  onRename?: (
-    sessionId: string,
-    type: "agent" | "terminal",
-    currentName: string,
-    projectName: string,
-  ) => void;
-  onSelect: (sessionId: string) => void;
-  t: TranslateFn;
-};
-
-/** InstanceCard 自适应网格（设计文档 §8）。纯 presentational——items 由调用方从 query/candidates 派生。
- * 可选 `dragAdapter` + `dragRefs`：桌面左总览传时，每个卡片用 DragSourceCard 包装启用拖放；
- * 移动端 / left-rail 不传 → 退化纯 InstanceCard（零回归）。dragRefs 按 InstanceGridItem.key
- *（= sessionId）查 WorkbenchPanelRef。 */
-export function InstanceGrid({
-  gap = true,
-  items,
-  plain = false,
-  dragAdapter,
-  dragRefs,
-}: {
-  /** 卡片间距：默认 gap-2（桌面/移动 grid）；grouped 视图每组实例列表传 false（无 gap，设计 §5 条 5）。 */
-  gap?: boolean;
-  items: InstanceGridItem[];
-  /** 卡片 surface：true = plain 扁平连续（去 raised border/bg + rounded-lg，对齐 `list` plain 行 token；
-   *  设计 §7 card 段 InstanceCard surface 两态）。grid/grouped 密集网格视图传 true；默认 false = raised
-   *  独立圆角卡。容器分隔：plain 非首卡由 InstanceCard `topSeparator` 绝对定位画 inset 分割线（两端统一 left-15=60px
-   *  内容区左，跳过 marker 列；2026-08-03 撤销桌面 lg:left-0 全宽；原 divide-y border-top 横跨全宽不支持 inset）；非 plain raised 卡靠 gap-2 或自身 border。 */
-  plain?: boolean;
-  dragAdapter?: DragSourceAdapter;
-  dragRefs?: Map<string, WorkbenchPanelRef>;
-}) {
-  const surface = plain ? "plain" : "raised";
-  // plain：非首卡由 InstanceCard topSeparator 绝对定位画 inset 分割线（两端统一 left-15=60px 内容区左，跳过 marker 列），
-  // 替代原 divide-y（border-top 横跨全宽不支持 inset）；非 plain：raised 独立卡靠 gap-2（grid）或自身 border（grouped）分隔。
-  const containerClass = plain ? "grid" : gap ? "grid gap-2" : "grid";
-  return (
-    <div className={containerClass} style={INSTANCE_GRID_STYLE}>
-      {items.map(({ key, ...card }, i) =>
-        dragAdapter && dragRefs ? (
-          <DragSourceCard
-            dragRef={dragRefs.get(key) ?? { kind: "session", projectName: "", sessionId: key }}
-            key={key}
-            onDragStart={dragAdapter.onDragStart}
-            onSelect={() => dragAdapter.onSelect(key)}
-          >
-            <InstanceCard {...card} surface={surface} topSeparator={i > 0} />
-          </DragSourceCard>
-        ) : (
-          <InstanceCard key={key} {...card} surface={surface} topSeparator={i > 0} />
-        ),
-      )}
-    </div>
-  );
-}
-
-/**
- * 项目实例 → InstanceGridItem（marker 按 type/provider，status 映射 pill，title=displayName）。
- * activity = relativeTime(updatedAt ?? agent.createdAt)，terminal 无 createdAt 故仅 updatedAt。
- * subtitle = agent.lastAssistantMessage / terminal.lastCommand（卡片第二行，缺失则不显）。
- * **不传 projectName prop**：project scope 卡片所在总览 header 已显项目名（scope.key），卡片再显冗余。
- * 但 onRename 闭包需 projectName 调 rename API，故 projectName 作为函数参数显式传入（调用方从 scope 取）。
- */
-export function instanceToGridItem(
-  entry: ProjectInstanceEntry,
-  cb: GridItemCallbacks,
-  projectName: string,
-): InstanceGridItem {
-  const provider = entry.type === "agent" ? (entry.session as AgentSession).provider : undefined;
-  const session = entry.session;
-  const activityIso =
-    session.updatedAt ?? (entry.type === "agent" ? (session as AgentSession).createdAt : undefined);
-  const subtitle =
-    entry.type === "agent"
-      ? (session as AgentSession).lastAssistantMessage
-      : (session as TerminalSession).lastCommand;
-  const onClose = cb.onClose;
-  const onRename = cb.onRename;
-  return {
-    actionsLabel: cb.t("session.actions"),
-    activity: relativeTime(activityIso ?? "", cb.t),
-    cancelLabel: cb.t("cancel"),
-    closeLabel: cb.t("session.close"),
-    key: session.id,
-    marker: sessionMarker(entry.type, provider, "lg"),
-    onClose: onClose ? () => onClose(session.id, entry.type) : undefined,
-    onRename: onRename
-      ? () => onRename(session.id, entry.type, session.displayName, projectName)
-      : undefined,
-    onSelect: () => cb.onSelect(session.id),
-    renameLabel: cb.t("session.rename"),
-    status: {
-      label: cb.t(sessionStatusLabel(session.status)),
-      tone: statusToTone(session.status),
-    },
-    subtitle,
-    title: session.displayName,
-  };
-}
-
-/**
- * 全局候选 → InstanceGridItem（candidate 已带 provider/type/status/displayName/subtitle）。
- * 卡片 meta 行显 projectName + activity（跨项目总览需项目名区分归属；relativeTime(updatedAt ?? createdAt)）。
- */
-export function candidateToGridItem(
-  candidate: GlobalInstanceCandidate,
-  cb: GridItemCallbacks,
-): InstanceGridItem {
-  const onClose = cb.onClose;
-  const onRename = cb.onRename;
-  return {
-    actionsLabel: cb.t("session.actions"),
-    activity: relativeTime(candidate.updatedAt ?? candidate.createdAt ?? "", cb.t),
-    cancelLabel: cb.t("cancel"),
-    closeLabel: cb.t("session.close"),
-    key: candidate.ref.sessionId,
-    marker: sessionMarker(candidate.type, candidate.provider, "lg"),
-    onClose: onClose ? () => onClose(candidate.ref.sessionId, candidate.type) : undefined,
-    onRename: onRename
-      ? () =>
-          onRename(
-            candidate.ref.sessionId,
-            candidate.type,
-            candidate.displayName,
-            candidate.ref.projectName,
-          )
-      : undefined,
-    onSelect: () => cb.onSelect(candidate.ref.sessionId),
-    projectName: candidate.ref.projectName,
-    renameLabel: cb.t("session.rename"),
-    status: {
-      label: cb.t(sessionStatusLabel(candidate.status)),
-      tone: statusToTone(candidate.status),
-    },
-    subtitle: candidate.subtitle,
-    title: candidate.displayName,
-  };
 }
 
 function PlaceholderPanel({ focusId }: { focusId: string }) {

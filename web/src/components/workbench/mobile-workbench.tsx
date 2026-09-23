@@ -102,8 +102,8 @@ type MobileWorkbenchProps = {
   pluginName?: string;
   /** 项目工具原位（v2 M3-b：?tab=files/git/wiki，与桌面 middle tab 同构；WorkbenchRoute 注入 ctx.tab）。 */
   tool?: WorkbenchMiddleTab;
-  /** 工具切换（WorkbenchRoute 注入 onToolTabChange：写 URL ?tab 但不写 rememberedMiddleTab；
-   * null = 退工具态，URL 去 tab 维度解析回退 remembered——M10 用户反馈：回进工具前的 tab） */
+  /** 工具切换（WorkbenchRoute 注入 onToolTabChange：写 URL ?tab；null = 退工具态，URL 去
+   * tab 维度回中栏默认 overview——「记住上次 tab」随 §6.12k 批次 1 桌面左栏退役删除） */
   onToolChange?: (next: WorkbenchMiddleTab | null) => void;
   /**
    * 一级会话页模式（设计 workbench-views §3.1）：mode=chat 时 global 列表态（leftMode=auto
@@ -576,8 +576,8 @@ type MobileProjectWorkbenchProps = {
   focusId?: string;
   /** 项目工具原位（v2 M3-b：?tab 维度 files/git/wiki，与桌面 ProjectLeftPanel middle tab 同构）。 */
   tool?: WorkbenchMiddleTab;
-  /** 工具切换（WorkbenchRoute 注入 onToolTabChange：写 URL ?tab 但不写 rememberedMiddleTab；
-   * null = 退工具态，URL 去 tab 维度解析回退 remembered——M10 用户反馈：回进工具前的 tab） */
+  /** 工具切换（WorkbenchRoute 注入 onToolTabChange：写 URL ?tab；null = 退工具态，URL 去
+   * tab 维度回中栏默认 overview——「记住上次 tab」随 §6.12k 批次 1 桌面左栏退役删除） */
   onToolChange?: (next: WorkbenchMiddleTab | null) => void;
   onSelectTab: (leafId: string, tabId: string) => void;
   onOpenFile: (projectName: string, path: string) => void;
@@ -624,7 +624,7 @@ function MobileProjectWorkbench({
 }: MobileProjectWorkbenchProps) {
   const { t } = useT();
   // 工具原位归一化：?tab 维度还含 overview 等非工具值，`?tab` 缺省时 WorkbenchRoute 回退
-  // rememberedMiddleTab（默认 "overview"）——tool prop 恒 truthy，不能直接当布尔用。
+  // 中栏默认 "overview"——tool prop 恒 truthy，不能直接当布尔用。
   const activeTool = tool === "files" || tool === "git" || tool === "wiki" ? tool : undefined;
   const navigateWorkbench = useWorkbenchNavigate();
   // nav 行 ◄「项目」push 回项目 Tab（v2 03 原型 .back；替代 v1 ☰ drawer 开关——v2 无 drawer，
@@ -733,8 +733,8 @@ function MobileProjectWorkbench({
       : null;
 
   // 工具态（?tab=files/git/wiki）：主体切换渲染项目工具面板；退出 = onToolChange(null)（URL 去
-  // tab 维度，WorkbenchRoute 解析回退 rememberedMiddleTab——M10 用户反馈：取消工具回进工具前的
-  // tab，不再恒回第一个 overview）。header 的 toggle 语义（再点同 ticon 退出）在
+  // tab 维度，回中栏默认 overview——原「回进工具前的 tab」的 rememberedMiddleTab 随 §6.12k
+  // 批次 1 桌面左栏退役删除）。header 的 toggle 语义（再点同 ticon 退出）在
   // MobileProjectHeader 内判定。
   const handleToolChange = (next: MobileProjectTool | null) => {
     onToolChange?.(next);
