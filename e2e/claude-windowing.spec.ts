@@ -155,9 +155,9 @@ test("Claude: slash menu renders catalog entries including plugin namespaced com
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  // Desktop workbench (Phase 1+) has no "Projects" heading; gate on the
-  // project node button being visible before navigating to the session route.
-  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
+  // Desktop workbench: §6.12k 合并 side 项目行（srow2）= 登录 gate（title 属性 = 项目名，
+  // 项目行独有——可访问名含 live 徽章不再 exact 可匹配）。
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible();
 
   await page.goto(`/projects/${projectName}/agent-sessions/${fakeSessionId}/claude`);
 
@@ -279,9 +279,9 @@ test("Claude: empty catalog does not crash the page or composer", async ({ page 
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  // Desktop workbench (Phase 1+) has no "Projects" heading; gate on the
-  // project node button being visible before navigating to the session route.
-  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
+  // Desktop workbench: §6.12k 合并 side 项目行（srow2）= 登录 gate（title 属性 = 项目名，
+  // 项目行独有——可访问名含 live 徽章不再 exact 可匹配）。
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible();
 
   await page.goto(`/projects/${projectName}/agent-sessions/${fakeSessionId}/claude`);
 

@@ -186,7 +186,7 @@ async function login(page) {
     await page.waitForTimeout(1500);
 
     // 开第一个窗格（新 context 无持久化 layout）。
-    await page.locator("main > div > aside").nth(1).getByText("Probe Agent A").click();
+    await page.locator("main > div > aside").nth(0).getByText("Probe Agent A").click();
     await page.waitForFunction(() => document.querySelectorAll("[data-drop-group]").length === 1, {
       timeout: 8000,
     });

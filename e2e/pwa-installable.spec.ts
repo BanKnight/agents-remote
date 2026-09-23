@@ -33,10 +33,9 @@ test("PWA manifest and service worker meet installability criteria", async ({ pa
   // Service worker is registered
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  // Desktop workbench renders the global project list as buttons in the left
-  // panel (no "Projects" heading after the Phase 1 desktop shell rework);
-  // gate on the project node being visible instead.
-  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
+  // Desktop workbench: §6.12k 合并 side 项目行（srow2）= 登录 gate。可访问名 = 名称 +
+  // live 徽章（"demo —"），title 属性 = 项目名（项目行独有，实例行/组头无）→ title 定位。
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible();
 
   const swReg = await page.evaluate(async () => {
     const reg = await navigator.serviceWorker.getRegistration();

@@ -138,7 +138,9 @@ export function WorkbenchShell({
               collapseLabel={t("workbench.collapseRight")}
               onCollapse={() => setRightCollapsed(true)}
             />
-            <div className="min-h-0 flex-1 overflow-hidden">{rightPanel}</div>
+            {/* §8 高度链：body 自身必须是 flex container，flex-1 子的约束才传得下去
+               （FilesPanel 根 flex-1 依赖此层；overflow 只裁不传约束）。 */}
+            <div className="flex min-h-0 flex-1 overflow-hidden">{rightPanel}</div>
             {rightCollapsed ? null : <ColumnResizeGutter onResize={onResizeRight} side="right" />}
           </aside>
         ) : null}

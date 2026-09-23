@@ -149,14 +149,37 @@ test("deriveWorkbenchRouteContext: chat focus 兜底 mode=chat（URL mode 键丢
   // focusId=chat_* 且 URL 无 mode → 派生层补 mode=chat（chat 只在 chat 模式创建/打开的不变式）。
   expect(
     deriveWorkbenchRouteContext(routeLeaf("/projects/session/$id", { id: "chat_abc" })),
-  ).toEqual({ scope: { kind: "global" }, focusId: "chat_abc", mode: "chat" });
+  ).toEqual({ scope: { kind: "global" }, focusId: "chat_abc", mode: "chat", leftMode: "auto" });
   // URL 显式 mode 优先（不覆盖）。
   expect(
     deriveWorkbenchRouteContext(
       routeLeaf("/projects/session/$id", { id: "chat_abc" }, { mode: "agent" }),
     ),
-  ).toEqual({ scope: { kind: "global" }, focusId: "chat_abc", mode: "agent" });
+  ).toEqual({
+    scope: { kind: "global" },
+    focusId: "chat_abc",
+    mode: "agent",
+    leftMode: "auto",
+  });
   // 非 chat focus 不补。
+  expect(
+    deriveWorkbenchRouteContext(routeLeaf("/projects/session/$id", { id: "agent_abc" })),
+  ).toEqual({ scope: { kind: "global" }, focusId: "agent_abc" });
+});
+
+test("deriveWorkbenchRouteContext: chat focus 兜底 leftMode=auto（§6.12k side 保持 SessionModeTabs 语境）", () => {
+  // global scope chat focus 时 leftMode 缺省显式化为 auto（URL 省略 = 默认）——side 的
+  // sessionPage derive（leftMode === "auto"）成立，聚焦 chat 会话后 side 语境不回退。
+  expect(
+    deriveWorkbenchRouteContext(routeLeaf("/projects/session/$id", { id: "chat_abc" })),
+  ).toEqual({ scope: { kind: "global" }, focusId: "chat_abc", mode: "chat", leftMode: "auto" });
+  // URL 显式 leftMode 优先（不覆盖）。
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/projects/session/$id", { id: "chat_abc" }, { leftMode: "files" }),
+    ),
+  ).toEqual({ scope: { kind: "global" }, focusId: "chat_abc", mode: "chat", leftMode: "files" });
+  // 非 chat focus 不补（undefined 语义 = auto，但不显式写键——渲染层按 undefined 回退）。
   expect(
     deriveWorkbenchRouteContext(routeLeaf("/projects/session/$id", { id: "agent_abc" })),
   ).toEqual({ scope: { kind: "global" }, focusId: "agent_abc" });

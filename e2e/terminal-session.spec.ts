@@ -9,22 +9,22 @@ test("authenticated user can create and interact with a Terminal Session", async
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  // Desktop workbench (Phase 1+): project nodes are buttons in the left panel,
-  // not links, and there is no "Projects" heading. Enter the project by
-  // clicking its node, then create a Terminal from the left-panel
-  // CreateSessionBar ("+ Create" -> "Terminal" menu item).
-  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
-  await page.getByRole("button", { name: projectName, exact: true }).click();
+  // Desktop workbench: §6.12k 合并 side 项目行（title 属性 = 项目名，项目行独有）进项目，
+  // 再从 side 实例组头 plus（aria-label "New session"，§6.12k 后唯一桌面创建入口）开
+  // ActionMenu 建 Terminal。
+  const projectRow = page.locator(`nav.side .srow2[title="${projectName}"]`);
+  await expect(projectRow).toBeVisible();
+  await projectRow.click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
-  // The project workbench renders multiple "+ Create" bars (left-panel header
-  // + empty-instance area); pick the left-panel one (first in DOM order).
-  await page.getByRole("button", { name: "+ Create" }).first().click();
+  await page.getByRole("button", { name: "New session" }).click();
   // Creating a session opens an optional-name prompt; confirm to create.
   // createTerminal's onSuccess navigates straight to the session detail,
   // so there is no need to click the "Open stream" link manually.
   await page.getByRole("menuitem", { name: "Terminal" }).click();
-  await page.getByRole("button", { name: "Create" }).click();
+  // prompt「Create」限定 dialog：side plus 可访问名 "Create or adopt Project" 子串撞名
+  //（getByRole name 默认 substring）。
+  await page.getByRole("dialog").getByRole("button", { name: "Create", exact: true }).click();
 
   // Wait for the connection to establish — the "Reconnecting" overlay
   // should disappear once the terminal is connected.

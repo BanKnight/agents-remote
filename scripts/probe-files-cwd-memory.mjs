@@ -102,28 +102,21 @@ async function setup(page) {
   return state;
 }
 
-// 读当前 breadcrumb 路径：最后一段 = 当前目录；根目录 = 无段。PathBreadcrumb 是
-// `div.flex.min-w-0.flex-wrap` 容器，含 root 按钮（aria-label=files.goRoot）+ segment 按钮。
-// segment 按钮无 svg（root 按钮含 home svg）。
+// 读当前路径：header .crumb chip = <b>{projectKey}</b> + segment buttons（无 svg；搜索
+// 按钮 aria-label=搜索且含 svg，排除）。last = 最后一个 segment；根目录 = 无段。
 async function readPath(page) {
   return await page.evaluate(() => {
-    const crumbs = Array.from(document.querySelectorAll("div.flex.min-w-0.flex-wrap"));
-    for (const c of crumbs) {
-      const btns = Array.from(c.querySelectorAll("button"));
-      if (btns.length === 0) continue;
-      const rootBtn = btns.find((b) => /root|根/i.test(b.getAttribute("aria-label") ?? ""));
-      if (!rootBtn) continue;
-      const segments = btns
-        .filter((b) => b !== rootBtn && !b.querySelector("svg"))
-        .map((b) => (b.textContent ?? "").trim())
-        .filter((s) => s.length > 0);
-      return {
-        last: segments.length > 0 ? segments[segments.length - 1] : null,
-        segments,
-        hasRoot: true,
-      };
-    }
-    return { last: null, segments: [], hasRoot: false };
+    const crumb = document.querySelector(".crumb");
+    if (!crumb) return { last: null, segments: [], hasCrumb: false };
+    const segments = Array.from(crumb.querySelectorAll("button"))
+      .filter((b) => !b.querySelector("svg"))
+      .map((b) => (b.textContent ?? "").trim())
+      .filter((s) => s.length > 0);
+    return {
+      last: segments.length > 0 ? segments[segments.length - 1] : null,
+      segments,
+      hasCrumb: true,
+    };
   });
 }
 
@@ -131,19 +124,13 @@ async function waitLast(page, expected) {
   await page
     .waitForFunction(
       (exp) => {
-        const crumbs = Array.from(document.querySelectorAll("div.flex.min-w-0.flex-wrap"));
-        for (const c of crumbs) {
-          const btns = Array.from(c.querySelectorAll("button"));
-          if (btns.length === 0) continue;
-          const rootBtn = btns.find((b) => /root|根/i.test(b.getAttribute("aria-label") ?? ""));
-          if (!rootBtn) continue;
-          const segs = btns
-            .filter((b) => b !== rootBtn && !b.querySelector("svg"))
-            .map((b) => (b.textContent ?? "").trim())
-            .filter((s) => s.length > 0);
-          return segs.length > 0 ? segs[segs.length - 1] === exp : exp === null;
-        }
-        return false;
+        const crumb = document.querySelector(".crumb");
+        if (!crumb) return exp === null;
+        const segs = Array.from(crumb.querySelectorAll("button"))
+          .filter((b) => !b.querySelector("svg"))
+          .map((b) => (b.textContent ?? "").trim())
+          .filter((s) => s.length > 0);
+        return segs.length > 0 ? segs[segs.length - 1] === exp : exp === null;
       },
       expected,
       { timeout: 8000 },
@@ -151,41 +138,27 @@ async function waitLast(page, expected) {
     .catch(() => {});
 }
 
-// 进入项目 Files tab 并逐级点击目录链。
+// 进入项目 Files 视图并逐级点击目录链。「文件」入口 = row2 工具行 ticon 图标按钮
+//（aria-label 精确匹配；历史 header tab 形制已退役）。
 async function openProjectFiles(page, projectName) {
   await page.goto(`${WEB_ORIGIN}/projects/${projectName}`);
   await page.waitForSelector("nav[aria-label]", { timeout: 8000 });
-  // 切到「文件」tab（列表态 MobileProjectOverview header tab）。
   await page
-    .getByRole("tab", { name: /^文件$|^Files$/ })
-    .or(page.getByText(/^文件$|^Files$/, { exact: true }).first())
+    .locator('button[aria-label="文件"], button[aria-label="Files"]')
     .first()
-    .click({ timeout: 5000 })
-    .catch(async () => {
-      await page.evaluate(() => {
-        const els = Array.from(document.querySelectorAll('[role="tab"], button'));
-        const t = els.find((el) => /^(文件|Files)$/.test((el.textContent ?? "").trim()));
-        if (t) t.click();
-      });
-    });
-  await page.waitForSelector("aside", { timeout: 8000 });
+    .click({ timeout: 8000 });
+  await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
   await page.waitForTimeout(500);
 }
 
-// 点击目录行进入下一级（目录行 = aside 内 div[role=button]，文本精确匹配）。
+// 点击目录行进入下一级（移动文件工具面板 [data-mobile-tool="files"] 内 .frow 行，
+// .p.dir 文本精确匹配；§6.12k 复核——v1 时代 aside drawer 形制已退役）。
 async function enterDir(page, dirName) {
   await page
-    .locator('aside [role="button"]')
-    .filter({ has: page.locator(`text="${dirName}"`) })
+    .locator('[data-mobile-tool="files"] .frow .p.dir')
+    .filter({ hasText: dirName })
     .first()
-    .click({ timeout: 4000 })
-    .catch(async () => {
-      await page
-        .locator("aside")
-        .getByText(dirName, { exact: true })
-        .first()
-        .click({ timeout: 4000 });
-    });
+    .click({ timeout: 4000 });
   await page.waitForTimeout(450);
 }
 
@@ -204,11 +177,9 @@ async function run() {
     const page = await ctx.newPage();
     const state = await setup(page);
     await page.goto(`${WEB_ORIGIN}/`);
-    await page
-      .getByLabel("密码")
-      .or(page.getByLabel("Password"))
-      .fill(await readAppPassword());
-    await page.getByRole("button", { name: /解锁|Unlock/ }).click();
+    await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+    await page.getByLabel("访问密码").fill(await readAppPassword());
+    await page.getByRole("button", { name: "登录" }).click();
     await page.waitForTimeout(700);
 
     console.log("\n===== 1. 项目 Files tab 逐级进入 A→B→C→D =====");
@@ -225,21 +196,22 @@ async function run() {
 
     console.log("\n===== 2. reload 后仍停在 D（localStorage 记忆）=====");
     await page.reload();
-    await page.waitForSelector("aside", { timeout: 8000 });
+    await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
     await waitLast(page, "D");
     record((await readPath(page)).last === "D", "reload 后仍停在 D（记忆核心断言）");
 
-    console.log("\n===== 3. 切 总览 tab 再切回 文件 仍停在 D =====");
+    console.log("\n===== 3. 退工具（再点同 ticon）再进文件 仍停在 D =====");
+    // 工具态 toggle 语义：再点「文件」ticon = 退出回 overview；再点 = 重进（cwd 记忆应保留）。
     await page
-      .getByText(/^总览$|^Overview$/, { exact: true })
+      .locator('button[aria-label="文件"], button[aria-label="Files"]')
       .first()
       .click({ timeout: 4000 });
     await page.waitForTimeout(400);
     await page
-      .getByText(/^文件$|^Files$/, { exact: true })
+      .locator('button[aria-label="文件"], button[aria-label="Files"]')
       .first()
       .click({ timeout: 4000 });
-    await page.waitForSelector("aside", { timeout: 8000 });
+    await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
     await waitLast(page, "D");
     record((await readPath(page)).last === "D", "切 tab 保活（总览→文件仍 D）");
 
@@ -258,13 +230,13 @@ async function run() {
     // 当前 proj1 记忆在 D；让 D 变 404 模拟目录被删，reload 后应回退根。
     state.deletedPath = "A/B/C/D";
     await page.reload();
-    await page.waitForSelector("aside", { timeout: 8000 });
+    await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
     await waitLast(page, null);
     const pAfter404 = await readPath(page);
     record(pAfter404.last === null, `路径不存在回退根（last=${pAfter404.last ?? "null"}）`);
     // 回退后 cwd 记忆应已清空（下次重开也在根，不会再撞 404）。
     await page.reload();
-    await page.waitForSelector("aside", { timeout: 8000 });
+    await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
     await waitLast(page, null);
     record((await readPath(page)).last === null, "回退后记忆已清空（二次 reload 仍在根）");
   } finally {

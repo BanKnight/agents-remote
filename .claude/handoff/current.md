@@ -1,33 +1,35 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-23（**第九轮收口**。第九轮两问题全闭环：①技能详情超长 URL 溢出 `052832a`；②行动钮塌宽 `4bddc6c`。§6.12i 记档。继续等用户复验报数）。
+> 最后更新：2026-09-23（**第十轮 6 批次全部闭环**。移动底部导航恒显 + 多端整体对齐设计包批次 1-6 全 commit：`79e68e7`/`052feda`/`848a04a`/`bf31c1b`/`1c99f26`/`42d2e10`，§6.12j 记档。继续等用户真机复验报数）。
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-第九轮两问题闭环：①超长 URL 溢出 = MARKDOWN_CLASS 容器级 `[overflow-wrap:anywhere]`（`052832a`）；②卸载钮挤成一团 = button width:auto fit-content 塌宽家族收官——`.cta`/`.rm`/`.logout`/`.readbtn` 四类补 width 三连（`4bddc6c`），python 全量交集扫描确认无漏网（237 个 button 挂载类仅 6 候选，.loadmore 设计意图/.ap-row 误报排除）。m6 68/68。**下一步：等用户继续复验报数。**
+第十轮两问题（①移动底部 nav 恒显 ②多端整体对齐）6 批次全闭环：批次 1 移动 nav 通栏恒显、批次 2 桌面 tabstrip+检视 seg4、批次 3 检视 IA 收敛（左栏只留实例/历史/插件）、批次 4 桌面市场可达+09m/10m 重排、批次 5 05g「全部」分组列表+aprow 审批橙行+侧栏 250/260 分档、批次 6 文件菜单 05e 五项。**下一步：交用户真机复验清单。**
 
 ## 本 session 焦点
 
-第九轮用户复验两问题的修复。塌宽根因 = `.rm`/`.cta` 自 M6（fb49dde）引入即漏 width 三连（.pcard/.addsrc 是 M10 第五轮修的，本批是同家族最后一批）；诊断探针实锤 .rm 41px（应 358px）后系统性扫描收官。
+批次 5 验证收尾 + 批次 6 实现。批次 5 验证期揪出并修了三个实质问题：①i18n 插值语法（`{{count}}` 双花括号，误写单花括号致模板原样输出）；②05g「全部」跨项目行导航错乱（focusInstance 的 scope.key 捷径把 proj2 行构造成 /projects/proj1/session/<proj2-id>——改为 AllSessionsGroupedList 组件内导航，行自身 candidate.ref 构造 URL + sticky search 透传，移动端 focusInstance(candidate) 同款先例）；③排除「approvals 非空即崩」假 bug（实为 dist JS 半更新态，同代码稳定 dist 复跑即过）。
 
 ## 关键决策（本阶段不可丢）
 
-- **塌宽判定法（可复用）**：bug 完整前提 = ①宿主是 button（width:auto=fit-content）②原型里是整宽形态（div 的 auto=fill）。修法 = width 三连（`-moz-available`/`-webkit-fill-available`/`stretch`），注释口径「button 实例 fit-content 修正：同 .pcard（width 三连注释）」。**勿用 w-full**（width:100% 不扣 margin，叠 16px×2 margin 即溢出 32px）。`.loadmore`（`16px auto` 居中文字钮）fit-content + auto margin 居中正是设计意图，**不是所有 button 都要修**。
-- **系统性扫描脚本**（python，本次收官用）：CSS 全类解析（横向 margin + 无 width）× tsx 全 `<button>` className 交集——237 类只出 6 候选，手工逐个判语义。比逐类 rg 快且不漏。
-- **pluginView 深度页范式 / 存量清洗双机制 / bridge registry / RuntimeConfigDialog 诚实取舍 / effort 行口径**：见 §6.12h 记档（第八轮，已固化进 redesign-v2.md，不再赘述）。
-- **heredoc 转义链**：JSON→bash→python 三层——`\\n` 到 python 才剩 `\n`；js 字面 `\n` 锚点用 `chr(92)+"n"`；python 括号表达式尾随逗号变 tuple。长 new 字符串写完必须 rg 机检。
+- **i18n 插值语法 = `{{count}}` 双花括号**（translate.ts 实现，home.nRunning 先例）——新 key 忘写双括号不会报错，只原样输出模板，探针文本断言才能拦住。
+- **dist JS 半更新态（新教训，已记 §6.12j）**：CSS 落盘硬闸 ≠ JS chunk 落盘稳定。vite build --watch 增量改多 chunk 时中途跑探针会载到新旧混合 chunk——症状 = ErrorBoundary "Something went wrong" + asides=0，极易误导向 mock 二分歧路（本次误导向「approvals 非空即崩」耗费数轮）。**跑探针前 touch main.tsx 完整 rebuild + 等 16s**。
+- **useGlobalInstanceCandidates 的 scope gate**：非 global scope 恒返回空数组（project scope 零开销设计）——project scope 下「全部」类跨项目列表不能依赖调用链上的 candidates 反查，组件内用行自身 ref 导航（AllSessionsGroupedList 模式）。
+- **rg 严禁 `-rn`**（`-r` 是 replace 标志会篡改输出）——本 session 误用两次，输出侥幸无损伤；一律 `-n`。
+- **Edit 工具乱码注入本 session 第 5 次**（WorkbenchRoute 回滚时 old_string 损坏未写入）——≥15 行/易乱码改动坚持 python 锚点脚本 + 写完 rg 机检；Edit 限单行小步。
+- 05e 文件菜单五项原文序：打开预览（file 图标）/重命名/移动到…/上传文件…（plus，onUploadClick）/删除；目录行无预览项；rootBrowse 根层 isRootListing 只读无 ⋯（readOnly 口径）。
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ M0–M10 → 用户总验证 → 九轮反馈修复全闭环（1~8 轮见 snapshots 与 §6.12a–h）
-- ✅ 探针：m6 68/68（第九轮 +2：超长 URL 无溢出 / .cta/.rm 整宽 = vw-32）；m10、m9-d、e2e 29/29 均绿（第八轮收口态）
-- ⬜ **交用户复验**，第九轮真机项：
-  - **技能详情**：正文含超长 URL 不再横向溢出（可断行）
-  - **技能详情行动钮**：安装/更新（.cta）与卸载（.rm）恢复整宽描边钮（358px，不再缩成文字宽）
-  - 连带受益：设置页退出登录钮（.logout）、wiki 文本预览「已读」钮（.readbtn）同步恢复整宽
-  - 第八轮清单（如未复验）：插件详情不积累 tab、浮层会话名置顶、三行 › 可点设置
+- ✅ M0–M10 + 十轮反馈修复；第十轮批次 1-6 全闭环（§6.12j 逐批记档）
+- ✅ 探针：m9-d 62/62（批次 5 +G1-G16）、probe-files-tree-bugs ALL PASS（IA 适配 + 菜单断言）、m11/m6/m10 均绿；e2e 27/27；四门禁全绿
+- ⬜ **交用户真机复验**，第十轮清单：
+  - **iPhone**：底部 nav 各场景恒显（工作台 project scope/聚焦态/L3 深度页）+ 通栏形态；键盘弹出盖 nav 属预期
+  - **桌面**：tabstrip 形制（32px/下划线/状态点/条上＋）、检视 seg4「检视 · 只读」、左栏只留实例/历史/插件、市场页 /plugins/market 直达、插件 09m 单页三段、文件 10m seg4+⌘F、05g「全部」分组列表（置顶/项目分组/空组）、aprow 审批橙行点击开审批中心、Mac 250px 侧栏
+  - **iPad（≥1024）**：侧栏 260px 分档、05g seg4、aprow 橙行、文件菜单（长按）
   - 遗留（历史轮）：②时间刷新节奏、⑥gf 卡形态、⑫浮层穿透、⑬ticon 间距、iPad 触屏 hover 正交、W4 chip-Popover 形态
+  - 记档不做：宽屏中栏 360px（回归面大收益低）、数据依赖 D 批（sbar 今日 $/Codex 创建行/MCP live 徽章）
 
 ## 阻塞 / 风险
 
@@ -35,11 +37,11 @@
 
 ## 易丢的关键上下文
 
-- **探针跑法**：`bun scripts/probe-*.mjs`（bun 不用 node）+ systemd-run 2G；旧探针 login 选择器是「密码/解锁」，新 UI 是「访问密码/登录」——复活旧探针先修 login。
-- **探针 mock 铁律**：route glob 带查询尾 `*`；mock「翻译后形态」按消费端契约；量溢出必须量滚动容器层不只 doc（§6.12e）。
+- **探针跑法**：`bun scripts/probe-*.mjs`（bun 不用 node）+ systemd-run 2G；跑前 touch main.tsx 完整 rebuild（本 session 新教训）。
+- **探针 mock 铁律**：route 正则带查询尾 `(?:\?.*)?$`；overview/subtitles/approvals/stream 都要 mock 隔离（真实环境数据穿透会污染桌面 sidewin 相关断言——probe-files-tree-bugs 实锤）。
+- **tint 类 token**：dist minify 转写 8 位 hex（#ff9f0a1f），探针断言做 hex8↔rgba 换算（alpha 31/255≈0.12 需 toFixed(2)）。
 - **e2e 纪律**：`systemd-run --scope --user -p MemoryMax=2G bun run e2e`。
-- **CSS 落盘流程**：改 web 后 touch main.tsx → sleep 16 → ar-verify-css；交付前 curl content-type 必须 text/css（dist CSS 文件名是 `style-*.css` 非 `index-*.css`，curl 拼名别用错 glob）。
-- **行高纪律**：v2-primitives 新增带 font-size 的块必须同步 `line-height: var(--line-height-ui)`（.cta/.rm 的 line-height 44px/40px 是垂直居中手段，非行高档，不属此纪律）。
+- **CSS 落盘流程**：改 web 后 touch main.tsx → sleep 16 → ar-verify-css；交付前 curl content-type 必须 text/css。
 - contains 防护 idiom：`if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node)) return;`
 
 ## 提醒

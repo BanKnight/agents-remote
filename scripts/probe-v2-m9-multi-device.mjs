@@ -155,41 +155,51 @@ async function login(page) {
       landscape.sideW !== null && Math.abs(landscape.sideW - 250) <= 1,
       `nav.side 250px（实际 ${landscape.sideW}）`,
     );
-    // 列几何：[sidebar 250][左栏][中栏][inspector]。右栏默认收起（M2 拍板：非聚焦态收起，
-    // workbenchRightCollapsedAtom 默认 true）→ 先断言 3 列；点 RailButton 唤出后测 4 列模型。
+    // 列几何（§6.12k 三列模型）：[side 250][中栏 minmax(0,600px)][inspector]。
+    // 右栏默认收起（workbenchRightCollapsedAtom 默认 true）→ 收起态 inspector aside
+    // 整个不渲染，grid = 2 children（side + 中栏吃满剩余）；点 RailButton 唤出后
+    // 3 children，inspector 吃剩余、中栏 ≤600。
     const defaultCols = await p2.evaluate(() => {
       const grid = document.querySelector("main > div.grid");
       return grid ? grid.children.length : 0;
     });
-    ok(defaultCols === 3, `右栏默认收起 3 列（M2 非聚焦态收起，实际 ${defaultCols}）`);
-
+    ok(
+      defaultCols === 2,
+      `收起态 2 children（side+中栏，inspector aside 不渲染，实际 ${defaultCols}）`,
+    );
+    const collapsedGeo = await p2.evaluate(() => {
+      const grid = document.querySelector("main > div.grid");
+      return grid
+        ? [...grid.children].map((el) => Math.round(el.getBoundingClientRect().width))
+        : [];
+    });
+    if (collapsedGeo.length === 2) {
+      ok(collapsedGeo[0] === 250, `side 250（实际 ${collapsedGeo[0]}）`);
+      ok(collapsedGeo[1] >= 920, `中栏吃满剩余（收起态 ≈ 1180−250，实际 ${collapsedGeo[1]}）`);
+    }
     await p2.getByRole("button", { name: "展开右栏" }).click();
     await p2.waitForFunction(
       () => {
-        const grid = document.querySelector("main > div.grid");
-        return grid ? grid.children.length === 4 : false;
+        const side = document.querySelectorAll("main > div > aside")[1];
+        return side ? side.getBoundingClientRect().width > 0 : false;
       },
       { timeout: 5000 },
     );
-
     const col = await p2.evaluate(() => {
       const grid = document.querySelector("main > div.grid");
       if (!grid) return null;
       return [...grid.children].map((el) => el.getBoundingClientRect().width);
     });
-    if (col && col.length === 4) {
-      const leftW = col[1];
-      const midW = col[2];
-      const rightW = col[3];
-      ok(Math.abs(leftW - 256) <= 1, `左栏 atom 默认 16rem=256px（实际 ${leftW}）`);
+    if (col && col.length === 3) {
+      const midW = col[1];
+      const rightW = col[2];
       ok(midW <= 601, `中栏 ≤600 上限（minmax(0,600px)，实际 ${midW}）`);
       ok(
-        Math.abs(rightW - (1180 - 250 - leftW - midW)) <= 2,
-        `inspector = 视口−其余列（${rightW} ≈ 1180−250−${leftW}−${midW}）`,
+        Math.abs(rightW - (1180 - 250 - midW)) <= 2,
+        `inspector = 视口−其余列（${rightW} ≈ 1180−250−${midW}）`,
       );
-      ok(rightW >= 352 - 1, `inspector ≥ 最小宽 22rem=352（实际 ${rightW}）`);
     } else {
-      ok(false, `唤出后 4 列不在（实际 ${col?.length ?? 0} 列）`);
+      ok(false, `三列模型不在（实际 ${col?.length ?? 0} 列）`);
     }
     await ipadLandscape.close();
 
@@ -203,12 +213,12 @@ async function login(page) {
     await login(p3);
     await p3.goto(`${WEB_ORIGIN}/projects/proj1`);
     await p3.waitForTimeout(1500);
-    // 右栏默认收起 → 先唤出再测 4 列
+    // 右栏默认收起 → 唤出后测三列几何（中栏封顶 600 + inspector 吃剩余）。
     await p3.getByRole("button", { name: "展开右栏" }).click();
     await p3.waitForFunction(
       () => {
-        const grid = document.querySelector("main > div.grid");
-        return grid ? grid.children.length === 4 : false;
+        const side = document.querySelectorAll("main > div > aside")[1];
+        return side ? side.getBoundingClientRect().width > 0 : false;
       },
       { timeout: 5000 },
     );
@@ -220,17 +230,16 @@ async function login(page) {
         w: el.getBoundingClientRect().width,
       }));
     });
-    if (col1600 && col1600.length === 4) {
-      const leftW = col1600[1].w;
-      const midW = col1600[2].w;
-      const rightW = col1600[3].w;
+    if (col1600 && col1600.length === 3) {
+      const midW = col1600[1].w;
+      const rightW = col1600[2].w;
       ok(midW !== null && Math.abs(midW - 600) <= 1, `中栏封顶精确 600（实际 ${midW}）`);
       ok(
-        rightW !== null && Math.abs(rightW - (1600 - 250 - leftW - 600)) <= 2,
-        `inspector 吃剩余（${rightW} ≈ 1600−250−${leftW}−600）`,
+        rightW !== null && Math.abs(rightW - (1600 - 250 - 600)) <= 2,
+        `inspector 吃剩余（${rightW} ≈ 1600−250−600）`,
       );
     } else {
-      ok(false, `1600 唤出后 4 列不在（实际 ${col1600?.length ?? 0} 列）`);
+      ok(false, `1600 唤出后三列不在（实际 ${col1600?.length ?? 0} 列）`);
     }
     await mac.close();
 

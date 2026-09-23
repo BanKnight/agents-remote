@@ -1,10 +1,11 @@
-// 探针：验证工作台 group tab 栏（GroupHeader `h-9`=36px）在矮容器下不再被面板遮挡。
+// 探针：验证工作台 group tab 栏（GroupHeader `.tabstrip`=32px，§6.12j tabstrip 形制）在矮容器
+// 下不再被面板遮挡。
 //
 // 根因（已修）：flatten-layout 旧用归一化 TAB_BAR_HEIGHT_RATIO=0.04 近似 tab 栏高度，仅当根容器
 // 高=900px 时 0.04×900=36px 才等于 GroupHeader；矮容器（iPad 横屏根容器 ~750px）下 0.04×750=30px
 // < 36px → 面板顶部高于 GroupHeader 底 6px → GroupHeader 下半被面板盖住（"tab 下半被遮挡"）。
 // 修复：flatten-layout 不再加 tab 栏偏移（contentRect.y === groupRect.y），tab 栏偏移交表现层
-// CSS calc 固定 px（rectStyle 的 insetTopPx=WORKBENCH_TAB_BAR_PX=36）——任意容器高度都
+// CSS calc 固定 px（rectStyle 的 insetTopPx=WORKBENCH_TAB_BAR_PX=32）——任意容器高度都
 // panel.top == GroupHeader.bottom。
 //
 // 本探针在真实工作台页面、不同 viewport 高度（900 桌面 / 750 iPad 横屏 / 600 极端矮）下测
@@ -62,8 +63,8 @@ async function measureOverlap(page) {
     if (!groupShell) {
       return { error: "GroupShell[data-drop-group] 未找到（WorkspaceTree 未渲染 leaf）" };
     }
-    const groupHeader = groupShell.querySelector(".flex.h-9");
-    if (!groupHeader) return { error: "GroupHeader(.flex.h-9) 未找到" };
+    const groupHeader = groupShell.querySelector(".tabstrip");
+    if (!groupHeader) return { error: "GroupHeader(.tabstrip) 未找到" };
     // panel = GroupShell 同级、同 relative 根下的直接子 div；其 style 含 calc（rectStyle insetTopPx>0
     // 生成 calc(top)）；GroupShell 自身用 rectStyle(rect) 无 insetTopPx → 纯百分比不含 calc。
     const root = groupShell.parentElement;

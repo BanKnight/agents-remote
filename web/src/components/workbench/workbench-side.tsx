@@ -55,7 +55,9 @@ import { SessionModeTabs } from "./mobile-workbench";
  */
 export function WorkbenchSide() {
   const { t } = useT();
-  const { scope, focusId, leftMode, rightTab, tab, mode } = useWorkbenchRouteContext();
+  // leftMode 默认 "auto"（URL 省略 = auto 语义；WorkbenchRoute 解构默认同口径——focus 路由
+  // derive 继承透传不写键，side 直读 context 需自带默认）。
+  const { scope, focusId, leftMode = "auto", rightTab, tab, mode } = useWorkbenchRouteContext();
   const navigate = useWorkbenchNavigate();
   const navigateRoute = useNavigate();
   const { openCreate, dialog } = useCreateProjectDialog();
@@ -235,6 +237,9 @@ export function WorkbenchSide() {
   return (
     <nav aria-label={t("nav.primaryAria")} className="side sidewin flex h-full w-full flex-col">
       {dialog}
+      {/* useCreateSession 契约「promptHolder 由调用方渲染」（instance-area :1585）：实例组头
+        plus 菜单的建会话 prompt 挂在此处——批次 1 漏挂导致菜单选类型后 prompt 永不出现。 */}
+      {create.promptHolder}
       {/* ── 项目组 ── */}
       <div className="ghead shrink-0">
         <span className="tt">{t("nav.projects")}</span>

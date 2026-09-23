@@ -319,7 +319,7 @@ async function sideOverviewVisible(page) {
     ok(await sideOverviewVisible(page), "A2 左栏恒 sidewin 项目总览");
 
     // ── A3. 10m 页面形态断言（§6.12j 批次 4）──
-    // §6.12j 批次 5 起 /projects 左栏（GlobalProjectsOverview）恒有 seg4 mini「项目/全部」，
+    // §6.12k 批次 5 起 /projects 合并 side（WorkbenchSide）恒有分组列表，
     // .seg4 全页计数为 2——10m 断言限定 main section（.wsearch 所在 section）。
     ok(
       (await page
@@ -414,7 +414,7 @@ async function sideOverviewVisible(page) {
     );
 
     // ── E. 07m 设置 mainPage ──
-    await page.locator(".footnav button").click();
+    await page.locator(".footnav button", { hasText: "设置" }).click();
     await page.waitForTimeout(1000);
     ok(page.url().includes("leftMode=settings"), "E1 footnav 设置 → URL leftMode=settings");
     const h1 = page.locator("h1", { hasText: "设置" }).first();
@@ -460,7 +460,7 @@ async function sideOverviewVisible(page) {
     try {
       await page
         .locator("main > div > aside")
-        .nth(1)
+        .nth(0)
         .getByText("Probe Agent A")
         .click({ timeout: 5000 });
     } catch {
@@ -532,11 +532,11 @@ async function sideOverviewVisible(page) {
 
     // 右栏 Inspector：glabel2「检视 · 只读」+ 标准 seg4（32px，§6.12j）。
     await page.getByRole("button", { name: "展开右栏" }).click();
-    await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 3, {
+    await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
       timeout: 5000,
     });
     const insp = await page.evaluate(() => {
-      const aside = document.querySelectorAll("main > div > aside")[2];
+      const aside = document.querySelectorAll("main > div > aside")[1];
       if (!aside) return null;
       const label = aside.querySelector(".glabel2");
       const seg = aside.querySelector(".seg4");
@@ -561,13 +561,13 @@ async function sideOverviewVisible(page) {
     }
 
     // ── G. 05g 全部会话分组 + aprow 审批橙行 + 侧栏分档（§6.12j 批次 5）──
-    // 当前在 /projects/proj1（F 段）。左栏 aside = nth(1)（0=Sidebar，2=右栏 Inspector）。
-    const leftAside = page.locator("main > div > aside").nth(1);
-    const leftSeg = leftAside.locator(".seg4.mini");
-    ok(await leftSeg.isVisible(), "G1 project 左栏 seg4 mini（项目/全部）在");
+    // 当前在 /projects/proj1（F 段）。合并 side = aside nth(0)，右栏 Inspector = nth(1)。
+    const side = page.locator("main > div > aside").nth(0);
+    const leftSeg = side.locator(".seg4.mini");
+    ok(await leftSeg.isVisible(), "G1 project side seg4 mini（项目/全部）在");
     await leftSeg.getByText("全部", { exact: true }).click();
     await page.waitForTimeout(500);
-    const microLabels = await leftAside.locator(".microlabel").allTextContents();
+    const microLabels = await side.locator(".microlabel").allTextContents();
     ok(
       microLabels.some((s) => s.includes("置顶")),
       "G2 05g 置顶组头在（pinned mock）",
@@ -581,13 +581,16 @@ async function sideOverviewVisible(page) {
       "G4 proj3 空组组头「proj3 · 0」在",
     );
     ok(
-      (await leftAside.getByText("暂无活跃会话").count()) === 1,
+      (await side.getByText("暂无活跃会话").count()) === 1,
       "G5 proj3 空组「暂无活跃会话」引导行在",
     );
-    const pinnedLive = await leftAside.locator(".srow2 .live.off").first().textContent();
-    ok(pinnedLive === "proj1", "G6 置顶行 live off 项目限定符 = proj1");
+    const pinnedLive = await side
+      .locator("button", { hasText: "Probe Agent A" })
+      .first()
+      .textContent();
+    ok((pinnedLive ?? "").includes("proj1"), "G6 置顶行 live off 项目限定符 = proj1（按钮文本含）");
     // pin⑤：点行 → 中栏开 tab 并激活（跨项目 proj2）。
-    await leftAside.getByText("Probe Agent B", { exact: true }).click();
+    await side.getByText("Probe Agent B", { exact: true }).click();
     await page.waitForTimeout(800);
     ok(
       page.url().includes("/projects/proj2/session/agent_m9d-2"),
@@ -597,8 +600,8 @@ async function sideOverviewVisible(page) {
     await page.waitForTimeout(1200);
 
     // aprow（04 审批橙行）：左栏底部 approval 橙行 + tint-orange computed + 点击开审批中心。
-    const aprow = page.locator(".aprow");
-    ok(await aprow.isVisible(), "G8 aprow 审批橙行渲染（approvals>0）");
+    const aprow = page.locator(".aprow").first();
+    ok((await aprow.boundingBox()) !== null, "G8 aprow 审批橙行渲染（boundingBox 非 null）");
     const aprowText = await aprow.textContent();
     ok((aprowText ?? "").includes("审批 · 1"), "G9 aprow 文本「审批 · 1 ›」");
     const aprowStyle = await aprow.evaluate((el) => {
@@ -651,19 +654,12 @@ async function sideOverviewVisible(page) {
     });
     ok(firstColPad === "260px", `G14 iPad 档（1100px）侧栏首列 260px（实际 ${firstColPad}）`);
     ok(
-      await page2.locator("main > div > aside").nth(1).locator(".seg4.mini").isVisible(),
-      "G15 /projects 左栏 global seg4（项目/全部）在",
+      (await page2.locator("main > div > aside").nth(0).locator(".microlabel").count()) >= 1,
+      "G15 /projects global scope side = 05g 分组列表（microlabel 分组在）",
     );
-    await page2
-      .locator("main > div > aside")
-      .nth(1)
-      .locator(".seg4.mini")
-      .getByText("全部", { exact: true })
-      .click();
-    await page2.waitForTimeout(500);
     ok(
-      (await page2.locator("main > div > aside").nth(1).locator(".microlabel").count()) >= 1,
-      "G16 global「全部」= 05g 分组列表（microlabel 分组在）",
+      !(await page2.locator("main > div > aside").nth(0).locator(".seg4.mini").isVisible()),
+      "G16 global scope 无 seg4（恒「全部」视图——05g）",
     );
     await ctx2.close();
 

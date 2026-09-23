@@ -184,10 +184,8 @@ async function login(page) {
     await segTabs.nth(1).click();
     await page.waitForTimeout(400);
     const allCards = await page.evaluate(() => {
-      const cards = [...document.querySelectorAll("main aside [data-drop-empty], main aside")];
-      void cards;
-      // 左栏卡片标题：InstanceCard title 行文本。
-      const aside = document.querySelectorAll("main > div > aside")[1];
+      // 合并 side 行文本（srow2 inst 行含 displayName）。
+      const aside = document.querySelectorAll("main > div > aside")[0];
       return aside ? aside.textContent : "";
     });
     ok(
@@ -197,7 +195,7 @@ async function login(page) {
     await segTabs.first().click();
     await page.waitForTimeout(400);
     const projCards = await page.evaluate(() => {
-      const aside = document.querySelectorAll("main > div > aside")[1];
+      const aside = document.querySelectorAll("main > div > aside")[0];
       return aside ? aside.textContent : "";
     });
     ok(
@@ -207,11 +205,11 @@ async function login(page) {
 
     // ── Inspector 四段 ──
     await page.getByRole("button", { name: "展开右栏" }).click();
-    await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 3, {
+    await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
       timeout: 5000,
     });
     const rightTabs = await page.evaluate(() => {
-      const aside = document.querySelectorAll("main > div > aside")[2];
+      const aside = document.querySelectorAll("main > div > aside")[1];
       if (!aside) return null;
       // §6.12j 起 Inspector 四段 = .seg4 分段（span role=tab），不再是胶囊 button。
       return [...aside.querySelectorAll(".seg4 span")].map((b) => b.textContent.trim());
@@ -222,12 +220,12 @@ async function login(page) {
     );
     await page
       .locator("main > div > aside")
-      .nth(2)
+      .nth(1)
       .getByRole("tab", { name: "历史", exact: true })
       .click();
     await page.waitForTimeout(400);
     const historyActive = await page.evaluate(() => {
-      const aside = document.querySelectorAll("main > div > aside")[2];
+      const aside = document.querySelectorAll("main > div > aside")[1];
       const seg = aside
         ? [...aside.querySelectorAll(".seg4 span")].find((b) => b.textContent.trim() === "历史")
         : null;
@@ -240,7 +238,7 @@ async function login(page) {
       page.evaluate(() => document.querySelectorAll("[data-drop-group]").length);
     // 新 context 无持久化 layout（root=null → EmptyInstanceArea 无 GroupHeader）：
     // 先点左栏实例卡片开第一个窗格，再测分屏。
-    await page.locator("main > div > aside").nth(1).getByText("Probe Agent A").click();
+    await page.locator("main > div > aside").nth(0).getByText("Probe Agent A").click();
     await page.waitForFunction(() => document.querySelectorAll("[data-drop-group]").length === 1, {
       timeout: 5000,
     });

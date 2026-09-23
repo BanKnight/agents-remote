@@ -12,17 +12,19 @@ test("authenticated user can inspect Git worktree and staged diffs", async ({ pa
   // Desktop workbench: enter the project, then drive the Git inspection tab via
   // the URL-visible ?rightTab=git state. §6.12j 批次 3 检视 IA 收敛：左栏 middle tab
   // [Git] 已删，Git 检视归右栏 Inspector（唯一检视入口，GitDiffPanel）——URL 直连从
-  // ?tab=git 改 ?rightTab=git；文件列表/diff 面板 DOM 特征不变，渲染位置从左栏 aside
-  // 变右栏 aside（DOM 第 3 个 complementary：活动栏=0/左栏=1/右栏=2）。
-  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
-  await page.getByRole("button", { name: projectName, exact: true }).click();
+  // ?tab=git 改 ?rightTab=git；文件列表/diff 面板 DOM 特征不变，渲染位置为右栏 aside
+  //（§6.12k 三列后 DOM 第 2 个 complementary：side=0/Inspector=1）。
+  // §6.12k 合并 side 项目行（title 属性 = 项目名，项目行独有）进项目。
+  const projectRow = page.locator(`nav.side .srow2[title="${projectName}"]`);
+  await expect(projectRow).toBeVisible();
+  await projectRow.click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
   await page.goto(`/projects/${projectName}?rightTab=git`);
   // 右栏默认收起（workbenchRightCollapsedAtom 默认 true，RailButton 唤出）——先展开再取 aside
-  //（折叠态右栏 aside 不渲染，展开后才是 DOM 第 3 个 complementary）。
+  //（折叠态右栏 aside 不渲染，展开后才是 DOM 第 2 个 complementary）。
   await page.getByRole("button", { name: "Expand right panel" }).click();
-  const files = page.getByRole("complementary").nth(2).getByLabel("Git changed files");
+  const files = page.getByRole("complementary").nth(1).getByLabel("Git changed files");
   await expect(files.getByRole("button", { name: /README\.md/ })).toBeVisible();
   await expect(files.getByRole("button", { name: /src\/index\.ts/ })).toBeVisible();
   await expect(files.getByRole("button", { name: /notes\.txt/ })).toBeVisible();

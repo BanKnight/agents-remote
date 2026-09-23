@@ -6,8 +6,9 @@
 //   Part 2（L1 移动 4 Tab，D21）：底 nav 恰为 项目/工作台/文件/插件（无「设置」——移到项目页 ⚙）。
 //   Part 3（D4「直达上次位置」）：无记忆时 `/` → `/projects`（项目列表）；写入 lastProjectKey 后
 //     `/` → `/projects/$key`（进项目后 shell 未卸载，一级导航仍在）。
-//   Part 4（桌面 Sidebar）：`nav.side` 宽 250px + 4 目的地 + 设置 footnav + 恰 1 项 active +
-//     点「文件」→ /files 且 active 跟随。
+//   Part 4（桌面 side，§6.12k 三列化）：`nav.side` 宽 250px + 项目行列表 + footnav 三项
+//     （全局文件/插件/设置）+ 工作台态 footnav 0 active（原型 05）+ 点 footnav「全局文件」
+//     → /files 且 active 跟随（原型 10m）。
 //
 // 密码自读（config.yaml → api environ），不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-ia-skeleton.mjs
@@ -138,43 +139,44 @@ const sidebar = await dpage.evaluate(() => {
   if (!nav) return null;
   const { width } = nav.getBoundingClientRect();
   const cs = getComputedStyle(nav);
+  const footnav = nav.querySelector(".footnav");
+  const footItems = footnav
+    ? [...footnav.querySelectorAll("button")].map((b) => b.textContent.trim())
+    : [];
   return {
     width,
     borderRight: cs.borderRightWidth,
-    items: [...nav.querySelectorAll("button")].map(
-      (b) => b.textContent.trim() || b.getAttribute("aria-label"),
-    ),
-    active: [...nav.querySelectorAll('button[aria-current="page"]')].map((b) =>
-      b.textContent.trim(),
-    ),
-    hasFootnav: !!nav.querySelector(".footnav"),
+    footItems,
+    onItems: [...nav.querySelectorAll(".footnav button.on")].map((b) => b.textContent.trim()),
+    hasFootnav: !!footnav,
   };
 });
-ok(!!sidebar, "桌面 Sidebar（nav.side）已渲染");
+ok(!!sidebar, "桌面 side（nav.side）已渲染");
 ok(
   Math.round(sidebar?.width ?? 0) === 250,
-  `Sidebar 宽 250px（设计包 .side，实际 ${Math.round(sidebar?.width ?? 0)}）`,
+  `side 宽 250px（设计包 .side，实际 ${Math.round(sidebar?.width ?? 0)}）`,
 );
 ok(
-  ["项目", "工作台", "文件", "插件"].every((x) => sidebar?.items.includes(x)),
-  `Sidebar 4 目的地（实际 ${JSON.stringify(sidebar?.items)}）`,
+  sidebar?.hasFootnav && sidebar?.footItems.join(",") === "全局文件,插件,设置",
+  `footnav 三项（实际 ${JSON.stringify(sidebar?.footItems)}）`,
 );
-ok(sidebar?.hasFootnav && sidebar?.items.includes("设置"), "Sidebar footnav 设置");
-ok(sidebar?.active.length === 1, `恰 1 项 active（实际 ${JSON.stringify(sidebar?.active)}）`);
-ok(parseFloat(sidebar?.borderRight ?? "0") > 0, `Sidebar 有右边框（${sidebar?.borderRight}）`);
+// 原型 05 工作台态 footnav 无 active 项（07m/09m/10m mainPage 才各有对应 .on）。
+ok(
+  sidebar?.onItems.length === 0,
+  `工作台态 footnav 0 项 active（原型 05，实际 ${JSON.stringify(sidebar?.onItems)}）`,
+);
+ok(parseFloat(sidebar?.borderRight ?? "0") > 0, `side 有右边框（${sidebar?.borderRight}）`);
 
-await dpage.locator("nav.side button", { hasText: "文件" }).first().click();
+await dpage.locator(".footnav button", { hasText: "全局文件" }).first().click();
 await dpage.waitForTimeout(1000);
 ok(
   new URL(dpage.url()).pathname.startsWith("/files"),
-  `点「文件」→ ${new URL(dpage.url()).pathname}`,
+  `点 footnav「全局文件」→ ${new URL(dpage.url()).pathname}`,
 );
 const activeAfter = await dpage.evaluate(() =>
-  [...document.querySelectorAll('nav.side button[aria-current="page"]')].map((b) =>
-    b.textContent.trim(),
-  ),
+  [...document.querySelectorAll("nav.side .footnav button.on")].map((b) => b.textContent.trim()),
 );
-ok(activeAfter.includes("文件"), `文件页 active 跟随（实际 ${JSON.stringify(activeAfter)}）`);
+ok(activeAfter.includes("全局文件"), `文件页 active 跟随（实际 ${JSON.stringify(activeAfter)}）`);
 await desktop.close();
 
 await browser.close();

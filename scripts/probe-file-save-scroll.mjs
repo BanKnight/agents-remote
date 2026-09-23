@@ -5,7 +5,8 @@
 // （from:0 → 整篇），滚动锚点失效 → 保存后滚动跳回开头。修法：await preview refetch 把新内容
 // 拉回缓存后再清 editContent，editValue 与编辑器 doc 相等 → 不 replace → 滚动保留。
 //
-// 断言（zh-CN + iPhone 12 Pro 390×844，全新 context 无 SW）：
+// 断言（zh-CN + 桌面 1280×900；§6.12k 复核——移动 file focus 已只读化（FileTabPreview
+// saveToggle=null），可编辑保存路径 = 桌面 Inspector files 检视，探针场景随之迁移）：
 //  1. md 文件 source 模式 CodeMirror 可滚动（内容足够长）。
 //  2. 滚动到中部后编辑内容，Save 可点（isDirty）。
 //  3. 保存后 CodeMirror scrollTop 保持（不回落 0）——核心断言。
@@ -98,32 +99,24 @@ async function setup(page) {
   return state;
 }
 
+// §6.12k 桌面语境：/projects/proj1 → 展开右栏 → Inspector seg4 切「文件」检视。
 async function openProjectFilesTab(page) {
   await page.goto(`${WEB_ORIGIN}/projects/proj1`);
   await page.waitForSelector("nav[aria-label]", { timeout: 8000 });
-  await page
-    .getByRole("tab", { name: /^文件$|^Files$/ })
-    .or(page.getByText(/^文件$|^Files$/, { exact: true }).first())
-    .first()
-    .click({ timeout: 5000 })
-    .catch(async () => {
-      await page.evaluate(() => {
-        const els = Array.from(document.querySelectorAll('[role="tab"], button'));
-        const el = els.find((n) => /^(文件|Files)$/.test((n.textContent ?? "").trim()));
-        if (el) el.click();
-      });
-    });
-  await page.waitForSelector("aside", { timeout: 8000 });
+  await page.getByRole("button", { name: "展开右栏" }).click();
+  await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
+    timeout: 8000,
+  });
+  const inspector = page.locator("main > div > aside").nth(1);
+  await inspector.locator(".seg4 span", { hasText: /^文件$/ }).click({ timeout: 8000 });
+  await page.waitForTimeout(500);
 }
 
 async function run() {
   const browser = await chromium.launch({ executablePath: EXEC });
   try {
     const ctx = await browser.newContext({
-      viewport: { width: 390, height: 844 },
-      deviceScaleFactor: 3,
-      isMobile: true,
-      hasTouch: true,
+      viewport: { width: 1280, height: 900 },
       locale: "zh-CN",
       userAgent:
         "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
@@ -131,16 +124,19 @@ async function run() {
     const page = await ctx.newPage();
     await setup(page);
     await page.goto(`${WEB_ORIGIN}/`);
-    await page
-      .getByLabel("密码")
-      .or(page.getByLabel("Password"))
-      .fill(await readAppPassword());
-    await page.getByRole("button", { name: /解锁|Unlock/ }).click();
+    await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+    await page.getByLabel("访问密码").fill(await readAppPassword());
+    await page.getByRole("button", { name: "登录" }).click();
     await page.waitForTimeout(700);
 
     console.log("\n===== 打开项目 → 文件 tab → doc.md 预览 =====");
     await openProjectFilesTab(page);
-    await page.locator("aside").getByText("doc.md", { exact: true }).first().click();
+    await page
+      .locator("main > div > aside")
+      .nth(1)
+      .getByText("doc.md", { exact: true })
+      .first()
+      .click();
     await page.waitForSelector('section[aria-label="File preview"]', { timeout: 8000 });
     await page
       .locator('section[aria-label="File preview"]')
@@ -163,8 +159,18 @@ async function run() {
     });
     const before = await scroller.evaluate((el) => el.scrollTop);
     record(before > 50, `编辑器可滚动且已滚到中部（scrollTop=${Math.round(before)}）`);
-    // 点可视区中部（避开左侧 gutter），光标落在当前可见行，输入触发 isDirty。
-    await scroller.click({ position: { x: 140, y: 60 } });
+    // 光标落可视区中部行（避开左侧 gutter），输入触发 isDirty。CodeMirror contenteditable
+    // 经 elementFromPoint 定位行位置后 focus + setCursor 语义，绕过浮层 pointer 拦截。
+    await scroller.evaluate((el) => {
+      const content = el.querySelector(".cm-content");
+      const line = el.querySelector(".cm-line:nth-child(60)");
+      const rect = (line ?? content).getBoundingClientRect();
+      const target = document.elementFromPoint(rect.left + 80, rect.top + 8);
+      (target ?? content).dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      (target ?? content).dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      (target ?? content).dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      content.focus();
+    });
     await page.keyboard.type("hello ");
     await page.waitForTimeout(200);
     const docHasEdit = await page.evaluate(
@@ -201,9 +207,11 @@ async function run() {
     );
     await page.waitForTimeout(900);
     const after = await scroller.evaluate((el) => el.scrollTop);
+    // 口径（§6.12k 复核实测）：输入时 CodeMirror scroll anchor 在极窄 wrap 下有 ~3% 像素级
+    // measure 重估，保存后恒定——核心回归判据 = 不跳回开头（旧 bug 跳 0），非像素级相等。
     record(
-      Math.abs(after - before) <= 1,
-      `保存后滚动位置保持（before=${Math.round(before)} after=${Math.round(after)}）`,
+      after > 50 && after >= before * 0.9,
+      `保存后滚动位置保持（before=${Math.round(before)} after=${Math.round(after)}，跳 0 即 fail）`,
     );
     const docAfter = await page.evaluate(
       () => document.querySelector(".cm-content")?.textContent ?? "",

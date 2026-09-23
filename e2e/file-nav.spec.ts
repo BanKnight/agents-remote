@@ -6,30 +6,26 @@ const projectName = process.env.E2E_PROJECT_NAME ?? "demo";
 /**
  * file nav（设计 §4.2 决策 16 + workbench-stable-refactor Phase 3）。
  *
- * §6.12j 批次 3 检视 IA 收敛：左栏 middle tab [文件] 已删除（左栏只留 实例/历史/插件），项目内
- * 文件检视归右栏 Inspector（FilesPanel，只读浏览语义，不开中栏 tab）；「点文件开中栏 file tab」
- * 桌面链路改走全局文件页（下方 test 2，rootBrowse 进项目）。原「middle tab [文件] → 左栏树 →
- * 中栏 tab」链路测试随收敛移除（收敛裁定记 redesign-v2.md §6.12j）。
+ * §6.12j 批次 3 检视 IA 收敛：左栏 middle tab [文件] 已删除（项目内文件检视归右栏 Inspector，
+ * 只读浏览语义，不开中栏 tab）；「点文件开中栏 file tab」桌面链路走全局文件页。
+ * §6.12k 合并 side：footnav 三项（All Files/Plugins/Settings）成唯一一级导航——4 目的地
+ * 活动栏退役，[文件] 入口 = footnav All Files（en）。
  */
 
-test("file nav: 活动栏 [文件] 全局树点文件 → 中栏 file tab + /files/file/$ 全路径 URL", async ({
+test("file nav: footnav 全局文件 → 全局树点文件 → 中栏 file tab + /files/file/$ 全路径 URL", async ({
   page,
 }) => {
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  // 活动栏 [文件] → /files 全局文件视图（rootBrowse 根目录列项目目录）。
-  await page
-    .getByRole("navigation", { name: "Primary navigation", exact: true })
-    .getByRole("button", { name: "Files", exact: true })
-    .click();
+  // footnav [All Files] → /files 全局文件视图（rootBrowse 根目录列项目目录）。
+  await page.locator("nav.side .footnav button", { hasText: "All Files" }).click();
   await expect(page).toHaveURL(/\/files$/);
 
-  // 全局文件树（v2 IA 批次 d §6.10-9：/files = main 整页 mainPage 的 GlobalFilesOverview，
-  // 左栏保持 sidewin 项目总览）。mainPage 态 "Project files" 全局唯一在 main 区，不限 aside。
-  // ⚠️ 点文件后 focusId 生效、mainPage 失效，leftMode=files 粘性让左栏变回 GlobalFilesOverview
-  //（WorkbenchRoute leftPanel 末分支）→ 页面出现第二棵 "Project files"；此测试后续不再消费
+  // 全局文件树（§6.10-9：/files = main 整页 mainPage 的 GlobalFilesOverview，side 恒定）。
+  // mainPage 态 "Project files" 全局唯一在 main 区。⚠️ 点文件后 focusId 生效、mainPage 失效
+  //（§6.12k：中栏 = InstanceArea file tab，mainPage 树整体消失）；此测试后续不再消费
   // files locator，追加断言须重新限定区域防 strict violation。
   const files = page.getByLabel("Project files");
   await expect(files.getByRole("button", { name: projectName, exact: true })).toBeVisible();

@@ -7,7 +7,7 @@ import type {
 } from "@agents-remote/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createFolder,
@@ -227,6 +227,15 @@ export function MobileFilesTool({
     queryKey: ["projects", projectName, "files", path],
     queryFn: () => listProjectFiles(projectName, path || undefined),
   });
+  // 路径不存在回退（§13，与 FilesPanel 受控模式同语义）：持久化 cwd 记忆指向已删除目录时
+  // listing 报错 → 回根 + onPathChange("") 清记忆（queryKey 变化时新查询 pending、error 归零
+  // 不误触发；effect 只依赖 error）。
+  useEffect(() => {
+    if (listing.error !== null && path !== "") {
+      onPathChange("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listing.error]);
   const diff = useQuery({
     queryKey: ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
     queryFn: () => listProjectGitDiff(projectName),

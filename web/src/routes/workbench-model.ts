@@ -532,7 +532,19 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
       // 数据不变式）。URL mode 键因故丢失（手工构造 URL / 旧入口漏透传）时左栏仍保持 chat
       // 语境——派生层兜底而非渲染层 per-type 特判。
       const chatFallback = p.id?.startsWith("chat_") ? ("chat" as const) : undefined;
-      return { scope: { kind: "global" }, focusId: p.id, ...s, mode: s.mode ?? chatFallback };
+      // leftMode 兜底（§6.12k 批次 2 chat 语境收敛）：global scope chat focus 时 leftMode
+      // 缺省即 auto（URL 省略 = 默认），显式化为 "auto" 让 side 的 sessionPage derive
+      // （leftMode === "auto"）成立——chat 列表仅在 global 一级会话页渲染，聚焦 chat 会话
+      // 后 side 必须保持 SessionModeTabs + ChatOverview 语境（stickyWorkbenchSearch 按
+      // 「URL 省略 = 默认」约定省略 leftMode=auto，故需派生层显式化）。
+      const leftModeFallback = p.id?.startsWith("chat_") ? ("auto" as const) : undefined;
+      return {
+        scope: { kind: "global" },
+        focusId: p.id,
+        ...s,
+        mode: s.mode ?? chatFallback,
+        leftMode: s.leftMode ?? leftModeFallback,
+      };
     }
     case "/projects/$key":
       return { scope: { kind: "project", key: p.key ?? "" }, focusId: undefined, ...s };

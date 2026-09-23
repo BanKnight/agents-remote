@@ -3,7 +3,7 @@
 // agent session）都使左栏标题从 SessionModeTabs 回退「会话」文案、chat 模式左栏 body 掉回项目
 // 总览；且 navigate 调用点手抄 search 合并漏 mode，点中栏 tab 后 mode 从 URL 丢失。
 // 断言（桌面 1280×900，chat-sessions API 走真实后端 43011）：
-//  1. /projects?mode=chat 前置态：mode tab 在左栏标题区 + ChatOverview 搜索框在。
+//  1. /projects?mode=chat 前置态：mode tab 在 side 头部 + ChatOverview 搜索框在。
 //  2. 新建会话 → 中栏聚焦（URL /projects/session/chat_*?mode=chat）：mode tab 仍在左栏 +
 //     搜索框仍在（body 未掉回项目总览）+ 中栏 chat composer 渲染。
 //  3. 点 Agent tab → 回列表态：mode 键消失、搜索框消失（项目总览）、mode tab 仍在。
@@ -66,25 +66,27 @@ function record(ok, label) {
 
 async function login(page) {
   await page.goto(`${WEB_ORIGIN}/`);
-  await page
-    .getByLabel("密码")
-    .or(page.getByLabel("Password"))
-    .fill(await readAppPassword());
-  await page.getByRole("button", { name: /解锁|Unlock/ }).click();
+  await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+  await page.getByLabel("访问密码").fill(await readAppPassword());
+  await page.getByRole("button", { name: "登录" }).click();
   await page.waitForTimeout(700);
 }
 
-// 左栏 = 第 2 个 aside（index 1，活动栏之后）。
-async function modeTabInLeftAside(page) {
+// side = aside[0]（§6.12k 三列化后 side=aside[0]、右栏 Inspector=aside[1]）。
+async function modeTabInSideAside(page) {
   return page.evaluate((sel) => {
-    const left = document.querySelectorAll("aside")[1];
-    return !!left && !!left.querySelector(sel);
+    const side = document.querySelectorAll("aside")[0];
+    return !!side && !!side.querySelector(sel);
   }, MODE_TAB_GROUP);
 }
 
 async function run() {
   const browser = await chromium.launch({ executablePath: EXEC });
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  // §6.12k 后 zh-CN label 口径与 m9 探针同源（页面默认英文 locale，登录 label 会不匹配）。
+  const ctx = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    locale: "zh-CN",
+  });
   const page = await ctx.newPage();
   await login(page);
 
@@ -97,7 +99,7 @@ async function run() {
   console.log("\n-- 1. 前置态：/projects?mode=chat 列表态 --");
   await page.goto(`${WEB_ORIGIN}/projects?mode=chat`);
   await page.waitForSelector(MODE_TAB_GROUP, { timeout: 8000 });
-  record(await modeTabInLeftAside(page), "mode tab 在左栏标题区");
+  record(await modeTabInSideAside(page), "mode tab 在 side 头部");
   record((await page.locator(SEARCH_BOX).count()) === 1, "ChatOverview 搜索框渲染");
 
   console.log("\n-- 2. 新建会话 → 中栏聚焦：mode tab + ChatOverview 保持（核心回归）--");
@@ -113,7 +115,7 @@ async function run() {
     `URL 聚焦 chat tab（${new URL(page.url()).pathname}）`,
   );
   record(new URL(page.url()).searchParams.get("mode") === "chat", "URL ?mode=chat 保持");
-  record(await modeTabInLeftAside(page), "聚焦后 mode tab 仍在左栏标题区（不回退「会话」标题）");
+  record(await modeTabInSideAside(page), "聚焦后 mode tab 仍在 side 头部（不回退「会话」标题）");
   record(
     (await page.locator(SEARCH_BOX).count()) === 1,
     "聚焦后左栏 body 仍 ChatOverview（不掉回项目总览）",
@@ -133,7 +135,7 @@ async function run() {
     (await page.locator(SEARCH_BOX).count()) === 0,
     "Agent 模式左栏 body 换回项目总览（搜索框消失）",
   );
-  record(await modeTabInLeftAside(page), "mode tab 仍在");
+  record(await modeTabInSideAside(page), "mode tab 仍在");
 
   console.log("\n-- 4. 切回 Chat → 点会话行聚焦：同断言保持 --");
   await modeTabButtons(page).nth(1).click();
@@ -146,7 +148,7 @@ async function run() {
   record((await row.count()) === 1, "会话行存在（探针标记会话在列表）");
   await row.click();
   await page.waitForURL(/\/projects\/session\/chat_/, { timeout: 8000 });
-  record(await modeTabInLeftAside(page), "行点击聚焦后 mode tab 仍在左栏标题区");
+  record(await modeTabInSideAside(page), "行点击聚焦后 mode tab 仍在 side 头部");
   record((await page.locator(SEARCH_BOX).count()) === 1, "行点击聚焦后左栏 body 仍 ChatOverview");
 
   console.log("\n-- 5. chat 模式 + file tab 聚焦：mode tab + ChatOverview 保持（架构回归）--");
@@ -158,14 +160,14 @@ async function run() {
     /\/files\/file\//.test(new URL(page.url()).pathname),
     `file focus URL（${new URL(page.url()).pathname}）`,
   );
-  record(await modeTabInLeftAside(page), "file 聚焦后 mode tab 仍在左栏标题区");
+  record(await modeTabInSideAside(page), "file 聚焦后 mode tab 仍在 side 头部");
   record((await page.locator(SEARCH_BOX).count()) === 1, "file 聚焦后左栏 body 仍 ChatOverview");
 
   console.log("\n-- 6. agent 模式聚焦态：mode tab 常驻（原「会话」标题回归）--");
   // agent session focus（focusId 非 chat_）→ mode tab 应保持（agent 高亮），不掉回「会话」文案。
   await page.goto(`${WEB_ORIGIN}/projects/session/agent_probe_focus`);
   await page.waitForSelector(MODE_TAB_GROUP, { timeout: 8000 });
-  record(await modeTabInLeftAside(page), "agent 聚焦后 mode tab 仍在左栏标题区");
+  record(await modeTabInSideAside(page), "agent 聚焦后 mode tab 仍在 side 头部");
   record(
     (await page.locator(SEARCH_BOX).count()) === 0,
     "agent 聚焦左栏 body = 项目总览（agent 模式语义）",

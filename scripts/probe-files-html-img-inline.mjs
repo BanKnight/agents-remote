@@ -141,23 +141,25 @@ async function run() {
     const page = await ctx.newPage();
     await setup(page);
     await page.goto(`${WEB_ORIGIN}/`);
-    await page
-      .getByLabel("密码")
-      .or(page.getByLabel("Password"))
-      .fill(await readAppPassword());
-    await page.getByRole("button", { name: /解锁|Unlock/ }).click();
+    await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+    await page.getByLabel("访问密码").fill(await readAppPassword());
+    await page.getByRole("button", { name: "登录" }).click();
     await page.waitForTimeout(700);
 
-    console.log("\n===== 项目 Files → index.html（html 默认 render 模式）=====");
+    console.log(
+      "\n===== 项目 Files → index.html（html 默认 render 模式；§6.12k 桌面 = Inspector 检视 files 树）=====",
+    );
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
     await page.waitForSelector("nav[aria-label]", { timeout: 8000 });
-    await page
-      .getByRole("tab", { name: /^文件$|^Files$/ })
-      .or(page.getByText(/^文件$|^Files$/, { exact: true }).first())
-      .first()
-      .click({ timeout: 5000 });
-    await page.waitForSelector("aside", { timeout: 8000 });
-    await page.locator("aside").getByText("index.html", { exact: true }).first().click();
+    // 右栏默认收起 → 展开；Inspector seg4 切「文件」；树点 index.html。
+    await page.getByRole("button", { name: "展开右栏" }).click();
+    await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
+      timeout: 8000,
+    });
+    const inspector = page.locator("main > div > aside").nth(1);
+    await inspector.locator(".seg4 span", { hasText: /^文件$/ }).click({ timeout: 5000 });
+    await page.waitForTimeout(500);
+    await inspector.getByText("index.html", { exact: true }).first().click();
     await page.waitForSelector('iframe[title="Sandboxed HTML render"]', { timeout: 10000 });
 
     console.log("\n===== 1. srcDoc 内联状态断言 =====");

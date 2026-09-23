@@ -108,9 +108,9 @@ test("Claude: session detail renders with mocked REST data", async ({ page }) =>
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  // Desktop workbench (Phase 1+) has no "Projects" heading; gate on the
-  // project node button being visible before navigating to the session route.
-  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible();
+  // Desktop workbench: §6.12k 合并 side 项目行（srow2）= 登录 gate（title 属性 = 项目名，
+  // 项目行独有——可访问名含 live 徽章不再 exact 可匹配）。
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible();
 
   await page.goto(`/projects/${projectName}/agent-sessions/${fakeSessionId}/claude`);
 
@@ -119,10 +119,10 @@ test("Claude: session detail renders with mocked REST data", async ({ page }) =>
   await expect(chatInput).toBeVisible({ timeout: 15_000 });
 
   // Session detail should show the mock data. The focused panel's tab chip
-  // carries the mock displayName as its accessible name; scope to it (exact)
-  // to avoid matching the same displayName in the left-overview InstanceCard,
-  // whose accessible name is prefixed with the status ("Waiting for input …").
+  // carries the mock displayName as its accessible name; scope to the
+  // center tabstrip (exact) — §6.12k 合并 side 后实例行（srow2 inst）可访问名 =
+  // displayName 本身（dot2 aria-hidden），与 tab chip 同名。
   await expect(
-    page.getByRole("button", { name: "Claude Agent (e2e-test)", exact: true }),
+    page.locator(".tabstrip").getByRole("button", { name: "Claude Agent (e2e-test)", exact: true }),
   ).toBeVisible();
 });

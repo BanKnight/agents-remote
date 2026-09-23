@@ -88,8 +88,9 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
           ))}
         </div>
       </div>
+      {/* §8 高度链：body 自身必须是 flex container（检视内容 FilesPanel 等是 flex-1 子）。 */}
       <div
-        className="min-h-0 flex-1 overflow-hidden"
+        className="flex min-h-0 flex-1 overflow-hidden"
         id="inspector-tab-panel"
         key={ctx.projectKey ?? "none"}
         role="tabpanel"

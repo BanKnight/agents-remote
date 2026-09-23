@@ -170,7 +170,8 @@ test("ACP: session detail renders omp stream (echo bubble, chunk text, tool call
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("button", { name: projectName, exact: true })).toBeVisible({
+  // §6.12k 合并 side 项目行（srow2）= 登录 gate（title 属性 = 项目名，项目行独有）。
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible({
     timeout: 15_000,
   });
 
