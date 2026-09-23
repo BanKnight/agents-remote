@@ -1557,7 +1557,9 @@ function XtermOutput({
   }, [onSendInput, onResize]);
 
   return (
-    <section className="relative min-h-0 flex-1 overflow-hidden pb-[var(--shell-mobile-bottom-nav-space,0px)]">
+    // nav 避让单点在 SessionInputDrawer 的 pb（static 流内在本区之下）——本区不重复让位，
+    // 否则 xterm 底部夹出一条 nav 高的空带（终端与输入框间隙，第十一轮复验）。
+    <section className="relative min-h-0 flex-1 overflow-hidden">
       <div
         ref={containerRef}
         className="h-full min-h-0 min-w-0 overflow-hidden [&_.xterm]:h-full"

@@ -40,6 +40,7 @@ import {
   removeTabFromLeaf,
   splitFilePath,
   useWorkbenchLayout,
+  useWorkbenchBack,
   useWorkbenchNavigate,
   type SessionPanelRef,
   workbenchMobileFocusTabAtom,
@@ -685,11 +686,17 @@ function MobileProjectWorkbench({
 
   const focusInstance = (sessionId: string) => {
     // 点 pill 进 focus → 重置 Output tab（同 MobileProjectsHome.focusInstance，避免继承
-    // Files/Git 记忆落到项目文件）。显式退工具态：点当前 focus 的 pill 时 focusId 不变，
-    // focus 变化裁决兜不到（H1）。
-    if (activeTool) handleToolChange(null);
+    // Files/Git 记忆落到项目文件）。
     setFocusTab("output");
-    void navigateWorkbench(scope, sessionId);
+    if (activeTool && sessionId === effectiveFocusId) {
+      // 点当前 focus 的 pill：focusId 不变导航无-op，显式退工具（H1，兜底路径）。
+      handleToolChange(null);
+      return;
+    }
+    // 一次导航同时退工具 + 聚焦（search = {} 清 tab 维度，focus 与工具互斥）。原先
+    // handleToolChange(null) + navigate 连环两次 push，栈里留 ?tab=files 中间态（一次点击
+    // history +2，返回要多按一次）。
+    void navigateWorkbench(scope, sessionId, {});
   };
 
   // 自动聚焦回退项（instances[0]）可能不在 layout（项目从未打开过 tab）——注入临时投影让
@@ -746,6 +753,8 @@ function MobileProjectWorkbench({
   // focusInstance 显式退兜底。M4：L3 focusId（githistory/gitbranches/gitcommit_/wiki_）是
   // 内容区替换的显式子路由，不是 focus 语义——退工具会经 onToolChange(null) 把 L3
   // focusId 透传进 session 路由（实测 /session/githistory 破坏 URL），故 L3 跳过。
+  // 第十一轮复验补注：进 focus 的导航已自带清 tab（search 无 tab 维度），正常路径本 effect
+  // 不再触发（activeTool 已 undefined），仅深链/脏 URL（?tab= 与 session focus 并存）兜底。
   const prevFocusRef = useRef(focusId);
   useEffect(() => {
     if (focusId !== prevFocusRef.current) {
@@ -773,7 +782,7 @@ function MobileProjectWorkbench({
   // 对齐——文件预览回文件树父目录（03q back「src/auth」），git diff 回 Git 工具面板（03r
   // back「Git 检视」）。此前动作是 v2 M4 旧设计「删 tab + 回实例主体」，backLabel 显示的
   // 是来源层级、动作却回实例主体，显示与行为脱节。预览 tab 仍是一次性（删），返回导航落在
-  // 来源工具层（handleToolChange 写 URL ?tab=files/git，cwd 同步到父目录）。
+  // 来源工具层（pop 优先；深链兜底 push 清 focusId 的工具态 URL，cwd 同步到父目录）。
   const closeTransientFocus =
     focusRef?.kind === "file" || focusRef?.kind === "git"
       ? () => {
@@ -785,10 +794,12 @@ function MobileProjectWorkbench({
             const lastSlash = relPath.lastIndexOf("/");
             // 根文件（无父目录）back = 项目名（l3Transient 同款）→ cwd 回根目录。
             setFilesPath(lastSlash === -1 ? "" : relPath.slice(0, lastSlash));
-            handleToolChange("files");
-          } else {
-            handleToolChange("git");
           }
+          // 返回导航 pop 优先：栈回 push 进预览前的工具态（?tab= files/git），不留死记录；
+          // 深链直达无来路时 push 兜底——显式 focusId=undefined + tab（不走 handleToolChange，
+          // 它透传闭包里的旧 focusId，返回后 URL 残留 session=file_*，刷新复活已删 tab）。
+          const backTool = focusRef?.kind === "file" ? "files" : "git";
+          backNav(() => void navigateWorkbench(scope, undefined, { tab: backTool }));
         }
       : null;
 
@@ -805,9 +816,24 @@ function MobileProjectWorkbench({
       return { kind: "wiki" as const, slug: parseWikiFocusId(focusId) ?? "" };
     return null;
   }, [focusId]);
-  // L3 back = focusId=undefined 导航 + ?tab 记忆（onTabChange 保留 focusId，不能复用）。
+  // 返回类导航原语（pop 优先，深链无来路时 fallback push 兜底）。
+  const backNav = useWorkbenchBack();
+  // L3 back：pop 优先（来源是 push，栈不留死记录）；深链直达无来路时 push 到 backLabel 声称的
+  // 层级兜底（?tab= 工具态）。
   const l3BackTo = (tab: WorkbenchMiddleTab) => {
-    void navigateWorkbench(scope, undefined, { tab });
+    backNav(() => void navigateWorkbench(scope, undefined, { tab }));
+  };
+  // commit 页 backLabel =「提交历史」：深链兜底同样退到 history 页（与 backLabel 一致），
+  // 而非 git 工具面板。
+  const l3BackToHistory = () => {
+    backNav(
+      () =>
+        void navigate({
+          params: { key: scope.key },
+          search: { tab: "git" },
+          to: "/projects/$key/git/history",
+        }),
+    );
   };
   // wiki L3 的 back 反查（分组名）与标题（页名）：同 key wiki-index/page 缓存共享。
   const l3WikiSlug = l3Route?.kind === "wiki" ? l3Route.slug : null;
@@ -916,7 +942,7 @@ function MobileProjectWorkbench({
           ? {
               backLabel: t("git.historyTitle"),
               title: l3Route.hash.slice(0, 7),
-              onClick: () => l3BackTo("git"),
+              onClick: l3BackToHistory,
             }
           : {
               backLabel: l3WikiMeta
@@ -1047,8 +1073,13 @@ function MobileProjectWorkbench({
           }}
           onSelectInstance={focusInstance}
           onSelectTab={(leafId, tabId) => {
-            // skill pill 显式退工具（点当前已 focus 的 skill 时 focusId 不变，effect 兜不到）。
-            if (activeTool) handleToolChange(null);
+            // skill pill 显式退工具：点当前已 focus 的 skill 时 focusId 不变导航无-op，
+            // effect 兜不到，需显式退；点其他 pill 时 onSelectTab 的 focus 导航一次完成
+            //（search 已无 tab 维度），不再连环双 push。
+            if (activeTool && tabId === effectiveFocusId) {
+              handleToolChange(null);
+              return;
+            }
             onSelectTab(leafId, tabId);
           }}
           onToolChange={handleToolChange}

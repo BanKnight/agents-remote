@@ -279,9 +279,10 @@ async function run() {
 
     console.log("\n===== Part 5. row2 ＋ 新建 → 新 pill 激活 =====");
     await page.getByRole("button", { name: "新建会话" }).click({ timeout: 5000 });
-    // ActionMenu（Radix menu）：点「Claude」（workbench.createClaude zh/en 同「Claude」）。
+    // M5-a sheet 化：CTA 打开 MobileCreateInstanceSheet（heading「New instance」），不再是
+    // ActionMenu；点 sheet 内 Claude 按钮（workbench.createClaude zh/en 同「Claude」）。
     await page
-      .getByText(/^Claude$/, { exact: true })
+      .getByRole("button", { name: /Claude/ })
       .first()
       .click({ timeout: 5000 });
     // 命名 prompt：填名 + 创建。
@@ -300,9 +301,15 @@ async function run() {
 
     console.log("\n===== Part 6. 工具态 → pill：退出工具、session 面板可见（H1 行为锁）=====");
     // 进 files 工具（row2 folder ticon）
+    await page.waitForSelector(".row2", { timeout: 8000 });
     await page.locator(".row2 .ticon").first().click({ timeout: 5000 });
     await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
-    // 工具态点另一个实例 pill（B）→ session 面板 visible + 工具面板退场 + URL ?tab 清除
+    // M10 工具态 chips 后：工具态 row2 pills 区被 toolChip（crumb）替换，无 pill 可点——
+    // 实例切换 = 再点同 ticon 退工具（pills 回来）→ 点 pill。原先「工具态直接点 pill」
+    // 交互面已不存在（探针基线长期未跑到此步）。
+    const pillsInTool = await page.locator(".pills .pill").count();
+    ok(pillsInTool === 0, `工具态 pills 区被 crumb 替换（pills=${pillsInTool}）`);
+    await page.locator(".row2 .ticon").first().click({ timeout: 5000 });
     await page.locator(".pills .pill", { hasText: "Probe Agent A" }).click({ timeout: 5000 });
     await page.waitForURL(/session\/agent_probe-1/, { timeout: 8000 });
     await page.waitForFunction(
@@ -453,6 +460,23 @@ async function run() {
     ok(geo.ticonSvg === "19x19", `ticon svg 19×19（实际 ${geo.ticonSvg}）`);
     ok(geo.chipH === 24, `.chip h24（实际 ${geo.chipH}）`);
     await ctx2.close();
+
+    // ── Part 8：nav back ◄ 点击 → URL 回项目列表（原 probe-mobile-tabstrip-back 的 v2 等价，
+    // 该探针依赖 v1「切换侧边栏」按钮已随 §6.12k 退役删除）─────────
+    console.log("\n===== Part 8. nav back 点击 → URL 回项目列表 =====");
+    const ctx3 = await browser.newContext(MOBILE_CTX);
+    const page3 = await ctx3.newPage();
+    await setupMocks(page3, { sessionIds: ["agent_probe-1"] });
+    await login(page3);
+    await page3.goto(`${ORIGIN}/projects/proj1/session/agent_probe-1`);
+    await page3.waitForSelector(".nav .back", { timeout: 8000 });
+    await page3.locator(".nav .back").click({ timeout: 5000 });
+    await page3.waitForURL(/\/projects\/?$/, { timeout: 8000 });
+    ok(
+      /\/projects\/?$/.test(new URL(page3.url()).pathname),
+      `back 点击回项目列表（实际 ${new URL(page3.url()).pathname}）`,
+    );
+    await ctx3.close();
   } finally {
     await browser.close();
   }

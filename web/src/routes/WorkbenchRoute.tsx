@@ -399,7 +399,10 @@ function WorkbenchContent({
         void navigate({
           to: "/projects/$key/file/$",
           params: { key: projectName, _splat: path },
-          search: stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+          // focus 与工具互斥（H1）：focus 导航剔除 tab 维度——否则 URL 残留 ?tab 由 H1
+          // effect 兜底二次导航，一次点击历史栈 +2（第十一轮复验）。桌面 URL 无 ?tab 键，
+          // 本改动对桌面 no-op。
+          search: stickyWorkbenchSearch({ rightTab, leftMode, mode }),
         });
         return;
       }
@@ -411,12 +414,11 @@ function WorkbenchContent({
         search: stickyWorkbenchSearch({
           leftMode: mainPageActive ? "auto" : leftMode,
           rightTab,
-          tab: tabFromUrl,
           mode,
         }),
       });
     },
-    [navigate, scope, rightTab, tabFromUrl, leftMode, mode, mainPageActive],
+    [navigate, scope, rightTab, leftMode, mode, mainPageActive],
   );
   // 左栏文件树点文件 → 中栏开/激活 file tab + focus 到该文件（设计 §6 决策 16）。file ref 用全路径
   //（kind:"file", path=全路径，无 projectName 字段），全局/项目点同一文件复用同一 tab。复用已测纯函数
@@ -436,14 +438,15 @@ function WorkbenchContent({
       void navigate({
         to: "/projects/$key/git/$",
         params: { key: projectName, _splat: path },
-        // gitScope 是路由特定维度，在 sticky 基础上追加。
+        // gitScope 是路由特定维度，在 sticky 基础上追加。focus 导航剔除 tab 维度（focus 与
+        // 工具互斥，否则 URL 残留 ?tab 由 H1 effect 兜底二次导航——一次点击历史栈 +2）。
         search: {
-          ...stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+          ...stickyWorkbenchSearch({ rightTab, leftMode, mode }),
           gitScope: scope,
         },
       });
     },
-    [navigate, rightTab, tabFromUrl, leftMode, mode],
+    [navigate, rightTab, leftMode, mode],
   );
   // compare 模式 git tab focus URL：与 navigateToGitFile 同路由（/projects/$key/git/$），
   // search 用 gitCompare（编码 `${base}~${compare}`）替代 gitScope，两者互斥。
@@ -454,12 +457,12 @@ function WorkbenchContent({
         to: "/projects/$key/git/$",
         params: { key: projectName, _splat: path },
         search: {
-          ...stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+          ...stickyWorkbenchSearch({ rightTab, leftMode, mode }),
           gitCompare: `${base}~${compare}`,
         },
       });
     },
-    [navigate, rightTab, tabFromUrl, leftMode, mode],
+    [navigate, rightTab, leftMode, mode],
   );
   // 左栏 git 变更列表点文件 → 中栏开/激活 git diff tab + focus（设计 workbench-layout-fix 阶段 3）。
   // 消费方仅剩移动工作台（mobile-workbench 工具态）；git 检视归右栏 Inspector，左栏 git
@@ -484,7 +487,8 @@ function WorkbenchContent({
         void navigate({
           to: "/projects/$key/skill/$",
           params: { key: scope.key, _splat: name },
-          search: stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
+          // focus 导航剔除 tab 维度（focus 与工具互斥，同 navigateToFile 注释）。
+          search: stickyWorkbenchSearch({ rightTab, leftMode, mode }),
         });
         return;
       }
@@ -495,12 +499,11 @@ function WorkbenchContent({
         search: stickyWorkbenchSearch({
           leftMode: mainPageActive ? "auto" : leftMode,
           rightTab,
-          tab: tabFromUrl,
           mode,
         }),
       });
     },
-    [navigate, scope, rightTab, tabFromUrl, leftMode, mode, mainPageActive],
+    [navigate, scope, rightTab, leftMode, mode, mainPageActive],
   );
   // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活；file tab
   // 移除（file 无生命周期，✕ 即从布局消失）。focusId 被关后回退到新 active tab 的 focus URL。

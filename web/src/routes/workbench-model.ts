@@ -1,7 +1,7 @@
 import { atom, useAtom, useSetAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 import { useCallback, useEffect, useState } from "react";
-import { useMatches, useNavigate, type AnyRouteMatch } from "@tanstack/react-router";
+import { useMatches, useNavigate, useRouter, type AnyRouteMatch } from "@tanstack/react-router";
 import type {
   AgentProvider,
   AgentSessionStatus,
@@ -268,6 +268,24 @@ export function useWorkbenchNavigate() {
             search,
           },
     );
+  };
+}
+
+/**
+ * 返回类导航原语（第十一轮复验：push 形态页的 back 用 push 实现，栈留死记录——浏览器返回
+ * 手势把刚离开的页面又弹回来）。pop 优先：来源是站内 push（history 有来路）时 `history.back()`
+ * 栈不留死记录，浏览器返回与 UI back 行为一致；深链直达无来路时调 `fallback` push 兜底
+ * （退到 backLabel 声称的层级）。判定用 `__TSR_index`（TanStack Router 写入 history.state 的
+ * 栈索引，0 = 首条无来路；运行时实测）。
+ */
+export function useWorkbenchBack() {
+  const router = useRouter();
+  return (fallback: () => void) => {
+    if ((window.history.state?.__TSR_index ?? 0) > 0) {
+      router.history.back();
+      return;
+    }
+    fallback();
   };
 }
 

@@ -210,18 +210,15 @@ async function run() {
     ok(emptyGeo.linkText === "先看看文件 / Git ›", `工具引导 link（实际「${emptyGeo.linkText}」）`);
     // CTA → ActionMenu（新建实例菜单）
     await page1.locator(".empty-cta").click({ timeout: 5000 });
+    // 断言跟随 M5-a sheet 化：空态 CTA 打开 MobileCreateInstanceSheet（heading「New instance」
+    // + Claude/omp/Terminal 三按钮），不再是 ActionMenu。
     ok(
-      (await page1
-        .getByText(/^Claude$/, { exact: true })
+      await page1
+        .getByRole("button", { name: /Claude/ })
         .first()
         .isVisible({ timeout: 5000 })
-        .catch(() => false)) ||
-        (await page1
-          .getByRole("menuitem", { name: /Claude/ })
-          .first()
-          .isVisible({ timeout: 2000 })
-          .catch(() => false)),
-      "CTA 打开新建实例 ActionMenu（含 Claude 项）",
+        .catch(() => false),
+      "CTA 打开新建实例 sheet（含 Claude 项）",
     );
     await page1.keyboard.press("Escape");
     // link → files 工具态
@@ -322,22 +319,33 @@ async function run() {
     });
     await page5.goto(`${ORIGIN}/projects/proj1/file/README.md`);
     await page5.waitForSelector('[data-tab-id="file_proj1/README.md"]', { timeout: 8000 });
-    const closeBtn = page5.locator('.nav [aria-label="关闭"], .nav [aria-label="Close"]').first();
-    ok((await closeBtn.count()) > 0, "file focus 的 nav 右 ✕ 存在");
-    await closeBtn.click({ timeout: 5000 });
-    await page5.waitForSelector('[data-tab-id="agent_probe-1"]', { timeout: 8000 });
+    // 断言跟随 M10 反馈③（1dc5172）：独立 ✕ 删除（nav 右上收敛 ℹ+⋯，082c/03k 原型），
+    // file 预览的关闭路径 = nav back ◄（l3 onClick = closeTransientFocus：删 tab + 回文件树
+    // 工具态，M10 第三轮 e55da72 back=上一层语义）。原「✕ 存在/点击回 agent 聚焦」断言过时。
+    const backBtn = page5.locator(".nav .back").first();
+    ok((await backBtn.count()) > 0, "file focus 的 nav back ◄ 存在（M10 ③ 后唯一关闭路径）");
+    await backBtn.click({ timeout: 5000 });
+    await page5.waitForSelector('[data-tab-id="file_proj1/README.md"]', {
+      state: "detached",
+      timeout: 8000,
+    });
     const afterClose = await page5.evaluate(() => {
-      const fileTab = document.querySelector('[data-tab-id="file_proj1/README.md"]');
       const agentTab = document.querySelector('[data-tab-id="agent_probe-1"]');
       return {
-        url: location.pathname,
-        fileGone: fileTab === null,
-        agentVisible: agentTab !== null && getComputedStyle(agentTab).display !== "none",
+        url: `${location.pathname}${location.search}`,
+        fileGone: document.querySelector('[data-tab-id="file_proj1/README.md"]') === null,
+        agentKept: agentTab !== null,
       };
     });
-    ok(afterClose.url === `/projects/${projectName}`, `URL 回项目工作台（实际 ${afterClose.url}）`);
+    ok(
+      afterClose.url === `/projects/${projectName}?tab=files`,
+      `URL 回文件树工具态（实际 ${afterClose.url}）`,
+    );
     ok(afterClose.fileGone, "file tab 已从 layout 移除（不渲染）");
-    ok(afterClose.agentVisible, "回退自动聚焦 agent_probe-1（面板 visible）");
+    const filesToolVisible = await page5.evaluate(
+      () => document.querySelector('[data-mobile-tool="files"]') !== null,
+    );
+    ok(filesToolVisible, "文件树工具面板原位呈现（back=上一层）");
     await ctx5.close();
 
     // ── context 6：回退态聚焦 terminal（reviewer #1：注入 ref 兜底前 chips 全缺）────────
@@ -357,8 +365,10 @@ async function run() {
         panelVisible: panel !== null && getComputedStyle(panel).display !== "none",
         chipText: chip?.textContent.trim(),
         emptyCard: document.querySelector(".empty-card") !== null,
-        closeBtn:
-          document.querySelector('.nav [aria-label="关闭"], .nav [aria-label="Close"]') !== null,
+        infoBtn:
+          document.querySelector(
+            '.nav [aria-label="实例信息"], .nav [aria-label="Instance info"]',
+          ) !== null,
       };
     });
     ok(termFallback.panelVisible && !termFallback.emptyCard, "terminal 面板 visible（无双渲染）");
@@ -366,7 +376,9 @@ async function run() {
       termFallback.chipText === "tmux · Probe Term",
       `回退态 tmux chip 存在（实际「${termFallback.chipText}」）`,
     );
-    ok(termFallback.closeBtn, "回退态聚焦实例 ℹ/✕（focusActions）恢复");
+    // 断言跟随 M10 ③：nav 右上 = ℹ（实例信息）图标；「关闭会话」在 info sheet acts 内
+    //（原「ℹ/✕」断言过时）。
+    ok(termFallback.infoBtn, "回退态聚焦实例 ℹ（focusActions）恢复");
     await ctx6.close();
   } finally {
     await browser.close();
