@@ -622,6 +622,35 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 - **宽屏中栏 360px 评估后不做**：批次 2 tabstrip 落地时 WORKBENCH_TAB_BAR_PX 联动 flatten-layout 刚落，中栏宽度模型再动会牵动分屏树/拖放/resize 全链路回归面；宽屏信息密度收益低（中栏 flex-1 已自然占宽），多 tab 分屏时 360px 反而挤压工作区。
 - **probe-files-tree-bugs IA 适配**（批次 3/4 重排欠账，本批补齐 ALL PASS）：①setupMocks 补 overview/subtitles/approvals 隔离 mock——桌面 sidewin 项目总览穿透真实 api 曾污染滚动容器查找（measureScroll 选到 sidewin 容器）与根层点击定位；②measureScroll 滚动容器限定 .wsearch 所在 section（桌面多 overflow-y-auto 容器全局首个匹配会选错）；③进入项目点击从 `[data-list-row-title]` 改 getByText("dir-00")（mainPage 根层卡形态无 ListRow）；④新增批次 6 断言：文件行菜单 05e 五项序（中英双语 + 过滤移动 sheet Cancel 项）。
 
+### §6.12k 第十一轮：桌面 IA 对齐原型——会话实例合并进侧栏（4 列 → 3 列）（2026-09-24，批次 1 `4a0e61f` / 批次 2 `4cdf2ab` / 批次 3 `7f99411`）
+
+**背景**：第十轮真机复验报两问题——①移动 terminal 聚焦态高度缺块（`4f82296`：聚焦态输入抽屉避让底部导航，高度链修复）；②「桌面端的实现很明显和设计不一致，会话实例是合并在侧边栏的」。调研实锤：原型 side 是跨页恒定单栏（05/04/05g/05c/07m/09m/10m 七页同构：ghead 项目+plus → srow2 项目行 live 徽章 → dsep → seg4 mini → 实例区 microlabel 分组 + srow2 inst → aprow → footnav 三项），实现却是 4 列过渡态（Sidebar 纯 4 目的地导航 + 左栏 ProjectLeftPanel middle tabs + 中栏 + 右栏）。
+
+**关键裁定（按原型执行，不再询问）**：
+- 4 目的地导航退役 → footnav 三项（全局文件/插件/设置）；
+- 实例卡片网格与手风琴项目卡退役 → srow2 行列表，点行开 tab 替代拖放（05g pin⑤；side 行不可拖）；
+- middle tabs 退役：历史 → side 实例组头时钟切 05c 列表态（再点返回）；插件 → footnav mainPage（09m 单页三段）；
+- ProjectSwitcher ▾ / PanelHeader title / 左栏折叠 / 左栏 resize 整套退役（04 pin③ 标题无 ▾）；
+- aprow 移入 side，gate 放开为**全局聚合**（04 pin④：任何桌面 scope approvals>0 渲染）；
+- **项目行操作（重命名/删除/置顶）随手风琴退役——记档不做**，创建入口保留 ghead plus（重开需用户发起）。
+
+**批次 1（`4a0e61f`，WorkbenchShell 3 列 + 合并 side 主体）**：grid 四轨道 → 三轨道；删 leftPanel/leftPanelTitle props、左 aside + 左 RailButton/ResizeGutter。side 分档沿用 260（1024–1179）/ 250（≥1180，`useMinViewport(1180)`）；中栏 `minmax(0,600px)` 机制不变；右栏收起态 aside 整个不渲染（grid 2 children、中栏吃满，非 0px 轨道）。WorkbenchSide 结构：项目组 → 项目 srow2 行（selrow + `aria-current="page"`；点行 = useWorkbenchNavigate project + sticky search 全维透传）→ dsep → seg4 mini（Project/All，仅 project scope，组件内 state 不持久化——§6.10 批次 b 口径）→ SessionModeTabs（global scope leftMode=auto 语境）→ 实例区 tabpanel：project「Project」= ghead「Instances · <名>」+ 时钟（切 05c HistoryList + HistoryRangeControl）+ plus（createSessionMenuItems 单源 + workbenchCreateMenuOpenAtom ⌘N 半受控）+ microlabel 分组（Agent sessions/Terminal；chat 会话是 global 资源不分组，不伪造 CHAT·PI）+ SideInstanceRow（dot2 状态点 + 点行 focus）；「All」/global = AllSessionsGroupedList（05g 单源复用）→ aprow（useApprovals WS + ApprovalPopover 05f）→ footnav 三项（All Files = navigateRoute /files；Plugins = /plugins；Settings = /projects + leftMode=settings；active 判定 = `global && leftMode==X` 的 .on class）。
+
+**批次 2（`4cdf2ab`，退役清理）**：project-left-panel.tsx、InstanceLeftOverview/InstanceGrid 卡片网格拖源链、CreateSessionBar、GlobalProjectsOverview 桌面挂点 + GroupedProjectsList 手风琴（workbenchProjectGroupsCollapsedAtom 随删）、ProjectScopeHeaderTitle/ProjectSwitcher、workbenchLeftCollapsedAtom/workbenchMiddleLeftWidthAtom + 迁移 effect 全删；chatMode 左栏分支收敛（mode 中栏语境保留）；PluginsPanel 左栏挂点退役。
+
+**批次 3（`7f99411`，探针/e2e 适配 + 实现修复）**——适配过程揪出并修复 **5 个真问题**（本批价值核心）：
+1. `/projects/session/$id` derive 补 leftModeFallback（chat focus → "auto"）：URL 省略 = 默认语义，stickyWorkbenchSearch 不写 auto 键，derive 需兜底 SessionModeTabs 语境才成立；
+2. WorkbenchSide 直读 context 补 `leftMode = "auto"` 解构默认（旧 WorkbenchRoute 解构默认层已删，直读组件需自带）；
+3. §8 高度链两层断链：shell 右栏 body div 与 right-panel-tabs 的 inspector-tab-panel body 缺 flex——overflow 只裁不传约束，检视 FilesPanel/CodeMirror 0 高 hidden（save-scroll 探针实锤）；
+4. MobileFilesTool 自实现丢 §13 受控模式 404 回退（listing.error → onPathChange("")）；
+5. **WorkbenchSide 漏挂 create.promptHolder**：side plus 菜单选类型后 prompt 状态开但不渲染 → 桌面建会话入口全断（useCreateSession 契约「promptHolder 由调用方渲染」被批次 1 遗漏；terminal/drag-source e2e 复现后修复）。
+
+探针侧：probe-chat-mode（占位 detail 时代断言）、probe-view-tabs（总览 ViewSwitcher 网格/分组/表格已整体退役 + pages 中间 tab 入口退役——Inspector 四段无 pages 段，§6.10-6）、probe-left-tab-overflow / probe-project-row-layout / probe-project-switcher-desktop（断言对象退役）删除；m9-b/c/d/multi-device 与 focus-header/ia-skeleton/cwd-memory/html-img-inline/save-scroll/tab-overlap 适配 aside 索引（`main > div > aside` 3→2：side=0/Inspector=1）与 side 结构断言。
+
+e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航与 .on 跟随 + scope 优先级 + `<main>` 保活 marker）；drag-source 重写为 tabstrip tab 拖拽分屏——**文件树源与落点在 v2 不同屏**（GlobalFilesOverview 只在 mainPage 渲染，`desktopMainPage ?? instanceArea` 二选一；Inspector FilesPanel 不接拖源），且单 tab 拖自身 leaf 边缘 = drop-to-self no-op（§7.2）→ 建 2 tab 拖左 zone（deriveZone 边缘 15% 带垂直中部，上下优先于左右）断言 GroupCell +1；项目行定位统一 `nav.side .srow2[title="<名>"]`（可访问名 = 名 + live 徽章「demo —」，exact 不再命中；title 属性项目行独有）；terminal-session 入口 "+ Create" → side plus「New session」+ menuitem；prompt「Create」限定 `getByRole("dialog")`（防撞 side "Create or adopt Project"，getByRole name 默认 substring）；file-browser/git-diff nth(2)→nth(1)；file-nav 活动栏 [Files] → footnav All Files（+全套跑实测修正：根层 10m 卡形态项目行可访问名 = 名 + overview 统计副行，随同套前序 spec 泄漏实例浮动，断言禁 exact——单跑干净环境恰好命中是 order-dependent 假绿）。
+
+**能力收窄与 IA 缺口记档**：①项目行操作（重命名/删除/置顶）随手风琴退役；②实例卡拖放源退役（点行开 tab 替代）；③文件树拖到中栏桌面不可达（mainPage 树点击开 tab 为主路径；onCardDragStart 代码链保留，需要时从 Inspector FilesPanel 接线，待产品拍板）；④**pages（静态根）桌面无入口**——Inspector 四段无 pages 段（原型无此页），当前仅移动聚焦态 tab 行可达；桌面 pages 归属（10m mainPage 段或 Inspector 第五段）等用户反馈再定。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

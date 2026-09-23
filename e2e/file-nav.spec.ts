@@ -24,14 +24,18 @@ test("file nav: footnav 全局文件 → 全局树点文件 → 中栏 file tab 
   await expect(page).toHaveURL(/\/files$/);
 
   // 全局文件树（§6.10-9：/files = main 整页 mainPage 的 GlobalFilesOverview，side 恒定）。
-  // mainPage 态 "Project files" 全局唯一在 main 区。⚠️ 点文件后 focusId 生效、mainPage 失效
-  //（§6.12k：中栏 = InstanceArea file tab，mainPage 树整体消失）；此测试后续不再消费
-  // files locator，追加断言须重新限定区域防 strict violation。
+  // 根层 = 10m 卡形态（§6.12j 批次 4）：项目行可访问名 = 项目名 + 统计副行（如
+  // "demo 2 instances · active just now"，overview candidates 按项目聚合）——同一套 e2e 跑内
+  // 前序 spec（terminal-session/drag-source）建的实例泄漏进本 spec 环境，后缀随实例数浮动，
+  // 禁 exact（单跑干净环境恰好命中 "demo" 是 order-dependent 假绿，全套实测挂过）。
+  // substring + "Project files" 容器限定（隔离环境项目唯一）足够。
+  // ⚠️ 点文件后 focusId 生效、mainPage 失效（§6.12k：中栏 = InstanceArea file tab，mainPage
+  // 树整体消失）；此测试后续不再消费 files locator，追加断言须重新限定区域防 strict violation。
   const files = page.getByLabel("Project files");
-  await expect(files.getByRole("button", { name: projectName, exact: true })).toBeVisible();
+  await expect(files.getByRole("button", { name: projectName })).toBeVisible();
 
   // 进项目目录 → 进 src → 点 index.ts。
-  await files.getByRole("button", { name: projectName, exact: true }).click();
+  await files.getByRole("button", { name: projectName }).click();
   await files.getByRole("button", { name: /src/ }).first().click();
   await files
     .getByRole("button", { name: /index\.ts/ })
