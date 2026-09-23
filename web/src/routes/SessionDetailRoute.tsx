@@ -1694,7 +1694,7 @@ function SessionInputDrawer({
 
   return (
     <section
-      className={`min-w-0 px-3 py-2 sm:px-4 sm:py-2.5 ${shellSurfaceClasses.runtimeComposer}`}
+      className={`min-w-0 px-3 py-2 sm:px-4 sm:py-2.5 max-lg:pb-[calc(0.5rem+var(--shell-mobile-bottom-nav-space,0px))] ${shellSurfaceClasses.runtimeComposer}`}
     >
       <form className="grid gap-1.5" onSubmit={onSubmit}>
         <div className="flex min-w-0 items-center gap-2">
