@@ -325,7 +325,6 @@ export const zh: Record<TranslationKey, string> = {
   "nav.primaryAria": "主导航",
   "nav.primaryMobileAria": "移动端主导航",
   "nav.projectWorkspaceAria": "项目工作区导航",
-  "nav.projectMobileAria": "项目移动端工作区导航",
   "nav.settings": "设置",
   "nav.plugins": "插件",
 

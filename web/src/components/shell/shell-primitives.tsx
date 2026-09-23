@@ -120,8 +120,11 @@ export function NavItemContent({
 }: NavItemContentProps) {
   const layoutClass =
     orientation === "vertical"
-      ? "grid justify-items-center gap-1 px-4 py-1.5 text-center"
+      ? "grid justify-items-center gap-[3px] px-1 py-1 text-center"
       : "flex items-center gap-2.5 px-2 py-1.5 text-left";
+  // vertical（底部 tab 通栏）label 校准原型 .lb：11px / on 态 600；horizontal 保持既有档。
+  const labelClass =
+    orientation === "vertical" ? "text-[11px] font-semibold" : "text-xs font-bold sm:text-sm";
   const stateClass =
     orientation === "vertical"
       ? active
@@ -143,7 +146,7 @@ export function NavItemContent({
     >
       {marker}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-bold sm:text-sm">{label}</span>
+        <span className={`block truncate ${labelClass}`}>{label}</span>
         {description ? (
           <span className="mt-0.5 block truncate text-xs text-on-surface-muted">{description}</span>
         ) : null}

@@ -1557,7 +1557,7 @@ function XtermOutput({
   }, [onSendInput, onResize]);
 
   return (
-    <section className="relative min-h-0 flex-1 overflow-hidden">
+    <section className="relative min-h-0 flex-1 overflow-hidden pb-[var(--shell-mobile-bottom-nav-space,0px)]">
       <div
         ref={containerRef}
         className="h-full min-h-0 min-w-0 overflow-hidden [&_.xterm]:h-full"

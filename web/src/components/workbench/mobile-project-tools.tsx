@@ -72,7 +72,7 @@ function RowChevron() {
 function ToolPanel({ children, tool }: { children: React.ReactNode; tool: MobileProjectTool }) {
   return (
     <div
-      className="flex h-full min-h-0 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+      className="flex h-full min-h-0 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
       data-mobile-tool={tool}
     >
       {children}

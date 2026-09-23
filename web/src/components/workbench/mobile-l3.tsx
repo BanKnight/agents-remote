@@ -85,7 +85,7 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
       data-role="l3-file-preview"
     >
       <div className="meta">
@@ -137,7 +137,7 @@ export function MobileL3GitDiff({ projectName, path, scope }: MobileL3GitDiffPro
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
       data-role="l3-git-diff"
     >
       <div className="meta">
@@ -235,7 +235,7 @@ export function L3GitHistory({ projectName, branch, onOpenCommit }: L3GitHistory
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
       data-role="l3-git-history"
     >
       <div className="meta">
@@ -313,7 +313,7 @@ export function L3GitCommit({ projectName, hash }: L3GitCommitProps) {
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
       data-role="l3-git-commit"
     >
       <div className="cmsg">{meta.message}</div>
@@ -416,7 +416,7 @@ export function L3GitBranches({ projectName, onOpenHistory }: L3GitBranchesProps
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
       data-role="l3-git-branches"
     >
       <div className="dlg">{t("git.branchesTitle", { n: list.length })}</div>
@@ -551,7 +551,7 @@ export function L3WikiReader({ projectName, slug, onOpenPage }: L3WikiReaderProp
 
   if (page.isLoading) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3 pb-[env(safe-area-inset-bottom)]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3 pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
         <ListRowSkeleton count={2} marker={false} />
       </div>
     );
@@ -566,7 +566,7 @@ export function L3WikiReader({ projectName, slug, onOpenPage }: L3WikiReaderProp
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
       data-role="l3-wiki-reader"
     >
       <div className="wmeta">{t("wiki.updatedMeta", { date: page.data.frontmatter.updated })}</div>

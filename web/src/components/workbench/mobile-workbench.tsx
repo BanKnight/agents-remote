@@ -158,17 +158,21 @@ export function MobileWorkbench({
       void navigate({ to: "/settings", replace: true });
     }
   }, [leftMode, navigate]);
-  // workbench 不走 ShellLayout，这里自行测量一级底部 nav 高度并注入
+  // workbench 不走 ShellLayout，这里自行测量底部 nav 高度并注入
   // `--shell-mobile-bottom-nav-space`，让 workbench 内用 var 的滚动容器（文件列表、
-  // Git diff 等）底部正确避让胶囊（参考 ShellLayout 同款 useMeasuredBottomNav）。
-  // 底部 nav 只在全局一级页（设计 §7.7 决策 ⑥）：project scope（二级页）与聚焦态
-  //（focusId，底部让位给输入区）都传 null → height=0 → var=0px。
-  const showPrimaryNav = scope.kind !== "project" && !focusId;
+  // Git diff 等）底部正确避让（参考 ShellLayout 同款 useMeasuredBottomNav）。
+  // nav 恒显（第十轮 §6.12j：原型 tabbar 覆盖 02/03 全系含 L3 与聚焦态等 22 页、仅 06-login
+  // 无——旧「聚焦态让位输入区」分支与原型 03「input + tabbar 共存」矛盾且无文档记录，回退；
+  // 聚焦态 composer 经 --composer-gap 上浮至 nav 上方，键盘弹出自然遮住 nav，iOS 原生同款）。
   const { height: bottomNavHeight, measured: measuredBottomNav } = useMeasuredBottomNav(
-    showPrimaryNav ? <MobilePrimaryNav /> : null,
+    <MobilePrimaryNav />,
   );
   const mainStyle = {
     "--shell-mobile-bottom-nav-space": `${bottomNavHeight}px`,
+    // 聚焦态 composer 浮层（session route 消费 pb-[calc(env+var(--composer-gap))]）：composer
+    // 底边要落在 nav 顶 = navH + 4px 间隙，而其 pb 已含 env 项 → gap = navH + 4px − env
+    //（env 抵消，防 home indicator 双重避让）。桌面 lg:pb-2.5 覆盖 pb，变量无消费者不受影响。
+    "--composer-gap": `calc(${bottomNavHeight}px + 0.25rem - env(safe-area-inset-bottom, 0px))`,
   } as CSSProperties;
 
   // project scope（含聚焦态）统一走 v2 三行头部工作台。
@@ -193,6 +197,7 @@ export function MobileWorkbench({
           scope={scope}
           tool={tool}
         />
+        {measuredBottomNav}
       </main>
     );
   }
@@ -241,6 +246,7 @@ export function MobileWorkbench({
         style={mainStyle}
       >
         <MobileFileFocus path={filePath} />
+        {measuredBottomNav}
       </main>
     );
   }
@@ -251,6 +257,7 @@ export function MobileWorkbench({
       style={mainStyle}
     >
       <MobileFocusBody focusId={focusId} scope={scope} />
+      {measuredBottomNav}
     </main>
   );
 }
@@ -1396,7 +1403,7 @@ function EmptyProjectState({
   return (
     // 滚动容器：pb-safe-area 避让（项目 scope 无底部 nav，PWA standalone 下 main=100vh 延伸进
     // home indicator 区）；pt-60px = 原型 .empty margin-top。
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[env(safe-area-inset-bottom)] pt-[60px]">
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))] pt-[60px]">
       <div className="empty-card rounded-xl border border-sep bg-elevated px-6 pb-8 pt-10 text-center">
         <div className="empty-big mx-auto mb-5 flex size-16 items-center justify-center rounded-xl bg-elevated2">
           <ShellIcon className="h-10 w-10 text-ink-3" name="terminal" />

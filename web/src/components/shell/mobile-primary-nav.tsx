@@ -42,7 +42,7 @@ export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
           active={projectsActive}
           interactive
           label={t("nav.projects")}
-          marker={<ShellIcon className="h-3.5 w-3.5" name="project" />}
+          marker={<ShellIcon className="h-6 w-6" name="project" />}
         />
       </Link>
       <Link className="min-w-0 cursor-pointer" to="/">
@@ -50,7 +50,7 @@ export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
           active={workbenchActive}
           interactive
           label={t("nav.workbench")}
-          marker={<ShellIcon className="h-3.5 w-3.5" name="terminal" />}
+          marker={<ShellIcon className="h-6 w-6" name="terminal" />}
         />
       </Link>
       <Link className="min-w-0 cursor-pointer" to="/files">
@@ -58,7 +58,7 @@ export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
           active={filesActive}
           interactive
           label={t("nav.files")}
-          marker={<ShellIcon className="h-3.5 w-3.5" name="file" />}
+          marker={<ShellIcon className="h-6 w-6" name="file" />}
         />
       </Link>
       <Link className="min-w-0 cursor-pointer" to="/plugins">
@@ -66,7 +66,7 @@ export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
           active={pluginsActive}
           interactive
           label={t("nav.plugins")}
-          marker={<ShellIcon className="h-3.5 w-3.5" name="pages-nav" />}
+          marker={<ShellIcon className="h-6 w-6" name="pages-nav" />}
         />
       </Link>
     </ShellMobileBottomNavigation>

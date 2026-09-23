@@ -580,6 +580,16 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 - 验证：workbench-model 单测 97（深度页派生断言重写+新增+残缺 ref 清洗）；m10 探针 C 段 +6 断言（h2=displayName / 无名称行 / effort 行 / 三行 role=button+chevron / 点模型行双层 dialog / Opus check 选中态 / 点选收起）全过；desktop-instance-info 复活（旧 login 选择器修新）ALL PASS；m6 66/66；e2e 29/29；四门禁 + CSS 硬闸。
 
+### §6.12i 第九轮：技能详情溢出与行动钮塌宽（2026-09-23，commit `052832a`/`4bddc6c`）
+
+用户 iPhone 复验两问题：①「技能详情有时横向溢出，内容里有超长 URL」；②「技能中的卸载按钮都集成一团了」。
+
+**① 超长 URL 横向溢出**：`MARKDOWN_CLASS` 容器级 `[overflow-wrap:anywhere]`——overflow-wrap 可继承，一处声明覆盖全部后代（markdown 正文/代码/表格内 URL）；`anywhere` 把软换行点计入 min-content，比 `break-word` 在嵌套约束链下更稳；仅词超容器宽时介入（正常排版零影响）。`.dmeta`/`.ddesc` 同步补断词。10 个 markdown 消费方全站受益。m6 探针 +1 断言（mock 正文塞 200+ 字符 URL；量滚动容器层不只 doc——§6.12e 教训）。
+
+**② 行动钮塌宽（button width:auto = fit-content 家族收官）**：根因与 .pcard/.addsrc（M10 第五轮）同族——`.rm`/`.cta` 自 M6（fb49dde）引入时即漏 width 三连，原型整宽行钮（.rm 描边卸载钮实测 41px，应 358px）移植成 `<button>` 后 width:auto 塌成 fit-content。修复 `.cta`/`.rm`/`.logout`/`.readbtn` 四类补 width 三连（注释口径同 .pcard）。**系统性扫描收官**：python 正则全量交集（button 宿主 × CSS 横向 margin 无 width，237 个 button 挂载类）仅 6 候选——`.loadmore`（`16px auto` + 无底无框 11px 小字，居中文字钮 fit-content + auto margin 居中即设计意图，不修）与 `.ap-row`（横向 margin 为 0 + 宿主 w-full，误报）排除。m6 探针 Part 2 +1 断言（.cta/.rm 整宽 = vw-32，修正前 rm=41 必挂）。
+
+- 验证：m6 68/68（+2 断言）；四门禁全绿；CSS 硬闸 + content-type text/css。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

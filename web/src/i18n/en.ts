@@ -327,7 +327,6 @@ export const en = {
   "nav.primaryAria": "Primary navigation",
   "nav.primaryMobileAria": "Primary mobile navigation",
   "nav.projectWorkspaceAria": "Project workspace navigation",
-  "nav.projectMobileAria": "Project mobile workspace navigation",
   "nav.settings": "Settings",
   "nav.plugins": "Plugins",
 

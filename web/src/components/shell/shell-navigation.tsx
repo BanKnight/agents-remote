@@ -127,14 +127,17 @@ export function ShellMobileBottomNavigation({
   ref,
 }: ShellMobileBottomNavigationProps) {
   const colsClass = columns === 5 ? "grid-cols-5" : columns === 4 ? "grid-cols-4" : "grid-cols-3";
+  // 通栏形态（第十轮对齐原型 .tabbar，components.css 单源；v2-primitives.css .tabbar 同值）：
+  // bg-elevated + border-top sep，grid 均分 = space-around；底部 8px 内容间隙 + safe-area
+  // 单点消费 home indicator（frontend-notes §1，原型静态稿 24px 为 mock 假设值）。
   return (
     <nav
       ref={ref}
-      className="absolute inset-x-0 bottom-0 z-20 px-3 pb-[var(--shell-safe-area-bottom)] lg:hidden"
+      className="absolute inset-x-0 bottom-0 z-20 border-t border-sep bg-elevated lg:hidden"
       aria-label={ariaLabel}
     >
       <div
-        className={`mx-auto grid w-fit max-w-full gap-4 rounded-2xl border border-on-surface/10 bg-surface-raised/40 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 ${colsClass}`}
+        className={`mx-auto grid w-full px-1 pt-2.5 pb-[calc(8px+var(--shell-safe-area-bottom,0px))] ${colsClass}`}
       >
         {children}
       </div>
@@ -221,44 +224,6 @@ export function PrimaryShellNavigation({
   );
 }
 
-type PrimaryShellBottomNavigationProps = {
-  activeItemId: string;
-  items: ShellNavigationItem[];
-  ref?: Ref<HTMLElement>;
-};
-
-export function PrimaryShellBottomNavigation({
-  activeItemId,
-  items,
-  ref,
-}: PrimaryShellBottomNavigationProps) {
-  const { t } = useT();
-  return (
-    <ShellMobileBottomNavigation ref={ref} ariaLabel={t("nav.primaryMobileAria")} columns={4}>
-      {items.map((item) =>
-        item.to ? (
-          <Link key={item.id} className="min-w-0 cursor-pointer" to={item.to}>
-            <ShellMobileNavItemContent
-              active={item.id === activeItemId}
-              interactive
-              label={item.mobileLabel ?? item.label}
-              marker={item.marker}
-            />
-          </Link>
-        ) : (
-          <div key={item.id} className="min-w-0">
-            <ShellMobileNavItemContent
-              active={item.id === activeItemId}
-              label={item.mobileLabel ?? item.label}
-              marker={item.marker}
-            />
-          </div>
-        ),
-      )}
-    </ShellMobileBottomNavigation>
-  );
-}
-
 type ProjectShellNavigationItem = ShellNavigationItem & {
   id: "agents" | "files" | "git";
 };
@@ -316,60 +281,5 @@ export function ProjectShellNavigation({
         ))}
       </ShellNavigationList>
     </>
-  );
-}
-
-type ProjectShellBottomNavigationProps = {
-  activeItemId: ProjectShellNavigationItem["id"];
-  items: ProjectShellNavigationItem[];
-  onSelectItem: (itemId: ProjectShellNavigationItem["id"]) => void;
-  ref?: Ref<HTMLElement>;
-};
-
-export function ProjectShellBottomNavigation({
-  activeItemId,
-  items,
-  onSelectItem,
-  ref,
-}: ProjectShellBottomNavigationProps) {
-  const { t } = useT();
-  return (
-    <ShellMobileBottomNavigation ref={ref} ariaLabel={t("nav.projectMobileAria")} columns={4}>
-      <Link className="min-w-0 cursor-pointer" to="/">
-        <ShellMobileNavItemContent
-          interactive
-          label={t("nav.back")}
-          marker={
-            <IconMarker size="sm" tone="accent">
-              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M10 3L5 8l5 5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </IconMarker>
-          }
-        />
-      </Link>
-      {items.map((item) => (
-        <Button
-          key={item.id}
-          className="h-auto w-full min-w-0 cursor-pointer justify-center bg-transparent p-0 text-inherit hover:bg-transparent hover:text-inherit"
-          type="button"
-          variant="ghost"
-          onClick={() => onSelectItem(item.id)}
-        >
-          <ShellMobileNavItemContent
-            active={activeItemId === item.id}
-            interactive
-            label={item.mobileLabel ?? item.label}
-            marker={item.marker}
-          />
-        </Button>
-      ))}
-    </ShellMobileBottomNavigation>
   );
 }
