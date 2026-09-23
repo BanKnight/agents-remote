@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 
 import { useIsMobile } from "../../lib/use-is-mobile";
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
-import { workbenchFilesSearchFocusRequestAtom } from "../../routes/workbench-model";
+import {
+  workbenchFilesSearchFocusRequestAtom,
+  workbenchLastProjectAtom,
+} from "../../routes/workbench-model";
 import { useGlobalInstanceCandidates } from "../workbench/instance-area";
 import { relativeTime } from "../workbench/history-list";
 import { FilesPanel } from "./file-browser";
@@ -31,6 +34,7 @@ export function GlobalFilesOverview({
   onPathChange,
   onOpenFile,
   onCardDragStart,
+  variant = "panel",
 }: {
   /** 受控 cwd（调用方持久化记忆；未传退 FilesPanel 内部 state，桌面保持现状）。路径不存在回退由 FilesPanel 侧查 files.error 处理。 */
   currentPath?: string;
@@ -38,9 +42,19 @@ export function GlobalFilesOverview({
   onOpenFile: (projectName: string, path: string) => void;
   /** 拖动源启动（文件行拖到中栏开 tab，透传 FilesPanel → FileEntryList）。undefined 退纯点击（移动）。 */
   onCardDragStart?: CardDragStartHandler;
+  /**
+   * 页面形态（§6.12j 批次 4，10m）：page = 桌面 main 整页（作用域 seg4 + ⌘F 角标 + 根层
+   * 分组卡）；panel = 左栏粘性文件语境（默认，通用树形态）。移动（useIsMobile）不传 variant，
+   * 根层卡形态照旧走 isMobile 分支（10-tab）。
+   */
+  variant?: "page" | "panel";
 }) {
   const { t } = useT();
   const isMobile = useIsMobile();
+  const pageMode = variant === "page";
+  // 10m 作用域（pin①）：「全局」= 服务器根目录；「本项目」= 全局记忆的当前项目（与工作台/
+  // 插件页同源 workbenchLastProjectAtom）——页内切 rootBrowse cwd（currentPath = 项目名）。
+  const [lastProject] = useAtom(workbenchLastProjectAtom);
   // 卡形态统计源：与项目 Tab 同 ["overview"] query（dedupe 零额外网络；10s refetchInterval 同步受益）。
   const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
   const [filter, setFilter] = useState("");
@@ -58,15 +72,65 @@ export function GlobalFilesOverview({
     }
   }, [searchFocusRequest]);
 
-  // 10-tab 卡形态的项目统计（仅移动）：instances/running + 最近活动 label（按项目聚合）。
+  // 10-tab 卡形态的项目统计（移动一级页 / 桌面 mainPage 10m）：instances/running + 最近活动
+  // label（按项目聚合）；左栏 panel 态保持通用 ListRow 树（250px 窄栏塞卡态过挤）。
   const globalOverview = useMemo(() => {
-    return isMobile ? buildGlobalOverview(candidates, t) : undefined;
-  }, [isMobile, candidates, t]);
+    return isMobile || pageMode ? buildGlobalOverview(candidates, t) : undefined;
+  }, [isMobile, pageMode, candidates, t]);
+
+  const inProject = (currentPath ?? "") !== "";
+  const scopeSeg =
+    variant === "page" ? (
+      // 10m mhead seg4（原型 :63，width:280px；此处满宽由 seg4 类 margin + 外层收口）：
+      // 全局 / 本项目 · <名>。span 键盘可达（Enter/Space），与右栏 Inspector seg4 同构。
+      <div className="shrink-0 px-3.5">
+        <div aria-label={t("plugins.scopeAria")} className="seg4" role="tablist">
+          <span
+            aria-selected={!inProject}
+            className={`cursor-pointer ${!inProject ? "on" : ""}`}
+            key="global"
+            onClick={() => onPathChange?.("")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onPathChange?.("");
+              }
+            }}
+            role="tab"
+            tabIndex={0}
+          >
+            {t("plugins.scopeGlobal")}
+          </span>
+          <span
+            aria-selected={inProject}
+            className={`cursor-pointer ${inProject ? "on" : ""}`}
+            key="project"
+            onClick={() => {
+              if (lastProject) onPathChange?.(lastProject);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                if (lastProject) onPathChange?.(lastProject);
+              }
+            }}
+            role="tab"
+            tabIndex={0}
+          >
+            {lastProject
+              ? t("plugins.scopeProject", { name: lastProject })
+              : t("plugins.scopeProjectEmpty")}
+          </span>
+        </div>
+      </div>
+    ) : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {scopeSeg}
       {/* 搜索框 = 10m 原型 .search 语义；实现复用 .wsearch 单源（03x/03p files/wiki 已共用，
-         原型 34px vs 单源 30px 属单源收敛取舍，记 §6.10 批次 d 补记）。 */}
+         原型 34px vs 单源 30px 属单源收敛取舍，记 §6.10 批次 d 补记）。page 态补 ⌘F 角标
+        （10m :67，桌面 mainPage 才有全局快捷键，11px ink-3）。 */}
       <div className="shrink-0 px-3 pt-3">
         <div className="wsearch w-full">
           <ShellIcon aria-hidden="true" name="magnifyingglass" />
@@ -79,6 +143,11 @@ export function GlobalFilesOverview({
             type="text"
             value={filter}
           />
+          {pageMode ? (
+            <span aria-hidden="true" className="flex-none text-[11px] text-ink-3">
+              ⌘F
+            </span>
+          ) : null}
         </div>
       </div>
       <FilesPanel

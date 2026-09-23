@@ -30,7 +30,9 @@ import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
 import { ProjectSwitcher } from "../components/workbench/project-switcher";
 import { GlobalFilesOverview } from "../components/files/global-files-overview";
 import { MobileMcpDetail } from "../components/workbench/mobile-plugins-detail";
-import { PluginsPanel, SkillTabPreview } from "./PluginsRoute";
+import { MobilePluginsOverview } from "../components/workbench/mobile-plugins-home";
+import { MobileMarket, MobileMarketSources } from "../components/workbench/mobile-plugins-market";
+import { SkillTabPreview } from "./PluginsRoute";
 import { useT } from "../i18n";
 import {
   type DropZone,
@@ -111,7 +113,8 @@ function WorkbenchContent({
   tab?: WorkbenchMiddleTab;
   // 左栏模式（设计 workbench-stable-refactor Phase 2，leftMode 粘性化）：project scope 恒走
   // ProjectLeftPanel（无视 leftMode）；global scope 下 leftMode="files" → GlobalFilesOverview
-  //（全局 rootBrowse），leftMode="plugins" → PluginsPanel（插件管理：skill + mcp），leftMode="auto" →
+  //（全局 rootBrowse），leftMode="plugins" → 插件 mainPage（§6.12j 批次 4 起 = 09m 单页
+  // MobilePluginsOverview），leftMode="auto" →
   // ProjectLeftPanel(global overview=GlobalProjectsOverview)。leftMode 是 URL search 维度
   //（见 workbench-model.ts deriveWorkbenchRouteContext），由各 navigate 粘性透传——活动栏入口
   // 强制，中栏 tab focus 透传不改（VSCode 式）。
@@ -150,6 +153,9 @@ function WorkbenchContent({
       }),
     );
   const [rememberedMiddleTab, setRememberedMiddleTab] = useAtom(workbenchMiddleTabAtom);
+  // 10m 文件 mainPage 的受控 cwd（§6.12j 批次 4）：作用域 seg4「本项目」= rootBrowse 进项目
+  // 目录（currentPath = 项目名），页面内态不进 URL（刷新回全局根，与 FilesPanel 内部态同语义）。
+  const [globalFilesPath, setGlobalFilesPath] = useState("");
   // 右栏折叠态与 WorkbenchShell 内 useAtom 共享同一 atom（Jotai 全局）—— 本组件只读，
   // 写入由 WorkbenchShell（RailButton 唤出 / onCollapse 收起）负责。纯手动控制，持久化到
   // localStorage，focusId 变化不覆盖。
@@ -574,30 +580,6 @@ function WorkbenchContent({
     },
     [navigate, scope, rightTab, tabFromUrl, leftMode, mode, mainPageActive],
   );
-  // Manage tab 点已装 skill 行 → 导航到详情 URL（第八轮：全局入口不再 ensureTabOpenLeaf 写
-  // layout——/plugins/skill/$ 已 pluginView 化为深度页；project scope 仍走 focusId 开 tab 带）。
-  const onOpenSkill = useCallback(
-    (name: string) => {
-      void navigateToSkill(name);
-    },
-    [navigateToSkill],
-  );
-  // MCP 详情深度页 URL（v2 M6 13 桌面入口；第八轮 pluginView 化，不写 layout）。
-  const onOpenMcp = useCallback(
-    (name: string) => {
-      void navigate({
-        to: "/plugins/mcp/$",
-        params: { _splat: name },
-        search: stickyWorkbenchSearch({
-          leftMode: mainPageActive ? "auto" : leftMode,
-          rightTab,
-          tab: tabFromUrl,
-          mode,
-        }),
-      });
-    },
-    [navigate, rightTab, tabFromUrl, leftMode, mode, mainPageActive],
-  );
   // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活；file tab
   // 移除（file 无生命周期，✕ 即从布局消失）。focusId 被关后回退到新 active tab 的 focus URL。
   //
@@ -933,21 +915,40 @@ function WorkbenchContent({
       <MainPageShell title={t("nav.plugins")}>
         <MobileMcpDetail name={pluginName} />
       </MainPageShell>
-    ) : (
+    ) : pluginView === "market" ? (
+      // §6.12j 批次 4：市场/管理源桌面 mainPage 直达——改前 /plugins/market|sources 在
+      // ≥1024 落入 home 分支（PluginsPanel 不消费 pluginView），市场页桌面不可达。
       <MainPageShell title={t("nav.plugins")}>
-        <PluginsPanel
-          onCardDragStart={onCardDragStart}
-          onOpenMcp={onOpenMcp}
-          onOpenSkill={onOpenSkill}
-        />
+        <MobileMarket />
+      </MainPageShell>
+    ) : pluginView === "sources" ? (
+      <MainPageShell title={t("nav.plugins")}>
+        <MobileMarketSources />
+      </MainPageShell>
+    ) : (
+      // §6.12j 批次 4（09m 单页三段）：桌面插件 mainPage 复用移动 09 单页实现（作用域分段 +
+      // 搜索 + MCP 组 + 已安装技能组 + 市场组一页纵览），替代 PluginsPanel 的 skill/mcp 大段切
+      // + discover/manage/sources 子 tab（panel 形态仍供左栏 middle tab [插件] 消费）。桌面
+      // 标题由 MainPageShell 17px h1 承担（09m .mhead h1 形态），内部 30px 大标题隐藏、作用域
+      // 分段限宽对齐 09m seg4 290px。
+      <MainPageShell title={t("nav.plugins")}>
+        <MobilePluginsOverview hideTitle />
       </MainPageShell>
     )
   ) : leftMode === "settings" ? (
     // 07m：设置并入 mainPage 体系（side 恒定 sidewin + main 整页），取代 M7 的居中 Dialog。
     <SettingsMainPage />
   ) : (
+    // §6.12j 批次 4（10m 文件页）：variant="page" 开桌面 mainPage 形态——作用域 seg4（全局 /
+    // 本项目）+ ⌘F 角标 + 项目根目录分组卡（10m:61-78）；cwd 受控供 seg4 页内切作用域。
     <MainPageShell title={t("nav.globalFiles")}>
-      <GlobalFilesOverview onCardDragStart={onCardDragStart} onOpenFile={onOpenFile} />
+      <GlobalFilesOverview
+        currentPath={globalFilesPath}
+        onCardDragStart={onCardDragStart}
+        onOpenFile={onOpenFile}
+        onPathChange={setGlobalFilesPath}
+        variant="page"
+      />
     </MainPageShell>
   );
   const leftOverview =

@@ -40,7 +40,7 @@ const pluginsMobileQueryAtom = atom("");
  * 容器，记档）；＋ → 14 添加 sheet（scope 随段）；管理源 › → /plugins/sources（15）；
  * 技能市场 → /plugins/market（18）。
  */
-export function MobilePluginsOverview() {
+export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boolean }) {
   const { t } = useT();
   const navigate = useNavigate();
   const [scope, setScope] = useAtom(pluginsMobileScopeAtom);
@@ -81,15 +81,23 @@ export function MobilePluginsOverview() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Large title 行（原型 .h-row h1 30px/800；插件 Tab 无右侧动作组） */}
-      <div className="px-4 pt-1">
-        <h1 className="text-large-title font-extrabold leading-tight text-ink-title">
-          {t("plugins.title")}
-        </h1>
-      </div>
+      {/* Large title 行（原型 .h-row h1 30px/800；插件 Tab 无右侧动作组）。hideTitle（桌面
+          mainPage 消费，§6.12j 批次 4）= 标题由 MainPageShell 17px h1 承担（09m .mhead 形态）。 */}
+      {hideTitle ? null : (
+        <div className="px-4 pt-1">
+          <h1 className="text-large-title font-extrabold leading-tight text-ink-title">
+            {t("plugins.title")}
+          </h1>
+        </div>
+      )}
 
-      {/* 作用域分段（.segc）：全局 / 本项目 · <名> ▾（§3.5 编号①②） */}
-      <div aria-label={t("plugins.scopeAria")} className="segc" role="group">
+      {/* 作用域分段（.segc）：全局 / 本项目 · <名> ▾（§3.5 编号①②）。hideTitle 时限宽 290px
+          对齐 09m seg4（style width:290px）；移动不限（一级页满宽分段）。 */}
+      <div
+        aria-label={t("plugins.scopeAria")}
+        className={`segc${hideTitle ? " max-w-[290px]" : ""}`}
+        role="group"
+      >
         <button
           aria-pressed={scope === "global"}
           className={`cursor-pointer${scope === "global" ? " on" : ""}`}

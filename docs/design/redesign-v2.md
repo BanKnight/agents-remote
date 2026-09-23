@@ -603,6 +603,12 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 **批次 3（检视 IA 收敛，用户拍板「左栏只留实例+历史+插件」）**：ProjectLeftPanel middleTabs 按 LEFT_PANEL_TAB_IDS（overview/history/plugins）过滤 buildOverviewTabs（移动端共用源不动）；files/git/wiki/pages 分支与面板删除，相应 props（onOpenFile/onOpenGitFile/onOpenGitCompareFile/onCardDragStart）从 ProjectLeftPanel 卸下（WorkbenchRoute 注入同步删；onOpenGitFile/navigateToGitCompareFile 因移动/恢复链路仍消费保留）。URL ?tab=files 等旧直链落集合外回退 overview。**右栏 Inspector 四段成为唯一检视入口**；e2e middle-tab-left（Files/Git tests → Plugins）、drag-source（拖源换 /files 全局链路）、file-nav（删 middle tab 链路 test）同步适配。
 
+**批次 4（桌面市场可达 + mainPage 重排 09m/10m）**：
+- **市场可达**：/plugins/market、/plugins/sources 桌面 ≥1024 直达——mainPage pluginView 分支补 market/sources → MainPageShell 包 MobileMarket/MobileMarketSources（先例：SkillTabPreview/MobileMcpDetail 桌面复用移动组件）；旧实现 desktopMainPage plugins 分支不消费 pluginView，市场页桌面不可达。
+- **插件页 09m 单页**：桌面 mainPage = MobilePluginsOverview（09 单页三段：MCP 服务器组 + 已安装技能组 + 市场组，作用域 segc + 本地搜索）替代 PluginsPanel skill/mcp 大段切；新增 hideTitle prop——标题由 MainPageShell 17px h1 承担（09m .mhead 形态），segc 限宽 290px 对齐 09m seg4。PluginsPanel 保留（项目内左栏 plugins tab，批次 3 拍板口径）。MCP 卡「● 已连接/N 工具」live 徽章数据依赖不画（McpServerEntry 无运行时状态，§6.6 摊牌同口径，D 批）。
+- **文件页 10m**：GlobalFilesOverview 新增 variant="page"（桌面 mainPage）——seg4「全局/本项目 · <名>」作用域（=workbenchLastProjectAtom，页内切 rootBrowse cwd 不进 URL）+ .wsearch 补 ⌘F 角标（11px ink-3）+ 根层 gfcard 分组卡（与移动 10-tab 卡形态同源）；variant="panel"（默认）= 左栏粘性文件语境通用树不变，移动不传 variant 走 isMobile 卡形态分支。10m plus「新建/上传」不实现——语义已在 FilesPanel 工具行承载（MainPageShell 注释既有口径）。
+- m9-d 探针扩展：A1 改 09m 结构断言（psect MCP 组 + segc）+ A3a-d 10m（seg4 恰 1/双段 tab/⌘F 恰 1/gfcard ≥1）+ B5-B7 market/sources 桌面可达；46 断言全绿。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

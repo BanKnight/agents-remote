@@ -245,21 +245,22 @@ async function sideOverviewVisible(page) {
     // ── A1. /plugins mainPage ──
     await page.goto(`${WEB_ORIGIN}/plugins`);
     await page.waitForTimeout(1500);
+    // §6.12j 批次 4（09m 单页）：桌面插件 mainPage = MobilePluginsOverview（MCP 组标题 +
+    // 作用域分段），替代 PluginsPanel 的 seg「MCP」大段切。
     ok(
-      (await page.getByRole("button", { name: "MCP" }).count()) >= 1,
-      "A1 /plugins 中栏渲染插件面板（seg MCP 入口在）",
+      (await page.locator(".psect").filter({ hasText: "MCP 服务器" }).count()) >= 1,
+      "A1 /plugins 中栏渲染 09m 插件单页（MCP 服务器组标题在）",
     );
+    ok((await page.locator(".segc").count()) >= 1, "A1b 09m 作用域分段（全局/本项目）在");
     ok(await sideOverviewVisible(page), "A1 左栏恒 sidewin 项目总览（proj1 树行可见）");
     ok(
       (await page.locator("[data-drop-group]").count()) === 0,
       "A1 无实例区窗格（mainPage 态不渲染工作台实例区）",
     );
 
-    // ── B. 13 入口：MCP 列表行点击进深度页（第八轮 pluginView 化，不进 tab 体系）──
-    await page.getByRole("button", { name: "MCP" }).click();
-    await page.waitForTimeout(800);
+    // ── B. 13 入口：MCP 卡点击进深度页（第八轮 pluginView 化，不进 tab 体系）──
     const mcpRow = page.getByText("probe-mcp", { exact: true }).first();
-    ok(await mcpRow.isVisible(), "B1 McpPanel 列表行渲染（probe-mcp）");
+    ok(await mcpRow.isVisible(), "B1 09m MCP 组卡渲染（probe-mcp）");
     await mcpRow.click();
     await page.waitForTimeout(1200);
     ok(
@@ -280,6 +281,38 @@ async function sideOverviewVisible(page) {
     const wsearch = page.locator(".wsearch input");
     ok(await wsearch.isVisible(), "A2 /files 中栏渲染全局文件页（.wsearch 搜索框在）");
     ok(await sideOverviewVisible(page), "A2 左栏恒 sidewin 项目总览");
+
+    // ── A3. 10m 页面形态断言（§6.12j 批次 4）──
+    ok((await page.locator(".seg4").count()) === 1, "A3a 10m 作用域 seg4 恰 1（全局/本项目分段）");
+    ok(
+      (await page.getByRole("tab", { name: "全局", exact: true }).isVisible()) &&
+        (await page
+          .getByRole("tab", { name: /本项目/ })
+          .first()
+          .isVisible()),
+      "A3b seg4 全局/本项目 两段都在",
+    );
+    ok(
+      (await page.locator(".wsearch").getByText("⌘F", { exact: true }).count()) === 1,
+      "A3c ⌘F 角标恰 1",
+    );
+    ok((await page.locator(".gfcard").count()) >= 1, "A3d 根层分组卡形态在（10m gfcard）");
+
+    // ── B5-B7. market/sources 桌面可达断言（§6.12j 批次 4）──
+    await page.goto(`${WEB_ORIGIN}/plugins/market`);
+    await page.waitForTimeout(1200);
+    const mktSeg = await page.locator(".tabseg").count();
+    ok(mktSeg === 1, "B5 /plugins/market 桌面渲染市场页恰 1（tabseg 双段）");
+    const mcpMkt = await page.getByText("MCP 服务器", { exact: true }).count();
+    ok(mcpMkt >= 1, "B6 市场页 tabseg「MCP 服务器」段按钮在");
+    await page.goto(`${WEB_ORIGIN}/plugins/sources`);
+    await page.waitForTimeout(1200);
+    const srcPage = await page.getByText("市场源管理", { exact: true }).count();
+    ok(srcPage >= 1, "B7 源管理页渲染");
+
+    // 回 /files（B7 停在 sources）——C 段在 /files 页做 ⌘F/filter/probe.txt。
+    await page.goto(`${WEB_ORIGIN}/files`);
+    await page.waitForTimeout(1200);
 
     // ── C. ⌘F 聚焦 + filter ──
     // 先进 proj1（中栏 section 作用域——左栏 sidewin 项目树有同名行，误点会跳项目工作台），
