@@ -4,30 +4,23 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { type PointerEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 import {
-  type DragSourceAdapter,
   InstanceArea,
-  InstanceLeftOverview,
   useCloseSession,
   useCreateSession,
   useGlobalInstanceCandidates,
   useGlobalInstanceRefs,
-  useProjectInstances,
   useRenameSession,
   useScopeInstanceOrder,
 } from "../components/workbench/instance-area";
-import { GlobalProjectsOverview } from "../components/workbench/global-projects-overview";
 import { createTerminalSession } from "../api/client";
 import { useWorkbenchShortcuts } from "../hooks/use-workbench-shortcuts";
-import { ChatOverview } from "../components/workbench/chat-overview";
-import { MobileWorkbench, SessionModeTabs } from "../components/workbench/mobile-workbench";
+import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { StatusBar } from "../components/workbench/status-bar";
 import { SettingsMainPage } from "../components/shell/settings-dialog";
-import { Sidebar } from "../components/shell/sidebar";
+import { WorkbenchSide } from "../components/workbench/workbench-side";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
-import { ProjectLeftPanel } from "../components/workbench/project-left-panel";
-import { ProjectSwitcher } from "../components/workbench/project-switcher";
 import { GlobalFilesOverview } from "../components/files/global-files-overview";
 import { MobileMcpDetail } from "../components/workbench/mobile-plugins-detail";
 import { MobilePluginsOverview } from "../components/workbench/mobile-plugins-home";
@@ -62,7 +55,6 @@ import {
   useWorkbenchNavigate,
   useWorkbenchRouteContext,
   workbenchFilesSearchFocusRequestAtom,
-  workbenchMiddleLeftWidthAtom,
   workbenchLastProjectAtom,
   workbenchMiddleTabAtom,
   workbenchRightCollapsedAtom,
@@ -111,13 +103,11 @@ function WorkbenchContent({
   rightTab?: WorkbenchInspectionTab;
   scope: WorkbenchScope;
   tab?: WorkbenchMiddleTab;
-  // 左栏模式（设计 workbench-stable-refactor Phase 2，leftMode 粘性化）：project scope 恒走
-  // ProjectLeftPanel（无视 leftMode）；global scope 下 leftMode="files" → GlobalFilesOverview
-  //（全局 rootBrowse），leftMode="plugins" → 插件 mainPage（§6.12j 批次 4 起 = 09m 单页
-  // MobilePluginsOverview），leftMode="auto" →
-  // ProjectLeftPanel(global overview=GlobalProjectsOverview)。leftMode 是 URL search 维度
-  //（见 workbench-model.ts deriveWorkbenchRouteContext），由各 navigate 粘性透传——活动栏入口
-  // 强制，中栏 tab focus 透传不改（VSCode 式）。
+  // leftMode（设计 workbench-stable-refactor Phase 2，粘性化）：global scope 的 mainPage 维度
+  //——"files" → 全局文件整页（10m），"plugins" → 插件 mainPage（§6.12j 批次 4 起 = 09m 单页
+  // MobilePluginsOverview），"settings" → 设置整页（07m），"auto" → 一级会话页。project scope
+  // 下不派生 UI（仅作 sticky 透传值）。是 URL search 维度（见 workbench-model.ts
+  // deriveWorkbenchRouteContext），由各 navigate 粘性透传，中栏 tab focus 透传不改（VSCode 式）。
   leftMode?: "auto" | "files" | "plugins" | "settings";
   // 插件深度页维度（v2 M6，redesign-v2.md §3.5）：/plugins/market、/plugins/sources、
   // /plugins/skill/$、/plugins/mcp/$ 派生非 home 值，移动端 MobileWorkbench 与桌面 mainPage
@@ -139,20 +129,7 @@ function WorkbenchContent({
   useEffect(() => {
     if (scope.kind === "project") setLastProjectKey(scope.key);
   }, [scope, setLastProjectKey]);
-  // project scope 左栏 header 返回入口（回 /projects 全局项目列表）。粘性透传 search（含
-  // mode）——用户离开会话页时的模式在返回后保持。
-  const backToProjects = () =>
-    void navigateWorkbench(
-      { kind: "global" },
-      undefined,
-      stickyWorkbenchSearch({
-        rightTab,
-        tab: tabFromUrl,
-        leftMode,
-        mode,
-      }),
-    );
-  const [rememberedMiddleTab, setRememberedMiddleTab] = useAtom(workbenchMiddleTabAtom);
+  const rememberedMiddleTab = useAtomValue(workbenchMiddleTabAtom);
   // 10m 文件 mainPage 的受控 cwd（§6.12j 批次 4）：作用域 seg4「本项目」= rootBrowse 进项目
   // 目录（currentPath = 项目名），页面内态不进 URL（刷新回全局根，与 FilesPanel 内部态同语义）。
   const [globalFilesPath, setGlobalFilesPath] = useState("");
@@ -166,7 +143,7 @@ function WorkbenchContent({
     focusId,
     sessionType: focusId ? inferSessionTypeFromId(focusId) : undefined,
   };
-  // 两个 navigate 都传完整 { tab, rightTab }（URL 原始值 tabFromUrl/rightTab 合并 + 新值）。
+  // navigate 传完整 { tab, rightTab }（URL 原始值 tabFromUrl/rightTab 合并 + 新值）。
   // TanStack Router navigate 整体替换 search 对象（非 merge），若只传单键会丢失其他维 ——
   // 违反设计 §13「tab/rightTab 正交」。用 URL 原始值（而非解析值）合并。
   const onRightTabChange = (rightTabNext: WorkbenchInspectionTab) => {
@@ -174,14 +151,6 @@ function WorkbenchContent({
       scope,
       focusId,
       stickyWorkbenchSearch({ rightTab: rightTabNext, tab: tabFromUrl, leftMode, mode }),
-    );
-  };
-  const onTabChange = (next: WorkbenchMiddleTab) => {
-    setRememberedMiddleTab(next);
-    void navigateWorkbench(
-      scope,
-      focusId,
-      stickyWorkbenchSearch({ rightTab, tab: next, leftMode, mode }),
     );
   };
   // 工具 ticon 打开/退出（移动 row2 ticon，M10 用户反馈）：打开工具 ≠ 选 tab——不写
@@ -202,34 +171,15 @@ function WorkbenchContent({
   // 会在聚焦任何 tab（含 file/git）时强制展开，冲掉用户手动折叠态——违背「保持折叠」。
   // 仅桌面端有右栏；移动端 MobileWorkbench 不读 rightCollapsed atom。
 
-  // Phase 2a 左栏宽度归并一次性迁移：workbenchLeftWidth → workbenchMiddleLeftWidth。
-  // 仅在目标 key 缺失（用户未调过新 key）且源 key 存在时迁移，保用户已调左栏宽度不丢。
-  // 用 setMiddleLeftWidth 写 atom（同步更新 state + localStorage + 本次会话即生效，
-  // WorkbenchShell 读到新值重渲染），而非裸 setItem（atom 已在首 render 用默认 16rem 初始化）。
-  const [, setMiddleLeftWidth] = useAtom(workbenchMiddleLeftWidthAtom);
-  useEffect(() => {
-    if (typeof localStorage === "undefined") return;
-    if (localStorage.getItem("workbenchMiddleLeftWidth")) return;
-    const legacy = localStorage.getItem("workbenchLeftWidth");
-    if (!legacy) return;
-    try {
-      const value = Number(JSON.parse(legacy));
-      if (Number.isFinite(value)) setMiddleLeftWidth(value);
-    } catch {
-      /* 旧值非合法 JSON 数值，忽略 → 保持默认 16rem */
-    }
-  }, [setMiddleLeftWidth]);
-
   // ── Phase 2a：原 InstanceArea 共享 state 提升到 WorkbenchContent（方案 X）──────────
-  // 左总览（InstanceLeftOverview，拖放源）+ 右工作区（InstanceArea，拖放目标）互补消费，
-  // 共享 state 单一来源在此。holders（close/rename/create prompt）由本组件 return 渲染。
+  // 右工作区（InstanceArea，拖放目标）消费，共享 state 单一来源在此。holders
+  //（close/rename/create prompt）由本组件 return 渲染。
   const { close, holder: closeHolder } = useCloseSession();
-  const { rename, holder: renameHolder } = useRenameSession();
+  const { holder: renameHolder } = useRenameSession();
   const [layout, update] = useWorkbenchLayout();
   const queryClient = useQueryClient();
   const { candidates } = useGlobalInstanceCandidates(scope);
   const create = useCreateSession(ctx.projectKey);
-  const projectInstances = useProjectInstances(ctx.projectKey);
   const scopeKey = scope.kind === "project" ? scope.key : "global";
   const { refs, isLoaded: refsLoaded } = useScopeInstanceOrder(scope);
   // 全局 refs（桌面 fan-out 所有项目）：prune effect 桌面分支用（2a，为单一 layout 跨项目 tab 铺路）。
@@ -357,8 +307,7 @@ function WorkbenchContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey, focusId, layout, isDesktop, refs, refsLoaded, globalRefs, globalRefsLoaded]);
 
-  // grid 回调用 projectName 解析：global scope 从 candidates 查（与 InstanceLeftOverview
-  // 同源），project scope = scope.key。
+  // grid 回调用 projectName 解析：global scope 从 candidates 查，project scope = scope.key。
   const resolveProjectName = (sessionId: string): string =>
     scope.kind === "project"
       ? scope.key
@@ -383,33 +332,6 @@ function WorkbenchContent({
     },
     [navigateWorkbench, scope, rightTab, tabFromUrl, leftMode, mode],
   );
-  const focusPanel = useCallback(
-    (ref: WorkbenchPanelRef) => {
-      // file tab 的 focus 由 Step 7 file 路由处理；此处只处理 session tab。
-      if (ref.kind !== "session") return;
-      if (ref.sessionId === focusId) return;
-      navigateSession(ref);
-    },
-    [focusId, navigateSession],
-  );
-  const focusInstance = useCallback(
-    (sessionId: string) => {
-      const projectName = resolveProjectName(sessionId);
-      if (!projectName) return;
-      focusPanel({ kind: "session", projectName, sessionId });
-    },
-    // resolveProjectName 闭包依赖 scope/candidates，已被 deps 覆盖。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scope, candidates, focusPanel],
-  );
-  const renameInstance = useCallback(
-    (sessionId: string, type: "agent" | "terminal", currentName: string, projectName: string) => {
-      if (!projectName) return;
-      void rename({ kind: "session", projectName, sessionId }, type, currentName);
-    },
-    [rename],
-  );
-
   const onToggleMaximize = useCallback(
     (groupId: string) => {
       update((prev) => toggleLeafMaximize(prev, groupId));
@@ -540,8 +462,8 @@ function WorkbenchContent({
     [navigate, rightTab, tabFromUrl, leftMode, mode],
   );
   // 左栏 git 变更列表点文件 → 中栏开/激活 git diff tab + focus（设计 workbench-layout-fix 阶段 3）。
-  // §6.12j 批次 3 后桌面消费方仅剩移动工作台（mobile-workbench 工具态）；ProjectLeftPanel 的
-  // git middle tab 已收敛删除（检视归右栏 Inspector）。
+  // 消费方仅剩移动工作台（mobile-workbench 工具态）；git 检视归右栏 Inspector，左栏 git
+  // middle tab 已收敛删除（§6.12j 批次 3）。
   const onOpenGitFile = useCallback(
     (projectName: string, scope: GitDiffScope, path: string) => {
       update((prev) =>
@@ -762,7 +684,7 @@ function WorkbenchContent({
 
   // ── Phase B 拖放分屏（设计 §7.2/§7.4）──────────────────────────────────────────
   // dragState = 拖动源 ref + 起始/当前 pointer；activeZone = elementFromPoint hit-test 结果。
-  // 源（InstanceLeftOverview 卡片 + InstanceArea tab）共享 onCardDragStart 单一实例；目标
+  // 源（GlobalFilesOverview 文件卡 + InstanceArea tab）共享 onCardDragStart 单一实例；目标
   //（InstanceArea DropZoneOverlay）消费 activeZone/onDrop/cancelDrag。
   const [dragState, setDragState] = useState<{
     ref: WorkbenchPanelRef;
@@ -848,12 +770,6 @@ function WorkbenchContent({
   const onSetDragPointer = useCallback((x: number, y: number) => {
     setDragState((prev) => (prev ? { ...prev, currentX: x, currentY: y } : prev));
   }, []);
-  // 左总览拖放源适配器（onSelect = 单击激活 = focusInstance）。
-  const dragAdapter: DragSourceAdapter = {
-    onDragStart: onCardDragStart,
-    onSelect: focusInstance,
-  };
-
   if (!isDesktop) {
     return (
       <MobileWorkbench
@@ -883,24 +799,7 @@ function WorkbenchContent({
     rightPanelCollapsible && !rightCollapsed ? (
       <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
     ) : null;
-  // 一级会话页（§3.1，桌面/移动结构对齐）：global scope + leftMode=auto 恒为会话页语境，
-  // **与 focusId 解耦**——中栏聚焦（session/chat/file/git/skill 任何 tab）是正交维度，不改左栏
-  //（VSCode 式，同 leftMode 粘性语义）。mode tab 常驻左栏 PanelHeader title（对齐移动
-  // MobilePageHeader title），不掉回「会话」文案标题；左栏 body 按 mode 切（chat → ChatOverview，
-  // agent → ProjectLeftPanel 项目总览）。chat 聚焦时 mode 由 deriveWorkbenchRouteContext 兜底
-  //（focusId=chat_* ⇒ mode=chat），URL mode 键丢失也不掉语境。
-  // 两种模式都保持三栏 shell + 中栏 InstanceArea 始终在。
-  // ⚠️ 新增中栏 tab 类型时不要在此按 focusId 前缀加分支——左栏语境只由 scope/leftMode/mode
-  // 决定，tab 类型差异全部收敛在 focus effect 与 PanelRouter。
-  const sessionPage = scope.kind === "global" && leftMode === "auto";
-  const chatMode = sessionPage && mode === "chat";
-  // 左栏内容（Phase 2 scope 优先 + leftMode）：project scope 恒走 ProjectLeftPanel（无视 leftMode
-  //——进项目左栏恒显项目实例总览/中栏 tab，用户诉求"进项目左栏不再不变"）；global scope 下
-  // leftMode="files"（活动栏 [文件] 入口或其粘性透传态）→ GlobalFilesOverview（全局 rootBrowse 根目录，
-  // leftMode="auto"（活动栏 [会话] 入口或其粘性透传态）→ 一级会话页：按 mode 切 Agent/Chat body。
-  // 左总览：global scope → 共享 GlobalProjectsOverview（桌面/移动同一实现，批 F / 决策 29）；
-  // project scope → InstanceLeftOverview（CreateSessionBar + 本项目实例总览）。
-  // 桌面 §6.10-9（M9 批次 d，对齐 09m/10m 原型 IA）：global scope 且 leftMode=plugins/files 时，
+  // 桌面 §6.10-9（M9 批次 d，对齐 09m/10m 原型 IA）：global scope 且 leftMode=plugins/files 时,
   // 插件/全局文件是 **main 整页**（原型 side sidewin 恒定不随导航切换、main 切内容），实例区让位
   //——tab 布局在 localStorage atom 持久化，切回 auto 原样恢复；会话服务端不销毁，重挂重连
   //（与移动端切 Tab 同语义）。仅桌面生效：中档/窄屏走 MobileWorkbench，此分支不渲染。
@@ -928,7 +827,7 @@ function WorkbenchContent({
     ) : (
       // §6.12j 批次 4（09m 单页三段）：桌面插件 mainPage 复用移动 09 单页实现（作用域分段 +
       // 搜索 + MCP 组 + 已安装技能组 + 市场组一页纵览），替代 PluginsPanel 的 skill/mcp 大段切
-      // + discover/manage/sources 子 tab（panel 形态仍供左栏 middle tab [插件] 消费）。桌面
+      // + discover/manage/sources 子 tab。桌面
       // 标题由 MainPageShell 17px h1 承担（09m .mhead h1 形态），内部 30px 大标题隐藏、作用域
       // 分段限宽对齐 09m seg4 290px。
       <MainPageShell title={t("nav.plugins")}>
@@ -950,46 +849,6 @@ function WorkbenchContent({
         variant="page"
       />
     </MainPageShell>
-  );
-  const leftOverview =
-    scope.kind === "global" ? (
-      <GlobalProjectsOverview dragAdapter={dragAdapter} onFocusInstance={focusInstance} />
-    ) : (
-      <InstanceLeftOverview
-        create={create}
-        ctx={ctx}
-        dragAdapter={dragAdapter}
-        onCloseInstance={closeInstance}
-        onFocusInstance={focusInstance}
-        onRenameInstance={renameInstance}
-        projectInstances={projectInstances}
-        scope={scope}
-      />
-    );
-  const leftPanel = mainPageActive ? (
-    // 09m/10m 原型：main 切插件/文件整页时左栏保持 sidewin 项目总览（§6.10-9 拍板记档）。
-    leftOverview
-  ) : scope.kind === "project" || (leftMode === "auto" && !chatMode) ? (
-    <ProjectLeftPanel
-      focusId={focusId}
-      onTabChange={onTabChange}
-      openSkillSearch={{
-        rightTab,
-        tab: tabFromUrl,
-        ...(leftMode !== "auto" ? { leftMode } : {}),
-      }}
-      overview={leftOverview}
-      scope={scope}
-      tab={tab}
-    />
-  ) : chatMode ? (
-    // 一级会话页 chat 模式：左栏 body = ChatOverview（绕过 ProjectLeftPanel——global scope 下它
-    // 只是 overview 的纯 wrapper，chat 不需要 middle tab bar，直接渲染列表）。
-    <ChatOverview />
-  ) : (
-    // global scope 非会话残余态（可达路径：/files/file/$ 等焦点深链透传 leftMode=files +
-    // focusId——focusId 让 mainPageActive 失效，左栏保持 GlobalFilesOverview 文件语境）。
-    <GlobalFilesOverview onCardDragStart={onCardDragStart} onOpenFile={onOpenFile} />
   );
   const instanceArea = (
     <InstanceArea
@@ -1015,19 +874,7 @@ function WorkbenchContent({
   );
   return (
     <WorkbenchShell
-      sidebar={<Sidebar />}
-      leftPanel={leftPanel}
-      leftPanelTitle={
-        scope.kind === "project" ? (
-          <ProjectScopeHeaderTitle onBack={backToProjects} projectName={scope.key} />
-        ) : sessionPage ? (
-          // 一级会话页（§3.1）：左栏标题区 = Agent/Chat mode tab（对齐移动 MobilePageHeader
-          // title），取代原「会话」文案标题。两种模式都显示（切回入口常驻）。
-          <SessionModeTabs mode={mode} />
-        ) : (
-          t("nav.projects")
-        )
-      }
+      sidebar={<WorkbenchSide />}
       rightPanel={desktopMainPage ? null : rightPanel}
       rightPanelCollapsible={desktopMainPage ? false : rightPanelCollapsible}
       statusBar={<StatusBar />}
@@ -1054,45 +901,5 @@ function MainPageShell({ title, children }: { title: string; children: ReactNode
       </header>
       <div className="min-h-0 flex-1">{children}</div>
     </div>
-  );
-}
-
-/**
- * project scope 左栏 header title 节点（设计 workbench-layout-fix.md 阶段 1）：
- * 返回箭头（回 /projects 全局项目列表）+ 当前项目名 truncate。置于 PanelHeader 的 flex
- * title 容器（button shrink-0 + 项目名 min-w-0 truncate），对齐全局项目 header 的
- * 「标题 + 主体」结构；与右侧折叠 chevron 区分（左=导航返回，右=收起左栏）。
- */
-function ProjectScopeHeaderTitle({
-  onBack,
-  projectName,
-}: {
-  onBack: () => void;
-  projectName: string;
-}) {
-  const { t } = useT();
-  return (
-    <>
-      <button
-        aria-label={t("workbench.backToProjects")}
-        className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface-soft"
-        onClick={onBack}
-        type="button"
-      >
-        <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24">
-          <path
-            d="M15 18l-6-6 6-6"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-          />
-        </svg>
-      </button>
-      <ProjectSwitcher
-        currentProjectName={projectName}
-        titleClassName="text-base font-semibold text-on-surface"
-      />
-    </>
   );
 }

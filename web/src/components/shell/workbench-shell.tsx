@@ -2,13 +2,9 @@ import { useAtom } from "jotai";
 import { type CSSProperties, type PointerEvent, type ReactNode, useRef } from "react";
 import { useT } from "../../i18n";
 import {
-  WORKBENCH_MIDDLE_LEFT_MAX_REM,
-  WORKBENCH_MIDDLE_LEFT_MIN_REM,
   WORKBENCH_RIGHT_PANEL_MAX_REM,
   WORKBENCH_RIGHT_PANEL_MIN_REM,
   useMinViewport,
-  workbenchLeftCollapsedAtom,
-  workbenchMiddleLeftWidthAtom,
   workbenchRightCollapsedAtom,
   workbenchRightWidthAtom,
 } from "../../routes/workbench-model";
@@ -17,8 +13,8 @@ import { shellSurfaceClasses } from "./shell-primitives";
 /**
  * Sidebar 列宽分档（§6.12j 批次 5，components.css 注释「宽度页自定：Mac 250 / iPad 260」）：
  * iPad 档（视口 1024–1179，04 原型 `.side` 260px）/ Mac 档（≥1180，05 原型 `.side` 250px）。
- * 用 px 而非 rem——标尺是像素值，rem 换算会随根字号漂移。固定不折叠、不 resize（一级导航
- * 常驻；内容自身 overflow-y-auto）。分档断点 1180 = MAC_SIDEBAR_MIN_VIEWPORT_PX。
+ * 用 px 而非 rem——标尺是像素值，rem 换算会随根字号漂移。固定不折叠、不 resize（side 恒驻；
+ * 内容自身 overflow-y-auto）。分档断点 1180 = MAC_SIDEBAR_MIN_VIEWPORT_PX。
  */
 const SIDEBAR_WIDTH_IPAD = "260px";
 const SIDEBAR_WIDTH_MAC = "250px";
@@ -27,9 +23,9 @@ const MAC_SIDEBAR_MIN_VIEWPORT_PX = 1180;
 
 /**
  * 中栏（会话窗格）定宽上限（§6.10-2：04 原型 `.center{width:600px;flex:none}`）。落成
- * `minmax(0, 600px)` 而非死 600px——四列现状（Sidebar+左栏并立）下视口 <~1458px 时放不下
- * 600，minmax 下限 0 让中栏让位（grid 顺序：左右栏先保底、中栏吃剩余、封顶 600）；大屏
- * （≥1458）中栏恒 600、剩余全给 inspector，即原型的「center flex-none + inspector flex-1」。
+ * `minmax(0, 600px)` 而非死 600px——三列（side 250/260 + 中栏 + inspector）下视口紧张时
+ * 中栏让位（grid 顺序：side/inspector 先保底、中栏吃剩余、封顶 600）；大屏中栏恒 600、
+ * 剩余全给 inspector，即原型的「center flex-none + inspector flex-1」。
  */
 const WORKBENCH_CENTER_MAX = "600px";
 
@@ -37,18 +33,10 @@ type WorkbenchShellProps = {
   /** 中栏：实例区（Stage 1 的 InstanceArea 接入）。工作台主体，不可收起。 */
   children: ReactNode;
   /**
-   * 桌面 Sidebar（v2 IA：4 目的地导航 项目/工作台/文件/插件 + footnav 设置），grid 第 0 列。
-   * 常驻——不读 leftCollapsed，折叠左栏时 Sidebar 列宽不变（一级导航进入项目后也在）。
-   * M2 前是 ActivityBar（48px 图标竖条），v2 换代为 250px Sidebar（redesign-v2.md M2）。
+   * 桌面合并 Sidebar（§6.12k：项目组 + seg4 + 实例组 + aprow + footnav 三项，05/04 原型
+   * 恒定 side 单栏），grid 第 0 列。常驻（原型 side 恒驻无折叠语义）。
    */
   sidebar?: ReactNode;
-  /** 左栏：项目 + 实例树（Stage 2 接入）。 */
-  leftPanel?: ReactNode;
-  /**
-   * 左栏顶部大标题（批 D / DESIGN PanelHeader）：活动栏 nav=projects →「项目」/ nav=files →「文件」。
-   * 对齐 MobilePageHeader 的 text-base font-semibold；右栏不传（仅收起）。
-   */
-  leftPanelTitle?: ReactNode;
   /** 右栏：inspection tab（Stage 3 接入）。收起时上层传 null（避免 inspection query）。 */
   rightPanel?: ReactNode;
   /**
@@ -65,55 +53,43 @@ type WorkbenchShellProps = {
 };
 
 /**
- * 三栏工作台外壳（设计文档 docs/design-v1/workbench-redesign.md §2）。
+ * 三列工作台外壳（§6.12k：4 列 → 3 列，05/04 原型同构 side 单栏）。
  *
- * 桌面常驻三栏 grid：左栏（项目树）/ 中栏（实例区）/ 右栏（inspection tab）。
- * 左右栏可收起（atom 持久化），收起后该侧消失、中栏对应边缘出现唤出按钮；
- * 中栏是工作台主体，minmax(0,600px) 定宽上限（§6.10-2 center flex-none），不可收起。
+ * 桌面常驻三列 grid：side（合并 Sidebar：项目组 + seg4 + 实例组 + aprow + footnav，恒驻
+ * 不折叠）/ 中栏（实例区）/ 右栏（inspection tab）。右栏可收起（atom 持久化），收起后
+ * 该侧消失、中栏对应边缘出现唤出按钮；中栏是工作台主体，minmax(0,600px) 定宽上限
+ * （§6.10-2 center flex-none），不可收起。
  *
- * 纯布局容器，不持业务 state：栏折叠态 + 宽度来自 workbench-model.ts 的 atom，
- * 三栏内容由 props 注入（Stage 1/2/3 分别接入）。
+ * 纯布局容器，不持业务 state：右栏折叠态 + 宽度来自 workbench-model.ts 的 atom，
+ * 三列内容由 props 注入。
  */
 export function WorkbenchShell({
   children,
-  leftPanel,
-  leftPanelTitle,
   rightPanel,
   rightPanelCollapsible,
   sidebar,
   statusBar,
 }: WorkbenchShellProps) {
   const { t } = useT();
-  const [leftCollapsed, setLeftCollapsed] = useAtom(workbenchLeftCollapsedAtom);
   const [rightCollapsed, setRightCollapsed] = useAtom(workbenchRightCollapsedAtom);
-  const [leftWidth, setLeftWidth] = useAtom(workbenchMiddleLeftWidthAtom);
   const [rightWidth, setRightWidth] = useAtom(workbenchRightWidthAtom);
   // 右栏可唤出 = 显式 prop 或有内容（向后兼容）。与 rightPanel 解耦：收起时 rightPanel=null
   //（aside 不渲染、零 inspection query），但 collapsible=true 仍在中栏边缘渲染 RailButton 唤出。
   const rightCollapsible = rightPanelCollapsible ?? !!rightPanel;
 
-  // grid 列宽：栏收起 → 0px（栏 aside display none + 列塌缩）；展开 → atom 记忆宽度。
-  const leftColumn = leftCollapsed ? "0px" : `${leftWidth}rem`;
   // 右栏列宽（变量值 = 完整轨道定义，模板裸引用 var()——若模板再包 minmax(var(...)) 会嵌套
   // 非法整条声明被丢、退化为单列全宽，探针实测）：收起 / 不可唤出 → 0px；展开 →
   // minmax(atom, 1fr)（§6.10-2 `.pinsp{flex:1}`）：atom 语义 = inspector 最小宽，gutter
   // 拖拽调下限、实际宽吃视口剩余。rightPanel null 不决定列宽（由 rightCollapsible 决定）。
   const rightColumn = rightCollapsed || !rightCollapsible ? "0px" : `minmax(${rightWidth}rem, 1fr)`;
   // 中栏列宽：右栏展开 → minmax(0, 600px)（§6.10-2 `.center{width:600px;flex:none}`：
-  // 左右栏保底后中栏吃剩余、封顶 600）；右栏收起/不可唤出 → minmax(0, 1fr)——原型
+  // side/inspector 保底后中栏吃剩余、封顶 600）；右栏收起/不可唤出 → minmax(0, 1fr)——原型
   // inspector 常驻无「收起」态，M2 拍板右栏可收，收起后中栏顶上吃满剩余（回 1fr 行为）。
   const centerColumn =
     rightCollapsed || !rightCollapsible ? "minmax(0, 1fr)" : `minmax(0, ${WORKBENCH_CENTER_MAX})`;
 
   // 栏 resize gutter：拖拽改宽度 atom（clamp 到 MIN/MAX，防压溃自身或吃掉中栏）。
   // 右栏翻转方向 —— 向左拖（−delta）才增宽。
-  const onResizeLeft = (deltaRem: number) =>
-    setLeftWidth((prev) =>
-      Math.min(
-        Math.max(prev + deltaRem, WORKBENCH_MIDDLE_LEFT_MIN_REM),
-        WORKBENCH_MIDDLE_LEFT_MAX_REM,
-      ),
-    );
   const onResizeRight = (deltaRem: number) =>
     setRightWidth((prev) =>
       Math.min(
@@ -129,40 +105,20 @@ export function WorkbenchShell({
   return (
     <main className="relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden text-on-surface">
       <div
-        className={`grid min-h-0 w-full min-w-0 flex-1 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-activity-col)_var(--workbench-left-col)_var(--workbench-center-col)_var(--workbench-right-col)] ${shellSurfaceClasses.shell}`}
+        className={`grid min-h-0 w-full min-w-0 flex-1 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-side-col)_var(--workbench-center-col)_var(--workbench-right-col)] ${shellSurfaceClasses.shell}`}
         style={
           {
-            "--workbench-activity-col": sidebarWidth,
-            "--workbench-left-col": leftColumn,
+            "--workbench-side-col": sidebarWidth,
             "--workbench-center-col": centerColumn,
             "--workbench-right-col": rightColumn,
           } as CSSProperties
         }
       >
-        {/* Sidebar（第 0 列）：v2 一级导航（项目/工作台/文件/插件 + 设置 footnav）。
-            视觉由 Sidebar 自带（.side/.sidewin：bg-sidebar + border-r + h-full）。 */}
+        {/* Sidebar（第 0 列）：合并 side（项目组 + seg4 + 实例组 + aprow + footnav 三项）。
+            视觉由 side 内容自带（.side/.sidewin：bg-sidebar + border-r + h-full）。 */}
         <aside className="hidden min-h-0 min-w-0 lg:block">{sidebar}</aside>
-        <aside
-          className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-line/80 lg:flex ${shellSurfaceClasses.sidebar}`}
-        >
-          <PanelHeader
-            chevron="left"
-            collapseLabel={t("workbench.collapseLeft")}
-            onCollapse={() => setLeftCollapsed(true)}
-            title={leftPanelTitle}
-          />
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{leftPanel}</div>
-          {leftCollapsed ? null : <ColumnResizeGutter onResize={onResizeLeft} side="left" />}
-        </aside>
 
         <section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-          {leftCollapsed ? (
-            <RailButton
-              label={t("workbench.expandLeft")}
-              onClick={() => setLeftCollapsed(false)}
-              side="left"
-            />
-          ) : null}
           {rightCollapsed && rightCollapsible ? (
             <RailButton
               label={t("workbench.expandRight")}
@@ -196,25 +152,16 @@ type PanelHeaderProps = {
   chevron: "left" | "right";
   collapseLabel: string;
   onCollapse: () => void;
-  /** 左栏大标题（批 D）；有 title 时 h-11 + text-base，无 title 时仍 h-11 对齐（仅收起按钮）。 */
-  title?: ReactNode;
 };
 
 /**
- * 栏顶部 header（批 D / DESIGN PanelHeader）：左侧可选大标题（对齐 MobilePageHeader
- * text-base font-semibold h-11），右侧收起按钮。左栏按活动栏 nav 注入「项目」「文件」；
- * 右栏不传 title，仅收起。
+ * 栏顶部 header（批 D / DESIGN PanelHeader）：右侧收起按钮。左栏 title 大标题形制已随左栏
+ * 退役（§6.12k）；右栏不传 title，仅收起。
  */
-function PanelHeader({ chevron, collapseLabel, onCollapse, title }: PanelHeaderProps) {
+function PanelHeader({ chevron, collapseLabel, onCollapse }: PanelHeaderProps) {
   return (
     <div className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
-      {title ? (
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 text-base font-semibold text-on-surface">
-          {title}
-        </div>
-      ) : (
-        <div className="min-w-0 flex-1" />
-      )}
+      <div className="min-w-0 flex-1" />
       <button
         type="button"
         aria-label={collapseLabel}

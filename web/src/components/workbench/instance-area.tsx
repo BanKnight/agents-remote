@@ -1877,7 +1877,7 @@ type CreateSessionBarProps = {
  * 创建实例菜单 items 单源（§6.12j）：CreateSessionBar 与 GroupHeader tabstrip「＋」共用同一
  * 菜单数据源（Claude/OMP/终端三行）。presentational——分派走 CreateSessionApi。
  */
-function createSessionMenuItems(create: CreateSessionApi, t: TranslateFn): ActionMenuItem[] {
+export function createSessionMenuItems(create: CreateSessionApi, t: TranslateFn): ActionMenuItem[] {
   return [
     {
       label: t("workbench.createClaude"),

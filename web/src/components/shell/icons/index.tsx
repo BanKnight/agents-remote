@@ -5,6 +5,7 @@ import bolt from "./bolt.svg?raw";
 import book from "./book.svg?raw";
 import check from "./check.svg?raw";
 import chat from "./chat.svg?raw";
+import clock from "./clock.svg?raw";
 import closeIcon from "./close.svg?raw";
 import edit from "./edit.svg?raw";
 import ellipsis from "./ellipsis.svg?raw";
@@ -43,6 +44,7 @@ const svgMap: Record<string, string> = {
   book,
   check,
   chat,
+  clock,
   close: closeIcon,
   edit,
   ellipsis,
