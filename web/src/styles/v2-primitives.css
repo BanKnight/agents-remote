@@ -1256,11 +1256,9 @@
     line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
-  .psearch svg {
-    width: 16px;
-    height: 16px;
-    flex: none;
-  }
+  /* 图标尺寸由调用方在 ShellIcon 的 span 上定（size-4 契约，svg = size-full 跟随 span）。
+     勿写 .psearch svg 约束——components layer 会被 svg 的 size-full（utilities）反超，静默失效
+     （2026-09-25 项目/插件搜索图标撑爆输入框复验）。 */
   @media (min-width: 1024px) {
     .psearch {
       height: 34px;

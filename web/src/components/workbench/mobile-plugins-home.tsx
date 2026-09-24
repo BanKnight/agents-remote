@@ -144,7 +144,7 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
       {/* 搜索（原型 .search）：本地过滤两组已装列表。.psearch 单源（与全局文件页同一搜索框，
          第十一轮复验：原内联 38/r12 与 /files 的 .wsearch 30 胶囊跨页不统一）。 */}
       <div className="psearch mx-4 mt-3 flex-none">
-        <ShellIcon className="flex-none text-ink-2" name="magnifyingglass" />
+        <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
         <input
           aria-label={t("plugins.searchPlaceholder")}
           className="w-full bg-transparent text-callout text-ink-1 outline-none placeholder:text-ink-2"
