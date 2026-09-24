@@ -39,8 +39,11 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
 
   return (
     /* flex-1 = 横向 grow（shell 右栏 body 是 row flex，子无 grow 会收缩到 max-content——
-       旧 FilesPanel 根 flex-1 承担，批次 3 换三件套后 grow 上移到本根，§6.12l 记档）。 */
-    <div className="flex h-full min-h-0 flex-1 flex-col">
+       旧 FilesPanel 根 flex-1 承担，批次 3 换三件套后 grow 上移到本根，§6.12l 记档）。
+       min-w-0 = row-flex item 收缩约束（automatic min size 默认 = min-content，详情态长行
+       pre/diff 的 min-content 会把本根撑到数千 px，seg4 span flex:1 均分后被裁成
+       「只剩文件」——用户复验实测 13850px，§6.12l 条 11）。 */
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       {/* 检视标头 + seg4 分段（§6.12j 对齐 05:99 原型：glabel2「检视 · 只读」+ 标准 .seg4，
           替代旧胶囊 TabButton）。只读语义固定——检视面板全部是只读视图；原型折叠 »（clps）
           未实现，不设假入口。span 键盘可达（Enter/Space），与左栏作用域 seg4 先例同构。 */}

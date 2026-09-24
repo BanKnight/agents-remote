@@ -690,6 +690,8 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 10. **批次 4+ 用户复验补齐：右栏 Git 同构三段（最近提交/全部历史/分支）**：用户复验指出右栏 Git 段缺三段与移动端不一致（条 4 原判「右栏无承载页不装配」被推翻——批次 3 已建栏内详情态承载机制，右栏完全能承载，只是当时装配保守）。修 = GitToolTab 升级**栏内详情栈**（`GitDetailState`：diff/history〔可带 branch〕/commit/branches，返回逐级弹栈——历史点 commit「返回历史」、分支页进历史「返回分支」，返回标签按栈下层动态）；GitToolPanel 装配回调补齐 → 三段自动渲染（与移动 L3 完全同组件：L3GitHistory/L3GitCommit/L3GitBranches，`data-role` 同锚）。新 i18n：`git.backToHistory`/`git.backToBranches`。验证：探针 inspector-row-menus 增 G6-G10（最近提交 crow/全部历史→历史→commit 逐级弹栈/分支 links）21/21、e2e git-diff 增历史+分支链路、单测 672+829+9 全绿。**教训记档**：探针 mock commit detail 端点 URL 是 `/git/commit?hash=…`（hash 走 query 无尾斜杠），mock 正则别带 `/` 锚；栏内详情栈断言要按栈态找元素（links 段只在列表态）。
 
+11. **批次 4++ 用户复验修复：右栏详情态长行内容撑爆 seg4（tab 导航变形）**：用户复验「文件层层点进预览后 tab 导航只剩文件/文件+Git，Git 侧同病」。DOM 实证（mock 2000 字符长行）：RightPanelTabs 根被撑到 **13850px**、seg4 三 span 各 4605px——可视 352px 只见首个 span，与描述完全吻合。**根因 = min-content 沿 column 链上传**：预览 `.tx`（`white-space: pre` 不换行）→ `.ln` flex → `.code` → … → RightPanelTabs 根，而根作为 shell 右栏 body（row flex）的 flex item，`min-width:auto` = min-content 直接撑爆（批次 4 修 grow 补了 `flex-1` 没配 `min-w-0`）。**修 = 根补 `min-w-0` 一处断根**（automatic min size → 0，全链 stretch 回 22rem；`.code` 自带 overflow-x:auto 长行转栏内横向滚动，clientW 351/scrollW 13850 实证；DiffContent `.dcode` overflow:hidden 同截断语义，Git 侧同修）。复测四层 351px + span 106×3 均分。**知识沉淀**：row-flex item 双件套 `flex-1 + min-w-0`（§8 高度链同族横向版）；overflow 非 visible 只解除 flex item 的 automatic min size，**不改变容器 intrinsic min-content**——scroll 容器照样把 min-content 传给父链，唯一断点 = 沿链每个 flex item 的 min 主轴约束。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
