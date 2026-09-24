@@ -138,15 +138,18 @@ export function MobileProjectsHome() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Large title 行（原型 .h-row：h1 30px/800 ink-title + 右侧 ➕/⚙ 22px 图标组 gap 14） */}
+      {/* Large title 行（原型 .h-row：h1 30px/800 ink-title + 右侧 ➕/⚙ 22px 图标组 gap 14）。
+          行高由 h1 决定（第十一轮复验：iPhone 触屏 touch:h-10 按钮参与行布局把标题行撑到
+          52px，文件/插件页 41.5px——主标题高度不一致）。触屏按钮 touch:-my-1 抵消增高，
+          40px 点击区保留（不缩内容盒，frontend-notes §7 触屏大点击区）。 */}
       <div className="flex items-end justify-between px-4 pt-1">
         <h1 className="text-large-title font-extrabold leading-tight text-ink-title">
           {t("nav.projects")}
         </h1>
-        <div className="flex items-center gap-3.5 pb-2">
+        <div className="flex items-end gap-3.5">
           <button
             aria-label={t("home.createProjectAria")}
-            className="-mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-1 transition hover:bg-ink-1/5 active:bg-ink-1/10 touch:h-10 touch:w-10"
+            className="-mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-1 transition hover:bg-ink-1/5 active:bg-ink-1/10 touch:h-10 touch:w-10 touch:-my-1"
             onClick={openCreate}
             type="button"
           >
@@ -154,7 +157,7 @@ export function MobileProjectsHome() {
           </button>
           <button
             aria-label={t("nav.settings")}
-            className="-mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-1 transition hover:bg-ink-1/5 active:bg-ink-1/10 touch:h-10 touch:w-10"
+            className="-mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-1 transition hover:bg-ink-1/5 active:bg-ink-1/10 touch:h-10 touch:w-10 touch:-my-1"
             onClick={() => void navigate({ to: "/settings" })}
             type="button"
           >
@@ -163,9 +166,10 @@ export function MobileProjectsHome() {
         </div>
       </div>
 
-      {/* 搜索框（原型 .search：h 38 / r 12 / bg fill-search / 15px placeholder） */}
-      <div className="mx-4 mt-2 flex h-[38px] flex-none items-center gap-2 rounded-[12px] bg-fill-search px-3">
-        <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
+      {/* 搜索框（原型 .search）：.psearch 单源（与插件/全局文件页同一搜索框，第十一轮复验
+         跨页统一）；02 原型 margin-top 8px 保留在调用处。 */}
+      <div className="psearch mx-4 mt-2 flex-none">
+        <ShellIcon className="flex-none text-ink-2" name="magnifyingglass" />
         <input
           aria-label={t("home.searchPlaceholder")}
           className="w-full bg-transparent text-callout text-ink-1 outline-none placeholder:text-ink-2"

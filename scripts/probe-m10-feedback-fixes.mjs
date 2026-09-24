@@ -494,9 +494,8 @@ async function run() {
     await page.waitForTimeout(900);
     const pgeo = await page.evaluate(() => {
       const h1 = document.querySelector("h1");
-      const search = [...document.querySelectorAll("div")].find((d) =>
-        d.className?.includes?.("rounded-[12px]"),
-      );
+      // 搜索框已从内联 utility 换 .psearch 单源（第十一轮复验跨页统一），选择器跟随。
+      const search = document.querySelector(".psearch");
       const segc = document.querySelector(".segc");
       const d2 = document.querySelector(".pcard .d2");
       const style = (el) => (el ? getComputedStyle(el) : null);

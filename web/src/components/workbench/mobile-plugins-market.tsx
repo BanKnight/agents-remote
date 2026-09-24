@@ -6,7 +6,7 @@ import { mcpMarketEntryToInstallRequest } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
 import { DEFAULT_SKILL_AGENT } from "../../routes/PluginsRoute";
-import { workbenchLastProjectAtom } from "../../routes/workbench-model";
+import { useWorkbenchBack, workbenchLastProjectAtom } from "../../routes/workbench-model";
 import {
   useAddSkillSource,
   useInstallSkill,
@@ -77,12 +77,16 @@ export function MobileMarket() {
   const navigate = useNavigate();
   const search = useSearch({ strict: false });
   const marketTab = search.marketTab === "mcp" ? "mcp" : "skill";
+  // back pop 优先（导航栈同族，第十一轮复验）：push 固定页留死记录——浏览器返回手势把刚
+  // 离开的页面弹回来；深链直达无来路时 push /plugins 兜底（backLabel 层级）。
+  const backNav = useWorkbenchBack();
+  const backToPlugins = () => backNav(() => void navigate({ to: "/plugins" }));
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PluginNav
         backLabel={t("plugins.title")}
-        onBack={() => void navigate({ to: "/plugins" })}
+        onBack={backToPlugins}
         title={marketTab === "mcp" ? t("plugins.mcpMarketTitle") : t("plugins.marketTitle")}
         trailing={
           marketTab === "skill" ? (
@@ -541,6 +545,11 @@ export function MobileMarketSources() {
   const [branch, setBranch] = useState("");
   const [label, setLabel] = useState("");
   const [adding, setAdding] = useState(false);
+  // back pop 优先：入口有两条（/plugins「管理源」行、市场页 trailing ⚙）——pop 回真实
+  // 来路（市场页进 → 回市场页，第十一轮复验：原 push /plugins 固定落点跳过来路）；深链
+  // 直达无来路时 push /plugins 兜底（backLabel 层级）。
+  const backNav = useWorkbenchBack();
+  const backToPlugins = () => backNav(() => void navigate({ to: "/plugins" }));
 
   const list = sources.data?.sources ?? [];
 
@@ -548,7 +557,7 @@ export function MobileMarketSources() {
     <div className="flex h-full min-h-0 flex-col">
       <PluginNav
         backLabel={t("plugins.title")}
-        onBack={() => void navigate({ to: "/plugins" })}
+        onBack={backToPlugins}
         title={t("plugins.sourcesTitle")}
       />
 

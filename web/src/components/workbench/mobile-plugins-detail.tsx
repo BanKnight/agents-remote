@@ -4,6 +4,7 @@ import type { AddMcpServerRequest, McpServerType } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
 import { DEFAULT_SKILL_AGENT, parseEnvLines } from "../../routes/PluginsRoute";
+import { useWorkbenchBack } from "../../routes/workbench-model";
 import { useAddMcpServer, useMcpServers, useRemoveMcpServer } from "../../hooks/mcp";
 import {
   useCheckSkillUpdates,
@@ -41,9 +42,9 @@ export function MobileSkillDetail({ name }: { name: string }) {
 
   // 「有更新」仅手动检测出结果后出现（updates.data undefined = 尚未检测），与 09 列表 chip 同源。
   const hasUpdate = (updates.data?.updates ?? []).some((u) => u.name === name && u.hasUpdate);
-  const back = () => {
-    void navigate({ to: "/plugins" });
-  };
+  // back pop 优先（导航栈同族，第十一轮复验）；深链直达无来路时 push /plugins 兜底。
+  const backNav = useWorkbenchBack();
+  const back = () => backNav(() => void navigate({ to: "/plugins" }));
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -166,9 +167,9 @@ export function MobileMcpDetail({ name }: { name: string }) {
   const { confirm, holder } = useConfirm();
 
   const entry = (servers.data?.servers ?? []).find((s) => s.name === name);
-  const back = () => {
-    void navigate({ to: "/plugins" });
-  };
+  // back pop 优先（同 MobileSkillDetail）；深链直达无来路时 push /plugins 兜底。
+  const backNav = useWorkbenchBack();
+  const back = () => backNav(() => void navigate({ to: "/plugins" }));
 
   return (
     <div className="flex h-full min-h-0 flex-col">

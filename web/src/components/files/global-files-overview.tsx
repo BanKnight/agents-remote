@@ -128,11 +128,11 @@ export function GlobalFilesOverview({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {scopeSeg}
-      {/* 搜索框 = 10m 原型 .search 语义；实现复用 .wsearch 单源（03x/03p files/wiki 已共用，
-         原型 34px vs 单源 30px 属单源收敛取舍，记 §6.10 批次 d 补记）。page 态补 ⌘F 角标
-        （10m :67，桌面 mainPage 才有全局快捷键，11px ink-3）。 */}
+      {/* 搜索框 = 10m 原型 .search 语义：.psearch 单源（09m/10m 移动 + 09-mac/10-mac 桌面
+         规格，与插件页同一搜索框）。mx-4 补 16px 与 gfcard margin 同值——搜索框左缘对齐
+         seg4/卡片 28px 内容线（FilesPanel px-3 + margin 16；第十一轮复验：原 12px 离群）。 */}
       <div className="shrink-0 px-3 pt-3">
-        <div className="wsearch w-full">
+        <div className="psearch mx-4 w-full">
           <ShellIcon aria-hidden="true" name="magnifyingglass" />
           <input
             aria-label={t("files.searchPlaceholder")}

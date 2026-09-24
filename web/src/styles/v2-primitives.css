@@ -1218,6 +1218,37 @@
   .wsearch:focus-within {
     border-color: color-mix(in srgb, var(--c-primary) 55%, transparent);
   }
+  /* 09m/10m 一级页搜索框单源（第十一轮复验：桌面 /files 用 .wsearch 30 胶囊、/plugins 内联
+     38/r12——跨页尺寸不统一）。移动 = 09-tab/10-tab .search（38 / r12 / fill-search / 15px）；
+     桌面 ≥1024 = 09-mac/10-mac .search（34 / r10 / elevated2 / 边框 / 13px）。margin 由调用方
+     承担（文件页需叠 FilesPanel px-3 对齐 28px 内容线；插件页 mx-4）。 */
+  .psearch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    border-radius: 12px;
+    background: var(--fill-search);
+    padding: 0 12px;
+    font-size: 15px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-2);
+  }
+  .psearch svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+  }
+  @media (min-width: 1024px) {
+    .psearch {
+      height: 34px;
+      border-radius: 10px;
+      background: var(--bg-elevated2);
+      border: 1px solid var(--sep);
+      font-size: 13px;
+    }
+  }
   .sect {
     font-size: 12px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
@@ -2422,7 +2453,10 @@
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
     color: var(--ink-3);
-    margin-left: 6px;
+    /* 原型 09 箭头贴右由 .c 计数列的 margin-left:auto 承担（09:79-80）；实现无计数列
+       （§6.12g：registry 无总量数据源），auto 移交 .ar——否则箭头贴在名称后（第十一轮
+       复验：不符合 iOS 列表 chevron 惯例）。 */
+    margin-left: auto;
   }
 
   /* 12/13 详情头：mono 名称 + 状态 chips（up 橙=有更新）+ 元信息 + 描述 */
