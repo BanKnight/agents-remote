@@ -161,6 +161,21 @@ async function readMenu(page) {
   });
 }
 
+/** 行菜单 open 目标态等待（替代右键后死 sleep，负载时段 400ms 不够会误报；超时不抛——
+ * 让 readMenu 返回 open:false 走断言 FAIL，不崩探针）。 */
+async function waitMenuOpen(page) {
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll("[role='menu']")].some((el) => {
+          const s = getComputedStyle(el);
+          return s.display !== "none" && s.visibility !== "hidden";
+        }),
+      { timeout: 5000 },
+    )
+    .catch(() => {});
+}
+
 const browser = await chromium.launch();
 try {
   const context = await browser.newContext({
@@ -215,7 +230,7 @@ try {
     .filter({ hasText: "index.ts" })
     .first();
   await fileRow.click({ button: "right" });
-  await page.waitForTimeout(400);
+  await waitMenuOpen(page);
   let menu = await readMenu(page);
   ok(menu.open, "F1 Files 段文件行右键开菜单");
   // 03w ∪ 05e 并集(批次 2):mock 文件行不 dirty → 无「在 Git 中查看 diff」= 6 项。
@@ -237,7 +252,7 @@ try {
     .first();
   ok((await gitRow.count()) > 0, "G0 Git 变更行渲染");
   await gitRow.click({ button: "right" });
-  await page.waitForTimeout(400);
+  await waitMenuOpen(page);
   menu = await readMenu(page);
   ok(menu.open, "G1 Git 变更行右键开菜单");
   ok(
@@ -254,7 +269,7 @@ try {
 
   // 批次 3：菜单「查看 diff」→ 栏内 diff 详情态（03r 形态：meta + DiffContent）→ 返回回列表。
   await gitRow.click({ button: "right" });
-  await page.waitForTimeout(400);
+  await waitMenuOpen(page);
   const diffItem = page.getByRole("menuitem").filter({ hasText: "查看 diff" }).first();
   await diffItem.click();
   await page
@@ -266,7 +281,14 @@ try {
   const diffBody = await page.locator("main > div > aside").nth(1).locator("table").count();
   ok(diffBody > 0, "G4 「查看 diff」进栏内 diff 详情态（diff 内容在）");
   await page.locator("main > div > aside").nth(1).getByText("返回变更文件列表").click();
-  await page.waitForTimeout(400);
+  // 返回列表目标态等待（替代死 sleep）。
+  await page
+    .locator("main > div > aside")
+    .nth(1)
+    .locator(".frow")
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => {});
   const backRows = await page.locator("main > div > aside").nth(1).locator(".frow").count();
   ok(backRows > 0, "G5 diff 详情态返回回变更列表");
 
@@ -285,7 +307,7 @@ try {
     .first();
   ok((await wikiRow.count()) > 0, "W0 Wiki 页面行渲染");
   await wikiRow.click({ button: "right" });
-  await page.waitForTimeout(400);
+  await waitMenuOpen(page);
   menu = await readMenu(page);
   ok(menu.open, "W1 Wiki 页面行右键开菜单");
   ok(

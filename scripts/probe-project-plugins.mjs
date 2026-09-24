@@ -1,7 +1,7 @@
 // 探针：项目级 skill + MCP（插件系统最后一块 D4/D7）——项目工作台「插件」tab 接线。
 // 断言：
 //  A（真实后端，桌面 1280×900）：
-//    1. test 项目工作台 middle tab bar 含「Plugins」tab（buildOverviewTabs 单独 push，非 inspection tab）
+//    1. test 项目工作台 middle tab bar 含「Plugins」tab（WORKBENCH_TAB_PLUGINS 注册表渲染，非 inspection tab）
 //    2. 点 Plugins → PluginsPanel 一级 SegmentedControl 含 Skills/MCP
 //    3. skill 子区无 Sources tab（源是全局 settings，项目隐藏）
 //    4. skill Manage tab 无「Check for updates」按钮（项目 update 直接拉取，隐藏全局检测入口）

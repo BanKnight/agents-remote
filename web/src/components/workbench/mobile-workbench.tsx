@@ -1258,10 +1258,11 @@ function MobileProjectWorkbench({
               )}
             </div>
           ) : null}
-          {/* 工具态主体（v2 M3-b，?tab=files/git/wiki）：项目工具面板原位（与桌面 ProjectLeftPanel
-            middle tab 同构）。file 树点文件仍走 onOpenFile 开 file tab focus（→ 实例主体层）。 */}
+          {/* 工具态主体（v2 M3-b，?tab=files/git/wiki）：项目工具面板原位（三件套双端共享）。
+            data-mobile-tool 探针锚 = ToolPanel 根单源（共享组件层）；file 树点文件仍走
+            onOpenFile 开 file tab focus（→ 实例主体层）。 */}
           {activeTool === "files" && !l3Route ? (
-            <div className="min-h-0 flex-1 overflow-hidden" data-mobile-tool="files">
+            <div className="min-h-0 flex-1 overflow-hidden">
               <FilesToolPanel
                 currentPath={filesPath}
                 onOpenFile={onOpenFile}
@@ -1272,7 +1273,7 @@ function MobileProjectWorkbench({
               />
             </div>
           ) : activeTool === "git" && !l3Route ? (
-            <div className="min-h-0 flex-1 overflow-hidden" data-mobile-tool="git">
+            <div className="min-h-0 flex-1 overflow-hidden">
               <GitToolPanel
                 onOpenCommit={(hash) => {
                   void navigate({
@@ -1300,7 +1301,7 @@ function MobileProjectWorkbench({
               />
             </div>
           ) : activeTool === "wiki" && !l3Route ? (
-            <div className="min-h-0 flex-1 overflow-hidden" data-mobile-tool="wiki">
+            <div className="min-h-0 flex-1 overflow-hidden">
               <WikiToolPanel
                 onOpenPage={(slug) => {
                   void navigate({

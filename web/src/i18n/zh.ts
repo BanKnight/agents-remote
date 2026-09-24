@@ -171,6 +171,7 @@ export const zh: Record<TranslationKey, string> = {
   "files.tooLarge": "文件过大，无法预览。限制：{{limit}}。",
   "files.unsupported": "此文件类型尚不支持预览。",
   "files.backToFiles": "返回文件列表",
+  "files.backToPreview": "返回预览",
   "files.sourceMode": "源码",
   "files.renderMode": "渲染",
   "files.fileActions": "文件操作",

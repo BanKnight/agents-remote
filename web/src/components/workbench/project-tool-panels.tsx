@@ -1,5 +1,6 @@
 import type {
   GitCommitLogItem,
+  GitDiffFileStatus,
   GitDiffFileSummary,
   GitDiffScope,
   ProjectFileEntry,
@@ -33,20 +34,6 @@ import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action
 import type { MobileProjectTool } from "./mobile-project-header";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
 
-/** frow badge 状态 → .badge 变体字符（M/A/D/R 与 statusShortLabel 同源；D/R 变体 M4 新增）。 */
-export function gitBadgeVariant(status: GitDiffFileSummary["status"]): string {
-  switch (status) {
-    case "added":
-      return "A";
-    case "deleted":
-      return "D";
-    case "renamed":
-      return "R";
-    case "modified":
-      return "M";
-  }
-}
-
 /** frow 行尾进入指示 chevron（.ar 内 14×14，SF Symbols chevron.right；与 SettingsChevron 同范式）。 */
 function RowChevron() {
   return (
@@ -62,34 +49,30 @@ function RowChevron() {
   );
 }
 
+/** Git 状态角标（badge lg + statusShortLabel；三件套行内 3 处复用，label 单次求值）。 */
+function GitStatusBadge({ status }: { status: GitDiffFileStatus }) {
+  const label = statusShortLabel(status);
+  return <span className={`badge lg ${label}`}>{label}</span>;
+}
+
 /**
  * 项目三工具的双端共享面板（多端同构，2026-09-24 第十二轮复验批次 2 泛化：代码同一份，
  * 移动项目工具态 / 移动 focus 态 / 桌面右栏 Inspector 同渲染本三件套，设备适配 = 容器差异，
- * 由 ToolPanel container prop 与调用方外壳表达）。形态基准 = v2 M4 移动原生形态（对标
+ * 由 ToolPanel 容器与调用方外壳表达）。形态基准 = v2 M4 移动原生形态（对标
  * 03m/03o/03p，frow/crow/tgrp/wpg 原语行 + header 工具 chip 联动）；与桌面左栏组件
- * （FilesLeftPanel / GitChangesList；wiki-index 与移动 L3WikiReader）同数据管道：query key 完全一致
- * （diff/log/branches/files/wiki-index）缓存去重。
+ * （FilesLeftPanel / GitChangesList；wiki-index 与移动 L3WikiReader）同数据管道：diff/files/
+ * wiki-index key 一致缓存去重（log/branches 语义不同，见 GitToolPanel 内注释）。
  */
 
 /**
- * 工具面板根容器（移动：占满工具态主体、滚动交内部列表区 + bottom-nav padding +
- * data-mobile-tool 探针锚点）。container=false 时只渲染内容——桌面右栏等语境由调用方
- * 包自己的 flex 高度链容器（§8：overflow 只裁不传约束，容器链由承载页负责）。
+ * 工具面板根容器：滚动 + bottom-nav padding + data-mobile-tool 探针锚点（单源，双端
+ * 同一容器——桌面右栏语境 16px 底 padding 无害、锚点无桌面消费者，§6.12l 记档）。
+ * w-full = 右栏 row-flex 承载链铺满栏宽（grow 由 RightPanelTabs 根承担）。
  */
-function ToolPanel({
-  children,
-  container = true,
-  tool,
-}: {
-  children: React.ReactNode;
-  /** false = 不包移动滚动容器（桌面右栏语境：调用方自备高度链容器）。 */
-  container?: boolean;
-  tool: MobileProjectTool;
-}) {
-  if (!container) return <>{children}</>;
+function ToolPanel({ children, tool }: { children: React.ReactNode; tool: MobileProjectTool }) {
   return (
     <div
-      className="flex h-full min-h-0 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
+      className="flex h-full min-h-0 w-full flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
       data-mobile-tool={tool}
     >
       {children}
@@ -126,8 +109,9 @@ export type GitToolPanelProps = {
  * 工作区 N，恒渲染）→ sect「工作区改动」frow 列表（badge + path + ›；右键/长按 = 05e 2 项
  * 菜单「查看 diff / 复制路径」，02c 单一菜单容器）→ sect「最近提交」crow×3（传 onOpenCommit
  * 才装配）→ links「全部历史 · 分支(N)」（传 onOpenHistory/onOpenBranches 才装配）。
- * diff/log/branches 三个 query key 与桌面 GitChangesList / GitCommitList / GitBranchList
- * 完全一致（缓存共享去重，单一数据管道）。
+ * diff query key 与桌面 GitChangesList 一致（缓存共享去重，单一数据管道）；log/branches
+ * key 与桌面 GitCommitList / GitBranchList 同形但语义不同——此处 log 请求不带 branch 参数
+ *（后端默认分支），缓存独立，不与桌面显式 branch 维度共享（消费点也移动独有）。
  */
 export function GitToolPanel({
   projectName,
@@ -143,13 +127,17 @@ export function GitToolPanel({
     queryKey: ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
     queryFn: () => listProjectGitDiff(projectName),
   });
-  // 03m 最近提交：与桌面 GitCommitList 完全同 key 同 queryFn（缓存共享），前端 slice 3 条。
+  // 03m 最近提交：请求不带 branch（后端默认分支），key 的 branch 维度恒 ""——与桌面
+  // GitCommitList（显式 branch 维度）key 同形但不共享缓存。前端 slice 3 条。
+  // 段装配规则同款门控：不传 onOpenCommit（右栏语境）= 最近提交段不装配，请求也不发。
   const log = useQuery({
+    enabled: onOpenCommit != null,
     queryKey: ["projects", projectName, "git", "log", ""],
     queryFn: () => getProjectGitLog(projectName),
   });
-  // links「分支 (N)」计数；与分支页 query 同 key。
+  // links「分支 (N)」计数；与分支页 query 同 key。onOpenBranches 不传（右栏）不拉。
   const branches = useQuery({
+    enabled: onOpenBranches != null,
     queryKey: ["projects", projectName, "git", "branches"],
     queryFn: () => listProjectGitBranches(projectName),
   });
@@ -194,7 +182,9 @@ export function GitToolPanel({
               ? ` ↑${branch.ahead ?? 0} ↓${branch.behind ?? 0}`
               : null}
           </span>
-          <span className="st">{t("git.githeadWorktree", { n: files.length })}</span>
+          <span className="st">
+            {t("git.githeadWorktree", { n: files.filter((f) => f.scope === "worktree").length })}
+          </span>
         </div>
       ) : null}
       <div className="sect">{t("git.sectWorktree")}</div>
@@ -212,9 +202,7 @@ export function GitToolPanel({
             type="button"
             {...lp.bind(`${file.scope}/${file.path}`)}
           >
-            <span className={`badge lg ${gitBadgeVariant(file.status)}`}>
-              {statusShortLabel(file.status)}
-            </span>
+            <GitStatusBadge status={file.status} />
             <span className="p">{file.path}</span>
             <span className="ar">
               <RowChevron />
@@ -572,11 +560,7 @@ export function FilesToolPanel({
               />
             </span>
             <span className="p">{m.path}</span>
-            {dirty.has(m.path) ? (
-              <span className={`badge lg ${gitBadgeVariant(dirty.get(m.path)!.status)}`}>
-                {statusShortLabel(dirty.get(m.path)!.status)}
-              </span>
-            ) : null}
+            {dirty.has(m.path) ? <GitStatusBadge status={dirty.get(m.path)!.status} /> : null}
           </button>
         ))}
         {search.isLoading ? (
@@ -636,11 +620,7 @@ export function FilesToolPanel({
             {!isDir && entry.mtimeMs !== undefined ? (
               <span className="tm">{mtimeRelative(entry.mtimeMs, t)}</span>
             ) : null}
-            {dirtyFile ? (
-              <span className={`badge lg ${gitBadgeVariant(dirtyFile.status)}`}>
-                {statusShortLabel(dirtyFile.status)}
-              </span>
-            ) : null}
+            {dirtyFile ? <GitStatusBadge status={dirtyFile.status} /> : null}
             <span className="ar">
               <RowChevron />
             </span>

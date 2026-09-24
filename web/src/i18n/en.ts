@@ -171,6 +171,7 @@ export const en = {
   "files.tooLarge": "File is too large to preview. Limit: {{limit}}.",
   "files.unsupported": "This file type is not supported for preview yet.",
   "files.backToFiles": "Back to files",
+  "files.backToPreview": "Back to preview",
   "files.sourceMode": "Source",
   "files.renderMode": "Render",
   "files.fileActions": "File actions",

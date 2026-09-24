@@ -25,10 +25,10 @@ export type WorkbenchScope = { kind: "project"; key: string } | { kind: "global"
  * 工作台 inspection tab 标识。V1 两个第一方 tab（设计文档 §6）：
  * `files` / `git`；pages 为 per-project 静态托管根配置（与 files/git 同构 inspection）。
  * Stage 3 以 WorkbenchTabPlugin 契约落地注册表。M9 批次 b 起（redesign-v2 §6.10-6）
- * 值域加 `history`：桌面 Inspector 四段 = 文件/Git/Wiki/历史（05 原型 seg4）。history
- * **不进** WORKBENCH_TAB_PLUGINS 注册表（buildOverviewTabs 已单独 push history middle
- * tab，进注册表会在中栏 tab 列表重复）——由 RightPanelTabs 局部追加；pages 桌面右栏
- * 隐藏（RightPanelTabs 过滤，per-project middle tab 语义）。
+ * 值域加 `history`；§6.12k 第三批复验收口后右栏 = 三段（文件/Git/Wiki，history 段已删，
+ * "history" 值仅存于类型与旧持久化记忆兜底）。history **不进** WORKBENCH_TAB_PLUGINS
+ * 注册表——由 RightPanelTabs 局部消费逻辑 gate；pages 桌面右栏隐藏（RightPanelTabs
+ * 过滤，per-project middle tab 语义）。
  */
 export type WorkbenchInspectionTab = "files" | "git" | "pages" | "wiki" | "history";
 

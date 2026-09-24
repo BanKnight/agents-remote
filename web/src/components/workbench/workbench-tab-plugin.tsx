@@ -5,8 +5,8 @@ import { FilesPanel } from "../files/file-browser";
 import { PagesPanel } from "../pages/pages-panel";
 import { WikiPageDetail } from "../wiki/wiki-panel";
 import { useT } from "../../i18n";
-import type { TranslateFn, TranslationKey } from "../../i18n/types";
-import type { WorkbenchInspectionTab, WorkbenchMiddleTab } from "../../routes/workbench-model";
+import type { TranslationKey } from "../../i18n/types";
+import type { WorkbenchInspectionTab } from "../../routes/workbench-model";
 import { ActionButton } from "../shell/shell-primitives";
 import { MobileL3FilePreview, MobileL3GitDiff } from "./mobile-l3";
 import { FilesToolPanel, GitToolPanel, WikiToolPanel } from "./project-tool-panels";
@@ -36,7 +36,8 @@ export type WorkbenchTabPluginContext = {
 /**
  * 工作台 inspection tab 插件契约（设计文档 §6）。V1 仅编译期第一方注册（Files/Git），
  * 不实装外部插件 / marketplace。`when` 集中表达可见性（Git 全局隐、Files 全局显）；
- * render 由 RightPanelTabs / 中栏 visibleTabs / 移动 MobileFocusBody 在 active tab 时调用。
+ * render 由 RightPanelTabs / 移动 MobileFocusBody 在 active tab 时调用（中栏 middle tab
+ * 已随 §6.12k 批次 2 三列化退役，buildOverviewTabs 随之删除）。
  */
 export type WorkbenchTabPlugin = {
   id: WorkbenchInspectionTab;
@@ -51,15 +52,36 @@ export type WorkbenchTabPlugin = {
 function DetailBackBar({ label, onBack }: { label: string; onBack: () => void }) {
   return (
     <div className="shrink-0 border-b border-neutral-line/40 px-3 py-2">
-      <ActionButton compact onClick={onBack}>
-        {label}
-      </ActionButton>
+      {/* 非 compact = 移动端自动撑到 min-h-11 触摸目标、桌面保持行内紧凑（§7 渐进增强）。 */}
+      <ActionButton onClick={onBack}>{label}</ActionButton>
     </div>
   );
 }
 
-/** 栏内 diff 详情目标（03r 详情形态：meta 行 + DiffContent）。 */
-type DiffTarget = { path: string; scope: GitDiffScope };
+/** 栏内 diff 详情目标（03r 详情形态：meta 行 + DiffContent）。from = 进入来源——
+ * files 预览内「查看 diff ›」进 diff 时返回去向是预览态（非列表），返回标签随之。 */
+type DiffTarget = { path: string; scope: GitDiffScope; from?: "preview" };
+
+/** 栏内 diff 详情态（FilesToolTab/GitToolTab 同构复用：返回条 + MobileL3GitDiff，仅返回
+ * 标签来源不同——files 预览内进入时返回预览态，其余返回列表）。 */
+function TabDiffDetail({
+  target,
+  backLabel,
+  onBack,
+  projectKey,
+}: {
+  target: DiffTarget;
+  backLabel: string;
+  onBack: () => void;
+  projectKey: string;
+}) {
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <DetailBackBar label={backLabel} onBack={onBack} />
+      <MobileL3GitDiff path={target.path} projectName={projectKey} scope={target.scope} />
+    </div>
+  );
+}
 
 /**
  * files tab 主体（第十二轮批次 3 双端装配：右栏 Inspector 与移动 focus 态同一 render）。
@@ -72,6 +94,8 @@ function FilesToolTab({
   onPathChange,
   projectKey,
 }: {
+  /** cwd 受控对——两 prop 必须成对传（只传 currentPath 会冻结目录导航）；右栏语境成对
+   * 不传 = Tab 层自持（同 FilesToolPanel 受控模式的既有边界）。 */
   currentPath?: string;
   onPathChange?: (path: string) => void;
   projectKey: string;
@@ -79,21 +103,31 @@ function FilesToolTab({
   const { t } = useT();
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [diffTarget, setDiffTarget] = useState<DiffTarget | null>(null);
+  // cwd：移动语境由父级（MobileFocusBody）受控传入跨 tab 保活；右栏语境 Tab 层持有——
+  // 详情态会卸载列表组件，若靠 FilesToolPanel 内部 state，预览返回后 cwd 会丢回根目录
+  //（design-review 批次 4 修复）。
+  const [tabPath, setTabPath] = useState("");
+  const path = currentPath ?? tabPath;
+  const changePath = onPathChange ?? setTabPath;
 
   if (diffTarget) {
     return (
-      <div className="flex h-full min-h-0 flex-col">
-        <DetailBackBar label={t("git.backToFiles")} onBack={() => setDiffTarget(null)} />
-        <MobileL3GitDiff path={diffTarget.path} projectName={projectKey} scope={diffTarget.scope} />
-      </div>
+      <TabDiffDetail
+        backLabel={diffTarget.from === "preview" ? t("files.backToPreview") : t("git.backToFiles")}
+        onBack={() => setDiffTarget(null)}
+        projectKey={projectKey}
+        target={diffTarget}
+      />
     );
   }
   if (previewPath !== null) {
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 w-full flex-col">
         <DetailBackBar label={t("files.backToFiles")} onBack={() => setPreviewPath(null)} />
         <MobileL3FilePreview
-          onViewDiff={() => setDiffTarget({ path: previewPath, scope: "worktree" })}
+          onViewDiff={() =>
+            setDiffTarget({ path: previewPath, scope: "worktree", from: "preview" })
+          }
           path={previewPath}
           projectName={projectKey}
         />
@@ -102,10 +136,10 @@ function FilesToolTab({
   }
   return (
     <FilesToolPanel
-      currentPath={currentPath}
-      onOpenFile={(_projectName, path) => setPreviewPath(path)}
+      currentPath={path}
+      onOpenFile={(_projectName, p) => setPreviewPath(p)}
       onOpenGitFile={(f) => setDiffTarget({ path: f.path, scope: f.scope })}
-      onPathChange={onPathChange}
+      onPathChange={changePath}
       projectName={projectKey}
     />
   );
@@ -122,15 +156,22 @@ function GitToolTab({ projectKey }: { projectKey: string }) {
 
   if (target) {
     return (
-      <div className="flex h-full min-h-0 flex-col">
-        <DetailBackBar label={t("git.backToFiles")} onBack={() => setTarget(null)} />
-        <MobileL3GitDiff path={target.path} projectName={projectKey} scope={target.scope} />
-      </div>
+      <TabDiffDetail
+        backLabel={t("git.backToFiles")}
+        onBack={() => setTarget(null)}
+        projectKey={projectKey}
+        target={target}
+      />
     );
   }
   return (
     <GitToolPanel
-      onOpenGitFile={(f) => setTarget({ path: f.path, scope: f.scope })}
+      onOpenGitFile={(f) =>
+        setTarget({
+          path: f.path,
+          scope: f.scope,
+        })
+      }
       projectName={projectKey}
     />
   );
@@ -151,8 +192,9 @@ function WikiToolTab({ projectKey }: { projectKey: string }) {
 
 /**
  * 第一方工作台 tab 插件注册表（设计文档 §5、§6）。files/git/wiki 换双端共享三件套
- * （2026-09-24 第十二轮复验批次 3，多端同构：桌面右栏 RightPanelTabs、移动 MobileFocusBody、
- * 中栏 visibleTabs 同一 render；详情态组件 MobileL3FilePreview/MobileL3GitDiff/WikiPageDetail
+ * （2026-09-24 第十二轮复验批次 3，多端同构：桌面右栏 RightPanelTabs、移动
+ * MobileFocusBody / MobileProjectHeader 工具 chip 同一 render 消费；详情态组件
+ * MobileL3FilePreview/MobileL3GitDiff/WikiPageDetail
  * 与移动 L3 详情页同一份，容器差异由装配层表达）。Files 全局可见（项目作用域 = FilesToolTab；
  * 全局根目录只读浏览保留 FilesPanel rootBrowse 语境——与 SessionDetailRoute agent-context、
  * 全局 /files 页同记档「后续评估合并」）；Git/pages/wiki 仅项目作用域（when）。
@@ -192,35 +234,3 @@ export const WORKBENCH_TAB_PLUGINS: WorkbenchTabPlugin[] = [
     when: (ctx) => ctx.projectKey !== null,
   },
 ];
-
-/**
- * 构建中栏 / 移动列表态的 overview tab 列表（设计文档 §4）：overview 常驻 + history
- * （includeHistory=true 时；列表态 project scope 恒传 true、global scope 传 false）+
- * 第一方 inspection 插件按 ctx 过滤。桌面 instance-area visibleTabs 与移动
- * MobileProjectOverview / MobileGlobalOverview tabs 共用此构建逻辑，plugin visibility
- * 收敛为单一来源（plugin.when），避免三处循环 + push 重复。返回类型对齐
- * WorkbenchMiddleTab（= WorkbenchMobileOverviewTab，见 workbench-model 别名）。
- */
-export function buildOverviewTabs(
-  t: TranslateFn,
-  ctx: WorkbenchTabPluginContext,
-  includeHistory: boolean,
-): { id: WorkbenchMiddleTab; label: string }[] {
-  const options: { id: WorkbenchMiddleTab; label: string }[] = [
-    { id: "overview", label: t("workbench.tabOverview") },
-  ];
-  if (includeHistory) {
-    options.push({ id: "history", label: t("workbench.tabHistory") });
-  }
-  for (const plugin of WORKBENCH_TAB_PLUGINS) {
-    if (plugin.when(ctx)) options.push({ id: plugin.id, label: t(plugin.labelKey) });
-  }
-  // plugins middle tab（项目级 skill+MCP，仅 project scope）。非 inspection tab——不进
-  // WORKBENCH_TAB_PLUGINS（那是右栏 inspection 注册表，被 right-panel-tabs / focus tab 消费），
-  // 单独 push 到 middle tab 列表；主体 render 由 project-left-panel / MobileProjectOverview 手写
-  // PluginsPanel 分支（与 pages/wiki 同构：middle tab + 消费者各自手写渲染）。
-  if (ctx.projectKey !== null) {
-    options.push({ id: "plugins", label: t("workbench.tabPlugins") });
-  }
-  return options;
-}

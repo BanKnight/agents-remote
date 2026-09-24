@@ -11,9 +11,9 @@ test("authenticated user can inspect Git worktree and staged diffs", async ({ pa
 
   // Desktop workbench: enter the project, then drive the Git inspection tab via
   // the URL-visible ?rightTab=git state. §6.12j 批次 3 检视 IA 收敛：左栏 middle tab
-  // [Git] 已删，Git 检视归右栏 Inspector（唯一检视入口，GitDiffPanel）——URL 直连从
-  // ?tab=git 改 ?rightTab=git；文件列表/diff 面板 DOM 特征不变，渲染位置为右栏 aside
-  //（§6.12k 三列后 DOM 第 2 个 complementary：side=0/Inspector=1）。
+  // [Git] 已删，Git 检视归右栏 Inspector。第十二轮批次 3：右栏 git tab = GitToolPanel
+  //（03m 形态：githead 态势行 + 工作区改动 .frow；最近提交/links 段右栏不装配）——
+  // 点行 → 栏内 diff 详情态（data-role="l3-git-diff"，移动 L3 同一份，列表 ↔ 详情切换）。
   // §6.12k 合并 side 项目行（title 属性 = 项目名，项目行独有）进项目。
   const projectRow = page.locator(`nav.side .srow2[title="${projectName}"]`);
   await expect(projectRow).toBeVisible();
@@ -24,21 +24,19 @@ test("authenticated user can inspect Git worktree and staged diffs", async ({ pa
   // 右栏默认收起（workbenchRightCollapsedAtom 默认 true，RailButton 唤出）——先展开再取 aside
   //（折叠态右栏 aside 不渲染，展开后才是 DOM 第 2 个 complementary）。
   await page.getByRole("button", { name: "Expand right panel" }).click();
-  const files = page.getByRole("complementary").nth(1).getByLabel("Git changed files");
-  await expect(files.getByRole("button", { name: /README\.md/ })).toBeVisible();
-  await expect(files.getByRole("button", { name: /src\/index\.ts/ })).toBeVisible();
-  await expect(files.getByRole("button", { name: /notes\.txt/ })).toBeVisible();
+  const files = page.getByRole("complementary").nth(1);
+  await expect(files.locator(".frow", { hasText: /README\.md/ })).toBeVisible();
+  await expect(files.locator(".frow", { hasText: /src\/index\.ts/ })).toBeVisible();
+  await expect(files.locator(".frow", { hasText: /notes\.txt/ })).toBeVisible();
 
-  await files.getByRole("button", { name: /README\.md/ }).click();
-  // GitFileDiffPanel 在右栏 GitDiffPanel 内 inline 渲染（<section aria-label="Git file
-  // diff">）。仍用 getByRole("region")（visibility-aware）：防御性保持——未来 keep-alive
-  // 场景（拖 git 行开中栏 git tab，§7.2）会出多个 region，getByRole 排除 hidden 只命中
-  // 可见 diff。
-  const diff = page.getByRole("region", { name: "Git file diff" });
+  await files.locator(".frow", { hasText: /README\.md/ }).click();
+  const diff = files.locator('[data-role="l3-git-diff"]');
   await expect(diff).toContainText("README.md");
   await expect(diff).toContainText("+git-diff-e2e-worktree-ok");
 
-  await files.getByRole("button", { name: /src\/index\.ts/ }).click();
+  // 栏内详情态独占列表位（非旧 GitDiffPanel inline 并存）：返回列表再点下一行。
+  await files.getByRole("button", { name: "Back to changed files" }).click();
+  await files.locator(".frow", { hasText: /src\/index\.ts/ }).click();
   await expect(diff).toContainText("src/index.ts");
   await expect(diff).toContainText("+export const gitDiffE2eStaged = true;");
 });
