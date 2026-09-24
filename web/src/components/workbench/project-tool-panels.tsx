@@ -67,7 +67,7 @@ function RowChevron() {
  * 移动项目工具态 / 移动 focus 态 / 桌面右栏 Inspector 同渲染本三件套，设备适配 = 容器差异，
  * 由 ToolPanel container prop 与调用方外壳表达）。形态基准 = v2 M4 移动原生形态（对标
  * 03m/03o/03p，frow/crow/tgrp/wpg 原语行 + header 工具 chip 联动）；与桌面左栏组件
- * （FilesLeftPanel / GitChangesList / WikiPanel）同数据管道：query key 完全一致
+ * （FilesLeftPanel / GitChangesList；wiki-index 与移动 L3WikiReader）同数据管道：query key 完全一致
  * （diff/log/branches/files/wiki-index）缓存去重。
  */
 
@@ -716,10 +716,10 @@ export function groupWikiPages(
 
 export type WikiToolPanelProps = {
   projectName: string;
-  /** header wsearch 展开的查询输入（提升共享：chip 与结果列表同 query state；右栏语境由
-   * 调用方持 state 或传常量 ""——无 chip 承载即无搜索入口）。 */
-  query: string;
-  onQueryChange: (query: string) => void;
+  /** header wsearch 展开的查询输入（可选受控：传 query+onQueryChange = 调用方持 header
+   * chip 联动 state；未传 = 无搜索态——右栏语境无承载 chip 不装配搜索，装配规则）。 */
+  query?: string;
+  onQueryChange?: (query: string) => void;
   /** 行点击 / 05e 行菜单「打开页面」（移动 = L3 阅读页；右栏 = 栏内阅读态）。 */
   onOpenPage: (slug: string) => void;
 };
@@ -729,11 +729,11 @@ export type WikiToolPanelProps = {
  * 分组树（tgrp 组头折叠 + wpg 页行）。wpg 行首 .ref 紫圆标记 = 该页已被注入过 agent 会话
  * （workbenchWikiRefsAtom 反查），refnote 行 = 注入会话数（03p 编号②「已注入」态）。wpg 行
  * 右键/长按 = 05e 2 项菜单「打开页面 / 复制链接」（第十一轮右栏 WikiPanel 同款迁移，02c 单一
- * 菜单容器）。同 key wiki-index 与桌面 WikiPanel 去重。
+ * 菜单容器）。同 key wiki-index 与移动 L3 wiki 阅读页去重。
  */
 export function WikiToolPanel({
   projectName,
-  query,
+  query = "",
   onQueryChange,
   onOpenPage,
 }: WikiToolPanelProps) {
@@ -764,7 +764,7 @@ export function WikiToolPanel({
       label: t("wiki.menuOpen"),
       icon: <ShellIcon name="pages-nav" />,
       onSelect: () => {
-        if (clearQuery) onQueryChange("");
+        if (clearQuery) onQueryChange?.("");
         onOpenPage(slug);
       },
     },
@@ -803,7 +803,7 @@ export function WikiToolPanel({
             key={m.slug}
             onClick={() => {
               if (lp.guardClick()) return;
-              onQueryChange("");
+              onQueryChange?.("");
               onOpenPage(m.slug);
             }}
             onContextMenu={(e) => ctx.openAt(m.slug, e)}

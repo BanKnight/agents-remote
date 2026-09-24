@@ -1,161 +1,23 @@
-import { useState } from "react";
-
 import { useT } from "../../i18n";
-import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
-import {
-  ActionButton,
-  IconMarker,
-  ListGroup,
-  ListRow,
-  ListRowSkeleton,
-} from "../shell/shell-primitives";
-import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
-import { ShellIcon } from "../shell/icons";
+import { WIKI_QUERY_SCOPE, useWikiPage } from "../../hooks/wiki";
+import { ActionButton, ListRowSkeleton } from "../shell/shell-primitives";
 import { ResourceStatePanel } from "../files/file-browser";
 import { MarkdownString } from "../markdown/MarkdownString";
 
-type WikiPanelProps = {
-  projectName: string;
-};
-
 /**
- * wiki 知识库面板（middle tab [wiki]，与 files/git/pages 同构 inspection，只读 consumer）。
- * 列表态：useWikiIndex 取页面摘要，行点击切到详情态（selectedSlug）。
- * 详情态：useWikiPage 取 { frontmatter, body }，头部显示 title/tags/updated，正文用 MarkdownString 渲染。
- * 写入由 agent 经 MCP wiki_* 工具完成，本面板只读浏览。UI=f(state)：列表与详情都从 query 派生。
+ * Wiki 阅读详情态（第十二轮批次 3 从 WikiPanel 详情态提取为共享组件；WikiPanel 列表面板随
+ * 注册表换 WikiToolPanel 退役删除，05e 行菜单已先迁移进共享 WikiToolPanel）。useWikiPage 取
+ * { frontmatter, body }，头部显示 title/tags/updated，正文用 MarkdownString 渲染。
+ * UI=f(state)：从 query 派生。消费方：注册表 WikiToolTab 详情态（右栏 Inspector / 移动
+ * focus 态同一 render）。
  */
-export function WikiPanel({ projectName }: WikiPanelProps) {
-  const { t } = useT();
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
-  // 05e 同款行菜单(第十一轮复验问题⑤:右栏「文件/Git/Wiki」段都要右键/长按菜单)。
-  // 桌面右键 = ctx 坐标 popover;触屏长按 = lp 计时(wiki 行无 ⋯ 按钮,长按是唯一菜单入口,
-  // 05e pin①「右键(iPad 长按)」)。
-  const ctx = useRowContextMenu();
-  const lp = useLongPressActions(ctx.openAt);
-  const index = useWikiIndex(projectName, WIKI_QUERY_SCOPE);
-
-  if (selectedSlug !== null) {
-    return (
-      <WikiPageDetail
-        projectName={projectName}
-        slug={selectedSlug}
-        onBack={() => setSelectedSlug(null)}
-      />
-    );
-  }
-
-  if (index.isLoading) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div
-          aria-hidden="true"
-          className="flex shrink-0 items-center justify-start border-b border-neutral-line/40 px-3.5 py-2.5"
-        >
-          <span className="skeleton-shimmer h-8 w-24 rounded-lg" />
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
-          <ListRowSkeleton count={3} />
-        </div>
-      </div>
-    );
-  }
-
-  if (index.error) {
-    return (
-      <div className="flex flex-1 min-h-0 flex-col items-center justify-start p-4 pt-6 lg:justify-center lg:pt-0">
-        <div className="w-full lg:w-auto">
-          <ResourceStatePanel
-            message={index.error.message}
-            tone="danger"
-            title={t("wiki.loadFailed")}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  const pages = index.data?.pages ?? [];
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
-        {pages.length === 0 ? (
-          <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-2 lg:justify-center lg:pt-0">
-            <div className="w-full lg:w-auto">
-              <ResourceStatePanel message={t("wiki.emptyDesc")} title={t("wiki.emptyTitle")} />
-            </div>
-          </div>
-        ) : (
-          <>
-            <ListGroup ariaLabel={t("wiki.panelAria")}>
-              {pages.map((page) => (
-                <ListRow
-                  key={page.slug}
-                  marker={
-                    <IconMarker size="sm" tone="muted">
-                      <ShellIcon className="h-4 w-4" name="pages-nav" />
-                    </IconMarker>
-                  }
-                  meta={
-                    <span className="text-[0.68rem] text-on-surface-muted">{page.updated}</span>
-                  }
-                  onClick={() => {
-                    if (lp.guardClick()) return;
-                    setSelectedSlug(page.slug);
-                  }}
-                  onContextMenu={(e) => ctx.openAt(page.slug, e)}
-                  {...lp.bind(page.slug)}
-                  subtitle={
-                    page.tags.length > 0 ? (
-                      <span className="font-mono text-[0.72rem] text-on-surface-muted">
-                        {page.tags.join(", ")}
-                      </span>
-                    ) : undefined
-                  }
-                  title={<span className="text-[0.82rem]">{page.title}</span>}
-                />
-              ))}
-            </ListGroup>
-            {(() => {
-              const menuPage = pages.find((p) => ctx.pointFor(p.slug));
-              return menuPage ? (
-                <ActionMenu
-                  contextMenuPoint={ctx.pointFor(menuPage.slug)}
-                  items={[
-                    {
-                      label: t("wiki.menuOpen"),
-                      icon: <ShellIcon name="pages-nav" />,
-                      onSelect: () => setSelectedSlug(menuPage.slug),
-                    },
-                    {
-                      label: t("wiki.copyLink"),
-                      icon: <ShellIcon name="edit" />,
-                      onSelect: () => {
-                        void navigator.clipboard.writeText(
-                          `${window.location.origin}/projects/${encodeURIComponent(projectName)}/wiki/${encodeURIComponent(menuPage.slug)}`,
-                        );
-                      },
-                    },
-                  ]}
-                  onContextMenuClose={ctx.close}
-                  trigger={<span className="hidden" />}
-                />
-              ) : null;
-            })()}
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 type WikiPageDetailProps = {
   projectName: string;
   slug: string;
   onBack: () => void;
 };
 
-function WikiPageDetail({ projectName, slug, onBack }: WikiPageDetailProps) {
+export function WikiPageDetail({ projectName, slug, onBack }: WikiPageDetailProps) {
   const { t } = useT();
   const page = useWikiPage(projectName, slug, WIKI_QUERY_SCOPE);
 

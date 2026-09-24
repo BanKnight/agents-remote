@@ -595,7 +595,7 @@ type MobileProjectWorkbenchProps = {
  * nav / row2 pills+工具 ticon / chips 运行摘要）+ 单面板主体。
  *
  * - **工具原位（?tab=files/git/wiki）**：主体区切换渲染项目工具面板（FilesLeftPanel /
- *   GitChangesList / WikiPanel，与桌面 ProjectLeftPanel middle tab 同构）；再点同 ticon 退出
+ *   GitChangesList / 共享三件套前身，与桌面 ProjectLeftPanel middle tab 同构）；再点同 ticon 退出
  *   回实例主体。工具态不改 focusId、不卸载已打开 session 面板（保活层 hidden 挂载）。
  * - **实例聚焦**：`<PanelRouter embeddedHeader>`——与桌面中栏主体同一渲染源（session 含底部
  *   输入；file/git/skill 只读预览），聚焦瞬态（focus effect 同步前 tab 尚未入 layout）渲染

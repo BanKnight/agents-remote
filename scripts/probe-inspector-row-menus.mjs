@@ -1,9 +1,13 @@
 // 探针：右栏 Inspector 行菜单三段覆盖 + 无历史同构（PASS/FAIL 断言，入库版）。
 // 第十一轮复验问题⑤（用户拍板）：右栏「文件/Git/Wiki」行都要 05e 同款右键/长按菜单；
 // 右栏无「历史」段（与 iPhone focus 工具同构，多端同构只是容器不同）。
-// 断言：①右栏 seg4 恰三段 ②Files 行右键 5 项菜单 ③Git 变更行右键 2 项 + 复制路径落剪贴板
-// ④Wiki 行右键 2 项 + 「打开页面」进详情态 ⑤触屏长按（合成 pointerType:touch pointerdown）
-// 开菜单。git/wiki 数据走 route mock（不依赖环境真实 repo 状态）。密码自读不打印。
+// 第十二轮批次 3 适配：右栏三段 render 换共享三件套（project-tool-panels 03o/03m/03p
+// 形态，与移动项目工具态同一份），断言对象随组件更新——行定位 .frow、Files 菜单 =
+// 03w∪05e 并集、详情态 = 栏内切换（WikiPageDetail）。
+// 断言：①右栏 seg4 恰三段 ②Files 行右键 6 项并集菜单（无 dirty）③Git 变更行右键 2 项 +
+// 复制路径落剪贴板 ④Wiki 行右键 2 项 + 「打开页面」进详情态 ⑤触屏长按（合成
+// pointerType:touch pointerdown）开菜单。git/wiki 数据走 route mock（不依赖环境真实 repo
+// 状态）。密码自读不打印。
 // 用法: bun scripts/probe-inspector-row-menus.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
@@ -99,8 +103,22 @@ async function setupMocks(page) {
       }),
     }),
   );
-  // 宽泛 git file-diff route 不 mock：「查看 diff」点开不在断言路径，且 LIFO 先匹配会
-  // 抢 /git/diff 列表请求（GitDiffPanel 拿到单文件形状 → 无行）。
+  // git file-diff（批次 3 右栏「查看 diff」→ 栏内详情态断言）。正则不与列表 `/git/diff$`
+  // 重叠（URL 多 /file 段），无 LIFO 抢跑问题。
+  await page.route(/\/api\/projects\/proj1\/git\/diff\/file/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        repository: true,
+        projectName,
+        path: "src/index.ts",
+        scope: "worktree",
+        status: "modified",
+        diff: "@@ -1,3 +1,4 @@\n line",
+      }),
+    }),
+  );
   // Wiki 段：2 页 + 单页内容（「打开页面」进详情态断言）。
   await page.route(/\/api\/projects\/proj1\/wiki$/, (r) =>
     r.fulfill({
@@ -185,7 +203,9 @@ try {
     .nth(1)
     .locator(".seg4 span", { hasText: "文件" });
   await filesTab.click();
-  await page.waitForSelector("main > div > aside:nth-of-type(2) [role='button']", {
+  // 第十二轮批次 3:右栏三段换共享三件套(03o/03m/03p 形态)——行定位从 ListRow 显式
+  // role=button 换 .frow 原生 button(隐式 role,getByRole 仍可达)。
+  await page.waitForSelector("main > div > aside:nth-of-type(2) .frow", {
     timeout: 5000,
   });
   const fileRow = page
@@ -198,9 +218,10 @@ try {
   await page.waitForTimeout(400);
   let menu = await readMenu(page);
   ok(menu.open, "F1 Files 段文件行右键开菜单");
+  // 03w ∪ 05e 并集(批次 2):mock 文件行不 dirty → 无「在 Git 中查看 diff」= 6 项。
   ok(
-    menu.items.length >= 4,
-    `F2 Files 菜单项 ≥4（实际 ${menu.items.length}：${menu.items.join("/")}）`,
+    menu.items.length === 6 && menu.items.some((x) => x.includes("上传文件")),
+    `F2 Files 菜单并集 6 项含上传（实际 ${menu.items.length}：${menu.items.join("/")}）`,
   );
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
@@ -230,6 +251,24 @@ try {
   await page.waitForTimeout(300);
   const clip = await page.evaluate(() => navigator.clipboard.readText());
   ok(clip === "proj1/src/index.ts", `G3 复制路径 = proj1/src/index.ts（实际 ${clip}）`);
+
+  // 批次 3：菜单「查看 diff」→ 栏内 diff 详情态（03r 形态：meta + DiffContent）→ 返回回列表。
+  await gitRow.click({ button: "right" });
+  await page.waitForTimeout(400);
+  const diffItem = page.getByRole("menuitem").filter({ hasText: "查看 diff" }).first();
+  await diffItem.click();
+  await page
+    .locator("main > div > aside")
+    .nth(1)
+    .getByText("返回变更文件列表")
+    .waitFor({ timeout: 5000 });
+  // DiffContent 渲染 <table>(diff 行表)——右栏 aside 内出现 table = 详情态内容在。
+  const diffBody = await page.locator("main > div > aside").nth(1).locator("table").count();
+  ok(diffBody > 0, "G4 「查看 diff」进栏内 diff 详情态（diff 内容在）");
+  await page.locator("main > div > aside").nth(1).getByText("返回变更文件列表").click();
+  await page.waitForTimeout(400);
+  const backRows = await page.locator("main > div > aside").nth(1).locator(".frow").count();
+  ok(backRows > 0, "G5 diff 详情态返回回变更列表");
 
   // ④ Wiki 段：页面行右键 → 2 项 + 「打开页面」进详情态。
   await page
