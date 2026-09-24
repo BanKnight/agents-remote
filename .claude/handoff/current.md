@@ -1,51 +1,57 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-24（**第十一轮 4 批次全闭环**。桌面 IA 对齐原型（4 列 → 3 列）+ review 修复：`4f82296`/`4a0e61f`/`4cdf2ab`/`7f99411`/`63c64bd`/`1a524a0`，§6.12k 记档。**下一步：交用户真机复验清单，等报数。**）
+> 最后更新：2026-09-24（**第十一轮复验两批全闭环**。第一批 2 问题（移动 terminal 空隙 + 导航栈 pop 语义）= `1fd4aab`；第二批 4 问题（标题行统一/市场箭头/桌面搜索框/管理源返回）= `9873f99`。**下一步：交用户真机复验两批清单 + 问题⑤（桌面右栏缺功能）待用户澄清。**）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-第十一轮两问题（①移动 terminal 聚焦态高度缺块 ②桌面会话实例合并进侧栏）全闭环：`4f82296` 移动高度链修复；批次 1-3（`4a0e61f`/`4cdf2ab`/`7f99411`）4→3 列 + WorkbenchSide 合并单栏；批次 4 review 修复（`63c64bd` file-nav 假绿修正 + `1a524a0` code/design review 22 条消化——side 恒定、footnav flow 化、高度链断链、workbenchMiddleTabAtom 死态删除、InstanceGrid 死链清理 ~350 行）。**下一步：交用户真机复验清单。**
+第十一轮复验报数 2+5 问题处理完：第一批（1fd4aab）修移动 terminal 双重避让空隙 + 导航栈三修（useWorkbenchBack pop 原语/单次导航/fallback 清 focusId）；第二批（9873f99）修 ①项目页标题行触屏撑高 52→41.5 统一 ②市场卡箭头贴右（.ar margin-left:auto）③新增 .psearch 搜索框单源 + /files 内容 28px 线对齐 ④管理源/市场/详情 4 处 back pop 优先。**问题⑤（桌面右栏缺乏重要功能）描述不完整，已调研 3 个差异点待用户澄清。**
 
 ## 本 session 焦点
 
-批次 3 收尾 + 批次 4（门禁/全套 e2e/双 review/记档/handoff）。批次 3 适配揪出 5 个真问题（①derive leftModeFallback ②WorkbenchSide leftMode 默认 ③§8 高度链两层断链 ④MobileFilesTool §13 404 回退 ⑤**WorkbenchSide 漏挂 create.promptHolder = 桌面建会话入口全断**）；批次 4 全套 e2e 首轮 22/23——file-nav order-dependent 假绿（根层 10m 卡形态可访问名含 overview 统计副行，同套前序 spec 泄漏实例使后缀浮动，exact 禁用）；双 review 消化 22 条修复（1 条误判回滚：DragSourceCard 是 tabstrip tab chip 活拖源，rg 过滤排除 instance-area 后误读零消费——教训：判死代码必须全文件看用点，不能 rg 过滤文件名）。
+两批复验修复。第二批根因：①`.h-ic` 原型是 22px 裸图标不撑行，实现 touch:h-10 按钮参与布局——修 = 删 pb-2 + touch:-my-1（点击区保留）；②原型 09 箭头贴右靠 .c 计数列 margin-left:auto（实现无计数列 §6.12g）——auto 移交 .ar；③桌面 mainPage 搜索框三页三形态（wsearch 30 胶囊/内联 38/内联 38）——新增 .psearch 单源（移动 38/r12/fill-search = 09m/10m，桌面 34/r10/elevated2/border = 09-mac/10-mac）+ /files 搜索框 mx-4 补齐 seg4/卡 28px 线；④管理源 back push 固定 /plugins 跳过来路——复用 useWorkbenchBack pop 优先，覆盖 market/sources/skill-detail/mcp-detail 4 处。
 
 ## 关键决策（本阶段不可丢）
 
-- **side 恒定（review P2③ 拍板）**：mainPage 态（global+文件/插件/设置+无 focus）side 由 `workbenchLastProjectAtom` 驱动项目视图（07m/09m/10m「side 仅遮盖主区」），无记忆项目退 05g 会话视图；global 会话页补「会话」ghead + seg4 mini（05g:32 原文「全部」on + 项目段回 lastProject；时钟/plus 无 global 数据源不伪造）。
-- **seg4 与历史态互斥**：seg4 点击均 setHistoryOpen(false)——否则历史态下高亮切换而内容不变 = 控件失灵。
-- **「记住上次中栏 tab」atom 已删**：写点随桌面左栏 middle tab 退役断链，残留 localStorage 值会错乱回退（残留 "git" → 退出文件工具直接进 git 态）；URL `?tab` 唯一真相，省略 = overview；移动工具退出回 overview（原「回进工具前 tab」语义随写点消亡）。
-- **file-nav 假绿教训**：根层 10m 卡形态项目行可访问名 = 名 + overview 统计副行（"demo 2 instances · active just now"）——同套 e2e 前序 spec 泄漏实例使后缀浮动，断言禁 exact；单跑干净环境恰好命中是 order-dependent 假绿。
-- **DragSourceCard 活体实锤**：中栏 tabstrip tab chip 的拖源包装（e2e drag-source 拖的 .tb 即它）——判死代码必须逐文件看全部用点，rg 输出排除定义文件后再过滤会误读。
-- **useApprovals 双 WS 订阅**（StatusBar + WorkbenchSide，承接 ProjectLeftPanel 时代）：注释已修正，收敛单一订阅点单独立项待办。
-- **不修记档**：历史态头部形制与 05c 独立行差异（P3⑧ 等真机反馈）；右栏渐变底 v1 残留（P3⑬ 随 token 收敛批）；pages 桌面无入口（Inspector 四段无 pages 段，等用户反馈定归属）。
+- **.psearch 搜索框单源**：三页（项目/插件/全局文件）一级页搜索框统一类；margin 由调用方承担（/files 需叠 FilesPanel px-3 补 mx-4 到 28px 线；/plugins mx-4=16px 自有线）。**遗留**：桌面 /files 28px 线 vs /plugins 16px 线两页内容基线差 + seg4 独立行形制（原型 mhead 行内 280/290 定宽）——记档待复验再议（收编需动 FilesPanel px-3 / seg4 margin 共享结构）。
+- **触屏撑高修法范式**：触屏大点击区按钮参与父行布局时用 touch:-my-* 抵消盒高，不砍点击区（frontend-notes §7 延伸）；agent-browser（pointer:fine）测不出 touch: 差异，需静态数学 + 真机。
+- **useWorkbenchBack 推广**：插件域 4 处 back（market/sources/skill/mcp detail）全部 pop 优先 + 深链兜底 push /plugins；原语在 workbench-model.ts:281，判定 `__TSR_index>0`。
+- **死探针删除**（tabstrip-back 先例延续）：probe-plugin-tooltips 首断言依赖 M6 已退役「Skills」button（组头现为 psect span）→ git rm。
+- **残留 tmux 会话不删**：ar-terminal-agents-remote-bd3bacc9-terminal_dd9 = 用户自建「重构ui」会话（terminal_dd988a5849af4fb2），非探针数据。
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ M0–M10 + 十一轮反馈修复；第十一轮 4 批次全闭环（§6.12k 逐批记档）
-- ✅ 门禁全绿（lint 0 warning/typecheck/web 672 + api 829 单测）；全套 e2e **23/23**；CSS 硬闸 + tokens 机检过；probe m9-d 63/63
-- ✅ 双 review（code 8 条 + design 14 条）消化完毕，修复 commit `1a524a0`（+204/−502）
-- ⬜ **交用户真机复验**，第十一轮清单：
-  - **桌面（Mac 250px / iPad 260px 分档）**：side 单栏（项目行切换/实例行开 tab/时钟切历史再点返回/seg4 项目↔全部/footnav 三项 + .on 跟随）；**建会话入口**（实例组头 + → 选类型 → prompt 出现——promptHolder 漏挂修复验证）；⌘N；aprow 审批橙行点击开审批中心；mainPage（文件/插件/设置）side 恒定不随导航变化；global 会话页「会话」ghead + seg4；分屏拖拽（tab 拖到中栏左/右边缘）
-  - **移动**：terminal 聚焦态输入抽屉不再被底部导航盖住（`4f82296`）
-  - 遗留（历史轮）：②时间刷新节奏、⑥gf 卡形态、⑫浮层穿透、⑬ticon 间距、iPad 触屏 hover 正交、W4 chip-Popover 形态
-  - 记档不做：宽屏中栏 360px、数据依赖 D 批、项目行操作（重命名/删除/置顶）、实例卡拖放源、文件树拖到中栏（桌面）、pages 桌面入口
+- ✅ 第一批（1fd4aab）：terminal 空隙 + 导航栈三修 + 3 探针适配（workbench-states/project-header 适配、tabstrip-back 删）
+- ✅ 第二批（9873f99）：标题行/箭头/搜索框/管理源 back 4 项 + m10、files-tree-bugs 选择器适配 + plugin-tooltips 删
+- ✅ 验证：e2e 受影响 10/10；探针 projects-home 21 + m6-plugins 53 + m6c 53 + files-tree PASS + m10 全过 + ia-skeleton 19 + m7 68；单测 672+829+9；门禁/CSS 硬闸过
+- ⬜ **交用户真机复验**：
+  - 移动 iPhone：①项目页/文件页/插件页三页主标题行高度一致（触屏 40px 按钮不再撑行）②插件页市场两卡箭头贴最右 ③插件页→管理源→back 回来路（市场 ⚙ 进 → 回市场页）④市场/管理源/技能详情/MCP 详情 back 后浏览器手势不回弹 ⑤terminal 聚焦态无空隙（上批）
+  - 桌面：⑥/files 作用域分段/搜索框/项目卡三块左缘对齐一条线 ⑦/files 与 /plugins 搜索框同规格（34px/圆角 10/浅底描边）
+- ⬜ **问题⑤澄清**：桌面右栏（Inspector）缺什么功能——已调研 3 个原型差异点（见下），等用户确认所指
 - ⬜ review 待办（单独立项）：useApprovals 双 WS 订阅收敛；右栏渐变底随 token 收敛批清
+
+## 问题⑤调研结论（桌面右栏 Inspector 原型 vs 实现）
+
+结构已对齐（glabel2「检视 · 只读」+ seg4 文件/Git/Wiki/历史）。原型（04 iPad pin⑥ / 05 Mac）有而实现无：
+1. **点文件 → 本栏预览 / diff**（04 insfoot / 05 Git 段 diffhead+dcode 内嵌 diff）
+2. **文件树 + Git 折叠同屏**（04 文件段同屏两块；实现四段互斥切换）
+3. **右键（长按）= 05e 同款菜单**（04 insfoot）
+另有 clps » 折叠（实现用 RailButton 收起替代，能力在）。用户原话「桌面端右侧的侧边栏缺乏，这种重要功能」话未说完——交付时列以上 3 点请其确认所指。
 
 ## 阻塞 / 风险
 
-- 无阻塞。dev 服务 tmux ar-dev 存活，43011/43012 均 200，dist 已 rebuild（CSS 硬闸过）。
+- 无阻塞。dev 服务 tmux ar-dev 存活 43011/43012，dist 已 rebuild（新代码），CSS content-type text/css。
+- 连跑探针偶发 flaky（m6c 首轮 click 超时、files-tree-bugs 首轮页面未渲染挂——重跑均绿；负载时段 sleep 800ms 不够）。
 
 ## 易丢的关键上下文
 
-- **探针跑法**：`bun scripts/probe-*.mjs`（bun 不用 node）+ `systemd-run --scope --user -p MemoryMax=2G`；跑前 touch main.tsx 完整 rebuild + sleep 16。
-- **探针 mock 铁律**：route 正则带查询尾 `(?:\?.*)?$`；overview/subtitles/approvals/stream 都要 mock 隔离。
-- **e2e 纪律**：`systemd-run --scope --user -p MemoryMax=2G bun run e2e`（全套）；开发期只跑受影响 spec——run-e2e.ts 多 filter 参数只吃第一个，多个 spec 用正则 `"a|b|c"`。
-- **项目行定位**：`nav.side .srow2[title="<项目名>"]`（可访问名含 live 徽章，exact 不命中；title 属性项目行独有）。
-- **CSS 落盘流程**：改 web 后 touch main.tsx → sleep 16 → ar-verify-css；交付前 curl content-type 必须 text/css。
-- **Edit 注入损坏第 6 次**（workbench-model 删 atom 时吞掉下一 JSDoc 的 `/**`）——≥15 行坚持 python 锚点脚本 + 写完 typecheck/rg 机检；Edit 限单行小步且 old_string 尾部不要吞下一声明的开头行。
-- contains 防护 idiom：`if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node)) return;`
+- **探针跑法**：`bun scripts/probe-*.mjs` + `systemd-run --scope --user -p MemoryMax=2G`；跑前 touch main.tsx 完整 rebuild + sleep 16。
+- **agent-browser 密码**：`PW=$(awk '/password:/ {print $2; exit}' ~/.agents-remote/config.yaml)` 进 shell 变量填 @ref，不进上下文/输出；agent-browser 无 locale 设置（界面英文，断言用类名/aria 不用文案）。
+- **agent-browser 页面缓存**：set viewport 后需重 open URL 才生效；dev rebuild 后旧页面跑旧代码，open 带 ?v=N cache-bust。
+- **stash 对照不可靠**（vite rebuild 竞态）：必须 stash 后 touch main.tsx + sleep 16 再跑基线；pop 后同样 touch + sleep。
+- **探针跑死≠回归**：连跑多探针时段 m6c/files-tree-bugs 均出现过环境 flaky（重跑绿）；先重跑再查代码。
+- **Edit 注入防护**（前科 8 次）：≥15 行用 python 锚点脚本；单行 Edit 后 rg 机检。
+- **e2e 纪律**：`systemd-run --scope --user -p MemoryMax=2G bun run e2e`；多 spec 用正则 `"a|b"`（run-e2e.ts 多 filter 只吃第一个）。
 
 ## 提醒
 
