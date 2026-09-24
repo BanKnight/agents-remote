@@ -110,6 +110,10 @@ export function WorkbenchSide() {
   // 切项目：sticky search 全维透传（GroupedProjectsList enterProject 同口径——navigate 整体
   // 替换 search，漏带即丢状态）。
   const enterProject = (name: string) => {
+    // 点项目行 = 进该项目实例分组视图：显式重置视图态（scopeSegment 残留「全部」时否则
+    // 进项目却是 05g 全部列表——视图态是用户在 side 里上次的选择，跨 scope 导航入口必须
+    // 显式表态，反馈④）。
+    setScopeSegment("project");
     void navigate(
       { kind: "project", key: name },
       undefined,
@@ -134,6 +138,9 @@ export function WorkbenchSide() {
     if (sideProjectName !== null) {
       setScopeSegment("project");
     } else if (lastProject) {
+      // 会话页点「项目」段 = navigate 回上次项目：同样显式重置视图态（组件不重挂，
+      // scopeSegment 残留会带到目标 scope）。
+      setScopeSegment("project");
       void navigate(
         { kind: "project", key: lastProject },
         undefined,
@@ -142,6 +149,10 @@ export function WorkbenchSide() {
     }
   };
 
+  // seg4 高亮 = 当前实例区视图态（scopeSegment + historyOpen 派生），非 scope 路由态——
+  // 点「全部」只切 side 视图不换 scope，高亮必须跟随内容（反馈④：内容变了、tab 不变）。
+  // 历史态（05c）是「项目」段的组头时钟子态，保持项目侧 on。
+  const projectSegOn = sideProjectName !== null && (historyOpen || scopeSegment === "project");
   const agentEntries = projectInstances.instances.filter((entry) => entry.type === "agent");
   const terminalEntries = projectInstances.instances.filter((entry) => entry.type === "terminal");
   const allSettled = isLoaded && pinnedLoaded;
@@ -307,15 +318,16 @@ export function WorkbenchSide() {
         })}
       </div>
       <div className="dsep shrink-0" />
-      {/* ── seg4 mini（sideProject = 项目 on；global 会话页 = 全部 on、项目段回上次项目——
+      {/* ── seg4 mini（高亮 = projectSegOn 视图态派生：项目实例分组/历史 on 或 05g 全部 on；
+          global 会话页 = 全部 on、项目段回上次项目——
           05g「全部」视图同画作用域分段，review P2④） ── */}
       {sideProjectName !== null || sessionPage ? (
         <div className="shrink-0 px-2 pt-2">
           <div aria-label={t("workbench.instancesAria")} className="seg4 mini mx-0" role="tablist">
             <span
               aria-controls="side-instance-panel"
-              aria-selected={sideProjectName !== null}
-              className={`cursor-pointer ${sideProjectName !== null ? "on" : ""}`}
+              aria-selected={projectSegOn}
+              className={`cursor-pointer ${projectSegOn ? "on" : ""}`}
               onClick={selectProjectSeg}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -330,8 +342,8 @@ export function WorkbenchSide() {
             </span>
             <span
               aria-controls="side-instance-panel"
-              aria-selected={sideProjectName === null}
-              className={`cursor-pointer ${sideProjectName === null ? "on" : ""}`}
+              aria-selected={!projectSegOn}
+              className={`cursor-pointer ${projectSegOn ? "" : "on"}`}
               onClick={() => {
                 setHistoryOpen(false);
                 setScopeSegment("all");

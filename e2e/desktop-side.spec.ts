@@ -68,6 +68,37 @@ test("project scope: side 结构（项目行选中 + seg4 + 实例组头 + footn
   await expect(side(page).getByRole("button", { name: "Files", exact: true })).toHaveCount(0);
 });
 
+test("seg4 切换跟随：点 All 高亮跟随 + body 视图同步（用户复验反馈④：内容变了 tab 不变）", async ({
+  page,
+}) => {
+  await projectRow(page).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
+
+  const seg4 = side(page).getByRole("tablist", { name: "Instances" });
+  const projectTab = seg4.getByRole("tab", { name: "Project", exact: true });
+  const allTab = seg4.getByRole("tab", { name: "All", exact: true });
+
+  // 点 All：高亮跟随（aria + .on 双断言）+ body 切 05g 全部分组（`<name> · <count>`
+  // microlabel 遍历全部项目——项目视图的分组只有 Agent sessions/Terminal，无项目名）。
+  await allTab.click();
+  await expect(allTab).toHaveAttribute("aria-selected", "true");
+  await expect(projectTab).toHaveAttribute("aria-selected", "false");
+  await expect(allTab).toHaveClass(/on/);
+  await expect(projectTab).not.toHaveClass(/on/);
+  await expect(side(page).locator(".microlabel").filter({ hasText: projectName })).toBeVisible();
+
+  // 点 Project：反向——高亮回 Project + body 回本项目实例分组（组头不变恒
+  // 「Instances · demo」，区分度在 body：Agent sessions 分组或空态引导行）。
+  await projectTab.click();
+  await expect(projectTab).toHaveAttribute("aria-selected", "true");
+  await expect(allTab).toHaveAttribute("aria-selected", "false");
+  await expect(
+    side(page)
+      .getByText(/Agent sessions|No active sessions/)
+      .first(),
+  ).toBeVisible();
+});
+
 test("footnav 三项导航 + active .on 跟随（All Files→/files、Plugins→/plugins、Settings→leftMode）", async ({
   page,
 }) => {

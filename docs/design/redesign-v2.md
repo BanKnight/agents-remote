@@ -692,6 +692,8 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 11. **批次 4++ 用户复验修复：右栏详情态长行内容撑爆 seg4（tab 导航变形）**：用户复验「文件层层点进预览后 tab 导航只剩文件/文件+Git，Git 侧同病」。DOM 实证（mock 2000 字符长行）：RightPanelTabs 根被撑到 **13850px**、seg4 三 span 各 4605px——可视 352px 只见首个 span，与描述完全吻合。**根因 = min-content 沿 column 链上传**：预览 `.tx`（`white-space: pre` 不换行）→ `.ln` flex → `.code` → … → RightPanelTabs 根，而根作为 shell 右栏 body（row flex）的 flex item，`min-width:auto` = min-content 直接撑爆（批次 4 修 grow 补了 `flex-1` 没配 `min-w-0`）。**修 = 根补 `min-w-0` 一处断根**（automatic min size → 0，全链 stretch 回 22rem；`.code` 自带 overflow-x:auto 长行转栏内横向滚动，clientW 351/scrollW 13850 实证；DiffContent `.dcode` overflow:hidden 同截断语义，Git 侧同修）。复测四层 351px + span 106×3 均分。**知识沉淀**：row-flex item 双件套 `flex-1 + min-w-0`（§8 高度链同族横向版）；overflow 非 visible 只解除 flex item 的 automatic min size，**不改变容器 intrinsic min-content**——scroll 容器照样把 min-content 传给父链，唯一断点 = 沿链每个 flex item 的 min 主轴约束。
 
+12. **批次 4++++ 用户复验修复：桌面左栏 seg4「项目/全部」切换高亮不跟随**：用户复验「左侧项目/全部切换时内容区有变化，但当前 tab 没有变化」。根因 = **高亮源与视图态源不一致**：seg4 两段 on/aria-selected 完全由 `sideProjectName`（scope 路由态，项目语境恒非 null）派生，而「全部」点击只写本地 `scopeSegment`（body 渲染分支的真源）——内容跟着 scopeSegment 变、高亮钉死在路由态。**修 = 视图态做唯一真相**：高亮改从 `projectSegOn = sideProjectName !== null && (historyOpen || scopeSegment === "project")` 派生（历史态是「项目」段的组头时钟子态，保持项目侧 on）；跨 scope 导航入口显式重置视图态（`enterProject` / `selectProjectSeg` 的 navigate 分支补 `setScopeSegment("project")`——组件不重挂，残留视图态会带进新 scope）。sessionPage（sideProjectName=null）语境 projectSegOn 恒 false =「全部」on，与原行为一致。验证：e2e desktop-side 新增「seg4 切换跟随」test（点 All → aria/.on 跟随 + 05g 分组 microlabel 出现；点 Project 反向）5/5 绿；四门禁 + CSS 硬闸全绿。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
