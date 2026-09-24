@@ -257,6 +257,8 @@ export const en = {
   "git.notRepoDesc": "This Project directory does not have Git metadata.",
   "git.loadingDiff": "Loading diff...",
   "git.backToFiles": "Back to changed files",
+  "git.backToHistory": "Back to history",
+  "git.backToBranches": "Back to branches",
   "git.allLabel": "All",
   "git.modifiedLabel": "Modified",
   "git.modifiedShort": "M",

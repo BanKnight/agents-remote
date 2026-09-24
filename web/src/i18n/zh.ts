@@ -256,6 +256,8 @@ export const zh: Record<TranslationKey, string> = {
   "git.notRepoDesc": "此项目目录不包含 Git 元数据。",
   "git.loadingDiff": "正在加载差异...",
   "git.backToFiles": "返回变更文件列表",
+  "git.backToHistory": "返回历史",
+  "git.backToBranches": "返回分支",
   "git.allLabel": "全部",
   "git.modifiedLabel": "已修改",
   "git.modifiedShort": "M",

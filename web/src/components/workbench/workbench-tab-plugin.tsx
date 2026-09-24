@@ -8,7 +8,13 @@ import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import type { WorkbenchInspectionTab } from "../../routes/workbench-model";
 import { ActionButton } from "../shell/shell-primitives";
-import { MobileL3FilePreview, MobileL3GitDiff } from "./mobile-l3";
+import {
+  L3GitBranches,
+  L3GitCommit,
+  L3GitHistory,
+  MobileL3FilePreview,
+  MobileL3GitDiff,
+} from "./mobile-l3";
 import { FilesToolPanel, GitToolPanel, WikiToolPanel } from "./project-tool-panels";
 
 /** Files inspection 的 query-key 隔离段（仅全局根目录浏览语境保留 FilesPanel；项目作用域
@@ -62,8 +68,8 @@ function DetailBackBar({ label, onBack }: { label: string; onBack: () => void })
  * files 预览内「查看 diff ›」进 diff 时返回去向是预览态（非列表），返回标签随之。 */
 type DiffTarget = { path: string; scope: GitDiffScope; from?: "preview" };
 
-/** 栏内 diff 详情态（FilesToolTab/GitToolTab 同构复用：返回条 + MobileL3GitDiff，仅返回
- * 标签来源不同——files 预览内进入时返回预览态，其余返回列表）。 */
+/** 栏内 diff 详情态（FilesToolTab 预览链路复用：返回条 + MobileL3GitDiff；GitToolTab 详情
+ * 已升级为含历史/commit/分支的详情栈，见 GitDetailState）。 */
 function TabDiffDetail({
   target,
   backLabel,
@@ -146,34 +152,66 @@ function FilesToolTab({
 }
 
 /**
- * git tab 主体（双端装配同 FilesToolTab）：列表态 = GitToolPanel（githead 态势行 + 工作区
- * 改动，03m 形态；右栏语境不传 onOpenCommit/onOpenHistory/onOpenBranches → 最近提交/links
- * 段不装配——无 commit/分支列表页承载，不伪造入口）；点改动行 → 栏内 diff 详情态。
+/** git 栏内详情栈项：改动 diff / 全部历史（分支页跳转带 branch）/ commit 详情 / 分支列表。 */
+type GitDetailState =
+  | { kind: "diff"; path: string; scope: GitDiffScope }
+  | { kind: "history"; branch?: string }
+  | { kind: "commit"; hash: string }
+  | { kind: "branches" };
+
+/**
+ * git tab 主体（双端装配同 FilesToolTab）：列表态 = GitToolPanel 03m 全段（githead 态势行 +
+ * 工作区改动 + 最近提交 + 全部历史/分支 links——2026-09-24 用户复验拍板：右栏与移动端同构
+ * 承载三段，装配回调补齐）；点改动行/提交行/links → 栏内详情栈（与移动 L3 同组件：
+ * L3GitHistory/L3GitCommit/L3GitBranches，返回逐级弹栈）。
  */
 function GitToolTab({ projectKey }: { projectKey: string }) {
   const { t } = useT();
-  const [target, setTarget] = useState<DiffTarget | null>(null);
+  const [stack, setStack] = useState<GitDetailState[]>([]);
 
-  if (target) {
+  if (stack.length === 0) {
     return (
-      <TabDiffDetail
-        backLabel={t("git.backToFiles")}
-        onBack={() => setTarget(null)}
-        projectKey={projectKey}
-        target={target}
+      <GitToolPanel
+        onOpenBranches={() => setStack((s) => [...s, { kind: "branches" }])}
+        onOpenCommit={(hash) => setStack((s) => [...s, { kind: "commit", hash }])}
+        onOpenGitFile={(f) =>
+          setStack((s) => [...s, { kind: "diff", path: f.path, scope: f.scope }])
+        }
+        onOpenHistory={() => setStack((s) => [...s, { kind: "history" }])}
+        projectName={projectKey}
       />
     );
   }
+  const top = stack[stack.length - 1]!;
+  const pop = () => setStack((s) => s.slice(0, -1));
+  // 返回标签按去向：栈底回变更列表；栈上层 history →「返回历史」、branches →「返回分支」。
+  const parent = stack.length > 1 ? stack[stack.length - 2] : undefined;
+  const backLabel =
+    stack.length === 1
+      ? t("git.backToFiles")
+      : parent?.kind === "branches"
+        ? t("git.backToBranches")
+        : t("git.backToHistory");
   return (
-    <GitToolPanel
-      onOpenGitFile={(f) =>
-        setTarget({
-          path: f.path,
-          scope: f.scope,
-        })
-      }
-      projectName={projectKey}
-    />
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <DetailBackBar label={backLabel} onBack={pop} />
+      {top.kind === "diff" ? (
+        <MobileL3GitDiff path={top.path} projectName={projectKey} scope={top.scope} />
+      ) : top.kind === "history" ? (
+        <L3GitHistory
+          branch={top.branch}
+          onOpenCommit={(hash) => setStack((s) => [...s, { kind: "commit", hash }])}
+          projectName={projectKey}
+        />
+      ) : top.kind === "commit" ? (
+        <L3GitCommit hash={top.hash} projectName={projectKey} />
+      ) : (
+        <L3GitBranches
+          onOpenHistory={(branch) => setStack((s) => [...s, { kind: "history", branch }])}
+          projectName={projectKey}
+        />
+      )}
+    </div>
   );
 }
 

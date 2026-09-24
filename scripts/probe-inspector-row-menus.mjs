@@ -6,8 +6,9 @@
 // 03w∪05e 并集、详情态 = 栏内切换（WikiPageDetail）。
 // 断言：①右栏 seg4 恰三段 ②Files 行右键 6 项并集菜单（无 dirty）③Git 变更行右键 2 项 +
 // 复制路径落剪贴板 ④Wiki 行右键 2 项 + 「打开页面」进详情态 ⑤触屏长按（合成
-// pointerType:touch pointerdown）开菜单。git/wiki 数据走 route mock（不依赖环境真实 repo
-// 状态）。密码自读不打印。
+// pointerType:touch pointerdown）开菜单 ⑥批次 4+ 同构三段：Git 段最近提交 crow + links
+// 「全部历史」→ 栏内历史 → commit 详情逐级弹栈（G6-G10）。git/wiki/log/branches 数据走
+// route mock（不依赖环境真实 repo 状态）。密码自读不打印。
 // 用法: bun scripts/probe-inspector-row-menus.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
@@ -116,6 +117,65 @@ async function setupMocks(page) {
         scope: "worktree",
         status: "modified",
         diff: "@@ -1,3 +1,4 @@\n line",
+      }),
+    }),
+  );
+  // git log/branches（批次 4+ 右栏同构三段：最近提交 crow + links「全部历史/分支 (N)」；
+  // 历史栈页 log-paged 分页同端点——mock 单页 total=commits.length 无 loadMore）。
+  await page.route(/\/api\/projects\/proj1\/git\/log/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        branch: "main",
+        total: 2,
+        commits: [
+          {
+            hash: "abc1234",
+            message: "最新提交",
+            author: "tester",
+            relativeTime: "2 小时前",
+            isoDate: "2026-09-24",
+          },
+          {
+            hash: "def5678",
+            message: "早期提交",
+            author: "tester",
+            relativeTime: "1 天前",
+            isoDate: "2026-09-23",
+          },
+        ],
+      }),
+    }),
+  );
+  await page.route(/\/api\/projects\/proj1\/git\/commit/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        repository: true,
+        projectName,
+        meta: { hash: "abc1234", message: "最新提交", author: "tester", relativeTime: "2 小时前" },
+        files: [{ path: "src/index.ts", status: "modified", addedLines: 3, removedLines: 1 }],
+      }),
+    }),
+  );
+  await page.route(/\/api\/projects\/proj1\/git\/branches/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        current: "main",
+        branches: [
+          {
+            name: "main",
+            type: "local",
+            isCurrent: true,
+            upstream: "origin/main",
+            ahead: 0,
+            behind: 0,
+          },
+        ],
       }),
     }),
   );
@@ -291,6 +351,30 @@ try {
     .catch(() => {});
   const backRows = await page.locator("main > div > aside").nth(1).locator(".frow").count();
   ok(backRows > 0, "G5 diff 详情态返回回变更列表");
+
+  // 批次 4+（用户复验拍板：右栏与移动同构承载 git 三段）——最近提交 crow + links 全部历史。
+  const recent = await page.locator("main > div > aside").nth(1).locator("button.crow").count();
+  ok(recent >= 1, "G6 Git 段最近提交 crow 渲染（右栏同构三段）");
+  await page.locator("main > div > aside").nth(1).getByRole("button", { name: "全部历史" }).click();
+  const history = page.locator("main > div > aside").nth(1).locator('[data-role="l3-git-history"]');
+  await history.waitFor({ timeout: 5000 }).catch(() => {});
+  ok((await history.count()) > 0, "G7 「全部历史」进栏内历史（03t 同组件）");
+  await history.locator("button.crow").first().click();
+  const commitDetail = page
+    .locator("main > div > aside")
+    .nth(1)
+    .locator('[data-role="l3-git-commit"]');
+  await commitDetail.waitFor({ timeout: 5000 }).catch(() => {});
+  ok((await commitDetail.count()) > 0, "G8 历史点 commit 进栏内详情（03u 同组件）");
+  await page.locator("main > div > aside").nth(1).getByText("返回历史").click();
+  ok((await history.count()) > 0, "G9 返回历史逐级弹栈");
+  // 回列表态再断言 links（links 段在 GitToolPanel 列表态，历史/详情页没有）。
+  await page.locator("main > div > aside").nth(1).getByText("返回变更文件列表").click();
+  const branchLink = page
+    .locator("main > div > aside")
+    .nth(1)
+    .getByRole("button", { name: /分支 \(\d+\)/ });
+  ok((await branchLink.count()) > 0, "G10 links「分支 (N)」渲染");
 
   // ④ Wiki 段：页面行右键 → 2 项 + 「打开页面」进详情态。
   await page

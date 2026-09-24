@@ -98,7 +98,8 @@ export type GitToolPanelProps = {
   /** 工作区改动行点击 / 行菜单「查看 diff」（移动 = git file focus → L3 diff；右栏 = 栏内详情态）。 */
   onOpenGitFile: (file: GitDiffFileSummary) => void;
   /** 段装配规则（有承载页才装配，回调式条件渲染）：传了才渲染「最近提交」段 / links 对应
-   * 按钮——右栏无 commit/分支列表页承载，不传即不渲染（不伪造入口，§6.12l 记档）。 */
+   * 按钮。三端承载一致（2026-09-24 用户复验拍板：右栏 GitToolTab 栈承载，与移动 L3 同构）——
+   * 当前所有消费方都传齐；保留可选语义给未来真无承载的语境。 */
   onOpenCommit?: (hash: string) => void;
   onOpenHistory?: () => void;
   onOpenBranches?: () => void;
@@ -111,7 +112,7 @@ export type GitToolPanelProps = {
  * 才装配）→ links「全部历史 · 分支(N)」（传 onOpenHistory/onOpenBranches 才装配）。
  * diff query key 与桌面 GitChangesList 一致（缓存共享去重，单一数据管道）；log/branches
  * key 与桌面 GitCommitList / GitBranchList 同形但语义不同——此处 log 请求不带 branch 参数
- *（后端默认分支），缓存独立，不与桌面显式 branch 维度共享（消费点也移动独有）。
+ *（后端默认分支），缓存独立，不与桌面显式 branch 维度共享。
  */
 export function GitToolPanel({
   projectName,
@@ -135,7 +136,7 @@ export function GitToolPanel({
     queryKey: ["projects", projectName, "git", "log", ""],
     queryFn: () => getProjectGitLog(projectName),
   });
-  // links「分支 (N)」计数；与分支页 query 同 key。onOpenBranches 不传（右栏）不拉。
+  // links「分支 (N)」计数；与分支页 query 同 key。onOpenBranches 不传不拉（段装配门控）。
   const branches = useQuery({
     enabled: onOpenBranches != null,
     queryKey: ["projects", projectName, "git", "branches"],
@@ -227,7 +228,8 @@ export function GitToolPanel({
       </div>
       {copiedPath ? <div className="cap mt-2 px-4">{t("files.copied")}</div> : null}
 
-      {/* 段装配规则：右栏语境不传 onOpenCommit/onOpenHistory/onOpenBranches → 两段不渲染。 */}
+      {/* 段装配规则：onOpenCommit/onOpenHistory/onOpenBranches 传了才渲染最近提交/links 两段
+          （当前三端都传齐——右栏 GitToolTab 栈承载，与移动同构）。 */}
       {onOpenCommit ? (
         <>
           <div className="sect">{t("git.sectRecent")}</div>
