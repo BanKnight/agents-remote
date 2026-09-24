@@ -1,59 +1,74 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-24（**第十一轮复验两批全闭环**。第一批 2 问题（移动 terminal 空隙 + 导航栈 pop 语义）= `1fd4aab`；第二批 4 问题（标题行统一/市场箭头/桌面搜索框/管理源返回）= `9873f99`。**下一步：交用户真机复验两批清单 + 问题⑤（桌面右栏缺功能）待用户澄清。**）
+> 最后更新：2026-09-24（**第十二轮复验四批全部闭环**：批次 1 右栏宽度固定 `bf95e05`、批次 2 三件套共享化 `aa93f48`、批次 3 注册表换装 `70a5c07`、批次 4 review 收口 `62fa904`。**下一步：交用户真机复验全清单（见下）。**）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-第十一轮复验报数 2+5 问题处理完：第一批（1fd4aab）修移动 terminal 双重避让空隙 + 导航栈三修（useWorkbenchBack pop 原语/单次导航/fallback 清 focusId）；第二批（9873f99）修 ①项目页标题行触屏撑高 52→41.5 统一 ②市场卡箭头贴右（.ar margin-left:auto）③新增 .psearch 搜索框单源 + /files 内容 28px 线对齐 ④管理源/市场/详情 4 处 back pop 优先。**问题⑤（桌面右栏缺乏重要功能）描述不完整，已调研 3 个差异点待用户澄清。**
+第十二轮复验（用户报「1 右栏宽度过大 2 文件/git 未与 iPhone 同构重用代码」）四批全闭环。核心成果：右栏宽度固定模型（22rem 档、中栏吃剩余）+ 文件/Git/Wiki **三件套多端同构单源**（FilesToolPanel/GitToolPanel/WikiToolPanel 双端同一份，注册表 files/git/wiki render = 移动项目工具态同一 render；右栏点行 = 栏内详情态，不进 URL）。design/code review 双终审零 P1/P2 残留，验证全绿。
 
 ## 本 session 焦点
 
-两批复验修复。第二批根因：①`.h-ic` 原型是 22px 裸图标不撑行，实现 touch:h-10 按钮参与布局——修 = 删 pb-2 + touch:-my-1（点击区保留）；②原型 09 箭头贴右靠 .c 计数列 margin-left:auto（实现无计数列 §6.12g）——auto 移交 .ar；③桌面 mainPage 搜索框三页三形态（wsearch 30 胶囊/内联 38/内联 38）——新增 .psearch 单源（移动 38/r12/fill-search = 09m/10m，桌面 34/r10/elevated2/border = 09-mac/10-mac）+ /files 搜索框 mx-4 补齐 seg4/卡 28px 线；④管理源 back push 固定 /plugins 跳过来路——复用 useWorkbenchBack pop 优先，覆盖 market/sources/skill-detail/mcp-detail 4 处。
+批次 4（验证 + 记档 + review + handoff）收口。关键点：
+- **P1 右栏不铺满（design-review 发现）**：右栏承载链是 row-flex（shell body → RightPanelTabs 根 → tabpanel → 三件套），旧面板根 `flex-1` 承担 grow、换三件套后断链 → 子项收缩 max-content。修 = grow 上移 RightPanelTabs 根（`flex-1`）+ `w-full` 下沉内容层。**方向语义铁律：row 容器子项 grow 用 flex-1，column 容器 cross 轴自动 stretch**。
+- **e2e 双重价值实证**：file-browser/git-diff 锚点适配（三件套形态）同时兜底发现**右栏 cwd 丢失真回归**（详情态卸载列表丢内部 state）→ FilesToolTab 层持 tabPath 受控传入。
+- **存量探针欠账归因（§6.12l 条 9）**：全套 48 探针 21 FAIL 逐个归因四类（①§6.12k 删 middle tab 结构退役 ②M2 登录 label 漂移 ③M7 设置结构 + cssCodeSplit 文件名 ④网关 524），**非本批回归**（基线 worktree 43099 对照实证）；单独立项跟进，不阻塞交付。
+- **code-review 终审**：P1/P2 零；P3 六条消化（log key 注释如实化〔与桌面同形不共享，对齐有 key 漂移双拉风险〕、GitStatusBadge/TabDiffDetail 单源折叠、探针死 sleep 换 waitFor 等）。
+- **Edit 注入前科复发**（工作纪律）：本 session 内置 Edit 三次被注入篡改（`setTarget`→`insTarget`、`(el) =>` 丢箭头、参数整体篡改）——每次 rg 机检 + 单行重修恢复。**大段 new_string 高危，单行小步替换 + 写后 rg 机检照旧执行**（verification.md 已记新纪律：内置工具 + 连续两次失败停手恢复）。
 
 ## 关键决策（本阶段不可丢）
 
-- **.psearch 搜索框单源**：三页（项目/插件/全局文件）一级页搜索框统一类；margin 由调用方承担（/files 需叠 FilesPanel px-3 补 mx-4 到 28px 线；/plugins mx-4=16px 自有线）。**遗留**：桌面 /files 28px 线 vs /plugins 16px 线两页内容基线差 + seg4 独立行形制（原型 mhead 行内 280/290 定宽）——记档待复验再议（收编需动 FilesPanel px-3 / seg4 margin 共享结构）。
-- **触屏撑高修法范式**：触屏大点击区按钮参与父行布局时用 touch:-my-* 抵消盒高，不砍点击区（frontend-notes §7 延伸）；agent-browser（pointer:fine）测不出 touch: 差异，需静态数学 + 真机。
-- **useWorkbenchBack 推广**：插件域 4 处 back（market/sources/skill/mcp detail）全部 pop 优先 + 深链兜底 push /plugins；原语在 workbench-model.ts:281，判定 `__TSR_index>0`。
-- **死探针删除**（tabstrip-back 先例延续）：probe-plugin-tooltips 首断言依赖 M6 已退役「Skills」button（组头现为 psect span）→ git rm。
-- **残留 tmux 会话不删**：ar-terminal-agents-remote-bd3bacc9-terminal_dd9 = 用户自建「重构ui」会话（terminal_dd988a5849af4fb2），非探针数据。
+- **多端同构 = 代码同一份（用户拍板）**：三件套（`project-tool-panels.tsx`）双端共享，注册表（`workbench-tab-plugin.tsx`）单源；表现差异只在容器层（ToolPanel 滚动容器 vs 右栏高度链；L3 跳转 vs 栏内详情态）。
+- **段装配规则**：回调式 props 条件渲染（传 onOpenCommit 才渲染最近提交段），query 同规则 `enabled` 门控（不白发请求）。右栏不传 → 只渲染 githead + 工作区改动 + diff 详情态（无 commit/分支列表页承载，不伪造入口）。
+- **右栏宽度模型（批次 1）**：右栏固定 `${rightWidth}rem`（默认 22rem=352px，拖拽 clamp 16–40rem），中栏恒 `minmax(0,1fr)` 吃剩余；`WORKBENCH_CENTER_MAX` 已删。grid-template 裸引 var() 必须是完整轨道定义（嵌套 minmax(var()) 整条非法——批次 1 实测坑）。
+- **`docs/design2/` 是用户目录不动。**
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ 第一批（1fd4aab）：terminal 空隙 + 导航栈三修 + 3 探针适配（workbench-states/project-header 适配、tabstrip-back 删）
-- ✅ 第二批（9873f99）：标题行/箭头/搜索框/管理源 back 4 项 + m10、files-tree-bugs 选择器适配 + plugin-tooltips 删
-- ✅ 验证：e2e 受影响 10/10；探针 projects-home 21 + m6-plugins 53 + m6c 53 + files-tree PASS + m10 全过 + ia-skeleton 19 + m7 68；单测 672+829+9；门禁/CSS 硬闸过
-- ⬜ **交用户真机复验**：
-  - 移动 iPhone：①项目页/文件页/插件页三页主标题行高度一致（触屏 40px 按钮不再撑行）②插件页市场两卡箭头贴最右 ③插件页→管理源→back 回来路（市场 ⚙ 进 → 回市场页）④市场/管理源/技能详情/MCP 详情 back 后浏览器手势不回弹 ⑤terminal 聚焦态无空隙（上批）
-  - 桌面：⑥/files 作用域分段/搜索框/项目卡三块左缘对齐一条线 ⑦/files 与 /plugins 搜索框同规格（34px/圆角 10/浅底描边）
-- ⬜ **问题⑤澄清**：桌面右栏（Inspector）缺什么功能——已调研 3 个原型差异点（见下），等用户确认所指
-- ⬜ review 待办（单独立项）：useApprovals 双 WS 订阅收敛；右栏渐变底随 token 收敛批清
+- ✅ 批次 1（`bf95e05`）：右栏宽度固定模型
+- ✅ 批次 2（`aa93f48`）：三件套共享化（mobile-project-tools 泛化迁 project-tool-panels）
+- ✅ 批次 3（`70a5c07`）：注册表换三件套 + 右栏/焦点详情态装配（WikiPanel 退役）
+- ✅ 批次 4（`62fa904`）：design-review P1/P2/P3 修复 + e2e 适配 + cwd 丢失修复 + code-review 终审 + §6.12l 记档 + verification.md 内置工具纪律
+- ✅ 验证：四门禁 + CSS 硬闸 + token 机检（11 处全存量）+ 探针 inspector-row-menus 16/16、m4-tools-l3 41/41、m9-b 16/16、m9-multi-device 13/13、files-cwd-memory ALL + 受影响 e2e 13/13
+- ⬜ **交用户真机复验**（清单见下）
+- ⬜ 存量探针欠账单独立项（§6.12l 条 9 四类：①类探针适配/退役、②③类修定位器、④类网关恢复重跑）
+- ⬜ review 待办（历史遗留）：useApprovals 双 WS 订阅收敛；右栏渐变底随 token 收敛批清
 
-## 问题⑤调研结论（桌面右栏 Inspector 原型 vs 实现）
+## 用户真机复验清单（第十二轮四批）
 
-结构已对齐（glabel2「检视 · 只读」+ seg4 文件/Git/Wiki/历史）。原型（04 iPad pin⑥ / 05 Mac）有而实现无：
-1. **点文件 → 本栏预览 / diff**（04 insfoot / 05 Git 段 diffhead+dcode 内嵌 diff）
-2. **文件树 + Git 折叠同屏**（04 文件段同屏两块；实现四段互斥切换）
-3. **右键（长按）= 05e 同款菜单**（04 insfoot）
-另有 clps » 折叠（实现用 RailButton 收起替代，能力在）。用户原话「桌面端右侧的侧边栏缺乏，这种重要功能」话未说完——交付时列以上 3 点请其确认所指。
+**桌面（1920/1440 宽屏优先）：**
+1. 右栏宽度 = 固定 ~352px 不随屏宽膨胀（1920 下不再是半屏）；中栏吃剩余宽度
+2. 右栏拖拽 gutter 可调 16–40rem；收起/展开正常（RailButton）
+3. 右栏三段（文件/Git/Wiki）每段内容铺满栏宽（frow 行贴满、githead 态势行 `main ↑N ↓N · 工作区 N` 推到行尾）
+4. 右栏点文件行 → 栏内预览（顶部「返回文件」条）；预览内「查看 diff ›」→ 栏内 diff（「返回预览」）；Git 改动行 → 栏内 diff（「返回变更文件列表」）；Wiki 行 → 栏内阅读态——返回后 cwd 不丢（预览返回还在原目录）
+5. 文件行右键 = 7 项菜单（预览/复制路径/在 Git 查看 diff〔dirty 文件〕/重命名/移动/上传/删除）；Git 行右键 2 项；Wiki 行右键 2 项；iPad 长按同菜单
+6. 双主题（浅/深）下右栏三段 + 栏内详情态显示正常
+
+**移动 iPhone：**
+7. 项目页工具态（文件/Git/Wiki chip）行为零变化 + **新增** Git/Wiki 行长按菜单（查看 diff/复制路径；打开页面/复制链接）
+8. 会话 focus 态 files/git tab = 工具面板形态（03o/03m：mtime/git 角标/githead）——原检视面板（FilesPanel/GitDiffPanel）形态消失（scope chips/branches/commits 完整视图移除，属预期；不合适反馈后单独装配）
+9. 移动 githead 态势行 + 最近提交段/links 段正常（项目工具态才有）
 
 ## 阻塞 / 风险
 
-- 无阻塞。dev 服务 tmux ar-dev 存活 43011/43012，dist 已 rebuild（新代码），CSS content-type text/css。
-- 连跑探针偶发 flaky（m6c 首轮 click 超时、files-tree-bugs 首轮页面未渲染挂——重跑均绿；负载时段 sleep 800ms 不够）。
+- 无阻塞。dev 服务 tmux ar-dev 存活 43011/43012，`62fa904` 后 dist 已 rebuild、`curl -sI localhost:43012/assets/<css>` = text/css。
+- **右栏 files tab 点图片文件 = unsupported 提示**（图片预览归 FilesPanel 检视语境，三件套详情态仅文本形态）——有意取舍，用户若需要再评估。
+- 探针连跑偶发 flaky（重跑绿）；iPad 长按/触屏 pointer media 自动化测不全，真机最终验证交用户。
 
 ## 易丢的关键上下文
 
-- **探针跑法**：`bun scripts/probe-*.mjs` + `systemd-run --scope --user -p MemoryMax=2G`；跑前 touch main.tsx 完整 rebuild + sleep 16。
-- **agent-browser 密码**：`PW=$(awk '/password:/ {print $2; exit}' ~/.agents-remote/config.yaml)` 进 shell 变量填 @ref，不进上下文/输出；agent-browser 无 locale 设置（界面英文，断言用类名/aria 不用文案）。
-- **agent-browser 页面缓存**：set viewport 后需重 open URL 才生效；dev rebuild 后旧页面跑旧代码，open 带 ?v=N cache-bust。
-- **stash 对照不可靠**（vite rebuild 竞态）：必须 stash 后 touch main.tsx + sleep 16 再跑基线；pop 后同样 touch + sleep。
-- **探针跑死≠回归**：连跑多探针时段 m6c/files-tree-bugs 均出现过环境 flaky（重跑绿）；先重跑再查代码。
-- **Edit 注入防护**（前科 8 次）：≥15 行用 python 锚点脚本；单行 Edit 后 rg 机检。
-- **e2e 纪律**：`systemd-run --scope --user -p MemoryMax=2G bun run e2e`；多 spec 用正则 `"a|b"`（run-e2e.ts 多 filter 只吃第一个）。
+- **探针跑法**：`bun scripts/probe-*.mjs`；跑前 touch main.tsx 完整 rebuild + sleep 16；e2e 用 `systemd-run --scope --user -p MemoryMax=2G bun run e2e "正则"`。
+- **agent-browser 密码**：`PW=$(awk '/password:/ {print $2; exit}' ~/.agents-remote/config.yaml)` 进 shell 变量，不进上下文；断言用类名/aria 不用文案（探针须设 locale zh-CN）。
+- **Edit 注入防护（本 session 三次实测）**：单行小步 Edit + 落盘后 rg 机检；大段 new_string 疑似高危（`setTarget`→`insTarget`、丢 `=>`、参数篡改三形态）；连续两次失败停手（git checkout 恢复仅限改动未混杂时）。
+- **route mock LIFO**：后注册先匹配，宽泛正则抢窄正则；探针 mock 别挂宽泛 `git/.*`。
+- **右栏默认收起**：atomWithLocalOnlyStorage 默认 true——探针/e2e 加InitScript `localStorage.setItem("workbenchRightCollapsed","false")` 或点 RailButton 展开。
+- **基线对照法**：`git worktree add /tmp/ar-probe-baseline <旧 commit>` + 43099 独立端口 preview，区分存量欠账 vs 本批回归。
+- **stash 对照不可靠**（vite rebuild 竞态）：stash 后必须 touch main.tsx + sleep 16。
 
 ## 提醒
 
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
+
+---
+最后更新：2026-09-24 21:53；触发原因：第十二轮四批闭环（批次 4 `62fa904`）+ handoff save
