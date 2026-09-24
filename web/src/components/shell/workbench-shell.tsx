@@ -21,14 +21,6 @@ const SIDEBAR_WIDTH_MAC = "250px";
 /** Mac 档（250px 侧栏）最低视口：04/05 原型分档的工程化落点（iPad 档 = 1024–1179）。 */
 const MAC_SIDEBAR_MIN_VIEWPORT_PX = 1180;
 
-/**
- * 中栏（会话窗格）定宽上限（§6.10-2：04 原型 `.center{width:600px;flex:none}`）。落成
- * `minmax(0, 600px)` 而非死 600px——三列（side 250/260 + 中栏 + inspector）下视口紧张时
- * 中栏让位（grid 顺序：side/inspector 先保底、中栏吃剩余、封顶 600）；大屏中栏恒 600、
- * 剩余全给 inspector，即原型的「center flex-none + inspector flex-1」。
- */
-const WORKBENCH_CENTER_MAX = "600px";
-
 type WorkbenchShellProps = {
   /** 中栏：实例区（Stage 1 的 InstanceArea 接入）。工作台主体，不可收起。 */
   children: ReactNode;
@@ -57,8 +49,8 @@ type WorkbenchShellProps = {
  *
  * 桌面常驻三列 grid：side（合并 Sidebar：项目组 + seg4 + 实例组 + aprow + footnav，恒驻
  * 不折叠）/ 中栏（实例区）/ 右栏（inspection tab）。右栏可收起（atom 持久化），收起后
- * 该侧消失、中栏对应边缘出现唤出按钮；中栏是工作台主体，minmax(0,600px) 定宽上限
- * （§6.10-2 center flex-none），不可收起。
+ * 该侧消失、中栏对应边缘出现唤出按钮；中栏是工作台主体，恒 minmax(0, 1fr) 吃剩余
+ * （右栏固定宽，见 rightColumn 注释），不可收起。
  *
  * 纯布局容器，不持业务 state：右栏折叠态 + 宽度来自 workbench-model.ts 的 atom，
  * 三列内容由 props 注入。
@@ -78,15 +70,14 @@ export function WorkbenchShell({
   const rightCollapsible = rightPanelCollapsible ?? !!rightPanel;
 
   // 右栏列宽（变量值 = 完整轨道定义，模板裸引用 var()——若模板再包 minmax(var(...)) 会嵌套
-  // 非法整条声明被丢、退化为单列全宽，探针实测）：收起 / 不可唤出 → 0px；展开 →
-  // minmax(atom, 1fr)（§6.10-2 `.pinsp{flex:1}`）：atom 语义 = inspector 最小宽，gutter
-  // 拖拽调下限、实际宽吃视口剩余。rightPanel null 不决定列宽（由 rightCollapsible 决定）。
-  const rightColumn = rightCollapsed || !rightCollapsible ? "0px" : `minmax(${rightWidth}rem, 1fr)`;
-  // 中栏列宽：右栏展开 → minmax(0, 600px)（§6.10-2 `.center{width:600px;flex:none}`：
-  // side/inspector 保底后中栏吃剩余、封顶 600）；右栏收起/不可唤出 → minmax(0, 1fr)——原型
-  // inspector 常驻无「收起」态，M2 拍板右栏可收，收起后中栏顶上吃满剩余（回 1fr 行为）。
-  const centerColumn =
-    rightCollapsed || !rightCollapsible ? "minmax(0, 1fr)" : `minmax(0, ${WORKBENCH_CENTER_MAX})`;
+  // 非法整条声明被丢、退化为单列全宽，探针实测）：收起 / 不可唤出 → 0px；展开 → 固定
+  // `${rightWidth}rem`（2026-09-24 第十二轮复验问题①拍板：minmax(atom, 1fr) 让默认 22rem
+  // 架空、1920 视口下右栏膨胀 ~1060px；改固定宽 + 中栏吃剩余，gutter 拖拽仍生效）。
+  // rightPanel null 不决定列宽（由 rightCollapsible 决定）。
+  const rightColumn = rightCollapsed || !rightCollapsible ? "0px" : `${rightWidth}rem`;
+  // 中栏列宽：恒 minmax(0, 1fr)——右栏固定宽后中栏吃剩余（原型 .pinsp{flex:1} 的弹性语义
+  // 移交中栏；右栏收起时行为不变，M2 拍板的中栏顶满保留）。
+  const centerColumn = "minmax(0, 1fr)";
 
   // 栏 resize gutter：拖拽改宽度 atom（clamp 到 MIN/MAX，防压溃自身或吃掉中栏）。
   // 右栏翻转方向 —— 向左拖（−delta）才增宽。

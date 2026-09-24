@@ -157,6 +157,12 @@ async function login(page) {
     await page.waitForTimeout(1500);
 
     // ── sbar ──
+    // 审批 chip 等待就绪再读（2026-09-24：死 sleep 1500 在负载时段不够——chip 渲染晚于
+    // 读取，连续误报；waitForFunction 目标态等待取代加固断言时序）。
+    await page.waitForFunction(
+      () => document.querySelector("main > .sbar")?.textContent.includes("待审批") ?? false,
+      { timeout: 8000 },
+    );
     const sbar = await page.evaluate(() => {
       const el = document.querySelector("main > .sbar");
       if (!el) return null;

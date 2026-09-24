@@ -5,9 +5,10 @@
 //     /projects 一级页底 nav 4 Tab 在、/projects/proj1 二级页 push 形态（.back「项目」）。
 //     此前中档落「非移动非桌面」空档（useIsMobile 639 以下才算移动，骨架移动/内件桌面混血）。
 //   Part 2（iPad 横屏 1180×820，≥1024）：桌面三栏 + 列模型——nav.side 250 + 左栏
-//     atom 宽 256 + 中栏 ≤600（minmax(0,600px) 让位）+ inspector 吃剩余（minmax(min,1fr)）。
-//   Part 3（Mac 外接 1600×1000）：中栏封顶精确 600（§6.10-2 center flex-none 语义）+
-//     inspector = 视口 − 其余列实测和（flex-1 吸收）。
+//     atom 宽 256 + 中栏吃剩余 + inspector 固定 22rem（2026-09-24 拍板：右栏固定宽，
+//     minmax(min,1fr) 弹性废弃——1920 视口膨胀 ~1060px）。
+//   Part 3（Mac 外接 1600×1000）：inspector 固定 22rem=352px + 中栏吃剩余
+//     （minmax(0,1fr) 弹性语义从中栏上限移交）。
 //
 // mock 数据（不污染真环境、无真会话）；密码自读，不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v2-m9-multi-device.mjs
@@ -193,17 +194,17 @@ async function login(page) {
     if (col && col.length === 3) {
       const midW = col[1];
       const rightW = col[2];
-      ok(midW <= 601, `中栏 ≤600 上限（minmax(0,600px)，实际 ${midW}）`);
       ok(
-        Math.abs(rightW - (1180 - 250 - midW)) <= 2,
-        `inspector = 视口−其余列（${rightW} ≈ 1180−250−${midW}）`,
+        Math.abs(rightW - 352) <= 2,
+        `inspector 固定 22rem=352px（2026-09-24 拍板，实际 ${rightW}）`,
       );
+      ok(Math.abs(midW - (1180 - 250 - 352)) <= 2, `中栏 = 视口−其余列（${midW} ≈ 1180−250−352）`);
     } else {
       ok(false, `三列模型不在（实际 ${col?.length ?? 0} 列）`);
     }
     await ipadLandscape.close();
 
-    console.log("Part 3: Mac 外接 1600×1000 → 中栏封顶 600 + inspector flex");
+    console.log("Part 3: Mac 外接 1600×1000 → inspector 固定 22rem + 中栏吃剩余");
     const mac = await browser.newContext({
       viewport: { width: 1600, height: 1000 },
       locale: "zh-CN",
@@ -213,7 +214,7 @@ async function login(page) {
     await login(p3);
     await p3.goto(`${WEB_ORIGIN}/projects/proj1`);
     await p3.waitForTimeout(1500);
-    // 右栏默认收起 → 唤出后测三列几何（中栏封顶 600 + inspector 吃剩余）。
+    // 右栏默认收起 → 唤出后测三列几何（inspector 固定 22rem + 中栏吃剩余）。
     await p3.getByRole("button", { name: "展开右栏" }).click();
     await p3.waitForFunction(
       () => {
@@ -233,10 +234,13 @@ async function login(page) {
     if (col1600 && col1600.length === 3) {
       const midW = col1600[1].w;
       const rightW = col1600[2].w;
-      ok(midW !== null && Math.abs(midW - 600) <= 1, `中栏封顶精确 600（实际 ${midW}）`);
       ok(
-        rightW !== null && Math.abs(rightW - (1600 - 250 - 600)) <= 2,
-        `inspector 吃剩余（${rightW} ≈ 1600−250−600）`,
+        rightW !== null && Math.abs(rightW - 352) <= 2,
+        `inspector 固定 22rem=352px（实际 ${rightW}）`,
+      );
+      ok(
+        midW !== null && Math.abs(midW - (1600 - 250 - 352)) <= 2,
+        `中栏吃剩余（${midW} ≈ 1600−250−352）`,
       );
     } else {
       ok(false, `1600 唤出后三列不在（实际 ${col1600?.length ?? 0} 列）`);
