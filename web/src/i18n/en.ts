@@ -245,6 +245,9 @@ export const en = {
   "git.loading": "Loading Git changes...",
   "git.errorTitle": "Unable to load Git changes.",
   "git.fileError": "Unable to open this diff.",
+  // Kept separate from files.menuViewDiff (design-review P3④): different context wording —
+  // change rows are already inside the Git list ("View diff"); file rows navigate to Git.
+  "git.menuViewDiff": "View diff",
   "git.noChanges": "No changes",
   "git.noChangesDesc": "Worktree and staged changes will appear here.",
   "git.selectPrompt": "Select a changed file",
@@ -691,6 +694,7 @@ export const en = {
   "workbench.toggleSidebar": "Toggle sidebar",
   "workbench.sidebar": "Project sidebar",
   "wiki.panelAria": "Wiki pages",
+  "wiki.menuOpen": "Open page",
   "wiki.emptyTitle": "No wiki pages yet",
   "wiki.emptyDesc": "Agent-authored pages appear here once written via the wiki MCP tools.",
   "wiki.loadFailed": "Wiki load failed",

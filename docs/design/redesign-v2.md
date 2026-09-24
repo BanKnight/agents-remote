@@ -393,14 +393,14 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 3. **Mac 分屏入口（05 pin①）**：窗格 tab 条右侧分屏按钮（`rect+分隔线` icon）+ 分隔条拖拽手柄（grip ⋮⋮）——拖拽已有（onResizeSplit），补按钮与 grip 视觉。
 4. **状态栏 sbar（05）**：底部固定条 = 连接点 + 「已连接 srv-01 · N 实例运行中」+ **「N 项待审批 ›」（warning 色，点击 → 审批中心 05f Popover）** + 右侧「今日 $X · N tok」。数据源：连接态（socket）+ 实例计数（refs）+ 待审批计数（M5 审批注册表）+ 费用/token（overview subtitle 同源）。
 5. **快捷键全集（spec §10.2 原文，无增删）**：⌘N 新建实例 · ⌘1..9 切窗格/实例 · ⌘\ 分屏 · ⌘F 文件搜索（聚焦搜索框，10m pin④）· Esc 关浮层 · ⌘R 重连（断线时）。仅桌面（≥1024 + pointer:fine）绑定；输入框聚焦时 ⌘ 系仍可触发（Esc 交 Radix）。
-6. **Inspector 四段（04/05）**：文件/Git/Wiki/历史 seg4——桌面现有 RightPanelTabs 的 tab 集对齐（rightTab 维度已有），补「历史」段（05c 历史 Sidebar 同数据：useHistorySessions）。
+6. **Inspector 四段（04/05）**：文件/Git/Wiki/历史 seg4——桌面现有 RightPanelTabs 的 tab 集对齐（rightTab 维度已有），补「历史」段（05c 历史 Sidebar 同数据：useHistorySessions）。**〔2026-09-24 复验拍板修订：右栏收敛为三段 文件/Git/Wiki，无「历史」——与 iPhone focus 工具同构（多端同构只是容器不同），历史由侧栏时钟态 05c + 中栏/移动 L3 承载；见 §6.12k 复验收口。〕**
 7. **Sidebar 作用域（04/05 pin②）**：seg4 mini「项目/全部」——项目 = 本项目实例组；全部 = 跨项目分组列表（05g）。现桌面 Sidebar 已有 scope 概念（leftMode/global overview），对齐原型交互形态。
 8. **桌面预览只读化（M4 记档落地）**：桌面 file tab 预览去编辑（saveFileContent API 保留，UI 入口移除）——03q 铁律 7「内容编辑器不存在」双端一致。
 9. **桌面版页面**：09m 插件 / 10m 全局文件（含 ⌘F）/ 07m 设置（Mac 设置 = 07 同构宽版）/ 13 MCP 详情桌面入口（M6 记档「M9 评估」→ 做：pluginmcp_ focusId 开 tab）。
 10. **触屏/hover 正交核对（frontend-notes §7）**：iPad 触屏 + 宽屏组合全量核对 hover-capable/touch 变体——hover 显隐功能在 iPad 上必须常显可达。
 11. **安全/杂项收尾**：security P3② `resolveCreateTarget` 补 realpath（M8 采用扩大使用面）；P3① searchFiles 遍历总量上限；`.setrow`/`.logout` 等键盘 `focus-visible`；`w-[52px]` 真机值验证（真机项交用户，代码按原型保持）。
 
-**批次**：a 断点三档 + iPad 列宽对齐 → b Mac 工作台（分屏按钮/状态栏/Inspector 四段/Sidebar 作用域）→ c 快捷键 + 05f 审批 Popover → d 桌面版页面（09m/10m/07m/13 入口/预览只读化）→ e 安全与键盘杂项。每批次探针断言 + 批次末 reviewer 三份 + 四门禁。
+**批次**：a 断点三档 + iPad 列宽对齐 → b Mac 工作台（分屏按钮/状态栏/Inspector 分段〔当时四段，2026-09-24 拍板改三段〕/Sidebar 作用域）→ c 快捷键 + 05f 审批 Popover → d 桌面版页面（09m/10m/07m/13 入口/预览只读化）→ e 安全与键盘杂项。每批次探针断言 + 批次末 reviewer 三份 + 四门禁。
 
 **批次 b 落地补记（2026-09-22，实现与拍板的差异 + 教训）**：
 - **seg4 作用域落位**：拍板写「Sidebar 作用域」，实际落在左栏 InstanceLeftOverview 顶部（桌面左栏 = 项目/实例树两列结构，作用域分段属于实例总览区域而非 Sidebar 本体）——原型 04/05 的 side 区域在实现中由左侧两列共同承载。
@@ -485,7 +485,7 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 | D4 | 上传移动选择器、Mac 拖拽；冲突三选 | probe-v2-m8-gaps（03z 冲突三选 + 拖拽多文件）+ e2e file-browser（上传链） |
 | D5 | 作用域切换生效；行带项目限定符；置顶最前；重名 tab 加后缀 | probe-v2-m6-plugins（作用域分段生效）+ probe-v2-m9-d（pluginmcp_${name} tab 后缀）+ probe-overview-pinned-nojump.mjs |
 | D6 | footnav 文件/插件/设置仅遮盖主区；点会话行回工作台；零销毁 | probe-v2-m9-d（07m/09m/10m mainPage + sidewin 恒定 + 内容行点击回工作台）+ e2e middle-tab-left（`<main>` stays mounted） |
-| D7 | Mac 页 07m/09m/10m 数据与 iPhone 同源 | probe-v2-m9-d（桌面 mainPage 与移动同 mock 数据源断言）+ probe-v2-m9-b（Inspector 四段同源） |
+| D7 | Mac 页 07m/09m/10m 数据与 iPhone 同源 | probe-v2-m9-d（桌面 mainPage 与移动同 mock 数据源断言）+ probe-v2-m9-b（Inspector 分段同源；2026-09-24 起三段） |
 | T1 | 业务代码无散落 HEX（机检） | `bun scripts/ar-verify-tokens.mjs`（report 模式：存活违例仅 SessionDetailRoute.tsx v1 遗留测试常量 9 处；v2 重写面零散落） |
 | T2 | 双主题切换全屏正确（对比度抽查） | probe-theme-switch.mjs（双轨同步）+ `node scripts/analyze-contrast.mjs` + probe-v2-m9-e（G 段 .ar 对比度，批次 e 修复 1.86/1.68 → 5.94/3.26） |
 | T3 | 深浅同名语义 token；SVG 示意值差异已备案 | tokens.json `$value` / `$extensions["mode.dark"]` 两态结构 + 本附录「浅色对比度已知限制」备案节 |
@@ -598,7 +598,7 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 
 **批次 2（桌面形制统一，`052feda`）**：
 - **tabstrip（用户拍板「改向原型 tabstrip」）**：GroupHeader 胶囊 tab 条 → v2-primitives `.tabstrip` 单源形制（32px + bg-tabstrip + border-b sep + gap 16px）；WORKBENCH_TAB_BAR_PX 36→32 联动（flatten-layout 面板顶部 calc 下推）。TabChip → `.tb` 形态：胶囊底色/provider marker/font-bold 退役，12.5px 文本 + on 态 ink-1 600 + ::after 2.5px 主色下划线 + 6px 状态点（statusDotToneBg 单源，session/terminal 有、其余纯文本与原型非 session tab 一致）。条上「＋」= 新建实例入口（05d 锚点语义），与左栏 CreateSessionBar 共用 createSessionMenuItems 单源。DragSourceCard 拖动/右键菜单/ℹ RuntimeConfigDialog/AutoRetry 接线全保留（DragGhost 仍消费 marker）。
-- **检视 seg4**：右栏 Inspector 胶囊 TabButton → glabel2「检视 · 只读」+ 标准 .seg4（32px 四段，span role=tab 键盘可达）；TabButton 保留 export 给批次 3/4 收敛对象。
+- **检视 seg4**：右栏 Inspector 胶囊 TabButton → glabel2「检视 · 只读」+ 标准 .seg4（32px 四段〔2026-09-24 起三段，见 §6.12k 复验收口〕，span role=tab 键盘可达）；TabButton 保留 export 给批次 3/4 收敛对象。
 - m9-d 探针 +Part F 14 断言（tabstrip 几何/token bg/下划线 2.5px 主色/状态点 6px/＋/seg4 32px/glabel2）；m9-b 适配 seg4 选择器。
 
 **批次 3（检视 IA 收敛，用户拍板「左栏只留实例+历史+插件」）**：ProjectLeftPanel middleTabs 按 LEFT_PANEL_TAB_IDS（overview/history/plugins）过滤 buildOverviewTabs（移动端共用源不动）；files/git/wiki/pages 分支与面板删除，相应 props（onOpenFile/onOpenGitFile/onOpenGitCompareFile/onCardDragStart）从 ProjectLeftPanel 卸下（WorkbenchRoute 注入同步删；onOpenGitFile/navigateToGitCompareFile 因移动/恢复链路仍消费保留）。URL ?tab=files 等旧直链落集合外回退 overview。**右栏 Inspector 四段成为唯一检视入口**；e2e middle-tab-left（Files/Git tests → Plugins）、drag-source（拖源换 /files 全局链路）、file-nav（删 middle tab 链路 test）同步适配。
@@ -659,13 +659,22 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 - **e2e order-dependence 教训**：file-nav 根层项目行断言 exact → substring（10m 卡形态可访问名 = 名 + overview 统计副行，同套前序 spec 泄漏实例使后缀浮动——单跑干净环境恰好命中是 order-dependent 假绿）；desktop-side 断言适配 side 恒定新语义（mainPage 态 seg4 Project 在）；m9-d G16 改断言 global seg4 在 + 新增 G17「全部」on（63/63）。
 - **不修记档**：历史态头部形制与 05c 独立行差异（P3⑧，重构 seg4 顺序收益低等真机反馈）；右栏渐变底 v1 残留（P3⑬，M2 存量随 token 收敛批一并清）；useApprovals 双 WS 订阅收敛（改动面大，单独立项）。
 
+### §6.12k 复验收口（2026-09-24，第十一轮真机复验问题⑤）
+
+用户拍板两项（原话「右侧工具中，是没有历史的，它理应和 iPhone 一致」「多端同构，只是容器不同，减少重复代码」，已写入 `.claude/rules/frontend.md` 核心原则）：
+
+1. **右栏删「历史」段，收敛三段 文件/Git/Wiki**：`RightPanelTabs` 删注册表外局部追加的 history 段（重复承载 + 重复代码——历史能力已由侧栏时钟态 05c 与中栏/移动 L3 承载），`visiblePlugins` 回归注册表单源（与移动 `MobileFocusBody` 同构）。`workbenchRightTabAtom` 残留 `"history"` 记忆由 `?? visiblePlugins[0]` 兜底。
+2. **05e 同款行菜单推广到 Git/Wiki 段**：Files 段（`FileEntryList`）已有 5 项菜单（预览/重命名/移动/上传/删除）；Git 变更行 +「查看 diff/复制路径」、Wiki 页面行 +「打开页面/复制链接」（能力摊牌：只挂真实存在的动作，复制路径格式 `projectName/path` 与移动 03w 同构）。桌面右键 = `useRowContextMenu` 坐标 popover、触屏长按 = `useLongPressActions` 计时（`DraggableListRow` 由硬覆盖改 compose 调用方 onPointerDown，长按与拖动序列按 pointerType 分流互不干扰）。菜单在共享组件层单份实现，移动/桌面容器自动同享（多端同构）。`i18n` 新 key `git.menuViewDiff` / `wiki.menuOpen`（`files.menuCopyPath` / `wiki.copyLink` 复用；`git.menuViewDiff` 与 `files.menuViewDiff` 两语境措辞不同——文件行语境是「在 Git 中查看」，变更行语境已在 Git 列表内）。
+3. **多端同构残余记档（跟进项，非本批引入）**：移动 git/wiki 工具行（`MobileGitTool`/`MobileWikiTool` `.frow`）未消费共享 GitFileList/WikiPanel，拿不到行菜单能力——后续移动工具行接入时直接换用共享列表，勿在 `.frow` 上再补菜单（design-review P3⑤）。
+4. **探针**：新增 `probe-inspector-row-menus.mjs`（14 断言：三段/无历史、Files 右键 5 项、Git/Wiki 右键 2 项 + 复制路径剪贴板实值、打开页面进详情态、合成 pointerType:touch 长按开菜单）；m9-d 适配（`.wsearch`→`.psearch` 第十一轮漏适配 + F14 三段）、m9-b 同步三段断言。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
 | --- | --- | --- |
 | Wiki「让 Agent 读这篇」注入协议 | ~~stdin 指令 vs attachment/引用卡；引用卡状态归属~~ ✅ 已摊牌（D13，§6.2）：stdin prompt + 客户端 per-session 引用 atom | ~~M4 开工前~~ 2026-09-21 |
 | iPad 三栏细节 | ✅ 已拍板（§6.10-1/2）：三档断点（<640 移动 / 640–1023 移动拉宽 / ≥1024 三栏），iPad 列宽 side 260 / center 600 / inspector flex-1 | 2026-09-22（Q17：原型+最佳实践拍板） |
-| Mac 专属件取舍 | ✅ 已拍板（§6.10-3..9）：分屏复用 V3 树 + tabstrip 按钮；Inspector 四段（文件/Git/Wiki/历史）；快捷键 = spec §10.2 原文六条 | 2026-09-22（Q17：spec 原文即全集，无增删） |
+| Mac 专属件取舍 | ✅ 已拍板（§6.10-3..9）：分屏复用 V3 树 + tabstrip 按钮；Inspector 四段（文件/Git/Wiki/历史；〔2026-09-24 拍板改三段〕）；快捷键 = spec §10.2 原文六条 | 2026-09-22（Q17：spec 原文即全集，无增删） |
 | Git ✦ 来源标注 | 关联数据面（会话提交映射表 vs commit message heuristic） | 暂不做（D12），重开需用户发起 |
 
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）

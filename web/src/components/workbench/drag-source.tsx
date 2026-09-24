@@ -190,5 +190,19 @@ export function DraggableListRow({
     onCardDragStart,
     onSelect,
   );
-  return <ListRow {...listRowProps} onMouseDown={onMouseDown} onPointerDown={onPointerDown} />;
+  // 调用方行级 onPointerDown（触屏长按 bind，useLongPressActions）与拖动序列 compose 而非
+  // 硬覆盖：两者各自按 pointerType 分流（长按 bind 仅 touch 生效；拖动在 useDragSource 首行
+  // 对 touch return），同一事件两个消费者互不干扰。05e pin① 文件/git 变更行「右键(iPad 长按)」
+  // 落在可拖分支上，覆盖掉即触屏无菜单入口。
+  const { onPointerDown: rowDown, ...restProps } = listRowProps;
+  return (
+    <ListRow
+      {...restProps}
+      onPointerDown={(e) => {
+        rowDown?.(e);
+        onPointerDown(e);
+      }}
+      onMouseDown={onMouseDown}
+    />
+  );
 }

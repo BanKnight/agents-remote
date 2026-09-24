@@ -34,7 +34,7 @@ import {
   shellSurfaceClasses,
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
-import { ActionMenu, useRowContextMenu } from "../ui/action-menu";
+import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
 import { relativeTime } from "../workbench/history-list";
 import { ImageViewer } from "./image-viewer";
@@ -215,6 +215,8 @@ export function FileEntryList({
   const { t } = useT();
   const renameInputRef = useRef<HTMLInputElement>(null);
   const ctx = useRowContextMenu();
+  // 05e pin①「右键文件行(iPad 长按)」:触屏长按计时(桌面右键走 onContextMenu 独立路径)。
+  const lp = useLongPressActions(ctx.openAt);
 
   useEffect(() => {
     if (!renamingPath) return;
@@ -436,8 +438,10 @@ export function FileEntryList({
               ? undefined
               : clickable
                 ? (e) => {
-                    // §4:移动 sheet scrim / 桌面 popover dismiss 的 click 按 fiber 冒泡到行,
-                    // target 在 body 不在行内 → 忽略,否则点 ⋯ 开菜单后再点外会误打开文件/目录。
+                    // guardClick 抑制长按后紧随的合成 click(02c pill 同款);§4:移动 sheet
+                    // scrim / 桌面 popover dismiss 的 click 按 fiber 冒泡到行,target 在 body
+                    // 不在行内 → 忽略,否则点 ⋯ 开菜单后再点外会误打开文件/目录。
+                    if (lp.guardClick()) return;
                     if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node))
                       return;
                     if (isDirectory) onOpenDirectory(entry.path);
@@ -445,6 +449,7 @@ export function FileEntryList({
                   }
                 : undefined,
             onContextMenu: isRenaming || readOnly ? undefined : (e) => ctx.openAt(entry.path, e),
+            ...(isRenaming || readOnly ? {} : lp.bind(entry.path)),
             actions: isRenaming || readOnly ? undefined : renderActions(entry),
           };
           // TS 在此分支内 narrow onCardDragStart/fileProjectName 到非空（无需 ! 断言）。

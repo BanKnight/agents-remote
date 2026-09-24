@@ -244,6 +244,9 @@ export const zh: Record<TranslationKey, string> = {
   "git.loading": "正在加载 Git 变更...",
   "git.errorTitle": "无法加载 Git 变更。",
   "git.fileError": "无法打开此差异。",
+  // 与 files.menuViewDiff 并行不合并（design-review P3④）：两语境措辞不同——变更行已身处
+  // Git 列表内（查看 diff）；文件行在文件语境，动作是跳 Git 面板（在 Git 中查看 diff）。
+  "git.menuViewDiff": "查看 diff",
   "git.noChanges": "没有变更",
   "git.noChangesDesc": "工作区和暂存的变更将在此处显示。",
   "git.selectPrompt": "选择变更文件",
@@ -688,6 +691,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.toggleSidebar": "切换侧边栏",
   "workbench.sidebar": "项目侧边栏",
   "wiki.panelAria": "Wiki 页面",
+  "wiki.menuOpen": "打开页面",
   "wiki.emptyTitle": "还没有 Wiki 页面",
   "wiki.emptyDesc": "Agent 通过 wiki MCP 工具写入的页面会显示在这里。",
   "wiki.loadFailed": "Wiki 加载失败",

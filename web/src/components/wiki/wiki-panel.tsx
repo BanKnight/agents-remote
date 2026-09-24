@@ -9,6 +9,7 @@ import {
   ListRow,
   ListRowSkeleton,
 } from "../shell/shell-primitives";
+import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
 import { ResourceStatePanel } from "../files/file-browser";
 import { MarkdownString } from "../markdown/MarkdownString";
@@ -26,6 +27,11 @@ type WikiPanelProps = {
 export function WikiPanel({ projectName }: WikiPanelProps) {
   const { t } = useT();
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  // 05e 同款行菜单(第十一轮复验问题⑤:右栏「文件/Git/Wiki」段都要右键/长按菜单)。
+  // 桌面右键 = ctx 坐标 popover;触屏长按 = lp 计时(wiki 行无 ⋯ 按钮,长按是唯一菜单入口,
+  // 05e pin①「右键(iPad 长按)」)。
+  const ctx = useRowContextMenu();
+  const lp = useLongPressActions(ctx.openAt);
   const index = useWikiIndex(projectName, WIKI_QUERY_SCOPE);
 
   if (selectedSlug !== null) {
@@ -80,28 +86,63 @@ export function WikiPanel({ projectName }: WikiPanelProps) {
             </div>
           </div>
         ) : (
-          <ListGroup ariaLabel={t("wiki.panelAria")}>
-            {pages.map((page) => (
-              <ListRow
-                key={page.slug}
-                marker={
-                  <IconMarker size="sm" tone="muted">
-                    <ShellIcon className="h-4 w-4" name="pages-nav" />
-                  </IconMarker>
-                }
-                meta={<span className="text-[0.68rem] text-on-surface-muted">{page.updated}</span>}
-                onClick={() => setSelectedSlug(page.slug)}
-                subtitle={
-                  page.tags.length > 0 ? (
-                    <span className="font-mono text-[0.72rem] text-on-surface-muted">
-                      {page.tags.join(", ")}
-                    </span>
-                  ) : undefined
-                }
-                title={<span className="text-[0.82rem]">{page.title}</span>}
-              />
-            ))}
-          </ListGroup>
+          <>
+            <ListGroup ariaLabel={t("wiki.panelAria")}>
+              {pages.map((page) => (
+                <ListRow
+                  key={page.slug}
+                  marker={
+                    <IconMarker size="sm" tone="muted">
+                      <ShellIcon className="h-4 w-4" name="pages-nav" />
+                    </IconMarker>
+                  }
+                  meta={
+                    <span className="text-[0.68rem] text-on-surface-muted">{page.updated}</span>
+                  }
+                  onClick={() => {
+                    if (lp.guardClick()) return;
+                    setSelectedSlug(page.slug);
+                  }}
+                  onContextMenu={(e) => ctx.openAt(page.slug, e)}
+                  {...lp.bind(page.slug)}
+                  subtitle={
+                    page.tags.length > 0 ? (
+                      <span className="font-mono text-[0.72rem] text-on-surface-muted">
+                        {page.tags.join(", ")}
+                      </span>
+                    ) : undefined
+                  }
+                  title={<span className="text-[0.82rem]">{page.title}</span>}
+                />
+              ))}
+            </ListGroup>
+            {(() => {
+              const menuPage = pages.find((p) => ctx.pointFor(p.slug));
+              return menuPage ? (
+                <ActionMenu
+                  contextMenuPoint={ctx.pointFor(menuPage.slug)}
+                  items={[
+                    {
+                      label: t("wiki.menuOpen"),
+                      icon: <ShellIcon name="pages-nav" />,
+                      onSelect: () => setSelectedSlug(menuPage.slug),
+                    },
+                    {
+                      label: t("wiki.copyLink"),
+                      icon: <ShellIcon name="edit" />,
+                      onSelect: () => {
+                        void navigator.clipboard.writeText(
+                          `${window.location.origin}/projects/${encodeURIComponent(projectName)}/wiki/${encodeURIComponent(menuPage.slug)}`,
+                        );
+                      },
+                    },
+                  ]}
+                  onContextMenuClose={ctx.close}
+                  trigger={<span className="hidden" />}
+                />
+              ) : null;
+            })()}
+          </>
         )}
       </div>
     </div>

@@ -4,7 +4,7 @@
 //   Part 1（1600×1000 桌面）：
 //     - 状态栏 sbar（§6.10-4）：28px 横贯底部 + 「已连接 · N 实例运行中」+「N 项待审批 ›」。
 //     - 左栏 seg4 作用域（§6.10-7）：「项目/全部」两段，全部 = 跨项目实例平铺。
-//     - Inspector 四段（§6.10-6）：右栏 tab = 文件/Git/Wiki/历史（05 原型 seg4 顺序）。
+//     - Inspector 三段（2026-09-24 拍板：右栏无历史，与 iPhone focus 工具同构）：文件/Git/Wiki。
 //     - 分屏按钮（§6.10-3）：GroupHeader icon → 新建终端 ref → dropIntoLeaf right 双窗格
 //       + URL 聚焦新终端；SplitGutter 中点 .grip 手柄视觉。
 //   Part 2（820×1180 中档移动形态）：无 sbar（桌面专属件，移动端 StatusBar return null）。
@@ -145,7 +145,7 @@ async function login(page) {
 (async () => {
   const browser = await chromium.launch();
   try {
-    console.log("Part 1: 1600×1000 桌面 → sbar / seg4 作用域 / Inspector 四段 / 分屏按钮");
+    console.log("Part 1: 1600×1000 桌面 → sbar / seg4 作用域 / Inspector 三段 / 分屏按钮");
     const ctx = await browser.newContext({
       viewport: { width: 1600, height: 1000 },
       locale: "zh-CN",
@@ -203,7 +203,8 @@ async function login(page) {
       "「项目」只含本项目实例",
     );
 
-    // ── Inspector 四段 ──
+    // ── Inspector 三段（2026-09-24 拍板：右栏无历史段，历史由侧栏时钟态 05c + 中栏/移动
+    //    L3 承载；行菜单覆盖见 probe-inspector-row-menus）──
     await page.getByRole("button", { name: "展开右栏" }).click();
     await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
       timeout: 5000,
@@ -211,27 +212,13 @@ async function login(page) {
     const rightTabs = await page.evaluate(() => {
       const aside = document.querySelectorAll("main > div > aside")[1];
       if (!aside) return null;
-      // §6.12j 起 Inspector 四段 = .seg4 分段（span role=tab），不再是胶囊 button。
+      // §6.12j 起 Inspector 分段 = .seg4（span role=tab），不再是胶囊 button。
       return [...aside.querySelectorAll(".seg4 span")].map((b) => b.textContent.trim());
     });
     ok(
-      rightTabs !== null && rightTabs.join(",") === "文件,Git,Wiki,历史",
-      `Inspector 四段 = 文件/Git/Wiki/历史（实际 ${JSON.stringify(rightTabs)}）`,
+      rightTabs !== null && rightTabs.join(",") === "文件,Git,Wiki",
+      `Inspector 三段 = 文件/Git/Wiki（实际 ${JSON.stringify(rightTabs)}）`,
     );
-    await page
-      .locator("main > div > aside")
-      .nth(1)
-      .getByRole("tab", { name: "历史", exact: true })
-      .click();
-    await page.waitForTimeout(400);
-    const historyActive = await page.evaluate(() => {
-      const aside = document.querySelectorAll("main > div > aside")[1];
-      const seg = aside
-        ? [...aside.querySelectorAll(".seg4 span")].find((b) => b.textContent.trim() === "历史")
-        : null;
-      return seg ? seg.getAttribute("aria-selected") === "true" : false;
-    });
-    ok(historyActive, "历史段可激活（seg4 aria-selected active 态）");
 
     // ── 分屏按钮 ──
     const leafCount = () =>

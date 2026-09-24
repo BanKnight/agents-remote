@@ -33,6 +33,7 @@ import { ShellIcon } from "../shell/icons";
 import { ResourceStatePanel } from "../files/file-browser";
 import { extToLang, highlightCodeLine } from "../markdown/prism-languages";
 import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
+import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 
 // ── Query-key 隔离段（cache 隔离，避免互相 invalidate）──────────────────────────
 /** 中栏 git tab 的 file diff query-key 隔离段（PanelRouter GitFileDiffPanel 默认）。 */
@@ -107,6 +108,12 @@ function GitFileList({
   onCardDragStart,
 }: GitFileListProps) {
   const { t } = useT();
+  // 05e 同款行菜单（第十一轮复验问题⑤：右栏「文件/Git/Wiki」段都要右键/长按菜单——文件段
+  // FilesPanel 已有，Git 段在此补齐）。桌面右键 = ctx 坐标 popover；触屏长按 = lp 计时（iPad
+  // 右栏行无 ⋯ 按钮，长按是唯一菜单入口，05e pin①「右键(iPad 长按)」）。
+  const ctx = useRowContextMenu();
+  const lp = useLongPressActions(ctx.openAt);
+  const rowKey = (file: GitDiffFileSummary) => `${file.scope}:${file.path}`;
 
   if (files.length === 0)
     return (
@@ -117,56 +124,90 @@ function GitFileList({
       </div>
     );
 
+  // 单一菜单容器（02c pill 同款）：items 按命中的当前行计算——pointFor 只对 ctx 记录行非空。
+  const menuFile = files.find((file) => ctx.pointFor(rowKey(file)) !== null);
+
   return (
-    <ListGroup ariaLabel="Git changed files">
-      {files.map((file) => {
-        const selected = selectedFile?.path === file.path && selectedFile.scope === file.scope;
-        // rowCommon 复用：onClick 是键盘 Enter/Space → click 路径（pointer 单击被拖动序列抑制，
-        // onSelect 接管）。onCardDragStart 存在 → DraggableListRow 拖到中栏开 git diff tab（设计 §7.2）。
-        const rowCommon: ComponentProps<typeof ListRow> = {
-          marker: (
-            <IconMarker size="sm" tone="muted">
-              <ShellIcon name="file" className="h-4 w-4" />
-            </IconMarker>
-          ),
-          meta: (
-            <>
-              <IconMarker size="sm" tone={gitStatusTone(file.status)}>
-                {statusShortLabel(file.status)}
+    <>
+      <ListGroup ariaLabel="Git changed files">
+        {files.map((file) => {
+          const selected = selectedFile?.path === file.path && selectedFile.scope === file.scope;
+          // rowCommon 复用：onClick 是键盘 Enter/Space → click 路径（pointer 单击被拖动序列抑制，
+          // onSelect 接管；guardClick 抑制长按后紧随的合成 click）。onCardDragStart 存在 →
+          // DraggableListRow 拖到中栏开 git diff tab（设计 §7.2）。
+          const rowCommon: ComponentProps<typeof ListRow> = {
+            marker: (
+              <IconMarker size="sm" tone="muted">
+                <ShellIcon name="file" className="h-4 w-4" />
               </IconMarker>
-              {file.addedLines !== null && file.removedLines !== null ? (
-                <span className="font-mono text-[0.62rem] font-bold tabular-nums">
-                  <span className="text-success">+{file.addedLines}</span>{" "}
-                  <span className="text-error">-{file.removedLines}</span>
-                </span>
-              ) : null}
-            </>
-          ),
-          selected,
-          subtitle: file.previousPath ? t("git.fromPath", { path: file.previousPath }) : undefined,
-          title: <span className="font-mono text-[0.82rem]">{file.path}</span>,
-          onClick: () => onSelectFile({ path: file.path, scope: file.scope }),
-        };
-        if (onCardDragStart) {
-          return (
-            <DraggableListRow
-              key={`${file.scope}:${file.path}`}
-              {...rowCommon}
-              dragRef={{
-                kind: "git",
-                mode: "scope",
-                projectName,
-                scope: file.scope,
-                path: file.path,
-              }}
-              onCardDragStart={onCardDragStart}
-              onSelect={() => onSelectFile({ path: file.path, scope: file.scope })}
-            />
-          );
-        }
-        return <ListRow key={`${file.scope}:${file.path}`} {...rowCommon} />;
-      })}
-    </ListGroup>
+            ),
+            meta: (
+              <>
+                <IconMarker size="sm" tone={gitStatusTone(file.status)}>
+                  {statusShortLabel(file.status)}
+                </IconMarker>
+                {file.addedLines !== null && file.removedLines !== null ? (
+                  <span className="font-mono text-[0.62rem] font-bold tabular-nums">
+                    <span className="text-success">+{file.addedLines}</span>{" "}
+                    <span className="text-error">-{file.removedLines}</span>
+                  </span>
+                ) : null}
+              </>
+            ),
+            selected,
+            subtitle: file.previousPath
+              ? t("git.fromPath", { path: file.previousPath })
+              : undefined,
+            title: <span className="font-mono text-[0.82rem]">{file.path}</span>,
+            onClick: () => {
+              if (lp.guardClick()) return;
+              onSelectFile({ path: file.path, scope: file.scope });
+            },
+            onContextMenu: (e) => ctx.openAt(rowKey(file), e),
+            ...lp.bind(rowKey(file)),
+          };
+          if (onCardDragStart) {
+            return (
+              <DraggableListRow
+                key={`${file.scope}:${file.path}`}
+                {...rowCommon}
+                dragRef={{
+                  kind: "git",
+                  mode: "scope",
+                  projectName,
+                  scope: file.scope,
+                  path: file.path,
+                }}
+                onCardDragStart={onCardDragStart}
+                onSelect={() => onSelectFile({ path: file.path, scope: file.scope })}
+              />
+            );
+          }
+          return <ListRow key={`${file.scope}:${file.path}`} {...rowCommon} />;
+        })}
+      </ListGroup>
+      {menuFile ? (
+        <ActionMenu
+          contextMenuPoint={ctx.pointFor(rowKey(menuFile))}
+          items={[
+            {
+              label: t("git.menuViewDiff"),
+              icon: <ShellIcon name="git-nav" />,
+              onSelect: () => onSelectFile({ path: menuFile.path, scope: menuFile.scope }),
+            },
+            {
+              label: t("files.menuCopyPath"),
+              icon: <ShellIcon name="edit" />,
+              onSelect: () => {
+                void navigator.clipboard.writeText(`${projectName}/${menuFile.path}`);
+              },
+            },
+          ]}
+          onContextMenuClose={ctx.close}
+          trigger={<span className="hidden" />}
+        />
+      ) : null}
+    </>
   );
 }
 
