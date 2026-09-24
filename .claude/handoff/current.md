@@ -1,11 +1,11 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-24（**第十二轮复验四批全部闭环**：批次 1 右栏宽度固定 `bf95e05`、批次 2 三件套共享化 `aa93f48`、批次 3 注册表换装 `70a5c07`、批次 4 review 收口 `62fa904`。**下一步：交用户真机复验全清单（见下）。**）
+> 最后更新：2026-09-24（**第十二轮复验四批 + 复验补齐全闭环**：批次 1 `bf95e05` / 批次 2 `aa93f48` / 批次 3 `70a5c07` / 批次 4 `62fa904` / **批次 4+ 右栏 Git 三段补齐 `5fc82ab`**。**下一步：交用户真机复验全清单（见下）。**）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-第十二轮复验（用户报「1 右栏宽度过大 2 文件/git 未与 iPhone 同构重用代码」）四批全闭环。核心成果：右栏宽度固定模型（22rem 档、中栏吃剩余）+ 文件/Git/Wiki **三件套多端同构单源**（FilesToolPanel/GitToolPanel/WikiToolPanel 双端同一份，注册表 files/git/wiki render = 移动项目工具态同一 render；右栏点行 = 栏内详情态，不进 URL）。design/code review 双终审零 P1/P2 残留，验证全绿。
+第十二轮复验（用户报「1 右栏宽度过大 2 文件/git 未与 iPhone 同构重用代码」）四批全闭环 + 复验补齐一轮（用户复验指出右栏 Git 缺「最近提交/全部历史/分支」与移动端不一致 → GitToolTab 升级栏内详情栈、GitToolPanel 三段补齐，`5fc82ab`）。核心成果：右栏宽度固定模型（22rem 档、中栏吃剩余）+ 文件/Git/Wiki **三件套多端同构单源**（三件套双端同一份 + 右栏 Git 三段与移动 L3 完全同组件）。验证全绿。
 
 ## 本 session 焦点
 
@@ -29,6 +29,7 @@
 - ✅ 批次 2（`aa93f48`）：三件套共享化（mobile-project-tools 泛化迁 project-tool-panels）
 - ✅ 批次 3（`70a5c07`）：注册表换三件套 + 右栏/焦点详情态装配（WikiPanel 退役）
 - ✅ 批次 4（`62fa904`）：design-review P1/P2/P3 修复 + e2e 适配 + cwd 丢失修复 + code-review 终审 + §6.12l 记档 + verification.md 内置工具纪律
+- ✅ 批次 4+（`5fc82ab`）：用户复验补齐——右栏 Git 同构三段（GitToolTab 栏内详情栈 + GitToolPanel 三段装配 + 探针 G6-G10 + e2e 历史/分支链路，§6.12l 条 10 记档）
 - ✅ 验证：四门禁 + CSS 硬闸 + token 机检（11 处全存量）+ 探针 inspector-row-menus 16/16、m4-tools-l3 41/41、m9-b 16/16、m9-multi-device 13/13、files-cwd-memory ALL + 受影响 e2e 13/13
 - ⬜ **交用户真机复验**（清单见下）
 - ⬜ 存量探针欠账单独立项（§6.12l 条 9 四类：①类探针适配/退役、②③类修定位器、④类网关恢复重跑）
@@ -40,14 +41,15 @@
 1. 右栏宽度 = 固定 ~352px 不随屏宽膨胀（1920 下不再是半屏）；中栏吃剩余宽度
 2. 右栏拖拽 gutter 可调 16–40rem；收起/展开正常（RailButton）
 3. 右栏三段（文件/Git/Wiki）每段内容铺满栏宽（frow 行贴满、githead 态势行 `main ↑N ↓N · 工作区 N` 推到行尾）
-4. 右栏点文件行 → 栏内预览（顶部「返回文件」条）；预览内「查看 diff ›」→ 栏内 diff（「返回预览」）；Git 改动行 → 栏内 diff（「返回变更文件列表」）；Wiki 行 → 栏内阅读态——返回后 cwd 不丢（预览返回还在原目录）
-5. 文件行右键 = 7 项菜单（预览/复制路径/在 Git 查看 diff〔dirty 文件〕/重命名/移动/上传/删除）；Git 行右键 2 项；Wiki 行右键 2 项；iPad 长按同菜单
-6. 双主题（浅/深）下右栏三段 + 栏内详情态显示正常
+4. **右栏 Git 段 = 三段同构**（批次 4+）：githead + 工作区改动 + **最近提交 crow×3** + links「全部历史 / 分支 (N)」——「全部历史」→ 栏内历史 → 点 commit → commit 详情 → 返回逐级弹栈；分支页点分支 → 该分支历史
+5. 右栏点文件行 → 栏内预览（顶部「返回文件」条）；预览内「查看 diff ›」→ 栏内 diff（「返回预览」）；Git 改动行 → 栏内 diff（「返回变更文件列表」）；Wiki 行 → 栏内阅读态——返回后 cwd 不丢（预览返回还在原目录）
+6. 文件行右键 = 7 项菜单（预览/复制路径/在 Git 查看 diff〔dirty 文件〕/重命名/移动/上传/删除）；Git 行右键 2 项；Wiki 行右键 2 项；iPad 长按同菜单
+7. 双主题（浅/深）下右栏三段 + 栏内详情态显示正常
 
 **移动 iPhone：**
-7. 项目页工具态（文件/Git/Wiki chip）行为零变化 + **新增** Git/Wiki 行长按菜单（查看 diff/复制路径；打开页面/复制链接）
-8. 会话 focus 态 files/git tab = 工具面板形态（03o/03m：mtime/git 角标/githead）——原检视面板（FilesPanel/GitDiffPanel）形态消失（scope chips/branches/commits 完整视图移除，属预期；不合适反馈后单独装配）
-9. 移动 githead 态势行 + 最近提交段/links 段正常（项目工具态才有）
+8. 项目页工具态（文件/Git/Wiki chip）行为零变化 + **新增** Git/Wiki 行长按菜单（查看 diff/复制路径；打开页面/复制链接）
+9. 会话 focus 态 files/git tab = 工具面板形态（03o/03m：mtime/git 角标/githead）——原检视面板（FilesPanel/GitDiffPanel）形态消失（scope chips/branches/commits 完整视图移除，属预期；不合适反馈后单独装配）
+10. 移动 githead 态势行 + 最近提交段/links 段正常（项目工具态才有）；与桌面右栏三段完全同构（批次 4+ 对齐）
 
 ## 阻塞 / 风险
 
@@ -71,4 +73,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-09-24 21:53；触发原因：第十二轮四批闭环（批次 4 `62fa904`）+ handoff save
+最后更新：2026-09-24 23:01；触发原因：批次 4+ 用户复验补齐（右栏 Git 三段 `5fc82ab`）+ handoff save
