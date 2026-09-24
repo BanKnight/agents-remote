@@ -7,7 +7,7 @@ import { ShellIcon } from "../shell/icons";
 import { formatBytes } from "@/lib/format";
 
 // ── 上传队列（03z `.upcard`：串行队列 + 冲突行内三选 + 失败重试）──────────────
-// 桌面 FilesPanel 与移动 MobileFilesTool 双端单源：atom 挂默认 store（全局单例），
+// 桌面 FilesPanel 与 FilesToolPanel 双端单源：atom 挂默认 store（全局单例），
 // pump 为 module 级串行循环，不依赖组件生命周期；组件层只渲染 + 调 action。
 
 export type UploadQueueStatus = "pending" | "uploading" | "conflict" | "error";

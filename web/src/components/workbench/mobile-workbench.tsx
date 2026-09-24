@@ -74,7 +74,7 @@ import {
   MobileL3FilePreview,
   MobileL3GitDiff,
 } from "./mobile-l3";
-import { MobileFilesTool, MobileGitTool, MobileWikiTool } from "./mobile-project-tools";
+import { FilesToolPanel, GitToolPanel, WikiToolPanel } from "./project-tool-panels";
 import {
   MobileCreateInstanceSheet,
   MobileProjectSwitchSheet,
@@ -847,7 +847,7 @@ function MobileProjectWorkbench({
   });
   // 03o crumb 段（filesPath 目录链，每段可点回跳；项目名 b 不可点）。
   const crumbSegments = filesPath ? filesPath.split("/") : [];
-  // 分支页标题计数（与 MobileGitTool / 分支页同 key 缓存共享）。
+  // 分支页标题计数（与 GitToolPanel / 分支页同 key 缓存共享）。
   const branchesForTitle = useQuery({
     queryKey: ["projects", scope.key, "git", "branches"],
     queryFn: () => listProjectGitBranches(scope.key),
@@ -861,10 +861,10 @@ function MobileProjectWorkbench({
   // 03m gitchip b = 分支名 + ahead/behind（spec §4.4 `main ↑1 ↓0`）；detached 降级工具名。
   const chipBranch =
     gitDiffForChip.data?.repository === true ? gitDiffForChip.data.branch : undefined;
-  // 03p wsearch：chip 点击展开输入（query 提升共享给 MobileWikiTool；非 wiki 态点 chip 进 wiki）。
+  // 03p wsearch：chip 点击展开输入（query 提升共享给 WikiToolPanel；非 wiki 态点 chip 进 wiki）。
   const [wikiSearchOpen, setWikiSearchOpen] = useState(false);
   const [wikiSearchQuery, setWikiSearchQuery] = useState("");
-  // 03x 文件搜索：chip 两态（面包屑 ↔ .wsearch 输入），query 提升共享给 MobileFilesTool。
+  // 03x 文件搜索：chip 两态（面包屑 ↔ .wsearch 输入），query 提升共享给 FilesToolPanel。
   const [filesSearchOpen, setFilesSearchOpen] = useState(false);
   const [filesSearchQuery, setFilesSearchQuery] = useState("");
   // M5-a 浮层（03j/03l/03n/08）：row2 ＋ 新建实例、nav 标题 ▾ 项目切换、nav ⋯ 菜单会话历史、
@@ -1262,18 +1262,18 @@ function MobileProjectWorkbench({
             middle tab 同构）。file 树点文件仍走 onOpenFile 开 file tab focus（→ 实例主体层）。 */}
           {activeTool === "files" && !l3Route ? (
             <div className="min-h-0 flex-1 overflow-hidden" data-mobile-tool="files">
-              <MobileFilesTool
+              <FilesToolPanel
+                currentPath={filesPath}
                 onOpenFile={onOpenFile}
                 onOpenGitFile={(f) => onOpenGitFile(scope.key, f.scope, f.path)}
                 onPathChange={setFilesPath}
-                path={filesPath}
                 projectName={scope.key}
                 searchQuery={filesSearchQuery}
               />
             </div>
           ) : activeTool === "git" && !l3Route ? (
             <div className="min-h-0 flex-1 overflow-hidden" data-mobile-tool="git">
-              <MobileGitTool
+              <GitToolPanel
                 onOpenCommit={(hash) => {
                   void navigate({
                     params: { key: scope.key, _splat: hash },
@@ -1301,7 +1301,7 @@ function MobileProjectWorkbench({
             </div>
           ) : activeTool === "wiki" && !l3Route ? (
             <div className="min-h-0 flex-1 overflow-hidden" data-mobile-tool="wiki">
-              <MobileWikiTool
+              <WikiToolPanel
                 onOpenPage={(slug) => {
                   void navigate({
                     params: { key: scope.key, _splat: slug },

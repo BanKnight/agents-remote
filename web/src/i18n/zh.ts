@@ -293,6 +293,8 @@ export const zh: Record<TranslationKey, string> = {
   "git.compareNoDiff": "两个 ref 之间没有差异",
   "git.chipCounts": "· 工作区 {{worktree}} · 暂存 {{staged}}",
   "git.sectWorktree": "工作区改动",
+  // 04 githead 分支态势行右侧计数(第十二轮批次 2 双端 Git 工具)。
+  "git.githeadWorktree": "工作区 {{n}}",
   "git.sectRecent": "最近提交",
   "git.linkHistory": "全部历史",
   "git.linkBranches": "分支 ({{n}})",

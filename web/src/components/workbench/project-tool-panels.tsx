@@ -34,7 +34,7 @@ import type { MobileProjectTool } from "./mobile-project-header";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
 
 /** frow badge 状态 → .badge 变体字符（M/A/D/R 与 statusShortLabel 同源；D/R 变体 M4 新增）。 */
-function gitBadgeVariant(status: GitDiffFileSummary["status"]): string {
+export function gitBadgeVariant(status: GitDiffFileSummary["status"]): string {
   switch (status) {
     case "added":
       return "A";
@@ -63,13 +63,30 @@ function RowChevron() {
 }
 
 /**
- * 移动项目三工具的原生形态面板（v2 M4，对标 03m/03o/03p）。与桌面左栏组件（FilesLeftPanel /
- * GitChangesList / WikiPanel）同数据管道：query key 完全一致（diff/log/branches/files/wiki-index）
- * 缓存去重；换的只是移动形态（frow/crow/tgrp/wpg 原语行 + header 工具 chip 联动）。
+ * 项目三工具的双端共享面板（多端同构，2026-09-24 第十二轮复验批次 2 泛化：代码同一份，
+ * 移动项目工具态 / 移动 focus 态 / 桌面右栏 Inspector 同渲染本三件套，设备适配 = 容器差异，
+ * 由 ToolPanel container prop 与调用方外壳表达）。形态基准 = v2 M4 移动原生形态（对标
+ * 03m/03o/03p，frow/crow/tgrp/wpg 原语行 + header 工具 chip 联动）；与桌面左栏组件
+ * （FilesLeftPanel / GitChangesList / WikiPanel）同数据管道：query key 完全一致
+ * （diff/log/branches/files/wiki-index）缓存去重。
  */
 
-/** 工具面板根容器（占满工具态主体，滚动交内部列表区）。 */
-function ToolPanel({ children, tool }: { children: React.ReactNode; tool: MobileProjectTool }) {
+/**
+ * 工具面板根容器（移动：占满工具态主体、滚动交内部列表区 + bottom-nav padding +
+ * data-mobile-tool 探针锚点）。container=false 时只渲染内容——桌面右栏等语境由调用方
+ * 包自己的 flex 高度链容器（§8：overflow 只裁不传约束，容器链由承载页负责）。
+ */
+function ToolPanel({
+  children,
+  container = true,
+  tool,
+}: {
+  children: React.ReactNode;
+  /** false = 不包移动滚动容器（桌面右栏语境：调用方自备高度链容器）。 */
+  container?: boolean;
+  tool: MobileProjectTool;
+}) {
+  if (!container) return <>{children}</>;
   return (
     <div
       className="flex h-full min-h-0 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
@@ -93,30 +110,35 @@ function GitCommitRow({ commit, onClick }: { commit: GitCommitLogItem; onClick: 
   );
 }
 
-export type MobileGitToolProps = {
+export type GitToolPanelProps = {
   projectName: string;
-  /** 工作区改动行点击 → git file focus（现有 onOpenGitFile 管道，M4 呈现为 L3 diff）。 */
+  /** 工作区改动行点击 / 行菜单「查看 diff」（移动 = git file focus → L3 diff；右栏 = 栏内详情态）。 */
   onOpenGitFile: (file: GitDiffFileSummary) => void;
-  onOpenCommit: (hash: string) => void;
-  onOpenHistory: () => void;
-  onOpenBranches: () => void;
+  /** 段装配规则（有承载页才装配，回调式条件渲染）：传了才渲染「最近提交」段 / links 对应
+   * 按钮——右栏无 commit/分支列表页承载，不传即不渲染（不伪造入口，§6.12l 记档）。 */
+  onOpenCommit?: (hash: string) => void;
+  onOpenHistory?: () => void;
+  onOpenBranches?: () => void;
 };
 
 /**
- * 03m Git 工具面板：sect「工作区改动」frow 列表（badge + path + ›）→ sect「最近提交」crow×3 →
- * links「全部历史 · 分支(N)」→ cap 工具替换说明。diff/log/branches 三个 query key 与桌面
- * GitChangesList / GitCommitList / GitBranchList 完全一致（缓存共享去重，单一数据管道）。
+ * Git 工具面板（03m 移动原生形态，双端共享）：githead 分支态势行（04 原型，main ↑N ↓N ·
+ * 工作区 N，恒渲染）→ sect「工作区改动」frow 列表（badge + path + ›；右键/长按 = 05e 2 项
+ * 菜单「查看 diff / 复制路径」，02c 单一菜单容器）→ sect「最近提交」crow×3（传 onOpenCommit
+ * 才装配）→ links「全部历史 · 分支(N)」（传 onOpenHistory/onOpenBranches 才装配）。
+ * diff/log/branches 三个 query key 与桌面 GitChangesList / GitCommitList / GitBranchList
+ * 完全一致（缓存共享去重，单一数据管道）。
  */
-export function MobileGitTool({
+export function GitToolPanel({
   projectName,
   onOpenGitFile,
   onOpenCommit,
   onOpenHistory,
   onOpenBranches,
-}: MobileGitToolProps) {
+}: GitToolPanelProps) {
   const { t } = useT();
-  // 与 GitChangesList 同 key（workbench-git-left scope）——header gitchip / 工具面板 / 桌面
-  // 左栏三方共享缓存。
+  // 与 GitChangesList 同 key（workbench-git-left scope）——header gitchip / 移动工具面板 /
+  // 桌面左栏 / 右栏（批次 3 装配）多方共享缓存。
   const diff = useQuery({
     queryKey: ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
     queryFn: () => listProjectGitDiff(projectName),
@@ -134,17 +156,61 @@ export function MobileGitTool({
   const files = diff.data?.repository === true && diff.data.files.length > 0 ? diff.data.files : [];
   const commits = log.data?.commits.slice(0, 3) ?? [];
   const branchCount = branches.data?.branches.length ?? 0;
+  const branch = diff.data?.repository === true ? diff.data.branch : undefined;
+  // 05e 复制路径反馈（03w 同款：cap 短暂显示「已复制」）。
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  // 05e 改动行菜单（02c 单一菜单容器模式：find(pointFor) 命中才挂，行外挂 → scrim 冒泡
+  // 不经行；触屏长按 = 同一菜单入口，useLongPressActions）。
+  const ctx = useRowContextMenu();
+  const lp = useLongPressActions(ctx.openAt);
+
+  const changeMenuItems = (file: GitDiffFileSummary) => [
+    {
+      label: t("git.menuViewDiff"),
+      icon: <ShellIcon name="git-nav" />,
+      onSelect: () => onOpenGitFile(file),
+    },
+    {
+      label: t("files.menuCopyPath"),
+      icon: <ShellIcon name="edit" />,
+      onSelect: () => {
+        void navigator.clipboard.writeText(`${projectName}/${file.path}`);
+        setCopiedPath(file.path);
+        window.setTimeout(() => setCopiedPath((p) => (p === file.path ? null : p)), 2000);
+      },
+    },
+  ];
 
   return (
     <ToolPanel tool="git">
+      {/* 04 githead 分支态势行：分支图标 + main ↑N ↓N（mono 600）+ 右侧 .st「工作区 N」。
+          恒渲染（不依赖改动数；非 git 仓库无 branch 字段 → 不渲染）。 */}
+      {branch ? (
+        <div className="githead">
+          <ShellIcon className="h-[13px] w-[13px] shrink-0" name="git-nav" />
+          <span className="min-w-0 truncate">
+            {branch.name === "HEAD" ? t("git.detached") : branch.name}
+            {branch.name !== "HEAD" && branch.upstream !== undefined
+              ? ` ↑${branch.ahead ?? 0} ↓${branch.behind ?? 0}`
+              : null}
+          </span>
+          <span className="st">{t("git.githeadWorktree", { n: files.length })}</span>
+        </div>
+      ) : null}
       <div className="sect">{t("git.sectWorktree")}</div>
       <div className="px-0">
         {files.map((file) => (
           <button
             className="frow w-full cursor-pointer text-left"
             key={`${file.scope}/${file.path}`}
-            onClick={() => onOpenGitFile(file)}
+            onClick={() => {
+              // 长按后松手的合成 click 抑制（03w 文件行同款）。
+              if (lp.guardClick()) return;
+              onOpenGitFile(file);
+            }}
+            onContextMenu={(e) => ctx.openAt(`${file.scope}/${file.path}`, e)}
             type="button"
+            {...lp.bind(`${file.scope}/${file.path}`)}
           >
             <span className={`badge lg ${gitBadgeVariant(file.status)}`}>
               {statusShortLabel(file.status)}
@@ -158,30 +224,54 @@ export function MobileGitTool({
         {files.length === 0 ? (
           <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("git.noChanges")}</div>
         ) : null}
+        {/* 05e 改动行菜单（02c 单一容器）。 */}
+        {(() => {
+          const menuFile = files.find((f) => ctx.pointFor(`${f.scope}/${f.path}`));
+          return menuFile ? (
+            <ActionMenu
+              contextMenuPoint={ctx.pointFor(`${menuFile.scope}/${menuFile.path}`)}
+              items={changeMenuItems(menuFile)}
+              onContextMenuClose={ctx.close}
+              trigger={<span className="hidden" />}
+            />
+          ) : null;
+        })()}
       </div>
+      {copiedPath ? <div className="cap mt-2 px-4">{t("files.copied")}</div> : null}
 
-      <div className="sect">{t("git.sectRecent")}</div>
-      <div>
-        {commits.map((commit) => (
-          <GitCommitRow
-            commit={commit}
-            key={commit.hash}
-            onClick={() => onOpenCommit(commit.hash)}
-          />
-        ))}
-        {commits.length === 0 ? (
-          <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("git.noCommits")}</div>
-        ) : null}
-      </div>
+      {/* 段装配规则：右栏语境不传 onOpenCommit/onOpenHistory/onOpenBranches → 两段不渲染。 */}
+      {onOpenCommit ? (
+        <>
+          <div className="sect">{t("git.sectRecent")}</div>
+          <div>
+            {commits.map((commit) => (
+              <GitCommitRow
+                commit={commit}
+                key={commit.hash}
+                onClick={() => onOpenCommit(commit.hash)}
+              />
+            ))}
+            {commits.length === 0 ? (
+              <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("git.noCommits")}</div>
+            ) : null}
+          </div>
+        </>
+      ) : null}
 
-      <div className="links">
-        <button onClick={onOpenHistory} type="button">
-          {t("git.linkHistory")}
-        </button>
-        <button onClick={onOpenBranches} type="button">
-          {t("git.linkBranches", { n: branchCount })}
-        </button>
-      </div>
+      {onOpenHistory || onOpenBranches ? (
+        <div className="links">
+          {onOpenHistory ? (
+            <button onClick={onOpenHistory} type="button">
+              {t("git.linkHistory")}
+            </button>
+          ) : null}
+          {onOpenBranches ? (
+            <button onClick={onOpenBranches} type="button">
+              {t("git.linkBranches", { n: branchCount })}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </ToolPanel>
   );
 }
@@ -194,45 +284,52 @@ function mtimeRelative(mtimeMs: number, t: TranslateFn): string {
   return relativeTime(new Date(mtimeMs).toISOString(), t);
 }
 
-type MobileFilesToolProps = {
+export type FilesToolPanelProps = {
   projectName: string;
-  /** cwd 记忆（受控，workbenchMobileProjectFilesPathAtom；§13 回退语义由调用方守）。 */
-  path: string;
-  /** 03x header 搜索框的查询（提升共享：chip 与面板结果列表同 query state）。 */
-  searchQuery: string;
-  onPathChange: (path: string) => void;
+  /** cwd（可选受控：传 currentPath+onPathChange = 调用方持记忆跨卸载保活，§13 回退语义由
+   * 调用方守；未传退内部 state——右栏语境无跨卸载保活诉求）。 */
+  currentPath?: string;
+  /** 03x header 搜索框的查询（提升共享：chip 与面板结果列表同 query state；右栏语境不传
+   * = 无搜索态，装配规则「无承载 chip 不装配搜索」）。 */
+  searchQuery?: string;
+  onPathChange?: (path: string) => void;
   onOpenFile: (projectName: string, path: string) => void;
-  /** 03w「在 Git 中查看 diff」→ git file focus（scope 取该文件的 worktree/staged）。 */
+  /** 03w/05e「在 Git 中查看 diff」（移动 = git file focus；右栏 = 栏内 diff 详情态）。 */
   onOpenGitFile: (file: { path: string; scope: GitDiffScope }) => void;
 };
 
 /**
- * 03o 文件工具面板：目录行（.p.dir + ›）+ 文件行（.ic + mono path + mtime + git badge + ›）。
- * git worktree 改动态 join（同 key diff query 与 GitChangesList 去重）——有改动的文件行尾显
- * badge（03o 编号③）。文件行长按/右键 = 03w 写操作菜单（打开预览/复制路径/在 Git 查看 diff/
- * 重命名/移动到…/删除…）；目录行 = 进入。写操作 mutation 后失效 files + git diff 缓存。
+ * 文件工具面板（03o 移动原生形态，双端共享）：目录行（.p.dir + ›）+ 文件行（.ic + mono path +
+ * mtime + git badge + ›）。git worktree 改动态 join（同 key diff query 与 GitChangesList
+ * 去重）——有改动的文件行尾显 badge（03o 编号③）。文件行长按/右键 = 03w ∪ 05e 菜单并集
+ * （打开预览/复制路径/在 Git 查看 diff〔条件 dirty〕/重命名/移动/上传/删除）；目录行 = 进入 +
+ * 新建到此/上传到此。写操作 mutation 后失效 files + git diff 缓存。
  */
-export function MobileFilesTool({
+export function FilesToolPanel({
   projectName,
-  path,
-  searchQuery,
+  currentPath: currentPathProp,
+  searchQuery = "",
   onPathChange,
   onOpenFile,
   onOpenGitFile,
-}: MobileFilesToolProps) {
+}: FilesToolPanelProps) {
   const { t } = useT();
   const queryClient = useQueryClient();
+  // cwd：受控可选（受控 = 调用方持持久化记忆；未受控退内部 state，右栏语境）。
+  const [internalPath, setInternalPath] = useState("");
+  const path = currentPathProp ?? internalPath;
+  const changePath = onPathChange ?? setInternalPath;
   // 与 FilesPanel 同 key（queryScope "files"）——工具面板与浮层文件树共享缓存。
   const listing = useQuery({
     queryKey: ["projects", projectName, "files", path],
     queryFn: () => listProjectFiles(projectName, path || undefined),
   });
   // 路径不存在回退（§13，与 FilesPanel 受控模式同语义）：持久化 cwd 记忆指向已删除目录时
-  // listing 报错 → 回根 + onPathChange("") 清记忆（queryKey 变化时新查询 pending、error 归零
+  // listing 报错 → 回根 + changePath("") 清记忆（queryKey 变化时新查询 pending、error 归零
   // 不误触发；effect 只依赖 error）。
   useEffect(() => {
     if (listing.error !== null && path !== "") {
-      onPathChange("");
+      changePath("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listing.error]);
@@ -394,6 +491,12 @@ export function MobileFilesTool({
       },
     },
     {
+      // 05e 菜单并集补「上传文件…」（桌面 FilesPanel 05e 5 项同款 key,上传到当前目录）。
+      label: t("files.menuUpload"),
+      icon: <ShellIcon name="upload" />,
+      onSelect: () => openUploadPicker(path),
+    },
+    {
       label: t("files.delete"),
       icon: <ShellIcon name="trash" />,
       variant: "destructive" as const,
@@ -493,7 +596,7 @@ export function MobileFilesTool({
       {parentPath !== null ? (
         <button
           className="frow w-full cursor-pointer text-left"
-          onClick={() => onPathChange(parentPath)}
+          onClick={() => changePath(parentPath)}
           type="button"
         >
           <span className="p dir">..</span>
@@ -512,7 +615,7 @@ export function MobileFilesTool({
               if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node))
                 return;
               if (lp.guardClick()) return;
-              if (isDir) onPathChange(entry.path);
+              if (isDir) changePath(entry.path);
               else onOpenFile(projectName, entry.path);
             }}
             onContextMenu={(e) => ctx.openAt(entry.path, e)}
@@ -611,25 +714,29 @@ export function groupWikiPages(
   return [...groups.values()];
 }
 
-type MobileWikiToolProps = {
+export type WikiToolPanelProps = {
   projectName: string;
-  /** header wsearch 展开的查询输入（提升共享：chip 与结果列表同 query state）。 */
+  /** header wsearch 展开的查询输入（提升共享：chip 与结果列表同 query state；右栏语境由
+   * 调用方持 state 或传常量 ""——无 chip 承载即无搜索入口）。 */
   query: string;
   onQueryChange: (query: string) => void;
+  /** 行点击 / 05e 行菜单「打开页面」（移动 = L3 阅读页；右栏 = 栏内阅读态）。 */
   onOpenPage: (slug: string) => void;
 };
 
 /**
- * 03p Wiki 工具面板：搜索态（query 非空 → searchWiki 匹配页列表）→ 分组树（tgrp 组头折叠 +
- * wpg 页行）。wpg 行首 .ref 紫圆标记 = 该页已被注入过 agent 会话（workbenchWikiRefsAtom 反查），
- * refnote 行 = 注入会话数（03p 编号②「已注入」态）。同 key wiki-index 与桌面 WikiPanel 去重。
+ * Wiki 工具面板（03p 移动原生形态，双端共享）：搜索态（query 非空 → searchWiki 匹配页列表）→
+ * 分组树（tgrp 组头折叠 + wpg 页行）。wpg 行首 .ref 紫圆标记 = 该页已被注入过 agent 会话
+ * （workbenchWikiRefsAtom 反查），refnote 行 = 注入会话数（03p 编号②「已注入」态）。wpg 行
+ * 右键/长按 = 05e 2 项菜单「打开页面 / 复制链接」（第十一轮右栏 WikiPanel 同款迁移，02c 单一
+ * 菜单容器）。同 key wiki-index 与桌面 WikiPanel 去重。
  */
-export function MobileWikiTool({
+export function WikiToolPanel({
   projectName,
   query,
   onQueryChange,
   onOpenPage,
-}: MobileWikiToolProps) {
+}: WikiToolPanelProps) {
   const { t } = useT();
   const refsWithSession = useAtomValue(workbenchWikiRefsAtom);
   const index = useWikiIndex(projectName, WIKI_QUERY_SCOPE);
@@ -649,6 +756,28 @@ export function MobileWikiTool({
     }
     return counts;
   }, [refsWithSession, projectName]);
+  // 05e 行菜单（02c 单一菜单容器：find(pointFor) 命中才挂；触屏长按 = 同一菜单入口）。
+  const ctx = useRowContextMenu();
+  const lp = useLongPressActions(ctx.openAt);
+  const wikiMenuItems = (slug: string, clearQuery = false) => [
+    {
+      label: t("wiki.menuOpen"),
+      icon: <ShellIcon name="pages-nav" />,
+      onSelect: () => {
+        if (clearQuery) onQueryChange("");
+        onOpenPage(slug);
+      },
+    },
+    {
+      label: t("wiki.copyLink"),
+      icon: <ShellIcon name="edit" />,
+      onSelect: () => {
+        void navigator.clipboard.writeText(
+          `${window.location.origin}/projects/${encodeURIComponent(projectName)}/wiki/${encodeURIComponent(slug)}`,
+        );
+      },
+    },
+  ];
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const toggle = (key: string) =>
     setCollapsed((prev) => {
@@ -673,10 +802,13 @@ export function MobileWikiTool({
             className="wpg flex w-full flex-wrap cursor-pointer text-left"
             key={m.slug}
             onClick={() => {
+              if (lp.guardClick()) return;
               onQueryChange("");
               onOpenPage(m.slug);
             }}
+            onContextMenu={(e) => ctx.openAt(m.slug, e)}
             type="button"
+            {...lp.bind(m.slug)}
           >
             <span className="n flex-1 truncate">{m.title}</span>
             <span className="st">{m.updated}</span>
@@ -686,6 +818,17 @@ export function MobileWikiTool({
         {matches.length === 0 ? (
           <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("wiki.searchNoMatch")}</div>
         ) : null}
+        {(() => {
+          const menuMatch = matches.find((m) => ctx.pointFor(m.slug));
+          return menuMatch ? (
+            <ActionMenu
+              contextMenuPoint={ctx.pointFor(menuMatch.slug)}
+              items={wikiMenuItems(menuMatch.slug, true)}
+              onContextMenuClose={ctx.close}
+              trigger={<span className="hidden" />}
+            />
+          ) : null;
+        })()}
       </ToolPanel>
     );
   }
@@ -713,8 +856,13 @@ export function MobileWikiTool({
                     <button
                       className="wpg flex w-full cursor-pointer flex-wrap text-left"
                       key={page.slug}
-                      onClick={() => onOpenPage(page.slug)}
+                      onClick={() => {
+                        if (lp.guardClick()) return;
+                        onOpenPage(page.slug);
+                      }}
+                      onContextMenu={(e) => ctx.openAt(page.slug, e)}
                       type="button"
+                      {...lp.bind(page.slug)}
                     >
                       <span className="n flex-1 truncate">{page.title}</span>
                       <span className="st">{page.updated}</span>
@@ -733,6 +881,17 @@ export function MobileWikiTool({
       {groups.length === 0 ? (
         <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("wiki.emptyDesc")}</div>
       ) : null}
+      {(() => {
+        const menuPage = groups.flatMap((group) => group.pages).find((p) => ctx.pointFor(p.slug));
+        return menuPage ? (
+          <ActionMenu
+            contextMenuPoint={ctx.pointFor(menuPage.slug)}
+            items={wikiMenuItems(menuPage.slug)}
+            onContextMenuClose={ctx.close}
+            trigger={<span className="hidden" />}
+          />
+        ) : null;
+      })()}
       <div className="cap mt-4 px-4">{t("wiki.readOnlyCap")}</div>
     </ToolPanel>
   );

@@ -294,6 +294,8 @@ export const en = {
   "git.compareNoDiff": "No differences between the two refs",
   "git.chipCounts": "· {{worktree}} working · {{staged}} staged",
   "git.sectWorktree": "Working tree changes",
+  // 04 githead 分支态势行右侧计数(第十二轮批次 2 双端 Git 工具)。
+  "git.githeadWorktree": "Worktree {{n}}",
   "git.sectRecent": "Recent commits",
   "git.linkHistory": "All history",
   "git.linkBranches": "Branches ({{n}})",
