@@ -1,75 +1,71 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-25（**第十二轮复验四批 + 四次复验补齐全闭环**：批次 1 `bf95e05` / 2 `aa93f48` / 3 `70a5c07` / 4 `62fa904` / 4+ 右栏 Git 三段 `5fc82ab` / 4++ seg4 撑爆 `1e44858` / 4+++ 搜索图标 `39b7ab2` / **4++++ 左栏 seg4 高亮跟随 `2410d9d`**。**下一步：交用户真机复验全清单（见下）。**）
+> 最后更新：2026-09-25（**深度优化四批全闭环 + code-simplifier 终审清单全消化 `658e61c`**。批次 1 `f3482bb` / 2 `13bc633`+`9dd796e`+`4d77a2d` / 3 `77c24c3`+`06b2c7f`+`347dda2`+review `21111f1` / 4 `2bf5e55`+终审 `658e61c`。**下一步：①用户拍板 SessionDetailHeader 死 UI（§6.12m 条 8）②真机复验清单（见下）**。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-第十二轮复验（用户报「1 右栏宽度过大 2 文件/git 未与 iPhone 同构重用代码」）四批全闭环 + 四次复验反馈全部修复闭环（最近一次：桌面左栏「项目/全部」分段切换时内容变但 tab 高亮不变 → 视图态做唯一真相，`2410d9d`）。核心成果：右栏宽度固定模型（22rem 档、中栏吃剩余）+ 文件/Git/Wiki **三件套多端同构单源**（三件套双端同一份 + 右栏 Git 三段与移动 L3 完全同组件）+ 左栏 seg4 高亮跟随视图态。验证全绿。
+深度优化（「多端同构，减少冗余代码」+ big picture 精简）四批全部闭环：批次 3 检视双轨退役 + 编辑能力下沉三件套详情态（useFileEditor 单源）+ 批次 4 Wiki 归一 + code-simplifier 终审 11 条 + 低优先 4 项全消化（i18n 孤儿 139 key、FilesPanel 单模式化、ChatRow/审批/新建 prompt 收敛等，19 文件 +105/−478）。设计文档同步（铁律 7 修订 + §6.12m 十条）。全部验证绿。
 
 ## 本 session 焦点
 
-四次用户复验反馈逐个修复闭环，模式固定 = **根因定位 → 最小修复 → e2e/探针新增断言兜底 → 门禁 → §6.12l 记档 → commit → handoff**。最近一条（反馈④）关键点：
-- **高亮源 ≠ 视图态源**：seg4 两段 on 完全由 `sideProjectName`（scope 路由态）派生，「全部」点击只写 `scopeSegment`（body 渲染真源）→ 内容变、高亮钉死。
-- **修 = 视图态做唯一真相**：`projectSegOn = sideProjectName !== null && (historyOpen || scopeSegment === "project")`（历史是项目段子态）；跨 scope 导航入口（`enterProject` / `selectProjectSeg` navigate 分支）显式重置视图态——组件不重挂，残留视图态会带进新 scope。
-- sessionPage 语境行为不变（sideProjectName=null → projectSegOn 恒 false =「全部」on）。
+批次 4 收尾闭环，模式 = **终审清单逐条核实（rg 消费计数）→ 消化 → typecheck 中途兜底 → 批末全套验证**。关键执行点：
+- **i18n 孤儿批量删**：只读脚本生成零引用清单（无模板拼接判定）→ 确定性删行脚本删 en+zh（278 行逐 Edit 反而是注入风险点）→ TranslationKey/zh Record 双向类型护栏。**多行 value 格式（key 单独一行）单行正则漏删**——typecheck 报 missing 3 key 兜住，手工补删 5 处。
+- **FilesPanel 单模式化**（终审 #4 完整形态）：非 rootBrowse 分支现存零调用方 → rootBrowse/projectName/onMobilePreviewChange 三 prop 删，`resolveRootBrowseTarget` 恒走，`joinRootBrowseDirectoryPath` 签名收窄，注释 rootBrowse 概念统一中文表述。
+- **顺手修复**：ChatRow 的 ActionMenu cancelLabel 误传 rowMenuAria（aria 文案「对话操作」当取消按钮文案）→ `t("cancel")`。
 
 ## 关键决策（本阶段不可丢）
 
-- **多端同构 = 代码同一份（用户拍板）**：三件套（`project-tool-panels.tsx`）双端共享，注册表（`workbench-tab-plugin.tsx`）单源；表现差异只在容器层（ToolPanel 滚动容器 vs 右栏高度链；L3 跳转 vs 栏内详情栈）。
-- **段装配规则**：回调式 props 条件渲染（传 onOpenCommit 才渲染最近提交段），query 同规则 `enabled` 门控。右栏现传齐全段（详情栈承载）。
-- **右栏宽度模型（批次 1）**：右栏固定 `${rightWidth}rem`（默认 22rem=352px，拖拽 clamp 16–40rem），中栏恒 `minmax(0,1fr)` 吃剩余；`WORKBENCH_CENTER_MAX` 已删。grid-template 裸引 var() 必须是完整轨道定义。
-- **seg4 高亮 = 视图态派生（反馈④）**：`sideProjectName` 是 scope 路由态，不能当视图高亮源；`historyOpen` 归项目侧子态。
-- **`docs/design2/` 是用户目录不动。**
+- **多端同构 = 代码同一份（用户拍板）**：三件套（project-tool-panels）双端共享，注册表（workbench-tab-plugin）单源；表现差异只在容器层。编辑能力经拍板保留并下沉三件套详情态（铁律 7 已修订记档）。
+- **精简方法论贯穿四批**：优先删除其次合并最后才提取；reviewer 以精简为主标尺；批次 4 code-simplifier 热区终审收尾。
+- **rootBrowse 单独立项**（用户拍板不在本轮）；GitFileDiffPanel 中栏保留（compare 专用语境）；§6.12m 条 6 评估不做两项（GitScopeChips/githead 展开）。
+- **⚠️ 待用户拍板：SessionDetailHeader + detailView 全链死 UI**（§6.12m 条 8）——全部 PanelRouter 挂载点传 `embeddedHeader`，Files/Git 切换入口不可达，DetailWorkspace files/git 分支（含批次 3 换装）当前不可达。选项：A 整片删除 / B 恢复一个入口。批次 3 换装保留（形态正确，恢复入口即用）。
+- `docs/design2/` 是用户目录不动。
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ 批次 1（`bf95e05`）：右栏宽度固定模型
-- ✅ 批次 2（`aa93f48`）：三件套共享化（mobile-project-tools 泛化迁 project-tool-panels）
-- ✅ 批次 3（`70a5c07`）：注册表换三件套 + 右栏/焦点详情态装配（WikiPanel 退役）
-- ✅ 批次 4（`62fa904`）：design-review P1/P2/P3 修复 + e2e 适配 + cwd 丢失修复 + code-review 终审 + §6.12l 记档 + verification.md 内置工具纪律
-- ✅ 批次 4+（`5fc82ab`）：右栏 Git 同构三段（GitToolTab 栏内详情栈 + GitToolPanel 三段装配 + 探针 G6-G10 + e2e 历史/分支链路，§6.12l 条 10）
-- ✅ 批次 4++（`1e44858`）：右栏详情态长行撑爆 seg4（min-w-0 断 min-content 传播根，§6.12l 条 11）
-- ✅ 批次 4+++（`39b7ab2`）：项目/插件搜索图标撑爆输入框（ShellIcon size-4 契约 + @layer 死规则，§6.12l 条 11 前记档）
-- ✅ 批次 4++++（`2410d9d`）：左栏 seg4 项目/全部切换高亮跟随视图态（§6.12l 条 12；e2e desktop-side 新增切换跟随 test 5/5 绿）
-- ✅ 验证：四门禁 + CSS 硬闸 + token 机检 + e2e desktop-side 5/5；探针 inspector-row-menus 21/21、m4-tools-l3 41/41、m9-b 16/16、m9-multi-device 13/13、files-cwd-memory ALL
+- ✅ 批次 1（`f3482bb`）：死代码清理 + 顺手 bug（chat 菜单 label/relativeTime/长按/TabContextMenu）
+- ✅ 批次 2（`13bc633`+`9dd796e`+`4d77a2d`）：纯逻辑单源（useGlobalActivityRows/useComposerEnterPolicy/useApprovalCenter/formatAheadBehind/LargeTitleRow/MOBILE_SHEET_CLASSES/instanceRowMenuItems/query key 工厂/WS 单订阅）
+- ✅ 批次 3（`77c24c3`+`06b2c7f`+`347dda2`+review `21111f1`）：useFileEditor 单源 + L3 编辑保存 + GitDiffPanel 退役（git-diff-viewer 1247→455 行）+ review 修复轮
+- ✅ 批次 4（`2bf5e55`）：Wiki 归一（WikiPageDetail → L3WikiReader）
+- ✅ 批次 4 收尾（`658e61c`）：code-simplifier 终审 11 条 + 低优先 4 项全消化 + 铁律 7 修订 + §6.12m 十条记档
+- ✅ 验证：四门禁 + CSS 硬闸 + e2e 24/24 + 探针 m4 43/43、inspector ALL、file-save-scroll ALL、approvals 26/26、cwd-memory ALL、m9-b 16/16、m9-d 63/63
+- ⬜ **用户拍板 SessionDetailHeader 死 UI**（A 删除 / B 恢复入口，§6.12m 条 8）
 - ⬜ **交用户真机复验**（清单见下）
-- ⬜ 存量探针欠账单独立项（§6.12l 条 9 四类：①类探针适配/退役、②③类修定位器、④类网关恢复重跑）
-- ⬜ review 待办（历史遗留）：useApprovals 双 WS 订阅收敛；右栏渐变底随 token 收敛批清
+- ⬜ 单独立项（不在本轮）：rootBrowse 下沉；i18n 动词级 key 收敛；存量探针欠账；probe-chat-e2e 2 存量 FAIL
 
-## 用户真机复验清单（第十二轮四批 + 四次复验补齐）
+## 用户真机复验清单（深度优化四批）
 
-**桌面（1920/1440 宽屏优先）：**
-1. 右栏宽度 = 固定 ~352px 不随屏宽膨胀（1920 下不再是半屏）；中栏吃剩余宽度
-2. 右栏拖拽 gutter 可调 16–40rem；收起/展开正常（RailButton）
-3. 右栏三段（文件/Git/Wiki）每段内容铺满栏宽（frow 行贴满、githead 态势行 `main ↑N ↓N · 工作区 N` 推到行尾）
-4. **右栏 Git 段 = 三段同构**（批次 4+）：githead + 工作区改动 + **最近提交 crow×3** + links「全部历史 / 分支 (N)」——「全部历史」→ 栏内历史 → 点 commit → commit 详情 → 返回逐级弹栈；分支页点分支 → 该分支历史
-5. 右栏点文件行 → 栏内预览（顶部「返回文件」条）；预览内「查看 diff ›」→ 栏内 diff（「返回预览」）；Git 改动行 → 栏内 diff（「返回变更文件列表」）；Wiki 行 → 栏内阅读态——返回后 cwd 不丢（预览返回还在原目录）
-5b. **长行内容进详情态后 seg4 三段恒定**（批次 4++）：预览超长单行代码/diff 长行，tab 导航不变形（长行转栏内横向滚动）
-6. 文件行右键 = 7 项菜单（预览/复制路径/在 Git 查看 diff〔dirty 文件〕/重命名/移动/上传/删除）；Git 行右键 2 项；Wiki 行右键 2 项；iPad 长按同菜单
-7. **左栏「项目/全部」分段切换**（批次 4++++）：点「全部」→ 段高亮跳「全部」+ 实例区变全部会话分组列表；点「项目」→ 高亮回「项目」+ 实例区回本项目实例分组；时钟历史态高亮保持「项目」侧
-8. 双主题（浅/深）下右栏三段 + 栏内详情态显示正常
+**编辑链（新能力，重点）：**
+1. 桌面右栏 files 段点文本文件 → 预览 →「编辑」→ 改内容 → 保存（「已保存」反馈 + ⌘S 快捷键 + 保存后列表 mtime 刷新）；改后不保存直接点其他文件 → dirty 丢弃确认
+2. 移动 iPhone 项目工具态文件预览：meta 行「编辑 / 查看 diff ›」按钮**贴行右缘**（review 修复过 auto margin 平分 bug）；编辑态保存/完成流同上
+3. md/html 文件：渲染态 ⇄「源码」/编辑切换正常（renderMode 重置 bug 已修）
+4. L3 图片文件预览 → ImageViewer；超大文件 → 提示文案
 
-**移动 iPhone：**
-9. 项目页工具态（文件/Git/Wiki chip）行为零变化 + **新增** Git/Wiki 行长按菜单（查看 diff/复制路径；打开页面/复制链接）
-10. 会话 focus 态 files/git tab = 工具面板形态（03o/03m：mtime/git 角标/githead）——原检视面板（FilesPanel/GitDiffPanel）形态消失（scope chips/branches/commits 完整视图移除，属预期；不合适反馈后单独装配）
-11. 移动 githead 态势行 + 最近提交段/links 段正常（项目工具态才有）；与桌面右栏三段完全同构（批次 4+ 对齐）
+**检视换装（形态变化，属预期）：**
+5. 移动会话 focus 态 files/git tab = 工具面板形态（03o/03m），原检视面板（scope chips/branches 完整视图）不再出现；git 改动行 → 栏内 diff → 返回
+6. Wiki：列表 → 阅读态（右栏/移动同一份 L3WikiReader）→ 返回；「让 Agent 读这篇」/复制链接按语境在
+7. 审批中心「全部允许」两段确认（桌面 Popover / 移动 sheet 双端行为一致）
+
+**杂项：**
+8. chat 会话列表行菜单（右键/长按）：菜单取消按钮现在显示「取消」（原误显示「对话操作」）；新建文件夹 prompt（文件面板底部 links + 文件夹行菜单「新建到此」）两入口行为一致
+9. 双主题（浅/深）下上述全部形态正常
 
 ## 阻塞 / 风险
 
-- 无阻塞。dev 服务 tmux ar-dev 存活 43011/43012，`2410d9d` 后 dist 已 rebuild、`curl -sI localhost:43012/assets/<css>` = text/css。
-- **右栏 files tab 点图片文件 = unsupported 提示**（图片预览归 FilesPanel 检视语境，三件套详情态仅文本形态）——有意取舍，用户若需要再评估。
-- 探针连跑偶发 flaky（重跑绿）；iPad 长按/触屏 pointer media 自动化测不全，真机最终验证交用户。
+- 无阻塞。dev 服务 tmux ar-dev 存活 43011/43012；`658e61c` 后已 touch main.tsx rebuild，`curl -sI` CSS = text/css。
+- 右栏 files tab 点图片文件 = ImageViewer（批次 3 起 L3 详情态支持，不再是 unsupported 提示）。
+- token 机检 report 模式存量 HEX（`#6b7280` 等）非本轮引入，M1 收紧时清。
 
 ## 易丢的关键上下文
 
 - **探针跑法**：`bun scripts/probe-*.mjs`；跑前 touch main.tsx 完整 rebuild + sleep 16；e2e 用 `systemd-run --scope --user -p MemoryMax=2G bun run e2e "正则"`。
 - **agent-browser 密码**：`PW=$(awk '/password:/ {print $2; exit}' ~/.agents-remote/config.yaml)` 进 shell 变量，不进上下文；断言用类名/aria 不用文案（探针须设 locale zh-CN）。
-- **Edit 注入防护（本 session 三次实测）**：单行小步 Edit + 落盘后 rg 机检；大段 new_string 疑似高危；连续两次失败停手恢复。
-- **route mock LIFO**：后注册先匹配，宽泛正则抢窄正则；探针 mock 别挂宽泛 `git/.*`。
-- **右栏默认收起**：atomWithLocalOnlyStorage 默认 true——探针/e2e 加InitScript `localStorage.setItem("workbenchRightCollapsed","false")` 或点 RailButton 展开。
-- **基线对照法**：`git worktree add /tmp/ar-probe-baseline <旧 commit>` + 43099 独立端口 preview，区分存量欠账 vs 本批回归。
-- **stash 对照不可靠**（vite rebuild 竞态）：stash 后必须 touch main.tsx + sleep 16。
+- **Edit 注入防护（本 session 又两次手滑：t() key 写错两处）**：单行小步 Edit + 落盘后 rg 机检 + typecheck 兜底；批量机械操作（278 行删）用确定性脚本比逐 Edit 更安全。
+- **i18n 批删方法论（可复用）**：只读脚本生成零引用清单 → 无模板拼接判定 → 确定性删行脚本 → TranslationKey 类型护栏拦漏删（多行 value 格式 key 单独一行，单行正则匹配不到）→ 手工补。
+- **route mock LIFO**：后注册先匹配；探针 mock 别挂宽泛 `git/.*`。preview 响应必带 mtimeMs。
+- **右栏默认收起**：探针/e2e 加InitScript `localStorage.setItem("workbenchRightCollapsed","false")`。
+- **基线对照法**：`git worktree add /tmp/ar-probe-baseline <旧 commit>` + 43099 独立端口 preview。
 
 ## 提醒
 
@@ -77,4 +73,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-09-25 02:56；触发原因：批次 4++++ seg4 高亮跟随修复（`2410d9d`）+ handoff save
+最后更新：2026-09-25 19:05；触发原因：深度优化四批全闭环 + 终审清单消化（`658e61c`）+ handoff save
