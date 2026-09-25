@@ -48,13 +48,6 @@ const NOOP = () => {};
 
 // ── Utilities ────────────────────────────────────────────────────
 
-export const parentProjectPath = (path: string) => {
-  if (path.length === 0) return null;
-  const parts = path.split("/").filter(Boolean);
-  parts.pop();
-  return parts.length === 0 ? "" : parts.join("/");
-};
-
 // 有渲染能力的文件（markdown / html）默认展示渲染结果，其余文本默认 source。
 export function defaultRenderMode(name: string): "source" | "render" {
   return name.endsWith(".md") || name.endsWith(".html") || name.endsWith(".htm")
@@ -175,7 +168,7 @@ type FileEntryListProps = {
   /** 拖动源启动（文件行拖到中栏开 file tab，WorkbenchContent onCardDragStart）。undefined 退纯点击。 */
   onCardDragStart?: CardDragStartHandler;
   /** 文件所属项目名（构造 fileRef.path 全路径 = `${fileProjectName}/${entry.path}`）。
-   *  undefined（rootBrowse 根目录层）→ 文件行不可拖（无对应 file tab）。与 selectFile 的 effectiveProjectName gate 一致。 */
+   *  undefined（根目录浏览根层）→ 文件行不可拖（无对应 file tab）。与 selectFile 的 effectiveProjectName gate 一致。 */
   fileProjectName?: string;
   /** 10-tab 全局文件总览卡形态（移动 /files mainPage 根层，M10 用户反馈⑥）：项目目录行 = ic 徽章 +
    *  统计副行 + live 尾标；散文件行 = mono 名 + tm 相对时间。10-tab 原型描述的就是根层总览——卡形态
@@ -823,12 +816,13 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
 // ── FilesPanel ────────────────────────────────────────────────────
 
 /**
- * rootBrowse 模式数据源解析（设计 workbench-views §4.1）。全局 files tab 根目录 = PROJECTS_ROOT：
+ * FilesPanel 数据源解析（设计 workbench-views §4.1，唯一模式）。全局 files tab 根目录 =
+ * PROJECTS_ROOT：
  * - currentPath 空 → root listing（只读，列所有项目目录）。
  * - currentPath 第一段 = 项目名 → 切换为该项目的可写 files（复用 project API）。
  *
- * 单一数据管道：rootBrowse 模式按 currentPath 派生 {projectName, relativePath, isRootListing}，
- * 不为 root 维护平行渲染组件。进入项目后 selectedFilePath / entry.path 均为项目内相对路径
+ * 单一数据管道：按 currentPath 派生 {projectName, relativePath, isRootListing}，不为 root
+ * 维护平行渲染组件。进入项目后 selectedFilePath / entry.path 均为项目内相对路径
  *（不含项目名前缀），与 project 模式同构。
  */
 export type RootBrowseTarget =
@@ -845,10 +839,9 @@ export function resolveRootBrowseTarget(currentPath: string): RootBrowseTarget {
 }
 
 /**
- * rootBrowse 项目层目录导航：把 `listProjectFiles` 返回的项目根相对 `entry.path`
+ * 项目层目录导航：把 `listProjectFiles` 返回的项目根相对 `entry.path`
  *（无 projectName 前缀）拼回完整 currentPath = "projectName/relativePath" 格式
- * （`resolveRootBrowseTarget` 的逆运算）。rootBrowse 根层（entry.path=项目名本身）
- * 与非 rootBrowse 模式（currentPath 本就是项目相对）原样返回。
+ * （`resolveRootBrowseTarget` 的逆运算）。根层（entry.path=项目名本身）原样返回。
  *
  * 调用方语义统一（设计 workbench-views §4.1）：`FileEntryList.onOpenDirectory` 传项目
  * 相对 entry.path，经本函数转成完整 currentPath 后再调 `goToPath`；
@@ -856,11 +849,8 @@ export function resolveRootBrowseTarget(currentPath: string): RootBrowseTarget {
  * `goToPath` 单一逻辑直接 `setCurrentPath`，避免单一函数同时服务两种 path 语义
  * 导致某种来源被双前缀或丢前缀。
  */
-export function joinRootBrowseDirectoryPath(
-  target: RootBrowseTarget | null,
-  entryPath: string,
-): string {
-  return target?.kind === "project" ? `${target.projectName}/${entryPath}` : entryPath;
+export function joinRootBrowseDirectoryPath(target: RootBrowseTarget, entryPath: string): string {
+  return target.kind === "project" ? `${target.projectName}/${entryPath}` : entryPath;
 }
 
 export type FilesPanelProps = {
@@ -870,23 +860,15 @@ export type FilesPanelProps = {
    * middle tab 切换不丢 cwd）。未传时退化为 initialPath 初始化的内部 state（其他调用方零改）。
    */
   currentPath?: string;
-  /** 项目作用域（非 rootBrowse 模式必填）。rootBrowse 模式按 currentPath 第一段派生。 */
-  projectName?: string;
   /** Show file preview panel when a file is clicked. Default true. */
   enablePreview?: boolean;
   /** Query-key segment to isolate caches between different consumers. Default "files". */
   queryScope?: string;
-  /**
-   * 全局根目录浏览模式（设计 workbench-views §4.1）。true 时根目录层只读列所有项目目录，
-   * 进入项目子目录后切换为该项目的可写 files（复用 project API）。默认 false（项目作用域）。
-   */
-  rootBrowse?: boolean;
   /** 10-tab 卡形态透传 FileEntryList（移动 /files mainPage 根层专用，见 FileEntryListProps 注释）。 */
   globalCard?: {
     overview: Record<string, { instances: number; running: number; latestLabel: string }>;
   };
   onPathChange?: (path: string) => void;
-  onMobilePreviewChange?: (open: boolean) => void;
   /**
    * 文件点击回调（仅 enablePreview=false 树模式触发）。透出当前 project + 文件相对路径，
    * 供调用方开 file tab（左栏文件树 → 中栏 file tab）。enablePreview=true（inspection）走
@@ -902,13 +884,10 @@ export type FilesPanelProps = {
 export function FilesPanel({
   initialPath,
   currentPath: controlledPath,
-  projectName,
   enablePreview = true,
   queryScope = "files",
-  rootBrowse = false,
   globalCard,
   onPathChange,
-  onMobilePreviewChange,
   onOpenFile,
   onCardDragStart,
   filter,
@@ -925,14 +904,12 @@ export function FilesPanel({
     cancel: cancelPreviewExit,
   } = useMobileExitClose(() => {
     setSelectedFilePath(undefined);
-    onMobilePreviewChange?.(false);
   });
-  // rootBrowse 模式按 currentPath 派生数据源（设计 §4.1）。非 rootBrowse 模式退化为项目作用域：
-  // effectiveProjectName = projectName，effectiveRelativePath = currentPath，readOnly 恒 false。
-  const target = rootBrowse ? resolveRootBrowseTarget(currentPath) : null;
-  const isRootListing = target?.kind === "root";
-  const effectiveProjectName = target?.kind === "project" ? target.projectName : projectName;
-  const effectiveRelativePath = target?.kind === "project" ? target.relativePath : currentPath;
+  // 按 currentPath 派生数据源（设计 §4.1）：根层只读列项目目录，进项目子目录切可写。
+  const target = resolveRootBrowseTarget(currentPath);
+  const isRootListing = target.kind === "root";
+  const effectiveProjectName = target.kind === "project" ? target.projectName : undefined;
+  const effectiveRelativePath = target.kind === "project" ? target.relativePath : currentPath;
   // 根目录层只读（用户权限边界）；进入项目子目录后可写。
   const readOnly = isRootListing;
 
@@ -994,13 +971,11 @@ export function FilesPanel({
       }).then((ok) => {
         if (ok) {
           setSelectedFilePath(path);
-          onMobilePreviewChange?.(true);
         }
       });
       return;
     }
     setSelectedFilePath(path);
-    onMobilePreviewChange?.(true);
   };
 
   // clearPreview 经 useMobileExitClose 编排：移动端先播 slide-out 再真正清（§7 对称），桌面端即时。

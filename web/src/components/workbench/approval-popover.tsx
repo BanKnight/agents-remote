@@ -20,8 +20,8 @@ export function ApprovalPopover({
 }) {
   const { t } = useT();
   const navigate = useNavigate();
-  const { confirmAll, pendingCount, respond, respondAll, startConfirmAll, resetConfirmAll } =
-    useApprovalCenter(approvals);
+  const center = useApprovalCenter(approvals);
+  const { pendingCount, respond, resetConfirmAll } = center;
 
   return (
     <Popover
@@ -33,21 +33,7 @@ export function ApprovalPopover({
       <PopoverContent align="start" className="apop" side="top">
         <div className="ahd">
           <span className="font-bold text-ink-1">{t("approvals.title")}</span>
-          {pendingCount > 0 ? (
-            <>
-              <span className="cnt">{t("approvals.nPending", { count: pendingCount })}</span>
-              <button
-                className="all cursor-pointer"
-                disabled={respond.isPending}
-                onClick={() => (confirmAll ? respondAll() : startConfirmAll())}
-                type="button"
-              >
-                {confirmAll
-                  ? t("approvals.confirmAll", { count: pendingCount })
-                  : t("approvals.allowAll")}
-              </button>
-            </>
-          ) : null}
+          <ApprovalAllowAll center={center} />
         </div>
         {pendingCount === 0 ? (
           <p className="hfoot">{t("approvals.empty")}</p>
@@ -114,5 +100,29 @@ export function ApprovalPopover({
         ) : null}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * 「N 项待审批 + 全部允许」头部二联（05f .ahd / 11 headerExtra 双容器共用）。confirmAll
+ * 两段确认状态机单源 useApprovalCenter；pendingCount = 0 渲染 null，容器无需再 gate。
+ */
+export function ApprovalAllowAll({ center }: { center: ReturnType<typeof useApprovalCenter> }) {
+  const { t } = useT();
+  if (center.pendingCount === 0) return null;
+  return (
+    <>
+      <span className="cnt">{t("approvals.nPending", { count: center.pendingCount })}</span>
+      <button
+        className="all cursor-pointer"
+        disabled={center.respond.isPending}
+        onClick={() => (center.confirmAll ? center.respondAll() : center.startConfirmAll())}
+        type="button"
+      >
+        {center.confirmAll
+          ? t("approvals.confirmAll", { count: center.pendingCount })
+          : t("approvals.allowAll")}
+      </button>
+    </>
   );
 }

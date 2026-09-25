@@ -44,8 +44,8 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
        pre/diff 的 min-content 会把本根撑到数千 px，seg4 span flex:1 均分后被裁成
        「只剩文件」——用户复验实测 13850px，§6.12l 条 11）。 */
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      {/* 检视标头 + seg4 分段（§6.12j 对齐 05:99 原型：glabel2「检视 · 只读」+ 标准 .seg4，
-          替代旧胶囊 TabButton）。只读语义固定——检视面板全部是只读视图；原型折叠 »（clps）
+      {/* 检视标头 + seg4 分段（§6.12j 对齐 05:99 原型：glabel2「检视 · 只读」+ 标准 .seg4）。
+          只读语义固定——检视面板全部是只读视图；原型折叠 »（clps）
           未实现，不设假入口。span 键盘可达（Enter/Space），与左栏作用域 seg4 先例同构。 */}
       <div className="glabel2 shrink-0">{t("workbench.inspectorTitle")}</div>
       {/* 水平缩进由 .seg4 自带 margin:10px 14px 0 承担（不另加 px——双重 14px = 28px 错位，
@@ -89,25 +89,3 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
     </div>
   );
 }
-
-/**
- * 胶囊 tab 钮（右栏 Inspector 已迁 seg4，§6.12j 不再内部使用）。存量消费方仅
- * mobile-workbench（移动工具态 tab），迁移完成后随之删除。
- */
-export function TabButton({ active, label, onClick }: TabButtonProps) {
-  return (
-    <button
-      className={`shrink-0 cursor-pointer rounded-lg px-2.5 py-1 text-xs font-semibold transition ${active ? "bg-primary/10 text-primary" : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"}`}
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-    </button>
-  );
-}
-
-type TabButtonProps = {
-  active: boolean;
-  label: string;
-  onClick: () => void;
-};

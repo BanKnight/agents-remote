@@ -115,7 +115,7 @@ export function useFileEditor({
         }
       })();
       // 列表/diff 失效用面板自身 queryScope 前缀（列表 key 同段）：L3 传 "files" 命中
-      // FilesToolPanel 列表，rootBrowse（"workbench-files"）命中自身列表。
+      // FilesToolPanel 列表，根目录浏览面板（"workbench-files"）命中自身列表。
       void queryClient.invalidateQueries({ queryKey: ["projects", projectName, queryScope] });
       void queryClient.invalidateQueries({ queryKey: gitDiffListQueryKey(projectName) });
     },

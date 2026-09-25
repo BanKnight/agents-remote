@@ -182,7 +182,7 @@ export const workbenchWikiRefsAtom = atomWithLocalOnlyStorage<
 >("workbenchWikiRefs", {});
 
 /**
- * 移动端 `/files` 全局页（rootBrowse 文件树）cwd 记忆。路径格式 = `${projectName}/${relative}`
+ * 移动端 `/files` 全局页（全局根目录浏览文件树）cwd 记忆。路径格式 = `${projectName}/${relative}`
  *（与 resolveRootBrowseTarget 解析格式一致），空串 = 根目录。持久化让后台被杀/重开停留在上次
  * 目录；进入项目子目录后切可写 files，记忆随之更新。
  */

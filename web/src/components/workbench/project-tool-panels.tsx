@@ -358,7 +358,7 @@ export function FilesToolPanel({
     uploadTargetDirRef.current = targetDir;
     uploadInputRef.current?.click();
   };
-  const openCreatePrompt = () => {
+  const openCreatePrompt = (parentPath: string) => {
     void createDialog
       .prompt({
         title: t("files.linkCreate"),
@@ -370,7 +370,7 @@ export function FilesToolPanel({
         if (value === null) return;
         const name = value.trim();
         if (name.length === 0) return;
-        createFolderMutation.mutate({ parentPath: path, name });
+        createFolderMutation.mutate({ parentPath, name });
       });
   };
   // 03y 语义：rename/move/新建 prompt 与删除 confirm 走 Radix 对话框（弃 window.prompt/confirm）。
@@ -515,21 +515,7 @@ export function FilesToolPanel({
     {
       label: t("files.menuCreateHere"),
       icon: <ShellIcon name="folder-plus" />,
-      onSelect: () => {
-        void createDialog
-          .prompt({
-            title: t("files.linkCreate"),
-            placeholder: t("files.newFolder"),
-            confirmLabel: t("files.create"),
-            cancelLabel: t("cancel"),
-          })
-          .then((value) => {
-            if (value === null) return;
-            const name = value.trim();
-            if (name.length === 0) return;
-            createFolderMutation.mutate({ parentPath: entry.path, name });
-          });
-      },
+      onSelect: () => openCreatePrompt(entry.path),
     },
     {
       label: t("files.menuUploadHere"),
@@ -646,7 +632,7 @@ export function FilesToolPanel({
       <UploadQueueCard />
       {/* 03o pin④「增=新建/上传（到当前作用域）」：底部 .links 行（03m Git 工具同款）。 */}
       <div className="links">
-        <button onClick={openCreatePrompt} type="button">
+        <button onClick={() => openCreatePrompt(path)} type="button">
           {t("files.linkCreate")}
         </button>
         <button onClick={() => openUploadPicker(path)} type="button">
@@ -686,10 +672,7 @@ type WikiGroup = { key: string; title: string; pages: WikiIndexResponse["pages"]
 
 /** 03p 分组树派生（纯函数）：首页面首个 tag 分组、无 tag 归「未分组」（客户端派生，
  * 服务端 index 无分组概念）。 */
-export function groupWikiPages(
-  pages: WikiIndexResponse["pages"],
-  ungroupedTitle: string,
-): WikiGroup[] {
+function groupWikiPages(pages: WikiIndexResponse["pages"], ungroupedTitle: string): WikiGroup[] {
   const groups = new Map<string, WikiGroup>();
   for (const page of pages) {
     const key = page.tags[0] ?? "";

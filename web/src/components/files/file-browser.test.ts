@@ -103,10 +103,6 @@ describe("joinRootBrowseDirectoryPath", () => {
     expect(joinRootBrowseDirectoryPath({ kind: "root" }, "lang-partner")).toBe("lang-partner");
   });
 
-  test("非 rootBrowse（target=null）→ 原样返回", () => {
-    expect(joinRootBrowseDirectoryPath(null, "apps")).toBe("apps");
-  });
-
   test("逆运算不变式：join → resolve 还原 projectName + relativePath", () => {
     const target = { kind: "project", projectName: "lang-partner", relativePath: "" } as const;
     const joined = joinRootBrowseDirectoryPath(target, "apps/web");

@@ -284,7 +284,7 @@ const localDateKey = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** 03t 日期分组（dlg 标题）：今天/昨天/本周（近 7 天）/更早。纯函数便于复用与测试。 */
-export function dateGroupOf(
+function dateGroupOf(
   isoDate: string,
   now: Date,
   labels: { today: string; yesterday: string; thisWeek: string; earlier: string },
@@ -444,6 +444,8 @@ export function L3GitCommit({ projectName, hash }: L3GitCommitProps) {
       <div>
         {files.map((file) => {
           const open = expanded.has(file.path);
+          // badge class 与 label 同源（statusShortLabel 单次求值，同 project-tool-panels GitStatusBadge）。
+          const short = statusShortLabel(file.status);
           return (
             <div key={file.path}>
               <button
@@ -451,11 +453,7 @@ export function L3GitCommit({ projectName, hash }: L3GitCommitProps) {
                 onClick={() => toggle(file.path)}
                 type="button"
               >
-                <span
-                  className={`badge lg ${file.status === "added" ? "A" : file.status === "deleted" ? "D" : file.status === "renamed" ? "R" : "M"}`}
-                >
-                  {statusShortLabel(file.status)}
-                </span>
+                <span className={`badge lg ${short}`}>{short}</span>
                 <span className="p">{file.path}</span>
                 {file.addedLines !== null && file.removedLines !== null ? (
                   <span className="tm font-mono">

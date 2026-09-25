@@ -261,9 +261,6 @@ export function ChatOverview() {
       {list.map((session) => (
         <ChatRow
           key={session.id}
-          archived={!!session.archivedAt}
-          deleteLabel={t("chat.delete")}
-          meta={relativeTime(session.updatedAt, t)}
           onArchive={() => void archiveSession(session)}
           onDelete={() => void deleteSession(session)}
           onOpen={() => openChat(session.id)}
@@ -271,12 +268,9 @@ export function ChatOverview() {
           onRename={() => void renameSession(session)}
           onRestore={() => void restoreSession(session)}
           onSelect={() => toggleSelected(session.id)}
-          renameLabel={t("chat.rename")}
-          rowMenuAria={t("chat.rowMenuAria")}
           selected={selected.has(session.id)}
           selecting={selecting}
           session={session}
-          title={session.displayName}
         />
       ))}
     </ListGroup>
@@ -371,8 +365,6 @@ export function ChatOverview() {
                 onRestore={restoreSession}
                 onDelete={deleteSession}
                 openChat={openChat}
-                renameLabel={t("chat.rename")}
-                deleteLabel={t("chat.delete")}
                 onSelect={toggleSelected}
                 selecting={selecting}
                 selected={selected}
@@ -399,8 +391,6 @@ function ArchivedGroup({
   onRestore,
   onDelete,
   openChat,
-  renameLabel,
-  deleteLabel,
   onSelect,
   selecting,
   selected,
@@ -412,8 +402,6 @@ function ArchivedGroup({
   onRestore: (session: ChatSession) => void;
   onDelete: (session: ChatSession) => void;
   openChat: (id: string) => void;
-  renameLabel: string;
-  deleteLabel: string;
   onSelect: (id: string) => void;
   selecting: boolean;
   selected: Set<string>;
@@ -445,20 +433,13 @@ function ArchivedGroup({
           {sessions.map((session) => (
             <ChatRow
               key={session.id}
-              archived
-              deleteLabel={deleteLabel}
-              meta={relativeTime(session.updatedAt, t)}
               onDelete={() => onDelete(session)}
               onOpen={() => openChat(session.id)}
-              onRename={() => {}}
               onRestore={() => onRestore(session)}
               onSelect={() => onSelect(session.id)}
-              renameLabel={renameLabel}
-              rowMenuAria={t("chat.rowMenuAria")}
               selected={selected.has(session.id)}
               selecting={selecting}
               session={session}
-              title={session.displayName}
             />
           ))}
         </ListGroup>
@@ -468,22 +449,17 @@ function ArchivedGroup({
 }
 
 type ChatRowProps = {
-  archived?: boolean;
-  deleteLabel: string;
-  meta: string;
   onDelete: () => void;
   onOpen: () => void;
-  onRename: () => void;
+  /** 重命名入口（非归档行）。归档行无此菜单项，不传。 */
+  onRename?: () => void;
   onPin?: () => void;
   onArchive?: () => void;
   onRestore?: () => void;
   onSelect: () => void;
-  renameLabel: string;
-  rowMenuAria: string;
   selected?: boolean;
   selecting: boolean;
   session: ChatSession;
-  title: string;
 };
 
 /**
@@ -496,9 +472,6 @@ type ChatRowProps = {
  * marker 显示勾选态；否则点击导航。
  */
 function ChatRow({
-  archived = false,
-  deleteLabel,
-  meta,
   onDelete,
   onOpen,
   onRename,
@@ -506,18 +479,18 @@ function ChatRow({
   onArchive,
   onRestore,
   onSelect,
-  renameLabel,
-  rowMenuAria,
   selected = false,
   selecting,
   session,
-  title,
 }: ChatRowProps) {
   const ctx = useRowContextMenu();
   const { t } = useT();
   // 触屏长按 = 同一菜单入口（iOS Safari 无 contextmenu 事件——组件头旧注释说法有误，
   // action-menu LONG_PRESS_MS 注释为准）；guardClick 抑制长按后紧随的合成 click。
   const lp = useLongPressActions(ctx.openAt);
+  // 归档态/相对时间/标题均从 session 派生（t() 在组件内求值，调用方免逐行透传同值 props）。
+  const archived = session.archivedAt != null;
+  const meta = relativeTime(session.updatedAt, t);
 
   const items: ActionMenuItem[] = [];
   if (archived) {
@@ -528,7 +501,8 @@ function ChatRow({
         onSelect: onRestore,
       });
   } else {
-    items.push({ label: renameLabel, icon: <ShellIcon name="edit" />, onSelect: onRename });
+    if (onRename)
+      items.push({ label: t("chat.rename"), icon: <ShellIcon name="edit" />, onSelect: onRename });
     if (onPin)
       items.push({
         label: session.pinned ? t("chat.unpin") : t("chat.pin"),
@@ -544,7 +518,7 @@ function ChatRow({
   }
   items.push({ label: t("chat.select"), icon: <ShellIcon name="check" />, onSelect: onSelect });
   items.push({
-    label: deleteLabel,
+    label: t("chat.delete"),
     icon: <ShellIcon name="trash" />,
     onSelect: onDelete,
     variant: "destructive",
@@ -555,13 +529,13 @@ function ChatRow({
       actions={
         <ActionMenu
           align="end"
-          cancelLabel={rowMenuAria}
+          cancelLabel={t("cancel")}
           contextMenuPoint={ctx.pointFor(session.id)}
           items={items}
           onContextMenuClose={ctx.close}
           trigger={
             <button
-              aria-label={rowMenuAria}
+              aria-label={t("chat.rowMenuAria")}
               className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover-capable:opacity-0 hover-capable:group-hover:opacity-100 touch:h-10 touch:w-10 touch:opacity-100"
               onClick={(e) => e.stopPropagation()}
               tabIndex={-1}
@@ -601,7 +575,7 @@ function ChatRow({
       onContextMenu={(e) => ctx.openAt(session.id, e)}
       {...lp.bind(session.id)}
       selected={selected}
-      title={title}
+      title={session.displayName}
     />
   );
 }

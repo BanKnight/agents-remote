@@ -1,4 +1,4 @@
-import type { GitDiffScope, SessionType } from "@agents-remote/shared";
+import type { GitDiffScope } from "@agents-remote/shared";
 import { type ReactNode, useState } from "react";
 
 import { FilesPanel } from "../files/file-browser";
@@ -24,12 +24,10 @@ const WORKBENCH_FILES_QUERY_SCOPE = "workbench-files";
 /**
  * 工作台 tab 插件渲染上下文（设计文档 §6）。当前作用域 + 聚焦实例决定 tab 可见性与
  * 内容作用域。projectKey 为 null（全局作用域）时 Git 隐藏；Files 全局可见（根目录
- * = PROJECTS_ROOT 只读浏览，进入项目子目录后切项目作用域可写，见 FilesPanel rootBrowse）。
+ * = PROJECTS_ROOT 只读浏览，进入项目子目录后切项目作用域可写，见 FilesPanel）。
  */
 export type WorkbenchTabPluginContext = {
   projectKey: string | null;
-  focusId?: string;
-  sessionType?: SessionType;
   /**
    * 受控当前路径（可选，仅 files plugin 消费）。透传 FilesToolPanel currentPath，让移动端
    * 父级（MobileFocusBody）持有 cwd 跨 tab 切换保活——切输出/git 再切回文件不再回根目录。
@@ -149,7 +147,6 @@ export function FilesToolTab({
   );
 }
 
-/**
 /** git 栏内详情栈项：改动 diff / 全部历史（分支页跳转带 branch）/ commit 详情 / 分支列表。 */
 type GitDetailState =
   | { kind: "diff"; path: string; scope: GitDiffScope }
@@ -240,7 +237,7 @@ function WikiToolTab({ projectKey }: { projectKey: string }) {
  * MobileL3FilePreview/MobileL3GitDiff/L3WikiReader
  * 与移动 L3 详情页同一份，容器差异由装配层表达）。
  * Files 全局可见（项目作用域 = FilesToolTab；
- * 全局根目录只读浏览保留 FilesPanel rootBrowse 语境——与全局 /files 页同记档「后续评估
+ * 全局根目录只读浏览保留 FilesPanel 语境——与全局 /files 页同记档「后续评估
  * 合并」，rootBrowse 下沉单独立项）；Git/pages/wiki 仅项目作用域（when）。
  */
 export const WORKBENCH_TAB_PLUGINS: WorkbenchTabPlugin[] = [
@@ -255,7 +252,7 @@ export const WORKBENCH_TAB_PLUGINS: WorkbenchTabPlugin[] = [
           projectKey={ctx.projectKey}
         />
       ) : (
-        <FilesPanel initialPath="" queryScope={WORKBENCH_FILES_QUERY_SCOPE} rootBrowse />
+        <FilesPanel initialPath="" queryScope={WORKBENCH_FILES_QUERY_SCOPE} />
       ),
     when: () => true,
   },

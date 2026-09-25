@@ -40,7 +40,6 @@ import {
   ensureTabOpenLeaf,
   findLeafBySessionId,
   findTabRefLeaf,
-  inferSessionTypeFromId,
   parseFileTabId,
   parseGitTabId,
   parseSkillTabId,
@@ -128,7 +127,7 @@ function WorkbenchContent({
   useEffect(() => {
     if (scope.kind === "project") setLastProjectKey(scope.key);
   }, [scope, setLastProjectKey]);
-  // 10m 文件 mainPage 的受控 cwd（§6.12j 批次 4）：作用域 seg4「本项目」= rootBrowse 进项目
+  // 10m 文件 mainPage 的受控 cwd（§6.12j 批次 4）：作用域 seg4「本项目」= 根目录浏览进项目
   // 目录（currentPath = 项目名），页面内态不进 URL（刷新回全局根，与 FilesPanel 内部态同语义）。
   const [globalFilesPath, setGlobalFilesPath] = useState("");
   // 右栏折叠态与 WorkbenchShell 内 useAtom 共享同一 atom（Jotai 全局）—— 本组件只读，
@@ -140,8 +139,6 @@ function WorkbenchContent({
   const tab = tabFromUrl ?? "overview";
   const ctx: WorkbenchTabPluginContext = {
     projectKey: scope.kind === "project" ? scope.key : null,
-    focusId,
-    sessionType: focusId ? inferSessionTypeFromId(focusId) : undefined,
   };
   // navigate 传完整 { tab, rightTab }（URL 原始值 tabFromUrl/rightTab 合并 + 新值）。
   // TanStack Router navigate 整体替换 search 对象（非 merge），若只传单键会丢失其他维 ——

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { ApprovalSummary } from "@agents-remote/shared";
 
 import { useHistorySessions } from "./history-list";
+import { ApprovalAllowAll } from "./approval-popover";
 import { usePromptDialog } from "../shell/prompt-dialog";
 import { isHotTool, useApprovalCenter } from "../../hooks/use-approvals";
 import { useT } from "../../i18n";
@@ -373,28 +374,12 @@ export function MobileApprovalSheet({
   open: boolean;
 }) {
   const { t } = useT();
-  const { confirmAll, pendingCount, respond, respondAll, startConfirmAll, resetConfirmAll } =
-    useApprovalCenter(approvals);
+  const center = useApprovalCenter(approvals);
+  const { pendingCount, respond, resetConfirmAll } = center;
 
   return (
     <MobileSheet
-      headerExtra={
-        pendingCount > 0 ? (
-          <>
-            <span className="cnt">{t("approvals.nPending", { count: pendingCount })}</span>
-            <button
-              className="all cursor-pointer"
-              disabled={respond.isPending}
-              onClick={() => (confirmAll ? respondAll() : startConfirmAll())}
-              type="button"
-            >
-              {confirmAll
-                ? t("approvals.confirmAll", { count: pendingCount })
-                : t("approvals.allowAll")}
-            </button>
-          </>
-        ) : null
-      }
+      headerExtra={<ApprovalAllowAll center={center} />}
       onOpenChange={(next) => {
         if (!next) resetConfirmAll();
         onOpenChange(next);

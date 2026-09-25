@@ -17,7 +17,7 @@ import { type CardDragStartHandler } from "../workbench/drag-source";
  * 全局文件总览共享主体（设计 workbench-stable-refactor Phase 4）。桌面活动栏 [文件] → /files 左栏 +
  * 移动 /files 一级页共用，结束「两端各自改各自」双写。
  *
- * 主体 = `<FilesPanel rootBrowse enablePreview={false}/>`（根目录列所有项目，进入项目子目录切可写
+ * 主体 = `<FilesPanel enablePreview={false}/>`（根目录列所有项目，进入项目子目录切可写
  * files，复用 resolveRootBrowseTarget 派生 projectName）。外壳（标题、底部 nav）由调用方提供：
  * 桌面 WorkbenchShell leftPanelTitle；移动 MobilePageHeader。
  *
@@ -53,7 +53,7 @@ export function GlobalFilesOverview({
   const isMobile = useIsMobile();
   const pageMode = variant === "page";
   // 10m 作用域（pin①）：「全局」= 服务器根目录；「本项目」= 全局记忆的当前项目（与工作台/
-  // 插件页同源 workbenchLastProjectAtom）——页内切 rootBrowse cwd（currentPath = 项目名）。
+  // 插件页同源 workbenchLastProjectAtom）——页内切根目录浏览 cwd（currentPath = 项目名）。
   const [lastProject] = useAtom(workbenchLastProjectAtom);
   // 卡形态统计源：与项目 Tab 同 ["overview"] query（dedupe 零额外网络；10s refetchInterval 同步受益）。
   const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
@@ -158,7 +158,6 @@ export function GlobalFilesOverview({
         enablePreview={false}
         onOpenFile={onOpenFile}
         onCardDragStart={onCardDragStart}
-        rootBrowse
         // 卡形态仅根层（10-tab 原型描述的就是根层总览）：子目录层不传 → FilesPanel 退 ListRow
         //（行内 rename input 所在路径；卡分支无编辑 UI，code review 2026-09-22 修 rename 回归）。
         globalCard={

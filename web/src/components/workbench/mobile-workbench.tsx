@@ -372,8 +372,6 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
   };
   const ctx: WorkbenchTabPluginContext = {
     projectKey: projectName ?? null,
-    focusId,
-    sessionType,
     currentPath: filesPath,
     onPathChange: setFilesPath,
   };
@@ -503,7 +501,7 @@ type MobileFocusTabButtonProps = {
   onClick: () => void;
 };
 
-/** 移动聚焦态 header tab 按钮（与右栏 RightPanelTabs.TabButton 同设计语言，5g 紧凑化匹配 h-12 单行 header）。 */
+/** 移动聚焦态 header tab 按钮（5g 紧凑化匹配 h-12 单行 header，与桌面检视 seg4 同设计语言）。 */
 function MobileFocusTabButton({ active, label, onClick }: MobileFocusTabButtonProps) {
   return (
     <button
@@ -1610,7 +1608,7 @@ export function SessionModeTabs({ mode }: { mode: WorkbenchMode }) {
 /**
  * 移动 [文件] 全局总览（设计 workbench-stable-refactor review 收口）：`/files`（scope=global +
  * leftMode="files"，无 focus）在移动端渲染此组件——外壳 MobilePageHeader 标题（与 MobileGlobalOverview
- * 同款范式）+ 主体 GlobalFilesOverview（rootBrowse 全局文件树，与桌面左栏同源）。收口 `/files`
+ * 同款范式）+ 主体 GlobalFilesOverview（全局根目录浏览文件树，与桌面左栏同源）。收口 `/files`
  * 进 workbench layout 后，移动无 focus 分支会落到 MobileGlobalOverview（项目列表），故在此按
  * `global + leftMode==="files"` 单独分流，避免行为丢失。点文件 navigate `/files/file/$`（与原
  * FilesRoute 移动 onOpenFile 一致，迁移过来）。

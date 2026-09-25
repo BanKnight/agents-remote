@@ -13,8 +13,9 @@ import { extToLang, highlightCodeLine } from "../markdown/prism-languages";
 // ── Query-key 单源（同 key 共享缓存；隔离段之间不互相 invalidate）────────────────
 /** 中栏 git tab / 移动 L3 diff 的 file diff query-key 隔离段（GitFileDiffPanel 默认）。 */
 export const WORKBENCH_GIT_TAB_QUERY_SCOPE = "git-tab";
-/** 左栏 git 变更列表 query-key 隔离段——移动 gitchip / 工具面板 / 桌面左栏多方共享缓存。 */
-export const WORKBENCH_GIT_LEFT_QUERY_SCOPE = "workbench-git-left";
+/** 左栏 git 变更列表 query-key 隔离段——移动 gitchip / 工具面板 / 桌面左栏经
+ * gitDiffListQueryKey 工厂共享缓存（常量本身仅本文件消费）。 */
+const WORKBENCH_GIT_LEFT_QUERY_SCOPE = "workbench-git-left";
 
 /** 工作区 diff 列表 key 单源（WORKBENCH_GIT_LEFT_QUERY_SCOPE 段）。 */
 export const gitDiffListQueryKey = (projectName: string) =>
@@ -53,7 +54,7 @@ export const statusShortLabel = (status: GitDiffFileStatus) => {
 };
 
 /** badge 色调（ShellTone）——移动 frow badge 映射 tint badge class（M4）。 */
-export const gitStatusTone = (status: GitDiffFileStatus): ShellTone => {
+const gitStatusTone = (status: GitDiffFileStatus): ShellTone => {
   switch (status) {
     case "added":
       return "success";
