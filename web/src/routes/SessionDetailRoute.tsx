@@ -38,8 +38,7 @@ import {
 import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
-import { FilesPanel } from "../components/files/file-browser";
-import { GitDiffPanel } from "../components/git/git-diff-viewer";
+import { FilesToolTab, GitToolTab } from "../components/workbench/workbench-tab-plugin";
 import { ShellIcon } from "../components/shell/icons";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { ActionMenu, type ActionMenuItem } from "../components/ui/action-menu";
@@ -917,8 +916,7 @@ function DetailWorkspace({
   title: _title,
 }: DetailWorkspaceProps) {
   const { t } = useT();
-  const showFiles = sessionType === "agent" && detailView === "files";
-  const showGit = sessionType === "agent" && detailView === "git";
+  const showDetail = sessionType === "agent" && detailView !== "terminal";
 
   return (
     <div className="relative min-h-0 flex-1 flex flex-col">
@@ -929,7 +927,7 @@ function DetailWorkspace({
         onResize={onResize}
         onSendInput={onSendInput}
       />
-      {showFiles ? (
+      {showDetail ? (
         <div className="absolute inset-0 z-20 flex flex-col bg-canvas">
           <div className="flex shrink-0 items-center border-b border-neutral-line/40 bg-surface-inset/60 px-3.5 py-2.5">
             <button
@@ -950,32 +948,11 @@ function DetailWorkspace({
             </button>
           </div>
           <div className="min-h-0 flex-1 flex flex-col">
-            <FilesPanel initialPath="" projectName={projectName} queryScope="agent-context" />
-          </div>
-        </div>
-      ) : null}
-      {showGit ? (
-        <div className="absolute inset-0 z-20 flex flex-col bg-canvas">
-          <div className="flex shrink-0 items-center border-b border-neutral-line/40 bg-surface-inset/60 px-3.5 py-2.5">
-            <button
-              className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-on-surface-muted transition hover:text-on-surface-soft"
-              type="button"
-              onClick={onReturnToStream}
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M10 3L5 8l5 5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              {t("session.backToStream")}
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 flex flex-col">
-            <GitDiffPanel projectName={projectName} queryScope="agent-context" />
+            {detailView === "files" ? (
+              <FilesToolTab projectKey={projectName} />
+            ) : (
+              <GitToolTab projectKey={projectName} />
+            )}
           </div>
         </div>
       ) : null}

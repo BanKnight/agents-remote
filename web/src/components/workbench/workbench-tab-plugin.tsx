@@ -95,7 +95,7 @@ function TabDiffDetail({
  * 复用）、「查看 diff ›」/行菜单「在 Git 查看 diff」→ 栏内 diff（MobileL3GitDiff 复用）——
  * 04 insfoot「点文件 → 本栏预览 / diff」。局部 state 不进 URL，返回逐级（列表 → 预览 → diff）。
  */
-function FilesToolTab({
+export function FilesToolTab({
   currentPath,
   onPathChange,
   projectKey,
@@ -165,7 +165,7 @@ type GitDetailState =
  * 承载三段，装配回调补齐）；点改动行/提交行/links → 栏内详情栈（与移动 L3 同组件：
  * L3GitHistory/L3GitCommit/L3GitBranches，返回逐级弹栈）。
  */
-function GitToolTab({ projectKey }: { projectKey: string }) {
+export function GitToolTab({ projectKey }: { projectKey: string }) {
   const { t } = useT();
   const [stack, setStack] = useState<GitDetailState[]>([]);
 
@@ -234,8 +234,8 @@ function WikiToolTab({ projectKey }: { projectKey: string }) {
  * MobileFocusBody / MobileProjectHeader 工具 chip 同一 render 消费；详情态组件
  * MobileL3FilePreview/MobileL3GitDiff/WikiPageDetail
  * 与移动 L3 详情页同一份，容器差异由装配层表达）。Files 全局可见（项目作用域 = FilesToolTab；
- * 全局根目录只读浏览保留 FilesPanel rootBrowse 语境——与 SessionDetailRoute agent-context、
- * 全局 /files 页同记档「后续评估合并」）；Git/pages/wiki 仅项目作用域（when）。
+ * 全局根目录只读浏览保留 FilesPanel rootBrowse 语境——与全局 /files 页同记档「后续评估
+ * 合并」，rootBrowse 下沉单独立项）；Git/pages/wiki 仅项目作用域（when）。
  */
 export const WORKBENCH_TAB_PLUGINS: WorkbenchTabPlugin[] = [
   {
