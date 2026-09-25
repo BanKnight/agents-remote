@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./dropdown-menu";
-import { Dialog, DialogContent, DialogTrigger } from "./dialog";
+import { Dialog, DialogContent, DialogTrigger, mobileSheetClasses } from "./dialog";
 
 export type OptionMenuAccent = "user" | "permission" | "assistant";
 
@@ -96,14 +96,6 @@ const CheckIcon = (
   </svg>
 );
 
-// 移动底部 sheet 容器样式（照搬 ActionMenu 移动 sheet：scrim + 从底滑上 + safe-area 单点避让）。
-const MOBILE_SHEET_CLASSES = cn(
-  "fixed inset-x-0 bottom-0 top-auto max-w-none w-full translate-x-0 translate-y-0 rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
-  "pb-[calc(env(safe-area-inset-bottom)+0.5rem)]",
-  "shadow-2xl shadow-black/40",
-  "slide-in-from-bottom duration-200 ease-out",
-);
-
 /**
  * 选择器菜单原语（DESIGN.md `action-menu` 条目「锚定选择器菜单」）。与 `<ActionMenu>` 对称，
  * 按视口自适应分流：
@@ -130,7 +122,7 @@ export function OptionMenu({
     return (
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>{trigger}</DialogTrigger>
-        <DialogContent className={MOBILE_SHEET_CLASSES} aria-label={cancelLabel ?? "选择菜单"}>
+        <DialogContent className={mobileSheetClasses} aria-label={cancelLabel ?? "选择菜单"}>
           <div role="menu" className="max-h-[60vh] overflow-y-auto">
             {items.map((item, index) => (
               <button

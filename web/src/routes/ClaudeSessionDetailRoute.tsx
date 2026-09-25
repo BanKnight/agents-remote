@@ -46,12 +46,12 @@ import {
 import { useT, type TranslationKey } from "../i18n";
 import { formatDuration, formatTokenCount } from "../lib/utils";
 import { isDebugButtonEnabled, isPerfTraceEnabled } from "../lib/debug-flags";
+import { ComposerStopSend } from "../components/ui/composer-actions";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
 import {
-  COMPOSER_DESKTOP_MIN_WIDTH_PX,
   decideDesktopEnterAction,
   insertNewlineAtCursor,
-  isMobileComposerMode,
+  useComposerEnterPolicy,
 } from "../lib/composer-enter";
 import { measureFrom, timed } from "../lib/perf-trace";
 import { useIsMobile } from "../lib/use-is-mobile";
@@ -4052,22 +4052,8 @@ function ComposerWithInterrupt({
   const isRunning = useAuiState((s) => s.thread.isRunning);
   // composer.isEmpty 驱动卡片内 Send/Stop 互斥（hasInput = !isEmpty）。
   const isEmpty = useAuiState((s) => s.composer.isEmpty);
-  // 「移动 composer 模式」判定 = 触屏 **且** 窄屏（见 isMobileComposerMode）。卡片内 Send 按钮
-  // 仅移动模式出现（hasInput && isMobileComposer）——桌面（含误报 coarse 的宽屏台式机）恒无 Send
-  //（Enter=发送），布局完全不变。mount 时一次性判定。
-  const [isMobileComposer] = useState(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return isMobileComposerMode({
-      coarse: window.matchMedia("(pointer: coarse)").matches,
-      wide: window.matchMedia(`(min-width: ${COMPOSER_DESKTOP_MIN_WIDTH_PX}px)`).matches,
-    });
-  });
-  // 平台判定（桌面 Enter 键分支用）：Mac 上 Cmd+Enter 换行、其余平台无此修饰键语义。mount 时一次性判定。
-  const [isMac] = useState(
-    () =>
-      typeof navigator !== "undefined" &&
-      /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent),
-  );
+  // 「移动 composer 模式」判定 = 触屏 **且** 窄屏（useComposerEnterPolicy 单源快照）。
+  const { isMac, isMobileComposer } = useComposerEnterPolicy();
 
   // Full skill+slash catalog is the sole source for the slash menu (project +
   // user + plugin + builtin). Always fetched on open — it does not depend on the
@@ -4197,39 +4183,12 @@ function ComposerWithInterrupt({
             availableModes={availablePermissionModes}
           />
           <EffortSelector currentEffort={currentEffort} onSelectEffort={onSelectEffort} />
-          {showStop ? (
-            <button
-              type="button"
-              onClick={onCancel}
-              aria-label={t("session.stop")}
-              title={t("session.stop")}
-              className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-error text-on-error shadow-lg transition cursor-pointer"
-            >
-              <span className="h-2.5 w-2.5 rounded-[2px] bg-on-error/90" />
-            </button>
-          ) : null}
-          {showSend ? (
-            <button
-              type="button"
-              // preventDefault 阻止 mousedown 把焦点从 textarea 转移到按钮 → textarea 保焦 →
-              // 键盘不收（发送后输入清空，用户大概率继续输入，保焦=键盘不收）。
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => composer.send()}
-              aria-label={t("claude.composer.send")}
-              title={t("claude.composer.send")}
-              className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary shadow-lg transition hover:opacity-90 cursor-pointer"
-            >
-              <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
-                <path
-                  d="M12 19V5M5 12l7-7 7 7"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  stroke="currentColor"
-                />
-              </svg>
-            </button>
-          ) : null}
+          <ComposerStopSend
+            onCancel={onCancel}
+            send={() => composer.send()}
+            showSend={showSend}
+            showStop={showStop}
+          />
         </div>
         {slashItems.length > 0 ? (
           <ComposerPrimitive.Unstable_TriggerPopover

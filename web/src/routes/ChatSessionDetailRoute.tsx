@@ -7,16 +7,16 @@ import {
   useAuiState,
   useComposerRuntime,
 } from "@assistant-ui/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { getChatSession } from "../api/client";
 import { useT } from "../i18n";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
 import {
-  COMPOSER_DESKTOP_MIN_WIDTH_PX,
   decideDesktopEnterAction,
   insertNewlineAtCursor,
-  isMobileComposerMode,
+  useComposerEnterPolicy,
 } from "../lib/composer-enter";
+import { ComposerStopSend } from "../components/ui/composer-actions";
 import { usePiSession, type PiAttachment } from "./pi-adapter";
 import { VirtualizedThreadContent } from "./ClaudeSessionDetailRoute";
 import type { RetryInfo } from "./claude-adapter";
@@ -171,18 +171,7 @@ function ComposerWithInterruptPi({
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const isEmpty = useAuiState((s) => s.composer.isEmpty);
   const composer = useComposerRuntime();
-  const [isMobileComposer] = useState(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return isMobileComposerMode({
-      coarse: window.matchMedia("(pointer: coarse)").matches,
-      wide: window.matchMedia(`(min-width: ${COMPOSER_DESKTOP_MIN_WIDTH_PX}px)`).matches,
-    });
-  });
-  const [isMac] = useState(
-    () =>
-      typeof navigator !== "undefined" &&
-      /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent),
-  );
+  const { isMac, isMobileComposer } = useComposerEnterPolicy();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const disconnected = !connected;
@@ -295,37 +284,12 @@ function ComposerWithInterruptPi({
             e.target.value = "";
           }}
         />
-        {showStop ? (
-          <button
-            type="button"
-            onClick={onCancel}
-            aria-label={t("session.stop")}
-            title={t("session.stop")}
-            className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-error text-on-error shadow-lg transition cursor-pointer"
-          >
-            <span className="h-2.5 w-2.5 rounded-[2px] bg-on-error/90" />
-          </button>
-        ) : null}
-        {showSend ? (
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => composer.send()}
-            aria-label={t("claude.composer.send")}
-            title={t("claude.composer.send")}
-            className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary shadow-lg transition hover:opacity-90 cursor-pointer"
-          >
-            <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
-              <path
-                d="M12 19V5M5 12l7-7 7 7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                stroke="currentColor"
-              />
-            </svg>
-          </button>
-        ) : null}
+        <ComposerStopSend
+          onCancel={onCancel}
+          send={() => composer.send()}
+          showSend={showSend}
+          showStop={showStop}
+        />
       </div>
     </div>
   );

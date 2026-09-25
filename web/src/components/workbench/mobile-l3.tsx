@@ -21,7 +21,14 @@ import { ActionMenu } from "../ui/action-menu";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { relativeTime } from "./history-list";
 import { ShellIcon } from "../shell/icons";
-import { DiffContent, statusShortLabel } from "../git/git-diff-viewer";
+import {
+  WORKBENCH_GIT_TAB_QUERY_SCOPE,
+  DiffContent,
+  formatAheadBehind,
+  gitDiffListQueryKey,
+  gitFileDiffQueryKey,
+  statusShortLabel,
+} from "../git/git-diff-viewer";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
 
 /**
@@ -109,17 +116,24 @@ export type MobileL3GitDiffProps = {
 
 /**
  * 03r git 文件 diff 页：meta 行（diffBaseScope「branch ← scope」+ numstat +-/n）+ DiffContent
- * 复用（sticky hunk 导航随带）。query key 与桌面 GitFileDiffPanel 一致（git-tab scope，缓存共享）。
+ * 复用（sticky hunk 导航随带）。query key = gitFileDiffQueryKey 单源，与桌面 GitFileDiffPanel 同 key 共享缓存。
  */
 export function MobileL3GitDiff({ projectName, path, scope }: MobileL3GitDiffProps) {
   const { t } = useT();
   const fileDiff = useQuery({
-    queryKey: ["projects", projectName, "git-tab", "file-diff", "scope", scope, path, "changes"],
+    queryKey: gitFileDiffQueryKey(
+      projectName,
+      WORKBENCH_GIT_TAB_QUERY_SCOPE,
+      "scope",
+      scope,
+      path,
+      false,
+    ),
     queryFn: () => getProjectGitFileDiff(projectName, scope, path),
   });
   // numstat join 工作区列表（同 key diff 与 03m/03o 去重）。
   const diffList = useQuery({
-    queryKey: ["projects", projectName, "workbench-git-left", "diff"],
+    queryKey: gitDiffListQueryKey(projectName),
     queryFn: () => listProjectGitDiff(projectName),
   });
   const branch = diffList.data?.repository === true ? (diffList.data.branch?.name ?? "") : "";
@@ -430,7 +444,7 @@ export function L3GitBranches({ projectName, onOpenHistory }: L3GitBranchesProps
                 ? t("git.noUpstream")
                 : (cur.ahead ?? 0) === 0 && (cur.behind ?? 0) === 0
                   ? t("git.upToDate")
-                  : `↑${cur.ahead ?? 0} ↓${cur.behind ?? 0}`}
+                  : formatAheadBehind(cur.ahead, cur.behind)}
             </span>
           </div>
           <div className="d2">{t("git.bcurSub", { time: cur.lastCommitShort ?? "" })}</div>
@@ -482,7 +496,7 @@ function BranchRow({ branch, onClick }: { branch: GitBranch; onClick: () => void
               ? t("git.noUpstream")
               : (branch.ahead ?? 0) === 0 && (branch.behind ?? 0) === 0
                 ? t("git.upToDate")
-                : `↑${branch.ahead ?? 0} ↓${branch.behind ?? 0}`}
+                : formatAheadBehind(branch.ahead, branch.behind)}
         </span>
       </span>
       <span className={merged ? "bsub mg" : "bsub"}>

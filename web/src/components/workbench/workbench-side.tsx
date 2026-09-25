@@ -20,6 +20,7 @@ import { ApprovalPopover } from "./approval-popover";
 import { ChatOverview } from "./chat-overview";
 import {
   AllSessionsGroupedList,
+  buildProjectRows,
   CardGridSkeleton,
   createSessionMenuItems,
   useCreateSession,
@@ -96,14 +97,9 @@ export function WorkbenchSide() {
   const sessionPage = scope.kind === "global" && leftMode === "auto";
   const chatMode = sessionPage && mode === "chat";
 
-  // 项目行运行数（live ● N）：overview candidates 按项目计 running。
+  // 项目行运行数（live ● N）：buildProjectRows 单源（与移动项目页同函数），消费 running 子集。
   const projectRows = useMemo(
-    () =>
-      projectNames.map((name) => ({
-        name,
-        running: candidates.filter((c) => c.ref.projectName === name && c.status === "running")
-          .length,
-      })),
+    () => buildProjectRows(candidates, projectNames),
     [projectNames, candidates],
   );
 

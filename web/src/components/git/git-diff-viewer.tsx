@@ -35,12 +35,31 @@ import { extToLang, highlightCodeLine } from "../markdown/prism-languages";
 import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
 import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 
-// ── Query-key 隔离段（cache 隔离，避免互相 invalidate）──────────────────────────
-/** 中栏 git tab 的 file diff query-key 隔离段（PanelRouter GitFileDiffPanel 默认）。 */
-const WORKBENCH_GIT_TAB_QUERY_SCOPE = "git-tab";
-/** 左栏 git 变更列表（原 middle tab）query-key 隔离段——现由 GitToolPanel 复用同 key 共享缓存。 */
-/** Git 左栏 diff 查询 scope——移动端 header gitchip 复用同 key 共享缓存（M4）。 */
+// ── Query-key 单源（同 key 共享缓存；隔离段之间不互相 invalidate）────────────────
+/** 中栏 git tab / 移动 L3 diff 的 file diff query-key 隔离段（GitFileDiffPanel 默认）。 */
+export const WORKBENCH_GIT_TAB_QUERY_SCOPE = "git-tab";
+/** 左栏 git 变更列表 query-key 隔离段——移动 gitchip / 工具面板 / 桌面左栏多方共享缓存。 */
 export const WORKBENCH_GIT_LEFT_QUERY_SCOPE = "workbench-git-left";
+
+/** 工作区 diff 列表 key 单源（WORKBENCH_GIT_LEFT_QUERY_SCOPE 段）。 */
+export const gitDiffListQueryKey = (projectName: string) =>
+  ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"] as const;
+
+/** 单文件 diff key 单源（GitFileDiffPanel 与移动 L3 同 key 共享缓存）。ref = scope 模式的
+ * scope 或 compare 模式的 `base~compare`。full = R8 展开完整文件（-U999999）。 */
+export const gitFileDiffQueryKey = (
+  projectName: string,
+  queryScope: string,
+  mode: "scope" | "compare",
+  ref: string | null,
+  path: string,
+  full: boolean,
+) => ["projects", projectName, queryScope, "file-diff", mode, ref, path, full ? "full" : "changes"];
+
+/** commit 历史 key 单源。branch 空 = 请求不带 branch（后端默认分支），key 维度统一 "" 哨兵
+ *（原 GitCommitList undefined / 工具面板 "" 双哨兵双拉，统一后同语义共享缓存）。 */
+export const gitLogQueryKey = (projectName: string, branch?: string | null) =>
+  ["projects", projectName, "git", "log", branch ?? ""] as const;
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -71,6 +90,12 @@ export const gitStatusTone = (status: GitDiffFileStatus): ShellTone => {
       return "warning";
   }
 };
+
+/** ahead/behind 态势箭头串（`↑N ↓N`；0 显 0 不省略——03m gitchip / 04 githead / 03v bcur
+ * 同形制）。与前置文本的分隔空格属调用点拼接意图，不进本函数；「有 upstream 才显」
+ * 「非 0,0 才显」等门控语义各处不同，也由调用方自判。带色分 span 版（GitAheadBehindPanel）不在此列。 */
+export const formatAheadBehind = (ahead?: number, behind?: number): string =>
+  `↑${ahead ?? 0} ↓${behind ?? 0}`;
 
 type GitSummary = {
   added: number;
@@ -246,16 +271,14 @@ export function GitFileDiffPanel(props: GitFileDiffPanelProps) {
   useEffect(() => setExpanded(false), [path, props.mode, compareRef, scopeRef]);
   const fileDiff = useQuery({
     enabled: path !== "",
-    queryKey: [
-      "projects",
+    queryKey: gitFileDiffQueryKey(
       projectName,
       queryScope,
-      "file-diff",
       props.mode,
       compareRef ?? scopeRef,
       path,
-      expanded ? "full" : "changes",
-    ],
+      expanded,
+    ),
     queryFn: (): Promise<GitFileDiffView> => {
       if (props.mode === "compare")
         return getProjectGitCompareFileDiff(
@@ -699,7 +722,7 @@ const GitCommitRow = ({ commit }: { commit: GitCommitLogItem }) => (
 const GitCommitList = ({ projectName, branch }: { projectName: string; branch?: string }) => {
   const { t } = useT();
   const log = useQuery({
-    queryKey: ["projects", projectName, "git", "log", branch],
+    queryKey: gitLogQueryKey(projectName, branch),
     queryFn: () => getProjectGitLog(projectName, branch),
   });
   if (log.isLoading) return <ListRowSkeleton count={5} />;

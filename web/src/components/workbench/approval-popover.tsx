@@ -1,24 +1,14 @@
 // M9 批次 c：05f 桌面审批中心 Popover（Mac）——锚于 sbar「N 项待审批」chip，箭头向下。
-// 与移动 MobileApprovalSheet（11 原型）同数据同逻辑（useApprovals 单订阅 + respond 逐个转发 +
-// 全部允许两段确认 + runtimeAlive 冻结），仅卡片形态按 05f 紧凑单行（.ar1 行内按钮）。
-import { useState, type ReactNode } from "react";
+// 与移动 MobileApprovalSheet（11 原型）同数据同逻辑（useApprovals 单订阅 + useApprovalCenter
+// respond 逐个转发 + 全部允许两段确认 + runtimeAlive 冻结），仅卡片形态按 05f 紧凑单行（.ar1 行内按钮）。
+import { type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
 import type { ApprovalSummary } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
-import { useRespondApproval } from "../../hooks/use-approvals";
+import { isHotTool, useApprovalCenter } from "../../hooks/use-approvals";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-
-/** 与 mobile-sheets.tsx 同源判定（Write/Edit/rm/git push 高亮 .hot）。 */
-const HOT_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
-const HOT_COMMAND_RE = /\b(rm|git push)\b/;
-
-function isHotTool(item: ApprovalSummary): boolean {
-  if (HOT_TOOLS.has(item.toolName)) return true;
-  if (item.toolName === "Bash") return HOT_COMMAND_RE.test(item.inputSummary);
-  return false;
-}
 
 export function ApprovalPopover({
   approvals,
@@ -30,30 +20,13 @@ export function ApprovalPopover({
 }) {
   const { t } = useT();
   const navigate = useNavigate();
-  const respond = useRespondApproval();
-  // 「全部允许」两段确认（与 MobileApprovalSheet 同语义）：首点进入待确认态，再点执行；
-  // 关 Popover 或应答落定后还原。
-  const [confirmAll, setConfirmAll] = useState(false);
-  const pendingCount = approvals.length;
-
-  const respondAll = () => {
-    // §6.4：批量允许 = 逐个调用（同会话内 CLI 逐条消费）。allSettled：失败卡留列表可重试。
-    void Promise.allSettled(
-      approvals.map((item) =>
-        respond.mutateAsync({
-          controlRequestId: item.controlRequestId,
-          decision: "allow",
-          projectName: item.projectName,
-          sessionId: item.sessionId,
-        }),
-      ),
-    ).then(() => setConfirmAll(false));
-  };
+  const { confirmAll, pendingCount, respond, respondAll, startConfirmAll, resetConfirmAll } =
+    useApprovalCenter(approvals);
 
   return (
     <Popover
       onOpenChange={(next) => {
-        if (!next) setConfirmAll(false);
+        if (!next) resetConfirmAll();
       }}
     >
       <PopoverTrigger asChild>{children}</PopoverTrigger>
@@ -66,7 +39,7 @@ export function ApprovalPopover({
               <button
                 className="all cursor-pointer"
                 disabled={respond.isPending}
-                onClick={() => (confirmAll ? respondAll() : setConfirmAll(true))}
+                onClick={() => (confirmAll ? respondAll() : startConfirmAll())}
                 type="button"
               >
                 {confirmAll

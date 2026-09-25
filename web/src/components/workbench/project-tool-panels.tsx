@@ -29,7 +29,12 @@ import { useT } from "../../i18n";
 import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
 import type { TranslateFn } from "../../i18n/types";
 import { ShellIcon } from "../shell/icons";
-import { WORKBENCH_GIT_LEFT_QUERY_SCOPE, statusShortLabel } from "../git/git-diff-viewer";
+import {
+  formatAheadBehind,
+  gitDiffListQueryKey,
+  gitLogQueryKey,
+  statusShortLabel,
+} from "../git/git-diff-viewer";
 import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 import type { MobileProjectTool } from "./mobile-project-header";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
@@ -125,7 +130,7 @@ export function GitToolPanel({
   // 与 GitChangesList 同 key（workbench-git-left scope）——header gitchip / 移动工具面板 /
   // 桌面左栏 / 右栏（批次 3 装配）多方共享缓存。
   const diff = useQuery({
-    queryKey: ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
+    queryKey: gitDiffListQueryKey(projectName),
     queryFn: () => listProjectGitDiff(projectName),
   });
   // 03m 最近提交：请求不带 branch（后端默认分支），key 的 branch 维度恒 ""——与桌面
@@ -133,7 +138,7 @@ export function GitToolPanel({
   // 段装配规则同款门控：不传 onOpenCommit（右栏语境）= 最近提交段不装配，请求也不发。
   const log = useQuery({
     enabled: onOpenCommit != null,
-    queryKey: ["projects", projectName, "git", "log", ""],
+    queryKey: gitLogQueryKey(projectName),
     queryFn: () => getProjectGitLog(projectName),
   });
   // links「分支 (N)」计数；与分支页 query 同 key。onOpenBranches 不传不拉（段装配门控）。
@@ -180,7 +185,7 @@ export function GitToolPanel({
           <span className="min-w-0 truncate">
             {branch.name === "HEAD" ? t("git.detached") : branch.name}
             {branch.name !== "HEAD" && branch.upstream !== undefined
-              ? ` ↑${branch.ahead ?? 0} ↓${branch.behind ?? 0}`
+              ? ` ${formatAheadBehind(branch.ahead, branch.behind)}`
               : null}
           </span>
           <span className="st">
@@ -324,7 +329,7 @@ export function FilesToolPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listing.error]);
   const diff = useQuery({
-    queryKey: ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
+    queryKey: gitDiffListQueryKey(projectName),
     queryFn: () => listProjectGitDiff(projectName),
   });
   // path → 改动态（worktree 改动优先；03o 编号③「git 工作区改动态 join 文件浏览」）。
@@ -381,7 +386,7 @@ export function FilesToolPanel({
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["projects", projectName, "files"] });
     void queryClient.invalidateQueries({
-      queryKey: ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
+      queryKey: gitDiffListQueryKey(projectName),
     });
   };
   const renameMutation = useMutation({

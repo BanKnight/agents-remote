@@ -1,9 +1,8 @@
 import { useCallback, useRef, useState } from "react";
 
 import { useIsMobile } from "@/lib/use-is-mobile";
-import { cn } from "@/lib/utils";
 
-import { Dialog, DialogContent } from "../ui/dialog";
+import { Dialog, DialogContent, mobileSheetClasses } from "../ui/dialog";
 import { ActionButton, shellSurfaceClasses } from "./shell-primitives";
 
 type ConfirmTone = "danger" | "accent" | "default";
@@ -98,14 +97,7 @@ function ConfirmDialog({
           : "text-on-surface-soft";
     return (
       <Dialog open={open} onOpenChange={(next) => !next && onCancel()}>
-        <DialogContent
-          className={cn(
-            "fixed inset-x-0 bottom-0 top-auto max-w-none w-full translate-x-0 translate-y-0 rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
-            "pb-[calc(env(safe-area-inset-bottom)+0.5rem)]",
-            "shadow-2xl shadow-black/40",
-            "slide-in-from-bottom duration-200 ease-out",
-          )}
-        >
+        <DialogContent className={mobileSheetClasses}>
           <div className="flex flex-col gap-2">
             <div className={`rounded-xl px-4 py-3 text-center ${shellSurfaceClasses.workspace}`}>
               <h2 className="text-base font-semibold text-on-surface">{title}</h2>

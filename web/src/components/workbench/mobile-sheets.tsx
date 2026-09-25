@@ -6,7 +6,7 @@ import type { ApprovalSummary } from "@agents-remote/shared";
 
 import { useHistorySessions } from "./history-list";
 import { usePromptDialog } from "../shell/prompt-dialog";
-import { useRespondApproval } from "../../hooks/use-approvals";
+import { isHotTool, useApprovalCenter } from "../../hooks/use-approvals";
 import { useT } from "../../i18n";
 import { MobileSheet } from "../shell/mobile-sheet";
 import { ShellIcon } from "../shell/icons";
@@ -20,16 +20,6 @@ function sessDotClass(status: string): string {
   if (status === "running") return "run";
   if (status === "error") return "err";
   return "idle";
-}
-
-/** 11 原型 cmd.hot 强写红判定（记档：原型仅 git push 卡明确红，机械规则 = 写文件族工具恒红；Bash 按内容启发 rm / git push）。 */
-const HOT_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
-const HOT_COMMAND_RE = /\b(rm|git push)\b/;
-
-function isHotTool(item: ApprovalSummary): boolean {
-  if (HOT_TOOLS.has(item.toolName)) return true;
-  if (item.toolName === "Bash") return HOT_COMMAND_RE.test(item.inputSummary);
-  return false;
 }
 
 /**
@@ -383,25 +373,8 @@ export function MobileApprovalSheet({
   open: boolean;
 }) {
   const { t } = useT();
-  const respond = useRespondApproval();
-  // 「全部允许」二次确认：首点进入待确认态（文案切换），再点执行；关 sheet 或应答完还原。
-  const [confirmAll, setConfirmAll] = useState(false);
-  const pendingCount = approvals.length;
-
-  const respondAll = () => {
-    // 逐个转发（§6.4：批量允许=逐个调用，同会话内 CLI 逐条消费）。allSettled：部分失败时
-    // 失败卡留在列表可重试（成功卡已被服务端注销广播移除），全部落定后退出确认态。
-    void Promise.allSettled(
-      approvals.map((item) =>
-        respond.mutateAsync({
-          controlRequestId: item.controlRequestId,
-          decision: "allow",
-          projectName: item.projectName,
-          sessionId: item.sessionId,
-        }),
-      ),
-    ).then(() => setConfirmAll(false));
-  };
+  const { confirmAll, pendingCount, respond, respondAll, startConfirmAll, resetConfirmAll } =
+    useApprovalCenter(approvals);
 
   return (
     <MobileSheet
@@ -412,7 +385,7 @@ export function MobileApprovalSheet({
             <button
               className="all cursor-pointer"
               disabled={respond.isPending}
-              onClick={() => (confirmAll ? respondAll() : setConfirmAll(true))}
+              onClick={() => (confirmAll ? respondAll() : startConfirmAll())}
               type="button"
             >
               {confirmAll
@@ -423,7 +396,7 @@ export function MobileApprovalSheet({
         ) : null
       }
       onOpenChange={(next) => {
-        if (!next) setConfirmAll(false);
+        if (!next) resetConfirmAll();
         onOpenChange(next);
       }}
       open={open}

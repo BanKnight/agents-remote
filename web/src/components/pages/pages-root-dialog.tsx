@@ -1,11 +1,10 @@
 import { useState } from "react";
 
 import { useIsMobile } from "@/lib/use-is-mobile";
-import { cn } from "@/lib/utils";
 import type { PagesRoot, PagesRootAuth } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
-import { Dialog, DialogContent } from "../ui/dialog";
+import { Dialog, DialogContent, mobileSheetClasses } from "../ui/dialog";
 import { ActionButton, SegmentedControl, shellSurfaceClasses } from "../shell/shell-primitives";
 
 type PagesRootDialogProps = {
@@ -133,14 +132,7 @@ export function PagesRootDialog({
   if (isMobile) {
     return (
       <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
-        <DialogContent
-          className={cn(
-            "fixed inset-x-0 bottom-0 top-auto max-w-none w-full translate-x-0 translate-y-0 rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
-            "pb-[calc(env(safe-area-inset-bottom)+0.5rem)]",
-            "shadow-2xl shadow-black/40",
-            "slide-in-from-bottom duration-200 ease-out",
-          )}
-        >
+        <DialogContent className={mobileSheetClasses}>
           <div className="flex flex-col gap-2">
             <div className={`rounded-xl px-4 py-3 ${shellSurfaceClasses.workspace}`}>
               <h2 className="mb-1 text-base font-semibold text-on-surface">{title}</h2>

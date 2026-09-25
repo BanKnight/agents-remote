@@ -19,7 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./dropdown-menu";
-import { Dialog, DialogContent, DialogTrigger } from "./dialog";
+import { Dialog, DialogContent, DialogTrigger, mobileSheetClasses } from "./dialog";
 
 export type ActionMenuItemVariant = "default" | "destructive";
 
@@ -101,15 +101,7 @@ export function ActionMenu({
         }}
       >
         <DialogTrigger asChild>{trigger}</DialogTrigger>
-        <DialogContent
-          className={cn(
-            "fixed inset-x-0 bottom-0 top-auto max-w-none w-full translate-x-0 translate-y-0 rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
-            "pb-[calc(env(safe-area-inset-bottom)+0.5rem)]",
-            "shadow-2xl shadow-black/40",
-            "slide-in-from-bottom duration-200 ease-out",
-          )}
-          aria-label={cancelLabel ?? "操作菜单"}
-        >
+        <DialogContent className={mobileSheetClasses} aria-label={cancelLabel ?? "操作菜单"}>
           <div role="menu">
             {items.map((item, index) => (
               <button

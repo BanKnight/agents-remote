@@ -1,9 +1,13 @@
 // M5-b 审批中心数据 hook（§6.4）：REST 初值 + approvals-stream WS 推送合并进**同一个
 // query cache**（单一数据管道——快照全量替换，无增量 merge 分支）。enabled=false 即断流。
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { ApprovalRespondRequest, ApprovalsStreamServerMessage } from "@agents-remote/shared";
+import type {
+  ApprovalRespondRequest,
+  ApprovalSummary,
+  ApprovalsStreamServerMessage,
+} from "@agents-remote/shared";
 
 import { approvalsStreamUrl, fetchApprovals, respondApproval } from "../api/client";
 
@@ -47,4 +51,49 @@ export function useRespondApproval() {
   return useMutation({
     mutationFn: (request: ApprovalRespondRequest) => respondApproval(request),
   });
+}
+
+/** 审批卡片 hot 高亮判定（11 原型 cmd.hot 强写红）：写文件族工具恒红；Bash 按内容启发
+ * rm / git push（原型仅 git push 卡明确红，机械规则记档）。桌面 ApprovalPopover 与移动
+ * MobileApprovalSheet 共用单源。 */
+const HOT_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
+const HOT_COMMAND_RE = /\b(rm|git push)\b/;
+
+export function isHotTool(item: ApprovalSummary): boolean {
+  if (HOT_TOOLS.has(item.toolName)) return true;
+  if (item.toolName === "Bash") return HOT_COMMAND_RE.test(item.inputSummary);
+  return false;
+}
+
+/**
+ * 「全部允许」两段确认 + 批量应答单源（桌面 ApprovalPopover 05f 与移动 MobileApprovalSheet 11
+ * 同逻辑收敛）：首点 startConfirmAll 进入待确认态，再点 respondAll 执行——逐个转发（§6.4：
+ * 批量允许 = 逐个调用，同会话内 CLI 逐条消费），allSettled 部分失败时失败卡留列表可重试
+ *（成功卡已被服务端注销广播移除），全部落定后退确认态；容器关闭时调 resetConfirmAll。
+ * 单卡应答共用同一 respond mutation（isPending 统一冻结全部卡片）。
+ */
+export function useApprovalCenter(approvals: ApprovalSummary[]) {
+  const respond = useRespondApproval();
+  const [confirmAll, setConfirmAll] = useState(false);
+  const pendingCount = approvals.length;
+  const respondAll = () => {
+    void Promise.allSettled(
+      approvals.map((item) =>
+        respond.mutateAsync({
+          controlRequestId: item.controlRequestId,
+          decision: "allow",
+          projectName: item.projectName,
+          sessionId: item.sessionId,
+        }),
+      ),
+    ).then(() => setConfirmAll(false));
+  };
+  return {
+    confirmAll,
+    pendingCount,
+    respond,
+    respondAll,
+    startConfirmAll: () => setConfirmAll(true),
+    resetConfirmAll: () => setConfirmAll(false),
+  };
 }

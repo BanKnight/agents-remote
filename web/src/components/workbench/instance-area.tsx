@@ -1740,6 +1740,50 @@ export function CreateSessionBar({
 }
 
 /**
+ * 项目聚合行单源（桌面 side 项目行 running 计数 + 移动项目页 projectRows 双写收敛）：
+ * 按项目分组（单遍 Map）+ 最近实例（updatedAt ?? createdAt 最大）+ running 数；query 给移动
+ * 搜索（项目名过滤），省略 = 不过滤（桌面 side 语境）。纯函数，调用方自行 useMemo。
+ */
+export type ProjectOverviewRow = {
+  instances: GlobalInstanceCandidate[];
+  /** 最近活跃实例（组内空 = null）。 */
+  latest: GlobalInstanceCandidate | null;
+  name: string;
+  running: number;
+};
+
+export function buildProjectRows(
+  candidates: GlobalInstanceCandidate[],
+  projectNames: string[],
+  query?: string,
+): ProjectOverviewRow[] {
+  const q = query?.trim().toLowerCase();
+  const byProject = new Map<string, GlobalInstanceCandidate[]>();
+  for (const c of candidates) {
+    const list = byProject.get(c.ref.projectName);
+    if (list) list.push(c);
+    else byProject.set(c.ref.projectName, [c]);
+  }
+  return projectNames
+    .filter((name) => !q || name.toLowerCase().includes(q))
+    .map((name) => {
+      const instances = byProject.get(name) ?? [];
+      let latest: GlobalInstanceCandidate | null = null;
+      let latestAt = "";
+      let running = 0;
+      for (const c of instances) {
+        const at = c.updatedAt ?? c.createdAt ?? "";
+        if (latest === null || at > latestAt) {
+          latest = c;
+          latestAt = at;
+        }
+        if (c.status === "running") running += 1;
+      }
+      return { instances, latest, name, running };
+    });
+}
+
+/**
  * 全局实例区候选聚合。仅在 global 作用域发**单个** `/api/overview` 请求（后端聚合全 project 名 +
  * 全活跃实例候选），替代旧 1+2N 瀑布（listProjects → 每项目 listAgent/listTerminal）。扁平化成
  * 带状态/类型的候选列表，供 rankGlobalInstances 排序后铺开。非 global 返回空。

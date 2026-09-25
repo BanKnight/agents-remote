@@ -4,10 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
-import { statusDotToneBg, statusToTone } from "../shell/shell-primitives";
+import { LargeTitleRow, statusDotToneBg, statusToTone } from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { relativeTime } from "./history-list";
-import { useGlobalInstanceCandidates } from "./instance-area";
+import { buildProjectRows, useGlobalInstanceCandidates } from "./instance-area";
 import { usePinnedSessions } from "../../hooks/pinned-sessions";
 import { useApprovals } from "../../hooks/use-approvals";
 import { MobileApprovalSheet } from "./mobile-sheets";
@@ -105,22 +105,11 @@ export function MobileProjectsHome() {
     [candidates],
   );
 
-  // 项目行 = 项目名搜索过滤 + 每项目聚合（活跃实例数 + 最近实例 + 时间）。
-  const projectRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return projectNames
-      .filter((name) => !q || name.toLowerCase().includes(q))
-      .map((name) => {
-        const instances = candidates.filter((c) => c.ref.projectName === name);
-        const latest = instances.reduce<GlobalInstanceCandidate | null>((acc, cur) => {
-          const curAt = cur.updatedAt ?? cur.createdAt ?? "";
-          const accAt = acc?.updatedAt ?? acc?.createdAt ?? "";
-          return curAt > accAt ? cur : acc;
-        }, null);
-        const running = instances.filter((c) => c.status === "running").length;
-        return { name, instances, latest, running };
-      });
-  }, [candidates, projectNames, query]);
+  // 项目行 = buildProjectRows 单源（项目名搜索过滤 + 每项目聚合，与桌面 side 项目行同函数）。
+  const projectRows = useMemo(
+    () => buildProjectRows(candidates, projectNames, query),
+    [candidates, projectNames, query],
+  );
 
   const focusInstance = (candidate: GlobalInstanceCandidate) => {
     // 与旧 MobileGlobalOverview 同语义：进项目 scope 工作台并聚焦该实例；重置 Output
@@ -138,33 +127,31 @@ export function MobileProjectsHome() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Large title 行（原型 .h-row：h1 30px/800 ink-title + 右侧 ➕/⚙ 22px 图标组 gap 14）。
-          行高由 h1 决定（第十一轮复验：iPhone 触屏 touch:h-10 按钮参与行布局把标题行撑到
-          52px，文件/插件页 41.5px——主标题高度不一致）。触屏按钮 touch:-my-1 抵消增高，
-          40px 点击区保留（不缩内容盒，frontend-notes §7 触屏大点击区）。 */}
-      <div className="flex items-end justify-between px-4 pt-1">
-        <h1 className="text-large-title font-extrabold leading-tight text-ink-title">
-          {t("nav.projects")}
-        </h1>
-        <div className="flex items-end gap-3.5">
-          <button
-            aria-label={t("home.createProjectAria")}
-            className="-mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-1 transition hover:bg-ink-1/5 active:bg-ink-1/10 touch:h-10 touch:w-10 touch:-my-1"
-            onClick={openCreate}
-            type="button"
-          >
-            <ShellIcon className="size-[22px]" name="plus" />
-          </button>
-          <button
-            aria-label={t("nav.settings")}
-            className="-mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-1 transition hover:bg-ink-1/5 active:bg-ink-1/10 touch:h-10 touch:w-10 touch:-my-1"
-            onClick={() => void navigate({ to: "/settings" })}
-            type="button"
-          >
-            <ShellIcon className="size-[22px]" name="settings" />
-          </button>
-        </div>
-      </div>
+      {/* Large title 行 + 右侧 ➕/⚙ 动作组（LargeTitleRow 单源，shell-primitives）。触屏按钮
+          touch:-my-1 抵消增高（第十一轮复验决策，组件注释记档）。 */}
+      <LargeTitleRow
+        actions={
+          <>
+            <button
+              aria-label={t("home.createProjectAria")}
+              className="-mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-1 transition hover:bg-ink-1/5 active:bg-ink-1/10 touch:h-10 touch:w-10 touch:-my-1"
+              onClick={openCreate}
+              type="button"
+            >
+              <ShellIcon className="size-[22px]" name="plus" />
+            </button>
+            <button
+              aria-label={t("nav.settings")}
+              className="-mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-ink-1 transition hover:bg-ink-1/5 active:bg-ink-1/10 touch:h-10 touch:w-10 touch:-my-1"
+              onClick={() => void navigate({ to: "/settings" })}
+              type="button"
+            >
+              <ShellIcon className="size-[22px]" name="settings" />
+            </button>
+          </>
+        }
+        title={t("nav.projects")}
+      />
 
       {/* 搜索框（原型 .search）：.psearch 单源（与插件/全局文件页同一搜索框，第十一轮复验
          跨页统一）；02 原型 margin-top 8px 保留在调用处。 */}

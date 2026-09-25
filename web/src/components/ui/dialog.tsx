@@ -72,4 +72,25 @@ function DialogContent({
   );
 }
 
-export { Dialog, DialogTrigger, DialogClose, DialogTitle, DialogDescription, DialogContent };
+/**
+ * 移动底部 sheet 形态的单源 class（上面注释「底部 sheet」中和串的完整成品）：定位中和 +
+ * 圆角顶 + safe-area 单点避让（frontend-notes §1）+ 入场 slide。消费方一律
+ * `<DialogContent className={mobileSheetClasses}>`（ActionMenu/OptionMenu 移动 sheet、
+ * prompt/confirm/pages-root 对话框）——改形制只动这里。
+ */
+const mobileSheetClasses = cn(
+  "fixed inset-x-0 bottom-0 top-auto max-w-none w-full translate-x-0 translate-y-0 rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
+  "pb-[calc(env(safe-area-inset-bottom)+0.5rem)]",
+  "shadow-2xl shadow-black/40",
+  "slide-in-from-bottom duration-200 ease-out",
+);
+
+export {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogTitle,
+  DialogDescription,
+  DialogContent,
+  mobileSheetClasses,
+};

@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 // 「移动 composer 模式」的桌面/移动分界断点（px），与项目主布局的桌面断点（lg=1024）对齐：
 // workbench 桌面布局同用 min-width:1024px（见 web/src/routes/workbench-model.ts）。
 export const COMPOSER_DESKTOP_MIN_WIDTH_PX = 1024;
@@ -41,4 +43,27 @@ export function insertNewlineAtCursor(
   requestAnimationFrame(() => {
     ta.selectionStart = ta.selectionEnd = start + 1;
   });
+}
+
+/**
+ * 移动 composer 模式 + 平台判定的 mount 时一次性快照（三 adapter composer 单源，此前
+ * ClaudeSessionDetailRoute/ChatSessionDetailRoute(Pi)/AcpSessionDetailRoute 各自 useState
+ * 四连逐字重复）。isMobileComposer 驱动「Enter 换行 + 卡片内显式 Send」；isMac 供桌面
+ * Enter 键分支（Cmd+Enter 换行）。
+ */
+export function useComposerEnterPolicy(): { isMac: boolean; isMobileComposer: boolean } {
+  const [isMobileComposer] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return isMobileComposerMode({
+      coarse: window.matchMedia("(pointer: coarse)").matches,
+      wide: window.matchMedia(`(min-width: ${COMPOSER_DESKTOP_MIN_WIDTH_PX}px)`).matches,
+    });
+  });
+  // 平台判定（桌面 Enter 键分支用）：Mac 上 Cmd+Enter 换行、其余平台无此修饰键语义。mount 时一次性判定。
+  const [isMac] = useState(
+    () =>
+      typeof navigator !== "undefined" &&
+      /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent),
+  );
+  return { isMac, isMobileComposer };
 }

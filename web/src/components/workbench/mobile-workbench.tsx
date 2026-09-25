@@ -15,7 +15,12 @@ import type { TranslationKey } from "../../i18n/types";
 import type { AgentSession, TerminalSession } from "@agents-remote/shared";
 import { listProjectGitBranches, listProjectGitDiff } from "../../api/client";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
-import { MobilePageHeader, ModeTabGroup, shellSurfaceClasses } from "../shell/shell-primitives";
+import {
+  LargeTitleRow,
+  MobilePageHeader,
+  ModeTabGroup,
+  shellSurfaceClasses,
+} from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { ActionMenu } from "../ui/action-menu";
 import { GlobalFilesOverview } from "../files/global-files-overview";
@@ -64,7 +69,7 @@ import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workben
 import { MobileProjectHeader, type MobileProjectTool } from "./mobile-project-header";
 import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
 import { FileTabPreview } from "../files/file-preview-panel";
-import { WORKBENCH_GIT_LEFT_QUERY_SCOPE } from "../git/git-diff-viewer";
+import { formatAheadBehind, gitDiffListQueryKey } from "../git/git-diff-viewer";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 import {
   L3GitBranches,
@@ -842,7 +847,7 @@ function MobileProjectWorkbench({
   // 工具 chip（03m gitchip / 03o crumb / 03p wsearch）数据与交互在此装配，header 只呈现。
   // git chip 计数与工具面板/桌面左栏同 key（缓存共享，桌面开着时零成本）。
   const gitDiffForChip = useQuery({
-    queryKey: ["projects", scope.key, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
+    queryKey: gitDiffListQueryKey(scope.key),
     queryFn: () => listProjectGitDiff(scope.key),
   });
   // 03o crumb 段（filesPath 目录链，每段可点回跳；项目名 b 不可点）。
@@ -873,44 +878,31 @@ function MobileProjectWorkbench({
   const [switchSheetOpen, setSwitchSheetOpen] = useState(false);
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
   const createProjectDialog = useCreateProjectDialog();
-  // 02c pill 长按/右键菜单（置顶/重命名/关闭）。pin 数据管道 = usePinnedSessions 单源（乐观
-  // 更新）；rename/close 复用既有业务 hook（与 MobileFocusActions .acts 行同源）。
-  const { pinned } = usePinnedSessions();
-  const pinIt = usePinSession();
-  const unpinIt = useUnpinSession();
-  const renameSession = useRenameSession();
+  // 02c pill 长按/右键菜单（置顶/重命名/关闭）= useInstanceRowActions 单源装配（与
+  // MobileFocusActions .acts 行同 hook）。
+  const rowActions = useInstanceRowActions(closeInstance);
   const pillMenuItems = (entry: ProjectInstanceEntry): ActionMenuItem[] => {
-    const id = entry.session.id;
-    const pinnedNow = pinned.has(id);
+    const a = rowActions.build(
+      {
+        kind: "session",
+        projectName: entry.session.projectName,
+        sessionId: entry.session.id,
+      },
+      entry.type,
+    );
     return [
-      ...(entry.type === "agent"
-        ? [
-            {
-              label: pinnedNow ? t("workbench.unpin") : t("workbench.pin"),
-              icon: <ShellIcon name="pin" />,
-              onSelect: () => (pinnedNow ? unpinIt.mutate(id) : pinIt.mutate(id)),
-            },
-          ]
+      ...(a.pin
+        ? [{ label: a.pin.label, icon: <ShellIcon name="pin" />, onSelect: a.pin.run }]
         : []),
       {
-        label: t("session.rename"),
+        label: a.rename.label,
         icon: <ShellIcon name="edit" />,
-        onSelect: () => {
-          void renameSession.rename(
-            {
-              kind: "session",
-              projectName: entry.session.projectName,
-              sessionId: entry.session.id,
-            },
-            entry.type,
-            entry.session.displayName,
-          );
-        },
+        onSelect: () => a.rename.run(entry.session.displayName),
       },
       {
-        label: t("workbench.pillCloseSession"),
+        label: a.close.label,
         icon: <ShellIcon name="close" />,
-        onSelect: () => closeInstance(id, entry.type),
+        onSelect: a.close.run,
         variant: "destructive" as const,
       },
     ];
@@ -1093,7 +1085,7 @@ function MobileProjectWorkbench({
                 <b>
                   {chipBranch ? chipBranch.name : t("git.toolTitle")}
                   {chipBranch?.ahead || chipBranch?.behind
-                    ? ` ↑${chipBranch?.ahead ?? 0} ↓${chipBranch?.behind ?? 0}`
+                    ? ` ${formatAheadBehind(chipBranch?.ahead, chipBranch?.behind)}`
                     : ""}
                 </b>
                 <span>{t("git.chipCounts", { worktree: chipWorktree, staged: chipStaged })}</span>
@@ -1340,8 +1332,9 @@ function MobileProjectWorkbench({
         永不挂载 → 「点击无响应」。顶层常驻。 */}
       {closeHolder}
       {createPromptHolder}
-      {/* 02c pill 菜单「重命名」的命名 prompt holder（useRenameSession 自带，portal 渲染）。 */}
-      {renameSession.holder}
+      {/* 02c pill 菜单「重命名」的命名 prompt holder（useInstanceRowActions 内
+        useRenameSession 自带，portal 渲染）。 */}
+      {rowActions.renameHolder}
       {/* M5-a 浮层（portal 渲染，位置无谓，随 holders 常驻顶层）：03j 新建实例 / 03l 切换 /
         03n 历史 / 08 新建项目（03l newp 行入口）。 */}
       {createProjectDialog.dialog}
@@ -1462,9 +1455,51 @@ function EmptyProjectState({
   );
 }
 
+/**
+ * 实例行「置顶/重命名/关闭」动作装配单源（02c pill 长按菜单 + 03k info sheet .acts footer
+ * 双消费；此前 MobileFocusActions 注释宣称同源实为双写，本 hook 收敛）。build(panelRef,
+ * sessionType) 返回单行动作的 label+run（pin 仅 agent——dot 状态语言归属 agent，review P3⑦）；
+ * 渲染形态与排序留给消费方（菜单项 vs button 行，两端原型各自定）。renameHolder 由调用方渲染
+ *（两消费方各自持 useRenameSession 实例，与原双装配行为一致）。
+ */
+function useInstanceRowActions(
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void,
+) {
+  const { t } = useT();
+  const { pinned } = usePinnedSessions();
+  const pinIt = usePinSession();
+  const unpinIt = useUnpinSession();
+  const renameSession = useRenameSession();
+  return {
+    renameHolder: renameSession.holder,
+    build: (panelRef: SessionPanelRef, sessionType: "agent" | "terminal") => {
+      const id = panelRef.sessionId;
+      const pinnedNow = pinned.has(id);
+      return {
+        close: {
+          label: t("workbench.pillCloseSession"),
+          run: () => closeInstance(id, sessionType),
+        },
+        pin:
+          sessionType === "agent"
+            ? {
+                label: pinnedNow ? t("workbench.unpin") : t("workbench.pin"),
+                run: () => (pinnedNow ? unpinIt : pinIt).mutate(id),
+              }
+            : null,
+        rename: {
+          label: t("session.rename"),
+          run: (displayName: string) =>
+            void renameSession.rename(panelRef, sessionType, displayName),
+        },
+      };
+    },
+  };
+}
+
 /** 项目聚焦态 tab trailing：ℹ 图标（03 原型 nav 右上两图标之一；M10 用户反馈③：✕ 关实例已收进
  * ⋯ moreMenu）。info sheet 对齐 03k：.acts 操作行（重命名/置顶/关闭会话）由本组件装配为 footer
- *（handler 与 pillMenuItems 同源 hook，单一管道；sheet 关闭由 info-sheet footer 委托）；displayName
+ *（useInstanceRowActions 单源装配；sheet 关闭由 info-sheet footer 委托）；displayName
  * 自取 detail（与装配层同 query key，React Query dedupe 零额外网络）。 */
 function MobileFocusActions({
   closeInstance,
@@ -1482,36 +1517,25 @@ function MobileFocusActions({
   const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
   const displayName =
     agentDetail.data?.session.displayName ?? terminalDetail.data?.session.displayName ?? "";
-  const { pinned } = usePinnedSessions();
-  const pinIt = usePinSession();
-  const unpinIt = useUnpinSession();
-  const renameSession = useRenameSession();
-  const pinnedNow = pinned.has(focusId);
+  const rowActions = useInstanceRowActions(closeInstance);
+  const a = rowActions.build(panelRef, sessionType ?? "terminal");
   const actClass = "cursor-pointer text-subhead font-semibold";
   const acts = (
     <div className="flex items-center justify-between border-t border-sep-row pb-1 pt-3.5">
       <button
         className={`${actClass} text-primary`}
-        onClick={() => void renameSession.rename(panelRef, sessionType ?? "terminal", displayName)}
+        onClick={() => a.rename.run(displayName)}
         type="button"
       >
-        {t("session.rename")}
+        {a.rename.label}
       </button>
-      {sessionType === "agent" ? (
-        <button
-          className={`${actClass} text-pin`}
-          onClick={() => (pinnedNow ? unpinIt : pinIt).mutate(focusId)}
-          type="button"
-        >
-          {pinnedNow ? t("workbench.unpin") : t("workbench.pin")}
+      {a.pin ? (
+        <button className={`${actClass} text-pin`} onClick={a.pin.run} type="button">
+          {a.pin.label}
         </button>
       ) : null}
-      <button
-        className={`${actClass} text-error`}
-        onClick={() => closeInstance(focusId, sessionType ?? "terminal")}
-        type="button"
-      >
-        {t("workbench.pillCloseSession")}
+      <button className={`${actClass} text-error`} onClick={a.close.run} type="button">
+        {a.close.label}
       </button>
     </div>
   );
@@ -1531,9 +1555,9 @@ function MobileFocusActions({
       >
         <ShellIcon name="info" />
       </button>
-      {/* info sheet holder + rename prompt holder（useRenameSession 自带，portal 渲染）。 */}
+      {/* info sheet holder + rename prompt holder（useInstanceRowActions 自带，portal 渲染）。 */}
       {infoHolder}
-      {renameSession.holder}
+      {rowActions.renameHolder}
       {autoRetryEditorHolder}
       {runtimeDialogHolder}
     </>
@@ -1605,13 +1629,9 @@ function MobileFilesOverview() {
   };
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Large title 行（10-tab 原型 .h-row h1 30px/800；M10 用户反馈⑥：紧凑 MobilePageHeader
-          换 Large title，与项目/插件 Tab 同款页头） */}
-      <div className="px-4 pt-1">
-        <h1 className="text-large-title font-extrabold leading-tight text-ink-title">
-          {t("nav.files")}
-        </h1>
-      </div>
+      {/* Large title 行（LargeTitleRow 单源；M10 用户反馈⑥：紧凑 MobilePageHeader 换
+          Large title，与项目/插件 Tab 同款页头） */}
+      <LargeTitleRow title={t("nav.files")} />
       <div className="flex min-h-0 flex-1 flex-col">
         <GlobalFilesOverview
           currentPath={globalFilesPath}

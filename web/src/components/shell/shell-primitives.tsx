@@ -740,6 +740,27 @@ export function MobilePageHeader({ actions, back, title }: MobilePageHeaderProps
   );
 }
 
+type LargeTitleRowProps = {
+  /** 右侧动作组（➕/⚙ 等）；无则标题占满行宽。 */
+  actions?: ReactNode;
+  title: ReactNode;
+};
+
+/**
+ * 移动一级页 Large title 行（原型 .h-row：h1 30px/800 ink-title + 右侧 22px 图标组 gap 3.5）。
+ * 行高由 h1 决定（第十一轮复验：触屏 touch:h-10 按钮参与行布局会把标题行撑到 52px——
+ * 触屏按钮须自带 touch:-my-1 抵消增高，40px 点击区保留，frontend-notes §7 触屏大点击区）。
+ * 消费方：项目 / 插件 / 全局文件三个移动一级 tab。
+ */
+export function LargeTitleRow({ actions, title }: LargeTitleRowProps) {
+  return (
+    <div className={actions ? "flex items-end justify-between px-4 pt-1" : "px-4 pt-1"}>
+      <h1 className="text-large-title font-extrabold leading-tight text-ink-title">{title}</h1>
+      {actions ? <div className="flex items-end gap-3.5">{actions}</div> : null}
+    </div>
+  );
+}
+
 /**
  * 实例 marker：agent 按 provider 选 tone/icon（codex→success/openai，其余→accent/anthropic），
  * terminal→muted/terminal。size 三档：`"xs"`（h-4 w-4=16px 裸 icon，无 IconMarker 方框，tone 用文字色
