@@ -3,7 +3,6 @@ import { type ReactNode, useState } from "react";
 
 import { FilesPanel } from "../files/file-browser";
 import { PagesPanel } from "../pages/pages-panel";
-import { WikiPageDetail } from "../wiki/wiki-panel";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import type { WorkbenchInspectionTab } from "../../routes/workbench-model";
@@ -12,6 +11,7 @@ import {
   L3GitBranches,
   L3GitCommit,
   L3GitHistory,
+  L3WikiReader,
   MobileL3FilePreview,
   MobileL3GitDiff,
 } from "./mobile-l3";
@@ -52,9 +52,7 @@ export type WorkbenchTabPlugin = {
   render: (ctx: WorkbenchTabPluginContext) => ReactNode;
 };
 
-/**
- * 栏内详情态返回条（详情态顶部返回控件）。WikiPageDetail 自带返回不消费。
- */
+/** 栏内详情态返回条（详情态顶部返回控件，files/git/wiki 三 tab 详情态共用）。 */
 function DetailBackBar({ label, onBack }: { label: string; onBack: () => void }) {
   return (
     <div className="shrink-0 border-b border-neutral-line/40 px-3 py-2">
@@ -216,14 +214,21 @@ export function GitToolTab({ projectKey }: { projectKey: string }) {
 }
 
 /**
- * wiki tab 主体（双端装配同 FilesToolTab）：分组树列表态 = WikiToolPanel（03p 形态）；
- * 点页面行 → 栏内阅读态（WikiPageDetail，自带返回）。
+ * wiki tab 主体（双端装配同 Files/GitToolTab）：分组树列表态 = WikiToolPanel（03p 形态）；
+ * 点页面行 → 栏内阅读态（L3WikiReader，与移动 L3 同一份——批次 4 归一，WikiPageDetail
+ * 退役）。返回条 = DetailBackBar（与 files/git 详情态同构）。
  */
 function WikiToolTab({ projectKey }: { projectKey: string }) {
+  const { t } = useT();
   const [slug, setSlug] = useState<string | null>(null);
 
   if (slug !== null) {
-    return <WikiPageDetail onBack={() => setSlug(null)} projectName={projectKey} slug={slug} />;
+    return (
+      <div className="flex h-full min-h-0 w-full flex-col">
+        <DetailBackBar label={t("wiki.backToList")} onBack={() => setSlug(null)} />
+        <L3WikiReader onOpenPage={setSlug} projectName={projectKey} slug={slug} />
+      </div>
+    );
   }
   return <WikiToolPanel onOpenPage={setSlug} projectName={projectKey} />;
 }
@@ -232,8 +237,9 @@ function WikiToolTab({ projectKey }: { projectKey: string }) {
  * 第一方工作台 tab 插件注册表（设计文档 §5、§6）。files/git/wiki 换双端共享三件套
  * （2026-09-24 第十二轮复验批次 3，多端同构：桌面右栏 RightPanelTabs、移动
  * MobileFocusBody / MobileProjectHeader 工具 chip 同一 render 消费；详情态组件
- * MobileL3FilePreview/MobileL3GitDiff/WikiPageDetail
- * 与移动 L3 详情页同一份，容器差异由装配层表达）。Files 全局可见（项目作用域 = FilesToolTab；
+ * MobileL3FilePreview/MobileL3GitDiff/L3WikiReader
+ * 与移动 L3 详情页同一份，容器差异由装配层表达）。
+ * Files 全局可见（项目作用域 = FilesToolTab；
  * 全局根目录只读浏览保留 FilesPanel rootBrowse 语境——与全局 /files 页同记档「后续评估
  * 合并」，rootBrowse 下沉单独立项）；Git/pages/wiki 仅项目作用域（when）。
  */

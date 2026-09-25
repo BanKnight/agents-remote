@@ -668,7 +668,6 @@ export const zh: Record<TranslationKey, string> = {
   "wiki.menuOpen": "打开页面",
   "wiki.emptyTitle": "还没有 Wiki 页面",
   "wiki.emptyDesc": "Agent 通过 wiki MCP 工具写入的页面会显示在这里。",
-  "wiki.loadFailed": "Wiki 加载失败",
   "wiki.backToList": "返回列表",
   "wiki.pageMissing": "Wiki 页面不存在",
   "wiki.searchPlaceholder": "搜索知识库全文",

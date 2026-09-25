@@ -3,7 +3,7 @@
 // 右栏无「历史」段（与 iPhone focus 工具同构，多端同构只是容器不同）。
 // 第十二轮批次 3 适配：右栏三段 render 换共享三件套（project-tool-panels 03o/03m/03p
 // 形态，与移动项目工具态同一份），断言对象随组件更新——行定位 .frow、Files 菜单 =
-// 03w∪05e 并集、详情态 = 栏内切换（WikiPageDetail）。
+// 03w∪05e 并集、详情态 = 栏内切换（L3WikiReader，批次 4 归一）。
 // 断言：①右栏 seg4 恰三段 ②Files 行右键 6 项并集菜单（无 dirty）③Git 变更行右键 2 项 +
 // 复制路径落剪贴板 ④Wiki 行右键 2 项 + 「打开页面」进详情态 ⑤触屏长按（合成
 // pointerType:touch pointerdown）开菜单 ⑥批次 4+ 同构三段：Git 段最近提交 crow + links

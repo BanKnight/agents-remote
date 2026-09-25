@@ -671,7 +671,6 @@ export const en = {
   "wiki.menuOpen": "Open page",
   "wiki.emptyTitle": "No wiki pages yet",
   "wiki.emptyDesc": "Agent-authored pages appear here once written via the wiki MCP tools.",
-  "wiki.loadFailed": "Wiki load failed",
   "wiki.backToList": "Back to list",
   "wiki.pageMissing": "Wiki page not found",
   "wiki.searchPlaceholder": "Search wiki full text",
