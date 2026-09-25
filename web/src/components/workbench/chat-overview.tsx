@@ -18,7 +18,13 @@ import {
 import { useConfirm } from "../shell/confirm-dialog";
 import { usePromptDialog } from "../shell/prompt-dialog";
 import { actionButtonClasses, ListGroup, ListRow, ShellInput } from "../shell/shell-primitives";
-import { ActionMenu, useRowContextMenu, type ActionMenuItem } from "../ui/action-menu";
+import {
+  ActionMenu,
+  useLongPressActions,
+  useRowContextMenu,
+  type ActionMenuItem,
+} from "../ui/action-menu";
+import { relativeTime } from "./history-list";
 import { ShellIcon } from "../shell/icons";
 
 const CHAT_SESSIONS_QUERY_KEY = ["chat-sessions"] as const;
@@ -61,9 +67,9 @@ export function groupChatSessions(sessions: ChatSession[]): {
  * 批量模式（⋯ 菜单「选择会话」→ SelectionBar：全选/归档/删除/取消）。置顶/归档存元数据字段
  * `pinned`/`archivedAt`（随 `<id>.json` 持久化），管理操作不动 updatedAt。
  *
- * 行操作不显按钮（§4 frontend-notes 长按/右键范式）：移动端长按、桌面端右键 → 同一
- * `onContextMenu` → `ActionMenu`（桌面 popover 坐标 / 移动 sheet）出改名/删除等。移动浏览器
- * 长按会触发 contextmenu 事件，与桌面右键同一 handler，无需额外 pointer 长按逻辑。
+ * 行操作不显按钮（§4 frontend-notes 长按/右键范式）：桌面端右键 `onContextMenu`、触屏
+ * `useLongPressActions` 计时长按（iOS Safari 无 contextmenu 事件）→ 同一 `ActionMenu`
+ *（桌面 popover 坐标 / 移动 sheet）出改名/删除等。
  */
 export function ChatOverview() {
   const { t } = useT();
@@ -257,7 +263,7 @@ export function ChatOverview() {
           key={session.id}
           archived={!!session.archivedAt}
           deleteLabel={t("chat.delete")}
-          meta={formatRelativeTime(session.updatedAt)}
+          meta={relativeTime(session.updatedAt, t)}
           onArchive={() => void archiveSession(session)}
           onDelete={() => void deleteSession(session)}
           onOpen={() => openChat(session.id)}
@@ -441,7 +447,7 @@ function ArchivedGroup({
               key={session.id}
               archived
               deleteLabel={deleteLabel}
-              meta={formatRelativeTime(session.updatedAt)}
+              meta={relativeTime(session.updatedAt, t)}
               onDelete={() => onDelete(session)}
               onOpen={() => openChat(session.id)}
               onRename={() => {}}
@@ -508,12 +514,16 @@ function ChatRow({
   title,
 }: ChatRowProps) {
   const ctx = useRowContextMenu();
+  const { t } = useT();
+  // 触屏长按 = 同一菜单入口（iOS Safari 无 contextmenu 事件——组件头旧注释说法有误，
+  // action-menu LONG_PRESS_MS 注释为准）；guardClick 抑制长按后紧随的合成 click。
+  const lp = useLongPressActions(ctx.openAt);
 
   const items: ActionMenuItem[] = [];
   if (archived) {
     if (onRestore)
       items.push({
-        label: "chat.restore",
+        label: t("chat.restore"),
         icon: <ShellIcon name="restore" />,
         onSelect: onRestore,
       });
@@ -521,18 +531,18 @@ function ChatRow({
     items.push({ label: renameLabel, icon: <ShellIcon name="edit" />, onSelect: onRename });
     if (onPin)
       items.push({
-        label: session.pinned ? "chat.unpin" : "chat.pin",
+        label: session.pinned ? t("chat.unpin") : t("chat.pin"),
         icon: <ShellIcon name="pin" />,
         onSelect: onPin,
       });
     if (onArchive)
       items.push({
-        label: "chat.archive",
+        label: t("chat.archive"),
         icon: <ShellIcon name="archive" />,
         onSelect: onArchive,
       });
   }
-  items.push({ label: "chat.select", icon: <ShellIcon name="check" />, onSelect: onSelect });
+  items.push({ label: t("chat.select"), icon: <ShellIcon name="check" />, onSelect: onSelect });
   items.push({
     label: deleteLabel,
     icon: <ShellIcon name="trash" />,
@@ -580,6 +590,7 @@ function ChatRow({
         // §4:portal fiber 冒泡守卫——ActionMenu portal（sheet/popover）dismiss 的 click 冒泡
         // 到行（DOM target 在 body）会误触发 onOpen 导航，contains 判断只接受行内真实 click。
         if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node)) return;
+        if (lp.guardClick()) return;
         // 多选模式：行点击 = 勾选切换；否则导航打开。
         if (selecting) {
           onSelect();
@@ -588,28 +599,9 @@ function ChatRow({
         onOpen();
       }}
       onContextMenu={(e) => ctx.openAt(session.id, e)}
+      {...lp.bind(session.id)}
       selected={selected}
       title={title}
     />
   );
-}
-
-/**
- * 相对时间格式化（粗粒度，与 history 列表「刚刚/N分钟前/昨天」语义对齐）。
- * 简化版：同天显示「N小时前/刚刚」，跨天显示日期。Phase 1 足够。
- */
-export function formatRelativeTime(iso: string, now = Date.now()): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const diffMs = now - then;
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "刚刚";
-  if (diffMin < 60) return `${diffMin}分钟前`;
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}小时前`;
-  const diffDay = Math.floor(diffHour / 24);
-  if (diffDay === 1) return "昨天";
-  if (diffDay < 7) return `${diffDay}天前`;
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
 }

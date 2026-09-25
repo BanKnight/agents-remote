@@ -65,7 +65,7 @@ export function WorkbenchSide() {
   // 项目行 + 「全部」视图数据（单一 overview 管道，与 StatusBar/InstanceArea dedupe 零额外请求）。
   const { candidates, projectNames, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
   // 「全部」视图置顶数据（与 candidates 同级并发，settled gate 防置顶组后到跳变——
-  // GlobalProjectsOverview 同口径）。
+  // AllSessionsGroupedList 同口径）。
   const { pinned, isLoaded: pinnedLoaded } = usePinnedSessions();
   // aprow（04 pin④ 全局聚合）：桌面任何 scope approvals>0 渲染。⚠️ useApprovals 每实例各自
   // 开 WS：桌面 StatusBar 与本组件 = 2 条 /api/approvals/stream 订阅（承接 ProjectLeftPanel

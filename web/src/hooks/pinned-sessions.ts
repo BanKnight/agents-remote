@@ -15,7 +15,7 @@ const PINNED_SESSIONS_STALE_MS = 30_000;
 // 旧 pin 静默丢失）。usePinnedSessions 挂载时读旧 key，把 true 项 POST 到服务端
 //（addPinned 去重，重复播种无害），成功后删除 key。幂等：key 被删后无残留、下次不再播；
 // POST 失败保留 key，下次页面加载重试。不设模块级 flag——幂等 + 服务端去重已保证
-// 并发双挂载（桌面+移动 GlobalProjectsOverview）安全，且测试无需重置状态。
+// 并发双挂载（桌面 side/中栏 + 移动项目页）安全，且测试无需重置状态。
 const LEGACY_PINNED_KEY = "workbenchPinnedSessions";
 
 // 旧 localStorage pin 值：Record<sessionId, true=置顶>。非 string true 项丢弃；损坏 JSON → []。
@@ -56,7 +56,7 @@ function useLegacyPinSeed(qc: QueryClient, querySettled: boolean): void {
 
 // 当前置顶 sessionId 集合 + 首次加载是否结算。加载中/出错 pinned 返回空 Set（总览页按
 // candidates 取交集，空集 = 无置顶组）；isLoaded = isSuccess || isError（settled）——供
-// GlobalProjectsOverview 与 candidates 一起 gate，避免 pinned 后到导致置顶组插入跳变。
+// 消费方（05g 总览/side「全部」）与 candidates 一起 gate，避免 pinned 后到导致置顶组插入跳变。
 // useMemo 让 data 不变时 Set 引用稳定。
 export function usePinnedSessions() {
   const qc = useQueryClient();

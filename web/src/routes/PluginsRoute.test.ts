@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseEnvLines } from "./PluginsRoute";
+import { parseEnvLines } from "./plugins-shared";
 
 describe("parseEnvLines（MCP stdio env 文本域解析）", () => {
   it("解析 KEY=value 行", () => {

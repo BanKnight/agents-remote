@@ -5,7 +5,7 @@ import type { McpMarketEntry, SkillMarketEntry } from "@agents-remote/shared";
 import { mcpMarketEntryToInstallRequest } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
-import { DEFAULT_SKILL_AGENT } from "../../routes/PluginsRoute";
+import { DEFAULT_SKILL_AGENT } from "../../routes/plugins-shared";
 import { useWorkbenchBack, workbenchLastProjectAtom } from "../../routes/workbench-model";
 import {
   useAddSkillSource,

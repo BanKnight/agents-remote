@@ -1,39 +1,43 @@
 import { describe, expect, test } from "bun:test";
 
 import type { ChatSession } from "../../api/client";
-import { formatRelativeTime, groupChatSessions } from "./chat-overview";
+import type { TranslateFn } from "../../i18n/types";
+import { groupChatSessions } from "./chat-overview";
+import { relativeTime } from "./history-list";
 
 const NOW = new Date("2026-08-18T12:00:00Z").getTime();
-const iso = (offsetMin: number) => new Date(NOW - offsetMin * 60000).toISOString();
+// relativeTime 内部取 Date.now() 做差——iso 必须相对当前时间构造偏移（固定基准日会随
+// 日历漂移落错档位）。
+const iso = (offsetMin: number) => new Date(Date.now() - offsetMin * 60000).toISOString();
 
-describe("formatRelativeTime", () => {
+// relativeTime 单源（history-list）后替 formatRelativeTime 的档位测试：stub t 直出
+// key+count，验证档位判断与参数透传（文案本身由 i18n 资源保证）。
+const stubT = ((key: string, params?: Record<string, string | number>) =>
+  params?.count === undefined ? key : `${key}:${params.count}`) as unknown as TranslateFn;
+
+describe("relativeTime", () => {
   test("刚刚：<1 分钟", () => {
-    expect(formatRelativeTime(iso(0), NOW)).toBe("刚刚");
-    expect(formatRelativeTime(iso(0.5), NOW)).toBe("刚刚");
+    expect(relativeTime(iso(0), stubT)).toBe("time.justNow");
   });
 
   test("分钟：<60 分钟", () => {
-    expect(formatRelativeTime(iso(1), NOW)).toBe("1分钟前");
-    expect(formatRelativeTime(iso(59), NOW)).toBe("59分钟前");
+    expect(relativeTime(iso(1), stubT)).toBe("time.minutesAgo:1");
+    expect(relativeTime(iso(59), stubT)).toBe("time.minutesAgo:59");
   });
 
   test("小时：<24 小时", () => {
-    expect(formatRelativeTime(iso(60), NOW)).toBe("1小时前");
-    expect(formatRelativeTime(iso(23 * 60), NOW)).toBe("23小时前");
+    expect(relativeTime(iso(60), stubT)).toBe("time.hoursAgo:1");
+    expect(relativeTime(iso(23 * 60), stubT)).toBe("time.hoursAgo:23");
   });
 
-  test("天：昨天 / N天前（<7 天）", () => {
-    expect(formatRelativeTime(iso(24 * 60), NOW)).toBe("昨天");
-    expect(formatRelativeTime(iso(3 * 24 * 60), NOW)).toBe("3天前");
-    expect(formatRelativeTime(iso(6 * 24 * 60), NOW)).toBe("6天前");
-  });
-
-  test("≥7 天：月日格式", () => {
-    expect(formatRelativeTime(iso(7 * 24 * 60), NOW)).toBe("8月11日");
+  test("天：<7 天", () => {
+    expect(relativeTime(iso(24 * 60), stubT)).toBe("time.daysAgo:1");
+    expect(relativeTime(iso(6 * 24 * 60), stubT)).toBe("time.daysAgo:6");
   });
 
   test("非法输入返回空串", () => {
-    expect(formatRelativeTime("not-a-date", NOW)).toBe("");
+    expect(relativeTime("not-a-date", stubT)).toBe("");
+    expect(relativeTime("", stubT)).toBe("");
   });
 });
 

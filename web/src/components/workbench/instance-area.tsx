@@ -80,17 +80,12 @@ import {
 import { AgentTerminalPanel, AcpPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { ChatSessionDetailBody } from "../../routes/ChatSessionDetailRoute";
 import { FileTabPreview } from "../files/file-preview-panel";
-import { SkillTabPreview } from "../../routes/PluginsRoute";
+import { SkillTabPreview } from "../../routes/plugins-shared";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
 import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
+
 import { Dialog, DialogContent } from "../ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
 import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
@@ -331,8 +326,8 @@ export function InstanceArea({
 }
 
 /**
- * 左总览（批 F：project-only）。global [项目] 总览已抽取为 `GlobalProjectsOverview`（桌面/移动共用，
- * 决策 29），本组件仅承载 project scope 左栏：CreateSessionBar（创建实例）+ InstanceGrid（grid 单
+ * 左总览（批 F：project-only）。global [项目] 总览（原 `GlobalProjectsOverview`，已删）由
+ * AllSessionsGroupedList（05g 形态）承载，本组件仅承载 project scope 左栏：CreateSessionBar（创建实例）+ InstanceGrid（grid 单
  * 视图，project scope 无视图切换）+ EmptyInstanceArea + CardGridSkeleton。承载于 WorkbenchShell
  * `leftPanel`（DOM 四栏第 1 列）。
  *
@@ -2548,37 +2543,30 @@ type TabContextMenuProps = {
 };
 
 /**
- * tab 右键菜单（设计 §7.1）：右键 tab 弹轻量菜单「最小化」+「关闭实例 kill」。走 Radix
- * DropdownMenu（与文件右键同模式：open 受控 + 不可见 size-0 trigger 锚定 pointer 坐标 +
- * avoidCollisions 自带视口钳制 + 外点/Esc 自带关闭），统一消费 DropdownMenuContent/Item token
- *（不再散写圆角/阴影/padding）。桌面快捷，移动端不可达。
+ * tab 右键菜单（设计 §7.1）：右键 tab 弹轻量菜单「最小化」+「关闭实例 kill」。单源消费
+ * ActionMenu 的 contextMenuPoint 坐标分支（02c 单一菜单容器——原手写裸 DropdownMenu +
+ * size-0 trigger 与其逐字同构，批次 1 冗余收敛删除）。
  * 「最小化」= removeTabFromGroup（session 存活，同 tab ✕）；「关闭实例」= useCloseSession
  *（自带 confirm → close API → 失效缓存，菜单内不再 confirm）。file tab 无 kill（无 session
  * 生命周期），onKill 不提供 → 只渲染最小化。
  */
 function TabContextMenu({ anchor, onClose, onKill, onMinimize }: TabContextMenuProps) {
   const { t } = useT();
+  const items: ActionMenuItem[] = [
+    { label: t("workbench.tabMinimize"), onSelect: onMinimize },
+    ...(onKill
+      ? [{ label: t("workbench.tabKill"), onSelect: onKill, variant: "destructive" as const }]
+      : []),
+  ];
   return (
-    <DropdownMenu
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <DropdownMenuTrigger asChild>
-        <div className="fixed size-0" style={{ left: anchor.x, top: anchor.y }} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="bottom">
-        <DropdownMenuItem onSelect={() => onMinimize()}>
-          {t("workbench.tabMinimize")}
-        </DropdownMenuItem>
-        {onKill ? (
-          <DropdownMenuItem variant="destructive" onSelect={() => onKill()}>
-            {t("workbench.tabKill")}
-          </DropdownMenuItem>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <ActionMenu
+      align="start"
+      cancelLabel={t("cancel")}
+      contextMenuPoint={anchor}
+      items={items}
+      onContextMenuClose={onClose}
+      trigger={<button aria-hidden="true" className="hidden" tabIndex={-1} type="button" />}
+    />
   );
 }
 

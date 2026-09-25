@@ -36,7 +36,7 @@ export function useCreateProject() {
 }
 
 /**
- * create 入口单源（设计文档 §3）。GlobalProjectsOverview 桌面「+ 新建项目」header 按钮与
+ * create 入口单源（设计文档 §3）。桌面 side 项目组头「+」与
  * 移动 MobileProjectsHome「+」/ 03l 切换 sheet newp 行共用此 hook：收敛 useCreateProject +
  * open 态 + ProjectSetupPanel，调用方只拿 { openCreate, dialog }。形态按端分流（M5-a 08
  * sheet 化）：桌面 = 居中 Dialog 卡片；移动 = 底部 MobileSheet（scrim/grab 关闭即取消）。

@@ -91,7 +91,7 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
       <div className="meta">
         <span>{t("files.previewMetaLines", { n: lineCount, time: updated })}</span>
         <button className="diff cursor-pointer" onClick={onViewDiff} type="button">
-          {t("files.viewDiff")} ›
+          {t("git.menuViewDiff")} ›
         </button>
       </div>
       <CodeWithLineNumbers content={data.content} />

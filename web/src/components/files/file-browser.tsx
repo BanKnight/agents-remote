@@ -238,7 +238,7 @@ export function FileEntryList({
           ...(entry.type !== "directory"
             ? [
                 {
-                  label: t("files.menuPreview"),
+                  label: t("files.menuOpenPreview"),
                   icon: <ShellIcon name="file" />,
                   onSelect: () => onPreviewFile(entry.path),
                 },

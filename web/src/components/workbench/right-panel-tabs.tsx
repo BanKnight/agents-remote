@@ -91,9 +91,8 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
 }
 
 /**
- * 胶囊 tab 钮（右栏 Inspector 已迁 seg4，§6.12j 不再内部使用）。存量消费方：
- * project-left-panel middle tabs（批次 3 收敛对象）与 PluginsRoute 子 tab（批次 4 重排对象），
- * 迁移完成后随之删除。
+ * 胶囊 tab 钮（右栏 Inspector 已迁 seg4，§6.12j 不再内部使用）。存量消费方仅
+ * mobile-workbench（移动工具态 tab），迁移完成后随之删除。
  */
 export function TabButton({ active, label, onClick }: TabButtonProps) {
   return (

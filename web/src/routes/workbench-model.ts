@@ -145,21 +145,6 @@ export const workbenchMobileFocusTabAtom = atomWithLocalOnlyStorage<WorkbenchMob
 );
 
 /**
- * 移动端项目列表态二级 header tab（设计文档 §7）。`overview` = 活跃实例 + 历史 session +
- * 创建入口（ProjectInstances）；`history` = project-scoped 历史 session（HistoryList）；
- * 其余值 = inspection（复用 WORKBENCH_TAB_PLUGINS render）。默认 `overview`（进入项目先看实例
- * 概览）。localStorage 记忆，不进 URL —— 列表态 URL 语义核心已是 scope（哪个项目），header
- * tab 是「看概览还是历史还是文件/Git」的局部视图偏好。值域对齐 WorkbenchMiddleTab（2c-3），
- * atom 独立 localStorage key，不与桌面 URL `?tab` 互污。
- */
-export type WorkbenchMobileOverviewTab = WorkbenchMiddleTab;
-
-export const workbenchMobileOverviewTabAtom = atomWithLocalOnlyStorage<WorkbenchMobileOverviewTab>(
-  "workbenchMobileOverviewTab",
-  "overview",
-);
-
-/**
  * 上次进入的项目 key（redesign-v2.md D4）。`/`（工作台 Tab）据此直达上次项目工作台——
  * 铁律「直达上次位置」：PWA 重开/刷新后工作台 Tab 恢复到离开时的项目，不回列表。
  * 写入点在 WorkbenchContent（scope.kind === "project" 的 effect）；`/` 的 beforeLoad
@@ -1789,7 +1774,7 @@ export function rankGlobalInstances(candidates: GlobalInstanceCandidate[]): Sess
 
 /**
  * 全局候选 + 项目名分组合并（融合视图分段）：以 projectNames 列表为主序，无实例项目 candidates=[]。
- * 纯函数，GlobalProjectsOverview GroupedProjectsList 用（global 跨项目分组 + 无实例项目空状态）。
+ * 纯函数，AllSessionsGroupedList 用（global 跨项目分组 + 无实例项目空状态）。
  * 组顺序 = projectNames 顺序（listProjects 返回顺序，稳定）。
  */
 export type ProjectGroup = {

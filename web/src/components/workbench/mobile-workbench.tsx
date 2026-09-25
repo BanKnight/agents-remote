@@ -526,7 +526,7 @@ type MobileTabHeaderProps<TabId extends string> = {
  * 移动单行 header 容器（设计文档 §7）：◄ 返回 + tab 横滚区（flex-1 overflow-x-auto 隐藏
  * 滚动条）+ 右侧 slot。聚焦态（MobileFocusHeader ℹ✕ 胶囊）与列表态（Project/Global Overview
  * 标题）共用此容器，避免三处逐字重复 header className / 返回按钮 SVG / tab 横滚 div。
- * 泛型 TabId 让聚焦态（WorkbenchMobileFocusTab）与列表态（WorkbenchMobileOverviewTab）
+ * 泛型 TabId 让聚焦态（WorkbenchMobileFocusTab）与列表态（WorkbenchMiddleTab）
  * 复用同一容器且保持各自 tab id 的类型安全。
  */
 function MobileTabHeader<TabId extends string>({

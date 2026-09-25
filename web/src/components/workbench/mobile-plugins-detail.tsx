@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { AddMcpServerRequest, McpServerType } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
-import { DEFAULT_SKILL_AGENT, parseEnvLines } from "../../routes/PluginsRoute";
+import { DEFAULT_SKILL_AGENT, parseEnvLines } from "../../routes/plugins-shared";
 import { useWorkbenchBack } from "../../routes/workbench-model";
 import { useAddMcpServer, useMcpServers, useRemoveMcpServer } from "../../hooks/mcp";
 import {

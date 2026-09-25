@@ -6,7 +6,7 @@ import type { McpServerEntry } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
 import { workbenchLastProjectAtom } from "../../routes/workbench-model";
-import { DEFAULT_SKILL_AGENT } from "../../routes/PluginsRoute";
+import { DEFAULT_SKILL_AGENT } from "../../routes/plugins-shared";
 import { useMcpServers } from "../../hooks/mcp";
 import { useCheckSkillUpdates, useInstalledSkills } from "../../hooks/skills";
 import { ShellIcon } from "../shell/icons";

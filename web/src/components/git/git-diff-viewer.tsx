@@ -38,7 +38,7 @@ import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action
 // ── Query-key 隔离段（cache 隔离，避免互相 invalidate）──────────────────────────
 /** 中栏 git tab 的 file diff query-key 隔离段（PanelRouter GitFileDiffPanel 默认）。 */
 const WORKBENCH_GIT_TAB_QUERY_SCOPE = "git-tab";
-/** 左栏 git middle tab 的 list diff query-key 隔离段（GitChangesList 专用）。 */
+/** 左栏 git 变更列表（原 middle tab）query-key 隔离段——现由 GitToolPanel 复用同 key 共享缓存。 */
 /** Git 左栏 diff 查询 scope——移动端 header gitchip 复用同 key 共享缓存（M4）。 */
 export const WORKBENCH_GIT_LEFT_QUERY_SCOPE = "workbench-git-left";
 
@@ -366,129 +366,6 @@ export function GitFileDiffPanel(props: GitFileDiffPanelProps) {
   );
 }
 
-export type GitChangesListProps = {
-  projectName: string;
-  /** 当前选中文件（高亮当前 git tab，从 focusId parseGitTabId 派生）；undefined 无高亮。 */
-  selectedFile?: SelectedGitFile;
-  /** 点变更文件回调（透出 path+scope，WorkbenchContent onOpenGitFile 开中栏 git diff tab）。 */
-  onSelectGitFile: (file: SelectedGitFile) => void;
-  /** 拖动源启动（git 行拖到中栏开 git diff tab，透传 GitFileList）。undefined 退纯点击（移动端）。 */
-  onCardDragStart?: CardDragStartHandler;
-  /** R5 双选 compare 文件回调（分支视图 [Base]/[Compare] 双选后点文件开中栏 compare tab）。
-   * undefined 退纯分支列表（不启用双选）。 */
-  onOpenGitCompareFile?: (projectName: string, base: string, compare: string, path: string) => void;
-  /** R5 当前选中 compare 文件路径（高亮，从 focusId parseGitTabId compare 模式派生）。 */
-  selectedCompareFile?: string;
-};
-
-/**
- * 左栏 git 变更列表（middle tab [git]，设计 workbench-layout-fix 阶段 3）。自带 listProjectGitDiff
- * query（独立 queryScope 段），顶部渲染 GitScopeChips 统计（与 GitDiffPanel 同源单源复用）+
- * GitFileList 文件列表。点文件透出 onSelectGitFile 开中栏 git diff tab（onOpenGitFile）。与
- * GitDiffPanel（右栏/移动端自包含 list+diff）共用 GitFileList + GitScopeChips，但本组件不带 diff——
- * 左栏只列表，diff 在中栏 kind:"git" tab 展示。
- */
-export function GitChangesList({
-  projectName,
-  selectedFile,
-  onSelectGitFile,
-  onCardDragStart,
-  onOpenGitCompareFile,
-  selectedCompareFile,
-}: GitChangesListProps) {
-  const { t } = useT();
-  const diff = useQuery({
-    queryKey: ["projects", projectName, WORKBENCH_GIT_LEFT_QUERY_SCOPE, "diff"],
-    queryFn: () => listProjectGitDiff(projectName),
-  });
-  const [view, setView] = useState<GitView>("changes");
-  const [commitBranch, setCommitBranch] = useState<string | undefined>();
-  const [aheadBehindOpen, setAheadBehindOpen] = useState(false);
-  const gitSummary =
-    diff.data?.repository === true ? summarizeGitFiles(diff.data.files) : undefined;
-  const branch = diff.data?.repository === true ? diff.data.branch : undefined;
-
-  if (diff.isLoading) {
-    // mirror loaded 布局（顶部 chips 行 + 文件列表），避免加载完从无 chips 跳到有 chips 的视觉断层。
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div aria-hidden="true" className="shrink-0 border-b border-neutral-line/40 px-3.5 py-3">
-          <div className="flex flex-wrap gap-1.5">
-            <span className="skeleton-shimmer h-6 w-16 rounded-full" />
-            <span className="skeleton-shimmer h-6 w-20 rounded-full" />
-            <span className="skeleton-shimmer h-6 w-16 rounded-full" />
-            <span className="skeleton-shimmer h-6 w-16 rounded-full" />
-          </div>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-          <ListRowSkeleton count={4} />
-        </div>
-      </div>
-    );
-  }
-  if (diff.error) {
-    return (
-      <div className="flex flex-1 min-h-0 flex-col items-center justify-start p-4 pt-6 lg:justify-center lg:pt-0">
-        <div className="w-full lg:w-auto">
-          <ResourceStatePanel
-            tone="danger"
-            title={t("git.errorTitle")}
-            message={diff.error.message}
-          />
-        </div>
-      </div>
-    );
-  }
-  if (diff.data?.repository === false) {
-    return (
-      <div className="flex flex-1 min-h-0 flex-col items-center justify-start p-4 pt-6 lg:justify-center lg:pt-0">
-        <div className="w-full lg:w-auto">
-          <ResourceStatePanel title={t("git.notRepo")} message={t("git.notRepoDesc")} />
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 border-b border-neutral-line/40 px-3.5 py-3">
-        {branch ? (
-          <GitBranchStatusRow
-            branch={branch}
-            projectName={projectName}
-            open={aheadBehindOpen}
-            onToggle={() => setAheadBehindOpen((v) => !v)}
-          />
-        ) : null}
-        <GitScopeChips summary={gitSummary} />
-        <GitViewSwitcher view={view} onChange={setView} />
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-        {view === "changes" ? (
-          <GitFileList
-            files={diff.data?.files ?? []}
-            onSelectFile={onSelectGitFile}
-            onCardDragStart={onCardDragStart}
-            projectName={projectName}
-            selectedFile={selectedFile}
-          />
-        ) : view === "branches" ? (
-          <GitBranchList
-            onOpenGitCompareFile={onOpenGitCompareFile}
-            projectName={projectName}
-            onSelectBranch={(name) => {
-              setCommitBranch(name);
-              setView("commits");
-            }}
-            selectedCompareFile={selectedCompareFile}
-          />
-        ) : (
-          <GitCommitList projectName={projectName} branch={commitBranch ?? branch?.name} />
-        )}
-      </div>
-    </div>
-  );
-}
-
 type DiffLineType = "header" | "hunk" | "add" | "del" | "context";
 
 type DiffLine = {
@@ -721,8 +598,8 @@ function GitScopeChip({
   );
 }
 
-/** scope chips 统计行（All/Modified/Added/Deleted 计数）。GitDiffPanel（右栏/移动端）与
- * GitChangesList（左栏列表）共用此组件，统计渲染单源——桌面左栏与移动端一致。 */
+/** scope chips 统计行（All/Modified/Added/Deleted 计数）。GitDiffPanel（右栏/移动端）
+ * 消费；统计渲染单源。 */
 function GitScopeChips({ summary }: { summary?: GitSummary }) {
   const { t } = useT();
   return (

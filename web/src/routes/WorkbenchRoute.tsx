@@ -25,7 +25,7 @@ import { GlobalFilesOverview } from "../components/files/global-files-overview";
 import { MobileMcpDetail } from "../components/workbench/mobile-plugins-detail";
 import { MobilePluginsOverview } from "../components/workbench/mobile-plugins-home";
 import { MobileMarket, MobileMarketSources } from "../components/workbench/mobile-plugins-market";
-import { SkillTabPreview } from "./PluginsRoute";
+import { SkillTabPreview } from "./plugins-shared";
 import { useT } from "../i18n";
 import {
   type DropZone,
