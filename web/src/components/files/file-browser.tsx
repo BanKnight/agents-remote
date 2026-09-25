@@ -685,7 +685,7 @@ export const rewriteImgSrc = (tag: string, dataUrl: string): string =>
 const previewUrl = (projectName: string, path: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/files/preview?path=${encodeURIComponent(path)}`;
 
-function CodeEditorFallback() {
+export function CodeEditorFallback() {
   const { t } = useT();
   return (
     <div className="flex flex-1 items-center justify-center rounded-lg border border-neutral-line/40 bg-surface-inset/80">

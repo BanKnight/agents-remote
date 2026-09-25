@@ -5,11 +5,12 @@
 // （from:0 → 整篇），滚动锚点失效 → 保存后滚动跳回开头。修法：await preview refetch 把新内容
 // 拉回缓存后再清 editContent，editValue 与编辑器 doc 相等 → 不 replace → 滚动保留。
 //
-// 断言（zh-CN + 桌面 1280×900；§6.12k 复核——移动 file focus 已只读化（FileTabPreview
-// saveToggle=null），可编辑保存路径 = 桌面 Inspector files 检视，探针场景随之迁移）：
-//  1. md 文件 source 模式 CodeMirror 可滚动（内容足够长）。
+// 断言（zh-CN + 桌面 1280×900；批次 3 Step B 语境迁移——桌面 Inspector 检视面板已退役，
+// 可编辑保存路径 = 三件套 L3 详情态编辑模式（右栏/移动同构单源 MobileL3FilePreview）：
+//  1. md 文件进编辑态（「编辑」）后 CodeMirror 可滚动（内容足够长）。
 //  2. 滚动到中部后编辑内容，Save 可点（isDirty）。
-//  3. 保存后 CodeMirror scrollTop 保持（不回落 0）——核心断言。
+//  3. 保存后 CodeMirror scrollTop 保持（不回落 0）——核心断言（守护 useFileEditor
+//     「await preview refetch 再清 editContent」语义）。
 //  4. 编辑内容保存后仍在文档中（未被中间回落丢弃）。
 //
 // preview mock 延迟 350ms：放大「保存后 refetch 完成前」的窗口，旧实现必然暴露中间回落；
@@ -75,6 +76,9 @@ async function setup(page) {
         path,
         name: path.split("/").pop(),
         size: 2048,
+        // 三件套 L3 meta 行渲染 relative mtime（检视面板时代无此字段也能跑；Step B 语境
+        // 迁移后必填——缺失时 new Date(undefined).toISOString() 抛 Invalid time value）。
+        mtimeMs: state.updatedAt ?? Date.now(),
         content: state.updatedContent ?? INITIAL_MD,
       }),
     });
@@ -82,6 +86,7 @@ async function setup(page) {
   await page.route(/\/api\/projects\/proj1\/files\/save$/, (r) => {
     const body = JSON.parse(r.request().postData() ?? "{}");
     state.updatedContent = body.content;
+    state.updatedAt = Date.now();
     return r.fulfill({
       status: 200,
       contentType: "application/json",
@@ -129,7 +134,7 @@ async function run() {
     await page.getByRole("button", { name: "登录" }).click();
     await page.waitForTimeout(700);
 
-    console.log("\n===== 打开项目 → 文件 tab → doc.md 预览 =====");
+    console.log("\n===== 打开项目 → 文件 tab → doc.md 预览 → 编辑 =====");
     await openProjectFilesTab(page);
     await page
       .locator("main > div > aside")
@@ -137,10 +142,11 @@ async function run() {
       .getByText("doc.md", { exact: true })
       .first()
       .click();
-    await page.waitForSelector('section[aria-label="File preview"]', { timeout: 8000 });
+    // L3 预览（meta 行「N 行 · 更新」+ 只读行号渲染）→ 点「编辑」进编辑态（CodeEditor）。
+    await page.waitForSelector('[data-role="l3-file-preview"]', { timeout: 8000 });
     await page
-      .locator('section[aria-label="File preview"]')
-      .getByRole("button", { name: "源码" })
+      .locator('[data-role="l3-file-preview"]')
+      .getByRole("button", { name: "编辑" })
       .click();
     await page.waitForSelector(".cm-scroller", { timeout: 10000 });
 
@@ -181,9 +187,7 @@ async function run() {
     console.log("\n===== 保存后滚动位置保持 =====");
     await page.waitForFunction(
       () => {
-        const btns = Array.from(
-          document.querySelectorAll('section[aria-label="File preview"] button'),
-        );
+        const btns = Array.from(document.querySelectorAll('[data-role="l3-file-preview"] button'));
         const save = btns.find((b) => (b.textContent ?? "").trim() === "保存");
         return save && !save.disabled;
       },
@@ -191,15 +195,13 @@ async function run() {
       { timeout: 8000 },
     );
     await page
-      .locator('section[aria-label="File preview"]')
+      .locator('[data-role="l3-file-preview"]')
       .getByRole("button", { name: "保存" })
       .click();
     // "已保存" 出现 = onSuccess 已跑；再等 refetch（350ms）+ setEditContent 完成。
     await page.waitForFunction(
       () => {
-        const btns = Array.from(
-          document.querySelectorAll('section[aria-label="File preview"] button'),
-        );
+        const btns = Array.from(document.querySelectorAll('[data-role="l3-file-preview"] button'));
         return btns.some((b) => (b.textContent ?? "").trim() === "已保存");
       },
       null,

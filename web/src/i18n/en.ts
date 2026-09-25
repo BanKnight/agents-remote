@@ -194,6 +194,8 @@ export const en = {
   "files.saved": "Saved",
   "files.discard": "Discard",
   "files.discardConfirm": 'Discard unsaved changes to "{{name}}"?',
+  "files.edit": "Edit",
+  "files.done": "Done",
   "files.dropZone": "Drop file to upload",
   "files.root": "root",
   "files.goRoot": "Go to root",

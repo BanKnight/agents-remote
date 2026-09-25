@@ -368,8 +368,10 @@ const fnav = await page.evaluate(() => {
 ok(fnav?.back === "proj1", `file 根目录 back = 项目名（实际 ${fnav?.back}）`);
 ok(fnav?.title === "README.md", `file 标题 = 文件名（实际 ${fnav?.title}）`);
 ok(await page.getByText(/行/).first().isVisible(), "preview meta 行数");
-const diffBtn = page.locator(".meta .diff");
+const diffBtn = page.locator(".meta .diff", { hasText: "查看 diff" });
 ok((await diffBtn.count()) === 1, "meta「查看 diff」按钮");
+// 批次 3 Step B：meta 行补「编辑」入口（进编辑态 CodeEditor + 保存，与桌面右栏同构）。
+ok((await page.locator(".meta .diff", { hasText: "编辑" }).count()) === 1, "meta「编辑」按钮");
 await diffBtn.click();
 await page.waitForTimeout(800);
 const gnav = await page.evaluate(() => {

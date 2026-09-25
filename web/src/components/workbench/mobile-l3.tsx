@@ -1,7 +1,7 @@
 import type { GitBranch, GitCommitLogItem, GitDiffScope } from "@agents-remote/shared";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 import {
   getProjectGitCommitDetail,
@@ -11,9 +11,12 @@ import {
   listAgentSessions,
   listProjectGitBranches,
   listProjectGitDiff,
-  previewProjectFile,
   sendProjectSessionMessage,
 } from "../../api/client";
+import { CodeEditorFallback, FileSaveButton } from "../files/file-browser";
+import { ImageViewer } from "../files/image-viewer";
+import { useFileEditor } from "../files/use-file-editor";
+import { useConfirm } from "../shell/confirm-dialog";
 import { MarkdownString } from "../markdown/MarkdownString";
 import { useT } from "../../i18n";
 import { ListRowSkeleton } from "../shell/shell-primitives";
@@ -30,6 +33,12 @@ import {
   statusShortLabel,
 } from "../git/git-diff-viewer";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
+import { formatBytes } from "@/lib/format";
+
+// CodeEditor 重依赖 CodeMirror（~75KB+），与 FilesPanel 同款 lazy 拆包（编辑态才拉）。
+const CodeEditor = lazy(() =>
+  import("../files/CodeEditor").then((m) => ({ default: m.CodeEditor })),
+);
 
 /**
  * 移动 L3 详情页主体（v2 M4，对标 03q/03r/03t/03u/03v/03s）。nav 形态（back label/标题/⋯）
@@ -65,43 +74,120 @@ export type MobileL3FilePreviewProps = {
 };
 
 /**
- * 03q 文件预览页：meta 行（N 行 · 更新 relative + 「查看 diff ›」）+ 只读行号渲染。文本类型才
- * 渲染 code 区（image/unsupported/too_large 走 .cap 简要说明——完整图片预览仍走原 file tab
- * 浮层路径，L3 preview 聚焦文本源码形态）。⋯ 菜单（复制路径/在 Git 中查看 diff）由调用方经
- * header l3.actions 装配。
+ * 03q 文件预览页（批次 3 编辑能力下沉：右栏 Inspector 与移动 focus 双端同构单源）。meta 行
+ *（N 行 · 更新 relative + 编辑 + 「查看 diff ›」）+ 只读行号渲染；「编辑」进编辑态（CodeEditor
+ * + FileSaveButton + ⌘S，保存/dirty 丢弃确认走 useFileEditor 单源，与 FilesPanel inspection
+ * 同 query key 共享缓存）。image → ImageViewer；too_large/unsupported → .cap 简要说明。⋯ 菜单
+ *（复制路径/在 Git 中查看 diff）由调用方经 header l3.actions 装配。
  */
 export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3FilePreviewProps) {
   const { t } = useT();
-  const preview = useQuery({
-    queryKey: ["projects", projectName, "files", "preview", path],
-    queryFn: () => previewProjectFile(projectName, path),
+  const { confirm, holder: confirmHolder } = useConfirm();
+  // 编辑态（组件内局部；切文件即退出——下方 effect 与 hook 清草稿同步）。
+  const [editing, setEditing] = useState(false);
+  useEffect(() => setEditing(false), [path]);
+  // editable 随 editing 切：非编辑态 canEdit 恒 false（⌘S no-op）。initialRenderMode "source"：
+  // L3 无 render toggle（查看/编辑都是源码形态），md/html 的 canEdit gate 需要 source。
+  const editor = useFileEditor({
+    editable: editing,
+    initialRenderMode: "source",
+    path,
+    projectName,
+    queryScope: "files",
   });
 
-  if (preview.isLoading) {
+  if (editor.preview.isLoading) {
     return <div className="cap mt-4 px-4">{t("files.loadingPreview")}</div>;
   }
-  if (preview.isError || !preview.data) {
+  if (editor.preview.isError || !editor.previewData) {
     return <div className="cap mt-4 px-4">{t("files.previewError")}</div>;
   }
-  const data = preview.data;
+  const data = editor.previewData;
+
+  // 非 text 类型：image → ImageViewer（缩放/旋转/双击手势工具条）；too_large/unsupported →
+  // .cap 简要说明。三类都带 data-role 根（预览态语义一致，调用方锚点稳定）。
+  if (data.type === "image") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col" data-role="l3-file-preview">
+        <ImageViewer alt={data.name} src={data.dataUrl} />
+        {confirmHolder}
+      </div>
+    );
+  }
   if (data.type !== "text") {
-    return <div className="cap mt-4 px-4">{t("files.unsupported")}</div>;
+    return (
+      <div className="flex min-h-0 flex-1 flex-col" data-role="l3-file-preview">
+        <div className="cap mt-4 px-4">
+          {data.type === "too_large"
+            ? t("files.tooLarge", { limit: formatBytes(data.limitBytes) })
+            : t("files.unsupported")}
+        </div>
+        {confirmHolder}
+      </div>
+    );
   }
   const lineCount = data.content.split("\n").length;
   const updated = relativeTime(new Date(data.mtimeMs).toISOString(), t);
+  // 完成编辑：dirty 时丢弃确认（与 FilesPanel 换文件守卫同款 dialog 文案）。
+  const finishEditing = () => {
+    if (!editor.isDirty) {
+      setEditing(false);
+      return;
+    }
+    void confirm({
+      title: t("files.discard"),
+      message: t("files.discardConfirm", { name: data.name }),
+      cancelLabel: t("cancel"),
+      confirmLabel: t("files.discard"),
+      tone: "default",
+    }).then((ok) => {
+      if (ok) setEditing(false);
+    });
+  };
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
+      className={`flex min-h-0 flex-1 flex-col pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))] ${editing ? "overflow-hidden" : "overflow-y-auto"}`}
       data-role="l3-file-preview"
     >
-      <div className="meta">
-        <span>{t("files.previewMetaLines", { n: lineCount, time: updated })}</span>
-        <button className="diff cursor-pointer" onClick={onViewDiff} type="button">
-          {t("git.menuViewDiff")} ›
-        </button>
-      </div>
-      <CodeWithLineNumbers content={data.content} />
+      {editing ? (
+        // 编辑态操作行：保存（FileSaveButton 统一样式，禁用/保存中/已保存三态）+ 完成。
+        <div className="meta">
+          <span className="diff">
+            <FileSaveButton
+              isDirty={editor.isDirty}
+              isPending={editor.isSaving}
+              onSave={editor.handleSave}
+              savedFlash={editor.savedFlash}
+            />
+          </span>
+          <button className="diff cursor-pointer" onClick={finishEditing} type="button">
+            {t("files.done")}
+          </button>
+        </div>
+      ) : (
+        <div className="meta">
+          <span>{t("files.previewMetaLines", { n: lineCount, time: updated })}</span>
+          <button className="diff cursor-pointer" onClick={() => setEditing(true)} type="button">
+            {t("files.edit")}
+          </button>
+          <button className="diff cursor-pointer" onClick={onViewDiff} type="button">
+            {t("git.menuViewDiff")} ›
+          </button>
+        </div>
+      )}
+      {editing ? (
+        // CodeEditor 根自带 relative+flex-1（内部 absolute 高度链，frontend-notes §8）；
+        // 编辑态根 overflow-hidden 给确定高度（非编辑态滚动看长文）。
+        <div className="flex min-h-0 flex-1 flex-col p-3">
+          <Suspense fallback={<CodeEditorFallback />}>
+            <CodeEditor name={data.name} onChange={editor.onEditChange} value={editor.editValue} />
+          </Suspense>
+        </div>
+      ) : (
+        <CodeWithLineNumbers content={data.content} />
+      )}
+      {confirmHolder}
     </div>
   );
 }

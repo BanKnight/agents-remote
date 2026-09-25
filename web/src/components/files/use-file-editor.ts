@@ -45,11 +45,16 @@ export type FileEditor = {
  */
 export function useFileEditor({
   editable,
+  initialRenderMode = "render",
   path,
   projectName,
   queryScope,
 }: {
   editable: boolean;
+  /** renderMode 初值：默认 "render"（md/html 打开即渲染，github 风格）。L3 详情态传
+   * "source"——其编辑/查看形态是 CodeEditor 源码、无 render toggle，md/html 的 canEdit
+   * gate（!showRenderToggle || renderMode === "source"）需要 source 才可保存。 */
+  initialRenderMode?: "source" | "render";
   path: string | null;
   projectName: string;
   queryScope: string;
@@ -59,9 +64,9 @@ export function useFileEditor({
   const [editContent, setEditContent] = useState<string | undefined>();
   // 保存成功后短暂「已保存」反馈；换文件即清。
   const [savedFlash, setSavedFlash] = useState(false);
-  // md/html 默认渲染预览（打开即看预览，github 风格）；非 md/html 由 canEdit gate 强制
+  // md/html 默认渲染预览（initialRenderMode，见参数注释）；非 md/html 由 canEdit gate 强制
   // source。原 FilesPanel/FileTabPreview 各自的 useState 收拢于此。
-  const [renderMode, setRenderMode] = useState<"source" | "render">("render");
+  const [renderMode, setRenderMode] = useState<"source" | "render">(initialRenderMode);
 
   const preview = useQuery({
     enabled: path !== null,

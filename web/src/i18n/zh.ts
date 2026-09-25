@@ -194,6 +194,8 @@ export const zh: Record<TranslationKey, string> = {
   "files.saved": "已保存",
   "files.discard": "放弃",
   "files.discardConfirm": "放弃「{{name}}」的未保存改动？",
+  "files.edit": "编辑",
+  "files.done": "完成",
   "files.dropZone": "拖拽文件以上传",
   "files.root": "根目录",
   "files.goRoot": "转到根目录",

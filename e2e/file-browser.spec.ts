@@ -73,13 +73,12 @@ test("authenticated user can browse Project files and preview text and images", 
     "file-browser-e2e-text-ok",
   );
 
-  // 图片预览：三件套详情态 = 移动 L3 同一份（MobileL3FilePreview 仅文本形态，非文本 →
-  // unsupported 文案）；图片预览归 FilesPanel 检视语境（§6.12l 记档能力边界）。
+  // 图片预览：三件套详情态补 image 分支（批次 3 Step B 同构增值）→ ImageViewer（缩放/旋转
+  // 手势工具条）。svg 后端分类 = image（imageMediaType 命中）。
   await files.getByRole("button", { name: "Back to files" }).click();
   await files
     .locator(".frow", { hasText: /logo\.svg/ })
     .first()
     .click();
-  // unsupported 是早退分支（无 data-role 根，仅一行 cap 文案）。
-  await expect(files).toContainText("not supported for preview yet");
+  await expect(files.locator('[data-role="l3-file-preview"] img')).toBeVisible();
 });
