@@ -15,14 +15,12 @@ import type {
   CreateTerminalSessionResponse,
   DeleteFileResponse,
   DeleteProjectResponse,
-  GitAheadBehindResponse,
   GitBranchListResponse,
   GitCommitDetailResponse,
   GitCommitFileDiffResponse,
   GitCommitLogResponse,
   GitDiffListResponse,
   GitDiffScope,
-  GitCompareDiffResponse,
   GitCompareFileDiffResponse,
   GitFileDiffResponse,
   HealthResponse,
@@ -440,24 +438,6 @@ export async function sendProjectSessionMessage(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text } satisfies SessionPromptInjectRequest),
     },
-  );
-}
-
-export async function getProjectGitAheadBehind(
-  projectName: string,
-  branch?: string,
-): Promise<GitAheadBehindResponse> {
-  return fetchJson(projectGitAheadBehindPath(projectName, branch), "api.projectGitDiffFailed");
-}
-
-export async function getProjectGitCompareDiff(
-  projectName: string,
-  base: string,
-  compare: string,
-): Promise<GitCompareDiffResponse> {
-  return fetchJson(
-    projectGitCompareDiffPath(projectName, base, compare),
-    "api.projectGitDiffFailed",
   );
 }
 
@@ -996,16 +976,8 @@ const projectGitLogPath = (projectName: string, branch?: string) => {
 const projectGitCommitPath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/git/commit`;
 
-const projectGitAheadBehindPath = (projectName: string, branch?: string) => {
-  const base = `/api/projects/${encodeURIComponent(projectName)}/git/ahead-behind`;
-  return branch ? `${base}?branch=${encodeURIComponent(branch)}` : base;
-};
-
 const projectGitComparePath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/git/compare`;
-
-const projectGitCompareDiffPath = (projectName: string, base: string, compare: string) =>
-  `${projectGitComparePath(projectName)}?base=${encodeURIComponent(base)}&compare=${encodeURIComponent(compare)}`;
 
 const projectGitCompareFileDiffPath = (
   projectName: string,

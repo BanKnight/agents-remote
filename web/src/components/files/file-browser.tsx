@@ -1154,7 +1154,9 @@ export function FilesPanel({
       const name = selectedFilePath.split("/").pop() ?? "";
       editor.onRenderModeChange(defaultRenderMode(name));
     }
-  }, [selectedFilePath, editor]);
+    // onRenderModeChange 是 useState setter（引用稳定）——不能把 editor 整对象进 deps
+    //（每渲染新字面量 → effect 每渲染跑，md/html 点「源码」会被立即重置回渲染态）。
+  }, [selectedFilePath, editor.onRenderModeChange]);
 
   const saveButton = editor.canEdit ? (
     <FileSaveButton
@@ -1218,7 +1220,7 @@ export function FilesPanel({
       onEditChange={editor.onEditChange}
       onClose={clearPreview}
       onRefresh={editor.refresh}
-      isRefreshing={editor.preview.isFetching}
+      isRefreshing={editor.isRefreshing}
       onRenderModeChange={editor.onRenderModeChange}
     />
   );

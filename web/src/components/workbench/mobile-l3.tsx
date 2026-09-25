@@ -105,12 +105,12 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
   const data = editor.previewData;
 
   // 非 text 类型：image → ImageViewer（缩放/旋转/双击手势工具条）；too_large/unsupported →
-  // .cap 简要说明。三类都带 data-role 根（预览态语义一致，调用方锚点稳定）。
+  // .cap 简要说明。三类都带 data-role 根（预览态语义一致，调用方锚点稳定）。confirmHolder
+  // 只在 text 分支渲染（丢弃确认仅编辑态可达，image/cap 分支进不了编辑态）。
   if (data.type === "image") {
     return (
       <div className="flex min-h-0 flex-1 flex-col" data-role="l3-file-preview">
         <ImageViewer alt={data.name} src={data.dataUrl} />
-        {confirmHolder}
       </div>
     );
   }
@@ -122,7 +122,6 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
             ? t("files.tooLarge", { limit: formatBytes(data.limitBytes) })
             : t("files.unsupported")}
         </div>
-        {confirmHolder}
       </div>
     );
   }
@@ -152,28 +151,44 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
     >
       {editing ? (
         // 编辑态操作行：保存（FileSaveButton 统一样式，禁用/保存中/已保存三态）+ 完成。
+        // 双按钮包进单个 .diff 容器（auto margin 每份平分剩余空间——两个 .diff 会把首钮
+        // 悬在行中部，design-review 批次 3）；裸文本钮加 after 纵向隐形扩区（铁律 9 触达）。
         <div className="meta">
-          <span className="diff">
+          <span className="diff flex items-center gap-3">
             <FileSaveButton
               isDirty={editor.isDirty}
               isPending={editor.isSaving}
               onSave={editor.handleSave}
               savedFlash={editor.savedFlash}
             />
+            <button
+              className="relative cursor-pointer after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-['']"
+              onClick={finishEditing}
+              type="button"
+            >
+              {t("files.done")}
+            </button>
           </span>
-          <button className="diff cursor-pointer" onClick={finishEditing} type="button">
-            {t("files.done")}
-          </button>
         </div>
       ) : (
         <div className="meta">
           <span>{t("files.previewMetaLines", { n: lineCount, time: updated })}</span>
-          <button className="diff cursor-pointer" onClick={() => setEditing(true)} type="button">
-            {t("files.edit")}
-          </button>
-          <button className="diff cursor-pointer" onClick={onViewDiff} type="button">
-            {t("git.menuViewDiff")} ›
-          </button>
+          <span className="diff flex items-center gap-3">
+            <button
+              className="relative cursor-pointer after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-['']"
+              onClick={() => setEditing(true)}
+              type="button"
+            >
+              {t("files.edit")}
+            </button>
+            <button
+              className="relative cursor-pointer after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-['']"
+              onClick={onViewDiff}
+              type="button"
+            >
+              {t("git.menuViewDiff")} ›
+            </button>
+          </span>
         </div>
       )}
       {editing ? (

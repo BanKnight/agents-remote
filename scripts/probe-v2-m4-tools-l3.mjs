@@ -372,6 +372,13 @@ const diffBtn = page.locator(".meta .diff", { hasText: "查看 diff" });
 ok((await diffBtn.count()) === 1, "meta「查看 diff」按钮");
 // 批次 3 Step B：meta 行补「编辑」入口（进编辑态 CodeEditor + 保存，与桌面右栏同构）。
 ok((await page.locator(".meta .diff", { hasText: "编辑" }).count()) === 1, "meta「编辑」按钮");
+// design-review 修复兜底：双按钮必须包进单个 .diff 容器——各挂 .diff = 两个 auto margin
+// 平分剩余空间，首钮悬行中部（几何硬数据验证容器贴行右缘，390 视口右距 < 32px）。
+const diffBox = await page.locator(".meta .diff").boundingBox();
+ok(
+  diffBox !== null && diffBox.x + diffBox.width > 390 - 32,
+  `meta 按钮容器贴行右缘（right=${diffBox ? Math.round(diffBox.x + diffBox.width) : "null"}）`,
+);
 await diffBtn.click();
 await page.waitForTimeout(800);
 const gnav = await page.evaluate(() => {

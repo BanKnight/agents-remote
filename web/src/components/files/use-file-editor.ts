@@ -114,7 +114,9 @@ export function useFileEditor({
           setEditContent((prev) => (prev === content ? undefined : prev));
         }
       })();
-      void queryClient.invalidateQueries({ queryKey: ["projects", projectName, "files"] });
+      // 列表/diff 失效用面板自身 queryScope 前缀（列表 key 同段）：L3 传 "files" 命中
+      // FilesToolPanel 列表，rootBrowse（"workbench-files"）命中自身列表。
+      void queryClient.invalidateQueries({ queryKey: ["projects", projectName, queryScope] });
       void queryClient.invalidateQueries({ queryKey: gitDiffListQueryKey(projectName) });
     },
   });
@@ -125,10 +127,12 @@ export function useFileEditor({
   }, [isDirty, canEdit, path, editContent, save]);
 
   // Ctrl/Cmd+S 在文本编辑态触发保存并拦截浏览器默认「保存网页」。用 ref 持有最新状态，
-  // listener 只挂载一次，避免每次输入改动都重绑 document 监听；Mac 走 metaKey（⌘），其余走 ctrlKey。
+  // listener 只在 editable 时挂载（只读消费方 FileTabPreview 不挂死 listener；editable=false
+  // 的多编辑实例也不会同时响应一次 ⌘S）。Mac 走 metaKey（⌘），其余走 ctrlKey。
   const saveShortcutRef = useRef({ canEdit, handleSave });
   saveShortcutRef.current = { canEdit, handleSave };
   useEffect(() => {
+    if (!editable) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "s") return;
       const { canEdit: can, handleSave: doSave } = saveShortcutRef.current;
@@ -138,7 +142,7 @@ export function useFileEditor({
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [editable]);
 
   const refresh = useCallback(() => {
     if (path === null) return;

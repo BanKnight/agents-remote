@@ -171,7 +171,7 @@ type DraggableListRowProps = ComponentProps<typeof ListRow> & {
 /**
  * 可拖动行（设计 §7.2 拖动源泛化，2026-07-19）。ListRow + useDragSource——不渲染额外 div，
  * handlers 经 ListRow 的 `...props`（shell-primitives.tsx:532）展开到行根 div。用于文件树文件行
- *（FileEntryList）/ git 变更行（GitFileList）/ skill ManageTab 行拖动到中栏开对应 file/git/skill tab。
+ *（FileEntryList）/ skill ManageTab 行拖动到中栏开对应 file/skill tab。
  *
  * 单击 onSelect 接管原 ListRow onClick 行为（pointer sequence 抑制 click，onSelect 在 pointerup
  * 触发）；行内 actions 按钮（⋯/uninstall）仍可点（inClose 判定：`closest("button")` → 不触发拖动

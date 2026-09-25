@@ -85,10 +85,6 @@ type GitFileDiffView = {
 export type GitFileDiffPanelProps = {
   projectName: string;
   path: string;
-  /** Query-key 隔离段（默认中栏 git tab 段，右栏 inspection 传其 queryScope）。 */
-  queryScope?: string;
-  /** 可选关闭回调（移动浮层关闭按钮，仅 sm:hidden 渲染；中栏 tab 不传，由 tab ✕ 关闭）。 */
-  onClose?: () => void;
 } &
   // scope 模式 = 变更文件（worktree/staged）；compare 模式 = 分支间 diff（base..compare）。
   // 两模式共享 DiffContent 渲染（R7 高亮/R8 展开/R9 hunk 导航），仅 query 数据源不同。
@@ -96,12 +92,12 @@ export type GitFileDiffPanelProps = {
 
 /**
  * 单文件 git diff 面板（自带 query，设计 workbench-layout-fix 阶段 3）。中栏 git tab（PanelRouter，
- * onClose 不传，关闭走 tab ✕）与 compare 专用语境复用。path 为空 → 未选态（selectPrompt）；
- * 非空 → getProjectGitFileDiff query 渲染 diff。
+ * 关闭走 tab ✕）与 compare 专用语境复用。path 为空 → 未选态（selectPrompt）；非空 →
+ * getProjectGitFileDiff query 渲染 diff。
  */
 export function GitFileDiffPanel(props: GitFileDiffPanelProps) {
   const { t } = useT();
-  const { projectName, path, queryScope = WORKBENCH_GIT_TAB_QUERY_SCOPE, onClose } = props;
+  const { projectName, path } = props;
   // R8：展开完整文件（默认仅显示改动附近 3 行）。切换文件/scope/compare 时重置为折叠态。
   const [expanded, setExpanded] = useState(false);
   const compareRef = props.mode === "compare" ? `${props.base}~${props.compare}` : null;
@@ -111,7 +107,7 @@ export function GitFileDiffPanel(props: GitFileDiffPanelProps) {
     enabled: path !== "",
     queryKey: gitFileDiffQueryKey(
       projectName,
-      queryScope,
+      WORKBENCH_GIT_TAB_QUERY_SCOPE,
       props.mode,
       compareRef ?? scopeRef,
       path,
@@ -180,23 +176,7 @@ export function GitFileDiffPanel(props: GitFileDiffPanelProps) {
             </button>
           ) : null}
         </div>
-        {onClose ? (
-          <div
-            className="inline-flex shrink-0 justify-self-end items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5 sm:hidden"
-            role="group"
-          >
-            <button
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
-              type="button"
-              onClick={onClose}
-              aria-label={t("session.close")}
-            >
-              <ShellIcon name="close" className="h-4 w-4" />
-            </button>
-          </div>
-        ) : (
-          <div className="justify-self-end" aria-hidden="true" />
-        )}
+        <div className="justify-self-end" aria-hidden="true" />
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
         {fileDiff.isLoading ? (

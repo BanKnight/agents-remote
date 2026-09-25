@@ -115,9 +115,9 @@ export type GitToolPanelProps = {
  * 工作区 N，恒渲染）→ sect「工作区改动」frow 列表（badge + path + ›；右键/长按 = 05e 2 项
  * 菜单「查看 diff / 复制路径」，02c 单一菜单容器）→ sect「最近提交」crow×3（传 onOpenCommit
  * 才装配）→ links「全部历史 · 分支(N)」（传 onOpenHistory/onOpenBranches 才装配）。
- * diff query key 与桌面 GitChangesList 一致（缓存共享去重，单一数据管道）；log/branches
- * key 与桌面 GitCommitList / GitBranchList 同形但语义不同——此处 log 请求不带 branch 参数
- *（后端默认分支），缓存独立，不与桌面显式 branch 维度共享。
+ * diff/log query key 走 git-diff-viewer 的 key 工厂单源（gitDiffListQueryKey /
+ * gitLogQueryKey，缓存共享去重，单一数据管道）；log 请求不带 branch 参数（后端默认分支），
+ * key 的 branch 维度恒 ""，与 L3GitHistory 的显式 branch 维度 key 区分开。
  */
 export function GitToolPanel({
   projectName,
@@ -127,14 +127,14 @@ export function GitToolPanel({
   onOpenBranches,
 }: GitToolPanelProps) {
   const { t } = useT();
-  // 与 GitChangesList 同 key（workbench-git-left scope）——header gitchip / 移动工具面板 /
+  // gitDiffListQueryKey 单源 key（workbench-git-left scope）——header gitchip / 移动工具面板 /
   // 桌面左栏 / 右栏（批次 3 装配）多方共享缓存。
   const diff = useQuery({
     queryKey: gitDiffListQueryKey(projectName),
     queryFn: () => listProjectGitDiff(projectName),
   });
-  // 03m 最近提交：请求不带 branch（后端默认分支），key 的 branch 维度恒 ""——与桌面
-  // GitCommitList（显式 branch 维度）key 同形但不共享缓存。前端 slice 3 条。
+  // 03m 最近提交：请求不带 branch（后端默认分支），key 的 branch 维度恒 ""——与
+  // L3GitHistory（显式 branch 维度）key 同形但不共享缓存。前端 slice 3 条。
   // 段装配规则同款门控：不传 onOpenCommit（右栏语境）= 最近提交段不装配，请求也不发。
   const log = useQuery({
     enabled: onOpenCommit != null,

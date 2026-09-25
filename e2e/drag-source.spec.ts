@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
  *
  * §6.12k 适配（原「文件树文件行拖到中栏」场景死亡）：v2 桌面 GlobalFilesOverview 只在 mainPage
  * 渲染，与中栏 InstanceArea 二选一（WorkbenchRoute `desktopMainPage ?? instanceArea`）——文件树
- * 源与落点不再同屏；Inspector FilesPanel 不接拖源（只读检视语义）。§7.2 协议 e2e 改走仍同屏的
+ * 源与落点不再同屏；三件套工具面板（检视换装后）不接拖源。§7.2 协议 e2e 改走仍同屏的
  * 中栏 tab 拖源：建两个 Terminal（单 tab 拖自身 leaf 边缘 = drop-to-self no-op，设计 §7.2）→
  * 拖第一个 tab 到 GroupCell 左 zone（15% 边带，垂直中部避开上下优先带）→ dropIntoLeaf split
  * → GroupCell 计数 +1。
