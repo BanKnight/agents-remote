@@ -6,22 +6,15 @@ import type {
   TerminalSession,
   TransportStatus,
 } from "@agents-remote/shared";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { type FormEvent, type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
-import {
-  closeAgentSession,
-  closeTerminalSession,
-  createTerminalSession,
-  getAgentSession,
-  getTerminalSession,
-  sessionStreamUrl,
-} from "../api/client";
+import { getAgentSession, getTerminalSession, sessionStreamUrl } from "../api/client";
 import { useT } from "../i18n";
 import type { TranslationKey } from "../i18n/types";
 import { useTheme, type ResolvedTheme } from "../theme";
@@ -38,34 +31,21 @@ import {
 import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
 import { ProjectShellNavigation } from "../components/shell/shell-navigation";
-import { FilesToolTab, GitToolTab } from "../components/workbench/workbench-tab-plugin";
 import { ShellIcon } from "../components/shell/icons";
-import { useConfirm } from "../components/shell/confirm-dialog";
-import { ActionMenu, type ActionMenuItem } from "../components/ui/action-menu";
-import { optimisticallyRemoveSession } from "../components/workbench/instance-area";
 import { workbenchReconnectRequestAtom } from "./workbench-model";
 
 type SessionDetailProps = {
   projectName: string;
   sessionId: string;
   sessionType: SessionType;
-  sourceAgentSession?: string;
   /**
    * 嵌入模式（workbench 中栏用）：跳过 ShellLayout/sidebar，直接渲染面板主体，
    * 由 WorkbenchShell 提供外壳。默认 false（旧路由用 ShellLayout）。
    */
   embedded?: boolean;
-  /**
-   * 省略面板自带 header（SessionDetailHeader 整个不渲染）。桌面右工作区与移动端聚焦态都用：
-   * header 由 GroupHeader（tab 栏 + ▢）/ MobileFocusHeader 承担，避免 title/projectName 双显冗余，
-   * operational actions（Files/Git 走中栏 tab、+Terminal 走左总览 CreateSessionBar、Retry 移内容区
-   * 错误态 Notice、Close 由 tab ✕）不再塞 header（设计 §11 对齐）。默认 false（旧路由用）。
-   */
-  embeddedHeader?: boolean;
 };
 
 type StreamConnectionStatus = "connecting" | TransportStatus;
-type DetailView = "terminal" | "files" | "git";
 
 type SessionDetailResponse =
   | {
@@ -79,13 +59,10 @@ export function SessionDetail({
   projectName,
   sessionId,
   sessionType,
-  sourceAgentSession,
   embedded = false,
-  embeddedHeader = false,
 }: SessionDetailProps) {
   const { t } = useT();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const socketRef = useRef<WebSocket | null>(null);
   // 最近一次收到 pong 的时刻（onopen 初始化）。心跳 tick 与发送瞬间用它判定 half-open：
   // readyState 仍 OPEN 但 Date.now()-lastPong 超过 PONG_TIMEOUT_MS 即对端不回 pong、连接
@@ -126,7 +103,6 @@ export function SessionDetail({
   // 让后端 attach() 以容器 cols/rows 作 PTY 初始尺寸（首帧即匹配容器，减少窄→宽跳变）。
   const terminalSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const [input, setInput] = useState("");
-  const [detailView, setDetailView] = useState<DetailView>("terminal");
   const [inputDrawerCollapsed, setInputDrawerCollapsed] = useAtom(inputDrawerCollapsedAtom);
   const [isDesktop, setIsDesktop] = useState(
     () => window.matchMedia?.("(min-width: 640px)").matches ?? true,
@@ -146,12 +122,6 @@ export function SessionDetail({
         ? getAgentSession(projectName, sessionId)
         : getTerminalSession(projectName, sessionId),
   });
-  const session = detail.data?.session;
-  const title =
-    session?.displayName ??
-    (sessionType === "agent"
-      ? `${t("section.agents")} Session`
-      : `${t("section.terminal")} Session`);
   const isEnded = connectionStatus === "ended" || sessionStatus === "closed";
 
   // Seed initial sessionStatus from the detail query; subsequent updates come
@@ -161,72 +131,6 @@ export function SessionDetail({
       setSessionStatus((prev) => prev ?? detail.data.session.status);
     }
   }, [detail.data?.session.status]);
-
-  const closeSession = useMutation({
-    mutationFn: async () => {
-      if (sessionType === "agent") {
-        await closeAgentSession(projectName, sessionId);
-      } else {
-        await closeTerminalSession(projectName, sessionId);
-      }
-    },
-    onSuccess: async () => {
-      socketRef.current?.close();
-      queryClient.removeQueries({
-        exact: true,
-        queryKey: ["projects", projectName, `${sessionType}-sessions`, sessionId],
-      });
-      // 乐观移除：navigate 前从 list + overview 当场 filter，避免返回项目页时 stale 列表短暂显示被关卡片（闪烁）。
-      optimisticallyRemoveSession(queryClient, projectName, sessionType, sessionId);
-      // navigate 优先：用户立即看到返回。detail route 用 per-session detail query，不依赖列表。
-      if (sessionType === "terminal" && sourceAgentSession) {
-        await navigate({
-          to: "/projects/$key/session/$id",
-          params: { key: projectName, id: sourceAgentSession },
-        });
-      } else {
-        await navigate({
-          to: "/projects/$key",
-          params: { key: projectName },
-        });
-      }
-      // invalidate 后台 fire-and-forget：刷新左栏列表 + overview（server index.delete 已保证一致，无回滚）。
-      void Promise.all([
-        queryClient.invalidateQueries({ exact: true, queryKey: ["projects"] }),
-        queryClient.invalidateQueries({ exact: true, queryKey: ["projects", projectName] }),
-        queryClient.invalidateQueries({
-          exact: true,
-          queryKey: ["projects", projectName, "agent-sessions"],
-        }),
-        queryClient.invalidateQueries({
-          exact: true,
-          queryKey: ["projects", projectName, "terminal-sessions"],
-        }),
-        queryClient.invalidateQueries({ queryKey: ["overview"] }),
-      ]);
-    },
-  });
-  const { confirm, holder } = useConfirm();
-  const createTerminal = useMutation({
-    mutationFn: () => createTerminalSession(projectName, `Terminal for ${title}`),
-    onSuccess: async (result) => {
-      // navigate 优先：detail route 用 sessionId 直查 per-session detail query，不依赖列表。
-      // invalidate 后台 fire-and-forget 刷新左栏 terminal 列表。
-      await navigate({
-        to: "/projects/$key/session/$id",
-        params: { key: projectName, id: result.session.id },
-      });
-      void Promise.all([
-        queryClient.invalidateQueries({
-          exact: true,
-          queryKey: ["projects", projectName, "terminal-sessions"],
-        }),
-        // overview 同步刷新：桌面 prune effect 用 globalRefs（= overview）判定 tab stale，
-        // 不刷则新 terminal 不在 globalRefs、tab 被误删（与 invalidateSessions helper 同源）。
-        queryClient.invalidateQueries({ queryKey: ["overview"] }),
-      ]);
-    },
-  });
 
   // Each mount (or reconnect) bumps this so stale-socket events are ignored.
   const connGeneration = useRef(0);
@@ -422,9 +326,8 @@ export function SessionDetail({
     return true;
   };
 
-  const canSend = canSendToSession(connectionStatus, closeSession.isPending);
+  const canSend = canSendToSession(connectionStatus);
   const quickKeys = sessionQuickKeys(sessionType);
-  const terminalViewVisible = sessionType === "terminal" || detailView === "terminal";
 
   // Stable callback for xterm to send raw input bytes over WebSocket
   const sendTerminalInput = useCallback(
@@ -487,47 +390,12 @@ export function SessionDetail({
 
   const content = (
     <>
-      {!embeddedHeader ? (
-        <SessionDetailHeader
-          connectionStatus={connectionStatus}
-          createTerminalError={createTerminal.error}
-          createTerminalPending={createTerminal.isPending}
-          embedded={embedded}
-          projectName={projectName}
-          sessionId={sessionId}
-          sessionType={sessionType}
-          sourceAgentSession={sourceAgentSession}
-          title={title}
-          closePending={closeSession.isPending}
-          onClose={async () => {
-            const ok = await confirm({
-              cancelLabel: t("cancel"),
-              confirmLabel: t("session.close"),
-              message: t("session.closeConfirm"),
-              title: t("session.close"),
-              tone: "danger",
-            });
-            if (ok) closeSession.mutate();
-          }}
-          onCreateTerminal={() => createTerminal.mutate()}
-          onReconnect={() => {
-            terminalDataRef.current = null;
-            setReconnectKey((value) => value + 1);
-          }}
-          onViewChange={setDetailView}
-        />
-      ) : null}
-
       <div
         className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden gap-0 p-0 ${shellSurfaceClasses.runtimeBody}`}
       >
-        {detail.error ||
-        fatalError ||
-        isEnded ||
-        closeSession.error ||
-        (embeddedHeader && connectionStatus === "error") ? (
+        {detail.error || fatalError || isEnded || connectionStatus === "error" ? (
           <div className="flex shrink-0 flex-col gap-2 p-2 sm:p-3">
-            {embeddedHeader && connectionStatus === "error" ? (
+            {connectionStatus === "error" ? (
               <>
                 <Notice tone="danger">{t("session.connectionError")}</Notice>
                 <button
@@ -548,42 +416,33 @@ export function SessionDetail({
             ) : null}
             {fatalError ? <Notice tone="danger">{fatalError}</Notice> : null}
             {isEnded ? <Notice>{t("session.runtimeEnded")}</Notice> : null}
-            {closeSession.error instanceof Error ? (
-              <Notice tone="danger">{closeSession.error.message}</Notice>
-            ) : null}
           </div>
         ) : null}
 
-        <DetailWorkspace
-          detailView={detailView}
-          projectName={projectName}
-          sessionType={sessionType}
-          terminalDataRef={terminalDataRef}
-          terminalWriteRef={terminalWriteRef}
-          title={title}
-          connectionStatus={connectionStatus}
-          onResize={sendTerminalResize}
-          onSendInput={sendTerminalInput}
-          onReturnToStream={() => setDetailView("terminal")}
-        />
+        <div className="relative min-h-0 flex-1 flex flex-col">
+          <TerminalOutput
+            connectionStatus={connectionStatus}
+            terminalDataRef={terminalDataRef}
+            terminalWriteRef={terminalWriteRef}
+            onResize={sendTerminalResize}
+            onSendInput={sendTerminalInput}
+          />
+        </div>
       </div>
 
-      {terminalViewVisible ? (
-        <SessionInputDrawer
-          canSend={canSend}
-          collapsed={inputDrawerCollapsed}
-          connectionStatus={connectionStatus}
-          input={input}
-          isDesktop={isDesktop}
-          quickKeys={quickKeys}
-          sessionType={sessionType}
-          onCollapsedChange={setInputDrawerCollapsed}
-          onInputChange={setInput}
-          onQuickKey={sendQuickKey}
-          onSubmit={handleInputSubmit}
-        />
-      ) : null}
-      {holder}
+      <SessionInputDrawer
+        canSend={canSend}
+        collapsed={inputDrawerCollapsed}
+        connectionStatus={connectionStatus}
+        input={input}
+        isDesktop={isDesktop}
+        quickKeys={quickKeys}
+        sessionType={sessionType}
+        onCollapsedChange={setInputDrawerCollapsed}
+        onInputChange={setInput}
+        onQuickKey={sendQuickKey}
+        onSubmit={handleInputSubmit}
+      />
     </>
   );
 
@@ -613,350 +472,6 @@ export function SessionDetail({
     >
       {content}
     </ShellLayout>
-  );
-}
-
-type SessionDetailHeaderProps = {
-  closePending: boolean;
-  connectionStatus: StreamConnectionStatus;
-  createTerminalError: Error | null;
-  createTerminalPending: boolean;
-  projectName: string;
-  sessionId: string;
-  sessionType: SessionType;
-  sourceAgentSession?: string;
-  title: string;
-  onClose: () => void;
-  onCreateTerminal: () => void;
-  onReconnect: () => void;
-  onViewChange: (view: DetailView) => void;
-  /**
-   * 嵌入模式（workbench split 中栏）：隐藏自带 back 链接 + close（SessionDetailActions
-   * 通过 showClose 收起 close）—— split 内无「返回」语义，close 由 SplitPanel 工具条
-   * 承载（Stage 4 ②），避免双 close。默认 false。
-   */
-  embedded?: boolean;
-};
-
-function SessionDetailHeader({
-  closePending,
-  connectionStatus: _connectionStatus,
-  createTerminalError,
-  createTerminalPending,
-  embedded = false,
-  onClose,
-  onCreateTerminal,
-  onReconnect: _onReconnect,
-  onViewChange,
-  projectName,
-  sessionId,
-  sessionType,
-  sourceAgentSession,
-  title,
-}: SessionDetailHeaderProps) {
-  const { t } = useT();
-  const returnsToAgent = sessionType === "terminal" && sourceAgentSession;
-
-  return (
-    <header
-      className={`relative min-w-0 px-3 py-2.5 sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeHeader}`}
-    >
-      <div className="flex min-w-0 items-center gap-2">
-        {!embedded &&
-          (returnsToAgent ? (
-            <Link
-              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-on-surface-muted transition hover:text-on-surface-soft"
-              aria-label={t("session.backToAgent")}
-              params={{ key: projectName, id: sourceAgentSession }}
-              to="/projects/$key/session/$id"
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M10 3L5 8l5 5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              {t("nav.back")}
-            </Link>
-          ) : (
-            <Link
-              className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-on-surface-muted transition hover:text-on-surface-soft"
-              aria-label={t("session.backToProject")}
-              params={{ key: projectName }}
-              to="/projects/$key"
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M10 3L5 8l5 5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              {t("nav.back")}
-            </Link>
-          ))}
-        <div className={`min-w-0 flex-1 text-center ${embedded ? "text-left" : ""}`}>
-          <p className="truncate text-xs font-semibold text-on-surface">{title}</p>
-          <p className="truncate font-mono text-[0.65rem] leading-4 text-on-surface-muted">
-            {projectName} · {sessionId.slice(0, 8)}
-          </p>
-        </div>
-        <SessionDetailActions
-          closePending={closePending}
-          connectionStatus={_connectionStatus}
-          createTerminalError={createTerminalError}
-          createTerminalPending={createTerminalPending}
-          sessionType={sessionType}
-          showClose={!embedded}
-          onClose={onClose}
-          onCreateTerminal={onCreateTerminal}
-          onReconnect={_onReconnect}
-          onViewChange={onViewChange}
-        />
-      </div>
-    </header>
-  );
-}
-
-type SessionDetailActionsMenuProps = {
-  closePending: boolean;
-  connectionStatus: StreamConnectionStatus;
-  createTerminalError: Error | null;
-  createTerminalPending: boolean;
-  sessionType: SessionType;
-  showClose: boolean;
-  onClose: () => void;
-  onCreateTerminal: () => void;
-  onReconnect: () => void;
-  onViewChange: (view: DetailView) => void;
-};
-
-function SessionDetailActions({
-  closePending,
-  connectionStatus,
-  createTerminalError,
-  createTerminalPending,
-  onClose,
-  onCreateTerminal,
-  onReconnect,
-  onViewChange,
-  sessionType,
-  showClose,
-}: SessionDetailActionsMenuProps) {
-  const { t } = useT();
-
-  // 移动端 ⋯ action sheet 项（DESIGN.md `action-menu`）。active 高亮与 IconMarker
-  // 收敛为裸 size-4 icon；tap 后 ActionMenu 自动收起（替代旧手写 stays-open 行为）。
-  const items: ActionMenuItem[] = [];
-  if (sessionType === "agent") {
-    items.push(
-      {
-        label: t("session.files"),
-        icon: <ShellIcon name="files-nav" />,
-        onSelect: () => onViewChange("files"),
-      },
-      {
-        label: t("session.git"),
-        icon: <ShellIcon name="git-nav" />,
-        onSelect: () => onViewChange("git"),
-      },
-      {
-        label: createTerminalPending ? t("session.creating") : t("session.terminal"),
-        icon: <ShellIcon name="terminal" />,
-        onSelect: onCreateTerminal,
-        disabled: createTerminalPending,
-      },
-    );
-  }
-  if (connectionStatus === "error") {
-    items.push({
-      label: t("session.retry"),
-      icon: <ShellIcon name="refresh" />,
-      onSelect: onReconnect,
-    });
-  }
-  items.push({
-    label: closePending ? t("session.closing") : t("session.close"),
-    icon: <ShellIcon name="close" />,
-    onSelect: onClose,
-    variant: "destructive",
-    disabled: closePending,
-  });
-
-  const buttonClass =
-    "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-on-surface-muted transition hover:text-on-surface-soft";
-  const iconBtn =
-    "inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-on-surface-muted transition hover:text-on-surface-soft disabled:opacity-40";
-
-  // Close 之外还有其他操作（Files/Git/+Terminal/Retry）时才用 ⋯ 菜单收起；
-  // terminal 详情页正常状态下只有 Close，直接展开（与 claude 详情页一致）
-  const hasExtraActions = sessionType === "agent" || connectionStatus === "error";
-
-  // 统一的 Close 按钮（h-8 + 16px 图标 + 桌面文字）：桌面端那排与移动端展开共用，
-  // 并与 claude 详情页 ChatHeader 的 Close 完全一致。embedded 模式（workbench split）
-  // 由 SplitPanel 工具条承载 close，此处 showClose=false → null，避免双 close。
-  const closeButton = showClose ? (
-    <button
-      className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-on-surface-muted transition hover:text-error disabled:opacity-40"
-      disabled={closePending}
-      title={closePending ? t("session.closing") : t("session.close")}
-      aria-label={t("session.close")}
-      type="button"
-      onClick={onClose}
-    >
-      <ShellIcon name="close" className="h-4 w-4" />
-      <span className="hidden sm:inline">
-        {closePending ? t("session.closing") : t("session.close")}
-      </span>
-    </button>
-  ) : null;
-
-  return (
-    <>
-      {/* Desktop: inline icon buttons */}
-      <div className="hidden shrink-0 items-center gap-1.5 sm:flex">
-        {sessionType === "agent" ? (
-          <>
-            <button
-              className={iconBtn}
-              title={t("session.files")}
-              type="button"
-              onClick={() => onViewChange("files")}
-            >
-              <ShellIcon name="files-nav" className="h-4 w-4" />
-            </button>
-            <button
-              className={iconBtn}
-              title={t("session.git")}
-              type="button"
-              onClick={() => onViewChange("git")}
-            >
-              <ShellIcon name="git-nav" className="h-4 w-4" />
-            </button>
-            <button
-              className={iconBtn}
-              disabled={createTerminalPending}
-              title={createTerminalPending ? t("session.creating") : t("session.createTerminal")}
-              type="button"
-              onClick={onCreateTerminal}
-            >
-              <ShellIcon name="terminal" className="h-4 w-4" />
-            </button>
-          </>
-        ) : null}
-        {connectionStatus === "error" ? (
-          <button
-            className={iconBtn}
-            title={t("session.retry")}
-            type="button"
-            onClick={onReconnect}
-          >
-            <ShellIcon name="refresh" className="h-4 w-4" />
-          </button>
-        ) : null}
-        {closeButton}
-        {createTerminalError instanceof Error ? (
-          <p className="text-xs text-error">{createTerminalError.message}</p>
-        ) : null}
-      </div>
-
-      {/* Mobile: inline Close when it's the only action (terminal, no error);
-          otherwise collapse into ⋯ → bottom action sheet (ActionMenu) */}
-      {hasExtraActions ? (
-        <div className="flex shrink-0 items-center gap-1.5 sm:hidden">
-          <ActionMenu
-            align="end"
-            cancelLabel={t("cancel")}
-            items={items}
-            trigger={
-              <button className={buttonClass} type="button" aria-label={t("session.actionsAria")}>
-                <ShellIcon className="h-4 w-4" name="ellipsis" />
-              </button>
-            }
-          />
-          {createTerminalError instanceof Error ? (
-            <p className="text-xs text-error">{createTerminalError.message}</p>
-          ) : null}
-        </div>
-      ) : (
-        <div className="shrink-0 sm:hidden">{closeButton}</div>
-      )}
-    </>
-  );
-}
-
-type DetailWorkspaceProps = {
-  detailView: DetailView;
-  projectName: string;
-  sessionType: SessionType;
-  title: string;
-  terminalWriteRef: React.MutableRefObject<((data: string) => void) | null>;
-  terminalDataRef: React.MutableRefObject<string | null>;
-  connectionStatus: StreamConnectionStatus;
-  onSendInput: (data: string) => void;
-  onResize: (cols: number, rows: number) => boolean;
-  onReturnToStream: () => void;
-};
-
-function DetailWorkspace({
-  connectionStatus,
-  detailView,
-  onReturnToStream,
-  onResize,
-  onSendInput,
-  projectName,
-  sessionType,
-  terminalDataRef,
-  terminalWriteRef,
-  title: _title,
-}: DetailWorkspaceProps) {
-  const { t } = useT();
-  const showDetail = sessionType === "agent" && detailView !== "terminal";
-
-  return (
-    <div className="relative min-h-0 flex-1 flex flex-col">
-      <TerminalOutput
-        connectionStatus={connectionStatus}
-        terminalDataRef={terminalDataRef}
-        terminalWriteRef={terminalWriteRef}
-        onResize={onResize}
-        onSendInput={onSendInput}
-      />
-      {showDetail ? (
-        <div className="absolute inset-0 z-20 flex flex-col bg-canvas">
-          <div className="flex shrink-0 items-center border-b border-neutral-line/40 bg-surface-inset/60 px-3.5 py-2.5">
-            <button
-              className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-on-surface-muted transition hover:text-on-surface-soft"
-              type="button"
-              onClick={onReturnToStream}
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M10 3L5 8l5 5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              {t("session.backToStream")}
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 flex flex-col">
-            {detailView === "files" ? (
-              <FilesToolTab projectKey={projectName} />
-            ) : (
-              <GitToolTab projectKey={projectName} />
-            )}
-          </div>
-        </div>
-      ) : null}
-    </div>
   );
 }
 

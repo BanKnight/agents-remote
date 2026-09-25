@@ -5,7 +5,7 @@ import { SessionDetail } from "../../routes/SessionDetailRoute";
 type PanelProps = {
   projectName: string;
   sessionId: string;
-  /** 省略面板自带 header（桌面右工作区 + 移动端聚焦态用）；透传给 ClaudeChat/SessionDetail。默认 false。 */
+  /** 省略面板自带 header（桌面右工作区 + 移动端聚焦态用）；透传给 ClaudeChat。默认 false。 */
   embeddedHeader?: boolean;
 };
 
@@ -38,18 +38,12 @@ export function ChatPanel({ projectName, sessionId, embeddedHeader }: PanelProps
  * agent 走此 stream 面板。
  *
  * 注：closeSession.onSuccess 已统一导航到 /projects/$key[/session/$id]（Phase 4 URL 统一）。
- * embedded 模式下 header 自带 close 按钮隐藏（close 由 SplitPanel 工具条承载），但移动端 ⋯ 菜单
- * 的 Close 仍触发 closeSession，导航回项目作用域。
+ * SessionDetail 自带 header/操作区已删（2026-09-25 用户拍板 A：检视入口由注册表承载，
+ * close/开终端由 tab ✕ / 左总览 CreateSessionBar 承担）。
  */
-export function AgentTerminalPanel({ projectName, sessionId, embeddedHeader }: PanelProps) {
+export function AgentTerminalPanel({ projectName, sessionId }: PanelProps) {
   return (
-    <SessionDetail
-      embedded
-      embeddedHeader={embeddedHeader}
-      projectName={projectName}
-      sessionId={sessionId}
-      sessionType="agent"
-    />
+    <SessionDetail embedded projectName={projectName} sessionId={sessionId} sessionType="agent" />
   );
 }
 
@@ -66,11 +60,10 @@ export function AcpPanel({ projectName, sessionId }: PanelProps) {
  *
  * 注：closeSession.onSuccess 已统一导航到 /projects/$key[/session/$id]（Phase 4 URL 统一）。
  */
-export function TerminalPanel({ projectName, sessionId, embeddedHeader }: PanelProps) {
+export function TerminalPanel({ projectName, sessionId }: PanelProps) {
   return (
     <SessionDetail
       embedded
-      embeddedHeader={embeddedHeader}
       projectName={projectName}
       sessionId={sessionId}
       sessionType="terminal"

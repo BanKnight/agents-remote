@@ -444,11 +444,11 @@ export function AllSessionsGroupedList({
 type PanelRouterProps = {
   panelRef: WorkbenchPanelRef;
   /**
-   * 省略面板自带 header（SessionDetailHeader/ChatHeader 整个不渲染）：透传给
-   * ChatPanel/AgentTerminalPanel/TerminalPanel → ClaudeChat/SessionDetail 的 embeddedHeader。
+   * 省略面板自带 header（ChatHeader 不渲染）：透传给 ChatPanel → ClaudeChat 的 embeddedHeader。
    * 桌面右工作区与移动聚焦态都传 true（设计 §11 对齐）：title/projectName 由 group tab 栏 chip
-   * + 中栏 tab 行显示，Files/Git/+Terminal/Retry/Close 操作按 §11 去向分别由中栏 tab / 左总览
-   * CreateSessionBar / 内容区错误态 Notice / tab ✕ 承担。默认 false（旧路由 ShellLayout 用）。
+   * + 中栏 tab 行显示，操作按 §11 去向分别由中栏 tab / 左总览 CreateSessionBar / 内容区错误态
+   * Notice / tab ✕ 承担（SessionDetail 自带 header/操作区已删，2026-09-25 拍板 A）。
+   * 默认 false（旧路由 ShellLayout 用）。
    */
   embeddedHeader?: boolean;
 };
@@ -517,7 +517,7 @@ function PanelRouterBase({ panelRef, embeddedHeader }: PanelRouterProps) {
     return <AgentPanelRouter embeddedHeader={embeddedHeader} panelRef={panelRef} />;
   }
   if (sessionType === "terminal") {
-    return <TerminalPanelRouter embeddedHeader={embeddedHeader} panelRef={panelRef} />;
+    return <TerminalPanelRouter panelRef={panelRef} />;
   }
   return <PlaceholderPanel focusId={panelRef.sessionId} />;
 }
@@ -574,34 +574,16 @@ function AgentPanelRouter({
     return <AcpPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
   if (detail.data?.session) {
-    return (
-      <AgentTerminalPanel
-        embeddedHeader={embeddedHeader}
-        projectName={panelRef.projectName}
-        sessionId={panelRef.sessionId}
-      />
-    );
+    return <AgentTerminalPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
   return <PlaceholderPanel focusId={panelRef.sessionId} />;
 }
 
-function TerminalPanelRouter({
-  panelRef,
-  embeddedHeader,
-}: {
-  panelRef: SessionPanelRef;
-  embeddedHeader?: boolean;
-}) {
+function TerminalPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
   const detail = useTerminalDetail(panelRef);
   if (detail.isLoading) return null;
   if (detail.data?.session) {
-    return (
-      <TerminalPanel
-        embeddedHeader={embeddedHeader}
-        projectName={panelRef.projectName}
-        sessionId={panelRef.sessionId}
-      />
-    );
+    return <TerminalPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
   return <PlaceholderPanel focusId={panelRef.sessionId} />;
 }

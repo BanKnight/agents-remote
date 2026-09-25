@@ -67,14 +67,7 @@ export const zh: Record<TranslationKey, string> = {
   "project.historyRangeAll": "全部",
 
   // ── Session Detail ───────────────────────────────────────────
-  "session.backToAgent": "返回 Agent 详情",
   "session.backToProject": "返回项目",
-  "session.backToStream": "返回流",
-  "session.files": "文件",
-  "session.git": "Git",
-  "session.terminal": "Terminal",
-  "session.createTerminal": "+ Terminal",
-  "session.creating": "正在创建...",
   "session.retry": "重试",
   "session.stop": "停止",
   "session.close": "关闭",
@@ -88,7 +81,6 @@ export const zh: Record<TranslationKey, string> = {
   "session.typeShell": "输入 Shell 命令...",
   "session.disconnected": "正在建立连接中…",
   "session.quickKeys": "会话快捷键",
-  "session.actionsAria": "会话操作",
   "session.namePrompt.createAgent": "创建 Agent 会话",
   "session.namePrompt.createTerminal": "创建终端",
   "session.namePrompt.resumeTitle": "恢复会话",
@@ -276,7 +268,6 @@ export const zh: Record<TranslationKey, string> = {
   "section.git": "Git",
   "section.gitDesc": "只读工作区和暂存差异查看器。",
   "section.gitStatus": "只读",
-  "section.terminal": "终端",
 
   // ── Session Status ───────────────────────────────────────────
   "status.waitingForInput": "等待输入",

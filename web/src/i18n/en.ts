@@ -65,14 +65,7 @@ export const en = {
   "project.historyRangeAll": "All",
 
   // ── Session Detail ───────────────────────────────────────────
-  "session.backToAgent": "Back to agent detail",
   "session.backToProject": "Back to project",
-  "session.backToStream": "Back to stream",
-  "session.files": "Files",
-  "session.git": "Git",
-  "session.terminal": "Terminal",
-  "session.createTerminal": "+ Terminal",
-  "session.creating": "Creating...",
   "session.retry": "Retry",
   "session.stop": "Stop",
   "session.close": "Close",
@@ -86,7 +79,6 @@ export const en = {
   "session.typeShell": "Type shell input...",
   "session.disconnected": "Establishing connection…",
   "session.quickKeys": "Session quick keys",
-  "session.actionsAria": "Session actions",
   "session.namePrompt.createAgent": "Create Agent Session",
   "session.namePrompt.createTerminal": "Create Terminal",
   "session.namePrompt.resumeTitle": "Resume session",
@@ -276,7 +268,6 @@ export const en = {
   "section.git": "Git",
   "section.gitDesc": "Read-only worktree and staged diff viewer.",
   "section.gitStatus": "Read-only",
-  "section.terminal": "Terminal",
 
   // ── Session Status ───────────────────────────────────────────
   "status.waitingForInput": "Waiting for input",
