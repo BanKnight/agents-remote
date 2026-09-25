@@ -57,8 +57,19 @@ async function setupMocks(page) {
       }),
     }),
   );
-  // WS 路由真实 server（fake session 不存在 → error，但页面不崩，chatInput 仍渲染）。
-  await page.routeWebSocket(/claude-stream/, (ws) => ws.connectToServer());
+  // WS 全 mock（无 connectToServer）：fake session 不存在于真实 server（upgrade → 404），
+  // 7c2f975 起 composer disconnected 时禁用输入——与 e2e claude-windowing 同款：全 mock 使
+  // socket open（→ connected → composer enabled），回 pong 防 half-open 自愈关连接。
+  await page.routeWebSocket(/claude-stream/, (ws) => {
+    ws.onMessage((data) => {
+      try {
+        const msg = JSON.parse(String(data));
+        if (msg.type === "ping") ws.send(JSON.stringify({ type: "pong" }));
+      } catch {
+        /* 非 JSON 帧忽略 */
+      }
+    });
+  });
 }
 
 async function probe(browser, label, contextOptions) {
