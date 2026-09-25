@@ -16,12 +16,11 @@ import { useMobileExitClose } from "../../lib/use-mobile-exit-close";
 import {
   listProjectFiles,
   listRootFiles,
-  previewProjectFile,
-  saveFileContent,
   createFolder,
   renameFile,
   deleteFile,
 } from "../../api/client";
+import { useFileEditor } from "./use-file-editor";
 import { enqueueUploads, UploadQueueCard } from "./upload-queue";
 import { usePromptDialog } from "../shell/prompt-dialog";
 import { useConfirm } from "../shell/confirm-dialog";
@@ -62,9 +61,6 @@ export function defaultRenderMode(name: string): "source" | "render" {
     ? "render"
     : "source";
 }
-
-// 保存成功后 Save 按钮短暂显示 "Saved" 反馈的时长。
-const SAVED_FLASH_MS = 1500;
 
 // ── ResourceStatePanel ────────────────────────────────────────────
 
@@ -620,7 +616,7 @@ export function FilePreviewPanel({
 /**
  * 文件预览的保存按钮（FilesPanel inspection + file tab 预览共用，DRY）。纯渲染：接收编辑态
  *（isDirty/isPending/savedFlash）+ onSave，渲染统一样式的 save button。canEdit gate 由调用方
- * 控制（`saveToggle = canEditText ? <FileSaveButton/> : null`，保持 saveToggle===null 语义供
+ * 控制（`saveToggle = editor.canEdit ? <FileSaveButton/> : null`，保持 saveToggle===null 语义供
  * FilePreviewPanel 容器 sm:hidden 判定）。
  */
 export function FileSaveButton({
@@ -931,11 +927,6 @@ export function FilesPanel({
     setSelectedFilePath(undefined);
     onMobilePreviewChange?.(false);
   });
-  // Local text edits to the file under preview. undefined = untouched (mirror preview content).
-  const [editContent, setEditContent] = useState<string | undefined>();
-  // Brief "Saved" feedback after a successful save; cleared on file switch.
-  const [savedFlash, setSavedFlash] = useState(false);
-
   // rootBrowse 模式按 currentPath 派生数据源（设计 §4.1）。非 rootBrowse 模式退化为项目作用域：
   // effectiveProjectName = projectName，effectiveRelativePath = currentPath，readOnly 恒 false。
   const target = rootBrowse ? resolveRootBrowseTarget(currentPath) : null;
@@ -954,28 +945,16 @@ export function FilesPanel({
         ? listRootFiles()
         : listProjectFiles(effectiveProjectName ?? "", effectiveRelativePath),
   });
-  const preview = useQuery({
-    enabled: enablePreview && selectedFilePath !== undefined && effectiveProjectName !== undefined,
-    queryKey: ["projects", effectiveProjectName, queryScope, "preview", selectedFilePath],
-    queryFn: () => previewProjectFile(effectiveProjectName ?? "", selectedFilePath ?? ""),
-    // 文件预览是易变的服务端状态（agent/外部改动）：不缓存，切回/重选即拉最新；
-    // 配合 FilePreviewPanel 手动 refresh 按钮（onRefresh invalidate）兜底常驻态。
-    staleTime: 0,
+  const editor = useFileEditor({
+    editable: true,
+    path: enablePreview && selectedFilePath !== undefined ? selectedFilePath : null,
+    projectName: effectiveProjectName ?? "",
+    queryScope,
   });
-
-  const previewData = preview.data;
-  const previewTextContent = previewData?.type === "text" ? previewData.content : undefined;
-  // Dirty only while editing the current text preview; switching files resets editContent.
-  const isDirty =
-    editContent !== undefined &&
-    previewTextContent !== undefined &&
-    editContent !== previewTextContent;
-  const editValue = editContent ?? previewTextContent ?? "";
-  const isHtml =
-    previewData?.type === "text" &&
-    (previewData.name.endsWith(".html") || previewData.name.endsWith(".htm"));
-  const isMarkdown = previewData?.type === "text" && previewData.name.endsWith(".md");
-  const showRenderToggle = isHtml || isMarkdown;
+  const previewData = editor.previewData;
+  const isDirty = editor.isDirty;
+  const editValue = editor.editValue;
+  const showRenderToggle = editor.showRenderToggle;
 
   const goToPath = (path: string) => {
     setInternalPath(path);
@@ -1026,9 +1005,6 @@ export function FilesPanel({
 
   // clearPreview 经 useMobileExitClose 编排：移动端先播 slide-out 再真正清（§7 对称），桌面端即时。
   const clearPreview = closePreviewOverlay;
-  // md/html 默认渲染预览（打开即看预览，github 风格）；非 md/html 被 showRenderToggle gate
-  // 强制 source（:1003 renderMode={showRenderToggle ? renderMode : "source"}），不受此初值影响。
-  const [renderMode, setRenderMode] = useState<"source" | "render">("render");
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -1109,31 +1085,6 @@ export function FilesPanel({
     onSuccess: () => invalidateFiles(),
   });
 
-  const save = useMutation({
-    mutationFn: ({ path, content }: { path: string; content: string }) =>
-      saveFileContent(effectiveProjectName ?? "", path, content),
-    onSuccess: (_data, { path, content }) => {
-      // Refresh both the preview (new content/size) and the list (size/mtime).
-      // 必须等 preview refetch 把新内容（= 刚保存的 content）拉回缓存后再清 editContent：
-      // 若在 refetch 前清，editValue 会瞬间回落到旧服务端内容，@uiw/react-codemirror 对受控
-      // value 变化做全文档 replace（from:0 → 整篇），滚动锚点失效 → 保存后滚动跳回文件开头。
-      setSavedFlash(true);
-      window.setTimeout(() => setSavedFlash(false), SAVED_FLASH_MS);
-      void (async () => {
-        try {
-          await queryClient.invalidateQueries({
-            queryKey: ["projects", effectiveProjectName, queryScope, "preview", path],
-          });
-        } finally {
-          // 仅当用户保存后未继续输入才清（清后 editValue = 新 previewTextContent，与 CodeMirror
-          // doc 相等 → 不 replace → 滚动保留）；保存期间又有新输入则保留，避免丢弃后续编辑。
-          setEditContent((prev) => (prev === content ? undefined : prev));
-        }
-      })();
-      invalidateFiles();
-    },
-  });
-
   const { confirm, holder: confirmHolder } = useConfirm();
 
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -1169,11 +1120,6 @@ export function FilesPanel({
     [confirm, del, t],
   );
 
-  const handleSave = useCallback(() => {
-    if (!isDirty || selectedFilePath === undefined || editContent === undefined) return;
-    save.mutate({ path: selectedFilePath, content: editContent });
-  }, [isDirty, selectedFilePath, editContent, save]);
-
   const handleFileDrop = useCallback(
     (fileList: FileList | File[]) => {
       uploadFiles(fileList);
@@ -1206,39 +1152,16 @@ export function FilesPanel({
   useEffect(() => {
     if (selectedFilePath !== undefined) {
       const name = selectedFilePath.split("/").pop() ?? "";
-      setRenderMode(defaultRenderMode(name));
+      editor.onRenderModeChange(defaultRenderMode(name));
     }
-    // Switching files (or closing the preview) drops any in-flight local edits.
-    setEditContent(undefined);
-    setSavedFlash(false);
-  }, [selectedFilePath]);
+  }, [selectedFilePath, editor]);
 
-  // Save only applies to editable text in source mode (markdown/html render mode is read-only).
-  const canEditText =
-    previewData?.type === "text" && (!showRenderToggle || renderMode === "source");
-
-  // Ctrl/Cmd+S 在文本编辑态触发保存并拦截浏览器默认「保存网页」。用 ref 持有最新状态，
-  // listener 只挂载一次，避免每次输入改动都重绑 document 监听；Mac 走 metaKey（⌘），其余走 ctrlKey。
-  const saveShortcutRef = useRef({ canEditText, handleSave });
-  saveShortcutRef.current = { canEditText, handleSave };
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "s") return;
-      const { canEditText, handleSave } = saveShortcutRef.current;
-      if (!canEditText) return;
-      e.preventDefault();
-      handleSave();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  const saveButton = canEditText ? (
+  const saveButton = editor.canEdit ? (
     <FileSaveButton
       isDirty={isDirty}
-      isPending={save.isPending}
-      savedFlash={savedFlash}
-      onSave={handleSave}
+      isPending={editor.isSaving}
+      savedFlash={editor.savedFlash}
+      onSave={editor.handleSave}
     />
   ) : null;
 
@@ -1283,25 +1206,20 @@ export function FilesPanel({
 
   const previewPanel = (
     <FilePreviewPanel
-      error={preview.error}
-      isLoading={preview.isLoading}
+      error={editor.preview.error}
+      isLoading={editor.preview.isLoading}
       preview={previewData}
-      renderMode={showRenderToggle ? renderMode : "source"}
+      renderMode={showRenderToggle ? editor.renderMode : "source"}
       saveToggle={saveButton}
-      isHtml={isHtml}
-      isMarkdown={isMarkdown}
+      isHtml={editor.isHtml}
+      isMarkdown={editor.isMarkdown}
       fileName={selectedFilePath?.split("/").pop() ?? selectedFilePath}
       editValue={editValue}
-      onEditChange={setEditContent}
+      onEditChange={editor.onEditChange}
       onClose={clearPreview}
-      onRefresh={() => {
-        if (selectedFilePath === undefined || effectiveProjectName === undefined) return;
-        queryClient.invalidateQueries({
-          queryKey: ["projects", effectiveProjectName, queryScope, "preview", selectedFilePath],
-        });
-      }}
-      isRefreshing={preview.isFetching}
-      onRenderModeChange={setRenderMode}
+      onRefresh={editor.refresh}
+      isRefreshing={editor.preview.isFetching}
+      onRenderModeChange={editor.onRenderModeChange}
     />
   );
 

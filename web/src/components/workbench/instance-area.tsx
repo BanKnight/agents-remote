@@ -471,7 +471,7 @@ type PanelRouterProps = {
 （memo 惯例，原 InstanceLeftOverview 同款——§6.12k 后已退役）。
  */
 function PanelRouterBase({ panelRef, embeddedHeader }: PanelRouterProps) {
-  // file tab 渲染 FileTabPreview（可编辑预览，queryScope="file-nav"，设计 §6 决策 16/18）。
+  // file tab 渲染 FileTabPreview（只读预览，queryScope="file-nav"，设计 §6 决策 16/18）。
   // path=全路径（含项目名前缀），FileTabPreview 内部 resolveRootBrowseTarget 解析 projectName
   // 走 project preview API（设计 workbench-stable-refactor Phase 3，去 projectName 字段）。
   if (panelRef.kind === "file") {
