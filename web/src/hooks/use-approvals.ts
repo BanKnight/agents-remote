@@ -13,10 +13,49 @@ import { approvalsStreamUrl, fetchApprovals, respondApproval } from "../api/clie
 
 export const APPROVALS_QUERY_KEY = ["approvals"] as const;
 
+// approvals-stream WS 单订阅（模块级引用计数）：桌面 StatusBar 与 side aprow（及未来消费方）
+// 各自 useApprovals(true) 时，历史上每实例各开一条 /api/approvals/stream（§6.12k review 记档
+// 的双 WS 待办）。计数收敛 = 第一个 enabled 实例开连接、最后一个卸载才关；帧写入同一 query
+// cache（APPROVALS_QUERY_KEY 单 key，各实例 useQuery 自动 dedupe，连接用哪个实例的
+// queryClient 写入行为一致）。
+let approvalsWsRefCount = 0;
+let approvalsWsSocket: WebSocket | null = null;
+
+function connectApprovalsStream(getClient: () => ReturnType<typeof useQueryClient>): void {
+  approvalsWsRefCount += 1;
+  if (approvalsWsSocket) return;
+  const queryClient = getClient();
+  const socket = new WebSocket(approvalsStreamUrl());
+  approvalsWsSocket = socket;
+  socket.onmessage = (event) => {
+    try {
+      const frame = JSON.parse(String(event.data)) as ApprovalsStreamServerMessage;
+      if (frame.type === "approvals") {
+        queryClient.setQueryData(APPROVALS_QUERY_KEY, { approvals: frame.approvals });
+      }
+    } catch {
+      // 非 JSON 帧忽略（与 session-stream 同纪律）
+    }
+  };
+  socket.onclose = () => {
+    // 连接断开清引用：后续实例卸载时 refCount 已归零守卫，不再对已关闭 socket 二次 close。
+    if (approvalsWsSocket === socket) approvalsWsSocket = null;
+  };
+}
+
+function disconnectApprovalsStream(): void {
+  approvalsWsRefCount -= 1;
+  if (approvalsWsRefCount === 0 && approvalsWsSocket) {
+    approvalsWsSocket.close();
+    approvalsWsSocket = null;
+  }
+}
+
 /**
- * 全局待审批快照。enabled 期间持有 WS 订阅：连接即推全量（open 时服务端先发一帧），
- * 之后任何 registry 变更推全量 → setQueryData 整体替换。WS 断线由 REST fallback 兜底
- *（refetchOnWindowFocus 全局关 → 显式 refetchInterval 兜底 15s，仅 enabled 期）。
+ * 全局待审批快照。enabled 期间持有 WS 订阅（模块级引用计数单订阅）：连接即推全量
+ *（open 时服务端先发一帧），之后任何 registry 变更推全量 → setQueryData 整体替换。
+ * WS 断线由 REST fallback 兜底（refetchOnWindowFocus 全局关 → 显式 refetchInterval
+ * 兜底 15s，仅 enabled 期）。
  */
 export function useApprovals(enabled: boolean) {
   const queryClient = useQueryClient();
@@ -29,18 +68,8 @@ export function useApprovals(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) return;
-    const socket = new WebSocket(approvalsStreamUrl());
-    socket.onmessage = (event) => {
-      try {
-        const frame = JSON.parse(String(event.data)) as ApprovalsStreamServerMessage;
-        if (frame.type === "approvals") {
-          queryClient.setQueryData(APPROVALS_QUERY_KEY, { approvals: frame.approvals });
-        }
-      } catch {
-        // 非 JSON 帧忽略（与 session-stream 同纪律）
-      }
-    };
-    return () => socket.close();
+    connectApprovalsStream(() => queryClient);
+    return () => disconnectApprovalsStream();
   }, [enabled, queryClient]);
 
   return { approvals: query.data?.approvals ?? [] };
