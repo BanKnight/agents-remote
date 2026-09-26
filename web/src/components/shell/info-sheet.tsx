@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils";
 
 import { Dialog, DialogContent } from "../ui/dialog";
+import { MobileSheet, SHEET_UNMOUNT_DELAY_MS } from "./mobile-sheet";
 import { shellSurfaceClasses } from "./shell-primitives";
 
 /**
@@ -68,8 +69,8 @@ export function useInstanceInfoSheet() {
   );
 
   const close = useCallback(() => {
-    // 延迟清空让退出动画（若有 transition）跑完；当前无动画，仅统一退出路径。
-    closeTimerRef.current = setTimeout(() => setPending(null), 0);
+    // 延迟清空：先让 Radix exit 动画跑完（见 SHEET_UNMOUNT_DELAY_MS）再卸载 holder。
+    closeTimerRef.current = setTimeout(() => setPending(null), SHEET_UNMOUNT_DELAY_MS);
   }, []);
 
   useEffect(() => {
@@ -102,7 +103,7 @@ function InfoSheetDialog({
 }: PendingInfo & { onClose: () => void }) {
   const body = (
     <>
-      <h2 className="text-title font-semibold text-ink-1">{title}</h2>
+      {/* 标题由 MobileSheet 的 shd 承担（§6.12n 迁移，原 h2 消解） */}
       {status ? (
         <p className="mt-0.5 text-caption font-semibold text-success-text">{status}</p>
       ) : null}
@@ -163,13 +164,20 @@ function InfoSheetDialog({
     </>
   );
 
+  const [open, setOpen] = useState(true);
+  const requestClose = () => {
+    setOpen(false);
+    onClose();
+  };
   if (variant === "modal") {
     return (
-      <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
+      <Dialog onOpenChange={(o) => !o && requestClose()} open={open}>
         <DialogContent>
           <div
             className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
           >
+            {/* modal 无 shd，标题留在卡片内（sheet 形态由 MobileSheet shd 承担） */}
+            <h2 className="text-title font-semibold text-ink-1">{title}</h2>
             {body}
           </div>
         </DialogContent>
@@ -178,20 +186,12 @@ function InfoSheetDialog({
   }
 
   return (
-    <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="fixed inset-x-0 bottom-0 top-auto max-w-none w-full translate-x-0 translate-y-0 flex items-end justify-center">
-        <div
-          className={`w-full max-w-md rounded-t-[20px] border-t border-sep bg-elevated px-5 pt-1 pb-[max(12px,env(safe-area-inset-bottom))] shadow-2xl shadow-black/40`}
-        >
-          <div
-            className="mx-auto mb-2.5 mt-3 h-[5px] w-10 rounded-[3px] bg-ink-3"
-            aria-hidden="true"
-          />
-          {body}
-          {/* 底部留白（原型 .sheet padding-bottom:12px，safe-area 单点消费于外壳 pb） */}
-          <div className="h-1" aria-hidden="true" />
-        </div>
-      </DialogContent>
-    </Dialog>
+    // sheet 形态走 MobileSheet 单源（§6.12n：悬浮卡片 + 滑入滑出 + 下拉收起，与切换/历史
+    // 同一容器）；受控开合 = pending 持有期。
+    <MobileSheet onOpenChange={(o) => !o && requestClose()} open={open} title={title}>
+      {body}
+      {/* 底部留白（原型 .sheet padding-bottom:12px，safe-area 消费于 .msheet bottom） */}
+      <div className="h-1" aria-hidden="true" />
+    </MobileSheet>
   );
 }

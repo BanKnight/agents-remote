@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+
 import { useQueryClient } from "@tanstack/react-query";
 import type { EffortLevel } from "@agents-remote/shared";
 import { EFFORT_LEVELS } from "@agents-remote/shared";
@@ -12,6 +14,7 @@ import {
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
 import type { InfoSheetVariant } from "../shell/info-sheet";
+import { MobileSheet, SHEET_UNMOUNT_DELAY_MS } from "../shell/mobile-sheet";
 import { Dialog, DialogContent } from "../ui/dialog";
 import { shellSurfaceClasses } from "../shell/shell-primitives";
 import { useConfirm } from "../shell/confirm-dialog";
@@ -62,6 +65,20 @@ export function RuntimeConfigDialog({
   ]);
   const bridge = getClaudeBridge(claudeBridgeKey(projectName, sessionId));
   const session = detail?.session;
+
+  // 受控关闭桥（open 恒 true 会让 Radix exit 动画被父级卸载截断，见 SHEET_UNMOUNT_DELAY_MS）。
+  const [open, setOpen] = useState(true);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    },
+    [],
+  );
+  const requestClose = () => {
+    setOpen(false);
+    closeTimerRef.current = setTimeout(() => onOpenChange(false), SHEET_UNMOUNT_DELAY_MS);
+  };
 
   const title =
     field === "model"
@@ -120,16 +137,15 @@ export function RuntimeConfigDialog({
       }
       bridge.switchEffort(value as EffortLevel);
     }
-    onOpenChange(false);
+    requestClose();
     void queryClient.invalidateQueries({
       exact: true,
       queryKey: ["projects", projectName, "agent-sessions", sessionId],
     });
   };
 
-  const body = (
-    <div className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}>
-      <h2 className="text-title font-semibold text-ink-1">{title}</h2>
+  const listBody = (
+    <>
       <div className="mt-2.5 border-t border-sep-row" />
       <div className="divide-y divide-sep-row">
         {bridge ? (
@@ -160,36 +176,34 @@ export function RuntimeConfigDialog({
         )}
       </div>
       <div className="kbtns">
-        <button className="c cursor-pointer" onClick={() => onOpenChange(false)} type="button">
+        <button className="c cursor-pointer" onClick={requestClose} type="button">
           {t("cancel")}
         </button>
       </div>
       {/* effort running 切换的 danger confirm（useConfirm holder，portal 渲染）。 */}
       {holder}
-    </div>
+    </>
   );
 
+  if (variant === "sheet") {
+    // sheet 形态走 MobileSheet 单源（§6.12n：悬浮卡片 + 滑入滑出 + 下拉收起，与实例信息
+    // sheet 同一容器）；标题由 shd 承担。
+    return (
+      <MobileSheet onOpenChange={(o) => !o && requestClose()} open={open} title={title}>
+        {listBody}
+      </MobileSheet>
+    );
+  }
+
   return (
-    <Dialog defaultOpen onOpenChange={(open) => !open && onOpenChange(false)}>
-      <DialogContent
-        className={
-          variant === "sheet"
-            ? "fixed inset-x-0 bottom-0 top-auto max-w-none w-full translate-x-0 translate-y-0 flex items-end justify-center"
-            : undefined
-        }
-      >
-        {variant === "sheet" ? (
-          <div className="w-full max-w-md rounded-t-[20px] border-t border-sep bg-elevated px-5 pt-1 pb-[max(12px,env(safe-area-inset-bottom))] shadow-2xl shadow-black/40">
-            <div
-              aria-hidden="true"
-              className="mx-auto mb-2.5 mt-3 h-[5px] w-10 rounded-[3px] bg-ink-3"
-            />
-            {body}
-            <div aria-hidden="true" className="h-1" />
-          </div>
-        ) : (
-          body
-        )}
+    <Dialog onOpenChange={(o) => !o && requestClose()} open={open}>
+      <DialogContent>
+        <div
+          className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        >
+          <h2 className="text-title font-semibold text-ink-1">{title}</h2>
+          {listBody}
+        </div>
       </DialogContent>
     </Dialog>
   );

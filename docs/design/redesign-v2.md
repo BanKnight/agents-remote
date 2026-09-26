@@ -713,6 +713,24 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 9. **探针经验记档**：probe-file-save-scroll 语境迁移到 L3 编辑态（检视面板退役），mock preview 响应必带 `mtimeMs`（L3 meta 渲染 relative mtime，缺失抛 Invalid time value → error boundary）；code-simplifier 热区终审结论随 commit 附带。
 10. **code-simplifier 终审清单消化（批次 4 收尾，全量 11 条 + 低优先 4 项）**：19 文件 +104/−478。①i18n 孤儿 key 139 个批量删（986→847；只读脚本生成零引用清单 + 无模板拼接判定 + TranslationKey/zh `Record<TranslationKey,string>` 双向类型护栏；en+zh 分行删除用确定性删行脚本——278 行逐 Edit 反而是注入风险点；**教训：i18n 多行 value 格式（key 单独一行）会让单行正则漏删，typecheck 报 missing 兜住后手工补 5 处**）②FilesPanel 单模式化——rootBrowse/projectName/onMobilePreviewChange 三 prop 删（非 rootBrowse 分支现存零调用方），`resolveRootBrowseTarget` 恒走、`joinRootBrowseDirectoryPath` 签名收窄 `RootBrowseTarget`，注释 rootBrowse 概念表述统一中文③WorkbenchTabPluginContext 死成员 focusId/sessionType 删（when/render 仅消费 projectKey/currentPath/onPathChange）④TabButton 死组件删⑤parentProjectPath 死导出删⑥ChatRow 8 props 收缩（archived/meta/title/deleteLabel/renameLabel/rowMenuAria 组件内 t()+session 派生，onRename 改可选；**顺手修 cancelLabel 误用**——ActionMenu cancelLabel 原传 rowMenuAria「对话操作」aria 文案，改 `t("cancel")`）⑦openCreatePrompt(parentPath) 参数化（03o 新建 prompt 两份合一）⑧ApprovalAllowAll 提取（05f Popover / 11 sheet 头部二联双容器共用，confirmAll 状态机仍单源 useApprovalCenter）⑨L3 commit 文件行 badge 三元链 → statusShortLabel 单次求值（同 GitStatusBadge 模式）⑩workbench-tab-plugin 孤儿 `/**` 残行删⑪四个仅本文件消费导出去 export（dateGroupOf/groupWikiPages/gitStatusTone/WORKBENCH_GIT_LEFT_QUERY_SCOPE）。验证：四门禁 + CSS 硬闸 + e2e 24/24 + 探针 m4 43/43、inspector、file-save-scroll、approvals 26/26、cwd-memory、m9-b 16/16、m9-d 63/63 全绿。
 
+### §6.12n 移动 sheet 形态统一：三套实现收敛 MobileSheet 单源（2026-09-26，用户拍板「彻底统一」）
+
+用户真机发现同为「底部弹出」浮层但样式不一（项目切换 vs 实例信息 ℹ）。盘点实为**三套**并存：① `MobileSheet`（`.msheet` 悬浮卡片原型单源：四周 10px、四角 20px 圆角、76dvh 内滚、滑入滑出动画、下拉收起手势）——03j/03l/03n/11 用；② `mobileSheetClasses`（ui/dialog.tsx 贴底面板：rounded-t-xl 顶角、无滑出、无手势）——ActionMenu/OptionMenu/prompt/confirm/pages-root 用；③ InfoSheetDialog 手写贴底（仅 fade 无滑动、自绘装饰 grab）。原型标尺上 `.msheet` 悬浮卡片是 03j/03k/03l/03n 共用容器（v2-primitives.css 注释），贴底是实现侧分化。
+
+**收敛**：全部六处迁 MobileSheet——① MobileSheet 增强 `trigger?`（ActionMenu/OptionMenu 的 asChild 半受控场景）+ `title` 可选（菜单 sheet 无标题，sr-only Title 保 a11y）；② 六消费方迁移（ActionMenu/OptionMenu 菜单行原样进 body；prompt/confirm/pages-root 的标题上移 shd 对齐 03 原型、内部卡片消解；InfoSheetDialog sheet 分支迁入，modal 形态保留给桌面）；③ `mobileSheetClasses` 删除。副产品统一：scrim 全走 `bg-scrim`（原型 .dim 无 blur，reviewer P2-4 方向）、滑入滑出动画、下拉收起全 sheet 生效。桌面居中 modal（PromptDialog/ConfirmDialog/pages 的 desktop 分支）不动。
+
+**review 消化（design-reviewer 7 条 + 自查 1 条，同日）**：
+- **P1-1 第七处漏迁**：`runtime-config-dialog.tsx` sheet 分支（ℹ 下钻第二层：模型/权限/effort 选择面，与 InfoSheet 共用 variant 契约）迁 MobileSheet；内部 open 桥 + 延迟通知父级（父级按 `runtimeField` 条件渲染立即卸载会截断 exit 动画）。
+- **P2-2 菜单 ariaLabel 误用**：ActionMenu/OptionMenu 曾 `ariaLabel={cancelLabel ?? …}`——cancelLabel 现全为「取消」，sr-only Title 读出「取消」当菜单名；解耦为固定「操作菜单」/「选择菜单」。
+- **P2-3 status 行间距**：info-sheet status 行 `mt-2.5` → `mt-0.5`（03k:62 margin-top:2px）。
+- **P2-4 pages 关闭路径**：pages-root-dialog 补 open 桥（照 info-sheet 模式），用户主动关闭（scrim/Esc/取消）走动画收起；**保存成功路径刻意保留立即收起**（父级 onSuccess 驱动卸载，无 DismissableLayer 竞态风险，仅剩 polish 级动画截断，为避免 ref 命令式通道复杂化接受）。
+- **P2-5 无标题 sheet 下拉热区**：菜单类 sheet 仅 grab 40×5px 难命中——无标题分支渲染 12px 零视觉热区行（复用 `.shd` flex 行为，sr-only Title 在其内）。
+- **P3-6 pages 按钮间距**：表单→按钮区 16px（mt-4）、保存→取消 8px（gap-2），对齐 08 原型 kbtns margin-top:16px。
+- **P3-7 scrim 统一**：`ui/dialog.tsx` Overlay `bg-black/60 backdrop-blur-sm` → `bg-scrim`（删 blur）——drawer/reader/桌面 modal 的 scrim 一并对齐原型 .dim；**收敛边界=全部 Dialog 封装**（非仅移动 sheet）。
+- **单源常量**：`SHEET_UNMOUNT_DELAY_MS`（300ms）提取至 mobile-sheet.tsx，info-sheet/prompt/confirm/runtime-config/pages 五处私有同值常量收敛；顺手修 info-sheet modal 分支漏绑 open state（defaultOpen 非 受控，桌面 fade-out 同被截断）。
+
+
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

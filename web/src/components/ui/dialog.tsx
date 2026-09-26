@@ -46,7 +46,8 @@ function DialogContent({
       <DialogPrimitive.Overlay
         data-slot="dialog-overlay"
         className={cn(
-          "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm",
+          // scrim 走语义 token（浅 40%/深 45%，原型 .dim 无 blur——§6.12n P3-7 与 MobileSheet 统一）。
+          "fixed inset-0 z-50 bg-scrim",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
         )}
       />
@@ -57,7 +58,7 @@ function DialogContent({
           // w-full max-w-[calc(100%-2rem)] sm:max-w-lg（移动端留 1rem 缝、桌面 512px）。
           // 点卡片外（Overlay 全屏 scrim 区）= outside → Radix onPointerDownOutside dismiss。
           // 非居中形态必须中和默认 top/left/translate 并解除 max-w：
-          //   底部 sheet = `inset-x-0 bottom-0 top-auto translate-x-0 translate-y-0 w-full max-w-none`；
+          //   底部 sheet 已统一走 MobileSheet 组件（§6.12n）；drawer/reader 两类仍走此封装：
           //   左侧 drawer = `inset-y-0 left-0 translate-x-0 translate-y-0 max-w-none`（右缘 16px 圆角）；
           //   全屏 reader = `inset-0 translate-x-0 translate-y-0 max-w-none`（无 outside 区，靠 ✕/Esc 关）。
           "pointer-events-auto fixed left-1/2 top-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 outline-none sm:max-w-lg",
@@ -73,24 +74,7 @@ function DialogContent({
 }
 
 /**
- * 移动底部 sheet 形态的单源 class（上面注释「底部 sheet」中和串的完整成品）：定位中和 +
- * 圆角顶 + safe-area 单点避让（frontend-notes §1）+ 入场 slide。消费方一律
- * `<DialogContent className={mobileSheetClasses}>`（ActionMenu/OptionMenu 移动 sheet、
- * prompt/confirm/pages-root 对话框）——改形制只动这里。
+ * 移动底部 sheet 形态统一走 `MobileSheet` 组件（§6.12n 单源收敛，原 mobileSheetClasses
+ * 串已删）。此处保留注释锚点：底部 sheet = MobileSheet（`.msheet` 悬浮卡片形态）。
  */
-const mobileSheetClasses = cn(
-  "fixed inset-x-0 bottom-0 top-auto max-w-none w-full translate-x-0 translate-y-0 rounded-t-xl border-t border-neutral-line bg-surface-raised px-2 pt-2",
-  "pb-[calc(env(safe-area-inset-bottom)+0.5rem)]",
-  "shadow-2xl shadow-black/40",
-  "slide-in-from-bottom duration-200 ease-out",
-);
-
-export {
-  Dialog,
-  DialogTrigger,
-  DialogClose,
-  DialogTitle,
-  DialogDescription,
-  DialogContent,
-  mobileSheetClasses,
-};
+export { Dialog, DialogTrigger, DialogClose, DialogTitle, DialogDescription, DialogContent };

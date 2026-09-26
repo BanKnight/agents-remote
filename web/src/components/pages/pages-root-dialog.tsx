@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useIsMobile } from "@/lib/use-is-mobile";
 import type { PagesRoot, PagesRootAuth } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
-import { Dialog, DialogContent, mobileSheetClasses } from "../ui/dialog";
+import { Dialog, DialogContent } from "../ui/dialog";
 import { ActionButton, SegmentedControl, shellSurfaceClasses } from "../shell/shell-primitives";
+import { MobileSheet, SHEET_UNMOUNT_DELAY_MS } from "../shell/mobile-sheet";
 
 type PagesRootDialogProps = {
   /** 编辑模式预填根；undefined = 新增。 */
@@ -39,6 +40,21 @@ export function PagesRootDialog({
   const [urlPath, setUrlPath] = useState(initial?.urlPath ?? "/");
   const [fsDir, setFsDir] = useState(initial?.fsDir ?? "");
   const [auth, setAuth] = useState<PagesRootAuth>(initial?.auth ?? "public");
+
+  // 受控关闭桥：先内部 open=false 播完 exit 动画再回调父级（父级按 editing 条件渲染，
+  // 立即回调 = 截断动画 + DismissableLayer 竞态；见 mobile-sheet SHEET_UNMOUNT_DELAY_MS）。
+  const [open, setOpen] = useState(true);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    },
+    [],
+  );
+  const requestClose = () => {
+    setOpen(false);
+    closeTimerRef.current = setTimeout(() => onClose(), SHEET_UNMOUNT_DELAY_MS);
+  };
 
   const title = initial ? t("pages.dialogTitleEdit") : t("pages.dialogTitleAdd");
 
@@ -130,31 +146,28 @@ export function PagesRootDialog({
   };
 
   if (isMobile) {
+    // shd 标题（§6.12n 对齐 03 原型）+ 表单 + 竖排全宽按钮（表单→按钮区 16px、保存→取消
+    // 8px，对齐 08 原型 kbtns margin-top:16px 与 confirm-dialog 的 gap-2）。
     return (
-      <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className={mobileSheetClasses}>
-          <div className="flex flex-col gap-2">
-            <div className={`rounded-xl px-4 py-3 ${shellSurfaceClasses.workspace}`}>
-              <h2 className="mb-1 text-base font-semibold text-on-surface">{title}</h2>
-              {formBody}
-            </div>
-            {saveButton("mobile")}
-            <button
-              className={`flex min-h-[48px] w-full items-center justify-center rounded-xl text-sm font-semibold text-on-surface-muted transition active:bg-on-surface/5 ${shellSurfaceClasses.workspace}`}
-              disabled={submitting}
-              onClick={onClose}
-              type="button"
-            >
-              {t("cancel")}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <MobileSheet onOpenChange={(o) => !o && requestClose()} open={open} title={title}>
+        {formBody}
+        <div className="mt-4 flex flex-col gap-2">
+          {saveButton("mobile")}
+          <button
+            className={`flex min-h-[48px] w-full items-center justify-center rounded-xl text-sm font-semibold text-on-surface-muted transition active:bg-on-surface/5 ${shellSurfaceClasses.workspace}`}
+            disabled={submitting}
+            onClick={requestClose}
+            type="button"
+          >
+            {t("cancel")}
+          </button>
+        </div>
+      </MobileSheet>
     );
   }
 
   return (
-    <Dialog defaultOpen onOpenChange={(open) => !open && onClose()}>
+    <Dialog onOpenChange={(o) => !o && requestClose()} open={open}>
       <DialogContent>
         <div
           className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
@@ -162,7 +175,7 @@ export function PagesRootDialog({
           <h2 className="text-base font-semibold text-on-surface">{title}</h2>
           <div className="mt-3">{formBody}</div>
           <div className="mt-5 flex justify-end gap-3">
-            <ActionButton disabled={submitting} onClick={onClose} tone="muted">
+            <ActionButton disabled={submitting} onClick={requestClose} tone="muted">
               {t("cancel")}
             </ActionButton>
             {saveButton("desktop")}

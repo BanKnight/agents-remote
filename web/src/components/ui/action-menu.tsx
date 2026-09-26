@@ -13,13 +13,14 @@ import {
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { cn } from "@/lib/utils";
 
+import { MobileSheet } from "@/components/shell/mobile-sheet";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./dropdown-menu";
-import { Dialog, DialogContent, DialogTrigger, mobileSheetClasses } from "./dialog";
 
 export type ActionMenuItemVariant = "default" | "destructive";
 
@@ -90,60 +91,59 @@ export function ActionMenu({
   };
 
   if (isMobile) {
+    // contextMenuPoint 非空 = 行 onContextMenu（移动长按）触发：受控开 sheet（onOpenChange
+    // false 时经 ctx.close 清 point 回非受控）。触屏无坐标 popover，长按语义 = 开 sheet。
     return (
-      // contextMenuPoint 非空 = 行 onContextMenu（移动长按）触发：受控开 sheet（onOpenChange
-      // false 时经 ctx.close 清 point 回非受控）。触屏无坐标 popover，长按语义 = 开 sheet。
-      <Dialog
+      <MobileSheet
+        ariaLabel="操作菜单"
         open={open || contextMenuPoint !== null}
         onOpenChange={(next) => {
           if (!next) onContextMenuClose?.();
           setOpen(next);
         }}
+        trigger={trigger}
       >
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
-        <DialogContent className={mobileSheetClasses} aria-label={cancelLabel ?? "操作菜单"}>
-          <div role="menu">
-            {items.map((item, index) => (
-              <button
-                key={`${item.label}-${index}`}
-                type="button"
-                role="menuitem"
-                disabled={item.disabled}
-                className={mobileSheetItemClasses(item.variant)}
-                onClick={(e) => {
-                  // portal 合成事件按 fiber 树冒泡（frontend-notes §4）：menuitem 的 click
-                  // 会冒到行/卡 onClick（如文件行 onOpenFile 导航），必须拦；否则 onSelect
-                  // 开的对话框随导航卸载、行又同步执行了导航。
-                  e.stopPropagation();
-                  // 长按路径 open 受控于 contextMenuPoint，setOpen(false) 关不掉——
-                  // 必须同时清（否则 sheet 残留与 onSelect 打开的对话框层叠抢焦点）。
-                  onContextMenuClose?.();
-                  item.onSelect();
-                  setOpen(false);
-                }}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            ))}
-            <div className="my-2 h-px bg-neutral-line" aria-hidden="true" />
+        <div role="menu">
+          {items.map((item, index) => (
             <button
+              key={`${item.label}-${index}`}
               type="button"
               role="menuitem"
-              className={mobileSheetItemClasses("default")}
+              disabled={item.disabled}
+              className={mobileSheetItemClasses(item.variant)}
               onClick={(e) => {
+                // portal 合成事件按 fiber 树冒泡（frontend-notes §4）：menuitem 的 click
+                // 会冒到行/卡 onClick（如文件行 onOpenFile 导航），必须拦；否则 onSelect
+                // 开的对话框随导航卸载、行又同步执行了导航。
                 e.stopPropagation();
+                // 长按路径 open 受控于 contextMenuPoint，setOpen(false) 关不掉——
+                // 必须同时清（否则 sheet 残留与 onSelect 打开的对话框层叠抢焦点）。
                 onContextMenuClose?.();
+                item.onSelect();
                 setOpen(false);
               }}
             >
-              <span className="w-full text-center text-on-surface-muted">
-                {cancelLabel ?? "取消"}
-              </span>
+              {item.icon}
+              <span>{item.label}</span>
             </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+          ))}
+          <div className="my-2 h-px bg-neutral-line" aria-hidden="true" />
+          <button
+            type="button"
+            role="menuitem"
+            className={mobileSheetItemClasses("default")}
+            onClick={(e) => {
+              e.stopPropagation();
+              onContextMenuClose?.();
+              setOpen(false);
+            }}
+          >
+            <span className="w-full text-center text-on-surface-muted">
+              {cancelLabel ?? "取消"}
+            </span>
+          </button>
+        </div>
+      </MobileSheet>
     );
   }
 

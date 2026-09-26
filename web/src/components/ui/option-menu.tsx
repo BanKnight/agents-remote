@@ -3,13 +3,14 @@ import { useState, type ButtonHTMLAttributes, type ReactElement } from "react";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { cn } from "@/lib/utils";
 
+import { MobileSheet } from "@/components/shell/mobile-sheet";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./dropdown-menu";
-import { Dialog, DialogContent, DialogTrigger, mobileSheetClasses } from "./dialog";
 
 export type OptionMenuAccent = "user" | "permission" | "assistant";
 
@@ -120,52 +121,50 @@ export function OptionMenu({
 
   if (isMobile) {
     return (
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
-        <DialogContent className={mobileSheetClasses} aria-label={cancelLabel ?? "选择菜单"}>
-          <div role="menu" className="max-h-[60vh] overflow-y-auto">
-            {items.map((item, index) => (
-              <button
-                key={`${item.label}-${index}`}
-                type="button"
-                role="menuitem"
-                disabled={item.isActive}
-                className={mobileOptionItemClasses(
-                  item.isActive === true,
-                  accent,
-                  hasDescription ? "start" : "center",
-                )}
-                onClick={() => {
-                  if (item.isActive) return;
-                  item.onSelect();
-                  setOpen(false);
-                }}
-              >
-                {item.isActive ? CheckIcon : <span className="size-4 shrink-0" />}
-                <span className="flex min-w-0 flex-col">
-                  <span>{item.label}</span>
-                  {item.description ? (
-                    <span className="text-xs font-normal text-on-surface-muted">
-                      {item.description}
-                    </span>
-                  ) : null}
-                </span>
-              </button>
-            ))}
-            <div className="my-2 h-px bg-neutral-line" aria-hidden="true" />
+      <MobileSheet ariaLabel="选择菜单" onOpenChange={setOpen} open={open} trigger={trigger}>
+        {/* .msheet 自带 max-height 内滚（frontend-notes §8），无需内部再设滚动约束 */}
+        <div role="menu">
+          {items.map((item, index) => (
             <button
+              key={`${item.label}-${index}`}
               type="button"
               role="menuitem"
-              className={mobileOptionItemClasses(false, accent)}
-              onClick={() => setOpen(false)}
+              disabled={item.isActive}
+              className={mobileOptionItemClasses(
+                item.isActive === true,
+                accent,
+                hasDescription ? "start" : "center",
+              )}
+              onClick={() => {
+                if (item.isActive) return;
+                item.onSelect();
+                setOpen(false);
+              }}
             >
-              <span className="w-full text-center text-on-surface-muted">
-                {cancelLabel ?? "取消"}
+              {item.isActive ? CheckIcon : <span className="size-4 shrink-0" />}
+              <span className="flex min-w-0 flex-col">
+                <span>{item.label}</span>
+                {item.description ? (
+                  <span className="text-xs font-normal text-on-surface-muted">
+                    {item.description}
+                  </span>
+                ) : null}
               </span>
             </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+          ))}
+          <div className="my-2 h-px bg-neutral-line" aria-hidden="true" />
+          <button
+            type="button"
+            role="menuitem"
+            className={mobileOptionItemClasses(false, accent)}
+            onClick={() => setOpen(false)}
+          >
+            <span className="w-full text-center text-on-surface-muted">
+              {cancelLabel ?? "取消"}
+            </span>
+          </button>
+        </div>
+      </MobileSheet>
     );
   }
 

@@ -158,20 +158,20 @@ async function login(page) {
       `G2 .ar computed color = ink-2（浅 #8e8e93 / 深 #98989f，实际 ${arInfo?.color ?? "n/a"}）`,
     );
 
-    // ── H. seg4 aria-controls / tabpanel ──
+    // ── H. seg4 aria-controls / tabpanel（§6.12k 批次 2 左栏退役后 panel 改 side-instance-panel） ──
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
     await page.waitForTimeout(1200);
     const segInfo = await page.evaluate(() => {
-      const span = document.querySelector('.seg4.mini span[aria-controls="instance-scope-panel"]');
-      const panel = document.querySelector('#instance-scope-panel[role="tabpanel"]');
+      const span = document.querySelector('.seg4.mini span[aria-controls="side-instance-panel"]');
+      const panel = document.querySelector('#side-instance-panel[role="tabpanel"]');
       return {
         spanOk: span !== null,
         panelOk: panel !== null,
         onCount: document.querySelectorAll(".seg4.mini span.on").length,
       };
     });
-    ok(segInfo.spanOk, "H1 seg4 span aria-controls=instance-scope-panel");
-    ok(segInfo.panelOk, "H2 tabpanel #instance-scope-panel[role=tabpanel] 存在");
+    ok(segInfo.spanOk, "H1 seg4 span aria-controls=side-instance-panel");
+    ok(segInfo.panelOk, "H2 tabpanel #side-instance-panel[role=tabpanel] 存在");
     ok(segInfo.onCount === 1, "H3 seg4 默认单段 .on（默认「项目」段）");
 
     // ── I. 键盘 focus-visible 实测（seg4 span + setrow） ──

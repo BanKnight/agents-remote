@@ -371,7 +371,10 @@ async function run() {
       if (!dialog) return null;
       const grab = dialog.querySelector("div[aria-hidden=true]");
       const h2 = dialog.querySelector("h2");
-      const statusLine = h2?.nextElementSibling;
+      // §6.12n 迁 MobileSheet 后：h2 在 shd 内，status 状态行按内容（含●）定位。
+      const statusLine = [...dialog.querySelectorAll("p")].find((p) =>
+        p.textContent?.includes("●"),
+      );
       const rows = [...dialog.querySelectorAll("dl > div")];
       const btns = [...dialog.querySelectorAll("div > button")].filter(
         (b) => b.closest("dl") === null,
