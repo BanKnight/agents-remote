@@ -5,7 +5,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { getProjectGitCompareFileDiff, getProjectGitFileDiff } from "../../api/client";
 import { useT } from "../../i18n";
 import { useTheme } from "../../theme";
-import { IconMarker, type ShellTone } from "../shell/shell-primitives";
+import { IconMarker, LoadingBlock, type ShellTone } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { ResourceStatePanel } from "../files/file-browser";
 import { extToLang, highlightCodeLine } from "../markdown/prism-languages";
@@ -181,15 +181,11 @@ export function GitFileDiffPanel(props: GitFileDiffPanelProps) {
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
         {fileDiff.isLoading ? (
-          <div className="flex flex-1 min-h-0 flex-col items-center justify-start gap-3 pt-10 lg:justify-center lg:pt-0">
-            <span className="relative flex h-3 w-3" aria-hidden="true">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
-            </span>
-            <span className="text-xs font-semibold text-on-surface-muted">
-              {t("git.loadingDiff")}
-            </span>
-          </div>
+          // LoadingBlock 单源（§6.12o）；窄屏贴顶、宽屏居中的对齐差异由 className 透传。
+          <LoadingBlock
+            className="min-h-0 flex-1 justify-start pt-10 lg:justify-center lg:pt-0"
+            label={t("git.loadingDiff")}
+          />
         ) : fileDiff.error ? (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
             <div className="w-full lg:w-auto">

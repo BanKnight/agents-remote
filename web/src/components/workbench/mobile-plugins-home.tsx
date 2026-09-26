@@ -10,7 +10,7 @@ import { DEFAULT_SKILL_AGENT } from "../../routes/plugins-shared";
 import { useMcpServers } from "../../hooks/mcp";
 import { useCheckSkillUpdates, useInstalledSkills } from "../../hooks/skills";
 import { ShellIcon } from "../shell/icons";
-import { LargeTitleRow } from "../shell/shell-primitives";
+import { LargeTitleRow, ListRowSkeleton } from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { MobileAddMcpSheet, mcpTypeLabel } from "./mobile-plugins-detail";
 import { MobileProjectSwitchSheet } from "./mobile-sheets";
@@ -172,32 +172,40 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
                 <ShellIcon className="size-5" name="plus" />
               </button>
             </div>
-            {mcpList.map((s) =>
-              projectName ? (
-                /* project scope MCP 卡暂无详情容器（/plugins/mcp/$ 只承载 global），记档 M6-b。 */
-                <div className="pcard" key={s.name}>
-                  <div className="r1">{s.name}</div>
-                  <div className="d2">{describeMcpTarget(s)}</div>
-                </div>
-              ) : (
-                /* 可点卡 = button：宽度由 .pcard 内 width:stretch 填满（勿加 w-full——100% 不扣
-                   margin，叠 .pcard 横向 margin 即右侧溢出 32px，M10 第五轮用户真机复验）。 */
-                <button
-                  className="pcard block cursor-pointer text-left"
-                  key={s.name}
-                  onClick={() => {
-                    void navigate({ to: "/plugins/mcp/$", params: { _splat: s.name } });
-                  }}
-                  type="button"
-                >
-                  <div className="r1">{s.name}</div>
-                  <div className="d2">{describeMcpTarget(s)}</div>
-                </button>
-              ),
+            {servers.isPending ? (
+              // 首载骨架（§6.12o）：仅 isPending 显，防 pending 闪「无 MCP」伪空态；
+              // pcard（名 + 副行，无 marker/尾钮）→ marker=false + action="none"。
+              <ListRowSkeleton action="none" count={2} marker={false} />
+            ) : (
+              <>
+                {mcpList.map((s) =>
+                  projectName ? (
+                    /* project scope MCP 卡暂无详情容器（/plugins/mcp/$ 只承载 global），记档 M6-b。 */
+                    <div className="pcard" key={s.name}>
+                      <div className="r1">{s.name}</div>
+                      <div className="d2">{describeMcpTarget(s)}</div>
+                    </div>
+                  ) : (
+                    /* 可点卡 = button：宽度由 .pcard 内 width:stretch 填满（勿加 w-full——100% 不扣
+                       margin，叠 .pcard 横向 margin 即右侧溢出 32px，M10 第五轮用户真机复验）。 */
+                    <button
+                      className="pcard block cursor-pointer text-left"
+                      key={s.name}
+                      onClick={() => {
+                        void navigate({ to: "/plugins/mcp/$", params: { _splat: s.name } });
+                      }}
+                      type="button"
+                    >
+                      <div className="r1">{s.name}</div>
+                      <div className="d2">{describeMcpTarget(s)}</div>
+                    </button>
+                  ),
+                )}
+                {mcpList.length === 0 ? (
+                  <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptyMcp")}</p>
+                ) : null}
+              </>
             )}
-            {mcpList.length === 0 ? (
-              <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptyMcp")}</p>
-            ) : null}
 
             {/* 已安装技能组（编号③：有更新 chip；.r = 手动检查更新，仅全局 scope） */}
             <div className="psect">
@@ -213,37 +221,44 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
                 </button>
               )}
             </div>
-            {skillList.map((s) => (
-              <button
-                className="pcard block cursor-pointer text-left"
-                key={s.name}
-                onClick={() => {
-                  // 技能卡点入详情（编号③）：global → /plugins/skill/$（12）；project → 项目
-                  // tab 带路径（skill preview 随项目 scope 查，/plugins/skill/$ 只承载 global）。
-                  if (projectName) {
-                    void navigate({
-                      to: "/projects/$key/skill/$",
-                      params: { key: projectName, _splat: s.name },
-                    });
-                  } else {
-                    void navigate({ to: "/plugins/skill/$", params: { _splat: s.name } });
-                  }
-                }}
-                type="button"
-              >
-                <div className="r1">
-                  {s.name}
-                  {/* project 技能与全局同名撞名时 updates 缓存会误报——chip 收敛全局段。 */}
-                  {!projectName && hasUpdateNames.has(s.name) ? (
-                    <span className="upd">{t("skills.hasUpdate")}</span>
-                  ) : null}
-                </div>
-                <div className="d2">{s.path}</div>
-              </button>
-            ))}
-            {skillList.length === 0 ? (
-              <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptySkills")}</p>
-            ) : null}
+            {installed.isPending ? (
+              // 同上：仅 isPending 显骨架，防 pending 闪「暂无技能」伪空态。
+              <ListRowSkeleton action="none" count={3} marker={false} />
+            ) : (
+              <>
+                {skillList.map((s) => (
+                  <button
+                    className="pcard block cursor-pointer text-left"
+                    key={s.name}
+                    onClick={() => {
+                      // 技能卡点入详情（编号③）：global → /plugins/skill/$（12）；project → 项目
+                      // tab 带路径（skill preview 随项目 scope 查，/plugins/skill/$ 只承载 global）。
+                      if (projectName) {
+                        void navigate({
+                          to: "/projects/$key/skill/$",
+                          params: { key: projectName, _splat: s.name },
+                        });
+                      } else {
+                        void navigate({ to: "/plugins/skill/$", params: { _splat: s.name } });
+                      }
+                    }}
+                    type="button"
+                  >
+                    <div className="r1">
+                      {s.name}
+                      {/* project 技能与全局同名撞名时 updates 缓存会误报——chip 收敛全局段。 */}
+                      {!projectName && hasUpdateNames.has(s.name) ? (
+                        <span className="upd">{t("skills.hasUpdate")}</span>
+                      ) : null}
+                    </div>
+                    <div className="d2">{s.path}</div>
+                  </button>
+                ))}
+                {skillList.length === 0 ? (
+                  <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptySkills")}</p>
+                ) : null}
+              </>
+            )}
 
             {/* 市场段（编号⑤）：两条 mrow（原型 09:79-80「MCP 市场/技能市场」，M6-c 接入官方
                 registry 后补齐）；无 .c 计数列（registry/skills.sh 均无总量数据源，§6.12g）；

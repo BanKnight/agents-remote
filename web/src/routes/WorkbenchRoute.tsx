@@ -870,6 +870,7 @@ function WorkbenchContent({
       onToggleMaximize={onToggleMaximize}
       projectName={ctx.projectKey}
       refsCount={globalRefs.length}
+      refsLoaded={globalRefsLoaded}
       setActiveZone={setActiveZone}
     />
   );

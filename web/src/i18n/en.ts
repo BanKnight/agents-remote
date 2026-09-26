@@ -613,6 +613,7 @@ export const en = {
   "workbench.historyClosed": "Ended · {{time}}",
   "workbench.historyEmpty": "No sessions",
   "workbench.historyLoading": "Loading…",
+  "workbench.sessionLoading": "Loading session…",
   "workbench.historyFoot": "Resume reopens the same session · full replay · keep chatting",
   "approvals.title": "Approval Center",
   "approvals.rowLabel": "{{count}} approvals · review together",

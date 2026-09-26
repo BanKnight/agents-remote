@@ -19,7 +19,7 @@ import { useFileEditor } from "../files/use-file-editor";
 import { useConfirm } from "../shell/confirm-dialog";
 import { MarkdownString } from "../markdown/MarkdownString";
 import { useT } from "../../i18n";
-import { ListRowSkeleton } from "../shell/shell-primitives";
+import { ListRowSkeleton, LoadingBlock } from "../shell/shell-primitives";
 import { ActionMenu } from "../ui/action-menu";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { relativeTime } from "./history-list";
@@ -97,7 +97,7 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
   });
 
   if (editor.preview.isLoading) {
-    return <div className="cap mt-4 px-4">{t("files.loadingPreview")}</div>;
+    return <LoadingBlock className="min-h-0 flex-1" label={t("files.loadingPreview")} />;
   }
   if (editor.preview.isError || !editor.previewData) {
     return <div className="cap mt-4 px-4">{t("files.previewError")}</div>;
@@ -244,7 +244,7 @@ export function MobileL3GitDiff({ projectName, path, scope }: MobileL3GitDiffPro
       : undefined;
 
   if (fileDiff.isLoading) {
-    return <div className="cap mt-4 px-4">{t("git.loadingDiff")}</div>;
+    return <LoadingBlock className="min-h-0 flex-1" label={t("git.loadingDiff")} />;
   }
   if (fileDiff.isError || !fileDiff.data || fileDiff.data.repository !== true) {
     return <div className="cap mt-4 px-4">{t("git.fileError")}</div>;
@@ -335,6 +335,9 @@ export function L3GitHistory({ projectName, branch, onOpenCommit }: L3GitHistory
   const { t } = useT();
   // offset 分页用 useInfiniteQuery（逐页累积，getNextPageParam = loaded < total 终止判断）。
   // key 用 "log-paged" 段与桌面单页 `git log`（同 key 全量）隔离——limit 分页语义不同不共享。
+  // 不加 keepPreviousData（§6.12o review 结论）：两个消费方（workbench-tab-plugin 栈 push、
+  // mobile-workbench 恒 HEAD）换 branch 均重挂载，placeholder 按 observer 记忆对重挂载无效，
+  // 只剩切项目时短暂跨项目陈旧列表的负作用。
   const log = useInfiniteQuery({
     queryKey: ["projects", projectName, "git", "log-paged", branch ?? ""],
     queryFn: ({ pageParam }) =>
@@ -353,28 +356,35 @@ export function L3GitHistory({ projectName, branch, onOpenCommit }: L3GitHistory
       className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
       data-role="l3-git-history"
     >
-      <div className="meta">
-        <span>{t("git.historyMeta", { branch: branch || "HEAD", n: total })}</span>
-      </div>
-      {commits.map((commit, i) => {
-        const group =
-          i === 0 || commits[i - 1]!.isoDate !== commit.isoDate
-            ? dateGroupOf(commit.isoDate ?? "", new Date(), {
-                today: t("git.dlgToday"),
-                yesterday: t("git.dlgYesterday"),
-                thisWeek: t("git.dlgThisWeek"),
-                earlier: t("git.dlgEarlier"),
-              })
-            : null;
-        return (
-          <HistoryCommitRow
-            commit={commit}
-            groupLabel={group}
-            key={commit.hash}
-            onClick={() => onOpenCommit(commit.hash)}
-          />
-        );
-      })}
+      {log.isPending ? (
+        // 首载骨架（§6.12o）：防 meta 行显「HEAD · 共 0 次提交」伪态；后台刷新不进来。
+        <ListRowSkeleton count={4} marker={false} />
+      ) : (
+        <>
+          <div className="meta">
+            <span>{t("git.historyMeta", { branch: branch || "HEAD", n: total })}</span>
+          </div>
+          {commits.map((commit, i) => {
+            const group =
+              i === 0 || commits[i - 1]!.isoDate !== commit.isoDate
+                ? dateGroupOf(commit.isoDate ?? "", new Date(), {
+                    today: t("git.dlgToday"),
+                    yesterday: t("git.dlgYesterday"),
+                    thisWeek: t("git.dlgThisWeek"),
+                    earlier: t("git.dlgEarlier"),
+                  })
+                : null;
+            return (
+              <HistoryCommitRow
+                commit={commit}
+                groupLabel={group}
+                key={commit.hash}
+                onClick={() => onOpenCommit(commit.hash)}
+              />
+            );
+          })}
+        </>
+      )}
       {log.hasNextPage ? (
         <button
           className="loadmore cursor-pointer"
@@ -417,7 +427,7 @@ export function L3GitCommit({ projectName, hash }: L3GitCommitProps) {
     });
 
   if (detail.isLoading) {
-    return <div className="cap mt-4 px-4">{t("git.loadingDiff")}</div>;
+    return <LoadingBlock className="min-h-0 flex-1" label={t("git.loadingDiff")} />;
   }
   if (detail.isError || !detail.data || detail.data.repository !== true) {
     return <div className="cap mt-4 px-4">{t("git.fileError")}</div>;
@@ -518,8 +528,10 @@ export function L3GitBranches({ projectName, onOpenHistory }: L3GitBranchesProps
     queryFn: () => listProjectGitBranches(projectName),
   });
 
-  if (branches.isLoading) {
-    return <div className="cap mt-4 px-4">{t("git.loading")}</div>;
+  if (branches.isPending) {
+    // 分支页是 bcur 卡 + brow 行列表 → 标准表「行列表首载」层用同形骨架（§6.12o review 修正：
+    // 原 LoadingBlock 属详情层，与同栈 L3GitHistory 的骨架不同层异形）。
+    return <ListRowSkeleton action="none" count={4} marker={false} />;
   }
   const list = branches.data?.branches ?? [];
   const current = branches.data?.current ?? "";

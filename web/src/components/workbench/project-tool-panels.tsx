@@ -6,7 +6,7 @@ import type {
   ProjectFileEntry,
   WikiIndexResponse,
 } from "@agents-remote/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -24,6 +24,7 @@ import {
 import { enqueueUploads, UploadQueueCard } from "../files/upload-queue";
 import { useConfirm } from "../shell/confirm-dialog";
 import { usePromptDialog } from "../shell/prompt-dialog";
+import { ListRowSkeleton } from "../shell/shell-primitives";
 import { relativeTime } from "./history-list";
 import { useT } from "../../i18n";
 import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
@@ -195,29 +196,37 @@ export function GitToolPanel({
       ) : null}
       <div className="sect">{t("git.sectWorktree")}</div>
       <div className="px-0">
-        {files.map((file) => (
-          <button
-            className="frow w-full cursor-pointer text-left"
-            key={`${file.scope}/${file.path}`}
-            onClick={() => {
-              // 长按后松手的合成 click 抑制（03w 文件行同款）。
-              if (lp.guardClick()) return;
-              onOpenGitFile(file);
-            }}
-            onContextMenu={(e) => ctx.openAt(`${file.scope}/${file.path}`, e)}
-            type="button"
-            {...lp.bind(`${file.scope}/${file.path}`)}
-          >
-            <GitStatusBadge status={file.status} />
-            <span className="p">{file.path}</span>
-            <span className="ar">
-              <RowChevron />
-            </span>
-          </button>
-        ))}
-        {files.length === 0 ? (
-          <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("git.noChanges")}</div>
-        ) : null}
+        {diff.isPending ? (
+          // 首载骨架（§6.12o）：仅 isPending（无缓存数据）显，防「加载中 = 无改动」伪空态；
+          // 后台刷新（isFetching）不走此分支，切回不闪。
+          <ListRowSkeleton count={3} />
+        ) : (
+          <>
+            {files.map((file) => (
+              <button
+                className="frow w-full cursor-pointer text-left"
+                key={`${file.scope}/${file.path}`}
+                onClick={() => {
+                  // 长按后松手的合成 click 抑制（03w 文件行同款）。
+                  if (lp.guardClick()) return;
+                  onOpenGitFile(file);
+                }}
+                onContextMenu={(e) => ctx.openAt(`${file.scope}/${file.path}`, e)}
+                type="button"
+                {...lp.bind(`${file.scope}/${file.path}`)}
+              >
+                <GitStatusBadge status={file.status} />
+                <span className="p">{file.path}</span>
+                <span className="ar">
+                  <RowChevron />
+                </span>
+              </button>
+            ))}
+            {files.length === 0 ? (
+              <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("git.noChanges")}</div>
+            ) : null}
+          </>
+        )}
         {/* 05e 改动行菜单（02c 单一容器）。 */}
         {(() => {
           const menuFile = files.find((f) => ctx.pointFor(`${f.scope}/${f.path}`));
@@ -239,16 +248,23 @@ export function GitToolPanel({
         <>
           <div className="sect">{t("git.sectRecent")}</div>
           <div>
-            {commits.map((commit) => (
-              <GitCommitRow
-                commit={commit}
-                key={commit.hash}
-                onClick={() => onOpenCommit(commit.hash)}
-              />
-            ))}
-            {commits.length === 0 ? (
-              <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("git.noCommits")}</div>
-            ) : null}
+            {log.isPending ? (
+              // 首载骨架（§6.12o），同工作区段语义。
+              <ListRowSkeleton count={2} marker={false} />
+            ) : (
+              <>
+                {commits.map((commit) => (
+                  <GitCommitRow
+                    commit={commit}
+                    key={commit.hash}
+                    onClick={() => onOpenCommit(commit.hash)}
+                  />
+                ))}
+                {commits.length === 0 ? (
+                  <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("git.noCommits")}</div>
+                ) : null}
+              </>
+            )}
           </div>
         </>
       ) : null}
@@ -260,7 +276,9 @@ export function GitToolPanel({
               {t("git.linkHistory")}
             </button>
           ) : null}
-          {onOpenBranches ? (
+          {onOpenBranches && branches.data != null ? (
+            // 分支计数待数据（data 到手，isPending 与 error 都不渲染）不渲染按钮——
+            // 「分支 (0)」伪态消解（§6.12o；error 半边由 review 修复补上）。
             <button onClick={onOpenBranches} type="button">
               {t("git.linkBranches", { n: branchCount })}
             </button>
@@ -345,11 +363,13 @@ export function FilesToolPanel({
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const ctx = useRowContextMenu();
   // 03x 搜索态（query 提升在 mobile-workbench header chip，非空 → 面板渲染结果列表）。
+  // keepPreviousData（§6.12o review 修复）：逐键换 query key 时保持上一份结果不闪。
   const trimmedQuery = searchQuery.trim();
   const search = useQuery({
     queryKey: ["projects", projectName, "files", "search", trimmedQuery],
     queryFn: () => searchProjectFiles(projectName, trimmedQuery),
     enabled: trimmedQuery.length > 0,
+    placeholderData: keepPreviousData,
   });
   // 03z 上传/03y 新建入口：hidden input + 目标目录 ref（菜单 onSelect → click 时序安全）。
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -556,10 +576,11 @@ export function FilesToolPanel({
             {dirty.has(m.path) ? <GitStatusBadge status={dirty.get(m.path)!.status} /> : null}
           </button>
         ))}
-        {search.isLoading ? (
-          <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("files.loading")}</div>
-        ) : null}
-        {!search.isLoading && matches.length === 0 ? (
+        {search.isPending ? (
+          // 搜索首载骨架（§6.12o review 收敛）：与 wiki 搜索同款 ListRowSkeleton，替换原
+          // 纯文案「正在加载文件...」；keepPreviousData 下逐键切 key 不再进入此分支。
+          <ListRowSkeleton count={3} />
+        ) : matches.length === 0 ? (
           <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("files.searchEmpty")}</div>
         ) : null}
       </ToolPanel>
@@ -579,55 +600,61 @@ export function FilesToolPanel({
           <span className="p dir">..</span>
         </button>
       ) : null}
-      {entries.map((entry) => {
-        const dirtyFile = dirty.get(entry.path);
-        const isDir = entry.type === "directory";
-        return (
-          <button
-            className="frow w-full cursor-pointer select-none text-left"
-            key={entry.path}
-            onClick={(e) => {
-              // §4:行内 ActionMenu（长按菜单）scrim 点击按 fiber 冒泡到行,target 在 body 不在
-              // 行内 → 忽略,否则关菜单点空白会误进目录/误开预览(用户实测复现)。
-              if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node))
-                return;
-              if (lp.guardClick()) return;
-              if (isDir) changePath(entry.path);
-              else onOpenFile(projectName, entry.path);
-            }}
-            onContextMenu={(e) => ctx.openAt(entry.path, e)}
-            type="button"
-            {...lp.bind(entry.path)}
-          >
-            {/* 03z pin①：目录行长按/右键 = 上传到此（+ 新建到此）。 */}
-            {isDir ? (
-              <span className="ic">
-                <ShellIcon name="project" className="h-[17px] w-[17px]" />
+      {/* 首载骨架（§6.12o 批次 2）：仅 isPending（无缓存数据）显，与 FilesPanel :372 同款
+        count=5 默认参数；目录内容到后空目录仍走真空态（无行）。 */}
+      {listing.isPending ? (
+        <ListRowSkeleton count={5} />
+      ) : (
+        entries.map((entry) => {
+          const dirtyFile = dirty.get(entry.path);
+          const isDir = entry.type === "directory";
+          return (
+            <button
+              className="frow w-full cursor-pointer select-none text-left"
+              key={entry.path}
+              onClick={(e) => {
+                // §4:行内 ActionMenu（长按菜单）scrim 点击按 fiber 冒泡到行,target 在 body 不在
+                // 行内 → 忽略,否则关菜单点空白会误进目录/误开预览(用户实测复现)。
+                if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node))
+                  return;
+                if (lp.guardClick()) return;
+                if (isDir) changePath(entry.path);
+                else onOpenFile(projectName, entry.path);
+              }}
+              onContextMenu={(e) => ctx.openAt(entry.path, e)}
+              type="button"
+              {...lp.bind(entry.path)}
+            >
+              {/* 03z pin①：目录行长按/右键 = 上传到此（+ 新建到此）。 */}
+              {isDir ? (
+                <span className="ic">
+                  <ShellIcon name="project" className="h-[17px] w-[17px]" />
+                </span>
+              ) : (
+                <span className="ic">
+                  <ShellIcon name="file" className="h-[17px] w-[17px]" />
+                </span>
+              )}
+              <span className={`p${isDir ? " dir" : ""}`}>{entry.name}</span>
+              {!isDir && entry.mtimeMs !== undefined ? (
+                <span className="tm">{mtimeRelative(entry.mtimeMs, t)}</span>
+              ) : null}
+              {dirtyFile ? <GitStatusBadge status={dirtyFile.status} /> : null}
+              <span className="ar">
+                <RowChevron />
               </span>
-            ) : (
-              <span className="ic">
-                <ShellIcon name="file" className="h-[17px] w-[17px]" />
-              </span>
-            )}
-            <span className={`p${isDir ? " dir" : ""}`}>{entry.name}</span>
-            {!isDir && entry.mtimeMs !== undefined ? (
-              <span className="tm">{mtimeRelative(entry.mtimeMs, t)}</span>
-            ) : null}
-            {dirtyFile ? <GitStatusBadge status={dirtyFile.status} /> : null}
-            <span className="ar">
-              <RowChevron />
-            </span>
-            {/* 03w 长按/右键菜单：per-row key 受控（contextMenuPoint 仅命中行非空）。 */}
-            <ActionMenu
-              cancelLabel={t("cancel")}
-              contextMenuPoint={ctx.pointFor(entry.path)}
-              items={isDir ? dirMenuItems(entry) : menuItems(entry)}
-              onContextMenuClose={ctx.close}
-              trigger={<span className="hidden" />}
-            />
-          </button>
-        );
-      })}
+              {/* 03w 长按/右键菜单：per-row key 受控（contextMenuPoint 仅命中行非空）。 */}
+              <ActionMenu
+                cancelLabel={t("cancel")}
+                contextMenuPoint={ctx.pointFor(entry.path)}
+                items={isDir ? dirMenuItems(entry) : menuItems(entry)}
+                onContextMenuClose={ctx.close}
+                trigger={<span className="hidden" />}
+              />
+            </button>
+          );
+        })
+      )}
       {/* 03z 上传队列卡（.upcard，与桌面 FilesPanel 双端单源）。 */}
       <UploadQueueCard />
       {/* 03o pin④「增=新建/上传（到当前作用域）」：底部 .links 行（03m Git 工具同款）。 */}
@@ -710,12 +737,14 @@ export function WikiToolPanel({
   const { t } = useT();
   const refsWithSession = useAtomValue(workbenchWikiRefsAtom);
   const index = useWikiIndex(projectName, WIKI_QUERY_SCOPE);
-  // 搜索态 query（enabled: 非空防抖省略——wiki 库小，直查）。
+  // 搜索态 query（enabled: 非空防抖省略——wiki 库小，直查）。keepPreviousData（§6.12o review
+  // 修复）：逐键换 query key 时保持上一份结果，不闪骨架。
   const trimmed = query.trim();
   const search = useQuery({
     queryKey: ["projects", projectName, WIKI_QUERY_SCOPE, "wiki-search", trimmed],
     queryFn: () => searchWiki(projectName, trimmed),
     enabled: trimmed.length > 0,
+    placeholderData: keepPreviousData,
   });
   // D13 注入反查：任一会话注入过该页 = ref 标记（wikiRefs[projectName] 展平计数）。
   const refsBySlug = useMemo(() => {
@@ -767,27 +796,34 @@ export function WikiToolPanel({
     return (
       <ToolPanel tool="wiki">
         <div className="sect">{t("wiki.searchPlaceholder")}</div>
-        {matches.map((m) => (
-          <button
-            className="wpg flex w-full flex-wrap cursor-pointer text-left"
-            key={m.slug}
-            onClick={() => {
-              if (lp.guardClick()) return;
-              onQueryChange?.("");
-              onOpenPage(m.slug);
-            }}
-            onContextMenu={(e) => ctx.openAt(m.slug, e)}
-            type="button"
-            {...lp.bind(m.slug)}
-          >
-            <span className="n flex-1 truncate">{m.title}</span>
-            <span className="st">{m.updated}</span>
-            <span className="refnote w-full truncate">{m.lines[0] ?? ""}</span>
-          </button>
-        ))}
-        {matches.length === 0 ? (
-          <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("wiki.searchNoMatch")}</div>
-        ) : null}
+        {search.isPending ? (
+          // 首载骨架（§6.12o）：防搜索请求在途显「无匹配」伪空态。
+          <ListRowSkeleton count={2} />
+        ) : (
+          <>
+            {matches.map((m) => (
+              <button
+                className="wpg flex w-full flex-wrap cursor-pointer text-left"
+                key={m.slug}
+                onClick={() => {
+                  if (lp.guardClick()) return;
+                  onQueryChange?.("");
+                  onOpenPage(m.slug);
+                }}
+                onContextMenu={(e) => ctx.openAt(m.slug, e)}
+                type="button"
+                {...lp.bind(m.slug)}
+              >
+                <span className="n flex-1 truncate">{m.title}</span>
+                <span className="st">{m.updated}</span>
+                <span className="refnote w-full truncate">{m.lines[0] ?? ""}</span>
+              </button>
+            ))}
+            {matches.length === 0 ? (
+              <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("wiki.searchNoMatch")}</div>
+            ) : null}
+          </>
+        )}
         {(() => {
           const menuMatch = matches.find((m) => ctx.pointFor(m.slug));
           return menuMatch ? (
@@ -805,52 +841,59 @@ export function WikiToolPanel({
 
   return (
     <ToolPanel tool="wiki">
-      {groups.map((group) => {
-        const isCollapsed = collapsed.has(group.key);
-        return (
-          <div key={group.key}>
-            <button
-              className="tgrp w-full cursor-pointer text-left"
-              onClick={() => toggle(group.key)}
-              type="button"
-            >
-              <span className="tw">{isCollapsed ? "▸" : "▾"}</span>
-              <span className="n">{group.title}</span>
-              <span className="c">{t("wiki.pagesCount", { n: group.pages.length })}</span>
-            </button>
-            {isCollapsed
-              ? null
-              : group.pages.map((page) => {
-                  const refCount = refsBySlug.get(page.slug) ?? 0;
-                  return (
-                    <button
-                      className="wpg flex w-full cursor-pointer flex-wrap text-left"
-                      key={page.slug}
-                      onClick={() => {
-                        if (lp.guardClick()) return;
-                        onOpenPage(page.slug);
-                      }}
-                      onContextMenu={(e) => ctx.openAt(page.slug, e)}
-                      type="button"
-                      {...lp.bind(page.slug)}
-                    >
-                      <span className="n flex-1 truncate">{page.title}</span>
-                      <span className="st">{page.updated}</span>
-                      {refCount > 0 ? (
-                        <>
-                          <span className="ref">✦</span>
-                          <span className="refnote">{t("wiki.refnote", { n: refCount })}</span>
-                        </>
-                      ) : null}
-                    </button>
-                  );
-                })}
-          </div>
-        );
-      })}
-      {groups.length === 0 ? (
-        <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("wiki.emptyDesc")}</div>
-      ) : null}
+      {index.isPending ? (
+        // 首载骨架（§6.12o）：防「加载中 = 暂无页面」伪空态；后台刷新（isFetching）不进来。
+        <ListRowSkeleton count={3} />
+      ) : (
+        <>
+          {groups.map((group) => {
+            const isCollapsed = collapsed.has(group.key);
+            return (
+              <div key={group.key}>
+                <button
+                  className="tgrp w-full cursor-pointer text-left"
+                  onClick={() => toggle(group.key)}
+                  type="button"
+                >
+                  <span className="tw">{isCollapsed ? "▸" : "▾"}</span>
+                  <span className="n">{group.title}</span>
+                  <span className="c">{t("wiki.pagesCount", { n: group.pages.length })}</span>
+                </button>
+                {isCollapsed
+                  ? null
+                  : group.pages.map((page) => {
+                      const refCount = refsBySlug.get(page.slug) ?? 0;
+                      return (
+                        <button
+                          className="wpg flex w-full cursor-pointer flex-wrap text-left"
+                          key={page.slug}
+                          onClick={() => {
+                            if (lp.guardClick()) return;
+                            onOpenPage(page.slug);
+                          }}
+                          onContextMenu={(e) => ctx.openAt(page.slug, e)}
+                          type="button"
+                          {...lp.bind(page.slug)}
+                        >
+                          <span className="n flex-1 truncate">{page.title}</span>
+                          <span className="st">{page.updated}</span>
+                          {refCount > 0 ? (
+                            <>
+                              <span className="ref">✦</span>
+                              <span className="refnote">{t("wiki.refnote", { n: refCount })}</span>
+                            </>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+              </div>
+            );
+          })}
+          {groups.length === 0 ? (
+            <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("wiki.emptyDesc")}</div>
+          ) : null}
+        </>
+      )}
       {(() => {
         const menuPage = groups.flatMap((group) => group.pages).find((p) => ctx.pointFor(p.slug));
         return menuPage ? (

@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
-import { LargeTitleRow, statusDotToneBg, statusToTone } from "../shell/shell-primitives";
+import {
+  LargeTitleRow,
+  ListRowSkeleton,
+  statusDotToneBg,
+  statusToTone,
+} from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { relativeTime } from "./history-list";
 import { buildProjectRows, useGlobalInstanceCandidates } from "./instance-area";
@@ -168,6 +173,12 @@ export function MobileProjectsHome() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
+        {!isLoaded ? (
+          // 首载骨架（§6.12o）：防 pending 全列表区空白；容器对齐真实卡形，加载完不跳。
+          <div className="mx-4 mt-[18px] rounded-xl border border-sep bg-elevated px-3 py-1">
+            <ListRowSkeleton count={3} marker={false} />
+          </div>
+        ) : null}
         {isLoaded && projectNames.length === 0 ? (
           <p className="p-6 text-center text-subhead text-ink-2">
             {t("workbench.globalOverviewEmpty")}

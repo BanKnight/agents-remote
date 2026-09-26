@@ -17,7 +17,13 @@ import {
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { usePromptDialog } from "../shell/prompt-dialog";
-import { actionButtonClasses, ListGroup, ListRow, ShellInput } from "../shell/shell-primitives";
+import {
+  actionButtonClasses,
+  ListGroup,
+  ListRow,
+  ListRowSkeleton,
+  ShellInput,
+} from "../shell/shell-primitives";
 import {
   ActionMenu,
   useLongPressActions,
@@ -345,7 +351,11 @@ export function ChatOverview() {
             {t("chat.selectedCount", { count: selected.size })}
           </div>
         ) : null}
-        {empty ? (
+        {isPending ? (
+          // 首载骨架（§6.12o）：仅 isPending（无缓存数据）显；empty 已含 !isPending 门，
+          // 数据到后真空态才显「暂无会话」，后台刷新走下方分组分支不闪骨架。
+          <ListRowSkeleton count={5} />
+        ) : empty ? (
           <div className="flex flex-1 items-center justify-center p-6 text-center">
             <p className="text-sm text-on-surface-muted">{t("chat.emptyList")}</p>
           </div>

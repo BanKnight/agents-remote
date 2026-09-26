@@ -3441,7 +3441,7 @@ function ChatSkeleton() {
   // sm:px-5 + justify-end/start）+ 气泡（max-w-[90%] rounded-2xl 单角 variant bg-* px-4 py-2.5
   // self-start）。alpha 对齐真实（user-deep/60、surface-raised/70），宽度用 max-w-[90%] 而非
   // 早期固定百分比（w-3/5 等不对应真实 max-w-[90%]）。内部行用 skeleton-shimmer（与
-  // NavItemSkeleton/CardGridSkeleton 范式一致），替代早期 bg-neutral-line 灰条 + 气泡层
+  // CardGridSkeleton 范式一致），替代早期 bg-neutral-line 灰条 + 气泡层
   // skeleton-shimmer 的双重处理——气泡只留底色，扫光交给内部文字行占位条。user 行短
   //（1-2 行）、assistant 行长（3-4 行）模拟典型对话节奏；行宽不一让气泡宽度由内容决定
   //（flex item），加载完真实气泡宽度由文字长度决定，行为一致。

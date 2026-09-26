@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AddMcpServerRequest, McpScope, UpdateMcpServerRequest } from "@agents-remote/shared";
 import {
   addMcpServer,
@@ -19,6 +19,8 @@ export function useMcpMarketSearch(query: string) {
     queryFn: () => searchMcpMarket(query),
     enabled: query.trim().length >= 2,
     staleTime: MCP_STALE_MS,
+    // keepPreviousData（§6.12o review 修复）：同 useSkillSearch——逐键不闪。
+    placeholderData: keepPreviousData,
   });
 }
 

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { AgentHistoryEntry, AgentHistoryRange } from "@agents-remote/shared";
 import { createAgentSession, listAgentHistory } from "../../api/client";
@@ -110,11 +110,18 @@ export function useHistorySessions(
     queryKey: ["projects", projectName, "agent-history", range],
     queryFn: () => listAgentHistory(projectName, range),
     staleTime: 5_000,
+    // keepPreviousData（§6.12o 批次 4）：range 切档（week↔all）时保持上一份列表显示，
+    // 后台换数据不闪骨架；首载无缓存 isPending 仍显 HistoryListSkeleton。
+    placeholderData: keepPreviousData,
   });
   const { isResuming, resume } = useResumeAgentSession(projectName);
   return {
     entries: history.data?.entries ?? [],
-    isLoading: history.isLoading,
+    // isLoading 含 placeholder 期（isPending || isPlaceholderData）：keepPreviousData 下上一份
+    // 缓存是 [] 时切档，v5 会把 [] 当 placeholder → isPending/isLoading 均 false，消费方的
+    // 「entries 空 && !isLoading → 空态」分支会显空白/伪空态——placeholder 期必须仍按加载中走
+    // 骨架门（review 修复：空→空切换回归）。
+    isLoading: history.isPending || history.isPlaceholderData,
     isResuming,
     resume: (entry: AgentHistoryEntry, displayName: string) =>
       resume({

@@ -71,6 +71,7 @@ import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
   actionButtonClasses,
+  LoadingBlock,
   sessionMarker,
   shellSurfaceClasses,
   type ShellTone,
@@ -110,7 +111,7 @@ export const INSTANCE_SKELETON_ROW_COUNT = 3;
  * line-height 行盒（title text-sm h-5=20px / subtitle text-xs h-4=16px / meta text-xs h-4=16px，
  * gap-1 对齐真实 flex-col gap-1）+ 右上 actions 占位（absolute right-2 top-2 h-7 w-7，对齐 InstanceCard
  * 折叠触发器）。骨架条用 line-height 而非 font-size——加载完内容栈总高与真实一致（行盒 20+16+16=52，
- * 实测 InstanceCard contentSum=52），消除卡片高度跳变。skeleton-shimmer 与 NavItemSkeleton/ProjectCardSkeleton 一致。
+ * 实测 InstanceCard contentSum=52），消除卡片高度跳变。skeleton-shimmer 与 ProjectCardSkeleton 一致。
  * plain 占位卡非首张顶部分割线 mirror InstanceCard `topSeparator`（两端统一 left-15=60px=p-3+marker lg+gap-3 内容区左，跳过 marker 列；
  * 2026-08-03 撤销桌面 lg:left-0 全宽），替代原 `divide-y`（border-top 横跨全宽不支持 inset）。
  *
@@ -171,6 +172,9 @@ type InstanceAreaProps = {
    * 中栏单一 layout（VSCode 式）后 tab 跨项目共存，中栏空时是否显空态提示（true）/ 创建态
    * （false）基于全局实例，而非当前 scope（InstanceArea 仅桌面渲染，globalRefs 桌面 fan-out）。 */
   refsCount: number;
+  /** 全局实例 refs 加载完成标志（useGlobalInstanceRefs().isLoaded 透传；false 时空态卡换成
+   * CardGridSkeleton，防 pending 闪伪空态，§6.12o）。 */
+  refsLoaded?: boolean;
   /** 拖放高亮区（DropZoneOverlay + WorkspaceTree activeZone）。 */
   activeZone: { targetGroupId: string | null; zone: DropZone } | null;
   setActiveZone: (zone: { targetGroupId: string | null; zone: DropZone } | null) => void;
@@ -221,6 +225,7 @@ export function InstanceArea({
   layout,
   create,
   refsCount,
+  refsLoaded = true,
   activeZone,
   setActiveZone,
   draggingRef,
@@ -277,6 +282,7 @@ export function InstanceArea({
       draggingRef={draggingRef}
       hasActiveInstances={refsCount > 0}
       maximized={layout.maximized}
+      refsLoaded={refsLoaded}
       onCloseLeafTab={onCloseTab}
       onResizeSplit={onResizeSplit}
       onSelectTab={onSelectTab}
@@ -543,8 +549,12 @@ function HtmlRenderPanel({ id }: { id: string }) {
 }
 
 function AgentPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
+  const { t } = useT();
   const detail = useAgentDetail(panelRef);
-  if (detail.isLoading) return null;
+  // LoadingBlock 门（§6.12o 批次 2）：detail query 首载显加载指示而非空白（原 return null
+  // 是工作台中栏最大空白点）；isPending 语义——有缓存数据后本分支不再可达，后台刷新不闪。
+  if (detail.isLoading)
+    return <LoadingBlock className="min-h-0 flex-1" label={t("workbench.sessionLoading")} />;
   if (detail.data?.session.provider === "claude") {
     return <ChatPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
@@ -560,8 +570,10 @@ function AgentPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
 }
 
 function TerminalPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
+  const { t } = useT();
   const detail = useTerminalDetail(panelRef);
-  if (detail.isLoading) return null;
+  if (detail.isLoading)
+    return <LoadingBlock className="min-h-0 flex-1" label={t("workbench.sessionLoading")} />;
   if (detail.data?.session) {
     return <TerminalPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
@@ -2314,6 +2326,9 @@ type WorkspaceTreeHandlers = {
 type WorkspaceTreeProps = WorkspaceTreeHandlers & {
   create: CreateSessionApi | null;
   hasActiveInstances: boolean;
+  /** 全局实例 refs 是否已加载（useGlobalInstanceRefs().isLoaded）；false 时 root=null 显骨架
+   * 而非空态卡——防 pending 期闪「无活跃实例」伪空态（§6.12o）。 */
+  refsLoaded?: boolean;
   maximized: string | null;
   projectName: string | null;
   root: TreeNode | null;
@@ -2368,11 +2383,15 @@ export function WorkspaceTree({
   maximized,
   create,
   hasActiveInstances,
+  refsLoaded = true,
   projectName,
   ...handlers
 }: WorkspaceTreeProps) {
   const flat = useMemo(() => flattenLayout(root, maximized), [root, maximized]);
   if (root === null) {
+    // refs 未加载完不显空态卡（§6.12o：hasActiveInstances 由 refsCount 派生，pending 期恒 0
+    // 会闪「无活跃实例/创建态」→ 数据到前显骨架）。同左栏/移动 grid 的 CardGridSkeleton 模式。
+    if (!refsLoaded) return <CardGridSkeleton plain />;
     return (
       <EmptyInstanceArea
         create={create}

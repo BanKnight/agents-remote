@@ -2,6 +2,7 @@ import type { SkillAgent } from "@agents-remote/shared";
 
 import { useT } from "../i18n";
 import { MarkdownString } from "../components/markdown/MarkdownString";
+import { LoadingBlock } from "../components/shell/shell-primitives";
 import { useSkillPreview } from "../hooks/skills";
 
 /**
@@ -47,17 +48,11 @@ export function SkillTabPreview({ name, projectName }: { name: string; projectNa
       aria-label={name}
       className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-raised/25"
     >
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {preview.isLoading ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4">
-            <span className="relative flex h-3 w-3" aria-hidden="true">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
-            </span>
-            <span className="text-xs font-semibold text-on-surface-muted">
-              {t("skills.previewLoading")}
-            </span>
-          </div>
+          // 父容器必须是 flex container，flex-1 才有高度约束（frontend-notes §8）——
+          // review 修复：原缺 flex 链，加载块贴顶不居中。
+          <LoadingBlock className="flex-1 p-4" label={t("skills.previewLoading")} />
         ) : preview.error ? (
           <div className="flex flex-1 items-center justify-center p-4">
             <p className="rounded-lg bg-error/10 px-3 py-2 text-xs text-error">

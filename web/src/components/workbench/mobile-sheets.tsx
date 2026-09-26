@@ -14,7 +14,7 @@ import { ShellIcon } from "../shell/icons";
 import { useGlobalInstanceCandidates } from "./instance-area";
 import type { CreateSessionApi } from "./instance-area";
 import { relativeTime } from "./history-list";
-import { statusToV2DotClass } from "../shell/shell-primitives";
+import { ListRowSkeleton, statusToV2DotClass } from "../shell/shell-primitives";
 
 /** 会话状态 → dot 变体（run 绿实心 / err 红实心 / idle 空心描边；03l d2 与 11 acard 共用）。 */
 function sessDotClass(status: string): string {
@@ -207,24 +207,12 @@ export function MobileSessionHistorySheet({
       </div>
       <div className="mt-1.5">
         {isLoading ? (
-          // 加载态（M10 第三轮用户反馈「缺少加载态提示」）：isLoading 区分加载与空态（与桌面
-          // HistoryListSkeleton 同语义），避免打开即闪「暂无会话」误导。骨架行复用 .hrow 原语
-          // 保持 03n 行几何（r1 内名/状态两条灰条），aria-hidden 装饰不进读屏。
+          // 加载态（M10 第三轮用户反馈「缺少加载态提示」）：isLoading 区分加载与空态，避免
+          // 打开即闪「暂无会话」误导。§6.12o 收敛：手写 animate-pulse 灰条 → ListRowSkeleton
+          // 单源（shimmer 单源；.hrow 无 marker/行尾方块 → marker=false + action="none"），
+          // role="status" aria-label 语义保留在外壳。
           <div aria-label={t("workbench.historyLoading")} role="status">
-            {[0, 1].map((i) => (
-              <div aria-hidden="true" className="hrow" key={i}>
-                <span className="r1">
-                  <span
-                    className="min-w-0 flex-1 animate-pulse rounded-md bg-ink-1/70"
-                    style={{ height: 14 }}
-                  />
-                  <span
-                    className="st animate-pulse rounded-md bg-ink-1/70"
-                    style={{ height: 10 }}
-                  />
-                </span>
-              </div>
-            ))}
+            <ListRowSkeleton action="none" count={2} marker={false} />
           </div>
         ) : rows.length === 0 ? (
           <p className="py-3 text-center text-footnote text-ink-2">{t("workbench.historyEmpty")}</p>

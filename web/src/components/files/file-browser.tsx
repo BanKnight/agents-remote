@@ -30,6 +30,7 @@ import {
   ListGroup,
   ListRow,
   ListRowSkeleton,
+  LoadingBlock,
   shellSurfaceClasses,
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
@@ -576,15 +577,7 @@ export function FilePreviewPanel({
       </div>
       <div className="min-h-0 flex-1 flex flex-col overflow-y-auto">
         {isLoading ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3">
-            <span className="relative flex h-3 w-3" aria-hidden="true">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
-            </span>
-            <span className="text-xs font-semibold text-on-surface-muted">
-              {t("files.loadingPreview")}
-            </span>
-          </div>
+          <LoadingBlock className="flex-1" label={t("files.loadingPreview")} />
         ) : error ? (
           <div className="flex-1 flex items-center justify-center p-4">
             <ResourceStatePanel
@@ -765,17 +758,7 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
         );
       }
       if (inlinedHtml === null)
-        return (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3">
-            <span className="relative flex h-3 w-3" aria-hidden="true">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
-            </span>
-            <span className="text-xs font-semibold text-on-surface-muted">
-              {t("files.preparingRender")}
-            </span>
-          </div>
-        );
+        return <LoadingBlock className="flex-1" label={t("files.preparingRender")} />;
       return (
         <div className="flex-1">
           <iframe

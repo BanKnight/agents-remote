@@ -155,32 +155,6 @@ export function NavItemContent({
   );
 }
 
-/**
- * NavItem 骨架行（对齐 NavItemContent horizontal：marker + label，`px-2 py-1.5 rounded-md`）。
- * 左栏项目子项加载占位——单行结构（marker + label 条）对齐真实单行 NavItemContent
- *（项目子项无 description），避免加载完从双行占位跳到单行真实的视觉跳动。label 占位条
- * `h-5` 对齐 `text-sm` 行盒 20px（DESIGN 对齐铁律）。行 `border border-transparent` 对齐
- * 真实 `ShellNavigationButton` 的 `Button` border 模型——骨架行自身 marker/行高与真实
- * `Button` outer 一致（border + `px-2 py-1.5` + marker `h-7` = 42px），由外层 `pl-4`
- * 容器提供子项缩进（与真实项目子项同容器），骨架→真实无横向跳动。skeleton-shimmer 与
- * ChatSkeleton 一致。
- */
-export function NavItemSkeleton({ count = 3 }: { count?: number }) {
-  return (
-    <>
-      {Array.from({ length: count }, (_, index) => (
-        <div
-          className="flex items-center gap-2.5 rounded-md border border-transparent px-2 py-1.5"
-          key={index}
-        >
-          <span aria-hidden="true" className="skeleton-shimmer h-7 w-7 shrink-0 rounded-sm" />
-          <span aria-hidden="true" className="skeleton-shimmer block h-5 w-3/4 rounded" />
-        </div>
-      ))}
-    </>
-  );
-}
-
 type ShellSectionLabelProps = {
   children: ReactNode;
   className?: string;
@@ -696,6 +670,29 @@ export function ListRowSkeleton({
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * 段级加载指示单源（§6.12o 加载态分层标准「详情/预览类单内容块」）：ping 双层圆（animate-ping
+ * 外圈 opacity-60 + 实心内圆，bg-primary）+ 12px/600 on-surface-muted 文案，居中竖排。收敛自
+ * git-diff-viewer / file-browser ×2 / SkillTabPreview 的同构散写与移动 L3 的纯文案行。
+ * 对齐差异由调用方 className 透传（cn 合并防覆盖失效，frontend-notes §11）；终端 scrim 的大圆
+ * spinner（TerminalStatusSpinner 双档 + primary 文案）非同构形态，保留终端域私有不强行归一。
+ * role="status"：动态出现的加载文案读屏播报（与 mobile-sheets 骨架外壳同约定）。
+ */
+export function LoadingBlock({ label, className }: { label: string; className?: string }) {
+  return (
+    <div role="status" className={cn("flex flex-col items-center justify-center gap-3", className)}>
+      <span aria-hidden="true" className="relative flex h-3 w-3">
+        <span
+          aria-hidden="true"
+          className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60"
+        />
+        <span aria-hidden="true" className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
+      </span>
+      <span className="text-xs font-semibold text-on-surface-muted">{label}</span>
     </div>
   );
 }

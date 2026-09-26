@@ -17,6 +17,7 @@ import {
 } from "../../hooks/skills";
 import { useAddMcpServer, useMcpMarketSearch, useMcpServers } from "../../hooks/mcp";
 import { ShellIcon } from "../shell/icons";
+import { ListRowSkeleton } from "../shell/shell-primitives";
 import { MobileSheet } from "../shell/mobile-sheet";
 
 /**
@@ -180,8 +181,10 @@ function SkillMarketTab() {
       <div className="min-h-0 flex-1 overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
         {showHint ? (
           <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptyMarket")}</p>
-        ) : search.isLoading ? (
-          <p className="px-4 py-2 text-[11.5px] text-ink-2">…</p>
+        ) : search.isPending ? (
+          // 搜索首载骨架（§6.12o）：market 卡行（名 + 安装量 + 尾安装钮）→ ListRowSkeleton
+          // marker=false + action="button" mirror mcard 几何；原「…」纯文案消解。
+          <ListRowSkeleton action="button" count={3} marker={false} />
         ) : skills.length === 0 ? (
           <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("skills.empty")}</p>
         ) : (
@@ -299,8 +302,9 @@ function McpMarketTab() {
       <div className="min-h-0 flex-1 overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
         {showHint ? (
           <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptyMarket")}</p>
-        ) : search.isLoading ? (
-          <p className="px-4 py-2 text-[11.5px] text-ink-2">…</p>
+        ) : search.isPending ? (
+          // 搜索首载骨架（§6.12o review 修复）：与 SkillMarketTab 同款，消「…」双形态并存。
+          <ListRowSkeleton action="button" count={3} marker={false} />
         ) : search.error ? (
           <p className="px-4 py-2 text-[11.5px] text-error">{search.error.message}</p>
         ) : servers.length === 0 ? (

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SkillAgent, SkillUpdateStatus } from "@agents-remote/shared";
 import {
   addSkillSource,
@@ -43,6 +43,9 @@ export function useSkillSearch(query: string) {
     queryKey: ["skill-search", query] as const,
     queryFn: () => searchSkills(query),
     enabled: query.trim().length >= SEARCH_MIN_CHARS,
+    // keepPreviousData（§6.12o review 修复）：逐键换 query key 保持上一份结果不闪骨架
+    //（市场搜索走外网更慢，闪烁更明显）。
+    placeholderData: keepPreviousData,
   });
 }
 
