@@ -153,3 +153,5 @@
 **标准做法**：**需要挂 DOM 的副作用，DOM 就绪信号用 state ref callback**（React 官方模式）：`const [node, setNode] = useState(null)` + `ref={setNode}`，effect 依赖 `[node]`——挂载时 setState 触发重跑、卸载时 React 先置 null 再跑 cleanup（顺序安全）。`useRef` 只适合「effect 必然晚于 DOM 就绪」或不需要在 effect 里用 DOM 的场景。**判定**：effect 里 `if (!ref.current) return` 且依赖不含 DOM 信号 = 潜在永不生效，逐个排查。诊断法：`getEventListeners`（CDP `Runtime.evaluate` + `includeCommandLineAPI`）直接列 DOM 上已注册 listener，对比「应注册」清单即知绑没绑上。
 
 **来源**：§6.12p 三轮真机反馈（`52af7aa` preventDefault 空转 → `1c50d91` 修绑定 + touch events 直驱）；redesign-v2.md §6.12p-③。
+
+**勿再走（第四轮真机实证，`5e56d71`）**：「iOS pointer events 派生层不可控 → 改 touch events 直驱」的推断被真机否定——**pointer events 驱动在 iOS 有效，原生 touch events 直驱反而完全无效**（机制未定论）。iOS 拖拽手势的正确组合 = **pointer events 驱动 + non-passive touchmove preventDefault 防滚动抢占**（prevent 判断读 dragRef，绑定修好后才真正生效）；真机「拖动有回弹/不跟手」= pointercancel 中断拖拽走回弹分支，Chromium 探针不复现 cancel，勿据探针推断真机手势行为。

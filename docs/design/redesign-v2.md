@@ -782,6 +782,8 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 - **拖拽驱动从 pointer events 迁原生 touch events 直驱**：iOS WebKit 上 pointer events 是 touch 的派生兼容层，滚动容器内派生行为不可控（pointercancel/停发 pointermove）。touch events 是 touch-action 出现前 iOS 自定义手势的唯一可靠通道：non-passive touchmove preventDefault 直接取消滚动默认行为（滚动从未启动即无抢占），touch 事件本身照常派发——拖拽驱动不依赖任何派生层。touchstart 不 prevent（保热区 tap 的 click 合成）；touchcancel 视同松手；touch events 的 target 固定为 touchstart 命中元素，无需 capture。
 - 探针修正：t0/t1 采样加 `isConnected` 守卫（exit 卸载瞬间 detached handle 的 `getBoundingClientRect()` 返回 0 而非抛错，误报「继续滑出」fail）。54 断言全绿；四门禁 + e2e 24/24。
 
+**④ 驱动回退 pointer events——touch 直驱被真机否定（同日第四轮反馈「拖动依然毫无动静，之前虽有回弹但至少拖动有效」，commit `5e56d71`）**：第四轮反馈推翻 ③ 的 touch 直驱假设——**真机实证 pointer events 驱动有效（第一/二轮「拖动有效」）、原生 touch events 直驱完全无效**（机制未定论，**勿再走**）。四轮现象统一解释：真机「回弹/不跟手/拖不动」的来源**不是 dismiss 分支**（`0f3c882` 修的那个），而是 **WebKit 把手势当滚动启动并 pointercancel 中断拖拽**——cancel 时 dy/v 不够 dismiss 即走回弹分支（拖动有效但弹回 = 用户看到的「有回弹」）；探针 Chromium 不复现 cancel，故三轮都测不到。本版组合各就各位：**拖拽驱动恢复 pointer events（真机验证过的通道）+ state ref callback 绑定修复保留（③）+ non-passive touchmove preventDefault 保留**——它读 dragRef 手势期拦截，**绑定修好后第一次真正生效**，从第一个 touchmove 阻断滚动抢占（含 pending 起步窗口）= 消灭 pointercancel 中断 = 消灭回弹/不跟手。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
