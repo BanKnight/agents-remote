@@ -371,11 +371,12 @@ ok(await page.getByRole("menuitem", { name: "置顶" }).isVisible(), "右键 →
 await page.keyboard.press("Escape");
 await page.waitForTimeout(200);
 
-// ── Part 5: 下拉收起手势（拖拽 dismiss 从松手位置滑出，不回弹） ──────────────
-// 覆盖用户反馈回归：dismiss 分支曾清 inline transform → sheet 瞬跳回原位再播 exit 动画
-//（「回弹后再消失」）。修复后 exit keyframes 无 from、起点 = 当前 inline 位置，松手后
-// rect.top 必须保持在拖拽位置附近并继续增大（滑出），最终卸载且重开无 inline 残留。
-console.log("Part 5: 下拉收起（拖拽 > 96px 松手 → 从松手位置继续滑出，不回弹）");
+// ── Part 5: 下拉收起手势（touch 拖拽跟手 + dismiss 从松手位置滑出，不回弹） ────
+// 覆盖用户反馈回归两轮：①拖拽期跟手（CDP touch 序列逐步断言 transform = 位移）；
+// ②dismiss 分支曾清 inline transform → sheet 瞬跳回原位再播 exit 动画（「回弹后再
+// 消失」）——修复后 exit keyframes 无 from、起点 = 当前 inline 位置，松手后 rect.top
+// 保持在拖拽位置附近并继续增大（滑出），最终卸载且重开无 inline 残留。
+console.log("Part 5: 下拉收起（touch 拖拽跟手 + >96px 松手 → 从松手位置滑出不回弹）");
 await page.locator(".nav h1 button").click();
 await page.waitForSelector(".msheet", { timeout: 5000 });
 await page.waitForTimeout(300); // 等 enter 动画（slide-in-from-bottom-4 200ms）播完再取基准。
@@ -387,13 +388,33 @@ const shd = page.locator(".msheet .shd").first();
 const sb = await shd.boundingBox();
 const cx = sb.x + sb.width / 2;
 const cy = sb.y + sb.height / 2;
-await page.mouse.move(cx, cy);
-await page.mouse.down();
-for (let i = 1; i <= 7; i++) {
-  // 分 7 步拖 140px（> DISMISS_DISTANCE_PX=96），每步内插值产生连续 pointermove。
-  await page.mouse.move(cx, cy + i * 20, { steps: 2 });
+// touch 序列驱动（贴近真机输入形态；CDP touch 派生 pointer events，Part 4 同款）。
+await cdp.send("Input.dispatchTouchEvent", {
+  type: "touchStart",
+  touchPoints: [{ x: cx, y: cy, force: 1 }],
+});
+for (let i = 1; i <= 3; i++) {
+  // 分步拖拽，每步断言跟手（transform = 累计位移）——守护「拖不动/不跟手」回归
+  //（WebKit 滚动手势 pointercancel 打断在 Chromium touch 模拟下不复现，真机项保留手动清单）。
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [{ x: cx, y: cy + i * 20, force: 1 }],
+  });
+  const tf = await page
+    .locator(".msheet")
+    .first()
+    .evaluate((el) => el.style.transform)
+    .catch(() => "gone");
+  ok(tf === `translateY(${i * 20}px)`, `touch 拖拽跟手（+${i * 20}px → transform "${tf}"）`);
 }
-await page.mouse.up();
+for (let i = 4; i <= 7; i++) {
+  // 拖到累计 140px（> DISMISS_DISTANCE_PX=96）。
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [{ x: cx, y: cy + i * 20, force: 1 }],
+  });
+}
+await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 // 松手后立刻采样：sheet 仍在且 top 保持在拖拽位置附近（bug 版此处已跳回 ≈ baseTop）。
 const t0 = await page
   .locator(".msheet")

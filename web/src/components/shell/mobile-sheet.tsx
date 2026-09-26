@@ -1,5 +1,5 @@
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
@@ -85,6 +85,24 @@ export function MobileSheet({
   trigger?: ReactElement;
 }) {
   const dragRef = useRef<DragState>({ phase: "idle" });
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  // WebKit（iOS）对滚动容器（.msheet overflow-y:auto）内触摸的 touch-action:none 判定
+  // 不稳：常把手势当滚动启动并 pointercancel——拖拽被打断 = 手指在滑 sheet 不动（「拖
+  // 不动/不跟手」，用户真机反馈）。起步窗口（pending，<6px）被打断则整个手势死在
+  // pending，故 prevent 覆盖整个手势期（非 idle）而非仅 dragging：从第一个 touchmove
+  // 就阻断原生滚动判定，WebKit 才不会先启动滚动再 cancel。纯 tap 无 touchmove 不受影响
+  //（热区按钮 tap 照常合成 click）；按住滑动的场景本就无 click 语义。依赖 open：Radix
+  // closed 即卸载 Content，重开是新 DOM，须重新绑定。
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!open || !el) return;
+    const onTouchMove = (e: TouchEvent) => {
+      if (dragRef.current.phase !== "idle") e.preventDefault();
+    };
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onTouchMove);
+  }, [open]);
 
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!(e.target instanceof Element) || !e.target.closest(".grab, .shd")) return;
@@ -166,6 +184,7 @@ export function MobileSheet({
         />
         <DialogPrimitive.Content
           aria-describedby={undefined}
+          ref={contentRef}
           className={cn(
             "msheet outline-none",
             "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4 data-[state=open]:duration-200",
