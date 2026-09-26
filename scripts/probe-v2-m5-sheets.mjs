@@ -212,10 +212,12 @@ await page.waitForTimeout(300);
 const historyItem = page.getByRole("menuitem", { name: "会话历史" });
 ok(await historyItem.isVisible(), "⋯ 菜单含「会话历史」项");
 await historyItem.click();
-await page.waitForSelector(".msheet", { timeout: 5000 });
+// 菜单 sheet 的 exit 动画未结束时会话历史 sheet 已打开（双 sheet 共存窗口）——
+// 等待条件收窄到目标 sheet 标题，防 .msheet .shd h2 命中残留菜单。
+await page.waitForSelector('.msheet .shd h2:has-text("会话历史")', { timeout: 5000 });
 ok(
   await page
-    .locator(".msheet .shd h2")
+    .locator('.msheet .shd h2:has-text("会话历史")')
     .textContent()
     .then((v) => v?.includes("会话历史")),
   "标题「会话历史」",
@@ -248,7 +250,8 @@ ok((await page.locator(".msheet").count()) === 0, "running 行点击关 sheet（
 await page.locator('.nav button[aria-label="更多操作"]').click();
 await page.waitForTimeout(300);
 await page.getByRole("menuitem", { name: "会话历史" }).click();
-await page.waitForSelector(".msheet", { timeout: 5000 });
+// 等目标 sheet 标题而非任意 .msheet（菜单 sheet exit 动画期双 sheet 共存窗口）。
+await page.waitForSelector('.msheet .shd h2:has-text("会话历史")', { timeout: 5000 });
 // 过滤复位到「全部」（上一段停在「进行中」，closed 行不在 DOM）。
 await page.locator(".msheet .fc", { hasText: "全部" }).click();
 await page.waitForTimeout(200);
@@ -287,7 +290,8 @@ ok(resumePosts[0]?.claudeSessionId === "c1aude-uuid-b", "resume 带 claudeSessio
 await page.locator('.nav button[aria-label="更多操作"]').click();
 await page.waitForTimeout(300);
 await page.getByRole("menuitem", { name: "会话历史" }).click();
-await page.waitForSelector(".msheet", { timeout: 5000 });
+// 等目标 sheet 标题而非任意 .msheet（菜单 sheet exit 动画期双 sheet 共存窗口）。
+await page.waitForSelector('.msheet .shd h2:has-text("会话历史")', { timeout: 5000 });
 // hfoot。
 ok(await page.locator(".msheet .hfoot").isVisible(), "hfoot 可见");
 // 关闭 sheet（Esc）。
@@ -315,10 +319,14 @@ ok(
   (await page.locator(".msheet .srow").first().textContent())?.includes("Claude") === true,
   "首行 = Claude",
 );
-// Claude 行点击 → sheet 关 + 命名 prompt 弹窗。
+// Claude 行点击 → sheet 关 + 命名 prompt 弹窗。prompt 自身也是 .msheet（§6.12n 迁移后），
+// 关闭断言收窄到 03j 标题（prompt 在场时 .msheet count 恒 >0，宽断言必挂）。
 await page.locator(".msheet .srow").first().click();
 await page.waitForTimeout(600);
-ok((await page.locator(".msheet").count()) === 0, "点 Claude 行后 sheet 关闭");
+ok(
+  (await page.locator('.msheet .shd h2:has-text("新建实例")').count()) === 0,
+  "点 Claude 行后 sheet 关闭",
+);
 ok(
   await page.locator('[role="alertdialog"], [role="dialog"]').last().isVisible(),
   "命名 prompt 弹窗可见",
@@ -362,6 +370,70 @@ ok(await page.getByRole("menuitem", { name: "重命名" }).isVisible(), "右键 
 ok(await page.getByRole("menuitem", { name: "置顶" }).isVisible(), "右键 →「置顶」");
 await page.keyboard.press("Escape");
 await page.waitForTimeout(200);
+
+// ── Part 5: 下拉收起手势（拖拽 dismiss 从松手位置滑出，不回弹） ──────────────
+// 覆盖用户反馈回归：dismiss 分支曾清 inline transform → sheet 瞬跳回原位再播 exit 动画
+//（「回弹后再消失」）。修复后 exit keyframes 无 from、起点 = 当前 inline 位置，松手后
+// rect.top 必须保持在拖拽位置附近并继续增大（滑出），最终卸载且重开无 inline 残留。
+console.log("Part 5: 下拉收起（拖拽 > 96px 松手 → 从松手位置继续滑出，不回弹）");
+await page.locator(".nav h1 button").click();
+await page.waitForSelector(".msheet", { timeout: 5000 });
+await page.waitForTimeout(300); // 等 enter 动画（slide-in-from-bottom-4 200ms）播完再取基准。
+const baseTop = await page
+  .locator(".msheet")
+  .first()
+  .evaluate((el) => el.getBoundingClientRect().top);
+const shd = page.locator(".msheet .shd").first();
+const sb = await shd.boundingBox();
+const cx = sb.x + sb.width / 2;
+const cy = sb.y + sb.height / 2;
+await page.mouse.move(cx, cy);
+await page.mouse.down();
+for (let i = 1; i <= 7; i++) {
+  // 分 7 步拖 140px（> DISMISS_DISTANCE_PX=96），每步内插值产生连续 pointermove。
+  await page.mouse.move(cx, cy + i * 20, { steps: 2 });
+}
+await page.mouse.up();
+// 松手后立刻采样：sheet 仍在且 top 保持在拖拽位置附近（bug 版此处已跳回 ≈ baseTop）。
+const t0 = await page
+  .locator(".msheet")
+  .first()
+  .evaluate((el) => el.getBoundingClientRect().top)
+  .catch(() => null);
+ok(t0 !== null, "松手后 sheet 仍在（exit 动画期未卸载）");
+ok(
+  t0 !== null && t0 >= baseTop + 100,
+  `松手后不回弹（top ${Math.round(t0 ?? -1)} ≥ 原位+100，原位 ${Math.round(baseTop)}）`,
+);
+await page.waitForTimeout(120);
+const t1 = await page
+  .locator(".msheet")
+  .first()
+  .evaluate((el) => el.getBoundingClientRect().top)
+  .catch(() => null);
+ok(
+  t1 === null || t1 > (t0 ?? 0) + 20,
+  `松手后继续滑出（+120ms top ${t1 === null ? "已卸载" : Math.round(t1)} > ${Math.round(t0 ?? -1)}+20）`,
+);
+await page.waitForTimeout(500);
+ok((await page.locator(".msheet").count()) === 0, "拖拽 dismiss 后 sheet 卸载（消费方关闭完成）");
+// 重开无 inline 残留：Radix Portal 重挂载为全新 DOM，top 回原位、无 inline transform。
+await page.locator(".nav h1 button").click();
+await page.waitForSelector(".msheet", { timeout: 5000 });
+await page.waitForTimeout(300);
+const reopen = await page
+  .locator(".msheet")
+  .first()
+  .evaluate((el) => ({
+    top: el.getBoundingClientRect().top,
+    inlineTransform: el.style.transform,
+  }));
+ok(
+  Math.abs(reopen.top - baseTop) < 5 && reopen.inlineTransform === "",
+  `重开回原位无残留（top 偏差 ${Math.round(reopen.top - baseTop)}px < 5，inline transform "${reopen.inlineTransform}"）`,
+);
+await page.keyboard.press("Escape");
+await page.waitForTimeout(400);
 
 console.log(`\n结果: ${passCount} pass / ${failCount} fail`);
 await browser.close();

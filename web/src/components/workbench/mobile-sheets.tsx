@@ -183,83 +183,91 @@ export function MobileSessionHistorySheet({
       });
   };
   return (
-    <MobileSheet
-      aside={projectName}
-      onOpenChange={onOpenChange}
-      open={open}
-      title={t("workbench.historyTitle")}
-    >
-      <div className="filters">
-        {HISTORY_FILTERS.map((f) => (
-          <button
-            className={`fc cursor-pointer${filter === f ? " on" : " seg"}`}
-            key={f}
-            onClick={() => setFilter(f)}
-            type="button"
-          >
-            {f === "all"
-              ? t("workbench.historyFilterAll")
-              : f === "running"
-                ? t("workbench.historyFilterRunning")
-                : t("workbench.historyFilterClosed")}
-          </button>
-        ))}
-      </div>
-      <div className="mt-1.5">
-        {isLoading ? (
-          // 加载态（M10 第三轮用户反馈「缺少加载态提示」）：isLoading 区分加载与空态，避免
-          // 打开即闪「暂无会话」误导。§6.12o 收敛：手写 animate-pulse 灰条 → ListRowSkeleton
-          // 单源（shimmer 单源；.hrow 无 marker/行尾方块 → marker=false + action="none"），
-          // role="status" aria-label 语义保留在外壳。
-          <div aria-label={t("workbench.historyLoading")} role="status">
-            <ListRowSkeleton action="none" count={2} marker={false} />
-          </div>
-        ) : rows.length === 0 ? (
-          <p className="py-3 text-center text-footnote text-ink-2">{t("workbench.historyEmpty")}</p>
-        ) : (
-          rows.map((entry) => {
-            const running = entry.hasActiveSession;
-            const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
-            return (
-              <button
-                className={`hrow${running ? "" : " end"} block w-full cursor-pointer text-left`}
-                key={
-                  entry.claudeSessionId ??
-                  entry.acpSessionId ??
-                  entry.title ??
-                  entry.firstMessage ??
-                  time
-                }
-                onClick={() => {
-                  onOpenChange(false);
-                  if (running && entry.activeSessionId) {
-                    onFocusExisting(entry.activeSessionId);
-                  } else if (!running) {
-                    openClosedEntry(entry);
+    <>
+      <MobileSheet
+        aside={projectName}
+        onOpenChange={onOpenChange}
+        open={open}
+        title={t("workbench.historyTitle")}
+      >
+        <div className="filters">
+          {HISTORY_FILTERS.map((f) => (
+            <button
+              className={`fc cursor-pointer${filter === f ? " on" : " seg"}`}
+              key={f}
+              onClick={() => setFilter(f)}
+              type="button"
+            >
+              {f === "all"
+                ? t("workbench.historyFilterAll")
+                : f === "running"
+                  ? t("workbench.historyFilterRunning")
+                  : t("workbench.historyFilterClosed")}
+            </button>
+          ))}
+        </div>
+        <div className="mt-1.5">
+          {isLoading ? (
+            // 加载态（M10 第三轮用户反馈「缺少加载态提示」）：isLoading 区分加载与空态，避免
+            // 打开即闪「暂无会话」误导。§6.12o 收敛：手写 animate-pulse 灰条 → ListRowSkeleton
+            // 单源（shimmer 单源；.hrow 无 marker/行尾方块 → marker=false + action="none"），
+            // role="status" aria-label 语义保留在外壳。
+            <div aria-label={t("workbench.historyLoading")} role="status">
+              <ListRowSkeleton action="none" count={2} marker={false} />
+            </div>
+          ) : rows.length === 0 ? (
+            <p className="py-3 text-center text-footnote text-ink-2">
+              {t("workbench.historyEmpty")}
+            </p>
+          ) : (
+            rows.map((entry) => {
+              const running = entry.hasActiveSession;
+              const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
+              return (
+                <button
+                  className={`hrow${running ? "" : " end"} block w-full cursor-pointer text-left`}
+                  key={
+                    entry.claudeSessionId ??
+                    entry.acpSessionId ??
+                    entry.title ??
+                    entry.firstMessage ??
+                    time
                   }
-                }}
-                type="button"
-              >
-                <span className="r1">
-                  {/* 已结束行无 dot（原型 03n end 行只有文字，reviewer P2-6）。 */}
-                  {running ? <span className={statusToV2DotClass("running")} /> : null}
-                  <span className="min-w-0 flex-1 truncate">
-                    {entry.title ?? entry.firstMessage ?? time}
+                  onClick={() => {
+                    onOpenChange(false);
+                    if (running && entry.activeSessionId) {
+                      onFocusExisting(entry.activeSessionId);
+                    } else if (!running) {
+                      openClosedEntry(entry);
+                    }
+                  }}
+                  type="button"
+                >
+                  <span className="r1">
+                    {/* 已结束行无 dot（原型 03n end 行只有文字，reviewer P2-6）。 */}
+                    {running ? <span className={statusToV2DotClass("running")} /> : null}
+                    <span className="min-w-0 flex-1 truncate">
+                      {entry.title ?? entry.firstMessage ?? time}
+                    </span>
+                    <span className={`st${running ? " run" : ""}`}>
+                      {running
+                        ? t("workbench.historyRunning", { time })
+                        : t("workbench.historyClosed", { time })}
+                    </span>
                   </span>
-                  <span className={`st${running ? " run" : ""}`}>
-                    {running
-                      ? t("workbench.historyRunning", { time })
-                      : t("workbench.historyClosed", { time })}
-                  </span>
-                </span>
-              </button>
-            );
-          })
-        )}
-      </div>
-      <p className="hfoot">{t("workbench.historyFoot")}</p>
+                </button>
+              );
+            })
+          )}
+        </div>
+        <p className="hfoot">{t("workbench.historyFoot")}</p>
+      </MobileSheet>
+      {/* holder 必须在 sheet 子树外：closed 行点击关 sheet 后，Radix exit 动画播完即卸载
+          Content 子树，嵌套其中的 prompt（Portal→body）会被连带卸载——input 消失、resolve
+          悬空（探针实锤）。与 03j 新建实例 sheet「prompt 由顶层 holder 承载」同因同解：
+          Fragment 兄弟位落在本组件调用方（workbench 层）而非 sheet Content 内。 */}
       {renameDialog.holder}
-    </MobileSheet>
+    </>
   );
 }
 

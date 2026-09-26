@@ -14,6 +14,10 @@ const DISMISS_MIN_DRAG_PX = 24;
 const DISMISS_VELOCITY_PX_MS = 0.5;
 const DRAG_START_PX = 6;
 const SPRING_BACK_MS = 200;
+/** 拖拽 dismiss 滑出：顶边推过视口底的余量（防亚像素残边，fill-forwards 保持出屏终态）。 */
+const DISMISS_SLIDE_PAST_PX = 40;
+/** 拖拽 dismiss 滑出时长：从松手位置滑出全屏比常规关闭（16px+fade）距离长，稍缓贴近 iOS。 */
+const DISMISS_SLIDE_MS = 200;
 
 /**
  * 受控关闭 → 消费方延迟卸载的统一间隔：受控 open 的浮层（MobileSheet / 桌面 Dialog）在
@@ -52,7 +56,8 @@ type DragState =
  *
  * 下拉收起（M10 第三轮用户反馈）：grab 条 + shd 头部为拖动热区（iOS sheet 教学位；列表区
  * 保持原生滚动不冲突，`touch-none` 须在手势开始前生效故挂在热区元素上），位移写 Content
- * inline transform 跟手，越过阈值调 onOpenChange(false) 交 Radix exit 动画收起，否则回弹。
+ * inline transform 跟手，越过阈值保留位移交 Radix exit 动画从松手位置继续滑出屏幕
+ *（exit keyframes 无 from，起点 = 当前 inline 位置），否则回弹。
  */
 export function MobileSheet({
   ariaLabel,
@@ -122,8 +127,20 @@ export function MobileSheet({
     const dismiss =
       d.dy >= DISMISS_DISTANCE_PX || (d.dy >= DISMISS_MIN_DRAG_PX && d.v >= DISMISS_VELOCITY_PX_MS);
     if (dismiss) {
-      // 清 inline transform 后交 Radix exit 动画（slide-out-to-bottom）完成收起。
-      el.style.transform = "";
+      // 保留 inline transform 作为 exit 动画起点（tw-animate-css 的 exit keyframes 只有 to
+      // 无 from，起始值 = 当前计算样式）——从松手位置继续滑出；清掉会瞬跳回原位再滑出
+      //（用户反馈的「回弹后再消失」）。inline 变量覆盖 class 的 exit 形态：滑出距离 =
+      // 顶边推出视口底 + 余量（slide-out-to-bottom-4 的 16px 不够出屏）、不 fade（iOS
+      // dismiss 是纯滑出）、200ms ease-in 贴合松手初速度。Content unmount 后 inline 样式
+      // 随之消亡，无残留。
+      const rect = el.getBoundingClientRect();
+      el.style.setProperty(
+        "--tw-exit-translate-y",
+        `${window.innerHeight - rect.top + DISMISS_SLIDE_PAST_PX}px`,
+      );
+      el.style.setProperty("--tw-exit-opacity", "1");
+      el.style.setProperty("--tw-animation-duration", `${DISMISS_SLIDE_MS}ms`);
+      el.style.setProperty("--tw-ease", "ease-in");
       onOpenChange(false);
       return;
     }
