@@ -1,61 +1,60 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-27（**§6.12p 真机反馈修复完成 `0f3c882`**：sheet 拖拽 dismiss 从松手位置滑出不回弹 + 历史 sheet prompt 连带卸载结构修复。§6.12o 加载态 `5dd1113`/`ecf34cc` 已闭环。**下一步：真机复验清单（见下）**。）
+> 最后更新：2026-09-27（**§6.12p 第二轮真机反馈修复 `52af7aa`**：sheet 拖拽对抗 WebKit 滚动手势 pointercancel——「拖不动/不跟手」根因 = .msheet 滚动容器内 touch-action:none 判定不稳。首轮 `0f3c882`（回弹 + holder 嵌套）已闭环。**下一步：真机复验清单（见下）**。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-§6.12p 真机反馈修复（`0f3c882`，3 文件 +180/−83）：①拖拽 dismiss 修复——exit keyframes 无 from，保留 inline transform 作动画起点从松手位置继续滑出屏幕（inline 变量覆盖滑出距离/不 fade/200ms ease-in）；②历史 sheet renameDialog.holder 移出 MobileSheet 子树（Radix exit 卸载 Content 时不再连带杀 prompt）。探针 m5-sheets 扩至 51 断言全绿。
+§6.12p 两轮真机反馈修复（`0f3c882` + `52af7aa`）：①拖拽 dismiss 从松手位置滑出不回弹（exit keyframes 无 from + inline 变量覆盖）；②历史 sheet renameDialog.holder 移出 MobileSheet 子树（不再被连带卸载）；③non-passive touchmove 手势期 preventDefault 对抗 WebKit 滚动判定（「拖不动/不跟手」）。探针 m5-sheets 54 断言全绿（CDP touch 序列 + 跟手断言）。
 
 ## 本 session 焦点
 
-1. 用户真机反馈「sheet 下拉松手后回弹再消失」→ 根因 = dismiss 分支先清 inline transform（瞬跳回原位）再交 exit 动画。
-2. 修复机制：tw-animate-css exit keyframes 只有 to 无 from → 起始值 = 当前计算样式 → 保留 transform 即从松手位置继续滑出；inline 覆盖 `--tw-exit-translate-y`（出屏距离）/`--tw-exit-opacity`（纯滑出不 fade）/时长 200ms ease-in。
-3. 探针诊断中发现**结构 bug**：历史 sheet 的 renameDialog.holder 嵌在 MobileSheet Content 内 → 关 sheet 时 Radix Presence 卸载 Content 子树 → 嵌套 Portal prompt 连带卸载（input 消失、resolve 悬空）。
-4. 全仓 holder 嵌套排查：仅 runtime-config confirm 属从属语义（父关=放弃操作）记档不修；其余顶层/页面级安全。
+1. 用户反馈「下拉松手回弹再消失」→ dismiss 分支清 transform 瞬跳回原位 → 保留 transform 作 exit 起点（keyframes 无 from）+ inline 变量（出屏距离/不 fade/200ms ease-in）。
+2. 探针诊断发现 holder 嵌套结构 bug（历史 sheet prompt 被关 sheet 连带卸载）→ Fragment 兄弟位修复 + 全仓排查。
+3. 用户再反馈「更差了，不跟手，经常拖不动」→ 根因 = **WebKit 对滚动容器（.msheet overflow-y:auto）内触摸的 touch-action:none 判定不稳**，把手势当滚动启动并 pointercancel；起步 6px 窗口被 cancel = 手势死在 pending。修复 = non-passive touchmove 手势期（非 idle）preventDefault，从第一个 touchmove 就拦。
+4. 探针 Part 5 升级 CDP touch 序列 + 逐步跟手断言。
 
 ## 关键决策（本阶段不可丢）
 
-- **嵌套浮层铁律（新）**：holder 模式的浮层（usePromptDialog/useConfirm/useInstanceInfoSheet）若承载**主操作流**，holder 必须渲染在 MobileSheet/DialogContent 子树外（Fragment 兄弟位/顶层）——Radix exit 动画播完即卸载 Content 子树，嵌套 Portal 的浮层被连带卸载，SHEET_UNMOUNT_DELAY_MS 只保护「holder 组件树」不保护「外层 Content 内的嵌套 Portal」。
-- **拖拽 dismiss 动画范式（新）**：exit keyframes 无 from → inline transform 即动画起点；要改滑出形态用 inline 变量（`--tw-exit-translate-y`/`--tw-exit-opacity`/`--tw-animation-duration`/`--tw-ease`）覆盖 class。
-- **dismiss 阈值不变**：≥96px 或 24-96px+速度 ≥0.5px/ms 甩动；<24px 点击 slop 不接管。
-- **runtime-config confirm 嵌套不修**：从属语义（父 sheet 关 = 放弃操作，confirm 连带消失合理），非主操作流。
-- **基线对照法再验证有效**：/tmp/ar-probe-baseline（39a8aca）+ 43099 独立端口——基线同挂证明 prompt bug 是 §6.12n 迁移引入的结构问题（非本轮/环境），与本轮改动解耦后定位到 holder 嵌套。
-- **Playwright「prompt crash」实为 prompt 消失后的探针侧症状**：快速 locator 轮询/press 撞上元素消失 → detached retry/TargetClosed 误导性报错；先修产品 bug 再看探针报错。
-- 加载态分层标准 / keepPreviousData 前提（同 observer in-place 换 key）/ 探针 mock 三铁律等沿用 §6.12o/§6.12n 记档。
+- **嵌套浮层铁律**：holder 模式浮层承载主操作流时必须在 MobileSheet/DialogContent 子树外（Fragment 兄弟位）——Radix exit 播完即卸载 Content，嵌套 Portal 连带卸载，SHEET_UNMOUNT_DELAY_MS 不保护嵌套层。runtime-config confirm 从属语义不修。
+- **拖拽 dismiss 动画范式**：exit keyframes 无 from → inline transform 即动画起点；滑出形态用 inline 变量覆盖（--tw-exit-translate-y/--tw-exit-opacity/--tw-animation-duration/--tw-ease）。
+- **iOS 拖拽手势铁律（新）**：滚动容器内的拖拽手势必须 non-passive touchmove preventDefault 从第一个 move 就拦（touch-action:none 在 WebKit 滚动容器内不可靠）；prevent 覆盖整个手势期（非 idle）——起步窗口被 cancel = 手势永久死在 pending。纯 tap 无 touchmove 不受影响。
+- ** dismiss 阈值**：≥96px 或 24-96px+速度 ≥0.5px/ms；<24px slop 不接管。
+- **基线对照法有效**：39a8aca worktree + 43099——基线同挂证明问题非本轮引入。
+- **Playwright「prompt crash」实为 prompt 消失后的症状**（detached retry/TargetClosed 误导），先修产品 bug。
+- **探针 stdout 缓冲**：timeout 杀进程丢缓冲，诊断打点用 console.error。
+- 加载态分层标准 / keepPreviousData 前提 / 探针 mock 三铁律沿用 §6.12o/§6.12n 记档。
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ §6.12o 全站加载态（`5dd1113` + `ecf34cc`）+ §6.12n sheet 收敛（`39a8aca`）全闭环
-- ✅ **§6.12p 真机反馈修复（`0f3c882`）**：验证 = 四门禁 + CSS 硬闸 + token 机检 + e2e 24/24 + 单测 673 + 探针 m5-sheets 51/51（含 Part 5 拖拽几何 5 断言）
-- ✅ handoff save（本文件）
-- ⬜ **交用户真机复验**（§6.12p 清单见下 + §6.12n 浮层清单 + §6.12o 加载态清单仍待执行）
-- ⬜ 记档不修：runtime-config confirm 从属嵌套；§6.12o 的 3 项（refsLoaded gate/keepPreviousData 行为探针/骨架单行变体）
-- ⬜ 存量欠账（不在本轮）：rootBrowse 下沉；i18n 动词级 key 收敛；probe-chat-e2e 2 存量 FAIL
+- ✅ §6.12o 加载态（`5dd1113`+`ecf34cc`）+ §6.12n sheet 收敛（`39a8aca`）+ §6.12p 两轮反馈修复（`0f3c882`+`52af7aa`）
+- ✅ 验证 = 四门禁 + CSS 硬闸 + token 机检 + e2e 24/24 ×2 + 单测 673 ×2 + 探针 m5-sheets 54/54
+- ⬜ **交用户真机复验（重点：拖拽手感——preventDefault 是 iOS 标准做法，WebKit 判定 Chromium 模拟不出，以真机为准）**
+- ⬜ 若真机仍拖不动 → 下一手：无标题菜单 sheet 热区增高（现 grab 40×5 + 12px 行，真机易 miss；增高有菜单首行下移的视觉代价需拍板）/ 拖拽热区扩展到内容区非滚动带（iOS 惯例，冲突面大需设计）
+- ⬜ 记档不修：runtime-config confirm 从属嵌套；§6.12o 3 项
+- ⬜ 存量欠账：rootBrowse 下沉；i18n key 收敛；probe-chat-e2e 2 存量 FAIL
 
-## 用户真机复验清单（§6.12p）
+## 用户真机复验清单（§6.12p 两轮）
 
-1. **任意移动 sheet 下拉收起**（重点验证项）：抓 grab 条/标题区下滑 → sheet 跟手 → 松手（超阈值或快速甩）→ **从松手位置继续滑出屏幕，不回弹、不闪回原位**；轻拖（<24px）松手回弹原位；中途松手（24-96px 慢速）也回弹
-2. 下拉中途松手后 sheet 完全消失、scrim 同步退场，页面可正常点击
-3. 同一 sheet 反复开关下拉，行为一致无残留
-4. **历史 sheet closed 行点击**（顺带修复项）：命名 prompt 弹出后**稳定可见不消失**，输入确认 → resume 成功
-5. 双主题下上述行为一致
-
-（§6.12o 加载态 11 项 + §6.12n 浮层清单见前轮交付说明/handoff 快照）
+1. **拖拽手感（重点）**：抓 sheet 头部下滑——**起步即跟手**（无迟滞、无「拖不动」）；拖拽全程跟手；快速轻扫也能抓住
+2. 松手（>96px 或快速甩）→ 从松手位置滑出屏幕，不回弹；轻拖回弹原位
+3. 热区按钮 tap 不受影响：审批「全部允许」、菜单项、行按钮点击正常（preventDefault 无误伤）
+4. sheet 内列表滚动正常（内容超高的 sheet，如历史列表）
+5. 历史 sheet closed 行 → 命名 prompt 稳定可见，确认后 resume
+6. 同一 sheet 反复开关下拉行为一致；双主题一致
 
 ## 阻塞 / 风险
 
-- 无阻塞。dev 服务 tmux ar-dev 存活 43011/43012；`0f3c882` 后已 rebuild（CSS 硬闸过，dist 01:32:25）。
-- 本机 agent-browser 常驻 chrome 进程较多（202 个，内存 used 11G/16G）——探针/e2e 跑批变慢+偶发时序漂移，跑前留意。
+- 无阻塞。dev 存活 43011/43012；`52af7aa` 已 rebuild（CSS 硬闸过，dist 05:25:55）。
+- 真机若仍「拖不动」→ 备选方案已列进度节（热区增高需拍板）。
 
 ## 易丢的关键上下文
 
-- **探针跑法**：`bun scripts/probe-*.mjs`；跑前 touch main.tsx 完整 rebuild + sleep 16（核对 dist mtime）；e2e/单测 `systemd-run --scope --user -p MemoryMax=2G`。
-- **基线对照法**：`git worktree add /tmp/ar-probe-baseline <commit>` + web build + tmux 43099 preview + `AR_WEB_ORIGIN` 指过去；stash 对照无效（dist 不随源码变）。
-- **探针 stdout 缓冲**：进程被 timeout 杀时 stdout 缓冲丢失——诊断打点用 console.error（stderr）。
-- **Playwright selector**：`text="..."` 带引号精确/无引号 substring；`.msheet` 系断言注意双 sheet 共存窗口（等目标标题）；`text-is` vs `has-text`。
-- **Edit/Write 注入防护（持续）**：Edit 从最新 Read 逐字拷贝；Write 临时脚本有注入前科 → 诊断用「cp 探针 + 小 Edit + sed 打点」，跑完即删；rg 的 `-r` 是 replace 标志别误用（会改写输出显示）。
-- **route mock LIFO** / preview 响应必带 mtimeMs / 右栏 InitScript 等沿用既往。
+- **探针跑法**：touch main.tsx + sleep 16 + 核对 dist mtime + `bun scripts/probe-*.mjs`；e2e/单测 systemd-run 2G。
+- **基线对照**：worktree 43099 + AR_WEB_ORIGIN；stash 对照无效。
+- **Playwright**：`text="..."` 精确/无引号 substring；双 sheet 共存窗口等目标标题；CDP touch 派生 pointer events 可驱动 React 手势。
+- **Edit/Write 注入防护**：Write 临时脚本有前科 → 「cp 探针 + 小 Edit + sed 打点」；rg `-r` 是 replace 别误用。
+- route mock LIFO / preview 带 mtimeMs / 右栏 InitScript 沿用。
 
 ## 提醒
 
@@ -63,4 +62,5 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-09-27 01:53；触发原因：§6.12p 真机反馈修复 commit `0f3c882` + handoff save
+最后更新：2026-09-27 05:35；触发原因：§6.12p 第二轮反馈修复 commit `52af7aa` + handoff 滚动
+

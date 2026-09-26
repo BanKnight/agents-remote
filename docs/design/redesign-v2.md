@@ -775,6 +775,8 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **探针（m5-sheets 扩至 51 断言）**：新增 Part 5 拖拽 dismiss 几何 5 断言（松手后 top 保持拖拽位置不回弹 + 继续滑出 + 卸载 + 重开无 inline 残留；mouse pointer 序列驱动，拖 140px > 96px 阈值）；prompt 链断言恢复（holder 修复后 press Enter 不再 detached）；断言收窄两处（菜单 sheet exit 期双 sheet 共存窗口 → 等目标 sheet 标题；03j 关闭断言 `.msheet count===0` → 收窄到「新建实例」标题——prompt 自身也是 .msheet，宽断言必挂）。
 
+**②' 拖不动/不跟手（同日第二轮真机反馈，commit `52af7aa`）**：`.msheet` 是 `overflow-y:auto` 滚动容器，**WebKit 对容器内触摸的 touch-action:none 判定不稳**——常把手势当滚动启动并 pointercancel。起步 6px 窗口被打断 = 手势死在 pending（「拖不动」）；拖拽中被打断 = 手指在滑 sheet 不动（「不跟手」）。修复：Content 挂 **non-passive touchmove 监听，手势期（非 idle）preventDefault** 阻断原生滚动判定——必须从第一个 touchmove 就拦，WebKit 才不会先启动滚动再 cancel。纯 tap 无 touchmove 不受影响（热区按钮 click 照常合成）；监听依赖 `open` 重绑（Radix closed 即卸载 Content，重开是新 DOM）。探针 Part 5 同步升级 mouse → **CDP touch 序列** + 逐步跟手断言 ×3（transform = 累计位移，54 断言全绿）；WebKit 手势判定在 Chromium touch 模拟下不复现 cancel，真机复验交用户。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
