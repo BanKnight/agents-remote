@@ -1,20 +1,22 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-26（**SessionDetailHeader 死 UI 整片删除完成 `2c59ed7`——用户拍板 A 执行**。深度优化四批全闭环：批次 1 `f3482bb` / 2 `13bc633`+`9dd796e`+`4d77a2d` / 3 `77c24c3`+`06b2c7f`+`347dda2`+review `21111f1` / 4 `2bf5e55`+终审 `658e61c` + 死 UI 删除 `2c59ed7`。**下一步：①待用户拍板两片同类死态（ChatHeader / SessionDetail embedded 壳）②真机复验清单（见下）**。）
+> 最后更新：2026-09-26（**SessionDetailHeader 死 UI + ChatHeader/embedded 死壳全部删除完成 `2c59ed7`+`66f6b70`——§6.12m 条 8 全闭环**。深度优化四批全闭环：批次 1 `f3482bb` / 2 `13bc633`+`9dd796e`+`4d77a2d` / 3 `77c24c3`+`06b2c7f`+`347dda2`+review `21111f1` / 4 `2bf5e55`+终审 `658e61c` + 死 UI 两轮 `2c59ed7`/`66f6b70`。**下一步：真机复验清单（见下）；单独立项见待办**。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-深度优化四批全闭环后，用户拍板 A 整片删除 SessionDetailHeader 死 UI（§6.12m 条 8）：header + 操作区 + DetailWorkspace + detailView 全链 + closeSession/createTerminal mutation + useConfirm + 透传链收缩 + i18n 孤儿 9 key（854→845），6 文件 +43/−571，全部自动化验证绿。
+深度优化四批全闭环后，§6.12m 条 8 死 UI 两轮删除全部完成（`2c59ed7` 拍板 A + `66f6b70` ChatHeader/embedded 壳拍板），共 13 文件 +74/−897、i18n 孤儿 12 key（854→842），全部自动化验证绿。SessionDetailRoute/ClaudeSessionDetailRoute 现为纯面板主体（无自带 header/壳分支）。
 
 ## 本 session 焦点
 
-拍板 A 删除收尾闭环：删组件三块（SessionDetailHeader/SessionDetailActions/DetailWorkspace ~340 行）→ mutations/state 链清理 → instance-panel/instance-area 透传收缩（ChatPanel→ClaudeChat 链保留）→ i18n 孤儿批删（方法论复用：只读脚本 → 无模板拼接判定 → 确定性删行脚本 → typecheck 双向护栏兜底）→ §6.12m 条 8 更新 → 全套验证 → commit。
+第二轮（`66f6b70`）：ChatHeader + ClaudeChat 的 embedded/embeddedHeader + ShellLayout 壳 + closeSession/title/projectNavItems（~200 行）+ SessionDetail 的 embedded 壳（~90 行）+ 透传链（PanelRouterProps 收缩单字段；桌面 WorkspaceTree + 移动聚焦两挂载点）+ i18n 3 key（backToProject/closing/nav.back）。
+
+**Edit 注入手滑再犯 3 次（大块 old_string 拼接错误 ×2 + new_string 残渣写入 ×1）**：对策已升级——①大块删除改用「Read 定位 → sed 行号区间删（单遍多区间按原始行号）→ rg 验证零残留」；②每次 Edit 前必须从最新 Read 输出逐字拷贝，禁止凭记忆重构；③new_string 写入后立即 rg 机检。
 
 ## 关键决策（本阶段不可丢）
 
-- **拍板 A 已执行（2026-09-26 `2c59ed7`）**：操作去向依据 §11——检视=注册表、close=tab ✕、开终端=左总览 CreateSessionBar、Retry=错误横幅 Notice。保留的活 key：backToProject/close/closing/closeConfirm/retry。
-- **⚠️ 待用户拍板两片同类死态（§6.12m 条 8 尾）**：① ClaudeSessionDetailRoute 的 ChatHeader——全挂载点恒传 embeddedHeader，同款死分支；② SessionDetail 的 `embedded` prop + ShellLayout 壳分支（挂载路径唯一 = PanelRouter 恒传 embedded，壳分支不可达）。
+- **条 8 死 UI 两轮删除完成（2026-09-26）**：`2c59ed7`（SessionDetailHeader/detailView/mutations）+ `66f6b70`（ChatHeader/embedded 壳）。操作去向依据 §11：检视=注册表、close=tab ✕、开终端=左总览 CreateSessionBar、Retry=错误横幅 Notice。保留活 key：close/closeConfirm/retry。
+- 死 UI 已全部清理完毕，当前无待拍板的设计决策。
 - **精简轮验证责任在 Claude**（用户反馈）：行为等价重构不交用户测，自动化门禁+e2e+探针全覆盖；只交产品决策和有 UI 变化的批次。
 - **多端同构 = 代码同一份**（用户拍板）；精简方法论：优先删除其次合并最后才提取。
 - rootBrowse 单独立项（不在本轮）；GitFileDiffPanel 中栏保留；`docs/design2/` 是用户目录不动。
@@ -22,9 +24,8 @@
 ## 进度（已完成 / 进行中 / 待办）
 
 - ✅ 深度优化四批全闭环（详见 §6.12m 十条 + snapshots/20260925-1905.md）
-- ✅ **拍板 A：SessionDetailHeader 死 UI 整片删除（`2c59ed7`）**：SessionDetailRoute 1800→~1290 行；验证 = 四门禁 + CSS 硬闸 + e2e 24/24 + 探针 desktop-instance-info ALL、m4-tools-l3 43/43、inspector-row-menus ALL、m9-b 16/16、m9-d 63/63
+- ✅ **第二轮删除（`66f6b70`）**：ChatHeader + ClaudeChat embedded/壳 + SessionDetail embedded 壳 + 透传链 + i18n 3 key；验证 = 四门禁 + CSS 硬闸 + e2e 24/24 + 探针 desktop-instance-info ALL、m4-tools-l3 43/43、inspector-row-menus ALL、m9-b 16/16、chat-focus-header ALL
 - ✅ handoff save（本文件）
-- ⬜ **待用户拍板**：ChatHeader 死态（①）+ SessionDetail embedded ShellLayout 壳（②）——删或留
 - ⬜ **交用户真机复验**（清单见下）
 - ⬜ 单独立项（不在本轮）：rootBrowse 下沉；i18n 动词级 key 收敛；存量探针欠账；probe-chat-e2e 2 存量 FAIL
 
@@ -44,7 +45,7 @@
 **杂项：**
 8. chat 行菜单取消按钮显示「取消」；新建文件夹 prompt 两入口一致
 9. 双主题下上述全部形态正常
-10. **本轮新增**：agent/terminal 会话面板（工作台中栏/移动聚焦态）顶部不再有标题/操作条——tab chip 即标识，关闭走 tab ✕（死 UI 删除，属预期）
+10. **本轮新增**：agent/terminal 会话面板（工作台中栏/移动聚焦态）与 claude 面板顶部均不再有自带标题/操作条——tab chip 即标识，关闭走 tab ✕（死 UI 两轮删除，属预期）；claude 面板 ChatHeader 关闭按钮已无，关闭同样走 tab ✕
 
 ## 阻塞 / 风险
 
@@ -67,4 +68,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-09-26 00:50；触发原因：拍板 A 删除完成 + commit `2c59ed7` + handoff save
+最后更新：2026-09-26 01:35；触发原因：条 8 两轮死 UI 删除完成（`2c59ed7`+`66f6b70`）+ handoff save
