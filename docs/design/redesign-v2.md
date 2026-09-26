@@ -777,6 +777,11 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **②' 拖不动/不跟手（同日第二轮真机反馈，commit `52af7aa`）**：`.msheet` 是 `overflow-y:auto` 滚动容器，**WebKit 对容器内触摸的 touch-action:none 判定不稳**——常把手势当滚动启动并 pointercancel。起步 6px 窗口被打断 = 手势死在 pending（「拖不动」）；拖拽中被打断 = 手指在滑 sheet 不动（「不跟手」）。修复：Content 挂 **non-passive touchmove 监听，手势期（非 idle）preventDefault** 阻断原生滚动判定——必须从第一个 touchmove 就拦，WebKit 才不会先启动滚动再 cancel。纯 tap 无 touchmove 不受影响（热区按钮 click 照常合成）；监听依赖 `open` 重绑（Radix closed 即卸载 Content，重开是新 DOM）。探针 Part 5 同步升级 mouse → **CDP touch 序列** + 逐步跟手断言 ×3（transform = 累计位移，54 断言全绿）；WebKit 手势判定在 Chromium touch 模拟下不复现 cancel，真机复验交用户。
 
+**③ 绑定时机 bug——三轮「拖不动」的真根因（同日第三轮反馈「抓 grab 小横线完全拖不动」，commit `1c50d91`）**：用户第三轮仍报拖不动，诊断探针（CDP `getEventListeners` + 合成 dispatch + window 打点三重对照）实锤 **MobileSheet 的交互 effect 从未执行到绑定代码**——effect 依赖 `[open]`，但 **Radix Portal 的 Content DOM 挂载晚于本组件 useEffect**（open=true 的 commit 时 `contentRef.current` 仍为 null），effect 提前 return 后**再无 open 变化 = 永不重绑**。即：第二轮 preventDefault 修复（②'）在线上从未生效，探针全绿测的是 React 合成 pointer 路径、原生 listener 是空转——「探针与真机脱节」的根因在此。修复两件：
+- **DOM 就绪信号改 state ref callback**（React 官方模式「measuring DOM nodes with state」）：`ref={setContentNode}`，Content 挂载时 setState → effect `[contentNode]` 重跑绑定；卸载时 React 先置 null → cleanup 先行，顺序安全。cleanup 里顺带把 dragRef 归位（防 DOM 卸载中断拖拽后状态残留）。
+- **拖拽驱动从 pointer events 迁原生 touch events 直驱**：iOS WebKit 上 pointer events 是 touch 的派生兼容层，滚动容器内派生行为不可控（pointercancel/停发 pointermove）。touch events 是 touch-action 出现前 iOS 自定义手势的唯一可靠通道：non-passive touchmove preventDefault 直接取消滚动默认行为（滚动从未启动即无抢占），touch 事件本身照常派发——拖拽驱动不依赖任何派生层。touchstart 不 prevent（保热区 tap 的 click 合成）；touchcancel 视同松手；touch events 的 target 固定为 touchstart 命中元素，无需 capture。
+- 探针修正：t0/t1 采样加 `isConnected` 守卫（exit 卸载瞬间 detached handle 的 `getBoundingClientRect()` 返回 0 而非抛错，误报「继续滑出」fail）。54 断言全绿；四门禁 + e2e 24/24。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

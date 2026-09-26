@@ -143,3 +143,13 @@
 **标准做法**：① 原子按域分组：`Record<string,string>` key = projectKey/scope.key——切项目天然隔离不串项目，**取代 derived-state 重置**；② 组件受控化（读 `atom[key] ?? ""`、写 spread），未传受控 prop 的调用方零改动；③ **路径不存在回退（仅受控模式）**：effect 依赖 `files.error`——持久化目录被删时 `listProjectFiles` 抛错 → `goToPath("")` 清记忆回根目录并同步清 atom；`queryKey` 变化时新查询 pending、error 归零不误触发。**判定**：受控 prop 是「跨卸载/刷新保活」开关；桌面左栏无此诉求不引入。
 
 **来源**：`scripts/probe-files-cwd-memory.mjs`（6 断言）；与 §3 同族「状态该进持久化层就进，别留在渲染层随生命周期丢失」。
+
+## 14. Radix Portal 子树的 DOM 挂载晚于宿主组件的 useEffect（ref callback 作 state 才可靠）
+
+**现象**：MobileSheet 的拖拽交互 effect（`useEffect` + `useRef` 判 `if (!ref.current) return`）线上从未生效——探针全绿但真机行为不变，用户三轮反馈「拖不动」。诊断实锤 effect 跑时 `contentRef.current` 仍为 null，且此后依赖（`[open]`）不再变化 = **永不重绑**。
+
+**机制**：Radix Dialog 的 Portal/Content 挂载由内部 Presence 状态驱动，**晚于宿主组件同一轮的 `useEffect`**——「ref 一定先于 effect 赋值」的 React 保证只覆盖**同一 commit 内已渲染的 DOM**，Portal 子树晚一个 effect 刷时 ref 仍为 null。effect 依赖里没有「DOM 就绪」信号，就不会有第二次机会。
+
+**标准做法**：**需要挂 DOM 的副作用，DOM 就绪信号用 state ref callback**（React 官方模式）：`const [node, setNode] = useState(null)` + `ref={setNode}`，effect 依赖 `[node]`——挂载时 setState 触发重跑、卸载时 React 先置 null 再跑 cleanup（顺序安全）。`useRef` 只适合「effect 必然晚于 DOM 就绪」或不需要在 effect 里用 DOM 的场景。**判定**：effect 里 `if (!ref.current) return` 且依赖不含 DOM 信号 = 潜在永不生效，逐个排查。诊断法：`getEventListeners`（CDP `Runtime.evaluate` + `includeCommandLineAPI`）直接列 DOM 上已注册 listener，对比「应注册」清单即知绑没绑上。
+
+**来源**：§6.12p 三轮真机反馈（`52af7aa` preventDefault 空转 → `1c50d91` 修绑定 + touch events 直驱）；redesign-v2.md §6.12p-③。
