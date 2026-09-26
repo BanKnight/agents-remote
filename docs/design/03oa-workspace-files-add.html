@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03oa · 检视面板（悬浮添加菜单）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（FAB 添加菜单弹出态；ptabs/crumb/fab 组件在 components.css 单源） */
+.ptabs{overflow:visible}
+.page{position:relative}
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.addmenu{position:absolute;right:16px;bottom:110px;z-index:7;width:190px;background:var(--bg-elevated);
+         border:1px solid var(--sep);border-radius:13px;overflow:hidden;
+         box-shadow:0 14px 36px rgba(0,0,0,.55)}
+.ami{display:flex;align-items:center;gap:8px;padding:10px 12px;font-size:13.5px;color:var(--ink-1);cursor:pointer}
+.ami svg{width:15px;height:15px;flex:none;stroke:var(--ink-2)}
+.ami .mv{margin-left:auto;color:var(--ink-3);font-size:12px}
+.frow{display:flex;align-items:center;gap:10px;padding:9px 0;font-size:13.5px;cursor:pointer}
+.frow + .frow{border-top:1px solid var(--sep-row)}
+.frow .ic{width:17px;height:17px;flex:none}
+.frow .ic svg{width:17px;height:17px;stroke:var(--ink-2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}
+.frow .p{font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-1);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow .p.dir{font-family:inherit;font-size:14px}
+.cap{font-size:11px;color:var(--ink-3);text-align:center;margin-top:16px}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">工作台</span>
+      <h1>agents-web <span class="sw"></span></h1>
+      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="8.8"/><path d="M0,-2.6 V4.4"/><path d="M0,-5.6 V-5.55"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="ptabs">
+      <span class="ptab on"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg>文件树</span>
+      <span class="ptab">Git</span>
+      <span class="ptab">Wiki</span>
+      <span class="plus" title="新建标签" style="cursor:pointer"></span>
+    </div>
+
+    <div class="row2" style="gap:6px">
+      <span class="crumb">agents-web / src / <b>auth</b></span>
+      <span class="obtn srch" title="搜索（仅根目录；点按展开 = 03x）"><i data-icon="search"></i></span>
+    </div>
+
+    <div class="addmenu">
+      <div class="ami" style="position:relative"><i data-icon="folder.plus"></i>新建…<span class="mv">›</span><span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">4</span></div>
+      <div style="height:1px;background:var(--sep-row)"></div>
+      <div class="ami"><i data-icon="upload"></i>上传…<span class="mv">›</span></div>
+    </div>
+
+    <div class="stream" style="flex:0 auto;padding-top:6px">
+      <div class="frow"><span class="ic"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span><span class="p dir">hooks</span></div>
+      <div class="frow"><span class="ic"><svg viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span><span class="p">index.ts</span></div>
+      <div class="frow"><span class="ic"><svg viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span><span class="p">middleware.ts</span></div>
+      <div class="cap">悬浮添加钮点开 = 添加菜单（本态） · 新建/上传目标 = 当前目录 · 点外部收起</div>
+    </div>
+
+    <div class="fab" title="添加：新建 / 上传"><span class="plus" style="width:20px;height:20px;color:var(--on-accent)"></span><span class="pin" style="right:-10px;top:-9px">3</span></div>
+
+    <div class="home"></div>
+
+    <!-- 检视面板的悬浮添加菜单态（FAB → 03oa 菜单） -->
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（①—③ 同 03o 原义，④ 为本态新增）</h4>
+  <ol>
+    <li><b>①</b><span>动态 tab 条（类浏览器）：文件树 / Git / Wiki ＋ 新建标签（03ob2）</span></li>
+    <li><b>②</b><span>文件树标签内容 = 地址栏（点上级段 = 返回上层）+ 收缩搜索钮（仅根目录）</span></li>
+    <li><b>③</b><span><b>悬浮添加钮</b>（FAB，右下）：点开 = 本态添加菜单；任意目录可用，点外部收起</span></li>
+    <li><b>④</b><span>添加菜单两项：新建… → 03y sheet（文件 | 文件夹 segmented + 名称 + 位置，目标 = 当前目录）；上传… → 03z（队列/同名冲突/重试同 03z 规格）</span></li>
+  </ol>
+</div>
+
+</body></html>

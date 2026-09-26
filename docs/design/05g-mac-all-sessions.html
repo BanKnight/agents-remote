@@ -19,6 +19,7 @@
 .pmark{width:12px;height:12px;flex:none;color:var(--ink-2)}
 </style>
 <script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
 </head>
 <body>
 
@@ -32,7 +33,7 @@
         <div class="ghead"><span class="tt">会话</span><span class="dicon" style="margin-left:auto"><svg viewBox="-10 -10 20 20" data-symbol="clock.arrow.circlepath"><circle r="8"/><path d="M0,-4.5 V0 L3,2"/></svg></span><span class="plus" data-symbol="plus"></span></div>
         <div class="seg4 mini scope"><span>项目</span><span class="on">全部</span></div>
         <div class="microlabel" style="margin:10px 6px 2px">置顶</div>
-        <div class="srow2 inst selrow" style="font-weight:600;color:var(--ink-1)"><span class="pmark"><svg viewBox="-10 -10 20 20" style="stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M-2.5,-9 h5 v5.5 l3,3.5 v1.5 h-4.5 v4.5 l-1,1.2 -1,-1.2 v-4.5 h-4.5 v-1.5 l3,-3.5 z"/></svg></span>支付联调脚本<span class="live off">infra-scripts</span></div>
+        <div class="srow2 inst selrow" style="font-weight:600;color:var(--ink-1)"><span class="pmark"><svg viewBox="-10 -10 20 20" style="stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round"><path d="M-2.5,-9 h5 v5.5 l3,3.5 v1.5 h-4.5 v4.5 l-1,1.2 -1,-1.2 v-4.5 h-4.5 v-1.5 l3,-3.5 z"/></svg></span>支付联调脚本<span class="live off">infra-scripts</span></div>
         <div class="microlabel" style="margin:10px 6px 2px">AGENTS-WEB · 2</div>
         <div class="srow2 inst" style="font-weight:600;color:var(--ink-1)"><span class="dot2" style="background:var(--c-success)"></span>claude·auth</div>
         <div class="srow2 inst" style="color:var(--ink-2)"><span class="dot2" style="border:1.4px solid var(--ink-2)"></span>codex·api</div>
@@ -52,8 +53,7 @@
           <span class="moreic" style="margin-left:auto" title="分屏"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-6.5" width="18" height="13" rx="3"/><path d="M3.5,-6.5 V6.5"/></svg></span>
         </div>
         <div class="chips">
-          <span class="chip" style="height:24px">opus ▾</span><span class="chip" style="height:24px">auto ▾</span>
-          <span class="chip" style="height:24px">effort·hi ▾</span><span class="rtry">⟳</span><span class="badge2">⚠ 1</span>
+          <span class="badge2" style="margin-left:auto">⚠ 1</span>
         </div>
         <div class="stream" style="flex:1 1 auto;min-height:0;overflow:hidden">
           <div class="task" style="font-size:13px"><b style="color:var(--c-primary)">›</b>&nbsp; 加固部署脚本：失败自动重试并推送日志</div>
@@ -62,14 +62,18 @@
           <div class="stat2">✓ 上一回合 · 3 轮 · $0.11 · 4.2k tok · 47s</div>
         </div>
         <div class="tray" style="margin:12px;flex-wrap:wrap;row-gap:6px">
-          <span class="w">⚠ 1 项待审批</span>
-          <span style="margin-left:auto;display:flex;gap:8px"><span class="btn ghost" style="padding:4px 10px">拒绝</span><span class="btn ok" style="padding:4px 10px">允许</span></span>
-          <span class="c" style="flex-basis:100%">git push --force origin main</span>
+          <span class="w">⚠ 1 项待审批</span><span style="margin-left:auto;font-size:11.5px;font-weight:600;color:var(--c-warning-text)">全部允许 ›</span>
         </div>
         <div class="input" style="margin:0 12px 18px">
-          <span class="stop" style="width:28px;height:28px"><i style="width:8px;height:8px"></i></span>
-          <span class="field" style="height:36px;font-size:13px">插话补充指令…</span>
-          <span class="send" style="width:26px;height:26px"></span>
+          <div class="composer wide" style="flex:1;min-width:0">
+            <div class="itext">插话补充指令…</div>
+            <div class="irow">
+              <span class="ipill perm"><i data-icon="shield.checkmark"></i>Auto<span style="font-size:9px;opacity:.75"> ▾</span></span>
+              <span class="ipill model">opus-4.8<span style="font-size:9px;opacity:.75"> ▾</span></span>
+              <span class="ipill eff"><i data-icon="brain"></i>high<span style="font-size:9px;opacity:.75"> ▾</span></span>
+              <span class="send2 stopstate"></span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -91,7 +95,7 @@
       <!-- Inspector：infra-scripts 检视 -->
       <div class="pane pinsp">
         <div class="glabel2">检视 · 只读<span class="clps">»</span></div>
-        <div class="seg4"><span>文件</span><span class="on">Git</span><span>Wiki</span><span>历史</span></div>
+        <div class="seg4"><span>文件</span><span class="on">Git</span><span>Wiki</span></div>
         <div class="grow" style="font-family:ui-monospace,Consolas,monospace;font-weight:600"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><circle cx="-5.5" cy="-6" r="2.4"/><circle cx="-5.5" cy="6" r="2.4"/><circle cx="5.5" cy="-3" r="2.4"/><path d="M-5.5,-3.6 V3.6"/><path d="M5.5,-0.6 C5.5,3.2 -5.5,1.4 -5.5,3.6"/></svg>main ↑0 ↓0<span style="margin-left:auto;font-weight:400;color:var(--ink-2)">工作区 2</span></div>
         <div class="grow"><span class="badge M">M</span><span class="p">deploy.sh</span></div>
         <div class="grow"><span class="badge U">??</span><span class="p" style="color:var(--ink-2)">run.log</span></div>

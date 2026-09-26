@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03q2 · 深度页（文本编辑态）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;font-size:14px;display:flex;align-items:center;justify-content:center;
+        font-family:ui-monospace,'SF Mono',Consolas,monospace}
+.nav .done{font-size:14px;font-weight:600;color:var(--c-primary)}
+.meta{display:flex;align-items:center;padding:8px 16px;font-size:11.5px;color:var(--ink-2);
+      border-bottom:1px solid var(--sep-row)}
+.meta .dirty{margin-left:auto;font-size:11px;font-weight:600;color:var(--c-warning-text)}
+.ed{background:var(--bg-codeblock);margin:0;padding:10px 0;flex:1;overflow:hidden;
+    font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11.5px;line-height:20px}
+.ed .ln{display:flex}
+.ed .no{width:34px;flex:none;text-align:right;padding-right:10px;color:var(--ink-3)}
+.ed .tx{color:var(--term-ink);white-space:pre}
+.cursor{display:inline-block;width:7px;height:14px;background:var(--c-success);vertical-align:-2px}
+.aux{display:flex;align-items:center;justify-content:center;gap:26px;height:40px;flex:none;
+     background:var(--bg-elevated);border-top:1px solid var(--sep-row);font-size:12px;color:var(--ink-2)}
+.cap{font-size:11px;color:var(--ink-3);text-align:center;padding:8px 16px 0}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">src/auth</span>
+      <h1>passkey.ts</h1>
+      <span class="done">完成</span>
+    </div>
+
+    <div class="meta">编辑中 · 248 行<span class="dirty">● 未保存变更</span></div>
+
+    <div class="ed">
+      <div class="ln"><span class="no">1</span><span class="tx"><span style="color:var(--c-pin)">import</span> { webauthn } <span style="color:var(--c-pin)">from</span> '@/lib'</span></div>
+      <div class="ln"><span class="no">2</span><span class="tx"><span style="color:var(--c-pin)">import</span> { session } <span style="color:var(--c-pin)">from</span> './session'</span></div>
+      <div class="ln"><span class="no">3</span><span class="tx"></span></div>
+      <div class="ln"><span class="no">4</span><span class="tx"><span style="color:var(--c-pin)">export async function</span> verify(cred) {</span></div>
+      <div class="ln"><span class="no">5</span><span class="tx">  <span style="color:var(--c-pin)">const</span> ok = <span style="color:var(--c-pin)">await</span> webauthn.verify(</span></div>
+      <div class="ln"><span class="no">6</span><span class="tx">    challenge: cred.challenge,</span></div>
+      <div class="ln"><span class="no">7</span><span class="tx">    origin: env.ALLOWED_ORIGIN,</span></div>
+      <div class="ln"><span class="no">8</span><span class="tx">  )</span></div>
+      <div class="ln"><span class="no">9</span><span class="tx">  <span style="color:var(--c-pin)">if</span> (!ok) {</span></div>
+      <div class="ln"><span class="no">10</span><span class="tx">    <span style="color:var(--c-pin)">throw new</span> AuthError(<span style="color:var(--c-success-text)">'验证失败，请重新绑定'</span>)<span class="cursor"></span></span></div>
+      <div class="ln"><span class="no">11</span><span class="tx">  }</span></div>
+    </div>
+
+    <div class="aux"><span>↩ 撤销</span><span>↪ 重做</span><span>⌄ 收起键盘</span></div>
+    <div class="cap">「完成」= 保存写回文件并作为 diff 基准 · Agent 持有写锁时进入编辑会提示冲突：等待 / 强制编辑（生成对比）</div>
+
+    <div class="tabbar">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home"></div>
+
+    <!-- 编号 pin：① 完成保存 ② 编辑器 ③ 辅助条 ④ 冲突规则 -->
+    <span class="pin" style="left:352px;top:60px">1</span>
+    <span class="pin" style="left:60px;top:230px">2</span>
+    <span class="pin" style="left:120px;top:548px">3</span>
+    <span class="pin" style="left:120px;top:600px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span>「完成」= 保存写回文件，并作为后续 diff 的对比基准；放弃 = 取消编辑不留痕</span></li>
+    <li><b>②</b><span>编辑态为等宽明文（不着色）；未保存变更以橙色点常驻提示</span></li>
+    <li><b>③</b><span>辅助条：撤销 / 重做 / 收起键盘；横屏与桌面（05h）同款编辑器</span></li>
+    <li><b>④</b><span>冲突规则：Agent 会话持有写锁时进入编辑 → 提示冲突，可选 等待 / 强制编辑（自动生成前后对比）</span></li>
+  </ol>
+</div>
+
+</body></html>

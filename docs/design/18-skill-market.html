@@ -11,21 +11,19 @@
 .page{display:block;height:auto;position:relative}
 .tabbar{position:absolute;left:0;right:0;bottom:0;margin-top:0;
         background:color-mix(in srgb,var(--bg-tabbar) 97%,transparent)}
+.nav h1{flex:1;text-align:center}
 .nav{display:flex;align-items:center;justify-content:space-between;padding:52px 16px 8px}
 .nav .back{color:var(--c-primary);font-size:15px}
 .nav h1{font-size:17px;font-weight:600;color:var(--ink-1)}
-.nav .gear{width:22px;height:22px;stroke:var(--ink-1);fill:none;stroke-width:1.7;cursor:pointer}
-.tabseg{display:flex;margin:0 16px;height:34px;border-radius:10px;background:var(--fill-segmented);padding:3px}
-.tabseg span{flex:1;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--ink-2);cursor:pointer}
-.tabseg .on{background:var(--segmented-thumb);color:var(--ink-1);font-weight:600;border-radius:8px}
+
+.segc{margin:0 16px}
 .chips{display:flex;gap:8px;margin:12px 16px 0;align-items:center}
 .chip2{font-size:12px;font-weight:600;padding:5px 14px;border-radius:15px;cursor:pointer;
        border:1px solid var(--sep);color:var(--ink-2);background:var(--bg-elevated)}
 .chip2.on{background:var(--c-primary);border-color:var(--c-primary);color:var(--on-accent)}
 .chips .mg{margin-left:auto;font-size:11px;color:var(--c-primary)}
-.msearch{margin:12px 16px 0;height:38px;border-radius:12px;background:var(--fill-search);display:flex;
-         align-items:center;gap:8px;padding:0 12px;font-size:14px;color:var(--ink-2)}
-.mcard{margin:10px 16px 0;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:14px;padding:10px 14px}
+.search{margin:12px 16px 0}
+.mcard{margin:10px 16px 0;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;padding:10px 16px}
 .mcard .r1{display:flex;align-items:center;gap:8px;font-family:ui-monospace,'SF Mono',Consolas,monospace;
            font-size:13.5px;font-weight:600;color:var(--ink-1)}
 .mcard .ver{font-size:10px;font-weight:600;color:var(--c-primary);background:var(--tint-blue);
@@ -43,6 +41,7 @@
 .mfoot{margin:14px 16px 0;text-align:center;font-size:11px;color:var(--ink-3)}
 </style>
 <script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
 </head>
 <body>
 
@@ -52,19 +51,19 @@
 
   <div class="page">
     <div class="nav">
-      <span class="back">‹ 插件</span>
+      <span class="back">插件</span>
       <h1>技能市场</h1>
-      <svg class="gear" viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg>
+
     </div>
 
-    <div class="tabseg"><span>MCP 服务器</span><span class="on">技能</span></div>
+    <div class="segc"><span>MCP 服务器</span><span class="on">技能</span></div>
 
     <div class="chips">
       <span class="chip2 on">官方精选</span><span class="chip2">skills.sh</span><span class="chip2">我的源</span>
-      <span class="mg">管理源 ›</span>
+
     </div>
 
-    <div class="msearch">搜索技能</div>
+    <div class="search"><i data-icon="search" class="sic"></i>搜索技能</div>
 
     <div class="mcard">
       <div class="r1">docs-writer<span class="src">社区</span></div>
@@ -86,7 +85,7 @@
       <div class="d2">发布说明生成 · 点名称 → 详情</div>
     </div>
 
-    <div class="mfoot">来源与类型绑定：技能市场不含 MCP 源，反之亦然</div>
+    <div class="mfoot">入口：插件页技能组头「＋ 添加」= 添加技能的唯一路径 · 来源与类型绑定，技能市场不含 MCP 源</div>
   </div>
 
   <div class="tabbar">
@@ -97,7 +96,7 @@
   </div>
   <div class="home"></div>
 
-  <!-- 编号 pin：① 双市场 tab ② 卡结构 ③ 安装→审计 ④ 名称→详情/管理源 -->
+  <!-- 编号 pin：① 双市场 tab ② 卡结构 ③ 安装→审计 ④ 名称→详情 -->
   <span class="pin" style="left:120px;top:130px">1</span>
   <span class="pin" style="left:350px;top:250px">2</span>
   <span class="pin" style="left:352px;top:262px">3</span>
@@ -110,7 +109,7 @@
     <li><b>①</b>两个市场：MCP 服务器 / 技能 —— 源与类型绑定，切 tab 时来源 chips 随之变化</li>
     <li><b>②</b>卡 = 名称（mono）+ 来源分级徽标 + 工具数/安装量 +〔安装〕</li>
     <li><b>③</b>〔安装〕→ 审计卡（16）→ 卡内进度 → ✓ 已安装；✕ 取消单个</li>
-    <li><b>④</b>点名称 → 详情（13）；⚙ 管理源（15）</li>
+    <li><b>④</b>点名称 → 详情（13）；来源 chips 过滤 = 插件页「管理源 ›」里配置的源（15）
   </ol>
 </div>
 

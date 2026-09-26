@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03m3 · 工具 Git（放弃改动确认）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.crumb{flex:none;display:flex;align-items:center;height:30px;padding:0 12px;border-radius:15px;
+      background:var(--bg-elevated);border:1px solid var(--sep);font-size:11.5px;white-space:nowrap;overflow:hidden;
+      font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-2)}
+.alert{position:absolute;left:60px;right:60px;top:296px;background:var(--menu);border:1px solid var(--sep-strong);
+       border-radius:14px;z-index:12;overflow:hidden;text-align:center;
+       box-shadow:0 8px 24px color-mix(in srgb,#000 25%,transparent)}
+.alert .at{padding:18px 16px 4px;font-size:16px;font-weight:700;color:var(--ink-1)}
+.alert .am{padding:2px 16px 12px;font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.alert .am .mono{font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-1)}
+.alert .awarn{margin:0 16px 14px;padding:8px 10px;border-radius:8px;background:var(--tint-red);
+       font-size:11.5px;font-weight:600;color:var(--c-danger);line-height:1.5;position:relative}
+.alert .af{display:flex;border-top:1px solid var(--sep)}
+.alert .af span{flex:1;height:44px;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--c-primary);cursor:pointer}
+.alert .af span + span{border-left:1px solid var(--sep);color:var(--c-danger);font-weight:600}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>agents-web <span class="sw"></span></h1>
+      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="8.8"/><path d="M0,-2.6 V4.4"/><path d="M0,-5.6 V-5.55"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="row2">
+      <div class="pills">
+        <span class="crumb">⎇ main · 工作区 4</span>
+      </div>
+      <span class="plus" data-symbol="plus"></span>
+      <span class="sep"></span>
+      <span class="ticon" title="检视面板：文件树 / Git / Wiki" style="position:relative"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-7.5" width="18" height="15" rx="3"/><path d="M2.5,-7.5 V7.5"/><path d="M5.2,-3.5 h1.6 M5.2,-0.5 h1.6 M5.2,2.5 h1.6"/></svg></span>
+    </div>
+
+    <div class="stream" style="flex:0 auto;padding-top:14px">
+      <div class="githead" style="display:flex;align-items:center;gap:6px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;font-weight:600;color:var(--ink-1)">main ↑1 ↓0<span class="st" style="margin-left:auto;font-size:11.5px;font-weight:400;color:var(--ink-2)">工作区 4</span></div>
+      <div class="grow"><span class="badge M">M</span><span class="p">src/auth/passkey.ts</span></div>
+      <div class="grow"><span class="badge M">M</span><span class="p">src/session.ts</span></div>
+    </div>
+
+    <!-- 放弃改动确认 Alert（iOS 居中式） -->
+    <div class="alert">
+      <div class="at" style="position:relative">放弃对「passkey.ts」的更改？<span class="pin" style="right:2px;top:-4px">1</span></div>
+      <div class="am">文件将恢复到 <span class="mono">main</span> 上一次提交的状态；<br>未提交的修改（<span class="mono">+48 −12</span>）<b>无法撤销</b></div>
+      <div class="awarn" style="position:relative">该文件正被 Agent 会话 claude·auth 编辑中——放弃可能与进行中的修改冲突<span class="pin" style="right:2px;top:50%;transform:translateY(-50%)">2</span></div>
+      <div class="af" style="position:relative"><span>取消</span><span>放弃更改<span class="pin" style="right:2px;top:-9px">3</span></span></div>
+    </div>
+
+    <div class="tabbar" style="position:absolute;left:0;right:0;bottom:0;margin-top:0;z-index:11">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home" style="z-index:12"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>入口：Git 段变更行长按/右键 →「放弃更改」；03r 单文件 diff 的 ⋯ 同入口</li>
+    <li><b>②</b><b>Agent 编辑冲突提示</b>（条件出现）：该文件正被某会话编辑时红色提示，仍可强制放弃（与 03q2 写锁同源）</li>
+    <li><b>③</b>放弃 = checkout 恢复到 HEAD：红字破坏性动作、不可撤销；取消为默认安全项。完成后变更列表移除该行、工作区计数 −1</li>
+    <li><b>④</b>多端：iPad/Mac = 同款居中 Alert；未跟踪文件（??）的「放弃」= 直接删除（同 03w4 警示）</li>
+  </ol>
+</div>
+
+</body></html>

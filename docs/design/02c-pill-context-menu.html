@@ -19,13 +19,14 @@
 .ctx::before{content:'';position:absolute;top:-6.5px;left:55px;width:12px;height:12px;background:var(--menu);
              border-left:1px solid var(--sep-strong);border-top:1px solid var(--sep-strong);transform:rotate(45deg)}
 .ctx .row{display:flex;align-items:center;gap:14px;height:45px;padding:0 14px;font-size:14px;color:var(--ink-1)}
-.ctx .row + .row{border-top:1px solid var(--sep-row)}
-.ctx .row svg{width:17px;height:17px;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ctx .row + .row{border-top:1px solid var(--sep)}
+.ctx .row svg{width:17px;height:17px;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .ctx .row.blue{color:var(--c-primary)} .ctx .row.red{color:var(--c-danger);font-weight:600}
 .ctx .row.red svg{stroke:var(--c-danger)} .ctx .row.blue svg{stroke:var(--c-primary)} .ctx .row.def svg{stroke:var(--ink-1)}
 .ring{position:absolute;border:1.8px dashed var(--c-success);border-radius:50%;pointer-events:none;z-index:15}
 </style>
 <script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
 </head>
 <body>
 
@@ -37,7 +38,7 @@
     <div class="nav">
       <span class="back">项目</span>
       <h1>agents-web <span class="sw"></span></h1>
-      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="9"/><path d="M0,-3.2 V4"/><circle cx="0" cy="-6.3" r="1.2" fill="var(--c-primary)" stroke="none"/></svg></span>
+      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="8.8"/><path d="M0,-2.6 V4.4"/><path d="M0,-5.6 V-5.55"/></svg></span>
       <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
     </div>
 
@@ -49,13 +50,10 @@
       </div>
       <span class="plus" data-symbol="plus"></span>
       <span class="sep"></span>
-      <span class="ticon" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
-      <span class="ticon" data-symbol="arrow.triangle.branch"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg></span>
-      <span class="ticon" data-symbol="book"><svg viewBox="-10 -10 20 20"><path d="M0,-6.5 C-2.4,-8.3 -5.8,-8.8 -9,-7.8 V6.2 C-5.8,5.2 -2.4,5.7 0,7.5 C2.4,5.7 5.8,5.2 9,6.2 V-7.8 C5.8,-8.8 2.4,-8.3 0,-6.5 Z"/><path d="M0,-6.5 V7.5"/></svg></span>
+      <span class="ticon" title="检视面板：文件树 / Git / Wiki" style="position:relative"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-7.5" width="18" height="15" rx="3"/><path d="M2.5,-7.5 V7.5"/><path d="M5.2,-3.5 h1.6 M5.2,-0.5 h1.6 M5.2,2.5 h1.6"/></svg></span>
     </div>
 
     <div class="chips">
-      <span class="chip"><span data-symbol="terminal" style="color:var(--c-pin);font-size:10px;margin-right:4px">&gt;_</span>opus · plan · hi</span>
       <span class="ic" data-symbol="arrow.clockwise" style="width:20px"><svg viewBox="-10 -10 20 20" style="stroke:var(--c-success)"><path d="M7.3,0 A7.3,7.3 0 1 1 5.16,-5.16"/><path d="M5.16,-9 V-5.16 H1.3"/></svg></span>
       <span style="font-size:10.5px;color:var(--ink-2)">自动重试开</span>
     </div>

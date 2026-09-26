@@ -19,6 +19,7 @@
 .cmenu > div + div{border-top:1px solid var(--sep)}
 </style>
 <script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
 </head>
 <body>
 
@@ -49,18 +50,16 @@
       <!-- Inspector：文件分段 + 右键菜单 -->
       <div class="pane pinsp">
         <div class="glabel2">检视 · 只读<span class="clps">»</span></div>
-        <div class="seg4"><span class="on">文件</span><span>Git</span><span>Wiki</span><span>历史</span></div>
+        <div class="seg4"><span class="on">文件</span><span>Git</span><span>Wiki</span></div>
         <div style="display:flex;align-items:center;gap:8px;margin:8px 14px 0">
           <span style="flex:1;height:32px;border-radius:10px;background:var(--bg-elevated2);display:flex;align-items:center;gap:6px;padding:0 10px;font-size:12px;color:var(--ink-2)"><svg class="icn" style="width:12px;height:12px" viewBox="-10 -10 20 20"><circle cx="-1.5" cy="-1.5" r="5.5"/><path d="M2.8,2.8 L7,7"/></svg>搜索文件名</span>
           <span style="color:var(--c-primary);font-weight:700;font-size:15px">＋</span>
         </div>
         <div class="tree">
-          <div class="trow"><span class="tw">▾</span><span class="dicon" style="width:14px"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>src</div>
-          <div class="trow" style="padding-left:22px"><span class="tw">▾</span><span class="dicon" style="width:14px"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>auth</div>
-          <div class="frow sel"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg> passkey.ts</div>
-          <div class="frow"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg> session.ts</div>
-          <div class="frow"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg> middleware.ts</div>
-          <div class="trow" style="padding-left:22px"><span class="tw">▸</span><span class="dicon" style="width:14px"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>tests</div>
+          <div class="frow sel"><svg class="icn" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg> passkey.ts</div>
+          <div class="frow"><svg class="icn" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg> session.ts</div>
+          <div class="frow"><svg class="icn" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg> middleware.ts</div>
+          <div class="trow"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span><span class="nm" style="font-family:inherit;font-size:13.5px;font-weight:600">tests</span></div>
         </div>
         <div style="position:absolute;left:16px;right:16px;bottom:12px;font-size:11px;color:var(--ink-3);line-height:1.6">拖拽文件到右栏 = 上传到当前目录</div>
         <!-- 右键菜单（右缘贴窗缘，同原稿裁切） -->

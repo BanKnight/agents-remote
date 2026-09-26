@@ -71,6 +71,18 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 .think{font-size:12.5px;font-style:italic;color:var(--ink-2);padding:0 4px}
 .stat{font-size:11.5px;color:var(--ink-2);padding:0 4px}
 
+/* ---- 代码查看（着色；.kw/.str/.cm/.num 用语义 token 上色） ---- */
+.code{background:var(--bg-codeblock);padding:10px 0;overflow:hidden;
+      font-family:ui-monospace,"SF Mono",Consolas,monospace;font-size:11.5px;line-height:20px}
+.code .ln{display:flex}
+.code .no{width:34px;flex:none;text-align:right;padding-right:10px;color:var(--ink-3)}
+.code .tx{color:var(--term-ink);white-space:pre}
+.code .kw{color:var(--c-pin)}
+.code .str{color:var(--c-success-text)}
+.code .cm{color:var(--ink-3);font-style:italic}
+.code .num{color:var(--c-warning-text)}
+.code .fn{color:var(--c-primary)}
+
 /* ---- 审批托盘 / 按钮 ---- */
 .tray{margin:12px 16px 0;border-radius:14px;background:var(--tint-orange);
       border:1px solid color-mix(in srgb,var(--c-warning) 50%,transparent);
@@ -92,6 +104,65 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
       background:var(--c-primary);display:flex;align-items:center;justify-content:center}
 .send::before{content:"↑";color:var(--on-accent);font-size:16px;line-height:1;font-weight:600;
               font-family:system-ui,-apple-system,"SF Pro Text",sans-serif}  /* ↑ 箭头，弃用双伪元素拼形 */
+
+/* ---- 会话输入区 composer（单源，全端同构）：上=文本区，下=控制行（权限｜模型·深度·发送）——配置行并入框内底沿，不再独占一行遮挡会话流 ---- */
+.composer{flex:1;min-width:0;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:20px;
+          padding:5px 6px 5px 4px;display:flex;flex-direction:column;position:relative}
+.composer .itext{min-height:32px;padding:5px 10px 0;font-size:14px;line-height:1.35;color:var(--ink-2)}
+.composer .irow{display:flex;align-items:center;gap:5px;padding:5px 5px 3px 10px}
+.composer .ipill{height:26px;display:flex;align-items:center;gap:4px;padding:0 10px;border-radius:13px;
+                 font-size:11.5px;font-weight:600;white-space:nowrap;flex:none;position:relative}
+.composer .ipill svg{width:13px;height:13px;flex:none}
+.composer .ipill.perm{color:var(--c-pin);background:var(--tint-purple)}      /* 权限模式（紫） */
+.composer .ipill.model{color:var(--c-primary);background:var(--tint-blue)}   /* 模型（蓝） */
+.composer .ipill.eff{color:var(--c-warning-text);background:var(--tint-orange)} /* 推理深度（橙） */
+/* 发送/停止键:对齐网页端——28×28px、r12(实测用户产品 rounded-lg 实际观感 ≈12px)、Lucide arrow-up 14px 白色图标 */
+.composer .send2{flex:none;width:28px;height:28px;margin-left:auto;border-radius:12px;background:var(--c-primary);color:var(--on-accent);
+                 display:flex;align-items:center;justify-content:center}
+.composer .send2 svg{width:14px;height:14px}
+/* 停止/发送同位互斥：运行中且框空 = 红色停止 ■；空闲或有插话文本 = 蓝色发送 ↑(SVG) */
+.composer .send2.stopstate{background:color-mix(in srgb,var(--c-danger) 16%,transparent);
+                           border:1px solid color-mix(in srgb,var(--c-danger) 60%,transparent)}
+.composer .send2.stopstate::before{content:"";width:10px;height:10px;border-radius:2.5px;background:var(--c-danger)}
+/* 窄端收缩态（iPhone）：权限/模型/深度 三项分别收缩为彩色图标（同宽端 pill 色语义），
+   点图标在原位上方弹出该项选项菜单；宽端（iPad/Mac）为 .ipill 文字 pill 常驻直切。
+   键面几何与发送键同族:28×28px、r12(用户实测对齐) */
+.composer .iicn{flex:none;width:28px;height:28px;border-radius:12px;display:flex;align-items:center;
+                justify-content:center;position:relative}
+.composer .iicn svg{width:14px;height:14px}
+/* 文件浏览 行2 单操作行（渐进式披露）：分割条左侧 = 文件工具操作组——「..」/搜索 互斥槽
+   （仅根目录可搜索）+「＋」添加钮（裸 .plus 字形，不带底色，与全站一致）；
+   分割条右侧 = 检视工具切换。行3 已废除 */
+.opsrow{display:flex;align-items:center;gap:8px;margin:8px 16px 0}
+.obtn.up{font-family:ui-monospace,'SF Mono',Consolas,monospace;font-weight:700}
+.opsrow .push{margin-left:auto}
+.obtn{flex:none;width:30px;height:30px;border-radius:9px;background:var(--tint-blue);
+      display:flex;align-items:center;justify-content:center;color:var(--c-primary);position:relative}
+.obtn svg{width:16px;height:16px}
+/* 搜索钮 = 渐进式披露收纳态：中性灰弱于两主动作；点按原位展开输入（03x） */
+.obtn.srch{background:var(--bg-elevated3);border:1px solid var(--sep);color:var(--ink-1)}
+/* 检视面板动态标签条（类浏览器）：标签即内容，＋ 新建 / ✕ 关闭；几何与 .pill 同族 */
+.ptabs{display:flex;align-items:center;gap:8px;margin:10px 16px 0;overflow-x:auto}
+.ptab{flex:none;display:flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:15px;
+      background:var(--bg-elevated);border:1px solid var(--sep);font-size:12px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
+.ptab svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8}
+.ptab.on{background:var(--tint-blue);border-color:color-mix(in srgb,var(--c-primary) 55%,transparent);color:var(--ink-1);font-weight:600}
+.ptab .x{margin-left:1px;color:var(--ink-3);font-size:11px}
+/* 地址栏（文件树标签）：路径面包屑，点上级段 = 返回上层 */
+.crumb{flex:1;display:flex;align-items:center;height:30px;padding:0 12px;border-radius:15px;
+       background:var(--bg-elevated);border:1px solid var(--sep);font-size:11.5px;white-space:nowrap;
+       overflow:hidden;font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-3)}
+.crumb b{color:var(--ink-1);font-weight:400}
+/* 悬浮添加钮（FAB）：文件树标签右下，→ 03oa 菜单 */
+.fab{position:absolute;right:16px;bottom:50px;width:48px;height:48px;border-radius:24px;
+     background:var(--tint-blue);display:flex;align-items:center;justify-content:center;
+     box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:6}
+.composer .iicn svg{width:16px;height:16px}
+.composer .iicn.perm{color:var(--c-pin);background:var(--tint-purple)}
+.composer .iicn.model{color:var(--c-primary);background:var(--tint-blue)}
+.composer .iicn.eff{color:var(--c-warning-text);background:var(--tint-orange)}
+/* 多端（iPad/Mac）变体：文本区默认 ≥3 行可输入高度（不含控制行） */
+.composer.wide .itext{min-height:62px}
 
 /* ---- Tab Bar（4 Tab：项目/工作台/文件/插件；流内版，02 页有绝对定位覆写） ---- */
 .tabbar{margin-top:auto;display:flex;justify-content:space-around;align-items:center;
@@ -130,17 +201,30 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 /* 桌面 Sidebar 分组头（左图标 + 标题 + 右 ＋）与行图标 */
 .ghead{display:flex;align-items:center;gap:6px;margin:8px 4px}
 .ghead .tt{font-size:12px;font-weight:600;color:var(--ink-2)}
-.ghead .clk{width:14px;height:14px;stroke:var(--c-primary);fill:none;stroke-width:1.7;stroke-linecap:round;flex:none}
+.ghead .clk{width:14px;height:14px;stroke:var(--c-primary);fill:none;stroke-width:2;stroke-linecap:round;flex:none}
 .ghead .plus{width:18px;height:18px;color:var(--ink-2)}  /* macOS 侧栏 ＋ 灰；间距档 6px，禁双 auto 分离 */
 .ghead .tt + .plus{margin-left:auto}  /* 仅"标题+＋"型组头才右推；与时钟成对时紧邻 */
-.dicon{width:16px;height:16px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
-.dicon svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block}  /* 笔画 2：20 盒映射 16px 后有效 ~1.6px，避免发虚 */
+.dicon{width:20px;height:20px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--ink-2)}  /* 桌面图标规格 = 标杆（02 右上）：20px 图形 · 1.8px 笔画 */
+.dicon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}  /* 1:1 渲染，与标杆同规格 */
 .footnav span{display:flex;align-items:center;gap:8px}
 .footnav{border-top:1px solid var(--sep-row);padding-top:12px}
 
 /* ---- 桌面分段控件（4 段；选中项内缩 2px，不占满工具条高——iOS/macOS segmented 惯例） ---- */
 .seg4{display:flex;height:32px;padding:2px;border-radius:10px;background:var(--seg-track);border:1px solid var(--sep);margin:10px 14px 0;flex:none}
 .seg4 span{flex:1;display:flex;align-items:center;justify-content:center;font-size:12.5px;color:var(--ink-2);border-radius:8px}
+.seg4 span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}  /* 嵌入项目名过长时尾截断，全名进切换器 */
+
+/* ---- 共享：移动端搜索框（09/17/18/10/03o…通用；页内只补 margin，禁本地重定义） ----
+   放大镜图标由统一图标系统提供（DOM 放 <i data-icon="search"></i>，Lucide search），不在 CSS 手绘。 */
+.search{height:38px;border-radius:12px;background:var(--fill-search);display:flex;
+        align-items:center;gap:8px;padding:0 12px 0 12px;font-size:14px;color:var(--ink-2)}
+.search .sic{width:14px;height:14px;flex:none;color:var(--ink-2)}
+
+/* ---- 共享：移动端分段控件（作用域/表单二选一/市场双 tab 同一规格；页内只补 margin） ---- */
+.segc{display:flex;height:32px;border-radius:10px;background:var(--fill-segmented);padding:3px}
+.segc span{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;color:var(--ink-2);cursor:pointer;min-width:0}
+.segc .on{background:var(--segmented-thumb);color:var(--ink-1);font-weight:600;border-radius:8px}
+.segc .caret{font-size:9px}
 .seg4 .on{background:var(--seg-thumb);color:var(--ink-1);font-weight:600}
 .seg4.mini{height:26px;border:0;font-size:12px}  /* Sidebar 内轻量变体：视图切换用，无描边 */
 .seg4.mini span{font-size:12px;border-radius:6px}
@@ -183,13 +267,15 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 .tfoot{font-size:11px;color:var(--ink-3);font-family:ui-monospace,Consolas,monospace;padding:0 14px 8px}
 .glabel2{font-size:12.5px;font-weight:600;color:var(--ink-2);padding:10px 14px 2px;display:flex;align-items:center}
 .glabel2 .clps{margin-left:auto;color:var(--c-primary);font-weight:700;font-size:14px}
-.badge{width:18px;height:15px;border-radius:3px;display:flex;align-items:center;justify-content:center;
-       font-size:9.5px;font-weight:600;flex:none;font-family:ui-monospace,Consolas,monospace}  /* 桌面尺寸；移动端 22×19 页自定 */
+.badge{width:22px;height:19px;border-radius:4px;display:flex;align-items:center;justify-content:center;
+       font-size:11px;font-weight:700;flex:none;font-family:ui-monospace,Consolas,monospace}  /* 桌面=03m 同规格 22×19 */
 .badge.M{background:var(--tint-orange);color:var(--c-warning-text)}
 .badge.A{background:var(--tint-green);color:var(--c-success-text)}
 .badge.U{background:color-mix(in srgb,var(--ink-2) 16%,transparent);color:var(--ink-2)}
-.grow{display:flex;align-items:center;gap:8px;padding:7px 14px;font-size:12.5px}
-.grow .p{font-family:ui-monospace,"SF Mono",Consolas,monospace;color:var(--ink-1)}
+.grow{display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:13px}
+.grow + .grow{border-top:1px solid var(--sep-row)}  /* 行分隔 = 03m 同规格 */
+.grow .p{font-family:ui-monospace,"SF Mono",Consolas,monospace;color:var(--ink-1);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grow .ar{color:var(--c-primary);font-size:12px}
 .diffhead{display:flex;align-items:center;gap:8px;padding:10px 14px 6px;font-family:ui-monospace,Consolas,monospace;
           font-size:11.5px;color:var(--ink-2)}
 .diffhead .add{color:var(--c-success-text);font-weight:600}
@@ -205,11 +291,18 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 .addbtn{margin:12px 14px 0;height:34px;border:1px solid var(--sep-strong);border-radius:10px;display:flex;
         align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--c-primary)}
 .tree{margin:12px 14px 0;font-size:13px;color:var(--ink-1)}  /* 作用域限定：移动端 .trow/.frow 是另一种列表行组件 */
-.tree .trow{display:flex;align-items:center;gap:5px;padding:6px 8px}
-.tree .tw{color:var(--ink-3);font-size:11px;width:12px;flex:none}
-.tree .frow{font-family:ui-monospace,"SF Mono",Consolas,monospace;font-size:12.5px;color:var(--term-ink);
-            padding:6px 8px 6px 30px;display:flex;align-items:center;gap:5px}
-.tree .frow.sel{background:var(--fill-selected);border-radius:8px}
+/* 检视器文件树 = 03o .frow 同规格换容器（铁律3）：17px 图标 + mono 名 + sep-row 分隔；组头「＋ 新建」= 03y（文件/文件夹） */
+.tree .vh{display:flex;align-items:center;gap:6px;padding:0 2px 6px;font-size:11px;font-weight:600;color:var(--ink-3)}
+.tree .vh .add{margin-left:auto;color:var(--c-primary);font-weight:600;font-size:12px}
+.tree .trow{display:flex;align-items:center;gap:10px;padding:7px 4px}
+.tree .trow + .trow,.tree .trow + .frow,.tree .frow + .frow,.tree .frow + .trow{border-top:1px solid var(--sep-row)}
+.tree .tw{color:var(--ink-3);font-size:10px;width:12px;flex:none}
+.tree .dicon{width:17px;height:17px;flex:none}
+.tree .dicon svg{width:17px;height:17px;stroke:var(--ink-2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}
+.tree .frow{font-family:ui-monospace,"SF Mono",Consolas,monospace;font-size:13px;color:var(--ink-1);
+            padding:7px 4px;display:flex;align-items:center;gap:10px}
+.tree .frow svg{width:17px;height:17px;stroke:var(--ink-2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.tree .frow.sel{background:var(--tint-blue);border-radius:8px}
 
 /* ---- 编号 pin + 说明面板 ---- */
 .pin{position:absolute;width:20px;height:20px;border-radius:50%;background:var(--c-primary);color:#fff;

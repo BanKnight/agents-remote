@@ -35,6 +35,7 @@
 .mkrow .ar{font-size:12px;color:var(--ink-3)}
 </style>
 <script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
 </head>
 <body>
 
@@ -64,25 +65,25 @@
         <div class="mhead">
           <h1>插件</h1>
           <div class="seg4" style="margin:0;width:290px"><span class="on" style="white-space:nowrap">全局</span><span style="white-space:nowrap">本项目 · agents-web ▾</span></div>
-          <span class="plus" data-symbol="plus" title="添加 MCP"></span>
+          
         </div>
         <div class="mbody">
-          <div class="search"><svg class="icn" viewBox="-10 -10 20 20"><circle cx="-1.5" cy="-1.5" r="5.5"/><path d="M2.8,2.8 L7,7"/></svg>搜索 MCP 与技能</div>
+          <div class="search"><i data-icon="search" class="sic"></i>搜索 MCP 与技能</div>
+          <div class="grplabel">市场<span class="r">管理源 ›</span></div>
+          <div class="pcard">
+            <div class="mkrow"><span class="n">MCP 市场</span><span class="c">42 个服务器</span><span class="ar">›</span></div>
+            <div class="mkrow"><span class="n">技能市场</span><span class="c">28 个技能</span><span class="ar">›</span></div>
+          </div>
           <div class="grplabel">MCP 服务器 · 2<span class="r">＋ 添加</span></div>
           <div class="pcard">
             <div class="prow2"><span class="dot2" style="background:var(--c-success)"></span><span class="tx"><span class="n">context7</span><span class="d">文档查询 · 3 个工具</span></span><span class="live">● 已连接</span><span class="ar">›</span></div>
             <div class="prow2"><span class="dot2" style="background:var(--c-success)"></span><span class="tx"><span class="n">firecrawl</span><span class="d">网页抓取 · 2 个工具</span></span><span class="live">● 已连接</span><span class="ar">›</span></div>
           </div>
-          <div class="grplabel">已安装技能 · 3</div>
+          <div class="grplabel">已安装技能 · 3<span class="r" style="color:var(--c-warning-text)">2 个更新 ›</span><span class="r" style="margin-left:12px">＋ 添加</span></div>
           <div class="pcard">
             <div class="prow2"><span class="tx"><span class="n">code-review</span><span class="d">提交前自动代码审查 · 来源:官方</span></span><span class="upd">有更新</span><span class="ar">›</span></div>
             <div class="prow2"><span class="tx"><span class="n">test-runner</span><span class="d">测试失败自动归因 · 来源:官方</span></span><span class="ar">›</span></div>
             <div class="prow2"><span class="tx"><span class="n">deploy-check</span><span class="d">部署前检查清单 · 来源:社区</span></span><span class="ar">›</span></div>
-          </div>
-          <div class="grplabel">市场<span class="r">管理源 ›</span></div>
-          <div class="pcard">
-            <div class="mkrow"><span class="n">MCP 市场</span><span class="c">42 个服务器</span><span class="ar">›</span></div>
-            <div class="mkrow"><span class="n">技能市场</span><span class="c">28 个技能</span><span class="ar">›</span></div>
           </div>
         </div>
       </div>
@@ -99,10 +100,10 @@
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
-    <li><b>①</b><span>作用域切换：全局 / 本项目 · agents-web ▾；本项目 = 全局记忆的当前项目（与工作台同源），▾ 打开切换器换项目</span></li>
+    <li><b>①</b><span>作用域切换：全局 / 本项目 · agents-web ▾；本项目 = 全局记忆的当前项目（与工作台同源），▾ 打开切换器换项目；项目名过长时段内尾截断 …，全名见切换器</span></li>
     <li><b>②</b><span>＋ = 添加 MCP 表单（14）；作用域决定注入给哪些会话</span></li>
     <li><b>③</b><span>技能/MCP 行点入 → 详情（12 / 13）；「有更新」橙标在详情内确认安装</span></li>
-    <li><b>④</b><span>市场两入口：MCP 市场（17）/ 技能市场（18）；管理源 ›（15）</span></li>
+    <li><b>④</b><span>市场分组前置（与 iPhone 09 同序同构）：双市场行一步触达；管理源 › = 唯一入口（push 15）；技能组头「＋ 添加」= 添加技能唯一路径 → 直达技能市场（17m；技能仅经市场分发、无手动导入，与 iPhone 09 同规则）；「2 个更新 ›」= 更新清单（16）</span></li>
     <li><b>⑤</b><span>视图切换原则：本页仅遮盖主区——工作台与会话 tab 原样保留，点侧栏任一会话行（或再点「插件」）即回工作台，零销毁</span></li>
   </ol>
 </div>

@@ -11,13 +11,12 @@
 .h-row h1{font-size:30px;font-weight:800;color:var(--ink-title)}
 .h-ic{display:flex;gap:14px;padding-bottom:8px}
 .h-ic svg{width:22px;height:22px;stroke:var(--ink-1);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.search{margin:8px 16px 0;height:38px;border-radius:12px;background:var(--fill-search);display:flex;
-        align-items:center;gap:8px;padding:0 12px;font-size:15px;color:var(--ink-2)}
+.search{margin:8px 16px 0}
 .gcard{margin:14px 16px 0;height:230px;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px}
 .dim{top:170px}
-.segc{display:flex;border-radius:10px;background:var(--bg-elevated2);padding:3px;margin-top:12px}
-.segc span{flex:1;text-align:center;padding:5px 0;font-size:13px;border-radius:8px;color:var(--ink-2)}
-.segc .on{background:var(--bg-elevated3);color:var(--ink-1);font-weight:600}
+.segc{background:var(--bg-elevated2);margin-top:12px}  /* sheet 表单内:轨道用 elevated2 提对比(其余规格走共享) */
+
+
 .klabel{font-size:12px;color:var(--ink-2);margin:14px 0 6px}
 .kfield{height:38px;border-radius:10px;background:var(--bg-elevated2);
         border:1px solid color-mix(in srgb,var(--c-primary) 60%,transparent);
@@ -30,6 +29,7 @@
 .kbtns .p{font-size:13.5px;font-weight:600;color:var(--c-primary);display:flex;align-items:center;cursor:pointer}
 </style>
 <script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
 </head>
 <body>
 
@@ -46,7 +46,7 @@
         <svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg>
       </div>
     </div>
-    <div class="search">搜索项目与会话</div>
+    <div class="search"><i data-icon="search" class="sic"></i>搜索项目与会话</div>
     <div class="gcard"></div>
   </div>
   <div class="dim" style="top:170px"></div>
@@ -91,7 +91,7 @@
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
     <li><b>①</b>入口：项目 Tab ＋ / 空态主按钮 / 桌面 Sidebar 分组头 ＋</li>
-    <li><b>②</b>新建 = 建目录并纳管；采用 = 扫描已有目录（列出候选，勾选纳管）</li>
+    <li><b>②</b>新建 = 建目录并纳管；采用 = 扫描已有目录（列出候选，勾选纳管）——采用态全貌见 08b</li>
     <li><b>③</b>重名/路径非法 = 行内提示，不弹窗</li>
     <li><b>④</b>创建成功 → push 进入该项目工作台（空态引导建第一个会话）；桌面同表单为 Sheet 居中</li>
   </ol>

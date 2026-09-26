@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>03q3 · 深度页（Markdown 渲染预览）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;font-size:14px;display:flex;align-items:center;justify-content:center}
+.meta{display:flex;align-items:center;padding:7px 16px;font-size:11.5px;color:var(--ink-2);
+      border-bottom:1px solid var(--sep-row)}
+.mseg{margin-left:auto;display:flex;height:24px;padding:2px;border-radius:8px;background:var(--bg-elevated3)}
+.mseg span{display:flex;align-items:center;padding:0 10px;font-size:11.5px;color:var(--ink-2);border-radius:6px}
+.mseg .on{background:var(--seg-thumb);color:var(--ink-1);font-weight:600}
+.md{flex:1;overflow:hidden;padding:14px 18px;color:var(--ink-1)}
+.md h1{font-size:20px;font-weight:700;margin-bottom:8px}
+.md p{font-size:13px;line-height:21px;color:var(--ink-1);margin-bottom:10px}
+.md p b{font-weight:700}
+.md p a{color:var(--c-primary)}
+.md ul{margin:0 0 10px;padding-left:18px}
+.md li{font-size:13px;line-height:21px;color:var(--ink-1)}
+.md .blockquote{border-left:3px solid var(--c-warning);background:var(--tint-orange);border-radius:0 8px 8px 0;
+                padding:8px 12px;font-size:12.5px;color:var(--c-warning-text);margin-bottom:10px}
+.mdcode{background:var(--bg-codeblock);border-radius:8px;padding:8px 12px;margin-bottom:10px;
+        font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11.5px;line-height:20px;color:var(--term-ink);white-space:pre}
+.mdcode .cm{color:var(--ink-3)}
+.toolbar{display:flex;gap:8px;padding:0 16px 10px;flex:none}
+.toolbar .tb2{flex:1;height:36px;border-radius:10px;border:1px solid var(--sep-strong);display:flex;
+              align-items:center;justify-content:center;font-size:12.5px;color:var(--ink-1);background:var(--bg-elevated)}
+.toolbar .tb2.pri{border:0;background:var(--tint-blue);color:var(--c-primary);font-weight:600}
+.cap{font-size:11px;color:var(--ink-3);text-align:center;padding:0 16px 8px}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">docs</span>
+      <h1>README.md</h1>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="meta">Markdown · 1.2 KB · 更新 昨天
+      <div class="mseg"><span class="on">渲染</span><span>源码</span></div>
+    </div>
+
+    <div class="md">
+      <h1>agents-web 部署指南</h1>
+      <p>部署前请确认 <b>环境变量</b> 已就绪，详见 <a href="#">配置说明</a>。所有命令在仓库根目录执行。</p>
+      <ul>
+        <li>构建产物上传至 srv-01 的 /var/www</li>
+        <li>部署窗口：<b>02:00 – 04:00</b>（UTC+8）</li>
+        <li>失败自动重试 3 次（指数退避）</li>
+      </ul>
+      <div class="mdcode"><span class="cm"># 构建并部署</span>
+npm run build
+./deploy.sh --retry</div>
+      <div class="blockquote">⚠ 强写操作（push --force）需在审批中心逐条确认。</div>
+    </div>
+
+    <div class="toolbar">
+      <span class="tb2 pri">编辑源码</span>
+      <span class="tb2">复制</span>
+      <span class="tb2">分享</span>
+    </div>
+    <div class="cap">渲染视图在沙箱中生成：不执行脚本、不发起外部请求 · HTML 文件同款渲染预览</div>
+
+    <div class="tabbar">
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+      <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="terminal"><rect x="-10" y="-8" width="20" height="16" rx="3.5"/><path d="M-5.5,-2.5 l3,3 l-3,3"/><path d="M0.5,3.5 h5"/></svg><span class="lb">工作台</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+      <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="square.grid.2x2"><rect x="-10" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="-10" width="8.4" height="8.4" rx="2.2"/><rect x="-10" y="1.6" width="8.4" height="8.4" rx="2.2"/><rect x="1.6" y="1.6" width="8.4" height="8.4" rx="2.2"/></svg><span class="lb">插件</span></span>
+    </div>
+    <div class="home"></div>
+
+    <!-- 编号 pin：① 渲染/源码 ② 沙箱渲染 ③ 编辑源码 ④ html 同款 -->
+    <span class="pin" style="left:300px;top:100px">1</span>
+    <span class="pin" style="left:60px;top:170px">2</span>
+    <span class="pin" style="left:70px;top:562px">3</span>
+    <span class="pin" style="left:352px;top:600px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span>渲染 ⇄ 源码 切换：源码态为等宽着色（同 03q）；切换不丢失滚动位置</span></li>
+    <li><b>②</b><span>渲染视图在沙箱中生成：不执行脚本、不发起外部请求；标题/列表/代码块/引用按预览样式呈现</span></li>
+    <li><b>③</b><span>「编辑源码」进入编辑态（03q2 同款），保存写回后渲染自动刷新</span></li>
+    <li><b>④</b><span>HTML 文件同款：渲染预览 + 源码查看；图片文件走查看器（03q4）</span></li>
+  </ol>
+</div>
+
+</body></html>

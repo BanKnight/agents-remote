@@ -12,15 +12,10 @@
 .meta{display:flex;align-items:center;padding:8px 16px 8px;font-size:11.5px;color:var(--ink-2);
       border-bottom:1px solid var(--sep-row)}
 .meta .diff{margin-left:auto;font-size:12px;color:var(--c-primary);font-weight:600;cursor:pointer}
-.code{background:var(--bg-codeblock);margin:0;padding:10px 0;overflow:hidden;
-      font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11.5px;line-height:20px}
-.code .ln{display:flex}
-.code .no{width:34px;flex:none;text-align:right;padding-right:10px;color:var(--ink-3)}
-.code .tx{color:var(--term-ink);white-space:pre}
-.code .kw{color:var(--c-primary)}
 .cap{font-size:11px;color:var(--ink-3);text-align:center;margin-top:16px}
 </style>
 <script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
 </head>
 <body>
 
@@ -35,7 +30,7 @@
       <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
     </div>
 
-    <div class="meta">TypeScript · 248 行 · 更新 2 小时前<span class="diff">查看 diff ›</span></div>
+    <div class="meta">TypeScript · 248 行 · 更新 2 小时前<span class="diff">编辑</span><span class="diff" style="margin-left:14px">查看 diff ›</span></div>
 
     <div class="code">
       <div class="ln"><span class="no">1</span><span class="tx"><span class="kw">import</span> { webauthn } <span class="kw">from</span> '@/lib'</span></div>
@@ -68,6 +63,7 @@
     <span class="pin" style="left:290px;top:230px">2</span>
     <span class="pin" style="left:358px;top:56px">3</span>
     <span class="pin" style="left:330px;top:104px">4</span>
+    <span class="pin" style="left:96px;top:100px">5</span>
   </div>
 </div>
 
@@ -75,9 +71,10 @@
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
     <li><b>①</b>L3 顶部返回式：从文件列表点入，‹ 返回即回到列表原位置</li>
-    <li><b>②</b>文本按行渲染（横向可滚）；图片文件走缩放预览</li>
+    <li><b>②</b><span>代码按行着色渲染（横向可滚、双指缩放）；「编辑」进入编辑态（03q2）</span></li>
     <li><b>③</b>⋯ 菜单：复制路径 / 在 Git 中查看 diff —— 检视动线互达</li>
-    <li><b>④</b>「查看 diff」直达 03r（对比基准 = 最近提交）</li>
+    <li><b>④</b><span>「查看 diff」直达 03r（对比基准 = 最近提交）</span></li>
+    <li><b>⑤</b><span>类型矩阵：文本/代码 = 着色查看 + 可编辑（03q2）；Markdown/HTML = 渲染⇄源码（03q3）；图片 = 查看器缩放旋转（03q4）；未知二进制 = 元信息 + 系统应用打开</span></li>
   </ol>
 </div>
 

@@ -6,6 +6,14 @@
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/components.css">
 <style>
+/* 市场快捷行 + 添加菜单（市场入口常驻顶部） */
+
+
+.quick{display:flex;gap:6px;overflow-x:auto;padding:2px 0 0}
+.quick .q{display:flex;align-items:center;gap:5px;height:30px;padding:0 12px;border-radius:15px;background:var(--bg-elevated);border:1px solid var(--sep);font-size:12px;color:var(--ink-1);white-space:nowrap;flex:none}
+.quick .q svg{width:14px;height:14px;stroke:var(--c-primary);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.quick .q.upd{border-color:color-mix(in srgb,var(--c-warning) 50%,transparent);color:var(--c-warning-text);font-weight:600}
+.quick .q.upd svg{stroke:var(--c-warning-text)}
 /* 仅本页样式（Tab 页：状态栏/Tab Bar 绝对定位） */
 .status{position:absolute;top:0;left:0;right:0;z-index:5}
 .page{display:block;height:auto;position:relative}
@@ -13,12 +21,15 @@
         background:color-mix(in srgb,var(--bg-tabbar) 97%,transparent)}
 .h-row{display:flex;align-items:flex-end;justify-content:space-between;margin:46px 16px 0}
 .h-row h1{font-size:30px;font-weight:800;color:var(--ink-title)}
-.segc{display:flex;margin:14px 16px 0;height:32px;border-radius:10px;background:var(--fill-segmented);padding:3px}
-.segc span{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;color:var(--ink-2);cursor:pointer}
-.segc .on{background:var(--segmented-thumb);color:var(--ink-1);font-weight:600;border-radius:8px}
-.segc .caret{font-size:9px}
-.search{margin:12px 16px 0;height:38px;border-radius:12px;background:var(--fill-search);display:flex;
-        align-items:center;gap:8px;padding:0 12px;font-size:15px;color:var(--ink-2)}
+.segc{margin:12px 16px 0}
+
+.segc .nm{min-width:0;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:inherit}
+
+
+/* 标注锚定：pin 挂到目标元素上（自动跟随布局，不手算坐标） */
+.segc span,.search,.sect .r,.sect .upd,.pcard .r1{position:relative}
+.sect .upd{color:var(--c-warning-text)}
+.search{margin:12px 16px 0}
 .sect{font-size:13px;font-weight:600;color:var(--ink-2);margin:16px 16px 6px;display:flex;align-items:center}
 .sect .r{margin-left:auto;font-size:11px;color:var(--c-primary);font-weight:600}
 .pcard{margin:0 16px 10px;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;padding:10px 16px}
@@ -34,6 +45,7 @@
 .mrow .ar{font-size:12px;color:var(--ink-3);margin-left:6px}
 </style>
 <script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
 </head>
 <body>
 
@@ -42,16 +54,22 @@
   <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
 
   <div class="page">
-    <div class="h-row"><h1>插件</h1></div>
+    
+<div class="h-row"><h1>插件</h1></div>
+
+    <div class="search"><i data-icon="search" class="sic"></i>搜索已安装与市场<span class="pin" style="right:-12px;top:-16px">1</span></div>
 
     <div class="segc">
       <span class="on">全局</span>
-      <span>本项目 · agents-web <span class="caret">▾</span></span>
+      <span>本项目 · <b class="nm">agents-web</b> <span class="caret">▾</span><span class="pin" style="right:-2px;top:-16px">2</span></span>
     </div>
 
-    <div class="search">搜索技能与 MCP</div>
+    <div class="sect"><span style="display:flex;align-items:center;gap:8px">市场</span><span class="r">管理源 ›<span class="pin" style="right:-12px;top:-9px">3</span></span></div>
+    <div class="quick">
+      <span class="q"><svg viewBox="-10 -10 20 20"><path d="M-5,-4 h10 l-1.2,12 h-7.6 z"/><path d="M-3.5,-4 v-2 a3.5,3.5 0 0 1 7,0 v2"/></svg>MCP 市场 · 42</span><span class="q"><svg viewBox="-10 -10 20 20"><path d="M-5,-4 h10 l-1.2,12 h-7.6 z"/><path d="M-3.5,-4 v-2 a3.5,3.5 0 0 1 7,0 v2"/></svg>技能市场 · 28</span>
+    </div>
 
-    <div class="sect"><span style="display:flex;align-items:center;gap:8px">MCP 服务器 · 2<span class="plus" style="position:static;width:20px;height:20px" data-symbol="plus"></span></span></div>
+    <div class="sect"><span style="display:flex;align-items:center;gap:8px">MCP 服务器 · 2</span><span class="r">＋ 添加<span class="pin" style="right:-12px;top:-9px">4</span></span></div>
     <div class="pcard">
       <div class="r1">context7<span class="live">● 已连接</span></div>
       <div class="d2">文档查询 · 3 个工具</div>
@@ -61,23 +79,19 @@
       <div class="d2">网页抓取 · 2 个工具</div>
     </div>
 
-    <div class="sect"><span>已安装技能 · 3</span></div>
+    <div class="sect"><span>已安装技能 · 3</span><span class="r" style="display:flex;align-items:center;gap:12px"><span class="upd">2 个更新 ›<span class="pin" style="right:-12px;top:-9px">5</span></span><span style="position:relative">＋ 添加<span class="pin" style="right:-14px;top:-9px">6</span></span></span></div>
     <div class="pcard">
-      <div class="r1">code-review<span class="upd">有更新</span></div>
+      <div class="r1">code-review<span class="upd">有更新</span><span class="pin" style="right:-12px;top:-9px">7</span></div>
       <div class="d2">提交前自动代码审查 · 来源:官方</div>
     </div>
     <div class="pcard">
-      <div class="r1">test-runner</div>
+      <div class="r1">test-runner<span class="upd">有更新</span></div>
       <div class="d2">测试失败自动归因 · 来源:官方</div>
     </div>
     <div class="pcard">
       <div class="r1">deploy-check</div>
       <div class="d2">部署前检查清单 · 来源:社区</div>
     </div>
-
-    <div class="sect"><span>市场</span><span class="r">管理源 ›</span></div>
-    <div class="mrow"><span class="n">MCP 市场</span><span class="c">42 个服务器</span><span class="ar">›</span></div>
-    <div class="mrow"><span class="n">技能市场</span><span class="c">28 个技能</span><span class="ar">›</span></div>
   </div>
 
   <div class="tabbar">
@@ -88,24 +102,19 @@
   </div>
   <div class="home"></div>
 
-  <!-- 编号 pin：① 作用域 ② ▾ 切换器 ③ 有更新 ④ ＋ 添加 MCP ⑤ 市场两入口 ⑥ 空态引导 -->
-  <span class="pin" style="left:90px;top:186px">1</span>
-  <span class="pin" style="left:330px;top:186px">2</span>
-  <span class="pin" style="left:280px;top:506px">3</span>
-  <span class="pin" style="left:322px;top:272px">4</span>
-  <span class="pin" style="left:130px;top:646px">5</span>
-  <span class="pin" style="left:40px;top:760px">6</span>
+  <!-- 编号 pin 已锚定：① 搜索 ② 作用域 ③ 管理源 ④ MCP＋添加 ⑤ 技能更新 ⑥ 技能＋添加 ⑦ 行点入 -->
 </div>
 
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
-    <li><b>①</b>作用域切换：全局 / 本项目；本项目 = 全局记忆的当前项目（与工作台同源）</li>
-    <li><b>②</b>点「本项目」段进入项目作用域；段上 ▾ 打开切换器（03l）换项目</li>
-    <li><b>③</b>技能/MCP 卡点入 → 详情（12 / 13）；「有更新」在详情内确认</li>
-    <li><b>④</b>＋ = 添加 MCP 表单（14）；作用域决定注入给哪些会话</li>
-    <li><b>⑤</b>市场两入口：MCP 市场 / 技能市场（17 / 18）；管理源 ›（15）</li>
-    <li><b>⑥</b>从未选项目时：本段为空态引导「去工作台选择项目」；桌面=Sidebar 同源</li>
+    <li><b>①</b><span>搜索融合市场：结果含已安装与市场两层，未安装项以「市场 · 安装」行出现</span></li>
+    <li><b>②</b><span>作用域切换：全局 / 本项目（▾ 打开切换器 03l；项目名过长时段内尾截断 …）；作用域决定组内插件与注入哪些会话</span></li>
+    <li><b>③</b><span>源维护（MCP 源 + 技能源）：唯一入口「管理源 ›」push 15（‹ 插件 返回；iPhone/Mac 分组头同位）；开关/排序/自定义 URL/纯内网模式</span></li>
+    <li><b>④</b><span>MCP 手动配置：「＋ 添加」= 14 表单（名称/传输/启动命令/环境变量，密钥只存服务器）；从市场安装走下方市场 chips</span></li>
+    <li><b>⑤</b><span>技能更新聚合：组头「n 个更新 ›」= 更新清单（16 逐个确认）；行内「有更新」橙标在详情内确认</span></li>
+    <li><b>⑥</b><span>技能添加：「＋ 添加」= 添加技能的唯一路径，直达技能市场（18；同 Wallet 的 ＋：按下「添加」即落地到可安装的市场）；技能仅经市场分发、不提供手动导入——保证来源可审计（MCP 不同：存在市场外手动配置的真需求，故 ＋ = 14 表单）</span></li>
+    <li><b>⑦</b><span>技能/MCP 行点入 → 详情（12 / 13）；长按行 → 操作菜单（查看详情/停用/卸载，09b）；市场浏览走「市场」chips（17 / 18），已装再多不改路径长度</span></li>
   </ol>
 </div>
 

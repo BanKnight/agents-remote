@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="UTF-8">
-<title>04 · L2 工作台（iPad 横屏三栏）— HTML 轨</title>
+<title>04 · iPad 三栏工作台 — HTML 轨</title>
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/components.css">
 <style>
@@ -25,6 +25,7 @@
 .insfoot{position:absolute;left:16px;right:16px;bottom:12px;font-size:11px;color:var(--ink-3);line-height:1.6}
 </style>
 <script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
 </head>
 <body>
 
@@ -55,11 +56,10 @@
     <div class="pane center">
       <div class="chead">
         <h1><span class="dot2" style="background:var(--c-success)"></span>claude·auth</h1>
-        <span class="cic"><svg class="icn" style="width:16px;height:16px" viewBox="-10 -10 20 20"><circle r="9"/><path d="M0,-3.2 V4"/><circle cx="0" cy="-6.3" r="1.2" fill="currentColor" stroke="none"/></svg><svg class="icn" style="width:16px;height:16px;stroke:none;fill:currentColor" viewBox="-10 -10 20 20"><circle cx="-6" r="1.7"/><circle r="1.7"/><circle cx="6" r="1.7"/></svg></span>
+        <span class="cic"><svg class="icn" style="width:16px;height:16px" viewBox="-10 -10 20 20"><circle r="8.8"/><path d="M0,-2.6 V4.4"/><path d="M0,-5.6 V-5.55"/></svg><svg class="icn" style="width:16px;height:16px;stroke:none;fill:currentColor" viewBox="-10 -10 20 20"><circle cx="-6" r="1.7"/><circle r="1.7"/><circle cx="6" r="1.7"/></svg></span>
       </div>
       <div class="chips">
-        <span class="chip" style="height:24px">opus ▾</span><span class="chip" style="height:24px">auto ▾</span>
-        <span class="chip" style="height:24px">effort·hi ▾</span><span class="rtry">⟳</span><span class="badge2">⚠ 2</span>
+        <span class="badge2" style="margin-left:auto">⚠ 2</span>
       </div>
       <div class="stream" style="flex:1 1 auto;min-height:0;overflow:hidden">
         <div class="task"><b style="color:var(--c-primary)">›</b>&nbsp; 把 auth 模块迁移到 passkeys，跑通全部测试</div>
@@ -71,47 +71,48 @@
         <div class="stat2">✓ 上一回合 · 6 轮 · $0.42 · 18.2k tok · 3m12s</div>
       </div>
       <div class="tray" style="margin:12px 16px 0;flex-wrap:wrap;row-gap:6px">
-        <span class="w">⚠ 2 项待审批</span>
-        <span style="margin-left:auto;display:flex;gap:8px"><span class="btn ghost">拒绝</span><span class="btn ok">允许</span></span>
-        <span class="c" style="flex-basis:100%">bash · curl … · git push</span>
+        <span class="w">⚠ 2 项待审批</span><span style="margin-left:auto;font-size:11.5px;font-weight:600;color:var(--c-warning-text)">全部允许 ›</span>
       </div>
       <div class="input" style="margin:14px 16px 18px">
-        <span class="stop"><i></i></span>
-        <span class="field">插话补充指令…</span>
-        <span class="send"></span>
+        <div class="composer wide" style="flex:1;min-width:0">
+          <div class="itext">插话补充指令…</div>
+          <div class="irow">
+            <span class="ipill perm"><i data-icon="shield.checkmark"></i>Auto<span style="font-size:9px;opacity:.75"> ▾</span></span>
+            <span class="ipill model">opus-4.8<span style="font-size:9px;opacity:.75"> ▾</span></span>
+            <span class="ipill eff"><i data-icon="brain"></i>high<span style="font-size:9px;opacity:.75"> ▾</span></span>
+            <span class="send2 stopstate"></span>
+          </div>
+        </div>
       </div>
     </div>
 
     <!-- 右栏：检视 · 只读（文件树 + Git 折叠同屏） -->
     <div class="pane inspector">
       <div class="glabel2">检视 · 只读<span class="clps">»</span></div>
-      <div class="seg4"><span class="on">文件</span><span>Git</span><span>Wiki</span><span>历史</span></div>
-      <div class="tree">
-        <div class="trow"><span class="tw">▾</span><span class="dicon" style="width:14px"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>src</div>
-        <div class="trow" style="padding-left:22px"><span class="tw">▾</span><span class="dicon" style="width:14px"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>auth</div>
-        <div class="frow sel"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg>passkey.ts</div>
-        <div class="frow"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg>session.ts</div>
-        <div class="frow"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg>middleware.ts</div>
-        <div class="trow" style="padding-left:22px"><span class="tw">▸</span><span class="dicon" style="width:14px"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>tests</div>
+      <div class="ptabs" style="margin:8px 14px 0"><span class="ptab on" style="position:relative"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg>文件树<span class="pin" style="right:-12px;top:-9px">6</span></span><span class="ptab">Git</span>
+      <span class="plus" title="新建标签：文件树 / Git / Wiki" style="cursor:pointer"></span></div>
+                  <div class="tree">
+      <div class="opsrow" style="margin:8px 14px 0"><span class="crumb" style="position:relative">agents-web / src / <b>auth</b></span><span class="obtn srch" title="搜索（仅根目录；点按展开）"><i data-icon="search"></i></span><span class="plus" title="添加：新建 / 上传" style="position:relative;margin-left:6px"><span class="pin" style="right:-10px;top:-9px">5</span></span></div>
+        <div class="trow" style="position:relative"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span><span class="nm" style="font-family:inherit;font-size:13.5px;font-weight:600">auth</span><span class="ar" style="margin-left:auto;color:var(--ink-3);font-size:11px">›</span></div>
+        <div class="trow"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span><span class="nm" style="font-family:inherit;font-size:13.5px;font-weight:600">tests</span><span class="ar" style="margin-left:auto;color:var(--ink-3);font-size:11px">›</span></div>
+        <div class="trow"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span><span class="nm" style="font-family:inherit;font-size:13.5px;font-weight:600">hooks</span><span class="ar" style="margin-left:auto;color:var(--ink-3);font-size:11px">›</span></div>
+        <div class="frow sel"><svg viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="nm">passkey.ts</span></div>
+        <div class="frow"><svg viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="nm">session.ts</span></div>
+        <div class="frow"><svg viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="nm">middleware.ts</span></div>
+        <div class="frow"><svg viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="nm">README.md</span></div>
       </div>
-      <div class="githead"><svg class="icn" style="width:13px;height:13px" viewBox="-10 -10 20 20"><circle cx="-5.5" cy="-6" r="2.4"/><circle cx="-5.5" cy="6" r="2.4"/><circle cx="5.5" cy="-3" r="2.4"/><path d="M-5.5,-3.6 V3.6"/><path d="M5.5,-0.6 C5.5,3.2 -5.5,1.4 -5.5,3.6"/></svg>main ↑2 ↓0<span class="st">工作区 4</span></div>
-      <div class="grow"><span class="badge M">M</span><span class="p">src/auth/passkey.ts</span></div>
-      <div class="grow"><span class="badge M">M</span><span class="p">src/session.ts</span></div>
-      <div class="grow"><span class="badge A">A</span><span class="p">tests/passkey.test.ts</span></div>
-      <div class="grow"><span class="badge U">??</span><span class="p" style="color:var(--ink-2)">.env.local</span></div>
-      <div class="insfoot">点文件 → 本栏预览 / diff · 右键（长按）= 05e 同款菜单</div>
+      <div class="insfoot">与 03o 面板同构：标签条（文件树 / Git / Wiki ＋ 新建）· 文件树标签 = 地址栏（点上级段返回）+ 收缩搜索（仅根）+ ＋ 添加（03oa）· Git 标签 = 03t/03u · 预览 = 文件标签（04b）</div>
     </div>
   </div>
 
   <!-- 高亮圈：时钟历史入口 -->
   <span class="hring" style="left:14px;top:197px;width:26px;height:26px;border-color:var(--c-primary)"></span>
 
-  <!-- 编号 pin：① 项目/实例组＋ ② 时钟历史 ③ 审批行 ④ 中栏页头 ⑤ 检视 4 段 ⑥ 跨项目切换 -->
+  <!-- 编号 pin：① 项目/实例组＋ ② 时钟历史 ③ 审批行 ④ 中栏页头 ⑤ 文件段「＋」添加钮（内联） ⑥ 文件段控件（内联） -->
   <span class="pin" style="left:170px;top:56px">1</span>
   <span class="pin" style="left:140px;top:168px">2</span>
   <span class="pin" style="left:150px;top:478px">3</span>
   <span class="pin" style="left:790px;top:18px">4</span>
-  <span class="pin" style="left:1140px;top:86px">5</span>
 </div>
 
 <div class="panel">
@@ -122,7 +123,7 @@
     <li><b>③</b><span>实例组时钟 → 历史列表（与 Mac 05c 同款）；项目/会话切换走 Sidebar，标题无 ▾</span></li>
     <li><b>④</b><span>审批入口行 = 实例区下方橙色行（全局聚合，点击入审批中心 11）</span></li>
     <li><b>⑤</b><span>iPad 无 ‹ 返回键（层级由 Sidebar 承担，与 Mac 一致）；页头 = 对象名 + ℹ/⋯，中栏 = 03 同一骨架换宽度</span></li>
-    <li><b>⑥</b><span>右栏检视只读 4 段（文件/Git/Wiki/历史，选中项内缩不占满段高）；文件树 + Git 折叠同屏；点文件本栏预览</span></li>
+    <li><b>⑥</b><span>右栏检视面板（动态标签容器，» 折叠整栏）：标签条 = 文件树 / Git / Wiki ＋ 新建标签（文件树 / Git / Wiki 任选；点文件 → 新增预览标签 04b）；文件树标签 = 地址栏（点上级段 = 返回上层）+ 收缩搜索（仅根目录，展开 = 03x）+ ＋ 添加（03oa → 03y / 03z）+ 当前目录单层列表（文件夹在前、全部平齐、纯条目）；Git 标签 = 分支 + 工作区变更（03t/03u）；长按 = 05e 菜单；标签跟随项目（仓库级），与侧栏会话切换解耦</span></li>
   </ol>
 </div>
 

@@ -26,6 +26,7 @@
 .cap{font-size:11px;color:var(--ink-3);text-align:center;margin-top:16px}
 </style>
 <script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
 </head>
 <body>
 
@@ -37,19 +38,15 @@
     <div class="nav">
       <span class="back">项目</span>
       <h1>agents-web <span class="sw"></span></h1>
-      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="9"/><path d="M0,-3.2 V4"/><circle cx="0" cy="-6.3" r="1.2" fill="var(--c-primary)" stroke="none"/></svg></span>
+      <span class="ic" data-symbol="info.circle"><svg viewBox="-10 -10 20 20"><circle r="8.8"/><path d="M0,-2.6 V4.4"/><path d="M0,-5.6 V-5.55"/></svg></span>
       <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
     </div>
 
+    <div class="ptabs" style="margin:10px 16px 0"><span class="ptab"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg>文件树</span><span class="ptab"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg>Git<span class="x">✕</span></span><span class="ptab on">Wiki</span><span class="plus" title="新建标签" style="cursor:pointer"></span></div>
     <div class="row2">
       <div class="pills">
-        <span class="wsearch"><svg width="13" height="13" viewBox="-10 -10 20 20" style="flex:none"><circle cx="-2" cy="-2" r="5.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M2,2 L7,7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>搜索知识库全文</span>
+        <span class="wsearch"><svg width="13" height="13" viewBox="-10 -10 20 20" style="flex:none"><circle cx="-2" cy="-2" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M2,2 L7,7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>搜索知识库全文</span>
       </div>
-      <span class="plus" data-symbol="plus"></span>
-      <span class="sep"></span>
-      <span class="ticon" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
-      <span class="ticon" data-symbol="arrow.triangle.branch"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg></span>
-      <span class="ticon hl" data-symbol="book"><svg viewBox="-10 -10 20 20"><path d="M0,-6.5 C-2.4,-8.3 -5.8,-8.8 -9,-7.8 V6.2 C-5.8,5.2 -2.4,5.7 0,7.5 C2.4,5.7 5.8,5.2 9,6.2 V-7.8 C5.8,-8.8 2.4,-8.3 0,-6.5 Z"/><path d="M0,-6.5 V7.5"/></svg></span>
     </div>
 
     <div class="stream" style="flex:0 auto;padding-top:4px">
@@ -87,11 +84,11 @@
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
-    <li><b>①</b>行2 工具图标原位高亮；再点当前图标返回会话（现场不动）</li>
+    <li><b>①</b>Wiki 标签（面板动态标签条，同 03o ①）：标签点击 = 容器内平级切换；面板滑入 / 滑出现场不动</li>
     <li><b>②</b>✦ = 可让 Agent 引用：阅读页有「让 Agent 读这篇」→ 注入当前会话上下文</li>
     <li><b>③</b>页面树 + 全文搜索；被会话引用中的页面标注引用来源</li>
     <li><b>④</b>v1 只读：编辑在源文件（仓库 markdown）进行，此处刷新即见</li>
-    <li><b>⑤</b>桌面端同一组件呈现在检视分段的 Wiki 页（见 05 / 05c）</li>
+    <li><b>⑤</b>桌面端同一组件 = 右栏 Wiki 标签（见 05）；03s 阅读 = L3 全屏，返回落回 Wiki 标签</li>
   </ol>
 </div>
 
