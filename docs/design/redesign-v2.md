@@ -729,7 +729,43 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 - **P3-7 scrim 统一**：`ui/dialog.tsx` Overlay `bg-black/60 backdrop-blur-sm` → `bg-scrim`（删 blur）——drawer/reader/桌面 modal 的 scrim 一并对齐原型 .dim；**收敛边界=全部 Dialog 封装**（非仅移动 sheet）。
 - **单源常量**：`SHEET_UNMOUNT_DELAY_MS`（300ms）提取至 mobile-sheet.tsx，info-sheet/prompt/confirm/runtime-config/pages 五处私有同值常量收敛；顺手修 info-sheet modal 分支漏绑 open state（defaultOpen 非 受控，桌面 fade-out 同被截断）。
 
+### §6.12o 全站加载态体系（分层标准 + LoadingBlock 单源 + keepPreviousData 推广）（2026-09-26，commit `5dd1113`，用户拍板「完善所有页面的加载态」）
 
+用户拍板完善全站加载态。盘点（三路 Explore + 逐处核对）出全仓 7 种加载态模式并存（shimmer 骨架 / ping 圆点 / 纯文案 / 空白 / 伪空态 / 保持上一屏 / scrim），本轮建立**加载态分层标准**（下表，成为后续所有加载态改动的设计标尺）并按层补缺收敛：
+
+| 场景 | 形态 | 实现 |
+| --- | --- | --- |
+| 路由切换 | 保持上一屏 | 固化不动（全仓 0 个 pendingComponent，用户 2026-06 拍板） |
+| 行/卡列表首载 | 同形骨架 | `ListRowSkeleton`（行）/`CardGridSkeleton`（卡）/`ChatSkeleton`（气泡）——已有，本轮补缺 11 处 |
+| 详情/预览单内容块 | **ping 圆点 + 文案居中** | **新建 `LoadingBlock`**（shell-primitives.tsx，双端同构） |
+| 同 query 参数切换 | 保持上一份数据 | `placeholderData: keepPreviousData`（本轮推广 2 处，参照 git-diff-viewer 先例） |
+| 终端/agent 流首连 | scrim overlay | `TerminalStatusOverlay`（已有） |
+| 确定进度 | `.prog` 进度条 | 已有（03z/17 标尺；安装进度 pulse 属此层，非骨架） |
+| 加载 vs 空态 | **isPending 区分，禁止伪空态** | 本轮修复 5 处伪空态 |
+
+**判定语义（TanStack Query v5）**：骨架/LoadingBlock 只在 `isPending`（无缓存数据首载）显；`isFetching`（后台刷新）不显——防陈旧缓存下闪骨架。**语义 pulse 点边界**：running/权限等待的 `animate-pulse` 状态点是语义动画非骨架，不属 shimmer 收敛对象。
+
+**批次 1 伪空态修复（5 处，行为正确性优先）**：① GitToolPanel 工作区/最近提交段 isPending 门（防「无改动」+「分支 (0)」伪态）② WikiToolPanel 搜索/列表双段 ③ L3GitHistory（防「HEAD · 共 0 次提交」）④ EmptyInstanceArea `refsLoaded` gate（pending 期显 CardGridSkeleton，防闪「无活跃实例」）⑤ MobileProjectsHome 列表区骨架。
+
+**批次 2 空白补骨架（3 处）**：⑥ 中栏 Agent/TerminalPanelRouter `detail.isLoading → return null`（最大空白点）→ LoadingBlock「加载会话…」（新 i18n key `workbench.sessionLoading`）⑦ ChatOverview chat 列表骨架 ⑧ FilesToolPanel 目录列表骨架（FilesPanel 同款）。
+
+**批次 3 单源收敛**：新建 **`LoadingBlock`**（ping 双层圆 animate-ping 外圈 opacity-60 + 实心内圆 bg-primary + 12px/600 muted 文案，label 必填 + className 透传对齐差异），替换散写 git-diff-viewer / file-browser ×2 / plugins-shared SkillTabPreview + **移动 L3 四处纯文案早退**（file preview / git diff ×2 / branches，`min-h-0 flex-1` 撑满居中，与桌面同构）；mobile-sheets 历史 sheet 手写 animate-pulse 灰条 → ListRowSkeleton（shimmer 单源）；插件族 home/market pending 伪空态补骨架；删 NavItemSkeleton 死代码（零调用方）+ 注释历史名清理。**保留私有**：TerminalStatusSpinner（终端 scrim 大圆 spinner 双档尺寸，非同构形态）与 tool-head 私有 Spinner（流内任务单点），不为统一而扩面。
+
+**批次 4 keepPreviousData 推广**：history-list `useHistorySessions`（range week↔all 切档，in-place key 变化）加 `placeholderData: keepPreviousData`——切换保持上一份列表显示不闪骨架；消费方 `isLoading` 改为 `isPending || isPlaceholderData`（防「上一份缓存为 [] 时切档」被 v5 当 placeholder → isPending/isLoading 双 false → 空白/伪空态回归）。**L3GitHistory 不加**（review 结论）：两个消费方换 branch 均重挂载，placeholder 按 observer 记忆对重挂载无效，只剩切项目时短暂跨项目陈旧列表的负作用——推广前提是「同 observer in-place 换 key」。搜索类 query（files/wiki 搜索、useSkillSearch/useMcpMarketSearch）同款推广：逐键换 key 不闪。
+
+**review 消化（design-reviewer P2×5/P3×4 + code-reviewer P2×1/P3×6，同日）**：
+- ✅ wiki 搜索 query 加 keepPreviousData（P2：逐键闪骨架，违反标准表第 4 行）
+- ✅ useSkillSearch / useMcpMarketSearch 加 keepPreviousData（P2：市场搜索走外网更慢）
+- ✅ McpMarketTab「…」漏迁 → ListRowSkeleton（P2：同文件双形态并存）
+- ✅ LoadingBlock 加 role="status"（P3：读屏播报，与骨架外壳同约定）
+- ✅ SkillTabPreview 父容器补 flex 链（P3：非 flex container 时 flex-1 死属性，frontend-notes §8）
+- ✅ L3GitBranches LoadingBlock → ListRowSkeleton marker=false（P2：分支页是行列表，属「行列表首载」层，与同栈 L3GitHistory 同层同形）
+- ✅ GitToolPanel branches 门 `!isPending` → `data != null`（P3：error 半边「分支 (0)」伪态）
+- ✅ files 搜索 pending 纯文案 → ListRowSkeleton + keepPreviousData（P3：同文件同语义异形态收敛）
+- ✅ 探针骨架断言 scope 收窄到面板锚点（P3：防同页他面板骨架假阳性）
+- ⬜ 记档不修：refsLoaded gate 失败出路（overview refetchInterval 10s 自愈；失败显空态卡同样误导，EmptyInstanceArea 错误态属后续增强）；keepPreviousData 行为探针（history range 切档二次响应时序，代码层注释守护）；ListRowSkeleton 单行变体 lines 参数（最近提交 .crow 单行 vs 双行骨架跳变，单点不扩原语）。
+
+**探针**：`scripts/probe-loading-states.mjs`（mock API 延迟 700ms，13 断言：git/wiki/历史/插件段 pending 骨架 + 无伪空态 + 数据到后真实渲染、中栏/L3 预览 LoadingBlock ping 圆点 + 文案 + 垂直居中几何；mock 基座 candidates 须含 focus 目标——global scope refs 由 candidates 派生，空则 focus 被 prune）。
 
 ## §7 待定项跟踪
 
