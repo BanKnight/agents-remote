@@ -443,14 +443,6 @@ export function AllSessionsGroupedList({
 
 type PanelRouterProps = {
   panelRef: WorkbenchPanelRef;
-  /**
-   * 省略面板自带 header（ChatHeader 不渲染）：透传给 ChatPanel → ClaudeChat 的 embeddedHeader。
-   * 桌面右工作区与移动聚焦态都传 true（设计 §11 对齐）：title/projectName 由 group tab 栏 chip
-   * + 中栏 tab 行显示，操作按 §11 去向分别由中栏 tab / 左总览 CreateSessionBar / 内容区错误态
-   * Notice / tab ✕ 承担（SessionDetail 自带 header/操作区已删，2026-09-25 拍板 A）。
-   * 默认 false（旧路由 ShellLayout 用）。
-   */
-  embeddedHeader?: boolean;
 };
 
 /**
@@ -465,12 +457,12 @@ type PanelRouterProps = {
  * 重渲染」。桌面多 group 切别的 group 的 tab 会同时改全局 layout root + URL focusId →
  * WorkspaceTree 全量重渲染所有 panel；agent 面板（ChatPanel/SessionDetail）有 live 自动
  * 吸底/xterm fit 逻辑，重渲染会触发其内容滚动跳变（往上翻历史被拉回底部）。memo 让 panel
- * 只在自身 props（panelRef/embeddedHeader）变化时重渲染——桌面 p.ref 引用稳定
+ * 只在自身 props（panelRef）变化时重渲染——桌面 p.ref 引用稳定
  * （flattenLayout 是纯投影，ref 字段指向 state 树同一节点，切无关 group 的 tab 不变），
  * 故跳过重渲染 → 滚动保持。panel 自身查询/hook 驱动的更新不受影响（memo 只拦父级重渲染）。
 （memo 惯例，原 InstanceLeftOverview 同款——§6.12k 后已退役）。
  */
-function PanelRouterBase({ panelRef, embeddedHeader }: PanelRouterProps) {
+function PanelRouterBase({ panelRef }: PanelRouterProps) {
   // file tab 渲染 FileTabPreview（只读预览，queryScope="file-nav"，设计 §6 决策 16/18）。
   // path=全路径（含项目名前缀），FileTabPreview 内部 resolveRootBrowseTarget 解析 projectName
   // 走 project preview API（设计 workbench-stable-refactor Phase 3，去 projectName 字段）。
@@ -514,7 +506,7 @@ function PanelRouterBase({ panelRef, embeddedHeader }: PanelRouterProps) {
   }
   const sessionType = inferSessionTypeFromId(panelRef.sessionId);
   if (sessionType === "agent") {
-    return <AgentPanelRouter embeddedHeader={embeddedHeader} panelRef={panelRef} />;
+    return <AgentPanelRouter panelRef={panelRef} />;
   }
   if (sessionType === "terminal") {
     return <TerminalPanelRouter panelRef={panelRef} />;
@@ -550,23 +542,11 @@ function HtmlRenderPanel({ id }: { id: string }) {
   );
 }
 
-function AgentPanelRouter({
-  panelRef,
-  embeddedHeader,
-}: {
-  panelRef: SessionPanelRef;
-  embeddedHeader?: boolean;
-}) {
+function AgentPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
   const detail = useAgentDetail(panelRef);
   if (detail.isLoading) return null;
   if (detail.data?.session.provider === "claude") {
-    return (
-      <ChatPanel
-        embeddedHeader={embeddedHeader}
-        projectName={panelRef.projectName}
-        sessionId={panelRef.sessionId}
-      />
-    );
+    return <ChatPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
   // ACP transport 类 provider（当前只有 omp）→ AcpPanel。按 transport 判定：加其它 ACP CLI
   // 只需注册表加 profile，此处跟随（当前用显式 provider 名，多 ACP CLI 时改查 profile.transport）。
@@ -2446,11 +2426,11 @@ export function WorkspaceTree({
           key={p.tabId}
           style={p.visible ? rectStyle(p.rect, WORKBENCH_TAB_BAR_PX) : undefined}
         >
-          {/* embeddedHeader 对齐移动端聚焦态：面板自带 SessionDetailHeader/ChatHeader 不渲染，
+          {/* 面板主体（SessionDetailHeader/ChatHeader 死 UI 已删，2026-09-26 拍板）：
               title/projectName 由 group tab 栏 chip + 中栏 tab 行显示，Files/Git 走中栏顶部 tab，
               +Terminal 走左总览 CreateSessionBar，Retry 走内容区错误态 Notice，Close 由 tab ✕ +
               左总览卡片 close 承担（设计 §11）。 */}
-          <PanelRouter embeddedHeader panelRef={p.ref} />
+          <PanelRouter panelRef={p.ref} />
         </div>
       ))}
     </div>

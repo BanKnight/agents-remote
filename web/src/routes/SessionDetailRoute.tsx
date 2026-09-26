@@ -6,7 +6,6 @@ import type {
   TerminalSession,
   TransportStatus,
 } from "@agents-remote/shared";
-import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { type FormEvent, type RefObject, useCallback, useEffect, useRef, useState } from "react";
@@ -25,12 +24,9 @@ import {
   isConnectionFresh,
   normalizeSessionTextInput,
   sessionQuickKeys,
-  consoleSections,
   type SessionQuickKey,
 } from "./console-model";
-import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
-import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
-import { ProjectShellNavigation } from "../components/shell/shell-navigation";
+import { shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
 import { workbenchReconnectRequestAtom } from "./workbench-model";
 
@@ -38,11 +34,6 @@ type SessionDetailProps = {
   projectName: string;
   sessionId: string;
   sessionType: SessionType;
-  /**
-   * 嵌入模式（workbench 中栏用）：跳过 ShellLayout/sidebar，直接渲染面板主体，
-   * 由 WorkbenchShell 提供外壳。默认 false（旧路由用 ShellLayout）。
-   */
-  embedded?: boolean;
 };
 
 type StreamConnectionStatus = "connecting" | TransportStatus;
@@ -55,14 +46,8 @@ type SessionDetailResponse =
       session: TerminalSession;
     };
 
-export function SessionDetail({
-  projectName,
-  sessionId,
-  sessionType,
-  embedded = false,
-}: SessionDetailProps) {
+export function SessionDetail({ projectName, sessionId, sessionType }: SessionDetailProps) {
   const { t } = useT();
-  const navigate = useNavigate();
   const socketRef = useRef<WebSocket | null>(null);
   // 最近一次收到 pong 的时刻（onopen 初始化）。心跳 tick 与发送瞬间用它判定 half-open：
   // readyState 仍 OPEN 但 Date.now()-lastPong 超过 PONG_TIMEOUT_MS 即对端不回 pong、连接
@@ -370,25 +355,7 @@ export function SessionDetail({
     sendMessage({ type: "input", data: quickKey.sequence });
   };
 
-  const projectNavItems = consoleSections.map((section) => ({
-    id: section.id,
-    label: t(section.labelKey),
-    marker: (
-      <IconMarker size="sm" tone="accent">
-        {section.id === "agents" ? (
-          <ShellIcon name="agent-nav" />
-        ) : section.id === "files" ? (
-          <ShellIcon name="files-nav" />
-        ) : section.id === "git" ? (
-          <ShellIcon name="git-nav" />
-        ) : (
-          <ShellIcon name="terminal" />
-        )}
-      </IconMarker>
-    ),
-  }));
-
-  const content = (
+  return (
     <>
       <div
         className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden gap-0 p-0 ${shellSurfaceClasses.runtimeBody}`}
@@ -444,34 +411,6 @@ export function SessionDetail({
         onSubmit={handleInputSubmit}
       />
     </>
-  );
-
-  if (embedded) {
-    return content;
-  }
-
-  return (
-    <ShellLayout
-      sidebar={
-        <ShellSidebar display="flex">
-          <ProjectShellNavigation
-            activeItemId="agents"
-            items={projectNavItems}
-            projectPath={projectName}
-            projectTitle={projectName}
-            onSelectItem={() => {
-              void navigate({
-                to: "/projects/$key",
-                params: { key: projectName },
-              });
-            }}
-          />
-        </ShellSidebar>
-      }
-      variant="project"
-    >
-      {content}
-    </ShellLayout>
   );
 }
 

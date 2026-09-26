@@ -324,7 +324,7 @@ type MobileFocusBodyProps = {
 /**
  * 移动端聚焦态主体（设计文档 §7，5g 重构）。单行 header = ◄ 返回 + tab 横滚区 + ℹ✕ 胶囊
  *（MobileFocusHeader），替代旧 MobilePageHeader + 二级 tab 行两块；面板自带 header 在聚焦态
- * 隐藏（PanelRouter embeddedHeader），消除 title 重复 / Files·Git 与 tab 重复 / meta 独占行
+ * 不再自带（已删，2026-09-26 拍板），消除 title 重复 / Files·Git 与 tab 重复 / meta 独占行
  * 三处冗余。Stage A：单实例面板（PanelRouter），不走桌面 split —— 窄屏不 split 多面板（避免
  * 挤压）。Stage B：tab 切 output / inspection —— 实例与 inspection 共占同一区域、tab 切换；
  * inspection 复用 WORKBENCH_TAB_PLUGINS render。ℹ 触发底部 info sheet 显实例 meta（agent 显
@@ -416,7 +416,6 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
         {projectName ? (
           <div className={activePlugin ? "hidden" : "flex min-h-0 flex-1 flex-col overflow-hidden"}>
             <PanelRouter
-              embeddedHeader
               key={focusId}
               panelRef={{ kind: "session", projectName, sessionId: focusId }}
             />
@@ -600,7 +599,7 @@ type MobileProjectWorkbenchProps = {
  * - **工具原位（?tab=files/git/wiki）**：主体区切换渲染项目工具面板（FilesLeftPanel /
  *   GitChangesList / 共享三件套前身，与桌面 ProjectLeftPanel middle tab 同构）；再点同 ticon 退出
  *   回实例主体。工具态不改 focusId、不卸载已打开 session 面板（保活层 hidden 挂载）。
- * - **实例聚焦**：`<PanelRouter embeddedHeader>`——与桌面中栏主体同一渲染源（session 含底部
+ * - **实例聚焦**：`<PanelRouter>`——与桌面中栏主体同一渲染源（session 含底部
  *   输入；file/git/skill 只读预览），聚焦瞬态（focus effect 同步前 tab 尚未入 layout）渲染
  *   骨架不闪空态。effectiveFocusId = 显式 ?session ?? 自动聚焦（见下）。
  * - **浏览态收敛（v2 M3-c）**：03 系列原型无「实例网格浏览态」——工作台页 = 聚焦态或空态卡。
@@ -1201,7 +1200,7 @@ function MobileProjectWorkbench({
                     scope={item.ref.scope}
                   />
                 ) : (
-                  <PanelRouter embeddedHeader panelRef={item.ref} />
+                  <PanelRouter panelRef={item.ref} />
                 )}
               </div>
             );

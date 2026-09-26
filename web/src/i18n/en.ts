@@ -65,11 +65,9 @@ export const en = {
   "project.historyRangeAll": "All",
 
   // ── Session Detail ───────────────────────────────────────────
-  "session.backToProject": "Back to project",
   "session.retry": "Retry",
   "session.stop": "Stop",
   "session.close": "Close",
-  "session.closing": "Closing...",
   "session.closeConfirm": "Close this session? The running process will be terminated.",
   "session.fatalProtocol": "Received an invalid stream message.",
   "session.reconnectStopped": "Reconnect stopped.",
@@ -247,7 +245,6 @@ export const en = {
   "git.scopeStaged": "Staged",
 
   // ── Navigation ───────────────────────────────────────────────
-  "nav.back": "Back",
   "nav.workbench": "Workbench",
   "nav.projects": "Projects",
   "nav.files": "Files",

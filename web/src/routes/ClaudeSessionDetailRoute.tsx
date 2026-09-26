@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -37,7 +37,6 @@ import { MarkdownString } from "../components/markdown/MarkdownString";
 import { MarkdownText } from "../components/markdown/MarkdownText";
 import {
   cancelAutoRetry,
-  closeAgentSession,
   fetchAutoRetryStatus,
   fireAutoRetryNow,
   getAgentSession,
@@ -57,12 +56,10 @@ import { measureFrom, timed } from "../lib/perf-trace";
 import { useIsMobile } from "../lib/use-is-mobile";
 import { useAtom } from "jotai";
 import { useConfirm } from "../components/shell/confirm-dialog";
-import { consoleSections, tasksExpandedAtom } from "./console-model";
+import { tasksExpandedAtom } from "./console-model";
 import { HtmlRenderContext } from "../components/markdown/markdown-components";
 import { useOpenRenderTab } from "./workbench-model";
-import { IconMarker, shellSurfaceClasses } from "../components/shell/shell-primitives";
-import { ShellLayout, ShellSidebar } from "../components/shell/shell-layout";
-import { ProjectShellNavigation } from "../components/shell/shell-navigation";
+import { shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
 import { Dialog, DialogContent } from "../components/ui/dialog";
 import { OptionMenu } from "../components/ui/option-menu";
@@ -365,29 +362,8 @@ function TaskPanel({
   );
 }
 
-export function ClaudeChat({
-  projectName,
-  sessionId,
-  embedded = false,
-  embeddedHeader = false,
-}: {
-  projectName: string;
-  sessionId: string;
-  /**
-   * 嵌入模式（workbench 中栏用）：跳过 ShellLayout/sidebar，直接渲染面板主体，
-   * 由 WorkbenchShell 提供外壳。默认 false（旧路由 ClaudeSessionDetailRoute 用 ShellLayout）。
-   */
-  embedded?: boolean;
-  /**
-   * 省略面板自带 header（ChatHeader 整个不渲染）。桌面右工作区与移动端聚焦态都用：
-   * header 由 GroupHeader（tab 栏 + ▢）/ MobileFocusHeader 承担，避免 title/projectName 双显
-   * 冗余（设计 §11 对齐）。claude 的 Files/Git 走中栏 tab，+Terminal 走左总览 CreateSessionBar，
-   * Retry 走内容区 RetryIndicator，Close 由 tab ✕。默认 false（旧路由用）。
-   */
-  embeddedHeader?: boolean;
-}) {
+export function ClaudeChat({ projectName, sessionId }: { projectName: string; sessionId: string }) {
   const { t } = useT();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { confirm, holder } = useConfirm();
 
@@ -402,29 +378,6 @@ export function ClaudeChat({
   const availableModels = detail.data?.availableModels ?? [];
   const availableModelResolved = detail.data?.availableModelResolved;
   const availablePermissionModes = detail.data?.availablePermissionModes ?? [];
-  const title = session?.displayName ?? `${t("section.agents")} Session`;
-
-  const closeSession = useMutation({
-    mutationFn: () => closeAgentSession(projectName, sessionId),
-    onSuccess: async () => {
-      queryClient.removeQueries({
-        exact: true,
-        queryKey: ["projects", projectName, "agent-sessions", sessionId],
-      });
-      await Promise.all([
-        queryClient.invalidateQueries({ exact: true, queryKey: ["projects"] }),
-        queryClient.invalidateQueries({ exact: true, queryKey: ["projects", projectName] }),
-        queryClient.invalidateQueries({
-          exact: true,
-          queryKey: ["projects", projectName, "agent-sessions"],
-        }),
-      ]);
-      await navigate({
-        to: "/projects/$key",
-        params: { key: projectName },
-      });
-    },
-  });
 
   const {
     storeAdapter,
@@ -556,45 +509,8 @@ export function ClaudeChat({
 
   const runtime = useExternalStoreRuntime(storeAdapterWithCompact);
 
-  const projectNavItems = consoleSections.map((section) => ({
-    id: section.id,
-    label: t(section.labelKey),
-    marker: (
-      <IconMarker size="sm" tone="accent">
-        {section.id === "agents" ? (
-          <ShellIcon name="agent-nav" />
-        ) : section.id === "files" ? (
-          <ShellIcon name="files-nav" />
-        ) : section.id === "git" ? (
-          <ShellIcon name="git-nav" />
-        ) : (
-          <ShellIcon name="terminal" />
-        )}
-      </IconMarker>
-    ),
-  }));
-
-  const content = (
+  return (
     <>
-      {!embeddedHeader ? (
-        <ChatHeader
-          closePending={closeSession.isPending}
-          embedded={embedded}
-          projectName={projectName}
-          title={title}
-          onClose={async () => {
-            const ok = await confirm({
-              cancelLabel: t("cancel"),
-              confirmLabel: t("session.close"),
-              message: t("session.closeConfirm"),
-              title: t("session.close"),
-              tone: "danger",
-            });
-            if (ok) closeSession.mutate();
-          }}
-        />
-      ) : null}
-
       <AssistantRuntimeProvider runtime={runtime}>
         <ClaudeBridgeContext.Provider value={bridge}>
           <PermissionModesContext.Provider value={availablePermissionModes}>
@@ -608,13 +524,6 @@ export function ClaudeChat({
                       <div className="shrink-0 px-3 py-2">
                         <p className="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
                           {detail.error.message}
-                        </p>
-                      </div>
-                    ) : null}
-                    {closeSession.error instanceof Error ? (
-                      <div className="shrink-0 px-3 py-2">
-                        <p className="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
-                          {closeSession.error.message}
                         </p>
                       </div>
                     ) : null}
@@ -710,103 +619,6 @@ export function ClaudeChat({
       </AssistantRuntimeProvider>
       {holder}
     </>
-  );
-
-  if (embedded) {
-    return content;
-  }
-
-  return (
-    <ShellLayout
-      sidebar={
-        <ShellSidebar display="flex">
-          <ProjectShellNavigation
-            activeItemId="agents"
-            items={projectNavItems}
-            projectPath={projectName}
-            projectTitle={projectName}
-            onSelectItem={() => {
-              void navigate({
-                to: "/projects/$key",
-                params: { key: projectName },
-              });
-            }}
-          />
-        </ShellSidebar>
-      }
-      variant="project"
-    >
-      {content}
-    </ShellLayout>
-  );
-}
-
-type ChatHeaderProps = {
-  closePending: boolean;
-  projectName: string;
-  title: string;
-  onClose: () => void;
-  /**
-   * 嵌入模式（workbench split 中栏）：隐藏自带 back 链接 + close 按钮 ——
-   * split 内无「返回」语义（工作台常驻），close 由 SplitPanel 工具条承载（Stage 4 ②），
-   * 避免双 close。默认 false（旧路由独立渲染时保留 back + close）。
-   */
-  embedded?: boolean;
-};
-
-function ChatHeader({
-  closePending,
-  projectName,
-  title,
-  onClose,
-  embedded = false,
-}: ChatHeaderProps) {
-  const { t } = useT();
-
-  return (
-    <header
-      className={`relative min-w-0 px-3 py-2.5 sm:px-4 sm:py-3 ${shellSurfaceClasses.runtimeHeader}`}
-    >
-      <div className="flex min-w-0 items-center gap-2">
-        {!embedded && (
-          <Link
-            className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-on-surface-muted transition hover:text-on-surface-soft"
-            aria-label={t("session.backToProject")}
-            params={{ key: projectName }}
-            to="/projects/$key"
-          >
-            <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M10 3L5 8l5 5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            {t("nav.back")}
-          </Link>
-        )}
-        <div className={`min-w-0 flex-1 text-center ${embedded ? "text-left" : ""}`}>
-          <p className="truncate text-xs font-semibold text-on-surface">{title}</p>
-          <p className="truncate text-[0.65rem] leading-4 text-on-surface-muted">{projectName}</p>
-        </div>
-        {!embedded && (
-          <button
-            type="button"
-            disabled={closePending}
-            className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs font-semibold text-on-surface-muted transition hover:text-error disabled:opacity-40"
-            onClick={onClose}
-            aria-label={t("session.close")}
-          >
-            <ShellIcon name="close" className="h-4 w-4" />
-            <span className="hidden sm:inline">
-              {closePending ? t("session.closing") : t("session.close")}
-            </span>
-          </button>
-        )}
-      </div>
-    </header>
   );
 }
 

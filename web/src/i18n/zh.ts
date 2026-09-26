@@ -67,11 +67,9 @@ export const zh: Record<TranslationKey, string> = {
   "project.historyRangeAll": "全部",
 
   // ── Session Detail ───────────────────────────────────────────
-  "session.backToProject": "返回项目",
   "session.retry": "重试",
   "session.stop": "停止",
   "session.close": "关闭",
-  "session.closing": "正在关闭...",
   "session.closeConfirm": "关闭此会话？正在运行的进程将被终止。",
   "session.fatalProtocol": "收到无效的流消息。",
   "session.reconnectStopped": "重连已停止。",
@@ -247,7 +245,6 @@ export const zh: Record<TranslationKey, string> = {
   "git.scopeStaged": "暂存区",
 
   // ── Navigation ───────────────────────────────────────────────
-  "nav.back": "返回",
   "nav.workbench": "工作台",
   "nav.projects": "项目",
   "nav.files": "文件",
