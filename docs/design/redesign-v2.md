@@ -767,6 +767,14 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **探针**：`scripts/probe-loading-states.mjs`（mock API 延迟 700ms，13 断言：git/wiki/历史/插件段 pending 骨架 + 无伪空态 + 数据到后真实渲染、中栏/L3 预览 LoadingBlock ping 圆点 + 文案 + 垂直居中几何；mock 基座 candidates 须含 focus 目标——global scope refs 由 candidates 派生，空则 focus 被 prune）。
 
+### §6.12p 真机反馈修复：sheet 下拉收起回弹 + 历史 sheet prompt 连带卸载（2026-09-27，commit `0f3c882`）
+
+**① 拖拽 dismiss 回弹（用户真机反馈）**：`endDrag` dismiss 分支曾先清 inline transform 再交 Radix exit 动画——sheet **瞬跳回原位**再从原位滑 16px+fade（「回弹后再消失」）。修复：**保留 inline transform 作为 exit 动画起点**（tw-animate-css 的 exit keyframes 只有 `to` 无 `from`，起始值 = 当前计算样式），inline 变量覆盖 exit 形态——`--tw-exit-translate-y` = 顶边推出视口底+40px 余量（`slide-out-to-bottom-4` 的 16px 不够出屏）、`--tw-exit-opacity: 1`（iOS dismiss 纯滑出不 fade）、200ms ease-in 贴合松手初速度。重开无残留（Radix closed 即 unmount，inline 样式随之消亡）。
+
+**② 历史 sheet prompt 连带卸载（拖拽探针诊断中发现的结构 bug）**：`MobileSessionHistorySheet` 的 `renameDialog.holder` 曾嵌在 MobileSheet Content 子树内——closed 行点击同帧 `onOpenChange(false)` 关 sheet + 开命名 prompt，**Radix exit 动画播完即卸载 Content 子树 → 嵌套 Portal 的 prompt 被连带卸载**（input 消失、resolve 悬空），真机上 prompt 闪现即没。修复：holder 移至 Fragment 兄弟位（渲染在调用方 workbench 层，不随 sheet Content 卸载）——与 03j 新建实例 sheet「prompt 由 workbench 顶层 holder 承载」同因同解（03j 先例）。**排查全仓 holder 嵌套**：runtime-config 的 danger confirm 嵌在 RuntimeConfig sheet/Dialog 内，属从属语义（父关 = 放弃操作，confirm 连带消失合理）记档不修；其余 holder（ClaudeSessionDetailRoute / file-browser / chat-overview / mobile-l3 / mobile-plugins-detail / mobile-workbench info+close）均在页面/顶层 ✓。
+
+**探针（m5-sheets 扩至 51 断言）**：新增 Part 5 拖拽 dismiss 几何 5 断言（松手后 top 保持拖拽位置不回弹 + 继续滑出 + 卸载 + 重开无 inline 残留；mouse pointer 序列驱动，拖 140px > 96px 阈值）；prompt 链断言恢复（holder 修复后 press Enter 不再 detached）；断言收窄两处（菜单 sheet exit 期双 sheet 共存窗口 → 等目标 sheet 标题；03j 关闭断言 `.msheet count===0` → 收窄到「新建实例」标题——prompt 自身也是 .msheet，宽断言必挂）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
