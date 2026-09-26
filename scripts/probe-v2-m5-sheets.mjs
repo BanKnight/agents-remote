@@ -416,10 +416,12 @@ for (let i = 4; i <= 7; i++) {
 }
 await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
 // 松手后立刻采样：sheet 仍在且 top 保持在拖拽位置附近（bug 版此处已跳回 ≈ baseTop）。
+// isConnected 守卫：exit 动画播完卸载的瞬间 evaluate 可能拿到 detached handle，
+// getBoundingClientRect() 返回全 0 而非抛错——按已卸载（null）处理。
 const t0 = await page
   .locator(".msheet")
   .first()
-  .evaluate((el) => el.getBoundingClientRect().top)
+  .evaluate((el) => (el.isConnected ? el.getBoundingClientRect().top : null))
   .catch(() => null);
 ok(t0 !== null, "松手后 sheet 仍在（exit 动画期未卸载）");
 ok(
@@ -430,7 +432,7 @@ await page.waitForTimeout(120);
 const t1 = await page
   .locator(".msheet")
   .first()
-  .evaluate((el) => el.getBoundingClientRect().top)
+  .evaluate((el) => (el.isConnected ? el.getBoundingClientRect().top : null))
   .catch(() => null);
 ok(
   t1 === null || t1 > (t0 ?? 0) + 20,
