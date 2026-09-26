@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
@@ -34,11 +34,11 @@ export const SHEET_UNMOUNT_DELAY_MS = 300;
  */
 type DragState =
   | { phase: "idle" }
-  | { phase: "pending"; startY: number; touchId: number }
+  | { phase: "pending"; startY: number; pointerId: number }
   | {
       phase: "dragging";
       startY: number;
-      touchId: number;
+      pointerId: number;
       lastY: number;
       lastT: number;
       v: number;
@@ -55,10 +55,10 @@ type DragState =
  * 退出动画 fill-mode-forwards 保持终态防闪（frontend-notes §9）。
  *
  * 下拉收起（M10 第三轮用户反馈）：grab 条 + shd 头部为拖动热区（iOS sheet 教学位；列表区
- * 保持原生滚动不冲突，热区 `touch-none` 作 CSS 层第一道防线），拖拽由原生 touch events
- * 直驱（iOS pointer events 派生层不可控，见 effect 内注释），位移写 Content inline
- * transform 跟手，越过阈值保留位移交 Radix exit 动画从松手位置继续滑出屏幕（exit keyframes
- * 无 from，起点 = 当前 inline 位置），否则回弹。
+ * 保持原生滚动不冲突，热区 `touch-none` 作 CSS 层第一道防线），拖拽由 pointer events 驱动
+ * + non-passive touchmove preventDefault 防滚动抢占（见 effect 内注释），位移写 Content
+ * inline transform 跟手，越过阈值保留位移交 Radix exit 动画从松手位置继续滑出屏幕（exit
+ * keyframes 无 from，起点 = 当前 inline 位置），否则回弹。
  */
 export function MobileSheet({
   ariaLabel,
@@ -96,81 +96,76 @@ export function MobileSheet({
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
 
-  // 拖拽驱动用原生 touch events 直驱，不走 pointer events。原因（三轮真机反馈换来的）：
-  // iOS WebKit 上 pointer events 是 touch 的派生兼容层，滚动容器（.msheet overflow-y:auto）
-  // 内这层与滚动判定/pointercancel 的交互不可控——touch-action:none 判定不稳「经常拖不动」
-  //（第二轮），touchmove preventDefault 后 pointermove 可能整个停发「完全拖不动」（第三轮，
-  // Chromium 的 touch/pointer 双实现模拟不出该派生层行为，探针测不出）。touch events 是
-  // touch-action 出现之前 iOS 自定义手势的唯一通道，机制最直接：non-passive touchmove 里
-  // preventDefault 直接取消滚动默认行为（滚动从未启动即无 pointercancel/抢占），touch 事件
-  // 本身照常派发，拖拽驱动不依赖任何派生层。prevent 覆盖整个手势期（非 idle）——起步窗口
-  //（<6px）被滚动接管 = 手势永久死在 pending。touchstart 不 prevent（保热区按钮 tap 的
-  // click 合成）；拖拽位移后 iOS 本就不合成 click。touchcancel（系统手势打断）视同松手。
-  // touch events 的 target 固定为 touchstart 命中元素，手指滑出热区也持续派发，无需 capture。
+  // 防滚动抢占：non-passive touchmove 在手势期（非 idle）preventDefault。真机「回弹/
+  // 不跟手/拖不动」的来源是 WebKit 把手势当滚动启动并 pointercancel 中断拖拽（cancel 时
+  // dy/v 不够 dismiss 即走回弹分支，探针 Chromium 不复现 cancel 所以测不到）——prevent
+  // 从第一个 touchmove 就拦，WebKit 才不会先启动滚动再 cancel。**preventDefault 的判断
+  // 读 dragRef（pointer handlers 设置），拖拽驱动本身走 pointer events**——四轮真机反馈
+  // 的实证：pointer 驱动在 iOS 有效（第一/二轮「拖动有效」），touch events 直驱无效
+  //（第四轮「毫无动静」，机制未定论，勿再走）。prevent 覆盖整个手势期（含 pending 起步
+  // 窗口，被滚动接管 = 手势死在 pending）；纯 tap 无 touchmove 不受影响（热区按钮 click
+  // 照常合成）。
   useEffect(() => {
     const el = contentNode;
     if (!el) return;
-
-    // 回弹：播完清 inline transition（防残留干扰 Radix enter/exit 动画的 transform）。
-    const springBack = () => {
-      el.style.transition = `transform ${SPRING_BACK_MS}ms ease-out`;
-      el.style.transform = "";
-      window.setTimeout(() => {
-        el.style.transition = "";
-      }, SPRING_BACK_MS + 40);
-    };
-
-    const onTouchStart = (e: TouchEvent) => {
-      const t = e.touches[0];
-      if (!t || !(e.target instanceof Element) || !e.target.closest(".grab, .shd")) return;
-      dragRef.current = { phase: "pending", startY: t.clientY, touchId: t.identifier };
-    };
-
     const onTouchMove = (e: TouchEvent) => {
-      const d = dragRef.current;
-      if (d.phase === "idle") return;
-      e.preventDefault();
-      const t = Array.from(e.touches).find((x) => x.identifier === d.touchId);
-      if (!t) return;
-      if (d.phase === "pending") {
-        const ndy = t.clientY - d.startY;
-        if (ndy <= DRAG_START_PX) return;
-        dragRef.current = {
-          ...d,
-          phase: "dragging",
-          lastY: t.clientY,
-          lastT: e.timeStamp,
-          v: 0,
-          dy: ndy,
-        };
-        // 接管期间清 transition 保证跟手。
-        el.style.transition = "";
-        el.style.transform = `translateY(${ndy}px)`;
-        return;
-      }
-      const v = (t.clientY - d.lastY) / Math.max(1, e.timeStamp - d.lastT);
-      const ndy = Math.max(0, t.clientY - d.startY);
-      dragRef.current = { ...d, lastY: t.clientY, lastT: e.timeStamp, v, dy: ndy };
-      el.style.transform = `translateY(${ndy}px)`;
+      if (dragRef.current.phase !== "idle") e.preventDefault();
     };
-
-    const onTouchEnd = () => {
-      const d = dragRef.current;
-      if (d.phase === "idle") return;
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    return () => {
+      el.removeEventListener("touchmove", onTouchMove);
+      // 拖拽中断（DOM 卸载）时状态机归位，防下一次打开残留 pending/dragging。
       dragRef.current = { phase: "idle" };
-      if (d.phase !== "dragging") return;
-      const dismiss =
-        d.dy >= DISMISS_DISTANCE_PX ||
-        (d.dy >= DISMISS_MIN_DRAG_PX && d.v >= DISMISS_VELOCITY_PX_MS);
-      if (!dismiss) {
-        springBack();
-        return;
-      }
+    };
+  }, [contentNode]);
+
+  const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!(e.target instanceof Element) || !e.target.closest(".grab, .shd")) return;
+    dragRef.current = { phase: "pending", startY: e.clientY, pointerId: e.pointerId };
+  };
+
+  const moveDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (d.phase === "idle") return;
+    if (d.phase === "pending") {
+      const dy = e.clientY - d.startY;
+      if (dy <= DRAG_START_PX) return;
+      // 越过起步阈值才接管：capture 后续 pointer（click 合成改落 capture 元素，热区按钮
+      // 的小位移点击不受影响）。inline transform 接管期间清 transition 保证跟手。
+      e.currentTarget.setPointerCapture(d.pointerId);
+      dragRef.current = {
+        ...d,
+        phase: "dragging",
+        lastY: e.clientY,
+        lastT: e.timeStamp,
+        v: 0,
+        dy,
+      };
+      e.currentTarget.style.transition = "";
+      e.currentTarget.style.transform = `translateY(${dy}px)`;
+      return;
+    }
+    const v = (e.clientY - d.lastY) / Math.max(1, e.timeStamp - d.lastT);
+    const dy = Math.max(0, e.clientY - d.startY);
+    dragRef.current = { ...d, lastY: e.clientY, lastT: e.timeStamp, v, dy };
+    e.currentTarget.style.transform = `translateY(${dy}px)`;
+  };
+
+  const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (d.phase === "idle") return;
+    dragRef.current = { phase: "idle" };
+    if (d.phase !== "dragging") return;
+    const el = e.currentTarget;
+    const dismiss =
+      d.dy >= DISMISS_DISTANCE_PX || (d.dy >= DISMISS_MIN_DRAG_PX && d.v >= DISMISS_VELOCITY_PX_MS);
+    if (dismiss) {
       // 保留 inline transform 作为 exit 动画起点（tw-animate-css 的 exit keyframes 只有 to
       // 无 from，起始值 = 当前计算样式）——从松手位置继续滑出；清掉会瞬跳回原位再滑出
-      //（用户反馈的「回弹后再消失」）。inline 变量覆盖 class 的 exit 形态：滑出距离 = 顶边
-      // 推出视口底 + 余量（slide-out-to-bottom-4 的 16px 不够出屏）、不 fade（iOS dismiss
-      // 是纯滑出）、200ms ease-in 贴合松手初速度。Content unmount 后 inline 样式随之消亡。
+      //（用户反馈的「回弹后再消失」）。inline 变量覆盖 class 的 exit 形态：滑出距离 =
+      // 顶边推出视口底 + 余量（slide-out-to-bottom-4 的 16px 不够出屏）、不 fade（iOS
+      // dismiss 是纯滑出）、200ms ease-in 贴合松手初速度。Content unmount 后 inline 样式
+      // 随之消亡，无残留。
       const rect = el.getBoundingClientRect();
       el.style.setProperty(
         "--tw-exit-translate-y",
@@ -180,21 +175,15 @@ export function MobileSheet({
       el.style.setProperty("--tw-animation-duration", `${DISMISS_SLIDE_MS}ms`);
       el.style.setProperty("--tw-ease", "ease-in");
       onOpenChangeRef.current(false);
-    };
-
-    el.addEventListener("touchstart", onTouchStart, { passive: true });
-    el.addEventListener("touchmove", onTouchMove, { passive: false });
-    el.addEventListener("touchend", onTouchEnd);
-    el.addEventListener("touchcancel", onTouchEnd);
-    return () => {
-      el.removeEventListener("touchstart", onTouchStart);
-      el.removeEventListener("touchmove", onTouchMove);
-      el.removeEventListener("touchend", onTouchEnd);
-      el.removeEventListener("touchcancel", onTouchEnd);
-      // 拖拽中断（DOM 卸载）时状态机归位，防下一次打开残留 pending/dragging。
-      dragRef.current = { phase: "idle" };
-    };
-  }, [contentNode]);
+      return;
+    }
+    // 回弹：播完清 inline transition（防残留干扰 Radix enter/exit 动画的 transform）。
+    el.style.transition = `transform ${SPRING_BACK_MS}ms ease-out`;
+    el.style.transform = "";
+    window.setTimeout(() => {
+      el.style.transition = "";
+    }, SPRING_BACK_MS + 40);
+  };
 
   return (
     <DialogPrimitive.Root onOpenChange={onOpenChange} open={open}>
@@ -216,6 +205,10 @@ export function MobileSheet({
             "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4 data-[state=open]:duration-200",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-4 data-[state=closed]:duration-150 data-[state=closed]:fill-mode-forwards",
           )}
+          onPointerCancel={endDrag}
+          onPointerDown={startDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
         >
           <div aria-hidden="true" className="grab touch-none" />
           {title || headerExtra || aside ? (
