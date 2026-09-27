@@ -605,15 +605,16 @@ async function run() {
       );
     }
     // F1 问题⑨：聚焦 agent 的 chips 行在进文件工具后隐藏（此前只 gate 聚焦实例类型漏 tool）。
+    // v1.4（03f）退役语义：agent chips 行（✦ model·perm·effort + AutoRetry）整体删除，
+    // 问题⑨⑩的「chips 隐藏/恢复」不再存在——恒不渲染即为正确态（terminal tmux chip 保留）。
     await ticon.click();
     await page.waitForTimeout(500);
     record((await page.locator(".chips").count()) === 0, "工具态 chips 隐藏（问题⑨）");
-    // F2 问题⑩：取消工具（再点同 ticon）→ URL 无 tab 维度（解析回退 rememberedMiddleTab），
-    // chips 恢复 = 回实例主体。
+    // F2 问题⑩：取消工具（再点同 ticon）→ URL 无 tab 维度（解析回退 rememberedMiddleTab）。
     await ticon.click();
     await page.waitForTimeout(500);
     record(!page.url().includes("tab="), `取消工具 URL 无 tab（got ${page.url()}）`);
-    record((await page.locator(".chips").count()) > 0, "取消工具 chips 恢复");
+    record((await page.locator(".chips").count()) === 0, "agent chips 行已退役（v1.4）");
     // F3 问题⑪：文件工具 → src 目录 → deep.ts → header back = 完整父目录 "src"（03q 原型；
     // 此前 .split("/").pop() 只取最后一段）。
     await ticon.click();

@@ -18,6 +18,7 @@ async function setupMocks(page) {
     provider: "claude",
     displayName: "Probe Agent",
     status: "idle",
+    permissionMode: "default",
     createdAt: new Date().toISOString(),
   };
   const detail = {
@@ -120,21 +121,140 @@ async function probe(browser, label, contextOptions) {
     .catch(() => 0);
   console.log(`[${label}] 获焦后 卡片内 selector trigger 数 = ${cardSelectorCount}（3=留卡片内）`);
 
+  // .send2 几何在「输入态」测（send 可见时）；点 send 后输入清空 .send2 即 unmount，
+  // v14 段（点击后）只能拿到 null——desktop idle 无 Stop/Send，无 .send2 = 产品行为。
+  const send2Box = await page
+    .locator(".send2")
+    .first()
+    .evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return { w: r.width, h: r.height, radius: cs.borderRadius };
+    })
+    .catch(() => null);
+  const send2Ok =
+    send2Box === null ||
+    (Math.abs(send2Box.w - 28) < 0.6 &&
+      Math.abs(send2Box.h - 28) < 0.6 &&
+      Math.abs(parseFloat(send2Box.radius) - 12) < 0.6);
+  console.log(
+    `[${label}] send2 几何: ${send2Ok ? "PASS" : "FAIL"} (${send2Box ? `${send2Box.w.toFixed(0)}x${send2Box.h.toFixed(0)} r${send2Box.radius}` : "无 .send2（desktop idle 无 Stop/Send = 产品行为）"})`,
+  );
+
   let focusedAfterClick = null;
   let sendCountAfterClick = null;
   let userFrameSent = null;
   if (sendCount > 0) {
     await sendBtn.first().click();
     await page.waitForTimeout(200);
+    sendCountAfterClick = await sendBtn.count();
     focusedAfterClick = await page.evaluate(
       () => !!document.activeElement && document.activeElement.tagName === "TEXTAREA",
     );
-    sendCountAfterClick = await sendBtn.count();
     userFrameSent = sentFrames.some((f) => f.includes('"type":"user"'));
     console.log(
       `[${label}] 点send后: textarea保焦=${focusedAfterClick}  sendButton仍在=${sendCountAfterClick}  WS user帧已发=${userFrameSent}`,
     );
   }
+
+  // ── v1.4 控制行形态断言（03a/04）：窄端 .iicn 三彩图标 / 宽端 .ipill 三 pill / anchored
+  // 菜单原位上方 / .send2 28×28 r12。窄宽断言按 viewport 分派（CSS @media 1024 切换）。
+  const v14 = {};
+  const permBtn = page.locator(
+    'button[aria-label="权限模式"], button[aria-label="Permission mode"]',
+  );
+  const iicnCount = await page.locator(".iicn").count();
+  const ipillCount = await page.locator(".ipill").count();
+  const iicnVisible = await page
+    .locator(".iicn")
+    .first()
+    .evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return { display: cs.display, w: r.width, h: r.height, radius: cs.borderRadius };
+    })
+    .catch(() => null);
+  const ipillDisplay = await page
+    .locator(".ipill")
+    .first()
+    .evaluate((el) => getComputedStyle(el).display)
+    .catch(() => null);
+  const wide = await page.evaluate(() => window.innerWidth >= 1024);
+  v14.wide = wide;
+  v14.iicnCount = iicnCount;
+  v14.ipillCount = ipillCount;
+  v14.narrowFormOk =
+    !wide &&
+    iicnCount === 3 &&
+    ipillDisplay === "none" &&
+    !!iicnVisible &&
+    Math.abs(iicnVisible.w - 28) < 0.6 &&
+    Math.abs(iicnVisible.h - 28) < 0.6 &&
+    Math.abs(parseFloat(iicnVisible.radius) - 12) < 0.6;
+  v14.wideFormOk =
+    wide && ipillCount === 3 && ipillDisplay !== "none" && iicnVisible?.display === "none";
+  console.log(
+    `[${label}] v1.4 控制行: wide=${wide} iicn=${iicnCount}(${iicnVisible ? `${iicnVisible.w.toFixed(0)}x${iicnVisible.h.toFixed(0)} r${iicnVisible.radius}` : "n/a"}) ipill=${ipillCount}(${ipillDisplay})`,
+  );
+
+  // iicn 三色语义（perm 紫 / model 蓝 / eff 橙 tint）
+  if (!wide && iicnCount === 3) {
+    const tints = await page.evaluate(() =>
+      [...document.querySelectorAll(".iicn")].map((el) => {
+        const cs = getComputedStyle(el);
+        return { color: cs.color, bg: cs.backgroundColor };
+      }),
+    );
+    const distinct = new Set(tints.map((t) => `${t.color}|${t.bg}`));
+    v14.iicnTints = distinct.size === 3;
+    console.log(
+      `[${label}] iicn 三色语义: distinct=${distinct.size} ${v14.iicnTints ? "PASS" : "FAIL"}`,
+    );
+  }
+
+  // anchored 菜单：窄端点权限 iicn → 菜单弹在图标上方（03a 原位上方，不落底部 sheet）
+  if (!wide && (await permBtn.count()) === 1) {
+    await permBtn.first().click();
+    const menu = page.locator('[role="menu"]').first();
+    const menuShown = await menu.waitFor({ state: "visible", timeout: 4000 }).then(
+      () => true,
+      () => false,
+    );
+    if (menuShown) {
+      const geo = await page.evaluate(() => {
+        const trigger = document.querySelector(
+          'button[aria-label="权限模式"], button[aria-label="Permission mode"]',
+        );
+        const icon = trigger?.querySelector(".iicn") ?? trigger;
+        const content = [...document.querySelectorAll('[role="menu"]')].find(
+          (el) => el.getBoundingClientRect().height > 0,
+        );
+        const tr = icon?.getBoundingClientRect();
+        const cr = content?.getBoundingClientRect();
+        return tr && cr
+          ? {
+              menuBottom: cr.bottom,
+              iconTop: tr.top,
+              menuInViewport: cr.top >= 0 && cr.bottom <= innerHeight,
+              mhText: content.querySelector(".mh")?.textContent?.trim() ?? null,
+            }
+          : null;
+      });
+      v14.mhOk = geo?.mhText === "权限模式" || geo?.mhText === "Permission mode";
+      v14.anchoredAbove = !!geo && geo.menuBottom <= geo.iconTop + 4 && geo.menuInViewport;
+      console.log(
+        `[${label}] anchored 菜单在图标上方: ${v14.anchoredAbove ? "PASS" : "FAIL"} (menuBottom=${geo?.menuBottom?.toFixed(1)} iconTop=${geo?.iconTop?.toFixed(1)})`,
+      );
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(120);
+    } else {
+      v14.anchoredAbove = false;
+      console.log(`[${label}] anchored 菜单未出现: FAIL`);
+    }
+  }
+
+  // .send2 几何已在输入态（send 点击前）测过（send2Ok）；此处只记录进 v14 结果。
+  v14.send2Ok = send2Ok;
 
   await ctx.close();
   return {
@@ -146,6 +266,7 @@ async function probe(browser, label, contextOptions) {
     sendCountAfterClick,
     userFrameSent,
     jump,
+    v14,
   };
 }
 
@@ -191,6 +312,25 @@ async function probe(browser, label, contextOptions) {
         `   (链路) onNew→sendToSocket→WS user帧: ${mobile.userFrameSent ? "PASS" : "未捕到（WS 可能未 open，不影响 H1 DOM 判定）"}`,
       );
     }
+
+    // v1.4 控制行换代断言（03a/04）：窄端 iicn 三彩图标 + 三色语义 + anchored 菜单原位上方；
+    // 宽端 ipill 三 pill；send2 28×28 r12。
+    const v14n = mobile.v14;
+    const v14d = desktop.v14;
+    const h5 =
+      v14n.narrowFormOk === true &&
+      v14n.iicnTints === true &&
+      v14n.anchoredAbove === true &&
+      v14n.mhOk === true &&
+      v14n.send2Ok === true;
+    console.log(
+      `H5 窄端 .iicn 形态+三色+anchored菜单+.mh菜单头+send2几何: ${h5 ? "PASS" : "FAIL"} (narrowFormOk=${v14n.narrowFormOk}, tints=${v14n.iicnTints}, anchored=${v14n.anchoredAbove}, mh=${v14n.mhOk}, send2=${v14n.send2Ok})`,
+    );
+    const h6 = v14d.wideFormOk === true && v14d.send2Ok === true;
+    console.log(
+      `H6 宽端 .ipill 形态+send2几何: ${h6 ? "PASS" : "FAIL"} (wideFormOk=${v14d.wideFormOk}, send2=${v14d.send2Ok})`,
+    );
+    if (!h5 || !h6) process.exitCode = 1;
   } finally {
     await browser.close();
   }

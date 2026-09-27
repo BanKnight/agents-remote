@@ -62,7 +62,11 @@ import { useOpenRenderTab } from "./workbench-model";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
 import { Dialog, DialogContent } from "../components/ui/dialog";
-import { OptionMenu } from "../components/ui/option-menu";
+import {
+  EffortSelector,
+  ModelSelector,
+  PermissionModeSelector,
+} from "../components/ui/composer-controls";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
@@ -78,7 +82,6 @@ import {
   useClaudeSession,
   deriveStatus,
   mapTurnStatusTone,
-  MODEL_1M_SUFFIX,
   resolveAutoPermissionMode,
   sortTasks,
   type AgentContainerStatus,
@@ -93,7 +96,6 @@ import {
   type TurnStatusTone,
 } from "./claude-adapter";
 import type { ClaudeFileHistorySnapshot, EffortLevel } from "@agents-remote/shared";
-import { EFFORT_LEVELS } from "@agents-remote/shared";
 
 // ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
 //
@@ -163,57 +165,14 @@ const PermissionModesContext = createContext<readonly string[]>([]);
 // ours to set, so it flows through context.
 const LiveThinkingTokensContext = createContext<number | null>(null);
 
-export function modelDisplayLabel(modelId: string): string {
-  // CLI 原生 alias [1m] 后缀机制：剥离 [1m] 得到基础 alias，给友好名后再标回 [1m]。
-  const has1m = modelId.endsWith(MODEL_1M_SUFFIX);
-  const base = has1m ? modelId.slice(0, -MODEL_1M_SUFFIX.length) : modelId;
-  const suffix = has1m ? ` ${MODEL_1M_SUFFIX}` : "";
-
-  if (base === "opusplan") return `Opus Plan${suffix}`;
-  // 具体 ID（含 "-"，兼容老数据 / system.init 回传具体值）原样。
-  if (base.includes("-")) return modelId;
-  // tier alias（opus/sonnet/haiku）→ capitalize
-  return base.charAt(0).toUpperCase() + base.slice(1) + suffix;
-}
-
-// 解析「当前选择的 model alias + plan 状态」→ trigger 显示用的映射 model ID。
-// 对齐 CLI getRuntimeMainLoopModel：opusplan 在 plan 模式取 opus 映射、否则取 sonnet 映射；
-// 普通 tier 取自身映射。返回的是用户在 settings 里填的映射 ID（如 claude-opus-4-8[1m]），
-// 而非 CLI 响应里的实际 model（可能被 baseUrl 网关改写成 glm-5.2 等）——显示层用「配置的映射」，
-// 不跟随运行态。这样 plan 进/出时 trigger 随 permissionMode 即时在 opus/sonnet 映射间切换，
-// 不等 assistant 消息（对齐 TUI 状态栏 onChangeAppState 即时重渲染）。
-function resolveDisplayModelId(
-  alias: string | undefined,
-  permissionMode: string | undefined,
-  resolved: Record<string, string> | undefined,
-  opusplanActive: boolean | undefined,
-): string | undefined {
-  if (!alias) return undefined;
-  const has1m = alias.endsWith(MODEL_1M_SUFFIX);
-  const base = has1m ? alias.slice(0, -MODEL_1M_SUFFIX.length) : alias;
-  // Only gate on opusplanActive when the alias base is opusplan — if the
-  // override isn't truly engaged the alias is a plain string and should be
-  // resolved as-is (no mode-tier switching).
-  const tierKey =
-    opusplanActive && base === "opusplan"
-      ? `${permissionMode === "plan" ? "opus" : "sonnet"}${has1m ? MODEL_1M_SUFFIX : ""}`
-      : alias;
-  return resolved?.[tierKey];
-}
-
-// currentModel → 菜单项 alias 的归一（ModelSelector 与 ℹ 浮层运行配置选择面共用）：
-// currentModel 来源混杂——switchModel 乐观更新给 alias，system.init/seed_init 回填具体 ID
-//（CLI 内部把 alias 解析成具体 ID 后上报）。菜单项是 alias，需统一成 alias 才能命中选中态。
-// 具体 ID 反查 resolved 映射的 value 得 alias；找不到（老数据/未知）原样保留。
-export function resolveCurrentModelAlias(
-  current: string | undefined,
-  resolved: Record<string, string> | undefined,
-): string | undefined {
-  if (!current) return current;
-  if (resolved?.[current]) return current;
-  const entry = Object.entries(resolved ?? {}).find(([, v]) => v === current);
-  return entry?.[0] ?? current;
-}
+// 模型/权限显示层 helper 已迁 @/lib/model-labels（v1.4 批1 composer 控制行换代，
+// 与 composer-controls 共用）；re-export 保持 ℹ RuntimeConfigDialog 的既有 import 源不变。
+import { PERMISSION_MODE_LABELS } from "../lib/model-labels";
+export {
+  modelDisplayLabel,
+  PERMISSION_MODE_LABELS,
+  resolveCurrentModelAlias,
+} from "../lib/model-labels";
 
 function TaskPanel({
   collapsed,
@@ -3482,272 +3441,6 @@ function ChatSkeleton() {
   );
 }
 
-function ModelSelector({
-  opusplanActive,
-  currentModel,
-  currentResolved,
-  availableModels,
-  availableModelResolved,
-  modelSwitchVersion,
-  permissionMode,
-}: {
-  opusplanActive: boolean | undefined;
-  currentModel?: string;
-  currentResolved?: string;
-  availableModels: string[];
-  availableModelResolved?: Record<string, string>;
-  modelSwitchVersion: number;
-  permissionMode?: string;
-}) {
-  const { t } = useT();
-  const bridge = useContext(ClaudeBridgeContext);
-  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
-  const preSwitchResolvedRef = useRef<string | undefined>(undefined);
-
-  // Clear the spinner when the server confirms the switch:
-  //   a) currentResolved changes from its pre-switch baseline (system.init
-  //      carries the resolved model name), OR
-  //   b) modelSwitchVersion increments after a control_response confirms the
-  //      set_model control_request succeeded (in-process switch, no restart).
-  //   c) modelSwitchVersion also covers failure: the adapter increments it
-  //      on error too, so the spinner clears and the model reverts.
-  const preSwitchVersionRef = useRef(modelSwitchVersion);
-  useEffect(() => {
-    if (!switchingTo) {
-      preSwitchResolvedRef.current = undefined;
-      preSwitchVersionRef.current = modelSwitchVersion;
-      return;
-    }
-    if (preSwitchResolvedRef.current === undefined) {
-      // First render after the switch was requested — capture the baseline.
-      preSwitchResolvedRef.current = currentResolved;
-      preSwitchVersionRef.current = modelSwitchVersion;
-      return;
-    }
-    const resolvedChanged = currentResolved !== preSwitchResolvedRef.current;
-    const versionChanged = modelSwitchVersion !== preSwitchVersionRef.current;
-    if (resolvedChanged || versionChanged) {
-      setSwitchingTo(null);
-      preSwitchResolvedRef.current = undefined;
-    }
-  }, [currentResolved, switchingTo, modelSwitchVersion]);
-
-  if (availableModels.length === 0) return null;
-
-  const current = currentModel ?? availableModels[0];
-  const currentAlias = resolveCurrentModelAlias(current, availableModelResolved);
-  // checkmark 停在用户选择的 alias（opusplan/sonnet/...），不随运行态移动。
-  // trigger 标签显示「解析后的映射 model ID」（对齐 CLI 状态栏渲染 runtimeModel）：
-  // opusplan + plan → opus 映射、opusplan + 非 plan → sonnet 映射、普通 tier → 自身映射。
-  // 解析不到（无 resolved 映射 / 老数据）才 fallback 到 alias 友好名。
-  const displayModelId = resolveDisplayModelId(
-    currentAlias,
-    permissionMode,
-    availableModelResolved,
-    opusplanActive,
-  );
-  const label = displayModelId ?? (currentAlias ? modelDisplayLabel(currentAlias) : "");
-
-  if (switchingTo) {
-    return (
-      <div className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant">
-        <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-assistant/40 border-t-assistant" />
-        {t("claude.switchingModel", { model: modelDisplayLabel(switchingTo) })}
-      </div>
-    );
-  }
-
-  return (
-    <OptionMenu
-      accent="user"
-      align="start"
-      cancelLabel={t("cancel")}
-      trigger={
-        <button
-          type="button"
-          className="inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-user hover:text-user hover:bg-surface-raised/50 transition cursor-pointer"
-        >
-          <span className="min-w-0 truncate">{label}</span>
-          <svg
-            className="h-3 w-3 shrink-0 opacity-60"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M4 6l4 4 4-4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      }
-      items={availableModels.map((modelId) => ({
-        label: modelDisplayLabel(modelId),
-        // opusplan 无 resolved（普通/Plan 模式分别由 CLI 经 env 自选），不展示具体 ID；
-        // tier alias 配对展示对应具体 ID（含 [1m]）。具体 ID（兼容老数据）无 description。
-        description: availableModelResolved?.[modelId],
-        isActive: modelId === currentAlias,
-        onSelect: () => {
-          if (bridge) {
-            setSwitchingTo(modelId);
-            bridge.switchModel(modelId);
-          }
-        },
-      }))}
-    />
-  );
-}
-
-// 供运行配置选择面（ℹ 浮层 RuntimeConfigDialog）共用——枚举标签单源，不复制。
-export const PERMISSION_MODE_LABELS: Record<string, string> = {
-  default: "Default",
-  acceptEdits: "Accept Edits",
-  bypassPermissions: "Bypass",
-  plan: "Plan Only",
-  auto: "Auto",
-  dontAsk: "Don't Ask",
-};
-
-function PermissionModeSelector({
-  currentMode,
-  availableModes,
-}: {
-  currentMode?: string;
-  availableModes: string[];
-}) {
-  const { t } = useT();
-  const bridge = useContext(ClaudeBridgeContext);
-  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
-
-  const modes =
-    availableModes.length > 0
-      ? availableModes
-      : ["default", "acceptEdits", "bypassPermissions", "plan", "auto", "dontAsk"];
-
-  const pending = currentMode === undefined;
-  const mode = currentMode ?? "__pending__";
-  const label = pending ? "..." : (PERMISSION_MODE_LABELS[mode] ?? mode);
-
-  // Clear switching animation when mode changes
-  useEffect(() => {
-    if (switchingTo && switchingTo === currentMode) setSwitchingTo(null);
-  }, [currentMode, switchingTo]);
-
-  if (switchingTo) {
-    return (
-      <div className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant">
-        <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-assistant/40 border-t-assistant" />
-        {PERMISSION_MODE_LABELS[switchingTo] ?? switchingTo}
-      </div>
-    );
-  }
-
-  return (
-    <OptionMenu
-      accent="permission"
-      align="start"
-      cancelLabel={t("cancel")}
-      trigger={
-        <button
-          type="button"
-          className={`inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium transition ${
-            pending
-              ? "text-on-surface-muted cursor-default"
-              : "text-permission hover:text-permission hover:bg-surface-raised/50 cursor-pointer"
-          }`}
-          disabled={pending}
-        >
-          <span className="min-w-0 truncate">{label}</span>
-          <svg
-            className="h-3 w-3 shrink-0 opacity-60"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M4 6l4 4 4-4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      }
-      items={modes.map((pmId) => ({
-        label: PERMISSION_MODE_LABELS[pmId] ?? pmId,
-        isActive: pmId === mode,
-        onSelect: () => {
-          if (bridge) {
-            setSwitchingTo(pmId);
-            bridge.switchPermissionMode(pmId);
-          }
-        },
-      }))}
-    />
-  );
-}
-
-// Per-session runtime effort switch. Unlike model/permission (in-process), the
-// CLI has no runtime effort switch on a direct-pull host, so changing effort
-// relaunches the CLI (--resume + new CLAUDE_CODE_EFFORT_LEVEL) and reconnects
-// the stream. The parent owns the side-effect orchestration (switch + detail
-// invalidation + running-turn confirm); this component is purely presentational.
-// The trigger mirrors ModelSelector/PermissionModeSelector — value-only, no
-// prefix label — so the composer bar reads as three peer chips. The effort
-// concept itself ("思考强度") is surfaced in settings, not here.
-// Level values (low/medium/high/xhigh/max) are shown verbatim — they are CLI
-// identifiers passed through as CLAUDE_CODE_EFFORT_LEVEL, not localized.
-function EffortSelector({
-  currentEffort,
-  onSelectEffort,
-}: {
-  currentEffort?: EffortLevel;
-  onSelectEffort: (effort: EffortLevel) => void;
-}) {
-  const { t } = useT();
-  // Default "high" matches DEFAULT_CLAUDE_RUNTIME.effort (Opus 4.8 built-in);
-  // shown while the session detail is still loading.
-  const current: EffortLevel = currentEffort ?? "high";
-  return (
-    <OptionMenu
-      accent="assistant"
-      align="start"
-      cancelLabel={t("cancel")}
-      trigger={
-        <button
-          type="button"
-          className="inline-flex min-w-0 items-center gap-1 rounded-md px-2 py-1 text-[0.65rem] font-medium text-assistant hover:text-assistant hover:bg-surface-raised/50 transition cursor-pointer"
-        >
-          <span className="min-w-0 truncate">{current}</span>
-          <svg
-            className="h-3 w-3 shrink-0 opacity-60"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M4 6l4 4 4-4"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      }
-      items={EFFORT_LEVELS.map((effort) => ({
-        label: effort,
-        isActive: effort === current,
-        onSelect: () => onSelectEffort(effort),
-      }))}
-    />
-  );
-}
-
 // assistant-ui's default directive formatter writes `:command[/x]{name=x}` into the
 // composer, which is meant for an LLM runtime to parse back into a tool call. Our
 // composer text is piped straight to the Claude CLI stdin, which only understands a
@@ -3979,8 +3672,13 @@ function ComposerWithInterrupt({
             void composer.send();
           }}
         />
-        {/* 卡片底行（恒渲染）：selectors + Stop/Send 互斥占同槽（ml-auto 右对齐），加 Send 不增宽。 */}
+        {/* 卡片底行（恒渲染）：selectors + Stop/Send 互斥占同槽（ml-auto 右对齐），加 Send 不增宽。
+            顺序对齐 03a 原型 irow：权限 → 模型 → 深度 → send2。 */}
         <div className="flex h-9 items-center gap-2 px-2.5 pb-2 pt-0.5">
+          <PermissionModeSelector
+            currentMode={permissionMode}
+            availableModes={availablePermissionModes}
+          />
           <ModelSelector
             opusplanActive={opusplanActive}
             currentModel={currentModel}
@@ -3989,10 +3687,6 @@ function ComposerWithInterrupt({
             availableModelResolved={availableModelResolved}
             modelSwitchVersion={modelSwitchVersion}
             permissionMode={permissionMode}
-          />
-          <PermissionModeSelector
-            currentMode={permissionMode}
-            availableModes={availablePermissionModes}
           />
           <EffortSelector currentEffort={currentEffort} onSelectEffort={onSelectEffort} />
           <ComposerStopSend

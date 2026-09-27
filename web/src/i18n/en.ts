@@ -98,8 +98,6 @@ export const en = {
   "session.instanceInfo.createdAt": "Created",
   "session.instanceInfo.resumeId": "Resume ID",
   "session.autoRetry.label": "Auto-retry",
-  "session.autoRetry.onChip": "Auto-retry on",
-  "session.autoRetry.offChip": "Auto-retry off",
   "session.autoRetry.edit": "Edit auto-retry",
   "session.autoRetry.editShort": "Edit",
   "session.autoRetry.enable": "Auto-retry",
@@ -381,6 +379,9 @@ export const en = {
   // ── Claude ────────────────────────────────────────────────────
   "claude.inputPlaceholder": "Ask Claude...",
   "claude.composer.send": "Send",
+  "claude.composer.permLabel": "Permission mode",
+  "claude.composer.modelLabel": "Model",
+  "claude.composer.effortLabel": "Reasoning effort",
   "claude.blockedByPendingAction": "Please confirm the action above first",
   "claude.disconnected": "Establishing connection…",
   "claude.plan.title": "Plan",

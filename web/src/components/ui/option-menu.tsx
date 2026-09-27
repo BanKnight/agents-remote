@@ -1,4 +1,4 @@
-import { useState, type ButtonHTMLAttributes, type ReactElement } from "react";
+import { useState, type ButtonHTMLAttributes, type ReactElement, type ReactNode } from "react";
 
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,18 @@ type OptionMenuProps = {
   align?: "start" | "center" | "end";
   /** 移动 sheet 末项「取消」文案。 */
   cancelLabel?: string;
+  /**
+   * 形态覆写（默认 "auto" = 按 useIsMobile 分流：移动 sheet / 桌面锚定 popover）。
+   * "anchored" = 强制 Radix 锚定 popover（窄端触屏也原位上方弹出）——v1.4 03a composer
+   * 选择器菜单语义（点 .iicn 图标原位上方弹选项，不再落底部 sheet）。
+   */
+  presentation?: "auto" | "anchored";
+  /**
+   * anchored 菜单头（03a `.mh`：mini tint 图标 + 标题行，纯展示非 menuitem）。仅在
+   * 锚定 popover 形态渲染；sheet 形态不需要（标题语义由整卡布局承载）。典型经
+   * composer-controls 的 `MenuHeader` 组装。
+   */
+  menuHeader?: ReactNode;
 };
 
 /**
@@ -113,13 +125,15 @@ export function OptionMenu({
   accent = "user",
   align = "start",
   cancelLabel,
+  presentation = "auto",
+  menuHeader,
 }: OptionMenuProps) {
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
   // 含 description（如 model alias + 具体 ID 配对）→ 移动端整列 items-start，让 label 行跨项对齐。
   const hasDescription = items.some((item) => item.description);
 
-  if (isMobile) {
+  if (presentation === "auto" && isMobile) {
     return (
       <MobileSheet ariaLabel="选择菜单" onOpenChange={setOpen} open={open} trigger={trigger}>
         {/* .msheet 自带 max-height 内滚（frontend-notes §8），无需内部再设滚动约束 */}
@@ -177,6 +191,7 @@ export function OptionMenu({
         sideOffset={4}
         className="max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto"
       >
+        {menuHeader}
         {items.map((item, index) => (
           <DropdownMenuItem
             key={`${item.label}-${index}`}

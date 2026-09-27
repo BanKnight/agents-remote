@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
-import type { AgentSession, TerminalSession } from "@agents-remote/shared";
+import type { TerminalSession } from "@agents-remote/shared";
 import { listProjectGitBranches, listProjectGitDiff } from "../../api/client";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import {
@@ -723,16 +723,9 @@ function MobileProjectWorkbench({
       renderItems.find((s) => s.tabId === effectiveFocusId)?.ref ??
       null)
     : null;
-  // chips 行数据源：聚焦实例的类型分派（M3-c 逐状态——agent = 摘要+自动重试、terminal = tmux
-  // chip；file/git/skill focus 无 chips 行）。type predicate 收窄 session union
-  //（ProjectInstanceEntry 非 discriminated union）。
-  const focusedAgent =
-    effectiveFocusId && focusRef?.kind === "session"
-      ? (instances.find(
-          (e): e is ProjectInstanceEntry & { session: AgentSession } =>
-            e.type === "agent" && e.session.id === effectiveFocusId,
-        )?.session ?? null)
-      : null;
+  // chips 行数据源：聚焦 terminal（v1.4 起 agent 无 chips 行——配置在 composer 控制行与
+  // ℹ 实例信息）。type predicate 收窄 session union（ProjectInstanceEntry 非 discriminated
+  // union）。
   const focusedTerminal =
     effectiveFocusId && focusRef?.kind === "session"
       ? (instances.find(
@@ -1015,7 +1008,6 @@ function MobileProjectWorkbench({
               />
             ) : undefined
           }
-          focusedAgent={focusedAgent}
           focusedTerminal={focusedTerminal}
           instances={instances}
           onCreateInstance={() => setCreateSheetOpen(true)}

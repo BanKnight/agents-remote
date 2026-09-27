@@ -1,4 +1,4 @@
-import type { AgentSession, TerminalSession } from "@agents-remote/shared";
+import type { TerminalSession } from "@agents-remote/shared";
 import { type ReactNode, useEffect, useRef } from "react";
 
 import { useT } from "../../i18n";
@@ -10,11 +10,7 @@ import {
   useLongPressActions,
   useRowContextMenu,
 } from "../ui/action-menu";
-import {
-  type CreateSessionApi,
-  AutoRetryHeaderButton,
-  type ProjectInstanceEntry,
-} from "./instance-area";
+import { type CreateSessionApi, type ProjectInstanceEntry } from "./instance-area";
 
 /** row2 尾部工具入口（原型 .ticon ×3：folder/branch/book）。工具原位主体 = 同名 ?tab 维度
  * （与桌面 ProjectLeftPanel middle tab 同构，v2 IA 两端同构约定）。 */
@@ -55,8 +51,6 @@ type MobileProjectHeaderProps = {
   onSwitchProjects?: () => void;
   /** nav ⋯ 更多菜单（03n「会话历史」等；调用方装配 ActionMenu）。 */
   moreMenu?: ReactNode;
-  /** 聚焦 agent 实例（chips 运行摘要行数据源；工具态无 chips 行）。 */
-  focusedAgent: AgentSession | null;
   /** 聚焦 terminal 实例（03f：chips 行只剩 tmux 会话 chip，无模型/权限/effort）。 */
   focusedTerminal: TerminalSession | null;
 };
@@ -69,8 +63,8 @@ type MobileProjectHeaderProps = {
  * - row2 行：`.pills` 实例横滑区（agent = 状态 dot + 名；terminal = `>_ 名` monospace；skill
  *   tab 兼职 pill）+ `.plus` 新建实例 ActionMenu + `.sep` + 3 个工具 ticon。无实例时 pills 区
  *   显示「项目工具」lb（03h：无实例不渲染 pill 条，工具是项目级仍可用）。
- * - chips 行：随聚焦实例类型切换（M3-c 逐状态）——agent = 运行摘要 chip（`✦ model · 权限
- *   模式 · effort`，03 编号②）+ 自动重试开关 chip；terminal = `tmux · 名` mono chip（03f）；
+ * - chips 行：仅 terminal 聚焦 = `tmux · 名` mono chip（03f）；agent 的运行摘要/自动重试
+ *   chip 已随 v1.4 退役（配置在 composer 控制行 .iicn/.ipill 与 ℹ 实例信息）。
  *   工具态/skill focus 无 chips 行（原型 03h 空态也无）。
  *
  * 原语类（.nav/.back/.nv-t/.row2/.pills/.pill/.plus/.sep/.ticon/.chips/.chip/.dot）消费
@@ -95,7 +89,6 @@ export function MobileProjectHeader({
   focusActions,
   moreMenu,
   onSwitchProjects,
-  focusedAgent,
   focusedTerminal,
 }: MobileProjectHeaderProps) {
   const { t } = useT();
@@ -292,28 +285,12 @@ export function MobileProjectHeader({
             ))}
           </div>
 
-          {/* chips 行（原型 .chips：随聚焦实例类型切换——agent = 运行摘要 ② + 自动重试；
-        terminal = tmux 会话 chip（03f 编号①「只剩 tmux 会话选择，无模型/权限/effort」；
-        终端实例 1:1 绑定 tmux 会话无切换能力，chip 静态展示不画 ▾）；工具态/skill 无 chips 行
-        ——M10 用户反馈：工具态（tool 非空）chips 必须隐藏，本注释原就写了此语义但渲染
-        此前只 gate 聚焦实例类型漏了 tool） */}
-          {!tool && focusedAgent ? (
-            <div className="chips shrink-0">
-              <span className="chip">
-                ✦{" "}
-                {[focusedAgent.modelAlias, focusedAgent.permissionMode, focusedAgent.effort]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </span>
-              {/* 摘要 chip 与重试开关间分隔（03 原型 chips 行 chip + sep + 重试区） */}
-              <span className="sep" />
-              <AutoRetryHeaderButton
-                projectName={focusedAgent.projectName}
-                sessionId={focusedAgent.id}
-                variant="chip"
-              />
-            </div>
-          ) : !tool && focusedTerminal ? (
+          {/* chips 行（v1.4 退役 agent 运行摘要/自动重试 chip：模型·权限·深度已在 composer
+        控制行 .iicn/.ipill 常驻可见（03a/04），自动重试配置在 ℹ 实例信息（03k ③）；错误态
+        红色倒计时条仍在流上方（03d）。terminal 保留 tmux 会话 chip（03f 编号①「只剩 tmux
+        会话选择，无模型/权限/effort」；终端实例 1:1 绑定 tmux 会话无切换能力，静态不画 ▾）；
+        工具态/skill 无 chips 行（M10 用户反馈语义保留） */}
+          {!tool && focusedTerminal ? (
             <div className="chips shrink-0">
               <span className="chip font-mono">tmux · {focusedTerminal.displayName}</span>
             </div>

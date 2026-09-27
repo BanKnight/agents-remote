@@ -1130,11 +1130,10 @@ export function AutoRetryHeaderButton({
   projectName: string;
   sessionId: string;
   /**
-   * tab = 桌面 TabChip icon 按钮（h-4）；capsule = 移动聚焦 header 胶囊按钮（h-8）；
-   * chip = v2 移动 chips 行形态（rotate 图标 + 「自动重试开/关」文字，对标 03 原型 .chips：
-   * on 态图标 success 色，文字恒 ink-2 micro 档）。
+   * tab = 桌面 TabChip icon 按钮（h-4）；capsule = 移动聚焦 header 胶囊按钮（h-8）。
+   * （chip = v2 移动 chips 行形态，v1.4 起 chips 行退役后已删。）
    */
-  variant: "tab" | "capsule" | "chip";
+  variant: "tab" | "capsule";
 }) {
   const { t } = useT();
   const { enabled, toggle } = useAutoRetryToggle(projectName, sessionId);
@@ -1148,11 +1147,9 @@ export function AutoRetryHeaderButton({
             ? "text-primary"
             : "text-on-surface-muted hover:text-on-surface opacity-100 hover-capable:opacity-0 hover-capable:group-hover/tab:opacity-100"
         }`
-      : variant === "capsule"
-        ? `flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-on-surface/5 active:bg-on-surface/10 ${
-            on ? "text-primary" : "text-on-surface-soft hover:text-on-surface"
-          }`
-        : `flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-micro text-ink-2 transition touch:px-2 touch:py-1.5 hover:bg-ink-1/5 active:bg-ink-1/10`;
+      : `flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-on-surface/5 active:bg-on-surface/10 ${
+          on ? "text-primary" : "text-on-surface-soft hover:text-on-surface"
+        }`;
   return (
     <button
       aria-checked={on}
@@ -1164,15 +1161,7 @@ export function AutoRetryHeaderButton({
       title={t("session.autoRetry.label")}
       type="button"
     >
-      <ShellIcon
-        className={`${variant === "chip" ? "h-5 w-5" : "h-3.5 w-3.5"} ${variant === "chip" && on ? "text-success" : ""}`}
-        name="rotate"
-      />
-      {variant === "chip"
-        ? on
-          ? t("session.autoRetry.onChip")
-          : t("session.autoRetry.offChip")
-        : null}
+      <ShellIcon className="h-3.5 w-3.5" name="rotate" />
     </button>
   );
 }

@@ -100,8 +100,6 @@ export const zh: Record<TranslationKey, string> = {
   "session.instanceInfo.createdAt": "创建时间",
   "session.instanceInfo.resumeId": "恢复 ID",
   "session.autoRetry.label": "自动重试",
-  "session.autoRetry.onChip": "自动重试开",
-  "session.autoRetry.offChip": "自动重试关",
   "session.autoRetry.edit": "编辑自动重试",
   "session.autoRetry.editShort": "编辑",
   "session.autoRetry.enable": "自动重试",
@@ -381,6 +379,9 @@ export const zh: Record<TranslationKey, string> = {
   // ── Claude ────────────────────────────────────────────────────
   "claude.inputPlaceholder": "向 Claude 提问...",
   "claude.composer.send": "发送",
+  "claude.composer.permLabel": "权限模式",
+  "claude.composer.modelLabel": "模型",
+  "claude.composer.effortLabel": "推理深度",
   "claude.blockedByPendingAction": "请先确认上方操作",
   "claude.disconnected": "正在建立连接中…",
   "claude.plan.title": "计划",

@@ -6,7 +6,7 @@
 // 新增三行几何断言（DOM 硬数据，禁截图）：
 //   nav 行 .back「项目」主色 15px + ::before 箭头 + .nv-t 17px/600
 //   row2 .pill h30/r15 + .plus 20×20 主色 + .sep 1×18 + ticon ×3 svg 19×19
-//   chips 行 .chip h24（聚焦 agent 时）
+//   agent chips 行已退役（v1.4 03f：✦ chip/AutoRetry chip 删，.chip 恒不渲染断言）
 //
 // 密码自读（config.yaml → api environ），不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-mobile-project-header.mjs
@@ -458,7 +458,9 @@ async function run() {
     ok(geo.sepSize === "1pxx18px", `.sep 1×18（实际 ${geo.sepSize}）`);
     ok(geo.ticonCount === 3, `row2 工具 ticon ×3（实际 ${geo.ticonCount}）`);
     ok(geo.ticonSvg === "19x19", `ticon svg 19×19（实际 ${geo.ticonSvg}）`);
-    ok(geo.chipH === 24, `.chip h24（实际 ${geo.chipH}）`);
+    // v1.4（03f）退役语义：agent chips 行（✦ model·perm·effort + AutoRetry）整体删除，
+    // 配置收敛到 composer 控制行 + ℹ 实例信息——聚焦 agent 时 .chip 恒不渲染。
+    ok(geo.chipH === null, `agent chips 行已退役，.chip 不渲染（实际 ${geo.chipH}）`);
     await ctx2.close();
 
     // ── Part 8：nav back ◄ 点击 → URL 回项目列表（原 probe-mobile-tabstrip-back 的 v2 等价，
