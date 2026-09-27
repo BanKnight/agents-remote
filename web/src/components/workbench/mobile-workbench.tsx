@@ -13,8 +13,11 @@ import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import type { GitDiffScope, TerminalSession } from "@agents-remote/shared";
-import { listProjectGitBranches, listProjectGitDiff } from "../../api/client";
+import { listProjectFiles, listProjectGitBranches, listProjectGitDiff } from "../../api/client";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
+import { AddMenu } from "../files/add-menu";
+import { NewItemSheet } from "../files/new-item-sheet";
+import { enqueueUploads } from "../files/upload-queue";
 import {
   LargeTitleRow,
   MobilePageHeader,
@@ -918,13 +921,26 @@ function MobileProjectWorkbench({
         </div>
       );
     });
-  // 面板 FAB（03o ③：文件树标签右下 → 批4 03oa 添加菜单；批2 先接空桩——design-review
-  // m3：disabled 不给无功能的可见 affordance，label 用「添加」语义非「新建文件夹」）。
+  // 面板 FAB（03o ③ / 03oa：文件树标签右下 → 添加菜单两项「新建…/上传…」，批4 启用；
+  // 批2 曾是 disabled 空桩）。目标目录 = 当前 cwd（filesPath，与 FilesToolPanel 受控记忆
+  // 同源）；上传走 03z 队列（enqueueUploads + hidden input，时序安全用 ref）。
+  const panelUploadInputRef = useRef<HTMLInputElement>(null);
+  const panelUploadTargetRef = useRef("");
+  const [panelNewItemParentPath, setPanelNewItemParentPath] = useState<string | null>(null);
   const renderPanelFab = () =>
     activePanelTab?.kind === "files" ? (
-      <button aria-label={t("files.add")} className="fab cursor-pointer" disabled type="button">
-        <span className="plus" style={{ width: 20, height: 20 }} />
-      </button>
+      <AddMenu
+        onNew={() => setPanelNewItemParentPath(filesPath)}
+        onUpload={() => {
+          panelUploadTargetRef.current = filesPath;
+          panelUploadInputRef.current?.click();
+        }}
+        trigger={
+          <button aria-label={t("files.add")} className="fab cursor-pointer" type="button">
+            <span className="plus" style={{ width: 20, height: 20 }} />
+          </button>
+        }
+      />
     ) : null;
   // H1 修复（design-reviewer 运行时实证）：focus 导航与面板互斥（脏 URL 兜底）。?tab 与
   // focusId 是独立存活的维度——脏 URL（?tab= 与 session focus 并存）时以 focusId 变化为信号
@@ -956,6 +972,12 @@ function MobileProjectWorkbench({
   const filesPath = projectFilesPaths[scope.key] ?? "";
   const setFilesPath = (path: string) =>
     setProjectFilesPaths((prev) => ({ ...prev, [scope.key]: path }));
+  // FAB 新建的重名即时校验数据源：与面板 FilesToolPanel 同 key 共享缓存（零额外网络）。
+  const panelFilesQuery = useQuery({
+    queryFn: () => listProjectFiles(scope.key, filesPath || undefined),
+    queryKey: ["projects", scope.key, "files", filesPath],
+  });
+  const panelFilesEntries = panelFilesQuery.data?.entries;
 
   // file/git 预览 focus 的返回（M10 第三轮用户反馈：back = 返回上一层，与 backLabel 语义
   // 对齐——文件预览回文件树父目录（03q back「src/auth」），git diff 回 Git 工具面板（03r
@@ -1441,6 +1463,34 @@ function MobileProjectWorkbench({
         >
           {panelEverOpened ? renderPanelChildren() : null}
         </InspectionPanel>
+        {/* 03y 新建 sheet + 03oa 上传 picker（面板 FAB 菜单装配；open = state 非空持有）。 */}
+        {panelNewItemParentPath !== null ? (
+          <NewItemSheet
+            onOpenChange={(next) => {
+              if (!next) setPanelNewItemParentPath(null);
+            }}
+            open
+            parentPath={panelNewItemParentPath}
+            projectName={scope.key}
+            siblingNames={
+              panelNewItemParentPath === filesPath
+                ? (panelFilesEntries ?? []).map((e) => e.name)
+                : []
+            }
+          />
+        ) : null}
+        <input
+          className="hidden"
+          multiple
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              enqueueUploads(scope.key, panelUploadTargetRef.current, Array.from(e.target.files));
+            }
+            e.target.value = "";
+          }}
+          ref={panelUploadInputRef}
+          type="file"
+        />
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* 保活面板层（2026-08-17 用户决策「全保活 + 聚焦过即可」；v2 M3-b 起工具态也保持
             hidden 挂载——进出检视面板不卸载 session 面板，WS 不断；v1.4 批2 起面板 open 时
@@ -1816,8 +1866,22 @@ function MobileFilesOverview() {
   const { t } = useT();
   const navigate = useNavigate();
   // 全局文件树 cwd（localStorage 记忆，路径 = `${projectName}/${relative}`，空串 = 根目录）：
-  // 后台被杀/重开停留在上次目录。路径不存在回退由 FilesPanel 侧查 files.error 处理。
+  // 后台被杀/重开停留在上次目录。路径不存在回退由 FilesPanel 侧查 files error 处理。
   const [globalFilesPath, setGlobalFilesPath] = useAtom(workbenchMobileGlobalFilesPathAtom);
+  // 10-tab ④ h1 行右端 ＋ = 03oa 添加菜单：项目层语境才可写（服务器根目录不可写——
+  // Project-safe resolver 无项目名）。cwd 前缀 = 项目名，拆出 projectName + 相对目录。
+  const [overviewAddPath, setOverviewAddPath] = useState<string | null>(null);
+  const overviewUploadInputRef = useRef<HTMLInputElement>(null);
+  const overviewUploadTargetRef = useRef("");
+  const slash = globalFilesPath.indexOf("/");
+  const overviewProject =
+    slash === -1
+      ? globalFilesPath.length > 0
+        ? globalFilesPath
+        : ""
+      : globalFilesPath.slice(0, slash);
+  const overviewDir = slash === -1 ? "" : globalFilesPath.slice(slash + 1);
+  const overviewWritable = overviewProject.length > 0;
   const onOpenFile = (projectName: string, path: string) => {
     void navigate({
       to: "/files/file/$",
@@ -1828,7 +1892,30 @@ function MobileFilesOverview() {
     <div className="flex h-full min-h-0 flex-col">
       {/* Large title 行（LargeTitleRow 单源；M10 用户反馈⑥：紧凑 MobilePageHeader 换
           Large title，与项目/插件 Tab 同款页头） */}
-      <LargeTitleRow title={t("nav.files")} />
+      <LargeTitleRow
+        actions={
+          <AddMenu
+            onNew={() => {
+              if (overviewWritable) setOverviewAddPath(overviewDir);
+            }}
+            onUpload={() => {
+              if (!overviewWritable) return;
+              overviewUploadTargetRef.current = overviewDir;
+              overviewUploadInputRef.current?.click();
+            }}
+            trigger={
+              <button
+                aria-label={t("files.add")}
+                className={`ic cursor-pointer ${overviewWritable ? "" : "pointer-events-none opacity-40"} flex size-9 items-center justify-center`}
+                type="button"
+              >
+                <ShellIcon name="plus" />
+              </button>
+            }
+          />
+        }
+        title={t("nav.files")}
+      />
       <div className="flex min-h-0 flex-1 flex-col">
         <GlobalFilesOverview
           currentPath={globalFilesPath}
@@ -1836,6 +1923,33 @@ function MobileFilesOverview() {
           onOpenFile={onOpenFile}
         />
       </div>
+      {overviewAddPath !== null ? (
+        <NewItemSheet
+          onOpenChange={(next) => {
+            if (!next) setOverviewAddPath(null);
+          }}
+          open
+          parentPath={overviewAddPath}
+          projectName={overviewProject}
+          siblingNames={[]}
+        />
+      ) : null}
+      <input
+        className="hidden"
+        multiple
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            enqueueUploads(
+              overviewProject,
+              overviewUploadTargetRef.current,
+              Array.from(e.target.files),
+            );
+          }
+          e.target.value = "";
+        }}
+        ref={overviewUploadInputRef}
+        type="file"
+      />
     </div>
   );
 }

@@ -288,6 +288,71 @@ test("createFolder rejects non-directory parent", async () => {
   });
 });
 
+test("createFile creates an empty file and returns entry", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(service.createFile("demo", "", "note.md")).resolves.toMatchObject({
+    entry: {
+      name: "note.md",
+      path: "note.md",
+      type: "file",
+      hidden: false,
+      size: 0,
+    },
+  });
+});
+
+test("createFile creates nested file", async () => {
+  await mkdir(join(root, "demo", "lib"));
+  const service = new ProjectFilesService(root);
+
+  await expect(service.createFile("demo", "lib", "index.ts")).resolves.toMatchObject({
+    entry: {
+      name: "index.ts",
+      path: "lib/index.ts",
+      type: "file",
+    },
+  });
+});
+
+test("createFile rejects dot-prefixed file name", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(service.createFile("demo", "", ".env")).rejects.toMatchObject({
+    code: "PROJECT_NAME_INVALID",
+  });
+});
+
+test("createFile rejects path traversal in file name", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(service.createFile("demo", "", "../escape")).rejects.toMatchObject({
+    code: "PROJECT_NAME_INVALID",
+  });
+});
+
+test("createFile rejects existing name (file or folder)", async () => {
+  const service = new ProjectFilesService(root);
+  await writeFile(join(root, "demo", "exists.txt"), "x");
+  await mkdir(join(root, "demo", "exists-dir"));
+
+  await expect(service.createFile("demo", "", "exists.txt")).rejects.toMatchObject({
+    code: "PROJECT_FILE_TARGET_EXISTS",
+  });
+  await expect(service.createFile("demo", "", "exists-dir")).rejects.toMatchObject({
+    code: "PROJECT_FILE_TARGET_EXISTS",
+  });
+});
+
+test("createFile rejects non-directory parent", async () => {
+  const service = new ProjectFilesService(root);
+  await writeFile(join(root, "demo", "file.txt"), "content");
+
+  await expect(service.createFile("demo", "file.txt", "sub.txt")).rejects.toMatchObject({
+    code: "PROJECT_FILE_NOT_DIRECTORY",
+  });
+});
+
 test("renameFile renames a file and returns updated entry", async () => {
   await writeFile(join(root, "demo", "old.txt"), "hello");
   const service = new ProjectFilesService(root);

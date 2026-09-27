@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import type {
   ApiErrorCode,
+  CreateFileResponse,
   CreateFolderResponse,
   DeleteFileResponse,
   ProjectFileEntry,
@@ -489,6 +490,61 @@ export class ProjectFilesService {
         size: null,
       },
     };
+  }
+
+  /** 新建空文件（03y 新建 sheet，v1.4 批4）：校验骨架与 createFolder 同款（Project-safe
+   * resolver + 名称合法性 + 重名硬拒），写空内容文件。 */
+  async createFile(
+    projectName: string,
+    parentPath: string,
+    fileName: string,
+  ): Promise<CreateFileResponse> {
+    const resolved = await this.resolvePath(projectName, parentPath);
+    const dirStat = await this.statPath(resolved.path);
+
+    if (!dirStat.isDirectory()) {
+      throw new ProjectFilesError("PROJECT_FILE_NOT_DIRECTORY", "File parent must be a directory");
+    }
+
+    if (
+      fileName.length === 0 ||
+      fileName.includes("/") ||
+      fileName.includes("\\") ||
+      fileName.includes("\0")
+    ) {
+      throw new ProjectFilesError("PROJECT_NAME_INVALID", "Invalid file name");
+    }
+
+    if (fileName.startsWith(".")) {
+      throw new ProjectFilesError("PROJECT_NAME_INVALID", "File name must not start with a dot");
+    }
+
+    const targetPath = join(resolved.path, fileName);
+
+    try {
+      // flag "wx" = 已存在即抛 EEXIST（默认 "w" 会截断既有文件，重名检查失效）。
+      await writeFile(targetPath, "", { flag: "wx" });
+      const entryStat = await this.statPath(targetPath);
+      return {
+        entry: {
+          name: fileName,
+          path: parentPath.length > 0 ? `${parentPath}/${fileName}` : fileName,
+          type: "file",
+          hidden: false,
+          size: entryStat.size,
+          ...(entryStat.isFile() ? { mtimeMs: entryStat.mtimeMs } : {}),
+        },
+      };
+    } catch (error) {
+      if (isAlreadyExistsError(error)) {
+        throw new ProjectFilesError(
+          "PROJECT_FILE_TARGET_EXISTS",
+          "A file or folder with this name already exists",
+        );
+      }
+
+      throw new ProjectFilesError("PROJECT_FS_ERROR", "Unable to create file");
+    }
   }
 
   async renameFile(

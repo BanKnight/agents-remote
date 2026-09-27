@@ -116,3 +116,69 @@ test("authenticated user can browse Project files and preview text and images", 
     "true",
   );
 });
+
+// v1.4 批4 文件操作：03y 新建 sheet（文件|文件夹 segc + 名称 + 位置）→ 03w2 重命名
+// Alert（预填全选 + ✓ 可用）→ 03w3 移动 sheet（目录浏览 + ✓ 选中 + 移动到此处）→
+// 03w4 删除确认（文件/文件夹措辞）。右栏 FilesToolPanel 桌面语境：行右键 = 03w 菜单。
+test("batch-4 file operations: new item sheet, rename, move, delete confirm", async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto("/");
+
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+
+  const projectRow = page.locator(`nav.side .srow2[title="${projectName}"]`);
+  await expect(projectRow).toBeVisible();
+  await page.goto(`/projects/${projectName}?rightTab=files`);
+  const files = page.getByRole("complementary").nth(1);
+  await expect(files.locator(".frow").first()).toBeVisible();
+
+  const stamp = Date.now().toString(36);
+  const fileName = `e2e-b4-${stamp}.txt`;
+
+  // ── 03y 新建 sheet：links 行「New…」打开，segc 文件态 + 名称 + 位置（项目根）。──
+  await files.locator(".links button", { hasText: /New…/ }).click();
+  const sheet = page.getByRole("dialog");
+  await expect(sheet.getByRole("tab", { name: "File", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(sheet.getByText("project root")).toBeVisible();
+  // 重名即时校验：输入既有名 → 行内红字；换唯一名 → 可创建。
+  await sheet.getByLabel("Name").fill("README.md");
+  await expect(sheet.getByText(/already exists/i)).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Create" })).toBeDisabled();
+  await sheet.getByLabel("Name").fill(fileName);
+  await sheet.getByRole("button", { name: "Create" }).click();
+  await expect(files.locator(".frow", { hasText: fileName })).toBeVisible();
+
+  // ── 03w2 重命名 Alert：右键行 → 菜单「Rename」→ 预填全选覆盖输入 + ✓ Available。──
+  await files.locator(".frow", { hasText: fileName }).click({ button: "right" });
+  await page.locator('[role="menuitem"]', { hasText: "Rename" }).click();
+  const renameBox = page.getByRole("dialog");
+  await expect(renameBox.getByRole("button", { name: "Rename" })).toBeDisabled(); // 未改名禁用
+  await renameBox.getByLabel("Rename").fill(`e2e-b4-${stamp}-renamed.txt`);
+  await expect(renameBox.getByText("✓ Available")).toBeVisible();
+  await renameBox.getByRole("button", { name: "Rename" }).click();
+  await expect(files.locator(".frow", { hasText: `-renamed.txt` })).toBeVisible();
+
+  // ── 03w3 移动 sheet：右键 → 「Move to…」→ 当前目录行 ✓ + 点 src 进入 + 移动到此处。──
+  await files.locator(".frow", { hasText: `-renamed.txt` }).click({ button: "right" });
+  await page.locator('[role="menuitem"]', { hasText: "Move to…" }).click();
+  const moveBox = page.getByRole("dialog");
+  await expect(moveBox.locator(".ck")).toHaveText("✓");
+  await moveBox.locator(".mvrow", { hasText: "src" }).click();
+  await moveBox.getByRole("button", { name: "Move here" }).click();
+  // 移动后：进 src 目录看到文件；原根层不再有。定位用子串匹配（与上方 /src/ 同款——
+  // .frow 行 textContent 带行内空白，锚定正则 ^src$ 不匹配）。
+  await files.locator(".frow", { hasText: /src/ }).first().click();
+  await expect(files.locator(".frow", { hasText: `-renamed.txt` })).toBeVisible();
+
+  // ── 03w4 删除确认：src 层右键 renamed 文件 → confirm 文案（文件版措辞）→ 确认移除。──
+  await files.locator(".frow", { hasText: `-renamed.txt` }).click({ button: "right" });
+  await page.locator('[role="menuitem"]', { hasText: "Delete" }).click();
+  const delBox = page.getByRole("dialog");
+  await expect(delBox).toContainText("removed from the project and the Git worktree");
+  await delBox.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(files.locator(".frow", { hasText: `-renamed.txt` })).toHaveCount(0);
+});

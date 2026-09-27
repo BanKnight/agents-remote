@@ -2,7 +2,7 @@ import type { GitDiffScope } from "@agents-remote/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { type PointerEvent, type ReactNode, useCallback, useEffect, useState } from "react";
+import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   InstanceArea,
   useCloseSession,
@@ -19,9 +19,13 @@ import { type WorkbenchTabPluginContext } from "../components/workbench/workbenc
 import { RightPanelTabs } from "../components/workbench/right-panel-tabs";
 import { StatusBar } from "../components/workbench/status-bar";
 import { SettingsMainPage } from "../components/shell/settings-dialog";
+import { ShellIcon } from "../components/shell/icons";
 import { WorkbenchSide } from "../components/workbench/workbench-side";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { GlobalFilesOverview } from "../components/files/global-files-overview";
+import { AddMenu } from "../components/files/add-menu";
+import { NewItemSheet } from "../components/files/new-item-sheet";
+import { enqueueUploads } from "../components/files/upload-queue";
 import { MobileMcpDetail } from "../components/workbench/mobile-plugins-detail";
 import { MobilePluginsOverview } from "../components/workbench/mobile-plugins-home";
 import { MobileMarket, MobileMarketSources } from "../components/workbench/mobile-plugins-market";
@@ -135,6 +139,20 @@ function WorkbenchContent({
   // 10m 文件 mainPage 的受控 cwd（§6.12j 批次 4）：作用域 seg4「本项目」= 根目录浏览进项目
   // 目录（currentPath = 项目名），页面内态不进 URL（刷新回全局根，与 FilesPanel 内部态同语义）。
   const [globalFilesPath, setGlobalFilesPath] = useState("");
+  // 10-mac ④ mainPage h1 行右端 ＋ = 03oa 添加菜单（批4）：项目层语境才可写（服务器根
+  // 不可写）。cwd 前缀 = 项目名，拆出 projectName + 项目内相对目录。
+  const [mainPageAddPath, setMainPageAddPath] = useState<string | null>(null);
+  const mainPageUploadInputRef = useRef<HTMLInputElement>(null);
+  const mainPageUploadTargetRef = useRef("");
+  const mainPageSlash = globalFilesPath.indexOf("/");
+  const mainPageProject =
+    mainPageSlash === -1
+      ? globalFilesPath.length > 0
+        ? globalFilesPath
+        : ""
+      : globalFilesPath.slice(0, mainPageSlash);
+  const mainPageDir = mainPageSlash === -1 ? "" : globalFilesPath.slice(mainPageSlash + 1);
+  const mainPageWritable = mainPageProject.length > 0;
   // 右栏开合（批3 融合）：运行时真相 = workbenchPanelOpenAtom（与移动检视面板同 atom——
   // 「面板 open ⇒ 右栏展开」单一来源）；workbenchRightCollapsedAtom 降级为持久化**记忆**，
   // mount 时按记忆投影初值（记忆展开 → panelOpen true），此后开合动作只写 panelOpen，
@@ -870,16 +888,68 @@ function WorkbenchContent({
   ) : (
     // §6.12j 批次 4（10m 文件页）：variant="page" 开桌面 mainPage 形态——作用域 seg4（全局 /
     // 本项目）+ ⌘F 角标 + 项目根目录分组卡（10m:61-78）；cwd 受控供 seg4 页内切作用域。
-    <MainPageShell title={t("nav.globalFiles")}>
-      {/* 不接 onCardDragStart（§6.12k review：mainPage 态唯一落点 instanceArea 已被
+    <>
+      <MainPageShell
+        actions={
+          <AddMenu
+            onNew={() => {
+              if (mainPageWritable) setMainPageAddPath(mainPageDir);
+            }}
+            onUpload={() => {
+              if (!mainPageWritable) return;
+              mainPageUploadTargetRef.current = mainPageDir;
+              mainPageUploadInputRef.current?.click();
+            }}
+            trigger={
+              <button
+                aria-label={t("files.add")}
+                className={`flex size-7 items-center justify-center rounded-md border border-neutral-line text-on-surface-soft transition hover:bg-on-surface/5 ${mainPageWritable ? "" : "pointer-events-none opacity-40"}`}
+                type="button"
+              >
+                <ShellIcon className="size-4" name="plus" />
+              </button>
+            }
+          />
+        }
+        title={t("nav.globalFiles")}
+      >
+        {/* 不接 onCardDragStart（§6.12k review：mainPage 态唯一悬停点 instanceArea 已被
           desktopMainPage ?? 互斥卸载，拖源激活无 zone 可落——有源无落点的死线）。 */}
-      <GlobalFilesOverview
-        currentPath={globalFilesPath}
-        onOpenFile={onOpenFile}
-        onPathChange={setGlobalFilesPath}
-        variant="page"
+        <GlobalFilesOverview
+          currentPath={globalFilesPath}
+          onOpenFile={onOpenFile}
+          onPathChange={setGlobalFilesPath}
+          variant="page"
+        />
+      </MainPageShell>
+      {mainPageAddPath !== null ? (
+        <NewItemSheet
+          onOpenChange={(next) => {
+            if (!next) setMainPageAddPath(null);
+          }}
+          open
+          parentPath={mainPageAddPath}
+          projectName={mainPageProject}
+          siblingNames={[]}
+        />
+      ) : null}
+      <input
+        className="hidden"
+        multiple
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            enqueueUploads(
+              mainPageProject,
+              mainPageUploadTargetRef.current,
+              Array.from(e.target.files),
+            );
+          }
+          e.target.value = "";
+        }}
+        ref={mainPageUploadInputRef}
+        type="file"
       />
-    </MainPageShell>
+    </>
   );
   const instanceArea = (
     <InstanceArea
@@ -927,11 +997,20 @@ function WorkbenchContent({
  * seg4「全局/本项目」语义已由导航承载（全局 mainPage ↔ 点项目回工作台）、plus 功能在
  * FilesPanel 工具行 / ManageTab 内承载（§6.10 批次 d 补记 design review 段）。
  */
-function MainPageShell({ title, children }: { title: string; children: ReactNode }) {
+function MainPageShell({
+  actions,
+  title,
+  children,
+}: {
+  actions?: ReactNode;
+  title: string;
+  children: ReactNode;
+}) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 items-center gap-2 px-5 pt-2.5">
         <h1 className="min-w-0 flex-1 truncate text-[17px] font-bold text-ink-1">{title}</h1>
+        {actions}
       </header>
       <div className="min-h-0 flex-1">{children}</div>
     </div>

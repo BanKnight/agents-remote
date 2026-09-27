@@ -9,6 +9,7 @@ import type {
   CreateAgentSessionRequest,
   CreateAgentSessionResponse,
   CreateFolderResponse,
+  CreateFileResponse,
   CreateProjectRequest,
   CreateProjectResponse,
   CreateTerminalSessionRequest,
@@ -252,6 +253,23 @@ export async function createFolder(
   return fetchJson(
     projectFileMkdirPath(projectName, parentPath),
     "api.projectFolderCreationFailed",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+  );
+}
+
+/** 新建空文件（03y 新建 sheet，v1.4 批4）：语义/错误码与 createFolder 同款。 */
+export async function createFile(
+  projectName: string,
+  parentPath: string,
+  name: string,
+): Promise<CreateFileResponse> {
+  return fetchJson(
+    projectFileCreatePath(projectName, parentPath),
+    "api.projectFileCreationFailed",
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -939,6 +957,9 @@ const projectFileSearchPath = (projectName: string, query: string) =>
 
 const projectFileMkdirPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/mkdir`, path);
+
+const projectFileCreatePath = (projectName: string, path: string) =>
+  withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/create`, path);
 
 const projectFileRenamePath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/files/rename`;

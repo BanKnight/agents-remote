@@ -11,7 +11,6 @@ import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
-  createFolder,
   deleteFile,
   getProjectGitLog,
   listProjectFiles,
@@ -22,8 +21,10 @@ import {
   searchWiki,
 } from "../../api/client";
 import { enqueueUploads, UploadQueueCard } from "../files/upload-queue";
+import { MoveSheet } from "../files/move-sheet";
+import { NewItemSheet } from "../files/new-item-sheet";
+import { RenameDialog } from "../files/rename-dialog";
 import { useConfirm } from "../shell/confirm-dialog";
-import { usePromptDialog } from "../shell/prompt-dialog";
 import { ListRowSkeleton } from "../shell/shell-primitives";
 import { relativeTime } from "./history-list";
 import { useT } from "../../i18n";
@@ -383,25 +384,11 @@ export function FilesToolPanel({
     uploadTargetDirRef.current = targetDir;
     uploadInputRef.current?.click();
   };
-  const openCreatePrompt = (parentPath: string) => {
-    void createDialog
-      .prompt({
-        title: t("files.linkCreate"),
-        placeholder: t("files.newFolder"),
-        confirmLabel: t("files.create"),
-        cancelLabel: t("cancel"),
-      })
-      .then((value) => {
-        if (value === null) return;
-        const name = value.trim();
-        if (name.length === 0) return;
-        createFolderMutation.mutate({ parentPath, name });
-      });
-  };
-  // 03y 语义：rename/move/新建 prompt 与删除 confirm 走 Radix 对话框（弃 window.prompt/confirm）。
-  const renameDialog = usePromptDialog();
-  const moveDialog = usePromptDialog();
-  const createDialog = usePromptDialog();
+  // 03y 新建 sheet 状态（open = parentPath 非空持有；null = 关）+ 03w2/03w3 状态（open =
+  // target entry 持有，null = 关）。03y/03w2/03w3 组件单源在 files/，本层只持 state 并接线。
+  const [newItemParentPath, setNewItemParentPath] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ProjectFileEntry | null>(null);
+  const [moveTarget, setMoveTarget] = useState<ProjectFileEntry | null>(null);
   const { confirm, holder: confirmHolder } = useConfirm();
   // 03w 触屏可达（design-reviewer M4 P2-5）：共享 touch 长按 hook（02c pill 同款，抽自本处
   // 内联实现）；移动超 slop 或提前松手取消；guardClick 抑制长按后紧随的合成 click。
@@ -428,11 +415,6 @@ export function FilesToolPanel({
   });
   const deleteMutation = useMutation({
     mutationFn: (entryPath: string) => deleteFile(projectName, entryPath),
-    onSuccess: invalidate,
-  });
-  const createFolderMutation = useMutation({
-    mutationFn: ({ parentPath, name }: { parentPath: string; name: string }) =>
-      createFolder(projectName, parentPath, name),
     onSuccess: invalidate,
   });
 
@@ -466,49 +448,12 @@ export function FilesToolPanel({
     {
       label: t("files.rename"),
       icon: <ShellIcon name="edit" />,
-      onSelect: () => {
-        void renameDialog
-          .prompt({
-            title: t("files.rename"),
-            placeholder: t("files.renamePrompt"),
-            initialValue: entry.name,
-            confirmLabel: t("files.rename"),
-            cancelLabel: t("cancel"),
-          })
-          .then((value) => {
-            if (value === null) return;
-            const newName = value.trim();
-            if (newName.length === 0 || newName === entry.name) return;
-            renameMutation.mutate({ entry, newName });
-          });
-      },
+      onSelect: () => setRenameTarget(entry),
     },
     {
       label: t("files.menuMove"),
       icon: <ShellIcon name="project" />, // folder 形状（目录行同款）；name="folder" 未注册渲染空白（M10 用户反馈）
-      onSelect: () => {
-        const currentDir = entry.path.includes("/")
-          ? entry.path.slice(0, entry.path.lastIndexOf("/"))
-          : "";
-        void moveDialog
-          .prompt({
-            title: t("files.menuMove"),
-            placeholder: t("files.movePrompt"),
-            initialValue: currentDir,
-            confirmLabel: t("files.move"),
-            cancelLabel: t("cancel"),
-          })
-          .then((targetDir) => {
-            if (targetDir === null) return;
-            const trimmed = targetDir.trim();
-            if (trimmed === currentDir) return;
-            renameMutation.mutate({
-              entry,
-              newName: entry.name,
-              targetDir: trimmed.length > 0 ? trimmed : undefined,
-            });
-          });
-      },
+      onSelect: () => setMoveTarget(entry),
     },
     {
       // 05e 菜单并集补「上传文件…」（桌面 FilesPanel 05e 5 项同款 key,上传到当前目录）。
@@ -521,10 +466,16 @@ export function FilesToolPanel({
       icon: <ShellIcon name="trash" />,
       variant: "destructive" as const,
       onSelect: () => {
-        const warn = dirty.has(entry.path) ? `\n\n${t("files.deleteDirtyWarn")}` : "";
+        // 03w4：文件夹正文换「及其中全部内容」措辞（子树计数不可得，用可达措辞）；
+        // 文件带 dirty 徽标时追加警示（03w4 ②——橙色警示条形制不做，文案警示保留，记 diverge）。
+        const isDir = entry.type === "directory";
+        const baseMessage = isDir
+          ? t("files.deleteConfirmFolder", { name: entry.name })
+          : t("files.deleteConfirm", { name: entry.name });
+        const warn = !isDir && dirty.has(entry.path) ? `\n\n${t("files.deleteDirtyWarn")}` : "";
         void confirm({
           title: t("files.delete"),
-          message: `${t("files.deleteConfirm", { name: entry.name })}${warn}`,
+          message: `${baseMessage}${warn}`,
           cancelLabel: t("cancel"),
           confirmLabel: t("files.delete"),
           tone: "danger",
@@ -540,7 +491,7 @@ export function FilesToolPanel({
     {
       label: t("files.menuCreateHere"),
       icon: <ShellIcon name="folder-plus" />,
-      onSelect: () => openCreatePrompt(entry.path),
+      onSelect: () => setNewItemParentPath(entry.path),
     },
     {
       label: t("files.menuUploadHere"),
@@ -664,7 +615,7 @@ export function FilesToolPanel({
       <UploadQueueCard />
       {/* 03o pin④「增=新建/上传（到当前作用域）」：底部 .links 行（03m Git 工具同款）。 */}
       <div className="links">
-        <button onClick={() => openCreatePrompt(path)} type="button">
+        <button onClick={() => setNewItemParentPath(path)} type="button">
           {t("files.linkCreate")}
         </button>
         <button onClick={() => openUploadPicker(path)} type="button">
@@ -688,11 +639,51 @@ export function FilesToolPanel({
       ) : (
         <div className="cap mt-4 px-4">{t("files.capBreadcrumb")}</div>
       )}
-      {/* 03y/03w 对话框 holder（rename/move/新建 prompt + 删除 confirm）：usePromptDialog 的
-        holder 必须挂载才渲染——否则 item.onSelect 里 prompt() 的 promise 永不 resolve。 */}
-      {renameDialog.holder}
-      {moveDialog.holder}
-      {createDialog.holder}
+      {/* 03y/03w2/03w3 受控 sheet/dialog（open = state 非空持有）+ 删除 confirm holder。
+        NewItemSheet 的重名即时校验对比同层名单（当前 cwd 层新建时才可得；子目录新建时
+        siblingNames 传空名单跳过即时校验，由服务端 409 兜底行内显示）。 */}
+      {newItemParentPath !== null ? (
+        <NewItemSheet
+          onOpenChange={(next) => {
+            if (!next) setNewItemParentPath(null);
+          }}
+          open
+          parentPath={newItemParentPath}
+          projectName={projectName}
+          siblingNames={newItemParentPath === path ? entries.map((e) => e.name) : []}
+        />
+      ) : null}
+      {renameTarget !== null ? (
+        <RenameDialog
+          initialName={renameTarget.name}
+          onSubmit={(newName) => {
+            if (renameTarget) renameMutation.mutate({ entry: renameTarget, newName });
+          }}
+          siblings={entries.filter((e) => e.name !== renameTarget.name).map((e) => e.name)}
+          open
+          onOpenChange={(next) => {
+            if (!next) setRenameTarget(null);
+          }}
+        />
+      ) : null}
+      {moveTarget !== null ? (
+        <MoveSheet
+          entryName={moveTarget.name}
+          excludePath={moveTarget.path}
+          onSubmit={(targetDir) => {
+            renameMutation.mutate({
+              entry: moveTarget,
+              newName: moveTarget.name,
+              targetDir: targetDir.length > 0 ? targetDir : undefined,
+            });
+          }}
+          open
+          projectName={projectName}
+          onOpenChange={(next) => {
+            if (!next) setMoveTarget(null);
+          }}
+        />
+      ) : null}
       {confirmHolder}
     </ToolPanel>
   );

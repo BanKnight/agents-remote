@@ -375,6 +375,15 @@ export type CreateFolderResponse = {
   entry: ProjectFileEntry;
 };
 
+/** 新建空文件（03y 新建 sheet；v1.4 批4）。请求体同 CreateFolderRequest（name）。 */
+export type CreateFileRequest = {
+  name: string;
+};
+
+export type CreateFileResponse = {
+  entry: ProjectFileEntry;
+};
+
 export type RenameFileRequest = {
   path: string;
   name: string;

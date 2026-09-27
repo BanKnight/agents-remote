@@ -3248,6 +3248,62 @@
     color: var(--ink-2);
   }
 
+  /* ---- 批4 文件操作（03w3 移动到… 目录选择 sheet；v1.4）----
+     目录浏览行（当前目录行 ✓ 选中 + .. 返回 + 子目录行进入）；按钮复用 .kbtns .p.solid
+    （实底主钮「移动到此处」）、新建文件夹行 = .mnew primary 文字行。03w2/w4 的居中 Alert
+    与 03y 的 segc/klabel/kfield/kbtns 均复用既有单源（.segc 09 段 + 14/16 表单段），不新增。 */
+  .mvrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 2px;
+    font-size: 13.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-1);
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+  }
+  .mvrow + .mvrow {
+    border-top: 1px solid var(--sep-row);
+  }
+  .mvrow .nm {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mvrow .nm.dir {
+    font-weight: 600;
+  }
+  .mvrow .nm .sub {
+    font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-3);
+    font-weight: 400;
+  }
+  .mvrow .ck {
+    margin-left: auto;
+    color: var(--c-primary);
+    font-weight: 700;
+  }
+  .mnew {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 2px;
+    font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--c-primary);
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+  }
+
   /* ---- M7 设置（07-settings.html；组标题复用 M4 .sect = 12px ink-2 margin 14/16/4）----
      命名避让：03j 新建实例已占 `.srow`、M4 wiki 已占 `.crow`，本节行用 `.setrow`。 */
   .sgroup {

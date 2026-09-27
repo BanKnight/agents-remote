@@ -803,6 +803,27 @@ const handleProjects = async (
       return Response.json(response);
     }
 
+    // 新建空文件（03y 新建 sheet，v1.4 批4）：校验/重名语义与 mkdir 同款。
+    if (
+      projectFilesMatch &&
+      request.method === "POST" &&
+      projectFilesMatch.create &&
+      projectFilesService
+    ) {
+      const body = (await request.json()) as { name?: string };
+
+      if (typeof body.name !== "string" || body.name.length === 0) {
+        return jsonError("PROJECT_NAME_INVALID", "File name is required", 400);
+      }
+
+      const response = await projectFilesService.createFile(
+        projectFilesMatch.projectName,
+        url.searchParams.get("path") ?? "",
+        body.name,
+      );
+      return Response.json(response);
+    }
+
     if (
       projectFilesMatch &&
       request.method === "POST" &&
@@ -1131,6 +1152,7 @@ type ProjectFilesPathMatch = {
   projectName: string;
   delete: boolean;
   mkdir: boolean;
+  create: boolean;
   preview: boolean;
   rename: boolean;
   save: boolean;
@@ -1149,6 +1171,7 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
   const renameSuffix = "/files/rename";
   const deleteSuffix = "/files/delete";
   const mkdirSuffix = "/files/mkdir";
+  const createSuffix = "/files/create";
   const uploadSuffix = "/files/upload";
   const previewSuffix = "/files/preview";
   const saveSuffix = "/files/save";
@@ -1160,17 +1183,19 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
       ? suffix.slice(0, -deleteSuffix.length)
       : suffix.endsWith(mkdirSuffix)
         ? suffix.slice(0, -mkdirSuffix.length)
-        : suffix.endsWith(uploadSuffix)
-          ? suffix.slice(0, -uploadSuffix.length)
-          : suffix.endsWith(previewSuffix)
-            ? suffix.slice(0, -previewSuffix.length)
-            : suffix.endsWith(saveSuffix)
-              ? suffix.slice(0, -saveSuffix.length)
-              : suffix.endsWith(searchSuffix)
-                ? suffix.slice(0, -searchSuffix.length)
-                : suffix.endsWith(filesSuffix)
-                  ? suffix.slice(0, -filesSuffix.length)
-                  : undefined;
+        : suffix.endsWith(createSuffix)
+          ? suffix.slice(0, -createSuffix.length)
+          : suffix.endsWith(uploadSuffix)
+            ? suffix.slice(0, -uploadSuffix.length)
+            : suffix.endsWith(previewSuffix)
+              ? suffix.slice(0, -previewSuffix.length)
+              : suffix.endsWith(saveSuffix)
+                ? suffix.slice(0, -saveSuffix.length)
+                : suffix.endsWith(searchSuffix)
+                  ? suffix.slice(0, -searchSuffix.length)
+                  : suffix.endsWith(filesSuffix)
+                    ? suffix.slice(0, -filesSuffix.length)
+                    : undefined;
 
   if (encodedName === undefined || encodedName.length === 0 || encodedName.includes("/")) {
     return undefined;
@@ -1186,6 +1211,7 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
     projectName,
     delete: suffix.endsWith(deleteSuffix),
     mkdir: suffix.endsWith(mkdirSuffix),
+    create: suffix.endsWith(createSuffix),
     preview: suffix.endsWith(previewSuffix),
     rename: suffix.endsWith(renameSuffix),
     save: suffix.endsWith(saveSuffix),
