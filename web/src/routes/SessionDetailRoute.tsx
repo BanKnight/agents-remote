@@ -514,15 +514,15 @@ export function readTerminalTheme(resolved: ResolvedTheme): ITheme {
 const LIGHT_EXTENDED_ANSI: string[] = (() => {
   // 256 → 稀疏映射：key=调色板索引(16..255)，value=达标色。length 取最大索引+1。
   const mapping: Record<number, string> = {
-    153: "#1d4ed8",
-    220: "#a16207",
-    174: "#be123c",
-    216: "#b45309",
-    114: "#15803d",
-    246: "#6b7280",
-    244: "#4b5563",
-    248: "#6b7280",
-    247: "#6b7280",
+    153: "#1d4ed8", // token-ok（terminal 256 色调色板映射：数据非 UI 样式）
+    220: "#a16207", // token-ok
+    174: "#be123c", // token-ok
+    216: "#b45309", // token-ok
+    114: "#15803d", // token-ok
+    246: "#6b7280", // token-ok
+    244: "#4b5563", // token-ok
+    248: "#6b7280", // token-ok
+    247: "#6b7280", // token-ok
   };
   const maxIdx = Math.max(...Object.keys(mapping).map(Number));
   const arr = Array.from({ length: maxIdx - 16 + 1 }, () => "");

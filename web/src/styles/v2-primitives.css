@@ -1281,14 +1281,6 @@
      .githead Git 段分支态势行（04:22 原型；第十二轮批次 2 双端 GitToolPanel 恒渲染首行）；
      L3 元信息行 .meta/.csub/.dlg/.loadmore；03t 历史页 .cmsg/.by/.dstat；03v 分支页 .bcur/.brow/.bsub/.rocard；
      03s wiki reader .readbtn/.wmeta/.wlink/.rel。 */
-  .ticon.hl {
-    background: var(--bg-elevated3);
-    border-radius: 6px;
-    padding: 4px;
-  }
-  .ticon.hl svg {
-    stroke: var(--ink-1);
-  }
   .githead {
     display: flex;
     align-items: center;
@@ -1394,6 +1386,80 @@
      落在 .wsearch 单源，files 与 wiki 两处搜索共用）。 */
   .wsearch:focus-within {
     border-color: color-mix(in srgb, var(--c-primary) 55%, transparent);
+  }
+  /* ---- 检视面板动态标签条（v1.4 03ob，redesign-v2 §6.13 批2）：标签即内容，＋ 新建 /
+     ✕ 关闭；几何与 .pill 同族（components.css .ptabs 单源 1:1） ---- */
+  .ptabs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 16px 0;
+    overflow-x: auto;
+    /* 横滚条隐藏（与 .pills 同款；桌面窄窗/Android 会画常驻滚动条挤压 30px 标签行） */
+    scrollbar-width: none;
+  }
+  .ptabs::-webkit-scrollbar {
+    display: none;
+  }
+  .ptab {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 15px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-2);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .ptab svg {
+    width: 13px;
+    height: 13px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.8;
+  }
+  .ptab.on {
+    background: var(--tint-blue);
+    border-color: color-mix(in srgb, var(--c-primary) 55%, transparent);
+    color: var(--ink-1);
+    font-weight: 600;
+  }
+  .ptab .x {
+    /* file 标签关闭钮（独立 button）：字形 11px、命中区 24×20（frontend-notes §7 大点击区） */
+    height: 24px;
+    width: 20px;
+    color: var(--ink-3);
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* 悬浮添加钮（03ob FAB）：文件树标签右下 → 批4 03oa 菜单（当前批2 接新建/上传桩） */
+  .fab {
+    position: absolute;
+    right: 16px;
+    bottom: 50px;
+    width: 48px;
+    height: 48px;
+    border-radius: 24px;
+    background: var(--tint-blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--c-primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    z-index: 6;
+  }
+  /* 批2 空桩态（批4 换 03oa 添加菜单后移除）：disabled 不给无功能的可见 affordance */
+  .fab:disabled {
+    opacity: 0.45;
   }
   /* 09m/10m 一级页搜索框单源（第十一轮复验：桌面 /files 用 .wsearch 30 胶囊、/plugins 内联
      38/r12——跨页尺寸不统一）。移动 = 09-tab/10-tab .search（38 / r12 / fill-search / 15px）；

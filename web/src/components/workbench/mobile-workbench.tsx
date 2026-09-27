@@ -52,6 +52,10 @@ import {
   workbenchMobileGlobalFilesPathAtom,
   workbenchMobileProjectFilesPathAtom,
   workbenchWikiRefsAtom,
+  workbenchPanelActiveAtom,
+  workbenchPanelOpenAtom,
+  workbenchPanelTabsAtom,
+  type PanelTab,
 } from "../../routes/workbench-model";
 
 import {
@@ -66,7 +70,8 @@ import {
   useScopeInstanceOrder,
 } from "./instance-area";
 import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
-import { MobileProjectHeader, type MobileProjectTool } from "./mobile-project-header";
+import { MobileProjectHeader } from "./mobile-project-header";
+import { InspectionPanel } from "./inspection-panel";
 import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
 import { FileTabPreview } from "../files/file-preview-panel";
 import { formatAheadBehind, gitDiffListQueryKey } from "../git/git-diff-viewer";
@@ -106,11 +111,9 @@ type MobileWorkbenchProps = {
   pluginView?: "home" | "market" | "sources" | "skill" | "mcp";
   /** 插件详情深度页条目名（第八轮）：pluginView="skill"/"mcp" 时为 skill/server 名。 */
   pluginName?: string;
-  /** 项目工具原位（v2 M3-b：?tab=files/git/wiki，与桌面 middle tab 同构；WorkbenchRoute 注入 ctx.tab）。 */
+  /** 项目工具原位（v2 M3-b：?tab=files/git/wiki，与桌面 middle tab 同构；WorkbenchRoute 注入 ctx.tab）。
+   * v1.4 批2 起仅作 URL 兼容入口（渲染期映射为检视面板 open+激活标签），不再驱动主体切换。 */
   tool?: WorkbenchMiddleTab;
-  /** 工具切换（WorkbenchRoute 注入 onToolTabChange：写 URL ?tab；null = 退工具态，URL 去
-   * tab 维度回中栏默认 overview——「记住上次 tab」随 §6.12k 批次 1 桌面左栏退役删除） */
-  onToolChange?: (next: WorkbenchMiddleTab | null) => void;
   /**
    * 一级会话页模式（设计 workbench-views §3.1）：mode=chat 时 global 列表态（leftMode=auto
    * 无 focus）渲染 MobileChatOverview（mode tab + 搜索/新建/列表）。仅 global scope 有意义。
@@ -151,7 +154,6 @@ export function MobileWorkbench({
   onOpenFile,
   onOpenGitFile,
   onSelectTab,
-  onToolChange,
   scope,
   tool,
 }: MobileWorkbenchProps) {
@@ -199,7 +201,6 @@ export function MobileWorkbench({
           onOpenFile={onOpenFile}
           onOpenGitFile={onOpenGitFile}
           onSelectTab={onSelectTab}
-          onToolChange={onToolChange}
           scope={scope}
           tool={tool}
         />
@@ -577,11 +578,9 @@ function MobileTabHeader<TabId extends string>({
 type MobileProjectWorkbenchProps = {
   scope: { kind: "project"; key: string };
   focusId?: string;
-  /** 项目工具原位（v2 M3-b：?tab 维度 files/git/wiki，与桌面 ProjectLeftPanel middle tab 同构）。 */
+  /** 项目工具原位（v2 M3-b：?tab 维度 files/git/wiki）。v1.4 批2 起仅作 URL 兼容入口
+   *（渲染期映射为检视面板 open+激活标签）。 */
   tool?: WorkbenchMiddleTab;
-  /** 工具切换（WorkbenchRoute 注入 onToolTabChange：写 URL ?tab；null = 退工具态，URL 去
-   * tab 维度回中栏默认 overview——「记住上次 tab」随 §6.12k 批次 1 桌面左栏退役删除） */
-  onToolChange?: (next: WorkbenchMiddleTab | null) => void;
   onSelectTab: (leafId: string, tabId: string) => void;
   onOpenFile: (projectName: string, path: string) => void;
   onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
@@ -594,23 +593,27 @@ type MobileProjectWorkbenchProps = {
 
 /**
  * 移动项目工作台（v2 M3-b/c，对标 03-workspace-* 原型）＝三行头部（`MobileProjectHeader`：
- * nav / row2 pills+工具 ticon / chips 运行摘要）+ 单面板主体。
+ * nav / row2 pills＋＋检视面板入口 / chips）+ 单面板主体 + 检视面板（`InspectionPanel`）。
  *
- * - **工具原位（?tab=files/git/wiki）**：主体区切换渲染项目工具面板（FilesLeftPanel /
- *   GitChangesList / 共享三件套前身，与桌面 ProjectLeftPanel middle tab 同构）；再点同 ticon 退出
- *   回实例主体。工具态不改 focusId、不卸载已打开 session 面板（保活层 hidden 挂载）。
+ * - **检视面板（v1.4 批2）**：文件树/Git/Wiki 工具面板迁全屏面板（标签条 .ptabs，标签集 per
+ *   projectKey 持久化）；row2 单 ticon 开面板，‹ 工作台 关面板。旧 ?tab=files/git/wiki 深链
+ *   渲染期一次性映射为面板 open+激活标签（不写回 URL）；「进工具」语义收敛为 handleToolChange
+ * （开面板+激活标签），面板内 L3（git 历史/分支/commit/wiki 页）渲染进面板 l3Body，主体区
+ *   仅承接深链直达（面板 closed）的现状路径。
  * - **实例聚焦**：`<PanelRouter>`——与桌面中栏主体同一渲染源（session 含底部
  *   输入；file/git/skill 只读预览），聚焦瞬态（focus effect 同步前 tab 尚未入 layout）渲染
- *   骨架不闪空态。effectiveFocusId = 显式 ?session ?? 自动聚焦（见下）。
+ *   骨架不闪空态。effectiveFocusId = 显式 ?session ?? 自动聚焦（见下）。面板 open 时实例层
+ *   照常挂载（保活 hidden），WS 不断。
  * - **浏览态收敛（v2 M3-c）**：03 系列原型无「实例网格浏览态」——工作台页 = 聚焦态或空态卡。
  *   无显式 ?session 时渲染层回退聚焦「上次位置」（layout 中 active tab 属本项目的第一个
  *   leaf，D4 直达语义延伸；否则第一个实例）；完全无实例才渲染 03h 空态卡。回退不写 URL
  *  （显式点击 pill 才落 ?session），避免 back 回「浏览态」再自动聚焦的循环。
- * - **file/git focus**（files/git 工具点文件进的一次性预览）：nav 右侧 ✕ = removeTabFromLeaf
- *   关闭预览 tab（v2 pills/工具 ticon 均无它的切回入口，✕ 是唯一关闭路径；M4 L3 preview
- *   形态落地时再收敛交互）。
+ * - **file/git focus**（files/git 树/变更点文件进的一次性预览）：面板 open 时渲染进面板
+ *   l3Body（保活层让位单实例）；面板 closed 时走 nav 右侧 ✕ = removeTabFromLeaf 关闭预览
+ *   tab（✕ 是唯一关闭路径）。
  * - **保活纪律不变**（2026-08-17 用户决策「全保活 + 聚焦过即可」）：聚焦过的已打开 tab 保持
- *   挂载 hidden，切 tab/进出工具态 WS 不断。
+ *   挂载 hidden，切 tab/进出面板 WS 不断（file/git 预览无 WS 生命周期，面板 open 时让位面板
+ *   渲染、关闭时回保活层，切换点销毁重建——记档批3 链接直达收敛）。
  */
 function MobileProjectWorkbench({
   closeHolder,
@@ -621,14 +624,68 @@ function MobileProjectWorkbench({
   onOpenFile,
   onOpenGitFile,
   onSelectTab,
-  onToolChange,
   scope,
   tool,
 }: MobileProjectWorkbenchProps) {
   const { t } = useT();
   // 工具原位归一化：?tab 维度还含 overview 等非工具值，`?tab` 缺省时 WorkbenchRoute 回退
   // 中栏默认 "overview"——tool prop 恒 truthy，不能直接当布尔用。
+  // v1.4 §6.13 批2：files/git/wiki 工具态退役为检视面板（InspectionPanel）。tool prop 不再
+  // 驱动主体切换，仅作 URL 兼容入口——旧深链 ?tab= 渲染期映射为 panelOpen + 激活标签
+  //（不写回 URL；面板开合真相 = workbenchPanelOpenAtom 内存态）。
   const activeTool = tool === "files" || tool === "git" || tool === "wiki" ? tool : undefined;
+  // 检视面板状态（per-projectKey 标签集/激活项持久化，open 内存级——跨刷新恢复标签不恢复开合）。
+  const [panelOpen, setPanelOpen] = useAtom(workbenchPanelOpenAtom);
+  const [panelTabsMap, setPanelTabsMap] = useAtom(workbenchPanelTabsAtom);
+  const [panelActiveMap, setPanelActiveMap] = useAtom(workbenchPanelActiveAtom);
+  const panelTabs = panelTabsMap[scope.key] ?? [{ id: "files", kind: "files" } as PanelTab];
+  const activePanelTabId = panelActiveMap[scope.key] ?? "files";
+  const activePanelTab = panelTabs.find((tab) => tab.id === activePanelTabId) ?? panelTabs[0];
+  // perf-review 批2 M1：面板从未打开过不挂载任何工具面板——invisible 只免 paint，不免渲染/
+  // 布局/网络（首访项目页不再多发一发不可见的 files 列表请求）。首次 open 当帧挂载（同一
+  // commit，滑入动画不受影响），关闭后不卸载（零销毁保持）。内存级，不与 URL/持久化交互。
+  const [panelEverOpened, setPanelEverOpened] = useState(false);
+  const openInspectionPanel = () => {
+    setPanelEverOpened(true);
+    setPanelOpen(true);
+  };
+  // design-review 批2 M2：面板 open 是页面级瞬态——组件卸载复位（浏览器/系统返回离开
+  // workbench 后重进任意项目不再「不请自来」复开面板；与 atom 注释「开面板是一次显式用户
+  // 动作」对齐）。残留 ?tab= 深链复开是拍板 f 的固有代价，记入批3（链接直达接管 URL）。
+  useEffect(() => () => setPanelOpen(false), []);
+  const ensurePanelTab = (id: string, tab: PanelTab) => {
+    setPanelTabsMap((prev) => {
+      const list = prev[scope.key] ?? [{ id: "files", kind: "files" } as PanelTab];
+      if (list.some((t0) => t0.id === id)) return prev;
+      return { ...prev, [scope.key]: [...list, tab] };
+    });
+  };
+  // 幂等守卫（perf-review 批2 m2）：值未变直接返回旧引用——点已激活标签 / URL 深链重复映射
+  // 不再产生多余的全组件重渲染 + localStorage 同步写（与 ensurePanelTab 的 some 守卫对齐）。
+  const activatePanelTab = (id: string) =>
+    setPanelActiveMap((prev) => (prev[scope.key] === id ? prev : { ...prev, [scope.key]: id }));
+  // ＋ 新建标签（03ob2 菜单）：同目标已开 = 激活幂等（03ob 编号①）。
+  const newPanelTab = (kind: "files" | "git" | "wiki") => {
+    ensurePanelTab(kind, { id: kind, kind } as PanelTab);
+    activatePanelTab(kind);
+  };
+  // ✕ 关标签：仅 file 标签可关（三基础标签不可关）；关激活标签回文件树首标签。
+  const closePanelTab = (id: string) => {
+    setPanelTabsMap((prev) => {
+      const list = prev[scope.key] ?? [];
+      return { ...prev, [scope.key]: list.filter((t0) => t0.id !== id) };
+    });
+    if (id === activePanelTabId) activatePanelTab("files");
+  };
+  // URL 兼容（plan 批2 ⑥）：旧 ?tab=files|git|wiki 深链渲染期一次性映射为面板 open+激活
+  // 标签（不写回 URL）。幂等——面板内 L3 导航（URL 带 tab=git）重复触发无副作用。
+  useEffect(() => {
+    if (!activeTool) return;
+    openInspectionPanel();
+    ensurePanelTab(activeTool, { id: activeTool, kind: activeTool } as PanelTab);
+    activatePanelTab(activeTool);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool]);
   const navigateWorkbench = useWorkbenchNavigate();
   // nav 行 ◄「项目」push 回项目 Tab（v2 03 原型 .back；替代 v1 ☰ drawer 开关——v2 无 drawer，
   // 实例切换 = pills、文件/Git/Wiki = 工具 ticon、新建 = row2 ＋）。
@@ -734,22 +791,127 @@ function MobileProjectWorkbench({
         )?.session ?? null)
       : null;
 
-  // 工具态（?tab=files/git/wiki）：主体切换渲染项目工具面板；退出 = onToolChange(null)（URL 去
-  // tab 维度，回中栏默认 overview——原「回进工具前的 tab」的 rememberedMiddleTab 随 §6.12k
-  // 批次 1 桌面左栏退役删除）。header 的 toggle 语义（再点同 ticon 退出）在
-  // MobileProjectHeader 内判定。
-  const handleToolChange = (next: MobileProjectTool | null) => {
-    onToolChange?.(next);
+  // v1.4 批2：工具态退役为检视面板——「进工具」= 开面板+激活标签，「退工具」（点当前
+  // focus 的 pill / focus 变化兜底）= 关面板回实例主体。签名与旧工具切换兼容，各消费点
+  //（focusInstance / skill pill / 空态卡）零改动。
+  const handleToolChange = (next: "files" | "git" | "wiki" | null) => {
+    if (next) {
+      ensurePanelTab(next, { id: next, kind: next } as PanelTab);
+      activatePanelTab(next);
+      openInspectionPanel();
+      return;
+    }
+    setPanelOpen(false);
   };
-  // H1 修复（design-reviewer 运行时实证）：focus 导航与工具态互斥。?tab 记忆/URL 与 focusId
-  // 是独立存活的维度，进 focus 的导航入口多（files 树点文件 / git 点文件 / skill pill），
-  // 以 focusId 变化为信号统一退工具（03o 工具态是浏览态的主体替身，不与实例面板并存；
-  // 保活铁律只要求不销毁、不豁免可见性）。点当前 focus 的 pill 时 focusId 不变，由
-  // focusInstance 显式退兜底。M4：L3 focusId（githistory/gitbranches/gitcommit_/wiki_）是
-  // 内容区替换的显式子路由，不是 focus 语义——退工具会经 onToolChange(null) 把 L3
-  // focusId 透传进 session 路由（实测 /session/githistory 破坏 URL），故 L3 跳过。
-  // 第十一轮复验补注：进 focus 的导航已自带清 tab（search 无 tab 维度），正常路径本 effect
-  // 不再触发（activeTool 已 undefined），仅深链/脏 URL（?tab= 与 session focus 并存）兜底。
+  // ‹ 工作台（面板 nav back；面板内 L3 时 InspectionPanel 的 back 先走 l3.onClick 回标签条，
+  // 真正关面板时 URL 可能停在 L3 路由——pop 优先回 push 前的工作台，深链兜底 push 清 focusId）。
+  const handlePanelClose = () => {
+    setPanelOpen(false);
+    if (l3Route) backNav(() => void navigateWorkbench(scope, undefined, {}));
+  };
+  // 面板 children：标签叠层保活（perf-review 批2 m1）——panelTabs 全渲染，非激活
+  // visibility:hidden：卸载重建 = 每次切换 5s staleTime 后台 refetch + 滚动位丢失，标签切换
+  // 是面板主交互。与保活层同范式（frontend-notes §3：副作用生命周期元素保稳定 key）。
+  // 渲染函数形态——求值推迟到 JSX 装配点（filesPath/wikiSearchQuery 等状态定义在后，
+  // 惰性求值避开 TDZ）。
+  const renderPanelChildren = () =>
+    panelTabs.map((tab) => {
+      const active = tab.id === activePanelTabId;
+      return (
+        <div
+          className={
+            active
+              ? "absolute inset-0 flex min-h-0 flex-col overflow-hidden"
+              : "absolute inset-0 invisible flex min-h-0 flex-col overflow-hidden"
+          }
+          data-panel-tab-body={tab.id}
+          key={tab.id}
+        >
+          {tab.kind === "files" ? (
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <FilesToolPanel
+                currentPath={filesPath}
+                onOpenFile={onOpenFile}
+                onOpenGitFile={(f) => onOpenGitFile(scope.key, f.scope, f.path)}
+                onPathChange={setFilesPath}
+                projectName={scope.key}
+                searchQuery={filesSearchQuery}
+              />
+            </div>
+          ) : tab.kind === "git" ? (
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <GitToolPanel
+                onOpenCommit={(hash) => {
+                  void navigate({
+                    params: { key: scope.key, _splat: hash },
+                    search: { tab: "git" },
+                    to: "/projects/$key/git/commit/$",
+                  });
+                }}
+                onOpenGitFile={(f) => onOpenGitFile(scope.key, f.scope, f.path)}
+                onOpenHistory={() => {
+                  void navigate({
+                    params: { key: scope.key },
+                    search: { tab: "git" },
+                    to: "/projects/$key/git/history",
+                  });
+                }}
+                onOpenBranches={() => {
+                  void navigate({
+                    params: { key: scope.key },
+                    search: { tab: "git" },
+                    to: "/projects/$key/git/branches",
+                  });
+                }}
+                projectName={scope.key}
+              />
+            </div>
+          ) : tab.kind === "wiki" ? (
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <WikiToolPanel
+                onOpenPage={(slug) => {
+                  void navigate({
+                    params: { key: scope.key, _splat: slug },
+                    search: { tab: "wiki" },
+                    to: "/projects/$key/wiki/$",
+                  });
+                }}
+                onQueryChange={setWikiSearchQuery}
+                projectName={scope.key}
+                query={wikiSearchQuery}
+              />
+            </div>
+          ) : tab.kind === "file" ? (
+            (() => {
+              const { projectName: fp, path: relPath } = splitFilePath(tab.path);
+              return (
+                <MobileL3FilePreview
+                  onViewDiff={() => onOpenGitFile(fp, "worktree", relPath)}
+                  path={relPath}
+                  projectName={fp}
+                />
+              );
+            })()
+          ) : null}
+        </div>
+      );
+    });
+  // 面板 FAB（03o ③：文件树标签右下 → 批4 03oa 添加菜单；批2 先接空桩——design-review
+  // m3：disabled 不给无功能的可见 affordance，label 用「添加」语义非「新建文件夹」）。
+  const renderPanelFab = () =>
+    activePanelTab?.kind === "files" ? (
+      <button aria-label={t("files.add")} className="fab cursor-pointer" disabled type="button">
+        <span className="plus" style={{ width: 20, height: 20 }} />
+      </button>
+    ) : null;
+  // H1 修复（design-reviewer 运行时实证）：focus 导航与面板互斥（脏 URL 兜底）。?tab 与
+  // focusId 是独立存活的维度——脏 URL（?tab= 与 session focus 并存）时以 focusId 变化为信号
+  // 关面板（面板全屏覆盖时点不到 header 入口，正常路径不触发）。面板内 L3 导航（githistory/
+  // gitbranches/gitcommit_/wiki_）是内容区替换的显式子路由，不是 focus 语义——关面板会把
+  // L3 路由丢成 session 路由（实测 /session/githistory 破坏 URL），故 L3 跳过；面板内 files
+  // 树点文件（file_*）导航自带清 tab（activeTool 已 undefined），同样不触发。
+  // 第十一轮复验补注（v1.4 批2 仍成立）：正常路径本 effect 不再触发（activeTool 已
+  // undefined），仅深链/脏 URL（?tab= 与 session focus 并存）兜底。
   const prevFocusRef = useRef(focusId);
   useEffect(() => {
     if (focusId !== prevFocusRef.current) {
@@ -897,11 +1059,6 @@ function MobileProjectWorkbench({
       },
     ];
   };
-  const updateWikiSearch = (next: string) => {
-    setWikiSearchQuery(next);
-    if (!activeTool) handleToolChange("wiki");
-  };
-
   // L3 nav 装配（03q/03r/03u/03t/03v/03s）。l3Route 优先；file/git focus 由保活层 ref 派生。
   const l3WikiMeta =
     l3Route?.kind === "wiki"
@@ -990,6 +1147,81 @@ function MobileProjectWorkbench({
   })();
   const headerL3 = l3 ?? l3Transient;
 
+  // L3 深度页主体单源（l3Route 4 分支）：主体区（面板 closed，深链直达现状路径）与面板
+  // l3Body（面板 open，03u「Git 检视」原型语义）共引本函数，避免双写漂移。
+  const renderL3Body = (route: NonNullable<typeof l3Route>) => (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-role="l3-page">
+      {route.kind === "history" ? (
+        <L3GitHistory
+          onOpenCommit={(hash) => {
+            void navigate({
+              params: { key: scope.key, _splat: hash },
+              search: { tab: "git" },
+              to: "/projects/$key/git/commit/$",
+            });
+          }}
+          projectName={scope.key}
+        />
+      ) : route.kind === "branches" ? (
+        <L3GitBranches
+          onOpenHistory={(b) => {
+            void navigate({
+              params: { key: scope.key },
+              search: { branch: b, tab: "git" },
+              to: "/projects/$key/git/history",
+            });
+          }}
+          projectName={scope.key}
+        />
+      ) : route.kind === "commit" ? (
+        <L3GitCommit hash={route.hash} projectName={scope.key} />
+      ) : (
+        <L3WikiReader
+          onOpenPage={(slug) => {
+            void navigate({
+              params: { key: scope.key, _splat: slug },
+              search: { tab: "wiki" },
+              to: "/projects/$key/wiki/$",
+            });
+          }}
+          projectName={scope.key}
+          slug={route.slug}
+        />
+      )}
+    </div>
+  );
+  // 面板内 L3 主体（InspectionPanel l3Body；面板 open 时才实际挂载）：l3Route 走单源；file/git
+  // 一次性预览（l3Transient 对应内容）在面板 open 时也渲染进面板（03o「L3 是面板内深度页」），
+  // 保活层对应 item 让位（见 renderItems.map 内 panelOpen 分支）保证单实例。l3Transient 分支
+  // 同样包 data-role="l3-page"——覆盖层内内容根标记统一（探针/调试选择器单源）。
+  const renderPanelL3Body = () => {
+    if (l3Route) return renderL3Body(l3Route);
+    if (focusRef?.kind === "file") {
+      const { projectName: fp, path: relPath } = splitFilePath(focusRef.path);
+      return (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-role="l3-page">
+          <MobileL3FilePreview
+            onViewDiff={() => onOpenGitFile(fp, "worktree", relPath)}
+            path={relPath}
+            projectName={fp}
+          />
+        </div>
+      );
+    }
+    if (focusRef?.kind === "git" && focusRef.mode === "scope") {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-role="l3-page">
+          <MobileL3GitDiff
+            path={focusRef.path}
+            projectName={focusRef.projectName}
+            scope={focusRef.scope}
+          />
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <>
       <div
@@ -1063,13 +1295,28 @@ function MobileProjectWorkbench({
             }
             onSelectTab(leafId, tabId);
           }}
-          onToolChange={handleToolChange}
+          onOpenPanel={openInspectionPanel}
           projectName={scope.key}
           skillTabs={skillTabs}
-          tool={activeTool}
           l3={headerL3}
+        />
+        {/* 检视面板（v1.4 03o/03ob）：常驻挂载零销毁，开合 = translate/visibility。工具 chip
+          槽/内容按激活标签装配（与退役前主体区工具态同源）；面板内 L3 = headerL3（back 回
+          标签条 03u 语义）；closed 时 invisible 防误聚焦。 */}
+        <InspectionPanel
+          activeTabId={activePanelTabId}
+          open={panelOpen}
+          projectName={scope.key}
+          tabs={panelTabs}
+          onActivateTab={activatePanelTab}
+          onCloseTab={closePanelTab}
+          onNewTab={newPanelTab}
+          onClose={handlePanelClose}
+          l3={panelOpen ? headerL3 : undefined}
+          l3Body={renderPanelL3Body()}
+          fab={renderPanelFab()}
           toolChip={
-            activeTool === "git" ? (
+            activePanelTab?.kind === "git" ? (
               <div className="gitchip">
                 <b>
                   {chipBranch ? chipBranch.name : t("git.toolTitle")}
@@ -1079,7 +1326,7 @@ function MobileProjectWorkbench({
                 </b>
                 <span>{t("git.chipCounts", { worktree: chipWorktree, staged: chipStaged })}</span>
               </div>
-            ) : activeTool === "files" ? (
+            ) : activePanelTab?.kind === "files" ? (
               filesSearchOpen ? (
                 // 03x ①「行2 内容头变搜索框（同 Wiki）」：单源复用 .wsearch（§6.9），
                 // 聚焦态描边由 .wsearch:focus-within 承载（不再另立 .sfield 一套值）。
@@ -1125,13 +1372,13 @@ function MobileProjectWorkbench({
                   </button>
                 </div>
               )
-            ) : activeTool === "wiki" ? (
+            ) : activePanelTab?.kind === "wiki" ? (
               <div className="wsearch">
                 {wikiSearchOpen ? (
                   <input
                     autoFocus
                     className="h-6 flex-1 bg-transparent text-[13px] text-ink-1 outline-none placeholder:text-ink-3"
-                    onChange={(e) => updateWikiSearch(e.target.value)}
+                    onChange={(e) => setWikiSearchQuery(e.target.value)}
                     placeholder={t("wiki.searchPlaceholder")}
                     value={wikiSearchQuery}
                   />
@@ -1148,19 +1395,30 @@ function MobileProjectWorkbench({
               </div>
             ) : undefined
           }
-        />
+        >
+          {panelEverOpened ? renderPanelChildren() : null}
+        </InspectionPanel>
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* 保活面板层（2026-08-17 用户决策「全保活 + 聚焦过即可」；v2 M3-b 起工具态也保持
-            hidden 挂载——进出文件/Git/Wiki 工具不卸载 session 面板，WS 不断）。本会话「聚焦过」
-            的已打开 tab 保持挂载，visible = 非工具态且 tabId===effectiveFocusId 用 hidden class
-            切换。对齐桌面 WorkspaceTree 扁平化保活；刷新重进 layout 恢复 N tab 只挂载当前聚焦的
+            hidden 挂载——进出检视面板不卸载 session 面板，WS 不断；v1.4 批2 起面板 open 时
+            visible 判定再叠 !panelOpen——面板全屏覆盖，主体可见性由面板接管）。本会话「聚焦过」
+            的已打开 tab 保持挂载，visible = tabId===effectiveFocusId 用 hidden class 切换。
+            对齐桌面 WorkspaceTree 扁平化保活；刷新重进 layout 恢复 N tab 只挂载当前聚焦的
            （显式 ?session 或自动聚焦回退）。 */}
           {renderItems.map((item) => {
             if (item.tabId !== effectiveFocusId && !focusedTabIds.has(item.tabId)) return null;
+            // 面板 open 时 file/git 一次性预览让位面板 l3Body 单实例渲染（03o「L3 是面板内
+            // 深度页」）；session/skill 保活挂载不受影响——WS 生命周期不随面板开合重建。
+            if (
+              panelOpen &&
+              (item.ref.kind === "file" || (item.ref.kind === "git" && item.ref.mode === "scope"))
+            ) {
+              return null;
+            }
             return (
               <div
                 className={
-                  !activeTool && !l3Route && item.tabId === effectiveFocusId
+                  !panelOpen && !l3Route && item.tabId === effectiveFocusId
                     ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                     : "hidden"
                 }
@@ -1168,7 +1426,7 @@ function MobileProjectWorkbench({
                 key={item.tabId}
               >
                 {/* D13 流顶引用卡：可见 session 面板顶部（wikiRefs atom 非空才渲染）。 */}
-                {!activeTool &&
+                {!panelOpen &&
                 !l3Route &&
                 item.tabId === effectiveFocusId &&
                 item.ref.kind === "session" ? (
@@ -1197,110 +1455,17 @@ function MobileProjectWorkbench({
               </div>
             );
           })}
-          {/* M4 L3 深度页（显式子路由）：nav l3 形态 + L3 主体；保活层 hidden 保持挂载（WS 不断）。 */}
-          {l3Route ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-role="l3-page">
-              {l3Route.kind === "history" ? (
-                <L3GitHistory
-                  onOpenCommit={(hash) => {
-                    void navigate({
-                      params: { key: scope.key, _splat: hash },
-                      search: { tab: "git" },
-                      to: "/projects/$key/git/commit/$",
-                    });
-                  }}
-                  projectName={scope.key}
-                />
-              ) : l3Route.kind === "branches" ? (
-                <L3GitBranches
-                  onOpenHistory={(b) => {
-                    void navigate({
-                      params: { key: scope.key },
-                      search: { branch: b, tab: "git" },
-                      to: "/projects/$key/git/history",
-                    });
-                  }}
-                  projectName={scope.key}
-                />
-              ) : l3Route.kind === "commit" ? (
-                <L3GitCommit projectName={scope.key} hash={l3Route.hash} />
-              ) : (
-                <L3WikiReader
-                  onOpenPage={(slug) => {
-                    void navigate({
-                      params: { key: scope.key, _splat: slug },
-                      search: { tab: "wiki" },
-                      to: "/projects/$key/wiki/$",
-                    });
-                  }}
-                  projectName={scope.key}
-                  slug={l3Route.slug}
-                />
-              )}
-            </div>
-          ) : null}
-          {/* 工具态主体（v2 M3-b，?tab=files/git/wiki）：项目工具面板原位（三件套双端共享）。
-            data-mobile-tool 探针锚 = ToolPanel 根单源（共享组件层）；file 树点文件仍走
-            onOpenFile 开 file tab focus（→ 实例主体层）。 */}
-          {activeTool === "files" && !l3Route ? (
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <FilesToolPanel
-                currentPath={filesPath}
-                onOpenFile={onOpenFile}
-                onOpenGitFile={(f) => onOpenGitFile(scope.key, f.scope, f.path)}
-                onPathChange={setFilesPath}
-                projectName={scope.key}
-                searchQuery={filesSearchQuery}
-              />
-            </div>
-          ) : activeTool === "git" && !l3Route ? (
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <GitToolPanel
-                onOpenCommit={(hash) => {
-                  void navigate({
-                    params: { key: scope.key, _splat: hash },
-                    search: { tab: "git" },
-                    to: "/projects/$key/git/commit/$",
-                  });
-                }}
-                onOpenGitFile={(f) => onOpenGitFile(scope.key, f.scope, f.path)}
-                onOpenHistory={() => {
-                  void navigate({
-                    params: { key: scope.key },
-                    search: { tab: "git" },
-                    to: "/projects/$key/git/history",
-                  });
-                }}
-                onOpenBranches={() => {
-                  void navigate({
-                    params: { key: scope.key },
-                    search: { tab: "git" },
-                    to: "/projects/$key/git/branches",
-                  });
-                }}
-                projectName={scope.key}
-              />
-            </div>
-          ) : activeTool === "wiki" && !l3Route ? (
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <WikiToolPanel
-                onOpenPage={(slug) => {
-                  void navigate({
-                    params: { key: scope.key, _splat: slug },
-                    search: { tab: "wiki" },
-                    to: "/projects/$key/wiki/$",
-                  });
-                }}
-                onQueryChange={setWikiSearchQuery}
-                projectName={scope.key}
-                query={wikiSearchQuery}
-              />
-            </div>
-          ) : null}
-          {/* 实例主体层（非工具态）：聚焦未入 layout（focus effect 同步前瞬态）或查询 pending
+          {/* M4 L3 深度页（显式子路由）：nav l3 形态 + L3 主体（renderL3Body 单源）；保活层
+            hidden 保持挂载（WS 不断）。v1.4 批2：面板 open 时 L3 渲染进面板（InspectionPanel
+            l3Body），主体区不重复渲染（深链直达面板 closed 的现状路径保留）。 */}
+          {l3Route && !panelOpen ? renderL3Body(l3Route) : null}
+          {/* 工具态主体已退役（v1.4 批2）：工具面板迁检视面板（InspectionPanel），?tab= 深链
+            渲染期映射为面板 open+激活标签。 */}
+          {/* 实例主体层（非面板态）：聚焦未入 layout（focus effect 同步前瞬态）或查询 pending
             （autoFocus 未定，避免空态卡与 pills 自相矛盾闪烁——reviewer M3-c #2）= 骨架承接；
-            加载完且完全无可聚焦对象（无实例无 skill tab）= 03h 空态卡。 */}
-          {!activeTool ? (
+            加载完且完全无可聚焦对象（无实例无 skill tab）= 03h 空态卡。面板 open 时主体被
+            全屏覆盖，实例层照常挂载（保活）。 */}
+          {!panelOpen ? (
             focusRef ? null : effectiveFocusId || isLoading ? (
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <div className="px-3 py-2">

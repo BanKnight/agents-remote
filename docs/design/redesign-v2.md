@@ -784,6 +784,36 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **④ 驱动回退 pointer events——touch 直驱被真机否定（同日第四轮反馈「拖动依然毫无动静，之前虽有回弹但至少拖动有效」，commit `5e56d71`）**：第四轮反馈推翻 ③ 的 touch 直驱假设——**真机实证 pointer events 驱动有效（第一/二轮「拖动有效」）、原生 touch events 直驱完全无效**（机制未定论，**勿再走**）。四轮现象统一解释：真机「回弹/不跟手/拖不动」的来源**不是 dismiss 分支**（`0f3c882` 修的那个），而是 **WebKit 把手势当滚动启动并 pointercancel 中断拖拽**——cancel 时 dy/v 不够 dismiss 即走回弹分支（拖动有效但弹回 = 用户看到的「有回弹」）；探针 Chromium 不复现 cancel，故三轮都测不到。本版组合各就各位：**拖拽驱动恢复 pointer events（真机验证过的通道）+ state ref callback 绑定修复保留（③）+ non-passive touchmove preventDefault 保留**——它读 dragRef 手势期拦截，**绑定修好后第一次真正生效**，从第一个 touchmove 阻断滚动抢占（含 pending 起步窗口）= 消灭 pointercancel 中断 = 消灭回弹/不跟手。
 
+## §6.13 v1.4 设计包对标（2026-09-27 起；9 批计划经 plan mode 批准，每批独立 commit + 双 reviewer）
+
+> 设计包 v1.4 换代（`8f1da09`）后全量对标。四项拍板：① 全量分批；② 插件「停用」做（服务端补能力）；③ 无数据源项维持不做（✦ 提交来源 / 市场计数 / 写锁冲突，见各批记档）；④ 图标渐进换代（新图标走 Lucide 管线，存量 29 手绘 SVG 后迁）。
+
+### 批1 图标管线 + composer 单源（commit `62cb980`）
+
+- `lucide-static` + `scripts/build-icons.mjs` → 生成 `web/src/assets/icons.js`（注册表 + 水合器，24 网格 stroke2 圆头；生成物进 git、runtime 零依赖）；composer 家族 CSS 进 v2-primitives.css（components.css :108-166 1:1）；`composer-controls.tsx` 单源（窄端 3×.iicn + anchored OptionMenu / 宽端 3×.ipill，同一菜单数据）；chips 行退役（agent 无 chips 行——配置收敛 composer 控制行 + ℹ 实例信息；terminal tmux chip 保留）。
+- composer 断点口径 = `COMPOSER_DESKTOP_MIN_WIDTH_PX = 1024`（iPad 竖屏 820 归窄端 iicn；「多端同构」的宽度口径与 useIsMobile 视口口径解耦，记档）。
+
+### 批2 检视面板·状态层 + 移动 IA（2026-09-27）
+
+**结构**：`workbench-model.ts` 加 `PanelTab`（discriminated union：files/git/wiki 基础标签不可关 + file 预览标签可 ✕，id = `file:<path>` 单点派生）+ 三 atom（panelTabs/panelActive per-projectKey localStorage、panelOpen 内存级不持久化）；新 `inspection-panel.tsx` = fixed 全屏常驻挂载、translate + visibility 开合零销毁；row2 ticon×3 退役为单「检视面板」ticon；旧 `?tab=` 深链渲染期一次性映射为面板 open+激活标签（不写回 URL）。
+
+**双 reviewer 消化**（design：1 Major 系 + 6 Minor；perf：1 Major + 2 Minor；两项重叠）：
+
+- **design M1 滑出动画失效**：`transition-transform` 的落盘 transition-property 不含 visibility，关闭时 `invisible` 瞬时生效 → 300ms 位移过渡在不可见元素上空转（滑出变硬切，违反 03o ⑥「滑入/滑出不销毁」）。修 = `transition-[transform,visibility]`（CSS visibility 离散插值特例：一端 visible 则整个过渡期按 visible，结束时才隐藏）。
+- **design M2 panelOpen 不随路由卸载复位**：fixed 全屏层 open 时应用内无出口离开 workbench 路由，浏览器/系统返回后 atom 残留 true → 重进**任意**项目面板「不请自来」。修 = `useEffect(() => () => setPanelOpen(false), [])` 卸载复位（开面板是页面级显式动作，与 atom 注释语义对齐）；残留 `?tab=` 深链复开是拍板 f 固有代价，批3 链接直达接管 URL 时收敛。
+- **perf M1 / design m5（同问题）首访多发不可见请求**：panelTabs/active 缺省回退 files → 面板从未打开时 FilesToolPanel 已挂载、invisible 只免 paint 不免渲染/布局/网络。修 = `panelEverOpened` 门控（内存 useState；三个 open 路径——ticon / handleToolChange / URL 映射 effect——统一走 `openInspectionPanel` 置位），首次 open 当帧挂载（滑入动画同 commit 不受影响）、关闭后不卸载（零销毁保持）。
+- **perf m1 标签切换卸载重建**：renderPanelChildren 单激活形态，每次切换 = 5s staleTime 后台 refetch + 滚动位丢失。修 = **标签叠层保活**：panelTabs 全渲染、非激活 `invisible`（visibility:hidden 保布局保滚动位，absolute inset-0 叠层互不挤占），容器叠 `data-panel-tab-body={tab.id}` 供探针限定。顺带把 **L3 从互斥渲染改不透明覆盖层**（InspectionPanel 内容区 children 恒挂载 + `absolute inset-0 z-10 bg-surface-base` 覆盖层承载 l3Body；fab 移出覆盖）——此前 L3 打开时整个 children 卸载、返回标签条零重建被破坏；l3Transient（file/git 预览）分支同样包 `data-role="l3-page"`（覆盖层内内容根标记统一）。
+- **perf m2 activatePanelTab 无条件 spread**：值未变也产生新引用 → 多余全组件重渲染 + localStorage 同步写。修 = `prev[scope.key] === id ? prev : ...` 早退守卫（与 ensurePanelTab 幂等守卫对齐）。
+- **design m1/m2 ptabs 触点**：＋ 触发器 20×20 裸热区 → `after:-inset-2` 扩至 36×36（同 row2 检视 ticon 范式）；file ✕ 从「span role=button 嵌 button」（嵌套交互元素不合法 + tabIndex=-1 键盘不可达 + 热区 ~12px）重构为 **ptab 改 `div role="tab"` + ✕ 独立 button**（24×20 命中区、Enter/Space 键盘激活、aria-label/aria-selected 补齐）。
+- **design m3 FAB 空桩诚实化**：label「新建文件夹」→ `files.add`「添加」（03o ③ 语义），批4 前先 `disabled`（`.fab:disabled opacity:.45`）不给无功能的可见 affordance。
+- **design m4 fab 死 prop**：组件文档 fab prop 恒 undefined（调用方混进 children）→ 收敛回 fab prop 单入口。
+- **design m6/n3/n4**：`.ptabs` 补横滚条隐藏（与 .pills 同款）；面板底色 `bg-surface`（canvas）→ `bg-surface-base`（贴 03o `.page`=bg-base；浅色 #FFF vs #F2F2F7 的胶囊质感差）；`.ticon.hl` 孤儿删除（ticon×3 退役制造的）。
+- **探针适配**：叠层保活后 children 里非激活面板与覆盖层 L3 并存（文档序 children 在前）——m4 探针 9 处、m10 探针 2 处查询限定 `[data-role="l3-page"]` / `[data-panel-tab-body=…]`；ptab button→div 后 `[role="tab"][aria-label=…]` 两处。m4 62/0、header 25/0、cwd ALL PASS、m10 全过。
+
+**diverge 记档（拍板/取舍，不作为偏差修复）**：① 面板态 nav 不渲染 ℹ/⋯（无聚焦实例上下文，原型编号说明未定义）；② 三基础标签不可关（原型示例 Git ✕ 视为展示语义）；③ iPad 竖屏（<1024）全屏中间态（批3 收敛）；④ FAB glyph 用 `--c-primary` 非原型 `--on-accent`（白 on 12% tint 浅色 ~1.2:1 不可读，「双主题硬约束 > 原型示意值」，批4 03oa 换菜单时复核）；⑤ 「文件」标签名保实现（原型「文件树」；铁律5 三端同名支持）；⑥ file/git 预览跨面板开关销毁重建（保活层让位过渡态，批3 链接直达收敛）；⑦ toolChip gap 8px vs 原型 6px、收缩搜索为 crumb 内联非独立 .obtn.srch（M4 既有形态整体迁入，批4 收敛）；⑧ 存量 29 手绘 SVG 未迁（拍板 ④ 渐进）。
+
+**验证**：四门禁 + token strict + CSS 硬闸 + 单测 673/0 + e2e 24/24 + 探针 4 个（m4-tools-l3 62/0 全量面板语境重写：入口/ptabs/FAB 几何/toolChip 三态/面板内 history+commit+branches+file+wiki/长按菜单/零销毁 DOM 身份/深链映射）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

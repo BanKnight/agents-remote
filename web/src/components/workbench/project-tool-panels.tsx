@@ -37,7 +37,6 @@ import {
   statusShortLabel,
 } from "../git/git-diff-viewer";
 import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
-import type { MobileProjectTool } from "./mobile-project-header";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
 
 /** frow 行尾进入指示 chevron（.ar 内 14×14，SF Symbols chevron.right；与 SettingsChevron 同范式）。 */
@@ -75,7 +74,13 @@ function GitStatusBadge({ status }: { status: GitDiffFileStatus }) {
  * 同一容器——桌面右栏语境 16px 底 padding 无害、锚点无桌面消费者，§6.12l 记档）。
  * w-full = 右栏 row-flex 承载链铺满栏宽（grow 由 RightPanelTabs 根承担）。
  */
-function ToolPanel({ children, tool }: { children: React.ReactNode; tool: MobileProjectTool }) {
+function ToolPanel({
+  children,
+  tool,
+}: {
+  children: React.ReactNode;
+  tool: "files" | "git" | "wiki";
+}) {
   return (
     <div
       className="flex h-full min-h-0 w-full flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"

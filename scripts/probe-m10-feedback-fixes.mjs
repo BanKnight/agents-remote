@@ -585,72 +585,103 @@ async function run() {
     console.log("F. 项目工作台（问题⑨⑩⑪⑬）");
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
     await page.waitForTimeout(900);
-    const ticon = page.locator('button[aria-label="文件"]');
-    // F4 问题⑬：ticon 视觉盒 19×19（.ticon svg 原型规格）+ 相邻间距 6px（.row2 gap）——
-    // 此前 p-1/touch:w-9 把点击区做进布局盒，触屏下间距被撑到 ~23px。
+    const ticon = page.locator('button[aria-label="检视面板"]');
+    // F4 问题⑬：检视 ticon 视觉盒 19×19（v1.4 批2 IA：单检视 ticon 替代三工具 ticon，
+    // 热区 -inset-2 扩展在 ::after 不进布局盒）。
     const tgeo = await page.evaluate(() => {
       const icons = [...document.querySelectorAll("button.ticon")];
       const rects = icons.map((b) => b.getBoundingClientRect());
       return {
         count: icons.length,
         w: rects[0]?.width,
-        gap: rects.length >= 2 ? rects[1].left - (rects[0].left + rects[0].width) : null,
       };
     });
-    if (record(tgeo.count === 3, `ticon ×3（got ${tgeo.count}）`)) {
-      record(tgeo.w !== null && Math.abs(tgeo.w - 19) < 1.5, `ticon 视觉盒 19px（got ${tgeo.w}）`);
+    if (record(tgeo.count === 1, `检视 ticon ×1（got ${tgeo.count}）`)) {
       record(
-        tgeo.gap !== null && Math.abs(tgeo.gap - 6) < 1.5,
-        `ticon 间距 6px（got ${tgeo.gap}）`,
+        tgeo.w !== null && Math.abs(tgeo.w - 19) < 1.5,
+        `检视 ticon 视觉盒 19px（got ${tgeo.w}）`,
       );
     }
     // F1 问题⑨：聚焦 agent 的 chips 行在进文件工具后隐藏（此前只 gate 聚焦实例类型漏 tool）。
     // v1.4（03f）退役语义：agent chips 行（✦ model·perm·effort + AutoRetry）整体删除，
     // 问题⑨⑩的「chips 隐藏/恢复」不再存在——恒不渲染即为正确态（terminal tmux chip 保留）。
     await ticon.click();
+    await page.waitForSelector('[data-inspection-panel="open"]', { timeout: 5000 });
+    await page.waitForTimeout(400);
+    record((await page.locator(".chips").count()) === 0, "开面板后 chips 恒不渲染（问题⑨）");
+    // F2 问题⑩：关面板（‹ 工作台）→ URL 无 tab 维度（panelOpen 内存态，不写回）。
+    await page.locator('[data-inspection-panel="open"] .nav .back').click();
     await page.waitForTimeout(500);
-    record((await page.locator(".chips").count()) === 0, "工具态 chips 隐藏（问题⑨）");
-    // F2 问题⑩：取消工具（再点同 ticon）→ URL 无 tab 维度（解析回退 rememberedMiddleTab）。
-    await ticon.click();
-    await page.waitForTimeout(500);
-    record(!page.url().includes("tab="), `取消工具 URL 无 tab（got ${page.url()}）`);
+    record(!page.url().includes("tab="), `关面板 URL 无 tab（got ${page.url()}）`);
     record((await page.locator(".chips").count()) === 0, "agent chips 行已退役（v1.4）");
-    // F3 问题⑪：文件工具 → src 目录 → deep.ts → header back = 完整父目录 "src"（03q 原型；
+    // F3 问题⑪：面板内 files → src 目录 → deep.ts → back = 完整父目录 "src"（03q 原型；
     // 此前 .split("/").pop() 只取最后一段）。
     await ticon.click();
     await page.waitForTimeout(500);
-    await page.locator("button.frow", { hasText: "src" }).first().click();
+    await page
+      .locator('[data-panel-tab-body="files"] button.frow', { hasText: "src" })
+      .first()
+      .click();
     await page.waitForTimeout(500);
-    await page.locator("button.frow", { hasText: "deep.ts" }).first().click();
+    await page
+      .locator('[data-panel-tab-body="files"] button.frow', { hasText: "deep.ts" })
+      .first()
+      .click();
     await page.waitForTimeout(700);
-    const backLabel = await page.evaluate(
-      () => document.querySelector(".nav .back")?.textContent?.trim() ?? "",
-    );
+    const backLabel = await page.evaluate(() => {
+      const panel = document.querySelector('[data-inspection-panel="open"]');
+      return panel?.querySelector(".nav .back")?.textContent?.trim() ?? "";
+    });
     record(backLabel === "src", `file L3 back = 完整父目录（got "${backLabel}"）`);
 
     // ── G 第三轮：预览 back = 返回上一层（⑭）+ 历史浮层加载态（①）+ 下拉收起（③）──
     console.log("G. 第三轮（back=上一层/加载态/下拉收起）");
-    // G1 问题⑭：file 预览 back → 删 tab + ?tab=files，文件树落在父目录（crumb 含 src）。
-    await page.locator(".nav .back").click();
+    // G1 问题⑭：file 预览 back → 回面板 files 标签（面板 atom 真相，URL 不写回；v1.4 批2），
+    // 文件树落在父目录（crumb 含 src）。
+    await page.locator('[data-inspection-panel="open"] .nav .back').click();
     await page.waitForTimeout(500);
-    record(page.url().includes("tab=files"), `file back → ?tab=files（got ${page.url()}）`);
-    const crumbText = await page.evaluate(
-      () => document.querySelector(".crumb")?.textContent ?? "",
+    const g1 = await page.evaluate(() => {
+      const panel = document.querySelector('[data-inspection-panel="open"]');
+      const on = panel?.querySelector(".ptab.on");
+      return {
+        panelOpen: panel != null,
+        onText: on?.textContent?.trim() ?? null,
+      };
+    });
+    record(
+      g1.panelOpen && (g1.onText ?? "").startsWith("文件"),
+      `file back 回面板 files 标签（got open=${g1.panelOpen} on=${g1.onText}）`,
     );
+    const crumbText = await page.evaluate(() => {
+      const panel = document.querySelector('[data-inspection-panel="open"]');
+      return panel?.querySelector(".crumb")?.textContent ?? "";
+    });
     record(crumbText.includes("src"), `file back crumb 在父目录层（got "${crumbText}"）`);
 
-    // G2 问题⑭：git 预览 back = 「Git 检视」（03r 原型）→ 点后 ?tab=git 回工具面板。
-    await page.locator('button[aria-label="Git"]').click();
+    // G2 问题⑭：git 预览 back = 「Git 检视」（03r 原型）→ 点后回面板 Git 标签。
+    await page.locator('button[aria-label="新建标签"]').click();
+    await page.waitForTimeout(300);
+    await page.getByRole("menuitem", { name: /Git/ }).click();
     await page.waitForTimeout(500);
-    await page.locator("button.frow", { hasText: "deep.ts" }).first().click();
+    // 叠层保活（perf-review m1）后 files 面板 invisible 保活在 children——限定 Git 标签叠层。
+    await page
+      .locator('[data-panel-tab-body="git"] button.frow', { hasText: "deep.ts" })
+      .first()
+      .click();
     await page.waitForTimeout(700);
-    const gitBack = await page.evaluate(
-      () => document.querySelector(".nav .back")?.textContent?.trim() ?? "",
-    );
+    const gitBack = await page.evaluate(() => {
+      const panel = document.querySelector('[data-inspection-panel="open"]');
+      return panel?.querySelector(".nav .back")?.textContent?.trim() ?? "";
+    });
     record(gitBack === "Git 检视", `git L3 back = 「Git 检视」（got "${gitBack}"）`);
-    await page.locator(".nav .back").click();
+    await page.locator('[data-inspection-panel="open"] .nav .back').click();
     await page.waitForTimeout(500);
-    record(page.url().includes("tab=git"), `git back → ?tab=git（got ${page.url()}）`);
+    const g2 = await page.evaluate(() => {
+      const panel = document.querySelector('[data-inspection-panel="open"]');
+      const on = panel?.querySelector(".ptab.on");
+      return on?.textContent?.trim() ?? null;
+    });
+    record((g2 ?? "").startsWith("Git"), `git back 回面板 Git 标签（got ${g2}）`);
 
     // G3 问题①：历史 sheet 打开先见加载骨架（[role=status]）再见数据行。
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
@@ -713,7 +744,9 @@ async function run() {
     await page.waitForTimeout(300);
     // H1：git 工具面板超长 commit message → crow 被父约束、.m ellipsis、doc 无溢出
     //（此前 button width:auto=fit-content 被内容撑破，.m 的 min-width:0/ellipsis 全失效）。
-    await page.locator('button[aria-label="Git"]').click();
+    await page.locator('button[aria-label="检视面板"]').click();
+    await page.waitForSelector('[data-inspection-panel="open"]', { timeout: 5000 });
+    await page.locator('[role="tab"][aria-label="Git"]').click();
     await page.waitForTimeout(700);
     const h1 = await page.evaluate(() => {
       const crow = document.querySelector("button.crow");
@@ -732,8 +765,9 @@ async function run() {
       record(h1.mClip === true, ".m 实际截断生效（clientWidth < scrollWidth）");
     }
     // H2：文件行右键 → 03w 菜单「移动到…」图标 svg 存在（name="folder" 未注册渲染空白）。
-    await page.locator('button[aria-label="文件"]').click();
+    await page.locator('[role="tab"][aria-label="文件"]').click();
     await page.waitForTimeout(500);
+    // （面板 open 态：上一步已开面板，此处切 files 标签）
     await page
       // G1 之后 files cwd 记忆停在 src（§13 持久化语义在探针进程内同样生效），src 下是 deep.ts。
       .locator("button.frow", { hasText: "deep.ts" })

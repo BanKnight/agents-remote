@@ -170,6 +170,43 @@ export const workbenchMobileProjectFilesPathAtom = atomWithLocalOnlyStorage<Reco
 );
 
 /**
+ * 检视面板标签（v1.4 03ob 检视面板，redesign-v2 §6.13 批2）：多标签类浏览器语义——
+ * 三基础标签（files/git/wiki）不可关，file 预览标签（批3 链接直达新增）可 ✕。
+ * `id` 是标签身份：file = `file:<relPath>`，基础 = kind 本身（同目标已开 = 激活幂等）。
+ */
+export type PanelTab =
+  | { id: "files"; kind: "files" }
+  | { id: "git"; kind: "git" }
+  | { id: "wiki"; kind: "wiki" }
+  | { id: string; kind: "file"; path: string };
+
+/** 构造 file 预览标签（path = `projectName:relPath` 与 focusRef.path 同格式可 splitFilePath；
+ * id = `file:<path>` 单点派生）。批2 预留（file 标签 ✕/渲染已支持），批3 链接直达
+ *（onOpenFile → 面板 open+标签）开始消费。 */
+export function panelFileTab(projectName: string, path: string): PanelTab {
+  const p = `${projectName}:${path}`;
+  return { id: `file:${p}`, kind: "file", path: p };
+}
+
+/** 面板标签表（per-projectKey 隔离，localStorage 持久化——跨刷新恢复标签集）。 */
+export const workbenchPanelTabsAtom = atomWithLocalOnlyStorage<Record<string, PanelTab[]>>(
+  "workbenchPanelTabs",
+  {},
+);
+
+/** 面板激活标签（per-projectKey；值 = PanelTab.id）。 */
+export const workbenchPanelActiveAtom = atomWithLocalOnlyStorage<Record<string, string>>(
+  "workbenchPanelActive",
+  {},
+);
+
+/**
+ * 面板开合（内存级，不持久化）：跨刷新恢复「标签集/激活项」但不恢复「面板开着」——
+ * 重开工作台先看实例主体（03 原型默认态），开面板是一次显式用户动作。
+ */
+export const workbenchPanelOpenAtom = atom(false);
+
+/**
  * D13 Wiki 注入记忆（M4，03s）：项目 → session → 已注入 wiki 页列表。localStorage 持久化——
  * wiki 阅读页「让 Agent 读这篇」注入成功后写入；session 流顶引用卡（可移除）与 wiki 面板
  * refnote 反查此表呈现「已注入」状态。移除引用 = 删该 slug 条目。key 分层与文件 cwd 记忆

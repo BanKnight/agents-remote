@@ -6,8 +6,9 @@ export type Theme = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
 
 const THEME_STORAGE_KEY = "theme";
-const DARK_THEME_COLOR = "#000000";
-const LIGHT_THEME_COLOR = "#f2f2f7";
+// token-ok：PWA/地址栏 theme-color meta 只认字面 HEX（不走 CSS var），双主题各一字面值。
+const DARK_THEME_COLOR = "#000000"; // token-ok
+const LIGHT_THEME_COLOR = "#f2f2f7"; // token-ok
 
 /** 主题偏好（用户选择）。`system` = 跟随系统 prefers-color-scheme。持久化到 localStorage，
  * 与 `index.html` FOUC inline script 读同一 key（首帧前注入 `<html>.dark` class 避免 FOUC）。*/

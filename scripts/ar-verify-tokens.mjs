@@ -10,7 +10,8 @@
 //   2. 裸 Tailwind 色阶：{bg,text,border,...}-{色名}-{档位}（含 /透明度 后缀）。
 //
 // 白名单：web/src/styles/（token 物化层，HEX 的唯一合法驻地）、*.test.*（测试断言
-// getComputedStyle 对比 token HEX 是合法用途）。
+// getComputedStyle 对比 token HEX 是合法用途）、行级 `token-ok` 后缀注释（合法字面色：
+// PWA theme-color meta、terminal 256 色调色板映射等「数据非 UI 样式」场景，v1.4 批2 起）。
 //
 // 模式（默认 report，M1 换底完成后收紧）：
 //   bun scripts/ar-verify-tokens.mjs           # report：打印违例，exit 0（M0-M1 过渡期）
@@ -69,6 +70,8 @@ function scan() {
       const t = line.trim();
       if (t.startsWith("//") || t.startsWith("/*") || t.startsWith("*") || t.startsWith("{/*"))
         return;
+      // 行级豁免标记：行尾 `// token-ok …` 注释 = 合法字面色（meta/调色板等数据场景）。
+      if (/\btoken-ok\b/.test(t)) return;
       for (const m of line.matchAll(HEX_RE))
         violations.push({
           file: rel,

@@ -150,19 +150,9 @@ function WorkbenchContent({
       stickyWorkbenchSearch({ rightTab: rightTabNext, tab: tabFromUrl, leftMode, mode }),
     );
   };
-  // 工具 ticon 打开/退出（移动 row2 ticon，M10 用户反馈）：打开工具 ≠ 选 tab——URL ?tab 进
-  // 工具值；退出（null）= URL 去 tab 维度，回中栏默认 overview（原「回进工具前的 tab」依赖
-  // rememberedMiddleTab，写点随 §6.12k 批次 1 桌面左栏 middle tab 退役而断链，atom 已删——
-  // 见 §6.12k code review #1）。
-  const onToolTabChange = (next: WorkbenchMiddleTab | null) => {
-    void navigateWorkbench(
-      scope,
-      focusId,
-      next === null
-        ? stickyWorkbenchSearch({ rightTab, leftMode, mode })
-        : stickyWorkbenchSearch({ rightTab, tab: next, leftMode, mode }),
-    );
-  };
+  // 工具 ticon 打开/退出（v2 M3-b 移动 row2 ticon）已随 v1.4 批2 退役：工具态改为检视面板
+  //（InspectionPanel），?tab= 深链由 MobileProjectWorkbench 渲染期映射，onToolTabChange 无
+  // 消费者删除。
   // 右栏可见性纯手动：用户折叠/展开持久化到 atom（localStorage），focusId 变化不再覆盖。
   // 中栏边缘 RailButton 唤出，RightPanelTabs onCollapse 收起。旧实现 setRightCollapsed(!focusId)
   // 会在聚焦任何 tab（含 file/git）时强制展开，冲掉用户手动折叠态——违背「保持折叠」。
@@ -785,7 +775,6 @@ function WorkbenchContent({
         onOpenFile={onOpenFile}
         onOpenGitFile={onOpenGitFile}
         onSelectTab={onSelectTab}
-        onToolChange={onToolTabChange}
         scope={scope}
         tool={tab}
       />

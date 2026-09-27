@@ -5,8 +5,10 @@
 //   auto-scroll：激活 pill 滚入横滚区视野
 // 新增三行几何断言（DOM 硬数据，禁截图）：
 //   nav 行 .back「项目」主色 15px + ::before 箭头 + .nv-t 17px/600
-//   row2 .pill h30/r15 + .plus 20×20 主色 + .sep 1×18 + ticon ×3 svg 19×19
+//   row2 .pill h30/r15 + .plus 20×20 主色 + .sep 1×18 + 检视面板单 ticon svg 19×19（v1.4 批2：
+//   工具 ticon ×3 退役为面板入口，文件树/Git/Wiki 收进 InspectionPanel）
 //   agent chips 行已退役（v1.4 03f：✦ chip/AutoRetry chip 删，.chip 恒不渲染断言）
+//   Part 6 面板语境（v1.4 批2）：检视 ticon 开面板 → 面板覆盖 row2 → ‹ 工作台 关面板 → 点 pill
 //
 // 密码自读（config.yaml → api environ），不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-mobile-project-header.mjs
@@ -299,17 +301,27 @@ async function run() {
     const newPillCls = await newPill.getAttribute("class", { timeout: 8000 });
     ok((newPillCls ?? "").includes("on"), "新会话 pill 出现且 on（激活态）");
 
-    console.log("\n===== Part 6. 工具态 → pill：退出工具、session 面板可见（H1 行为锁）=====");
-    // 进 files 工具（row2 folder ticon）
+    console.log("\n===== Part 6. 检视面板 → pill：关面板、session 面板可见（H1 行为锁）=====");
+    // 开检视面板（row2 单 ticon，v1.4 批2 IA）
     await page.waitForSelector(".row2", { timeout: 8000 });
     await page.locator(".row2 .ticon").first().click({ timeout: 5000 });
-    await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
-    // M10 工具态 chips 后：工具态 row2 pills 区被 toolChip（crumb）替换，无 pill 可点——
-    // 实例切换 = 再点同 ticon 退工具（pills 回来）→ 点 pill。原先「工具态直接点 pill」
-    // 交互面已不存在（探针基线长期未跑到此步）。
-    const pillsInTool = await page.locator(".pills .pill").count();
-    ok(pillsInTool === 0, `工具态 pills 区被 crumb 替换（pills=${pillsInTool}）`);
-    await page.locator(".row2 .ticon").first().click({ timeout: 5000 });
+    await page.waitForSelector('[data-inspection-panel="open"]', { timeout: 8000 });
+    // 面板全屏覆盖：row2 的检视 ticon 被面板盖住（elementFromPoint 落面板子树）——实例切换
+    // = 关面板（‹ 工作台）→ 点 pill（面板 closed 时 pills 才可点）。
+    const panelCovers = await page.evaluate(() => {
+      const ticon = document.querySelector(".row2 .ticon");
+      if (!ticon) return false;
+      const r = ticon.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      const panel = document.querySelector('[data-inspection-panel="open"]');
+      return hit !== null && panel != null && panel.contains(hit);
+    });
+    ok(panelCovers, "面板 open 时覆盖 row2（检视 ticon 不可点，实例切换经面板 back）");
+    await page.locator('[data-inspection-panel="open"] .nav .back').click({ timeout: 5000 });
+    await page.waitForSelector('[data-inspection-panel="closed"]', {
+      state: "attached",
+      timeout: 5000,
+    });
     await page.locator(".pills .pill", { hasText: "Probe Agent A" }).click({ timeout: 5000 });
     await page.waitForURL(/session\/agent_probe-1/, { timeout: 8000 });
     await page.waitForFunction(
@@ -320,20 +332,14 @@ async function run() {
       undefined,
       { timeout: 8000 },
     );
-    const toolGone = await page.evaluate(() => {
-      const st = (sel) => {
-        const el = document.querySelector(sel);
-        return el ? getComputedStyle(el).display : null;
-      };
-      return {
-        filesTool: st('[data-mobile-tool="files"]'),
-        urlTab: new URLSearchParams(location.search).get("tab"),
-      };
-    });
-    ok(toolGone.filesTool === null, `工具面板退场（files 容器 display=${toolGone.filesTool}）`);
+    const panelStateAfter = await page.evaluate(() => ({
+      panelOpen: document.querySelector('[data-inspection-panel="open"]') !== null,
+      urlTab: new URLSearchParams(location.search).get("tab"),
+    }));
+    ok(panelStateAfter.panelOpen === false, "面板已关闭（聚焦导航不重开面板）");
     ok(
-      toolGone.urlTab === null || toolGone.urlTab === "overview",
-      `URL ?tab 已清除（实际 ${toolGone.urlTab}）`,
+      panelStateAfter.urlTab === null || panelStateAfter.urlTab === "overview",
+      `URL ?tab 已清除（实际 ${panelStateAfter.urlTab}）`,
     );
     await ctx.close();
 
@@ -456,8 +462,8 @@ async function run() {
       `.plus 20×20 主色（实际 ${geo.plusSize}）`,
     );
     ok(geo.sepSize === "1pxx18px", `.sep 1×18（实际 ${geo.sepSize}）`);
-    ok(geo.ticonCount === 3, `row2 工具 ticon ×3（实际 ${geo.ticonCount}）`);
-    ok(geo.ticonSvg === "19x19", `ticon svg 19×19（实际 ${geo.ticonSvg}）`);
+    ok(geo.ticonCount === 1, `row2 单检视面板 ticon（v1.4 批2 IA；实际 ${geo.ticonCount}）`);
+    ok(geo.ticonSvg === "19x19", `检视 ticon svg 19×19（实际 ${geo.ticonSvg}）`);
     // v1.4（03f）退役语义：agent chips 行（✦ model·perm·effort + AutoRetry）整体删除，
     // 配置收敛到 composer 控制行 + ℹ 实例信息——聚焦 agent 时 .chip 恒不渲染。
     ok(geo.chipH === null, `agent chips 行已退役，.chip 不渲染（实际 ${geo.chipH}）`);
@@ -472,7 +478,8 @@ async function run() {
     await login(page3);
     await page3.goto(`${ORIGIN}/projects/proj1/session/agent_probe-1`);
     await page3.waitForSelector(".nav .back", { timeout: 8000 });
-    await page3.locator(".nav .back").click({ timeout: 5000 });
+    // v1.4 批2：InspectionPanel 常驻挂载（closed 时 DOM 仍在）——header nav 是文档序第一个。
+    await page3.locator(".nav .back").first().click({ timeout: 5000 });
     await page3.waitForURL(/\/projects\/?$/, { timeout: 8000 });
     ok(
       /\/projects\/?$/.test(new URL(page3.url()).pathname),

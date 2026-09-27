@@ -138,17 +138,31 @@ async function waitLast(page, expected) {
     .catch(() => {});
 }
 
-// 进入项目 Files 视图并逐级点击目录链。「文件」入口 = row2 工具行 ticon 图标按钮
-//（aria-label 精确匹配；历史 header tab 形制已退役）。
+// 进入项目 Files 视图并逐级点击目录链。入口 = row2 检视面板 ticon（v1.4 批2 IA：
+// 文件树收进 InspectionPanel，默认 files 标签激活）。
 async function openProjectFiles(page, projectName) {
   await page.goto(`${WEB_ORIGIN}/projects/${projectName}`);
   await page.waitForSelector("nav[aria-label]", { timeout: 8000 });
   await page
-    .locator('button[aria-label="文件"], button[aria-label="Files"]')
+    .locator('button[aria-label="检视面板"], button[aria-label="Inspection panel"]')
     .first()
     .click({ timeout: 8000 });
-  await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
+  await page.waitForSelector('[data-inspection-panel="open"] [data-mobile-tool="files"]', {
+    timeout: 8000,
+  });
   await page.waitForTimeout(500);
+}
+
+// 刷新后面板 open 是内存态（不持久化）→ 重开面板（row2 ticon）。
+async function reopenPanel(page) {
+  await page
+    .locator('button[aria-label="检视面板"], button[aria-label="Inspection panel"]')
+    .first()
+    .click({ timeout: 8000 });
+  await page.waitForSelector('[data-inspection-panel="open"] [data-mobile-tool="files"]', {
+    timeout: 8000,
+  });
+  await page.waitForTimeout(400);
 }
 
 // 点击目录行进入下一级（移动文件工具面板 [data-mobile-tool="files"] 内 .frow 行，
@@ -196,24 +210,23 @@ async function run() {
 
     console.log("\n===== 2. reload 后仍停在 D（localStorage 记忆）=====");
     await page.reload();
-    await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
+    await reopenPanel(page);
     await waitLast(page, "D");
     record((await readPath(page)).last === "D", "reload 后仍停在 D（记忆核心断言）");
 
-    console.log("\n===== 3. 退工具（再点同 ticon）再进文件 仍停在 D =====");
-    // 工具态 toggle 语义：再点「文件」ticon = 退出回 overview；再点 = 重进（cwd 记忆应保留）。
+    console.log("\n===== 3. 关面板（‹ 工作台）再开 仍停在 D =====");
+    // 面板开关语义（v1.4 批2）：‹ 工作台 关面板（零销毁）；row2 ticon 重开，cwd 记忆保留。
     await page
-      .locator('button[aria-label="文件"], button[aria-label="Files"]')
+      .locator('[data-inspection-panel="open"] .nav .back')
       .first()
       .click({ timeout: 4000 });
-    await page.waitForTimeout(400);
-    await page
-      .locator('button[aria-label="文件"], button[aria-label="Files"]')
-      .first()
-      .click({ timeout: 4000 });
-    await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
+    await page.waitForSelector('[data-inspection-panel="closed"]', {
+      state: "attached",
+      timeout: 4000,
+    });
+    await reopenPanel(page);
     await waitLast(page, "D");
-    record((await readPath(page)).last === "D", "切 tab 保活（总览→文件仍 D）");
+    record((await readPath(page)).last === "D", "面板开关保活（关→开仍 D）");
 
     console.log("\n===== 4. 切项目 proj2：Files tab 回根（按项目隔离）=====");
     await openProjectFiles(page, "proj2");
@@ -230,13 +243,13 @@ async function run() {
     // 当前 proj1 记忆在 D；让 D 变 404 模拟目录被删，reload 后应回退根。
     state.deletedPath = "A/B/C/D";
     await page.reload();
-    await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
+    await reopenPanel(page);
     await waitLast(page, null);
     const pAfter404 = await readPath(page);
     record(pAfter404.last === null, `路径不存在回退根（last=${pAfter404.last ?? "null"}）`);
     // 回退后 cwd 记忆应已清空（下次重开也在根，不会再撞 404）。
     await page.reload();
-    await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 8000 });
+    await reopenPanel(page);
     await waitLast(page, null);
     record((await readPath(page)).last === null, "回退后记忆已清空（二次 reload 仍在根）");
   } finally {

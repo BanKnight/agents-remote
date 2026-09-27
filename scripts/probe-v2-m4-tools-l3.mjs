@@ -1,16 +1,21 @@
-// M4 工具与深度页探针（v2 M4：03m/03o/03p 三工具态 + 03q/03r/03t/03u/03v/03s L3 详情页）。
+// M4 工具与深度页探针（v1.4 §6.13 批2 重写：工具态退役为检视面板 InspectionPanel）。
 //
 // 覆盖单测验不到的真实浏览器行为（DOM 几何硬数据，禁截图）：
-//   Part 1 三工具态（?tab=git/files/wiki）：data-mobile-tool 容器 + header ticon .hl 高亮 +
-//     toolChip（.gitchip 计数 / .crumb 目录链 / .wsearch 胶囊）。
-//   Part 2 L3 git history/commit：links「全部历史」→ /git/history（dlg 日期分组 + loadmore）；
-//     点 crow → /git/commit/$（cmsg + dstat + commitFiles frow 内嵌展开 CommitFileDiff）。
-//   Part 3 L3 branches：links「分支 (N)」→ /git/branches（bcur 当前分支蓝卡 + brow + rocard
-//     只读橙卡 + sectRemoteBranches 远程段）。
-//   Part 4 L3 file preview：files 工具点文件行 → file focus（l3 nav back=父目录名 + meta 行
-//     「查看 diff」→ git focus，back=「Git 检视」）。
-//   Part 5 L3 wiki reader：wiki 工具点页行 → /wiki/$（wmeta + readbtn + wlink + Markdown 正文 +
-//     rel 同组页）+ readbtn 注入会话 sheet。
+//   Part 1 面板入口 + ptabs：row2 单检视 ticon 开面板（translate 滑入）→ 面板 rect 覆盖视口 +
+//     tab bar 让位（elementFromPoint 落面板内）+ 默认 files 标签 + FAB 几何（48×48 r24
+//     right16 bottom50）+ ＋ 菜单开 Git 标签（标签数/激活态/toolChip 切换/FAB 消失）。
+//   Part 2 toolChip 三态：git = .gitchip（分支 + 工作区/暂存计数 + 高 30）；files = .crumb
+//     （项目名首段 + frow 行）；wiki = .wsearch（分组行）。
+//   Part 3 面板内 L3 git history/commit：links「全部历史」→ /git/history 面板内 L3
+//     （nav back=「Git 检视」+ dlg 日期分组 + crow）→ crow → commit 页（cmsg + dstat + 内嵌
+//     diff）→ 面板 back 回标签条。
+//   Part 4 面板内 L3 branches：links「分支 (N)」→ bcur 蓝卡 + brow + rocard + 远程段。
+//   Part 5 面板内 file preview：files frow 点文件 → focusId=file_* 面板内 L3（nav back=父
+//     目录、保活层让位单实例）→「查看 diff」→ git diff focus 面板内（back=「Git 检视」）。
+//   Part 6 面板内 L3 wiki reader：wpg 点页 → wmeta + readbtn + wlink + Markdown 正文 + rel。
+//   Part 7 03w files 长按菜单（触屏可达，面板语境）。
+//   Part 8 零销毁滚动位（FilesToolPanel 查询/滚动跨开关保持）+ ?tab= 深链渲染期映射
+//     （面板 open + 激活标签，不写回 URL）。
 //
 // 全 mock API（proj1 不依赖真实项目数据）；密码自读不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v2-m4-tools-l3.mjs
@@ -113,8 +118,8 @@ const WIKI_PAGE = {
 const FILE_LIST = {
   parentPath: null,
   entries: [
-    { name: "src", path: "src", type: "directory", mtimeMs: Date.now() },
-    { name: "README.md", path: "README.md", type: "file", mtimeMs: Date.now() },
+    { name: "src", type: "directory", path: "src", mtimeMs: Date.now() },
+    { name: "README.md", type: "file", path: "README.md", mtimeMs: Date.now() },
   ],
 };
 
@@ -158,10 +163,10 @@ async function setupM4Mocks(page) {
       json({
         repository: true,
         projectName,
-        path: "src/a.ts",
+        path: "README.md",
         scope: "worktree",
         status: "modified",
-        diff: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,3 +1,4 @@\n const a = 1;\n-const b = 2;\n+const b = 3;\n+const c = 4;\n",
+        diff: "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1,2 +1,3 @@\n probe line 1\n-probe line 2\n+probe line 2 edited\n+probe line 3\n",
       }),
     ),
   );
@@ -228,20 +233,48 @@ async function setupM4Mocks(page) {
   await page.routeWebSocket(/stream/, (ws) => ws.connectToServer());
 }
 
-/** 预置 V4 layout（单 leaf；file tab 可选）。 */
-async function seedLayout(page, { active }) {
+/** goto 前清检视面板/文件树持久化（panelTabs/panelActive 跨刷新恢复——不清理会跨 Part 串态）。 */
+async function resetPanelStorage(page) {
+  await page.evaluate(() => {
+    localStorage.removeItem("workbenchPanelTabs");
+    localStorage.removeItem("workbenchPanelActive");
+    localStorage.removeItem("workbenchMobileProjectFilesPath");
+  });
+}
+
+/** 预置 V4 layout（单 leaf；file tab 可选）+ 面板 atoms 清零，再 goto 目标 URL。 */
+async function gotoWorkbench(page, url) {
   await page.goto(`${ORIGIN}/projects/${projectName}`);
-  await page.evaluate((activeId) => {
-    localStorage.removeItem("workbenchMiddleTab");
+  await resetPanelStorage(page);
+  await page.evaluate(() => {
     localStorage.setItem(
       "workbenchLayoutV4",
       JSON.stringify({
-        root: { kind: "leaf", id: "leaf-seed", tabs: [], activeTabId: activeId ?? null },
+        root: { kind: "leaf", id: "leaf-seed", tabs: [], activeTabId: null },
         activeGroupId: "leaf-seed",
         maximized: null,
       }),
     );
-  }, active);
+  });
+  await page.goto(url);
+}
+
+/** 点 row2 检视 ticon 开面板（03o 入口），等滑入完成。 */
+async function openPanel(page) {
+  await page.getByLabel("检视面板").click();
+  await page.waitForSelector('[data-inspection-panel="open"]', { timeout: 5000 });
+  await page.waitForTimeout(450);
+}
+
+/** nav 信息：面板 open 时取面板 nav（03o「‹ 工作台」），closed 时取工作台 header nav。 */
+async function navInfo(page) {
+  return page.evaluate(() => {
+    const root =
+      document.querySelector('[data-inspection-panel="open"]') ?? document.documentElement;
+    const back = root.querySelector(".nav .back");
+    const title = root.querySelector(".nav .nv-t");
+    return { back: back?.textContent?.trim(), title: title?.textContent?.trim() };
+  });
 }
 
 async function login(page) {
@@ -263,15 +296,87 @@ const ctx = await browser.newContext({
 });
 const page = await ctx.newPage();
 await setupM4Mocks(page);
-await seedLayout(page, { active: null });
+await page.goto(`${ORIGIN}/projects/${projectName}`);
 await login(page);
 
-console.log("Part 1: 三工具态（gitchip / crumb / wsearch + ticon 高亮）");
-await page.goto(`${ORIGIN}/projects/${projectName}?tab=git`);
-await page.waitForSelector('[data-mobile-tool="git"]', { timeout: 10000 });
-ok(await page.locator('[data-mobile-tool="git"]').first().isVisible(), "git 工具面板可见");
-const hlCount = await page.locator(".ticon.hl").count();
-ok(hlCount === 1, `ticon 高亮恰 1 个（实际 ${hlCount}）`);
+console.log("Part 1: 面板入口 + ptabs + FAB 几何");
+await gotoWorkbench(page, `${ORIGIN}/projects/${projectName}`);
+await page.waitForSelector('[data-inspection-panel="closed"]', {
+  state: "attached",
+  timeout: 10000,
+});
+ok(true, "初始面板 closed（常驻挂载，invisible + translate-x-full）");
+await openPanel(page);
+// 面板 rect 覆盖视口（fixed inset-0）。
+const panelRect = await page.evaluate(() => {
+  const el = document.querySelector('[data-inspection-panel="open"]');
+  const r = el.getBoundingClientRect();
+  return { x: r.x, y: r.y, w: r.width, h: r.height };
+});
+ok(
+  panelRect.w === 390 && panelRect.h === 844 && panelRect.x === 0 && panelRect.y === 0,
+  `面板 rect 覆盖视口（${JSON.stringify(panelRect)}）`,
+);
+// tab bar 让位：视口中下点命中的元素在面板子树内（fixed z-40 覆盖 nav 区）。
+const hitInPanel = await page.evaluate(() => {
+  const el = document.elementFromPoint(195, 760);
+  const panel = document.querySelector('[data-inspection-panel="open"]');
+  return !!el && panel.contains(el);
+});
+ok(hitInPanel, "面板覆盖 nav 区（elementFromPoint 落面板子树）");
+const tabState = await page.evaluate(() => {
+  const tabs = [...document.querySelectorAll(".ptabs .ptab")];
+  const on = tabs.find((t) => t.classList.contains("on"));
+  return { count: tabs.length, onText: on?.textContent?.trim() ?? null };
+});
+ok(tabState.count === 1, `默认标签 1 个（files；实际 ${tabState.count}）`);
+ok(tabState.onText === "文件", `files 标签激活（实际 ${tabState.onText}）`);
+// FAB 几何（03ob：48×48 r24 right16 bottom50）。
+const fab = await page.evaluate(() => {
+  const el = document.querySelector(".fab");
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return {
+    w: r.width,
+    h: r.height,
+    right: 390 - (r.x + r.width),
+    bottom: 844 - (r.y + r.height),
+    radius: getComputedStyle(el).borderRadius,
+  };
+});
+ok(fab?.w === 48 && fab?.h === 48, `FAB 48×48（实际 ${fab?.w}×${fab?.h}）`);
+ok(
+  fab?.right === 16 && fab?.bottom === 50,
+  `FAB right16 bottom50（实际 ${fab?.right}/${fab?.bottom}）`,
+);
+ok(fab?.radius === "24px", `FAB r24（实际 ${fab?.radius}）`);
+// ＋ 菜单开 Git 标签（03ob2：文件树/Git/Wiki 三选；已开 = 激活幂等）。
+await page.getByLabel("新建标签").click();
+await page.waitForSelector('[role="menuitem"]', { timeout: 5000 });
+const menuItems = await page.evaluate(() =>
+  [...document.querySelectorAll('[role="menuitem"]')].map((n) => n.textContent.trim()),
+);
+ok(
+  menuItems.some((x) => x.includes("文件")) &&
+    menuItems.some((x) => x.includes("Git")) &&
+    menuItems.some((x) => x.includes("Wiki")),
+  `＋ 菜单三选（${menuItems.join(" | ")}）`,
+);
+await page.getByRole("menuitem", { name: /Git/ }).click();
+await page.waitForTimeout(400);
+const tabState2 = await page.evaluate(() => {
+  const tabs = [...document.querySelectorAll(".ptabs .ptab")];
+  const on = tabs.find((t) => t.classList.contains("on"));
+  const xCount = document.querySelectorAll(".ptabs .ptab .x").length;
+  return { count: tabs.length, onText: on?.textContent?.trim() ?? null, xCount };
+});
+ok(tabState2.count === 2, `＋ 开 Git 后标签 2 个（实际 ${tabState2.count}）`);
+ok(tabState2.onText?.startsWith("Git"), `Git 标签激活（实际 ${tabState2.onText}）`);
+ok(tabState2.xCount === 0, "三基础标签无 ✕（plan 拍板：不可关）");
+ok((await page.locator(".fab").count()) === 0, "Git 标签无 FAB（仅文件树标签）");
+ok(await page.locator(".gitchip").isVisible(), "git toolChip（gitchip）可见");
+
+console.log("Part 2: toolChip 三态（gitchip / crumb / wsearch）");
 const gitchip = await page.evaluate(() => {
   const el = document.querySelector(".gitchip");
   if (!el) return null;
@@ -284,140 +389,225 @@ ok(
 );
 ok(gitchip?.height === 30, `gitchip 高 30px（实际 ${gitchip?.height}）`);
 ok((gitchip?.text ?? "").includes("main"), `gitchip b = 分支名 main（${gitchip?.text}）`);
-ok(await page.getByText("工作区改动").isVisible(), "sect「工作区改动」");
-ok(await page.getByText("全部历史").isVisible(), "links「全部历史」");
-
-await page.goto(`${ORIGIN}/projects/${projectName}?tab=files`);
-await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 10000 });
+// 切回 files 标签：crumb + frow（面板内）。
+await page.locator(".ptabs .ptab", { hasText: "文件" }).first().click();
+await page.waitForTimeout(400);
 const crumb = await page.evaluate(() => {
-  const el = document.querySelector(".crumb");
+  const panel = document.querySelector('[data-inspection-panel="open"]');
+  const el = panel?.querySelector(".crumb");
   if (!el) return null;
   return { text: el.textContent, buttons: el.querySelectorAll("button").length };
 });
 ok(crumb?.text.startsWith("proj1"), `crumb 项目名首段（${crumb?.text}）`);
-ok((await page.locator('[data-mobile-tool="files"] .frow').count()) === 2, "files frow 2 行");
-
-await page.goto(`${ORIGIN}/projects/${projectName}?tab=wiki`);
-await page.waitForSelector('[data-mobile-tool="wiki"]', { timeout: 10000 });
-const wsearch = await page.locator(".wsearch").first();
-ok((await wsearch.count()) >= 1 && (await wsearch.isVisible()), "wsearch chip 可见");
-ok(await page.getByText("指南").first().isVisible(), "wiki 分组「指南」");
-
-console.log("Part 2: L3 git history / commit");
-await page.goto(`${ORIGIN}/projects/${projectName}?tab=git`);
-await page.waitForSelector('[data-mobile-tool="git"]', { timeout: 10000 });
-await page.getByText("全部历史").click();
-try {
-  await page.waitForURL(/\/git\/history/, { timeout: 5000 });
-} catch {
-  console.error(`  [debug] 当前 URL: ${page.url()}`);
-  throw new Error("history 导航未发生");
-}
-const nav = await page.evaluate(() => {
-  const back = document.querySelector(".nav .back");
-  const title = document.querySelector(".nav .nv-t");
-  return { back: back?.textContent?.trim(), title: title?.textContent?.trim() };
+ok(
+  (await page
+    .locator('[data-inspection-panel="open"] [data-mobile-tool="files"] .frow')
+    .count()) === 2,
+  "files frow 2 行（面板内）",
+);
+// wiki 标签：wsearch + 分组。
+await page.getByLabel("新建标签").click();
+await page.getByRole("menuitem", { name: /Wiki/ }).click();
+await page.waitForTimeout(400);
+const wsearch = await page.evaluate(() => {
+  const panel = document.querySelector('[data-inspection-panel="open"]');
+  return panel?.querySelector(".wsearch") != null;
 });
+ok(wsearch, "wiki toolChip（wsearch）可见");
+ok(
+  (await page.locator('[data-inspection-panel="open"]').getByText("指南").first().isVisible()) ===
+    true,
+  "wiki 分组「指南」",
+);
+
+console.log("Part 3: 面板内 L3 git history / commit");
+await page.locator(".ptabs .ptab", { hasText: "Git" }).first().click();
+await page.waitForTimeout(300);
+await page.locator('[data-inspection-panel="open"]').getByText("全部历史").click();
+await page.waitForURL(/\/git\/history/, { timeout: 5000 });
+const nav = await navInfo(page);
 ok(nav?.back === "Git 检视", `history back = 「Git 检视」（实际 ${nav?.back}）`);
 ok(nav?.title === "提交历史", `history 标题 = 「提交历史」（实际 ${nav?.title}）`);
+const l3InPanel = await page.evaluate(() => {
+  const panel = document.querySelector('[data-inspection-panel="open"]');
+  return panel?.querySelector('[data-role="l3-page"]') != null;
+});
+ok(l3InPanel, "L3 主体渲染在面板内（03o「L3 是面板内深度页」）");
 ok((await page.locator(".dlg").count()) >= 1, "dlg 日期分组行存在");
 ok(
-  (await page.locator('[data-mobile-tool="git"]').count()) === 0,
-  "L3 独占内容区（工具面板不叠放，P1 互斥）",
+  await page
+    .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
+    .getByText("abc1234")
+    .first()
+    .isVisible(),
+  "crow 短 hash 显示",
 );
-ok(await page.getByText("abc1234").first().isVisible(), "crow 短 hash 显示");
 ok((await page.locator(".loadmore").count()) === 0, "total 已尽无 loadmore");
-
-await page.getByText("abc1234").first().click();
+// 叠层保活（perf-review m1）后 children 里 git 面板与覆盖层 L3 并存——L3 页内容查询
+// 一律限定 [data-role="l3-page"]（文档序 children 在前，getByText 全局 first 会命中被盖面板）。
+await page
+  .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
+  .getByText("abc1234")
+  .first()
+  .click();
 await page.waitForURL(/\/git\/commit\/abc1234/, { timeout: 5000 });
-ok(await page.getByText("feat: probe commit today").first().isVisible(), "commit cmsg");
-const dstat = await page.locator(".dstat").first();
-ok((await dstat.count()) === 1, "dstat 行存在");
-ok(await page.getByText("feat: probe commit today").first().isVisible(), "commit 消息在页");
-await page.locator(".frow").first().click();
-await page.getByText("const neu = 2;").first().waitFor({ state: "visible", timeout: 5000 });
-ok(await page.getByText("const neu = 2;").first().isVisible(), "commit 文件内嵌 diff 展开");
-
-console.log("Part 3: L3 branches");
-await page.goto(`${ORIGIN}/projects/${projectName}?tab=git`);
-await page.waitForSelector('[data-mobile-tool="git"]', { timeout: 10000 });
-await page.getByText(/分支 \(3\)/).click();
-await page.waitForURL(/\/git\/branches/, { timeout: 5000 });
-const bnav = await page.evaluate(() => {
-  const back = document.querySelector(".nav .back");
-  const title = document.querySelector(".nav .nv-t");
-  return { back: back?.textContent?.trim(), title: title?.textContent?.trim() };
+ok(
+  await page
+    .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
+    .getByText("feat: probe commit today")
+    .first()
+    .isVisible(),
+  "commit cmsg",
+);
+ok((await page.locator(".dstat").count()) === 1, "dstat 行存在");
+await page.locator('[data-inspection-panel="open"] [data-role="l3-page"] .frow').first().click();
+await page
+  .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
+  .getByText("const neu = 2;")
+  .first()
+  .waitFor({ state: "visible", timeout: 5000 });
+ok(
+  await page
+    .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
+    .getByText("const neu = 2;")
+    .first()
+    .isVisible(),
+  "commit 文件内嵌 diff 展开",
+);
+// commit back（‹ 提交历史）→ pop 回 history；history back（‹ Git 检视）→ 回标签条。
+await page.locator('[data-inspection-panel="open"] .nav .back').click();
+await page.waitForURL(/\/git\/history/, { timeout: 5000 });
+const nav2 = await navInfo(page);
+ok(nav2?.title === "提交历史", `commit back 回 history（实际 ${nav2?.title}）`);
+await page.locator('[data-inspection-panel="open"] .nav .back').click();
+await page.waitForTimeout(600);
+const backToTabs = await page.evaluate(() => {
+  const panel = document.querySelector('[data-inspection-panel="open"]');
+  return {
+    ptabs: panel?.querySelector(".ptabs") != null,
+    l3: panel?.querySelector('[data-role="l3-page"]') != null,
+  };
 });
+ok(backToTabs.ptabs && !backToTabs.l3, "面板 back 回标签条（L3 退出）");
+
+console.log("Part 4: 面板内 L3 branches");
+await page
+  .locator('[data-inspection-panel="open"]')
+  .getByText(/分支 \(3\)/)
+  .click();
+await page.waitForURL(/\/git\/branches/, { timeout: 5000 });
+const bnav = await navInfo(page);
 ok(bnav?.back === "Git 检视", `branches back = 「Git 检视」（实际 ${bnav?.back}）`);
 ok((bnav?.title ?? "").startsWith("分支 · 3"), `branches 标题（${bnav?.title}）`);
 ok((await page.locator(".bcur").count()) === 1, "bcur 当前分支蓝卡");
-ok(await page.getByText("feature").first().isVisible(), "本地分支行 feature");
+ok(
+  await page
+    .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
+    .getByText("feature")
+    .first()
+    .isVisible(),
+  "本地分支行 feature",
+);
 ok((await page.locator(".rocard").count()) === 1, "rocard 只读橙卡");
-ok(await page.getByText("远程分支").isVisible(), "远程分支 sect");
+ok(
+  await page
+    .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
+    .getByText("远程分支")
+    .isVisible(),
+  "远程分支 sect",
+);
+// 深链兜底：branches 回 Git 检视标签。
+await page.locator('[data-inspection-panel="open"] .nav .back').click();
+await page.waitForTimeout(600);
 
-console.log("Part 4: L3 file preview → 查看 diff → git focus");
-await page.goto(`${ORIGIN}/projects/${projectName}?tab=files`);
-await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 10000 });
-await page.locator('[data-mobile-tool="files"] .frow', { hasText: "README.md" }).click();
+console.log("Part 5: 面板内 file preview → 查看 diff → git focus");
+await page.locator(".ptabs .ptab", { hasText: "文件" }).first().click();
+await page.waitForTimeout(300);
+await page
+  .locator('[data-inspection-panel="open"] [data-mobile-tool="files"] .frow', {
+    hasText: "README.md",
+  })
+  .click();
 await page.waitForTimeout(800);
-const fnav = await page.evaluate(() => {
-  const back = document.querySelector(".nav .back");
-  const title = document.querySelector(".nav .nv-t");
-  return { back: back?.textContent?.trim(), title: title?.textContent?.trim() };
-});
+ok(page.url().includes("/file/"), `file focus 导航发生（${page.url()}）`);
+const fnav = await navInfo(page);
 ok(fnav?.back === "proj1", `file 根目录 back = 项目名（实际 ${fnav?.back}）`);
 ok(fnav?.title === "README.md", `file 标题 = 文件名（实际 ${fnav?.title}）`);
-ok(await page.getByText(/行/).first().isVisible(), "preview meta 行数");
-const diffBtn = page.locator(".meta .diff", { hasText: "查看 diff" });
+ok(
+  await page
+    .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
+    .getByText(/行/)
+    .first()
+    .isVisible(),
+  "preview meta 行数",
+);
+// 保活层让位：面板 open 时 file item 单实例（主体区不渲染）。
+const fileItemLeaks = await page.evaluate(
+  () => document.querySelectorAll('[data-tab-id^="file_"]').length,
+);
+ok(fileItemLeaks === 0, `保活层让位（file item 主体区 0 实例；实际 ${fileItemLeaks}）`);
+const diffBtn = page.locator('[data-inspection-panel="open"] .meta .diff', {
+  hasText: "查看 diff",
+});
 ok((await diffBtn.count()) === 1, "meta「查看 diff」按钮");
 // 批次 3 Step B：meta 行补「编辑」入口（进编辑态 CodeEditor + 保存，与桌面右栏同构）。
-ok((await page.locator(".meta .diff", { hasText: "编辑" }).count()) === 1, "meta「编辑」按钮");
+ok(
+  (await page
+    .locator('[data-inspection-panel="open"] .meta .diff', { hasText: "编辑" })
+    .count()) === 1,
+  "meta「编辑」按钮",
+);
 // design-review 修复兜底：双按钮必须包进单个 .diff 容器——各挂 .diff = 两个 auto margin
 // 平分剩余空间，首钮悬行中部（几何硬数据验证容器贴行右缘，390 视口右距 < 32px）。
-const diffBox = await page.locator(".meta .diff").boundingBox();
+const diffBox = await diffBtn.boundingBox();
 ok(
   diffBox !== null && diffBox.x + diffBox.width > 390 - 32,
   `meta 按钮容器贴行右缘（right=${diffBox ? Math.round(diffBox.x + diffBox.width) : "null"}）`,
 );
 await diffBtn.click();
 await page.waitForTimeout(800);
-const gnav = await page.evaluate(() => {
-  const back = document.querySelector(".nav .back");
-  return back?.textContent?.trim();
-});
-ok(gnav === "Git 检视", `diff focus back = 「Git 检视」（实际 ${gnav}）`);
+const gnav = await navInfo(page);
+ok(gnav?.back === "Git 检视", `diff focus back = 「Git 检视」（实际 ${gnav?.back}）`);
 
-console.log("Part 5: L3 wiki reader + readbtn sheet");
-await page.goto(`${ORIGIN}/projects/${projectName}?tab=wiki`);
-await page.waitForSelector('[data-mobile-tool="wiki"]', { timeout: 10000 });
-await page.locator(".wpg", { hasText: "介绍" }).first().click();
+console.log("Part 6: 面板内 L3 wiki reader + readbtn sheet");
+// 直开 wiki 标签（panelTabs 已有 wiki——本 Part 复用面板态，不重置）。
+await gotoWorkbench(page, `${ORIGIN}/projects/${projectName}`);
+await openPanel(page);
+await page.getByLabel("新建标签").click();
+await page.getByRole("menuitem", { name: /Wiki/ }).click();
+await page.waitForTimeout(400);
+await page.locator('[data-inspection-panel="open"] .wpg', { hasText: "介绍" }).first().click();
 await page.waitForURL(/\/wiki\/intro/, { timeout: 5000 });
-const wnav = await page.evaluate(() => {
-  const back = document.querySelector(".nav .back");
-  const title = document.querySelector(".nav .nv-t");
-  return { back: back?.textContent?.trim(), title: title?.textContent?.trim() };
-});
+const wnav = await navInfo(page);
 ok(wnav?.back === "指南", `wiki back = 分组名（实际 ${wnav?.back}）`);
 ok(wnav?.title === "介绍", `wiki 标题 = 页名（实际 ${wnav?.title}）`);
 ok(await page.locator(".readbtn").isVisible(), "readbtn「让 Agent 读这篇」");
 ok(await page.locator(".wlink").isVisible(), "wlink「复制链接」");
 ok(await page.getByText("这是 wiki 页正文内容。").isVisible(), "Markdown 正文渲染");
-ok(await page.getByText("进阶").first().isVisible(), "rel 同组页「进阶」");
+ok(
+  await page
+    .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
+    .getByText("进阶")
+    .first()
+    .isVisible(),
+  "rel 同组页「进阶」",
+);
 await page.locator(".readbtn").click();
 await page.waitForTimeout(500);
-const sheetItems = await page.evaluate(() => {
-  const btns = [...document.querySelectorAll('[role="menuitem"]')].map((n) => n.textContent.trim());
-  return btns;
-});
+const sheetItems = await page.evaluate(() =>
+  [...document.querySelectorAll('[role="menuitem"]')].map((n) => n.textContent.trim()),
+);
 ok(
   sheetItems.some((x) => x.includes("Probe Agent A")),
   `readbtn sheet 含会话（${sheetItems.join(" | ")}）`,
 );
 
-console.log("Part 6: 03w files 长按菜单（触屏可达，design-reviewer P2-5）");
-await page.goto(`${ORIGIN}/projects/${projectName}?tab=files`);
-await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 10000 });
-const lrow = page.locator('[data-mobile-tool="files"] .frow', { hasText: "README.md" });
+console.log("Part 7: 03w files 长按菜单（触屏可达，面板语境）");
+await gotoWorkbench(page, `${ORIGIN}/projects/${projectName}`);
+await openPanel(page);
+const lrow = page.locator('[data-inspection-panel="open"] [data-mobile-tool="files"] .frow', {
+  hasText: "README.md",
+});
 const rb = await lrow.boundingBox();
 const cdp = await ctx.newCDPSession(page);
 await cdp.send("Input.dispatchTouchEvent", {
@@ -435,6 +625,47 @@ ok(
   `touch 长按触发 03w 菜单（${lpItems.join(" | ")}）`,
 );
 ok(!page.url().includes("README"), "长按未误触导航（合成 click 抑制）");
+
+console.log("Part 8: 零销毁 DOM 身份 + ?tab= 深链映射");
+await gotoWorkbench(page, `${ORIGIN}/projects/${projectName}`);
+await openPanel(page);
+// 零销毁（frontend-notes §3 副作用生命周期）：面板开关前后 files 面板 DOM 节点身份一致
+//（translate/visibility 切换不卸载；内容不足一屏时滚动位恒 0，改用节点身份强断言）。
+const sameNode = await page.evaluate(() => {
+  window.__probeFilesEl = document.querySelector(
+    '[data-inspection-panel="open"] [data-mobile-tool="files"]',
+  );
+  return true;
+});
+ok(sameNode, "files 面板节点标记");
+await page.locator('[data-inspection-panel="open"] .nav .back').click();
+await page.waitForSelector('[data-inspection-panel="closed"]', {
+  state: "attached",
+  timeout: 5000,
+});
+ok(true, "‹ 工作台 关面板");
+// 关闭后 URL 不写回（panelOpen 内存态，URL 无 tab 维度）。
+ok(!page.url().includes("tab="), `关面板 URL 不写回 tab（${page.url()}）`);
+await openPanel(page);
+const kept = await page.evaluate(
+  () =>
+    window.__probeFilesEl ===
+    document.querySelector('[data-inspection-panel="open"] [data-mobile-tool="files"]'),
+);
+ok(kept, "零销毁：重开面板 files 面板 DOM 节点身份一致");
+// ?tab= 深链渲染期映射：面板 open + 激活标签；关面板不写回（URL 保留旧值）。
+await gotoWorkbench(page, `${ORIGIN}/projects/${projectName}?tab=git`);
+await page.waitForSelector('[data-inspection-panel="open"]', { timeout: 10000 });
+const deepLink = await page.evaluate(() => {
+  const panel = document.querySelector('[data-inspection-panel="open"]');
+  const on = panel?.querySelector(".ptab.on");
+  return { onText: on?.textContent?.trim() ?? null };
+});
+ok(
+  deepLink.onText?.startsWith("Git"),
+  `深链 ?tab=git 映射面板激活 Git 标签（实际 ${deepLink.onText}）`,
+);
+ok(await page.locator(".gitchip").isVisible(), "深链 gitchip 可见");
 
 console.log(`\n结果：${passCount} pass / ${failCount} fail`);
 await browser.close();
