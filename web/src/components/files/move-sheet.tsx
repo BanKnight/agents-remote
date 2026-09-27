@@ -6,6 +6,7 @@ import { useIsMobile } from "../../lib/use-is-mobile";
 import { useT } from "../../i18n";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { MobileSheet } from "../shell/mobile-sheet";
+import { shellSurfaceClasses } from "../shell/shell-primitives";
 
 /**
  * 03w3 移动到… 目录选择 sheet（v1.4 批4）。项目根起树逐层浏览（pin②）：当前目录行（✓ =
@@ -184,8 +185,10 @@ export function MoveSheet({
   }
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-sm">
-        <div className="rounded-2xl p-5">
+      <DialogContent className="max-w-sm sm:max-w-sm">
+        <div
+          className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        >
           <DialogTitle className="text-base font-semibold text-on-surface">
             {t("files.moveTitle", { name: entryName })}
           </DialogTitle>

@@ -64,3 +64,56 @@ test("authenticated user can inspect Git worktree and staged diffs", async ({ pa
   await files.getByRole("button", { name: "Back to changed files" }).click();
   await expect(gitRows.filter({ hasText: /README\.md/ })).toBeVisible();
 });
+
+test("authenticated user can commit selected changes from the worktree panel", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+
+  const projectRow = page.locator(`nav.side .srow2[title="${projectName}"]`);
+  await expect(projectRow).toBeVisible();
+  await projectRow.click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
+
+  await page.goto(`/projects/${projectName}?rightTab=git`);
+  const files = page.getByRole("complementary").nth(1);
+  const gitRows = files.locator('[data-panel-tab-body="git"] .frow');
+  await expect(gitRows.filter({ hasText: /notes\.txt/ })).toBeVisible();
+
+  // 03m2 提交入口：links「Commit…」（有工作区改动才显）。开 sheet（桌面 = 居中 Dialog）。
+  const gitBody = files.locator('[data-panel-tab-body="git"]');
+  await gitBody.getByRole("button", { name: "Commit…" }).click();
+  const sheet = page.getByRole("dialog");
+  await expect(sheet).toBeVisible();
+  // 03m2 编号②：M/A/D/R 默认勾、untracked 默认不勾（防密钥误提交）——README.md
+  //（worktree M）与 src/index.ts（staged M）勾选、notes.txt（untracked）不勾。
+  const rows = sheet.locator(".crow2");
+  await expect(rows.filter({ hasText: /README\.md/ }).locator(".cb.on")).toHaveCount(1);
+  await expect(rows.filter({ hasText: /src\/index\.ts/ }).locator(".cb.on")).toHaveCount(1);
+  await expect(rows.filter({ hasText: /notes\.txt/ }).locator(".cb:not(.on)")).toHaveCount(1);
+  // 信息必填：空信息提交钮禁用；勾选计数联动按钮文案（untracked 默认不勾不计入）。
+  const commitBtn = sheet.locator("button.cbtn");
+  await expect(commitBtn).toHaveText("Commit (2 files)");
+  await expect(commitBtn).toBeDisabled();
+  await rows.filter({ hasText: /README\.md/ }).click();
+  await expect(commitBtn).toHaveText("Commit (1 files)");
+  await rows.filter({ hasText: /README\.md/ }).click();
+  await expect(commitBtn).toHaveText("Commit (2 files)");
+
+  // 填信息提交 → sheet 关 → 勾选行（README.md + staged src/index.ts）变更清零、
+  // untracked notes.txt（默认不勾 = 不提交）保留；invalidate 生效即时反映。
+  await sheet.locator("textarea.cmsgin").fill("e2e: commit all pending changes");
+  await commitBtn.click();
+  await expect(sheet).toBeHidden();
+
+  await expect(gitRows.filter({ hasText: /README\.md/ })).toHaveCount(0);
+  await expect(gitRows.filter({ hasText: /src\/index\.ts/ })).toHaveCount(0);
+  await expect(gitRows.filter({ hasText: /notes\.txt/ })).toBeVisible();
+
+  // 历史 +1：initial + 本次提交 = 2 行（03t 历史列表 .crow）。
+  await gitBody.getByRole("button", { name: "All history" }).click();
+  const history = gitBody.locator('[data-role="l3-git-history"]');
+  await expect(history).toBeVisible();
+  await expect(history.locator("button.crow")).toHaveCount(2);
+});

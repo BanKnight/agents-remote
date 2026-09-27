@@ -38,6 +38,8 @@ import {
   statusShortLabel,
 } from "../git/git-diff-viewer";
 import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
+import { CommitSheet } from "../git/commit-sheet";
+import { DiscardDialog } from "../git/discard-dialog";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
 
 /** frow 行尾进入指示 chevron（.ar 内 14×14，SF Symbols chevron.right；与 SettingsChevron 同范式）。 */
@@ -158,6 +160,9 @@ export function GitToolPanel({
   const commits = log.data?.commits.slice(0, 3) ?? [];
   const branchCount = branches.data?.branches.length ?? 0;
   const branch = diff.data?.repository === true ? diff.data.branch : undefined;
+  // 03m2「提交…」入口开关 + 03m3 弃层目标行。
+  const [commitOpen, setCommitOpen] = useState(false);
+  const [discardTarget, setDiscardTarget] = useState<GitDiffFileSummary | null>(null);
   // 05e 复制路径反馈（03w 同款：cap 短暂显示「已复制」）。
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   // 05e 改动行菜单（02c 单一菜单容器模式：find(pointFor) 命中才挂，行外挂 → scrim 冒泡
@@ -179,6 +184,12 @@ export function GitToolPanel({
         setCopiedPath(file.path);
         window.setTimeout(() => setCopiedPath((p) => (p === file.path ? null : p)), 2000);
       },
+    },
+    {
+      // 03m3 放弃更改入口（行菜单红项）。Dialog 由 holder 条件渲染。
+      label: t("git.menuDiscard"),
+      onSelect: () => setDiscardTarget(file),
+      variant: "destructive" as const,
     },
   ];
 
@@ -282,6 +293,13 @@ export function GitToolPanel({
               {t("git.linkHistory")}
             </button>
           ) : null}
+          {files.length > 0 ? (
+            // 03m2 提交入口（04d gacts 同排「历史|提交…|分支」）。改动清零即隐藏——
+            // 空变更提交无语义（原型恒显，记 diverge）。
+            <button onClick={() => setCommitOpen(true)} type="button">
+              {t("git.linkCommit")}
+            </button>
+          ) : null}
           {onOpenBranches && branches.data != null ? (
             // 分支计数待数据（data 到手，isPending 与 error 都不渲染）不渲染按钮——
             // 「分支 (0)」伪态消解（§6.12o；error 半边由 review 修复补上）。
@@ -290,6 +308,27 @@ export function GitToolPanel({
             </button>
           ) : null}
         </div>
+      ) : null}
+
+      {/* 03m2/03m3 写操作层（单源收 GitToolPanel 内部：装配点零改动；mutation 失败保持
+          开层，成功失效缓存后关）。 */}
+      <CommitSheet
+        branch={branch?.name ?? "HEAD"}
+        files={files}
+        onOpenChange={setCommitOpen}
+        open={commitOpen}
+        projectName={projectName}
+      />
+      {discardTarget ? (
+        <DiscardDialog
+          branch={branch?.name ?? "HEAD"}
+          file={discardTarget}
+          onOpenChange={(open) => {
+            if (!open) setDiscardTarget(null);
+          }}
+          open
+          projectName={projectName}
+        />
       ) : null}
     </ToolPanel>
   );

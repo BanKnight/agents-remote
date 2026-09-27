@@ -165,7 +165,7 @@ export const resolveProjectRelativePath = async (
   }
 };
 
-const isInsideOrSelf = (rootPath: string, targetPath: string) => {
+export const isInsideOrSelf = (rootPath: string, targetPath: string) => {
   const relation = relative(rootPath, targetPath);
   return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
 };

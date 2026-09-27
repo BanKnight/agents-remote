@@ -235,6 +235,7 @@ export const en = {
   "git.sectRecent": "Recent commits",
   "git.linkHistory": "All history",
   "git.linkBranches": "Branches ({{n}})",
+  "git.linkCommit": "Commit…",
   "git.toolTitle": "Git",
   "git.historyTitle": "Commit history",
   "git.historyMeta": "{{branch}} · {{n}} commits",
@@ -255,10 +256,21 @@ export const en = {
   "git.bcurSub": "Last commit {{time}} · inspection and history are based on this",
   "git.rocardTitle": "Read-only boundary",
   "git.rocardDesc":
-    "Switch / merge / push are write operations: hand them to an agent or terminal. Inspection never mutates.",
+    "Remote writes (switch / merge / push) go to an agent or terminal. Inspection only offers local commit and discard.",
   "git.diffBaseScope": "{{base}} ← {{scope}}",
   "git.scopeWorktree": "Working tree",
   "git.scopeStaged": "Staged",
+  "git.commitTitle": "Commit to {{branch}}",
+  "git.commitBtn": "Commit ({{n}} files)",
+  "git.commitMessagePlaceholder": "Commit message",
+  "git.commitEmpty": "No changes to commit",
+  "git.menuDiscard": "Discard changes…",
+  "git.discardTitle": "Discard changes",
+  "git.discardDesc":
+    "The file will be restored to its last committed state on {{branch}}; uncommitted changes (+{{added}} −{{removed}}) cannot be undone.",
+  "git.discardUntrackedWarn":
+    "This file is untracked — discarding deletes the file. This cannot be undone.",
+  "git.discardBtn": "Discard changes",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.workbench": "Workbench",
@@ -330,6 +342,8 @@ export const en = {
   "api.projectFileDeleteFailed": "File delete failed",
   "api.projectFileSaveFailed": "File save failed",
   "api.projectGitDiffFailed": "Project Git diff failed",
+  "api.projectGitCommitFailed": "Git commit failed",
+  "api.projectGitDiscardFailed": "Git discard failed",
   "api.projectGitFileDiffFailed": "Project Git file diff failed",
   "api.projectPagesConfigFailed": "Pages config load failed",
   "api.wikiIndexFailed": "Wiki index load failed",

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { useT } from "../../i18n";
+import { shellSurfaceClasses } from "../shell/shell-primitives";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
 /**
@@ -42,8 +43,10 @@ export function RenameDialog({
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-xs">
-        <div className="rounded-2xl p-5 text-center">
+      <DialogContent className="max-w-xs sm:max-w-xs">
+        <div
+          className={`rounded-2xl p-5 text-center shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        >
           <DialogTitle className="text-base font-bold text-on-surface">
             {t("files.rename")}
           </DialogTitle>

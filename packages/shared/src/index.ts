@@ -193,6 +193,37 @@ export type GitBranchListResponse = {
   branches: GitBranch[];
 };
 
+// ── v1.4 批5 Git 写操作（03m2 提交 / 03m3 放弃）─────────────────────────────
+
+/** 提交请求：paths = 变更列表成员（entry.path；renamed 由服务端补 previousPath），
+ * message 必填非空（服务端 trim 后 ≤2000）。 */
+export type GitCommitRequest = {
+  paths: string[];
+  message: string;
+};
+
+/** 提交响应：hash = 新提交全 hash，branch = 提交所在分支（detached = "HEAD"）。 */
+export type GitCommitResponse = {
+  hash: string;
+  branch: string;
+  filesCommitted: number;
+};
+
+/** 放弃请求：paths = 变更列表成员（tracked 恢复 HEAD / untracked 删除）。 */
+export type GitDiscardRequest = {
+  paths: string[];
+};
+
+/** 单文件放行动作：restored = git restore 回 HEAD；deleted = untracked 文件移除。 */
+export type GitDiscardResult = {
+  path: string;
+  action: "restored" | "deleted";
+};
+
+export type GitDiscardResponse = {
+  results: GitDiscardResult[];
+};
+
 /** R4/R6 共享 commit 项（git log %h/%an/%ar/%s；isoDate = %ci 日期段，客户端日期分组用，M4 R6 增强可选字段）。 */
 export type GitCommitLogItem = {
   hash: string;
@@ -2381,6 +2412,11 @@ export type ApiErrorCode =
   | "PROJECT_GIT_SCOPE_INVALID"
   | "PROJECT_GIT_FILE_NOT_CHANGED"
   | "PROJECT_GIT_UNAVAILABLE"
+  | "PROJECT_GIT_MESSAGE_INVALID"
+  | "PROJECT_GIT_NOTHING_TO_COMMIT"
+  | "PROJECT_GIT_IDENTITY_MISSING"
+  | "PROJECT_GIT_COMMIT_FAILED"
+  | "PROJECT_GIT_DISCARD_FAILED"
   | "PROJECT_FS_ERROR"
   | "PROJECT_PAGES_CONFIG_INVALID"
   | "PROJECT_PAGES_ROOT_CONFLICT"

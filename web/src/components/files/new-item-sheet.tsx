@@ -7,6 +7,7 @@ import { useT } from "../../i18n";
 import { gitDiffListQueryKey } from "../git/git-diff-viewer";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { MobileSheet } from "../shell/mobile-sheet";
+import { shellSurfaceClasses } from "../shell/shell-primitives";
 
 /**
  * 03y 新建 sheet 单源（v1.4 批4）：文件 | 文件夹 segc 二选一 + 名称 kfield + 位置只读
@@ -147,8 +148,10 @@ export function NewItemSheet({
   }
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-sm">
-        <div className="rounded-2xl p-5">
+      <DialogContent className="max-w-sm sm:max-w-sm">
+        <div
+          className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+        >
           <DialogTitle className="text-base font-semibold text-on-surface">
             {t("files.newItemTitle")}
           </DialogTitle>

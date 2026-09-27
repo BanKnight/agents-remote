@@ -20,7 +20,11 @@ import type {
   GitCommitDetailResponse,
   GitCommitFileDiffResponse,
   GitCommitLogResponse,
+  GitCommitRequest,
+  GitCommitResponse,
   GitDiffListResponse,
+  GitDiscardRequest,
+  GitDiscardResponse,
   GitDiffScope,
   GitCompareFileDiffResponse,
   GitFileDiffResponse,
@@ -363,6 +367,31 @@ export async function previewProjectFile(
 
 export async function listProjectGitDiff(projectName: string): Promise<GitDiffListResponse> {
   return fetchJson(projectGitDiffPath(projectName), "api.projectGitDiffFailed");
+}
+
+/** 03m2 提交（v1.4 批5）：勾选变更行 + 信息 → 新提交。renamed 服务端展开 pathspec 两端。 */
+export async function commitProjectGit(
+  projectName: string,
+  paths: string[],
+  message: string,
+): Promise<GitCommitResponse> {
+  return fetchJson(projectGitCommitPath(projectName), "api.projectGitCommitFailed", {
+    body: JSON.stringify({ paths, message } satisfies GitCommitRequest),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+}
+
+/** 03m3 放弃更改（v1.4 批5）：tracked 恢复 HEAD、untracked 删除（服务端逐项判定）。 */
+export async function discardProjectGit(
+  projectName: string,
+  paths: string[],
+): Promise<GitDiscardResponse> {
+  return fetchJson(projectGitDiscardPath(projectName), "api.projectGitDiscardFailed", {
+    body: JSON.stringify({ paths } satisfies GitDiscardRequest),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
 }
 
 export async function getPagesConfig(projectName: string): Promise<PagesConfigResponse> {
@@ -989,13 +1018,16 @@ const projectGitFileDiffPath = (
 const projectGitBranchesPath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/git/branches`;
 
+const projectGitCommitPath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/git/commit`;
+
+const projectGitDiscardPath = (projectName: string) =>
+  `/api/projects/${encodeURIComponent(projectName)}/git/discard`;
+
 const projectGitLogPath = (projectName: string, branch?: string) => {
   const base = `/api/projects/${encodeURIComponent(projectName)}/git/log`;
   return branch ? `${base}?branch=${encodeURIComponent(branch)}` : base;
 };
-
-const projectGitCommitPath = (projectName: string) =>
-  `/api/projects/${encodeURIComponent(projectName)}/git/commit`;
 
 const projectGitComparePath = (projectName: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/git/compare`;

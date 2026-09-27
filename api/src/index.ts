@@ -34,6 +34,7 @@ import {
 import { ProjectFilesService, ProjectFilesError } from "./project-files";
 import { ProjectPagesError, ProjectPagesService } from "./project-pages";
 import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
+import { ProjectGitWriteError, ProjectGitWriteService } from "./project-git-write";
 import { ProjectWikiError, ProjectWikiService } from "./project-wiki";
 import { ProjectService, ProjectServiceError } from "./projects";
 import { resolveProjectPath } from "./project-paths";
@@ -82,6 +83,7 @@ type FetchHandlerOptions = {
   projectPagesService?: ProjectPagesService;
   projectWikiService?: ProjectWikiService;
   projectGitDiffService?: ProjectGitDiffService;
+  projectGitWriteService?: ProjectGitWriteService;
   projectService?: ProjectService;
   projectsRoot?: string;
   sessionRegistry?: SessionRegistry;
@@ -560,6 +562,7 @@ export const createFetchHandler =
         options.projectService,
         options.projectFilesService,
         options.projectGitDiffService,
+        options.projectGitWriteService,
       );
 
       if (projectResponse) {
@@ -604,6 +607,7 @@ const handleProjects = async (
   projectService: ProjectService,
   projectFilesService?: ProjectFilesService,
   projectGitDiffService?: ProjectGitDiffService,
+  projectGitWriteService?: ProjectGitWriteService,
 ) => {
   try {
     if (url.pathname === "/api/projects" && request.method === "GET") {
@@ -670,6 +674,44 @@ const handleProjects = async (
                       ? await projectGitDiffService.listAheadBehind(projectName, branch)
                       : await projectGitDiffService.listDiff(projectName);
       return Response.json(response);
+    }
+
+    // v1.4 批5 Git 写操作 gate（03m2 提交 / 03m3 放弃）：POST-only，与只读 GET gate
+    // 分流——只读 8 suffix 语义不变，写路径独立校验 body。
+    if (projectGitDiffMatch && request.method === "POST" && projectGitWriteService) {
+      const { projectName, kind } = projectGitDiffMatch;
+
+      if (kind === "commit") {
+        const body = (await request.json().catch(() => null)) as {
+          paths?: unknown;
+          message?: unknown;
+        } | null;
+        if (
+          !Array.isArray(body?.paths) ||
+          typeof body?.message !== "string" ||
+          !body.paths.every((p) => typeof p === "string")
+        ) {
+          return jsonError("PROJECT_TARGET_INVALID", "Invalid commit request payload", 400);
+        }
+        const commitResponse = await projectGitWriteService.commit(
+          projectName,
+          body.paths as string[],
+          body.message,
+        );
+        return Response.json(commitResponse);
+      }
+
+      if (kind === "discard") {
+        const body = (await request.json().catch(() => null)) as { paths?: unknown } | null;
+        if (!Array.isArray(body?.paths) || !body.paths.every((p) => typeof p === "string")) {
+          return jsonError("PROJECT_TARGET_INVALID", "Invalid discard request payload", 400);
+        }
+        const discardResponse = await projectGitWriteService.discard(
+          projectName,
+          body.paths as string[],
+        );
+        return Response.json(discardResponse);
+      }
     }
 
     const projectFilesRawMatch = matchProjectFilesRawPath(url.pathname);
@@ -907,6 +949,10 @@ const handleProjects = async (
       return projectGitDiffErrorResponse(error);
     }
 
+    if (error instanceof ProjectGitWriteError) {
+      return projectGitWriteErrorResponse(error);
+    }
+
     if (error instanceof ProjectFilesError) {
       return projectFilesErrorResponse(error);
     }
@@ -1105,7 +1151,16 @@ const handleWikiRoute = async (
 
 type ProjectGitDiffPathMatch = {
   projectName: string;
-  kind: "file" | "diff" | "branches" | "log" | "aheadBehind" | "compare" | "compareFile" | "commit";
+  kind:
+    | "file"
+    | "diff"
+    | "branches"
+    | "log"
+    | "aheadBehind"
+    | "compare"
+    | "compareFile"
+    | "commit"
+    | "discard";
 };
 
 const matchProjectGitDiffPath = (pathname: string): ProjectGitDiffPathMatch | undefined => {
@@ -1123,6 +1178,9 @@ const matchProjectGitDiffPath = (pathname: string): ProjectGitDiffPathMatch | un
     { suffix: "/git/commit", kind: "commit" },
     { suffix: "/git/diff/file", kind: "file" },
     { suffix: "/git/diff", kind: "diff" },
+    // v1.4 批5 Git 写操作：discard = 03m3 放弃更改（POST）；commit 写操作复用
+    // /git/commit suffix 靠 method 分流（GET = 提交详情只读）。
+    { suffix: "/git/discard", kind: "discard" },
     { suffix: "/git/branches", kind: "branches" },
     { suffix: "/git/log", kind: "log" },
     { suffix: "/git/ahead-behind", kind: "aheadBehind" },
@@ -1270,6 +1328,20 @@ const projectGitDiffErrorResponse = (error: ProjectGitDiffError) => {
 
   if (error.code === "PROJECT_GIT_NOT_REPOSITORY") {
     return jsonError(error.code, error.message, 400);
+  }
+
+  if (error.code === "PROJECT_GIT_UNAVAILABLE" || error.code === "PROJECT_FS_ERROR") {
+    return jsonError(error.code, error.message, 500);
+  }
+
+  return jsonError(error.code, error.message, 400);
+};
+
+// v1.4 批5：Git 写操作错误映射（404 项目不存在 / 500 Git 不可用或 FS 故障 / 400 其余
+// 校验失败：message 非法、nothing-to-commit、identity 缺失、变更集外路径、放弃失败）。
+const projectGitWriteErrorResponse = (error: ProjectGitWriteError) => {
+  if (error.code === "PROJECT_NOT_FOUND") {
+    return jsonError(error.code, error.message, 404);
   }
 
   if (error.code === "PROJECT_GIT_UNAVAILABLE" || error.code === "PROJECT_FS_ERROR") {
@@ -1530,6 +1602,7 @@ export const startApi = async () => {
   const projectFilesService = new ProjectFilesService(config.projectsRoot);
   const projectPagesService = new ProjectPagesService(config.projectsRoot);
   const projectGitDiffService = new ProjectGitDiffService(config.projectsRoot);
+  const projectGitWriteService = new ProjectGitWriteService(config.projectsRoot);
   // 全局 idleTimeout：MCP 同步 spawn（mcp-management runCliTool 默认 60s）静默期需覆盖，
   // 默认 10s 会在中途关闭连接（Empty reply）。调到 Bun.serve 上限 255s。
   // skill install/update 已异步化（POST 立即返 202 + 后台 spawn），其 SSE 进度流用
@@ -1549,6 +1622,7 @@ export const startApi = async () => {
       projectPagesService,
       projectWikiService,
       projectGitDiffService,
+      projectGitWriteService,
       projectService,
       projectsRoot: config.projectsRoot,
       sessionRegistry,
