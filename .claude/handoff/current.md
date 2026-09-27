@@ -1,57 +1,59 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-27（**§6.12p 第四轮修复 `5e56d71`**：拖拽驱动回退 pointer events——真机实证 touch 直驱无效、pointer 有效。preventDefault 在绑定修好后第一次真正生效，针对 pointercancel 中断。**下一步：交用户真机复验**。）
+> 最后更新：2026-09-27（**v1.4 批1 `62cb980` + 批2 `c684738` 已 commit**。批2 = 检视面板·状态层 + 移动 IA，双 reviewer 全消化。**下一步：交用户真机复验批1+批2，然后批3（桌面 ptabs + 链接直达）**。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-§6.12p 四轮真机反馈修复（`0f3c882`+`52af7aa`+`1c50d91`+`5e56d71`）：绑定时机 bug（Radix Portal Content 晚于宿主 effect → preventDefault 曾空转）已修；驱动定版 **pointer events + non-passive touchmove preventDefault**（touch 直驱被真机否定勿再走）。探针 54/54、四门禁 + e2e 24/24 全绿。
+v1.4 设计包对标进行中：批1（图标管线 + composer 单源 `62cb980`）、批2（检视面板 InspectionPanel + 移动 IA `c684738`）已 commit；四门禁 + token strict + CSS 硬闸 + 单测 1511/0 + e2e 24/24 + 探针 4 个全绿；记档 redesign-v2.md §6.13 批1/批2 段（含 diverge 清单 8 项）。
 
-## 本 session 焦点（四轮反馈的完整事实链）
+## 本 session 焦点（批2 完整闭环）
 
-1. 第一轮「松手回弹再消失」→ `0f3c882` 修 dismiss 清 transform（exit 起点=inline transform）。
-2. 第二轮「不跟手/经常拖不动」→ `52af7aa` 加 preventDefault——**因绑定 bug 从未生效**。
-3. 第三轮「抓小横线完全拖不动」→ `1c50d91` 诊断出**真根因**：MobileSheet 交互 effect 依赖 `[open]`，但 Radix Portal Content 挂载晚于宿主 useEffect，ref=null 提前 return 且永不重绑——探针全绿测的是 React 合成 pointer 路径（委托，不需要 ref），原生 listener 空转 = 「探针与真机脱节」的根因。修复 = state ref callback（`ref={setContentNode}`，effect 依赖 `[contentNode]`）+ 同 commit 尝试 touch events 直驱。
-4. 第四轮「拖动依然毫无动静，之前虽有回弹但至少拖动有效」→ `5e56d71` **推翻 touch 直驱**：真机实证 pointer 驱动有效、touch 直驱无效（机制未定论）。四轮现象统一解释：真机「回弹/不跟手」= **WebKit 滚动抢占 pointercancel 中断拖拽走回弹分支**（非 dismiss 分支 bug），Chromium 探针不复现 cancel 故测不到。
+1. **结构**：`PanelTab` union + 三 atom（panelTabs/panelActive per-projectKey 持久化、panelOpen 内存级）；新 `inspection-panel.tsx`（fixed 全屏常驻挂载、translate+visibility 开合零销毁）；row2 ticon×3 退役单检视 ticon；旧 `?tab=` 深链渲染期映射不写回。
+2. **双 reviewer 消化**（design M1/M2/m1-m6/n3/n4 + perf M1/m1/m2）：滑出动画 `transition-[transform,visibility]`；panelOpen 卸载复位；`panelEverOpened` 首开门控；**标签叠层保活**（panelTabs 全渲染非激活 invisible + L3 改不透明覆盖层）；activatePanelTab 幂等守卫；ptabs ＋ 热区 / ✕ 重构 div[role=tab]+独立 button / FAB「添加」+disabled；fab prop 收敛；.ptabs 滚动条；bg-surface-base；.ticon.hl 孤儿删除。
+3. **探针适配**（叠层保活的语义变化）：L3 内容查询限定 `[data-role="l3-page"]`、叠层容器 `[data-panel-tab-body=…]`、ptab 改 `[role="tab"][aria-label=…]`。
 
 ## 关键决策（本阶段不可丢）
 
-- **iOS 拖拽手势定版组合**：pointer events 驱动（startDrag/moveDrag/endDrag + setPointerCapture）+ non-passive touchmove preventDefault（读 dragRef，手势期含 pending 全拦）+ 热区 touch-none CSS 第一道。**勿再走：原生 touch events 直驱（真机完全无效）。**
-- **Radix Portal DOM 就绪铁律（frontend-notes §14）**：需要挂 DOM 的副作用用 state ref callback（`useState` + `ref={setNode}`，effect 依赖 `[node]`）；`useRef` + effect 内 `if (!ref.current) return` 且依赖无 DOM 信号 = 潜在永不生效。诊断法：CDP `getEventListeners` + 绑定时刻 window 标记 + 元素身份对比。
-- **探针≠真机的边界**：Chromium 不复现 WebKit pointercancel/手势抢占——拖拽手感类问题探针只能验证逻辑通路（跟手/dismiss 几何），手势判定以真机为准；勿据探针全绿推断真机手势行为，也勿据探针推翻真机实证。
-- 嵌套浮层铁律 / dismiss 阈值（≥96px 或 24-96px+速度≥0.5px/ms，DRAG_START_PX=6）/ exit 起点范式 沿用 §6.12p 前轮记档。
+- **面板语境真相链**：panelOpen 内存 atom（卸载复位 effect 兜底）> URL 无 tab（面板开合不写 URL）> panelTabs/panelActive per-projectKey localStorage。旧 `?tab=` 深链 = 渲染期一次性映射（不写回），残留复开是拍板 f 固有代价（批3 收敛）。
+- **叠层保活范式**（perf-review m1 产物）：children 里 panelTabs 全渲染、非激活 `visibility:hidden`（保布局保滚动位；不用 display:none——丢 scrollTop）+ absolute inset-0 叠层；L3 = 覆盖层 `absolute inset-0 z-10 bg-surface-base` 盖住 children（打开 L3 不卸载标签面板）。
+- **panelEverOpened 门控**：invisible 只免 paint 不免渲染/布局/网络——面板从未打开不挂载工具面板；三个 open 路径（ticon/handleToolChange/URL effect）统一走 `openInspectionPanel`。
+- **探针铁律**：面板常驻挂载（closed 时 DOM 在）→ 全局查询必须限定面板根/叠层容器；ptab 是 div role=tab 非 button。
+- **diverge 8 项**记档 §6.13（ℹ/⋯ 不渲染、三基础标签不可关、iPad 竖屏中间态、FAB 色取舍、「文件」命名、file/git 预览重建过渡态、toolChip gap、存量 SVG 未迁）。
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ §6.12o 加载态 + §6.12n sheet 收敛 + §6.12p 四轮反馈修复（`0f3c882`+`52af7aa`+`1c50d91`+`5e56d71`）
-- ✅ 验证 = 四门禁 + CSS 硬闸 + token 机检 + e2e 24/24 + 单测 673+829+9 + 探针 m5-sheets 54/54
-- ✅ 记档：redesign-v2.md §6.12p-①~④ + frontend-notes §14（含勿再走）
-- ⬜ **交用户真机复验（清单见下）——本版 = pointer 驱动（用户实证「拖动有效」）+ preventDefault 首次真正生效**
-- ⬜ 若真机仍有回弹/不跟手（即 preventDefault 生效后仍被 pointercancel 打断）→ 备选：拖拽热区扩展到内容区非滚动带 / 无标题菜单 sheet 热区增高（需拍板视觉代价）
-- ⬜ 记档不修：runtime-config confirm 从属嵌套；§6.12o 3 项
-- ⬜ 存量欠账：rootBrowse 下沉；i18n key 收敛；probe-chat-e2e 2 存量 FAIL
+- ✅ 设计包换代 `8f1da09`；9 批计划批准；批1 `62cb980`；批2 `c684738`（含双 reviewer 消化 + 记档 §6.13）
+- ✅ 验证：四门禁 + CSS 硬闸 + token strict + 单测 829+9+673 全绿 + e2e 24/24 + 探针（m4-tools-l3 62/0 全量重写、header 25/0、cwd-memory ALL PASS、m10 全过）
+- ⬜ **交用户真机复验（清单见下）**：批1 composer/图标 + 批2 检视面板
+- ⬜ 批3（桌面 ptabs + 链接直达）→ 批4（文件操作）→ 批5（Git 写，security 必过）→ 批6（插件重排+停用）→ 批7（预览矩阵）→ 批8（密度，perf 必过）→ 批9（收尾）
+- ⬜ sheet 拖拽 bug 真机复验（§6.12p 挂起）；存量欠账（rootBrowse 下沉；i18n key 收敛；probe-chat-e2e 2 存量 FAIL）
 
-## 用户真机复验清单（§6.12p 第四轮）
+## 用户真机复验清单（批1 + 批2）
 
-1. **拖拽手感（重点）**：抓 sheet 头部下滑——应跟手且**中途不再被弹回**（preventDefault 首次生效，对抗 WebKit 滚动抢占）
-2. 松手（>96px 或快速甩）→ 从松手位置滑出屏幕不回弹；轻拖回弹原位
-3. 热区按钮 tap 不受影响：审批「全部允许」、菜单项、行按钮点击正常
-4. sheet 内列表滚动正常（历史列表等超高内容——preventDefault 仅拦拖拽手势期，列表滚动应无影响）
-5. 历史 sheet closed 行 → 命名 prompt 稳定可见，确认后 resume
-6. 同一 sheet 反复开关下拉行为一致；双主题一致
-7. §6.12o 加载态 11 项 + §6.12n 浮层清单（前轮遗留待验）
+**批1 composer**：
+1. 底部输入区控制行：窄屏 3 个彩色小图标（权限/模型/深度）→ 点弹出上方锚定菜单，✓ 即点即生效；≥1024 宽屏变 3 个 pill
+2. 发送键 = Lucide ↑ 圆角方形；运行中变停止键；Agent 运行时 chips 行不再出现（配置在控制行 + ℹ）
+
+**批2 检视面板**：
+3. row2 单个「检视面板」图标 → 点开全屏滑入（300ms）；‹ 工作台 关闭应**滑出**（非硬切消失）
+4. 标签条：默认「文件」；＋ 菜单加 Git/Wiki 标签；切标签内容保留（回来不闪骨架/滚动位不掉）；file 标签 ✕ 可关（仅 file 有 ✕）
+5. 文件树：crumb 地址栏点段返回（无「..」行）；进子目录再关面板重开仍停留；点文件 → 面板内预览 → back 回文件树（内容瞬间恢复）
+6. Git 标签：chip 显示分支态势；全部历史/分支 → 面板内 L3 页 → back 回标签条
+7. FAB 右下半透明（disabled 桩，批4 启用）；深链 `?tab=git` 直达面板 Git 标签
+8. 双主题过一遍（面板底色浅色应为暖白 #F2F2F7 系）；sheet 拖拽四轮修复一并复验（§6.12p 清单）
 
 ## 阻塞 / 风险
 
-- 无阻塞。dev 存活 43011/43012；`5e56d71` 已 rebuild（CSS 硬闸过，dist 07:45）。
-- 风险：若真机仍被 pointercancel 打断（preventDefault 对 WebKit 滚动容器内手势拦不住），下一手是热区结构方案（备选已列）。
+- 无阻塞。dev 存活 43011/43012；批2 已 rebuild（CSS 硬闸过）。
+- 风险：面板滑出动画依赖 visibility 离散插值（Chrome/Safari 均支持），真机 WebKit 表现待复验；探针 Chromium 已验证。
 
 ## 易丢的关键上下文
 
-- **探针跑法**：touch main.tsx + sleep 16 + 核对 dist mtime + `bun scripts/probe-*.mjs`；e2e/单测 systemd-run 2G。
-- **诊断技巧**：detached 元素 `getBoundingClientRect()` 返回 0 不抛错（几何采样加 `isConnected` 守卫）；/tmp 脚本解析到全局 playwright → 挪进 scripts/ 跑完删；python patch 前确认锚点原样存在（replace 静默不命中）；window 计数器打点比 console 同步可靠（Playwright console 异步送达）。
-- **Playwright**：双 sheet 共存窗口等目标标题；CDP touch 派生 pointer events 可驱动 pointer 手势。
-- route mock LIFO / preview 带 mtimeMs / 右栏 InitScript 沿用。
+- **探针跑法**：touch web/src/main.tsx + sleep 16 + 核对 dist mtime + `bun scripts/probe-*.mjs`；e2e/单测 systemd-run 2G。
+- **探针选择器（面板语境）**：面板根 `[data-inspection-panel="open"]`、L3 内容 `[data-role="l3-page"]`（含 file/git 预览分支）、标签叠层 `[data-panel-tab-body="files|git|wiki"]`、ptab `[role="tab"][aria-label="文件|Git|Wiki"]`。
+- **本 session 生成损坏高发**（~7 次）：大段 Edit/中文注释易混入垃圾 token——对策 = 小段 Edit、失败即 Read 实际内容、不硬试第三次。
+- route mock LIFO / preview 带 mtimeMs / 右栏 InitScript 沿用；panelFileTab 预留给批3 链接直达消费。
 
 ## 提醒
 
@@ -59,4 +61,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-09-27 07:45；触发原因：§6.12p 第四轮修复 commit `5e56d71` + handoff save
+最后更新：2026-09-27 17:17；触发原因：v1.4 批2 commit `c684738` + handoff save
