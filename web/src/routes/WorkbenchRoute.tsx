@@ -34,6 +34,7 @@ import {
   type WorkbenchInspectionTab,
   type WorkbenchMode,
   type WorkbenchScope,
+  type PanelTab,
   activeTabRefLeaf,
   collectLeaves,
   dropIntoLeaf,
@@ -53,8 +54,12 @@ import {
   useWorkbenchLayout,
   useWorkbenchNavigate,
   useWorkbenchRouteContext,
+  ensurePanelTabOpen,
   workbenchFilesSearchFocusRequestAtom,
   workbenchLastProjectAtom,
+  workbenchPanelActiveAtom,
+  workbenchPanelOpenAtom,
+  workbenchPanelTabsAtom,
   workbenchRightCollapsedAtom,
 } from "./workbench-model";
 
@@ -130,33 +135,72 @@ function WorkbenchContent({
   // 10m 文件 mainPage 的受控 cwd（§6.12j 批次 4）：作用域 seg4「本项目」= 根目录浏览进项目
   // 目录（currentPath = 项目名），页面内态不进 URL（刷新回全局根，与 FilesPanel 内部态同语义）。
   const [globalFilesPath, setGlobalFilesPath] = useState("");
-  // 右栏折叠态与 WorkbenchShell 内 useAtom 共享同一 atom（Jotai 全局）—— 本组件只读，
-  // 写入由 WorkbenchShell（RailButton 唤出 / onCollapse 收起）负责。纯手动控制，持久化到
-  // localStorage，focusId 变化不覆盖。
-  const rightCollapsed = useAtomValue(workbenchRightCollapsedAtom);
+  // 右栏开合（批3 融合）：运行时真相 = workbenchPanelOpenAtom（与移动检视面板同 atom——
+  // 「面板 open ⇒ 右栏展开」单一来源）；workbenchRightCollapsedAtom 降级为持久化**记忆**，
+  // mount 时按记忆投影初值（记忆展开 → panelOpen true），此后开合动作只写 panelOpen，
+  // 记忆由 open/close 包装同步镜像（单一入口保证一致）。卸载复位（断点切换/离开工作台
+  // 不残留——移动 MobileProjectWorkbench 批2 M2 同款）。
+  const [panelOpen, setPanelOpen] = useAtom(workbenchPanelOpenAtom);
+  // 折叠记忆只读（mount 投影初值）；写入走 openDesktopPanel/closeDesktopPanel 镜像。
+  const rightCollapsedMem = useAtomValue(workbenchRightCollapsedAtom);
+  const setRightCollapsed = useSetAtom(workbenchRightCollapsedAtom);
+  const setPanelTabsAtomMap = useSetAtom(workbenchPanelTabsAtom);
+  const setPanelActiveAtomMap = useSetAtom(workbenchPanelActiveAtom);
+  // 记忆投影（批3）：jotai atomWithStorage 的 storage 值在 baseAtom.onMount 才派发
+  //（getOnInit 缺省 false——mount 渲染读到的恒是 initialValue），effect 必须依赖
+  // rightCollapsedMem，等 storage 值落地后再投影（空 deps 读到的一定是 initialValue，
+  // 恒 true → 投影永不触发，e2e/prod 双环境实测）。写入幂等无 ref 守卫：StrictMode
+  // dev 双调用（mount→cleanup→mount）下卸载复位 cleanup 会撤销首轮写入、ref 守卫会
+  // 吞掉次轮重执行，删除守卫让 remount 重执行即自愈（e2e vite dev 实测）。
+  useEffect(() => {
+    if (scope.kind === "project" && !rightCollapsedMem) setPanelOpen(true);
+  }, [scope, rightCollapsedMem, setPanelOpen]);
+  useEffect(() => () => setPanelOpen(false), []);
+  /** 桌面右栏开合单点（唤出钮/PanelHeader/深链映射共用）——panelOpen + 记忆镜像同步。 */
+  const openDesktopPanel = () => {
+    setPanelOpen(true);
+    setRightCollapsed(false);
+  };
+  const closeDesktopPanel = () => {
+    setPanelOpen(false);
+    setRightCollapsed(true);
+  };
+  // 深链兼容（?rightTab=）：渲染期一次性映射为面板 open+激活标签（不写回 URL）——与移动
+  // ?tab= 批2 同模式。写入幂等（ensure/activate 同值 no-op），无 ref 守卫（StrictMode
+  // remount 重执行自愈，见上）。pages/history 非面板 kind（右栏注册表过滤），不映射
+  //（URL 键被旧版本页面/手工输入带出时静默忽略）。
+  // 依赖收敛为 [rightTab]（批3 review M1）：WorkbenchContent 是常驻 pathless layout，
+  // rightTab 经 stickyWorkbenchSearch 永久透传——若依赖 scope，消费过一次深链后每次切项目
+  // 都会复开已手动收起的右栏（开面板是显式动作，不请自来 = 批2 M2 同款 bug）。闭包读当轮
+  // scope 即首次映射语义；残留 ?rightTab= 刷新复开是拍板 f 固有代价（批2 同款记档）。
+  useEffect(() => {
+    if (!rightTab || scope.kind !== "project") return;
+    const kind =
+      rightTab === "git" || rightTab === "wiki" || rightTab === "files" ? rightTab : null;
+    if (!kind) return;
+    openDesktopPanel();
+    const key = scope.key;
+    setPanelTabsAtomMap((prev) => {
+      const list = prev[key] ?? [{ id: "files", kind: "files" } as PanelTab];
+      const next = ensurePanelTabOpen(list, { id: kind, kind } as PanelTab);
+      if (next === list) return prev;
+      return { ...prev, [key]: next };
+    });
+    setPanelActiveAtomMap((prev) => (prev[key] === kind ? prev : { ...prev, [key]: kind }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rightTab]);
   // tab 回退恒 overview：「记住上次 tab」atom 已随桌面左栏 middle tab 退役删除（写点
   // onTabChange 在 §6.12k 批次 1 退役，只残留无写点读者——review 清理；URL 省略 = overview）。
   const tab = tabFromUrl ?? "overview";
   const ctx: WorkbenchTabPluginContext = {
     projectKey: scope.kind === "project" ? scope.key : null,
   };
-  // navigate 传完整 { tab, rightTab }（URL 原始值 tabFromUrl/rightTab 合并 + 新值）。
-  // TanStack Router navigate 整体替换 search 对象（非 merge），若只传单键会丢失其他维 ——
-  // 违反设计 §13「tab/rightTab 正交」。用 URL 原始值（而非解析值）合并。
-  const onRightTabChange = (rightTabNext: WorkbenchInspectionTab) => {
-    void navigateWorkbench(
-      scope,
-      focusId,
-      stickyWorkbenchSearch({ rightTab: rightTabNext, tab: tabFromUrl, leftMode, mode }),
-    );
-  };
   // 工具 ticon 打开/退出（v2 M3-b 移动 row2 ticon）已随 v1.4 批2 退役：工具态改为检视面板
   //（InspectionPanel），?tab= 深链由 MobileProjectWorkbench 渲染期映射，onToolTabChange 无
   // 消费者删除。
-  // 右栏可见性纯手动：用户折叠/展开持久化到 atom（localStorage），focusId 变化不再覆盖。
-  // 中栏边缘 RailButton 唤出，RightPanelTabs onCollapse 收起。旧实现 setRightCollapsed(!focusId)
-  // 会在聚焦任何 tab（含 file/git）时强制展开，冲掉用户手动折叠态——违背「保持折叠」。
-  // 仅桌面端有右栏；移动端 MobileWorkbench 不读 rightCollapsed atom。
+  // 右栏可见性（批3 融合）：panelOpen 驱动（mount 按折叠记忆投影初值，开合动作单点
+  // openDesktopPanel/closeDesktopPanel 写 panelOpen + 镜像记忆）。focusId 变化不覆盖用户
+  // 手动折叠/展开态（§6.10 旧约束保留）；仅桌面端有右栏。
 
   // ── Phase 2a：原 InstanceArea 共享 state 提升到 WorkbenchContent（方案 X）──────────
   // 右工作区（InstanceArea，拖放目标）消费，共享 state 单一来源在此。holders
@@ -772,7 +816,6 @@ function WorkbenchContent({
         pluginName={pluginName}
         pluginView={pluginView}
         mode={mode}
-        onOpenFile={onOpenFile}
         onOpenGitFile={onOpenGitFile}
         onSelectTab={onSelectTab}
         scope={scope}
@@ -782,12 +825,10 @@ function WorkbenchContent({
   }
   // project 可唤出右栏（inspection 只依赖 projectKey，非聚焦态唤出看 files/git）；
   // global scope 不唤出右栏（全局 inspection 走中栏 files tab，见 workbench-views §4.1）。
-  // 收起态 rightPanel=null（aside 不渲染、零 query），由 RailButton 唤出。
+  // 收起态 rightPanel=null（aside 不渲染、零 query），由 RailButton 唤出。可见性真相 =
+  // panelOpen（批3 融合），rightCollapsed 仅为 mount 恢复用记忆。
   const rightPanelCollapsible = scope.kind === "project";
-  const rightPanel =
-    rightPanelCollapsible && !rightCollapsed ? (
-      <RightPanelTabs activeTab={rightTab} ctx={ctx} onTabChange={onRightTabChange} />
-    ) : null;
+  const rightPanel = rightPanelCollapsible && panelOpen ? <RightPanelTabs ctx={ctx} /> : null;
   // 桌面 §6.10-9（M9 批次 d，对齐 09m/10m 原型 IA）：global scope 且 leftMode=plugins/files 时,
   // 插件/全局文件是 **main 整页**（原型 side sidewin 恒定不随导航切换、main 切内容），实例区让位
   //——tab 布局在 localStorage atom 持久化，切回 auto 原样恢复；会话服务端不销毁，重挂重连
@@ -865,6 +906,8 @@ function WorkbenchContent({
   );
   return (
     <WorkbenchShell
+      rightOpen={panelOpen}
+      onRightOpenChange={(open) => (open ? openDesktopPanel() : closeDesktopPanel())}
       sidebar={<WorkbenchSide />}
       rightPanel={desktopMainPage ? null : rightPanel}
       rightPanelCollapsible={desktopMainPage ? false : rightPanelCollapsible}

@@ -104,7 +104,7 @@ async function setup(page) {
   return state;
 }
 
-// §6.12k 桌面语境：/projects/proj1 → 展开右栏 → Inspector seg4 切「文件」检视。
+// §6.12k 桌面语境：/projects/proj1 → 展开右栏 → ptabs 默认「文件」标签（v1.4 批3）。
 async function openProjectFilesTab(page) {
   await page.goto(`${WEB_ORIGIN}/projects/proj1`);
   await page.waitForSelector("nav[aria-label]", { timeout: 8000 });
@@ -112,8 +112,6 @@ async function openProjectFilesTab(page) {
   await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
     timeout: 8000,
   });
-  const inspector = page.locator("main > div > aside").nth(1);
-  await inspector.locator(".seg4 span", { hasText: /^文件$/ }).click({ timeout: 8000 });
   await page.waitForTimeout(500);
 }
 

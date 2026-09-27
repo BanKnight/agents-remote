@@ -1398,6 +1398,11 @@
     /* 横滚条隐藏（与 .pills 同款；桌面窄窗/Android 会画常驻滚动条挤压 30px 标签行） */
     scrollbar-width: none;
   }
+  /* 桌面右栏语境（批3 review m1）：槽距对齐 .glabel2 的 14px（05:104 原型以 margin 上下文
+     差异对齐头部；基础 16px 是移动 InspectionPanel 语境）。 */
+  [data-desktop-inspector] .ptabs {
+    margin-inline: 14px;
+  }
   .ptabs::-webkit-scrollbar {
     display: none;
   }

@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
-import type { TerminalSession } from "@agents-remote/shared";
+import type { GitDiffScope, TerminalSession } from "@agents-remote/shared";
 import { listProjectGitBranches, listProjectGitDiff } from "../../api/client";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import {
@@ -31,12 +31,14 @@ import { MobilePluginsOverview } from "./mobile-plugins-home";
 import { MobileMarket, MobileMarketSources } from "./mobile-plugins-market";
 import {
   collectLeaves,
+  ensurePanelTabOpen,
   findTabRefLeaf,
   type WorkbenchMobileFocusTab,
   type WorkbenchScope,
   type WorkbenchMode,
   type WorkbenchMiddleTab,
   inferSessionTypeFromId,
+  panelFileTab,
   parseFileTabId,
   parseGitCommitFocusId,
   parseWikiFocusId,
@@ -121,8 +123,6 @@ type MobileWorkbenchProps = {
   mode?: WorkbenchMode;
   /** tab 点选 = setActiveTabInLeaf + navigate focus（WorkbenchContent 注入）。 */
   onSelectTab: (leafId: string, tabId: string) => void;
-  /** 左栏/抽屉文件树点文件 → 开 file tab + focus（WorkbenchContent 注入）。 */
-  onOpenFile: (projectName: string, path: string) => void;
   /** git 变更点文件 → 开 git diff tab + focus（WorkbenchContent 注入）。 */
   onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
   /** 关闭实例（confirm → close API → 删 tab，WorkbenchContent 注入）。 */
@@ -151,7 +151,6 @@ export function MobileWorkbench({
   pluginName,
   pluginView,
   mode,
-  onOpenFile,
   onOpenGitFile,
   onSelectTab,
   scope,
@@ -198,7 +197,6 @@ export function MobileWorkbench({
           create={create}
           createPromptHolder={createPromptHolder}
           focusId={focusId}
-          onOpenFile={onOpenFile}
           onOpenGitFile={onOpenGitFile}
           onSelectTab={onSelectTab}
           scope={scope}
@@ -582,7 +580,6 @@ type MobileProjectWorkbenchProps = {
    *（渲染期映射为检视面板 open+激活标签）。 */
   tool?: WorkbenchMiddleTab;
   onSelectTab: (leafId: string, tabId: string) => void;
-  onOpenFile: (projectName: string, path: string) => void;
   onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
   closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
   create: CreateSessionApi;
@@ -621,7 +618,6 @@ function MobileProjectWorkbench({
   create,
   createPromptHolder,
   focusId,
-  onOpenFile,
   onOpenGitFile,
   onSelectTab,
   scope,
@@ -645,6 +641,11 @@ function MobileProjectWorkbench({
   // 布局/网络（首访项目页不再多发一发不可见的 files 列表请求）。首次 open 当帧挂载（同一
   // commit，滑入动画不受影响），关闭后不卸载（零销毁保持）。内存级，不与 URL/持久化交互。
   const [panelEverOpened, setPanelEverOpened] = useState(false);
+  // 面板可见性 = open 且本挂载周期打开过（批3 review M2）：panelOpen 是两端共享的内存
+  // atom——桌面（≥1024）开面板后视口转窄，MobileWorkbench 重挂时 panelEverOpened=false
+  // 而 panelOpen 残留 true，直接消费会把空面板全屏渲染 + 主体隐藏。所有「面板可见性」
+  // 语义的消费点（open/l3/保活层让位/主体切换）统一走本派生；写入路径不变。
+  const panelVisible = panelEverOpened && panelOpen;
   const openInspectionPanel = () => {
     setPanelEverOpened(true);
     setPanelOpen(true);
@@ -653,11 +654,12 @@ function MobileProjectWorkbench({
   // workbench 后重进任意项目不再「不请自来」复开面板；与 atom 注释「开面板是一次显式用户
   // 动作」对齐）。残留 ?tab= 深链复开是拍板 f 的固有代价，记入批3（链接直达接管 URL）。
   useEffect(() => () => setPanelOpen(false), []);
-  const ensurePanelTab = (id: string, tab: PanelTab) => {
+  const ensurePanelTab = (tab: PanelTab) => {
     setPanelTabsMap((prev) => {
       const list = prev[scope.key] ?? [{ id: "files", kind: "files" } as PanelTab];
-      if (list.some((t0) => t0.id === id)) return prev;
-      return { ...prev, [scope.key]: [...list, tab] };
+      const next = ensurePanelTabOpen(list, tab);
+      if (next === list) return prev;
+      return { ...prev, [scope.key]: next };
     });
   };
   // 幂等守卫（perf-review 批2 m2）：值未变直接返回旧引用——点已激活标签 / URL 深链重复映射
@@ -666,9 +668,24 @@ function MobileProjectWorkbench({
     setPanelActiveMap((prev) => (prev[scope.key] === id ? prev : { ...prev, [scope.key]: id }));
   // ＋ 新建标签（03ob2 菜单）：同目标已开 = 激活幂等（03ob 编号①）。
   const newPanelTab = (kind: "files" | "git" | "wiki") => {
-    ensurePanelTab(kind, { id: kind, kind } as PanelTab);
+    ensurePanelTab({ id: kind, kind } as PanelTab);
     activatePanelTab(kind);
   };
+  // 链接直达（03ab ⑥，v1.4 批3）：树点文件 → file 预览标签新增/激活（不再走中栏 file tab
+  // + URL focus 旧体系）。同目标已开 = 激活幂等；面板已在打开态（面板内点击），无需再 open。
+  const openPanelFileTab = (path: string) => {
+    const tab = panelFileTab(scope.key, path);
+    ensurePanelTab(tab);
+    activatePanelTab(tab.id);
+  };
+  // 面板内 diff（03r「L3 是面板内深度页」批3 收敛）：git 变更行 / file 标签「查看 diff」→
+  // 面板级瞬态呈现（l3Body 覆盖层），back 清本态回标签条——不再写中栏 git tab + URL focus
+  //（旧体系仅剩深链/存量 tab 渲染路径，入口清零后自然消亡）。from 记录来源标签（back 标签）。
+  const [panelDiff, setPanelDiff] = useState<{
+    path: string;
+    scope: GitDiffScope;
+    from: "git" | "file" | "files";
+  } | null>(null);
   // ✕ 关标签：仅 file 标签可关（三基础标签不可关）；关激活标签回文件树首标签。
   const closePanelTab = (id: string) => {
     setPanelTabsMap((prev) => {
@@ -682,7 +699,7 @@ function MobileProjectWorkbench({
   useEffect(() => {
     if (!activeTool) return;
     openInspectionPanel();
-    ensurePanelTab(activeTool, { id: activeTool, kind: activeTool } as PanelTab);
+    ensurePanelTab({ id: activeTool, kind: activeTool } as PanelTab);
     activatePanelTab(activeTool);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool]);
@@ -796,17 +813,20 @@ function MobileProjectWorkbench({
   //（focusInstance / skill pill / 空态卡）零改动。
   const handleToolChange = (next: "files" | "git" | "wiki" | null) => {
     if (next) {
-      ensurePanelTab(next, { id: next, kind: next } as PanelTab);
+      ensurePanelTab({ id: next, kind: next } as PanelTab);
       activatePanelTab(next);
       openInspectionPanel();
       return;
     }
     setPanelOpen(false);
+    // 面板关即清瞬态 diff（批3 review m6）：残留会让下次开面板直落旧 diff 覆盖层而非标签条。
+    setPanelDiff(null);
   };
   // ‹ 工作台（面板 nav back；面板内 L3 时 InspectionPanel 的 back 先走 l3.onClick 回标签条，
   // 真正关面板时 URL 可能停在 L3 路由——pop 优先回 push 前的工作台，深链兜底 push 清 focusId）。
   const handlePanelClose = () => {
     setPanelOpen(false);
+    setPanelDiff(null);
     if (l3Route) backNav(() => void navigateWorkbench(scope, undefined, {}));
   };
   // 面板 children：标签叠层保活（perf-review 批2 m1）——panelTabs 全渲染，非激活
@@ -831,8 +851,8 @@ function MobileProjectWorkbench({
             <div className="min-h-0 flex-1 overflow-hidden">
               <FilesToolPanel
                 currentPath={filesPath}
-                onOpenFile={onOpenFile}
-                onOpenGitFile={(f) => onOpenGitFile(scope.key, f.scope, f.path)}
+                onOpenFile={(_projectName, p) => openPanelFileTab(p)}
+                onOpenGitFile={(f) => setPanelDiff({ path: f.path, scope: f.scope, from: "files" })}
                 onPathChange={setFilesPath}
                 projectName={scope.key}
                 searchQuery={filesSearchQuery}
@@ -848,7 +868,7 @@ function MobileProjectWorkbench({
                     to: "/projects/$key/git/commit/$",
                   });
                 }}
-                onOpenGitFile={(f) => onOpenGitFile(scope.key, f.scope, f.path)}
+                onOpenGitFile={(f) => setPanelDiff({ path: f.path, scope: f.scope, from: "git" })}
                 onOpenHistory={() => {
                   void navigate({
                     params: { key: scope.key },
@@ -886,7 +906,9 @@ function MobileProjectWorkbench({
               const { projectName: fp, path: relPath } = splitFilePath(tab.path);
               return (
                 <MobileL3FilePreview
-                  onViewDiff={() => onOpenGitFile(fp, "worktree", relPath)}
+                  onViewDiff={() =>
+                    setPanelDiff({ path: relPath, scope: "worktree", from: "file" })
+                  }
                   path={relPath}
                   projectName={fp}
                 />
@@ -1145,7 +1167,21 @@ function MobileProjectWorkbench({
     }
     return undefined;
   })();
-  const headerL3 = l3 ?? l3Transient;
+  // 面板内 diff 的 L3 nav 形态（backLabel = 来源标签/文件名）：panelOpen 时最优先（diff 覆盖
+  // 层在最上层）；面板 closed 不呈现（panelDiff 是面板内瞬态）。title = diff 文件名。
+  const panelDiffL3 = panelDiff
+    ? {
+        backLabel:
+          panelDiff.from === "git"
+            ? t("git.toolTitle")
+            : panelDiff.from === "files"
+              ? t("workbench.tabFiles")
+              : panelDiff.path.split("/").pop() || panelDiff.path,
+        title: panelDiff.path.split("/").pop() || panelDiff.path,
+        onClick: () => setPanelDiff(null),
+      }
+    : null;
+  const headerL3 = (panelOpen && panelDiffL3) || l3 || l3Transient;
 
   // L3 深度页主体单源（l3Route 4 分支）：主体区（面板 closed，深链直达现状路径）与面板
   // l3Body（面板 open，03u「Git 检视」原型语义）共引本函数，避免双写漂移。
@@ -1196,6 +1232,13 @@ function MobileProjectWorkbench({
   // 同样包 data-role="l3-page"——覆盖层内内容根标记统一（探针/调试选择器单源）。
   const renderPanelL3Body = () => {
     if (l3Route) return renderL3Body(l3Route);
+    if (panelDiff) {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-role="l3-page">
+          <MobileL3GitDiff path={panelDiff.path} projectName={scope.key} scope={panelDiff.scope} />
+        </div>
+      );
+    }
     if (focusRef?.kind === "file") {
       const { projectName: fp, path: relPath } = splitFilePath(focusRef.path);
       return (
@@ -1305,14 +1348,14 @@ function MobileProjectWorkbench({
           标签条 03u 语义）；closed 时 invisible 防误聚焦。 */}
         <InspectionPanel
           activeTabId={activePanelTabId}
-          open={panelOpen}
+          open={panelVisible}
           projectName={scope.key}
           tabs={panelTabs}
           onActivateTab={activatePanelTab}
           onCloseTab={closePanelTab}
           onNewTab={newPanelTab}
           onClose={handlePanelClose}
-          l3={panelOpen ? headerL3 : undefined}
+          l3={panelVisible ? headerL3 : undefined}
           l3Body={renderPanelL3Body()}
           fab={renderPanelFab()}
           toolChip={
@@ -1410,7 +1453,7 @@ function MobileProjectWorkbench({
             // 面板 open 时 file/git 一次性预览让位面板 l3Body 单实例渲染（03o「L3 是面板内
             // 深度页」）；session/skill 保活挂载不受影响——WS 生命周期不随面板开合重建。
             if (
-              panelOpen &&
+              panelVisible &&
               (item.ref.kind === "file" || (item.ref.kind === "git" && item.ref.mode === "scope"))
             ) {
               return null;
@@ -1418,7 +1461,7 @@ function MobileProjectWorkbench({
             return (
               <div
                 className={
-                  !panelOpen && !l3Route && item.tabId === effectiveFocusId
+                  !panelVisible && !l3Route && item.tabId === effectiveFocusId
                     ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                     : "hidden"
                 }
@@ -1426,7 +1469,7 @@ function MobileProjectWorkbench({
                 key={item.tabId}
               >
                 {/* D13 流顶引用卡：可见 session 面板顶部（wikiRefs atom 非空才渲染）。 */}
-                {!panelOpen &&
+                {!panelVisible &&
                 !l3Route &&
                 item.tabId === effectiveFocusId &&
                 item.ref.kind === "session" ? (
@@ -1458,14 +1501,14 @@ function MobileProjectWorkbench({
           {/* M4 L3 深度页（显式子路由）：nav l3 形态 + L3 主体（renderL3Body 单源）；保活层
             hidden 保持挂载（WS 不断）。v1.4 批2：面板 open 时 L3 渲染进面板（InspectionPanel
             l3Body），主体区不重复渲染（深链直达面板 closed 的现状路径保留）。 */}
-          {l3Route && !panelOpen ? renderL3Body(l3Route) : null}
+          {l3Route && !panelVisible ? renderL3Body(l3Route) : null}
           {/* 工具态主体已退役（v1.4 批2）：工具面板迁检视面板（InspectionPanel），?tab= 深链
             渲染期映射为面板 open+激活标签。 */}
           {/* 实例主体层（非面板态）：聚焦未入 layout（focus effect 同步前瞬态）或查询 pending
             （autoFocus 未定，避免空态卡与 pills 自相矛盾闪烁——reviewer M3-c #2）= 骨架承接；
             加载完且完全无可聚焦对象（无实例无 skill tab）= 03h 空态卡。面板 open 时主体被
             全屏覆盖，实例层照常挂载（保活）。 */}
-          {!panelOpen ? (
+          {!panelVisible ? (
             focusRef ? null : effectiveFocusId || isLoading ? (
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <div className="px-3 py-2">

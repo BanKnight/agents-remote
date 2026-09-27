@@ -5,7 +5,6 @@ import {
   WORKBENCH_RIGHT_PANEL_MAX_REM,
   WORKBENCH_RIGHT_PANEL_MIN_REM,
   useMinViewport,
-  workbenchRightCollapsedAtom,
   workbenchRightWidthAtom,
 } from "../../routes/workbench-model";
 import { shellSurfaceClasses } from "./shell-primitives";
@@ -29,6 +28,14 @@ type WorkbenchShellProps = {
    * 恒定 side 单栏），grid 第 0 列。常驻（原型 side 恒驻无折叠语义）。
    */
   sidebar?: ReactNode;
+  /**
+   * 右栏展开态（运行时真相 = workbenchPanelOpenAtom，WorkbenchContent 单点写入并同步
+   * rightCollapsed 记忆——批3 融合）。false = aside 不渲染（避免 inspection query）、
+   * 中栏边缘渲染唤出钮。
+   */
+  rightOpen: boolean;
+  /** 右栏开合统一入口（唤出钮 true / PanelHeader false）。 */
+  onRightOpenChange: (open: boolean) => void;
   /** 右栏：inspection tab（Stage 3 接入）。收起时上层传 null（避免 inspection query）。 */
   rightPanel?: ReactNode;
   /**
@@ -52,18 +59,19 @@ type WorkbenchShellProps = {
  * 该侧消失、中栏对应边缘出现唤出按钮；中栏是工作台主体，恒 minmax(0, 1fr) 吃剩余
  * （右栏固定宽，见 rightColumn 注释），不可收起。
  *
- * 纯布局容器，不持业务 state：右栏折叠态 + 宽度来自 workbench-model.ts 的 atom，
- * 三列内容由 props 注入。
+ * 纯布局容器，不持业务 state：右栏开合受控（rightOpen/onRightOpenChange，真相 =
+ * workbenchPanelOpenAtom）、宽度来自 workbench-model.ts 的 atom，三列内容由 props 注入。
  */
 export function WorkbenchShell({
   children,
+  rightOpen,
   rightPanel,
   rightPanelCollapsible,
+  onRightOpenChange,
   sidebar,
   statusBar,
 }: WorkbenchShellProps) {
   const { t } = useT();
-  const [rightCollapsed, setRightCollapsed] = useAtom(workbenchRightCollapsedAtom);
   const [rightWidth, setRightWidth] = useAtom(workbenchRightWidthAtom);
   // 右栏可唤出 = 显式 prop 或有内容（向后兼容）。与 rightPanel 解耦：收起时 rightPanel=null
   //（aside 不渲染、零 inspection query），但 collapsible=true 仍在中栏边缘渲染 RailButton 唤出。
@@ -74,7 +82,7 @@ export function WorkbenchShell({
   // `${rightWidth}rem`（2026-09-24 第十二轮复验问题①拍板：minmax(atom, 1fr) 让默认 22rem
   // 架空、1920 视口下右栏膨胀 ~1060px；改固定宽 + 中栏吃剩余，gutter 拖拽仍生效）。
   // rightPanel null 不决定列宽（由 rightCollapsible 决定）。
-  const rightColumn = rightCollapsed || !rightCollapsible ? "0px" : `${rightWidth}rem`;
+  const rightColumn = !rightOpen || !rightCollapsible ? "0px" : `${rightWidth}rem`;
   // 中栏列宽：恒 minmax(0, 1fr)——右栏固定宽后中栏吃剩余（原型 .pinsp{flex:1} 的弹性语义
   // 移交中栏；右栏收起时行为不变，M2 拍板的中栏顶满保留）。
   const centerColumn = "minmax(0, 1fr)";
@@ -110,10 +118,10 @@ export function WorkbenchShell({
         <aside className="hidden min-h-0 min-w-0 lg:block">{sidebar}</aside>
 
         <section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-          {rightCollapsed && rightCollapsible ? (
+          {!rightOpen && rightCollapsible ? (
             <RailButton
               label={t("workbench.expandRight")}
-              onClick={() => setRightCollapsed(false)}
+              onClick={() => onRightOpenChange(true)}
               side="right"
             />
           ) : null}
@@ -127,12 +135,12 @@ export function WorkbenchShell({
             <PanelHeader
               chevron="right"
               collapseLabel={t("workbench.collapseRight")}
-              onCollapse={() => setRightCollapsed(true)}
+              onCollapse={() => onRightOpenChange(false)}
             />
             {/* §8 高度链：body 自身必须是 flex container，flex-1 子的约束才传得下去
                （FilesPanel 根 flex-1 依赖此层；overflow 只裁不传约束）。 */}
             <div className="flex min-h-0 flex-1 overflow-hidden">{rightPanel}</div>
-            {rightCollapsed ? null : <ColumnResizeGutter onResize={onResizeRight} side="right" />}
+            {rightOpen ? null : <ColumnResizeGutter onResize={onResizeRight} side="right" />}
           </aside>
         ) : null}
       </div>

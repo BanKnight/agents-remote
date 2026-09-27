@@ -12,21 +12,25 @@ test("authenticated user can browse Project files and preview text and images", 
   await page.getByRole("button", { name: "Sign in" }).click();
 
   // Desktop workbench: enter the project, then drive the Files inspection via
-  // the URL-visible ?rightTab=files state. §6.12j 批次 3 检视 IA 收敛：左栏 middle tab
-  // [文件] 已删，文件检视归右栏 Inspector。第十二轮批次 3：右栏 files tab = FilesToolPanel
-  //（03o 形态，双端共享三件套）——行 = .frow（button，role 可达）；点文件 → 栏内预览态
-  //（data-role="l3-file-preview"，移动 L3 同一份，返回「..」行 = 03o 编号①）。
-  // §6.12k 合并 side 项目行（title 属性 = 项目名，项目行独有）进项目。
+  // the ?rightTab=files deep link. §6.12j 批次 3 检视 IA 收敛：左栏 middle tab
+  // [文件] 已删，文件检视归右栏 Inspector。v1.4 批3：右栏 = RightPanelTabs（ptabs 动态
+  // 标签，05:99），?rightTab= 深链渲染期一次性映射为「面板展开 + 标签激活」（不写回 URL，
+  // 右栏自动展开无需点 RailButton）；files 标签 = FilesToolPanel（.frow 行）。树点文件
+  // → 新增/激活 file 预览标签（PanelFileTabBody：l3-file-preview + 文件名标题 + ✕ 可关，
+  // 03ab peek 语义）；返回列表 = 点「文件」标签（叠层保活，cwd 保留）。
   const projectRow = page.locator(`nav.side .srow2[title="${projectName}"]`);
   await expect(projectRow).toBeVisible();
   await projectRow.click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
   await page.goto(`/projects/${projectName}?rightTab=files`);
-  // 右栏默认收起（workbenchRightCollapsedAtom 默认 true，RailButton 唤出）——先展开再取 aside
-  //（折叠态右栏 aside 不渲染，展开后才是 DOM 第 2 个 complementary）。
-  await page.getByRole("button", { name: "Expand right panel" }).click();
+  // 深链映射（WorkbenchRoute rightTab effect）自动展开右栏——aside 直接出现（DOM 第 2 个
+  // complementary），ptabs 标签条「文件」激活。
   const files = page.getByRole("complementary").nth(1);
+  await expect(files.getByRole("tab", { name: "Files", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(files.locator(".frow").first()).toBeVisible();
 
   await expect(files.locator(".frow", { hasText: /src/ }).first()).toBeVisible();
@@ -52,15 +56,23 @@ test("authenticated user can browse Project files and preview text and images", 
 
   await files.locator(".frow", { hasText: /src/ }).first().click();
   await expect(files.locator(".frow", { hasText: /index\.ts/ }).first()).toBeVisible();
+  // 树点文件 → 新增 file 标签并激活（03ab peek）：标签名 = 文件名，预览 = l3-file-preview
+  //（PanelFileTabBody 单源，移动 L3 同一份）。
   await files
     .locator(".frow", { hasText: /index\.ts/ })
     .first()
     .click();
-  await expect(files.locator('[data-role="l3-file-preview"]')).toContainText("fileBrowserE2e");
+  const indexTab = files.getByRole("tab", { name: "index.ts", exact: true });
+  await expect(indexTab).toHaveAttribute("aria-selected", "true");
+  // 预览断言限定激活标签的叠层容器（多签并排后非激活签的 l3-file-preview 仍在 DOM）。
+  const indexBody = files.locator(
+    `[data-panel-tab-body="file:${projectName}/src/index.ts"] [data-role="l3-file-preview"]`,
+  );
+  await expect(indexBody).toContainText("fileBrowserE2e");
 
-  // 栏内详情态逐级返回：预览 → 列表（DetailBackBar），列表 → 上级「..」行（03o 编号①
-  // 保底；旧 FilesPanel「Root」按钮随检视面板退役）。
-  await files.getByRole("button", { name: "Back to files" }).click();
+  // 返回列表 = 点「文件」标签（叠层保活：files 标签不卸载，cwd 仍在 src）——「..」行
+  // 返回根目录（03o 编号① 保底）。
+  await files.getByRole("tab", { name: "Files", exact: true }).click();
   await files
     .locator(".frow")
     .filter({ hasText: /^\.\.$/ })
@@ -69,16 +81,38 @@ test("authenticated user can browse Project files and preview text and images", 
     .locator(".frow", { hasText: /README\.md/ })
     .first()
     .click();
-  await expect(files.locator('[data-role="l3-file-preview"]')).toContainText(
-    "file-browser-e2e-text-ok",
-  );
+  await expect(
+    files.locator(
+      `[data-panel-tab-body="file:${projectName}/README.md"] [data-role="l3-file-preview"]`,
+    ),
+  ).toContainText("file-browser-e2e-text-ok");
 
-  // 图片预览：三件套详情态补 image 分支（批次 3 Step B 同构增值）→ ImageViewer（缩放/旋转
-  // 手势工具条）。svg 后端分类 = image（imageMediaType 命中）。
-  await files.getByRole("button", { name: "Back to files" }).click();
+  // 图片预览：file 标签 image 分支 → ImageViewer（缩放/旋转手势工具条）。svg 后端分类 =
+  // image（imageMediaType 命中）。多文件并排标签（05 ptabs）：README.md 与 logo.svg 各一签。
+  await files.getByRole("tab", { name: "Files", exact: true }).click();
   await files
     .locator(".frow", { hasText: /logo\.svg/ })
     .first()
     .click();
-  await expect(files.locator('[data-role="l3-file-preview"] img')).toBeVisible();
+  await expect(files.getByRole("tab", { name: "logo.svg", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(
+    files.locator(
+      `[data-panel-tab-body="file:${projectName}/logo.svg"] [data-role="l3-file-preview"] img`,
+    ),
+  ).toBeVisible();
+
+  // file 标签 ✕ 可关（三基础标签不可关）：关激活的 logo.svg → 标签消失、「文件」标签回正
+  //（README.md 标签仍开着——多文件并排是 ptabs 语义；✕ 限定标签内定位避多签同名按钮）。
+  await files
+    .getByRole("tab", { name: "logo.svg", exact: true })
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  await expect(files.getByRole("tab", { name: "logo.svg", exact: true })).toHaveCount(0);
+  await expect(files.getByRole("tab", { name: "Files", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
 });

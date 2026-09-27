@@ -1,35 +1,79 @@
 import { useAtom } from "jotai";
 import { useT } from "../../i18n";
-import { type WorkbenchInspectionTab, workbenchRightTabAtom } from "../../routes/workbench-model";
-import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
-
-type RightPanelTabsProps = {
-  activeTab?: WorkbenchInspectionTab;
-  ctx: WorkbenchTabPluginContext;
-  onTabChange: (tab: WorkbenchInspectionTab) => void;
-};
+import {
+  type PanelTab,
+  panelFileTab,
+  ensurePanelTabOpen,
+  splitFilePath,
+  workbenchPanelActiveAtom,
+  workbenchPanelTabsAtom,
+} from "../../routes/workbench-model";
+import { FilesToolTab, GitToolTab, PanelFileTabBody, WikiToolTab } from "./workbench-tab-plugin";
+import { PanelTabBar } from "./inspection-panel";
+import { cn } from "@/lib/utils";
+import type { WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 
 /**
- * 右栏 inspection tab 容器（设计文档 §5）。消费 WORKBENCH_TAB_PLUGINS 注册表，
- * 按 ctx 过滤可见 tab，active tab 渲染对应插件面板。Stage 3 commit ③ 把
- * active tab 提升到 URL rightTab（语义核心、刷新可分享），URL 未指定时回退
- * workbenchRightTabAtom 记忆；若所得 tab 不可见则回退首个可见 tab。
+ * 桌面右栏检视面板容器（v1.4 05:99 ptabs 动态标签，redesign-v2 §6.13 批3）：与移动全屏面板
+ * 消费**同一** panelTabs/panelActive atom（per-projectKey，多端同构——标签集/激活项跨端一致），
+ * 标签条 = PanelTabBar 单源（seg4 退役）；「检视 · 只读」头保持。
+ *
+ * **叠层保活**（批2 移动同范式，frontend-notes §3）：panelTabs 全渲染，非激活 invisible
+ *（visibility 保布局保滚动位），absolute inset-0 叠层；切标签不卸载不重挂，cwd/滚动位/详情栈
+ * 状态跨切换保持。file 标签 body = PanelFileTabBody 单源（preview ↔ diff 栈）。
+ *
+ * 面板开合真相 = workbenchPanelOpenAtom（WorkbenchContent 融合右栏折叠，WorkbenchShell
+ * 受控化）；本组件恒在面板 open 时渲染，不持开合 state。
  */
-export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsProps) {
+export function RightPanelTabs({ ctx }: { ctx: WorkbenchTabPluginContext }) {
   const { t } = useT();
-  const [rememberedTab, setRememberedTab] = useAtom(workbenchRightTabAtom);
-  // 检视分段（第十一轮复验用户拍板：右栏无「历史」，与 iPhone focus 工具同构——多端同构
-  // 只是容器不同，代码不重复写；历史能力由侧栏时钟态（05c）与中栏/移动 L3 承载，注册表外
-  // 局部追加 history 段是重复承载 + 重复代码，删除）。pages 仍不进右栏（per-project middle
-  // tab 语义，05 原型 inspector 无 pages 段）。注册表 = 移动 MobileFocusBody / 桌面右栏的
-  // 单一可见性来源（plugin.when）。
-  const visiblePlugins = WORKBENCH_TAB_PLUGINS.filter(
-    (plugin) => plugin.id !== "pages" && plugin.when(ctx),
-  );
-  const preferred = activeTab ?? rememberedTab;
-  const current = visiblePlugins.find((plugin) => plugin.id === preferred) ?? visiblePlugins[0];
+  const projectKey = ctx.projectKey;
+  const [panelTabsMap, setPanelTabsMap] = useAtom(workbenchPanelTabsAtom);
+  const [panelActiveMap, setPanelActiveMap] = useAtom(workbenchPanelActiveAtom);
+  // 右栏仅 project scope 渲染（WorkbenchRoute rightPanelCollapsible gate），projectKey 理论
+  // 恒非空；undefined 回退缺省标签表（与移动缺省一致 = [{files}]），null 保留 empty 态兜底。
+  const panelTabs = (projectKey ? panelTabsMap[projectKey] : undefined) ?? [
+    { id: "files", kind: "files" } as PanelTab,
+  ];
+  const activePanelTabId = (projectKey ? panelActiveMap[projectKey] : undefined) ?? "files";
+  // 幂等守卫：值未变直接返回旧引用（与移动 activatePanelTab 同款）。
+  const activatePanelTab = (id: string) =>
+    setPanelActiveMap((prev) => {
+      const cur = projectKey ? prev[projectKey] : undefined;
+      return cur === id ? prev : { ...prev, [projectKey as string]: id };
+    });
+  // ensure 新增标签（基础标签由 ＋ 菜单/深链映射调用；存在即幂等 no-op）。
+  const ensureTab = (tab: PanelTab) => {
+    if (!projectKey) return;
+    setPanelTabsMap((prev) => {
+      const list = prev[projectKey] ?? [{ id: "files", kind: "files" } as PanelTab];
+      const next = ensurePanelTabOpen(list, tab);
+      if (next === list) return prev;
+      return { ...prev, [projectKey]: next };
+    });
+  };
+  // ＋ 新建标签（03ob2 菜单）：同目标已开 = 激活幂等。
+  const newPanelTab = (kind: "files" | "git" | "wiki") => {
+    ensureTab({ id: kind, kind } as PanelTab);
+    activatePanelTab(kind);
+  };
+  // ✕ 关标签：仅 file 标签可关（三基础标签不可关）；关激活标签回文件树首标签。
+  const closePanelTab = (id: string) => {
+    setPanelTabsMap((prev) => {
+      if (!projectKey) return prev;
+      const list = prev[projectKey] ?? [];
+      return { ...prev, [projectKey]: list.filter((t0) => t0.id !== id) };
+    });
+    if (id === activePanelTabId) activatePanelTab("files");
+  };
+  // 树点文件直达（链接直达批3）：ensure + 激活 file 标签。file 标签 ✕ 关闭由 PanelTabBar。
+  const openPanelFileTab = (relPath: string) => {
+    const tab = panelFileTab(projectKey ?? "", relPath);
+    ensureTab(tab);
+    activatePanelTab(tab.id);
+  };
 
-  if (!current) {
+  if (!projectKey) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-center text-xs text-on-surface-muted">
         {t("workbench.rightPanelEmpty")}
@@ -43,48 +87,58 @@ export function RightPanelTabs({ activeTab, ctx, onTabChange }: RightPanelTabsPr
        min-w-0 = row-flex item 收缩约束（automatic min size 默认 = min-content，详情态长行
        pre/diff 的 min-content 会把本根撑到数千 px，seg4 span flex:1 均分后被裁成
        「只剩文件」——用户复验实测 13850px，§6.12l 条 11）。 */
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      {/* 检视标头 + seg4 分段（§6.12j 对齐 05:99 原型：glabel2「检视 · 只读」+ 标准 .seg4）。
-          只读语义固定——检视面板全部是只读视图；原型折叠 »（clps）
-          未实现，不设假入口。span 键盘可达（Enter/Space），与左栏作用域 seg4 先例同构。 */}
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col" data-desktop-inspector="">
+      {/* 检视标头（§6.12j 对齐 05:99 原型：glabel2「检视 · 只读」+ PanelTabBar 动态标签条
+          （批3，seg4 退役）。只读语义固定——检视面板全部是只读视图；原型折叠 »（clps）
+          未实现，不设假入口。 */}
       <div className="glabel2 shrink-0">{t("workbench.inspectorTitle")}</div>
-      {/* 水平缩进由 .seg4 自带 margin:10px 14px 0 承担（不另加 px——双重 14px = 28px 错位，
-          §6.12k design review P2⑥）。 */}
-      <div className="shrink-0 pb-2">
-        <div aria-label={t("workbench.inspectorAria")} className="seg4" role="tablist">
-          {visiblePlugins.map((plugin) => (
-            <span
-              aria-controls="inspector-tab-panel"
-              aria-selected={plugin.id === current.id}
-              className={`cursor-pointer ${plugin.id === current.id ? "on" : ""}`}
-              key={plugin.id}
-              onClick={() => {
-                setRememberedTab(plugin.id);
-                onTabChange(plugin.id);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setRememberedTab(plugin.id);
-                  onTabChange(plugin.id);
-                }
-              }}
-              role="tab"
-              tabIndex={0}
-            >
-              {t(plugin.labelKey)}
-            </span>
-          ))}
-        </div>
-      </div>
-      {/* §8 高度链：body 自身必须是 flex container（检视内容 FilesPanel 等是 flex-1 子）。 */}
+      <PanelTabBar
+        activeTabId={activePanelTabId}
+        onActivateTab={activatePanelTab}
+        onCloseTab={closePanelTab}
+        onNewTab={newPanelTab}
+        tabs={panelTabs}
+      />
+      {/* §8 高度链：body 自身必须是 flex container（检视内容 FilesPanel 等是 flex-1 子）；
+        relative = 标签叠层 absolute inset-0 的定位基准。 */}
       <div
-        className="flex min-h-0 flex-1 overflow-hidden"
-        id="inspector-tab-panel"
-        key={ctx.projectKey ?? "none"}
+        className="relative flex min-h-0 flex-1 overflow-hidden"
+        key={projectKey}
         role="tabpanel"
       >
-        {current.render(ctx)}
+        {panelTabs.map((tab) => {
+          const active = tab.id === activePanelTabId;
+          return (
+            <div
+              className={cn(
+                "absolute inset-0 flex min-h-0 flex-col overflow-hidden",
+                !active && "invisible",
+              )}
+              data-panel-tab-body={tab.id}
+              key={tab.id}
+            >
+              {tab.kind === "files" ? (
+                <FilesToolTab
+                  currentPath={ctx.currentPath}
+                  onPathChange={ctx.onPathChange}
+                  onOpenFileTab={openPanelFileTab}
+                  projectKey={projectKey}
+                />
+              ) : tab.kind === "git" ? (
+                <GitToolTab projectKey={projectKey} />
+              ) : tab.kind === "wiki" ? (
+                <WikiToolTab projectKey={projectKey} />
+              ) : (
+                // file 标签 path 编码 = 「projectName/relPath」（panelFileTab 单点）——拆回
+                // relPath 给预览（projectName 即本栏 projectKey）。
+                (() => {
+                  const { path: relPath } = splitFilePath(tab.path);
+                  return <PanelFileTabBody path={relPath} projectName={projectKey} />;
+                })()
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

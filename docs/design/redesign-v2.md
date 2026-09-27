@@ -814,6 +814,30 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：四门禁 + token strict + CSS 硬闸 + 单测 673/0 + e2e 24/24 + 探针 4 个（m4-tools-l3 62/0 全量面板语境重写：入口/ptabs/FAB 几何/toolChip 三态/面板内 history+commit+branches+file+wiki/长按菜单/零销毁 DOM 身份/深链映射）。
 
+### 批3 检视面板·桌面 ptabs + 链接直达（2026-09-27）
+
+**结构**：桌面右栏 seg4 三段退役 → `PanelTabBar` 单源标签条（与移动 InspectionPanel 同一组件/同一 panelTabsAtom·panelActiveAtom，多端同构只容器不同）；`workbenchPanelOpenAtom` 成两端面板开合单一真相——右栏折叠 atom（`workbenchRightCollapsed` localStorage）降级为 mount 恢复记忆，投影 effect 把「记忆=未折叠」镜像成 panelOpen=true，运行时写入走 open/close 包装镜像；`?rightTab=` 深链映射 effect = 打开右栏 + ensurePanelTabOpen/activate（幂等）；链接直达（03ab）：面板/树点文件 → `panelFileTab`（path 编码改 `${projectName}/${relPath}`，splitFilePath 可逆）+ 激活，移动面板 file 行点击同批收敛（transient focus L3 旧体系入口清零，仅剩深链/存量渲染路径）。
+
+**三个真 bug（e2e/探针实战抓出，机制记档）**：
+
+1. **StrictMode 双调用吃掉深链/恢复逻辑**（e2e vite dev 挂、prod 43012 好——dev 挂 prod 好即此 bug 指纹）：React dev mount→cleanup→mount 双调用下，卸载复位 cleanup 撤销首轮 effect 写入 + ref 幂等守卫吞掉次轮重执行 → 深链映射/记忆投影整体丢失。**修复范式 = 写入幂等则删 ref 守卫，让 remount 重执行自愈**（不与「panelOpen 卸载复位」批2 决策冲突——复位本身是幂等语义，问题只在守卫）。
+2. **jotai `atomWithStorage` getOnInit 缺省 false 陷阱**：`baseAtom = atom(initialValue)`，storage 值在 `baseAtom.onMount` 才派发——effect 的 mount 闭包读到的**恒是 initialValue**（右栏折叠记忆恒 true → 投影永不触发）。**修复 = effect 依赖该 storage 派生值**，等 storage 落地后再投影（jotai/vanilla/utils.js:504-516 实证）。
+3. **panelFileTab path 编码不匹配**：id/path 用 `:` 分隔 vs 消费端 splitFilePath 按 `/` 拆 → file 标签 body 收到含项目名前缀的 path → preview 404 → error 分支（无 l3-file-preview）。修复 = 单点改 `/` 分隔 + RightPanelTabs 拆 relPath。
+
+**diverge 记档**：① 会话流 tool card 文件链接不可点击（03ab 直达覆盖树/面板入口，会话流内联卡留后续）；② stickyWorkbenchSearch 的 rightTab 透传保留（幂等无害）；③ html render iframe 语境归全局 /files 页 FilesPanel——检视面板 file 标签 = 03q 源码形态无 render toggle（批7 sandbox 收紧时一并处理）；④ iPad 竖屏 <1024 全屏中间态（批2 记档 ③ 延续，桌面 ptabs 只做 ≥1024）；⑤ 桌面右栏折叠 = 卸载（与移动零销毁不对称：滚动位/file 标签 cwd/diff 栈跨折叠丢失；保挂载是行为变更牵扯 RailButton/aside 渲染条件，留后续批次）；⑥ tabpanel id/aria-controls 关联未做（role=tablist 已补，读屏树待补全）。
+
+**reviewer 消化**（design：2 Major + 6 Minor）：
+
+- **M1 深链映射非一次性**：effect 依赖 `[rightTab, scope]` 且 rightTab 经 stickyWorkbenchSearch 永久透传、WorkbenchContent 是常驻 pathless layout——消费过一次 `?rightTab=` 后切项目即复开已手动收起的右栏并强设激活标签（批2 M2「开面板是显式动作」同款违背）。修 = 依赖收敛 `[rightTab]`（闭包读当轮 scope 即首次映射语义）；残留 `?rightTab=` 刷新复开仍是拍板 f 固有代价。
+- **M2 桌面残留 panelOpen 穿透移动端**（批2 diverge ③「批3 收敛」兑现）：桌面开面板 → 视口 <1024 → MobileWorkbench 重挂，共享 panelOpen atom 残留 true 而 panelEverOpened=false → 空面板全屏渲染 + 主体隐藏。修 = `panelVisible = panelEverOpened && panelOpen` 派生，全部「面板可见性」消费点（open/l3/保活层让位/主体切换共 7 处）统一替换；写入路径不变。
+- **m1 桌面槽距**：`.ptabs` 基础 margin 16px 是移动语境，桌面右栏 `.glabel2` 槽距 14px——`[data-desktop-inspector] .ptabs { margin-inline: 14px }` 上下文覆写（05:104 原型 margin 差异许可用法）。
+- **m2 panelFileTab JSDoc 旧编码**：头注释仍写 `:` 分隔与实现 `/` 分隔矛盾——同步。
+- **m3 tablist 语义**：PanelTabBar 容器补 `role="tablist"`（tabpanel id/aria-controls 关联 → diverge ⑥）。
+- **m4 Space 激活滚动**：重写时丢的 `e.preventDefault()` 补回（Space 默认滚 .ptabs 横滚容器）。
+- **m6 panelDiff 残留**：handleToolChange(null)/handlePanelClose 两条关闭路径补 `setPanelDiff(null)`——残留会让重开面板直落旧 diff 覆盖层。
+
+**验证**：四门禁 + token strict + CSS 硬闸 + e2e 3 spec（file-browser/git-diff 改写 ptabs 断言 + desktop-side 回归）+ 全量 e2e 24/24 + 探针 7 个（m9-b 19/0 ptabs 重写、m4 Part5 面板 file 标签/diff 详情态重写、m9-d F11-F14、inspector-row-menus 全量、html-img-inline 迁 /files 页语境、file-save-scroll、m10 F3/G 段批3 语义改写）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

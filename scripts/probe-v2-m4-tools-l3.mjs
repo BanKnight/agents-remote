@@ -520,41 +520,33 @@ ok(
 await page.locator('[data-inspection-panel="open"] .nav .back').click();
 await page.waitForTimeout(600);
 
-console.log("Part 5: 面板内 file preview → 查看 diff → git focus");
+console.log("Part 5: 面板 file 标签（03ab peek）→ 查看 diff（面板级 panelDiff）");
 await page.locator(".ptabs .ptab", { hasText: "文件" }).first().click();
 await page.waitForTimeout(300);
+// 树点文件 → 面板 file 标签新增/激活（批3 链接直达：不再 URL /file/ focus 导航）。
 await page
   .locator('[data-inspection-panel="open"] [data-mobile-tool="files"] .frow', {
     hasText: "README.md",
   })
   .click();
 await page.waitForTimeout(800);
-ok(page.url().includes("/file/"), `file focus 导航发生（${page.url()}）`);
-const fnav = await navInfo(page);
-ok(fnav?.back === "proj1", `file 根目录 back = 项目名（实际 ${fnav?.back}）`);
-ok(fnav?.title === "README.md", `file 标题 = 文件名（实际 ${fnav?.title}）`);
-ok(
-  await page
-    .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
-    .getByText(/行/)
-    .first()
-    .isVisible(),
-  "preview meta 行数",
+const fileTab = page.locator('.ptabs .ptab[aria-label="README.md"]');
+ok((await fileTab.count()) === 1, "file 标签新增（README.md）");
+ok((await fileTab.getAttribute("aria-selected")) === "true", "file 标签新增即激活");
+// 预览在激活叠层（PanelFileTabBody 单源）：meta 行数 + 保活层让位（中栏 0 file item）。
+const previewBody = page.locator(
+  '[data-panel-tab-body="file:proj1/README.md"] [data-role="l3-file-preview"]',
 );
-// 保活层让位：面板 open 时 file item 单实例（主体区不渲染）。
+ok(await previewBody.getByText(/行/).first().isVisible(), "preview meta 行数");
 const fileItemLeaks = await page.evaluate(
   () => document.querySelectorAll('[data-tab-id^="file_"]').length,
 );
 ok(fileItemLeaks === 0, `保活层让位（file item 主体区 0 实例；实际 ${fileItemLeaks}）`);
-const diffBtn = page.locator('[data-inspection-panel="open"] .meta .diff', {
-  hasText: "查看 diff",
-});
+const diffBtn = previewBody.locator(".meta .diff", { hasText: "查看 diff" });
 ok((await diffBtn.count()) === 1, "meta「查看 diff」按钮");
 // 批次 3 Step B：meta 行补「编辑」入口（进编辑态 CodeEditor + 保存，与桌面右栏同构）。
 ok(
-  (await page
-    .locator('[data-inspection-panel="open"] .meta .diff', { hasText: "编辑" })
-    .count()) === 1,
+  (await previewBody.locator(".meta .diff", { hasText: "编辑" }).count()) === 1,
   "meta「编辑」按钮",
 );
 // design-review 修复兜底：双按钮必须包进单个 .diff 容器——各挂 .diff = 两个 auto margin
@@ -564,10 +556,31 @@ ok(
   diffBox !== null && diffBox.x + diffBox.width > 390 - 32,
   `meta 按钮容器贴行右缘（right=${diffBox ? Math.round(diffBox.x + diffBox.width) : "null"}）`,
 );
+// 「查看 diff」→ 面板级 panelDiff（data-role="l3-page" 覆盖层 + MobileL3GitDiff）——
+// back = 文件名（from:"file" 返回去向是 file 标签预览）。
 await diffBtn.click();
 await page.waitForTimeout(800);
-const gnav = await navInfo(page);
-ok(gnav?.back === "Git 检视", `diff focus back = 「Git 检视」（实际 ${gnav?.back}）`);
+const panelDiffNav = await navInfo(page);
+ok(panelDiffNav?.back === "README.md", `panelDiff back = 文件名（实际 ${panelDiffNav?.back}）`);
+ok(panelDiffNav?.title === "README.md", `panelDiff 标题 = 文件名（实际 ${panelDiffNav?.title}）`);
+ok(
+  (await page
+    .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
+    .getByText("+")
+    .count()) > 0,
+  "panelDiff diff 内容渲染",
+);
+// back → panelDiff 退出，回 file 标签预览（panelDiff state 清空，预览叠层回正）。
+await page.locator('[data-inspection-panel="open"] .nav .back').click();
+await page.waitForTimeout(600);
+ok(
+  (await page.locator('[data-inspection-panel="open"] [data-role="l3-page"]').count()) === 0,
+  "panelDiff back 回 file 标签预览（L3 退出）",
+);
+ok(
+  (await fileTab.getAttribute("aria-selected")) === "true",
+  "file 标签仍激活（panelDiff 只覆盖内容区）",
+);
 
 console.log("Part 6: 面板内 L3 wiki reader + readbtn sheet");
 // 直开 wiki 标签（panelTabs 已有 wiki——本 Part 复用面板态，不重置）。

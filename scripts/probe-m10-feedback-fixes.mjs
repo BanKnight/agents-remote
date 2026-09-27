@@ -221,6 +221,25 @@ async function setupMocks(page) {
       }),
     });
   });
+  // file 预览（v1.4 批3 file 标签：面板点文件 → MobileL3FilePreview 发 preview 请求；
+  // 无 mock 请求会落到真实 api 404 → l3-file-preview 不渲染）。
+  await page.route(/\/api\/projects\/proj1\/files\/preview(?:\?.*)?$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        type: "text",
+        projectName: "proj1",
+        path: new URL(r.request().url()).searchParams.get("path") ?? "",
+        name: new URL(r.request().url()).searchParams.get("path")?.split("/").pop() ?? "",
+        size: 24,
+        content: "deep file content",
+        // ProjectTextFilePreview 契约必填（mobile-l3.tsx 直接 new Date(mtimeMs)）——缺了
+        // RangeError → React 树崩溃卸载，探针面板直接消失。
+        mtimeMs: Date.now() - 60000,
+      }),
+    }),
+  );
   // git diff（G2）：repository + worktree 改动 src/deep.ts（badge M 行 fixture）。
   await page.route(/\/api\/projects\/proj1\/git\/diff$/, (r) =>
     r.fulfill({
@@ -614,8 +633,8 @@ async function run() {
     await page.waitForTimeout(500);
     record(!page.url().includes("tab="), `关面板 URL 无 tab（got ${page.url()}）`);
     record((await page.locator(".chips").count()) === 0, "agent chips 行已退役（v1.4）");
-    // F3 问题⑪：面板内 files → src 目录 → deep.ts → back = 完整父目录 "src"（03q 原型；
-    // 此前 .split("/").pop() 只取最后一段）。
+    // F3 v1.4 批3（链接直达 03ab）：面板内点文件 = file 预览标签新增/激活——树点 src →
+    // deep.ts，断言 file 标签「deep.ts」激活 + 叠层内 l3-file-preview（transient L3 旧体系退役）。
     await ticon.click();
     await page.waitForTimeout(500);
     await page
@@ -628,37 +647,46 @@ async function run() {
       .first()
       .click();
     await page.waitForTimeout(700);
-    const backLabel = await page.evaluate(() => {
+    const f3 = await page.evaluate(() => {
       const panel = document.querySelector('[data-inspection-panel="open"]');
-      return panel?.querySelector(".nav .back")?.textContent?.trim() ?? "";
+      const deepTab = panel?.querySelector('[role="tab"][aria-label="deep.ts"]');
+      const preview = panel?.querySelector(
+        '[data-panel-tab-body="file:proj1/src/deep.ts"] [data-role="l3-file-preview"]',
+      );
+      return {
+        hasTab: deepTab != null,
+        selected: deepTab?.getAttribute("aria-selected") === "true",
+        preview: preview != null,
+        backLabel: panel?.querySelector(".nav .back")?.textContent?.trim() ?? "",
+      };
     });
-    record(backLabel === "src", `file L3 back = 完整父目录（got "${backLabel}"）`);
+    record(f3.hasTab && f3.selected, `树点 deep.ts → file 标签激活（got ${JSON.stringify(f3)}）`);
+    record(f3.preview, "file 标签叠层渲染 l3-file-preview");
+    record(
+      f3.backLabel === "工作台",
+      `file 标签态面板 nav 仍为「工作台」（got "${f3.backLabel}"）`,
+    );
 
-    // ── G 第三轮：预览 back = 返回上一层（⑭）+ 历史浮层加载态（①）+ 下拉收起（③）──
-    console.log("G. 第三轮（back=上一层/加载态/下拉收起）");
-    // G1 问题⑭：file 预览 back → 回面板 files 标签（面板 atom 真相，URL 不写回；v1.4 批2），
-    // 文件树落在父目录（crumb 含 src）。
-    await page.locator('[data-inspection-panel="open"] .nav .back').click();
+    // ── G 第三轮：链接直达标签动线 + 历史浮层加载态（①）+ 下拉收起（③）──
+    console.log("G. 第三轮（标签直达/加载态/下拉收起）");
+    // G1 v1.4 批3：点回 files 标签 = 回树（内容保活：crumb 停在 src、deep.ts 标签不丢）。
+    await page.locator('[data-inspection-panel="open"] [role="tab"][aria-label="文件"]').click();
     await page.waitForTimeout(500);
     const g1 = await page.evaluate(() => {
       const panel = document.querySelector('[data-inspection-panel="open"]');
-      const on = panel?.querySelector(".ptab.on");
+      const filesTab = panel?.querySelector('[role="tab"][aria-label="文件"]');
       return {
-        panelOpen: panel != null,
-        onText: on?.textContent?.trim() ?? null,
+        filesSelected: filesTab?.getAttribute("aria-selected") === "true",
+        crumb: panel?.querySelector(".crumb")?.textContent ?? "",
+        deepTabKept: panel?.querySelector('[role="tab"][aria-label="deep.ts"]') != null,
       };
     });
-    record(
-      g1.panelOpen && (g1.onText ?? "").startsWith("文件"),
-      `file back 回面板 files 标签（got open=${g1.panelOpen} on=${g1.onText}）`,
-    );
-    const crumbText = await page.evaluate(() => {
-      const panel = document.querySelector('[data-inspection-panel="open"]');
-      return panel?.querySelector(".crumb")?.textContent ?? "";
-    });
-    record(crumbText.includes("src"), `file back crumb 在父目录层（got "${crumbText}"）`);
+    record(g1.filesSelected, `点 files 标签回树（got ${JSON.stringify(g1)}）`);
+    record(g1.crumb.includes("src"), `树保活 crumb 停在 src（got "${g1.crumb}"）`);
+    record(g1.deepTabKept, "deep.ts file 标签保活不丢");
 
-    // G2 问题⑭：git 预览 back = 「Git 检视」（03r 原型）→ 点后回面板 Git 标签。
+    // G2 问题⑭：git 变更行 → 面板内 diff（panelDiff 瞬态 L3）→ back = 「Git 检视」
+    //（03r 原型）→ 点后回面板 Git 标签。
     await page.locator('button[aria-label="新建标签"]').click();
     await page.waitForTimeout(300);
     await page.getByRole("menuitem", { name: /Git/ }).click();
@@ -671,17 +699,23 @@ async function run() {
     await page.waitForTimeout(700);
     const gitBack = await page.evaluate(() => {
       const panel = document.querySelector('[data-inspection-panel="open"]');
-      return panel?.querySelector(".nav .back")?.textContent?.trim() ?? "";
+      return {
+        back: panel?.querySelector(".nav .back")?.textContent?.trim() ?? "",
+        title: panel?.querySelector(".nav h1")?.textContent?.trim() ?? "",
+      };
     });
-    record(gitBack === "Git 检视", `git L3 back = 「Git 检视」（got "${gitBack}"）`);
+    record(
+      gitBack.back === "Git 检视" && gitBack.title === "deep.ts",
+      `git diff L3 back =「Git 检视」+ title = deep.ts（got ${JSON.stringify(gitBack)}）`,
+    );
     await page.locator('[data-inspection-panel="open"] .nav .back').click();
     await page.waitForTimeout(500);
     const g2 = await page.evaluate(() => {
       const panel = document.querySelector('[data-inspection-panel="open"]');
-      const on = panel?.querySelector(".ptab.on");
-      return on?.textContent?.trim() ?? null;
+      const on = panel?.querySelector('[role="tab"][aria-selected="true"]');
+      return on?.getAttribute("aria-label") ?? null;
     });
-    record((g2 ?? "").startsWith("Git"), `git back 回面板 Git 标签（got ${g2}）`);
+    record(g2 === "Git", `git diff back 回面板 Git 标签（got ${g2}）`);
 
     // G3 问题①：历史 sheet 打开先见加载骨架（[role=status]）再见数据行。
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);

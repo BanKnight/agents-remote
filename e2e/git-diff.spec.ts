@@ -23,15 +23,22 @@ test("authenticated user can inspect Git worktree and staged diffs", async ({ pa
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
 
   await page.goto(`/projects/${projectName}?rightTab=git`);
-  // 右栏默认收起（workbenchRightCollapsedAtom 默认 true，RailButton 唤出）——先展开再取 aside
-  //（折叠态右栏 aside 不渲染，展开后才是 DOM 第 2 个 complementary）。
-  await page.getByRole("button", { name: "Expand right panel" }).click();
+  // 深链映射（v1.4 批3）：?rightTab=git 渲染期一次性映射为「面板展开 + git 标签激活」
+  //（不写回 URL，右栏自动展开无需点 RailButton）——aside 直接出现（DOM 第 2 个
+  // complementary），ptabs「Git」标签激活。
   const files = page.getByRole("complementary").nth(1);
-  await expect(files.locator(".frow", { hasText: /README\.md/ })).toBeVisible();
-  await expect(files.locator(".frow", { hasText: /src\/index\.ts/ })).toBeVisible();
-  await expect(files.locator(".frow", { hasText: /notes\.txt/ })).toBeVisible();
+  await expect(files.getByRole("tab", { name: "Git", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  // .frow 查询限定 git 叠层容器：ptabs 叠层保活下 files 标签的同名树行（README.md 等）
+  // 仍在 DOM（invisible）——不限定的多匹配会 strict violation。
+  const gitRows = files.locator('[data-panel-tab-body="git"] .frow');
+  await expect(gitRows.filter({ hasText: /README\.md/ })).toBeVisible();
+  await expect(gitRows.filter({ hasText: /src\/index\.ts/ })).toBeVisible();
+  await expect(gitRows.filter({ hasText: /notes\.txt/ })).toBeVisible();
 
-  await files.locator(".frow", { hasText: /README\.md/ }).click();
+  await gitRows.filter({ hasText: /README\.md/ }).click();
   const diff = files.locator('[data-role="l3-git-diff"]');
   await expect(diff).toContainText("README.md");
   await expect(diff).toContainText("+git-diff-e2e-worktree-ok");
@@ -50,10 +57,10 @@ test("authenticated user can inspect Git worktree and staged diffs", async ({ pa
   await files.getByRole("button", { name: "Back to history" }).click();
   await expect(history).toBeVisible();
   await files.getByRole("button", { name: "Back to changed files" }).click();
-  await expect(files.locator(".frow", { hasText: /README\.md/ })).toBeVisible();
+  await expect(gitRows.filter({ hasText: /README\.md/ })).toBeVisible();
 
   await files.getByRole("button", { name: /Branches \(\d+\)/ }).click();
   await expect(files.locator('[data-role="l3-git-branches"]')).toBeVisible();
   await files.getByRole("button", { name: "Back to changed files" }).click();
-  await expect(files.locator(".frow", { hasText: /README\.md/ })).toBeVisible();
+  await expect(gitRows.filter({ hasText: /README\.md/ })).toBeVisible();
 });

@@ -8,6 +8,101 @@ import { ShellIcon } from "../shell/icons";
 import { ActionMenu } from "../ui/action-menu";
 
 /**
+ * 面板标签条单源（v1.4 .ptabs，批3 从 InspectionPanel 抽出——桌面右栏 RightPanelTabs 与移动
+ * 全屏面板共用同一标签条，多端同构只是容器不同）：标签即内容（div[role=tab] + ShellIcon +
+ * 标签名），三基础标签不可关、file 标签 ✕，「＋」= 03ob2 新建标签菜单（已开 = 激活幂等，
+ * 调用方保证）。
+ */
+export function PanelTabBar({
+  activeTabId,
+  onActivateTab,
+  onCloseTab,
+  onNewTab,
+  tabs,
+}: {
+  activeTabId: string;
+  onActivateTab: (id: string) => void;
+  onCloseTab: (id: string) => void;
+  /** ＋ 新建标签（03ob2 菜单选中值；已开 = 激活幂等，调用方保证）。 */
+  onNewTab: (kind: "files" | "git" | "wiki") => void;
+  tabs: PanelTab[];
+}) {
+  const { t } = useT();
+  const tabMeta = (
+    tab: PanelTab,
+  ): { icon: "project" | "git-nav" | "book" | "file"; label: string } => {
+    if (tab.kind === "files") return { icon: "project", label: t("workbench.tabFiles") };
+    if (tab.kind === "git") return { icon: "git-nav", label: t("workbench.tabGit") };
+    if (tab.kind === "wiki") return { icon: "book", label: t("workbench.tabWiki") };
+    return { icon: "file", label: tab.path.split("/").pop() || tab.path };
+  };
+  return (
+    <div className="ptabs shrink-0" data-role="ptabs" role="tablist">
+      {tabs.map((tab) => {
+        const meta = tabMeta(tab);
+        const active = tab.id === activeTabId;
+        return (
+          <div
+            aria-label={meta.label}
+            aria-selected={active}
+            className={cn("ptab relative cursor-pointer", active && "on")}
+            key={tab.id}
+            onClick={() => onActivateTab(tab.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                // Space 默认滚动最近可滚祖先（.ptabs overflow-x:auto）——抑制后语义=纯激活。
+                e.preventDefault();
+                onActivateTab(tab.id);
+              }
+            }}
+            role="tab"
+            tabIndex={0}
+          >
+            <ShellIcon className="h-[13px] w-[13px]" name={meta.icon} />
+            {meta.label}
+            {tab.kind === "file" ? (
+              <button
+                aria-label={t("session.close")}
+                className="x flex h-6 w-5 cursor-pointer items-center justify-center"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCloseTab(tab.id);
+                }}
+                type="button"
+              >
+                ✕
+              </button>
+            ) : null}
+          </div>
+        );
+      })}
+      <ActionMenu
+        align="start"
+        cancelLabel={t("cancel")}
+        items={(
+          [
+            { id: "files", icon: "project", label: t("workbench.tabFiles") },
+            { id: "git", icon: "git-nav", label: t("workbench.tabGit") },
+            { id: "wiki", icon: "book", label: t("workbench.tabWiki") },
+          ] as const
+        ).map((item) => ({
+          label: item.label,
+          icon: <ShellIcon name={item.icon} />,
+          onSelect: () => onNewTab(item.id),
+        }))}
+        trigger={
+          <button
+            aria-label={t("workbench.newPanelTab")}
+            className="plus shrink-0 cursor-pointer relative after:absolute after:-inset-2 after:content-['']"
+            type="button"
+          />
+        }
+      />
+    </div>
+  );
+}
+
+/**
  * 检视面板（v1.4 03o/03ob 检视面板，redesign-v2 §6.13 批2）：移动端 = 全屏页——自带
  * 「‹ 工作台」nav（back 文案随面板态切换，03o 原型）、动态标签条（.ptabs，标签即内容：
  * 三基础标签不可关、file 标签 ✕、「＋」= 03ob2 新建标签菜单）、工具 chip 槽（03o crumb /
@@ -59,14 +154,6 @@ export function InspectionPanel({
   toolChip?: ReactNode;
 }) {
   const { t } = useT();
-  const tabMeta = (
-    tab: PanelTab,
-  ): { icon: "project" | "git-nav" | "book" | "file"; label: string } => {
-    if (tab.kind === "files") return { icon: "project", label: t("workbench.tabFiles") };
-    if (tab.kind === "git") return { icon: "git-nav", label: t("workbench.tabGit") };
-    if (tab.kind === "wiki") return { icon: "book", label: t("workbench.tabWiki") };
-    return { icon: "file", label: tab.path.split("/").pop() || tab.path };
-  };
   return (
     <div
       aria-hidden={!open}
@@ -93,66 +180,15 @@ export function InspectionPanel({
       </div>
       {l3 ? null : (
         <>
-          {/* 动态标签条（03ob ①）：标签即内容，＋ 新建 / ✕ 关闭；三基础标签不可关
-           （plan 批2 拍板；原型示例 Git 标签的 ✕ 视为展示语义）。 */}
-          <div className="ptabs shrink-0" data-role="ptabs">
-            {tabs.map((tab) => {
-              const meta = tabMeta(tab);
-              const active = tab.id === activeTabId;
-              return (
-                <div
-                  aria-label={meta.label}
-                  aria-selected={active}
-                  className={cn("ptab relative cursor-pointer", active && "on")}
-                  key={tab.id}
-                  onClick={() => onActivateTab(tab.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") onActivateTab(tab.id);
-                  }}
-                  role="tab"
-                  tabIndex={0}
-                >
-                  <ShellIcon className="h-[13px] w-[13px]" name={meta.icon} />
-                  {meta.label}
-                  {tab.kind === "file" ? (
-                    <button
-                      aria-label={t("session.close")}
-                      className="x flex h-6 w-5 cursor-pointer items-center justify-center"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCloseTab(tab.id);
-                      }}
-                      type="button"
-                    >
-                      ✕
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-            <ActionMenu
-              align="start"
-              cancelLabel={t("cancel")}
-              items={(
-                [
-                  { id: "files", icon: "project", label: t("workbench.tabFiles") },
-                  { id: "git", icon: "git-nav", label: t("workbench.tabGit") },
-                  { id: "wiki", icon: "book", label: t("workbench.tabWiki") },
-                ] as const
-              ).map((item) => ({
-                label: item.label,
-                icon: <ShellIcon name={item.icon} />,
-                onSelect: () => onNewTab(item.id),
-              }))}
-              trigger={
-                <button
-                  aria-label={t("workbench.newPanelTab")}
-                  className="plus shrink-0 cursor-pointer relative after:absolute after:-inset-2 after:content-['']"
-                  type="button"
-                />
-              }
-            />
-          </div>
+          {/* 动态标签条（03ob ①，PanelTabBar 单源——桌面右栏同引）：标签即内容，＋ 新建 /
+           ✕ 关闭；三基础标签不可关（plan 批2 拍板；原型示例 Git 标签的 ✕ 视为展示语义）。 */}
+          <PanelTabBar
+            activeTabId={activeTabId}
+            onActivateTab={onActivateTab}
+            onCloseTab={onCloseTab}
+            onNewTab={onNewTab}
+            tabs={tabs}
+          />
           {/* 工具 chip 槽（03o ②：文件树标签 = crumb+收缩搜索；Git = gitchip；Wiki = wsearch） */}
           {toolChip ? (
             <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-2">{toolChip}</div>

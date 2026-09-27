@@ -103,7 +103,12 @@ const atomWithLocalOnlyStorage = <T>(key: string, initialValue: T) => {
   return atomWithStorage(key, initialValue, storage);
 };
 
-/** 右栏（inspection tab）折叠态，默认折叠（对齐 §3 非聚焦态收起）。 */
+/**
+ * 桌面右栏折叠记忆（v1.4 批3 起降级为**恢复源**：运行时开合真相 = workbenchPanelOpenAtom，
+ * WorkbenchContent mount 时按本记忆投影 panelOpen 初值；此后开合动作只写 panelOpen，本 atom
+ * 由 open/close 包装同步镜像。默认折叠（对齐 §3 非聚焦态收起）——默认值下刷新后右栏收起，
+ * 与「不恢复 open」的内存级语义一致。
+ */
 export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
   "workbenchRightCollapsed",
   true,
@@ -113,15 +118,6 @@ export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
 export const workbenchRightWidthAtom = atomWithLocalOnlyStorage(
   "workbenchRightWidth",
   WORKBENCH_RIGHT_PANEL_DEFAULT_REM,
-);
-
-/**
- * 右栏当前 tab。Stage 3 起 URL `rightTab` 优先（语义核心、刷新可分享），
- * 此 atom 作「记忆上次 tab」的回退（首次进入 / URL 未指定时）。
- */
-export const workbenchRightTabAtom = atomWithLocalOnlyStorage<WorkbenchInspectionTab>(
-  "workbenchRightTab",
-  "files",
 );
 
 /**
@@ -180,12 +176,22 @@ export type PanelTab =
   | { id: "wiki"; kind: "wiki" }
   | { id: string; kind: "file"; path: string };
 
-/** 构造 file 预览标签（path = `projectName:relPath` 与 focusRef.path 同格式可 splitFilePath；
+/** 构造 file 预览标签（path = `projectName/relPath`，splitFilePath 可逆拆回；
  * id = `file:<path>` 单点派生）。批2 预留（file 标签 ✕/渲染已支持），批3 链接直达
  *（onOpenFile → 面板 open+标签）开始消费。 */
 export function panelFileTab(projectName: string, path: string): PanelTab {
-  const p = `${projectName}:${path}`;
+  // path 编码 = 「projectName/relPath」（splitFilePath 可逆拆回，与 file tab id 全路径同语义；
+  // 勿用 `:` 等其他分隔——消费端（移动/桌面 file 标签 body）按 splitFilePath 拆）。
+  const p = `${projectName}/${path}`;
   return { id: `file:${p}`, kind: "file", path: p };
+}
+
+/**
+ * 确保标签在标签表中打开（批3 链接直达，两端共用纯函数）：已存在 → 原数组引用（幂等守卫，
+ * 与 activatePanelTab 同款——避免多余重渲染 + localStorage 同步写）；不存在 → 追加。
+ */
+export function ensurePanelTabOpen(tabs: PanelTab[], tab: PanelTab): PanelTab[] {
+  return tabs.some((t0) => t0.id === tab.id) ? tabs : [...tabs, tab];
 }
 
 /** 面板标签表（per-projectKey 隔离，localStorage 持久化——跨刷新恢复标签集）。 */

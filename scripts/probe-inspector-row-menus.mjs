@@ -259,25 +259,39 @@ try {
     timeout: 8000,
   });
 
-  // ① 右栏 seg4 恰三段（文件/Git/Wiki），无「历史」。
-  const seg = await page.evaluate(() => {
-    const aside = document.querySelectorAll("main > div > aside")[1];
-    const seg = aside?.querySelector(".seg4");
-    return seg ? [...seg.querySelectorAll("span")].map((s) => s.textContent.trim()) : null;
-  });
-  ok(seg !== null, "S1 右栏 seg4 渲染");
+  // ① 右栏 ptabs（v1.4 批3：seg4 分段退役，PanelTabBar 动态标签条 05:99）：默认 [文件]，
+  // ＋ 菜单含 Git/Wiki（三段语义由菜单覆盖），无「历史」。
+  const readPanelTabs = () =>
+    page.evaluate(() => {
+      const aside = document.querySelectorAll("main > div > aside")[1];
+      return aside
+        ? [...aside.querySelectorAll('[role="tab"]')].map((b) => b.getAttribute("aria-label"))
+        : null;
+    });
+  const seg = await readPanelTabs();
+  ok(seg !== null, "S1 右栏 ptabs 渲染");
+  ok(seg?.join(",") === "文件", `S2 右栏 ptabs 默认 = [文件]（实际 ${JSON.stringify(seg)}）`);
+  ok(!seg?.includes("历史"), "S3 右栏无「历史」标签（与 iPhone 同构）");
+  // ＋ 菜单可加 Git/Wiki（基础三段语义由 03ob2 菜单承载）——点「Git」加签供 G 段使用。
+  await page.locator("main > div > aside").nth(1).getByRole("button", { name: "新建标签" }).click();
+  await waitMenuOpen(page);
+  const plusItems = await readMenu(page);
   ok(
-    seg?.join(",") === "文件,Git,Wiki",
-    `S2 右栏恰三段 文件/Git/Wiki（实际 ${JSON.stringify(seg)}）`,
+    plusItems.items.join(",").includes("Git") && plusItems.items.join(",").includes("Wiki"),
+    `S4 ＋ 菜单含 Git/Wiki（实际 ${plusItems.items.join("/")}）`,
   );
-  ok(!seg?.includes("历史"), "S3 右栏无「历史」段（与 iPhone 同构）");
+  await page.getByRole("menuitem", { name: "Git" }).click();
+  await page.waitForTimeout(400);
+  const segAfterGit = await readPanelTabs();
+  ok(
+    segAfterGit?.join(",") === "文件,Git",
+    `S5 ＋ 菜单点 Git 加签激活 = [文件,Git]（实际 ${JSON.stringify(segAfterGit)}）`,
+  );
 
-  // ② Files 段：文件行右键 → 5 项菜单（预览/重命名/移动/上传/删除）。
-  const filesTab = page
-    .locator("main > div > aside")
-    .nth(1)
-    .locator(".seg4 span", { hasText: "文件" });
-  await filesTab.click();
+  // ② Files 标签（点回文件标签）：文件行右键 → 5 项菜单（预览/重命名/移动/上传/删除）。
+  const aside = page.locator("main > div > aside").nth(1);
+  await aside.getByRole("tab", { name: "文件" }).click();
+  await page.waitForTimeout(300);
   // 第十二轮批次 3:右栏三段换共享三件套(03o/03m/03p 形态)——行定位从 ListRow 显式
   // role=button 换 .frow 原生 button(隐式 role,getByRole 仍可达)。
   await page.waitForSelector("main > div > aside:nth-of-type(2) .frow", {
@@ -301,8 +315,8 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
 
-  // ③ Git 段：变更行右键 → 2 项（查看 diff/复制路径）+ 复制路径落剪贴板。
-  await page.locator("main > div > aside").nth(1).locator(".seg4 span", { hasText: "Git" }).click();
+  // ③ Git 标签（＋ 菜单加签后激活）：变更行右键 → 2 项（查看 diff/复制路径）+ 复制路径落剪贴板。
+  await aside.getByRole("tab", { name: "Git" }).click();
   await page.waitForTimeout(600);
   const gitRow = page
     .locator("main > div > aside")
@@ -376,12 +390,10 @@ try {
     .getByRole("button", { name: /分支 \(\d+\)/ });
   ok((await branchLink.count()) > 0, "G10 links「分支 (N)」渲染");
 
-  // ④ Wiki 段：页面行右键 → 2 项 + 「打开页面」进详情态。
-  await page
-    .locator("main > div > aside")
-    .nth(1)
-    .locator(".seg4 span", { hasText: "Wiki" })
-    .click();
+  // ④ Wiki 标签（＋ 菜单加签）：页面行右键 → 2 项 + 「打开页面」进详情态。
+  await aside.getByRole("button", { name: "新建标签" }).click();
+  await waitMenuOpen(page);
+  await page.getByRole("menuitem", { name: "Wiki" }).click();
   await page.waitForTimeout(600);
   const wikiRow = page
     .locator("main > div > aside")

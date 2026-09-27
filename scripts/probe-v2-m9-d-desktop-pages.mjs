@@ -530,7 +530,8 @@ async function sideOverviewVisible(page) {
       );
     }
 
-    // 右栏 Inspector：glabel2「检视 · 只读」+ 标准 seg4（32px，§6.12j）。
+    // 右栏 Inspector（v1.4 批3）：glabel2「检视 · 只读」+ ptabs 动态标签条（.ptab 30px，
+    // 05:99；seg4 分段退役——默认 [文件]，Git/Wiki 由 ＋ 菜单加签）。
     await page.getByRole("button", { name: "展开右栏" }).click();
     await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
       timeout: 5000,
@@ -539,24 +540,24 @@ async function sideOverviewVisible(page) {
       const aside = document.querySelectorAll("main > div > aside")[1];
       if (!aside) return null;
       const label = aside.querySelector(".glabel2");
-      const seg = aside.querySelector(".seg4");
+      const ptab = aside.querySelector(".ptab");
       return {
         label: label
           ? label.textContent.trim()
           : aside.textContent.includes("检视")
             ? "检视"
             : null,
-        segH: seg ? Math.round(seg.getBoundingClientRect().height) : null,
-        segSpans: seg ? [...seg.querySelectorAll("span")].map((s) => s.textContent.trim()) : [],
+        ptabH: ptab ? Math.round(ptab.getBoundingClientRect().height) : null,
+        tabs: [...aside.querySelectorAll('[role="tab"]')].map((s) => s.getAttribute("aria-label")),
       };
     });
     ok(insp !== null, "F11 右栏 Inspector 渲染");
     if (insp) {
       ok(insp.label === "检视 · 只读", `F12 glabel2「检视 · 只读」（实际 ${insp.label}）`);
-      ok(insp.segH === 32, `F13 标准 seg4 高 32px（实际 ${insp.segH}）`);
+      ok(insp.ptabH === 30, `F13 .ptab 高 30px（实际 ${insp.ptabH}）`);
       ok(
-        insp.segSpans.join(",") === "文件,Git,Wiki",
-        `F14 三段顺序（右栏无历史，与 iPhone focus 工具同构；实际 ${JSON.stringify(insp.segSpans)}）`,
+        insp.tabs.join(",") === "文件",
+        `F14 ptabs 默认 = [文件]（05:99 动态标签；实际 ${JSON.stringify(insp.tabs)}）`,
       );
     }
 

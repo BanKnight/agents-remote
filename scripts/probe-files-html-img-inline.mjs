@@ -51,6 +51,19 @@ async function setup(page) {
       body: JSON.stringify({ projectNames: ["proj1"], candidates: [] }),
     }),
   );
+  // 全局 /files 页 root listing（列 PROJECTS_ROOT 下的项目目录）。
+  await page.route(/\/api\/root\/files(?:\?.*)?$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        projectName: "",
+        path: "",
+        parentPath: null,
+        entries: [{ name: "proj1", path: "proj1", type: "directory", hidden: false, size: 0 }],
+      }),
+    }),
+  );
   await page.route(/\/api\/projects\/proj1\/files(?:\?.*)?$/, (r) =>
     r.fulfill({
       status: 200,
@@ -147,19 +160,19 @@ async function run() {
     await page.waitForTimeout(700);
 
     console.log(
-      "\n===== 项目 Files → index.html（html 默认 render 模式；§6.12k 桌面 = Inspector 检视 files 树）=====",
+      "\n===== 全局 /files 页 → proj1 → index.html（html 默认 render 模式；" +
+        "v1.4 批3 起桌面检视面板 file 标签 = 03q 源码形态，render iframe 语境归全局 /files 页 FilesPanel）=====",
     );
-    await page.goto(`${WEB_ORIGIN}/projects/proj1`);
+    await page.goto(`${WEB_ORIGIN}/files`);
     await page.waitForSelector("nav[aria-label]", { timeout: 8000 });
-    // 右栏默认收起 → 展开；Inspector seg4 切「文件」；树点 index.html。
-    await page.getByRole("button", { name: "展开右栏" }).click();
-    await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
-      timeout: 8000,
-    });
-    const inspector = page.locator("main > div > aside").nth(1);
-    await inspector.locator(".seg4 span", { hasText: /^文件$/ }).click({ timeout: 5000 });
-    await page.waitForTimeout(500);
-    await inspector.getByText("index.html", { exact: true }).first().click();
+    // root listing（列项目目录）→ 点 proj1 进项目（listProjectFiles mock 命中）→ 点 index.html。
+    // 行定位限定列表行形态（.gfrow=根层项目行；项目层文件行 = ListRow div[role=button]
+    // +[data-list-row-title]——getByText 全局首个命中是左侧 nav 侧栏项目行，会误导航去项目页）。
+    await page.locator(".gfrow button", { hasText: "proj1" }).click();
+    await page
+      .locator("[data-list-row-title]", { hasText: "index.html" })
+      .waitFor({ timeout: 8000 });
+    await page.locator("[data-list-row-title]", { hasText: "index.html" }).click();
     await page.waitForSelector('iframe[title="Sandboxed HTML render"]', { timeout: 10000 });
 
     console.log("\n===== 1. srcDoc 内联状态断言 =====");

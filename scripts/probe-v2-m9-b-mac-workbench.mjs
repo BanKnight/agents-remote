@@ -209,22 +209,54 @@ async function login(page) {
       "「项目」只含本项目实例",
     );
 
-    // ── Inspector 三段（2026-09-24 拍板：右栏无历史段，历史由侧栏时钟态 05c + 中栏/移动
-    //    L3 承载；行菜单覆盖见 probe-inspector-row-menus）──
+    // ── 右栏 ptabs（v1.4 批3：Inspector 分段 .seg4 退役，换 PanelTabBar 动态标签条
+    //    （05:99，div[role=tab]）；默认仅「文件」基础标签，「＋」菜单（03ob2）可加
+    //    Git/Wiki——三段语义由菜单覆盖，行菜单覆盖见 probe-inspector-row-menus）──
     await page.getByRole("button", { name: "展开右栏" }).click();
     await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
       timeout: 5000,
     });
-    const rightTabs = await page.evaluate(() => {
-      const aside = document.querySelectorAll("main > div > aside")[1];
-      if (!aside) return null;
-      // §6.12j 起 Inspector 分段 = .seg4（span role=tab），不再是胶囊 button。
-      return [...aside.querySelectorAll(".seg4 span")].map((b) => b.textContent.trim());
-    });
+    const panelTabs = () =>
+      page.evaluate(() => {
+        const aside = document.querySelectorAll("main > div > aside")[1];
+        if (!aside) return null;
+        return [...aside.querySelectorAll('[role="tab"]')].map((b) => b.getAttribute("aria-label"));
+      });
+    const rightTabs = await panelTabs();
     ok(
-      rightTabs !== null && rightTabs.join(",") === "文件,Git,Wiki",
-      `Inspector 三段 = 文件/Git/Wiki（实际 ${JSON.stringify(rightTabs)}）`,
+      rightTabs !== null && rightTabs.join(",") === "文件",
+      `右栏 ptabs 默认 = [文件]（实际 ${JSON.stringify(rightTabs)}）`,
     );
+    // ＋ 菜单三项（文件/Git/Wiki）→ 点「Git」新增并激活 → 两签并存。
+    await page
+      .locator("main > div > aside")
+      .nth(1)
+      .getByRole("button", { name: "新建标签" })
+      .click();
+    await page.waitForTimeout(300);
+    const newTabItems = await page.evaluate(() =>
+      [...document.querySelectorAll('[role="menuitem"]')].map((m) => m.textContent.trim()),
+    );
+    ok(
+      newTabItems.join(",") === "文件,Git,Wiki",
+      `＋ 菜单三项 = 文件/Git/Wiki（实际 ${JSON.stringify(newTabItems)}）`,
+    );
+    await page.getByRole("menuitem", { name: "Git" }).click();
+    await page.waitForTimeout(300);
+    const tabsAfterGit = await panelTabs();
+    ok(
+      tabsAfterGit !== null && tabsAfterGit.join(",") === "文件,Git",
+      `开 Git 后 ptabs = [文件,Git]（实际 ${JSON.stringify(tabsAfterGit)}）`,
+    );
+    ok(
+      (await page
+        .locator("main > div > aside")
+        .nth(1)
+        .getByRole("tab", { name: "Git" })
+        .getAttribute("aria-selected")) === "true",
+      "Git 标签激活（新增即激活）",
+    );
+    await page.locator("main > div > aside").nth(1).getByRole("tab", { name: "文件" }).click();
 
     // ── 分屏按钮 ──
     const leafCount = () =>
