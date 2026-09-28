@@ -555,6 +555,7 @@ export const en = {
   "claude.approval.trayAriaLabel": "Pending approvals",
   "claude.approval.trayTitle": "{{count}} approvals pending",
   "claude.agent.runningAriaLabel": "Running sub-agents",
+  "claude.output.expandTools": "Expand tools",
   "claude.subagent.prompt": "Prompt",
   "claude.subagent.output": "Sub-agent output",
   "claude.retry.attempt": "Retry {{attempt}}/{{max}}",

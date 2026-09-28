@@ -893,6 +893,20 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：探针 probe-files-html-img-inline 扩展（sandbox="" 断言 + 另存钮 3 断言：download 建议名 = 文件名 / href = dataUrl / aria-label「另存」）+ probe-lightbox-center 回归；门禁同批6 基线。
 
+### 批8 工作台密度（2026-09-28；reviewer：perf 必过 + design）
+
+**实现**：① **03b 滚动收敛**——会话输出流上滚越过一屏（`scrollTop > clientHeight`，绑定 `upDelta > CHAT_SCROLL_UP_EPS` 上滚方向：点 ▾ 弹回后的布局钳制滚动不再触发）→ row2/pills+chips 与检视入口折叠为 `.mini` 单行胶囊（`● 会话名 · ⚠n · ▾`），回底 0.5 屏内 / 点 ▾ / 点回底浮球弹回；滞回死区（1 屏进 / 0.5 屏出）防折叠布局变化的来回抖动。② **托盘两态**（spec §4.2）——ApprovalTray 默认单行胶囊「⚠ n 项待审批 + 全部允许 ›」，首点「全部允许」只切确认态（文案 `approvals.confirmAll`「确认允许 N 项？」、零上行），再点执行 `allowAll`（循环 `bridge.respondToControlRequest`，payload 与逐条允许一致）；`allowAllSent` 锁 + `disabled` 防双击重复帧；⚠ 行点击 = 展开完整托盘（逐条 mono 摘要 + 允许/拒绝），展开态标题点击 = 审批中心入口保持。③ `.mini` 原语类提升进 v2-primitives.css（原型 03b L12-17 一比一：34px 胶囊 / gap 8px / r10 / bg-elevated / sep 边 / 12.5px 600 / `.wn` warning-text 700 / `.ex` ml-auto ink-2 11px），margin 由挂载点 utility 管；mini 状态语言用既有 `.dot` 原语（run=idle 两态，1:1 原型不加 pulse）；aria-label 拼合可见文本（WCAG 2.5.3）。
+
+**perf review 消化**：P1 **atom 会话级 scoping**——`workbenchOutputCollapsedAtom = atom<Record<string, boolean>>({})` 按 sessionId 分桶（桌面对 hidden 面板保活、多面板同时挂载 VirtualizedThreadContent，全局单值跨面板串扰）；订阅侧 `selectAtom` 派生（jotai/utils，只在自身 key 变化时重渲），写侧 `useSetAtom` + 函数式幂等更新（同值不换引用），会话页卸载复位清本 key（残留 true 误伤项目页 row2）。P2 收敛判定全走 ref + passive onScroll（无逐帧 setState，MutationObserver 计数 = 0 翻转硬数据）。**atom scoping 隔离语义由 workbench-model 单测锁定**（桌面「点左栏第二个实例」会丢 leaf——存量问题、双面板并存在当前导航下不可构造，探针场景不可达）。
+
+**design review 消化（13 项）**：#1 托盘两段确认（spec §4.2 红线，推翻初版「无确认直接执行」）；#2 **子 agent 条保留**——03b 原型 L45 mini 与 `.sub` 并存，推翻初版「一并折叠」（像素 + spec §4.1-4 胜出原注释①）；#7/8/9/13 `.mini` 从 utility 组合提升原语类；#4 dot 状态语言用既有 `.dot` 原语；#11 aria 拼合；#5 mini 的 key 用 sessionId；#12 调用点（Acp/Chat 路由）补 `sessionId`/`loading`/`retryInfo` props；#3 收敛态重试条保留（流瞬态非工具区）；#6 AllowAll 文案收敛既有 `approvals.allowAll`/`approvals.confirmAll` key（删 `claude.approval.allowAll` 重复 key）；#10 热区扩展 `-mx-1 -my-1 px-1 py-1`。
+
+**diverge（对原型 03b 的取舍）**：① 桌面仅 subbar 段收敛断言（桌面无 row2；atom 已 Record scoping，多面板串扰防御就位）；② mini 的 ⚠ 采用紧凑 `⚠n` 格式（原型「⚠ 2」对齐）；③ 收敛绑定上滚方向（原型未指定，防点 ▾ 弹回后的钳制滚动误触发）。
+
+**验证**：probe-claude-detail-perf 27/0（移动/桌面收敛、34px 几何、dot 7×7、滞回死区 30 帧零翻转、回底/点 ▾ 弹回、subbar 保留）+ probe-v2-m5-approvals 43/0（胶囊默认态、两段确认全链：首点确认态零上行 → 再点 control_response ×2（request_id 覆盖/behavior=allow/updatedInput 原样）→ 防重锁 → 展开托盘 → 审批中心入口）+ workbench-model.test atom scoping 单测；e2e chat-session 1/1 + mobile-nav 6/6；门禁同批6 基线（test 674/0）。
+
+**顺带发现（存量问题记档，非本批范围）**：桌面 workbench「点左栏第二个实例」后 leaf 区不重建（面板区空、`[data-drop-group]`=0），且面板 hidden→visible 后内容不自动恢复（remount + WS 重连，mock 场景永久骨架）——真实链路重连会重新回放恢复，但切 tab 体验有洞。真机复验清单项；修复立项待排。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

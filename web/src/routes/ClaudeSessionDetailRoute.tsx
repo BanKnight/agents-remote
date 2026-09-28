@@ -54,11 +54,12 @@ import {
 } from "../lib/composer-enter";
 import { measureFrom, timed } from "../lib/perf-trace";
 import { useIsMobile } from "../lib/use-is-mobile";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { selectAtom } from "jotai/utils";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { tasksExpandedAtom } from "./console-model";
 import { HtmlRenderContext } from "../components/markdown/markdown-components";
-import { useOpenRenderTab } from "./workbench-model";
+import { useOpenRenderTab, workbenchOutputCollapsedAtom } from "./workbench-model";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
 import { Dialog, DialogContent } from "../components/ui/dialog";
@@ -489,12 +490,14 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
 
                     <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                       <VirtualizedThreadContent
+                        approvalCount={pendingApprovals.length}
                         autoRetryEnabled
                         loading={loading}
                         projectName={projectName}
                         retryInfo={retryInfo}
                         scrollerApi={scrollerApiRef}
                         sessionId={sessionId}
+                        sessionName={session?.displayName}
                         offlineCap={!connected}
                       />
 
@@ -1865,6 +1868,25 @@ function ApprovalTray({
   const navigateToCenter = () => {
     void navigate({ to: "/projects", search: { approvals: true } });
   };
+  // 03b 托盘两态：默认胶囊（⚠ n 项待审批 + 「全部允许 ›」两段确认——spec §4.2「全部允许
+  //（二次确认）」，与审批中心 .all/use-approvals 同款状态机），点 ⚠ 行展开完整托盘
+  //（= 逐条 允许/拒绝 + 定位）。展开态 useState 不持久化（审批是瞬态高频变化面，
+  // 新审批到达时保持展开态避免反复折叠；刷新/重开回默认胶囊）。
+  const [expanded, setExpanded] = useState(false);
+  // 两段确认状态机 + 防重（双击 = 同 request_id 双发重复批准；首点即锁）。
+  const [confirming, setConfirming] = useState(false);
+  const [allowAllSent, setAllowAllSent] = useState(false);
+  const allowAll = () => {
+    if (allowAllSent) return;
+    if (!confirming) {
+      setConfirming(true);
+      return;
+    }
+    setAllowAllSent(true);
+    for (const item of approvals) {
+      bridge?.respondToControlRequest(item.controlRequestId, item.args);
+    }
+  };
   return (
     // v2 M3-d .tray 原语（03/04/05 三端同源：tint-orange + w 警示行 + c mono 摘要 +
     // btn ghost/ok）。utility 覆盖原型 margin（挂载点在 composer 区，间距由布局层管）。
@@ -1872,72 +1894,106 @@ function ApprovalTray({
       aria-label={t("claude.approval.trayAriaLabel")}
       className="tray mx-0 mb-1 flex-wrap gap-y-1.5"
     >
-      {isMobile ? (
-        <button
-          className="w w-full cursor-pointer text-left"
-          onClick={navigateToCenter}
-          type="button"
-        >
-          {/* 原型 03 .w 行 = warning 三角 SVG + 文本（非 warning 文本符号；M10 emoji 机检偏差收口）。 */}
-          <span className="flex items-center gap-1">
-            <ShellIcon aria-hidden="true" className="h-3.5 w-3.5" name="warning-triangle" />
-            {t("claude.approval.trayTitle", { count: approvals.length })} ›
-          </span>
-        </button>
+      {!expanded ? (
+        // 胶囊态（原型 03b tray 单行）：⚠ 行点击 = 展开；「全部允许 ›」首点切确认态
+        //（文案 approvals.confirmAll），再点执行；执行后禁用防双击重复帧。
+        <div className="flex w-full items-center gap-1">
+          <button
+            aria-expanded={false}
+            className="w flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
+            onClick={() => setExpanded(true)}
+            type="button"
+          >
+            <ShellIcon
+              aria-hidden="true"
+              className="h-3.5 w-3.5 shrink-0"
+              name="warning-triangle"
+            />
+            <span className="truncate">
+              {t("claude.approval.trayTitle", { count: approvals.length })}
+            </span>
+          </button>
+          <button
+            className="-mx-1 -my-1 shrink-0 cursor-pointer px-1 py-1 text-[11.5px] font-semibold text-warning-text disabled:cursor-default disabled:opacity-50"
+            disabled={allowAllSent}
+            onClick={allowAll}
+            type="button"
+          >
+            {confirming
+              ? t("approvals.confirmAll", { count: approvals.length })
+              : t("approvals.allowAll")}
+          </button>
+        </div>
       ) : (
-        <span className="w flex w-full items-center gap-1">
-          <ShellIcon aria-hidden="true" className="h-3.5 w-3.5" name="warning-triangle" />
-          {t("claude.approval.trayTitle", { count: approvals.length })}
-        </span>
+        <>
+          {isMobile ? (
+            <button
+              className="w w-full cursor-pointer text-left"
+              onClick={navigateToCenter}
+              type="button"
+            >
+              {/* 原型 03 .w 行 = warning 三角 SVG + 文本（非 warning 文本符号；M10 emoji 机检偏差收口）。 */}
+              <span className="flex items-center gap-1">
+                <ShellIcon aria-hidden="true" className="h-3.5 w-3.5" name="warning-triangle" />
+                {t("claude.approval.trayTitle", { count: approvals.length })} ›
+              </span>
+            </button>
+          ) : (
+            <span className="w flex w-full items-center gap-1">
+              <ShellIcon aria-hidden="true" className="h-3.5 w-3.5" name="warning-triangle" />
+              {t("claude.approval.trayTitle", { count: approvals.length })}
+            </span>
+          )}
+          {approvals.map((item) => {
+            const firstArg = Object.values(item.args)[0];
+            const argSummary = typeof firstArg === "string" ? firstArg.slice(0, 80) : item.toolName;
+            return (
+              <div key={item.controlRequestId} className="flex min-w-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const index = locateToolCall(item.toolCallId);
+                    if (index != null) onLocate(index);
+                  }}
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+                  title={t("claude.permission.awaiting")}
+                >
+                  <ShellIcon
+                    className="h-[15px] w-[14px] shrink-0 text-warning-text"
+                    name="warning-triangle"
+                  />
+                  {item.owner?.subagentType ? (
+                    <span className="shrink-0 rounded bg-ink-1/10 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-ink-2">
+                      {item.owner.subagentType}
+                    </span>
+                  ) : null}
+                  {item.owner?.description ? (
+                    <span className="shrink-0 truncate text-[0.65rem] font-medium text-ink-2">
+                      {item.owner.description}
+                    </span>
+                  ) : null}
+                  <span className="w shrink-0 truncate">{item.toolName}</span>
+                  <span className="c min-w-0 truncate">{argSummary}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn ok shrink-0 cursor-pointer"
+                  onClick={() => bridge?.respondToControlRequest(item.controlRequestId, item.args)}
+                >
+                  {t("claude.permission.allow")}
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost shrink-0 cursor-pointer"
+                  onClick={() => bridge?.cancelControlRequest(item.controlRequestId)}
+                >
+                  {t("claude.permission.deny")}
+                </button>
+              </div>
+            );
+          })}
+        </>
       )}
-      {approvals.map((item) => {
-        const firstArg = Object.values(item.args)[0];
-        const argSummary = typeof firstArg === "string" ? firstArg.slice(0, 80) : item.toolName;
-        return (
-          <div key={item.controlRequestId} className="flex min-w-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                const index = locateToolCall(item.toolCallId);
-                if (index != null) onLocate(index);
-              }}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
-              title={t("claude.permission.awaiting")}
-            >
-              <ShellIcon
-                className="h-[15px] w-[14px] shrink-0 text-warning-text"
-                name="warning-triangle"
-              />
-              {item.owner?.subagentType ? (
-                <span className="shrink-0 rounded bg-ink-1/10 px-1.5 py-0.5 text-[0.55rem] font-semibold tracking-wide text-ink-2">
-                  {item.owner.subagentType}
-                </span>
-              ) : null}
-              {item.owner?.description ? (
-                <span className="shrink-0 truncate text-[0.65rem] font-medium text-ink-2">
-                  {item.owner.description}
-                </span>
-              ) : null}
-              <span className="w shrink-0 truncate">{item.toolName}</span>
-              <span className="c min-w-0 truncate">{argSummary}</span>
-            </button>
-            <button
-              type="button"
-              className="btn ok shrink-0 cursor-pointer"
-              onClick={() => bridge?.respondToControlRequest(item.controlRequestId, item.args)}
-            >
-              {t("claude.permission.allow")}
-            </button>
-            <button
-              type="button"
-              className="btn ghost shrink-0 cursor-pointer"
-              onClick={() => bridge?.cancelControlRequest(item.controlRequestId)}
-            >
-              {t("claude.permission.deny")}
-            </button>
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -3078,7 +3134,53 @@ const CHAT_SCROLL_UP_EPS = 2;
 // even when content keeps growing mid-stream.
 const CHAT_BOTTOM_THRESHOLD = 32;
 
+// 03b 滚动收敛滞回阈值（屏数）：上滚越过 1 屏收敛；回到底 0.5 屏内弹回。中间死区防
+// 折叠本身引起的布局变化（工具区高度增减 → 滚动位置漂移）来回抖动。
+const OUTPUT_COLLAPSE_SCREENS = 1;
+const OUTPUT_EXPAND_SCREENS = 0.5;
+
+/** 03b 收敛迷你条（`● 会话名 · ⚠n · ▾`）：替代完整工具区（row2/pills），子 agent 条保留
+ * （03b 原型 L43-45：mini 与 .sub 并存）。 */
+function OutputMiniBar({
+  approvalCount,
+  isRunning,
+  name,
+  onExpand,
+}: {
+  approvalCount: number;
+  isRunning: boolean;
+  name?: string;
+  onExpand: () => void;
+}) {
+  const { t } = useT();
+  // aria-label 拼合可见文本（WCAG 2.5.3 label-in-name）：会话名 + ⚠n + 动作。
+  const approvalLabel =
+    approvalCount > 0 ? t("claude.approval.trayTitle", { count: approvalCount }) : "";
+  return (
+    // 原型 03b .mini 原语（v2-primitives.css）：34px 胶囊——dot 7px（run/idle 状态语言）+
+    // 会话名 12.5px/600 + ⚠n 紧凑格式 + ▾ ink-2 11px 推右。整行点击 = 弹回完整工具区。
+    // `mini` 类名同时是收敛探针（probe-claude-detail-perf）的 DOM 锚点。
+    <button
+      aria-label={`${name ?? ""}${approvalLabel ? ` · ${approvalLabel}` : ""} · ${t("claude.output.expandTools")}`}
+      className="mini mx-3 mt-2 shrink-0 cursor-pointer sm:mx-5"
+      onClick={onExpand}
+      type="button"
+    >
+      <span className={`dot ${isRunning ? "run" : "idle"}`} />
+      <span className="min-w-0 truncate">{name}</span>
+      {approvalCount > 0 ? (
+        <span className="wn flex shrink-0 items-center gap-0.5">
+          <ShellIcon aria-hidden="true" className="h-3 w-3" name="warning-triangle" />
+          {approvalCount}
+        </span>
+      ) : null}
+      <span className="ex shrink-0">▾</span>
+    </button>
+  );
+}
+
 export function VirtualizedThreadContent({
+  approvalCount = 0,
   autoRetryEnabled = false,
   loading,
   projectName = "",
@@ -3086,7 +3188,10 @@ export function VirtualizedThreadContent({
   scrollerApi,
   sessionId = "",
   offlineCap = false,
+  sessionName,
 }: {
+  /** 待审批计数（03b 迷你条 ⚠n；与 composer 区 ApprovalTray 同源 collectPendingApprovals）。 */
+  approvalCount?: number;
   /** 服务端 auto-retry pending 轮询开关：仅 claude 会话（有 runtimeKey）开启，ACP/Chat 恒 false。 */
   autoRetryEnabled?: boolean;
   loading: boolean;
@@ -3097,6 +3202,8 @@ export function VirtualizedThreadContent({
   sessionId?: string;
   /** 03i 流内离线分隔（.cap「离线中 · 此后内容将在重连后补齐」），断线且已有内容时显示。 */
   offlineCap?: boolean;
+  /** 03b 迷你条会话名。 */
+  sessionName?: string;
 }) {
   const { t } = useT();
   // ── Turn builder ──────────────────────────────────────────────────
@@ -3146,6 +3253,35 @@ export function VirtualizedThreadContent({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const isRunning = useAuiState((s) => s.thread.isRunning);
 
+  // ── 03b 滚动收敛（上滚超一屏折叠工具区，回底/显式动作弹回） ──────────
+  // 按会话读派生：selectAtom 只在自身 sessionId 的条目变化时重渲（桌面 hidden 保活多面板
+  // 各挂一份 VirtualizedThreadContent，全局单值会跨面板串扰）。
+  const collapsedAtom = useMemo(
+    () => selectAtom(workbenchOutputCollapsedAtom, (m) => m[sessionId] === true),
+    [sessionId],
+  );
+  const collapsed = useAtomValue(collapsedAtom);
+  const setCollapsedAtom = useSetAtom(workbenchOutputCollapsedAtom);
+  const collapsedRef = useRef(collapsed);
+  const setCollapsed = useCallback(
+    (next: boolean) => {
+      collapsedRef.current = next;
+      setCollapsedAtom((prev) =>
+        prev[sessionId] === next ? prev : { ...prev, [sessionId]: next },
+      );
+    },
+    [setCollapsedAtom, sessionId],
+  );
+  useEffect(() => {
+    collapsedRef.current = collapsed;
+  }, [collapsed]);
+  // 卸载复位：切 tab 未回底时残留 true 会误伤共用本组件的项目页 header row2。
+  useEffect(() => {
+    return () => {
+      setCollapsedAtom((prev) => (prev[sessionId] ? { ...prev, [sessionId]: false } : prev));
+    };
+  }, [setCollapsedAtom, sessionId]);
+
   const stickToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -3159,10 +3295,17 @@ export function VirtualizedThreadContent({
     const onScroll = () => {
       if (!el) return;
       // User scrolled up (wheel/touch/keyboard) → stop following.
-      if (prevScrollTopRef.current - el.scrollTop > CHAT_SCROLL_UP_EPS) {
+      const upDelta = prevScrollTopRef.current - el.scrollTop;
+      if (upDelta > CHAT_SCROLL_UP_EPS) {
         if (stickyRef.current) {
           stickyRef.current = false;
           setShowScrollButton(true);
+        }
+        // 03b：用户主动上滚越过一屏线 → 收敛（折叠 row2/子 agent 条）。
+        // 绑定上滚方向——点 ▾ 弹回后的布局钳制滚动（向下）不会立刻再收敛。
+        if (!collapsedRef.current && el.scrollTop > el.clientHeight * OUTPUT_COLLAPSE_SCREENS) {
+          collapsedRef.current = true;
+          setCollapsed(true);
         }
       }
       // Back near the bottom → resume following.
@@ -3172,12 +3315,20 @@ export function VirtualizedThreadContent({
           setShowScrollButton(false);
         }
       }
+      // 03b 滞回下沿：回到底 0.5 屏内弹回完整工具区（任意滚动方向）。
+      if (
+        collapsedRef.current &&
+        el.scrollHeight - el.scrollTop - el.clientHeight < el.clientHeight * OUTPUT_EXPAND_SCREENS
+      ) {
+        collapsedRef.current = false;
+        setCollapsed(false);
+      }
       prevScrollTopRef.current = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     prevScrollTopRef.current = el.scrollTop;
     return () => el.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [setCollapsed]);
 
   // Follow content growth while sticky (covers streaming, virtualizer
   // measurement settling, and loading→ready height changes).
@@ -3299,6 +3450,19 @@ export function VirtualizedThreadContent({
       {/* 03d 自动重试倒计时条：流上方（编号②位置），不随滚动（sticky 语义——瞬态、一眼可见）。
         RetryIndicator = CLI 内部 api_retry（只读倒计时）；AutoRetryBanner = 服务端 auto-retry
         pending 状态机（可取消/立即重试，M8 §6.9 双语义厘清）。 */}
+      {collapsed ? (
+        // 03b 收敛态：迷你条替代完整工具区（row2/pills + 子 agent 条）；重试条是流瞬态
+        // 状态非工具区，保留。点 ▾ / 回底 / 回底浮球弹回。
+        <OutputMiniBar
+          approvalCount={approvalCount}
+          isRunning={isRunning}
+          name={sessionName}
+          onExpand={() => {
+            collapsedRef.current = false;
+            setCollapsed(false);
+          }}
+        />
+      ) : null}
       <RetryIndicator retryInfo={retryInfo} />
       <AutoRetryBanner
         enabled={autoRetryEnabled && !offlineCap}

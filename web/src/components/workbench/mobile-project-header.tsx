@@ -1,7 +1,10 @@
 import type { TerminalSession } from "@agents-remote/shared";
-import { type ReactNode, useEffect, useRef } from "react";
+import { useAtomValue } from "jotai";
+import { selectAtom } from "jotai/utils";
+import { type ReactNode, useEffect, useMemo, useRef } from "react";
 
 import { useT } from "../../i18n";
+import { workbenchOutputCollapsedAtom } from "../../routes/workbench-model";
 import { LucideIcon } from "../shell/lucide-icon";
 import { statusToV2DotClass } from "../shell/shell-primitives";
 import {
@@ -82,6 +85,14 @@ export function MobileProjectHeader({
   onOpenPanel,
 }: MobileProjectHeaderProps) {
   const { t } = useT();
+  // 03b 收敛态：会话流上滚超一屏 → row2（pills + 检视入口）与 chips 行折叠，让出
+  // 输出流高度；会话页收起迷你条 / 回底时自动展开（atom 内存级，会话页卸载复位）。
+  // 按会话读派生：selectAtom 只在自身 key 变化时重渲（atom 是 Record，按 activeTabId 取）。
+  const collapsedAtom = useMemo(
+    () => selectAtom(workbenchOutputCollapsedAtom, (m) => m[activeTabId ?? ""] ?? false),
+    [activeTabId],
+  );
+  const collapsed = useAtomValue(collapsedAtom);
   const scrollRef = useRef<HTMLDivElement>(null);
   // 02c pill 长按/右键菜单：共享 long-press hook（03w 同源）+ per-pill 坐标菜单容器。
   const pillCtx = useRowContextMenu();
@@ -157,7 +168,7 @@ export function MobileProjectHeader({
           </>
         )}
       </div>
-      {l3 ? null : (
+      {l3 || collapsed ? null : (
         <>
           {/* row2 行（v1.4 03 原型：实例 pills + ＋ + sep + 检视面板单 ticon——三工具入口
         合并为一个面板 ticon，文件树/Git/Wiki 收进面板动态标签条 03o）。 */}

@@ -554,6 +554,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude.approval.trayAriaLabel": "待审批事项",
   "claude.approval.trayTitle": "{{count}} 项待审批",
   "claude.agent.runningAriaLabel": "运行中的子 Agent",
+  "claude.output.expandTools": "展开工具区",
   "claude.subagent.prompt": "提示词",
   "claude.subagent.output": "子 Agent 输出",
   "claude.retry.attempt": "重试 {{attempt}}/{{max}}",

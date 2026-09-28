@@ -92,7 +92,7 @@ export function ChatSessionDetailBody({
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} />
+          <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} sessionId={id} />
           <div
             data-composer-float
             className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"

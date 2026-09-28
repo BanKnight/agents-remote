@@ -77,6 +77,12 @@ const AGENTS = {
 };
 
 let respondCalls = [];
+// 模块级 json helper（Part 6 会话页 mock 在 setupMocks 作用域外使用）。
+const json = (body, status = 200) => ({
+  status,
+  contentType: "application/json",
+  body: JSON.stringify(body),
+});
 // 快照同源可变状态：REST 与 WS 推帧共用（模拟服务端 registry 真值，15s refetch 兜底拉取
 // 与推送不冲突——真实服务端两路同源，mock 必须同构，否则 refetch 会"回滚"推帧）。
 let currentApprovals = [];
@@ -260,6 +266,152 @@ ok(
   "空态文案「暂无待审批」",
 );
 ok((await page.locator(".msheet .cnt").count()) === 0, "cnt 随 0 待审批隐藏");
+
+console.log("Part 6: 03b 会话页托盘两态（胶囊 → 两段确认转发 → 展开完整托盘）");
+// 会话详情 mock（托盘挂载在会话页 composer 区，数据源 = chatStream 的 control_request，
+// 非 approvals REST——与审批中心 sheet 不同管道）。
+await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions/agent_probe-1$`), (r) =>
+  r.fulfill(
+    json({
+      session: AGENTS["agent_probe-1"],
+      availableModels: ["sonnet"],
+      availablePermissionModes: ["default"],
+    }),
+  ),
+);
+// claude-stream mock（覆盖 setupMocks 的 connectToServer——routeWebSocket 后注册先匹配），
+// onMessage 收上行帧断言「全部允许」→ bridge.respondToControlRequest 逐条 control_response。
+let chatSocket = null;
+const upstream = [];
+await page.routeWebSocket(
+  new RegExp(`/api/projects/${projectName}/agent-sessions/agent_probe-1/claude-stream$`),
+  (ws) => {
+    chatSocket = ws;
+    ws.onMessage((data) => {
+      try {
+        upstream.push(JSON.parse(data));
+      } catch {
+        // ignore
+      }
+    });
+  },
+);
+await page.goto(`${ORIGIN}/projects/${projectName}/session/agent_probe-1`);
+await page.waitForTimeout(1200);
+ok(chatSocket !== null, "会话页 claude-stream 连接建立");
+const chatSend = (data) => chatSocket.send(JSON.stringify(data));
+chatSend({ type: "session_init", resume: false });
+chatSend({
+  type: "assistant",
+  uuid: "uuid-tray-head",
+  message: {
+    id: "msg-tray",
+    role: "assistant",
+    content: [
+      {
+        type: "tool_use",
+        id: "toolu-tray-1",
+        name: "Bash",
+        input: { command: "curl https://api.example.com/deploy" },
+      },
+      { type: "tool_use", id: "toolu-tray-2", name: "Write", input: { file_path: "/tmp/x.md" } },
+    ],
+  },
+});
+chatSend({
+  type: "control_request",
+  request_id: "cr-tray-1",
+  request: {
+    subtype: "can_use_tool",
+    tool_name: "Bash",
+    tool_use_id: "toolu-tray-1",
+    display_name: "Bash",
+    input: { command: "curl https://api.example.com/deploy" },
+  },
+});
+chatSend({
+  type: "control_request",
+  request_id: "cr-tray-2",
+  request: {
+    subtype: "can_use_tool",
+    tool_name: "Write",
+    tool_use_id: "toolu-tray-2",
+    display_name: "Write",
+    input: { file_path: "/tmp/x.md" },
+  },
+});
+await page.waitForSelector(".tray", { timeout: 8000 });
+
+// 胶囊默认态：单行（⚠ n 项待审批 + 全部允许 ›），无逐条摘要行。
+const capsuleText = await page.locator(".tray").textContent();
+ok(
+  capsuleText?.includes("2 项待审批") === true,
+  `胶囊文案「2 项待审批」（${capsuleText?.trim()}）`,
+);
+ok((await page.locator(".tray button").count()) === 2, "胶囊态按钮 = 2（⚠ 行 + 全部允许）");
+ok((await page.locator(".tray .c").count()) === 0, "胶囊态无逐条 mono 摘要行");
+const trayH = await page.locator(".tray").evaluate((el) => el.getBoundingClientRect().height);
+ok(trayH <= 46, `胶囊单行高度 ≤46px（实际 ${trayH?.toFixed(1)}）`);
+const allowAllText = await page.locator(".tray button").nth(1).textContent();
+ok(allowAllText?.includes("全部允许") === true, `「全部允许 ›」贴右（${allowAllText?.trim()}）`);
+
+// 胶囊「全部允许」两段确认（spec §4.2）：首点只切确认态（文案变「确认允许 2 项？」、
+// 零上行）→ 再点执行 bridge.respondToControlRequest 循环 → 上行 control_response ×2
+//（payload 与逐条允许一致：behavior allow + updatedInput=args）→ 第三次点击防重锁兜底。
+await page.locator(".tray button", { hasText: "全部允许" }).click();
+await page.waitForTimeout(300);
+const confirmText = await page.locator(".tray button").nth(1).textContent();
+ok(
+  confirmText?.includes("确认允许 2 项") === true,
+  `首点切确认态「确认允许 2 项？」（${confirmText?.trim()}）`,
+);
+ok(upstream.filter((f) => f.type === "control_response").length === 0, "确认态无上行（未执行）");
+await page.locator(".tray button", { hasText: "确认允许" }).click();
+await page.waitForTimeout(400);
+const responses = upstream.filter((f) => f.type === "control_response");
+ok(responses.length === 2, `再点执行 → 上行 control_response ×2（实际 ${responses.length}）`);
+ok(
+  responses
+    .map((f) => f.response.request_id)
+    .sort()
+    .join(",") === "cr-tray-1,cr-tray-2",
+  "request_id 覆盖两条待审批",
+);
+ok(
+  responses.every(
+    (f) => f.response.subtype === "success" && f.response.response.behavior === "allow",
+  ),
+  "逐条 behavior=allow（与逐条允许 payload 一致）",
+);
+ok(
+  responses.every((f) => {
+    const input = f.response.response.updatedInput;
+    return input != null && typeof input === "object";
+  }),
+  "updatedInput 原样转发（args 不经改写）",
+);
+// 防重锁：执行后按钮 disabled，再点不发重复帧（allowAllSent 锁兜底）。
+await page.locator(".tray button").nth(1).click({ force: true });
+await page.waitForTimeout(300);
+ok(
+  upstream.filter((f) => f.type === "control_response").length === 2,
+  "执行后防重：再点仍上行 ×2（allowAllSent 锁）",
+);
+
+// 点 ⚠ 行 → 展开完整托盘（= 原实现：逐条 摘要 + 允许/拒绝）。
+await page.locator(".tray button.w").click();
+await page.waitForTimeout(300);
+ok((await page.locator(".tray .c").count()) === 2, "展开 → 逐条 mono 摘要 ×2");
+ok((await page.locator(".tray .btn.ok").count()) === 2, "展开 → 允许钮 ×2");
+ok((await page.locator(".tray .btn.ghost").count()) === 2, "展开 → 拒绝钮 ×2");
+// 展开态（移动端）标题点击 = 审批中心入口保持（03 pin ④）。
+await page.locator(".tray button.w").click();
+await page.waitForTimeout(600);
+ok(
+  new URL(page.url()).pathname.endsWith("/projects") &&
+    new URL(page.url()).searchParams.has("approvals"),
+  `展开态标题点击 → 审批中心（${page.url()}）`,
+);
 
 console.log(`\n结果: ${passCount} pass / ${failCount} fail`);
 await browser.close();

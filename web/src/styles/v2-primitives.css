@@ -130,6 +130,30 @@
     background: none;
     border: 1.4px solid var(--ink-2);
   }
+  /* 03b 行2 收敛迷你条（`● 会话名 · ⚠n · ▾`）：margin 由挂载点管（流容器 sm:px-5 槽宽系），
+    .wn 警示计数 / .ex 展开指示见原型 L16-17（.wn c-warning-text 700、.ex 推右 ink-2 11px）。 */
+  .mini {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 10px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .mini .wn {
+    color: var(--c-warning-text);
+    font-weight: 700;
+  }
+  .mini .ex {
+    margin-left: auto;
+    color: var(--ink-2);
+    font-size: 11px;
+  }
   .plus {
     flex: none;
     width: 20px;
