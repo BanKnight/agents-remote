@@ -398,6 +398,7 @@ body {
   --color-code-text: var(--ink-1);
   --color-code-muted: var(--ink-2);
   --color-success: var(--c-success);
+  --color-on-success: var(--on-success); /* 实心成功面文字/图符（toggle on thumb 等） */
   --color-warning: var(--c-warning);
   --color-error: var(--c-danger);
   --color-secondary: var(--c-pin); /* v1 violet 渐变终点 → v2 pin 紫 */

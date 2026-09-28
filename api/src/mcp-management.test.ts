@@ -14,6 +14,10 @@ mock.module("./cli-process", () => ({
   DEFAULT_TIMEOUT_MS: 60_000,
 }));
 
+// homedir 不 mock：stash 路径已改依赖注入（read/write home 参数 + disable/enable context.home），
+// 测试传 tmp home 即可隔离——mock.module("node:os") 在 bun test 全量并发下时序不可靠，
+// 曾致 stash 写到真家目录（见 mcp-management.ts readMcpDisabledStash 注释）。
+
 const {
   parseMcpServers,
   sanitizeMcpName,
@@ -22,6 +26,11 @@ const {
   removeMcpServer,
   updateMcpServer,
   handleMcpRoutes,
+  mergeDisabledMcpServers,
+  disableMcpServer,
+  enableMcpServer,
+  writeMcpDisabledStash,
+  readMcpDisabledStash,
 } = await import("./mcp-management");
 
 let rootDir: string;
@@ -432,5 +441,134 @@ describe("handleMcpRoutes", () => {
       {},
     );
     expect(res?.status).toBe(400);
+  });
+});
+
+describe("mergeDisabledMcpServers", () => {
+  const live = [
+    { name: "ctx7", type: "stdio" as const, command: "npx", args: ["-y", "ctx7"] },
+    { name: "fc", type: "http" as const, url: "https://fc.example.com" },
+  ];
+  const stashEntry = { name: "old", type: "stdio" as const, command: "old-cmd" };
+
+  it("appends user-scope stash entries as disabled:true", () => {
+    const out = mergeDisabledMcpServers(live, [{ scope: "user", entry: stashEntry }], "user");
+    expect(out.map((s) => s.name)).toEqual(["ctx7", "fc", "old"]);
+    expect(out[2].disabled).toBe(true);
+    // 原 live 条目不被污染
+    expect(out[0].disabled).toBeUndefined();
+  });
+
+  it("drops stale live-shadowed stash entries (live 同名优先)", () => {
+    const out = mergeDisabledMcpServers(
+      live,
+      [{ scope: "user", entry: { ...stashEntry, name: "ctx7" } }],
+      "user",
+    );
+    expect(out.map((s) => s.name)).toEqual(["ctx7", "fc"]);
+    expect(out[0].disabled).toBeUndefined();
+  });
+
+  it("filters project stash entries by projectName", () => {
+    const out = mergeDisabledMcpServers(
+      [],
+      [
+        { scope: "project", projectName: "a", entry: stashEntry },
+        { scope: "project", projectName: "b", entry: { ...stashEntry, name: "other" } },
+      ],
+      "project",
+      "a",
+    );
+    expect(out.map((s) => s.name)).toEqual(["old"]);
+    expect(out[0].disabled).toBe(true);
+  });
+
+  it("ignores user stash when querying project scope (反向隔离)", () => {
+    const out = mergeDisabledMcpServers(
+      live,
+      [{ scope: "user", entry: stashEntry }],
+      "project",
+      "a",
+    );
+    expect(out.map((s) => s.name)).toEqual(["ctx7", "fc"]);
+  });
+});
+
+describe("disableMcpServer/enableMcpServer（stash 闭环，security review 批6）", () => {
+  // 每测试独立 tmp home：live ~/.claude.json 与 stash 全落其中，零接触真家目录。
+  let tmpHome: string;
+
+  beforeEach(async () => {
+    tmpHome = await mkdtemp(join(tmpdir(), "ar-mcp-home-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpHome, { recursive: true, force: true });
+  });
+
+  it("enable 循环保留 http 条目 headers（disable→enable 不剥鉴权头）", async () => {
+    await writeMcpDisabledStash(
+      [
+        {
+          scope: "user",
+          entry: {
+            name: "fc",
+            type: "http",
+            url: "https://fc.example.com",
+            headers: { Authorization: "Bearer t" },
+          },
+        },
+      ],
+      tmpHome,
+    );
+    runCliTool.mockResolvedValue(ok());
+    const res = await enableMcpServer("fc", "user", { home: tmpHome });
+    expect(res).toEqual({ ok: true, name: "fc" });
+    // add argv 带 -H（entryToAddRequest headers 回填——曾漏，enable 后 server 认证失效）
+    expect(runCliTool.mock.calls[0][0]).toContain("-H");
+    expect(runCliTool.mock.calls[0][0]).toContain("Authorization: Bearer t");
+    // 取回后 stash 清空
+    expect(await readMcpDisabledStash(tmpHome)).toEqual([]);
+  });
+
+  it("disable：live remove 成功 + entry 带 scope 入 stash；未装条目拒绝", async () => {
+    // live 配置写注入 home（readScopeServers user = join(home, ".claude.json")）
+    await writeFile(
+      join(tmpHome, ".claude.json"),
+      JSON.stringify({ mcpServers: { fc: { type: "http", url: "https://fc.example.com" } } }),
+    );
+    runCliTool.mockResolvedValue(ok());
+    const res = await disableMcpServer("fc", "user", { home: tmpHome });
+    expect(res).toEqual({ ok: true, name: "fc" });
+    expect(runCliTool.mock.calls[0][0]).toEqual(["claude", "mcp", "remove", "fc", "-s", "user"]);
+    const stash = await readMcpDisabledStash(tmpHome);
+    expect(stash).toHaveLength(1);
+    expect(stash[0].scope).toBe("user");
+    expect(stash[0].entry).toEqual({ name: "fc", type: "http", url: "https://fc.example.com" });
+
+    await expect(disableMcpServer("ghost", "user", { home: tmpHome })).rejects.toThrow(
+      /not found/i,
+    );
+  });
+
+  it("disable 时 stash 写失败 → 回滚 add 旧配置", async () => {
+    await writeFile(
+      join(tmpHome, ".claude.json"),
+      JSON.stringify({ mcpServers: { fc: { type: "http", url: "https://fc.example.com" } } }),
+    );
+    // stash 写失败 = rename 目标是目录（EISDIR/ENOTEMPTY）→ writeMcpDisabledStash 抛。
+    const stashFile = join(tmpHome, ".agents", "mcp-disabled.json");
+    await mkdir(stashFile, { recursive: true }); // 目录占位 → rename 失败
+    try {
+      runCliTool.mockResolvedValue(ok());
+      await expect(disableMcpServer("fc", "user", { home: tmpHome })).rejects.toThrow(
+        /stash write failed/,
+      );
+      // 回滚 add 发生（remove 后 add 旧配置）
+      expect(runCliTool.mock.calls[1][0]).toContain("add");
+      expect(runCliTool.mock.calls[1][0]).toContain("https://fc.example.com");
+    } finally {
+      await rm(stashFile, { recursive: true, force: true });
+    }
   });
 });

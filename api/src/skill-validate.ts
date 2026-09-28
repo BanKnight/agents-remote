@@ -13,6 +13,7 @@ export type SkillErrorCode = Extract<
   | "SKILL_SOURCE_INVALID"
   | "SKILL_UPDATE_CHECK_FAILED"
   | "SKILL_UPDATE_FAILED"
+  | "SKILL_DISABLE_FAILED"
 >;
 
 /** skill 操作统一错误类型，携带 ApiErrorCode 供 HTTP 层翻译。 */
@@ -64,6 +65,10 @@ export function sanitizeSource(input: string, type: SkillSourceType = "github"):
 
 export function sanitizeSkillId(input: string): string {
   const value = rejectEmpty(input);
+  // dot-segment 拒绝与 sanitizeSkillName 同口径（防御一致性，进 CLI/锁 key 前先收敛）。
+  if (value === "." || value === "..") {
+    throw new SkillError("SKILL_SOURCE_INVALID", `Invalid skill id: ${value}`);
+  }
   if (!SKILL_TOKEN_RE.test(value)) {
     throw new SkillError("SKILL_SOURCE_INVALID", `Invalid skill id: ${value}`);
   }
@@ -72,6 +77,11 @@ export function sanitizeSkillId(input: string): string {
 
 export function sanitizeSkillName(input: string): string {
   const value = rejectEmpty(input);
+  // dot-segment 显式拒（SKILL_TOKEN_RE 对 "." ".." 为 true）：name 进 rename/rm 的 join()
+  // 路径，".." 会归一化到父目录（skill-disable.ts / skill-market.ts uninstall），路径逃逸。
+  if (value === "." || value === "..") {
+    throw new SkillError("SKILL_SOURCE_INVALID", `Invalid skill name: ${value}`);
+  }
   if (!SKILL_TOKEN_RE.test(value)) {
     throw new SkillError("SKILL_SOURCE_INVALID", `Invalid skill name: ${value}`);
   }

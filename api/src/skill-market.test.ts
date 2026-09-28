@@ -464,6 +464,9 @@ describe("project scope skills", () => {
     expect(matchProjectSkillPath("/api/projects/proj1/skills/uninstall")?.action).toBe("uninstall");
     expect(matchProjectSkillPath("/api/projects/proj1/skills/update")?.action).toBe("update");
     expect(matchProjectSkillPath("/api/projects/proj1/skills/preview")?.action).toBe("preview");
+    // disable/enable 分发（security review 批6：tail 曾漏分支 → 端点 404 死代码）
+    expect(matchProjectSkillPath("/api/projects/proj1/skills/disable")?.action).toBe("disable");
+    expect(matchProjectSkillPath("/api/projects/proj1/skills/enable")?.action).toBe("enable");
     // 全局 skill 路由不匹配项目段
     expect(matchProjectSkillPath("/api/skills/install")).toBeUndefined();
     // 项目名含 `/`（越界）→ undefined

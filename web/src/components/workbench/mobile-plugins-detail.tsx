@@ -5,9 +5,16 @@ import type { AddMcpServerRequest, McpServerType } from "@agents-remote/shared";
 import { useT } from "../../i18n";
 import { DEFAULT_SKILL_AGENT, parseEnvLines } from "../../routes/plugins-shared";
 import { useWorkbenchBack } from "../../routes/workbench-model";
-import { useAddMcpServer, useMcpServers, useRemoveMcpServer } from "../../hooks/mcp";
+import {
+  useAddMcpServer,
+  useMcpServers,
+  useRemoveMcpServer,
+  useSetMcpDisabled,
+} from "../../hooks/mcp";
 import {
   useCheckSkillUpdates,
+  useInstalledSkills,
+  useSetSkillDisabled,
   useSkillPreview,
   useUninstallSkill,
   useUpdateSkill,
@@ -25,7 +32,8 @@ import { PluginNav } from "./mobile-plugins-market";
  *
  * 能力边界（§6.6 摊牌 + M6-b 记档）：原型 12 的 upcard（更新内容 changelog）与「注入给 Agent 的
  * 能力」arow 无数据源（SkillUpdateStatus 只有 hasUpdate/manageable/sourceUrl；skill 无
- * capabilities 声明）不画；「已启用」dchip 不画（无 enable/disable 能力，安装即启用）；版本号
+ * capabilities 声明）不画；「已启用」toggle（v1.4 批6，09b）= 停用/启用（保留文件、停止注入，
+ * 服务端 rename 进/出停用区 + reload 闭环）；版本号
  * 无数据源（npx skills 不回版本），dmeta/CTA 均不带版本。更新流 = 列表页手动「检查更新」→
  * hasUpdate 出 chip + CTA → update 202 + SSE waitForSkillTask（hook 内置乐观 hasUpdate:false，
  * 完成后 chip/CTA 消失）。SKILL.md 正文段是实现扩展（有据：useSkillPreview 读本地文件），保留
@@ -38,7 +46,14 @@ export function MobileSkillDetail({ name }: { name: string }) {
   const preview = useSkillPreview(name, DEFAULT_SKILL_AGENT);
   const update = useUpdateSkill();
   const uninstall = useUninstallSkill();
+  const installed = useInstalledSkills(DEFAULT_SKILL_AGENT);
+  const setDisabled = useSetSkillDisabled();
   const { confirm, holder } = useConfirm();
+
+  // 停用态（批6）：列表项 disabled 字段（服务端 rename 进停用区）。undefined = 未检出（防御）。
+  const skillDisabled = Boolean(
+    (installed.data?.skills ?? []).find((s) => s.name === name)?.disabled,
+  );
 
   // 「有更新」仅手动检测出结果后出现（updates.data undefined = 尚未检测），与 09 列表 chip 同源。
   const hasUpdate = (updates.data?.updates ?? []).some((u) => u.name === name && u.hasUpdate);
@@ -63,6 +78,42 @@ export function MobileSkillDetail({ name }: { name: string }) {
         </div>
         {preview.data?.description ? <div className="ddesc">{preview.data.description}</div> : null}
 
+        {/* 已启用 toggle（v1.4 批6，09b）：停用 = 保留文件与配置、停止注入（目录 rename 进停用区）。
+            停用后详情页保留（文件未删），toggle 可再启用；停用中更新 CTA 隐藏（服务端守卫拒绝更新停用技能）。 */}
+        <button
+          aria-checked={!skillDisabled}
+          className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-4 py-1 text-left transition hover:bg-surface-inset/40 disabled:cursor-default disabled:opacity-60"
+          disabled={setDisabled.isPending}
+          onClick={() =>
+            setDisabled.mutate({ name, agent: DEFAULT_SKILL_AGENT, disabled: !skillDisabled })
+          }
+          role="switch"
+          type="button"
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-on-surface">
+              {t("plugins.enabledToggle")}
+            </span>
+            <span className="block text-xs leading-5 text-on-surface-muted">
+              {t("plugins.enabledToggleNote")}
+            </span>
+          </span>
+          {/* on 态 = success 绿（对齐原型 12 toggle；thumb 用三元互斥，不同时挂两个 bg 类
+              ——Tailwind 生成顺序赌注，frontend-notes §11 同族）。 */}
+          <span
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${!skillDisabled ? "bg-success" : "bg-surface-inset"}`}
+          >
+            <span
+              className={`inline-block size-5 transform rounded-full shadow transition ${!skillDisabled ? "translate-x-[1.375rem] bg-on-success" : "translate-x-0.5 bg-on-surface"}`}
+            />
+          </span>
+        </button>
+        {setDisabled.error ? (
+          <p className="mx-4 mt-2 rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
+            {setDisabled.error.message}
+          </p>
+        ) : null}
+
         {/* SKILL.md 正文（有据扩展：本地只读预览，原型 12 无此段） */}
         <div className="dsect">
           <span>{t("skills.skillMdSection")}</span>
@@ -82,8 +133,9 @@ export function MobileSkillDetail({ name }: { name: string }) {
           </div>
         ) : null}
 
-        {/* 更新 CTA：仅手动检测出 hasUpdate 后出现（更新流见 JSDoc） */}
-        {hasUpdate ? (
+        {/* 更新 CTA：仅手动检测出 hasUpdate 后出现（更新流见 JSDoc）；停用中隐藏——
+            服务端 update 守卫拒绝停用技能（防复活），CTA 出来也必败。 */}
+        {hasUpdate && !skillDisabled ? (
           <>
             <button
               className="cta cursor-pointer"
@@ -164,6 +216,7 @@ export function MobileMcpDetail({ name }: { name: string }) {
   const navigate = useNavigate();
   const servers = useMcpServers("user");
   const removeServer = useRemoveMcpServer("user");
+  const setMcpDisabled = useSetMcpDisabled("user");
   const { confirm, holder } = useConfirm();
 
   const entry = (servers.data?.servers ?? []).find((s) => s.name === name);
@@ -215,6 +268,32 @@ export function MobileMcpDetail({ name }: { name: string }) {
           <span>{t("mcp.detailScope")}</span>
         </div>
         <div className="scope">{t("mcp.scopeGlobalValue")}</div>
+
+        {/* 已启用 toggle（v1.4 批6，09b）：停用 = CLI remove + stash 保留配置；启用 = 取回重加。 */}
+        <button
+          aria-checked={!entry?.disabled}
+          className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-4 py-1 text-left transition hover:bg-surface-inset/40 disabled:cursor-default disabled:opacity-60"
+          disabled={setMcpDisabled.isPending}
+          onClick={() => setMcpDisabled.mutate({ name, disabled: !entry?.disabled })}
+          role="switch"
+          type="button"
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-on-surface">
+              {t("plugins.enabledToggle")}
+            </span>
+            <span className="block text-xs leading-5 text-on-surface-muted">
+              {t("plugins.enabledToggleNote")}
+            </span>
+          </span>
+          <span
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${!entry?.disabled ? "bg-primary" : "bg-surface-inset"}`}
+          >
+            <span
+              className={`inline-block size-5 transform rounded-full bg-on-primary shadow transition ${!entry?.disabled ? "translate-x-[1.375rem]" : "translate-x-0.5"} ${!entry?.disabled ? "" : "bg-on-surface"}`}
+            />
+          </span>
+        </button>
 
         <button
           className="rm cursor-pointer"

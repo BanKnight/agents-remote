@@ -1,6 +1,7 @@
 import agentNav from "./agent-nav.svg?raw";
 import anthropic from "./anthropic.svg?raw";
 import archive from "./archive.svg?raw";
+import bag from "./bag.svg?raw";
 import bolt from "./bolt.svg?raw";
 import book from "./book.svg?raw";
 import check from "./check.svg?raw";
@@ -40,6 +41,7 @@ const svgMap: Record<string, string> = {
   archive,
   "agent-nav": agentNav,
   anthropic,
+  bag,
   bolt,
   book,
   check,

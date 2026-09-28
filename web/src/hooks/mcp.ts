@@ -2,6 +2,10 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import type { AddMcpServerRequest, McpScope, UpdateMcpServerRequest } from "@agents-remote/shared";
 import {
   addMcpServer,
+  disableMcpServer,
+  disableProjectMcpServer,
+  enableMcpServer,
+  enableProjectMcpServer,
   listMcpServers,
   removeMcpServer,
   searchMcpMarket,
@@ -57,6 +61,29 @@ export function useUpdateMcpServer(scope: McpScope, projectName?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: UpdateMcpServerRequest) => updateMcpServer(req, scope, projectName),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: MCP_KEY });
+    },
+  });
+}
+
+/** 停用/启用 toggle（09b）：服务端 = remove + stash / stash 取回 add。invalidate 伞形。 */
+export function useSetMcpDisabled(scope: McpScope, projectName?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: { name: string; disabled: boolean }) => {
+      if (vars.disabled) {
+        if (projectName) {
+          await disableProjectMcpServer(projectName, { name: vars.name });
+        } else {
+          await disableMcpServer({ name: vars.name });
+        }
+      } else if (projectName) {
+        await enableProjectMcpServer(projectName, { name: vars.name });
+      } else {
+        await enableMcpServer({ name: vars.name });
+      }
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: MCP_KEY });
     },

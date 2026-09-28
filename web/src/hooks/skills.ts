@@ -1,8 +1,12 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { SkillAgent, SkillUpdateStatus } from "@agents-remote/shared";
+import type { SkillAgent, SkillDisableRequest, SkillUpdateStatus } from "@agents-remote/shared";
 import {
   addSkillSource,
   checkSkillUpdates,
+  disableProjectSkill,
+  disableSkill,
+  enableProjectSkill,
+  enableSkill,
   installProjectSkill,
   installSkill,
   listInstalledSkills,
@@ -106,6 +110,33 @@ export function useUninstallSkill(projectName?: string) {
   return useMutation({
     mutationFn: (vars: Parameters<typeof uninstallSkill>[0]) =>
       projectName ? uninstallProjectSkill(projectName, vars) : uninstallSkill(vars),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: skillsScopeKey(projectName) });
+    },
+  });
+}
+
+/**
+ * 停用/启用 toggle（v1.4 批6，09b）：服务端 = 目录 rename 进/出停用区，成功后 reload 闭环
+ *（slash catalog 自动失效，无需这里手动）。invalidate 对应 scope 伞形 key。
+ */
+export function useSetSkillDisabled(projectName?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (vars: SkillDisableRequest & { disabled: boolean }) => {
+      const req: SkillDisableRequest = { name: vars.name, agent: vars.agent };
+      if (projectName) {
+        if (vars.disabled) {
+          await disableProjectSkill(projectName, req);
+        } else {
+          await enableProjectSkill(projectName, req);
+        }
+      } else if (vars.disabled) {
+        await disableSkill(req);
+      } else {
+        await enableSkill(req);
+      }
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: skillsScopeKey(projectName) });
     },

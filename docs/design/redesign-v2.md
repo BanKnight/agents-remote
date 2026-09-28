@@ -862,6 +862,29 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：四门禁 + token strict + CSS 硬闸（批5 新类 .crow2/.cb/.cmsgin/.cbtn/.awarn + sm:max-w-* 落盘逐一核对）+ 单测 1529（api 849 含 project-git-write 14：commit/discard/renamed/identity/嵌套仓库拒/pathspec magic 拒）+ e2e git-diff 2 test（新增 commit 全流程：默认勾选态→计数联动→提交→勾选行清零 untracked 保留→历史 +1）+ file-browser 2 test 回归 + 探针 m4-tools-l3 65/0 + m10 全量。
 
+### 批6 插件重排 + 停用（2026-09-28；reviewer：design + security 自查）
+
+**服务端（停用语义 = 状态即目录布局，零标记文件）**：`api/src/skill-disable.ts`——技能 disable = rename 激活区→停用区：全局 `~/.claude/skills/<name>` → `~/.agents/disabled-skills/<agent>/<name>`（**symlink 整体 rename 保留 canonical**，per-agent 子目录防 claude-code/codex 同名撞）；项目 `<root>/.<agentHome>/skills/<name>` → 同级 `skills.disabled/<name>`（非 skills CLI 约定目录，CLI 不再发现 = 停止注入）；enable 反向。防复活四点配套：scan 停用区（disabled:true）/ uninstall 停用条目直接 rm / checkUpdates+update 拒停用条目 / 成功后 reloadAliveSessions（活跃会话 slash 菜单即时刷新）。端点：POST /api/skills/disable|enable + 项目级 /api/projects/{name}/skills/disable|enable（matchProjectSkillPath action 复用）。MCP 停用（mcp-management.ts）= `claude mcp remove` + entry stash `~/.agents/mcp-disabled.json`（**remove 成功 stash 失败 → 回滚 add**）；enable = stash 取回重 add（buildAddArgs 复用）+ 删 stash；list 经 mergeDisabledMcpServers 合并（live 同名 shadow 丢弃 / projectName 过滤 / user stash 在 project scope 忽略）。
+
+**前端（09 单页重排 + 09b 长按 + 12/13 toggle + 09mb Popover）**：mobile-plugins-home.tsx 段序 = 搜索（psearch，本地过滤已装+市场融合）→ segc 作用域分段 → 市场组顶部化（组头「市场」+「管理源 ›」仅全局 + .quick 两 chip 无计数 §6.12g）→ MCP 组（＋ 添加两段共有，scope 随段）→ 技能组（组头「n 个更新 ›」chip 橙色 = 状态指示点击重检测 / 无结果时「检查更新」钮 +「＋ 添加」仅全局）。卡从 button 改 div[role=button]+tabIndex（ActionMenu trigger 是 button 不能嵌套，chat-overview ListRow 先例）+ 首行 §4 contains 守卫 + onContextMenu + 长按（useLongPressActions/useRowContextMenu，09b 菜单 = 查看详情/停用（停止注入）/卸载·移除 destructive+confirm）。搜索市场融合（编号①）：useSkillSearch/useMcpMarketSearch ≥2 字符门控 + keepPreviousData + installedNames Set 去重，「市场 · 安装」.mrow 行插组尾 → 复用 InstallAuditSheet/McpInstallAuditSheet（后者 export 化）。技能详情（12）+ MCP 详情（13）各加「已启用」toggle（button role=switch + 双 span 轨道，settings-dialog enable1m 先例；停用中更新 CTA 隐藏）。09mb：hideTitle（桌面 mainPage/iPad）▾ = ScopeSwitchPopover 锚定 Popover（.spop 300px：ttl/全局行/项目组/newp ＋新建项目）；移动保持 MobileProjectSwitchSheet。CSS：.spop .row+row 边线 / .ar 尾箭头 / .sep。
+
+**diverge 记档（拍板/取舍）**：① upd chip 位置 = 技能组头（原型 09 L82 为准）而非计划文字的 quick 区——quick 区只 2 chips；② 「16 更新清单页」不存在（16 实为 install-audit）→ 组头「n 个更新 ›」= 状态指示（点击 refetch），更新确认收敛在详情页，无更新时保留「检查更新」钮作检测入口；③ 搜索融合行仅全局 scope（市场安装恒全局语义）；④ 卡 div[role=button] 形态（语义 button 视觉 pcard）；⑤ ActionMenu trigger = aria-hidden hidden button（桌面非受控路径永不触发，仅 contextMenuPoint/长按路径工作）；⑥ project MCP 卡静态无菜单/详情（/plugins/mcp/$ 只承载 global，记档 M6-b 延续）；⑦ project 技能卡不带 hasUpdate chip（project 与全局同名撞名时 updates 缓存误报——chip 收敛全局段）；⑧ manageable/Local 徽标不进新 IA（旧 PluginsPanel 语义，随组件退役）。
+
+**验证**：四门禁 + token strict + CSS 硬闸 + 单测（api 全量 865 pass，含 skill-disable 7：symlink lstat/realpath 保留/错误码/双 scope/停用区扫描 + mergeDisabledMcpServers 4 + mcp stash 闭环 3）+ 探针 m6 87/0（段序/长按菜单/停用闭环双端点/详情 toggle/搜索融合审计 sheet 复用/09mb Popover——**场景修正：docs-writer 在 Part 5 已装、Part 7 融合行换 code-style 验证（已装去重是正确行为）**）+ m6c 53/0（Part 1 适配 .quick chip 入口）+ project-plugins 重写 15/15（旧承载 nav Projects/PluginsPanel/drawer 已退役，新断言 = 项目级端点矩阵 + 项目段空态 + 项目卡停用 payload 闭环 + A3b 真实 disable 路由断言）+ e2e mobile-nav 6 / desktop-side 5 全绿（reviewer 消化改动后全量复跑）。
+
+**security review 消化（6 修 + 2 记档）**：
+
+1. **dot-segment 路径逃逸（高）**：SKILL_TOKEN_RE 对 `.`/`..` 返回 true → disable `..` = rename 整个 `~/.claude`、uninstall = rm -rf 目标目录——sanitizeSkillId/sanitizeSkillName 显式拒 bare dot/dotdot（skill-process.test 矩阵 +2 case）。
+2. **项目级 disable/enable 端点 404 死代码（高）**：matchProjectSkillPath union 扩了 disable/enable action 但 tail 分发漏写 → 端点 404。**探针盲区教训：mock 探针（page.route）只断言前端发了请求，拦不住端点 404——project-plugins A3b 补真实路由断言（POST 真后端 → 400 业务错而非 404）**。
+3. **headers 回填（中）**：entryToAddRequest 丢 headers → disable→enable 循环剥掉鉴权头，enable 后 server 认证失效——回填 + 单测断言 add argv 含 `-H`。
+4. **stash 读改写并发丢条目（中）**：远程控制面双端并发是常态——withStashLock 模块级 promise 链串行化（失败不阻断后续排队）。
+5. **stash 原子写 + 权限（低）**：tmp+rename 原子落盘（崩溃截断 = 解析失败静默丢全部停用条目）+ mode 0600（stash 条目含 env/headers 密钥，不落世界可读）。
+6. **测试写真家目录（低，根治）**：bun test 全量并发下 `mock.module("node:os")` 时序不可靠 → homedir() 返回真值 → stash 写到真 `~/.agents/mcp-disabled.json`（实测发生过、已清）。治本 = **路径依赖注入优于进程级 mock**：read/write stash 加 home 参数、disable/enable context 加 `home?: string`（readScopeServers 同），测试 per-test mkdtemp 零接触真家目录。
+7. 记档：rename 跨设备 EXDEV 错误信息裸路径回显——与既有错误处理风格一致，不另做归类层。
+8. 记档：停用区 symlink 穿透（informational）——enable 时按 stash 记录 rename 停用条目，若停用区被投放恶意 symlink 理论上可移动系统目录；投放需 `~/.agents` 写权限 = 同 trust 边界内，且 symlink 整体 rename 保留 canonical 的语义是本设计核心（单测锁定），不引入 realpath 校验。
+
+**design review 消化（13 项全修）**：① PopoverTrigger 无 asChild 渲染原生 button，嵌宿主分段 button = 无效 HTML → `asChild` + `span[role=button]`（键盘可达保持）；② home 两卡 div[role=button] 无 onKeyDown = WCAG 2.1.1 违例——**div 形态豁免口径修正：形态可豁免、键盘可达不可豁免**，两卡补 Enter/Space navigate；③ 组头双按钮在 fit-content 父内 margin-left:auto 解析为 0 → span 加 ml-auto（flex 内推）；④ 「＋ 添加」i18n 双 key 收敛 `plugins.add`（zh「＋ 添加」/en「＋ Add」）；⑤ MCP 组头 plus 图标钮 → `.r` 文字钮（原型 09 L72 组头形态，与技能组头同体系）；⑥ 管理源钮 isFetching 条件显隐致组头跳动 → 恒显；⑦ `.spop .row` div onClick → `button type=button`（CSS 补 UA reset：border/background/font/text-align）；⑧ 详情 toggle thumb 双 bg 类并存赌 Tailwind 生成顺序（frontend-notes §11 同族）→ 三元互斥；⑨ toggle on 态 primary 蓝 → success 绿对齐原型 12（`--color-on-success` 物化补齐，thumb 走 token）；⑩ 更新 CTA 缺 `!skillDisabled` 门控（服务端守卫拒停用技能更新，CTA 出来必败）→ 补；⑪ `.spop` 注释声称上箭头但 CSS 从未实现 → 补 `::before`（原型 09mb L126：top -6px / right 52px / 12×12 / rotate 45°；去 `overflow:hidden` 防裁切，`.row.on` 背景不贴容器边无圆角溢出）；⑫ 停用 chip 沿用「有更新」蓝 tint → `.upd.off` 中性变体（ink-2 + bg-elevated2，静止语义不抢注意力）；⑬ quick chips 补 bag 袋形图标（原型 09 L69，14px stroke c-primary）——新增 `ShellIcon` bag 件。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

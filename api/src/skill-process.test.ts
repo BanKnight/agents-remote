@@ -56,6 +56,8 @@ describe("skill-process sanitizers", () => {
       ["slash", "foo/bar"],
       ["path traversal", "../x"],
       ["dot-slash", "./x"],
+      ["bare dot", "."],
+      ["bare dotdot（rename/rm 路径逃逸，security review 批6）", ".."],
       ["space", "foo bar"],
       ["null byte", "foo\0bar"],
       ["colon", "foo:bar"],

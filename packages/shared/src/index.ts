@@ -703,6 +703,8 @@ export type InstalledSkill = {
    * checkSkillUpdates → SkillUpdateStatus）。手写 skill（项目锁无记录）→ false。
    */
   manageable?: boolean;
+  /** 已停用（目录已 rename 到停用区，停止注入会话；enable = rename 回）。 */
+  disabled?: boolean;
 };
 export type InstalledSkillsResponse = { skills: InstalledSkill[] };
 
@@ -747,6 +749,11 @@ export type CheckSkillUpdatesResponse = { updates: SkillUpdateStatus[] };
 export type UpdateSkillRequest = { name: string; agent: SkillAgent };
 // POST /api/skills/update 立即返 202（异步任务，git clone 在后台跑）；完成态走 SSE SkillTaskFrame。
 export type UpdateSkillResponse = { taskId: string; status: "running" };
+
+// 停用/启用（09b 长按菜单）：目录 rename 进/出停用区（状态即目录布局，零标记文件），
+// 同步 POST（FS rename 毫秒级，无 task 流）；enable 复用同一对类型。
+export type SkillDisableRequest = { name: string; agent: SkillAgent };
+export type SkillDisableResponse = { ok: true };
 
 // skill install/update 异步任务的 SSE 进度帧（GET /api/skills/task/:id/events，EventSource 订阅）。
 // 两态 UI 只消费 status 转换（running→done/failed），不展示阶段进度；done/failed 后服务端关闭流。
@@ -801,6 +808,8 @@ export type McpServerEntry = {
   url?: string;
   /** http：自定义请求头（读保真；add 链路经 -H 落盘——手工表单不设，市场远程条目安装会带）。 */
   headers?: Record<string, string>;
+  /** 已停用（配置已从 ~/.claude.json / .mcp.json stash 到停用区，停止注入；enable = 恢复）。 */
+  disabled?: boolean;
 };
 
 export type ListMcpServersResponse = { servers: McpServerEntry[] };
@@ -820,6 +829,10 @@ export type RemoveMcpServerResponse = { ok: true; name: string };
  * 实现是 remove + add 同名（后端 mcp-management.ts）。请求体复用 AddMcpServerRequest 字段。 */
 export type UpdateMcpServerRequest = AddMcpServerRequest;
 export type UpdateMcpServerResponse = { ok: true; server: McpServerEntry };
+// 停用/启用（09b 长按菜单）：配置从 ~/.claude.json / .mcp.json remove 后 stash 进停用区
+//（~/.agents/mcp-disabled.json），enable 取回 add 回；同步 POST（毫秒级 CLI 调用，无 task 流）。
+export type DisableMcpServerRequest = { name: string };
+export type DisableMcpServerResponse = { ok: true; name: string };
 
 // ── Wiki 能力域（per-project `wiki/` markdown 目录）──────────────────
 // wiki = agent 用 wiki_* MCP 工具逐页写的、结构化可浏览的 per-project 知识库（产物）。
@@ -2440,6 +2453,7 @@ export type ApiErrorCode =
   | "SKILL_SOURCE_INVALID"
   | "SKILL_UPDATE_CHECK_FAILED"
   | "SKILL_UPDATE_FAILED"
+  | "SKILL_DISABLE_FAILED"
   | "MCP_HUB_START_FAILED"
   | "MCP_INJECT_UNSUPPORTED"
   | "MCP_CONFIG_INVALID"
@@ -2447,6 +2461,8 @@ export type ApiErrorCode =
   | "MCP_ADD_FAILED"
   | "MCP_REMOVE_FAILED"
   | "MCP_UPDATE_FAILED"
+  | "MCP_DISABLE_FAILED"
+  | "MCP_ENABLE_FAILED"
   | "MCP_MARKET_FETCH_FAILED"
   | "WIKI_SLUG_INVALID"
   | "SESSION_NOT_CONFIGURED";

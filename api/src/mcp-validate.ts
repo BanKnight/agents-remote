@@ -12,6 +12,8 @@ export type McpErrorCode = Extract<
   | "MCP_ADD_FAILED"
   | "MCP_REMOVE_FAILED"
   | "MCP_UPDATE_FAILED"
+  | "MCP_DISABLE_FAILED"
+  | "MCP_ENABLE_FAILED"
   | "MCP_MARKET_FETCH_FAILED"
 >;
 

@@ -77,6 +77,13 @@ const MARKET_SKILLS = [
     installs: 1234,
     source: "anthropics/skills",
   },
+  {
+    id: "anthropics/skills/code-style",
+    skillId: "code-style",
+    name: "code-style",
+    installs: 567,
+    source: "anthropics/skills",
+  },
 ];
 
 const SKILL_SOURCES = [
@@ -86,6 +93,8 @@ const SKILL_SOURCES = [
 // 请求记录（payload 断言用）。
 const mcpAddPosts = [];
 const skillInstallPosts = [];
+const disablePosts = [];
+const mcpDisablePosts = [];
 
 async function setupM6Mocks(page) {
   await page.route("**/api/projects", (r) => {
@@ -117,11 +126,45 @@ async function setupM6Mocks(page) {
   await page.route("**/api/skills/updates*", (r) =>
     r.fulfill(json({ updates: [{ name: "code-review", hasUpdate: true, manageable: true }] })),
   );
-  await page.route("**/api/skills/search*", (r) =>
-    r.fulfill(json({ query: "docs", skills: MARKET_SKILLS, count: MARKET_SKILLS.length })),
-  );
+  // 按 query 区分命中（服务端语义）：docs→docs-writer、style→code-style。
+  // Part 5 会真装 docs-writer（mock handler push 进 INSTALLED_SKILLS），Part 7 搜索融合段
+  // 改用 code-style——已装项被去重是正确行为，场景不能自撞。
+  await page.route("**/api/skills/search*", (r) => {
+    const q = new URL(r.request().url()).searchParams.get("q") ?? "";
+    const hits = MARKET_SKILLS.filter((s) =>
+      q.includes("style") ? s.name === "code-style" : s.name === "docs-writer",
+    );
+    return r.fulfill(json({ query: q, skills: hits, count: hits.length }));
+  });
   await page.route("**/api/skills/sources", (r) => r.fulfill(json({ sources: SKILL_SOURCES })));
   await page.route("**/api/skills/uninstall", (r) => r.fulfill(json({ ok: true })));
+  // v1.4 批6：停用/启用（rename 语义）——成功后 mock 数据同步翻转（列表 chip 断言依赖）。
+  await page.route("**/api/skills/disable", (r) => {
+    const body = JSON.parse(r.request().postData() ?? "{}");
+    disablePosts.push(body);
+    const skill = INSTALLED_SKILLS.find((s) => s.name === body.name);
+    if (skill) skill.disabled = true;
+    return r.fulfill(json({ ok: true }));
+  });
+  await page.route("**/api/skills/enable", (r) => {
+    const body = JSON.parse(r.request().postData() ?? "{}");
+    const skill = INSTALLED_SKILLS.find((s) => s.name === body.name);
+    if (skill) skill.disabled = false;
+    return r.fulfill(json({ ok: true }));
+  });
+  await page.route("**/api/mcp/disable", (r) => {
+    const body = JSON.parse(r.request().postData() ?? "{}");
+    mcpDisablePosts.push(body);
+    const server = MCP_SERVERS.find((s) => s.name === body.name);
+    if (server) server.disabled = true;
+    return r.fulfill(json({ ok: true, name: body.name }));
+  });
+  await page.route("**/api/mcp/enable", (r) => {
+    const body = JSON.parse(r.request().postData() ?? "{}");
+    const server = MCP_SERVERS.find((s) => s.name === body.name);
+    if (server) server.disabled = false;
+    return r.fulfill(json({ ok: true, name: body.name }));
+  });
   await page.route("**/api/skills/install", (r) => {
     skillInstallPosts.push(JSON.parse(r.request().postData() ?? "{}"));
     // done 后已装列表应含 docs-writer（✓ Installed 态断言依赖）。
@@ -172,7 +215,7 @@ await setupM6Mocks(page);
 await login(page);
 
 // ── Part 1: 09 主页 ─────────────────────────────────────────────────────────
-console.log("Part 1: 09 插件主页（大标题 + 作用域分段 + 两组卡 + 市场段）");
+console.log("Part 1: 09 插件主页（v1.4 批6：大标题 → 搜索 → segc → 市场组 quick chips → 两组卡）");
 await page.goto(`${ORIGIN}/plugins`);
 await page.waitForSelector(".segc", { timeout: 10000 });
 ok(
@@ -180,6 +223,16 @@ ok(
   "h1 大标题「插件」",
 );
 ok((await page.locator(".segc button").count()) === 2, "segc 作用域分段 = 2 段");
+// 段序：搜索在 segc 之上（v1.4 批6）。
+ok(
+  (await page.evaluate(() => {
+    const search = document.querySelector(".psearch");
+    const segc = document.querySelector(".segc");
+    if (!search || !segc) return false;
+    return (search.compareDocumentPosition(segc) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+  })) === true,
+  "段序：搜索框在作用域分段之上",
+);
 ok(
   (await page.locator(".segc button.on").textContent())?.includes("全局") === true,
   "默认作用域「全局」on",
@@ -187,16 +240,26 @@ ok(
 await page.waitForSelector(".pcard", { timeout: 5000 });
 ok((await page.locator(".pcard").count()) === 4, "pcard = 4（MCP 2 + 技能 2）");
 ok(
-  (await page.locator(".psect").first().textContent())?.includes("MCP 服务器 · 2") === true,
+  (await page.locator(".psect", { hasText: "MCP 服务器" }).textContent())?.includes(
+    "MCP 服务器 · 2",
+  ) === true,
   "MCP 组标题含计数",
 );
-ok((await page.locator(".mrow").count()) === 2, "市场段 mrow = 2（MCP 市场 + 技能市场）");
-ok((await page.locator(".mrow", { hasText: "MCP 市场" }).count()) === 1, "市场段 mrow「MCP 市场」");
-ok((await page.locator(".mrow", { hasText: "技能市场" }).count()) === 1, "市场段 mrow「技能市场」");
-// 搜索本地过滤：命中 tdd（1 张技能卡）+ MCP 全滤掉。
+// 市场组顶部化：第一组 = 「市场」+ .quick 两 chip（无计数 §6.12g）。
+ok(
+  (await page.locator(".psect").first().textContent())?.includes("市场") === true,
+  "组头「市场」顶部化（第一组）",
+);
+await page.waitForSelector(".quick .q", { timeout: 5000 });
+ok((await page.locator(".quick .q").count()) === 2, "quick chips = 2（MCP 市场 + 技能市场）");
+// 搜索融合（编号①）：搜索「tdd」→ 市场命中 docs-writer →「市场 · 安装」行插组尾。
 await page.getByRole("searchbox").first().fill("tdd");
-await page.waitForTimeout(300);
-ok((await page.locator(".pcard").count()) === 1, "搜索「tdd」后 pcard = 1");
+await page.waitForSelector(".mrow", { timeout: 5000 });
+ok((await page.locator(".pcard").count()) === 1, "搜索「tdd」后 pcard = 1（tdd 已装）");
+ok(
+  (await page.locator(".mrow", { hasText: "docs-writer" }).count()) === 1,
+  "市场融合行 docs-writer（市场 · 安装）",
+);
 await page.getByRole("searchbox").first().fill("");
 await page.waitForTimeout(300);
 // 「本项目」段：从未选项目 → 空态引导（编号⑥）。
@@ -208,12 +271,16 @@ ok(
 );
 await page.locator(".segc button").first().click();
 await page.waitForTimeout(300);
-// 手动「检查更新」→ hasUpdate chip（updates mock 返回 code-review hasUpdate:true）。
+// 手动「检查更新」→ 组头「1 个更新 ›」chip（updates mock 返回 code-review hasUpdate:true）。
 await page.locator(".psect button.r", { hasText: "检查更新" }).click();
 await page.waitForTimeout(600);
 ok(
-  (await page.locator(".pcard .upd").count()) === 1,
-  "手动检查更新后「有更新」chip 恰 1（code-review）",
+  (await page.locator(".psect button.r", { hasText: "个更新" }).count()) === 1,
+  "手动检查更新后组头「1 个更新 ›」chip（技能组头）",
+);
+ok(
+  (await page.locator(".pcard .upd", { hasText: "有更新" }).count()) === 1,
+  "行内「有更新」chip 恰 1（code-review）",
 );
 
 // ── Part 2: 12 技能详情 + 卸载确认 ──────────────────────────────────────────
@@ -276,17 +343,15 @@ ok(
   btnGeo.cta === btnGeo.vw - 32 && btnGeo.rm === btnGeo.vw - 32,
   `.cta/.rm 整宽 = vw-32（cta ${btnGeo.cta} / rm ${btnGeo.rm} / vw ${btnGeo.vw}）`,
 );
-// 卸载确认 Alert（spec §5：删除类确认走 useConfirm 的 Dialog，非 sheet；移动形态 = iOS action sheet）。
+// 卸载确认 Alert（spec §5：删除类确认走 useConfirm；移动形态 = iOS action sheet，即
+// ConfirmDialog 的 MobileSheet 分支——39a8aca 起移动收敛单源，桌面才是 Dialog）。
 await page.locator(".rm").click();
-await page.waitForSelector('[data-slot="dialog-content"]', { timeout: 5000 });
+await page.waitForSelector(".msheet", { timeout: 5000 });
 ok(
-  (await page.locator('[data-slot="dialog-content"] h2').textContent())?.includes("卸载技能") ===
-    true,
+  (await page.locator(".msheet .shd h2").textContent())?.includes("卸载技能") === true,
   "卸载确认 Alert 标题",
 );
-const alertConfirm = page
-  .locator('[data-slot="dialog-content"] button', { hasText: "卸载" })
-  .first();
+const alertConfirm = page.locator(".msheet button", { hasText: "卸载" }).first();
 ok(
   (await alertConfirm.getAttribute("class"))?.includes("text-error") === true,
   "Alert 确认钮红字（action sheet destructive）",
@@ -305,9 +370,9 @@ ok(
   dangerBox !== null && rmBox !== null && dangerBox.height >= 44 && dangerBox.width >= 200,
   "Alert 确认钮几何（全宽 ≥200×44）",
 );
-await page.locator('[data-slot="dialog-content"] button', { hasText: "取消" }).click();
-await page.waitForTimeout(700);
-ok((await page.locator('[data-slot="dialog-content"]').count()) === 0, "取消后 Alert 关闭");
+await page.locator(".msheet button", { hasText: "取消" }).click();
+await page.waitForTimeout(700); // SHEET_UNMOUNT_DELAY_MS 延迟卸载
+ok((await page.locator(".msheet").count()) === 0, "取消后 Alert 关闭");
 // 返回 09（.back 设计语言：‹ + 可见返回文字）。
 ok(
   (await page.locator("header .back").textContent())?.includes("已安装技能") === true,
@@ -344,7 +409,12 @@ await page.waitForTimeout(500);
 
 // ── Part 4: 14 添加 sheet ──────────────────────────────────────────────────
 console.log("Part 4: 14 添加 MCP sheet（stabseg 切换 + 提交 payload）");
-await page.locator('.psect button.r[aria-label="添加服务器"]').click();
+// 组头改 .r 文字钮「＋ 添加」（design review ⑤，原型 09 L72）——MCP/技能两组头同文案，
+// 限定 MCP 段（hasText 组头标签）定位。
+await page
+  .locator(".psect", { hasText: "MCP 服务器" })
+  .locator("button.r", { hasText: "＋ 添加" })
+  .click();
 await page.waitForSelector(".msheet", { timeout: 5000 });
 ok(
   (await page.locator(".msheet .shd h2").textContent())?.includes("添加 MCP") === true,
@@ -384,7 +454,7 @@ ok((await page.locator(".msheet").count()) === 0, "提交成功后 sheet 关闭"
 
 // ── Part 5: 18 市场 + 16 审计 sheet ────────────────────────────────────────
 console.log("Part 5: 18 技能市场 + 16 安装审计 sheet");
-await page.locator(".mrow", { hasText: "技能市场" }).click();
+await page.locator(".quick .q", { hasText: "技能市场" }).click();
 await page.waitForTimeout(600);
 ok(page.url().endsWith("/plugins/market?marketTab=skill"), "URL /plugins/market?marketTab=skill");
 ok(
@@ -454,6 +524,144 @@ await page.locator(".addsrc").click();
 await page.waitForTimeout(300);
 ok((await page.locator(".addsrc").count()) === 0, "addsrc 点击后切换为表单");
 ok((await page.locator('input[aria-label="owner/repo"]').count()) === 1, "repo 字段可见");
+
+// ── Part 7: 09b 长按菜单 + 停用闭环 + 搜索融合安装 + 09mb 作用域 Popover ──────
+console.log("Part 7: 09b 长按菜单（查看详情/停用/卸载）+ 停用 chip + 审计 sheet 复用 + 09mb");
+await page.goto(`${ORIGIN}/plugins`);
+await page.waitForSelector(".pcard", { timeout: 10000 });
+// 长按技能卡（pointerdown touch 持 600ms > LONG_PRESS_MS 500）→ action sheet。
+const skillCard = page.locator(".pcard", { hasText: "code-review" });
+await skillCard.dispatchEvent("pointerdown", {
+  pointerId: 7,
+  pointerType: "touch",
+  isPrimary: true,
+  clientX: 40,
+  clientY: 40,
+});
+await page.waitForTimeout(650);
+await skillCard.dispatchEvent("pointerup", { pointerId: 7, pointerType: "touch", isPrimary: true });
+await page.waitForSelector('[role="menu"]', { timeout: 5000 });
+ok(
+  (await page.locator('[role="menuitem"]', { hasText: "查看详情" }).count()) === 1,
+  "菜单项「查看详情」",
+);
+ok(
+  (await page.locator('[role="menuitem"]', { hasText: "停用（停止注入）" }).count()) === 1,
+  "菜单项「停用（停止注入）」",
+);
+ok(
+  (await page.locator('[role="menuitem"]', { hasText: "卸载" }).count()) === 1,
+  "菜单项「卸载…」（destructive）",
+);
+// 点停用 → POST /api/skills/disable → 列表刷新出「已停用」chip。
+await page.locator('[role="menuitem"]', { hasText: "停用" }).click();
+await page.waitForTimeout(800);
+ok(disablePosts.length === 1, `POST /api/skills/disable 恰 1（实际 ${disablePosts.length}）`);
+if (disablePosts.length === 1) {
+  ok(
+    disablePosts[0].name === "code-review" && disablePosts[0].agent === "claude-code",
+    "disable payload name/agent 正确",
+  );
+}
+ok(
+  (await page
+    .locator(".pcard", { hasText: "code-review" })
+    .locator(".upd", { hasText: "已停用" })
+    .count()) === 1,
+  "停用后卡上「已停用」chip",
+);
+// 详情页「已启用」toggle：停用后 = 未选中；点击 = enable（payload disabled:false）。
+await page.locator(".pcard", { hasText: "code-review" }).click();
+await page.waitForSelector('[role="switch"]', { timeout: 5000 });
+const enabledSwitch = page.locator('[role="switch"]').first();
+ok(
+  (await enabledSwitch.getAttribute("aria-checked")) === "false",
+  "详情页「已启用」toggle 反映停用态（aria-checked=false）",
+);
+await enabledSwitch.click();
+await page.waitForTimeout(800);
+await page.goto(`${ORIGIN}/plugins`);
+await page.waitForSelector(".pcard", { timeout: 10000 });
+ok(
+  (await page
+    .locator(".pcard", { hasText: "code-review" })
+    .locator(".upd", { hasText: "已停用" })
+    .count()) === 0,
+  "enable 后「已停用」chip 消失",
+);
+
+// MCP 卡长按停用（09b 同款闭环，/api/mcp/disable）。
+const mcpCard = page.locator(".pcard", { hasText: "sentry" });
+await mcpCard.dispatchEvent("pointerdown", {
+  pointerId: 8,
+  pointerType: "touch",
+  isPrimary: true,
+  clientX: 40,
+  clientY: 40,
+});
+await page.waitForTimeout(650);
+await mcpCard.dispatchEvent("pointerup", { pointerId: 8, pointerType: "touch", isPrimary: true });
+await page.waitForSelector('[role="menu"]', { timeout: 5000 });
+await page.locator('[role="menuitem"]', { hasText: "停用" }).click();
+await page.waitForTimeout(800);
+ok(mcpDisablePosts.length === 1, `POST /api/mcp/disable 恰 1（实际 ${mcpDisablePosts.length}）`);
+ok(
+  (await page
+    .locator(".pcard", { hasText: "sentry" })
+    .locator(".upd", { hasText: "已停用" })
+    .count()) === 1,
+  "MCP 停用后卡上「已停用」chip",
+);
+// MCP 详情页 toggle 同款（停用态 → aria-checked=false）。
+await page.locator(".pcard", { hasText: "sentry" }).click();
+await page.waitForSelector('[role="switch"]', { timeout: 5000 });
+ok(
+  (await page.locator('[role="switch"]').first().getAttribute("aria-checked")) === "false",
+  "MCP 详情页「已启用」toggle 反映停用态",
+);
+await page.locator("header .back").first().click();
+await page.waitForTimeout(500);
+
+// 搜索融合 → 审计 sheet 复用（编号①安装链路）。docs-writer 已在 Part 5 装过（已装去重是
+// 正确行为），换未安装的 code-style 验证行渲染 + 点击进审计 sheet。
+await page.getByRole("searchbox").first().fill("style");
+await page.waitForSelector(".mrow", { timeout: 5000 });
+await page.locator(".mrow", { hasText: "code-style" }).click();
+await page.waitForSelector(".msheet", { timeout: 5000 });
+ok(
+  (await page.locator(".msheet .shd h2").textContent())?.includes("安装前请确认") === true,
+  "搜索行 → 16 审计 sheet（复用单源）",
+);
+await page.locator(".msheet .kbtns .c").click();
+await page.waitForTimeout(400);
+ok((await page.locator(".msheet").count()) === 0, "取消后审计 sheet 关闭");
+await page.getByRole("searchbox").first().fill("");
+
+// 09mb：桌面语境（hideTitle）▾ → .spop 作用域 Popover。
+const desktopCtx = await browser.newContext({
+  viewport: { width: 1280, height: 800 },
+  locale: "zh-CN",
+});
+const dpage = await desktopCtx.newPage();
+await setupM6Mocks(dpage);
+await login(dpage);
+// 09mb ▾ 只在有 lastProject 时渲染（ScopeSwitchPopover 挂在 lastProject 条件下）——
+// 预置 lastProjectKey（atomWithLocalOnlyStorage = JSON 序列化值）。
+await dpage.addInitScript(() => {
+  localStorage.setItem("workbench.lastProjectKey", JSON.stringify("proj1"));
+});
+await dpage.goto(`${ORIGIN}/plugins`);
+await dpage.waitForSelector('[aria-label="切换项目"]', { timeout: 10000 });
+await dpage.locator('[aria-label="切换项目"]').click();
+await dpage.waitForSelector(".spop", { timeout: 5000 });
+ok(
+  (await dpage.locator(".spop .ttl").textContent())?.includes("切换作用域") === true,
+  "09mb Popover 标题「切换作用域」",
+);
+ok((await dpage.locator(".spop .row.on").count()) === 1, "当前作用域行 on");
+ok((await dpage.locator(".spop .ck").count()) === 1, "当前作用域行 ✓");
+ok((await dpage.locator(".spop .newp").count()) === 1, "「＋ 新建项目」行");
+await desktopCtx.close();
 
 // ── 汇总 ───────────────────────────────────────────────────────────────────
 console.log(`\n${passCount} pass, ${failCount} fail`);

@@ -367,7 +367,7 @@ function McpMarketTab() {
  * 走既有 useAddMcpServer；成功关 sheet（invalidate 自动转 ✓ 已安装），失败保留 sheet 重试。
  * 作用域切换在 pending 中禁用（mutation 实例随 scope 参数重建，防 mid-flight 错位）。
  */
-function McpInstallAuditSheet({
+export function McpInstallAuditSheet({
   entry,
   onCancel,
 }: {

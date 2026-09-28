@@ -2660,6 +2660,12 @@
     border-radius: 9px;
     padding: 2px 10px;
   }
+  /* 停用态 chip（design review 低13）：中性灰——语义是静止状态，不与「有更新」蓝 tint/
+     「待更新」橙 tint 抢注意力。 */
+  .pcard .upd.off {
+    color: var(--ink-2);
+    background: var(--bg-elevated2);
+  }
   .pcard .d2 {
     font-size: 11.5px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
@@ -2703,6 +2709,127 @@
        （§6.12g：registry 无总量数据源），auto 移交 .ar——否则箭头贴在名称后（第十一轮
        复验：不符合 iOS 列表 chevron 惯例）。 */
     margin-left: auto;
+  }
+
+  /* 09 市场快捷 chips（v1.4 批6 市场组顶部化）：横滚 chip 行（MCP 市场/技能市场/更新橙 chip）。
+     无计数（§6.12g：registry/skills.sh 无总量数据源，chips 不带「· n」）。 */
+  .quick {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    margin: 0 16px 10px;
+    padding: 2px 0 0;
+  }
+  .quick .q {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 15px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-1);
+    white-space: nowrap;
+    flex: none;
+  }
+  .quick .q.upd {
+    border-color: color-mix(in srgb, var(--c-warning) 50%, transparent);
+    color: var(--c-warning-text);
+    font-weight: 600;
+  }
+
+  /* 09mb 作用域切换 Popover（iPad/Mac 段上 ▾；iPhone 保持 03l 半屏 sheet）。
+     形制照抄原型内联段：menu 底 + sep-strong 边框 + 14px 圆角 + 上箭头（::before 45°）。
+     不设 overflow:hidden——会裁掉外悬箭头；带背景的 .row.on 不贴容器边，无圆角溢出。 */
+  .spop {
+    position: relative;
+    background: var(--menu);
+    border: 1px solid var(--sep-strong);
+    border-radius: 14px;
+    box-shadow: 0 8px 24px color-mix(in srgb, #000 25%, transparent);
+    padding: 4px 0 2px;
+  }
+  /* 上箭头（原型 09mb）：50% 悬出盖住边框成开口，右偏 52px 对齐分段 ▾ 触发位。 */
+  .spop::before {
+    content: "";
+    position: absolute;
+    top: -6px;
+    right: 52px;
+    width: 12px;
+    height: 12px;
+    background: var(--menu);
+    transform: rotate(45deg);
+  }
+  .spop .ttl {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink-1);
+    padding: 8px 14px 6px;
+  }
+  /* row 是 button（键盘可达）：base 层补 UA reset，.on 背景由下方高特异性规则覆盖。 */
+  .spop .row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    width: 100%;
+    cursor: pointer;
+    border: none;
+    background: none;
+    font: inherit;
+    text-align: left;
+  }
+  .spop .row.on {
+    background: var(--fill-selected);
+  }
+  .spop .row + .row {
+    border-top: 1px solid var(--sep-row);
+  }
+  .spop .ar {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .spop .sep {
+    height: 1px;
+    background: var(--sep);
+    margin: 4px 0;
+  }
+  .spop .nm {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-1);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .spop .ck {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--c-primary);
+  }
+  .spop .grp {
+    font-size: 10.5px;
+    color: var(--ink-3);
+    padding: 6px 14px 2px;
+    letter-spacing: 0.3px;
+  }
+  .spop .newp {
+    border-top: 1px solid var(--sep);
+    margin-top: 4px;
+    padding: 7px 14px 4px;
+    width: 100%;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--c-primary);
+    cursor: pointer;
+    text-align: left;
   }
 
   /* 12/13 详情头：mono 名称 + 状态 chips（up 橙=有更新）+ 元信息 + 描述 */

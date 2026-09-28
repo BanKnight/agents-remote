@@ -85,6 +85,8 @@ import type {
   AddSkillSourceRequest,
   AddSkillSourceResponse,
   CheckSkillUpdatesResponse,
+  DisableMcpServerRequest,
+  DisableMcpServerResponse,
   InstallSkillRequest,
   InstallSkillResponse,
   InstalledSkillsResponse,
@@ -94,6 +96,8 @@ import type {
   RemoveMcpServerResponse,
   RemoveSkillSourceResponse,
   SkillAgent,
+  SkillDisableRequest,
+  SkillDisableResponse,
   UpdateMcpServerRequest,
   UpdateMcpServerResponse,
   SkillMarketSearchResponse,
@@ -1216,6 +1220,88 @@ export async function updateProjectSkill(
       body: JSON.stringify(req),
       headers: { "content-type": "application/json" },
     },
+  );
+}
+
+// ── 停用/启用（v1.4 批6，09b）：技能 = 目录 rename；MCP = remove + stash。同步 POST。 ──
+
+export async function disableSkill(req: SkillDisableRequest): Promise<SkillDisableResponse> {
+  return fetchJson("/api/skills/disable", "api.skillDisableFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function enableSkill(req: SkillDisableRequest): Promise<SkillDisableResponse> {
+  return fetchJson("/api/skills/enable", "api.skillDisableFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function disableProjectSkill(
+  projectName: string,
+  req: SkillDisableRequest,
+): Promise<SkillDisableResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/skills/disable`,
+    "api.skillDisableFailed",
+    { method: "POST", body: JSON.stringify(req), headers: { "content-type": "application/json" } },
+  );
+}
+
+export async function enableProjectSkill(
+  projectName: string,
+  req: SkillDisableRequest,
+): Promise<SkillDisableResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/skills/enable`,
+    "api.skillDisableFailed",
+    { method: "POST", body: JSON.stringify(req), headers: { "content-type": "application/json" } },
+  );
+}
+
+export async function disableMcpServer(
+  req: DisableMcpServerRequest,
+): Promise<DisableMcpServerResponse> {
+  return fetchJson("/api/mcp/disable", "api.mcpDisableFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function enableMcpServer(
+  req: DisableMcpServerRequest,
+): Promise<DisableMcpServerResponse> {
+  return fetchJson("/api/mcp/enable", "api.mcpEnableFailed", {
+    method: "POST",
+    body: JSON.stringify(req),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function disableProjectMcpServer(
+  projectName: string,
+  req: DisableMcpServerRequest,
+): Promise<DisableMcpServerResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/mcp/disable`,
+    "api.mcpDisableFailed",
+    { method: "POST", body: JSON.stringify(req), headers: { "content-type": "application/json" } },
+  );
+}
+
+export async function enableProjectMcpServer(
+  projectName: string,
+  req: DisableMcpServerRequest,
+): Promise<DisableMcpServerResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/mcp/enable`,
+    "api.mcpEnableFailed",
+    { method: "POST", body: JSON.stringify(req), headers: { "content-type": "application/json" } },
   );
 }
 

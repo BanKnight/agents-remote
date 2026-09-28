@@ -398,6 +398,9 @@ export const en = {
   "api.mcpAddFailed": "Failed to add MCP server",
   "api.mcpRemoveFailed": "Failed to remove MCP server",
   "api.mcpUpdateFailed": "Failed to update MCP server",
+  "api.skillDisableFailed": "Failed to toggle skill",
+  "api.mcpDisableFailed": "Failed to disable MCP server",
+  "api.mcpEnableFailed": "Failed to enable MCP server",
   "api.pinnedSessionsFailed": "Failed to update pinned sessions",
 
   // ── Time ───────────────────────────────────────────────────────
@@ -831,10 +834,22 @@ export const en = {
   "plugins.pickProject": "Pick a project in the workbench",
   "plugins.pickProjectHint":
     "Pick a project to manage skills and MCP servers injected into its agent sessions",
-  "plugins.searchPlaceholder": "Search skills and MCP",
+  "plugins.searchPlaceholder": "Search installed and market",
   "plugins.mcpGroup": "MCP servers · {{n}}",
   "plugins.skillsGroup": "Installed skills · {{n}}",
   "plugins.market": "Market",
+  "plugins.updatesChip": "{{n}} updates",
+  "plugins.menuView": "View details",
+  "plugins.menuDisable": "Disable (stop injecting)",
+  "plugins.menuEnable": "Enable",
+  "plugins.disabledChip": "Disabled",
+  "plugins.scopeSwitchTitle": "Switch scope",
+  "plugins.scopeProjectsGroup": "Projects",
+  "plugins.enabledToggle": "Enabled",
+  "plugins.enabledToggleNote":
+    "Off keeps files & config, stops session injection; re-enable anytime",
+  "plugins.installFromMarket": "Market · Install",
+  "plugins.add": "＋ Add",
   "plugins.manageSources": "Manage sources ›",
   "plugins.skillMarket": "Skill market",
   "plugins.mcpMarket": "MCP marketplace",

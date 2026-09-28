@@ -6,17 +6,19 @@ import {
   type UpdateSkillRequest,
   type UpdateSkillResponse,
 } from "@agents-remote/shared";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { jsonError } from "./http-auth.js";
 import {
+  disabledSkillsDir,
   listInstalledSkills,
   matchProjectSkillPath,
   parseAgent,
   projectPathErrorStatus,
   reloadAliveSessions,
   resolveProjectSkillCwd,
+  resolveSkillsHome,
   trimErr,
   type ProjectSkillCtx,
   type SkillMarketDeps,
@@ -185,6 +187,7 @@ export async function checkSkillUpdates(
   const updates: SkillUpdateStatus[] = [];
 
   for (const skill of installed.skills) {
+    if (skill.disabled) continue; // 停用条目不进更新清单（防 update 复活的前置面）
     const entry = lock[skill.name];
     const status: SkillUpdateStatus = { name: skill.name, hasUpdate: false, manageable: false };
     if (!entry) {
@@ -242,6 +245,15 @@ export async function executeUpdate(
   //（直接从源重新拉取同步，写 <cwd>/.claude/skills + 刷新 <cwd>/skills-lock.json）。项目 update 不做
   // 远程 hash 检测（区别于全局 checkSkillUpdates 的 GitHub Trees 比对），用户主动点「更新」直接拉取覆盖。
   const cwd = projectCtx ? await resolveProjectSkillCwd(projectCtx) : undefined;
+  // 防复活守卫：停用条目 update = CLI 把 skill 重装回 skills/（重新注入）——直接拒绝。
+  const home = resolveSkillsHome(deps);
+  const disabledEntry = join(disabledSkillsDir(agent, home, cwd), name);
+  const isDisabled = await stat(disabledEntry)
+    .then(() => true)
+    .catch(() => false);
+  if (isDisabled) {
+    throw new SkillError("SKILL_UPDATE_FAILED", `${name} is disabled; enable it before updating`);
+  }
   const result = await runSkillsCommand(
     projectCtx ? ["update", name, "-p", "--yes"] : ["update", name, "--global", "--yes"],
     {

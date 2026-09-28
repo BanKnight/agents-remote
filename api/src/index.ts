@@ -60,6 +60,7 @@ import { StateStore } from "./state-store";
 import { handleStateRoutes } from "./state-routes";
 import { handleSettingsRoutes } from "./settings-routes";
 import { handleSkillRoutes } from "./skill-market";
+import { handleSkillDisableRoutes } from "./skill-disable";
 import { handleSkillUpdateRoutes } from "./skill-update";
 import { handleSkillTaskEvents } from "./skill-tasks";
 import { handleMcpRoutes } from "./mcp-management";
@@ -242,6 +243,14 @@ export const createFetchHandler =
       });
       if (skillUpdateResponse) {
         return withRefresh(skillUpdateResponse);
+      }
+      const skillDisableResponse = await handleSkillDisableRoutes(request, url, {
+        settingsStore: options.settingsStore,
+        claudeRuntime: options.claudeRuntime,
+        projectsRoot: options.projectsRoot,
+      });
+      if (skillDisableResponse) {
+        return withRefresh(skillDisableResponse);
       }
     }
 

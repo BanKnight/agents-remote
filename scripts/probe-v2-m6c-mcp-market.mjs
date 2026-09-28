@@ -1,7 +1,8 @@
-// M6-c MCP 官方市场探针（v2 M6-c：09 市场段两条 mrow / 17 市场页双 tab / MCP 审计 sheet）。
+// M6-c MCP 官方市场探针（v2 M6-c：17 市场页双 tab / MCP 审计 sheet；v1.4 批6 起入口 = 09
+// 市场组顶部化 .quick chip，旧「市场段两条 mrow」随重排退役）。
 //
 // 覆盖单测验不到的真实浏览器行为（DOM 几何硬数据，禁截图）：
-//   Part 1 09 市场段两条 mrow →「MCP 市场」落 ?marketTab=mcp + tabseg 选中态。
+//   Part 1 市场组 .quick chip「MCP 市场」→ 落 ?marketTab=mcp + tabseg 选中态。
 //   Part 2 MCP 段列表：npm/remote/pypi/已装四卡字段 + 诚实硬断言（无「认证/安装量/工具数/%」，
 //     registry 无这些字段，§6.12g）+ pypi 禁装态 + 已装 ✓ 态 + tabseg/mcard 几何（滚动容器层）。
 //   Part 3 npm 条目审计 sheet：env password 行 + 作用域 stabseg（无记忆项目 → 本项目 disabled）+
@@ -161,12 +162,15 @@ const page = await ctx.newPage();
 await setupM6cMocks(page);
 await login(page);
 
-// ── Part 1: 09 市场段两条 mrow → MCP 市场 ───────────────────────────────────
-console.log("Part 1: 09 市场段两条 mrow →「MCP 市场」落 ?marketTab=mcp");
+// ── Part 1: 市场组 .quick chip → MCP 市场 ───────────────────────────────────
+console.log("Part 1: 市场组 .quick chip「MCP 市场」→ ?marketTab=mcp");
 await page.goto(`${ORIGIN}/plugins`);
-await page.waitForSelector(".mrow", { timeout: 10000 });
-ok((await page.locator(".mrow").count()) === 2, "市场段 mrow = 2");
-await page.locator(".mrow", { hasText: "MCP 市场" }).click();
+await page.waitForSelector(".quick .q", { timeout: 10000 });
+ok(
+  (await page.locator(".quick .q").count()) === 2,
+  "市场组 quick chips = 2（MCP 市场 + 技能市场）",
+);
+await page.locator(".quick .q", { hasText: "MCP 市场" }).click();
 await page.waitForTimeout(600);
 ok(page.url().endsWith("/plugins/market?marketTab=mcp"), "URL /plugins/market?marketTab=mcp");
 const mcpSeg = page.locator(".tabseg button").first();

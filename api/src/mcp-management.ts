@@ -1,6 +1,8 @@
 import {
   type AddMcpServerRequest,
   type AddMcpServerResponse,
+  type DisableMcpServerRequest,
+  type DisableMcpServerResponse,
   type ListMcpServersResponse,
   type McpScope,
   type McpServerEntry,
@@ -9,9 +11,9 @@ import {
   type UpdateMcpServerRequest,
   type UpdateMcpServerResponse,
 } from "@agents-remote/shared";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { runCliTool, type CliToolResult } from "./cli-process.js";
 import { resolveProjectPath, ProjectPathError } from "./project-paths.js";
 import { jsonError } from "./http-auth.js";
@@ -124,7 +126,9 @@ async function readMcpServersFile(filePath: string): Promise<McpServerEntry[]> {
 }
 
 export async function listUserMcpServers(): Promise<ListMcpServersResponse> {
-  return { servers: await readMcpServersFile(join(homedir(), USER_CONFIG_FILE)) };
+  const live = await readMcpServersFile(join(homedir(), USER_CONFIG_FILE));
+  const stash = await readMcpDisabledStash();
+  return { servers: mergeDisabledMcpServers(live, stash, "user") };
 }
 
 export async function listProjectMcpServers(
@@ -132,7 +136,78 @@ export async function listProjectMcpServers(
   projectName: string,
 ): Promise<ListMcpServersResponse> {
   const project = await resolveProjectPath(projectsRoot, projectName);
-  return { servers: await readMcpServersFile(join(project.path, PROJECT_MCP_FILE)) };
+  const live = await readMcpServersFile(join(project.path, PROJECT_MCP_FILE));
+  const stash = await readMcpDisabledStash();
+  return {
+    servers: mergeDisabledMcpServers(live, stash, "project", projectName),
+  };
+}
+
+// ── 停用区（stash）：`claude mcp` 无 enable/disable 子命令（蓝图实测），停用 = remove（CLI）
+// ── + entry 记入 stash 文件；enable 反向。scope + projectName 是 stash 取回键。
+
+/** 一条停用记录：scope + projectName（project scope 取回 cwd 用）+ 原始配置。 */
+export type McpDisabledStashEntry = {
+  scope: McpScope;
+  projectName?: string;
+  entry: McpServerEntry;
+};
+
+/** 读停用区。文件缺失/损坏 → 空（list 不崩；损坏时停用条目不可恢复，接受取舍）。
+ *  home 参数 = 依赖注入（测试传 tmp；bun test 并发加载下 mock.module("node:os") 时序不可靠，
+ *  曾致 stash 写到真家目录——路径注入优于进程级 mock）。 */
+export async function readMcpDisabledStash(
+  home: string = homedir(),
+): Promise<McpDisabledStashEntry[]> {
+  let raw: string;
+  try {
+    raw = await readFile(join(home, ".agents", "mcp-disabled.json"), "utf8");
+  } catch {
+    return []; // 文件缺失 = 无停用记录。
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  const list = (parsed as { disabled?: unknown }).disabled;
+  if (!Array.isArray(list)) return [];
+  const out: McpDisabledStashEntry[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const e = item as McpDisabledStashEntry;
+    if ((e.scope === "user" || e.scope === "project") && e.entry) out.push(e);
+    else continue;
+  }
+  return out;
+}
+
+/** 写停用区（全量覆写）。父目录不存在时创建（~/.agents 首次使用）。
+ *  tmp+rename 原子落盘（崩溃截断 = 解析失败静默丢全部停用条目）；mode 0600——stash 条目
+ *  含 env/headers 密钥，不落世界可读。home 参数同 read（依赖注入，见上）。 */
+export async function writeMcpDisabledStash(
+  entries: McpDisabledStashEntry[],
+  home: string = homedir(),
+): Promise<void> {
+  const file = join(home, ".agents", "mcp-disabled.json");
+  await mkdir(dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  await writeFile(tmp, `${JSON.stringify({ disabled: entries }, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  await rename(tmp, file);
+}
+
+/** stash 读改写互斥：disable/enable 各自「读快照→改→全量覆写」，并发时后写者吞掉先写者
+ *  条目（远程控制面双端并发是常态）。模块级 promise 链串行化，失败不阻断后续排队。 */
+let stashLock: Promise<unknown> = Promise.resolve();
+function withStashLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = stashLock.then(fn, fn);
+  stashLock = next.catch(() => {});
+  return next;
 }
 
 // ── 写：wrap `claude mcp add/remove` ──
@@ -239,19 +314,24 @@ export async function removeMcpServer(
 async function readScopeServers(
   scope: McpScope,
   cwd: string | undefined,
+  home?: string,
 ): Promise<McpServerEntry[]> {
   const filePath =
-    scope === "user" ? join(homedir(), USER_CONFIG_FILE) : join(cwd ?? "", PROJECT_MCP_FILE);
+    scope === "user"
+      ? join(home ?? homedir(), USER_CONFIG_FILE)
+      : join(cwd ?? "", PROJECT_MCP_FILE);
   return readMcpServersFile(filePath);
 }
 
-/** McpServerEntry → AddMcpServerRequest（回滚 add 复用 buildAddArgs，字段透传）。 */
+/** McpServerEntry → AddMcpServerRequest（回滚 add/停用取回复用 buildAddArgs，字段透传）。
+ *  headers 必须回填：远程条目鉴权头经 stash 循环（disable→enable）不能被剥掉。 */
 function entryToAddRequest(entry: McpServerEntry): AddMcpServerRequest {
   const req: AddMcpServerRequest = { name: entry.name, type: entry.type };
   if (entry.command) req.command = entry.command;
   if (entry.args) req.args = entry.args;
   if (entry.env) req.env = entry.env;
   if (entry.url) req.url = entry.url;
+  if (entry.headers) req.headers = entry.headers;
   return req;
 }
 
@@ -310,6 +390,105 @@ export async function updateMcpServer(
   return { ok: true, server: entryFromRequest(name, req) };
 }
 
+// ── 停用/启用：remove（CLI）+ stash（~/.agents/mcp-disabled.json），镜像 updateMcpServer
+// ── 的 remove+add 回滚骨架（先读旧配置 → remove → stash 写入失败回滚 add）。
+
+/**
+ * 停用 = `claude mcp remove` + entry 记入停用区。原子性：CLI remove 成功但 stash 写入失败 →
+ * 回滚 add 旧配置（best-effort）再抛 MCP_DISABLE_FAILED。目标不存在 → MCP_CONFIG_INVALID。
+ */
+export async function disableMcpServer(
+  rawName: string,
+  scope: McpScope,
+  context: { projectsRoot?: string; projectName?: string; home?: string },
+): Promise<DisableMcpServerResponse> {
+  const name = sanitizeMcpName(rawName);
+  const cwd = await resolveProjectCwd(scope, context);
+  return withStashLock(async () => {
+    // 先读旧配置（stash 用）——remove 前读，remove 后文件已无此条目。
+    const oldList = await readScopeServers(scope, cwd, context.home);
+    const oldEntry = oldList.find((s) => s.name === name);
+    if (!oldEntry) {
+      throw new McpError("MCP_CONFIG_INVALID", `MCP server not found: ${name}`);
+    }
+    const stash = await readMcpDisabledStash(context.home);
+    const rmResult = await runCliTool([CLAUDE_BIN, "mcp", "remove", name, "-s", scope], {
+      cwd,
+      timeoutMs: MCP_CLI_TIMEOUT_MS,
+      makeError: (m) => new McpError("MCP_DISABLE_FAILED", m),
+    });
+    if (rmResult.exitCode !== 0) {
+      throw new McpError("MCP_DISABLE_FAILED", `remove phase: ${trimResult(rmResult)}`);
+    }
+    try {
+      stash.push({ scope, projectName: context.projectName, entry: oldEntry });
+      await writeMcpDisabledStash(stash, context.home);
+    } catch (error) {
+      // 回滚：把旧配置 add 回去（best-effort），不掩盖 stash 失败。
+      try {
+        await runCliTool(
+          [CLAUDE_BIN, "mcp", "add", ...buildAddArgs(name, entryToAddRequest(oldEntry), scope)],
+          {
+            cwd,
+            timeoutMs: MCP_CLI_TIMEOUT_MS,
+            makeError: (m) => new McpError("MCP_DISABLE_FAILED", m),
+          },
+        );
+      } catch {
+        /* 回滚失败：不掩盖 stash 失败 */
+      }
+      throw new McpError("MCP_DISABLE_FAILED", `stash write failed: ${errMsg(error)}`);
+    }
+    return { ok: true, name };
+  });
+}
+
+/**
+ * 启用 = stash 取回该 scope 的条目 → `claude mcp add` → 从 stash 删除。原子性：add 失败抛
+ * MCP_ENABLE_FAILED（stash 保留，可重试）；stash 删除失败仅告警（条目已回 live，list 合并时
+ * live 同名优先——见 listUserMcpServers 合并逻辑）。
+ */
+export async function enableMcpServer(
+  rawName: string,
+  scope: McpScope,
+  context: { projectsRoot?: string; projectName?: string; home?: string },
+): Promise<DisableMcpServerResponse> {
+  const name = sanitizeMcpName(rawName);
+  const cwd = await resolveProjectCwd(scope, context);
+  return withStashLock(async () => {
+    const stash = await readMcpDisabledStash(context.home);
+    const idx = stash.findIndex(
+      (item) =>
+        item.scope === scope &&
+        (scope === "user" || item.projectName === context.projectName) &&
+        item.entry.name === name,
+    );
+    if (idx === -1) {
+      throw new McpError("MCP_CONFIG_INVALID", `MCP server is not disabled: ${name}`);
+    }
+    const { entry } = stash[idx];
+    const addResult = await runCliTool(
+      [CLAUDE_BIN, "mcp", "add", ...buildAddArgs(name, entryToAddRequest(entry), scope)],
+      {
+        cwd,
+        timeoutMs: MCP_CLI_TIMEOUT_MS,
+        makeError: (m) => new McpError("MCP_ENABLE_FAILED", m),
+      },
+    );
+    if (addResult.exitCode !== 0) {
+      throw new McpError("MCP_ENABLE_FAILED", `claude mcp add failed: ${trimResult(addResult)}`);
+    }
+    // stash 删除失败仅告警：条目已回 live，list 合并按 live 同名优先去重。
+    const next = stash.filter((_, i) => i !== idx);
+    try {
+      await writeMcpDisabledStash(next, context.home);
+    } catch (error) {
+      console.error(`[mcp-management] failed to update stash: ${errMsg(error)}`);
+    }
+    return { ok: true, name };
+  });
+}
+
 // ── 路由：/api/mcp/*（user scope）+ /api/projects/{name}/mcp/*（project scope） ──
 
 export type McpManagementDeps = {
@@ -319,7 +498,9 @@ export type McpManagementDeps = {
 
 function matchProjectMcpPath(
   pathname: string,
-): { projectName: string; action: "list" | "add" | "remove" | "update" } | undefined {
+):
+  | { projectName: string; action: "list" | "add" | "remove" | "update" | "disable" | "enable" }
+  | undefined {
   const prefix = "/api/projects/";
   if (!pathname.startsWith(prefix)) return undefined;
   const rest = pathname.slice(prefix.length);
@@ -340,6 +521,8 @@ function matchProjectMcpPath(
   if (tail === "/add") return { projectName, action: "add" };
   if (tail === "/remove") return { projectName, action: "remove" };
   if (tail === "/update") return { projectName, action: "update" };
+  if (tail === "/disable") return { projectName, action: "disable" };
+  if (tail === "/enable") return { projectName, action: "enable" };
   return undefined;
 }
 
@@ -405,6 +588,14 @@ export async function handleMcpRoutes(
     const body = await readJson<UpdateMcpServerRequest>(request);
     return runMcpHandler(() => updateMcpServer(body, "user", {}));
   }
+  if (url.pathname === "/api/mcp/disable" && isPost) {
+    const body = await readJson<DisableMcpServerRequest>(request);
+    return runMcpHandler(() => disableMcpServer(body.name, "user", {}));
+  }
+  if (url.pathname === "/api/mcp/enable" && isPost) {
+    const body = await readJson<DisableMcpServerRequest>(request);
+    return runMcpHandler(() => enableMcpServer(body.name, "user", {}));
+  }
 
   // ── project scope ──
   const match = matchProjectMcpPath(url.pathname);
@@ -433,7 +624,40 @@ export async function handleMcpRoutes(
         updateMcpServer(body, "project", { projectsRoot, projectName: match.projectName }),
       );
     }
+    if (match.action === "disable" && isPost) {
+      const body = await readJson<DisableMcpServerRequest>(request);
+      return runMcpHandler(() =>
+        disableMcpServer(body.name, "project", { projectsRoot, projectName: match.projectName }),
+      );
+    }
+    if (match.action === "enable" && isPost) {
+      const body = await readJson<DisableMcpServerRequest>(request);
+      return runMcpHandler(() =>
+        enableMcpServer(body.name, "project", { projectsRoot, projectName: match.projectName }),
+      );
+    }
   }
 
   return undefined;
+}
+
+/**
+ * live + stash 合并（纯函数，直接单测）：stash 条目转 `disabled:true` 追加到列表尾；
+ * live 同名条目优先（enable 时 stash 删除失败的残留，以 live 真相为准）。
+ */
+export function mergeDisabledMcpServers(
+  live: McpServerEntry[],
+  stash: McpDisabledStashEntry[],
+  scope: McpScope,
+  projectName?: string,
+): McpServerEntry[] {
+  const liveNames = new Set(live.map((s) => s.name));
+  const out = [...live];
+  for (const item of stash) {
+    if (item.scope !== scope) continue;
+    if (scope === "project" && item.projectName !== projectName) continue;
+    if (liveNames.has(item.entry.name)) continue;
+    out.push({ ...item.entry, disabled: true });
+  }
+  return out;
 }

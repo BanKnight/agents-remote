@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile, readdir, realpath, stat } from "node:fs/promises";
+import { readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -150,8 +150,8 @@ export async function searchSkillMarket(query: string): Promise<SkillMarketSearc
 
 // skills CLI 各 agent 的全局 skills 目录名（home 下的隐藏目录）：claude-code→`.claude`、
 // codex→`.codex`（CLI 的 claudeHome=CLAUDE_CONFIG_DIR||~/.claude、codexHome=CODEX_HOME||
-// ~/.codex；全局 skills 在其下 `skills/` 子目录）。
-const AGENT_SKILLS_HOME_DIR: Record<SkillAgent, string> = {
+// ~/.codex；全局 skills 在其下 `skills/` 子目录）。skill-disable.ts 复用（停用区同布局约定）。
+export const AGENT_SKILLS_HOME_DIR: Record<SkillAgent, string> = {
   "claude-code": ".claude",
   codex: ".codex",
 };
@@ -161,12 +161,25 @@ const AGENT_DISPLAY_NAME: Record<SkillAgent, string> = {
   codex: "Codex",
 };
 
-function resolveSkillsHome(deps?: SkillMarketDeps): string {
+export function resolveSkillsHome(deps?: SkillMarketDeps): string {
   return deps?.skillsHome ?? homedir();
 }
 
 function agentGlobalSkillsDir(agent: SkillAgent, home: string): string {
   return join(home, AGENT_SKILLS_HOME_DIR[agent], "skills");
+}
+
+/**
+ * 停用区父目录（调用方 join(name) 得条目路径；v1.4 批6 停用能力，消费方 skill-disable.ts）。
+ * 全局 = `~/.agents/disabled-skills/<agent>`（per-agent 子目录：停用区无 agent 隔离时
+ * claude-code/codex 同名 skill rename 相撞）；项目 = `<root>/.<agentHome>/skills.disabled`
+ *（与 skills/ 同级；`skills.disabled` 非 skills CLI 约定目录，不会被 CLI 发现 = 停止注入）。
+ * 状态即目录布局，零标记文件。
+ */
+export function disabledSkillsDir(agent: SkillAgent, home: string, projectRoot?: string): string {
+  return projectRoot
+    ? join(projectRoot, AGENT_SKILLS_HOME_DIR[agent], "skills.disabled")
+    : join(home, ".agents", "disabled-skills", agent);
 }
 
 /**
@@ -185,52 +198,59 @@ async function scanInstalledSkillsFromFs(
 ): Promise<InstalledSkill[]> {
   // 项目 scope：读 <projectRoot>/.<agentHome>/skills（skills CLI 项目 scope 安装位置）；
   // 全局 scope：读 ~/.<agentHome>/skills。scope 标签由目录来源决定，调用方无需另传。
+  // 停用区条目（disabled:true）一并返回（09b：停用行仍可查看/启用/卸载）。
   const dir = projectRoot
     ? join(projectRoot, AGENT_SKILLS_HOME_DIR[agent], "skills")
     : agentGlobalSkillsDir(agent, home);
+  const disabledDir = disabledSkillsDir(agent, home, projectRoot);
   // 项目 scope 读一次项目锁判断每 skill 是否有源（manageable）；全局 scope 不读（manageable 走
   // 独立的 checkSkillUpdates）。循环外读一次，不 per-skill 重复 IO。
   const lockNames = projectRoot ? await readProjectSkillLockNames(projectRoot) : null;
-  let entries: string[];
-  try {
-    entries = await readdir(dir);
-  } catch {
-    return []; // 目录缺失（codex 全新 / agent 未装）= 空列表，非错误。
-  }
-  const skills: InstalledSkill[] = [];
-  for (const entry of entries) {
-    if (entry.startsWith(".")) continue; // 跳过 .system 等隐藏条目
-    const entryPath = join(dir, entry);
+  const scanOne = async (dir: string, disabled: boolean): Promise<InstalledSkill[]> => {
+    let entries: string[];
     try {
-      const st = await stat(entryPath); // stat 跟随 symlink：broken symlink → ENOENT → 跳过
-      if (!st.isDirectory()) continue;
+      entries = await readdir(dir);
     } catch {
-      continue;
+      return []; // 目录缺失（codex 全新 / agent 未装 / 无停用条目）= 空，非错误。
     }
-    let content: string;
-    try {
-      content = await readFile(join(entryPath, SKILL_MD), "utf8");
-    } catch {
-      continue; // 无 SKILL.md → CLI 同样不视为 skill，跳过
+    const skills: InstalledSkill[] = [];
+    for (const entry of entries) {
+      if (entry.startsWith(".")) continue; // 跳过 .system 等隐藏条目
+      const entryPath = join(dir, entry);
+      try {
+        const st = await stat(entryPath); // stat 跟随 symlink：broken symlink → ENOENT → 跳过
+        if (!st.isDirectory()) continue;
+      } catch {
+        continue;
+      }
+      let content: string;
+      try {
+        content = await readFile(join(entryPath, SKILL_MD), "utf8");
+      } catch {
+        continue; // 无 SKILL.md → CLI 同样不视为 skill，跳过
+      }
+      const fm = parseFrontmatter(content);
+      let realPath: string;
+      try {
+        realPath = await realpath(entryPath);
+      } catch {
+        realPath = entryPath;
+      }
+      const name = fm.name || entry;
+      skills.push({
+        name,
+        path: realPath,
+        scope: projectRoot ? "project" : "global",
+        agents: [AGENT_DISPLAY_NAME[agent]],
+        // 项目 scope：锁记录存在 = 有源可更新；手写 skill（无锁记录）= false。全局不填（undefined）。
+        // 停用条目不可更新（disabled 已表达语义），manageable 不填。
+        ...(disabled ? { disabled: true } : lockNames ? { manageable: lockNames.has(name) } : {}),
+      });
     }
-    const fm = parseFrontmatter(content);
-    let realPath: string;
-    try {
-      realPath = await realpath(entryPath);
-    } catch {
-      realPath = entryPath;
-    }
-    const name = fm.name || entry;
-    skills.push({
-      name,
-      path: realPath,
-      scope: projectRoot ? "project" : "global",
-      agents: [AGENT_DISPLAY_NAME[agent]],
-      // 项目 scope：锁记录存在 = 有源可更新；手写 skill（无锁记录）= false。全局不填（undefined）。
-      ...(lockNames ? { manageable: lockNames.has(name) } : {}),
-    });
-  }
-  return skills;
+    return skills;
+  };
+  const [active, disabled] = await Promise.all([scanOne(dir, false), scanOne(disabledDir, true)]);
+  return [...active, ...disabled];
 }
 
 /**
@@ -424,9 +444,20 @@ export async function uninstallSkill(
   if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
     throw new SkillError("SKILL_SOURCE_INVALID", `Unsupported agent: ${agent}`);
   }
+  // 停用条目卸载：skills CLI 看不到停用区（不在 skills/ 下），直接 rm 停用区条目
+  //（语义仍是「卸载」= 清理残留；恢复注入需先启用）。
+  const cwd = projectCtx ? await resolveProjectSkillCwd(projectCtx) : undefined;
+  const disabledEntry = join(disabledSkillsDir(agent, resolveSkillsHome(deps), cwd), name);
+  const isDisabled = await stat(disabledEntry)
+    .then(() => true)
+    .catch(() => false);
+  if (isDisabled) {
+    await rm(disabledEntry, { recursive: true, force: true });
+    await reloadAliveSessions(deps);
+    return { ok: true };
+  }
   // 项目 scope：cwd=projectRoot + argv 不带 --global（删 <cwd>/.claude/skills/<name>）；
   // 全局 scope：argv 带 --global（删 ~/.claude/skills/<name>）。
-  const cwd = projectCtx ? await resolveProjectSkillCwd(projectCtx) : undefined;
   const result = await runSkillsCommand(
     projectCtx
       ? ["remove", name, "--agent", agent, "--yes"]
@@ -448,7 +479,7 @@ export async function previewInstalledSkill(
   deps?: SkillMarketDeps,
   projectCtx?: ProjectSkillCtx,
 ): Promise<SkillPreviewResponse> {
-  // sanitize 拒绝 `..`/`/`/null byte，锁死在 agent skills 目录内（路径穿越不可达）。
+  // sanitize 拒绝 dot-segment/`/`/null byte，锁死在 agent skills 目录内（路径穿越不可达）。
   const safeName = sanitizeSkillName(name);
   // 项目 scope：读 <projectRoot>/.<agentHome>/skills/<name>；全局 scope：读 ~/.<agentHome>/skills/<name>。
   const cwd = projectCtx ? await resolveProjectSkillCwd(projectCtx) : undefined;
@@ -572,10 +603,11 @@ const readJson = async <T>(request: Request): Promise<T> => {
  * bare prefix = list。镜像 mcp-management.ts 的 matchProjectMcpPath（同口径：单 path 段 + decode）。
  * update action 由 skill-update.ts 的 handleSkillUpdateRoutes 消费（避免循环 import）。
  */
-export function matchProjectSkillPath(
-  pathname: string,
-):
-  | { projectName: string; action: "list" | "install" | "uninstall" | "update" | "preview" }
+export function matchProjectSkillPath(pathname: string):
+  | {
+      projectName: string;
+      action: "list" | "install" | "uninstall" | "update" | "preview" | "disable" | "enable";
+    }
   | undefined {
   const prefix = "/api/projects/";
   if (!pathname.startsWith(prefix)) return undefined;
@@ -598,6 +630,9 @@ export function matchProjectSkillPath(
   if (tail === "/uninstall") return { projectName, action: "uninstall" };
   if (tail === "/update") return { projectName, action: "update" };
   if (tail === "/preview") return { projectName, action: "preview" };
+  // disable/enable 交 handleSkillDisableRoutes（skill-disable.ts，镜像 update 的独立 handler）。
+  if (tail === "/disable") return { projectName, action: "disable" };
+  if (tail === "/enable") return { projectName, action: "enable" };
   return undefined;
 }
 
@@ -685,7 +720,8 @@ export async function handleSkillRoutes(
       const body = await readJson<UninstallSkillRequest>(request);
       return runSkillHandler(() => uninstallSkill(body, deps, projectCtx));
     }
-    // action === "update" → 不处理，交 handleSkillUpdateRoutes（index.ts 顺序调用）。
+    // action === "update"|"disable"|"enable" → 不处理，交后续专用 handler（index.ts 顺序调用：
+    // handleSkillUpdateRoutes / handleSkillDisableRoutes，避免循环 import）。
   }
 
   return undefined;
