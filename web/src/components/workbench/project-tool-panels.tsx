@@ -8,7 +8,7 @@ import type {
 } from "@agents-remote/shared";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAtomValue } from "jotai";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   deleteFile,
@@ -287,14 +287,16 @@ export function GitToolPanel({
       ) : null}
 
       {onOpenHistory || onOpenBranches ? (
-        <div className="links">
+        // 04d:98/05i:108 gacts 动作组（真机反馈 2026-09-29：裸 .links 文字链 = 动作区
+        // 降级，换回原型三枚等宽 32px 描边钮；.links 形态仅存于 files 底部链）。
+        <div className="gacts">
           {onOpenHistory ? (
             <button onClick={onOpenHistory} type="button">
               {t("git.linkHistory")}
             </button>
           ) : null}
           {files.length > 0 ? (
-            // 03m2 提交入口（04d gacts 同排「历史|提交…|分支」）。改动清零即隐藏——
+            // 03m2 提交入口（gacts「历史列表|提交…|分支」中列）。改动清零即隐藏——
             // 空变更提交无语义（原型恒显，记 diverge）。
             <button onClick={() => setCommitOpen(true)} type="button">
               {t("git.linkCommit")}
@@ -652,8 +654,9 @@ export function FilesToolPanel({
       )}
       {/* 03z 上传队列卡（.upcard，与桌面 FilesPanel 双端单源）。 */}
       <UploadQueueCard />
-      {/* 03o pin④「增=新建/上传（到当前作用域）」：底部 .links 行（03m Git 工具同款）。 */}
-      <div className="links">
+      {/* 03o pin④「增=新建/上传（到当前作用域）」：底部 .links 行（移动检视面板语境；
+          桌面右栏 = 05e:54 顶部搜索行右端「＋」（toolChip 装配承载），lg 隐藏。 */}
+      <div className="links lg:hidden">
         <button onClick={() => setNewItemParentPath(path)} type="button">
           {t("files.linkCreate")}
         </button>
@@ -676,7 +679,13 @@ export function FilesToolPanel({
       {copiedPath ? (
         <div className="cap mt-2 px-4">{t("files.copied")}</div>
       ) : (
-        <div className="cap mt-4 px-4">{t("files.capBreadcrumb")}</div>
+        <>
+          {/* 页脚提示分档（同一 DOM 两文案显隐，grplabel hidden lg:block 反向先例）：
+              移动 = 03o 面包屑操作提示；桌面 = 05e:64 拖拽上传提示（长按语义在桌面
+              不成立）。10e absolute 贴底不取——遮内容，文档流尾行记 diverge。 */}
+          <div className="cap mt-4 px-4 lg:hidden">{t("files.capBreadcrumb")}</div>
+          <div className="cap mt-4 hidden px-4 lg:block">{t("files.capDesktop")}</div>
+        </>
       )}
       {/* 03y/03w2/03w3 受控 sheet/dialog（open = state 非空持有）+ 删除 confirm holder。
         NewItemSheet 的重名即时校验对比同层名单（当前 cwd 层新建时才可得；子目录新建时
@@ -943,4 +952,158 @@ export function WikiToolPanel({
       <div className="cap mt-4 px-4">{t("wiki.readOnlyCap")}</div>
     </ToolPanel>
   );
+}
+
+/**
+ * 检视面板工具 chip 装配单源（03m gitchip / 03o crumb+.obtn.srch / 03p wsearch）：移动
+ * InspectionPanel 与桌面 RightPanelTabs 消费同一份（多端同构：行为收敛共享组件、两端只
+ * 容器不同——真机反馈 2026-09-29 桌面右栏 Files/Wiki 标签零工具行，批3 遗留补齐）。
+ * git chip 计数与 GitToolPanel 同 key（缓存共享零额外网络）；files/wiki 搜索 query
+ * 提升返回给调用方透传工具面板（chip 与列表同 query state，03x 语义）。
+ */
+export function usePanelToolChip({
+  currentPath,
+  kind,
+  onPathChange,
+  projectKey,
+}: {
+  /** files crumb 目录链（受控 cwd：桌面 = ctx.currentPath / 移动 = filesPath）。 */
+  currentPath?: string;
+  /** 激活标签种类（file 预览标签无 chip）。 */
+  kind: "git" | "files" | "wiki" | "file";
+  onPathChange?: (path: string) => void;
+  projectKey: string;
+}): {
+  /** files 搜索 query（调用方透传 FilesToolPanel searchQuery）。 */
+  filesSearchQuery: string;
+  /** wiki 搜索 query（调用方透传 WikiToolPanel query）。 */
+  setFilesSearchOpen: (open: boolean) => void;
+  setFilesSearchQuery: (query: string) => void;
+  setWikiSearchOpen: (open: boolean) => void;
+  setWikiSearchQuery: (query: string) => void;
+  toolChip: ReactNode;
+  wikiSearchQuery: string;
+} {
+  const { t } = useT();
+  // 03x 文件搜索：chip 两态（crumb ↔ .wsearch 输入），query 提升共享给 FilesToolPanel。
+  const [filesSearchOpen, setFilesSearchOpen] = useState(false);
+  const [filesSearchQuery, setFilesSearchQuery] = useState("");
+  // 03p wiki 搜索：chip 点击展开输入，query 提升共享给 WikiToolPanel。
+  const [wikiSearchOpen, setWikiSearchOpen] = useState(false);
+  const [wikiSearchQuery, setWikiSearchQuery] = useState("");
+  // git chip 数据（与 GitToolPanel 同 key 缓存共享——开着 git 标签零额外网络）。
+  const gitDiffForChip = useQuery({
+    queryKey: gitDiffListQueryKey(projectKey),
+    queryFn: () => listProjectGitDiff(projectKey),
+  });
+  const crumbSegments = currentPath ? currentPath.split("/") : [];
+  // gitchip 计数（worktree/staged 分 scope 计数；非 repository 恒 0）。
+  const { worktree, staged } = useMemo(() => {
+    const files = gitDiffForChip.data?.repository === true ? gitDiffForChip.data.files : [];
+    const count = (s: string) => files.filter((f) => f.scope === s).length;
+    return { worktree: count("worktree"), staged: count("staged") };
+  }, [gitDiffForChip.data]);
+  // 03m gitchip b = 分支名 + ahead/behind（spec §4.4 `main ↑1 ↓0`）；detached 降级工具名。
+  const chipBranch =
+    gitDiffForChip.data?.repository === true ? gitDiffForChip.data.branch : undefined;
+  const toolChip =
+    kind === "git" ? (
+      <div className="gitchip">
+        <b>
+          {chipBranch ? chipBranch.name : t("git.toolTitle")}
+          {chipBranch?.ahead || chipBranch?.behind
+            ? ` ${formatAheadBehind(chipBranch.ahead, chipBranch.behind)}`
+            : ""}
+        </b>
+        <span>{t("git.chipCounts", { worktree, staged })}</span>
+      </div>
+    ) : kind === "files" ? (
+      filesSearchOpen ? (
+        // 03x ①「行2 内容头变搜索框（同 Wiki）」：单源复用 .wsearch（§6.9），聚焦态描边
+        // 由 .wsearch:focus-within 承载。
+        <div className="wsearch">
+          <input
+            autoFocus
+            className="h-6 flex-1 bg-transparent text-[13px] text-ink-1 outline-none placeholder:text-ink-3"
+            onChange={(e) => setFilesSearchQuery(e.target.value)}
+            placeholder={t("files.searchPlaceholder")}
+            value={filesSearchQuery}
+          />
+          <button
+            className="flex cursor-pointer items-center text-ink-2"
+            onClick={() => {
+              setFilesSearchOpen(false);
+              setFilesSearchQuery("");
+            }}
+            type="button"
+            aria-label={t("cancel")}
+          >
+            <ShellIcon className="h-[13px] w-[13px]" name="close" />
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* 03o 地址栏（.crumb flex:1 撑满行）：段按钮在前、当前段 <b> 收尾（原型
+             「agents-web / src / auth」b=auth——此前 b 恒为项目根、强调段反转）；搜索钮 =
+              独立 .obtn.srch chip 在胶囊右侧（03o 渐进披露）。此前搜索钮塞胶囊内部占
+              last-child，分隔符 ::after 选择器把「/」错画到末段后、前导 b 又不带分隔
+             （DOM 实测 textContent 粘连「proj1src」，真机反馈「地址栏样式错误」主因）。 */}
+          <div className="crumb">
+            {crumbSegments.length > 0 ? (
+              <button onClick={() => onPathChange?.("")} type="button">
+                {projectKey}
+              </button>
+            ) : null}
+            {crumbSegments.slice(0, -1).map((seg, i) => (
+              <button
+                key={i}
+                onClick={() => onPathChange?.(crumbSegments.slice(0, i + 1).join("/"))}
+                type="button"
+              >
+                {seg}
+              </button>
+            ))}
+            <b>{crumbSegments.length > 0 ? crumbSegments[crumbSegments.length - 1] : projectKey}</b>
+          </div>
+          <button
+            className="obtn srch cursor-pointer"
+            onClick={() => setFilesSearchOpen(true)}
+            type="button"
+            aria-label={t("files.searchPlaceholder")}
+          >
+            <ShellIcon className="size-4" name="magnifyingglass" />
+          </button>
+        </>
+      )
+    ) : kind === "wiki" ? (
+      <div className="wsearch">
+        {wikiSearchOpen ? (
+          <input
+            autoFocus
+            className="h-6 flex-1 bg-transparent text-[13px] text-ink-1 outline-none placeholder:text-ink-3"
+            onChange={(e) => setWikiSearchQuery(e.target.value)}
+            placeholder={t("wiki.searchPlaceholder")}
+            value={wikiSearchQuery}
+          />
+        ) : (
+          <button
+            className="flex items-center gap-1.5 cursor-pointer"
+            onClick={() => setWikiSearchOpen(true)}
+            type="button"
+          >
+            <ShellIcon className="h-[13px] w-[13px] text-ink-2" name="magnifyingglass" />
+            <span>{t("wiki.searchPlaceholder")}</span>
+          </button>
+        )}
+      </div>
+    ) : undefined;
+  return {
+    filesSearchQuery,
+    setFilesSearchOpen,
+    setFilesSearchQuery,
+    setWikiSearchOpen,
+    setWikiSearchQuery,
+    toolChip,
+    wikiSearchQuery,
+  };
 }

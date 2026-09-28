@@ -1341,8 +1341,13 @@
     color: var(--ink-2);
   }
   .crumb {
-    display: inline-flex;
+    /* 单源 components.css :152 flex:1（撑满行、搜索 chip 落右侧兄弟位）——此前
+       inline-flex 无 flex:1，短路径下胶囊缩在左侧（真机反馈「地址栏样式不对」实锤）。 */
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
     align-items: center;
+    white-space: nowrap;
     height: 30px;
     border-radius: 15px;
     background: var(--bg-elevated);
@@ -1361,6 +1366,12 @@
     font-weight: 400;
     color: var(--ink-1);
     white-space: nowrap;
+    /* 当前段溢出防护（实现层补，n/d truncate 先例）——超长目录名在 flex:1 容器下
+       会撑破胶囊。 */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+    flex: none;
   }
   .crumb button {
     font: inherit;
@@ -1374,10 +1385,37 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .crumb button:not(:last-child)::after {
+  /* 段间「 / 」（03o 原型字面分隔）：相邻兄弟前缀——结构与原型同构（段按钮在前、当前段
+     <b> 收尾）。此前 button:not(:last-child)::after 因搜索钮占 last-child、前导 <b> 非
+     button，出现「首段无分隔 + 末段反多 /」的结构性错位（DOM 实测 textContent 粘连
+     「proj1src」，真机反馈「地址栏样式错误」主因）。 */
+  .crumb > * + *::before {
     content: "/";
     margin: 0 4px;
     color: var(--ink-3);
+  }
+  /* 03o 独立操作 chip（单源 components.css :139-143 1:1）：地址栏行右端搜索钮，
+     渐进披露收纳态（中性灰弱于主动作；点按原位展开输入 = 03x）。 */
+  .obtn {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: var(--tint-blue);
+    color: var(--c-primary);
+    position: relative;
+  }
+  .obtn svg {
+    width: 16px;
+    height: 16px;
+  }
+  .obtn.srch {
+    background: var(--bg-elevated3);
+    border: 1px solid var(--sep);
+    color: var(--ink-1);
   }
   .wsearch {
     display: inline-flex;
@@ -1545,6 +1583,35 @@
     color: var(--ink-2);
     margin: 14px 16px 4px;
   }
+  /* 04d:98/05i:108 Git 动作组（双端原型同构：iPad/移动 margin 16、Mac 14——右栏语境
+     [data-desktop-inspector] 分档）。三枚等宽 32px 描边钮；取代实现自创的 .links 裸
+     文字链降级形态（真机反馈 2026-09-29「Git 标签动作区降级」实锤，.links 类随之退役）。 */
+  .gacts {
+    display: flex;
+    gap: 8px;
+    margin: 14px 16px 0;
+  }
+  [data-desktop-inspector] .gacts {
+    margin-inline: 14px;
+  }
+  .gacts button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    border-radius: 9px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 600;
+    color: var(--ink-1);
+    cursor: pointer;
+  }
+  /* 03o pin④/03z 底部新建/上传文字链（移动检视面板语境；桌面右栏 = 顶部＋入口，
+     lg 隐藏由消费方 utility 承载——05e:54 顶部搜索行右端「＋」）。 */
   .links {
     display: flex;
     gap: 24px;
@@ -1618,6 +1685,24 @@
   .frow .ar svg {
     width: 14px;
     height: 14px;
+  }
+  /* ---- 桌面右栏语境分档（[data-desktop-inspector]，先例 ptabs margin-inline）——真机
+     反馈 2026-09-29「桌面右栏与设计差距非常大」：05e .tree .frow 31px 密度行（padding
+     7px 14px、栏边距 14）+ 无 mtime/chevron（03o 移动语义尾件，display:none）+ .sect
+     边距 16→14 + 05i .grow 33px 密度（.crow 分档）。同一 DOM 语境分档，非两套 DOM。 ---- */
+  [data-desktop-inspector] .frow {
+    padding: 7px 14px;
+  }
+  [data-desktop-inspector] .frow .tm,
+  [data-desktop-inspector] .frow .ar {
+    display: none;
+  }
+  [data-desktop-inspector] .sect {
+    margin-inline: 14px;
+  }
+  [data-desktop-inspector] .crow {
+    padding: 7px 14px 0;
+    font-size: 11.5px;
   }
 
   /* 10 全局文件总览（移动 /files mainPage；10-tab-files-global.html）。与 03o .frow 同名不同物
@@ -1725,7 +1810,7 @@
   .gfile .p {
     flex: 1 1 auto;
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
-    font-size: 12.5px;
+    font-size: 13.5px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
     color: var(--ink-1);
@@ -1740,6 +1825,62 @@
     line-height: var(--line-height-ui);
     color: var(--ink-2);
     flex: none;
+  }
+  /* 10m 桌面分档（10-mac-files-global.html）：同一 DOM 的容器级 @media lg 数值分档——
+     同构原则「行为收敛共享组件、两端只容器不同」落地为分档，而非两套 DOM（真机反馈
+     2026-09-28「iPhone 与桌面差距大」整改）。mbody 的 gap 12 + padding 20px 由消费方
+     utility 承担，此处卡 margin 归零。 */
+  @media (min-width: 1024px) {
+    .gfcard {
+      border-radius: 12px;
+      padding: 0;
+      margin: 0;
+    }
+    .gfrow {
+      padding: 10px 14px;
+    }
+    .gfrow .ic {
+      width: 20px;
+      height: 20px;
+      border-radius: 0;
+      background: transparent;
+    }
+    .gfrow .ic svg {
+      width: 20px;
+      height: 20px;
+      color: var(--ink-2);
+    }
+    .gfrow .n {
+      font-size: 13.5px;
+    }
+    .gfile {
+      padding: 8px 14px;
+    }
+    .gfile .ic {
+      display: none;
+    }
+    .gfile .p {
+      font-size: 12.5px;
+      color: var(--term-ink);
+    }
+    .gfile .tm {
+      color: var(--ink-3);
+      font-family:
+        system-ui,
+        -apple-system,
+        "Segoe UI",
+        sans-serif;
+    }
+  }
+  /* 10m:22 分组标签（桌面「项目根目录 / 根目录散文件」双组；移动 10-tab 无组标签，
+     消费方以 hidden lg:block 承载差异）。 */
+  .grplabel {
+    font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 600;
+    color: var(--ink-2);
+    margin: 2px 2px 0;
   }
   .badge.lg {
     /* 语义标记变体：基类已是 v1.4 22×19/r4/11px/700 全量规格（真机反馈批次对齐），

@@ -257,12 +257,17 @@ export function WorkbenchSide() {
           onOpenChange={setCreateMenuOpen}
           open={createMenuOpen}
           trigger={
+            /* 「＋」字形放内层 span.plus（容器式热区，inspection-panel PanelTabBar 先例）：
+               button 只当 28px 热区（.ghead .plus 的 18×18 字形落在 span 上，伪元素笔画
+               不受热区 utilities 干扰——在 plus 上挂 after 星号系列热区类会让竖笔画游离）。 */
             <button
               aria-label={t("workbench.createSessionAria")}
-              className="plus cursor-pointer"
+              className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center"
               disabled={create.isCreating}
               type="button"
-            />
+            >
+              <span className="plus" />
+            </button>
           }
         />
       </div>
@@ -281,12 +286,16 @@ export function WorkbenchSide() {
       {/* ── 项目组 ── */}
       <div className="ghead shrink-0">
         <span className="tt">{t("nav.projects")}</span>
+        {/* 「＋」= 容器式热区（同实例组头）：button 28px 热区 + 内层 span.plus 字形；
+            ml-auto 补 .ghead .tt + .plus 相邻选择器断链（中间隔了热区 button）。 */}
         <button
           aria-label={t("home.createProjectAria")}
-          className="plus cursor-pointer"
+          className="ml-auto flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center"
           onClick={openCreate}
           type="button"
-        />
+        >
+          <span className="plus" />
+        </button>
       </div>
       <div className="shrink-0">
         {projectRows.map((row) => {

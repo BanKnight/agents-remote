@@ -192,6 +192,11 @@ export const en = {
   "files.searchCount": "{{n}} results",
   "files.searchTruncated": "First {{n}} results",
   "files.searchEmpty": "No matching files",
+  "files.groupProjectRoots": "Project roots",
+  "files.groupRootFiles": "Loose files in root",
+  "files.globalCap":
+    "Tap a project folder to enter its workbench · the rest matches the project file tools",
+  "files.capDesktop": "Drag files here to upload to the current directory",
   "files.capBreadcrumb":
     "Tap “..” or breadcrumbs to go up · tap a file to preview · long-press for actions",
   "files.uploadQueue.uploading": "Uploading {{count}} files",
@@ -234,7 +239,7 @@ export const en = {
   // 04 githead 分支态势行右侧计数(第十二轮批次 2 双端 Git 工具)。
   "git.githeadWorktree": "Worktree {{n}}",
   "git.sectRecent": "Recent commits",
-  "git.linkHistory": "All history",
+  "git.linkHistory": "History",
   "git.linkBranches": "Branches ({{n}})",
   "git.linkCommit": "Commit…",
   "git.toolTitle": "Git",

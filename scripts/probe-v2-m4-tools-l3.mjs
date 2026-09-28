@@ -6,7 +6,7 @@
 //     right16 bottom50）+ ＋ 菜单开 Git 标签（标签数/激活态/toolChip 切换/FAB 消失）。
 //   Part 2 toolChip 三态：git = .gitchip（分支 + 工作区/暂存计数 + 高 30）；files = .crumb
 //     （项目名首段 + frow 行）；wiki = .wsearch（分组行）。
-//   Part 3 面板内 L3 git history/commit：links「全部历史」→ /git/history 面板内 L3
+//   Part 3 面板内 L3 git history/commit：links「历史列表」→ /git/history 面板内 L3
 //     （nav back=「Git 检视」+ dlg 日期分组 + crow）→ crow → commit 页（cmsg + dstat + 内嵌
 //     diff）→ 面板 back 回标签条。
 //   Part 4 面板内 L3 branches：links「分支 (N)」→ bcur 蓝卡 + brow + rocard + 远程段。
@@ -423,7 +423,7 @@ ok(
 console.log("Part 3: 面板内 L3 git history / commit");
 await page.locator(".ptabs .ptab", { hasText: "Git" }).first().click();
 await page.waitForTimeout(300);
-await page.locator('[data-inspection-panel="open"]').getByText("全部历史").click();
+await page.locator('[data-inspection-panel="open"]').getByText("历史列表").click();
 await page.waitForURL(/\/git\/history/, { timeout: 5000 });
 const nav = await navInfo(page);
 ok(nav?.back === "Git 检视", `history back = 「Git 检视」（实际 ${nav?.back}）`);

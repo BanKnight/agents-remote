@@ -846,7 +846,10 @@ function WorkbenchContent({
   // 收起态 rightPanel=null（aside 不渲染、零 query），由 RailButton 唤出。可见性真相 =
   // panelOpen（批3 融合），rightCollapsed 仅为 mount 恢复用记忆。
   const rightPanelCollapsible = scope.kind === "project";
-  const rightPanel = rightPanelCollapsible && panelOpen ? <RightPanelTabs ctx={ctx} /> : null;
+  const rightPanel =
+    rightPanelCollapsible && panelOpen ? (
+      <RightPanelTabs ctx={ctx} onCollapse={closeDesktopPanel} />
+    ) : null;
   // 桌面 §6.10-9（M9 批次 d，对齐 09m/10m 原型 IA）：global scope 且 leftMode=plugins/files 时,
   // 插件/全局文件是 **main 整页**（原型 side sidewin 恒定不随导航切换、main 切内容），实例区让位
   //——tab 布局在 localStorage atom 持久化，切回 auto 原样恢复；会话服务端不销毁，重挂重连

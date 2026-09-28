@@ -83,8 +83,8 @@ export function GlobalFilesOverview({
     variant === "page" ? (
       // 10m mhead seg4（原型 :63，width:280px；此处满宽由 seg4 类 margin + 外层收口）：
       // 全局 / 本项目 · <名>。span 键盘可达（Enter/Space），与右栏 Inspector seg4 同构。
-      <div className="shrink-0 px-3.5">
-        <div aria-label={t("plugins.scopeAria")} className="seg4" role="tablist">
+      <div className="shrink-0 px-4 lg:px-5">
+        <div aria-label={t("plugins.scopeAria")} className="seg4 mx-0 mt-2.5" role="tablist">
           <span
             aria-selected={!inProject}
             className={`cursor-pointer ${!inProject ? "on" : ""}`}
@@ -128,11 +128,12 @@ export function GlobalFilesOverview({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {scopeSeg}
-      {/* 搜索框 = 10-tab/10m 页私 .sfield 语义（文件语境专属：bg-elevated 胶囊 + sep 描边，
-          移动 30px / 桌面 ≥lg 34px——v1.4 真机反馈②对齐）。mx-4 补 16px 与 gfcard margin
-          同值——搜索框左缘对齐 seg4/卡片 28px 内容线（FilesPanel px-3 + margin 16）。 */}
-      <div className="shrink-0 px-3 pt-2.5">
-        <div className="sfield mx-4 w-full">
+      {/* 搜索框 = 10-tab opsrow / 10m mbody 首行（.sfield 语义：bg-elevated 胶囊 + sep 描边，
+          移动 30px / 桌面 ≥lg 34px）。sfield 填满行——此前 mx-4 + w-full 叠加右溢 16px 且
+          左缘 28px 与卡片 16px 不对齐（真机反馈实锤）；本容器与卡片同边距（移动 16/桌面 20），
+          lg gap 12 接管 gfcard 桌面档归零的 margin（mbody gap 语义）。 */}
+      <div className="flex min-h-0 flex-1 flex-col px-4 pt-2.5 lg:gap-3 lg:px-5 lg:pt-3">
+        <div className="sfield w-auto shrink-0">
           <ShellIcon
             aria-hidden="true"
             className="size-[13px] flex-none lg:size-[14px]"
@@ -153,21 +154,21 @@ export function GlobalFilesOverview({
             </span>
           ) : null}
         </div>
+        <FilesPanel
+          filter={filter}
+          initialPath=""
+          currentPath={currentPath}
+          onPathChange={onPathChange}
+          enablePreview={false}
+          onOpenFile={onOpenFile}
+          onCardDragStart={onCardDragStart}
+          // 卡形态仅根层（10-tab 原型描述的就是根层总览）：子目录层不传 → FilesPanel 退 ListRow
+          //（行内 rename input 所在路径；卡分支无编辑 UI，code review 2026-09-22 修 rename 回归）。
+          globalCard={
+            globalOverview && (currentPath ?? "") === "" ? { overview: globalOverview } : undefined
+          }
+        />
       </div>
-      <FilesPanel
-        filter={filter}
-        initialPath=""
-        currentPath={currentPath}
-        onPathChange={onPathChange}
-        enablePreview={false}
-        onOpenFile={onOpenFile}
-        onCardDragStart={onCardDragStart}
-        // 卡形态仅根层（10-tab 原型描述的就是根层总览）：子目录层不传 → FilesPanel 退 ListRow
-        //（行内 rename input 所在路径；卡分支无编辑 UI，code review 2026-09-22 修 rename 回归）。
-        globalCard={
-          globalOverview && (currentPath ?? "") === "" ? { overview: globalOverview } : undefined
-        }
-      />
     </div>
   );
 }

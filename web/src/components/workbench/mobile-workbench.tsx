@@ -13,7 +13,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import type { GitDiffScope } from "@agents-remote/shared";
-import { listProjectFiles, listProjectGitBranches, listProjectGitDiff } from "../../api/client";
+import { listProjectFiles, listProjectGitBranches } from "../../api/client";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { AddMenu } from "../files/add-menu";
 import { NewItemSheet } from "../files/new-item-sheet";
@@ -79,7 +79,6 @@ import { MobileProjectHeader } from "./mobile-project-header";
 import { InspectionPanel } from "./inspection-panel";
 import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
 import { FileTabPreview } from "../files/file-preview-panel";
-import { formatAheadBehind, gitDiffListQueryKey } from "../git/git-diff-viewer";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 import {
   L3GitBranches,
@@ -89,7 +88,12 @@ import {
   MobileL3FilePreview,
   MobileL3GitDiff,
 } from "./mobile-l3";
-import { FilesToolPanel, GitToolPanel, WikiToolPanel } from "./project-tool-panels";
+import {
+  FilesToolPanel,
+  GitToolPanel,
+  usePanelToolChip,
+  WikiToolPanel,
+} from "./project-tool-panels";
 import {
   MobileCreateInstanceSheet,
   MobileProjectSwitchSheet,
@@ -1030,34 +1034,19 @@ function MobileProjectWorkbench({
   const l3WikiSlug = l3Route?.kind === "wiki" ? l3Route.slug : null;
   const wikiIndex = useWikiIndex(scope.key, WIKI_QUERY_SCOPE);
   const l3WikiPage = useWikiPage(scope.key, l3WikiSlug ?? null, WIKI_QUERY_SCOPE);
-  // 工具 chip（03m gitchip / 03o crumb / 03p wsearch）数据与交互在此装配，header 只呈现。
-  // git chip 计数与工具面板/桌面左栏同 key（缓存共享，桌面开着时零成本）。
-  const gitDiffForChip = useQuery({
-    queryKey: gitDiffListQueryKey(scope.key),
-    queryFn: () => listProjectGitDiff(scope.key),
+  // 检视面板工具 chip（03m gitchip / 03o crumb / 03p wsearch）装配单源（usePanelToolChip，
+  // 桌面右栏同消费——真机反馈 2026-09-29 同构补齐）；搜索 query 提升返回给面板透传。
+  const { filesSearchQuery, setWikiSearchQuery, toolChip, wikiSearchQuery } = usePanelToolChip({
+    currentPath: filesPath,
+    kind: activePanelTab?.kind ?? "files",
+    onPathChange: setFilesPath,
+    projectKey: scope.key,
   });
-  // 03o crumb 段（filesPath 目录链，每段可点回跳；项目名 b 不可点）。
-  const crumbSegments = filesPath ? filesPath.split("/") : [];
   // 分支页标题计数（与 GitToolPanel / 分支页同 key 缓存共享）。
   const branchesForTitle = useQuery({
     queryKey: ["projects", scope.key, "git", "branches"],
     queryFn: () => listProjectGitBranches(scope.key),
   });
-  // gitchip 计数（worktree/staged 分 scope 计数；非 repository 恒 0）。
-  const { worktree: chipWorktree, staged: chipStaged } = useMemo(() => {
-    const files = gitDiffForChip.data?.repository === true ? gitDiffForChip.data.files : [];
-    const count = (s: string) => files.filter((f) => f.scope === s).length;
-    return { worktree: count("worktree"), staged: count("staged") };
-  }, [gitDiffForChip.data]);
-  // 03m gitchip b = 分支名 + ahead/behind（spec §4.4 `main ↑1 ↓0`）；detached 降级工具名。
-  const chipBranch =
-    gitDiffForChip.data?.repository === true ? gitDiffForChip.data.branch : undefined;
-  // 03p wsearch：chip 点击展开输入（query 提升共享给 WikiToolPanel；非 wiki 态点 chip 进 wiki）。
-  const [wikiSearchOpen, setWikiSearchOpen] = useState(false);
-  const [wikiSearchQuery, setWikiSearchQuery] = useState("");
-  // 03x 文件搜索：chip 两态（面包屑 ↔ .wsearch 输入），query 提升共享给 FilesToolPanel。
-  const [filesSearchOpen, setFilesSearchOpen] = useState(false);
-  const [filesSearchQuery, setFilesSearchQuery] = useState("");
   // M5-a 浮层（03j/03l/03n/08）：row2 ＋ 新建实例、nav 标题 ▾ 项目切换、nav ⋯ 菜单会话历史、
   // 切换 sheet 内新建项目。
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
@@ -1369,86 +1358,7 @@ function MobileProjectWorkbench({
           l3={panelVisible ? headerL3 : undefined}
           l3Body={renderPanelL3Body()}
           fab={renderPanelFab()}
-          toolChip={
-            activePanelTab?.kind === "git" ? (
-              <div className="gitchip">
-                <b>
-                  {chipBranch ? chipBranch.name : t("git.toolTitle")}
-                  {chipBranch?.ahead || chipBranch?.behind
-                    ? ` ${formatAheadBehind(chipBranch?.ahead, chipBranch?.behind)}`
-                    : ""}
-                </b>
-                <span>{t("git.chipCounts", { worktree: chipWorktree, staged: chipStaged })}</span>
-              </div>
-            ) : activePanelTab?.kind === "files" ? (
-              filesSearchOpen ? (
-                // 03x ①「行2 内容头变搜索框（同 Wiki）」：单源复用 .wsearch（§6.9），
-                // 聚焦态描边由 .wsearch:focus-within 承载（不再另立 .sfield 一套值）。
-                <div className="wsearch">
-                  <input
-                    autoFocus
-                    className="h-6 flex-1 bg-transparent text-[13px] text-ink-1 outline-none placeholder:text-ink-3"
-                    onChange={(e) => setFilesSearchQuery(e.target.value)}
-                    placeholder={t("files.searchPlaceholder")}
-                    value={filesSearchQuery}
-                  />
-                  <button
-                    className="flex cursor-pointer items-center text-ink-2"
-                    onClick={() => {
-                      setFilesSearchOpen(false);
-                      setFilesSearchQuery("");
-                    }}
-                    type="button"
-                    aria-label={t("cancel")}
-                  >
-                    <ShellIcon className="h-[13px] w-[13px]" name="close" />
-                  </button>
-                </div>
-              ) : (
-                <div className="crumb">
-                  <b>{scope.key}</b>
-                  {crumbSegments.map((seg, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setFilesPath(crumbSegments.slice(0, i + 1).join("/"))}
-                      type="button"
-                    >
-                      {seg}
-                    </button>
-                  ))}
-                  <button
-                    className="flex cursor-pointer items-center gap-1 text-ink-2"
-                    onClick={() => setFilesSearchOpen(true)}
-                    type="button"
-                    aria-label={t("files.searchPlaceholder")}
-                  >
-                    <ShellIcon className="h-[13px] w-[13px]" name="magnifyingglass" />
-                  </button>
-                </div>
-              )
-            ) : activePanelTab?.kind === "wiki" ? (
-              <div className="wsearch">
-                {wikiSearchOpen ? (
-                  <input
-                    autoFocus
-                    className="h-6 flex-1 bg-transparent text-[13px] text-ink-1 outline-none placeholder:text-ink-3"
-                    onChange={(e) => setWikiSearchQuery(e.target.value)}
-                    placeholder={t("wiki.searchPlaceholder")}
-                    value={wikiSearchQuery}
-                  />
-                ) : (
-                  <button
-                    className="flex items-center gap-1.5 cursor-pointer"
-                    onClick={() => setWikiSearchOpen(true)}
-                    type="button"
-                  >
-                    <ShellIcon className="h-[13px] w-[13px] text-ink-2" name="magnifyingglass" />
-                    <span>{t("wiki.searchPlaceholder")}</span>
-                  </button>
-                )}
-              </div>
-            ) : undefined
-          }
+          toolChip={toolChip}
         >
           {panelEverOpened ? renderPanelChildren() : null}
         </InspectionPanel>

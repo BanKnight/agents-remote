@@ -27,6 +27,10 @@ function sessDotClass(status: string): string {
  * 03l 项目切换 sheet（nav 标题 ▾ 入口）：按项目分组的活跃会话一步切换（原 2 跳变 1 跳）。
  * 点会话 = 切项目并激活该会话；点分组头 = 只切项目；空组 gempty 引导点分组头进项目；
  * newp 行 = 调用方 openCreate（08 新建/采用项目）。搜索同 match 项目名 + 会话名（编号③）。
+ *
+ * `projectOnly`（插件页 ▾ 复用，真机反馈 2026-09-28）：插件语境无会话上下文——语义是
+ * 「切换项目」而非「切换会话」，隐藏会话行与空组引导（sessions 只供组头 ● 计数）、
+ * 搜索只按项目名、标题切「切换作用域」。
  */
 export function MobileProjectSwitchSheet({
   currentSessionId,
@@ -35,14 +39,17 @@ export function MobileProjectSwitchSheet({
   onSwitchProject,
   onSwitchSession,
   open,
+  projectOnly = false,
 }: {
   /** 当前聚焦会话（.sess.on 高亮；L3/工具态为 undefined 无高亮）。 */
   currentSessionId?: string;
   onCreateProject: () => void;
   onOpenChange: (open: boolean) => void;
   onSwitchProject: (projectName: string) => void;
-  onSwitchSession: (projectName: string, sessionId: string) => void;
+  /** projectOnly 时不传（无会话行不可点）。 */
+  onSwitchSession?: (projectName: string, sessionId: string) => void;
   open: boolean;
+  projectOnly?: boolean;
 }) {
   const { t } = useT();
   const [query, setQuery] = useState("");
@@ -55,13 +62,21 @@ export function MobileProjectSwitchSheet({
         sessions: candidates.filter(
           (c) =>
             c.ref.projectName === name &&
-            (!q || name.toLowerCase().includes(q) || c.displayName.toLowerCase().includes(q)),
+            (!q ||
+              name.toLowerCase().includes(q) ||
+              (!projectOnly && c.displayName.toLowerCase().includes(q))),
         ),
       }))
-      .filter((g) => !q || g.sessions.length > 0 || g.name.toLowerCase().includes(q));
-  }, [candidates, projectNames, query]);
+      .filter(
+        (g) => !q || g.name.toLowerCase().includes(q) || (!projectOnly && g.sessions.length > 0),
+      );
+  }, [candidates, projectNames, query, projectOnly]);
   return (
-    <MobileSheet onOpenChange={onOpenChange} open={open} title={t("workbench.switchTitle")}>
+    <MobileSheet
+      onOpenChange={onOpenChange}
+      open={open}
+      title={projectOnly ? t("plugins.scopeSwitchTitle") : t("workbench.switchTitle")}
+    >
       {/* 搜索框（原型 36px elevated2 r10 + 14px + 放大镜） */}
       <div className="mt-2.5 flex h-9 items-center gap-2 rounded-md bg-elevated2 px-3">
         <ShellIcon className="size-[15px] flex-none text-ink-2" name="magnifyingglass" />
@@ -88,9 +103,9 @@ export function MobileProjectSwitchSheet({
               {group.sessions.length > 0 ? `● ${group.sessions.length}` : "—"}
             </span>
           </button>
-          {group.sessions.length === 0 ? (
+          {!projectOnly && group.sessions.length === 0 ? (
             <p className="gempty">{t("workbench.switchEmptyGroup")}</p>
-          ) : (
+          ) : !projectOnly ? (
             group.sessions.map((candidate) => (
               <button
                 className={`sess w-full cursor-pointer text-left${
@@ -99,7 +114,7 @@ export function MobileProjectSwitchSheet({
                 key={candidate.ref.sessionId}
                 onClick={() => {
                   onOpenChange(false);
-                  onSwitchSession(group.name, candidate.ref.sessionId);
+                  onSwitchSession?.(group.name, candidate.ref.sessionId);
                 }}
                 type="button"
               >
@@ -107,7 +122,7 @@ export function MobileProjectSwitchSheet({
                 {candidate.displayName}
               </button>
             ))
-          )}
+          ) : null}
         </div>
       ))}
       <button

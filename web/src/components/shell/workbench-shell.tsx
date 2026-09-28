@@ -34,7 +34,7 @@ type WorkbenchShellProps = {
    * 中栏边缘渲染唤出钮。
    */
   rightOpen: boolean;
-  /** 右栏开合统一入口（唤出钮 true / PanelHeader false）。 */
+  /** 右栏开合统一入口（唤出钮 true / 面板 glabel2 行内 clps「»」false）。 */
   onRightOpenChange: (open: boolean) => void;
   /** 右栏：inspection tab（Stage 3 接入）。收起时上层传 null（避免 inspection query）。 */
   rightPanel?: ReactNode;
@@ -132,13 +132,10 @@ export function WorkbenchShell({
           <aside
             className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden border-l border-neutral-line/80 lg:flex ${shellSurfaceClasses.sidebar}`}
           >
-            <PanelHeader
-              chevron="right"
-              collapseLabel={t("workbench.collapseRight")}
-              onCollapse={() => onRightOpenChange(false)}
-            />
-            {/* §8 高度链：body 自身必须是 flex container，flex-1 子的约束才传得下去
-               （FilesPanel 根 flex-1 依赖此层；overflow 只裁不传约束）。 */}
+            {/* 折叠入口 = 面板 glabel2 行内 clps「»」（05:103 原型）——44px PanelHeader 行
+               退役（真机反馈 2026-09-29：右栏第一屏与原型完全两样，折叠钮从行内主色 »
+               变成头部灰 ›）。§8 高度链：body 自身必须是 flex container，flex-1 子的约束
+               才传得下去（FilesPanel 根 flex-1 依赖此层；overflow 只裁不传约束）。 */}
             <div className="flex min-h-0 flex-1 overflow-hidden">{rightPanel}</div>
             {rightOpen ? null : <ColumnResizeGutter onResize={onResizeRight} side="right" />}
           </aside>
@@ -146,32 +143,6 @@ export function WorkbenchShell({
       </div>
       {statusBar}
     </main>
-  );
-}
-
-type PanelHeaderProps = {
-  chevron: "left" | "right";
-  collapseLabel: string;
-  onCollapse: () => void;
-};
-
-/**
- * 栏顶部 header（批 D / DESIGN PanelHeader）：右侧收起按钮。左栏 title 大标题形制已随左栏
- * 退役（§6.12k）；右栏不传 title，仅收起。
- */
-function PanelHeader({ chevron, collapseLabel, onCollapse }: PanelHeaderProps) {
-  return (
-    <div className="flex h-11 shrink-0 items-center gap-1 border-b border-on-surface/5 px-2">
-      <div className="min-w-0 flex-1" />
-      <button
-        type="button"
-        aria-label={collapseLabel}
-        onClick={onCollapse}
-        className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface-soft active:bg-on-surface/10"
-      >
-        {chevron === "left" ? <ChevronLeft /> : <ChevronRight />}
-      </button>
-    </div>
   );
 }
 

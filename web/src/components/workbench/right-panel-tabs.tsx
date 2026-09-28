@@ -10,6 +10,7 @@ import {
 } from "../../routes/workbench-model";
 import { FilesToolTab, GitToolTab, PanelFileTabBody, WikiToolTab } from "./workbench-tab-plugin";
 import { PanelTabBar } from "./inspection-panel";
+import { usePanelToolChip } from "./project-tool-panels";
 import { cn } from "@/lib/utils";
 import type { WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 
@@ -25,7 +26,14 @@ import type { WorkbenchTabPluginContext } from "./workbench-tab-plugin";
  * 面板开合真相 = workbenchPanelOpenAtom（WorkbenchContent 融合右栏折叠，WorkbenchShell
  * 受控化）；本组件恒在面板 open 时渲染，不持开合 state。
  */
-export function RightPanelTabs({ ctx }: { ctx: WorkbenchTabPluginContext }) {
+export function RightPanelTabs({
+  ctx,
+  onCollapse,
+}: {
+  ctx: WorkbenchTabPluginContext;
+  /** glabel2 行内 clps「»」收起右栏（05:103 原型折叠语义；装配点传 closeDesktopPanel）。 */
+  onCollapse: () => void;
+}) {
   const { t } = useT();
   const projectKey = ctx.projectKey;
   const [panelTabsMap, setPanelTabsMap] = useAtom(workbenchPanelTabsAtom);
@@ -72,11 +80,33 @@ export function RightPanelTabs({ ctx }: { ctx: WorkbenchTabPluginContext }) {
     ensureTab(tab);
     activatePanelTab(tab.id);
   };
+  // 工具 chip 槽装配单源（usePanelToolChip，与移动 InspectionPanel 同一份——多端同构；
+  // 搜索 query 提升透传 Tab 三件套，chip 与列表同 state）。
+  const { filesSearchQuery, setWikiSearchQuery, toolChip, wikiSearchQuery } = usePanelToolChip({
+    currentPath: ctx.currentPath,
+    kind: panelTabs.find((t0) => t0.id === activePanelTabId)?.kind ?? "files",
+    onPathChange: ctx.onPathChange,
+    projectKey: projectKey ?? "",
+  });
 
   if (!projectKey) {
     return (
-      <div className="flex h-full items-center justify-center p-4 text-center text-xs text-on-surface-muted">
-        {t("workbench.rightPanelEmpty")}
+      <div className="flex h-full min-h-0 flex-col">
+        {/* 空态同样暴露折叠入口（PanelHeader 退役后 clps 是唯一收起钮）。 */}
+        <div className="glabel2 shrink-0">
+          {t("workbench.inspectorTitle")}
+          <button
+            aria-label={t("workbench.collapseRight")}
+            className="clps cursor-pointer border-none bg-transparent"
+            onClick={onCollapse}
+            type="button"
+          >
+            »
+          </button>
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-xs text-on-surface-muted">
+          {t("workbench.rightPanelEmpty")}
+        </div>
       </div>
     );
   }
@@ -88,10 +118,21 @@ export function RightPanelTabs({ ctx }: { ctx: WorkbenchTabPluginContext }) {
        pre/diff 的 min-content 会把本根撑到数千 px，seg4 span flex:1 均分后被裁成
        「只剩文件」——用户复验实测 13850px，§6.12l 条 11）。 */
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col" data-desktop-inspector="">
-      {/* 检视标头（§6.12j 对齐 05:99 原型：glabel2「检视 · 只读」+ PanelTabBar 动态标签条
-          （批3，seg4 退役）。只读语义固定——检视面板全部是只读视图；原型折叠 »（clps）
-          未实现，不设假入口。 */}
-      <div className="glabel2 shrink-0">{t("workbench.inspectorTitle")}</div>
+      {/* 检视标头（§6.12j 对齐 05:99/05:103 原型：glabel2「检视 · 只读」+ 行内右端折叠
+          «（clps，主色 14px/700，05:103）+ PanelTabBar 动态标签条（批3，seg4 退役）。
+          只读语义固定——检视面板全部是只读视图。clps 取代 44px PanelHeader 折叠钮
+         （真机反馈 2026-09-29：右栏第一屏与原型完全两样）。 */}
+      <div className="glabel2 shrink-0">
+        {t("workbench.inspectorTitle")}
+        <button
+          aria-label={t("workbench.collapseRight")}
+          className="clps cursor-pointer border-none bg-transparent"
+          onClick={onCollapse}
+          type="button"
+        >
+          »
+        </button>
+      </div>
       <PanelTabBar
         activeTabId={activePanelTabId}
         onActivateTab={activatePanelTab}
@@ -99,6 +140,12 @@ export function RightPanelTabs({ ctx }: { ctx: WorkbenchTabPluginContext }) {
         onNewTab={newPanelTab}
         tabs={panelTabs}
       />
+      {/* 工具 chip 槽（03o crumb+搜索 / 03m gitchip / 03p wsearch；与移动 InspectionPanel
+          同款槽结构 mx-4 mt-2.5 gap-2——装配单源 usePanelToolChip，右栏不再裸奔「..」行
+          （真机反馈 2026-09-29 Files 标签缺顶部工具行 / Wiki 缺搜索入口）。 */}
+      {toolChip ? (
+        <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-2">{toolChip}</div>
+      ) : null}
       {/* §8 高度链：body 自身必须是 flex container（检视内容 FilesPanel 等是 flex-1 子）；
         relative = 标签叠层 absolute inset-0 的定位基准。 */}
       <div
@@ -123,11 +170,16 @@ export function RightPanelTabs({ ctx }: { ctx: WorkbenchTabPluginContext }) {
                   onPathChange={ctx.onPathChange}
                   onOpenFileTab={openPanelFileTab}
                   projectKey={projectKey}
+                  searchQuery={filesSearchQuery}
                 />
               ) : tab.kind === "git" ? (
                 <GitToolTab projectKey={projectKey} />
               ) : tab.kind === "wiki" ? (
-                <WikiToolTab projectKey={projectKey} />
+                <WikiToolTab
+                  onQueryChange={setWikiSearchQuery}
+                  projectKey={projectKey}
+                  query={wikiSearchQuery}
+                />
               ) : (
                 // file 标签 path 编码 = 「projectName/relPath」（panelFileTab 单点）——拆回
                 // relPath 给预览（projectName 即本栏 projectKey）。

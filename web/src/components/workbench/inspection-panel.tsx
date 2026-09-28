@@ -91,11 +91,16 @@ export function PanelTabBar({
           onSelect: () => onNewTab(item.id),
         }))}
         trigger={
+          /* ＋ 字形放内层 span.plus（button 只当 28px 热区容器）：.plus 的笔画是 ::before/::after
+             伪元素，此前 after:-inset-2 热区 utilities 会以 utilities 层覆盖 ::after 的
+             left/top → 竖笔画游离成标签条右端的蓝色「'」（真机反馈实锤后改容器式热区）。 */
           <button
             aria-label={t("workbench.newPanelTab")}
-            className="plus shrink-0 cursor-pointer relative after:absolute after:-inset-2 after:content-['']"
+            className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center"
             type="button"
-          />
+          >
+            <span className="plus" />
+          </button>
         }
       />
     </div>

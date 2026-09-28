@@ -541,7 +541,10 @@ async function sideOverviewVisible(page) {
       if (!aside) return null;
       const label = aside.querySelector(".glabel2");
       const ptab = aside.querySelector(".ptab");
+      const clps = label?.querySelector(".clps");
       return {
+        clps: clps ? clps.textContent.trim() : null,
+        clpsColor: clps ? getComputedStyle(clps).color : null,
         label: label
           ? label.textContent.trim()
           : aside.textContent.includes("检视")
@@ -553,7 +556,13 @@ async function sideOverviewVisible(page) {
     });
     ok(insp !== null, "F11 右栏 Inspector 渲染");
     if (insp) {
-      ok(insp.label === "检视 · 只读", `F12 glabel2「检视 · 只读」（实际 ${insp.label}）`);
+      // glabel2 行内 clps「»」折叠钮（05:103，真机反馈 2026-09-29 PanelHeader 44px 行退役）
+      // ——textContent 变为「检视 · 只读»」为预期形态。
+      ok(
+        insp.label === "检视 · 只读»",
+        `F12 glabel2「检视 · 只读」+ clps「»」（实际 ${insp.label}）`,
+      );
+      ok(insp.clps === "»", `F12b .clps 折叠钮在（实际 ${insp.clps}）`);
       ok(insp.ptabH === 30, `F13 .ptab 高 30px（实际 ${insp.ptabH}）`);
       ok(
         insp.tabs.join(",") === "文件",

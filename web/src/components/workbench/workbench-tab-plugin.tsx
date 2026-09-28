@@ -100,6 +100,7 @@ export function FilesToolTab({
   onPathChange,
   onOpenFileTab,
   projectKey,
+  searchQuery,
 }: {
   /** cwd 受控对——两 prop 必须成对传（只传 currentPath 会冻结目录导航）；右栏语境成对
    * 不传 = Tab 层自持（同 FilesToolPanel 受控模式的既有边界）。 */
@@ -108,6 +109,8 @@ export function FilesToolTab({
   /** 传入 = 树/搜索点文件直达 file 预览标签（检视面板标签体系）；不传 = 栏内预览态（现状）。 */
   onOpenFileTab?: (relPath: string) => void;
   projectKey: string;
+  /** 03x header 搜索 query（usePanelToolChip 提升共享——chip 与列表同 state）。 */
+  searchQuery?: string;
 }) {
   const { t } = useT();
   const [previewPath, setPreviewPath] = useState<string | null>(null);
@@ -154,6 +157,7 @@ export function FilesToolTab({
       onOpenGitFile={(f) => setDiffTarget({ path: f.path, scope: f.scope })}
       onPathChange={changePath}
       projectName={projectKey}
+      searchQuery={searchQuery ?? ""}
     />
   );
 }
@@ -247,7 +251,16 @@ export function GitToolTab({ projectKey }: { projectKey: string }) {
  * 点页面行 → 栏内阅读态（L3WikiReader，与移动 L3 同一份——批次 4 归一，WikiPageDetail
  * 退役）。返回条 = DetailBackBar（与 files/git 详情态同构）。
  */
-export function WikiToolTab({ projectKey }: { projectKey: string }) {
+export function WikiToolTab({
+  projectKey,
+  onQueryChange,
+  query,
+}: {
+  projectKey: string;
+  /** 03p wiki 搜索 query（usePanelToolChip 提升共享——chip 与列表同 state）。 */
+  onQueryChange?: (query: string) => void;
+  query?: string;
+}) {
   const { t } = useT();
   const [slug, setSlug] = useState<string | null>(null);
 
@@ -259,7 +272,14 @@ export function WikiToolTab({ projectKey }: { projectKey: string }) {
       </div>
     );
   }
-  return <WikiToolPanel onOpenPage={setSlug} projectName={projectKey} />;
+  return (
+    <WikiToolPanel
+      onOpenPage={setSlug}
+      onQueryChange={onQueryChange}
+      projectName={projectKey}
+      query={query}
+    />
+  );
 }
 
 /**

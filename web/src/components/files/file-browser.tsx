@@ -306,67 +306,82 @@ export function FileEntryList({
     return (
       <div aria-label="Project files">
         {dirs.length > 0 ? (
-          <div className="gfcard">
-            {dirs.map((entry) => {
-              const stat = globalCard.overview[entry.name];
-              const active = (stat?.running ?? 0) > 0;
-              return (
-                <div className="gfrow group" key={`${entry.type}:${entry.path}`}>
-                  <button
-                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
-                    onClick={() => onOpenDirectory(entry.path)}
-                    type="button"
-                  >
-                    <span className={active ? "ic" : "ic off"}>
-                      <ShellIcon name="project" />
+          <>
+            {/* 10m:72 组标签（桌面双分组；移动 10-tab 无组标签 → hidden lg:block 承载差异，
+                同构同一 DOM。左缘随 gfcard margin 16 / 容器 lg px-5，与原型 grplabel 对齐）。 */}
+            <div className="grplabel hidden lg:block">{t("files.groupProjectRoots")}</div>
+            <div className="gfcard">
+              {dirs.map((entry) => {
+                const stat = globalCard.overview[entry.name];
+                const active = (stat?.running ?? 0) > 0;
+                return (
+                  <div className="gfrow group" key={`${entry.type}:${entry.path}`}>
+                    <button
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                      onClick={() => onOpenDirectory(entry.path)}
+                      type="button"
+                    >
+                      <span className={active ? "ic" : "ic off"}>
+                        <ShellIcon name="project" />
+                      </span>
+                      <span className="tx">
+                        <span className="n">{entry.name}</span>
+                        {stat ? (
+                          <span className="d">
+                            {stat.latestLabel
+                              ? active
+                                ? t("files.projectMetaActive", {
+                                    count: stat.instances,
+                                    time: stat.latestLabel,
+                                  })
+                                : t("files.projectMetaIdle", { time: stat.latestLabel })
+                              : t("home.idle")}
+                          </span>
+                        ) : null}
+                      </span>
+                    </button>
+                    <span className={active ? "live" : "live off"}>
+                      {active ? `● ${stat?.running}` : "—"}
                     </span>
-                    <span className="tx">
-                      <span className="n">{entry.name}</span>
-                      {stat ? (
-                        <span className="d">
-                          {stat.latestLabel
-                            ? active
-                              ? t("files.projectMetaActive", {
-                                  count: stat.instances,
-                                  time: stat.latestLabel,
-                                })
-                              : t("files.projectMetaIdle", { time: stat.latestLabel })
-                            : t("home.idle")}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                  <span className={active ? "live" : "live off"}>
-                    {active ? `● ${stat?.running}` : "—"}
-                  </span>
-                  {rowActions(entry)}
-                </div>
-              );
-            })}
-          </div>
+                    {rowActions(entry)}
+                  </div>
+                );
+              })}
+            </div>
+          </>
         ) : null}
         {plainFiles.length > 0 ? (
-          <div className="gfcard" style={{ marginTop: 10 }}>
-            {plainFiles.map((entry) => (
-              <div className="gfile group" key={`${entry.type}:${entry.path}`}>
-                <button
-                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
-                  onClick={() => (filesClickable ? onPreviewFile(entry.path) : undefined)}
-                  type="button"
-                >
-                  <span className="ic flex-none">
-                    <ShellIcon name="file" />
-                  </span>
-                  <span className="p">{entry.name}</span>
-                  <span className="tm">
-                    {entry.mtimeMs ? relativeTime(new Date(entry.mtimeMs).toISOString(), t) : ""}
-                  </span>
-                </button>
-                {rowActions(entry)}
-              </div>
-            ))}
-          </div>
+          <>
+            {/* 第二卡 margin：移动 10px（原型双卡间距）；桌面归零由外层 lg:gap-3 承担
+               （此前 inline style 优先级盖 lg 分档 margin:0，桌面多出 10px）。 */}
+            <div className="grplabel hidden lg:block">{t("files.groupRootFiles")}</div>
+            <div className="gfcard mt-2.5 lg:mt-0">
+              {plainFiles.map((entry) => (
+                <div className="gfile group" key={`${entry.type}:${entry.path}`}>
+                  <button
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                    onClick={() => (filesClickable ? onPreviewFile(entry.path) : undefined)}
+                    type="button"
+                  >
+                    <span className="ic flex-none">
+                      <ShellIcon name="file" />
+                    </span>
+                    <span className="p">{entry.name}</span>
+                    <span className="tm">
+                      {entry.mtimeMs ? relativeTime(new Date(entry.mtimeMs).toISOString(), t) : ""}
+                    </span>
+                  </button>
+                  {rowActions(entry)}
+                </div>
+              ))}
+            </div>
+          </>
         ) : null}
+        {/* 10-tab:85 / 10m:84 页脚说明（同一 DOM：移动 center + mt 14；桌面 lg 左对齐、
+            间距由外层 gap 承担。10m 长文「视图切换原则」为桌面专有说明，单份文案取
+            10-tab 共有语义，desktop 长文 diverge 记档；10m absolute bottom 不取——
+            遮内容，文档流尾行更安全）。 */}
+        <p className="cap mt-3.5 lg:mt-0 lg:text-left">{t("files.globalCap")}</p>
       </div>
     );
   }
@@ -1136,7 +1151,9 @@ export function FilesPanel({
     <aside
       className={`min-h-0 min-w-0 flex-1 ${enablePreview ? "sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60" : "sm:flex-1"} ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
     >
-      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-3 pb-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
+      <div
+        className={`flex flex-1 min-h-0 flex-col overflow-y-auto pb-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] ${globalCard ? "" : "px-3"}`}
+      >
         <UploadQueueCard />
         <FileEntryList
           entries={

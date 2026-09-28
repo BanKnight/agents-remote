@@ -548,8 +548,8 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
         )}
       </div>
 
-      {/* 03l 切换器（段上 ▾）：换项目写同一份 workbench 记忆（§3.5 作用域规则）。
-          点会话行在插件页降级为只切项目（无会话上下文，激活会话是工作台语义）。 */}
+      {/* 03l 切换器（段上 ▾，projectOnly 模式）：插件语境无会话上下文，语义 = 切换项目
+          （真机反馈 2026-09-28）——只渲染项目组头 + 新建行，无会话行。 */}
       <MobileAddMcpSheet
         onOpenChange={setAddMcpOpen}
         open={addMcpOpen}
@@ -563,11 +563,8 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
           setLastProject(name);
           setScope("project");
         }}
-        onSwitchSession={(name) => {
-          setLastProject(name);
-          setScope("project");
-        }}
         open={switchOpen}
+        projectOnly
       />
       {/* 搜索融合安装（编号①）：pending 审计 sheet。技能装全局（sheet 固定），MCP 走 sheet 内
           stabseg 自管 scope。安装成功 invalidate 自动把命中项从「市场 · 安装」行转为已装卡。 */}

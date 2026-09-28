@@ -939,6 +939,25 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **基线失败记档（stash 实验实锤与本次无关，未硬修）**：① probe-m10-feedback-fixes H 段 3 处（`button.pcard`/`button.mrow`/MCP 组 ＋——插件页 mock 卡未渲染，疑似 mock 与页面实现既有偏差）；② probe-files-tree-bugs「05e 五项序」——断言期望 `Open Preview`（大写 P），i18n 实际 `Open preview`（M4 `1891a43` 起），文案与断言大小写既有不匹配。
 
+### 真机反馈修复·第二批：全局文件页 + 插件浮层 + 蓝「'」+ 桌面右栏（2026-09-29）
+
+**用户四条真机反馈**：① 全局文件页整页样式不对（边距/搜索超右边/地址栏/文件列表）；② 插件页切换项目浮层做成了切换会话；③ 侧边栏添加按钮图标错误 + 文件地址栏样式错误 + 最右标签右边多了个蓝色「'」；④（mid-turn 补充）桌面右侧侧边栏与设计差距非常大，且 iPhone 与桌面差距大 = 疑似违背同构前提。
+
+**同构整改前提（用户 mid-turn 拍板）**：整改不得用「两套 DOM」——必须**同一 DOM + 分档**：右栏语境用 `[data-desktop-inspector]` 属性选择器（v2-primitives 既有先例 ptabs margin-inline），main 整页用 `@media (min-width:1024px)`；行为收敛共享组件单份实现，两端只容器不同。
+
+**实现**：
+
+- **反馈① 全局文件页**：双重缩进根因 = `.gfcard` 基类 margin 16px + FilesPanel 内层容器 px-3 → 卡片距屏 44px 而搜索框 16px。修 = `file-browser.tsx` 容器 className 模板化（`globalCard ? "" : "px-3"`）；`global-files-overview.tsx` scopeSeg/搜索容器 padding 对齐原型（`px-4 lg:px-5`），FilesPanel 移入搜索容器（lg gap-3 接管 gfcard 桌面档归零的 margin = mbody 语义）；桌面分组建群标签（`files.groupProjectRoots`/`files.groupRootFiles`，`hidden lg:block`——移动无分组）；第二卡 `style={{marginTop:10}}` 改 utility（inline style 会盖 lg 分档 margin:0）；尾行 cap 桌面档左对齐归零 margin。
+- **反馈② 切换项目浮层**：`mobile-plugins-home.tsx` 项目作用域浮层从会话列表语义改回项目列表（projectOnly 门控）——浮层标题/条目/回调查项目而非会话。
+- **反馈③ 蓝「'」根因 + 地址栏重构**：① **plus 伪元素冲突**——`.plus::before/::after` 是 CSS 笔画（components 层），Tailwind `after:-inset-2`（utilities 层）覆盖 ::after 的 left/top → 竖笔画游离成蓝色小撇。修复范式 = **容器式热区**：外层 button（h-7 w-7 热区）+ 内层 span.plus，workbench-side 两处（实例组头/项目组头）平移；项目组头加 `ml-auto` 补偿 `.ghead .tt + .plus` 相邻选择器被中间 button 断链。② **crumb 分隔符结构性 bug**——旧 `.crumb button:not(:last-child)::after` 因搜索钮占 last-child、前导 b 非 button → 首段无分隔 + 末段反多「/」（textContent 粘连「proj1src」）。修 = 分隔符改 `.crumb > * + *::before` + JSX 段按钮在前、当前段 `<b>` 收尾 + 搜索钮独立 `.obtn.srch` chip（对齐 03o 单源 L139-143：30×30 r9 tint-blue）。③ `.crumb` 改 `flex:1 1 auto; min-width:0` + `.crumb b` 溢出防护（ellipsis/max-width 140px）。
+- **反馈④ 桌面右栏 10 项差距扫描消化**：已修 #1 头部 PanelHeader 44px 折叠钮 → glabel2 行内 clps「»」（05:103 原型；workbench-shell 删组件定义，RightPanelTabs 加 onCollapse）；#2 Files 标签缺工具行 → usePanelToolChip 装配（crumb+搜索，与移动同一份 hook）；#3 Git 链接行 → `.gacts` 段（单源 04d/05i 一致原型：gap8/margin14/等宽 32px 按钮，`[data-desktop-inspector]` margin-inline 14）；#4 行密度 → `.frow` padding 7px14px + `.frow .tm/.ar` 右栏隐藏 + `.sect`/`.crow` margin/padding/字号分档；#5 左缘统一 14px；#6 cap 分档（移动 capBreadcrumb lg:hidden / 桌面 capDesktop）；#8 Wiki 搜索 wsearch（03p）。**usePanelToolChip 装配单源**（新 hook 于 project-tool-panels）：移动 InspectionPanel 与桌面 RightPanelTabs 共用（crumb/gitchip/wsearch 四分支；git diff useQuery 同 key 缓存共享零额外网络；files/wiki 搜索 query 提升由调用方透传工具面板）。
+
+**Agent 结论记档**：Agent C（移动端四差异 + plus）——crumb 四项全修；侧边栏 plus 渲染经 DOM 几何实锤**完全符合单源**（18×18 灰），用户所见「错误」最可能是 PWA 旧缓存 CSS（旧版 20×20 蓝裸 plus）+ 18px 无热区难点按 → 容器式热区平移，复验须清缓存。Agent D（桌面右栏）——10 项差距中 7 项修（见上），3 项 diverge。
+
+**diverge（记档）**：④-#7 栏宽 352 vs 原型 320（现实现三栏布局口径，动栏宽牵动整体 grid，立项待排）；④-#9 「＋」28px 热区 vs 原型 20px 图标（触屏可达性刻意 diverge，非缺陷）；④-#10 diff 展示位置（原型右栏内嵌 vs 现 L3 预览栈，架构性，另立）；①桌面「＋ 加开终端实例」affordance 不做（桌面原型页私有，移动 Git 面板无此入口，做了即违反同构）；10m cap absolute 定位/长文不取；crumbrow 原语零实现（toolChip 槽已覆盖其职责）；05e 顶部「＋」入口未做；Files 底部 links 行 lg 隐藏后桌面新建/上传入口依赖 toolChip crumb FAB 链路（批4 03oa 已接）。
+
+**验证**：探针回归全绿——m9-d 64/0（新增 F12b clps 断言）、m6-plugins 87/0（projectOnly）、m4-tools-l3 65/0（「历史列表」文案）、m9-b 19/0、mobile-project-header 25/0、mobile-workbench-states 22/0、mobile-projects-home 21/0、loading-states 13/0、m11-mobile-nav 14/0、files-tree-bugs 与基线一致（存量 2 处）。四门禁全绿（test api 865 + shared 9 + web 674）+ CSS 硬闸（183066 字节 text/css）+ tokens strict 0 违例。交付 checklist：stylesheet `Content-Type: text/css` 实测过。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
