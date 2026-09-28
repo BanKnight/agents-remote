@@ -155,3 +155,13 @@
 **来源**：§6.12p 三轮真机反馈（`52af7aa` preventDefault 空转 → `1c50d91` 修绑定 + touch events 直驱）；redesign-v2.md §6.12p-③。
 
 **勿再走（第四轮真机实证，`5e56d71`）**：「iOS pointer events 派生层不可控 → 改 touch events 直驱」的推断被真机否定——**pointer events 驱动在 iOS 有效，原生 touch events 直驱反而完全无效**（机制未定论）。iOS 拖拽手势的正确组合 = **pointer events 驱动 + non-passive touchmove preventDefault 防滚动抢占**（prevent 判断读 dragRef，绑定修好后才真正生效）；真机「拖动有回弹/不跟手」= pointercancel 中断拖拽走回弹分支，Chromium 探针不复现 cancel，勿据探针推断真机手势行为。
+
+## 15. 图标双轨并存：手绘 SVG（20 网格）与 Lucide 管线（24 网格）
+
+**现象**：v1.4 图标系统换代（设计包 spec §10.3）要求新图标走 Lucide 管线，但存量 29 个手绘 SVG 面图标（`web/src/components/shell/icons/*.svg`，20 网格 stroke2 圆头）仍在消费。
+
+**机制**：两轨的网格规格与消费链不同，并存期内不允许互相替代——手绘轨 = `svgMap`（icons/index.tsx）+ `<ShellIcon name>`（v1.4 spec §10.3 data-symbol 风格，20 网格）；Lucide 轨 = `scripts/build-icons.mjs` 白名单生成 `web/src/assets/icons.ts`（24 网格 stroke-2 圆头，源 lucide-static，生成物进 git、runtime 零依赖）→ `<LucideIcon>` React 消费；`data-icon` 水合器仅供非 React 静态 DOM 场景。**同名不并存**（sparkles 两轨都有）属换代期暂态，存量迁移时删手绘件。
+
+**标准做法**：① 新图标一律 Lucide 管线（`build-icons.mjs` ICONS 白名单加名 → 重跑生成 → `<LucideIcon>`）；② 面图标（导航/卡片装饰）维持手绘轨不动（迁移单独立项，v1.4 拍板④「渐进换代」）；③ 禁止给手绘 SVG 手改 path 模仿 Lucide 风格（网格规格不同，改了也是两不像）。
+
+**来源**：v1.4 拍板④（§6.13）；批1（`62cb980`）管线落地；frontend-notes §N 编号契约。

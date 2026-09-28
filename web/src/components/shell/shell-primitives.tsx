@@ -220,13 +220,16 @@ export const statusDotToneBg: Record<ShellTone, string> = {
 };
 
 /**
- * status → v2 原语 dot class（v2-primitives.css 的 .dot run/idle/err，03 系列原型语义：
- * 绿=运行 红=出错 灰=闲置/closed）。与 statusToTone 的 idle→warning（琥珀）刻意不同——
- * v2 页面圆点状态一律消费本映射（.dot 原语自带 7×7 圆），禁私设第二套 status→色。
+ * status → v2 原语 dot class（v2-primitives.css 的 .dot run/idle/err/warn，03 系列原型语义：
+ * 绿=运行 红=出错 灰=闲置/closed 橙=待审批）。与 statusToTone 的 idle→warning（琥珀）刻意
+ * 不同——v2 页面圆点状态一律消费本映射（.dot 原语自带 7×7 圆），禁私设第二套 status→色。
+ * 待审批覆盖运行绿（原型 02 L80：act-row 待审批会话 dot=c-warning——等输入语义优先于运行态）。
  */
 export function statusToV2DotClass(
   status: AgentSession["status"] | TerminalSession["status"],
+  opts?: { needsApproval?: boolean },
 ): string {
+  if (opts?.needsApproval) return "dot warn";
   if (status === "running") return "dot run";
   if (status === "error") return "dot err";
   return "dot idle";

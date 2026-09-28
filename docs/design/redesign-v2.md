@@ -905,7 +905,25 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：probe-claude-detail-perf 27/0（移动/桌面收敛、34px 几何、dot 7×7、滞回死区 30 帧零翻转、回底/点 ▾ 弹回、subbar 保留）+ probe-v2-m5-approvals 43/0（胶囊默认态、两段确认全链：首点确认态零上行 → 再点 control_response ×2（request_id 覆盖/behavior=allow/updatedInput 原样）→ 防重锁 → 展开托盘 → 审批中心入口）+ workbench-model.test atom scoping 单测；e2e chat-session 1/1 + mobile-nav 6/6；门禁同批6 基线（test 674/0）。
 
-**顺带发现（存量问题记档，非本批范围）**：桌面 workbench「点左栏第二个实例」后 leaf 区不重建（面板区空、`[data-drop-group]`=0），且面板 hidden→visible 后内容不自动恢复（remount + WS 重连，mock 场景永久骨架）——真实链路重连会重新回放恢复，但切 tab 体验有洞。真机复验清单项；修复立项待排。
+**顺带发现（存量问题记档，§6.13 尾收拢）**：桌面 workbench「点左栏第二个实例」后 leaf 区不重建（面板区空、`[data-drop-group]`=0），且面板 hidden→visible 后内容不自动恢复（remount + WS 重连，mock 场景永久骨架）——真实链路重连会重新回放恢复，但切 tab 体验有洞。真机复验清单项；修复立项待排。
+
+### 批9 小项收尾 + 记档（2026-09-28）
+
+**实现**：① **02 状态点橙 = 待审批**（原型 02 L80 act-row `dot=c-warning`）：`.dot` 原语补 `.warn` 变体（`--c-warning`）；`statusToV2DotClass` 加可选 `opts.needsApproval` 覆盖运行绿（待审批 = 等输入语义优先于运行态）；活动卡 dot 从 v1 `statusDotToneBg[statusToTone(...)]`（idle→琥珀 = **语义反转**：原型橙是待审批不是闲置）切到 `.dot` 原语 + `approvalSessionIds` Set 派生判定；probe-mobile-projects-home dot 选择器同步（`span.rounded-full` → `span.dot`）。② frontend-notes §15 图标双轨规格。③ 本节总 diverge 汇总：
+
+| 批 | diverge / 拍板 |
+| --- | --- |
+| 1 | 发送键 r12 vs 原型方形（spec 视觉层级胜）；composer 断点 1024 纯宽度口径（iPad 竖屏归窄端 iicn）；存量 29 手绘 SVG 未迁（拍板④渐进换代） |
+| 2 | ℹ/⋯ 不渲染进原语；三基础标签不可关；iPad 竖屏走移动全屏容器（中间态）；FAB disabled 桩灰（批4 启用）；「文件」命名；file/git 预览重建过渡态 |
+| 3 | 桌面右栏折叠 = 卸载（与移动零销毁不对称，保挂载牵扯面广留后续）；panel id/aria-controls 关联未做；`?rightTab=` 深链残留刷新复开是拍板固有代价 |
+| 4 | 桌面左栏 panel 态不接（右栏写入口兜底）；03w4 橙警示条不渲染（子树计数不可得时可达措辞）；03y 位置不可切换；右栏 FilesToolPanel 保留「..」行 |
+| 5 | 提交 sheet 勾选默认：M/A/D/R 勾、untracked 不勾（防密钥误提交）；sheet 内不做 diff 复核；untracked badge 绿 A 非 `??`；桌面 Dialog 无显式取消钮 |
+| 6 | skills.disabled 目录暴露为 git 噪音（记档接受）；update CTA 门控停用项；停用 chip 中性色；stash 语义「状态即目录布局」 |
+| 7 | 编辑态保持着色（明文降 UX）；未知二进制 = 下载替代「系统应用打开」；图片查看器沿用重置/双击语义 |
+| 8 | 桌面仅 subbar 收敛断言（row2 是移动专属）；mini ⚠ 紧凑 `⚠n` 格式；收敛绑定上滚方向 |
+| 9 | 活动卡 dot 语义修正（idle 灰、橙=待审批）——v1 tone 映射残留反转 |
+
+**验证**：probe-mobile-projects-home 回归（dot 7×7 几何断言保留，选择器换 `span.dot`）+ 门禁同批6 基线。
 
 ## §7 待定项跟踪
 

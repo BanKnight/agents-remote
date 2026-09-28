@@ -129,7 +129,7 @@ const actCard = await page.evaluate(() => {
     varElev: root.getPropertyValue("--bg-elevated").trim(),
     secVisible: [...document.querySelectorAll("span")].some((s) => s.textContent === "全局活动"),
     dot: (() => {
-      const d = el.querySelector("span.rounded-full");
+      const d = el.querySelector("span.dot");
       if (!d) return null;
       const { width, height } = d.getBoundingClientRect();
       return { width, height };

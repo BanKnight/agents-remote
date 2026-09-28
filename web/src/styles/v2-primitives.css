@@ -126,6 +126,9 @@
   .dot.err {
     background: var(--c-danger);
   }
+  .dot.warn {
+    background: var(--c-warning);
+  }
   .dot.ring {
     background: none;
     border: 1.4px solid var(--ink-2);
