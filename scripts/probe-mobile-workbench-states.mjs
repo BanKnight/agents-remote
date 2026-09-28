@@ -4,7 +4,8 @@
 //     rounded-full bg-primary / 工具引导 link）；CTA 开新建 ActionMenu；link 进 files 工具。
 //   浏览态自动聚焦：无显式 ?session 时渲染层回退聚焦「layout 上次位置」（D4 延伸），URL
 //     不写 ?session；无 layout 时回退第一个实例。
-//   terminal chips（03f）：聚焦 terminal 时 chips 行 = `tmux · 名` mono chip（无摘要/重试）。
+//   terminal 聚焦态（03f）：chips 行已整体退役（2026-09-28 真机反馈删），任何聚焦态不渲染
+//     .chips；聚焦态渲染本身由 [data-tab-id] 等待 + 面板可见断言承接。
 //   file 预览 ✕（M3-c 关闭路径）：file focus 的 nav 右 ✕ = removeTabFromLeaf + 回浏览态。
 //
 // 密码自读（config.yaml → api environ），不进 agent 上下文、不打印值。
@@ -276,8 +277,8 @@ async function run() {
     );
     await ctx3.close();
 
-    // ── context 4：terminal chips（03f）──────────────────────────────────
-    console.log("\n===== Part 4. terminal chips 行（03f：tmux chip，无摘要/重试）=====");
+    // ── context 4：terminal 聚焦态（03f chips 行已退役：2026-09-28 真机反馈删）──
+    console.log("\n===== Part 4. terminal 聚焦态（chips 行已整体退役）=====");
     const ctx4 = await browser.newContext(MOBILE_CTX);
     const page4 = await ctx4.newPage();
     await setupMocks(page4, { agents: ["agent_probe-1"], terminals: ["terminal_probe-1"] });
@@ -288,22 +289,10 @@ async function run() {
     });
     await page4.goto(`${ORIGIN}/projects/proj1`);
     await page4.waitForSelector('[data-tab-id="terminal_probe-1"]', { timeout: 8000 });
-    const termChips = await page4.evaluate(() => {
-      const chips = document.querySelector(".chips");
-      const chip = chips?.querySelector(".chip");
-      return {
-        exists: chips !== null,
-        text: chip?.textContent.trim(),
-        mono: chip ? getComputedStyle(chip).fontFamily.includes("mono") : false,
-        hasAutoRetry: chips?.textContent.includes("自动重试") ?? false,
-      };
-    });
-    ok(
-      termChips.exists && termChips.text === "tmux · Probe Term",
-      `tmux chip 文案（实际「${termChips.text}」）`,
-    );
-    ok(termChips.mono, "chip mono 字体");
-    ok(!termChips.hasAutoRetry, "无自动重试区（03f 编号①：无模型/权限/effort）");
+    const termChips = await page4.evaluate(() => ({
+      exists: document.querySelector(".chips") !== null,
+    }));
+    ok(!termChips.exists, "chips 行已整体退役，任何聚焦态都不渲染 .chips");
     await ctx4.close();
 
     // ── context 5：file 预览 ✕（M3-c 关闭路径）───────────────────────────
@@ -349,7 +338,7 @@ async function run() {
     await ctx5.close();
 
     // ── context 6：回退态聚焦 terminal（reviewer #1：注入 ref 兜底前 chips 全缺）────────
-    console.log("\n===== Part 6. 回退态聚焦 terminal：注入 ref 兜底 → tmux chip 恢复 =====");
+    console.log("\n===== Part 6. 回退态聚焦 terminal：注入 ref 兜底（chips 行已退役）=====");
     const ctx6 = await browser.newContext(MOBILE_CTX);
     const page6 = await ctx6.newPage();
     // 仅 terminal 实例（无 agent）：autoFocus 回退 = terminal id，且不在空 layout → 注入投影。
@@ -373,8 +362,8 @@ async function run() {
     });
     ok(termFallback.panelVisible && !termFallback.emptyCard, "terminal 面板 visible（无双渲染）");
     ok(
-      termFallback.chipText === "tmux · Probe Term",
-      `回退态 tmux chip 存在（实际「${termFallback.chipText}」）`,
+      termFallback.chipText === undefined,
+      `回退态 chips 行退役不渲染（实际「${termFallback.chipText}」）`,
     );
     // 断言跟随 M10 ③：nav 右上 = ℹ（实例信息）图标；「关闭会话」在 info sheet acts 内
     //（原「ℹ/✕」断言过时）。

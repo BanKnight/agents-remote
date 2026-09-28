@@ -350,10 +350,13 @@ export function FileEntryList({
             {plainFiles.map((entry) => (
               <div className="gfile group" key={`${entry.type}:${entry.path}`}>
                 <button
-                  className="flex min-w-0 flex-1 cursor-pointer items-center justify-between gap-2.5 text-left"
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
                   onClick={() => (filesClickable ? onPreviewFile(entry.path) : undefined)}
                   type="button"
                 >
+                  <span className="ic flex-none">
+                    <ShellIcon name="file" />
+                  </span>
                   <span className="p">{entry.name}</span>
                   <span className="tm">
                     {entry.mtimeMs ? relativeTime(new Date(entry.mtimeMs).toISOString(), t) : ""}

@@ -7,7 +7,8 @@
 //   nav 行 .back「项目」主色 15px + ::before 箭头 + .nv-t 17px/600
 //   row2 .pill h30/r15 + .plus 20×20 主色 + .sep 1×18 + 检视面板单 ticon svg 19×19（v1.4 批2：
 //   工具 ticon ×3 退役为面板入口，文件树/Git/Wiki 收进 InspectionPanel）
-//   agent chips 行已退役（v1.4 03f：✦ chip/AutoRetry chip 删，.chip 恒不渲染断言）
+//   chips 行整体退役（agent ✦/AutoRetry chip v1.4 批1 删；terminal tmux chip 2026-09-28
+//   真机反馈删——静态无切换能力；.chip 恒不渲染断言）
 //   Part 6 面板语境（v1.4 批2）：检视 ticon 开面板 → 面板覆盖 row2 → ‹ 工作台 关面板 → 点 pill
 //
 // 密码自读（config.yaml → api environ），不进 agent 上下文、不打印值。
@@ -464,9 +465,9 @@ async function run() {
     ok(geo.sepSize === "1pxx18px", `.sep 1×18（实际 ${geo.sepSize}）`);
     ok(geo.ticonCount === 1, `row2 单检视面板 ticon（v1.4 批2 IA；实际 ${geo.ticonCount}）`);
     ok(geo.ticonSvg === "19x19", `检视 ticon svg 19×19（实际 ${geo.ticonSvg}）`);
-    // v1.4（03f）退役语义：agent chips 行（✦ model·perm·effort + AutoRetry）整体删除，
-    // 配置收敛到 composer 控制行 + ℹ 实例信息——聚焦 agent 时 .chip 恒不渲染。
-    ok(geo.chipH === null, `agent chips 行已退役，.chip 不渲染（实际 ${geo.chipH}）`);
+    // chips 行退役语义：agent（✦ model·perm·effort + AutoRetry，v1.4 批1）与 terminal
+    // （tmux chip，2026-09-28 真机反馈）全部删除——.chip 恒不渲染。
+    ok(geo.chipH === null, `chips 行已整体退役，.chip 不渲染（实际 ${geo.chipH}）`);
     await ctx2.close();
 
     // ── Part 8：nav back ◄ 点击 → URL 回项目列表（原 probe-mobile-tabstrip-back 的 v2 等价，

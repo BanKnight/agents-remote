@@ -301,7 +301,7 @@ export function WorkbenchSide() {
               type="button"
             >
               <span className="dicon">
-                <ShellIcon className="h-3.5 w-3.5" name="project" />
+                <ShellIcon className="size-full" name="project" />
               </span>
               <span className="min-w-0 truncate">{row.name}</span>
               {row.running > 0 ? (
@@ -398,7 +398,7 @@ export function WorkbenchSide() {
           type="button"
         >
           <span className="dicon">
-            <ShellIcon className="h-3.5 w-3.5" name="file" />
+            <ShellIcon className="size-full" name="file" />
           </span>
           {t("nav.globalFiles")}
         </button>
@@ -408,7 +408,7 @@ export function WorkbenchSide() {
           type="button"
         >
           <span className="dicon">
-            <ShellIcon className="h-3.5 w-3.5" name="pages-nav" />
+            <ShellIcon className="size-full" name="pages-nav" />
           </span>
           {t("nav.plugins")}
         </button>
@@ -423,7 +423,7 @@ export function WorkbenchSide() {
           type="button"
         >
           <span className="dicon">
-            <ShellIcon className="h-3.5 w-3.5" name="settings" />
+            <ShellIcon className="size-full" name="settings" />
           </span>
           {t("nav.settings")}
         </button>
@@ -459,7 +459,7 @@ function SideInstanceRow({
     >
       {isTerminal ? (
         <span className="dicon">
-          <ShellIcon className="h-3.5 w-3.5" name="terminal" />
+          <ShellIcon className="size-full" name="terminal" />
         </span>
       ) : (
         <span

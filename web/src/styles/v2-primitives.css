@@ -2,7 +2,8 @@
    v2 原语层 —— docs/design/assets/components.css 的 app 组件单源移植。
    范围：类名与结构 1:1 沿用（redesign-v2 §1「直接沿用类名，不另造平行组件」）；
    设计轨专用件不移植（.stage/.island/.home/.status/.page 舞台外框、
-   .stagepad/.stagewin/.tbar/.lights/.sbar Mac 窗口框、.pin/.hring/.panel 编号注释件、
+   .stagepad/.stagewin/.tbar/.lights Mac 窗口框（.sbar 状态栏已随桌面窗口壳移植）、
+   .pin/.hring/.panel 编号注释件、
    body 演示底）——M9 桌面窗口壳随 iPad/Mac 里程碑落地。
    颜色全走 var()（styles/index.css :root = tokens.css 同名同值），两主题自动成立。
    包 @layer components：Tailwind 层序 theme<base<components<utilities，
@@ -359,26 +360,8 @@
     background: var(--tint-orange);
   }
 
-  /* ---- 行3：tmux 会话 chip（v1.4 起 agent 摘要 chips 退役，仅 terminal 实例保留） ---- */
-  .chips {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 16px;
-  }
-  .chip {
-    height: 24px;
-    display: inline-flex;
-    align-items: center;
-    padding: 0 10px;
-    border-radius: 12px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--sep);
-    font-size: 11.5px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
-    color: var(--ink-1);
-  }
+  /* 行3 chips（tmux chip）已退役（agent 摘要 chip v1.4 批1、terminal chip 2026-09-28 真机反馈），
+     .chips/.chip 类随消费面清空一并删除；插件页 .dchips/.mchips 为独立命名不相关。 */
 
   /* ---- 输出流 ---- */
   .stream {
@@ -686,7 +669,7 @@
     height: 14px;
     stroke: var(--c-primary);
     fill: none;
-    stroke-width: 1.7;
+    stroke-width: 2;
     stroke-linecap: round;
     flex: none;
   }
@@ -699,8 +682,8 @@
     margin-left: auto;
   } /* 仅"标题+＋"型组头才右推；与时钟成对时紧邻 */
   .dicon {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     flex: none;
     display: flex;
     align-items: center;
@@ -708,15 +691,15 @@
     color: var(--ink-2);
   }
   .dicon svg {
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     stroke: currentColor;
     fill: none;
-    stroke-width: 2;
+    stroke-width: 1.8;
     stroke-linecap: round;
     stroke-linejoin: round;
     display: block;
-  } /* 笔画 2：20 盒映射 16px 后有效 ~1.6px，避免发虚 */
+  } /* v1.4 桌面图标规格 = 标杆（02 右上）：20px 图形 · 1.8px 笔画（components.css 单源同款） */
   .footnav span {
     display: flex;
     align-items: center;
@@ -756,6 +739,11 @@
     line-height: var(--line-height-ui);
     color: var(--ink-2);
     border-radius: 8px;
+    /* 长项目名尾截断（单源 :215「嵌入项目名过长时尾截断」，真机反馈②同批） */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .seg4 .on {
     background: var(--seg-thumb);
@@ -1065,19 +1053,20 @@
     line-height: var(--line-height-ui);
   }
   .badge {
-    width: 18px;
-    height: 15px;
-    border-radius: 3px;
+    /* v1.4 单源对齐（components.css :270「桌面=03m 同规格 22×19」）：22×19 · r4 · 11px · 700 */
+    width: 22px;
+    height: 19px;
+    border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 9.5px;
+    font-size: 11px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
-    font-weight: 600;
+    font-weight: 700;
     flex: none;
     font-family: ui-monospace, Consolas, monospace;
-  } /* 桌面尺寸；移动端 22×19 页自定 */
+  }
   .badge.M {
     background: var(--tint-orange);
     color: var(--c-warning-text);
@@ -1363,7 +1352,7 @@
     font-size: 11.5px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
-    color: var(--ink-2);
+    color: var(--ink-3);
     max-width: 100%;
     overflow: hidden;
   }
@@ -1494,9 +1483,10 @@
     opacity: 0.45;
   }
   /* 09m/10m 一级页搜索框单源（第十一轮复验：桌面 /files 用 .wsearch 30 胶囊、/plugins 内联
-     38/r12——跨页尺寸不统一）。移动 = 09-tab/10-tab .search（38 / r12 / fill-search / 15px）；
-     桌面 ≥1024 = 09-mac/10-mac .search（34 / r10 / elevated2 / 边框 / 13px）。margin 由调用方
-     承担（文件页需叠 FilesPanel px-3 对齐 28px 内容线；插件页 mx-4）。 */
+     38/r12——跨页尺寸不统一）。移动 = 09-tab/10-tab .search（38 / r12 / fill-search / 14px，
+     v1.4 单源 .search :219 对齐——真机反馈批次纠正页私 15px）；桌面 ≥1024 = 09-mac/10-mac
+     .search（34 / r10 / elevated2 / 边框 / 13px）。margin 由调用方承担（文件页需叠
+     FilesPanel px-3 对齐 28px 内容线；插件页 mx-4）。 */
   .psearch {
     display: flex;
     align-items: center;
@@ -1505,10 +1495,35 @@
     border-radius: 12px;
     background: var(--fill-search);
     padding: 0 12px;
-    font-size: 15px;
+    font-size: 14px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
     color: var(--ink-2);
+  }
+  /* 全局文件页搜索框（10-tab:41 / 10m:17 页私 .sfield——文件语境专属形态，与通用 .search
+     并存）：bg-elevated 胶囊 + sep 描边（区别于 .search 灰底无描边）。移动 30px/r15/12.5px 字；
+     桌面 ≥lg 放大（10m：34px/r10/13px 字）。放大镜尺寸由 ShellIcon span 定（size-[13px]
+     lg:size-[14px]，components 层 svg 规则会被 size-full 反超——.psearch 同款教训）。 */
+  .sfield {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 15px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-2);
+  }
+  @media (min-width: 1024px) {
+    .sfield {
+      height: 34px;
+      border-radius: 10px;
+      font-size: 13px;
+    }
   }
   /* 图标尺寸由调用方在 ShellIcon 的 span 上定（size-4 契约，svg = size-full 跟随 span）。
      勿写 .psearch svg 约束——components layer 会被 svg 的 size-full（utilities）反超，静默失效
@@ -1688,16 +1703,27 @@
   .gfile {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 10px;
+    gap: 12px;
     width: 100%;
-    padding: 9px 0;
+    padding: 10px 0;
     text-align: left;
   }
   .gfile + .gfile {
     border-top: 1px solid var(--sep-row);
   }
+  /* 散文件行 17px 文件图标（10-tab:36 .file .ic）：span 定尺寸（svg size-full 跟随），
+     stroke 走 currentColor = ink-2。 */
+  .gfile .ic {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-2);
+  }
   .gfile .p {
+    flex: 1 1 auto;
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     font-size: 12.5px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
@@ -1716,11 +1742,8 @@
     flex: none;
   }
   .badge.lg {
-    height: 19px;
-    min-width: 22px;
-    border-radius: 4px;
-    font-size: 10.5px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    /* 语义标记变体：基类已是 v1.4 22×19/r4/11px/700 全量规格（真机反馈批次对齐），
+       此处不回写任何数值——旧 font-size:10.5px 回补会以特异性盖过基类 11px，已删。 */
     line-height: var(--line-height-ui);
   }
   .badge.D {

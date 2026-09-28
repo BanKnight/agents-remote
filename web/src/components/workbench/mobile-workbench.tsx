@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
-import type { GitDiffScope, TerminalSession } from "@agents-remote/shared";
+import type { GitDiffScope } from "@agents-remote/shared";
 import { listProjectFiles, listProjectGitBranches, listProjectGitDiff } from "../../api/client";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { AddMenu } from "../files/add-menu";
@@ -800,16 +800,6 @@ function MobileProjectWorkbench({
       renderItems.find((s) => s.tabId === effectiveFocusId)?.ref ??
       null)
     : null;
-  // chips 行数据源：聚焦 terminal（v1.4 起 agent 无 chips 行——配置在 composer 控制行与
-  // ℹ 实例信息）。type predicate 收窄 session union（ProjectInstanceEntry 非 discriminated
-  // union）。
-  const focusedTerminal =
-    effectiveFocusId && focusRef?.kind === "session"
-      ? (instances.find(
-          (e): e is ProjectInstanceEntry & { session: TerminalSession } =>
-            e.type === "terminal" && e.session.id === effectiveFocusId,
-        )?.session ?? null)
-      : null;
 
   // v1.4 批2：工具态退役为检视面板——「进工具」= 开面板+激活标签，「退工具」（点当前
   // focus 的 pill / focus 变化兜底）= 关面板回实例主体。签名与旧工具切换兼容，各消费点
@@ -1305,7 +1295,6 @@ function MobileProjectWorkbench({
               />
             ) : undefined
           }
-          focusedTerminal={focusedTerminal}
           instances={instances}
           onCreateInstance={() => setCreateSheetOpen(true)}
           pillMenuItems={pillMenuItems}
@@ -1909,7 +1898,7 @@ function MobileFilesOverview() {
                 className={`ic cursor-pointer ${overviewWritable ? "" : "pointer-events-none opacity-40"} flex size-9 items-center justify-center`}
                 type="button"
               >
-                <ShellIcon name="plus" />
+                <ShellIcon className="size-5" name="plus" />
               </button>
             }
           />

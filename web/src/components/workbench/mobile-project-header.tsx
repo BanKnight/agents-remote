@@ -1,4 +1,3 @@
-import type { TerminalSession } from "@agents-remote/shared";
 import { useAtomValue } from "jotai";
 import { selectAtom } from "jotai/utils";
 import { type ReactNode, useEffect, useMemo, useRef } from "react";
@@ -43,8 +42,6 @@ type MobileProjectHeaderProps = {
   onSwitchProjects?: () => void;
   /** nav ⋯ 更多菜单（03n「会话历史」等；调用方装配 ActionMenu）。 */
   moreMenu?: ReactNode;
-  /** 聚焦 terminal 实例（03f：chips 行只剩 tmux 会话 chip，无模型/权限/effort）。 */
-  focusedTerminal: TerminalSession | null;
   /** 检视面板入口（03 原型 row2 尾部单 ticon：文件树/Git/Wiki 合并入口，v1.4 03o）。 */
   onOpenPanel: () => void;
 };
@@ -58,11 +55,10 @@ type MobileProjectHeaderProps = {
  *   monospace；skill tab 兼职 pill）+ `.plus` 新建实例 + `.sep` + **检视面板单 ticon**
  *  （文件树/Git/Wiki 三工具入口合并进面板动态标签条 03o，panel-left 图标）。无实例时
  *   pills 区显示「项目工具」lb（03h：无实例不渲染 pill 条，检视入口仍可用）。
- * - chips 行：仅 terminal 聚焦 = `tmux · 名` mono chip（03f）；agent 的运行摘要/自动重试
- *   chip 已随 v1.4 退役（配置在 composer 控制行 .iicn/.ipill 与 ℹ 实例信息）。
- *   skill focus 无 chips 行（原型 03h 空态也无）。
+ * - chips 行：已全部退役（agent/skill 的运行摘要 chip v1.4 批1 删；terminal 的 tmux chip
+ *   2026-09-28 真机反馈删——静态展示无切换能力，不值一行）。
  *
- * 原语类（.nav/.back/.nv-t/.row2/.pills/.pill/.plus/.sep/.ticon/.chips/.chip/.dot）消费
+ * 原语类（.nav/.back/.nv-t/.row2/.pills/.pill/.plus/.sep/.ticon/.dot）消费
  * v2-primitives.css 单源；pills 横滑在消费处叠 overflow-x-auto（原型 .pills overflow:hidden
  * 是示意，横滑区语义见 03 编号①）。
  */
@@ -81,7 +77,6 @@ export function MobileProjectHeader({
   focusActions,
   moreMenu,
   onSwitchProjects,
-  focusedTerminal,
   onOpenPanel,
 }: MobileProjectHeaderProps) {
   const { t } = useT();
@@ -268,16 +263,9 @@ export function MobileProjectHeader({
             </button>
           </div>
 
-          {/* chips 行（v1.4 退役 agent 运行摘要/自动重试 chip：模型·权限·深度已在 composer
-        控制行 .iicn/.ipill 常驻可见（03a/04），自动重试配置在 ℹ 实例信息（03k ③）；错误态
-        红色倒计时条仍在流上方（03d）。terminal 保留 tmux 会话 chip（03f 编号①「只剩 tmux
-        会话选择，无模型/权限/effort」；终端实例 1:1 绑定 tmux 会话无切换能力，静态不画 ▾）；
-        skill focus 无 chips 行（M10 用户反馈语义保留） */}
-          {focusedTerminal ? (
-            <div className="chips shrink-0">
-              <span className="chip font-mono">tmux · {focusedTerminal.displayName}</span>
-            </div>
-          ) : null}
+          {/* chips 行已随真机反馈删除（2026-09-28）：终端的 tmux chip 是纯静态展示
+       （终端实例 1:1 绑定 tmux 会话，无切换能力），信息量不足以独占一行——终端名已在
+        header tab 与 ℹ 实例信息可见。agent/skill 的 chips 行此前已退役（v1.4 批1）。 */}
         </>
       )}
     </>

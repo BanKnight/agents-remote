@@ -925,6 +925,20 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：probe-mobile-projects-home 回归（dot 7×7 几何断言保留，选择器换 `span.dot`）+ 门禁同批6 基线。
 
+### 真机反馈修复：终端 chips 行 + 侧边栏图标规格 + 全局文件页（2026-09-28）
+
+**用户三条真机反馈**：① 终端会话第三行（chips）多余；② agent 会话侧边栏与设计图有差距；③ 全局文件页与设计图差距较多。
+
+**实现**：① **chips 行整体退役**——终端的 tmux chip 是纯静态展示（终端实例 1:1 绑定 tmux 会话，无切换能力），不值独占一行；`mobile-project-header` 删 chips 渲染块 + `focusedTerminal` props 派生链（mobile-workbench 的 type predicate 收窄一并删），`.chips/.chip` 原语类退役（插件页 `.dchips/.mchips` 独立命名不相关）。② **侧边栏图标规格对齐 v1.4 标杆**——`.dicon` 16px/2 → 20px/1.8（单源 L207-208「桌面图标规格 = 标杆（02 右上）」）；`.ghead .clk` 笔画 1.7→2；workbench-side 五处 ShellIcon span `h-3.5 w-3.5` → `size-full`（svg 恒 size-full 跟随容器，components 层 `.X svg` 宽高规则被 utilities 反超的既有教训）。③ **全局文件页对齐 10-tab/10m**——搜索框 `.psearch` → 新原语 `.sfield`（移动 30px/r15/bg-elevated/sep 边/12.5px 字；≥lg 34px/r10/13px，@media 分档单类；放大镜 ShellIcon span `size-[13px] lg:size-[14px]`）；`.gfile` 散文件行 gap 10→12、padding 9→10、加 `.ic` 17px ink-2 文件图标、`.p` flex:1；外层 pt-3→pt-2.5（原型 margin 10px）；文件页 ＋ 补 `size-5`。④ **v1.4 单源数值对齐（全量扫描收敛 4 条该修项）**——`.badge` 基类 → 22×19/r4/11px/700（单源 L270；`.badge.lg` 删 10.5px 回退行防特异性盖基类）；`.crumb` 字色 ink-2→ink-3；`.seg4 span` 补长名尾截断三连（单源 L215）；`.psearch` 15→14px（单源 .search L219）。文件头 `.sbar` 注释漂移顺手修正。
+
+**全量差距扫描记档（v2-primitives.css vs 单源 317 行）**：真正该修的数值差距仅上列 4 条（已修）；`.tree` 段与 `.growrow`（= 单源 `.grow` 避 Tailwind 撞名改名）为「数值漂移 + 零消费」复合项——启用前须先修值（`.growrow` 缺 sep-row 分隔/`.ar`/`.p` 溢出三连）；零消费死代码族（浮层旧版 `.dim/.sheet`、iMessage 输入旧族 `.input/.field/.stop/.send`、`.stream/.card/.think`、`.tabbar/.lb`、`.pane/.icn/.tterm` 等）删除无损，留待清扫批次；命名隐患一则：自造 `.kfield.plain` 与单源 `.plain` 同名 token 靠层序+特异性恰好中和（暂无回归，静默耦合记档）。
+
+**diverge（记档）**：① 10-mac 桌面全局文件的 grplabel/pcard 项目分组形态（组标签 + 项目卡）未实现——现用 gfcard 列表形态，桌面分组化立项待排；② 散文件行 `.ic` 图标移动 10-tab 有 / 桌面 10-m 无——两端按原型各自渲染；③ badge 消费全带 `.lg`，基类几何变化对消费方生效值零影响。
+
+**验证**：受影响探针回归全绿——probe-mobile-workbench-states 22/0、probe-v2-m11-mobile-nav 14/0、probe-mobile-project-header 25/0、probe-v2-m9-d-desktop-pages 63/0（.sfield ×10）、probe-v2-m6-plugins 87/0、probe-v2-m4-tools-l3 65/0（crumb）、probe-mobile-projects-home 21/0、probe-loading-states 13/0、probe-files-tree-bugs 滚动/交互段全过；probe-m10-feedback-fixes 除 3 处基线失败外全过。e2e 零受影响断言。四门禁 + CSS 硬闸 + format 361 文件全过。
+
+**基线失败记档（stash 实验实锤与本次无关，未硬修）**：① probe-m10-feedback-fixes H 段 3 处（`button.pcard`/`button.mrow`/MCP 组 ＋——插件页 mock 卡未渲染，疑似 mock 与页面实现既有偏差）；② probe-files-tree-bugs「05e 五项序」——断言期望 `Open Preview`（大写 P），i18n 实际 `Open preview`（M4 `1891a43` 起），文案与断言大小写既有不匹配。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

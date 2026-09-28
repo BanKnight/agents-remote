@@ -622,8 +622,8 @@ async function run() {
       );
     }
     // F1 问题⑨：聚焦 agent 的 chips 行在进文件工具后隐藏（此前只 gate 聚焦实例类型漏 tool）。
-    // v1.4（03f）退役语义：agent chips 行（✦ model·perm·effort + AutoRetry）整体删除，
-    // 问题⑨⑩的「chips 隐藏/恢复」不再存在——恒不渲染即为正确态（terminal tmux chip 保留）。
+    // v1.4（03f）退役语义：chips 行整体删除（2026-09-28 真机反馈连 terminal tmux chip 一并删），
+    // 问题⑨⑩的「chips 隐藏/恢复」不再存在——恒不渲染即为正确态。
     await ticon.click();
     await page.waitForSelector('[data-inspection-panel="open"]', { timeout: 5000 });
     await page.waitForTimeout(400);

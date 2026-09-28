@@ -128,12 +128,16 @@ export function GlobalFilesOverview({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {scopeSeg}
-      {/* 搜索框 = 10m 原型 .search 语义：.psearch 单源（09m/10m 移动 + 09-mac/10-mac 桌面
-         规格，与插件页同一搜索框）。mx-4 补 16px 与 gfcard margin 同值——搜索框左缘对齐
-         seg4/卡片 28px 内容线（FilesPanel px-3 + margin 16；第十一轮复验：原 12px 离群）。 */}
-      <div className="shrink-0 px-3 pt-3">
-        <div className="psearch mx-4 w-full">
-          <ShellIcon aria-hidden="true" name="magnifyingglass" />
+      {/* 搜索框 = 10-tab/10m 页私 .sfield 语义（文件语境专属：bg-elevated 胶囊 + sep 描边，
+          移动 30px / 桌面 ≥lg 34px——v1.4 真机反馈②对齐）。mx-4 补 16px 与 gfcard margin
+          同值——搜索框左缘对齐 seg4/卡片 28px 内容线（FilesPanel px-3 + margin 16）。 */}
+      <div className="shrink-0 px-3 pt-2.5">
+        <div className="sfield mx-4 w-full">
+          <ShellIcon
+            aria-hidden="true"
+            className="size-[13px] flex-none lg:size-[14px]"
+            name="magnifyingglass"
+          />
           <input
             aria-label={t("files.searchPlaceholder")}
             className="min-w-0 flex-1 cursor-text border-none bg-transparent text-ink-1 outline-none"

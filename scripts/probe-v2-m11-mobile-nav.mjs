@@ -162,7 +162,9 @@ ok((await page.locator('nav[aria-label="移动端主导航"] a').count()) === 4,
 // ── Part 2: project scope（恒显修复核心）─────────────────────────────────────
 console.log("Part 2: project scope（/projects/proj1）");
 await page.goto(`${ORIGIN}/projects/proj1`);
-await page.waitForSelector(".chips", { timeout: 10000 });
+// （原等 .chips 作 project scope 就绪标志；chips 行 2026-09-28 真机反馈整体退役，
+// 就绪标志改等工作台 tab 渲染。）
+await page.waitForSelector('[data-tab-id="agent_a"]', { timeout: 10000 });
 await page.waitForTimeout(400);
 g = await navGeo(page);
 ok(g !== null, "project scope nav 存在（旧实现缺失）");
