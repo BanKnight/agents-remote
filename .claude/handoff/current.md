@@ -1,59 +1,57 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-27（**v1.4 批1 `62cb980` + 批2 `c684738` 已 commit**。批2 = 检视面板·状态层 + 移动 IA，双 reviewer 全消化。**下一步：交用户真机复验批1+批2，然后批3（桌面 ptabs + 链接直达）**。）
+> 最后更新：2026-09-29（**第二批真机反馈四条修复 commit `5c8f831`**：全局文件页整页整改 + 插件切换项目浮层 + 蓝「'」根因（plus 伪元素冲突）+ crumb 结构性修复 + 桌面右栏 7 项差距。同构整改：同一 DOM + 分档（`[data-desktop-inspector]` + `@media lg`），无两套 DOM。10 探针回归全绿 + 四门禁 + CSS 硬闸。**下一步：交用户真机复验（清单见下，含 PWA 清缓存提醒），随后存量欠账**。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-v1.4 设计包对标进行中：批1（图标管线 + composer 单源 `62cb980`）、批2（检视面板 InspectionPanel + 移动 IA `c684738`）已 commit；四门禁 + token strict + CSS 硬闸 + 单测 1511/0 + e2e 24/24 + 探针 4 个全绿；记档 redesign-v2.md §6.13 批1/批2 段（含 diverge 清单 8 项）。
+第二批真机反馈四条修复已 commit（`5c8f831`，18 文件），10 探针回归全绿 + 四门禁（test 865+9+674）+ CSS 硬闸（183066 字节 text/css）+ tokens strict 0 违例；记档 redesign-v2.md §6.13「真机反馈修复·第二批」段（4 条反馈 + Agent C/D 结论 + diverge 清单）。
 
-## 本 session 焦点（批2 完整闭环）
+## 本 session 焦点（第二批真机反馈收口）
 
-1. **结构**：`PanelTab` union + 三 atom（panelTabs/panelActive per-projectKey 持久化、panelOpen 内存级）；新 `inspection-panel.tsx`（fixed 全屏常驻挂载、translate+visibility 开合零销毁）；row2 ticon×3 退役单检视 ticon；旧 `?tab=` 深链渲染期映射不写回。
-2. **双 reviewer 消化**（design M1/M2/m1-m6/n3/n4 + perf M1/m1/m2）：滑出动画 `transition-[transform,visibility]`；panelOpen 卸载复位；`panelEverOpened` 首开门控；**标签叠层保活**（panelTabs 全渲染非激活 invisible + L3 改不透明覆盖层）；activatePanelTab 幂等守卫；ptabs ＋ 热区 / ✕ 重构 div[role=tab]+独立 button / FAB「添加」+disabled；fab prop 收敛；.ptabs 滚动条；bg-surface-base；.ticon.hl 孤儿删除。
-3. **探针适配**（叠层保活的语义变化）：L3 内容查询限定 `[data-role="l3-page"]`、叠层容器 `[data-panel-tab-body=…]`、ptab 改 `[role="tab"][aria-label=…]`。
+1. **反馈①（全局文件页整页不对）**：双重缩进根因 = `.gfcard` margin 16 + FilesPanel 容器 px-3 → 44px。修 = file-browser 容器 className 模板化（globalCard 时 px 归零）；scopeSeg/搜索容器 `px-4 lg:px-5`；桌面分组建群标签（groupProjectRoots/groupRootFiles，hidden lg:block）；第二卡 inline style 改 utility（会盖 lg 分档）。
+2. **反馈②（插件切换项目浮层）**：mobile-plugins-home 项目作用域浮层从会话列表语义改回项目列表（projectOnly 门控）。
+3. **反馈③（蓝「'」+ 添加按钮 + 地址栏）**：① plus 伪元素冲突——`.plus::before/::after` 笔画被 utilities 层 `after:-inset-2` 打散 → **容器式热区**范式（外层 button h-7 w-7 + 内层 span.plus，workbench-side 两处；项目组头 `ml-auto` 补相邻选择器断链）。② crumb 分隔符结构性 bug——旧 `button:not(:last-child)::after` 因搜索钮占 last-child 首段无分隔 + 末段反多「/」；修 = `.crumb > * + *::before` + 段按钮在前 `<b>` 收尾 + 搜索钮独立 `.obtn.srch` chip（03o 单源 L139-143）。
+4. **反馈④（桌面右栏差距大 + 同构质疑）**：10 项差距修 7——clps「»」折叠钮（PanelHeader 退役）、usePanelToolChip 装配单源（移动/桌面共用 crumb/gitchip/wsearch 四分支，git diff 同 key 缓存共享）、`.gacts` Git 操作行（04d/05i 一致原型）、行密度/左缘 14/cap/Wiki wsearch 分档。diverge 记档 3 项（栏宽 352/＋28px 热区/diff L3 位置）。
 
 ## 关键决策（本阶段不可丢）
 
-- **面板语境真相链**：panelOpen 内存 atom（卸载复位 effect 兜底）> URL 无 tab（面板开合不写 URL）> panelTabs/panelActive per-projectKey localStorage。旧 `?tab=` 深链 = 渲染期一次性映射（不写回），残留复开是拍板 f 固有代价（批3 收敛）。
-- **叠层保活范式**（perf-review m1 产物）：children 里 panelTabs 全渲染、非激活 `visibility:hidden`（保布局保滚动位；不用 display:none——丢 scrollTop）+ absolute inset-0 叠层；L3 = 覆盖层 `absolute inset-0 z-10 bg-surface-base` 盖住 children（打开 L3 不卸载标签面板）。
-- **panelEverOpened 门控**：invisible 只免 paint 不免渲染/布局/网络——面板从未打开不挂载工具面板；三个 open 路径（ticon/handleToolChange/URL effect）统一走 `openInspectionPanel`。
-- **探针铁律**：面板常驻挂载（closed 时 DOM 在）→ 全局查询必须限定面板根/叠层容器；ptab 是 div role=tab 非 button。
-- **diverge 8 项**记档 §6.13（ℹ/⋯ 不渲染、三基础标签不可关、iPad 竖屏中间态、FAB 色取舍、「文件」命名、file/git 预览重建过渡态、toolChip gap、存量 SVG 未迁）。
+- **同构整改前提（用户 mid-turn 拍板）**：整改不得「两套 DOM」——**同一 DOM + 分档**：右栏语境 `[data-desktop-inspector]` 属性选择器，main 整页 `@media (min-width:1024px)`；行为收敛共享组件（usePanelToolChip）单份实现，两端只容器不同。
+- **容器式热区范式**：CSS 伪元素笔画图标（.plus 类）与 Tailwind after:* utilities 冲突（utilities 层反超）——外层 button 承担热区、内层 span.plus 只画笔画；相邻选择器（`.ghead .tt + .plus`）会被中间 button 断链，需 `ml-auto` 补偿。
+- **探针基线失败判定法**：git stash push → rebuild → 对照 → pop 后**必须再 rebuild**（否则诊断跑旧 dist——「滚动容器未找到」假阳性教训）。
+- **Agent C plus 实锤**：侧边栏 plus 渲染 DOM 几何完全符合单源（18×18 灰）——用户所见「错误」最可能是 PWA 旧缓存 CSS + 18px 无热区难点按；复验须清缓存。
+- 批8 遗留决策继续有效；subagent 按依赖并发（memory `parallel-subagents-by-dependency.md`）。
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ 设计包换代 `8f1da09`；9 批计划批准；批1 `62cb980`；批2 `c684738`（含双 reviewer 消化 + 记档 §6.13）
-- ✅ 验证：四门禁 + CSS 硬闸 + token strict + 单测 829+9+673 全绿 + e2e 24/24 + 探针（m4-tools-l3 62/0 全量重写、header 25/0、cwd-memory ALL PASS、m10 全过）
-- ⬜ **交用户真机复验（清单见下）**：批1 composer/图标 + 批2 检视面板
-- ⬜ 批3（桌面 ptabs + 链接直达）→ 批4（文件操作）→ 批5（Git 写，security 必过）→ 批6（插件重排+停用）→ 批7（预览矩阵）→ 批8（密度，perf 必过）→ 批9（收尾）
-- ⬜ sheet 拖拽 bug 真机复验（§6.12p 挂起）；存量欠账（rootBrowse 下沉；i18n key 收敛；probe-chat-e2e 2 存量 FAIL）
+- ✅ v1.4 对标 9 批全部 commit（批1 `62cb980` … 批9 `98328ca`）+ 第一批真机反馈 `aa95081` + 全套 e2e 26/26
+- ✅ 第二批真机反馈四条修复 commit `5c8f831`：10 探针全绿（m9-d 64/0 含 F12b clps、m6-plugins 87/0、m4-tools-l3 65/0、m9-b 19/0、mobile-project-header 25/0、mobile-workbench-states 22/0、mobile-projects-home 21/0、loading-states 13/0、m11-mobile-nav 14/0、files-tree-bugs 与基线一致）+ 四门禁 + CSS 硬闸 + tokens strict
+- ⬜ **交用户真机复验**（清单见下；全程多批次累积清单）
+- ⬜ 存量欠账：桌面「点第二个实例丢 leaf」；DialogTitle a11y；rootBrowse 下沉；i18n key 收敛；probe-chat-e2e 2 存量 FAIL；sheet 拖拽真机复验（§6.12p）；`.tree`/`.growrow` 死代码清扫；Agent B 零消费死代码族清扫批次；probe-m10-feedback-fixes H 段基线失败 + files-tree-bugs「05e 五项序」大小写排查；右栏栏宽 352 vs 320 立项；diff 展示位置架构项
 
-## 用户真机复验清单（批1 + 批2）
+## 用户真机复验清单
 
-**批1 composer**：
-1. 底部输入区控制行：窄屏 3 个彩色小图标（权限/模型/深度）→ 点弹出上方锚定菜单，✓ 即点即生效；≥1024 宽屏变 3 个 pill
-2. 发送键 = Lucide ↑ 圆角方形；运行中变停止键；Agent 运行时 chips 行不再出现（配置在控制行 + ℹ）
+**⚠️ 先清 PWA 缓存**（侧边栏 plus 上轮实锤渲染正常，旧缓存 CSS 可能钉住旧样式；iOS：删 PWA 重装或 Safari 清网站数据）。
 
-**批2 检视面板**：
-3. row2 单个「检视面板」图标 → 点开全屏滑入（300ms）；‹ 工作台 关闭应**滑出**（非硬切消失）
-4. 标签条：默认「文件」；＋ 菜单加 Git/Wiki 标签；切标签内容保留（回来不闪骨架/滚动位不掉）；file 标签 ✕ 可关（仅 file 有 ✕）
-5. 文件树：crumb 地址栏点段返回（无「..」行）；进子目录再关面板重开仍停留；点文件 → 面板内预览 → back 回文件树（内容瞬间恢复）
-6. Git 标签：chip 显示分支态势；全部历史/分支 → 面板内 L3 页 → back 回标签条
-7. FAB 右下半透明（disabled 桩，批4 启用）；深链 `?tab=git` 直达面板 Git 标签
-8. 双主题过一遍（面板底色浅色应为暖白 #F2F2F7 系）；sheet 拖拽四轮修复一并复验（§6.12p 清单）
+**本轮（第二批，`5c8f831`）**：
+1. **全局文件页**（iPhone + 桌面双端）：卡片边距与搜索框对齐（16px 一致）；搜索框不再超右边；地址栏 = crumb 段间「/」分隔、当前段加粗收尾、右端方形搜索 chip（蓝 tint 圆角方钮）；桌面档出现「项目根目录 / 根目录散文件」建群标签、卡片 margin 归零
+2. **插件页**：右上切换浮层 = 项目列表（非会话）
+3. **工作台侧边栏**：组头「＋」= 灰色笔画 + 隐形 28px 方热区（好按）；文件/Git 标签地址栏 = crumb 新结构；**任何地方不再有蓝色小撇「'」**
+4. **桌面右栏**：头「检视 · 只读」行内右端「»」可收起；Files 标签顶部有地址栏+搜索；Git 标签 = 三等宽方按钮行（历史列表/提交…/分支）；行密度变紧、左缘 14px 统一；Wiki 有搜索框
+
+**前批累积（`aa95081` + 批6-9，详见 snapshots/20260929-0216.md）**：终端 header 两行、侧边栏图标 20px、全局文件页 .sfield/.gfile、插件页段序/停用闭环、预览 sandbox、滚动收敛迷你条、托盘两段确认、活动卡橙点。
 
 ## 阻塞 / 风险
 
-- 无阻塞。dev 存活 43011/43012；批2 已 rebuild（CSS 硬闸过）。
-- 风险：面板滑出动画依赖 visibility 离散插值（Chrome/Safari 均支持），真机 WebKit 表现待复验；探针 Chromium 已验证。
+- 无阻塞。dev 存活 43011/43012；`5c8f831` 后已 rebuild（CSS 硬闸过，183066 字节 text/css；stylesheet content-type 实测 text/css）。
 
 ## 易丢的关键上下文
 
-- **探针跑法**：touch web/src/main.tsx + sleep 16 + 核对 dist mtime + `bun scripts/probe-*.mjs`；e2e/单测 systemd-run 2G。
-- **探针选择器（面板语境）**：面板根 `[data-inspection-panel="open"]`、L3 内容 `[data-role="l3-page"]`（含 file/git 预览分支）、标签叠层 `[data-panel-tab-body="files|git|wiki"]`、ptab `[role="tab"][aria-label="文件|Git|Wiki"]`。
-- **本 session 生成损坏高发**（~7 次）：大段 Edit/中文注释易混入垃圾 token——对策 = 小段 Edit、失败即 Read 实际内容、不硬试第三次。
-- route mock LIFO / preview 带 mtimeMs / 右栏 InitScript 沿用；panelFileTab 预留给批3 链接直达消费。
+- **探针跑法**：touch web/src/main.tsx + sleep 16 + `bun scripts/probe-*.mjs`；e2e/单测 systemd-run 2G。
+- **Agent D 桌面右栏 10 项差距清单**已消化记档 §6.13 第二批段；**Agent B 死代码清单**在 task output（a9ce64120b822bd82），清扫批次直接取用勿重扫。
+- `.obtn`/`.gacts`/`.sfield`/`[data-desktop-inspector]` 分档段均在 v2-primitives.css 新增段，注释含单源行号锚点。
+- 本 session 生成损坏高发（前段 ~6 次 Edit 混入垃圾）——对策照旧：小段 Edit、失败即 Read、不硬试第三次；文件编辑只用内置工具。
+- 真机反馈段记档位置：§6.13 内「真机反馈修复·第二批」（「基线失败记档」段后、§7 前）。
 
 ## 提醒
 
@@ -61,4 +59,4 @@ v1.4 设计包对标进行中：批1（图标管线 + composer 单源 `62cb980`�
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-09-27 17:17；触发原因：v1.4 批2 commit `c684738` + handoff save
+最后更新：2026-09-29；触发原因：第二批真机反馈四条修复 commit `5c8f831` + /handoff save
