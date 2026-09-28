@@ -8,6 +8,7 @@ import check from "./check.svg?raw";
 import chat from "./chat.svg?raw";
 import clock from "./clock.svg?raw";
 import closeIcon from "./close.svg?raw";
+import download from "./download.svg?raw";
 import edit from "./edit.svg?raw";
 import ellipsis from "./ellipsis.svg?raw";
 import eye from "./eye.svg?raw";
@@ -48,6 +49,7 @@ const svgMap: Record<string, string> = {
   chat,
   clock,
   close: closeIcon,
+  download,
   edit,
   ellipsis,
   eye,

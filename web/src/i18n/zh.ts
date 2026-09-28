@@ -159,6 +159,7 @@ export const zh: Record<TranslationKey, string> = {
   "files.imageZoomOut": "缩小",
   "files.imageRotate": "旋转",
   "files.imageReset": "重置",
+  "files.imageDownload": "另存",
   "files.previewMetaLines": "{{n}} 行 · 更新 {{time}}",
   "files.menuCopyPath": "复制路径",
   "files.menuViewDiff": "在 Git 中查看 diff",

@@ -524,8 +524,9 @@ export const PanelRouter = memo(PanelRouterBase);
 
 /**
  * render tab 主体：从 workbenchRenderContentAtom 读 id → html，sandbox iframe srcDoc 渲染
- * （对齐 Files 预览 HTML 的 sandbox 语义，allow-scripts 脚本可执行、无同源权限）。bg-white：
- * 渲染产物通常面向白底。内容瞬态（内存 atom），刷新后 atom 清空 + tab 被剔除，空态兜底。
+ * （对齐 Files 预览 HTML 的 sandbox 语义，sandbox=""：不执行脚本、不发请求——v1.4 批7
+ * 随 Files 预览一并收紧）。bg-white：渲染产物通常面向白底。内容瞬态（内存 atom），刷新后
+ * atom 清空 + tab 被剔除，空态兜底。
  */
 function HtmlRenderPanel({ id }: { id: string }) {
   const { t } = useT();
@@ -541,7 +542,7 @@ function HtmlRenderPanel({ id }: { id: string }) {
   return (
     <iframe
       className="h-full w-full border-0 bg-white"
-      sandbox="allow-scripts"
+      sandbox=""
       srcDoc={html}
       title={t("workbench.renderTab")}
     />

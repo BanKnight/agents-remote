@@ -110,7 +110,7 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
   if (data.type === "image") {
     return (
       <div className="flex min-h-0 flex-1 flex-col" data-role="l3-file-preview">
-        <ImageViewer alt={data.name} src={data.dataUrl} />
+        <ImageViewer alt={data.name} downloadName={data.name} src={data.dataUrl} />
       </div>
     );
   }

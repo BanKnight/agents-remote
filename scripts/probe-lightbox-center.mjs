@@ -38,10 +38,10 @@ const OVERRIDE =
 async function login(page) {
   await page.goto(`${WEB_ORIGIN}/`);
   await page
-    .getByLabel("密码")
+    .getByLabel("访问密码")
     .or(page.getByLabel("Password"))
     .fill(await readAppPassword());
-  await page.getByRole("button", { name: /解锁|Unlock/ }).click();
+  await page.getByRole("button", { name: /登录|Sign in/ }).click();
   await page.waitForTimeout(700);
 }
 

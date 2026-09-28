@@ -74,6 +74,7 @@ async function setup(page) {
         parentPath: null,
         entries: [
           { name: "index.html", path: "index.html", type: "file", hidden: false, size: 512 },
+          { name: "chart.svg", path: "chart.svg", type: "file", hidden: false, size: 200 },
         ],
       }),
     }),
@@ -176,9 +177,13 @@ async function run() {
     await page.waitForSelector('iframe[title="Sandboxed HTML render"]', { timeout: 10000 });
 
     console.log("\n===== 1. srcDoc 内联状态断言 =====");
-    const srcDoc = await page
-      .locator('iframe[title="Sandboxed HTML render"]')
-      .getAttribute("srcdoc");
+    const renderIframe = page.locator('iframe[title="Sandboxed HTML render"]');
+    const srcDoc = await renderIframe.getAttribute("srcdoc");
+    // v1.4 批7：sandbox="" 收紧（design_spec L93 沙箱 = 不执行脚本、不发请求）。
+    record(
+      (await renderIframe.getAttribute("sandbox")) === "",
+      "iframe sandbox 属性 = 空串（不执行脚本不发请求）",
+    );
     const hasSvgData = srcDoc?.includes('src="data:image/svg+xml;base64,') ?? false;
     const hasPngData = srcDoc?.includes('src="data:image/png;base64,') ?? false;
     record(hasSvgData, "chart.svg 的 src 已替换为 svg dataUrl");
@@ -202,6 +207,29 @@ async function run() {
     record(
       !!pngBox && pngBox.width > 0,
       `png img 渲染出非零尺寸（${pngBox ? `${pngBox.width}x${pngBox.height}` : "null"}）`,
+    );
+
+    console.log("\n===== 3. 图片查看器另存钮（v1.4 批7：a[download]） =====");
+    // 回列表 → 点 chart.svg → ImageViewer 工具条含「另存」a[download]，建议名 = 真文件名。
+    await page.goto(`${WEB_ORIGIN}/files`);
+    await page.waitForSelector("nav[aria-label]", { timeout: 8000 });
+    await page.locator(".gfrow button", { hasText: "proj1" }).click();
+    const chartRow = page.locator("[data-list-row-title]", { hasText: "chart.svg" });
+    await chartRow.waitFor({ timeout: 8000 });
+    await chartRow.click();
+    const saveLink = page.locator("a[download]").first();
+    await saveLink.waitFor({ timeout: 8000 });
+    record(
+      (await saveLink.getAttribute("download")) === "chart.svg",
+      "另存 a[download] 建议名 = 文件名（chart.svg）",
+    );
+    record(
+      (await saveLink.getAttribute("href"))?.startsWith("data:image/svg+xml") === true,
+      "另存 href = 图片 dataUrl",
+    );
+    record(
+      (await saveLink.getAttribute("aria-label")) === "另存",
+      "另存钮 aria-label「另存」（spec L93 口径）",
     );
   } finally {
     await browser.close();

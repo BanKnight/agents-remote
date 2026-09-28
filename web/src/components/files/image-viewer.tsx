@@ -33,7 +33,24 @@ function zoomAboutCenter(prev: Transform, nextScale: number): Transform {
 export type ImageViewerProps = {
   src: string;
   alt: string;
+  /** 另存建议文件名（a[download]）；缺省从 src 推导（dataUrl mime → image.<ext>）。 */
+  downloadName?: string;
 };
+
+/** src 推导下载名：调用方（lightbox）没有真名时的兜底。 */
+function suggestDownloadName(src: string): string {
+  if (src.startsWith("data:")) {
+    const m = /^data:image\/([\w.+-]+)[;,]/.exec(src);
+    const ext = m?.[1].replace("svg+xml", "svg");
+    return ext ? `image.${ext}` : "image";
+  }
+  try {
+    const tail = new URL(src, "http://localhost").pathname.split("/").filter(Boolean).pop();
+    return tail || "image";
+  } catch {
+    return "image";
+  }
+}
 
 /**
  * 图片查看器（原地增强，设计 image-viewer 条目）：替换 PreviewBody 的静态 `<img>`。
@@ -42,7 +59,7 @@ export type ImageViewerProps = {
  * - 单指针拖拽 → 平移；双指针 → pinch（距离比 → 缩放，中点位移 → 平移）。
  * - 桌面滚轮（onWheel）→ 围绕中心缩放。
  * - 双击（鼠标 dblclick / 触屏连按）→ fit(1) ↔ 2x。
- * - 按钮条：放大 / 缩小 / 90° 旋转 / 重置。
+ * - 按钮条：放大 / 缩小 / 90° 旋转 / 重置 / 另存（spec：另存 = a[download]，v1.4 批7）。
  *
  * 缩放统一围绕图片中心（不做 zoom-to-cursor）——与旋转兼容、数学简洁，Google Photos 同款取舍。
  * 容器 `touch-none`（touch-action:none）阻止浏览器默认手势（页面滚动 / 系统 pinch-zoom），
@@ -51,7 +68,7 @@ export type ImageViewerProps = {
  * transform：img 绝对定位 left-1/2 top-1/2 + `translate(-50%,-50%)` 居中，再叠加用户的
  * translate(x,y) rotate(deg) scale(scale)，transform-origin center。
  */
-export function ImageViewer({ src, alt }: ImageViewerProps) {
+export function ImageViewer({ src, alt, downloadName }: ImageViewerProps) {
   const { t } = useT();
   const canvasRef = useRef<HTMLDivElement>(null);
   // transform 的 ref 镜像：手势回调读最新值而不重绑 listener（与 FilesPanel saveShortcut 同款范式）。
@@ -233,6 +250,15 @@ export function ImageViewer({ src, alt }: ImageViewerProps) {
         <ViewerButton aria-label={t("files.imageReset")} onClick={reset}>
           <ShellIcon className="size-4" name="maximize" />
         </ViewerButton>
+        {/* 另存 = a[download]（同源/blob URL 浏览器直接落盘；dataUrl 同样成立）。 */}
+        <a
+          aria-label={t("files.imageDownload")}
+          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-primary/10 hover:text-primary active:bg-primary/20"
+          download={downloadName ?? suggestDownloadName(src)}
+          href={src}
+        >
+          <ShellIcon className="size-4" name="download" />
+        </a>
       </div>
     </div>
   );

@@ -158,6 +158,7 @@ export const en = {
   "files.imageZoomOut": "Zoom out",
   "files.imageRotate": "Rotate",
   "files.imageReset": "Reset",
+  "files.imageDownload": "Save",
   "files.previewMetaLines": "{{n}} lines · updated {{time}}",
   "files.menuCopyPath": "Copy path",
   "files.menuViewDiff": "View diff in Git",

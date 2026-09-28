@@ -761,9 +761,11 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
         return <LoadingBlock className="flex-1" label={t("files.preparingRender")} />;
       return (
         <div className="flex-1">
+          {/* sandbox=""（v1.4 批7，design_spec）：纯静态预览——不执行脚本、不发请求；
+              动态行为交工作台终端里的真实环境。 */}
           <iframe
             className="w-full h-full border-0"
-            sandbox="allow-scripts"
+            sandbox=""
             srcDoc={inlinedHtml}
             title="Sandboxed HTML render"
           />
@@ -784,7 +786,8 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
     );
   }
 
-  if (preview.type === "image") return <ImageViewer alt={preview.name} src={preview.dataUrl} />;
+  if (preview.type === "image")
+    return <ImageViewer alt={preview.name} downloadName={preview.name} src={preview.dataUrl} />;
 
   if (preview.type === "too_large")
     return (
