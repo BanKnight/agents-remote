@@ -284,7 +284,10 @@ export function WorkbenchSide() {
         plus 菜单的建会话 prompt 挂在此处——批次 1 漏挂导致菜单选类型后 prompt 永不出现。 */}
       {create.promptHolder}
       {/* ── 项目组 ── */}
-      <div className="ghead shrink-0">
+      {/* 首行 ghead mt-0（覆写 .ghead 单源 margin-top 8，utilities > components 层序）：
+          与 .side padding-top 2 配合 = 首行中心 16 = 中栏 tabstrip 中心（2026-09-29 真机
+          反馈：左栏「项目」原中心 30 低 14px；三栏第一行同一水平线拍板）。 */}
+      <div className="ghead mt-0 shrink-0">
         <span className="tt">{t("nav.projects")}</span>
         {/* 「＋」= 容器式热区（同实例组头）：button 28px 热区 + 内层 span.plus 字形；
             ml-auto 补 .ghead .tt + .plus 相邻选择器断链（中间隔了热区 button）。 */}

@@ -779,7 +779,11 @@
     flex: none;
     background: var(--bg-sidebar);
     border-right: 1px solid var(--sep);
-    padding: 8px 10px;
+    /* 顶 2（2026-09-29 真机反馈：三栏第一行应与中栏 tabstrip 同一水平线——原型顶 8 +
+       ghead mt 8 + 行半 9 = 首行中心 25，本就不与 tabstrip 中心 16 对齐；实现首行 ghead
+       含 28px 容器式热区（行高 28），2 + 28/2 = 16 = tabstrip 中心。右栏 .glabel2 中心
+       15.8 已齐。配套：首行 ghead margin-top 由调用点 mt-0 覆写。 */
+    padding: 2px 10px 8px;
     position: relative;
   } /* 宽度页自定：Mac 250 / iPad 260 */
   .srow2 {
