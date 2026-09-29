@@ -956,7 +956,19 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **diverge（记档）**：④-#7 栏宽 352 vs 原型 320（现实现三栏布局口径，动栏宽牵动整体 grid，立项待排）；④-#9 「＋」28px 热区 vs 原型 20px 图标（触屏可达性刻意 diverge，非缺陷）；④-#10 diff 展示位置（原型右栏内嵌 vs 现 L3 预览栈，架构性，另立）；①桌面「＋ 加开终端实例」affordance 不做（桌面原型页私有，移动 Git 面板无此入口，做了即违反同构）；10m cap absolute 定位/长文不取；crumbrow 原语零实现（toolChip 槽已覆盖其职责）；05e 顶部「＋」入口未做；Files 底部 links 行 lg 隐藏后桌面新建/上传入口依赖 toolChip crumb FAB 链路（批4 03oa 已接）。
 
-**验证**：探针回归全绿——m9-d 64/0（新增 F12b clps 断言）、m6-plugins 87/0（projectOnly）、m4-tools-l3 65/0（「历史列表」文案）、m9-b 19/0、mobile-project-header 25/0、mobile-workbench-states 22/0、mobile-projects-home 21/0、loading-states 13/0、m11-mobile-nav 14/0、files-tree-bugs 与基线一致（存量 2 处）。四门禁全绿（test api 865 + shared 9 + web 674）+ CSS 硬闸（183066 字节 text/css）+ tokens strict 0 违例。交付 checklist：stylesheet `Content-Type: text/css` 实测过。
+**验证**：探针回归全绿——m9-d 64/0（新增 F12b clps 断言）、m6-plugins 87/0（projectOnly）、m4-tools-l3 65/0（「历史列表」文案）、m9-b 19/0、mobile-project-header 25/0、mobile-workbench-states 22/0、m11-mobile-nav 14/0、mobile-projects-home 21/0、loading-states 13/0、files-tree-bugs 与基线一致（存量 2 处）。四门禁全绿（test api 865 + shared 9 + web 674）+ CSS 硬闸（183066 字节 text/css）+ tokens strict 0 违例。交付 checklist：stylesheet `Content-Type: text/css` 实测过。
+
+### 真机反馈修复·第三批：卡片双重边距 + 检视面板三基础标签常驻 + 搜索框归一（2026-09-29，commit `a4e9e69`）
+
+**用户三条反馈**：① iPhone 全局文件页列表两侧边距还是不对（没对齐）；② 工作台中的侧边栏（检视面板）缺了 wiki；③ 全局文件移动端搜索栏高度偏小，应与其他页面一致——但工具文件中的搜索确实应该紧凑，怎么处理。
+
+**实现**：
+
+- **反馈① 双重边距根因（DOM 几何实锤）**：搜索框容器 `px-4`（sfield 左缘 16px）+ 滚动容器无 padding + `.gfcard` 自带 `margin-left:16px` → **卡片左缘 32px vs 搜索框 16px**——上一批只归零了容器 px，忘了 gfcard 自身 margin 在新嵌套下叠加。修 = `.gfcard` margin `14px 16px 0` → `14px 0 0`（inline 归零，外层 px-4 提供边距与搜索框天然对齐；lg 分档 margin:0 不变）。复验：h1/搜索框/卡片/cap 左缘全部 16px。
+- **反馈② 三基础标签常驻**：03m/03p 原型 ptabs = 文件树/Git/Wiki **三标签全在**，实现旧默认单 files 需手动「＋」开（用户开检视面板只见「文件」→「缺了 wiki」）。修 = `workbench-model.ts` 新增 `BASE_PANEL_TABS` 常量 + `withBasePanelTabs` 读侧 normalize（存量 localStorage 单 files 自动补齐，基础固定序前置、file 预览保序后置，幂等），移动/桌面消费点同构同一份。「＋」菜单保留（激活幂等语义不变）；✕ 仍仅 file 标签（三基础不可关）。
+- **反馈③ 搜索框归一**：`.sfield` 页私 30px（上批照抄 10-tab 页内定义）退役，全局文件页搜索换 **`.psearch` 一级页单源**（38px/r12 移动 / 34px/r10 桌面，与插件页/项目页完全同款）。**语境分工方案（用户问「怎么处理」的答案）**：mainPage 整页语境搜索 = 与其他页面一致（38px 单源）；工具面板语境（检视面板 files 搜索 .wsearch 30px）保持紧凑——不同语境不同原语档位，同一 input 形态、零两套 DOM。diverge 记档：原型 10-tab 页私 .sfield 30px vs 实现 .psearch 38px，用户拍板跨页一致性优先于页私原型值。
+
+**验证**：几何探针（diag-files-global-geometry.mjs 入库）：h1/搜索框/卡片/cap 左缘全 16px 对齐（修复前卡片 32）；m4-tools-l3 65/0（默认标签断言 1→3 适配）、m9-d 64/0（F14 三常驻 + psearch ×10）、m9-b 19/0（右栏 ptabs 三常驻）、mobile-workbench-states 22/0、mobile-projects-home 21/0、m6-plugins 87/0、files-tree-bugs 仅存量「05e 五项序」（基线在案）。四门禁全绿 + CSS 硬闸（182787 字节）+ tokens strict 0 违例。
 
 ## §7 待定项跟踪
 
