@@ -984,6 +984,16 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：probe-inspector-row-menus 23/23（S2/S5 三基础常驻 + G2 批5 放弃更改 3 项适配）；e2e 13 spec 全绿——file-browser.spec 三处适配（`.frow` 断言限定 `[data-panel-tab-body="files"]` 防 Git 面板变更行混入；「＋」入口改 toolChip AddMenu；深链就绪信号），git-diff.spec 两处（"All history"→"History"）。四门禁全绿 + CSS 硬闸 + tokens strict 过。存量在案：e2e pwa-installable 失败（manifest.short_name null，`git stash -u` 对照证实为存量基线，静态文件问题与本次无关）。
 
+### 真机反馈修复·第五批：桌面三栏第一行同一水平线（2026-09-29，commit `73fd9fa`）
+
+**用户反馈**：桌面左栏「项目」标题、右栏「检视」行理应与中栏 tab 同一高度，现在看起来偏低——为什么。
+
+**根因（DOM 几何实锤）**：中栏 tabstrip 32px 顶格、文字中心 15.5~16；右栏 `.glabel2`「检视 · 只读」中心 15.8 **本已齐**（无需改，用户感知被左栏拉偏）；左栏「项目」ghead 中心 **30**——`.side` padding-top 8 + 首行 ghead margin-top 8 + 28px 容器式热区行高（plus 按钮可访问性增强，原型 .plus 仅 18px 字形）三层叠加。
+
+**修法**（拍板「三栏第一行同一水平线」——原型三行本就不齐 25/16/18.5，原型自身粗糙处，用户对齐要求优先）：① `.side` padding `8px 10px` → `2px 10px 8px`（顶 2 + 首行行高 28/2 = 中心 16；`.side` 唯一消费点 = 桌面侧栏零外溢）；② 首行 ghead「项目」`mt-0` utility 覆写单源 margin-top 8（utilities > components 层序，v2-primitives 注释明示）。
+
+**验证**：新探针 `probe-desktop-tri-column-firstline.mjs`（入库，mock session 触发 tabstrip）：F0-F5 全 PASS——tabstrip 32px 顶格 + 三行中心 side 16 / tab 15.5 / inspector 15.8 互差 ≤1px；m9-b 19/0、m9-d 64/0、desktop-instance-info ALL PASS、inspector-row-menus ALL PASS、states 22/0、tokens strict 0 违例、CSS 硬闸（182791 字节）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
