@@ -1026,6 +1026,16 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：m5-sheets（03n sheet 主探针）54/54；web typecheck/test（674）、CSS 硬闸全过。
 
+### 真机反馈修复·第五批⑥：移动历史补「展开更早」折叠（2026-09-30，commit `1652a22`）
+
+**用户反馈**：桌面历史有依次加载更多，iPhone 没有。
+
+**根因**：折叠展开（第五批②拍板「展示最近的几个会话，更久的再依次展开」）只在桌面 HistoryList 实现，移动 sheet 全量平铺——行为没有按多端同构收敛到共享层。
+
+**修法**：抽 `useHistoryRecentWindow` 共享 hook（窗口 5 / 步进 5 / 切过滤重置，行为单份），`HistoryList` 与 `MobileSessionHistorySheet` 共同消费；移动展开按钮 = 03n `.fc` 同数值胶囊（12px r15 p 5px 14px ghost）但 utility 拼写**不挂 `.fc`**（该类语义专属 filters chips，探针按 `.fc` 计数三态）。
+
+**验证**：m5-sheets 扩至 **56 断言**（mock 扩 7 条：折叠 5 / 已结束重置 5 / 展开全显 7）56/56；tri-column 15/15（HistoryList hook 重构无回归）；web typecheck/test/format/lint、CSS 硬闸全过。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
