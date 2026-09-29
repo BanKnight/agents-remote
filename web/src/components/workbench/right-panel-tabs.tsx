@@ -1,4 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { useAtom } from "jotai";
+import { useRef, useState } from "react";
+import { listProjectFiles } from "../../api/client";
 import { useT } from "../../i18n";
 import {
   type PanelTab,
@@ -10,6 +13,9 @@ import {
   BASE_PANEL_TABS,
   withBasePanelTabs,
 } from "../../routes/workbench-model";
+import { AddMenu } from "../files/add-menu";
+import { NewItemSheet } from "../files/new-item-sheet";
+import { enqueueUploads } from "../files/upload-queue";
 import { FilesToolTab, GitToolTab, PanelFileTabBody, WikiToolTab } from "./workbench-tab-plugin";
 import { PanelTabBar } from "./inspection-panel";
 import { usePanelToolChip } from "./project-tool-panels";
@@ -84,11 +90,25 @@ export function RightPanelTabs({
   };
   // 工具 chip 槽装配单源（usePanelToolChip，与移动 InspectionPanel 同一份——多端同构；
   // 搜索 query 提升透传 Tab 三件套，chip 与列表同 state）。
+  const activeKind = panelTabs.find((t0) => t0.id === activePanelTabId)?.kind ?? "files";
   const { filesSearchQuery, setWikiSearchQuery, toolChip, wikiSearchQuery } = usePanelToolChip({
     currentPath: ctx.currentPath,
-    kind: panelTabs.find((t0) => t0.id === activePanelTabId)?.kind ?? "files",
+    kind: activeKind,
     onPathChange: ctx.onPathChange,
     projectKey: projectKey ?? "",
+  });
+  // 05e:54 搜索行右端「＋」（第二批缺口补齐：桌面 .links 行 lg:hidden 后新建/上传入口断）——
+  // AddMenu 单源（03oa 两项）装配 toolChip 行尾，与移动面板 FAB 同构；目标目录 = ctx.currentPath
+  //（cwd 与 crumb 受控同源）。siblingNames 走同 key files query 共享缓存（gitDiffForChip 同
+  // 范式，sheet 开启才启用，零常态网络）。
+  const [newItemParentPath, setNewItemParentPath] = useState<string | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const uploadTargetRef = useRef("");
+  const cwd = ctx.currentPath ?? "";
+  const filesListing = useQuery({
+    enabled: newItemParentPath !== null,
+    queryFn: () => listProjectFiles(projectKey ?? "", cwd || undefined),
+    queryKey: ["projects", projectKey, "files", cwd],
   });
 
   if (!projectKey) {
@@ -146,7 +166,27 @@ export function RightPanelTabs({
           同款槽结构 mx-4 mt-2.5 gap-2——装配单源 usePanelToolChip，右栏不再裸奔「..」行
           （真机反馈 2026-09-29 Files 标签缺顶部工具行 / Wiki 缺搜索入口）。 */}
       {toolChip ? (
-        <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-2">{toolChip}</div>
+        <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-2">
+          {toolChip}
+          {activeKind === "files" ? (
+            <AddMenu
+              onNew={() => setNewItemParentPath(cwd)}
+              onUpload={() => {
+                uploadTargetRef.current = cwd;
+                uploadInputRef.current?.click();
+              }}
+              trigger={
+                <button
+                  aria-label={t("files.add")}
+                  className="cursor-pointer text-[15px] font-bold text-primary"
+                  type="button"
+                >
+                  ＋
+                </button>
+              }
+            />
+          ) : null}
+        </div>
       ) : null}
       {/* §8 高度链：body 自身必须是 flex container（检视内容 FilesPanel 等是 flex-1 子）；
         relative = 标签叠层 absolute inset-0 的定位基准。 */}
@@ -194,6 +234,33 @@ export function RightPanelTabs({
           );
         })}
       </div>
+      {/* 03y 新建 sheet + 03oa 上传 picker（toolChip「＋」菜单装配；open = state 非空持有）。
+          与移动面板 FAB 装配同构（mobile-workbench renderPanelFab 同款三件）。 */}
+      {newItemParentPath !== null ? (
+        <NewItemSheet
+          onOpenChange={(next) => {
+            if (!next) setNewItemParentPath(null);
+          }}
+          open
+          parentPath={newItemParentPath}
+          projectName={projectKey}
+          siblingNames={
+            newItemParentPath === cwd ? (filesListing.data?.entries ?? []).map((e) => e.name) : []
+          }
+        />
+      ) : null}
+      <input
+        className="hidden"
+        multiple
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            enqueueUploads(projectKey ?? "", uploadTargetRef.current, Array.from(e.target.files));
+          }
+          e.target.value = "";
+        }}
+        ref={uploadInputRef}
+        type="file"
+      />
     </div>
   );
 }

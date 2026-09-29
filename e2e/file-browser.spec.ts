@@ -41,8 +41,10 @@ test("authenticated user can browse Project files and preview text and images", 
   await expect(files.locator(".frow", { hasText: /\.env\.example/ }).first()).toBeVisible();
   await expect(files.locator(".frow", { hasText: /\.git$/ })).toHaveCount(0);
 
+  // 根目录列表限定 files 标签 body——三基础标签常驻（2026-09-29 反馈②）后 Git/Wiki 面板
+  // 叠层保活挂载（invisible 仍在 DOM），其 .frow .p（git 变更行）会混入全局选择器。
   const rootNames = await files
-    .locator(".frow .p")
+    .locator('[data-panel-tab-body="files"] .frow .p')
     .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
   // 目录在前（.config/src），文件按 localeCompare（.env.example 首位）。
   expect(rootNames).toEqual([
@@ -131,13 +133,24 @@ test("batch-4 file operations: new item sheet, rename, move, delete confirm", as
   await expect(projectRow).toBeVisible();
   await page.goto(`/projects/${projectName}?rightTab=files`);
   const files = page.getByRole("complementary").nth(1);
+  // 深链映射完成信号（对齐上方测试同款）：右栏 aside 挂载 + files 标签激活，再等列表行
+  //——fresh page 直达深链时 aside/inspection/files 三层串行就绪，直接等 .frow 会竞速失败。
+  await expect(files.getByRole("tab", { name: "Files", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(files.locator(".frow").first()).toBeVisible();
 
   const stamp = Date.now().toString(36);
   const fileName = `e2e-b4-${stamp}.txt`;
+  // 行定位限定 files 标签 body：三基础常驻后 Git 面板叠层保活（invisible 仍在 DOM），新建/
+  // 重命名文件的 git 变更行与 files 列表行同 hasText → 全局 .frow 会 strict violation。
+  const filesBody = files.locator('[data-panel-tab-body="files"]');
 
-  // ── 03y 新建 sheet：links 行「New…」打开，segc 文件态 + 名称 + 位置（项目根）。──
-  await files.locator(".links button", { hasText: /New…/ }).click();
+  // ── 03y 新建 sheet：toolChip 行「＋」（05e:54，第二批起桌面 .links 行 lg:hidden、
+  //    入口移至 toolChip AddMenu 单源）→「New…」菜单项，segc 文件态 + 名称 + 位置（项目根）。──
+  await files.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("menuitem", { name: "New…" }).click();
   const sheet = page.getByRole("dialog");
   await expect(sheet.getByRole("tab", { name: "File", exact: true })).toHaveAttribute(
     "aria-selected",
@@ -150,20 +163,20 @@ test("batch-4 file operations: new item sheet, rename, move, delete confirm", as
   await expect(sheet.getByRole("button", { name: "Create" })).toBeDisabled();
   await sheet.getByLabel("Name").fill(fileName);
   await sheet.getByRole("button", { name: "Create" }).click();
-  await expect(files.locator(".frow", { hasText: fileName })).toBeVisible();
+  await expect(filesBody.locator(".frow", { hasText: fileName })).toBeVisible();
 
   // ── 03w2 重命名 Alert：右键行 → 菜单「Rename」→ 预填全选覆盖输入 + ✓ Available。──
-  await files.locator(".frow", { hasText: fileName }).click({ button: "right" });
+  await filesBody.locator(".frow", { hasText: fileName }).click({ button: "right" });
   await page.locator('[role="menuitem"]', { hasText: "Rename" }).click();
   const renameBox = page.getByRole("dialog");
   await expect(renameBox.getByRole("button", { name: "Rename" })).toBeDisabled(); // 未改名禁用
   await renameBox.getByLabel("Rename").fill(`e2e-b4-${stamp}-renamed.txt`);
   await expect(renameBox.getByText("✓ Available")).toBeVisible();
   await renameBox.getByRole("button", { name: "Rename" }).click();
-  await expect(files.locator(".frow", { hasText: `-renamed.txt` })).toBeVisible();
+  await expect(filesBody.locator(".frow", { hasText: `-renamed.txt` })).toBeVisible();
 
   // ── 03w3 移动 sheet：右键 → 「Move to…」→ 当前目录行 ✓ + 点 src 进入 + 移动到此处。──
-  await files.locator(".frow", { hasText: `-renamed.txt` }).click({ button: "right" });
+  await filesBody.locator(".frow", { hasText: `-renamed.txt` }).click({ button: "right" });
   await page.locator('[role="menuitem"]', { hasText: "Move to…" }).click();
   const moveBox = page.getByRole("dialog");
   await expect(moveBox.locator(".ck")).toHaveText("✓");
@@ -171,14 +184,15 @@ test("batch-4 file operations: new item sheet, rename, move, delete confirm", as
   await moveBox.getByRole("button", { name: "Move here" }).click();
   // 移动后：进 src 目录看到文件；原根层不再有。定位用子串匹配（与上方 /src/ 同款——
   // .frow 行 textContent 带行内空白，锚定正则 ^src$ 不匹配）。
-  await files.locator(".frow", { hasText: /src/ }).first().click();
-  await expect(files.locator(".frow", { hasText: `-renamed.txt` })).toBeVisible();
+  await filesBody.locator(".frow", { hasText: /src/ }).first().click();
+  await expect(filesBody.locator(".frow", { hasText: `-renamed.txt` })).toBeVisible();
 
   // ── 03w4 删除确认：src 层右键 renamed 文件 → confirm 文案（文件版措辞）→ 确认移除。──
-  await files.locator(".frow", { hasText: `-renamed.txt` }).click({ button: "right" });
+  await filesBody.locator(".frow", { hasText: `-renamed.txt` }).click({ button: "right" });
   await page.locator('[role="menuitem"]', { hasText: "Delete" }).click();
   const delBox = page.getByRole("dialog");
   await expect(delBox).toContainText("removed from the project and the Git worktree");
   await delBox.getByRole("button", { name: "Delete", exact: true }).click();
+  // count 0 保持全局（files + git 变更行都应消失，比 body 限定更严）。
   await expect(files.locator(".frow", { hasText: `-renamed.txt` })).toHaveCount(0);
 });

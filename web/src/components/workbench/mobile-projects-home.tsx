@@ -156,8 +156,9 @@ export function MobileProjectsHome() {
       />
 
       {/* 搜索框（原型 .search）：.psearch 单源（与插件/全局文件页同一搜索框，第十一轮复验
-         跨页统一）；02 原型 margin-top 8px 保留在调用处。 */}
-      <div className="psearch mx-4 mt-2 flex-none">
+         跨页统一）。margin-top 统一 10px（2026-09-29 真机反馈：三页原型页私值 8/12/10 各异，
+         切换底部导航时搜索框跳动——跨页一致优先，三页统一 mt-2.5，文件页同为 10px）。 */}
+      <div className="psearch mx-4 mt-2.5 flex-none">
         <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
         <input
           aria-label={t("home.searchPlaceholder")}

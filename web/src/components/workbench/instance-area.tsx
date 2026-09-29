@@ -2395,8 +2395,10 @@ export function WorkspaceTree({
   // 不再是 group 的后代，closest 找不到 group，必须靠穿透）。非拖动态 panel 正常接交互。
   const isDragging = handlers.draggingRef !== null;
   return (
-    // 共享 relative 根：所有 group/gutter/panel 的 absolute 百分比定位基准。p-1 给 group 边缘留间距。
-    <div className="relative h-full min-h-0 w-full p-1">
+    // 共享 relative 根：所有 group/gutter/panel 的 absolute 百分比定位基准。窗格满铺
+    //（2026-09-29 真机反馈：原型 .pane 平面拼接 border-right 分隔，无浮动卡片缝——原 p-1
+    // 内衬 + 窗格描边 = VSCode 浮动卡片形制，原型里没有）。
+    <div className="relative h-full min-h-0 w-full">
       {flat.groups.map((g) => (
         <GroupShell
           activeZone={handlers.activeZone}
@@ -2491,8 +2493,11 @@ function GroupShell({
   const isDraggingThis = dragRef ? group.tabs.some((t) => tabIdOf(t) === tabIdOf(dragRef)) : false;
   const isDropTarget = activeZone?.targetGroupId === group.id;
   return (
+    // group 壳对齐原型 .pane 形制（components.css:245）：平面拼接、无圆角、无白卡，仅
+    // border-right 1px 分隔线（2026-09-29 真机反馈④「多 tab 会话用了圆角矩形，原型里没有」
+    // ——原 rounded-lg + workspace 白卡是浮动卡片形制）。
     <div
-      className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg ${shellSurfaceClasses.workspace} ${
+      className={`relative flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-line ${
         isDraggingThis ? "opacity-40" : ""
       }`}
       data-drop-group={group.id}

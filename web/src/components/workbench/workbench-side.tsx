@@ -327,7 +327,9 @@ export function WorkbenchSide() {
           global 会话页 = 全部 on、项目段回上次项目——
           05g「全部」视图同画作用域分段，review P2④） ── */}
       {sideProjectName !== null || sessionPage ? (
-        <div className="shrink-0 px-2 pt-2">
+        /* pt 无额外 padding（2026-09-29 真机反馈：dsep→seg4 间距 26px vs 原型 18px——
+           原型 dsep mb 8 + .seg4 基类 mt 10，此处 wrapper 的 pt-2 是实现自加的多余一档）。 */
+        <div className="shrink-0 px-2">
           <div aria-label={t("workbench.instancesAria")} className="seg4 mini mx-0" role="tablist">
             <span
               aria-controls="side-instance-panel"

@@ -44,12 +44,13 @@ test("authenticated user can inspect Git worktree and staged diffs", async ({ pa
   await expect(diff).toContainText("+git-diff-e2e-worktree-ok");
 
   // 栏内详情态独占列表位（非旧 GitDiffPanel inline 并存）：返回列表再点下一行。
-  // 同构三段（批次 4+ 复验拍板）：最近提交段 + links「All history / Branches (N)」——
+  // 同构三段（批次 4+ 复验拍板）：最近提交段 + gacts「History / Branches (N)」（第二批起
+  // 文案 History，原型 05i:108 中列「提交…」）——
   // 全部历史 → 栏内历史（03t）→ 点 commit → 栏内 commit 详情（03u），返回逐级弹栈。
   // 先退出上方 diff 详情态（详情独占列表位）再断言列表态的段。
   await files.getByRole("button", { name: "Back to changed files" }).click();
   await expect(files.getByText("Recent commits")).toBeVisible();
-  await files.getByRole("button", { name: "All history" }).click();
+  await files.getByRole("button", { name: "History", exact: true }).click();
   const history = files.locator('[data-role="l3-git-history"]');
   await expect(history).toBeVisible();
   await history.locator("button.crow").first().click();
@@ -112,7 +113,7 @@ test("authenticated user can commit selected changes from the worktree panel", a
   await expect(gitRows.filter({ hasText: /notes\.txt/ })).toBeVisible();
 
   // 历史 +1：initial + 本次提交 = 2 行（03t 历史列表 .crow）。
-  await gitBody.getByRole("button", { name: "All history" }).click();
+  await gitBody.getByRole("button", { name: "History", exact: true }).click();
   const history = gitBody.locator('[data-role="l3-git-history"]');
   await expect(history).toBeVisible();
   await expect(history.locator("button.crow")).toHaveCount(2);

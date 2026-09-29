@@ -207,8 +207,10 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
           = 标题由 MainPageShell 17px h1 承担（09m .mhead 形态）。 */}
       {hideTitle ? null : <LargeTitleRow title={t("plugins.title")} />}
 
-      {/* 搜索（原型 .search 在分段之上，编号①）：本地过滤已装 + 市场融合。.psearch 单源。 */}
-      <div className="psearch mx-4 mt-3 flex-none">
+      {/* 搜索（原型 .search 在分段之上，编号①）：本地过滤已装 + 市场融合。.psearch 单源。
+          margin-top 统一 10px（2026-09-29 真机反馈：三页原型页私值 8/12/10 各异致切换跳动，
+          跨页一致优先统一 mt-2.5，与项目/全局文件页同值）。 */}
+      <div className="psearch mx-4 mt-2.5 flex-none">
         <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
         <input
           aria-label={t("plugins.searchPlaceholder")}

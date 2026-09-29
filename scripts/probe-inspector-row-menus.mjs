@@ -270,7 +270,12 @@ try {
     });
   const seg = await readPanelTabs();
   ok(seg !== null, "S1 右栏 ptabs 渲染");
-  ok(seg?.join(",") === "文件", `S2 右栏 ptabs 默认 = [文件]（实际 ${JSON.stringify(seg)}）`);
+  // 三基础标签常驻（2026-09-29 真机反馈②，a4e9e69）：默认 [文件,Git,Wiki]，＋ 菜单点基础
+  // 段 = 激活幂等（加签前后列表不变）。
+  ok(
+    seg?.join(",") === "文件,Git,Wiki",
+    `S2 右栏 ptabs 默认 = [文件,Git,Wiki]（三基础常驻；实际 ${JSON.stringify(seg)}）`,
+  );
   ok(!seg?.includes("历史"), "S3 右栏无「历史」标签（与 iPhone 同构）");
   // ＋ 菜单可加 Git/Wiki（基础三段语义由 03ob2 菜单承载）——点「Git」加签供 G 段使用。
   await page.locator("main > div > aside").nth(1).getByRole("button", { name: "新建标签" }).click();
@@ -284,8 +289,8 @@ try {
   await page.waitForTimeout(400);
   const segAfterGit = await readPanelTabs();
   ok(
-    segAfterGit?.join(",") === "文件,Git",
-    `S5 ＋ 菜单点 Git 加签激活 = [文件,Git]（实际 ${JSON.stringify(segAfterGit)}）`,
+    segAfterGit?.join(",") === "文件,Git,Wiki",
+    `S5 ＋ 菜单点 Git = 激活常驻 Git（仍 [文件,Git,Wiki]；实际 ${JSON.stringify(segAfterGit)}）`,
   );
 
   // ② Files 标签（点回文件标签）：文件行右键 → 5 项菜单（预览/重命名/移动/上传/删除）。
@@ -329,9 +334,10 @@ try {
   await waitMenuOpen(page);
   menu = await readMenu(page);
   ok(menu.open, "G1 Git 变更行右键开菜单");
+  // 03m3 放弃更改（v1.4 批5）后 Git 行菜单 = 3 项（查看 diff/复制路径/放弃更改…）。
   ok(
-    menu.items.length === 2,
-    `G2 Git 菜单 2 项（实际 ${menu.items.length}：${menu.items.join("/")}）`,
+    menu.items.length === 3 && menu.items.some((x) => x.includes("放弃更改")),
+    `G2 Git 菜单 3 项含放弃更改（实际 ${menu.items.length}：${menu.items.join("/")}）`,
   );
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.evaluate(() => navigator.clipboard.writeText("sentinel"));
@@ -369,10 +375,10 @@ try {
   // 批次 4+（用户复验拍板：右栏与移动同构承载 git 三段）——最近提交 crow + links 全部历史。
   const recent = await page.locator("main > div > aside").nth(1).locator("button.crow").count();
   ok(recent >= 1, "G6 Git 段最近提交 crow 渲染（右栏同构三段）");
-  await page.locator("main > div > aside").nth(1).getByRole("button", { name: "全部历史" }).click();
+  await page.locator("main > div > aside").nth(1).getByRole("button", { name: "历史列表" }).click();
   const history = page.locator("main > div > aside").nth(1).locator('[data-role="l3-git-history"]');
   await history.waitFor({ timeout: 5000 }).catch(() => {});
-  ok((await history.count()) > 0, "G7 「全部历史」进栏内历史（03t 同组件）");
+  ok((await history.count()) > 0, "G7 「历史列表」进栏内历史（03t 同组件；gacts 文案）");
   await history.locator("button.crow").first().click();
   const commitDetail = page
     .locator("main > div > aside")
