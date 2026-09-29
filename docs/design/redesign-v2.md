@@ -970,6 +970,20 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：几何探针（diag-files-global-geometry.mjs 入库）：h1/搜索框/卡片/cap 左缘全 16px 对齐（修复前卡片 32）；m4-tools-l3 65/0（默认标签断言 1→3 适配）、m9-d 64/0（F14 三常驻 + psearch ×10）、m9-b 19/0（右栏 ptabs 三常驻）、mobile-workbench-states 22/0、mobile-projects-home 21/0、m6-plugins 87/0、files-tree-bugs 仅存量「05e 五项序」（基线在案）。四门禁全绿 + CSS 硬闸（182787 字节）+ tokens strict 0 违例。
 
+### 真机反馈修复·第四批：三页搜索框对位 + Lucide 全量换代 + 侧栏间距 + 窗格圆角退役（2026-09-29，commit `f93b2b6`）
+
+**用户四条反馈**：① iPhone 底部导航三页布局相似，搜索组件位置理应一致，切换时跳动——是哪个没遵守规范；② 图标理应都采用 Lucide 的标准和规范；③ 桌面左侧中部的「会话」区域距离分割线非常遥远；④ 桌面中间多 tab 会话用了圆角矩形，原型里没有。
+
+**实现**：
+
+- **反馈① 三页 psearch 对位**：「是哪个没有遵守规范」的答案 = **三页原型页私 margin 各异（8/12/10），实现忠实照抄页私值，页私值彼此不一致** → 跨页跳动。修法延续第三批拍板（跨页一致优先于页私原型值）：三页统一 `mt-2.5`（10px，文件页本就是 10）——mobile-projects-home（8→10）/ mobile-plugins-home（12→10）/ mobile-files-home（不动）。几何实锤：三页 psearch top 49.5/53.5/51.5 → 全 51.5。
+- **反馈② Lucide 全量换代**（v1.4 spec §10.3 落地完成，frontend-notes §15 双轨并存收口）：37 个手绘 SVG（20 网格）删除；ShellIcon 保持 SF 名契约（调用点零改动），svgMap 换源 = `TO_LUCIDE` 映射（SF 名→lucide 名，35 项）+ `LUCIDE_ICONS` 生成物（build-icons.mjs 白名单 38 个 lucide 名，24 网格 stroke2 圆头）。anthropic/openai 品牌 fill 型保留手绘（Lucide 无对应物，政策不加品牌件）；menu/skills-nav 零消费删除；file/files-nav 手绘本就同形（同映射 maximize-2/minimize-2 配对）。
+- **反馈③ 侧栏 dsep→seg4 间距**：26px vs 原型 18px——wrapper `pt-2` 是实现自加的多余一档（原型 = dsep mb 8 + .seg4 基类 mt 10），删除（workbench-side.tsx）。
+- **反馈④ 窗格圆角退役**：GroupShell `rounded-lg` + `shellSurfaceClasses.workspace` 白卡 + 根容器 `p-1` 浮动缝 = VSCode 浮动卡片形制；原型 `.pane`（components.css:245）= 平面拼接 + `border-right: 1px solid var(--sep)`，无圆角无卡片。修 = 根容器去 p-1 满铺 + GroupShell 换 `border-r border-neutral-line`（几何实锤：radius 12→0、白卡→透明、窗格 rect y=0）。
+- **⑤ 右栏「＋」缺口补齐**（第二批回归发现）：第二批 `.links` 行加 `lg:hidden` 后桌面右栏新建/上传入口断（toolChip 实际只有 crumb+srch）。修 = right-panel-tabs 装配 AddMenu 单源（03oa 两项）于 toolChip 行尾（05e:54 搜索行右端主色「＋」），NewItemSheet + upload picker 与移动面板 FAB 同构。
+
+**验证**：probe-inspector-row-menus 23/23（S2/S5 三基础常驻 + G2 批5 放弃更改 3 项适配）；e2e 13 spec 全绿——file-browser.spec 三处适配（`.frow` 断言限定 `[data-panel-tab-body="files"]` 防 Git 面板变更行混入；「＋」入口改 toolChip AddMenu；深链就绪信号），git-diff.spec 两处（"All history"→"History"）。四门禁全绿 + CSS 硬闸 + tokens strict 过。存量在案：e2e pwa-installable 失败（manifest.short_name null，`git stash -u` 对照证实为存量基线，静态文件问题与本次无关）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
