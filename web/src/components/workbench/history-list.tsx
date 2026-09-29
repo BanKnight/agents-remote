@@ -323,7 +323,10 @@ function HistorySessionNode({ active, entry, isResuming, onClick }: HistorySessi
       onClick={() => {
         if (!isResuming) onClick();
       }}
+      /* sm = 侧栏行档（.srow2.inst 13px / meta 10.5px，05c 历史行规格）——默认档 16px
+         在左栏与 srow2 inst 实例试点行（13px 单源类）同栏对比明显偏大（真机反馈）。 */
       selected={active}
+      size="sm"
       subtitle={description || undefined}
       title={displayTitle}
     />

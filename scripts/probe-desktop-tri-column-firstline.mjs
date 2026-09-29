@@ -150,6 +150,12 @@ try {
       b.textContent?.trim(),
     );
     const rowsInPanel = side.querySelectorAll("#side-instance-panel [data-list-row-title]").length;
+    // 字号档（.srow2.inst 13px / meta 10.5px，05c 历史行规格；默认档 16px = 偏大）。
+    const firstTitle = side.querySelector("#side-instance-panel [data-list-row-title]");
+    const titleFs = firstTitle ? getComputedStyle(firstTitle).fontSize : null;
+    const subtitleEl = firstTitle?.parentElement?.querySelector(":scope > span:last-child");
+    const subtitleFs =
+      subtitleEl && subtitleEl !== firstTitle ? getComputedStyle(subtitleEl).fontSize : null;
     const showEarlier =
       [...side.querySelectorAll("#side-instance-panel button")]
         .find((b) => b.textContent?.includes("展开更早"))
@@ -163,13 +169,17 @@ try {
       if (!seg4r || !gr) return null;
       return +(gr.top - seg4r.bottom).toFixed(1);
     })();
-    return { chips, rowsInPanel, showEarlier, note, chain };
+    return { chips, rowsInPanel, showEarlier, note, chain, titleFs, subtitleFs };
   });
   ok(
     h.chips?.join(",") === "全部,已结束",
     `H1 chips 两枚 全部/已结束（实际 ${JSON.stringify(h.chips)}）`,
   );
   ok(h.rowsInPanel === 5, `H2 折叠窗口默认 5 行（实际 ${h.rowsInPanel}）`);
+  ok(
+    h.titleFs === "13px" && h.subtitleFs === "10.5px",
+    `H9 历史行字号 13px / 副文本 10.5px（实际 ${h.titleFs} / ${h.subtitleFs}）`,
+  );
   ok(
     h.showEarlier === "展开更早",
     `H3 「展开更早」按钮在（实际 ${JSON.stringify(h.showEarlier)}）`,

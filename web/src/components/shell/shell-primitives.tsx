@@ -542,6 +542,8 @@ type ListRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "title"> & {
   selected?: boolean;
   subtitle?: ReactNode;
   title: ReactNode;
+  /** sm = 侧栏行档：title 13px（.srow2.inst 规格）/ subtitle 10.5px（原型 meta 值）。 */
+  size?: "sm";
 };
 
 /**
@@ -553,10 +555,13 @@ type ListRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "title"> & {
  */
 export function listRowClasses({
   selected = false,
+  size,
   className,
-}: { selected?: boolean; className?: string } = {}): string {
+}: { selected?: boolean; className?: string; size?: ListRowProps["size"] } = {}): string {
   return cn(
     "flex h-auto w-full min-w-0 cursor-pointer items-center justify-start px-3 py-2.5 text-left transition interactive-row",
+    // sm = 侧栏行档（设计包 .srow2.inst 13px——桌面左栏行规格；默认档继承全局字号不动）。
+    size === "sm" && "text-[13px]",
     selected ? "bg-primary/10" : "hover:bg-on-surface/5",
     className,
   );
@@ -568,6 +573,7 @@ export function ListRow({
   marker,
   meta,
   selected = false,
+  size,
   subtitle,
   title,
   ...props
@@ -583,7 +589,7 @@ export function ListRow({
           (e.currentTarget as HTMLDivElement).click();
         }
       }}
-      className={listRowClasses({ selected, className })}
+      className={listRowClasses({ selected, size, className })}
     >
       <span className="flex min-w-0 grow items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-3">
@@ -598,7 +604,9 @@ export function ListRow({
             </span>
             {subtitle ? (
               <span
-                className="mt-0.5 block truncate text-xs text-on-surface-muted"
+                className={`mt-0.5 block truncate text-on-surface-muted ${
+                  size === "sm" ? "text-[10.5px]" : "text-xs"
+                }`}
                 title={typeof subtitle === "string" ? subtitle : undefined}
               >
                 {subtitle}
