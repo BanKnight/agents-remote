@@ -169,7 +169,9 @@ export function MobileSessionHistorySheet({
   const { t } = useT();
   const [filter, setFilter] = useState<(typeof HISTORY_FILTERS)[number]>("all");
   // open gate：sheet 常驻挂载（open 只控显隐），不打开不发 agent-history 查询。
-  const { entries, isLoading, resume } = useHistorySessions(projectName, "week", open);
+  // range 固定 "all"（2026-09-30 真机反馈：iPhone 历史数量远少于桌面——旧值 "week" 只拉
+  // 近 7 天窗口，服务端按 mtime 滤除更早条目；桌面第五批②已改 "all"，同管道必须同窗口）。
+  const { entries, isLoading, resume } = useHistorySessions(projectName, "all", open);
   const renameDialog = usePromptDialog();
   const rows = entries
     .filter((entry) =>

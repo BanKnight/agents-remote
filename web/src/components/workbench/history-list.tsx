@@ -161,7 +161,7 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
   const navigate = useNavigate();
   const { holder: promptHolder, prompt } = usePromptDialog();
   // range 固定 "all"：折叠在客户端做，服务端 range 过滤失去意义（hook 的 range 参数保留——
-  // mobile-sheets 03n sheet 仍用 "week"）。
+  // mobile-sheets 03n sheet 同窗 "all"，多端同构同一数据口径）。
   const { entries, isLoading, isResuming, resume } = useHistorySessions(projectName, "all");
   // 状态过滤 + 折叠窗口：均视图态不持久化（§6.10 口径）；切过滤重置窗口，防残留大窗口跨过滤。
   const [filter, setFilter] = useState<"all" | "ended">("all");
