@@ -1006,6 +1006,16 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：tri-column 探针扩至 **14 断言**（F0-F5 三栏第一行回归 + 新 H1-H8：chips 两枚/折叠 5 行/展开更早/展开全显/尾注/seg4→组头 8px/切过滤重置窗口/已结束展开）ALL PASS——探针 locale 需 `locale: "zh-CN"`（resolveLang 走 navigator.language，默认 en 会让中文断言全挂）；五探针回归全绿；四门禁 + tokens strict + CSS 硬闸（182978 字节）。
 
+### 真机反馈修复·第五批④：历史行字号对齐（2026-09-29，commit `4c7ab9e`）
+
+**用户反馈**：历史列表样式不符原型，字体偏大。
+
+**根因**：历史行走通用 `ListRow`，title 无字号类继承全局 16px、subtitle `text-xs` 12px；原型 `.srow2.inst` 侧栏行规格 = **13px + meta 10.5px**（05c 历史行即 `.srow2 inst` 形态）。同栏实例试点行走 `srow2 inst` 单源类已是 13px，唯历史行偏大，同栏对比强烈。
+
+**修法**：`ListRow` 单源加 `size?: "sm"` 侧栏行档（行根 `text-[13px]` 由 title 继承 + subtitle 10.5px；默认档与其余 11 个消费方零变化），`HistorySessionNode` 传 `size="sm"`。后续文件树/git 等面板行如需侧栏档按需跟进。
+
+**验证**：tri-column 探针扩至 **15 断言**（新增 H9 历史行 title 13px / subtitle 10.5px computed 实锤）ALL PASS；m9-b 19/0；web typecheck/test（674）/format/lint 全过。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
