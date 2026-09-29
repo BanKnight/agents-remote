@@ -994,6 +994,18 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：新探针 `probe-desktop-tri-column-firstline.mjs`（入库，mock session 触发 tabstrip）：F0-F5 全 PASS——tabstrip 32px 顶格 + 三行中心 side 16 / tab 15.5 / inspector 15.8 互差 ≤1px；m9-b 19/0、m9-d 64/0、desktop-instance-info ALL PASS、inspector-row-menus ALL PASS、states 22/0、tokens strict 0 违例、CSS 硬闸（182791 字节）。
 
+### 真机反馈修复·第五批②③：dsep→内容间距 + 历史态改版 05c（2026-09-29，commit `98183fe`）
+
+**用户反馈**：① 左栏第一个分割线距离会话实质内容仍然离谱地大；② 会话历史沿用旧方案（周/半月/全部分段），应改原型 05c 做法——展示最近的几个会话，更久的再依次展开。
+
+**反馈①根因（探针实锤）**：dsep→实例行实现链比原型多两档——组头热区 28px 容器式（原型 `.dicon` 20px 即行高，+8）+ microlabel `mt-2.5` 10px（原型页私 AGENT 6px / TERMINAL 8px，+4/+2）。探查曾误判第三项「`.seg4.mini` 变体缺失」——实为早期批次已实现（v2-primitives :753）且已消费，作废。
+
+**修法（反馈①）**：plus 容器式热区 `h-7→h-5`（项目组/实例组两处，20px = 原型 dicon 规格即组头行高，桌面指针语境够用）；`.side` padding-top 2→6（行高 28→20 后 6+20/2 = 中心 16，**第五批①第一行同线拍板不破**——tri-column 探针 F4 复测 side 16 vs tab 15.5）；microlabel AGENT `mt-1.5`（6px）/ TERMINAL `mt-2`（8px）。
+
+**修法（反馈②历史态）**：退役 `HistoryRangeControl`（周/半月/全部）旧方案及其 4 个 i18n key；`HistoryList` 改 05c 做法——range 固定 `"all"` 一次拉全量（hook 参数保留，mobile-sheets 03n 仍用 "week"）+ 状态过滤 chips 全部/已结束（05c :42-45 形态：11.5px r12 胶囊 padding 3px 12px，on = 600 ink-1 bg-elevated3、ghost = ink-2 border sep-strong，on 态透明 border 防切换跳动；**复用 mobile-sheets 现成 key** `historyFilterAll/Closed`）+「最近 5 条 + 展开更早每次 +5」客户端折叠（用户拍板补充设计，原型无此控件；entries 服务端 `lastActivityAt` 倒序，slice 即「最近 N」；切过滤重置窗口）+ 尾注「再次点时钟返回活跃实例列表」（05c :50，microlabel 形态 shrink-0 常驻 HistoryList 之后）。`HistoryList` 根 `h-full→flex-1`：允许 wrapper 内兄弟尾注按内容占位。已结束 = `!hasActiveSession`（活跃中的历史 = 已 resume 为活跃实例，ActiveDot 同语义）；过滤空态显「无已结束会话」。
+
+**验证**：tri-column 探针扩至 **14 断言**（F0-F5 三栏第一行回归 + 新 H1-H8：chips 两枚/折叠 5 行/展开更早/展开全显/尾注/seg4→组头 8px/切过滤重置窗口/已结束展开）ALL PASS——探针 locale 需 `locale: "zh-CN"`（resolveLang 走 navigator.language，默认 en 会让中文断言全挂）；五探针回归全绿；四门禁 + tokens strict + CSS 硬闸（182978 字节）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
