@@ -129,6 +129,17 @@ async function setupM5Mocks(page) {
             fileSize: 2048,
             hasActiveSession: false,
           },
+          // filler 5 条已结束更早条目（触发折叠窗口：全部 = 7 条显 5）。
+          ...Array.from({ length: 5 }, (_, i) => ({
+            provider: "claude",
+            claudeSessionId: `c1aude-filler-${i + 1}`,
+            title: `Probe Old ${i + 1}`,
+            firstMessage: `old ${i + 1}`,
+            startedAt: new Date(Date.UTC(2026, 8, 18 - i, 8)).toISOString(),
+            lastActivityAt: new Date(Date.UTC(2026, 8, 18 - i, 9)).toISOString(),
+            fileSize: 512,
+            hasActiveSession: false,
+          })),
         ],
       }),
     ),
@@ -229,11 +240,14 @@ ok(
 ok((await page.locator(".msheet .fc").count()) === 3, "filters 三态 = 3 个 fc");
 const fcOn = await page.locator(".msheet .fc.on").textContent();
 ok(fcOn?.includes("全部") === true, `默认 filter on = 全部（${fcOn?.trim()}）`);
-ok((await page.locator(".msheet .hrow").count()) === 2, "hrow = 2（全部）");
-// 已结束过滤 → 1 行（agent_probe-2 closed）。
+ok(
+  (await page.locator(".msheet .hrow").count()) === 5,
+  "hrow = 5（折叠窗口：全部 7 条显 5，桌面同款行为）",
+);
+// 已结束过滤 → 切过滤重置窗口，6 条已结束显 5。
 await page.locator(".msheet .fc", { hasText: "已结束" }).click();
 await page.waitForTimeout(200);
-ok((await page.locator(".msheet .hrow").count()) === 1, "「已结束」过滤 hrow = 1");
+ok((await page.locator(".msheet .hrow").count()) === 5, "「已结束」过滤 hrow = 5（6 条重置窗口）");
 // 进行中过滤 → 1 行；空过滤组「已结束」→…保持简单：进行中过滤 + 运行中 st。
 await page.locator(".msheet .fc", { hasText: "进行中" }).click();
 await page.waitForTimeout(200);
@@ -272,6 +286,12 @@ ok(runningWeight === "600", `running 行 r1 字重 600（实测 ${runningWeight}
 ok(closedWeight === "400", `closed 行 r1 字重 400（实测 ${closedWeight}，P2-5 生效）`);
 ok((await runningRow.locator(".r1 .dot").count()) === 1, "running 行有 dot");
 ok((await closedRow.locator(".r1 .dot").count()) === 0, "closed 行无 dot（P2-6）");
+// 折叠展开（与桌面同款 useHistoryRecentWindow 行为）：复位「全部」重置窗口 5 → 展开全显 7。
+const earlyBtn = page.locator(".msheet button", { hasText: "展开更早" });
+ok((await earlyBtn.count()) === 1, "「展开更早」按钮在（折叠窗口 7 条显 5）");
+await earlyBtn.click();
+await page.waitForTimeout(200);
+ok((await page.locator(".msheet .hrow").count()) === 7, "展开后 hrow = 7（全量，按钮消失）");
 // P2-6/P1：closed 行点击 = 命名 prompt（M8：与桌面 history-list 同语义，预填 title）
 // → 确认后 resume（唯一允许 resume 的态）。
 resumePosts = [];

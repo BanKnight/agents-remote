@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import type { ApprovalSummary } from "@agents-remote/shared";
 
-import { useHistorySessions } from "./history-list";
+import { useHistoryRecentWindow, useHistorySessions } from "./history-list";
 import { ApprovalAllowAll } from "./approval-popover";
 import { usePromptDialog } from "../shell/prompt-dialog";
 import { isHotTool, useApprovalCenter } from "../../hooks/use-approvals";
@@ -172,6 +172,8 @@ export function MobileSessionHistorySheet({
   // range 固定 "all"（2026-09-30 真机反馈：iPhone 历史数量远少于桌面——旧值 "week" 只拉
   // 近 7 天窗口，服务端按 mtime 滤除更早条目；桌面第五批②已改 "all"，同管道必须同窗口）。
   const { entries, isLoading, resume } = useHistorySessions(projectName, "all", open);
+  // 折叠窗口与桌面同款行为（useHistoryRecentWindow 行为单份；切过滤重置）。
+  const { visibleCount, resetWindow, expandWindow } = useHistoryRecentWindow();
   const renameDialog = usePromptDialog();
   const rows = entries
     .filter((entry) =>
@@ -184,6 +186,8 @@ export function MobileSessionHistorySheet({
     .sort((a, b) =>
       (b.lastActivityAt ?? b.startedAt ?? "").localeCompare(a.lastActivityAt ?? a.startedAt ?? ""),
     );
+  const visibleRows = rows.slice(0, visibleCount);
+  const hiddenCount = rows.length - visibleRows.length;
   const openClosedEntry = (entry: (typeof entries)[number]) => {
     void renameDialog
       .prompt({
@@ -212,7 +216,10 @@ export function MobileSessionHistorySheet({
             <button
               className={`fc cursor-pointer${filter === f ? " on" : " seg"}`}
               key={f}
-              onClick={() => setFilter(f)}
+              onClick={() => {
+                setFilter(f);
+                resetWindow();
+              }}
               type="button"
             >
               {f === "all"
@@ -237,44 +244,60 @@ export function MobileSessionHistorySheet({
               {t("workbench.historyEmpty")}
             </p>
           ) : (
-            rows.map((entry) => {
-              const running = entry.hasActiveSession;
-              const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
-              return (
-                <button
-                  className={`hrow${running ? "" : " end"} block w-full cursor-pointer text-left`}
-                  key={
-                    entry.claudeSessionId ??
-                    entry.acpSessionId ??
-                    entry.title ??
-                    entry.firstMessage ??
-                    time
-                  }
-                  onClick={() => {
-                    onOpenChange(false);
-                    if (running && entry.activeSessionId) {
-                      onFocusExisting(entry.activeSessionId);
-                    } else if (!running) {
-                      openClosedEntry(entry);
+            <>
+              {visibleRows.map((entry) => {
+                const running = entry.hasActiveSession;
+                const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
+                return (
+                  <button
+                    className={`hrow${running ? "" : " end"} block w-full cursor-pointer text-left`}
+                    key={
+                      entry.claudeSessionId ??
+                      entry.acpSessionId ??
+                      entry.title ??
+                      entry.firstMessage ??
+                      time
                     }
-                  }}
-                  type="button"
-                >
-                  <span className="r1">
-                    {/* 已结束行无 dot（原型 03n end 行只有文字，reviewer P2-6）。 */}
-                    {running ? <span className={statusToV2DotClass("running")} /> : null}
-                    <span className="min-w-0 flex-1 truncate">
-                      {entry.title ?? entry.firstMessage ?? time}
+                    onClick={() => {
+                      onOpenChange(false);
+                      if (running && entry.activeSessionId) {
+                        onFocusExisting(entry.activeSessionId);
+                      } else if (!running) {
+                        openClosedEntry(entry);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <span className="r1">
+                      {/* 已结束行无 dot（原型 03n end 行只有文字，reviewer P2-6）。 */}
+                      {running ? <span className={statusToV2DotClass("running")} /> : null}
+                      <span className="min-w-0 flex-1 truncate">
+                        {entry.title ?? entry.firstMessage ?? time}
+                      </span>
+                      <span className={`st${running ? " run" : ""}`}>
+                        {running
+                          ? t("workbench.historyRunning", { time })
+                          : t("workbench.historyClosed", { time })}
+                      </span>
                     </span>
-                    <span className={`st${running ? " run" : ""}`}>
-                      {running
-                        ? t("workbench.historyRunning", { time })
-                        : t("workbench.historyClosed", { time })}
-                    </span>
-                  </span>
-                </button>
-              );
-            })
+                  </button>
+                );
+              })}
+              {/* 「展开更早」（与桌面同款行为，useHistoryRecentWindow；形态 = 03n .fc 同数值
+                  胶囊 12px r15 p 5px 14px + ghost 描边，utility 拼写不挂 .fc——该类语义
+                  专属 filters chips，探针按 .fc 计数 filters 三态）。 */}
+              {hiddenCount > 0 ? (
+                <div className="flex justify-center pb-2 pt-1">
+                  <button
+                    className="cursor-pointer rounded-[15px] border border-sep-strong px-3.5 py-[5px] text-[12px] leading-[var(--line-height-ui)] text-ink-2"
+                    onClick={expandWindow}
+                    type="button"
+                  >
+                    {t("workbench.historyShowEarlier")}
+                  </button>
+                </div>
+              ) : null}
+            </>
           )}
         </div>
         <p className="hfoot">{t("workbench.historyFoot")}</p>

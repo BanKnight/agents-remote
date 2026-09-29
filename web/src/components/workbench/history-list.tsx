@@ -33,6 +33,20 @@ const HISTORY_RECENT_COUNT = 5;
 const HISTORY_EXPAND_STEP = 5;
 
 /**
+ * 「最近 N + 依次展开」客户端折叠窗口（行为单份，多端同构）：桌面 05c 历史态与移动 03n
+ * sheet 共用同一窗口常量与展开/重置行为，两端只容器不同（2026-09-30 真机反馈：iPhone
+ * 也要依次加载更多）。调用方在切过滤的 onClick 里同时调 resetWindow，防残留大窗口跨过滤。
+ */
+export function useHistoryRecentWindow() {
+  const [visibleCount, setVisibleCount] = useState(HISTORY_RECENT_COUNT);
+  return {
+    visibleCount,
+    resetWindow: () => setVisibleCount(HISTORY_RECENT_COUNT),
+    expandWindow: () => setVisibleCount((n) => n + HISTORY_EXPAND_STEP),
+  };
+}
+
+/**
  * 历史条目的 provider 归一（缺省 claude，兼容存量响应）。条目归属由 provider 决定：
  * 同一类型（历史 session）的渲染/恢复只有这一条管道，provider 只作为条目自身属性参与分流。
  */
@@ -165,7 +179,7 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
   const { entries, isLoading, isResuming, resume } = useHistorySessions(projectName, "all");
   // 状态过滤 + 折叠窗口：均视图态不持久化（§6.10 口径）；切过滤重置窗口，防残留大窗口跨过滤。
   const [filter, setFilter] = useState<"all" | "ended">("all");
-  const [visibleCount, setVisibleCount] = useState(HISTORY_RECENT_COUNT);
+  const { visibleCount, resetWindow, expandWindow } = useHistoryRecentWindow();
 
   const focus = (sessionId: string) => {
     void navigate({
@@ -241,7 +255,7 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
           }`}
           onClick={() => {
             setFilter("all");
-            setVisibleCount(HISTORY_RECENT_COUNT);
+            resetWindow();
           }}
           type="button"
         >
@@ -256,7 +270,7 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
           }`}
           onClick={() => {
             setFilter("ended");
-            setVisibleCount(HISTORY_RECENT_COUNT);
+            resetWindow();
           }}
           type="button"
         >
@@ -287,7 +301,7 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
               <div className="flex justify-center py-2">
                 <button
                   className="cursor-pointer rounded-xl border border-sep-strong px-3 py-[3px] text-[11.5px] leading-[var(--line-height-ui)] text-ink-2"
-                  onClick={() => setVisibleCount((n) => n + HISTORY_EXPAND_STEP)}
+                  onClick={expandWindow}
                   type="button"
                 >
                   {t("workbench.historyShowEarlier")}
