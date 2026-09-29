@@ -314,17 +314,17 @@ async function sideOverviewVisible(page) {
     // ── A2. /files mainPage ──
     await page.goto(`${WEB_ORIGIN}/files`);
     await page.waitForTimeout(1500);
-    const wsearch = page.locator(".sfield input");
-    ok(await wsearch.isVisible(), "A2 /files 中栏渲染全局文件页（.sfield 搜索框在）");
+    const wsearch = page.locator(".psearch input");
+    ok(await wsearch.isVisible(), "A2 /files 中栏渲染全局文件页（.psearch 搜索框在）");
     ok(await sideOverviewVisible(page), "A2 左栏恒 sidewin 项目总览");
 
     // ── A3. 10m 页面形态断言（§6.12j 批次 4）──
     // §6.12k 批次 5 起 /projects 合并 side（WorkbenchSide）恒有分组列表，
-    // .seg4 全页计数为 2——10m 断言限定 main section（.sfield 所在 section）。
+    // .seg4 全页计数为 2——10m 断言限定 main section（.psearch 所在 section）。
     ok(
       (await page
         .locator("section")
-        .filter({ has: page.locator(".sfield") })
+        .filter({ has: page.locator(".psearch") })
         .locator(".seg4")
         .count()) === 1,
       "A3a 10m 作用域 seg4 恰 1（main section 内，左栏 global seg4 另计）",
@@ -338,7 +338,7 @@ async function sideOverviewVisible(page) {
       "A3b seg4 全局/本项目 两段都在",
     );
     ok(
-      (await page.locator(".sfield").getByText("⌘F", { exact: true }).count()) === 1,
+      (await page.locator(".psearch").getByText("⌘F", { exact: true }).count()) === 1,
       "A3c ⌘F 角标恰 1",
     );
     ok((await page.locator(".gfcard").count()) >= 1, "A3d 根层分组卡形态在（10m gfcard）");
@@ -364,7 +364,7 @@ async function sideOverviewVisible(page) {
     // 再 ⌘F 聚焦 + filter 过滤（顺序反了 filter 会把 proj1 行先滤掉，后续点击空找）。
     await page
       .locator("section")
-      .filter({ has: page.locator(".sfield") })
+      .filter({ has: page.locator(".psearch") })
       .getByText("proj1", { exact: true })
       .first()
       .click();
@@ -375,11 +375,11 @@ async function sideOverviewVisible(page) {
       await page.evaluate(() => document.activeElement?.tagName === "INPUT"),
       "C1 ⌘F 聚焦全局文件页搜索框",
     );
-    await page.locator(".sfield input").fill("read");
+    await page.locator(".psearch input").fill("read");
     await page.waitForTimeout(500);
     const readmeVisible = await page
       .locator("section")
-      .filter({ has: page.locator(".sfield") })
+      .filter({ has: page.locator(".psearch") })
       .getByText("README.md")
       .first()
       .isVisible();
@@ -390,13 +390,13 @@ async function sideOverviewVisible(page) {
       .isVisible();
     ok(readmeVisible, "C2 filter=read 命中 README.md 行");
     ok(!srcVisible, "C3 filter=read 过滤掉 src 行（客户端 filter）");
-    await page.locator(".sfield input").fill("");
+    await page.locator(".psearch input").fill("");
 
     // ── D. file tab 预览只读 ──
     // 用 .txt（非 md/html → 无 render toggle，直接 source 模式 = CodeMirror）。
     await page
       .locator("section")
-      .filter({ has: page.locator(".sfield") })
+      .filter({ has: page.locator(".psearch") })
       .getByText("probe.txt")
       .first()
       .click();
@@ -565,8 +565,8 @@ async function sideOverviewVisible(page) {
       ok(insp.clps === "»", `F12b .clps 折叠钮在（实际 ${insp.clps}）`);
       ok(insp.ptabH === 30, `F13 .ptab 高 30px（实际 ${insp.ptabH}）`);
       ok(
-        insp.tabs.join(",") === "文件",
-        `F14 ptabs 默认 = [文件]（05:99 动态标签；实际 ${JSON.stringify(insp.tabs)}）`,
+        insp.tabs.join(",") === "文件,Git,Wiki",
+        `F14 ptabs 默认 = [文件,Git,Wiki]（03m/03p 三基础常驻，2026-09-29 反馈②；实际 ${JSON.stringify(insp.tabs)}）`,
       );
     }
 

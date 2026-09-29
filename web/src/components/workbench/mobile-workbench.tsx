@@ -61,6 +61,8 @@ import {
   workbenchPanelOpenAtom,
   workbenchPanelTabsAtom,
   type PanelTab,
+  BASE_PANEL_TABS,
+  withBasePanelTabs,
 } from "../../routes/workbench-model";
 
 import {
@@ -641,7 +643,7 @@ function MobileProjectWorkbench({
   const [panelOpen, setPanelOpen] = useAtom(workbenchPanelOpenAtom);
   const [panelTabsMap, setPanelTabsMap] = useAtom(workbenchPanelTabsAtom);
   const [panelActiveMap, setPanelActiveMap] = useAtom(workbenchPanelActiveAtom);
-  const panelTabs = panelTabsMap[scope.key] ?? [{ id: "files", kind: "files" } as PanelTab];
+  const panelTabs = withBasePanelTabs(panelTabsMap[scope.key] ?? BASE_PANEL_TABS);
   const activePanelTabId = panelActiveMap[scope.key] ?? "files";
   const activePanelTab = panelTabs.find((tab) => tab.id === activePanelTabId) ?? panelTabs[0];
   // perf-review 批2 M1：面板从未打开过不挂载任何工具面板——invisible 只免 paint，不免渲染/
@@ -663,7 +665,7 @@ function MobileProjectWorkbench({
   useEffect(() => () => setPanelOpen(false), []);
   const ensurePanelTab = (tab: PanelTab) => {
     setPanelTabsMap((prev) => {
-      const list = prev[scope.key] ?? [{ id: "files", kind: "files" } as PanelTab];
+      const list = prev[scope.key] ?? BASE_PANEL_TABS;
       const next = ensurePanelTabOpen(list, tab);
       if (next === list) return prev;
       return { ...prev, [scope.key]: next };

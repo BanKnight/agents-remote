@@ -329,7 +329,10 @@ const tabState = await page.evaluate(() => {
   const on = tabs.find((t) => t.classList.contains("on"));
   return { count: tabs.length, onText: on?.textContent?.trim() ?? null };
 });
-ok(tabState.count === 1, `默认标签 1 个（files；实际 ${tabState.count}）`);
+ok(
+  tabState.count === 3,
+  `默认标签 3 个（03m/03p 三基础常驻 files/git/wiki；实际 ${tabState.count}）`,
+);
 ok(tabState.onText === "文件", `files 标签激活（实际 ${tabState.onText}）`);
 // FAB 几何（03ob：48×48 r24 right16 bottom50）。
 const fab = await page.evaluate(() => {
@@ -370,7 +373,7 @@ const tabState2 = await page.evaluate(() => {
   const xCount = document.querySelectorAll(".ptabs .ptab .x").length;
   return { count: tabs.length, onText: on?.textContent?.trim() ?? null, xCount };
 });
-ok(tabState2.count === 2, `＋ 开 Git 后标签 2 个（实际 ${tabState2.count}）`);
+ok(tabState2.count === 3, `＋ 开 Git = 激活常驻 Git 标签（仍 3 个；实际 ${tabState2.count}）`);
 ok(tabState2.onText?.startsWith("Git"), `Git 标签激活（实际 ${tabState2.onText}）`);
 ok(tabState2.xCount === 0, "三基础标签无 ✕（plan 拍板：不可关）");
 ok((await page.locator(".fab").count()) === 0, "Git 标签无 FAB（仅文件树标签）");

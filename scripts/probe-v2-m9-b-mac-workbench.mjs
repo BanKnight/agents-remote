@@ -224,8 +224,8 @@ async function login(page) {
       });
     const rightTabs = await panelTabs();
     ok(
-      rightTabs !== null && rightTabs.join(",") === "文件",
-      `右栏 ptabs 默认 = [文件]（实际 ${JSON.stringify(rightTabs)}）`,
+      rightTabs !== null && rightTabs.join(",") === "文件,Git,Wiki",
+      `右栏 ptabs 默认 = [文件,Git,Wiki]（03m/03p 三基础常驻，2026-09-29 反馈②；实际 ${JSON.stringify(rightTabs)}）`,
     );
     // ＋ 菜单三项（文件/Git/Wiki）→ 点「Git」新增并激活 → 两签并存。
     await page
@@ -245,8 +245,8 @@ async function login(page) {
     await page.waitForTimeout(300);
     const tabsAfterGit = await panelTabs();
     ok(
-      tabsAfterGit !== null && tabsAfterGit.join(",") === "文件,Git",
-      `开 Git 后 ptabs = [文件,Git]（实际 ${JSON.stringify(tabsAfterGit)}）`,
+      tabsAfterGit !== null && tabsAfterGit.join(",") === "文件,Git,Wiki",
+      `开 Git = 激活常驻 Git（仍 [文件,Git,Wiki]；实际 ${JSON.stringify(tabsAfterGit)}）`,
     );
     ok(
       (await page

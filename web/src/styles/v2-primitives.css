@@ -1524,7 +1524,9 @@
      38/r12——跨页尺寸不统一）。移动 = 09-tab/10-tab .search（38 / r12 / fill-search / 14px，
      v1.4 单源 .search :219 对齐——真机反馈批次纠正页私 15px）；桌面 ≥1024 = 09-mac/10-mac
      .search（34 / r10 / elevated2 / 边框 / 13px）。margin 由调用方承担（文件页需叠
-     FilesPanel px-3 对齐 28px 内容线；插件页 mx-4）。 */
+     FilesPanel px-3 对齐 28px 内容线；插件页 mx-4）。全局文件页 = .psearch 消费（真机
+     反馈 2026-09-29：搜索与其他页面理应一致——.sfield 页私 30px 退役，diverge 记档：
+     原型 10-tab 页私 .sfield 30px vs 实现 .psearch 38px，用户拍板跨页一致性优先）。 */
   .psearch {
     display: flex;
     align-items: center;
@@ -1537,31 +1539,6 @@
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
     color: var(--ink-2);
-  }
-  /* 全局文件页搜索框（10-tab:41 / 10m:17 页私 .sfield——文件语境专属形态，与通用 .search
-     并存）：bg-elevated 胶囊 + sep 描边（区别于 .search 灰底无描边）。移动 30px/r15/12.5px 字；
-     桌面 ≥lg 放大（10m：34px/r10/13px 字）。放大镜尺寸由 ShellIcon span 定（size-[13px]
-     lg:size-[14px]，components 层 svg 规则会被 size-full 反超——.psearch 同款教训）。 */
-  .sfield {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 30px;
-    padding: 0 12px;
-    border-radius: 15px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--sep);
-    font-size: 12.5px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
-    color: var(--ink-2);
-  }
-  @media (min-width: 1024px) {
-    .sfield {
-      height: 34px;
-      border-radius: 10px;
-      font-size: 13px;
-    }
   }
   /* 图标尺寸由调用方在 ShellIcon 的 span 上定（size-4 契约，svg = size-full 跟随 span）。
      勿写 .psearch svg 约束——components layer 会被 svg 的 size-full（utilities）反超，静默失效
@@ -1707,9 +1684,11 @@
 
   /* 10 全局文件总览（移动 /files mainPage；10-tab-files-global.html）。与 03o .frow 同名不同物
      → gf 前缀消歧（.psect/.dsect 先例）。项目目录行 = ic 徽章 + 名 + 副行 + live；散文件行 =
-     mono 名 + tm 相对时间。n/d 加 truncate（原型无，真实长名防溢出，实现层补非原型偏差）。 */
+     mono 名 + tm 相对时间。n/d 加 truncate（原型无，真实长名防溢出，实现层补非原型偏差）。
+     margin-inline 归零（真机反馈 2026-09-29：搜索框容器 px-4 与卡 margin 16 叠加 = 卡左缘
+     32px vs 搜索框 16px 不对齐）——两侧边距由外层 px-4 提供，与搜索框天然对齐。 */
   .gfcard {
-    margin: 14px 16px 0;
+    margin: 14px 0 0;
     background: var(--bg-elevated);
     border: 1px solid var(--sep);
     border-radius: 16px;

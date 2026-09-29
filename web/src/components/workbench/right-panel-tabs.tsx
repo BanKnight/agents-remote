@@ -7,6 +7,8 @@ import {
   splitFilePath,
   workbenchPanelActiveAtom,
   workbenchPanelTabsAtom,
+  BASE_PANEL_TABS,
+  withBasePanelTabs,
 } from "../../routes/workbench-model";
 import { FilesToolTab, GitToolTab, PanelFileTabBody, WikiToolTab } from "./workbench-tab-plugin";
 import { PanelTabBar } from "./inspection-panel";
@@ -40,9 +42,9 @@ export function RightPanelTabs({
   const [panelActiveMap, setPanelActiveMap] = useAtom(workbenchPanelActiveAtom);
   // 右栏仅 project scope 渲染（WorkbenchRoute rightPanelCollapsible gate），projectKey 理论
   // 恒非空；undefined 回退缺省标签表（与移动缺省一致 = [{files}]），null 保留 empty 态兜底。
-  const panelTabs = (projectKey ? panelTabsMap[projectKey] : undefined) ?? [
-    { id: "files", kind: "files" } as PanelTab,
-  ];
+  const panelTabs = withBasePanelTabs(
+    (projectKey ? panelTabsMap[projectKey] : undefined) ?? BASE_PANEL_TABS,
+  );
   const activePanelTabId = (projectKey ? panelActiveMap[projectKey] : undefined) ?? "files";
   // 幂等守卫：值未变直接返回旧引用（与移动 activatePanelTab 同款）。
   const activatePanelTab = (id: string) =>
@@ -54,7 +56,7 @@ export function RightPanelTabs({
   const ensureTab = (tab: PanelTab) => {
     if (!projectKey) return;
     setPanelTabsMap((prev) => {
-      const list = prev[projectKey] ?? [{ id: "files", kind: "files" } as PanelTab];
+      const list = prev[projectKey] ?? BASE_PANEL_TABS;
       const next = ensurePanelTabOpen(list, tab);
       if (next === list) return prev;
       return { ...prev, [projectKey]: next };

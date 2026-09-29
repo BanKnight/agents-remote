@@ -194,6 +194,24 @@ export function ensurePanelTabOpen(tabs: PanelTab[], tab: PanelTab): PanelTab[] 
   return tabs.some((t0) => t0.id === tab.id) ? tabs : [...tabs, tab];
 }
 
+/** 三基础标签常驻集（03m/03p 原型 ptabs = 文件树/Git/Wiki 三标签全在；真机反馈 2026-09-29
+ * 「检视面板缺 wiki」——旧默认单 files 标签需手动 ＋ 开 Git/Wiki，与原型不符）。 */
+export const BASE_PANEL_TABS: PanelTab[] = [
+  { id: "files", kind: "files" },
+  { id: "git", kind: "git" },
+  { id: "wiki", kind: "wiki" },
+];
+
+/**
+ * 读侧 normalize：三基础标签常驻（原型 03m/03p），存量 localStorage（单 files 时代写入）
+ * 补齐缺的基础标签——基础按固定序前置、file 预览标签保持相对序后置。幂等：已齐返回原引用。
+ */
+export function withBasePanelTabs(tabs: PanelTab[]): PanelTab[] {
+  const missing = BASE_PANEL_TABS.filter((b) => !tabs.some((t0) => t0.id === b.id));
+  if (missing.length === 0) return tabs;
+  return [...BASE_PANEL_TABS, ...tabs.filter((t0) => !BASE_PANEL_TABS.some((b) => b.id === t0.id))];
+}
+
 /** 面板标签表（per-projectKey 隔离，localStorage 持久化——跨刷新恢复标签集）。 */
 export const workbenchPanelTabsAtom = atomWithLocalOnlyStorage<Record<string, PanelTab[]>>(
   "workbenchPanelTabs",

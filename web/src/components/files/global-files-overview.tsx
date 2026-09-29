@@ -128,24 +128,24 @@ export function GlobalFilesOverview({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {scopeSeg}
-      {/* 搜索框 = 10-tab opsrow / 10m mbody 首行（.sfield 语义：bg-elevated 胶囊 + sep 描边，
-          移动 30px / 桌面 ≥lg 34px）。sfield 填满行——此前 mx-4 + w-full 叠加右溢 16px 且
-          左缘 28px 与卡片 16px 不对齐（真机反馈实锤）；本容器与卡片同边距（移动 16/桌面 20），
-          lg gap 12 接管 gfcard 桌面档归零的 margin（mbody gap 语义）。 */}
+      {/* 搜索框 = 一级页搜索单源 .psearch（38px/r12 移动 / 34px/r10 桌面，与插件页同款——
+          真机反馈 2026-09-29：全局文件页搜索应与其他页面一致；.sfield 页私 30px 退役）。
+          容器与卡片同边距（移动 px-4 16 / 桌面 px-5 20），lg gap 12 接管 gfcard 桌面档
+          归零的 margin（mbody gap 语义）。 */}
       <div className="flex min-h-0 flex-1 flex-col px-4 pt-2.5 lg:gap-3 lg:px-5 lg:pt-3">
-        <div className="sfield w-auto shrink-0">
+        <div className="psearch shrink-0">
           <ShellIcon
             aria-hidden="true"
-            className="size-[13px] flex-none lg:size-[14px]"
+            className="size-4 flex-none text-ink-2"
             name="magnifyingglass"
           />
           <input
             aria-label={t("files.searchPlaceholder")}
-            className="min-w-0 flex-1 cursor-text border-none bg-transparent text-ink-1 outline-none"
+            className="w-full bg-transparent text-callout text-ink-1 outline-none"
             onChange={(e) => setFilter(e.target.value)}
             placeholder={t("files.searchPlaceholder")}
             ref={searchInputRef}
-            type="text"
+            type="search"
             value={filter}
           />
           {pageMode ? (

@@ -307,8 +307,8 @@ export function FileEntryList({
       <div aria-label="Project files">
         {dirs.length > 0 ? (
           <>
-            {/* 10m:72 组标签（桌面双分组；移动 10-tab 无组标签 → hidden lg:block 承载差异，
-                同构同一 DOM。左缘随 gfcard margin 16 / 容器 lg px-5，与原型 grplabel 对齐）。 */}
+            {/* 10m:72 组标签（桌面双分组；移动 10-tab 无组标签 → hidden lg:block 才渲染，
+                同构同一 DOM。左缘 = 容器 lg px-5 20px，卡 margin-inline 已归零）。 */}
             <div className="grplabel hidden lg:block">{t("files.groupProjectRoots")}</div>
             <div className="gfcard">
               {dirs.map((entry) => {

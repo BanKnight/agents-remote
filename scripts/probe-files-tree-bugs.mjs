@@ -81,10 +81,10 @@ async function setupMocks(page) {
 // Bug 1 几何:找 overflow-y-auto 滚动容器,测可滚性;失败时沿父链打印断点(便于诊断)。
 async function measureScroll(page, label) {
   const m = await page.evaluate(() => {
-    // 限定 10m mainPage 主体（.sfield 所在 section）内的滚动容器——桌面还有 sidewin/
+    // 限定 10m mainPage 主体（.psearch 所在 section）内的滚动容器——桌面还有 sidewin/
     // Inspector 等多个 overflow-y-auto 容器，全局第一个匹配会选错目标（IA 重排后教训）。
-    // （原 .psearch 单源换 .sfield 文件页专属搜索框，2026-09-28 真机反馈③。）
-    const wsearch = document.querySelector(".sfield");
+    // （全局文件页搜索框 = .psearch 单源；2026-09-29 反馈③ .sfield 页私档退役。）
+    const wsearch = document.querySelector(".psearch");
     const scope = wsearch ? (wsearch.closest("section") ?? document) : document;
     const scroll = Array.from(scope.querySelectorAll("div")).find((el) => {
       const s = getComputedStyle(el);
