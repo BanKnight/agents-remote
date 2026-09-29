@@ -61,10 +61,6 @@ export const zh: Record<TranslationKey, string> = {
   // ── Project Console ──────────────────────────────────────────
   "project.creating": "正在创建...",
   "project.historyResuming": "正在恢复...",
-  "project.historyRangeAria": "历史时间范围",
-  "project.historyRangeWeek": "周",
-  "project.historyRangeBiweekly": "半月",
-  "project.historyRangeAll": "全部",
 
   // ── Session Detail ───────────────────────────────────────────
   "session.retry": "重试",
@@ -597,6 +593,9 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.statusPendingApprovals": "{{count}} 项待审批 ›",
   "workbench.splitPane": "分屏并新建终端",
   "workbench.historySection": "历史会话",
+  "workbench.historyShowEarlier": "展开更早",
+  "workbench.historyBackHint": "再次点时钟返回活跃实例列表",
+  "workbench.historyEndedEmpty": "无已结束会话",
   "workbench.emptyInstanceHint": "没有活跃会话，创建一个开始。",
   "workbench.emptyInstanceGlobalHint": "从左栏选择一个项目。",
   "workbench.emptyInstanceNoTab": "点击左侧实例查看，或拖卡片到这里分屏。",

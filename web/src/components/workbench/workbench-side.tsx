@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import type { AgentHistoryRange } from "@agents-remote/shared";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -28,7 +27,7 @@ import {
   useProjectInstances,
   type ProjectInstanceEntry,
 } from "./instance-area";
-import { HistoryList, HistoryRangeControl } from "./history-list";
+import { HistoryList } from "./history-list";
 import { SessionModeTabs } from "./mobile-workbench";
 
 /**
@@ -87,8 +86,6 @@ export function WorkbenchSide() {
   const [scopeSegment, setScopeSegment] = useState<"project" | "all">("project");
   // 时钟切历史（05c）：project scope seg「项目」内 side 内切换态（再点时钟返回活跃列表）。
   const [historyOpen, setHistoryOpen] = useState(false);
-  // 历史时间范围（受控；切档重拉，ProjectLeftPanel 时代同口径）。
-  const [range, setRange] = useState<AgentHistoryRange>("week");
   // ⌘N（新建实例）受控菜单：快捷键 set atom true → 实例组头 plus 程序化打开（§6.10 批次 c
   // 半受控化；project scope 才渲染 plus，global 忽略——§6.10 批次 d 拍板维持）。
   const createMenuOpen = useAtomValue(workbenchCreateMenuOpenAtom);
@@ -157,17 +154,13 @@ export function WorkbenchSide() {
   let body = null;
   if (sideProjectName !== null && historyOpen) {
     // 05c 历史列表态（时钟切入；HistoryList 空 = null 自然空态，不伪造占位）。包 min-h-0
-    // flex-1 wrapper：容器 flex-col 化后 HistoryList（根 h-full）才吃到剩余高、列表自身滚
-    //（§6.12k code review：历史态高度链断链——容器非 flex 时 h-full 恒溢出组头高）。
+    // flex-1 wrapper：容器 flex-col 化后 HistoryList（根 flex-1）才吃到剩余高、列表自身滚
+    //（§6.12k code review：历史态高度链断链——容器非 flex 时恒溢出组头高）；尾注 shrink-0
+    // 常驻列表下方（05c :50「再次点时钟返回活跃实例列表」，margin 8px 6px 形态）。
     body = (
       <div className="flex min-h-0 flex-1 flex-col">
-        <HistoryList
-          focusId={focusId}
-          onRangeChange={setRange}
-          projectName={sideProjectName}
-          range={range}
-          showLabel={false}
-        />
+        <HistoryList focusId={focusId} projectName={sideProjectName} showLabel={false} />
+        <div className="microlabel mx-1.5 my-2 shrink-0">{t("workbench.historyBackHint")}</div>
       </div>
     );
   } else if (chatMode) {
@@ -186,7 +179,9 @@ export function WorkbenchSide() {
         <>
           {agentEntries.length > 0 ? (
             <>
-              <div className="microlabel mx-1.5 mb-0.5 mt-2.5 uppercase">
+              {/* AGENT 会话组 microlabel mt 6px（05c/05 页私值；原实现 mt-2.5 10px 多一档，
+                  2026-09-29 真机反馈① dsep→内容间距） */}
+              <div className="microlabel mx-1.5 mb-0.5 mt-1.5 uppercase">
                 {t("workbench.agentSessionsGroup")}
               </div>
               {agentEntries.map((entry) => (
@@ -201,7 +196,8 @@ export function WorkbenchSide() {
           ) : null}
           {terminalEntries.length > 0 ? (
             <>
-              <div className="microlabel mx-1.5 mb-0.5 mt-2.5 uppercase">
+              {/* TERMINAL 组 microlabel mt 8px（05 页私值，AGENT 组 6px） */}
+              <div className="microlabel mx-1.5 mb-0.5 mt-2 uppercase">
                 {t("workbench.terminalGroup")}
               </div>
               {terminalEntries.map((entry) => (
@@ -258,11 +254,13 @@ export function WorkbenchSide() {
           open={createMenuOpen}
           trigger={
             /* 「＋」字形放内层 span.plus（容器式热区，inspection-panel PanelTabBar 先例）：
-               button 只当 28px 热区（.ghead .plus 的 18×18 字形落在 span 上，伪元素笔画
-               不受热区 utilities 干扰——在 plus 上挂 after 星号系列热区类会让竖笔画游离）。 */
+               button 只当 20px 热区（.ghead .plus 的 18×18 字形落在 span 上，伪元素笔画
+               不受热区 utilities 干扰——在 plus 上挂 after 星号系列热区类会让竖笔画游离）。
+               20px = 原型 dicon 规格即组头行高（2026-09-29 真机反馈①：28px 热区撑高组头，
+               dsep→内容多 8px；桌面指针语境 20px 热区够用）。 */
             <button
               aria-label={t("workbench.createSessionAria")}
-              className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center"
+              className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
               disabled={create.isCreating}
               type="button"
             >
@@ -285,15 +283,15 @@ export function WorkbenchSide() {
       {create.promptHolder}
       {/* ── 项目组 ── */}
       {/* 首行 ghead mt-0（覆写 .ghead 单源 margin-top 8，utilities > components 层序）：
-          与 .side padding-top 2 配合 = 首行中心 16 = 中栏 tabstrip 中心（2026-09-29 真机
-          反馈：左栏「项目」原中心 30 低 14px；三栏第一行同一水平线拍板）。 */}
+          与 .side padding-top 6 配合（组头热区收 20px 后行高 20）= 首行中心 16 = 中栏
+          tabstrip 中心（2026-09-29 真机反馈：第一行同一水平线拍板 + 组头热区 28→20）。 */}
       <div className="ghead mt-0 shrink-0">
         <span className="tt">{t("nav.projects")}</span>
-        {/* 「＋」= 容器式热区（同实例组头）：button 28px 热区 + 内层 span.plus 字形；
+        {/* 「＋」= 容器式热区（同实例组头）：button 20px 热区 + 内层 span.plus 字形；
             ml-auto 补 .ghead .tt + .plus 相邻选择器断链（中间隔了热区 button）。 */}
         <button
           aria-label={t("home.createProjectAria")}
-          className="ml-auto flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center"
+          className="ml-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
           onClick={openCreate}
           type="button"
         >
@@ -387,11 +385,6 @@ export function WorkbenchSide() {
         role="tabpanel"
       >
         {groupHeader}
-        {sideProjectName !== null && historyOpen ? (
-          <div className="px-2 pb-1">
-            <HistoryRangeControl onChange={setRange} value={range} />
-          </div>
-        ) : null}
         {body}
       </div>
       {/* ── aprow 审批橙行（04 pin④：实例区下，全局聚合） ── */}

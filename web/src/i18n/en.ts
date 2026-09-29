@@ -59,10 +59,6 @@ export const en = {
   // ── Project Console ──────────────────────────────────────────
   "project.creating": "Creating...",
   "project.historyResuming": "Resuming...",
-  "project.historyRangeAria": "History time range",
-  "project.historyRangeWeek": "Week",
-  "project.historyRangeBiweekly": "2 Weeks",
-  "project.historyRangeAll": "All",
 
   // ── Session Detail ───────────────────────────────────────────
   "session.retry": "Retry",
@@ -599,6 +595,9 @@ export const en = {
   "workbench.statusPendingApprovals": "{{count}} pending approvals ›",
   "workbench.splitPane": "Split pane with new terminal",
   "workbench.historySection": "History",
+  "workbench.historyShowEarlier": "Show earlier",
+  "workbench.historyBackHint": "Tap the clock again to return to active instances",
+  "workbench.historyEndedEmpty": "No ended sessions",
   "workbench.emptyInstanceHint": "No active sessions. Create one to get started.",
   "workbench.emptyInstanceGlobalHint": "Select a project from the left rail.",
   "workbench.emptyInstanceNoTab":

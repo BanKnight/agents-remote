@@ -1,9 +1,9 @@
-// 探针：桌面三栏第一行同一水平线（PASS/FAIL 断言，入库版）。
-// 2026-09-29 真机反馈：左栏「项目」首行中心 30 低中栏 tabstrip 中心 16 达 14px——
-// 根因 = .side padding-top 8 + 首行 ghead margin-top 8 + 28px 热区行高叠加；右栏
-// 「检视」.glabel2 中心 15.8 本已齐。拍板 = 三栏第一行与中栏 tabstrip 同一水平线。
-// 断言：①左栏首行 .tt 中心 = tabstrip .tb 中心 ②右栏 glabel2 中心 = 同线（容差 1px）
-// ③tabstrip 高 32 顶格。tabstrip 用 route mock（m9-d 同法：mock 一个 running session）。
+// 探针：桌面三栏第一行同一水平线 + 左栏历史态（05c 改版）断言（PASS/FAIL，入库版）。
+// 2026-09-29 真机反馈：① 三栏第一行同线（.side pt 6 + 组头热区 20px → 首行中心 16）；
+// ② dsep→内容间距（组头热区 28→20 + microlabel 页私 mt）；③ 历史态改版 05c：过滤 chips
+// 全部/已结束 +「最近 5 + 展开更早每次+5」客户端折叠 + 尾注。
+// 断言：F0-F5 三栏第一行几何；H1-H6 历史态（chips/折叠/展开/尾注/已结束过滤/dsep→chips 链）。
+// tabstrip 用 route mock（m9-d 同法：mock 一个 running session）。
 // 密码自读不打印。用法: bun scripts/probe-desktop-tri-column-firstline.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
@@ -19,7 +19,10 @@ function ok(cond, label) {
 
 const browser = await chromium.launch();
 try {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    locale: "zh-CN",
+  });
   const page = await context.newPage();
 
   await page.route(/\/api\/overview$/, (r) =>
@@ -55,6 +58,29 @@ try {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ sessions: [], total: 0 }),
+    }),
+  );
+  // 历史态 mock：1 活跃 + 6 已结束（全部=7 显 5；已结束=6 显 5），lastActivityAt 倒序自造。
+  const histEntry = (i, active) => ({
+    claudeSessionId: `tri-hist-${i}`,
+    provider: "claude",
+    title: `tri 历史 ${i}`,
+    firstMessage: `tri 历史 ${i} 首条消息`,
+    hasActiveSession: active,
+    activeSessionId: active ? "tri-sess-1" : undefined,
+    lastActivityAt: new Date(Date.now() - i * 86_400_000).toISOString(),
+    startedAt: new Date(Date.now() - i * 86_400_000).toISOString(),
+    fileSize: 4096,
+  });
+  const historyEntries = [
+    histEntry(0, true),
+    ...Array.from({ length: 6 }, (_, i) => histEntry(i + 1, false)),
+  ];
+  await page.route(/\/api\/projects\/proj1\/agent-history(?:\?.*)?$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ entries: historyEntries }),
     }),
   );
 
@@ -110,6 +136,88 @@ try {
     data.inspector !== null && data.tabTb !== null && Math.abs(data.inspector - data.tabTb) <= 1,
     `F5 右栏首行「检视」中心 = tab 中心（实际 inspector ${data.inspector} vs tab ${data.tabTb}）`,
   );
+
+  // ── H 段：左栏历史态（05c 改版：chips/折叠/展开/尾注/过滤） ──
+  // 时钟按钮 = 实例组头 ghead 内带 aria-pressed 的 button（.dicon 20×20 热区）。
+  const clockBtn = page.locator("nav.side .ghead button[aria-pressed]").first();
+  await clockBtn.click();
+  await page.waitForTimeout(600);
+  const h = await page.evaluate(() => {
+    const side = document.querySelector("nav.side");
+    const q = (sel) => side.querySelector(sel);
+    const textOf = (el) => el?.textContent?.trim() ?? null;
+    const chips = [...side.querySelectorAll('[role="group"] > button')].map((b) =>
+      b.textContent?.trim(),
+    );
+    const rowsInPanel = side.querySelectorAll("#side-instance-panel [data-list-row-title]").length;
+    const showEarlier =
+      [...side.querySelectorAll("#side-instance-panel button")]
+        .find((b) => b.textContent?.includes("展开更早"))
+        ?.textContent?.trim() ?? null;
+    const note = textOf(side.querySelector("#side-instance-panel .microlabel"));
+    const seg4 = q(".seg4.mini");
+    const ghead = q("#side-instance-panel .ghead");
+    const chain = (() => {
+      const seg4r = seg4?.getBoundingClientRect();
+      const gr = ghead?.getBoundingClientRect();
+      if (!seg4r || !gr) return null;
+      return +(gr.top - seg4r.bottom).toFixed(1);
+    })();
+    return { chips, rowsInPanel, showEarlier, note, chain };
+  });
+  ok(
+    h.chips?.join(",") === "全部,已结束",
+    `H1 chips 两枚 全部/已结束（实际 ${JSON.stringify(h.chips)}）`,
+  );
+  ok(h.rowsInPanel === 5, `H2 折叠窗口默认 5 行（实际 ${h.rowsInPanel}）`);
+  ok(
+    h.showEarlier === "展开更早",
+    `H3 「展开更早」按钮在（实际 ${JSON.stringify(h.showEarlier)}）`,
+  );
+  await page.locator("#side-instance-panel").getByText("展开更早").click();
+  await page.waitForTimeout(400);
+  const h2 = await page.evaluate(() => {
+    const side = document.querySelector("nav.side");
+    return {
+      rowsAfter: side.querySelectorAll("#side-instance-panel [data-list-row-title]").length,
+      btnGone:
+        [...side.querySelectorAll("#side-instance-panel button")].find((b) =>
+          b.textContent?.includes("展开更早"),
+        ) === undefined,
+    };
+  });
+  ok(
+    h2.rowsAfter === 7 && h2.btnGone,
+    `H4 展开后 7 行全显 + 按钮消失（实际 ${h2.rowsAfter} 行，按钮${h2.btnGone ? "已消失" : "仍在"}）`,
+  );
+  ok(h.note === "再次点时钟返回活跃实例列表", `H5 尾注在（实际 ${JSON.stringify(h.note)}）`);
+  ok(
+    h.chain !== null && Math.abs(h.chain - 8) <= 2,
+    `H6 seg4 底→组头顶 = 8（ghead mt 8 两态同口径；实际 ${h.chain}）`,
+  );
+  // H7/H8「已结束」过滤：切过滤重置窗口 → 5 行 + 展开按钮在；展开后 6 行全显。
+  await page.locator('#side-instance-panel [role="group"]').getByText("已结束").click();
+  await page.waitForTimeout(400);
+  const h3 = await page.evaluate(() => {
+    const side = document.querySelector("nav.side");
+    return {
+      rows: side.querySelectorAll("#side-instance-panel [data-list-row-title]").length,
+      hasBtn:
+        [...side.querySelectorAll("#side-instance-panel button")].find((b) =>
+          b.textContent?.includes("展开更早"),
+        ) !== undefined,
+    };
+  });
+  ok(
+    h3.rows === 5 && h3.hasBtn,
+    `H7 切「已结束」重置窗口 5 行 + 展开按钮在（实际 ${h3.rows} 行，按钮${h3.hasBtn ? "在" : "无"}）`,
+  );
+  await page.locator("#side-instance-panel").getByText("展开更早").click();
+  await page.waitForTimeout(400);
+  const endedRows = await page.evaluate(
+    () => document.querySelectorAll("#side-instance-panel [data-list-row-title]").length,
+  );
+  ok(endedRows === 6, `H8 已结束展开后 6 行全显（实际 ${endedRows}）`);
 } finally {
   await browser.close();
 }

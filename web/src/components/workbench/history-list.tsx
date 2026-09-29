@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { AgentHistoryEntry, AgentHistoryRange } from "@agents-remote/shared";
@@ -9,7 +10,6 @@ import {
   ListGroup,
   ListRow,
   ListRowSkeleton,
-  SegmentedControl,
   sessionMarker,
   ShellSectionLabel,
 } from "../shell/shell-primitives";
@@ -25,6 +25,12 @@ const ActiveDot = (
 
 /** 历史 session 加载骨架行数（与左栏 InstanceSkeleton/CardGridSkeleton 同款 UI 常量）。 */
 const HISTORY_SKELETON_ROW_COUNT = 3;
+
+/** 折叠窗口初始条数（2026-09-29 真机反馈②用户拍板：「展示最近的几个会话」，默认 5）。 */
+const HISTORY_RECENT_COUNT = 5;
+
+/** 「展开更早」每次步进条数（用户拍板「更久的再依次展开」）。 */
+const HISTORY_EXPAND_STEP = 5;
 
 /**
  * 历史条目的 provider 归一（缺省 claude，兼容存量响应）。条目归属由 provider 决定：
@@ -141,26 +147,25 @@ type HistoryListProps = {
    * 中栏 history tab 顶部 tab bar 已标识「历史」，省略标题避免冗余。
    */
   showLabel?: boolean;
-  /** 时间范围过滤器（受控；由父级持有避免 tab 切换丢失）。默认 "week"。 */
-  range?: AgentHistoryRange;
-  onRangeChange?: (next: AgentHistoryRange) => void;
 };
 
 /**
- * 历史 session 列表（设计文档 §3/§4）。供桌面 + 移动中栏 history tab 共用——单一数据管道
+ * 历史 session 列表（2026-09-29 真机反馈②改版为 05c 原型做法）：一次拉全量（range 固定
+ * "all"——周/半月/全部旧方案退役），状态过滤 chips（全部/已结束，05c :42-45）+「最近
+ * N 条 + 展开更早（每次 +N）」客户端折叠（用户拍板补充设计，原型无此控件）。单一数据管道
  *（useHistorySessions）+ 单一渲染（ListGroup/ListRow plain 连续行 + sessionMarker sm，
- * 与总览 grid 卡片同款 marker）。entries 为空时返回 null（中栏 tab 自然空态，不伪造占位）。
+ * 与总览 grid 卡片同款 marker）。entries 为空时返回 null（左栏段落自然空态，不伪造占位）。
  */
-export function HistoryList({
-  focusId,
-  projectName,
-  showLabel = true,
-  range = "week",
-}: HistoryListProps) {
+export function HistoryList({ focusId, projectName, showLabel = true }: HistoryListProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const { holder: promptHolder, prompt } = usePromptDialog();
-  const { entries, isLoading, isResuming, resume } = useHistorySessions(projectName, range);
+  // range 固定 "all"：折叠在客户端做，服务端 range 过滤失去意义（hook 的 range 参数保留——
+  // mobile-sheets 03n sheet 仍用 "week"）。
+  const { entries, isLoading, isResuming, resume } = useHistorySessions(projectName, "all");
+  // 状态过滤 + 折叠窗口：均视图态不持久化（§6.10 口径）；切过滤重置窗口，防残留大窗口跨过滤。
+  const [filter, setFilter] = useState<"all" | "ended">("all");
+  const [visibleCount, setVisibleCount] = useState(HISTORY_RECENT_COUNT);
 
   const focus = (sessionId: string) => {
     void navigate({
@@ -192,8 +197,13 @@ export function HistoryList({
     });
   };
 
+  // 已结束 = !hasActiveSession（活跃中的历史 = 已 resume 为活跃实例，ActiveDot 同语义）。
+  const filtered = filter === "all" ? entries : entries.filter((e) => !e.hasActiveSession);
+  const visible = filtered.slice(0, visibleCount);
+  const hiddenCount = filtered.length - visible.length;
+
   // 加载中（首次拉取，entries 仍空）→ 骨架行占位，避免空白；真空态（!isLoading 且空）→ null
-  // （左栏段落、中栏 tab 自然空态，不伪造占位）。isLoading 区分二者，消除"加载中 = 空态"的误导。
+  // （左栏段落自然空态，不伪造占位）。isLoading 区分二者，消除"加载中 = 空态"的误导。
   if (entries.length === 0) {
     if (!isLoading) return null;
     return showLabel ? (
@@ -210,24 +220,82 @@ export function HistoryList({
     );
   }
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    /* 根 flex-1（原 h-full）：作为左栏历史态 wrapper 的 flex item 占满剩余高，且允许
+       wrapper 内的兄弟节点（尾注）按内容占位——h-full 会把兄弟推出可视区。 */
+    <div className="flex min-h-0 flex-1 flex-col">
       {showLabel ? (
         <ShellSectionLabel className="shrink-0 px-3 pb-1 pt-2">
           {t("workbench.historySection")}
         </ShellSectionLabel>
       ) : null}
+      {/* 05c 过滤 chips 行（原型 :42：上 8 下 8，左右 14 = .side 10 + px-1，与 seg4 基类
+          14 同口径；chip = 11.5px r12 p 3px 12px，on = 600 ink-1 bg-elevated3，ghost =
+          ink-2 border sep-strong。on 态透明 border 防切换 1px 跳动。 */}
+      <div className="flex shrink-0 gap-1.5 px-1 pb-2 pt-2" role="group">
+        <button
+          aria-pressed={filter === "all"}
+          className={`cursor-pointer rounded-xl border px-3 py-[3px] text-[11.5px] leading-[var(--line-height-ui)] ${
+            filter === "all"
+              ? "border-transparent bg-elevated3 font-semibold text-ink-1"
+              : "border-sep-strong text-ink-2"
+          }`}
+          onClick={() => {
+            setFilter("all");
+            setVisibleCount(HISTORY_RECENT_COUNT);
+          }}
+          type="button"
+        >
+          {t("workbench.historyFilterAll")}
+        </button>
+        <button
+          aria-pressed={filter === "ended"}
+          className={`cursor-pointer rounded-xl border px-3 py-[3px] text-[11.5px] leading-[var(--line-height-ui)] ${
+            filter === "ended"
+              ? "border-transparent bg-elevated3 font-semibold text-ink-1"
+              : "border-sep-strong text-ink-2"
+          }`}
+          onClick={() => {
+            setFilter("ended");
+            setVisibleCount(HISTORY_RECENT_COUNT);
+          }}
+          type="button"
+        >
+          {t("workbench.historyFilterClosed")}
+        </button>
+      </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <ListGroup ariaLabel={t("workbench.historySection")}>
-          {entries.map((entry) => (
-            <HistorySessionNode
-              active={entry.hasActiveSession && entry.activeSessionId === focusId}
-              entry={entry}
-              isResuming={isResuming}
-              key={entryNativeId(entry)}
-              onClick={() => handleClick(entry)}
-            />
-          ))}
-        </ListGroup>
+        {filtered.length === 0 ? (
+          <div className="px-3 py-2 text-caption text-ink-3">
+            {t("workbench.historyEndedEmpty")}
+          </div>
+        ) : (
+          <>
+            <ListGroup ariaLabel={t("workbench.historySection")}>
+              {visible.map((entry) => (
+                <HistorySessionNode
+                  active={entry.hasActiveSession && entry.activeSessionId === focusId}
+                  entry={entry}
+                  isResuming={isResuming}
+                  key={entryNativeId(entry)}
+                  onClick={() => handleClick(entry)}
+                />
+              ))}
+            </ListGroup>
+            {/* 「展开更早」（用户拍板「更久的再依次展开」，原型无此控件——形态与 chips
+                ghost 胶囊同族）。entries 服务端已按 lastActivityAt 倒序，slice 即「最近 N」。 */}
+            {hiddenCount > 0 ? (
+              <div className="flex justify-center py-2">
+                <button
+                  className="cursor-pointer rounded-xl border border-sep-strong px-3 py-[3px] text-[11.5px] leading-[var(--line-height-ui)] text-ink-2"
+                  onClick={() => setVisibleCount((n) => n + HISTORY_EXPAND_STEP)}
+                  type="button"
+                >
+                  {t("workbench.historyShowEarlier")}
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
       {promptHolder}
     </div>
@@ -275,31 +343,4 @@ export function relativeTime(iso: string, t: TranslateFn): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return t("time.daysAgo", { count: days });
   return date.toLocaleDateString();
-}
-
-/**
- * 历史时间范围分段选择器（周/半月/全部，默认周）。桌面 history tab 顶部 sticky header +
- * 移动 history tab 容器顶部共用——range state 由父级持有（受控），避免 tab 切换丢失；
- * range 进 queryKey → 切档自动重拉（week 默认仅近 7 天，all 首拉全量后走缓存）。
- */
-export function HistoryRangeControl({
-  value,
-  onChange,
-}: {
-  value: AgentHistoryRange;
-  onChange: (next: AgentHistoryRange) => void;
-}) {
-  const { t } = useT();
-  return (
-    <SegmentedControl
-      ariaLabel={t("project.historyRangeAria")}
-      onChange={onChange}
-      options={[
-        { value: "week", label: t("project.historyRangeWeek") },
-        { value: "biweekly", label: t("project.historyRangeBiweekly") },
-        { value: "all", label: t("project.historyRangeAll") },
-      ]}
-      value={value}
-    />
-  );
 }
