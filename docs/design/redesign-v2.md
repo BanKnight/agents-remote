@@ -1016,6 +1016,16 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：tri-column 探针扩至 **15 断言**（新增 H9 历史行 title 13px / subtitle 10.5px computed 实锤）ALL PASS；m9-b 19/0；web typecheck/test（674）/format/lint 全过。
 
+### 真机反馈修复·第五批⑤：移动历史查询窗口对齐桌面（2026-09-30，commit `dd49a01`）
+
+**用户反馈**：iPhone 端历史数量远少于桌面端。
+
+**根因**：`MobileSessionHistorySheet` 调 `useHistorySessions(projectName, "week", open)`——同一 hook 同一 API，桌面第五批②改 "all"（全量 + 客户端折叠）时移动端仍锁 "week"；服务端 range 按**文件 mtime 窗口**滤除更早条目（agent-history / omp-history 同语义），iPhone 只显近 7 天。移动行字号无问题（`.hrow` 14px/11px 本就 03n 原文 1:1，与桌面 `srow2.inst` 13px 是各自容器的正常分档）。
+
+**修法**：移动 sheet range `"week"` → `"all"`（多端同构 = 同一数据管道同一窗口；`listAgentHistory` 有 mtime+size 缓存，无新增性能负担）。03n sheet 保持全量平铺（模态列表原生滚动，折叠是桌面 05c 语境的拍板补充，移动不加）。
+
+**验证**：m5-sheets（03n sheet 主探针）54/54；web typecheck/test（674）、CSS 硬闸全过。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
