@@ -214,8 +214,9 @@ async function setupM4Mocks(page) {
         projectName,
         path: "README.md",
         name: "README.md",
-        size: 27,
-        content: "probe line 1\nprobe line 2\n",
+        size: 28,
+        // markdown 语法（h1 + p）——Part 5 渲染态断言靠 h1「probe title」识别 MarkdownString 真渲染。
+        content: "# probe title\n\nprobe line 2\n",
         mtimeMs: Date.now(),
       }),
     ),
@@ -536,15 +537,40 @@ await page.waitForTimeout(800);
 const fileTab = page.locator('.ptabs .ptab[aria-label="README.md"]');
 ok((await fileTab.count()) === 1, "file 标签新增（README.md）");
 ok((await fileTab.getAttribute("aria-selected")) === "true", "file 标签新增即激活");
-// 预览在激活叠层（PanelFileTabBody 单源）：meta 行数 + 保活层让位（中栏 0 file item）。
+// 预览在激活叠层（PanelFileTabBody 单源）：2026-09-30 预览优先改造——md 打开即渲染态
+//（MarkdownString 渲染 h1 + meta toggle「渲染」on），不再显「N 行」meta。
 const previewBody = page.locator(
   '[data-panel-tab-body="file:proj1/README.md"] [data-role="l3-file-preview"]',
 );
-ok(await previewBody.getByText(/行/).first().isVisible(), "preview meta 行数");
+ok(
+  await previewBody.locator("h1", { hasText: "probe title" }).isVisible(),
+  "md 打开即渲染态（h1 默认渲染，预览优先）",
+);
+const renderBtn = previewBody.getByRole("button", { name: "渲染" });
+ok(
+  (await renderBtn.getAttribute("class"))?.includes("bg-primary/10") === true,
+  "meta toggle「渲染」on 态",
+);
+ok((await previewBody.locator(".code .ln").count()) === 0, "渲染态无行号源码");
 const fileItemLeaks = await page.evaluate(
   () => document.querySelectorAll('[data-tab-id^="file_"]').length,
 );
 ok(fileItemLeaks === 0, `保活层让位（file item 主体区 0 实例；实际 ${fileItemLeaks}）`);
+// toggle「源码」→ 行号形态；「编辑」→ CodeEditor（renderMode 先切 source，canEdit 恢复）；
+// 「完成」→ 回渲染态（预览优先，2026-09-30）。
+await previewBody.getByRole("button", { name: "源码" }).click();
+await page.waitForTimeout(300);
+ok((await previewBody.locator(".code .ln").count()) > 0, "toggle 源码 → 行号形态");
+await previewBody.locator(".meta .diff").getByRole("button", { name: "编辑" }).click();
+// CodeEditor lazy chunk + CodeMirror 初始化：等挂载而非固定延时。
+await previewBody.locator(".cm-editor").waitFor({ timeout: 8000 });
+ok(true, "编辑态 CodeEditor 在场");
+await previewBody.getByRole("button", { name: "完成" }).click();
+await page.waitForTimeout(400);
+ok(
+  await previewBody.locator("h1", { hasText: "probe title" }).isVisible(),
+  "完成 → 回渲染态（预览优先）",
+);
 const diffBtn = previewBody.locator(".meta .diff", { hasText: "查看 diff" });
 ok((await diffBtn.count()) === 1, "meta「查看 diff」按钮");
 // 批次 3 Step B：meta 行补「编辑」入口（进编辑态 CodeEditor + 保存，与桌面右栏同构）。

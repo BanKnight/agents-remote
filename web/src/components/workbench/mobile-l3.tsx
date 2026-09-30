@@ -13,7 +13,7 @@ import {
   listProjectGitDiff,
   sendProjectSessionMessage,
 } from "../../api/client";
-import { CodeEditorFallback, FileSaveButton } from "../files/file-browser";
+import { CodeEditorFallback, FileSaveButton, PreviewBody } from "../files/file-browser";
 import { ImageViewer } from "../files/image-viewer";
 import { useFileEditor } from "../files/use-file-editor";
 import { useConfirm } from "../shell/confirm-dialog";
@@ -86,11 +86,13 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
   // 编辑态（组件内局部；切文件即退出——下方 effect 与 hook 清草稿同步）。
   const [editing, setEditing] = useState(false);
   useEffect(() => setEditing(false), [path]);
-  // editable 随 editing 切：非编辑态 canEdit 恒 false（⌘S no-op）。initialRenderMode "source"：
-  // L3 无 render toggle（查看/编辑都是源码形态），md/html 的 canEdit gate 需要 source。
+  // editable 随 editing 切：非编辑态 canEdit 恒 false（⌘S no-op）。renderMode 用 hook 默认
+  // "render"（2026-09-30 用户反馈「可预览的优先展示预览效果」：md/html 打开即渲染，与桌面
+  // FilePreviewPanel 同款默认；检视面板 file 标签 PanelFileTabBody 与移动 L3 双端同源）。
+  // 点「编辑」时先 setRenderMode("source")——md/html render 态的 canEdit gate 要求 source，
+  // 且「完成」后回到渲染态（预览优先）。
   const editor = useFileEditor({
     editable: editing,
-    initialRenderMode: "source",
     path,
     projectName,
     queryScope: "files",
@@ -127,10 +129,12 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
   }
   const lineCount = data.content.split("\n").length;
   const updated = relativeTime(new Date(data.mtimeMs).toISOString(), t);
-  // 完成编辑：dirty 时丢弃确认（与 FilesPanel 换文件守卫同款 dialog 文案）。
+  // 完成编辑：dirty 时丢弃确认（与 FilesPanel 换文件守卫同款 dialog 文案）。确认后回渲染
+  // 态（预览优先——「完成」= 结束一次编辑动作，回到 md/html 的默认阅读形态；源码再点 toggle）。
   const finishEditing = () => {
     if (!editor.isDirty) {
       setEditing(false);
+      editor.onRenderModeChange("render");
       return;
     }
     void confirm({
@@ -140,13 +144,20 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
       confirmLabel: t("files.discard"),
       tone: "default",
     }).then((ok) => {
-      if (ok) setEditing(false);
+      if (ok) {
+        setEditing(false);
+        editor.onRenderModeChange("render");
+      }
     });
   };
 
+  // md/html 渲染态（showRenderToggle gate：非 md/html 恒源码形态）根 overflow-hidden——
+  // 渲染内容自滚（MarkdownString 容器 overflow-auto / iframe 内文档滚动），meta 行常驻。
+  const isRenderView = editor.showRenderToggle && editor.renderMode === "render";
+
   return (
     <div
-      className={`flex min-h-0 flex-1 flex-col pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))] ${editing ? "overflow-hidden" : "overflow-y-auto"}`}
+      className={`flex min-h-0 flex-1 flex-col pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))] ${editing || isRenderView ? "overflow-hidden" : "overflow-y-auto"}`}
       data-role="l3-file-preview"
     >
       {editing ? (
@@ -172,11 +183,40 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
         </div>
       ) : (
         <div className="meta">
-          <span>{t("files.previewMetaLines", { n: lineCount, time: updated })}</span>
+          {/* md/html：source/render toggle（桌面 FilePreviewPanel header 同款形态单源）；
+              渲染态行数无意义（渲染排版无行号）由 toggle 替换，源码态行号在旁自明。 */}
+          {editor.showRenderToggle ? (
+            <div
+              className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
+              role="group"
+            >
+              {(["source", "render"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  className={`flex h-7 shrink-0 cursor-pointer items-center rounded-md px-2.5 text-xs font-semibold transition ${
+                    editor.renderMode === mode
+                      ? "bg-primary/10 text-primary"
+                      : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"
+                  }`}
+                  type="button"
+                  onClick={() => editor.onRenderModeChange(mode)}
+                >
+                  {mode === "source" ? t("files.sourceMode") : t("files.renderMode")}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span>{t("files.previewMetaLines", { n: lineCount, time: updated })}</span>
+          )}
           <span className="diff flex items-center gap-3">
             <button
               className="relative cursor-pointer after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-['']"
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                // render 态点编辑：先切源码（md/html render 态 canEdit gate 恒 false——
+                // 保存会被 hook 拦），编辑器与检视面板 source 态同形态。
+                editor.onRenderModeChange("source");
+                setEditing(true);
+              }}
               type="button"
             >
               {t("files.edit")}
@@ -193,12 +233,16 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
       )}
       {editing ? (
         // CodeEditor 根自带 relative+flex-1（内部 absolute 高度链，frontend-notes §8）；
-        // 编辑态根 overflow-hidden 给确定高度（非编辑态滚动看长文）。
+        // 编辑态根 overflow-hidden 给确定高度。
         <div className="flex min-h-0 flex-1 flex-col p-3">
           <Suspense fallback={<CodeEditorFallback />}>
             <CodeEditor name={data.name} onChange={editor.onEditChange} value={editor.editValue} />
           </Suspense>
         </div>
+      ) : isRenderView ? (
+        // 渲染态 = PreviewBody 单源（md → MarkdownString / html → sandbox iframe + 本地资源
+        // 内联），与检视面板/中栏 file tab 同一渲染器（onEditChange 不传 = 只读）。
+        <PreviewBody editValue="" preview={data} renderMode="render" />
       ) : (
         <CodeWithLineNumbers content={data.content} />
       )}
