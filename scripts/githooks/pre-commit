@@ -5,6 +5,30 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "pre-commit: running quality gates"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+# ── 快速通道（2026-09-30 用户拍板「提速」）──────────────────────────────
+# 纯文档 commit（.md / .claude/** / docs/** 等非代码文件）不影响运行时，
+# 全仓 typecheck+test（~100s）纯浪费——只跑 format:check + lint（~3s）。
+# 判定是反向的：任一 staged 文件命中代码面（web/ api/ packages/ scripts/
+# e2e/ 目录前缀，或代码扩展名）即走全门禁。宁可漏放行，不可错放行。
+staged_files=$(git diff --cached --name-only)
+if [ -n "$staged_files" ] && ! grep -qE '^(web|api|packages|scripts|e2e)/|\.(ts|tsx|js|mjs|cjs|json|css|html|sh|toml|ya?ml)$' <<<"$staged_files"; then
+  echo ""
+  echo "⚡ docs-only commit → fast path (format:check + lint, skip typecheck/test)"
+  echo ""
+  echo "▶ format:check"
+  bun run format:check
+
+  echo ""
+  echo "▶ lint"
+  bun run lint
+
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "pre-commit: fast path passed (docs-only)"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  exit 0
+fi
+
 echo ""
 echo "▶ format:check"
 bun run format:check
