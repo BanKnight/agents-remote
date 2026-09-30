@@ -49,12 +49,7 @@ const NOOP = () => {};
 
 // ── Utilities ────────────────────────────────────────────────────
 
-// 有渲染能力的文件（markdown / html）默认展示渲染结果，其余文本默认 source。
-export function defaultRenderMode(name: string): "source" | "render" {
-  return name.endsWith(".md") || name.endsWith(".html") || name.endsWith(".htm")
-    ? "render"
-    : "source";
-}
+// defaultRenderMode 已下沉 use-file-editor.ts（renderMode 重置收敛 hook 单源，2026-09-30）。
 
 // ── ResourceStatePanel ────────────────────────────────────────────
 
@@ -1128,14 +1123,7 @@ export function FilesPanel({
     [handleFileDrop],
   );
 
-  useEffect(() => {
-    if (selectedFilePath !== undefined) {
-      const name = selectedFilePath.split("/").pop() ?? "";
-      editor.onRenderModeChange(defaultRenderMode(name));
-    }
-    // onRenderModeChange 是 useState setter（引用稳定）——不能把 editor 整对象进 deps
-    //（每渲染新字面量 → effect 每渲染跑，md/html 点「源码」会被立即重置回渲染态）。
-  }, [selectedFilePath, editor.onRenderModeChange]);
+  // 换文件重置 renderMode 由 useFileEditor hook 内承担（2026-09-30 下沉，原调用方 effect 退役）。
 
   const saveButton = editor.canEdit ? (
     <FileSaveButton

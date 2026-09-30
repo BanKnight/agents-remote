@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   IMG_TAG_RE,
-  defaultRenderMode,
   joinRootBrowseDirectoryPath,
   localAssetProjectPath,
   resolveRootBrowseTarget,
   rewriteImgSrc,
 } from "./file-browser";
+import { defaultRenderMode } from "./use-file-editor";
 
 describe("defaultRenderMode", () => {
   test("markdown / html default to render", () => {

@@ -86,9 +86,10 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
   // 编辑态（组件内局部；切文件即退出——下方 effect 与 hook 清草稿同步）。
   const [editing, setEditing] = useState(false);
   useEffect(() => setEditing(false), [path]);
-  // editable 随 editing 切：非编辑态 canEdit 恒 false（⌘S no-op）。renderMode 用 hook 默认
-  // "render"（2026-09-30 用户反馈「可预览的优先展示预览效果」：md/html 打开即渲染，与桌面
-  // FilePreviewPanel 同款默认；检视面板 file 标签 PanelFileTabBody 与移动 L3 双端同源）。
+  // editable 随 editing 切：非编辑态 canEdit 恒 false（⌘S no-op）。renderMode 由 hook 按文件
+  // 名派生默认（md/html → render，换文件随 hook 重置——2026-09-30 用户反馈「可预览的优先
+  // 展示预览效果」：md/html 打开即渲染，与桌面 FilePreviewPanel 同款；检视面板 file 标签
+  // PanelFileTabBody 与移动 L3 双端同源）。
   // 点「编辑」时先 setRenderMode("source")——md/html render 态的 canEdit gate 要求 source，
   // 且「完成」后回到渲染态（预览优先）。
   const editor = useFileEditor({

@@ -11,6 +11,15 @@ import type { ProjectFilePreviewResponse } from "@agents-remote/shared";
 
 const SAVED_FLASH_MS = 1500;
 
+// 有渲染能力的文件（markdown / html）默认展示渲染结果，其余文本默认 source。
+//（2026-09-30 自 file-browser.tsx 下沉：renderMode 重置收敛进 hook 单源后，判定逻辑同属
+// 渲染管道，留在本文件；file-browser 消费点已随重置下沉一并退役。）
+export function defaultRenderMode(name: string): "source" | "render" {
+  return name.endsWith(".md") || name.endsWith(".html") || name.endsWith(".htm")
+    ? "render"
+    : "source";
+}
+
 // Query result 类型收缩（不引 TanStack 内部类型名，泛型即所得）。
 type PreviewQuery = ReturnType<typeof useQuery<ProjectFilePreviewResponse, Error>>;
 
@@ -45,16 +54,11 @@ export type FileEditor = {
  */
 export function useFileEditor({
   editable,
-  initialRenderMode = "render",
   path,
   projectName,
   queryScope,
 }: {
   editable: boolean;
-  /** renderMode 初值：默认 "render"（md/html 打开即渲染，github 风格）。L3 详情态传
-   * "source"——其编辑/查看形态是 CodeEditor 源码、无 render toggle，md/html 的 canEdit
-   * gate（!showRenderToggle || renderMode === "source"）需要 source 才可保存。 */
-  initialRenderMode?: "source" | "render";
   path: string | null;
   projectName: string;
   queryScope: string;
@@ -64,9 +68,13 @@ export function useFileEditor({
   const [editContent, setEditContent] = useState<string | undefined>();
   // 保存成功后短暂「已保存」反馈；换文件即清。
   const [savedFlash, setSavedFlash] = useState(false);
-  // md/html 默认渲染预览（initialRenderMode，见参数注释）；非 md/html 由 canEdit gate 强制
-  // source。原 FilesPanel/FileTabPreview 各自的 useState 收拢于此。
-  const [renderMode, setRenderMode] = useState<"source" | "render">(initialRenderMode);
+  // basename 从 path 立即可得（不等 preview 返回）——否则换文件首帧沿用上一文件的判定。
+  const fileBaseName = path === null ? "" : (path.split("/").pop() ?? "");
+  // md/html 默认渲染预览（github 风格）、其余文本 source；renderMode 是 per-file 视图态，
+  // 换文件随下方 effect 重置回默认。原 FilesPanel/FileTabPreview 各自的 useState 收拢于此。
+  const [renderMode, setRenderMode] = useState<"source" | "render">(() =>
+    defaultRenderMode(fileBaseName),
+  );
 
   const preview = useQuery({
     enabled: path !== null,
@@ -77,11 +85,14 @@ export function useFileEditor({
     staleTime: 0,
   });
 
-  // Switching files (or closing the preview) drops any in-flight local edits.
+  // Switching files (or closing the preview) drops any in-flight local edits and resets the
+  // render mode（per-file 视图态随文件回默认；2026-09-30 前由 FilesPanel 调用方补丁承担，
+  // MobileL3FilePreview 漏配致单实例复用换文件时残留——收敛进 hook 单源两端同效）。
   useEffect(() => {
     setEditContent(undefined);
     setSavedFlash(false);
-  }, [path]);
+    setRenderMode(defaultRenderMode(fileBaseName));
+  }, [path, fileBaseName]);
 
   const previewData = preview.data;
   const previewTextContent = previewData?.type === "text" ? previewData.content : undefined;
