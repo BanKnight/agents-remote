@@ -1036,6 +1036,36 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：m5-sheets 扩至 **56 断言**（mock 扩 7 条：折叠 5 / 已结束重置 5 / 展开全显 7）56/56；tri-column 15/15（HistoryList hook 重构无回归）；web typecheck/test/format/lint、CSS 硬闸全过。
 
+### 第五批②⑥ reviewer 双审（2026-09-30，修复 commit `bd7aedc`）
+
+第五批②③④⑤⑥四 commit（`98183fe`/`4c7ab9e`/`dd49a01`/`1652a22`）经 code-reviewer + design-reviewer 并行审查，均无 P0。**当场修**（`bd7aedc`）：
+
+**code-reviewer（P1×1 + P2 采纳×5）**
+- P1 切项目历史 stale：`historyOpen` 跨项目保留 + `keepPreviousData` → 新项目组头下显示旧项目条目、旧 sessionId 可误操作。修 = `<HistoryList key={sideProjectName}>` 切项目重挂（filter/折叠窗口随组件 state 重建）。
+- P2 折叠窗口 resetKey 化：`useHistoryRecentWindow(resetKey)` render 期 adjust（React 官方模式），替代「调用方 onClick 手动配对 resetWindow」；移动 sheet 传 `open ? filter : "gate:closed"`——关闭即重置、重开全新窗口（sheet 常驻挂载不卸载，防残留大窗口跨开合；`gate:closed` 刻意避开 filter 值域防恒等不触发）。
+- P2 `useHistorySessions` 默认 range `"week"`→`"all"`（dd49a01 根因的默认值陷阱根治，防下一个消费方踩坑）。
+- P2 `HistoryList` showLabel 死分支退役（唯一消费方传 false；中栏 history tab 消费方已不存在）+ chips 行提取骨架期共用（防数据到达 CLS 跳动）。
+- P2 历史 key 兜底 `entryNativeId || title || firstMessage`（防损坏数据双空串 key 冲突）。
+- P2 rows memo：**不做**（低收益，避免 useMemo 引用不稳定反模式）。
+
+**design-reviewer（P1×2 + P2 采纳×3）**
+- P1 px 任意值字号 → tokens utility（验收清单 rem 化 + 铁律 9 Dynamic Type）：`text-[13px]`→`text-footnote`、`text-[10.5px]`→`text-micro`、`text-[12px]`→`text-caption`；**11.5px 是字阶外 05c 页私档 → 回填 tokens.json 新增 `chip` 档**（0.71875rem）+ index.css 物化。每档自带 line-height 1.4（原 preflight 1.5 回落一并修正对齐 .srow2 单源）。fontSize 值零变化（tri-column H9 13px/10.5px 复测通过）。
+- P1 组头时钟/plus 20px 热区无触屏扩区：iPad 横屏（≥1024 pointer coarse）走桌面 WorkbenchSide，低于 WCAG 2.5.8 24px 下限——frontend-notes §7「指针能力与视口宽度正交」正交铁律回归（第五批①收热区时未覆盖 iPad 路径）。修 = `touch:` variant 伪元素扩区 `touch:relative touch:after:-inset-1`（20→28px 热区，回到第四批前可用性档；**不撑行高**，「第一行同线」拍板不回退；桌面 hover-capable 零变化；Chromium 模拟不了 pointer media，iPad 真机项交用户）。
+- P2 移动「展开更早」挂 `fc ghost` 回归组件单源（utility 拼写退役）；探针 filters 计数改 `.msheet .filters .fc` 限定。
+- P2 桌面「无已结束会话」空态色 ink-3→ink-2（浅色 #C7C7CC 对比 1.6:1 过低，与移动空态统一）。
+- P2 排序口径两端单份：`useHistorySessions` 出口 useMemo 统一 lastActivityAt 倒序（服务端顺序不构成契约；移动删客户端 sort，桌面「slice 即最近 N」前提不再依赖服务端顺序）。
+
+**记档滚动（design P2×5，不动已验收形态）**：
+1. chips 行纵向多一档——实现 ghead mb 8 + pt-2 = 16px vs 05c 原文 `margin:0 2px 8px` 上 0 下 8，历史态比原型节奏松 8px（真机已验收，收敛需用户发起）。
+2. chips 左缘三值不齐——实现 14px（side 10 + px-1）vs 原型 12px vs 段内 seg4 渲染 18px（wrapper px-2 覆写基类 14）；注释「与 seg4 基类 14 同口径」引的是基类值非渲染值。
+3. 「展开更早」外框两端不一——桌面 py-2（8/8）vs 移动 pb-2 pt-1（4/8）；同款行为控件宜同框间距。
+4. 尾注复用 microlabel 带出 letter-spacing 0.3px（05c :50 是裸样式无字距；en 文案可感知，zh 弱）——可接受则注记页私豁免。
+5. 浅色主题 chips on 态辨识弱（bg-elevated3 #E9E9EB vs bg-sidebar #F2F2F4 近融合，选中仅靠 600 字重）——token 两态取值正确、忠实原型，收紧属设计包层改动。
+
+**审查确认无问题项**：双主题 token 语义两态全成立（diff 内零裸 HEX/裸色阶）、microlabel mt 页私值全对齐（AGENT 6px/TERMINAL 8px）、chips 形态本体与 05c :43-45 全等、ListRow size="sm" 对其余 11 消费方零影响、chips role=group + aria-pressed 语义在位、多端同构方向正确（hook 行为单份 + 铁律 3 容器分流成立）。
+
+**验证**：全仓 typecheck + 865/9/674 单测 + 四门禁 + tokens strict 0 违例 + CSS 硬闸（183387 字节）+ tri-column 15/15 + m5-sheets 56/56。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
