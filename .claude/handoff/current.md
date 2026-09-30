@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-09-30（**第六批收口，最新 `16db0ad`**。用户反馈「md 等可预览文件优先展示预览效果 + 编辑后风格一致」：`60dc9e3` MobileL3FilePreview 默认渲染态 + meta 行 render/source toggle（与桌面 FilePreviewPanel 逐字同款）+ 渲染主体复用 PreviewBody 单源 + 编辑流转闭环；`d807ccb` 自审补遗——renderMode 换文件重置收敛 hook 单源（修 L3 切文件形态残留，FilesPanel 调用方补丁退役 + initialRenderMode 死参数退役 + 3 个 hook 契约单测）。全部验证绿。**等用户真机复验**。）
+> 最后更新：2026-09-30（**第六批收口，最新 `b9ca344`**。用户反馈「md 等可预览文件优先展示预览效果 + 编辑后风格一致」：`60dc9e3` MobileL3FilePreview 默认渲染态 + meta 行 render/source toggle（与桌面 FilePreviewPanel 逐字同款）+ 渲染主体复用 PreviewBody 单源 + 编辑流转闭环；`d807ccb` 自审补遗——renderMode 换文件重置收敛 hook 单源（修 L3 切文件形态残留，FilesPanel 调用方补丁退役 + initialRenderMode 死参数退役 + 3 个 hook 契约单测）。随后用户拍板三项提速全落地：`e88e601` pre-commit 快速通道（纯文档 commit 只跑 format:check+lint）+ `b9ca344` verification.md 沉淀回归裁剪与 getByRole 纪律。全部验证绿。**等用户真机复验**。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
@@ -12,6 +12,7 @@
 1. 用户反馈：可预览文件（md/html）优先展示预览；点击编辑后布局排版应风格一致。
 2. 根因：MobileL3FilePreview 强制 `initialRenderMode: "source"`（旧假设「L3 无 toggle」），与桌面 `defaultRenderMode()` 默认分叉——同一 md 两端形态不一致。
 3. 自审（design/code reviewer 双双因 API 故障早退，人工完成）：发现 renderMode 不随 path 重置的真缺陷并当场修。
+4. 用户质疑小功能改得慢 → 拆解时间构成后拍板三项提速，全部落地：① pre-commit 快速通道（`e88e601`：纯文档 commit 只跑 format:check+lint ~2.5s，代码面反向判定走全门禁，两条路径均实测验证）；② 回归裁剪 + ③ getByRole 纪律沉淀进 `.claude/rules/verification.md`（`b9ca344`）。
 
 ## 关键决策（本阶段不可丢）
 
@@ -26,6 +27,7 @@
 ## 进度（已完成 / 进行中 / 待办）
 
 - ✅ 第六批四 commit：`60dc9e3`（功能）→ `044ad55`（记档）→ `d807ccb`（自审修复）→ `16db0ad`（记档补遗）
+- ✅ 三项提速落地（用户拍板）：`e88e601` pre-commit 快速通道（纯文档 commit 跳过 typecheck/test，代码面反向判定全门禁，两路径实测）→ `b9ca344` verification.md 沉淀②回归裁剪 ③getByRole 定位纪律
 - ✅ 验证：m4 探针 70/70（Part 5 六项断言链：渲染态/toggle on/无行号/源码态/编辑态/完成回渲染）+ file-save-scroll ALL PASS + files-html-img-inline PASS + e2e file-browser 2/2 + 四门禁（865/9/677 单测，+3 hook 契约测试）+ tokens strict 0 违例 + CSS 硬闸 183387 字节 + dev CSS content-type text/css
 - ⬜ **交用户真机复验**（清单见下）
 - ⬜ reviewer 复审补跑：本批 design/code 双审因 API 故障未完成（人工自审已做，design 侧结论已记档）——下个批次开工前若 API 恢复，可让 reviewer 补审 `60dc9e3`+`d807ccb` 两个 commit
@@ -48,6 +50,7 @@
 ## 易丢的关键上下文
 
 - **探针跑法**：touch web/src/main.tsx + sleep 16 + `bun scripts/probe-*.mjs`；e2e/单测 systemd-run 2G。
+- **pre-commit 快速通道**：staged 全为纯文档面（.md/.claude/**/docs/** 等非代码）→ 只跑 format:check+lint（~2.5s）；任一文件命中 `web/ api/ packages/ scripts/ e2e/` 前缀或代码扩展名 → 全门禁。反向判定宁可漏放行；混合 commit 一律全门禁。
 - **useFileEditor 契约已变**：renderMode 随 path 重置进 hook（use-file-editor.test.tsx 三个契约测试守）；`defaultRenderMode` 现从 use-file-editor.ts 导出（原 file-browser.tsx）；`initialRenderMode` 参数已不存在。
 - **m4 Part 5 mock**：README preview 升为 markdown 语法（`# probe title\n\nprobe line 2\n`）供 h1 渲染断言。
 - 记档位置：§6.13「真机反馈修复·第六批」段（修法五步 + 探针陷阱 + 自审补遗）。
