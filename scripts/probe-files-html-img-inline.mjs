@@ -41,7 +41,15 @@ const HTML_CONTENT = `<!DOCTYPE html>
   <img src="chart.svg" alt="chart">
   <img src="./logo.png" alt="logo">
   <img src="https://cdn.example/ext.png" alt="ext">
+  <iframe src="nested/frame.html" title="nested"></iframe>
+  <iframe src="diagram.svg" title="svg-frame"></iframe>
+  <iframe src="https://ext.example/embed.html"></iframe>
 </body></html>`;
+
+// 嵌套文档：自身目录下的 img + css（验证相对引用按嵌套文档目录解析，非外层目录）。
+const NESTED_FRAME_CONTENT = `<!DOCTYPE html>
+<html><head><link rel="stylesheet" href="nested.css"></head>
+<body><p id="nested-marker">nested-ok</p><img src="inner.svg" alt="inner"></body></html>`;
 
 async function setup(page) {
   await page.route(/\/api\/overview$/, (r) =>
@@ -127,6 +135,65 @@ async function setup(page) {
         }),
       });
     }
+    if (path === "nested/frame.html") {
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          type: "text",
+          projectName: "proj1",
+          path,
+          name: "frame.html",
+          size: 200,
+          content: NESTED_FRAME_CONTENT,
+        }),
+      });
+    }
+    // 嵌套文档自身目录下的资源（相对引用按嵌套目录 nested/ 解析）。
+    if (path === "nested/inner.svg") {
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          type: "image",
+          projectName: "proj1",
+          path,
+          name: "inner.svg",
+          size: 200,
+          mediaType: "image/svg+xml",
+          dataUrl: SVG_DATAURL,
+        }),
+      });
+    }
+    if (path === "nested/nested.css") {
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          type: "text",
+          projectName: "proj1",
+          path,
+          name: "nested.css",
+          size: 30,
+          content: "#nested-marker{color:#58a6ff}",
+        }),
+      });
+    }
+    if (path === "diagram.svg") {
+      return r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          type: "image",
+          projectName: "proj1",
+          path,
+          name: "diagram.svg",
+          size: 200,
+          mediaType: "image/svg+xml",
+          dataUrl: SVG_DATAURL,
+        }),
+      });
+    }
     if (path === "style.css") {
       return r.fulfill({
         status: 200,
@@ -194,8 +261,47 @@ async function run() {
       "stylesheet 内联回归正常",
     );
 
-    console.log("\n===== 2. iframe 内真实渲染断言 =====");
+    console.log("\n===== 1b. iframe 嵌套本地 html/svg（2026-09-30 真机反馈） =====");
+    record(
+      srcDoc?.includes('srcdoc="') === true &&
+        srcDoc?.includes('src="nested/frame.html"') === false,
+      "嵌套本地 html iframe：src 已转 srcdoc（不再指向无法解析的相对路径）",
+    );
+    record(srcDoc?.includes("nested-ok") ?? false, "嵌套文档内容已内联进 srcdoc");
+    record(
+      srcDoc?.includes("#nested-marker{color:#58a6ff}") ?? false,
+      "嵌套文档的 css 内联（相对引用按嵌套文档自身目录 nested/ 解析）",
+    );
+    record(
+      srcDoc?.includes('src="https://ext.example/embed.html"') ?? false,
+      "外链 iframe 保持原样（不误伤）",
+    );
+    const svgFrameTag = srcDoc?.match(/<iframe[^>]*title="svg-frame"[^>]*>/)?.[0] ?? "";
+    record(
+      svgFrameTag.includes('src="data:image/svg+xml;base64,') &&
+        !svgFrameTag.includes('src="diagram.svg"'),
+      "iframe 指向本地 svg → src 换 dataUrl",
+    );
+
+    console.log("\n===== 1c. 嵌套 frame 内真实渲染断言 =====");
     const frame = page.frameLocator('iframe[title="Sandboxed HTML render"]');
+    const nestedFrame = frame.frameLocator('iframe[title="nested"]');
+    // srcdoc 嵌套 frame 无网络加载，marker 应立即可见；用 waitFor 防首帧竞态。
+    await nestedFrame
+      .locator("#nested-marker")
+      .waitFor({ state: "visible", timeout: 5000 })
+      .catch(() => {});
+    record(
+      await nestedFrame.locator("#nested-marker").isVisible(),
+      "嵌套 iframe 内容真实渲染（#nested-marker 可见）；修复前空白",
+    );
+    const innerBox = await nestedFrame.locator('img[src^="data:image/svg+xml"]').boundingBox();
+    record(
+      !!innerBox && innerBox.width > 0,
+      `嵌套文档内 svg 渲染出非零尺寸（${innerBox ? `${innerBox.width}x${innerBox.height}` : "null"}）`,
+    );
+
+    console.log("\n===== 2. iframe 内真实渲染断言 =====");
     const svgImg = frame.locator('img[src^="data:image/svg+xml"]');
     await svgImg.waitFor({ state: "visible", timeout: 5000 });
     const box = await svgImg.boundingBox();

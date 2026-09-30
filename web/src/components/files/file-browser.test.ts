@@ -1,12 +1,31 @@
 import { describe, expect, test } from "bun:test";
+import type { ProjectFilePreviewResponse } from "@agents-remote/shared";
 import {
+  INLINE_NESTED_HTML_MAX_DEPTH,
   IMG_TAG_RE,
+  inlineLocalHtmlAssets,
   joinRootBrowseDirectoryPath,
   localAssetProjectPath,
   resolveRootBrowseTarget,
   rewriteImgSrc,
+  rewriteIframeSrcdoc,
 } from "./file-browser";
 import { defaultRenderMode } from "./use-file-editor";
+
+// inlineLocalHtmlAssets 的 fetchPreview 注入：path → 响应 map，miss 抛 404。
+function fakeFetcher(map: Record<string, Partial<ProjectFilePreviewResponse>>) {
+  return async (_projectName: string, path: string): Promise<ProjectFilePreviewResponse> => {
+    const hit = map[path];
+    if (!hit) throw new Error(`404 ${path}`);
+    return {
+      projectName: "proj",
+      path,
+      name: path.split("/").pop() ?? path,
+      size: 0,
+      ...hit,
+    } as ProjectFilePreviewResponse;
+  };
+}
 
 describe("defaultRenderMode", () => {
   test("markdown / html default to render", () => {
@@ -89,6 +108,106 @@ describe("rewriteImgSrc", () => {
     expect(rewriteImgSrc(`<img src='a.png'>`, "data:image/png;base64,AA==")).toBe(
       `<img src="data:image/png;base64,AA==">`,
     );
+  });
+});
+
+describe("rewriteIframeSrcdoc", () => {
+  test("src 属性替换为 srcdoc，& 与 &quot; 转义后放进双引号属性", () => {
+    expect(rewriteIframeSrcdoc(`<iframe src="chart.html" width="600">`, `<p>a &amp; "b"</p>`)).toBe(
+      `<iframe srcdoc="<p>a &amp;amp; &quot;b&quot;</p>" width="600">`,
+    );
+  });
+});
+
+describe("inlineLocalHtmlAssets", () => {
+  const SVG =
+    "data:image/svg+xml;base64," +
+    Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"/>').toString(
+      "base64",
+    );
+
+  test("iframe 指向本地 html → 递归内联后整体转 srcdoc（嵌套文档 img/css 按其自身目录解析）", async () => {
+    const html = await inlineLocalHtmlAssets(`<iframe src="charts/chart.html"></iframe>`, {
+      dir: "",
+      projectName: "proj",
+      fetchPreview: fakeFetcher({
+        "charts/chart.html": {
+          type: "text",
+          content: `<img src="pic.svg"><link rel="stylesheet" href="s.css">`,
+        },
+        "charts/pic.svg": { type: "image", dataUrl: SVG },
+        "charts/s.css": { type: "text", content: "b{}" },
+      }),
+    });
+    expect(html).toContain('srcdoc="');
+    expect(html).not.toContain('src="charts/chart.html"');
+    // 嵌套文档在内联 img 后才整体进 srcdoc：dataUrl 的引号已随转义层变 &quot;。
+    expect(html).toContain("data:image/svg+xml;base64,");
+    expect(html).toContain("<style>b{}</style>");
+  });
+
+  test("iframe 指向本地图片（svg）→ src 换 dataUrl，非本地引用保持原样", async () => {
+    const html = await inlineLocalHtmlAssets(
+      `<iframe src="diagram.svg"></iframe><iframe src="https://ext.example/x.html"></iframe>`,
+      {
+        dir: "docs/",
+        projectName: "proj",
+        fetchPreview: fakeFetcher({
+          "docs/diagram.svg": { type: "image", dataUrl: SVG },
+        }),
+      },
+    );
+    expect(html).toContain(`src="data:image/svg+xml;base64,`);
+    expect(html).toContain('src="https://ext.example/x.html"');
+  });
+
+  test("srcdoc 转义：嵌套文档含引号与 & 不破属性边界", async () => {
+    const html = await inlineLocalHtmlAssets(`<iframe src="chart.html"></iframe>`, {
+      dir: "",
+      projectName: "proj",
+      fetchPreview: fakeFetcher({
+        "chart.html": { type: "text", content: `<p data-x="a&b">say "hi"</p>` },
+      }),
+    });
+    expect(html).toContain(`srcdoc="<p data-x=&quot;a&amp;b&quot;>say &quot;hi&quot;</p>"`);
+  });
+
+  test(`深度上限（${INLINE_NESTED_HTML_MAX_DEPTH} 层）：超限嵌套文档不再递归内联，原样进 srcdoc`, async () => {
+    // depth0 → c1(depth1) → c2(depth2) → c3(depth3，超限不递归)。
+    const map = {
+      "c1.html": {
+        type: "text",
+        content: `<iframe src="c2.html"></iframe>`,
+      },
+      "c2.html": { type: "text", content: `<iframe src="c3.html"></iframe>` },
+      "c3.html": { type: "text", content: `<img src="deep.svg">` },
+      // deep.svg 有可用响应：若超限后仍递归，它会被内联成 dataUrl——断言可区分
+      // 「未递归」与「fetch 失败原样」。
+      "deep.svg": { type: "image", dataUrl: SVG },
+    };
+    const html = await inlineLocalHtmlAssets(`<iframe src="c1.html"></iframe>`, {
+      dir: "",
+      projectName: "proj",
+      fetchPreview: fakeFetcher(map),
+    });
+    // c3 到达深度上限：deep.svg 保持相对引用（未发起内联 fetch）。
+    expect(html).toContain("deep.svg");
+    expect(html).not.toContain("data:image/svg+xml");
+  });
+
+  test("fetch 失败的引用保持原样，不阻塞其余引用内联", async () => {
+    const html = await inlineLocalHtmlAssets(
+      `<iframe src="gone.html"></iframe><img src="ok.svg">`,
+      {
+        dir: "",
+        projectName: "proj",
+        fetchPreview: fakeFetcher({
+          "ok.svg": { type: "image", dataUrl: SVG },
+        }),
+      },
+    );
+    expect(html).toContain('src="gone.html"');
+    expect(html).toContain(`src="data:image/svg+xml;base64,`);
   });
 });
 

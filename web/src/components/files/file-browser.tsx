@@ -659,6 +659,10 @@ export const STYLESHEET_LINK_RE =
   /<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)["'][^>]*>/gi;
 // \s 而非 \b：\b 会把 data-src 的 src 段当词边界命中。
 export const IMG_TAG_RE = /<img\b[^>]*?\ssrc=["']([^"']+)["'][^>]*>/gi;
+// iframe 同病：srcDoc 文档无 base URL，相对 src 解析不出 → 嵌套本地 html/svg 空白
+//（2026-09-30 真机反馈）。iframe 指向本地 html → 递归内联后整体转 srcdoc；
+// 指向本地 svg 等图片 → src 换 dataUrl。
+export const IFRAME_TAG_RE = /<iframe\b[^>]*?\ssrc=["']([^"']+)["'][^>]*>/gi;
 
 // 文档所在目录 dir + 相对引用 → 项目内相对路径；非本地引用返回 null。
 export const localAssetProjectPath = (dir: string, ref: string): string | null => {
@@ -676,13 +680,104 @@ export const localAssetProjectPath = (dir: string, ref: string): string | null =
 
 const IMG_SRC_ATTR_RE = /\ssrc=("[^"]*"|'[^']*')/;
 
-// img 标签内 src 属性值替换为 dataUrl（保留其余属性，引号统一双引号）。
+// 标签内 src 属性值整体替换（img/iframe 通用，引号统一双引号）。
 // IMG_SRC_ATTR_RE 的 \s 参与匹配（防 data-src 误命中），替换串须补回该空格。
-export const rewriteImgSrc = (tag: string, dataUrl: string): string =>
-  tag.replace(IMG_SRC_ATTR_RE, () => ` src="${dataUrl}"`);
+const rewriteSrcAttr = (tag: string, value: string): string =>
+  tag.replace(IMG_SRC_ATTR_RE, () => ` src="${value}"`);
+
+export const rewriteImgSrc = (tag: string, dataUrl: string): string => rewriteSrcAttr(tag, dataUrl);
+
+// srcdoc 属性值转义：& 与 " 要放进双引号属性内。
+const escapeSrcdoc = (doc: string): string => doc.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+
+// iframe src 属性替换为 srcdoc：嵌套 html 文档整体内联进属性值，sandbox 语义不变
+//（嵌套文档同样不执行脚本、不发请求）。
+export const rewriteIframeSrcdoc = (tag: string, doc: string): string =>
+  tag.replace(IMG_SRC_ATTR_RE, () => ` srcdoc="${escapeSrcdoc(doc)}"`);
 
 const previewUrl = (projectName: string, path: string) =>
   `/api/projects/${encodeURIComponent(projectName)}/files/preview?path=${encodeURIComponent(path)}`;
+
+export const INLINE_NESTED_HTML_MAX_DEPTH = 2;
+
+export type InlinePreviewFetcher = (
+  projectName: string,
+  path: string,
+) => Promise<ProjectFilePreviewResponse>;
+
+// 深度优先内联文档内的本地资源引用（css → <style>、img → dataUrl、iframe →
+// srcdoc/dataUrl），返回内联后的 html。嵌套 iframe 指向本地 html 时递归内联其
+// 资源——相对引用基于嵌套文档自身所在目录（不是外层文档目录）——到
+// INLINE_NESTED_HTML_MAX_DEPTH 层为止，超限的嵌套文档原样进 srcdoc。
+// fetchPreview 抛错（404 等）的引用保持原样，不阻塞其余引用。
+export async function inlineLocalHtmlAssets(
+  html: string,
+  opts: {
+    dir: string;
+    projectName: string;
+    fetchPreview: InlinePreviewFetcher;
+    depth?: number;
+  },
+): Promise<string> {
+  const { dir, projectName, fetchPreview, depth = 0 } = opts;
+
+  const stylesheetJobs = [...html.matchAll(STYLESHEET_LINK_RE)].map(async ([fullTag, href]) => {
+    const cssPath = localAssetProjectPath(dir, href);
+    if (cssPath === null) return;
+    try {
+      const data = await fetchPreview(projectName, cssPath);
+      if (data.type === "text" && data.content) {
+        html = html.replace(fullTag, `<style>${data.content}</style>`);
+      }
+    } catch {
+      // leave the link tag as-is if fetch fails
+    }
+  });
+
+  const imgJobs = [...html.matchAll(IMG_TAG_RE)].map(async ([fullTag, src]) => {
+    const imgPath = localAssetProjectPath(dir, src);
+    if (imgPath === null) return;
+    try {
+      const data = await fetchPreview(projectName, imgPath);
+      if (data.type === "image" && data.dataUrl) {
+        html = html.replace(fullTag, rewriteImgSrc(fullTag, data.dataUrl));
+      }
+    } catch {
+      // leave the img tag as-is if fetch fails
+    }
+  });
+
+  const iframeJobs = [...html.matchAll(IFRAME_TAG_RE)].map(async ([fullTag, src]) => {
+    const nestedPath = localAssetProjectPath(dir, src);
+    if (nestedPath === null) return;
+    try {
+      const data = await fetchPreview(projectName, nestedPath);
+      if (data.type === "text" && data.content) {
+        // 嵌套文档内的相对引用基于嵌套文档自身目录。
+        const nestedDir = nestedPath.includes("/")
+          ? nestedPath.slice(0, nestedPath.lastIndexOf("/") + 1)
+          : "";
+        const nested =
+          depth < INLINE_NESTED_HTML_MAX_DEPTH
+            ? await inlineLocalHtmlAssets(data.content, {
+                dir: nestedDir,
+                projectName,
+                fetchPreview,
+                depth: depth + 1,
+              })
+            : data.content;
+        html = html.replace(fullTag, rewriteIframeSrcdoc(fullTag, nested));
+      } else if (data.type === "image" && data.dataUrl) {
+        html = html.replace(fullTag, rewriteSrcAttr(fullTag, data.dataUrl));
+      }
+    } catch {
+      // leave the iframe tag as-is if fetch fails
+    }
+  });
+
+  await Promise.all([...stylesheetJobs, ...imgJobs, ...iframeJobs]);
+  return html;
+}
 
 export function CodeEditorFallback() {
   const { t } = useT();
@@ -715,47 +810,24 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
     const dir = preview.path.includes("/")
       ? preview.path.slice(0, preview.path.lastIndexOf("/") + 1)
       : "";
-
-    const inlineLocalAssets = async () => {
-      let html = preview.content;
-
-      const stylesheetJobs = [...preview.content.matchAll(STYLESHEET_LINK_RE)].map(
-        async ([fullTag, href]) => {
-          const cssPath = localAssetProjectPath(dir, href);
-          if (cssPath === null) return;
-          try {
-            const res = await fetch(previewUrl(preview.projectName, cssPath));
-            if (!res.ok) return;
-            const data = (await res.json()) as { type: string; content?: string };
-            if (data.type === "text" && data.content) {
-              html = html.replace(fullTag, `<style>${data.content}</style>`);
-            }
-          } catch {
-            // leave the link tag as-is if fetch fails
-          }
-        },
-      );
-
-      const imgJobs = [...preview.content.matchAll(IMG_TAG_RE)].map(async ([fullTag, src]) => {
-        const imgPath = localAssetProjectPath(dir, src);
-        if (imgPath === null) return;
-        try {
-          const res = await fetch(previewUrl(preview.projectName, imgPath));
-          if (!res.ok) return;
-          const data = (await res.json()) as { type: string; dataUrl?: string };
-          if (data.type === "image" && data.dataUrl) {
-            html = html.replace(fullTag, rewriteImgSrc(fullTag, data.dataUrl));
-          }
-        } catch {
-          // leave the img tag as-is if fetch fails
-        }
-      });
-
-      await Promise.all([...stylesheetJobs, ...imgJobs]);
-      if (!cancelled) setInlinedHtml(html);
+    const fetchPreview: InlinePreviewFetcher = async (projectName, path) => {
+      const res = await fetch(previewUrl(projectName, path));
+      if (!res.ok) throw new Error(`preview ${path}: ${res.status}`);
+      return (await res.json()) as ProjectFilePreviewResponse;
     };
 
-    void inlineLocalAssets();
+    void inlineLocalHtmlAssets(preview.content, {
+      dir,
+      projectName: preview.projectName,
+      fetchPreview,
+    })
+      .then((html) => {
+        if (!cancelled) setInlinedHtml(html);
+      })
+      .catch(() => {
+        // 整体兜底：内联管道抛错退回原文渲染（相对引用保持原样）。
+        if (!cancelled) setInlinedHtml(preview.content);
+      });
     return () => {
       cancelled = true;
     };
