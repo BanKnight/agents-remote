@@ -1084,6 +1084,8 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **探针陷阱（本次踩到，已入注释）**：`.meta .diff` 是「编辑 + 查看 diff ›」两按钮的容器，`locator(..., { hasText: "编辑" }).click()` 落容器中心会误触「查看 diff」→ panelDiff 覆盖层打开、预览让位、`.cm-editor` 不在场（表现为后续断言 30s 超时）。按钮交互一律 `getByRole("button", { name })` 精确到按钮本体。
 
+**自审补遗（commit `d807ccb`）**：design/code 双 reviewer 均因 API 故障早退，人工完成审查。发现真缺陷一处——`useFileEditor` 的 `renderMode` 是 useState 不随 `path` 重置，「换文件回默认渲染态」此前由桌面 `FilesPanel` 调用方 effect 补丁承担（file-browser.tsx :1131），`MobileL3FilePreview` 漏配：`renderPanelL3Body` 的 file 分支是**单实例复用**（无 key，同位置同类型），a.md 点「源码」→ 切 b.md 直接以源码态打开。旧实现 L3 恒 source 时残留无害；`60dc9e3` 改默认 render + toggle 后成为用户可见缺陷，恰是本批诉求的反面。修法**收敛 hook 单源**（多端同构铁律）：`defaultRenderMode` 下沉 use-file-editor.ts，hook 既有 path effect（清 editContent/savedFlash）加 `setRenderMode(default)`（basename 从 path 立即可得，不等 preview 返回防首帧沿用旧判定）；FilesPanel 调用方补丁退役（树模式 `enablePreview=false` 时 selectedFilePath 恒 undefined，新旧等价）；`initialRenderMode` 死参数退役；新增 `use-file-editor.test.tsx` 三个契约测试守回归。e2e file-browser 2/2、m4 70/70、file-save-scroll、files-html-img-inline 全绿。design 侧自查结论：meta toggle 与桌面 `FilePreviewPanel` header **逐字一致**（seg 容器 + 两枚按钮同 token 同字号同 on 态），`h-7` 28px 满足 WCAG 2.5.8，token 全语义无散写，双主题自动成立。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
