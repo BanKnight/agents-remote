@@ -318,6 +318,8 @@ body {
   --text-caption--line-height: 1.4;
   --text-micro: 0.65625rem; /* 10.5px Caption 2 */
   --text-micro--line-height: 1.4;
+  --text-chip: 0.71875rem; /* 11.5px 05c chips/展开钮页私档 */
+  --text-chip--line-height: 1.4;
 
   /* shadcn theme color mappings — values driven by :root/[data-theme="light"] above. */
   --color-sidebar-ring: var(--sidebar-ring);

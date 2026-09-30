@@ -172,20 +172,20 @@ export function MobileSessionHistorySheet({
   // range 固定 "all"（2026-09-30 真机反馈：iPhone 历史数量远少于桌面——旧值 "week" 只拉
   // 近 7 天窗口，服务端按 mtime 滤除更早条目；桌面第五批②已改 "all"，同管道必须同窗口）。
   const { entries, isLoading, resume } = useHistorySessions(projectName, "all", open);
-  // 折叠窗口与桌面同款行为（useHistoryRecentWindow 行为单份；切过滤重置）。
-  const { visibleCount, resetWindow, expandWindow } = useHistoryRecentWindow();
+  // 折叠窗口与桌面同款行为（useHistoryRecentWindow 行为单份）：resetKey 绑「打开时的过滤」
+  // 与 sheet 开合（gate:closed 避开 filter 值域），关闭即重置、重开全新窗口（sheet 常驻
+  // 挂载不卸载，防残留大窗口/过滤跨开合——code review P2-2）；切过滤自动重置。
+  const { visibleCount, expandWindow } = useHistoryRecentWindow(open ? filter : "gate:closed");
   const renameDialog = usePromptDialog();
-  const rows = entries
-    .filter((entry) =>
-      filter === "all"
-        ? true
-        : filter === "running"
-          ? entry.hasActiveSession
-          : !entry.hasActiveSession,
-    )
-    .sort((a, b) =>
-      (b.lastActivityAt ?? b.startedAt ?? "").localeCompare(a.lastActivityAt ?? a.startedAt ?? ""),
-    );
+  // 排序已在管道出口（useHistorySessions）归一 lastActivityAt 倒序（P2-9 口径单份），
+  // 这里只做状态过滤。
+  const rows = entries.filter((entry) =>
+    filter === "all"
+      ? true
+      : filter === "running"
+        ? entry.hasActiveSession
+        : !entry.hasActiveSession,
+  );
   const visibleRows = rows.slice(0, visibleCount);
   const hiddenCount = rows.length - visibleRows.length;
   const openClosedEntry = (entry: (typeof entries)[number]) => {
@@ -216,10 +216,7 @@ export function MobileSessionHistorySheet({
             <button
               className={`fc cursor-pointer${filter === f ? " on" : " seg"}`}
               key={f}
-              onClick={() => {
-                setFilter(f);
-                resetWindow();
-              }}
+              onClick={() => setFilter(f)}
               type="button"
             >
               {f === "all"
@@ -283,16 +280,12 @@ export function MobileSessionHistorySheet({
                   </button>
                 );
               })}
-              {/* 「展开更早」（与桌面同款行为，useHistoryRecentWindow；形态 = 03n .fc 同数值
-                  胶囊 12px r15 p 5px 14px + ghost 描边，utility 拼写不挂 .fc——该类语义
-                  专属 filters chips，探针按 .fc 计数 filters 三态）。 */}
+              {/* 「展开更早」（与桌面同款行为，useHistoryRecentWindow；形态 = 03n .fc.ghost
+                  单源胶囊 12px r15 p 5px 14px——design review P2-7 回归组件单源，探针改按
+                  .filters .fc 计数 filters 三态）。 */}
               {hiddenCount > 0 ? (
                 <div className="flex justify-center pb-2 pt-1">
-                  <button
-                    className="cursor-pointer rounded-[15px] border border-sep-strong px-3.5 py-[5px] text-[12px] leading-[var(--line-height-ui)] text-ink-2"
-                    onClick={expandWindow}
-                    type="button"
-                  >
+                  <button className="fc ghost cursor-pointer" onClick={expandWindow} type="button">
                     {t("workbench.historyShowEarlier")}
                   </button>
                 </div>

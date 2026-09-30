@@ -157,9 +157,11 @@ export function WorkbenchSide() {
     // flex-1 wrapper：容器 flex-col 化后 HistoryList（根 flex-1）才吃到剩余高、列表自身滚
     //（§6.12k code review：历史态高度链断链——容器非 flex 时恒溢出组头高）；尾注 shrink-0
     // 常驻列表下方（05c :50「再次点时钟返回活跃实例列表」，margin 8px 6px 形态）。
+    // key = 项目名：切项目重挂（filter/折叠窗口随组件 state 重建），防 keepPreviousData
+    // 把旧项目条目投影到新项目名下（code review P1：stale 数据 + 旧 sessionId 误操作）。
     body = (
       <div className="flex min-h-0 flex-1 flex-col">
-        <HistoryList focusId={focusId} projectName={sideProjectName} showLabel={false} />
+        <HistoryList focusId={focusId} key={sideProjectName} projectName={sideProjectName} />
         <div className="microlabel mx-1.5 my-2 shrink-0">{t("workbench.historyBackHint")}</div>
       </div>
     );
@@ -240,7 +242,10 @@ export function WorkbenchSide() {
         <button
           aria-label={t("workbench.historyToggleAria")}
           aria-pressed={historyOpen}
-          className="dicon ml-auto cursor-pointer text-primary"
+          /* 触屏热区扩至 28px（frontend-notes §7：iPad 横屏走桌面栏但 pointer coarse，
+             20px 低于 WCAG 2.5.8 下限；design review P1-2）。伪元素扩区不撑行高，
+             「第一行同线」拍板不回退；桌面 hover-capable 环境零变化。 */
+          className="dicon ml-auto cursor-pointer text-primary touch:relative touch:after:absolute touch:after:-inset-1 touch:after:content-['']"
           onClick={() => setHistoryOpen((prev) => !prev)}
           type="button"
         >
@@ -260,7 +265,7 @@ export function WorkbenchSide() {
                dsep→内容多 8px；桌面指针语境 20px 热区够用）。 */
             <button
               aria-label={t("workbench.createSessionAria")}
-              className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
+              className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center touch:relative touch:after:absolute touch:after:-inset-1 touch:after:content-['']"
               disabled={create.isCreating}
               type="button"
             >
@@ -291,7 +296,7 @@ export function WorkbenchSide() {
             ml-auto 补 .ghead .tt + .plus 相邻选择器断链（中间隔了热区 button）。 */}
         <button
           aria-label={t("home.createProjectAria")}
-          className="ml-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center"
+          className="ml-auto flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center touch:relative touch:after:-inset-1 touch:after:absolute touch:after:content-['']"
           onClick={openCreate}
           type="button"
         >

@@ -237,8 +237,11 @@ ok(
   (await page.locator(".msheet .shd .aside").textContent())?.includes(projectName) === true,
   "shd aside = 项目名",
 );
-ok((await page.locator(".msheet .fc").count()) === 3, "filters 三态 = 3 个 fc");
-const fcOn = await page.locator(".msheet .fc.on").textContent();
+ok(
+  (await page.locator(".msheet .filters .fc").count()) === 3,
+  "filters 三态 = 3 个 fc（.filters 限定：展开按钮已挂 fc ghost 回归单源，不混入计数）",
+);
+const fcOn = await page.locator(".msheet .filters .fc.on").textContent();
 ok(fcOn?.includes("全部") === true, `默认 filter on = 全部（${fcOn?.trim()}）`);
 ok(
   (await page.locator(".msheet .hrow").count()) === 5,

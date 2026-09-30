@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { AgentHistoryEntry, AgentHistoryRange } from "@agents-remote/shared";
@@ -6,13 +6,7 @@ import { createAgentSession, listAgentHistory } from "../../api/client";
 import { useT } from "../../i18n";
 import type { TranslateFn } from "../../i18n/types";
 import { formatBytes } from "@/lib/format";
-import {
-  ListGroup,
-  ListRow,
-  ListRowSkeleton,
-  sessionMarker,
-  ShellSectionLabel,
-} from "../shell/shell-primitives";
+import { ListGroup, ListRow, ListRowSkeleton, sessionMarker } from "../shell/shell-primitives";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
 /**
@@ -35,14 +29,18 @@ const HISTORY_EXPAND_STEP = 5;
 /**
  * 「最近 N + 依次展开」客户端折叠窗口（行为单份，多端同构）：桌面 05c 历史态与移动 03n
  * sheet 共用同一窗口常量与展开/重置行为，两端只容器不同（2026-09-30 真机反馈：iPhone
- * 也要依次加载更多）。调用方在切过滤的 onClick 里同时调 resetWindow，防残留大窗口跨过滤。
+ * 也要依次加载更多）。`resetKey` 变化即重置窗口（render 期 adjust，React 官方模式，无
+ * effect 时序）——切过滤自动重置、无需调用方手动配对；移动 sheet 传 `open ? filter :
+ * "gate:closed"`，关闭即重置、重开全新窗口（sheet 常驻挂载不卸载，防残留大窗口跨开合）。
  */
-export function useHistoryRecentWindow() {
-  const [visibleCount, setVisibleCount] = useState(HISTORY_RECENT_COUNT);
+export function useHistoryRecentWindow(resetKey?: string) {
+  const [state, setState] = useState({ key: resetKey, count: HISTORY_RECENT_COUNT });
+  if (resetKey !== undefined && resetKey !== state.key) {
+    setState({ key: resetKey, count: HISTORY_RECENT_COUNT });
+  }
   return {
-    visibleCount,
-    resetWindow: () => setVisibleCount(HISTORY_RECENT_COUNT),
-    expandWindow: () => setVisibleCount((n) => n + HISTORY_EXPAND_STEP),
+    visibleCount: state.count,
+    expandWindow: () => setState((s) => ({ ...s, count: s.count + HISTORY_EXPAND_STEP })),
   };
 }
 
@@ -121,7 +119,9 @@ export function useResumeAgentSession(projectName: string) {
  */
 export function useHistorySessions(
   projectName: string,
-  range: AgentHistoryRange = "week",
+  // 默认 "all"（2026-09-30）：服务端 range 是 mtime 窗口滤除，"week" 只回近 7 天——
+  // iPhone 历史数量远少于桌面的历史根因（dd49a01 修复的默认值陷阱，勿回退）。
+  range: AgentHistoryRange = "all",
   /** false 时不发查询（常驻挂载的浮层消费方传「打开才拉」，如 03n 移动 sheet）。 */
   enabled = true,
 ) {
@@ -135,8 +135,21 @@ export function useHistorySessions(
     placeholderData: keepPreviousData,
   });
   const { isResuming, resume } = useResumeAgentSession(projectName);
+  // 管道出口统一 lastActivityAt 倒序（design review P2-9：服务端顺序不构成契约，排序口径
+  // 两端单份——桌面 slice 即「最近 N」与移动 rows 派生消费同一份有序数据）。
+  const entries = useMemo(
+    () =>
+      (history.data?.entries ?? [])
+        .slice()
+        .sort((a, b) =>
+          (b.lastActivityAt ?? b.startedAt ?? "").localeCompare(
+            a.lastActivityAt ?? a.startedAt ?? "",
+          ),
+        ),
+    [history.data],
+  );
   return {
-    entries: history.data?.entries ?? [],
+    entries,
     // isLoading 含 placeholder 期（isPending || isPlaceholderData）：keepPreviousData 下上一份
     // 缓存是 [] 时切档，v5 会把 [] 当 placeholder → isPending/isLoading 均 false，消费方的
     // 「entries 空 && !isLoading → 空态」分支会显空白/伪空态——placeholder 期必须仍按加载中走
@@ -156,11 +169,6 @@ export function useHistorySessions(
 type HistoryListProps = {
   projectName: string;
   focusId?: string;
-  /**
-   * 是否渲染「历史会话」段落标题。左栏项目段需要它区分活跃实例段与历史段（默认 true）；
-   * 中栏 history tab 顶部 tab bar 已标识「历史」，省略标题避免冗余。
-   */
-  showLabel?: boolean;
 };
 
 /**
@@ -170,16 +178,18 @@ type HistoryListProps = {
  *（useHistorySessions）+ 单一渲染（ListGroup/ListRow plain 连续行 + sessionMarker sm，
  * 与总览 grid 卡片同款 marker）。entries 为空时返回 null（左栏段落自然空态，不伪造占位）。
  */
-export function HistoryList({ focusId, projectName, showLabel = true }: HistoryListProps) {
+export function HistoryList({ focusId, projectName }: HistoryListProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const { holder: promptHolder, prompt } = usePromptDialog();
   // range 固定 "all"：折叠在客户端做，服务端 range 过滤失去意义（hook 的 range 参数保留——
-  // mobile-sheets 03n sheet 同窗 "all"，多端同构同一数据口径）。
+  // mobile-sheets 03n sheet 同窗 "all"，多端同构同一数据口径）。服务端顺序不构成契约，
+  // 管道出口统一按 lastActivityAt 倒序归一（design review P2-9：两端排序口径单份）。
   const { entries, isLoading, isResuming, resume } = useHistorySessions(projectName, "all");
-  // 状态过滤 + 折叠窗口：均视图态不持久化（§6.10 口径）；切过滤重置窗口，防残留大窗口跨过滤。
+  // 状态过滤 + 折叠窗口：均视图态不持久化（§6.10 口径）；折叠窗口的 resetKey = filter，
+  // 切过滤自动重置、防残留大窗口跨过滤（hook 内 render 期 adjust，无需 onClick 配对）。
   const [filter, setFilter] = useState<"all" | "ended">("all");
-  const { visibleCount, resetWindow, expandWindow } = useHistoryRecentWindow();
+  const { visibleCount, expandWindow } = useHistoryRecentWindow(filter);
 
   const focus = (sessionId: string) => {
     void navigate({
@@ -216,70 +226,62 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
   const visible = filtered.slice(0, visibleCount);
   const hiddenCount = filtered.length - visible.length;
 
+  // 05c 过滤 chips 行（原型 :42 下 8，左右 14 = .side 10 + px-1，与 seg4 基类 14 同口径；
+  // chip = 11.5px r12 p 3px 12px，on = 600 ink-1 bg-elevated3，ghost = ink-2 border
+  // sep-strong。on 态透明 border 防切换 1px 跳动。骨架期也渲染（与列表同根 flex 容器，
+  // 数据到达时无 CLS 跳动——design review）。窗口 resetKey = filter 已在 hook 调用处
+  // 绑定，onClick 只切过滤。
+  const chipsRow = (
+    <div className="flex shrink-0 gap-1.5 px-1 pb-2 pt-2" role="group">
+      <button
+        aria-pressed={filter === "all"}
+        className={`cursor-pointer rounded-xl border px-3 py-[3px] text-chip leading-[var(--line-height-ui)] ${
+          filter === "all"
+            ? "border-transparent bg-elevated3 font-semibold text-ink-1"
+            : "border-sep-strong text-ink-2"
+        }`}
+        onClick={() => setFilter("all")}
+        type="button"
+      >
+        {t("workbench.historyFilterAll")}
+      </button>
+      <button
+        aria-pressed={filter === "ended"}
+        className={`cursor-pointer rounded-xl border px-3 py-[3px] text-chip leading-[var(--line-height-ui)] ${
+          filter === "ended"
+            ? "border-transparent bg-elevated3 font-semibold text-ink-1"
+            : "border-sep-strong text-ink-2"
+        }`}
+        onClick={() => setFilter("ended")}
+        type="button"
+      >
+        {t("workbench.historyFilterClosed")}
+      </button>
+    </div>
+  );
+
   // 加载中（首次拉取，entries 仍空）→ 骨架行占位，避免空白；真空态（!isLoading 且空）→ null
   // （左栏段落自然空态，不伪造占位）。isLoading 区分二者，消除"加载中 = 空态"的误导。
+  // 骨架分支与正文同根 flex 容器 + chips 在场（chipsRow 提前于早退分支，防 CLS）。
   if (entries.length === 0) {
     if (!isLoading) return null;
-    return showLabel ? (
-      <>
-        <ShellSectionLabel className="px-3 pb-1 pt-2">
-          {t("workbench.historySection")}
-        </ShellSectionLabel>
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {chipsRow}
         <div className="px-3">
           <HistoryListSkeleton />
         </div>
-      </>
-    ) : (
-      <HistoryListSkeleton />
+      </div>
     );
   }
   return (
     /* 根 flex-1（原 h-full）：作为左栏历史态 wrapper 的 flex item 占满剩余高，且允许
        wrapper 内的兄弟节点（尾注）按内容占位——h-full 会把兄弟推出可视区。 */
     <div className="flex min-h-0 flex-1 flex-col">
-      {showLabel ? (
-        <ShellSectionLabel className="shrink-0 px-3 pb-1 pt-2">
-          {t("workbench.historySection")}
-        </ShellSectionLabel>
-      ) : null}
-      {/* 05c 过滤 chips 行（原型 :42：上 8 下 8，左右 14 = .side 10 + px-1，与 seg4 基类
-          14 同口径；chip = 11.5px r12 p 3px 12px，on = 600 ink-1 bg-elevated3，ghost =
-          ink-2 border sep-strong。on 态透明 border 防切换 1px 跳动。 */}
-      <div className="flex shrink-0 gap-1.5 px-1 pb-2 pt-2" role="group">
-        <button
-          aria-pressed={filter === "all"}
-          className={`cursor-pointer rounded-xl border px-3 py-[3px] text-[11.5px] leading-[var(--line-height-ui)] ${
-            filter === "all"
-              ? "border-transparent bg-elevated3 font-semibold text-ink-1"
-              : "border-sep-strong text-ink-2"
-          }`}
-          onClick={() => {
-            setFilter("all");
-            resetWindow();
-          }}
-          type="button"
-        >
-          {t("workbench.historyFilterAll")}
-        </button>
-        <button
-          aria-pressed={filter === "ended"}
-          className={`cursor-pointer rounded-xl border px-3 py-[3px] text-[11.5px] leading-[var(--line-height-ui)] ${
-            filter === "ended"
-              ? "border-transparent bg-elevated3 font-semibold text-ink-1"
-              : "border-sep-strong text-ink-2"
-          }`}
-          onClick={() => {
-            setFilter("ended");
-            resetWindow();
-          }}
-          type="button"
-        >
-          {t("workbench.historyFilterClosed")}
-        </button>
-      </div>
+      {chipsRow}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <div className="px-3 py-2 text-caption text-ink-3">
+          <div className="px-3 py-2 text-caption text-ink-2">
             {t("workbench.historyEndedEmpty")}
           </div>
         ) : (
@@ -290,17 +292,19 @@ export function HistoryList({ focusId, projectName, showLabel = true }: HistoryL
                   active={entry.hasActiveSession && entry.activeSessionId === focusId}
                   entry={entry}
                   isResuming={isResuming}
-                  key={entryNativeId(entry)}
+                  // id 缺失（损坏数据）退 title/firstMessage 兜底，防双空串 key 冲突
+                  //（code review P2-6）。
+                  key={entryNativeId(entry) || entry.title || entry.firstMessage || ""}
                   onClick={() => handleClick(entry)}
                 />
               ))}
             </ListGroup>
             {/* 「展开更早」（用户拍板「更久的再依次展开」，原型无此控件——形态与 chips
-                ghost 胶囊同族）。entries 服务端已按 lastActivityAt 倒序，slice 即「最近 N」。 */}
+                ghost 胶囊同族）。排序已在管道出口归一倒序，slice 即「最近 N」。 */}
             {hiddenCount > 0 ? (
               <div className="flex justify-center py-2">
                 <button
-                  className="cursor-pointer rounded-xl border border-sep-strong px-3 py-[3px] text-[11.5px] leading-[var(--line-height-ui)] text-ink-2"
+                  className="cursor-pointer rounded-xl border border-sep-strong px-3 py-[3px] text-chip leading-[var(--line-height-ui)] text-ink-2"
                   onClick={expandWindow}
                   type="button"
                 >
