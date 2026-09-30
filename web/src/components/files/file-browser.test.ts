@@ -6,7 +6,9 @@ import {
   inlineLocalHtmlAssets,
   joinRootBrowseDirectoryPath,
   localAssetProjectPath,
+  parseWindowIcons,
   resolveRootBrowseTarget,
+  rewriteIconPlaceholder,
   rewriteImgSrc,
   rewriteIframeSrcdoc,
 } from "./file-browser";
@@ -208,6 +210,100 @@ describe("inlineLocalHtmlAssets", () => {
     );
     expect(html).toContain('src="gone.html"');
     expect(html).toContain(`src="data:image/svg+xml;base64,`);
+  });
+
+  test("script 引用 window.ICONS 注册表 → data-icon 占位静态水合成 svg", async () => {
+    const iconsJs = `window.ICONS = ${JSON.stringify({
+      terminal: '<path d="m7 11 2-2-2-2"/>',
+    })};(function(){})();`;
+    const html = await inlineLocalHtmlAssets(
+      `<i data-icon="terminal"></i><script src="icons.js"></script>`,
+      {
+        dir: "",
+        projectName: "proj",
+        fetchPreview: fakeFetcher({
+          "icons.js": { type: "text", content: iconsJs },
+        }),
+      },
+    );
+    expect(html).toContain('viewBox="0 0 24 24" fill="none" stroke="currentColor"');
+    expect(html).toContain('<path d="m7 11 2-2-2-2"/>');
+    expect(html).not.toContain("data-icon=");
+  });
+
+  test("占位 class 继承到 svg；未知图标名与 svg[data-symbol] 保持原样", async () => {
+    const iconsJs = `window.ICONS = ${JSON.stringify({ terminal: "<path/>" })};`;
+    const html = await inlineLocalHtmlAssets(
+      `<i class="ic big" data-icon="terminal"></i>` +
+        `<i data-icon="unknown.icon"></i>` +
+        `<svg viewBox="-10 -10 20 20" data-symbol="folder"><path/></svg>` +
+        `<script src="icons.js"></script>`,
+      {
+        dir: "",
+        projectName: "proj",
+        fetchPreview: fakeFetcher({
+          "icons.js": { type: "text", content: iconsJs },
+        }),
+      },
+    );
+    expect(html).toContain(
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="stroke-width:2" class="ic big" aria-hidden="true"><path/></svg>',
+    );
+    expect(html).toContain('data-icon="unknown.icon"'); // 未知名不猜，保持原样
+    expect(html).toContain('data-symbol="folder"'); // 手绘兜底占位不动
+  });
+
+  test("非 window.ICONS 格式的脚本跳过（占位保持原样）", async () => {
+    const html = await inlineLocalHtmlAssets(
+      `<i data-icon="x"></i><script src="app.js"></script>`,
+      {
+        dir: "",
+        projectName: "proj",
+        fetchPreview: fakeFetcher({
+          "app.js": { type: "text", content: `console.log("not icons")` },
+        }),
+      },
+    );
+    expect(html).toContain('data-icon="x"');
+  });
+});
+
+describe("parseWindowIcons / rewriteIconPlaceholder", () => {
+  test("parseWindowIcons：头注释/IIFE 等前后缀不挡提取；非法 JSON 与非该格式返 null", () => {
+    const icons = parseWindowIcons(
+      `window.ICONS = {"a":"<path/>"};\n(function(){ hydrate(); })();`,
+    );
+    expect(icons).toEqual({ a: "<path/>" });
+
+    // 真实生成物形态：/*! 头注释 */ 在赋值语句前（实测缺失该支持导致水合静默失效）。
+    expect(parseWindowIcons(`/*! generated */\nwindow.ICONS = {"b":"<path/>"};`)).toEqual({
+      b: "<path/>",
+    });
+    // 纯读取型引用（无赋值）不命中。
+    expect(parseWindowIcons(`const x = window.ICONS["a"];`)).toBeNull();
+
+    expect(parseWindowIcons(`const x = 1;`)).toBeNull();
+    expect(parseWindowIcons(`window.ICONS = {broken`)).toBeNull();
+    expect(parseWindowIcons(`window.ICONS = "not-object";`)).toBeNull();
+  });
+
+  test("rewriteIconPlaceholder：class 继承、转义体原样内插、未知名 null", () => {
+    const icons = { "shield.checkmark": `<path d="M20 13"/>` };
+    expect(
+      rewriteIconPlaceholder(`<i data-icon="shield.checkmark"></i>`, "shield.checkmark", icons),
+    ).toBe(
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="stroke-width:2" aria-hidden="true"><path d="M20 13"/></svg>`,
+    );
+    expect(
+      rewriteIconPlaceholder(
+        `<span class="pin-ic" data-icon="shield.checkmark"></span>`,
+        "shield.checkmark",
+        icons,
+      ),
+    ).toBe(
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="stroke-width:2" class="pin-ic" aria-hidden="true"><path d="M20 13"/></svg>`,
+    );
+    expect(rewriteIconPlaceholder(`<i data-icon="missing"></i>`, "missing", icons)).toBeNull();
   });
 });
 

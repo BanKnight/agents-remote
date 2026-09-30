@@ -690,6 +690,78 @@ export const rewriteImgSrc = (tag: string, dataUrl: string): string => rewriteSr
 // srcdoc 属性值转义：& 与 " 要放进双引号属性内。
 const escapeSrcdoc = (doc: string): string => doc.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 
+// ── 静态图标水合（2026-09-30 真机反馈：嵌套原型页图标消失）────────────────
+// 项目图标管线的静态页（docs/design 原型等）用 <i data-icon="x"></i> 空占位 +
+// icons.js 运行时替换成 svg；sandbox="" 禁脚本后水合不发生 → 占位处图标空白。
+// 内联阶段做静态等效水合：fetch 文档引用的脚本，识别「window.ICONS = {JSON}」
+// 格式（build-icons.mjs 生成物）后按其规则替换占位；JSON.parse 解析、不 eval，
+// 认不得格式的脚本跳过保持原样。svg[data-symbol] 自带手绘 path 兜底能显示，不动。
+export const ICON_SCRIPT_TAG_RE = /<script\b[^>]*?\ssrc=["']([^"']+)["'][^>]*>\s*<\/script>/gi;
+// icons.js 形如 `/* 头注释 */ window.ICONS = {...};(function(){…})();`——赋值语句
+// 前可能有生成头注释、其后可能还有水合器代码，故定位 `window.ICONS = {` 赋值后用
+// 括号配对提取首个平衡对象（纯读取型引用 `window.ICONS[x]` 无 `= {` 不命中）。
+export const WINDOW_ICONS_ASSIGN_RE = /window\.ICONS\s*=\s*\{/;
+export const DATA_ICON_TAG_RE =
+  /<(?:i|span)\b[^>]*?\sdata-icon=["']([^"']+)["'][^>]*>\s*<\/(?:i|span)>/gi;
+
+// 解析 window.ICONS 注册表；非该格式（或 JSON 非法）返回 null。括号配对（含
+// 字符串/转义感知）找首个平衡对象后 JSON.parse——不 eval，杜绝执行任意代码。
+export const parseWindowIcons = (script: string): Record<string, string> | null => {
+  const assign = script.match(WINDOW_ICONS_ASSIGN_RE);
+  if (!assign || assign.index === undefined) return null;
+  const open = assign.index + assign[0].length - 1; // "{" 的位置
+  let depth = 0;
+  let inString = false;
+  for (let i = open; i < script.length; i++) {
+    const ch = script[i];
+    if (inString) {
+      if (ch === "\\") {
+        i++; // 跳过转义字符
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          const parsed: unknown = JSON.parse(script.slice(open, i + 1));
+          if (typeof parsed !== "object" || parsed === null) return null;
+          return parsed as Record<string, string>;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+};
+
+// i/span[data-icon] 占位 → 静态 svg（复刻 icons.js 的 apply 规则：24 网格 +
+// stroke currentColor + strokeWidth 2，class 从占位继承）。名字查不到返回 null。
+export const rewriteIconPlaceholder = (
+  tag: string,
+  name: string,
+  icons: Record<string, string>,
+): string | null => {
+  const body = icons[name];
+  if (!body) return null;
+  const cls = tag.match(/\sclass=["']([^"']+)["']/)?.[1];
+  const clsAttr = cls ? ` class="${cls}"` : "";
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="stroke-width:2"${clsAttr} aria-hidden="true">${body}</svg>`;
+};
+
+export const hydrateDataIconPlaceholders = (html: string, icons: Record<string, string>): string =>
+  html.replace(
+    DATA_ICON_TAG_RE,
+    (fullTag, name: string) => rewriteIconPlaceholder(fullTag, name, icons) ?? fullTag,
+  );
+
 // iframe src 属性替换为 srcdoc：嵌套 html 文档整体内联进属性值，sandbox 语义不变
 //（嵌套文档同样不执行脚本、不发请求）。
 export const rewriteIframeSrcdoc = (tag: string, doc: string): string =>
@@ -775,7 +847,23 @@ export async function inlineLocalHtmlAssets(
     }
   });
 
-  await Promise.all([...stylesheetJobs, ...imgJobs, ...iframeJobs]);
+  // 静态图标水合：文档引用的 icons.js（window.ICONS 格式）在 sandbox 禁脚本下
+  // 不再水合 data-icon 占位 → 图标空白。fetch 脚本后静态替换占位（见上方注释）。
+  const iconScriptJobs = [...html.matchAll(ICON_SCRIPT_TAG_RE)].map(async ([, src]) => {
+    const jsPath = localAssetProjectPath(dir, src);
+    if (jsPath === null) return;
+    try {
+      const data = await fetchPreview(projectName, jsPath);
+      if (data.type !== "text" || !data.content) return;
+      const icons = parseWindowIcons(data.content);
+      if (!icons) return;
+      html = hydrateDataIconPlaceholders(html, icons);
+    } catch {
+      // leave data-icon placeholders as-is if fetch fails
+    }
+  });
+
+  await Promise.all([...stylesheetJobs, ...imgJobs, ...iframeJobs, ...iconScriptJobs]);
   return html;
 }
 
