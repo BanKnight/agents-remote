@@ -1086,6 +1086,23 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **自审补遗（commit `d807ccb`）**：design/code 双 reviewer 均因 API 故障早退，人工完成审查。发现真缺陷一处——`useFileEditor` 的 `renderMode` 是 useState 不随 `path` 重置，「换文件回默认渲染态」此前由桌面 `FilesPanel` 调用方 effect 补丁承担（file-browser.tsx :1131），`MobileL3FilePreview` 漏配：`renderPanelL3Body` 的 file 分支是**单实例复用**（无 key，同位置同类型），a.md 点「源码」→ 切 b.md 直接以源码态打开。旧实现 L3 恒 source 时残留无害；`60dc9e3` 改默认 render + toggle 后成为用户可见缺陷，恰是本批诉求的反面。修法**收敛 hook 单源**（多端同构铁律）：`defaultRenderMode` 下沉 use-file-editor.ts，hook 既有 path effect（清 editContent/savedFlash）加 `setRenderMode(default)`（basename 从 path 立即可得，不等 preview 返回防首帧沿用旧判定）；FilesPanel 调用方补丁退役（树模式 `enablePreview=false` 时 selectedFilePath 恒 undefined，新旧等价）；`initialRenderMode` 死参数退役；新增 `use-file-editor.test.tsx` 三个契约测试守回归。e2e file-browser 2/2、m4 70/70、file-save-scroll、files-html-img-inline 全绿。design 侧自查结论：meta toggle 与桌面 `FilePreviewPanel` header **逐字一致**（seg 容器 + 两枚按钮同 token 同字号同 on 态），`h-7` 28px 满足 WCAG 2.5.8，token 全语义无散写，双主题自动成立。
 
+### 真机反馈修复·第七批：html 渲染支持 iframe 嵌套本地 html/svg（2026-09-30，commit `b62d9d2`）
+
+**用户反馈**（第六批真机复验）：md 渲染没问题；html 渲染有问题——需要支持 iframe 嵌套另一个本地 html/svg。
+
+**根因**：`PreviewBody` 的 `inlineLocalAssets` 只内联两类相对引用——`<link rel=stylesheet>` → `<style>`、`<img src>` → dataUrl。`<iframe src="chart.html">` / `<iframe src="diagram.svg">` 完全不在处理范围，而 srcDoc 渲染的文档**没有项目目录 base URL**，相对 src 解析不出 → 嵌套 frame 空白。与 2026-09-10 修 img 那次是同一根因（frontend-notes 家族：srcDoc 无 base URL），只是漏了 iframe 这一类标签。
+
+**修法**（递归内联，sandbox 语义不变）：
+
+1. **新增 `IFRAME_TAG_RE`**：`/<iframe\b[^>]*?\ssrc=["']([^"']+)["'][^>]*>/gi`（与 IMG_TAG_RE 同款 `\s` 防 data-src 误命中）。
+2. **内联管道抽成可递归导出函数 `inlineLocalHtmlAssets(html, {dir, projectName, fetchPreview, depth})`**：`fetch` 细节由调用方注入（`PreviewBody` 传真 `fetch` 封装，单测传 fake），使递归可测、无网络依赖。三类 job 并行：stylesheet/img 行为不变，**新增 iframe job**——指向本地 html → 递归内联该文档自身资源后整体转 `srcdoc`（`&`/`"` 转义进属性值，见 `rewriteIframeSrcdoc`）；指向本地 svg 等图片 → src 换 dataUrl（`rewriteSrcAttr` 共用，原 `rewriteImgSrc` 改为它的别名）。
+3. **相对基准修正**：嵌套文档内的相对引用按**嵌套文档自身所在目录**解析（不是外层文档目录），深度优先递归。
+4. **深度上限 `INLINE_NESTED_HTML_MAX_DEPTH = 2`**：防自引用/环状 iframe 无限递归；超限的嵌套文档原样进 srcdoc（不内联、不阻塞）。
+5. **失败容错**：单个引用 fetch 404/抛错保持原样，不阻塞其余引用；整体管道抛错则 `PreviewBody` 退回原文渲染。
+6. **sandbox 语义不变**：外层 iframe 仍 `sandbox=""`；srcdoc 嵌套 frame 继承同一沙箱语义（同样不执行脚本、不发请求），与 v1.4 批7「纯静态预览」口径一致。
+
+**验证**：单测 `file-browser.test.ts` 扩 6 项（嵌套 html 递归内联 + 相对基准按嵌套目录 + svg iframe 换 dataUrl + srcdoc 转义 + 深度上限不递归 + fetch 失败不阻塞），13→19 全绿；探针 `probe-files-html-img-inline` 扩 1b（srcDoc 层 5 项：src→srcdoc/内容内联/嵌套 css 按 nested/ 解析/外链 iframe 不误伤/svg iframe 换 dataUrl）+ 1c（嵌套 frame 内真实渲染 2 项：`#nested-marker` 可见 + 内层 svg 40×20 非零尺寸，修复前空白）——**全 PASS**。回归 `probe-v2-m4-tools-l3` 70/70、e2e file-browser 2/2 全绿；CSS 硬闸 183387 字节 + content-type text/css。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
