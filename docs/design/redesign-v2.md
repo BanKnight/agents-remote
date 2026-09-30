@@ -1120,7 +1120,27 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **file tab 状态澄清**（用户 2026-09-30 拍板）：桌面中栏 file tab **后续规划要恢复发挥作用**，当前暂时保持没有——不是弃案，是暂缓。
 
-## §7 待定项跟踪
+### 真机反馈修复·第九批：全局文件预览返回目标（2026-09-30，commit `9bbf351`）
+
+**用户反馈**：在全局文件中预览文件后，返回的却不是全局文件。
+
+**根因**：`MobileFileFocus`（/files/file/$ 移动端浮窗预览）的 back/✕ 写死 `navigate({ to: "/projects/$key" })` 落项目工作台——附近注释声称「返回回全局文件树（/files）」但实现从未跟上（removeUnusedSrcArea 拆分后遗留）。
+
+**修法**：纳入返回类导航统一范式（workbench-model.ts `useWorkbenchBack`）——pop 优先（有来路 `history.back()` 回来源：/files push 进来→回 /files；项目工作台跨项目打开→回该项目，栈不留死记录），深链直达无来路兜底 push /files。cwd 记忆（`workbenchMobileGlobalFilesPathAtom`）不经返回动作，返回后停在原目录。
+
+**验证**：新探针 `probe-files-global-back`（移动 390×844，mock preview API + 真实登录加载构建产物）3 场景 6 断言全 PASS——①主路径 pop 回 /files 且列表在场；②cwd 记忆保持（返回后仍在 proj1 目录内）；③深链直达返回兜底 /files。
+
+### 真机反馈修复·第十批：桌面右栏折叠唤出钮视觉不可见（2026-09-30，commit `5e06b5d`）
+
+**用户反馈**（Mac 桌面浏览器）：右栏折叠后，展开按钮不见了（完全没有按钮）。
+
+**诊断（排除法定性）**：装配点/panelOpen 写点/lg 断点（1024）均正确，headless DOM 全场景（4 视口 × 循环开合 × reload × 切 scope）RailButton 恒在场且 `elementFromPoint` 命中自身——不是 DOM 缺失，是**视觉不可发现性**：RailButton 原样式 `bg-surface-raised/60` 半透明白 + `text-on-surface-muted` 浅灰图标，浅色主题下与中栏背景几乎同色（getComputedStyle：按钮底 oklab(1.0/0.6) 白、图标 rgb(142,142,147) 14×14）≈ 人眼不可见。headless `visible=true` 只证 DOM 非隐藏，不证人眼可辨。
+
+**修法**：实底 + 描边 + 实色图标 + 增大热区——`h-20 w-6 border-neutral-line bg-surface-raised text-on-surface-soft shadow-sm`（旧 `h-16 w-5 bg-surface-raised/60 text-on-surface-muted backdrop-blur`）。
+
+**验证**：getComputedStyle 两主题复测——dark 底 rgb(28,28,30)/图标 rgb(242,242,247)、light 底 rgb(255,255,255)/图标 rgb(28,28,30)，24×80 热区；tokens 机检 0 违例；CSS 硬闸过；probe-v2-m9-multi-device 13 断言全绿（Part 2/3 均真实点击 RailButton 唤出后断言三列几何）。待真机复验。
+
+**顺带发现（独立 bug，未处理待拍板）**：`workbench-shell.tsx` 中 `<ColumnResizeGutter/>` 的渲染条件 `rightOpen ? null : gutter` 位于仅 `rightPanel` 非空才渲染的 aside 内，而 rightPanel 非空 ⟹ panelOpen=true ⟹ rightOpen=true → gutter 恒不渲染 = 右栏宽度拖拽疑似失效（与「右栏栏宽 352 vs 320」欠账可能同源）。
 
 ## §7 待定项跟踪
 
