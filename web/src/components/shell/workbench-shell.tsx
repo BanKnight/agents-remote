@@ -152,17 +152,19 @@ type RailButtonProps = {
   side: "left" | "right";
 };
 
-/** 栏收起后，贴中栏边缘的唤出按钮（absolute overlay，不占 grid 轨道）。 */
+/** 栏收起后，贴中栏边缘的唤出按钮（absolute overlay，不占 grid 轨道）。实底 +
+ * 描边 + 实色图标：/60 半透明白在浅色主题下与中栏背景几乎同色，真机不可发现
+ *（2026-09-30 用户反馈「折叠后展开按钮不见了」——DOM 在场但视觉隐形）。 */
 function RailButton({ label, onClick, side }: RailButtonProps) {
   return (
     <button
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={`absolute top-1/2 z-20 flex h-16 w-5 -translate-y-1/2 items-center justify-center bg-surface-raised/60 text-on-surface-muted backdrop-blur transition hover:bg-surface-raised/80 hover:text-on-surface active:bg-on-surface/10 ${
+      className={`absolute top-1/2 z-20 flex h-20 w-6 -translate-y-1/2 items-center justify-center border-neutral-line bg-surface-raised text-on-surface-soft shadow-sm transition hover:text-on-surface active:bg-on-surface/10 ${
         side === "left"
-          ? "left-0 rounded-r-lg border-y border-r border-neutral-line/80"
-          : "right-0 rounded-l-lg border-y border-l border-neutral-line/80"
+          ? "left-0 rounded-r-lg border-y border-r"
+          : "right-0 rounded-l-lg border-y border-l"
       }`}
     >
       {side === "left" ? <ChevronLeft /> : <ChevronRight />}
