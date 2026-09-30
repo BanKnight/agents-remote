@@ -23,6 +23,18 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 - lint 使用 `--deny-warnings`，0 warning 0 error 才算通过。
 - test 必须全部 pass，不允许以"基线就有问题"为由跳过修复。
 - 改动影响端到端用户路径时，加 `bun run e2e`。
+- **快速通道（2026-09-30 用户拍板「提速」，hook 自动判定）**：staged 文件全部为纯文档面（.md / .claude/** / docs/** 等非代码文件）→ 只跑 format:check + lint（~3s），跳过 typecheck/test；任一文件命中代码面（`web/ api/ packages/ scripts/ e2e/` 前缀或代码扩展名）→ 全门禁。反向判定、宁可漏放行；混合 commit 一律全门禁（见 `scripts/githooks/pre-commit`）。
+
+## 回归验证按改动面裁剪（2026-09-30 用户拍板「提速」）
+
+- **触发**：小批次功能改动后的回归验证。
+- **动作**：探针/e2e 只跑与改动面直接相关的（改动文件被哪些 probe/e2e 覆盖就跑哪些）；全套回归留到里程碑收尾统一查漏补缺。
+- **边界**：裁剪只针对「与改动无关的面」的回归；每增量 self-check（对应包单测/typecheck）与 CSS 硬闸、tokens 机检不裁剪——那是改动自身的正确性验证，不是回归面。
+
+## 探针定位写法（2026-09-30 用户拍板「提速」，减少返工轮次）
+
+- **触发**：写/改 Playwright 探针涉及按钮点击或 lazy 挂载组件。
+- **动作**：① 按钮交互一律 `getByRole("button", { name: "…" })` 精确定位——禁 `locator(容器, { hasText })` 后 click：容器 click 落几何中心会误触同容器另一按钮（实证：m4 探针「编辑 + 查看 diff ›」容器，误触打开 diff 让位预览，返工一轮）。② lazy 挂载（CodeEditor/CodeMirror 等）用 `.waitFor()` 等在场，不用固定 sleep——固定延时短了挂、长了浪费。
 
 ## CSS 落盘硬闸（改 web 包内任何文件后必跑）
 
