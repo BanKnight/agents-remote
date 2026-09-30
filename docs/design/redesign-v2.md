@@ -1103,6 +1103,25 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：单测 `file-browser.test.ts` 扩 6 项（嵌套 html 递归内联 + 相对基准按嵌套目录 + svg iframe 换 dataUrl + srcdoc 转义 + 深度上限不递归 + fetch 失败不阻塞），13→19 全绿；探针 `probe-files-html-img-inline` 扩 1b（srcDoc 层 5 项：src→srcdoc/内容内联/嵌套 css 按 nested/ 解析/外链 iframe 不误伤/svg iframe 换 dataUrl）+ 1c（嵌套 frame 内真实渲染 2 项：`#nested-marker` 可见 + 内层 svg 40×20 非零尺寸，修复前空白）——**全 PASS**。回归 `probe-v2-m4-tools-l3` 70/70、e2e file-browser 2/2 全绿；CSS 硬闸 183387 字节 + content-type text/css。
 
+### 真机反馈修复·第八批：嵌套原型页 data-icon 图标静态水合（2026-09-30，commit `3665264`）
+
+**用户反馈**（第七批真机复验）：html 嵌套 html 过程中，有些使用图标的地方看不到了。
+
+**根因**：`docs/design` 原型页的图标走 v1.4 图标管线**运行时水合**——`assets/icons.js`（`build-icons.mjs` 生成物）首语句注册 `window.ICONS = {SF名→lucide path body}` 注册表 + 页面里 `<i data-icon="x"></i>`/`<span data-icon>` 空占位，icons.js 的 hydrate 在 DOMContentLoaded 后把占位替换成 svg。第七批内联后的嵌套文档在 `sandbox=""` 下**禁脚本**（v1.4 批7「纯静态预览」口径），水合永不发生 → 占位空白。`svg[data-symbol]` 自带手绘 path 兜底能显示，`data-icon` 占位不能——「有些图标看不到」精确对应。
+
+**修法**（静态等效水合，进第七批的 `inlineLocalHtmlAssets` 管道）：
+
+1. **`iconScriptJobs`**：文档引用的本地 `<script src>`（`ICON_SCRIPT_TAG_RE`，空标签体形态）→ fetch → 识别 `window.ICONS` 注册表 → 把文档内占位静态替换成 svg。认不得格式的脚本跳过、失败保持原样不阻塞。
+2. **`parseWindowIcons`**：定位 `window.ICONS = {` 赋值语句（**允许头注释等前置内容**——真实生成物带 `/*! … */` 生成头，首版按 `startsWith` 判定被它挡住全部静默跳过，单测无注释输入故绿、真实链路失效，探针 mock 已复刻头注释形态锁死）；括号配对（字符串/转义感知）提取首个平衡对象后 `JSON.parse`——不 eval。纯读取型引用（`window.ICONS[x]` 无 `= {`）不命中。
+3. **`rewriteIconPlaceholder` / `hydrateDataIconPlaceholders`**：复刻 icons.js 的 apply 规则——`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="stroke-width:2" [class继承] aria-hidden="true">body</svg>`；未知名保持原样不猜；`svg[data-symbol]` 手绘兜底不动。
+4. **script 标签本身保留**（禁脚本下不执行、无害），只消费其注册表。
+
+**验证**：真实链路诊断（`/tmp` 一次性脚本 + 真实 preview API + 真实 `docs/design/index.html` 78 嵌套页）：78 页真实占位残留 **0**（剥 `<style>` 后复核——CSS 注释文字里的 `<i data-icon="search">` 示例曾被诊断正则误报为残留）、静态水合 svg 80。单测 24（+头注释前缀提取/读取型引用不命中/class 继承）；探针 `probe-files-html-img-inline` 扩 1d 段 4 断言（mock icons.js 带头注释形态）+ 1c 水合 svg 真实渲染非零尺寸（284×284）——全 PASS；web 单测 688 全绿；CSS 硬闸 183387 字节。
+
+**file tab 状态澄清**（用户 2026-09-30 拍板）：桌面中栏 file tab **后续规划要恢复发挥作用**，当前暂时保持没有——不是弃案，是暂缓。
+
+## §7 待定项跟踪
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
