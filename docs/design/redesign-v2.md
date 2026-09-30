@@ -1066,6 +1066,24 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：全仓 typecheck + 865/9/674 单测 + 四门禁 + tokens strict 0 违例 + CSS 硬闸（183387 字节）+ tri-column 15/15 + m5-sheets 56/56。
 
+### 真机反馈修复·第六批：md/html 文件预览优先（2026-09-30，commit `60dc9e3`）
+
+**用户反馈**：「可以看预览的，优先展示预览效果；点击编辑后布局排版之类的也理应看起来风格一致，然而目前并没有。」
+
+**根因**：`MobileL3FilePreview`（移动 L3 文件详情 **与** 检视面板 file 标签 `PanelFileTabBody` 共同消费的双端单源）对 md/html 强制 `initialRenderMode: "source"`——该取值来自「L3 无 render toggle，查看/编辑都是源码形态」的旧假设。而 `useFileEditor` 的默认值是 `defaultRenderMode()`（md/html/htm → render），桌面 `FilePreviewPanel` 消费该默认。结果：**同一份 md 在桌面右栏（含移动检视面板 file 标签）看是渲染排版，在移动 L3 看是源码**——同一能力两端形态分叉，违反「多端同构」。
+
+**修法**（渲染能力复用单源，不新增渲染器）：
+
+1. **默认渲染态**：删 `initialRenderMode: "source"`，回落 hook 默认 `"render"`。非 md/html 时 `showRenderToggle === false`，恒源码形态，本项零影响。
+2. **meta 行补 toggle**：`showRenderToggle` 为真时，meta 左侧渲染 source/render 分段（与桌面 `FilePreviewPanel` header 同款形态：seg 容器 `rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5` + 两枚 `h-7 px-2.5 text-xs font-semibold` 按钮、on 态 `bg-primary/10 text-primary`）；非 md/html 仍是「行数 · 时间」span（行数在渲染态无意义，改由 toggle 占位；源码态行号本就自明）。
+3. **渲染主体走 `PreviewBody` 单源**：`isRenderView = showRenderToggle && renderMode === "render"` 时用 `PreviewBody`（md → `MarkdownString`；html → `sandbox=""` iframe + 本地资源内联），`onEditChange` 不传 = 只读——与检视面板/中栏 file tab 同一渲染器，渲染实现单份。源码态保持 `CodeWithLineNumbers` 行号形态（唯一消费点即此处，未删）。
+4. **编辑流转（预览优先闭环）**：点「编辑」= `onRenderModeChange("source")` + `setEditing(true)`（md/html render 态 `canEdit` gate 恒 false，保存会被 hook 拦，故进编辑前必须先切 source——gate 语义零改动）；「完成」两分支（clean / dirty 丢弃确认后）都 `onRenderModeChange("render")`——「完成」= 结束一次编辑动作、回到默认阅读形态，要看源码再点 toggle。
+5. **根容器 overflow**：`isRenderView` 亦走 `overflow-hidden`（渲染内容自滚：MarkdownString 容器 `overflow-auto` / iframe 内文档滚动），meta 行常驻；源码态保持 `overflow-y-auto`。
+
+**验证**：`probe-v2-m4-tools-l3` Part 5 扩断言链 6 项——md 打开即渲染态（h1 默认渲染）/ meta toggle「渲染」on 态 / 渲染态无行号源码（`.code .ln` 计数 0）/ toggle 源码 → 行号形态 / 编辑态 CodeEditor 在场 / 完成 → 回渲染态；**70/70 绿**（mock README 升为 markdown 语法以便 h1 渲染断言）。回归 `probe-file-save-scroll`（doc.md 编辑保存路径全过）、`probe-files-html-img-inline`（html 内联 + iframe 渲染全过）。四门禁 + tokens strict 0 违例 + CSS 硬闸（183387 字节）全绿。
+
+**探针陷阱（本次踩到，已入注释）**：`.meta .diff` 是「编辑 + 查看 diff ›」两按钮的容器，`locator(..., { hasText: "编辑" }).click()` 落容器中心会误触「查看 diff」→ panelDiff 覆盖层打开、预览让位、`.cm-editor` 不在场（表现为后续断言 30s 超时）。按钮交互一律 `getByRole("button", { name })` 精确到按钮本体。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
