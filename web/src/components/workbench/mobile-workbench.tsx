@@ -280,17 +280,17 @@ export function MobileWorkbench({
  * 移动端文件聚焦浮窗（设计 §6 决策 3 / workbench-stable-refactor Phase 3）：`/file/$path` URL 在
  * 移动端用此组件打开。`path` = 全路径（含项目名前缀），单行 header（◄ 返回 + 文件名 + ✕）+
  * FileTabPreview 可编辑预览（FileTabPreview 内部 resolveRootBrowseTarget 解析项目名走 project API）。
- * 不实现 V3 group（移动端 [文件] 保持浮窗式，设计决策 12）。返回 / ✕ = navigate 回全局文件树
- *（`/files`，全局文件入口）；项目内文件 → 回 `/projects/$key`（用全路径首段派生项目名）。复用
+ * 不实现 V3 group（移动端 [文件] 保持浮窗式，设计决策 12）。返回 / ✕ = pop 优先回来源（2026-09-30
+ * 用户反馈「全局文件预览后返回的不是全局文件」：主路径从全局 /files push 进来 → 回 /files；项目
+ * 工作台跨项目打开 → 回该项目），深链直达无来路时兜底回全局文件树（`/files`，全局文件入口）。复用
  * MobileTabHeader 保持与 MobileFocusHeader 同款 header 结构。
  */
 function MobileFileFocus({ path }: { path: string }) {
   const { t } = useT();
   const navigate = useNavigate();
-  // 全路径首段 = projectName（splitFilePath 与 resolveRootBrowseTarget 同语义，正确处理无 `/` 异常降级）。返回回项目列表态。
-  const projectName = splitFilePath(path).projectName;
+  const backNav = useWorkbenchBack();
   const back = () => {
-    void navigate({ to: "/projects/$key", params: { key: projectName } });
+    backNav(() => void navigate({ to: "/files" }));
   };
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
