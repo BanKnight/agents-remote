@@ -6,6 +6,7 @@ import {
   extractSkillReloadFromStdoutLine,
   buildSpawnEnv,
   resolveActivePresetCreds,
+  sanitizePersistedModel,
   ClaudeRuntime,
 } from "./claude-runtime";
 import type { ClaudeModelMapping, ClaudePreset } from "@agents-remote/shared";
@@ -114,6 +115,68 @@ test("extractModelFromStdoutLine captures a bare concrete id (no parens → no a
     },
   } as Record<string, unknown>;
   expect(extractModelFromStdoutLine(parsed)).toBe("claude-sonnet-4-6[1m]");
+});
+
+test("extractModelFromStdoutLine unwraps the markdown code-span echo (2026-10-01 regression)", () => {
+  // CLI modelDisplayString 把模型名包进 code span：`opus[1m] (claude-opus-4-8[1m])`。
+  // 旧解析把整串（含反引号）存进 state.model → --resume --model <脏值> → 网关 422。
+  const parsed = {
+    type: "user",
+    message: {
+      role: "user",
+      content:
+        "<local-command-stdout>Set model to `opus[1m] (claude-opus-4-8[1m])`</local-command-stdout>",
+    },
+  } as Record<string, unknown>;
+  expect(extractModelFromStdoutLine(parsed)).toBe("opus[1m]");
+});
+
+test("extractModelFromStdoutLine unwraps code-span echo without [1m] suffix", () => {
+  const parsed = {
+    type: "user",
+    message: {
+      role: "user",
+      content: "<local-command-stdout>Set model to `opus (claude-opus-4-8)`</local-command-stdout>",
+    },
+  } as Record<string, unknown>;
+  expect(extractModelFromStdoutLine(parsed)).toBe("opus");
+});
+
+test("extractModelFromStdoutLine rejects non-model display strings (help text / long tail)", () => {
+  const makeParsed = (text: string) =>
+    ({ type: "user", message: { role: "user", content: text } }) as Record<string, unknown>;
+  // /model 帮助占位（无实际模型名）
+  expect(
+    extractModelFromStdoutLine(
+      makeParsed("<local-command-stdout>Set model to (id)</local-command-stdout>"),
+    ),
+  ).toBeUndefined();
+  // 「saved as your default」长尾文案：剥不出合法 token，宁可跳过不污染 state.model
+  expect(
+    extractModelFromStdoutLine(
+      makeParsed(
+        "<local-command-stdout>Set model to `Opus 5 (1M context)` and saved as your default for new sessions</local-command-stdout>",
+      ),
+    ),
+  ).toBeUndefined();
+});
+
+test("sanitizePersistedModel passes bare aliases / concrete ids / [1m] variants unchanged", () => {
+  expect(sanitizePersistedModel("opus")).toBe("opus");
+  expect(sanitizePersistedModel("opusplan")).toBe("opusplan");
+  expect(sanitizePersistedModel("claude-opus-4-8")).toBe("claude-opus-4-8");
+  expect(sanitizePersistedModel("opus[1m]")).toBe("opus[1m]");
+  expect(sanitizePersistedModel(" glm-5.3-flash ")).toBe("glm-5.3-flash");
+});
+
+test("sanitizePersistedModel strips legacy raw (resolved) annotation", () => {
+  expect(sanitizePersistedModel("haiku (claude-haiku-4-5-20251001)")).toBe("haiku");
+});
+
+test("sanitizePersistedModel returns undefined for empty/absent input", () => {
+  expect(sanitizePersistedModel(undefined)).toBeUndefined();
+  expect(sanitizePersistedModel("")).toBeUndefined();
+  expect(sanitizePersistedModel("   ")).toBeUndefined();
 });
 
 test("extractModelFromStdoutLine parses model id from array text-block content", () => {

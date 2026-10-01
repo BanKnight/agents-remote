@@ -52,15 +52,24 @@ export function buildSeedInitLine(
 // when the CLI resolved an alias. See CLI print.ts set_model handler +
 // utils/messages.ts createModelSwitchBreadcrumbs.
 //
-// We capture the RAW requested model (the token before ` (` when present, else
-// the whole tail) — mirroring the CLI, which stores activeUserSpecifiedModel =
-// requestedModel verbatim and resolves aliases at query time. Capturing the
-// resolved id instead would persist e.g. `claude-sonnet-4-6` for an `opusplan`
-// switch, so an API restart (--resume --model <state.model>) would lose the
-// plan-mode-aware Opus/Sonnet semantics. control_response carries no model and
-// system.init is spawn-time only, so this echo is the ONLY stdout signal of the
-// switch — symmetric to capturePermissionModeFromLine. Extracted as a pure
-// function so the parse is unit-testable (cf. buildSeedInitLine).
+// We capture the RAW requested model — mirroring the CLI, which stores
+// activeUserSpecifiedModel = requestedModel verbatim and resolves aliases at
+// query time. Capturing the resolved id instead would persist e.g.
+// `claude-sonnet-4-6` for an `opusplan` switch, so an API restart
+// (--resume --model <state.model>) would lose the plan-mode-aware Opus/Sonnet
+// semantics. control_response carries no model and system.init is spawn-time
+// only, so this echo is the ONLY stdout signal of the switch — symmetric to
+// capturePermissionModeFromLine. Extracted as a pure function so the parse is
+// unit-testable (cf. buildSeedInitLine).
+//
+// ⚠️ CLI 的 echo 是人类可读显示串（modelDisplayString），不是裸 model 名：
+// 实测形状 `Set model to \`opus[1m] (claude-opus-4-8[1m])\``——模型名被包进
+// markdown code span（两侧反引号）+ 尾部 (resolved) 注解。旧正则的「token
+// before ` (`」假设对它失配（剥掉括号注解后尾部反引号收不了尾，回溯成整串
+// code span 进 group 1），脏值经 state.model → --resume --model <脏值> 令网关
+// 422 model not found、UI 模型显示两侧多出反引号（2026-10-01，§6.13）。
+// 归一回裸 model 名统一走 sanitizePersistedModel（剥 code span / 注解 + 白名单闸），
+// spawn --model 传参处共用同一道闸拦存量脏值。
 export function extractModelFromStdoutLine(
   parsed: Record<string, unknown> | null,
 ): string | undefined {
@@ -75,12 +84,29 @@ export function extractModelFromStdoutLine(
       /<local-command-stdout>\s*Set model to (.+?)\s*(?:\([^)]*\))?\s*<\/local-command-stdout>/,
     );
     if (match?.[1]) {
-      // group 1 = raw requested model (alias or concrete); the optional
-      // `(resolved)` group is display-only and intentionally discarded.
-      return match[1].trim();
+      // group 1 = display 串（可能含 code span 反引号 / (resolved) 注解 / 文案尾巴），
+      // 归一 + 白名单闸后才是 raw requested model。
+      return sanitizePersistedModel(match[1]);
     }
   }
   return undefined;
+}
+
+// 「Set model to <display>」echo 的 display 串 → 可持久化/可传给 CLI 的裸 model 名：
+// ① 剥 markdown code span 包裹（modelDisplayString 会把模型名包进 `` `…` ``）；
+// ② 剥尾部 ` (resolved)` 展示注解（display-only，语义同旧正则的可选组）；
+// ③ 白名单闸——只放行 alias/具体 ID（[A-Za-z0-9._-]+）+ 可选 [1m] 后缀。
+// 帮助文案（(id)）、ANSI 样式文本、剥不出合法 token 的长尾文案一律拒绝
+// （返回 undefined），调用方跳过 state.model 更新——宁可保守也不让显示串进链路。
+export function sanitizePersistedModel(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  let s = raw.trim();
+  if (s.length >= 2 && s.startsWith("`") && s.endsWith("`")) s = s.slice(1, -1).trim();
+  if (s.endsWith(")")) {
+    const paren = s.indexOf(" (");
+    if (paren > 0) s = s.slice(0, paren).trim();
+  }
+  return /^[A-Za-z0-9._-]+(?:\[1m\])?$/.test(s) ? s : undefined;
 }
 
 // Detect a successful /reload-skills from its CLI echo.
@@ -597,6 +623,10 @@ export class ClaudeRuntime implements RuntimeResources {
     view?: ModelMappingView,
     mcpArgs: string[] = [],
   ): BunSubprocess {
+    // --model 存量脏值闸：state.model 可能残留旧版 echo 解析进来的显示串（code span
+    // 反引号 / (resolved) 注解），直接透传会让 CLI 拿它当模型名请求 → 网关 422。
+    // sanitize 恢复不出合法 model 名时不传 --model（CLI 回落自身默认）。
+    const safeModel = sanitizePersistedModel(model);
     const args = [
       "claude",
       "--output-format",
@@ -607,7 +637,7 @@ export class ClaudeRuntime implements RuntimeResources {
       "--permission-prompt-tool",
       "stdio",
       ...(permissionMode ? ["--permission-mode", permissionMode] : []),
-      ...(model ? ["--model", model] : []),
+      ...(safeModel ? ["--model", safeModel] : []),
       ...(claudeSessionId ? ["--resume", claudeSessionId] : []),
       ...mcpArgs,
     ];
