@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-01（**reviewer 补审修复批 M13a–d 四里程碑收口，最新 `b169aaa`**。补审第六~十二批 8 commit 产出 P1 五条 + P2 九条全修完毕；两条 reviewer premise 经核实推翻（shadow-sm 保留 / back 判定安全）。四批全门禁 + 探针回归绿。第八~十二批 + 第十三批均待真机复验。）
+> 最后更新：2026-10-01（**reviewer 补审修复批 M13a–d 收口 `b169aaa` + 第十三批②文件预览扩展名黑名单反转 `2e9eac8`**。补审第六~十二批 8 commit 产出 P1 五条 + P2 九条全修完毕；用户反馈 `.mjs` 不能查看&编辑已修（白名单→二进制黑名单，dev api 已重启实证）。第八~十二批 + 第十三批均待真机复验。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
@@ -27,6 +27,7 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 
 - ✅ 第八~十二批 `3665264`/`9bbf351`/`5e06b5d`/`e9e9c87`/`386533a` + 记档齐
 - ✅ reviewer 补审 + M13a `069704c` + M13b `07572a4` + M13c `5b3d527` + M13d `b169aaa` + §6.13 第十三批段
+- ✅ 第十三批②文件预览扩展名修复 `2e9eac8`（白名单反转二进制黑名单；dev api 已 respawn 实证 `.mjs` text）
 - ⬜ **交用户真机复验**（第八~十二批 + 第十三批清单见下）
 - ⬜ 阶段一遗留：第五批 reviewer 修复批（`bd7aedc`）真机复验清单仍待用户执行
 - ⬜ 存量欠账（不动）：e2e pwa-installable 存量失败；桌面「点第二个实例丢 leaf」；DialogTitle a11y；rootBrowse 下沉（global 右栏多项目浏览增强）；i18n key 收敛；probe-chat-e2e 2 存量 FAIL；sheet 拖拽真机复验；`.tree`/`.growrow` 死代码清扫；probe-m10-feedback-fixes H 段基线；diff L3 位置架构项；design P2 滚动 5 项
@@ -55,6 +56,10 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 9. **html 内联渲染正确性**：agents-remote 项目 `docs/design/index.html` 渲染态 → 图标/样式/嵌套 iframe 正常（含路径含 `$` 字符的文件若可构造）；重复切「渲染↔源码」无明显卡顿（管道 memo）
 10. **gutter 键盘**：右栏展开态 Tab 聚焦左缘分隔条（高亮）→ ← 变宽 / → 变窄，±1rem 步进，clamp 16–40rem
 11. **非 md/html 编辑返回**：移动端打开 .ts 文件 → 编辑 → 返回 → 再进不残留「渲染态」（脏 renderMode gate）
+
+**第十三批②**（文件预览扩展名，两端）：
+12. **源码文件可查看&编辑**：`.mjs`/`.cjs`/`.sql`/`.ini`/`.htm` 等此前打不开的源码/配置文件 → 现在能预览且能编辑保存；`.env`/`Dockerfile`/`Makefile`/无扩展名文件同样可读
+13. **二进制仍被拦**：`.zip`/`.png`（图片走 ImageViewer）/`.wasm`/`bun.lockb` → 仍是「无法预览」或图片视图，不出乱码
 
 ## 阻塞 / 风险
 

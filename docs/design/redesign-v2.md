@@ -1180,6 +1180,16 @@ API 恢复后对第六~十二批 8 个代码 commit（`60dc9e3`~`386533a`）补�
 
 **验证汇总**：四批均过全门禁（1565 单测）+ CSS 硬闸 + tokens 机检；探针回归 m4 70 pass（toggle 断言跟随新标尺）、probe-files-html-img-inline PASS（解码链补 `&lt;`）、m9 27 pass、m9-d 64 pass。**待真机复验**（清单见 handoff）。
 
+### 第十三批②：文件预览扩展名判定——白名单反转二进制黑名单（2026-10-01，commit `2e9eac8`）
+
+**用户反馈**：源码文件并非都能查看&编辑，例如 `.mjs` 不能预览。
+
+**根因**：`previewFile` 的 `isSupportedTextPath` 是**文本扩展名白名单**（26 项，`api/src/project-files.ts`）——`.mjs`/`.cjs`/`.sql`/`.ini`/`.htm` 等大量源码/配置扩展名不在列，直接落 `unsupported_type`（非内容问题，是判定方式问题：白名单永远追不全）。
+
+**修法（判定方向反转）**：改 `binaryExtensions` 二进制黑名单初筛（46 项：图片/音视频/归档/字体/二进制文档/编译产物/数据库/`bun.lockb`）；**黑名单外（含未知扩展名与无扩展名的 Dockerfile/Makefile/LICENSE）皆按文本尝试**。安全性不减——黑名单只做初筛，既有**内容级双闸**兜底不变：UTF-8 strict 解码失败（`decodeText → undefined`）与含控制字符（`containsBinaryControlCharacters` → `binary_text`）拦真二进制，黑名单漏网文件不会以乱码漏出；`TEXT/IMAGE_PREVIEW_LIMIT_BYTES` 大小闸仍先行。**编辑链零改动**（`canEdit` 依赖 `preview.type === "text"`，预览解锁即编辑解锁）。`.env` 类配置文件本就可见（`FILE_LIST_BLOCKLIST` 只挡 `.git`），无安全回退。
+
+**验证**：`project-files.test` 47 pass——新增黑名单反转语义断言（`.mjs`/`.sql` 文本预览、无扩展名 `Dockerfile` 放行、`.wasm` 假文本内容仍被初筛拦），既有 `.zip` unsupported / `binary.txt` binary_text / `large` too_large 边界全保持；全门禁 866+9+691 绿。**dev api 重启后真实 API 实证**：`scripts/build-icons.mjs` → `text`（5138 字节可编辑）；顺带实测（`bun --watch` 未热重载本次改动，按 runbook `respawn-pane -k` 重启 ar-dev:api 后生效——「watch 偶发不重启」坑复发一次）。**待真机复验**（清单见 handoff）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
