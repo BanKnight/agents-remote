@@ -138,7 +138,10 @@ export function WorkbenchShell({
                变成头部灰 ›）。§8 高度链：body 自身必须是 flex container，flex-1 子的约束
                才传得下去（FilesPanel 根 flex-1 依赖此层；overflow 只裁不传约束）。 */}
             <div className="flex min-h-0 flex-1 overflow-hidden">{rightPanel}</div>
-            {rightOpen ? null : <ColumnResizeGutter onResize={onResizeRight} side="right" />}
+            {/* 宽度拖拽 gutter（2026-10-01 拍板「右栏宽度确实要有拖拽效果」）：aside 在即渲染
+               （原 `{rightOpen ? null : …}` 位于仅 rightPanel 非空才渲染的 aside 内，而
+               rightPanel 非空 ⟹ panelOpen=true ⟹ rightOpen=true → 恒 null = 拖拽从未生效）。 */}
+            <ColumnResizeGutter onResize={onResizeRight} side="right" />
           </aside>
         ) : null}
       </div>
@@ -210,7 +213,8 @@ type ColumnResizeGutterProps = {
  * 栏与中栏之间的 resize 分隔条（贴 aside 内侧边缘，全高 absolute）。pointer-event
  * 拖拽：增量式（每次 move 算 deltaX / rootFontSize → deltaRem → onResize），上层
  * clamp 到 MIN/MAX。setPointerCapture 锁定指针，拖拽时即使滑过中栏仍持续。右栏翻转
- * 方向（向左拖才增宽）。栏收起时不渲染（改由 RailButton 唤出）。
+ * 方向（向左拖才增宽）。aside（展开态右栏容器）在即渲染——收起态整个 aside 不渲染
+ *（唤出走 RailButton），gutter 随之消失是自然行为。
  */
 function ColumnResizeGutter({ onResize, side }: ColumnResizeGutterProps) {
   const dragRef = useRef<{ lastX: number; rootFont: number } | null>(null);

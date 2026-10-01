@@ -10,8 +10,12 @@
 //   Part 3（Mac 外接 1600×1000）：inspector 固定 22rem = 352px + 中栏吃剩余
 //     （minmax(0,1fr) 弹性语义从中栏上限移交）。
 //   Part 4（1440×900，2026-10-01）：global 会话页（/projects）右栏连续性——折叠态唤出钮
-//     在、唤出显示「暂无内容」空态、panelOpen 内存单例跨 scope 连续（项目页展开态切
-//     global 保持展开空态不蒸发）、seg4「项目」段导航回项目页右栏仍展开。
+//     在、唤出 = 当前项目内容（lastProject/列表首个回退，2026-10-01 拍板非空态）、
+//     panelOpen 内存单例跨 scope 连续（项目页展开态切 global 保持展开不蒸发）、
+//     seg4「项目」段导航回项目页右栏仍展开。
+//   Part 5（1440×900，2026-10-01 拍板落地）：真无项目（overview projectNames=[]）global
+//     唤出 = 完全空态「暂无内容」且零 project 维度脏请求；project scope 右栏左缘 gutter
+//     拖拽增宽（修复前 gutter 恒 null 拖拽从未生效）。
 //
 // mock 数据（不污染真环境、无真会话）；密码自读，不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v2-m9-multi-device.mjs
@@ -49,12 +53,12 @@ function sessionDetail(session) {
   };
 }
 
-async function setupMocks(page) {
+async function setupMocks(page, projectNames = ["proj1"]) {
   await page.route(/\/api\/overview$/, (r) =>
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ projectNames: ["proj1"], candidates: [] }),
+      body: JSON.stringify({ projectNames, candidates: [] }),
     }),
   );
   await page.route(new RegExp(`/api/projects/proj1/agent-sessions(?:\\?.*)?$`), (r) =>
@@ -293,11 +297,13 @@ async function login(page) {
       asideW: Math.round(
         document.querySelectorAll("main > div > aside")[1].getBoundingClientRect().width,
       ),
-      empty: !!document.querySelector(
-        'main > div > aside:nth-of-type(2) [class*="text-on-surface-muted"], aside [class*="text-on-surface-muted"]',
-      ),
+      inspector: !!document.querySelector("[data-desktop-inspector]"),
     }));
-    ok(Math.abs(g2.asideW - 352) <= 2, `② global 唤出后空态右栏 352px（实际 ${g2.asideW}）`);
+    ok(Math.abs(g2.asideW - 352) <= 2, `② global 唤出后右栏 352px（实际 ${g2.asideW}）`);
+    ok(
+      g2.inspector,
+      "② global 唤出 = 当前项目内容（lastProject/列表首个回退）——非空态（2026-10-01 拍板）",
+    );
     // ③ 折叠 → 唤出钮回；进项目页开 files 标签 → 切 global → 右栏保持展开（连续性核心断言）。
     await gp.getByRole("button", { name: "收起右栏" }).click();
     await gp.waitForTimeout(300);
@@ -341,6 +347,95 @@ async function login(page) {
     );
 
     await gctx.close();
+
+    console.log("Part 5: 真无项目空态（2026-10-01 拍板「一个项目都没有才完全空态」）");
+    const ectx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      locale: "zh-CN",
+    });
+    const ep = await ectx.newPage();
+    const projectReqs = [];
+    ep.on("request", (req) => {
+      const u = new URL(req.url());
+      if (u.pathname.startsWith("/api/projects/")) projectReqs.push(u.pathname);
+    });
+    await setupMocks(ep, []);
+    await login(ep);
+    await ep.goto(`${WEB_ORIGIN}/projects`);
+    await ep.waitForTimeout(1200);
+    await ep.getByRole("button", { name: "展开右栏" }).click();
+    await ep.waitForFunction(
+      () => {
+        const side = document.querySelectorAll("main > div > aside")[1];
+        return side ? side.getBoundingClientRect().width > 0 : false;
+      },
+      { timeout: 5000 },
+    );
+    const e1 = await ep.evaluate(() => {
+      const side = document.querySelectorAll("main > div > aside")[1];
+      return {
+        asideW: Math.round(side.getBoundingClientRect().width),
+        inspector: !!document.querySelector("[data-desktop-inspector]"),
+        emptyText: side ? side.textContent.includes("暂无内容") : false,
+      };
+    });
+    ok(Math.abs(e1.asideW - 352) <= 2, `① 真无项目 global 唤出后右栏 352px（实际 ${e1.asideW}）`);
+    ok(
+      !e1.inspector,
+      "① projectKey=null（lastProject 与列表首个均无）→ 空态分支（data-desktop-inspector 不在）",
+    );
+    ok(e1.emptyText, "① 空态文案「暂无内容」在右栏内");
+    ok(
+      projectReqs.length === 0,
+      `① 真无项目零 project 维度脏请求（实际 ${JSON.stringify(projectReqs)}）`,
+    );
+
+    // ② gutter 拖拽（2026-10-01 拍板「右栏宽度确实要有拖拽效果」）：project 页右栏展开，
+    // aside 左缘 col-resize 分隔条向左拖 60px → 增宽（修复前 gutter 恒 null 拖拽从未生效）。
+    await ep.goto(`${WEB_ORIGIN}/projects/proj1`);
+    await ep.waitForFunction(
+      () => {
+        const side = document.querySelectorAll("main > div > aside")[1];
+        return side ? side.getBoundingClientRect().width > 0 : false;
+      },
+      { timeout: 5000 },
+    );
+    await ep.waitForTimeout(400);
+    const e2before = await ep.evaluate(() => {
+      const side = document.querySelectorAll("main > div > aside")[1];
+      const gutter = [...side.querySelectorAll("div")].find(
+        (el) => getComputedStyle(el).cursor === "col-resize",
+      );
+      if (!gutter) return null;
+      const r = gutter.getBoundingClientRect();
+      return {
+        asideW: Math.round(side.getBoundingClientRect().width),
+        gx: r.x + r.width / 2,
+        gy: r.y + r.height / 2,
+      };
+    });
+    ok(e2before !== null, "② gutter（col-resize 分隔条）在 aside 左缘在场");
+    if (e2before) {
+      ok(
+        Math.abs(e2before.asideW - 352) <= 2,
+        `② project 页右栏投影展开 352px（实际 ${e2before.asideW}）`,
+      );
+      await ep.mouse.move(e2before.gx, e2before.gy);
+      await ep.mouse.down();
+      await ep.mouse.move(e2before.gx - 30, e2before.gy, { steps: 4 });
+      await ep.mouse.move(e2before.gx - 60, e2before.gy, { steps: 4 });
+      await ep.mouse.up();
+      await ep.waitForTimeout(300);
+      const e2after = await ep.evaluate(() =>
+        Math.round(
+          document.querySelectorAll("main > div > aside")[1].getBoundingClientRect().width,
+        ),
+      );
+      ok(
+        e2after - e2before.asideW >= 55,
+        `② 向左拖 60px → 右栏增宽（${e2before.asideW} → ${e2after}；修复前恒 352 拖拽失效）`,
+      );
+    }
 
     await browser.close();
     console.log(`\n${passCount} pass, ${failCount} fail`);

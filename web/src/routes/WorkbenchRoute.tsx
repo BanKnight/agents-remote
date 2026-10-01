@@ -227,7 +227,7 @@ function WorkbenchContent({
   const { holder: renameHolder } = useRenameSession();
   const [layout, update] = useWorkbenchLayout();
   const queryClient = useQueryClient();
-  const { candidates } = useGlobalInstanceCandidates(scope);
+  const { candidates, projectNames } = useGlobalInstanceCandidates(scope);
   const create = useCreateSession(ctx.projectKey);
   const scopeKey = scope.kind === "project" ? scope.key : "global";
   const { refs, isLoaded: refsLoaded } = useScopeInstanceOrder(scope);
@@ -843,11 +843,21 @@ function WorkbenchContent({
   }
   // 右栏全 scope 可唤出（2026-10-01 用户反馈「左栏从项目切到全部，右栏直接消失」：原 gate
   // scope.kind==="project" 让 global 会话页 aside+RailButton 一起蒸发——用户切项目行/点
-  // seg4「项目」段才恢复，状态不连续。RightPanelTabs 的 !projectKey 空态分支（「检视 · 只读」
-  // +「暂无内容」）本就是为 global 备的。全局 inspection 真内容 = rootBrowse 下沉（存量欠账）。
-  // 收起态 rightPanel=null（aside 不渲染、零 query），由 RailButton 唤出。可见性真相 =
-  // panelOpen（批3 融合），rightCollapsed 仅为 mount 恢复用记忆。
-  const rightPanel = panelOpen ? <RightPanelTabs ctx={ctx} onCollapse={closeDesktopPanel} /> : null;
+  // seg4「项目」段才恢复，状态不连续）。收起态 rightPanel=null（aside 不渲染、零 query），
+  // 由 RailButton 唤出。可见性真相 = panelOpen（批3 融合），rightCollapsed 仅为 mount
+  // 恢复用记忆。
+  // 右栏 project 语境（2026-10-01 拍板「global 实际也有一个当前项目，一个项目都没有才
+  // 完全空态」）：global = lastProject 记忆优先（与 side mainPage 同源 D4），无记忆回退
+  // 项目列表首个；project scope = scope.key。独立 rightCtx——ctx 供 useCreateSession 等
+  // 用，global 下 create 不带 projectKey 的语义不变。projectKey=null（真无项目）才落
+  // RightPanelTabs 空态分支。
+  const [lastProject] = useAtom(workbenchLastProjectAtom);
+  const rightPanelProjectKey =
+    scope.kind === "project" ? scope.key : lastProject || projectNames[0] || null;
+  const rightCtx: WorkbenchTabPluginContext = { projectKey: rightPanelProjectKey };
+  const rightPanel = panelOpen ? (
+    <RightPanelTabs ctx={rightCtx} onCollapse={closeDesktopPanel} />
+  ) : null;
   // 桌面 §6.10-9（M9 批次 d，对齐 09m/10m 原型 IA）：global scope 且 leftMode=plugins/files 时,
   // 插件/全局文件是 **main 整页**（原型 side sidewin 恒定不随导航切换、main 切内容），实例区让位
   //——tab 布局在 localStorage atom 持久化，切回 auto 原样恢复；会话服务端不销毁，重挂重连
