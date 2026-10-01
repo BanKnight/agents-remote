@@ -1142,6 +1142,22 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **顺带发现（独立 bug，未处理待拍板）**：`workbench-shell.tsx` 中 `<ColumnResizeGutter/>` 的渲染条件 `rightOpen ? null : gutter` 位于仅 `rightPanel` 非空才渲染的 aside 内，而 rightPanel 非空 ⟹ panelOpen=true ⟹ rightOpen=true → gutter 恒不渲染 = 右栏宽度拖拽疑似失效（与「右栏栏宽 352 vs 320」欠账可能同源）。
 
+### 真机反馈修复·第十一批：global 会话页右栏整体蒸发（2026-10-01，commit `e9e9c87`）
+
+**用户反馈**（第十批视觉修复后的复盘澄清）：左栏从项目切到「全部」，右栏直接消失；折叠按钮出来后能看到（颜色修复已生效，非视觉问题）；消失的不只是面板，唤出钮也没了；不刷新页面、切回「项目」就回来；URL 没变。
+
+**根因**：global 会话页（/projects）的 `rightPanelCollapsible = scope.kind === "project"` gate 把右栏 aside + RailButton 一起蒸发——项目页右栏展开态落到该页右栏直接消失。三个误导因素叠加让定位走了弯路：①左栏 seg4 在 global 页**恒「全部」高亮**（用户归因「切到全部导致」——实际 seg4 是 side 内视图态，探针矩阵实锤与右栏零因果）；②URL `/projects/xxx` vs `/projects` 仅差尾段，用户感知「没变」；③恢复动作（点 seg4「项目」段）恰好是「切回项目」的直觉表述。逐条吻合的复现 = 直达 /projects（浏览器历史/地址栏可达，代码无 UI 入口）。
+
+**修法**（右栏全 scope 连续可唤出）：
+
+1. `rightPanel = panelOpen ? <RightPanelTabs/> : null`（去 scope gate）；装配 `rightPanelCollapsible={!desktopMainPage}`（mainPage 整页态中栏吃满是 09m/10m 既定 IA，保留蒸发）；mount 投影 effect 去 scope gate（开合记忆全 scope 连续）。
+2. RightPanelTabs 的 `!projectKey` 空态分支（「检视 · 只读」+「暂无内容」+ 折叠钮）本就是为 global 备的，首次被走到。
+3. 配套 `usePanelToolChip` 的 gitDiffForChip query 加 `enabled: projectKey !== ""` gate——global 空态也装配该 hook，空 projectKey 会打出 `/api/projects//git` 脏请求。
+
+**验证**：probe-v2-m9-multi-device 新 Part 4 六断言（global 折叠态唤出钮在场/唤出空态 352px/panelOpen 内存单例跨 scope 连续不蒸发/seg4「项目」段导航回项目右栏仍展开）全绿（19 pass）；probe-v2-m9-d 64 pass 回归；web 688 单测 + typecheck 绿；CSS 硬闸过。**待真机复验**。
+
+**遗留**：global 右栏目前是空态占位，真内容（rootBrowse 全局文件树下沉到 FilesToolPanel）为存量欠账，后续批次。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
