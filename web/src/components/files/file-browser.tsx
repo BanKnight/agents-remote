@@ -21,6 +21,7 @@ import {
   deleteFile,
 } from "../../api/client";
 import { useFileEditor } from "./use-file-editor";
+import { RenderModeToggle } from "./render-mode-toggle";
 import { enqueueUploads, UploadQueueCard } from "./upload-queue";
 import { usePromptDialog } from "../shell/prompt-dialog";
 import { useConfirm } from "../shell/confirm-dialog";
@@ -535,25 +536,11 @@ export function FilePreviewPanel({
           {displayName.split("/").pop() ?? displayName}
         </h4>
         {isHtml || isMarkdown ? (
-          <div
-            className="inline-flex shrink-0 justify-self-center items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
-            role="group"
-          >
-            {(["source", "render"] as const).map((mode) => (
-              <button
-                key={mode}
-                className={`flex h-7 shrink-0 cursor-pointer items-center rounded-md px-2.5 text-xs font-semibold transition ${
-                  renderMode === mode
-                    ? "bg-primary/10 text-primary"
-                    : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"
-                }`}
-                type="button"
-                onClick={() => onRenderModeChange(mode)}
-              >
-                {mode === "source" ? t("files.sourceMode") : t("files.renderMode")}
-              </button>
-            ))}
-          </div>
+          <RenderModeToggle
+            className="justify-self-center"
+            mode={renderMode}
+            onChange={onRenderModeChange}
+          />
         ) : (
           <div className="justify-self-center" aria-hidden="true" />
         )}

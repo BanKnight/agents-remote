@@ -92,7 +92,9 @@ export function useFileEditor({
     setEditContent(undefined);
     setSavedFlash(false);
     setRenderMode(defaultRenderMode(fileBaseName));
-  }, [path, fileBaseName]);
+    // fileBaseName 是 path 的纯派生（渲染期立即可得），列 path 即覆盖换文件时机。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
 
   const previewData = preview.data;
   const previewTextContent = previewData?.type === "text" ? previewData.content : undefined;

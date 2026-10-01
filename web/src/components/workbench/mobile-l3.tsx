@@ -15,6 +15,7 @@ import {
 } from "../../api/client";
 import { CodeEditorFallback, FileSaveButton, PreviewBody } from "../files/file-browser";
 import { ImageViewer } from "../files/image-viewer";
+import { RenderModeToggle } from "../files/render-mode-toggle";
 import { useFileEditor } from "../files/use-file-editor";
 import { useConfirm } from "../shell/confirm-dialog";
 import { MarkdownString } from "../markdown/MarkdownString";
@@ -131,11 +132,15 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
   const lineCount = data.content.split("\n").length;
   const updated = relativeTime(new Date(data.mtimeMs).toISOString(), t);
   // 完成编辑：dirty 时丢弃确认（与 FilesPanel 换文件守卫同款 dialog 文案）。确认后回渲染
-  // 态（预览优先——「完成」= 结束一次编辑动作，回到 md/html 的默认阅读形态；源码再点 toggle）。
+  // 态（预览优先——「完成」= 结束一次编辑动作，回到 md/html 的默认阅读形态；源码再点
+  // toggle）。renderMode 仅 md/html（showRenderToggle）消费——非 md/html 不写脏 state。
   const finishEditing = () => {
-    if (!editor.isDirty) {
+    const backToRender = () => {
       setEditing(false);
-      editor.onRenderModeChange("render");
+      if (editor.showRenderToggle) editor.onRenderModeChange("render");
+    };
+    if (!editor.isDirty) {
+      backToRender();
       return;
     }
     void confirm({
@@ -145,10 +150,7 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
       confirmLabel: t("files.discard"),
       tone: "default",
     }).then((ok) => {
-      if (ok) {
-        setEditing(false);
-        editor.onRenderModeChange("render");
-      }
+      if (ok) backToRender();
     });
   };
 
@@ -184,28 +186,22 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
         </div>
       ) : (
         <div className="meta">
-          {/* md/html：source/render toggle（桌面 FilePreviewPanel header 同款形态单源）；
-              渲染态行数无意义（渲染排版无行号）由 toggle 替换，源码态行号在旁自明。 */}
+          {/* md/html：源码/渲染 toggle（03q3 .mseg 单源 RenderModeToggle，渲染段在前）+
+              元信息行并存（原型 :50——渲染态行数无意义只留时间，源码态行号在旁自明）；
+              非 md/html 恒 previewMetaLines（原形态）。 */}
           {editor.showRenderToggle ? (
-            <div
-              className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
-              role="group"
-            >
-              {(["source", "render"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  className={`flex h-7 shrink-0 cursor-pointer items-center rounded-md px-2.5 text-xs font-semibold transition ${
-                    editor.renderMode === mode
-                      ? "bg-primary/10 text-primary"
-                      : "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface"
-                  }`}
-                  type="button"
-                  onClick={() => editor.onRenderModeChange(mode)}
-                >
-                  {mode === "source" ? t("files.sourceMode") : t("files.renderMode")}
-                </button>
-              ))}
-            </div>
+            <>
+              <span>
+                {editor.renderMode === "render"
+                  ? updated
+                  : t("files.previewMetaLines", { n: lineCount, time: updated })}
+              </span>
+              <RenderModeToggle
+                className="ml-auto"
+                mode={editor.renderMode}
+                onChange={editor.onRenderModeChange}
+              />
+            </>
           ) : (
             <span>{t("files.previewMetaLines", { n: lineCount, time: updated })}</span>
           )}

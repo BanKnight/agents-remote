@@ -547,9 +547,11 @@ ok(
   "md 打开即渲染态（h1 默认渲染，预览优先）",
 );
 const renderBtn = previewBody.getByRole("button", { name: "渲染" });
+// 2026-10-01 M13b 起 toggle = 03q3 .mseg 单源（RenderModeToggle），on 态 = segmented-thumb
+// 语义 token（原 bg-primary/10 绕开 token 已随单源消除）。
 ok(
-  (await renderBtn.getAttribute("class"))?.includes("bg-primary/10") === true,
-  "meta toggle「渲染」on 态",
+  (await renderBtn.getAttribute("class"))?.includes("bg-segmented-thumb") === true,
+  "meta toggle「渲染」on 态（03q3 .mseg segmented-thumb）",
 );
 ok((await previewBody.locator(".code .ln").count()) === 0, "渲染态无行号源码");
 const fileItemLeaks = await page.evaluate(
