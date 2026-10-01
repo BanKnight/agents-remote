@@ -7,8 +7,11 @@
 //   Part 2（iPad 横屏 1180×820，≥1024）：桌面三栏 + 列模型——nav.side 250 + 左栏
 //     atom 宽 256 + 中栏吃剩余 + inspector 固定 22rem（2026-09-24 拍板：右栏固定宽，
 //     minmax(min,1fr) 弹性废弃——1920 视口膨胀 ~1060px）。
-//   Part 3（Mac 外接 1600×1000）：inspector 固定 22rem=352px + 中栏吃剩余
+//   Part 3（Mac 外接 1600×1000）：inspector 固定 22rem = 352px + 中栏吃剩余
 //     （minmax(0,1fr) 弹性语义从中栏上限移交）。
+//   Part 4（1440×900，2026-10-01）：global 会话页（/projects）右栏连续性——折叠态唤出钮
+//     在、唤出显示「暂无内容」空态、panelOpen 内存单例跨 scope 连续（项目页展开态切
+//     global 保持展开空态不蒸发）、seg4「项目」段导航回项目页右栏仍展开。
 //
 // mock 数据（不污染真环境、无真会话）；密码自读，不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v2-m9-multi-device.mjs
@@ -73,6 +76,21 @@ async function setupMocks(page) {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ sessions: [] }),
+    }),
+  );
+  // Part 4 右栏 files 标签（FilesToolPanel 文件列表）。
+  await page.route(/\/api\/projects\/proj1\/files(?:\?.*)?$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        projectName: "proj1",
+        path: "",
+        parentPath: null,
+        entries: [
+          { name: "index.html", path: "index.html", type: "file", hidden: false, size: 64 },
+        ],
+      }),
     }),
   );
 }
@@ -246,6 +264,83 @@ async function login(page) {
       ok(false, `1600 唤出后三列不在（实际 ${col1600?.length ?? 0} 列）`);
     }
     await mac.close();
+
+    console.log("Part 4: global 会话页（/projects）右栏连续性（2026-10-01 用户反馈修复）");
+    const gctx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      locale: "zh-CN",
+    });
+    const gp = await gctx.newPage();
+    await setupMocks(gp);
+    await login(gp);
+    await gp.goto(`${WEB_ORIGIN}/projects`);
+    await gp.waitForTimeout(1500);
+    // ① 折叠记忆默认收起 → global 页 RailButton 在（修复前 collapsible=false 全蒸发）。
+    ok(
+      (await gp.getByRole("button", { name: "展开右栏" }).count()) > 0,
+      "① global 页折叠态唤出钮在场（修复前整个右栏系统蒸发）",
+    );
+    // ② 点唤出钮 → 空态右栏（「检视 · 只读」+「暂无内容」，projectKey=null 分支）。
+    await gp.getByRole("button", { name: "展开右栏" }).click();
+    await gp.waitForFunction(
+      () => {
+        const side = document.querySelectorAll("main > div > aside")[1];
+        return side ? side.getBoundingClientRect().width > 0 : false;
+      },
+      { timeout: 5000 },
+    );
+    const g2 = await gp.evaluate(() => ({
+      asideW: Math.round(
+        document.querySelectorAll("main > div > aside")[1].getBoundingClientRect().width,
+      ),
+      empty: !!document.querySelector(
+        'main > div > aside:nth-of-type(2) [class*="text-on-surface-muted"], aside [class*="text-on-surface-muted"]',
+      ),
+    }));
+    ok(Math.abs(g2.asideW - 352) <= 2, `② global 唤出后空态右栏 352px（实际 ${g2.asideW}）`);
+    // ③ 折叠 → 唤出钮回；进项目页开 files 标签 → 切 global → 右栏保持展开（连续性核心断言）。
+    await gp.getByRole("button", { name: "收起右栏" }).click();
+    await gp.waitForTimeout(300);
+    ok(
+      (await gp.getByRole("button", { name: "展开右栏" }).count()) > 0,
+      "③ global 折叠 → 唤出钮回",
+    );
+    await gp.goto(`${WEB_ORIGIN}/projects/proj1`);
+    await gp.waitForTimeout(1200);
+    // 右栏保持收起（panelOpen 内存单例连续）→ 展开 files 标签。
+    await gp.getByRole("button", { name: "展开右栏" }).click();
+    await gp.waitForTimeout(400);
+    ok(
+      (await gp.locator("[data-desktop-inspector]").count()) > 0,
+      "④ 项目页展开右栏（files 标签在）",
+    );
+    await gp.goto(`${WEB_ORIGIN}/projects`);
+    await gp.waitForTimeout(1200);
+    // 核心断言：panelOpen 内存单例连续 → global 页右栏保持展开（空态），不再蒸发。
+    const g5 = await gp.evaluate(() => {
+      const side = document.querySelectorAll("main > div > aside")[1];
+      return {
+        asideW: side ? Math.round(side.getBoundingClientRect().width) : null,
+        rail: !!document.querySelector('button[aria-label="展开右栏"]'),
+      };
+    });
+    ok(
+      g5.asideW !== null && Math.abs(g5.asideW - 352) <= 2,
+      `⑤ 项目页展开态切 global → 右栏保持展开空态 352px（实际 ${g5.asideW}；修复前蒸发）`,
+    );
+    // ⑥ seg4「项目」段点击 → selectProjectSeg 导航回 lastProject → 右栏仍展开。
+    await gp.locator('.seg4 span[role="tab"]', { hasText: "项目" }).click();
+    await gp.waitForTimeout(900);
+    const g6 = await gp.evaluate(() => {
+      const side = document.querySelectorAll("main > div > aside")[1];
+      return side ? Math.round(side.getBoundingClientRect().width) : null;
+    });
+    ok(
+      g6 !== null && Math.abs(g6 - 352) <= 2,
+      `⑥ seg4「项目」段导航回项目页 → 右栏仍展开（实际 ${g6}）`,
+    );
+
+    await gctx.close();
 
     await browser.close();
     console.log(`\n${passCount} pass, ${failCount} fail`);

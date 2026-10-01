@@ -46,7 +46,7 @@ export function RightPanelTabs({
   const projectKey = ctx.projectKey;
   const [panelTabsMap, setPanelTabsMap] = useAtom(workbenchPanelTabsAtom);
   const [panelActiveMap, setPanelActiveMap] = useAtom(workbenchPanelActiveAtom);
-  // 右栏仅 project scope 渲染（WorkbenchRoute rightPanelCollapsible gate），projectKey 理论
+  // 右栏全 scope 渲染（2026-10-01 起；projectKey=null 的 global 空态分支见下），projectKey 理论
   // 恒非空；undefined 回退缺省标签表（与移动缺省一致 = [{files}]），null 保留 empty 态兜底。
   const panelTabs = withBasePanelTabs(
     (projectKey ? panelTabsMap[projectKey] : undefined) ?? BASE_PANEL_TABS,

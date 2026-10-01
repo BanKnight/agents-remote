@@ -991,8 +991,10 @@ export function usePanelToolChip({
   // 03p wiki 搜索：chip 点击展开输入，query 提升共享给 WikiToolPanel。
   const [wikiSearchOpen, setWikiSearchOpen] = useState(false);
   const [wikiSearchQuery, setWikiSearchQuery] = useState("");
-  // git chip 数据（与 GitToolPanel 同 key 缓存共享——开着 git 标签零额外网络）。
+  // git chip 数据（与 GitToolPanel 同 key 缓存共享——开着 git 标签零额外网络）。enabled
+  // gate 空 projectKey：global scope 右栏空态（2026-10-01）也装配本 hook，空串会打出脏请求。
   const gitDiffForChip = useQuery({
+    enabled: projectKey !== "",
     queryKey: gitDiffListQueryKey(projectKey),
     queryFn: () => listProjectGitDiff(projectKey),
   });

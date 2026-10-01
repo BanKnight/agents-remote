@@ -171,8 +171,8 @@ function WorkbenchContent({
   // dev 双调用（mount→cleanup→mount）下卸载复位 cleanup 会撤销首轮写入、ref 守卫会
   // 吞掉次轮重执行，删除守卫让 remount 重执行即自愈（e2e vite dev 实测）。
   useEffect(() => {
-    if (scope.kind === "project" && !rightCollapsedMem) setPanelOpen(true);
-  }, [scope, rightCollapsedMem, setPanelOpen]);
+    if (!rightCollapsedMem) setPanelOpen(true);
+  }, [rightCollapsedMem, setPanelOpen]);
   useEffect(() => () => setPanelOpen(false), []);
   /** 桌面右栏开合单点（唤出钮/PanelHeader/深链映射共用）——panelOpen + 记忆镜像同步。 */
   const openDesktopPanel = () => {
@@ -841,15 +841,13 @@ function WorkbenchContent({
       />
     );
   }
-  // project 可唤出右栏（inspection 只依赖 projectKey，非聚焦态唤出看 files/git）；
-  // global scope 不唤出右栏（全局 inspection 走中栏 files tab，见 workbench-views §4.1）。
+  // 右栏全 scope 可唤出（2026-10-01 用户反馈「左栏从项目切到全部，右栏直接消失」：原 gate
+  // scope.kind==="project" 让 global 会话页 aside+RailButton 一起蒸发——用户切项目行/点
+  // seg4「项目」段才恢复，状态不连续。RightPanelTabs 的 !projectKey 空态分支（「检视 · 只读」
+  // +「暂无内容」）本就是为 global 备的。全局 inspection 真内容 = rootBrowse 下沉（存量欠账）。
   // 收起态 rightPanel=null（aside 不渲染、零 query），由 RailButton 唤出。可见性真相 =
   // panelOpen（批3 融合），rightCollapsed 仅为 mount 恢复用记忆。
-  const rightPanelCollapsible = scope.kind === "project";
-  const rightPanel =
-    rightPanelCollapsible && panelOpen ? (
-      <RightPanelTabs ctx={ctx} onCollapse={closeDesktopPanel} />
-    ) : null;
+  const rightPanel = panelOpen ? <RightPanelTabs ctx={ctx} onCollapse={closeDesktopPanel} /> : null;
   // 桌面 §6.10-9（M9 批次 d，对齐 09m/10m 原型 IA）：global scope 且 leftMode=plugins/files 时,
   // 插件/全局文件是 **main 整页**（原型 side sidewin 恒定不随导航切换、main 切内容），实例区让位
   //——tab 布局在 localStorage atom 持久化，切回 auto 原样恢复；会话服务端不销毁，重挂重连
@@ -983,7 +981,7 @@ function WorkbenchContent({
       onRightOpenChange={(open) => (open ? openDesktopPanel() : closeDesktopPanel())}
       sidebar={<WorkbenchSide />}
       rightPanel={desktopMainPage ? null : rightPanel}
-      rightPanelCollapsible={desktopMainPage ? false : rightPanelCollapsible}
+      rightPanelCollapsible={!desktopMainPage}
       statusBar={<StatusBar />}
     >
       {desktopMainPage ?? instanceArea}

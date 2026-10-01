@@ -41,7 +41,8 @@ type WorkbenchShellProps = {
   /**
    * 右栏是否可收起/唤出（默认 !!rightPanel）。解耦「可唤出」与「内容渲染」：收起时
    * rightPanel=null（aside 不渲染，零 query），但 RailButton 仍渲染依赖 collapsible。
-   * project scope 传 true（非聚焦态唤出看 project-scoped inspection）；global 传 false。
+   * 装配点传 !desktopMainPage（全 scope 可唤出——2026-10-01 用户反馈 global 会话页右栏
+   * 蒸发；mainPage 整页态仍传 false，中栏吃满是 09m/10m 既定 IA）。
    */
   rightPanelCollapsible?: boolean;
   /**
