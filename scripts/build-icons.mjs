@@ -29,6 +29,8 @@ const ICONS = [
   "book-open", // ShellIcon book（wiki 标签；打开双页书）
   "bot", // ShellIcon agent-nav（agent 导航/行标）
   "check", // ShellIcon check
+  "chevron-left", // RailButton 左栏唤出（M13c reviewer D-P2-4：手写 16 网格退役）
+  "chevron-right", // RailButton 右栏唤出（M13c，同上）
   "clock", // ShellIcon clock
   "download", // ShellIcon download
   "ellipsis", // ShellIcon ellipsis（行菜单）

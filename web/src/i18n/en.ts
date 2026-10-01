@@ -570,6 +570,7 @@ export const en = {
   // ── Workbench（三栏工作台外壳）──────────────────────────────
   "workbench.collapseRight": "Collapse right panel",
   "workbench.expandRight": "Expand right panel",
+  "workbench.resizeRightPanel": "Resize right panel",
   "workbench.createMenu": "+ Create",
   "workbench.createSessionAria": "New session",
   "workbench.createClaude": "Claude",

@@ -568,6 +568,7 @@ export const zh: Record<TranslationKey, string> = {
   // ── Workbench（三栏工作台外壳）──────────────────────────────
   "workbench.collapseRight": "收起右栏",
   "workbench.expandRight": "展开右栏",
+  "workbench.resizeRightPanel": "调整右栏宽度",
   "workbench.createMenu": "+ 新建",
   "workbench.createSessionAria": "新建会话",
   "workbench.createClaude": "Claude",

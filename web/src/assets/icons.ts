@@ -18,6 +18,8 @@ export type LucideIconName =
   | "book-open"
   | "bot"
   | "check"
+  | "chevron-left"
+  | "chevron-right"
   | "clock"
   | "download"
   | "ellipsis"
@@ -91,6 +93,14 @@ export const LUCIDE_ICONS = {
   check: {
     viewBox: "0 0 24 24",
     body: '<path d="M20 6 9 17l-5-5"/>',
+  },
+  "chevron-left": {
+    viewBox: "0 0 24 24",
+    body: '<path d="m15 18-6-6 6-6"/>',
+  },
+  "chevron-right": {
+    viewBox: "0 0 24 24",
+    body: '<path d="m9 18 6-6-6-6"/>',
   },
   clock: {
     viewBox: "0 0 24 24",

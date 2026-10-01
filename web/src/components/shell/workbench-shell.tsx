@@ -1,5 +1,11 @@
 import { useAtom } from "jotai";
-import { type CSSProperties, type PointerEvent, type ReactNode, useRef } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+  useRef,
+} from "react";
 import { useT } from "../../i18n";
 import {
   WORKBENCH_RIGHT_PANEL_MAX_REM,
@@ -7,6 +13,7 @@ import {
   useMinViewport,
   workbenchRightWidthAtom,
 } from "../../routes/workbench-model";
+import { LucideIcon } from "./lucide-icon";
 import { shellSurfaceClasses } from "./shell-primitives";
 
 /**
@@ -141,7 +148,14 @@ export function WorkbenchShell({
             {/* 宽度拖拽 gutter（2026-10-01 拍板「右栏宽度确实要有拖拽效果」）：aside 在即渲染
                （原 `{rightOpen ? null : …}` 位于仅 rightPanel 非空才渲染的 aside 内，而
                rightPanel 非空 ⟹ panelOpen=true ⟹ rightOpen=true → 恒 null = 拖拽从未生效）。 */}
-            <ColumnResizeGutter onResize={onResizeRight} side="right" />
+            <ColumnResizeGutter
+              label={t("workbench.resizeRightPanel")}
+              max={WORKBENCH_RIGHT_PANEL_MAX_REM}
+              min={WORKBENCH_RIGHT_PANEL_MIN_REM}
+              onResize={onResizeRight}
+              side="right"
+              value={rightWidth}
+            />
           </aside>
         ) : null}
       </div>
@@ -158,66 +172,63 @@ type RailButtonProps = {
 
 /** 栏收起后，贴中栏边缘的唤出按钮（absolute overlay，不占 grid 轨道）。实底 +
  * 描边 + 实色图标：/60 半透明白在浅色主题下与中栏背景几乎同色，真机不可发现
- *（2026-09-30 用户反馈「折叠后展开按钮不见了」——DOM 在场但视觉隐形）。 */
+ *（2026-09-30 用户反馈「折叠后展开按钮不见了」——DOM 在场但视觉隐形）。
+ * 触屏扩热区（w-6=24px 恰压 WCAG 2.5.8 最小值，touch:after 左右各 +8px → 40px，
+ * frontend-notes §7 点击区口径；h-20=80px 已足）。shadow-sm 是第十批可发现性修复
+ * 的一部分（5e06b5d），保留。图标单轨 Lucide（spec §10.3，M13c 手写 16 网格退役）。 */
 function RailButton({ label, onClick, side }: RailButtonProps) {
   return (
     <button
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={`absolute top-1/2 z-20 flex h-20 w-6 -translate-y-1/2 items-center justify-center border-neutral-line bg-surface-raised text-on-surface-soft shadow-sm transition hover:text-on-surface active:bg-on-surface/10 ${
+      className={`absolute top-1/2 z-20 flex h-20 w-6 -translate-y-1/2 items-center justify-center border-neutral-line bg-surface-raised text-on-surface-soft shadow-sm transition hover:text-on-surface active:bg-on-surface/10 touch:after:absolute touch:after:-inset-x-2 touch:after:inset-y-0 touch:after:content-[''] ${
         side === "left"
           ? "left-0 rounded-r-lg border-y border-r"
           : "right-0 rounded-l-lg border-y border-l"
       }`}
     >
-      {side === "left" ? <ChevronLeft /> : <ChevronRight />}
+      <LucideIcon
+        className="h-3.5 w-3.5"
+        name={side === "left" ? "chevron-left" : "chevron-right"}
+      />
     </button>
   );
 }
 
-function ChevronLeft() {
-  return (
-    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M10 3L5 8l5 5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.5}
-        stroke="currentColor"
-      />
-    </svg>
-  );
-}
-
-function ChevronRight() {
-  return (
-    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M6 3l5 5-5 5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={1.5}
-        stroke="currentColor"
-      />
-    </svg>
-  );
-}
-
 type ColumnResizeGutterProps = {
+  /** 当前栏宽（rem）——aria-valuenow（可聚焦 separator 的 WAI-ARIA 契约）。 */
+  value: number;
+  min: number;
+  max: number;
+  /** 键盘/读屏语境的 separator 名称（i18n 已翻译，如「调整右栏宽度」）。 */
+  label: string;
   side: "left" | "right";
   onResize: (deltaRem: number) => void;
 };
 
+/** 键盘方向键每次步进的栏宽增量（rem）。 */
+const GUTTER_KEYBOARD_STEP_REM = 1;
+
 /**
- * 栏与中栏之间的 resize 分隔条（贴 aside 内侧边缘，全高 absolute）。pointer-event
- * 拖拽：增量式（每次 move 算 deltaX / rootFontSize → deltaRem → onResize），上层
- * clamp 到 MIN/MAX。setPointerCapture 锁定指针，拖拽时即使滑过中栏仍持续。右栏翻转
- * 方向（向左拖才增宽）。aside（展开态右栏容器）在即渲染——收起态整个 aside 不渲染
- *（唤出走 RailButton），gutter 随之消失是自然行为。
+ * 栏与中栏之间的 resize 分隔条（贴 aside 内侧边缘，全高 absolute）。pointer 拖拽 +
+ * 键盘步进双通道（M13c：原 aria-hidden 纯 pointer，键盘不可达）。pointer 增量式
+ *（每次 move 算 deltaX / rootFontSize → deltaRem → onResize），上层 clamp 到
+ * MIN/MAX；setPointerCapture 锁定指针，拖拽时即使滑过中栏仍持续。键盘 = role
+ * separator + ←/→ 步进（aria-valuenow/min/max 报告栏宽），焦点高亮可见。右栏翻转
+ * 方向（向左拖/← 键才增宽）。aside（展开态右栏容器）在即渲染——收起态整个 aside
+ * 不渲染（唤出走 RailButton），gutter 随之消失是自然行为。
  */
-function ColumnResizeGutter({ onResize, side }: ColumnResizeGutterProps) {
+function ColumnResizeGutter({ label, max, min, onResize, side, value }: ColumnResizeGutterProps) {
   const dragRef = useRef<{ lastX: number; rootFont: number } | null>(null);
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    // ← 把分隔条向左移：右栏增宽（side="right" 翻转）、左栏收窄（side="left" 同向）。
+    const dir = event.key === "ArrowLeft" ? 1 : -1;
+    onResize(side === "left" ? -dir * GUTTER_KEYBOARD_STEP_REM : dir * GUTTER_KEYBOARD_STEP_REM);
+  };
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -241,10 +252,15 @@ function ColumnResizeGutter({ onResize, side }: ColumnResizeGutterProps) {
 
   return (
     <div
-      aria-hidden
-      className={`absolute bottom-0 top-0 z-20 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 ${
+      aria-label={label}
+      aria-orientation="vertical"
+      aria-valuemax={max}
+      aria-valuemin={min}
+      aria-valuenow={value}
+      className={`absolute bottom-0 top-0 z-20 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 focus-visible:bg-primary/60 focus-visible:outline-none ${
         side === "left" ? "right-0" : "left-0"
       }`}
+      onKeyDown={onKeyDown}
       onPointerCancel={endDrag}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
