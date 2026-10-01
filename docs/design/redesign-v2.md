@@ -1167,6 +1167,19 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证**：probe-v2-m9-multi-device 27 pass（Part 4 ② 断言改为非空态 `[data-desktop-inspector]` 在场；新增 Part 5 七断言：真空态 projectNames=[] mock → global 唤出「暂无内容」+ `data-desktop-inspector` 不在 + 零 `/api/projects/` 维度脏请求；project 页 gutter 向左拖 60px → 352→412 精确增宽）。m9-d 64 pass 回归；typecheck + 865/9/688 单测绿；CSS 硬闸 + tokens 机检过。**待真机复验**。
 
+### reviewer 补审修复批（M13a–d，2026-10-01，commits `069704c`/`07572a4`/`5b3d527`/`b169aaa`）
+
+API 恢复后对第六~十二批 8 个代码 commit（`60dc9e3`~`386533a`）补审：code-reviewer + design-reviewer 双审产出 **P1 五条 + P2 九条（P0 零）**，用户拍板「可以全修，用多个里程碑来修复」，四里程碑收口：
+
+- **M13a 内联管道正确性**（`069704c`，C-P1-1/2/3 + C-P2-4/7）：①`$` 特殊序列——inlineLocalHtmlAssets 四类 job 的替换串全部改函数形式 `html.replace(tag, () => …)`（字符串替换串里的 `$&`/`` $` ``/`$'` 会被 String.replace 展开，html 内容含该序列即产损坏输出）；②剥 style/script 段再水合——STYLE_SCRIPT_SEGMENT_RE 把 `<style|script>` 段摘出，占位用私有使用区字符包裹序号（不用 NUL——lint no-control-regex 拦截），回填按序号还原，杜绝 data-icon 水合全文误匹配（第八批 33 处「残留」实为 CSS 注释内容误命中），iconScript 收集改从 segments 提取；③escapeSrcdoc 补 `<`（`& → &amp;` 最先、`<`、`"`；`>` 在双引号属性值内合法不转义）；④PreviewBody memo（inlinedRef 同 preview 引用复用 promise，source↔render 切换不重跑管道）+ fetchOnce per-call 去重（同树嵌套递归透传共享缓存，跨调用不缓存）。file-browser.test.ts 增 5 断言（`$&` 不展开/剥段不误伤/去重 calls===2/回填无损）。
+- **M13b toggle 单源 + 03q3 对齐**（`07572a4`，D-P1-1/2 + D-P2-5/7 + C-P2-5/6）：抽 `RenderModeToggle` 共享组件（此前桌面/移动逐字复制非单源），按 03q3:13-15,51 `.mseg` 原型重写形态（24px 高 bg-elevated3 无描边轨、段 11.5px、on 态 `bg-segmented-thumb`+text-on-surface 600——`bg-primary/10` 绕开 token 退役、渲染段在前）；移动 meta 行元信息与 toggle 并存（渲染态行数无意义只留时间）；非 md/html 不写脏 renderMode（finishEditing gate）；use-file-editor effect deps 收敛 `[path]`；toggle 按钮 touch:after 触屏扩热区。
+- **M13c shell 杂项**（`5b3d527`，D-P2-3/4/6）：①RailButton 手写 ChevronLeft/Right 16 网格 SVG 退役 → build-icons.mjs 白名单加 chevron-left/right 重跑生成、`<LucideIcon>` 直接消费（图标单轨 Lucide，spec §10.3）；②RailButton touch:after 左右各 +8px 扩热区（w-6=24px 恰压 WCAG 2.5.8）；③ColumnResizeGutter 键盘可达——原 aria-hidden 纯 pointer → role="separator" + aria-valuenow/min/max + ←/→ ±1rem 步进（方向随 side 翻转）+ focus-visible 高亮，i18n 加 `workbench.resizeRightPanel`。
+- **M13d back 语义核实**（`b169aaa`，C-P2-8）：质疑「`__TSR_index > 0` 只证栈里有前条不证是 /files」——逐场景核实（冷深链 index=0 走 fallback/站内 push 落点=真实来源/reload 与会话恢复保留 state 跨文档回 SPA 前条/裸 pushState `?? 0` 落安全侧）**判定安全**：「前条不保证是 backLabel 声称的层级」恰是 pop 优先（第九批拍板）的设计意图；出站不可能（只有 index=0 才穿出站，而它走 fallback）。行为零改动，注释从过强的「0 = 首条无来路」修正为准确语义。
+
+**reviewer premise 核实推翻两条（修复时逐条对照源码验证）**：D-P2-3「shadow-sm 全站唯一组件阴影」不成立（ClaudeSessionDetailRoute 另有 3 处，且 RailButton 的 shadow-sm 是第十批可发现性修复 `5e06b5d` 刻意加的——保留）；C-P2-4 的「HTML5 parse error」机制描述不准确（`<` 在属性值内合法），但补转义无损照做。**教训**：reviewer 报告的「全站唯一」「违反 spec」类断言先 grep 全量核实再动手。
+
+**验证汇总**：四批均过全门禁（1565 单测）+ CSS 硬闸 + tokens 机检；探针回归 m4 70 pass（toggle 断言跟随新标尺）、probe-files-html-img-inline PASS（解码链补 `&lt;`）、m9 27 pass、m9-d 64 pass。**待真机复验**（清单见 handoff）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
