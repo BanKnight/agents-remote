@@ -1158,6 +1158,15 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **遗留**：global 右栏目前是空态占位，真内容（rootBrowse 全局文件树下沉到 FilesToolPanel）为存量欠账，后续批次。
 
+### 真机反馈修复·第十二批：global 右栏跟随当前项目 + 右栏宽度拖拽修复（2026-10-01，commit `386533a`）
+
+第十一批复验通过后用户对两个待拍板项给出决定，本批落地：
+
+1. **global 右栏内容**（拍板「global 实际也有一个当前项目，一个项目都没有才完全空态」）：`rightPanelProjectKey = scope.kind === "project" ? scope.key : (lastProject || projectNames[0] || null)`——lastProject 记忆优先（与 side mainPage 同源 D4），无记忆回退项目列表首个，null（真无项目）才落 RightPanelTabs 空态分支。独立 `rightCtx` 不动 ctx（ctx 供 useCreateSession 等，global 下 create 不带 projectKey 的语义不变）。第十一批遗留的「空态占位等 rootBrowse 下沉」被此拍板覆盖：有项目的环境 global 右栏直接显示当前项目 files 标签。
+2. **右栏宽度拖拽**（拍板「右栏宽度确实要有拖拽效果」）：ColumnResizeGutter 是死代码——原 `{rightOpen ? null : <ColumnResizeGutter/>}` 位于仅 rightPanel 非空才渲染的 aside 内，而 rightPanel 非空 ⟹ panelOpen=true ⟹ rightOpen=true → **恒 null，拖拽从未生效**。改 aside 在即渲染（收起态整个 aside 不渲染、唤出走 RailButton，gutter 随之消失是自然行为）。
+
+**验证**：probe-v2-m9-multi-device 27 pass（Part 4 ② 断言改为非空态 `[data-desktop-inspector]` 在场；新增 Part 5 七断言：真空态 projectNames=[] mock → global 唤出「暂无内容」+ `data-desktop-inspector` 不在 + 零 `/api/projects/` 维度脏请求；project 页 gutter 向左拖 60px → 352→412 精确增宽）。m9-d 64 pass 回归；typecheck + 865/9/688 单测绿；CSS 硬闸 + tokens 机检过。**待真机复验**。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
