@@ -331,8 +331,14 @@ export function useWorkbenchNavigate() {
  * 返回类导航原语（第十一轮复验：push 形态页的 back 用 push 实现，栈留死记录——浏览器返回
  * 手势把刚离开的页面又弹回来）。pop 优先：来源是站内 push（history 有来路）时 `history.back()`
  * 栈不留死记录，浏览器返回与 UI back 行为一致；深链直达无来路时调 `fallback` push 兜底
- * （退到 backLabel 声称的层级）。判定用 `__TSR_index`（TanStack Router 写入 history.state 的
- * 栈索引，0 = 首条无来路；运行时实测）。
+ * （退到 backLabel 声称的层级）。
+ *
+ * 判定语义（M13d C-P2-8 核实）：`__TSR_index` 是 TanStack Router 写入 history.state 的全局
+ * 栈索引，`> 0` 证的是「栈中有本 SPA 会话 push 的前条」——back() 落点 = 真实来源页（pop
+ * 优先的设计意图），不保证是 fallback 声称的层级。出站安全性：SPA push 链索引连续，只有
+ * index=0（本站首条）才可能穿出站，而它走 fallback；跨文档导航（reload/地址栏/外链）新
+ * 文档首条 state=null → 0 走 fallback；reload/会话恢复保留 state，back() 跨文档回 SPA 前条
+ * （行为正确、整页重载）；裸 pushState（无 TSR state）缺 index → ?? 0 同样落安全侧。
  */
 export function useWorkbenchBack() {
   const router = useRouter();
