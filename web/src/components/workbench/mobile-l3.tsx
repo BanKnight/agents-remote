@@ -230,8 +230,8 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
       )}
       {editing ? (
         // CodeEditor 根自带 relative+flex-1（内部 absolute 高度链，frontend-notes §8）；
-        // 编辑态根 overflow-hidden 给确定高度。
-        <div className="flex min-h-0 flex-1 flex-col p-3">
+        // 编辑态根 overflow-hidden 给确定高度。py-2.5 = 03q2 .ed 的 padding:10px 0（画布全幅）。
+        <div className="flex min-h-0 flex-1 flex-col py-2.5">
           <Suspense fallback={<CodeEditorFallback />}>
             <CodeEditor name={data.name} onChange={editor.onEditChange} value={editor.editValue} />
           </Suspense>

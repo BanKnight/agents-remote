@@ -890,8 +890,9 @@ export async function inlineLocalHtmlAssets(
 
 export function CodeEditorFallback() {
   const { t } = useT();
+  // 画布与 CodeEditor 根同款（bg-codeblock 全幅）——lazy 加载就位瞬间零跳变。
   return (
-    <div className="flex flex-1 items-center justify-center rounded-lg border border-neutral-line/40 bg-surface-inset/80">
+    <div className="flex flex-1 items-center justify-center bg-codeblock">
       <span className="text-xs font-semibold text-on-surface-muted">
         {t("files.loadingEditor")}
       </span>
@@ -979,7 +980,9 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
       );
     }
     return (
-      <div className="flex min-h-0 flex-1 flex-col p-3">
+      // 上下 10px = 03q2 .ed / 03q .code 的 padding:10px 0（水平 0——编辑器画布全幅，
+      // 左缘留白由 .cm-content padding 承担）。
+      <div className="flex min-h-0 flex-1 flex-col py-2.5">
         <Suspense fallback={<CodeEditorFallback />}>
           <CodeEditor
             value={editValue}

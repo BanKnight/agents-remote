@@ -567,6 +567,36 @@ await previewBody.locator(".meta .diff").getByRole("button", { name: "编辑" })
 // CodeEditor lazy chunk + CodeMirror 初始化：等挂载而非固定延时。
 await previewBody.locator(".cm-editor").waitFor({ timeout: 8000 });
 ok(true, "编辑态 CodeEditor 在场");
+// 编辑态画布 = 03q2 .ed / 03q .code 同款 bg-codeblock 全幅（2026-10-02 用户反馈：旧
+// rounded-lg + border + surface-inset「输入框」壳使查看/编辑切换观感跳变过大——去壳后
+// 容器零跳变）。硬数据断言：背景 = codeblock token 值、无边框、无圆角。
+const editorCanvas = await page.evaluate(() => {
+  const cm = document.querySelector('[data-role="l3-file-preview"] .cm-editor');
+  const root = cm?.parentElement?.parentElement; // @uiw wrapper → CodeEditor 根
+  if (!root) return null;
+  const cs = getComputedStyle(root);
+  // token 读出是 hex（#f6f6f8），backgroundColor 是 rgb()——统一成 rgb 数组再比。
+  const token = getComputedStyle(document.documentElement)
+    .getPropertyValue("--bg-codeblock")
+    .trim();
+  const h = token.replace("#", "");
+  const rgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const bgMatches = cs.backgroundColor === `rgb(${rgb.join(", ")})`;
+  return {
+    bgMatches,
+    border: cs.borderTopWidth,
+    radius: cs.borderRadius,
+    bg: cs.backgroundColor,
+    token,
+  };
+});
+ok(
+  editorCanvas !== null &&
+    editorCanvas.bgMatches &&
+    editorCanvas.border === "0px" &&
+    editorCanvas.radius === "0px",
+  `编辑态画布=codeblock 全幅无框无角（bg=${editorCanvas?.bg} token=${editorCanvas?.token} border=${editorCanvas?.border} radius=${editorCanvas?.radius}）`,
+);
 await previewBody.getByRole("button", { name: "完成" }).click();
 await page.waitForTimeout(400);
 ok(
