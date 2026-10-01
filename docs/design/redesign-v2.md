@@ -1216,6 +1216,8 @@ API 恢复后对第六~十二批 8 个代码 commit（`60dc9e3`~`386533a`）补�
 
 **验证**：m4 探针 71 pass（新增画布硬数据断言：CodeEditor 根 `backgroundColor` 与 `--bg-codeblock` token 一致 + border 0 + radius 0）；CSS 硬闸过（`bg-codeblock` utility 首次消费、content-type text/css）；token 机检 strict 0 违例；e2e 无旧壳断言。**待真机复验**：任意文本文件 查看↔编辑 切换——画布形态（背景/边距/无框无角）不变，仅内容层变（等宽+着色），md/html 渲染↔源码同验。
 
+**④续：排印/行号对齐 `.ed`——md 源码 toggle 与编辑同套**（同日第二轮反馈 `542686e`）：「md 的源码和编辑模式看起来不是同一套，边距问题仍在」。对照标尺：03q 查看态（`.code`）与 03q2 编辑态（`.ed`）原型**同规格**——11.5px/20px 等宽 + 行号列 + `padding: 10px 0`；查看态实现已对齐，上一轮只对了画布壳，编辑态排印仍偏离（0.875rem/1.6 + 无行号 + 顶格 16px）——字号行高与左缘（顶格 vs 行号列）就是「不是同一套」的观感来源。修法：CodeEditor THEME `fontSize: 11.5px` / `lineHeight: 20px`、extensions 加 `lineNumbers()`（@uiw re-export，零新增依赖）、行号色 `var(--ink-3)` 对齐原型 `.no`。移动「源码 toggle ↔ 编辑」与桌面（source 态本就同组件）现在同一套：同画布/同排印/同行号列/同边距。**剩余差异 = 语法着色**（编辑态有、查看态 `.code` 无——spec 既定「语法高亮随桌面编辑器收敛统一处理」+ 多端同构终局：查看态也收敛到 CodeEditor 只读、CodeWithLineNumbers 退役；因 CodeEditor lazy chunk 会引入查看态拉包/闪烁回退，另批做）。验证：m4 探针 72 pass（画布断言保持 + 新增排印/行号断言：fontSize 11.5px + lineHeight 20px + `.cm-lineNumbers` 在场）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

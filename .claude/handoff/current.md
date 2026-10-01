@@ -30,6 +30,7 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 - ✅ 第十三批②文件预览扩展名修复 `2e9eac8`（白名单反转二进制黑名单；dev api 已 respawn 实证 `.mjs` text）
 - ✅ 第十三批③模型链路污染修复（`sanitizePersistedModel`：echo 解析出口 + spawn --model 闸，legacy 形状兼容，dev api 已 respawn、脏 CLI 进程已消亡）
 - ✅ 第十三批④编辑态画布对齐 03q2（`0663ddd`：bg-codeblock 全幅去输入框壳，四处单源改，m4 探针 71 pass）
+- ✅ 第十三批④续排印/行号对齐（`542686e`：11.5px/20px + lineNumbers()，md 源码 toggle↔编辑同套，m4 探针 72 pass；语法着色收敛 + CodeWithLineNumbers 退役另批）
 - ⬜ **交用户真机复验**（第八~十二批 + 第十三批清单见下）
 - ⬜ 阶段一遗留：第五批 reviewer 修复批（`bd7aedc`）真机复验清单仍待用户执行
 - ⬜ 存量欠账（不动）：e2e pwa-installable 存量失败；桌面「点第二个实例丢 leaf」；DialogTitle a11y；rootBrowse 下沉（global 右栏多项目浏览增强）；i18n key 收敛；probe-chat-e2e 2 存量 FAIL；sheet 拖拽真机复验；`.tree`/`.growrow` 死代码清扫；probe-m10-feedback-fixes H 段基线；diff L3 位置架构项；design P2 滚动 5 项
@@ -68,7 +69,8 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 15. **发消息不再 422**：同一会话发一条消息 → 正常回复，无「model not found」错误气泡
 
 **第十三批④**（编辑态画布，两端）：
-16. **查看↔编辑切换零跳变**：任意文本文件（如 `.ts`）查看 → 编辑 → 画布形态不变（codeblock 全幅背景、上下 10px 边距、无圆角无边框），仅内容层变化（等宽字体+语法着色）；md/html 的 渲染↔源码 切换同验；lazy 加载瞬间无白框闪动
+16. **查看↔编辑切换零跳变**：任意文本文件（如 `.ts`）查看 → 编辑 → 画布形态不变（codeblock 全幅背景、上下 10px 边距、无圆角无边框），仅内容层变化；md/html 的 渲染↔源码 切换同验；lazy 加载瞬间无白框闪动
+17. **md 源码↔编辑同套**：md「源码」toggle 与点「编辑」→ 同排印（11.5px 等宽/行高 20px）、同有行号列、同画布——只差语法着色（编辑态有着色为预期）；桌面右栏同验
 
 ## 阻塞 / 风险
 
