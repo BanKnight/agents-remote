@@ -582,12 +582,18 @@ const editorCanvas = await page.evaluate(() => {
   const h = token.replace("#", "");
   const rgb = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
   const bgMatches = cs.backgroundColor === `rgb(${rgb.join(", ")})`;
+  const content = root.querySelector(".cm-content");
+  const ccs = content ? getComputedStyle(content) : null;
   return {
     bgMatches,
     border: cs.borderTopWidth,
     radius: cs.borderRadius,
     bg: cs.backgroundColor,
     token,
+    // 排印对齐 03q2 .ed / 03q .code（11.5px/20px）——md 源码 toggle 与编辑态同套。
+    fontSize: ccs?.fontSize,
+    lineHeight: ccs?.lineHeight,
+    hasLineNumbers: !!root.querySelector(".cm-lineNumbers"),
   };
 });
 ok(
@@ -596,6 +602,13 @@ ok(
     editorCanvas.border === "0px" &&
     editorCanvas.radius === "0px",
   `编辑态画布=codeblock 全幅无框无角（bg=${editorCanvas?.bg} token=${editorCanvas?.token} border=${editorCanvas?.border} radius=${editorCanvas?.radius}）`,
+);
+ok(
+  editorCanvas !== null &&
+    editorCanvas.fontSize === "11.5px" &&
+    editorCanvas.lineHeight === "20px" &&
+    editorCanvas.hasLineNumbers,
+  `编辑态排印/行号对齐 03q2 .ed（font=${editorCanvas?.fontSize} lh=${editorCanvas?.lineHeight} 行号=${editorCanvas?.hasLineNumbers}）`,
 );
 await previewBody.getByRole("button", { name: "完成" }).click();
 await page.waitForTimeout(400);

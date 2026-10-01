@@ -1,15 +1,16 @@
 import { useMemo } from "react";
-import CodeMirror, { EditorView, Prec, minimalSetup } from "@uiw/react-codemirror";
+import CodeMirror, { EditorView, Prec, lineNumbers, minimalSetup } from "@uiw/react-codemirror";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { useTheme } from "../../theme";
 import { extToEditorLanguage } from "./editor-languages";
 
-// 可编辑代码容器：CodeMirror 6 + oneDark 主题。画布对齐 03q2 编辑态（.ed）与 03q 查看态
-//（.code，v2-primitives）的同一规格：bg-codeblock 全幅、无圆角无边框、上下 10px——查看/编辑
-// 切换只有内容渲染层变化，容器零跳变（2026-10-02 用户反馈：旧 rounded-lg + border +
-// surface-inset「输入框」壳使编辑模式观感跳变过大）。等宽字体、0.875rem（对齐渲染模式
-// markdown 正文 text-sm）/ 行高 1.6。用 minimalSetup 而非 basicSetup 省去 fold gutter /
-// 自动补全等重型功能（约省 75KB）。lineWrapping 让移动端长行自动折行。
+// 可编辑代码容器：CodeMirror 6 + oneDark 主题。画布与排印对齐 03q2 编辑态（.ed）与 03q 查看
+// 态（.code，v2-primitives）的**同一规格**：bg-codeblock 全幅、无圆角无边框、上下 10px、
+// 11.5px/20px 等宽、行号列（2026-10-02 用户反馈两轮：①旧 rounded+border「输入框」壳跳变；
+// ②md 源码 toggle（CodeWithLineNumbers）与编辑态字号/行高/行号不同——两处皆因编辑态偏离
+// 原型，对齐后查看/编辑只差语法着色，着色收敛是 spec 既定方向另批做）。用 minimalSetup
+// 而非 basicSetup 省去 fold gutter / 自动补全等重型功能（约省 75KB），行号单独加回
+//（lineNumbers 随 @uiw re-export，零新增依赖）。lineWrapping 让移动端长行自动折行。
 //
 // 受控 value/onChange：value 是可序列化的纯文本，阶段 3 离线草稿可在此基础上挂接 CodeMirror 的
 // initialState.json（EditorState.toJSON/fromJSON）做 IndexedDB 持久化，无需改动此组件契约。
@@ -17,21 +18,24 @@ import { extToEditorLanguage } from "./editor-languages";
 const THEME = EditorView.theme({
   "&": {
     backgroundColor: "transparent",
-    fontSize: "0.875rem",
+    fontSize: "11.5px",
     height: "100%",
   },
   ".cm-content": {
-    // 原型 .ed 左缘留白由 34px 行号列充当；本实现 minimalSetup 无行号，以水平 padding
-    // 等效（16px 对齐查看态 .tx 的 padding-right）。
+    // 原型左缘留白由行号列（.no 34px + padding-right 10px）充当；行号 gutter 落位后
+    // content 左侧不再补 padding，右侧 16px 对齐查看态 .tx。
     padding: "0 16px",
   },
   ".cm-scroller": {
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-    lineHeight: "1.6",
+    lineHeight: "20px",
   },
   ".cm-gutters": {
     backgroundColor: "transparent",
     border: "none",
+  },
+  ".cm-lineNumbers .cm-gutterElement": {
+    color: "var(--ink-3)",
   },
 });
 
@@ -52,6 +56,7 @@ export function CodeEditor({ editable = true, name, onChange, value }: CodeEdito
   const extensions = useMemo(
     () => [
       ...minimalSetup(),
+      lineNumbers(),
       ...(isDark ? [oneDark] : []),
       Prec.highest(THEME),
       ...extToEditorLanguage(name),
