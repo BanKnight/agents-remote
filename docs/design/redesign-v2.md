@@ -1190,7 +1190,21 @@ API 恢复后对第六~十二批 8 个代码 commit（`60dc9e3`~`386533a`）补�
 
 **验证**：`project-files.test` 47 pass——新增黑名单反转语义断言（`.mjs`/`.sql` 文本预览、无扩展名 `Dockerfile` 放行、`.wasm` 假文本内容仍被初筛拦），既有 `.zip` unsupported / `binary.txt` binary_text / `large` too_large 边界全保持；全门禁 866+9+691 绿。**dev api 重启后真实 API 实证**：`scripts/build-icons.mjs` → `text`（5138 字节可编辑）；顺带实测（`bun --watch` 未热重载本次改动，按 runbook `respawn-pane -k` 重启 ar-dev:api 后生效——「watch 偶发不重启」坑复发一次）。**待真机复验**（清单见 handoff）。
 
-**②续：文本预览大小闸放宽 256KiB → 2MiB**（同日用户拍板，用户问值、推荐后采纳）：项目内真实大文本（`playwright-report/index.html` 533KB / `tsbuildinfo` 361–439KB / `daemon.log` 365KB / `bun.lock` 355KB / `redesign-v2.md` 285KB）全被 256KiB 挡在预览外，恰是排查高价值文件；2MiB = 4 倍余量，移动端 JSON gzip 传输秒级、CodeMirror 虚拟渲染查看无感，数量级与 IMAGE 预览（5MiB）一致；上限真正挡的是「10MB sourcemap 不该在手机看」那类，留 raw 下载。测试 `large.txt` 断言用常量生成自动跟随（47 pass）；dev api 重启实证上述五文件全部 `text`。
+**②续：文本预览大小闸放宽 256KiB → 2MiB**（同日用户拍板，用户问值、推荐后采纳）：项目内真实大文本（`playwright-report/index.html` 533KB / `tsbuildinfo` 361–439KB / `ar-dev` daemon.log 365KB / `bun.lock` 355KB / `redesign-v2.md` 285KB）全被 256KiB 挡在预览外，恰是排查高价值文件；2MiB = 4 倍余量，移动端 JSON gzip 传输秒级、CodeMirror 虚拟渲染查看无感，数量级与 IMAGE 预览（5MiB）一致；上限真正挡的是「10MB sourcemap 不该在手机看」那类，留 raw 下载。测试 `large.txt` 断言用常量生成自动跟随（47 pass）；dev api 重启实证上述五文件全部 `text`。
+
+### 第十三批③：模型链路污染——CLI echo 显示串进 state.model（2026-10-01，同日修复）
+
+**用户反馈（两症状同源）**：①「不知道什么时候起，开始出现模型问题」；②「桌面端显示的模型，两侧多出反引号」。
+
+**根因链（JSONL + API 日志 + 进程 cmdline 三处一手数据互证）**：
+1. CLI 对 in-process set_model 的回应是 breadcrumb user message `<local-command-stdout>Set model to <display></local-command-stdout>`，其中 `<display>` 是 modelDisplayString 输出的**人类可读显示串**，实测形状为 markdown code span：反引号包裹的 `opus[1m] (claude-opus-4-8[1m])`（+ 尾部 (resolved) 注解）。
+2. `extractModelFromStdoutLine`（`api/src/claude-runtime.ts`）旧解析按「token before ( 」假设设计——对 code span 形状失配：正则剥掉括号注解后尾部反引号收不了尾、回溯成整串进 group 1 → 脏值（反引号+alias+注解）进 state.model。
+3. **放大器 = resume**：API 重启 ensureRunning 用 `--resume --model ${state.model}` 重拉 CLI（cmdline 实证 `--model `反引号opus[1m] (claude-opus-4-8[1m])`反引号`）→ CLI 拿显示串当模型名请求 → 网关 422 model not found（症状①「模型问题」）；init 帧 echo 脏值 → UI 原样显示（症状②反引号）。
+4. 与用户怀疑的「agent 恢复动到逻辑」方向部分吻合（resume 是放大器），但 git 历史核实**近期无模型链路代码改动**——根因是 CLI echo 格式与解析假设失配，非代码回归。
+
+**修法（同日收口）**：新增导出纯函数 `sanitizePersistedModel`（`api/src/claude-runtime.ts`）：① 剥 markdown code span 反引号 → ② 剥尾部 (resolved) 注解（保持旧语义）→ ③ 白名单闸 `[A-Za-z0-9._-]+([1m])?`——帮助文案/ANSI 样式文本/剥不出合法 token 的长尾文案一律拒绝返回 undefined，调用方跳过更新（宁可保守不让显示串进链路）。两处接入：`extractModelFromStdoutLine` 出口归一（防新增污染）；`spawnClaudeDirect` 的 `--model` 传参闸（**拦存量脏值**——恢复语义后传 `opus[1m]`，不丢 opusplan plan-mode 语义与 [1m] 后缀；恢复失败则不传 --model 回落 CLI 默认）。
+
+**验证**：`claude-runtime.test` 50 pass（新增 7 条：code span 剥离含/不含 [1m]、`(id)` 与长尾文案拒绝、alias/具体 ID/[1m] 恒等、legacy `(resolved)` 形状兼容保持）；api 全量 872 pass；dev api 已按 runbook respawn，脏 CLI 进程已随 API 重启消亡（`claude --output-format` 进程零残留）。**待真机复验**：重开问题会话 → 模型 pill 无反引号、发消息不再 422。
 
 ## §7 待定项跟踪
 
