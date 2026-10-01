@@ -1190,6 +1190,8 @@ API 恢复后对第六~十二批 8 个代码 commit（`60dc9e3`~`386533a`）补�
 
 **验证**：`project-files.test` 47 pass——新增黑名单反转语义断言（`.mjs`/`.sql` 文本预览、无扩展名 `Dockerfile` 放行、`.wasm` 假文本内容仍被初筛拦），既有 `.zip` unsupported / `binary.txt` binary_text / `large` too_large 边界全保持；全门禁 866+9+691 绿。**dev api 重启后真实 API 实证**：`scripts/build-icons.mjs` → `text`（5138 字节可编辑）；顺带实测（`bun --watch` 未热重载本次改动，按 runbook `respawn-pane -k` 重启 ar-dev:api 后生效——「watch 偶发不重启」坑复发一次）。**待真机复验**（清单见 handoff）。
 
+**②续：文本预览大小闸放宽 256KiB → 2MiB**（同日用户拍板，用户问值、推荐后采纳）：项目内真实大文本（`playwright-report/index.html` 533KB / `tsbuildinfo` 361–439KB / `daemon.log` 365KB / `bun.lock` 355KB / `redesign-v2.md` 285KB）全被 256KiB 挡在预览外，恰是排查高价值文件；2MiB = 4 倍余量，移动端 JSON gzip 传输秒级、CodeMirror 虚拟渲染查看无感，数量级与 IMAGE 预览（5MiB）一致；上限真正挡的是「10MB sourcemap 不该在手机看」那类，留 raw 下载。测试 `large.txt` 断言用常量生成自动跟随（47 pass）；dev api 重启实证上述五文件全部 `text`。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

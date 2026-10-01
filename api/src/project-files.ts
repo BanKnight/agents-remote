@@ -21,7 +21,11 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { basename, dirname, extname, join, relative } from "node:path";
 import { ProjectPathError, resolveProjectRelativePath, resolveProjectsRoot } from "./project-paths";
 
-export const TEXT_PREVIEW_LIMIT_BYTES = 256 * 1024;
+// 2MiB（2026-10-01 用户拍板放宽，原 256KiB）：项目内真实大文本（lock/log/tsbuildinfo/
+// sourcemap/长文档，实测最大 553KB）全被 256KiB 挡在预览外，而它们恰是排查高价值文件；
+// 2MiB = 4 倍余量，移动端 JSON gzip 传输秒级、CodeMirror 虚拟渲染查看无感。上限真正
+// 挡的是「10MB sourcemap 不该在手机看」，那类留给 raw 下载。
+export const TEXT_PREVIEW_LIMIT_BYTES = 2 * 1024 * 1024;
 export const IMAGE_PREVIEW_LIMIT_BYTES = 5 * 1024 * 1024;
 
 /** 03x 文件搜索：结果上限（达到即 truncated，客户端提示「仅显示前 N 个」）。 */
