@@ -1206,6 +1206,16 @@ API 恢复后对第六~十二批 8 个代码 commit（`60dc9e3`~`386533a`）补�
 
 **验证**：`claude-runtime.test` 50 pass（新增 7 条：code span 剥离含/不含 [1m]、`(id)` 与长尾文案拒绝、alias/具体 ID/[1m] 恒等、legacy `(resolved)` 形状兼容保持）；api 全量 872 pass；dev api 已按 runbook respawn，脏 CLI 进程已随 API 重启消亡（`claude --output-format` 进程零残留）。**待真机复验**：重开问题会话 → 模型 pill 无反引号、发消息不再 422。
 
+### 第十三批④：编辑态画布对齐 03q2——bg-codeblock 全幅去「输入框」壳（2026-10-02，commit `0663ddd`）
+
+**用户反馈**：CodeMirror 编辑模式的背景色/圆角矩形/边距与预览态差异过大，查看↔编辑切换观感跳变。
+
+**对照标尺实锤偏离**：03q2 编辑态（`.ed`）与 03q 查看态（`.code`，`v2-primitives.css` 已实现的查看画布）是**同一规格**——`bg-codeblock` 全幅、无圆角无边框、`padding: 10px 0`。跳变真相 = 设计里两端都是全幅画布，唯独实现的编辑态被做成了嵌套「输入框」壳（`rounded-lg + border + surface-inset/80 + 外层 p-3`）。
+
+**修法（四处，全在既有单源上）**：CodeEditor 根壳 → `bg-codeblock` 全幅（去 rounded/border/surface-inset），THEME 补 `.cm-content` padding `0 16px`（原型左缘留白由 34px 行号列充当，minimalSetup 无行号，以水平 padding 等效、对齐查看态 `.tx` padding-right）；PreviewBody source 分支 + mobile-l3 编辑分支外层 `p-3` → `py-2.5`（10px 0）；CodeEditorFallback 同步全幅——lazy 就位瞬间零跳变。**行号 diverge 保持**：03q2 原型有行号列（`.no` 34px），实现 minimalSetup 无行号（既有省体积取舍，非本次范围）。剩余色差（codeblock vs 页面底）= 03q2↔03q3 之间的设计预期切换。无关消费不动：markdown CodeBlock/工具条的 `surface-inset` 壳语义正确（内嵌卡 ≠ 全幅画布）。
+
+**验证**：m4 探针 71 pass（新增画布硬数据断言：CodeEditor 根 `backgroundColor` 与 `--bg-codeblock` token 一致 + border 0 + radius 0）；CSS 硬闸过（`bg-codeblock` utility 首次消费、content-type text/css）；token 机检 strict 0 违例；e2e 无旧壳断言。**待真机复验**：任意文本文件 查看↔编辑 切换——画布形态（背景/边距/无框无角）不变，仅内容层变（等宽+着色），md/html 渲染↔源码同验。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
