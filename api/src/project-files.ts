@@ -783,36 +783,84 @@ const imageMediaType = (path: string): ProjectFilePreviewMediaType | undefined =
   }
 };
 
-const textExtensions = new Set([
-  "",
-  ".c",
-  ".conf",
-  ".cpp",
-  ".css",
-  ".csv",
-  ".env",
-  ".gitignore",
-  ".go",
-  ".h",
-  ".html",
-  ".js",
-  ".json",
-  ".jsx",
-  ".log",
-  ".md",
-  ".py",
-  ".rs",
-  ".sh",
-  ".toml",
-  ".ts",
-  ".tsx",
-  ".txt",
-  ".xml",
-  ".yaml",
-  ".yml",
+/**
+ * 二进制扩展名黑名单（预览/编辑初筛）。判定方向 = 黑名单外皆按文本尝试（2026-10-01
+ * 用户反馈 .mjs 等源码不能查看——文本白名单永远追不全源码/配置扩展名，反转后新扩展名
+ * 天然支持）。黑名单只做初筛，真二进制另有内容级双闸兜底：UTF-8 strict 解码失败
+ *（decodeText → undefined）或含控制字符（containsBinaryControlCharacters）都会落
+ * unsupported，黑名单漏网文件不会以乱码漏出。无扩展名文件（Dockerfile/Makefile/LICENSE）
+ * 不命中黑名单，天然放行；图片先由 imageMediaType 分流，不进本判定。
+ */
+const binaryExtensions = new Set([
+  // 图片（svg 走 imageMediaType 先行分流，不在本列）
+  ".avif",
+  ".bmp",
+  ".gif",
+  ".heic",
+  ".ico",
+  ".jpeg",
+  ".jpg",
+  ".png",
+  ".tif",
+  ".tiff",
+  ".webp",
+  // 音视频
+  ".aac",
+  ".avi",
+  ".flac",
+  ".m4a",
+  ".mkv",
+  ".mov",
+  ".mp3",
+  ".mp4",
+  ".ogg",
+  ".wav",
+  ".webm",
+  // 归档/压缩
+  ".7z",
+  ".bz2",
+  ".gz",
+  ".rar",
+  ".tar",
+  ".tgz",
+  ".xz",
+  ".zst",
+  ".zip",
+  // 字体
+  ".eot",
+  ".otf",
+  ".ttf",
+  ".woff",
+  ".woff2",
+  // 文档（二进制格式）
+  ".doc",
+  ".docx",
+  ".pdf",
+  ".ppt",
+  ".pptx",
+  ".xls",
+  ".xlsx",
+  // 编译产物/二进制可执行
+  ".a",
+  ".class",
+  ".dll",
+  ".dylib",
+  ".exe",
+  ".jar",
+  ".node",
+  ".o",
+  ".pyc",
+  ".so",
+  ".wasm",
+  // 数据库/缓存/锁（bun.lockb 为二进制格式）
+  ".db",
+  ".ds_store",
+  ".lockb",
+  ".sqlite",
+  ".sqlite3",
 ]);
 
-const isSupportedTextPath = (path: string) => textExtensions.has(extname(path).toLowerCase());
+const isSupportedTextPath = (path: string) => !binaryExtensions.has(extname(path).toLowerCase());
 
 const decodeText = (content: Buffer) => {
   try {

@@ -152,6 +152,33 @@ test("previewFile returns unsupported and too_large preview states", async () =>
   });
 });
 
+// 黑名单反转语义（2026-10-01 用户反馈 .mjs 不能查看）：扩展名只做二进制初筛，
+// 黑名单外（含未知扩展/无扩展名）皆按文本尝试，真二进制由内容级检测兜底。
+test("previewFile treats unknown extensions as text (binary blocklist)", async () => {
+  await writeFile(join(root, "demo", "script.mjs"), "export default 1;");
+  await writeFile(join(root, "demo", "Dockerfile"), "FROM node:22\n");
+  await writeFile(join(root, "demo", "schema.sql"), "CREATE TABLE t(id);");
+  await writeFile(join(root, "demo", "firmware.wasm"), "text-in-disguise");
+  const service = new ProjectFilesService(root);
+
+  await expect(service.previewFile("demo", "script.mjs")).resolves.toMatchObject({
+    type: "text",
+    content: "export default 1;",
+  });
+  await expect(service.previewFile("demo", "Dockerfile")).resolves.toMatchObject({
+    type: "text",
+    content: "FROM node:22\n",
+  });
+  await expect(service.previewFile("demo", "schema.sql")).resolves.toMatchObject({
+    type: "text",
+  });
+  // 黑名单初筛：.wasm 即使内容是文本也拦（unsupported_type）。
+  await expect(service.previewFile("demo", "firmware.wasm")).resolves.toMatchObject({
+    type: "unsupported",
+    reason: "unsupported_type",
+  });
+});
+
 test("ProjectFilesService rejects path escape and type mismatches", async () => {
   await mkdir(join(root, "demo", "src"));
   await writeFile(join(root, "demo", "file.txt"), "content");
