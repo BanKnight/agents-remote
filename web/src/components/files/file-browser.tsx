@@ -687,8 +687,10 @@ const rewriteSrcAttr = (tag: string, value: string): string =>
 
 export const rewriteImgSrc = (tag: string, dataUrl: string): string => rewriteSrcAttr(tag, dataUrl);
 
-// srcdoc 属性值转义：& 与 " 要放进双引号属性内。
-const escapeSrcdoc = (doc: string): string => doc.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+// srcdoc 属性值转义：& 与 " 要放进双引号属性内（& 必须最先，后续实体的 & 不被二次转义；
+// < 在双引号属性值内本合法，转义后浏览器解码无损——reviewer 建议的规范健壮性）。
+const escapeSrcdoc = (doc: string): string =>
+  doc.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 
 // ── 静态图标水合（2026-09-30 真机反馈：嵌套原型页图标消失）────────────────
 // 项目图标管线的静态页（docs/design 原型等）用 <i data-icon="x"></i> 空占位 +
@@ -703,6 +705,11 @@ export const ICON_SCRIPT_TAG_RE = /<script\b[^>]*?\ssrc=["']([^"']+)["'][^>]*>\s
 export const WINDOW_ICONS_ASSIGN_RE = /window\.ICONS\s*=\s*\{/;
 export const DATA_ICON_TAG_RE =
   /<(?:i|span)\b[^>]*?\sdata-icon=["']([^"']+)["'][^>]*>\s*<\/(?:i|span)>/gi;
+
+// <style>/<script> 完整段（含标签）——内联前剥出为占位，资源收集与 data-icon 水合
+// 都不进样式/脚本文本（CSS 注释里的 `<i data-icon>` 字样曾被占位正则误替换成 svg，
+// 第八批 33 处残留实为此因；script 闭合法则保证段内无嵌套段）。
+export const STYLE_SCRIPT_SEGMENT_RE = /<(style|script)\b[^>]*>[\s\S]*?<\/\1>/gi;
 
 // 解析 window.ICONS 注册表；非该格式（或 JSON 非法）返回 null。括号配对（含
 // 字符串/转义感知）找首个平衡对象后 JSON.parse——不 eval，杜绝执行任意代码。
@@ -793,13 +800,35 @@ export async function inlineLocalHtmlAssets(
 ): Promise<string> {
   const { dir, projectName, fetchPreview, depth = 0 } = opts;
 
+  // per-call fetch 去重：同一文档树（含嵌套 iframe）内同 path 只 fetch 一次——外层与
+  // 嵌套文档共引 icons.js/共享 css 是常态；跨调用不缓存（preview 重取后内容可能已变）。
+  const fetchCache = new Map<string, Promise<ProjectFilePreviewResponse>>();
+  const fetchOnce: InlinePreviewFetcher = (name, path) => {
+    const key = `${name}\uE000${path}`;
+    let p = fetchCache.get(key);
+    if (!p) {
+      p = fetchPreview(name, path);
+      fetchCache.set(key, p);
+    }
+    return p;
+  };
+
+  // 剥出 style/script 段为 PUA 占位（ 转义，私有使用区字符，正常 HTML 文档
+  // 不会出现；段定义见 STYLE_SCRIPT_SEGMENT_RE 注）——资源收集与 data-icon 水合只
+  // 作用于正文。带 src 的 script 标签随之进 segments，iconScript jobs 改从 segments
+  // 收集（fetch 语义不变，水合目标本来就是正文占位）。
+  const segments: string[] = [];
+  html = html.replace(STYLE_SCRIPT_SEGMENT_RE, (m) => `\uE000${segments.push(m) - 1}\uE000`);
+
   const stylesheetJobs = [...html.matchAll(STYLESHEET_LINK_RE)].map(async ([fullTag, href]) => {
     const cssPath = localAssetProjectPath(dir, href);
     if (cssPath === null) return;
     try {
-      const data = await fetchPreview(projectName, cssPath);
+      const data = await fetchOnce(projectName, cssPath);
       if (data.type === "text" && data.content) {
-        html = html.replace(fullTag, `<style>${data.content}</style>`);
+        // 替换串走函数形式：字符串替换串里 `$&`/`` $` ``/`$'` 会被当特殊序列展开，
+        // css/嵌套文档内容（任意文本，常内嵌 JS）一旦出现即静默破坏内联产物。
+        html = html.replace(fullTag, () => `<style>${data.content}</style>`);
       }
     } catch {
       // leave the link tag as-is if fetch fails
@@ -810,9 +839,9 @@ export async function inlineLocalHtmlAssets(
     const imgPath = localAssetProjectPath(dir, src);
     if (imgPath === null) return;
     try {
-      const data = await fetchPreview(projectName, imgPath);
+      const data = await fetchOnce(projectName, imgPath);
       if (data.type === "image" && data.dataUrl) {
-        html = html.replace(fullTag, rewriteImgSrc(fullTag, data.dataUrl));
+        html = html.replace(fullTag, () => rewriteImgSrc(fullTag, data.dataUrl));
       }
     } catch {
       // leave the img tag as-is if fetch fails
@@ -823,7 +852,7 @@ export async function inlineLocalHtmlAssets(
     const nestedPath = localAssetProjectPath(dir, src);
     if (nestedPath === null) return;
     try {
-      const data = await fetchPreview(projectName, nestedPath);
+      const data = await fetchOnce(projectName, nestedPath);
       if (data.type === "text" && data.content) {
         // 嵌套文档内的相对引用基于嵌套文档自身目录。
         const nestedDir = nestedPath.includes("/")
@@ -834,13 +863,14 @@ export async function inlineLocalHtmlAssets(
             ? await inlineLocalHtmlAssets(data.content, {
                 dir: nestedDir,
                 projectName,
-                fetchPreview,
+                // 透传 fetchOnce：嵌套树与外层共享去重。
+                fetchPreview: fetchOnce,
                 depth: depth + 1,
               })
             : data.content;
-        html = html.replace(fullTag, rewriteIframeSrcdoc(fullTag, nested));
+        html = html.replace(fullTag, () => rewriteIframeSrcdoc(fullTag, nested));
       } else if (data.type === "image" && data.dataUrl) {
-        html = html.replace(fullTag, rewriteSrcAttr(fullTag, data.dataUrl));
+        html = html.replace(fullTag, () => rewriteSrcAttr(fullTag, data.dataUrl));
       }
     } catch {
       // leave the iframe tag as-is if fetch fails
@@ -849,22 +879,26 @@ export async function inlineLocalHtmlAssets(
 
   // 静态图标水合：文档引用的 icons.js（window.ICONS 格式）在 sandbox 禁脚本下
   // 不再水合 data-icon 占位 → 图标空白。fetch 脚本后静态替换占位（见上方注释）。
-  const iconScriptJobs = [...html.matchAll(ICON_SCRIPT_TAG_RE)].map(async ([, src]) => {
-    const jsPath = localAssetProjectPath(dir, src);
-    if (jsPath === null) return;
-    try {
-      const data = await fetchPreview(projectName, jsPath);
-      if (data.type !== "text" || !data.content) return;
-      const icons = parseWindowIcons(data.content);
-      if (!icons) return;
-      html = hydrateDataIconPlaceholders(html, icons);
-    } catch {
-      // leave data-icon placeholders as-is if fetch fails
-    }
-  });
+  // jobs 从 segments 收集——script 标签已随段剥出，水合目标本来就是正文占位。
+  const iconScriptJobs = segments.flatMap((seg) =>
+    [...seg.matchAll(ICON_SCRIPT_TAG_RE)].map(async ([, src]) => {
+      const jsPath = localAssetProjectPath(dir, src);
+      if (jsPath === null) return;
+      try {
+        const data = await fetchOnce(projectName, jsPath);
+        if (data.type !== "text" || !data.content) return;
+        const icons = parseWindowIcons(data.content);
+        if (!icons) return;
+        html = hydrateDataIconPlaceholders(html, icons);
+      } catch {
+        // leave data-icon placeholders as-is if fetch fails
+      }
+    }),
+  );
 
   await Promise.all([...stylesheetJobs, ...imgJobs, ...iframeJobs, ...iconScriptJobs]);
-  return html;
+  // 回填剥出的 style/script 段（占位 = NUL + index + NUL，正常 HTML 文档不含 NUL）。
+  return html.replace(/\uE000(\d+)\uE000/g, (_, i: string) => segments[Number(i)]);
 }
 
 export function CodeEditorFallback() {
@@ -888,6 +922,13 @@ export type PreviewBodyProps = {
 export function PreviewBody({ preview, renderMode, editValue, onEditChange }: PreviewBodyProps) {
   const { t } = useT();
   const [inlinedHtml, setInlinedHtml] = useState<string | null>(null);
+  // 内联产物缓存（key = preview 引用）：source↔render 切换、staleTime=0 refetch 未换
+  // 引用时复用，不重跑内联管道（img/css/iframe 逐个 fetch 的量级不小）。引用变了
+  //（内容真变）才重跑。
+  const inlinedRef = useRef<{
+    html: Promise<string>;
+    preview: ProjectFilePreviewResponse;
+  } | null>(null);
 
   useEffect(() => {
     if (preview.type !== "text" || renderMode !== "render") {
@@ -895,20 +936,25 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
       return;
     }
     let cancelled = false;
-    const dir = preview.path.includes("/")
-      ? preview.path.slice(0, preview.path.lastIndexOf("/") + 1)
-      : "";
-    const fetchPreview: InlinePreviewFetcher = async (projectName, path) => {
-      const res = await fetch(previewUrl(projectName, path));
-      if (!res.ok) throw new Error(`preview ${path}: ${res.status}`);
-      return (await res.json()) as ProjectFilePreviewResponse;
-    };
+    let promise = inlinedRef.current?.preview === preview ? inlinedRef.current.html : null;
+    if (!promise) {
+      const dir = preview.path.includes("/")
+        ? preview.path.slice(0, preview.path.lastIndexOf("/") + 1)
+        : "";
+      const fetchPreview: InlinePreviewFetcher = async (projectName, path) => {
+        const res = await fetch(previewUrl(projectName, path));
+        if (!res.ok) throw new Error(`preview ${path}: ${res.status}`);
+        return (await res.json()) as ProjectFilePreviewResponse;
+      };
+      promise = inlineLocalHtmlAssets(preview.content, {
+        dir,
+        projectName: preview.projectName,
+        fetchPreview,
+      });
+      inlinedRef.current = { html: promise, preview };
+    }
 
-    void inlineLocalHtmlAssets(preview.content, {
-      dir,
-      projectName: preview.projectName,
-      fetchPreview,
-    })
+    void promise
       .then((html) => {
         if (!cancelled) setInlinedHtml(html);
       })

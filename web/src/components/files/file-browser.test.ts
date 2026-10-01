@@ -116,7 +116,7 @@ describe("rewriteImgSrc", () => {
 describe("rewriteIframeSrcdoc", () => {
   test("src 属性替换为 srcdoc，& 与 &quot; 转义后放进双引号属性", () => {
     expect(rewriteIframeSrcdoc(`<iframe src="chart.html" width="600">`, `<p>a &amp; "b"</p>`)).toBe(
-      `<iframe srcdoc="<p>a &amp;amp; &quot;b&quot;</p>" width="600">`,
+      `<iframe srcdoc="&lt;p>a &amp;amp; &quot;b&quot;&lt;/p>" width="600">`,
     );
   });
 });
@@ -143,9 +143,10 @@ describe("inlineLocalHtmlAssets", () => {
     });
     expect(html).toContain('srcdoc="');
     expect(html).not.toContain('src="charts/chart.html"');
-    // 嵌套文档在内联 img 后才整体进 srcdoc：dataUrl 的引号已随转义层变 &quot;。
+    // 嵌套文档在内联 img 后才整体进 srcdoc：dataUrl 的引号已随转义层变 &quot;，
+    // < 随 escapeSrcdoc 变 &lt;（> 属性值内合法不转义；解码无损）。
     expect(html).toContain("data:image/svg+xml;base64,");
-    expect(html).toContain("<style>b{}</style>");
+    expect(html).toContain("&lt;style>b{}&lt;/style>");
   });
 
   test("iframe 指向本地图片（svg）→ src 换 dataUrl，非本地引用保持原样", async () => {
@@ -171,7 +172,7 @@ describe("inlineLocalHtmlAssets", () => {
         "chart.html": { type: "text", content: `<p data-x="a&b">say "hi"</p>` },
       }),
     });
-    expect(html).toContain(`srcdoc="<p data-x=&quot;a&amp;b&quot;>say &quot;hi&quot;</p>"`);
+    expect(html).toContain(`srcdoc="&lt;p data-x=&quot;a&amp;b&quot;>say &quot;hi&quot;&lt;/p>"`);
   });
 
   test(`深度上限（${INLINE_NESTED_HTML_MAX_DEPTH} 层）：超限嵌套文档不再递归内联，原样进 srcdoc`, async () => {
@@ -265,6 +266,82 @@ describe("inlineLocalHtmlAssets", () => {
       },
     );
     expect(html).toContain('data-icon="x"');
+  });
+
+  test("替换串函数形式：css/嵌套文档内容含 $& 特殊序列不被展开", async () => {
+    const css = `.a::after{content:"$&"}`;
+    const nested = `<p>$&</p>`;
+    const html = await inlineLocalHtmlAssets(
+      `<link rel="stylesheet" href="s.css"><iframe src="n.html"></iframe>`,
+      {
+        dir: "",
+        projectName: "proj",
+        fetchPreview: fakeFetcher({
+          "s.css": { type: "text", content: css },
+          "n.html": { type: "text", content: nested },
+        }),
+      },
+    );
+    // 字符串替换串会把 $& 展开成被匹配的标签文本；函数形式原样保留。
+    expect(html).toContain(`<style>${css}</style>`);
+    expect(html).toContain(`srcdoc="&lt;p>$&amp;&lt;/p>"`);
+  });
+
+  test("剥段：style/script 段原样保留，段内标签字样不参与资源收集与水合", async () => {
+    const styleBody = `/* <i data-icon="search"></i> <img src="fake.png"> */ .x{color:red}`;
+    const scriptBody = `if (a < b && c > d) { run(); }`;
+    const html = await inlineLocalHtmlAssets(
+      `<style>${styleBody}</style><script>${scriptBody}</script>` +
+        `<i data-icon="search"></i><script src="icons.js"></script>`,
+      {
+        dir: "",
+        projectName: "proj",
+        fetchPreview: fakeFetcher({
+          "icons.js": { type: "text", content: `window.ICONS = {"search":"<circle/>"};` },
+        }),
+      },
+    );
+    // 正文占位水合；段内同字样不被水合、段内 img 字样不被收集（fake.png 未配置 fetch，
+    // 若被误收集会 404 保持原样——用「结果不含 dataUrl」实锤）。
+    expect(html).toContain("<circle/>");
+    expect(html).toContain(`/* <i data-icon="search"></i>`);
+    expect(html).not.toContain("data:image/svg+xml");
+    expect(html).toContain(`<style>${styleBody}</style>`);
+    expect(html).toContain(`<script>${scriptBody}</script>`);
+  });
+
+  test("per-call fetch 去重：嵌套文档与外层共引 icons.js 只 fetch 一次", async () => {
+    let calls = 0;
+    const fetcher = async (_p: string, path: string): Promise<ProjectFilePreviewResponse> => {
+      calls++;
+      if (path === "icons.js")
+        return {
+          projectName: "proj",
+          path,
+          name: "icons.js",
+          size: 0,
+          type: "text",
+          content: `window.ICONS = {"search":"<circle/>"};`,
+        } as ProjectFilePreviewResponse;
+      if (path === "n.html")
+        return {
+          projectName: "proj",
+          path,
+          name: "n.html",
+          size: 0,
+          type: "text",
+          content: `<i data-icon="search"></i><script src="icons.js"></script>`,
+        } as ProjectFilePreviewResponse;
+      throw new Error(`404 ${path}`);
+    };
+    const html = await inlineLocalHtmlAssets(
+      `<i data-icon="search"></i><script src="icons.js"></script><iframe src="n.html"></iframe>`,
+      { dir: "", projectName: "proj", fetchPreview: fetcher },
+    );
+    // icons.js 外层 1 次 + n.html 1 次 = 2（无去重嵌套会再 fetch icons.js = 3）；
+    // 嵌套文档的占位在进 srcdoc 前同样水合（> 属性值内合法不转义）。
+    expect(calls).toBe(2);
+    expect(html).toContain("&lt;circle/>");
   });
 });
 

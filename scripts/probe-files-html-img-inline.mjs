@@ -306,9 +306,10 @@ async function run() {
     );
 
     console.log("\n===== 1d. data-icon 静态水合（2026-09-30 第八批真机反馈） =====");
-    // 嵌套层水合的 svg 在外层 srcDoc 属性值里经 srcdoc 转义（" → &quot;），
-    // 先解码再断言嵌套文档产物。
-    const nestedDoc = srcDoc?.replaceAll("&quot;", '"').replaceAll("&amp;", "&") ?? "";
+    // 嵌套层水合的 svg 在外层 srcDoc 属性值里经 srcdoc 转义（& → &amp;、< → &lt;、
+    // " → &quot;），先解码再断言嵌套文档产物（&amp; 最后解，防 &amp;lt; 错解）。
+    const nestedDoc =
+      srcDoc?.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&amp;", "&") ?? "";
     record(
       nestedDoc.includes('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"') === true,
       "嵌套文档 data-icon 占位已静态水合成 svg（icons.js 注册表）",
