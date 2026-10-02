@@ -62,7 +62,19 @@ export function resolveCurrentModelAlias(
   resolved: Record<string, string> | undefined,
 ): string | undefined {
   if (!current) return current;
-  if (resolved?.[current]) return current;
-  const entry = Object.entries(resolved ?? {}).find(([, v]) => v === current);
-  return entry?.[0] ?? current;
+  // 显示层脏值兜底（2026-10-02 第十三批③⑤）：服务端已全链路 sanitize（metadata 读写边界 +
+  // CLI 传参），但 relay 内存缓冲 / 历史 JSONL 里可能仍有存量脏帧。含反引号的 code span
+  // 显示串剥出 base 后，base 命中 resolved key（alias 自身，如 opus[1m]）或 value（具体 ID）
+  // 才接受；不含反引号的 current 同样过 token 形状闸（(id) 类帮助占位 / 文案尾巴按 undefined
+  // 处理触发 fallback 链）——不让显示串进 UI。
+  let s = current.trim();
+  if (s.length >= 2 && s.startsWith("`") && s.endsWith("`")) s = s.slice(1, -1).trim();
+  const paren = s.indexOf(" (");
+  const base = paren > 0 ? s.slice(0, paren).trim() : s;
+  if (resolved?.[base]) return base;
+  const entry = Object.entries(resolved ?? {}).find(([, v]) => v === base);
+  if (entry) return entry[0];
+  // 未命中映射：形状合法的 token 原样保留（未知具体 ID / 老数据兜底语义不变）；显示串形状
+  // （空白/括号/不合法字符）一律丢弃。
+  return /^[A-Za-z0-9._-]+(?:\[1m\])?$/.test(base) ? base : undefined;
 }

@@ -526,6 +526,99 @@ test("SessionRegistry normalizes legacy acp provider to omp on metadata load (Ph
   expect(sessions[0].acpSessionId).toBe("omp-legacy-session-abc");
 });
 
+test("SessionRegistry sanitizes legacy dirty model values on metadata load (2026-10-01 echo regression)", async () => {
+  // 旧版把 CLI「Set model to」显示串（code span 反引号 + (resolved) 注解）整串写进了
+  // metadata.modelAlias；model 会被 system.init 覆盖干净，modelAlias 却无人再写——前端
+  // 优先读 modelAlias → 显示两侧反引号。parseMetadata 读取即归一：code span 剥离出裸
+  // alias；剥不出 token 的（文案尾巴）抹掉字段让前端回落 model。
+  const legacy = {
+    schemaVersion: 1,
+    id: "agent_legacymodelxyz",
+    projectName: project.name,
+    projectPath: project.path,
+    type: "agent",
+    provider: "claude",
+    displayName: "Claude Agent legacy model",
+    status: "running",
+    runtimeKey: "ar-agent-claude-hello-world-8f3a2b1c-agent_legacymodel",
+    createdAt: "2026-09-20T00:00:00.000Z",
+    updatedAt: "2026-09-20T00:00:00.000Z",
+    claudeSessionId: "claude-legacy-session-model",
+    model: "claude-opus-4-8[1m]",
+    modelAlias: "`opus[1m] (claude-opus-4-8[1m])`",
+  };
+  await mkdir(join(runDir, "sessions"), { recursive: true });
+  await writeFile(
+    join(runDir, "sessions", "agent_legacymodelxyz.json"),
+    JSON.stringify(legacy, null, 2),
+  );
+
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    runtime: {
+      async exists() {
+        return false;
+      },
+      async close() {},
+      async listAliveRuntimeKeys() {
+        return new Set<string>();
+      },
+    },
+  });
+
+  const sessions = await registry.listAgentSessions(project.name);
+  expect(sessions).toHaveLength(1);
+  // code span + (resolved) 注解 → 剥出裸 alias；model（干净）保持。
+  expect(sessions[0].modelAlias).toBe("opus[1m]");
+  expect(sessions[0].model).toBe("claude-opus-4-8[1m]");
+});
+
+test("SessionRegistry drops unsanitizable modelAlias on load (falls back to model)", async () => {
+  // 剥不出合法 token 的长尾文案（如「saved as your default」尾巴）→ 字段抹掉 undefined，
+  // 前端回落 model——宁可弃用也不让显示串进显示层。
+  const legacy = {
+    schemaVersion: 1,
+    id: "agent_legacymodelbad",
+    projectName: project.name,
+    projectPath: project.path,
+    type: "agent",
+    provider: "claude",
+    displayName: "Claude Agent legacy model bad",
+    status: "running",
+    runtimeKey: "ar-agent-claude-hello-world-8f3a2b1c-agent_legacymodelbad",
+    createdAt: "2026-09-20T00:00:00.000Z",
+    updatedAt: "2026-09-20T00:00:00.000Z",
+    claudeSessionId: "claude-legacy-session-model-bad",
+    model: "claude-opus-4-8[1m]",
+    modelAlias: "`Opus 5 (1M context)` and saved as your default for new sessions",
+  };
+  await mkdir(join(runDir, "sessions"), { recursive: true });
+  await writeFile(
+    join(runDir, "sessions", "agent_legacymodelbad.json"),
+    JSON.stringify(legacy, null, 2),
+  );
+
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    runtime: {
+      async exists() {
+        return false;
+      },
+      async close() {},
+      async listAliveRuntimeKeys() {
+        return new Set<string>();
+      },
+    },
+  });
+
+  const sessions = await registry.listAgentSessions(project.name);
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0].modelAlias).toBeUndefined();
+  expect(sessions[0].model).toBe("claude-opus-4-8[1m]");
+});
+
 test("createRuntimeKey 的 provider 段承载 transport 家族（omp → acp）", () => {
   // omp 会话 key 段 = "acp"（与 Phase 1 存量一致，isAcpSessionName/存量 metadata 零改动）。
   expect(createRuntimeKey("hello world", "agent", "omp", "agent_1234567890abcdef")).toStartWith(

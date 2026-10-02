@@ -17,6 +17,7 @@ import { getAgentProviderProfile } from "./agent-provider-profiles";
 import type { ResolvedProjectPath } from "./project-paths";
 import { extractLastCommand } from "./tmux-runtime";
 import { getLastAssistantMessage } from "./agent-history";
+import { sanitizePersistedModel } from "./model-id";
 
 export type SessionMetadata = {
   schemaVersion: 1;
@@ -244,7 +245,12 @@ export class SessionRegistry {
       claudeSessionId,
       updatedAt: this.now().toISOString(),
     };
-    if (model) updated.model = model;
+    // system.init 回传的是 CLI 解析后的具体 ID（干净）；仍过同一道闸，保持「model 入盘
+    // 必经 model-id.ts」的单源约束（脏串宁可弃用也不落盘）。
+    if (model) {
+      const safe = sanitizePersistedModel(model);
+      if (safe) updated.model = safe;
+    }
     await this.writeMetadata(updated);
   }
 
@@ -271,10 +277,14 @@ export class SessionRegistry {
     await this.ensureLoaded();
     const metadata = this.index.get(sessionId);
     if (!metadata) return;
+    // 写边界归一（读边界 parseMetadata 也有同一道闸）：model 经 claude-runtime 已 sanitize，
+    // 此处再兜一次防未来新调用点漏过——剥不出合法 token 则整体跳过（保留已存值）。
+    const safe = sanitizePersistedModel(model);
+    if (!safe) return;
     const updated: SessionMetadata = {
       ...metadata,
-      model,
-      modelAlias: model,
+      model: safe,
+      modelAlias: safe,
       updatedAt: this.now().toISOString(),
     };
     await this.writeMetadata(updated);
@@ -692,8 +702,9 @@ export class SessionRegistry {
       updatedAt: timestamp,
       claudeSessionId: input.claudeSessionId,
       acpSessionId: input.acpSessionId,
-      model: input.model,
-      modelAlias: input.model,
+      // model 与 modelAlias 同源同归一（model 供 --resume 传给 CLI、modelAlias 供前端显示）。
+      model: sanitizePersistedModel(input.model),
+      modelAlias: sanitizePersistedModel(input.model),
       permissionMode: input.permissionMode,
       effort: input.effort,
     };
@@ -912,6 +923,15 @@ const parseMetadata = (raw: string): SessionMetadata | undefined => {
   ) {
     return undefined;
   }
+
+  // model 存量脏值归一（2026-10-02，§6.13 第十三批③）：旧版把 CLI「Set model to」显示串
+  // （code span 反引号 + (resolved) 注解）整串写进了 metadata.model/modelAlias。model 会被
+  // 后续 system.init 覆盖成干净值，modelAlias 却没人再写——而前端优先读 modelAlias
+  //（ClaudeSessionDetailRoute），于是显示层一直带反引号。此处读取即归一（内存层，不重写
+  // 磁盘，与上面 claude2/acp provider 归一同一手法）：非法/剥不出 token 则抹掉该字段，
+  // 前端回落 model / 默认展示。
+  parsed.model = sanitizePersistedModel(parsed.model);
+  parsed.modelAlias = sanitizePersistedModel(parsed.modelAlias);
 
   return parsed as SessionMetadata;
 };

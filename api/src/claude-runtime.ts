@@ -16,6 +16,7 @@ import {
 } from "./settings-store";
 import { getAgentProviderProfile } from "./agent-provider-profiles";
 import { buildMcpInjectorForProvider } from "./mcp-injector";
+import { sanitizePersistedModel } from "./model-id";
 import { ClaudeAutoRetryWatch } from "./claude-auto-retry";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
@@ -92,22 +93,10 @@ export function extractModelFromStdoutLine(
   return undefined;
 }
 
-// 「Set model to <display>」echo 的 display 串 → 可持久化/可传给 CLI 的裸 model 名：
-// ① 剥 markdown code span 包裹（modelDisplayString 会把模型名包进 `` `…` ``）；
-// ② 剥尾部 ` (resolved)` 展示注解（display-only，语义同旧正则的可选组）；
-// ③ 白名单闸——只放行 alias/具体 ID（[A-Za-z0-9._-]+）+ 可选 [1m] 后缀。
-// 帮助文案（(id)）、ANSI 样式文本、剥不出合法 token 的长尾文案一律拒绝
-// （返回 undefined），调用方跳过 state.model 更新——宁可保守也不让显示串进链路。
-export function sanitizePersistedModel(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  let s = raw.trim();
-  if (s.length >= 2 && s.startsWith("`") && s.endsWith("`")) s = s.slice(1, -1).trim();
-  if (s.endsWith(")")) {
-    const paren = s.indexOf(" (");
-    if (paren > 0) s = s.slice(0, paren).trim();
-  }
-  return /^[A-Za-z0-9._-]+(?:\[1m\])?$/.test(s) ? s : undefined;
-}
+// 「Set model to <display>」echo 的 display 串 → 可持久化/可传给 CLI 的裸 model 名。
+// 归一本体在 model-id.ts（叶子模块单源）——session-registry 的 metadata 读写边界
+// 同样消费它，故不在此定义；此处 import + re-export 保持既有导入点兼容。
+export { sanitizePersistedModel };
 
 // Detect a successful /reload-skills from its CLI echo.
 //
