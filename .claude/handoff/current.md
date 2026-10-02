@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-02（**第十三批④编辑态画布对齐 03q2 `0663ddd`**：CodeMirror 编辑态旧「输入框」壳（rounded+border+surface-inset+p-3）偏离 03q2 标尺（bg-codeblock 全幅 + py 10px 无框无角），去壳四处改（CodeEditor 根壳 / PreviewBody source / mobile-l3 / Fallback），m4 探针 71 pass 含画布硬数据断言。13③模型链路污染修复 `ffb5767` + 13②文件预览扩展名 `2e9eac8`。第八~十二批 + 第十三批均待真机复验。）
+> 最后更新：2026-10-02（**第十三批⑤模型反引号存量根治 `6529c87`**：13③只拦了 parse/spawn 边界，存量 metadata.modelAlias 脏值未清（前端优先读 modelAlias）→ sanitize 单源下沉 `api/src/model-id.ts`，parseMetadata 读取归一 + setModel/setClaudeSessionId/createMetadata 写闸 + 前端 resolveCurrentModelAlias 兜底，三层接入。13④编辑态画布对齐 `0663ddd`+`542686e`。第八~十二批 + 第十三批均待真机复验。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
@@ -83,7 +83,7 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 - **pre-commit 快速通道**：staged 全为纯文档面 → 只跑 format:check+lint；任一命中代码面 → 全门禁。
 - **右栏装配链（第十二批后终态）**：WorkbenchRoute rightPanelProjectKey/rightCtx → RightPanelTabs；workbench-shell gutter 无条件渲染（aside 内，现 role=separator 可聚焦）+ RailButton 收起态唤出。探针覆盖：probe-v2-m9-multi-device Part 4（global 连续性六断言）+ Part 5（真空态 + 拖拽七断言）。
 - **MobileFileFocus back 契约**（第九批）：pop 优先回来源 + 深链兜底 /files。
-- **CLI 模型 echo 是显示串**（第十三批③）：CLI 对 set_model 的回应 `<local-command-stdout>Set model to <display></local-command-stdout>` 里 `<display>` = modelDisplayString 显示串（markdown code span 反引号包裹 + (resolved) 注解），非裸 model 名；`sanitizePersistedModel`（claude-runtime.ts）是归一单源，echo 解析与 spawn --model 都要过它——再遇模型显示怪串先查这条链。
+- **CLI 模型 echo 是显示串**（第十三批③⑤）：CLI 对 set_model 的回应 `<local-command-stdout>Set model to <display></local-command-stdout>` 里 `<display>` = modelDisplayString 显示串（markdown code span 反引号包裹 + (resolved) 注解），非裸 model 名；`sanitizePersistedModel`（**api/src/model-id.ts 叶子模块单源**，claude-runtime re-export）归一链路四处必过：CLI echo 解析出口、spawn --model 传参、metadata 读写边界（parseMetadata/setModel/setClaudeSessionId/createMetadata）、前端 resolveCurrentModelAlias 显示兜底——再遇模型显示怪串先查这条链。
 - **本 session 输出管线坑（复发两次）**：生成「反斜杠-u-XXXX」转义文本会退化为真实字符（PUA/NUL）——内置 Edit 匹配不上、markdown 记档也中招；处理用 python/perl 字节级替换，记档表述用纯文字描述占位符。
 - 记档位置：§6.13「真机反馈修复」第八~十二批 + reviewer 补审修复批（M13a–d）段齐。
 
@@ -93,4 +93,4 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-02；触发原因：第十三批④编辑态画布对齐（`0663ddd`）+ /handoff save
+最后更新：2026-10-02；触发原因：第十三批⑤模型反引号存量根治（`6529c87`）+ /handoff save

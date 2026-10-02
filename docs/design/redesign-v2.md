@@ -1218,6 +1218,21 @@ API 恢复后对第六~十二批 8 个代码 commit（`60dc9e3`~`386533a`）补�
 
 **④续：排印/行号对齐 `.ed`——md 源码 toggle 与编辑同套**（同日第二轮反馈 `542686e`）：「md 的源码和编辑模式看起来不是同一套，边距问题仍在」。对照标尺：03q 查看态（`.code`）与 03q2 编辑态（`.ed`）原型**同规格**——11.5px/20px 等宽 + 行号列 + `padding: 10px 0`；查看态实现已对齐，上一轮只对了画布壳，编辑态排印仍偏离（0.875rem/1.6 + 无行号 + 顶格 16px）——字号行高与左缘（顶格 vs 行号列）就是「不是同一套」的观感来源。修法：CodeEditor THEME `fontSize: 11.5px` / `lineHeight: 20px`、extensions 加 `lineNumbers()`（@uiw re-export，零新增依赖）、行号色 `var(--ink-3)` 对齐原型 `.no`。移动「源码 toggle ↔ 编辑」与桌面（source 态本就同组件）现在同一套：同画布/同排印/同行号列/同边距。**剩余差异 = 语法着色**（编辑态有、查看态 `.code` 无——spec 既定「语法高亮随桌面编辑器收敛统一处理」+ 多端同构终局：查看态也收敛到 CodeEditor 只读、CodeWithLineNumbers 退役；因 CodeEditor lazy chunk 会引入查看态拉包/闪烁回退，另批做）。验证：m4 探针 72 pass（画布断言保持 + 新增排印/行号断言：fontSize 11.5px + lineHeight 20px + `.cm-lineNumbers` 在场）。
 
+### 第十三批⑤：模型反引号存量根治——sanitize 全链路接入（2026-10-02，commit `6529c87`）
+
+**用户复验反馈**：composer 模型 pill 两侧仍有反引号（13③ 修复后残留）。
+
+**根因 = 存量**：13③ 只拦了解析出口（extractModelFromStdoutLine）与 CLI 传参（spawn --model）两个边界，未清洗**已持久化**的脏值——metadata.modelAlias 里整串存着 `` `opus[1m] (claude-opus-4-8[1m])` ``（实测 `/run/user/1000/agents-remote/sessions/agent_956fe157c8884411.json`），且 `model` 字段会被 system.init 覆盖成干净值、`modelAlias` 却无人再写；前端优先读 `modelAlias ?? model`（ClaudeSessionDetailRoute）→ 显示层直接透传脏值。
+
+**三层修复（sanitize 单源下沉叶子模块 `api/src/model-id.ts`）**：
+1. `parseMetadata` 读取归一：model/modelAlias 逐字段 sanitize——code span 剥出裸 alias（`opus[1m]`），剥不出 token 的抹掉字段让前端回落 model；与 claude2/acp provider 归一同一手法（内存层，不重写磁盘）。
+2. 写边界闸：`setModel` / `setClaudeSessionId` / `createMetadata` 三条 model 入盘路径全部过闸——脏串宁可弃用也不落盘。
+3. 前端显示层兜底：`resolveCurrentModelAlias`（`web/src/lib/model-labels.ts`）对 code span 显示串剥出 base 后命中 resolved key（开启 1m 时 key 本就是 `opus[1m]` 变体）或 value 才接受；形状闸外（`(id)` 帮助占位/文案尾巴）一律 undefined 触发 fallback——拦 relay 内存缓冲/历史 JSONL 里的存量脏帧。
+
+**教训沉淀**：修数据污染类 bug，边界闸（parse/spawn）之外必须排查**存量数据**是否需要读取归一——前端有 fallback 字段（modelAlias ?? model）时，只修「以后不脏」不修「已经脏的」，用户复验必然复现。
+
+**验证**：model-id 4 + session-registry 新 2 + model-labels 新 4 单测，受影响面 91 pass；真实脏文件经 sanitize 实证剥出 `opus[1m]`；dev api 已按 runbook respawn（parseMetadata 加载期归一即生效）。**待真机复验**：重开 22router 项目旧会话 → 模型 pill 显示 `Opus [1m]` 无反引号。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
