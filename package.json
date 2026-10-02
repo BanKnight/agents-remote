@@ -42,5 +42,10 @@
     "typescript": "^5.9.3",
     "vite-plugin-pwa": "^1.3.0",
     "workbox-window": "^7.4.1"
+  },
+  "overrides": {
+    "framer-motion": "13.4.4",
+    "motion-dom": "13.4.4",
+    "motion-utils": "13.3.0"
   }
 }

@@ -5,6 +5,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nProvider } from "./i18n";
 import { queryClient } from "./lib/query-client";
+import { MotionProvider } from "./components/motion-provider";
 import { restoreLastPath, saveCurrentPath } from "./navigation-persistence";
 import { router } from "./routes/router";
 import { ThemeSync } from "./theme";
@@ -31,8 +32,10 @@ createRoot(root).render(
             （upload-queue 的 getDefaultStore 写入）读写分裂——队列卡永远读不到入队（探针实测）。
             挂 default store 后 hook 读写与 imperative 写入同源。 */}
         <JotaiProvider store={getDefaultStore()}>
-          <ThemeSync />
-          <RouterProvider router={router} />
+          <MotionProvider>
+            <ThemeSync />
+            <RouterProvider router={router} />
+          </MotionProvider>
         </JotaiProvider>
       </QueryClientProvider>
     </I18nProvider>
