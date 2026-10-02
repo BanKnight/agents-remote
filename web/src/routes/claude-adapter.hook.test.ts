@@ -326,6 +326,137 @@ describe("useClaudeSession websocket lifecycle", () => {
     }
   });
 
+  test("delta reconnect keeps state, sends the anchor, and closes without a divider", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useClaudeSession("proj", "sess"));
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+      const socket = MockSocket.instances[0];
+      act(() => socket.open());
+      act(() => {
+        socket.emit({
+          type: "assistant",
+          uuid: "uuid-1",
+          message: { id: "a1", role: "assistant", content: [{ type: "text", text: "first" }] },
+          session_id: "s1",
+        } as never);
+      });
+      expect(result.current.storeAdapter.messages).toHaveLength(1);
+
+      act(() => {
+        socket.onclose?.();
+      });
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+      const reconnectSocket = MockSocket.instances[1];
+      // 重连 URL 携带本地锚（最后一条带 uuid 消息）。
+      expect(reconnectSocket.url).toContain("since=uuid-1");
+      act(() => reconnectSocket.open());
+
+      act(() => {
+        reconnectSocket.emit({ type: "session_init", resume: true, replay: "delta" } as never);
+        reconnectSocket.emit({ type: "history_start", count: 0 } as never);
+        reconnectSocket.emit({ type: "history_end" } as never);
+        reconnectSocket.emit({ type: "live_start", count: 1 } as never);
+        reconnectSocket.emit({
+          type: "assistant",
+          uuid: "uuid-2",
+          message: { id: "a2", role: "assistant", content: [{ type: "text", text: "second" }] },
+          session_id: "s1",
+        } as never);
+        reconnectSocket.emit({ type: "live_end" } as never);
+      });
+
+      expect(result.current.loading).toBe(false);
+      // delta 路径：不 reset（首连的 a1 保留）+ 不注 divider → 恰 2 条。扛判别的
+      // 是 deltaEnter 的 from=1（隐含 a1 保留）——长度断言区分不了 full-reset 回归
+      //（full 同样 2 条：reset 清掉 a1 后重放 a1+a2）。
+      expect(result.current.storeAdapter.messages).toHaveLength(2);
+      const firstText = (
+        result.current.storeAdapter.messages[0]?.content as Array<{ type: string; text: string }>
+      )?.[0]?.text;
+      expect(firstText).toContain("first");
+      await waitFor(() => expect(result.current.deltaEnter).toEqual({ from: 1, to: 2 }));
+      // 增量回合结束后，后续 live 行不再计入淡入范围（范围已封口）。
+      act(() => {
+        reconnectSocket.emit({
+          type: "assistant",
+          uuid: "uuid-3",
+          message: { id: "a3", role: "assistant", content: [{ type: "text", text: "third" }] },
+          session_id: "s1",
+        } as never);
+      });
+      expect(result.current.deltaEnter).toEqual({ from: 1, to: 2 });
+      // 封口 ~600ms 后摘除动画 class（防虚拟列表滚出滚回重播淡入）。
+      act(() => {
+        vi.advanceTimersByTime(700);
+      });
+      expect(result.current.deltaEnter).toBe(null);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("delta replay does not fake running when the history tail ends with an open assistant", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useClaudeSession("proj", "sess"));
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+      const socket = MockSocket.instances[0];
+      act(() => socket.open());
+      // 断线时正在流式：user echo + 悬空 assistant（无 result）。
+      act(() => {
+        socket.emit({
+          type: "user",
+          uuid: "uuid-u1",
+          isUserInput: true,
+          message: { role: "user", content: [{ type: "text", text: "go" }] },
+          session_id: "s1",
+        } as never);
+        socket.emit({
+          type: "assistant",
+          uuid: "uuid-1",
+          message: { id: "a1", role: "assistant", content: [{ type: "text", text: "…" }] },
+          session_id: "s1",
+        } as never);
+      });
+
+      act(() => {
+        socket.onclose?.();
+      });
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+      const reconnectSocket = MockSocket.instances[1];
+      act(() => reconnectSocket.open());
+
+      // delta 补齐段尾 = 悬空 assistant（断线瞬间 CLI 的 live 尾行），live 段空。
+      act(() => {
+        reconnectSocket.emit({ type: "session_init", resume: true, replay: "delta" } as never);
+        reconnectSocket.emit({ type: "history_start", count: 1 } as never);
+        reconnectSocket.emit({
+          type: "assistant",
+          uuid: "uuid-2",
+          message: { id: "a2", role: "assistant", content: [{ type: "text", text: "more" }] },
+          session_id: "s1",
+        } as never);
+        reconnectSocket.emit({ type: "history_end" } as never);
+        reconnectSocket.emit({ type: "live_start", count: 0 } as never);
+        reconnectSocket.emit({ type: "live_end" } as never);
+      });
+
+      // liveStart 必须落在补齐段之后：补齐段内的悬空 assistant 不算 running
+      //（没有正在进行的 turn——CLI 已停，只是补历史）。liveStart 若照抄
+      // batch.length，扫描会覆盖前缀里的悬空 assistant → 假 running。
+      expect(result.current.storeAdapter.isRunning).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("messages flow through pipeline without errors", async () => {
     const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));

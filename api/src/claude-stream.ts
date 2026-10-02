@@ -20,6 +20,8 @@ export type ClaudeWebSocketData = {
   sessionId: string;
   runtimeKey: string;
   status: AgentSessionStatus;
+  /** 增量回放锚：客户端已持有的最后一条消息 uuid（?since= query）。缺省 = 全量回放。 */
+  replaySince?: string;
 };
 
 /** injectUserPrompt 的 discriminated result（controller 层不构造 Response，路由层 map）。 */
@@ -183,6 +185,11 @@ export const handleClaudeStreamUpgrade = async (
       };
     }
 
+    // Incremental-replay anchor (?since=<uuid>): the last message uuid the client
+    // already holds. Absent/oversized → undefined → relay does a full replay.
+    const since = url.searchParams.get("since");
+    const replaySince = since && since.length <= 128 ? since : undefined;
+
     if (
       server.upgrade(request, {
         data: {
@@ -192,6 +199,7 @@ export const handleClaudeStreamUpgrade = async (
           sessionId: metadata.id,
           runtimeKey: metadata.runtimeKey,
           status: session.status,
+          ...(replaySince ? { replaySince } : {}),
         },
       })
     ) {
@@ -529,15 +537,20 @@ export class ClaudeStreamController {
         }
       },
     });
-    const stream = await this.claudeRuntime.stream(data.runtimeKey, onData, (error: Error) => {
-      emit(
-        JSON.stringify({
-          type: "error",
-          code: "SESSION_RUNTIME_ERROR",
-          message: error.message,
-        }),
-      );
-    });
+    const stream = await this.claudeRuntime.stream(
+      data.runtimeKey,
+      onData,
+      (error: Error) => {
+        emit(
+          JSON.stringify({
+            type: "error",
+            code: "SESSION_RUNTIME_ERROR",
+            message: error.message,
+          }),
+        );
+      },
+      data.replaySince,
+    );
     this.streams.set(socket, stream);
   }
 }

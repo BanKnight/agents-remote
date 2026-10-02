@@ -807,9 +807,10 @@ export function sessionStreamUrl(
   return base;
 }
 
-export function claudeStreamUrl(projectName: string, sessionId: string) {
+export function claudeStreamUrl(projectName: string, sessionId: string, since?: string) {
   const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/claude-stream`;
+  const base = `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/claude-stream`;
+  return since ? `${base}?since=${encodeURIComponent(since)}` : base;
 }
 
 export function acpStreamUrl(projectName: string, sessionId: string) {

@@ -21,6 +21,15 @@ type Subscriber = {
   onError(err: Error): void;
 };
 
+// 锚命中的顶层确认：行 JSON 的顶层 uuid 字段确为锚值（防 needle 命中嵌套字段）。
+function topLevelUuidIs(line: string, uuid: string): boolean {
+  try {
+    return (JSON.parse(line) as { uuid?: unknown }).uuid === uuid;
+  } catch {
+    return false;
+  }
+}
+
 export class ClaudeSessionRelay {
   private historyLines: string[] = [];
   private liveLines: string[] = [];
@@ -52,23 +61,46 @@ export class ClaudeSessionRelay {
     onData: (line: string) => void,
     onError: (err: Error) => void,
     seedInitLine?: string,
+    opts?: { sinceUuid?: string },
   ): RuntimeStream {
     if (this.activationError) {
       onError(this.activationError);
       return { close: () => {} };
     }
 
+    // Incremental replay: if the client's anchor uuid (last message it already
+    // holds) is still in a replay buffer, resend only the lines AFTER it. Miss
+    // (buffer trimmed / compact / process restart) falls back to a full replay —
+    // the client resets and rebuilds exactly as it did before this feature.
+    const anchor = opts?.sinceUuid ? this.locateReplayAnchor(opts.sinceUuid) : null;
+    const historyFrom = anchor
+      ? anchor.buffer === "history"
+        ? anchor.index + 1
+        : this.historyLines.length
+      : 0;
+    const liveFrom = anchor && anchor.buffer === "live" ? anchor.index + 1 : 0;
+    const historySlice = this.historyLines.slice(historyFrom);
+    const liveSlice = this.liveLines.slice(liveFrom);
+
     console.log(
-      `[relay] addSubscriber: phase=${this.phase} history=${this.historyLines.length} live=${this.liveLines.length}`,
+      `[relay] addSubscriber: phase=${this.phase} history=${this.historyLines.length} live=${this.liveLines.length} replay=${anchor ? `delta(history+${historySlice.length}/live+${liveSlice.length})` : "full"}`,
     );
 
     const sub: Subscriber = { onData, onError };
     this.subscribers.add(sub);
 
     // Connection-level metadata — sent before any batch so the client knows
-    // whether this is a resume (history may contain orphaned tool_use).
+    // whether this is a resume (history may contain orphaned tool_use) and
+    // whether the batches that follow are a delta (it must keep its state and
+    // append) or a full replay (it resets). Older clients ignore the field.
     try {
-      onData(JSON.stringify({ type: "session_init", resume: this.startedAsResume }));
+      onData(
+        JSON.stringify({
+          type: "session_init",
+          resume: this.startedAsResume,
+          replay: anchor ? "delta" : "full",
+        }),
+      );
     } catch {
       /* subscriber error shouldn't block replay */
     }
@@ -85,9 +117,10 @@ export class ClaudeSessionRelay {
       }
     }
 
-    // Always send history batch (count may be 0 for new sessions)
-    onData(JSON.stringify({ type: "history_start", count: this.historyLines.length }));
-    for (const line of this.historyLines) {
+    // Always send history batch (count may be 0 for new sessions — and for a
+    // live-anchored delta, where nothing between history_start/end is resent)
+    onData(JSON.stringify({ type: "history_start", count: historySlice.length }));
+    for (const line of historySlice) {
       try {
         onData(line);
       } catch {
@@ -97,8 +130,8 @@ export class ClaudeSessionRelay {
     onData(JSON.stringify({ type: "history_end" }));
 
     // Always send live batch (count may be 0)
-    onData(JSON.stringify({ type: "live_start", count: this.liveLines.length }));
-    for (const line of this.liveLines) {
+    onData(JSON.stringify({ type: "live_start", count: liveSlice.length }));
+    for (const line of liveSlice) {
       try {
         onData(line);
       } catch {
@@ -112,6 +145,38 @@ export class ClaudeSessionRelay {
         this.subscribers.delete(sub);
       },
     };
+  }
+
+  // Locate the client's anchor uuid in the replay buffers by plain string scan —
+  // zero extra index state to keep in sync. Live buffer is scanned FIRST so a uuid
+  // present in both (compact-boundary overlap between history tail and live) pins
+  // to the live position and nothing gets sent twice. Returns null on miss → full
+  // replay. The uuid comes from a URL query param: validate its charset first so
+  // the search needle can't be spoofed with quotes; any invalid/missing uuid is a
+  // clean full-replay fallback.
+  private locateReplayAnchor(
+    sinceUuid: string,
+  ): { buffer: "history" | "live"; index: number } | null {
+    if (sinceUuid.length === 0 || sinceUuid.length > 128 || !/^[A-Za-z0-9_-]+$/.test(sinceUuid)) {
+      return null;
+    }
+    const needle = `"uuid":"${sinceUuid}"`;
+    for (let i = this.liveLines.length - 1; i >= 0; i--) {
+      // 命中后 parse 确认顶层 uuid——子串可能出现在更晚行的嵌套结构里（错锚会造成
+      // 缺口：跳过的行客户端没有、去重防线补不了）。每连接至多几次 parse，可忽略。
+      if (this.liveLines[i].includes(needle) && topLevelUuidIs(this.liveLines[i], sinceUuid)) {
+        return { buffer: "live", index: i };
+      }
+    }
+    for (let i = this.historyLines.length - 1; i >= 0; i--) {
+      if (
+        this.historyLines[i].includes(needle) &&
+        topLevelUuidIs(this.historyLines[i], sinceUuid)
+      ) {
+        return { buffer: "history", index: i };
+      }
+    }
+    return null;
   }
 
   // `parsed` lets the caller (readStdout) reuse a single parse across all three

@@ -4109,25 +4109,43 @@ export function useClaudeSession(
     [projectName, sessionId],
   );
 
+  // rawMessages 的统一追加口：所有批量/单条/合成(divider)追加都走这里，让 rawCountRef
+  // 在 updater 内同步推进——同宏任务连续处理多 batch 时 state.length 不可靠（见上）。
+  const appendRawMessages = useCallback((msgs: SessionStreamServerMessage[]) => {
+    setRawMessages((prev) => [...prev, ...msgs]);
+  }, []);
+
   const processBatch = useCallback(
     (rawMsgs: SessionStreamServerMessage[]) =>
       timed(
         "processBatch",
         () => {
-          // Phase 1: register all uuids + append to rawMessages
-          for (const m of rawMsgs) {
+          // delta 重连的防御去重：服务端仍下发了客户端已持有的 uuid → skip（正常路径
+          // 不触发；全量重放时 map 刚被 reset 清空、filter 为恒等，行为不变）。
+          const batch = deltaReplayRef.current
+            ? rawMsgs.filter((m) => {
+                const uuid = getMessageUuid(m);
+                return !(uuid && messageMapRef.current.has(uuid));
+              })
+            : rawMsgs;
+          // Phase 1: register all uuids + advance the reconnect anchor. 按到达序
+          // append，循环结束时 cursor 严格 = 最后一条带 uuid 的行。
+          for (const m of batch) {
             const uuid = getMessageUuid(m);
-            if (uuid) messageMapRef.current.set(uuid, m);
+            if (uuid) {
+              messageMapRef.current.set(uuid, m);
+              cursorRef.current = uuid;
+            }
           }
-          setRawMessages((prev) => [...prev, ...rawMsgs]);
+          appendRawMessages(batch);
           // Phase 2: update scalar state for each message in the batch
-          for (const m of rawMsgs) {
+          for (const m of batch) {
             applyMessageScalarState(m);
           }
         },
         rawMsgs.length,
       ),
-    [applyMessageScalarState],
+    [applyMessageScalarState, appendRawMessages],
   );
 
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -4196,6 +4214,24 @@ export function useClaudeSession(
   }, [initialPermissionMode, permissionMode]);
 
   const cursorRef = useRef<string | null>(null);
+  // ── delta 重连（增量回放）──
+  // deltaReplayRef：本连接的回放是增量（session_init.replay==="delta" 且本地有锚）。
+  // gate 三件事：processBatch 防御去重、divider 抑制、liveStart 基准修正。
+  const deltaReplayRef = useRef(false);
+  // replayCursor：delta 回合内 history 增量段终点的同步游标（session_init 记起点，
+  // history_end += batch.length）。只服务 liveStart 修正公式——setRawMessages 的
+  // updater 到下次 render 才执行，同宏任务连续处理多 batch（gzip blob 串行链）时
+  // state.length 不可读。
+  const replayCursorRef = useRef(0);
+  // deltaEnter：增量回合新增消息范围 [from, to)，**rendered 索引空间**——消费方是
+  // buildTurns 的 turn.startIndex（renderChatStream 投影），raw 索引因 HiddenDropped/
+  // 合并普遍大于 rendered 索引，混用会让动画静默失效。from = session_init 时的
+  // renderedMessages.length（重连闭包=最新值）；to 由封口 effect 在增量渲染落地后
+  // 取最新 renderedMessages.length，再延迟清 null（摘动画 class，防虚拟列表滚出
+  // 滚回重播）。
+  const [deltaEnter, setDeltaEnter] = useState<{ from: number; to: number } | null>(null);
+  const deltaClosePendingRef = useRef(false);
+  const deltaEnterCleanupRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAskRef = useRef<SessionStreamServerMessage | null>(null);
   const compactActiveRef = useRef(false);
   const compactInterruptedRef = useRef(false);
@@ -4237,6 +4273,14 @@ export function useClaudeSession(
     setLoading(true);
     liveEndPendingRef.current = false;
     cursorRef.current = null;
+    deltaReplayRef.current = false;
+    deltaClosePendingRef.current = false;
+    replayCursorRef.current = 0;
+    if (deltaEnterCleanupRef.current) {
+      clearTimeout(deltaEnterCleanupRef.current);
+      deltaEnterCleanupRef.current = null;
+    }
+    setDeltaEnter(null);
     pendingAskRef.current = null;
     historyBatchRef.current = null;
     liveBatchRef.current = null;
@@ -4491,7 +4535,6 @@ export function useClaudeSession(
 
     let cancelled = false;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-    const url = claudeStreamUrl(projectName, sessionId);
 
     // Reset on session change or initial mount; reconnect otherwise.
     if (isSessionChange || connectionVersion === 0) {
@@ -4506,6 +4549,10 @@ export function useClaudeSession(
       setLoading(true);
     }
 
+    // 重连锚：本地已持有的最后一条消息 uuid（ref 同步维护）。服务端命中 → 增量补齐；
+    // 未命中/无锚 → 全量（session_init.replay 区分）。首连/session 切换刚 reset 过 =
+    // 无 query（构造必须在 reset 之后，否则会把上一会话的锚带进新会话的 URL）。
+    const url = claudeStreamUrl(projectName, sessionId, cursorRef.current ?? undefined);
     const socket = new WebSocket(url);
     // Receive the gzipped history/live replay batches as ArrayBuffer so they can
     // be detected via `instanceof ArrayBuffer` and decompressed before buffering.
@@ -4594,12 +4641,30 @@ export function useClaudeSession(
         // End markers render as a horizontal divider only when the
         // batch contained at least one visible content bubble.
         if (msg.type === "session_init") {
-          // New connection — discard all state from the prior connection
-          // before replaying history/output batches.
-          resetSessionState();
-          isResumeRef.current = (msg as { resume: boolean }).resume ?? false;
-          if (isSocketLoggingEnabled())
-            console.log("[claude-adapter] session_init resume=", isResumeRef.current);
+          if (msg.replay === "delta" && cursorRef.current != null) {
+            // delta 重连：服务端确认了 since 锚，接下来只补锚后的行——保留全部 state
+            //（rawMessages/scalars/tasks/UI 都不动），不 reset、不置 isResume（没有
+            // turn 被打断；增量段若悬空，补齐的 result 会正常闭合它）。
+            deltaReplayRef.current = true;
+            replayCursorRef.current = rawMessages.length;
+            // from 取 rendered 空间：turn.startIndex 是 renderChatStream 投影的索引，
+            // rawMessages.length（raw 空间）在有 HiddenDropped/合并的会话里普遍偏大，
+            // 混用 = 没有任何 turn 命中范围。重连闭包的 renderedMessages = 断线前
+            // 最新投影（与 rawMessages 同样的时序论证：重连期间无并发追加）。
+            setDeltaEnter({ from: renderedMessages.length, to: Number.POSITIVE_INFINITY });
+            if (isSocketLoggingEnabled())
+              console.log(
+                "[claude-adapter] session_init delta replay from=",
+                renderedMessages.length,
+              );
+          } else {
+            // Full replay (or pre-delta server) — discard all state from the prior
+            // connection before replaying history/output batches.
+            resetSessionState();
+            isResumeRef.current = msg.resume ?? false;
+            if (isSocketLoggingEnabled())
+              console.log("[claude-adapter] session_init resume=", isResumeRef.current);
+          }
           return;
         }
         // seed_init: replay-time scalar seed (model/permissionMode), sent between
@@ -4638,18 +4703,30 @@ export function useClaudeSession(
           // Break historyRecv down: how much was client processing vs waiting for
           // frames to arrive. procTotal ≪ recvMs + even gaps ⇒ network, not client.
           reportArrival(recvMs);
-          // The history segment occupies rawMessages[0..batch.length) (processBatch
-          // appends 1:1). The live + instantaneous region starts at batch.length —
-          // capture it BEFORE processBatch so the re-render it triggers reads the
-          // new value. Empty history (non-resume) leaves liveStart at its 0 reset.
-          liveStartRef.current = batch.length;
+          // The history segment occupies rawMessages[base..base+batch.length)
+          // (processBatch appends 1:1). The live + instantaneous region starts at
+          // base + batch.length — capture it BEFORE processBatch so the re-render
+          // it triggers reads the new value. Full replay: base = 0. Delta replay:
+          // base = replayCursorRef（session_init 记增量起点；此处同步 += batch.length
+          // ——updater 到下次 render 才执行,同宏任务连续处理多 batch 时 state.length
+          // 不可读）。Empty history (non-resume) leaves liveStart at its 0 reset.
+          if (deltaReplayRef.current) {
+            liveStartRef.current = replayCursorRef.current + batch.length;
+          } else {
+            liveStartRef.current = batch.length;
+          }
           processBatch(batch);
+          if (deltaReplayRef.current) {
+            replayCursorRef.current += batch.length;
+          }
           // Inject a batch divider whenever the batch carried any messages at
           // all; whether it actually renders is decided in renderChatStream
-          // (visible-neighbor rule), so this stays a pure state append.
-          if (batch.length > 0) {
-            setRawMessages((prev) => [
-              ...prev,
+          // (visible-neighbor rule), so this stays a pure state append. Delta
+          // replay skips the divider — the incremental rows continue the same
+          // stream the user is already looking at; a mid-conversation boundary
+          // would render as a bogus「历史」split.
+          if (batch.length > 0 && !deltaReplayRef.current) {
+            appendRawMessages([
               {
                 type: "system",
                 subtype: "batch_boundary",
@@ -4670,6 +4747,13 @@ export function useClaudeSession(
           const batch = liveBatchRef.current ?? [];
           liveBatchRef.current = null;
           processBatch(batch);
+          // delta 回合封口：to 不能在此处取值——renderedMessages 是 rawMessages 的
+          // memo，同宏任务内增量还没投影。置 pending，由下方 effect 在投影落地后
+          // 用最新 renderedMessages.length 收口并延迟摘除动画 class。
+          if (deltaReplayRef.current) {
+            deltaReplayRef.current = false;
+            deltaClosePendingRef.current = true;
+          }
           // No divider here: the boundary lives at the history/live junction
           // (injected at history_end), not at the tail of the live batch.
           // Defer setLoading(false) to the next render (the effect below): flipping
@@ -4702,8 +4786,11 @@ export function useClaudeSession(
 
         // ── Per-message dispatch (live, after batches) ───────────────
         const liveUuid = getMessageUuid(msg);
-        if (liveUuid) messageMapRef.current.set(liveUuid, msg);
-        setRawMessages((prev) => [...prev, msg]);
+        if (liveUuid) {
+          messageMapRef.current.set(liveUuid, msg);
+          cursorRef.current = liveUuid;
+        }
+        appendRawMessages([msg]);
         applyMessageScalarState(msg);
         setLoading(false);
       } catch {
@@ -4794,6 +4881,24 @@ export function useClaudeSession(
           )
         : renderChatStream(chatStream, { isResume: isResumeRef.current }),
     [chatStream],
+  );
+
+  // delta 回合封口：增量段已投影（renderedMessages 落地），用最新 rendered 长度收口
+  // 淡入范围，再延迟清 null——动画 class 摘除后虚拟列表滚出/滚回重挂不再重播淡入
+  //（delta 范围可很大，长滚动反复淡入是噪音）。timer 挂 ref、一次性调度：effect 因
+  // renderedMessages 变化重跑时不得清掉未触发的 timer（early return 路径）。
+  useEffect(() => {
+    if (!deltaClosePendingRef.current) return;
+    deltaClosePendingRef.current = false;
+    setDeltaEnter((prev) => (prev ? { from: prev.from, to: renderedMessages.length } : null));
+    if (deltaEnterCleanupRef.current) clearTimeout(deltaEnterCleanupRef.current);
+    deltaEnterCleanupRef.current = setTimeout(() => setDeltaEnter(null), 600);
+  }, [renderedMessages]);
+  useEffect(
+    () => () => {
+      if (deltaEnterCleanupRef.current) clearTimeout(deltaEnterCleanupRef.current);
+    },
+    [],
   );
 
   // A control_request is pending when some tool-call part carries an injected
@@ -4910,5 +5015,10 @@ export function useClaudeSession(
      *（预览随 live message 自然刷新——previewLines 经 useMemo 依赖 rawMessages.length 变化）。
      */
     rawMessagesRef,
+    /**
+     * delta 重连增量回合新增消息范围 [from, to)：buildTurns 派生的 turn.startIndex 落在
+     * 范围内 → turn 容器挂淡入动画（仅 delta 重连批次，正常流式新 turn 不加）。
+     */
+    deltaEnter,
   };
 }

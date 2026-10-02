@@ -473,6 +473,7 @@ export class ClaudeRuntime implements RuntimeResources {
     sessionName: string,
     onData: (data: string) => void,
     onError: (error: Error) => void,
+    sinceUuid?: string,
   ): Promise<RuntimeStream> {
     const proc = this.processes.get(sessionName);
     if (!proc) throw new Error(`Session "${sessionName}" not registered`);
@@ -491,7 +492,12 @@ export class ClaudeRuntime implements RuntimeResources {
     // the CURRENT model/permissionMode before history.
     const seedInitLine = buildSeedInitLine(proc.model, proc.permissionMode, proc.modelAlias);
 
-    return relay.addSubscriber(onData, onError, seedInitLine);
+    return relay.addSubscriber(
+      onData,
+      onError,
+      seedInitLine,
+      sinceUuid ? { sinceUuid } : undefined,
+    );
   }
 
   async capture(): Promise<string> {

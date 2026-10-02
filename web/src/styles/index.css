@@ -569,6 +569,30 @@ body {
   }
 }
 
+/* msg-enter — turn-level fade-in for delta-reconnect incremental turns only.
+   Opacity only, 200ms once: the turn container carries the virtualizer's
+   positioning transform (inline translateY), and a CSS animation on transform
+   would override it (cascade beats inline styles; fill-mode keeps the final
+   frame forever) — collapsing all animated turns to the container top. Turns
+   mount when the incremental batch lands, so the animation marks "content
+   arrived during disconnect" rather than "scrolled into view". Converges to
+   static under prefers-reduced-motion (the global fallback above zeroes
+   animation-duration). */
+@keyframes msg-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  .animate-msg-enter {
+    animation: msg-enter 0.2s var(--ease-standard) 1 both;
+  }
+}
+
 /* Reduced-motion static fallback — site-wide. MotionConfig reducedMotion="user"
    handles JS-driven animation (disables transform/layout, keeps opacity); this
    covers everything else: the skeleton shimmer, the plan-awaiting flow, and

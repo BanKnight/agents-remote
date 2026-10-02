@@ -357,6 +357,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     pendingInteraction,
     pendingApprovals,
     opusplanActive,
+    deltaEnter,
   } = useClaudeSession(
     projectName,
     sessionId,
@@ -500,6 +501,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                         sessionId={sessionId}
                         sessionName={session?.displayName}
                         offlineCap={!connected}
+                        deltaEnter={deltaEnter}
                       />
 
                       <CompactIndicator />
@@ -3190,6 +3192,7 @@ export function VirtualizedThreadContent({
   sessionId = "",
   offlineCap = false,
   sessionName,
+  deltaEnter,
 }: {
   /** 待审批计数（03b 迷你条 ⚠n；与 composer 区 ApprovalTray 同源 collectPendingApprovals）。 */
   approvalCount?: number;
@@ -3205,6 +3208,11 @@ export function VirtualizedThreadContent({
   offlineCap?: boolean;
   /** 03b 迷你条会话名。 */
   sessionName?: string;
+  /**
+   * delta 重连增量回合新增消息范围 [from, to)：turn.startIndex 落在范围内 → turn 容器
+   * 挂淡入动画（仅 delta 重连批次，正常流式新 turn 不加）。null = 无 delta 回合。
+   */
+  deltaEnter?: { from: number; to: number } | null;
 }) {
   const { t } = useT();
   // ── Turn builder ──────────────────────────────────────────────────
@@ -3512,6 +3520,13 @@ export function VirtualizedThreadContent({
                   ref={virtualizer.measureElement}
                   data-index={virtualItem.index}
                   data-turn-message-ids={`${turn.startIndex}-${turn.endIndex - 1}`}
+                  className={
+                    deltaEnter &&
+                    turn.startIndex >= deltaEnter.from &&
+                    turn.startIndex < deltaEnter.to
+                      ? "animate-msg-enter"
+                      : undefined
+                  }
                   style={{
                     position: "absolute",
                     top: 0,

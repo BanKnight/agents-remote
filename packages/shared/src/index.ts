@@ -2379,6 +2379,8 @@ export type SessionStreamServerMessage =
   | {
       type: "session_init";
       resume: boolean;
+      /** 回放模式：delta = 服务端命中客户端 since 锚、只下发锚后行；full/缺省 = 全量（老服务端缺省）。 */
+      replay?: "delta" | "full";
     }
   | {
       type: "history_end";

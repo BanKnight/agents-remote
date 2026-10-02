@@ -779,3 +779,236 @@ test("ClaudeSessionRelay treats vcs_state_changed as a known subtype and replays
 
   relay.destroy();
 });
+
+// ── 增量回放（?since= 锚定）────────────────────────────────────────────
+
+test("ClaudeSessionRelay anchors on a live-buffer uuid and resends only the tail", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  const lines = ["uuid-live-1", "uuid-live-2", "uuid-live-3"].map((uuid) =>
+    JSON.stringify({
+      type: "assistant",
+      uuid,
+      message: { id: `msg-${uuid}`, role: "assistant", content: [{ type: "text", text: uuid }] },
+    }),
+  );
+  for (const line of lines) await relay.handleStdoutLine(line);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+    undefined,
+    { sinceUuid: "uuid-live-2" },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+
+  const historyStart = messages.findIndex((msg) => msg.type === "history_start");
+  const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0 });
+  expect(messages.slice(historyStart + 1, historyEnd)).toHaveLength(0);
+
+  const liveStart = messages.findIndex((msg) => msg.type === "live_start");
+  const liveEnd = messages.findIndex((msg) => msg.type === "live_end");
+  expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 1 });
+  const liveMessages = messages.slice(liveStart + 1, liveEnd);
+  expect(liveMessages).toHaveLength(1);
+  expect(liveMessages[0]).toMatchObject({ uuid: "uuid-live-3" });
+
+  relay.destroy();
+});
+
+test("ClaudeSessionRelay anchors on a history uuid and resends the history tail plus all live", async () => {
+  const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
+  const claudeSessionId = "relay-delta-history-anchor";
+  const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
+  cleanupDirs.add(dirname(jsonlPath));
+
+  await mkdir(dirname(jsonlPath), { recursive: true });
+
+  const historyLines = ["uuid-hist-1", "uuid-hist-2"].map((uuid) =>
+    JSON.stringify({
+      type: "user",
+      uuid,
+      session_id: claudeSessionId,
+      message: { role: "user", content: [{ type: "text", text: uuid }] },
+    }),
+  );
+  await writeFile(jsonlPath, `${historyLines.join("\n")}\n`);
+
+  const relay = new ClaudeSessionRelay();
+  await relay.activate(projectPath, claudeSessionId);
+
+  const liveLine = JSON.stringify({
+    type: "assistant",
+    uuid: "uuid-live-a",
+    message: { id: "msg-a", role: "assistant", content: [{ type: "text", text: "live" }] },
+  });
+  await relay.handleStdoutLine(liveLine);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+    undefined,
+    { sinceUuid: "uuid-hist-1" },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+
+  const historyStart = messages.findIndex((msg) => msg.type === "history_start");
+  const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 1 });
+  const historyMessages = messages.slice(historyStart + 1, historyEnd);
+  expect(historyMessages).toHaveLength(1);
+  expect(historyMessages[0]).toMatchObject({ uuid: "uuid-hist-2" });
+
+  const liveStart = messages.findIndex((msg) => msg.type === "live_start");
+  const liveEnd = messages.findIndex((msg) => msg.type === "live_end");
+  expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 1 });
+  expect(messages.slice(liveStart + 1, liveEnd)).toHaveLength(1);
+
+  relay.destroy();
+});
+
+test("ClaudeSessionRelay sends empty batches when the anchor is the last line", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  const line = JSON.stringify({
+    type: "assistant",
+    uuid: "uuid-tail",
+    message: { id: "msg-tail", role: "assistant", content: [{ type: "text", text: "tail" }] },
+  });
+  await relay.handleStdoutLine(line);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+    undefined,
+    { sinceUuid: "uuid-tail" },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+  const historyStart = messages.findIndex((msg) => msg.type === "history_start");
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0 });
+  const liveStart = messages.findIndex((msg) => msg.type === "live_start");
+  expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 0 });
+  // markers + init only, no data rows
+  expect(messages).toHaveLength(5);
+
+  relay.destroy();
+});
+
+test("ClaudeSessionRelay falls back to full replay when the anchor is unknown", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  await relay.handleStdoutLine(
+    JSON.stringify({
+      type: "assistant",
+      uuid: "uuid-a",
+      message: { id: "msg-a", role: "assistant", content: [{ type: "text", text: "a" }] },
+    }),
+  );
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+    undefined,
+    { sinceUuid: "uuid-not-in-buffer" },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(messages[0]).toMatchObject({ type: "session_init", resume: false, replay: "full" });
+  const liveStart = messages.findIndex((msg) => msg.type === "live_start");
+  expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 1 });
+
+  relay.destroy();
+});
+
+test("ClaudeSessionRelay falls back to full replay on a malformed anchor", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  await relay.handleStdoutLine(
+    JSON.stringify({
+      type: "assistant",
+      uuid: "uuid-a",
+      message: { id: "msg-a", role: "assistant", content: [{ type: "text", text: "a" }] },
+    }),
+  );
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+    undefined,
+    { sinceUuid: 'x","uuid":"uuid-a","k":"' },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(messages[0]).toMatchObject({ type: "session_init", replay: "full" });
+
+  relay.destroy();
+});
+
+test("ClaudeSessionRelay ignores a nested uuid match and pins the top-level line", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  // 锚行在前，更晚的一行在嵌套结构里内嵌同值 uuid（needle 会命中更晚行）。
+  const anchorLine = JSON.stringify({
+    type: "assistant",
+    uuid: "uuid-anchor",
+    message: { id: "m-anchor", role: "assistant", content: [{ type: "text", text: "anchor" }] },
+  });
+  const nestedLine = JSON.stringify({
+    type: "assistant",
+    uuid: "uuid-later",
+    message: {
+      id: "m-later",
+      role: "assistant",
+      content: [{ type: "tool_use", input: { note: '"uuid":"uuid-anchor"' } }],
+    },
+  });
+  await relay.handleStdoutLine(anchorLine);
+  await relay.handleStdoutLine(nestedLine);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+    undefined,
+    { sinceUuid: "uuid-anchor" },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+  const liveStart = messages.findIndex((msg) => msg.type === "live_start");
+  const liveEnd = messages.findIndex((msg) => msg.type === "live_end");
+  // 正确锚点 = 顶层 uuid-anchor 那行 → 只补后一行（uuid-later），不是空批。
+  expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 1 });
+  expect(messages.slice(liveStart + 1, liveEnd)[0]).toMatchObject({ uuid: "uuid-later" });
+
+  relay.destroy();
+});
