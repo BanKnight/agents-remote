@@ -3,7 +3,7 @@
 // transition: grid-template-columns。硬数据断言:
 //   Part 1:idle 态 grid 容器 computed transitionProperty 含 grid-template-columns
 //     (动画类在场),折叠态第三轨 = 0px。
-//   Part 2:展开(点唤出钮)→ 立即抓中间值(0 < 第三轨 < 352px,轨道插值进行中)
+//   Part 2:展开(点唤出钮)→ transitionrun 派发(grid-template-columns,真过渡非瞬切)
 //     → 播完收敛 352px(22rem)。
 //   Part 3:拖宽 1:1 优先——gutter pointerdown 后 transition 摘除(rightResizing
 //     摘类),pointerup 后恢复;拖拽中宽度即时跟手(每帧 atom 直改,无 transition)。
@@ -133,6 +133,28 @@ async function gridState(page) {
   }, GRID_SEL);
 }
 
+/** 在 grid 容器挂 transitionrun 监听(重置标志)。transitionrun 只有真过渡才派发
+ *  (瞬切无事件)→ 事件断言证明「过渡机制在场」,不依赖在 280ms 窗口内抓到中间值:
+ *  点击→evaluate 往返在机器负载下可超 280ms,采样会抓到终态 = 假 fail(实测两次)。 */
+async function armGridTransitionRun(page) {
+  await page.evaluate((sel) => {
+    window.__gridTransitionRun = null;
+    document.querySelector(sel)?.addEventListener("transitionrun", (e) => {
+      if (e.propertyName === "grid-template-columns") window.__gridTransitionRun = e.propertyName;
+    });
+  }, GRID_SEL);
+}
+
+/** click 后等 transitionrun 派发(超时不抛,由 ok() 断言标志)。 */
+async function awaitGridTransitionRun(page) {
+  await page
+    .waitForFunction(() => window.__gridTransitionRun === "grid-template-columns", null, {
+      timeout: 1500,
+    })
+    .catch(() => {});
+  return page.evaluate(() => window.__gridTransitionRun);
+}
+
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
@@ -152,13 +174,14 @@ async function gridState(page) {
   );
   ok(idle && idle.thirdCol === 0, `折叠态第三轨 = 0px(实测 ${idle?.thirdCol})`);
 
-  // ── Part 2:展开 → 中间值(轨道插值)→ 收敛 352px ──
-  console.log("Part 2: 展开 = 轨道 0→22rem 插值,收敛 352px");
+  // ── Part 2:展开 → transitionrun(真过渡)→ 收敛 352px ──
+  console.log("Part 2: 展开 = 轨道 0→22rem 真过渡,收敛 352px");
+  await armGridTransitionRun(page);
   await page.getByRole("button", { name: "展开右栏" }).click();
-  const mid = await gridState(page);
+  const run2 = await awaitGridTransitionRun(page);
   ok(
-    mid && mid.thirdCol > 0 && mid.thirdCol < RIGHT_REM_PX,
-    `展开中间值 0 < 第三轨 < 352px(实测 ${mid?.thirdCol})`,
+    run2 === "grid-template-columns",
+    `展开派发 transitionrun(grid-template-columns)(实测 ${run2})`,
   );
   await page.waitForTimeout(500); // 280ms + 余量
   const open = await gridState(page);
@@ -196,13 +219,40 @@ async function gridState(page) {
     );
   }
 
-  // ── Part 4:折叠 = 同一条 transition 反方向 ──
-  console.log("Part 4: 折叠 22rem→0 中间值收敛 0px");
-  await page.getByRole("button", { name: "收起右栏" }).click();
-  const closeMid = await gridState(page);
+  // ── Part 3.5:键盘长按也摘 transition(perf review:keydown 20-30 次/秒连续
+  // 重定目标,与拖拽同属连续改宽;keyup/blur 恢复) ──
+  console.log("Part 3.5: 键盘步进期间 transition 摘除,keyup 恢复");
+  await page.locator('[aria-label="调整右栏宽度"]').focus();
+  await page.keyboard.down("ArrowLeft");
+  await page.waitForTimeout(80); // 含 key repeat 起步
+  const kbdDown = await gridState(page);
   ok(
-    closeMid && closeMid.thirdCol > 0 && closeMid.thirdCol < draggedWidth,
-    `折叠中间值进行中(实测 ${closeMid?.thirdCol})`,
+    kbdDown && !kbdDown.transitionProperty.includes("grid-template-columns"),
+    `键盘按住中 transitionProperty 不含 grid-template-columns(实测 ${kbdDown?.transitionProperty})`,
+  );
+  await page.keyboard.up("ArrowLeft");
+  await page.waitForTimeout(80);
+  const kbdUp = await gridState(page);
+  ok(
+    kbdUp && kbdUp.transitionProperty.includes("grid-template-columns"),
+    `keyup 后 transition 恢复(实测 ${kbdUp?.transitionProperty})`,
+  );
+  // 键盘通道真正生效的正面证据:← 键把右栏增宽一个步进(1rem = 16px)。Playwright
+  // keyboard.down 不发 OS 级 key repeat → 单次 keydown = 单步。基准随之更新(Part 5 用)。
+  ok(
+    kbdUp && Math.abs(kbdUp.thirdCol - (draggedWidth + 16)) <= 2,
+    `← 键步进右栏 +1rem(实测 ${kbdUp?.thirdCol} / 期望 ${draggedWidth + 16})`,
+  );
+  draggedWidth = kbdUp?.thirdCol ?? draggedWidth;
+
+  // ── Part 4:折叠 = 同一条 transition 反方向 ──
+  console.log("Part 4: 折叠 → transitionrun → 收敛 0px");
+  await armGridTransitionRun(page);
+  await page.getByRole("button", { name: "收起右栏" }).click();
+  const run4 = await awaitGridTransitionRun(page);
+  ok(
+    run4 === "grid-template-columns",
+    `折叠派发 transitionrun(grid-template-columns)(实测 ${run4})`,
   );
   await page.waitForTimeout(500);
   const closed = await gridState(page);

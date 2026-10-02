@@ -286,7 +286,11 @@ export function HistoryList({ focusId, projectName }: HistoryListProps) {
           </div>
         ) : (
           <>
-            <ListGroup ariaLabel={t("workbench.historySection")} className="animate-stagger-rows">
+            {/* 不挂 animate-stagger-rows（批C review P1）：本列表按 lastActivityAt 倒序动态
+                重排（:144），WS 活动让行前移时 React insertBefore 移动 keyed DOM = CSS
+                animation 从头重播（含 backwards 填充的 opacity:0 闪烁）。stagger 只保留在
+                排序稳定的列表（instance-area createdAt / file-browser 名字序）。 */}
+            <ListGroup ariaLabel={t("workbench.historySection")}>
               {visible.map((entry) => (
                 <HistorySessionNode
                   active={entry.hasActiveSession && entry.activeSessionId === focusId}

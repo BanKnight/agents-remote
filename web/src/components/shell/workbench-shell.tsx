@@ -212,8 +212,9 @@ type ColumnResizeGutterProps = {
   label: string;
   side: "left" | "right";
   onResize: (deltaRem: number) => void;
-  /** 拖拽开始/结束（pointerdown / up+cancel）：宿主据此摘掉列宽 transition（批D
-   *  折叠/展开动画），保证拖宽 1:1 跟手。键盘步进不算拖拽（离散、不连续改宽）。 */
+  /** 宽度连续变化开始/结束：pointer 拖拽（down / up+cancel）与键盘步进（keydown /
+   *  keyup+blur）都通知宿主摘掉列宽 transition（批D 折叠/展开动画）——连续改宽
+   *  1:1 优先，带 transition 会以 280ms 追指针。仅程序化开合（折叠钮）带动画。 */
   onResizeStart?: () => void;
   onResizeEnd?: () => void;
 };
@@ -245,10 +246,17 @@ function ColumnResizeGutter({
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
+    // 长按方向键 = keydown 20-30 次/秒连续重定目标，与拖拽同属「连续改宽」——
+    // 同样摘掉列宽 transition（perf review P2：不摘则 280ms 追指针 + 每帧全 grid
+    // 重排）。单击步进随之变为即时到位（键盘 = 精确调整语义，可接受）。
+    onResizeStart?.();
     // ← 把分隔条向左移：右栏增宽（side="right" 翻转）、左栏收窄（side="left" 同向）。
     const dir = event.key === "ArrowLeft" ? 1 : -1;
     onResize(side === "left" ? -dir * GUTTER_KEYBOARD_STEP_REM : dir * GUTTER_KEYBOARD_STEP_REM);
   };
+  // keyup / 焦点离开（按住时 Tab 走、切窗）都恢复动画类——漏恢复会让下一次
+  // 程序化开合丢过渡。
+  const endKeyboardResize = () => onResizeEnd?.();
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -276,6 +284,12 @@ function ColumnResizeGutter({
     <div
       aria-label={label}
       aria-orientation="vertical"
+      // WAI-ARIA separator 契约的可聚焦落点：role + tabIndex 让 Tab 可达、方向键
+      // 步进（onKeyDown）真正可触发——M13c 曾补键盘通道但此 div 一直缺这两个属性
+      // = 键盘通道死路（批D 探针 Part 3.5 实抓），Props 注释的「可聚焦 separator」
+      // 直到本修复才成立。
+      role="separator"
+      tabIndex={0}
       aria-valuemax={max}
       aria-valuemin={min}
       aria-valuenow={value}
@@ -283,6 +297,8 @@ function ColumnResizeGutter({
         side === "left" ? "right-0" : "left-0"
       }`}
       onKeyDown={onKeyDown}
+      onBlur={endKeyboardResize}
+      onKeyUp={endKeyboardResize}
       onPointerCancel={endDrag}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

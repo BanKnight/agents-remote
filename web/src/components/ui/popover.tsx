@@ -30,7 +30,7 @@ function PopoverContent({
           // enter 走 spring snappy（轻量锚定层比居中 modal 快一档）；zoom/fade 幅度
           // 保持，新增 transform-origin 锚定触发源（skill §7 空间一致性，与 dropdown
           // 对齐）。变量注入机制见 dialog.tsx 同段注释。
-          "[transform-origin:var(--radix-popover-content-transform-origin)] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=open]:[--tw-ease:var(--spring-snappy)] data-[state=open]:[--tw-animation-duration:375ms]",
+          "[transform-origin:var(--radix-popover-content-transform-origin)] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=open]:[--tw-ease:var(--spring-snappy)] data-[state=open]:[--tw-animation-duration:var(--spring-snappy-duration)] data-[state=closed]:[--tw-animation-duration:var(--duration-exit)]",
           className,
         )}
         {...props}

@@ -64,11 +64,14 @@ function DialogContent({
           "pointer-events-auto fixed left-1/2 top-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 outline-none sm:max-w-lg",
           // enter = spring materialize（skill §12：blur 半径与 scale 一起动，表面
           // 读作「实体材料抵达」而非纯淡入）；exit 保持快速淡出（iOS 惯例：离开快）。
+          // blur 4px 而非 8px（perf review P1）：filter:blur 非 compositor-only，
+          // 每帧全对话框重栅格化，DialogContent 可到全屏 reader——8px 的 paint 代价
+          // 在 iOS WebKit 上最高；4px 保留 materialize 观感、栅格化成本减半。
           // timing/duration 走 [--tw-ease:…]/[--tw-animation-duration:…] 变量注入——
           // tw-animate 的 animate-in shorthand 本身引用这两个变量，自定义属性不参与
           // shorthand 的长属性重置，必生效（直接写 animation-timing-function 会被
           // shorthand 按源序重置回 ease）。spring 采样见 index.css --spring-standard。
-          "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-[0.96] data-[state=open]:blur-in-[8px] data-[state=open]:[--tw-ease:var(--spring-standard)] data-[state=open]:[--tw-animation-duration:525ms]",
+          "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-[0.96] data-[state=open]:blur-in-[4px] data-[state=open]:[--tw-ease:var(--spring-standard)] data-[state=open]:[--tw-animation-duration:var(--spring-standard-duration)] data-[state=closed]:[--tw-animation-duration:var(--duration-exit)]",
           className,
         )}
         {...props}

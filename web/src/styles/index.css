@@ -31,25 +31,33 @@
   --shell-safe-area-top: env(safe-area-inset-top, 0px);
   --shell-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --app-viewport-height: 100dvh;
-  /* Motion design tokens — single source of truth; mirrors EASE/DURATION in
-     motion/tokens.ts. Plain :root vars (NOT @theme) so var(--ease-standard)
-     resolves everywhere（详见 v1 时代验证注释，机制不变）. */
+  /* Motion design tokens — single source of truth（CSS 动画唯一动效 token 源；
+     曾镜像 JS 侧 motion/tokens.ts，批A review 后 motion 库摘除——五批动效全走
+     CSS 零 JS 消费方，115KB entry 死重不值得，见 redesign-v2 动效段）.
+     Plain :root vars (NOT @theme) so var(--ease-standard) resolves everywhere. */
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --duration-fast: 120ms;
   --duration-base: 180ms;
   --duration-slow: 280ms;
+  /* 弹层离场（iOS「离开快」）：此前靠 tw-animate 默认 150ms 的巧合（隐式魔数，
+     design review P2）——显式 token 后 exit 消费点一律 var() 引用。 */
+  --duration-exit: 150ms;
   /* Spring timing（Apple 流体接口 §4：临界阻尼无过冲；response 仅缩放时间轴——
      临界阻尼 x(t)=1-(1+ωt)e^(-ωt) 的形状只由 ζ=1 决定，一条采样两档共用）。
      linear() 采样自 response=0.35s（w=2π/0.35，收敛至 0.525s）；snappy 档 =
      同曲线 × (0.25/0.35) 时长（≈375ms，--spring-snappy 纯引用同一条采样——
-     形状只由 ζ 决定，时长缩放即可）。消费：弹层 animation 的 timing-function，
+     形状只由 ζ 决定，时长缩放即可）。时长 token（design review P1：换算关系
+     收单源，改 response 只动这里）：*-duration = 各档收敛时长，消费点一律
+     var() 引用禁止散写 ms。消费：弹层 animation 的 timing-function/duration，
      经 [--tw-ease:…] / [--tw-animation-duration:…] 注入——自定义属性不参与
      animation shorthand 的长属性重置，机制上必生效。linear() 不支持的旧引擎
      在使用点 IACVT 回退 initial（ease），与改造前持平。
 */
   --spring-snappy: var(--spring-standard);
+  --spring-standard-duration: 525ms;
+  --spring-snappy-duration: 375ms;
   --spring-standard: linear(
     0,
     0.0802 5%,
@@ -645,41 +653,46 @@ body {
 }
 
 @layer utilities {
+  /* 步进/时长 token（design review P2：28×8 算术与 cap 的关系收单源，delay 规则
+     calc 引用——改步进只动 --stagger-step）。 */
   .animate-stagger-rows > * {
-    animation: stagger-row-enter 0.32s var(--ease-standard) backwards;
+    --stagger-step: 28ms;
+    animation: stagger-row-enter var(--stagger-duration, 0.32s) var(--ease-standard) backwards;
   }
   .animate-stagger-rows > *:nth-child(1) {
     animation-delay: 0ms;
   }
   .animate-stagger-rows > *:nth-child(2) {
-    animation-delay: 28ms;
+    animation-delay: var(--stagger-step);
   }
   .animate-stagger-rows > *:nth-child(3) {
-    animation-delay: 56ms;
+    animation-delay: calc(var(--stagger-step) * 2);
   }
   .animate-stagger-rows > *:nth-child(4) {
-    animation-delay: 84ms;
+    animation-delay: calc(var(--stagger-step) * 3);
   }
   .animate-stagger-rows > *:nth-child(5) {
-    animation-delay: 112ms;
+    animation-delay: calc(var(--stagger-step) * 4);
   }
   .animate-stagger-rows > *:nth-child(6) {
-    animation-delay: 140ms;
+    animation-delay: calc(var(--stagger-step) * 5);
   }
   .animate-stagger-rows > *:nth-child(7) {
-    animation-delay: 168ms;
+    animation-delay: calc(var(--stagger-step) * 6);
   }
   .animate-stagger-rows > *:nth-child(8) {
-    animation-delay: 196ms;
+    animation-delay: calc(var(--stagger-step) * 7);
   }
-  /* 第 9 行及以后共用同一延迟：长列表末段不再无限递增（避免第 40 行等 1s+）。
-     fill 用 backwards 不用 both：delay 期间保持 from 态（不闪现），播完即释放
-     transform 占用——forwards 会以动画终态持续压过后续 transform（拖拽行跟手
-     位移会被 translateY(0) 锁死）。已存在的行 re-render 复用 DOM 不重播；列表
-     后续追加的新行（新 key 新 DOM）会以同款淡入出现——与 msg-enter「新内容
-     抵达」同语义，属预期。 */
+  /* 第 9 行及以后共用同一延迟（= 步进 × 8）：长列表末段不再无限递增（避免第 40 行
+     等 1s+）。fill 用 backwards 不用 both：delay 期间保持 from 态（不闪现），播完
+     即释放 transform 占用——forwards 会以动画终态持续压过后续 transform（拖拽行
+     跟手位移会被 translateY(0) 锁死）。已存在的行 re-render 复用 DOM 不重播；
+     列表后续追加的新行（新 key 新 DOM）会以同款淡入出现——与 msg-enter「新内容
+     抵达」同语义，属预期。**只在排序稳定的列表挂**（批C review P1）：lastActivityAt
+     动态排序列表（history-list）行前移 = insertBefore 移动 keyed DOM = CSS
+     animation 从头重播（opacity:0 闪烁）。 */
   .animate-stagger-rows > *:nth-child(n + 9) {
-    animation-delay: 224ms;
+    animation-delay: calc(var(--stagger-step) * 8);
   }
 }
 
@@ -698,10 +711,11 @@ body {
   }
 }
 
-/* Reduced-motion static fallback — site-wide. MotionConfig reducedMotion="user"
-   handles JS-driven animation (disables transform/layout, keeps opacity); this
-   covers everything else: the skeleton shimmer, the plan-awaiting flow, and
-   Tailwind's animate-* utilities. */
+/* Reduced-motion static fallback — site-wide。覆盖 CSS 侧全部动效：skeleton
+   shimmer、plan-awaiting flow、Tailwind 的 animate-* utilities，以及五批动效
+   （弹层 spring / 交错入场 / grid 轨道 / press）。曾注释提到 MotionConfig
+   reducedMotion="user" 作 JS 侧双保险——批A 引入的 motion 库在 review 后摘除
+   （五批全走纯 CSS，零 JS 消费方），现为唯一兜底。 */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

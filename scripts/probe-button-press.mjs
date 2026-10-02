@@ -109,12 +109,40 @@ function ok(cond, msg) {
   // ── Part 2:active scale 0.97(skill §1 pointer-down 即反馈) ──
   console.log("Part 2: 按住 scale 0.97(中间值证明在插值),松手回 none");
   const box = await cancel.boundingBox();
+  // 页面内 rAF 采样器:中间值必须证明「过渡真的在插值」,而由 Node 定时往返采样
+  // (down → waitForTimeout(60) → evaluate)在机器负载下往返可超 100ms 过渡时长 →
+  // 只能读到终态 0.97 = 假 fail(实测)。rAF 逐帧采样不依赖往返延迟,transitionrun
+  // 事件作机制在场证据(瞬切无事件——transition-property 写 transform 时对独立
+  // scale 零作用,曾实测跳变)。
+  await page.evaluate(() => {
+    window.__pressSamples = [];
+    window.__pressRun = false;
+    const el = document.querySelector('[role="dialog"] button[data-slot="button"]');
+    el?.addEventListener("transitionrun", (e) => {
+      if (e.propertyName === "scale") window.__pressRun = true;
+    });
+    const t0 = performance.now();
+    const tick = () => {
+      window.__pressSamples.push(getComputedStyle(el).scale);
+      if (performance.now() - t0 < 800) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await page.waitForTimeout(60); // 过渡中段采样:必须已离开 1 但未到 0.97
-  const mid = Number.parseFloat(await cancel.evaluate((el) => getComputedStyle(el).scale));
-  ok(mid > 0.97 && mid < 1, `过渡中间值 0.97 < scale < 1(实测 ${mid} —— 瞬切会得 0.97)`);
-  await page.waitForTimeout(250); // 等过渡播完,采终态
+  await page.waitForTimeout(450); // 覆盖 100ms 过渡 + 余量(rAF 采样已在页内自持)
+  const press = await page.evaluate(() => ({
+    run: window.__pressRun,
+    samples: window.__pressSamples,
+  }));
+  const mids = press.samples
+    .map(Number.parseFloat)
+    .filter((v) => Number.isFinite(v) && v > 0.97 && v < 1);
+  ok(press.run, "按住派发 transitionrun(scale)(真过渡非瞬切)");
+  ok(
+    mids.length > 0,
+    `过渡中间值 0.97 < scale < 1 存在(实测样本 ${mids.length} 个,峰值 ${Math.max(...mids, 0)} —— 瞬切会得 0 个)`,
+  );
   const pressed = await cancel.evaluate((el) => getComputedStyle(el).scale);
   ok(pressed === "0.97", `按住终态 scale = 0.97(实测 ${pressed})`);
   // 松手前把指针移开:down/up 异元素时 click 落最近公共祖先,避免 click 命中

@@ -186,20 +186,27 @@ async function assertEnter(page, selector, wantDuration, label) {
     );
 
     // exit 保持快速离开：Esc 关闭，closed 态窗口内（150ms 动画期）读 computed。
+    // 用页面内单表达式轮询，不用 locator.evaluate：后者在「解析句柄 → 求值」之间
+    // React 若已卸载，句柄指向游离节点 → getComputedStyle 全空串（实测假 fail），
+    // 而非 null 走不到 ⚠ 分支。
     await d.keyboard.press("Escape");
     const exitStyle = await d
-      .locator('[data-slot="dialog-content"][data-state="closed"]')
-      .evaluate(
-        (node) => {
-          const s = getComputedStyle(node);
+      .waitForFunction(
+        () => {
+          const el = document.querySelector('[data-slot="dialog-content"][data-state="closed"]');
+          if (!el) return null;
+          const s = getComputedStyle(el);
+          if (!s.animationName.includes("exit")) return null;
           return {
             name: s.animationName,
             timing: s.animationTimingFunction,
             duration: s.animationDuration,
           };
         },
-        { timeout: 2000 },
+        null,
+        { timeout: 1500 },
       )
+      .then((handle) => handle.jsonValue())
       .catch(() => null);
     if (exitStyle) {
       ok(

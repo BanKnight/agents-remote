@@ -322,7 +322,9 @@ export function actionButtonClasses({
     // transition 同 ui/button.tsx 批E 收窄(scale 而非 transform——Tailwind v4 的
     // scale-* 是独立属性,transform 过渡对它零作用;裸 transition 的 23 属性表会经
     // twMerge 后传覆盖 cva base 的同款 arbitrary——两处必须同步,否则收窄失效)。
-    `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition-[scale,background-color,box-shadow] active:bg-on-surface/10 ${mobile} ${buttonToneClasses[tone]}`,
+    // press 同款 scale 反馈 + aria-haspopup 豁免(弹层 trigger 锚点稳定,design
+    // review P2:全站按压力度语言统一,此前 ActionButton 只有底色反馈)。
+    `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition-[scale,background-color,box-shadow] active:bg-on-surface/10 active:not-aria-[haspopup]:scale-[0.97] ${mobile} ${buttonToneClasses[tone]}`,
     className,
   );
 }

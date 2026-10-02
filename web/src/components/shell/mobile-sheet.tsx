@@ -141,6 +141,10 @@ export function MobileSheet({
         v: 0,
         dy,
       };
+      // enter spring（批B，375ms）运行期 keyframes transform 压过 inline style——
+      // 「打开即下拉」会在动画播完才跳到手指位置（design review P2）。显式 cancel
+      // 让拖拽立即接管；未在播时是 no-op。只 cancel 不改拖拽状态机。
+      for (const a of e.currentTarget.getAnimations()) a.cancel();
       e.currentTarget.style.transition = "";
       e.currentTarget.style.transform = `translateY(${dy}px)`;
       return;
@@ -205,8 +209,8 @@ export function MobileSheet({
             // programmatic enter 换 spring snappy（[--tw-ease/--tw-animation-duration]
             // 变量注入，与拖拽 dismiss 的 exit 变量注入同机制）；拖拽状态机、exit
             // keyframes（inline transform 作起点）与 fill-mode-forwards 一律不动。
-            "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4 data-[state=open]:[--tw-ease:var(--spring-snappy)] data-[state=open]:[--tw-animation-duration:375ms]",
-            "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-4 data-[state=closed]:duration-150 data-[state=closed]:fill-mode-forwards",
+            "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4 data-[state=open]:[--tw-ease:var(--spring-snappy)] data-[state=open]:[--tw-animation-duration:var(--spring-snappy-duration)]",
+            "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-4 data-[state=closed]:[--tw-animation-duration:var(--duration-exit)] data-[state=closed]:fill-mode-forwards",
           )}
           onPointerCancel={endDrag}
           onPointerDown={startDrag}
