@@ -1,21 +1,28 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-02（**重连增量回放 `d565ba4`**：客户端 WS URL 携带 `?since=<锚 uuid>`，relay 双缓冲定位锚命中 → session_init `replay:"delta"` 只发锚后行，未命中全量回退；客户端 delta 分流不 reset + liveStart 修正防假 running + 新增 turn 淡入。relay 单测 6 项 + hook 54 pass + 探针 8 项全绿。**待真机复验（清单第 19 项）**。第八~十三批仍待真机复验。）
+> 最后更新：2026-10-03（**全站动效体系收口**：批A–E 五批 + 三 reviewer 消化。弹层 CSS `linear()` 弹簧 / 列表 `nth-child` 交错入场 / grid 轨道开合过渡 / press 独立 `scale` 过渡 / 时长 token 化；**motion 库引入后摘除**（115KB 死重，五批全走纯 CSS 零 JS 消费方，entry 397KB→292KB）。四探针全绿（14/20/7/11）+ 全门禁绿。**待真机复验**。回滚点 = `98b12fa`。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-**重连增量回放收口（`d565ba4`）**：claude 会话重连不再大面积重刷——①数据层：cursorRef 锚 → `?since=` → relay locateReplayAnchor（先倒序 live 后 history、顶层 uuid 确认防错锚）→ 命中 `replay:"delta"` 只发锚后行 / 未命中安全回退 full；②体验层：delta 新增 turn 挂 `animate-msg-enter` 淡入（rendered 索引空间 + 封口 600ms 摘除）。双向兼容（缺省 = full）。
+**全站动效体系收口（`4d4772c` 为末批）**：以 Apple 流体接口原则落地五批动效，最终**全走纯 CSS**——①弹层 enter/exit 换 `linear()` 临界阻尼弹簧曲线（525/375ms token 化）+ exit 显式 150ms；②首屏列表 `nth-child` stagger 交错入场（28ms 步进 cap 224ms，仅排序稳定列表）；③右栏开合走 `grid-template-columns` 轨道过渡（拖拽/键盘连续改宽期间摘类）；④button press 用独立 `scale` 属性过渡。**批A 引入的 motion 库经 perf review 实锤为死重（LazyMotion 树摇失效）后整体摘除**——决策详见 redesign-v2.md 动效段。
 
-## 本 session 焦点（重连增量回放）
+## 本 session 焦点（全站动效体系）
 
-1. 用户需求：重连时大面积聊天内容刷新太重量级，两部分优化（数据结构层增量 + 体验层动效）。
-2. 拍板：回退场景维持 skeleton 现状不做旧内容保留；范围 claude 先行（pi/acp 事件帧无 uuid 锚不可靠）。
-3. 双 reviewer 审查消化：P0（动画 transform 覆盖虚拟列表 translateY → turn 堆叠，改纯 opacity）+ P1（deltaEnter 误用 raw 索引空间，改 rendered）+ P2×2（nested uuid 错锚防护、测试注释/断言）全修；P2#5（replayCursor 与实际追加数发散）接受为注记。
-4. 调试实锤：封口 effect 的 per-run cleanup 在 renderedMessages 变化重跑时清掉未触发的摘除 timer 且 early-return 不重建 → timer 挂 ref 一次性调度、卸载清理独立 effect。
+1. 用户需求：添加合适动画使整体更出彩，按最佳实践选技术栈；先 push 作回滚点（`98b12fa`）。
+2. AskUserQuestion 三拍板：范围 = 全站动效体系；弹层 = 换 spring；工作台布局 = 要 layout 动画。**页面切换动效 = 我决策不做**（与既有拍板「ready 直接切」冲突；替代 = 内容层交错入场）。
+3. **motion 库摘除**（与拍板①的偏离，可回滚）：批A 按 plan 引入 `motion@13.4.4` + LazyMotion + MotionConfig，但批B–E 实施全部落成纯 CSS、零 `m.` 消费方；perf review P0-1 实锤 LazyMotion 动态 import 与静态 import 同属一个 barrel → 树摇失效 → 115KB min（29% entry chunk）死重。摘除后 entry **397KB → 292KB（-26%）**，全产物零 framer-motion 引用（sourcemap 归因）。**motion 的独有价值（可中断 spring + 速度继承）在本项目无落点**——无手势驱动动画（mobile-sheet 拖拽是禁区），`linear()` 采样提供了 spring 的曲线形状，静止场景足够。
+4. 三 reviewer 消化（`4d4772c`）：perf 摘除 motion / blur 8→4px / history-list 撤 stagger / 键盘摘类；design 时长 token 化 ×2 / mobile-sheet `getAnimations()` cancel / actionButton press / stagger calc 化；security 随摘除消失。
+5. 探针消竞态三处（均为 Node↔页面往返慢于动画窗口的**假 fail**）：`transitionrun` 事件断言（grid-panel）/ 页面内 rAF 逐帧采样（button-press）/ 页面内 `waitForFunction` 轮询（spring-overlays exit）。
 
 ## 关键决策（本阶段不可丢）
 
+- **motion 摘除（本批最大决策，与拍板①偏离、可回滚）**：批B–E 实施后动效全落纯 CSS、零 `m.` 消费方；LazyMotion 动态 import 与静态 import 同 barrel → 树摇失效 → 115KB（29% entry）死重。motion 独有价值（可中断 spring + 速度继承）在本项目无落点（mobile-sheet 拖拽是禁区、无其他手势驱动动画），`linear()` 采样已给 spring 曲线形状。**若未来做手势中断续接再引入，须在消费点动态 import 避开 barrel 树摇**；`git revert 4d4772c` 可整体回滚摘除。动效单源 = `web/src/styles/index.css`（JS 镜像 tokens.ts 已删）。
+- **Tailwind v4 独立 transform 属性（frontend-notes §19）**：`scale-*` 生成独立 CSS `scale` 属性非 transform；transition-property 写 transform 对它零作用（press 退化瞬切）——必须显式列 `scale`，断言读 `getComputedStyle(el).scale`。
+- **insertBefore 移动 keyed DOM = CSS animation 重播（frontend-notes §17）**：动态排序列表（lastActivityAt）不能挂 stagger（行前移 = opacity:0 闪烁），只挂排序稳定列表（服务端排序全稳定字段）。
+- **grid 轨道过渡（frontend-notes §18）**：变量承载列宽、模板裸引用（包 `minmax(var())` 嵌套非法整条声明被丢）；拖拽**和键盘长按**连续改宽期间摘 transition（keydown 20-30 次/秒 = 连续重定目标）；gutter 可聚焦 separator 契约（role+tabIndex 是键盘通道可达前提，存量 a11y 缺失本批补）。
+- **tw-animate timing 注入（frontend-notes §16）**：`.animate-in` 是 animation shorthand 会重置长属性，timing 只能走 `--tw-ease`/`--tw-animation-duration` 自定义属性注入；时长 token `--spring-standard-duration: 525ms` / `--spring-snappy-duration: 375ms` / `--duration-exit: 150ms`（exit 原靠 tw-animate 默认值隐式巧合）。
+- **页面切换动效不做**（本批拍板）：与「ready 直接切」冲突，导航路径上任何非必要延迟都是回归；内容层交错入场为替代。
 - **global 右栏语义（第十二批拍板）**：global 右栏 = 当前项目内容（lastProject 记忆优先，无记忆回退 projectNames[0]），一个项目都没有才完全空态。
 - **返回类导航统一 pop 优先**（useWorkbenchBack；M13d 核实其判定语义并注释准确化——back 落点=真实来源是设计意图，出站不可能）。
 - **inlineLocalHtmlAssets 契约（M13a 后）**：四类 job 替换串必须函数形式（字符串形式 `$&` 会展开）；style/script 段先剥（PUA 占位非 NUL）后回填；escapeSrcdoc = `& → < → "` 三转义（`>` 不转）；PreviewBody promise 按 preview 引用缓存；fetchOnce per-call 不跨调用。
@@ -36,7 +43,8 @@
 - ✅ 第十三批⑤模型反引号存量根治（`6529c87`：sanitize 单源下沉 api/src/model-id.ts + parseMetadata 读取归一 + 三写路径闸 + 前端 resolveCurrentModelAlias 兜底；**真机复验已通过**）
 - ✅ 第十三批⑥composer 草稿持久化（`04478d5`：lib/composer-draft.ts 单源 hook，persist/hydrate/时序门闩/key 切换四机制，claude+pi+acp 三端接入；探针 5 项 + 单测 4 项全绿）
 - ✅ 重连增量回放（`d565ba4`：shared replay 字段 → relay 锚定 → claude-stream 串参 → 客户端 delta 分流 + liveStart 修正 + 淡入；relay 单测 6 项 + hook 54 pass + 探针 8 项；协议文档「重连回放消息序列」段同步更新为现行序列）
-- ⬜ **交用户真机复验**（第八~十二批 + 第十三批 + 重连增量清单见下）
+- ✅ **全站动效体系**（批A `acf2c15` → 批B `4683116` → 批C `dc8a2ff` → 批D+E `fbd789a` → 批E scale 修正 `e02ec70` → reviewer 消化 `4d4772c`；记档齐：redesign-v2.md 动效段 + frontend-notes §16–20 + handoff 滚动；回滚点 `98b12fa`）
+- ⬜ **交用户真机复验**（第八~十二批 + 第十三批 + 重连增量 + **动效批清单 21–25** 见下）
 - ⬜ 阶段一遗留：第五批 reviewer 修复批（`bd7aedc`）真机复验清单仍待用户执行
 - ⬜ 存量欠账（不动）：e2e pwa-installable 存量失败；桌面「点第二个实例丢 leaf」；DialogTitle a11y；rootBrowse 下沉（global 右栏多项目浏览增强）；i18n key 收敛；probe-chat-e2e 2 存量 FAIL；sheet 拖拽真机复验；`.tree`/`.growrow` 死代码清扫；probe-m10-feedback-fixes H 段基线；diff L3 位置架构项；design P2 滚动 5 项
 
@@ -84,10 +92,18 @@
 19. **长会话断网重连**：打开长 claude 会话 → 关 Wifi 几秒再开 → 重连后**内容不闪不重刷**（无 skeleton、既有消息不动）、offlineCap 横幅消失、断线期间新消息补齐且**淡入**；注意手机 PWA 断网期间 WS 语义与桌面一致
 20. **全量回退分支**：API 重启（tmux respawn api）后重连 → skeleton + 全量重放正常（现状，预期行为）；pi/acp 会话断网重连 → 行为与之前完全一致（全量）
 
+**全站动效批**（批A–E + `4d4772c`，Mac 桌面 + iPhone；**如整体不满意可回滚到 `98b12fa`**）：
+21. **弹层手感**：新建会话菜单 / prompt Dialog / 设置弹层开合 = 弹簧曲线无过冲、打开有 materialize 质感（scale+blur 4px）；**连续快速开合**不卡不跳（中断跳变窗口，perf P2-7 重点验）；Esc/scrim 关闭快速离开（150ms）
+22. **mobile-sheet「打开即下拉」**：移动端 sheet 刚打开（enter 弹簧 375ms 播放中）立即按住往下拖 → **应立刻跟手**（不等待动画播完才跳到手指）；拖拽回弹/dismiss 与之前手感一致（禁区未动）
+23. **列表入场**：进 /projects、/files、项目页 → 列表行自上而下 28ms 交错淡入上浮，**只首次挂载**——WS 状态更新/hover 不重播、历史列表（时钟切过去）完全无闪烁
+24. **右栏开合 + 拖宽 + 键盘**：折叠/展开有 280ms 滑动；**拖宽 1:1 跟手**（无迟滞）；**Tab 聚焦左缘分隔条（高亮）→ ←/→ 步进 ±1rem 即时到位**（清单第 10 项，本批修复 role+tabIndex 后键盘通道才真正可用）；reduced-motion（系统减弱动效开启）下全部即时到位
+25. **button press**：按住按钮有 0.97 按压回缩（弹层 trigger 类带 aria-haspopup 的不缩——锚点稳定）；松手回弹
+
 ## 阻塞 / 风险
 
-- 无阻塞。dev 存活 43011/43012；CSS 硬闸已过（184198 字节，content-type text/css）。
+- 无阻塞。dev 存活 43011/43012；CSS 硬闸已过（188010 字节，content-type text/css）。
 - **router22 残留进程待用户处理**：21 天前的 chromium 两棵进程树（PID 1989432/1989916，user-data-dir=/tmp/router22-fb31-diag3，remote-debugging-port=9781）——kill 被权限分类器拦截（跨项目资源），需用户自己清或授权；本项目探针无残留。
+- **存量时序 flake（与本批无关，欠账）**：`probe-claude-reconnect-delta` ③c 偶发 animated=0（600ms 摘除 timer 与采样窗口竞态），复跑即绿。
 
 ## 易丢的关键上下文
 
@@ -99,7 +115,8 @@
 - **本 session 输出管线坑（复发两次）**：生成「反斜杠-u-XXXX」转义文本会退化为真实字符（PUA/NUL）——内置 Edit 匹配不上、markdown 记档也中招；处理用 python/perl 字节级替换，记档表述用纯文字描述占位符。
 - **composer 草稿持久化（第十三批⑥）**：`web/src/lib/composer-draft.ts` 单源 hook（loadComposerDraft/saveComposerDraft 纯函数 + useComposerDraft）；key = `composerDraft:<type>:<sessionId>`；**assistant-ui 的 aui state 投影走异步调度**——setText 后订阅不立即回显，测试必须 waitFor/async act，同步断言读不到。
 - **重连增量回放链路（`d565ba4`）**：cursorRef（最后带 uuid 消息）→ `claudeStreamUrl(project, session, since)` → `?since=` → handleClaudeStreamUpgrade（≤128 校验）→ relay.addSubscriber opts.sinceUuid → locateReplayAnchor（先倒序 live 后 history + topLevelUuidIs 顶层确认）→ session_init `replay:"delta"|"full"`。客户端 session_init 分流（delta 不 reset）+ history_end liveStart 修正（replayCursorRef 同步累进）+ 封口 effect（deltaClosePendingRef → setDeltaEnter rendered 范围 → 600ms timer 挂 ref 摘除）。探针 `probe-claude-reconnect-delta.mjs` 8 项。
-- 记档位置：§6.13「真机反馈修复」第八~十二批 + reviewer 补审修复批（M13a–d）+ 重连增量回放段齐；协议文档「重连回放消息序列」段已更新为现行序列（session_init/seed_init/history/live + replay 字段）。
+- **动效批跑法与断言口径**：改动效相关文件后跑四探针（grid-panel 14 / spring-overlays 20 / button-press 7 / stagger-entry 11），均 `bun scripts/probe-*.mjs`；**探针断言动画禁止 Node 侧定时采样**（Node↔页面往返可慢于动画窗口 = 假 fail 三连教训）——用 `transitionrun` 事件（真过渡才派发）、页面内 rAF 逐帧采样、页面内 `waitForFunction` 三选一；读 scale 读 `getComputedStyle(el).scale` 非 transform（§19）。
+- 记档位置：§6.13「真机反馈修复」第八~十二批 + reviewer 补审修复批（M13a–d）+ 重连增量回放段 + **动效段（§7 前）**齐；协议文档「重连回放消息序列」段已更新为现行序列（session_init/seed_init/history/live + replay 字段）。
 
 ## 提醒
 
@@ -107,4 +124,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-02；触发原因：重连增量回放（`d565ba4`）+ 记档
+最后更新：2026-10-03；触发原因：全站动效体系（批A–E + reviewer 消化 `4d4772c`）+ 记档

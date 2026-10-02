@@ -1267,6 +1267,94 @@ API 恢复后对第六~十二批 8 个代码 commit（`60dc9e3`~`386533a`）补�
 
 **待真机复验**：长会话断网重连（Wifi 关/开）→ 内容不闪不重刷、offlineCap 消失、断线期间新消息补齐且淡入；API 重启后重连 → 全量回退正常（skeleton 现状）；pi/acp 重连行为不变。
 
+### 全站动效体系：Apple 流体接口原则落地（2026-10-03，批A–E + reviewer 消化）
+
+**用户需求**：为项目添加合适的动画使整体更出彩，按最佳实践选技术栈；实操前先 push 作回滚点。
+
+**拍板**（AskUserQuestion 三问）：①范围 = **全站动效体系**；②弹层 = **换 spring**；③工作台布局变化 = **要 layout 动画**。**页面切换动效——决策：不做**。理由：与既有拍板「过渡保持上一屏，ready 直接切」（`router.tsx:385` + 记忆 `feedback-page-owns-loading`）直接冲突；Apple skill §1「响应优先」——导航路径上任何非必要延迟都是回归；工作台本身是「作用域常驻、同屏换面板」范式，无页面切换语义。替代 = 内容层交错入场。
+
+**回滚点**：`98b12fa`（批A 前 push 的 main）；批次 commit 链 `acf2c15`（批A）→ `4683116`（批B）→ `dc8a2ff`（批C）→ `fbd789a`（批D+E）→ `e02ec70`（批E scale 机制修正 + frontend-notes §16–20）→ `4d4772c`（reviewer 消化）。
+
+#### ⚠️ 关键技术决策：motion 库摘除（与拍板①的偏离，可回滚）
+
+**用户拍板过「引入 motion 库」（批A 落 `motion@13.4.4` + LazyMotion + MotionConfig），但批B–E 实施后全部动效都走了纯 CSS，零 `m.` 消费方**。perf review P0-1 实锤：LazyMotion 的动态 `import()` 与静态 import **同属 `motion/react` 命名空间导出**（同一个 barrel）→ 树摇失效 → 115KB min（占 entry chunk **29%**）纯死重。摘除后 entry chunk **397KB → 292KB（-26%）**，全产物零 framer-motion/motion-dom 引用（sourcemap 归因实锤，同时消掉 perf P2-4：根 `overrides` 未被遵循、实际入包 framer-motion@13.5.1 全家）。
+
+**为什么纯 CSS 够用**（不是凑合，是更合适）：
+
+| 能力 | motion 库 | 本项目实际需要 | 结论 |
+| --- | --- | --- | --- |
+| 弹层 enter/exit | spring | Radix data-state + tw-animate keyframes，**曲线换 `linear()` 阻尼采样即可** | CSS 胜（零 JS 边界） |
+| 列表交错入场 | variants 容器驱动 | `nth-child` + `calc()` delay，**声明式零 JS** | CSS 胜 |
+| grid 轨道过渡 | layout 动画 | `transition: grid-template-columns`（grid 轨道原生可插值） | CSS 胜 |
+| press 反馈 | whileTap | `:active` + 独立 `scale` 属性过渡 | CSS 胜（pointer-down 即触发，无 JS 延迟） |
+| **手势中断续接**（skill §3 核心） | spring retarget + velocity | **无消费场景**——mobile-sheet 拖拽是四轮真机调优的既有 pointer 状态机（禁区），其余无手势驱动动画 | 不需要 |
+
+即：motion 的核心价值（可中断 spring + 速度继承）在本项目**没有落点**，而它的体积全部要付。CSS `linear()` 阻尼采样提供了 spring 的**曲线形状**（静止场景足够）；**唯一** motion 能做得更好的场景是「用户抓住正在飞的元素」，本批无此交互。
+
+**决策记录**：属「用户拍板范围内选最佳实践实现」。若未来要做手势中断续接（如卡片甩出、可抓取的 sheet），重新引入 motion 并在**消费点**动态 import（避开 barrel 树摇问题）即可——本批的 CSS 基建与之不冲突（token 与曲线可复用）。**回滚**：`git revert 4d4772c`（该 commit 含摘除全部改动）。
+
+#### 批A：基建（`acf2c15`）
+
+- `web/src/motion/tokens.ts` 落地 index.css 注释里**超前预留**的单源（`motion/tokens.ts` 曾从未存在，git 确认）+ 一致性单测。**该文件已随摘除删除**——现 motion 单源 = `web/src/styles/index.css` 的 `:root` 段（CSS 唯一）。
+- 引入 `motion@13.4.4`（供应链：2026-09-25 发布，≥7 天；latest 14.0.0 / 13.5.1 均当日发布不合规，锁死 13.4.4）。
+- **已摘除**（见上）。
+
+#### 批B：弹层 spring 化（`4683116`）
+
+弹层 enter/exit 曲线换 **CSS `linear()` 临界阻尼采样**（ζ=1，无过冲——Apple 默认）：
+
+- `--spring-standard: linear(0 0%, 0.0802 5%, 0.2428 10%, 0.4129 15%, …)`（525ms）；`--spring-snappy: var(--spring-standard)`（**纯引用**——形状只由 ζ=1 决定，二者只差时长）。
+- 时长 token 化（design review P1-3/P2-7）：`--spring-standard-duration: 525ms` / `--spring-snappy-duration: 375ms` / `--duration-exit: 150ms`（exit 此前靠 tw-animate 默认 150ms **隐式巧合**，现显式）。四个消费点（dialog/popover/dropdown/mobile-sheet）一律 `var()`，禁散写 ms。
+- **机制要点**：tw-animate 的 `.animate-in` 是 animation **shorthand**，其中 `--tw-ease` / `--tw-animation-duration` 是**自定义属性**（不参与 shorthand 的长属性重置）——所以注入走 `data-[state=open]:[--tw-ease:var(--spring-standard)]` 这类 arbitrary 类，而非覆盖 `animation-timing-function`。**三处（popover/dropdown/mobile-sheet）写同一 arbitrary 串 → Tailwind 合并为一条共用规则**（探针 Part 0 断言 ≥1 条即覆盖全部）。
+- dialog：`zoom-in-[0.96]` + opacity + **`blur-in-[4px]`**（skill §12 materialize：blur 与 scale 同动；perf review P1-2 从 8px 降 4px——`filter:blur` 非 compositor-only，每帧全对话框重栅格化，iOS WebKit 代价最高）。
+- popover/dropdown 保留 `transform-origin: var(--radix-…-content-transform-origin)`（skill §7 锚定触发源，探针断言 `!== center`）。
+- **mobile-sheet 只动 programmatic enter**；**拖拽路径与拖拽 dismiss 的 exit 完全不动**（exit 依赖「inline transform 作 from」机制，frontend-notes §14 四轮真机调优成果 = 禁区）。
+- 不锁输入：Radix pointer-events 语义不动，动画纯视觉（skill §3）。
+
+#### 批C：内容交错入场（`dc8a2ff`）
+
+首屏列表（左栏会话分组行 / 文件树 ListGroup / instance-area 卡片）**首次挂载** stagger：`fade + rise 6px`，`--stagger-step: 28ms` 挂容器，delay 规则 `calc(var(--stagger-step) * n)`（design review P2-10 calc 化，改步进只动一处），第 9 行起 cap `calc(var(--stagger-step) * 8)`。
+
+- **fill 必须是 `backwards` 不能 `both`**：`both` 会在播完后以动画终态持续压过 `transform`（拖拽行跟手位移被 `translateY(0)` 锁死）。探针 Part 1 专断言此项防回退。
+- **铁律「只首次挂载」**：数据更新 / 流式追加不重播。**批C review P1 实锤的坑**：同 key 行 re-render 不重播，但 **React `insertBefore` 移动 keyed DOM = 脱离文档再插回 = CSS animation 从头重播**（含 backwards 填充的 `opacity:0` 闪烁）。故 **history-list 撤 stagger**（按 `lastActivityAt` 倒序动态重排，WS 活动让行前移 = 真实重播面）；stagger 只留**排序稳定**的列表——instance-area overview 候选排序 = 项目名 localeCompare → 类型 → createdAt 升序（服务端 `session-registry.ts:414` 全稳定字段），file-browser 名字序。
+- 消息流 turn 入场已有 `msg-enter`（纯 opacity），不动。
+
+#### 批D：工作台布局动画（`fbd789a`）
+
+- **右栏折叠/展开**：`grid-template-columns` 轨道过渡（`.workbench-grid-animated`，`transition: grid-template-columns var(--duration-slow) var(--ease-standard)`）。
+  - **变量承载列宽，模板裸引用**：`--workbench-right-col` = 完整轨道定义（`0px` 或 `${rightWidth}rem`），模板 `lg:grid-cols-[var(--workbench-side-col)_var(--workbench-center-col)_var(--workbench-right-col)]`。**若模板再包 `minmax(var(...))` 会嵌套非法 → 整条声明被丢 → 退化为单列全宽**（探针实抓）。
+  - 同值轨道不插值、长度轨道插值；不支持 track 插值的旧引擎退化为离散切换（渐进增强）。
+- **拖宽 / 键盘长按期间必须摘 transition**（`rightResizing` state 条件挂类，perf review P2-6 扩到键盘）：每帧改 `rightWidth` 的 1:1 手势带 280ms transition = 追指针 + 每帧全 grid 重排。仅**程序化开合**（唤出钮 / 折叠钮）带动画。
+- **中栏 FLIP 搁置**：`flattenLayout` 绝对槽位 + 拖拽 1:1 互斥 + xterm/虚拟列表禁区 + plan 原目标 `InstanceGrid` 已退役。
+- **存量 a11y 回归修复**（本批探针 Part 3.5 实抓）：`ColumnResizeGutter` 的 div **一直缺 `role="separator"` + `tabIndex={0}`** → M13c（`5b3d527`）补的键盘方向键通道自始**不可达**（不可聚焦）。补上后 handoff 复验清单第 10 项「gutter 键盘」才真正可用。
+
+#### 批E：微交互（`e02ec70`）
+
+- **button press**：`active:translate-y-px` → **`active:not-aria-[haspopup]:scale-[0.97]`**（skill §1 pointer-down 即反馈；`aria-haspopup` 的弹层 trigger 例外——锚点稳定，不缩）。`actionButtonClasses` 同步补（全站按压力度统一，design review P2-8）。
+- **⚠️ Tailwind v4 独立 transform 属性（本批最硬的一课）**：`scale-*` / `translate-*` / `rotate-*` utility 生成**独立的 CSS `scale` / `translate` / `rotate` 属性**，不是 `transform`。**`transition-property: transform` 对独立 `scale` 零作用** → press 会退化为**瞬切**（诊断实锤：中间值 0.5 跳变、无插值）。必须显式写 `transition-[scale,background-color,box-shadow]`，断言也必须读 `getComputedStyle(el).scale`（读 `transform` 恒 `none`）。
+- **twMerge 后传覆盖**（frontend-notes §11 同族）：`actionButtonClasses` base 串的**裸 `transition`**（= 23 属性大表）经 `cn` 后传会**覆盖** cva base 的收窄 arbitrary——组件定义与 helper 必须**同步收窄**。
+- 验证：探针采**过渡中间值**（页面内 rAF 逐帧采样，实测 8 个中间帧、峰值 0.999025）+ `transitionrun` 事件双证据（只采终态则瞬切也能通过）。
+
+#### 动画禁区（三件，全线未触碰）
+
+1. **mobile-sheet 拖拽状态机与 exit 机制**（frontend-notes §14，四轮真机调优，逐行不动）。
+2. **虚拟列表 turn 的 inline `transform`**（仅 `ClaudeSessionDetailRoute.tsx`，全仓唯一虚拟化）——任何动画不得碰 transform，`msg-enter` 为此改纯 opacity 的 P0 教训。
+3. **路由级 pending / 页面切换动画**（拍板冲突，见上）。
+
+拖拽 ghost（`instance-area.tsx`）是独立 portal + ref 直写 transform，不走 React render，与卡片本体互不干扰。
+
+#### reviewer 三审消化（`4d4772c`）
+
+perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4 overrides 失效（随摘除消失）/ P2-6 键盘摘类 / P2-7 enter 中断跳变窗口（记档 + 真机验收项）/ P2-8 两处 `transition-all` 存量（`badge.tsx` 可忽略；`ClaudeSessionDetailRoute.tsx` 承重不动）。design：P1-3 + P2-7 时长 token 化 / P2-6 mobile-sheet `getAnimations()` cancel / P2-8 actionButton press / P2-10 stagger calc 化；P2-9/11/12 记档。security：P2-1 override 维护义务（随摘除消失）。**P2-12（设计包 `tokens.json` 缺动效段）**：本批动效 token 只落在 `index.css`，未回写设计包——分叉记档，后续设计包升级时一并补。
+
+#### 验证
+
+探针四支全绿（`scripts/`）：`probe-grid-panel` 14（含键盘可达性 + transitionrun 事件断言）/ `probe-spring-overlays` 20 / `probe-button-press` 7 / `probe-stagger-entry` 11。门禁全绿（api 884 / shared 9 / web 701，0 fail）+ CSS 硬闸 + tokens 机检（0 违例）。
+
+**探针消竞态（三处均为「Node↔页面往返慢于被观测动画窗口」的假 fail，非产品缺陷）**：① grid-panel Part 2/4 中间值采样 → `transitionrun` 事件断言（**只有真过渡才派发**）；② button-press Part 2 同因 → 页面内 rAF 逐帧采样；③ spring-overlays Part 1 exit 用 `locator.evaluate` 在「句柄解析 → 求值」间 React 已卸载（游离节点 computed 全空串）→ 改页面内 `waitForFunction` 轮询。另修两处夹具缺口：stagger-entry Part 1 `fill` 读 computed `animationFillMode`（无 forwards 的动画播完即从 `getAnimations()` 移除）、Part 2b 补 `agent-history` mock（entries 空时容器早退 null，断言读成 null 而非 false）。
+
+**待真机复验**：弹层开合手感（含**连续快速开合**的中断跳变窗口——perf P2-7）/ mobile-sheet「打开即下拉」/ 列表入场 / 右栏折叠展开 / 拖宽跟手 / **gutter 键盘可达（Tab 聚焦 → ←/→ 步进 ±1rem，handoff 清单第 10 项本批修复后才真正可用）** / button press 手感 / iOS 减弱动效开关。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

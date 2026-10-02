@@ -172,19 +172,23 @@
 
 **机制**：`.animate-in` 是 **animation shorthand**（`enter var(--tw-animation-duration,var(--tw-duration,.15s)) var(--tw-ease,ease)`）。CSS 规范里 shorthand 会**重置其未写出的长属性为初始值**，而 shorthand 声明与长属性声明的胜负按 **cascade 源序**（而非属性粒度）判定——所以同在 `data-[state=open]:` 变体下，谁在后谁赢，长属性写法不可靠。**自定义属性不参与 shorthand 重置**：往 `--tw-ease` / `--tw-animation-duration` 里塞值，shorthand 消费时就取到你的值。
 
-**标准做法**：timing/duration 一律走变量注入 arbitrary 类——`data-[state=open]:[--tw-ease:var(--spring-standard)] data-[state=open]:[--tw-animation-duration:525ms]`。**注意 Tailwind 会把三处写同一串的 arbitrary 合并成一条共用规则**（popover/dropdown/mobile-sheet 实测只有 1 条），断言产物规则数时别按消费点计数。不支持 `linear()` 的引擎在使用点 IACVT → 回退 initial(ease)，与改造前持平。
+**标准做法**：timing/duration 一律走变量注入 arbitrary 类——`data-[state=open]:[--tw-ease:var(--spring-standard)] data-[state=open]:[--tw-animation-duration:var(--spring-standard-duration)]`。**注意 Tailwind 会把三处写同一串的 arbitrary 合并成一条共用规则**（popover/dropdown/mobile-sheet 实测只有 1 条），断言产物规则数时别按消费点计数。不支持 `linear()` 的引擎在使用点 IACVT → 回退 initial(ease)，与改造前持平。
 
-**来源**：批B 弹层 spring（`4683116`）；DESIGN.md overlay 动效条目。
+**动效单源 = `web/src/styles/index.css`**：本批（批A）曾按此注释的预留引入 JS 侧 `motion/tokens.ts` 镜像 + motion 库，**review 后整体摘除**——实施下来五批动效全走纯 CSS、零 JS 消费方，而 LazyMotion 与静态 import 同属一个 barrel 导出导致树摇失效（115KB min = 29% entry chunk 死重，摘除后 entry 397KB→292KB）。曲线/时长 token 现只此一处 CSS 定义，**不再有 JS 镜像**（故也不存在两处漂移问题）；reduced-motion 兜底亦纯 CSS（下文 §14 站点级 media query），MotionConfig 双保险一并消失。
+
+**来源**：批B 弹层 spring（`4683116`）；motion 摘除 = `4d4772c`（perf review P0-1），详见 `docs/design/redesign-v2.md` 动效段「motion 库摘除」小节；DESIGN.md overlay 动效条目。
 
 ## 17. 列表入场交错用纯 CSS nth-child（高频 re-render 区零运行时）
 
 **现象**：想给会话/文件列表加「首次挂载交错淡入」时，若用 JS 驱动 variants（motion stagger），列表行会随 WS 状态点/hover/追加高频 re-render——每帧跑 JS 编排，开销白付。
 
-**机制**：**CSS animation 只在元素创建时播一次**，同 key 的行复用 DOM 不重播（React 更新属性不触发 animation 重跑）；而数据追加产生新 key = 新 DOM = 自然获得同款淡入，语义恰与「新消息进入」一致。代价为零运行时。stagger 用纯 CSS `nth-child(n)` 递增 delay 表达。
+**机制**：**CSS animation 只在元素创建时播一次**，同 key 的行复用 DOM 不重播（React 更新属性不触发 animation 重跑）；而数据追加产生新 key = 新 DOM = 自然获得同款淡入，语义恰与「新消息进入」一致。代价为零运行时。stagger 用纯 CSS `nth-child(n)` 递增 delay 表达，delay 规则 `calc(var(--stagger-step) * n)`（步进 token 挂容器，改值只动一处）。
+
+**⚠️ 但 `insertBefore` 移动 keyed DOM 会重播**（批C review P1 实锤）：React 重排一个已存在 key 的行（不是新建）会把它**从文档摘除再插回**，浏览器视作**新元素** → CSS animation 从头重播，backwards 填充的 `opacity:0` 阶段会**闪一下**。**判定**：列表按**动态字段**排序（如 `lastActivityAt`，WS 活动让行前移）= 有真实重播面，**不能挂 stagger**；只挂**排序稳定**的列表（服务端排序口径全用稳定字段，如项目名 localeCompare → 类型 → createdAt 升序 / 文件树名字序）。history-list 因此撤除。
 
 **标准做法**：容器挂 `.animate-stagger-rows`，行组件零改动（不传 props、不包 m）。**fill 必须 `backwards` 不能用 `both`**——`forwards`/`both` 会在播完后以动画终态**持续压过后续 transform**（拖拽行跟手位移被 `translateY(0)` 锁死）；`backwards` 只覆盖 delay 期间的 from 态，播完释放。delay 递增到第 8 行后用 `nth-child(n + 9)` cap（实测 28ms×8 = 224ms 封顶），防长列表尾部行等太久。配套 reduced-motion 兜底：站点级 `@media (prefers-reduced-motion: reduce)` 把 `animation-delay` 压 0s、duration 压 0.01ms。
 
-**来源**：批C（`dc8a2ff`）；`scripts/probe-stagger-entry.mjs` 9 断言（含 `getTiming().fill === "backwards"` 防回退）；DESIGN.md 动效段。
+**来源**：批C（`dc8a2ff`）+ 撤 history-list（`4d4772c`）；`scripts/probe-stagger-entry.mjs` 11 断言（含 `animationFillMode === "backwards"` 防回退 + history-list 无 stagger 防回归）；DESIGN.md 动效段。
 
 ## 18. grid 轨道 transition 做布局开合动画（拖拽期间必须摘 transition）
 
@@ -192,9 +196,11 @@
 
 **机制**：`grid-template-columns` 的轨道列表里，**同值轨道不插值、长度轨道才插值**——`250px minmax(0,1fr) 22rem ↔ 250px minmax(0,1fr) 0px` 只有第三轨在动，前两轨静止，所以 `transition: grid-template-columns` 是干净的。列宽用 CSS 变量承载（`var(--workbench-right-col)`，模板裸引用——**再包 `minmax(var(...))` 会嵌套非法、整条声明被丢→退化成单列全宽**，探针实测过）。
 
-**标准做法**：宿主用 state 记录「是否拖拽中」（gutter 的 `pointerdown`/`pointerup`+`pointercancel` 经 `onResizeStart`/`onResizeEnd` 通知；**键盘步进不算拖拽**——离散步进不连续改宽），拖拽期间摘掉动画类。折叠方向不必自己做退出动画：让中栏 `minmax(0,1fr)` 的扩张自然承接（同时保住「收起态 aside 不渲染 = 零 query」的优化），符合「离开快」取向。
+**标准做法**：宿主用 state 记录「是否连续改宽中」（gutter 的 `pointerdown`/`pointerup`+`pointercancel` 经 `onResizeStart`/`onResizeEnd` 通知），期间摘掉动画类。**键盘长按方向键同属「连续改宽」**（perf review P2-6 修正：keydown 20–30 次/秒连续重定目标，不摘则每帧全 grid 重排 + 280ms 追指针）——`onKeyDown` 摘类、`onKeyUp` + `onBlur` 恢复（**漏恢复会让下一次程序化开合丢过渡**）；单击步进随之变为即时到位（键盘 = 精确调整语义，可接受）。折叠方向不必自己做退出动画：让中栏 `minmax(0,1fr)` 的扩张自然承接（同时保住「收起态 aside 不渲染 = 零 query」的优化），符合「离开快」取向。
 
-**来源**：批D（`fbd789a`）；`scripts/probe-grid-panel.mjs` 11 断言（展开中间值 / 拖拽摘类跟手 / 折叠 / reduced-motion）。
+**⚠️ 可聚焦 separator 契约**：`role="separator"` + `tabIndex={0}` 是键盘方向键通道**可达的前提**——只写 `onKeyDown` 而 div 不可聚焦 = 键盘通道死路（本仓 gutter 曾如此：M13c 补了键盘逻辑但两个属性一直缺，直到批D 探针实抓才修）。`aria-valuenow/min/max` 报告当前栏宽。
+
+**来源**：批D（`fbd789a`）+ 键盘摘类（`4d4772c`）；`scripts/probe-grid-panel.mjs` 14 断言（展开/折叠 `transitionrun` 事件 / 拖拽与键盘摘类跟手 / ← 键 +1rem 步进 / reduced-motion）。**中间值采样断言有竞态**——Node↔页面往返可慢于 280ms 过渡窗口，只能读到终态 = 假 fail；改 `transitionrun` 事件断言（**只有真过渡才派发**，瞬切无事件）。
 
 ## 19. Tailwind v4 的 `scale-*` 生成独立 `scale` 属性（不是 transform）
 
