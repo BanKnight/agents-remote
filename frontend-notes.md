@@ -165,3 +165,53 @@
 **标准做法**：① 新图标一律 Lucide 管线（`build-icons.mjs` ICONS 白名单加名 → 重跑生成 → `<LucideIcon>`）；② ShellIcon 消费点加新图标 = TO_LUCIDE 加映射 + 白名单加名，不新增 `.svg`；③ 禁止手写 SVG path 模仿 Lucide 风格（网格规格不同，改了也是两不像）；④ 品牌件（provider logo）例外走 `BRAND_SVG`。
 
 **来源**：v1.4 拍板④（§6.13）；批1（`62cb980`）管线落地；第四批反馈②全量换代（`f93b2b6`，§6.13）；frontend-notes §N 编号契约。
+
+## 16. tw-animate-css 的 timing 只能靠自定义属性注入（shorthand 会重置长属性）
+
+**现象**：给弹层 `.animate-in` 换 spring 缓动时，直写 `[animation-timing-function:var(--spring-standard)]` 或 `[animation-duration:525ms]` 都无效——computed 仍是 `ease` / 默认时长，弹层看起来没换动画。
+
+**机制**：`.animate-in` 是 **animation shorthand**（`enter var(--tw-animation-duration,var(--tw-duration,.15s)) var(--tw-ease,ease)`）。CSS 规范里 shorthand 会**重置其未写出的长属性为初始值**，而 shorthand 声明与长属性声明的胜负按 **cascade 源序**（而非属性粒度）判定——所以同在 `data-[state=open]:` 变体下，谁在后谁赢，长属性写法不可靠。**自定义属性不参与 shorthand 重置**：往 `--tw-ease` / `--tw-animation-duration` 里塞值，shorthand 消费时就取到你的值。
+
+**标准做法**：timing/duration 一律走变量注入 arbitrary 类——`data-[state=open]:[--tw-ease:var(--spring-standard)] data-[state=open]:[--tw-animation-duration:525ms]`。**注意 Tailwind 会把三处写同一串的 arbitrary 合并成一条共用规则**（popover/dropdown/mobile-sheet 实测只有 1 条），断言产物规则数时别按消费点计数。不支持 `linear()` 的引擎在使用点 IACVT → 回退 initial(ease)，与改造前持平。
+
+**来源**：批B 弹层 spring（`4683116`）；DESIGN.md overlay 动效条目。
+
+## 17. 列表入场交错用纯 CSS nth-child（高频 re-render 区零运行时）
+
+**现象**：想给会话/文件列表加「首次挂载交错淡入」时，若用 JS 驱动 variants（motion stagger），列表行会随 WS 状态点/hover/追加高频 re-render——每帧跑 JS 编排，开销白付。
+
+**机制**：**CSS animation 只在元素创建时播一次**，同 key 的行复用 DOM 不重播（React 更新属性不触发 animation 重跑）；而数据追加产生新 key = 新 DOM = 自然获得同款淡入，语义恰与「新消息进入」一致。代价为零运行时。stagger 用纯 CSS `nth-child(n)` 递增 delay 表达。
+
+**标准做法**：容器挂 `.animate-stagger-rows`，行组件零改动（不传 props、不包 m）。**fill 必须 `backwards` 不能用 `both`**——`forwards`/`both` 会在播完后以动画终态**持续压过后续 transform**（拖拽行跟手位移被 `translateY(0)` 锁死）；`backwards` 只覆盖 delay 期间的 from 态，播完释放。delay 递增到第 8 行后用 `nth-child(n + 9)` cap（实测 28ms×8 = 224ms 封顶），防长列表尾部行等太久。配套 reduced-motion 兜底：站点级 `@media (prefers-reduced-motion: reduce)` 把 `animation-delay` 压 0s、duration 压 0.01ms。
+
+**来源**：批C（`dc8a2ff`）；`scripts/probe-stagger-entry.mjs` 9 断言（含 `getTiming().fill === "backwards"` 防回退）；DESIGN.md 动效段。
+
+## 18. grid 轨道 transition 做布局开合动画（拖拽期间必须摘 transition）
+
+**现象**：右栏折叠/展开想要滑动动画，但同一个列宽同时被 gutter 拖拽 1:1 改——直接给容器加 transition，拖拽就变成「以 280ms 追指针」，完全不跟手。
+
+**机制**：`grid-template-columns` 的轨道列表里，**同值轨道不插值、长度轨道才插值**——`250px minmax(0,1fr) 22rem ↔ 250px minmax(0,1fr) 0px` 只有第三轨在动，前两轨静止，所以 `transition: grid-template-columns` 是干净的。列宽用 CSS 变量承载（`var(--workbench-right-col)`，模板裸引用——**再包 `minmax(var(...))` 会嵌套非法、整条声明被丢→退化成单列全宽**，探针实测过）。
+
+**标准做法**：宿主用 state 记录「是否拖拽中」（gutter 的 `pointerdown`/`pointerup`+`pointercancel` 经 `onResizeStart`/`onResizeEnd` 通知；**键盘步进不算拖拽**——离散步进不连续改宽），拖拽期间摘掉动画类。折叠方向不必自己做退出动画：让中栏 `minmax(0,1fr)` 的扩张自然承接（同时保住「收起态 aside 不渲染 = 零 query」的优化），符合「离开快」取向。
+
+**来源**：批D（`fbd789a`）；`scripts/probe-grid-panel.mjs` 11 断言（展开中间值 / 拖拽摘类跟手 / 折叠 / reduced-motion）。
+
+## 19. Tailwind v4 的 `scale-*` 生成独立 `scale` 属性（不是 transform）
+
+**现象**：断言 button `active:scale-[0.97]` 生效时读 `getComputedStyle(el).transform` 是 `none`，以为没生效；实际反馈效果正确。
+
+**机制**：Tailwind v4 的 `scale-*` / `translate-*` / `rotate-*` utility 生成**独立的 CSS `scale`/`translate`/`rotate` 属性**（W3C individual transform properties），不再拼进 `transform`。**好处**：与 `transform` 并存互不覆盖（弹层 enter 的 keyframes `transform` 与定位 `translate` 可叠加）。**坑**：验证脚本/断言必须读对应的独立属性，读 `transform` 恒 `none`。
+
+**标准做法**：断言 `scale` 读 `getComputedStyle(el).scale`。**transition-property 必须列 `scale` 而非 `transform`**——transition-property 的 `transform` 对独立 `scale` 属性**零作用**（探针实测按下瞬切：中段采样即得终值 0.5，无插值）；要按压动画必须显式列入 `scale`（本仓 `transition-[scale,background-color,box-shadow]`）。测 press 态要等过渡播完（默认 150ms）再采终值，并**加一条中段采样读中间值**的断言（实测 0.979116）——这是「过渡真实在插值」的证据，专防退化成瞬切。
+
+**来源**：批E（`fbd789a`）；`scripts/probe-button-press.mjs` 6 断言（含中间值插值防护）。
+
+## 20. 封装 helper 的裸 `transition` 会经 twMerge 覆盖组件 base 的收窄值
+
+**现象**：把 `ui/button.tsx` 的 `transition-all` 收窄成三属性后，弹层按钮的 computed `transitionProperty` 仍是 **23 属性大表**（含 display/content-visibility/overlay/pointer-events），收窄完全没生效。
+
+**机制**：`actionButtonClasses()`（shell-primitives.tsx）的 base 串里有**裸 `transition`**（= transition-all 的 23 属性表）。它作为 `className` 后传给 `<Button>`，组件内 `cn(base, className)` 走 twMerge——**后传者覆盖前者的同属性 utility**，于是 helper 的裸 `transition` 盖掉了 cva base 里刚收窄的三属性 arbitrary。与 §11 同族：封装/拼接层悄悄吞掉调用方意图。
+
+**标准做法**：收窄/替换 transition 时，**全局搜同族 helper 的 transition 写法一起改**（`rg -n "transition-all|[^-]transition[ \"\`]"`），不要只改组件定义。**属性列表要写 `scale` 而非 `transform`**（§19 机制）。判定：改了组件 base 但 computed 无变化 → 查调用链上有没有经 helper 拍串的后传 className。
+
+**来源**：批E（`fbd789a`）review 自查发现；与 §11 同族。

@@ -7,10 +7,12 @@ import { cn } from "@/lib/utils";
 // 批E(动效体系)微交互:①press 反馈 = active scale(0.97)(skill §1 pointer-down
 // 即反馈;transform-origin 默认 center)取代 1px 下移——aria-haspopup 的弹层 trigger
 // 例外(锚点稳定优先,缩放会让 popover 定位源微移)。②transition-all 收窄为
-// transform/background-color/box-shadow 三属性(skill §11 只动 compositor/paint
-// 友好属性,all 会波及布局属性)。focus ring 走 box-shadow,无需 border-color。
+// scale/background-color/box-shadow 三属性(skill §11 只动 compositor/paint 友好
+// 属性)。⚠ 列表必须是 scale 而非 transform:Tailwind v4 的 scale-* 生成独立
+// scale 属性,transition-property 的 transform 对它零作用(探针实测跳变)——
+// 写 transform 会让 press 退化为无过渡瞬切。focus ring 走 box-shadow。
 const buttonVariants = cva(
-  "group/button cursor-pointer inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-[transform,background-color,box-shadow] outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button cursor-pointer inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-[scale,background-color,box-shadow] outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {

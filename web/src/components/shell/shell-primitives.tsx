@@ -319,9 +319,10 @@ export function actionButtonClasses({
   // header 按钮不隐藏；size-14 被 h-auto 覆盖 → FAB 变 56×44 矩形）。twMerge 让后传 className 正确
   // override（FAB size-14/rounded-full、全局总览/pages header hidden lg:inline-flex 均依赖）。
   return cn(
-    // transition 同 ui/button.tsx 批E 收窄(三属性;裸 transition 的 23 属性表会经
+    // transition 同 ui/button.tsx 批E 收窄(scale 而非 transform——Tailwind v4 的
+    // scale-* 是独立属性,transform 过渡对它零作用;裸 transition 的 23 属性表会经
     // twMerge 后传覆盖 cva base 的同款 arbitrary——两处必须同步,否则收窄失效)。
-    `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition-[transform,background-color,box-shadow] active:bg-on-surface/10 ${mobile} ${buttonToneClasses[tone]}`,
+    `inline-flex h-auto cursor-pointer items-center justify-center rounded-xl border px-3 py-1.5 text-xs font-bold transition-[scale,background-color,box-shadow] active:bg-on-surface/10 ${mobile} ${buttonToneClasses[tone]}`,
     className,
   );
 }

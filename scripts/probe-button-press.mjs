@@ -1,9 +1,12 @@
 // 批E(动效体系)button press 微交互探针:ui Button(button.tsx)的
-//   ① active 反馈 = scale(0.97)(取代 1px translate)——按住读 computed transform
-//     = matrix(...0.97...);松手回 none。aria-haspopup 的弹层 trigger 例外
-//     (锚点稳定,不缩)——DOM setAttribute 临时加属性验证 CSS 条件命中。
-//   ② transition-all 收窄为 transform/background-color/box-shadow——computed
-//     transitionProperty 精确三属性(不含 all)。
+//   ① active 反馈 = scale(0.97)——按住读 computed `scale`(Tailwind v4 的
+//     scale-* 生成**独立属性**,读 transform 恒 none);松手回 none;并且中途
+//     采样须为**中间值**(证明过渡真的在插值,而非瞬切——transition-property
+//     写 transform 时对独立 scale 零作用,探针实测跳变,此为回归防护点)。
+//     aria-haspopup 的弹层 trigger 例外(锚点稳定,不缩)——DOM setAttribute
+//     临时加属性验证 CSS 条件命中。
+//   ② transition 收窄为 scale/background-color/box-shadow——computed
+//     transitionProperty 精确三属性(不含 all,也不含 23 属性大表)。
 //
 // 样本 = 「新建会话」链打开的 prompt Dialog 内按钮(桌面工作台无常驻 ui Button;
 // 批B 探针同款链)。mock 无需;密码自读,不进 agent 上下文、不打印值。
@@ -98,19 +101,22 @@ function ok(cond, msg) {
       .filter(Boolean),
   );
   ok(
-    props.has("transform") && props.has("background-color") && props.has("box-shadow"),
-    `transition 含 transform/background-color/box-shadow(实测 ${tp})`,
+    props.has("scale") && props.has("background-color") && props.has("box-shadow"),
+    `transition 含 scale/background-color/box-shadow(实测 ${tp})`,
   );
   ok(!props.has("all"), `不含 all(实测 ${tp})`);
 
   // ── Part 2:active scale 0.97(skill §1 pointer-down 即反馈) ──
-  console.log("Part 2: 按住 scale 0.97,松手回 none");
+  console.log("Part 2: 按住 scale 0.97(中间值证明在插值),松手回 none");
   const box = await cancel.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
-  await page.waitForTimeout(250); // 等过渡播完(默认 150ms),采终态 0.97 非中间值
+  await page.waitForTimeout(60); // 过渡中段采样:必须已离开 1 但未到 0.97
+  const mid = Number.parseFloat(await cancel.evaluate((el) => getComputedStyle(el).scale));
+  ok(mid > 0.97 && mid < 1, `过渡中间值 0.97 < scale < 1(实测 ${mid} —— 瞬切会得 0.97)`);
+  await page.waitForTimeout(250); // 等过渡播完,采终态
   const pressed = await cancel.evaluate((el) => getComputedStyle(el).scale);
-  ok(pressed === "0.97", `按住 scale = 0.97(实测 ${pressed})`);
+  ok(pressed === "0.97", `按住终态 scale = 0.97(实测 ${pressed})`);
   // 松手前把指针移开:down/up 异元素时 click 落最近公共祖先,避免 click 命中
   // 「取消」把 dialog 关掉(down 在按钮上按住 60ms 已完成断言采样)。
   await page.mouse.move(box.x + box.width / 2, 10);
