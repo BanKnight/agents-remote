@@ -1,18 +1,18 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-02（**第十三批⑥composer 草稿持久化 `04478d5`**：新增 `web/src/lib/composer-draft.ts` 单源 hook，useAuiState 订阅 text 落 localStorage + mount/key 切换恢复，发送/删空=落盘清档同一条数据流；接入 claude/pi/acp 三 composer，key=`composerDraft:<type>:<sessionId>`。探针 5 项 + hook 单测 4 项全绿。⑤模型反引号已真机确认。第八~十二批 + 第十三批均待真机复验。）
+> 最后更新：2026-10-02（**重连增量回放 `d565ba4`**：客户端 WS URL 携带 `?since=<锚 uuid>`，relay 双缓冲定位锚命中 → session_init `replay:"delta"` 只发锚后行，未命中全量回退；客户端 delta 分流不 reset + liveStart 修正防假 running + 新增 turn 淡入。relay 单测 6 项 + hook 54 pass + 探针 8 项全绿。**待真机复验（清单第 19 项）**。第八~十三批仍待真机复验。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`069704c`：`$` 序列函数形式×4 / 剥 style-script 段再水合 / escapeSrcdoc 补 `<` / PreviewBody memo + fetchOnce 去重）；**M13b** RenderModeToggle 单源 + 03q3 `.mseg` 对齐（`07572a4`：bg-segmented-thumb 首次消费、非 md/html 脏 gate、deps `[path]`、touch 热区）；**M13c** shell 杂项（`5b3d527`：Chevron→Lucide 管线 40 图标、RailButton 热区 40px、gutter 键盘可达 role=separator + ←/→ ±1rem）；**M13d** useWorkbenchBack 判定核实**安全**（`b169aaa`：行为零改动，注释准确化）。
+**重连增量回放收口（`d565ba4`）**：claude 会话重连不再大面积重刷——①数据层：cursorRef 锚 → `?since=` → relay locateReplayAnchor（先倒序 live 后 history、顶层 uuid 确认防错锚）→ 命中 `replay:"delta"` 只发锚后行 / 未命中安全回退 full；②体验层：delta 新增 turn 挂 `animate-msg-enter` 淡入（rendered 索引空间 + 封口 600ms 摘除）。双向兼容（缺省 = full）。
 
-## 本 session 焦点（reviewer 补审修复循环）
+## 本 session 焦点（重连增量回放）
 
-1. API 恢复 → 双 reviewer 补审 `60dc9e3`~`386533a` → P1×5 + P2×9（P0 零）。
-2. 用户拍板「可以全修，用多个里程碑来修复」→ M13a/b/c/d 四里程碑全收口。
-3. premise 核实推翻两条：shadow-sm「全站唯一」不成立（4 处，且是第十批刻意加的——保留）；C-P2-4「HTML5 parse error」机制描述不准（`<` 在属性值内合法——补转义无损照做）。
-4. M13d 推演实锤：`__TSR_index > 0` 判定安全（pop 优先设计意图），只修注释。
+1. 用户需求：重连时大面积聊天内容刷新太重量级，两部分优化（数据结构层增量 + 体验层动效）。
+2. 拍板：回退场景维持 skeleton 现状不做旧内容保留；范围 claude 先行（pi/acp 事件帧无 uuid 锚不可靠）。
+3. 双 reviewer 审查消化：P0（动画 transform 覆盖虚拟列表 translateY → turn 堆叠，改纯 opacity）+ P1（deltaEnter 误用 raw 索引空间，改 rendered）+ P2×2（nested uuid 错锚防护、测试注释/断言）全修；P2#5（replayCursor 与实际追加数发散）接受为注记。
+4. 调试实锤：封口 effect 的 per-run cleanup 在 renderedMessages 变化重跑时清掉未触发的摘除 timer 且 early-return 不重建 → timer 挂 ref 一次性调度、卸载清理独立 effect。
 
 ## 关键决策（本阶段不可丢）
 
@@ -21,6 +21,8 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 - **inlineLocalHtmlAssets 契约（M13a 后）**：四类 job 替换串必须函数形式（字符串形式 `$&` 会展开）；style/script 段先剥（PUA 占位非 NUL）后回填；escapeSrcdoc = `& → < → "` 三转义（`>` 不转）；PreviewBody promise 按 preview 引用缓存；fetchOnce per-call 不跨调用。
 - **RenderModeToggle 单源**（03q3 .mseg）：渲染段在前、on 态 bg-segmented-thumb、位置由调用方 className 注入。
 - **file tab 状态（用户拍板）**：桌面中栏 file tab 后续规划要恢复发挥作用，当前暂时保持——暂缓非弃案。
+- **重连增量回放（本批拍板）**：①回退场景（锚找不到：API 重启 / compact / cap 截断）维持 skeleton 现状，不做旧内容保留；②范围 claude 先行，pi/acp 维持全量记档后续。
+- **增量回放技术要点（防复发）**：锚 = 最后一条带 uuid 消息（到达序 append 保证严格最后已见）；liveStart 修正 = 断线前 raw 基线 + historyBatch.length（replayCursorRef 同步累进——setRawMessages updater 延迟执行，同宏任务连续 batch 读 state.length 不可靠）；淡入范围用 rendered 索引空间（turn.startIndex 是投影索引，raw 空间在有 HiddenDropped/合并会话偏大）；动画 keyframes 纯 opacity（transform 会覆盖虚拟列表定位）。
 - 历史拍板继续有效：三栏第一行同一水平线；跨页一致优先；多端同构；「侧边栏」= 检视面板；mainPage 整页态右栏蒸发保留。
 
 ## 进度（已完成 / 进行中 / 待办）
@@ -33,7 +35,8 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 - ✅ 第十三批④续排印/行号对齐（`542686e`：11.5px/20px + lineNumbers()，md 源码 toggle↔编辑同套，m4 探针 72 pass；语法着色收敛 + CodeWithLineNumbers 退役另批）
 - ✅ 第十三批⑤模型反引号存量根治（`6529c87`：sanitize 单源下沉 api/src/model-id.ts + parseMetadata 读取归一 + 三写路径闸 + 前端 resolveCurrentModelAlias 兜底；**真机复验已通过**）
 - ✅ 第十三批⑥composer 草稿持久化（`04478d5`：lib/composer-draft.ts 单源 hook，persist/hydrate/时序门闩/key 切换四机制，claude+pi+acp 三端接入；探针 5 项 + 单测 4 项全绿）
-- ⬜ **交用户真机复验**（第八~十二批 + 第十三批清单见下）
+- ✅ 重连增量回放（`d565ba4`：shared replay 字段 → relay 锚定 → claude-stream 串参 → 客户端 delta 分流 + liveStart 修正 + 淡入；relay 单测 6 项 + hook 54 pass + 探针 8 项；协议文档「重连回放消息序列」段同步更新为现行序列）
+- ⬜ **交用户真机复验**（第八~十二批 + 第十三批 + 重连增量清单见下）
 - ⬜ 阶段一遗留：第五批 reviewer 修复批（`bd7aedc`）真机复验清单仍待用户执行
 - ⬜ 存量欠账（不动）：e2e pwa-installable 存量失败；桌面「点第二个实例丢 leaf」；DialogTitle a11y；rootBrowse 下沉（global 右栏多项目浏览增强）；i18n key 收敛；probe-chat-e2e 2 存量 FAIL；sheet 拖拽真机复验；`.tree`/`.growrow` 死代码清扫；probe-m10-feedback-fixes H 段基线；diff L3 位置架构项；design P2 滚动 5 项
 
@@ -77,6 +80,10 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 **第十三批⑥**（composer 草稿持久化，两端）：
 18. **未发送输入跨刷新保留**：任意会话输入框打字（不发送）→ 刷新 / 关 PWA 重开 → 草稿原样保留；切到别的会话再回来 → 各自草稿独立保留；发送后输入框清空且重开不再恢复；手动删光同上
 
+**重连增量回放**（`d565ba4`，claude 会话，Mac 桌面 + 移动端）：
+19. **长会话断网重连**：打开长 claude 会话 → 关 Wifi 几秒再开 → 重连后**内容不闪不重刷**（无 skeleton、既有消息不动）、offlineCap 横幅消失、断线期间新消息补齐且**淡入**；注意手机 PWA 断网期间 WS 语义与桌面一致
+20. **全量回退分支**：API 重启（tmux respawn api）后重连 → skeleton + 全量重放正常（现状，预期行为）；pi/acp 会话断网重连 → 行为与之前完全一致（全量）
+
 ## 阻塞 / 风险
 
 - 无阻塞。dev 存活 43011/43012；CSS 硬闸已过（184198 字节，content-type text/css）。
@@ -91,7 +98,8 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 - **CLI 模型 echo 是显示串**（第十三批③⑤）：CLI 对 set_model 的回应 `<local-command-stdout>Set model to <display></local-command-stdout>` 里 `<display>` = modelDisplayString 显示串（markdown code span 反引号包裹 + (resolved) 注解），非裸 model 名；`sanitizePersistedModel`（**api/src/model-id.ts 叶子模块单源**，claude-runtime re-export）归一链路四处必过：CLI echo 解析出口、spawn --model 传参、metadata 读写边界（parseMetadata/setModel/setClaudeSessionId/createMetadata）、前端 resolveCurrentModelAlias 显示兜底——再遇模型显示怪串先查这条链。
 - **本 session 输出管线坑（复发两次）**：生成「反斜杠-u-XXXX」转义文本会退化为真实字符（PUA/NUL）——内置 Edit 匹配不上、markdown 记档也中招；处理用 python/perl 字节级替换，记档表述用纯文字描述占位符。
 - **composer 草稿持久化（第十三批⑥）**：`web/src/lib/composer-draft.ts` 单源 hook（loadComposerDraft/saveComposerDraft 纯函数 + useComposerDraft）；key = `composerDraft:<type>:<sessionId>`；**assistant-ui 的 aui state 投影走异步调度**——setText 后订阅不立即回显，测试必须 waitFor/async act，同步断言读不到。
-- 记档位置：§6.13「真机反馈修复」第八~十二批 + reviewer 补审修复批（M13a–d）段齐。
+- **重连增量回放链路（`d565ba4`）**：cursorRef（最后带 uuid 消息）→ `claudeStreamUrl(project, session, since)` → `?since=` → handleClaudeStreamUpgrade（≤128 校验）→ relay.addSubscriber opts.sinceUuid → locateReplayAnchor（先倒序 live 后 history + topLevelUuidIs 顶层确认）→ session_init `replay:"delta"|"full"`。客户端 session_init 分流（delta 不 reset）+ history_end liveStart 修正（replayCursorRef 同步累进）+ 封口 effect（deltaClosePendingRef → setDeltaEnter rendered 范围 → 600ms timer 挂 ref 摘除）。探针 `probe-claude-reconnect-delta.mjs` 8 项。
+- 记档位置：§6.13「真机反馈修复」第八~十二批 + reviewer 补审修复批（M13a–d）+ 重连增量回放段齐；协议文档「重连回放消息序列」段已更新为现行序列（session_init/seed_init/history/live + replay 字段）。
 
 ## 提醒
 
@@ -99,4 +107,4 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-02；触发原因：第十三批⑥composer 草稿持久化（`04478d5`）+ 记档
+最后更新：2026-10-02；触发原因：重连增量回放（`d565ba4`）+ 记档

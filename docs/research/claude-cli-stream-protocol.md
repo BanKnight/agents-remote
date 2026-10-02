@@ -2041,16 +2041,16 @@ CLI 子进程通过 `Bun.spawn()` 直接管理，不再经过 tmux。stdin 直�
 新 WebSocket 订阅者连接时的完整消息序列：
 
 ```
-replay_start → 磁盘历史 JSONL → 待刷新历史 → replay_end → 实时消息队列
+session_init → seed_init（如有）→ history_start → history 行 → history_end → live_start → live 行 → live_end
 ```
 
-- WebSocket 连接建立后（`onopen`），服务端直接开始回放历史数据。`isRunning` 由消息流中的三态消息生命周期驱动。
-- **`replay_start`** / **`replay_end`**：标记回放边界，客户端用于 batch apply（loading 态管理）
-- **磁盘历史 JSONL**：逐行读文件发送，不占内存
-- **待刷新历史**：buffer 回放，含 JSONL 缺失内容 + in-progress
-- **实时消息队列**：`replay_end` 之后到达的数据
+- `history` = 磁盘 JSONL 尾 compact block（resume 才有）；`live` = relay 内存缓冲（CLI stdout 实时行，cap 截断 + thinking_tokens 折叠）。512KB chunk gzip 分块传输。
+- **`session_init`**：连接级元数据，`resume` 标记本次是 resume（history 可能含孤儿 tool_use）。
+- **`seed_init`**：标量 seed（system.init 不在 JSONL/tail 里，客户端标量 fold 需要种子），必须在 history_start 之前（否则被 gzip 进 batch）。
+- **增量回放（2026-10-02）**：客户端在 WS URL 携带 `?since=<uuid>`（本地最后一条带 uuid 消息）。relay 在 live/history 双缓冲倒序定位锚：命中 → `session_init` 加 **`replay:"delta"`**，只发锚后行（锚在 history → history 后缀 + live 全部；锚在 live → 空 history batch + live 后缀）；未命中（API 重启 / compact 清缓冲 / cap 截断 / 未传 since）→ `replay:"full"` 全量。老客户端不带 since 行为不变；老服务端缺省 replay 字段，客户端按 full 处理。
+- `isRunning` 由消息流中的三态消息生命周期驱动；客户端 delta 分流、liveStart 修正（防假 running）见 `web/src/routes/claude-adapter.ts` 与 redesign-v2.md §6.13。
 
-**当前状态**：第一版全量回放，不做分页裁剪。超大会话的分页优化待后续讨论后实现。
+**当前状态**：claude 先行 delta + 全量回退（fail-safe）；pi/acp 事件帧无稳定 uuid，维持全量。超大会话的分页优化待后续讨论后实现。
 
 ### 职责边界
 

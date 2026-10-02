@@ -1249,6 +1249,24 @@ API 恢复后对第六~十二批 8 个代码 commit（`60dc9e3`~`386533a`）补�
 
 **待真机复验**（第 18 项）：任意会话输入框打字（不发送）→ 刷新 / 关 PWA 重开 → 草稿原样保留；发送后输入框空且重开不再恢复；手动删光同上。
 
+### 重连增量回放：锚定 uuid delta 下发 + 新增 turn 淡入（2026-10-02，commit `d565ba4`）
+
+**用户需求**：重连时大面积聊天内容刷新太重量级——很多时候仅几条消息变化，却走全量重放（rawMessages 清空 → skeleton 闪现 → 全部重渲染）。两部分优化：①数据结构层——客户端携带本地最后消息 id，服务端鉴别后只下发缺失部分；②体验层——减少重刷感。
+
+**拍板**：①回退场景（锚找不到：API 重启 relay 重建 / compact 清缓冲 / live 缓冲 cap 截断）**维持 skeleton 现状**，不做旧内容保留；②范围 **claude 先行**——pi/acp 事件帧（open record）无稳定 uuid、锚不可靠，维持全量记档后续。
+
+**全链路**：客户端锚 = cursorRef（最后一条带 uuid 消息，到达序 append 保证其严格是「最后已见行」）→ WS URL `?since=<uuid>`（encodeURIComponent，claudeStreamUrl 第三参）→ handleClaudeStreamUpgrade 解析（长度 ≤128 校验）→ ClaudeWebSocketData.replaySince → claudeRuntime.stream 第 4 参 → relay.addSubscriber opts `{ sinceUuid }` → locateReplayAnchor（**先倒序扫 liveLines 再 historyLines**——同 uuid 两处都有（compact 边界重叠）取 live 位置不重复下发；needle 字符集白名单 `/^[A-Za-z0-9_-]+$/` 防引号注入 + 命中后 topLevelUuidIs parse 确认**顶层** uuid，防子串命中更晚行的嵌套字段错锚）→ 命中 session_init 带 `replay:"delta"` 只发锚后行 / 未命中 `replay:"full"` 全量。**delta 下发矩阵**：锚在 history → history 后缀 + live 全部；锚在 live → 空 history batch + live 后缀；锚 = 最后行 → 两段空 batch。
+
+**客户端 delta 分流（claude-adapter）**：session_init `replay==="delta" && cursorRef.current != null` → 不 resetSessionState、不置 isResumeRef、不注 batch_boundary divider；else 走原 full 路径。delta 模式 processBatch 过滤 `messageMapRef` 已有 uuid（防御服务端重复下发）；无 uuid 标量行重放幂等无需处理。**liveStart 修正**：delta 时 `liveStartRef = 断线前 raw 基线 + historyBatch.length`（replayCursorRef 同步累进——setRawMessages updater 延迟执行，同宏任务连续 batch 时 state.length 不可读，同步游标是唯一可靠读点）；不修正则 computeRunningCount 扫到补齐段悬空 assistant → 假 running。
+
+**淡入动效（animate-msg-enter）**：delta 新增 turn 挂 opacity 淡入 200ms。判定范围用 **rendered 索引空间**（turn.startIndex 是 renderChatStream 投影索引，rawMessages.length 在有 HiddenDropped/合并的会话里偏大）：from = session_init 时 renderedMessages.length、to = 封口 effect 取最新 memo 长度；封口后 600ms 自动摘除动画 class，防虚拟列表滚出滚回重挂重播淡入。**两个 reviewer 实锤的坑**：①keyframes 必须纯 opacity——CSS animation cascade 高于 inline style 且 fill-mode both 永久生效，动画 transform 会覆盖虚拟列表 `translateY(virtualItem.start)` 定位，delta turn 全部堆叠容器顶；②封口 effect 的 per-run cleanup 会在 renderedMessages 变化重跑时清掉未触发的摘除 timer 且 early-return 不重建——timer 挂 ref 一次性调度、卸载清理独立成 effect。
+
+**双向兼容**：老服务端 session_init 无 replay 字段 = full 路径；新服务端 + 老客户端（无 since query）→ anchor null → full，老客户端忽略未知字段。
+
+**验证**：relay 锚定单测 6 项 + hook delta 单测（锚携带/状态保留/无 divider/封口摘除/假 running 防护）54 pass + 浏览器探针 8 项全绿（含 turn top 严格递增几何断言——P0 回归防护）；全仓 701 pass 0 fail。
+
+**待真机复验**：长会话断网重连（Wifi 关/开）→ 内容不闪不重刷、offlineCap 消失、断线期间新消息补齐且淡入；API 重启后重连 → 全量回退正常（skeleton 现状）；pi/acp 重连行为不变。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
