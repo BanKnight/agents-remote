@@ -54,3 +54,13 @@ describe("motion tokens mirror CSS vars", () => {
     expect(DURATION.slow).toBe(Number.parseFloat(cssVar("duration-slow")) / 1000);
   });
 });
+
+describe("spring timing tokens（批B 弹层 spring）", () => {
+  test("--spring-standard 是 linear() 弹簧采样且 --spring-snappy 纯引用它", () => {
+    const standard = cssVar("spring-standard");
+    expect(standard.startsWith("linear(")).toBe(true);
+    // 临界阻尼首采样点（response=0.35s 手算）：曲线本体被误改/误删在此暴露。
+    expect(standard).toContain("0.0802 5%");
+    expect(cssVar("spring-snappy")).toBe("var(--spring-standard)");
+  });
+});

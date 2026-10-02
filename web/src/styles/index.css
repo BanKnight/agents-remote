@@ -40,6 +40,39 @@
   --duration-fast: 120ms;
   --duration-base: 180ms;
   --duration-slow: 280ms;
+  /* Spring timing（Apple 流体接口 §4：临界阻尼无过冲；response 仅缩放时间轴——
+     临界阻尼 x(t)=1-(1+ωt)e^(-ωt) 的形状只由 ζ=1 决定，一条采样两档共用）。
+     linear() 采样自 response=0.35s（w=2π/0.35，收敛至 0.525s）；snappy 档 =
+     同曲线 × (0.25/0.35) 时长（≈375ms，--spring-snappy 纯引用同一条采样——
+     形状只由 ζ 决定，时长缩放即可）。消费：弹层 animation 的 timing-function，
+     经 [--tw-ease:…] / [--tw-animation-duration:…] 注入——自定义属性不参与
+     animation shorthand 的长属性重置，机制上必生效。linear() 不支持的旧引擎
+     在使用点 IACVT 回退 initial（ease），与改造前持平。
+*/
+  --spring-snappy: var(--spring-standard);
+  --spring-standard: linear(
+    0,
+    0.0802 5%,
+    0.2428 10%,
+    0.4129 15%,
+    0.5618 20%,
+    0.6819 25%,
+    0.7734 30%,
+    0.8416 35%,
+    0.8898 40%,
+    0.9246 45%,
+    0.9487 50%,
+    0.9654 55%,
+    0.9767 60%,
+    0.9844 65%,
+    0.9896 70%,
+    0.9931 75%,
+    0.9955 80%,
+    0.997 85%,
+    0.998 90%,
+    0.9987 95%,
+    0.9992
+  );
   font-family:
     system-ui,
     -apple-system,

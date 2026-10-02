@@ -202,7 +202,10 @@ export function MobileSheet({
           ref={setContentNode}
           className={cn(
             "msheet outline-none",
-            "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4 data-[state=open]:duration-200",
+            // programmatic enter 换 spring snappy（[--tw-ease/--tw-animation-duration]
+            // 变量注入，与拖拽 dismiss 的 exit 变量注入同机制）；拖拽状态机、exit
+            // keyframes（inline transform 作起点）与 fill-mode-forwards 一律不动。
+            "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4 data-[state=open]:[--tw-ease:var(--spring-snappy)] data-[state=open]:[--tw-animation-duration:375ms]",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-4 data-[state=closed]:duration-150 data-[state=closed]:fill-mode-forwards",
           )}
           onPointerCancel={endDrag}

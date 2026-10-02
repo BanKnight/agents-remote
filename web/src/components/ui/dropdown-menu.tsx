@@ -25,7 +25,10 @@ function DropdownMenuContent({
         sideOffset={sideOffset}
         className={cn(
           "z-50 min-w-[10rem] overflow-hidden rounded-xl border border-neutral-line bg-surface-inset/95 p-1.5 text-on-surface-soft shadow-2xl shadow-black/40 backdrop-blur-md",
-          "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 [transform-origin:var(--radix-dropdown-menu-content-transform-origin)]",
+          // enter 走 spring snappy（与 popover 同档：轻量锚定层）；zoom 幅度、方向
+          // 位移（skill §8 hint in direction）与 transform-origin 锚定触发源（§7）
+          // 全保持，只换 timing。变量注入机制见 dialog.tsx 同段注释。
+          "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 [transform-origin:var(--radix-dropdown-menu-content-transform-origin)] data-[state=open]:[--tw-ease:var(--spring-snappy)] data-[state=open]:[--tw-animation-duration:375ms]",
           "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
           className,
         )}
