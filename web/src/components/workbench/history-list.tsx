@@ -286,7 +286,7 @@ export function HistoryList({ focusId, projectName }: HistoryListProps) {
           </div>
         ) : (
           <>
-            <ListGroup ariaLabel={t("workbench.historySection")}>
+            <ListGroup ariaLabel={t("workbench.historySection")} className="animate-stagger-rows">
               {visible.map((entry) => (
                 <HistorySessionNode
                   active={entry.hasActiveSession && entry.activeSessionId === focusId}

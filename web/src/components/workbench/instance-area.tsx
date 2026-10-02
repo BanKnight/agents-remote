@@ -410,7 +410,7 @@ export function AllSessionsGroupedList({
         </>
       ) : null}
       {groups.map((group) => (
-        <div key={group.projectName}>
+        <div key={group.projectName} className="animate-stagger-rows">
           <div className="microlabel mx-1.5 mb-0.5 mt-2.5 uppercase">
             {t("workbench.allSessionsGroupLabel", {
               count: group.candidates.length,

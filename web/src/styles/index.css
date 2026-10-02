@@ -626,6 +626,63 @@ body {
   }
 }
 
+/* Content-entry stagger（批C）— 列表/卡片区首次挂载时逐行淡入上浮，让「新内容抵达」
+   有方向感（Apple 流体接口 §8 hint in direction）。纯 CSS nth-child delay：行是高频
+   re-render 区（WS 追加、状态点、hover 态），用 JS 编排（motion variants）会把每个
+   row 拖进运行时成本，而 CSS 零成本，且同 :key 的行复用 DOM 不重播（满足「只首次
+   挂载」铁律）。延迟是入场方向的一部分：逐行递增，末行最晚。
+   应用点由 className 显式挂到各列表根（.animate-stagger-rows 的直接子 = 行），
+   不使用 Tailwind 任意值（含括号/逗号时 v4 任意值解析不稳定，dist 实测不落盘）。 */
+@keyframes stagger-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@layer utilities {
+  .animate-stagger-rows > * {
+    animation: stagger-row-enter 0.32s var(--ease-standard) backwards;
+  }
+  .animate-stagger-rows > *:nth-child(1) {
+    animation-delay: 0ms;
+  }
+  .animate-stagger-rows > *:nth-child(2) {
+    animation-delay: 28ms;
+  }
+  .animate-stagger-rows > *:nth-child(3) {
+    animation-delay: 56ms;
+  }
+  .animate-stagger-rows > *:nth-child(4) {
+    animation-delay: 84ms;
+  }
+  .animate-stagger-rows > *:nth-child(5) {
+    animation-delay: 112ms;
+  }
+  .animate-stagger-rows > *:nth-child(6) {
+    animation-delay: 140ms;
+  }
+  .animate-stagger-rows > *:nth-child(7) {
+    animation-delay: 168ms;
+  }
+  .animate-stagger-rows > *:nth-child(8) {
+    animation-delay: 196ms;
+  }
+  /* 第 9 行及以后共用同一延迟：长列表末段不再无限递增（避免第 40 行等 1s+）。
+     fill 用 backwards 不用 both：delay 期间保持 from 态（不闪现），播完即释放
+     transform 占用——forwards 会以动画终态持续压过后续 transform（拖拽行跟手
+     位移会被 translateY(0) 锁死）。已存在的行 re-render 复用 DOM 不重播；列表
+     后续追加的新行（新 key 新 DOM）会以同款淡入出现——与 msg-enter「新内容
+     抵达」同语义，属预期。 */
+  .animate-stagger-rows > *:nth-child(n + 9) {
+    animation-delay: 224ms;
+  }
+}
+
 /* Reduced-motion static fallback — site-wide. MotionConfig reducedMotion="user"
    handles JS-driven animation (disables transform/layout, keeps opacity); this
    covers everything else: the skeleton shimmer, the plan-awaiting flow, and
@@ -635,6 +692,7 @@ body {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;

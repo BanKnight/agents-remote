@@ -306,7 +306,7 @@ export function FileEntryList({
             {/* 10m:72 组标签（桌面双分组；移动 10-tab 无组标签 → hidden lg:block 才渲染，
                 同构同一 DOM。左缘 = 容器 lg px-5 20px，卡 margin-inline 已归零）。 */}
             <div className="grplabel hidden lg:block">{t("files.groupProjectRoots")}</div>
-            <div className="gfcard">
+            <div className="gfcard animate-stagger-rows">
               {dirs.map((entry) => {
                 const stat = globalCard.overview[entry.name];
                 const active = (stat?.running ?? 0) > 0;
@@ -351,7 +351,7 @@ export function FileEntryList({
             {/* 第二卡 margin：移动 10px（原型双卡间距）；桌面归零由外层 lg:gap-3 承担
                （此前 inline style 优先级盖 lg 分档 margin:0，桌面多出 10px）。 */}
             <div className="grplabel hidden lg:block">{t("files.groupRootFiles")}</div>
-            <div className="gfcard mt-2.5 lg:mt-0">
+            <div className="gfcard mt-2.5 lg:mt-0 animate-stagger-rows">
               {plainFiles.map((entry) => (
                 <div className="gfile group" key={`${entry.type}:${entry.path}`}>
                   <button
@@ -399,7 +399,7 @@ export function FileEntryList({
 
   return (
     <>
-      <ListGroup ariaLabel="Project files">
+      <ListGroup ariaLabel="Project files" className="animate-stagger-rows">
         {entries.map((entry) => {
           const selected = entry.path === selectedFilePath;
           const isDirectory = entry.type === "directory";
