@@ -1231,7 +1231,23 @@ API 恢复后对第六~十二批 8 个代码 commit（`60dc9e3`~`386533a`）补�
 
 **教训沉淀**：修数据污染类 bug，边界闸（parse/spawn）之外必须排查**存量数据**是否需要读取归一——前端有 fallback 字段（modelAlias ?? model）时，只修「以后不脏」不修「已经脏的」，用户复验必然复现。
 
-**验证**：model-id 4 + session-registry 新 2 + model-labels 新 4 单测，受影响面 91 pass；真实脏文件经 sanitize 实证剥出 `opus[1m]`；dev api 已按 runbook respawn（parseMetadata 加载期归一即生效）。**待真机复验**：重开 22router 项目旧会话 → 模型 pill 显示 `Opus [1m]` 无反引号。
+**验证**：model-id 4 + session-registry 新 2 + model-labels 新 4 单测，受影响面 91 pass；真实脏文件经 sanitize 实证剥出 `opus[1m]`；dev api 已按 runbook respawn（parseMetadata 加载期归一即生效）。**待真机复验**：重开 22router 项目旧会话 → 模型 pill 显示 `Opus [1m]` 无反引号。真机复验通过（2026-10-02 用户确认「看起来没问题了」）。
+
+### 第十三批⑥：composer 草稿持久化——未发送输入跨刷新/切会话保留（2026-10-02，commit `04478d5`）
+
+**用户需求**：agent 输入框里输入的内容，只要没发送出去或者主动删除，就一直保留在输入框。
+
+**单源 hook `web/src/lib/composer-draft.ts`**（三个 agent composer 全部 assistant-ui 同构，共用）：
+1. **persist**：`useAuiState` 订阅 `ComposerState.text`，偏离基线即落 localStorage；「发送清空」（runtime 发送后自动 clear）与「手动删空」同为 text→""，落盘清档——两个语义由同一条数据流自然覆盖，无需额外状态。
+2. **hydrate**：mount / key 变化时恢复该会话草稿。时序门闩（lastSavedRef）：persist 与 hydrate 两个 effect 同 commit 内按声明序执行——persist 先声明、基线未建跳过，mount 首帧不会抢在恢复前把空串写盘清掉已有草稿；hydrate 后基线记为 runtime 实际值，「恢复引发的 text 回显」与基线相等自然跳过。
+3. **key 切换**（挂载槽位复用，如面板同槽换绑会话）：persist effect 先把 runtime 里的旧文本落回旧 key，hydrate effect 再无条件接管新 key——互不串档。
+4. **key 命名** `composerDraft:<type>:<sessionId>`（claude:/pi:/acp: 前缀按 runtime 类型隔离）；localStorage 直读直写而非 atomWithLocalOnlyStorage——草稿值由 assistant-ui runtime 持有，React 层无需响应式读它，没有第二个读者。
+
+**接入**：`ComposerWithInterrupt`（claude，内部组 key）+ `ComposerWithInterruptPi` / `ComposerWithInterruptAcp`（各新增 sessionId prop，调用方传入）。
+
+**验证**：hook 单测 4 项（真实 AuiProvider + useExternalStoreRuntime 最小 adapter；**assistant-ui 的 aui state 投影走异步调度**——setText 后需 async flush/waitFor 断言，同步断言读不到回显）；浏览器探针 `probe-composer-draft` 5 项全绿（①输入落盘 ②reload 恢复 ③恢复后再改同步 ④清空清档 ⑤清空后 reload 保持空——**跨 reload 持久化是 jsdom remount mock 覆盖不了的**，探针补真浏览器证据）；composer-toolbar 回归 H1–H6 全 PASS；全仓 test 1586 pass 0 fail。
+
+**待真机复验**（第 18 项）：任意会话输入框打字（不发送）→ 刷新 / 关 PWA 重开 → 草稿原样保留；发送后输入框空且重开不再恢复；手动删光同上。
 
 ## §7 待定项跟踪
 

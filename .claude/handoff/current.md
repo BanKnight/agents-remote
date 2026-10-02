@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-02（**第十三批⑤模型反引号存量根治 `6529c87`**：13③只拦了 parse/spawn 边界，存量 metadata.modelAlias 脏值未清（前端优先读 modelAlias）→ sanitize 单源下沉 `api/src/model-id.ts`，parseMetadata 读取归一 + setModel/setClaudeSessionId/createMetadata 写闸 + 前端 resolveCurrentModelAlias 兜底，三层接入。13④编辑态画布对齐 `0663ddd`+`542686e`。第八~十二批 + 第十三批均待真机复验。）
+> 最后更新：2026-10-02（**第十三批⑥composer 草稿持久化 `04478d5`**：新增 `web/src/lib/composer-draft.ts` 单源 hook，useAuiState 订阅 text 落 localStorage + mount/key 切换恢复，发送/删空=落盘清档同一条数据流；接入 claude/pi/acp 三 composer，key=`composerDraft:<type>:<sessionId>`。探针 5 项 + hook 单测 4 项全绿。⑤模型反引号已真机确认。第八~十二批 + 第十三批均待真机复验。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
@@ -31,6 +31,8 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 - ✅ 第十三批③模型链路污染修复（`sanitizePersistedModel`：echo 解析出口 + spawn --model 闸，legacy 形状兼容，dev api 已 respawn、脏 CLI 进程已消亡）
 - ✅ 第十三批④编辑态画布对齐 03q2（`0663ddd`：bg-codeblock 全幅去输入框壳，四处单源改，m4 探针 71 pass）
 - ✅ 第十三批④续排印/行号对齐（`542686e`：11.5px/20px + lineNumbers()，md 源码 toggle↔编辑同套，m4 探针 72 pass；语法着色收敛 + CodeWithLineNumbers 退役另批）
+- ✅ 第十三批⑤模型反引号存量根治（`6529c87`：sanitize 单源下沉 api/src/model-id.ts + parseMetadata 读取归一 + 三写路径闸 + 前端 resolveCurrentModelAlias 兜底；**真机复验已通过**）
+- ✅ 第十三批⑥composer 草稿持久化（`04478d5`：lib/composer-draft.ts 单源 hook，persist/hydrate/时序门闩/key 切换四机制，claude+pi+acp 三端接入；探针 5 项 + 单测 4 项全绿）
 - ⬜ **交用户真机复验**（第八~十二批 + 第十三批清单见下）
 - ⬜ 阶段一遗留：第五批 reviewer 修复批（`bd7aedc`）真机复验清单仍待用户执行
 - ⬜ 存量欠账（不动）：e2e pwa-installable 存量失败；桌面「点第二个实例丢 leaf」；DialogTitle a11y；rootBrowse 下沉（global 右栏多项目浏览增强）；i18n key 收敛；probe-chat-e2e 2 存量 FAIL；sheet 拖拽真机复验；`.tree`/`.growrow` 死代码清扫；probe-m10-feedback-fixes H 段基线；diff L3 位置架构项；design P2 滚动 5 项
@@ -72,6 +74,9 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 16. **查看↔编辑切换零跳变**：任意文本文件（如 `.ts`）查看 → 编辑 → 画布形态不变（codeblock 全幅背景、上下 10px 边距、无圆角无边框），仅内容层变化；md/html 的 渲染↔源码 切换同验；lazy 加载瞬间无白框闪动
 17. **md 源码↔编辑同套**：md「源码」toggle 与点「编辑」→ 同排印（11.5px 等宽/行高 20px）、同有行号列、同画布——只差语法着色（编辑态有着色为预期）；桌面右栏同验
 
+**第十三批⑥**（composer 草稿持久化，两端）：
+18. **未发送输入跨刷新保留**：任意会话输入框打字（不发送）→ 刷新 / 关 PWA 重开 → 草稿原样保留；切到别的会话再回来 → 各自草稿独立保留；发送后输入框清空且重开不再恢复；手动删光同上
+
 ## 阻塞 / 风险
 
 - 无阻塞。dev 存活 43011/43012；CSS 硬闸已过（184198 字节，content-type text/css）。
@@ -85,6 +90,7 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 - **MobileFileFocus back 契约**（第九批）：pop 优先回来源 + 深链兜底 /files。
 - **CLI 模型 echo 是显示串**（第十三批③⑤）：CLI 对 set_model 的回应 `<local-command-stdout>Set model to <display></local-command-stdout>` 里 `<display>` = modelDisplayString 显示串（markdown code span 反引号包裹 + (resolved) 注解），非裸 model 名；`sanitizePersistedModel`（**api/src/model-id.ts 叶子模块单源**，claude-runtime re-export）归一链路四处必过：CLI echo 解析出口、spawn --model 传参、metadata 读写边界（parseMetadata/setModel/setClaudeSessionId/createMetadata）、前端 resolveCurrentModelAlias 显示兜底——再遇模型显示怪串先查这条链。
 - **本 session 输出管线坑（复发两次）**：生成「反斜杠-u-XXXX」转义文本会退化为真实字符（PUA/NUL）——内置 Edit 匹配不上、markdown 记档也中招；处理用 python/perl 字节级替换，记档表述用纯文字描述占位符。
+- **composer 草稿持久化（第十三批⑥）**：`web/src/lib/composer-draft.ts` 单源 hook（loadComposerDraft/saveComposerDraft 纯函数 + useComposerDraft）；key = `composerDraft:<type>:<sessionId>`；**assistant-ui 的 aui state 投影走异步调度**——setText 后订阅不立即回显，测试必须 waitFor/async act，同步断言读不到。
 - 记档位置：§6.13「真机反馈修复」第八~十二批 + reviewer 补审修复批（M13a–d）段齐。
 
 ## 提醒
@@ -93,4 +99,4 @@ reviewer 补审修复批四里程碑收口：**M13a** 内联管道正确性（`0
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-02；触发原因：第十三批⑤模型反引号存量根治（`6529c87`）+ /handoff save
+最后更新：2026-10-02；触发原因：第十三批⑥composer 草稿持久化（`04478d5`）+ 记档
