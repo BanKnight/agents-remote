@@ -53,6 +53,7 @@ import {
   useComposerEnterPolicy,
 } from "../lib/composer-enter";
 import { measureFrom, timed } from "../lib/perf-trace";
+import { useComposerDraft } from "../lib/composer-draft";
 import { useIsMobile } from "../lib/use-is-mobile";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { selectAtom } from "jotai/utils";
@@ -3723,6 +3724,10 @@ function ComposerWithInterrupt({
   const isEmpty = useAuiState((s) => s.composer.isEmpty);
   // 「移动 composer 模式」判定 = 触屏 **且** 窄屏（useComposerEnterPolicy 单源快照）。
   const { isMac, isMobileComposer } = useComposerEnterPolicy();
+
+  // 草稿持久化（2026-10-02 用户需求）：未发送 / 未主动删除的输入一直保留——刷新、PWA 重开、
+  // 切会话回来都在。key 按 runtime 类型 + 会话隔离（三个 agent composer 共用 lib 单源）。
+  useComposerDraft(`claude:${sessionId}`);
 
   // Full skill+slash catalog is the sole source for the slash menu (project +
   // user + plugin + builtin). Always fetched on open — it does not depend on the

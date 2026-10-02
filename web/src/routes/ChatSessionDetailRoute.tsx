@@ -11,6 +11,7 @@ import { useEffect, useRef } from "react";
 import { getChatSession } from "../api/client";
 import { useT } from "../i18n";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
+import { useComposerDraft } from "../lib/composer-draft";
 import {
   decideDesktopEnterAction,
   insertNewlineAtCursor,
@@ -105,6 +106,7 @@ export function ChatSessionDetailBody({
                 <ComposerWithInterruptPi
                   connected={connected}
                   onCancel={onCancel}
+                  sessionId={id}
                   attachments={attachments}
                   addAttachments={addAttachments}
                   removeAttachment={removeAttachment}
@@ -157,12 +159,14 @@ export function ChatSessionDetailBody({
 function ComposerWithInterruptPi({
   connected,
   onCancel,
+  sessionId,
   attachments,
   addAttachments,
   removeAttachment,
 }: {
   connected: boolean;
   onCancel?: () => void;
+  sessionId: string;
   attachments: PiAttachment[];
   addAttachments: (files: File[]) => void;
   removeAttachment: (id: string) => void;
@@ -173,6 +177,9 @@ function ComposerWithInterruptPi({
   const composer = useComposerRuntime();
   const { isMac, isMobileComposer } = useComposerEnterPolicy();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 草稿持久化（同 Claude composer，key 按 runtime 类型 + 会话隔离）。
+  useComposerDraft(`pi:${sessionId}`);
 
   const disconnected = !connected;
   const inputDisabled = disconnected;

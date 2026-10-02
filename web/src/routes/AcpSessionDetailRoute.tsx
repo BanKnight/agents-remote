@@ -7,6 +7,7 @@ import {
 } from "@assistant-ui/react";
 import { useT } from "../i18n";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
+import { useComposerDraft } from "../lib/composer-draft";
 import {
   decideDesktopEnterAction,
   insertNewlineAtCursor,
@@ -65,6 +66,7 @@ export function AcpChatPanel({
                   configOptions={configOptions}
                   onSetConfig={setConfig}
                   onCancel={onCancel}
+                  sessionId={sessionId}
                 />
               </ComposerPrimitive.Root>
             </div>
@@ -86,17 +88,22 @@ function ComposerWithInterruptAcp({
   configOptions,
   onSetConfig,
   onCancel,
+  sessionId,
 }: {
   connected: boolean;
   configOptions: AcpConfigOption[];
   onSetConfig: (configId: string, value: string) => void;
   onCancel?: () => void;
+  sessionId: string;
 }) {
   const { t } = useT();
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const isEmpty = useAuiState((s) => s.composer.isEmpty);
   const composer = useComposerRuntime();
   const { isMac, isMobileComposer } = useComposerEnterPolicy();
+
+  // 草稿持久化（同 Claude composer，key 按 runtime 类型 + 会话隔离）。
+  useComposerDraft(`acp:${sessionId}`);
 
   const disconnected = !connected;
   const inputDisabled = disconnected;
