@@ -683,6 +683,21 @@ body {
   }
 }
 
+/* Workbench right-panel column transition（批D）。右栏列宽 = grid 第三轨
+   var(--workbench-right-col)（22rem ↔ 0px），轨道是同类型长度可插值——挂
+   grid-template-columns transition 后：展开 = 右栏从 0 平滑滑入（aside 自带
+   overflow-hidden 裁内容）；折叠 = aside 已卸载、中栏 minmax(0,1fr) 轨道平滑
+   扩张承接（iOS「离开快」取向，且不动「收起态零 inspection query」优化）。
+   **拖宽 gutter 期间必须禁用**（gutter 每帧改 rightWidth，带 transition 会以
+   280ms 追指针 = 不跟手）——WorkbenchShell 仅在非拖拽态挂本类。
+   minmax/minmax/同值轨道不参与插值；不支持 track 插值的旧引擎退化为离散切换
+   （与改造前持平，渐进增强）。 */
+@layer utilities {
+  .workbench-grid-animated {
+    transition: grid-template-columns var(--duration-slow) var(--ease-standard);
+  }
+}
+
 /* Reduced-motion static fallback — site-wide. MotionConfig reducedMotion="user"
    handles JS-driven animation (disables transform/layout, keeps opacity); this
    covers everything else: the skeleton shimmer, the plan-awaiting flow, and

@@ -5,6 +5,7 @@ import {
   type PointerEvent,
   type ReactNode,
   useRef,
+  useState,
 } from "react";
 import { useT } from "../../i18n";
 import {
@@ -81,6 +82,10 @@ export function WorkbenchShell({
 }: WorkbenchShellProps) {
   const { t } = useT();
   const [rightWidth, setRightWidth] = useAtom(workbenchRightWidthAtom);
+  // 右栏拖宽进行中（gutter pointerdown→up）：批D 折叠/展开动画走 grid 轨道
+  // transition，拖拽是每帧改 rightWidth 的 1:1 手势，带 transition 会以 280ms
+  // 追指针 = 不跟手——拖宽期间摘掉动画类（skill §2 1:1 tracking 优先）。
+  const [rightResizing, setRightResizing] = useState(false);
   // 右栏可唤出 = 显式 prop 或有内容（向后兼容）。与 rightPanel 解耦：收起时 rightPanel=null
   //（aside 不渲染、零 inspection query），但 collapsible=true 仍在中栏边缘渲染 RailButton 唤出。
   const rightCollapsible = rightPanelCollapsible ?? !!rightPanel;
@@ -112,7 +117,7 @@ export function WorkbenchShell({
   return (
     <main className="relative flex h-[var(--app-viewport-height)] flex-col overflow-hidden text-on-surface">
       <div
-        className={`grid min-h-0 w-full min-w-0 flex-1 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-side-col)_var(--workbench-center-col)_var(--workbench-right-col)] ${shellSurfaceClasses.shell}`}
+        className={`grid min-h-0 w-full min-w-0 flex-1 grid-cols-1 overflow-hidden pt-[var(--shell-safe-area-top)] lg:grid-cols-[var(--workbench-side-col)_var(--workbench-center-col)_var(--workbench-right-col)] ${shellSurfaceClasses.shell} ${rightResizing ? "" : "workbench-grid-animated"}`}
         style={
           {
             "--workbench-side-col": sidebarWidth,
@@ -153,6 +158,8 @@ export function WorkbenchShell({
               max={WORKBENCH_RIGHT_PANEL_MAX_REM}
               min={WORKBENCH_RIGHT_PANEL_MIN_REM}
               onResize={onResizeRight}
+              onResizeEnd={() => setRightResizing(false)}
+              onResizeStart={() => setRightResizing(true)}
               side="right"
               value={rightWidth}
             />
@@ -205,6 +212,10 @@ type ColumnResizeGutterProps = {
   label: string;
   side: "left" | "right";
   onResize: (deltaRem: number) => void;
+  /** 拖拽开始/结束（pointerdown / up+cancel）：宿主据此摘掉列宽 transition（批D
+   *  折叠/展开动画），保证拖宽 1:1 跟手。键盘步进不算拖拽（离散、不连续改宽）。 */
+  onResizeStart?: () => void;
+  onResizeEnd?: () => void;
 };
 
 /** 键盘方向键每次步进的栏宽增量（rem）。 */
@@ -219,7 +230,16 @@ const GUTTER_KEYBOARD_STEP_REM = 1;
  * 方向（向左拖/← 键才增宽）。aside（展开态右栏容器）在即渲染——收起态整个 aside
  * 不渲染（唤出走 RailButton），gutter 随之消失是自然行为。
  */
-function ColumnResizeGutter({ label, max, min, onResize, side, value }: ColumnResizeGutterProps) {
+function ColumnResizeGutter({
+  label,
+  max,
+  min,
+  onResize,
+  onResizeEnd,
+  onResizeStart,
+  side,
+  value,
+}: ColumnResizeGutterProps) {
   const dragRef = useRef<{ lastX: number; rootFont: number } | null>(null);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -235,6 +255,7 @@ function ColumnResizeGutter({ label, max, min, onResize, side, value }: ColumnRe
     event.stopPropagation();
     const rootFont = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
     dragRef.current = { lastX: event.clientX, rootFont };
+    onResizeStart?.();
     void event.currentTarget.setPointerCapture(event.pointerId);
   };
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -247,6 +268,7 @@ function ColumnResizeGutter({ label, max, min, onResize, side, value }: ColumnRe
   };
   const endDrag = (event: PointerEvent<HTMLDivElement>) => {
     dragRef.current = null;
+    onResizeEnd?.();
     void event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
