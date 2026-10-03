@@ -137,11 +137,17 @@ export function NavItemContent({
           ? "text-on-surface-muted hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
           : "text-on-surface-muted";
   const shapeClass = orientation === "vertical" ? "" : "rounded-md";
-  const interactionClass = interactive ? "cursor-pointer" : "";
+  // 按压统一（移动端动效批）：nav 项按下 scale 0.98（与行同档、比按钮 0.97 轻——大面积
+  // 元素缩放更可感）；active 态也参与（按住当前 tab 同样有反馈）。transition 收窄为
+  // [scale, background-color]（§19/§20：scale 是独立属性，必须显式列出；裸 transition
+  // 的 23 属性大表会连 hover 色变一起过渡布局属性）。
+  const interactionClass = interactive
+    ? "cursor-pointer transition-[scale,background-color] duration-[var(--duration-fast)] active:scale-[0.98]"
+    : "";
 
   return (
     <span
-      className={`w-full min-w-0 transition ${layoutClass} ${stateClass} ${shapeClass} ${interactionClass}`}
+      className={`w-full min-w-0 ${layoutClass} ${stateClass} ${shapeClass} ${interactionClass}`}
     >
       {marker}
       <span className="min-w-0 flex-1">
@@ -564,7 +570,9 @@ export function listRowClasses({
   className,
 }: { selected?: boolean; className?: string; size?: ListRowProps["size"] } = {}): string {
   return cn(
-    "flex h-auto w-full min-w-0 cursor-pointer items-center justify-start px-3 py-2.5 text-left transition interactive-row",
+    // 按压统一（移动端动效批）：行按下 scale 0.98（§19 独立 scale 属性——transition
+    // 必须显式列 scale 才有插值，写 transform 零作用）。selected 态同样参与按压。
+    "flex h-auto w-full min-w-0 cursor-pointer items-center justify-start px-3 py-2.5 text-left transition-[scale,background-color] duration-[var(--duration-fast)] interactive-row active:scale-[0.98]",
     // sm = 侧栏行档（设计包 .srow2.inst 13px——桌面左栏行规格；默认档继承全局字号不动）。
     size === "sm" && "text-footnote",
     selected ? "bg-primary/10" : "hover:bg-on-surface/5",

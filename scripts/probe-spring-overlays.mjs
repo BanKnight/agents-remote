@@ -9,7 +9,7 @@
 //     exit 保持 0.15s ease（快速离开）；reduced-motion 下动画即时到位（全局兜底）。
 //   Part 2（桌面）：侧栏「新建会话」DropdownMenu enter = linear( + 0.375s
 //     （spring snappy）+ transform-origin 锚定触发源（非 center）。
-//   Part 3（移动 390×844）：会话页「切换」MobileSheet enter = linear( + 0.375s；
+//   Part 3（移动 390×844）：会话页「切换」MobileSheet enter = linear( + 0.45s + 全程升起；
 //     拖拽状态机类不验证（真机复验清单项）。
 //   Part 4（node 静态）：dist CSS 产物中 popover/dropdown/sheet 的 snappy 注入与
 //     dialog 的 standard 注入都在场（popover 无稳定业务入口可实测，以同类规则
@@ -250,7 +250,7 @@ async function assertEnter(page, selector, wantDuration, label) {
     await m.goto(`${WEB_ORIGIN}/projects/${PROJECT}/session/${AGENT.id}`);
     await m.waitForSelector(".nav h1 button", { timeout: 10000 });
     await m.locator(".nav h1 button").click();
-    await assertEnter(m, ".msheet", "0.375s", "mobile-sheet content");
+    await assertEnter(m, ".msheet", "0.45s", "mobile-sheet content");
     const msheetTiming = await m
       .locator('.msheet[data-state="open"]')
       .evaluate((node) => getComputedStyle(node).animationTimingFunction);
@@ -258,6 +258,12 @@ async function assertEnter(page, selector, wantDuration, label) {
       msheetTiming.includes("linear("),
       "mobile-sheet timing 为 spring（拖拽路径类未动，exit 仍走 inline 起点）",
     );
+    // 移动端动效批：enter 位移从 16px 浮起改全程升起——[--tw-enter-translate-y:100%]
+    // 变量注入落盘（computed 自定义属性可读）；去 fade 由 CSS 无 fade 类保证（静态）。
+    const msheetEnterY = await m
+      .locator('.msheet[data-state="open"]')
+      .evaluate((node) => getComputedStyle(node).getPropertyValue("--tw-enter-translate-y").trim());
+    ok(msheetEnterY === "100%", `mobile-sheet enter 位移为全程升起 100%（实测 ${msheetEnterY}）`);
     await mob.close();
   } finally {
     await browser.close();

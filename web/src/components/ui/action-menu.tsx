@@ -103,7 +103,10 @@ export function ActionMenu({
         }}
         trigger={trigger}
       >
-        <div role="menu">
+        {/* 逐项交错入场（移动端动效批）：Radix Portal 每次开 = 全新 DOM，animation
+            天然每次播放；菜单项静态无重排 = 无 insertBefore 重播面（frontend-notes
+            §17 判定通过）。28ms 步进 × 菜单项数，cap 224ms 兜底长菜单。 */}
+        <div className="animate-stagger-rows" role="menu">
           {items.map((item, index) => (
             <button
               key={`${item.label}-${index}`}
@@ -273,7 +276,9 @@ export function useLongPressActions(openAt: (key: string, e: MouseEvent) => void
  */
 export function mobileSheetItemClasses(variant: ActionMenuItemVariant = "default"): string {
   return cn(
-    "flex w-full items-center gap-2.5 rounded-lg px-3 min-h-[48px] text-sm font-semibold transition",
+    // 按压统一（移动端动效批）：菜单项按下 scale 0.98（行/卡片同档）；裸 transition 收窄为
+    // [scale,background-color]（§20 裸 transition = 23 属性大表；§19 scale 须显式列出）。
+    "flex w-full items-center gap-2.5 rounded-lg px-3 min-h-[48px] text-sm font-semibold transition-[scale,background-color] duration-[var(--duration-fast)] active:scale-[0.98]",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
     variant === "destructive"
       ? "text-error active:bg-error/10"

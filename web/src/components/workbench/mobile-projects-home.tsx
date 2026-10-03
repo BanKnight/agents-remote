@@ -200,7 +200,8 @@ export function MobileProjectsHome() {
               {/* 审批行（原型 02 .ap-row tint-orange，pending=0 隐藏）：入口①（§6.4）。 */}
               {approvals.length > 0 ? (
                 <button
-                  className="ap-row w-full cursor-pointer"
+                  // 按压统一（移动端动效批）：行档 0.98（§19 scale 独立属性，transition 显式列出）。
+                  className="ap-row w-full cursor-pointer transition-[scale,background-color] duration-[var(--duration-fast)] active:scale-[0.98]"
                   onClick={openApprovals}
                   type="button"
                 >
@@ -215,7 +216,8 @@ export function MobileProjectsHome() {
                   <div key={row.candidate.ref.sessionId}>
                     {index > 0 ? <div className="mx-3 border-t border-sep-row" /> : null}
                     <button
-                      className="flex w-full cursor-pointer flex-col items-stretch gap-0 text-left"
+                      // 按压统一（移动端动效批）：行档 0.98（§19 scale 独立属性，transition 显式列出）。
+                      className="flex w-full cursor-pointer flex-col items-stretch gap-0 text-left transition-[scale,background-color] duration-[var(--duration-fast)] active:scale-[0.98]"
                       onClick={() => focusInstance(row.candidate)}
                       type="button"
                     >
@@ -282,7 +284,8 @@ export function MobileProjectsHome() {
                 <div key={row.name}>
                   {index > 0 ? <div className="border-t border-sep-row" /> : null}
                   <button
-                    className="flex w-full cursor-pointer items-center gap-2.5 py-2.5 text-left"
+                    // 按压统一（移动端动效批）：行档 0.98（§19 scale 独立属性，transition 显式列出）。
+                    className="flex w-full cursor-pointer items-center gap-2.5 py-2.5 text-left transition-[scale,background-color] duration-[var(--duration-fast)] active:scale-[0.98]"
                     onClick={() =>
                       void navigate({ to: "/projects/$key", params: { key: row.name } })
                     }

@@ -206,10 +206,14 @@ export function MobileSheet({
           ref={setContentNode}
           className={cn(
             "msheet outline-none",
-            // programmatic enter 换 spring snappy（[--tw-ease/--tw-animation-duration]
-            // 变量注入，与拖拽 dismiss 的 exit 变量注入同机制）；拖拽状态机、exit
-            // keyframes（inline transform 作起点）与 fill-mode-forwards 一律不动。
-            "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4 data-[state=open]:[--tw-ease:var(--spring-snappy)] data-[state=open]:[--tw-animation-duration:var(--spring-snappy-duration)]",
+            // programmatic enter = spring 全程升起（移动端动效批）：位移从 16px 浮起改
+            // 屏幕底完整升起（[--tw-enter-translate-y:100%] 变量注入，机制同 §16——
+            // tw-animate 的 enter keyframes 消费该变量），去掉 fade（iOS sheet 是纯
+            // 位移，升起途中不透明，dim 交给 scrim）；时长走 sheet 档 token（100%
+            // 路程下 375ms 偏陡）。拖拽状态机、exit keyframes（inline transform 作
+            // 起点）与 fill-mode-forwards 一律不动；「打开即下拉」的 getAnimations
+            // cancel 对 450ms 升起同样生效。
+            "data-[state=open]:animate-in data-[state=open]:[--tw-enter-translate-y:100%] data-[state=open]:[--tw-ease:var(--spring-standard)] data-[state=open]:[--tw-animation-duration:var(--spring-sheet-duration)]",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-4 data-[state=closed]:[--tw-animation-duration:var(--duration-exit)] data-[state=closed]:fill-mode-forwards",
           )}
           onPointerCancel={endDrag}

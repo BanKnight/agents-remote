@@ -58,6 +58,9 @@
   --spring-snappy: var(--spring-standard);
   --spring-standard-duration: 525ms;
   --spring-snappy-duration: 375ms;
+  /* sheet 全程升起档（移动端动效批）：位移从 16px 浮起改为屏幕底完整升起后，375ms
+     snappy 对 100% 路程偏陡，450ms 贴 iOS UISheetPresentationController 常见时长。 */
+  --spring-sheet-duration: 450ms;
   --spring-standard: linear(
     0,
     0.0802 5%,

@@ -796,6 +796,12 @@
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
     color: var(--ink-1);
+    /* 按压统一（移动端动效批）：行按下轻微回缩、松手回弹——scale 是独立 CSS 属性
+      （frontend-notes §19），transition 显式列 scale；fast 档 120ms 贴按压直觉。 */
+    transition: scale var(--duration-fast) var(--ease-standard);
+  }
+  .srow2:active {
+    scale: 0.98;
   } /* 侧栏行用主文字色；term-ink 仅限终端正文 */
   .srow2 .live {
     margin-left: auto;
