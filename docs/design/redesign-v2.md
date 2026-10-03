@@ -1377,6 +1377,10 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **速度窗口 + velocity-first（`e7fb156` + `65fa654`，用户反馈「慢拖回弹好奇怪」「拉得快反而有回弹」）**：①松手速度从「最后一次 move 的瞬时值」改为**从松手时刻回看 100ms 的窗口净速度**（apple-design §2「track a short velocity/position history, not just the current point」）——停停走走的慢拖在停顿后松手，旧瞬时速度被注入弹簧 → 向下过冲；窗口语义让停顿自然计入分母（停住 300ms 松手 = 0）。判定与动画共用同一速度值。②去掉 24px 最小行程门（velocity-first：「reverse vs. commit 看速度不看位置」）——短距快甩不再被拦成猛回弹。probe 48 断言全绿。
 
+**回弹越顶钳制（`7e9db59`，用户质疑「回弹后又继续往下走不符合物理规律」）**：往回收手再松手时窗口速度为负（向上），原样注入弹簧 → sheet 越过原位向上再垂落——越顶与拖拽期 `dy≥0` 的硬边界自相矛盾。修复 = 回弹初速钳 `max(0, v)`：向上残余速度（用户主动收手）钳 0 平滑归位，向下残余速度（惯性，已被投影判定限到 <1px）保留。
+
+**motion 库回归，接管弹簧物理层（`a98e13b`，用户拍板「用库治本，编译有裁剪不担心体积」）**：手写半隐式欧拉积分退役，换 `motion@13.4.4` 命令式 `animate`（bounce 0 + duration 0.3 = 临界阻尼；velocity 单位 units/s，内部 px/ms ×1000；起点显式读 presentation value；中断走 `controls.stop()`，`finished.then` 以「ref 仍指向自己」判定自然收敛后才清 inline 交还 Radix）。**判定/测速层保留在本文件**（投影、velocity-first、窗口速度、越顶钳 0、起手面分档、可滚保护、pending 失联）——这几轮修对的成果不扔。**供应链记录**：Vaul 方案否决（作者 2025-10 README 官方声明 unmaintained + 22 个月无发版）；motion 14.0.0 昨日发布避开，锁 13.4.4（2026-09-25 ≥7 天）。**当年摘除决策的修正说明**：摘除前提「无手势驱动动画场景」在移动批后失效，本次按场景回归引入——仅命令式 `animate` 消费（无 LazyMotion/`m` 组件），entry 292886B 与摘除基线持平（tree-shaking 摇掉 React 绑定层）；未来再引入组件层消费须重估 barrel 树摇（§16 教训）。probe-mobile-motion 48 断言 + 单测 10 项全绿。
+
 **待真机复验（移动批新项 + 修复）**：sheet 全程升起手感（450ms spring）/ 菜单逐项入场 / 触屏按压回缩分层手感（行 0.98 vs 按钮 0.97）/ **「打开即下拉」手指落在 sheet 任意位置（包括内容区）往下拖 → 立刻跟手（`bdce488` 热区分档 + `6aa7c27` 摘类双修复；WebKit 真机是唯一能复现原 bug 的环境，重点验）** / **iOS `:active` 按压缩放生效且滚动时无粘滞**（iOS Safari 滚动会清 ：active，需真机确认）+ PWA standalone 下生效。
 
 ## §7 待定项跟踪

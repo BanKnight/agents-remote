@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-03（**sheet 手感四轮收口**：根因修复 `e1ae5a6`（取证定根因）→ 回弹弹簧 `f1f99ed`（速度继承）→ 投影判定 `7c590b6`（慢拖过 1/4 收起）→ 窗口速度+velocity-first `e7fb156`+`65fa654`（apple-design §2 审查：停顿后松手不再向下窜；短距快甩收起不再被 24px 行程门拦成猛回弹）。probe-mobile-motion **48** 断言 + 单测 12 全绿，全门禁绿。**待真机复验全套手感；通过后删 sheet-debug.ts**。回滚点 = `98b12fa`。）
+> 最后更新：2026-10-04（**sheet 手感收口 + motion 库回归**：根因修复 `e1ae5a6`（取证定根因）→ 回弹弹簧 `f1f99ed` → 投影判定 `7c590b6` → 窗口速度+velocity-first `e7fb156`+`65fa654` → 越顶钳制 `7e9db59` → **弹簧物理移交 motion `a98e13b`**（用户拍板用库治本；Vaul 否决——作者官方声明 unmaintained；motion 锁 13.4.4 ≥7 天，仅命令式 animate 消费、entry 与摘除基线持平；判定/测速层保留在本文件）。probe-mobile-motion **48** 断言 + 单测 10 全绿，全门禁绿。**待真机复验全套手感；通过后删 sheet-debug.ts**。回滚点 = `98b12fa`。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
