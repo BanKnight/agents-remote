@@ -226,6 +226,8 @@
 
 ## 21. CSS 动画 cancel 后按样式匹配重建：手势接管入场动画须摘类断匹配（WebKit 分歧行为）
 
+> 「打开即下拉」bug 的**次根因**；**主根因（热区时序错位）见 §22**。
+
 **现象**：mobile-sheet「打开即下拉」真机必然失败（450ms 全程升起 enter 播放中按住 grab 下拉，sheet 不跟手，动画播完才跳到手指位）；Chromium 探针与诊断脚本全绿（动画中拖 t=100ms inline=`translateY(40px)` 跟手、`getAnimations()=[]`），复现不了。
 
 **机制**：`element.getAnimations().cancel()` 取消 CSS 生成的动画后，若 `animation-name` 仍在样式上匹配，**下次样式更新时浏览器立即重建动画实例从头重播**（CSS Animations + Web Animations 规范语义；Chromium 不重建——引擎行为分歧，WebKit 侧 results.webkit.org 294899@main 2025-05 变更佐证）。拖拽用 inline `style.transform` 跟手，但重建实例的 keyframes transform 压过 inline（animation 层级高于普通声明）→ sheet 按动画轨迹走 = 拖不动。cancel 只在 Chromium 有效。
@@ -233,3 +235,13 @@
 **标准做法**：手势接管入场动画时，**cancel 之外必须让样式失配**——React state（`enterKilled`）驱动 className 条件摘掉 `animate-in` 类串（`animation-name` 不再匹配 = 动画死亡且任何引擎不可重建），cancel 保留（Chromium 即时生效）；动画不可能再播的时机重置 state（closed 态下 `data-[state=open]` 变体失配，重置无重启面；exit 类串独立不动）。**否决** inline `animation: none`：回弹（清空→重建重播升起 / 不清→压死 `animate-out` 退出）与 dismiss（恢复→enter 重建闪烁）三路径死结。**探针法（WAAPI 定格）**：验证「动画运行期手势接管」时，自然时序窗口（~17px 薄热区 × spring 升速）下 Playwright `boundingBox` 往返必 race 输（down 落点错过热区、inline 恒空，实锤）——**页内 `getAnimations()` 后 `a.pause(); a.currentTime = 中段时刻` 把动画定格成确定性 fixture**，手势对静止元素执行；cancel+摘类对 paused 动画同样生效。与 §18「等 enter 播完再取几何」同族：把不可重复的动画时序变成可断言的确定态。
 
 **来源**：commit `6aa7c27`；MDN getAnimations；results.webkit.org 294899@main；redesign-v2.md 动效段「打开即下拉」修复小节。
+
+## 22. 拖拽起手热区的时序错位：手势起手面必须覆盖「元素到达手指前」的按下（「打开即下拉」主根因）
+
+**现象**：mobile-sheet「打开即下拉」真机必然失败，改了五轮（前四轮拖拽本身、第五轮动画层）仍失败；探针按 grab 热区全绿。
+
+**机制**：拖拽起手判定 `e.target.closest(".grab, .shd")` 要求按下时手指落在顶部热区（grab 5px + shd ≈12–44px）——但该热区**随 sheet 升起在移动**，「刚打开就下拉」的手指在第一次 pointerdown 时必然按在升起中的 sheet 内容区（或热区尚未到达的位置）：判定失败 → pending 从未建立 → **拖拽从未启动**，后续 move 与任何动画层修复（cancel/摘类）都没机会执行。探针 boundingBox 精确按 grab = 永远命中，掩盖真人手指的落点分布。动画层的「拖不动」与此层「拖不起」现象同名、根因不同层。
+
+**标准做法**：**起手面按动画状态分档**——元素带入场动画时，动画运行期（`data-state=open` + 自身 `getAnimations()` 非空，down 时查询：零魔数、零新 state、动画结束自动收窄）放宽到整个元素可起拖（此窗口内内容无交互意义，宽热区无副作用）；动画结束回窄热区（保护内容区原生滚动）。判定口诀：**手势 bug 先问「pending 到底建没建立」，再问「建了之后跟不跟手」——两问分属事件层与动画层，别混**。探针侧同步补「按内容区起拖」断言（修复前必失败路径），别只测「按准热区」的理想路径。
+
+**来源**：commit `bdce488`；redesign-v2.md 动效段「打开即下拉」修复小节（两轮根因全记录）；与 §14（拖拽绑定四轮调优）、§21（动画层次根因）同链。
