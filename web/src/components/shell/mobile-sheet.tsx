@@ -7,16 +7,17 @@ import { cn } from "@/lib/utils";
 import { sheetDebug } from "./sheet-debug";
 
 /**
- * 下拉收起手势判定（iOS sheet 惯例 = snap point 动量投影）：以「当前位移 + 速度 × 投影
- * 视野」预估松手后的自然落点，越过阈值（**sheet 高度的 25%、至少 64px**——固定 96px 绝对
- * 阈值下慢拖几乎不可达，用户实测「慢拖都有回弹」）或纯甩动（位移 ≥24px 且 v ≥ 0.5px/ms）
- * 即收起；都达不到才回弹。<24px 是点击 slop 不接管（保住 shd 内「全部允许」等按钮的
- * click 合成）。
+ * 下拉收起手势判定（iOS sheet 惯例 = velocity-first，apple-design Quick Reference：
+ * 「Decide reverse vs. commit — use velocity sign, not position」——flick 几乎任何行程
+ * 都收起，**没有短距离快甩回弹这回事**；位置门会拦下快甩造成猛回弹，用户实测否定）。
+ * 收起 = 投影过阈值（「位移 + 速度 × 300ms 视野」≥ max(64px, sheet 高度 × 25%)——固定
+ * 96px 绝对阈值下慢拖几乎不可达，用户实测「慢拖都有回弹」）或纯甩动（v ≥ 0.5px/ms）；
+ * 都达不到才回弹。<6px（DRAG_START_PX）是点击 slop 不接管拖拽（保住 shd 内「全部允许」
+ * 等按钮的 click 合成），接管后的手势才有收起/回弹判定。
  */
 const DISMISS_MIN_DISTANCE_PX = 64;
 const DISMISS_HEIGHT_RATIO = 0.25;
 const DISMISS_PROJECT_MS = 300;
-const DISMISS_MIN_DRAG_PX = 24;
 const DISMISS_VELOCITY_PX_MS = 0.5;
 const DRAG_START_PX = 6;
 /** 回弹弹簧：response 300ms 临界阻尼（Apple sheet 惯例 damping 1.0）。单位制 px/ms：
@@ -364,8 +365,7 @@ export function MobileSheet({
     const rect = el.getBoundingClientRect();
     const threshold = Math.max(DISMISS_MIN_DISTANCE_PX, rect.height * DISMISS_HEIGHT_RATIO);
     const projected = d.dy + v * DISMISS_PROJECT_MS;
-    const dismiss =
-      d.dy >= DISMISS_MIN_DRAG_PX && (projected >= threshold || v >= DISMISS_VELOCITY_PX_MS);
+    const dismiss = projected >= threshold || v >= DISMISS_VELOCITY_PX_MS;
     if (dismiss) {
       // 保留 inline transform 作为 exit 动画起点（tw-animate-css 的 exit keyframes 只有 to
       // 无 from，起始值 = 当前计算样式）——从松手位置继续滑出；清掉会瞬跳回原位再滑出
