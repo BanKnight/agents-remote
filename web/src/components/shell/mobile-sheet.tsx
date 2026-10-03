@@ -22,14 +22,18 @@ const DISMISS_HEIGHT_RATIO = 0.25;
 const DISMISS_PROJECT_MS = 300;
 const DISMISS_VELOCITY_PX_MS = 0.5;
 const DRAG_START_PX = 6;
+/** 松手动量阈值：v ≥ 此值视作动量释放，回弹弹簧带轻微 bounce（apple-design §4：bounce
+ * 只给带动量的手势——flick/throw/drag release；damping ~0.8 的映射即 bounce ≈ 0.2）。
+ * 慢速松手（v < 阈值）bounce 0 优雅归位，无过冲。 */
+const MOMENTUM_VELOCITY_PX_MS = 0.3;
+const MOMENTUM_BOUNCE = 0.2;
 /** 回弹弹簧参数：response 300ms 临界阻尼（bounce 0，Apple sheet 惯例 damping 1.0），
  * 初速度 = 手指松手窗口速度——快甩带速下冲过冲再收回、慢拖平滑收回。物理由 motion
  * 积分（velocity 选项单位 units/s，内部 px/ms 值 ×1000 换算）。 */
 const SPRING_RESPONSE_S = 0.3;
-/** 拖拽 dismiss 滑出：顶边推过视口底的余量（防亚像素残边，fill-forwards 保持出屏终态）。 */
+/** 拖拽 dismiss 滑出：顶边推过视口底的余量（防亚像素残边，fill-forwards 保持出屏终态）。
+ * 滑出动画 = motion 弹簧带松手速度（duration 0.3），不再用固定 200ms ease-in。 */
 const DISMISS_SLIDE_PAST_PX = 40;
-/** 拖拽 dismiss 滑出时长：从松手位置滑出全屏比常规关闭（16px+fade）距离长，稍缓贴近 iOS。 */
-const DISMISS_SLIDE_MS = 200;
 
 /**
  * 受控关闭 → 消费方延迟卸载的统一间隔：受控 open 的浮层（MobileSheet / 桌面 Dialog）在
@@ -67,6 +71,27 @@ export function hasScrollableContent(el: HTMLElement): boolean {
 
 /** 松手速度窗口：从松手时刻回看这么长的时间取净位移（iOS UIPanGestureRecognizer 惯例）。 */
 const VELOCITY_WINDOW_MS = 100;
+
+/** rubber-band 越界阻力系数（apple-design §9 公式的 constant：越小越硬）。上顶原位比
+ * 拖过一屏硬得多——iOS sheet 顶边几乎不动，只留一丝弹性。 */
+const RUBBER_TOP_CONSTANT = 0.2;
+const RUBBER_OVERDRAG_CONSTANT = 0.55;
+
+/**
+ * apple-design §9 rubber-band：越界量经渐进阻力映射为视觉位移（iOS scroll 同款公式——
+ * 越深阻力越大，边界是「软」的）。上顶原位（dy<0）与拖过一屏（dy>dimension）为两个软
+ * 边界；界内 1:1 跟手。**收起判定用原始位移**（visual 只影响跟手渲染），见 moveDrag。
+ */
+export function visualDragY(dy: number, dimension: number): number {
+  if (dy < 0) return -rubberband(-dy, dimension, RUBBER_TOP_CONSTANT);
+  if (dy > dimension)
+    return dimension + rubberband(dy - dimension, dimension, RUBBER_OVERDRAG_CONSTANT);
+  return dy;
+}
+
+function rubberband(overshoot: number, dimension: number, constant: number): number {
+  return (overshoot * dimension * constant) / (dimension + constant * Math.abs(overshoot));
+}
 
 /**
  * 松手速度 = 最近窗口的净位移 ÷ 窗口时长（apple-design §2：track a short velocity/position
@@ -165,6 +190,9 @@ export function MobileSheet({
   // transform。finished.then 里以「ref 仍指向自己」判定自然收敛（stop 后 resolve 但 ref
   // 已换/已清，跳过清 inline）。
   const springControlsRef = useRef<ReturnType<typeof animate> | null>(null);
+  // 拖拽 dismiss 的带速滑出动画句柄：滑出期间 startDrag 早退（不接管正在离场的 sheet），
+  // finished 后才 onOpenChange(false)。open effect / cleanup 时兜底 stop。
+  const exitControlsRef = useRef<ReturnType<typeof animate> | null>(null);
   const cancelSpringBack = () => {
     springControlsRef.current?.stop();
     springControlsRef.current = null;
@@ -172,6 +200,8 @@ export function MobileSheet({
   useEffect(() => {
     if (!open) {
       cancelSpringBack();
+      exitControlsRef.current?.stop();
+      exitControlsRef.current = null;
       setEnterKilled(false);
     }
   }, [open]);
@@ -208,6 +238,8 @@ export function MobileSheet({
       // 拖拽中断（DOM 卸载）时状态机归位 + 弹簧取消，防下一次打开残留状态/rAF。
       dragRef.current = { phase: "idle" };
       cancelSpringBack();
+      exitControlsRef.current?.stop();
+      exitControlsRef.current = null;
     };
   }, [contentNode]);
 
@@ -223,7 +255,12 @@ export function MobileSheet({
     const controls = animate(
       el,
       { y: [x0, 0] },
-      { type: "spring", bounce: 0, duration: SPRING_RESPONSE_S, velocity: Math.max(0, v0) * 1000 },
+      {
+        type: "spring",
+        bounce: v0 >= MOMENTUM_VELOCITY_PX_MS ? MOMENTUM_BOUNCE : 0,
+        duration: SPRING_RESPONSE_S,
+        velocity: Math.max(0, v0) * 1000,
+      },
     );
     springControlsRef.current = controls;
     controls.finished.then(
@@ -250,6 +287,8 @@ export function MobileSheet({
 
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!(e.target instanceof Element)) return;
+    // 带速滑出进行中不接管（200-300ms 窗口，正在离场的 sheet 不再响应抓取）。
+    if (exitControlsRef.current) return;
     // 起手面分档（真机取证定的根因：450ms 升起播完后手指落在内容区被窄热区拒绝，而人
     // 「打开→按下拖」的反应必然超过 450ms）：①enter 升起中（getAnimations 非空）内容
     // 尚未就位无交互意义，整个 Content 可起拖；②播完后按内容可滚性分——不可滚（菜单/
@@ -323,11 +362,13 @@ export function MobileSheet({
       });
       return;
     }
-    const dy = Math.max(0, e.clientY - d.startY);
+    // 判定用原始位移（可为负 = 上顶），视觉经 rubber-band 软边界（§9：上顶原位与拖过
+    // 一屏渐进阻力，界内 1:1 跟手）；收起投影判定仍用原始 dy。
+    const dy = e.clientY - d.startY;
     const samples = [...d.samples, { y: e.clientY, t: e.timeStamp }].slice(-8);
     dragRef.current = { ...d, dy, samples };
     mvCountRef.current++;
-    e.currentTarget.style.transform = `translateY(${dragBaseRef.current + dy}px)`;
+    e.currentTarget.style.transform = `translateY(${dragBaseRef.current + visualDragY(dy, window.innerHeight)}px)`;
   };
 
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -346,23 +387,32 @@ export function MobileSheet({
     const projected = d.dy + v * DISMISS_PROJECT_MS;
     const dismiss = projected >= threshold || v >= DISMISS_VELOCITY_PX_MS;
     if (dismiss) {
-      // 保留 inline transform 作为 exit 动画起点（tw-animate-css 的 exit keyframes 只有 to
-      // 无 from，起始值 = 当前计算样式）——从松手位置继续滑出；清掉会瞬跳回原位再滑出
-      //（用户反馈的「回弹后再消失」）。inline 变量覆盖 class 的 exit 形态：滑出距离 =
-      // 顶边推出视口底 + 余量（slide-out-to-bottom-4 的 16px 不够出屏）、不 fade（iOS
-      // dismiss 是纯滑出）、200ms ease-in 贴合松手初速度。Content unmount 后 inline 样式
-      // 随之消亡，无残留。
-      el.style.setProperty(
-        "--tw-exit-translate-y",
-        `${window.innerHeight - rect.top + DISMISS_SLIDE_PAST_PX}px`,
+      // 拖拽 dismiss 的滑出 = motion 弹簧顺松手速度滑出屏外（velocity handoff——原 CSS
+      // exit 路径无初速通道，固定 200ms ease-in 不带速度信息）。到位（finished）后才
+      // onOpenChange(false) 走常规 exit 卸载路径，且保留 --tw-exit-translate-y 注入（CSS
+      // exit 的 to 若回落 16px 会让 sheet 从屏外闪回，必须同在屏外）。滑出期间 startDrag
+      // 早退，不接管正在离场的 sheet。
+      const curY = new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
+      const targetY = window.innerHeight - rect.top + DISMISS_SLIDE_PAST_PX;
+      exitControlsRef.current = animate(
+        el,
+        { y: [curY, targetY] },
+        { type: "spring", bounce: 0, duration: 0.3, velocity: Math.max(0, v) * 1000 },
       );
-      el.style.setProperty("--tw-exit-opacity", "1");
-      el.style.setProperty("--tw-animation-duration", `${DISMISS_SLIDE_MS}ms`);
-      el.style.setProperty("--tw-ease", "ease-in");
       sheetDebug(
-        `${kind} dy=${Math.round(d.dy)} v=${v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> DISMISS`,
+        `${kind} dy=${Math.round(d.dy)} v=${v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> DISMISS(exit)`,
       );
-      onOpenChangeRef.current(false);
+      exitControlsRef.current.finished.then(
+        () => {
+          exitControlsRef.current = null;
+          el.style.setProperty(
+            "--tw-exit-translate-y",
+            `${window.innerHeight - rect.top + DISMISS_SLIDE_PAST_PX}px`,
+          );
+          onOpenChangeRef.current(false);
+        },
+        () => {},
+      );
       return;
     }
     // 回弹：弹簧从当前视觉位置 + 松手窗口速度积分回 0（速度继承），收敛后清 inline 交还

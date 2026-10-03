@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { JSDOM } from "jsdom";
 
-import { hasScrollableContent, sampleVelocity } from "./mobile-sheet";
+import { hasScrollableContent, sampleVelocity, visualDragY } from "./mobile-sheet";
 
 // bun:test 无内置 jsdom 环境——手动建 JSDOM 挂 globalThis（session-detail.test.ts 同款
 // 范式）。每个 test 一个新干净 DOM。
@@ -97,5 +97,26 @@ describe("sampleVelocity（松手速度窗口）", () => {
       { y: 80, t: 200 },
     ];
     expect(sampleVelocity(samples, 200)).toBeCloseTo(-0.1, 2);
+  });
+});
+
+describe("visualDragY（rubber-band 软边界）", () => {
+  const DIM = 844;
+  test("界内 1:1 跟手", () => {
+    expect(visualDragY(0, DIM)).toBe(0);
+    expect(visualDragY(300, DIM)).toBe(300);
+  });
+
+  test("上顶原位：渐进阻力（20px 只出 ~4px，界内拖 20px 出 20px）", () => {
+    const vis = visualDragY(-20, DIM);
+    expect(vis).toBeLessThan(0);
+    expect(vis).toBeGreaterThan(-8);
+    expect(visualDragY(20, DIM)).toBe(20);
+  });
+
+  test("拖过一屏：渐进阻力（超出 100px 只出 ~54px）", () => {
+    const vis = visualDragY(DIM + 100, DIM);
+    expect(vis).toBeGreaterThan(DIM);
+    expect(vis).toBeLessThan(DIM + 100);
   });
 });
