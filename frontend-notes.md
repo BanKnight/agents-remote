@@ -268,4 +268,14 @@
 
 **来源**：commit `f1f99ed`（用户反馈「回弹很假」）；apple-design §5 velocity handoff；与 §22（取证纪律）、§23（pending 失联）同链。
 
-**速度测量的另一半（`e7fb156`，apple-design §2 审查补正）**：velocity handoff 的「速度」必须是**窗口净速度**（从松手时刻回看 ~100ms：位移 ÷ 时长），不是最后一次 `pointermove` 的瞬时值——真实手指慢拖停停走走，停顿期没有 move 事件，旧瞬时速度会被当作松手速度注入弹簧 → sheet 先向下冲一截再回弹（用户「慢拖回弹好奇怪」的真凶）。iOS `UIPanGestureRecognizer.velocity()` 同款语义：停顿自然计入分母（停住 300ms 松手 = 0 ÷ 300ms = 0）。判定的速度（dismiss 投影）与动画的速度（弹簧初速）必须共用同一值，否则「看起来该收起却弹回」或「弹回却带甩劲」。
+**速度测量的另一半（`e7fb156`，apple-design §2 审查补正）**：velocity handoff 的「速度」必须是**窗口净速度**（从松手时刻回看 ~100ms：位移 ÷ 时间），不是最后一次 `pointermove` 的瞬时值——真实手指慢拖停停走走，停顿期没有 move 事件，旧瞬时速度会被当作松手速度注入弹簧 → sheet 先向下冲一截再回弹（用户「慢拖回弹好奇怪」的真相）。iOS `UIPanGestureRecognizer.velocity()` 同款语义：停顿自然计入分母（停住 300ms 松手 = 0 ÷ 300ms = 0）。判定的速度（dismiss 投影）与动画的速度（弹簧初速）必须共用同一值，否则「看起来该收起却弹回」或「弹回却带甩劲」。
+
+## 25. motion `stop()` 的「最后一写」：已在 rAF 队列的回调仍执行一次，同步接管后必须同帧 rAF 矫正
+
+**现象**：mobile-sheet enter 升起中被拖拽接管——moveDrag 接管分支顺序正确（读 frozenY → `stop()` → 写 inline = frozenY+dy），但下一帧 inline 被 motion 改写回自己的轨迹值（升起方向倒退 ~14px），探针 trail 逐帧实抓：接管写入 60.24 → 下一帧 46.47。
+
+**机制**：motion（13.4.4 实测）的 `controls.stop()` **同步置停止标志、阻止后续帧注册，但阻止不了「stop 调用时已在 rAF 队列中的回调」**——该回调仍执行一次并写 inline。接管事件（pointermove 任务层）与 motion 的已排队 rAF 常落在同一帧：任务先跑（接管写入），帧内 motion 回调后跑（覆盖）。**不是 bug**，是 rAF 驱动动画库的固有时序面；CSS 时代 `cancel()` 语义（回未变换位置）与之根本不同。
+
+**标准做法**：接管分支 stop 后**注册同帧 rAF 矫正写入**（重写 `translateY(base + visualDragY(最新 dy))`）——矫正回调注册序晚于 motion 已排队回调 → 同帧执行序在后 → **paint 前最后写入生效，同帧矫正零跳变**。执行条件 = phase 仍是 dragging 且无回弹/exit controls（松手/关闭的 transform 已归其它路径管，不抢）。**禁 Node 侧定时采样**的老规矩在此失效变体：探针 waitStillTop 的「1 帧静止」可能是慢速尾段误判（帧差 <0.5px ≠ 速度为 0），必须配**硬数值断言兜底**（visShift = 手指位移 ±0.5）——误判时基准偏移必偏出容差。
+
+**来源**：弹层近瞬时档批（2026-10-04）调试实锤；与 §21（动画接管）、§22（取证纪律）、§24（速度继承）同链。

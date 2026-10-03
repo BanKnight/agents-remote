@@ -1,12 +1,10 @@
 import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { animate } from "motion";
 
 import { cn } from "@/lib/utils";
-
-import { sheetDebug } from "./sheet-debug";
 
 /**
  * 下拉收起手势判定（iOS sheet 惯例 = velocity-first，apple-design Quick Reference：
@@ -31,6 +29,12 @@ const MOMENTUM_BOUNCE = 0.2;
  * 初速度 = 手指松手窗口速度——快甩带速下冲过冲再收回、慢拖平滑收回。物理由 motion
  * 积分（velocity 选项单位 units/s，内部 px/ms 值 ×1000 换算）。 */
 const SPRING_RESPONSE_S = 0.3;
+/** sheet enter 升起弹簧 fallback 时长（运行时读 token --spring-sheet-duration，常量仅在
+ * token 缺失时兜底——JS/CSS 时长单源）。近瞬时档 120ms 带 bounce 0.12 的 materialize
+ * 弹性（Apple modal presentation 惯例；一次性打开动量的小幅过冲，与回弹越顶钳制不
+ * 冲突——那是松手弹回的边界，这是打开动量的签名弹性）。物理由 motion 积分。 */
+const SPRING_SHEET_ENTER_S = 0.12;
+const ENTER_BOUNCE = 0.12;
 /** 拖拽 dismiss 滑出：顶边推过视口底的余量（防亚像素残边，fill-forwards 保持出屏终态）。
  * 滑出动画 = motion 弹簧带松手速度（duration 0.3），不再用固定 200ms ease-in。 */
 const DISMISS_SLIDE_PAST_PX = 40;
@@ -44,9 +48,15 @@ const DISMISS_SLIDE_PAST_PX = 40;
  */
 export const SHEET_UNMOUNT_DELAY_MS = 300;
 
+/** reduced-motion 下的 JS 驱动动画兜底：CSS 站点级 media query（index.css）只压
+ * animation/transition 时长，管不到 motion rAF 驱动——本文件三处 JS 动画（enter 升起/
+ * 回弹/带速滑出）各自在启动前查询，reduce 时直接置终态（动画语义 = 瞬时到位）。 */
+const prefersReducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 /**
- * sheet 内容是否存在实际溢出的可滚容器（真机取证 `7a3d37c` 后的根因：enter 450ms 播完后
- * 手指落在内容区被窄热区拒绝，而人「打开→按下拖」的反应必然超过 450ms = 必拒）。播完后
+ * sheet 内容是否存在实际溢出的可滚容器（真机取证 `7a3d37c` 后的根因：enter 播完后
+ * 手指落在内容区被窄热区拒绝，而人「打开→按下拖」的反应必然超过 enter 时长 = 必拒；
+ * 取证时为 450ms，现 120ms 近瞬时档下「播完后分档」是所有用户的主路径）。播完后
  * 的起手面按此分档：不可滚（菜单/确认框/prompt 等大多数 sheet）→ 整个 Content 都可往下
  * 拖收起；可滚（历史/文件/实例信息列表）→ 维持 grab/shd 窄热区，保住列表原生滚动。
  * 只扫后代不含 el 自身（.msheet 根的 max-height 内滚是 sheet 级滚动，不是内容列表）。
@@ -178,14 +188,11 @@ export function MobileSheet({
   // latest-ref 模式：effect 只依赖 contentNode，onOpenChange 变化不触发重绑。
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
-  // enter 动画被拖拽接管后置 true：从 className 摘掉 animate-in 串。规范语义（CSS
-  // Animations）：cancel 一个 animation-name 仍匹配的 CSS 动画，样式更新时会**立即重建
-  // 实例**（keyframes transform 重新压过 inline——真机「刚打开必然下拉不成功」即此；
-  // Chromium 不重建所以探针测不到，WebKit 有历史分歧行为）。样式失配 = 动画死亡且
-  // 不可重建，全引擎一致。open=false 时重置：此时 data-state=closed，animate-in 的
-  // data-[state=open] 变体失配不产生动画（exit 的 animate-out 独立类不受影响），Content
-  // 卸载后下次打开正常播 enter。
-  const [enterKilled, setEnterKilled] = useState(false);
+  // enter 升起 = motion 弹簧驱动（见下方 useLayoutEffect）。CSS enter 类串随之移除——
+  // §21 的 WebKit「cancel 后按样式匹配重建动画」防线不再需要：motion 是 rAF 驱动 inline
+  // transform，不经 CSS 样式匹配，stop 即死、无重建面。
+  const enterControlsRef = useRef<ReturnType<typeof animate> | null>(null);
+  const enterPlayingRef = useRef(false);
   // 回弹弹簧的 motion controls：拖拽中断/关闭时 stop，防旧弹簧跟新手势或 exit 动画抢
   // transform。finished.then 里以「ref 仍指向自己」判定自然收敛（stop 后 resolve 但 ref
   // 已换/已清，跳过清 inline）。
@@ -202,17 +209,57 @@ export function MobileSheet({
       cancelSpringBack();
       exitControlsRef.current?.stop();
       exitControlsRef.current = null;
-      setEnterKilled(false);
     }
   }, [open]);
-  // 接管时的视觉续接基点：enter 升起中被接管时 cancel 会让元素瞬回未变换位置（终态），
-  // 直接写 translateY(dy) = 从升起中段瞬跳到近终态再跟手。cancel 前记下当前视觉顶与
-  // cancel 后未变换顶的差（= 动画尚存的视觉偏移），inline 一律写 base + dy——从手指
-  // 看到的位置无跳续接（animate from the presentation value）。endDrag 归零。
+  // enter 升起：从视口底外弹簧到原位（时长读 token --spring-sheet-duration——近瞬时档
+  // 120ms 带 bounce 0.12；页内放慢该变量即探针的确定性升起窗口）。useLayoutEffect：
+  // Radix Portal 挂载 → contentNode state 化 → 同一 commit paint 前置起点
+  // （translateY(视口高)），防首帧闪终态。reduced-motion 直接置终态（CSS 站点级兜底
+  // 管不到 JS 驱动动画）。
+  useLayoutEffect(() => {
+    const el = contentNode;
+    if (!el || !open) return;
+    if (prefersReducedMotion()) {
+      el.style.transform = "";
+      return;
+    }
+    const y0 = window.innerHeight;
+    el.style.transform = `translateY(${y0}px)`;
+    const tokenMs = Number.parseFloat(
+      getComputedStyle(el).getPropertyValue("--spring-sheet-duration"),
+    );
+    const controls = animate(
+      el,
+      { y: [y0, 0] },
+      {
+        type: "spring",
+        bounce: ENTER_BOUNCE,
+        duration: Number.isFinite(tokenMs) && tokenMs > 0 ? tokenMs / 1000 : SPRING_SHEET_ENTER_S,
+      },
+    );
+    enterControlsRef.current = controls;
+    enterPlayingRef.current = true;
+    controls.finished.then(
+      () => {
+        if (enterControlsRef.current === controls) {
+          enterControlsRef.current = null;
+          enterPlayingRef.current = false;
+          el.style.transform = "";
+        }
+      },
+      () => {},
+    );
+    return () => {
+      controls.stop();
+      if (enterControlsRef.current === controls) enterControlsRef.current = null;
+      enterPlayingRef.current = false;
+    };
+  }, [contentNode, open]);
+  // 接管时的视觉续接基点：= enter 升起中 motion 冻结的 inline 偏移（stop 不回未变换
+  // 位置，视觉顶不变——CSS 时代「cancel 回未变换位置取差」随 motion 驱动画句号）。
+  // inline 一律写 base + dy（animate from the presentation value）；enter 播完后接管
+  // frozenY=0 → base=0。endDrag 归零。
   const dragBaseRef = useRef(0);
-  // 真机诊断计数（sheet-debug 浮层用，flag 关时零开销）。
-  const mvCountRef = useRef(0);
-  const tpCountRef = useRef(0);
 
   // 防滚动抢占：non-passive touchmove 在手势期（非 idle）preventDefault。真机「回弹/
   // 不跟手/拖不动」的来源是 WebKit 把手势当滚动启动并 pointercancel 中断拖拽（cancel 时
@@ -229,7 +276,6 @@ export function MobileSheet({
     const onTouchMove = (e: TouchEvent) => {
       if (dragRef.current.phase !== "idle") {
         e.preventDefault();
-        tpCountRef.current++;
       }
     };
     el.addEventListener("touchmove", onTouchMove, { passive: false });
@@ -250,8 +296,12 @@ export function MobileSheet({
   // 清 inline 交还 Radix 动画（stop 场景 ref 已换，then 跳过清 inline）。
   const springBack = (el: HTMLDivElement, v0: number) => {
     cancelSpringBack();
+    // reduced-motion：瞬时归位（清 inline 回原位），不播弹簧。
+    if (prefersReducedMotion()) {
+      el.style.transform = "";
+      return;
+    }
     const x0 = new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
-    sheetDebug(`spring x0=${Math.round(x0)} v0=${v0.toFixed(2)}`);
     const controls = animate(
       el,
       { y: [x0, 0] },
@@ -280,7 +330,6 @@ export function MobileSheet({
   // 指针离开边界即放弃手势；dragging 期有 capture（leave 被抑制），不受影响。
   const abandonPending = () => {
     if (dragRef.current.phase === "pending") {
-      sheetDebug("drop-out（指针离开 Content，pending 放弃）");
       dragRef.current = { phase: "idle" };
     }
   };
@@ -289,23 +338,17 @@ export function MobileSheet({
     if (!(e.target instanceof Element)) return;
     // 带速滑出进行中不接管（200-300ms 窗口，正在离场的 sheet 不再响应抓取）。
     if (exitControlsRef.current) return;
-    // 起手面分档（真机取证定的根因：450ms 升起播完后手指落在内容区被窄热区拒绝，而人
-    // 「打开→按下拖」的反应必然超过 450ms）：①enter 升起中（getAnimations 非空）内容
-    // 尚未就位无交互意义，整个 Content 可起拖；②播完后按内容可滚性分——不可滚（菜单/
-    // 确认框/prompt 等大多数）整个 Content 可起拖，可滚（历史/文件/实例信息）维持
-    // grab/shd 窄热区保住列表原生滚动。向下才接管（moveDrag 判方向），点按与向上滑不受
-    // 影响。exit 期间（data-state=closed）不放宽。
-    const enterPlaying =
-      e.currentTarget.getAttribute("data-state") === "open" &&
-      e.currentTarget.getAnimations().length > 0;
+    // 起手面分档（真机取证定的根因：enter 升起播完后手指落在内容区被窄热区拒绝，而人
+    // 「打开→按下拖」的反应必然超过 enter 时长——取证时为 450ms，现 120ms 近瞬时档下
+    // 「播完后分档」是主路径）：①enter 升起中内容尚未就位无交互意义，整个 Content 可起
+    // 拖；②播完后按内容可滚性分——不可滚（菜单/确认框/prompt 等大多数）整个 Content 可
+    // 起拖，可滚（历史/文件/实例信息）维持 grab/shd 窄热区保住列表原生滚动。向下才接管
+    //（moveDrag 判方向），点按与向上滑不受影响。exit 期间（data-state=closed）不放宽。
+    const enterPlaying = enterPlayingRef.current;
     const zone = e.target.closest(".grab") ? "grab" : e.target.closest(".shd") ? "shd" : "content";
     if (zone === "content" && !enterPlaying && hasScrollableContent(e.currentTarget)) {
-      sheetDebug(`down zone=content play=0 pend=NO（可滚内容区保窄热区）`);
       return;
     }
-    mvCountRef.current = 0;
-    tpCountRef.current = 0;
-    sheetDebug(`down zone=${zone} play=${enterPlaying ? 1 : 0} pend=YES`);
     dragRef.current = { phase: "pending", startY: e.clientY, pointerId: e.pointerId };
   };
 
@@ -316,7 +359,6 @@ export function MobileSheet({
       const dy = e.clientY - d.startY;
       if (dy <= -DRAG_START_PX) {
         // 向上滑过阈值 = 滚动/选择意图，放弃手势（回 idle 后 touchmove 不再 prevent）。
-        sheetDebug(`drop-up dy=${Math.round(dy)}`);
         dragRef.current = { phase: "idle" };
         return;
       }
@@ -333,32 +375,32 @@ export function MobileSheet({
         dy,
         samples: [{ y: e.clientY, t: e.timeStamp }],
       };
-      // enter spring（批B，375ms）运行期 keyframes transform 压过 inline style——
-      // 「打开即下拉」会在动画播完才跳到手指位置（design review P2）。显式 cancel
-      // 让拖拽立即接管；未在播时是 no-op。只 cancel 不改拖拽状态机。
-      const visTop = e.currentTarget.getBoundingClientRect().top;
-      for (const a of e.currentTarget.getAnimations()) a.cancel();
-      // WebKit：cancel 后 animation-name 仍匹配，样式更新即重建动画实例、keyframes
-      // 重新压过 inline（真机「刚打开必然下拉不成功」的根因）——置 enterKilled 从
-      // className 摘掉 animate-in 串，样式失配让动画彻底死亡（React 离散事件同步
-      // flush，与 inline transform 同帧生效，无跳帧）。
-      setEnterKilled(true);
-      // 视觉续接（animate from the presentation value）：cancel 后元素回未变换位置，
-      // 差值 = 动画尚存的视觉偏移；inline 一律 base + dy，接管瞬间无跳变。
-      dragBaseRef.current = visTop - e.currentTarget.getBoundingClientRect().top;
-      e.currentTarget.style.transition = "";
-      e.currentTarget.style.transform = `translateY(${dragBaseRef.current + dy}px)`;
-      sheetDebug(`take dy=${Math.round(dy)} base=${Math.round(dragBaseRef.current)}`);
-      // 真机校验（一次）：下一帧 inline 期望值与视觉 translateY 是否一致——不一致 =
-      // 动画/keyframes 仍在压过 inline（WebKit 压制实锤）。
+      // enter 运行期接管：motion stop 后元素**冻结在当前 inline 值**（不回未变换位置，
+      // 视觉顶不变）。base = 冻结偏移，inline = base + dy =「动画偏移 + 手指自 down 的
+      // 全量位移」——与 CSS 时代 base+dy 语义一致（enter 播完后 frozenY=0 → base=0，
+      // dy 多少移多少，接管步位移不丢；升起中段 frozenY>0 → 从停止点续跟，接管瞬间
+      // 只跳 dy≤起步阈值的小位移，比 CSS 时代 cancel 回 0 再跳 base+dy 小得多）。
+      // stop 即死无重建面（§21 防线随之退役）。
       const el = e.currentTarget;
-      const expected = dragBaseRef.current + dy;
+      const frozenY = new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
+      enterControlsRef.current?.stop();
+      enterControlsRef.current = null;
+      enterPlayingRef.current = false;
+      dragBaseRef.current = frozenY;
+      el.style.transition = "";
+      // 与跟手/矫正写入同式（visualDragY）：dy 在起步阈值~视口高内恒等，超界单事件
+      // （快速甩动的大 gap）下 rubber-band 即时生效，不会先 paint 一帧未阻尼超界值。
+      el.style.transform = `translateY(${dragBaseRef.current + visualDragY(dy, window.innerHeight)}px)`;
+      // motion stop 的「最后一写」：stop 时已在 rAF 队列中的回调仍会执行一次，把 inline
+      // 从「接管写入的 frozenY+dy」覆盖回 motion 轨迹值（实测 60.24 → 46.47，倒退 ~14px）。
+      // 矫正写入注册于同帧 rAF（注册序晚于 motion 已排队的回调）→ 执行序在后 → paint 前
+      // 最后写入生效，同帧矫正零跳变。phase 仍是 dragging 才矫正（松手/关闭的 transform
+      // 已归回弹/exit 路径管，不抢）。
       requestAnimationFrame(() => {
-        const visY = new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
-        const diff = Math.round(Math.abs(visY - expected));
-        sheetDebug(
-          `chk inline=${Math.round(expected)} visY=${Math.round(visY)} ${diff < 2 ? "ok" : "MISMATCH!"}`,
-        );
+        const d2 = dragRef.current;
+        if (d2.phase === "dragging" && !springControlsRef.current && !exitControlsRef.current) {
+          el.style.transform = `translateY(${dragBaseRef.current + visualDragY(d2.dy, window.innerHeight)}px)`;
+        }
       });
       return;
     }
@@ -367,14 +409,12 @@ export function MobileSheet({
     const dy = e.clientY - d.startY;
     const samples = [...d.samples, { y: e.clientY, t: e.timeStamp }].slice(-8);
     dragRef.current = { ...d, dy, samples };
-    mvCountRef.current++;
     e.currentTarget.style.transform = `translateY(${dragBaseRef.current + visualDragY(dy, window.innerHeight)}px)`;
   };
 
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = dragRef.current;
     if (d.phase === "idle") return;
-    const kind = e.type === "pointercancel" ? "PCANCEL" : "up";
     dragRef.current = { phase: "idle" };
     if (d.phase !== "dragging") return;
     const el = e.currentTarget;
@@ -391,16 +431,19 @@ export function MobileSheet({
       // exit 路径无初速通道，固定 200ms ease-in 不带速度信息）。到位（finished）后才
       // onOpenChange(false) 走常规 exit 卸载路径，且保留 --tw-exit-translate-y 注入（CSS
       // exit 的 to 若回落 16px 会让 sheet 从屏外闪回，必须同在屏外）。滑出期间 startDrag
-      // 早退，不接管正在离场的 sheet。
+      // 早退，不接管正在离场的 sheet。reduced-motion：不播滑出弹簧，直接走关闭路径
+      //（exit CSS 本身已被站点级兜底压为瞬时）。
+      if (prefersReducedMotion()) {
+        el.style.transform = "";
+        onOpenChangeRef.current(false);
+        return;
+      }
       const curY = new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
       const targetY = window.innerHeight - rect.top + DISMISS_SLIDE_PAST_PX;
       exitControlsRef.current = animate(
         el,
         { y: [curY, targetY] },
         { type: "spring", bounce: 0, duration: 0.3, velocity: Math.max(0, v) * 1000 },
-      );
-      sheetDebug(
-        `${kind} dy=${Math.round(d.dy)} v=${v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> DISMISS(exit)`,
       );
       exitControlsRef.current.finished.then(
         () => {
@@ -423,9 +466,6 @@ export function MobileSheet({
     // 保留，其幅度已被投影判定限制（能进 bounce 的 v 都不足收起阈值，下冲 <1px）。
     // 向上残余速度的钳 0 在 springBack 内部（velocity 传入前）。
     springBack(el, v);
-    sheetDebug(
-      `${kind} dy=${Math.round(d.dy)} v=${v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> bounce`,
-    );
   };
 
   return (
@@ -445,18 +485,10 @@ export function MobileSheet({
           ref={setContentNode}
           className={cn(
             "msheet outline-none",
-            // programmatic enter = spring 全程升起（移动端动效批）：位移从 16px 浮起改
-            // 屏幕底完整升起（[--tw-enter-translate-y:100%] 变量注入，机制同 §16——
-            // tw-animate 的 enter keyframes 消费该变量），去掉 fade（iOS sheet 是纯
-            // 位移，升起途中不透明，dim 交给 scrim）；时长走 sheet 档 token（100%
-            // 路程下 375ms 偏陡）。拖拽状态机、exit keyframes（inline transform 作
-            // 起点）与 fill-mode-forwards 一律不动；「打开即下拉」= getAnimations
-            // cancel + enterKilled 摘类（WebKit 重建动画防护，见 state 处注释）。
-            ...(enterKilled
-              ? []
-              : [
-                  "data-[state=open]:animate-in data-[state=open]:[--tw-enter-translate-y:100%] data-[state=open]:[--tw-ease:var(--spring-standard)] data-[state=open]:[--tw-animation-duration:var(--spring-sheet-duration)]",
-                ]),
+            // enter（全程升起）= motion 弹簧驱动（见 useLayoutEffect：近瞬时档 120ms
+            // 读 token --spring-sheet-duration，带 bounce 0.12，升起途中不透明、dim 交
+            // scrim）。CSS enter 类串已移除；exit keyframes（inline transform 作起点）
+            // 与 fill-mode-forwards 不动——关闭路径仍是 CSS。
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-4 data-[state=closed]:[--tw-animation-duration:var(--duration-exit)] data-[state=closed]:fill-mode-forwards",
           )}
           onPointerCancel={endDrag}

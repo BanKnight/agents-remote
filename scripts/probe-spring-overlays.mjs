@@ -1,17 +1,19 @@
-// 批B（动效体系）弹层 spring 化探针：dialog / dropdown / mobile-sheet 的 enter
-// 动画换 CSS linear() 弹簧曲线（--spring-standard/-snappy）后，用 computed style
-// 硬数据断言 timing/duration 真实生效（类名落 DOM ≠ CSS 规则胜出——animate-in 的
-// animation shorthand 会重置长属性，我们的注入走自定义属性机制，必须实测验证）。
+// 弹层 spring 探针：dialog / dropdown 的 enter = CSS linear() 弹簧曲线
+// （--spring-standard/-snappy，近瞬时档 120ms），用 computed style 硬数据断言
+// timing/duration 真实生效（类名落 DOM ≠ CSS 规则胜出——animate-in 的 animation
+// shorthand 会重置长属性，我们的注入走自定义属性机制，必须实测验证）；
+// mobile-sheet enter 已换 motion rAF 弹簧（时长读 --spring-sheet-duration），
+// 用 rAF 采样断言全程升起真实发生。
 //
 // 覆盖单测验不到的行为（DOM computed 硬数据，禁截图）：
-//   Part 1（桌面 1440×900）：SettingsDialog enter = linear( + 0.525s（spring
-//     standard）；overlay scrim 保持默认 ease（快速 dim，不跟 spring）；Esc 关闭
+//   Part 1（桌面 1440×900）：SettingsDialog enter = linear( + 0.12s（spring
+//     standard 近瞬时档）；overlay scrim 保持默认 ease（快速 dim，不跟 spring）；Esc 关闭
 //     exit 保持 0.15s ease（快速离开）；reduced-motion 下动画即时到位（全局兜底）。
-//   Part 2（桌面）：侧栏「新建会话」DropdownMenu enter = linear( + 0.375s
+//   Part 2（桌面）：侧栏「新建会话」DropdownMenu enter = linear( + 0.12s
 //     （spring snappy）+ transform-origin 锚定触发源（非 center）。
-//   Part 3（移动 390×844）：会话页「切换」MobileSheet enter = linear( + 0.45s + 全程升起；
-//     拖拽状态机类不验证（真机复验清单项）。
-//   Part 4（node 静态）：dist CSS 产物中 popover/dropdown/sheet 的 snappy 注入与
+//   Part 3（移动 390×844）：会话页「切换」MobileSheet = motion 弹簧全程升起
+//     （起点屏底、递减收敛、inline 清空）；拖拽状态机类不验证（真机复验清单项）。
+//   Part 4（node 静态）：dist CSS 产物中 popover/dropdown 的 snappy 注入与
 //     dialog 的 standard 注入都在场（popover 无稳定业务入口可实测，以同类规则
 //     产物断言补位——PopoverContent 与 DropdownMenuContent 消费同一份类）。
 //
@@ -143,8 +145,8 @@ async function assertEnter(page, selector, wantDuration, label) {
     "产物含 --spring-snappy 纯引用（同曲线单源）",
   );
   ok(standardDecls >= 1, `dialog standard 注入规则在场（${standardDecls} 条）`);
-  // popover + dropdown + mobile-sheet 三处写的是同一个 arbitrary 类字符串 → Tailwind
-  // 合并为一条共用规则（机制正常），≥1 即覆盖全部三处消费端。
+  // popover + dropdown 两处写的是同一个 arbitrary 类字符串 → Tailwind 合并为一条共用
+  // 规则（机制正常），≥1 即覆盖全部消费端（mobile-sheet enter 已换 motion 驱动）。
   ok(snappyDecls >= 1, `snappy 注入规则在场（实测 ${snappyDecls} 条，三处共用）`);
 
   const browser = await chromium.launch();
@@ -164,7 +166,7 @@ async function assertEnter(page, selector, wantDuration, label) {
     await d.goto(`${WEB_ORIGIN}/projects/${PROJECT}`);
     await d.waitForSelector('button[aria-label="新建会话"]', { timeout: 10000 });
     await d.locator('button[aria-label="新建会话"]').click();
-    await assertEnter(d, '[data-slot="dropdown-menu-content"]', "0.375s", "dropdown content");
+    await assertEnter(d, '[data-slot="dropdown-menu-content"]', "0.12s", "dropdown content");
     const origin = await d
       .locator('[data-slot="dropdown-menu-content"][data-state="open"]')
       .evaluate((node) => getComputedStyle(node).transformOrigin);
@@ -172,7 +174,7 @@ async function assertEnter(page, selector, wantDuration, label) {
 
     console.log("Part 1: Dialog enter spring standard + scrim ease + exit 保持 + reduced-motion");
     await d.getByRole("menuitem", { name: "Claude" }).click();
-    await assertEnter(d, '[data-slot="dialog-content"]', "0.525s", "dialog content");
+    await assertEnter(d, '[data-slot="dialog-content"]', "0.12s", "dialog content");
 
     const overlayTiming = await d
       .locator('[data-slot="dialog-overlay"][data-state="open"]')
@@ -235,8 +237,11 @@ async function assertEnter(page, selector, wantDuration, label) {
     await d.keyboard.press("Escape");
     await desktop.close();
 
-    // ── Part 3：移动 MobileSheet（会话页「切换」） ──
-    console.log("Part 3: MobileSheet programmatic enter spring snappy（拖拽路径未触碰）");
+    // ── Part 3：移动 MobileSheet（会话页「切换」）——enter 已换 motion rAF 弹簧
+    // （时长读 token --spring-sheet-duration，CSS enter 类串删除）。断言 = 放慢变量
+    // 后页内 rAF 采样 m42 序列：起点在屏底附近、逐帧递减（升起真实发生）、收敛到 0
+    // 且 inline 清空（finished 交还）。拖拽状态机类不验证（真机复验清单项）。
+    console.log("Part 3: MobileSheet motion 弹簧全程升起（拖拽路径未触碰）");
     const mob = await browser.newContext({
       viewport: { width: 390, height: 844 },
       deviceScaleFactor: 3,
@@ -249,21 +254,58 @@ async function assertEnter(page, selector, wantDuration, label) {
     await login(m);
     await m.goto(`${WEB_ORIGIN}/projects/${PROJECT}/session/${AGENT.id}`);
     await m.waitForSelector(".nav h1 button", { timeout: 10000 });
-    await m.locator(".nav h1 button").click();
-    await assertEnter(m, ".msheet", "0.45s", "mobile-sheet content");
-    const msheetTiming = await m
-      .locator('.msheet[data-state="open"]')
-      .evaluate((node) => getComputedStyle(node).animationTimingFunction);
-    ok(
-      msheetTiming.includes("linear("),
-      "mobile-sheet timing 为 spring（拖拽路径类未动，exit 仍走 inline 起点）",
+    await m.evaluate(() =>
+      document.documentElement.style.setProperty("--spring-sheet-duration", "1600ms"),
     );
-    // 移动端动效批：enter 位移从 16px 浮起改全程升起——[--tw-enter-translate-y:100%]
-    // 变量注入落盘（computed 自定义属性可读）；去 fade 由 CSS 无 fade 类保证（静态）。
-    const msheetEnterY = await m
+    // 采样器在 click 前挂起：sheet 未开时继续 rAF 等待（上限兜底），首样本必为弹簧
+    // 起点（844）——挂晚了首样本会落在弹簧已走过大半的中段（CDP 往返负载下 m42 可低
+    // 至 <700），起点断言变成时序彩票。
+    await m.evaluate(() => {
+      window.__rise = [];
+      let waited = 0;
+      const tick = () => {
+        const el = document.querySelector(".msheet");
+        if (!el) {
+          if (waited++ > 300) return; // ~5s 未开即弃（waitFor 会先超时）
+          requestAnimationFrame(tick);
+          return;
+        }
+        const t = getComputedStyle(el).transform;
+        const v = t === "none" ? 0 : new DOMMatrixReadOnly(t).m42;
+        window.__rise.push(v);
+        if ((v === 0 && window.__rise.length > 5) || window.__rise.length > 200) return;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await m.locator(".nav h1 button").click();
+    await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
+    await m
+      .waitForFunction(() => (window.__rise?.length ?? 0) > 5 && window.__rise.at(-1) === 0, null, {
+        timeout: 5000,
+      })
+      .catch(() => {});
+    const rise = await m.evaluate(() => window.__rise ?? []);
+    ok(
+      rise.length > 10 && rise[0] > 700,
+      `mobile-sheet: 起点在屏底附近（首帧 m42=${(rise[0] ?? 0).toFixed(0)}，${rise.length} 帧）`,
+    );
+    ok(
+      rise.some((v, i) => i > 0 && v < rise[i - 1]),
+      "mobile-sheet: 升起位移真实发生（存在递减帧）",
+    );
+    ok(
+      Math.min(...rise, 1e9) < 5,
+      `mobile-sheet: 收敛到原位（min m42=${Math.min(...rise, 1e9).toFixed(1)}）`,
+    );
+    const riseInline = await m
       .locator('.msheet[data-state="open"]')
-      .evaluate((node) => getComputedStyle(node).getPropertyValue("--tw-enter-translate-y").trim());
-    ok(msheetEnterY === "100%", `mobile-sheet enter 位移为全程升起 100%（实测 ${msheetEnterY}）`);
+      .evaluate((node) => node.style.transform)
+      .catch(() => "(已卸载)");
+    ok(riseInline === "", `mobile-sheet: 收敛后 inline 清空（实测 "${riseInline}"）`);
+    await m.evaluate(() =>
+      document.documentElement.style.removeProperty("--spring-sheet-duration"),
+    );
     await mob.close();
   } finally {
     await browser.close();

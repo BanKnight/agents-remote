@@ -1385,6 +1385,20 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **待真机复验（移动批新项 + 修复）**：sheet 全程升起手感（450ms spring）/ 菜单逐项入场 / 触屏按压回缩分层手感（行 0.98 vs 按钮 0.97）/ **「打开即下拉」手指落在 sheet 任意位置（包括内容区）往下拖 → 立刻跟手（`bdce488` 热区分档 + `6aa7c27` 摘类双修复；WebKit 真机是唯一能复现原 bug 的环境，重点验）** / **iOS `:active` 按压缩放生效且滚动时无粘滞**（iOS Safari 滚动会清 ：active，需真机确认）+ PWA standalone 下生效。
 
+### 弹层 enter 近瞬时档 + sheet enter motion 化收口（2026-10-04）
+
+**背景与拍板**：用户反馈「弹出浮层显得好慢」（sheet-debug 诊断期的 450→1600ms 慢速倍率放大了观感）。经三轮对齐拍板：**保留弹簧曲线、时长压到 ~120ms 近瞬时观感**（曲线形状不变只缩时间轴）；调试浮层完成使命即删。**Part 2（Dialog/Popover/Dropdown 换 motion 可中断 spring）取消**：静态打开无中断场景，120ms 下 motion/CSS 无感差异——用户本意是「快」，CSS 提速即达。
+
+**token 收敛**：三档 spring 时长收敛 120ms、保留分档结构备未来差异化——`--spring-standard-duration`（dialog）/`--spring-snappy-duration`（popover/dropdown）/`--spring-sheet-duration`（mobile-sheet）。`--duration-exit: 150ms` 与 scrim fade（默认 150ms ease）不动（关闭快速离开语义不变）。dialog 的 zoom/blur materialize 与 ActionMenu 菜单 stagger（28ms 递增）保留（与 120ms 升起叠加无冲突）。
+
+**sheet enter 换 motion 驱动（Part 1 收口）**：CSS enter 类串（`[--tw-enter-translate-y:100%]` 变量注入）删除，换 `useLayoutEffect` + `animate(el, {y:[y0,0]}, {type:"spring", bounce:0.12})`——paint 前置起点防首帧闪终态；时长读 token（**JS/CSS 时长单源**，页内 `setProperty` 放慢即探针 fixture）；reduced-motion 直达终态（CSS 站点级兜底管不到 JS 驱动）；**§21 的 WebKit「cancel 后按样式匹配重建动画」防线退役**（motion 是 rAF 驱动 inline，不经样式匹配，stop 即死无重建面）。`enterKilled` state、`getAnimations()` cancel 兜底随之删除。
+
+**探针 fixture 方案换代**：WAAPI 定格（`getAnimations().pause()`）对 motion rAF 动画拿不到实例——换代为**页内放慢 `--spring-sheet-duration`（1600ms）+ 跨起步阈值接管即定格**（stop 后 transform 纯 inline 驱动 = 静止基准）。`waitStillTop`（页内 rAF 帧差 <0.5px 判静止）消 CDP 事件派发 race；其「1 帧静止」可能是 enter 慢速尾段的误判，由 **visShift=30±0.5 硬容差断言兜底**（1:1 跟手是硬约束）。
+
+**motion stop「最后一写」与本轮组件修复**：调试中实锤 motion 13.4.4 的行为——**`stop()` 时已在 rAF 队列中的回调仍会执行一次「最后一写」**，把接管写入的 `frozenY+dy` 覆盖回 motion 轨迹值（实测倒退 ~14px，探针 trail 逐帧实抓）。修复 = 接管分支 stop 后注册**同帧 rAF 矫正写入**（`translateY(base + visualDragY(最新dy))`，注册序晚于 motion 已排队回调 → paint 前最后写入生效，同帧矫正零跳变；phase 仍是 dragging 且无回弹/exit controls 才矫正）。**base 语义同步修正**：base = frozenY（motion stop 冻结的 inline 偏移），inline = base + dy =「动画偏移 + 手指全量位移」——与 CSS 时代 base+dy 语义一致；中途曾试 `frozenY - dy`（增量语义）被探针实锤错误（播完后接管丢失 8px 起步位移 → 22.5px），`frozenY` 直取正确。**用户禁止截图验证 UI 的纪律下，这轮的探针逐帧 trail（rAF 采样 inline/top）+ 组件埋点（page console 转发）是定位 motion stop 时序的唯一路径**。
+
+**验证**：probe-mobile-motion **45 断言**全绿（三处 visShift 精确 30.0，容差收紧 ±0.5）/ probe-spring-overlays **19 断言**全绿（dropdown/dialog duration 0.12s + sheet motion 升起 rAF 采样 + reduced-motion 1e-05s）/ 全门禁绿 + CSS 硬闸（188771 字节）+ tokens 机检 0 违例。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

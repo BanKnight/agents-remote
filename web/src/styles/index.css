@@ -45,22 +45,23 @@
      design review P2）——显式 token 后 exit 消费点一律 var() 引用。 */
   --duration-exit: 150ms;
   /* Spring timing（Apple 流体接口 §4：临界阻尼无过冲；response 仅缩放时间轴——
-     临界阻尼 x(t)=1-(1+ωt)e^(-ωt) 的形状只由 ζ=1 决定，一条采样两档共用）。
-     linear() 采样自 response=0.35s（w=2π/0.35，收敛至 0.525s）；snappy 档 =
-     同曲线 × (0.25/0.35) 时长（≈375ms，--spring-snappy 纯引用同一条采样——
-     形状只由 ζ 决定，时长缩放即可）。时长 token（design review P1：换算关系
-     收单源，改 response 只动这里）：*-duration = 各档收敛时长，消费点一律
-     var() 引用禁止散写 ms。消费：弹层 animation 的 timing-function/duration，
-     经 [--tw-ease:…] / [--tw-animation-duration:…] 注入——自定义属性不参与
-     animation shorthand 的长属性重置，机制上必生效。linear() 不支持的旧引擎
-     在使用点 IACVT 回退 initial（ease），与改造前持平。
+     临界阻尼 x(t)=1-(1+ωt)e^(-ωt) 的形状只由 ζ=1 决定，一条采样多档共用）。
+     linear() 采样自 response=0.35s（w=2π/0.35）。时长 token（design review P1：
+     换算关系收单源）：*-duration = 各档时长，消费点一律 var() 引用禁止散写 ms。
+     弹层 enter 近瞬时档（2026-10-04 用户拍板「保留动效只大幅提速」）：三档收敛
+     120ms——曲线形状不变只缩时间轴（dialog/popover/dropdown 档；sheet 档 enter 随
+     motion 化曲线另换 bounce 0.12 弹簧，仅时长 token 语义延续），观感「瞬时就出来了」；
+     保留分档结构备未来差异化。消费：弹层 animation 的 timing-function/duration，经 [--tw-ease:…] /
+     [--tw-animation-duration:…] 注入——自定义属性不参与 animation shorthand 的
+     长属性重置，机制上必生效。mobile-sheet 的 motion enter 同读 sheet 档变量
+     （JS/CSS 时长单源，探针可页内放慢作确定性 fixture）。linear() 不支持的旧
+     引擎在使用点 IACVT 回退 initial（ease），与改造前持平。
 */
   --spring-snappy: var(--spring-standard);
-  --spring-standard-duration: 525ms;
-  --spring-snappy-duration: 375ms;
-  /* sheet 全程升起档（移动端动效批）：位移从 16px 浮起改为屏幕底完整升起后，375ms
-     snappy 对 100% 路程偏陡，450ms 贴 iOS UISheetPresentationController 常见时长。 */
-  --spring-sheet-duration: 450ms;
+  --spring-standard-duration: 120ms;
+  --spring-snappy-duration: 120ms;
+  /* sheet 升起档：原 450ms 贴 iOS 常见时长（100% 路程），随弹层近瞬时档收敛 120ms。 */
+  --spring-sheet-duration: 120ms;
   --spring-standard: linear(
     0,
     0.0802 5%,
