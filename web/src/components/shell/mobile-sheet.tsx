@@ -2,6 +2,8 @@ import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from 
 import { useEffect, useRef, useState } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
+import { animate } from "motion";
+
 import { cn } from "@/lib/utils";
 
 import { sheetDebug } from "./sheet-debug";
@@ -20,12 +22,10 @@ const DISMISS_HEIGHT_RATIO = 0.25;
 const DISMISS_PROJECT_MS = 300;
 const DISMISS_VELOCITY_PX_MS = 0.5;
 const DRAG_START_PX = 6;
-/** 回弹弹簧：response 300ms 临界阻尼（Apple sheet 惯例 damping 1.0）。单位制 px/ms：
- * k = (2π/T)²，c = 2√k（= 2ω，ζ=1）；半隐式欧拉积分，初速度 = 手指松手速度——快甩
- * 带速下冲过冲再收回、慢拖平滑收回，固定时长的 ease-out 做不到速度继承（手感假）。 */
-const SPRING_RESPONSE_MS = 300;
-const SPRING_STIFFNESS = ((2 * Math.PI) / SPRING_RESPONSE_MS) ** 2; // ≈4.39e-4 /ms²
-const SPRING_DAMPING = 2 * Math.sqrt(SPRING_STIFFNESS); // ≈0.0419 /ms（ζ=1）
+/** 回弹弹簧参数：response 300ms 临界阻尼（bounce 0，Apple sheet 惯例 damping 1.0），
+ * 初速度 = 手指松手窗口速度——快甩带速下冲过冲再收回、慢拖平滑收回。物理由 motion
+ * 积分（velocity 选项单位 units/s，内部 px/ms 值 ×1000 换算）。 */
+const SPRING_RESPONSE_S = 0.3;
 /** 拖拽 dismiss 滑出：顶边推过视口底的余量（防亚像素残边，fill-forwards 保持出屏终态）。 */
 const DISMISS_SLIDE_PAST_PX = 40;
 /** 拖拽 dismiss 滑出时长：从松手位置滑出全屏比常规关闭（16px+fade）距离长，稍缓贴近 iOS。 */
@@ -58,33 +58,12 @@ export function hasScrollableContent(el: HTMLElement): boolean {
 }
 
 /**
- * 回弹弹簧一步积分（半隐式欧拉单子步）。运行时 rAF 与单测共用同一份积分代码——
- * CDP 输入节流做不出高松手速度（4 步快甩实测只得 0.17px/ms），速度继承的数值验证
- * 在单测，浏览器探针只断言「回弹发生且收敛」。
+ * 回弹弹簧物理 = motion 库（`animate` 命令式，bounce 0 + duration 0.3 = 临界阻尼；velocity
+ * 单位 units/s）。此前手写半隐式欧拉积分 + 数值单测（用户拍板「用库治本，编译有裁剪不
+ * 担心体积」后移交库实现——判定/测速层仍在本文件：投影、velocity-first、窗口速度、越顶
+ * 钳制）。CDP 输入节流做不出高松手速度（4 步快甩实测只得 0.17px/ms），弹簧收敛行为由
+ * 浏览器探针断言。原 springStep/simulateSpringBack 纯函数随手写积分移除（入库即删）。
  */
-export function springStep(x: number, v: number, h: number): { x: number; v: number } {
-  v += (-SPRING_STIFFNESS * x - SPRING_DAMPING * v) * h;
-  x += v * h;
-  return { x, v };
-}
-
-/** 模拟回弹到收敛，返回峰值与收敛时长（单测用，验证速度继承与收敛性）。 */
-export function simulateSpringBack(x0: number, v0: number): { peak: number; settleMs: number } {
-  let x = x0;
-  let v = v0;
-  let t = 0;
-  let peak = x0;
-  while (t < 2000) {
-    const { x: x1, v: v1 } = springStep(x, v, 4);
-    const { x: x2, v: v2 } = springStep(x1, v1, 4);
-    x = x2;
-    v = v2;
-    t += 8;
-    peak = Math.max(peak, x);
-    if (Math.abs(x) < 0.5 && Math.abs(v) < 0.005) return { peak, settleMs: t };
-  }
-  return { peak, settleMs: t };
-}
 
 /** 松手速度窗口：从松手时刻回看这么长的时间取净位移（iOS UIPanGestureRecognizer 惯例）。 */
 const VELOCITY_WINDOW_MS = 100;
@@ -182,11 +161,13 @@ export function MobileSheet({
   // data-[state=open] 变体失配不产生动画（exit 的 animate-out 独立类不受影响），Content
   // 卸载后下次打开正常播 enter。
   const [enterKilled, setEnterKilled] = useState(false);
-  // 回弹弹簧的 rAF 句柄：拖拽中断/关闭时取消，防旧弹簧跟新手势或 exit 动画抢 transform。
-  const springRafRef = useRef(0);
+  // 回弹弹簧的 motion controls：拖拽中断/关闭时 stop，防旧弹簧跟新手势或 exit 动画抢
+  // transform。finished.then 里以「ref 仍指向自己」判定自然收敛（stop 后 resolve 但 ref
+  // 已换/已清，跳过清 inline）。
+  const springControlsRef = useRef<ReturnType<typeof animate> | null>(null);
   const cancelSpringBack = () => {
-    if (springRafRef.current) cancelAnimationFrame(springRafRef.current);
-    springRafRef.current = 0;
+    springControlsRef.current?.stop();
+    springControlsRef.current = null;
   };
   useEffect(() => {
     if (!open) {
@@ -230,32 +211,30 @@ export function MobileSheet({
     };
   }, [contentNode]);
 
-  // 回弹 = 临界阻尼弹簧从**当前视觉位置** + 手指松手速度积分到 0（velocity handoff：
-  // 快甩带速下冲过冲再收回、慢拖平滑收回；固定时长 ease-out 无速度信息 = 手感假）。
-  // 从 computed transform 读起点（presentation value）；拖拽再接管/关闭时经
-  // cancelSpringBack 取消，收敛后清 inline 交还 Radix 动画。
+  // 回弹 = 临界阻尼弹簧从**当前视觉位置** + 手指松手窗口速度回 0（velocity handoff：
+  // 快甩带速下冲过冲再收回、慢拖平滑收回）。物理由 motion 积分（bounce 0 + duration
+  // 0.3 = 临界阻尼；velocity 单位 units/s → px/ms ×1000）；起点显式读 computed transform
+  // 的 m42（presentation value）。拖拽再接管/关闭时经 cancelSpringBack stop；自然收敛后
+  // 清 inline 交还 Radix 动画（stop 场景 ref 已换，then 跳过清 inline）。
   const springBack = (el: HTMLDivElement, v0: number) => {
     cancelSpringBack();
-    let x = new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
-    sheetDebug(`spring x0=${Math.round(x)} v0=${v0.toFixed(2)}`);
-    let v = v0;
-    let last = performance.now();
-    const tick = (now: number) => {
-      const dt = Math.min(now - last, 32);
-      last = now;
-      for (let i = 0; i < 2; i++) {
-        v += (-SPRING_STIFFNESS * x - SPRING_DAMPING * v) * (dt / 2);
-        x += v * (dt / 2);
-      }
-      if (Math.abs(x) < 0.5 && Math.abs(v) < 0.005) {
-        el.style.transform = "";
-        springRafRef.current = 0;
-        return;
-      }
-      el.style.transform = `translateY(${x}px)`;
-      springRafRef.current = requestAnimationFrame(tick);
-    };
-    springRafRef.current = requestAnimationFrame(tick);
+    const x0 = new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
+    sheetDebug(`spring x0=${Math.round(x0)} v0=${v0.toFixed(2)}`);
+    const controls = animate(
+      el,
+      { y: [x0, 0] },
+      { type: "spring", bounce: 0, duration: SPRING_RESPONSE_S, velocity: Math.max(0, v0) * 1000 },
+    );
+    springControlsRef.current = controls;
+    controls.finished.then(
+      () => {
+        if (springControlsRef.current === controls) {
+          el.style.transform = "";
+          springControlsRef.current = null;
+        }
+      },
+      () => {},
+    );
   };
 
   // pending 期失联清理：pending 未 capture，指针移出 Content 后 move/up 都收不到——
@@ -392,7 +371,8 @@ export function MobileSheet({
     // dy 已 clamp ≥0（sheet 不能高于原位），回弹若携带向上初速会让弹簧越过原位再垂落
     //（「弹过头又掉下来」的果冻感，越顶与拖拽期的硬边界自相矛盾）；向下残余速度 = 惯性
     // 保留，其幅度已被投影判定限制（能进 bounce 的 v 都不足收起阈值，下冲 <1px）。
-    springBack(el, Math.max(0, v));
+    // 向上残余速度的钳 0 在 springBack 内部（velocity 传入前）。
+    springBack(el, v);
     sheetDebug(
       `${kind} dy=${Math.round(d.dy)} v=${v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> bounce`,
     );
