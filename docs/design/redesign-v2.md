@@ -1375,6 +1375,8 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **收起判定换 snap point 动量投影（`7c590b6`，用户反馈「慢拖也都有回弹，好奇怪」）**：固定 96px 绝对位移阈值下慢拖几乎不可达（40–80px 松手只能弹回）。换 iOS sheet 惯例：以「当前位移 + 速度 × 300ms 视野」预估松手后自然落点，越过 **max(64px, sheet 高度 × 25%)** 或纯甩动（≥24px 且 v ≥ 0.5px/ms）即收起——阈值随 sheet 高度自适应，慢拖过 1/4 也收。probe 48 断言（回弹 fixture 改 30px 慢拖压投影 + 新增 1b7 慢拖 70px 投影收起）。
 
+**速度窗口 + velocity-first（`e7fb156` + `65fa654`，用户反馈「慢拖回弹好奇怪」「拉得快反而有回弹」）**：①松手速度从「最后一次 move 的瞬时值」改为**从松手时刻回看 100ms 的窗口净速度**（apple-design §2「track a short velocity/position history, not just the current point」）——停停走走的慢拖在停顿后松手，旧瞬时速度被注入弹簧 → 向下过冲；窗口语义让停顿自然计入分母（停住 300ms 松手 = 0）。判定与动画共用同一速度值。②去掉 24px 最小行程门（velocity-first：「reverse vs. commit 看速度不看位置」）——短距快甩不再被拦成猛回弹。probe 48 断言全绿。
+
 **待真机复验（移动批新项 + 修复）**：sheet 全程升起手感（450ms spring）/ 菜单逐项入场 / 触屏按压回缩分层手感（行 0.98 vs 按钮 0.97）/ **「打开即下拉」手指落在 sheet 任意位置（包括内容区）往下拖 → 立刻跟手（`bdce488` 热区分档 + `6aa7c27` 摘类双修复；WebKit 真机是唯一能复现原 bug 的环境，重点验）** / **iOS `:active` 按压缩放生效且滚动时无粘滞**（iOS Safari 滚动会清 ：active，需真机确认）+ PWA standalone 下生效。
 
 ## §7 待定项跟踪
