@@ -108,4 +108,12 @@ describe("sampleVelocity（松手速度窗口）", () => {
   test("空样本 → 0", () => {
     expect(sampleVelocity([], 100)).toBe(0);
   });
+
+  test("往回推（向上收手）→ 返回负值（组件层钳 0，回弹不越顶）", () => {
+    const samples = [
+      { y: 100, t: 0 },
+      { y: 80, t: 200 },
+    ];
+    expect(sampleVelocity(samples, 200)).toBeCloseTo(-0.1, 2);
+  });
 });

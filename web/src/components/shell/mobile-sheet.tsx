@@ -388,7 +388,11 @@ export function MobileSheet({
     }
     // 回弹：弹簧从当前视觉位置 + 松手窗口速度积分回 0（速度继承），收敛后清 inline 交还
     // Radix 动画；拖拽再接管 / 关闭时经 cancelSpringBack 取消。
-    springBack(el, v);
+    // 回弹：弹簧从当前视觉位置 + 松手窗口速度积分回 0。**向上残余速度钳为 0**——拖拽期
+    // dy 已 clamp ≥0（sheet 不能高于原位），回弹若携带向上初速会让弹簧越过原位再垂落
+    //（「弹过头又掉下来」的果冻感，越顶与拖拽期的硬边界自相矛盾）；向下残余速度 = 惯性
+    // 保留，其幅度已被投影判定限制（能进 bounce 的 v 都不足收起阈值，下冲 <1px）。
+    springBack(el, Math.max(0, v));
     sheetDebug(
       `${kind} dy=${Math.round(d.dy)} v=${v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> bounce`,
     );
