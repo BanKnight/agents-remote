@@ -226,10 +226,11 @@ async function pressAssert(page, sel, locator, label) {
   );
   await m.mouse.move(grab.x + grab.width / 2, grab.y + grab.height / 2);
   await m.mouse.down();
-  // 分步下拖 40px，步间 30ms 压低末速（v≈0.33px/ms < 0.5，防误判惯性 dismiss）。
+  // 分步下拖 30px，步间 140ms 压低末速（v≈0.05px/ms → 投影 30+16=46 < 64 阈值，
+  // 走回弹分支）。
   for (let i = 1; i <= 4; i++) {
-    await m.mouse.move(grab.x + grab.width / 2, grab.y + grab.height / 2 + i * 10);
-    await m.waitForTimeout(30);
+    await m.mouse.move(grab.x + grab.width / 2, grab.y + grab.height / 2 + i * 7.5);
+    await m.waitForTimeout(140);
   }
   const during = await m.evaluate(() => {
     const el = document.querySelector(".msheet");
@@ -242,12 +243,12 @@ async function pressAssert(page, sel, locator, label) {
       cls: el.className,
     };
   });
-  // 视觉跟手且无跳变：手指移 40px，sheet 视觉顶同移 40px（±3 容差）——修复前直接写
-  // translateY(dy) 会从升起中段瞬跳到近终态再跟手（位移 = 40-base ≠ 40）。
+  // 视觉跟手且无跳变：手指移 30px，sheet 视觉顶同移 30px（±3 容差）——修复前直接写
+  // translateY(dy) 会从升起中段瞬跳到近终态再跟手（位移 = 30-base ≠ 30）。
   const visShift = during.top - top0;
   ok(
-    Math.abs(visShift - 40) <= 3,
-    `打开即下拉: 手指移 40px 视觉跟手无跳变（实测视觉移 ${visShift.toFixed(1)}px）`,
+    Math.abs(visShift - 30) <= 3,
+    `打开即下拉: 手指移 30px 视觉跟手无跳变（实测视觉移 ${visShift.toFixed(1)}px）`,
   );
   const inlineN = Number.parseFloat(during.inline.replace("translateY(", "")) || 0;
   ok(
@@ -297,8 +298,8 @@ async function pressAssert(page, sel, locator, label) {
   await m.mouse.move(grab2.x + grab2.width / 2, grab2.y + 80); // 内容区（菜单项上），非热区
   await m.mouse.down();
   for (let i = 1; i <= 4; i++) {
-    await m.mouse.move(grab2.x + grab2.width / 2, grab2.y + 80 + i * 10);
-    await m.waitForTimeout(30);
+    await m.mouse.move(grab2.x + grab2.width / 2, grab2.y + 80 + i * 7.5);
+    await m.waitForTimeout(140);
   }
   const during2 = await m.evaluate(() => {
     const el = document.querySelector(".msheet");
@@ -313,7 +314,7 @@ async function pressAssert(page, sel, locator, label) {
   });
   const visShift2 = during2.top - top0b;
   ok(
-    Math.abs(visShift2 - 40) <= 3,
+    Math.abs(visShift2 - 30) <= 3,
     `内容区起拖: pending 建立、视觉跟手无跳变（实测视觉移 ${visShift2.toFixed(1)}px）`,
   );
   const inlineN2 = Number.parseFloat(during2.inline.replace("translateY(", "")) || 0;
@@ -349,9 +350,10 @@ async function pressAssert(page, sel, locator, label) {
   );
   await m.mouse.move(grab3.x + grab3.width / 2, grab3.y + 80); // 内容区（菜单项上）
   await m.mouse.down();
+  // 慢拖 30px（v≈0.05 → 投影 ≈46 < 64 阈值，走回弹不收起）。
   for (let i = 1; i <= 4; i++) {
-    await m.mouse.move(grab3.x + grab3.width / 2, grab3.y + 80 + i * 10);
-    await m.waitForTimeout(30);
+    await m.mouse.move(grab3.x + grab3.width / 2, grab3.y + 80 + i * 7.5);
+    await m.waitForTimeout(140);
   }
   const during3 = await m.evaluate(() => {
     const el = document.querySelector(".msheet");
@@ -364,7 +366,7 @@ async function pressAssert(page, sel, locator, label) {
   });
   const visShift3 = during3.top - top3;
   ok(
-    Math.abs(visShift3 - 40) <= 3,
+    Math.abs(visShift3 - 30) <= 3,
     `播完后: 内容区起拖仍接管、视觉跟手（实测视觉移 ${visShift3.toFixed(1)}px）`,
   );
   const inlineN3 = Number.parseFloat(during3.inline.replace("translateY(", "")) || 0;
@@ -458,6 +460,9 @@ async function pressAssert(page, sel, locator, label) {
     await m.mouse.move(grab6.x + grab6.width / 2, grab6.y + grab6.height / 2 + i * 5);
     await m.waitForTimeout(5);
   }
+  // 尾步 1px/300ms 把末速压回 ≈0（否则投影 20+300 ≥ 阈值会判 dismiss，测不到 bounce）。
+  await m.mouse.move(grab6.x + grab6.width / 2, grab6.y + grab6.height / 2 + 21);
+  await m.waitForTimeout(300);
   await m.mouse.up();
   await m.waitForTimeout(700); // 覆盖采样 50 帧与 spring 收敛
   const springRes = await m.evaluate(() => ({
@@ -471,6 +476,24 @@ async function pressAssert(page, sel, locator, label) {
   );
   await m.getByRole("menuitem", { name: "取消" }).click();
   await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
+
+  // Part 1b7：慢拖过阈值即收起（iOS snap point 投影）——阈值 = max(64, sheet 高 ×25%)，
+  // ActionMenu sheet（h≈214）取 64px；慢速拖 70px（v≈0.05 → 投影 ≈86 ≥ 64）即收起，
+  // 不再要求固定 96px 或高速度（用户实测「慢拖都有回弹」的修复）。
+  console.log("Part 1b7: 慢拖过阈值即收起（投影判定）");
+  await m.locator('[aria-label="更多操作"]').click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
+  await m.waitForTimeout(650); // 等 enter 播完（§18）
+  const grab7 = await m.locator(".msheet .grab").boundingBox();
+  await m.mouse.move(grab7.x + grab7.width / 2, grab7.y + grab7.height / 2);
+  await m.mouse.down();
+  for (let i = 1; i <= 5; i++) {
+    await m.mouse.move(grab7.x + grab7.width / 2, grab7.y + grab7.height / 2 + i * 14);
+    await m.waitForTimeout(140);
+  }
+  await m.mouse.up();
+  await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
+  ok(true, `慢拖 70px（v≈0.05）松手 → 投影过阈值直接收起（sheet 已 detach）`);
 
   // Part 1c：重开验证 enterKilled 重置——enter 类串回归、动画重播。
   console.log("Part 1c: 关闭重开后 enter 动画恢复（enterKilled 重置）");

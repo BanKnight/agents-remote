@@ -7,11 +7,15 @@ import { cn } from "@/lib/utils";
 import { sheetDebug } from "./sheet-debug";
 
 /**
- * 下拉收起手势阈值（M10 第三轮用户反馈：sheet 应可下滑收起，iOS sheet 惯例）。位移 ≥96px
- * 直接收起；24–96px 区间按速度 ≥0.5px/ms 判惯性甩动收起；<24px 是点击 slop 不接管（保住
- * shd 内「全部允许」等按钮的 click 合成）。回弹动画时长。
+ * 下拉收起手势判定（iOS sheet 惯例 = snap point 动量投影）：以「当前位移 + 速度 × 投影
+ * 视野」预估松手后的自然落点，越过阈值（**sheet 高度的 25%、至少 64px**——固定 96px 绝对
+ * 阈值下慢拖几乎不可达，用户实测「慢拖都有回弹」）或纯甩动（位移 ≥24px 且 v ≥ 0.5px/ms）
+ * 即收起；都达不到才回弹。<24px 是点击 slop 不接管（保住 shd 内「全部允许」等按钮的
+ * click 合成）。
  */
-const DISMISS_DISTANCE_PX = 96;
+const DISMISS_MIN_DISTANCE_PX = 64;
+const DISMISS_HEIGHT_RATIO = 0.25;
+const DISMISS_PROJECT_MS = 300;
 const DISMISS_MIN_DRAG_PX = 24;
 const DISMISS_VELOCITY_PX_MS = 0.5;
 const DRAG_START_PX = 6;
@@ -334,8 +338,11 @@ export function MobileSheet({
     if (d.phase !== "dragging") return;
     const el = e.currentTarget;
     dragBaseRef.current = 0;
+    const rect = el.getBoundingClientRect();
+    const threshold = Math.max(DISMISS_MIN_DISTANCE_PX, rect.height * DISMISS_HEIGHT_RATIO);
+    const projected = d.dy + d.v * DISMISS_PROJECT_MS;
     const dismiss =
-      d.dy >= DISMISS_DISTANCE_PX || (d.dy >= DISMISS_MIN_DRAG_PX && d.v >= DISMISS_VELOCITY_PX_MS);
+      d.dy >= DISMISS_MIN_DRAG_PX && (projected >= threshold || d.v >= DISMISS_VELOCITY_PX_MS);
     if (dismiss) {
       // 保留 inline transform 作为 exit 动画起点（tw-animate-css 的 exit keyframes 只有 to
       // 无 from，起始值 = 当前计算样式）——从松手位置继续滑出；清掉会瞬跳回原位再滑出
@@ -343,7 +350,6 @@ export function MobileSheet({
       // 顶边推出视口底 + 余量（slide-out-to-bottom-4 的 16px 不够出屏）、不 fade（iOS
       // dismiss 是纯滑出）、200ms ease-in 贴合松手初速度。Content unmount 后 inline 样式
       // 随之消亡，无残留。
-      const rect = el.getBoundingClientRect();
       el.style.setProperty(
         "--tw-exit-translate-y",
         `${window.innerHeight - rect.top + DISMISS_SLIDE_PAST_PX}px`,
