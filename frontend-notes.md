@@ -223,3 +223,13 @@
 **标准做法**：收窄/替换 transition 时，**全局搜同族 helper 的 transition 写法一起改**（`rg -n "transition-all|[^-]transition[ \"\`]"`），不要只改组件定义。**属性列表要写 `scale` 而非 `transform`**（§19 机制）。判定：改了组件 base 但 computed 无变化 → 查调用链上有没有经 helper 拍串的后传 className。
 
 **来源**：批E（`fbd789a`）review 自查发现；与 §11 同族。
+
+## 21. CSS 动画 cancel 后按样式匹配重建：手势接管入场动画须摘类断匹配（WebKit 分歧行为）
+
+**现象**：mobile-sheet「打开即下拉」真机必然失败（450ms 全程升起 enter 播放中按住 grab 下拉，sheet 不跟手，动画播完才跳到手指位）；Chromium 探针与诊断脚本全绿（动画中拖 t=100ms inline=`translateY(40px)` 跟手、`getAnimations()=[]`），复现不了。
+
+**机制**：`element.getAnimations().cancel()` 取消 CSS 生成的动画后，若 `animation-name` 仍在样式上匹配，**下次样式更新时浏览器立即重建动画实例从头重播**（CSS Animations + Web Animations 规范语义；Chromium 不重建——引擎行为分歧，WebKit 侧 results.webkit.org 294899@main 2025-05 变更佐证）。拖拽用 inline `style.transform` 跟手，但重建实例的 keyframes transform 压过 inline（animation 层级高于普通声明）→ sheet 按动画轨迹走 = 拖不动。cancel 只在 Chromium 有效。
+
+**标准做法**：手势接管入场动画时，**cancel 之外必须让样式失配**——React state（`enterKilled`）驱动 className 条件摘掉 `animate-in` 类串（`animation-name` 不再匹配 = 动画死亡且任何引擎不可重建），cancel 保留（Chromium 即时生效）；动画不可能再播的时机重置 state（closed 态下 `data-[state=open]` 变体失配，重置无重启面；exit 类串独立不动）。**否决** inline `animation: none`：回弹（清空→重建重播升起 / 不清→压死 `animate-out` 退出）与 dismiss（恢复→enter 重建闪烁）三路径死结。**探针法（WAAPI 定格）**：验证「动画运行期手势接管」时，自然时序窗口（~17px 薄热区 × spring 升速）下 Playwright `boundingBox` 往返必 race 输（down 落点错过热区、inline 恒空，实锤）——**页内 `getAnimations()` 后 `a.pause(); a.currentTime = 中段时刻` 把动画定格成确定性 fixture**，手势对静止元素执行；cancel+摘类对 paused 动画同样生效。与 §18「等 enter 播完再取几何」同族：把不可重复的动画时序变成可断言的确定态。
+
+**来源**：commit `6aa7c27`；MDN getAnimations；results.webkit.org 294899@main；redesign-v2.md 动效段「打开即下拉」修复小节。

@@ -1359,7 +1359,7 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **背景**：五批可见面几乎全在桌面，用户反馈「移动端加的不多」→ 拍板两项（AskUserQuestion）：①sheet 升起 + 逐项入场；②触屏按压统一（行·卡片·nav 项 0.98，比按钮 0.97 轻——大面积元素缩放更可感）。页面切换动效仍不做。
 
-**① sheet 全程升起 + 逐项入场**：mobile-sheet enter 位移 16px 浮起 → 屏幕底**全程升起**（`[--tw-enter-translate-y:100%]` 变量注入，机制同 §16 自定义属性注入），去 fade（iOS sheet 是纯位移，升起途中不透明，dim 交 scrim）；新 token `--spring-sheet-duration: 450ms`（100% 路程下 375ms 基础档偏陡，贴 iOS UISheetPresentationController 常见时长）。拖拽状态机 / exit keyframes（inline transform 作起点）/ fill-forwards 禁区一行未动；「打开即下拉」的 `getAnimations()` cancel 对 450ms 升起同样生效。ActionMenu 移动 sheet `role="menu"` 容器挂 `.animate-stagger-rows`（Radix Portal 每次开 = 全新 DOM，animation 天然每次播放；菜单项静态无 insertBefore 重播面，§17 判定通过；fill=backwards 契约同批C）。
+**① sheet 全程升起 + 逐项入场**：mobile-sheet enter 位移 16px 浮起 → 屏幕底**全程升起**（`[--tw-enter-translate-y:100%]` 变量注入，机制同 §16 自定义属性注入），去 fade（iOS sheet 是纯位移，升起途中不透明，dim 交 scrim）；新 token `--spring-sheet-duration: 450ms`（100% 路程下 375ms 基础档偏陡，贴 iOS UISheetPresentationController 常见时长）。拖拽状态机 / exit keyframes（inline transform 作起点）/ fill-forwards 禁区一行未动；「打开即下拉」以 `getAnimations()` cancel 兜底（**后经真机证伪——WebKit 上 cancel 后动画实例被重建，见下方修复段**）。ActionMenu 移动 sheet `role="menu"` 容器挂 `.animate-stagger-rows`（Radix Portal 每次开 = 全新 DOM，animation 天然每次播放；菜单项静态无 insertBefore 重播面，§17 判定通过；fill=backwards 契约同批C）。
 
 **② 触屏按压统一（0.98 行档 + 0.97 按钮档分层）**：`.srow2` CSS 单源加 `transition: scale var(--duration-fast) var(--ease-standard) + :active { scale: 0.98 }`（一处覆盖 workbench-side 项目行/实例试点行 + AllSessionsGroupedList 行三消费点——CSS 单源优于逐消费点 utility）；utility 侧（NavItemContent 含底 nav / listRowClasses / mobileSheetItemClasses / mobile-projects-home 活动行·项目行·审批行）= `active:scale-[0.98]` + `transition-[scale,background-color]`（§19 scale 独立属性须显式列出 / §20 裸 transition = 23 属性大表）+ `duration-[var(--duration-fast)]` 120ms 全档统一。**DragSourceCard 确认仅桌面 tabstrip 使用**（移动无拖放，MobileWorkbench 不渲染 InstanceArea），移动端无独立卡片面，行原语即全部交互面。
 
@@ -1367,7 +1367,9 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **探针新教训（§18 同族）**：**全程升起后，sheet 内元素的几何/按压断言必须等 enter 播完**——`translateY(100%)` 起点整个 sheet 在视口下方（诊断实测 menuitem boundingBox y=845.8 > 视口 844），`mouse.down` 落屏外不命中任何元素 = 无 `:active` = scale 恒 none；enter 450ms + 余量 waitForTimeout 后恢复。此前 16px 浮起不会踩这坑（起点基本在位），批B 探针无此防护的根源。
 
-**待真机复验（移动批新项）**：sheet 全程升起手感（450ms spring）/ 菜单逐项入场 / 触屏按压回缩分层手感（行 0.98 vs 按钮 0.97）/ **iOS `:active` 按压缩放生效且滚动时无粘滞**（iOS Safari 滚动会清 ：active，需真机确认）+ PWA standalone 下生效。
+**「打开即下拉」WebKit 修复（2026-10-03，commit `6aa7c27`）**：移动批收口当晚真机实锤「sheet 刚打开下拉必然失败」。根因 = **WebKit 语义：`getAnimations().cancel()` 取消 CSS 生成的动画后，`animation-name` 仍匹配样式 → 下次样式更新立即重建动画实例**、keyframes transform 重新压过 inline（CSS Animations 规范语义；Chromium 不重建——探针与诊断在 Chromium 全绿，掩盖了 WebKit 行为）。修复 = moveDrag 接管处置 `enterKilled` state，className 条件摘掉 `data-[state=open]:animate-in` 串——**样式失配 = 动画彻底死亡且任何引擎不可重建**；保留 cancel（Chromium 即时生效）与 open=false 重置（closed 态下 data-[state=open] 变体失配不重启、exit 类串独立不受影响，dismiss/正常关闭行为零变化；拖拽状态机零改动）。否决 inline `animation: none`：回弹（清空→重建重播 / 不清→压死 exit）、dismiss（恢复→enter 重建闪烁）三路径死结。**探针教训追加**：验证「动画运行期手势接管」，自然时序窗口 = ~17px 热区 × spring 升速，Playwright boundingBox 往返必 race 输（首跑实锤 down 落点错过热区、inline 恒空）——**WAAPI `a.pause(); a.currentTime = 200` 定格 enter 于升起中段作确定性 fixture**（拖拽接管的 cancel+摘类对 paused 动画同样生效，验证力度不减反增），probe-mobile-motion 扩至 **37 断言**（1b 接管四证据 + 回弹/exit 完好 6 项 + 1c 重置重播 2 项）。
+
+**待真机复验（移动批新项 + 修复）**：sheet 全程升起手感（450ms spring）/ 菜单逐项入场 / 触屏按压回缩分层手感（行 0.98 vs 按钮 0.97）/ **「打开即下拉」立即按住往下拖 → 立刻跟手（`6aa7c27` 修复，WebKit 真机是唯一能复现原 bug 的环境，重点验）** / **iOS `:active` 按压缩放生效且滚动时无粘滞**（iOS Safari 滚动会清 ：active，需真机确认）+ PWA standalone 下生效。
 
 ## §7 待定项跟踪
 
