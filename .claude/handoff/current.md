@@ -1,11 +1,11 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-03（**「打开即下拉」第四轮 `e1ae5a6` = 真机取证定根因并修复**：用户 debug 日志实锤——第一次下拉成功 = 赶上升起 450ms 窗口；后续被拒 = 动画播完（play=0）+ 手指在内容区 → 「播完后窄热区拒绝」，人的反应必然超 450ms = 必拒。修复 = 播完后按 `hasScrollableContent` 分档（不可滚整面可拖 / 可滚保窄热区）+ 上滑放弃手势 + pending 失联清理（§23）。probe-mobile-motion **46** 断言 + 单测 5 全绿，全门禁绿。**待真机复验：任意位置下拖应跟手；通过后删 sheet-debug.ts**。回滚点 = `98b12fa`。）
+> 最后更新：2026-10-03（**「打开即下拉」根因已修（`e1ae5a6`）+ 回弹速度继承（`f1f99ed`）**：debug 日志实锤根因 = 播完后窄热区拒绝 + 人的反应必然超 450ms；修复 = `hasScrollableContent` 分档 + 上滑放弃 + pending 失联清理（§23）。用户复验「好很多」后反馈**回弹无速度感**（固定 ease-out）→ 换临界阻尼弹簧 rAF 积分、初速度 = 松手速度（§24）。probe-mobile-motion **47** 断言 + 单测 8 全绿，全门禁绿。**待真机复验回弹手感；通过后删 sheet-debug.ts**。回滚点 = `98b12fa`。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-**全站动效体系收口 + 移动端加强批（`eb5f62c` 为末批）**：五批动效全走纯 CSS（弹层 `linear()` 弹簧 / 列表 stagger / grid 轨道过渡 / press 独立 scale），**motion 库引入后摘除**（115KB 死重，entry 397KB→292KB）。移动端追加：sheet enter 从 16px 浮起改**屏幕底全程升起**（450ms 新档 `--spring-sheet-duration`）+ ActionMenu sheet 菜单逐项 stagger + **触屏按压统一**（行档 0.98：.srow2 CSS 单源 + NavItemContent/ListRow/菜单项/首页行 utility；按钮档 0.97 既有）。探针 probe-mobile-motion 46 + spring-overlays 21 全绿。决策详见 redesign-v2.md 动效段。
+**全站动效体系收口 + 移动端加强批（`eb5f62c` 为末批）**：五批动效全走纯 CSS（弹层 `linear()` 弹簧 / 列表 stagger / grid 轨道过渡 / press 独立 scale），**motion 库引入后摘除**（115KB 死重，entry 397KB→292KB）。移动端追加：sheet enter 从 16px 浮起改**屏幕底全程升起**（450ms 新档 `--spring-sheet-duration`）+ ActionMenu sheet 菜单逐项 stagger + **触屏按压统一**（行档 0.98：.srow2 CSS 单源 + NavItemContent/ListRow/菜单项/首页行 utility；按钮档 0.97 既有）。探针 probe-mobile-motion 47 + spring-overlays 21 全绿。决策详见 redesign-v2.md 动效段。
 
 ## 本 session 焦点（全站动效体系）
 
@@ -51,7 +51,7 @@
 - ✅ **全站动效体系**（批A `acf2c15` → 批B `4683116` → 批C `dc8a2ff` → 批D+E `fbd789a` → 批E scale 修正 `e02ec70` → reviewer 消化 `4d4772c`；记档齐：redesign-v2.md 动效段 + frontend-notes §16–20 + handoff 滚动；回滚点 `98b12fa`）
 - ✅ **移动端动效加强批 `eb5f62c`**（sheet 全程升起 + ActionMenu sheet stagger + 触屏按压统一；新探针 probe-mobile-motion + spring-overlays 21；记档齐：redesign-v2.md 移动批小节 + frontend-notes §18 全屏入场几何断言教训）
 - ✅ **「打开即下拉」第四轮 `e1ae5a6` = 取证定根因修复**（debug 日志实锤「播完后窄热区拒绝 + 反应必然超 450ms」；修复 = `hasScrollableContent` 分档 + 上滑放弃 + pending 失联清理 §23；probe-mobile-motion **46** 断言 + `hasScrollableContent` 单测 5 项全绿；记档：redesign-v2.md 第四轮段 + frontend-notes §22 取证结果 + §23 新条）
-- ⬜ **待用户真机复验「任意位置下拖」（当前最优先）**：打开 sheet 后**不用抢动画窗口**，按住任意位置往下拖 → 应立刻跟手；历史/文件列表 sheet 的列表滚动行为不变
+- ⬜ **待用户真机复验回弹手感（当前最优先）**：sheet 拖拽松手的回弹应**随松手速度变化**——快甩（未达 dismiss）带速下冲过冲再收回、慢拖平滑收回；回弹途中再按住可重新接管跟手；任意位置下拖/列表滚动行为不变；通过后删 `sheet-debug.ts` + 同步摘 mobile-sheet.tsx 的 import 与五处 sheetDebug 调用 + mvCountRef/tpCountRef
 - ⬜ 复验通过后：删除 `web/src/components/shell/sheet-debug.ts`（一次性工具）+ 同步摘 mobile-sheet.tsx 的 import 与五处 sheetDebug 调用 + mvCountRef/tpCountRef
 - ⬜ **交用户真机复验**（第八~十二批 + 第十三批 + 重连增量 + **动效批清单 21–25 + 移动批 26–29** 见下）
 - ⬜ 阶段一遗留：第五批 reviewer 修复批（`bd7aedc`）真机复验清单仍待用户执行

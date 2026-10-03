@@ -257,3 +257,13 @@
 **标准做法**：**capture 前的 pending 手势，指针离开元素边界即放弃**（`onPointerLeave` 判 `phase === "pending"` 清回 idle）；dragging 期有 capture（leave 被抑制）不受影响。通用式：**手势状态机的每个非终态都必须有失活路径**——down 与 up/cancel 组不成对时（指针移出元素是最常见的失联），状态必须能自愈。
 
 **来源**：commit `e1ae5a6`（起手面分档修复的伴生回归，探针 Part 1 实抓）；与 §14（绑定）、§22（取证纪律）同链。
+
+## 24. 手势松手的速度继承：回弹用弹簧 rAF 积分，固定时长 ease-out 无速度信息必然假
+
+**现象**：sheet 拖拽回弹无论松手速度（慢拖收回 vs 快甩未达 dismiss 阈值）都是同一条固定 `200ms ease-out`——「无论什么速度都一样的回弹，感觉很假」。
+
+**机制**：CSS transition/animation **没有初速度通道**——`transition: transform 200ms ease-out` 从起点到终点的曲线形状与「手指此刻多快」无关；velocity handoff（松手动画必须以手指速度继续）只有 JS 驱动才做得到。参数：response 300ms 临界阻尼（k=(2π/T)²，c=2√k，单位制 px/ms），半隐式欧拉 rAF 积分，初速度 = 最新 pointermove 的瞬时速度。
+
+**标准做法**：①**积分抽成导出纯函数**（`springStep`/`simulateSpringBack`），运行时 rAF 与单测共用同一份代码——**CDP 输入节流做不出高松手速度**（Playwright 4 步快甩只派发 2 个 pointermove，实测 v0=0.17px/ms；浏览器有输入合并），速度继承的数值验证（v0=1.2 → 峰值>x0+6 的下冲过冲）在单测，浏览器探针只断言「回弹发生且逐帧收敛、inline 清空」；②弹簧 rAF 句柄在**拖拽再接管/关闭/DOM 卸载**三处取消，防旧弹簧跟新手势或 exit 动画抢 transform；③起点读 computed transform 的 m42（presentation value）。
+
+**来源**：commit `f1f99ed`（用户反馈「回弹很假」）；apple-design §5 velocity handoff；与 §22（取证纪律）、§23（pending 失联）同链。

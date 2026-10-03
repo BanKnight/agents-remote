@@ -1371,6 +1371,8 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **第四轮 = 真机取证定根因（`e1ae5a6`）**：用户回报 debug 日志「第一次下拉完美，后续全部 `down zone=content play=0 pend=NO`」——第一次成功 = 赶上升起动画 450ms 窗口（`play=1` 宽热区分支）；后续被拒 = 动画播完（`play=0`）+ 手指自然落在内容区 → 走「播完后窄热区拒绝」分支，而**人的「打开→看到→按下拖」反应必然超过 450ms = 必拒**——这才是「必然失败」的真根因，前两轮假设（摘类/升起期分档）均未触及此分支故全部无效。修复三件套：①播完后按 `hasScrollableContent` 分档——不可滚（菜单/确认框/prompt 等大多数 sheet）整面可下拖收起，可滚（历史/文件/实例信息列表）维持 grab/shd 窄热区护住列表原生滚动；②内容区上滑过阈值放弃手势（向上是滚动/选择方向，不劫持）；③**pending 失联清理**（`onPointerLeave`：capture 前指针移出 Content 即放弃——伴生回归，残留 pending 会把点击按钮的前置 move 判成拖拽起点把 sheet 瞬间拖走，探针 Part 1 实抓，frontend-notes §23）。probe-mobile-motion **46 断言**（1b3 断言反转 + 新增 1b4 可滚保护 / 1b5 上滑放弃）+ `hasScrollableContent` 单测 5 项。debug 通道完成使命，**真机复验通过后删除 sheet-debug.ts**。
 
+**回弹速度继承（`f1f99ed`，用户反馈「无论什么速度回弹都一样、很假」）**：回弹从固定 `200ms ease-out` 换成**临界阻尼弹簧 rAF 积分**（response 300ms，半隐式欧拉，初速度 = 手指松手速度）——快甩带速下冲过冲再收回、慢拖平滑收回，回弹途中再抓住可即时接管。`springStep`/`simulateSpringBack` 导出纯函数，运行时与单测共用（CDP 输入节流做不出高 v0，速度继承数值验证在单测；probe 1b6 只断言收敛），**47 断言 + 弹簧单测 3 项全绿**。
+
 **待真机复验（移动批新项 + 修复）**：sheet 全程升起手感（450ms spring）/ 菜单逐项入场 / 触屏按压回缩分层手感（行 0.98 vs 按钮 0.97）/ **「打开即下拉」手指落在 sheet 任意位置（包括内容区）往下拖 → 立刻跟手（`bdce488` 热区分档 + `6aa7c27` 摘类双修复；WebKit 真机是唯一能复现原 bug 的环境，重点验）** / **iOS `:active` 按压缩放生效且滚动时无粘滞**（iOS Safari 滚动会清 ：active，需真机确认）+ PWA standalone 下生效。
 
 ## §7 待定项跟踪
