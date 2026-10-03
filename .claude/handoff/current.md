@@ -1,11 +1,11 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-03（**「打开即下拉」第三轮 `1fcadbe`**：两轮修复（摘类 `6aa7c27` + 热区分档 `bdce488`）**均被真机否证无效**——停止盲改。本轮交付：①接管视觉续接（base = cancel 前后视觉顶差，inline 写 base+dy，消接管瞬跳，探针实锤）；②真机诊断通道 `sheet-debug.ts`（浮层**默认常开**打手势事件链）。**等用户真机复现，浮层内容 = 定位证据，到手后按断点层修复并删 sheet-debug.ts**。probe-mobile-motion 44 断言全绿，全门禁绿。回滚点 = `98b12fa`。）
+> 最后更新：2026-10-03（**「打开即下拉」第四轮 `e1ae5a6` = 真机取证定根因并修复**：用户 debug 日志实锤——第一次下拉成功 = 赶上升起 450ms 窗口；后续被拒 = 动画播完（play=0）+ 手指在内容区 → 「播完后窄热区拒绝」，人的反应必然超 450ms = 必拒。修复 = 播完后按 `hasScrollableContent` 分档（不可滚整面可拖 / 可滚保窄热区）+ 上滑放弃手势 + pending 失联清理（§23）。probe-mobile-motion **46** 断言 + 单测 5 全绿，全门禁绿。**待真机复验：任意位置下拖应跟手；通过后删 sheet-debug.ts**。回滚点 = `98b12fa`。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
 
-**全站动效体系收口 + 移动端加强批（`eb5f62c` 为末批）**：五批动效全走纯 CSS（弹层 `linear()` 弹簧 / 列表 stagger / grid 轨道过渡 / press 独立 scale），**motion 库引入后摘除**（115KB 死重，entry 397KB→292KB）。移动端追加：sheet enter 从 16px 浮起改**屏幕底全程升起**（450ms 新档 `--spring-sheet-duration`）+ ActionMenu sheet 菜单逐项 stagger + **触屏按压统一**（行档 0.98：.srow2 CSS 单源 + NavItemContent/ListRow/菜单项/首页行 utility；按钮档 0.97 既有）。探针 probe-mobile-motion 44 + spring-overlays 21 全绿。决策详见 redesign-v2.md 动效段。
+**全站动效体系收口 + 移动端加强批（`eb5f62c` 为末批）**：五批动效全走纯 CSS（弹层 `linear()` 弹簧 / 列表 stagger / grid 轨道过渡 / press 独立 scale），**motion 库引入后摘除**（115KB 死重，entry 397KB→292KB）。移动端追加：sheet enter 从 16px 浮起改**屏幕底全程升起**（450ms 新档 `--spring-sheet-duration`）+ ActionMenu sheet 菜单逐项 stagger + **触屏按压统一**（行档 0.98：.srow2 CSS 单源 + NavItemContent/ListRow/菜单项/首页行 utility；按钮档 0.97 既有）。探针 probe-mobile-motion 46 + spring-overlays 21 全绿。决策详见 redesign-v2.md 动效段。
 
 ## 本 session 焦点（全站动效体系）
 
@@ -15,7 +15,7 @@
 4. 三 reviewer 消化（`4d4772c`）：perf 摘除 motion / blur 8→4px / history-list 撤 stagger / 键盘摘类；design 时长 token 化 ×2 / mobile-sheet `getAnimations()` cancel / actionButton press / stagger calc 化；security 随摘除消失。
 5. 探针消竞态三处（均为 Node↔页面往返慢于动画窗口的**假 fail**）：`transitionrun` 事件断言（grid-panel）/ 页面内 rAF 逐帧采样（button-press）/ 页面内 `waitForFunction` 轮询（spring-overlays exit）。
 6. **移动端动效加强批**（`eb5f62c`，用户反馈「移动端加的不多」）：拍板①sheet 升起 + 逐项入场、②触屏按压统一；页面切换动效仍不做。sheet enter 全程升起 = `[--tw-enter-translate-y:100%]` 变量注入（机制 §16）+ 去 fade + 新 token 450ms；**拖拽状态机/exit/fill-forwards 禁区一行未动**。按压 = 行档 0.98 / 按钮档 0.97 分层；`.srow2` 走 **CSS 单源**（一处覆盖三消费点）而非逐点 utility；utility 侧 `transition-[scale,background-color] duration-[var(--duration-fast)]`（§19/§20）。DragSourceCard 仅桌面 tabstrip（移动无卡片面）。
-7. **「打开即下拉」三轮修复 + 证据转向**（`6aa7c27`/`bdce488`/`1fcadbe`）：第一轮摘类断动画重建（§21 机制真实，真机否证）；第二轮热区分档（§22 原主根因假设，真机否证**且被用户批评为「质疑测试能力」的越界推测**——禁止把用户手势落点当变量）；第三轮**停止推理盲改**：交付①接管视觉续接（`dragBaseRef` = cancel 前后视觉顶差，inline 写 base+dy）+ ②真机诊断通道 `sheet-debug.ts`（**默认常开**——PWA standalone 注入不了 URL 参数，flag 通道不可靠；pointer-events:none 浮层打事件链）。**当前等用户真机复现一次「打开即下拉」，念回浮层事件链 → 按断点层定位修复 → 删 sheet-debug.ts。**
+7. **「打开即下拉」三轮修复 + 证据转向**（`6aa7c27`/`bdce488`/`1fcadbe`）：第一轮摘类断动画重建（§21 机制真实，真机否证）；第二轮热区分档（§22 原主根因假设，真机否证**且被用户批评为「质疑测试能力」的越界推测**——禁止把用户手势落点当变量）；第三轮**停止推理盲改**：交付①接管视觉续接（`dragBaseRef` = cancel 前后视觉顶差，inline 写 base+dy）+ ②真机诊断通道 `sheet-debug.ts`（**默认常开**——PWA standalone 注入不了 URL 参数，flag 通道不可靠；pointer-events:none 浮层打事件链）。**第四轮（`e1ae5a6`）= 取证数据定根因**：用户日志「第一次完美，后续全 `down zone=content play=0 pend=NO`」→ 根因 = 播完后窄热区拒绝 + 人的反应必然超 450ms；修复 = 播完后 `hasScrollableContent` 分档（不可滚整面可拖/可滚保窄热区）+ 上滑放弃手势 + pending 失联清理（onPointerLeave，§23——伴生回归：残留 pending 把点击按钮的前置 move 判成拖拽把 sheet 拖走，探针实抓）。**待真机复验，通过后删 sheet-debug.ts。**
 
 ## 关键决策（本阶段不可丢）
 
@@ -50,9 +50,9 @@
 - ✅ 重连增量回放（`d565ba4`：shared replay 字段 → relay 锚定 → claude-stream 串参 → 客户端 delta 分流 + liveStart 修正 + 淡入；relay 单测 6 项 + hook 54 pass + 探针 8 项；协议文档「重连回放消息序列」段同步更新为现行序列）
 - ✅ **全站动效体系**（批A `acf2c15` → 批B `4683116` → 批C `dc8a2ff` → 批D+E `fbd789a` → 批E scale 修正 `e02ec70` → reviewer 消化 `4d4772c`；记档齐：redesign-v2.md 动效段 + frontend-notes §16–20 + handoff 滚动；回滚点 `98b12fa`）
 - ✅ **移动端动效加强批 `eb5f62c`**（sheet 全程升起 + ActionMenu sheet stagger + 触屏按压统一；新探针 probe-mobile-motion + spring-overlays 21；记档齐：redesign-v2.md 移动批小节 + frontend-notes §18 全屏入场几何断言教训）
-- ✅ **「打开即下拉」第三轮 `1fcadbe`**（两轮假设真机否证 → 停止盲改：接管视觉续接 + sheet-debug 诊断通道；probe-mobile-motion **44** 断言含视觉跟手 + m42≈inline；记档：redesign-v2.md 修复小节三轮口径 + frontend-notes §22 改写为证据纪律 + §21 加否证标注）
-- ⬜ **等用户真机复现「打开即下拉」并回报浮层事件链（当前最优先）**
-- ⬜ 证据到手后：按断点层修复 + 删除 `web/src/components/shell/sheet-debug.ts`（一次性工具）+ probe 断言按根因校准
+- ✅ **「打开即下拉」第四轮 `e1ae5a6` = 取证定根因修复**（debug 日志实锤「播完后窄热区拒绝 + 反应必然超 450ms」；修复 = `hasScrollableContent` 分档 + 上滑放弃 + pending 失联清理 §23；probe-mobile-motion **46** 断言 + `hasScrollableContent` 单测 5 项全绿；记档：redesign-v2.md 第四轮段 + frontend-notes §22 取证结果 + §23 新条）
+- ⬜ **待用户真机复验「任意位置下拖」（当前最优先）**：打开 sheet 后**不用抢动画窗口**，按住任意位置往下拖 → 应立刻跟手；历史/文件列表 sheet 的列表滚动行为不变
+- ⬜ 复验通过后：删除 `web/src/components/shell/sheet-debug.ts`（一次性工具）+ 同步摘 mobile-sheet.tsx 的 import 与五处 sheetDebug 调用 + mvCountRef/tpCountRef
 - ⬜ **交用户真机复验**（第八~十二批 + 第十三批 + 重连增量 + **动效批清单 21–25 + 移动批 26–29** 见下）
 - ⬜ 阶段一遗留：第五批 reviewer 修复批（`bd7aedc`）真机复验清单仍待用户执行
 - ⬜ 存量欠账（不动）：e2e pwa-installable 存量失败；桌面「点第二个实例丢 leaf」；DialogTitle a11y；rootBrowse 下沉（global 右栏多项目浏览增强）；i18n key 收敛；probe-chat-e2e 2 存量 FAIL；sheet 拖拽真机复验；`.tree`/`.growrow` 死代码清扫；probe-m10-feedback-fixes H 段基线；diff L3 位置架构项；design P2 滚动 5 项
@@ -103,7 +103,7 @@
 
 **全站动效批**（批A–E + `4d4772c`，Mac 桌面 + iPhone；**如整体不满意可回滚到 `98b12fa`**）：
 21. **弹层手感**：新建会话菜单 / prompt Dialog / 设置弹层开合 = 弹簧曲线无过冲、打开有 materialize 质感（scale+blur 4px）；**连续快速开合**不卡不跳（中断跳变窗口，perf P2-7 重点验）；Esc/scrim 关闭快速离开（150ms）
-22. **mobile-sheet「打开即下拉」→ 已升级为取证模式**：直接用平时访问的地址（debug 浮层默认常开，无需任何参数）→ 复现「打开即下拉」→ **把屏幕左上角绿色浮层的几行事件链念回来**（`#N down zone=... pend=...` / `take ...` / `chk ...` / `up|PCANCEL ... -> ...`）；顺带感受接管跳变是否已消失（视觉续接）
+22. **mobile-sheet 任意位置下拖（取证根因修复后复验）**：打开任意 sheet 后**不用抢动画时间**，按住 sheet **任意位置**（顶部、中间、菜单项上都行）往下拖 → 应立刻跟手；快速甩动 → 收起；慢速松手 → 回弹；**历史/文件列表 sheet**：列表可正常滚动（窄热区保护），从顶部热区下拖仍可收起；操作顺带看 debug 浮层确认链路（`down ... pend=YES` → `take ...` → `chk ... ok` → `up ... -> DISMISS|bounce`）
 23. **列表入场**：进 /projects、/files、项目页 → 列表行自上而下 28ms 交错淡入上浮，**只首次挂载**——WS 状态更新/hover 不重播、历史列表（时钟切过去）完全无闪烁
 24. **右栏开合 + 拖宽 + 键盘**：折叠/展开有 280ms 滑动；**拖宽 1:1 跟手**（无迟滞）；**Tab 聚焦左缘分隔条（高亮）→ ←/→ 步进 ±1rem 即时到位**（清单第 10 项，本批修复 role+tabIndex 后键盘通道才真正可用）；reduced-motion（系统减弱动效开启）下全部即时到位
 25. **button press**：按住按钮有 0.97 按压回缩（弹层 trigger 类带 aria-haspopup 的不缩——锚点稳定）；松手回弹
@@ -116,7 +116,7 @@
 ## 阻塞 / 风险
 
 - 无阻塞。dev 存活 43011/43012；CSS 硬闸已过（188773 字节，content-type text/css）。
-- **「打开即下拉」根因未定**：两轮修复假设均真机否证，根因候选空间（事件层上游 / 热区拒绝 / pointercancel 抢占 / 动画压制 inline / 判定参数）等 debug 浮层数据切分——**在此之前不再做任何推理型修复**。
+- **「打开即下拉」根因已修（`e1ae5a6`），待真机复验收口**：debug 浮层还在线（默认常开），复验时可顺带看事件链；**复验通过前不删 sheet-debug.ts**。若复验仍失败：浮层数据 + 「任意位置拖」的新行为会给出新的断点信息，继续按数据走。
 - **router22 残留进程待用户处理**：21 天前的 chromium 两棵进程树（PID 1989432/1989916，user-data-dir=/tmp/router22-fb31-diag3，remote-debugging-port=9781）——kill 被权限分类器拦截（跨项目资源），需用户自己清或授权；本项目探针无残留。
 - **存量时序 flake（与本批无关，欠账）**：`probe-claude-reconnect-delta` ③c 偶发 animated=0（600ms 摘除 timer 与采样窗口竞态），复跑即绿。
 
@@ -131,7 +131,7 @@
 - **本 session 输出管线坑（复发两次）**：生成「反斜杠-u-XXXX」转义文本会退化为真实字符（PUA/NUL）——内置 Edit 匹配不上、markdown 记档也中招；处理用 python/perl 字节级替换，记档表述用纯文字描述占位符。
 - **composer 草稿持久化（第十三批⑥）**：`web/src/lib/composer-draft.ts` 单源 hook（loadComposerDraft/saveComposerDraft 纯函数 + useComposerDraft）；key = `composerDraft:<type>:<sessionId>`；**assistant-ui 的 aui state 投影走异步调度**——setText 后订阅不立即回显，测试必须 waitFor/async act，同步断言读不到。
 - **重连增量回放链路（`d565ba4`）**：cursorRef（最后带 uuid 消息）→ `claudeStreamUrl(project, session, since)` → `?since=` → handleClaudeStreamUpgrade（≤128 校验）→ relay.addSubscriber opts.sinceUuid → locateReplayAnchor（先倒序 live 后 history + topLevelUuidIs 顶层确认）→ session_init `replay:"delta"|"full"`。客户端 session_init 分流（delta 不 reset）+ history_end liveStart 修正（replayCursorRef 同步累进）+ 封口 effect（deltaClosePendingRef → setDeltaEnter rendered 范围 → 600ms timer 挂 ref 摘除）。探针 `probe-claude-reconnect-delta.mjs` 8 项。
-- **动效批跑法与断言口径**：改动效相关文件后跑四探针（grid-panel 14 / spring-overlays **21** / button-press 7 / stagger-entry 11 + 新 **probe-mobile-motion 44**），均 `bun scripts/probe-*.mjs`；**探针断言动画禁止 Node 侧定时采样**（Node↔页面往返可慢于动画窗口 = 假 fail 三连教训）——用 `transitionrun` 事件（真过渡才派发）、页面内 rAF 逐帧采样、页面内 `waitForFunction` 三选一；读 scale 读 `getComputedStyle(el).scale` 非 transform（§19）。**全程升起的 sheet 内几何/按压断言必须先等 enter 播完**（translateY(100%) 起点整 sheet 在视口外，boundingBox 落屏外 = mouse.down 不命中，frontend-notes §18）；**验「动画运行期手势接管」用 WAAPI `a.pause(); a.currentTime=N` 定格**（薄热区 × 动画速度下 boundingBox 往返必 race 输，§21）；**DOMMatrixReadOnly 只在页面内存在**（m42 计算必须进 `page.evaluate`）。
+- **动效批跑法与断言口径**：改动效相关文件后跑四探针（grid-panel 14 / spring-overlays **21** / button-press 7 / stagger-entry 11 + 新 **probe-mobile-motion 46**），均 `bun scripts/probe-*.mjs`；**探针断言动画禁止 Node 侧定时采样**（Node↔页面往返可慢于动画窗口 = 假 fail 三连教训）——用 `transitionrun` 事件（真过渡才派发）、页面内 rAF 逐帧采样、页面内 `waitForFunction` 三选一；读 scale 读 `getComputedStyle(el).scale` 非 transform（§19）。**全程升起的 sheet 内几何/按压断言必须先等 enter 播完**（translateY(100%) 起点整 sheet 在视口外，boundingBox 落屏外 = mouse.down 不命中，frontend-notes §18）；**验「动画运行期手势接管」用 WAAPI `a.pause(); a.currentTime=N` 定格**（薄热区 × 动画速度下 boundingBox 往返必 race 输，§21）；**DOMMatrixReadOnly 只在页面内存在**（m42 计算必须进 `page.evaluate`）。
 - **移动批按压统一清单（`eb5f62c`）**：CSS 单源 = `.srow2`（v2-primitives.css，transition: scale + :active 0.98）；utility = NavItemContent interactionClass / listRowClasses / mobileSheetItemClasses（action-menu.tsx，§20 裸 transition 已收窄）/ mobile-projects-home 三处行；统一 `duration-[var(--duration-fast)]` 120ms。改行按压回退排查从这五处看。
 - 记档位置：§6.13「真机反馈修复」第八~十二批 + reviewer 补审修复批（M13a–d）+ 重连增量回放段 + **动效段（§7 前）**齐；协议文档「重连回放消息序列」段已更新为现行序列（session_init/seed_init/history/live + replay 字段）。
 
