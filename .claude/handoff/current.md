@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-03（**「打开即下拉」第三轮 `1fcadbe`**：两轮修复（摘类 `6aa7c27` + 热区分档 `bdce488`）**均被真机否证无效**——停止盲改。本轮交付：①接管视觉续接（base = cancel 前后视觉顶差，inline 写 base+dy，消接管瞬跳，探针实锤）；②真机诊断通道 `sheet-debug.ts`（`?sheetdebug=1` 浮层打手势事件链）。**等用户带 flag 真机复现，浮层内容 = 定位证据，到手后按断点层修复并删 sheet-debug.ts**。probe-mobile-motion 44 断言全绿，全门禁绿。回滚点 = `98b12fa`。）
+> 最后更新：2026-10-03（**「打开即下拉」第三轮 `1fcadbe`**：两轮修复（摘类 `6aa7c27` + 热区分档 `bdce488`）**均被真机否证无效**——停止盲改。本轮交付：①接管视觉续接（base = cancel 前后视觉顶差，inline 写 base+dy，消接管瞬跳，探针实锤）；②真机诊断通道 `sheet-debug.ts`（浮层**默认常开**打手势事件链）。**等用户真机复现，浮层内容 = 定位证据，到手后按断点层修复并删 sheet-debug.ts**。probe-mobile-motion 44 断言全绿，全门禁绿。回滚点 = `98b12fa`。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
@@ -15,7 +15,7 @@
 4. 三 reviewer 消化（`4d4772c`）：perf 摘除 motion / blur 8→4px / history-list 撤 stagger / 键盘摘类；design 时长 token 化 ×2 / mobile-sheet `getAnimations()` cancel / actionButton press / stagger calc 化；security 随摘除消失。
 5. 探针消竞态三处（均为 Node↔页面往返慢于动画窗口的**假 fail**）：`transitionrun` 事件断言（grid-panel）/ 页面内 rAF 逐帧采样（button-press）/ 页面内 `waitForFunction` 轮询（spring-overlays exit）。
 6. **移动端动效加强批**（`eb5f62c`，用户反馈「移动端加的不多」）：拍板①sheet 升起 + 逐项入场、②触屏按压统一；页面切换动效仍不做。sheet enter 全程升起 = `[--tw-enter-translate-y:100%]` 变量注入（机制 §16）+ 去 fade + 新 token 450ms；**拖拽状态机/exit/fill-forwards 禁区一行未动**。按压 = 行档 0.98 / 按钮档 0.97 分层；`.srow2` 走 **CSS 单源**（一处覆盖三消费点）而非逐点 utility；utility 侧 `transition-[scale,background-color] duration-[var(--duration-fast)]`（§19/§20）。DragSourceCard 仅桌面 tabstrip（移动无卡片面）。
-7. **「打开即下拉」三轮修复 + 证据转向**（`6aa7c27`/`bdce488`/`1fcadbe`）：第一轮摘类断动画重建（§21 机制真实，真机否证）；第二轮热区分档（§22 原主根因假设，真机否证**且被用户批评为「质疑测试能力」的越界推测**——禁止把用户手势落点当变量）；第三轮**停止推理盲改**：交付①接管视觉续接（`dragBaseRef` = cancel 前后视觉顶差，inline 写 base+dy）+ ②真机诊断通道 `sheet-debug.ts`（`?sheetdebug=1`，sessionStorage 记忆，pointer-events:none 浮层打事件链）。**当前等用户真机带 flag 复现一次「打开即下拉」，念回浮层事件链 → 按断点层定位修复 → 删 sheet-debug.ts。**
+7. **「打开即下拉」三轮修复 + 证据转向**（`6aa7c27`/`bdce488`/`1fcadbe`）：第一轮摘类断动画重建（§21 机制真实，真机否证）；第二轮热区分档（§22 原主根因假设，真机否证**且被用户批评为「质疑测试能力」的越界推测**——禁止把用户手势落点当变量）；第三轮**停止推理盲改**：交付①接管视觉续接（`dragBaseRef` = cancel 前后视觉顶差，inline 写 base+dy）+ ②真机诊断通道 `sheet-debug.ts`（**默认常开**——PWA standalone 注入不了 URL 参数，flag 通道不可靠；pointer-events:none 浮层打事件链）。**当前等用户真机复现一次「打开即下拉」，念回浮层事件链 → 按断点层定位修复 → 删 sheet-debug.ts。**
 
 ## 关键决策（本阶段不可丢）
 
@@ -51,7 +51,7 @@
 - ✅ **全站动效体系**（批A `acf2c15` → 批B `4683116` → 批C `dc8a2ff` → 批D+E `fbd789a` → 批E scale 修正 `e02ec70` → reviewer 消化 `4d4772c`；记档齐：redesign-v2.md 动效段 + frontend-notes §16–20 + handoff 滚动；回滚点 `98b12fa`）
 - ✅ **移动端动效加强批 `eb5f62c`**（sheet 全程升起 + ActionMenu sheet stagger + 触屏按压统一；新探针 probe-mobile-motion + spring-overlays 21；记档齐：redesign-v2.md 移动批小节 + frontend-notes §18 全屏入场几何断言教训）
 - ✅ **「打开即下拉」第三轮 `1fcadbe`**（两轮假设真机否证 → 停止盲改：接管视觉续接 + sheet-debug 诊断通道；probe-mobile-motion **44** 断言含视觉跟手 + m42≈inline；记档：redesign-v2.md 修复小节三轮口径 + frontend-notes §22 改写为证据纪律 + §21 加否证标注）
-- ⬜ **等用户真机带 `?sheetdebug=1` 复现「打开即下拉」并回报浮层事件链（当前最优先）**
+- ⬜ **等用户真机复现「打开即下拉」并回报浮层事件链（当前最优先）**
 - ⬜ 证据到手后：按断点层修复 + 删除 `web/src/components/shell/sheet-debug.ts`（一次性工具）+ probe 断言按根因校准
 - ⬜ **交用户真机复验**（第八~十二批 + 第十三批 + 重连增量 + **动效批清单 21–25 + 移动批 26–29** 见下）
 - ⬜ 阶段一遗留：第五批 reviewer 修复批（`bd7aedc`）真机复验清单仍待用户执行
@@ -103,7 +103,7 @@
 
 **全站动效批**（批A–E + `4d4772c`，Mac 桌面 + iPhone；**如整体不满意可回滚到 `98b12fa`**）：
 21. **弹层手感**：新建会话菜单 / prompt Dialog / 设置弹层开合 = 弹簧曲线无过冲、打开有 materialize 质感（scale+blur 4px）；**连续快速开合**不卡不跳（中断跳变窗口，perf P2-7 重点验）；Esc/scrim 关闭快速离开（150ms）
-22. **mobile-sheet「打开即下拉」→ 已升级为带 flag 取证**：URL 加 `?sheetdebug=1`（一次即可，sessionStorage 记忆）→ 复现「打开即下拉」→ **把屏幕左上角绿色浮层的几行事件链念回来**（`#N down zone=... pend=...` / `take ...` / `chk ...` / `up|PCANCEL ... -> ...`）；顺带感受接管跳变是否已消失（视觉续接）
+22. **mobile-sheet「打开即下拉」→ 已升级为取证模式**：直接用平时访问的地址（debug 浮层默认常开，无需任何参数）→ 复现「打开即下拉」→ **把屏幕左上角绿色浮层的几行事件链念回来**（`#N down zone=... pend=...` / `take ...` / `chk ...` / `up|PCANCEL ... -> ...`）；顺带感受接管跳变是否已消失（视觉续接）
 23. **列表入场**：进 /projects、/files、项目页 → 列表行自上而下 28ms 交错淡入上浮，**只首次挂载**——WS 状态更新/hover 不重播、历史列表（时钟切过去）完全无闪烁
 24. **右栏开合 + 拖宽 + 键盘**：折叠/展开有 280ms 滑动；**拖宽 1:1 跟手**（无迟滞）；**Tab 聚焦左缘分隔条（高亮）→ ←/→ 步进 ±1rem 即时到位**（清单第 10 项，本批修复 role+tabIndex 后键盘通道才真正可用）；reduced-motion（系统减弱动效开启）下全部即时到位
 25. **button press**：按住按钮有 0.97 按压回缩（弹层 trigger 类带 aria-haspopup 的不缩——锚点稳定）；松手回弹
@@ -124,7 +124,7 @@
 
 - **探针跑法**：touch web/src/main.tsx + sleep 16 + `bun scripts/probe-*.mjs`；e2e/单测 systemd-run 2G。
 - **pre-commit 快速通道**：staged 全为纯文档面 → 只跑 format:check+lint；任一命中代码面 → 全门禁。
-- **sheet-debug 通道（一次性，证据到手即删）**：`web/src/components/shell/sheet-debug.ts` + mobile-sheet.tsx 内 `sheetDebug(...)` 埋点（down/take/chk/end 五处）；`?sheetdebug=1` 开启、sessionStorage 记忆跳转不丢；浮层黑底绿字左上角、pointer-events:none 不干扰手势；MAX_LINES=8 环形。删工具时同步摘 mobile-sheet 的 import 与五处调用 + mvCountRef/tpCountRef。
+- **sheet-debug 通道（一次性，证据到手即删）**：`web/src/components/shell/sheet-debug.ts` + mobile-sheet.tsx 内 `sheetDebug(...)` 埋点（down/take/chk/end 五处）；**诊断期默认常开**（PWA standalone 注入不了 URL 参数，flag 通道不可靠）；浮层黑底绿字左上角、pointer-events:none 不干扰手势；MAX_LINES=8 环形。删工具时同步摘 mobile-sheet 的 import 与五处调用 + mvCountRef/tpCountRef。
 - **右栏装配链（第十二批后终态）**：WorkbenchRoute rightPanelProjectKey/rightCtx → RightPanelTabs；workbench-shell gutter 无条件渲染（aside 内，现 role=separator 可聚焦）+ RailButton 收起态唤出。探针覆盖：probe-v2-m9-multi-device Part 4（global 连续性六断言）+ Part 5（真空态 + 拖拽七断言）。
 - **MobileFileFocus back 契约**（第九批）：pop 优先回来源 + 深链兜底 /files。
 - **CLI 模型 echo 是显示串**（第十三批③⑤）：CLI 对 set_model 的回应 `<local-command-stdout>Set model to <display></local-command-stdout>` 里 `<display>` = modelDisplayString 显示串（markdown code span 反引号包裹 + (resolved) 注解），非裸 model 名；`sanitizePersistedModel`（**api/src/model-id.ts 叶子模块单源**，claude-runtime re-export）归一链路四处必过：CLI echo 解析出口、spawn --model 传参、metadata 读写边界（parseMetadata/setModel/setClaudeSessionId/createMetadata）、前端 resolveCurrentModelAlias 显示兜底——再遇模型显示怪串先查这条链。
