@@ -267,3 +267,5 @@
 **标准做法**：①**积分抽成导出纯函数**（`springStep`/`simulateSpringBack`），运行时 rAF 与单测共用同一份代码——**CDP 输入节流做不出高松手速度**（Playwright 4 步快甩只派发 2 个 pointermove，实测 v0=0.17px/ms；浏览器有输入合并），速度继承的数值验证（v0=1.2 → 峰值>x0+6 的下冲过冲）在单测，浏览器探针只断言「回弹发生且逐帧收敛、inline 清空」；②弹簧 rAF 句柄在**拖拽再接管/关闭/DOM 卸载**三处取消，防旧弹簧跟新手势或 exit 动画抢 transform；③起点读 computed transform 的 m42（presentation value）。
 
 **来源**：commit `f1f99ed`（用户反馈「回弹很假」）；apple-design §5 velocity handoff；与 §22（取证纪律）、§23（pending 失联）同链。
+
+**速度测量的另一半（`e7fb156`，apple-design §2 审查补正）**：velocity handoff 的「速度」必须是**窗口净速度**（从松手时刻回看 ~100ms：位移 ÷ 时长），不是最后一次 `pointermove` 的瞬时值——真实手指慢拖停停走走，停顿期没有 move 事件，旧瞬时速度会被当作松手速度注入弹簧 → sheet 先向下冲一截再回弹（用户「慢拖回弹好奇怪」的真凶）。iOS `UIPanGestureRecognizer.velocity()` 同款语义：停顿自然计入分母（停住 300ms 松手 = 0 ÷ 300ms = 0）。判定的速度（dismiss 投影）与动画的速度（弹簧初速）必须共用同一值，否则「看起来该收起却弹回」或「弹回却带甩劲」。
