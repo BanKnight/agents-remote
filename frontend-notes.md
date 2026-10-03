@@ -202,6 +202,8 @@
 
 **来源**：批D（`fbd789a`）+ 键盘摘类（`4d4772c`）；`scripts/probe-grid-panel.mjs` 14 断言（展开/折叠 `transitionrun` 事件 / 拖拽与键盘摘类跟手 / ← 键 +1rem 步进 / reduced-motion）。**中间值采样断言有竞态**——Node↔页面往返可慢于 280ms 过渡窗口，只能读到终态 = 假 fail；改 `transitionrun` 事件断言（**只有真过渡才派发**，瞬切无事件）。
 
+**⚠️ 全屏入场动画期间的几何断言（移动端动效批新增）**：元素带 `translateY(100%)` 级入场（如 mobile-sheet 全程升起）时，**动画播完前元素在视口外**——`boundingBox()` 落屏外（实测 sheet 内 menuitem y=845.8 > 视口 844），`mouse.down` 不命中任何元素 = 无 `:active` = 按压断言恒 none，且无 `transitionrun`。**先等 enter 时长 + 余量再取几何**（`waitForTimeout(450ms + 200ms)`）。小位移浮起（16px）不踩此坑，改大位移入场时要回头检查既有几何断言。
+
 ## 19. Tailwind v4 的 `scale-*` 生成独立 `scale` 属性（不是 transform）
 
 **现象**：断言 button `active:scale-[0.97]` 生效时读 `getComputedStyle(el).transform` 是 `none`，以为没生效；实际反馈效果正确。

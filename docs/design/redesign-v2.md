@@ -1355,6 +1355,20 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **待真机复验**：弹层开合手感（含**连续快速开合**的中断跳变窗口——perf P2-7）/ mobile-sheet「打开即下拉」/ 列表入场 / 右栏折叠展开 / 拖宽跟手 / **gutter 键盘可达（Tab 聚焦 → ←/→ 步进 ±1rem，handoff 清单第 10 项本批修复后才真正可用）** / button press 手感 / iOS 减弱动效开关。
 
+### 移动端动效加强批（2026-10-03，commit `eb5f62c`）
+
+**背景**：五批可见面几乎全在桌面，用户反馈「移动端加的不多」→ 拍板两项（AskUserQuestion）：①sheet 升起 + 逐项入场；②触屏按压统一（行·卡片·nav 项 0.98，比按钮 0.97 轻——大面积元素缩放更可感）。页面切换动效仍不做。
+
+**① sheet 全程升起 + 逐项入场**：mobile-sheet enter 位移 16px 浮起 → 屏幕底**全程升起**（`[--tw-enter-translate-y:100%]` 变量注入，机制同 §16 自定义属性注入），去 fade（iOS sheet 是纯位移，升起途中不透明，dim 交 scrim）；新 token `--spring-sheet-duration: 450ms`（100% 路程下 375ms 基础档偏陡，贴 iOS UISheetPresentationController 常见时长）。拖拽状态机 / exit keyframes（inline transform 作起点）/ fill-forwards 禁区一行未动；「打开即下拉」的 `getAnimations()` cancel 对 450ms 升起同样生效。ActionMenu 移动 sheet `role="menu"` 容器挂 `.animate-stagger-rows`（Radix Portal 每次开 = 全新 DOM，animation 天然每次播放；菜单项静态无 insertBefore 重播面，§17 判定通过；fill=backwards 契约同批C）。
+
+**② 触屏按压统一（0.98 行档 + 0.97 按钮档分层）**：`.srow2` CSS 单源加 `transition: scale var(--duration-fast) var(--ease-standard) + :active { scale: 0.98 }`（一处覆盖 workbench-side 项目行/实例试点行 + AllSessionsGroupedList 行三消费点——CSS 单源优于逐消费点 utility）；utility 侧（NavItemContent 含底 nav / listRowClasses / mobileSheetItemClasses / mobile-projects-home 活动行·项目行·审批行）= `active:scale-[0.98]` + `transition-[scale,background-color]`（§19 scale 独立属性须显式列出 / §20 裸 transition = 23 属性大表）+ `duration-[var(--duration-fast)]` 120ms 全档统一。**DragSourceCard 确认仅桌面 tabstrip 使用**（移动无拖放，MobileWorkbench 不渲染 InstanceArea），移动端无独立卡片面，行原语即全部交互面。
+
+**探针**：新增 `probe-mobile-motion.mjs` **29 断言**（sheet stagger 5 + srow2/ListRow/nav/菜单项/首页活动行五个按压面各 4–6，全部 rAF 中段插值 + transitionrun 双证据）；`probe-spring-overlays` Part 3 更新（0.45s + `--tw-enter-translate-y` computed = 100%）→ **21/21**。门禁全绿（format/lint/typecheck/web 701）+ CSS 硬闸 + tokens 机检 0 违例。
+
+**探针新教训（§18 同族）**：**全程升起后，sheet 内元素的几何/按压断言必须等 enter 播完**——`translateY(100%)` 起点整个 sheet 在视口下方（诊断实测 menuitem boundingBox y=845.8 > 视口 844），`mouse.down` 落屏外不命中任何元素 = 无 `:active` = scale 恒 none；enter 450ms + 余量 waitForTimeout 后恢复。此前 16px 浮起不会踩这坑（起点基本在位），批B 探针无此防护的根源。
+
+**待真机复验（移动批新项）**：sheet 全程升起手感（450ms spring）/ 菜单逐项入场 / 触屏按压回缩分层手感（行 0.98 vs 按钮 0.97）/ **iOS `:active` 按压缩放生效且滚动时无粘滞**（iOS Safari 滚动会清 ：active，需真机确认）+ PWA standalone 下生效。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
