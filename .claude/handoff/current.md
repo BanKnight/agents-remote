@@ -122,6 +122,8 @@
 
 ## 易丢的关键上下文
 
+- **⚠️ 进行中的未 commit 中间态（压缩恢复点，2026-10-04）**：用户拍板「enter + 弹层族都换 motion」。**Part 1（sheet enter 换 motion 驱动）组件侧已改完且 typecheck 过、未 commit**：enterKilled state 已删 → `enterControlsRef`+`enterPlayingRef`；useLayoutEffect 启动 enter（y0=视口高 → 0，bounce 0.12，duration 0.45×SLOW_ENTER_FACTOR，reduced-motion 直达终态）；startDrag enterPlaying 改读 ref；接管段 stop enter controls（§21 防线随 motion 驱动退役）；Content CSS enter 类串已删（exit CSS 保留）；sheet-debug.ts 新增导出 `SLOW_ENTER_FACTOR = 3.6`（enter 450ms→1.6s 作 probe fixture）。**下一步 = probe-mobile-motion.mjs 还没同步（当前会挂）**：删三处 WAAPI 定格循环（getAnimations/pause/currentTime——motion rAF 动画不在 getAnimations）；Part 1/1b3/1b4/1b6/1b7 的 waitForTimeout(650) 改 2000（SLOW 下播完）；1b/1b2 改 open 后等 900ms（SLOW 中段）且删 `during.cls.includes("animate-in")` 断言×2；1c 断言改 `inline !== ""`（motion 写入）。**Part 2（弹层族 Dialog/Popover/Dropdown/OptionMenu 换可中断 spring）未动**。完成后照常：门禁 + CSS 硬闸 + commit + push + 记档。
+
 - **探针跑法**：touch web/src/main.tsx + sleep 16 + `bun scripts/probe-*.mjs`；e2e/单测 systemd-run 2G。
 - **pre-commit 快速通道**：staged 全为纯文档面 → 只跑 format:check+lint；任一命中代码面 → 全门禁。
 - **sheet-debug 通道（一次性，证据到手即删）**：`web/src/components/shell/sheet-debug.ts` + mobile-sheet.tsx 内 `sheetDebug(...)` 埋点（down/take/chk/end 五处）；**诊断期默认常开**（PWA standalone 注入不了 URL 参数，flag 通道不可靠）；浮层黑底绿字左上角、pointer-events:none 不干扰手势；MAX_LINES=8 环形。删工具时同步摘 mobile-sheet 的 import 与五处调用 + mvCountRef/tpCountRef。
