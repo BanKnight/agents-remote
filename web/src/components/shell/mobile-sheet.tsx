@@ -4,6 +4,8 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 
+import { sheetDebug } from "./sheet-debug";
+
 /**
  * 下拉收起手势阈值（M10 第三轮用户反馈：sheet 应可下滑收起，iOS sheet 惯例）。位移 ≥96px
  * 直接收起；24–96px 区间按速度 ≥0.5px/ms 判惯性甩动收起；<24px 是点击 slop 不接管（保住
@@ -106,6 +108,14 @@ export function MobileSheet({
   useEffect(() => {
     if (!open) setEnterKilled(false);
   }, [open]);
+  // 接管时的视觉续接基点：enter 升起中被接管时 cancel 会让元素瞬回未变换位置（终态），
+  // 直接写 translateY(dy) = 从升起中段瞬跳到近终态再跟手。cancel 前记下当前视觉顶与
+  // cancel 后未变换顶的差（= 动画尚存的视觉偏移），inline 一律写 base + dy——从手指
+  // 看到的位置无跳续接（animate from the presentation value）。endDrag 归零。
+  const dragBaseRef = useRef(0);
+  // 真机诊断计数（sheet-debug 浮层用，flag 关时零开销）。
+  const mvCountRef = useRef(0);
+  const tpCountRef = useRef(0);
 
   // 防滚动抢占：non-passive touchmove 在手势期（非 idle）preventDefault。真机「回弹/
   // 不跟手/拖不动」的来源是 WebKit 把手势当滚动启动并 pointercancel 中断拖拽（cancel 时
@@ -120,7 +130,10 @@ export function MobileSheet({
     const el = contentNode;
     if (!el) return;
     const onTouchMove = (e: TouchEvent) => {
-      if (dragRef.current.phase !== "idle") e.preventDefault();
+      if (dragRef.current.phase !== "idle") {
+        e.preventDefault();
+        tpCountRef.current++;
+      }
     };
     el.addEventListener("touchmove", onTouchMove, { passive: false });
     return () => {
@@ -143,7 +156,14 @@ export function MobileSheet({
     const enterPlaying =
       e.currentTarget.getAttribute("data-state") === "open" &&
       e.currentTarget.getAnimations().length > 0;
-    if (!enterPlaying && !e.target.closest(".grab, .shd")) return;
+    const zone = e.target.closest(".grab") ? "grab" : e.target.closest(".shd") ? "shd" : "content";
+    if (!enterPlaying && zone === "content") {
+      sheetDebug(`down zone=content play=0 pend=NO（窄热区拒绝）`);
+      return;
+    }
+    mvCountRef.current = 0;
+    tpCountRef.current = 0;
+    sheetDebug(`down zone=${zone} play=${enterPlaying ? 1 : 0} pend=YES`);
     dragRef.current = { phase: "pending", startY: e.clientY, pointerId: e.pointerId };
   };
 
@@ -167,28 +187,47 @@ export function MobileSheet({
       // enter spring（批B，375ms）运行期 keyframes transform 压过 inline style——
       // 「打开即下拉」会在动画播完才跳到手指位置（design review P2）。显式 cancel
       // 让拖拽立即接管；未在播时是 no-op。只 cancel 不改拖拽状态机。
+      const visTop = e.currentTarget.getBoundingClientRect().top;
       for (const a of e.currentTarget.getAnimations()) a.cancel();
       // WebKit：cancel 后 animation-name 仍匹配，样式更新即重建动画实例、keyframes
       // 重新压过 inline（真机「刚打开必然下拉不成功」的根因）——置 enterKilled 从
       // className 摘掉 animate-in 串，样式失配让动画彻底死亡（React 离散事件同步
       // flush，与 inline transform 同帧生效，无跳帧）。
       setEnterKilled(true);
+      // 视觉续接（animate from the presentation value）：cancel 后元素回未变换位置，
+      // 差值 = 动画尚存的视觉偏移；inline 一律 base + dy，接管瞬间无跳变。
+      dragBaseRef.current = visTop - e.currentTarget.getBoundingClientRect().top;
       e.currentTarget.style.transition = "";
-      e.currentTarget.style.transform = `translateY(${dy}px)`;
+      e.currentTarget.style.transform = `translateY(${dragBaseRef.current + dy}px)`;
+      sheetDebug(`take dy=${Math.round(dy)} base=${Math.round(dragBaseRef.current)}`);
+      // 真机校验（一次）：下一帧 inline 期望值与视觉 translateY 是否一致——不一致 =
+      // 动画/keyframes 仍在压过 inline（WebKit 压制实锤）。
+      const el = e.currentTarget;
+      const expected = dragBaseRef.current + dy;
+      requestAnimationFrame(() => {
+        const visY = new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
+        const diff = Math.round(Math.abs(visY - expected));
+        sheetDebug(
+          `chk inline=${Math.round(expected)} visY=${Math.round(visY)} ${diff < 2 ? "ok" : "MISMATCH!"}`,
+        );
+      });
       return;
     }
     const v = (e.clientY - d.lastY) / Math.max(1, e.timeStamp - d.lastT);
     const dy = Math.max(0, e.clientY - d.startY);
     dragRef.current = { ...d, lastY: e.clientY, lastT: e.timeStamp, v, dy };
-    e.currentTarget.style.transform = `translateY(${dy}px)`;
+    mvCountRef.current++;
+    e.currentTarget.style.transform = `translateY(${dragBaseRef.current + dy}px)`;
   };
 
   const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = dragRef.current;
     if (d.phase === "idle") return;
+    const kind = e.type === "pointercancel" ? "PCANCEL" : "up";
     dragRef.current = { phase: "idle" };
     if (d.phase !== "dragging") return;
     const el = e.currentTarget;
+    dragBaseRef.current = 0;
     const dismiss =
       d.dy >= DISMISS_DISTANCE_PX || (d.dy >= DISMISS_MIN_DRAG_PX && d.v >= DISMISS_VELOCITY_PX_MS);
     if (dismiss) {
@@ -206,6 +245,9 @@ export function MobileSheet({
       el.style.setProperty("--tw-exit-opacity", "1");
       el.style.setProperty("--tw-animation-duration", `${DISMISS_SLIDE_MS}ms`);
       el.style.setProperty("--tw-ease", "ease-in");
+      sheetDebug(
+        `${kind} dy=${Math.round(d.dy)} v=${d.v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> DISMISS`,
+      );
       onOpenChangeRef.current(false);
       return;
     }
@@ -215,6 +257,9 @@ export function MobileSheet({
     window.setTimeout(() => {
       el.style.transition = "";
     }, SPRING_BACK_MS + 40);
+    sheetDebug(
+      `${kind} dy=${Math.round(d.dy)} v=${d.v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> bounce`,
+    );
   };
 
   return (

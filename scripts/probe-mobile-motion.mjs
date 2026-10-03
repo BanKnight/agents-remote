@@ -220,6 +220,9 @@ async function pressAssert(page, sel, locator, label) {
     }
   });
   const grab = await m.locator(".msheet .grab").boundingBox();
+  const top0 = await m.evaluate(
+    () => document.querySelector(".msheet").getBoundingClientRect().top,
+  );
   await m.mouse.move(grab.x + grab.width / 2, grab.y + grab.height / 2);
   await m.mouse.down();
   // 分步下拖 40px，步间 30ms 压低末速（v≈0.33px/ms < 0.5，防误判惯性 dismiss）。
@@ -229,20 +232,26 @@ async function pressAssert(page, sel, locator, label) {
   }
   const during = await m.evaluate(() => {
     const el = document.querySelector(".msheet");
+    const computed = getComputedStyle(el).transform;
     return {
+      top: el.getBoundingClientRect().top,
       inline: el.style.transform,
-      computed: getComputedStyle(el).transform,
+      m42: computed === "none" ? 0 : new DOMMatrixReadOnly(computed).m42,
       anims: el.getAnimations().length,
       cls: el.className,
     };
   });
+  // 视觉跟手且无跳变：手指移 40px，sheet 视觉顶同移 40px（±3 容差）——修复前直接写
+  // translateY(dy) 会从升起中段瞬跳到近终态再跟手（位移 = 40-base ≠ 40）。
+  const visShift = during.top - top0;
   ok(
-    during.inline === "translateY(40px)",
-    `打开即下拉: 拖 40px 后 inline transform 即时跟手（实测 ${during.inline}）`,
+    Math.abs(visShift - 40) <= 3,
+    `打开即下拉: 手指移 40px 视觉跟手无跳变（实测视觉移 ${visShift.toFixed(1)}px）`,
   );
+  const inlineN = Number.parseFloat(during.inline.replace("translateY(", "")) || 0;
   ok(
-    during.computed.includes("40"),
-    `打开即下拉: computed transform 同步（实测 ${during.computed}）`,
+    Math.abs(during.m42 - inlineN) < 1 && inlineN > 0,
+    `打开即下拉: 视觉由 inline 决定（computed m42=${during.m42.toFixed(1)} ≈ inline ${inlineN}，动画未压过）`,
   );
   ok(during.anims === 0, `打开即下拉: getAnimations 已清空（实测 ${during.anims}）`);
   ok(
@@ -282,6 +291,9 @@ async function pressAssert(page, sel, locator, label) {
     }
   });
   const grab2 = await m.locator(".msheet .grab").boundingBox();
+  const top0b = await m.evaluate(
+    () => document.querySelector(".msheet").getBoundingClientRect().top,
+  );
   await m.mouse.move(grab2.x + grab2.width / 2, grab2.y + 80); // 内容区（菜单项上），非热区
   await m.mouse.down();
   for (let i = 1; i <= 4; i++) {
@@ -290,15 +302,24 @@ async function pressAssert(page, sel, locator, label) {
   }
   const during2 = await m.evaluate(() => {
     const el = document.querySelector(".msheet");
+    const computed = getComputedStyle(el).transform;
     return {
+      top: el.getBoundingClientRect().top,
       inline: el.style.transform,
+      m42: computed === "none" ? 0 : new DOMMatrixReadOnly(computed).m42,
       anims: el.getAnimations().length,
       cls: el.className,
     };
   });
+  const visShift2 = during2.top - top0b;
   ok(
-    during2.inline === "translateY(40px)",
-    `内容区起拖: pending 建立、拖 40px 即时接管跟手（实测 ${during2.inline}）`,
+    Math.abs(visShift2 - 40) <= 3,
+    `内容区起拖: pending 建立、视觉跟手无跳变（实测视觉移 ${visShift2.toFixed(1)}px）`,
+  );
+  const inlineN2 = Number.parseFloat(during2.inline.replace("translateY(", "")) || 0;
+  ok(
+    Math.abs(during2.m42 - inlineN2) < 1 && inlineN2 > 0,
+    `内容区起拖: 视觉由 inline 决定（computed m42=${during2.m42.toFixed(1)} ≈ inline ${inlineN2}）`,
   );
   ok(during2.anims === 0, `内容区起拖: enter 动画已 cancel+摘类（实测 anims=${during2.anims}）`);
   ok(
