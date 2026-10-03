@@ -15,7 +15,12 @@ const DISMISS_DISTANCE_PX = 96;
 const DISMISS_MIN_DRAG_PX = 24;
 const DISMISS_VELOCITY_PX_MS = 0.5;
 const DRAG_START_PX = 6;
-const SPRING_BACK_MS = 200;
+/** 回弹弹簧：response 300ms 临界阻尼（Apple sheet 惯例 damping 1.0）。单位制 px/ms：
+ * k = (2π/T)²，c = 2√k（= 2ω，ζ=1）；半隐式欧拉积分，初速度 = 手指松手速度——快甩
+ * 带速下冲过冲再收回、慢拖平滑收回，固定时长的 ease-out 做不到速度继承（手感假）。 */
+const SPRING_RESPONSE_MS = 300;
+const SPRING_STIFFNESS = ((2 * Math.PI) / SPRING_RESPONSE_MS) ** 2; // ≈4.39e-4 /ms²
+const SPRING_DAMPING = 2 * Math.sqrt(SPRING_STIFFNESS); // ≈0.0419 /ms（ζ=1）
 /** 拖拽 dismiss 滑出：顶边推过视口底的余量（防亚像素残边，fill-forwards 保持出屏终态）。 */
 const DISMISS_SLIDE_PAST_PX = 40;
 /** 拖拽 dismiss 滑出时长：从松手位置滑出全屏比常规关闭（16px+fade）距离长，稍缓贴近 iOS。 */
@@ -45,6 +50,35 @@ export function hasScrollableContent(el: HTMLElement): boolean {
     }
   }
   return false;
+}
+
+/**
+ * 回弹弹簧一步积分（半隐式欧拉单子步）。运行时 rAF 与单测共用同一份积分代码——
+ * CDP 输入节流做不出高松手速度（4 步快甩实测只得 0.17px/ms），速度继承的数值验证
+ * 在单测，浏览器探针只断言「回弹发生且收敛」。
+ */
+export function springStep(x: number, v: number, h: number): { x: number; v: number } {
+  v += (-SPRING_STIFFNESS * x - SPRING_DAMPING * v) * h;
+  x += v * h;
+  return { x, v };
+}
+
+/** 模拟回弹到收敛，返回峰值与收敛时长（单测用，验证速度继承与收敛性）。 */
+export function simulateSpringBack(x0: number, v0: number): { peak: number; settleMs: number } {
+  let x = x0;
+  let v = v0;
+  let t = 0;
+  let peak = x0;
+  while (t < 2000) {
+    const { x: x1, v: v1 } = springStep(x, v, 4);
+    const { x: x2, v: v2 } = springStep(x1, v1, 4);
+    x = x2;
+    v = v2;
+    t += 8;
+    peak = Math.max(peak, x);
+    if (Math.abs(x) < 0.5 && Math.abs(v) < 0.005) return { peak, settleMs: t };
+  }
+  return { peak, settleMs: t };
 }
 
 /**
@@ -122,8 +156,17 @@ export function MobileSheet({
   // data-[state=open] 变体失配不产生动画（exit 的 animate-out 独立类不受影响），Content
   // 卸载后下次打开正常播 enter。
   const [enterKilled, setEnterKilled] = useState(false);
+  // 回弹弹簧的 rAF 句柄：拖拽中断/关闭时取消，防旧弹簧跟新手势或 exit 动画抢 transform。
+  const springRafRef = useRef(0);
+  const cancelSpringBack = () => {
+    if (springRafRef.current) cancelAnimationFrame(springRafRef.current);
+    springRafRef.current = 0;
+  };
   useEffect(() => {
-    if (!open) setEnterKilled(false);
+    if (!open) {
+      cancelSpringBack();
+      setEnterKilled(false);
+    }
   }, [open]);
   // 接管时的视觉续接基点：enter 升起中被接管时 cancel 会让元素瞬回未变换位置（终态），
   // 直接写 translateY(dy) = 从升起中段瞬跳到近终态再跟手。cancel 前记下当前视觉顶与
@@ -155,10 +198,39 @@ export function MobileSheet({
     el.addEventListener("touchmove", onTouchMove, { passive: false });
     return () => {
       el.removeEventListener("touchmove", onTouchMove);
-      // 拖拽中断（DOM 卸载）时状态机归位，防下一次打开残留 pending/dragging。
+      // 拖拽中断（DOM 卸载）时状态机归位 + 弹簧取消，防下一次打开残留状态/rAF。
       dragRef.current = { phase: "idle" };
+      cancelSpringBack();
     };
   }, [contentNode]);
+
+  // 回弹 = 临界阻尼弹簧从**当前视觉位置** + 手指松手速度积分到 0（velocity handoff：
+  // 快甩带速下冲过冲再收回、慢拖平滑收回；固定时长 ease-out 无速度信息 = 手感假）。
+  // 从 computed transform 读起点（presentation value）；拖拽再接管/关闭时经
+  // cancelSpringBack 取消，收敛后清 inline 交还 Radix 动画。
+  const springBack = (el: HTMLDivElement, v0: number) => {
+    cancelSpringBack();
+    let x = new DOMMatrixReadOnly(getComputedStyle(el).transform).m42;
+    sheetDebug(`spring x0=${Math.round(x)} v0=${v0.toFixed(2)}`);
+    let v = v0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(now - last, 32);
+      last = now;
+      for (let i = 0; i < 2; i++) {
+        v += (-SPRING_STIFFNESS * x - SPRING_DAMPING * v) * (dt / 2);
+        x += v * (dt / 2);
+      }
+      if (Math.abs(x) < 0.5 && Math.abs(v) < 0.005) {
+        el.style.transform = "";
+        springRafRef.current = 0;
+        return;
+      }
+      el.style.transform = `translateY(${x}px)`;
+      springRafRef.current = requestAnimationFrame(tick);
+    };
+    springRafRef.current = requestAnimationFrame(tick);
+  };
 
   // pending 期失联清理：pending 未 capture，指针移出 Content 后 move/up 都收不到——
   // 残留 pending 会把**后续无关手势**（如点击其它按钮时 Playwright/真人的前置 move）
@@ -208,6 +280,8 @@ export function MobileSheet({
       // 越过起步阈值才接管：capture 后续 pointer（click 合成改落 capture 元素，热区按钮
       // 的小位移点击不受影响）。inline transform 接管期间清 transition 保证跟手。
       e.currentTarget.setPointerCapture(d.pointerId);
+      // 弹簧回弹途中再抓住 = 从当前位置重新接管（可中断，apple-design §3）。
+      cancelSpringBack();
       dragRef.current = {
         ...d,
         phase: "dragging",
@@ -283,12 +357,9 @@ export function MobileSheet({
       onOpenChangeRef.current(false);
       return;
     }
-    // 回弹：播完清 inline transition（防残留干扰 Radix enter/exit 动画的 transform）。
-    el.style.transition = `transform ${SPRING_BACK_MS}ms ease-out`;
-    el.style.transform = "";
-    window.setTimeout(() => {
-      el.style.transition = "";
-    }, SPRING_BACK_MS + 40);
+    // 回弹：弹簧从当前视觉位置 + 松手速度积分回 0（速度继承），收敛后清 inline 交还
+    // Radix 动画；拖拽再接管 / 关闭时经 cancelSpringBack 取消。
+    springBack(el, d.v);
     sheetDebug(
       `${kind} dy=${Math.round(d.dy)} v=${d.v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> bounce`,
     );

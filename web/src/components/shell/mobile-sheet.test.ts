@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { JSDOM } from "jsdom";
 
-import { hasScrollableContent } from "./mobile-sheet";
+import { hasScrollableContent, simulateSpringBack } from "./mobile-sheet";
 
 // bun:test 无内置 jsdom 环境——手动建 JSDOM 挂 globalThis（session-detail.test.ts 同款
 // 范式）。每个 test 一个新干净 DOM。
@@ -56,5 +56,26 @@ describe("hasScrollableContent", () => {
     const root = document.createElement("div");
     root.append(fakePane("auto", 200, 200));
     expect(hasScrollableContent(root)).toBe(false);
+  });
+});
+
+describe("simulateSpringBack（回弹速度继承）", () => {
+  test("快甩 v0=1.2px/ms、x0=37 → 带速下冲过冲（峰值 > x0+6，固定 ease-out 无此行为）", () => {
+    const { peak, settleMs } = simulateSpringBack(37, 1.2);
+    expect(peak).toBeGreaterThan(43);
+    expect(settleMs).toBeLessThan(600);
+  });
+
+  test("慢拖 v0=0、x0=40 → 无过冲（峰值=起点）且 ~300ms 收敛", () => {
+    const { peak, settleMs } = simulateSpringBack(40, 0);
+    expect(Math.abs(peak - 40)).toBeLessThan(0.1);
+    expect(settleMs).toBeGreaterThan(150);
+    expect(settleMs).toBeLessThan(600);
+  });
+
+  test("CDP 现实值 v0=0.17、x0=37 → 微过冲（诊断实测口径）", () => {
+    const { peak } = simulateSpringBack(37, 0.17);
+    expect(peak).toBeGreaterThan(37);
+    expect(peak).toBeLessThan(38.5);
   });
 });

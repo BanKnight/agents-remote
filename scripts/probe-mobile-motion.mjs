@@ -432,6 +432,46 @@ async function pressAssert(page, sel, locator, label) {
   await m.getByRole("menuitem", { name: "取消" }).click();
   await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
 
+  // Part 1b6：回弹弹簧收敛（速度继承的数值验证在 springStep/simulateSpringBack 单测——
+  // CDP 输入节流做不出高松手速度，诊断实测 4×5px/5ms 只得 0.17px/ms；此处断言回弹发生、
+  // 逐帧收敛到 0、收敛后 inline 清空交还 Radix 动画）。
+  console.log("Part 1b6: 回弹弹簧收敛");
+  await m.locator('[aria-label="更多操作"]').click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
+  await m.evaluate(() => {
+    for (const a of document.querySelector(".msheet").getAnimations()) {
+      a.pause();
+      a.currentTime = 200;
+    }
+    window.__spring = [];
+    const tick = () => {
+      const t = getComputedStyle(document.querySelector(".msheet")).transform;
+      window.__spring.push(t === "none" ? 0 : new DOMMatrixReadOnly(t).m42);
+      if (window.__spring.length < 50) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const grab6 = await m.locator(".msheet .grab").boundingBox();
+  await m.mouse.move(grab6.x + grab6.width / 2, grab6.y + grab6.height / 2);
+  await m.mouse.down();
+  for (let i = 1; i <= 4; i++) {
+    await m.mouse.move(grab6.x + grab6.width / 2, grab6.y + grab6.height / 2 + i * 5);
+    await m.waitForTimeout(5);
+  }
+  await m.mouse.up();
+  await m.waitForTimeout(700); // 覆盖采样 50 帧与 spring 收敛
+  const springRes = await m.evaluate(() => ({
+    peak: Math.max(...window.__spring),
+    last: window.__spring[window.__spring.length - 1],
+    transform: getComputedStyle(document.querySelector(".msheet")).transform,
+  }));
+  ok(
+    springRes.peak > 0 && springRes.last < 1 && springRes.transform === "none",
+    `回弹弹簧: 发生且逐帧收敛到 0、inline 清空（峰值 ${springRes.peak.toFixed(1)} → 末值 ${springRes.last.toFixed(2)}，computed=${springRes.transform}）`,
+  );
+  await m.getByRole("menuitem", { name: "取消" }).click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
+
   // Part 1c：重开验证 enterKilled 重置——enter 类串回归、动画重播。
   console.log("Part 1c: 关闭重开后 enter 动画恢复（enterKilled 重置）");
   await m.locator('[aria-label="更多操作"]').click();
