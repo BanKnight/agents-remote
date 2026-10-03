@@ -1381,6 +1381,8 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **motion 库回归，接管弹簧物理层（`a98e13b`，用户拍板「用库治本，编译有裁剪不担心体积」）**：手写半隐式欧拉积分退役，换 `motion@13.4.4` 命令式 `animate`（bounce 0 + duration 0.3 = 临界阻尼；velocity 单位 units/s，内部 px/ms ×1000；起点显式读 presentation value；中断走 `controls.stop()`，`finished.then` 以「ref 仍指向自己」判定自然收敛后才清 inline 交还 Radix）。**判定/测速层保留在本文件**（投影、velocity-first、窗口速度、越顶钳 0、起手面分档、可滚保护、pending 失联）——这几轮修对的成果不扔。**供应链记录**：Vaul 方案否决（作者 2025-10 README 官方声明 unmaintained + 22 个月无发版）；motion 14.0.0 昨日发布避开，锁 13.4.4（2026-09-25 ≥7 天）。**当年摘除决策的修正说明**：摘除前提「无手势驱动动画场景」在移动批后失效，本次按场景回归引入——仅命令式 `animate` 消费（无 LazyMotion/`m` 组件），entry 292886B 与摘除基线持平（tree-shaking 摇掉 React 绑定层）；未来再引入组件层消费须重估 barrel 树摇（§16 教训）。probe-mobile-motion 48 断言 + 单测 10 项全绿。
 
+**手感出彩三件套（`c8bdbfc`，用户反馈「没有 bug 但不出彩」）**：迁移 motion 时参数原样搬运（运动等价），出彩差距在运用层。①**动量 bounce 分档**——v ≥ 0.3px/ms（动量释放）回弹带 bounce 0.2（Apple damping ~0.8 的映射；skill §4：bounce 只给带动量的手势），慢速松手 bounce 0 优雅；②**rubber-band 软边界**（§9）——上顶原位（constant 0.2，比正向硬）与拖过一屏（0.55）渐进阻力，界内 1:1 跟手，判定仍用原始位移（`visualDragY` 导出纯函数）；③**拖拽 dismiss 带速滑出**——motion 弹簧顺松手速度滑出屏外（原 CSS exit 无初速通道），finished 后注入出屏 exit 变量再 onOpenChange（Radix exit 无感），滑出期间 startDrag 早退不接管离场中的 sheet。probe 48 断言 + 单测 13 项全绿。
+
 **待真机复验（移动批新项 + 修复）**：sheet 全程升起手感（450ms spring）/ 菜单逐项入场 / 触屏按压回缩分层手感（行 0.98 vs 按钮 0.97）/ **「打开即下拉」手指落在 sheet 任意位置（包括内容区）往下拖 → 立刻跟手（`bdce488` 热区分档 + `6aa7c27` 摘类双修复；WebKit 真机是唯一能复现原 bug 的环境，重点验）** / **iOS `:active` 按压缩放生效且滚动时无粘滞**（iOS Safari 滚动会清 ：active，需真机确认）+ PWA standalone 下生效。
 
 ## §7 待定项跟踪

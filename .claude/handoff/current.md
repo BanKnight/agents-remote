@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-04（**sheet 手感收口 + motion 库回归**：根因修复 `e1ae5a6`（取证定根因）→ 回弹弹簧 `f1f99ed` → 投影判定 `7c590b6` → 窗口速度+velocity-first `e7fb156`+`65fa654` → 越顶钳制 `7e9db59` → **弹簧物理移交 motion `a98e13b`**（用户拍板用库治本；Vaul 否决——作者官方声明 unmaintained；motion 锁 13.4.4 ≥7 天，仅命令式 animate 消费、entry 与摘除基线持平；判定/测速层保留在本文件）。probe-mobile-motion **48** 断言 + 单测 10 全绿，全门禁绿。**待真机复验全套手感；通过后删 sheet-debug.ts**。回滚点 = `98b12fa`。）
+> 最后更新：2026-10-04（**sheet 手感收口 + motion 库回归**：根因修复 `e1ae5a6`（取证定根因）→ 回弹弹簧 `f1f99ed` → 投影判定 `7c590b6` → 窗口速度+velocity-first `e7fb156`+`65fa654` → 越顶钳制 `7e9db59` → **弹簧物理移交 motion `a98e13b`**（用户拍板用库治本；Vaul 否决——作者官方声明 unmaintained；motion 锁 13.4.4 ≥7 天，仅命令式 animate 消费、entry 与摘除基线持平；判定/测速层保留在本文件）。→ **出彩三件套 `c8bdbfc`**（动量 bounce 0.2 分档 / rubber-band 软边界 / dismiss 带速滑出——用户反馈「没有 bug 但不出彩」）。probe-mobile-motion **48** 断言 + 单测 13 全绿，全门禁绿。**待真机复验出彩手感；通过后删 sheet-debug.ts**。回滚点 = `98b12fa`。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
