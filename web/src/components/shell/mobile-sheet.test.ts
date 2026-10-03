@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { JSDOM } from "jsdom";
 
-import { hasScrollableContent, simulateSpringBack } from "./mobile-sheet";
+import { hasScrollableContent, sampleVelocity, simulateSpringBack } from "./mobile-sheet";
 
 // bun:test 无内置 jsdom 环境——手动建 JSDOM 挂 globalThis（session-detail.test.ts 同款
 // 范式）。每个 test 一个新干净 DOM。
@@ -77,5 +77,35 @@ describe("simulateSpringBack（回弹速度继承）", () => {
     const { peak } = simulateSpringBack(37, 0.17);
     expect(peak).toBeGreaterThan(37);
     expect(peak).toBeLessThan(38.5);
+  });
+});
+
+describe("sampleVelocity（松手速度窗口）", () => {
+  test("匀速拖（2px/16ms×400ms）→ 窗口速度 = 真实速度 0.125px/ms", () => {
+    const samples = Array.from({ length: 26 }, (_, i) => ({ y: i * 2, t: i * 16 }));
+    expect(sampleVelocity(samples, 400)).toBeCloseTo(0.125, 2);
+  });
+
+  test("停顿后松手 → 速度衰减到 0（过期瞬时速度不再注入弹簧）", () => {
+    // 拖到 y=100（最后样本 t=200），停住 300ms，up 在 t=500：窗口回看 100ms 落在停顿期，
+    // 参考点 = 停住前最后样本，位移 0 ÷ 300ms = 0。
+    const samples = [
+      { y: 0, t: 0 },
+      { y: 100, t: 200 },
+    ];
+    expect(sampleVelocity(samples, 500)).toBe(0);
+  });
+
+  test("快甩末段（最后 100ms 内 80px）→ 0.8px/ms", () => {
+    const samples = [
+      { y: 0, t: 0 },
+      { y: 120, t: 380 },
+      { y: 200, t: 480 },
+    ];
+    expect(sampleVelocity(samples, 480)).toBeCloseTo(0.8, 2);
+  });
+
+  test("空样本 → 0", () => {
+    expect(sampleVelocity([], 100)).toBe(0);
   });
 });

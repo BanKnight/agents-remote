@@ -85,6 +85,28 @@ export function simulateSpringBack(x0: number, v0: number): { peak: number; sett
   return { peak, settleMs: t };
 }
 
+/** 松手速度窗口：从松手时刻回看这么长的时间取净位移（iOS UIPanGestureRecognizer 惯例）。 */
+const VELOCITY_WINDOW_MS = 100;
+
+/**
+ * 松手速度 = 最近窗口的净位移 ÷ 窗口时长（apple-design §2：track a short velocity/position
+ * history，不是最后一次 move 的瞬时值——真实手指慢拖停停走走，停顿期没有 move 事件，
+ * 用「up 时刻回看」窗口让停顿自然计入分母：停住 300ms 后松手 → 位移 0 ÷ 300ms = 0，
+ * 过期瞬时速度不会再被注入弹簧造成向下过冲）。
+ */
+export function sampleVelocity(samples: { y: number; t: number }[], tEnd: number): number {
+  if (samples.length === 0) return 0;
+  const cutoff = tEnd - VELOCITY_WINDOW_MS;
+  let ref = samples[0];
+  for (const s of samples) {
+    if (s.t <= cutoff) ref = s;
+    else break;
+  }
+  const dt = tEnd - ref.t;
+  if (dt < 1) return 0;
+  return (samples[samples.length - 1].y - ref.y) / dt;
+}
+
 /**
  * 拖动状态机：idle → pending（在热区按下）→ dragging（越过起步阈值，跟手位移）。
  * 全 ref 不触发 re-render——位移直接写 Content 的 inline transform。
@@ -96,10 +118,9 @@ type DragState =
       phase: "dragging";
       startY: number;
       pointerId: number;
-      lastY: number;
-      lastT: number;
-      v: number;
       dy: number;
+      /** 位置/时间样本（§2 velocity history），松手时经 sampleVelocity 取窗口速度。 */
+      samples: { y: number; t: number }[];
     };
 
 /**
@@ -287,12 +308,11 @@ export function MobileSheet({
       // 弹簧回弹途中再抓住 = 从当前位置重新接管（可中断，apple-design §3）。
       cancelSpringBack();
       dragRef.current = {
-        ...d,
         phase: "dragging",
-        lastY: e.clientY,
-        lastT: e.timeStamp,
-        v: 0,
+        startY: d.startY,
+        pointerId: d.pointerId,
         dy,
+        samples: [{ y: e.clientY, t: e.timeStamp }],
       };
       // enter spring（批B，375ms）运行期 keyframes transform 压过 inline style——
       // 「打开即下拉」会在动画播完才跳到手指位置（design review P2）。显式 cancel
@@ -323,9 +343,9 @@ export function MobileSheet({
       });
       return;
     }
-    const v = (e.clientY - d.lastY) / Math.max(1, e.timeStamp - d.lastT);
     const dy = Math.max(0, e.clientY - d.startY);
-    dragRef.current = { ...d, lastY: e.clientY, lastT: e.timeStamp, v, dy };
+    const samples = [...d.samples, { y: e.clientY, t: e.timeStamp }].slice(-8);
+    dragRef.current = { ...d, dy, samples };
     mvCountRef.current++;
     e.currentTarget.style.transform = `translateY(${dragBaseRef.current + dy}px)`;
   };
@@ -338,11 +358,14 @@ export function MobileSheet({
     if (d.phase !== "dragging") return;
     const el = e.currentTarget;
     dragBaseRef.current = 0;
+    // 松手速度 = 窗口净速度（停顿自然衰减，§2 velocity history），dismiss 投影与
+    // 弹簧初速共用同一值——判定的速度与动画的速度不会分叉。
+    const v = sampleVelocity(d.samples, e.timeStamp);
     const rect = el.getBoundingClientRect();
     const threshold = Math.max(DISMISS_MIN_DISTANCE_PX, rect.height * DISMISS_HEIGHT_RATIO);
-    const projected = d.dy + d.v * DISMISS_PROJECT_MS;
+    const projected = d.dy + v * DISMISS_PROJECT_MS;
     const dismiss =
-      d.dy >= DISMISS_MIN_DRAG_PX && (projected >= threshold || d.v >= DISMISS_VELOCITY_PX_MS);
+      d.dy >= DISMISS_MIN_DRAG_PX && (projected >= threshold || v >= DISMISS_VELOCITY_PX_MS);
     if (dismiss) {
       // 保留 inline transform 作为 exit 动画起点（tw-animate-css 的 exit keyframes 只有 to
       // 无 from，起始值 = 当前计算样式）——从松手位置继续滑出；清掉会瞬跳回原位再滑出
@@ -358,16 +381,16 @@ export function MobileSheet({
       el.style.setProperty("--tw-animation-duration", `${DISMISS_SLIDE_MS}ms`);
       el.style.setProperty("--tw-ease", "ease-in");
       sheetDebug(
-        `${kind} dy=${Math.round(d.dy)} v=${d.v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> DISMISS`,
+        `${kind} dy=${Math.round(d.dy)} v=${v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> DISMISS`,
       );
       onOpenChangeRef.current(false);
       return;
     }
-    // 回弹：弹簧从当前视觉位置 + 松手速度积分回 0（速度继承），收敛后清 inline 交还
+    // 回弹：弹簧从当前视觉位置 + 松手窗口速度积分回 0（速度继承），收敛后清 inline 交还
     // Radix 动画；拖拽再接管 / 关闭时经 cancelSpringBack 取消。
-    springBack(el, d.v);
+    springBack(el, v);
     sheetDebug(
-      `${kind} dy=${Math.round(d.dy)} v=${d.v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> bounce`,
+      `${kind} dy=${Math.round(d.dy)} v=${v.toFixed(2)} mv=${mvCountRef.current} tp=${tpCountRef.current} -> bounce`,
     );
   };
 
