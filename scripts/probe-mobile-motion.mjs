@@ -6,8 +6,9 @@
 //     （inline transform = translateY(40px)、getAnimations 清空、enterKilled 从 className
 //     摘掉 animate-in 串——WebKit cancel 后会重建动画实例，样式失配才彻底死亡），慢速松
 //     手回弹（非 dismiss），exit 类串仍在（关闭动画能力未被破坏）。
-//   Part 1b2（移动）：热区分档——升起中按**内容区**（非热区）也即时接管（真机主根因：
-//     手指落点赶不上 grab/shd 升起到位，窄热区判定 = 拖拽从未启动）。
+//   Part 1b2（移动）：升起期宽热区——升起中按**内容区**（非热区）也即时接管。
+//   Part 1b3/1b4/1b5（移动）：播完后按内容可滚性分档——不可滚（菜单）整面可拖；
+//     可滚（人为造溢出 fixture）保窄热区拒绝；内容区上滑放弃手势不劫持。
 //   Part 1b3（移动）：防过宽——enter 播完后窄热区回归，内容区拖动不接管。
 //   Part 1c（移动）：关闭后重开——enterKilled 重置，enter 类串回归、动画重播。
 //   Part 2（移动）：/projects 全部会话行（.srow2 CSS 单源）按住 scale 0.98——
@@ -276,11 +277,10 @@ async function pressAssert(page, sel, locator, label) {
   await m.getByRole("menuitem", { name: "取消" }).click();
   await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
 
-  // Part 1b2：热区分档（真机主根因修复）——「刚打开就下拉」的手指落点在时序上赶不上升起
-  // 到位的 grab/shd 热区，必然按在 sheet 内容区：窄热区 closest 判定失败 → pending 从未
-  // 建立 → 拖拽从未启动（动画层的 cancel/摘类根本没机会执行；探针此前精确按 grab 全绿 =
-  // 掩盖真机失败面）。enter 升起中（open + Content 自身动画在播）整个 Content 可起拖；
-  // 定格同一窗口，down 落在 grab 下方 ~80px 的菜单项区（非热区）→ 拖 40px 应即时接管。
+  // Part 1b2：升起期宽热区——enter 运行期（open + Content 自身动画在播）内容尚未就位
+  // 无交互意义，整个 Content 可起拖。定格同一窗口，down 落在 grab 下方 ~80px 的菜单项区
+  // （非热区）→ 拖 40px 应即时接管（真机取证定的真根因在「播完后窄热区拒绝」段，见 1b3；
+  // 此段覆盖升起期窗口的宽热区行为）。
   console.log("Part 1b2: 升起中按内容区（非热区）也即时接管");
   await m.locator('[aria-label="更多操作"]').click();
   await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
@@ -335,14 +335,19 @@ async function pressAssert(page, sel, locator, label) {
   await m.getByRole("menuitem", { name: "取消" }).click();
   await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
 
-  // Part 1b3：防过宽——enter 播完后窄热区回归：按住内容区（菜单项）拖动**不**接管（否则
-  // 内容可滚 sheet 的原生滚动会被拖拽劫持）。
-  console.log("Part 1b3: 播完后窄热区回归（内容区拖动不接管）");
+  // Part 1b3：播完后内容区仍可拖（真机取证定的根因修复：450ms 播完后手指落在内容区曾是
+  // 窄热区拒绝 = 「打开后拖必失败」的真根因——人的「打开→按下拖」反应必然超过 450ms；
+  // 现在按内容可滚性分档，ActionMenu 菜单不可滚 → 整面可拖。拖成功同时证明
+  // hasScrollableContent 对菜单判 false）。
+  console.log("Part 1b3: 播完后内容区仍可拖（不可滚 sheet 整面起拖）");
   await m.locator('[aria-label="更多操作"]').click();
   await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
   await m.waitForTimeout(650); // 等 450ms enter 播完（§18）
   const grab3 = await m.locator(".msheet .grab").boundingBox();
-  await m.mouse.move(grab3.x + grab3.width / 2, grab3.y + 80);
+  const top3 = await m.evaluate(
+    () => document.querySelector(".msheet").getBoundingClientRect().top,
+  );
+  await m.mouse.move(grab3.x + grab3.width / 2, grab3.y + 80); // 内容区（菜单项上）
   await m.mouse.down();
   for (let i = 1; i <= 4; i++) {
     await m.mouse.move(grab3.x + grab3.width / 2, grab3.y + 80 + i * 10);
@@ -350,12 +355,78 @@ async function pressAssert(page, sel, locator, label) {
   }
   const during3 = await m.evaluate(() => {
     const el = document.querySelector(".msheet");
-    return { inline: el.style.transform, anims: el.getAnimations().length };
+    const computed = getComputedStyle(el).transform;
+    return {
+      top: el.getBoundingClientRect().top,
+      inline: el.style.transform,
+      m42: computed === "none" ? 0 : new DOMMatrixReadOnly(computed).m42,
+    };
   });
-  ok(during3.inline === "", `播完后: 内容区拖动不接管、inline 恒空（实测 "${during3.inline}"）`);
-  ok(during3.anims === 0, `播完后: 无残留动画实例（实测 ${during3.anims}）`);
+  const visShift3 = during3.top - top3;
+  ok(
+    Math.abs(visShift3 - 40) <= 3,
+    `播完后: 内容区起拖仍接管、视觉跟手（实测视觉移 ${visShift3.toFixed(1)}px）`,
+  );
+  const inlineN3 = Number.parseFloat(during3.inline.replace("translateY(", "")) || 0;
+  ok(
+    Math.abs(during3.m42 - inlineN3) < 1 && inlineN3 > 0,
+    `播完后: 视觉由 inline 决定（m42=${during3.m42.toFixed(1)} ≈ inline ${inlineN3}）`,
+  );
+  // 慢速松手回弹（非 dismiss），再正常取消关闭。
+  await m.mouse.up();
+  await m.waitForTimeout(280);
+  await m.getByRole("menuitem", { name: "取消" }).click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
+
+  // Part 1b4：可滚内容区保窄热区——列表类 sheet 的原生滚动不被拖拽劫持。页内给菜单容器
+  // 人为造溢出（max-height + overflow-y:auto）作可滚 fixture，播完后按内容区拖 → 拒绝。
+  console.log("Part 1b4: 可滚内容区仍走窄热区拒绝");
+  await m.locator('[aria-label="更多操作"]').click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
+  await m.waitForTimeout(650);
+  await m.evaluate(() => {
+    const menu = document.querySelector('[role="menu"]');
+    menu.style.maxHeight = "120px";
+    menu.style.overflowY = "auto";
+  });
+  const grab4 = await m.locator(".msheet .grab").boundingBox();
+  await m.mouse.move(grab4.x + grab4.width / 2, grab4.y + 80);
+  await m.mouse.down();
+  for (let i = 1; i <= 4; i++) {
+    await m.mouse.move(grab4.x + grab4.width / 2, grab4.y + 80 + i * 10);
+    await m.waitForTimeout(30);
+  }
+  const during4 = await m.evaluate(() => ({
+    inline: document.querySelector(".msheet").style.transform,
+  }));
+  ok(
+    during4.inline === "",
+    `可滚 sheet: 内容区拖动仍拒绝、inline 恒空（实测 "${during4.inline}"）`,
+  );
   // 未 capture → click 落 down/up 公共祖先：移开指针再松手防误触菜单项导航。
-  await m.mouse.move(grab3.x + grab3.width / 2, 10);
+  await m.mouse.move(grab4.x + grab4.width / 2, 10);
+  await m.mouse.up();
+  await m.waitForTimeout(250);
+  await m.getByRole("menuitem", { name: "取消" }).click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
+
+  // Part 1b5：内容区上滑 = 放弃手势（向上是滚动/选择方向，不劫持；回 idle 后菜单项
+  // 照常可点）。
+  console.log("Part 1b5: 内容区上滑放弃手势");
+  await m.locator('[aria-label="更多操作"]').click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
+  await m.waitForTimeout(650);
+  const grab5 = await m.locator(".msheet .grab").boundingBox();
+  await m.mouse.move(grab5.x + grab5.width / 2, grab5.y + 80);
+  await m.mouse.down();
+  for (let i = 1; i <= 3; i++) {
+    await m.mouse.move(grab5.x + grab5.width / 2, grab5.y + 80 - i * 10); // 向上滑
+    await m.waitForTimeout(30);
+  }
+  const during5 = await m.evaluate(() => ({
+    inline: document.querySelector(".msheet").style.transform,
+  }));
+  ok(during5.inline === "", `上滑: 放弃手势、inline 恒空（实测 "${during5.inline}"）`);
   await m.mouse.up();
   await m.waitForTimeout(250);
   await m.getByRole("menuitem", { name: "取消" }).click();

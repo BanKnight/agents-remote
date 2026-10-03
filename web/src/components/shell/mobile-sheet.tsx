@@ -31,6 +31,23 @@ const DISMISS_SLIDE_MS = 200;
 export const SHEET_UNMOUNT_DELAY_MS = 300;
 
 /**
+ * sheet 内容是否存在实际溢出的可滚容器（真机取证 `7a3d37c` 后的根因：enter 450ms 播完后
+ * 手指落在内容区被窄热区拒绝，而人「打开→按下拖」的反应必然超过 450ms = 必拒）。播完后
+ * 的起手面按此分档：不可滚（菜单/确认框/prompt 等大多数 sheet）→ 整个 Content 都可往下
+ * 拖收起；可滚（历史/文件/实例信息列表）→ 维持 grab/shd 窄热区，保住列表原生滚动。
+ * 只扫后代不含 el 自身（.msheet 根的 max-height 内滚是 sheet 级滚动，不是内容列表）。
+ */
+export function hasScrollableContent(el: HTMLElement): boolean {
+  for (const n of el.querySelectorAll<HTMLElement>("*")) {
+    if (n.scrollHeight > n.clientHeight + 1) {
+      const oy = getComputedStyle(n).overflowY;
+      if (oy === "auto" || oy === "scroll") return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 拖动状态机：idle → pending（在热区按下）→ dragging（越过起步阈值，跟手位移）。
  * 全 ref 不触发 re-render——位移直接写 Content 的 inline transform。
  */
@@ -143,22 +160,31 @@ export function MobileSheet({
     };
   }, [contentNode]);
 
+  // pending 期失联清理：pending 未 capture，指针移出 Content 后 move/up 都收不到——
+  // 残留 pending 会把**后续无关手势**（如点击其它按钮时 Playwright/真人的前置 move）
+  // 判成「down 点 → 当前位置」的拖拽起点，瞬间把 sheet 拖走。pending 期间（capture 前）
+  // 指针离开边界即放弃手势；dragging 期有 capture（leave 被抑制），不受影响。
+  const abandonPending = () => {
+    if (dragRef.current.phase === "pending") {
+      sheetDebug("drop-out（指针离开 Content，pending 放弃）");
+      dragRef.current = { phase: "idle" };
+    }
+  };
+
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!(e.target instanceof Element)) return;
-    // 热区分档：enter 升起中（open 态 + Content 自身动画在播 = getAnimations 非空）整个
-    // Content 都可起拖。真机多轮「打开即下拉不成功」的主根因在此，不在动画层：顶部热区
-    // （grab 5px + shd ≈12–44px）要等 sheet 升到手指位置才可命中，而「刚打开就下拉」的
-    // 手指落点在时序上必然赶不上升起到位——按在升起中的 sheet 内容区，closest 窄热区判定
-    // 失败 → pending 从未建立 → moveDrag 接管段（cancel/摘类）根本没机会执行（探针
-    // boundingBox 精确按 grab 全绿、真人手指必失败的原因）。升起中内容无交互意义（菜单
-    // 项/列表未到位点不到），宽热区无副作用；enter 播完或被接管摘类后 getAnimations 归空
-    // 自动收窄回 grab/shd，列表区原生滚动不受影响。exit 期间（data-state=closed）不放宽。
+    // 起手面分档（真机取证定的根因：450ms 升起播完后手指落在内容区被窄热区拒绝，而人
+    // 「打开→按下拖」的反应必然超过 450ms）：①enter 升起中（getAnimations 非空）内容
+    // 尚未就位无交互意义，整个 Content 可起拖；②播完后按内容可滚性分——不可滚（菜单/
+    // 确认框/prompt 等大多数）整个 Content 可起拖，可滚（历史/文件/实例信息）维持
+    // grab/shd 窄热区保住列表原生滚动。向下才接管（moveDrag 判方向），点按与向上滑不受
+    // 影响。exit 期间（data-state=closed）不放宽。
     const enterPlaying =
       e.currentTarget.getAttribute("data-state") === "open" &&
       e.currentTarget.getAnimations().length > 0;
     const zone = e.target.closest(".grab") ? "grab" : e.target.closest(".shd") ? "shd" : "content";
-    if (!enterPlaying && zone === "content") {
-      sheetDebug(`down zone=content play=0 pend=NO（窄热区拒绝）`);
+    if (zone === "content" && !enterPlaying && hasScrollableContent(e.currentTarget)) {
+      sheetDebug(`down zone=content play=0 pend=NO（可滚内容区保窄热区）`);
       return;
     }
     mvCountRef.current = 0;
@@ -172,6 +198,12 @@ export function MobileSheet({
     if (d.phase === "idle") return;
     if (d.phase === "pending") {
       const dy = e.clientY - d.startY;
+      if (dy <= -DRAG_START_PX) {
+        // 向上滑过阈值 = 滚动/选择意图，放弃手势（回 idle 后 touchmove 不再 prevent）。
+        sheetDebug(`drop-up dy=${Math.round(dy)}`);
+        dragRef.current = { phase: "idle" };
+        return;
+      }
       if (dy <= DRAG_START_PX) return;
       // 越过起步阈值才接管：capture 后续 pointer（click 合成改落 capture 元素，热区按钮
       // 的小位移点击不受影响）。inline transform 接管期间清 transition 保证跟手。
@@ -295,6 +327,7 @@ export function MobileSheet({
           )}
           onPointerCancel={endDrag}
           onPointerDown={startDrag}
+          onPointerLeave={abandonPending}
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
         >
