@@ -2,6 +2,11 @@
 //   Part 1（移动 390×844）：project scope ⋯ ActionMenu sheet——role="menu" 容器挂
 //     .animate-stagger-rows，菜单项 animation-name = stagger-row-enter、delay 按
 //     nth-child 递增（0/28/56ms）、fill backwards（frontend-notes §17）。
+//   Part 1b（移动）：「打开即下拉」——enter 升起中立即按住 grab 拖 40px：拖拽即时接管
+//     （inline transform = translateY(40px)、getAnimations 清空、enterKilled 从 className
+//     摘掉 animate-in 串——WebKit cancel 后会重建动画实例，样式失配才彻底死亡），慢速松
+//     手回弹（非 dismiss），exit 类串仍在（关闭动画能力未被破坏）。
+//   Part 1c（移动）：关闭后重开——enterKilled 重置，enter 类串回归、动画重播。
 //   Part 2（移动）：/projects 全部会话行（.srow2 CSS 单源）按住 scale 0.98——
 //     中段 rAF 采样有中间值（真插值非瞬切，§19）+ transitionrun 派发 + 松手释放。
 //   Part 3（移动）：底 nav 项（NavItemContent）按住 scale 0.98 + transition 收窄
@@ -192,6 +197,86 @@ async function pressAssert(page, sel, locator, label) {
   const menuItem = m.locator('[role="menu"] > button').first();
   await menuItem.waitFor({ timeout: 5000 });
   await pressAssert(m, '[role="menu"] > button:nth-child(1)', menuItem, "sheet 菜单项");
+  await m.getByRole("menuitem", { name: "取消" }).click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
+
+  // Part 1b：「打开即下拉」——sheet enter（450ms 全程升起）播放中按住 grab 往下拖。
+  // 修复前（WebKit）：cancel 后 animation-name 仍匹配 → 动画实例重建 → keyframes transform
+  // 压过 inline → 拖不动（真机「打开即下拉必失败」）；修复后 enterKilled 摘类 = 样式失配，
+  // 动画死亡。自然时序窗口 = ~17px 热区 × spring 升速，Playwright 原子事件序的 boundingBox
+  // 往返必 race 输（本段首跑实锤：down 落点错过热区，inline 恒空）——WAAPI 把 enter 动画
+  // pause 定格在 t=200ms（升起中段），grab 静止 = 确定性 fixture；拖拽接管的 cancel + 摘类
+  // 对 paused 动画同样生效，验证力度不减反增（任意时刻可打断）。
+  console.log("Part 1b: 打开即下拉（enter 播放中拖拽即时接管）");
+  await m.locator('[aria-label="更多操作"]').click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
+  await m.evaluate(() => {
+    for (const a of document.querySelector(".msheet").getAnimations()) {
+      a.pause();
+      a.currentTime = 200;
+    }
+  });
+  const grab = await m.locator(".msheet .grab").boundingBox();
+  await m.mouse.move(grab.x + grab.width / 2, grab.y + grab.height / 2);
+  await m.mouse.down();
+  // 分步下拖 40px，步间 30ms 压低末速（v≈0.33px/ms < 0.5，防误判惯性 dismiss）。
+  for (let i = 1; i <= 4; i++) {
+    await m.mouse.move(grab.x + grab.width / 2, grab.y + grab.height / 2 + i * 10);
+    await m.waitForTimeout(30);
+  }
+  const during = await m.evaluate(() => {
+    const el = document.querySelector(".msheet");
+    return {
+      inline: el.style.transform,
+      computed: getComputedStyle(el).transform,
+      anims: el.getAnimations().length,
+      cls: el.className,
+    };
+  });
+  ok(
+    during.inline === "translateY(40px)",
+    `打开即下拉: 拖 40px 后 inline transform 即时跟手（实测 ${during.inline}）`,
+  );
+  ok(
+    during.computed.includes("40"),
+    `打开即下拉: computed transform 同步（实测 ${during.computed}）`,
+  );
+  ok(during.anims === 0, `打开即下拉: getAnimations 已清空（实测 ${during.anims}）`);
+  ok(
+    !during.cls.includes("data-[state=open]:animate-in"),
+    "打开即下拉: enterKilled 已摘 animate-in 类串（WebKit 重建防护生效）",
+  );
+  // 慢速松手 → 回弹分支：sheet 仍在、exit 类串未受影响。
+  await m.mouse.up();
+  await m.waitForTimeout(280); // 覆盖 200ms 回弹
+  const afterBack = await m.evaluate(() => {
+    const el = document.querySelector(".msheet");
+    return { state: el?.getAttribute("data-state"), cls: el?.className ?? "" };
+  });
+  ok(
+    afterBack.state === "open",
+    `打开即下拉: 慢速 40px 松手走回弹非 dismiss（data-state=${afterBack.state}）`,
+  );
+  ok(
+    afterBack.cls.includes("data-[state=closed]:animate-out"),
+    "打开即下拉: 回弹后 exit 类串仍在（关闭动画能力未破坏）",
+  );
+  await m.getByRole("menuitem", { name: "取消" }).click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
+
+  // Part 1c：重开验证 enterKilled 重置——enter 类串回归、动画重播。
+  console.log("Part 1c: 关闭重开后 enter 动画恢复（enterKilled 重置）");
+  await m.locator('[aria-label="更多操作"]').click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
+  const reopened = await m.evaluate(() => {
+    const el = document.querySelector(".msheet");
+    return { cls: el.className, anims: el.getAnimations().length };
+  });
+  ok(
+    reopened.cls.includes("data-[state=open]:animate-in"),
+    "重开: animate-in 类串回归（enterKilled 已重置）",
+  );
+  ok(reopened.anims > 0, `重开: enter 动画重播中（实测 ${reopened.anims} 个动画实例）`);
   await m.getByRole("menuitem", { name: "取消" }).click();
   await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
 

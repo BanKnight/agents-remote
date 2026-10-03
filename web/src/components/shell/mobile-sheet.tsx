@@ -95,6 +95,17 @@ export function MobileSheet({
   // latest-ref 模式：effect 只依赖 contentNode，onOpenChange 变化不触发重绑。
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
+  // enter 动画被拖拽接管后置 true：从 className 摘掉 animate-in 串。规范语义（CSS
+  // Animations）：cancel 一个 animation-name 仍匹配的 CSS 动画，样式更新时会**立即重建
+  // 实例**（keyframes transform 重新压过 inline——真机「刚打开必然下拉不成功」即此；
+  // Chromium 不重建所以探针测不到，WebKit 有历史分歧行为）。样式失配 = 动画死亡且
+  // 不可重建，全引擎一致。open=false 时重置：此时 data-state=closed，animate-in 的
+  // data-[state=open] 变体失配不产生动画（exit 的 animate-out 独立类不受影响），Content
+  // 卸载后下次打开正常播 enter。
+  const [enterKilled, setEnterKilled] = useState(false);
+  useEffect(() => {
+    if (!open) setEnterKilled(false);
+  }, [open]);
 
   // 防滚动抢占：non-passive touchmove 在手势期（非 idle）preventDefault。真机「回弹/
   // 不跟手/拖不动」的来源是 WebKit 把手势当滚动启动并 pointercancel 中断拖拽（cancel 时
@@ -145,6 +156,11 @@ export function MobileSheet({
       // 「打开即下拉」会在动画播完才跳到手指位置（design review P2）。显式 cancel
       // 让拖拽立即接管；未在播时是 no-op。只 cancel 不改拖拽状态机。
       for (const a of e.currentTarget.getAnimations()) a.cancel();
+      // WebKit：cancel 后 animation-name 仍匹配，样式更新即重建动画实例、keyframes
+      // 重新压过 inline（真机「刚打开必然下拉不成功」的根因）——置 enterKilled 从
+      // className 摘掉 animate-in 串，样式失配让动画彻底死亡（React 离散事件同步
+      // flush，与 inline transform 同帧生效，无跳帧）。
+      setEnterKilled(true);
       e.currentTarget.style.transition = "";
       e.currentTarget.style.transform = `translateY(${dy}px)`;
       return;
@@ -211,9 +227,13 @@ export function MobileSheet({
             // tw-animate 的 enter keyframes 消费该变量），去掉 fade（iOS sheet 是纯
             // 位移，升起途中不透明，dim 交给 scrim）；时长走 sheet 档 token（100%
             // 路程下 375ms 偏陡）。拖拽状态机、exit keyframes（inline transform 作
-            // 起点）与 fill-mode-forwards 一律不动；「打开即下拉」的 getAnimations
-            // cancel 对 450ms 升起同样生效。
-            "data-[state=open]:animate-in data-[state=open]:[--tw-enter-translate-y:100%] data-[state=open]:[--tw-ease:var(--spring-standard)] data-[state=open]:[--tw-animation-duration:var(--spring-sheet-duration)]",
+            // 起点）与 fill-mode-forwards 一律不动；「打开即下拉」= getAnimations
+            // cancel + enterKilled 摘类（WebKit 重建动画防护，见 state 处注释）。
+            ...(enterKilled
+              ? []
+              : [
+                  "data-[state=open]:animate-in data-[state=open]:[--tw-enter-translate-y:100%] data-[state=open]:[--tw-ease:var(--spring-standard)] data-[state=open]:[--tw-animation-duration:var(--spring-sheet-duration)]",
+                ]),
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-bottom-4 data-[state=closed]:[--tw-animation-duration:var(--duration-exit)] data-[state=closed]:fill-mode-forwards",
           )}
           onPointerCancel={endDrag}
