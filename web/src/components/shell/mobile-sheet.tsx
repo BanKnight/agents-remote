@@ -131,7 +131,19 @@ export function MobileSheet({
   }, [contentNode]);
 
   const startDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!(e.target instanceof Element) || !e.target.closest(".grab, .shd")) return;
+    if (!(e.target instanceof Element)) return;
+    // 热区分档：enter 升起中（open 态 + Content 自身动画在播 = getAnimations 非空）整个
+    // Content 都可起拖。真机多轮「打开即下拉不成功」的主根因在此，不在动画层：顶部热区
+    // （grab 5px + shd ≈12–44px）要等 sheet 升到手指位置才可命中，而「刚打开就下拉」的
+    // 手指落点在时序上必然赶不上升起到位——按在升起中的 sheet 内容区，closest 窄热区判定
+    // 失败 → pending 从未建立 → moveDrag 接管段（cancel/摘类）根本没机会执行（探针
+    // boundingBox 精确按 grab 全绿、真人手指必失败的原因）。升起中内容无交互意义（菜单
+    // 项/列表未到位点不到），宽热区无副作用；enter 播完或被接管摘类后 getAnimations 归空
+    // 自动收窄回 grab/shd，列表区原生滚动不受影响。exit 期间（data-state=closed）不放宽。
+    const enterPlaying =
+      e.currentTarget.getAttribute("data-state") === "open" &&
+      e.currentTarget.getAnimations().length > 0;
+    if (!enterPlaying && !e.target.closest(".grab, .shd")) return;
     dragRef.current = { phase: "pending", startY: e.clientY, pointerId: e.pointerId };
   };
 

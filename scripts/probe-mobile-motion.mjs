@@ -2,10 +2,13 @@
 //   Part 1（移动 390×844）：project scope ⋯ ActionMenu sheet——role="menu" 容器挂
 //     .animate-stagger-rows，菜单项 animation-name = stagger-row-enter、delay 按
 //     nth-child 递增（0/28/56ms）、fill backwards（frontend-notes §17）。
-//   Part 1b（移动）：「打开即下拉」——enter 升起中立即按住 grab 拖 40px：拖拽即时接管
+//   Part 1b（移动）：「打开即下拉」——enter 升起中按住 grab 拖 40px：拖拽即时接管
 //     （inline transform = translateY(40px)、getAnimations 清空、enterKilled 从 className
 //     摘掉 animate-in 串——WebKit cancel 后会重建动画实例，样式失配才彻底死亡），慢速松
 //     手回弹（非 dismiss），exit 类串仍在（关闭动画能力未被破坏）。
+//   Part 1b2（移动）：热区分档——升起中按**内容区**（非热区）也即时接管（真机主根因：
+//     手指落点赶不上 grab/shd 升起到位，窄热区判定 = 拖拽从未启动）。
+//   Part 1b3（移动）：防过宽——enter 播完后窄热区回归，内容区拖动不接管。
 //   Part 1c（移动）：关闭后重开——enterKilled 重置，enter 类串回归、动画重播。
 //   Part 2（移动）：/projects 全部会话行（.srow2 CSS 单源）按住 scale 0.98——
 //     中段 rAF 采样有中间值（真插值非瞬切，§19）+ transitionrun 派发 + 松手释放。
@@ -261,6 +264,79 @@ async function pressAssert(page, sel, locator, label) {
     afterBack.cls.includes("data-[state=closed]:animate-out"),
     "打开即下拉: 回弹后 exit 类串仍在（关闭动画能力未破坏）",
   );
+  await m.getByRole("menuitem", { name: "取消" }).click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
+
+  // Part 1b2：热区分档（真机主根因修复）——「刚打开就下拉」的手指落点在时序上赶不上升起
+  // 到位的 grab/shd 热区，必然按在 sheet 内容区：窄热区 closest 判定失败 → pending 从未
+  // 建立 → 拖拽从未启动（动画层的 cancel/摘类根本没机会执行；探针此前精确按 grab 全绿 =
+  // 掩盖真机失败面）。enter 升起中（open + Content 自身动画在播）整个 Content 可起拖；
+  // 定格同一窗口，down 落在 grab 下方 ~80px 的菜单项区（非热区）→ 拖 40px 应即时接管。
+  console.log("Part 1b2: 升起中按内容区（非热区）也即时接管");
+  await m.locator('[aria-label="更多操作"]').click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
+  await m.evaluate(() => {
+    for (const a of document.querySelector(".msheet").getAnimations()) {
+      a.pause();
+      a.currentTime = 200;
+    }
+  });
+  const grab2 = await m.locator(".msheet .grab").boundingBox();
+  await m.mouse.move(grab2.x + grab2.width / 2, grab2.y + 80); // 内容区（菜单项上），非热区
+  await m.mouse.down();
+  for (let i = 1; i <= 4; i++) {
+    await m.mouse.move(grab2.x + grab2.width / 2, grab2.y + 80 + i * 10);
+    await m.waitForTimeout(30);
+  }
+  const during2 = await m.evaluate(() => {
+    const el = document.querySelector(".msheet");
+    return {
+      inline: el.style.transform,
+      anims: el.getAnimations().length,
+      cls: el.className,
+    };
+  });
+  ok(
+    during2.inline === "translateY(40px)",
+    `内容区起拖: pending 建立、拖 40px 即时接管跟手（实测 ${during2.inline}）`,
+  );
+  ok(during2.anims === 0, `内容区起拖: enter 动画已 cancel+摘类（实测 anims=${during2.anims}）`);
+  ok(
+    !during2.cls.includes("data-[state=open]:animate-in"),
+    "内容区起拖: enterKilled 摘类生效（WebKit 重建防护）",
+  );
+  await m.mouse.up();
+  await m.waitForTimeout(280);
+  const back2 = await m.evaluate(() =>
+    document.querySelector(".msheet")?.getAttribute("data-state"),
+  );
+  ok(back2 === "open", `内容区起拖: 慢速松手回弹非 dismiss（data-state=${back2}）`);
+  await m.getByRole("menuitem", { name: "取消" }).click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
+
+  // Part 1b3：防过宽——enter 播完后窄热区回归：按住内容区（菜单项）拖动**不**接管（否则
+  // 内容可滚 sheet 的原生滚动会被拖拽劫持）。
+  console.log("Part 1b3: 播完后窄热区回归（内容区拖动不接管）");
+  await m.locator('[aria-label="更多操作"]').click();
+  await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
+  await m.waitForTimeout(650); // 等 450ms enter 播完（§18）
+  const grab3 = await m.locator(".msheet .grab").boundingBox();
+  await m.mouse.move(grab3.x + grab3.width / 2, grab3.y + 80);
+  await m.mouse.down();
+  for (let i = 1; i <= 4; i++) {
+    await m.mouse.move(grab3.x + grab3.width / 2, grab3.y + 80 + i * 10);
+    await m.waitForTimeout(30);
+  }
+  const during3 = await m.evaluate(() => {
+    const el = document.querySelector(".msheet");
+    return { inline: el.style.transform, anims: el.getAnimations().length };
+  });
+  ok(during3.inline === "", `播完后: 内容区拖动不接管、inline 恒空（实测 "${during3.inline}"）`);
+  ok(during3.anims === 0, `播完后: 无残留动画实例（实测 ${during3.anims}）`);
+  // 未 capture → click 落 down/up 公共祖先：移开指针再松手防误触菜单项导航。
+  await m.mouse.move(grab3.x + grab3.width / 2, 10);
+  await m.mouse.up();
+  await m.waitForTimeout(250);
   await m.getByRole("menuitem", { name: "取消" }).click();
   await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
 
