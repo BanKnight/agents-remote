@@ -205,6 +205,19 @@ async function waitForFrame(page, frames, cursor, pred, label) {
         !cam.inDom || cam.display === "none",
         `inDom=${cam.inDom} display=${cam.display ?? "-"}`,
       );
+      // 图标显式尺寸契约（真机 WebKit 裸 svg 在 flex 里收缩 0×0——图形隐形但按钮可点，
+      // Chromium 探针复现不了该差异，锁「有显式尺寸」防回归）。
+      const plusSvg = await page.evaluate(() => {
+        const svg = document.querySelector('button[aria-label="添加附件"] svg');
+        if (!svg) return null;
+        const r = svg.getBoundingClientRect();
+        return { w: r.width, h: r.height };
+      });
+      check(
+        "Part1: + 图标 svg 有显式尺寸（16×16）",
+        !!plusSvg && plusSvg.w === 16 && plusSvg.h === 16,
+        `w=${plusSvg?.w ?? "null"} h=${plusSvg?.h ?? "null"}`,
+      );
       await page.keyboard.press("Escape");
 
       // Part 2: 图片 pick → chip → Enter 发送 → 上行帧含 base64 图片块 + 文本块
@@ -320,6 +333,19 @@ async function waitForFrame(page, frames, cursor, pred, label) {
       // Part 6: chip × 移除
       await page.locator('input[type="file"][accept="image/*"][multiple]').setInputFiles(PNG_FILE);
       await page.locator("[data-attachment-chip]").waitFor({ timeout: 8000 });
+      const xSvg = await page.evaluate(() => {
+        const svg = document.querySelector(
+          '[data-attachment-chip] button[aria-label="移除附件"] svg',
+        );
+        if (!svg) return null;
+        const r = svg.getBoundingClientRect();
+        return { w: r.width, h: r.height };
+      });
+      check(
+        "Part6: × 图标 svg 有显式尺寸（16×16，同 + 钮契约）",
+        !!xSvg && xSvg.w === 16 && xSvg.h === 16,
+        `w=${xSvg?.w ?? "null"}`,
+      );
       await page.getByRole("button", { name: "移除附件" }).click();
       check(
         "Part6: × 移除后 chip 行消失",

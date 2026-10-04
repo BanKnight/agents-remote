@@ -285,7 +285,9 @@ export function ComposerAttachMenu({ onFiles }: { onFiles: (files: File[]) => vo
             title={t("claude.attach.add")}
             className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-xl text-on-surface-muted transition active:bg-on-surface/5"
           >
-            <LucideIcon name="plus" />
+            {/* 尺寸类必须显式给（全仓唯一裸用曾在真机 WebKit 翻车）：svg 无 width/height
+                时 Chromium flex 收缩给非零值、WebKit 收缩到 0×0——按钮占位可点但图形隐形。 */}
+            <LucideIcon className="size-4" name="plus" />
           </button>
         }
       />
@@ -363,7 +365,7 @@ export function AttachmentChipRow({
               onClick={() => onRemove(a.id)}
               type="button"
             >
-              <LucideIcon name="x" />
+              <LucideIcon className="size-4" name="x" />
             </button>
           </div>
         );

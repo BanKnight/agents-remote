@@ -162,9 +162,9 @@
 
 **机制**：现单轨 = Lucide 管线：`scripts/build-icons.mjs` ICONS 白名单（38 个 lucide 名）生成 `web/src/assets/icons.ts`（24 网格 stroke-2 圆头，源 lucide-static，生成物进 git、runtime 零依赖）。`<ShellIcon name>` 保持 SF 名契约（调用点零改动），内部 `TO_LUCIDE` 映射（SF 名→lucide 名）+ `<LucideIcon>` 同源消费；`data-icon` 水合器仅供非 React 静态 DOM 场景。仅存手绘件 = anthropic/openai 品牌 fill 型 logo（Lucide 无对应物，政策不加品牌件）。**同名不并存**（sparkles 曾两轨都有）已随换代消除。
 
-**标准做法**：① 新图标一律 Lucide 管线（`build-icons.mjs` ICONS 白名单加名 → 重跑生成 → `<LucideIcon>`）；② ShellIcon 消费点加新图标 = TO_LUCIDE 加映射 + 白名单加名，不新增 `.svg`；③ 禁止手写 SVG path 模仿 Lucide 风格（网格规格不同，改了也是两不像）；④ 品牌件（provider logo）例外走 `BRAND_SVG`。
+**标准做法**：① 新图标一律 Lucide 管线（`build-icons.mjs` ICONS 白名单加名 → 重跑生成 → `<LucideIcon>`）；② ShellIcon 消费点加新图标 = TO_LUCIDE 加映射 + 白名单加名，不新增 `.svg`；③ 禁止手写 SVG path 模仿 Lucide 风格（网格规格不同，改了也是两不像）；④ 品牌件（provider logo）例外走 `BRAND_SVG`；⑤ **svg 必须显式定尺寸**（`className="size-4"` 等 utility 或消费方 CSS 如 `.iicn svg`）——`LucideIcon`/`ShellIcon` 渲染的 svg 无 width/height 属性、尺寸全靠消费方给，**裸用时 Chromium flex 收缩给非零默认值、WebKit 收缩到 0×0**（按钮占位可点但图形隐形；真机 PWA 实锤，Chromium 探针复现不了该差异，只能断 `getBoundingClientRect` 锁「显式尺寸」契约）。ActionMenu 的 item.icon 容器有 `[&_svg:not([class*='size-'])]:size-4` 兜底。
 
-**来源**：v1.4 拍板④（§6.13）；批1（`62cb980`）管线落地；第四批反馈②全量换代（`f93b2b6`，§6.13）；frontend-notes §N 编号契约。
+**来源**：v1.4 拍板④（§6.13）；批1（`62cb980`）管线落地；第四批反馈②全量换代（`f93b2b6`，§6.13）；⑤（2026-10-05）composer 发图批真机反馈——PWA 里 + 图标隐形而按钮可点（Chromium 探针全绿测不出，WebKit flex 收缩差异）；frontend-notes §N 编号契约。
 
 ## 16. tw-animate-css 的 timing 只能靠自定义属性注入（shorthand 会重置长属性）
 
