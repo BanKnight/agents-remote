@@ -351,6 +351,47 @@ async function waitForFrame(page, frames, cursor, pred, label) {
         "Part6: × 移除后 chip 行消失",
         (await page.locator("[data-composer-attachments]").count()) === 0,
       );
+
+      // Part 7: 粘贴图片直进附件（合成 ClipboardEvent 触发同一 React onPaste 路径；
+      // untrusted 事件无默认插入行为，纯文本锚走 defaultPrevented 层验证「有图才拦」）。
+      await page.locator(COMPOSER_TEXTAREA).evaluate((el, b64) => {
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const dt = new DataTransfer();
+        dt.items.add(new File([bytes], "clip.png", { type: "image/png" }));
+        el.dispatchEvent(
+          new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: dt }),
+        );
+      }, TINY_PNG_BASE64);
+      await page
+        .locator('[data-attachment-chip] img[src^="data:image/png;base64,"]')
+        .waitFor({ timeout: 8000 });
+      check("Part7: 粘贴图片 → chip 缩略图在场", true);
+      await composer.press("Enter");
+      const frame7 = await waitForFrame(
+        page,
+        frames,
+        cursor,
+        (f) => f.type === "user" && f.message?.content?.some?.((b) => b.type === "image"),
+        "Part7: 粘贴图上行帧",
+      );
+      if (frame7) {
+        check(
+          "Part7: 粘贴图上行帧含图片块",
+          frame7.message.content.some((b) => b.type === "image"),
+        );
+      }
+      const textPaste = await page.locator(COMPOSER_TEXTAREA).evaluate((el) => {
+        const dt = new DataTransfer();
+        dt.setData("text/plain", "纯文本粘贴锚");
+        const ev = new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: dt,
+        });
+        el.dispatchEvent(ev);
+        return ev.defaultPrevented;
+      });
+      check("Part7: 纯文本 paste 不拦（defaultPrevented=false）", textPaste === false);
       await page.context().close();
     }
 

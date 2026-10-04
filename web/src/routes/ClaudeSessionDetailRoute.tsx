@@ -3902,6 +3902,23 @@ function ComposerWithInterrupt({
             e.preventDefault();
             sendComposer();
           }}
+          onPaste={(e) => {
+            // 粘贴图片直进附件（对齐 pi composer 先例 ChatSessionDetailRoute）：只拦含图片
+            // 文件的 paste——preventDefault 是事件级的，纯文本/混合里的文本照常走默认。
+            // 粘贴图走同一条 pick（压图/5MiB 闸/cap 4/chip 增删），无端分支。
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            const files: File[] = [];
+            for (const item of items) {
+              if (item.kind !== "file") continue;
+              const file = item.getAsFile();
+              if (file && file.type.startsWith("image/")) files.push(file);
+            }
+            if (files.length > 0) {
+              e.preventDefault();
+              attachments.pick(files);
+            }
+          }}
         />
         {/* 卡片底行（恒渲染）：attach + selectors + Stop/Send 互斥占同槽（ml-auto 右对齐），加 Send 不增宽。
             顺序对齐 03a 原型 irow：附件加号 → 权限 → 模型 → 深度 → send2。 */}

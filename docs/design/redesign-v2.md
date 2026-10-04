@@ -1439,6 +1439,10 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **security review 消化（`675255b`，1×Medium-Low + 1 加固全采纳）**：①**单图 5MiB 上限**——原实现只限张数（4），透传分支尺寸达标 ≠ 体积达标（1×1 带 MB 级 tEXt 块的 PNG、1568px 噪声 PNG），放行会撑爆 WS 帧 → api stdin → JSONL 永久落盘 + relay 常驻重放；现三出口过 `IMAGE_MAX_BYTES` 闸（透传超限落重编码、无法重编码的兜底与重编码产物超限即 chip 报失败），与 Anthropic API 单图 5MB 对齐。②`extractUserBubbleContent` 增 media_type 白名单 `image/(jpeg|png|webp|gif)`（唯一消费点 `<img src>` 本就无可触发注入，加固收紧 data: URL 拼接面）。③文件上传链 / shared 类型扩宽 / ProjectName / 鉴权 / 命令执行各面 reviewer 确认未发现。
 
+**真机反馈①：附件图标隐形（`5e15ef3`）**：PWA 里「＋」按钮占位可点（权限/模型/深度让位、点击菜单照常弹出）但图形看不见，桌面正常。根因 = `LucideIcon` 裸用无尺寸类——svg 无 width/height 属性时 **Chromium flex 收缩给非零默认值、WebKit 收缩到 0×0**（引擎分歧，Chromium 探针全绿测不出）。全仓其它 plus/x 消费点均带尺寸类，唯本批裸用。修复：两处补 `size-4`；探针补「图标显式尺寸 16×16」断言锁契约；沉淀 frontend-notes §15⑤（svg 必须显式定尺寸）。
+
+**粘贴入口（2026-10-05，同日批）**：桌面粘贴图片直进附件 chips（用户需求「直接复制粘贴图片，并且可以增删已复制的」——增 = 继续粘贴或菜单加，删 = chip ×，均已存在，本批只补入口）。**对齐 pi composer 先例**（ChatSessionDetailRoute onPaste 已长期在跑）：`ComposerPrimitive.Input` 透传 onPaste，`clipboardData.items` 筛 `kind==="file"` + `type.startsWith("image/")`，有图 `preventDefault()` 交 `attachments.pick`（压图/5MiB 闸/cap 4/chip 状态机全复用）；纯文本/混合里的文本照常走默认（preventDefault 是事件级的，有图才拦）；无端分支（移动长按粘贴同效）。探针 Part7：合成 ClipboardEvent 触发同一 React handler 路径（untrusted 事件无默认插入行为，文本锚走 `defaultPrevented` 层验证「有图才拦」）——20 断言全绿。拖拽（drag & drop）与非图片文件粘贴未要求不做（文件走「＋」菜单上传入口）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
