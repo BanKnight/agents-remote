@@ -10,6 +10,12 @@ import { ActionMenu, type ActionMenuItem } from "./action-menu";
 export const COMPOSER_MAX_ATTACHMENTS = 4;
 /** vision 最优长边（Anthropic 推荐内）；超过即 canvas 重编码。 */
 export const IMAGE_MAX_EDGE_PX = 1568;
+/**
+ * 单图字节上限（裸 base64 换算回字节），与 Anthropic API 单图 5MB 上限对齐。达标透传分支
+ * 也要过闸——尺寸达标 ≠ 体积达标（大 tEXt 块/噪声 PNG），放行会撑爆 WS 帧 → stdin →
+ * JSONL 永久落盘 + relay 常驻重放（security review 68b030c）。
+ */
+export const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 /** 重编码 JPEG 质量。 */
 export const IMAGE_JPEG_QUALITY = 0.8;
 /** 任意文件的上传目录（项目内相对路径；CLI cwd 可见可 Read）。 */
@@ -49,6 +55,11 @@ export function needsImageReEncode(input: {
   return Math.max(input.width, input.height) > IMAGE_MAX_EDGE_PX;
 }
 
+/** 裸 base64 串换算回原始字节数（4 字符 = 3 字节；尾 padding 误差可忽略）。 */
+export function base64Bytes(data: string): number {
+  return Math.floor((data.length * 3) / 4);
+}
+
 /** Blob → 裸 base64（无 data: 前缀）。分块 fromCharCode 防 arg 上限。 */
 export async function blobToBase64(blob: Blob): Promise<string> {
   const buf = new Uint8Array(await blob.arrayBuffer());
@@ -80,6 +91,10 @@ export async function normalizeImageFile(file: File): Promise<{
   if (!bitmap) {
     if (PASSTHROUGH_IMAGE_TYPES.has(file.type)) {
       const data = await blobToBase64(file);
+      // 无法重编码的兜底直传同样过字节闸，超限 chip 报失败（security review 68b030c）。
+      if (base64Bytes(data) > IMAGE_MAX_BYTES) {
+        throw new Error(`image exceeds ${IMAGE_MAX_BYTES} bytes: ${file.name}`);
+      }
       return { mediaType: file.type, data, dataUrl: `data:${file.type};base64,${data}` };
     }
     throw new Error(`unsupported image type: ${file.type || "unknown"}`);
@@ -87,7 +102,10 @@ export async function normalizeImageFile(file: File): Promise<{
   try {
     if (!needsImageReEncode({ mediaType: file.type, width: bitmap.width, height: bitmap.height })) {
       const data = await blobToBase64(file);
-      return { mediaType: file.type, data, dataUrl: `data:${file.type};base64,${data}` };
+      // 尺寸达标 ≠ 体积达标（tEXt 块/噪声 PNG）：超限不透传，落重编码（可解码必有 bitmap）。
+      if (base64Bytes(data) <= IMAGE_MAX_BYTES) {
+        return { mediaType: file.type, data, dataUrl: `data:${file.type};base64,${data}` };
+      }
     }
     const scale = IMAGE_MAX_EDGE_PX / Math.max(bitmap.width, bitmap.height);
     const w = Math.max(1, Math.round(bitmap.width * scale));
@@ -97,7 +115,12 @@ export async function normalizeImageFile(file: File): Promise<{
     canvas.height = h;
     canvas.getContext("2d")?.drawImage(bitmap, 0, 0, w, h);
     const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
-    return { mediaType: "image/jpeg", data: dataUrl.slice(dataUrl.indexOf(",") + 1), dataUrl };
+    const data = dataUrl.slice(dataUrl.indexOf(",") + 1);
+    // 重编码产物兜底闸（1568px q0.8 常规远小于上限；此处防极端构造）。
+    if (base64Bytes(data) > IMAGE_MAX_BYTES) {
+      throw new Error(`image exceeds ${IMAGE_MAX_BYTES} bytes after re-encode: ${file.name}`);
+    }
+    return { mediaType: "image/jpeg", data, dataUrl };
   } finally {
     bitmap.close();
   }

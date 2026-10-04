@@ -1792,6 +1792,18 @@ describe("message processing building blocks", () => {
     expect(images).toEqual([]);
   });
 
+  test("extractUserBubbleContent skips non-image media_type（白名单收紧 dataUrl 拼接面）", () => {
+    const content = [
+      { type: "image", source: { type: "base64", media_type: "text/html", data: "PHNjcmlwdD4=" } },
+      {
+        type: "image",
+        source: { type: "base64", media_type: "application/pdf", data: "JVBERi0=" },
+      },
+    ];
+    const { images } = extractUserBubbleContent(content);
+    expect(images).toEqual([]);
+  });
+
   test("normalizeChatStream: user text+image → user-prompt item carries images（真链）", () => {
     const items = normalizeChatStream([
       makeUser([

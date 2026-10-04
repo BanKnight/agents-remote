@@ -1021,6 +1021,9 @@ export function normalizeAttachmentTaskStatus(status: string): TaskInfo["status"
  * user 消息 content 数组 → 气泡内容（文本合并 + 图片块 dataUrl 化）。tool_result 块由
  * extractToolResults 单独消费，此处忽略。纯函数导出可单测（composer 发图批）。
  */
+/** 用户气泡图片块接受的 media_type 白名单（CLI/Claude API 支持的四种；收紧 data: URL 拼接面）。 */
+const USER_IMAGE_MEDIA_TYPES = /^image\/(jpeg|png|webp|gif)$/;
+
 export function extractUserBubbleContent(content: unknown): {
   text: string;
   images: ExtractedImage[];
@@ -1037,6 +1040,7 @@ export function extractUserBubbleContent(content: unknown): {
         if (
           source?.type === "base64" &&
           typeof source.media_type === "string" &&
+          USER_IMAGE_MEDIA_TYPES.test(source.media_type) &&
           typeof source.data === "string"
         ) {
           images.push({

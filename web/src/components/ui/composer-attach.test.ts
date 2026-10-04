@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { blobToBase64, needsImageReEncode } from "./composer-attach";
+import { base64Bytes, blobToBase64, needsImageReEncode } from "./composer-attach";
 
 describe("composer attach pure helpers", () => {
   describe("needsImageReEncode", () => {
@@ -29,6 +29,14 @@ describe("composer attach pure helpers", () => {
       const b64 = await blobToBase64(blob);
       const back = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       expect([...back]).toEqual([...bytes]);
+    });
+  });
+
+  describe("base64Bytes", () => {
+    test("裸 base64 换算回字节（4 字符 = 3 字节，floor）", () => {
+      expect(base64Bytes("")).toBe(0);
+      expect(base64Bytes("aGk=")).toBe(3); // "hi" 是 2 字节，"aGk=" 解码 3 字节含 padding 前的 3 数据字符
+      expect(base64Bytes("aGVsbG8=")).toBe(6);
     });
   });
 });
