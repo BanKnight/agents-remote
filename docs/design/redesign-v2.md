@@ -1413,6 +1413,20 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **真实数据收口（api 重启 + line-clamp 采纳，2026-10-04 晚）**：用户追问「除了来源，不是应该还有其他东西吗」→ 实锤 **dev api 进程跑旧代码**（`ps etime` 1 天 17 小时 > 源码 mtime，bun --watch 偶发不重启坑复发；列表响应无 description/source 字段，前端全 fallback「来源:本地」）——按 runbook `respawn-pane -k` 重启后真实数据全线生效。重启后真实数据**否证了 reviewer P3 不采纳的两个前提**：市场技能的 frontmatter description 是 200+ 字符多句长文（「惯例一句话」不成立），无钳制卡片被撑到 8+ 行（「撑高」观感与 d2 曾显示路径长串同族）。**采纳 line-clamp 2**：`.pcard .d2` 补 `display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden`（MCP 卡共用本类但 url/命令短句一行内无感；textContent 断言不受影响——钳制是视觉截断非 DOM 裁剪）。验证：CSS 硬闸 188856 字节 + tokens 机检 0 违例 + 双探针 90/17 全绿 + 真实环境几何验证（21 张 d2 高度 max=32px 恰 2 行 @lineHeight 16.1px；computed `-webkit-line-clamp=2`；产物 CSS 四条声明完整）。
 
+**来源挪右上角 chip（同日二次演化，`07b3ae5`）**：用户拍板「技能列表卡片右上角标注来源」——line-clamp 2 下长描述占满副行会截掉「描述 · 来源」里的来源段，右上角 chip 位始终可见。展示规则演化：**r1 尾部（已停用 chip 之后）来源 chip + d2 回归纯描述**（无描述不渲染空副行）；chip 走 `.upd off` 中性灰变体（元信息不与「有更新」蓝 tint 抢注意力），复用现有 i18n key（「来源:{{source}}」/「来源:本地」零新 key）；`.pcard .upd` 补防溢出三连（`max-width:60% + nowrap + ellipsis`——slug 可达 20+ 字符，短词 chip 无感）。详情页 dmeta 不动（用户指令仅指列表卡）。探针同步演化：d2 断言改纯描述 + r1 来源 chip 断言（probe 92 pass / project 19 ALL PASS）。
+
+### 浮层打开不自动聚焦输入框（2026-10-04，`8a474be`）
+
+**拍板与原则**：用户观察「有些浮层带搜索，默认聚焦输入框，导致浮层&键盘唤起同时发生」→ 拍板**「输入是低频且理应是用户的行为」**：浮层（sheet/dialog）打开时不自动聚焦输入框——sheet 升起动画与软键盘同时唤起互相打架（键盘推挤视口打断动画），聚焦应发生在用户点击输入框之后。
+
+**两段修（命中面全查清）**：
+- **MobileSheet 基座**统一 `onOpenAutoFocus` preventDefault——一次覆盖两类命中面：①Radix DialogContent 默认 initial focus（内容首 focusable 恰为输入框：切换 sheet 搜索框、MCP 手动添加名称框）；②消费方显式 `autoFocus`（基座拦不住 React autoFocus，必须逐处删）。
+- **删显式 autoFocus 4 处**：prompt-dialog 移动面（桌面面保留显式 autoFocus）、new-item-sheet、pages-root-dialog 共用 formBody（桌面靠 Radix 默认聚焦同一 input 等效）、rename-dialog（双端同款居中 Alert，`isMobile` 条件 preventDefault——桌面保持聚焦惯例）。
+- **桌面零代码改动**：居中 Dialog（ui/dialog.tsx）无键盘推挤问题，Radix 默认聚焦（首 focusable = 该 input）保留表单惯例与键盘导航 a11y。
+- **行内渐进披露保留 autoFocus**（不在「浮层打开即聚焦」语义内）：files/wiki 搜索框、重命名行内输入、新建文件夹行、move-sheet 新建行——输入框出现本身就是用户点击的直接反馈。
+
+**验证**：新探针 `probe-sheet-focus-policy`（4 断言：切换 sheet + 文件新建 sheet 打开后 activeElement 非 INPUT，对照断言锚输入框在场防空转）/ probe-mobile-motion 45（首跑 1 fail 为高负载采样 flake，复跑全绿）/ probe-spring-overlays 19 / probe-v2-m6-plugins 92 / probe-project-plugins 19 全绿 / 全门禁绿。桌面面零代码改动不做浏览器断言（路径深），交桌面抽查。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |
