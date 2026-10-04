@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-04（**弹层 enter 近瞬时档 + sheet enter motion 化收口 `f5e1436`**：用户拍板「保留弹簧曲线只大幅提速」→ 三档 spring 时长 token 收敛 120ms / exit 150ms 不动；mobile-sheet enter 从 CSS 类串换 motion 弹簧（时长读 token = JS/CSS 单源）；**sheet-debug.ts 已删**（真机复验已过 + 完成使命）；调试实锤 motion `stop()`「最后一写」机制（stop 时已在 rAF 队列的回调仍执行一次覆盖接管写入 → 同帧 rAF 矫正）+ base=frozenY 语义修正；reduced-motion JS 兜底补齐三处（design reviewer P2）。probe-mobile-motion **45** + probe-spring-overlays **19** 全绿，全门禁绿，双 reviewer 消化完毕，已 push。**待真机复验：弹层打开近瞬时统一手感 + sheet 拖拽回归项**。回滚点 = `938618a`。）
+> 最后更新：2026-10-04（**弹层 enter 近瞬时档 + sheet enter motion 化收口 `f5e1436`，真机复验已通过（用户确认「非常好，没什么问题了」）**：三档 spring 时长 token 收敛 120ms / exit 150ms 不动；mobile-sheet enter 换 motion 弹簧（时长读 token = JS/CSS 单源）；sheet-debug.ts 已删；motion `stop()`「最后一写」机制实锤 + 同帧 rAF 矫正；reduced-motion JS 兜底补齐三处。probe-mobile-motion **45** + probe-spring-overlays **19** 全绿，全门禁绿，双 reviewer 消化完毕。**sheet 手感 + 弹层动效全线收口**。回滚点 = `938618a`。）
 > 用法：`/handoff save` 更新本文件并把旧版归档到 `snapshots/`。compact 与 session 启动时由 hook 自动注入。
 
 ## 一句话状态
@@ -27,8 +27,7 @@
 ## 进度（已完成 / 进行中 / 待办）
 
 - ✅ sheet 手感全链收口（`e1ae5a6`→`f1f99ed`→`7c590b6`→`e7fb156`+`65fa654`→`7e9db59`→`a98e13b`→`c8bdbfc`，probe 48 + 单测 13 全绿，真机复验**已过**）
-- ✅ **弹层 enter 近瞬时档 + sheet enter motion 化收口（`f5e1436`，已 push）**：token 收敛 120ms + motion 化 + sheet-debug 删除 + 探针 fixture 换代 + motion stop 最后一写修复 + 双 reviewer 消化；probe-mobile-motion **45** + probe-spring-overlays **19** 全绿；全门禁 + CSS 硬闸（188771 字节 text/css）+ tokens 机检 0 违例；记档 redesign-v2.md 动效段小节 + frontend-notes §25
-- ⬜ **交用户真机复验（当前最优先，清单见下）**
+- ✅ **弹层 enter 近瞬时档 + sheet enter motion 化收口（`f5e1436`，已 push，真机复验通过 2026-10-04）**：token 收敛 120ms + motion 化 + sheet-debug 删除 + 探针 fixture 换代 + motion stop 最后一写修复 + 双 reviewer 消化；probe-mobile-motion **45** + probe-spring-overlays **19** 全绿；全门禁 + CSS 硬闸（188771 字节 text/css）+ tokens 机检 0 违例；记档 redesign-v2.md 动效段小节 + frontend-notes §25
 - ⬜ 阶段一遗留：第五批 reviewer 修复批（`bd7aedc`）真机复验清单仍待用户执行
 - ⬜ 存量欠账（不动）：e2e pwa-installable 存量失败；桌面「点第二个实例丢 leaf」；DialogTitle a11y；rootBrowse 下沉；i18n key 收敛；probe-chat-e2e 2 存量 FAIL；`.tree`/`.growrow` 死代码清扫；probe-m10-feedback-fixes H 段基线；diff L3 位置架构项；design P2 滚动 5 项
 
