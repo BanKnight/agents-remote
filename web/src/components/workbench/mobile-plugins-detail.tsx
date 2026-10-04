@@ -55,9 +55,13 @@ export function MobileSkillDetail({ name }: { name: string }) {
   const skillDisabled = Boolean(skillEntry?.disabled);
   // 来源行（原型 12 dmeta「来源:x · 全局作用域」，2026-10-04 对齐）：与 09 列表副行同源
   //（installed 的锁 slug）；不用 preview.source（realpath 文件路径，非来源语义）。
-  const sourceLabel = skillEntry?.source
-    ? t("plugins.skillSource", { source: skillEntry.source })
-    : t("plugins.skillLocal");
+  // skillEntry 未检出（installed 加载窗，深链/刷新直达 query 缓存冷）= 未知 ≠ 本地，
+  // 来源段不渲染（design review P2：防「先本地后跳变 slug」闪变）。
+  const sourceLabel = skillEntry
+    ? skillEntry.source
+      ? t("plugins.skillSource", { source: skillEntry.source })
+      : t("plugins.skillLocal")
+    : null;
 
   // 「有更新」仅手动检测出结果后出现（updates.data undefined = 尚未检测），与 09 列表 chip 同源。
   const hasUpdate = (updates.data?.updates ?? []).some((u) => u.name === name && u.hasUpdate);
@@ -77,7 +81,9 @@ export function MobileSkillDetail({ name }: { name: string }) {
             </span>
           </div>
         ) : null}
-        <div className="dmeta">{[sourceLabel, t("plugins.scopeGlobal")].join(" · ")}</div>
+        <div className="dmeta">
+          {[sourceLabel, t("plugins.scopeGlobal")].filter(Boolean).join(" · ")}
+        </div>
         {preview.data?.description ? <div className="ddesc">{preview.data.description}</div> : null}
 
         {/* 已启用 toggle（v1.4 批6，09b）：停用 = 保留文件与配置、停止注入（目录 rename 进停用区）。

@@ -1407,7 +1407,9 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **展示规则**：d2 = `[description, source ? 来源: {slug} : 来源: 本地].join(" · ")`（最少「来源: 本地」，path 不再上列表——字段保留调试/深度页）；详情 dmeta = `[来源行, 全局作用域].join(" · ")`，与列表同源（installed.source），不再用 preview.source。桌面端消费同一 MobilePluginsOverview（hideTitle 复用），一次改动两端生效。
 
-**验证**：skill 单测 67 pass（新增 description/source 全局锁 case + 锁损坏容错 case + 项目锁 source 断言）/ web 714 pass / probe-v2-m6-plugins **87** + probe-project-plugins **15** 全绿（mock 补 description/source，dmeta 断言注释改 installed.source 口径）/ CSS 硬闸 + tokens 机检绿 / 真实环境抽查实抓技能卡 d2 =「来源: 本地」（新代码路径生效）。
+**验证**：skill 单测 67 pass（新增 description/source 全局锁 case + 锁损坏容错 case + 项目锁 source 断言）/ web 714 pass / probe-v2-m6-plugins **90** + probe-project-plugins **17** 全绿（mock 补 description/source + **d2 断言 3+2 条**——主交付面此前零断言，code review P2 补齐；dmeta 断言锚「来源:」前缀防回归）/ CSS 硬闸 + tokens 机检绿 / 真实环境抽查实抓技能卡 d2 =「来源: 本地」（新代码路径生效）。
+
+**reviewer 消化（双审，2×P2 + 8×P3）**：①详情页 dmeta 加载窗闪变（installed 缓存冷时 skillEntry 未检出 ≠ 本地，来源段不渲染防「先本地后跳变 slug」）——已修；②zh 冒号形态拍板**半角冒号无空格「来源:本地」**（逐字符对齐原型「来源:官方」；仓内全角惯例让位原型标尺）+ 探针 dmeta 断言锚前缀——已修；③探针 d2 断言补齐（上）——已修；④`name in lock` → `Object.hasOwn`（技能名恰为 toString/constructor 时原型链误判 manageable）——已修；⑤readSkillLock/readProjectSkillLock 归一化抽 `normalizeLockSkills` 共用 + 项目锁 manageable 畸形 entry 口径注释声明（比旧 Set 略严，非对象 entry 不再视为有源）——已修；⑥preview mock source 拟真 realpath（防未来误消费 preview.source 被探针放过）——已修；⑦过时注释「全局 scope 不读锁」修正——已修。**不采纳**：d2 加 line-clamp（原型无截断示意、frontmatter description 惯例一句话、MCP 卡共用 .d2 会被钳——风险记档，真机观感反馈再定）。
 
 ## §7 待定项跟踪
 

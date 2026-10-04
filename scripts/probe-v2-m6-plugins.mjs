@@ -124,7 +124,9 @@ async function setupM6Mocks(page) {
         description: "提交前自动审查代码变更：风格、潜在缺陷、测试覆盖建议。",
         content:
           "---\nname: code-review\ndescription: 提交前自动审查代码变更\nlicense: MIT\n---\n\n# Code Review\n\n正文内容段落。\n\n参考文档：https://example.com/docs/very-long-path/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/cccccccccccccccccccccccccccccccc/dddddddddddddddddddddddddddddddd/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee。",
-        source: "anthropics/skills",
+        // 拟真：preview.source 真实语义 = realpath（code-review P3-6——假 slug 会掩盖未来
+        // 对 preview.source 的误消费；dmeta 已改走 installed.source，此处不再被消费）。
+        source: "/home/deploy/.claude/skills/code-review",
       }),
     ),
   );
@@ -246,6 +248,27 @@ ok(
 );
 await page.waitForSelector(".pcard", { timeout: 5000 });
 ok((await page.locator(".pcard").count()) === 4, "pcard = 4（MCP 2 + 技能 2）");
+// 列表副行 d2（2026-10-04 对齐原型「描述 · 来源」）：code-review 有锁 slug →
+//「描述 · 来源:slug」（zh 半角冒号无空格逐字符对齐原型）；tdd 同款。防 d2 回归成 path。
+{
+  const crD2 = await page
+    .locator(".pcard", { hasText: "code-review" })
+    .locator(".d2")
+    .textContent();
+  ok(
+    crD2?.includes("提交前自动审查代码变更") === true && crD2.includes("来源:anthropics/skills"),
+    `技能卡 d2 = 描述 · 来源:slug（实测「${crD2?.trim()}」）`,
+  );
+  const tddD2 = await page.locator(".pcard", { hasText: "tdd" }).locator(".d2").textContent();
+  ok(
+    tddD2?.includes("测试驱动开发工作流") === true && tddD2.includes("来源:anthropics/skills"),
+    `技能卡 d2（tdd）= 描述 · 来源:slug（实测「${tddD2?.trim()}」）`,
+  );
+  ok(
+    (await page.locator(".pcard .d2", { hasText: "/home/deploy" }).count()) === 0,
+    "列表 d2 不再显示安装路径（对齐原型）",
+  );
+}
 ok(
   (await page.locator(".psect", { hasText: "MCP 服务器" }).textContent())?.includes(
     "MCP 服务器 · 2",
@@ -308,10 +331,11 @@ ok(
   "metadata 卡不含 name/description（排除硬断言）",
 );
 ok(
-  (await page.locator(".dmeta").textContent())?.includes("anthropics/skills") === true,
+  (await page.locator(".dmeta").textContent())?.includes("来源:anthropics/skills") === true,
   // 数据源 = installed.source（2026-10-04 对齐：preview.source 是 realpath 非来源语义，
-  // 详情页 dmeta 与 09 列表副行统一走锁 slug）。
-  "dmeta 含来源（installed.source）",
+  // 详情页 dmeta 与 09 列表副行统一走锁 slug）；锚「来源:」前缀（zh 半角冒号无空格，
+  // 逐字符对齐原型「来源:官方」形态，防前缀回归）。
+  "dmeta 含来源前缀 + slug（installed.source）",
 );
 ok(
   (await page.locator(".ddesc").textContent())?.includes("提交前自动审查") === true,

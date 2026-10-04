@@ -173,7 +173,8 @@ describe("listInstalledSkills", () => {
       settingsStore: store,
       skillsHome: home,
     });
-    // 全局 scope 不读锁；manageable 走独立 checkSkillUpdates → SkillUpdateStatus。
+    // 全局 scope 不填 manageable（走独立 checkSkillUpdates → SkillUpdateStatus）；
+    // 锁在本 scope 仅用于 source 展示（本 case 未写锁 → source 同为缺省）。
     expect(res.skills[0].manageable).toBeUndefined();
   });
 

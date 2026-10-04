@@ -250,8 +250,13 @@ async function scanInstalledSkillsFromFs(
         ...(fm.description ? { description: fm.description } : {}),
         ...(lock[name]?.source ? { source: lock[name].source } : {}),
         // 项目 scope：锁记录存在 = 有源可更新；手写 skill（无锁记录）= false。全局不填（undefined）。
-        // 停用条目不可更新（disabled 已表达语义），manageable 不填。
-        ...(disabled ? { disabled: true } : projectRoot ? { manageable: name in lock } : {}),
+        // 停用条目不可更新（disabled 已表达语义），manageable 不填。hasOwn 防 Object 原型键
+        //（技能名恰为 toString/constructor 时 in 会误判有记录）。
+        ...(disabled
+          ? { disabled: true }
+          : projectRoot
+            ? { manageable: Object.hasOwn(lock, name) }
+            : {}),
       });
     }
     return skills;
@@ -277,6 +282,20 @@ export type SkillLockEntry = {
   updatedAt?: string;
 };
 
+/** 锁 JSON → skills map（parse + 逐 entry 校验；非对象 entry 丢弃——畸形记录不参与
+ *  manageable 判定/来源展示，读侧两函数仅「错误策略」不同，归一化共用此实现）。 */
+function normalizeLockSkills(parsed: { skills?: unknown }): Record<string, SkillLockEntry> {
+  const skills = parsed.skills;
+  if (!skills || typeof skills !== "object" || Array.isArray(skills)) return {};
+  const out: Record<string, SkillLockEntry> = {};
+  for (const [name, entry] of Object.entries(skills as Record<string, unknown>)) {
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+      out[name] = entry as SkillLockEntry;
+    }
+  }
+  return out;
+}
+
 /**
  * 读 `~/.agents/.skill-lock.json` 的 skills map。文件缺失 → {}（无第三方 skill）；JSON 损坏 → 抛。
  * home 复用 deps.skillsHome（测试注入临时目录；生产 = os.homedir()，与 skills 目录同一 home 基准）。
@@ -292,16 +311,7 @@ export async function readSkillLock(home: string): Promise<Record<string, SkillL
     throw new SkillError("SKILL_UPDATE_CHECK_FAILED", "Unable to read skill lock file");
   }
   try {
-    const parsed = JSON.parse(raw) as { skills?: unknown };
-    const skills = parsed.skills;
-    if (!skills || typeof skills !== "object" || Array.isArray(skills)) return {};
-    const out: Record<string, SkillLockEntry> = {};
-    for (const [name, entry] of Object.entries(skills as Record<string, unknown>)) {
-      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
-        out[name] = entry as SkillLockEntry;
-      }
-    }
-    return out;
+    return normalizeLockSkills(JSON.parse(raw) as { skills?: unknown });
   } catch {
     throw new SkillError("SKILL_UPDATE_CHECK_FAILED", "Skill lock file is not valid JSON");
   }
@@ -312,7 +322,8 @@ export async function readSkillLock(home: string): Promise<Record<string, SkillL
  * 文件缺失/损坏 → {}（list 容错：锁损坏不应让已装列表整体失败）。
  * 与全局锁 `~/.agents/.skill-lock.json` 结构同构（{version, skills:{[name]:{...}}}），但路径
  * 与容错策略不同：全局 readSkillLock 损坏抛错（checkSkillUpdates 需感知）；项目锁仅展示/判定
- * 消费，容错。
+ * 消费，容错。manageable 口径（原 name 集合 Set.has → 现对象 own-key 判定）：仅「entry 为
+ * 规范对象」的记录计入——畸形 entry（null/字符串/数组）不再视为有源，语义略严于旧版。
  */
 async function readProjectSkillLock(projectRoot: string): Promise<Record<string, SkillLockEntry>> {
   let raw: string;
@@ -322,16 +333,7 @@ async function readProjectSkillLock(projectRoot: string): Promise<Record<string,
     return {}; // 文件缺失（项目无第三方 skill）= 空集，非错误。
   }
   try {
-    const parsed = JSON.parse(raw) as { skills?: unknown };
-    const skills = parsed.skills;
-    if (!skills || typeof skills !== "object" || Array.isArray(skills)) return {};
-    const out: Record<string, SkillLockEntry> = {};
-    for (const [name, entry] of Object.entries(skills as Record<string, unknown>)) {
-      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
-        out[name] = entry as SkillLockEntry;
-      }
-    }
-    return out;
+    return normalizeLockSkills(JSON.parse(raw) as { skills?: unknown });
   } catch {
     return {}; // JSON 损坏 → 空 map（list 容错，不抛）。
   }

@@ -165,6 +165,25 @@ async function sectionB(browser) {
         .locator(".upd", { hasText: "已停用" })
         .count()) === 1,
     );
+    // 列表副行 d2（2026-10-04 对齐原型「描述 · 来源」；project scope 同款）：pskill 有锁
+    // slug →「描述 · 来源:slug」；pskill-off 无锁记录 →「来源:本地」（手写语义）。
+    {
+      // pskill 在 mock 数组首位 → DOM 序第一（hasText 子串匹配无法区分 pskill/pskill-off）。
+      const pskillD2 = await skillCards.first().locator(".d2").textContent();
+      check(
+        "B2b 技能卡 d2 = 描述 · 来源:slug",
+        pskillD2?.includes("项目级技能示例") === true && pskillD2.includes("来源:acme/skills"),
+      );
+      const offD2 = await page
+        .locator(".pcard", { hasText: "pskill-off" })
+        .locator(".d2")
+        .first()
+        .textContent();
+      check(
+        "B2c 手写技能卡 d2 = 来源:本地",
+        offD2?.includes("来源:本地") === true && !offD2.includes("acme/skills"),
+      );
+    }
 
     // MCP 卡 2 张 + disabled chip 恰 1（proj-mcp-off，静态卡无菜单）。
     await page
