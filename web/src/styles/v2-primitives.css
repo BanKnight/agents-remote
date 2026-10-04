@@ -2855,6 +2855,14 @@
     /* 原型示意数据短；真实 stdio 命令/技能路径含无空格长串会横向撑破（M10 用户反馈⑦）——
        长词断行，属实现层防溢出非原型偏差。 */
     overflow-wrap: anywhere;
+    /* 两行钳制（design review P3，2026-10-04 真实数据实装确认）：市场技能的 frontmatter
+       description 是多句长文（200+ 字符），无钳制卡片被撑到 8+ 行——与原型一句话副行
+       观感差极远，且与 d2 曾显示路径长串是同一「撑高」观感族。MCP 卡共用本类：url/命令
+       短句一行内，钳制无感。textContent 断言不受影响（钳制是视觉截断非 DOM 裁剪）。 */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
   }
 
   /* 09 市场入口行 */
