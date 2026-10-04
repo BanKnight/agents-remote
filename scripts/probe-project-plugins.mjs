@@ -165,23 +165,29 @@ async function sectionB(browser) {
         .locator(".upd", { hasText: "已停用" })
         .count()) === 1,
     );
-    // 列表副行 d2（2026-10-04 对齐原型「描述 · 来源」；project scope 同款）：pskill 有锁
-    // slug →「描述 · 来源:slug」；pskill-off 无锁记录 →「来源:本地」（手写语义）。
+    // 列表卡来源（2026-10-04 用户拍板「右上角标注来源」；project scope 同款）：pskill 有锁
+    // slug → 右上角 chip「来源:acme/skills」+ d2 纯描述；pskill-off 无锁记录 → chip
+    //「来源:本地」（手写语义）+ 无 d2（mock 未给 description，条件渲染）。
     {
       // pskill 在 mock 数组首位 → DOM 序第一（hasText 子串匹配无法区分 pskill/pskill-off）。
       const pskillD2 = await skillCards.first().locator(".d2").textContent();
       check(
-        "B2b 技能卡 d2 = 描述 · 来源:slug",
-        pskillD2?.includes("项目级技能示例") === true && pskillD2.includes("来源:acme/skills"),
+        "B2b 技能卡 d2 = 纯描述",
+        pskillD2?.includes("项目级技能示例") === true && !pskillD2.includes("来源:"),
       );
-      const offD2 = await page
-        .locator(".pcard", { hasText: "pskill-off" })
-        .locator(".d2")
-        .first()
-        .textContent();
       check(
-        "B2c 手写技能卡 d2 = 来源:本地",
-        offD2?.includes("来源:本地") === true && !offD2.includes("acme/skills"),
+        "B2b2 技能卡右上角来源 chip = 来源:acme/skills",
+        (await skillCards.first().locator(".r1 .upd", { hasText: "来源:acme/skills" }).count()) ===
+          1,
+      );
+      const offCard = page.locator(".pcard", { hasText: "pskill-off" }).first();
+      check(
+        "B2c 手写技能卡右上角 chip = 来源:本地",
+        (await offCard.locator(".r1 .upd", { hasText: "来源:本地" }).count()) === 1,
+      );
+      check(
+        "B2c2 手写技能卡无 d2（无描述不渲染空副行）",
+        (await offCard.locator(".d2").count()) === 0,
       );
     }
 

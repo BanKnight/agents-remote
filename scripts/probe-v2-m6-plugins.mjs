@@ -248,21 +248,29 @@ ok(
 );
 await page.waitForSelector(".pcard", { timeout: 5000 });
 ok((await page.locator(".pcard").count()) === 4, "pcard = 4（MCP 2 + 技能 2）");
-// 列表副行 d2（2026-10-04 对齐原型「描述 · 来源」）：code-review 有锁 slug →
-//「描述 · 来源:slug」（zh 半角冒号无空格逐字符对齐原型）；tdd 同款。防 d2 回归成 path。
+// 列表卡来源（2026-10-04 用户拍板「右上角标注来源」，当日二次演化：副行「描述 · 来源」
+// → 右上角来源 chip + 副行纯描述）：code-review 有锁 slug → chip「来源:anthropics/skills」
+//（zh 半角冒号无空格）+ d2 纯描述；tdd 同款。防 d2 回归成 path / 回归挂来源。
 {
-  const crD2 = await page
-    .locator(".pcard", { hasText: "code-review" })
-    .locator(".d2")
-    .textContent();
+  const crCard = page.locator(".pcard", { hasText: "code-review" });
+  const crD2 = await crCard.locator(".d2").textContent();
   ok(
-    crD2?.includes("提交前自动审查代码变更") === true && crD2.includes("来源:anthropics/skills"),
-    `技能卡 d2 = 描述 · 来源:slug（实测「${crD2?.trim()}」）`,
+    crD2?.includes("提交前自动审查代码变更") === true && !crD2.includes("来源:"),
+    `技能卡 d2 = 纯描述（实测「${crD2?.trim()}」）`,
   );
-  const tddD2 = await page.locator(".pcard", { hasText: "tdd" }).locator(".d2").textContent();
   ok(
-    tddD2?.includes("测试驱动开发工作流") === true && tddD2.includes("来源:anthropics/skills"),
-    `技能卡 d2（tdd）= 描述 · 来源:slug（实测「${tddD2?.trim()}」）`,
+    (await crCard.locator(".r1 .upd", { hasText: "来源:anthropics/skills" }).count()) === 1,
+    "技能卡右上角来源 chip = 来源:anthropics/skills",
+  );
+  const tddCard = page.locator(".pcard", { hasText: "tdd" });
+  const tddD2 = await tddCard.locator(".d2").textContent();
+  ok(
+    tddD2?.includes("测试驱动开发工作流") === true && !tddD2.includes("来源:"),
+    `技能卡 d2（tdd）= 纯描述（实测「${tddD2?.trim()}」）`,
+  );
+  ok(
+    (await tddCard.locator(".r1 .upd", { hasText: "来源:anthropics/skills" }).count()) === 1,
+    "技能卡右上角来源 chip（tdd）",
   );
   ok(
     (await page.locator(".pcard .d2", { hasText: "/home/deploy" }).count()) === 0,

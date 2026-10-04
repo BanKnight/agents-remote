@@ -515,20 +515,19 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
                       {s.disabled ? (
                         <span className="upd off">{t("plugins.disabledChip")}</span>
                       ) : null}
-                    </div>
-                    {/* 副行 = 描述 · 来源（原型 d2，2026-10-04 拍板口径）：描述 = frontmatter；
-                        来源 = skills 锁记录 slug，手写（无锁记录）= 本地。path 不再上列表
-                       （原型语义；长路径串换行即用户反馈的观感差异，字段保留给调试/深度页）。 */}
-                    <div className="d2">
-                      {[
-                        s.description,
-                        s.source
+                      {/* 来源 chip（2026-10-04 用户拍板「右上角标注来源」）：skills 锁记录
+                          slug，手写（无锁记录）= 本地；中性灰变体——元信息不与「有更新」
+                          蓝 tint 抢注意力。副行 d2 回归纯描述：line-clamp 2 下长描述占满
+                          副行会截掉「描述 · 来源」里的来源段，chip 位始终可见。 */}
+                      <span className="upd off">
+                        {s.source
                           ? t("plugins.skillSource", { source: s.source })
-                          : t("plugins.skillLocal"),
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
+                          : t("plugins.skillLocal")}
+                      </span>
                     </div>
+                    {/* 副行 = 纯描述（frontmatter；来源已挪右上角 chip）。path 不上列表
+                       （原型语义；长路径串换行即用户反馈的观感差异，字段保留给调试/深度页）。 */}
+                    {s.description ? <div className="d2">{s.description}</div> : null}
                     <ActionMenu
                       items={skillMenuItems(s)}
                       trigger={
