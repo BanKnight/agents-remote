@@ -176,6 +176,41 @@ describe("listInstalledSkills", () => {
     // 全局 scope 不读锁；manageable 走独立 checkSkillUpdates → SkillUpdateStatus。
     expect(res.skills[0].manageable).toBeUndefined();
   });
+
+  it("populates description + source（frontmatter + 全局锁 slug）；手写 skill source 缺省", async () => {
+    await writeSkill(".claude", "tdd"); // SKILL.md description: tdd skill
+    await writeSkill(".claude", "handwritten");
+    // 全局锁：仅 tdd 有记录（模拟 skills CLI 安装时写入；handwritten 手写无锁）。
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(
+      join(home, ".agents", ".skill-lock.json"),
+      JSON.stringify({
+        version: 3,
+        skills: { tdd: { source: "owner/repo", sourceType: "github" } },
+      }),
+    );
+    const res = await listInstalledSkills("claude-code", {
+      settingsStore: store,
+      skillsHome: home,
+    });
+    const byName = Object.fromEntries(res.skills.map((s) => [s.name, s]));
+    expect(byName.tdd.description).toBe("tdd skill");
+    expect(byName.tdd.source).toBe("owner/repo");
+    expect(byName.handwritten.description).toBe("handwritten skill");
+    expect(byName.handwritten.source).toBeUndefined(); // 前端显示「来源: 本地」
+  });
+
+  it("全局锁损坏 → list 容错不抛（source 退化缺省，不让已装列表整体失败）", async () => {
+    await writeSkill(".claude", "tdd");
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(join(home, ".agents", ".skill-lock.json"), "{not json");
+    const res = await listInstalledSkills("claude-code", {
+      settingsStore: store,
+      skillsHome: home,
+    });
+    expect(res.skills).toHaveLength(1);
+    expect(res.skills[0].source).toBeUndefined();
+  });
 });
 
 describe("executeInstall", () => {
@@ -505,6 +540,9 @@ describe("project scope skills", () => {
     const byName = Object.fromEntries(res.skills.map((s) => [s.name, s]));
     expect(byName.sourced.manageable).toBe(true);
     expect(byName.handwritten.manageable).toBe(false);
+    // 来源 slug 随锁记录（09 列表副行「描述 · 来源」）；手写无锁记录 → 缺省（前端显示本地）。
+    expect(byName.sourced.source).toBe("owner/repo");
+    expect(byName.handwritten.source).toBeUndefined();
   });
 
   it("listInstalledSkills project: 锁缺失/损坏 → 全部 manageable=false（list 容错不抛）", async () => {

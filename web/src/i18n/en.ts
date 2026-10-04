@@ -850,6 +850,8 @@ export const en = {
   "plugins.menuDisable": "Disable (stop injecting)",
   "plugins.menuEnable": "Enable",
   "plugins.disabledChip": "Disabled",
+  "plugins.skillSource": "Source: {{source}}",
+  "plugins.skillLocal": "Source: local",
   "plugins.scopeSwitchTitle": "Switch scope",
   "plugins.scopeProjectsGroup": "Projects",
   "plugins.enabledToggle": "Enabled",

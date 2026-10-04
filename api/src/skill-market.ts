@@ -184,9 +184,9 @@ export function disabledSkillsDir(agent: SkillAgent, home: string, projectRoot?:
 
 /**
  * 直扫 agent 全局 skills 目录，返回该 agent installed 的全部 skill（只读 SKILL.md
- * frontmatter 拿 name）。跳过：隐藏条目（`.system` 等）、非目录/broken symlink、无
- * SKILL.md 的目录——与 skills CLI 的过滤口径一致。目录缺失（agent 未装任何 skill）→
- * 空数组，不报错。
+ * frontmatter 拿 name/description，source 取 skills 锁记录 slug）。跳过：隐藏条目
+ *（`.system` 等）、非目录/broken symlink、无 SKILL.md 的目录——与 skills CLI 的过滤
+ * 口径一致。目录缺失（agent 未装任何 skill）→ 空数组，不报错。
  *
  * `path` 用 realpath：symlink 条目解析到 canonical 真身（与 CLI 输出一致），agent-only
  * 真实目录解析到自身。
@@ -203,9 +203,12 @@ async function scanInstalledSkillsFromFs(
     ? join(projectRoot, AGENT_SKILLS_HOME_DIR[agent], "skills")
     : agentGlobalSkillsDir(agent, home);
   const disabledDir = disabledSkillsDir(agent, home, projectRoot);
-  // 项目 scope 读一次项目锁判断每 skill 是否有源（manageable）；全局 scope 不读（manageable 走
-  // 独立的 checkSkillUpdates）。循环外读一次，不 per-skill 重复 IO。
-  const lockNames = projectRoot ? await readProjectSkillLockNames(projectRoot) : null;
+  // 锁记录循环外读一次（不 per-skill 重复 IO）：source 展示（09 列表副行「描述 · 来源」）+
+  // 项目 scope manageable 判定。全局 = ~/.agents/.skill-lock.json（损坏时 list 容错降级为
+  // 空记录，来源退化为「本地」——锁损坏不应让已装列表整体失败）；项目锁本就容错。
+  const lock = projectRoot
+    ? await readProjectSkillLock(projectRoot)
+    : await readSkillLock(home).catch(() => ({}) as Record<string, SkillLockEntry>);
   const scanOne = async (dir: string, disabled: boolean): Promise<InstalledSkill[]> => {
     let entries: string[];
     try {
@@ -242,9 +245,13 @@ async function scanInstalledSkillsFromFs(
         path: realPath,
         scope: projectRoot ? "project" : "global",
         agents: [AGENT_DISPLAY_NAME[agent]],
+        // 描述/来源（09 列表副行「描述 · 来源」对齐原型）：description = frontmatter 现成
+        // 字段；source = 锁记录 slug，无记录（手写 skill）不填 → 前端显示「来源: 本地」。
+        ...(fm.description ? { description: fm.description } : {}),
+        ...(lock[name]?.source ? { source: lock[name].source } : {}),
         // 项目 scope：锁记录存在 = 有源可更新；手写 skill（无锁记录）= false。全局不填（undefined）。
         // 停用条目不可更新（disabled 已表达语义），manageable 不填。
-        ...(disabled ? { disabled: true } : lockNames ? { manageable: lockNames.has(name) } : {}),
+        ...(disabled ? { disabled: true } : projectRoot ? { manageable: name in lock } : {}),
       });
     }
     return skills;
@@ -253,26 +260,80 @@ async function scanInstalledSkillsFromFs(
   return [...active, ...disabled];
 }
 
+// 锁文件相对 home 的路径（skills CLI 的 global lock）。
+export const LOCK_FILE_RELATIVE = join(".agents", ".skill-lock.json");
+
+const isNotFoundError = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+
+/** skills 锁记录（skills CLI 写入）。更新检测（skill-update.ts）与来源展示共用。 */
+export type SkillLockEntry = {
+  source?: string;
+  sourceType?: string;
+  sourceUrl?: string;
+  skillPath?: string;
+  skillFolderHash?: string;
+  installedAt?: string;
+  updatedAt?: string;
+};
+
 /**
- * 读项目锁 `<projectRoot>/skills-lock.json` 的 skill name 集合（判断项目 scope skill 是否
- * 有源 = 纳入版本管理）。文件缺失/损坏 → empty set（list 容错：锁损坏不应让已装列表整体失败）。
- * 与全局锁 `~/.agents/.skill-lock.json` 结构同构（{version, skills:{[name]:{...}}}），但路径
- * 与容错策略不同：全局 readSkillLock 损坏抛错（checkSkillUpdates 需感知）；项目锁仅判存在性，容错。
+ * 读 `~/.agents/.skill-lock.json` 的 skills map。文件缺失 → {}（无第三方 skill）；JSON 损坏 → 抛。
+ * home 复用 deps.skillsHome（测试注入临时目录；生产 = os.homedir()，与 skills 目录同一 home 基准）。
+ * （原 skill-update.ts 持有；scanInstalledSkillsFromFs 也需读 source，下沉本文件避依赖成环——
+ * skill-update → skill-market 是既有方向。）
  */
-async function readProjectSkillLockNames(projectRoot: string): Promise<Set<string>> {
+export async function readSkillLock(home: string): Promise<Record<string, SkillLockEntry>> {
   let raw: string;
   try {
-    raw = await readFile(join(projectRoot, "skills-lock.json"), "utf8");
-  } catch {
-    return new Set(); // 文件缺失（项目无第三方 skill）= 空集，非错误。
+    raw = await readFile(join(home, LOCK_FILE_RELATIVE), "utf8");
+  } catch (error) {
+    if (isNotFoundError(error)) return {};
+    throw new SkillError("SKILL_UPDATE_CHECK_FAILED", "Unable to read skill lock file");
   }
   try {
     const parsed = JSON.parse(raw) as { skills?: unknown };
     const skills = parsed.skills;
-    if (!skills || typeof skills !== "object" || Array.isArray(skills)) return new Set();
-    return new Set(Object.keys(skills as Record<string, unknown>));
+    if (!skills || typeof skills !== "object" || Array.isArray(skills)) return {};
+    const out: Record<string, SkillLockEntry> = {};
+    for (const [name, entry] of Object.entries(skills as Record<string, unknown>)) {
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        out[name] = entry as SkillLockEntry;
+      }
+    }
+    return out;
   } catch {
-    return new Set(); // JSON 损坏 → 空集（list 容错，不抛）。
+    throw new SkillError("SKILL_UPDATE_CHECK_FAILED", "Skill lock file is not valid JSON");
+  }
+}
+
+/**
+ * 读项目锁 `<projectRoot>/skills-lock.json` 的完整 skills map（来源展示 + manageable 判定）。
+ * 文件缺失/损坏 → {}（list 容错：锁损坏不应让已装列表整体失败）。
+ * 与全局锁 `~/.agents/.skill-lock.json` 结构同构（{version, skills:{[name]:{...}}}），但路径
+ * 与容错策略不同：全局 readSkillLock 损坏抛错（checkSkillUpdates 需感知）；项目锁仅展示/判定
+ * 消费，容错。
+ */
+async function readProjectSkillLock(projectRoot: string): Promise<Record<string, SkillLockEntry>> {
+  let raw: string;
+  try {
+    raw = await readFile(join(projectRoot, "skills-lock.json"), "utf8");
+  } catch {
+    return {}; // 文件缺失（项目无第三方 skill）= 空集，非错误。
+  }
+  try {
+    const parsed = JSON.parse(raw) as { skills?: unknown };
+    const skills = parsed.skills;
+    if (!skills || typeof skills !== "object" || Array.isArray(skills)) return {};
+    const out: Record<string, SkillLockEntry> = {};
+    for (const [name, entry] of Object.entries(skills as Record<string, unknown>)) {
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        out[name] = entry as SkillLockEntry;
+      }
+    }
+    return out;
+  } catch {
+    return {}; // JSON 损坏 → 空 map（list 容错，不抛）。
   }
 }
 

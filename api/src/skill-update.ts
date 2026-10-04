@@ -6,7 +6,7 @@ import {
   type UpdateSkillRequest,
   type UpdateSkillResponse,
 } from "@agents-remote/shared";
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { jsonError } from "./http-auth.js";
@@ -16,6 +16,7 @@ import {
   matchProjectSkillPath,
   parseAgent,
   projectPathErrorStatus,
+  readSkillLock,
   reloadAliveSessions,
   resolveProjectSkillCwd,
   resolveSkillsHome,
@@ -45,13 +46,10 @@ import { skillTaskRegistry } from "./skill-tasks.js";
  * default_branch + recursive tree），repo 之间串行（天然限并发）。v1 用户手动触发，不自动批量。
  */
 
-// 锁文件相对 home 的路径（skills CLI 的 global lock）。
-const LOCK_FILE_RELATIVE = join(".agents", ".skill-lock.json");
+// 锁文件读取（readSkillLock/SkillLockEntry）已下沉 skill-market.ts（scanInstalledSkillsFromFs
+// 同需读 source，下沉避依赖成环）；此处仅消费。
 const GITHUB_API_BASE = "https://api.github.com";
 const GITHUB_TIMEOUT_MS = 20_000;
-
-const isNotFoundError = (error: unknown): boolean =>
-  typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 
 function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -95,42 +93,6 @@ function skillFolderFromPath(skillPath: string): string {
   if (stripped !== skillPath) return stripped;
   const idx = skillPath.lastIndexOf("/");
   return idx > 0 ? skillPath.slice(0, idx) : "";
-}
-
-type SkillLockEntry = {
-  source?: string;
-  sourceType?: string;
-  sourceUrl?: string;
-  skillPath?: string;
-  skillFolderHash?: string;
-  installedAt?: string;
-  updatedAt?: string;
-};
-
-/** 读 `~/.agents/.skill-lock.json` 的 skills map。文件缺失 → {}（无第三方 skill）；JSON 损坏 → 抛。
- *  home 复用 deps.skillsHome（测试注入临时目录；生产 = os.homedir()，与 skills 目录同一 home 基准）。 */
-async function readSkillLock(home: string): Promise<Record<string, SkillLockEntry>> {
-  let raw: string;
-  try {
-    raw = await readFile(join(home, LOCK_FILE_RELATIVE), "utf8");
-  } catch (error) {
-    if (isNotFoundError(error)) return {};
-    throw new SkillError("SKILL_UPDATE_CHECK_FAILED", "Unable to read skill lock file");
-  }
-  try {
-    const parsed = JSON.parse(raw) as { skills?: unknown };
-    const skills = parsed.skills;
-    if (!skills || typeof skills !== "object" || Array.isArray(skills)) return {};
-    const out: Record<string, SkillLockEntry> = {};
-    for (const [name, entry] of Object.entries(skills as Record<string, unknown>)) {
-      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
-        out[name] = entry as SkillLockEntry;
-      }
-    }
-    return out;
-  } catch {
-    throw new SkillError("SKILL_UPDATE_CHECK_FAILED", "Skill lock file is not valid JSON");
-  }
 }
 
 /**

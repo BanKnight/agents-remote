@@ -837,6 +837,8 @@ export const zh: Record<TranslationKey, string> = {
   "plugins.menuDisable": "停用（停止注入）",
   "plugins.menuEnable": "启用",
   "plugins.disabledChip": "已停用",
+  "plugins.skillSource": "来源: {{source}}",
+  "plugins.skillLocal": "来源: 本地",
   "plugins.scopeSwitchTitle": "切换作用域",
   "plugins.scopeProjectsGroup": "项目",
   "plugins.enabledToggle": "已启用",

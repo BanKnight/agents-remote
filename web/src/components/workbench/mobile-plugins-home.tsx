@@ -516,7 +516,19 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
                         <span className="upd off">{t("plugins.disabledChip")}</span>
                       ) : null}
                     </div>
-                    <div className="d2">{s.path}</div>
+                    {/* 副行 = 描述 · 来源（原型 d2，2026-10-04 拍板口径）：描述 = frontmatter；
+                        来源 = skills 锁记录 slug，手写（无锁记录）= 本地。path 不再上列表
+                       （原型语义；长路径串换行即用户反馈的观感差异，字段保留给调试/深度页）。 */}
+                    <div className="d2">
+                      {[
+                        s.description,
+                        s.source
+                          ? t("plugins.skillSource", { source: s.source })
+                          : t("plugins.skillLocal"),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
                     <ActionMenu
                       items={skillMenuItems(s)}
                       trigger={

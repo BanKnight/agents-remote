@@ -50,10 +50,14 @@ export function MobileSkillDetail({ name }: { name: string }) {
   const setDisabled = useSetSkillDisabled();
   const { confirm, holder } = useConfirm();
 
+  const skillEntry = (installed.data?.skills ?? []).find((s) => s.name === name);
   // 停用态（批6）：列表项 disabled 字段（服务端 rename 进停用区）。undefined = 未检出（防御）。
-  const skillDisabled = Boolean(
-    (installed.data?.skills ?? []).find((s) => s.name === name)?.disabled,
-  );
+  const skillDisabled = Boolean(skillEntry?.disabled);
+  // 来源行（原型 12 dmeta「来源:x · 全局作用域」，2026-10-04 对齐）：与 09 列表副行同源
+  //（installed 的锁 slug）；不用 preview.source（realpath 文件路径，非来源语义）。
+  const sourceLabel = skillEntry?.source
+    ? t("plugins.skillSource", { source: skillEntry.source })
+    : t("plugins.skillLocal");
 
   // 「有更新」仅手动检测出结果后出现（updates.data undefined = 尚未检测），与 09 列表 chip 同源。
   const hasUpdate = (updates.data?.updates ?? []).some((u) => u.name === name && u.hasUpdate);
@@ -73,9 +77,7 @@ export function MobileSkillDetail({ name }: { name: string }) {
             </span>
           </div>
         ) : null}
-        <div className="dmeta">
-          {[preview.data?.source, t("plugins.scopeGlobal")].filter(Boolean).join(" · ")}
-        </div>
+        <div className="dmeta">{[sourceLabel, t("plugins.scopeGlobal")].join(" · ")}</div>
         {preview.data?.description ? <div className="ddesc">{preview.data.description}</div> : null}
 
         {/* 已启用 toggle（v1.4 批6，09b）：停用 = 保留文件与配置、停止注入（目录 rename 进停用区）。

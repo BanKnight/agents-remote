@@ -697,6 +697,13 @@ export type InstalledSkill = {
   path: string;
   scope: "project" | "global";
   agents: string[];
+  /** SKILL.md frontmatter description（缺失不填）。09 列表副行 + 12 详情 ddesc 数据源。 */
+  description?: string;
+  /**
+   * skills 锁记录的来源 slug（如 vercel-labs/agent-skills）；无锁记录（手写 skill）不填，
+   * 前端显示「来源: 本地」。全局 = ~/.agents/.skill-lock.json；项目 = <project>/skills-lock.json。
+   */
+  source?: string;
   /**
    * 是否纳入版本管理（项目 scope：有 <project>/skills-lock.json 记录=有源可更新）。
    * 仅项目 scope 填 true/false；全局 scope 不填（undefined，manageable 走独立的

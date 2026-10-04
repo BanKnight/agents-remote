@@ -60,12 +60,17 @@ const INSTALLED_SKILLS = [
     path: "/home/deploy/.claude/skills/code-review",
     scope: "global",
     agents: ["claude-code"],
+    // description/source（2026-10-04 列表副行「描述 · 来源」对齐原型）：与 preview mock 同 slug 口径。
+    description: "提交前自动审查代码变更",
+    source: "anthropics/skills",
   },
   {
     name: "tdd",
     path: "/home/deploy/.claude/skills/tdd",
     scope: "global",
     agents: ["claude-code"],
+    description: "测试驱动开发工作流",
+    source: "anthropics/skills",
   },
 ];
 
@@ -173,6 +178,8 @@ async function setupM6Mocks(page) {
       path: "/home/deploy/.claude/skills/docs-writer",
       scope: "global",
       agents: ["claude-code"],
+      description: "编写与维护项目文档",
+      source: "anthropics/skills",
     });
     return r.fulfill(json({ taskId: "task-m6", status: "running" }));
   });
@@ -302,7 +309,9 @@ ok(
 );
 ok(
   (await page.locator(".dmeta").textContent())?.includes("anthropics/skills") === true,
-  "dmeta 含来源（preview.source）",
+  // 数据源 = installed.source（2026-10-04 对齐：preview.source 是 realpath 非来源语义，
+  // 详情页 dmeta 与 09 列表副行统一走锁 slug）。
+  "dmeta 含来源（installed.source）",
 );
 ok(
   (await page.locator(".ddesc").textContent())?.includes("提交前自动审查") === true,

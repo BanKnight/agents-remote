@@ -1399,6 +1399,16 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **验证**：probe-mobile-motion **45 断言**全绿（三处 visShift 精确 30.0，容差收紧 ±0.5）/ probe-spring-overlays **19 断言**全绿（dropdown/dialog duration 0.12s + sheet motion 升起 rAF 采样 + reduced-motion 1e-05s）/ 全门禁绿 + CSS 硬闸（188771 字节）+ tokens 机检 0 违例。
 
+### 技能列表对齐原型：副行「描述 · 来源」+ 详情 dmeta 对齐（2026-10-04）
+
+**背景与拍板**：用户反馈插件技能列表「样式上和内容上都和原型设计有区别」。逐条对比结论 = **样式类（.pcard/.r1/.upd/.d2/.psect）与原型 09 逐条一致**，真正差异在内容：①列表副行 d2 显示**安装路径**（长串换行），原型 =「描述 · 来源:官方」；②详情页 dmeta 显示 preview.source = **realpath 文件路径**（探针 mock 一直写 slug，与真实行为脱节——探针绿但真机显示路径）。用户拍板：来源口径 = `来源: {slug}`（真实数据无官方/社区分类，**分类映射否决**——白名单维护脆弱、分类不准=伪造来源语义）；手写技能（无锁记录）= `来源: 本地`；范围 = 列表 + 详情页一并对齐。
+
+**数据管道**：`InstalledSkill` 加 `description?`（SKILL.md frontmatter，scan 本就读已解析，零额外 IO）+ `source?`（skills 锁记录 slug）。锁读取下沉：`readSkillLock`/`SkillLockEntry`/`LOCK_FILE_RELATIVE` 从 skill-update.ts 移到 skill-market.ts 并导出（依赖方向 skill-update → skill-market 既有，反向成环）；scanInstalledSkillsFromFs 循环外读一次锁（全局锁损坏 list 容错降级空记录 = 来源退化「本地」，不让列表整体失败；项目锁本就容错）；项目锁函数 `readProjectSkillLockNames`（name 集合）→ `readProjectSkillLock`（完整 map，manageable 判定语义不变）。`SkillPreviewResponse.source`（realpath）语义保留，仅详情页改消费口。
+
+**展示规则**：d2 = `[description, source ? 来源: {slug} : 来源: 本地].join(" · ")`（最少「来源: 本地」，path 不再上列表——字段保留调试/深度页）；详情 dmeta = `[来源行, 全局作用域].join(" · ")`，与列表同源（installed.source），不再用 preview.source。桌面端消费同一 MobilePluginsOverview（hideTitle 复用），一次改动两端生效。
+
+**验证**：skill 单测 67 pass（新增 description/source 全局锁 case + 锁损坏容错 case + 项目锁 source 断言）/ web 714 pass / probe-v2-m6-plugins **87** + probe-project-plugins **15** 全绿（mock 补 description/source，dmeta 断言注释改 installed.source 口径）/ CSS 硬闸 + tokens 机检绿 / 真实环境抽查实抓技能卡 d2 =「来源: 本地」（新代码路径生效）。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

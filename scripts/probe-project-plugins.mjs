@@ -104,12 +104,15 @@ async function sectionB(browser) {
   });
   const page = await ctx.newPage();
   // 项目 skill list：active + disabled 两态。disable handler 翻转 disabled（refetch 闭环断言）。
+  // description/source（2026-10-04 列表副行「描述 · 来源」）：pskill 有锁 slug、pskill-off 手写缺省。
   const projectSkills = [
     {
       name: "pskill",
       path: `/projects/${projectName}/.claude/skills/pskill`,
       scope: "project",
       agents: ["claude-code"],
+      description: "项目级技能示例",
+      source: "acme/skills",
     },
     {
       name: "pskill-off",
