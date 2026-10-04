@@ -1425,7 +1425,19 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **桌面零代码改动**：居中 Dialog（ui/dialog.tsx）无键盘推挤问题，Radix 默认聚焦（首 focusable = 该 input）保留表单惯例与键盘导航 a11y。
 - **行内渐进披露保留 autoFocus**（不在「浮层打开即聚焦」语义内）：files/wiki 搜索框、重命名行内输入、新建文件夹行、move-sheet 新建行——输入框出现本身就是用户点击的直接反馈。
 
-**验证**：新探针 `probe-sheet-focus-policy`（4 断言：切换 sheet + 文件新建 sheet 打开后 activeElement 非 INPUT，对照断言锚输入框在场防空转）/ probe-mobile-motion 45（首跑 1 fail 为高负载采样 flake，复跑全绿）/ probe-spring-overlays 19 / probe-v2-m6-plugins 92 / probe-project-plugins 19 全绿 / 全门禁绿。桌面面零代码改动不做浏览器断言（路径深），交桌面抽查。
+**验证**：新探针 `probe-sheet-focus-policy`（4 断言：切换 sheet + 文件新建 sheet 两面，打开后 activeElement 非 INPUT，对照断言锚输入框在场防空转）/ probe-mobile-motion 45（首跑 1 fail 为高负载采样 flake，复跑全绿）/ probe-spring-overlays 19 / probe-v2-m6-plugins 92 / probe-project-plugins 19 全绿 / 全门禁绿。桌面面零代码改动不做浏览器断言（路径深），交桌面抽查。
+
+### composer 发图——+ 菜单（图片 / 相机 / 文件）（2026-10-04，`68b030c`）
+
+**用户需求与拍板**：「为 claude agent 输入框增加发图功能，能够发送图片或者拍照发送，在左侧出现一个加号按钮，点击出现菜单，包含 图片 相机 文件。」AskUserQuestion 拍板：①图片送达 = **stream-json 图片块**（base64 内联 WS 帧 → api 原样透传 stdin → CLI 直达模型；JSONL 同样以 base64 落盘 → 历史回放天然携带）；②「文件」= **项目内 uploads/ 目录**（CLI cwd 内可见可 Read，权限零摩擦；复用 writeUpload 校验/50MiB/keepBoth）。
+
+**链路**：pick/拍照 → 客户端归一化（达标 jpeg/png/webp 且 ≤1568px **原样透传**保 PNG 锐度；否则 canvas 重编码 JPEG q0.8，GIF 取首帧）→ WS user 帧 `content=[图片块…, 文本块]`；文件 pick → 立即 `uploadFile(projectName,"uploads",file,"keepBoth")` → chip 上传中→就绪 → 发送时并入提及行「附件：{path}」。发送接线 = route 顶层 `useComposerAttachments` 持草稿 → 第 5 参 options 经 ref 进 `useClaudeSession` → onNew 发送瞬间 `takeSnapshot` 组帧；**纯附件无文本走 `api.thread().append(" ")` 兜底**（assistant-ui 空文本 send 不可靠；占位空格被 onNew trim，纯图成 image-only content）。多端同构：同一 composer 两端生效，相机项显隐按 pointer media（`hover-capable:hidden`，默认常显 = 触屏/未知方向无害，§7）。
+
+**渲染链（真管道）**：`ChatStreamItem` user-prompt 增 `images?`；`normalizeChatStream` user 分支用 `extractUserBubbleContent` 单源提取（纯图不丢气泡）；`renderChatStream` 映射 image parts；`UserChatBubble` 配 `UserImageView`（气泡+全屏阅读器同源）。**教训记档**：本批首版把渲染改动接在 `convertContentToBubble` 上——该函数是**无生产调用者的存量死函数**（仅测试引用），探针 Part5「下行气泡」抓包暴露（组帧绿但渲染链未接），改接真链后才通。改渲染语义先核真实调用链，别信名字像的函数。
+
+**探针**：`probe-composer-attach` 15 断言全绿（菜单/相机两端显隐/组帧精确比对 base64/纯附件兜底/提及行/下行气泡 img/× 移除；routeWebSocket 上行捕获 + mock 上传端点）。**探针实战价值实锤**：首跑抓到 `pick`/`addFiles` 占位 id 错位真 bug（addFiles 重复 ++idRef，chip 状态永停「上传中」——mock 单测覆盖不到的接线 bug）。回归 probe-claude-detail-perf 27 pass。dev 真实环境抽查（真实后端会话页 + 按钮在场 + 相机 display=none）。
+
+**security review 消化（`675255b`，1×Medium-Low + 1 加固全采纳）**：①**单图 5MiB 上限**——原实现只限张数（4），透传分支尺寸达标 ≠ 体积达标（1×1 带 MB 级 tEXt 块的 PNG、1568px 噪声 PNG），放行会撑爆 WS 帧 → api stdin → JSONL 永久落盘 + relay 常驻重放；现三出口过 `IMAGE_MAX_BYTES` 闸（透传超限落重编码、无法重编码的兜底与重编码产物超限即 chip 报失败），与 Anthropic API 单图 5MB 对齐。②`extractUserBubbleContent` 增 media_type 白名单 `image/(jpeg|png|webp|gif)`（唯一消费点 `<img src>` 本就无可触发注入，加固收紧 data: URL 拼接面）。③文件上传链 / shared 类型扩宽 / ProjectName / 鉴权 / 命令执行各面 reviewer 确认未发现。
 
 ## §7 待定项跟踪
 
