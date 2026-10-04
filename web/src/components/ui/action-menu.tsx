@@ -35,6 +35,11 @@ export type ActionMenuItem = {
   onSelect: () => void;
   variant?: ActionMenuItemVariant;
   disabled?: boolean;
+  /**
+   * 逐项显隐/微调类（两端形态同落）。composer 附件菜单「相机」用它做仅触屏显隐
+   *（`hidden touch:inline-flex`，能力判定按 pointer media，frontend-notes §7）。
+   */
+  className?: string;
 };
 
 type ActionMenuProps = {
@@ -113,7 +118,7 @@ export function ActionMenu({
               type="button"
               role="menuitem"
               disabled={item.disabled}
-              className={mobileSheetItemClasses(item.variant)}
+              className={cn(mobileSheetItemClasses(item.variant), item.className)}
               onClick={(e) => {
                 // portal 合成事件按 fiber 树冒泡（frontend-notes §4）：menuitem 的 click
                 // 会冒到行/卡 onClick（如文件行 onOpenFile 导航），必须拦；否则 onSelect
@@ -156,6 +161,7 @@ export function ActionMenu({
         key={`${item.label}-${index}`}
         variant={item.variant}
         disabled={item.disabled}
+        className={item.className}
         onSelect={() => item.onSelect()}
       >
         {item.icon}

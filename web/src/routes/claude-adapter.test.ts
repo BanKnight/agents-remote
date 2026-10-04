@@ -12,6 +12,7 @@ import {
   deriveRetryInfo,
   deriveStatus,
   extractTaskIdAssignment,
+  extractUserBubbleContent,
   extractTaskOps,
   mapTurnStatusTone,
   hasToolUseNamed,
@@ -1768,6 +1769,57 @@ describe("message processing building blocks", () => {
       message: { role: "user", content: [] },
     } as unknown as SessionStreamServerMessage;
     expect(convertContentToBubble(msg)).toBeNull();
+  });
+
+  // ── 发图批：用户气泡图片块（实时 echo 与 JSONL 回放同管道）──────────
+  test("extractUserBubbleContent joins texts and extracts base64 image blocks", () => {
+    const content = [
+      { type: "text", text: "看看这张图" },
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "aGk=" },
+      },
+      { type: "tool_result", tool_use_id: "tu-1", content: "ignored" },
+    ];
+    const { text, images } = extractUserBubbleContent(content);
+    expect(text).toBe("看看这张图");
+    expect(images).toEqual([{ mediaType: "image/png", dataUrl: "data:image/png;base64,aGk=" }]);
+  });
+
+  test("extractUserBubbleContent skips image blocks with non-base64 source", () => {
+    const content = [{ type: "image", source: { type: "url", ...({} as object) } }];
+    const { images } = extractUserBubbleContent(content);
+    expect(images).toEqual([]);
+  });
+
+  test("normalizeChatStream: user text+image → user-prompt item carries images（真链）", () => {
+    const items = normalizeChatStream([
+      makeUser([
+        { type: "text", text: "分析一下" },
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "aGk=" } },
+      ]),
+    ]);
+    const prompts = items.filter((i) => i.kind === "user-prompt");
+    expect(prompts).toHaveLength(1);
+    const prompt = prompts[0] as Extract<ChatStreamItem, { kind: "user-prompt" }>;
+    expect(prompt.text).toBe("分析一下");
+    expect(prompt.images).toEqual([
+      { mediaType: "image/jpeg", dataUrl: "data:image/jpeg;base64,aGk=" },
+    ]);
+  });
+
+  test("normalizeChatStream + renderChatStream: image-only user（无文本）不丢气泡（真链）", () => {
+    const items = normalizeChatStream([
+      makeUser([
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "aGk=" } },
+      ]),
+    ]);
+    const prompts = items.filter((i) => i.kind === "user-prompt");
+    expect(prompts).toHaveLength(1);
+    const messages = renderChatStream(items);
+    const bubble = messages.find((m) => m.role === "user");
+    expect(bubble).toBeDefined();
+    expect(bubble?.content).toEqual([{ type: "image", image: "data:image/jpeg;base64,aGk=" }]);
   });
 
   test("extractTaskOps returns empty for non-task messages", () => {

@@ -4,11 +4,13 @@ import type {
   ClaudeAttachment,
   ClaudeControlResponse,
   ClaudeQueueOperation,
+  ClaudeUserImageBlock,
   EffortLevel,
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
 import { isCompactBoundarySubtype } from "@agents-remote/shared";
 import { claudeStreamUrl } from "../api/client";
+import type { PendingAttachments } from "@/components/ui/composer-attach";
 import { isConnectionFresh } from "./console-model";
 import { isPerfTraceEnabled, isSocketLoggingEnabled } from "../lib/debug-flags";
 import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
@@ -1015,6 +1017,39 @@ export function normalizeAttachmentTaskStatus(status: string): TaskInfo["status"
 
 // ── Handlers ─────────────────────────────────────────────────────────
 
+/**
+ * user 消息 content 数组 → 气泡内容（文本合并 + 图片块 dataUrl 化）。tool_result 块由
+ * extractToolResults 单独消费，此处忽略。纯函数导出可单测（composer 发图批）。
+ */
+export function extractUserBubbleContent(content: unknown): {
+  text: string;
+  images: ExtractedImage[];
+} {
+  const texts: string[] = [];
+  const images: ExtractedImage[] = [];
+  if (Array.isArray(content)) {
+    for (const block of content as Array<Record<string, unknown>>) {
+      if (block.type === "text" && typeof block.text === "string") texts.push(block.text);
+      else if (block.type === "image") {
+        const source = block.source as
+          | { type?: unknown; media_type?: unknown; data?: unknown }
+          | undefined;
+        if (
+          source?.type === "base64" &&
+          typeof source.media_type === "string" &&
+          typeof source.data === "string"
+        ) {
+          images.push({
+            mediaType: source.media_type,
+            dataUrl: `data:${source.media_type};base64,${source.data}`,
+          });
+        }
+      }
+    }
+  }
+  return { text: texts.join("\n"), images: images };
+}
+
 export function convertContentToBubble(
   msg: SessionStreamServerMessage,
   opts?: { estimatedTokens?: number | null },
@@ -1809,6 +1844,9 @@ export type ChatStreamItem =
   | {
       kind: "user-prompt";
       text: string;
+      // 发图批：随消息内联的图片块（stream-json base64 → dataUrl），实时 echo 与 JSONL
+      // 回放同管道携带；渲染映射层转 image parts。无图消息不带该字段（现状零变化）。
+      images?: ExtractedImage[];
       sourceUuids: string[];
       _rawSnapshots: SessionStreamServerMessage[];
     }
@@ -2541,11 +2579,15 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       }
 
       // UserPrompt: text content → user-prompt item.
-      if (texts.length > 0) {
+      // 发图批：图片块随 user-prompt 携带（extractUserBubbleContent 单源提取；纯图无文本
+      // 也产 item——此前落到下方 dropped 分支丢气泡）。
+      const { images: userImages } = extractUserBubbleContent(msg.message.content);
+      if (texts.length > 0 || userImages.length > 0) {
         const promptText = texts.join("\n");
         items.push({
           kind: "user-prompt",
           text: promptText,
+          ...(userImages.length > 0 ? { images: userImages } : {}),
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
           _rawSnapshots: [msg],
         });
@@ -3475,10 +3517,21 @@ export function renderChatStream(
         break;
       }
       case "user-prompt": {
+        // 发图批：有图 → image parts 在前 + 可选文本块（UserImageView 消费）；无图维持
+        // 字符串 content（现状零变化）。
+        const hasImages = (item.images?.length ?? 0) > 0;
         messages.push(
           enrichBubbleMetadata({
             role: "user",
-            content: item.text,
+            content: hasImages
+              ? [
+                  ...item.images!.map((img) => ({
+                    type: "image" as const,
+                    image: img.dataUrl,
+                  })),
+                  ...(item.text ? [{ type: "text" as const, text: item.text }] : []),
+                ]
+              : item.text,
             metadata: {
               custom: {
                 sourceUuids: [...item.sourceUuids],
@@ -3766,6 +3819,11 @@ export function useClaudeSession(
   sessionId: string,
   initialModel?: string,
   initialPermissionMode?: string,
+  // composer 附件接线（发图批）：ref 持有（onNew 依赖稳定），发送瞬间取快照组帧。
+  options?: {
+    takePendingAttachments?: () => PendingAttachments | null;
+    clearPendingAttachments?: () => void;
+  },
 ) {
   const [connectionVersion, setConnectionVersion] = useState(0);
 
@@ -3800,6 +3858,10 @@ export function useClaudeSession(
   // reach the current onCompact handler the route injected into bridge, without
   // hitting the const TDZ between applyMessageScalarState and bridge.
   const bridgeRef = useRef<ClaudeBridge | null>(null);
+
+  // composer 附件接线（发图批）：ref 持有 options，onNew 依赖保持 [sendToSocket] 不变。
+  const pendingAttachmentsRef = useRef(options);
+  pendingAttachmentsRef.current = options;
 
   // ── Scalar state updater ──────────────────────────────────────────
   // Applies per-message scalar state updates (tasks, model, etc.).
@@ -4936,12 +4998,30 @@ export function useClaudeSession(
         .map((p) => (p as { text: string }).text)
         .join("\n");
 
-      if (textContent.trim()) {
-        sendToSocket({
-          type: "user",
-          message: { role: "user", content: [{ type: "text", text: textContent }] },
+      // 附件快照（composer 发图批）：图片 → stream-json 图片块（api 原样透传 stdin，CLI
+      // 直达模型）；文件 → 就绪路径的提及行并入文本。纯图片（无文本）也发——CLI 接受纯
+      // 图片 content 数组；此前 `textContent.trim()` 单一条件会丢纯图消息。
+      const pending = pendingAttachmentsRef.current?.takePendingAttachments?.() ?? null;
+      const images = pending?.images ?? [];
+      const text = [textContent.trim(), ...(pending?.mentionLines ?? [])]
+        .filter(Boolean)
+        .join("\n");
+      if (!text && images.length === 0) return;
+
+      const content: Array<{ type: "text"; text: string } | ClaudeUserImageBlock> = [];
+      for (const img of images) {
+        content.push({
+          type: "image",
+          source: { type: "base64", media_type: img.mediaType, data: img.data },
         });
       }
+      if (text) content.push({ type: "text", text });
+
+      sendToSocket({
+        type: "user",
+        message: { role: "user", content },
+      });
+      pendingAttachmentsRef.current?.clearPendingAttachments?.();
     },
     [sendToSocket],
   );

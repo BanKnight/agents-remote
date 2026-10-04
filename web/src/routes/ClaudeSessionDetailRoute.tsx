@@ -69,6 +69,11 @@ import {
   ModelSelector,
   PermissionModeSelector,
 } from "../components/ui/composer-controls";
+import {
+  AttachmentChipRow,
+  ComposerAttachMenu,
+  useComposerAttachments,
+} from "../components/ui/composer-attach";
 import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
 import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
@@ -340,6 +345,10 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
   const availableModelResolved = detail.data?.availableModelResolved;
   const availablePermissionModes = detail.data?.availablePermissionModes ?? [];
 
+  // composer 附件（发图批）：状态挂 route 顶层（适配器 useClaudeSession 的取快照回调在
+  // 此接线；ComposerWithInterrupt 深层经 props 消费）。
+  const composerAttachments = useComposerAttachments({ projectName });
+
   const {
     storeAdapter,
     bridge,
@@ -363,6 +372,11 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     sessionId,
     detail.data?.session.modelAlias ?? detail.data?.session.model,
     detail.data?.session.permissionMode,
+    // composer 附件接线（发图批）：onNew 发送瞬间取快照组帧、成功后清 chips。
+    {
+      takePendingAttachments: composerAttachments.takeSnapshot,
+      clearPendingAttachments: composerAttachments.clear,
+    },
   );
 
   // 聊天流 ```html 代码块「渲染」→ 工作台 render tab（sandbox iframe）。瞬态：
@@ -557,6 +571,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                                 onCancel={storeAdapter.onCancel}
                                 currentEffort={session?.effort}
                                 onSelectEffort={onSelectEffort}
+                                attachments={composerAttachments}
                               />
                             </ComposerPrimitive.Root>
                           </ComposerPrimitive.Unstable_TriggerPopoverRoot>
@@ -659,6 +674,12 @@ function ExpandGlyph({ className }: { className?: string }) {
   );
 }
 
+// 用户消息里的内联图片 part（发图批）：实时 echo 与 JSONL 回放同管道抵达（base64 图片块
+// → adapter 转 dataUrl image part）。约束在气泡内自适应，点气泡可进全屏阅读器看大图。
+function UserImageView({ image }: { image: string }) {
+  return <img alt="" className="max-h-64 max-w-full rounded-lg" src={image} />;
+}
+
 function UserChatBubble() {
   const message = useMessage();
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
@@ -668,7 +689,8 @@ function UserChatBubble() {
 
   const renderBody = () => (
     <>
-      <MessagePrimitive.Parts />
+      {/* Image part 渲染器（发图批）：文本照旧走默认 markdown，图片块走 UserImageView。 */}
+      <MessagePrimitive.Parts components={{ Image: UserImageView }} />
       <SyntheticBodyView />
       <ApiErrorAttachments />
     </>
@@ -3713,6 +3735,7 @@ function ComposerWithInterrupt({
   onCancel,
   currentEffort,
   onSelectEffort,
+  attachments,
 }: {
   opusplanActive: boolean | undefined;
   currentModel?: string;
@@ -3730,6 +3753,8 @@ function ComposerWithInterrupt({
   onCancel?: () => void;
   currentEffort?: EffortLevel;
   onSelectEffort: (effort: EffortLevel) => void;
+  /** composer 附件草稿状态（发图批；useComposerAttachments 返回值）。 */
+  attachments: ReturnType<typeof useComposerAttachments>;
 }) {
   const { t } = useT();
   // thread.isRunning drives the stop overlay for assistant turns; compactStatus
@@ -3802,7 +3827,10 @@ function ComposerWithInterrupt({
   const disconnected = !connected;
   const inputDisabled = blocked || disconnected;
   const running = isRunning || compactStatus === "compacting";
-  const hasInput = !isEmpty;
+  // 附件在场 = 可发送（发图批）：Send 可见性与纯附件发送跟随附件，不再单看 composer 文本。
+  const attachmentCount = attachments.attachments.length;
+  const hasUploadingAttachment = attachments.attachments.some((a) => a.status === "uploading");
+  const hasInput = !isEmpty || attachmentCount > 0;
   // 卡片内底行 Stop/Send 互斥占同一槽位（ml-auto 右对齐），Send 覆盖 Stop——有 Send 时（移动模式有
   // 输入）不显示 Stop。Send 仅移动模式（hasInput && isMobileComposer）；Stop 在 Send 未占用时显示
   //（running && !showSend）——桌面无 Send，running 总显示 Stop（零回归）。底行恒渲染 → textarea
@@ -3810,9 +3838,28 @@ function ComposerWithInterrupt({
   const showSend = hasInput && isMobileComposer && !inputDisabled;
   const showStop = running && !!onCancel && !blocked && !showSend;
 
+  // 统一发送入口（两条路径共用：桌面 Enter / 卡片内 Send 钮）：
+  // ① 任一附件上传中 → 暂缓（提及行未就绪，放行会静默丢附件；chip 的「上传中…」自解释）；
+  // ② 纯附件无文本 → composer.send() 的空文本路径不可靠（assistant-ui isEmpty 语义），走
+  //    api.thread().append 直驱 onNew（slash 命令先例 :3894）；占位空格被 onNew trim 掉，
+  //    文件提及行经附件快照并入帧文本，纯图成 image-only content。
+  // ③ 有文本 → 原生 composer.send()（图片/提及行经 takePendingAttachments 快照随帧）。
+  const sendComposer = () => {
+    if (inputDisabled || hasUploadingAttachment) return;
+    if (attachmentCount > 0 && isEmpty) {
+      api.thread().append(" ");
+    } else {
+      composer.send();
+    }
+  };
+
   return (
     <>
       <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
+        {/* 附件 chip 行（发图批）：图片缩略图 / 文件名+路径，× 移除；任一上传中会暂缓发送。 */}
+        {attachmentCount > 0 ? (
+          <AttachmentChipRow attachments={attachments.attachments} onRemove={attachments.remove} />
+        ) : null}
         <ComposerPrimitive.Input
           placeholder={
             blocked
@@ -3853,12 +3900,13 @@ function ComposerWithInterrupt({
             // 桌面 plain Enter → 发送。preventDefault 阻断库/默认换行；composer.send() 只查
             // canSend，可在运行中排队发送（库 handleKeyPress 会因 isRunning && !queue 丢成换行）。
             e.preventDefault();
-            void composer.send();
+            sendComposer();
           }}
         />
-        {/* 卡片底行（恒渲染）：selectors + Stop/Send 互斥占同槽（ml-auto 右对齐），加 Send 不增宽。
-            顺序对齐 03a 原型 irow：权限 → 模型 → 深度 → send2。 */}
+        {/* 卡片底行（恒渲染）：attach + selectors + Stop/Send 互斥占同槽（ml-auto 右对齐），加 Send 不增宽。
+            顺序对齐 03a 原型 irow：附件加号 → 权限 → 模型 → 深度 → send2。 */}
         <div className="flex h-9 items-center gap-2 px-2.5 pb-2 pt-0.5">
+          <ComposerAttachMenu onFiles={attachments.pick} />
           <PermissionModeSelector
             currentMode={permissionMode}
             availableModes={availablePermissionModes}
@@ -3875,7 +3923,7 @@ function ComposerWithInterrupt({
           <EffortSelector currentEffort={currentEffort} onSelectEffort={onSelectEffort} />
           <ComposerStopSend
             onCancel={onCancel}
-            send={() => composer.send()}
+            send={sendComposer}
             showSend={showSend}
             showStop={showStop}
           />

@@ -2007,6 +2007,12 @@ export type ClaudeQueueOperation = {
   content?: string;
 };
 
+/** 用户消息里的内联图片块（stream-json 输入官方格式；JSONL 以 base64 落盘 → 回放天然携带）。 */
+export type ClaudeUserImageBlock = {
+  type: "image";
+  source: { type: "base64"; media_type: string; data: string };
+};
+
 export type ClaudeUserMessage = {
   type: "user";
   message: {
@@ -2015,6 +2021,7 @@ export type ClaudeUserMessage = {
       | string
       | Array<
           | { type: "text"; text: string }
+          | ClaudeUserImageBlock
           | {
               type: "tool_result";
               tool_use_id: string;
@@ -2311,9 +2318,10 @@ export type ClaudeStreamControlRequest = {
 export type ClaudeStreamClientMessage =
   | {
       type: "user";
+      // 图片块 = ClaudeUserImageBlock（stream-json 输入官方格式；api 原样透传 stdin）。
       message: {
         role: "user";
-        content: Array<{ type: "text"; text: string }>;
+        content: Array<{ type: "text"; text: string } | ClaudeUserImageBlock>;
       };
     }
   | ClaudeControlResponse

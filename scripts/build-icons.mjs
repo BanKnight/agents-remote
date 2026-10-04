@@ -58,6 +58,10 @@ const ICONS = [
   "upload", // ShellIcon upload
   "x", // ShellIcon close（关闭）
   "zap", // ShellIcon bolt（执行/闪电）
+  // ── composer 发图批（2026-10-04）：+ 菜单三项（LucideIcon 直消费）──
+  "image", // composer 附件菜单「图片」
+  "camera", // composer 附件菜单「相机」（仅触屏项）
+  "paperclip", // composer 附件菜单「文件」
 ];
 
 const entries = [];

@@ -46,7 +46,10 @@ export type LucideIconName =
   | "triangle-alert"
   | "upload"
   | "x"
-  | "zap";
+  | "zap"
+  | "image"
+  | "camera"
+  | "paperclip";
 
 /** 24 网格 stroke-2 圆头描边（Lucide 规格）；body 为 svg inner 内容。 */
 export const LUCIDE_ICONS = {
@@ -209,6 +212,18 @@ export const LUCIDE_ICONS = {
   zap: {
     viewBox: "0 0 24 24",
     body: '<path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"/>',
+  },
+  image: {
+    viewBox: "0 0 24 24",
+    body: '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+  },
+  camera: {
+    viewBox: "0 0 24 24",
+    body: '<path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z"/><circle cx="12" cy="13" r="3"/>',
+  },
+  paperclip: {
+    viewBox: "0 0 24 24",
+    body: '<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>',
   },
 } as const satisfies Record<LucideIconName, { viewBox: string; body: string }>;
 

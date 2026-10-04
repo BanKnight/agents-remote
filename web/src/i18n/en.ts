@@ -417,6 +417,16 @@ export const en = {
   // ── Claude ────────────────────────────────────────────────────
   "claude.inputPlaceholder": "Ask Claude...",
   "claude.composer.send": "Send",
+  // Composer attachments (image batch): + menu items + chip labels.
+  "claude.attach.add": "Add attachment",
+  "claude.attach.photo": "Photo",
+  "claude.attach.camera": "Camera",
+  "claude.attach.file": "File",
+  "claude.attach.uploading": "Uploading…",
+  "claude.attach.ready": "Uploaded",
+  "claude.attach.failed": "Upload failed",
+  "claude.attach.remove": "Remove attachment",
+  "claude.attach.fileMention": "Attachment: {{path}}",
   "claude.composer.permLabel": "Permission mode",
   "claude.composer.modelLabel": "Model",
   "claude.composer.effortLabel": "Reasoning effort",
