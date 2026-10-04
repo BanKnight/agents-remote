@@ -82,8 +82,9 @@ export function PagesRootDialog({
         <label className={labelClassName} htmlFor="pages-root-urlPath">
           {t("pages.urlPath")}
         </label>
+        {/* 不 autoFocus（2026-10-04 用户拍板：移动 sheet 打开不唤键盘，聚焦交用户点击）；
+            桌面 Radix initial focus 默认聚焦首个可聚焦元素 = 本 input，行为等效保留。 */}
         <input
-          autoFocus
           className={inputClassName}
           id="pages-root-urlPath"
           onKeyDown={onKeyDown}

@@ -94,8 +94,10 @@ function PromptDialog({
     return (
       <MobileSheet onOpenChange={(next) => !next && onCancel()} open={open} title={title}>
         <div className="flex flex-col gap-2">
+          {/* 移动面不 autoFocus（MobileSheet 基座统一拦 initial focus：键盘与升起动画
+              同时唤起打架，2026-10-04 用户拍板「输入是用户的行为」）；桌面面保留 autoFocus
+              （无键盘推挤，表单惯例）。 */}
           <input
-            autoFocus
             className={inputClassName}
             data-prompt-input
             defaultValue={initialValue}

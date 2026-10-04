@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { useT } from "../../i18n";
+import { useIsMobile } from "@/lib/use-is-mobile";
 import { shellSurfaceClasses } from "../shell/shell-primitives";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 
@@ -24,6 +25,9 @@ export function RenameDialog({
   onSubmit: (newName: string) => void;
 }) {
   const { t } = useT();
+  // 双端同款居中 Alert（不分流 MobileSheet）——键盘推挤只在移动端存在，isMobile 条件拦
+  // initial focus（桌面保持聚焦输入框的表单惯例）。
+  const isMobile = useIsMobile();
   const [value, setValue] = useState(initialName);
   // 打开时重置为当前名（同一挂载实例二次打开不残留上次输入）。
   useEffect(() => {
@@ -43,7 +47,12 @@ export function RenameDialog({
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className="max-w-xs sm:max-w-xs">
+      <DialogContent
+        className="max-w-xs sm:max-w-xs"
+        onOpenAutoFocus={(e) => {
+          if (isMobile) e.preventDefault();
+        }}
+      >
         <div
           className={`rounded-2xl p-5 text-center shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         >
@@ -55,7 +64,6 @@ export function RenameDialog({
             <input
               aria-label={t("files.rename")}
               autoComplete="off"
-              autoFocus
               onChange={(e) => setValue(e.target.value)}
               onFocus={(e) => e.target.select()}
               onKeyDown={(e) => {

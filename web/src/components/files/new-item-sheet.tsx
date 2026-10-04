@@ -103,10 +103,11 @@ export function NewItemSheet({
         {t("files.newItemName")}
       </label>
       <div className="kfield mono">
+        {/* 不 autoFocus（MobileSheet 基座统一拦 initial focus）：键盘与 sheet 升起动画
+            同时唤起打架，聚焦交用户点击输入框的主动行为（2026-10-04 用户拍板）。 */}
         <input
           aria-label={t("files.newItemName")}
           autoComplete="off"
-          autoFocus
           id="new-item-name"
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {

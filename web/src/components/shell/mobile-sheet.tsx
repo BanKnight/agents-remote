@@ -496,6 +496,13 @@ export function MobileSheet({
           onPointerLeave={abandonPending}
           onPointerMove={moveDrag}
           onPointerUp={endDrag}
+          /* 打开不自动聚焦（2026-10-04 用户拍板）：sheet 升起动画与软键盘同时唤起互相
+             打架（键盘推挤视口打断动画），且这类输入（搜索/命名/表单）低频——聚焦应是
+             用户点输入框的主动行为。统一在基座拦 Radix 的 initial focus（内容首元素
+             恰为输入框时会被默认聚焦，如切换 sheet 搜索框/MCP 添加名称框），消费方
+             显式 autoFocus 也一并失效；关闭焦点返还（onCloseAutoFocus）不受影响。
+             桌面居中 Dialog（ui/dialog.tsx）无键盘推挤问题，保持默认聚焦不动。 */
+          onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <div aria-hidden="true" className="grab touch-none" />
           {title || headerExtra || aside ? (
