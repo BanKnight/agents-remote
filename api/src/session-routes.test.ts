@@ -49,10 +49,8 @@ afterEach(async () => {
   await rm(ompSlugDir, { recursive: true, force: true });
 });
 
-const historyRequest = (projectName = "mergeproj", range = "all") => {
-  const req = new Request(
-    `http://localhost/api/projects/${projectName}/agent-history?range=${range}`,
-  );
+const historyRequest = (projectName = "mergeproj", query = "filter=all") => {
+  const req = new Request(`http://localhost/api/projects/${projectName}/agent-history?${query}`);
   return handleSessionRoutes(req, new URL(req.url), projectsRoot, registry);
 };
 
@@ -86,14 +84,19 @@ test("GET agent-history 合流 claude + omp 两路，lastActivityAt 统一降序
   expect(res?.status).toBe(200);
   const body = (await res?.json()) as {
     entries: { provider?: string; title: string | null }[];
-    range: string;
+    filter: string;
+    counts: { all: number; active: number; ended: number };
+    nextCursor: string | null;
   };
-  expect(body.range).toBe("all");
+  // 新契约（v1.5 批5）：range 回显退役 → filter 回显 + counts 聚合 + 游标。
+  expect(body.filter).toBe("all");
   expect(body.entries.map((e) => `${e.provider}:${e.title}`)).toEqual([
     "omp:o1",
     "claude:c2",
     "claude:c1",
   ]);
+  expect(body.counts.all).toBe(3);
+  expect(body.nextCursor).toBeNull();
 });
 
 test("POST agent-sessions（provider=omp）透传 acpSessionId；未知 provider → 400", async () => {

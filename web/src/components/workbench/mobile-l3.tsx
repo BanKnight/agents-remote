@@ -535,10 +535,11 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
       );
     }
     // text 分支（编辑/渲染/源码三态）。desktop 档去移动底部 safe-area 让位（中栏/主区推入态
-    // 无 bottom nav，05h 原型四边贴容器）。
+    // 无 bottom nav，05h 原型四边贴容器）。编辑态去 pb——.aux 是末子元素且自带
+    // env(safe-area-inset-bottom) 单层避让（frontend-notes §1），pb 会把 aux 抬离屏底悬空。
     return (
       <div
-        className={`flex min-h-0 flex-1 flex-col ${variant === "desktop" ? "fdesktop" : ""} ${variant === "desktop" ? "" : "pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"} ${editing || isRenderView ? "overflow-hidden" : "overflow-y-auto"}`}
+        className={`flex min-h-0 flex-1 flex-col ${variant === "desktop" ? "fdesktop" : ""} ${variant === "desktop" || editing ? "" : "pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"} ${editing || isRenderView ? "overflow-hidden" : "overflow-y-auto"}`}
         data-role="file-preview-pane"
       >
         {editing ? (

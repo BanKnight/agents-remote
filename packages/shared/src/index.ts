@@ -1198,13 +1198,77 @@ export type AgentHistoryEntry = {
   hasActiveSession: boolean;
   /** Agent session ID when hasActiveSession is true */
   activeSessionId?: string;
+  /** v1.5 批5：条目归属项目名（跨项目作用域「全部」响应恒填，行带项目限定符 04g pin②；
+   *  项目作用域响应不填——语境已由调用方持有）。 */
+  projectName?: string;
 };
 
+/**
+ * v1.5 批5：历史筛选段（§4.2 三段计数筛选：全部/进行中/已结束）。
+ * 进行中 = hasActiveSession（活跃实例挂载，含 idle）；已结束 = 其余。
+ */
+export type AgentHistoryFilter = "all" | "active" | "ended";
+
+/** v1.5 批5：三段计数（当前 search 词下服务端聚合一次返回；filter 切换不重拉）。 */
+export type AgentHistoryCounts = {
+  all: number;
+  active: number;
+  ended: number;
+};
+
+/**
+ * v1.5 批5：历史查询响应（规模化模型：服务端按名搜索 + 三段计数聚合 + 游标分页 20+20）。
+ * 旧 range 时间窗参数退役（五档分组需 30 天+ 数据 = 恒全窗；防慢动机由分页取代）。
+ */
 export type ListAgentHistoryResponse = {
   entries: AgentHistoryEntry[];
-  /** 回显当前 range（防御 query param 被中间层裁剪） */
-  range: AgentHistoryRange;
+  counts: AgentHistoryCounts;
+  /** 下一页游标（keyset：排序键+tiebreak 的 base64url）；null = 没有更多。 */
+  nextCursor: string | null;
+  /** 回显当前 filter（防御 query param 被中间层裁剪，同旧 range 先例）。 */
+  filter: AgentHistoryFilter;
 };
+
+export type DeleteAgentHistoryResponse = {
+  ok: true;
+};
+
+/**
+ * v1.5 批5：五档分组键（按最近活动时间：今天/昨天/7 天内/30 天内/更早；组头随数据出现）。
+ * 纯函数派生（三端同规则），组头文案走 i18n。
+ */
+export type AgentHistoryGroupKey = "today" | "yesterday" | "week" | "month" | "earlier";
+
+/** 五档分组顺序（渲染排序固定，不随出现顺序漂移）。 */
+export const AGENT_HISTORY_GROUP_ORDER: AgentHistoryGroupKey[] = [
+  "today",
+  "yesterday",
+  "week",
+  "month",
+  "earlier",
+];
+
+/**
+ * 派生条目分组键。lastActivityAt 为 null（罕见：startedAt 亦空）兜底 "earlier"。
+ * 档位边界：今天/昨天按本地日历日；7 天内 = >24h 且 ≤7×24h；30 天内 = >7×24h 且
+ * ≤30×24h；更早 = >30×24h。
+ */
+export function agentHistoryGroupKey(
+  lastActivityAt: string | null,
+  now: Date,
+): AgentHistoryGroupKey {
+  if (!lastActivityAt) return "earlier";
+  const t = Date.parse(lastActivityAt);
+  if (Number.isNaN(t)) return "earlier";
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayMs = 86_400_000;
+  if (t >= startOfToday) return "today";
+  if (t >= startOfToday - dayMs) return "yesterday";
+  const age = now.getTime() - t;
+  if (age <= 7 * dayMs) return "week";
+  if (age <= 30 * dayMs) return "month";
+  return "earlier";
+}
 
 export type ListTerminalSessionsResponse = {
   sessions: TerminalSession[];
@@ -2458,6 +2522,8 @@ export type ApiErrorCode =
   | "SESSION_TYPE_INVALID"
   | "SESSION_STATE_CONFLICT"
   | "SESSION_METADATA_ERROR"
+  | "SESSION_HISTORY_ACTIVE"
+  | "SESSION_HISTORY_INVALID_ID"
   | "SESSION_STREAM_MISMATCH"
   | "SETTINGS_INVALID"
   | "PRESET_NOT_FOUND"

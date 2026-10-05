@@ -4,10 +4,14 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import {
   clearHistoryCache,
+  deleteAgentHistoryEntry,
   inspectHistoryCacheForTesting,
   listAgentHistory,
+  paginateAgentHistory,
   projectToSlug,
+  HISTORY_PAGE_SIZE,
 } from "./agent-history";
+import type { AgentHistoryEntry } from "@agents-remote/shared";
 
 const TEST_DIR = join(homedir(), ".claude", "projects", "_test-agent-history-unit");
 const TEST_PROJECT = "/test/project";
@@ -658,4 +662,137 @@ test("filters out placeholder-only sessions (no title, no user line)", async () 
   expect(entries.map((e) => e.claudeSessionId)).toEqual(["ccc-333"]);
 
   await rm(realDir, { recursive: true, force: true });
+});
+
+// ────────────────── v1.5 批5：规模化查询 paginateAgentHistory ──────────────────
+
+let entrySeq = 0;
+const mkEntry = (overrides: Partial<AgentHistoryEntry> = {}): AgentHistoryEntry => {
+  entrySeq += 1;
+  const id = `00000000-0000-4000-8000-${String(entrySeq).padStart(12, "0")}`;
+  return {
+    provider: "claude",
+    claudeSessionId: id,
+    title: null,
+    firstMessage: null,
+    startedAt: null,
+    lastActivityAt: null,
+    fileSize: 0,
+    hasActiveSession: false,
+    ...overrides,
+  };
+};
+
+const mkPage = (n: number, baseMs: number) =>
+  Array.from({ length: n }, (_, i) =>
+    mkEntry({ lastActivityAt: new Date(baseMs - i * 60_000).toISOString() }),
+  );
+
+test("paginateAgentHistory filters by search across title and firstMessage", () => {
+  const entries = [
+    mkEntry({ title: "Fix login bug", firstMessage: null }),
+    mkEntry({ title: null, firstMessage: "please REFACTOR the parser" }),
+    mkEntry({ title: "unrelated", firstMessage: "hello world" }),
+  ];
+  const response = paginateAgentHistory(entries, { filter: "all", search: "refactor", cursor: "" });
+  expect(response.entries).toHaveLength(1);
+  expect(response.entries[0]!.firstMessage).toBe("please REFACTOR the parser");
+  // 计数在 search 之后聚合：只统计命中词的条目
+  expect(response.counts).toEqual({ all: 1, active: 0, ended: 1 });
+});
+
+test("paginateAgentHistory counts stay stable across filter switches", () => {
+  const entries = [
+    mkEntry({ title: "a", hasActiveSession: true }),
+    mkEntry({ title: "b" }),
+    mkEntry({ title: "c" }),
+  ];
+  const all = paginateAgentHistory(entries, { filter: "all", search: "", cursor: "" });
+  expect(all.counts).toEqual({ all: 3, active: 1, ended: 2 });
+  const active = paginateAgentHistory(entries, { filter: "active", search: "", cursor: "" });
+  expect(active.entries).toHaveLength(1);
+  expect(active.counts).toEqual({ all: 3, active: 1, ended: 2 });
+  const ended = paginateAgentHistory(entries, { filter: "ended", search: "", cursor: "" });
+  expect(ended.entries.map((e) => e.title)).toEqual(["c", "b"]);
+  expect(ended.counts).toEqual({ all: 3, active: 1, ended: 2 });
+});
+
+test("paginateAgentHistory pages 20+cursor and reports nextCursor null on last page", () => {
+  const base = Date.parse("2026-10-06T12:00:00Z");
+  const entries = mkPage(HISTORY_PAGE_SIZE + 5, base);
+  const page1 = paginateAgentHistory(entries, { filter: "all", search: "", cursor: "" });
+  expect(page1.entries).toHaveLength(HISTORY_PAGE_SIZE);
+  expect(page1.nextCursor).not.toBeNull();
+  // 倒序：首页 = 最新 20 条
+  expect(page1.entries[0]!.lastActivityAt).toBe(new Date(base).toISOString());
+  const page2 = paginateAgentHistory(entries, {
+    filter: "all",
+    search: "",
+    cursor: page1.nextCursor!,
+  });
+  expect(page2.entries).toHaveLength(5);
+  expect(page2.nextCursor).toBeNull();
+  // 第二页首条 = 第 21 新（首页末条之后）
+  expect(page2.entries[0]!.lastActivityAt).toBe(
+    new Date(base - HISTORY_PAGE_SIZE * 60_000).toISOString(),
+  );
+});
+
+test("paginateAgentHistory falls back to first page on forged cursor", () => {
+  const entries = mkPage(25, Date.parse("2026-10-06T12:00:00Z"));
+  const forged = paginateAgentHistory(entries, {
+    filter: "all",
+    search: "",
+    cursor: Buffer.from("not json").toString("base64url"),
+  });
+  expect(forged.entries).toHaveLength(HISTORY_PAGE_SIZE);
+  expect(forged.nextCursor).not.toBeNull();
+  // 不足一页 → nextCursor null
+  const short = paginateAgentHistory(entries.slice(0, 3), {
+    filter: "all",
+    search: "",
+    cursor: "",
+  });
+  expect(short.entries).toHaveLength(3);
+  expect(short.nextCursor).toBeNull();
+});
+
+// ────────────────── v1.5 批5：删除 deleteAgentHistoryEntry ──────────────────
+
+const UUID_OK = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+const UUID_OTHER = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+
+test("deleteAgentHistoryEntry rejects non-uuid session ids", async () => {
+  await expect(deleteAgentHistoryEntry(TEST_PROJECT, "../evil", "claude")).rejects.toThrow();
+  await expect(deleteAgentHistoryEntry(TEST_PROJECT, "", "claude")).rejects.toThrow();
+  await expect(deleteAgentHistoryEntry(TEST_PROJECT, "not-a-uuid-at-all", "omp")).rejects.toThrow();
+});
+
+test("deleteAgentHistoryEntry removes claude jsonl and stays idempotent when missing", async () => {
+  const dir = join(homedir(), ".claude", "projects", projectToSlug(TEST_PROJECT));
+  await rm(dir, { recursive: true, force: true }).catch(() => {});
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${UUID_OK}.jsonl`), "{}");
+
+  await expect(deleteAgentHistoryEntry(TEST_PROJECT, UUID_OK, "claude")).resolves.toBe(true);
+  await expect(rm(join(dir, `${UUID_OK}.jsonl`))).rejects.toThrow();
+  // 已删再删 = 幂等 false（不 500）
+  await expect(deleteAgentHistoryEntry(TEST_PROJECT, UUID_OK, "claude")).resolves.toBe(false);
+  await expect(deleteAgentHistoryEntry(TEST_PROJECT, UUID_OTHER, "claude")).resolves.toBe(false);
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("deleteAgentHistoryEntry removes omp jsonl by suffix match", async () => {
+  const dir = join(homedir(), ".omp", "agent", "sessions", projectToSlug(TEST_PROJECT));
+  await rm(dir, { recursive: true, force: true }).catch(() => {});
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `20261006T120000Z_${UUID_OK}.jsonl`), "{}");
+  // 同 id 不同 ts 的多文件（omp 分段）全删
+  await writeFile(join(dir, `20261005T080000Z_${UUID_OK}.jsonl`), "{}");
+  await writeFile(join(dir, `20261006T120000Z_${UUID_OTHER}.jsonl`), "{}");
+
+  await expect(deleteAgentHistoryEntry(TEST_PROJECT, UUID_OK, "omp")).resolves.toBe(true);
+  const left = (await import("node:fs/promises")).readdir;
+  expect((await left(dir)).sort()).toEqual([`20261006T120000Z_${UUID_OTHER}.jsonl`]);
+  await rm(dir, { recursive: true, force: true });
 });

@@ -252,7 +252,14 @@ export function WikiToolTab({
     return (
       <div className="flex h-full min-h-0 w-full flex-col">
         <DetailBackBar label={t("wiki.backToList")} onBack={() => setSlug(null)} />
-        <L3WikiReader onOpenPage={setSlug} projectName={projectKey} slug={slug} />
+        {/* 原型 wiki-reader 正文无复制链接元素（copyLinkInBody 默认 true 是实现自有能力）——
+            中栏与 tabstrip 通路对齐关闭（design review P2-2）。 */}
+        <L3WikiReader
+          copyLinkInBody={false}
+          onOpenPage={setSlug}
+          projectName={projectKey}
+          slug={slug}
+        />
       </div>
     );
   }

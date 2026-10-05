@@ -1,8 +1,8 @@
-// 探针：桌面三栏第一行同一水平线 + 左栏历史态（05c 改版）断言（PASS/FAIL，入库版）。
+// 探针：桌面三栏第一行同一水平线 + 左栏历史态（05c 批5 规模化）断言（PASS/FAIL，入库版）。
 // 2026-09-29 真机反馈：① 三栏第一行同线（.side pt 6 + 组头热区 20px → 首行中心 16）；
-// ② dsep→内容间距（组头热区 28→20 + microlabel 页私 mt）；③ 历史态改版 05c：过滤 chips
-// 全部/已结束 +「最近 5 + 展开更早每次+5」客户端折叠 + 尾注。
-// 断言：F0-F5 三栏第一行几何；H1-H6 历史态（chips/折叠/展开/尾注/已结束过滤/dsep→chips 链）。
+// ② dsep→内容间距（组头热区 28→20 + microlabel 页私 mt）；③ 历史态批5：segc 三段内嵌计数
+//（服务端 filter 聚合）+ 按名搜索 + 五档组头 + 底部「没有更多」+ 行右键菜单（恢复/删除…）。
+// 断言：F0-F5 三栏第一行几何；H1-H14 历史态（segc/行数/搜索/组头/尾态/尾注/链/过滤/菜单/字号）。
 // tabstrip 用 route mock（m9-d 同法：mock 一个 running session）。
 // 密码自读不打印。用法: bun scripts/probe-desktop-tri-column-firstline.mjs
 import { chromium } from "@playwright/test";
@@ -15,6 +15,36 @@ let allPass = true;
 function ok(cond, label) {
   console.log(`${cond ? "PASS" : "FAIL"}  ${label}`);
   if (!cond) allPass = false;
+}
+
+/** 当前打开的行菜单（role=menu portal 在 body 末尾，inspector-row-menus 同法）。 */
+async function readMenu(page) {
+  return page.evaluate(() => {
+    const menus = [...document.querySelectorAll("[role='menu']")].filter((el) => {
+      const s = getComputedStyle(el);
+      return s.display !== "none" && s.visibility !== "hidden";
+    });
+    const menu = menus[menus.length - 1];
+    if (!menu) return { open: false, items: [] };
+    return {
+      open: true,
+      items: [...menu.querySelectorAll("[role='menuitem']")].map((el) => el.textContent.trim()),
+    };
+  });
+}
+
+/** 行菜单 open 目标态等待（超时不抛——readMenu 返回 open:false 走断言 FAIL，不崩探针）。 */
+async function waitMenuOpen(page) {
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll("[role='menu']")].some((el) => {
+          const s = getComputedStyle(el);
+          return s.display !== "none" && s.visibility !== "hidden";
+        }),
+      { timeout: 5000 },
+    )
+    .catch(() => {});
 }
 
 const browser = await chromium.launch();
@@ -60,7 +90,7 @@ try {
       body: JSON.stringify({ sessions: [], total: 0 }),
     }),
   );
-  // 历史态 mock：1 活跃 + 6 已结束（全部=7 显 5；已结束=6 显 5），lastActivityAt 倒序自造。
+  // 历史态 mock：1 活跃 + 6 已结束（全部=7/进行中=1/已结束=6），lastActivityAt 倒序自造。
   const histEntry = (i, active) => ({
     claudeSessionId: `tri-hist-${i}`,
     provider: "claude",
@@ -76,13 +106,34 @@ try {
     histEntry(0, true),
     ...Array.from({ length: 6 }, (_, i) => histEntry(i + 1, false)),
   ];
-  await page.route(/\/api\/projects\/proj1\/agent-history(?:\?.*)?$/, (r) =>
+  // 批5 契约 mock：filter 切片 + search 按名过滤 + counts（search 后 filter 前聚合）+
+  // nextCursor=null（无下页 → 底部「没有更多」态）。
+  await page.route(/\/api\/projects\/proj1\/agent-history(?:\?.*)?$/, (r) => {
+    const url = new URL(r.request().url());
+    const search = url.searchParams.get("search") ?? "";
+    const filter = url.searchParams.get("filter") ?? "all";
+    const matched = historyEntries.filter((e) => !search || (e.title ?? "").includes(search));
+    const entries =
+      filter === "active"
+        ? matched.filter((e) => e.hasActiveSession)
+        : filter === "ended"
+          ? matched.filter((e) => !e.hasActiveSession)
+          : matched;
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ entries: historyEntries }),
-    }),
-  );
+      body: JSON.stringify({
+        entries,
+        counts: {
+          all: matched.length,
+          active: matched.filter((e) => e.hasActiveSession).length,
+          ended: matched.filter((e) => !e.hasActiveSession).length,
+        },
+        nextCursor: null,
+        filter,
+      }),
+    });
+  });
 
   await page.addInitScript(() => localStorage.setItem("workbenchRightCollapsed", "false"));
   await page.goto(`${WEB_ORIGIN}/`);
@@ -137,97 +188,163 @@ try {
     `F5 右栏首行「检视」中心 = tab 中心（实际 inspector ${data.inspector} vs tab ${data.tabTb}）`,
   );
 
-  // ── H 段：左栏历史态（05c 改版：chips/折叠/展开/尾注/过滤） ──
+  // ── H 段：左栏历史态（批5 规模化：segc 三段计数/搜索/五档组头/底部三态/行右键菜单） ──
   // 时钟按钮 = 实例组头 ghead 内带 aria-pressed 的 button（.dicon 20×20 热区）。
   const clockBtn = page.locator("nav.side .ghead button[aria-pressed]").first();
   await clockBtn.click();
-  await page.waitForTimeout(600);
+  await page
+    .locator("#side-instance-panel [data-list-row-title]")
+    .first()
+    .waitFor({ timeout: 8000 });
   const h = await page.evaluate(() => {
     const side = document.querySelector("nav.side");
-    const q = (sel) => side.querySelector(sel);
-    const textOf = (el) => el?.textContent?.trim() ?? null;
-    const chips = [...side.querySelectorAll('[role="group"] > button')].map((b) =>
+    const panel = side.querySelector("#side-instance-panel");
+    const segBtns = [...panel.querySelectorAll('[role="tablist"] > [role="tab"]')].map((b) =>
       b.textContent?.trim(),
     );
-    const rowsInPanel = side.querySelectorAll("#side-instance-panel [data-list-row-title]").length;
+    const rowsInPanel = panel.querySelectorAll("[data-list-row-title]").length;
     // 字号档（.srow2.inst 13px / meta 10.5px，05c 历史行规格；默认档 16px = 偏大）。
-    const firstTitle = side.querySelector("#side-instance-panel [data-list-row-title]");
+    const firstTitle = panel.querySelector("[data-list-row-title]");
     const titleFs = firstTitle ? getComputedStyle(firstTitle).fontSize : null;
     const subtitleEl = firstTitle?.parentElement?.querySelector(":scope > span:last-child");
     const subtitleFs =
       subtitleEl && subtitleEl !== firstTitle ? getComputedStyle(subtitleEl).fontSize : null;
-    const showEarlier =
-      [...side.querySelectorAll("#side-instance-panel button")]
-        .find((b) => b.textContent?.includes("展开更早"))
-        ?.textContent?.trim() ?? null;
-    const note = textOf(side.querySelector("#side-instance-panel .microlabel"));
-    const seg4 = q(".seg4.mini");
-    const ghead = q("#side-instance-panel .ghead");
+    // microlabel 序 = 组头…+ 尾注（尾注在 HistoryList 外 sibling，恒 last）。
+    const labels = [...panel.querySelectorAll(".microlabel")].map((el) => el.textContent?.trim());
+    const searchAria = panel.querySelector('input[type="search"]')?.getAttribute("aria-label");
+    const seg4 = side.querySelector(".seg4.mini");
+    const ghead = panel.querySelector(".ghead");
     const chain = (() => {
       const seg4r = seg4?.getBoundingClientRect();
       const gr = ghead?.getBoundingClientRect();
       if (!seg4r || !gr) return null;
       return +(gr.top - seg4r.bottom).toFixed(1);
     })();
-    return { chips, rowsInPanel, showEarlier, note, chain, titleFs, subtitleFs };
+    return {
+      segBtns,
+      rowsInPanel,
+      groupHeads: labels.slice(0, -1),
+      note: labels.at(-1) ?? null,
+      searchAria,
+      hasEndMark: (panel.textContent ?? "").includes("没有更多"),
+      pulseCount: panel.querySelectorAll(".animate-pulse").length,
+      chain,
+      titleFs,
+      subtitleFs,
+    };
   });
   ok(
-    h.chips?.join(",") === "全部,已结束",
-    `H1 chips 两枚 全部/已结束（实际 ${JSON.stringify(h.chips)}）`,
+    h.segBtns?.join(",") === "全部7,进行中1,已结束6",
+    `H1 segc 三段内嵌服务端计数（实际 ${JSON.stringify(h.segBtns)}）`,
   );
-  ok(h.rowsInPanel === 5, `H2 折叠窗口默认 5 行（实际 ${h.rowsInPanel}）`);
+  ok(
+    h.rowsInPanel === 7,
+    `H2 服务端分页首屏全量 7 行（客户端折叠窗口已退役；实际 ${h.rowsInPanel}）`,
+  );
+  ok(
+    h.searchAria === "搜索历史会话",
+    `H3 搜索框在场（aria-label = placeholder；实际 ${JSON.stringify(h.searchAria)}）`,
+  );
+  ok(
+    h.groupHeads?.join(",") === "今天,昨天,7 天内",
+    `H4 五档组头（实际 ${JSON.stringify(h.groupHeads)}）`,
+  );
+  ok(h.hasEndMark, "H5 底部「没有更多」尾态在场（nextCursor=null）");
+  ok(h.note === "再次点时钟返回活跃实例列表", `H6 尾注在（实际 ${JSON.stringify(h.note)}）`);
+  ok(
+    h.chain !== null && Math.abs(h.chain - 8) <= 2,
+    `H7 seg4 底→组头顶 = 8（ghead mt 8 两态同口径；实际 ${h.chain}）`,
+  );
+  ok(h.pulseCount === 1, `H8 活跃行脉动点 1（实际 ${h.pulseCount}）`);
   ok(
     h.titleFs === "13px" && h.subtitleFs === "10.5px",
     `H9 历史行字号 13px / 副文本 10.5px（实际 ${h.titleFs} / ${h.subtitleFs}）`,
   );
+
+  // 「进行中」段：服务端 filter 切片 → 1 行（活跃行）。
+  await page
+    .locator('#side-instance-panel [role="tablist"] > [role="tab"]')
+    .filter({ hasText: "进行中" })
+    .click();
+  await page.waitForFunction(
+    () => document.querySelectorAll("#side-instance-panel [data-list-row-title]").length === 1,
+    { timeout: 8000 },
+  );
+  ok(true, "H10 「进行中」段 → 1 行（服务端 filter 切片）");
+
+  // 「已结束」段：6 行 + 无脉动点。
+  await page
+    .locator('#side-instance-panel [role="tablist"] > [role="tab"]')
+    .filter({ hasText: "已结束" })
+    .click();
+  await page.waitForFunction(
+    () => document.querySelectorAll("#side-instance-panel [data-list-row-title]").length === 6,
+    { timeout: 8000 },
+  );
+  const endedPulse = await page.evaluate(
+    () => document.querySelectorAll("#side-instance-panel .animate-pulse").length,
+  );
+  ok(endedPulse === 0, `H11 「已结束」段 → 6 行且无脉动点（实际脉动 ${endedPulse}）`);
+
+  // 搜索（服务端按名过滤 + 300ms 防抖）：命中 1 行；清空恢复（已结束段仍 6 行）。
+  await page.locator('#side-instance-panel input[type="search"]').fill("tri 历史 3");
+  await page.waitForFunction(
+    () => document.querySelectorAll("#side-instance-panel [data-list-row-title]").length === 1,
+    { timeout: 8000 },
+  );
+  ok(true, "H12 搜索「tri 历史 3」→ 1 行（300ms 防抖 + 服务端 search）");
+  await page.locator('#side-instance-panel input[type="search"]').fill("");
+  await page.waitForFunction(
+    () => document.querySelectorAll("#side-instance-panel [data-list-row-title]").length === 6,
+    { timeout: 8000 },
+  );
+
+  // 行右键菜单（05c pin④）：已结束行 = 恢复/删除…；活跃行 = 仅恢复（无删除，服务端 409）。
+  await page
+    .locator("#side-instance-panel [role='button']")
+    .filter({ hasText: "tri 历史 1" })
+    .first()
+    .click({ button: "right" });
+  await waitMenuOpen(page);
+  const endedMenu = await readMenu(page);
   ok(
-    h.showEarlier === "展开更早",
-    `H3 「展开更早」按钮在（实际 ${JSON.stringify(h.showEarlier)}）`,
+    endedMenu.open && endedMenu.items.join("/") === "恢复/删除…",
+    `H13 已结束行右键菜单 = 恢复/删除…（实际 ${endedMenu.items.join("/") || "未开"}）`,
   );
-  await page.locator("#side-instance-panel").getByText("展开更早").click();
-  await page.waitForTimeout(400);
-  const h2 = await page.evaluate(() => {
-    const side = document.querySelector("nav.side");
-    return {
-      rowsAfter: side.querySelectorAll("#side-instance-panel [data-list-row-title]").length,
-      btnGone:
-        [...side.querySelectorAll("#side-instance-panel button")].find((b) =>
-          b.textContent?.includes("展开更早"),
-        ) === undefined,
-    };
-  });
+  // 「删除…」= 双重确认（05c pin④）：菜单项点开 Radix danger confirm，取消不删。
+  await page.getByRole("menuitem").filter({ hasText: "删除…" }).click();
+  await page
+    .getByText("删除历史会话")
+    .waitFor({ timeout: 5000 })
+    .catch(() => {});
+  const confirmShown = await page
+    .getByText("删除历史会话")
+    .isVisible()
+    .catch(() => false);
+  ok(confirmShown, "H13b 「删除…」→ 二次确认对话框在场（05c pin④ double confirm）");
+  await page.getByRole("button", { name: "取消" }).click();
+  await page.keyboard.press("Escape");
+  // 回「全部」段再右键活跃行（已结束切片无活跃行——上一段 H11 的过滤语境）。
+  await page
+    .locator('#side-instance-panel [role="tablist"] > [role="tab"]')
+    .filter({ hasText: /^全部/ })
+    .click();
+  await page.waitForFunction(
+    () => document.querySelectorAll("#side-instance-panel [data-list-row-title]").length === 7,
+    { timeout: 8000 },
+  );
+  await page
+    .locator("#side-instance-panel [role='button']")
+    .filter({ hasText: "tri 历史 0" })
+    .first()
+    .click({ button: "right" });
+  await waitMenuOpen(page);
+  const activeMenu = await readMenu(page);
   ok(
-    h2.rowsAfter === 7 && h2.btnGone,
-    `H4 展开后 7 行全显 + 按钮消失（实际 ${h2.rowsAfter} 行，按钮${h2.btnGone ? "已消失" : "仍在"}）`,
+    activeMenu.open && activeMenu.items.length === 1 && activeMenu.items[0] === "恢复",
+    `H14 活跃行右键菜单仅恢复（实际 ${JSON.stringify(activeMenu.items)}）`,
   );
-  ok(h.note === "再次点时钟返回活跃实例列表", `H5 尾注在（实际 ${JSON.stringify(h.note)}）`);
-  ok(
-    h.chain !== null && Math.abs(h.chain - 8) <= 2,
-    `H6 seg4 底→组头顶 = 8（ghead mt 8 两态同口径；实际 ${h.chain}）`,
-  );
-  // H7/H8「已结束」过滤：切过滤重置窗口 → 5 行 + 展开按钮在；展开后 6 行全显。
-  await page.locator('#side-instance-panel [role="group"]').getByText("已结束").click();
-  await page.waitForTimeout(400);
-  const h3 = await page.evaluate(() => {
-    const side = document.querySelector("nav.side");
-    return {
-      rows: side.querySelectorAll("#side-instance-panel [data-list-row-title]").length,
-      hasBtn:
-        [...side.querySelectorAll("#side-instance-panel button")].find((b) =>
-          b.textContent?.includes("展开更早"),
-        ) !== undefined,
-    };
-  });
-  ok(
-    h3.rows === 5 && h3.hasBtn,
-    `H7 切「已结束」重置窗口 5 行 + 展开按钮在（实际 ${h3.rows} 行，按钮${h3.hasBtn ? "在" : "无"}）`,
-  );
-  await page.locator("#side-instance-panel").getByText("展开更早").click();
-  await page.waitForTimeout(400);
-  const endedRows = await page.evaluate(
-    () => document.querySelectorAll("#side-instance-panel [data-list-row-title]").length,
-  );
-  ok(endedRows === 6, `H8 已结束展开后 6 行全显（实际 ${endedRows}）`);
+  await page.keyboard.press("Escape");
 } finally {
   await browser.close();
 }

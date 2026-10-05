@@ -1,5 +1,5 @@
 import type {
-  AgentHistoryRange,
+  AgentHistoryFilter,
   AgentProvider,
   AutoRetryStatusResponse,
   AgentSessionDetailResponse,
@@ -15,6 +15,7 @@ import type {
   CreateTerminalSessionRequest,
   CreateTerminalSessionResponse,
   DeleteFileResponse,
+  DeleteAgentHistoryResponse,
   DeleteProjectResponse,
   GitBranchListResponse,
   GitCommitDetailResponse,
@@ -532,13 +533,51 @@ export async function listAgentSessions(projectName: string): Promise<ListAgentS
   return fetchJson(agentSessionsPath(projectName), "api.agentSessionListFailed");
 }
 
+/** v1.5 批5：历史查询参数（filter/search/cursor；range 退役，恒全窗 + 服务端分页）。 */
+export type AgentHistoryQuery = {
+  filter: AgentHistoryFilter;
+  search: string;
+  /** keyset 游标（服务端 nextCursor 透传）；空串 = 首页。 */
+  cursor: string;
+};
+
 export async function listAgentHistory(
   projectName: string,
-  range: AgentHistoryRange = "week",
+  query: AgentHistoryQuery,
 ): Promise<ListAgentHistoryResponse> {
+  const params = new URLSearchParams({
+    filter: query.filter,
+    search: query.search,
+    cursor: query.cursor,
+  });
   return fetchJson(
-    `/api/projects/${encodeURIComponent(projectName)}/agent-history?range=${range}`,
+    `/api/projects/${encodeURIComponent(projectName)}/agent-history?${params.toString()}`,
     "api.agentHistoryListFailed",
+  );
+}
+
+/** v1.5 批5：跨项目历史全局作用域（iPad/Mac「全部」段；行带 projectName 限定符）。 */
+export async function listGlobalAgentHistory(
+  query: AgentHistoryQuery,
+): Promise<ListAgentHistoryResponse> {
+  const params = new URLSearchParams({
+    filter: query.filter,
+    search: query.search,
+    cursor: query.cursor,
+  });
+  return fetchJson(`/api/agent-history?${params.toString()}`, "api.agentHistoryListFailed");
+}
+
+/** v1.5 批5：删除历史会话（单条，二次确认在 UI 层；hasActiveSession 服务端 409 拒绝）。 */
+export async function deleteAgentHistory(
+  projectName: string,
+  sessionId: string,
+  provider: "claude" | "omp",
+): Promise<DeleteAgentHistoryResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/agent-history/${encodeURIComponent(sessionId)}?provider=${provider}`,
+    "api.agentHistoryDeleteFailed",
+    { method: "DELETE" },
   );
 }
 

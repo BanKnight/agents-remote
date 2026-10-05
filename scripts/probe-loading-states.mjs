@@ -104,7 +104,12 @@ async function setupBaseMocks(page) {
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ entries: [] }),
+      body: JSON.stringify({
+        entries: [],
+        counts: { all: 0, active: 0, ended: 0 },
+        nextCursor: null,
+        filter: "all",
+      }),
     }),
   );
   await page.route(/\/api\/approvals$/, (r) =>

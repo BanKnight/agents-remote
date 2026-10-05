@@ -86,6 +86,9 @@ export function WorkbenchSide() {
   const [scopeSegment, setScopeSegment] = useState<"project" | "all">("project");
   // 时钟切历史（05c）：project scope seg「项目」内 side 内切换态（再点时钟返回活跃列表）。
   const [historyOpen, setHistoryOpen] = useState(false);
+  // 历史作用域（04g pin②）：历史态下 seg4（项目/全部）= 作用域切换——项目段 = 本项目历史
+  //（05c 全特性），全部段 = 跨项目历史（行 subtitle 带项目限定符）。重开历史默认回项目段。
+  const [historyScope, setHistoryScope] = useState<"project" | "all">("project");
   // ⌘N（新建实例）受控菜单：快捷键 set atom true → 实例组头 plus 程序化打开（§6.10 批次 c
   // 半受控化；project scope 才渲染 plus，global 忽略——§6.10 批次 d 拍板维持）。
   const createMenuOpen = useAtomValue(workbenchCreateMenuOpenAtom);
@@ -124,9 +127,13 @@ export function WorkbenchSide() {
     );
   };
   // seg4「项目」段：sideProject 语境 = 切回本项目实例分组；global 会话页 = 回上次项目
-  //（05g seg4「全部」on 的对侧）。均退出历史态（seg4 与时钟历史互斥——否则高亮切换而
-  // 内容仍是历史列表，控件失灵）。
+  //（05g seg4「全部」on 的对侧）；历史态 = 切回项目作用域历史（04g，不退出历史态）。
   const selectProjectSeg = () => {
+    // 历史态（04g pin②）：seg4 = 历史作用域切换，「项目」段 = 回本项目历史（不退出历史态）。
+    if (sideProjectName !== null && historyOpen) {
+      setHistoryScope("project");
+      return;
+    }
     setHistoryOpen(false);
     if (sideProjectName !== null) {
       setScopeSegment("project");
@@ -144,8 +151,10 @@ export function WorkbenchSide() {
 
   // seg4 高亮 = 当前实例区视图态（scopeSegment + historyOpen 派生），非 scope 路由态——
   // 点「全部」只切 side 视图不换 scope，高亮必须跟随内容（反馈④：内容变了、tab 不变）。
-  // 历史态（05c）是「项目」段的组头时钟子态，保持项目侧 on。
-  const projectSegOn = sideProjectName !== null && (historyOpen || scopeSegment === "project");
+  // 历史态（04g）seg4 = 历史作用域切换，高亮跟随 historyScope（项目段 on ↔ 全部段 on）。
+  const projectSegOn =
+    sideProjectName !== null &&
+    (historyOpen ? historyScope === "project" : scopeSegment === "project");
   const agentEntries = projectInstances.instances.filter((entry) => entry.type === "agent");
   const terminalEntries = projectInstances.instances.filter((entry) => entry.type === "terminal");
   const allSettled = isLoaded && pinnedLoaded;
@@ -157,11 +166,16 @@ export function WorkbenchSide() {
     // flex-1 wrapper：容器 flex-col 化后 HistoryList（根 flex-1）才吃到剩余高、列表自身滚
     //（§6.12k code review：历史态高度链断链——容器非 flex 时恒溢出组头高）；尾注 shrink-0
     // 常驻列表下方（05c :50「再次点时钟返回活跃实例列表」，margin 8px 6px 形态）。
-    // key = 项目名：切项目重挂（filter/折叠窗口随组件 state 重建），防 keepPreviousData
-    // 把旧项目条目投影到新项目名下（code review P1：stale 数据 + 旧 sessionId 误操作）。
+    // key = 项目名:作用域：切项目/切作用域重挂（filter/search 随组件 state 重建，两作用域
+    // 各持独立 useHistoryQuery 实例），防 keepPreviousData 把旧作用域条目投影到新语境下
+    //（code review P1：stale 数据 + 旧 sessionId 误操作）。
     body = (
       <div className="flex min-h-0 flex-1 flex-col">
-        <HistoryList focusId={focusId} key={sideProjectName} projectName={sideProjectName} />
+        <HistoryList
+          focusId={focusId}
+          key={`${sideProjectName}:${historyScope}`}
+          projectName={historyScope === "project" ? sideProjectName : null}
+        />
         <div className="microlabel mx-1.5 my-2 shrink-0">{t("workbench.historyBackHint")}</div>
       </div>
     );
@@ -246,7 +260,11 @@ export function WorkbenchSide() {
              20px 低于 WCAG 2.5.8 下限；design review P1-2）。伪元素扩区不撑行高，
              「第一行同线」拍板不回退；桌面 hover-capable 环境零变化。 */
           className="dicon ml-auto cursor-pointer text-primary touch:relative touch:after:absolute touch:after:-inset-1 touch:after:content-['']"
-          onClick={() => setHistoryOpen((prev) => !prev)}
+          onClick={() => {
+            // 重开历史默认回项目作用域（04g 分段语义：时钟 = 项目历史入口）。
+            if (!historyOpen) setHistoryScope("project");
+            setHistoryOpen((prev) => !prev);
+          }}
           type="button"
         >
           <ShellIcon className="clk" name="clock" />
@@ -358,12 +376,21 @@ export function WorkbenchSide() {
               aria-selected={!projectSegOn}
               className={`cursor-pointer ${projectSegOn ? "" : "on"}`}
               onClick={() => {
+                // 历史态（04g pin②）：「全部」段 = 切跨项目历史作用域（不退出历史态）。
+                if (sideProjectName !== null && historyOpen) {
+                  setHistoryScope("all");
+                  return;
+                }
                 setHistoryOpen(false);
                 setScopeSegment("all");
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
+                  if (sideProjectName !== null && historyOpen) {
+                    setHistoryScope("all");
+                    return;
+                  }
                   setHistoryOpen(false);
                   setScopeSegment("all");
                 }

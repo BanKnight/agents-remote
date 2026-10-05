@@ -1,20 +1,28 @@
 // M5-a 浮层族 sheet 页（§6.4 摊牌：03l 切换 / 03n 会话历史 / 03j 新建实例）。原语消费
 // v2-primitives M5 段（grp/sess/fc/hrow…）；容器 = `MobileSheet`（Radix modal + .msheet）。
-import { useMemo, useState } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { ApprovalSummary } from "@agents-remote/shared";
+import type {
+  AgentHistoryEntry,
+  AgentHistoryFilter,
+  AgentHistoryGroupKey,
+  ApprovalSummary,
+} from "@agents-remote/shared";
 
-import { useHistoryRecentWindow, useHistorySessions } from "./history-list";
+import { relativeTime, useResumeAgentSession } from "./history-list";
 import { ApprovalAllowAll } from "./approval-popover";
+import { useConfirm } from "../shell/confirm-dialog";
 import { usePromptDialog } from "../shell/prompt-dialog";
 import { isHotTool, useApprovalCenter } from "../../hooks/use-approvals";
 import { useT } from "../../i18n";
+import type { TranslationKey } from "../../i18n/types";
 import { MobileSheet } from "../shell/mobile-sheet";
 import { ShellIcon } from "../shell/icons";
 import { useGlobalInstanceCandidates } from "./instance-area";
 import type { CreateSessionApi } from "./instance-area";
-import { relativeTime } from "./history-list";
 import { ListRowSkeleton, statusToV2DotClass } from "../shell/shell-primitives";
+import { useHistoryQuery } from "./use-history-query";
 
 /** 会话状态 → dot 变体（run 绿实心 / err 红实心 / idle 空心描边；03l d2 与 11 acard 共用）。 */
 function sessDotClass(status: string): string {
@@ -143,16 +151,159 @@ export function MobileProjectSwitchSheet({
   );
 }
 
-/** 03n 过滤维度（全部 / 进行中 / 已结束）。 */
-const HISTORY_FILTERS = ["all", "running", "closed"] as const;
+/** 03n 三段筛选段（值序 = shared AgentHistoryFilter；切段 = 服务端 filter 切片）。 */
+const HISTORY_FILTERS: readonly { key: AgentHistoryFilter; labelKey: TranslationKey }[] = [
+  { key: "all", labelKey: "workbench.historyFilterAll" },
+  { key: "active", labelKey: "workbench.historyFilterRunning" },
+  { key: "ended", labelKey: "workbench.historyFilterClosed" },
+];
+
+/** 03n 五档分组组头文案键（渲染序 = hook groups 的 AGENT_HISTORY_GROUP_ORDER）。 */
+const HISTORY_GROUP_LABEL_KEYS: Record<AgentHistoryGroupKey, TranslationKey> = {
+  today: "workbench.historyGroupToday",
+  yesterday: "workbench.historyGroupYesterday",
+  week: "workbench.historyGroupWeek",
+  month: "workbench.historyGroupMonth",
+  earlier: "workbench.historyGroupEarlier",
+};
+
+/** 左滑露出的删除钮宽（03n 原型 .del 64px；v2-primitives `.hrow.swipe .del` 同源）。 */
+const SWIPE_REVEAL_WIDTH_PX = 64;
+/** 手势轴向判定阈值：|dx|、|dy| 都越过才判向（tap slop 内不接管，保行体 click 合成）。 */
+const SWIPE_AXIS_PX = 8;
+/** 松手吸附判定：滑过露出宽一半 = 常开，否则收回。 */
+const SWIPE_OPEN_RATIO = 0.5;
 
 /**
- * 03n 会话历史 sheet（nav ⋯ →「会话历史」入口，编号①：pill 条只放活跃实例，历史不占常驻位）：
- * filters 三态 + hrow 列表（dot + 名 + st 状态·时间）。数据走 agent-history 单一管道
- *（useHistorySessions，与桌面 history tab 同源——M8 §6.9 消除 listAgentSessions 并行管道）。
- * hasActiveSession 行点击 = 聚焦既有实例（activeSessionId，不新建）；closed 行 = prompt 命名
- * （预填 title，桌面 history-list 同语义）→ resume 复用同 id。end 行 d2 轮次/费用原型数据
- * 无来源不画（诚实呈现，hfoot 承载恢复语义说明）。
+ * 03n 左滑删除行（v1.5 批5）：行体 .hbody 跟手左滑露出垫底 .del 删除钮，松手过半吸附常开；
+ * 删除必经调用方二次确认（requestDelete → useConfirm），行体点按仍走原 resume 链。
+ * 轴向判定 + 指针捕获（frontend-notes §14 pointer 驱动；§23 失联清理：capture 前 pending
+ * 指针离界即放弃）；`touch-pan-y` 把竖滚交还浏览器（横滑才进手势，替代 touchmove prevent），
+ * 拖拽期摘 transition 跟手（§18 同族）。hasActiveSession 行不消费本组件（服务端删除 409，
+ * 入口不提供）。开态点行体 = 仅收起（iOS 惯例，激活走纯 tap）。
+ */
+function HistorySwipeRow({
+  actionLabel,
+  children,
+  onActivate,
+  onDelete,
+  onOpenChange,
+  open,
+}: {
+  /** 删除钮文案（workbench.historyDelete）。 */
+  actionLabel: string;
+  children: ReactNode;
+  /** 行体纯 tap（未成滑动手势）= 原 resume 链。 */
+  onActivate: () => void;
+  onDelete: () => void;
+  /** 吸附后开态上报（父层 swipedId 单源，同时至多一行开）。 */
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+}) {
+  // DOM 就绪信号走 state ref callback（§14：portal 子树挂载晚于宿主 effect）。
+  const [bodyNode, setBodyNode] = useState<HTMLButtonElement | null>(null);
+  const openRef = useRef(open);
+  openRef.current = open;
+  type Gesture =
+    | { phase: "idle" }
+    | { phase: "pending"; x0: number; y0: number; pointerId: number }
+    | { phase: "dragging"; x0: number; y0: number; base: number; x: number };
+  const gesture = useRef<Gesture>({ phase: "idle" });
+  // 滑动手势松手后的 click 合成抑制（capture 目标 = 行体，pointerup 必跟 click）。
+  const draggedRef = useRef(false);
+
+  // open 受控同步（父层 swipedId 驱动：开另一行 / 关 sheet / 删除后重置）。
+  useEffect(() => {
+    const el = bodyNode;
+    if (!el) return;
+    el.style.transition = "";
+    el.style.transform = `translateX(${open ? -SWIPE_REVEAL_WIDTH_PX : 0}px)`;
+  }, [open, bodyNode]);
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    // 不进 sheet 下拉手势（其 pending 会捕获竖向漂移 >6px 的横滑并拖走整个 sheet）。
+    e.stopPropagation();
+    gesture.current = { phase: "pending", x0: e.clientX, y0: e.clientY, pointerId: e.pointerId };
+  };
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const g = gesture.current;
+    if (g.phase === "idle") return;
+    if (g.phase === "pending") {
+      const dx = e.clientX - g.x0;
+      const dy = e.clientY - g.y0;
+      if (Math.abs(dx) > SWIPE_AXIS_PX && Math.abs(dx) > Math.abs(dy)) {
+        // 横向接管：capture 后续指针（移出行体仍跟手）；位移基点 = 当前开合偏移。
+        e.currentTarget.setPointerCapture(g.pointerId);
+        draggedRef.current = true;
+        const base = openRef.current ? -SWIPE_REVEAL_WIDTH_PX : 0;
+        gesture.current = { phase: "dragging", x0: g.x0, y0: g.y0, base, x: base };
+      } else if (Math.abs(dy) > SWIPE_AXIS_PX) {
+        gesture.current = { phase: "idle" }; // 纵向 = 列表滚动意图，放弃（pan-y 交浏览器）。
+      }
+      return;
+    }
+    const x = Math.min(0, Math.max(-SWIPE_REVEAL_WIDTH_PX, g.base + (e.clientX - g.x0)));
+    gesture.current = { ...g, x };
+    // 拖拽摘 transition 跟手。
+    e.currentTarget.style.transition = "none";
+    e.currentTarget.style.transform = `translateX(${x}px)`;
+  };
+
+  const settle = (el: HTMLButtonElement) => {
+    const g = gesture.current;
+    gesture.current = { phase: "idle" };
+    if (g.phase !== "dragging") return;
+    const next = g.x < -SWIPE_REVEAL_WIDTH_PX * SWIPE_OPEN_RATIO;
+    // 吸附恢复类上过渡（.hbody transition = --duration-exit）。
+    el.style.transition = "";
+    el.style.transform = `translateX(${next ? -SWIPE_REVEAL_WIDTH_PX : 0}px)`;
+    onOpenChange(next);
+  };
+
+  return (
+    <div className="hrow swipe end">
+      <button
+        className="hbody cursor-pointer select-none touch-pan-y"
+        onClick={() => {
+          if (draggedRef.current) {
+            draggedRef.current = false; // 滑动手势松手的 click 合成，非点按。
+            return;
+          }
+          if (openRef.current) {
+            onOpenChange(false); // 开态点行体 = 仅收起。
+            return;
+          }
+          onActivate();
+        }}
+        onPointerCancel={(e) => settle(e.currentTarget)}
+        onPointerDown={onPointerDown}
+        onPointerLeave={() => {
+          // capture 前 pending 指针离界 = 手势失联，放弃（§23）。
+          if (gesture.current.phase === "pending") gesture.current = { phase: "idle" };
+        }}
+        onPointerMove={onPointerMove}
+        onPointerUp={(e) => settle(e.currentTarget)}
+        ref={setBodyNode}
+        type="button"
+      >
+        {children}
+      </button>
+      <button className="del cursor-pointer" onClick={onDelete} type="button">
+        {actionLabel}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 03n 会话历史 sheet（nav ⋯ →「会话历史」入口，编号①）：v1.5 批5 规模化查询模型（spec §4.2
+ * 会话历史查询）——三段计数筛选（.segc + 段内服务端聚合计数）+ 按名搜索 + 五档分组组头
+ *（.gh 随数据出现）+ 游标分页三态尾（滚动到底自动 +20 / 没有更多 / 失败重试）+ 左滑删除
+ *（closed 行，二次确认）。数据走 useHistoryQuery 单源管道（与桌面 05c / iPad 04g 同构消费），
+ * 旧「客户端全量 + 折叠窗口」（useHistorySessions + useHistoryRecentWindow）退役。
+ * hasActiveSession 行点击 = 聚焦既有实例（activeSessionId，不新建，无删除入口）；closed 行
+ * 点按 = prompt 命名 → resume 复用同 id。end 行 d2 轮次/费用原型数据无来源不画（诚实呈现）。
  */
 export function MobileSessionHistorySheet({
   onFocusExisting,
@@ -167,27 +318,58 @@ export function MobileSessionHistorySheet({
   projectName: string;
 }) {
   const { t } = useT();
-  const [filter, setFilter] = useState<(typeof HISTORY_FILTERS)[number]>("all");
-  // open gate：sheet 常驻挂载（open 只控显隐），不打开不发 agent-history 查询。
-  // range 固定 "all"（2026-09-30 真机反馈：iPhone 历史数量远少于桌面——旧值 "week" 只拉
-  // 近 7 天窗口，服务端按 mtime 滤除更早条目；桌面第五批②已改 "all"，同管道必须同窗口）。
-  const { entries, isLoading, resume } = useHistorySessions(projectName, "all", open);
-  // 折叠窗口与桌面同款行为（useHistoryRecentWindow 行为单份）：resetKey 绑「打开时的过滤」
-  // 与 sheet 开合（gate:closed 避开 filter 值域），关闭即重置、重开全新窗口（sheet 常驻
-  // 挂载不卸载，防残留大窗口/过滤跨开合——code review P2-2）；切过滤自动重置。
-  const { visibleCount, expandWindow } = useHistoryRecentWindow(open ? filter : "gate:closed");
+  // open gate：sheet 常驻挂载（open 只控显隐），不打开不发查询；filter/search UI 态由 hook
+  // 代管（§6.10 视图态不持久化）。v1.5 批5 规模化：服务端查询（三段筛选计数 + 搜索 + 游标
+  // 分页）+ 五档分组派生，取代客户端全量拉取 + 折叠窗口。
+  const {
+    counts,
+    deleteEntry,
+    entries,
+    fetchNextPage,
+    filter,
+    groups,
+    hasNextPage,
+    isError,
+    isFetchingNextPage,
+    isLoading,
+    refetch,
+    search,
+    setFilter,
+    setSearch,
+  } = useHistoryQuery({ projectName, enabled: open });
+  const { resume } = useResumeAgentSession(projectName);
   const renameDialog = usePromptDialog();
-  // 排序已在管道出口（useHistorySessions）归一 lastActivityAt 倒序（P2-9 口径单份），
-  // 这里只做状态过滤。
-  const rows = entries.filter((entry) =>
-    filter === "all"
-      ? true
-      : filter === "running"
-        ? entry.hasActiveSession
-        : !entry.hasActiveSession,
-  );
-  const visibleRows = rows.slice(0, visibleCount);
-  const hiddenCount = rows.length - visibleRows.length;
+  const confirmDialog = useConfirm();
+  // 左滑开态行 id（同时至多一行开）；关 sheet 重置，重开不残留开行。
+  const [swipedId, setSwipedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open) setSwipedId(null);
+  }, [open]);
+
+  // 滚动到底自动 +20（03n 编号④）：哨兵 IntersectionObserver——.msheet 裁剪后哨兵可见
+  // 即与视口相交，root 缺省（视口）即可；isFetchingNextPage 期不重复触发。
+  const [tailNode, setTailNode] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!tailNode || !open || !hasNextPage || isFetchingNextPage) return;
+    const io = new IntersectionObserver(
+      (obs) => {
+        if (obs.some((o) => o.isIntersecting)) void fetchNextPage();
+      },
+      { rootMargin: "80px" },
+    );
+    io.observe(tailNode);
+    return () => io.disconnect();
+  }, [tailNode, open, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  /** 行 key：id 缺失退 title/firstMessage/startedAt 兜底，防双空串 key 冲突（code review P2-6 同族）。 */
+  const entryKey = (entry: AgentHistoryEntry) =>
+    entry.claudeSessionId ??
+    entry.acpSessionId ??
+    entry.title ??
+    entry.firstMessage ??
+    entry.startedAt ??
+    "";
+
   const openClosedEntry = (entry: (typeof entries)[number]) => {
     void renameDialog
       .prompt({
@@ -200,9 +382,39 @@ export function MobileSessionHistorySheet({
       })
       .then((displayName) => {
         if (displayName === null) return;
-        resume(entry, displayName.trim());
+        // resume 输入装配 = useResumeAgentSession 单源（provider + 原生 session id + 显示名）。
+        resume({
+          acpSessionId: entry.acpSessionId,
+          claudeSessionId: entry.claudeSessionId,
+          displayName: displayName.trim() || undefined,
+          provider: entry.provider ?? "claude",
+        });
       });
   };
+
+  /** 左滑删除（spec §4.2：二次确认——Alert 族；服务端 hasActiveSession 409 兜底）。 */
+  const requestDelete = async (entry: (typeof entries)[number]) => {
+    setSwipedId(null);
+    const confirmed = await confirmDialog.confirm({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("workbench.historyDeleteConfirmCta"),
+      message: t("workbench.historyDeleteConfirmBody", {
+        name: entry.title ?? entry.firstMessage ?? "",
+      }),
+      title: t("workbench.historyDeleteConfirmTitle"),
+      tone: "danger",
+    });
+    if (confirmed) deleteEntry(entry);
+  };
+
+  /** 失败重试态（03n 列表底部三态之一；首屏失败 = 列表位、追加分页失败 = 列表尾）。 */
+  const retryPill = (
+    <div className="flex justify-center pb-2 pt-1">
+      <button className="fc ghost cursor-pointer" onClick={() => void refetch()} type="button">
+        {t("workbench.historyLoadFailed")}
+      </button>
+    </div>
+  );
   return (
     <>
       <MobileSheet
@@ -211,21 +423,32 @@ export function MobileSessionHistorySheet({
         open={open}
         title={t("workbench.historyTitle")}
       >
-        <div className="filters">
+        {/* 三段计数筛选（03n 编号②：.segc 单源 + 段内嵌服务端聚合计数；sheet 内吃满
+            20px 内容线，覆盖 09 页语境的 16px 页边距 margin）。 */}
+        <div className="segc mx-0 mt-2.5" role="group">
           {HISTORY_FILTERS.map((f) => (
             <button
-              className={`fc cursor-pointer${filter === f ? " on" : " seg"}`}
-              key={f}
-              onClick={() => setFilter(f)}
+              aria-pressed={filter === f.key}
+              className={`cursor-pointer${filter === f.key ? " on" : ""}`}
+              key={f.key}
+              onClick={() => setFilter(f.key)}
               type="button"
             >
-              {f === "all"
-                ? t("workbench.historyFilterAll")
-                : f === "running"
-                  ? t("workbench.historyFilterRunning")
-                  : t("workbench.historyFilterClosed")}
+              {t(f.labelKey)}
+              <em className="n">{counts[f.key]}</em>
             </button>
           ))}
+        </div>
+        {/* 搜索（03n 编号③：服务端按会话名过滤；行原语 = 03l 切换 sheet 同款紧凑搜索）。 */}
+        <div className="mt-2 flex h-9 items-center gap-2 rounded-md bg-elevated2 px-3">
+          <ShellIcon className="size-[15px] flex-none text-ink-2" name="magnifyingglass" />
+          <input
+            aria-label={t("workbench.historySearchPlaceholder")}
+            className="w-full bg-transparent text-[14px] text-ink-1 outline-none placeholder:text-ink-2"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("workbench.historySearchPlaceholder")}
+            value={search}
+          />
         </div>
         <div className="mt-1.5">
           {isLoading ? (
@@ -236,70 +459,94 @@ export function MobileSessionHistorySheet({
             <div aria-label={t("workbench.historyLoading")} role="status">
               <ListRowSkeleton action="none" count={2} marker={false} />
             </div>
-          ) : rows.length === 0 ? (
-            <p className="py-3 text-center text-footnote text-ink-2">
-              {t("workbench.historyEmpty")}
-            </p>
+          ) : entries.length === 0 ? (
+            isError ? (
+              retryPill
+            ) : (
+              <p className="py-3 text-center text-footnote text-ink-2">
+                {t("workbench.historyEmpty")}
+              </p>
+            )
           ) : (
             <>
-              {visibleRows.map((entry) => {
-                const running = entry.hasActiveSession;
-                const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
-                return (
-                  <button
-                    className={`hrow${running ? "" : " end"} block w-full cursor-pointer text-left`}
-                    key={
-                      entry.claudeSessionId ??
-                      entry.acpSessionId ??
-                      entry.title ??
-                      entry.firstMessage ??
-                      time
-                    }
-                    onClick={() => {
-                      onOpenChange(false);
-                      if (running && entry.activeSessionId) {
-                        onFocusExisting(entry.activeSessionId);
-                      } else if (!running) {
-                        openClosedEntry(entry);
-                      }
-                    }}
-                    type="button"
-                  >
-                    <span className="r1">
-                      {/* 已结束行无 dot（原型 03n end 行只有文字，reviewer P2-6）。 */}
-                      {running ? <span className={statusToV2DotClass("running")} /> : null}
-                      <span className="min-w-0 flex-1 truncate">
-                        {entry.title ?? entry.firstMessage ?? time}
+              {/* 五档分组组头（03n 编号④：gh 随数据出现；组内序 = 服务端倒序入桶保序）。 */}
+              {groups.map((group) => (
+                <div key={group.key}>
+                  <div className="gh">{t(HISTORY_GROUP_LABEL_KEYS[group.key])}</div>
+                  {group.entries.map((entry) => {
+                    const running = entry.hasActiveSession;
+                    const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
+                    const key = entryKey(entry);
+                    const r1 = (
+                      <span className="r1">
+                        {/* 已结束行无 dot（原型 03n end 行只有文字，reviewer P2-6）。 */}
+                        {running ? <span className={statusToV2DotClass("running")} /> : null}
+                        <span className="min-w-0 flex-1 truncate">
+                          {entry.title ?? entry.firstMessage ?? time}
+                        </span>
+                        <span className={`st${running ? " run" : ""}`}>
+                          {running
+                            ? t("workbench.historyRunning", { time })
+                            : t("workbench.historyClosed", { time })}
+                        </span>
                       </span>
-                      <span className={`st${running ? " run" : ""}`}>
-                        {running
-                          ? t("workbench.historyRunning", { time })
-                          : t("workbench.historyClosed", { time })}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-              {/* 「展开更早」（与桌面同款行为，useHistoryRecentWindow；形态 = 03n .fc.ghost
-                  单源胶囊 12px r15 p 5px 14px——design review P2-7 回归组件单源，探针改按
-                  .filters .fc 计数 filters 三态）。 */}
-              {hiddenCount > 0 ? (
-                <div className="flex justify-center pb-2 pt-1">
-                  <button className="fc ghost cursor-pointer" onClick={expandWindow} type="button">
-                    {t("workbench.historyShowEarlier")}
-                  </button>
+                    );
+                    return running ? (
+                      <button
+                        className="hrow block w-full cursor-pointer text-left"
+                        key={key}
+                        onClick={() => {
+                          onOpenChange(false);
+                          if (entry.activeSessionId) onFocusExisting(entry.activeSessionId);
+                        }}
+                        type="button"
+                      >
+                        {r1}
+                      </button>
+                    ) : (
+                      <HistorySwipeRow
+                        actionLabel={t("workbench.historyDelete")}
+                        key={key}
+                        onActivate={() => {
+                          onOpenChange(false);
+                          openClosedEntry(entry);
+                        }}
+                        onDelete={() => void requestDelete(entry)}
+                        onOpenChange={(next) => setSwipedId(next ? key : null)}
+                        open={swipedId === key}
+                      >
+                        {r1}
+                      </HistorySwipeRow>
+                    );
+                  })}
                 </div>
-              ) : null}
+              ))}
+              {/* 游标三态尾（03n 编号④）：失败重试 > 哨兵（滚动到底自动 +20，拉取中提示）>
+                  已加载完 = 「没有更多」。 */}
+              {isError ? (
+                retryPill
+              ) : hasNextPage ? (
+                <div className="flex justify-center py-2" ref={setTailNode} data-history-tail>
+                  {isFetchingNextPage ? (
+                    <span aria-label={t("workbench.historyLoading")} className="hend" role="status">
+                      {t("workbench.historyLoading")}
+                    </span>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="hend py-2 text-center">{t("workbench.historyEndOfList")}</p>
+              )}
             </>
           )}
         </div>
         <p className="hfoot">{t("workbench.historyFoot")}</p>
       </MobileSheet>
-      {/* holder 必须在 sheet 子树外：closed 行点击关 sheet 后，Radix exit 动画播完即卸载
-          Content 子树，嵌套其中的 prompt（Portal→body）会被连带卸载——input 消失、resolve
-          悬空（探针实锤）。与 03j 新建实例 sheet「prompt 由顶层 holder 承载」同因同解：
+      {/* holders 必须在 sheet 子树外：closed 行点击关 sheet 后，Radix exit 动画播完即卸载
+          Content 子树，嵌套其中的 prompt/confirm（Portal→body）会被连带卸载——input 消失、
+          resolve 悬空（探针实锤）。与 03j 新建实例 sheet「prompt 由顶层 holder 承载」同因同解：
           Fragment 兄弟位落在本组件调用方（workbench 层）而非 sheet Content 内。 */}
       {renameDialog.holder}
+      {confirmDialog.holder}
     </>
   );
 }

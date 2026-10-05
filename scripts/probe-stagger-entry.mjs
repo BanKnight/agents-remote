@@ -82,8 +82,9 @@ async function setupMocks(page) {
   await page.route(new RegExp(`/api/projects/${PROJECT}/terminal-sessions(?:\\?.*)?$`), (r) =>
     r.fulfill(json({ sessions: [] })),
   );
-  // 历史列表（Part 2b）：entries 空时 HistoryList 早退 null（容器不在场，断言会读成
-  // null 而非 false）——必须造数据让容器真正渲染，断言才落在「挂着没挂 stagger」上。
+  // 历史列表（Part 2b，批5 新契约 {entries, counts, nextCursor, filter}）：entries 空时
+  // HistoryList 早退 null（容器不在场，断言会读成 null 而非 0）——必须造数据让容器真正
+  // 渲染，断言才落在「挂着没挂 stagger」上。
   await page.route(new RegExp(`/api/projects/${PROJECT}/agent-history(?:\\?.*)?$`), (r) =>
     r.fulfill(
       json({
@@ -99,7 +100,9 @@ async function setupMocks(page) {
             hasActiveSession: false,
           },
         ],
-        range: "week",
+        counts: { all: 1, active: 0, ended: 1 },
+        nextCursor: null,
+        filter: "all",
       }),
     ),
   );
@@ -245,16 +248,23 @@ async function rowAnim(page, containerSel, nth) {
   const historyBtn = page.getByRole("button", { name: "查看历史会话" });
   if (await historyBtn.isVisible().catch(() => false)) {
     await historyBtn.click();
-    await page.locator('[aria-label="历史会话"]').waitFor({ timeout: 8000 });
-    const historyHasStagger = await page.evaluate(() => {
-      const el = document.querySelector('[aria-label="历史会话"]');
-      return el ? el.className.includes("animate-stagger-rows") : null;
-    });
-    ok(historyHasStagger !== null, `历史列表容器在场（实测 ${historyHasStagger}）`);
-    ok(
-      historyHasStagger === false,
-      `历史列表容器无 animate-stagger-rows（实测 ${historyHasStagger}）`,
+    // 05c 新结构：历史态无 aria-label 容器，行标题 data-list-row-title 定位（等行在场，
+    // 不用固定 sleep——慢机竞态）。
+    await page.waitForFunction(
+      () =>
+        Array.from(document.querySelectorAll("nav.side [data-list-row-title]")).some(
+          (el) => el.textContent === "Probe Stagger History",
+        ),
+      { timeout: 8000 },
     );
+    // 历史态下 side 主体 = 历史列表（实例分组已被替换）：side 内零 stagger 容器 = 历史
+    // 列表未挂 stagger（动态排序列表禁挂，frontend-notes §17）。
+    const historyStaggerCount = await page.evaluate(() => {
+      const side = document.querySelector("nav.side");
+      return side ? side.querySelectorAll(".animate-stagger-rows").length : null;
+    });
+    ok(historyStaggerCount !== null, `side 历史态在场（实测 ${historyStaggerCount}）`);
+    ok(historyStaggerCount === 0, `历史列表无 animate-stagger-rows（实测 ${historyStaggerCount}）`);
   } else {
     console.log("  ⚠ project scope 无「查看历史会话」入口，跳过防回归断言");
   }

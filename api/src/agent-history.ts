@@ -1,7 +1,7 @@
 import { open as openFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readdir, stat } from "node:fs/promises";
+import { readdir, stat, unlink } from "node:fs/promises";
 import { open, read, close } from "node:fs";
 import type { AgentHistoryEntry, AgentHistoryRange } from "@agents-remote/shared";
 
@@ -540,3 +540,177 @@ export async function getLastAssistantMessage(
 // CJK characters, or other symbols still resolve to the correct JSONL folder.
 export const projectToSlug = (projectPath: string): string =>
   projectPath.replace(/[^a-zA-Z0-9]/g, "-");
+
+// ────────────────── v1.5 批5：历史查询规模化核心（design_spec.md §4.2）──────────────────
+
+import type {
+  AgentHistoryCounts,
+  AgentHistoryFilter,
+  ListAgentHistoryResponse,
+} from "@agents-remote/shared";
+
+/** 游标分页大小（规格：首屏 20 · 滚动到底自动 +20）。 */
+export const HISTORY_PAGE_SIZE = 20;
+
+/** 排序键：lastActivityAt 优先、startedAt 兜底（与既有列表排序同源）。 */
+const historySortKey = (e: AgentHistoryEntry): string => e.lastActivityAt ?? e.startedAt ?? "";
+
+const historySessionId = (e: AgentHistoryEntry): string =>
+  e.claudeSessionId ?? e.acpSessionId ?? "";
+
+const historyTiebreak = (e: AgentHistoryEntry): string =>
+  `${e.provider ?? "claude"}|${historySessionId(e)}`;
+
+/** 合流排序比较器（倒序：新→旧；同键用 provider|sessionId tiebreak，游标切片同源）。 */
+export const compareHistoryDesc = (a: AgentHistoryEntry, b: AgentHistoryEntry): number => {
+  const ka = historySortKey(a);
+  const kb = historySortKey(b);
+  if (ka !== kb) return kb.localeCompare(ka);
+  return historyTiebreak(b).localeCompare(historyTiebreak(a));
+};
+
+const encodeHistoryCursor = (e: AgentHistoryEntry): string =>
+  Buffer.from(JSON.stringify([historySortKey(e), historyTiebreak(e)]), "utf8").toString(
+    "base64url",
+  );
+
+export type AgentHistoryQueryParams = {
+  filter: AgentHistoryFilter;
+  search: string;
+  /** 空串 = 首页；否则为上一页 nextCursor 透传。 */
+  cursor: string;
+};
+
+/** 解析 ?filter= 查询参数：白名单校验，缺省/非法 → "all"。 */
+export const parseHistoryFilter = (value: string | null): AgentHistoryFilter =>
+  value === "active" || value === "ended" ? value : "all";
+
+/** 游标失真（客户端伪造/排序漂移后过期）→ 从头开始（回到首页，不 500）。 */
+const decodeHistoryCursor = (cursor: string): { key: string; tiebreak: string } | null => {
+  if (!cursor) return null;
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length !== 2 ||
+      typeof parsed[0] !== "string" ||
+      typeof parsed[1] !== "string"
+    ) {
+      return null;
+    }
+    return { key: parsed[0], tiebreak: parsed[1] };
+  } catch {
+    return null;
+  }
+};
+
+/** 按会话名搜索（title 优先、firstMessage 兜底——AI title 未生成的会话仍可被首消息命中）。 */
+const matchHistorySearch = (e: AgentHistoryEntry, search: string): boolean => {
+  if (!search) return true;
+  const haystack = `${e.title ?? ""} ${e.firstMessage ?? ""}`.toLowerCase();
+  return haystack.includes(search);
+};
+
+/**
+ * 规模化查询纯函数（设计 §4.2：搜索 → 计数聚合 → 筛选 → 游标切片）。
+ *
+ * 输入 = 调用方组装好的合流条目流（claude + omp 两路，可跨项目；全局作用域由调用方
+ * 预填 projectName）；计数在 search 过滤后、filter 之前聚合（切筛选段不重拉）；
+ * 游标切片在 filter 之后（每页恒 ≤ PAGE_SIZE 条）。
+ * 游标无效（伪造/过期）回首页不报错——排序键漂移（文件 mtime 更新）时客户端自然回顶。
+ */
+export function paginateAgentHistory(
+  entries: AgentHistoryEntry[],
+  params: AgentHistoryQueryParams,
+): ListAgentHistoryResponse {
+  const search = params.search.trim().toLowerCase();
+  const sorted = [...entries].sort(compareHistoryDesc);
+  const matched = sorted.filter((e) => matchHistorySearch(e, search));
+
+  const active = matched.reduce((n, e) => n + (e.hasActiveSession ? 1 : 0), 0);
+  const counts: AgentHistoryCounts = {
+    all: matched.length,
+    active,
+    ended: matched.length - active,
+  };
+
+  const filtered =
+    params.filter === "active"
+      ? matched.filter((e) => e.hasActiveSession)
+      : params.filter === "ended"
+        ? matched.filter((e) => !e.hasActiveSession)
+        : matched;
+
+  const cursorState = decodeHistoryCursor(params.cursor);
+  let start = 0;
+  if (cursorState) {
+    // 倒序列表中「游标之后」= 排序键元组 (key, tiebreak) 字典序严格小于游标（key 更小 = 更旧；
+    // 同 key 用 tiebreak 更小）。findIndex 落空（游标条目已被删/滑出窗口）→ 回首页。
+    start = filtered.findIndex((e) => {
+      const ek = historySortKey(e);
+      if (ek !== cursorState.key) return ek < cursorState.key;
+      return historyTiebreak(e) < cursorState.tiebreak;
+    });
+    if (start === -1) start = 0;
+  }
+
+  const page = filtered.slice(start, start + HISTORY_PAGE_SIZE);
+  const hasMore = start + HISTORY_PAGE_SIZE < filtered.length;
+  const nextCursor = hasMore && page.length > 0 ? encodeHistoryCursor(page[page.length - 1]) : null;
+
+  return {
+    entries: page,
+    counts,
+    nextCursor,
+    filter: params.filter,
+  };
+}
+
+/** 历史会话 JSONL 文件名的 sessionId 段白名单（claude/omp 皆 uuid；防路径逃逸的硬校验）。 */
+const HISTORY_SESSION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * v1.5 批5：删除单条历史会话（二次确认在 UI 层）。物理删除 JSONL 文件；条目自然消失
+ * （claude 侧缓存对账「磁盘无此 id」在下次列表时清缓存）。hasActiveSession 的拒绝判定在
+ * handler 层（需查 activeMap），本函数只管文件。
+ *
+ * @returns false = 文件不存在（幂等成功）
+ * @throws sessionId 非法（uuid 白名单外）
+ */
+export async function deleteAgentHistoryEntry(
+  projectPath: string,
+  sessionId: string,
+  provider: "claude" | "omp",
+): Promise<boolean> {
+  if (!HISTORY_SESSION_ID_PATTERN.test(sessionId)) {
+    throw new Error(`invalid history session id: ${JSON.stringify(sessionId)}`);
+  }
+  const slug = projectToSlug(projectPath);
+  const isEnoent = (error: unknown) => (error as { code?: string } | null)?.code === "ENOENT";
+  if (provider === "claude") {
+    // claude = ~/.claude/projects/<slug>/<id>.jsonl（listAgentHistory 同源规则）
+    const path = join(homedir(), ".claude", "projects", slug, `${sessionId}.jsonl`);
+    try {
+      await unlink(path);
+      return true;
+    } catch (error) {
+      if (isEnoent(error)) return false;
+      throw error;
+    }
+  }
+  // omp = ~/.omp/agent/sessions/<slug>/<fileSafeTs>_<id>.jsonl——ts 段未知，readdir 前缀匹配
+  const ompDir = join(homedir(), ".omp", "agent", "sessions", slug);
+  let files: string[];
+  try {
+    files = await readdir(ompDir);
+  } catch (error) {
+    if (isEnoent(error)) return false;
+    throw error;
+  }
+  const matches = files.filter((f) => f.endsWith(`_${sessionId}.jsonl`));
+  for (const f of matches) {
+    await unlink(join(ompDir, f));
+  }
+  return matches.length > 0;
+}

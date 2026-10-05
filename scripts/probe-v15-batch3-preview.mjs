@@ -4,15 +4,15 @@
 //   Part 1 面板 file 标签预览态（workspace-preview）：.fmeta = 「TypeScript · N 行 · 更新 …」
 //     + nav [pencil][⋯]（text enabled）+ ⋯ 菜单三项（复制内容/复制路径/查看 diff）+ 无 segc。
 //   Part 2 编辑态：.emeta（fdim 编辑中·N 行 + dirty ● 未保存变更）+ fact 放弃/完成 + .aux
-//     三钮（撤销/重做/收起键盘）；放弃（clean 直接退 / dirty 弹确认）回预览态。
+//     三钮（撤销/重做/收起键盘，贴屏底——P2-2 编辑态去 pb）+ 放弃（clean 直接退 / dirty 弹确认）。
 //   Part 3 MD 文件：.fmeta = 「Markdown · …」+ .fright>.segc.mini「渲染|源码」（几何 ≈28px）。
-//   Part 4 unsupported 空态：.unsupported(.big+.t+.d) + fmeta = Binary（无「更新」段——
-//     preview 非 text 分支无 mtimeMs，不伪造）。
+//   Part 4 unsupported 空态：.unsupported(.big+.t+.d 两行 pre-line) + fmeta = Binary（无
+//     「更新」段——preview 非 text 分支无 mtimeMs，不伪造）+ nav 无 pencil（条件渲染，P1-1）。
 //   Part 5 FAB 实心主色：computed background = c-primary + .plus 白。
 //   Part 6 push 容器（files-global-preview）：.nav back=父目录 + h1 文件名（mono 14px）+
 //     [pencil][⋯]；根文件 back=「服务器根」；无 tabbar；⋯ 仅两项（无查看 diff）。
 //   Part 7 wikiread 标签（wiki-reader）：wiki 深链 → 面板 wikiread 标签 + .fmeta「Markdown ·
-//     … · 更新 …」+ .actbtn「让 Agent 读这篇」。
+//     … · 更新 …」+ .actbtn「让 Agent 读这篇」+ ⋯ = 复制内容/查看 diff（原型 pin②，P1-2）。
 //
 // 全 mock API（无真实数据创建/删除）；密码自读不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v15-batch3-preview.mjs
@@ -201,6 +201,11 @@ async function setupMocks(page) {
   await page.route(/\/api\/projects\/proj1\/git\/diff(\?.*)?$/, (r) =>
     r.fulfill(json({ files: [] })),
   );
+  // 单文件 diff（/git/diff/file?scope=…&path=…）：非 repo 形状 → 面板 diff 容器落错误分支
+  //（Part 7 ⑨ 断言「查看 diff 走到 diff 管道」；mock 不依赖真实 dev api）。
+  await page.route(/\/api\/projects\/proj1\/git\/diff\/file\?/, (r) =>
+    r.fulfill(json({ repository: false })),
+  );
   await page.route(/\/api\/projects\/proj1\/git\/branches(\?.*)?$/, (r) =>
     r.fulfill(json({ branches: [{ name: "main", current: true, ahead: 0, behind: 0 }] })),
   );
@@ -292,7 +297,8 @@ ok(
   "⑩ ⋯ 菜单 = 复制内容/复制路径/查看 diff",
 );
 await page.keyboard.press("Escape");
-await page.waitForTimeout(300);
+// §18 同源：sheet 退出动画（~450ms + fill-mode-forwards）播完再点 nav 钮，防 scrim 残留挡点击。
+await page.waitForTimeout(700);
 
 // ───────────────────────── Part 2 编辑态 ─────────────────────────
 console.log("Part 2 编辑态（emeta/aux/fact）");
@@ -310,6 +316,13 @@ const auxText = (await pane.locator(".aux").textContent()) ?? "";
 ok(
   /撤销/.test(auxText) && /重做/.test(auxText) && /收起键盘/.test(auxText),
   "⑤ .aux = 撤销/重做/收起键盘",
+);
+// P2-2：编辑态去 pb → .aux 贴屏底（bottom ≈ 视口高，容差 2px 防亚像素）。
+const auxBox = await pane.locator(".aux").boundingBox();
+const vpH = page.viewportSize()?.height ?? 0;
+ok(
+  auxBox !== null && Math.abs(auxBox.y + auxBox.height - vpH) <= 2,
+  `⑤b 编辑态 .aux 贴屏底（bottom=${(auxBox?.y ?? 0) + (auxBox?.height ?? 0)} / vp=${vpH}）`,
 );
 ok((await pane.locator(".cm-editor").count()) > 0, "⑥ CodeMirror 在场");
 // clean 放弃 → 直接退出回预览态。
@@ -393,16 +406,15 @@ const unsupT = (await unsup.locator(".t").textContent()) ?? "";
 ok(/不支持预览/.test(unsupT), "③ .t = 不支持预览");
 const unsupD = (await unsup.locator(".d").textContent()) ?? "";
 ok(/限制/.test(unsupD) || unsupD.includes("\n") || unsupD.length > 10, "④ .d 两行说明");
+// P2-1：i18n 文案 \n 不被折叠（white-space: pre-line 渲染两行）。
+const unsupDWs = await unsup.locator(".d").evaluate((el) => getComputedStyle(el).whiteSpace);
+ok(unsupDWs === "pre-line", `④b .d white-space = pre-line（got ${unsupDWs}）`);
 const zipFmeta = (await zipBody.locator(".fmeta").textContent()) ?? "";
 ok(/Binary · /.test(zipFmeta), `⑤ fmeta = Binary · 大小（${zipFmeta.trim().slice(0, 24)}）`);
 ok(!/更新 /.test(zipFmeta), "⑥ 非 text 无 mtimeMs → fmeta 无「更新」段");
 ok(
-  (await page
-    .locator('[data-inspection-panel="open"] .nav [aria-label="编辑"]')
-    .isDisabled()
-    .catch(() => true)) ||
-    (await page.locator('[data-inspection-panel="open"] .nav [aria-label="编辑"]').count()) === 0,
-  "⑦ unsupported → pencil 不可编辑",
+  (await page.locator('[data-inspection-panel="open"] .nav [aria-label="编辑"]').count()) === 0,
+  "⑦ unsupported → nav 无 pencil 图标钮（text 条件渲染，P1-1）",
 );
 
 // ───────────────────────── Part 5 FAB 实心主色 ─────────────────────────
@@ -438,7 +450,8 @@ ok(
   "⑤ push ⋯ 仅两项（根作用域无查看 diff）",
 );
 await page.keyboard.press("Escape");
-await page.waitForTimeout(300);
+// §18 同源：sheet 退出动画播完再点 pencil。
+await page.waitForTimeout(700);
 // push 编辑态 nav [放弃][完成]。
 await pushPencil.click();
 await page.waitForTimeout(700);
@@ -504,6 +517,32 @@ const actBtnBox = await actBtn.boundingBox();
 ok(
   actBtnBox !== null && actBtnBox.height >= 24 && actBtnBox.height <= 34,
   `⑥ actbtn 高 ≈28px（实测 ${actBtnBox?.height.toFixed(1)}）`,
+);
+// P1-2（wiki 复审）：wikiread nav ⋯ = 复制内容/查看 diff（wiki-reader 原型 pin②），无复制链接。
+const wikiDots = page.locator('[data-inspection-panel="open"] .nav [aria-label="更多操作"]');
+ok((await wikiDots.count()) === 1, "⑦ wikiread nav [⋯] 存在");
+await wikiDots.click();
+// §18：sheet 450ms 全程升起 enter——动画播完前 menuitem boundingBox 落屏外，click 不命中。
+await page.waitForTimeout(700);
+const wikiMenu =
+  (await page
+    .locator('[role="menu"]')
+    .textContent()
+    .catch(() => "")) ?? "";
+ok(
+  /复制内容/.test(wikiMenu) && /查看 diff/.test(wikiMenu) && !/复制链接/.test(wikiMenu),
+  "⑧ wikiread ⋯ = 复制内容/查看 diff（无复制链接）",
+);
+// ⑨ 查看 diff → wiki 源文件（wiki/intro.md）走面板 file diff 管道（panelDiff from "file"）。
+// mock diff API 非 repo 形状 → MobileL3GitDiff 落 fileError 分支（l3-git-diff 容器只在成功
+// 分支渲染）——l3 覆盖层 + 「无法打开此差异」文案 = diff query 被走到即达标。
+await page.locator('[role="menuitem"]').filter({ hasText: "查看 diff" }).first().click();
+await page.waitForTimeout(800);
+const wikiDiffPage = page.locator('[data-role="l3-page"]');
+ok(
+  (await wikiDiffPage.count()) > 0 &&
+    /无法打开此差异/.test((await wikiDiffPage.textContent().catch(() => "")) ?? ""),
+  "⑨ wikiread 查看 diff → l3 覆盖层 + diff 管道（wiki/{slug}.md 走到 diff query）",
 );
 
 console.log(`\n结果: ${passCount} pass / ${failCount} fail`);

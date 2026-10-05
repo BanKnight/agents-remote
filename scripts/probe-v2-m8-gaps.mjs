@@ -105,7 +105,14 @@ async function setupMocks(page) {
     r.fulfill(json({ sessions: [] })),
   );
   await page.route(new RegExp(`/api/projects/${projectName}/agent-history(?:\\?.*)?$`), (r) =>
-    r.fulfill(json({ entries: [] })),
+    r.fulfill(
+      json({
+        entries: [],
+        counts: { all: 0, active: 0, ended: 0 },
+        nextCursor: null,
+        filter: "all",
+      }),
+    ),
   );
   await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions$`), (r) =>
     r.fulfill(json({ sessions: [] })),
@@ -248,8 +255,9 @@ console.log("Part 1: 03x 文件搜索（.wsearch 两态 + .res 计数 + .xrow �
 await page.goto(`${ORIGIN}/projects/${projectName}?tab=files`);
 await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 10000 });
 ok((await page.locator(".crumb").count()) === 1, "默认态 = .crumb 面包屑");
-// magnifyingglass 按钮（header toolChip 内，aria-label = 搜索文件）。
-await page.locator('.crumb button[aria-label="搜索文件"]').click();
+// magnifyingglass 按钮（03o 渐进披露：独立 .obtn.srch chip 在 .crumb 胶囊右侧——非胶囊内
+// 子元素，地址栏单源修复后为兄弟节点）。
+await page.locator('button.obtn.srch[aria-label="搜索文件"]').click();
 await page.waitForSelector(".wsearch", { timeout: 5000 });
 ok((await page.locator(".wsearch").count()) === 1, "点放大镜 → .wsearch 搜索框（03x ①同 Wiki）");
 ok((await page.locator(".crumb").count()) === 0, "搜索态无 .crumb（两态互斥）");
@@ -297,7 +305,7 @@ ok(
 // 回 files 工具，✕ 清空回面包屑。
 await page.goto(`${ORIGIN}/projects/${projectName}?tab=files`);
 await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 10000 });
-await page.locator('.crumb button[aria-label="搜索文件"]').click();
+await page.locator('button.obtn.srch[aria-label="搜索文件"]').click();
 await page.waitForSelector(".wsearch", { timeout: 5000 });
 await page.locator(".wsearch input").fill("readme");
 await page.waitForTimeout(500);

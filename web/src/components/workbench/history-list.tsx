@@ -1,13 +1,26 @@
-import { useMemo, useState } from "react";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, type MouseEvent, type UIEvent } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { AgentHistoryEntry, AgentHistoryRange } from "@agents-remote/shared";
-import { createAgentSession, listAgentHistory } from "../../api/client";
+import type {
+  AgentHistoryEntry,
+  AgentHistoryFilter,
+  AgentHistoryGroupKey,
+} from "@agents-remote/shared";
+import { createAgentSession } from "../../api/client";
 import { useT } from "../../i18n";
-import type { TranslateFn } from "../../i18n/types";
+import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { formatBytes } from "@/lib/format";
 import { ListGroup, ListRow, ListRowSkeleton, sessionMarker } from "../shell/shell-primitives";
+import { useConfirm } from "../shell/confirm-dialog";
 import { usePromptDialog } from "../shell/prompt-dialog";
+import {
+  ActionMenu,
+  useLongPressActions,
+  useRowContextMenu,
+  type ActionMenuItem,
+} from "../ui/action-menu";
+import { ShellIcon } from "../shell/icons";
+import { useHistoryQuery } from "./use-history-query";
 
 /**
  * 历史 session「活跃中」脉动点。hasActiveSession 的历史（已 resume 为活跃实例）共用
@@ -20,28 +33,16 @@ const ActiveDot = (
 /** 历史 session 加载骨架行数（与左栏 InstanceSkeleton/CardGridSkeleton 同款 UI 常量）。 */
 const HISTORY_SKELETON_ROW_COUNT = 3;
 
-/** 折叠窗口初始条数（2026-09-29 真机反馈②用户拍板：「展示最近的几个会话」，默认 5）。 */
-const HISTORY_RECENT_COUNT = 5;
-
-/** 「展开更早」每次步进条数（用户拍板「更久的再依次展开」）。 */
-const HISTORY_EXPAND_STEP = 5;
+/** 滚动到底自动取下页的提前量（距底 ≤48px 触发 fetchNextPage，§4.2 游标分页）。 */
+const HISTORY_LOAD_MORE_LEAD_PX = 48;
 
 /**
- * 「最近 N + 依次展开」客户端折叠窗口（行为单份，多端同构）：桌面 05c 历史态与移动 03n
- * sheet 共用同一窗口常量与展开/重置行为，两端只容器不同（2026-09-30 真机反馈：iPhone
- * 也要依次加载更多）。`resetKey` 变化即重置窗口（render 期 adjust，React 官方模式，无
- * effect 时序）——切过滤自动重置、无需调用方手动配对；移动 sheet 传 `open ? filter :
- * "gate:closed"`，关闭即重置、重开全新窗口（sheet 常驻挂载不卸载，防残留大窗口跨开合）。
+ * 历史 session 加载骨架（复用 ListRowSkeleton，与真实 ListRow 行高对齐，plain divide-y 连续行）。
+ * 首次拉取 pending 时占位，避免 entries=[] 直接 return null 的空白。行级骨架与卡片网格
+ *（CardGridSkeleton）形态不同：历史是紧凑连续行，卡片是高卡。
  */
-export function useHistoryRecentWindow(resetKey?: string) {
-  const [state, setState] = useState({ key: resetKey, count: HISTORY_RECENT_COUNT });
-  if (resetKey !== undefined && resetKey !== state.key) {
-    setState({ key: resetKey, count: HISTORY_RECENT_COUNT });
-  }
-  return {
-    visibleCount: state.count,
-    expandWindow: () => setState((s) => ({ ...s, count: s.count + HISTORY_EXPAND_STEP })),
-  };
+function HistoryListSkeleton() {
+  return <ListRowSkeleton count={HISTORY_SKELETON_ROW_COUNT} />;
 }
 
 /**
@@ -57,52 +58,59 @@ function entryNativeId(entry: AgentHistoryEntry): string {
   return (entryProvider(entry) === "omp" ? entry.acpSessionId : entry.claudeSessionId) ?? "";
 }
 
-/**
- * 历史 session 加载骨架（复用 ListRowSkeleton，与真实 ListRow 行高对齐，plain divide-y 连续行）。
- * 首次拉取 pending 时占位，避免 entries=[] 直接 return null 的空白。行级骨架与卡片网格
- *（CardGridSkeleton）形态不同：历史是紧凑连续行，卡片是高卡。
- */
-function HistoryListSkeleton() {
-  return <ListRowSkeleton count={HISTORY_SKELETON_ROW_COUNT} />;
+/** 行主标题（title → firstMessage → 原生 id 前 8 位兜底，防全空）。 */
+function displayTitleOf(entry: AgentHistoryEntry): string {
+  return entry.title ?? entry.firstMessage ?? entryNativeId(entry).slice(0, 8);
 }
 
-/** resume「这条会话」的语义单元（provider + 原生 session id + 可选显示名）。 */
+/** 行 React key / 右键菜单定位 key（id 缺失退 title/firstMessage 兜底，防双空串冲突）。 */
+function rowKey(entry: AgentHistoryEntry): string {
+  return entryNativeId(entry) || entry.title || entry.firstMessage || "";
+}
+
+/** resume「这条会话」的语义单元（provider + 原生 session id + 可选显示名 + 归属项目）。 */
 export type ResumeAgentSessionInput = {
   provider?: "claude" | "omp";
   claudeSessionId?: string;
   acpSessionId?: string;
   displayName?: string;
+  /** 全局作用域行自带归属项目（04g「全部」段服务端恒填）；缺省回退 hook 级 projectName。 */
+  projectName?: string;
 };
 
 /**
- * 恢复会话为活跃实例（单一管道，桌面 history tab 与移动 03n 会话历史 sheet 共用）：
+ * 恢复会话为活跃实例（单一管道，桌面 05c 历史、iPad 04g「全部」段与移动 03n sheet 共用）：
  * claude → claudeSessionId（--resume）；omp → acpSessionId（session/load 全量回放）。成功后
  * navigate 聚焦新实例（detail route 用 sessionId 直查，不依赖列表）+ invalidate
- * sessions/history/overview。navigate 固定 `/projects/$key/...`，故仅适用于 project scope。
+ * sessions/history/overview。navigate 固定 `/projects/$key/...`，key 取「行归属项目优先」
+ *（全局行跨项目恢复落其归属项目）。
  */
-export function useResumeAgentSession(projectName: string) {
+export function useResumeAgentSession(projectName: string | null) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const resumeSession = useMutation({
     mutationFn: (input: ResumeAgentSessionInput) =>
-      createAgentSession(projectName, input.provider ?? "claude", {
+      createAgentSession(input.projectName ?? projectName ?? "", input.provider ?? "claude", {
         claudeSessionId: input.claudeSessionId,
         acpSessionId: input.acpSessionId,
         displayName: input.displayName,
       }),
-    onSuccess: async (data) => {
+    onSuccess: async (data, input) => {
+      const key = input.projectName ?? projectName;
+      // key 空 = 不可恢复语境（全局行必带 projectName；契约破坏时防 navigate 到坏 URL）。
+      if (!key) return;
       // navigate 优先：detail route 用 sessionId 直查 per-session detail query，不依赖列表。
-      // invalidate 后台 fire-and-forget 刷新左栏 InstanceLeftOverview + history tab 列表。
+      // invalidate 后台 fire-and-forget 刷新左栏 InstanceLeftOverview + history 列表。
       await navigate({
         to: "/projects/$key/session/$id",
-        params: { key: projectName, id: data.session.id },
-        // resume 后聚焦新实例，切回 overview tab 看活动组 output（否则停在 history 全宽列表）。
+        params: { key, id: data.session.id },
+        // resume 后聚焦新实例，切回 overview tab 看活动组 output（否则停在历史列表）。
         // 函数式 search 保留 view/rightTab 等其他维度（设计 §13 正交）。
         search: (prev) => ({ ...prev, tab: "overview" }),
       });
       void Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-sessions"] }),
-        queryClient.invalidateQueries({ queryKey: ["projects", projectName, "agent-history"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", key, "agent-sessions"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", key, "agent-history"] }),
         // overview 同步刷新：桌面 prune effect 用 globalRefs（= overview）判定 tab stale，
         // 不刷则新 session 不在 globalRefs、tab 被误删（与 invalidateSessions helper 同源）。
         queryClient.invalidateQueries({ queryKey: ["overview"] }),
@@ -112,245 +120,319 @@ export function useResumeAgentSession(projectName: string) {
   return { isResuming: resumeSession.isPending, resume: resumeSession.mutate };
 }
 
-/**
- * 项目历史 session 数据管道（单一来源，设计文档 §3/§4）。桌面 + 移动中栏 history tab 消费
- * 历史都走此 hook：`listAgentHistory` 查询 + resume mutation（见 `useResumeAgentSession`）。
- * history 是 project-scoped 数据，global 不可见。
- */
-export function useHistorySessions(
-  projectName: string,
-  // 默认 "all"（2026-09-30）：服务端 range 是 mtime 窗口滤除，"week" 只回近 7 天——
-  // iPhone 历史数量远少于桌面的历史根因（dd49a01 修复的默认值陷阱，勿回退）。
-  range: AgentHistoryRange = "all",
-  /** false 时不发查询（常驻挂载的浮层消费方传「打开才拉」，如 03n 移动 sheet）。 */
-  enabled = true,
-) {
-  const history = useQuery({
-    enabled,
-    queryKey: ["projects", projectName, "agent-history", range],
-    queryFn: () => listAgentHistory(projectName, range),
-    staleTime: 5_000,
-    // keepPreviousData（§6.12o 批次 4）：range 切档（week↔all）时保持上一份列表显示，
-    // 后台换数据不闪骨架；首载无缓存 isPending 仍显 HistoryListSkeleton。
-    placeholderData: keepPreviousData,
-  });
-  const { isResuming, resume } = useResumeAgentSession(projectName);
-  // 管道出口统一 lastActivityAt 倒序（design review P2-9：服务端顺序不构成契约，排序口径
-  // 两端单份——桌面 slice 即「最近 N」与移动 rows 派生消费同一份有序数据）。
-  const entries = useMemo(
-    () =>
-      (history.data?.entries ?? [])
-        .slice()
-        .sort((a, b) =>
-          (b.lastActivityAt ?? b.startedAt ?? "").localeCompare(
-            a.lastActivityAt ?? a.startedAt ?? "",
-          ),
-        ),
-    [history.data],
-  );
-  return {
-    entries,
-    // isLoading 含 placeholder 期（isPending || isPlaceholderData）：keepPreviousData 下上一份
-    // 缓存是 [] 时切档，v5 会把 [] 当 placeholder → isPending/isLoading 均 false，消费方的
-    // 「entries 空 && !isLoading → 空态」分支会显空白/伪空态——placeholder 期必须仍按加载中走
-    // 骨架门（review 修复：空→空切换回归）。
-    isLoading: history.isPending || history.isPlaceholderData,
-    isResuming,
-    resume: (entry: AgentHistoryEntry, displayName: string) =>
-      resume({
-        acpSessionId: entry.acpSessionId,
-        claudeSessionId: entry.claudeSessionId,
-        displayName: displayName || undefined,
-        provider: entry.provider ?? "claude",
-      }),
-  };
-}
+/** 三段筛选段（值序 = shared AgentHistoryFilter；切段 = 服务端 filter 切片，spec §4.2）。 */
+const HISTORY_FILTERS: readonly { key: AgentHistoryFilter; labelKey: TranslationKey }[] = [
+  { key: "all", labelKey: "workbench.historyFilterAll" },
+  { key: "active", labelKey: "workbench.historyFilterRunning" },
+  { key: "ended", labelKey: "workbench.historyFilterClosed" },
+];
+
+/** 五档分组组头文案键（渲染序 = hook groups 的 AGENT_HISTORY_GROUP_ORDER，spec §4.2）。 */
+const HISTORY_GROUP_LABEL_KEYS: Record<AgentHistoryGroupKey, TranslationKey> = {
+  today: "workbench.historyGroupToday",
+  yesterday: "workbench.historyGroupYesterday",
+  week: "workbench.historyGroupWeek",
+  month: "workbench.historyGroupMonth",
+  earlier: "workbench.historyGroupEarlier",
+};
 
 type HistoryListProps = {
-  projectName: string;
   focusId?: string;
+  /** 项目名；null = 全局作用域（04g「全部」段，行 subtitle 带项目限定符）。 */
+  projectName: string | null;
 };
 
 /**
- * 历史 session 列表（2026-09-29 真机反馈②改版为 05c 原型做法）：一次拉全量（range 固定
- * "all"——周/半月/全部旧方案退役），状态过滤 chips（全部/已结束，05c :42-45）+「最近
- * N 条 + 展开更早（每次 +N）」客户端折叠（用户拍板补充设计，原型无此控件）。单一数据管道
- *（useHistorySessions）+ 单一渲染（ListGroup/ListRow plain 连续行 + sessionMarker sm，
- * 与总览 grid 卡片同款 marker）。entries 为空时返回 null（左栏段落自然空态，不伪造占位）。
+ * 历史 session 列表（v1.5 批5 规模化，05c/04g 对齐）：数据管道单源 = useHistoryQuery
+ *（服务端三段计数筛选 + 按名搜索 + 五档分组 + 游标分页 20+20）。列表底部三态（§4.2）=
+ * 骨架（HistoryListSkeleton）/「加载失败 · 点按重试」（refetch）/「没有更多」，滚动到底自动
+ * fetchNextPage。行右键（Mac 05c）/长按（iPad 04g pin⑤）= 恢复/删除… 菜单（02c 单一容器
+ * 模式；删除二次确认连历史删除，活跃行不提供——服务端 409）。`projectName=null` 渲染全局
+ * 作用域（同一管道同构，仅行 subtitle 多项目限定符）。纯净空态（无筛选无搜索无数据）返回
+ * null（左栏段落自然空态，不伪造占位）。
  */
 export function HistoryList({ focusId, projectName }: HistoryListProps) {
   const { t } = useT();
   const navigate = useNavigate();
   const { holder: promptHolder, prompt } = usePromptDialog();
-  // range 固定 "all"：折叠在客户端做，服务端 range 过滤失去意义（hook 的 range 参数保留——
-  // mobile-sheets 03n sheet 同窗 "all"，多端同构同一数据口径）。服务端顺序不构成契约，
-  // 管道出口统一按 lastActivityAt 倒序归一（design review P2-9：两端排序口径单份）。
-  const { entries, isLoading, isResuming, resume } = useHistorySessions(projectName, "all");
-  // 状态过滤 + 折叠窗口：均视图态不持久化（§6.10 口径）；折叠窗口的 resetKey = filter，
-  // 切过滤自动重置、防残留大窗口跨过滤（hook 内 render 期 adjust，无需 onClick 配对）。
-  const [filter, setFilter] = useState<"all" | "ended">("all");
-  const { visibleCount, expandWindow } = useHistoryRecentWindow(filter);
+  const { confirm, holder: confirmHolder } = useConfirm();
+  const {
+    filter,
+    setFilter,
+    search,
+    setSearch,
+    entries,
+    counts,
+    groups,
+    isLoading,
+    isError,
+    refetch,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    deleteEntry,
+  } = useHistoryQuery({ projectName, enabled: true });
+  const { isResuming, resume } = useResumeAgentSession(projectName);
+  // 行右键（Mac）/长按（iPad）菜单 state + 触屏长按绑定（单一容器挂载，见 JSX 尾部）。
+  const ctx = useRowContextMenu();
+  const lp = useLongPressActions(ctx.openAt);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  const focus = (sessionId: string) => {
+  // 聚焦活跃实例（中栏开窗格，设计 §4：history 点会话切 overview）。
+  const focus = (projectKey: string, sessionId: string) => {
     void navigate({
       to: "/projects/$key/session/$id",
-      params: { key: projectName, id: sessionId },
-      // 聚焦活跃实例，切回 overview tab 看活动组 output（设计 §4：history 点会话切 overview）。
+      params: { key: projectKey, id: sessionId },
       search: (prev) => ({ ...prev, tab: "overview" }),
     });
   };
 
-  const handleClick = (entry: AgentHistoryEntry) => {
+  // 行激活核心（点击/菜单「恢复」共用）：活跃 → 直接聚焦（只是切过去看）；已结束 → 弹命名框
+  //（预填历史标题，可选）→ resume 新建。命名可选（留空 = 默认 displayName），取消 = 不新建。
+  const activateEntry = (entry: AgentHistoryEntry) => {
     if (entry.hasActiveSession && entry.activeSessionId) {
-      // 已有活跃实例 → 直接聚焦，不命名（只是切过去看）。
-      focus(entry.activeSessionId);
+      const key = entry.projectName ?? projectName;
+      if (key) focus(key, entry.activeSessionId);
       return;
     }
-    // 无活跃实例 → 弹命名框（预填历史标题，可选）→ resume 新建。与新建会话同一 prompt 模式
-    //（useCreateSession），命名可选（留空 = 默认 displayName），取消 = 不新建。
     void prompt({
       cancelLabel: t("cancel"),
       confirmLabel: t("session.namePrompt.confirm"),
-      initialValue: entry.title ?? entry.firstMessage ?? "",
+      initialValue: displayTitleOf(entry),
       placeholder: t("session.namePrompt.placeholder"),
       title: t("session.namePrompt.resumeTitle"),
     }).then((name) => {
       if (name !== null) {
-        resume(entry, name);
+        resume({
+          acpSessionId: entry.acpSessionId,
+          claudeSessionId: entry.claudeSessionId,
+          displayName: name || undefined,
+          projectName: entry.projectName ?? projectName ?? undefined,
+          provider: entry.provider ?? "claude",
+        });
       }
     });
   };
 
-  // 已结束 = !hasActiveSession（活跃中的历史 = 已 resume 为活跃实例，ActiveDot 同语义）。
-  const filtered = filter === "all" ? entries : entries.filter((e) => !e.hasActiveSession);
-  const visible = filtered.slice(0, visibleCount);
-  const hiddenCount = filtered.length - visible.length;
+  // 行点击 = 长按守卫（guardClick 抑制长按后紧随的合成 click，05c pin④ 长按 = 菜单）先行。
+  const handleRowClick = (entry: AgentHistoryEntry) => {
+    if (lp.guardClick()) return;
+    activateEntry(entry);
+  };
 
-  // 05c 过滤 chips 行（原型 :42 下 8，左右 14 = .side 10 + px-1，与 seg4 基类 14 同口径；
-  // chip = 11.5px r12 p 3px 12px，on = 600 ink-1 bg-elevated3，ghost = ink-2 border
-  // sep-strong。on 态透明 border 防切换 1px 跳动。骨架期也渲染（与列表同根 flex 容器，
-  // 数据到达时无 CLS 跳动——design review）。窗口 resetKey = filter 已在 hook 调用处
-  // 绑定，onClick 只切过滤。
-  const chipsRow = (
-    <div className="flex shrink-0 gap-1.5 px-1 pb-2 pt-2" role="group">
+  // 删除（05c pin④：二次确认连历史删除，与 09c/05e 右键同族）。活跃行无此入口（服务端 409）。
+  const confirmDelete = (entry: AgentHistoryEntry) => {
+    void confirm({
+      cancelLabel: t("cancel"),
+      confirmLabel: t("workbench.historyDeleteConfirmCta"),
+      message: t("workbench.historyDeleteConfirmBody", { name: displayTitleOf(entry) }),
+      title: t("workbench.historyDeleteConfirmTitle"),
+      tone: "danger",
+    }).then((confirmed) => {
+      if (confirmed) deleteEntry(entry);
+    });
+  };
+
+  const menuItems = (entry: AgentHistoryEntry): ActionMenuItem[] => {
+    const items: ActionMenuItem[] = [
+      {
+        icon: <ShellIcon name="rotate" />,
+        label: t("workbench.historyMenuResume"),
+        onSelect: () => activateEntry(entry),
+      },
+    ];
+    if (!entry.hasActiveSession) {
+      items.push({
+        icon: <ShellIcon name="trash" />,
+        label: t("workbench.historyMenuDelete"),
+        onSelect: () => void confirmDelete(entry),
+        variant: "destructive",
+      });
+    }
+    return items;
+  };
+
+  // 滚动到底自动 +20（§4.2：首屏 20 · 滚动到底自动加载）。
+  const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (!hasNextPage || isFetchingNextPage || isError) return;
+    const el = event.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > HISTORY_LOAD_MORE_LEAD_PX) return;
+    void fetchNextPage();
+  };
+
+  // 首页不足一屏（行数少 × 大屏容器高）时 scroll 事件不会到来，entries 落定后补一次
+  // 「已到底」探测，防分页滞留（hasNextPage/isFetchingNextPage 守卫幂等）。
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || isLoading || isError || isFetchingNextPage || !hasNextPage) return;
+    if (el.scrollHeight <= el.clientHeight) void fetchNextPage();
+  }, [entries, isLoading, isError, isFetchingNextPage, hasNextPage, fetchNextPage]);
+
+  // 纯净空态（无筛选无搜索无数据无错误）→ null：左栏段落自然空态，不伪造占位（既有契约）。
+  // 有筛选/搜索时必须保住筛选段与搜索框在场，否则搜索无结果时用户无法清词。
+  if (entries.length === 0 && !isLoading && !isError && search === "" && filter === "all") {
+    return null;
+  }
+
+  // 列表底部三态（§4.2）：失败重试 / 取下页骨架 / 没有更多；还有下一页 = 静默等滚动触发。
+  const footer = isError ? (
+    <div className="flex justify-center py-2">
       <button
-        aria-pressed={filter === "all"}
-        className={`cursor-pointer rounded-xl border px-3 py-[3px] text-chip leading-[var(--line-height-ui)] ${
-          filter === "all"
-            ? "border-transparent bg-elevated3 font-semibold text-ink-1"
-            : "border-sep-strong text-ink-2"
-        }`}
-        onClick={() => setFilter("all")}
+        className="cursor-pointer text-micro text-ink-2 hover:text-ink-1"
+        onClick={() => void refetch()}
         type="button"
       >
-        {t("workbench.historyFilterAll")}
-      </button>
-      <button
-        aria-pressed={filter === "ended"}
-        className={`cursor-pointer rounded-xl border px-3 py-[3px] text-chip leading-[var(--line-height-ui)] ${
-          filter === "ended"
-            ? "border-transparent bg-elevated3 font-semibold text-ink-1"
-            : "border-sep-strong text-ink-2"
-        }`}
-        onClick={() => setFilter("ended")}
-        type="button"
-      >
-        {t("workbench.historyFilterClosed")}
+        {t("workbench.historyLoadFailed")}
       </button>
     </div>
-  );
+  ) : isFetchingNextPage ? (
+    <div className="px-3 pb-2">
+      <HistoryListSkeleton />
+    </div>
+  ) : !hasNextPage ? (
+    <div className="px-3 py-2 text-micro text-ink-3">{t("workbench.historyEndOfList")}</div>
+  ) : null;
 
-  // 加载中（首次拉取，entries 仍空）→ 骨架行占位，避免空白；真空态（!isLoading 且空）→ null
-  // （左栏段落自然空态，不伪造占位）。isLoading 区分二者，消除"加载中 = 空态"的误导。
-  // 骨架分支与正文同根 flex 容器 + chips 在场（chipsRow 提前于早退分支，防 CLS）。
-  if (entries.length === 0) {
-    if (!isLoading) return null;
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        {chipsRow}
-        <div className="px-3">
-          <HistoryListSkeleton />
-        </div>
-      </div>
-    );
-  }
+  // 当前打开右键/长按菜单的行（02c 单一容器模式：find(pointFor) 命中才挂，行外挂 →
+  // scrim 冒泡不经行；frontend-notes §4 同源考量）。
+  const menuEntry = entries.find((entry) => ctx.pointFor(rowKey(entry)) !== null) ?? null;
+
   return (
-    /* 根 flex-1（原 h-full）：作为左栏历史态 wrapper 的 flex item 占满剩余高，且允许
-       wrapper 内的兄弟节点（尾注）按内容占位——h-full 会把兄弟推出可视区。 */
+    /* 根 flex-1：作为左栏历史态 wrapper 的 flex item 占满剩余高（workbench-side 挂载点）。 */
     <div className="flex min-h-0 flex-1 flex-col">
-      {chipsRow}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {filtered.length === 0 ? (
-          <div className="px-3 py-2 text-caption text-ink-2">
-            {t("workbench.historyEndedEmpty")}
+      {/* 05c .hlist：筛选段 + 搜索 + 分组列表 + 底部三态同入滚动区（原型结构）。 */}
+      <div className="min-h-0 flex-1 overflow-y-auto" onScroll={handleScroll} ref={scrollRef}>
+        {/* 三段计数筛选（05c :59 / 04g :59 seg4 mini fseg 规格 + 段内嵌 em.n 计数；counts
+            服务端聚合，切段不重拉不闪）。桌面分段 = .seg4 单源（r10，与 scope 段同 rail 同形）；
+            移动 03n 用 .segc（r8）——两端容器各自原型形态。 */}
+        <div className="seg4 mini mx-2 mb-1 mt-3.5" role="tablist">
+          {HISTORY_FILTERS.map((f) => (
+            <span
+              aria-selected={filter === f.key}
+              className={`cursor-pointer${filter === f.key ? " on" : ""}`}
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              role="tab"
+            >
+              {t(f.labelKey)}
+              <em className="n">{counts[f.key]}</em>
+            </span>
+          ))}
+        </div>
+        {/* 搜索（05c :60 search mini 30px 变体；受控 input，防抖在管道层 use-history-query）。 */}
+        <div className="mx-2 mb-1.5 flex h-7.5 items-center gap-1.5 rounded-md bg-elevated2 px-2.5">
+          <ShellIcon aria-hidden className="size-3 flex-none text-ink-3" name="magnifyingglass" />
+          <input
+            aria-label={t("workbench.historySearchPlaceholder")}
+            className="w-full bg-transparent text-caption text-ink-1 outline-none placeholder:text-ink-3"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t("workbench.historySearchPlaceholder")}
+            type="search"
+            value={search}
+          />
+        </div>
+        {isLoading ? (
+          <div className="px-3">
+            <HistoryListSkeleton />
           </div>
+        ) : entries.length === 0 ? (
+          isError ? (
+            footer
+          ) : (
+            <div className="px-3 py-2 text-caption text-ink-2">
+              {filter === "ended" && search === ""
+                ? t("workbench.historyEndedEmpty")
+                : t("workbench.historyEmpty")}
+            </div>
+          )
         ) : (
           <>
-            {/* 不挂 animate-stagger-rows（批C review P1）：本列表按 lastActivityAt 倒序动态
-                重排（:144），WS 活动让行前移时 React insertBefore 移动 keyed DOM = CSS
-                animation 从头重播（含 backwards 填充的 opacity:0 闪烁）。stagger 只保留在
-                排序稳定的列表（instance-area createdAt / file-browser 名字序）。 */}
-            <ListGroup ariaLabel={t("workbench.historySection")}>
-              {visible.map((entry) => (
-                <HistorySessionNode
-                  active={entry.hasActiveSession && entry.activeSessionId === focusId}
-                  entry={entry}
-                  isResuming={isResuming}
-                  // id 缺失（损坏数据）退 title/firstMessage 兜底，防双空串 key 冲突
-                  //（code review P2-6）。
-                  key={entryNativeId(entry) || entry.title || entry.firstMessage || ""}
-                  onClick={() => handleClick(entry)}
-                />
-              ))}
-            </ListGroup>
-            {/* 「展开更早」（用户拍板「更久的再依次展开」，原型无此控件——形态与 chips
-                ghost 胶囊同族）。排序已在管道出口归一倒序，slice 即「最近 N」。 */}
-            {hiddenCount > 0 ? (
-              <div className="flex justify-center py-2">
-                <button
-                  className="cursor-pointer rounded-xl border border-sep-strong px-3 py-[3px] text-chip leading-[var(--line-height-ui)] text-ink-2"
-                  onClick={expandWindow}
-                  type="button"
-                >
-                  {t("workbench.historyShowEarlier")}
-                </button>
+            {groups.map((group) => (
+              <div key={group.key}>
+                {/* 五档组头（05c :63 microlabel margin 6px 6px 2px 页私值）。 */}
+                <div className="microlabel mx-1.5 mb-0.5 mt-1.5">
+                  {t(HISTORY_GROUP_LABEL_KEYS[group.key])}
+                </div>
+                <ListGroup>
+                  {group.entries.map((entry) => (
+                    <HistorySessionNode
+                      active={entry.hasActiveSession && entry.activeSessionId === focusId}
+                      entry={entry}
+                      isResuming={isResuming}
+                      key={rowKey(entry)}
+                      longPress={lp.bind(rowKey(entry))}
+                      onActivate={() => handleRowClick(entry)}
+                      onContextMenu={(event) => ctx.openAt(rowKey(entry), event)}
+                    />
+                  ))}
+                </ListGroup>
               </div>
-            ) : null}
+            ))}
+            {/* 不挂 animate-stagger-rows（frontend-notes §17）：lastActivityAt 动态排序 +
+                WS/分页追加 = insertBefore 移动 keyed DOM → CSS animation 从头重播闪烁。
+                stagger 只保留排序稳定列表（instance-area createdAt / file-browser 名字序）。 */}
+            {footer}
           </>
         )}
       </div>
+      {menuEntry ? (
+        <ActionMenu
+          contextMenuPoint={ctx.pointFor(rowKey(menuEntry))}
+          items={menuItems(menuEntry)}
+          onContextMenuClose={ctx.close}
+          trigger={<span className="hidden" />}
+        />
+      ) : null}
       {promptHolder}
+      {confirmHolder}
     </div>
   );
 }
+
+/** 触屏长按绑定包（useLongPressActions().bind(key) 的返回形态）。 */
+type HistoryLongPressBindings = ReturnType<ReturnType<typeof useLongPressActions>["bind"]>;
 
 type HistorySessionNodeProps = {
   active: boolean;
   entry: AgentHistoryEntry;
   isResuming: boolean;
-  onClick: () => void;
+  longPress: HistoryLongPressBindings;
+  onActivate: () => void;
+  onContextMenu: (event: MouseEvent) => void;
 };
 
-function HistorySessionNode({ active, entry, isResuming, onClick }: HistorySessionNodeProps) {
+function HistorySessionNode({
+  active,
+  entry,
+  isResuming,
+  longPress,
+  onActivate,
+  onContextMenu,
+}: HistorySessionNodeProps) {
   const { t } = useT();
-  const displayTitle = entry.title ?? entry.firstMessage ?? entryNativeId(entry).slice(0, 8);
   const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
+  // 全局作用域行带项目限定符（04g pin②「全部 = 跨项目列表，行带项目限定符」）：
+  // subtitle 前缀归属项目；项目作用域响应无 projectName 字段，自然退化为原形态。
   const description = isResuming
     ? t("project.historyResuming")
-    : [time, entry.fileSize > 0 ? formatBytes(entry.fileSize) : null].filter(Boolean).join(" · ");
+    : [entry.projectName, time, entry.fileSize > 0 ? formatBytes(entry.fileSize) : null]
+        .filter(Boolean)
+        .join(" · ");
   return (
     <ListRow
       marker={sessionMarker("agent", entryProvider(entry), "sm")}
       meta={entry.hasActiveSession ? ActiveDot : undefined}
       onClick={() => {
-        if (!isResuming) onClick();
+        if (!isResuming) onActivate();
       }}
+      onContextMenu={onContextMenu}
+      {...longPress}
       /* sm = 侧栏行档（.srow2.inst 13px / meta 10.5px，05c 历史行规格）——默认档 16px
          在左栏与 srow2 inst 实例试点行（13px 单源类）同栏对比明显偏大（真机反馈）。 */
       selected={active}
       size="sm"
       subtitle={description || undefined}
-      title={displayTitle}
+      title={displayTitleOf(entry)}
     />
   );
 }

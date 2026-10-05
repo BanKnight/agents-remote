@@ -7,6 +7,7 @@ import { expect, test, type Page } from "@playwright/test";
  * 属性 = 项目名）→ seg4 mini（tab Project/All，仅 project scope）→ 实例区（组头
  * `Instances · <name>` + 时钟 View session history + New session plus + srow2 inst 行）→
  * footnav 三项（All Files / Plugins / Settings，active = .on class，无 aria-current）。
+ * 时钟历史态（05c）：组头切 `Session history · <name>`，seg4 = 历史作用域切换（04g pin②）。
  *
  * 已退役断言对象（勿复活）：middle tab bar（Overview/History/Plugins 切左栏主体）、4 目的地
  * 活动栏（Projects/Workbench/Files/Plugins 按钮列）。原型 05 工作台态 footnav 0 项 active；
@@ -97,6 +98,42 @@ test("seg4 切换跟随：点 All 高亮跟随 + body 视图同步（用户复�
       .getByText(/Agent sessions|No active sessions/)
       .first(),
   ).toBeVisible();
+});
+
+test("时钟历史模式：seg4 = 历史作用域切换（04g pin②：项目段/全部段高亮跟随 + 时钟返回）", async ({
+  page,
+}) => {
+  await projectRow(page).click();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectName}`));
+
+  const clock = side(page).getByRole("button", { name: "View session history" });
+  const seg4 = side(page).getByRole("tablist", { name: "Instances" });
+  const projectTab = seg4.getByRole("tab", { name: "Project", exact: true });
+  const allTab = seg4.getByRole("tab", { name: "All", exact: true });
+
+  // 时钟切入历史态：aria-pressed 翻转 + 组头切「Session history · demo」（05c :51），
+  // seg4 高亮 = 项目段（历史默认作用域 = 本项目，workbench-side 初始 historyScope）。
+  await clock.click();
+  await expect(clock).toHaveAttribute("aria-pressed", "true");
+  await expect(side(page).getByText(`Session history · ${projectName}`)).toBeVisible();
+  await expect(projectTab).toHaveAttribute("aria-selected", "true");
+
+  // 「全部」段 = 跨项目历史作用域（04g pin②）：高亮跟随 historyScope，且不退出历史态
+  //（组头仍是 Session history——seg4 在历史态下变作用域切换，不再切 05g 实例列表）。
+  await allTab.click();
+  await expect(allTab).toHaveAttribute("aria-selected", "true");
+  await expect(projectTab).toHaveAttribute("aria-selected", "false");
+  await expect(side(page).getByText(`Session history · ${projectName}`)).toBeVisible();
+
+  // 「项目」段切回本项目历史：高亮反转回来。
+  await projectTab.click();
+  await expect(projectTab).toHaveAttribute("aria-selected", "true");
+  await expect(allTab).toHaveAttribute("aria-selected", "false");
+
+  // 再点时钟 = 返回活跃实例列表（05c back hint）：aria-pressed 复原 + 组头复原。
+  await clock.click();
+  await expect(clock).toHaveAttribute("aria-pressed", "false");
+  await expect(side(page).getByText(`Instances · ${projectName}`)).toBeVisible();
 });
 
 test("footnav 三项导航 + active .on 跟随（All Files→/files、Plugins→/plugins、Settings→leftMode）", async ({

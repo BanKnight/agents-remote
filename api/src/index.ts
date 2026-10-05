@@ -37,6 +37,8 @@ import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
 import { ProjectGitWriteError, ProjectGitWriteService } from "./project-git-write";
 import { ProjectWikiError, ProjectWikiService } from "./project-wiki";
 import { ProjectService, ProjectServiceError } from "./projects";
+import { listAgentHistory, paginateAgentHistory, parseHistoryFilter } from "./agent-history";
+import { listOmpHistory } from "./omp-history";
 import { resolveProjectPath } from "./project-paths";
 import { readFile, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
@@ -544,6 +546,16 @@ export const createFetchHandler =
       if (overviewResponse) {
         return withRefresh(overviewResponse);
       }
+      const globalHistoryResponse = await handleGlobalAgentHistory(
+        request,
+        url,
+        options.projectsRoot,
+        options.projectService,
+        options.sessionRegistry,
+      );
+      if (globalHistoryResponse) {
+        return withRefresh(globalHistoryResponse);
+      }
     }
 
     if (options.projectPagesService) {
@@ -608,6 +620,46 @@ const handleOverview = async (
   }
 
   return undefined;
+};
+
+// GET /api/agent-history（v1.5 批5 全局作用域，iPad/Mac「全部」段）：跨项目历史统一列表——
+// 枚举全部项目逐个 claude+omp 两路合流（预填 projectName 作行限定符），再统一分页。
+// 单项目 fs 错误跳过（resolve/list 抛错 → 空条目），不拖垮全局列表。
+const handleGlobalAgentHistory = async (
+  request: Request,
+  url: URL,
+  projectsRoot: string | undefined,
+  projectService: ProjectService,
+  sessionRegistry: SessionRegistry,
+): Promise<Response | undefined> => {
+  if (!projectsRoot || url.pathname !== "/api/agent-history" || request.method !== "GET") {
+    return undefined;
+  }
+  const projectNames = await projectService.listProjectNames();
+  const perProject = await Promise.all(
+    projectNames.map(async (name) => {
+      try {
+        const project = await resolveProjectPath(projectsRoot, name);
+        const [claudeActiveMap, acpActiveMap] = await Promise.all([
+          sessionRegistry.getActiveClaudeSessionMap(name),
+          sessionRegistry.getActiveAcpSessionMap(name),
+        ]);
+        const [claudeEntries, ompEntries] = await Promise.all([
+          listAgentHistory(project.path, claudeActiveMap, "all"),
+          listOmpHistory(project.path, acpActiveMap, "all"),
+        ]);
+        return [...claudeEntries, ...ompEntries].map((e) => ({ ...e, projectName: name }));
+      } catch {
+        return [];
+      }
+    }),
+  );
+  const response = paginateAgentHistory(perProject.flat(), {
+    filter: parseHistoryFilter(url.searchParams.get("filter")),
+    search: url.searchParams.get("search") ?? "",
+    cursor: url.searchParams.get("cursor") ?? "",
+  });
+  return Response.json(response);
 };
 
 const handleProjects = async (

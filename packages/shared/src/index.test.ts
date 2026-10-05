@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import {
+  agentHistoryGroupKey,
+  AGENT_HISTORY_GROUP_ORDER,
   CLAUDE_MODEL_TIERS,
   COMPACT_BOUNDARY_SUBTYPES,
   EFFORT_LEVELS,
@@ -294,4 +296,29 @@ test("Settings DTOs describe claude presets and runtime defaults", () => {
 test("EFFORT_LEVELS and CLAUDE_MODEL_TIERS enumerate all variants", () => {
   expect(EFFORT_LEVELS).toEqual(["low", "medium", "high", "xhigh", "max"]);
   expect(CLAUDE_MODEL_TIERS).toEqual(["default", "opus", "sonnet", "haiku"]);
+});
+
+test("agentHistoryGroupKey 五档分组边界（v1.5 批5）", () => {
+  const now = new Date("2026-10-06T15:00:00");
+  const iso = (d: Date) => d.toISOString();
+  const dayMs = 86_400_000;
+  // 今天：本地日历日内（含今天 00:00 整）
+  expect(agentHistoryGroupKey(iso(new Date(2026, 9, 6, 0, 0)), now)).toBe("today");
+  expect(agentHistoryGroupKey(iso(new Date(2026, 9, 6, 14, 59)), now)).toBe("today");
+  // 昨天：今天 00:00 之前 ≥0、<24h
+  expect(agentHistoryGroupKey(iso(new Date(2026, 9, 5, 23, 59)), now)).toBe("yesterday");
+  expect(agentHistoryGroupKey(iso(new Date(2026, 9, 5, 0, 0)), now)).toBe("yesterday");
+  // 7 天内：早于昨日 00:00 且 ≤7d（昨天 14:59 这类 now-24h 时刻属「昨天」日历日，不算 week）
+  expect(agentHistoryGroupKey(iso(new Date(2026, 9, 4, 23, 59)), now)).toBe("week");
+  expect(agentHistoryGroupKey(iso(new Date(now.getTime() - 7 * dayMs)), now)).toBe("week");
+  // 30 天内：>7d 且 ≤30d
+  expect(agentHistoryGroupKey(iso(new Date(now.getTime() - 7 * dayMs - 1)), now)).toBe("month");
+  expect(agentHistoryGroupKey(iso(new Date(now.getTime() - 30 * dayMs)), now)).toBe("month");
+  // 更早
+  expect(agentHistoryGroupKey(iso(new Date(now.getTime() - 30 * dayMs - 1)), now)).toBe("earlier");
+  // 兜底：null / 非法 ISO
+  expect(agentHistoryGroupKey(null, now)).toBe("earlier");
+  expect(agentHistoryGroupKey("not-a-date", now)).toBe("earlier");
+  // 组头渲染顺序固定
+  expect(AGENT_HISTORY_GROUP_ORDER).toEqual(["today", "yesterday", "week", "month", "earlier"]);
 });

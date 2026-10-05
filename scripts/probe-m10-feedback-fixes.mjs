@@ -290,9 +290,9 @@ async function setupMocks(page) {
     }),
   );
   // agent-history（G3/G4）：延迟 400ms 返回 1 条（加载窗口内可断言加载骨架）。
-  // range 口径（2026-09-30 真机反馈）：移动历史 sheet 与桌面第五批②统一 "all"（旧 "week"
-  // 只拉近 7 天窗口）；mock 随实现同口径。
-  await page.route(/\/api\/projects\/proj1\/agent-history\?range=all$/, async (r) => {
+  // v1.5 批5 规模化契约：filter/search/cursor 查询 + counts 聚合 + nextCursor 游标
+  // （ListAgentHistoryResponse 全形；range 口径已退役）。
+  await page.route(/\/api\/projects\/proj1\/agent-history(?:\?.*)?$/, async (r) => {
     await new Promise((res) => setTimeout(res, 400));
     return r.fulfill({
       status: 200,
@@ -311,6 +311,9 @@ async function setupMocks(page) {
             activeSessionId: "agent_a",
           },
         ],
+        counts: { all: 1, active: 1, ended: 0 },
+        nextCursor: null,
+        filter: "all",
       }),
     });
   });

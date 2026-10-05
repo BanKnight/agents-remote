@@ -1,16 +1,15 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
-  AgentHistoryRange,
   CloseAgentSessionResponse,
   CloseTerminalSessionResponse,
   CreateAgentSessionRequest,
   CreateAgentSessionResponse,
   CreateTerminalSessionRequest,
   CreateTerminalSessionResponse,
+  DeleteAgentHistoryResponse,
   EffortLevel,
   ListAgentSessionsResponse,
-  ListAgentHistoryResponse,
   ListTerminalSessionsResponse,
   AgentSessionDetailResponse,
   TerminalSessionDetailResponse,
@@ -20,7 +19,14 @@ import type {
   UpdateAutoRetryRequest,
   UpdateAutoRetryResponse,
 } from "@agents-remote/shared";
-import { listAgentHistory, getLastAssistantMessage, projectToSlug } from "./agent-history";
+import {
+  deleteAgentHistoryEntry,
+  getLastAssistantMessage,
+  listAgentHistory,
+  paginateAgentHistory,
+  parseHistoryFilter,
+  projectToSlug,
+} from "./agent-history";
 import { listOmpHistory } from "./omp-history";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
@@ -39,9 +45,18 @@ export const handleSessionRoutes = async (
   settingsStore?: SettingsStore,
 ) => {
   const historyMatch = matchAgentHistoryRoute(url.pathname);
+  if (historyMatch && request.method === "DELETE" && historyMatch.sessionId) {
+    const project = await resolveProjectPath(projectsRoot, historyMatch.projectName);
+    return handleDeleteAgentHistory(
+      project,
+      registry,
+      historyMatch.sessionId,
+      url.searchParams.get("provider"),
+    );
+  }
   if (historyMatch && request.method === "GET") {
     try {
-      const range = parseHistoryRange(url.searchParams.get("range"));
+      const filter = parseHistoryFilter(url.searchParams.get("filter"));
       const project = await resolveProjectPath(projectsRoot, historyMatch.projectName);
       // 两路历史（claude JSONL + omp JSONL）合流，按 lastActivityAt 统一降序——前端历史 tab
       // 是单一列表，provider 只影响 marker 图标与 resume 分流（不分组、不分区）。
@@ -50,15 +65,15 @@ export const handleSessionRoutes = async (
         registry.getActiveAcpSessionMap(project.name),
       ]);
       const [claudeEntries, ompEntries] = await Promise.all([
-        listAgentHistory(project.path, claudeActiveMap, range),
-        listOmpHistory(project.path, acpActiveMap, range),
+        listAgentHistory(project.path, claudeActiveMap, "all"),
+        listOmpHistory(project.path, acpActiveMap, "all"),
       ]);
-      const entries = [...claudeEntries, ...ompEntries].sort((a, b) =>
-        (b.lastActivityAt ?? b.startedAt ?? "").localeCompare(
-          a.lastActivityAt ?? a.startedAt ?? "",
-        ),
-      );
-      const response: ListAgentHistoryResponse = { entries, range };
+      const entries = [...claudeEntries, ...ompEntries];
+      const response = paginateAgentHistory(entries, {
+        filter,
+        search: url.searchParams.get("search") ?? "",
+        cursor: url.searchParams.get("cursor") ?? "",
+      });
       return Response.json(response);
     } catch (error) {
       if (error instanceof ProjectPathError) {
@@ -335,22 +350,53 @@ const handleTerminalSessionRoute = async (
   return undefined;
 };
 
-const HISTORY_RANGES: readonly AgentHistoryRange[] = ["week", "biweekly", "all"];
-
-/** 解析 ?range= 查询参数：白名单校验，缺省/非法 → "week"（默认近期，避免大项目全量扫描慢）。 */
-const parseHistoryRange = (value: string | null): AgentHistoryRange =>
-  value && (HISTORY_RANGES as readonly string[]).includes(value)
-    ? (value as AgentHistoryRange)
-    : "week";
-
 const matchAgentHistoryRoute = (pathname: string) => {
   const segments = pathname.split("/").filter(Boolean);
-  if (segments.length !== 4) return undefined;
-  if (segments[0] !== "api" || segments[1] !== "projects" || segments[3] !== "agent-history") {
+  if (
+    segments[0] !== "api" ||
+    segments[1] !== "projects" ||
+    segments[3] !== "agent-history" ||
+    (segments.length !== 4 && segments.length !== 5)
+  ) {
     return undefined;
   }
   const projectName = decodePathSegment(segments[2]);
-  return projectName ? { projectName } : undefined;
+  if (!projectName) return undefined;
+  // 5 段 = 删除单条（/agent-history/<sessionId>）；4 段 = 列表查询。
+  const sessionId = segments.length === 5 ? decodePathSegment(segments[4]) : undefined;
+  if (segments.length === 5 && !sessionId) return undefined;
+  return { projectName, sessionId };
+};
+
+/**
+ * v1.5 批5 删除历史会话。hasActiveSession 的服务端拒绝：活跃实例挂载的会话不可删（UI 隐藏入口，
+ * 服务端仍守边界——防竞态/直连）。判据 = 该 sessionId 在 claude/omp activeMap 中。
+ */
+const handleDeleteAgentHistory = async (
+  project: { name: string; path: string },
+  registry: SessionRegistry,
+  sessionId: string,
+  providerParam: string | null,
+) => {
+  const provider = providerParam === "omp" ? "omp" : "claude";
+  const [claudeActive, ompActive] = await Promise.all([
+    registry.getActiveClaudeSessionMap(project.name),
+    registry.getActiveAcpSessionMap(project.name),
+  ]);
+  const activeMap = provider === "claude" ? claudeActive : ompActive;
+  if (activeMap.has(sessionId)) {
+    return jsonError("SESSION_HISTORY_ACTIVE", "Active session history cannot be deleted", 409);
+  }
+  try {
+    await deleteAgentHistoryEntry(project.path, sessionId, provider);
+  } catch (error) {
+    return jsonError(
+      "SESSION_HISTORY_INVALID_ID",
+      error instanceof Error ? error.message : "Invalid session id",
+      400,
+    );
+  }
+  return Response.json({ ok: true } satisfies DeleteAgentHistoryResponse);
 };
 
 const matchSessionRoute = (pathname: string) => {

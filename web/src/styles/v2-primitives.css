@@ -746,6 +746,12 @@
     line-height: var(--line-height-ui);
     border-radius: 6px;
   }
+  /* seg4 段内嵌计数（05c :59 .fseg .cnt 桌面专属形态：10px / ml 3px，无 on 提亮——
+     移动 03n 的 .segc em.n 形态（10.5px/ml1/on 提亮）不混用。design review P1-1。 */
+  .seg4 em.n {
+    font-size: 10px;
+    margin-left: 3px;
+  }
 
   /* ---- 桌面 Sidebar / 中栏 / 输出 ---- */
   .icn {
@@ -2415,6 +2421,8 @@
     color: var(--ink-2);
     text-align: center;
     line-height: 1.6;
+    /* i18n 文案含 \n 两行（原型 Binary 页两行说明），默认 normal 折叠成一行。 */
+    white-space: pre-line;
   }
   /* wiki 阅读标签 .fmeta 右端动作钮（wiki-reader 页私规格收编：tint-purple 底 + pin 色，
      sparkles 前缀 + 12.5px）。 */
@@ -2794,6 +2802,59 @@
     line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
+  /* 03n 时间分组组头（v1.5 批5 规模化：今天/昨天/7 天内/30 天内/更早，随数据出现）——
+     原型页私 .gh（workspace-session-history :22）收编单源。 */
+  .gh {
+    font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-3);
+    letter-spacing: 0.3px;
+    padding-top: 8px;
+  }
+  /* 03n 列表尾态（加载中/没有更多）——独立类不蹭组头 .gh 语义（design review P2-3）。 */
+  .hend {
+    font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-3);
+    letter-spacing: 0.3px;
+  }
+  /* 03n 左滑删除（v1.5 批5）：del 钮垫底、行体 .hbody 滑出露出（行体不透明底遮盖 rest 态；
+     overflow hidden 防位移体撑出 sheet 横向滚动）。原型页私 .hrow.swipe/.del
+    （workspace-session-history :24-25）收编；横滑/竖滚触达分配 = 消费方 touch-pan-y
+     utility（横滑归手势、竖滚交浏览器），吸附过渡时长读 --duration-exit。 */
+  .hrow.swipe {
+    position: relative;
+    overflow: hidden;
+  }
+  .hrow.swipe .hbody {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: var(--bg-elevated);
+    transition: transform var(--duration-exit, 150ms);
+  }
+  .hrow.swipe .del {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 600;
+    background: var(--tint-red);
+    /* 左滑删除文字 = danger 主色（iOS 惯例红字红 tint 底；原 03n 页私 --c-danger-text
+       为悬空引用，全仓无定义——原型自身 bug 不照抄。design review P1-2。） */
+    color: var(--c-danger);
+  }
 
   /* 11 审批中心（M5-b sheet） */
   .cnt {
@@ -2997,6 +3058,21 @@
     /* 触区扩（role=button 可达性）：负 margin 抵消 padding，视觉零变化、命中区扩到 ~22px。 */
     padding: 8px 6px;
     margin: -8px -6px;
+  }
+  /* 03n 段内计数（v1.5 批5 规模化：全部/进行中/已结束 段内嵌服务端聚合计数）——计数小一号
+     弱色，选中段随 .on 提亮。原型页私 .segc em.n（workspace-session-history :16-17）收编。 */
+  .segc em.n {
+    flex: none;
+    font-style: normal;
+    font-size: 10.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 400;
+    color: var(--ink-3);
+    margin-left: 1px;
+  }
+  .segc .on em.n {
+    color: var(--ink-2);
   }
 
   /* 09 分组小标题（组名 · N + .r 右侧动作） */

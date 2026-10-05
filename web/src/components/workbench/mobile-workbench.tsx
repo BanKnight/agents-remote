@@ -14,7 +14,7 @@ import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import type { GitDiffScope } from "@agents-remote/shared";
 import { listProjectFiles, listProjectGitBranches } from "../../api/client";
-import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
+import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { AddMenu } from "../files/add-menu";
 import { NewItemSheet } from "../files/new-item-sheet";
 import { enqueueUploads } from "../files/upload-queue";
@@ -328,15 +328,18 @@ function MobileFileFocus({ path }: { path: string }) {
           </span>
         ) : (
           <>
-            <button
-              aria-label={t("files.edit")}
-              className="ic cursor-pointer"
-              disabled={preview.data?.type !== "text"}
-              onClick={() => setEditing(true)}
-              type="button"
-            >
-              <ShellIcon name="edit" />
-            </button>
+            {/* pencil 条件渲染（原型 §4.5「编辑钮仅在类型可编辑时出现」）：image/unsupported
+            nav 右端只有 ⋯——与桌面 FileTabStripActions 同模式。 */}
+            {preview.data?.type === "text" ? (
+              <button
+                aria-label={t("files.edit")}
+                className="ic cursor-pointer"
+                onClick={() => setEditing(true)}
+                type="button"
+              >
+                <ShellIcon name="edit" />
+              </button>
+            ) : null}
             <FilePreviewNavMenu path={relPath} projectName={fp} queryScope="file-nav" />
           </>
         )}
@@ -744,6 +747,10 @@ function MobileProjectWorkbench({
     panelVisible && activeFilePath !== null ? activeFilePath : null,
     "files",
   );
+  // wikiread ⋯ 菜单数据源（wiki-reader 原型 pin②「复制内容」= 页面正文；与 L3WikiReader 同
+  // queryKey dedupe 零额外网络）。panelVisible gate 与 panelPreview 同语义（面板未开不拉）。
+  const activeWikiSlug = panelVisible ? (activeWikiReadTab?.slug ?? null) : null;
+  const activeWikiPage = useWikiPage(scope.key, activeWikiSlug, WIKI_QUERY_SCOPE);
   // ✕ 关标签：仅 file/wikiread 标签可关（三基础标签不可关）；关激活标签回文件树首标签。
   const closePanelTab = (id: string) => {
     setPanelTabsMap((prev) => {
@@ -1068,8 +1075,9 @@ function MobileProjectWorkbench({
         }
       : null;
 
-  // 面板 nav 右端动作（v1.5 批3，03o/03s 原型）：file 标签 = [pencil(text)][⋯]（编辑态
-  // pencil 退役仅 ⋯——emeta fact 承担放弃/完成）；wikiread = ⋯ 复制链接；三基础标签无动作。
+  // 面板 nav 右端动作（v1.5 批3，03o/03s 原型）：file 标签 = [pencil(text 条件渲染)][⋯]（编辑态
+  // pencil 退役仅 ⋯——emeta fact 承担放弃/完成）；wikiread = ⋯ 复制内容/查看 diff（原型
+  // pin②，wiki 复审 P1-2 对齐）；三基础标签无动作。
   const panelNavActions = (() => {
     if (!panelVisible) return undefined;
     if (activeFileTab) {
@@ -1077,11 +1085,11 @@ function MobileProjectWorkbench({
       const { path: relPath } = splitFilePath(activeFileTab.path);
       return (
         <div className="flex items-center gap-1">
-          {editing ? null : (
+          {/* pencil 条件渲染（同 MobileFileFocus——text 才出现，image/unsupported 只有 ⋯）。 */}
+          {editing || panelPreview.data?.type !== "text" ? null : (
             <button
               aria-label={t("files.edit")}
               className="ic cursor-pointer"
-              disabled={panelPreview.data?.type !== "text"}
               onClick={() => setEditingFileTabId(activeFileTab.id)}
               type="button"
             >
@@ -1098,17 +1106,30 @@ function MobileProjectWorkbench({
       );
     }
     if (activeWikiReadTab) {
-      const link = `${window.location.origin}/projects/${encodeURIComponent(scope.key)}/wiki/${encodeURIComponent(activeWikiReadTab.slug)}`;
+      // wiki-reader 原型 pin②：⋯ = 复制内容 / 查看 diff（wiki 在 Git 内）。复制内容 = 页面
+      // 正文（page 未热时 disabled 防 copy 空）；查看 diff = 源文件 wiki/{slug}.md 走现有
+      // 面板 file diff 管道（from "file" → back = 文件名，与 file 标签同款）。
       return (
         <ActionMenu
           align="end"
           cancelLabel={t("cancel")}
           items={[
             {
-              label: t("wiki.copyLink"),
+              label: t("files.menuCopyContent"),
+              disabled: !activeWikiPage.data,
               onSelect: () => {
-                void navigator.clipboard.writeText(link);
+                const body = activeWikiPage.data?.body;
+                if (body !== undefined) void navigator.clipboard.writeText(body);
               },
+            },
+            {
+              label: t("git.menuViewDiff"),
+              onSelect: () =>
+                setPanelDiff({
+                  path: `wiki/${activeWikiReadTab.slug}.md`,
+                  scope: "worktree",
+                  from: "file",
+                }),
             },
           ]}
           trigger={
@@ -1265,7 +1286,7 @@ function MobileProjectWorkbench({
   useEffect(() => {
     setL3FileEditing(false);
   }, [effectiveFocusId]);
-  // l3Transient file 的预览数据（pencil disabled gate；与 Pane 同 queryKey dedupe）。
+  // l3Transient file 的预览数据（pencil 可见性 gate——text 条件渲染；与 Pane 同 queryKey dedupe）。
   const l3FileTabRef = focusRef?.kind === "file" ? focusRef : null;
   const l3FilePath = l3FileTabRef ? splitFilePath(l3FileTabRef.path).path : null;
   const l3FilePreview = useFilePreview(
@@ -1327,15 +1348,17 @@ function MobileProjectWorkbench({
           </span>
         ) : (
           <>
-            <button
-              aria-label={t("files.edit")}
-              className="ic cursor-pointer"
-              disabled={l3FilePreview.data?.type !== "text"}
-              onClick={() => setL3FileEditing(true)}
-              type="button"
-            >
-              <ShellIcon name="edit" />
-            </button>
+            {/* pencil 条件渲染（text 才出现，同 MobileFileFocus/panelNavActions 模式）。 */}
+            {l3FilePreview.data?.type === "text" ? (
+              <button
+                aria-label={t("files.edit")}
+                className="ic cursor-pointer"
+                onClick={() => setL3FileEditing(true)}
+                type="button"
+              >
+                <ShellIcon name="edit" />
+              </button>
+            ) : null}
             <FilePreviewNavMenu
               onViewDiff={() => onOpenGitFile(fp, "worktree", relPath)}
               path={relPath}
