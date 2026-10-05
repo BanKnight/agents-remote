@@ -1,14 +1,14 @@
-// M5-a 浮层族探针（v2 M5：03j 新建实例 / 03l 项目切换 / 03n 会话历史 / 02c pill 长按菜单）。
+// M5-a 浮层族探针（v1.5 批1 换代：▾ 实例切换菜单 / 03n 会话历史 / 03j 新建实例 / 实例信息）。
 //
 // 覆盖单测验不到的真实浏览器行为（DOM 几何硬数据，禁截图）：
-//   Part 1 03l 切换 sheet：nav 标题 ▾ 点击 → .msheet + grp 分组头/搜索/newp 行 + 点分组头
-//     关 sheet（同项目导航幂等）。
+//   Part 1 ▾ 实例切换菜单：nav 标题（= 实例名）点击 → DropdownMenu 锚定浮卡（组头「切换
+//     实例」+ 实例行状态/✓ + 钉底 ＋新建/⟲恢复历史）+ 点实例行切换导航；03l sheet 退役。
 //   Part 2 03n 会话历史 sheet：nav ⋯ →「会话历史」→ filters 三态（全部 on）+ hrow 列表 +
 //     「已结束」过滤空态。
-//   Part 3 03j 新建实例 sheet：row2 ＋ → .msheet + srow/tile 36×36 + Claude 行点击 → 命名
-//     prompt 弹窗。
-//   Part 4 02c pill 长按菜单：CDP touch 长按 pill → 坐标菜单（置顶/重命名/关闭会话三项）+
-//     合成 click 抑制（URL 不落 ?session）+ 桌面右键同菜单。
+//   Part 3 03j 新建实例 sheet：▾ 菜单钉底「＋ 新建实例…」→ .msheet + srow/tile 36×36 +
+//     Claude 行点击 → 命名 prompt 弹窗（row2 ＋ 已退役）。
+//   Part 4 ⋯ › 实例信息 → info sheet .acts 动作行（重命名/置顶/关闭三按钮；02c pill 长按
+//     菜单随 pills 退役，操作入口唯一）。
 //
 // 全 mock API（proj1 不依赖真实项目数据）；密码自读不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v2-m5-sheets.mjs
@@ -177,44 +177,62 @@ const page = await ctx.newPage();
 await setupM5Mocks(page);
 await login(page);
 
-// ── Part 1: 03l 切换 sheet ──────────────────────────────────────────────────
-console.log("Part 1: 03l 切换 sheet（nav 标题 ▾）");
+// ── Part 1: ▾ 实例切换菜单（v1.5 workspace-instance-switch，03l sheet 退役）──
+console.log("Part 1: ▾ 实例切换菜单（nav 标题 ▾ 锚定浮卡）");
 await page.goto(`${ORIGIN}/projects/${projectName}/session/agent_probe-1`);
-await page.waitForSelector(".pills .pill", { timeout: 10000 });
-// nav 标题（▾ button）点击开 sheet。标题 button 内含 .sw 指示符。
+await page.waitForSelector(".nav h1 button", { timeout: 10000 });
+// 行1 标题 = 当前实例名（非项目名）；detail/list query 就绪后标题收敛 displayName
+//（首帧回落 id 属预期瞬态）——等收敛再断言。probe-1 running → runct ●1。
+await page
+  .waitForFunction(
+    () => document.querySelector(".nav h1 button")?.textContent?.includes("Probe Agent A"),
+    undefined,
+    { timeout: 8000 },
+  )
+  .catch(() => {});
+const navTitle = await page.locator(".nav h1 button").textContent();
+ok(navTitle?.includes("Probe Agent A") === true, `标题 = 实例名（「${navTitle?.trim()}」）`);
+ok(navTitle?.includes(projectName) === false, "标题非项目名（单会话化）");
+ok(
+  (await page.locator(".nav .runct").textContent())?.includes("1") === true,
+  "runct ●1（probe-1 running）",
+);
+// 点标题 → DropdownMenu 浮卡（族A 锚定型，非 .msheet）。
 await page.locator(".nav h1 button").click();
-await page.waitForSelector(".msheet", { timeout: 5000 });
-ok(await page.locator(".msheet").isVisible(), "03l .msheet 可见");
-ok(
-  (await page.locator(".msheet .shd h2").textContent())?.includes("切换") === true,
-  "shd 标题「切换」",
-);
-const grpText = await page.locator(".msheet .grp").first().textContent();
-ok(grpText?.includes(projectName) === true, `grp 分组头含项目名（${grpText?.trim()}）`);
-ok((await page.locator(".msheet .sess").count()) === 2, "sess 行 = 2（活跃候选）");
-ok(
-  (await page.locator(".msheet .sess.on").count()) === 1,
-  "当前会话 .sess.on 高亮恰 1（agent_probe-1 聚焦）",
-);
-// 搜索过滤（编号③：match 项目名 + 会话名）。
-await page.locator(".msheet input").fill("Probe Agent B");
-await page.waitForTimeout(200);
-ok((await page.locator(".msheet .sess").count()) === 1, "搜索「Probe Agent B」过滤后 sess = 1");
-await page.locator(".msheet input").fill("");
-await page.waitForTimeout(200);
-// newp 行存在。
-ok(
-  (await page.locator(".msheet .newp").textContent())?.includes("新建 / 采用项目") === true,
-  "newp 行「新建 / 采用项目」",
-);
-// 点分组头 = 只切项目（同项目幂等）：sheet 关闭 + URL 仍在本项目。
-await page.locator(".msheet .grp").first().click();
+await page.getByRole("menuitem").first().waitFor({ timeout: 5000 });
+ok((await page.locator(".msheet").count()) === 0, "▾ 开浮卡非 sheet（03l sheet 已退役）");
+// 组头「切换实例」+ 实例行（图标 + 名 + 状态文案 + 当前行 ✓）。
+const grpText = await page.evaluate(() => {
+  const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+  return menu?.querySelector("div")?.textContent ?? "";
+});
+ok(grpText.includes("切换实例") === true, `组头「切换实例」（「${grpText.trim()}」）`);
+ok((await page.getByRole("menuitem", { name: /Probe Agent A/ }).count()) === 1, "实例行 A 在");
+ok((await page.getByRole("menuitem", { name: /Probe Agent B/ }).count()) === 1, "实例行 B 在");
+const rowA = page.getByRole("menuitem", { name: /Probe Agent A/ });
+ok((await rowA.textContent())?.includes("运行中") === true, "实例行含状态文案（运行中）");
+ok((await rowA.locator("svg").count()) >= 1, "实例行类型图标在");
+const ckCount = await page.evaluate(() => {
+  const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+  return [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])].filter((el) =>
+    el.textContent?.includes("✓"),
+  ).length;
+});
+ok(ckCount === 1, `当前行 ✓ 恰 1（agent_probe-1 聚焦；实际 ${ckCount}）`);
+// 钉底两行动作。
+const pinNew = page.getByRole("menuitem", { name: /新建实例/ });
+const pinResume = page.getByRole("menuitem", { name: /恢复历史会话/ });
+ok((await pinNew.count()) === 1, "钉底「＋ 新建实例…」");
+ok((await pinResume.count()) === 1, "钉底「⟲ 恢复历史会话…」");
+// 点实例行 B → 导航切换（保活层语义由 probe-mobile-project-header 覆盖）。
+await page.getByRole("menuitem", { name: /Probe Agent B/ }).click();
+await page.waitForURL(/session\/agent_probe-2/, { timeout: 8000 });
+ok(true, "点实例行 B → URL 切至 agent_probe-2");
 await page.waitForTimeout(400);
-ok((await page.locator(".msheet").count()) === 0, "点分组头后 sheet 关闭");
-ok(
-  page.url().includes(`/projects/${projectName}`),
-  `URL 仍在本项目（${page.url().split("/").pop()}）`,
-);
+// 菜单已关、标题跟随。
+ok((await page.getByRole("menuitem").count()) === 0, "选择后菜单关闭");
+const title2 = await page.locator(".nav h1 button").textContent();
+ok(title2?.includes("Probe Agent B") === true, `标题跟随切换（「${title2?.trim()}」）`);
 
 // ── Part 2: 03n 会话历史 sheet ──────────────────────────────────────────────
 console.log("Part 2: 03n 会话历史 sheet（nav ⋯ 菜单）");
@@ -323,8 +341,9 @@ await page.waitForTimeout(400);
 ok((await page.locator(".msheet").count()) === 0, "Esc 关闭 03n");
 
 // ── Part 3: 03j 新建实例 sheet ──────────────────────────────────────────────
-console.log("Part 3: 03j 新建实例 sheet（row2 ＋）");
-await page.locator('button[aria-label="新建会话"]').click();
+console.log("Part 3: 03j 新建实例 sheet（▾ 菜单钉底「＋ 新建实例…」，row2 ＋ 已退役）");
+await page.locator(".nav h1 button").click();
+await page.getByRole("menuitem", { name: /新建实例/ }).click();
 await page.waitForSelector(".msheet", { timeout: 5000 });
 ok(await page.locator(".msheet").isVisible(), "03j .msheet 可见");
 ok(
@@ -358,41 +377,39 @@ ok(
 await page.getByRole("button", { name: "取消" }).click();
 await page.waitForTimeout(300);
 
-// ── Part 4: 02c pill 长按菜单 ───────────────────────────────────────────────
-console.log("Part 4: 02c pill 长按菜单（touch 长按 + 右键）");
+// ── Part 4: ⋯ › 实例信息 sheet（v1.5：pill 长按菜单退役，操作收进 info .acts footer）──
+console.log("Part 4: ⋯ 菜单「实例信息」→ info sheet .acts 动作行（重命名/置顶/关闭）");
 await page.goto(`${ORIGIN}/projects/${projectName}/session/agent_probe-1`);
-await page.waitForSelector(".pills .pill", { timeout: 10000 });
-const pill = page.locator(".pills .pill", { hasText: "Probe Agent A" }).first();
-const pb = await pill.boundingBox();
-ok(pb !== null, "pill 可定位");
-// CDP touch 长按 700ms（> LONG_PRESS_MS=500）。
+await page.waitForSelector(".nav h1 button", { timeout: 10000 });
 const cdp = await ctx.newCDPSession(page);
-await cdp.send("Input.dispatchTouchEvent", {
-  type: "touchStart",
-  touchPoints: [{ x: pb.x + pb.width / 2, y: pb.y + pb.height / 2, force: 1 }],
+await page.locator('button[aria-label="更多操作"]').click();
+await page.getByRole("menuitem", { name: "实例信息" }).click();
+await page.waitForSelector('.msheet .shd h2:has-text("实例信息")', { timeout: 5000 });
+ok(true, "⋯ → 实例信息 → info sheet 打开");
+// .acts footer 三按钮（useInstanceRowActions 单源装配：置顶仅 agent；关闭 = destructive 红）。
+// 定位收窄到 info sheet dialog（菜单 sheet exit 动画期双 .msheet 共存窗口，Part 2 同款）。
+const actsText = await page.getByRole("dialog", { name: "实例信息" }).evaluate((el) => {
+  const footer = [...el.querySelectorAll("div")].find((d) =>
+    [...d.querySelectorAll("button")].some((b) => b.textContent?.includes("重命名")),
+  );
+  return footer
+    ? [...footer.querySelectorAll("button")].map((b) => ({
+        label: b.textContent?.trim(),
+        color: getComputedStyle(b).color,
+      }))
+    : [];
 });
-await page.waitForTimeout(700);
-await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-await page.waitForTimeout(300);
-ok(await page.getByRole("menuitem", { name: "重命名" }).isVisible(), "长按 pill → 菜单「重命名」");
-ok(await page.getByRole("menuitem", { name: "置顶" }).isVisible(), "菜单「置顶」");
+ok(actsText.length === 3, `.acts 三按钮（重命名/置顶/关闭；实际 ${actsText.length}）`);
+ok(actsText.some((b) => b.label?.includes("置顶")) === true, "置顶按钮在（agent 实例）");
+const closeBtn = actsText.find((b) => b.label?.includes("关闭"));
 ok(
-  await page.getByRole("menuitem", { name: "关闭会话…" }).isVisible(),
-  "菜单「关闭会话」（destructive）",
+  (closeBtn?.color ?? "") !== "" && (closeBtn?.color ?? "") !== "rgb(0, 0, 0)",
+  `关闭按钮有 destructive 着色（color=${closeBtn?.color}）`,
 );
-ok(
-  !page.url().includes("session=agent_probe-2") || page.url().includes("session=agent_probe-1"),
-  "长按未误触导航（URL 保持聚焦 agent_probe-1）",
-);
-// 关菜单（Esc）→ 右键同菜单（02c 编号⑤：桌面右键同三项）。
+// sheet 关闭（Esc）→ 无残留。
 await page.keyboard.press("Escape");
-await page.waitForTimeout(300);
-await pill.click({ button: "right" });
-await page.waitForTimeout(300);
-ok(await page.getByRole("menuitem", { name: "重命名" }).isVisible(), "右键 →「重命名」");
-ok(await page.getByRole("menuitem", { name: "置顶" }).isVisible(), "右键 →「置顶」");
-await page.keyboard.press("Escape");
-await page.waitForTimeout(200);
+await page.waitForTimeout(400);
+ok((await page.locator(".msheet").count()) === 0, "Esc 关闭实例信息 sheet");
 
 // ── Part 5: 下拉收起手势（touch 拖拽跟手 + dismiss 从松手位置滑出，不回弹） ────
 // 覆盖用户反馈回归两轮：①拖拽期跟手（CDP touch 序列逐步断言 transform = 位移）；
@@ -400,8 +417,10 @@ await page.waitForTimeout(200);
 // 消失」）——修复后 exit keyframes 无 from、起点 = 当前 inline 位置，松手后 rect.top
 // 保持在拖拽位置附近并继续增大（滑出），最终卸载且重开无 inline 残留。
 console.log("Part 5: 下拉收起（touch 拖拽跟手 + >96px 松手 → 从松手位置滑出不回弹）");
-await page.locator(".nav h1 button").click();
-await page.waitForSelector(".msheet", { timeout: 5000 });
+// v1.5 批1：▾ 开 DropdownMenu 浮卡（非 sheet）——手势测的通用 .msheet 改走 ⋯ › 会话历史。
+await page.locator('button[aria-label="更多操作"]').click();
+await page.getByRole("menuitem", { name: "会话历史" }).click();
+await page.waitForSelector('.msheet .shd h2:has-text("会话历史")', { timeout: 5000 });
 await page.waitForTimeout(300); // 等 enter 动画（slide-in-from-bottom-4 200ms）播完再取基准。
 const baseTop = await page
   .locator(".msheet")
@@ -464,8 +483,9 @@ ok(
 await page.waitForTimeout(500);
 ok((await page.locator(".msheet").count()) === 0, "拖拽 dismiss 后 sheet 卸载（消费方关闭完成）");
 // 重开无 inline 残留：Radix Portal 重挂载为全新 DOM，top 回原位、无 inline transform。
-await page.locator(".nav h1 button").click();
-await page.waitForSelector(".msheet", { timeout: 5000 });
+await page.locator('button[aria-label="更多操作"]').click();
+await page.getByRole("menuitem", { name: "会话历史" }).click();
+await page.waitForSelector('.msheet .shd h2:has-text("会话历史")', { timeout: 5000 });
 await page.waitForTimeout(300);
 const reopen = await page
   .locator(".msheet")

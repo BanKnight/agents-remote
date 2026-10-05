@@ -247,9 +247,10 @@ test.describe("ACP mobile create entry", () => {
     });
 
     await page.goto(`/projects/${projectName}`);
-    // v2 M5-a：row2 ＋ 与 03h 空态卡 CTA 均打开 03j 新建实例 sheet（srow 富行，取代 ActionMenu
-    // 菜单形态）——omp 行文案 =「＋ omp」（sheet 行是 button 非 menuitem）。
-    const createButton = page.getByRole("button", { name: "New session" }).first();
+    // v1.5 批1：row2 ＋ 退役——空态项目走 03h 空态卡 CTA 打开 03j 新建实例 sheet（▾ 菜单
+    // 钉底「＋ 新建实例」为有实例时的入口，本用例 sessions=[] 渲染空态卡）——omp 行文案
+    // =「＋ omp」（sheet 行是 button 非 menuitem）。
+    const createButton = page.locator(".empty-cta").first();
     await expect(createButton).toBeVisible({ timeout: 15_000 });
     await createButton.click();
     await expect(page.getByRole("button", { name: "＋ omp" })).toBeVisible();

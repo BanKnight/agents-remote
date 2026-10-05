@@ -1,6 +1,4 @@
 import { expect, test } from "bun:test";
-import { createStore } from "jotai";
-import { selectAtom } from "jotai/utils";
 import {
   EMPTY_WORKBENCH_LAYOUT,
   EMPTY_WORKBENCH_LAYOUT_V2,
@@ -44,7 +42,6 @@ import {
   toggleLeafMaximize,
   validateLayoutV3,
   validateWorkbenchSearch,
-  workbenchOutputCollapsedAtom,
   workbenchPath,
 } from "./workbench-model";
 
@@ -1062,28 +1059,4 @@ test("normalizeRef: 已退役 pluginmcp ref / 残缺 session ref → null（存�
   expect(normalizeRef(pluginmcp)).toBeNull();
   const broken = { kind: "session" } as unknown as Parameters<typeof normalizeRef>[0];
   expect(normalizeRef(broken)).toBeNull();
-});
-
-test("workbenchOutputCollapsedAtom: Record 按会话 scoping + selectAtom 派生隔离（03b）", () => {
-  // 桌面多面板各挂一份 VirtualizedThreadContent（hidden 保活），全局单值 atom 会跨面板
-  // 串扰（A 收敛带动 B 渲染 mini）。Record 按 sessionId 分桶：selectAtom 派生只在自身
-  // key 变化时不同，幂等写保证同值不换引用（selectAtom 无谓重渲）。卸载复位是消费侧
-  // effect 职责，此处只测 atom 语义。
-  const store = createStore();
-  const a = selectAtom(workbenchOutputCollapsedAtom, (m) => m["s1"] === true);
-  const b = selectAtom(workbenchOutputCollapsedAtom, (m) => m["s2"] === true);
-  expect(store.get(a)).toBe(false);
-  expect(store.get(b)).toBe(false);
-  // 写 A 的 key：A 变 true，B 保持 false（隔离）。
-  store.set(workbenchOutputCollapsedAtom, { s1: true });
-  expect(store.get(a)).toBe(true);
-  expect(store.get(b)).toBe(false);
-  // 幂等写：同值写回同引用（写侧 `(prev) => prev[key] === next ? prev : {...}` 契约）。
-  const prev = store.get(workbenchOutputCollapsedAtom);
-  store.set(workbenchOutputCollapsedAtom, (p) => (p["s1"] ? p : { ...p, s1: true }));
-  expect(store.get(workbenchOutputCollapsedAtom)).toBe(prev);
-  // 卸载复位只清本 key（消费侧 effect 语义：`prev[sessionId] ? {...prev, [sessionId]: false} : prev`）。
-  store.set(workbenchOutputCollapsedAtom, (p) => (p["s1"] ? { ...p, s1: false } : p));
-  expect(store.get(a)).toBe(false);
-  expect(store.get(b)).toBe(false);
 });

@@ -1453,6 +1453,16 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **批 0（本节，设计包换代）**：docs/design/ 旧 74 页 html 全部退役 → 落 v1.5 全部 124 文件；index.md 重写 v1.5 表述；frontend.md / verification.md / design-reviewer.md / CLAUDE.md 版本引用 v1.3→v1.5、页数→116。批 1–8 待实施。
 
+**批 1（单会话化）**：移动项目工作台换代 v1.5 行1 导航（spec §4.1-1/§4.2）。
+- **行1（44px 唯一常驻行）** = `.back`「项目」（‹ = 项目 Tab 根）+ 标题 = **当前实例名**（skill tab 聚焦 = tab 名；空态 = 项目名）+ `runct ●n` 运行微标（9px `--c-success-text`，n = 项目 running 实例数）+ `▾` + 右端 [面板][⋯]。**行2（pills+＋+ticon）退役**；`MobileProjectHeader` 全量重写，`InstanceSwitchMenu`（DropdownMenu 族A 锚定浮卡）= 组头「切换实例」+ 活跃实例列表（类型图标+名+状态点文案+当前行 ✓，max-h 200px 定高滚动）+ 钉底「＋ 新建实例…」「⟲ 恢复历史会话…」；空态菜单仅新建（spec §4.1-1）。
+- **⋯ 菜单** = [实例信息（原 ℹ 钮入口合并），会话历史]；`MobileFocusActions` 组件退役、`useInstanceInfoActions` + acts footer（重命名/置顶/关闭）逻辑上移 `MobileProjectWorkbench` 装配（hooks 恒调用，sessionType gate 零网络；holders 顶层提升对齐 2026-08-17 先例）；pill 长按菜单（02c）随 pills 退役——实例操作入口唯一（info .acts）。
+- **标题名派生链**：活跃列表名（深链/刷新 detail 未热时即刻有名，▾ 菜单同源 query）→ detail（历史恢复会话）→ `instanceNameMemoAtom` sidecar → id 兜底；runct 由 instances reduce 派生。探针实测曾暴露「detail 未热标题显 id」，列表名优先修复。
+- **迷你条（03b）全链退役**（spec §4.1-3）：`workbenchOutputCollapsedAtom` + `OutputMiniBar` + onScroll 收敛判定删除，回底职能由既有回底浮球（showScrollButton）承担；`.mini` 恒不渲染写入探针防回归。
+- **恢复语义记档（spec §8 规则1）**：恢复历史会话 = resume agent 历史（壳常驻自动续，非 fork）；runtime `--resume` 已有，本批零改动，▾ 菜单「⟲ 恢复历史会话」直通既有 03n 历史 sheet。
+- **Diverge 记档**：①skill tab 聚焦行为保持（点击已聚焦 skill 退工具的 selectTab 兜底逻辑随 pills 入口删除而移除，skill tab 仍可从工具态进入）；②global scope（MobileFocusBody）本批不动（v1.5 无规格）；③`MobileProjectSwitchSheet`（03l）保留但已无入口（▾ 开浮卡非 sheet）——自然消亡路径批 2 处理；④原 03b 探针（perf）Part 3/4 改写为回底浮球断言。
+- **探针**：probe-mobile-project-header 全量重写（行1 几何/runct/▾ 菜单开合与列表滚动/钉底动作/退役元素恒不渲染/检视面板语境/back 回项目列表，34 断言）；probe-v2-m5-sheets Part 1/3/4/5 换代（▾ 菜单/钉底新建/实例信息 .acts/手势入口改历史 sheet，60 断言）；probe-mobile-workbench-states pill 断言改标题断言（22 断言）；probe-claude-detail-perf mini 段改回底浮球（移动+桌面，16 断言）。全部全绿。
+- **design review 消化（P1×1 + P2×9，无 P0）**：P1 = terminal 类型图标 `terminal`（裸 `>_`）→ **`square-terminal`**（原型 `.tic` = rect+`>_`，与桌面侧栏/历史行/空态卡同 registry，spec §6.2 单源；图形色 `--c-success`；build-icons 白名单 `terminal` 条目回退）。P2 修复 7 项：⋯ 菜单顺序对齐原型（会话历史在前、实例信息在后）；▾ caret 两态（观察 ink-2 10px / 菜单开 `group-data-[state=open]` 激活态主色 700 12px——workspace.html vs workspace-instance-switch.html:12）；实例行状态列 run 态 `success-text` 600（原型 `.st.run`）；当前行 `aria-current="true"`（✓ 保留作视觉）；⋯ trigger 热区 `after:-inset-2` 扩展（§7 触屏可达，v1.5 起 ⋯ 是历史+实例信息唯一入口）；死面清理 = i18n 死键 ×3（`menuInstanceInfo` 新增未消费 / `expandTools`·`projectTools` 随 OutputMiniBar·row2 退役成孤儿）+ `.mini` 死 CSS 段（v2-primitives，components.css 1:1 恢复）+ info-sheet 注释换代；lint 复跑抓到 workbench-model.test.ts 孤儿 import（删测试块遗留）已清。Diverge 记档 2 项：①空态 ▾ 菜单列表区灰行（现渲染 projectName）改「暂无活跃实例」类提示 defer——原型无空态菜单锚、spec 只约束「仅新建」，留真机反馈定夺；②⋯ 在移动端走 ActionMenu 底部 sheet、原型为锚定浮卡 = 既有视口分流机制（§7「不改」），待 ActionMenu 支持移动锚定浮卡时统一，非本批回归。复验：门禁全绿（lint 0 warning / typecheck / test 723）+ CSS 硬闸 + tokens strict 0 违例 + 四探针复跑全绿（34/60/22/16）+ 全套 e2e 26/26。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

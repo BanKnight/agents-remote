@@ -41,6 +41,7 @@ import {
   type WorkbenchMode,
   type WorkbenchMiddleTab,
   inferSessionTypeFromId,
+  instanceNameMemoAtom,
   panelFileTab,
   parseFileTabId,
   parseGitCommitFocusId,
@@ -70,7 +71,6 @@ import {
   type CreateSessionApi,
   AutoRetryHeaderButton,
   PanelRouter,
-  type ProjectInstanceEntry,
   useCloseSession,
   useInstanceInfoActions,
   useProjectInstances,
@@ -102,7 +102,6 @@ import {
   MobileSessionHistorySheet,
 } from "./mobile-sheets";
 import { useAgentDetail, useRenameSession, useTerminalDetail } from "./instance-area";
-import type { ActionMenuItem } from "../ui/action-menu";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { useMeasuredBottomNav } from "../shell/shell-layout";
 
@@ -130,8 +129,6 @@ type MobileWorkbenchProps = {
    * 无 focus）渲染 MobileChatOverview（mode tab + 搜索/新建/列表）。仅 global scope 有意义。
    */
   mode?: WorkbenchMode;
-  /** tab 点选 = setActiveTabInLeaf + navigate focus（WorkbenchContent 注入）。 */
-  onSelectTab: (leafId: string, tabId: string) => void;
   /** git 变更点文件 → 开 git diff tab + focus（WorkbenchContent 注入）。 */
   onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
   /** 关闭实例（confirm → close API → 删 tab，WorkbenchContent 注入）。 */
@@ -161,7 +158,6 @@ export function MobileWorkbench({
   pluginView,
   mode,
   onOpenGitFile,
-  onSelectTab,
   scope,
   tool,
 }: MobileWorkbenchProps) {
@@ -207,7 +203,6 @@ export function MobileWorkbench({
           createPromptHolder={createPromptHolder}
           focusId={focusId}
           onOpenGitFile={onOpenGitFile}
-          onSelectTab={onSelectTab}
           scope={scope}
           tool={tool}
         />
@@ -588,7 +583,6 @@ type MobileProjectWorkbenchProps = {
   /** 项目工具原位（v2 M3-b：?tab 维度 files/git/wiki）。v1.4 批2 起仅作 URL 兼容入口
    *（渲染期映射为检视面板 open+激活标签）。 */
   tool?: WorkbenchMiddleTab;
-  onSelectTab: (leafId: string, tabId: string) => void;
   onOpenGitFile: (projectName: string, scope: "worktree" | "staged", path: string) => void;
   closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
   create: CreateSessionApi;
@@ -628,7 +622,6 @@ function MobileProjectWorkbench({
   createPromptHolder,
   focusId,
   onOpenGitFile,
-  onSelectTab,
   scope,
   tool,
 }: MobileProjectWorkbenchProps) {
@@ -1049,41 +1042,82 @@ function MobileProjectWorkbench({
     queryKey: ["projects", scope.key, "git", "branches"],
     queryFn: () => listProjectGitBranches(scope.key),
   });
-  // M5-a 浮层（03j/03l/03n/08）：row2 ＋ 新建实例、nav 标题 ▾ 项目切换、nav ⋯ 菜单会话历史、
-  // 切换 sheet 内新建项目。
+  // M5-a 浮层（03j/03n/08）：▾ 菜单新建实例、⋯ 菜单会话历史、切换 sheet 内新建项目。
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [switchSheetOpen, setSwitchSheetOpen] = useState(false);
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
   const createProjectDialog = useCreateProjectDialog();
-  // 02c pill 长按/右键菜单（置顶/重命名/关闭）= useInstanceRowActions 单源装配（与
-  // MobileFocusActions .acts 行同 hook）。
+  // v1.5 批1（spec §4.2）：实例操作全量收进实例信息面板动作行（⋯ › 实例信息 → 03k .acts
+  // footer：重命名/置顶/关闭）——02c pill 长按菜单随 pills 退役，入口唯一。
   const rowActions = useInstanceRowActions(closeInstance);
-  const pillMenuItems = (entry: ProjectInstanceEntry): ActionMenuItem[] => {
-    const a = rowActions.build(
-      {
-        kind: "session",
-        projectName: entry.session.projectName,
-        sessionId: entry.session.id,
-      },
-      entry.type,
-    );
-    return [
-      ...(a.pin
-        ? [{ label: a.pin.label, icon: <ShellIcon name="pin" />, onSelect: a.pin.run }]
-        : []),
-      {
-        label: a.rename.label,
-        icon: <ShellIcon name="edit" />,
-        onSelect: () => a.rename.run(entry.session.displayName),
-      },
-      {
-        label: a.close.label,
-        icon: <ShellIcon name="close" />,
-        onSelect: a.close.run,
-        variant: "destructive" as const,
-      },
-    ];
+  // .acts footer 按钮样式（03k 动作行规格；原 MobileFocusActions actClass 随组件删除上移）。
+  const actClass = "cursor-pointer text-subhead font-semibold";
+  // 聚焦实例 detail（行1 标题 + 实例信息装配源）：detail query 与 PanelRouter 同 key，React
+  // Query dedupe 零额外网络。hooks 恒调用，enabled 随 sessionType gate（非聚焦 session 时
+  // 零网络）。
+  const focusSessionType = inferSessionTypeFromId(effectiveFocusId ?? "");
+  const focusPanelRef: SessionPanelRef = {
+    kind: "session",
+    projectName: scope.key,
+    sessionId: effectiveFocusId ?? "",
   };
+  const focusAgentDetail = useAgentDetail(focusPanelRef, focusSessionType === "agent");
+  const focusTerminalDetail = useTerminalDetail(focusPanelRef, focusSessionType === "terminal");
+  // 标题/动作行当前名派生：detail（历史恢复会话不在活跃列表）→ 活跃列表（▾ 菜单同源，
+  // 深链/刷新 detail 未热时即刻有名）→ sidecar 记忆。
+  const focusListName =
+    instances.find((e) => e.session.id === effectiveFocusId)?.session.displayName ?? "";
+  const focusDisplayName =
+    focusListName ||
+    (focusAgentDetail.data?.session.displayName ??
+      focusTerminalDetail.data?.session.displayName ??
+      "");
+  // 实例信息 .acts footer（03k 动作行：重命名/置顶/关闭，button 行形态留给 info-sheet 装配）。
+  const a = rowActions.build(focusPanelRef, focusSessionType ?? "terminal");
+  const focusActs =
+    effectiveFocusId && focusSessionType ? (
+      <div className="flex items-center justify-between border-t border-sep-row pb-1 pt-3.5">
+        <button
+          className={`${actClass} text-primary`}
+          onClick={() => a.rename.run(focusDisplayName)}
+          type="button"
+        >
+          {a.rename.label}
+        </button>
+        {a.pin ? (
+          <button className={`${actClass} text-pin`} onClick={a.pin.run} type="button">
+            {a.pin.label}
+          </button>
+        ) : null}
+        <button className={`${actClass} text-error`} onClick={a.close.run} type="button">
+          {a.close.label}
+        </button>
+      </div>
+    ) : null;
+  const focusInfo = useInstanceInfoActions(
+    focusPanelRef,
+    focusSessionType,
+    scope.key,
+    "sheet",
+    focusActs,
+  );
+  // 行1 标题与 runct 徽标（spec §4.1-1）：标题 = 当前聚焦对象名（skill tab 名 / 实例名；
+  // detail 未热时 instanceNameMemo sidecar 兜底防 id 闪现——tab 首帧同款语义），无聚焦对象
+  // = 项目名（空态标题即项目名，▾ 菜单内仅新建）。runct ●n = 项目运行中实例数。
+  const runningCount = useMemo(
+    () => instances.reduce((n, e) => n + (e.session.status === "running" ? 1 : 0), 0),
+    [instances],
+  );
+  const instanceNameMemo = useAtomValue(instanceNameMemoAtom);
+  const headerTitle =
+    focusRef?.kind === "skill"
+      ? (skillTabs.find((st) => st.tabId === effectiveFocusId)?.name ?? scope.key)
+      : focusSessionType
+        ? focusDisplayName ||
+          instanceNameMemo[effectiveFocusId ?? ""]?.name ||
+          effectiveFocusId ||
+          scope.key
+        : scope.key;
   // L3 nav 装配（03q/03r/03u/03t/03v/03s）。l3Route 优先；file/git focus 由保活层 ref 派生。
   const l3WikiMeta =
     l3Route?.kind === "wiki"
@@ -1275,49 +1309,35 @@ function MobileProjectWorkbench({
         key={scope.key}
       >
         <MobileProjectHeader
-          activeTabId={effectiveFocusId}
-          create={create}
-          focusActions={
-            effectiveFocusId && focusRef?.kind === "session" ? (
-              <MobileFocusActions
-                closeInstance={closeInstance}
-                focusId={effectiveFocusId}
-                projectName={scope.key}
-              />
-            ) : undefined
-          }
+          focusId={focusRef?.kind === "session" ? effectiveFocusId : undefined}
           instances={instances}
           onCreateInstance={() => setCreateSheetOpen(true)}
-          pillMenuItems={pillMenuItems}
           moreMenu={
             <ActionMenu
               align="end"
               cancelLabel={t("cancel")}
               items={[
-                // M10 用户反馈③：关实例收进 ⋯ 菜单（nav 右上回归原型 ℹ+⋯ 两图标）。
-                ...(effectiveFocusId && focusRef?.kind === "session"
-                  ? [
-                      {
-                        label: t("workbench.pillCloseSession"),
-                        icon: <ShellIcon name="close" />,
-                        onSelect: () =>
-                          closeInstance(
-                            focusRef.sessionId,
-                            inferSessionTypeFromId(effectiveFocusId) ?? "terminal",
-                          ),
-                      },
-                    ]
-                  : []),
+                // v1.5 批1（workspace-more-menu）：⋯ = 会话历史 + 实例信息（原型顺序：历史在前）
+                // ——ℹ 钮入口合并进菜单（MobileFocusActions 退役）；关实例收进实例信息 .acts footer。
                 {
                   label: t("workbench.menuHistory"),
                   icon: <ShellIcon name="restore" />,
                   onSelect: () => setHistorySheetOpen(true),
                 },
+                ...(effectiveFocusId && focusRef?.kind === "session"
+                  ? [
+                      {
+                        label: t("session.instanceInfo.title"),
+                        icon: <ShellIcon name="info" />,
+                        onSelect: focusInfo.openInfo,
+                      },
+                    ]
+                  : []),
               ]}
               trigger={
                 <button
                   aria-label={t("workbench.moreActions")}
-                  className="ic cursor-pointer"
+                  className="ic relative cursor-pointer after:absolute after:-inset-2 after:content-['']"
                   type="button"
                 >
                   <ShellIcon name="ellipsis" />
@@ -1325,24 +1345,15 @@ function MobileProjectWorkbench({
               }
             />
           }
-          onSwitchProjects={() => setSwitchSheetOpen(true)}
           onBack={() => {
             void navigate({ to: "/projects" });
           }}
           onSelectInstance={focusInstance}
-          onSelectTab={(leafId, tabId) => {
-            // skill pill 显式退工具：点当前已 focus 的 skill 时 focusId 不变导航无-op，
-            // effect 兜不到，需显式退；点其他 pill 时 onSelectTab 的 focus 导航一次完成
-            //（search 已无 tab 维度），不再连环双 push。
-            if (activeTool && tabId === effectiveFocusId) {
-              handleToolChange(null);
-              return;
-            }
-            onSelectTab(leafId, tabId);
-          }}
+          onOpenHistory={() => setHistorySheetOpen(true)}
           onOpenPanel={openInspectionPanel}
           projectName={scope.key}
-          skillTabs={skillTabs}
+          runningCount={runningCount}
+          title={headerTitle}
           l3={headerL3}
         />
         {/* 检视面板（v1.4 03o/03ob）：常驻挂载零销毁，开合 = translate/visibility。工具 chip
@@ -1483,6 +1494,12 @@ function MobileProjectWorkbench({
       {/* 02c pill 菜单「重命名」的命名 prompt holder（useInstanceRowActions 内
         useRenameSession 自带，portal 渲染）。 */}
       {rowActions.renameHolder}
+      {/* v1.5 批1：实例信息链 holders（⋯ › 实例信息 → info sheet + auto-retry 编辑器 +
+        runtime 对话框；原 MobileFocusActions 内渲染，组件退役后上移顶层常驻——portal
+        渲染位置无谓，对齐 2026-08-17 holders 提升先例）。 */}
+      {focusInfo.holder}
+      {focusInfo.autoRetryEditorHolder}
+      {focusInfo.runtimeDialogHolder}
       {/* M5-a 浮层（portal 渲染，位置无谓，随 holders 常驻顶层）：03j 新建实例 / 03l 切换 /
         03n 历史 / 08 新建项目（03l newp 行入口）。 */}
       {createProjectDialog.dialog}
@@ -1643,73 +1660,6 @@ function useInstanceRowActions(
       };
     },
   };
-}
-
-/** 项目聚焦态 tab trailing：ℹ 图标（03 原型 nav 右上两图标之一；M10 用户反馈③：✕ 关实例已收进
- * ⋯ moreMenu）。info sheet 对齐 03k：.acts 操作行（重命名/置顶/关闭会话）由本组件装配为 footer
- *（useInstanceRowActions 单源装配；sheet 关闭由 info-sheet footer 委托）；displayName
- * 自取 detail（与装配层同 query key，React Query dedupe 零额外网络）。 */
-function MobileFocusActions({
-  closeInstance,
-  focusId,
-  projectName,
-}: {
-  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
-  focusId: string;
-  projectName: string;
-}) {
-  const { t } = useT();
-  const sessionType = inferSessionTypeFromId(focusId);
-  const panelRef: SessionPanelRef = { kind: "session", projectName, sessionId: focusId };
-  const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
-  const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
-  const displayName =
-    agentDetail.data?.session.displayName ?? terminalDetail.data?.session.displayName ?? "";
-  const rowActions = useInstanceRowActions(closeInstance);
-  const a = rowActions.build(panelRef, sessionType ?? "terminal");
-  const actClass = "cursor-pointer text-subhead font-semibold";
-  const acts = (
-    <div className="flex items-center justify-between border-t border-sep-row pb-1 pt-3.5">
-      <button
-        className={`${actClass} text-primary`}
-        onClick={() => a.rename.run(displayName)}
-        type="button"
-      >
-        {a.rename.label}
-      </button>
-      {a.pin ? (
-        <button className={`${actClass} text-pin`} onClick={a.pin.run} type="button">
-          {a.pin.label}
-        </button>
-      ) : null}
-      <button className={`${actClass} text-error`} onClick={a.close.run} type="button">
-        {a.close.label}
-      </button>
-    </div>
-  );
-  const {
-    openInfo,
-    holder: infoHolder,
-    autoRetryEditorHolder,
-    runtimeDialogHolder,
-  } = useInstanceInfoActions(panelRef, sessionType, projectName, "sheet", acts);
-  return (
-    <>
-      <button
-        aria-label={t("session.instanceInfo.title")}
-        className="ic cursor-pointer touch:h-9 touch:w-9"
-        onClick={openInfo}
-        type="button"
-      >
-        <ShellIcon name="info" />
-      </button>
-      {/* info sheet holder + rename prompt holder（useInstanceRowActions 自带，portal 渲染）。 */}
-      {infoHolder}
-      {rowActions.renameHolder}
-      {autoRetryEditorHolder}
-      {runtimeDialogHolder}
-    </>
-  );
 }
 
 /**

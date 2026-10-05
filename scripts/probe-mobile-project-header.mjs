@@ -1,15 +1,12 @@
-// 移动项目工作台三行头部探针（v2 M3-b，对标 03-workspace-agent.html + v2-primitives.css）。
-// 自 probe-mobile-tab-strip.mjs 迁移（MobileTabStrip/drawer 已删，v2 = MobileProjectHeader）：
-//   保活纪律（2026-08-17「全保活 + 聚焦过即可」）：聚焦过即可 + 切 pill 面板不卸载（WS 不断）
-//   row2 ＋ 新建 → 新 pill 激活（自 drawer 总览段新建迁移，v2 新建入口 = row2 ＋）
-//   auto-scroll：激活 pill 滚入横滚区视野
-// 新增三行几何断言（DOM 硬数据，禁截图）：
-//   nav 行 .back「项目」主色 15px + ::before 箭头 + .nv-t 17px/600
-//   row2 .pill h30/r15 + .plus 20×20 主色 + .sep 1×18 + 检视面板单 ticon svg 19×19（v1.4 批2：
-//   工具 ticon ×3 退役为面板入口，文件树/Git/Wiki 收进 InspectionPanel）
-//   chips 行整体退役（agent ✦/AutoRetry chip v1.4 批1 删；terminal tmux chip 2026-09-28
-//   真机反馈删——静态无切换能力；.chip 恒不渲染断言）
-//   Part 6 面板语境（v1.4 批2）：检视 ticon 开面板 → 面板覆盖 row2 → ‹ 工作台 关面板 → 点 pill
+// 移动项目工作台行1 导航探针（v1.5 批1 单会话化，对标 workspace.html / workspace-instance-
+// switch.html；v2 M3-b 旧三行头部探针随行2 退役全面改写）。
+//   保活纪律（2026-08-17「全保活 + 聚焦过即可」）：▾ 菜单切实例不卸载（WS 不断）
+//   行1（44px 唯一常驻行）：.back「项目」主色 15px + ::before 箭头 + .nv-t 标题 = 实例名
+//     17/600 + runct ●n（running 实例数）+ 右端 [面板][⋯]
+//   ▾ 实例切换菜单（DropdownMenu 锚定浮卡）：组头 + 实例行 + ✓ + 钉底 ＋新建/⟲恢复历史
+//   ⋯ 菜单 = 会话历史 + 实例信息（info sheet .acts footer 三按钮 = 唯一操作入口）
+//   退役断言：row2/pills/chips/＋/mini 恒不渲染（防回归）
+//   Part 6 检视面板语境：行1 面板钮开面板 → 面板覆盖行1 → ‹ 工作台 关面板 → ▾ 切实例
 //
 // 密码自读（config.yaml → api environ），不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-mobile-project-header.mjs
@@ -51,7 +48,7 @@ const SESSIONS = {
     projectName: "proj1",
     provider: "claude",
     displayName: "Probe Agent A",
-    status: "idle",
+    status: "running",
     createdAt: "2026-07-26T00:00:00.000Z",
   },
   "agent_probe-2": {
@@ -86,8 +83,16 @@ const SESSIONS = {
     status: "idle",
     createdAt: "2026-07-26T00:00:00.000Z",
   },
+  "agent_probe-6": {
+    id: "agent_probe-6",
+    projectName: "proj1",
+    provider: "claude",
+    displayName: "Probe Agent F",
+    status: "idle",
+    createdAt: "2026-07-26T00:00:00.000Z",
+  },
 };
-// row2 ＋ 新建 mock 返回的新会话（useCreateSession onSuccess navigate 到它）。
+// ▾ 菜单钉底「＋ 新建实例」mock 返回的新会话（useCreateSession onSuccess navigate 到它）。
 const NEW_AGENT = {
   id: "agent_probe-9",
   projectName: "proj1",
@@ -97,7 +102,7 @@ const NEW_AGENT = {
   createdAt: "2026-07-26T00:00:00.000Z",
 };
 const projectName = "proj1";
-// POST 新建追加进 GET 列表（模拟服务端持久化；v2 pills 源 = instances query）。
+// POST 新建追加进 GET 列表（模拟服务端持久化；▾ 菜单列表源 = instances query）。
 const POST_ADDS = [];
 
 const MOBILE_CTX = {
@@ -119,8 +124,9 @@ function sessionDetail(session) {
 }
 
 async function setupMocks(page, { sessionIds }) {
-  // POST 新建后 GET 列表要含新会话（v2 pills 数据源 = React Query instances，invalidate 后
-  // refetch 拿的就是这里；旧 tab 带从 layout state 投影无此要求）。闭包可变列表。
+  // POST 新建后 GET 列表要要含新会话（▾ 菜单列表源 = React Query instances，invalidate 后
+  // refetch 拿的就是这里）。闭包可变列表；模块级 POST_ADDS 跨 context 复位。
+  POST_ADDS.length = 0;
   const known = sessionIds.map((id) => SESSIONS[id]);
   await page.route(/\/api\/overview$/, (r) =>
     r.fulfill({
@@ -222,17 +228,23 @@ async function waitPanelVisible(page, tabId, visible) {
     .catch(() => {});
 }
 
+/** 打开 ▾ 实例切换菜单（等 menuitem 在场）。 */
+async function openSwitchMenu(page) {
+  await page.locator(".nav h1 button").click();
+  await page.getByRole("menuitem").first().waitFor({ timeout: 5000 });
+}
+
 async function run() {
   const browser = await chromium.launch();
   try {
-    // ── context 1：保活 + row2 ＋ 新建 ─────────────────────────────────────
+    // ── context 1：保活 + ▾ 菜单切换 + 钉底新建 ─────────────────────────────
     const ctx = await browser.newContext(MOBILE_CTX);
     const page = await ctx.newPage();
     await setupMocks(page, { sessionIds: ["agent_probe-1", "agent_probe-2"] });
     await login(page);
     await seedLayout(page, ["agent_probe-1", "agent_probe-2"], "agent_probe-1");
 
-    console.log("\n===== Part 1. 保活纪律（聚焦过即可 + 切 pill 不卸载）=====");
+    console.log("\n===== Part 1. 行1 结构（标题=实例名/runct/退役元素恒不渲染）=====");
     await page.goto(`${ORIGIN}/projects/proj1/session/agent_probe-1`);
     await page.waitForSelector('[data-tab-id="agent_probe-1"]', { timeout: 8000 });
     const a0 = await panelState(page, "agent_probe-1");
@@ -241,13 +253,29 @@ async function run() {
       (await page.locator('[data-tab-id="agent_probe-2"]').count()) === 0,
       "B 未聚焦过 → 不在 DOM（不预挂载）",
     );
+    // 标题 = 实例名；probe-1 是 running → runct ●1；非项目名。
+    const navBtn = page.locator(".nav h1 button");
+    const navText = await navBtn.textContent();
+    ok(navText?.includes("Probe Agent A") === true, `标题 = 实例名（「${navText?.trim()}」）`);
+    ok(navText?.includes("proj1") === false, "标题非项目名");
+    const runctText = await page.locator(".nav .runct").textContent();
+    ok(
+      (runctText ?? "").includes("●") && (runctText ?? "").includes("1"),
+      `runct ●1（running 实例数；实际「${runctText}」）`,
+    );
+    // 退役元素恒不渲染（v1.5 批1：row2/pills/chips/mini）。
+    ok((await page.locator(".row2").count()) === 0, "row2 恒不渲染（行2 已退役）");
+    ok((await page.locator(".pills").count()) === 0, "pills 恒不渲染（实例切换入 ▾ 菜单）");
+    ok((await page.locator(".chips").count()) === 0, "chips 恒不渲染（此前已退役）");
+    ok((await page.locator("button.mini").count()) === 0, "mini 迷你条恒不渲染（03b 退役）");
     await page.evaluate(() => {
       const el = document.querySelector('[data-tab-id="agent_probe-1"]');
       if (el) el.__probe = 1;
     });
 
-    console.log("\n===== Part 2. 切 pill：A 保活 hidden + B 挂载 =====");
-    await page.locator(".pills .pill", { hasText: "Probe Agent B" }).click({ timeout: 5000 });
+    console.log("\n===== Part 2. ▾ 菜单切实例：A 保活 hidden + B 挂载 =====");
+    await openSwitchMenu(page);
+    await page.getByRole("menuitem", { name: /Probe Agent B/ }).click();
     await page.waitForURL(/\/projects\/proj1\/session\/agent_probe-2/, { timeout: 8000 });
     await waitPanelVisible(page, "agent_probe-2", true);
     const b1 = await panelState(page, "agent_probe-2");
@@ -260,13 +288,14 @@ async function run() {
     ok(marker1 === 1, "切走时 A 未重挂（__probe 保留）");
 
     console.log("\n===== Part 3. 切回 A：未重挂（WS 不断）=====");
-    await page.locator(".pills .pill", { hasText: "Probe Agent A" }).click({ timeout: 5000 });
+    await openSwitchMenu(page);
+    await page.getByRole("menuitem", { name: /Probe Agent A/ }).click();
     await page.waitForURL(/\/projects\/proj1\/session\/agent_probe-1/, { timeout: 8000 });
     await waitPanelVisible(page, "agent_probe-1", true);
     const marker2 = await page.evaluate(
       () => document.querySelector('[data-tab-id="agent_probe-1"]')?.__probe,
     );
-    ok(marker2 === 1, "切回 A 未重挂（__probe 仍在 → 切 pill 不重连）");
+    ok(marker2 === 1, "切回 A 未重挂（__probe 仍在 → 切换不重连）");
     const b2 = await panelState(page, "agent_probe-2");
     ok(b2 !== null && !b2.visible, "B 面板保持挂载（hidden 保活）");
 
@@ -280,10 +309,10 @@ async function run() {
       "reload 后 B 不在 DOM（focusedTabIds 重置只含当前激活）",
     );
 
-    console.log("\n===== Part 5. row2 ＋ 新建 → 新 pill 激活 =====");
-    await page.getByRole("button", { name: "新建会话" }).click({ timeout: 5000 });
-    // M5-a sheet 化：CTA 打开 MobileCreateInstanceSheet（heading「New instance」），不再是
-    // ActionMenu；点 sheet 内 Claude 按钮（workbench.createClaude zh/en 同「Claude」）。
+    console.log("\n===== Part 5. ▾ 钉底「＋ 新建实例」→ 新实例聚焦 =====");
+    await openSwitchMenu(page);
+    await page.getByRole("menuitem", { name: /新建实例/ }).click();
+    // M5-a sheet 化：▾ 钉底打开 MobileCreateInstanceSheet（heading「New instance」）。
     await page
       .getByRole("button", { name: /Claude/ })
       .first()
@@ -297,33 +326,36 @@ async function run() {
     await page.waitForURL(/\/projects\/proj1\/session\/agent_probe-9/, { timeout: 8000 });
     await page.waitForSelector('[data-tab-id="agent_probe-9"]', { timeout: 8000 });
     const newPanel = await panelState(page, "agent_probe-9");
-    ok(newPanel !== null && newPanel.visible, "新 tab 面板挂载且 visible");
-    const newPill = page.locator(".pills .pill", { hasText: "Probe New Agent" });
-    const newPillCls = await newPill.getAttribute("class", { timeout: 8000 });
-    ok((newPillCls ?? "").includes("on"), "新会话 pill 出现且 on（激活态）");
+    ok(newPanel !== null && newPanel.visible, "新实例面板挂载且 visible");
+    await openSwitchMenu(page);
+    ok(
+      (await page.getByRole("menuitem", { name: /Probe New Agent/ }).count()) === 1,
+      "新实例入 ▾ 菜单列表（instances query invalidate 后含新会话）",
+    );
+    await page.keyboard.press("Escape");
 
-    console.log("\n===== Part 6. 检视面板 → pill：关面板、session 面板可见（H1 行为锁）=====");
-    // 开检视面板（row2 单 ticon，v1.4 批2 IA）
-    await page.waitForSelector(".row2", { timeout: 8000 });
-    await page.locator(".row2 .ticon").first().click({ timeout: 5000 });
+    console.log("\n===== Part 6. 检视面板语境（v1.5：行1 面板钮）=====");
+    // 行1 右端 [面板] ticon 开面板（aria-label 检视面板）。
+    await page.locator('.nav button[aria-label="检视面板"]').click({ timeout: 5000 });
     await page.waitForSelector('[data-inspection-panel="open"]', { timeout: 8000 });
-    // 面板全屏覆盖：row2 的检视 ticon 被面板盖住（elementFromPoint 落面板子树）——实例切换
-    // = 关面板（‹ 工作台）→ 点 pill（面板 closed 时 pills 才可点）。
+    // 面板全屏覆盖：行1 的面板钮被面板盖住（elementFromPoint 落面板子树）——实例切换
+    // = 关面板（‹ 工作台）→ ▾ 菜单（面板 closed 时行1 才可点）。
     const panelCovers = await page.evaluate(() => {
-      const ticon = document.querySelector(".row2 .ticon");
+      const ticon = document.querySelector('.nav button[aria-label="检视面板"]');
       if (!ticon) return false;
       const r = ticon.getBoundingClientRect();
       const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
       const panel = document.querySelector('[data-inspection-panel="open"]');
       return hit !== null && panel != null && panel.contains(hit);
     });
-    ok(panelCovers, "面板 open 时覆盖 row2（检视 ticon 不可点，实例切换经面板 back）");
+    ok(panelCovers, "面板 open 时覆盖行1（面板钮不可点，实例切换经面板 back）");
     await page.locator('[data-inspection-panel="open"] .nav .back').click({ timeout: 5000 });
     await page.waitForSelector('[data-inspection-panel="closed"]', {
       state: "attached",
       timeout: 5000,
     });
-    await page.locator(".pills .pill", { hasText: "Probe Agent A" }).click({ timeout: 5000 });
+    await openSwitchMenu(page);
+    await page.getByRole("menuitem", { name: /Probe Agent A/ }).click();
     await page.waitForURL(/session\/agent_probe-1/, { timeout: 8000 });
     await page.waitForFunction(
       () => {
@@ -344,86 +376,75 @@ async function run() {
     );
     await ctx.close();
 
-    // ── context 2：auto-scroll + 三行几何 ──────────────────────────────────
-    console.log("\n===== Part 7. auto-scroll：激活 pill 滚入视野 =====");
+    // ── context 2：▾ 菜单定高滚动 + 行1 几何 ──────────────────────────────
+    console.log("\n===== Part 7. ▾ 菜单列表定高滚动（6 实例溢出）=====");
     const ctx2 = await browser.newContext(MOBILE_CTX);
     const page2 = await ctx2.newPage();
-    const ids5 = [
+    const ids6 = [
       "agent_probe-1",
       "agent_probe-2",
       "agent_probe-3",
       "agent_probe-4",
       "agent_probe-5",
+      "agent_probe-6",
     ];
-    await setupMocks(page2, { sessionIds: ids5 });
+    await setupMocks(page2, { sessionIds: ids6 });
     await login(page2);
-    await seedLayout(page2, ids5, "agent_probe-5");
+    await seedLayout(page2, ids6, "agent_probe-5");
     await page2.goto(`${ORIGIN}/projects/proj1/session/agent_probe-5`);
     await page2.waitForSelector('[data-tab-id="agent_probe-5"]', { timeout: 8000 });
-    const scrollInfo = await page2
-      .waitForFunction(
-        () => {
-          const scroller = document.querySelector(".pills");
-          if (!scroller) return null;
-          const chip = scroller.querySelector('[data-active="true"]');
-          if (!chip) return null;
-          const sr = scroller.getBoundingClientRect();
-          const cr = chip.getBoundingClientRect();
-          if (cr.left >= sr.left - 1 && cr.right <= sr.right + 1) {
-            return {
-              scrollLeft: Math.round(scroller.scrollLeft),
-              chipRange: `${Math.round(cr.left)}-${Math.round(cr.right)}`,
-              scrollerRange: `${Math.round(sr.left)}-${Math.round(sr.right)}`,
-            };
-          }
-          return null;
-        },
-        undefined,
-        { timeout: 6000 },
-      )
-      .then(() =>
-        page2.evaluate(() => {
-          const scroller = document.querySelector(".pills");
-          const chip = scroller?.querySelector('[data-active="true"]');
-          const sr = scroller?.getBoundingClientRect();
-          const cr = chip?.getBoundingClientRect();
-          return {
-            scrollLeft: Math.round(scroller?.scrollLeft ?? -1),
-            chipRange: cr ? `${Math.round(cr.left)}-${Math.round(cr.right)}` : null,
-            scrollerRange: sr ? `${Math.round(sr.left)}-${Math.round(sr.right)}` : null,
-          };
-        }),
-      )
-      .catch(() => {
-        // 超时诊断：抓 .pills 存在性 + pill 数 + active 属性，分辨「没滚」vs「没渲染」。
-        return page2.evaluate(() => ({
-          scrollLeft: Math.round(document.querySelector(".pills")?.scrollLeft ?? -1),
-          pillCount: document.querySelectorAll(".pills .pill").length,
-          activeAttr: document
-            .querySelector('.pills [data-active="true"]')
-            ?.getAttribute("data-active"),
-          pillTexts: [...document.querySelectorAll(".pills .pill")].map((p) =>
-            p.textContent.trim().slice(0, 20),
-          ),
-        }));
-      });
-    ok(
-      scrollInfo !== null && scrollInfo.scrollLeft > 0,
-      `激活 pill 触发横滚且完全在视野内（scrollLeft=${scrollInfo?.scrollLeft} pill ${scrollInfo?.chipRange} ∈ scroller ${scrollInfo?.scrollerRange}）`,
-    );
+    await openSwitchMenu(page2);
+    // 列表区 max-h 200px：5 行（每行 40px = 200px 边界）——断言 scroller 可滚且当前行（E）
+    // 滚入视野（autoFocus 在队尾）。
+    const menuScroll = await page2.evaluate(() => {
+      const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+      if (!menu) return null;
+      const list = [...menu.querySelectorAll("div")].find(
+        (d) =>
+          getComputedStyle(d).overflowY === "auto" || getComputedStyle(d).overflowY === "scroll",
+      );
+      if (!list) return null;
+      const items = [...menu.querySelectorAll('[role="menuitem"]')];
+      const current = items.find((it) => it.textContent?.includes("✓"));
+      return {
+        maxH: getComputedStyle(list).maxHeight,
+        itemsCount: items.filter(
+          (it) => !it.textContent?.includes("新建") && !it.textContent?.includes("恢复"),
+        ).length,
+        listScrollable: list.scrollHeight > list.clientHeight,
+        currentInRange:
+          current != null &&
+          (() => {
+            const lr = list.getBoundingClientRect();
+            const cr = current.getBoundingClientRect();
+            return cr.top >= lr.top - 1 && cr.bottom <= lr.bottom + 1;
+          })(),
+      };
+    });
+    ok(menuScroll !== null, "▾ 菜单列表滚动容器在");
+    ok(menuScroll?.maxH === "200px", `列表 max-h 200px 定高（实际 ${menuScroll?.maxH}）`);
+    ok(menuScroll?.itemsCount === 6, `实例行 6 条（实际 ${menuScroll?.itemsCount}）`);
+    ok(menuScroll?.listScrollable === true, "6 实例溢出 max-h 200px → 列表可滚");
+    ok(menuScroll?.currentInRange === true, "当前行（✓）在列表视野内");
+    await page2.keyboard.press("Escape");
+    await page2.waitForTimeout(300);
 
-    console.log("\n===== Part 8. 三行几何（对标 03 原型 + v2-primitives.css）=====");
+    console.log("\n===== Part 8. 行1 几何（对标 workspace.html + v2-primitives.css）=====");
     const geo = await page2.evaluate(() => {
       const px = (v) => parseFloat(v);
       const rgbStr = (el) => getComputedStyle(el).color;
       const back = document.querySelector(".nav .back");
       const navTitle = document.querySelector(".nav .nv-t");
-      const pill = document.querySelector(".pills .pill");
-      const plus = document.querySelector(".row2 .plus");
-      const sep = document.querySelector(".row2 .sep");
-      const ticons = [...document.querySelectorAll(".row2 .ticon")];
-      const chip = document.querySelector(".chips .chip");
+      const titleBtn = document.querySelector(".nav .nv-t button");
+      const panelTicon = document.querySelector('.nav button[aria-label="检视面板"]');
+      const moreBtn = document.querySelector('.nav button[aria-label="更多操作"]');
+      const runct = document.querySelector(".nav .runct");
       const rootStyle = getComputedStyle(document.documentElement);
+      const svgRect = (el) => {
+        const svg = el?.querySelector("svg");
+        const r = svg?.getBoundingClientRect();
+        return r ? `${Math.round(r.width)}x${Math.round(r.height)}` : null;
+      };
       return {
         backText: back?.textContent.trim(),
         backColor: back ? rgbStr(back) : null,
@@ -432,21 +453,13 @@ async function run() {
         navTitleFont: navTitle
           ? `${px(getComputedStyle(navTitle).fontSize)}/${getComputedStyle(navTitle).fontWeight}`
           : null,
-        pillH: pill ? Math.round(pill.getBoundingClientRect().height) : null,
-        pillR: pill ? getComputedStyle(pill).borderRadius : null,
-        plusSize: plus ? `${getComputedStyle(plus).width}x${getComputedStyle(plus).height}` : null,
-        plusColor: plus ? rgbStr(plus) : null,
-        sepSize: sep ? `${getComputedStyle(sep).width}x${getComputedStyle(sep).height}` : null,
-        ticonCount: ticons.length,
-        ticonSvg: ticons[0]
-          ? (() => {
-              const svg = ticons[0].querySelector("svg");
-              const r = svg?.getBoundingClientRect();
-              return r ? `${Math.round(r.width)}x${Math.round(r.height)}` : null;
-            })()
-          : null,
-        chipH: chip ? Math.round(chip.getBoundingClientRect().height) : null,
+        titleBtnText: titleBtn?.textContent.trim(),
+        runctFont: runct ? getComputedStyle(runct).fontSize : null,
+        runctColor: runct ? rgbStr(runct) : null,
+        panelSvg: svgRect(panelTicon),
+        morePresent: moreBtn !== null,
         primary: rootStyle.getPropertyValue("--c-primary").trim(),
+        success: rootStyle.getPropertyValue("--c-success-text").trim(),
       };
     });
     ok(
@@ -456,23 +469,21 @@ async function run() {
       `nav .back「项目」主色 15px（color=${geo.backColor}）`,
     );
     ok(geo.backArrow, "nav .back ::before 返回箭头（border 画笔）存在");
-    ok(geo.navTitleFont === "17/600", `.nv-t 项目名标题 17px/600（实际 ${geo.navTitleFont}）`);
-    ok(geo.pillH === 30 && geo.pillR === "15px", `.pill h30/r15（实际 ${geo.pillH}/${geo.pillR}）`);
+    ok(geo.navTitleFont === "17/600", `.nv-t 标题 17px/600（实际 ${geo.navTitleFont}）`);
     ok(
-      geo.plusSize === "20pxx20px" && geo.plusColor === hexToRgb(geo.primary),
-      `.plus 20×20 主色（实际 ${geo.plusSize}）`,
+      geo.titleBtnText?.includes("Probe Agent E") === true,
+      `标题 = 聚焦实例名（「${geo.titleBtnText}」）`,
     );
-    ok(geo.sepSize === "1pxx18px", `.sep 1×18（实际 ${geo.sepSize}）`);
-    ok(geo.ticonCount === 1, `row2 单检视面板 ticon（v1.4 批2 IA；实际 ${geo.ticonCount}）`);
-    ok(geo.ticonSvg === "19x19", `检视 ticon svg 19×19（实际 ${geo.ticonSvg}）`);
-    // chips 行退役语义：agent（✦ model·perm·effort + AutoRetry，v1.4 批1）与 terminal
-    // （tmux chip，2026-09-28 真机反馈）全部删除——.chip 恒不渲染。
-    ok(geo.chipH === null, `chips 行已整体退役，.chip 不渲染（实际 ${geo.chipH}）`);
+    ok(
+      geo.runctFont === "9px" && geo.runctColor === hexToRgb(geo.success),
+      `.runct 9px 绿（实际 ${geo.runctFont}）`,
+    );
+    ok(geo.panelSvg === "19x19", `面板钮 svg 19×19（实际 ${geo.panelSvg}）`);
+    ok(geo.morePresent === true, "⋯ 更多菜单钮在（data-role=nav-more）");
     await ctx2.close();
 
-    // ── Part 8：nav back ◄ 点击 → URL 回项目列表（原 probe-mobile-tabstrip-back 的 v2 等价，
-    // 该探针依赖 v1「切换侧边栏」按钮已随 §6.12k 退役删除）─────────
-    console.log("\n===== Part 8. nav back 点击 → URL 回项目列表 =====");
+    // ── Part 9：nav back ◄ 点击 → URL 回项目列表（v1.5 back = 项目 Tab 根语义）──
+    console.log("\n===== Part 9. nav back 点击 → URL 回项目列表 =====");
     const ctx3 = await browser.newContext(MOBILE_CTX);
     const page3 = await ctx3.newPage();
     await setupMocks(page3, { sessionIds: ["agent_probe-1"] });

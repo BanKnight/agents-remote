@@ -835,7 +835,6 @@ function WorkbenchContent({
         pluginView={pluginView}
         mode={mode}
         onOpenGitFile={onOpenGitFile}
-        onSelectTab={onSelectTab}
         scope={scope}
         tool={tab}
       />

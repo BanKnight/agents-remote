@@ -55,12 +55,11 @@ import {
 import { measureFrom, timed } from "../lib/perf-trace";
 import { useComposerDraft } from "../lib/composer-draft";
 import { useIsMobile } from "../lib/use-is-mobile";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { selectAtom } from "jotai/utils";
+import { useAtom } from "jotai";
 import { useConfirm } from "../components/shell/confirm-dialog";
 import { tasksExpandedAtom } from "./console-model";
 import { HtmlRenderContext } from "../components/markdown/markdown-components";
-import { useOpenRenderTab, workbenchOutputCollapsedAtom } from "./workbench-model";
+import { useOpenRenderTab } from "./workbench-model";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
 import { Dialog, DialogContent } from "../components/ui/dialog";
@@ -506,14 +505,12 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
 
                     <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                       <VirtualizedThreadContent
-                        approvalCount={pendingApprovals.length}
                         autoRetryEnabled
                         loading={loading}
                         projectName={projectName}
                         retryInfo={retryInfo}
                         scrollerApi={scrollerApiRef}
                         sessionId={sessionId}
-                        sessionName={session?.displayName}
                         offlineCap={!connected}
                         deltaEnter={deltaEnter}
                       />
@@ -3159,53 +3156,7 @@ const CHAT_SCROLL_UP_EPS = 2;
 // even when content keeps growing mid-stream.
 const CHAT_BOTTOM_THRESHOLD = 32;
 
-// 03b 滚动收敛滞回阈值（屏数）：上滚越过 1 屏收敛；回到底 0.5 屏内弹回。中间死区防
-// 折叠本身引起的布局变化（工具区高度增减 → 滚动位置漂移）来回抖动。
-const OUTPUT_COLLAPSE_SCREENS = 1;
-const OUTPUT_EXPAND_SCREENS = 0.5;
-
-/** 03b 收敛迷你条（`● 会话名 · ⚠n · ▾`）：替代完整工具区（row2/pills），子 agent 条保留
- * （03b 原型 L43-45：mini 与 .sub 并存）。 */
-function OutputMiniBar({
-  approvalCount,
-  isRunning,
-  name,
-  onExpand,
-}: {
-  approvalCount: number;
-  isRunning: boolean;
-  name?: string;
-  onExpand: () => void;
-}) {
-  const { t } = useT();
-  // aria-label 拼合可见文本（WCAG 2.5.3 label-in-name）：会话名 + ⚠n + 动作。
-  const approvalLabel =
-    approvalCount > 0 ? t("claude.approval.trayTitle", { count: approvalCount }) : "";
-  return (
-    // 原型 03b .mini 原语（v2-primitives.css）：34px 胶囊——dot 7px（run/idle 状态语言）+
-    // 会话名 12.5px/600 + ⚠n 紧凑格式 + ▾ ink-2 11px 推右。整行点击 = 弹回完整工具区。
-    // `mini` 类名同时是收敛探针（probe-claude-detail-perf）的 DOM 锚点。
-    <button
-      aria-label={`${name ?? ""}${approvalLabel ? ` · ${approvalLabel}` : ""} · ${t("claude.output.expandTools")}`}
-      className="mini mx-3 mt-2 shrink-0 cursor-pointer sm:mx-5"
-      onClick={onExpand}
-      type="button"
-    >
-      <span className={`dot ${isRunning ? "run" : "idle"}`} />
-      <span className="min-w-0 truncate">{name}</span>
-      {approvalCount > 0 ? (
-        <span className="wn flex shrink-0 items-center gap-0.5">
-          <ShellIcon aria-hidden="true" className="h-3 w-3" name="warning-triangle" />
-          {approvalCount}
-        </span>
-      ) : null}
-      <span className="ex shrink-0">▾</span>
-    </button>
-  );
-}
-
 export function VirtualizedThreadContent({
-  approvalCount = 0,
   autoRetryEnabled = false,
   loading,
   projectName = "",
@@ -3213,11 +3164,8 @@ export function VirtualizedThreadContent({
   scrollerApi,
   sessionId = "",
   offlineCap = false,
-  sessionName,
   deltaEnter,
 }: {
-  /** 待审批计数（03b 迷你条 ⚠n；与 composer 区 ApprovalTray 同源 collectPendingApprovals）。 */
-  approvalCount?: number;
   /** 服务端 auto-retry pending 轮询开关：仅 claude 会话（有 runtimeKey）开启，ACP/Chat 恒 false。 */
   autoRetryEnabled?: boolean;
   loading: boolean;
@@ -3228,8 +3176,6 @@ export function VirtualizedThreadContent({
   sessionId?: string;
   /** 03i 流内离线分隔（.cap「离线中 · 此后内容将在重连后补齐」），断线且已有内容时显示。 */
   offlineCap?: boolean;
-  /** 03b 迷你条会话名。 */
-  sessionName?: string;
   /**
    * delta 重连增量回合新增消息范围 [from, to)：turn.startIndex 落在范围内 → turn 容器
    * 挂淡入动画（仅 delta 重连批次，正常流式新 turn 不加）。null = 无 delta 回合。
@@ -3284,35 +3230,6 @@ export function VirtualizedThreadContent({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const isRunning = useAuiState((s) => s.thread.isRunning);
 
-  // ── 03b 滚动收敛（上滚超一屏折叠工具区，回底/显式动作弹回） ──────────
-  // 按会话读派生：selectAtom 只在自身 sessionId 的条目变化时重渲（桌面 hidden 保活多面板
-  // 各挂一份 VirtualizedThreadContent，全局单值会跨面板串扰）。
-  const collapsedAtom = useMemo(
-    () => selectAtom(workbenchOutputCollapsedAtom, (m) => m[sessionId] === true),
-    [sessionId],
-  );
-  const collapsed = useAtomValue(collapsedAtom);
-  const setCollapsedAtom = useSetAtom(workbenchOutputCollapsedAtom);
-  const collapsedRef = useRef(collapsed);
-  const setCollapsed = useCallback(
-    (next: boolean) => {
-      collapsedRef.current = next;
-      setCollapsedAtom((prev) =>
-        prev[sessionId] === next ? prev : { ...prev, [sessionId]: next },
-      );
-    },
-    [setCollapsedAtom, sessionId],
-  );
-  useEffect(() => {
-    collapsedRef.current = collapsed;
-  }, [collapsed]);
-  // 卸载复位：切 tab 未回底时残留 true 会误伤共用本组件的项目页 header row2。
-  useEffect(() => {
-    return () => {
-      setCollapsedAtom((prev) => (prev[sessionId] ? { ...prev, [sessionId]: false } : prev));
-    };
-  }, [setCollapsedAtom, sessionId]);
-
   const stickToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -3332,12 +3249,6 @@ export function VirtualizedThreadContent({
           stickyRef.current = false;
           setShowScrollButton(true);
         }
-        // 03b：用户主动上滚越过一屏线 → 收敛（折叠 row2/子 agent 条）。
-        // 绑定上滚方向——点 ▾ 弹回后的布局钳制滚动（向下）不会立刻再收敛。
-        if (!collapsedRef.current && el.scrollTop > el.clientHeight * OUTPUT_COLLAPSE_SCREENS) {
-          collapsedRef.current = true;
-          setCollapsed(true);
-        }
       }
       // Back near the bottom → resume following.
       if (el.scrollHeight - el.scrollTop - el.clientHeight < CHAT_BOTTOM_THRESHOLD) {
@@ -3346,20 +3257,12 @@ export function VirtualizedThreadContent({
           setShowScrollButton(false);
         }
       }
-      // 03b 滞回下沿：回到底 0.5 屏内弹回完整工具区（任意滚动方向）。
-      if (
-        collapsedRef.current &&
-        el.scrollHeight - el.scrollTop - el.clientHeight < el.clientHeight * OUTPUT_EXPAND_SCREENS
-      ) {
-        collapsedRef.current = false;
-        setCollapsed(false);
-      }
       prevScrollTopRef.current = el.scrollTop;
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     prevScrollTopRef.current = el.scrollTop;
     return () => el.removeEventListener("scroll", onScroll);
-  }, [setCollapsed]);
+  }, []);
 
   // Follow content growth while sticky (covers streaming, virtualizer
   // measurement settling, and loading→ready height changes).
@@ -3480,20 +3383,8 @@ export function VirtualizedThreadContent({
     <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden">
       {/* 03d 自动重试倒计时条：流上方（编号②位置），不随滚动（sticky 语义——瞬态、一眼可见）。
         RetryIndicator = CLI 内部 api_retry（只读倒计时）；AutoRetryBanner = 服务端 auto-retry
-        pending 状态机（可取消/立即重试，M8 §6.9 双语义厘清）。 */}
-      {collapsed ? (
-        // 03b 收敛态：迷你条替代完整工具区（row2/pills + 子 agent 条）；重试条是流瞬态
-        // 状态非工具区，保留。点 ▾ / 回底 / 回底浮球弹回。
-        <OutputMiniBar
-          approvalCount={approvalCount}
-          isRunning={isRunning}
-          name={sessionName}
-          onExpand={() => {
-            collapsedRef.current = false;
-            setCollapsed(false);
-          }}
-        />
-      ) : null}
+        pending 状态机（可取消/立即重试，M8 §6.9 双语义厘清）。v1.5 批1：03b 收敛迷你条退役
+        （spec §4.1-3）——输出流上滚回底职能由既有回底浮球（showScrollButton）承担。 */}
       <RetryIndicator retryInfo={retryInfo} />
       <AutoRetryBanner
         enabled={autoRetryEnabled && !offlineCap}

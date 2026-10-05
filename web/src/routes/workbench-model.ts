@@ -231,16 +231,6 @@ export const workbenchPanelActiveAtom = atomWithLocalOnlyStorage<Record<string, 
 export const workbenchPanelOpenAtom = atom(false);
 
 /**
- * 输出流收敛态（内存级，03b 滚动收敛），key = sessionId：会话流上滚超一屏 → row2/pills
- * 与子 agent 条折叠为单行迷你条（输出流可视高度 +17%），回底 / 点迷你条 ▾ / 点回底浮球
- * 弹回。会话页卸载清本 key（残留 true 会误伤项目页 row2——切 tab 未回底场景）。
- * Record 按会话 scoping 而非全局单值：桌面 workbench 对 tab 做 hidden 保活（多个面板同时
- * 挂载 VirtualizedThreadContent），单值会让一个面板的滚动串扰所有面板的工具区。
- * 订阅侧用 selectAtom 派生（jotai/utils），只在自身 key 值变化时重渲。
- */
-export const workbenchOutputCollapsedAtom = atom<Record<string, boolean>>({});
-
-/**
  * D13 Wiki 注入记忆（M4，03s）：项目 → session → 已注入 wiki 页列表。localStorage 持久化——
  * wiki 阅读页「让 Agent 读这篇」注入成功后写入；session 流顶引用卡（可移除）与 wiki 面板
  * refnote 反查此表呈现「已注入」状态。移除引用 = 删该 slug 条目。key 分层与文件 cwd 记忆

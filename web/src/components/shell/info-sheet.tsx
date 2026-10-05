@@ -151,7 +151,8 @@ function InfoSheetDialog({
       </dl>
       {footer ? (
         // 03k .acts 操作行语义：点击行内按钮（动作已触发）即收起 sheet——委托关闭，调用方
-        // 装配的 footer 无需感知 close（当前消费方 = MobileFocusActions 的重命名/置顶/关闭）。
+        // 装配的 footer 无需感知 close（当前消费方 = useInstanceInfoActions 装配的 .acts 动作行，
+        // v1.5 批1 起 MobileFocusActions 已退役）。
         <div
           className="mt-1.5"
           onClick={(e) => {

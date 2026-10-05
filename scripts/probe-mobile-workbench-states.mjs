@@ -250,13 +250,11 @@ async function run() {
       "无空态卡与面板同屏（reviewer #1 双渲染修复）",
     );
     ok(!/\/session\//.test(page2.url()), `URL 不写 ?session（实际 ${page2.url()}）`);
-    const pillOn = await page2.evaluate(() => {
-      const pill = [...document.querySelectorAll(".pills .pill")].find((p) =>
-        p.textContent.includes("Probe Agent B"),
-      );
-      return pill?.getAttribute("data-active") === "true";
+    const titleOn = await page2.evaluate(() => {
+      const title = document.querySelector(".nav .nv-t");
+      return title?.textContent?.includes("Probe Agent B") ?? false;
     });
-    ok(pillOn, "对应 pill 激活（data-active=true）");
+    ok(titleOn, "行1 标题 = 自动聚焦实例名（v1.5 单会话化：标题即当前实例）");
 
     console.log("\n===== Part 3. 自动聚焦回退：无 layout tab → 第一个实例 =====");
     const ctx3 = await browser.newContext(MOBILE_CTX);
@@ -354,10 +352,6 @@ async function run() {
         panelVisible: panel !== null && getComputedStyle(panel).display !== "none",
         chipText: chip?.textContent.trim(),
         emptyCard: document.querySelector(".empty-card") !== null,
-        infoBtn:
-          document.querySelector(
-            '.nav [aria-label="实例信息"], .nav [aria-label="Instance info"]',
-          ) !== null,
       };
     });
     ok(termFallback.panelVisible && !termFallback.emptyCard, "terminal 面板 visible（无双渲染）");
@@ -365,9 +359,15 @@ async function run() {
       termFallback.chipText === undefined,
       `回退态 chips 行退役不渲染（实际「${termFallback.chipText}」）`,
     );
-    // 断言跟随 M10 ③：nav 右上 = ℹ（实例信息）图标；「关闭会话」在 info sheet acts 内
-    //（原「ℹ/✕」断言过时）。
-    ok(termFallback.infoBtn, "回退态聚焦实例 ℹ（focusActions）恢复");
+    // v1.5 批1：ℹ 钮退役，实例信息入口 = ⋯ 菜单项（terminal 聚焦态同样可达）。
+    await page6.locator('.nav button[aria-label="更多操作"]').click();
+    ok(
+      await page6
+        .getByRole("menuitem", { name: "实例信息" })
+        .isVisible({ timeout: 5000 })
+        .catch(() => false),
+      "回退态聚焦实例 ⋯ 菜单含「实例信息」项（ℹ 钮退役后入口）",
+    );
     await ctx6.close();
   } finally {
     await browser.close();
