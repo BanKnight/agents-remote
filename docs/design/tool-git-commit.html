@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>tool-git-commit · 检视面板 Git 标签（提交操作 sheet）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（检视面板 Git 标签态底图 = 03m 同构；ptabs 组件在 components.css 单源） */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.gitchip{flex:none;display:flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:15px;
+      background:var(--bg-elevated);border:1px solid var(--sep);white-space:nowrap;overflow:hidden}
+.gitchip b{font-size:11.5px;font-weight:600;font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-1)}
+.gitchip span{font-size:11px;color:var(--ink-2)}
+.sect{font-size:12px;font-weight:600;color:var(--ink-2);margin:14px 0 4px}
+.frow{display:flex;align-items:center;gap:10px;padding:8px 0;font-size:12.5px;cursor:pointer}
+.frow + .frow{border-top:1px solid var(--sep-row)}
+.badge{width:22px;height:19px;border-radius:4px;display:flex;align-items:center;justify-content:center;
+       font-size:10.5px;font-weight:600;flex:none;font-family:ui-monospace,Consolas,monospace}
+.badge.M{background:var(--tint-orange);color:var(--c-warning-text)}
+.badge.A{background:var(--tint-green);color:var(--c-success-text)}
+.badge.U{background:color-mix(in srgb,var(--ink-2) 16%,transparent);color:var(--ink-2)}
+.frow .p{font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-1);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frow .ar{color:var(--ink-3)}
+.crow{display:flex;align-items:baseline;gap:8px;padding:6px 0;font-size:12.5px}
+.crow .h{font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--term-ink)}
+.crow .m{flex:1;color:var(--ink-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow .t{font-size:11px;color:var(--ink-2)}
+.cap{font-size:11px;color:var(--ink-3);text-align:center;margin-top:16px}
+.csheet{position:absolute;left:10px;right:10px;bottom:44px;background:var(--bg-elevated);border:1px solid var(--sep);
+        border-radius:20px;padding:0 16px 14px;z-index:12}
+.ch{display:flex;align-items:center;height:48px;margin:0 -16px;padding:0 16px;border-bottom:1px solid var(--sep)}
+.ch .c{font-size:14px;color:var(--c-primary);cursor:pointer}
+.ch .t{flex:1;text-align:center;font-size:15px;font-weight:700;color:var(--ink-1)}
+.crow2{display:flex;align-items:center;gap:10px;padding:8px 2px;font-size:13px;cursor:pointer}
+.crow2 + .crow2{border-top:1px solid var(--sep-row)}
+.cb{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--ink-2);flex:none;display:flex;align-items:center;justify-content:center}
+.cb.on{background:var(--c-primary);border-color:var(--c-primary)}
+.cb.on::after{content:"✓";color:var(--on-accent);font-size:12px;font-weight:700}
+.crow2 .nm{font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:12.5px;color:var(--ink-1);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmsg{margin-top:12px;min-height:58px;border-radius:10px;background:var(--bg-elevated2);padding:9px 12px;
+      font-size:13.5px;line-height:1.45;color:var(--ink-1);border:1.5px solid var(--c-primary);position:relative}
+.cmsg .caret{width:1.5px;height:15px;background:var(--c-primary);display:inline-block;vertical-align:-2px}
+.cbtn{margin-top:12px;height:40px;border-radius:20px;background:var(--c-primary);display:flex;align-items:center;
+      justify-content:center;font-size:14px;font-weight:600;color:var(--on-accent);cursor:pointer}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">工作台</span>
+      <h1>agents-web <span class="sw"></span></h1>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="ptabs" style="margin:10px 16px 0"><span class="ptab"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg>文件树</span><span class="ptab on"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg>Git<span class="x">✕</span></span><span class="ptab">Wiki</span><span class="plus" title="新建标签" style="cursor:pointer"></span></div>
+    <div class="row2">
+      <div class="pills">
+        <span class="gitchip"><b>main ↑1 ↓0</b><span>· 工作区 4 · 暂存 0</span></span>
+      </div>
+    </div>
+
+    <div class="stream" style="flex:0 auto;padding-top:6px">
+      <div class="sect">工作区改动</div>
+      <div class="frow"><span class="badge M">M</span><span class="p">src/auth/passkey.ts</span><span class="ar">›</span></div>
+      <div class="frow"><span class="badge M">M</span><span class="p">src/session.ts</span><span class="ar">›</span></div>
+      <div class="frow"><span class="badge A">A</span><span class="p">tests/passkey.test.ts</span><span class="ar">›</span></div>
+      <div class="frow"><span class="badge U">??</span><span class="p" style="color:var(--ink-2)">.env.local</span><span class="ar">›</span></div>
+
+      <div class="sect" style="margin-top:14px">最近提交</div>
+      <div class="crow"><span class="h">a3f9c21</span><span class="m">passkey migration (#42)</span><span class="t">2 小时前</span></div>
+      <div class="crow"><span class="h">7b2e884</span><span class="m">fix session leak</span><span class="t">昨天</span></div>
+      <div class="crow"><span class="h">c41d90f</span><span class="m">ci: add e2e</span><span class="t">3 天前</span></div>
+
+      <div class="gacts" style="margin-top:14px"><span>历史列表</span><span>提交…</span><span>分支</span></div>
+      <div class="cap">会话仍在后台运行</div>
+    </div>
+
+    <!-- 提交操作 sheet（浮于 Git 标签内容之上） -->
+    <div class="csheet">
+      <div class="ch"><span class="c">取消</span><span class="t" style="position:relative">提交到 main<span class="pin" style="right:-12px;top:-9px">1</span></span><span style="width:28px"></span></div>
+      <div class="crow2" style="position:relative"><span class="cb on"></span><span class="nm">src/auth/passkey.ts</span><span class="badge M">M</span><span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">2</span></div>
+      <div class="crow2"><span class="cb on"></span><span class="nm">src/session.ts</span><span class="badge M">M</span></div>
+      <div class="crow2"><span class="cb on"></span><span class="nm">tests/passkey.test.ts</span><span class="badge A">A</span></div>
+      <div class="crow2"><span class="cb"></span><span class="nm" style="color:var(--ink-2)">.env.local</span><span class="badge U">??</span></div>
+      <div class="cmsg" style="position:relative">迁移 auth 到 passkeys，移除旧 session 校验<span class="caret"></span><span class="pin" style="right:-10px;top:-9px">3</span></div>
+      <div class="cbtn" style="position:relative">提交（3 个文件）<span class="pin" style="right:-10px;top:-9px">4</span></div>
+    </div>
+
+    <div class="home" style="z-index:13"></div>
+
+    <!-- 检视面板 Git 标签态 + 提交操作 sheet；sheet 入口 = 底部操作行「提交…」，完成后返回 Git 标签（工作区清零） -->
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>提交 sheet：入口 = Git 标签底部操作行「提交…」（.gacts 主入口，03m2）；目标分支随当前分支（main）</li>
+    <li><b>②</b>变更清单勾选：M/A 默认勾选；**未跟踪（??）默认不勾**——纳入需手动勾选（防止密钥等误提交，如 .env.local）</li>
+    <li><b>③</b>提交信息必填：空信息时提交按钮禁用；点文件名 → 单文件 diff（03r）复核</li>
+    <li><b>④</b>提交 = 仅提交勾选文件：完成后工作区清零、main ↑1、提交出现在 03t 历史顶部（带 ✦ 来源者 = Agent 提交）。多端：iPad/Mac = 同款 sheet 居中（04c 形制）</li>
+  </ol>
+</div>
+
+</body></html>

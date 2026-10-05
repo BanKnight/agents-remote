@@ -1443,6 +1443,16 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **粘贴入口（2026-10-05，同日批）**：桌面粘贴图片直进附件 chips（用户需求「直接复制粘贴图片，并且可以增删已复制的」——增 = 继续粘贴或菜单加，删 = chip ×，均已存在，本批只补入口）。**对齐 pi composer 先例**（ChatSessionDetailRoute onPaste 已长期在跑）：`ComposerPrimitive.Input` 透传 onPaste，`clipboardData.items` 筛 `kind==="file"` + `type.startsWith("image/")`，有图 `preventDefault()` 交 `attachments.pick`（压图/5MiB 闸/cap 4/chip 状态机全复用）；纯文本/混合里的文本照常走默认（preventDefault 是事件级的，有图才拦）；无端分支（移动长按粘贴同效）。探针 Part7：合成 ClipboardEvent 触发同一 React handler 路径（untrusted 事件无默认插入行为，文本锚走 `defaultPrevented` 层验证「有图才拦」）——20 断言全绿。拖拽（drag & drop）与非图片文件粘贴未要求不做（文件走「＋」菜单上传入口）。
 
+## §6.14 v1.5 设计包换代（2026-10-05 起；9 批计划经 plan mode 批准，每批独立 commit + 全门禁 + 探针 + reviewer）
+
+**用户需求与拍板**：「接下来，我们来按照新的原型进行优化，文件放置在docs/agents-remote-design-v1.5.zip。本次优化策略和之前一样」（= §6.13 v1.4 换代先例全套流程）。校准补充：①「1.5版本相比目前，主要是做了很多小细节的优化，而在iphone端，隐藏了底部工作台入口，而每一个会话详情不再使用多tab方案，而仅仅是单tab就足够，从而有更多的使用空间，也因此，页面之间的导航也发生了细微变化」；②「1.5版本是全方位的整个项目的优化，别遗漏了哦」。附件语义 AskUserQuestion 拍板：**双路径并存**——小文本白名单（txt/md/csv/json/log）≤1MB 走消息级内联附件（不落库不进 Git 工作区），超限自动落 uploads/ 提及行（现有上传路径保留为超限兜底）。
+
+**调研结论（包全读 + 18 题现状调查）**：124 文件 = 116 页原型（全语义命名，§10.2 有 74 旧名→116 新名对照表）+ design_spec.md（91KB）+ tokens.json + assets×4 + gallery.manifest.json + index.html + 01-ia-flow.svg。资产层迁移面极小：tokens.json 唯一 diff = 删现状后补 `chip` token（web 零消费）；components.css +27 行新原语（`.fmeta`/`.fab` 实心主色/`.gacts`/`.segc.mini`/`.padcol`/`.crumb .cico`/浮层两族注释；`.fstat` 退役）；icons.js +`puzzlepiece`/`chevron.left`；theme.js 零 diff。实现侧引用干净（探针/e2e 对原型仅注释性引用）。
+
+**11 大变更域 → 9 批**（spec 全读结论）：①工作台 Tab 退役→三 Tab+会话页全屏+登录直达上次会话（批 2）；②单会话化：行1 = ‹项目｜实例名▾+●n 微标｜[面板][⋯]，▾=实例切换菜单、⋯=历史/实例信息、pill 长按菜单与 collapsed 迷你条退役（批 1）；③恢复 = resume agent 历史（壳常驻自动续，非 fork；runtime `--resume` 已有，语义记档）；④文件预览容器矩阵四容器×全类型（`.fmeta` 单源/pencil 编辑钮/⋯ 固定菜单/未知二进制「不支持预览」空态/FAB 实心主色/wiki 阅读迁容器，批 3 移动 + 批 4 桌面）；⑤历史规模化（三段计数筛选/服务端按名搜索/五档分组/游标分页 20+20/行删除/iPad 04g Sidebar，批 5）；⑥项目管理（行菜单/重命名影响提醒/删除 ☐ 磁盘文件+按钮文案升级，api 重命名新端点+删除语义改造，批 6）；⑦浮层两族总则 §5.0（批 8 核查）；⑧指针规范 §7.2（滚轮横滚+12px 渐隐 mask，批 8）；⑨composer 附件双路径（用户拍板，批 8）；⑩杂项（iPad 底部状态栏+Sidebar 橙行退役/终端输入默认收起/子 agent 计数条列表卡/会话类型图标统一/puzzlepiece 插件图标，批 7）；⑪图集规范 §11（gallery.manifest.json 为设计包自身法规，audit 脚本不在包内，不涉 web 实现）。已知 spec 内部残留不一致（正文未清洗）：§2 IA 图仍四 Tab、§6.1「Tab Bar ×4」、§4.5「行2 面板入口钮」旧残留——实现以最末定案为准（三 Tab/行1）。
+
+**批 0（本节，设计包换代）**：docs/design/ 旧 74 页 html 全部退役 → 落 v1.5 全部 124 文件；index.md 重写 v1.5 表述；frontend.md / verification.md / design-reviewer.md / CLAUDE.md 版本引用 v1.3→v1.5、页数→116。批 1–8 待实施。
+
 ## §7 待定项跟踪
 
 | 项 | 决策点 | 摊牌时点 |

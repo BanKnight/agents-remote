@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>workspace-attach-chips · 会话（附件输入与展示态）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（底图 = workspace.html 单会话页；会话流 = 附件演示序列 + composer 待发送 chips） */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.sub{margin:6px 16px 0;padding:6px 12px;border-radius:9px;background:var(--tint-green);
+     font-size:12px;font-weight:600;color:var(--c-success-text);display:flex;justify-content:space-between}
+.subc{border-radius:12px;background:var(--tint-green);
+      border:1px solid color-mix(in srgb,var(--c-success) 40%,transparent);
+      padding:9px 12px;font-size:13px;font-weight:600;color:var(--ink-1);display:flex;align-items:center;gap:8px}
+.subc .st{margin-left:auto;font-size:11.5px;font-weight:400;color:var(--c-success-text)}
+/* 标注锚定：pin 挂到目标元素上（自动跟随布局，不手算坐标） */
+.sub,.tray{position:relative}
+.runct{font-size:9px;color:var(--c-success-text);font-weight:600;vertical-align:2px}
+.caret{font-size:10px;color:var(--ink-2)}
+/* 已发送附件消息：正文 + 图片附件卡 + 文本文件 chip（同一条消息成组） */
+.uatt{display:flex;flex-direction:column;align-items:flex-start;gap:7px}
+.imgcard{display:flex;flex-direction:column;background:var(--bg-elevated);border:1px solid var(--sep);
+         border-radius:12px;padding:5px;position:relative;cursor:pointer}  /* 点开 = 全屏预览（图例③） */
+.imgcard .thumb{width:176px;height:88px;border-radius:8px;
+                background:linear-gradient(135deg,var(--c-primary),var(--c-pin));
+                display:flex;align-items:center;justify-content:center}  /* CSS 示意图（渐变 + 山形），非实图 */
+.imgcard .thumb svg{width:34px;height:34px;stroke:var(--on-accent);fill:none;stroke-width:2.2;
+                    stroke-linecap:round;stroke-linejoin:round}
+.imgcard .cap{padding:5px 3px 1px;font-size:11px;color:var(--ink-2)}
+.fchip{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 11px;border-radius:13px;
+       background:var(--bg-elevated);border:1px solid var(--sep);position:relative;
+       font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11px;color:var(--ink-1)}
+.fchip svg{width:13px;height:13px;color:var(--ink-2)}
+.areply{font-size:13px;line-height:1.5;color:var(--term-ink);padding:0 4px}
+/* 待发送附件 chips 行（文本区上方）：× = 移除；多图时 overflow-x:auto 横排滚动（本态 2 枚全展示不滚） */
+.achips{display:flex;align-items:center;gap:9px;padding:2px 4px 6px;position:relative}
+.achip{flex:none;position:relative}
+.achip.img{width:46px;height:46px;border-radius:11px;
+           background:linear-gradient(135deg,var(--c-primary),var(--c-pin));
+           display:flex;align-items:center;justify-content:center}  /* 缩略小方图（发送自动压缩，图例②） */
+.achip.img svg{width:22px;height:22px;stroke:var(--on-accent);fill:none;stroke-width:2.2;
+               stroke-linecap:round;stroke-linejoin:round}
+.achip .xb{position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;
+           background:var(--bg-elevated3);border:1px solid var(--sep-strong);color:var(--ink-1);
+           font-size:9px;font-weight:700;line-height:14px;text-align:center}
+.achip.file{display:flex;align-items:center;gap:6px;height:34px;padding:0 9px;border-radius:11px;
+            background:var(--bg-elevated2);border:1px solid var(--sep);
+            font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11.5px;color:var(--ink-1)}
+.achip.file svg{width:14px;height:14px;color:var(--ink-2)}
+.achip.file .xx{color:var(--ink-2);font-size:11px;font-weight:700;margin-left:2px}
+/* ＋ 附件入口（本态带高亮圈标注）：裸 ＋ 字形，与三彩配置图标并列 */
+.composer .iicn.add{color:var(--c-primary)}
+.composer .send2{position:relative}
+.ring{position:absolute;border:1.8px dashed var(--c-primary);border-radius:50%;pointer-events:none;z-index:15}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+  <div class="page">
+
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>claude·auth <span class="runct">●2</span> <span class="caret" title="实例切换菜单">▾</span></h1>
+      <span class="ic" title="检视面板：文件树 / Git / Wiki"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-7.5" width="18" height="15" rx="3"/><path d="M2.5,-7.5 V7.5"/><path d="M5.2,-3.5 h1.6 M5.2,-0.5 h1.6 M5.2,2.5 h1.6"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="sub"><span>▸ 2 个子 agent 运行中 · 点按跳转</span><span>›</span></div>
+
+    <div class="stream">
+
+      <!-- 已发送用户消息：正文 + 图片附件卡（③）+ 文本文件 chip（④） -->
+      <div class="uatt">
+        <div class="task">看这个报错截图</div>
+        <div class="imgcard" title="点开 = 全屏预览"><span class="pin" style="right:-10px;top:-9px">3</span>
+          <div class="thumb"><svg viewBox="-10 -10 20 20"><circle cx="-4" cy="-3.5" r="1.8"/><path d="M-9,6.5 L-2.5,-0.5 L2,3.5 L5,1 L9,5"/></svg></div>
+          <div class="cap">err-shot.png · 1280×640</div>
+        </div>
+        <span class="fchip"><svg data-symbol="doc.text"></svg>app.log · 12 KB<span class="pin" style="right:-10px;top:-9px">4</span></span>
+      </div>
+
+      <!-- agent 回复开头一条（简短 plain） -->
+      <div class="areply">已看到截图与日志：retry 风暴触发 rate limit，下面逐条分析。</div>
+    </div>
+
+    <div class="tray" style="padding:9px 12px">
+      <span class="w" style="display:flex;align-items:center;gap:5px"><svg width="14" height="13" viewBox="-10 -10 20 20" style="display:block"><path d="M0,-9 L9.5,7.5 H-9.5 z" fill="none" style="stroke:var(--c-warning-text)" stroke-width="2"/><path d="M0,-3.2 V1.8" style="stroke:var(--c-warning-text)" stroke-width="2" fill="none"/><circle cx="0" cy="4.6" r="1.1" style="fill:var(--c-warning-text)" stroke="none"/></svg>2 项待审批</span><span style="margin-left:auto;font-size:11.5px;font-weight:600;color:var(--c-warning-text)">全部允许 ›</span>
+    </div>
+
+    <div class="input">
+      <div class="composer"><span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">5</span>
+        <!-- 待发送附件 chips 行（①）：来源菜单选完回落于此，× 移除；② = 图片 chip -->
+        <div class="achips"><span class="pin" style="right:-6px;top:-9px">1</span>
+          <span class="achip img" title="长按或点 × 移除"><svg viewBox="-10 -10 20 20"><circle cx="-4" cy="-3.5" r="1.8"/><path d="M-9,6.5 L-2.5,-0.5 L2,3.5 L5,1 L9,5"/></svg><span class="xb">✕</span><span class="pin" style="left:-9px;top:-9px">2</span></span>
+          <span class="achip file"><svg data-symbol="doc.text"></svg>报错.log<span class="xx">✕</span></span>
+        </div>
+        <div class="itext">描述一下这个报错…</div>
+        <div class="irow">
+          <span class="iicn add" title="添加附件：照片 / 相机 / 文件"><svg data-symbol="plus"></svg><span class="ring" style="left:-4px;top:-4px;width:36px;height:36px"></span></span>
+          <span class="iicn perm"><i data-icon="shield.checkmark"></i></span>
+          <span class="iicn model"><i data-icon="sparkles"></i></span>
+          <span class="iicn eff"><i data-icon="brain"></i></span>
+          <span class="send2 stopstate" style="margin-left:auto"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="home"></div>
+
+    <!-- 编号 pin 已锚定到目标元素：① 待发送附件 chips 行 ② 图片 chip（压缩策略） ③ 已发送图片卡 ④ 已发送文本文件 chip ⑤ composer（超限行内提示区） -->
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span><b>待发送附件 chips</b>（composer 文本区上方，来源菜单选完回落于此，见 attach-menu 页）：× = 移除；多图横排滚动（本态 2 枚全展示），发送时随消息上行成附件卡</span></li>
+    <li><b>②</b><span><b>图片压缩策略</b>：发送自动压长边 ≤1568px，原图本地保留——附件只作为消息级上下文，不落项目文件系统（与 03z 上传分工：上传 = 项目资产落库）</span></li>
+    <li><b>③</b><span><b>已发送图片卡</b>：缩略图 + 尺寸标注（err-shot.png · 1280×640），点开 = 全屏预览；多模态直接消费，无需另存到项目</span></li>
+    <li><b>④</b><span><b>文本文件 chip</b>：内容内联为消息上下文（≤1MB；白名单 txt / md / csv / json / log），agent 直接读取，不产生项目文件</span></li>
+    <li><b>⑤</b><span><b>超限引导</b>：&gt;10MB 或非白名单（PDF / 二进制）→ composer 行内提示「大文件请上传到项目文件」+ 03z 捷径；来源入口与类型边界见 attach-menu 页</span></li>
+  </ol>
+</div>
+
+</body></html>

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>workspace-instance-switch · 浮层（实例切换菜单 · 单会话展示）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（族A 锚定浮卡：标题 ▾ 正下方，点按型无压暗） */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.runct{font-size:9px;color:var(--c-success-text);font-weight:600;vertical-align:2px}  /* 标题运行徽标：●n = 项目内活跃实例数 */
+.caret{font-size:12px;color:var(--c-primary);font-weight:700;vertical-align:-1px;position:relative}  /* 标题 ▾ 激活态：实例切换菜单锚 */
+.task{position:relative;z-index:5}
+.navmenu{position:absolute;top:88px;left:84px;width:250px;background:var(--menu);
+         border:1px solid var(--sep-strong);border-radius:14px;z-index:12;
+         box-shadow:0 6px 20px color-mix(in srgb,#000 22%,transparent)}
+.mh{padding:10px 14px 6px;font-size:10.5px;font-weight:700;color:var(--ink-2);letter-spacing:.5px}
+.ilist{position:relative}  /* 列表区固定最大高度（图例②）：实例多时区内滚动，本态 4 行全展示不滚动 */
+.irow{display:flex;align-items:center;gap:9px;height:40px;padding:0 14px;font-size:13.5px;color:var(--ink-1);cursor:pointer}
+.irow + .irow{border-top:1px solid var(--sep)}
+.irow .nm{font-weight:400;white-space:nowrap}
+.irow.on .nm{font-weight:600}
+.irow .tic{width:16px;height:16px;flex:none;display:flex;align-items:center;justify-content:center}
+.irow .tic svg{width:15px;height:15px;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}
+.irow .st{margin-left:auto;font-size:11px;display:flex;align-items:center;gap:3px;white-space:nowrap}
+.irow .st.run{color:var(--c-success-text);font-weight:600}
+.irow .st.idle{color:var(--ink-2)}
+.irow .ck{color:var(--c-primary);font-weight:700;font-size:12px;margin-left:2px}
+.iacts{border-top:1px solid var(--sep-row);padding:0 0 4px}  /* 钉底两行动作：与列表间分隔线，永不挤压 */
+.iact{display:flex;align-items:center;gap:9px;height:42px;padding:0 14px;font-size:13.5px;font-weight:600;color:var(--c-primary);cursor:pointer;position:relative}
+.iact .aic{width:16px;height:16px;flex:none;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;line-height:1}
+.ring{position:absolute;border:1.8px dashed var(--c-primary);border-radius:50%;pointer-events:none;z-index:15}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>claude·auth <span class="runct">●2</span> <span class="caret">▾<span class="pin" style="left:12px;top:-9px">1</span></span></h1>
+      <span class="ic" title="检视面板：文件树 / Git / Wiki"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-7.5" width="18" height="15" rx="3"/><path d="M2.5,-7.5 V7.5"/><path d="M5.2,-3.5 h1.6 M5.2,-0.5 h1.6 M5.2,2.5 h1.6"/></svg></span>
+      <span class="ic" data-symbol="ellipsis" style="position:relative"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg><span class="pin" style="right:-10px;top:-9px">5</span></span>
+    </div>
+
+    <!-- 高亮圈：标题 ▾ 激活态（菜单锚，相对 stage） -->
+    <span class="ring" style="left:232px;top:44px;width:30px;height:30px"></span>
+
+    <div class="stream" style="flex:0 auto;padding-top:14px">
+      <div class="task">把 auth 模块迁移到 passkeys…</div>
+    </div>
+
+    <div class="home"></div>
+
+    <!-- 族A 锚定浮卡：实例切换菜单（标题 ▾ 正下方，点按型无压暗，点外部收起） -->
+    <div class="navmenu">
+      <div class="mh">切换实例</div>
+
+      <!-- 列表区（固定最大高度，图例②）：本态 4 行全展示 -->
+      <div class="ilist"><span class="pin" style="right:-11px;top:50%;transform:translateY(-50%)">2</span>
+        <div class="irow on">
+          <span class="tic"><svg viewBox="-10 -10 20 20" style="stroke:var(--c-primary)"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>
+          <span class="nm">claude·auth</span>
+          <span class="st run">● 运行中</span><span class="ck">✓</span>
+        </div>
+        <div class="irow">
+          <span class="iicn add" title="添加附件：照片 / 相机 / 文件"><svg data-symbol="plus"></svg></span>
+          <span class="tic"><svg viewBox="-10 -10 20 20" style="stroke:var(--c-primary)"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>
+          <span class="nm">codex·api</span>
+          <span class="st run">● 运行中</span>
+        </div>
+        <div class="irow">
+          <span class="iicn add" title="添加附件：照片 / 相机 / 文件"><svg data-symbol="plus"></svg></span>
+          <span class="tic"><svg viewBox="-10 -10 20 20" style="stroke:var(--c-success)"><rect x="-9" y="-7.5" width="18" height="15" rx="3"/><path d="M-4.5,-2.5 l3,2.5 l-3,2.5"/><path d="M0.5,3 h5"/></svg></span>
+          <span class="nm">term·1</span>
+          <span class="st idle">○ 空闲</span>
+        </div>
+        <div class="irow">
+          <span class="iicn add" title="添加附件：照片 / 相机 / 文件"><svg data-symbol="plus"></svg></span>
+          <span class="tic"><svg viewBox="-10 -10 20 20" style="stroke:var(--c-pin)"><path d="M-8,-6 a3,3 0 0 1 3,-3 h10 a3,3 0 0 1 3,3 v6 a3,3 0 0 1 -3,3 h-6 l-4,4 v-4 h0 a3,3 0 0 1 -3,-3 z"/></svg></span>
+          <span class="nm">pi·chat</span>
+          <span class="st idle">○ 空闲</span>
+        </div>
+      </div>
+
+      <!-- 钉底两行动作（与列表间分隔线） -->
+      <div class="iacts">
+        <div class="iact"><span class="aic">＋</span>新建实例…<span class="pin" style="right:-11px;top:50%;transform:translateY(-50%)">3</span></div>
+        <div class="iact"><span class="aic">⟲</span>恢复历史会话…<span class="pin" style="right:-11px;top:50%;transform:translateY(-50%)">4</span></div>
+      </div>
+    </div>
+
+    <!-- 编号 pin 已锚定到目标元素：① 标题 ▾ ② 实例列表 ③ ＋ 新建实例 ④ ⟲ 恢复历史会话 ⑤ 行1 右端 [面板][⋯] -->
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span><b>实例切换菜单</b>（标题 ▾ 锚定，族A 浮卡点按型·无压暗，点外部收起）：单会话展示——并行实例能力保留，pills 常驻撤除，切换走此菜单；切换零销毁，各实例现场保留不销毁</span></li>
+    <li><b>②</b><span><b>列表区</b>（当前行 ✓）：活跃实例与历史互斥——已关闭会话不在本列表，走「恢复」；列表区固定最大高度：实例多时区内滚动，钉底两行永不挤压（本态 4 行全展示、不滚动）</span></li>
+    <li><b>③</b><span><b>＋ 新建实例…</b>（→ sheet 03j，纯空白起步；本图入口即标题 ▾ 菜单内钉底行）</span></li>
+    <li><b>④</b><span><b>⟲ 恢复历史会话…</b>（捷径直通 ⋯ 会话历史 sheet；恢复 = resume agent 会话历史，非新建实例）</span></li>
+    <li><b>⑤</b><span><b>行1 右端 [面板][⋯]</b>：检视面板入口（文件树 / Git / Wiki）+ 低频操作菜单（⋯ › 会话历史 / 实例信息）</span></li>
+  </ol>
+</div>
+
+</body></html>

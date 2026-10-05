@@ -11,7 +11,7 @@
 ## format 写入必须用项目脚本（2026-09-22 oxfmt 全仓误伤教训）
 
 - **触发**：format 违例需要写入修复时。
-- **动作**：只用 `bun run format`（范围限定 package.json + tsconfigs + scripts/e2e/api/packages/web）；**禁 `bunx oxfmt --write .`**——全仓模式会重排 .claude/、docs/（含 54 页原型 HTML）等 200+ 非门禁文件，违反 surgical 原则，只能 git checkout 救回。
+- **动作**：只用 `bun run format`（范围限定 package.json + tsconfigs + scripts/e2e/api/packages/web）；**禁 `bunx oxfmt --write .`**——全仓模式会重排 .claude/、docs/（含 116 页原型 HTML）等 200+ 非门禁文件，违反 surgical 原则，只能 git checkout 救回。
 - **门禁范围 vs 全仓**：`format:check` 只查 339 个门禁文件，md/html 不在内；全仓写入不影响门禁通过但污染工作区。
 
 ## commit 前全门禁（pre-commit hook 自动跑，不豁免）

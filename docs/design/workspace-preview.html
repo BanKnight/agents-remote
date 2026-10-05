@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>workspace-preview · 工作台（检视面板 · 文件预览标签）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.ptabs{overflow:visible;margin:14px 16px 0}  /* 放开裁切：预览标签上方 pin 可见 */
+.code.fill{flex:1 1 auto;min-height:0}
+.cap{font-size:11px;color:var(--ink-3);text-align:center;margin:10px 16px 0}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+  <div class="page">
+
+    <div class="nav">
+      <span class="back">工作台</span>
+      <h1>agents-web <span class="sw"></span></h1>
+      <span class="ic" data-symbol="pencil" title="编辑"><svg viewBox="-10 -10 20 20"><path d="M-6.5,6.5 l1.2,-4.6 8,-8 3.4,3.4 -8,8 -4.6,1.2 z"/><path d="M2.7,-5.3 l3.4,3.4"/></svg></span><span class="ic" data-symbol="ellipsis" style="position:relative"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg><span class="pin" style="right:-8px;top:-9px">2</span></span>
+    </div>
+
+    <div class="ptabs">
+      <span class="ptab" style="position:relative"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg>文件树<span class="pin" style="right:-12px;top:-9px">3</span></span>
+      <span class="ptab"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg>Git</span>
+      <span class="ptab"><svg viewBox="-10 -10 20 20" data-symbol="book"><path d="M-8,-6 C-5,-7.5 -2,-7.5 0,-6 C2,-7.5 5,-7.5 8,-6 V6 C5,4.5 2,4.5 0,6 C-2,4.5 -5,4.5 -8,6 Z"/><path d="M0,-6 V6"/></svg>Wiki</span>
+      <span class="ptab on" style="position:relative"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-6,-9 h6 l6,6 v12 a2,2 0 0 1 -2,2 h-10 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-9 v6 h6"/></svg><span class="pin" style="left:0;top:-15px">1</span>passkey.ts<span class="x" style="position:relative">✕<span class="pin" style="right:-8px;top:-13px">4</span></span></span>
+      <span class="plus" title="新建标签：文件树 / Git / Wiki" style="cursor:pointer"></span>
+    </div>
+
+    <!-- 顶部元信息行（ptabs 下）：类型·行数·更新时间；代码页右端空 -->
+    <div class="fmeta"><span>TypeScript · 248 行 · 更新 2 小时前</span></div>
+
+    <div class="code fill">
+      <div class="ln"><span class="no">1</span><span class="tx"><span class="kw">import</span> { webauthn } <span class="kw">from</span> '@/lib'</span></div>
+      <div class="ln"><span class="no">2</span><span class="tx"><span class="kw">import</span> { session } <span class="kw">from</span> './session'</span></div>
+      <div class="ln"><span class="no">3</span><span class="tx"></span></div>
+      <div class="ln"><span class="no">4</span><span class="tx"><span class="kw">export async function</span> verify(cred) {</span></div>
+      <div class="ln"><span class="no">5</span><span class="tx">  <span class="kw">const</span> ok = <span class="kw">await</span> webauthn.verify(</span></div>
+      <div class="ln"><span class="no">6</span><span class="tx">    challenge: cred.challenge,</span></div>
+      <div class="ln"><span class="no">7</span><span class="tx">    origin: env.ALLOWED_ORIGIN,</span></div>
+      <div class="ln"><span class="no">8</span><span class="tx">  )</span></div>
+      <div class="ln"><span class="no">9</span><span class="tx">  <span class="kw">if</span> (!ok) {</span></div>
+      <div class="ln"><span class="no">10</span><span class="tx">    <span class="kw">throw new</span> AuthError()</span></div>
+      <div class="ln"><span class="no">11</span><span class="tx">  }</span></div>
+      <div class="ln"><span class="no">12</span><span class="tx">  <span class="kw">return</span> session.issue(user)</span></div>
+      <div class="ln"><span class="no">13</span><span class="tx">}</span></div>
+    </div>
+
+    <div class="home"></div>
+
+    <!-- 检视面板全屏层：预览标签态；面板覆盖 tab bar，退出后让位回归 -->
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span>文件预览标签（passkey.ts，doc.text 图标）：来源 = 文件树点文件 → <b>面板内新增/激活标签，面板不退出</b>——树点多个文件连续浏览、✕ 逐个关回文件树，比让位切容器更顺手；同目标已开 = 激活不重复</span></li>
+    <li><b>②</b><span><b>同屏单 ⋯</b>：复制内容 / 复制路径 / 查看 diff（→ 03r push）收进<b>右上导航 ⋯ 菜单</b>（03k2 同机制，iPhone 屏幅窄双 ⋯ 易误触）；「编辑」= 顶部行右端主操作（编辑钮在 ⋯ 左侧，iOS 导航栏惯例），进入编辑态——机制同 03q2，内联于本标签，不新开页；顶部元信息行（ptabs 下）= 类型·度量·更新时间（代码页右端空；MD/HTML 页右端 = 渲染⇄源码分段）</span></li>
+    <li><b>③</b><span>结构标签（文件树 / Git / Wiki）与预览标签并排：点按平级切换，树仍在原位——看完文件点「文件树」即回目录，层级不入导航栈</span></li>
+    <li><b>④</b><span>预览标签 ✕ = 关闭回文件树（不需确认，逐个关）；「＋」新建结构标签菜单（03ob2，标签多时标签条横向滑动、「＋」在滑出区）；「‹ 工作台」退出面板 → 面板让位回归、标签与会话状态零销毁（铁律 2）；长按预览标签 = 菜单</span></li>
+    <li><b>容器矩阵</b><span>文件预览 = 一个内容组件四种容器：<b>面板标签</b>（本图 · iPhone 工作台）/ <b>中栏标签</b>（iPad/Mac 工作台 · 05h 系）/ <b>push</b>（iPhone 全局文件 · 03q 家族）/ <b>主区推入态</b>（Mac/iPad 全局文件 · 10m2）</span></li>
+  </ol>
+</div>
+
+</body></html>

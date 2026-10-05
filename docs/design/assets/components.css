@@ -153,14 +153,14 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
        background:var(--bg-elevated);border:1px solid var(--sep);font-size:11.5px;white-space:nowrap;
        overflow:hidden;font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-3)}
 .crumb b{color:var(--ink-1);font-weight:400}
-/* 悬浮添加钮（FAB）：文件树标签右下，→ 03oa 菜单 */
-.fab{position:absolute;right:16px;bottom:50px;width:48px;height:48px;border-radius:24px;
-     background:var(--tint-blue);display:flex;align-items:center;justify-content:center;
-     box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:6}
+.crumb .cico{width:12px;height:12px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;margin-right:4px}  /* 根段 = 项目图标（固定宽，不随项目名长度） */
+/* 悬浮添加钮（FAB）：文件树标签右下，实心主色蓝底 + 白＋，→ 03oa 菜单（三端同构） */
+.fab{position:absolute;right:16px;bottom:50px;width:48px;height:48px;border-radius:24px;background:var(--c-primary);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 24px color-mix(in srgb,#000 35%,transparent);z-index:6}
 .composer .iicn svg{width:16px;height:16px}
 .composer .iicn.perm{color:var(--c-pin);background:var(--tint-purple)}
 .composer .iicn.model{color:var(--c-primary);background:var(--tint-blue)}
 .composer .iicn.eff{color:var(--c-warning-text);background:var(--tint-orange)}
+.composer .iicn.add{color:var(--c-primary)}  /* ＋ 附件入口：控制行最左，三端同位（来源菜单：照片/相机/文件） */
 /* 多端（iPad/Mac）变体：文本区默认 ≥3 行可输入高度（不含控制行） */
 .composer.wide .itext{min-height:62px}
 
@@ -172,7 +172,11 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
         stroke-linecap:round;stroke-linejoin:round}
 .tb.on{color:var(--c-primary)} .tb.on svg{stroke:var(--c-primary)} .tb.on .lb{font-weight:600}
 
-/* ---- 浮层原语（半屏 sheet：dim / sheet / 抓手 / sheet 头） ---- */
+/* ---- 浮层原语 —— 两族（总则见 spec §5.0）：
+     族A 锚定浮卡（菜单）：--menu 底/sep-strong/r14，永不贴边、锚定触发点；标准档 = 02c 取值（45px 行/14 字/17 图标/gap14，
+       页内 .ctx / .addmenu 均按此），紧凑档 = 03a（36px 行/13 字，微锚点）；点按型无 dim，长按型加 dim + 触发件高亮。
+     族B 边缘锚定层（"贴边"=以屏幕边缘定位，非零距）：半屏 sheet = 近贴边左右各 10pt 侧距 + r20 + 抓手 + 全屏 dim（下方原语）；
+       全高面板 = 三边零距贴边一侧留隙（03ab peek）；push = 四边零距贴边。 ---- */
 .dim{position:absolute;left:0;right:0;bottom:100px;background:var(--scrim);z-index:10}  /* top 由页面按遮盖范围指定 */
 .sheet{position:absolute;left:10px;right:10px;bottom:114px;background:var(--bg-elevated);
        border:1px solid var(--sep);border-radius:20px;padding:0 20px 12px;z-index:11}
@@ -185,6 +189,7 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
           overflow:hidden;color:var(--ink-1)}
 .stagewin{position:relative;width:1240px;height:710px;margin:0 auto;background:var(--bg-base);
           border:1.5px solid var(--sep-strong);border-radius:14px;overflow:hidden;color:var(--ink-1)}
+.padcol{display:flex;flex-direction:column;height:100%}  /* 桌面纵向骨架：三栏区(.pad) + 状态栏(.sbar)，iPad/Mac 同构 */
 .tbar{height:52px;background:var(--bg-sidebar);display:flex;align-items:center;justify-content:center;
       position:relative;border-bottom:1px solid var(--sep)}
 .lights{position:absolute;left:16px;top:50%;transform:translateY(-50%);display:flex;gap:15px}
@@ -228,6 +233,13 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 .seg4 .on{background:var(--seg-thumb);color:var(--ink-1);font-weight:600}
 .seg4.mini{height:26px;border:0;font-size:12px}  /* Sidebar 内轻量变体：视图切换用，无描边 */
 .seg4.mini span{font-size:12px;border-radius:6px}
+.segc.mini{height:26px;border-radius:8px;padding:2px}  /* 底部状态栏内嵌变体：渲染⇄源码（.fstat 右端） */
+.segc.mini span{font-size:12px;border-radius:6px}
+.segc.mini span{flex:none;padding:0 14px}
+
+/* ---- 共享：Git 底部操作行（三端同构 03m/04d/05i；页内只补 margin） ---- */
+.gacts{display:flex;gap:8px;position:relative}
+.gacts span{flex:1;height:32px;border-radius:9px;background:var(--bg-elevated);border:1px solid var(--sep);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--ink-1);cursor:pointer}
 
 /* ---- 桌面共享组件（Mac/iPad = 同一 UI 的响应式；页面只留列宽与页私布局） ---- */
 .icn{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
@@ -265,6 +277,11 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 .tterm .tdim{color:var(--ink-2)}
 .cursor{display:inline-block;width:8px;height:15px;background:var(--c-success);vertical-align:-2px}
 .tfoot{font-size:11px;color:var(--ink-3);font-family:ui-monospace,Consolas,monospace;padding:0 14px 8px}
+/* ---- 共享：文件预览顶部元信息行（四容器同构：nav/tabstrip/mhead 下、内容上；与编辑态 emeta 同位异职） ----
+   左 = 类型·度量·更新时间；右 = segc mini 仅 MD/HTML；代码/图片/unsupported 右端空。底部无元信息——底部仅编辑态有 aux（撤销/重做/收起键盘）。 */
+.fmeta{display:flex;align-items:center;gap:10px;height:36px;padding:0 16px 0 14px;border-bottom:1px solid var(--sep);font-size:11.5px;color:var(--ink-2);flex:none;position:relative}
+.fmeta .fright{margin-left:auto;display:flex;align-items:center;gap:12px;flex:none}
+.fmeta .fright .segc{flex:none}
 .glabel2{font-size:12.5px;font-weight:600;color:var(--ink-2);padding:10px 14px 2px;display:flex;align-items:center}
 .glabel2 .clps{margin-left:auto;color:var(--c-primary);font-weight:700;font-size:14px}
 .badge{width:22px;height:19px;border-radius:4px;display:flex;align-items:center;justify-content:center;

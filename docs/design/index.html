@@ -6,6 +6,30 @@
 <title>agents-remote · UI/UX 设计图集 v1.3</title>
 <link rel="stylesheet" href="assets/tokens.css">
 <style>
+/* ===== 图集规范 §11：筛选 / 灯箱 / 深链高亮 ===== */
+figure{position:relative}
+.xpand{position:absolute;top:8px;right:8px;z-index:6;width:28px;height:28px;border-radius:8px;
+       background:color-mix(in srgb,var(--bg-elevated) 90%,transparent);border:1px solid var(--sep);
+       display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--ink-2);cursor:pointer}
+.xpand:hover{color:var(--c-primary);border-color:var(--c-primary)}
+.dview{display:none}
+body[data-df="iphone"] .dview[data-view="iphone"],
+body[data-df="ipad"] .dview[data-view="ipad"],
+body[data-df="mac"] .dview[data-view="mac"]{display:block}
+figure.flash{outline:2.5px solid var(--c-primary);outline-offset:4px;border-radius:8px}
+#lb{position:fixed;inset:0;z-index:100;background:color-mix(in srgb,#000 80%,transparent);
+    display:flex;flex-direction:column;padding:16px}
+#lb[hidden]{display:none}
+.lb-bar{display:flex;align-items:center;gap:14px;margin-bottom:10px;flex:none}
+.lb-bar .t{font-size:13px;font-weight:600;color:var(--ink-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-bar .code{font-size:11px;color:var(--ink-3)}
+.lb-bar .a{margin-left:auto;font-size:12px;color:var(--c-primary);text-decoration:none;flex:none}
+.lb-bar .x{flex:none;width:30px;height:30px;border-radius:8px;background:var(--bg-elevated);border:1px solid var(--sep);
+        color:var(--ink-1);font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+#lb-stage{flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center}
+#lb-stage iframe{border:0;transform-origin:0 0;background:var(--bg-base);flex:none}
+</style>
+<style>
 /* 图集自身布局（颜色全部走 tokens.css，跟随主题开关） */
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg-base);color:var(--ink-1);
@@ -29,7 +53,8 @@ h2{font-size:17px;font-weight:700;margin:40px 0 2px;color:var(--ink-title)}
 h3{font-size:13px;font-weight:700;margin:22px 0 2px;color:var(--ink-2)}
 .flow{color:var(--ink-2);font-size:13px;margin:0 0 14px}
 .flow b{color:var(--c-primary);font-weight:600}
-.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.grid figure{min-width:0}
 figure{margin:0 0 28px;background:var(--bg-elevated);border:1px solid var(--sep);
        border-radius:16px;overflow:hidden}
 figure.phone{max-width:560px;margin-left:auto;margin-right:auto}
@@ -52,362 +77,669 @@ a{color:var(--c-primary);text-decoration:none}
 @media (max-width:760px){.grid{grid-template-columns:1fr}}
 </style>
 </head>
-<body>
+<body data-df="iphone">
 
 <header class="bar"><div class="wrap barin">
   <div>
-    <h1>agents-remote · UI/UX 设计图集 <span>v1.3</span></h1>
+    <h1>agents-remote · UI/UX 设计图集 <span>v1.5</span></h1>
     <p class="sub">远程调度与观察 AI Agent · iPhone / iPad / Mac 三端同构 · 规格书见 <a href="design_spec.md">design_spec.md</a></p>
-    <span class="badge">1 张 SVG（图解轨）+ 74 页 HTML 轨 · 主题开关全图联动 · 结构确认版</span>
+    <span class="badge">1 张 SVG（图解轨）+ 115 页 HTML 轨 · 主题开关全图联动 · 结构确认版</span>
   </div>
   <div class="segc" id="seg" title="切换全部页面与图的主题">
     <span data-t="dark" class="on">深色</span><span data-t="light">浅色</span>
   </div>
+  <div class="segc" id="dseg" title="按端筛选卡片">
+    <span data-d="iphone" class="on">iPhone</span><span data-d="ipad">iPad</span><span data-d="mac">Mac</span>
+  </div>
 </div></header>
 
 <div class="wrap">
-  <h2>一、结构总览</h2>
-  <p class="flow">阅读动线：L0 → L1 → L2 → L3；箭头颜色区分跳转方式（蓝 push / 绿 cover / 橙 sheet / 紫 跨项目直达）</p>
-  <figure>
+  <h2>结构总览</h2>
+  <p class="flow">三端同一 IA：先读总图，再进任一端按动线走。</p>
+<figure>
     <div class="svgbox"><img src="01-ia-flow.svg" alt="" data-swap></div>
     <figcaption><span class="tag">第 0 步</span>信息架构总图：3 层 + 临时面板；两市场（MCP / 技能）源与类型绑定。<br><code>01-ia-flow.svg</code> · 图解轨（无浅色变体）</figcaption>
   </figure>
-
-  <h2>二、分层页面（L0 / L1）</h2>
-  <p class="flow">阅读动线：登录 → 建/采用项目 → 项目 Tab（全局活动 + 审批入口 + 项目列表）→ 插件（双市场入口）→ 全局文件 → 设置</p>
-  <div class="grid">
-    <figure>
-      <iframe src="06-login.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">L0 · 登录</span>单密码 + 服务器地址；token 免登直达上次位置；双语入口；无 Tab Bar。<br><code>06-login.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure>
-      <iframe src="08-sheet-new-project.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">浮层 · 新建/采用</span>新建目录 or 扫描采用已有目录；成功 → push 进工作台空态。<br><code>08-sheet-new-project.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure>
-      <iframe src="08b-adopt-directory.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">浮层 · 采用已有目录</span>路径扫描列出候选（文件数/git 分支/空目录），勾选批量纳管；只读边界：不复制不移动，敏感文件仅黄字警示。<br><code>08b-adopt-directory.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure class="phone">
-      <iframe src="02-tab-projects.html" loading="lazy" style="width:100%;height:1085px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">L1 · 项目 Tab</span>全局活动纵向列表（审批入口行 + 置顶紫标 + 状态点摘要）+ 项目行带最近活动摘要。<br><code>02-tab-projects.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure class="phone">
-      <iframe src="02c-pill-context-menu.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">会话操作</span>长按 pill（桌面右键）：取消置顶 / 重命名 / 关闭会话（确认式）；新增走 ＋。<br><code>02c-pill-context-menu.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure>
-      <iframe src="09-tab-plugins.html" loading="lazy" style="width:100%;height:1130px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">L1 · 插件</span>大标题 → 搜索（融合市场层）→ 作用域切换 → 市场分组（chips 一步触达；管理源唯一入口）→ MCP 组（＋ 添加 = 手动配置 14）→ 技能组（＋ 添加 = 直达技能市场 18；更新聚合）；页顶无全局添加按钮。<br><code>09-tab-plugins.html</code> · HTML 轨</figcaption>
-    </figure>
-  <figure class="phone">
-    <iframe src="09b-skill-row-menu.html" loading="lazy" style="width:100%;height:1130px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">深度 · 行操作</span>长按已安装行（技能/MCP 同款）→ 查看详情 / 停用（停止注入）/ 卸载需确认（依赖与影响提示）；删除入口也在详情页 12③/13④。<br><code>09b-skill-row-menu.html</code> · HTML 轨</figcaption>
+  <div class="dview" data-view="iphone">
+    <h2>1 · L1 目的地与新建</h2>
+    <p class="flow">首次进入：登录 → 新建/采用 → 四 Tab（项目 · 文件 · 插件 · 设置）</p>
+    <div class="grid">
+  <figure data-page="login.html" data-device="iphone">
+      <iframe src="login.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L0 · 登录</span>单密码 + 服务器地址；token 免登直达上次位置；双语入口；无 Tab Bar。<br><code>login.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="login.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
   </figure>
-    <figure class="phone">
-      <iframe src="10-tab-files-global.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">L1 · 全局文件</span>文件组件的全局作用域（服务器根）；项目根带 live 标，点项目文件夹进工作台。<br><code>10-tab-files-global.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure class="phone">
-      <iframe src="07-settings.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">L1 · 设置</span>外观/语言 · Runtime 预设 · 自动重试默认 · 服务器/PWA · 退出（确认）；密钥脱敏。<br><code>07-settings.html</code> · HTML 轨</figcaption>
-    </figure>
+  <figure data-page="project-new.html" data-device="iphone">
+      <iframe src="project-new.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">浮层 · 新建/采用</span>新建目录 or 扫描采用已有目录；成功 → push 进工作台空态。<br><code>project-new.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="project-new.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="project-adopt.html" data-device="iphone">
+      <iframe src="project-adopt.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">浮层 · 采用已有目录</span>路径扫描列出候选（文件数/git 分支/空目录），勾选批量纳管；只读边界：不复制不移动，敏感文件仅黄字警示。<br><code>project-adopt.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="project-adopt.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="project-tab.html" data-device="iphone">
+      <iframe src="project-tab.html" loading="lazy" style="width:100%;height:1085px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L1 · 项目 Tab</span>全局活动纵向列表（审批入口行 + 置顶紫标 + 状态点摘要）+ 项目行带最近活动摘要。<br><code>project-tab.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="project-tab.html" data-w="390" data-h="1085" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="project-row-menu.html" data-device="iphone">
+      <iframe src="project-row-menu.html" loading="lazy" style="width:100%;height:1085px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">浮层 · 项目行菜单</span>长按项目行（桌面右键同款）：打开 / 重命名…（有活跃实例时先弹影响提醒）/ 删除…（红）——此前项目行无任何操作入口，删除缺失即此补。<br><code>project-row-menu.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="project-row-menu.html" data-w="390" data-h="1085" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="project-rename.html" data-device="iphone">
+      <iframe src="project-rename.html" loading="lazy" style="width:100%;height:1085px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">浮层 · 重命名影响提醒</span>有活跃实例时先提醒：将关闭全部实例（运行中亦然）；会话历史保留、归属更新为新名称 → 继续 = 03w2 预填输入。<br><code>project-rename.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="project-rename.html" data-w="390" data-h="1085" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="project-delete.html" data-device="iphone">
+      <iframe src="project-delete.html" loading="lazy" style="width:100%;height:1085px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">浮层 · 删除项目确认（贴底 sheet）</span>影响清单：关闭全部实例（运行中亦然）· 会话历史一并清除（不可再 resume）· 移出置顶与活动记录；☐ 同时删除磁盘文件（默认不勾 = 保留，主按钮「移出项目」；勾选升级「删除项目·不可恢复」）；移出后可重新 adopt。<br><code>project-delete.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="project-delete.html" data-w="390" data-h="1085" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="files-global-tab.html" data-device="iphone">
+      <iframe src="files-global-tab.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L1 · 全局文件</span>文件组件的全局作用域（服务器根）；项目根带 live 标，点项目文件夹进工作台。<br><code>files-global-tab.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="files-global-tab.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="plugins-tab.html" data-device="iphone">
+      <iframe src="plugins-tab.html" loading="lazy" style="width:100%;height:1180px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L1 · 插件</span>大标题 → 搜索（融合市场层）→ 作用域切换 → 市场分组（chips 一步触达；管理源唯一入口）→ MCP 组（＋ 添加 = 手动配置 14）→ 技能组（＋ 添加 = 直达技能市场 18；更新聚合）；页顶无全局添加按钮。<br><code>plugins-tab.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="plugins-tab.html" data-w="390" data-h="1180" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="settings.html" data-device="iphone">
+      <iframe src="settings.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L1 · 设置</span>外观/语言 · Runtime 预设 · 自动重试默认 · 服务器/PWA · 退出（确认）；密钥脱敏。<br><code>settings.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="settings.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+    </div>
+    <h2>2 · 工作台骨架与状态</h2>
+    <p class="flow">工作台 Tab 已退役：会话入口 = 项目 Tab（全局活动会话行 / 项目行）→ 全屏会话生命周期：空闲/错误/子 agent/空态/断线 → 终端/Chat 变体</p>
+    <div class="grid">
+  <figure class="phone" data-page="workspace.html" data-device="iphone">
+    <iframe src="workspace.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">骨架 · 观察态</span>常驻 2 行 + 滚动收纳（上滚收敛迷你条）；输入框双行 composer：窄端配置三项分别收缩为彩色图标（点图标弹出选项菜单 03a）+ 右端停止/发送互斥方形键；托盘单行胶囊点开展开；标题 ▾ 切项目。<br><code>workspace.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-idle.html" data-device="iphone">
+    <iframe src="workspace-idle.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 空闲</span>灰点、绿色完成横幅；停止/发送同位互斥方形键（空闲 = 蓝色发送）；push / Tab 直达差异见注④。<br><code>workspace-idle.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-idle.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-error.html" data-device="iphone">
+    <iframe src="workspace-error.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 出错</span>红点 + 错误红卡 + 自动重试倒计时条（取消 / 立即重试）；配置在实例信息（03k）。<br><code>workspace-error.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-error.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-subagent.html" data-device="iphone">
+    <iframe src="workspace-subagent.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 子 agent 展开</span>嵌套工具卡缩进一级、同一组件；概览条可跳转；审批仍聚合到托盘。<br><code>workspace-subagent.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-subagent.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-subagent-list.html" data-device="iphone">
+    <iframe src="workspace-subagent-list.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 子 agent 列表（多 agent）</span>概览条聚合态：计数条点按展开列表卡——运行中在前、完成置灰置底；行点按跳转对应子 agent；全部完成自动折叠回单行。<br><code>workspace-subagent-list.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-subagent-list.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-empty.html" data-device="iphone">
+    <iframe src="workspace-empty.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 空态</span>Tab 直达无返回键；无实例不渲染 pill 条；项目级工具仍可用。<br><code>workspace-empty.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-empty.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-offline.html" data-device="iphone">
+    <iframe src="workspace-offline.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">状态 · 断线</span>顶部横幅 + 全部冻结变灰但不销毁；输入禁用；重连按缺口回放。<br><code>workspace-offline.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-offline.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-terminal.html" data-device="iphone">
+    <iframe src="workspace-terminal.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">实例 · 终端</span>tmux 实例：无模型 chips；上滑看历史，「↓ 实时」回底；无审批托盘。<br><code>workspace-terminal.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-terminal.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-chat.html" data-device="iphone">
+    <iframe src="workspace-chat.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">实例 · Chat(Pi)</span>气泡式轻量对话；置顶 / 重命名 / 关闭；无审批、无子 agent。<br><code>workspace-chat.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-chat.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-attach-chips.html" data-device="iphone">
+    <iframe src="workspace-attach-chips.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">变体 · 附件输入与展示</span>composer ＋ 附件：待发送 chips（×移除，图压长边 ≤1568px）→ 发送后消息内附件卡（图片点开全屏预览 / 文本文件内联 ≤1MB）；大文件引导上传到项目（与 03z 分工：附件=消息上下文，上传=项目资产）。<br><code>workspace-attach-chips.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-attach-chips.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+    </div>
+    <h2>3 · 浮层 · 会话与行菜单</h2>
+    <p class="flow">标题 ▾ / ＋ / ⋯ 唤起族：实例切换 → 新建/信息/历史/配置/附件来源 → 审批中心 → 行菜单</p>
+    <div class="grid">
+  <figure class="phone" data-page="workspace-new-instance.html" data-device="iphone">
+    <iframe src="workspace-new-instance.html" loading="lazy" style="width:100%;height:1125px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 新建实例</span>+Claude / +OMP / +Codex / 终端 / Chat；模型预设来自设置；下滑关闭零影响。<br><code>workspace-new-instance.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-new-instance.html" data-w="390" data-h="1125" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-instance-info.html" data-device="iphone">
+    <iframe src="workspace-instance-info.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 实例信息</span>元信息 + 运行配置 + 自动重试；重命名 / 置顶 / 关闭（确认式）。<br><code>workspace-instance-info.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-instance-info.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-more-menu.html" data-device="iphone">
+    <iframe src="workspace-more-menu.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 导航 ⋯ 菜单</span>低频集合（铁律 6）：会话历史 → 03n / 实例信息 → 03k，两项直开对应 sheet；旧信息钮退役，导航右上唯一 ⋯。<br><code>workspace-more-menu.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-more-menu.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-instance-switch.html" data-device="iphone">
+    <iframe src="workspace-instance-switch.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 实例切换</span>标题 ▾：单会话展示（并行能力保留，pills 常驻撤除）；列表区定高滚动 + 钉底 ＋ 新建实例 / ⟲ 恢复历史会话；切换零销毁（活跃实例与历史互斥）。<br><code>workspace-instance-switch.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-instance-switch.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-session-history.html" data-device="iphone">
+    <iframe src="workspace-session-history.html" loading="lazy" style="width:100%;height:1125px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 会话历史</span>⋯ 菜单进入；筛选段内嵌计数（全部 342｜进行中 3｜已结束 339）+ 搜索（服务端按名）；时间分组 + 游标分页（首屏 20 · 增量 +20）；点已结束 → 恢复回放；删除 = 左滑行（二次确认）。<br><code>workspace-session-history.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-session-history.html" data-w="390" data-h="1125" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-composer-config.html" data-device="iphone">
+    <iframe src="workspace-composer-config.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 会话配置</span>窄端 composer 三项（权限/模型/深度）分别收缩为彩色图标，点图标原位上方弹出该项选项菜单、即点即生效；宽端 pills 常驻且文本区 ≥3 行。<br><code>workspace-composer-config.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-composer-config.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-attach-menu.html" data-device="iphone">
+    <iframe src="workspace-attach-menu.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 附件来源</span>composer ＋（控制行最左）→ 来源菜单：照片（图库多选）/ 相机（拍摄）/ 文件（txt/md/csv/json/log 白名单）；类型边界外（大文件/二进制/PDF）→ 引导上传到项目文件（03z）；来源可扩展。<br><code>workspace-attach-menu.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-attach-menu.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="approval-center.html" data-device="iphone">
+    <iframe src="approval-center.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 审批中心</span>跨会话聚合待审批：逐条 允许/拒绝、全部允许（确认）、强写操作红色高亮、点卡跳会话。<br><code>approval-center.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="approval-center.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="plugins-skill-menu.html" data-device="iphone">
+    <iframe src="plugins-skill-menu.html" loading="lazy" style="width:100%;height:1130px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · 行操作</span>长按已安装行（技能/MCP 同款）→ 查看详情 / 停用（停止注入）/ 卸载需确认（依赖与影响提示）；删除入口也在详情页 12③/13④。<br><code>plugins-skill-menu.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="plugins-skill-menu.html" data-w="390" data-h="1130" title="全屏查看">⤢</span>
+  </figure>
+    </div>
+    <h2>4 · 工具 · Git</h2>
+    <p class="flow">状态 → 提交/放弃 → 历史/详情/分支 → diff</p>
+    <div class="grid">
+  <figure class="phone" data-page="tool-git.html" data-device="iphone">
+    <iframe src="tool-git.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · Git 检视</span>工具图标原位高亮互切（Git/文件/Wiki）；再点当前图标回会话；底部通向历史/分支；变更行 = diff / 长按放弃（03m3）/ 提交（03m2）。<br><code>tool-git.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-git.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-git-commit.html" data-device="iphone">
+    <iframe src="tool-git-commit.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 提交操作</span>变更勾选（?? 默认不勾防误提交）+ 提交信息（必填）→ 提交到当前分支；完成后工作区清零。<br><code>tool-git-commit.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-git-commit.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-git-discard.html" data-device="iphone">
+    <iframe src="tool-git-discard.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 放弃改动</span>居中 Alert：恢复到 HEAD、不可撤销；Agent 编辑冲突红色提示；未跟踪文件放弃 = 删除。<br><code>tool-git-discard.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-git-discard.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-git-history.html" data-device="iphone">
+    <iframe src="tool-git-history.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · 提交历史</span>从「全部历史」进入：按日期分组、hash + 信息 + 作者（✦ = Agent 会话提交）。<br><code>tool-git-history.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-git-history.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-git-commit-detail.html" data-device="iphone">
+    <iframe src="tool-git-commit-detail.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · 提交详情</span>提交信息 + 来源标注 + 变更文件列表；点文件 → diff（对比基准 = 本次提交）。<br><code>tool-git-commit-detail.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-git-commit-detail.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-git-branches.html" data-device="iphone">
+    <iframe src="tool-git-branches.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · 分支列表</span>当前分支置顶 + 领先/落后统计；已合并置灰；只读边界：切换/合并交给 Agent。<br><code>tool-git-branches.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-git-branches.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-git-diff.html" data-device="iphone">
+    <iframe src="tool-git-diff.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · 单文件 diff</span>自工作台文件预览标签 ⋯「查看 diff」push 进入（iPhone）；iPad/Mac = 中栏 diff 标签（内容同本页）：unified 红删绿增、双栏行号、「下一个改动」逐块跳转。<br><code>tool-git-diff.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-git-diff.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+    </div>
+    <h2>5 · 工具 · 文件</h2>
+    <p class="flow">树 → 新建标签 → 链接直达 → 搜索 → 添加 → 行操作 → 结构写操作（文件预览专组见第 6 组）</p>
+    <div class="grid">
+  <figure class="phone" data-page="tool-files.html" data-device="iphone">
+    <iframe src="tool-files.html" loading="lazy" style="width:100%;height:1190px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 检视面板</span>三个结构标签 + 文件预览标签（iPhone 预览回归面板，iPad·Mac 中栏）；地址栏 + 收缩搜索 + 悬浮添加；内容编辑交给 Agent。<br><code>tool-files.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-files.html" data-w="390" data-h="1190" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-files-newtab.html" data-device="iphone">
+    <iframe src="tool-files-newtab.html" loading="lazy" style="width:100%;height:1158px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 新建标签菜单</span>标签条「＋」= 新建标签菜单：文件树 / Git / Wiki 任选，选中即新增标签并激活（同目标已开 = 激活）。<br><code>tool-files-newtab.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-files-newtab.html" data-w="390" data-h="844" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-link.html" data-device="iphone">
+    <iframe src="workspace-link.html" loading="lazy" style="width:100%;height:1157px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">会话 · 面板入口与链接直达</span>行2 单面板入口钮；流内链接按目标分容器：文件 → 面板滑入并开预览标签（iPad·Mac 中栏标签）；wiki → 中栏阅读；Git → 面板滑入并激活 Git 标签（peek = 滑入至 80% 示意）。<br><code>workspace-link.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-link.html" data-w="390" data-h="844" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-files-search.html" data-device="iphone">
+    <iframe src="tool-files-search.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 文件搜索</span>仅根目录可搜索（与「..」互斥）：行2 搜索钮原位展开输入，项目内文件名子串过滤，结果带路径与时间；✕ 收起。<br><code>tool-files-search.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-files-search.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-files-add.html" data-device="iphone">
+    <iframe src="tool-files-add.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 添加菜单</span>行2「＋」单入口承载：新建…（03y）/ 上传…（03z），目标 = 当前目录，任意层级可用。<br><code>tool-files-add.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-files-add.html" data-w="390" data-h="844" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-files-row-menu.html" data-device="iphone">
+    <iframe src="tool-files-row-menu.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 文件操作</span>长按文件行五项：预览（→ 面板/中栏标签）/ 重命名 / 移动到… / 上传文件… / 删除（确认 + 未提交警示）；桌面右键同款（05e）。<br><code>tool-files-row-menu.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-files-row-menu.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-files-rename.html" data-device="iphone">
+    <iframe src="tool-files-rename.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 重命名</span>居中 Alert：名称预填全选、重名行内校验；确认 = Git mv，未提交改动跟随。<br><code>tool-files-rename.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-files-rename.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-files-move.html" data-device="iphone">
+    <iframe src="tool-files-move.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 移动到…</span>目录浏览 sheet：✓ 选中目标、就地新建文件夹、非法目标禁用按钮；确认 = Git mv。<br><code>tool-files-move.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-files-move.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-files-delete.html" data-device="iphone">
+    <iframe src="tool-files-delete.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 删除确认</span>Alert + 未提交改动橙色警示（条件出现）；删除红色破坏性、取消默认。<br><code>tool-files-delete.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-files-delete.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-files-create.html" data-device="iphone">
+    <iframe src="tool-files-create.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 新建</span>文件 / 文件夹二选一，默认当前目录，重名行内提示；创建后刷新并选中。<br><code>tool-files-create.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-files-create.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="tool-files-upload.html" data-device="iphone">
+    <iframe src="tool-files-upload.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · 上传</span>⋯ 菜单 / 长按文件夹「上传到此」/ 桌面拖拽；队列进度、同名冲突三选。<br><code>tool-files-upload.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-files-upload.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+    </div>
+    <h2>6 · 文件预览 · 容器与类型矩阵</h2>
+    <p class="flow">一个内容组件四种容器 × 类型矩阵：面板标签（工作台）/ push（全局文件）——代码·文本=着色+编辑 · MD/HTML=渲染⇄源码（无缩放）· 图片=查看器 · 未知二进制=不支持态；编辑态全文本类共用</p>
+    <div class="grid">
+  <figure class="phone" data-page="workspace-preview.html" data-device="iphone">
+    <iframe src="workspace-preview.html" loading="lazy" style="width:100%;height:1140px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">容器① · 面板标签（工作台）</span>面板树点文件 → 面板内新增/激活预览标签（doc.text 图标，面板不退出、连续浏览）；检视器只留结构标签；元信息在顶部行（类型·行数·更新时间）；[编辑] = 导航右端（⋯ 左侧，iOS 惯例），同屏单 ⋯——复制内容 / 复制路径 / 查看 diff 收进右上导航 ⋯；✕ 关回文件树，‹ 工作台退出面板（状态零销毁）。<br><code>workspace-preview.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-preview.html" data-w="390" data-h="1125" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-preview-md.html" data-device="iphone">
+    <iframe src="workspace-preview-md.html" loading="lazy" style="width:100%;height:1140px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">容器① · 面板标签</span>MD/HTML 渲染态：README.md 激活；渲染⇄源码分段收顶部元信息行右端；沙箱渲染、无缩放；同容器代码态（上图）同一 ptabs 骨架。<br><code>workspace-preview-md.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-preview-md.html" data-w="390" data-h="1125" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-preview-image.html" data-device="iphone">
+    <iframe src="workspace-preview-image.html" loading="lazy" style="width:100%;height:1140px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">容器① · 面板标签</span>图片查看器：hero-banner.png 只读，棋盘格画布 + 画布操作条（放大/缩小/适应窗口/1:1/旋转），倍率在画布；fstat 右端空。<br><code>workspace-preview-image.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-preview-image.html" data-w="390" data-h="1125" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-preview-edit.html" data-device="iphone">
+    <iframe src="workspace-preview-edit.html" loading="lazy" style="width:100%;height:1140px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">容器① · 面板标签</span>编辑态内联于本标签（不新开页）：emeta 放弃/完成 + 未保存标记、等宽明文、底部 aux 撤销/重做/收起键盘；写锁冲突 = 等待/强制编辑。<br><code>workspace-preview-edit.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-preview-edit.html" data-w="390" data-h="1125" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-preview-unsupported.html" data-device="iphone">
+    <iframe src="workspace-preview-unsupported.html" loading="lazy" style="width:100%;height:1140px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">容器① · 面板标签</span>未知二进制（data.bin）=「不支持预览」空态，处理引导 Agent / 终端；⋯ 仅复制路径；fstat 右端空。<br><code>workspace-preview-unsupported.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-preview-unsupported.html" data-w="390" data-h="1125" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="files-global-preview.html" data-device="iphone">
+    <iframe src="files-global-preview.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">容器② · push（代码）</span>全局文件 Tab 点散文件行 push 进入（push 容器基准图）：deploy.sh 按语法着色；元信息在顶部行（右端空）；[编辑] = 导航右端主操作（进 03q2）；⋯：复制内容 / 复制路径（根作用域无 Git，无查看 diff）。<br><code>files-global-preview.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="files-global-preview.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="files-global-preview-edit.html" data-device="iphone">
+    <iframe src="files-global-preview-edit.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">类型 · 编辑态（全文本类共用）</span>代码/文本/MD/HTML 同机制：等宽明文编辑器，「放弃/完成」= 不留痕/保存写回；根作用域无 Git → 写回即保存，无 diff 基准；写锁冲突提示 等待/强制编辑。<br><code>files-global-preview-edit.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="files-global-preview-edit.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="files-global-preview-md.html" data-device="iphone">
+    <iframe src="files-global-preview-md.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">类型 · Markdown/HTML（渲染⇄源码）</span>[编辑] = 导航右端主操作；渲染 ⇄ 源码 分段收顶部元信息行右端；沙箱渲染（不执行脚本/不发请求），HTML 同款；流式排版无缩放；⋯：复制内容/复制路径（根作用域无查看 diff）。<br><code>files-global-preview-md.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="files-global-preview-md.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="files-global-preview-image.html" data-device="iphone">
+    <iframe src="files-global-preview-image.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">类型 · 图片（查看器）</span>顶部元信息行（右端空，倍率在画布）+ 画布操作条：放大/缩小/适应窗口/1:1/旋转；⋯：复制路径/另存为…；滚轮与双指同效；只读无编辑。<br><code>files-global-preview-image.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="files-global-preview-image.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="files-global-preview-unsupported.html" data-device="iphone">
+    <iframe src="files-global-preview-unsupported.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">类型 · 未知二进制（不支持态）</span>内容区居中「不支持预览」提示（无画布语义），处理引导交给 Agent / 终端；⋯ 仅复制路径（无编辑/无 diff）；顶部元信息行右端空。四容器同构：工作台面板/中栏标签打开未知二进制 = 同款空态。<br><code>files-global-preview-unsupported.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="files-global-preview-unsupported.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+    </div>
+    <h2>7 · 工具 · Wiki</h2>
+    <p class="flow">目录 → 中栏阅读</p>
+    <div class="grid">
+  <figure class="phone" data-page="tool-wiki.html" data-device="iphone">
+    <iframe src="tool-wiki.html" loading="lazy" style="width:100%;height:1125px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">工具 · Wiki 检视</span>页面树 + 全文搜索；✦ 页面可「让 Agent 读这篇」注入当前会话上下文；v1 只读。<br><code>tool-wiki.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="tool-wiki.html" data-w="390" data-h="1125" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="wiki-reader.html" data-device="iphone">
+    <iframe src="wiki-reader.html" loading="lazy" style="width:100%;height:1138px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">深度 · Wiki 阅读（pill 容器）</span>检视器 Wiki 标签只留目录；阅读 = 中栏 wiki pill（book 图标）：正文渲染 +「让 Agent 读这篇」→ 注入会话上下文；相关页面互跳。<br><code>wiki-reader.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="wiki-reader.html" data-w="390" data-h="1138" title="全屏查看">⤢</span>
+  </figure>
+    </div>
+    <h2>8 · 插件深度与市场</h2>
+    <p class="flow">市场浏览/技能市场 → 审计 → 详情 → 添加 → 源管理</p>
+    <div class="grid">
+  <figure data-page="market-browse.html" data-device="iphone">
+      <iframe src="market-browse.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">市场 · MCP</span>来源 chips（官方精选 / Registry / 私有源）+ 搜索；卡含 可安装/安装中/已安装 三态。<br><code>market-browse.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="market-browse.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="market-skills.html" data-device="iphone">
+      <iframe src="market-skills.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">市场 · 技能</span>源 = 官方精选 / skills.sh / 私有源（无 Registry）；卡含 来源分级与安装量。<br><code>market-skills.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="market-skills.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="market-install-audit.html" data-device="iphone">
+      <iframe src="market-install-audit.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">浮层 · 安装审计</span>市场点「安装」→ 审计 sheet：来源分级、版本与校验和、权限声明、工具预览。<br><code>market-install-audit.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="market-install-audit.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="plugins-skill-detail.html" data-device="iphone">
+      <iframe src="plugins-skill-detail.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">深度 · 技能详情</span>更新卡内确认变更 → 后台安装不打断会话；注入能力清单；卸载需确认。<br><code>plugins-skill-detail.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="plugins-skill-detail.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="plugins-mcp-detail.html" data-device="iphone">
+      <iframe src="plugins-mcp-detail.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">深度 · MCP 详情</span>连接状态/重启、命令与脱敏密钥、注入工具清单、注入范围；移除需确认。<br><code>plugins-mcp-detail.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="plugins-mcp-detail.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="plugins-mcp-add.html" data-device="iphone">
+      <iframe src="plugins-mcp-add.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">浮层 · 添加 MCP</span>传输类型（stdio/SSE）字段联动、密钥脱敏、作用域、添加后自动连接。<br><code>plugins-mcp-add.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="plugins-mcp-add.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="market-sources.html" data-device="iphone">
+      <iframe src="market-sources.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+      <figcaption><span class="tag">L3 · 市场源管理</span>三层源：官方精选（内置）/ Registry / skills.sh / 私有源；纯内网模式。<br><code>market-sources.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="market-sources.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+    </div>
   </div>
-
-  <h2>三、状态矩阵（工作台页 · 单列）</h2>
-  <p class="flow">阅读动线：骨架 03 → ① 空闲 → ② 出错+自动重试 → ③ 子 agent 展开 → ④ 空态 → ⑤ 断线 → 浮层（新建 / ℹ / 切换 / 历史 / 会话配置 / 审批中心）→ 工具与深度（Git → 历史 → 提交 → 分支；文件 → 搜索 → 操作 → 新建 → 上传 → 预览 → diff；Wiki → 阅读）。所有状态共用同一页面骨架。</p>
-
-  <h3>骨架</h3>
-  <figure class="phone">
-    <iframe src="03-workspace-agent.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">骨架 · 观察态</span>常驻 2 行 + 滚动收纳（上滚收敛迷你条）；输入框双行 composer：窄端配置三项分别收缩为彩色图标（点图标弹出选项菜单 03a）+ 右端停止/发送互斥方形键；托盘单行胶囊点开展开；标题 ▾ 切项目。<br><code>03-workspace-agent.html</code> · HTML 轨</figcaption>
+  <div class="dview" data-view="ipad">
+    <h2>1 · 三栏骨架与检视</h2>
+    <p class="flow">三栏 → 检视 Git → 返回动线（文件预览专组见第 2 组）</p>
+  <figure data-page="ipad-workspace.html" data-device="ipad">
+    <div class="fit" data-os="0.878" style="height:984px"><iframe src="ipad-workspace.html" loading="lazy" style="width:1228px;height:1121px;transform:scale(0.878)"></iframe></div>
+    <figcaption><span class="tag t-multi">iPad</span>侧栏项目/实例 · 中栏会话（无返回键）· 右栏检视面板（三个结构标签）· 底部状态栏与 Mac 同构（连接 / 审批段 / 用量）。<br><code>ipad-workspace.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="ipad-workspace.html" data-w="1228" data-h="984" title="全屏查看">⤢</span>
   </figure>
-  <figure class="phone">
-    <iframe src="03b-collapsed.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">骨架 · 收敛态</span>输出流上滚超一屏 → 行2 收敛为单行迷你条（● 会话名 · ⚠n · ▾），回底浮球点按弹回完整工具区；输出流可视高度 +17%。<br><code>03b-collapsed.html</code> · HTML 轨</figcaption>
+  <figure data-page="ipad-tool-git.html" data-device="ipad">
+    <div class="fit" data-os="0.878" style="height:944px"><iframe src="ipad-tool-git.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
+    <figcaption><span class="tag t-multi">iPad · 检视 Git</span>Git 标签选中态：分支 + 工作区变更列表，与 05i 同构；历史/提交/分支 = 03t/03u/03v。<br><code>ipad-tool-git.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="ipad-tool-git.html" data-w="1228" data-h="944" title="全屏查看">⤢</span>
   </figure>
-
-  <h3>生命周期与连接</h3>
-  <figure class="phone">
-    <iframe src="03c-workspace-idle.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">状态 · 空闲</span>灰点、绿色完成横幅；停止/发送同位互斥方形键（空闲 = 蓝色发送）；push / Tab 直达差异见注④。<br><code>03c-workspace-idle.html</code> · HTML 轨</figcaption>
+  <figure data-page="ipad-inspector-back.html" data-device="ipad">
+    <div class="fit" data-os="0.878" style="height:946px"><iframe src="ipad-inspector-back.html" loading="lazy" style="width:1228px;height:1077px;transform:scale(0.878)"></iframe></div>
+    <figcaption><span class="tag t-multi">iPad · 返回动线</span>检视器深层返回三路径：‹ 列表回首层 / 段切换平级返回 / » 折叠整栏——均不入导航栈；iPhone 侧为 push 栈（‹ 导航 + 右滑）。<br><code>ipad-inspector-back.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="ipad-inspector-back.html" data-w="1228" data-h="946" title="全屏查看">⤢</span>
   </figure>
-  <figure class="phone">
-    <iframe src="03a-sheet-composer-config.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">浮层 · 会话配置</span>窄端 composer 三项（权限/模型/深度）分别收缩为彩色图标，点图标原位上方弹出该项选项菜单、即点即生效；宽端 pills 常驻且文本区 ≥3 行。<br><code>03a-sheet-composer-config.html</code> · HTML 轨</figcaption>
+    <h2>2 · 文件预览 · 中栏标签</h2>
+    <p class="flow">树点文件 → 中栏文件标签（IDE 模式）——代码 / MD·HTML（图片、编辑态与 Mac 同构声明）；与 iPhone 面板标签、push 容器同构</p>
+  <figure data-page="ipad-tool-files-preview.html" data-device="ipad">
+      <div class="fit" data-os="0.878" style="height:973px"><iframe src="ipad-tool-files-preview.html" loading="lazy" style="width:1228px;height:1108px;transform:scale(0.878)"></iframe></div>
+      <figcaption><span class="tag t-multi">iPad · 代码</span>中栏文件标签（IDE 模式）：检视器树点文件 → 中栏新增/激活 passkey.ts 标签 · 检视器只留结构标签；tabstrip 右端 [分屏][编辑][⋯]（⋯：复制内容 / 复制路径 / 查看 diff → 中栏 diff 标签）；顶部元信息行（类型·行数·更新时间，右端空）。<br><code>ipad-tool-files-preview.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="ipad-tool-files-preview.html" data-w="1228" data-h="973" title="全屏查看">⤢</span>
   </figure>
-  <figure class="phone">
-    <iframe src="03d-workspace-error.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">状态 · 出错</span>红点 + 错误红卡 + 自动重试倒计时条（取消 / 立即重试）；配置在 ℹ。<br><code>03d-workspace-error.html</code> · HTML 轨</figcaption>
+  <figure data-page="ipad-tool-files-preview-md.html" data-device="ipad">
+      <div class="fit" data-os="0.878" style="height:1111px"><iframe src="ipad-tool-files-preview-md.html" loading="lazy" style="width:1228px;height:1265px;transform:scale(0.878)"></iframe></div>
+      <figcaption><span class="tag t-multi">iPad · MD/HTML</span>渲染 ⇄ 源码 分段收顶部元信息行右端 + 沙箱渲染，流式排版无缩放；[编辑] = tabstrip 右端（⋯ 左侧）；⋯：复制内容 / 复制路径 / 查看 diff。<br><code>ipad-tool-files-preview-md.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="ipad-tool-files-preview-md.html" data-w="1228" data-h="1111" title="全屏查看">⤢</span>
   </figure>
-  <figure class="phone">
-    <iframe src="03e-subagent-expanded.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">状态 · 子 agent 展开</span>嵌套工具卡缩进一级、同一组件；概览条可跳转；审批仍聚合到托盘。<br><code>03e-subagent-expanded.html</code> · HTML 轨</figcaption>
+  <figure data-page="ipad-tool-files-preview-image.html" data-device="ipad">
+      <div class="fit" data-os="0.878" style="height:973px"><iframe src="ipad-tool-files-preview-image.html" loading="lazy" style="width:1228px;height:1108px;transform:scale(0.878)"></iframe></div>
+      <figcaption><span class="tag t-multi">iPad · 图片</span>中栏标签容器，只读查看器：棋盘格画布 + 画布操作条（放大/缩小/适应窗口/1:1/旋转，倍率在画布）；⋯ = 图片菜单（复制路径 / 另存为…）；顶部元信息行右端空。<br><code>ipad-tool-files-preview-image.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="ipad-tool-files-preview-image.html" data-w="1228" data-h="973" title="全屏查看">⤢</span>
   </figure>
-  <figure class="phone">
-    <iframe src="03h-workspace-empty.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">状态 · 空态</span>Tab 直达无返回键；无实例不渲染 pill 条；项目级工具仍可用。<br><code>03h-workspace-empty.html</code> · HTML 轨</figcaption>
+  <figure data-page="ipad-tool-files-preview-edit.html" data-device="ipad">
+      <div class="fit" data-os="0.878" style="height:973px"><iframe src="ipad-tool-files-preview-edit.html" loading="lazy" style="width:1228px;height:1108px;transform:scale(0.878)"></iframe></div>
+      <figcaption><span class="tag t-multi">iPad · 编辑态</span>中栏标签容器，全文本类共用：emeta 顶部（放弃/完成 + 未保存标记）、等宽明文、底部 aux 撤销/重做/收起键盘（桌面无收起键盘项）；写锁冲突 = 等待/强制编辑。<br><code>ipad-tool-files-preview-edit.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="ipad-tool-files-preview-edit.html" data-w="1228" data-h="973" title="全屏查看">⤢</span>
   </figure>
-  <figure class="phone">
-    <iframe src="03i-workspace-offline.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">状态 · 断线</span>顶部横幅 + 全部冻结变灰但不销毁；输入禁用；重连按缺口回放。<br><code>03i-workspace-offline.html</code> · HTML 轨</figcaption>
+  <figure data-page="ipad-tool-files-preview-unsupported.html" data-device="ipad">
+      <div class="fit" data-os="0.878" style="height:973px"><iframe src="ipad-tool-files-preview-unsupported.html" loading="lazy" style="width:1228px;height:1108px;transform:scale(0.878)"></iframe></div>
+      <figcaption><span class="tag t-multi">iPad · 未知二进制</span>中栏标签打开 data.bin = 「不支持预览」空态（无画布语义）；⋯ 仅复制路径；顶部元信息行右端空。<br><code>ipad-tool-files-preview-unsupported.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="ipad-tool-files-preview-unsupported.html" data-w="1228" data-h="973" title="全屏查看">⤢</span>
   </figure>
-
-  <h3>实例类型</h3>
-  <figure class="phone">
-    <iframe src="03f-workspace-terminal.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">实例 · 终端</span>tmux 实例：无模型 chips；上滑看历史，「↓ 实时」回底；无审批托盘。<br><code>03f-workspace-terminal.html</code> · HTML 轨</figcaption>
+    <h2>3 · 全局文件 · 浏览与推入态</h2>
+    <p class="flow">footnav 全局文件 → 列表 → 点散文件行 = 主区推入预览（容器④；其余类型态与 Mac 推入态同构）</p>
+  <figure data-page="ipad-files-global.html" data-device="ipad">
+      <div class="fit" data-os="0.878" style="height:944px"><iframe src="ipad-files-global.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
+      <figcaption><span class="tag t-multi">iPad · 全局文件</span>footnav 直入：作用域分段（全局/本项目）+ 项目根目录（live 标）+ 散文件行；「＋」与主标题同行；点散文件行 → 主区推入预览（下图）。<br><code>ipad-files-global.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="ipad-files-global.html" data-w="1228" data-h="944" title="全屏查看">⤢</span>
   </figure>
-  <figure class="phone">
-    <iframe src="03g-workspace-chat.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">实例 · Chat(Pi)</span>气泡式轻量对话；置顶 / 重命名 / 关闭；无审批、无子 agent。<br><code>03g-workspace-chat.html</code> · HTML 轨</figcaption>
+  <figure data-page="ipad-files-global-preview.html" data-device="ipad">
+      <div class="fit" data-os="0.878" style="height:944px"><iframe src="ipad-files-global-preview.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
+      <figcaption><span class="tag t-multi">iPad · 推入态 · 代码</span>容器④ iPad 形态：主区原地推入 ‹ 返回浏览原位；标题行 pencil + ⋯（复制内容/复制路径/在工作台打开，根作用域无 diff）；fstat 右端空；MD/图片/编辑/未知二进制态与 Mac 推入态同构（骨架仅差 padcol/sbar）。<br><code>ipad-files-global-preview.html</code> · HTML 轨</figcaption>
+          <span class="xpand" data-page="ipad-files-global-preview.html" data-w="1228" data-h="944" title="全屏查看">⤢</span>
   </figure>
-
-  <h3>浮层</h3>
-  <figure class="phone">
-    <iframe src="03j-sheet-new-instance.html" loading="lazy" style="width:100%;height:1125px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">浮层 · 新建实例</span>+Claude / +OMP / +Codex / 终端 / Chat；模型预设来自设置；下滑关闭零影响。<br><code>03j-sheet-new-instance.html</code> · HTML 轨</figcaption>
+    <h2>4 · 历史 · 审批 · 浮层</h2>
+    <p class="flow">历史 Sidebar → 审批模态 → 新建 Popover</p>
+  <figure data-page="ipad-history-sidebar.html" data-device="ipad">
+    <div class="fit" data-os="0.878" style="height:950px"><iframe src="ipad-history-sidebar.html" loading="lazy" style="width:1228px;height:1082px;transform:scale(0.878)"></iframe></div>
+    <figcaption><span class="tag t-multi">iPad · 历史模式 Sidebar</span>时钟把实例区切换为历史列表（与 05c 同一数据）：作用域分段 + 三段计数筛选 + 搜索 + 时间分组与增量加载（20+20）；点已结束 → 中栏回放恢复；右键 = 菜单（恢复/删除…）；现场零销毁。<br><code>ipad-history-sidebar.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="ipad-history-sidebar.html" data-w="1228" data-h="950" title="全屏查看">⤢</span>
   </figure>
-  <figure class="phone">
-    <iframe src="03k-sheet-instance-info.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">浮层 · 实例信息 ℹ</span>元信息 + 运行配置 + 自动重试；重命名 / 置顶 / 关闭（确认式）。<br><code>03k-sheet-instance-info.html</code> · HTML 轨</figcaption>
+  <figure data-page="ipad-approval-modal.html" data-device="ipad">
+    <div class="fit" data-os="0.878" style="height:944px"><iframe src="ipad-approval-modal.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
+    <figcaption><span class="tag t-multi">iPad · 审批中心</span>审批入口行点击 → 居中卡片模态（iPad 无半屏 sheet 惯例）：卡片与 11/05f 同规格，全部允许需确认。<br><code>ipad-approval-modal.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="ipad-approval-modal.html" data-w="1228" data-h="944" title="全屏查看">⤢</span>
   </figure>
-  <figure class="phone">
-    <iframe src="03l-sheet-project-switch.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">浮层 · 切换</span>标题 ▾：按项目分组的活跃会话，点会话一步切换（原 2 跳变 1 跳）；切换零销毁。<br><code>03l-sheet-project-switch.html</code> · HTML 轨</figcaption>
+  <figure data-page="ipad-new-instance.html" data-device="ipad">
+    <div class="fit" data-os="0.878" style="height:944px"><iframe src="ipad-new-instance.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
+    <figcaption><span class="tag t-multi">iPad · 新建实例</span>Popover 锚于侧栏实例组 ＋（无箭头、浅阴影）：五种运行时与 03j / 05d 同数据同组件。<br><code>ipad-new-instance.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="ipad-new-instance.html" data-w="1228" data-h="944" title="全屏查看">⤢</span>
   </figure>
-  <figure class="phone">
-    <iframe src="03n-sheet-session-history.html" loading="lazy" style="width:100%;height:1125px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">浮层 · 会话历史</span>入口在 ⋯ 菜单；过滤 全部/进行中/已结束；点已结束会话即恢复并回放。<br><code>03n-sheet-session-history.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="11-approval-center.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">浮层 · 审批中心</span>跨会话聚合待审批：逐条 允许/拒绝、全部允许（确认）、强写操作红色高亮、点卡跳会话。<br><code>11-approval-center.html</code> · HTML 轨</figcaption>
-  </figure>
-
-  <h3>工具与深度页</h3>
-  <figure class="phone">
-    <iframe src="03m-workspace-git-tool.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · Git 检视</span>工具图标原位高亮互切（Git/文件/Wiki）；再点当前图标回会话；底部通向历史/分支；变更行 = diff / 长按放弃（03m3）/ 提交（03m2）。<br><code>03m-workspace-git-tool.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03m2-git-commit.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 提交操作</span>变更勾选（?? 默认不勾防误提交）+ 提交信息（必填）→ 提交到当前分支；完成后工作区清零。<br><code>03m2-git-commit.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03m3-git-discard.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 放弃改动</span>居中 Alert：恢复到 HEAD、不可撤销；Agent 编辑冲突红色提示；未跟踪文件放弃 = 删除。<br><code>03m3-git-discard.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03t-git-history.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">深度 · 提交历史</span>从「全部历史」进入：按日期分组、hash + 信息 + 作者（✦ = Agent 会话提交）。<br><code>03t-git-history.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03u-git-commit.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">深度 · 提交详情</span>提交信息 + 来源标注 + 变更文件列表；点文件 → diff（对比基准 = 本次提交）。<br><code>03u-git-commit.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03v-git-branches.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">深度 · 分支列表</span>当前分支置顶 + 领先/落后统计；已合并置灰；只读边界：切换/合并交给 Agent。<br><code>03v-git-branches.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03o-workspace-files-tool.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 检视面板</span>动态标签条（文件树 / Git / Wiki / 文件预览）；地址栏 + 收缩搜索 + 悬浮添加；会话链接直达新增标签；内容编辑交给 Agent。<br><code>03o-workspace-files-tool.html</code> · HTML 轨</figcaption>
-    <iframe src="03ob2-workspace-panel-newtab.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 新建标签菜单</span>标签条「＋」= 新建标签菜单：文件树 / Git / Wiki 任选，选中即新增标签并激活（同目标已开 = 激活）。<br><code>03ob2-workspace-panel-newtab.html</code> · HTML 轨</figcaption>
-    <iframe src="03ab-workspace-link.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">会话 · 面板入口与链接直达</span>行2 单面板入口钮；流内文件/Git/wiki 链接可点——点击面板滑入并自动新增/激活对应标签（peek = 滑入至 80% 示意）。<br><code>03ab-workspace-link.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03x-file-search.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 文件搜索</span>仅根目录可搜索（与「..」互斥）：行2 搜索钮原位展开输入，项目内文件名子串过滤，结果带路径与时间；✕ 收起。<br><code>03x-file-search.html</code> · HTML 轨</figcaption>
-    <iframe src="03oa-workspace-files-add.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 添加菜单</span>行2「＋」单入口承载：新建…（03y）/ 上传…（03z），目标 = 当前目录，任意层级可用。<br><code>03oa-workspace-files-add.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03w-file-actions.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 文件操作</span>长按文件行五项：预览 / 重命名 / 移动到… / 上传文件… / 删除（确认 + 未提交警示）；桌面右键同款（05e）。<br><code>03w-file-actions.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03w2-file-rename.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 重命名</span>居中 Alert：名称预填全选、重名行内校验；确认 = Git mv，未提交改动跟随。<br><code>03w2-file-rename.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03w3-file-move.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 移动到…</span>目录浏览 sheet：✓ 选中目标、就地新建文件夹、非法目标禁用按钮；确认 = Git mv。<br><code>03w3-file-move.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03w4-file-delete.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 删除确认</span>Alert + 未提交改动橙色警示（条件出现）；删除红色破坏性、取消默认。<br><code>03w4-file-delete.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03y-file-create.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 新建</span>文件 / 文件夹二选一，默认当前目录，重名行内提示；创建后刷新并选中。<br><code>03y-file-create.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03z-file-upload.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · 上传</span>⋯ 菜单 / 长按文件夹「上传到此」/ 桌面拖拽；队列进度、同名冲突三选。<br><code>03z-file-upload.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03q-preview-file.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">深度 · 文件预览</span>从文件列表点入：代码按语法着色按行渲染；「编辑」进编辑态（03q2），⋯ 直达 Git diff。<br><code>03q-preview-file.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure>
-    <iframe src="03q2-preview-edit.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">深度 · 文件编辑</span>文本/代码文件可编辑：等宽明文编辑器，「完成」保存写回并作为 diff 基准；Agent 写锁冲突时提示 等待/强制编辑。<br><code>03q2-preview-edit.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure>
-    <iframe src="03q3-preview-md.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">深度 · Markdown 渲染</span>渲染 ⇄ 源码 切换；渲染在沙箱中生成（不执行脚本/不发请求），HTML 同款；「编辑源码」进编辑态。<br><code>03q3-preview-md.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure>
-    <iframe src="03q4-preview-image.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">深度 · 图片查看器</span>常规操作：放大/缩小/适应窗口/1:1/旋转/另存为…；滚轮与双指同效；只读（修改交 Agent 或系统工具）。<br><code>03q4-preview-image.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03r-preview-diff.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">深度 · 单文件 diff</span>从 Git 行点入：unified 红删绿增、双栏行号、「下一个改动」逐块跳转。<br><code>03r-preview-diff.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03p-workspace-wiki-tool.html" loading="lazy" style="width:100%;height:1125px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">工具 · Wiki 检视</span>页面树 + 全文搜索；✦ 页面可「让 Agent 读这篇」注入当前会话上下文；v1 只读。<br><code>03p-workspace-wiki-tool.html</code> · HTML 轨</figcaption>
-  </figure>
-  <figure class="phone">
-    <iframe src="03s-wiki-reader.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">深度 · Wiki 阅读</span>正文渲染 +「让 Agent 读这篇」→ 注入会话上下文；相关页面互跳。<br><code>03s-wiki-reader.html</code> · HTML 轨</figcaption>
-  </figure>
-
-  <h2>四、市场体系（插件 Tab 深度）</h2>
-  <p class="flow">阅读动线：插件 Tab 市场两入口 → 选市场（MCP / 技能，源与类型绑定）→ 浏览/搜索 → 审计 → 安装 → 已安装管理。</p>
-  <div class="grid">
-    <figure>
-      <iframe src="17-market-browse.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">市场 · MCP</span>来源 chips（官方精选 / Registry / 私有源）+ 搜索；卡含 可安装/安装中/已安装 三态。<br><code>17-market-browse.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure>
-      <iframe src="18-skill-market.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">市场 · 技能</span>源 = 官方精选 / skills.sh / 私有源（无 Registry）；卡含 来源分级与安装量。<br><code>18-skill-market.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure>
-      <iframe src="16-install-audit.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">浮层 · 安装审计</span>市场点「安装」→ 审计 sheet：来源分级、版本与校验和、权限声明、工具预览。<br><code>16-install-audit.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure>
-      <iframe src="12-skill-detail.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">深度 · 技能详情</span>更新卡内确认变更 → 后台安装不打断会话；注入能力清单；卸载需确认。<br><code>12-skill-detail.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure>
-      <iframe src="13-mcp-detail.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">深度 · MCP 详情</span>连接状态/重启、命令与脱敏密钥、注入工具清单、注入范围；移除需确认。<br><code>13-mcp-detail.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure>
-      <iframe src="14-mcp-add.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">浮层 · 添加 MCP</span>传输类型（stdio/SSE）字段联动、密钥脱敏、作用域、添加后自动连接。<br><code>14-mcp-add.html</code> · HTML 轨</figcaption>
-    </figure>
-    <figure>
-      <iframe src="15-market-sources.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">L3 · 市场源管理</span>三层源：官方精选（内置）/ Registry / skills.sh / 私有源；纯内网模式。<br><code>15-market-sources.html</code> · HTML 轨</figcaption>
-    </figure>
   </div>
-
-  <h2>五、多端适配（同一数据，只换容器）</h2>
-  <p class="flow">iPad = 三栏；Mac = Sidebar + 可分屏 + Inspector；含 审批中心 / 历史模式 / 浮层样式 / 文件菜单 的桌面形态。</p>
-  <figure>
-    <div class="fit" style="height:944px"><iframe src="04-ipad-workspace.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
-    <figcaption><span class="tag t-multi">iPad</span>侧栏项目/实例（实例区下方橙色审批行）· 中栏会话（无返回键）· 右栏检视面板（动态标签：文件树 / Git / Wiki / 文件预览）。<br><code>04-ipad-workspace.html</code> · HTML 轨</figcaption>
+  <div class="dview" data-view="mac">
+    <h2>1 · 窗口骨架与状态</h2>
+    <p class="flow">三栏可分屏 → 错误/离线/子 agent 桌面态</p>
+  <figure data-page="mac-workspace.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:803px"><iframe src="mac-workspace.html" loading="lazy" style="width:1288px;height:956px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac</span>可分屏多窗格；Inspector 出 diff；Sidebar「其他项目 · 活跃」跨项目切换；状态栏审批入口。<br><code>mac-workspace.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-workspace.html" data-w="1288" data-h="803" title="全屏查看">⤢</span>
   </figure>
-    <figure>
-      <div class="fit" style="height:944px"><iframe src="04b-ipad-workspace.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
-      <figcaption><span class="tag t-multi">iPad</span>检视器文件预览态：文件段内点文件 → 本栏预览（着色同 03q/05h）· ‹ 列表回文件树 · 编辑 03q2 / diff 03r。<br><code>04b-ipad-workspace.html</code> · HTML 轨</figcaption>
-    </figure>
-  <figure>
-    <div class="fit" style="height:944px"><iframe src="04f-inspector-back.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
-    <figcaption><span class="tag t-multi">iPad · 返回动线</span>检视器深层返回三路径：‹ 列表回首层 / 段切换平级返回 / » 折叠整栏——均不入导航栈；iPhone 侧为 push 栈（‹ 导航 + 右滑）。<br><code>04f-inspector-back.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-workspace-error.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-workspace-error.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 工作台错误态</span>错误卡 + 自动重试倒计时（取消/立即重试）；配置 = 页头 ⋯ › 实例信息。<br><code>mac-workspace-error.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-workspace-error.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:944px"><iframe src="04c-ipad-approval-modal.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
-    <figcaption><span class="tag t-multi">iPad · 审批中心</span>审批入口行点击 → 居中卡片模态（iPad 无半屏 sheet 惯例）：卡片与 11/05f 同规格，全部允许需确认。<br><code>04c-ipad-approval-modal.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-workspace-offline.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-workspace-offline.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 工作台离线态</span>断线横幅 + 现场冻结不销毁（铁律 2）+ 重连按缺口回放。<br><code>mac-workspace-offline.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-workspace-offline.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:944px"><iframe src="04e-ipad-new-instance.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
-    <figcaption><span class="tag t-multi">iPad · 新建实例</span>Popover 锚于侧栏实例组 ＋（无箭头、浅阴影）：五种运行时与 03j / 05d 同数据同组件。<br><code>04e-ipad-new-instance.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-workspace-subagent.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-workspace-subagent.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 子 agent 展开态</span>卡点开展开（任务/嵌套工具行）· 收起折回单行。<br><code>mac-workspace-subagent.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-workspace-subagent.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:944px"><iframe src="04d-ipad-git.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
-    <figcaption><span class="tag t-multi">iPad · 检视 Git</span>Git 段选中态：分支 + 工作区变更列表，与 05i 同构；历史/提交/分支 = 03t/03u/03v。<br><code>04d-ipad-git.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-composer-attach.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-composer-attach.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · composer 附件态</span>chips 行（多图横排滚动）+ hover × / ⌫ 删除 + ⌘V 粘贴剪贴板图片（桌面第三来源，来源菜单因此无相机：照片/文件两项）；发送后附件卡与 iPhone 同构。<br><code>mac-composer-attach.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-composer-attach.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:944px"><iframe src="04d-ipad-git.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
-    <figcaption><span class="tag t-multi">iPad · 检视 Git</span>Git 段 = 分支状态 + 工作区变更列表，与文件树分屏不混排；历史/提交/分支 = 03t/03u/03v（与 Mac 05i 同组件）。<br><code>04d-ipad-git.html</code> · HTML 轨</figcaption>
+    <h2>2 · 检视器 · Git 与文件操作</h2>
+    <p class="flow">检视 Git → 文件树右键（结构操作；文件预览专组见第 3 组）</p>
+  <figure data-page="mac-tool-git.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-tool-git.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 检视 Git</span>Git 标签 = 分支状态 + 工作区变更列表；历史列表/提交/分支 = 03t/03u/03v；与 iPad 04d 同构（铁律 3）。<br><code>mac-tool-git.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-tool-git.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:944px"><iframe src="04e-ipad-new-instance.html" loading="lazy" style="width:1228px;height:1075px;transform:scale(0.878)"></iframe></div>
-    <figcaption><span class="tag t-multi">iPad · 新建实例</span>Popover 锚于侧栏实例组 ＋（无箭头、浅阴影）：五种运行时与 03j / 05d 同数据同组件。<br><code>04e-ipad-new-instance.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-tool-files-row-menu.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:773px"><iframe src="mac-tool-files-row-menu.html" loading="lazy" style="width:1288px;height:920px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 文件操作</span>检视文件分段右键（iPad 长按）：预览 / 重命名 / 移动 / 上传 / 删除；拖拽进右栏即上传。<br><code>mac-tool-files-row-menu.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-tool-files-row-menu.html" data-w="1288" data-h="773" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:800px"><iframe src="05-mac-workspace.html" loading="lazy" style="width:1288px;height:952px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac</span>可分屏多窗格；Inspector 出 diff；Sidebar「其他项目 · 活跃」跨项目切换；状态栏审批入口。<br><code>05-mac-workspace.html</code> · HTML 轨</figcaption>
+    <h2>3 · 文件预览 · 中栏标签与推入态</h2>
+    <p class="flow">树点文件 → 中栏文件标签（IDE 模式）——代码 / MD·HTML / 图片 / 编辑态；全局文件推入态 = 第二容器（与 iPhone 面板标签、push 同构）</p>
+  <figure data-page="mac-tool-files-preview.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:830px"><iframe src="mac-tool-files-preview.html" loading="lazy" style="width:1288px;height:988px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 代码</span>中栏文件标签（IDE 模式）：检视器树点文件行 → 中栏新增/激活标签（会话⇄文件随意切换，检视器只留结构标签）；tabstrip 右端 [分屏][编辑][⋯]（⋯ = 文件菜单：复制内容 / 复制路径 / 查看 diff → 中栏 diff 标签）；顶部元信息行（类型·行数·更新时间，右端空）；类型化预览：代码着色 / Markdown·HTML 渲染 / 图片查看器 / 文本可编辑（03q 同一渲染器）。<br><code>mac-tool-files-preview.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-tool-files-preview.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:773px"><iframe src="05f-mac-approval-center.html" loading="lazy" style="width:1288px;height:920px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 审批中心</span>状态栏「N 项待审批」点击 → Popover；卡片与手机审批中心（11）同数据同组件。<br><code>05f-mac-approval-center.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-tool-files-preview-md.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:830px"><iframe src="mac-tool-files-preview-md.html" loading="lazy" style="width:1288px;height:988px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · MD/HTML</span>中栏标签容器（与 04b2 同构）：[编辑] = tabstrip 右端主操作（05h4），渲染 ⇄ 源码 分段收顶部元信息行右端；tabstrip 右端 [分屏][编辑][⋯]：复制内容 / 复制路径 / 查看 diff；沙箱渲染，流式排版无缩放。<br><code>mac-tool-files-preview-md.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-tool-files-preview-md.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:773px"><iframe src="05c-mac-history-sidebar.html" loading="lazy" style="width:1288px;height:920px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 历史模式</span>时钟把 Sidebar 实例区切换为历史列表（过滤 + 恢复）；iPhone 为 sheet（03n）。<br><code>05c-mac-history-sidebar.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-tool-files-preview-image.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-tool-files-preview-image.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 图片</span>中栏标签容器，只读查看器：画布操作条 放大/缩小/适应窗口/1:1/旋转（倍率在画布）；⋯：复制路径 / 另存为…；修改交 Agent 或系统工具。<br><code>mac-tool-files-preview-image.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-tool-files-preview-image.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:823px"><iframe src="05g-mac-all-sessions.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 全部会话</span>Sidebar 作用域切换（项目/全部）：项目 = 05 现状实例区，全部 = 跨项目分组列表；点行 → 中栏新开会话 tab（可跨项目混开）。<br><code>05g-mac-all-sessions.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-tool-files-preview-edit.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:827px"><iframe src="mac-tool-files-preview-edit.html" loading="lazy" style="width:1288px;height:985px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 编辑态</span>中栏标签容器，全文本类共用编辑态：放弃/完成（写回 = diff 基准）、撤销/重做；写锁冲突 = 等待/强制编辑。<br><code>mac-tool-files-preview-edit.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-tool-files-preview-edit.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:823px"><iframe src="05h-mac-preview.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 检视预览</span>文件段点文件行 → 本栏类型化预览：代码着色 / Markdown·HTML 渲染 / 图片查看器 / 文本可编辑（03q 同一渲染器）。<br><code>05h-mac-preview.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-tool-files-preview-unsupported.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-tool-files-preview-unsupported.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 未知二进制</span>中栏标签打开 data.bin = 「不支持预览」空态（无画布语义，处理引导 Agent / 终端）；⋯ 仅复制路径；顶部元信息行右端空。<br><code>mac-tool-files-preview-unsupported.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-tool-files-preview-unsupported.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:823px"><iframe src="05i-mac-git.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 检视 Git</span>Git 段 = 分支状态 + 工作区变更列表；历史列表/提交/分支 = 03t/03u/03v；与 iPad 04d 同构（铁律 3）。<br><code>05i-mac-git.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-files-global-preview.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-files-global-preview.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 推入态 · 代码</span>容器④：主区原地推入，‹ 返回浏览原位，不动工作台现场；标题行右端 pencil + ⋯：复制内容 / 复制路径 / 在工作台打开（显式升级路径 → 切该项目工作台并开中栏文件标签；根作用域无 Git，无查看 diff）；顶部元信息行（右端空）。<br><code>mac-files-global-preview.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-files-global-preview.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:823px"><iframe src="05i-mac-git.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 检视 Git</span>Git 段 = 分支状态 + 工作区变更列表；历史列表/提交/分支 = 03t/03u/03v；与 iPad 04d 同构（铁律 3）。<br><code>05i-mac-git.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-files-global-preview-md.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-files-global-preview-md.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 推入态 · MD/HTML</span>README.md 推入渲染：渲染⇄源码分段收顶部元信息行右端；沙箱渲染、无缩放。<br><code>mac-files-global-preview-md.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-files-global-preview-md.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:823px"><iframe src="10-mac-files-global.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 全局文件</span>Sidebar「全局文件」直入；作用域 全局/本项目；与项目文件工具同一组件。<br><code>10-mac-files-global.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-files-global-preview-image.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-files-global-preview-image.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 推入态 · 图片</span>hero-banner.png 只读查看器：棋盘格画布 + 画布操作条（倍率在画布）；⋯ = 图片菜单（复制路径 / 另存为…）；fstat 右端空。<br><code>mac-files-global-preview-image.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-files-global-preview-image.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:823px"><iframe src="09-mac-plugins.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 插件</span>Sidebar「插件」直入；作用域 全局/本项目·agents-web ▾；MCP / 已安装技能 / 市场两入口。<br><code>09-mac-plugins.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-files-global-preview-edit.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-files-global-preview-edit.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 推入态 · 编辑态</span>编辑内联于推入态：emeta 放弃/完成 + 未保存标记、等宽明文、aux 撤销/重做（桌面无收起键盘）；写锁冲突 = 等待/强制编辑。<br><code>mac-files-global-preview-edit.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-files-global-preview-edit.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:823px"><iframe src="17m-mac-market.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 市场</span>插件页市场行点击 → 同窗口推入：双分段双市场 + 来源 chips 过滤 +〔安装〕→ 审计卡 16；‹ 插件 返回。<br><code>17m-mac-market.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-files-global-preview-unsupported.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-files-global-preview-unsupported.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 推入态 · 未知二进制</span>data.bin =「不支持预览」空态；⋯ 仅复制路径；fstat 右端空。<br><code>mac-files-global-preview-unsupported.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-files-global-preview-unsupported.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:823px"><iframe src="09mb-scope-switcher.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 作用域切换</span>作用域分段 ▾ → 向下弹出切换 Popover：全局/本项目单选 + 项目列表直接换绑（选择即生效）；iPhone = 03l sheet。<br><code>09mb-scope-switcher.html</code> · HTML 轨</figcaption>
+    <h2>4 · 会话 · 历史与作用域</h2>
+    <p class="flow">历史 Sidebar → 全部会话 → pill 右键</p>
+  <figure data-page="mac-history-sidebar.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:811px"><iframe src="mac-history-sidebar.html" loading="lazy" style="width:1288px;height:966px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 历史模式</span>时钟把 Sidebar 实例区切换为历史列表：三段计数筛选 + 搜索 + 时间分组与增量加载（20+20）+ 恢复；右键 = 菜单（恢复/删除…）；iPhone 为 sheet（03n）。<br><code>mac-history-sidebar.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-history-sidebar.html" data-w="1288" data-h="811" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:823px"><iframe src="17m-mac-market.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 市场</span>插件页市场行点击 → 同窗口推入：双分段双市场 + 来源 chips 过滤 +〔安装〕→ 审计卡 16；‹ 插件 返回。<br><code>17m-mac-market.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-all-sessions.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:827px"><iframe src="mac-all-sessions.html" loading="lazy" style="width:1288px;height:985px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 全部会话</span>Sidebar 作用域切换（项目/全部）：项目 = 05 现状实例区，全部 = 跨项目分组列表；点行 → 中栏新开会话 tab（可跨项目混开）。<br><code>mac-all-sessions.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-all-sessions.html" data-w="1288" data-h="827" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:823px"><iframe src="07-mac-settings.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 设置</span>Sidebar「设置」直入；居中表单列：外观三态（与主题开关同源）/ Runtime 预设 / 重试默认 / 服务器（令牌脱敏）/ 退出。<br><code>07-mac-settings.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-workspace-pill-menu.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-workspace-pill-menu.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 会话 pill 右键菜单</span>右键 = 取消置顶/重命名/关闭会话…（iPhone = 长按 02c）；桌面右键无压暗。<br><code>mac-workspace-pill-menu.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-workspace-pill-menu.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:800px"><iframe src="05d-mac-popover-new-instance.html" loading="lazy" style="width:1288px;height:952px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 浮层样式</span>桌面浮层 = Popover（锚点弹出、不遮罩窗口）：新建实例（含 OMP）/ ℹ / 运行配置。<br><code>05d-mac-popover-new-instance.html</code> · HTML 轨</figcaption>
+    <h2>5 · 浮层 · Popover 与右键</h2>
+    <p class="flow">新建/实例信息/新建文件/审批 → 居中 Sheet → 技能行右键</p>
+  <figure data-page="mac-new-instance.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:800px"><iframe src="mac-new-instance.html" loading="lazy" style="width:1288px;height:952px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 浮层样式</span>桌面浮层 = Popover（锚点弹出、不遮罩窗口）：新建实例（含 OMP）/ 实例信息 / 运行配置。<br><code>mac-new-instance.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-new-instance.html" data-w="1288" data-h="800" title="全屏查看">⤢</span>
   </figure>
-  <figure>
-    <div class="fit" style="height:773px"><iframe src="05e-mac-inspector-file-menu.html" loading="lazy" style="width:1288px;height:920px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 文件操作</span>检视文件分段右键（iPad 长按）：预览 / 重命名 / 移动 / 上传 / 删除；拖拽进右栏即上传。<br><code>05e-mac-inspector-file-menu.html</code> · HTML 轨</figcaption>
+  <figure data-page="mac-instance-info.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:848px"><iframe src="mac-instance-info.html" loading="lazy" style="width:1288px;height:1009px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 实例信息 Popover</span>页头 ⋯ → 实例信息浮卡（状态/自动重试/重命名/置顶/关闭）；点外部收起。<br><code>mac-instance-info.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-instance-info.html" data-w="1288" data-h="848" title="全屏查看">⤢</span>
   </figure>
-
-  <h2>六、主题机制</h2>
+  <figure data-page="mac-tool-files-create.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-tool-files-create.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 新建文件 Popover</span>检视器组头 ＋ → 表单（文件|文件夹 + 名称 + 位置）；iPhone = 03y 同构。<br><code>mac-tool-files-create.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-tool-files-create.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-approval-center.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:773px"><iframe src="mac-approval-center.html" loading="lazy" style="width:1288px;height:920px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 审批中心</span>状态栏「N 项待审批」点击 → Popover；卡片与手机审批中心（11）同数据同组件。<br><code>mac-approval-center.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-approval-center.html" data-w="1288" data-h="773" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-project-new.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-project-new.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 新建/采用项目 居中 Sheet</span>Sidebar 组头 ＋ → 强模态居中卡（新建|采用 + 名称 + 目录）；iPhone = 08 同构。<br><code>mac-project-new.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-project-new.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-plugins-skill-menu.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-plugins-skill-menu.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 技能行右键菜单</span>右键 = 查看详情/停用/卸载…（iPhone = 长按 09b）；桌面右键无压暗。<br><code>mac-plugins-skill-menu.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-plugins-skill-menu.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-project-row-menu.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-project-row-menu.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 项目行右键菜单</span>Sidebar 项目行右键：打开 / 重命名…（活跃实例 → 影响提醒 Alert）/ 删除…（红）→ 居中 Alert 确认（信息结构同 iPhone 贴底 sheet，容器差异 = Alert 非 sheet）。<br><code>mac-project-row-menu.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-project-row-menu.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+    <h2>6 · 全局文件 · 浏览</h2>
+    <p class="flow">列表（点散文件行 → 主区推入预览，见第 3 组文件预览专组）</p>
+  <figure data-page="mac-files-global.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-files-global.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 全局文件</span>Sidebar「全局文件」直入；作用域 全局/本项目；与项目文件工具同一组件；点散文件行 = 主区推入预览（10m2）。<br><code>mac-files-global.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-files-global.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+    <h2>7 · 插件与市场</h2>
+    <p class="flow">插件 → 作用域切换 → 详情 → 更新 → 源 → 市场</p>
+  <figure data-page="mac-plugins-tab.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:828px"><iframe src="mac-plugins-tab.html" loading="lazy" style="width:1288px;height:986px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 插件</span>Sidebar「插件」直入；作用域 全局/本项目·agents-web ▾；MCP / 已安装技能 / 市场两入口。<br><code>mac-plugins-tab.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-plugins-tab.html" data-w="1288" data-h="828" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-plugins-scope.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-plugins-scope.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 作用域切换</span>作用域分段 ▾ → 向下弹出切换 Popover：全局/本项目单选 + 项目列表直接换绑（选择即生效）；iPhone = 03l sheet。<br><code>mac-plugins-scope.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-plugins-scope.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-plugins-skill-detail.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-plugins-skill-detail.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 技能详情</span>插件页技能行点入 → 推入视图：版本/来源/权限/启停/卸载（确认式）。<br><code>mac-plugins-skill-detail.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-plugins-skill-detail.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-plugins-mcp-detail.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-plugins-mcp-detail.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · MCP 详情</span>状态/传输/启动命令（mono 脱敏）/工具清单/启停/卸载。<br><code>mac-plugins-mcp-detail.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-plugins-mcp-detail.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-plugins-updates.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-plugins-updates.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 更新清单</span>技能组「n 个更新 ›」→ 逐项确认更新；市场签名校验说明。<br><code>mac-plugins-updates.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-plugins-updates.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-market-sources.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-market-sources.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 管理源</span>唯一入口（插件页「管理源 ›」）：官方/Registry/自定义源、排序、纯内网模式。<br><code>mac-market-sources.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-market-sources.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-market-browse.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-market-browse.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 市场</span>插件页市场行点击 → 同窗口推入：双分段双市场 + 来源 chips 过滤 +〔安装〕→ 审计卡 16；「‹ 插件」工具钮返回。<br><code>mac-market-browse.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-market-browse.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+    <h2>8 · 设置</h2>
+    <p class="flow">Sidebar 设置直入</p>
+  <figure data-page="mac-settings.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-settings.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 设置</span>Sidebar「设置」直入；居中表单列：外观三态（与主题开关同源）/ Runtime 预设 / 重试默认 / 服务器（令牌脱敏）/ 退出。<br><code>mac-settings.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-settings.html" data-w="1288" data-h="823" title="全屏查看">⤢</span>
+  </figure>
+  </div>
+<h2>附 · 主题机制</h2>
   <p class="flow">顶部「深色 / 浅色」开关 = 全图联动：HTML 轨经 postMessage 换 <code>&lt;html data-theme&gt;</code>。<b>全部 64 页页面原型均为运行时双主题——点开关即可预览任意页面的浅色形态，因此不产浅色样例图</b>；图解轨 01 为唯一深色静态图。命名规则（数字段后插 x + <code>-light</code>）仅供未来新增 SVG 图解使用，无变体自动回退深色。</p>
-  <h2>七、方法论 / Token / 单源机制</h2>
+  <h2>附 · 方法论 / Token / 单源机制</h2>
   <p class="flow">唯一事实源 = <a href="tokens.json">tokens.json</a>（语义名两态一致，换值不换名）；实现侧禁止散落 HEX。组件单源 = <code>assets/components.css</code>（改一处，全部 HTML 轨页生效）；颜色单源 = <code>assets/tokens.css</code>；主题联动 = <code>assets/theme.js</code>（postMessage + localStorage 双通道）。</p>
   <div class="tok">
     <figure><div class="sw2" style="background:#007AFF"></div><figcaption>--c-primary<br><code>#007AFF / #0A84FF</code></figcaption></figure>
@@ -422,6 +754,8 @@ a{color:var(--c-primary);text-decoration:none}
   <p class="sub">方法论：双轨制（页面=HTML 轨 / 图解=SVG 轨）· 基准端原则（iPhone 先行）· 一功能一入口 · 只读边界（结构操作入工具；内容编辑默认归 Agent，文本/代码可经预览编辑态人工修改）· 状态点语言（绿运行/灰空闲/红出错）· 单源组件（components.css 改一处全生效）· 主题联动（index 开关 → iframe postMessage + SVG 变体换图）· <b>HTML 轨阅读约定：每页 = stage 舞台（元素旁挂编号 pin）＋ 下方「编号说明」面板，序号一一对应</b> · 增量确认节奏。</p>
 </div>
 
+
+</div>
 <script>
 /* ===== 图集主题控制器：自身换肤 + iframe 广播 + SVG 浅色变体换图 ===== */
 var mode = 'dark';
@@ -475,5 +809,99 @@ document.querySelectorAll('#seg span').forEach(function (el) {
 });
 
 applyMode(mode);
+
+/* ===== .fit 响应式缩放：scale 跟随容器实际宽度（不再写死 0.84/0.878），窄视口下 iPad/Mac 卡完整显示、零横滚 ===== */
+function fitScale() {
+  document.querySelectorAll('.fit').forEach(function (box) {
+    var f = box.querySelector('iframe');
+    if (!f) return;
+    var st = f.getAttribute('style') || '';
+    var mw = st.match(/width:(\d+(?:\.\d+)?)px/);
+    var mh = st.match(/height:(\d+(?:\.\d+)?)px/);
+    if (!mw || !mh) return;
+    var w = parseFloat(mw[1]), h = parseFloat(mh[1]);
+    if (!box.clientWidth) return;  /* 隐藏视图不计算，避免 scale=0 塌陷 */
+    var os = parseFloat(box.dataset.os || 0.84);
+    var s = box.clientWidth / w;
+    if (s > os) s = os;  /* 宽视口不放大超过该卡基准档，保持版面克制 */
+    f.style.transform = 'scale(' + s + ')';
+    box.style.height = Math.round(h * s) + 'px';
+  });
+}
+window.addEventListener('resize', fitScale);
+window.addEventListener('load', fitScale);
+fitScale();
+
+/* ===== N7/D1/D4：深链 / 端筛选 / 灯箱 ===== */
+/* 深链 ?page=03q5 → 滚动定位 + 短暂高亮 */
+function deepLink() {
+  var p; try { p = new URLSearchParams(location.search).get('page'); } catch (e) {}
+  if (!p) return;
+  var fig = document.querySelector('figure[data-page="' + p + '"], .xpand[data-page="' + p + '"]');
+  if (!fig) return;
+  var view = fig.closest('.dview');
+  if (view && document.body.dataset.df !== view.dataset.view) {
+    var tab = document.querySelector('#dseg span[data-d="' + view.dataset.view + '"]');
+    if (tab) tab.click();
+  }
+  fig = fig.closest('figure') || fig;
+  fig.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  fig.classList.add('flash');
+  setTimeout(function () { fig.classList.remove('flash'); }, 2600);
+}
+window.addEventListener('load', function () { setTimeout(deepLink, 80); });
+deepLink();
+
+/* D1 端筛选：设备视图切换（默认 iPhone；记忆选择） */
+function setDevice(d) {
+  document.body.dataset.df = d;
+  document.querySelectorAll('#dseg span').forEach(function (s) { s.classList.toggle('on', s.dataset.d === d); });
+  try { localStorage.setItem('adr-device', d); } catch (e) {}
+  requestAnimationFrame(fitScale);  /* 视图 display 生效后再算尺寸 */
+}
+document.querySelectorAll('#dseg span').forEach(function (el) {
+  el.addEventListener('click', function () { setDevice(el.dataset.d); });
+});
+(function () { var d; try { d = localStorage.getItem('adr-device'); } catch (e) {}
+  if (d && d !== 'iphone' && document.querySelector('#dseg span[data-d="' + d + '"]')) setDevice(d); })();
+/* D4 灯箱：卡角 ⤢ → 全屏按原始尺寸 contain 缩放查看 */
+var lb = document.createElement('div');
+lb.id = 'lb'; lb.hidden = true;
+lb.innerHTML = '<div class="lb-bar"><span class="t" id="lb-t"></span><span class="code" id="lb-c"></span>' +
+  '<a class="a" id="lb-a" target="_blank" rel="noopener">在新窗口打开</a>' +
+  '<button class="x" id="lb-x" title="关闭 (Esc)">✕</button></div><div id="lb-stage"></div>';
+document.body.appendChild(lb);
+function openLB(chip) {
+  var page = chip.dataset.page, w = parseFloat(chip.dataset.w) || 390, h = parseFloat(chip.dataset.h) || 844;
+  var fig = chip.closest('figure');
+  var figcap = fig ? fig.querySelector('figcaption') : null;
+  document.getElementById('lb-t').textContent = figcap ? (figcap.textContent.split('· HTML 轨')[0].trim().slice(0, 120)) : page;
+  document.getElementById('lb-c').textContent = page;
+  document.getElementById('lb-a').href = page;
+  var stage = document.getElementById('lb-stage');
+  stage.innerHTML = '';
+  var f = document.createElement('iframe');
+  var s = Math.min((window.innerWidth - 48) / w, (window.innerHeight - 130) / h, 1);
+  f.setAttribute('style', 'width:' + w + 'px;height:' + h + 'px;transform:scale(' + s + ')');
+  f.src = page;
+  f.addEventListener('load', function () {
+    try { f.contentWindow.postMessage({ type: 'adr-theme', theme: mode }, '*'); } catch (e) {}
+  });
+  stage.appendChild(f);
+  lb.hidden = false;
+  document.body.style.overflow = 'hidden';
+}
+function closeLB() {
+  lb.hidden = true;
+  document.getElementById('lb-stage').innerHTML = '';
+  document.body.style.overflow = '';
+}
+document.addEventListener('click', function (ev) {
+  var chip = ev.target.closest && ev.target.closest('.xpand');
+  if (chip) { openLB(chip); return; }
+  if (ev.target === lb) closeLB();
+});
+document.getElementById('lb-x').addEventListener('click', closeLB);
+document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !lb.hidden) closeLB(); });
 </script>
 </body></html>

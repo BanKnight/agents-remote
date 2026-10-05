@@ -3,7 +3,7 @@
 > 来源：原 CLAUDE.md「前端实现约定」节迁移（2026-09-19 harness 改造）；2026-09-20 UI v2 重构起标尺切换为设计包三件套（见 `docs/design/redesign-v2.md`）。
 
 - 执行 React 前端实现（含原型/UI 对齐类改动）时，必须先加载 `vercel-react-best-practices` skill，并把它作为组件编写、重构和代码评审约束。
-- UI 改动的唯一对齐标尺 = **v1.3 设计包三件套**：`docs/design/design_spec.md`（规格+九铁律+验收清单）、`docs/design/tokens.json`（唯一数值源）、`docs/design/assets/components.css`（共享组件单源，直接沿用类名与结构）；54 页原型 HTML（`docs/design/*.html`）是像素级视觉标准。重构决策与里程碑状态见 `docs/design/redesign-v2.md`；v1 体系已归档 `docs/design-v1/`（仅历史参考）。
+- UI 改动的唯一对齐标尺 = **v1.5 设计包三件套**：`docs/design/design_spec.md`（规格+铁律+验收清单）、`docs/design/tokens.json`（唯一数值源）、`docs/design/assets/components.css`（共享组件单源，直接沿用类名与结构）；116 页原型 HTML（`docs/design/*.html`，全语义命名，旧号新名对照见 spec §10.2）是像素级视觉标准。重构决策与里程碑状态见 `docs/design/redesign-v2.md`；v1 体系已归档 `docs/design-v1/`（仅历史参考）。
 - **双主题（浅色/深色）是硬约束**：语义 token 两态一致（`$value`=浅、`$extensions["mode.dark"]`=深），每个组件浅深两态都要成立；主题切换走 `data-theme` 机制。
 - 原型一致性通过横向和纵向两层抽象落地：横向复用同一套 Tab/工作台/工具/详情设计语言，纵向抽取 shell、workspace、navigation、surface、row、status、action、input、terminal/code 等 primitive。
 - **多端同构，只是容器不同（核心原则，2026-09-24 用户拍板写入）**：移动（iPhone）与桌面共用同一套功能组件、tab 注册表与数据管道——行为能力收敛在共享组件层（行组件/面板/菜单）单份实现，两端只允许容器/布局层（移动 sheet vs 桌面 popover、mainPage vs 分栏）不同。禁止在某一端容器里注册表外手写另一端已有的段/面板（先例：桌面右栏局部追加 history 段 = 与移动端重复承载 + 重复代码，已删；新功能默认「一次实现、两端生效」）。

@@ -1,6 +1,6 @@
 # design 索引
 
-UI 设计权威层：v1.4 设计包（Apple HIG 风格，iPhone/iPad/Mac 三端 75 页原型）+ v2 重构总纲。v1.4 核心变更：会话输入区 composer 单源重构并全端铺开（停止/发送同位互斥、窄端三彩色图标、宽端 pill + ≥3 行）、检视面板定案（动态标签条 03o/03ob2 + 链接直达 03ab）、文件浏览行结构定案（03oa，行3 与常驻搜索框废弃）、文件/Git 操作原型补全（03w2-4/03m2/03m3）、检视器深层返回动线 04f。
+UI 设计权威层：v1.5 设计包（Apple HIG 风格，iPhone/iPad/Mac 三端 116 页原型，全语义命名）+ v2 重构总纲。v1.5 核心变更：iPhone 三 Tab 化（工作台 Tab 退役）与会话页单 tab 化（行1 = ‹项目｜实例名▾●n｜[面板][⋯]，全屏无 tab bar）；文件预览容器矩阵（.fmeta 元信息行/pencil 编辑钮/⋯ 固定菜单/不支持预览空态）；历史规模化（三段计数筛选/服务端搜索/五档分组/游标分页/行删除）；项目管理（行菜单/重命名/删除 ☐ 磁盘文件）；浮层两族总则（§5.0 锚定浮卡 vs 边缘锚定）与指针规范（§7.2）；composer 附件；iPad 底部状态栏。
 
 ## 子目录
 
@@ -8,7 +8,8 @@ UI 设计权威层：v1.4 设计包（Apple HIG 风格，iPhone/iPad/Mac 三端 
 
 ## 文档
 
-- [design_spec.md](./design_spec.md) — v1.4 设计规格唯一权威：九条铁律、IA 总览、L0–L3 逐页说明、浮层清单、三端适配映射、§7 设计语言、§8 数据模型、§9 验收清单。
+- [design_spec.md](./design_spec.md) — v1.5 设计规格唯一权威：铁律、IA 总览（§2）、逐 Tab/逐页说明（§3–§4）、浮层两族总则（§5.0）、三端映射（§6）、设计语言与指针规范（§7）、数据模型（§8）、验收清单（§9）、旧号新名对照表（§10.2）、图集规范（§11）。
 - [tokens.json](./tokens.json) — 设计 token 唯一数值源（color/radius/space/typography/icon/component 七组）；`$value`=浅色、`$extensions["mode.dark"]`=深色，语义名两态一致；禁止散落 HEX。
-- [redesign-v2.md](./redesign-v2.md) — UI v2 重构总纲：权威源声明、23 条决策日志、九铁律实现映射、现状能力盘点、关键代码锚点、M0–M10 里程碑计划与状态、待定项跟踪。
-- [index.html](./index.html) — 原型图集导航入口：75 页原型索引 + 浅/深主题联动开关。
+- [gallery.manifest.json](./gallery.manifest.json) — 图集规范单源（§11）：116 页语义名清单与分组，index.html 消费。
+- [redesign-v2.md](./redesign-v2.md) — UI v2 重构总纲：权威源声明、决策日志、九铁律实现映射、现状能力盘点、关键代码锚点、里程碑计划与状态、待定项跟踪。
+- [index.html](./index.html) — 原型图集导航入口：116 页原型索引（语义名 + 分组）+ 浅/深主题联动开关。

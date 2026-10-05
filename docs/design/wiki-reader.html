@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>wiki-reader · 检视面板（Wiki 阅读标签）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（检视面板：Wiki 阅读标签态；ptabs/fmeta 组件在 components.css 单源） */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.ptabs{overflow:visible;margin:14px 16px 0;gap:6px}  /* 放开裁切：阅读标签上方 pin 可见（同 03q 预览标签） */
+.flow{flex:1 1 auto;min-height:0}  /* 阅读内容占面板内容区，余量落在正文与底部元信息行之间 */
+.article{padding:10px 16px 0}
+.article h3{font-size:15px;font-weight:700;color:var(--ink-title);margin:14px 0 6px}
+.article p{font-size:13px;color:var(--term-ink);line-height:1.6}
+.article ul{list-style:none;padding:0}
+.article li{font-size:13px;color:var(--term-ink);line-height:1.7}
+.codeblock{margin:8px 0;border-radius:10px;background:var(--bg-codeblock);border:1px solid var(--sep);
+           padding:8px 12px;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:11px;
+           line-height:18px;color:var(--term-ink)}
+.rel{padding:14px 16px 0;font-size:13px;color:var(--c-primary);font-weight:600;position:relative}
+.actbtn{height:28px;padding:0 12px;border-radius:8px;font-size:12.5px;font-weight:600;
+        display:flex;align-items:center;gap:5px;flex:none;position:relative;
+        background:var(--tint-purple);color:var(--c-pin)}
+.actbtn svg{width:12px;height:12px;flex:none}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+  <div class="page">
+
+    <div class="nav">
+      <span class="back">工作台</span>
+      <h1>agents-web <span class="sw"></span></h1>
+      <span class="ic" data-symbol="ellipsis" style="position:relative"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg><span class="pin" style="right:-8px;top:-9px">2</span></span>
+    </div>
+
+    <div class="ptabs">
+      <span class="ptab">文件树</span>
+      <span class="ptab">Git<span class="x">✕</span></span>
+      <span class="ptab">Wiki</span>
+      <span class="ptab on" style="position:relative"><svg viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="pin" style="left:0;top:-15px">1</span>迁移计划<span class="x" style="position:relative">✕</span></span>
+      <span class="plus" title="新建标签：文件树 / Git / Wiki" style="cursor:pointer"></span>
+    </div>
+
+    <div class="fmeta"><span>Markdown · 2.1 KB · 更新 昨天</span><span class="fright"><span class="actbtn"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg>让 Agent 读这篇<span class="pin" style="right:-10px;top:-9px">4</span></span></span></div>
+
+    <div class="flow">
+      <div class="article">
+        <h3>背景</h3>
+        <p>现有密码登录在移动端转化率低，且维护成本高；决定迁移到 passkeys。</p>
+        <h3>决策</h3>
+        <ul>
+          <li>• 全平台接入 webauthn，保留密码回退</li>
+          <li>• 回退路径需要二次邮件验证</li>
+          <li>• 会话签发统一走 issueToken()</li>
+        </ul>
+        <div class="codeblock">const ok = await verify(pk)<br>return issueToken(user)</div>
+        <h3>影响</h3>
+        <p>session.ts 的登录分支全部重写；测试覆盖新增 passkey 用例。</p>
+      </div>
+
+      <div class="rel">相关：密码回退策略 ›<span class="pin" style="left:142px;top:-9px">3</span></div>
+    </div>
+
+    <div class="home"></div>
+
+    <!-- 检视面板全屏层：Wiki 阅读标签态（第 4 标签 = doc.text + 页面标题，激活）；无 FAB——阅读标签不是文件树；‹ 工作台 退出面板 -->
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span>Wiki 阅读标签（passkey 迁移计划页，doc.text 图标；标签题过长时截断）：来源 = Wiki 目录页点页面（03p）/ 会话流 wiki pill 点击 → 面板内新增/激活标签，面板不退出；同页已开 = 激活不重复，✕ 逐个关回；结构标签（文件树 / Git / Wiki）与阅读标签并排平级切换</span></li>
+    <li><b>②</b><span>导航栏 ⋯ 菜单（同屏单 ⋯，03k2 同机制）：复制内容 / 查看 diff（wiki 在 Git 内）</span></li>
+    <li><b>③</b><span>交叉链接互跳：「相关：密码回退策略 ›」= 面板内新开一个阅读标签，可切回对比；v1 只读——编辑在源文件（仓库 markdown）进行，此处刷新即见</span></li>
+    <li><b>④</b><span>顶部元信息行（ptabs 下，.fmeta）：类型·大小·更新时间；右端主操作「让 Agent 读这篇」按原文保留——选会话注入上下文，流顶部出现引用卡</span></li>
+    <li><b>面板全屏层</b><span>‹ 工作台 退出 → 面板让位回归、标签与会话状态零销毁（铁律 2）；无 FAB——阅读标签不是文件树，添加类操作仅文件树标签提供；同一阅读组件多容器：检视面板阅读标签（本图）/ Mac/iPad 中栏标签（05h 系）</span></li>
+  </ol>
+</div>
+
+</body></html>

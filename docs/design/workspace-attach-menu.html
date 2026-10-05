@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>workspace-attach-menu · 浮层（附件来源菜单）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（底图 = workspace.html 单会话页；新增 ＋ 附件入口 + 族A 来源菜单浮卡） */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.sub{margin:6px 16px 0;padding:6px 12px;border-radius:9px;background:var(--tint-green);
+     font-size:12px;font-weight:600;color:var(--c-success-text);display:flex;justify-content:space-between}
+.subc{border-radius:12px;background:var(--tint-green);
+      border:1px solid color-mix(in srgb,var(--c-success) 40%,transparent);
+      padding:9px 12px;font-size:13px;font-weight:600;color:var(--ink-1);display:flex;align-items:center;gap:8px}
+.subc .st{margin-left:auto;font-size:11.5px;font-weight:400;color:var(--c-success-text)}
+/* 标注锚定：pin 挂到目标元素上（自动跟随布局，不手算坐标） */
+.sub,.tray{position:relative}
+.runct{font-size:9px;color:var(--c-success-text);font-weight:600;vertical-align:2px}
+.caret{font-size:10px;color:var(--ink-2)}
+/* ＋ 附件入口（点开态）：裸 ＋ 字形（内容类：给 agent 看），与三彩配置图标（配置类）并列分离；虚线圈 = 点开态 */
+.composer .iicn.add{color:var(--c-primary)}
+.composer .send2{position:relative}
+.ring{position:absolute;border:1.8px dashed var(--c-primary);border-radius:50%;pointer-events:none;z-index:15}
+/* 族A 锚定浮卡：附件来源菜单（＋ 上方 14px，点按型无压暗，点外部收起） */
+.navmenu{position:absolute;left:14px;bottom:72px;width:264px;background:var(--menu);
+         border:1px solid var(--sep-strong);border-radius:14px;z-index:12;
+         box-shadow:0 6px 20px color-mix(in srgb,var(--scrim) 49%,transparent)}
+.mh{position:relative;padding:10px 14px 6px;font-size:10.5px;font-weight:700;color:var(--ink-2);letter-spacing:.5px}
+.alist{position:relative}
+.arow{display:flex;align-items:center;gap:9px;height:40px;padding:0 14px;font-size:13.5px;color:var(--ink-1);cursor:pointer}
+.arow + .arow{border-top:1px solid var(--sep)}
+.arow .aic{width:16px;height:16px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--ink-1)}
+.arow .aic svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}
+.arow .nm{font-weight:400;white-space:nowrap}
+.arow .ds{margin-left:auto;font-size:10px;color:var(--ink-2);white-space:nowrap}
+.anote{position:relative;border-top:1px solid var(--sep);padding:7px 14px 9px;font-size:10.5px;line-height:1.55;color:var(--ink-2)}  /* 浮层内分割线用 --sep（--sep-row 与 --menu 同值会隐身，见 html-track 坑9） */
+.anote .go{color:var(--c-primary);font-weight:700}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+  <div class="page">
+
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>claude·auth <span class="runct">●2</span> <span class="caret" title="实例切换菜单">▾</span></h1>
+      <span class="ic" title="检视面板：文件树 / Git / Wiki"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-7.5" width="18" height="15" rx="3"/><path d="M2.5,-7.5 V7.5"/><path d="M5.2,-3.5 h1.6 M5.2,-0.5 h1.6 M5.2,2.5 h1.6"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="sub"><span>▸ 2 个子 agent 运行中 · 点按跳转</span><span>›</span></div>
+
+    <div class="stream">
+      <div class="task">把 auth 模块迁移到 passkeys，跑通全部测试</div>
+      <div class="card"><span class="t">bash · npm run test</span><span class="m">4.2s</span><span class="ok">✓</span></div>
+      <div class="card"><span class="t">edit · src/auth/passkey.ts</span><span class="ok" style="font-size:11px">+48</span><span class="ok" style="color:var(--c-danger);font-weight:600;font-size:11px">−12</span><span class="ok">✓</span></div>
+      <div class="think">✦ 思考 · 14s ›</div>
+      <div class="subc">▸ 子 agent · test-runner<span class="st">运行中</span></div>
+      <div class="card"><span class="t">grep · 'verifyToken'</span><span class="ok" style="color:var(--c-warning)">⟳</span></div>
+      <div class="stat">✓ 上一回合 · 6 轮 · $0.42 · 18.2k tok · 3m12s</div>
+    </div>
+
+    <div class="tray" style="padding:9px 12px">
+      <span class="w" style="display:flex;align-items:center;gap:5px"><svg width="14" height="13" viewBox="-10 -10 20 20" style="display:block"><path d="M0,-9 L9.5,7.5 H-9.5 z" fill="none" style="stroke:var(--c-warning-text)" stroke-width="2"/><path d="M0,-3.2 V1.8" style="stroke:var(--c-warning-text)" stroke-width="2" fill="none"/><circle cx="0" cy="4.6" r="1.1" style="fill:var(--c-warning-text)" stroke="none"/></svg>2 项待审批</span><span style="margin-left:auto;font-size:11.5px;font-weight:600;color:var(--c-warning-text)">全部允许 ›</span>
+    </div>
+
+    <div class="input">
+      <div class="composer">
+        <div class="itext">插话补充指令…</div>
+        <div class="irow">
+          <span class="iicn add" title="添加附件：照片 / 相机 / 文件"><svg data-symbol="plus"></svg><span class="ring" style="left:-4px;top:-4px;width:36px;height:36px"></span><span class="pin" style="right:-11px;top:-11px">1</span></span>
+          <span class="iicn perm"><i data-icon="shield.checkmark"></i></span>
+          <span class="iicn model"><i data-icon="sparkles"></i></span>
+          <span class="iicn eff"><i data-icon="brain"></i></span>
+          <span class="send2 stopstate" style="margin-left:auto"><span class="pin" style="right:-10px;top:-9px">5</span></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="home"></div>
+
+    <!-- 族A 锚定浮卡：附件来源菜单（＋ 附件入口正上方 14px，点按型无压暗，点外部收起） -->
+    <div class="navmenu">
+      <div class="mh">添加附件<span class="pin" style="right:-11px;top:4px">2</span></div>
+
+      <!-- 三源行：点任一项 → 对应系统 UI（图例③）；来源可扩展（图例②） -->
+      <div class="alist"><span class="pin" style="right:-11px;top:50%;transform:translateY(-50%)">3</span>
+        <div class="arow"><span class="aic"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="2.5"/><circle cx="-3.8" cy="-2.4" r="1.7"/><path d="M-9,4.6 L-2.6,-1.4 L1.8,2.6 L4.8,0 L9,3.8"/></svg></span><span class="nm">照片</span><span class="ds">图库 · 可多选</span></div>
+        <div class="arow"><span class="aic"><svg viewBox="-10 -10 20 20"><path d="M-5.5,-5.5 h2.2 l1.4,-2 h3.8 l1.4,2 h2.2 a2.2,2.2 0 0 1 2.2,2.2 v8 a2.2,2.2 0 0 1 -2.2,2.2 h-11 a2.2,2.2 0 0 1 -2.2,-2.2 v-8 a2.2,2.2 0 0 1 2.2,-2.2 z"/><circle cx="0" cy="0.8" r="3"/></svg></span><span class="nm">相机</span><span class="ds">拍摄</span></div>
+        <div class="arow"><span class="aic"><svg data-symbol="doc.text"></svg></span><span class="nm">文件</span><span class="ds">txt / md / csv / json / log…</span></div>
+      </div>
+
+      <!-- 类型边界脚注（图例④）：白名单内 ✓；超限 → 行内提示 + 03z 上传捷径 -->
+      <div class="anote"><span class="pin" style="right:-11px;top:50%;transform:translateY(-50%)">4</span>限图片与 ≤1MB 小文本 · 大文件 / PDF 请上传到项目文件<span class="go"> ›</span></div>
+    </div>
+
+    <!-- 编号 pin 已锚定到目标元素：① ＋ 附件入口 ② 来源菜单卡 ③ 三源行（→ 系统 UI） ④ 类型边界脚注 ⑤ 发送键（发送后 → 消息内附件卡） -->
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span><b>＋ 附件入口</b>（composer 控制行最左新增，裸 ＋ 字形）：与三彩配置图标并列——内容类（给 agent 看的附件）与配置类（权限 / 模型 / 深度）分离；虚线圈 = 点开态，点按弹出本菜单</span></li>
+    <li><b>②</b><span><b>附件来源菜单</b>（族A 锚定浮卡：--menu 底 / sep-strong 描边 / r14，点按型无压暗，点外部收起）：三源——照片 / 相机 / 文件；<b>可扩展</b>：未来 PDF / 扫描等新来源在此追加行</span></li>
+    <li><b>③</b><span><b>点任一项 → 对应系统 UI</b>：照片 = 系统图库（可多选）/ 相机 = 拍摄 / 文件 = 文件选择器（白名单过滤）；选完回 composer 成附件 chips（见 attach-chips 页）</span></li>
+    <li><b>④</b><span><b>类型边界</b>：图片（png / jpg / webp / gif）+ 小文本（txt / md / csv / json / log ≤1MB）✓；大文件 / 二进制 / PDF → 行内提示「大文件请上传到项目文件」+ 03z 捷径——<b>与上传分工：附件 = 消息上下文不落库，上传 = 项目资产落库</b>（文件树 03z），零重复入口</span></li>
+    <li><b>⑤</b><span><b>发送后 = 消息内附件卡</b>：图片卡 + 文本文件 chip 随消息展示在会话流内（下一张图 attach-chips）</span></li>
+  </ol>
+</div>
+
+</body></html>

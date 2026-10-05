@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>mac-plugins-mcp-detail · Mac MCP 详情 — HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（骨架照 17m 推入视图；共享组件全部在 components.css 桌面段） */
+.win{display:flex;flex-direction:column;height:calc(100% - 2px)}
+.wbody{display:flex;flex:1;min-height:0}
+.side{width:250px}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.mhead{display:flex;align-items:center;gap:12px;padding:14px 20px 0}
+.mbk{position:relative;display:flex;align-items:center;gap:3px;height:26px;padding:0 10px 0 7px;border-radius:8px;flex:none;
+     border:1px solid var(--sep);background:var(--bg-elevated);font-size:12.5px;font-weight:600;
+     color:var(--c-primary);cursor:pointer}
+.mbk svg{width:11px;height:11px}  /* Mac 工具钮式返回：描边胶囊（17m 同款） */
+.mhead h1{font-size:17px;font-weight:700;color:var(--ink-1);margin-right:auto;
+          font-family:ui-monospace,'SF Mono',Consolas,monospace}
+.mbody{flex:1;overflow:hidden;padding:12px 20px 0;display:flex;flex-direction:column;gap:10px}
+.dot2{width:7px;height:7px;border-radius:50%;flex:none}
+.live{font-size:11px;font-weight:600;color:var(--c-success-text)}
+/* 详情内容（字段照 iPhone 13，宽版表单/卡分组） */
+.stcard{position:relative;border-radius:16px;background:var(--tint-green);
+        border:1px solid color-mix(in srgb,var(--c-success) 35%,transparent);padding:10px 16px}
+.stcard .r1{display:flex;align-items:center;gap:10px;font-size:13.5px;font-weight:600;color:var(--c-success-text)}
+.stcard .ab{font-size:10px;font-weight:600;color:var(--c-primary);background:var(--tint-blue);border-radius:9px;padding:2px 9px}
+.stcard .rb{margin-left:auto;font-size:11.5px;color:var(--ink-2);border:1px solid var(--sep-strong);
+            border-radius:12px;padding:4px 12px;cursor:pointer}
+.stcard .d{font-size:11.5px;color:var(--ink-2);margin-top:4px}
+.sect{font-size:12px;font-weight:600;color:var(--ink-2);margin:2px 2px 0}
+.cfg{position:relative;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:14px;padding:2px 14px}
+.cfg .krow{display:flex;align-items:center;padding:8px 0;font-size:13px}
+.cfg .krow + .krow,.cfg .krow + .monorow,.cfg .monorow + .krow{border-top:1px solid var(--sep-row)}
+.cfg .k{color:var(--ink-2)}
+.cfg .v{margin-left:auto;color:var(--ink-1);font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:12px}
+.cfg .v.ok{color:var(--c-success-text)}
+.cfg .monorow{padding:8px 0 10px;display:flex;flex-direction:column;gap:6px}
+.cfg .kl{font-size:12px;color:var(--ink-2)}
+.cfg code{display:block;background:var(--bg-elevated2);border:1px solid var(--sep-row);border-radius:9px;
+          padding:8px 12px;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:12.5px;color:var(--term-ink)}
+.pcard{position:relative;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:12px}
+.mkrow{display:flex;align-items:center;gap:10px;padding:10px 14px}
+.mkrow + .mkrow{border-top:1px solid var(--sep-row)}
+.mkrow .n{font-size:13.5px;font-weight:600;color:var(--ink-1);font-family:ui-monospace,'SF Mono',Consolas,monospace}
+.mkrow .c{margin-left:auto;font-size:11.5px;color:var(--ink-2)}
+.mkrow .ar{font-size:12px;color:var(--ink-3)}
+.toggle{width:44px;height:26px;border-radius:13px;background:var(--c-success);position:relative;flex:none}
+.toggle::after{content:'';position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:#fff}
+.toggle.off{background:var(--bg-elevated3)}
+.toggle.off::after{right:auto;left:3px}
+.rm{position:relative;height:40px;border-radius:14px;border:1px solid color-mix(in srgb,var(--c-danger) 60%,transparent);
+    line-height:38px;text-align:center;font-size:14px;font-weight:600;color:var(--c-danger);cursor:pointer}
+.rmnote{text-align:center;font-size:11px;color:var(--ink-2)}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stagewin">
+  <div class="win">
+    <div class="tbar"><span class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></span><span class="t">agents-remote — 插件</span></div>
+    <div class="wbody">
+
+      <!-- Sidebar（插件激活） -->
+      <div class="side sidewin">
+        <div class="ghead"><span class="tt">项目</span><span class="plus" data-symbol="plus"></span></div>
+        <div class="srow2 selrow" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>agents-web<span class="live">● 2</span></div>
+        <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>infra-scripts<span class="live">● 1</span></div>
+        <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>docs-wiki<span class="live off">—</span></div>
+        <div class="dsep" style="margin:8px 0"></div>
+        <div class="seg4 scope"><span class="on">项目</span><span>全部</span></div>
+        <div class="ghead"><span class="tt">实例 · agents-web</span><span class="dicon" style="margin-left:auto"><svg viewBox="-10 -10 20 20" data-symbol="clock.arrow.circlepath"><circle r="8"/><path d="M0,-4.5 V0 L3,2"/></svg></span><span class="plus" data-symbol="plus"></span></div>
+        <div class="srow2 inst" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>claude·auth<span class="dot2" style="margin-left:2px;background:var(--c-success)"></span></div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>codex·api<span class="dot2" style="margin-left:2px;border:1.4px solid var(--ink-2)"></span></div>
+        <div class="srow2 inst" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--ink-2)"><span class="dicon"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg></span>term·1</div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="message"><path d="M-8,-6 a3,3 0 0 1 3,-3 h10 a3,3 0 0 1 3,3 v6 a3,3 0 0 1 -3,3 h-6 l-4,4 v-4 h0 a3,3 0 0 1 -3,-3 z"/></svg></span>pi·chat</div>
+        <div class="footnav"><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span>全局文件</span><span class="on"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="puzzlepiece"><path d="M-8.5,6.5 V-4 H-2.7 a2.7,2.7 0 0 1 5.4,0 H8.5 V-1.3 a2.7,2.7 0 0 0 0,5.4 V6.5 Z"/></svg></span>插件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg></span>设置</span></div>
+      </div>
+
+      <!-- 主区：MCP 详情（插件页 MCP 行推入） -->
+      <div class="main">
+        <div class="mhead">
+          <span class="mbk" title="返回插件"><svg viewBox="-10 -10 20 20" data-symbol="chevron.left"><path d="M-2.5,-6.5 L-8.5,0 L-2.5,6.5"/></svg>插件<span class="pin" style="right:-14px;top:-15px">1</span></span>
+          <h1>github-mcp-server</h1>
+        </div>
+        <div class="mbody">
+          <div class="stcard">
+            <div class="r1">● 已连接 · 运行中<span class="ab">✓ 已认证</span><span class="rb">重启</span><span class="pin" style="right:-12px;top:-9px">2</span></div>
+            <div class="d">启动于 2 小时前 · 传输 stdio · GitHub 官方 · 12k 安装</div>
+          </div>
+          <div class="sect">配置</div>
+          <div class="cfg"><span class="pin" style="right:-12px;top:-9px">3</span>
+            <div class="krow"><span class="k">传输</span><span class="v">stdio · 本地子进程</span></div>
+            <div class="krow"><span class="k">认证</span><span class="v ok">✓ OAuth 已授权</span></div>
+            <div class="monorow"><span class="kl">启动命令</span><code>npx -y @github/github-mcp-server</code></div>
+            <div class="krow"><span class="k">环境变量 GITHUB_TOKEN</span><span class="v">••••••••••（脱敏）</span></div>
+          </div>
+          <div class="sect">注入给 Agent 的工具 · 3</div>
+          <div class="pcard">
+            <span class="pin" style="right:-12px;top:-9px">4</span>
+            <div class="mkrow"><span class="n">create-issue</span><span class="c">创建 Issue 与评论</span></div>
+            <div class="mkrow"><span class="n">list-pull-requests</span><span class="c">列出 / 检查 PR</span></div>
+            <div class="mkrow"><span class="n">search-repositories</span><span class="c">搜索仓库</span></div>
+          </div>
+          <div class="pcard">
+            <span class="pin" style="right:-12px;top:-9px">5</span>
+            <div class="mkrow"><span class="n">启用服务器</span><span class="c">停用 = 断开并移除工具</span><span class="toggle"></span></div>
+            <div class="mkrow"><span class="n">注入范围</span><span class="c">全局 · 所有 Agent 会话</span><span class="ar">›</span></div>
+          </div>
+          <div class="rm"><span class="pin" style="right:-12px;top:-9px">6</span>卸载…</div>
+          <div class="rmnote">卸载需确认；使用该服务器的会话将失去对应工具</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div class="sbar">
+      <span class="dot2" style="width:7px;height:7px;background:var(--c-success)"></span>已连接 srv-01 · 42 MCP 服务器 · 28 技能
+      <span style="margin-left:auto">今日 $3.18 · 84.2k tok</span>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span>插件页 MCP 行（或市场已安装卡点名称）→ 同窗口推入本视图；‹ 插件 返回（侧栏「插件」亦可）</span></li>
+    <li><b>②</b><span>已连接态 + ✓ 认证徽标（OAuth，凭据存服务器）；连接失败 = 红点 + 错误信息 + 重试按钮</span></li>
+    <li><b>③</b><span>启动命令 = manifest 提供的 mono 块；密钥/环境变量脱敏回显，修改走 ⋯ 菜单「编辑」</span></li>
+    <li><b>④</b><span>工具清单 = 注入给 Agent 会话的工具；⋯ 菜单 › 实例信息 中为同一清单</span></li>
+    <li><b>⑤</b><span>启停开关：停用 = 断开连接并移除工具，新会话生效；注入范围随作用域（全局 / 本项目）</span></li>
+    <li><b>⑥</b><span>卸载需确认（确认式）；使用该服务器的会话将失去对应工具</span></li>
+  </ol>
+</div>
+
+</body></html>

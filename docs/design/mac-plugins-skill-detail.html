@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>mac-plugins-skill-detail · Mac 技能详情 — HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（骨架照 17m 推入视图；共享组件全部在 components.css 桌面段） */
+.win{display:flex;flex-direction:column;height:calc(100% - 2px)}
+.wbody{display:flex;flex:1;min-height:0}
+.side{width:250px}
+.main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.mhead{display:flex;align-items:center;gap:12px;padding:14px 20px 0}
+.mbk{position:relative;display:flex;align-items:center;gap:3px;height:26px;padding:0 10px 0 7px;border-radius:8px;flex:none;
+     border:1px solid var(--sep);background:var(--bg-elevated);font-size:12.5px;font-weight:600;
+     color:var(--c-primary);cursor:pointer}
+.mbk svg{width:11px;height:11px}  /* Mac 工具钮式返回：描边胶囊（17m 同款） */
+.mhead h1{font-size:17px;font-weight:700;color:var(--ink-1);margin-right:auto;
+          font-family:ui-monospace,'SF Mono',Consolas,monospace}
+.mbody{flex:1;overflow:hidden;padding:12px 20px 0;display:flex;flex-direction:column;gap:12px}
+.dot2{width:7px;height:7px;border-radius:50%;flex:none}
+.live{font-size:11px;font-weight:600;color:var(--c-success-text)}
+/* 详情内容（字段照 iPhone 12，宽版表单/卡分组） */
+.dhead{position:relative;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;padding:12px 16px}
+.dhead .r1{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:700;color:var(--ink-1)}
+.dhead .meta{font-size:11.5px;color:var(--ink-2);margin-top:6px}
+.dchip{font-size:11px;font-weight:600;border-radius:10px;padding:3px 10px;flex:none}
+.dchip.up{background:var(--tint-orange);color:var(--c-warning-text)}
+.dchip.en{background:var(--tint-green);color:var(--c-success-text)}
+.desc{padding:0 2px;font-size:13px;color:var(--term-ink);line-height:1.7}
+.upcard{position:relative;border-radius:16px;background:var(--tint-orange);
+        border:1px solid color-mix(in srgb,var(--c-warning) 40%,transparent);padding:11px 16px}
+.upcard .t{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--c-warning-text)}
+.upcard .t small{font-weight:400;color:var(--ink-2)}
+.upcard ul{list-style:none;margin-top:6px}
+.upcard li{font-size:12.5px;color:var(--ink-1);line-height:1.85}
+.upcard .tm{font-size:10.5px;color:var(--ink-2);text-align:right;margin-top:2px}
+.btn2{margin-left:auto;font-size:12px;font-weight:600;padding:6px 18px;border-radius:13px;cursor:pointer;
+      background:var(--c-primary);color:var(--on-accent)}
+.sect{font-size:12px;font-weight:600;color:var(--ink-2);margin:2px 2px 0}
+.pcard{position:relative;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:12px}
+.mkrow{display:flex;align-items:center;gap:10px;padding:11px 14px}
+.mkrow + .mkrow{border-top:1px solid var(--sep-row)}
+.mkrow .n{font-size:13.5px;font-weight:600;color:var(--ink-1)}
+.mkrow .c{margin-left:auto;font-size:11.5px;color:var(--ink-2)}
+.mkrow .ar{font-size:12px;color:var(--ink-3)}
+.toggle{width:44px;height:26px;border-radius:13px;background:var(--c-success);position:relative;flex:none}
+.toggle::after{content:'';position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:#fff}
+.toggle.off{background:var(--bg-elevated3)}
+.toggle.off::after{right:auto;left:3px}
+.rm{position:relative;height:40px;border-radius:14px;border:1px solid color-mix(in srgb,var(--c-danger) 60%,transparent);
+    line-height:38px;text-align:center;font-size:14px;font-weight:600;color:var(--c-danger);cursor:pointer}
+.rmnote{text-align:center;font-size:11px;color:var(--ink-2)}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stagewin">
+  <div class="win">
+    <div class="tbar"><span class="lights"><i class="r"></i><i class="y"></i><i class="g"></i></span><span class="t">agents-remote — 插件</span></div>
+    <div class="wbody">
+
+      <!-- Sidebar（插件激活） -->
+      <div class="side sidewin">
+        <div class="ghead"><span class="tt">项目</span><span class="plus" data-symbol="plus"></span></div>
+        <div class="srow2 selrow" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>agents-web<span class="live">● 2</span></div>
+        <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>infra-scripts<span class="live">● 1</span></div>
+        <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>docs-wiki<span class="live off">—</span></div>
+        <div class="dsep" style="margin:8px 0"></div>
+        <div class="seg4 scope"><span class="on">项目</span><span>全部</span></div>
+        <div class="ghead"><span class="tt">实例 · agents-web</span><span class="dicon" style="margin-left:auto"><svg viewBox="-10 -10 20 20" data-symbol="clock.arrow.circlepath"><circle r="8"/><path d="M0,-4.5 V0 L3,2"/></svg></span><span class="plus" data-symbol="plus"></span></div>
+        <div class="srow2 inst" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>claude·auth<span class="dot2" style="margin-left:2px;background:var(--c-success)"></span></div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>codex·api<span class="dot2" style="margin-left:2px;border:1.4px solid var(--ink-2)"></span></div>
+        <div class="srow2 inst" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--ink-2)"><span class="dicon"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg></span>term·1</div>
+        <div class="srow2 inst" style="color:var(--ink-2)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="message"><path d="M-8,-6 a3,3 0 0 1 3,-3 h10 a3,3 0 0 1 3,3 v6 a3,3 0 0 1 -3,3 h-6 l-4,4 v-4 h0 a3,3 0 0 1 -3,-3 z"/></svg></span>pi·chat</div>
+        <div class="footnav"><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span>全局文件</span><span class="on"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="puzzlepiece"><path d="M-8.5,6.5 V-4 H-2.7 a2.7,2.7 0 0 1 5.4,0 H8.5 V-1.3 a2.7,2.7 0 0 0 0,5.4 V6.5 Z"/></svg></span>插件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg></span>设置</span></div>
+      </div>
+
+      <!-- 主区：技能详情（插件页技能行推入） -->
+      <div class="main">
+        <div class="mhead">
+          <span class="mbk" title="返回插件"><svg viewBox="-10 -10 20 20" data-symbol="chevron.left"><path d="M-2.5,-6.5 L-8.5,0 L-2.5,6.5"/></svg>插件<span class="pin" style="right:-14px;top:-15px">1</span></span>
+          <h1>code-review</h1>
+        </div>
+        <div class="mbody">
+          <div class="dhead">
+            <div class="r1">代码审查技能<span class="dchip up">有更新</span><span class="dchip en">已启用</span></div>
+            <div class="meta">v2.3.1 · 来源:官方 · 全局作用域 · 12.4k 安装</div>
+          </div>
+          <div class="desc">提交前自动审查代码变更：风格、潜在缺陷、测试覆盖建议，并输出审查报告。</div>
+          <div class="upcard"><span class="pin" style="right:-12px;top:-9px">2</span>
+            <div class="t">更新内容 <small>v2.3.1 → v2.4.0</small><span class="btn2">确认更新到 v2.4.0</span></div>
+            <ul>
+              <li>• 新增：Rust / Go 语言支持</li>
+              <li>• 优化：大型 diff 的分块审查策略</li>
+              <li>• 修复：中文路径下报告生成失败</li>
+            </ul>
+            <div class="tm">发布于 3 天前</div>
+          </div>
+          <div class="sect">注入给 Agent 的能力 · 权限</div>
+          <div class="pcard">
+            <span class="pin" style="right:-12px;top:-9px">3</span>
+            <div class="mkrow"><span class="n">读取 Git diff 与提交历史</span><span class="c">只读</span></div>
+            <div class="mkrow"><span class="n">在工作区运行只读命令</span><span class="c">只读</span></div>
+          </div>
+          <div class="pcard">
+            <span class="pin" style="right:-12px;top:-9px">4</span>
+            <div class="mkrow"><span class="n">启用技能</span><span class="c">停用后新会话不再注入</span><span class="toggle"></span></div>
+            <div class="mkrow"><span class="n">作用域</span><span class="c">全局 · 所有项目</span><span class="ar">›</span></div>
+          </div>
+          <div class="rm"><span class="pin" style="right:-12px;top:-9px">5</span>卸载…</div>
+          <div class="rmnote">卸载需确认；test-runner 依赖本技能时将一并提示</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 状态栏 -->
+    <div class="sbar">
+      <span class="dot2" style="width:7px;height:7px;background:var(--c-success)"></span>已连接 srv-01 · 42 MCP 服务器 · 28 技能
+      <span style="margin-left:auto">今日 $3.18 · 84.2k tok</span>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span>插件页技能行点入 → 同窗口推入本视图；‹ 插件 返回（侧栏「插件」亦可）</span></li>
+    <li><b>②</b><span>更新 = 卡内确认变更内容 →「确认更新到 v2.4.0」；后台安装不打断会话，新版本下次运行生效</span></li>
+    <li><b>③</b><span>权限说明卡 = 注入给 Agent 的能力（只读）；未列出的写操作不会被授权</span></li>
+    <li><b>④</b><span>启停开关：停用立即作用于新会话，进行中会话不受影响；作用域行决定注入范围（全局 / 本项目）</span></li>
+    <li><b>⑤</b><span>卸载需确认（确认式）；test-runner 依赖本技能时将一并提示</span></li>
+  </ol>
+</div>
+
+</body></html>

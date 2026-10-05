@@ -1,0 +1,848 @@
+{
+ "version": 2,
+ "$comment": "图集单一事实源（N8 校验式）：三端各自视图、组内按动线排序；交付前 scripts/audit-gallery.mjs 对账。",
+ "badge": {
+  "svg": 1,
+  "html": 115
+ },
+ "groups": {
+  "iphone": [
+   {
+    "title": "L1 目的地与新建",
+    "flow": "首次进入：登录 → 新建/采用 → 三 Tab（项目 · 文件 · 插件）；项目行长按/右键 = 操作菜单（重命名先提醒、删除二次确认）",
+    "pages": [
+     "login.html",
+     "project-new.html",
+     "project-adopt.html",
+     "project-tab.html",
+     "project-row-menu.html",
+     "project-rename.html",
+     "project-delete.html",
+     "files-global-tab.html",
+     "plugins-tab.html",
+     "settings.html"
+    ],
+    "n": 1
+   },
+   {
+    "title": "工作台骨架与状态",
+    "flow": "工作台 Tab 已退役：会话入口 = 项目 Tab（全局活动会话行 / 项目行）→ 全屏单会话（实例切换 = 标题 ▾）：空闲/错误/子 agent/空态/断线 → 终端/Chat/附件 变体",
+    "pages": [
+     "workspace.html",
+     "workspace-idle.html",
+     "workspace-error.html",
+     "workspace-subagent.html",
+     "workspace-subagent-list.html",
+     "workspace-empty.html",
+     "workspace-offline.html",
+     "workspace-terminal.html",
+     "workspace-chat.html",
+     "workspace-attach-chips.html"
+    ],
+    "n": 2
+   },
+   {
+    "title": "浮层 · 会话与行菜单",
+    "flow": "标题 ▾ / ＋ / ⋯ 唤起族：实例切换 → 新建/信息/历史/配置/附件来源 → 审批中心 → 行菜单",
+    "pages": [
+     "workspace-instance-switch.html",
+     "workspace-new-instance.html",
+     "workspace-instance-info.html",
+     "workspace-more-menu.html",
+     "workspace-session-history.html",
+     "workspace-composer-config.html",
+     "workspace-attach-menu.html",
+     "approval-center.html",
+     "plugins-skill-menu.html"
+    ],
+    "n": 3
+   },
+   {
+    "title": "工具 · Git",
+    "flow": "状态 → 提交/放弃 → 历史/详情/分支 → diff",
+    "pages": [
+     "tool-git.html",
+     "tool-git-commit.html",
+     "tool-git-discard.html",
+     "tool-git-history.html",
+     "tool-git-commit-detail.html",
+     "tool-git-branches.html",
+     "tool-git-diff.html"
+    ],
+    "n": 4
+   },
+   {
+    "title": "工具 · 文件",
+    "flow": "树 → 新建标签 → 链接直达 → 搜索 → 添加 → 行操作 → 结构写操作（文件预览专组见第 6 组）",
+    "pages": [
+     "tool-files.html",
+     "tool-files-newtab.html",
+     "workspace-link.html",
+     "tool-files-search.html",
+     "tool-files-add.html",
+     "tool-files-row-menu.html",
+     "tool-files-rename.html",
+     "tool-files-move.html",
+     "tool-files-delete.html",
+     "tool-files-create.html",
+     "tool-files-upload.html"
+    ],
+    "n": 5
+   },
+   {
+    "title": "文件预览 · 容器与类型矩阵",
+    "flow": "一个内容组件四种容器 × 类型矩阵：面板标签（工作台，全类型）/ push（全局文件，全类型）——代码·文本=着色+编辑 · MD/HTML=渲染⇄源码（无缩放）· 图片=查看器 · 未知二进制=不支持态；编辑态全文本类共用",
+    "pages": [
+     "workspace-preview.html",
+     "workspace-preview-md.html",
+     "workspace-preview-image.html",
+     "workspace-preview-edit.html",
+     "workspace-preview-unsupported.html",
+     "files-global-preview.html",
+     "files-global-preview-edit.html",
+     "files-global-preview-md.html",
+     "files-global-preview-image.html",
+     "files-global-preview-unsupported.html"
+    ],
+    "n": 6
+   },
+   {
+    "title": "工具 · Wiki",
+    "flow": "目录 → 中栏阅读",
+    "pages": [
+     "tool-wiki.html",
+     "wiki-reader.html"
+    ],
+    "n": 7
+   },
+   {
+    "title": "插件深度与市场",
+    "flow": "市场浏览/技能市场 → 审计 → 详情 → 添加 → 源管理",
+    "pages": [
+     "market-browse.html",
+     "market-skills.html",
+     "market-install-audit.html",
+     "plugins-skill-detail.html",
+     "plugins-mcp-detail.html",
+     "plugins-mcp-add.html",
+     "market-sources.html"
+    ],
+    "n": 8
+   }
+  ],
+  "ipad": [
+   {
+    "title": "三栏骨架与检视",
+    "flow": "三栏 → 检视 Git → 返回动线（文件预览专组见第 2 组）",
+    "pages": [
+     "ipad-workspace.html",
+     "ipad-tool-git.html",
+     "ipad-inspector-back.html"
+    ],
+    "n": 1
+   },
+   {
+    "title": "文件预览 · 中栏标签",
+    "flow": "树点文件 → 中栏文件标签（IDE 模式）——代码 / MD·HTML / 图片 / 编辑态 / 未知二进制；与 iPhone 面板标签、push 容器同构",
+    "pages": [
+     "ipad-tool-files-preview.html",
+     "ipad-tool-files-preview-md.html",
+     "ipad-tool-files-preview-image.html",
+     "ipad-tool-files-preview-edit.html",
+     "ipad-tool-files-preview-unsupported.html"
+    ],
+    "n": 2
+   },
+   {
+    "title": "全局文件 · 浏览与推入态",
+    "flow": "footnav 全局文件 → 列表 → 点散文件行 = 主区推入预览（容器④；其余类型态与 Mac 推入态同构）",
+    "pages": [
+     "ipad-files-global.html",
+     "ipad-files-global-preview.html"
+    ],
+    "n": 3
+   },
+   {
+    "title": "历史 · 审批 · 浮层",
+    "flow": "历史 Sidebar → 审批模态 → 新建 Popover",
+    "pages": [
+     "ipad-history-sidebar.html",
+     "ipad-approval-modal.html",
+     "ipad-new-instance.html"
+    ],
+    "n": 4
+   }
+  ],
+  "mac": [
+   {
+    "title": "窗口骨架与状态",
+    "flow": "三栏可分屏 → 错误/离线/子 agent 桌面态 → composer 附件态（多图粘贴/删除）",
+    "pages": [
+     "mac-workspace.html",
+     "mac-workspace-error.html",
+     "mac-workspace-offline.html",
+     "mac-workspace-subagent.html",
+     "mac-composer-attach.html"
+    ],
+    "n": 1
+   },
+   {
+    "title": "检视器 · Git 与文件操作",
+    "flow": "检视 Git → 文件树右键（结构操作；文件预览专组见第 3 组）",
+    "pages": [
+     "mac-tool-git.html",
+     "mac-tool-files-row-menu.html"
+    ],
+    "n": 2
+   },
+   {
+    "title": "文件预览 · 中栏标签与推入态",
+    "flow": "一个内容组件四种容器 × 类型矩阵：中栏标签（IDE 模式，全类型）/ 主区推入态（全局文件，全类型）",
+    "pages": [
+     "mac-tool-files-preview.html",
+     "mac-tool-files-preview-md.html",
+     "mac-tool-files-preview-image.html",
+     "mac-tool-files-preview-edit.html",
+     "mac-tool-files-preview-unsupported.html",
+     "mac-files-global-preview.html",
+     "mac-files-global-preview-md.html",
+     "mac-files-global-preview-image.html",
+     "mac-files-global-preview-edit.html",
+     "mac-files-global-preview-unsupported.html"
+    ],
+    "n": 3
+   },
+   {
+    "title": "会话 · 历史与作用域",
+    "flow": "历史 Sidebar → 全部会话 → pill 右键",
+    "pages": [
+     "mac-history-sidebar.html",
+     "mac-all-sessions.html",
+     "mac-workspace-pill-menu.html"
+    ],
+    "n": 4
+   },
+   {
+    "title": "浮层 · Popover 与右键",
+    "flow": "新建/实例信息/新建文件/审批/项目行右键 → 居中 Sheet → 技能行右键",
+    "pages": [
+     "mac-new-instance.html",
+     "mac-instance-info.html",
+     "mac-tool-files-create.html",
+     "mac-approval-center.html",
+     "mac-project-new.html",
+     "mac-project-row-menu.html",
+     "mac-plugins-skill-menu.html"
+    ],
+    "n": 5
+   },
+   {
+    "title": "全局文件 · 浏览",
+    "flow": "列表（点散文件行 → 主区推入预览，见第 3 组文件预览专组）",
+    "pages": [
+     "mac-files-global.html"
+    ],
+    "n": 6
+   },
+   {
+    "title": "插件与市场",
+    "flow": "插件 → 作用域切换 → 详情 → 更新 → 源 → 市场",
+    "pages": [
+     "mac-plugins-tab.html",
+     "mac-plugins-scope.html",
+     "mac-plugins-skill-detail.html",
+     "mac-plugins-mcp-detail.html",
+     "mac-plugins-updates.html",
+     "mac-market-sources.html",
+     "mac-market-browse.html"
+    ],
+    "n": 7
+   },
+   {
+    "title": "设置",
+    "flow": "Sidebar 设置直入",
+    "pages": [
+     "mac-settings.html"
+    ],
+    "n": 8
+   }
+  ]
+ },
+ "cards": [
+  {
+   "page": "login.html",
+   "device": "iphone",
+   "group": "L1 目的地与新建"
+  },
+  {
+   "page": "project-new.html",
+   "device": "iphone",
+   "group": "L1 目的地与新建"
+  },
+  {
+   "page": "project-adopt.html",
+   "device": "iphone",
+   "group": "L1 目的地与新建"
+  },
+  {
+   "page": "project-tab.html",
+   "device": "iphone",
+   "group": "L1 目的地与新建"
+  },
+  {
+   "page": "project-row-menu.html",
+   "device": "iphone",
+   "group": "L1 目的地与新建"
+  },
+  {
+   "page": "project-rename.html",
+   "device": "iphone",
+   "group": "L1 目的地与新建"
+  },
+  {
+   "page": "project-delete.html",
+   "device": "iphone",
+   "group": "L1 目的地与新建"
+  },
+  {
+   "page": "files-global-tab.html",
+   "device": "iphone",
+   "group": "L1 目的地与新建"
+  },
+  {
+   "page": "plugins-tab.html",
+   "device": "iphone",
+   "group": "L1 目的地与新建"
+  },
+  {
+   "page": "settings.html",
+   "device": "iphone",
+   "group": "L1 目的地与新建"
+  },
+  {
+   "page": "workspace.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
+   "page": "workspace-idle.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
+   "page": "workspace-error.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
+   "page": "workspace-subagent.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
+   "page": "workspace-subagent-list.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
+   "page": "workspace-empty.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
+   "page": "workspace-offline.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
+   "page": "workspace-terminal.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
+   "page": "workspace-chat.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
+   "page": "workspace-attach-chips.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
+   "page": "workspace-new-instance.html",
+   "device": "iphone",
+   "group": "浮层 · 会话与行菜单"
+  },
+  {
+   "page": "workspace-instance-info.html",
+   "device": "iphone",
+   "group": "浮层 · 会话与行菜单"
+  },
+  {
+   "page": "workspace-more-menu.html",
+   "device": "iphone",
+   "group": "浮层 · 会话与行菜单"
+  },
+  {
+   "page": "workspace-instance-switch.html",
+   "device": "iphone",
+   "group": "浮层 · 会话与行菜单"
+  },
+  {
+   "page": "workspace-session-history.html",
+   "device": "iphone",
+   "group": "浮层 · 会话与行菜单"
+  },
+  {
+   "page": "workspace-composer-config.html",
+   "device": "iphone",
+   "group": "浮层 · 会话与行菜单"
+  },
+  {
+   "page": "workspace-attach-menu.html",
+   "device": "iphone",
+   "group": "浮层 · 会话与行菜单"
+  },
+  {
+   "page": "approval-center.html",
+   "device": "iphone",
+   "group": "浮层 · 会话与行菜单"
+  },
+  {
+   "page": "plugins-skill-menu.html",
+   "device": "iphone",
+   "group": "浮层 · 会话与行菜单"
+  },
+  {
+   "page": "tool-git.html",
+   "device": "iphone",
+   "group": "工具 · Git"
+  },
+  {
+   "page": "tool-git-commit.html",
+   "device": "iphone",
+   "group": "工具 · Git"
+  },
+  {
+   "page": "tool-git-discard.html",
+   "device": "iphone",
+   "group": "工具 · Git"
+  },
+  {
+   "page": "tool-git-history.html",
+   "device": "iphone",
+   "group": "工具 · Git"
+  },
+  {
+   "page": "tool-git-commit-detail.html",
+   "device": "iphone",
+   "group": "工具 · Git"
+  },
+  {
+   "page": "tool-git-branches.html",
+   "device": "iphone",
+   "group": "工具 · Git"
+  },
+  {
+   "page": "tool-git-diff.html",
+   "device": "iphone",
+   "group": "工具 · Git"
+  },
+  {
+   "page": "tool-files.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "tool-files-newtab.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "workspace-link.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "tool-files-search.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "tool-files-add.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "tool-files-row-menu.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "tool-files-rename.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "tool-files-move.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "tool-files-delete.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "tool-files-create.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "tool-files-upload.html",
+   "device": "iphone",
+   "group": "工具 · 文件"
+  },
+  {
+   "page": "workspace-preview.html",
+   "device": "iphone",
+   "group": "文件预览 · 容器与类型矩阵"
+  },
+  {
+   "page": "workspace-preview-md.html",
+   "device": "iphone",
+   "group": "文件预览 · 容器与类型矩阵"
+  },
+  {
+   "page": "workspace-preview-image.html",
+   "device": "iphone",
+   "group": "文件预览 · 容器与类型矩阵"
+  },
+  {
+   "page": "workspace-preview-edit.html",
+   "device": "iphone",
+   "group": "文件预览 · 容器与类型矩阵"
+  },
+  {
+   "page": "workspace-preview-unsupported.html",
+   "device": "iphone",
+   "group": "文件预览 · 容器与类型矩阵"
+  },
+  {
+   "page": "files-global-preview.html",
+   "device": "iphone",
+   "group": "文件预览 · 容器与类型矩阵"
+  },
+  {
+   "page": "files-global-preview-edit.html",
+   "device": "iphone",
+   "group": "文件预览 · 容器与类型矩阵"
+  },
+  {
+   "page": "files-global-preview-md.html",
+   "device": "iphone",
+   "group": "文件预览 · 容器与类型矩阵"
+  },
+  {
+   "page": "files-global-preview-image.html",
+   "device": "iphone",
+   "group": "文件预览 · 容器与类型矩阵"
+  },
+  {
+   "page": "files-global-preview-unsupported.html",
+   "device": "iphone",
+   "group": "文件预览 · 容器与类型矩阵"
+  },
+  {
+   "page": "tool-wiki.html",
+   "device": "iphone",
+   "group": "工具 · Wiki"
+  },
+  {
+   "page": "wiki-reader.html",
+   "device": "iphone",
+   "group": "工具 · Wiki"
+  },
+  {
+   "page": "market-browse.html",
+   "device": "iphone",
+   "group": "插件深度与市场"
+  },
+  {
+   "page": "market-skills.html",
+   "device": "iphone",
+   "group": "插件深度与市场"
+  },
+  {
+   "page": "market-install-audit.html",
+   "device": "iphone",
+   "group": "插件深度与市场"
+  },
+  {
+   "page": "plugins-skill-detail.html",
+   "device": "iphone",
+   "group": "插件深度与市场"
+  },
+  {
+   "page": "plugins-mcp-detail.html",
+   "device": "iphone",
+   "group": "插件深度与市场"
+  },
+  {
+   "page": "plugins-mcp-add.html",
+   "device": "iphone",
+   "group": "插件深度与市场"
+  },
+  {
+   "page": "market-sources.html",
+   "device": "iphone",
+   "group": "插件深度与市场"
+  },
+  {
+   "page": "ipad-workspace.html",
+   "device": "ipad",
+   "group": "三栏骨架与检视"
+  },
+  {
+   "page": "ipad-tool-git.html",
+   "device": "ipad",
+   "group": "三栏骨架与检视"
+  },
+  {
+   "page": "ipad-inspector-back.html",
+   "device": "ipad",
+   "group": "三栏骨架与检视"
+  },
+  {
+   "page": "ipad-tool-files-preview.html",
+   "device": "ipad",
+   "group": "文件预览 · 中栏标签"
+  },
+  {
+   "page": "ipad-tool-files-preview-md.html",
+   "device": "ipad",
+   "group": "文件预览 · 中栏标签"
+  },
+  {
+   "page": "ipad-tool-files-preview-image.html",
+   "device": "ipad",
+   "group": "文件预览 · 中栏标签"
+  },
+  {
+   "page": "ipad-tool-files-preview-edit.html",
+   "device": "ipad",
+   "group": "文件预览 · 中栏标签"
+  },
+  {
+   "page": "ipad-tool-files-preview-unsupported.html",
+   "device": "ipad",
+   "group": "文件预览 · 中栏标签"
+  },
+  {
+   "page": "ipad-files-global.html",
+   "device": "ipad",
+   "group": "全局文件 · 浏览与推入态"
+  },
+  {
+   "page": "ipad-files-global-preview.html",
+   "device": "ipad",
+   "group": "全局文件 · 浏览与推入态"
+  },
+  {
+   "page": "ipad-history-sidebar.html",
+   "device": "ipad",
+   "group": "历史 · 审批 · 浮层"
+  },
+  {
+   "page": "ipad-approval-modal.html",
+   "device": "ipad",
+   "group": "历史 · 审批 · 浮层"
+  },
+  {
+   "page": "ipad-new-instance.html",
+   "device": "ipad",
+   "group": "历史 · 审批 · 浮层"
+  },
+  {
+   "page": "mac-workspace.html",
+   "device": "mac",
+   "group": "窗口骨架与状态"
+  },
+  {
+   "page": "mac-workspace-error.html",
+   "device": "mac",
+   "group": "窗口骨架与状态"
+  },
+  {
+   "page": "mac-workspace-offline.html",
+   "device": "mac",
+   "group": "窗口骨架与状态"
+  },
+  {
+   "page": "mac-workspace-subagent.html",
+   "device": "mac",
+   "group": "窗口骨架与状态"
+  },
+  {
+   "page": "mac-composer-attach.html",
+   "device": "mac",
+   "group": "窗口骨架与状态"
+  },
+  {
+   "page": "mac-tool-git.html",
+   "device": "mac",
+   "group": "检视器 · Git 与文件操作"
+  },
+  {
+   "page": "mac-tool-files-row-menu.html",
+   "device": "mac",
+   "group": "检视器 · Git 与文件操作"
+  },
+  {
+   "page": "mac-tool-files-preview.html",
+   "device": "mac",
+   "group": "文件预览 · 中栏标签与推入态"
+  },
+  {
+   "page": "mac-tool-files-preview-md.html",
+   "device": "mac",
+   "group": "文件预览 · 中栏标签与推入态"
+  },
+  {
+   "page": "mac-tool-files-preview-image.html",
+   "device": "mac",
+   "group": "文件预览 · 中栏标签与推入态"
+  },
+  {
+   "page": "mac-tool-files-preview-edit.html",
+   "device": "mac",
+   "group": "文件预览 · 中栏标签与推入态"
+  },
+  {
+   "page": "mac-tool-files-preview-unsupported.html",
+   "device": "mac",
+   "group": "文件预览 · 中栏标签与推入态"
+  },
+  {
+   "page": "mac-files-global-preview.html",
+   "device": "mac",
+   "group": "文件预览 · 中栏标签与推入态"
+  },
+  {
+   "page": "mac-files-global-preview-md.html",
+   "device": "mac",
+   "group": "文件预览 · 中栏标签与推入态"
+  },
+  {
+   "page": "mac-files-global-preview-image.html",
+   "device": "mac",
+   "group": "文件预览 · 中栏标签与推入态"
+  },
+  {
+   "page": "mac-files-global-preview-edit.html",
+   "device": "mac",
+   "group": "文件预览 · 中栏标签与推入态"
+  },
+  {
+   "page": "mac-files-global-preview-unsupported.html",
+   "device": "mac",
+   "group": "文件预览 · 中栏标签与推入态"
+  },
+  {
+   "page": "mac-history-sidebar.html",
+   "device": "mac",
+   "group": "会话 · 历史与作用域"
+  },
+  {
+   "page": "mac-all-sessions.html",
+   "device": "mac",
+   "group": "会话 · 历史与作用域"
+  },
+  {
+   "page": "mac-workspace-pill-menu.html",
+   "device": "mac",
+   "group": "会话 · 历史与作用域"
+  },
+  {
+   "page": "mac-new-instance.html",
+   "device": "mac",
+   "group": "浮层 · Popover 与右键"
+  },
+  {
+   "page": "mac-instance-info.html",
+   "device": "mac",
+   "group": "浮层 · Popover 与右键"
+  },
+  {
+   "page": "mac-tool-files-create.html",
+   "device": "mac",
+   "group": "浮层 · Popover 与右键"
+  },
+  {
+   "page": "mac-approval-center.html",
+   "device": "mac",
+   "group": "浮层 · Popover 与右键"
+  },
+  {
+   "page": "mac-project-new.html",
+   "device": "mac",
+   "group": "浮层 · Popover 与右键"
+  },
+  {
+   "page": "mac-plugins-skill-menu.html",
+   "device": "mac",
+   "group": "浮层 · Popover 与右键"
+  },
+  {
+   "page": "mac-project-row-menu.html",
+   "device": "mac",
+   "group": "浮层 · Popover 与右键"
+  },
+  {
+   "page": "mac-files-global.html",
+   "device": "mac",
+   "group": "全局文件 · 浏览"
+  },
+  {
+   "page": "mac-plugins-tab.html",
+   "device": "mac",
+   "group": "插件与市场"
+  },
+  {
+   "page": "mac-plugins-scope.html",
+   "device": "mac",
+   "group": "插件与市场"
+  },
+  {
+   "page": "mac-plugins-skill-detail.html",
+   "device": "mac",
+   "group": "插件与市场"
+  },
+  {
+   "page": "mac-plugins-mcp-detail.html",
+   "device": "mac",
+   "group": "插件与市场"
+  },
+  {
+   "page": "mac-plugins-updates.html",
+   "device": "mac",
+   "group": "插件与市场"
+  },
+  {
+   "page": "mac-market-sources.html",
+   "device": "mac",
+   "group": "插件与市场"
+  },
+  {
+   "page": "mac-market-browse.html",
+   "device": "mac",
+   "group": "插件与市场"
+  },
+  {
+   "page": "mac-settings.html",
+   "device": "mac",
+   "group": "设置"
+  }
+ ]
+}

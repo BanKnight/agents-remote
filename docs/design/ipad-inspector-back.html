@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>ipad-inspector-back · iPad 检视器深层返回动线 — HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+.scope{margin:6px 2px 0}
+/* 仅本页样式（列宽与页私布局；共享组件全部在 components.css 桌面段） */
+.padcol{display:flex;flex-direction:column;height:100%}
+.pad{display:flex;flex:1;min-height:0}
+.side{width:260px}
+.center{width:600px;flex:none}
+.inspector{flex:1;min-width:0}
+.chead{height:48px;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--sep);flex:none}
+.chead h1{font-size:16px;font-weight:600;color:var(--ink-1);display:flex;align-items:center;gap:8px}
+.chead .cic{display:flex;gap:14px;margin-left:auto;color:var(--ink-2)}
+.chips{padding:8px 16px 0;gap:6px}
+.pane .stream{gap:12px;padding:10px 16px 0}
+.pvhead{display:flex;align-items:center;gap:7px;padding:10px 14px 0;position:relative}
+.pvhead .pvb{color:var(--c-primary);font-size:12.5px;font-weight:600;cursor:pointer}
+.pvhead .pvn{font-size:13px;font-weight:700;color:var(--ink-1);font-family:ui-monospace,'SF Mono',Consolas,monospace}
+.pvhead .pvt{font-size:10px;font-weight:600;color:var(--c-primary);background:var(--tint-blue);border-radius:8px;padding:1px 8px}
+.pvhead .pva{margin-left:auto;font-size:12px;color:var(--c-primary);font-weight:600;cursor:pointer;position:relative}
+.cmt{display:flex;align-items:center;gap:8px;padding:9px 12px 9px 2px;font-size:12.5px;cursor:pointer}
+.cmt + .cmt{border-top:1px solid var(--sep-row)}
+.cmt .ha{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--c-primary);flex:none}
+.cmt .hm{color:var(--ink-1);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmt .ht{font-size:11px;color:var(--ink-3);flex:none}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stagepad">
+  <div class="padcol">
+  <div class="pad">
+
+    <!-- Sidebar（保留作上下文，本页不标注） -->
+    <div class="side sidewin">
+      <div class="ghead"><span class="tt">项目</span><span class="plus" data-symbol="plus"></span></div>
+      <div class="srow2 selrow" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>agents-web<span class="live">● 2</span></div>
+      <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>infra-scripts<span class="live">● 1</span></div>
+      <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>docs-wiki<span class="live off">—</span></div>
+      <div class="dsep" style="margin:8px 0"></div>
+        <div class="seg4 mini scope"><span class="on">项目</span><span>全部</span></div>
+      <div class="ghead"><span class="tt">实例 · agents-web</span><span class="dicon" style="margin-left:auto"><svg viewBox="-10 -10 20 20" data-symbol="clock.arrow.circlepath"><circle r="8"/><path d="M0,-4.5 V0 L3,2"/></svg></span><span class="plus" data-symbol="plus"></span></div>
+      <div class="microlabel" style="margin:6px 6px 2px">AGENT 会话</div>
+      <div class="srow2 inst selrow" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>claude·auth<span class="dot2" style="margin-left:2px;background:var(--c-success)"></span></div>
+      <div class="srow2 inst"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>codex·api<span class="dot2" style="margin-left:2px;border:1.4px solid var(--ink-2)"></span></div>
+      <div class="microlabel" style="margin:8px 6px 2px">TERMINAL</div>
+      <div class="srow2 inst" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--ink-2)"><span class="dicon"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg></span>term·1</div>
+      <div class="footnav"><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span>全局文件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="puzzlepiece"><path d="M-8.5,6.5 V-4 H-2.7 a2.7,2.7 0 0 1 5.4,0 H8.5 V-1.3 a2.7,2.7 0 0 0 0,5.4 V6.5 Z"/></svg></span>插件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg></span>设置</span></div>
+    </div>
+
+    <!-- 中栏：会话（上下文，本页不标注） -->
+    <div class="pane center">
+      <div class="chead">
+        <h1><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>claude·auth<span class="dot2" style="margin-left:2px;background:var(--c-success)"></span></h1>
+        <span class="cic"><svg class="icn" style="width:16px;height:16px" viewBox="-10 -10 20 20"><circle r="8.8"/><path d="M0,-2.6 V4.4"/><path d="M0,-5.6 V-5.55"/></svg><svg class="icn" style="width:16px;height:16px;stroke:none;fill:currentColor" viewBox="-10 -10 20 20"><circle cx="-6" r="1.7"/><circle r="1.7"/><circle cx="6" r="1.7"/></svg></span>
+      </div>
+      <div class="stream" style="flex:1 1 auto;min-height:0;overflow:hidden">
+        <div class="task"><b style="color:var(--c-primary)">›</b>&nbsp; 把 auth 模块迁移到 passkeys，跑通全部测试</div>
+        <div class="card"><span class="t" style="display:flex;align-items:center;gap:6px"><svg class="icn" style="width:12px;height:12px" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg>bash · npm run test</span><span class="m">4.2s <b style="color:var(--c-success-text)">✓</b></span></div>
+        <div class="card"><span class="t" style="display:flex;align-items:center;gap:6px"><svg class="icn" style="width:12px;height:12px" viewBox="-10 -10 20 20"><path d="M-6.5,6.5 l1.2,-4.6 8,-8 3.4,3.4 -8,8 -4.6,1.2 z"/></svg>edit · src/auth/passkey.ts</span><span class="ok" style="font-size:11.5px">+48</span><span class="ok" style="color:var(--c-danger)">−12</span></div>
+        <div class="stat2">✓ 上一回合 · 6 轮 · $0.42 · 18.2k tok · 3m12s</div>
+      </div>
+      <div class="input" style="margin:14px 16px 18px">
+        <div class="composer wide" style="flex:1;min-width:0">
+          <div class="itext">插话补充指令…</div>
+          <div class="irow">
+            <span class="iicn add" title="添加附件：照片 / 相机 / 文件"><svg data-symbol="plus"></svg></span>
+            <span class="ipill perm"><i data-icon="shield.checkmark"></i>Auto<span style="font-size:9px;opacity:.75"> ▾</span></span>
+            <span class="ipill model"><i data-icon="sparkles"></i>opus-4.8<span style="font-size:9px;opacity:.75"> ▾</span></span>
+            <span class="ipill eff"><i data-icon="brain"></i>high<span style="font-size:9px;opacity:.75"> ▾</span></span>
+            <span class="send2 stopstate"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右栏：检视器（深层 = Git 历史态）——本页主题：返回动线；文件预览已移中栏（04b） -->
+    <div class="pane inspector">
+      <div class="glabel2">检视 · 只读<span class="clps" style="position:relative">»<span class="pin" style="right:-10px;top:-9px">3</span></span></div>
+      <div class="ptabs" style="margin:8px 14px 0"><span class="ptab" style="position:relative"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg>文件树<span class="pin" style="right:-12px;top:-9px">2</span></span><span class="ptab on"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg>Git<span class="x">✕</span></span><span class="ptab">Wiki</span>
+      <span class="plus" title="新建标签" style="cursor:pointer"></span></div>
+      <div class="pvhead">
+        <span class="pvb" style="position:relative;background:var(--tint-blue);border-radius:8px;padding:2px 8px">‹ 列表<span class="pin" style="right:-10px;top:-9px">1</span></span>
+        <span class="pvn">main · 历史</span><span class="pvt">GIT</span>
+      </div>
+      <div style="margin:0 14px">
+        <div class="cmt"><span class="ha">a1b2c3</span><span class="hm">feat: passkey 迁移完成</span><span class="ht">2 小时前</span></div>
+        <div class="cmt"><span class="ha">9f8e7d</span><span class="hm">fix: challenge 校验边界</span><span class="ht">昨天</span></div>
+        <div class="cmt"><span class="ha">4c5b6a</span><span class="hm">chore: 升级 webauthn 依赖</span><span class="ht">2 天前</span></div>
+        <div class="cmt"><span class="ha">7d1e2f</span><span class="hm">test: 补齐 verify 用例</span><span class="ht">3 天前</span></div>
+        <div class="cmt"><span class="ha">0aa11b</span><span class="hm">refactor: 拆分 session 模块</span><span class="ht">上周</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sbar">
+    <span class="dot2" style="width:7px;height:7px;background:var(--c-success)"></span>已连接 srv-01 · 3 实例运行中 ·
+    <span style="color:var(--c-warning);font-weight:600">2 项待审批 ›</span>
+    <span style="margin-left:auto">今日 $3.18 · 84.2k tok</span>
+  </div>
+  </div>
+
+  <!-- 编号 pin ①②③ 已锚定进三个返回点元素内部（‹ 列表 / 段 / 折叠 »） -->
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应；三个返回点 ↔ 三条返回路径）</h4>
+  <ol>
+    <li><b>①</b><span>栏内返回：深层（Git 历史/提交详情、文件树子目录）的「‹ 列表」= 回该标签首层——层级发生在右栏内部，<b>不入导航栈</b>（工作台层级零变化、中栏会话不受影响）；文件树列表内再往上 = 地址栏的上级段（与搜索互斥）</span></li>
+    <li><b>②</b><span>平级返回：标签切换——文件树 / Git / Wiki 标签点击即互切回该标签首层（Git 标签深链 03t/03u 同规则）；✕ 关闭 Git·Wiki 结构标签 = 同效回首层</span></li>
+    <li><b>③</b><span>整体退场：» 折叠整个检视栏（会话扩展全宽）；再点展开，折叠前的段与深层位置原样恢复</span></li>
+    <li><b>三端差异（本页主题）</b><span><b>iPhone = push 栈</b>——Git 深层与全局文件预览是 L3 页面，经 ‹ 导航返回 + 右滑手势（03r/03t 与全局 push 03q 家族，深度 +1；工作台文件预览不走 push——中栏标签，见 04b）；<b>iPad/Mac = 栏内层级</b>——同款深链发生在右栏内部（本图），深度不变；数据全部跟随项目（与检视器作用域规则一致）</span></li>
+  </ol>
+</div>
+
+</body></html>

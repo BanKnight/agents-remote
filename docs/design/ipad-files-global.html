@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>ipad-files-global · iPad 全局文件（列表）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+.scope{margin:6px 2px 0}
+/* 仅本页样式（列宽与页私布局；共享组件全部在 components.css 桌面段） */
+.padcol{display:flex;flex-direction:column;height:100%}
+.pad{display:flex;flex:1;min-height:0}
+.side{width:260px}
+.center{width:600px;flex:none}
+.inspector{flex:1;min-width:0}
+/* 中栏 = 全局文件列表（mac-files-global 主区内容 → iPad 600px 中栏容器；仅本页布局） */
+.mhead{display:flex;align-items:center;gap:10px;padding:12px 14px 0;flex:none}
+.mhead h1{font-size:16px;font-weight:700;color:var(--ink-1);margin-right:auto;flex:none}
+.mbody{flex:1;overflow:hidden;padding:10px 14px 0;display:flex;flex-direction:column;gap:10px}
+.mbtn{flex:none;width:28px;height:28px;border-radius:7px;background:var(--bg-elevated2);border:1px solid var(--sep);
+      display:flex;align-items:center;justify-content:center}
+.sfield{flex:1;display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:10px;
+        background:var(--bg-elevated);border:1px solid var(--sep);font-size:13px;color:var(--ink-2)}
+.sfield svg{width:14px;height:14px;flex:none}
+.grplabel{font-size:12px;font-weight:600;color:var(--ink-2);margin:2px 2px 0}
+.pcard{background:var(--bg-elevated);border:1px solid var(--sep);border-radius:12px;overflow:hidden}
+.prow2{display:flex;align-items:center;gap:10px;padding:9px 12px}
+.prow2 + .prow2{border-top:1px solid var(--sep)}
+.prow2 .tx{flex:1;display:flex;flex-direction:column;gap:1px}
+.prow2 .tx .n{font-size:13px;font-weight:600;color:var(--ink-1)}
+.prow2 .tx .d{font-size:11px;color:var(--ink-2)}
+.prow2 .live{font-size:11px;font-weight:600;color:var(--c-success-text)}
+.prow2 .live.off{color:var(--ink-2);font-weight:400}
+.filerow{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;
+         font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:12.5px;color:var(--term-ink)}
+.filerow + .filerow{border-top:1px solid var(--sep-row)}
+.filerow .tm{font-size:11px;color:var(--ink-3);font-family:system-ui,-apple-system,sans-serif}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stagepad">
+  <div class="padcol">
+  <div class="pad">
+
+    <!-- Sidebar（照 iPad 工作台骨架；footnav「全局文件」on = 激活态） -->
+    <div class="side sidewin">
+      <div class="ghead"><span class="tt">项目</span><span class="plus" data-symbol="plus"></span></div>
+      <div class="srow2 selrow" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>agents-web<span class="live">● 2</span></div>
+      <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>infra-scripts<span class="live">● 1</span></div>
+      <div class="srow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>docs-wiki<span class="live off">—</span></div>
+      <div class="dsep" style="margin:8px 0"></div>
+        <div class="seg4 mini scope"><span class="on">项目</span><span>全部</span></div>
+      <div class="ghead"><span class="tt">实例 · agents-web</span><span class="dicon" style="margin-left:auto"><svg viewBox="-10 -10 20 20" data-symbol="clock.arrow.circlepath"><circle r="8"/><path d="M0,-4.5 V0 L3,2"/></svg></span><span class="plus" data-symbol="plus"></span></div>
+      <div class="microlabel" style="margin:6px 6px 2px">AGENT 会话</div>
+      <div class="srow2 inst selrow" style="font-weight:600;color:var(--ink-1)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>claude·auth<span class="dot2" style="margin-left:2px;background:var(--c-success)"></span></div>
+      <div class="srow2 inst"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg></span>codex·api<span class="dot2" style="margin-left:2px;border:1.4px solid var(--ink-2)"></span></div>
+      <div class="microlabel" style="margin:8px 6px 2px">TERMINAL</div>
+      <div class="srow2 inst" style="font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--ink-2)"><span class="dicon"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg></span>term·1</div>
+      <div class="microlabel" style="margin:8px 6px 2px">CHAT · PI</div>
+      <div class="srow2 inst" style="color:var(--ink-2)"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="message"><path d="M-8,-6 a3,3 0 0 1 3,-3 h10 a3,3 0 0 1 3,3 v6 a3,3 0 0 1 -3,3 h-6 l-4,4 v-4 h0 a3,3 0 0 1 -3,-3 z"/></svg></span>pi·chat</div>
+      <div class="footnav"><span class="on"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span>全局文件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="puzzlepiece"><path d="M-8.5,6.5 V-4 H-2.7 a2.7,2.7 0 0 1 5.4,0 H8.5 V-1.3 a2.7,2.7 0 0 0 0,5.4 V6.5 Z"/></svg></span>插件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg></span>设置</span></div>
+    </div>
+
+    <!-- 中栏：全局文件 · 列表（mac-files-global 主区内容 → iPad 中栏容器；仅遮盖中栏，工作台现场零销毁） -->
+    <div class="pane center">
+      <div class="mhead">
+        <h1>全局文件</h1>
+        <div class="seg4 mini" style="margin:0;width:260px;position:relative"><span class="on" style="white-space:nowrap">全局</span><span style="white-space:nowrap">本项目 · agents-web</span><span class="pin" style="right:-2px;top:-14px">1</span></div>
+        <span class="mbtn" title="添加：新建 / 上传" style="position:relative"><span class="plus" style="width:16px;height:16px;color:var(--ink-1)"></span><span class="pin" style="right:-10px;top:-9px">4</span></span>
+      </div>
+      <div class="mbody">
+        <div class="opsrow" style="margin:0"><span class="sfield"><i data-icon="search"></i>搜索文件与目录<span style="margin-left:auto;font-size:11px;color:var(--ink-3)">⌘F</span></span></div>
+        <div class="grplabel">项目根目录</div>
+        <div class="pcard">
+          <div class="prow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span><span class="tx"><span class="n">agents-web</span><span class="d">5 实例 · 项目根目录</span></span><span class="live" style="position:relative">● 2<span class="pin" style="right:-8px;top:-9px">2</span></span></div>
+          <div class="prow2"><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span><span class="tx"><span class="n">infra-scripts</span><span class="d">3 实例 · 项目根目录</span></span><span class="live">● 1</span></div>
+          <div class="prow2"><span class="dicon" style="color:var(--ink-3)"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span><span class="tx"><span class="n">docs-wiki</span><span class="d">空闲 · 最近活动 3 天前</span></span><span class="live off">—</span></div>
+        </div>
+        <div class="grplabel">根目录散文件</div>
+        <div class="pcard">
+          <div class="filerow"><span>README.md</span><span class="tm">上周</span></div>
+          <div class="filerow" style="position:relative"><span>.env</span><span class="tm">3 天前</span><span class="pin" style="left:110px;top:-9px">3</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右栏：检视 · 只读（列表页未选中文件 = 空态；结构标签照 iPad 工作台检视器简化） -->
+    <div class="pane inspector">
+      <div class="glabel2">检视 · 只读<span class="clps">»</span></div>
+      <div class="ptabs" style="margin:8px 14px 0"><span class="ptab on"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg>文件树</span><span class="ptab">Git</span><span class="ptab">Wiki</span>
+      <span class="plus" title="新建标签：文件树 / Git / Wiki" style="cursor:pointer"></span></div>
+      <div class="stat2" style="margin:14px;line-height:1.7">未选中文件 — 全局域检视内容跟随所选作用域。<br>点中栏文件行 → 主区推入预览（10m2）。</div>
+    </div>
+  </div>
+
+  <div class="sbar">
+    <span class="dot2" style="width:7px;height:7px;background:var(--c-success)"></span>已连接 srv-01 · 3 实例运行中 ·
+    <span style="color:var(--c-warning);font-weight:600">2 项待审批 ›</span>
+    <span style="margin-left:auto">今日 $3.18 · 84.2k tok</span>
+  </div>
+  </div>
+
+  <!-- 编号 pin：① 作用域分段（内联） ② 项目根 live 标（内联） ③ 根下散文件行（内联） ④ mhead「＋」添加钮（内联） -->
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span>iPad 全局文件域：与项目文件工具同一组件（铁律 3），作用域 = 服务器根目录；作用域分段（seg4 mini）切「本项目 · agents-web」= 该项目工作台的文件分段</span></li>
+    <li><b>②</b><span>项目根目录带 live 标与实例数；点项目文件夹 → 进入其工作台；动线原则：本页仅遮盖中栏——工作台与会话现场原样保留，点侧栏任一会话行（或再点「全局文件」）即回工作台，零销毁</span></li>
+    <li><b>③</b><span>根下散文件（不属于任何项目）：点散文件行 = 主区推入预览（10m2：‹ 返回列表，⋯ 含「在工作台打开」→ 本轨 ipad-files-global-preview 页）；长按 = 05e 同款菜单；服务器根无「..」</span></li>
+    <li><b>④</b><span>mhead「＋」（主标题行右端，Mac 工具栏钮同款 28px 方钮）= 添加菜单（03oa：新建 / 上传到当前作用域）；拖拽文件到列表 = 上传到当前作用域；搜索框常驻展开（点按或 ⌘F 聚焦）；分组行不设入口</span></li>
+  </ol>
+</div>
+
+</body></html>

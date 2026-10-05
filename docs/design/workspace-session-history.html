@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>workspace-session-history · 浮层（会话历史 sheet）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.runct{font-size:9px;color:var(--c-success-text);font-weight:600;vertical-align:2px}  /* 标题运行徽标：●n = 项目内活跃实例数 */
+.caret{font-size:12px;color:var(--ink-2);vertical-align:-1px}  /* 标题 ▾：实例切换菜单锚 */
+.task{position:relative;z-index:5}
+/* 筛选段（单源 .segc）+ 段内计数：计数小一号弱色，选中段随 .on 高亮 */
+.segwrap{position:relative;margin-top:8px}
+.segc em.n{flex:none;font-style:normal;font-size:10.5px;font-weight:400;color:var(--ink-3);margin-left:1px}
+.segc .on em.n{color:var(--ink-2)}
+/* 搜索框（单源 .search，sheet 内紧凑 34px） */
+.srchwrap{position:relative;margin-top:8px}
+/* 时间分组列表：组头 = 11px 弱色 microlabel（今天/昨天/7 天内/30 天内/更早，随数据出现） */
+.hlist{margin-top:2px}
+.gh{font-size:11px;color:var(--ink-3);letter-spacing:.3px;padding-top:8px}
+.hrow{padding:7px 0}
+.hrow.swipe{position:relative;padding:7px 64px 7px 0}
+.hrow.swipe .del{position:absolute;right:0;top:0;bottom:0;width:64px;background:var(--tint-red);color:var(--c-danger-text);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600}
+
+.hrow + .hrow{border-top:1px solid var(--sep-row)}
+.hrow .r1{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;color:var(--ink-1)}
+.hrow.idle .r1{font-weight:400}
+.hrow.end .r1{font-weight:400}
+.hrow .st{margin-left:auto;font-size:11px;color:var(--ink-2)}
+.hrow .st.run{color:var(--c-success-text)}
+.hrow .d2{font-size:11px;color:var(--ink-2);margin-top:2px}
+/* 游标分页底态：滚动到底自动 +20（骨架行 = 本态） */
+.skel{position:relative;margin-top:7px;padding:2px 0}
+.skel .bar{height:12px;border-radius:6px;background:var(--bg-elevated2)}
+.skel .b1{width:80%}
+.skel .b2{width:60%;margin-top:5px}
+.skel .t{font-size:11px;color:var(--ink-3);text-align:center;margin-top:6px}
+.hfoot{position:relative;margin-top:8px;text-align:center;font-size:11px;color:var(--ink-3)}
+.ring{position:absolute;border:1.8px dashed var(--c-primary);border-radius:50%;pointer-events:none;z-index:15}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>claude·auth <span class="runct">●2</span> <span class="caret">▾</span></h1>
+      <span class="ic" title="检视面板：文件树 / Git / Wiki"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-7.5" width="18" height="15" rx="3"/><path d="M2.5,-7.5 V7.5"/><path d="M5.2,-3.5 h1.6 M5.2,-0.5 h1.6 M5.2,2.5 h1.6"/></svg></span>
+      <span class="ic" style="position:relative"><svg viewBox="-10 -10 20 20" data-symbol="ellipsis"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg><span class="pin" style="right:-10px;top:-9px">1</span></span>
+    </div>
+
+    <div class="stream" style="flex:0 auto;padding-top:14px">
+      <div class="task">把 auth 模块迁移到 passkeys…</div>
+    </div>
+
+    <div class="dim" style="top:67px;bottom:0"></div>
+
+    <!-- 半屏 sheet：会话历史（服务端分页查询：作用域 × 筛选 × 排序 × 游标） -->
+    <div class="sheet" style="bottom:0;padding-bottom:26px" data-symbol="sheet">
+      <div class="grab"></div>
+      <div class="shd"><h2>会话历史</h2><span style="margin-left:auto;font-size:12px;color:var(--ink-2)">agents-web</span></div>
+
+      <!-- 筛选段：全部/进行中/已结束 三段（无归档——删除即清除），段内嵌计数 = 服务端聚合一次返回 -->
+      <div class="segwrap">
+        <div class="segc">
+          <span class="on">全部<em class="n">342</em></span>
+          <span>进行中<em class="n">3</em></span>
+          <span>已结束<em class="n">339</em></span>
+        </div>
+        <span class="pin" style="right:-22px;top:6px">2</span>
+      </div>
+
+      <!-- 搜索：服务端按会话名过滤（历史列表内定位；跨会话搜索在项目 Tab） -->
+      <div class="srchwrap">
+        <div class="search" style="height:34px;font-size:13px"><i data-icon="search" class="sic"></i>搜索历史会话</div>
+        <span class="pin" style="right:-22px;top:7px">3</span>
+      </div>
+
+      <!-- 列表：按最近活动时间分组（组头随数据出现） -->
+      <div class="hlist">
+        <div class="gh">今天</div>
+        <div class="hrow">
+          <div class="r1"><svg viewBox="-10 -10 20 20" data-symbol="sparkles" style="width:13px;height:13px;flex:none;color:var(--ink-2)"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg>claude·auth<span class="st run">运行中 · 现在</span></div>
+          <div class="d2">passkey 迁移 · 进行到第 7 轮</div>
+        </div>
+        <div class="hrow idle">
+          <div class="r1"><svg viewBox="-10 -10 20 20" data-symbol="sparkles" style="width:13px;height:13px;flex:none;color:var(--ink-2)"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg>codex·api<span class="st">空闲 · 14 分钟前</span></div>
+        </div>
+        <div class="gh">昨天</div>
+        <div class="hrow end">
+          <div class="r1"><svg viewBox="-10 -10 20 20" data-symbol="sparkles" style="width:13px;height:13px;flex:none;color:var(--ink-2)"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg>refactor-auth<span class="st">已结束 · 昨天</span></div>
+          <div class="d2">24 轮 · $1.86 · 点按恢复并回放全部历史</div>
+        </div>
+        <div class="gh">更早</div>
+        <div class="hrow swipe">
+          <div class="hbody">
+            <div class="r1"><svg viewBox="-10 -10 20 20" data-symbol="sparkles" style="width:13px;height:13px;flex:none;color:var(--ink-2)"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg>flaky-test-hunt<span class="st">已结束 · 2 个月前</span></div>
+            <div class="d2">9 轮 · $0.34 · 点按恢复</div>
+          </div>
+          <span class="del">删除<span class="pin" style="left:50%;transform:translateX(-50%);bottom:-26px">6</span></span>
+        </div>
+
+        <!-- 游标分页底态：首屏 20 · 滚动到底自动 +20 -->
+        <div class="skel">
+          <div class="bar b1"></div>
+          <div class="bar b2"></div>
+          <div class="t">正在加载更多…</div>
+          <span class="pin" style="right:-22px;top:8px">4</span>
+        </div>
+      </div>
+
+      <div class="hfoot">历史会话 · 服务端分页查询（首屏 20 · 增量 +20）· 搜索/筛选/计数均在服务端 · 删除 = 左滑行 → 二次确认<span class="pin" style="right:-22px;top:6px">5</span></div>
+    </div>
+
+    <div class="home" style="z-index:12"></div>
+
+    <!-- 高亮圈：⋯ 入口（对齐导航右侧 ⋯） -->
+    <span class="ring" style="left:347px;top:51px;width:28px;height:28px"></span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>⋯ 入口：⋯ →「会话历史」；三端同一数据同一查询模型（Mac = 05c / iPad = 04g 侧栏）</li>
+    <li><b>②</b>筛选段内嵌计数（服务端聚合一次返回）：全部 342 · 进行中 3 · 已结束 339；无归档段</li>
+    <li><b>③</b>搜索 = 服务端按会话名过滤；与项目 Tab 跨会话搜索分工：此处 = 历史列表内定位</li>
+    <li><b>④</b>时间分组（今天/昨天/7 天内/30 天内/更早，组头随最近活动出现）+ 游标分页：首屏 20 · 滚动到底自动 +20（骨架行 = 本态）</li>
+    <li><b>⑤</b>恢复 = 重开同一会话完整回放，可继续对话（无归档，删除 = 清空历史唯一途径）</li>
+    <li><b>⑥</b>删除入口 = 左滑行（本态）：露出删除钮 → 二次确认（连历史一起删）；iPad = 长按行菜单（04g/05c 形态）</li>
+  </ol>
+</div>
+
+</body></html>

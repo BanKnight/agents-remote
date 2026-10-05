@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>files-global-tab · L1 全局文件 Tab — HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式（Tab 页） */
+.status{position:absolute;top:0;left:0;right:0;z-index:5}
+.page{display:block;height:auto;position:relative}
+.tabbar{position:absolute;left:0;right:0;bottom:0;margin-top:0;
+        background:color-mix(in srgb,var(--bg-tabbar) 97%,transparent)}
+.h-row{display:flex;align-items:flex-end;justify-content:space-between;margin:46px 16px 0}
+.h-row h1{font-size:30px;font-weight:800;color:var(--ink-title)}
+.h-ic{display:flex;gap:14px;padding-bottom:8px}  /* 与 02 项目 Tab 同款标题行图标 */
+.h-ic svg{width:22px;height:22px;stroke:var(--ink-1);fill:none;stroke-width:1.8;
+          stroke-linecap:round;stroke-linejoin:round;cursor:pointer}
+.fcard{margin:14px 16px 0;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;padding:2px 16px}
+.frow{display:flex;align-items:center;gap:12px;padding:10px 0;cursor:pointer}
+.frow + .frow{border-top:1px solid var(--sep-row)}
+.frow .ic{width:30px;height:30px;border-radius:8px;background:var(--tint-blue);flex:none;
+          display:flex;align-items:center;justify-content:center}
+.frow .ic svg{width:17px;height:17px;stroke:var(--c-primary);fill:none;stroke-width:1.8}
+.frow .ic.off{background:color-mix(in srgb,var(--ink-2) 12%,transparent)}
+.frow .ic.off svg{stroke:var(--ink-2)}
+.frow .tx{flex:1;min-width:0}
+.frow .n{display:block;font-size:14.5px;font-weight:600;color:var(--ink-1)}
+.frow .d{display:block;font-size:11px;color:var(--ink-2);margin-top:2px}
+.frow .live{font-size:11px;font-weight:600;color:var(--c-success-text)}
+.frow .live.off{color:var(--ink-2);font-weight:400}
+.file{display:flex;align-items:center;gap:12px;padding:10px 16px;font-size:13.5px;cursor:pointer}
+.file + .file{border-top:1px solid var(--sep-row)}
+.file .ic{width:17px;height:17px;flex:none}
+.file .ic svg{width:17px;height:17px;stroke:var(--ink-2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}
+.file .p{font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-1);flex:1}
+.file .tm{font-size:11px;color:var(--ink-2)}
+.sfield{flex:1;display:flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:15px;
+        background:var(--bg-elevated);border:1px solid var(--sep);font-size:12.5px;color:var(--ink-2)}
+.sfield svg{width:13px;height:13px;flex:none}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="h-row"><h1>文件</h1><div class="h-ic" style="position:relative"><svg viewBox="-10 -10 20 20" data-symbol="plus" title="添加：新建 / 上传"><path d="M0,-6.5 V6.5 M-6.5,0 H6.5"/></svg><span class="pin" style="right:-10px;top:-9px">4</span></div></div>
+
+    <div class="opsrow" style="margin:10px 16px 0">
+      <span class="sfield" style="position:relative"><i data-icon="search"></i>搜索文件与目录<span class="pin" style="right:-10px;top:-9px">1</span></span>
+    </div>
+
+    <div class="fcard">
+      <div class="frow" style="position:relative">
+        <span class="ic" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+        <span class="tx"><span class="n">agents-web</span><span class="d">5 实例 · 项目根目录</span></span>
+        <span class="live">● 2</span>
+        <span class="pin" style="right:-14px;top:50%;transform:translateY(-50%)">2</span>
+      </div>
+      <div class="frow">
+        <span class="ic" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+        <span class="tx"><span class="n">infra-scripts</span><span class="d">3 实例 · 项目根目录</span></span>
+        <span class="live">● 1</span>
+      </div>
+      <div class="frow">
+        <span class="ic off" data-symbol="folder"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg></span>
+        <span class="tx"><span class="n">docs-wiki</span><span class="d">空闲 · 最近活动 3 天前</span></span>
+        <span class="live off">—</span>
+      </div>
+    </div>
+
+    <div class="fcard" style="margin-top:10px">
+      <div class="file"><span class="ic"><svg viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span><span class="p">README.md</span><span class="tm">上周</span></div>
+      <div class="file" style="position:relative"><span class="ic"><svg viewBox="-10 -10 20 20"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span><span class="p">.env</span><span class="tm">3 天前</span><span class="pin" style="right:-14px;top:50%;transform:translateY(-50%)">3</span></div>
+    </div>
+  </div>
+
+  <div class="tabbar">
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="folder"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><span class="lb">项目</span></span>
+    <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg><span class="lb">文件</span></span>
+    <span class="tb"><svg viewBox="-10 -10 20 20" data-symbol="puzzlepiece"><path d="M-8.5,6.5 V-4 H-2.7 a2.7,2.7 0 0 1 5.4,0 H8.5 V-1.3 a2.7,2.7 0 0 0 0,5.4 V6.5 Z"/></svg><span class="lb">插件</span></span>
+  </div>
+  <div class="home"></div>
+
+  <!-- 编号 pin 已内联锚定：① 搜索钮 ② 项目根 live 行 ③ 根下散文件行 ④「＋」添加钮（行2右端） -->
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b><span>与项目文件工具同一组件，作用域 = 服务器根目录（铁律 3）；布局同构：行2 = 常驻展开搜索框（空间足够不收纳；聚焦过滤 = 03x）；「＋」不与搜索同行——与主标题同行（h1 行右端）；服务器根无「..」（搜索与返回上层互斥，仅根目录可搜索）</span></li>
+    <li><b>②</b>项目根目录带 live 标与实例数；点项目文件夹 → 进入其工作台</li>
+    <li><b>③</b><span>行2 搜索框聚焦/输入 = 03x（根作用域；服务器根下的子目录该位置 = 「..」）；点散文件行 → push 预览（03q 家族 = 全局文件语境基准图，根作用域无 Git、⋯ 无查看 diff）；结构/上传操作同 03w/03y/03z</span></li>
+    <li><b>④</b><span>「＋」（与主标题同行，h1 行右端）= 添加菜单（03oa）：新建… = 03y（文件/文件夹二选一）、上传… = 03z（到当前作用域）；桌面端 = Sidebar「全局文件」（05/10m 同构）</span></li>
+  </ol>
+</div>
+
+</body></html>

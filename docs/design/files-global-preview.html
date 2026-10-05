@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>files-global-preview · 深度页（文件预览）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;font-size:14px;display:flex;align-items:center;justify-content:center;
+        font-family:ui-monospace,'SF Mono',Consolas,monospace}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">scripts</span>
+      <h1>deploy.sh</h1>
+      <span class="ic" data-symbol="pencil" title="编辑"><svg viewBox="-10 -10 20 20"><path d="M-6.5,6.5 l1.2,-4.6 8,-8 3.4,3.4 -8,8 -4.6,1.2 z"/><path d="M2.7,-5.3 l3.4,3.4"/></svg></span><span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="fmeta" style="position:relative"><span>Shell · 86 行 · 更新 2 天前</span><span class="pin" style="left:176px;top:8px">5</span></div>
+
+    <div class="code">
+      <div class="ln"><span class="no">1</span><span class="tx"><span class="cm">#!/usr/bin/env bash</span></span></div>
+      <div class="ln"><span class="no">2</span><span class="tx"><span class="kw">set</span> -euo pipefail</span></div>
+      <div class="ln"><span class="no">3</span><span class="tx"></span></div>
+      <div class="ln"><span class="no">4</span><span class="tx">APP_DIR=<span class="str">"/var/www/agents-web"</span></span></div>
+      <div class="ln"><span class="no">5</span><span class="tx">BUILD=<span class="str">"$(mktemp -d)"</span></span></div>
+      <div class="ln"><span class="no">6</span><span class="tx"></span></div>
+      <div class="ln"><span class="no">7</span><span class="tx"><span class="kw">npm</span> run build -- --out <span class="str">"$BUILD"</span></span></div>
+      <div class="ln"><span class="no">8</span><span class="tx"><span class="kw">rsync</span> -a --delete <span class="str">"$BUILD/"</span> <span class="str">"$APP_DIR/"</span></span></div>
+      <div class="ln"><span class="no">9</span><span class="tx"></span></div>
+      <div class="ln"><span class="no">10</span><span class="tx"><span class="kw">if</span> ! <span class="kw">curl</span> -fsS https://agents-web/healthz; <span class="kw">then</span></span></div>
+      <div class="ln"><span class="no">11</span><span class="tx">  <span class="kw">./rollback.sh</span> --last</span></div>
+      <div class="ln"><span class="no">12</span><span class="tx">  <span class="kw">exit</span> 1</span></div>
+      <div class="ln"><span class="no">13</span><span class="tx"><span class="kw">fi</span></span></div>
+      <div class="ln"><span class="no">14</span><span class="tx"><span class="kw">echo</span> <span class="str">"deploy ok $(date)"</span></span></div>
+    </div>
+
+    <div class="home"></div>
+
+    <!-- 编号 pin：① ‹ 返回列表（scripts）原位 ② 代码着色渲染 ③ ⋯ 菜单 ④ 根作用域无 Git ⑤ 类型矩阵（顶部元信息行，nav 下） -->
+    <span class="pin" style="left:88px;top:54px">1</span>
+    <span class="pin" style="left:330px;top:190px">2</span>
+    <span class="pin" style="left:320px;top:56px">3</span>
+    <span class="pin" style="left:24px;top:500px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>入口 = 全局文件 Tab 点散文件行 push 进入（本页 = push 容器基准图；工作台内文件 = 面板预览标签（iPhone）/ 中栏标签（iPad·Mac），见 workspace-preview）；‹ 返回列表原位</li>
+    <li><b>②</b><span>代码按行着色渲染（横向可滚、双指缩放）；「编辑」= 顶部行右端主操作（编辑钮在 ⋯ 左侧，iOS 导航栏惯例），进入编辑态（03q2，push 编辑态）</span></li>
+    <li><b>③</b><span>⋯ 菜单：复制内容 / 复制路径 —— 根作用域无 Git，无「查看 diff」</span></li>
+    <li><b>④</b><span>根作用域无 Git：无查看 diff；结构与上传操作同 03w / 03y / 03z</span></li>
+    <li><b>⑤</b><span>类型矩阵（顶部元信息行（nav 下）= 类型·度量·更新时间（代码页右端空；MD/HTML 页右端 = 渲染⇄源码分段））：文本/代码 = 着色查看 + 可编辑（03q2，「编辑」= 顶部行右端主操作（编辑钮在 ⋯ 左侧，iOS 导航栏惯例））；Markdown/HTML = 渲染⇄源码（03q3）；图片 = 查看器缩放旋转（03q4）；未知二进制 = 「不支持预览」提示 + 元信息（无编辑/diff；⋯ 仅复制路径）</span></li>
+  </ol>
+</div>
+
+</body></html>

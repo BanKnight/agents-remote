@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>workspace-chat · 工作台页（Chat(Pi) 实例态）— HTML 轨</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/components.css">
+<style>
+/* 仅本页样式 */
+.nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.chat{flex:1;overflow:hidden;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+.bub{max-width:72%;border-radius:18px;padding:10px 14px;font-size:13.5px;line-height:1.5;color:var(--ink-1)}
+.bub.me{align-self:flex-end;background:var(--tint-blue);
+        border:1px solid color-mix(in srgb,var(--c-primary) 30%,transparent)}
+.bub.pi{align-self:flex-start;background:var(--bg-elevated);border:1px solid var(--sep);
+        color:var(--term-ink);font-size:13px}
+.dots{align-self:flex-start;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:18px;
+      padding:14px 16px;display:flex;gap:6px}
+.dots i{width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
+.cstat{font-size:11.5px;color:var(--ink-2);padding:0 4px}
+.runct{font-size:9px;color:var(--c-success-text);font-weight:600;vertical-align:2px}
+.caret{font-size:10px;color:var(--ink-2)}
+</style>
+<script src="assets/theme.js"></script>
+<script src="assets/icons.js"></script>
+</head>
+<body>
+
+<div class="stage">
+  <div class="island"></div>
+  <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
+  <div class="page">
+    <div class="nav">
+      <span class="back">项目</span>
+      <h1>pi·chat <span class="runct">●1</span> <span class="caret" title="实例切换菜单">▾</span></h1>
+      <span class="ic" title="检视面板：文件树 / Git / Wiki"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-7.5" width="18" height="15" rx="3"/><path d="M2.5,-7.5 V7.5"/><path d="M5.2,-3.5 h1.6 M5.2,-0.5 h1.6 M5.2,2.5 h1.6"/></svg></span>
+      <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
+    </div>
+
+    <div class="chips">
+      <span class="chip" style="gap:5px">pi · provider <span style="font-size:10px;color:var(--ink-2)">▾</span></span>
+    </div>
+
+    <div class="chat">
+      <div class="bub me">帮我看下这个报错</div>
+      <div class="bub pi">看了日志，是 rate limit 触发。<br>建议把重试间隔调到 45s。</div>
+      <div class="bub me">好，帮我改配置</div>
+      <div class="bub pi">已改 .env：RETRY_INTERVAL=45</div>
+      <div class="dots"><i></i><i></i><i></i></div>
+      <div class="cstat">今天 · 32 条 · 约 1.2k tok</div>
+    </div>
+
+    <div class="input">
+      <div class="composer">
+        <div class="itext">发消息…</div>
+        <div class="irow">
+          <span class="iicn add" title="添加附件：照片 / 相机 / 文件"><svg data-symbol="plus"></svg></span>
+          
+          <span class="iicn perm"><i data-icon="shield.checkmark"></i></span>
+          <span class="iicn model"><i data-icon="sparkles"></i></span>
+          <span class="iicn eff"><i data-icon="brain"></i></span>
+          <span class="send2"><i data-icon="arrow.up"></i></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="home"></div>
+
+    <!-- 编号 pin：① 气泡流 ② provider chip ③ ⋯ 关闭入口 ④ 托盘位（无）；行2 移除后 ①② 上移 46px -->
+    <span class="pin" style="left:140px;top:246px">1</span>
+    <span class="pin" style="left:70px;top:88px">2</span>
+    <span class="pin" style="left:338px;top:52px">3</span>
+    <span class="pin" style="left:300px;top:743px">4</span>
+  </div>
+</div>
+
+<div class="panel">
+  <h4>编号说明（与图内 pin 一一对应）</h4>
+  <ol>
+    <li><b>①</b>Pi 会话：气泡式轻量对话（用户右蓝、Pi 左灰），非 terminal-first</li>
+    <li><b>②</b>chips 只有 provider 选择；置顶 / 重命名 / 关闭在行1 ▾ 实例切换菜单</li>
+    <li><b>③</b>关闭后进历史「已结束」，可恢复（与 Agent 会话同一规则）</li>
+    <li><b>④</b>无审批托盘 / 子 agent（Chat 无工具执行权限）——pin 标在其本应出现的位置</li>
+    <li><b>返回</b><span>‹ 项目 = 返回项目 Tab（全局活动/项目行，全屏 push 层，无 tab bar）；会话入口 = 项目 Tab（全局活动会话行 / 项目行）</span></li>
+  </ol>
+</div>
+
+</body></html>
