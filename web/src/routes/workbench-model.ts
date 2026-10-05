@@ -251,6 +251,16 @@ export const workbenchPanelActiveAtom = atomWithLocalOnlyStorage<Record<string, 
 export const workbenchPanelOpenAtom = atom(false);
 
 /**
+ * 中栏 file tab 编辑态（v1.5 批 4，内存级瞬态）：值 = 正在编辑的中栏 file tabId（tabIdOf
+ * file ref），null = 无编辑。tabstrip「编辑」pencil 钮（GroupHeader）与 tab body（FileTabPreview
+ * → FilePreviewPane 受控 editing）跨组件共享此状态——提升为 atom 避免 WorkspaceTree →
+ * GroupShell/panel 四层 props 穿透；编辑态互斥（同屏单编辑，05h4 原型）：进新编辑自动顶替旧值，
+ * 关 tab/切换激活由消费方清理。不持久化：刷新回到预览态（未保存草稿由 useFileEditor 内部
+ * query 缓存短时兜底，与移动面板同语义）。
+ */
+export const workbenchFileTabEditingAtom = atom<string | null>(null);
+
+/**
  * D13 Wiki 注入记忆（M4，03s）：项目 → session → 已注入 wiki 页列表。localStorage 持久化——
  * wiki 阅读页「让 Agent 读这篇」注入成功后写入；session 流顶引用卡（可移除）与 wiki 面板
  * refnote 反查此表呈现「已注入」状态。移除引用 = 删该 slug 条目。key 分层与文件 cwd 记忆
@@ -874,6 +884,18 @@ export type SkillPanelRef = {
 };
 
 /**
+ * wiki 阅读面板引用（v1.5 批 4，spec §4.6，对标 SkillPanelRef）。projectName + slug 定位一篇
+ * wiki 页——wiki 工具 tab 点页面行开/激活中栏 wikiread tab，渲染 L3WikiReader（同移动面板
+ * 标签单源）。tabId = `wikiread_${projectName}/${slug}`（前缀互斥）。内容每次渲染从 wiki API
+ * 拉取（无内存瞬态），刷新持久化恢复安全——normalizeRef 识别保留（区别于 render）。
+ */
+export type WikireadPanelRef = {
+  kind: "wikiread";
+  projectName: string;
+  slug: string;
+};
+
+/**
  * HTML 渲染面板引用（聊天流富媒体，2026-09-10）。id = tabId 本身（`render_${uuid}`）。
  * 瞬态内容：html 存内存 atom（workbenchRenderContentAtom），不持久化——normalizeRef 不识别
  * render（刷新丢弃，focus 回原 session 自洽），stale prune 同款跳过。无 URL focus 路由。
@@ -884,10 +906,11 @@ export type RenderPanelRef = {
 };
 
 /**
- * V3 面板引用（判别联合，设计 §6 决策 18）。session/file/git/skill tab 同处 group+tab。
+ * V3 面板引用（判别联合，设计 §6 决策 18）。session/file/git/skill/wikiread tab 同处 group+tab。
  * session tab 的 tabId === sessionId（值不变 → localStorage 零迁移、session 路径零回归）；
  * file tab 的 tabId = `file_${path}`、git scope tab = `git_${scope}/${path}`、git compare tab =
- * `gitcmp_${base}~${compare}/${path}`（R5）、skill tab = `skill_${name}`（前缀互斥）。
+ * `gitcmp_${base}~${compare}/${path}`（R5）、skill tab = `skill_${name}`、wikiread tab =
+ * `wikiread_${projectName}/${slug}`（前缀互斥）。
  */
 export type WorkbenchPanelRef =
   | SessionPanelRef
@@ -895,6 +918,7 @@ export type WorkbenchPanelRef =
   | FilePanelRef
   | GitPanelRef
   | SkillPanelRef
+  | WikireadPanelRef
   | RenderPanelRef;
 
 /** V1/V2 历史布局的面板引用（迁移源，无 kind —— 仅 session，= 旧 WorkbenchPanelRef）。 */
@@ -907,8 +931,8 @@ export type LegacyPanelRef = {
  * 派生 tab id（= activeTabId / React key / sizes key 概念）：session tab = sessionId，
  * file tab = `file_${path}`（path=全路径含项目名前缀），git scope tab = `git_${scope}/${path}`，
  * git compare tab = `gitcmp_${base}~${compare}/${path}`（`~` 分隔 base/compare——合法 ref 不含 `~`）。
- * session tab 的 tabId === sessionId（值不变）是 V3 多态零回归的基石；file_/git_/gitcmp_/skill_ 前缀互斥。
- * file 全路径让全局/项目点同一文件复用同一 tab（去重）。
+ * session tab 的 tabId === sessionId（值不变）是 V3 多态零回归的基石；file_/git_/gitcmp_/skill_/
+ * wikiread_ 前缀互斥。file 全路径让全局/项目点同一文件复用同一 tab（去重）。
  */
 export function tabIdOf(ref: WorkbenchPanelRef): string {
   if (ref.kind === "session") return ref.sessionId;
@@ -916,6 +940,7 @@ export function tabIdOf(ref: WorkbenchPanelRef): string {
   if (ref.kind === "render") return ref.id;
   if (ref.kind === "file") return `file_${ref.path}`;
   if (ref.kind === "skill") return `skill_${ref.name}`;
+  if (ref.kind === "wikiread") return `wikiread_${ref.projectName}/${ref.slug}`;
   return ref.mode === "compare"
     ? `gitcmp_${ref.base}~${ref.compare}/${ref.path}`
     : `git_${ref.scope}/${ref.path}`;
@@ -1005,6 +1030,9 @@ export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef | null {
         };
   }
   if (ref.kind === "skill") return { kind: "skill", name: ref.name };
+  if (ref.kind === "wikiread") {
+    return { kind: "wikiread", projectName: ref.projectName, slug: ref.slug };
+  }
   if (ref.kind === "chat") return { kind: "chat", sessionId: ref.sessionId };
   if (ref.kind === "render") return null;
   const legacy = ref as { projectName?: unknown; sessionId?: unknown };

@@ -17,6 +17,7 @@ const TO_LUCIDE = {
   book: "book-open",
   chat: "message-square",
   check: "check",
+  "chevron-left": "chevron-left", // 10m2 推入态返回（mac-files-global-preview mback）
   clock: "clock",
   close: "x",
   download: "download",

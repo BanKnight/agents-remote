@@ -32,6 +32,7 @@ import {
   type WorkbenchLayoutV3,
   type WorkbenchPanelRef,
   type SessionPanelRef,
+  type WikireadPanelRef,
   type WorkbenchScope,
   deriveZone,
   inferSessionTypeFromId,
@@ -42,9 +43,11 @@ import {
   useIsDesktopViewport,
   useWorkbenchNavigate,
   useWorkbenchRouteContext,
+  workbenchFileTabEditingAtom,
   workbenchRenderContentAtom,
 } from "../../routes/workbench-model";
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
+import { L3WikiReader } from "./mobile-l3";
 import { DragSourceCard } from "./drag-source";
 import {
   closeAgentSession,
@@ -80,7 +83,9 @@ import {
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, AcpPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { ChatSessionDetailBody } from "../../routes/ChatSessionDetailRoute";
-import { FileTabPreview } from "../files/file-preview-panel";
+import { FileTabPreview, FileTabStripActions } from "../files/file-preview-panel";
+import { type GitDiffScope } from "@agents-remote/shared";
+import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
 import { SkillTabPreview } from "../../routes/plugins-shared";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
@@ -196,6 +201,8 @@ type InstanceAreaProps = {
   onCardDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
   // ── 右工作区 leaf/tab 操作（WorkbenchContent 提升为成品 callback）──
   onCloseTab: (groupId: string, tabId: string) => void;
+  /** v1.5 批 4：GroupHeader file tab ⋯「查看 diff」（WorkbenchRoute onOpenGitFile 透传）。 */
+  onOpenGitDiff?: (projectName: string, scope: GitDiffScope, path: string) => void;
   onToggleMaximize: (groupId: string) => void;
   onResizeSplit: (
     splitId: string,
@@ -240,6 +247,7 @@ export function InstanceArea({
   onSelectTab,
   onSplitLeaf,
   closeInstance,
+  onOpenGitDiff,
 }: InstanceAreaProps) {
   const { t } = useT();
 
@@ -278,12 +286,14 @@ export function InstanceArea({
   const rightWorkspace = (
     <WorkspaceTree
       activeZone={activeZone}
+      closeInstance={closeInstance}
       create={create}
       draggingRef={draggingRef}
       hasActiveInstances={refsCount > 0}
       maximized={layout.maximized}
       refsLoaded={refsLoaded}
       onCloseLeafTab={onCloseTab}
+      onOpenGitDiff={onOpenGitDiff}
       onResizeSplit={onResizeSplit}
       onSelectTab={onSelectTab}
       onSplitLeaf={onSplitLeaf}
@@ -469,11 +479,20 @@ type PanelRouterProps = {
 （memo 惯例，原 InstanceLeftOverview 同款——§6.12k 后已退役）。
  */
 function PanelRouterBase({ panelRef }: PanelRouterProps) {
-  // file tab 渲染 FileTabPreview（只读预览，queryScope="file-nav"，设计 §6 决策 16/18）。
+  // file tab 渲染 FileTabPreview（v1.5 批 4：FilePreviewPane 中栏形态——预览/编辑/渲染三态
+  // + editing atom 受控，05h 原型；queryScope="file-nav"，设计 §6 决策 16/18）。
   // path=全路径（含项目名前缀），FileTabPreview 内部 resolveRootBrowseTarget 解析 projectName
   // 走 project preview API（设计 workbench-stable-refactor Phase 3，去 projectName 字段）。
   if (panelRef.kind === "file") {
-    return <FileTabPreview path={panelRef.path} />;
+    return <FileTabPreview panelRef={panelRef} />;
+  }
+  // wikiread tab 渲染 L3WikiReader（v1.5 批 4，spec §4.6：wiki 阅读进中栏——与移动面板
+  // wikiread 标签同一 reader 单源，actbtn「让 Agent 读这篇」随组件自带）。rel 同组页跳转
+  // navigate 到 wiki 深链 URL → focus effect 开/激活对应 slug 的 wikiread tab（URL 单一管道，
+  // 每 slug 一个 tab 与移动「同目标已开=激活幂等」同构）；copyLinkInBody=false 对齐
+  // wiki-reader 原型（.fmeta 右端仅 actbtn，无 wlink）。
+  if (panelRef.kind === "wikiread") {
+    return <WikireadTabBody panelRef={panelRef} />;
   }
   // skill tab 渲染 SkillTabPreview（只读 SKILL.md 预览，对标 FileTabPreview）。name 来自 tab ref；
   // SkillTabPreview 内部用 DEFAULT_SKILL_AGENT 调 useSkillPreview。中栏 tab 关闭走 tab ✕。
@@ -521,6 +540,29 @@ function PanelRouterBase({ panelRef }: PanelRouterProps) {
 }
 
 export const PanelRouter = memo(PanelRouterBase);
+
+/**
+ * wikiread tab 主体（v1.5 批 4，spec §4.6）：L3WikiReader 中栏容器（与移动面板 wikiread
+ * 标签同一 reader 单源）。rel 同组页跳转 navigate wiki 深链 URL——focus effect 按 slug 开/
+ * 激活 wikiread tab（每 slug 一 tab，URL 单一管道；跨 slug 不在组件内改 tab ref）。
+ */
+function WikireadTabBody({ panelRef }: { panelRef: WikireadPanelRef }) {
+  const navigate = useNavigate();
+  return (
+    <L3WikiReader
+      copyLinkInBody={false}
+      onOpenPage={(slug) => {
+        if (slug === panelRef.slug) return;
+        void navigate({
+          to: "/projects/$key/wiki/$",
+          params: { key: panelRef.projectName, _splat: slug },
+        });
+      }}
+      projectName={panelRef.projectName}
+      slug={panelRef.slug}
+    />
+  );
+}
 
 /**
  * render tab 主体：从 workbenchRenderContentAtom 读 id → html，sandbox iframe srcDoc 渲染
@@ -696,6 +738,21 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     // 无 session 生命周期，无 statusDot）。
     return {
       label: panelRef.name,
+      marker: (
+        <span
+          aria-hidden="true"
+          className="inline-flex shrink-0 items-center text-on-surface-muted"
+        >
+          <ShellIcon className="h-4 w-4" name="file" />
+        </span>
+      ),
+    };
+  }
+  if (panelRef.kind === "wikiread") {
+    // wikiread tab（v1.5 批 4）：marker/label 对齐移动 PanelTabBar tabMeta（icon "file" +
+    // label = slug；usePanelMeta 不发 wiki 查询——页面标题随 reader 正文呈现，标签条 slug 可读）。
+    return {
+      label: panelRef.slug,
       marker: (
         <span
           aria-hidden="true"
@@ -1971,16 +2028,91 @@ function PlaceholderPanel({ focusId }: { focusId: string }) {
 }
 
 /**
+ * tabstrip 右端 ⋯ 会话菜单（v1.5 批 4，spec §4.5：实例信息/重命名/置顶/关闭会话——与移动
+ * ⋯ 菜单同构；TabChip ℹ 退役后桌面实例信息入口。pin 仅 agent（terminal 无置顶，与移动
+ * useInstanceRowActions build 同语义）。关闭走 InstanceArea closeInstance（confirm 在
+ * useCloseSession 内）。
+ */
+function SessionTabStripActions({
+  closeInstance,
+  panelRef,
+}: {
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
+  panelRef: SessionPanelRef;
+}) {
+  const { t } = useT();
+  const meta = usePanelMeta(panelRef);
+  const sessionType = inferSessionTypeFromId(panelRef.sessionId);
+  const { openInfo, holder: infoHolder } = useInstanceInfoActions(
+    panelRef,
+    sessionType,
+    panelRef.projectName,
+    "modal",
+  );
+  const { pinned } = usePinnedSessions();
+  const pinIt = usePinSession();
+  const unpinIt = useUnpinSession();
+  const renameSession = useRenameSession();
+  const pinnedNow = pinned.has(panelRef.sessionId);
+  const items: ActionMenuItem[] = [
+    { label: t("session.instanceInfo.title"), onSelect: openInfo },
+    {
+      label: t("session.rename"),
+      onSelect: () => {
+        void renameSession.rename(
+          panelRef,
+          sessionType ?? "agent",
+          meta?.label ?? panelRef.sessionId,
+        );
+      },
+    },
+    ...(sessionType === "agent"
+      ? [
+          {
+            label: pinnedNow ? t("workbench.unpin") : t("workbench.pin"),
+            onSelect: () => (pinnedNow ? unpinIt : pinIt).mutate(panelRef.sessionId),
+          },
+        ]
+      : []),
+    {
+      label: t("workbench.pillCloseSession"),
+      onSelect: () => closeInstance(panelRef.sessionId, sessionType ?? "agent"),
+    },
+  ];
+  return (
+    <>
+      <ActionMenu
+        align="end"
+        items={items}
+        trigger={
+          <button
+            aria-label={t("workbench.moreActions")}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+            type="button"
+          >
+            <ShellIcon className="h-3 w-3" name="ellipsis" />
+          </button>
+        }
+      />
+      {infoHolder}
+      {renameSession.holder}
+    </>
+  );
+}
+
+/**
  * 右工作区活动组 header = tab 栏（设计 §7.1）：每个 tab 一个实例 chip（marker + 名 + ✕），
  * 右侧 ▢ 最大化（group 级独占）。tab ✕ = 最小化（移除 tab，session 存活回左总览，设计 §7.2）；
  * 关闭实例 kill 不放 tab ✕（走左总览卡片 close，避免高频按钮触发破坏性 kill）。usePanelMeta
  * 从实例 detail query 派生（与 PanelRouter 同源 query key，React Query dedupe）。
  */
 function GroupHeader({
+  closeInstance,
   create,
   group,
   isMaximized,
   onCloseTab,
+  onOpenGitDiff,
   onSelectTab,
   onSplit,
   onTabContextMenu,
@@ -1989,6 +2121,13 @@ function GroupHeader({
 }: GroupHeaderProps) {
   const { t } = useT();
   const maximizeLabelKey = isMaximized ? "workbench.panelRestore" : "workbench.panelMaximize";
+  // v1.5 批 4（spec §4.5）：tabstrip 右端 [＋][分屏][最大化][编辑][⋯]，⋯ 收尾最右、内容
+  // 跟随激活标签（会话/文件两族；git/skill/wikiread/chat/render 无 ⋯ 规格 → 不渲染）。
+  // 编辑态只剩结构钮（pencil/⋯ 消失，05h4 原型实证）。编辑判定 = 激活 tabId 与
+  // workbenchFileTabEditingAtom 相等。
+  const activeTab = group.tabs.find((tab) => tabIdOf(tab) === group.activeTabId) ?? null;
+  const editingTabId = useAtomValue(workbenchFileTabEditingAtom);
+  const editing = editingTabId !== null && editingTabId === group.activeTabId;
   return (
     // tabstrip 单源形制（§6.12j，v2-primitives .tabstrip：高 32px + bg-tabstrip + border-b
     // sep + gap 16px）。高度 32px 须与 WORKBENCH_TAB_BAR_PX 对齐：表现层靠此固定值把面板顶部
@@ -2045,16 +2184,28 @@ function GroupHeader({
       >
         <ShellIcon className="h-3 w-3" name={isMaximized ? "restore" : "maximize"} />
       </button>
+      {/* v1.5 批 4：[编辑][⋯] 跟随激活标签（⋯ 收尾最右）；编辑态消失（05h4 原型）。 */}
+      {!editing && activeTab?.kind === "file" ? (
+        <FileTabStripActions onOpenDiff={onOpenGitDiff} panelRef={activeTab} />
+      ) : null}
+      {!editing && activeTab?.kind === "session" ? (
+        <SessionTabStripActions closeInstance={closeInstance} panelRef={activeTab} />
+      ) : null}
     </div>
   );
 }
 
 type GroupHeaderProps = {
+  /** 关闭实例（⋯ 会话菜单「关闭会话」项；InstanceArea 透传 WorkbenchRoute closeInstance）。
+   *  v1.5 批 4（spec §4.5）tabstrip ⋯ 新增。 */
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
   /** 新建实例菜单（tabstrip「＋」）；null 时不渲染（EmptyInstanceArea 承担空态创建）。 */
   create: CreateSessionApi | null;
   group: WorkbenchGroup;
   isMaximized: boolean;
   onCloseTab: (tabId: string) => void;
+  /** v1.5 批 4（spec §4.5）：file tab ⋯「查看 diff」= 开中栏 git tab（diff = 中栏标签）。 */
+  onOpenGitDiff?: (projectName: string, scope: GitDiffScope, path: string) => void;
   onSelectTab: (tabId: string) => void;
   /** 分屏按钮（§6.10-3）：在此 group 右侧分屏并新建终端窗格（WorkbenchContent 实现）。 */
   onSplit: () => void;
@@ -2105,23 +2256,14 @@ function TabChip({
           ? panelRef.sessionId.slice(0, 12)
           : panelRef.kind === "render"
             ? t("workbench.renderTab")
-            : panelRef.path);
-  // 仅 session tab 有实例信息（file/git/skill 无 session 生命周期，不渲染 ℹ）。装配复用
-  // useInstanceInfoActions（与移动端 ℹ sheet 同源，detail 查询同 query key 零额外网络），
-  // variant="modal" 居中卡片（移动端保持底部 sheet）。
+            : panelRef.kind === "wikiread"
+              ? panelRef.slug
+              : panelRef.path);
+  // v1.5 批 4（spec §4.5）：TabChip ℹ 退役——实例信息收敛进 tabstrip 右端 ⋯ 会话菜单
+  //（GroupHeader ActiveTabActions，与移动端 ⋯ 菜单同构）；TabChip 只留文本 + 状态点 +
+  // AutoRetry + ✕。
   const sessionType =
     panelRef.kind === "session" ? inferSessionTypeFromId(panelRef.sessionId) : undefined;
-  const {
-    openInfo,
-    holder: infoHolder,
-    autoRetryEditorHolder,
-    runtimeDialogHolder,
-  } = useInstanceInfoActions(
-    panelRef.kind === "session" ? panelRef : { kind: "session", projectName: "", sessionId: "" },
-    sessionType,
-    panelRef.kind === "session" ? panelRef.projectName : undefined,
-    "modal",
-  );
   return (
     <DragSourceCard dragRef={panelRef} onDragStart={onDragStart} onSelect={onSelect}>
       {/* tabstrip .tb 单源形制（§6.12j，v2-primitives .tabstrip .tb）：12.5px 文本 + on 态
@@ -2163,19 +2305,6 @@ function TabChip({
                 variant="tab"
               />
             ) : null}
-            <button
-              aria-label={t("session.instanceInfo.title")}
-              className={`inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded text-on-surface-muted transition hover:bg-on-surface/10 active:bg-on-surface/10 hover:text-on-surface ${
-                isActive
-                  ? "opacity-100"
-                  : "opacity-100 hover-capable:opacity-0 hover-capable:group-hover/tab:opacity-100"
-              }`}
-              onClick={openInfo}
-              title={t("session.instanceInfo.title")}
-              type="button"
-            >
-              <ShellIcon className="h-3 w-3" name="info" />
-            </button>
           </>
         ) : null}
         <button
@@ -2192,9 +2321,6 @@ function TabChip({
           <ShellIcon className="h-3 w-3" name="close" />
         </button>
       </div>
-      {infoHolder}
-      {autoRetryEditorHolder}
-      {runtimeDialogHolder}
     </DragSourceCard>
   );
 }
@@ -2297,8 +2423,12 @@ function SplitGutter({ orientation, rect, splitRect, onResize }: SplitGutterProp
 
 type WorkspaceTreeHandlers = {
   activeZone: { targetGroupId: string | null; zone: DropZone } | null;
+  /** v1.5 批 4：GroupHeader ⋯ 会话菜单「关闭会话」（InstanceArea closeInstance 透传）。 */
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
   draggingRef: WorkbenchPanelRef | null;
   onCloseLeafTab: (leafId: string, tabId: string) => void;
+  /** v1.5 批 4：file tab ⋯「查看 diff」= 开中栏 git tab（WorkbenchRoute onOpenGitFile）。 */
+  onOpenGitDiff?: (projectName: string, scope: GitDiffScope, path: string) => void;
   onResizeSplit: (
     splitId: string,
     leftChildId: string,
@@ -2402,11 +2532,13 @@ export function WorkspaceTree({
       {flat.groups.map((g) => (
         <GroupShell
           activeZone={handlers.activeZone}
+          closeInstance={handlers.closeInstance}
           create={create}
           dragRef={handlers.draggingRef}
           group={g}
           key={g.id}
           onCloseTab={(tabId) => handlers.onCloseLeafTab(g.id, tabId)}
+          onOpenGitDiff={handlers.onOpenGitDiff}
           onSelectTab={(tabId) => handlers.onSelectTab(g.id, tabId)}
           onSplit={() => handlers.onSplitLeaf(g.id)}
           onTabContextMenu={(tabId, event) =>
@@ -2457,10 +2589,14 @@ type GroupShellProps = {
   activeZone: { targetGroupId: string | null; zone: DropZone } | null;
   /** 透传 GroupHeader tabstrip「＋」新建实例菜单（§6.12j）。 */
   create: CreateSessionApi | null;
+  /** v1.5 批 4：GroupHeader ⋯ 会话菜单「关闭会话」（InstanceArea closeInstance 透传）。 */
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
   dragRef: WorkbenchPanelRef | null;
   /** flattenLayout 投影出的 group（含 rect / contentRect / isMaximized / tabs）。 */
   group: FlatGroup;
   onCloseTab: (tabId: string) => void;
+  /** v1.5 批 4：file tab ⋯「查看 diff」= 开中栏 git tab（WorkspaceTree handlers 透传）。 */
+  onOpenGitDiff?: (projectName: string, scope: GitDiffScope, path: string) => void;
   onSelectTab: (tabId: string) => void;
   /** 分屏按钮（§6.10-3）：在此 group 右侧分屏并新建终端窗格。 */
   onSplit: () => void;
@@ -2480,10 +2616,12 @@ type GroupShellProps = {
  */
 function GroupShell({
   activeZone,
+  closeInstance,
   create,
   dragRef,
   group,
   onCloseTab,
+  onOpenGitDiff,
   onSelectTab,
   onSplit,
   onTabContextMenu,
@@ -2504,10 +2642,12 @@ function GroupShell({
       style={rectStyle(group.rect)}
     >
       <GroupHeader
+        closeInstance={closeInstance}
         create={create}
         group={group}
         isMaximized={group.isMaximized}
         onCloseTab={onCloseTab}
+        onOpenGitDiff={onOpenGitDiff}
         onSelectTab={onSelectTab}
         onSplit={onSplit}
         onTabContextMenu={onTabContextMenu}
@@ -2753,7 +2893,9 @@ function DragGhost({
           ? panelRef.sessionId.slice(0, 12)
           : panelRef.kind === "render"
             ? t("workbench.renderTab")
-            : panelRef.path);
+            : panelRef.kind === "wikiread"
+              ? panelRef.slug
+              : panelRef.path);
   return (
     <div
       ref={ghostRef}

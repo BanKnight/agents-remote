@@ -91,14 +91,14 @@ function TabDiffDetail({
  * 复用）、「查看 diff ›」/行菜单「在 Git 查看 diff」→ 栏内 diff（MobileL3GitDiff 复用）——
  * 04 insfoot「点文件 → 本栏预览 / diff」。局部 state 不进 URL，返回逐级（列表 → 预览 → diff）。
  *
- * **批3 链接直达语境**（`onOpenFileTab` 传入时，检视面板标签体系）：树/搜索点文件 →
- * file 预览标签新增/激活（03ab peek/05 ptabs 语义），不再走栏内预览态。未传（移动
- * global 聚焦态 MobileFocusBody）保持栏内预览——该语境无面板标签体系。
+ * **批4 桌面检视器通路**（`onOpenFile` 传入时）：树/搜索点文件 → 中栏 file tab（v1.5 批 4
+ * spec §4.5——file 预览标签退役出检视器，预览在中栏 tabstrip）。未传（移动聚焦态
+ * MobileFocusBody）保持栏内预览——移动保留 file 标签体系，该语境预览在面板内完成。
  */
 export function FilesToolTab({
   currentPath,
   onPathChange,
-  onOpenFileTab,
+  onOpenFile,
   projectKey,
   searchQuery,
 }: {
@@ -106,8 +106,8 @@ export function FilesToolTab({
    * 不传 = Tab 层自持（同 FilesToolPanel 受控模式的既有边界）。 */
   currentPath?: string;
   onPathChange?: (path: string) => void;
-  /** 传入 = 树/搜索点文件直达 file 预览标签（检视面板标签体系）；不传 = 栏内预览态（现状）。 */
-  onOpenFileTab?: (relPath: string) => void;
+  /** 传入 = 树/搜索点文件直达中栏 file tab（批 4 桌面检视器）；不传 = 栏内预览态（移动）。 */
+  onOpenFile?: (projectName: string, relPath: string) => void;
   projectKey: string;
   /** 03x header 搜索 query（usePanelToolChip 提升共享——chip 与列表同 state）。 */
   searchQuery?: string;
@@ -149,37 +149,12 @@ export function FilesToolTab({
   return (
     <FilesToolPanel
       currentPath={path}
-      onOpenFile={
-        onOpenFileTab
-          ? (_projectName, p) => onOpenFileTab(p)
-          : (_projectName, p) => setPreviewPath(p)
-      }
+      onOpenFile={onOpenFile ?? ((_projectName, p) => setPreviewPath(p))}
       onOpenGitFile={(f) => setDiffTarget({ path: f.path, scope: f.scope })}
       onPathChange={changePath}
       projectName={projectKey}
       searchQuery={searchQuery ?? ""}
     />
-  );
-}
-
-/**
- * file 预览标签 body 单源（v1.4 批3，03ab peek/05 ptabs 的 file 标签）：预览（MobileL3FilePreview
- * 复用）↔ diff（MobileL3GitDiff + 返回条）二态栈——标签内「查看 diff ›」/行菜单直达，back 回
- * 预览。标题 = 文件名（PanelTabBar tabMeta 单点派生）；✕ 关标签由 PanelTabBar 承担。
- */
-export function PanelFileTabBody({ path, projectName }: { path: string; projectName: string }) {
-  const { t } = useT();
-  const [diff, setDiff] = useState(false);
-  if (diff) {
-    return (
-      <div className="flex h-full min-h-0 w-full flex-col">
-        <DetailBackBar label={t("files.backToPreview")} onBack={() => setDiff(false)} />
-        <MobileL3GitDiff path={path} projectName={projectName} scope="worktree" />
-      </div>
-    );
-  }
-  return (
-    <MobileL3FilePreview onViewDiff={() => setDiff(true)} path={path} projectName={projectName} />
   );
 }
 
@@ -250,19 +225,28 @@ export function GitToolTab({ projectKey }: { projectKey: string }) {
  * wiki tab 主体（双端装配同 Files/GitToolTab）：分组树列表态 = WikiToolPanel（03p 形态）；
  * 点页面行 → 栏内阅读态（L3WikiReader，与移动 L3 同一份——批次 4 归一，WikiPageDetail
  * 退役）。返回条 = DetailBackBar（与 files/git 详情态同构）。
+ *
+ * **批4 桌面检视器通路**（`onOpenPage` 传入时）：页面行点入 → 中栏 wikiread tab（v1.5 批 4
+ * spec §4.6 wiki 阅读进中栏，检视器 wiki 标签只承担列表/搜索）；未传 = 栏内阅读态（移动保留，
+ * rel 同组页跳转也在栏内完成）。
  */
 export function WikiToolTab({
+  onOpenPage,
   projectKey,
   onQueryChange,
   query,
 }: {
   projectKey: string;
+  /** 传入 = 页面行/rel 跳转直达中栏 wikiread tab（批 4 桌面检视器）；不传 = 栏内阅读态。 */
+  onOpenPage?: (slug: string) => void;
   /** 03p wiki 搜索 query（usePanelToolChip 提升共享——chip 与列表同 state）。 */
   onQueryChange?: (query: string) => void;
   query?: string;
 }) {
   const { t } = useT();
   const [slug, setSlug] = useState<string | null>(null);
+  // 传入 onOpenPage 时 slug 恒 null（栏内阅读分支不达，返回条不渲染）。
+  const openPage = onOpenPage ?? setSlug;
 
   if (slug !== null) {
     return (
@@ -274,7 +258,7 @@ export function WikiToolTab({
   }
   return (
     <WikiToolPanel
-      onOpenPage={setSlug}
+      onOpenPage={openPage}
       onQueryChange={onQueryChange}
       projectName={projectKey}
       query={query}

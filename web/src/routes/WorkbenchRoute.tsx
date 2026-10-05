@@ -2,7 +2,15 @@ import type { GitDiffScope } from "@agents-remote/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type PointerEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   InstanceArea,
   useCloseSession,
@@ -39,6 +47,7 @@ import {
   type WorkbenchMode,
   type WorkbenchScope,
   type PanelTab,
+  type FilePanelRef,
   activeTabRefLeaf,
   collectLeaves,
   dropIntoLeaf,
@@ -67,7 +76,12 @@ import {
   workbenchPanelOpenAtom,
   workbenchPanelTabsAtom,
   workbenchRightCollapsedAtom,
+  workbenchFileTabEditingAtom,
 } from "./workbench-model";
+import { FILE_NAV_QUERY_SCOPE, FileTabPreview } from "../components/files/file-preview-panel";
+import { FilePreviewNavMenu } from "../components/workbench/mobile-l3";
+import { useFilePreview } from "../components/files/use-file-editor";
+import { resolveRootBrowseTarget } from "../components/files/file-browser";
 
 /**
  * workbench 共享 pathless layout 组件（设计 workbench-stable-refactor.md Phase 1）。7 个 workbench
@@ -256,14 +270,28 @@ function WorkbenchContent({
     // 字面量 focusId，gitcommit_/wiki_ 由子路由 _splat 派生。这些 focusId 不开 tab（渲染层在
     // MobileWorkbench 按 focusId 直渲 L3 组件），在此提前 return 防止落入 default 分支被误开成
     // session tab（未匹配 projectName 的兜底会开 session tab → 无效 tab 进保活层）。
-    if (
-      focusId === "githistory" ||
-      focusId === "gitbranches" ||
-      focusId.startsWith("gitcommit_") ||
-      focusId.startsWith("wiki_")
-    ) {
+    if (focusId === "githistory" || focusId === "gitbranches" || focusId.startsWith("gitcommit_")) {
       return;
     }
+    // wiki_ 桌面分流（v1.5 批 4，spec §4.6：wiki 阅读进中栏）：wiki 深链 URL → wikiread tab
+    //（每 slug 一 tab，同 slug 已开 = 激活幂等，与移动「同目标已开=激活」同构）。移动端维持
+    // 提前 return（MobileWorkbench 按 focusId 直渲 L3，栏内阅读态保留）。
+    if (focusId.startsWith("wiki_")) {
+      if (!isDesktop || scope.kind !== "project") return;
+      update((prev) =>
+        ensureTabOpenLeaf(prev, {
+          kind: "wikiread",
+          projectName: scope.key,
+          slug: focusId.slice("wiki_".length),
+        }),
+      );
+      return;
+    }
+    // 10m2 全局文件推入态（v1.5 批 4，mac-files-global-preview）：files mainPage 的 file
+    // focusId 是主区推入预览，不进中栏 tab（原型②「大面积 UI 切换仅在点『在工作台打开』时
+    // 发生」）；「在工作台打开」走 openPushInWorkbench 命令式开 tab。工作台内（leftMode=auto）
+    // file focus 仍开 tab，此 gate 不拦。
+    if (leftMode === "files" && scope.kind === "global" && focusId.startsWith("file_")) return;
     update((prev) => {
       const found = findLeafBySessionId(prev, focusId);
       if (found) return setActiveTabInLeaf(prev, found.leafId, focusId);
@@ -333,6 +361,7 @@ function WorkbenchContent({
           t.kind === "git" ||
           t.kind === "skill" ||
           t.kind === "chat" ||
+          t.kind === "wikiread" ||
           t.kind === "render"
         )
           continue;
@@ -450,8 +479,13 @@ function WorkbenchContent({
   // mainPage：中栏 tab focus（/files/file/$ 等继承 leftMode 透传）必须回工作台渲染 tab。
   const mainPageActive =
     scope.kind === "global" &&
-    !focusId &&
-    (leftMode === "files" || leftMode === "plugins" || leftMode === "settings");
+    (leftMode === "files" || leftMode === "plugins" || leftMode === "settings") &&
+    (!focusId ||
+      // 10m2 全局文件推入态（v1.5 批 4，mac-files-global-preview）：files mainPage 的 file
+      // focusId = 主区推入预览（不退工作台）；其余 focusId（L3 详情等）仍优先于 mainPage。
+      (leftMode === "files" && focusId.startsWith("file_")));
+  // 推入态判定（独立变量：focus effect gate 与 desktopMainPage 分流共用）。
+  const filesPushActive = mainPageActive && !!focusId;
   const navigateToFile = useCallback(
     (projectName: string, path: string) => {
       const fullPath = `${projectName}/${path}`;
@@ -469,16 +503,13 @@ function WorkbenchContent({
       void navigate({
         to: "/files/file/$",
         params: { _splat: fullPath },
-        // mainPage 态（09m/10m 整页）点文件 = 跳回工作台看 tab：leftMode 重置 auto 退出整页
-        //（sticky 只在非 mainPage 态保留——工作台内 tab 切换不改左栏的原语义不变）。
-        search: stickyWorkbenchSearch({
-          leftMode: mainPageActive ? "auto" : leftMode,
-          rightTab,
-          mode,
-        }),
+        // leftMode 原值透传（sticky）：消费方 = 工作台内开 tab（leftMode=auto）/ 推入态
+        //「在工作台打开」走 openPushInWorkbench（显式无 leftMode = 退出 mainPage）。10m2 起
+        // mainPage 列表点文件走 pushToFilePreview（保留 files = 推入），不再经本函数。
+        search: stickyWorkbenchSearch({ leftMode, rightTab, mode }),
       });
     },
-    [navigate, scope, rightTab, leftMode, mode, mainPageActive],
+    [navigate, scope, rightTab, leftMode, mode],
   );
   // 左栏文件树点文件 → 中栏开/激活 file tab + focus 到该文件（设计 §6 决策 16）。file ref 用全路径
   //（kind:"file", path=全路径，无 projectName 字段），全局/项目点同一文件复用同一 tab。复用已测纯函数
@@ -490,6 +521,30 @@ function WorkbenchContent({
       void navigateToFile(projectName, path);
     },
     [update, navigateToFile],
+  );
+  // 10m2 推入入口（v1.5 批 4，mac-files-global-preview）：全局文件 mainPage 列表点文件 =
+  // 主区推入预览（leftMode=files + focusId），不写中栏 layout——「大面积 UI 切换仅在点
+  // 『在工作台打开』时发生」（原型②）。桌面 mainPage 专属；移动列表点文件仍走无 search
+  // navigate（leftMode=auto，移动 push 页按 focusId 直渲）。
+  const pushToFilePreview = useCallback(
+    (projectName: string, path: string) => {
+      void navigate({
+        to: "/files/file/$",
+        params: { _splat: `${projectName}/${path}` },
+        search: stickyWorkbenchSearch({ leftMode: "files", rightTab, mode }),
+      });
+    },
+    [navigate, rightTab, mode],
+  );
+  // 推入态 ⋯「在工作台打开」（原型②）：开中栏 file tab + 退 mainPage（无 leftMode = auto），
+  // 大面积切换唯一入口。focusId 不变（file_ 前缀已一致），focus effect 不重复开。
+  const openPushInWorkbench = useCallback(
+    (projectName: string, path: string) => {
+      const fullPath = `${projectName}/${path}`;
+      update((prev) => ensureTabOpenLeaf(prev, { kind: "file", path: fullPath }));
+      void navigateWorkbench(scope, focusId, { rightTab, tab: tabFromUrl, mode });
+    },
+    [update, navigateWorkbench, scope, focusId, rightTab, tabFromUrl, mode],
   );
   // git diff tab focus URL = /projects/$key/git/$ splat + ?gitScope search（设计 workbench-layout-fix
   // 阶段 3）。scope 走 search param（splat 不便编码 staged/worktree），与 tabIdOf 的 `git_${scope}/${path}` 一致。
@@ -535,6 +590,19 @@ function WorkbenchContent({
       void navigateToGitFile(projectName, scope, path);
     },
     [update, navigateToGitFile],
+  );
+  // wiki tab focus URL（v1.5 批 4，spec §4.6）：/projects/$key/wiki/$ 深链（slug 在 splat，
+  // 可含 `/` 的嵌套页路径）。focus effect 桌面把 wiki_ 前缀 focusId 映射成 wikiread tab；
+  // onSelectTab 反向（tab → URL）同管道，每 slug 一 tab。
+  const navigateToWiki = useCallback(
+    (projectName: string, slug: string) => {
+      void navigate({
+        to: "/projects/$key/wiki/$",
+        params: { key: projectName, _splat: slug },
+        search: stickyWorkbenchSearch({ rightTab, leftMode, mode }),
+      });
+    },
+    [navigate, rightTab, leftMode, mode],
   );
   // skill tab focus URL（对标 navigateToFile 的 project/global 分流，2026-08-16 scope-aware 化）：
   // - 项目 scope → /projects/$key/skill/$（skill 停在项目内，与 file/git 同语义；focus effect 全局
@@ -693,6 +761,10 @@ function WorkbenchContent({
         void navigateToSkill(ref.name);
         return;
       }
+      if (ref?.kind === "wikiread") {
+        void navigateToWiki(ref.projectName, ref.slug);
+        return;
+      }
       if (ref?.kind === "chat") {
         // chat 是 global 会话（无 projectName）：保 scope，focus URL=sessionId（focus effect 据此重开）。
         navigateWorkbench(
@@ -727,6 +799,7 @@ function WorkbenchContent({
       navigateToGitFile,
       navigateToGitCompareFile,
       navigateToSkill,
+      navigateToWiki,
       navigateSession,
     ],
   );
@@ -865,14 +938,44 @@ function WorkbenchContent({
   const rightPanelProjectKey =
     scope.kind === "project" ? scope.key : lastProject || projectNames[0] || null;
   const rightCtx: WorkbenchTabPluginContext = { projectKey: rightPanelProjectKey };
+  // 检视器 → 中栏通路（v1.5 批 4，spec §4.5 预览矩阵·桌面）：file 树点文件 = 中栏 file tab
+  //（onOpenFile 既有）；wiki 页行点入 = 中栏 wikiread tab（projectKey 用右栏语境项目——global
+  // scope 下右栏挂 lastProject，跳转后 scope 跟随 URL 切换，与 file 跨项目同语义）。
+  const onOpenWiki = useCallback(
+    (slug: string) => {
+      const projectName = rightPanelProjectKey;
+      if (!projectName) return;
+      update((prev) => ensureTabOpenLeaf(prev, { kind: "wikiread", projectName, slug }));
+      void navigateToWiki(projectName, slug);
+    },
+    [update, navigateToWiki, rightPanelProjectKey],
+  );
   const rightPanel = panelOpen ? (
-    <RightPanelTabs ctx={rightCtx} onCollapse={closeDesktopPanel} />
+    <RightPanelTabs
+      ctx={rightCtx}
+      onCollapse={closeDesktopPanel}
+      onOpenFile={onOpenFile}
+      onOpenWiki={onOpenWiki}
+    />
   ) : null;
   // 桌面 §6.10-9（M9 批次 d，对齐 09m/10m 原型 IA）：global scope 且 leftMode=plugins/files 时,
   // 插件/全局文件是 **main 整页**（原型 side sidewin 恒定不随导航切换、main 切内容），实例区让位
   //——tab 布局在 localStorage atom 持久化，切回 auto 原样恢复；会话服务端不销毁，重挂重连
   //（与移动端切 Tab 同语义）。仅桌面生效：中档/窄屏走 MobileWorkbench，此分支不渲染。
-  const desktopMainPage = !mainPageActive ? null : leftMode === "plugins" ? (
+  const desktopMainPage = !mainPageActive ? null : filesPushActive ? (
+    // 10m2 推入态（v1.5 批 4，mac-files-global-preview）：mback 返回 + fname mono + 右端
+    // [编辑][⋯]；推入只替换主区内容，工作台现场（会话标签/检视器）原样保留零销毁。
+    <FilesPushPreview
+      focusId={focusId ?? ""}
+      onBack={() => {
+        void navigate({
+          to: "/files",
+          search: stickyWorkbenchSearch({ leftMode: "files", rightTab, mode }),
+        });
+      }}
+      onOpenInWorkbench={openPushInWorkbench}
+    />
+  ) : leftMode === "plugins" ? (
     // 插件域 mainPage 按深度页分流（第八轮）：skill/mcp 详情 = main 整页渲染详情面板
     //（复用 tab 时代同款组件；不写 layout、无 tabstrip chip），home = 插件管理整页。
     pluginView === "skill" && pluginName ? (
@@ -938,7 +1041,7 @@ function WorkbenchContent({
           desktopMainPage ?? 互斥卸载，拖源激活无 zone 可落——有源无落点的死线）。 */}
         <GlobalFilesOverview
           currentPath={globalFilesPath}
-          onOpenFile={onOpenFile}
+          onOpenFile={pushToFilePreview}
           onPathChange={setGlobalFilesPath}
           variant="page"
         />
@@ -984,6 +1087,7 @@ function WorkbenchContent({
       onCardDragStart={onCardDragStart}
       onCloseTab={onCloseTab}
       onDrop={onDrop}
+      onOpenGitDiff={onOpenGitFile}
       onResizeSplit={onResizeSplit}
       onSelectTab={onSelectTab}
       onSetDragPointer={onSetDragPointer}
@@ -1009,6 +1113,72 @@ function WorkbenchContent({
       {renameHolder}
       {create.promptHolder}
     </WorkbenchShell>
+  );
+}
+
+/**
+ * 10m2 全局文件主区推入态（v1.5 批 4，mac-files-global-preview）：mhead = mback「‹ 全局文件」
+ * （蓝字 chevron.left）+ h1 文件名（等宽 700，原型 margin-left:34px）+ 右端 [编辑][⋯]（编辑态
+ * pencil 让位 emeta 放弃/完成，⋯ 恒在——编辑态保留）。主体复用 FileTabPreview（desktop 档：
+ * .fmeta 元信息行 / 编辑态 .emeta+.aux / unsupported 空态单源），编辑受控共享
+ * workbenchFileTabEditingAtom（tabId=file_ 前缀全路径，与中栏 tab 同命名空间、同屏单编辑）。
+ * ⋯ 菜单 = 复制内容/复制路径/在工作台打开（根作用域无 Git，无查看 diff——onOpenDiff 不传）。
+ */
+function FilesPushPreview({
+  focusId,
+  onBack,
+  onOpenInWorkbench,
+}: {
+  focusId: string;
+  onBack: () => void;
+  onOpenInWorkbench: (projectName: string, path: string) => void;
+}) {
+  const { t } = useT();
+  const setEditingTabId = useSetAtom(workbenchFileTabEditingAtom);
+  const editingNow = useAtomValue(workbenchFileTabEditingAtom) === focusId;
+  const fullPath = parseFileTabId(focusId) ?? "";
+  const target = resolveRootBrowseTarget(fullPath);
+  const projectName = target.kind === "project" ? target.projectName : fullPath;
+  const relativePath = target.kind === "project" ? target.relativePath : "";
+  const fileName = relativePath.split("/").pop() ?? relativePath;
+  const panelRef = useMemo<FilePanelRef>(() => ({ kind: "file", path: fullPath }), [fullPath]);
+  const { data } = useFilePreview(projectName, relativePath, FILE_NAV_QUERY_SCOPE);
+  const editable = data?.type === "text";
+  return (
+    <div className="push-preview flex h-full min-h-0 flex-col">
+      <header className="flex shrink-0 items-center gap-2.5 px-5 pt-3.5">
+        <button
+          className="flex flex-none cursor-pointer items-center gap-1 text-[14px] font-semibold text-primary"
+          onClick={onBack}
+          type="button"
+        >
+          <ShellIcon className="size-[15px]" name="chevron-left" />
+          {t("nav.globalFiles")}
+        </button>
+        <h1 className="ml-[34px] min-w-0 flex-1 truncate font-mono text-[17px] font-bold text-ink-1">
+          {fileName}
+        </h1>
+        {editable && !editingNow ? (
+          <button
+            aria-label={t("files.edit")}
+            className="inline-flex h-6 w-6 flex-none items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+            onClick={() => setEditingTabId(focusId)}
+            title={t("files.edit")}
+            type="button"
+          >
+            <ShellIcon className="h-3 w-3" name="edit" />
+          </button>
+        ) : null}
+        <FilePreviewNavMenu
+          onOpenInWorkbench={() => onOpenInWorkbench(projectName, relativePath)}
+          path={relativePath}
+          projectName={projectName}
+          queryScope={FILE_NAV_QUERY_SCOPE}
+          triggerClassName="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+        />
+      </header>
+      <FileTabPreview panelRef={panelRef} />
+    </div>
   );
 }
 

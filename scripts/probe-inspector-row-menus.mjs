@@ -418,14 +418,16 @@ try {
   );
   const openItem = page.getByRole("menuitem").filter({ hasText: "打开页面" }).first();
   await openItem.click();
-  await page.waitForTimeout(500);
-  const detailBack = await page.locator("main > div > aside").nth(1).getByText("返回列表").count();
-  ok(detailBack > 0, "W3 「打开页面」进详情态（返回列表按钮在）");
+  await page.waitForTimeout(800);
+  // v1.5 批 4：wiki 页行「打开页面」→ 中栏 wikiread tab（检视器 wikiread 阅读标签退役）。
+  const wikiTab = page.locator(".tabstrip .tb", { hasText: "index-1" });
+  ok(
+    (await wikiTab.count()) === 1,
+    "W3 「打开页面」→ 中栏 wikiread tab（index-1 chip；检视器 wikiread 标签退役）",
+  );
 
-  // ⑤ 触屏长按（合成 pointerType:touch pointerdown 500ms 阈值）：Wiki 列表已切详情态，
-  // 回列表后长按页面行 → 菜单开（iPad 右栏唯一菜单入口）。
-  await page.locator("main > div > aside").nth(1).getByText("返回列表").first().click();
-  await page.waitForTimeout(500);
+  // ⑤ 触屏长按（合成 pointerType:touch pointerdown 500ms 阈值）：批 4 页行点入开中栏 tab，
+  // 检视器保持列表态（无详情态切换）——直接长按页面行 → 菜单开（iPad 右栏唯一菜单入口）。
   const wikiRow2 = page
     .locator("main > div > aside")
     .nth(1)

@@ -12,7 +12,7 @@ const projectName = process.env.E2E_PROJECT_NAME ?? "demo";
  * 活动栏退役，[文件] 入口 = footnav All Files（en）。
  */
 
-test("file nav: footnav 全局文件 → 全局树点文件 → 中栏 file tab + /files/file/$ 全路径 URL", async ({
+test("file nav: footnav 全局文件 → 全局树点文件 → 主区推入态预览 + /files/file/$ 全路径 URL", async ({
   page,
 }) => {
   await page.goto("/");
@@ -42,9 +42,13 @@ test("file nav: footnav 全局文件 → 全局树点文件 → 中栏 file tab 
     .first()
     .click();
 
-  // URL 切到 /files/file/$ 全路径（_splat = demo/src/index.ts）。
+  // URL 切到 /files/file/$ 全路径（_splat = demo/src/index.ts；v1.5 批 4 起 sticky 透传
+  // leftMode=files = 10m2 主区推入态）。
   await expect(page).toHaveURL(new RegExp(`/files/file/${projectName}/src/index\\.ts(\\?|$)`));
 
-  // 中栏 FileTabPreview 渲染（与项目文件 tab 同组件，resolveRootBrowseTarget 解析项目名）。
-  await expect(page.getByLabel("File preview")).toContainText("fileBrowserE2e");
+  // v1.5 批 4（10m2，mac-files-global-preview）：/files mainPage 点文件 = 主区推入预览
+  //（mback + h1 mono 文件名 + FilePreviewPane；不写中栏 layout，「在工作台打开」才进中栏
+  // tab）。与项目文件 tab 同组件，resolveRootBrowseTarget 解析项目名。
+  await expect(page.locator("h1.font-mono")).toHaveText("index.ts");
+  await expect(page.locator('[data-role="file-preview-pane"]')).toContainText("fileBrowserE2e");
 });

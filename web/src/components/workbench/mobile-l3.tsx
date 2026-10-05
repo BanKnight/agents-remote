@@ -364,6 +364,10 @@ export type FilePreviewPaneProps = {
   onEditingChange: (editing: boolean) => void;
   /** 编辑态动作位置：meta = .emeta fact 放弃/完成；nav = push nav [放弃][完成]（容器渲染）。 */
   editingActions: "meta" | "nav";
+  /** 容器分档（v1.5 批 4，spec §4.5 预览矩阵）：mobile = 面板/push（底部 safe-area 让位 +
+   * .aux 收起键盘钮）；desktop = 中栏 tab/主区推入态（无移动底部空间，aux 仅撤销/重做——
+   * 05h4 原型 .pvaux 两钮）。缺省 mobile（存量调用零改动）。 */
+  variant?: "mobile" | "desktop";
 };
 
 /**
@@ -376,7 +380,7 @@ export type FilePreviewPaneProps = {
  */
 export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPaneProps>(
   function FilePreviewPane(
-    { projectName, path, queryScope, editing, onEditingChange, editingActions },
+    { projectName, path, queryScope, editing, onEditingChange, editingActions, variant = "mobile" },
     ref,
   ) {
     const { t } = useT();
@@ -485,7 +489,10 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
     // 保持简述，diverge 记档）。三类根都带 data-role 语义锚。
     if (data.type === "image") {
       return (
-        <div className="flex min-h-0 flex-1 flex-col" data-role="file-preview-pane">
+        <div
+          className={`flex min-h-0 flex-1 flex-col ${variant === "desktop" ? "fdesktop" : ""}`}
+          data-role="file-preview-pane"
+        >
           <div className="fmeta">
             <span>{paneFmetaLine}</span>
           </div>
@@ -495,7 +502,10 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
     }
     if (data.type === "unsupported") {
       return (
-        <div className="flex min-h-0 flex-1 flex-col" data-role="file-preview-pane">
+        <div
+          className={`flex min-h-0 flex-1 flex-col ${variant === "desktop" ? "fdesktop" : ""}`}
+          data-role="file-preview-pane"
+        >
           <div className="fmeta">
             <span>{paneFmetaLine}</span>
           </div>
@@ -511,7 +521,10 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
     }
     if (data.type === "too_large") {
       return (
-        <div className="flex min-h-0 flex-1 flex-col" data-role="file-preview-pane">
+        <div
+          className={`flex min-h-0 flex-1 flex-col ${variant === "desktop" ? "fdesktop" : ""}`}
+          data-role="file-preview-pane"
+        >
           <div className="fmeta">
             <span>{paneFmetaLine}</span>
           </div>
@@ -521,10 +534,11 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
         </div>
       );
     }
-    // text 分支（编辑/渲染/源码三态）。
+    // text 分支（编辑/渲染/源码三态）。desktop 档去移动底部 safe-area 让位（中栏/主区推入态
+    // 无 bottom nav，05h 原型四边贴容器）。
     return (
       <div
-        className={`flex min-h-0 flex-1 flex-col pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))] ${editing || isRenderView ? "overflow-hidden" : "overflow-y-auto"}`}
+        className={`flex min-h-0 flex-1 flex-col ${variant === "desktop" ? "fdesktop" : ""} ${variant === "desktop" ? "" : "pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"} ${editing || isRenderView ? "overflow-hidden" : "overflow-y-auto"}`}
         data-role="file-preview-pane"
       >
         {editing ? (
@@ -582,9 +596,12 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
               >
                 ↪ {t("files.auxRedo")}
               </button>
-              <button onClick={() => editorView?.contentDOM.blur()} type="button">
-                ⌄ {t("files.auxDismissKeyboard")}
-              </button>
+              {/* desktop 档无软键盘收起诉求（05h4 原型 .pvaux 仅撤销/重做两钮）。 */}
+              {variant === "desktop" ? null : (
+                <button onClick={() => editorView?.contentDOM.blur()} type="button">
+                  ⌄ {t("files.auxDismissKeyboard")}
+                </button>
+              )}
             </div>
           </>
         ) : (
@@ -625,11 +642,18 @@ export function FilePreviewNavMenu({
   path,
   queryScope,
   onViewDiff,
+  onOpenInWorkbench,
+  triggerClassName = "ic cursor-pointer",
 }: {
   projectName: string;
   path: string;
   queryScope: string;
   onViewDiff?: () => void;
+  /** 桌面全局文件推入态专属（10m2 ②）：切工作台并自动打开中栏文件标签；其余容器不传。 */
+  onOpenInWorkbench?: () => void;
+  /** 触发钮 class（桌面 tabstrip 右端 = 与 tabstrip 结构钮同形制 h-6 w-6 / 图标 12px；缺省
+   * 移动 .ic 形制）。 */
+  triggerClassName?: string;
 }) {
   const { t } = useT();
   const { data } = useFilePreview(projectName, path, queryScope);
@@ -662,13 +686,18 @@ export function FilePreviewNavMenu({
       },
     });
   }
+  // 「在工作台打开」恒最末（spec §4.5 列举序 [复制路径, 另存为…, 在工作台打开]；text 推入态
+  // 无前两者时序不变）。reviewer P2-1：原置于复制路径后，image 推入态顺序错。
+  if (onOpenInWorkbench) {
+    items.push({ label: t("files.menuOpenInWorkbench"), onSelect: onOpenInWorkbench });
+  }
   return (
     <ActionMenu
       align="end"
       cancelLabel={t("cancel")}
       items={items}
       trigger={
-        <button aria-label={t("workbench.moreActions")} className="ic cursor-pointer" type="button">
+        <button aria-label={t("workbench.moreActions")} className={triggerClassName} type="button">
           <ShellIcon name="ellipsis" />
         </button>
       }

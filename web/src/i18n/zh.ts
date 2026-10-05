@@ -170,6 +170,7 @@ export const zh: Record<TranslationKey, string> = {
   "files.menuCopyPath": "复制路径",
   "files.menuCopyContent": "复制内容",
   "files.menuSaveAs": "另存为…",
+  "files.menuOpenInWorkbench": "在工作台打开",
   "files.menuViewDiff": "在 Git 中查看 diff",
   "files.copied": "已复制",
   "files.menuOpenPreview": "打开预览",

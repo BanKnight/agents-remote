@@ -2352,6 +2352,28 @@
     color: inherit;
     cursor: pointer;
   }
+  /* v1.5 批4（reviewer P1-1）：桌面两容器 fmeta/emeta 页私 padding 档（.fdesktop = FilePreviewPane
+     variant="desktop" 容器标记）。中栏 05h（.pcenter 页私）= 右 26 对齐中栏右缘 / 左 14；
+     10m2 推入态（mac-files-global-preview 页私）= 左右 20 对齐 mhead px-5、编辑态 emeta
+     左 20 右 26。iPhone 档保持单源默认 16/14 不动。 */
+  .fdesktop .fmeta {
+    padding: 0 26px 0 14px;
+  }
+  .fdesktop .emeta {
+    padding: 0 26px 0 14px;
+  }
+  .push-preview .fdesktop .fmeta {
+    padding: 0 20px;
+  }
+  .push-preview .fdesktop .emeta {
+    padding: 0 26px 0 20px;
+  }
+  /* reviewer P2-2：桌面 aux 无软键盘避让诉求（.pvaux = 38px 无 safe-area，
+     mac-tool-files-preview-edit 页私）；env 仅 iPhone 形态消费。 */
+  .fdesktop .aux {
+    height: 38px;
+    padding-bottom: 0;
+  }
   /* 未知二进制「不支持预览」空态（workspace-preview-unsupported 页私规格收编）：无画布语义，
      ⋯ 菜单仅复制路径。 */
   .unsupported {

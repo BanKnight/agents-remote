@@ -170,6 +170,7 @@ export const en = {
   "files.menuCopyPath": "Copy path",
   "files.menuCopyContent": "Copy contents",
   "files.menuSaveAs": "Save as…",
+  "files.menuOpenInWorkbench": "Open in Workbench",
   "files.menuViewDiff": "View diff in Git",
   "files.copied": "Copied",
   "files.menuOpenPreview": "Open preview",

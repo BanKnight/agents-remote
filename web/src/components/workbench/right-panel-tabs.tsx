@@ -5,10 +5,7 @@ import { listProjectFiles } from "../../api/client";
 import { useT } from "../../i18n";
 import {
   type PanelTab,
-  panelFileTab,
-  panelWikiReadTab,
   ensurePanelTabOpen,
-  splitFilePath,
   workbenchPanelActiveAtom,
   workbenchPanelTabsAtom,
   BASE_PANEL_TABS,
@@ -17,8 +14,7 @@ import {
 import { AddMenu } from "../files/add-menu";
 import { NewItemSheet } from "../files/new-item-sheet";
 import { enqueueUploads } from "../files/upload-queue";
-import { FilesToolTab, GitToolTab, PanelFileTabBody, WikiToolTab } from "./workbench-tab-plugin";
-import { L3WikiReader } from "./mobile-l3";
+import { FilesToolTab, GitToolTab, WikiToolTab } from "./workbench-tab-plugin";
 import { PanelTabBar } from "./inspection-panel";
 import { usePanelToolChip } from "./project-tool-panels";
 import { cn } from "@/lib/utils";
@@ -31,7 +27,12 @@ import type { WorkbenchTabPluginContext } from "./workbench-tab-plugin";
  *
  * **叠层保活**（批2 移动同范式，frontend-notes §3）：panelTabs 全渲染，非激活 invisible
  *（visibility 保布局保滚动位），absolute inset-0 叠层；切标签不卸载不重挂，cwd/滚动位/详情栈
- * 状态跨切换保持。file 标签 body = PanelFileTabBody 单源（preview ↔ diff 栈）。
+ * 状态跨切换保持。
+ *
+ * **v1.5 批 4 两端分化**（spec §4.5 预览矩阵）：桌面只渲染三结构标签（files/git/wiki）——
+ * file/wikiread 标签退役出检视器（文件预览 → 中栏 tabstrip 文件标签、wiki 阅读 → 中栏
+ * wikiread tab，onOpenFile/onOpenWiki 通路）；共享 atom 不动（移动保留 file/wikiread 标签，
+ * 同一数据不同容器投影，多端同构）。激活项指向被投影隐藏的标签时回退 files。
  *
  * 面板开合真相 = workbenchPanelOpenAtom（WorkbenchContent 融合右栏折叠，WorkbenchShell
  * 受控化）；本组件恒在面板 open 时渲染，不持开合 state。
@@ -39,10 +40,16 @@ import type { WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 export function RightPanelTabs({
   ctx,
   onCollapse,
+  onOpenFile,
+  onOpenWiki,
 }: {
   ctx: WorkbenchTabPluginContext;
   /** glabel2 行内 clps「»」收起右栏（05:103 原型折叠语义；装配点传 closeDesktopPanel）。 */
   onCollapse: () => void;
+  /** 树点文件 → 中栏 file tab（WorkbenchRoute.onOpenFile）。 */
+  onOpenFile: (projectName: string, path: string) => void;
+  /** wiki 页行点入 → 中栏 wikiread tab（WorkbenchRoute.onOpenWiki）。 */
+  onOpenWiki: (slug: string) => void;
 }) {
   const { t } = useT();
   const projectKey = ctx.projectKey;
@@ -53,7 +60,15 @@ export function RightPanelTabs({
   const panelTabs = withBasePanelTabs(
     (projectKey ? panelTabsMap[projectKey] : undefined) ?? BASE_PANEL_TABS,
   );
-  const activePanelTabId = (projectKey ? panelActiveMap[projectKey] : undefined) ?? "files";
+  // 桌面投影 = 三结构标签（files/git/wiki）；file/wikiread 留在存储（移动仍消费）不渲染。
+  const inspectorTabs = panelTabs.filter(
+    (t0) => t0.kind === "files" || t0.kind === "git" || t0.kind === "wiki",
+  );
+  const activePanelTabIdRaw = (projectKey ? panelActiveMap[projectKey] : undefined) ?? "files";
+  // 激活项指向被投影隐藏的标签（file/wikiread）→ 回退 files（body 全 invisible 死屏防线）。
+  const activePanelTabId = inspectorTabs.some((t0) => t0.id === activePanelTabIdRaw)
+    ? activePanelTabIdRaw
+    : "files";
   // 幂等守卫：值未变直接返回旧引用（与移动 activatePanelTab 同款）。
   const activatePanelTab = (id: string) =>
     setPanelActiveMap((prev) => {
@@ -75,7 +90,8 @@ export function RightPanelTabs({
     ensureTab({ id: kind, kind } as PanelTab);
     activatePanelTab(kind);
   };
-  // ✕ 关标签：仅 file 标签可关（三基础标签不可关）；关激活标签回文件树首标签。
+  // ✕ 关标签：桌面投影仅三结构标签（不可关）；closePanelTab 保留为 PanelTabBar 契约
+  //（存储中的 file 标签由移动端关闭路径管理）。
   const closePanelTab = (id: string) => {
     setPanelTabsMap((prev) => {
       if (!projectKey) return prev;
@@ -84,21 +100,13 @@ export function RightPanelTabs({
     });
     if (id === activePanelTabId) activatePanelTab("files");
   };
-  // 树点文件直达（链接直达批3）：ensure + 激活 file 标签。file 标签 ✕ 关闭由 PanelTabBar。
-  const openPanelFileTab = (relPath: string) => {
-    const tab = panelFileTab(projectKey ?? "", relPath);
-    ensureTab(tab);
-    activatePanelTab(tab.id);
-  };
   // 工具 chip 槽装配单源（usePanelToolChip，与移动 InspectionPanel 同一份——多端同构；
-  // 搜索 query 提升透传 Tab 三件套，chip 与列表同 state）。
-  const activeKind = panelTabs.find((t0) => t0.id === activePanelTabId)?.kind ?? "files";
-  // wikiread 阅读标签无 chip 槽语义（wiki-reader 原型 ptabs 下直接 .fmeta，无搜索行）——
-  // usePanelToolChip 仍按 wiki 域取数（hooks 恒调用），toolChip 渲染 gate 在 JSX。
-  const toolChipKind = activeKind === "wikiread" ? "wiki" : activeKind;
+  // 搜索 query 提升透传 Tab 三件套，chip 与列表同 state）。批 4 桌面投影无 wikiread
+  //（原 wikiread 无 chip 槽的三元随投影删除）。
+  const activeKind = inspectorTabs.find((t0) => t0.id === activePanelTabId)?.kind ?? "files";
   const { filesSearchQuery, setWikiSearchQuery, toolChip, wikiSearchQuery } = usePanelToolChip({
     currentPath: ctx.currentPath,
-    kind: toolChipKind,
+    kind: activeKind,
     onPathChange: ctx.onPathChange,
     projectKey: projectKey ?? "",
   });
@@ -165,12 +173,12 @@ export function RightPanelTabs({
         onActivateTab={activatePanelTab}
         onCloseTab={closePanelTab}
         onNewTab={newPanelTab}
-        tabs={panelTabs}
+        tabs={inspectorTabs}
       />
       {/* 工具 chip 槽（03o crumb+搜索 / 03m gitchip / 03p wsearch；与移动 InspectionPanel
           同款槽结构 mx-4 mt-2.5 gap-2——装配单源 usePanelToolChip，右栏不再裸奔「..」行
           （真机反馈 2026-09-29 Files 标签缺顶部工具行 / Wiki 缺搜索入口）。 */}
-      {toolChip && activeKind !== "wikiread" ? (
+      {toolChip ? (
         <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-2">
           {toolChip}
           {activeKind === "files" ? (
@@ -200,7 +208,7 @@ export function RightPanelTabs({
         key={projectKey}
         role="tabpanel"
       >
-        {panelTabs.map((tab) => {
+        {inspectorTabs.map((tab) => {
           const active = tab.id === activePanelTabId;
           return (
             <div
@@ -215,7 +223,7 @@ export function RightPanelTabs({
                 <FilesToolTab
                   currentPath={ctx.currentPath}
                   onPathChange={ctx.onPathChange}
-                  onOpenFileTab={openPanelFileTab}
+                  onOpenFile={onOpenFile}
                   projectKey={projectKey}
                   searchQuery={filesSearchQuery}
                 />
@@ -223,32 +231,12 @@ export function RightPanelTabs({
                 <GitToolTab projectKey={projectKey} />
               ) : tab.kind === "wiki" ? (
                 <WikiToolTab
+                  onOpenPage={onOpenWiki}
                   onQueryChange={setWikiSearchQuery}
                   projectKey={projectKey}
                   query={wikiSearchQuery}
                 />
-              ) : tab.kind === "wikiread" ? (
-                // wikiread 阅读标签（v1.5 批3）：L3WikiReader 面板形态（复制链接收进 nav ⋯
-                //——copyLinkInBody=false；rel 页跳转 = 更新本标签目标）。
-                <L3WikiReader
-                  copyLinkInBody={false}
-                  onOpenPage={(s) => {
-                    const next = panelWikiReadTab(s);
-                    ensureTab(next);
-                    activatePanelTab(next.id);
-                    // title 缺省 = slug（wikiIndex 反查随装配层；桌面标签条 slug 可读）。
-                  }}
-                  projectName={projectKey ?? ""}
-                  slug={tab.slug}
-                />
-              ) : (
-                // file 标签 path 编码 = 「projectName/relPath」（panelFileTab 单点）——拆回
-                // relPath 给预览（projectName 即本栏 projectKey）。
-                (() => {
-                  const { path: relPath } = splitFilePath(tab.path);
-                  return <PanelFileTabBody path={relPath} projectName={projectKey} />;
-                })()
-              )}
+              ) : null}
             </div>
           );
         })}

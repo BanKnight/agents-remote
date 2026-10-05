@@ -392,7 +392,7 @@ async function sideOverviewVisible(page) {
     ok(!srcVisible, "C3 filter=read 过滤掉 src 行（客户端 filter）");
     await page.locator(".psearch input").fill("");
 
-    // ── D. file tab 预览只读 ──
+    // ── D. 10m2 推入态预览（v1.5 批 4：file tab 只读化翻案——推入预览 + pencil 编辑）──
     // 用 .txt（非 md/html → 无 render toggle，直接 source 模式 = CodeMirror）。
     await page
       .locator("section")
@@ -402,11 +402,15 @@ async function sideOverviewVisible(page) {
       .click();
 
     await page.waitForTimeout(1500);
+    ok((await page.locator("h1.font-mono").count()) === 1, "D0 10m2 推入态 h1 文件名（mono）");
     const cmContent = page.locator(".cm-content").first();
-    ok(await cmContent.isVisible(), "D1 file tab 渲染 CodeMirror（source 模式）");
     ok(
-      (await cmContent.getAttribute("contenteditable")) === "false",
-      "D2 CodeMirror 只读（contenteditable=false，§6.10-8）",
+      (await page.locator(".code .ln").first().isVisible()) || (await cmContent.isVisible()),
+      "D1 推入预览渲染代码体（行号行或 CodeMirror）",
+    );
+    ok(
+      (await page.locator(".code").count()) > 0,
+      "D2 预览态只读代码面（v1.5 §4.5 翻案 §6.10-8 只读化；编辑走 pencil）",
     );
     ok(
       (await page.getByRole("button", { name: "保存" }).count()) === 0,
