@@ -141,10 +141,9 @@ export const workbenchMobileFocusTabAtom = atomWithLocalOnlyStorage<WorkbenchMob
 );
 
 /**
- * 上次进入的项目 key（redesign-v2.md D4）。`/`（工作台 Tab）据此直达上次项目工作台——
- * 铁律「直达上次位置」：PWA 重开/刷新后工作台 Tab 恢复到离开时的项目，不回列表。
- * 写入点在 WorkbenchContent（scope.kind === "project" 的 effect）；`/` 的 beforeLoad
- * 读 localStorage 原值（不经过 atom 实例，router 层可直接读）。
+ * 上次进入的项目 key（redesign-v2.md D4）。v1.5 起作 `/` 跳板的次级兜底（无上次会话记忆时
+ * 直达上次项目现场）。写入点在 WorkbenchContent（scope.kind === "project" 的 effect）；
+ * `/` 的 beforeLoad 读 localStorage 原值（不经过 atom 实例，router 层可直接读）。
  */
 export const workbenchLastProjectAtom = atomWithLocalOnlyStorage<string>(
   "workbench.lastProjectKey",
@@ -152,6 +151,22 @@ export const workbenchLastProjectAtom = atomWithLocalOnlyStorage<string>(
 );
 /** localStorage 原始 key（router beforeLoad / 探针读原始值用，与 atom 同源）。 */
 export const WORKBENCH_LAST_PROJECT_KEY = "workbench.lastProjectKey";
+
+/**
+ * 上次聚焦的会话（v1.5 批 2 恢复现场，spec §3.3）：`/` 跳板直达上次会话（全屏会话现场 =
+ * 上次项目 + 上次实例）。写入点在 WorkbenchContent（project scope 聚焦 session 的 effect，
+ * `isSessionFocusId` gate）；`/` 的 beforeLoad 读 localStorage 原值。
+ *
+ * 已知边界（redesign-v2.md §6.14 批 2）：会话被关闭后记忆不失效（关闭动作分散在
+ * useInstanceInfoActions 等多处，无全局失效通知面）——深链落 detail 404 面板、行1 ‹ 项目
+ * 可返回；优雅回退随批 5 历史规模化（恢复语义）一并摊牌。
+ */
+export const workbenchLastSessionAtom = atomWithLocalOnlyStorage<{
+  k: string;
+  id: string;
+} | null>("workbench.lastSession", null);
+/** localStorage 原始 key（router beforeLoad / 探针读原始值用，与 atom 同源）。 */
+export const WORKBENCH_LAST_SESSION_KEY = "workbench.lastSession";
 
 /**
  * 移动端项目文件树 cwd 记忆（按项目 key 分组）。localStorage 持久化，后台被杀/重开/刷新后
@@ -705,6 +720,25 @@ export function parseGitCommitFocusId(focusId: string): string | undefined {
 
 export function parseWikiFocusId(focusId: string): string | undefined {
   return focusId.startsWith("wiki_") ? focusId.slice("wiki_".length) : undefined;
+}
+
+/**
+ * URL focusId 是否为 session 聚焦（v1.5 批 2 恢复现场写入判定）：session/chat 之外的 tab 族
+ * 均带前缀互斥（file_/git_/gitcmp_/skill_/chat_），M4 L3 为字面量或 gitcommit_/wiki_ 前缀；
+ * session tab 的 tabId === sessionId（无前缀，V3 多态基石）。与 WorkbenchRoute focus effect
+ * 的分流判定同源——排除法集中一处，新增带前缀 tab 族时同步补这里。
+ */
+export function isSessionFocusId(focusId: string): boolean {
+  return (
+    focusId !== "githistory" &&
+    focusId !== "gitbranches" &&
+    !focusId.startsWith("gitcommit_") &&
+    !focusId.startsWith("wiki_") &&
+    parseFileTabId(focusId) === null &&
+    parseSkillTabId(focusId) === null &&
+    parseGitTabId(focusId) === null &&
+    !focusId.startsWith("chat_")
+  );
 }
 
 /**

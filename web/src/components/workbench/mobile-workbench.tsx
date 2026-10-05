@@ -42,6 +42,7 @@ import {
   type WorkbenchMiddleTab,
   inferSessionTypeFromId,
   instanceNameMemoAtom,
+  isSessionFocusId,
   panelFileTab,
   parseFileTabId,
   parseGitCommitFocusId,
@@ -54,6 +55,7 @@ import {
   useWorkbenchBack,
   useWorkbenchNavigate,
   type SessionPanelRef,
+  workbenchLastSessionAtom,
   workbenchMobileFocusTabAtom,
   workbenchMobileGlobalFilesPathAtom,
   workbenchMobileProjectFilesPathAtom,
@@ -96,11 +98,7 @@ import {
   usePanelToolChip,
   WikiToolPanel,
 } from "./project-tool-panels";
-import {
-  MobileCreateInstanceSheet,
-  MobileProjectSwitchSheet,
-  MobileSessionHistorySheet,
-} from "./mobile-sheets";
+import { MobileCreateInstanceSheet, MobileSessionHistorySheet } from "./mobile-sheets";
 import { useAgentDetail, useRenameSession, useTerminalDetail } from "./instance-area";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { useMeasuredBottomNav } from "../shell/shell-layout";
@@ -173,11 +171,13 @@ export function MobileWorkbench({
   // workbench 不走 ShellLayout，这里自行测量底部 nav 高度并注入
   // `--shell-mobile-bottom-nav-space`，让 workbench 内用 var 的滚动容器（文件列表、
   // Git diff 等）底部正确避让（参考 ShellLayout 同款 useMeasuredBottomNav）。
-  // nav 恒显（第十轮 §6.12j：原型 tabbar 覆盖 02/03 全系含 L3 与聚焦态等 22 页、仅 06-login
-  // 无——旧「聚焦态让位输入区」分支与原型 03「input + tabbar 共存」矛盾且无文档记录，回退；
-  // 聚焦态 composer 经 --composer-gap 上浮至 nav 上方，键盘弹出自然遮住 nav，iOS 原生同款）。
+  // v1.5 批 2（spec §3.3/铁律 4）：会话现场 = 全屏 push 层**无 tab bar**（底部空间让给
+  // 工作流；原型 tabbar 域 = L1 三 Tab 页 + 设置/审批中心，workspace*.html 与 tool-git-*/
+  // wiki-reader 均无 tabbar）——project scope（含浏览态自动聚焦、URL 聚焦、L3 深层）不挂
+  // nav；L1 三 Tab 页（global scope：项目列表/文件/插件）与文件 push 页保持挂载（§3.4
+  // 「tab bar 可见且文件激活」，files-global-preview 的 tabbar 归属批 3 摊牌）。
   const { height: bottomNavHeight, measured: measuredBottomNav } = useMeasuredBottomNav(
-    <MobilePrimaryNav />,
+    scope.kind === "project" ? null : <MobilePrimaryNav />,
   );
   const mainStyle = {
     "--shell-mobile-bottom-nav-space": `${bottomNavHeight}px`,
@@ -744,6 +744,17 @@ function MobileProjectWorkbench({
   }, [instances, isLoading, layout, stripItems]);
   const effectiveFocusId = focusId ?? autoFocusId ?? undefined;
 
+  // v1.5 批 2 恢复现场（spec §3.3）：浏览态停留也是「上次会话」——URL 未聚焦时 autoFocus
+  // 聚焦的实例即用户实际所在现场，写入恢复记忆（否则 instances[0] 排序漂移会让下次 `/` 恢复
+  // 到非用户停留实例）。URL 聚焦路径由 WorkbenchContent 统一写（两处条件互斥不重复写）。
+  // ⚠️ autoFocusId 可能取到 **skill tab id**（layout activeTab 属本项目 skill 时）——恢复记忆
+  // 只承载 session 维度，isSessionFocusId 守门（与写入/跳板同源判定），skill 聚焦不写。
+  const [, setLastSession] = useAtom(workbenchLastSessionAtom);
+  useEffect(() => {
+    if (focusId || !autoFocusId || !isSessionFocusId(autoFocusId)) return;
+    setLastSession({ k: scope.key, id: autoFocusId });
+  }, [autoFocusId, focusId, scope.key, setLastSession]);
+
   // 保活集合（2026-08-17 问题 3，用户决策「全保活 + 聚焦过即可」）：本会话「聚焦过」（含当前
   // 激活，含自动聚焦回退）的已打开 tab。移动端单面板不照搬桌面全挂载——刷新重进 layout 恢复
   // N tab 只挂载当前激活的，随切换逐步纳入保活。切 tab 再切回不重连（WS 不断）。
@@ -1042,9 +1053,8 @@ function MobileProjectWorkbench({
     queryKey: ["projects", scope.key, "git", "branches"],
     queryFn: () => listProjectGitBranches(scope.key),
   });
-  // M5-a 浮层（03j/03n/08）：▾ 菜单新建实例、⋯ 菜单会话历史、切换 sheet 内新建项目。
+  // M5-a 浮层（03j/03n/08）：▾ 菜单新建实例、⋯ 菜单会话历史、新建项目 dialog。
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
-  const [switchSheetOpen, setSwitchSheetOpen] = useState(false);
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
   const createProjectDialog = useCreateProjectDialog();
   // v1.5 批1（spec §4.2）：实例操作全量收进实例信息面板动作行（⋯ › 实例信息 → 03k .acts
@@ -1500,26 +1510,15 @@ function MobileProjectWorkbench({
       {focusInfo.holder}
       {focusInfo.autoRetryEditorHolder}
       {focusInfo.runtimeDialogHolder}
-      {/* M5-a 浮层（portal 渲染，位置无谓，随 holders 常驻顶层）：03j 新建实例 / 03l 切换 /
-        03n 历史 / 08 新建项目（03l newp 行入口）。 */}
+      {/* M5-a 浮层（portal 渲染，位置无谓，随 holders 常驻顶层）：03j 新建实例 / 03n 历史 /
+        08 新建项目。03l 项目切换 sheet 在项目语境无入口（v1.5 批 2：‹ 项目 = 项目 Tab 根，
+        项目列表即切换器；插件语境的 03l 切换器仍在 mobile-plugins-home）。 */}
       {createProjectDialog.dialog}
       <MobileCreateInstanceSheet
         create={create}
         onOpenChange={setCreateSheetOpen}
         open={createSheetOpen}
         projectName={scope.key}
-      />
-      <MobileProjectSwitchSheet
-        currentSessionId={focusRef?.kind === "session" ? effectiveFocusId : undefined}
-        onCreateProject={createProjectDialog.openCreate}
-        onOpenChange={setSwitchSheetOpen}
-        onSwitchProject={(name) => {
-          void navigateWorkbench({ kind: "project", key: name });
-        }}
-        onSwitchSession={(name, sessionId) => {
-          void navigateWorkbench({ kind: "project", key: name }, sessionId);
-        }}
-        open={switchSheetOpen}
       />
       <MobileSessionHistorySheet
         onFocusExisting={(sessionId) => {

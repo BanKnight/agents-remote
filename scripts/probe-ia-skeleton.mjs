@@ -66,7 +66,7 @@ const loginRadius = await page.evaluate(() => {
 });
 ok(parseFloat(loginRadius) > 100, `登录钮胶囊（rounded-full，实际 ${loginRadius}）`);
 
-console.log("Part 2: L1 移动 4 Tab（D21）");
+console.log("Part 2: L1 移动 3 Tab（v1.5 铁律 4，工作台 Tab 退役）");
 await page.getByLabel("访问密码").fill(await readAppPassword());
 await page.getByRole("button", { name: "登录" }).click();
 await page.waitForSelector("nav[aria-label]", { timeout: 15000 });
@@ -77,12 +77,18 @@ const tabs = await page.evaluate(() =>
     .map((n) => n.textContent.trim())
     .filter(Boolean),
 );
-ok(tabs.join(",") === "项目,工作台,文件,插件", `4 Tab = ${tabs.join(",")}（D21）`);
+ok(tabs.join(",") === "项目,文件,插件", `3 Tab = ${tabs.join(",")}（v1.5 三 Tab）`);
+ok(!tabs.includes("工作台"), "底 nav 无「工作台」（v1.5 铁律 4 退役）");
 ok(!tabs.includes("设置"), "底 nav 无「设置」（D21 移到项目页 ⚙ push）");
 
-console.log("Part 3: D4「直达上次位置」");
-// 无记忆：`/` → 项目列表（冷启动从项目开始）
-await page.evaluate(() => localStorage.removeItem("workbench.lastProjectKey"));
+console.log(
+  "Part 3: D4「直达上次位置」（v1.5 跳板三级：lastSession → lastProjectKey → /projects）",
+);
+// 无记忆：`/` → 项目列表（冷启动从项目开始；lastSession 一并清，测纯无记忆分支）
+await page.evaluate(() => {
+  localStorage.removeItem("workbench.lastProjectKey");
+  localStorage.removeItem("workbench.lastSession");
+});
 await page.goto(`${ORIGIN}/`);
 await page.waitForTimeout(1200);
 ok(
@@ -90,7 +96,7 @@ ok(
   `无记忆 \`/\` → /projects（实际 ${new URL(page.url()).pathname}）`,
 );
 
-// 有记忆：`/` → 上次项目
+// 有 lastProjectKey（次级兜底）：`/` → 上次项目（lastSession 无值时的 v1.5 行为）
 const key = await page.evaluate(async () => {
   const r = await fetch("/api/overview");
   if (!r.ok) return null;

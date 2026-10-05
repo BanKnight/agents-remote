@@ -1,15 +1,16 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * 移动端一级底部胶囊导航 项目/工作台/文件/插件 全链路（redesign-v2.md D21：v2 4 Tab；设置自底
- * nav 移除，改为项目页 ⚙ push — M7）。移动视口（<lg=1024）下 `/` = D4 跳板（读 localStorage
- * `workbench.lastProjectKey`：有记忆 → `/projects/$key`，无记忆 → `/projects`），落地页
- * header 为 Agent/Chat mode tab。验证导航结构与各页可达，不依赖运行态 session。
+ * 移动端一级底部导航 项目/文件/插件 全链路（v1.5 批 2 三 Tab，spec 铁律 4/§3.3：工作台 Tab
+ * 退役——它是项目的工作现场，入口 = 项目 Tab；设置自底 nav 移除，改为项目页 ⚙ push — M7）。
+ * 移动视口（<lg=1024）下 `/` = 恢复现场跳板（读 localStorage `workbench.lastSession`：有记忆
+ * → `/projects/$key/session/$id` 全屏会话现场；无 → `workbench.lastProjectKey` 上次项目；
+ * 再无 → `/projects`）。验证导航结构与各页可达，不依赖运行态 session。
  */
 
 const password = process.env.E2E_PASSWORD ?? "secret";
 
-// iPhone 12 尺寸（390×844），<lg=1024 触发移动视口分流。
+// iPhone 12 尺寸（390×844），<lg=1024 触发移动视口移动形态分流。
 const MOBILE_VIEWPORT = { width: 390, height: 844 } as const;
 
 test.use({ viewport: MOBILE_VIEWPORT });
@@ -20,18 +21,16 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole("button", { name: "Sign in" }).click();
 });
 
-test("mobile primary nav has four items: projects / workbench / files / plugins", async ({
-  page,
-}) => {
-  // 移动底部胶囊渲染四项。用 nav aria-label 定位底部导航。
+test("mobile primary nav has three items: projects / files / plugins", async ({ page }) => {
+  // 移动底部导航渲染三项（v1.5 三 Tab）。用 nav aria-label 定位底部导航。
   const bottomNav = page.getByRole("navigation", { name: /primary|项目|主/i });
   await expect(bottomNav).toBeVisible();
-  // 四项 label（i18n：nav.projects / nav.workbench / nav.files / nav.plugins）。
+  // 三项 label（i18n：nav.projects / nav.files / nav.plugins）。
   await expect(bottomNav.getByRole("link", { name: /项目|Projects/ })).toBeVisible();
-  await expect(bottomNav.getByRole("link", { name: /工作台|Workbench/ })).toBeVisible();
   await expect(bottomNav.getByRole("link", { name: /文件|Files/ })).toBeVisible();
   await expect(bottomNav.getByRole("link", { name: /插件|Plugins/ })).toBeVisible();
-  // D21：设置自底 nav 移除（M7 改项目页 ⚙ push 入口）。
+  // v1.5 批 2：工作台 Tab 退役（铁律 4）；D21：设置自底 nav 移除（M7 改项目页 ⚙ push）。
+  await expect(bottomNav.getByRole("link", { name: /工作台|Workbench/ })).toHaveCount(0);
   await expect(bottomNav.getByRole("link", { name: /设置|Settings/ })).toHaveCount(0);
 });
 

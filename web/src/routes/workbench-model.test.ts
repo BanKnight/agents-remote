@@ -24,6 +24,7 @@ import {
   findLeafBySessionId,
   findTabRefLeaf,
   inferSessionTypeFromId,
+  isSessionFocusId,
   mergeProjectsWithCandidates,
   migrateLegacyLayout,
   migrateV2ToV3,
@@ -91,6 +92,23 @@ test("parseSkillTabId: skill_${name} → name；非 skill tabId → null", () =>
   expect(parseSkillTabId("agent_abc")).toBeNull();
   expect(parseSkillTabId("file_p1/src/index.ts")).toBeNull();
   expect(parseSkillTabId("git_worktree/a.ts")).toBeNull();
+});
+
+test("isSessionFocusId: session focus 正例 + 前缀/字面量排除族（与 focus effect 分流同源）", () => {
+  // 正例：session tab 的 tabId === sessionId（无前缀，V3 多态基石）。
+  expect(isSessionFocusId("agent_a")).toBe(true);
+  expect(isSessionFocusId("uuid-aaaa")).toBe(true);
+  // 字面量排除：L3 字面量 focusId（git history/branches）。
+  expect(isSessionFocusId("githistory")).toBe(false);
+  expect(isSessionFocusId("gitbranches")).toBe(false);
+  // 前缀排除：L3 gitcommit_/wiki_ 与 file_/skill_/git_/chat_ 前缀族。
+  expect(isSessionFocusId("gitcommit_abc123")).toBe(false);
+  expect(isSessionFocusId("wiki_home")).toBe(false);
+  expect(isSessionFocusId("file_p1/src/index.ts")).toBe(false);
+  expect(isSessionFocusId("skill_tdd")).toBe(false);
+  expect(isSessionFocusId("git_worktree/a.ts")).toBe(false);
+  // gitcmp_ 前缀（compare 模式 git tab）同为排除（与 focus effect 分流判定一致）。
+  expect(isSessionFocusId("gitcmp_main~feat/a.ts")).toBe(false);
 });
 
 test("validateWorkbenchSearch whitelists rightTab, omits key otherwise", () => {

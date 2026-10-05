@@ -13,6 +13,7 @@ import {
   parseWorkbenchScope,
   validateWorkbenchSearch,
   WORKBENCH_LAST_PROJECT_KEY,
+  WORKBENCH_LAST_SESSION_KEY,
 } from "./workbench-model";
 
 // 无效 URL（无任何路由匹配）→ 静默重定向到 `/`（工作台 Tab 落点，D4：直达上次项目）。
@@ -56,15 +57,38 @@ const workbenchLayoutRoute = createRoute({
   component: lazyRouteComponent(() => import("./WorkbenchRoute"), "WorkbenchLayoutShell"),
 });
 
-// `/` 入口路由（redesign-v2.md D4）：`/` = 工作台 Tab 落点 = 上次项目工作台（铁律「直达上次
-// 位置」）。beforeLoad 读 localStorage 上次项目 key：有 → replace 跳 `/projects/$key`（仍在本
-// workbench pathless layout 内，WorkbenchLayoutShell 不卸载、session/WS 保活）；无（首次使用）
-// → replace 跳 `/projects`（项目列表，冷启动从项目开始）。`/` 自身不渲染内容——纯跳板，
-// 故无 validateSearch（sticky search 由各入口自带，跳板不承载视图状态）。
+// `/` 入口路由（v1.5 批 2 恢复现场，spec §3.3）：登录/启动直达**上次会话**（全屏会话现场 =
+// 上次项目 + 上次实例）；无会话记忆回退上次项目现场（D4 遗产）；再无（首次使用）→
+// `/projects`（项目列表，冷启动从项目开始）。beforeLoad 读 localStorage 原值（不经过 atom
+// 实例，router 层可直接读）。replace 跳转仍在本 workbench pathless layout 内，
+// WorkbenchLayoutShell 不卸载、session/WS 保活。`/` 自身不渲染内容——纯跳板，故无
+// validateSearch（sticky search 由各入口自带，跳板不承载视图状态）。
 const indexRoute = createRoute({
   getParentRoute: () => workbenchLayoutRoute,
   path: "/",
   beforeLoad: () => {
+    let last: { k?: unknown; id?: unknown } | null = null;
+    try {
+      last = JSON.parse(localStorage.getItem(WORKBENCH_LAST_SESSION_KEY) ?? "null") as {
+        k?: unknown;
+        id?: unknown;
+      } | null;
+    } catch {
+      /* 旧值非合法 JSON（atomWithLocalOnlyStorage 写入格式），按无记忆处理 */
+    }
+    if (
+      last &&
+      typeof last.k === "string" &&
+      last.k.length > 0 &&
+      typeof last.id === "string" &&
+      last.id.length > 0
+    ) {
+      throw redirect({
+        to: "/projects/$key/session/$id",
+        params: { key: last.k, id: last.id },
+        replace: true,
+      });
+    }
     let lastKey = "";
     try {
       lastKey = JSON.parse(localStorage.getItem(WORKBENCH_LAST_PROJECT_KEY) ?? '""');

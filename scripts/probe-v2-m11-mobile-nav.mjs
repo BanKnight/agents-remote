@@ -1,14 +1,16 @@
-// M11 移动底部导航恒显探针（第十轮 §6.12j：nav 通栏化 + 工作台域恒显）。
+// M11 移动底部导航探针（v1.5 批 2 换代：三 Tab + tabbar 覆盖域收窄，spec 铁律 4/§3.3）。
 //
-// 原型规则（tabbar 覆盖 22 页、仅 06-login 无）对照断言（DOM 几何硬数据，禁截图）：
-//   Part 1 全局一级页（/projects）：nav 存在 4 tab + 通栏几何（宽=vw、bg-elevated、
-//     无浮岛圆角/阴影）+「项目」active + 图标 24px + label 11px。
-//   Part 2 project scope（/projects/proj1）：nav 存在（旧实现此处缺失——恒显修复核心）+
-//     「工作台」active。
-//   Part 3 聚焦态（自动聚焦 session）：nav 仍存在 + composer 浮层底边 ≤ nav 顶边
-//     （--composer-gap 注入生效，不与 nav 重叠）。
-//   Part 4 L3 深度页（git/history）：nav 存在。
-//   Part 5 设置页（/settings）：nav 存在（回归）。
+// v1.5 原型规则（tabbar 仅覆盖 L1 三 Tab 页 + 设置等全局页；workspace*.html 会话现场、
+// tool-git-*/wiki-reader L3 深层、workspace-session-history 均无 tabbar）对照断言
+// （DOM 几何硬数据，禁截图）：
+//   Part 1 全局一级页（/projects）：nav 存在 3 tab（项目/文件/插件，无工作台项）+
+//     通栏几何（宽=vw、bg-elevated、无浮岛圆角/阴影）+ 图标 24px + label 11px。
+//   Part 2 project scope（/projects/proj1）：nav 不存在（会话现场 = 全屏 push 层，
+//     spec §3.3——旧实现此处恒显，v1.5 起摘除）。
+//   Part 3 聚焦态（自动聚焦 session）：nav 不存在 + composer 卡片底贴视口底
+//     （无 nav 让位，--composer-gap 只剩 safe-area 补偿）。
+//   Part 4 L3 深度页（git/history）：nav 不存在（project scope 深层无 tabbar）。
+//   Part 5 设置页（/settings）：nav 存在（回归，设置属全局 tabbar 域）。
 //
 // 全 mock API（无真实数据创建/删除）；密码自读不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v2-m11-mobile-nav.mjs
@@ -145,7 +147,7 @@ const page = await ctx.newPage();
 await setupMocks(page);
 await login(page);
 
-// ── Part 1: 全局一级页（回归：nav 存在 + 通栏形态）────────────────────────────
+// ── Part 1: 全局一级页（回归：nav 存在 + 通栏形态 + 三 tab）────────────────────
 console.log("Part 1: 全局一级页（/projects）");
 await page.goto(`${ORIGIN}/projects`);
 await page.waitForSelector('nav[aria-label="移动端主导航"]', { timeout: 10000 });
@@ -157,54 +159,65 @@ ok(g.radius === "0px", `无浮岛圆角（radius ${g.radius}）`);
 ok(g.hasBorderTop !== "0px", `顶部描边（border-top ${g.hasBorderTop}）`);
 ok(g.iconW === 24, `图标 24px（got ${g.iconW}）`);
 ok(g.labelFs === "11px", `active label 11px（got ${g.labelFs}）`);
-ok((await page.locator('nav[aria-label="移动端主导航"] a').count()) === 4, "4 tab");
+ok((await page.locator('nav[aria-label="移动端主导航"] a').count()) === 3, "3 tab（v1.5 三 Tab）");
+ok(
+  (await page.locator('nav[aria-label="移动端主导航"] a').allTextContents()).every(
+    (s) => !s.includes("工作台"),
+  ),
+  "无「工作台」项（铁律 4 退役）",
+);
 
-// ── Part 2: project scope（恒显修复核心）─────────────────────────────────────
-console.log("Part 2: project scope（/projects/proj1）");
+// ── Part 2: project scope = 会话现场，无 tab bar（v1.5 §3.3 全屏 push 层）──────
+console.log("Part 2: project scope（/projects/proj1 会话现场无 nav）");
 await page.goto(`${ORIGIN}/projects/proj1`);
 // （原等 .chips 作 project scope 就绪标志；chips 行 2026-09-28 真机反馈整体退役，
 // 就绪标志改等工作台 tab 渲染。）
 await page.waitForSelector('[data-tab-id="agent_a"]', { timeout: 10000 });
 await page.waitForTimeout(400);
 g = await navGeo(page);
-ok(g !== null, "project scope nav 存在（旧实现缺失）");
-ok(g?.width === g?.vw, `通栏全宽（${g?.width} = vw ${g?.vw}）`);
-ok(g?.activeText?.includes("工作台") === true, `「工作台」active（got ${g?.activeText}）`);
+ok(g === null, "project scope 无 nav（会话现场全屏，v1.5 §3.3）");
 
-// ── Part 3: 聚焦态（自动聚焦 session）nav 不让位 + composer 不与 nav 重叠 ─────
-console.log("Part 3: 聚焦态（?session=agent_a）");
+// ── Part 3: 聚焦态 composer 贴底（无 nav 让位，--composer-gap = 4px − env）─────
+console.log("Part 3: 聚焦态（?session=agent_a）composer 贴底");
 await page.goto(`${ORIGIN}/projects/proj1?session=agent_a`);
 await page.waitForTimeout(1200);
 g = await navGeo(page);
-ok(g !== null, "聚焦态 nav 存在（原型 03 input+tabbar 共存）");
+ok(g === null, "聚焦态无 nav（会话现场全屏）");
 const composerGeo = await page.evaluate(() => {
-  const nav = document.querySelector('nav[aria-label="移动端主导航"]');
   const composer = document.querySelector("[data-composer-float]");
-  if (!nav) return { navTop: null, cardBottom: null, pb: null };
+  if (!composer) return { cardBottom: null, pb: null, vh: window.innerHeight };
   // composer 外层容器 bottom-0 锚定（rect.bottom 恒=面板底，padding 在盒内）；卡片 =
   // 内层 translateY div，其底边才是视觉底。
-  const card = composer?.firstElementChild;
+  const card = composer.firstElementChild;
   return {
-    navTop: nav.getBoundingClientRect().top,
     cardBottom: card ? card.getBoundingClientRect().bottom : null,
-    pb: composer ? getComputedStyle(composer).paddingBottom : null,
+    pb: getComputedStyle(composer).paddingBottom,
+    vh: window.innerHeight,
   };
 });
 if (composerGeo.cardBottom !== null) {
+  // pb 语义（frontend-notes §1 单层避让）：pb = env + gap = env + (navH + 4px − env)。会话现场
+  // 无 nav（navH=0）→ env 相消，pb 收敛为纯 4px 间隙；卡片底 = 视口底 − pb（外层 bottom-0，
+  // padding 在盒内）。
+  const pbNum = Number.parseFloat(composerGeo.pb) || 0;
   ok(
-    composerGeo.cardBottom <= composerGeo.navTop + 1,
-    `composer 卡片底 ${Math.round(composerGeo.cardBottom)} ≤ nav 顶 ${Math.round(composerGeo.navTop)}（--composer-gap 生效，pb ${composerGeo.pb}）`,
+    Math.abs(pbNum - 4) <= 1,
+    `composer pb 收敛纯间隙 4px（实际 ${composerGeo.pb}，env 相消 + 无 nav 项）`,
+  );
+  ok(
+    Math.abs(composerGeo.cardBottom + pbNum - composerGeo.vh) <= 2,
+    `composer 卡片底 ${Math.round(composerGeo.cardBottom)} + pb ≈ 视口底 ${composerGeo.vh}（贴底工作流）`,
   );
 } else {
-  console.log("  · composer 未挂载（WS 未就绪错误态承接），跳过重叠断言");
+  console.log("  · composer 未挂载（WS 未就绪错误态承接），跳过贴底断言");
 }
 
-// ── Part 4: L3 深度页 ────────────────────────────────────────────────────────
+// ── Part 4: L3 深度页（project scope 深层，无 tabbar）────────────────────────
 console.log("Part 4: L3 深度页（git/history）");
 await page.goto(`${ORIGIN}/projects/proj1/git/history`);
 await page.waitForTimeout(1000);
 g = await navGeo(page);
-ok(g !== null, "L3 页 nav 存在");
+ok(g === null, "L3 页无 nav（project scope 深层 push 无 tabbar）");
 
 // ── Part 5: 设置页回归 ───────────────────────────────────────────────────────
 console.log("Part 5: 设置页（/settings）");

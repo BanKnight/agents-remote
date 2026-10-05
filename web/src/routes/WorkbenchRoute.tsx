@@ -59,8 +59,10 @@ import {
   useWorkbenchNavigate,
   useWorkbenchRouteContext,
   ensurePanelTabOpen,
+  isSessionFocusId,
   workbenchFilesSearchFocusRequestAtom,
   workbenchLastProjectAtom,
+  workbenchLastSessionAtom,
   workbenchPanelActiveAtom,
   workbenchPanelOpenAtom,
   workbenchPanelTabsAtom,
@@ -131,11 +133,20 @@ function WorkbenchContent({
   const isDesktop = useIsDesktopViewport();
   const navigateWorkbench = useWorkbenchNavigate();
   const navigate = useNavigate();
-  // D4「直达上次位置」：进入 project scope 即记忆 key，`/`（工作台 Tab）据此恢复。
+  // D4「直达上次位置」：进入 project scope 即记忆 key，`/` 跳板无会话记忆时据此恢复。
   const [, setLastProjectKey] = useAtom(workbenchLastProjectAtom);
   useEffect(() => {
     if (scope.kind === "project") setLastProjectKey(scope.key);
   }, [scope, setLastProjectKey]);
+  // v1.5 批 2 恢复现场（spec §3.3）：project scope 聚焦 session 即记忆（项目+实例），`/`
+  // 跳板直达上次会话。非 session focus（file_/git_/skill_/chat_/L3 字面量）不写——
+  // isSessionFocusId 与 focus effect 分流判定同源。
+  const [, setLastSession] = useAtom(workbenchLastSessionAtom);
+  useEffect(() => {
+    if (scope.kind === "project" && focusId && isSessionFocusId(focusId)) {
+      setLastSession({ k: scope.key, id: focusId });
+    }
+  }, [scope, focusId, setLastSession]);
   // 10m 文件 mainPage 的受控 cwd（§6.12j 批次 4）：作用域 seg4「本项目」= 根目录浏览进项目
   // 目录（currentPath = 项目名），页面内态不进 URL（刷新回全局根，与 FilesPanel 内部态同语义）。
   const [globalFilesPath, setGlobalFilesPath] = useState("");

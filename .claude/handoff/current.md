@@ -1,57 +1,53 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-04（**composer 发图批收口已 commit**：`68b030c` 功能批 + `675255b` security 消化批 + docs commit，待 push + 真机复验）
+> 最后更新：2026-10-05（**v1.5 换代批 0 + 批 1 已 commit + push**：批 0 `d1210f0` 设计包换代 / 批 1 `75a88f2` 单会话化；下一批 = 批 2 IA 三 Tab）
 
 ## 一句话状态
 
-**claude composer 发图全链落地**：+ 菜单（图片/相机/文件）→ 图片内联 stream-json（5MiB 闸）/文件上传 uploads/ 提及行 → 真管道渲染（user-prompt images → image parts）。探针 15 断言全绿；security-reviewer 1×Medium-Low + 1 加固已消化；真机复验清单待用户执行。
+**v1.5 设计包换代 9 批计划推进中（2/9 完成）**：批 0 落 124 文件设计包 + 批 1 移动单会话化（行1 导航/▾ 实例切换菜单/⋯ 菜单收敛/迷你条退役）均已 commit+push；门禁/CSS 硬闸/tokens 机检/四探针（34+60+22+16）/全套 e2e 26/26/design-reviewer（P1×1+P2×7 消化）全绿。下一批 = 批 2 IA 三 Tab。
 
-## 本 session 焦点（composer 发图批）
+## 本 session 焦点（v1.5 换代 9 批计划）
 
-1. **功能批 `68b030c`**：shared `ClaudeUserImageBlock` 类型扩宽（api 零逻辑改动）；composer-attach（新组件：`useComposerAttachments` 草稿 + `ComposerAttachMenu` + `AttachmentChipRow` + 压图纯函数）；发送接线（onNew takeSnapshot 组帧，纯附件 `api.thread().append(" ")` 兜底）；**渲染真管道**（`normalizeChatStream` user 分支 → `user-prompt` item `images?` → `renderChatStream` image parts → `UserImageView`）。
-2. **security 消化批 `675255b`**：单图 5MiB 上限（三出口过闸：透传超限落重编码、兜底/产物超限即抛）；`extractUserBubbleContent` media_type 白名单 `image/(jpeg|png|webp|gif)`。
-3. **探针 `probe-composer-attach` 15 断言**：菜单/相机两端显隐（`hover-capable:hidden` + 移动常显）/组帧精确比对/纯附件兜底/提及行/下行气泡/× 移除。**首跑抓到真 bug**：pick/addFiles 占位 id 错位（chip 永停上传中）。
+Plan（已批准）：`/home/deploy/.claude/plans/toasty-sprouting-star.md`。批次 = 0 设计包换代✅ → 1 单会话化✅ → **2 IA 三 Tab（下一个）** → 3 预览矩阵·移动 → 4 预览矩阵·桌面 → 5 历史规模化 → 6 项目管理 → 7 多端骨架 → 8 微交互收尾（含双路径附件）。
+
+**批 1（`75a88f2`）已落地**：
+- 行1（44px 唯一常驻行）= ‹项目 + 标题（实例名 + runct ●n + ▾）+ [面板][⋯]；行2（pills+＋+ticon）退役；`MobileProjectHeader` 全量重写 + `InstanceSwitchMenu`（DropdownMenu 族A 锚定浮卡 250px：组头/实例列表 max-h 200 滚动/当前行 ✓+aria-current/钉底＋新建+⟲恢复历史；caret 两态）。
+- ⋯ 菜单 = [会话历史, 实例信息]；`MobileFocusActions` 退役 → `useInstanceInfoActions` + acts footer 上移 `MobileProjectWorkbench` 装配（hooks 恒调用 + sessionType gate 零网络，holders 顶层提升）。
+- 标题名派生链：活跃列表名 → detail query → `instanceNameMemoAtom` sidecar → id 兜底（深链/刷新 detail 未热时即刻有名）。
+- 03b 迷你条全链退役（atom+组件+onScroll 判定+.mini CSS）→ 回底浮球承担。
+- design-reviewer 消化：P1 terminal→square-terminal 图标单源（`terminal` 白名单条目已回退，icons.ts 净零 diff）+ P2×7（菜单顺序/caret 两态/.st.run 色/aria-current/⋯ 热区/死键×3/.mini 死 CSS）。
 
 ## 关键决策（本阶段不可丢）
 
-- **图片 = stream-json 内联**（不落项目目录）；文件 = uploads/（writeUpload 校验/50MiB/keepBoth 复用）；api 零逻辑改动（透传 + echo spread 复用）。
-- **渲染接真链教训**：`convertContentToBubble` 是无生产调用者的存量死函数（仅测试引用）——首版误接，探针 Part5 抓包暴露后改接 `normalizeChatStream`/`renderChatStream`，死函数已恢复批前原样。**改渲染语义先核真实调用链**。
-- 相机项显隐 = pointer media（`hover-capable:hidden` 默认常显，§7）；压图 = 达标透传（保 PNG 锐度）/否则 canvas JPEG q0.8；**尺寸达标 ≠ 体积达标**（5MiB 闸三出口）。
-- 历史拍板继续有效：浮层不自动聚焦；技能来源 chip；「用户的测试操作不是变量」；多端同构。
+- **9 批流程**（§6.13 v1.4 先例）：每批独立 commit + 全门禁 + CSS 硬闸 + tokens 机检 + 探针 + reviewer + redesign-v2.md §6.14 记档 + push；最后统一交真机复验清单。
+- **恢复语义**（spec §8 规则1）：恢复历史会话 = resume agent 历史（壳常驻自动续，非 fork）；runtime `--resume` 已有，零改动。
+- **批 1 Diverge 记档**（redesign-v2.md §6.14）：①skill tab 聚焦行为保持；②global scope 不动；③`MobileProjectSwitchSheet`（03l）保留但无入口——批 2 处理自然消亡；④▾ 空态灰行改提示文案 defer（原型无锚）；⑤⋯ 移动端 sheet 形态 vs 原型锚定浮卡 = 既有视口分流，待 ActionMenu 支持后统一。
+- **v1.5 附件双路径**（用户拍板，批 8 实施）：小文本白名单（txt/md/csv/json/log）≤1MB 内联消息级；超限自动落 uploads/ 提及行。
+- spec 内部残留不一致（正文未清洗）：§2 IA 图仍四 Tab、§4.5「行2 面板入口钮」——实现以最末定案为准（三 Tab/行1）。
+- 历史拍板继续有效：密码自读不进上下文；禁截图/vision（DOM 几何硬数据）；探针只删自建数据、用 bun 跑；改 web 文件后必跑 ar-verify-css；format 只用 `bun run format`；React 前加载 vercel-react-best-practices；多端同构；tokens.json 唯一权威。
 
 ## 进度（已完成 / 进行中 / 待办）
 
-- ✅ 发图功能批 + security 消化批 + 记档（redesign-v2.md「composer 发图」小节）+ 探针 + dev 抽查，全门禁绿
-- ⬜ **本批真机复验清单（交用户，见下）**
-- ⬜ 阶段一遗留：第五批 reviewer 修复批（`bd7aedc`）真机复验清单仍待用户执行
-- ⬜ 存量欠账（不动）：e2e pwa-installable 存量失败；桌面「点第二个实例丢 leaf」；DialogTitle a11y；rootBrowse 下沉；i18n key 收敛；probe-chat-e2e 2 存量 FAIL；`.tree`/`.growrow` 死代码清扫；probe-m10-feedback-fixes H 段基线；diff L3 位置架构项；design P2 滚动 5 项
-
-## 用户真机复验清单（iPhone 优先；发图批为本批新增）
-
-**发图批（核心项）**：
-1. **+ 按钮**：composer 卡片底行最左；点击出菜单（图片/相机/文件；**桌面隐藏相机项、iPhone 显示**）
-2. **图片**：相册选图 → chip 缩略图 → 发送 → 气泡显示图片；HEIC 相册图自动转 JPEG；纯图无文本也能发
-3. **相机**：菜单「相机」→ 直接唤起后摄（`capture=environment`）→ 拍照发送
-4. **文件**：选 PDF/文本 → chip 显示「上传中…→uploads/ 路径」→ 发送 → Claude 能 Read 该路径
-5. **边界**：附件上传中按发送应暂缓；>5MiB 图 chip 报「上传失败」；大文件（接近 50MiB）上传
-6. **桌面端**：同款 + Enter 发送 + 相机项不可见；下行气泡/历史回放里图片正常显示
-
-**前序遗留（不动）**：技能列表批 + 浮层聚焦批 9 项真机复验清单（见 git 历史 handoff）；第五批 reviewer 修复批真机复验。
+- ✅ 批 0（`d1210f0`）：docs/design/ 落 v1.5 全部 124 文件 + index/规则引用换代 + §6.14 记档
+- ✅ 批 1（`75a88f2`）：单会话化全量 + reviewer 消化 + 记档 + push；全套 e2e 26/26
+- ⬜ **批 2 IA 三 Tab（下一个）**：tabbar 4→3（删工作台项，columns=3；project scope active 归项目）；`/` 跳板 = 直达上次会话（上次会话记忆 atom，对齐 lastProjectKey 范式）；e2e mobile-nav/middle-tab-left 适配；03l sheet 消亡处理
+- ⬜ 批 3–8（预览矩阵移动/桌面 → 历史规模化 → 项目管理 → 多端骨架 → 微交互收尾）
+- ⬜ 全部批次完成后：统一真机复验清单交用户
+- ⬜ 前序遗留真机清单（待用户）：发图批 6 项 + 技能列表批/浮层聚焦批 9 项 + 第五批 reviewer 修复批
 
 ## 阻塞 / 风险
 
-- 无阻塞。dev 存活 43011/43012（web build 含发图批）；CSS 硬闸 189284 字节；探针 15 + 回归 27 全绿。
+- 无阻塞。dev 存活 43011/43012（web build 含批 1）；CSS 硬闸 187934 字节。
 - router22 残留进程仍待用户处理（PID 1989432/1989916，跨项目资源 kill 被拦截）。
-- 存量时序 flake（与本批无关）：probe-claude-reconnect-delta ③c 偶发；probe-mobile-motion 采样断言高负载偶发 1 fail（复跑即绿）。
+- 存量欠账（不动）：e2e pwa-installable 存量失败（本批 26/26 全绿说明已被修复或跳过——以最新运行为准）；桌面「点第二个实例丢 leaf」；DialogTitle a11y；rootBrowse 下沉；i18n key 收敛；probe-chat-e2e 2 存量 FAIL；`.tree`/`.growrow` 死代码；diff L3 位置架构项。
 
 ## 易丢的关键上下文
 
-- **探针跑法**：touch web/src/main.tsx + sleep 16 + `bun scripts/probe-composer-attach.mjs`；e2e/单测 systemd-run 2G。
-- **渲染链锚**：user 气泡图片 = `normalizeChatStream` user 分支（`extractUserBubbleContent` 单源提取 + media_type 白名单）→ `user-prompt.images` → `renderChatStream` image parts。改渲染先核真实调用链（convertContentToBubble 是死函数教训）。
-- **移动端 Enter 语义**：`unstable_insertNewlineOnTouchEnter`（触屏 Enter 换行，卡片内 Send 发送）；桌面 Enter = sendComposer（上传中暂缓 / 纯附件 append(" ") 兜底 / 有文本 composer.send()）。
-- **压图闸**：`needsImageReEncode`（类型/尺寸）+ `IMAGE_MAX_BYTES` 5MiB（三出口）——单测锚 `base64Bytes`。
-- **zh 冒号形态**：提及行「附件：{path}」全角冒号（对齐既有 zh 文案惯例，与技能批「来源:」半角拍板不同面）。
-- **Write/Edit 内容退化坑**：本 session 复发 6 次（丢箭头/坏括号）——Read 回读修正；连续两次失败即停换路。
+- **批 1 实施教训**：①`||` 与 `??` 混用 = esbuild 语法错误但 tsc 放行——**typecheck 过 ≠ build 过**，混用必加括号；②7 天老 vite build --watch watcher 失效（touch 不 rebuild）→ `tmux respawn-pane -k -t ar-dev:1.0` 重启，pane dead 后不带 -k；③探针 strict mode 双 sheet 窗口（菜单 exit 动画 + 新 sheet 共存）→ `getByRole("dialog", { name })` 收窄；④mock POST_ADDS 跨 context 残留 → setupMocks 开头复位；⑤max-h 200px 恰好 5 行×40 不溢出，断言滚动需 6 行 fixture。
+- **探针跑法**：改 web 文件后 touch web/src/main.tsx + sleep 16 + ar-verify-css；探针 `bun scripts/*.mjs`；e2e/单测 systemd-run 2G。
+- **e2e 移动创建入口已换代**：acp-session.spec.ts 用 `.empty-cta`（空态卡 CTA）打开 03j sheet；有实例时的入口 = ▾ 菜单钉底「＋ 新建实例…」。
+- **评审器消化节奏**：批 1 reviewer 报告 P1 全修 + P2 与原型硬规格直接相关的修、无锚的 defer 记档（如空态灰行）。
+- **Write/Edit 内容退化坑**：Read 回读修正；连续两次失败即停换路。
 
 ## 提醒
 
@@ -59,4 +55,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-04；触发原因：composer 发图批收口（功能批 + security 消化批 + 记档），真机复验清单交用户
+最后更新：2026-10-05；触发原因：v1.5 换代批 1 收口（commit+push+reviewer 消化+记档），下一批 = 批 2 IA 三 Tab
