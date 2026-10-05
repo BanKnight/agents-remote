@@ -34,6 +34,9 @@ export function PanelTabBar({
     if (tab.kind === "files") return { icon: "project", label: t("workbench.tabFiles") };
     if (tab.kind === "git") return { icon: "git-nav", label: t("workbench.tabGit") };
     if (tab.kind === "wiki") return { icon: "book", label: t("workbench.tabWiki") };
+    if (tab.kind === "wikiread") {
+      return { icon: "file", label: tab.title ?? tab.slug };
+    }
     return { icon: "file", label: tab.path.split("/").pop() || tab.path };
   };
   return (
@@ -60,7 +63,7 @@ export function PanelTabBar({
           >
             <ShellIcon className="h-[13px] w-[13px]" name={meta.icon} />
             {meta.label}
-            {tab.kind === "file" ? (
+            {tab.kind === "file" || tab.kind === "wikiread" ? (
               <button
                 aria-label={t("session.close")}
                 className="x flex h-6 w-5 cursor-pointer items-center justify-center"
@@ -128,6 +131,7 @@ export function InspectionPanel({
   fab,
   l3,
   l3Body,
+  navActions,
   onActivateTab,
   onClose,
   onCloseTab,
@@ -146,6 +150,12 @@ export function InspectionPanel({
   l3?: { backLabel: string; title: string; onClick: () => void; actions?: ReactNode };
   /** 面板内 L3 主体。 */
   l3Body?: ReactNode;
+  /**
+   * 面板 nav 右端动作（v1.5 批3：面板态 = 激活 file 标签的 [pencil][⋯] / wikiread 标签的
+   * ⋯ 复制链接；open 态才渲染——panelVisible gate 由装配层保证）。与 l3.actions 互斥
+   *（L3 形态走 l3.actions）。
+   */
+  navActions?: ReactNode;
   onActivateTab: (id: string) => void;
   /** ‹ 工作台（关面板；面板内 L3 时由调用方同时清 L3 路由）。 */
   onClose: () => void;
@@ -181,7 +191,7 @@ export function InspectionPanel({
         <h1 className={`nv-t min-w-0${l3 ? " font-mono text-[14px]" : ""}`}>
           <span className="block truncate">{l3 ? l3.title : projectName}</span>
         </h1>
-        {l3?.actions}
+        {l3 ? l3.actions : navActions}
       </div>
       {l3 ? null : (
         <>

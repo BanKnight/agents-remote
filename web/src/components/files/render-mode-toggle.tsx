@@ -12,13 +12,32 @@ export function RenderModeToggle({
   mode,
   onChange,
   className,
+  mini,
 }: {
   mode: "source" | "render";
   onChange: (mode: "source" | "render") => void;
   /** 调用方语境定位（桌面 justify-self-center / 移动 ml-auto）。 */
   className?: string;
+  /** v1.5 批3：.fmeta 右端内嵌变体（.segc.mini CSS 原语单源，h26 轨 + 12px 段）。 */
+  mini?: boolean;
 }) {
   const { t } = useT();
+  if (mini) {
+    return (
+      <div className={`segc mini ${className ?? ""}`} role="group">
+        {(["render", "source"] as const).map((m) => (
+          <button
+            className={mode === m ? "on" : ""}
+            key={m}
+            type="button"
+            onClick={() => onChange(m)}
+          >
+            {m === "source" ? t("files.sourceMode") : t("files.renderMode")}
+          </button>
+        ))}
+      </div>
+    );
+  }
   return (
     <div
       className={`inline-flex h-6 shrink-0 items-center rounded-lg bg-elevated3 p-0.5 ${className ?? ""}`}

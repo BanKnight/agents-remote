@@ -6,6 +6,7 @@ import { useT } from "../../i18n";
 import {
   type PanelTab,
   panelFileTab,
+  panelWikiReadTab,
   ensurePanelTabOpen,
   splitFilePath,
   workbenchPanelActiveAtom,
@@ -17,6 +18,7 @@ import { AddMenu } from "../files/add-menu";
 import { NewItemSheet } from "../files/new-item-sheet";
 import { enqueueUploads } from "../files/upload-queue";
 import { FilesToolTab, GitToolTab, PanelFileTabBody, WikiToolTab } from "./workbench-tab-plugin";
+import { L3WikiReader } from "./mobile-l3";
 import { PanelTabBar } from "./inspection-panel";
 import { usePanelToolChip } from "./project-tool-panels";
 import { cn } from "@/lib/utils";
@@ -91,9 +93,12 @@ export function RightPanelTabs({
   // 工具 chip 槽装配单源（usePanelToolChip，与移动 InspectionPanel 同一份——多端同构；
   // 搜索 query 提升透传 Tab 三件套，chip 与列表同 state）。
   const activeKind = panelTabs.find((t0) => t0.id === activePanelTabId)?.kind ?? "files";
+  // wikiread 阅读标签无 chip 槽语义（wiki-reader 原型 ptabs 下直接 .fmeta，无搜索行）——
+  // usePanelToolChip 仍按 wiki 域取数（hooks 恒调用），toolChip 渲染 gate 在 JSX。
+  const toolChipKind = activeKind === "wikiread" ? "wiki" : activeKind;
   const { filesSearchQuery, setWikiSearchQuery, toolChip, wikiSearchQuery } = usePanelToolChip({
     currentPath: ctx.currentPath,
-    kind: activeKind,
+    kind: toolChipKind,
     onPathChange: ctx.onPathChange,
     projectKey: projectKey ?? "",
   });
@@ -165,7 +170,7 @@ export function RightPanelTabs({
       {/* 工具 chip 槽（03o crumb+搜索 / 03m gitchip / 03p wsearch；与移动 InspectionPanel
           同款槽结构 mx-4 mt-2.5 gap-2——装配单源 usePanelToolChip，右栏不再裸奔「..」行
           （真机反馈 2026-09-29 Files 标签缺顶部工具行 / Wiki 缺搜索入口）。 */}
-      {toolChip ? (
+      {toolChip && activeKind !== "wikiread" ? (
         <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-2">
           {toolChip}
           {activeKind === "files" ? (
@@ -221,6 +226,20 @@ export function RightPanelTabs({
                   onQueryChange={setWikiSearchQuery}
                   projectKey={projectKey}
                   query={wikiSearchQuery}
+                />
+              ) : tab.kind === "wikiread" ? (
+                // wikiread 阅读标签（v1.5 批3）：L3WikiReader 面板形态（复制链接收进 nav ⋯
+                //——copyLinkInBody=false；rel 页跳转 = 更新本标签目标）。
+                <L3WikiReader
+                  copyLinkInBody={false}
+                  onOpenPage={(s) => {
+                    const next = panelWikiReadTab(s);
+                    ensureTab(next);
+                    activatePanelTab(next.id);
+                    // title 缺省 = slug（wikiIndex 反查随装配层；桌面标签条 slug 可读）。
+                  }}
+                  projectName={projectKey ?? ""}
+                  slug={tab.slug}
                 />
               ) : (
                 // file 标签 path 编码 = 「projectName/relPath」（panelFileTab 单点）——拆回

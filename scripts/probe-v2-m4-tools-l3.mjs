@@ -537,33 +537,33 @@ await page.waitForTimeout(800);
 const fileTab = page.locator('.ptabs .ptab[aria-label="README.md"]');
 ok((await fileTab.count()) === 1, "file 标签新增（README.md）");
 ok((await fileTab.getAttribute("aria-selected")) === "true", "file 标签新增即激活");
-// 预览在激活叠层（PanelFileTabBody 单源）：2026-09-30 预览优先改造——md 打开即渲染态
-//（MarkdownString 渲染 h1 + meta toggle「渲染」on），不再显「N 行」meta。
+// 预览在激活叠层（PanelFileTabBody 单源）：v1.5 批3 起顶部 = .fmeta（类型·度量·更新）+
+// .fright>.segc.mini（md/html 渲染⇄源码），nav 右端 [pencil][⋯]。
 const previewBody = page.locator(
-  '[data-panel-tab-body="file:proj1/README.md"] [data-role="l3-file-preview"]',
+  '[data-panel-tab-body="file:proj1/README.md"] [data-role="file-preview-pane"]',
 );
 ok(
   await previewBody.locator("h1", { hasText: "probe title" }).isVisible(),
   "md 打开即渲染态（h1 默认渲染，预览优先）",
 );
-const renderBtn = previewBody.getByRole("button", { name: "渲染" });
-// 2026-10-01 M13b 起 toggle = 03q3 .mseg 单源（RenderModeToggle），on 态 = segmented-thumb
-// 语义 token（原 bg-primary/10 绕开 token 已随单源消除）。
+const segc = previewBody.locator(".fmeta .fright .segc.mini");
+ok((await segc.count()) === 1, ".fmeta 右端 .segc.mini（批3 单源）");
+const renderBtn = segc.getByRole("button", { name: "渲染" });
 ok(
-  (await renderBtn.getAttribute("class"))?.includes("bg-segmented-thumb") === true,
-  "meta toggle「渲染」on 态（03q3 .mseg segmented-thumb）",
+  (await renderBtn.getAttribute("class"))?.includes("on") === true,
+  "segc.mini「渲染」on 态（默认渲染）",
 );
 ok((await previewBody.locator(".code .ln").count()) === 0, "渲染态无行号源码");
 const fileItemLeaks = await page.evaluate(
   () => document.querySelectorAll('[data-tab-id^="file_"]').length,
 );
 ok(fileItemLeaks === 0, `保活层让位（file item 主体区 0 实例；实际 ${fileItemLeaks}）`);
-// toggle「源码」→ 行号形态；「编辑」→ CodeEditor（renderMode 先切 source，canEdit 恢复）；
-// 「完成」→ 回渲染态（预览优先，2026-09-30）。
-await previewBody.getByRole("button", { name: "源码" }).click();
+// toggle「源码」→ 行号形态；nav [pencil] → CodeEditor（renderMode 先切 source，canEdit 恢复）；
+// nav [完成] → 回渲染态（预览优先）。
+await segc.getByRole("button", { name: "源码" }).click();
 await page.waitForTimeout(300);
 ok((await previewBody.locator(".code .ln").count()) > 0, "toggle 源码 → 行号形态");
-await previewBody.locator(".meta .diff").getByRole("button", { name: "编辑" }).click();
+await page.locator('[data-inspection-panel="open"] .nav [aria-label="编辑"]').click();
 // CodeEditor lazy chunk + CodeMirror 初始化：等挂载而非固定延时。
 await previewBody.locator(".cm-editor").waitFor({ timeout: 8000 });
 ok(true, "编辑态 CodeEditor 在场");
@@ -571,7 +571,7 @@ ok(true, "编辑态 CodeEditor 在场");
 // rounded-lg + border + surface-inset「输入框」壳使查看/编辑切换观感跳变过大——去壳后
 // 容器零跳变）。硬数据断言：背景 = codeblock token 值、无边框、无圆角。
 const editorCanvas = await page.evaluate(() => {
-  const cm = document.querySelector('[data-role="l3-file-preview"] .cm-editor');
+  const cm = document.querySelector('[data-role="file-preview-pane"] .cm-editor');
   const root = cm?.parentElement?.parentElement; // @uiw wrapper → CodeEditor 根
   if (!root) return null;
   const cs = getComputedStyle(root);
@@ -610,29 +610,20 @@ ok(
     editorCanvas.hasLineNumbers,
   `编辑态排印/行号对齐 03q2 .ed（font=${editorCanvas?.fontSize} lh=${editorCanvas?.lineHeight} 行号=${editorCanvas?.hasLineNumbers}）`,
 );
-await previewBody.getByRole("button", { name: "完成" }).click();
+// 面板 file 标签 = editingActions="meta"：完成/放弃在 .emeta .fact（nav 只承载 pencil/⋯）。
+await previewBody.locator(".emeta .fact button").last().click();
 await page.waitForTimeout(400);
 ok(
   await previewBody.locator("h1", { hasText: "probe title" }).isVisible(),
   "完成 → 回渲染态（预览优先）",
 );
-const diffBtn = previewBody.locator(".meta .diff", { hasText: "查看 diff" });
-ok((await diffBtn.count()) === 1, "meta「查看 diff」按钮");
-// 批次 3 Step B：meta 行补「编辑」入口（进编辑态 CodeEditor + 保存，与桌面右栏同构）。
-ok(
-  (await previewBody.locator(".meta .diff", { hasText: "编辑" }).count()) === 1,
-  "meta「编辑」按钮",
-);
-// design-review 修复兜底：双按钮必须包进单个 .diff 容器——各挂 .diff = 两个 auto margin
-// 平分剩余空间，首钮悬行中部（几何硬数据验证容器贴行右缘，390 视口右距 < 32px）。
-const diffBox = await diffBtn.boundingBox();
-ok(
-  diffBox !== null && diffBox.x + diffBox.width > 390 - 32,
-  `meta 按钮容器贴行右缘（right=${diffBox ? Math.round(diffBox.x + diffBox.width) : "null"}）`,
-);
-// 「查看 diff」→ 面板级 panelDiff（data-role="l3-page" 覆盖层 + MobileL3GitDiff）——
-// back = 文件名（from:"file" 返回去向是 file 标签预览）。
-await diffBtn.click();
+// v1.5 批3：nav 右端 [pencil][⋯]；「查看 diff」收进 ⋯ 菜单（不再行内文字钮）。
+const navDots = page.locator('[data-inspection-panel="open"] .nav [aria-label="更多操作"]');
+ok((await navDots.count()) === 1, "nav [⋯] 存在");
+await navDots.click();
+await page.waitForTimeout(400);
+const fileMenu = page.locator('[role="menu"]');
+await fileMenu.getByRole("menuitem", { name: "查看 diff" }).click();
 await page.waitForTimeout(800);
 const panelDiffNav = await navInfo(page);
 ok(panelDiffNav?.back === "README.md", `panelDiff back = 文件名（实际 ${panelDiffNav?.back}）`);
@@ -656,30 +647,38 @@ ok(
   "file 标签仍激活（panelDiff 只覆盖内容区）",
 );
 
-console.log("Part 6: 面板内 L3 wiki reader + readbtn sheet");
-// 直开 wiki 标签（panelTabs 已有 wiki——本 Part 复用面板态，不重置）。
+console.log("Part 6: 面板内 wikiread 标签 + .actbtn 让 Agent 读这篇 sheet");
+// v1.5 批3：wiki 阅读迁面板 wikiread 标签（L3WikiReader copyLinkInBody=false）——点面板
+// wiki 列表页行 → 新增/激活 wikiread 标签；.fmeta 右端 .actbtn「让 Agent 读这篇」。
 await gotoWorkbench(page, `${ORIGIN}/projects/${projectName}`);
 await openPanel(page);
 await page.getByLabel("新建标签").click();
 await page.getByRole("menuitem", { name: /Wiki/ }).click();
 await page.waitForTimeout(400);
 await page.locator('[data-inspection-panel="open"] .wpg', { hasText: "介绍" }).first().click();
-await page.waitForURL(/\/wiki\/intro/, { timeout: 5000 });
-const wnav = await navInfo(page);
-ok(wnav?.back === "指南", `wiki back = 分组名（实际 ${wnav?.back}）`);
-ok(wnav?.title === "介绍", `wiki 标题 = 页名（实际 ${wnav?.title}）`);
-ok(await page.locator(".readbtn").isVisible(), "readbtn「让 Agent 读这篇」");
-ok(await page.locator(".wlink").isVisible(), "wlink「复制链接」");
+await page.waitForTimeout(600);
+const wikiReadTab = page.locator('[data-role="ptabs"] [role="tab"]').filter({ hasText: "介绍" });
+ok((await wikiReadTab.count()) >= 1, "wikiread 标签新增（介绍）");
 ok(await page.getByText("这是 wiki 页正文内容。").isVisible(), "Markdown 正文渲染");
 ok(
-  await page
-    .locator('[data-inspection-panel="open"] [data-role="l3-page"]')
-    .getByText("进阶")
-    .first()
-    .isVisible(),
+  await page.locator('[data-panel-tab-body^="wikiread:"]').getByText("进阶").first().isVisible(),
   "rel 同组页「进阶」",
 );
-await page.locator(".readbtn").click();
+const readAct = page.locator('[data-panel-tab-body^="wikiread:"] .fmeta .actbtn');
+ok(await readAct.isVisible(), ".fmeta .actbtn「让 Agent 读这篇」");
+// 复制链接已收进 nav ⋯（面板形态无行内 wlink）——断言 ⋯ 菜单含复制链接项。
+await page.locator('[data-inspection-panel="open"] .nav [aria-label="更多操作"]').click();
+await page.waitForTimeout(400);
+ok(
+  (await page
+    .locator('[role="menu"]')
+    .getByRole("menuitem", { name: /复制链接/ })
+    .count()) === 1,
+  "nav ⋯ 含「复制链接」",
+);
+await page.keyboard.press("Escape");
+await page.waitForTimeout(300);
+await readAct.click();
 await page.waitForTimeout(500);
 const sheetItems = await page.evaluate(() =>
   [...document.querySelectorAll('[role="menuitem"]')].map((n) => n.textContent.trim()),

@@ -116,11 +116,21 @@ async function setupMocks(page, { agents, terminals }) {
     );
   }
   // file 预览（previewProjectFile → /files/preview?path=…）：只求面板能挂载，不验内容。
+  // v1.5 批3：.fmeta 需要契约字段 type/name/size（缺 type → fileTypeLabel(undefined) 崩），
+  // mock 按 ProjectTextFilePreview 契约给全。
   await page.route(/\/api\/projects\/proj1\/files.*/, (r) =>
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ content: "probe", language: "markdown" }),
+      body: JSON.stringify({
+        type: "text",
+        projectName: "proj1",
+        path: "README.md",
+        name: "README.md",
+        size: 64,
+        mtimeMs: Date.parse("2026-07-26T00:00:00.000Z"),
+        content: "probe",
+      }),
     }),
   );
   // 聚焦 session 面板连真实 WS（fake session 不存在 → error，但 panel 容器仍渲染）。

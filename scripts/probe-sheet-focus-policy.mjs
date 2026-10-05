@@ -50,7 +50,7 @@ async function assertSheetNoFocus(page, inputLocator, label) {
 
   const browser = await chromium.launch();
   try {
-    // ── A. 切换 sheet（Radix 默认聚焦面，基座 preventDefault 直接证据）──
+    // ── A. 实例切换菜单（v1.5 批1：▾ 由切换 sheet 换为锚定浮卡，Radix 默认聚焦面）──
     {
       const page = await (
         await browser.newContext({ viewport: { width: 390, height: 844 }, locale: "zh-CN" })
@@ -61,8 +61,8 @@ async function assertSheetNoFocus(page, inputLocator, label) {
       await page.locator(".nv-t button").first().click();
       await assertSheetNoFocus(
         page,
-        page.getByRole("textbox", { name: "搜索项目或会话" }),
-        "A 切换 sheet",
+        page.getByRole("menuitem", { name: /新建实例/ }),
+        "A 实例切换菜单",
       );
       await page.keyboard.press("Escape");
       await page.context().close();

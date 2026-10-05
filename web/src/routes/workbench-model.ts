@@ -181,19 +181,22 @@ export const workbenchMobileProjectFilesPathAtom = atomWithLocalOnlyStorage<Reco
 );
 
 /**
- * 检视面板标签（v1.4 03ob 检视面板，redesign-v2 §6.13 批2）：多标签类浏览器语义——
- * 三基础标签（files/git/wiki）不可关，file 预览标签（批3 链接直达新增）可 ✕。
- * `id` 是标签身份：file = `file:<relPath>`，基础 = kind 本身（同目标已开 = 激活幂等）。
+ * 检视面板标签（v1.4 03ob 检视面板，redesign-v2 §6.13 批2；v1.5 批3 加 wiki 阅读标签）：
+ * 多标签类浏览器语义——三基础标签（files/git/wiki）不可关，file 预览标签与 wiki 阅读标签
+ *（03s：WikiToolPanel 点页面 → 标签内阅读，面板不退出）可 ✕。
+ * `id` 是标签身份：file = `file:<relPath>`，wikiread = `wikiread:<slug>`，基础 = kind 本身
+ *（同目标已开 = 激活幂等）。
  */
 export type PanelTab =
   | { id: "files"; kind: "files" }
   | { id: "git"; kind: "git" }
   | { id: "wiki"; kind: "wiki" }
-  | { id: string; kind: "file"; path: string };
+  | { id: string; kind: "file"; path: string }
+  | { id: string; kind: "wikiread"; slug: string; title?: string };
 
-/** 构造 file 预览标签（path = `projectName/relPath`，splitFilePath 可逆拆回；
- * id = `file:<path>` 单点派生）。批2 预留（file 标签 ✕/渲染已支持），批3 链接直达
- *（onOpenFile → 面板 open+标签）开始消费。 */
+/** 构造 file 预览标签（path = `projectName/relPath`，splitFilePath 可逆拆回；id = `file:<path>`
+ * 单点派生）。批2 预留（file 标签 ✕/渲染已支持），批3 链接直达（onOpenFile → 面板 open+标签）
+ * 开始消费。 */
 export function panelFileTab(projectName: string, path: string): PanelTab {
   // path 编码 = 「projectName/relPath」（splitFilePath 可逆拆回，与 file tab id 全路径同语义；
   // 勿用 `:` 等其他分隔——消费端（移动/桌面 file 标签 body）按 splitFilePath 拆）。
@@ -201,10 +204,12 @@ export function panelFileTab(projectName: string, path: string): PanelTab {
   return { id: `file:${p}`, kind: "file", path: p };
 }
 
-/**
- * 确保标签在标签表中打开（批3 链接直达，两端共用纯函数）：已存在 → 原数组引用（幂等守卫，
- * 与 activatePanelTab 同款——避免多余重渲染 + localStorage 同步写）；不存在 → 追加。
- */
+/** 构造 wiki 阅读标签（03s，v1.5 批3：WikiToolPanel 点页面/深链 → 标签内阅读）。id =
+ * `wikiread:<slug>` 单点派生（同目标已开 = 激活幂等）；title 可选存打开时页名（面板标签条
+ * 显示用；缺省由装配层 wiki-index 反查兜底）。 */
+export function panelWikiReadTab(slug: string, title?: string): PanelTab {
+  return { id: `wikiread:${slug}`, kind: "wikiread", slug, title };
+}
 export function ensurePanelTabOpen(tabs: PanelTab[], tab: PanelTab): PanelTab[] {
   return tabs.some((t0) => t0.id === tab.id) ? tabs : [...tabs, tab];
 }

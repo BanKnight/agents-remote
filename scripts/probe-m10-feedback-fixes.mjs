@@ -290,7 +290,9 @@ async function setupMocks(page) {
     }),
   );
   // agent-history（G3/G4）：延迟 400ms 返回 1 条（加载窗口内可断言加载骨架）。
-  await page.route(/\/api\/projects\/proj1\/agent-history\?range=week$/, async (r) => {
+  // range 口径（2026-09-30 真机反馈）：移动历史 sheet 与桌面第五批②统一 "all"（旧 "week"
+  // 只拉近 7 天窗口）；mock 随实现同口径。
+  await page.route(/\/api\/projects\/proj1\/agent-history\?range=all$/, async (r) => {
     await new Promise((res) => setTimeout(res, 400));
     return r.fulfill({
       status: 200,
@@ -368,20 +370,23 @@ async function run() {
       .first()
       .click();
     await page.waitForTimeout(900);
-    const infoBtn = page.getByRole("button", { name: "实例信息" });
-    record(await infoBtn.isVisible().catch(() => false), "ℹ 按钮可见");
     const closeInHeader = await page.getByRole("button", { name: "关闭", exact: true }).count();
     record(closeInHeader === 0, "独立「关闭」✕ 不在 nav");
     await page.getByRole("button", { name: "更多操作" }).click();
     await page.waitForTimeout(400);
+    // v1.5 批1：独立 ℹ 钮退役（MobileFocusActions）→ 实例信息入口合并进 ⋯ 菜单。
+    const infoItem = page.getByRole("menuitem", { name: "实例信息" });
+    record(await infoItem.isVisible().catch(() => false), "⋯ 菜单含「实例信息」");
     const closeItem = page.getByText("关闭会话…", { exact: true });
-    record(await closeItem.isVisible().catch(() => false), "⋯ 菜单含「关闭会话…」");
-    await page.keyboard.press("Escape");
-    await page.waitForTimeout(300);
+    // v1.5 批1：关闭动作收进实例信息面板 .acts footer（⋯ 菜单仅 会话历史/实例信息）。
+    record(
+      !(await closeItem.isVisible().catch(() => false)),
+      "关闭动作不在 ⋯ 菜单（已收进实例信息）",
+    );
 
     // ── C 问题⑤：info sheet 对齐 03k ─────────────────────────────
     console.log("C. info sheet 几何（03k）");
-    await infoBtn.click();
+    await infoItem.click();
     await page.waitForTimeout(600);
     const sheet = page.locator("[role=dialog]").last();
     record(await sheet.isVisible().catch(() => false), "sheet 挂载");
@@ -651,7 +656,7 @@ async function run() {
       const panel = document.querySelector('[data-inspection-panel="open"]');
       const deepTab = panel?.querySelector('[role="tab"][aria-label="deep.ts"]');
       const preview = panel?.querySelector(
-        '[data-panel-tab-body="file:proj1/src/deep.ts"] [data-role="l3-file-preview"]',
+        '[data-panel-tab-body="file:proj1/src/deep.ts"] [data-role="file-preview-pane"]',
       );
       return {
         hasTab: deepTab != null,
@@ -719,15 +724,12 @@ async function run() {
 
     // G3 问题①：历史 sheet 打开先见加载骨架（[role=status]）再见数据行。
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
-    await page.waitForTimeout(700);
-    await page
-      .getByRole("button", { name: /AAA-running/ })
-      .first()
-      .click();
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(900);
+    // v1.5 批1：/projects/$key 直链即聚焦态（autoFocus 上次实例）——h1 内 AAA-running 是
+    // ▾ 切换触发器，误点会开 Radix modal 菜单（外部 aria-hidden → ⋯ 移出 a11y tree）。
     await page.getByRole("button", { name: "更多操作" }).click();
     await page.waitForTimeout(300);
-    await page.getByText("会话历史", { exact: true }).click();
+    await page.getByRole("menuitem", { name: "会话历史" }).click();
     await page.waitForTimeout(120); // mock 延迟 400ms 的加载窗口内
     const loadVisible = await page
       .locator("[role=status]")
@@ -754,7 +756,7 @@ async function run() {
       // 回弹：重开 sheet（mock history 已缓存，直出行），慢速拖 40px（v≈0.11px/ms < 阈值）。
       await page.getByRole("button", { name: "更多操作" }).click();
       await page.waitForTimeout(300);
-      await page.getByText("会话历史", { exact: true }).click();
+      await page.getByRole("menuitem", { name: "会话历史" }).click();
       await page.waitForTimeout(500);
       const gb2 = await page.locator("[role=dialog] .grab").last().boundingBox();
       if (record(gb2 !== null, "重开 sheet grab 可定位")) {

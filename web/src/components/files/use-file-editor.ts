@@ -20,8 +20,29 @@ export function defaultRenderMode(name: string): "source" | "render" {
     : "source";
 }
 
-// Query result 类型收缩（不引 TanStack 内部类型名，泛型即所得）。
+// Query result 类型收缩（不导出 TanStack 内部类型名，泛型即所得）。
 type PreviewQuery = ReturnType<typeof useQuery<ProjectFilePreviewResponse, Error>>;
+
+/**
+ * 文件预览 query key 单源（useFileEditor 与容器层 nav 动作装配共用——React Query dedupe
+ * 同 key 零额外网络，⋯ 菜单/pencil 可见性因此可以挂在容器层）。
+ */
+export function filePreviewQueryKey(projectName: string, queryScope: string, path: string) {
+  return ["projects", projectName, queryScope, "preview", path] as const;
+}
+
+/**
+ * 文件预览数据（v1.5 批3 容器层消费：nav [pencil][⋯] 的菜单项条件与复制内容数据源）。
+ * 与 useFileEditor 同 key 共享缓存（staleTime 0，挂载即拉最新——与编辑链对齐）。
+ */
+export function useFilePreview(projectName: string, path: string | null, queryScope: string) {
+  return useQuery({
+    enabled: path !== null && path !== "",
+    queryKey: filePreviewQueryKey(projectName, queryScope, path ?? ""),
+    queryFn: () => previewProjectFile(projectName, path ?? ""),
+    staleTime: 0,
+  });
+}
 
 export type FileEditor = {
   preview: PreviewQuery;
@@ -30,7 +51,8 @@ export type FileEditor = {
   isDirty: boolean;
   /** CodeEditor 受控值 = 本地编辑 ?? 服务端内容。 */
   editValue: string;
-  onEditChange: (value: string) => void;
+  /** 传 undefined = 清草稿（v1.5 批3「放弃」直接丢弃编辑，不经换文件路径）。 */
+  onEditChange: (value: string | undefined) => void;
   handleSave: () => void;
   isSaving: boolean;
   savedFlash: boolean;
@@ -78,7 +100,7 @@ export function useFileEditor({
 
   const preview = useQuery({
     enabled: path !== null,
-    queryKey: ["projects", projectName, queryScope, "preview", path],
+    queryKey: filePreviewQueryKey(projectName, queryScope, path ?? ""),
     queryFn: () => previewProjectFile(projectName, path ?? ""),
     // 文件预览是易变的服务端状态（agent/外部改动）：不缓存，切回/重选即拉最新；
     // 配合手动 refresh（invalidate）兜底常驻态。
@@ -121,7 +143,7 @@ export function useFileEditor({
       void (async () => {
         try {
           await queryClient.invalidateQueries({
-            queryKey: ["projects", projectName, queryScope, "preview", p],
+            queryKey: filePreviewQueryKey(projectName, queryScope, p),
           });
         } finally {
           setEditContent((prev) => (prev === content ? undefined : prev));
@@ -160,7 +182,7 @@ export function useFileEditor({
   const refresh = useCallback(() => {
     if (path === null) return;
     void queryClient.invalidateQueries({
-      queryKey: ["projects", projectName, queryScope, "preview", path],
+      queryKey: filePreviewQueryKey(projectName, queryScope, path),
     });
   }, [queryClient, projectName, queryScope, path]);
 

@@ -1,7 +1,23 @@
-import type { GitBranch, GitCommitLogItem, GitDiffScope } from "@agents-remote/shared";
+import type {
+  GitBranch,
+  GitCommitLogItem,
+  GitDiffScope,
+  ProjectFilePreviewResponse,
+} from "@agents-remote/shared";
+import { undo, redo } from "@codemirror/commands";
+import { EditorView } from "@uiw/react-codemirror";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  forwardRef,
+  lazy,
+  Suspense,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   getProjectGitCommitDetail,
@@ -16,12 +32,12 @@ import {
 import { CodeEditorFallback, FileSaveButton, PreviewBody } from "../files/file-browser";
 import { ImageViewer } from "../files/image-viewer";
 import { RenderModeToggle } from "../files/render-mode-toggle";
-import { useFileEditor } from "../files/use-file-editor";
+import { useFileEditor, useFilePreview } from "../files/use-file-editor";
 import { useConfirm } from "../shell/confirm-dialog";
 import { MarkdownString } from "../markdown/MarkdownString";
 import { useT } from "../../i18n";
 import { ListRowSkeleton, LoadingBlock } from "../shell/shell-primitives";
-import { ActionMenu } from "../ui/action-menu";
+import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { relativeTime } from "./history-list";
 import { ShellIcon } from "../shell/icons";
@@ -64,6 +80,87 @@ function CodeWithLineNumbers({ content }: { content: string }) {
       ))}
     </div>
   );
+}
+
+/**
+ * 扩展名 → .fmeta 类型段标签（workspace-preview 原型英文常量：zh/en 页一致，不走 i18n）。
+ * 未知扩展名兜底 = 大写扩展名（.yaml → YAML）；无扩展名 = 大写 basename。
+ */
+export function fileTypeLabel(name: string): string {
+  const base = name.split("/").pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return base.toUpperCase();
+  const ext = base.slice(dot + 1).toLowerCase();
+  switch (ext) {
+    case "ts":
+    case "tsx":
+    case "mts":
+    case "cts":
+      return "TypeScript";
+    case "js":
+    case "mjs":
+    case "cjs":
+    case "jsx":
+      return "JavaScript";
+    case "md":
+    case "markdown":
+    case "mdx":
+      return "Markdown";
+    case "html":
+    case "htm":
+      return "HTML";
+    case "css":
+    case "scss":
+    case "sass":
+      return "CSS";
+    case "json":
+    case "jsonc":
+      return "JSON";
+    case "sh":
+    case "bash":
+    case "zsh":
+    case "fish":
+      return "Shell";
+    case "py":
+      return "Python";
+    case "go":
+      return "Go";
+    case "rs":
+      return "Rust";
+    default:
+      return ext.toUpperCase();
+  }
+}
+
+/** image mediaType → 类型标签（image/png → PNG；异常形态兜底 IMAGE）。 */
+export function mediaTypeLabel(mediaType: string): string {
+  return (mediaType.split("/")[1] ?? "image").toUpperCase();
+}
+
+/**
+ * .fmeta 左段（类型·度量）派生：text 源码态 = 行数、md/html 渲染态 = size；image =
+ * 宽×高（解码就绪前回落 size）；unsupported/too_large = size（类型 = Binary/扩展名标签）。
+ * 更新段独立拼（仅 text 分支有 mtimeMs——v1.5 服务端 preview 响应仅 text 携带，
+ * image/unsupported 省略更新段，不伪造数据）。
+ */
+export function paneFmetaText(
+  data: ProjectFilePreviewResponse,
+  opts: { renderView: boolean; lineCountLabel: string; imgDims: { w: number; h: number } | null },
+): { typeLabel: string; metric: string } {
+  const typeLabel = data.type === "unsupported" ? "Binary" : fileTypeLabel(data.name);
+  if (data.type === "text") {
+    return {
+      typeLabel,
+      metric: opts.renderView ? formatBytes(data.size) : opts.lineCountLabel,
+    };
+  }
+  if (data.type === "image") {
+    return {
+      typeLabel,
+      metric: opts.imgDims ? `${opts.imgDims.w}×${opts.imgDims.h}` : formatBytes(data.size),
+    };
+  }
+  return { typeLabel, metric: formatBytes(data.size) };
 }
 
 export type MobileL3FilePreviewProps = {
@@ -245,6 +342,337 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
       )}
       {confirmHolder}
     </div>
+  );
+}
+
+// ── v1.5 批3 文件预览面板（03m/03p 面板标签容器与 10m push 容器共用主体）──────
+
+/** 容器收尾动作句柄（nav 模式容器经 handle 调 finish/discard——push 编辑态 nav [放弃][完成]）。 */
+export type FilePreviewPaneHandle = {
+  finish: () => void;
+  discard: () => void;
+};
+
+export type FilePreviewPaneProps = {
+  projectName: string;
+  /** 项目相对路径。 */
+  path: string;
+  /** query 命名空间（保存后失效联动调用方列表；容器 ⋯ 菜单同 key dedupe）。 */
+  queryScope: string;
+  /** 受控编辑态（容器持有——面板 editingTabId 单例守门 / push 容器本地 state）。 */
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
+  /** 编辑态动作位置：meta = .emeta fact 放弃/完成；nav = push nav [放弃][完成]（容器渲染）。 */
+  editingActions: "meta" | "nav";
+};
+
+/**
+ * v1.5 预览矩阵·移动：文件预览主体单源（面板标签 / push 容器共用）。预览态 = .fmeta
+ *（左 = 类型·度量·更新时间；右端 = MD/HTML 渲染⇄源码 segc.mini）+ CodeWithLineNumbers
+ * 源码 / PreviewBody 渲染 / ImageViewer 图片 / .unsupported 空态；编辑态 = .emeta
+ *（编辑中·行数 + ● 未保存变更 + fact 放弃/完成）+ CodeEditor + .aux（撤销/重做/收起键盘，
+ * @codemirror/commands view 命令）。finish = dirty 即保存并退出编辑（回渲染态）；discard =
+ * dirty 弹确认（files.discardConfirm）后清草稿退出。
+ */
+export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPaneProps>(
+  function FilePreviewPane(
+    { projectName, path, queryScope, editing, onEditingChange, editingActions },
+    ref,
+  ) {
+    const { t } = useT();
+    const { confirm, holder: confirmHolder } = useConfirm();
+    const editor = useFileEditor({ editable: editing, path, projectName, queryScope });
+    const data = editor.previewData;
+    // 编辑器实例（aux 三钮消费；退出编辑时清空——下方 effect）。
+    const [editorView, setEditorView] = useState<EditorView | null>(null);
+    // handle 内部镜像（editingActions="meta" 的 fact 钮消费——useImperativeHandle 工厂
+    // 每次 render 同步同一对象，meta 钮与外部 ref 驱动同一 finish/discard 闭包）。
+    const mirrorHandleRef = useRef<FilePreviewPaneHandle | null>(null);
+    // image 度量（原型 1280×640）：dataUrl 解码后回填，加载前/失败回落 size。
+    const [imgDims, setImgDims] = useState<{ w: number; h: number } | null>(null);
+    useEffect(() => {
+      if (data?.type !== "image") {
+        setImgDims(null);
+        return;
+      }
+      setImgDims(null);
+      let alive = true;
+      const img = new Image();
+      img.onload = () => {
+        if (alive) setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
+      };
+      img.src = data.dataUrl;
+      return () => {
+        alive = false;
+      };
+    }, [data]);
+    // 进编辑先切源码（md/html render 态 canEdit gate 要求 source；退出编辑清 editorView——
+    // 编辑器 unmount；finish/discard 已统一回 render）。
+    useEffect(() => {
+      if (editing) {
+        editor.onRenderModeChange("source");
+      } else {
+        setEditorView(null);
+      }
+      // onRenderModeChange 是 setState（引用稳定），列 editing 即覆盖。
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [editing]);
+    // 容器收尾动作（无依赖数组 = 每次 render 重建闭包，handle 拿最新 editor 态）。
+    // 不能依赖 useImperativeHandle 的工厂执行——ref 为 null（meta 模式面板容器不传 ref）时
+    // React 短路 factory：内部 fact 钮的镜像 handle 就会永远 null。因此 handle 由普通
+    // render 期构造 + effect 同步镜像；useImperativeHandle 只承担外部 ref 通道。
+    const paneHandle: FilePreviewPaneHandle = {
+      finish: () => {
+        if (editor.isSaving) return;
+        if (editor.isDirty) editor.handleSave();
+        onEditingChange(false);
+        if (editor.showRenderToggle) editor.onRenderModeChange("render");
+      },
+      discard: () => {
+        const exit = () => {
+          editor.onEditChange(undefined);
+          if (editor.showRenderToggle) editor.onRenderModeChange("render");
+          onEditingChange(false);
+        };
+        if (!editor.isDirty) {
+          exit();
+          return;
+        }
+        void confirm({
+          title: t("files.discard"),
+          message: t("files.discardConfirm", { name: data?.name ?? path }),
+          cancelLabel: t("cancel"),
+          confirmLabel: t("files.discard"),
+          tone: "default",
+        }).then((ok) => {
+          if (ok) exit();
+        });
+      },
+    };
+    useEffect(() => {
+      mirrorHandleRef.current = paneHandle;
+    });
+    // 外部 ref 通道（nav 模式容器的 finish/discard 入口）；工厂引用同一 paneHandle。
+    useImperativeHandle(ref, () => paneHandle);
+    // ── .fmeta 派生（text 分支消费 updated/lineLabel；非 text 分支复用 paneFmetaLine）──
+    // renderView = md/html 渲染态（metric 段换 size；更新段仅 text 有 mtimeMs 可显）。
+    const lineCount = data?.type === "text" ? data.content.split("\n").length : 0;
+    const updated =
+      data?.type === "text" ? relativeTime(new Date(data.mtimeMs).toISOString(), t) : "";
+    const isRenderView =
+      data?.type === "text" && editor.showRenderToggle && editor.renderMode === "render";
+    const paneFmetaText0 = data
+      ? paneFmetaText(data, {
+          renderView: isRenderView,
+          lineCountLabel: t("files.lineCount", { n: lineCount }),
+          imgDims,
+        })
+      : null;
+    const paneFmetaLine = paneFmetaText0
+      ? `${paneFmetaText0.typeLabel} · ${paneFmetaText0.metric}${
+          data?.type === "text" ? ` · ${t("files.metaUpdated", { time: updated })}` : ""
+        }`
+      : "";
+
+    if (editor.preview.isLoading) {
+      return <LoadingBlock className="min-h-0 flex-1" label={t("files.loadingPreview")} />;
+    }
+    if (editor.preview.isError || !data) {
+      return <div className="cap mt-4 px-4">{t("files.previewError")}</div>;
+    }
+    // 非 text 分支：image = fmeta + ImageViewer；unsupported = fmeta + .unsupported 空态
+    //（原型 Binary 页：文档图标 + 标题 + 两行说明）；too_large = fmeta + .cap（原型无锚，
+    // 保持简述，diverge 记档）。三类根都带 data-role 语义锚。
+    if (data.type === "image") {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col" data-role="file-preview-pane">
+          <div className="fmeta">
+            <span>{paneFmetaLine}</span>
+          </div>
+          <ImageViewer alt={data.name} downloadName={data.name} src={data.dataUrl} />
+        </div>
+      );
+    }
+    if (data.type === "unsupported") {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col" data-role="file-preview-pane">
+          <div className="fmeta">
+            <span>{paneFmetaLine}</span>
+          </div>
+          <div className="unsupported">
+            <div className="big">
+              <ShellIcon name="file" />
+            </div>
+            <div className="t">{t("files.unsupportedTitle")}</div>
+            <div className="d">{t("files.unsupportedDesc")}</div>
+          </div>
+        </div>
+      );
+    }
+    if (data.type === "too_large") {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col" data-role="file-preview-pane">
+          <div className="fmeta">
+            <span>{paneFmetaLine}</span>
+          </div>
+          <div className="cap mt-4 px-4">
+            {t("files.tooLarge", { limit: formatBytes(data.limitBytes) })}
+          </div>
+        </div>
+      );
+    }
+    // text 分支（编辑/渲染/源码三态）。
+    return (
+      <div
+        className={`flex min-h-0 flex-1 flex-col pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))] ${editing || isRenderView ? "overflow-hidden" : "overflow-y-auto"}`}
+        data-role="file-preview-pane"
+      >
+        {editing ? (
+          <>
+            {/* .emeta 事实行：fdim（编辑中·行数）+ dirty（● 未保存变更）恒渲染；fact
+            （放弃/完成）仅 meta 模式——nav 模式（push/l3Transient）上移 nav [放弃][完成]。 */}
+            <div className="emeta">
+              <span className="fdim">{t("files.editingMeta", { n: lineCount })}</span>
+              {editor.isDirty ? <span className="dirty">● {t("files.unsavedChanges")}</span> : null}
+              {editingActions === "meta" ? (
+                <span className="fact">
+                  <button
+                    className="giveup cursor-pointer"
+                    onClick={() => mirrorHandleRef.current?.discard()}
+                    type="button"
+                  >
+                    {t("files.discard")}
+                  </button>
+                  <button
+                    className="cursor-pointer"
+                    onClick={() => mirrorHandleRef.current?.finish()}
+                    type="button"
+                  >
+                    {t("files.done")}
+                  </button>
+                </span>
+              ) : null}
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col py-2.5">
+              <Suspense fallback={<CodeEditorFallback />}>
+                <CodeEditor
+                  name={data.name}
+                  onCreateEditor={setEditorView}
+                  onChange={editor.onEditChange}
+                  value={editor.editValue}
+                />
+              </Suspense>
+            </div>
+            <div className="aux">
+              <button
+                disabled={!editorView}
+                onClick={() => {
+                  if (editorView) undo(editorView);
+                }}
+                type="button"
+              >
+                ↩ {t("files.auxUndo")}
+              </button>
+              <button
+                disabled={!editorView}
+                onClick={() => {
+                  if (editorView) redo(editorView);
+                }}
+                type="button"
+              >
+                ↪ {t("files.auxRedo")}
+              </button>
+              <button onClick={() => editorView?.contentDOM.blur()} type="button">
+                ⌄ {t("files.auxDismissKeyboard")}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="fmeta">
+              <span>{paneFmetaLine}</span>
+              {editor.showRenderToggle ? (
+                <span className="fright">
+                  <RenderModeToggle
+                    mini
+                    mode={editor.renderMode}
+                    onChange={editor.onRenderModeChange}
+                  />
+                </span>
+              ) : null}
+            </div>
+            {isRenderView ? (
+              <PreviewBody editValue="" preview={data} renderMode="render" />
+            ) : (
+              <CodeWithLineNumbers content={data.content} />
+            )}
+          </>
+        )}
+        {confirmHolder}
+      </div>
+    );
+  },
+);
+
+/**
+ * v1.5 批3：文件预览 ⋯ 菜单（nav 右端容器级——同屏单 ⋯ 由容器保证）。useFilePreview 与
+ * Pane 同 queryKey dedupe（零额外网络）。菜单项按 preview 类型收敛（原型 workspace-preview
+ * / files-global-preview ⋯ 规格）：复制内容（text）/ 复制路径（全部）/ 查看 diff（text 且
+ * 容器提供 onViewDiff）/ 另存为…（image，dataUrl 触发下载）。
+ */
+export function FilePreviewNavMenu({
+  projectName,
+  path,
+  queryScope,
+  onViewDiff,
+}: {
+  projectName: string;
+  path: string;
+  queryScope: string;
+  onViewDiff?: () => void;
+}) {
+  const { t } = useT();
+  const { data } = useFilePreview(projectName, path, queryScope);
+  const items: ActionMenuItem[] = [];
+  if (data?.type === "text") {
+    items.push({
+      label: t("files.menuCopyContent"),
+      onSelect: () => {
+        void navigator.clipboard.writeText(data.content);
+      },
+    });
+  }
+  items.push({
+    label: t("files.menuCopyPath"),
+    onSelect: () => {
+      void navigator.clipboard.writeText(path);
+    },
+  });
+  if (data?.type === "text" && onViewDiff) {
+    items.push({ label: t("git.menuViewDiff"), onSelect: onViewDiff });
+  }
+  if (data?.type === "image") {
+    items.push({
+      label: t("files.menuSaveAs"),
+      onSelect: () => {
+        const a = document.createElement("a");
+        a.href = data.dataUrl;
+        a.download = data.name;
+        a.click();
+      },
+    });
+  }
+  return (
+    <ActionMenu
+      align="end"
+      cancelLabel={t("cancel")}
+      items={items}
+      trigger={
+        <button aria-label={t("workbench.moreActions")} className="ic cursor-pointer" type="button">
+          <ShellIcon name="ellipsis" />
+        </button>
+      }
+    />
   );
 }
 
@@ -672,15 +1100,25 @@ export type L3WikiReaderProps = {
   slug: string;
   /** rel「同组页」跳转（同首 tag 的其他页，组件内派生）。 */
   onOpenPage: (slug: string) => void;
+  /** 正文内「复制链接」wlink 保留（桌面中栏默认 true 保底；v1.5 移动面板标签传 false——
+   * 复制链接收敛进 nav ⋯ 菜单，wiki-reader 原型 .fmeta 右端只有 actbtn）。 */
+  copyLinkInBody?: boolean;
 };
 
 /**
- * 03s wiki 阅读页：wmeta（更新日期）+ readbtn「让 Agent 读这篇」（ActionMenu 选 agent 会话 →
- * D13 REST 注入 + wikiRefs 记忆）+ wlink 复制链接 + MarkdownString 正文 + rel 同组页跳转 +
- * cap 只读说明。注入协议：text = injectPrompt 模板 + 页面正文（§6.2 A 方案——stdin prompt 注入，
- * 客户端引用 atom 驱动流顶引用卡与 refnote）。
+ * 03s wiki 阅读页（v1.5 批3 对齐 wiki-reader 原型）：.fmeta（Markdown · size · 更新 date）
+ * + 右端 .fright>.actbtn「✦让 Agent 读这篇」（ActionMenu 选 agent 会话 → D13 REST 注入 +
+ * wikiRefs 记忆）+ MarkdownString 正文 + rel 同组页跳转 + cap 只读说明。wmeta/readbtn 退役
+ *（fmeta 覆盖）；wlink 随 copyLinkInBody（默认 true，桌面保底）。注入协议：text =
+ * injectPrompt 模板 + 页面正文（§6.2 A 方案——stdin prompt 注入，客户端引用 atom 驱动流顶
+ * 引用卡与 refnote）。
  */
-export function L3WikiReader({ projectName, slug, onOpenPage }: L3WikiReaderProps) {
+export function L3WikiReader({
+  copyLinkInBody = true,
+  onOpenPage,
+  projectName,
+  slug,
+}: L3WikiReaderProps) {
   const { t } = useT();
   const setWikiRefs = useSetAtom(workbenchWikiRefsAtom);
   const page = useWikiPage(projectName, slug, WIKI_QUERY_SCOPE);
@@ -735,44 +1173,54 @@ export function L3WikiReader({ projectName, slug, onOpenPage }: L3WikiReaderProp
       className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"
       data-role="l3-wiki-reader"
     >
-      <div className="wmeta">{t("wiki.updatedMeta", { date: page.data.frontmatter.updated })}</div>
-      <ActionMenu
-        align="start"
-        cancelLabel={t("cancel")}
-        items={
-          sessions.data?.sessions.length
-            ? sessions.data.sessions.map((s) => ({
-                label: s.displayName,
-                icon: <ShellIcon name="agent-nav" />,
-                onSelect: () => inject.mutate(s.id),
-              }))
-            : [
-                {
-                  label: t("wiki.noSessions"),
-                  onSelect: () => undefined,
-                  disabled: true,
-                },
-              ]
-        }
-        trigger={
-          <button className="readbtn cursor-pointer" disabled={inject.isPending} type="button">
-            <ShellIcon name="book" className="h-4 w-4" />
-            {t("wiki.readByAgent")}
-          </button>
-        }
-      />
+      <div className="fmeta">
+        <span>
+          {fileTypeLabel("page.md")} ·{" "}
+          {formatBytes(new TextEncoder().encode(page.data.body).length)} ·{" "}
+          {t("files.metaUpdated", { time: page.data.frontmatter.updated })}
+        </span>
+        <span className="fright">
+          <ActionMenu
+            align="end"
+            cancelLabel={t("cancel")}
+            items={
+              sessions.data?.sessions.length
+                ? sessions.data.sessions.map((s) => ({
+                    label: s.displayName,
+                    icon: <ShellIcon name="agent-nav" />,
+                    onSelect: () => inject.mutate(s.id),
+                  }))
+                : [
+                    {
+                      label: t("wiki.noSessions"),
+                      onSelect: () => undefined,
+                      disabled: true,
+                    },
+                  ]
+            }
+            trigger={
+              <button className="actbtn cursor-pointer" disabled={inject.isPending} type="button">
+                <ShellIcon name="sparkles" />
+                {t("wiki.readByAgent")}
+              </button>
+            }
+          />
+        </span>
+      </div>
       {injectError ? <div className="cap mt-2 px-4">{t("wiki.injectFailed")}</div> : null}
-      <button
-        className="wlink cursor-pointer"
-        onClick={() => {
-          void navigator.clipboard.writeText(
-            `${window.location.origin}/projects/${encodeURIComponent(projectName)}/wiki/${encodeURIComponent(slug)}`,
-          );
-        }}
-        type="button"
-      >
-        {t("wiki.copyLink")}
-      </button>
+      {copyLinkInBody ? (
+        <button
+          className="wlink cursor-pointer"
+          onClick={() => {
+            void navigator.clipboard.writeText(
+              `${window.location.origin}/projects/${encodeURIComponent(projectName)}/wiki/${encodeURIComponent(slug)}`,
+            );
+          }}
+          type="button"
+        >
+          {t("wiki.copyLink")}
+        </button>
+      ) : null}
       <div className="px-4 py-2">
         <MarkdownString text={page.data.body} />
       </div>

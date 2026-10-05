@@ -1493,7 +1493,8 @@
     align-items: center;
     justify-content: center;
   }
-  /* 悬浮添加钮（03ob FAB）：文件树标签右下 → 批4 03oa 菜单（当前批2 接新建/上传桩） */
+  /* 悬浮添加钮（03ob FAB）：文件树标签右下，实心主色蓝底 + 白＋（components.css 单源
+     :157-158，v1.5 批3 从 tint-blue 换实心——03oa 添加菜单已挂，空桩 disabled 态一并退役） */
   .fab {
     position: absolute;
     right: 16px;
@@ -1501,17 +1502,17 @@
     width: 48px;
     height: 48px;
     border-radius: 24px;
-    background: var(--tint-blue);
+    background: var(--c-primary);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--c-primary);
+    color: var(--on-accent);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
     z-index: 6;
   }
-  /* 批2 空桩态（批4 换 03oa 添加菜单后移除）：disabled 不给无功能的可见 affordance */
-  .fab:disabled {
-    opacity: 0.45;
+  .fab .plus {
+    /* 实心主色底上的白＋（.plus 基类主色蓝在蓝底不可见；原型 tool-files :62 同款覆写） */
+    color: var(--on-accent);
   }
   /* 09m/10m 一级页搜索框单源（第十一轮复验：桌面 /files 用 .wsearch 30 胶囊、/plugins 内联
      38/r12——跨页尺寸不统一）。移动 = 09-tab/10-tab .search（38 / r12 / fill-search / 14px，
@@ -2200,6 +2201,222 @@
     color: var(--term-ink);
     white-space: pre;
     padding-right: 16px;
+  }
+  /* ---- 文件预览元信息行（v1.5 批3，components.css :282-284 单源镜像）：03q/05h/10m2 四容器
+     共用——左 = 类型·度量·更新时间，右端 .fright（MD/HTML = 渲染⇄源码分段；wiki 阅读标签 =
+     actbtn）。push 容器无 ptabs 时 .fmeta 直贴 nav 下（files-global-preview 原型同款）。 */
+  .fmeta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+    padding: 0 16px 0 14px;
+    border-bottom: 1px solid var(--sep);
+    font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-2);
+    flex: none;
+    position: relative;
+  }
+  .fmeta .fright {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: none;
+  }
+  .fmeta .fright .segc {
+    flex: none;
+  }
+  /* 分段控件（components.css :229-238 单源镜像；span/button 双覆盖——实现层 toggle 用 button
+     保 a11y，原型为 span）。mini = .fmeta 右端内嵌变体（渲染⇄源码）。 */
+  .segc {
+    display: flex;
+    height: 32px;
+    border-radius: 10px;
+    background: var(--fill-segmented);
+    padding: 3px;
+  }
+  .segc span,
+  .segc button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--ink-2);
+    cursor: pointer;
+    min-width: 0;
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+  }
+  .segc .on {
+    background: var(--segmented-thumb);
+    color: var(--ink-1);
+    font-weight: 600;
+    border-radius: 8px;
+  }
+  .segc.mini {
+    height: 26px;
+    border-radius: 8px;
+    padding: 2px;
+  }
+  .segc.mini span,
+  .segc.mini button {
+    font-size: 12px;
+    border-radius: 6px;
+    flex: none;
+    padding: 0 14px;
+  }
+  /* 编辑态元信息行（workspace-preview-edit 页私规格收编：fdim 度量 / dirty 未保存 /
+     fact 收尾动作组——面板容器放行内，push 容器 fact 上移 nav、行内只剩 fdim+dirty）。 */
+  .emeta {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 38px;
+    padding: 0 16px 0 14px;
+    border-bottom: 1px solid var(--sep);
+  }
+  .emeta .fdim {
+    font-size: 11.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .emeta .dirty {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--c-warning-text);
+    white-space: nowrap;
+  }
+  .emeta .fact {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--c-primary);
+    flex: none;
+  }
+  .emeta .fact .giveup {
+    color: var(--ink-2);
+  }
+  /* nav 版 fact（push 容器编辑态 [放弃][完成]，files-global-preview-edit）：与面板
+     .emeta .fact 同为 span.fact 包双钮，但原型该页字号档不同——放弃 15px 次级 ink-2、
+     完成 14px/600 主色（files-global-preview-edit 页私规格 .giveup/.done）。 */
+  .nav .fact {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: none;
+  }
+  .nav .fact .giveup {
+    font-size: 15px;
+    color: var(--ink-2);
+  }
+  .nav .fact button:not(.giveup) {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--c-primary);
+  }
+  /* 编辑态底部 aux 条（workspace-preview-edit）：撤销 / 重做 / 收起键盘（iPhone 形态）；
+     底部交互面单层避让 env（frontend-notes §1）。 */
+  .aux {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 26px;
+    height: 40px;
+    flex: none;
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--sep-row);
+    font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    color: var(--ink-2);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .aux button {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  /* 未知二进制「不支持预览」空态（workspace-preview-unsupported 页私规格收编）：无画布语义，
+     ⋯ 菜单仅复制路径。 */
+  .unsupported {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .unsupported .big {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: var(--bg-elevated2);
+    border: 1px solid var(--sep);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-2);
+  }
+  .unsupported .big svg {
+    width: 26px;
+    height: 26px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .unsupported .t {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .unsupported .d {
+    font-size: 12px;
+    color: var(--ink-2);
+    text-align: center;
+    line-height: 1.6;
+  }
+  /* wiki 阅读标签 .fmeta 右端动作钮（wiki-reader 页私规格收编：tint-purple 底 + pin 色，
+     sparkles 前缀 + 12.5px）。 */
+  .actbtn {
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 600;
+    color: var(--c-pin);
+    background: var(--tint-purple);
+    border: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+    cursor: pointer;
+  }
+  .actbtn svg {
+    width: 12px;
+    height: 12px;
+    flex: none;
   }
   .wmeta {
     padding: 6px 16px 0;

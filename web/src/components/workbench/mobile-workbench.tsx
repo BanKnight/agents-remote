@@ -14,7 +14,7 @@ import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import type { GitDiffScope } from "@agents-remote/shared";
 import { listProjectFiles, listProjectGitBranches } from "../../api/client";
-import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
+import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
 import { AddMenu } from "../files/add-menu";
 import { NewItemSheet } from "../files/new-item-sheet";
 import { enqueueUploads } from "../files/upload-queue";
@@ -44,6 +44,7 @@ import {
   instanceNameMemoAtom,
   isSessionFocusId,
   panelFileTab,
+  panelWikiReadTab,
   parseFileTabId,
   parseGitCommitFocusId,
   parseWikiFocusId,
@@ -82,16 +83,18 @@ import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workben
 import { MobileProjectHeader } from "./mobile-project-header";
 import { InspectionPanel } from "./inspection-panel";
 import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
-import { FileTabPreview } from "../files/file-preview-panel";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 import {
+  FilePreviewNavMenu,
+  FilePreviewPane,
+  type FilePreviewPaneHandle,
   L3GitBranches,
   L3GitCommit,
   L3GitHistory,
   L3WikiReader,
-  MobileL3FilePreview,
   MobileL3GitDiff,
 } from "./mobile-l3";
+import { useFilePreview } from "../files/use-file-editor";
 import {
   FilesToolPanel,
   GitToolPanel,
@@ -174,10 +177,13 @@ export function MobileWorkbench({
   // v1.5 批 2（spec §3.3/铁律 4）：会话现场 = 全屏 push 层**无 tab bar**（底部空间让给
   // 工作流；原型 tabbar 域 = L1 三 Tab 页 + 设置/审批中心，workspace*.html 与 tool-git-*/
   // wiki-reader 均无 tabbar）——project scope（含浏览态自动聚焦、URL 聚焦、L3 深层）不挂
-  // nav；L1 三 Tab 页（global scope：项目列表/文件/插件）与文件 push 页保持挂载（§3.4
-  // 「tab bar 可见且文件激活」，files-global-preview 的 tabbar 归属批 3 摊牌）。
+  // nav；文件 push 页也不挂（批 3 摊牌落定：files-global-preview.html 无 tabbar，push 四边
+  // 零距）；L1 三 Tab 页（global scope：项目列表/文件/插件）保持挂载（§3.4「tab bar 可见且
+  // 文件激活」= files-global-tab 列表页）。
+  // focusId 未定时 parseFileTabId("") = null（file_ 前缀不匹配）——不影响 nav 挂载判定。
+  const filePath = parseFileTabId(focusId ?? "");
   const { height: bottomNavHeight, measured: measuredBottomNav } = useMeasuredBottomNav(
-    scope.kind === "project" ? null : <MobilePrimaryNav />,
+    scope.kind === "project" || filePath !== null ? null : <MobilePrimaryNav />,
   );
   const mainStyle = {
     "--shell-mobile-bottom-nav-space": `${bottomNavHeight}px`,
@@ -244,10 +250,9 @@ export function MobileWorkbench({
     );
   }
 
-  // file focus（focusId 形如 file_demo/src/index.ts，path=全路径含项目名前缀，设计 §6 决策 3 /
-  // workbench-stable-refactor Phase 3）：global scope 文件 tab 用 MobileFileFocus 浮窗式预览
-  //（复用 FileTabPreview 可编辑预览 + 顶部返回/✕ header）；project scope 文件走 tab 带已在上分支。
-  const filePath = parseFileTabId(focusId);
+  // file focus（focusId 形如 file_demo/src/index.ts，path=全路径含项目名前缀）：global scope
+  // 文件 push 页 = MobileFileFocus（v1.5 批3 files-global-preview：nav back=父目录/h1 文件名/
+  // [pencil][⋯]，无 tabbar——见上方摊牌注释）；project scope 文件走 tab 带已在上分支。
   if (filePath !== null) {
     return (
       <main
@@ -255,7 +260,6 @@ export function MobileWorkbench({
         style={mainStyle}
       >
         <MobileFileFocus path={filePath} />
-        {measuredBottomNav}
       </main>
     );
   }
@@ -272,49 +276,80 @@ export function MobileWorkbench({
 }
 
 /**
- * 移动端文件聚焦浮窗（设计 §6 决策 3 / workbench-stable-refactor Phase 3）：`/file/$path` URL 在
- * 移动端用此组件打开。`path` = 全路径（含项目名前缀），单行 header（◄ 返回 + 文件名 + ✕）+
- * FileTabPreview 可编辑预览（FileTabPreview 内部 resolveRootBrowseTarget 解析项目名走 project API）。
- * 不实现 V3 group（移动端 [文件] 保持浮窗式，设计决策 12）。返回 / ✕ = pop 优先回来源（2026-09-30
- * 用户反馈「全局文件预览后返回的不是全局文件」：主路径从全局 /files push 进来 → 回 /files；项目
- * 工作台跨项目打开 → 回该项目），深链直达无来路时兜底回全局文件树（`/files`，全局文件入口）。复用
- * MobileTabHeader 保持与 MobileFocusHeader 同款 header 结构。
+ * 移动端全局文件 push 页（v1.5 批3 files-global-preview）：`/file/$path` URL 在移动端用此组件
+ * 打开。`path` = 全路径（含项目名前缀）。push 容器 nav = back（父目录名，根 = 服务器根）+
+ * h1（文件名）+ 右端 [pencil][⋯]（预览态）/ [放弃][完成]（编辑态，原型 03q2 files-global-
+ * preview-edit）；本体 = FilePreviewPane（queryScope "file-nav" 独立 scope，防与项目面板
+ * "files" 预览互串缓存）。根作用域无 Git → ⋯ 不传 onViewDiff（菜单无「查看 diff」项）。
+ * 返回 = pop 优先回来源（2026-09-30 用户反馈：主路径从全局 /files push 进来 → 回 /files；
+ * 项目工作台跨项目打开 → 回该项目），深链直达无来路时兜底回全局文件树。
  */
 function MobileFileFocus({ path }: { path: string }) {
   const { t } = useT();
   const navigate = useNavigate();
   const backNav = useWorkbenchBack();
+  const [editing, setEditing] = useState(false);
+  const paneRef = useRef<FilePreviewPaneHandle | null>(null);
   const back = () => {
     backNav(() => void navigate({ to: "/files" }));
   };
+  const { projectName: fp, path: relPath } = splitFilePath(path);
+  // pencil 可见性数据源（与 Pane 内部 useFileEditor 同 key dedupe，零额外网络）。
+  const preview = useFilePreview(fp, relPath, "file-nav");
+  const lastSlash = relPath.lastIndexOf("/");
+  // back = 父目录名（原型 `scripts`）；根文件 = 「服务器根」（files.rootDirectory）。
+  const backLabel = lastSlash === -1 ? t("files.rootDirectory") : relPath.slice(0, lastSlash);
+  const fileName = relPath.split("/").pop() || relPath;
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <MobileTabHeader
-        activeTabId="file"
-        back={{ ariaLabelKey: "files.backToFiles", onClick: back }}
-        onTabSelect={() => {
-          /* file focus 单 tab，无切换 */
-        }}
-        tabs={[{ id: "file" as const, label: path.split("/").pop() ?? path }]}
-        trailing={
-          <div
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-neutral-line/60 bg-surface-inset/60 p-0.5"
-            role="group"
-          >
+      <div className="nav shrink-0">
+        <button className="back cursor-pointer touch:px-2 touch:py-2" onClick={back} type="button">
+          {backLabel}
+        </button>
+        <h1 className="nv-t min-w-0 font-mono text-[14px]">
+          <span className="block truncate">{fileName}</span>
+        </h1>
+        {editing ? (
+          <span className="fact">
             <button
-              aria-label={t("session.close")}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
-              onClick={back}
+              className="giveup cursor-pointer"
+              onClick={() => paneRef.current?.discard()}
               type="button"
             >
-              <ShellIcon className="h-4 w-4" name="close" />
+              {t("files.discard")}
             </button>
-          </div>
-        }
-      />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <FileTabPreview path={path} />
+            <button
+              className="cursor-pointer"
+              onClick={() => paneRef.current?.finish()}
+              type="button"
+            >
+              {t("files.done")}
+            </button>
+          </span>
+        ) : (
+          <>
+            <button
+              aria-label={t("files.edit")}
+              className="ic cursor-pointer"
+              disabled={preview.data?.type !== "text"}
+              onClick={() => setEditing(true)}
+              type="button"
+            >
+              <ShellIcon name="edit" />
+            </button>
+            <FilePreviewNavMenu path={relPath} projectName={fp} queryScope="file-nav" />
+          </>
+        )}
       </div>
+      <FilePreviewPane
+        editing={editing}
+        editingActions="nav"
+        onEditingChange={setEditing}
+        path={relPath}
+        projectName={fp}
+        queryScope="file-nav"
+        ref={paneRef}
+      />
     </div>
   );
 }
@@ -680,6 +715,14 @@ function MobileProjectWorkbench({
     ensurePanelTab(tab);
     activatePanelTab(tab.id);
   };
+  // v1.5 批3（03s）：WikiToolPanel 点页面 / wiki_ 深链 → 面板 wikiread 阅读标签新增/激活
+  //（面板不退出，阅读在标签内）。标题反查 wiki-index（未热 = slug 兜底，PanelTabBar label）。
+  const openPanelWikiReadTab = (slug: string) => {
+    const title = wikiIndex.data?.pages.find((p) => p.slug === slug)?.title;
+    const tab = panelWikiReadTab(slug, title);
+    ensurePanelTab(tab);
+    activatePanelTab(tab.id);
+  };
   // 面板内 diff（03r「L3 是面板内深度页」批3 收敛）：git 变更行 / file 标签「查看 diff」→
   // 面板级瞬态呈现（l3Body 覆盖层），back 清本态回标签条——不再写中栏 git tab + URL focus
   //（旧体系仅剩深链/存量 tab 渲染路径，入口清零后自然消亡）。from 记录来源标签（back 标签）。
@@ -688,12 +731,26 @@ function MobileProjectWorkbench({
     scope: GitDiffScope;
     from: "git" | "file" | "files";
   } | null>(null);
-  // ✕ 关标签：仅 file 标签可关（三基础标签不可关）；关激活标签回文件树首标签。
+  // v1.5 批3 编辑态单例（03o 原型「同屏单编辑」）：面板层 file 标签编辑态互斥——pencil 进
+  // 入 / 完成·放弃退出（FilePreviewPane finish/discard 回调）；关标签随关清。
+  const [editingFileTabId, setEditingFileTabId] = useState<string | null>(null);
+  // 面板 nav 动作装配源：激活 file/wikiread 标签 + 预览数据（与 FilePreviewPane 同 queryKey
+  // dedupe 零额外网络；panelVisible gate——面板未开不拉）。pencil 可见性 = text 类型。
+  const activeFileTab = activePanelTab?.kind === "file" ? activePanelTab : null;
+  const activeWikiReadTab = activePanelTab?.kind === "wikiread" ? activePanelTab : null;
+  const activeFilePath = activeFileTab ? splitFilePath(activeFileTab.path).path : null;
+  const panelPreview = useFilePreview(
+    scope.key,
+    panelVisible && activeFilePath !== null ? activeFilePath : null,
+    "files",
+  );
+  // ✕ 关标签：仅 file/wikiread 标签可关（三基础标签不可关）；关激活标签回文件树首标签。
   const closePanelTab = (id: string) => {
     setPanelTabsMap((prev) => {
       const list = prev[scope.key] ?? [];
       return { ...prev, [scope.key]: list.filter((t0) => t0.id !== id) };
     });
+    if (editingFileTabId === id) setEditingFileTabId(null);
     if (id === activePanelTabId) activatePanelTab("files");
   };
   // URL 兼容（plan 批2 ⑥）：旧 ?tab=files|git|wiki 深链渲染期一次性映射为面板 open+激活
@@ -892,31 +949,38 @@ function MobileProjectWorkbench({
           ) : tab.kind === "wiki" ? (
             <div className="min-h-0 flex-1 overflow-hidden">
               <WikiToolPanel
-                onOpenPage={(slug) => {
-                  void navigate({
-                    params: { key: scope.key, _splat: slug },
-                    search: { tab: "wiki" },
-                    to: "/projects/$key/wiki/$",
-                  });
-                }}
+                onOpenPage={openPanelWikiReadTab}
                 onQueryChange={setWikiSearchQuery}
                 projectName={scope.key}
                 query={wikiSearchQuery}
               />
             </div>
           ) : tab.kind === "file" ? (
+            // v1.5 批3 面板预览矩阵：FilePreviewPane 单源（meta 模式——编辑态 fact 放弃/完成
+            // 在 .emeta 行；编辑态单例 editingFileTabId 守门「同屏单编辑」）。⋯ 菜单/pencil
+            // 在面板 nav（navActions 装配）， Pane 本体只渲染 fmeta/主体。
             (() => {
               const { projectName: fp, path: relPath } = splitFilePath(tab.path);
               return (
-                <MobileL3FilePreview
-                  onViewDiff={() =>
-                    setPanelDiff({ path: relPath, scope: "worktree", from: "file" })
-                  }
+                <FilePreviewPane
+                  editing={editingFileTabId === tab.id}
+                  editingActions="meta"
+                  onEditingChange={(next) => setEditingFileTabId(next ? tab.id : null)}
                   path={relPath}
                   projectName={fp}
+                  queryScope="files"
                 />
               );
             })()
+          ) : tab.kind === "wikiread" ? (
+            // wikiread 阅读标签（wiki-reader 原型）：L3WikiReader 面板形态（复制链接收进
+            // nav ⋯——copyLinkInBody=false；rel 页跳转 = 换本标签目标，面板不退出）。
+            <L3WikiReader
+              copyLinkInBody={false}
+              onOpenPage={openPanelWikiReadTab}
+              projectName={scope.key}
+              slug={tab.slug}
+            />
           ) : null}
         </div>
       );
@@ -1004,6 +1068,64 @@ function MobileProjectWorkbench({
         }
       : null;
 
+  // 面板 nav 右端动作（v1.5 批3，03o/03s 原型）：file 标签 = [pencil(text)][⋯]（编辑态
+  // pencil 退役仅 ⋯——emeta fact 承担放弃/完成）；wikiread = ⋯ 复制链接；三基础标签无动作。
+  const panelNavActions = (() => {
+    if (!panelVisible) return undefined;
+    if (activeFileTab) {
+      const editing = editingFileTabId === activeFileTab.id;
+      const { path: relPath } = splitFilePath(activeFileTab.path);
+      return (
+        <div className="flex items-center gap-1">
+          {editing ? null : (
+            <button
+              aria-label={t("files.edit")}
+              className="ic cursor-pointer"
+              disabled={panelPreview.data?.type !== "text"}
+              onClick={() => setEditingFileTabId(activeFileTab.id)}
+              type="button"
+            >
+              <ShellIcon name="edit" />
+            </button>
+          )}
+          <FilePreviewNavMenu
+            onViewDiff={() => setPanelDiff({ path: relPath, scope: "worktree", from: "file" })}
+            path={relPath}
+            projectName={scope.key}
+            queryScope="files"
+          />
+        </div>
+      );
+    }
+    if (activeWikiReadTab) {
+      const link = `${window.location.origin}/projects/${encodeURIComponent(scope.key)}/wiki/${encodeURIComponent(activeWikiReadTab.slug)}`;
+      return (
+        <ActionMenu
+          align="end"
+          cancelLabel={t("cancel")}
+          items={[
+            {
+              label: t("wiki.copyLink"),
+              onSelect: () => {
+                void navigator.clipboard.writeText(link);
+              },
+            },
+          ]}
+          trigger={
+            <button
+              aria-label={t("workbench.moreActions")}
+              className="ic cursor-pointer"
+              type="button"
+            >
+              <ShellIcon name="ellipsis" />
+            </button>
+          }
+        />
+      );
+    }
+    return undefined;
+  })();
+
   // ── M4 L3 深度页路由态（显式子路由，不写 layout）──────────────────────────────
   // focusId 只认显式 URL（autoFocusId 是 session 维度，不会是 L3 值）。4 种 focusId 由
   // deriveWorkbenchRouteContext 派生（workbench-model），此处仅解析渲染形态。
@@ -1013,8 +1135,7 @@ function MobileProjectWorkbench({
     if (focusId === "gitbranches") return { kind: "branches" as const };
     if (focusId.startsWith("gitcommit_"))
       return { kind: "commit" as const, hash: parseGitCommitFocusId(focusId) ?? "" };
-    if (focusId.startsWith("wiki_"))
-      return { kind: "wiki" as const, slug: parseWikiFocusId(focusId) ?? "" };
+    // wiki_ 深链不进 L3 路由（v1.5 批3：wiki 阅读迁面板 wikiread 标签，映射 effect 见下）。
     return null;
   }, [focusId]);
   // 返回类导航原语（pop 优先，深链无来路时 fallback push 兜底）。
@@ -1037,14 +1158,23 @@ function MobileProjectWorkbench({
     );
   };
   // wiki L3 的 back 反查（分组名）与标题（页名）：同 key wiki-index/page 缓存共享。
-  const l3WikiSlug = l3Route?.kind === "wiki" ? l3Route.slug : null;
+  // v1.5 批3：wiki_ 深链渲染期映射为面板 wikiread 标签（?tab= 同款——不写回 URL，幂等；
+  // URL 残留 wiki_ 前缀与 ?tab= 前例同批记档）。
   const wikiIndex = useWikiIndex(scope.key, WIKI_QUERY_SCOPE);
-  const l3WikiPage = useWikiPage(scope.key, l3WikiSlug ?? null, WIKI_QUERY_SCOPE);
+  useEffect(() => {
+    if (!focusId?.startsWith("wiki_")) return;
+    const slug = parseWikiFocusId(focusId);
+    if (!slug) return;
+    openInspectionPanel();
+    openPanelWikiReadTab(slug);
+    // 幂等映射：slug 维度依赖（focusId 变化但非 wiki_ 时不重触发）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId?.startsWith("wiki_") ? (parseWikiFocusId(focusId) ?? "") : ""]);
   // 检视面板工具 chip（03m gitchip / 03o crumb / 03p wsearch）装配单源（usePanelToolChip，
   // 桌面右栏同消费——真机反馈 2026-09-29 同构补齐）；搜索 query 提升返回给面板透传。
   const { filesSearchQuery, setWikiSearchQuery, toolChip, wikiSearchQuery } = usePanelToolChip({
     currentPath: filesPath,
-    kind: activePanelTab?.kind ?? "files",
+    kind: activePanelTab?.kind === "wikiread" ? "wiki" : (activePanelTab?.kind ?? "files"),
     onPathChange: setFilesPath,
     projectKey: scope.key,
   });
@@ -1128,11 +1258,23 @@ function MobileProjectWorkbench({
           effectiveFocusId ||
           scope.key
         : scope.key;
-  // L3 nav 装配（03q/03r/03u/03t/03v/03s）。l3Route 优先；file/git focus 由保活层 ref 派生。
-  const l3WikiMeta =
-    l3Route?.kind === "wiki"
-      ? (wikiIndex.data?.pages.find((p) => p.slug === l3Route.slug) ?? null)
-      : null;
+  // v1.5 批3 l3Transient file 编辑态（nav [放弃][完成] handle 模式）：focus 变化重置；
+  // preview 数据 gate pencil 可见性（与 keepalive Pane 同 queryKey dedupe）。
+  const [l3FileEditing, setL3FileEditing] = useState(false);
+  const l3FilePaneRef = useRef<FilePreviewPaneHandle | null>(null);
+  useEffect(() => {
+    setL3FileEditing(false);
+  }, [effectiveFocusId]);
+  // l3Transient file 的预览数据（pencil disabled gate；与 Pane 同 queryKey dedupe）。
+  const l3FileTabRef = focusRef?.kind === "file" ? focusRef : null;
+  const l3FilePath = l3FileTabRef ? splitFilePath(l3FileTabRef.path).path : null;
+  const l3FilePreview = useFilePreview(
+    l3FileTabRef ? splitFilePath(l3FileTabRef.path).projectName : "",
+    l3FilePath,
+    "files",
+  );
+  // L3 nav 装配（03r/03u/03t/03v；wiki 阅读已迁面板 wikiread 标签——v1.5 批3）。
+  // l3Route 优先；file/git focus 由保活层 ref 派生（l3Transient）。
   const l3 = l3Route
     ? l3Route.kind === "history"
       ? {
@@ -1146,19 +1288,11 @@ function MobileProjectWorkbench({
             title: t("git.branchesTitle", { n: branchesForTitle.data?.branches.length ?? 0 }),
             onClick: () => l3BackTo("git"),
           }
-        : l3Route.kind === "commit"
-          ? {
-              backLabel: t("git.historyTitle"),
-              title: l3Route.hash.slice(0, 7),
-              onClick: l3BackToHistory,
-            }
-          : {
-              backLabel: l3WikiMeta
-                ? l3WikiMeta.tags[0] || t("wiki.groupUngrouped")
-                : t("wiki.groupUngrouped"),
-              title: l3WikiPage.data?.frontmatter.title ?? l3Route.slug,
-              onClick: () => l3BackTo("wiki"),
-            }
+        : {
+            backLabel: t("git.historyTitle"),
+            title: l3Route.hash.slice(0, 7),
+            onClick: l3BackToHistory,
+          }
     : null;
 
   // file/git focus（保活层 ref 派生，非 L3 路由）：back=来源层级、title=文件名、动作=删 tab 回浏览态。
@@ -1174,34 +1308,41 @@ function MobileProjectWorkbench({
         backLabel,
         title: relPath.split("/").pop() || focusRef.path,
         onClick: closeTransientFocus,
-        actions: (
-          <ActionMenu
-            align="end"
-            cancelLabel={t("cancel")}
-            items={[
-              {
-                label: t("files.menuCopyPath"),
-                icon: <ShellIcon name="edit" />,
-                onSelect: () => {
-                  void navigator.clipboard.writeText(focusRef.path);
-                },
-              },
-              {
-                label: t("files.menuViewDiff"),
-                icon: <ShellIcon name="git-nav" />,
-                onSelect: () => onOpenGitFile(fp, "worktree", relPath),
-              },
-            ]}
-            trigger={
-              <button
-                aria-label={t("workbench.moreActions")}
-                className="ic cursor-pointer"
-                type="button"
-              >
-                <ShellIcon name="ellipsis" />
-              </button>
-            }
-          />
+        actions: l3FileEditing ? (
+          <span className="fact">
+            <button
+              className="giveup cursor-pointer"
+              onClick={() => l3FilePaneRef.current?.discard()}
+              type="button"
+            >
+              {t("files.discard")}
+            </button>
+            <button
+              className="cursor-pointer"
+              onClick={() => l3FilePaneRef.current?.finish()}
+              type="button"
+            >
+              {t("files.done")}
+            </button>
+          </span>
+        ) : (
+          <>
+            <button
+              aria-label={t("files.edit")}
+              className="ic cursor-pointer"
+              disabled={l3FilePreview.data?.type !== "text"}
+              onClick={() => setL3FileEditing(true)}
+              type="button"
+            >
+              <ShellIcon name="edit" />
+            </button>
+            <FilePreviewNavMenu
+              onViewDiff={() => onOpenGitFile(fp, "worktree", relPath)}
+              path={relPath}
+              projectName={fp}
+              queryScope="files"
+            />
+          </>
         ),
       };
     }
@@ -1258,19 +1399,7 @@ function MobileProjectWorkbench({
         />
       ) : route.kind === "commit" ? (
         <L3GitCommit hash={route.hash} projectName={scope.key} />
-      ) : (
-        <L3WikiReader
-          onOpenPage={(slug) => {
-            void navigate({
-              params: { key: scope.key, _splat: slug },
-              search: { tab: "wiki" },
-              to: "/projects/$key/wiki/$",
-            });
-          }}
-          projectName={scope.key}
-          slug={route.slug}
-        />
-      )}
+      ) : null}
     </div>
   );
   // 面板内 L3 主体（InspectionPanel l3Body；面板 open 时才实际挂载）：l3Route 走单源；file/git
@@ -1290,10 +1419,16 @@ function MobileProjectWorkbench({
       const { projectName: fp, path: relPath } = splitFilePath(focusRef.path);
       return (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-role="l3-page">
-          <MobileL3FilePreview
-            onViewDiff={() => onOpenGitFile(fp, "worktree", relPath)}
+          {/* v1.5 批3：编辑动作上移 nav（editingActions="nav"）；ref 承载于 l3FilePaneRef
+          ——keepalive 让位后单实例，直挂安全。 */}
+          <FilePreviewPane
+            editing={l3FileEditing}
+            editingActions="nav"
+            onEditingChange={setL3FileEditing}
             path={relPath}
             projectName={fp}
+            queryScope="files"
+            ref={l3FilePaneRef}
           />
         </div>
       );
@@ -1380,6 +1515,7 @@ function MobileProjectWorkbench({
           onClose={handlePanelClose}
           l3={panelVisible ? headerL3 : undefined}
           l3Body={renderPanelL3Body()}
+          navActions={panelNavActions}
           fab={renderPanelFab()}
           toolChip={toolChip}
         >
@@ -1450,11 +1586,19 @@ function MobileProjectWorkbench({
                 {item.ref.kind === "file" ? (
                   (() => {
                     const { projectName: fp, path: relPath } = splitFilePath(item.ref.path);
+                    // v1.5 批3：editing 只对当前聚焦实例生效（l3FileEditing 全局单值，保活
+                    // 多 file tab 不扩散）；ref 仅挂激活项（nav [完成]/[放弃] 只该作用于
+                    // 用户正在编辑的这个 Pane）。
+                    const isActive = item.tabId === effectiveFocusId;
                     return (
-                      <MobileL3FilePreview
-                        onViewDiff={() => onOpenGitFile(fp, "worktree", relPath)}
+                      <FilePreviewPane
+                        editing={l3FileEditing && isActive}
+                        editingActions="nav"
+                        onEditingChange={(next) => setL3FileEditing(isActive && next)}
                         path={relPath}
                         projectName={fp}
+                        queryScope="files"
+                        ref={isActive ? l3FilePaneRef : undefined}
                       />
                     );
                   })()
