@@ -25,7 +25,7 @@ export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
   // v1.5 三 Tab（spec 铁律 4：项目/文件/插件；设置 = 项目页 ⚙ push，M7；`/settings` 路由
   // 保留深度链接不破）。项目 = `/projects` 系全部（L1 列表页 + project scope 现场 + global
   // 会话聚焦）；文件/插件各自前缀。图标按 tokens.json icon.mapping（folder/doc.text/
-  // square.grid.2x2；插件图标 puzzlepiece 换代随批 7）。
+  // square.grid.2x2；插件图标 = puzzlepiece，v1.5 批 7 换代）。
   const projectsActive =
     pathname === "/projects" ||
     pathname.startsWith("/projects/session/") ||
@@ -56,7 +56,7 @@ export function MobilePrimaryNav({ ref }: { ref?: Ref<HTMLElement> }) {
           active={pluginsActive}
           interactive
           label={t("nav.plugins")}
-          marker={<ShellIcon className="h-6 w-6" name="pages-nav" />}
+          marker={<ShellIcon className="h-6 w-6" name="puzzlepiece" />}
         />
       </Link>
     </ShellMobileBottomNavigation>

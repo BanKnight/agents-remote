@@ -2,7 +2,6 @@ import { Fragment, useMemo, useState } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 
-import { useApprovals } from "../../hooks/use-approvals";
 import { usePinnedSessions } from "../../hooks/pinned-sessions";
 import { useT } from "../../i18n";
 import {
@@ -23,7 +22,6 @@ import {
 } from "../shell/project-row-actions";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
-import { ApprovalPopover } from "./approval-popover";
 import { ChatOverview } from "./chat-overview";
 import {
   AllSessionsGroupedList,
@@ -52,12 +50,14 @@ import { SessionModeTabs } from "./mobile-workbench";
  *    - project scope「项目」：ghead「实例 · <项目名>」+ 时钟（切 05c 历史列表态，再点返回）
  *      + plus（新建实例菜单，createSessionMenuItems 单源 + workbenchCreateMenuOpenAtom ⌘N 受控）
  *      + microlabel 分组行（AGENT 会话 / TERMINAL；chat 会话是 global 资源不分组——数据模型如此，
- *      不伪造 CHAT·PI 组）。行 = srow2 inst + dot2 状态点；行不可拖（05g 无拖放语义），
- *      点行 = 中栏开 tab（05g pin⑤，行自身 scope 构造 URL——AllSessionsGroupedList 先例）。
+ *      不伪造 CHAT·PI 组）。行 = srow2 inst（行首类型 dicon：agent sparkles / terminal
+ *      terminal，v1.5 批 7 §6.2）+ dot2 状态点（agent 行，随名称后）；行不可拖（05g 无拖放
+ *      语义），点行 = 中栏开 tab（05g pin⑤，行自身 scope 构造 URL——AllSessionsGroupedList
+ *      先例）。
  *    - project scope「全部」/ global scope：AllSessionsGroupedList（05g 形态单源）。
  *    - global scope 一级会话页：SessionModeTabs（Agent/Chat）+（chat 模式 → ChatOverview）。
- * 4. **aprow 审批橙行**（04 pin④ 全局聚合）：approvals>0 渲染，点击 = ApprovalPopover
- *    （05f 审批中心，与 ProjectLeftPanel 时代同接线）。
+ * 4. 审批入口 = 状态栏审批段（StatusBar `.sbar` 内 ApprovalPopover，Mac/iPad 同构；
+ *    v1.5 批 7 spec §9:328 Sidebar 审批橙行退役，本组件不再承载审批订阅/渲染）。
  * 5. **footnav 三项**（全局文件/插件/设置，active .on）：4 目的地导航退役后的唯一一级导航
  *    （07m/09m/10m 原型 footnav 三项）。
  *
@@ -76,10 +76,6 @@ export function WorkbenchSide() {
   // 「全部」视图置顶数据（与 candidates 同级并发，settled gate 防置顶组后到跳变——
   // AllSessionsGroupedList 同口径）。
   const { pinned, isLoaded: pinnedLoaded } = usePinnedSessions();
-  // aprow（04 pin④ 全局聚合）：桌面任何 scope approvals>0 渲染。⚠️ useApprovals 每实例各自
-  // 开 WS：桌面 StatusBar 与本组件 = 2 条 /api/approvals/stream 订阅（承接 ProjectLeftPanel
-  // 时代现状，非「单实例纪律」；收敛单一订阅点待办——§6.12k review 记档）。
-  const { approvals } = useApprovals(true);
 
   const isProject = scope.kind === "project";
   // mainPage 态（global + 文件/插件/设置 + 无 focus）side 恒定项目视图（07m/09m/10m「side
@@ -511,16 +507,6 @@ export function WorkbenchSide() {
         {groupHeader}
         {body}
       </div>
-      {/* ── aprow 审批橙行（04 pin④：实例区下，全局聚合） ── */}
-      {approvals.length > 0 ? (
-        <div className="shrink-0">
-          <ApprovalPopover approvals={approvals}>
-            <button className="aprow w-full cursor-pointer" type="button">
-              {t("workbench.approvalRow", { count: approvals.length })}
-            </button>
-          </ApprovalPopover>
-        </div>
-      ) : null}
       {/* ── footnav 三项（07m/09m/10m：全局文件/插件/设置，active .on） ── */}
       <div className="footnav footnav--flow flex-none">
         <button
@@ -539,7 +525,7 @@ export function WorkbenchSide() {
           type="button"
         >
           <span className="dicon">
-            <ShellIcon className="size-full" name="pages-nav" />
+            <ShellIcon className="size-full" name="puzzlepiece" />
           </span>
           {t("nav.plugins")}
         </button>
@@ -564,9 +550,11 @@ export function WorkbenchSide() {
 }
 
 /**
- * 实例试点行（srow2 inst）。agent 行 = dot2 状态点（running 实心 c-success + 600，其余空心
- * ink-2，05 inst 行形制，AllSessionsGroupedList rowClasses 同款）；terminal 行 = dicon 终端
- * 图标 + mono 12px ink-2、无状态点（05:42——dot 状态语言属 agent 会话状态机，review P3⑦）。
+ * 实例试点行（srow2 inst）。行首类型标识 = dicon 图标（v1.5 批 7 spec §6.2 统一 registry：
+ * agent 行 sparkles、terminal 行 terminal）；agent 行名称后随 dot2 状态点（running 实心
+ * c-success + 600，其余空心 ink-2，05 inst 行形制，「状态点随名称后」——
+ * AllSessionsGroupedList rowClasses 同款）；terminal 行无状态点（05:42——dot 状态语言属
+ * agent 会话状态机，review P3⑦）。
  */
 function SideInstanceRow({
   active,
@@ -588,17 +576,16 @@ function SideInstanceRow({
       onClick={() => onSelect(entry.session.id)}
       type="button"
     >
-      {isTerminal ? (
-        <span className="dicon">
-          <ShellIcon className="size-full" name="terminal" />
-        </span>
-      ) : (
+      <span className="dicon">
+        <ShellIcon className="size-full" name={isTerminal ? "terminal" : "sparkles"} />
+      </span>
+      <span className="min-w-0 truncate">{entry.session.displayName}</span>
+      {isTerminal ? null : (
         <span
           aria-hidden="true"
           className={`dot2 ${running ? "bg-success" : "border-[1.4px] border-ink-2 bg-transparent"}`}
         />
       )}
-      <span className="min-w-0 truncate">{entry.session.displayName}</span>
     </button>
   );
 }

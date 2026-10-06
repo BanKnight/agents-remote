@@ -49,7 +49,10 @@ export type LucideIconName =
   | "zap"
   | "image"
   | "camera"
-  | "paperclip";
+  | "paperclip"
+  | "puzzle"
+  | "expand"
+  | "shrink";
 
 /** 24 网格 stroke-2 圆头描边（Lucide 规格）；body 为 svg inner 内容。 */
 export const LUCIDE_ICONS = {
@@ -224,6 +227,18 @@ export const LUCIDE_ICONS = {
   paperclip: {
     viewBox: "0 0 24 24",
     body: '<path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/>',
+  },
+  puzzle: {
+    viewBox: "0 0 24 24",
+    body: '<path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/>',
+  },
+  expand: {
+    viewBox: "0 0 24 24",
+    body: '<path d="m15 15 6 6"/><path d="m15 9 6-6"/><path d="M21 16v5h-5"/><path d="M21 8V3h-5"/><path d="M3 16v5h5"/><path d="m3 21 6-6"/><path d="M3 8V3h5"/><path d="M9 9 3 3"/>',
+  },
+  shrink: {
+    viewBox: "0 0 24 24",
+    body: '<path d="m15 15 6 6m-6-6v4.8m0-4.8h4.8"/><path d="M9 19.8V15m0 0H4.2M9 15l-6 6"/><path d="M15 4.2V9m0 0h4.8M15 9l6-6"/><path d="M9 4.2V9m0 0H4.2M9 9 3 3"/>',
   },
 } as const satisfies Record<LucideIconName, { viewBox: string; body: string }>;
 

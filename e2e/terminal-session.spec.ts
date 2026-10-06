@@ -37,6 +37,10 @@ test("authenticated user can create and interact with a Terminal Session", async
     await page.getByRole("button", { name: "Reconnect" }).click();
   }
 
+  // v1.5 批 7（spec §4.7）：终端输入默认收起——常驻行 = 快捷键条 + 「展开输入」钮，
+  // composer 条件渲染。先展开再输入。
+  await page.getByRole("button", { name: "Expand input" }).click();
+
   // Terminal is ready when the input box is enabled (stream connected)
   await expect(page.getByLabel("Send input")).toBeEnabled({
     timeout: 10_000,

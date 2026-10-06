@@ -8,8 +8,9 @@
 //   D. 预览只读化：file tab 无保存钮 + CodeMirror contenteditable=false（双端一致）。
 //   E. 07m：设置 = main 整页（mhead h1 + 560px col）+ footnav .on + 无 Dialog overlay。
 //   G. 批次 5（§6.12j）：05g 全部会话分组列表（置顶/项目分组/空组/限定符/点行激活）+
-//      aprow 审批橙行（tint-orange computed + 点击开审批中心）+ 侧栏分档（Mac 250 / iPad 260）。
-//      Part 2 = 1100×800 iPad 档 context（260px + global seg4）。
+//      状态栏审批段（v1.5 批 7：.aprow 橙行退役断言 + .sbar 审批段点击开审批中心）+
+//      侧栏分档（Mac 250 / iPad 260）。Part 2 = 1100×800 iPad 档 context（260px + global
+//      seg4 + .sbar 在场——iPad ≥1024 与 Mac 同构渲染状态栏，spec §9:327-328）。
 //
 // mock 三铁律：形状对齐 shared；overview candidates 完备（prune activeIds 源）；
 // approvals/stream abort（铁律③，隔离真实环境 WS 推送）。用法：
@@ -613,35 +614,25 @@ async function sideOverviewVisible(page) {
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
     await page.waitForTimeout(1200);
 
-    // aprow（04 审批橙行）：左栏底部 approval 橙行 + tint-orange computed + 点击开审批中心。
-    const aprow = page.locator(".aprow").first();
-    ok((await aprow.boundingBox()) !== null, "G8 aprow 审批橙行渲染（boundingBox 非 null）");
-    const aprowText = await aprow.textContent();
-    ok((aprowText ?? "").includes("审批 · 1"), "G9 aprow 文本「审批 · 1 ›」");
-    const aprowStyle = await aprow.evaluate((el) => {
-      const rootStyle = getComputedStyle(document.documentElement);
-      return {
-        bg: getComputedStyle(el).backgroundColor,
-        token: rootStyle.getPropertyValue("--tint-orange").trim(),
-        h: Math.round(el.getBoundingClientRect().height),
-      };
-    });
-    // tint 类 token 源码是现代语法（index.css:221 深色 `rgb(255 159 10 / 0.12)`），dist minify
-    // 转写为 8 位 hex（#ff9f0a1f）→ computed rgba 四段。alpha 0x1f=31, 31/255≈0.12。
-    const t8 = aprowStyle.token.replace("#", "");
-    const expectA = t8.length === 8 ? (Number.parseInt(t8.slice(6, 8), 16) / 255).toFixed(2) : "-1";
+    // aprow 退役 + 状态栏审批段（v1.5 批 7，spec §9:328「Sidebar 审批行退役」）：审批入口
+    // = 状态栏审批段（.sbar 内 ApprovalPopover），Mac/iPad 同构；旧橙行断言随之换代。
+    ok((await page.locator(".aprow").count()) === 0, "G8 .aprow 审批橙行已退役（count = 0）");
+    const sbar = page.locator(".sbar").first();
+    ok((await sbar.boundingBox()) !== null, "G9 .sbar 底部状态栏在场（1600 桌面档）");
+    const approvalBtn = sbar.locator("button", { hasText: "待审批" });
     ok(
-      t8.length === 8 &&
-        aprowStyle.bg ===
-          `rgba(${parseInt(t8.slice(0, 2), 16)}, ${parseInt(t8.slice(2, 4), 16)}, ${parseInt(t8.slice(4, 6), 16)}, ${expectA})`,
-      `G10 aprow bg = --tint-orange（bg=${aprowStyle.bg} / token=${aprowStyle.token}）`,
+      (await approvalBtn.textContent())?.includes("1 项待审批 ›"),
+      "G10 .sbar 审批段按钮文本「1 项待审批 ›」（mock 1 条 approval）",
     );
-    ok(aprowStyle.h === 30, `G11 aprow 高 30px（实际 ${aprowStyle.h}）`);
-    await aprow.click();
+    await approvalBtn.click();
     await page.waitForTimeout(500);
-    ok((await page.locator(".apop").count()) === 1, "G12 aprow 点击开审批中心 Popover（.apop）");
+    ok(
+      (await page.locator(".apop").count()) === 1,
+      "G11 状态栏审批段点击开审批中心 Popover（.apop）",
+    );
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
+    ok((await page.locator(".apop").count()) === 0, "G12 Escape 关闭审批 Popover（.apop 消失）");
 
     // 侧栏分档 Mac 档（1600 ≥ 1180 → 250px；Part 2 为 iPad 档 260px）。
     const firstCol = await page.evaluate(() => {
@@ -680,6 +671,17 @@ async function sideOverviewVisible(page) {
         await page2.locator("main > div > aside").nth(0).locator(".seg4.mini .on").innerText()
       ).includes("全部"),
       "G17 global scope seg4「全部」on（05g 语境）",
+    );
+    // iPad 底部状态栏（v1.5 批 7 spec §9:327）：1100px ≥1024（useIsDesktopViewport 分界），
+    // iPad 与 Mac 同构渲染 .sbar——旧「移动 return null」在 ≥1024 档不再命中。
+    const sbarPad = page2.locator(".sbar").first();
+    ok(
+      (await sbarPad.boundingBox()) !== null,
+      "G18 iPad 档（1100px）底部状态栏 .sbar 在场（iPad/Mac 同构，spec §9:327）",
+    );
+    ok(
+      (await sbarPad.locator("button", { hasText: "待审批" }).count()) === 1,
+      "G19 iPad 状态栏审批段按钮在场（与 Mac 同源 mock）",
     );
     await ctx2.close();
 

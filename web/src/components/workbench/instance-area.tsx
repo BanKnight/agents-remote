@@ -749,8 +749,9 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     };
   }
   if (panelRef.kind === "wikiread") {
-    // wikiread tab（v1.5 批 4）：marker/label 对齐移动 PanelTabBar tabMeta（icon "file" +
-    // label = slug；usePanelMeta 不发 wiki 查询——页面标题随 reader 正文呈现，标签条 slug 可读）。
+    // wikiread tab（v1.5 批 4）：label = slug（usePanelMeta 不发 wiki 查询——页面标题随
+    // reader 正文呈现，标签条 slug 可读）；marker = book（v1.5 批 7 spec §6.2「wiki 标签
+    // = book」）。
     return {
       label: panelRef.slug,
       marker: (
@@ -758,7 +759,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
           aria-hidden="true"
           className="inline-flex shrink-0 items-center text-on-surface-muted"
         >
-          <ShellIcon className="h-4 w-4" name="file" />
+          <ShellIcon className="h-4 w-4" name="book" />
         </span>
       ),
     };
@@ -801,7 +802,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     if (session) {
       return {
         label: session.displayName,
-        marker: sessionMarker("agent", session.provider, "xs"),
+        marker: sessionMarker("agent", "xs"),
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
           pulse: session.status === "running",
@@ -812,7 +813,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     if (sessionMemo && sessionMemo.type === "agent") {
       return {
         label: sessionMemo.name,
-        marker: sessionMarker("agent", sessionMemo.provider, "xs"),
+        marker: sessionMarker("agent", "xs"),
       };
     }
     return undefined;
@@ -823,7 +824,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     if (session) {
       return {
         label: session.displayName,
-        marker: sessionMarker("terminal", undefined, "xs"),
+        marker: sessionMarker("terminal", "xs"),
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
           pulse: session.status === "running",
@@ -832,7 +833,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
       };
     }
     if (sessionMemo && sessionMemo.type === "terminal") {
-      return { label: sessionMemo.name, marker: sessionMarker("terminal", undefined, "xs") };
+      return { label: sessionMemo.name, marker: sessionMarker("terminal", "xs") };
     }
     return undefined;
   }
@@ -846,40 +847,33 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
  */
 export function useInstanceNameMemoWriter(
   panelRef: WorkbenchPanelRef,
-  session: { displayName: string; provider?: AgentProvider } | undefined,
+  session: { displayName: string } | undefined,
 ) {
   const setMemo = useSetAtom(instanceNameMemoAtom);
   const sessionId = panelRef.kind === "session" ? panelRef.sessionId : undefined;
   const sessionType = sessionId ? inferSessionTypeFromId(sessionId) : undefined;
   const displayName = session?.displayName;
-  const provider = session?.provider;
   useEffect(() => {
     if (!sessionId || !sessionType || !displayName) return;
     setMemo((prev) => {
       const entry = prev[sessionId];
-      if (
-        entry &&
-        entry.name === displayName &&
-        entry.provider === provider &&
-        entry.type === sessionType
-      ) {
+      if (entry && entry.name === displayName && entry.type === sessionType) {
         return prev;
       }
-      return { ...prev, [sessionId]: { name: displayName, provider, type: sessionType } };
+      return { ...prev, [sessionId]: { name: displayName, type: sessionType } };
     });
-  }, [sessionId, sessionType, displayName, provider, setMemo]);
+  }, [sessionId, sessionType, displayName, setMemo]);
 }
 
 /**
  * 从已拉热的列表缓存（项目 agent/terminal 列表 + overview 聚合）查 sessionId 对应的
- * displayName/provider/status，供 usePanelMeta 在 detail query 未回时预填（tab 首帧即显
+ * displayName/status，供 usePanelMeta 在 detail query 未回时预填（tab 首帧即显
  * 实例名）。三个缓存按序尝试：项目列表（同 project scope 打开 tab 的常态路径）→ overview
  *（跨项目/global 总览点开的 tab）。全部 miss（如刷新后直进聚焦态、缓存尚未拉热）返回
  * undefined，调用方维持原 fallback（sessionId 前 12 位）。
  *
- * 类型注意：overview candidate 与项目列表 session 的 status/provider 字段同名同语义
- *（OverviewCandidate 就是它们的聚合投影），共用同一查找类型；agent 的 provider 从
- * overview candidate 提取（可能 undefined——候选缺 provider 时退默认 claude 色）。
+ * 类型注意：overview candidate 与项目列表 session 的 status 字段同名同语义
+ *（OverviewCandidate 就是它们的聚合投影），共用同一查找类型。
  */
 function cachedSessionFromLists(
   panelRef: SessionPanelRef,
@@ -890,7 +884,6 @@ function cachedSessionFromLists(
   | {
       displayName: string;
       status: AgentSession["status"] | TerminalSession["status"];
-      provider?: AgentProvider;
     }
   | undefined {
   const inProjectList =
@@ -899,7 +892,6 @@ function cachedSessionFromLists(
   if (inProjectList) {
     return {
       displayName: inProjectList.displayName,
-      provider: "provider" in inProjectList ? inProjectList.provider : undefined,
       status: inProjectList.status,
     };
   }
@@ -909,7 +901,6 @@ function cachedSessionFromLists(
   if (!candidate) return undefined;
   return {
     displayName: candidate.displayName,
-    provider: candidate.provider,
     status: candidate.status,
   };
 }
@@ -2224,10 +2215,11 @@ type TabChipProps = {
 };
 
 /**
- * group 内单个 tab chip（设计 §7.1，§9 批 6b；§6.12j 起对齐原型 tabstrip .tb 形制）：实例名
- * （点击 = 切活动 tab）+ 6px 状态点（session/terminal tab）+ ℹ（实例信息，仅 session tab）+
- * ✕（最小化）。active = ink-1 600 + 2.5px 主色下划线；非 active hover 才显动作钮（hover
- * 环境）。usePanelMeta 派生 label + statusDot。
+ * group 内单个 tab chip（设计 §7.1，§9 批 6b；§6.12j 起对齐原型 tabstrip .tb 形制）：类型
+ * marker（v1.5 批 7 §6.2 行首回归）+ 实例名（点击 = 切活动 tab）+ 6px 状态点（session/
+ * terminal tab，「状态点随名称后」）+ AutoRetry（agent session tab）+ ✕（最小化）。active =
+ * ink-1 600 + 2.5px 主色下划线；非 active hover 才显动作钮（hover 环境）。usePanelMeta 派生
+ * marker + label + statusDot。
  *
  * 外层 DragSourceCard 启用拖动（设计 §7.3 tab 跨 group 拖动）：pointermove 超阈值 →
  * onCardDragStart → dragState → DropZoneOverlay 显示 drop zone。单击（未超阈值）select/close
@@ -2260,19 +2252,19 @@ function TabChip({
               ? panelRef.slug
               : panelRef.path);
   // v1.5 批 4（spec §4.5）：TabChip ℹ 退役——实例信息收敛进 tabstrip 右端 ⋯ 会话菜单
-  //（GroupHeader ActiveTabActions，与移动端 ⋯ 菜单同构）；TabChip 只留文本 + 状态点 +
-  // AutoRetry + ✕。
+  //（GroupHeader ActiveTabActions，与移动端 ⋯ 菜单同构）；TabChip 留 marker + 文本 + 状态点
+  // + AutoRetry + ✕。
   const sessionType =
     panelRef.kind === "session" ? inferSessionTypeFromId(panelRef.sessionId) : undefined;
   return (
     <DragSourceCard dragRef={panelRef} onDragStart={onDragStart} onSelect={onSelect}>
       {/* tabstrip .tb 单源形制（§6.12j，v2-primitives .tabstrip .tb）：12.5px 文本 + on 态
-          ink-1 600 + ::after 2.5px 主色下划线（absolute bottom，随 .tb on 类自动来）。旧胶囊
-          底色/provider marker/font-bold 退役——原型 05 tab = 6px 状态点 + 文本（状态点 tone
-          消费 statusDotToneBg 禁私设映射；session/terminal tab 有，file/git/skill/chat/render
-          无 → 纯文本，与原型非 session tab 一致）。✕/ℹ/AutoRetry 是 tab 特有动作保留接线
-          （触屏常显、hover 环境显隐，frontend-notes §7；DragGhost 仍消费 meta.marker）。
-          group/tab 供 AutoRetry tab variant 的 hover-capable:group-hover/tab 显隐。 */}
+          ink-1 600 + ::after 2.5px 主色下划线（absolute bottom，随 .tb on 类自动来）。v1.5 批 7
+          §6.2 行首类型 marker 回归（sparkles/terminal/message 同一 registry，与 DragGhost 同源
+          meta.marker），状态点移名称后（状态点 tone 消费 statusDotToneBg 禁私设映射；
+          session/terminal tab 有，file/git/skill/chat/render 无 → 纯文本，与原型非 session tab
+          一致）。✕/AutoRetry 是 tab 特有动作保留接线（触屏常显、hover 环境显隐，frontend-notes
+          §7）。group/tab 供 AutoRetry tab variant 的 hover-capable:group-hover/tab 显隐。 */}
       <div
         className={`tb group/tab shrink-0 cursor-pointer ${isActive ? "on" : ""}`}
         onContextMenu={(event) => {
@@ -2280,6 +2272,14 @@ function TabChip({
           onContextMenu(event);
         }}
       >
+        {meta?.marker ?? null}
+        <button
+          className="flex min-w-0 cursor-pointer items-center"
+          onClick={onSelect}
+          type="button"
+        >
+          <span className="block max-w-[8rem] truncate">{label}</span>
+        </button>
         {meta?.statusDot ? (
           <span
             aria-label={meta.statusDot.label}
@@ -2289,13 +2289,6 @@ function TabChip({
             role="img"
           />
         ) : null}
-        <button
-          className="flex min-w-0 cursor-pointer items-center"
-          onClick={onSelect}
-          type="button"
-        >
-          <span className="block max-w-[8rem] truncate">{label}</span>
-        </button>
         {panelRef.kind === "session" ? (
           <>
             {sessionType === "agent" && panelRef.kind === "session" ? (

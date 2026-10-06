@@ -7,7 +7,6 @@ import type {
   TransportStatus,
 } from "@agents-remote/shared";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp } from "lucide-react";
 import { type FormEvent, type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Terminal, type ITheme } from "@xterm/xterm";
@@ -88,7 +87,9 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
   // 让后端 attach() 以容器 cols/rows 作 PTY 初始尺寸（首帧即匹配容器，减少窄→宽跳变）。
   const terminalSizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const [input, setInput] = useState("");
-  const [inputDrawerCollapsed, setInputDrawerCollapsed] = useAtom(inputDrawerCollapsedAtom);
+  const [inputDrawerCollapsed, setInputDrawerCollapsed] = useAtom(
+    inputDrawerCollapsedAtom(sessionType),
+  );
   const [isDesktop, setIsDesktop] = useState(
     () => window.matchMedia?.("(min-width: 640px)").matches ?? true,
   );
@@ -1097,6 +1098,12 @@ type SessionInputDrawerProps = {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 };
 
+/**
+ * 会话输入抽屉（v1.5 批 7，spec §4.7:182）：collapse 按 session type 分族（terminal 默认
+ * 收起 / agent 默认展开，spec 只约束终端——终端以输出为主，输入框不占常驻高度）。快捷键条
+ * 常驻贴底（收起态也在，点按即注入；展开时上移不消失），右端展开钮唤出/收回双行 composer
+ * （⇧回车发送；无权限模型深度三图标——终端执行配置在服务器侧）。
+ */
 function SessionInputDrawer({
   canSend,
   collapsed,
@@ -1129,65 +1136,66 @@ function SessionInputDrawer({
     <section
       className={`min-w-0 px-3 py-2 sm:px-4 sm:py-2.5 max-lg:pb-[calc(0.5rem+var(--shell-mobile-bottom-nav-space,0px))] ${shellSurfaceClasses.runtimeComposer}`}
     >
-      <form className="grid gap-1.5" onSubmit={onSubmit}>
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <QuickKeyBar canSend={canSend} quickKeys={quickKeys} onQuickKey={onQuickKey} />
-          </div>
-          <button
-            className={`inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full transition ${shellSurfaceClasses.raised} ${shellSurfaceClasses.raisedHover}`}
-            type="button"
-            aria-expanded={!collapsed}
-            aria-label={collapsed ? "Expand input drawer" : "Collapse input drawer"}
-            onClick={() => onCollapsedChange(!collapsed)}
-          >
-            {collapsed ? (
-              <ChevronUp className="h-4 w-4" aria-hidden="true" />
-            ) : (
-              <ChevronDown className="h-4 w-4" aria-hidden="true" />
-            )}
-          </button>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <div className="min-w-0 flex-1">
+          <QuickKeyBar canSend={canSend} quickKeys={quickKeys} onQuickKey={onQuickKey} />
         </div>
-        {!collapsed ? (
+        <button
+          className="xbtn cursor-pointer"
+          type="button"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? t("session.expandInput") : t("session.collapseInput")}
+          title={collapsed ? t("session.expandInput") : t("session.collapseInput")}
+          onClick={() => onCollapsedChange(!collapsed)}
+        >
+          <ShellIcon className="h-4 w-4" name={collapsed ? "expand" : "shrink"} />
+        </button>
+      </div>
+      {!collapsed ? (
+        <form className="mt-2" onSubmit={onSubmit}>
           <div
-            className={`flex min-w-0 items-start gap-2 rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
+            className={`flex min-w-0 flex-col rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
           >
-            <span className="shrink-0 font-mono text-xs leading-[1.35] text-on-surface-muted pt-px">
-              $
-            </span>
-            <label className="sr-only" htmlFor="session-input">
-              {t("session.sendInput")}
-            </label>
-            <textarea
-              autoCapitalize="none"
-              autoComplete="off"
-              autoCorrect="off"
-              className="min-w-0 flex-1 resize-none bg-transparent font-mono text-sm leading-[1.35] text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={!canSend}
-              id="session-input"
-              placeholder={
-                connectionStatus === "connected"
-                  ? sessionType === "agent"
-                    ? t("session.typePrompt")
-                    : t("session.typeShell")
-                  : t("session.disconnected")
-              }
-              rows={rows}
-              spellCheck={false}
-              value={input}
-              onChange={(e) => onInputChange(e.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-            <button
-              className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-on-surface-muted transition enabled:cursor-pointer enabled:hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={!canSend || input.trim().length === 0}
-              type="submit"
-            >
-              ⏎
-            </button>
+            <div className="flex min-w-0 items-start gap-2">
+              <span className="shrink-0 font-mono text-xs leading-[1.35] text-on-surface-muted pt-px">
+                $
+              </span>
+              <label className="sr-only" htmlFor="session-input">
+                {t("session.sendInput")}
+              </label>
+              <textarea
+                autoCapitalize="none"
+                autoComplete="off"
+                autoCorrect="off"
+                className="min-w-0 flex-1 resize-none bg-transparent font-mono text-sm leading-[1.35] text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!canSend}
+                id="session-input"
+                placeholder={
+                  connectionStatus === "connected"
+                    ? sessionType === "agent"
+                      ? t("session.typePrompt")
+                      : t("session.typeShell")
+                    : t("session.disconnected")
+                }
+                rows={rows}
+                spellCheck={false}
+                value={input}
+                onChange={(e) => onInputChange(e.target.value)}
+                onKeyDown={handleKeyDown}
+              />
+            </div>
+            <div className="mt-1 flex justify-end">
+              <button
+                className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-on-surface-muted transition enabled:cursor-pointer enabled:hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={!canSend || input.trim().length === 0}
+                type="submit"
+              >
+                ⏎
+              </button>
+            </div>
           </div>
-        ) : null}
-      </form>
+        </form>
+      ) : null}
     </section>
   );
 }
@@ -1208,7 +1216,7 @@ function QuickKeyBar({ canSend, quickKeys, onQuickKey }: QuickKeyBarProps) {
       {quickKeys.map((quickKey) => (
         <button
           aria-label={t(quickKey.ariaLabelKey)}
-          className={`shrink-0 rounded-full px-2.5 py-1.5 font-mono text-[0.62rem] font-semibold text-on-surface transition enabled:cursor-pointer enabled:hover:border-primary/50 disabled:cursor-not-allowed disabled:opacity-40 sm:px-3 sm:py-2 sm:text-xs ${shellSurfaceClasses.raised}`}
+          className="qkey cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
           disabled={!canSend}
           key={quickKey.id}
           type="button"

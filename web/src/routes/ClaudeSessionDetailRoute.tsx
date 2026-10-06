@@ -101,6 +101,7 @@ import {
   type TurnStats,
   type TurnStatusTone,
 } from "./claude-adapter";
+import { SubagentOverviewBar, agentCardExpandSignalAtom } from "./claude-subagent-overview";
 import type { ClaudeFileHistorySnapshot, EffortLevel } from "@agents-remote/shared";
 
 // ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
@@ -1733,6 +1734,14 @@ function AgentContainer({ headIndex }: { headIndex: number }) {
   useEffect(() => {
     if (status !== "running") setBodyExpanded(false);
   }, [status]);
+  const [expandSignal, setExpandSignal] = useAtom(agentCardExpandSignalAtom);
+  // 概览条行点按 → 一次性展开信号（置 null 防跨会话泄漏/重放）；跳转滚动由 route 层 onJump 承担。
+  useEffect(() => {
+    if (expandSignal && expandSignal.index === headIndex) {
+      setBodyExpanded(true);
+      setExpandSignal(null);
+    }
+  }, [expandSignal, headIndex, setExpandSignal]);
   const bodyRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const prevScrollTopRef = useRef(0);
@@ -3336,46 +3345,6 @@ export function VirtualizedThreadContent({
     };
   }, [scrollerApi, scrollToMessage]);
 
-  // useAuiState selector 必须返回 referentially stable 值（useSyncExternalStore
-  // Object.is 比较）——这里只产出 primitive 签名字符串，数组由 useMemo 派生。
-  const runningAgentsSignature = useAuiState((s) => {
-    const compute = () =>
-      JSON.stringify(
-        s.thread.messages
-          .map((m, index) => {
-            const custom = (m.metadata?.custom ?? {}) as AgentContainerCustom;
-            if (custom.systemMessageType !== "agent-container") return null;
-            if (
-              deriveStatus({
-                hasTail: custom.tailResult != null,
-                isError: custom.tailIsError === true,
-                isInterrupted: custom.isInterrupted === true,
-              }) !== "running"
-            ) {
-              return null;
-            }
-            return {
-              index,
-              subagentType: custom.subagentType ?? "Agent",
-              description: custom.description ?? "",
-            };
-          })
-          .filter((c) => c !== null),
-      );
-    return isPerfTraceEnabled()
-      ? timed("runningAgentsSignature", compute, s.thread.messages.length)
-      : compute();
-  });
-  const runningAgents = useMemo(
-    () =>
-      JSON.parse(runningAgentsSignature) as {
-        index: number;
-        subagentType: string;
-        description: string;
-      }[],
-    [runningAgentsSignature],
-  );
-
   // ── Render ────────────────────────────────────────────────────────
   const items = virtualizer.getVirtualItems();
 
@@ -3391,27 +3360,9 @@ export function VirtualizedThreadContent({
         projectName={projectName}
         sessionId={sessionId}
       />
-      {runningAgents.length > 0 ? (
-        <div
-          aria-label={t("claude.agent.runningAriaLabel")}
-          className="subbar flex shrink-0 flex-wrap items-center gap-1.5 px-3 py-1.5 sm:px-5"
-        >
-          {runningAgents.map((agent) => (
-            <button
-              key={agent.index}
-              type="button"
-              onClick={() => scrollToMessage(agent.index)}
-              className="inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.65rem] transition hover:brightness-105"
-            >
-              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-current" />
-              <span className="shrink-0 font-semibold">{agent.subagentType}</span>
-              {agent.description ? (
-                <span className="min-w-0 truncate opacity-70">{agent.description}</span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {/* 03e 子 agent 概览条（spec §4.1:118）：单 agent chip 直跳 / 多 agent 计数条 +
+          展开列表卡，实现与状态都在 claude-subagent-overview 模块（本层只挂载 + 传跳转）。 */}
+      <SubagentOverviewBar onJump={scrollToMessage} />
       <div
         ref={scrollerRef}
         className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-5"

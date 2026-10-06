@@ -23,6 +23,7 @@ const TO_LUCIDE = {
   download: "download",
   edit: "pencil",
   ellipsis: "ellipsis",
+  expand: "expand", // 终端「展开输入」钮（03f .xbtn，v1.5 批 7 spec §4.7；与 shrink 配对）
   eye: "eye",
   file: "file",
   "files-nav": "file", // 与 file 手绘本就同形（折角文档）
@@ -36,10 +37,12 @@ const TO_LUCIDE = {
   pin: "pin",
   plus: "plus",
   project: "folder",
+  puzzlepiece: "puzzle", // 插件（底部 nav + 桌面 footnav，v1.5 批 7 spec §3.5/§6.2）
   refresh: "refresh-cw",
   restore: "minimize-2", // 与 maximize-2 配对（最大化/还原）
   rotate: "rotate-cw",
   settings: "settings",
+  shrink: "shrink", // 终端「收回输入」钮（展开态，与 expand 配对，v1.5 批 7 spec §4.7）
   sparkles: "sparkles",
   split: "panel-right",
   terminal: "square-terminal",

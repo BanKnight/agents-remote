@@ -62,6 +62,10 @@ const ICONS = [
   "image", // composer 附件菜单「图片」
   "camera", // composer 附件菜单「相机」（仅触屏项）
   "paperclip", // composer 附件菜单「文件」
+  // ── v1.5 批 7 多端骨架与杂项 ──
+  "puzzle", // ShellIcon puzzlepiece（插件：底部 nav + 桌面 footnav，spec §3.5/§6.2）
+  "expand", // 终端「展开输入」钮（收起态，03f .xbtn，spec §4.7）
+  "shrink", // 终端「收回输入」钮（展开态，与 expand 配对，spec §4.7）
 ];
 
 const entries = [];
@@ -83,11 +87,17 @@ for (const name of ICONS) {
   entries.push({ name, viewBox, body });
 }
 
-const typeUnion = entries.map((e) => `  | "${e.name}"`).join("\n");
+/** 序列化字符串：与 oxfmt 输出风格一致（最少转义——body 含双引号时用单引号包裹）——
+ *  使生成物直接过 format:check，免去事后 format 覆盖（否则每次重跑生成器都破门禁）。 */
+const quote = (s) => (s.includes('"') && !s.includes("'") ? `'${s}'` : JSON.stringify(s));
+/** 对象 key：合法标识符去引号（oxfmt quoteProps: as-needed），否则加双引号。 */
+const keyOf = (name) => (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name));
+
+const typeUnion = entries.map((e) => `  | ${JSON.stringify(e.name)}`).join("\n");
 const registry = entries
   .map(
     (e) =>
-      `  "${e.name}": {\n    viewBox: "${e.viewBox}",\n    body: ${JSON.stringify(e.body)},\n  },`,
+      `  ${keyOf(e.name)}: {\n    viewBox: ${quote(e.viewBox)},\n    body: ${quote(e.body)},\n  },`,
   )
   .join("\n");
 

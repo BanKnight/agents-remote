@@ -1,4 +1,4 @@
-import { atomWithStorage } from "jotai/utils";
+import { atomFamily, atomWithStorage } from "jotai/utils";
 import type {
   AgentSession,
   Project,
@@ -11,7 +11,12 @@ import { PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
 
 export type ConsoleSection = "agents" | "git" | "files";
 
-export const inputDrawerCollapsedAtom = atomWithStorage("inputDrawerCollapsed", false);
+// v1.5 批 7 按 session type 分族（terminal 默认收起 / agent 默认展开；spec §4.7:182 只约束
+// 终端——终端以输出为主，输入框不占常驻高度）。旧 key "inputDrawerCollapsed"（全局布尔，
+// 默认 false）不做迁移——用户重设一次即落新 key。
+export const inputDrawerCollapsedAtom = atomFamily((sessionType: SessionType) =>
+  atomWithStorage(`inputDrawerCollapsed:${sessionType}`, sessionType === "terminal"),
+);
 // TaskPanel expand state, persisted across session enter/leave. Defaults to
 // collapsed — the header shows the first in-progress task, the panel body stays
 // hidden until the user expands it.

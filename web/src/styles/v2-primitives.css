@@ -816,22 +816,8 @@
     border-radius: 50%;
     flex: none;
   }
-  /* 04 iPad 审批橙行（05f pin①：实例区下审批中心入口，§6.12j 批次 5）。左栏满宽贴边色块
-     （原型 margin:12px 0 10px），tint-orange 衬底 + warning-text 前景。 */
-  .aprow {
-    display: flex;
-    align-items: center;
-    height: 30px;
-    margin: 12px 0 10px;
-    padding: 0 12px;
-    border-radius: 9px;
-    background: var(--tint-orange);
-    font-size: 12.5px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
-    font-weight: 600;
-    color: var(--c-warning-text);
-  }
+  /* .aprow 审批橙行已退役（v1.5 批 7，spec §9:328「Sidebar 审批行退役」）：审批入口 =
+     状态栏审批段（.sbar 内 ApprovalPopover，Mac/iPad 同构）。 */
   .otherlbl {
     font-size: 10.5px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
@@ -871,7 +857,7 @@
     gap: 14px;
   }
   /* 合并 side 变体（§6.12k design review P1①）：实例区 flex-1 通到列底后，absolute footnav
-     会盖住滚动行（aprow 必然相撞；原型 absolute 成立依赖静态短内容）。flow 化保持原型位置
+     会盖住滚动行（实例行必然相撞；原型 absolute 成立依赖静态短内容）。flow 化保持原型位置
      语义（左右 10px、上下 12px）由 margin 承担。 */
   .footnav--flow {
     position: static;
@@ -4100,6 +4086,113 @@
     background: var(--tint-green);
     border-bottom: 1px solid var(--sep);
     color: var(--c-success-text);
+  }
+  /* 03e 子 agent 概览条 v1.5（workspace-subagent-list，spec §4.1:118）：多 agent = 计数条头行
+     （.sub）+ 展开列表卡（.slist + 行 .subrow——命名避让 03j 已占 .srow）；单 agent 保持
+     .subbar chip 单行直跳。完成行置灰置底、全部完成折叠回单行（保留入口）。 */
+  .sub {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 12px;
+    border-radius: 9px;
+    background: var(--tint-green);
+    font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 600;
+    color: var(--c-success-text);
+  }
+  .slist {
+    overflow: hidden;
+    border-radius: 12px;
+    background: var(--tint-green);
+    border: 1px solid color-mix(in srgb, var(--c-success) 40%, transparent);
+  }
+  .subrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 9px 12px;
+    font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 600;
+    color: var(--ink-1);
+    text-align: left;
+    cursor: pointer;
+  }
+  .subrow + .subrow {
+    border-top: 1px solid color-mix(in srgb, var(--c-success) 25%, transparent);
+  }
+  .subrow .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .subrow .st {
+    flex: none;
+    font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 400;
+    color: var(--c-success-text);
+  }
+  .subrow .tm {
+    margin-left: auto;
+    margin-right: 14px;
+    flex: none;
+    font-size: 11px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 400;
+    color: var(--ink-2);
+  }
+  .subrow .ar {
+    flex: none;
+    color: var(--c-success-text);
+  }
+  .subrow.done {
+    color: var(--ink-3);
+  }
+  /* 原型 .srow.done 状态字无显式 color → 继承行色 --ink-3（非 --ink-2）。 */
+  .subrow.done .st {
+    color: var(--ink-3);
+  }
+  /* 03f 终端快捷键条（workspace-terminal .qkeys b/.xbtn，spec §4.7:182）：常驻贴底，点按即
+     注入；键 = flex 均分 32px 高 r8 块（bg-elevated + sep 描边 + mono 12px 600），min-width
+     max-content 防长标签挤压（窄端容器横向滚动兜底）；右端 .xbtn = 34×32 展开输入钮
+     （tint-blue 衬底 + 主色描边/前景）。 */
+  .qkey {
+    flex: 1 1 auto;
+    min-width: max-content;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--sep);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono, ui-monospace, "SF Mono", Consolas, monospace);
+    font-size: 12px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
+    line-height: var(--line-height-ui);
+    font-weight: 600;
+    color: var(--ink-1);
+  }
+  .xbtn {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--tint-blue);
+    border: 1px solid color-mix(in srgb, var(--c-primary) 55%, transparent);
+    color: var(--c-primary);
   }
   /* 03d `.count` 取消/立即重试按钮组（r1 右侧）+ 蓝色主按钮。 */
   .count .btns {

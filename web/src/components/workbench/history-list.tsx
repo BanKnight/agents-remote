@@ -420,7 +420,7 @@ function HistorySessionNode({
         .join(" · ");
   return (
     <ListRow
-      marker={sessionMarker("agent", entryProvider(entry), "sm")}
+      marker={sessionMarker("agent", "sm")}
       meta={entry.hasActiveSession ? ActiveDot : undefined}
       onClick={() => {
         if (!isResuming) onActivate();

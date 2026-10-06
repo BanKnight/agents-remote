@@ -32,7 +32,7 @@ type WorkbenchShellProps = {
   /** 中栏：实例区（Stage 1 的 InstanceArea 接入）。工作台主体，不可收起。 */
   children: ReactNode;
   /**
-   * 桌面合并 Sidebar（§6.12k：项目组 + seg4 + 实例组 + aprow + footnav 三项，05/04 原型
+   * 桌面合并 Sidebar（§6.12k：项目组 + seg4 + 实例组 + footnav 三项，05/04 原型
    * 恒定 side 单栏），grid 第 0 列。常驻（原型 side 恒驻无折叠语义）。
    */
   sidebar?: ReactNode;
@@ -63,7 +63,7 @@ type WorkbenchShellProps = {
 /**
  * 三列工作台外壳（§6.12k：4 列 → 3 列，05/04 原型同构 side 单栏）。
  *
- * 桌面常驻三列 grid：side（合并 Sidebar：项目组 + seg4 + 实例组 + aprow + footnav，恒驻
+ * 桌面常驻三列 grid：side（合并 Sidebar：项目组 + seg4 + 实例组 + footnav，恒驻
  * 不折叠）/ 中栏（实例区）/ 右栏（inspection tab）。右栏可收起（atom 持久化），收起后
  * 该侧消失、中栏对应边缘出现唤出按钮；中栏是工作台主体，恒 minmax(0, 1fr) 吃剩余
  * （右栏固定宽，见 rightColumn 注释），不可收起。
@@ -126,7 +126,7 @@ export function WorkbenchShell({
           } as CSSProperties
         }
       >
-        {/* Sidebar（第 0 列）：合并 side（项目组 + seg4 + 实例组 + aprow + footnav 三项）。
+        {/* Sidebar（第 0 列）：合并 side（项目组 + seg4 + 实例组 + footnav 三项）。
             视觉由 side 内容自带（.side/.sidewin：bg-sidebar + border-r + h-full）。 */}
         <aside className="hidden min-h-0 min-w-0 lg:block">{sidebar}</aside>
 

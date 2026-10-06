@@ -224,10 +224,34 @@ async function setupCollapseMocks(page) {
   return { socketsRef: () => sockets };
 }
 
-/** 注入足量长内容：12 turn（user+assistant 交替）+ 一个 running 子 agent（产 .subbar）。 */
+/** 注入足量长内容：12 turn（user+assistant 交替）+ 一个 running 子 agent（产 .subbar）。
+ * 顺序铁律（v1.5 批 7 子 agent 概览条的回合边界）：agent-container 必须在最后一条 user
+ * 消息之后（=「当前回合」），否则被概览条过滤（.subbar 不渲染，探针基线即挂）——
+ * 真实流顺序 turn 先、当前回合的子 agent 在后，此处对齐。 */
 async function seedLongSession(socket) {
   const send = (d) => socket.send(JSON.stringify(d));
   send({ type: "session_init", resume: false });
+  const filler = "长文本回放内容用于撑高输出流，验证收敛阈值与滞回死区。".repeat(24);
+  for (let i = 0; i < 12; i++) {
+    send({
+      type: "user",
+      uuid: `uuid-probe-u${i}`,
+      message: {
+        id: `msg-probe-u${i}`,
+        role: "user",
+        content: [{ type: "text", text: `第 ${i + 1} 轮提问` }],
+      },
+    });
+    send({
+      type: "assistant",
+      uuid: `uuid-probe-a${i}`,
+      message: {
+        id: `msg-probe-a${i}`,
+        role: "assistant",
+        content: [{ type: "text", text: `${filler}（第 ${i + 1} 轮）` }],
+      },
+    });
+  }
   send({
     type: "assistant",
     uuid: "uuid-probe-agent",
@@ -254,27 +278,6 @@ async function seedLongSession(socket) {
       content: [{ type: "text", text: "子 agent 仍在工作" }],
     },
   });
-  const filler = "长文本回放内容用于撑高输出流，验证收敛阈值与滞回死区。".repeat(24);
-  for (let i = 0; i < 12; i++) {
-    send({
-      type: "user",
-      uuid: `uuid-probe-u${i}`,
-      message: {
-        id: `msg-probe-u${i}`,
-        role: "user",
-        content: [{ type: "text", text: `第 ${i + 1} 轮提问` }],
-      },
-    });
-    send({
-      type: "assistant",
-      uuid: `uuid-probe-a${i}`,
-      message: {
-        id: `msg-probe-a${i}`,
-        role: "assistant",
-        content: [{ type: "text", text: `${filler}（第 ${i + 1} 轮）` }],
-      },
-    });
-  }
 }
 
 async function loginUi(page) {

@@ -13,7 +13,7 @@ import { approvalsStreamUrl, fetchApprovals, respondApproval } from "../api/clie
 
 export const APPROVALS_QUERY_KEY = ["approvals"] as const;
 
-// approvals-stream WS 单订阅（模块级引用计数）：桌面 StatusBar 与 side aprow（及未来消费方）
+// approvals-stream WS 单订阅（模块级引用计数）：状态栏审批段（及未来消费方）
 // 各自 useApprovals(true) 时，历史上每实例各开一条 /api/approvals/stream（§6.12k review 记档
 // 的双 WS 待办）。计数收敛 = 第一个 enabled 实例开连接、最后一个卸载才关；帧写入同一 query
 // cache（APPROVALS_QUERY_KEY 单 key，各实例 useQuery 自动 dedupe，连接用哪个实例的

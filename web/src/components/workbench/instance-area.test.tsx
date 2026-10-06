@@ -128,7 +128,7 @@ describe("usePanelMeta 列表缓存预填（detail 未回时 tab 首帧即显实
     localStorage.setItem(
       "instanceNameMemo",
       JSON.stringify({
-        [AGENT_SESSION.id]: { name: "Memo Name", provider: "claude", type: "agent" },
+        [AGENT_SESSION.id]: { name: "Memo Name", type: "agent" },
       }),
     );
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
