@@ -1135,7 +1135,7 @@ function SessionInputDrawer({
 
   return (
     <section
-      className={`min-w-0 px-3 py-2 sm:px-4 sm:py-2.5 max-lg:pb-[calc(0.5rem+var(--shell-mobile-bottom-nav-space,0px))] ${shellSurfaceClasses.runtimeComposer}`}
+      className={`min-w-0 px-3 py-2 sm:px-4 sm:py-2.5 max-lg:pb-[calc(0.5rem+max(env(safe-area-inset-bottom,0px),var(--shell-mobile-bottom-nav-space,0px)))] ${shellSurfaceClasses.runtimeComposer}`}
     >
       <div className="flex min-w-0 items-center gap-1.5">
         <div className="min-w-0 flex-1">

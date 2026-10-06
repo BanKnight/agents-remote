@@ -62,7 +62,6 @@ import {
   setActiveTabInLeaf,
   stickyWorkbenchSearch,
   splitFilePath,
-  toggleLeafMaximize,
   useIsDesktopViewport,
   useWorkbenchLayout,
   useWorkbenchNavigate,
@@ -420,12 +419,6 @@ function WorkbenchContent({
       );
     },
     [navigateWorkbench, scope, rightTab, tabFromUrl, leftMode, mode],
-  );
-  const onToggleMaximize = useCallback(
-    (groupId: string) => {
-      update((prev) => toggleLeafMaximize(prev, groupId));
-    },
-    [update],
   );
   const onResizeSplit = useCallback(
     (splitId: string, leftChildId: string, rightChildId: string, deltaFlex: number) => {
@@ -1092,7 +1085,6 @@ function WorkbenchContent({
       onSelectTab={onSelectTab}
       onSetDragPointer={onSetDragPointer}
       onSplitLeaf={onSplitLeaf}
-      onToggleMaximize={onToggleMaximize}
       projectName={ctx.projectKey}
       refsCount={globalRefs.length}
       refsLoaded={globalRefsLoaded}

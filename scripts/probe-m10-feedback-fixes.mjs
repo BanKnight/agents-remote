@@ -613,20 +613,20 @@ async function run() {
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);
     await page.waitForTimeout(900);
     const ticon = page.locator('button[aria-label="检视面板"]');
-    // F4 问题⑬：检视 ticon 视觉盒 19×19（v1.4 批2 IA：单检视 ticon 替代三工具 ticon，
-    // 热区 -inset-2 扩展在 ::after 不进布局盒）。
+    // F4 问题⑬：检视钮与 ⋯ 同 .ic 形制（v1.5 真机复验反馈②：原型 nav 右端两钮恒 .ic，
+    // svg 20px；热区 -inset-2 扩展在 ::after 不进布局盒）。
     const tgeo = await page.evaluate(() => {
-      const icons = [...document.querySelectorAll("button.ticon")];
+      const icons = [...document.querySelectorAll('button.ic[aria-label="检视面板"]')];
       const rects = icons.map((b) => b.getBoundingClientRect());
       return {
         count: icons.length,
         w: rects[0]?.width,
       };
     });
-    if (record(tgeo.count === 1, `检视 ticon ×1（got ${tgeo.count}）`)) {
+    if (record(tgeo.count === 1, `检视钮 .ic ×1（got ${tgeo.count}）`)) {
       record(
-        tgeo.w !== null && Math.abs(tgeo.w - 19) < 1.5,
-        `检视 ticon 视觉盒 19px（got ${tgeo.w}）`,
+        tgeo.w !== null && Math.abs(tgeo.w - 26) < 1.5,
+        `检视钮 .ic 视觉盒 26px（got ${tgeo.w}）`,
       );
     }
     // F1 问题⑨：聚焦 agent 的 chips 行在进文件工具后隐藏（此前只 gate 聚焦实例类型漏 tool）。

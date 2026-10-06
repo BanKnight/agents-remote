@@ -478,7 +478,9 @@ async function run() {
       geo.runctFont === "9px" && geo.runctColor === hexToRgb(geo.success),
       `.runct 9px 绿（实际 ${geo.runctFont}）`,
     );
-    ok(geo.panelSvg === "19x19", `面板钮 svg 19×19（实际 ${geo.panelSvg}）`);
+    // 真机复验反馈②（2026-10-06）：面板钮与 ⋯ 同 .ic 26×26 形制（原型 nav 右端两钮恒 .ic，
+    // svg 20px）——此前 .ticon 19px 与工具页 [pencil][⋯] 中心距不一致。
+    ok(geo.panelSvg === "20x20", `面板钮 .ic svg 20×20（实际 ${geo.panelSvg}）`);
     ok(geo.morePresent === true, "⋯ 更多菜单钮在（data-role=nav-more）");
     await ctx2.close();
 

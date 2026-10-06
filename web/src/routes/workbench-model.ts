@@ -1679,12 +1679,6 @@ export function resizeSplitChildren(
   return { ...layout, root: replaceInTree(layout.root, splitId, newSplit) };
 }
 
-/** 切换 leaf 最大化（设计 §7.4 ▢ 独占）。maximize 时设 activeGroupId。 */
-export function toggleLeafMaximize(layout: WorkbenchLayoutV3, leafId: string): WorkbenchLayoutV3 {
-  if (layout.maximized === leafId) return { ...layout, maximized: null };
-  return { ...layout, maximized: leafId, activeGroupId: leafId };
-}
-
 /** 按 tabId 反查 leaf 位置（设计 §7.13 focusId 反查；session tab 的 tabId===sessionId，名字保留兼容调用点）。 */
 export function findLeafBySessionId(
   layout: WorkbenchLayoutV3,
@@ -2015,6 +2009,16 @@ function normalizeTree(node: TreeNode): TreeNode {
 }
 
 /**
+ * 真机复验反馈①（2026-10-06）：中栏分组 [最大化] 退役（GroupHeader UI 链已删）。存量持久化
+ * maximized 在读取侧归零（含 V1/V2/V3 迁移路径——迁移分支透传 maximized，只 clamp V4 raw
+ * 分支会让迁移用户当次独占无入口退出）——防已独占用户困死。
+ */
+const stripMaximized = (layout: WorkbenchLayoutV3): WorkbenchLayoutV3 => ({
+  ...layout,
+  maximized: null,
+});
+
+/**
  * 自定义 storage 实现迁移链：读 V4 key（"workbenchLayoutV4"，单一 layout），不存在则按
  * V3-state → V2 → V1 回溯，各取 global 作单一 layout。四分支：① 有 V4 直返；② 有 V3-state 无 V4
  * → migrateV3StateToSingleLayout（取 global）→ 写 V4 删 V3-state；③ 有 V2 无 V3-state/V4
@@ -2039,6 +2043,12 @@ const workbenchLayoutStorage = {
           localStorage.setItem(key, JSON.stringify(layout));
           localStorage.setItem(WORKBENCH_LAYOUT_V4_PLUGIN_TAB_CLEAN_KEY, "1");
         }
+        // 真机复验反馈①（2026-10-06）：中栏分组 [最大化] 退役（GroupHeader UI 链已删），存量
+        // 持久化 maximized 在读取侧归零并写回——否则已独占用户无入口退出（困死）。
+        if (layout.maximized !== null) {
+          layout = stripMaximized(layout);
+          localStorage.setItem(key, JSON.stringify(layout));
+        }
         return layout;
       } catch {
         return initialValue;
@@ -2047,8 +2057,10 @@ const workbenchLayoutStorage = {
     const v3StateRaw = localStorage.getItem(LEGACY_WORKBENCH_LAYOUT_V3_KEY);
     if (v3StateRaw) {
       try {
-        const single = normalizeLayoutV3(
-          migrateV3StateToSingleLayout(JSON.parse(v3StateRaw) as WorkbenchLayoutState),
+        const single = stripMaximized(
+          normalizeLayoutV3(
+            migrateV3StateToSingleLayout(JSON.parse(v3StateRaw) as WorkbenchLayoutState),
+          ),
         );
         localStorage.setItem(key, JSON.stringify(single));
         localStorage.removeItem(LEGACY_WORKBENCH_LAYOUT_V3_KEY);
@@ -2060,8 +2072,10 @@ const workbenchLayoutStorage = {
     const v2Raw = localStorage.getItem(LEGACY_WORKBENCH_LAYOUT_V2_KEY);
     if (v2Raw) {
       try {
-        const single = normalizeLayoutV3(
-          migrateV3StateToSingleLayout(migrateLayoutStateV2ToV3(JSON.parse(v2Raw))),
+        const single = stripMaximized(
+          normalizeLayoutV3(
+            migrateV3StateToSingleLayout(migrateLayoutStateV2ToV3(JSON.parse(v2Raw))),
+          ),
         );
         localStorage.setItem(key, JSON.stringify(single));
         localStorage.removeItem(LEGACY_WORKBENCH_LAYOUT_V2_KEY);
@@ -2073,8 +2087,8 @@ const workbenchLayoutStorage = {
     const v1Raw = localStorage.getItem(LEGACY_WORKBENCH_LAYOUT_KEY);
     if (!v1Raw) return initialValue;
     try {
-      const single = normalizeLayoutV3(
-        migrateV3StateToSingleLayout(migrateLayoutState(JSON.parse(v1Raw))),
+      const single = stripMaximized(
+        normalizeLayoutV3(migrateV3StateToSingleLayout(migrateLayoutState(JSON.parse(v1Raw)))),
       );
       localStorage.setItem(key, JSON.stringify(single));
       localStorage.removeItem(LEGACY_WORKBENCH_LAYOUT_KEY);

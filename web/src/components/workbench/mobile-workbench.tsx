@@ -187,10 +187,17 @@ export function MobileWorkbench({
   );
   const mainStyle = {
     "--shell-mobile-bottom-nav-space": `${bottomNavHeight}px`,
-    // 聚焦态 composer 浮层（session route 消费 pb-[calc(env+var(--composer-gap))]）：composer
-    // 底边要落在 nav 顶 = navH + 4px 间隙，而其 pb 已含 env 项 → gap = navH + 4px − env
-    //（env 抵消，防 home indicator 双重避让）。桌面 lg:pb-2.5 覆盖 pb，变量无消费者不受影响。
-    "--composer-gap": `calc(${bottomNavHeight}px + 0.25rem - env(safe-area-inset-bottom, 0px))`,
+    // 聚焦态 composer 浮层（session route 消费 pb-[calc(env+var(--composer-gap))]）：
+    // 有 nav（global scope L1 页）时 composer 底边落 nav 顶 = navH + 4px 间隙，而其 pb 已含
+    // env 项 → gap = navH + 4px − env（env 抵消，防 home indicator 双重避让）。
+    // 无 nav（v1.5 批 2 会话现场全屏无 tab bar）时公式失去 navH 项会算出负值（0.25rem −
+    // env ≈ −30px → composer 几乎贴屏底）。真机复验反馈⑥：无 nav 场景固定 0.5rem 视觉间隙
+    //（pb = env + 0.5rem，safe-area 完整避让 + 8px——与 session route pb 的变量 fallback
+    // 一致），env 只消费一处（frontend-notes §1 单层避让）。
+    "--composer-gap":
+      bottomNavHeight > 0
+        ? `calc(${bottomNavHeight}px + 0.25rem - env(safe-area-inset-bottom, 0px))`
+        : "0.5rem",
   } as CSSProperties;
 
   // project scope（含聚焦态）统一走 v2 三行头部工作台。
@@ -445,11 +452,7 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
         tabs={tabs}
         trailingExtra={
           sessionType === "agent" && projectName ? (
-            <AutoRetryHeaderButton
-              projectName={projectName}
-              sessionId={focusId}
-              variant="capsule"
-            />
+            <AutoRetryHeaderButton projectName={projectName} sessionId={focusId} />
           ) : null
         }
       />

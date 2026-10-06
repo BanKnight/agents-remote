@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { useT } from "../../i18n";
 import { sessionStatusLabel } from "../../routes/console-model";
@@ -104,15 +104,17 @@ export function MobileProjectHeader({
           l3.actions
         ) : (
           <>
-            {/* 检视面板单入口（v1.5 行1 右端 [面板]：03 面板钮自行2 迁入；热区扩展同前 M10 语义） */}
+            {/* 检视面板单入口（v1.5 行1 右端 [面板]：03 面板钮自行2 迁入；热区扩展同前 M10 语义）。
+                真机复验反馈②：与右端 ⋯ 同 .ic 26×26 形制（原型 nav 右端两钮恒 .ic，此前 .ticon
+                19px 无容器 → 与工具页 [pencil][⋯]（恒 .ic）中心距差 3.5px，用户可见不一致）。 */}
             <button
               aria-label={t("workbench.inspectionPanel")}
-              className="ticon relative cursor-pointer after:absolute after:-inset-2 after:content-['']"
+              className="ic relative cursor-pointer after:absolute after:-inset-2 after:content-['']"
               onClick={onOpenPanel}
               title={t("workbench.inspectionPanel")}
               type="button"
             >
-              <LucideIcon className="h-[19px] w-[19px]" name="panel-left" />
+              <LucideIcon name="panel-left" />
             </button>
             {moreMenu}
           </>
@@ -152,6 +154,13 @@ function InstanceSwitchMenu({
 }: InstanceSwitchMenuProps) {
   const { t } = useT();
   const empty = instances.length === 0;
+  // 菜单打开时把当前行（✓）滚入视野：实例多溢出定高时队尾当前行会视野外——autoFocus 常落
+  // 队尾，不滚则用户看不到自己所在实例。Content 是 portal 子树且仅开态挂载（§14）：mount 跑
+  // 的 effect 拿到 null、open 变化不重跑 [] effect——用 state ref callback，挂载即触发重跑。
+  const [listNode, setListNode] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    listNode?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [listNode]);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -177,7 +186,7 @@ function InstanceSwitchMenu({
         <div className="px-3.5 pb-1.5 pt-2.5 text-[10.5px] font-bold tracking-[0.5px] text-ink-2">
           {t("workbench.switchInstance")}
         </div>
-        <div className="max-h-[200px] overflow-y-auto">
+        <div ref={setListNode} className="max-h-[200px] overflow-y-auto">
           {empty ? (
             <div className="px-3.5 py-3 text-[13px] text-ink-3">{projectName}</div>
           ) : (
@@ -186,7 +195,7 @@ function InstanceSwitchMenu({
               return (
                 <DropdownMenuItem
                   aria-current={current ? "true" : undefined}
-                  className="h-10 justify-start gap-2.5 rounded-none border-t border-sep px-3.5 text-[13.5px] font-normal focus:bg-on-surface/5 first:border-t-0"
+                  className="justify-start gap-2.5 rounded-none border-t border-sep px-3.5 text-[13.5px] font-normal focus:bg-on-surface/5 first:border-t-0"
                   key={entry.session.id}
                   onSelect={() => onSelectInstance(entry.session.id)}
                 >

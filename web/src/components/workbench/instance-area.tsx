@@ -204,7 +204,6 @@ type InstanceAreaProps = {
   onCloseTab: (groupId: string, tabId: string) => void;
   /** v1.5 批 4：GroupHeader file tab ⋯「查看 diff」（WorkbenchRoute onOpenGitFile 透传）。 */
   onOpenGitDiff?: (projectName: string, scope: GitDiffScope, path: string) => void;
-  onToggleMaximize: (groupId: string) => void;
   onResizeSplit: (
     splitId: string,
     leftChildId: string,
@@ -243,7 +242,6 @@ export function InstanceArea({
   onSetDragPointer,
   onCardDragStart,
   onCloseTab,
-  onToggleMaximize,
   onResizeSplit,
   onSelectTab,
   onSplitLeaf,
@@ -300,7 +298,6 @@ export function InstanceArea({
       onSplitLeaf={onSplitLeaf}
       onTabContextMenu={onTabContextMenu}
       onTabDragStart={onCardDragStart}
-      onToggleMaximize={onToggleMaximize}
       projectName={projectName}
       root={layout.root}
     />
@@ -1175,31 +1172,22 @@ function useAutoRetryToggle(projectName: string, sessionId: string) {
 export function AutoRetryHeaderButton({
   projectName,
   sessionId,
-  variant,
 }: {
   projectName: string;
   sessionId: string;
   /**
-   * tab = 桌面 TabChip icon 按钮（h-4）；capsule = 移动聚焦 header 胶囊按钮（h-8）。
-   * （chip = v2 移动 chips 行形态，v1.4 起 chips 行退役后已删。）
+   * 移动聚焦 header 胶囊按钮（h-8）。v1.5 批 8 真机复验反馈①：桌面 TabChip 的 "tab"
+   * 形态撤除（tab 宽度挤占），仅存胶囊消费。
    */
-  variant: "tab" | "capsule";
 }) {
   const { t } = useT();
   const { enabled, toggle } = useAutoRetryToggle(projectName, sessionId);
   const session = useAgentDetail({ kind: "session", projectName, sessionId }).data?.session;
   if (session?.provider !== "claude") return null;
   const on = enabled === true;
-  const className =
-    variant === "tab"
-      ? `inline-flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded transition hover:bg-on-surface/10 active:bg-on-surface/10 ${
-          on
-            ? "text-primary"
-            : "text-on-surface-muted hover:text-on-surface opacity-100 hover-capable:opacity-0 hover-capable:group-hover/tab:opacity-100"
-        }`
-      : `flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-on-surface/5 active:bg-on-surface/10 ${
-          on ? "text-primary" : "text-on-surface-soft hover:text-on-surface"
-        }`;
+  const className = `flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-on-surface/5 active:bg-on-surface/10 ${
+    on ? "text-primary" : "text-on-surface-soft hover:text-on-surface"
+  }`;
   return (
     <button
       aria-checked={on}
@@ -2047,9 +2035,14 @@ function SessionTabStripActions({
   const renameSession = useRenameSession();
   const pinnedNow = pinned.has(panelRef.sessionId);
   const items: ActionMenuItem[] = [
-    { label: t("session.instanceInfo.title"), onSelect: openInfo },
+    {
+      label: t("session.instanceInfo.title"),
+      icon: <ShellIcon className="size-[17px]" name="info" />,
+      onSelect: openInfo,
+    },
     {
       label: t("session.rename"),
+      icon: <ShellIcon className="size-[17px]" name="edit" />,
       onSelect: () => {
         void renameSession.rename(
           panelRef,
@@ -2062,12 +2055,14 @@ function SessionTabStripActions({
       ? [
           {
             label: pinnedNow ? t("workbench.unpin") : t("workbench.pin"),
+            icon: <ShellIcon className="size-[17px]" name="pin" />,
             onSelect: () => (pinnedNow ? unpinIt : pinIt).mutate(panelRef.sessionId),
           },
         ]
       : []),
     {
       label: t("workbench.pillCloseSession"),
+      icon: <ShellIcon className="size-[17px]" name="close" />,
       onSelect: () => closeInstance(panelRef.sessionId, sessionType ?? "agent"),
     },
   ];
@@ -2094,7 +2089,8 @@ function SessionTabStripActions({
 
 /**
  * 右工作区活动组 header = tab 栏（设计 §7.1）：每个 tab 一个实例 chip（marker + 名 + ✕），
- * 右侧 ▢ 最大化（group 级独占）。tab ✕ = 最小化（移除 tab，session 存活回左总览，设计 §7.2）；
+ * 右端 [＋][分屏][编辑][⋯]（v1.5 spec §4.5；▢ 最大化已随真机复验反馈①退役，见渲染处注释）。
+ * tab ✕ = 最小化（移除 tab，session 存活回左总览，设计 §7.2）；
  * 关闭实例 kill 不放 tab ✕（走左总览卡片 close，避免高频按钮触发破坏性 kill）。usePanelMeta
  * 从实例 detail query 派生（与 PanelRouter 同源 query key，React Query dedupe）。
  */
@@ -2102,25 +2098,22 @@ function GroupHeader({
   closeInstance,
   create,
   group,
-  isMaximized,
   onCloseTab,
   onOpenGitDiff,
   onSelectTab,
   onSplit,
   onTabContextMenu,
   onTabDragStart,
-  onToggleMaximize,
 }: GroupHeaderProps) {
   const { t } = useT();
   // §7.2（批 8）：tabstrip 标签溢出时滚轮横滚 + 边缘 12px 渐隐（右端 ＋/分屏等尾部控件
   // 在滚动容器外，「尾部控件可达」天然成立）；标签数变化在内容 effect 里重算渐隐方向。
   const hs = useHScroll();
   useEffect(() => hs.update(), [hs.update, group.tabs.length]);
-  const maximizeLabelKey = isMaximized ? "workbench.panelRestore" : "workbench.panelMaximize";
-  // v1.5 批 4（spec §4.5）：tabstrip 右端 [＋][分屏][最大化][编辑][⋯]，⋯ 收尾最右、内容
+  // v1.5 批 4（spec §4.5）：tabstrip 右端 [＋][分屏][编辑][⋯]，⋯ 收尾最右、内容
   // 跟随激活标签（会话/文件两族；git/skill/wikiread/chat/render 无 ⋯ 规格 → 不渲染）。
   // 编辑态只剩结构钮（pencil/⋯ 消失，05h4 原型实证）。编辑判定 = 激活 tabId 与
-  // workbenchFileTabEditingAtom 相等。
+  // workbenchFileTabEditingAtom 相等。真机复验反馈①：[最大化] 退役（见 tabstrip 内注释）。
   const activeTab = group.tabs.find((tab) => tabIdOf(tab) === group.activeTabId) ?? null;
   const editingTabId = useAtomValue(workbenchFileTabEditingAtom);
   const editing = editingTabId !== null && editingTabId === group.activeTabId;
@@ -2175,16 +2168,10 @@ function GroupHeader({
       >
         <ShellIcon className="h-3 w-3" name="split" />
       </button>
-      <button
-        aria-label={t(maximizeLabelKey)}
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-        onClick={onToggleMaximize}
-        title={t(maximizeLabelKey)}
-        type="button"
-      >
-        <ShellIcon className="h-3 w-3" name={isMaximized ? "restore" : "maximize"} />
-      </button>
       {/* v1.5 批 4：[编辑][⋯] 跟随激活标签（⋯ 收尾最右）；编辑态消失（05h4 原型）。 */}
+      {/* 真机复验反馈①（2026-10-06）：tabstrip 最大化钮退役——独占态挤压多 tab 工作面，
+          与 v1.5 原型 tabstrip（[＋][分屏][⋯]）不符；已最大化布局记忆由 storage 读取侧
+          归零（workbench-model workbenchLayoutStorage.getItem，防无入口困死）。 */}
       {!editing && activeTab?.kind === "file" ? (
         <FileTabStripActions onOpenDiff={onOpenGitDiff} panelRef={activeTab} />
       ) : null}
@@ -2202,7 +2189,6 @@ type GroupHeaderProps = {
   /** 新建实例菜单（tabstrip「＋」）；null 时不渲染（EmptyInstanceArea 承担空态创建）。 */
   create: CreateSessionApi | null;
   group: WorkbenchGroup;
-  isMaximized: boolean;
   onCloseTab: (tabId: string) => void;
   /** v1.5 批 4（spec §4.5）：file tab ⋯「查看 diff」= 开中栏 git tab（diff = 中栏标签）。 */
   onOpenGitDiff?: (projectName: string, scope: GitDiffScope, path: string) => void;
@@ -2211,7 +2197,6 @@ type GroupHeaderProps = {
   onSplit: () => void;
   onTabContextMenu: (tabId: string, event: MouseEvent<HTMLDivElement>) => void;
   onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
-  onToggleMaximize: () => void;
 };
 
 type TabChipProps = {
@@ -2226,9 +2211,9 @@ type TabChipProps = {
 /**
  * group 内单个 tab chip（设计 §7.1，§9 批 6b；§6.12j 起对齐原型 tabstrip .tb 形制）：类型
  * marker（v1.5 批 7 §6.2 行首回归）+ 实例名（点击 = 切活动 tab）+ 6px 状态点（session/
- * terminal tab，「状态点随名称后」）+ AutoRetry（agent session tab）+ ✕（最小化）。active =
+ * terminal tab，「状态点随名称后」）+ ✕（最小化）。active =
  * ink-1 600 + 2.5px 主色下划线；非 active hover 才显动作钮（hover 环境）。usePanelMeta 派生
- * marker + label + statusDot。
+ * marker + label + statusDot。AutoRetry 图标已随真机复验反馈①退役（见渲染处注释）。
  *
  * 外层 DragSourceCard 启用拖动（设计 §7.3 tab 跨 group 拖动）：pointermove 超阈值 →
  * onCardDragStart → dragState → DropZoneOverlay 显示 drop zone。单击（未超阈值）select/close
@@ -2262,9 +2247,8 @@ function TabChip({
               : panelRef.path);
   // v1.5 批 4（spec §4.5）：TabChip ℹ 退役——实例信息收敛进 tabstrip 右端 ⋯ 会话菜单
   //（GroupHeader ActiveTabActions，与移动端 ⋯ 菜单同构）；TabChip 留 marker + 文本 + 状态点
-  // + AutoRetry + ✕。
-  const sessionType =
-    panelRef.kind === "session" ? inferSessionTypeFromId(panelRef.sessionId) : undefined;
+  // + ✕。真机复验反馈①（2026-10-06）：tab 上的 AutoRetry 图标撤除（与 ✕ 并排挤占 tab
+  // 宽度；自动重试开关在实例信息面板动作行仍有入口）。
   return (
     <DragSourceCard dragRef={panelRef} onDragStart={onDragStart} onSelect={onSelect}>
       {/* tabstrip .tb 单源形制（§6.12j，v2-primitives .tabstrip .tb）：12.5px 文本 + on 态
@@ -2272,8 +2256,7 @@ function TabChip({
           §6.2 行首类型 marker 回归（sparkles/terminal/message 同一 registry，与 DragGhost 同源
           meta.marker），状态点移名称后（状态点 tone 消费 statusDotToneBg 禁私设映射；
           session/terminal tab 有，file/git/skill/chat/render 无 → 纯文本，与原型非 session tab
-          一致）。✕/AutoRetry 是 tab 特有动作保留接线（触屏常显、hover 环境显隐，frontend-notes
-          §7）。group/tab 供 AutoRetry tab variant 的 hover-capable:group-hover/tab 显隐。 */}
+          一致）。✕ 是 tab 特有动作保留接线（触屏常显、hover 环境显隐，frontend-notes §7）。 */}
       <div
         className={`tb group/tab shrink-0 cursor-pointer ${isActive ? "on" : ""}`}
         onContextMenu={(event) => {
@@ -2297,17 +2280,6 @@ function TabChip({
             }`}
             role="img"
           />
-        ) : null}
-        {panelRef.kind === "session" ? (
-          <>
-            {sessionType === "agent" && panelRef.kind === "session" ? (
-              <AutoRetryHeaderButton
-                projectName={panelRef.projectName}
-                sessionId={panelRef.sessionId}
-                variant="tab"
-              />
-            ) : null}
-          </>
         ) : null}
         <button
           aria-label={t("workbench.tabMinimize")}
@@ -2442,7 +2414,6 @@ type WorkspaceTreeHandlers = {
   onSplitLeaf: (leafId: string) => void;
   onTabContextMenu: (leafId: string, tabId: string, x: number, y: number) => void;
   onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
-  onToggleMaximize: (leafId: string) => void;
 };
 
 type WorkspaceTreeProps = WorkspaceTreeHandlers & {
@@ -2547,7 +2518,6 @@ export function WorkspaceTree({
             handlers.onTabContextMenu(g.id, tabId, event.clientX, event.clientY)
           }
           onTabDragStart={handlers.onTabDragStart}
-          onToggleMaximize={() => handlers.onToggleMaximize(g.id)}
         />
       ))}
       {flat.gutters.map((g) => (
@@ -2604,7 +2574,6 @@ type GroupShellProps = {
   onSplit: () => void;
   onTabContextMenu: (tabId: string, event: MouseEvent<HTMLDivElement>) => void;
   onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
-  onToggleMaximize: () => void;
 };
 
 /**
@@ -2628,7 +2597,6 @@ function GroupShell({
   onSplit,
   onTabContextMenu,
   onTabDragStart,
-  onToggleMaximize,
 }: GroupShellProps) {
   const isDraggingThis = dragRef ? group.tabs.some((t) => tabIdOf(t) === tabIdOf(dragRef)) : false;
   const isDropTarget = activeZone?.targetGroupId === group.id;
@@ -2647,14 +2615,12 @@ function GroupShell({
         closeInstance={closeInstance}
         create={create}
         group={group}
-        isMaximized={group.isMaximized}
         onCloseTab={onCloseTab}
         onOpenGitDiff={onOpenGitDiff}
         onSelectTab={onSelectTab}
         onSplit={onSplit}
         onTabContextMenu={onTabContextMenu}
         onTabDragStart={onTabDragStart}
-        onToggleMaximize={onToggleMaximize}
       />
       {isDropTarget ? <DropZoneHighlight zone={activeZone?.zone ?? "center"} /> : null}
     </div>

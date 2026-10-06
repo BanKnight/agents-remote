@@ -40,7 +40,6 @@ import {
   splitFilePath,
   stickyWorkbenchSearch,
   tabIdOf,
-  toggleLeafMaximize,
   validateLayoutV3,
   validateWorkbenchSearch,
   workbenchPath,
@@ -921,16 +920,6 @@ test("resizeSplitChildren: 非相邻 / 不存在 → noop", () => {
     root: split("s", "horizontal", [leaf("g1", ["a"]), leaf("g2", ["b"]), leaf("g3", ["c"])]),
   });
   expect(resizeSplitChildren(l, "s", "g1", "g3", 0.5)).toBe(l);
-});
-
-// ── toggleLeafMaximize ────────────────────────────────────────────────────────
-
-test("toggleLeafMaximize: 设 / 再 toggle 还原", () => {
-  const l = v3({ root: leaf("g1", ["a"]) });
-  const r1 = toggleLeafMaximize(l, "g1");
-  expect(r1.maximized).toBe("g1");
-  expect(r1.activeGroupId).toBe("g1");
-  expect(toggleLeafMaximize(r1, "g1").maximized).toBeNull();
 });
 
 // ── 查询 ──────────────────────────────────────────────────────────────────────

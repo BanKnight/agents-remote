@@ -682,8 +682,6 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.rightPanelEmpty": "暂无内容",
   "workbench.inspectorTitle": "检视 · 只读",
   "workbench.inspectorAria": "检视面板分段",
-  "workbench.panelMaximize": "最大化面板",
-  "workbench.panelRestore": "恢复面板",
   "workbench.tabMinimize": "最小化",
   "workbench.moreActions": "更多操作",
   "workbench.switchInstance": "切换实例",

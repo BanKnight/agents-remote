@@ -688,8 +688,6 @@ export const en = {
   "workbench.rightPanelEmpty": "No content",
   "workbench.inspectorTitle": "Inspector · Read-only",
   "workbench.inspectorAria": "Inspector sections",
-  "workbench.panelMaximize": "Maximize panel",
-  "workbench.panelRestore": "Restore panel",
   "workbench.tabMinimize": "Minimize",
   "workbench.moreActions": "More actions",
   "workbench.switchInstance": "Switch instance",

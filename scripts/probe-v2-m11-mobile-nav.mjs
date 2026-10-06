@@ -8,7 +8,7 @@
 //   Part 2 project scope（/projects/proj1）：nav 不存在（会话现场 = 全屏 push 层，
 //     spec §3.3——旧实现此处恒显，v1.5 起摘除）。
 //   Part 3 聚焦态（自动聚焦 session）：nav 不存在 + composer 卡片底贴视口底
-//     （无 nav 让位，--composer-gap 只剩 safe-area 补偿）。
+//     （无 nav 固定 --composer-gap: 0.5rem，真机复验反馈⑥——旧公式负值贴底已修）。
 //   Part 4 L3 深度页（git/history）：nav 不存在（project scope 深层无 tabbar）。
 //   Part 5 设置页（/settings）：nav 存在（回归，设置属全局 tabbar 域）。
 //
@@ -177,7 +177,7 @@ await page.waitForTimeout(400);
 g = await navGeo(page);
 ok(g === null, "project scope 无 nav（会话现场全屏，v1.5 §3.3）");
 
-// ── Part 3: 聚焦态 composer 贴底（无 nav 让位，--composer-gap = 4px − env）─────
+// ── Part 3: 聚焦态 composer 贴底（无 nav 固定 --composer-gap: 0.5rem，反馈⑥）─────
 console.log("Part 3: 聚焦态（?session=agent_a）composer 贴底");
 await page.goto(`${ORIGIN}/projects/proj1?session=agent_a`);
 await page.waitForTimeout(1200);
@@ -196,13 +196,14 @@ const composerGeo = await page.evaluate(() => {
   };
 });
 if (composerGeo.cardBottom !== null) {
-  // pb 语义（frontend-notes §1 单层避让）：pb = env + gap = env + (navH + 4px − env)。会话现场
-  // 无 nav（navH=0）→ env 相消，pb 收敛为纯 4px 间隙；卡片底 = 视口底 − pb（外层 bottom-0，
-  // padding 在盒内）。
+  // pb 语义（frontend-notes §1 单层避让）：pb = env + gap。真机复验反馈⑥（2026-10-06）：
+  // 无 nav（navH=0）时旧公式 0.25rem − env 为负 → composer 几乎贴底（≈4px）；改为固定
+  // --composer-gap: 0.5rem → pb = env + 8px（Playwright 下 env=0 → 8px 纯间隙）。卡片底 =
+  // 视口底 − pb（外层 bottom-0，padding 在盒内）。
   const pbNum = Number.parseFloat(composerGeo.pb) || 0;
   ok(
-    Math.abs(pbNum - 4) <= 1,
-    `composer pb 收敛纯间隙 4px（实际 ${composerGeo.pb}，env 相消 + 无 nav 项）`,
+    Math.abs(pbNum - 8) <= 1,
+    `composer pb 收敛纯间隙 8px（实际 ${composerGeo.pb}，无 nav 固定 0.5rem gap）`,
   );
   ok(
     Math.abs(composerGeo.cardBottom + pbNum - composerGeo.vh) <= 2,

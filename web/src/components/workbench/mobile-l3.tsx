@@ -662,6 +662,7 @@ export function FilePreviewNavMenu({
   if (data?.type === "text") {
     items.push({
       label: t("files.menuCopyContent"),
+      icon: <ShellIcon className="size-[17px]" name="file" />,
       onSelect: () => {
         void navigator.clipboard.writeText(data.content);
       },
@@ -669,16 +670,22 @@ export function FilePreviewNavMenu({
   }
   items.push({
     label: t("files.menuCopyPath"),
+    icon: <ShellIcon className="size-[17px]" name="project" />,
     onSelect: () => {
       void navigator.clipboard.writeText(path);
     },
   });
   if (data?.type === "text" && onViewDiff) {
-    items.push({ label: t("git.menuViewDiff"), onSelect: onViewDiff });
+    items.push({
+      label: t("git.menuViewDiff"),
+      icon: <ShellIcon className="size-[17px]" name="git-nav" />,
+      onSelect: onViewDiff,
+    });
   }
   if (data?.type === "image") {
     items.push({
       label: t("files.menuSaveAs"),
+      icon: <ShellIcon className="size-[17px]" name="download" />,
       onSelect: () => {
         const a = document.createElement("a");
         a.href = data.dataUrl;
@@ -690,7 +697,11 @@ export function FilePreviewNavMenu({
   // 「在工作台打开」恒最末（spec §4.5 列举序 [复制路径, 另存为…, 在工作台打开]；text 推入态
   // 无前两者时序不变）。reviewer P2-1：原置于复制路径后，image 推入态顺序错。
   if (onOpenInWorkbench) {
-    items.push({ label: t("files.menuOpenInWorkbench"), onSelect: onOpenInWorkbench });
+    items.push({
+      label: t("files.menuOpenInWorkbench"),
+      icon: <ShellIcon className="size-[17px]" name="split" />,
+      onSelect: onOpenInWorkbench,
+    });
   }
   return (
     <ActionMenu

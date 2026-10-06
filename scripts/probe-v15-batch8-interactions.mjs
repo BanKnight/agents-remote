@@ -202,6 +202,9 @@ async function setupTerminalMocks(page) {
       // P-D1 浮层规格（§5.0 标准档）
       await page.getByRole("button", { name: "添加附件" }).click();
       await page.getByRole("menuitem", { name: "文件" }).waitFor({ timeout: 6000 });
+      // 弹出 spring 动画（150ms）进行中 getBoundingClientRect 采到中间帧（0.995 级缩放），
+      // 行高/图标尺寸断言会亚像素假 fail——等动画播完再取几何。
+      await page.waitForTimeout(250);
       const menu = await page.evaluate(() => {
         const item = [...document.querySelectorAll('[role="menuitem"]')].find((n) =>
           n.textContent?.includes("文件"),
