@@ -45,6 +45,8 @@ import type {
   ProjectFilePreviewResponse,
   ProjectFileSearchResponse,
   ProjectListResponse,
+  RenameProjectRequest,
+  RenameProjectResponse,
   UpdatePagesConfigRequest,
   UpdatePagesConfigResponse,
   RenameAgentSessionResponse,
@@ -225,10 +227,33 @@ export async function getProject(projectName: string): Promise<ProjectDetailResp
   return fetchJson(`/api/projects/${encodeURIComponent(projectName)}`, "api.projectDetailFailed");
 }
 
-export async function deleteProject(projectName: string): Promise<DeleteProjectResponse> {
-  return fetchJson(`/api/projects/${encodeURIComponent(projectName)}`, "api.projectDeleteFailed", {
-    method: "DELETE",
-  });
+export async function deleteProject(
+  projectName: string,
+  options: { deleteFiles?: boolean } = {},
+): Promise<DeleteProjectResponse> {
+  const query = options.deleteFiles === true ? "?deleteFiles=true" : "";
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}${query}`,
+    "api.projectDeleteFailed",
+    {
+      method: "DELETE",
+    },
+  );
+}
+
+export async function renameProject(
+  projectName: string,
+  name: string,
+): Promise<RenameProjectResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/rename`,
+    "api.projectRenameFailed",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name } satisfies RenameProjectRequest),
+    },
+  );
 }
 
 export async function listProjectFiles(

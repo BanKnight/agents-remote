@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -12,9 +12,17 @@ import {
   workbenchCreateMenuOpenAtom,
   workbenchLastProjectAtom,
 } from "../../routes/workbench-model";
+import { RenameDialog } from "../files/rename-dialog";
 import { ShellIcon } from "../shell/icons";
+import {
+  ProjectDeleteDialog,
+  ProjectRenameImpactDialog,
+  ProjectRowMenu,
+  PROJECT_ROW_TRIGGER_RING,
+  useProjectRowFlow,
+} from "../shell/project-row-actions";
 import { useCreateProjectDialog } from "../shell/project-setup";
-import { ActionMenu } from "../ui/action-menu";
+import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 import { ApprovalPopover } from "./approval-popover";
 import { ChatOverview } from "./chat-overview";
 import {
@@ -36,7 +44,8 @@ import { SessionModeTabs } from "./mobile-workbench";
  *
  * 1. **项目组**：ghead「项目」+ plus（新建项目）+ 项目 srow2 行（folder 图标 + 名 +
  *    `live ● N` 运行数 / `live off —`；当前项目行 selrow 600）。点行 = 切项目（05 语义：
- *    原型无 [项目]/[工作台] 一级导航项，项目行即导航）。
+ *    原型无 [项目]/[工作台] 一级导航项，项目行即导航）；右键 / 触屏长按 = 项目行菜单
+ *    （v1.5 §3.2 批6：打开 / 重命名… / 删除…，ProjectRowMenu + 重命名/删除流转）。
  * 2. `dsep` → **seg4 mini**（项目/全部，仅 project scope；global scope 恒 05g「全部」视图，
  *    ghead 文案「会话」——05g 原文）。视图偏好不持久化（§6.10 批次 b 记档口径）。
  * 3. **实例区**：
@@ -102,6 +111,38 @@ export function WorkbenchSide() {
     () => buildProjectRows(candidates, projectNames),
     [projectNames, candidates],
   );
+
+  // ── 项目行菜单（v1.5 §3.2 批6）：右键 / 触屏长按 → ProjectRowMenu → 行操作流转单源
+  // hook（重命名影响提醒→预填输入 / 删除 getProject 补路径→确认，编排全在共享 hook）。
+  // scope 兜底（review P2）：重命名/删除**当前打开**的项目后 scope.key 悬空会让中栏查询
+  // 全 404——成功回调里命中当前 scope 时，rename 导航新名 / delete 退回 global。
+  const flow = useProjectRowFlow({
+    onDeleted: (name) => {
+      if (isProject && scope.key === name) {
+        void navigate(
+          { kind: "global" },
+          undefined,
+          stickyWorkbenchSearch({ rightTab, tab, leftMode, mode }),
+        );
+      }
+    },
+    onRenamed: (from, to) => {
+      if (isProject && scope.key === from) {
+        void navigate(
+          { kind: "project", key: to },
+          undefined,
+          stickyWorkbenchSearch({ rightTab, tab, leftMode, mode }),
+        );
+      }
+    },
+  });
+  // 行操作失败呈现（error 卡；下次 start 时 hook 内 reset）。
+  const rowActionError = flow.renameMutation.error ?? flow.deleteMutation.error;
+  // 右键/长按共用一份 ctx（per-row key 设计）；bind 内部只对 touch pointer 生效（iPad
+  // 横屏触屏长按走桌面容器），鼠标路径无感。菜单锚定 = 各行内 pointFor(行名)（ActionMenu
+  // 行级 contextMenuPoint 同法）。
+  const rowCtx = useRowContextMenu();
+  const longPress = useLongPressActions(rowCtx.openAt);
 
   // 切项目：sticky search 全维透传（GroupedProjectsList enterProject 同口径——navigate 整体
   // 替换 search，漏带即丢状态）。
@@ -304,6 +345,34 @@ export function WorkbenchSide() {
       {/* useCreateSession 契约「promptHolder 由调用方渲染」（instance-area :1585）：实例组头
         plus 菜单的建会话 prompt 挂在此处——批次 1 漏挂导致菜单选类型后 prompt 永不出现。 */}
       {create.promptHolder}
+      {/* ── 重命名/删除流转对话框（v1.5 §3.2 批6；菜单本体在各项目行内 pointFor 锚定） ── */}
+      <RenameDialog
+        initialName={flow.renameRow?.name ?? ""}
+        onOpenChange={(open) => {
+          if (!open) flow.closeRenameDialog();
+        }}
+        onSubmit={flow.submitRename}
+        open={flow.renameDialogOpen}
+        siblings={projectNames.filter((name) => name !== flow.renameRow?.name)}
+      />
+      <ProjectRenameImpactDialog
+        instanceCount={flow.renameRow?.instances.length ?? 0}
+        onContinue={() => flow.closeImpact(true)}
+        onOpenChange={(open) => {
+          if (!open) flow.closeImpact(false);
+        }}
+        open={flow.renameImpactOpen}
+        projectName={flow.renameRow?.name ?? ""}
+        runningCount={flow.renameRow?.running ?? 0}
+      />
+      <ProjectDeleteDialog
+        instanceCount={flow.deleteRow?.instances.length ?? 0}
+        onConfirm={flow.handleDeleteDialog}
+        open={flow.deleteRow !== null}
+        projectName={flow.deleteRow?.name ?? ""}
+        projectPath={flow.deleteRow?.path ?? ""}
+        runningCount={flow.deleteRow?.running ?? 0}
+      />
       {/* ── 项目组 ── */}
       {/* 首行 ghead mt-0（覆写 .ghead 单源 margin-top 8，utilities > components 层序）：
           与 .side padding-top 6 配合（组头热区收 20px 后行高 20）= 首行中心 16 = 中栏
@@ -325,27 +394,50 @@ export function WorkbenchSide() {
         {projectRows.map((row) => {
           const selected = isProject && scope.key === row.name;
           return (
-            <button
-              aria-current={selected ? "page" : undefined}
-              className={`srow2 w-full cursor-pointer text-left ${selected ? "selrow font-semibold" : ""}`}
-              key={row.name}
-              onClick={() => enterProject(row.name)}
-              title={row.name}
-              type="button"
-            >
-              <span className="dicon">
-                <ShellIcon className="size-full" name="project" />
-              </span>
-              <span className="min-w-0 truncate">{row.name}</span>
-              {row.running > 0 ? (
-                <span className="live">● {row.running}</span>
-              ) : (
-                <span className="live off">—</span>
-              )}
-            </button>
+            <Fragment key={row.name}>
+              <button
+                aria-current={selected ? "page" : undefined}
+                className={`srow2 w-full cursor-pointer text-left ${selected ? "selrow font-semibold" : ""} ${
+                  rowCtx.pointFor(row.name) ? PROJECT_ROW_TRIGGER_RING : ""
+                }`}
+                onClick={() => {
+                  if (longPress.guardClick()) return;
+                  enterProject(row.name);
+                }}
+                onContextMenu={(e) => rowCtx.openAt(row.name, e)}
+                title={row.name}
+                type="button"
+                {...longPress.bind(row.name)}
+              >
+                <span className="dicon">
+                  <ShellIcon className="size-full" name="project" />
+                </span>
+                <span className="min-w-0 truncate">{row.name}</span>
+                {row.running > 0 ? (
+                  <span className="live">● {row.running}</span>
+                ) : (
+                  <span className="live off">—</span>
+                )}
+              </button>
+              {/* 项目行菜单 open 期间触发行 dashed ring 高亮（原型 .ring，两端共用常量）；
+                  回调走 flow（重命名/删除流转 + scope 兜底导航）。 */}
+              <ProjectRowMenu
+                anchor={rowCtx.pointFor(row.name)}
+                onClose={rowCtx.close}
+                onDelete={() => flow.startDelete(row)}
+                onOpen={() => enterProject(row.name)}
+                onRename={() => flow.startRename(row)}
+              />
+            </Fragment>
           );
         })}
       </div>
+      {/* 行操作失败呈现（侧栏窄幅紧凑版；下次 start 时 hook 内 reset）。 */}
+      {rowActionError ? (
+        <p className="mx-3 mt-2 rounded-xl border border-error/30 bg-error/10 px-3 py-2 text-xs text-error">
+          {rowActionError.message}
+        </p>
+      ) : null}
       <div className="dsep shrink-0" />
       {/* ── seg4 mini（高亮 = projectSegOn 视图态派生：项目实例分组/历史 on 或 05g 全部 on；
           global 会话页 = 全部 on、项目段回上次项目——

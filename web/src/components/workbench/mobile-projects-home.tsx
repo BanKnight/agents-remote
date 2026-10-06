@@ -3,9 +3,18 @@ import { useAtom } from "jotai";
 import { useEffect, useMemo, useState } from "react";
 
 import { useT } from "../../i18n";
+import { RenameDialog } from "../files/rename-dialog";
+import {
+  ProjectDeleteDialog,
+  ProjectRenameImpactDialog,
+  ProjectRowMenu,
+  PROJECT_ROW_TRIGGER_RING,
+  useProjectRowFlow,
+} from "../shell/project-row-actions";
 import { ShellIcon } from "../shell/icons";
 import { LargeTitleRow, ListRowSkeleton, statusToV2DotClass } from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
+import { useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 import { relativeTime } from "./history-list";
 import { buildProjectRows, useGlobalInstanceCandidates } from "./instance-area";
 import { usePinnedSessions } from "../../hooks/pinned-sessions";
@@ -31,7 +40,9 @@ type ActivityRow = {
  * 结构（原型自上而下）：Large title 行（`项目` 30px/800 + ➕ 新建 + ⚙ 设置——D21：设置自底
  * nav 移到项目页 ⚙ push）→ 搜索框（客户端过滤项目名与实例名）→ 全局活动卡（审批行 [M5 接
  * D8 服务端聚合，pending=0 隐藏] + 活动行 [D14：副行用现有 subtitle] + see-all 展开）→
- * 项目行列表（folder 徽章 + 实例数/最近活动副行 + ● N 进行中 tchip）。
+ * 项目行列表（folder 徽章 + 实例数/最近活动副行 + ● N 进行中 tchip；**长按/右键 → 行操作
+ * 菜单** project-row-menu：打开 / 重命名… / 删除…，spec §3.2 三段流转——重命名 running>0 先
+ * 影响提醒再预填输入、删除 = getProject 补磁盘路径后贴底 sheet 二次确认，随勾选升级销毁）。
  *
  * v2 起本页无 Agent/Chat mode tabs（v1 一级「会话」页语义消亡）：chat 归 `default` 项目实例
  * 体系（D6），`/chat` 深度链接保留。数据与全局总览同源（`["overview"]` query，React Query
@@ -112,6 +123,20 @@ export function MobileProjectsHome() {
     () => buildProjectRows(candidates, projectNames, query),
     [candidates, projectNames, query],
   );
+
+  // ── §3.2 项目行操作（v1.5）：长按/右键 → ProjectRowMenu（锚定浮卡单源）→ 行操作流转
+  // 单源 hook（重命名影响提醒→预填输入 / 删除 getProject 补路径→确认，编排全在共享 hook）。
+  // 行操作菜单 state（per-row key 设计见 useRowContextMenu JSDoc）；longPress 只对 pointerType
+  // touch 计时（500ms/10px slop），触发后的合成 click 由行 onClick 首行 guardClick 抑制。
+  const rowCtx = useRowContextMenu();
+  const longPress = useLongPressActions(rowCtx.openAt);
+  const flow = useProjectRowFlow();
+  // 行操作失败呈现（error 卡；下次 start 时 hook 内 reset）。
+  const rowActionError = flow.renameMutation.error ?? flow.deleteMutation.error;
+
+  const openProject = (name: string) => {
+    void navigate({ to: "/projects/$key", params: { key: name } });
+  };
 
   const focusInstance = (candidate: GlobalInstanceCandidate) => {
     // 与旧 MobileGlobalOverview 同语义：进项目 scope 工作台并聚焦该实例；重置 Output
@@ -279,17 +304,29 @@ export function MobileProjectsHome() {
                 {t("home.projectsTitle", { count: projectRows.length })}
               </span>
             </div>
+            {/* 行操作失败呈现（onSettled invalidate 后仍以此卡表达失败态；project-setup 同款）。 */}
+            {rowActionError ? (
+              <p className="mx-4 mb-3 rounded-2xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
+                {rowActionError.message}
+              </p>
+            ) : null}
             <div className="mx-4 rounded-xl border border-sep bg-elevated px-3 py-0.5">
               {projectRows.map((row, index) => (
                 <div key={row.name}>
                   {index > 0 ? <div className="border-t border-sep-row" /> : null}
                   <button
                     // 按压统一（移动端动效批）：行档 0.98（§19 scale 独立属性，transition 显式列出）。
-                    className="flex w-full cursor-pointer items-center gap-2.5 py-2.5 text-left transition-[scale,background-color] duration-[var(--duration-fast)] active:scale-[0.98]"
-                    onClick={() =>
-                      void navigate({ to: "/projects/$key", params: { key: row.name } })
-                    }
+                    className={`flex w-full cursor-pointer items-center gap-2.5 py-2.5 text-left transition-[scale,background-color] duration-[var(--duration-fast)] active:scale-[0.98] ${
+                      rowCtx.pointFor(row.name) ? PROJECT_ROW_TRIGGER_RING : ""
+                    }`}
+                    onClick={() => {
+                      // 长按后的合成 click 抑制（useLongPressActions 契约：onClick 首行 guardClick）。
+                      if (longPress.guardClick()) return;
+                      openProject(row.name);
+                    }}
+                    onContextMenu={(e) => rowCtx.openAt(row.name, e)}
                     type="button"
+                    {...longPress.bind(row.name)}
                   >
                     <span
                       className={`flex h-[30px] w-[30px] flex-none items-center justify-center rounded-sm ${
@@ -330,6 +367,15 @@ export function MobileProjectsHome() {
                       </span>
                     )}
                   </button>
+                  {/* §3.2 行操作菜单（锚定浮卡单源，长按/右键同构桌面）：anchor 受控于 rowCtx，
+                      点外部收起回调 rowCtx.close；「打开」= 行点击等效导航。 */}
+                  <ProjectRowMenu
+                    anchor={rowCtx.pointFor(row.name)}
+                    onClose={rowCtx.close}
+                    onDelete={() => flow.startDelete(row)}
+                    onOpen={() => openProject(row.name)}
+                    onRename={() => flow.startRename(row)}
+                  />
                 </div>
               ))}
             </div>
@@ -337,6 +383,35 @@ export function MobileProjectsHome() {
         ) : null}
       </div>
       {createProjectDialog}
+      {/* §3.2 重命名流转：running>0 先影响提醒（关闭全部实例 · 历史保留归属更新），「继续」
+          → 03w2 预填输入（RenameDialog 单源；siblings = 其余项目名做重名校验）。 */}
+      <RenameDialog
+        initialName={flow.renameRow?.name ?? ""}
+        onOpenChange={(open) => {
+          if (!open) flow.closeRenameDialog();
+        }}
+        onSubmit={flow.submitRename}
+        open={flow.renameDialogOpen}
+        siblings={projectNames.filter((name) => name !== flow.renameRow?.name)}
+      />
+      <ProjectRenameImpactDialog
+        instanceCount={flow.renameRow?.instances.length ?? 0}
+        onContinue={() => flow.closeImpact(true)}
+        onOpenChange={(open) => {
+          if (!open) flow.closeImpact(false);
+        }}
+        open={flow.renameImpactOpen}
+        projectName={flow.renameRow?.name ?? ""}
+        runningCount={flow.renameRow?.running ?? 0}
+      />
+      <ProjectDeleteDialog
+        instanceCount={flow.deleteRow?.instances.length ?? 0}
+        onConfirm={flow.handleDeleteDialog}
+        open={flow.deleteRow !== null}
+        projectName={flow.deleteRow?.name ?? ""}
+        projectPath={flow.deleteRow?.path ?? ""}
+        runningCount={flow.deleteRow?.running ?? 0}
+      />
       <MobileApprovalSheet
         approvals={approvals}
         onOpenChange={(next) => {

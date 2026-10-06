@@ -1,12 +1,14 @@
 import { expect, test, beforeEach } from "bun:test";
-import { mkdir, writeFile, rm, utimes } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import {
   clearHistoryCache,
   deleteAgentHistoryEntry,
+  deleteAgentHistoryProject,
   inspectHistoryCacheForTesting,
   listAgentHistory,
+  migrateAgentHistoryProject,
   paginateAgentHistory,
   projectToSlug,
   HISTORY_PAGE_SIZE,
@@ -795,4 +797,86 @@ test("deleteAgentHistoryEntry removes omp jsonl by suffix match", async () => {
   const left = (await import("node:fs/promises")).readdir;
   expect((await left(dir)).sort()).toEqual([`20261006T120000Z_${UUID_OTHER}.jsonl`]);
   await rm(dir, { recursive: true, force: true });
+});
+
+// ── 项目级历史目录操作（v1.5 §3.2 重命名迁移/删除清除）─────────────────────────
+const MIGRATE_PROJ_A = () => join(homedir(), "ar-proj-migrate-a");
+const MIGRATE_PROJ_B = () => join(homedir(), "ar-proj-migrate-b");
+const claudeDirOf = (p: string) => join(homedir(), ".claude", "projects", projectToSlug(p));
+// home 内一层路径的 omp slug = "-" + dirname（/[/\\:]/→"-"）
+const ompDirOf = (p: string) => join(homedir(), ".omp", "agent", "sessions", `-${basename(p)}`);
+
+test("deleteAgentHistoryProject removes claude+omp history dirs", async () => {
+  const a = MIGRATE_PROJ_A();
+  const claudeDir = claudeDirOf(a);
+  const ompDir = ompDirOf(a);
+  await rm(claudeDir, { recursive: true, force: true });
+  await rm(ompDir, { recursive: true, force: true });
+  await mkdir(claudeDir, { recursive: true });
+  await mkdir(ompDir, { recursive: true });
+  await writeFile(join(claudeDir, `${UUID_OK}.jsonl`), "{}");
+  await writeFile(join(ompDir, `20261006T120000Z_${UUID_OK}.jsonl`), "{}");
+
+  await expect(deleteAgentHistoryProject(a)).resolves.toBeUndefined();
+  await expect(stat(claudeDir)).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(stat(ompDir)).rejects.toMatchObject({ code: "ENOENT" });
+  // 清理（测试自清理纪律）。
+  await rm(claudeDir, { recursive: true, force: true });
+  await rm(ompDir, { recursive: true, force: true });
+});
+
+test("migrateAgentHistoryProject renames both slug dirs to the new slug", async () => {
+  const a = MIGRATE_PROJ_A();
+  const b = MIGRATE_PROJ_B();
+  const claudeA = claudeDirOf(a);
+  const claudeB = claudeDirOf(b);
+  const ompA = ompDirOf(a);
+  const ompB = ompDirOf(b);
+  for (const d of [claudeA, claudeB, ompA, ompB]) {
+    await rm(d, { recursive: true, force: true });
+  }
+  await mkdir(claudeA, { recursive: true });
+  await mkdir(ompA, { recursive: true });
+  await writeFile(join(claudeA, "old.jsonl"), "{}");
+  await writeFile(join(ompA, "old.jsonl"), "{}");
+
+  await expect(migrateAgentHistoryProject(a, b)).resolves.toBeUndefined();
+  await expect(stat(claudeB)).resolves.toBeTruthy();
+  await expect(stat(ompB)).resolves.toBeTruthy();
+  expect(await readdir(claudeB)).toEqual(["old.jsonl"]);
+  expect(await readdir(ompB)).toEqual(["old.jsonl"]);
+  await expect(stat(claudeA)).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(stat(ompA)).rejects.toMatchObject({ code: "ENOENT" });
+  for (const d of [claudeA, claudeB, ompA, ompB]) {
+    await rm(d, { recursive: true, force: true });
+  }
+});
+
+test("migrateAgentHistoryProject merges into existing target without losing files", async () => {
+  const a = MIGRATE_PROJ_A();
+  const b = MIGRATE_PROJ_B();
+  const claudeA = claudeDirOf(a);
+  const claudeB = claudeDirOf(b);
+  for (const d of [claudeA, claudeB]) {
+    await rm(d, { recursive: true, force: true });
+  }
+  await mkdir(claudeA, { recursive: true });
+  await mkdir(claudeB, { recursive: true });
+  await writeFile(join(claudeA, "src-only.jsonl"), "{}");
+  await writeFile(join(claudeB, "dst-keep.jsonl"), "{}");
+  // 同名冲突文件：目标侧保留、源侧跳过（不丢任何一侧）。
+  await writeFile(join(claudeA, "both.jsonl"), "from-src");
+  await writeFile(join(claudeB, "both.jsonl"), "from-dst");
+
+  await expect(migrateAgentHistoryProject(a, b)).resolves.toBeUndefined();
+  expect((await readdir(claudeB)).sort()).toEqual([
+    "both.jsonl",
+    "dst-keep.jsonl",
+    "src-only.jsonl",
+  ]);
+  expect(await readFile(join(claudeB, "both.jsonl"), "utf8")).toBe("from-dst");
+  await expect(stat(claudeA)).rejects.toMatchObject({ code: "ENOENT" });
+  for (const d of [claudeA, claudeB]) {
+    await rm(d, { recursive: true, force: true });
+  }
 });

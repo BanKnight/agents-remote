@@ -10,6 +10,7 @@ import type {
   PagesConfigResponse,
   ProjectDetailResponse,
   ProjectListResponse,
+  RenameProjectResponse,
   UpdatePagesConfigResponse,
   WikiIndexResponse,
   WikiSearchResponse,
@@ -37,6 +38,7 @@ import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
 import { ProjectGitWriteError, ProjectGitWriteService } from "./project-git-write";
 import { ProjectWikiError, ProjectWikiService } from "./project-wiki";
 import { ProjectService, ProjectServiceError } from "./projects";
+import type { ProjectStateManager } from "./projects";
 import { listAgentHistory, paginateAgentHistory, parseHistoryFilter } from "./agent-history";
 import { listOmpHistory } from "./omp-history";
 import { resolveProjectPath } from "./project-paths";
@@ -689,6 +691,22 @@ const handleProjects = async (
       return Response.json(response);
     }
 
+    const projectRenameMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/rename$/);
+    if (projectRenameMatch && request.method === "POST") {
+      const projectName = decodeProjectName(projectRenameMatch[1]);
+      if (!projectName) {
+        return jsonError("PROJECT_NAME_INVALID", "Project name is invalid", 400);
+      }
+      const body = (await readCreateProjectRequest(request)) as { name?: unknown };
+      if (typeof body?.name !== "string" || body.name.trim().length === 0) {
+        return jsonError("PROJECT_NAME_INVALID", "Project name is required", 400);
+      }
+      const response: RenameProjectResponse = {
+        project: await projectService.renameProject(projectName, body.name),
+      };
+      return Response.json(response);
+    }
+
     const projectGitDiffMatch = matchProjectGitDiffPath(url.pathname);
 
     if (projectGitDiffMatch && request.method === "GET" && projectGitDiffService) {
@@ -988,7 +1006,9 @@ const handleProjects = async (
         return jsonError("PROJECT_NAME_INVALID", "Project name is invalid", 400);
       }
 
-      const response: DeleteProjectResponse = await projectService.deleteProject(projectName);
+      const response: DeleteProjectResponse = await projectService.deleteProject(projectName, {
+        deleteFiles: url.searchParams.get("deleteFiles") === "true",
+      });
       return Response.json(response);
     }
 
@@ -1659,7 +1679,34 @@ export const startApi = async () => {
   // chat 会话空闲回收（设计 workbench-views §3.1.1）：空会话 3min 后清出列表 + idle 运行时
   // 10min 后 dispose（历史保留，重进 resume）。startApi 内启动——测试走 createFetchHandler 不经过。
   startChatIdleRecycler({ piRuntime, registry: chatSessionRegistry, chatSessionsDir });
-  const projectService = new ProjectService(config.projectsRoot, sessionRegistry);
+  // 项目状态窄接口（v1.5 §3.2 删除/重命名语义）：state.yaml projects 模块（detached 名单）+
+  // overview 模块（置顶清理）。attach 在 createProject 内部调用，这里只组接口。
+  const projectStateManager: ProjectStateManager = {
+    listDetached: async () => (await stateStore.readModule("projects")).detached,
+    detach: async (name) => {
+      await stateStore.updateModule("projects", (m) => ({
+        detached: m.detached.includes(name) ? m.detached : [...m.detached, name],
+      }));
+    },
+    attach: async (name) => {
+      await stateStore.updateModule("projects", (m) => ({
+        detached: m.detached.filter((n) => n !== name),
+      }));
+    },
+    removePinnedSessions: async (sessionIds) => {
+      if (sessionIds.length === 0) return;
+      const ids = new Set(sessionIds);
+      await stateStore.updateModule("overview", (m) => {
+        const pinnedSessions = m.pinnedSessions.filter((id) => !ids.has(id));
+        return pinnedSessions.length === m.pinnedSessions.length ? m : { pinnedSessions };
+      });
+    },
+  };
+  const projectService = new ProjectService(
+    config.projectsRoot,
+    sessionRegistry,
+    projectStateManager,
+  );
   const projectFilesService = new ProjectFilesService(config.projectsRoot);
   const projectPagesService = new ProjectPagesService(config.projectsRoot);
   const projectGitDiffService = new ProjectGitDiffService(config.projectsRoot);

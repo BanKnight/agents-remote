@@ -355,9 +355,24 @@ export type ProjectDetailResponse = {
   project: Project;
 };
 
+/**
+ * 删除项目（v1.5 §3.2）：语义 = **移出工作台管理**（默认，磁盘文件保留、可重新 adopt）或
+ * 彻底销毁（`deleteFiles=true`，用户显式勾选）。两条路径都：关闭全部实例（含运行中）、
+ * 清除该项目的会话历史、移出全局置顶记录。`filesDeleted` 报告磁盘文件是否真被删除。
+ */
 export type DeleteProjectResponse = {
   deleted: true;
   projectName: string;
+  filesDeleted: boolean;
+};
+
+/** v1.5 §3.2 重命名项目（关闭全部实例 + 磁盘目录迁移 + 会话历史归属跟迁）。 */
+export type RenameProjectRequest = {
+  name: string;
+};
+
+export type RenameProjectResponse = {
+  project: Project;
 };
 
 /**
@@ -917,6 +932,12 @@ export type SettingsState = {
 // 而非在路由里悄悄塞字段。StateStore 只暴露 readModule/updateModule，物理上无法往顶层塞字段。
 export type AppModules = {
   overview: { pinnedSessions: string[] };
+  /**
+   * 项目模块（v1.5 §3.2 删除语义）。`detached` = 已移出工作台管理、但磁盘目录仍保留的项目名。
+   * 项目列表源自 PROJECTS_ROOT 的 readdir，目录在则必然可见——「移出（保留文件）」必须有
+   * 显式记录才能表达；重新纳管（POST /api/projects 采用语义）时按名移出本表即闭环。
+   */
+  projects: { detached: string[] };
   // 未来新增模块在此声明（sessions/files/workbench...），需 review，是可见的类型改动
 };
 

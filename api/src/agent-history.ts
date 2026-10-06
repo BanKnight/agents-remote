@@ -1,9 +1,10 @@
 import { open as openFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readdir, stat, unlink } from "node:fs/promises";
+import { link, readdir, rename, rm, stat, unlink } from "node:fs/promises";
 import { open, read, close } from "node:fs";
 import type { AgentHistoryEntry, AgentHistoryRange } from "@agents-remote/shared";
+import { ompSessionSlug } from "./omp-history";
 
 /**
  * 单文件扫描的行数安全上限。正常路径在首条 user 行就 early-exit（前 ~5-20 行）；此上限仅
@@ -713,4 +714,82 @@ export async function deleteAgentHistoryEntry(
     await unlink(join(ompDir, f));
   }
   return matches.length > 0;
+}
+
+// ── 项目级历史目录操作（v1.5 §3.2 项目重命名/删除）──────────────────────────────
+//
+// claude = ~/.claude/projects/<slug>/（slug = projectToSlug，目录整体即该项目全部历史）；
+// omp = ~/.omp/agent/sessions/<ompSlug>/（ompSlug 相对 home 派生，home 外 = null 无目录）。
+
+function claudeHistoryDir(projectPath: string): string {
+  return join(homedir(), ".claude", "projects", projectToSlug(projectPath));
+}
+
+function ompHistoryDir(projectPath: string): string | null {
+  const slug = ompSessionSlug(projectPath);
+  return slug === null ? null : join(homedir(), ".omp", "agent", "sessions", slug);
+}
+
+const isEnoent = (error: unknown) => (error as { code?: string } | null)?.code === "ENOENT";
+
+/**
+ * 清除一个项目的全部会话历史（v1.5 §3.2 删除项目）：rm claude/omp 两个 slug 目录，
+ * 不存在即幂等成功；claude 侧同步释放 entryCache（下次列表不再命中已删文件的缓存）。
+ */
+export async function deleteAgentHistoryProject(projectPath: string): Promise<void> {
+  const dirs = [claudeHistoryDir(projectPath)];
+  const ompDir = ompHistoryDir(projectPath);
+  if (ompDir) dirs.push(ompDir);
+  await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true })));
+  entryCache.delete(projectToSlug(projectPath));
+}
+
+/**
+ * 项目重命名后会话历史归属跟迁（v1.5 §3.2）：slug 由 projectPath 派生，磁盘历史目录 mv 到
+ * 新 slug 下——「会话历史保留，项目归属更新为新名称」的落点。
+ *
+ * - 源目录不存在 = 该项目无历史，幂等成功。
+ * - slug 相同（如 `a-b` vs `a_b` 的 claude slug 碰撞，已知存量缺陷）跳过：目录本是同一个。
+ * - 目标已存在（rename 报 ENOTEMPTY 等）：逐文件合并，同名保留目标跳过源（文件名含
+ *   sessionId，理论上仅异常残余才撞名，不丢任何一侧），最后删除已清空的源目录。
+ */
+export async function migrateAgentHistoryProject(
+  oldProjectPath: string,
+  newProjectPath: string,
+): Promise<void> {
+  const moves: Array<[string, string]> = [];
+  const oldClaude = claudeHistoryDir(oldProjectPath);
+  const newClaude = claudeHistoryDir(newProjectPath);
+  if (oldClaude !== newClaude) moves.push([oldClaude, newClaude]);
+  const oldOmp = ompHistoryDir(oldProjectPath);
+  const newOmp = ompHistoryDir(newProjectPath);
+  if (oldOmp && newOmp && oldOmp !== newOmp) moves.push([oldOmp, newOmp]);
+  await Promise.all(moves.map(([from, to]) => migrateHistoryDir(from, to)));
+  // 旧 slug 缓存失效（entryCache 以 claude slug 为 key；omp 侧无缓存）。
+  entryCache.delete(projectToSlug(oldProjectPath));
+}
+
+async function migrateHistoryDir(from: string, to: string): Promise<void> {
+  try {
+    await rename(from, to);
+    return;
+  } catch (error) {
+    if (isEnoent(error)) return;
+    // 目录 rename 撞上已存在的目标（ENOTEMPTY 等）→ 走下方逐文件合并；其余错误合并路径会再抛。
+  }
+  const files = await readdir(from);
+  await Promise.all(
+    files.map(async (f) => {
+      try {
+        await link(join(from, f), join(to, f));
+      } catch (error) {
+        // 目标已有同名文件：保留目标跳过源（防覆盖丢文件）。
+        if ((error as { code?: string } | null)?.code === "EEXIST") return;
+        if (isEnoent(error)) return;
+        throw error;
+      }
+      await unlink(join(from, f));
+    }),
+  );
+  await rm(from, { recursive: true, force: true });
 }

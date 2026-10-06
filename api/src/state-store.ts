@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -22,6 +23,8 @@ type RawState = { schemaVersion: number } & Partial<AppModules>;
 // 是可见、类型检查的改动，而非在路由里悄悄塞。
 export class StateStore {
   private readonly path: string;
+  /** updateModule 串行化的 promise 链尾（见 updateModule 注释）。 */
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(options: StateStoreOptions = {}) {
     this.path = options.path ?? defaultStatePath();
@@ -37,15 +40,27 @@ export class StateStore {
   }
 
   // 模块化 read-modify-write：mutator 只拿当前模块，写回也只 merge 该模块，其余模块原样保留。
+  // 整体入进程内互斥队列（security review P2）：读-改-写无锁时，跨模块并发写各以陈旧快照
+  // 整文件写回 → 后写者静默回滚先写者的模块（如 detach 丢失 = 已删项目复活）。单进程
+  // 控制面，promise 链串行足够。
   async updateModule<K extends keyof AppModules>(
     module: K,
     mutator: (current: AppModules[K]) => AppModules[K],
   ): Promise<AppModules[K]> {
-    const raw = await this.readRaw();
-    const current = normalizeModule(raw, module);
-    const next = mutator(current);
-    await this.writeRaw({ ...raw, [module]: next });
-    return next;
+    const run = async () => {
+      const raw = await this.readRaw();
+      const current = normalizeModule(raw, module);
+      const next = mutator(current);
+      await this.writeRaw({ ...raw, [module]: next });
+      return next;
+    };
+    const result = this.writeQueue.then(run, run);
+    // 队列自身吞掉结果/异常（只作串行信号），错误由本次调用者经 result 感知。
+    this.writeQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
   // 读整文件（含 schemaVersion）。文件缺失/非法 → 默认空模块表。
@@ -71,7 +86,9 @@ export class StateStore {
 
   private async writeRaw(state: RawState): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    const tempPath = `${this.path}.${process.pid}.tmp`;
+    // 临时名加随机段（security review P2）：仅 pid 时两个并发 writeRaw 打开同一文件，
+    // 后 open 的 O_TRUNC 截断前者的写入 → 终文件拼成损坏 YAML。
+    const tempPath = `${this.path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
     const payload = stringifyYaml({ ...state, schemaVersion: SCHEMA_VERSION });
     await writeFile(tempPath, payload, { mode: 0o600 });
     await chmod(tempPath, 0o600);
@@ -84,6 +101,11 @@ function normalizeModule<K extends keyof AppModules>(state: RawState, module: K)
   if (module === "overview") {
     return {
       pinnedSessions: normalizePinnedSessions(state.overview?.pinnedSessions),
+    } as AppModules[K];
+  }
+  if (module === "projects") {
+    return {
+      detached: normalizeDetachedProjects(state.projects?.detached),
     } as AppModules[K];
   }
   // exhaustive：shared AppModules 新增键后，TS 会在此报类型错误，提示补 normalize 分支。
@@ -105,6 +127,12 @@ export function normalizePinnedSessions(input: unknown): string[] {
     out.push(item);
   }
   return out;
+}
+
+// 已移出管理的项目名列表（v1.5 §3.2 删除语义）宽松规整：非空 string 去重，同 pinnedSessions
+// 同构（残留名字在磁盘上无对应目录 = 永不匹配，无需后端清理）。委托复用同款实现。
+function normalizeDetachedProjects(input: unknown): string[] {
+  return normalizePinnedSessions(input);
 }
 
 const isNotFoundError = (error: unknown) =>
