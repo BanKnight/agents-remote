@@ -78,6 +78,7 @@ import {
   useInstanceInfoActions,
   useProjectInstances,
   useScopeInstanceOrder,
+  useGlobalInstanceCandidates,
 } from "./instance-area";
 import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 import { MobileProjectHeader } from "./mobile-project-header";
@@ -779,6 +780,10 @@ function MobileProjectWorkbench({
   // layout 读写（单一 V4 atom，与 WorkbenchRoute 同源）：file/git 预览 ✕ 用 removeTabFromLeaf。
   const [layout, updateLayout] = useWorkbenchLayout();
   const { instances, isLoading } = useProjectInstances(scope.key);
+  // 真机复验反馈③：▾ 菜单跨项目——全局活跃实例候选（/api/overview 单管道，与桌面共享
+  // query 缓存零额外网络）。本项目行仍由 instances 承载（排序语义既有），candidates 只消费
+  // 其它项目部分（InstanceSwitchMenu 内 filter+分组）。
+  const { candidates: globalCandidates } = useGlobalInstanceCandidates({ kind: "global" });
 
   // tab 带（中栏投影）：projectTabStrip 过滤当前项目 tab（skill 全局包含）。v2 起 pills 只装
   // 实例（+skill 兼职 pill）；file/git tab 由工具 ticon 承载，skillTabs 派生给 header pills。
@@ -840,10 +845,16 @@ function MobileProjectWorkbench({
   }, [focusId, autoFocusId]);
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
 
-  const focusInstance = (sessionId: string) => {
+  const focusInstance = (targetProject: string, sessionId: string) => {
     // 点 pill 进 focus → 重置 Output tab（同 MobileProjectsHome.focusInstance，避免继承
     // Files/Git 记忆落到项目文件）。
     setFocusTab("output");
+    // 真机复验反馈③：▾ 菜单跨项目切换——直接导航目标项目 scope 聚焦目标实例（一次 push，
+    // search = {} 清 tab 维度；目标页 render 承接工具互斥语义）。本项目分支保持既有逻辑。
+    if (targetProject !== scope.key) {
+      void navigateWorkbench({ kind: "project", key: targetProject }, sessionId, {});
+      return;
+    }
     if (activeTool && sessionId === effectiveFocusId) {
       // 点当前 focus 的 pill：focusId 不变导航无-op，显式退工具（H1，兜底路径）。
       handleToolChange(null);
@@ -1481,6 +1492,7 @@ function MobileProjectWorkbench({
       >
         <MobileProjectHeader
           focusId={focusRef?.kind === "session" ? effectiveFocusId : undefined}
+          foreignCandidates={globalCandidates}
           instances={instances}
           onCreateInstance={() => setCreateSheetOpen(true)}
           moreMenu={

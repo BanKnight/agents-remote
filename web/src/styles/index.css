@@ -614,6 +614,18 @@ body {
   }
 }
 
+/* upcard-sweep — 上传队列卡 indeterminate 扫动条（真机复验反馈⑨a；与 skeleton-shimmer
+   同族 indeterminate 动效，参数单源 index.css——design-review P2：曲线/时长与 shimmer
+   对齐 var(--ease-standard) 1.4s，keyframes 不住 v2-primitives）。 */
+@keyframes upcard-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(380%);
+  }
+}
+
 /* msg-enter — turn-level fade-in for delta-reconnect incremental turns only.
    Opacity only, 200ms once: the turn container carries the virtualizer's
    positioning transform (inline translateY), and a CSS animation on transform

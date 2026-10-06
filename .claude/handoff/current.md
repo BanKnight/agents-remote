@@ -1,78 +1,52 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-07（**真机复验反馈 9 条 · 批 9 已收口待 commit；批 10 预研定稿即将实施**）
+> 最后更新：2026-10-07（**真机复验反馈批 10 已收口待 commit；剩余 = 收尾清理 + 统一真机清单**）
 
 ## 一句话状态
 
-v1.5 九批全部完成后，用户真机复验反馈 9 条 → 拆两批消化。**批 9（点①②④⑤⑥）实现 + 探针 + 双 reviewer 审查 + 消化全部完成**，§6.14 已记档，本 commit 收口。**批 10（点③⑦⑧⑨a）预研（只读）已定稿**，马上实施。收尾 = 删诊断脚本/清上传探针残留/交用户统一真机清单（点 9b 等用户说明 composer uploads/ 语义）。
+v1.5 九批 + 真机反馈批 9 全部收口后，**批 10（反馈③⑦⑧⑨a）实现 + 探针 + 双 reviewer 审查 + 消化全部完成**（§6.14 已记档），本 commit 收口。**剩余收尾** = 删 probe-upload-repro.mjs 诊断脚本 + 清 test 项目上传残留（probe-upload-repro.txt / probe-up-dir/）+ probe-files-cwd-refresh 死探针处置 + 交用户统一真机清单（点 9b 请用户说明上传操作路径 composer uploads/ 语义）。
 
-## 本 session 焦点（真机复验反馈 9 条 → 批 9 / 批 10 / 收尾）
+## 本 session 焦点（真机复验反馈 → 批 9✅ / 批 10✅ / 收尾）
 
-### 批 9（已完成，本 commit）——改动文件 15 个
+### 批 10（已完成，本 commit）——16 files changed（10 web + 6 探针 + e2e 1 + 记档）
 
-- **反馈①**：TabChip 删 AutoRetry 图标（`AutoRetryHeaderButton` 收窄为移动胶囊形态，variant prop 退役）；GroupHeader 删 ▢ 最大化钮 + prop 链全删（WorkbenchRoute→InstanceArea→WorkspaceTree→GroupShell→GroupHeader）+ `toggleLeafMaximize` 函数/单测删除；**读取侧 `stripMaximized` 归零**（V4 raw 条件写回 + V1/V2/V3 三迁移分支包 clamp，防迁移用户独占无入口困死）；en/zh 孤儿键 panelMaximize/panelRestore 删除。maximized 维度此后不可达（记档随清理批）。
-- **反馈②**：面板钮 `.ticon`→`.ic`（26×26/svg 20px，与工具页 [pencil][⋯] 中心距一致）；▾ 菜单行删 `h-10` 死值 + **新增打开时当前行 scrollIntoView**（state-ref §14 范式三轮调试：useRef+[] → open 受控+[open] → state-ref 才成立——portal Content 仅开态挂载）。
-- **反馈④⑥**：`SessionInputDrawer` pb = `max(env, var(--shell-mobile-bottom-nav-space))`（reviewer P1 实抓双重避让——nav 高度已含 env，同向相加=真机 34px 空带；max() 一条公式两态单层）；`--composer-gap` 无 nav 固定 `"0.5rem"`（旧公式 `0.25rem−env`≈−30px → composer 贴屏底）。
-- **反馈⑤**：SessionTabStripActions 4 icon + FilePreviewNavMenu 5 icon（桌面 FileTabStripActions 复用 = 三端生效）显式 `size-[17px]`（design-reviewer P2 实抓：ActionMenu 17px 兜底选择器被 ShellIcon 内部 size-4/size-full 滑过，永不命中）。
-- **★ 实抓缺陷（m9-d 探针 F5/F6）**：删 TabChip AutoRetry 块时把 `${isActive ? "on" : ""}` 一并误删 → tab active 下划线全灭；typecheck/单测/reviewer 全绿测不出，只有 DOM 几何断言抓到。
-- **复验数据**：门禁全绿（test 1644 = api 905 + shared 10 + web 729）+ CSS 硬闸 196327 字节 + tokens 0 违例 + 探针全绿（mobile-workbench-states 22 / mobile-project-header 34 / batch8 25 / m9-d 67 / tab-overlap / batch3 55 / batch4 36 / m5-sheets 82 / m11 14 + e2e 4）。
-- **双 reviewer**：code P1×1（env）已修 + P2 修 5 记档 2；design P1×1（同一 env）已修 + P2 修 1 记档 1。§6.14 批 9 段已落。
+- **反馈③（▾ 菜单跨项目）**：`useGlobalInstanceCandidates({kind:"global"})` 数据源（共享 ["overview"] 缓存）；`foreignGroups` useMemo（filter 本项目 + Map 分组 + localeCompare）；`InstanceSwitchRow` 模块级 + badge prop（外项目行内标注项目名，ink-2）；`onSelectInstance` 扩签 `(projectName, sessionId)`，focusInstance 跨项目分支 `navigateWorkbench({kind:"project", key}, sessionId, {})`；✓ 仅本项目行；caret 文字 ▾ → `.sw` chevron 原语 + 开态主色。**探针 mock 契约坑**：/api/overview candidates = 扁平 wire shape（{projectName,sessionId}），ref 嵌套是 hook :1834 映射后 client 形状。
+- **反馈⑦（全局文件行同构）**：FileEntryList ListRow 分支 → `.frow` button 形制（.ic 17px + .p/.p dir + .tm + .ar RowChevron + 长按/右键菜单）；行尾 ⋯ 钮退役（renderActions triggerMode="hidden"）；DragSourceCard 包裹（新 className prop="frow-host"；inClose 判定命中行根 button → 单击/拖动语义正确）；**重命名态行 = div**（code-review P1：HTML 内容模型禁 button 含交互式后代）。分隔线四组合选择器并入既有规则。
+- **反馈⑧（crumb 图标化）**：`.crumb .cico` 12px 物化；首段 ShellIcon name="project"；**根层也改**（任何层级不显项目名文字——用户反馈优先于原型根态 b 项目名，diverge 记档）；aria-label 补可访问名（design-review P1）；`.cseg` 标记抑制图标后「/」前导（原型「📁 src / auth」）。
+- **反馈⑨a（上传进度）**：upcard `data-state="uploading|queued"`（**卡根**）；uploading = indeterminate 扫动条（keyframes 单源 index.css 与 skeleton-shimmer 同族、var(--ease-standard) 1.4s）；queued 保持 percent 静态；reduce 态 width:0（防「定格 30% 被读成已完成 30%」）；i18n 单数键 uploadingOne/queuedOne。
+- **★ 伴生存量缺陷（global-back 探针实抓）**：mobile-l3 预览 meta 行 `new Date(data.mtimeMs).toISOString()` 对 optional 契约字段无守卫 → RangeError 崩预览渲染树。修复 = 4 处守卫。探针腐化双因：selector `[data-list-row-title]` 已删 + 「返回文件列表」批 3 已改父目录名。stash 基线实锤存量（批 3 后某批引入）。
+- **e2e 适配**：file-browser.spec 断言批 4 已退役的右栏 ptabs file 标签 → 中栏 tabstrip（.tb.on / main 内预览文本 / Minimize ✕）；基线实锤存量腐化。
 
-### 批 10（即将实施，预研定稿）——点③⑦⑧⑨a
+### 关键决策（本阶段不可丢）
 
-- **点③ 顶栏切换跨项目**：数据源换 `useGlobalInstanceCandidates({kind:"global"})`（instance-area.tsx:1796，返回 `{ref:{kind,projectName,sessionId}, displayName, status, type, provider,...}` 含全部项目）；本项目行在前不加标注、其它项目行内标注项目名；✓ 判定 = projectName+sessionId 对比（不再是单 sessionId）；onSelectInstance 扩签 `(projectName, sessionId)`，跨项目走 `navigateWorkbench({kind:"project", key:projectName}, sessionId, {})`（mobile-workbench.tsx:843-856 focusInstance 处）。**配套 caret ▾ 文字 → `.sw` chevron**（v2-primitives：8px border rotate 45deg，开态 `group-data-[state=open]:text-primary`；原型「标题▾」单源）。
-- **点⑦ 全局文件行同构**：file-browser.tsx ListRow 分支（:400-476）→ `.frow` 形制（`<button class="frow">` + .ic 17px + .p/.p dir + .tm + GitStatusBadge + RowChevron，对照 project-tool-panels.tsx:609-651）；保留 DraggableListRow/rename input/readOnly/selected 能力；`.frow` 无 selected 原语需查/补 on 态。共享组件层改动 = 桌面左栏同步生效（多端同构 ✓）。
-- **点⑧ 工具区 crumb 项目名 → 图标**：`.crumb .cico`（原型 components.css:156 12px 项目图标首段）物化到 v2-primitives.css + 实现点 project-tool-panels.tsx:1053-1058 usePanelToolChip 首段换 ShellIcon name="project"。
-- **点⑨a 上传进度**：UploadQueueCard percent=doneCount/total 恒 0%（fetch 无进度回调）→ 加 `data-state="uploading|queued"` + v2-primitives `.upcard .prog[data-state="uploading"] i` indeterminate CSS 动画；en i18n「1 files queued」复数瑕疵顺带修（translate.ts 无复数机制，改条件词）。
-- 批 10 验证链：门禁 + CSS 硬闸 + tokens + 探针（probe-files-cwd-memory/probe-m10 相关面 + 新断言）+ design/code reviewer + §6.14 记档 + commit + push。
+- **基线 stash 对照法两条铁律**：①产物面探针（bun scripts/*.mjs 打 43012 preview）必须等 build --watch 完整 rebuild（touch main.tsx + 45s）——增量产物中间态会假 fail（tree-bugs 桌面根层「不可滚」即此类，完整 rebuild 后消失）；②e2e（自起 vite dev 测源码）**不受产物影响**，stash 后立即跑就是真基线。
+- **探针 mock wire shape**：overview candidates 扁平；ref 嵌套是 client 形状。mock 按 wire 写。
+- **用户反馈 > 原型落图**：反馈⑧「不再展示项目名」明确推翻原型根态 `<b>项目名</b>`（diverge 记档 redesign-v2 §6.14 批 10 段）。
+- **死探针记档**：probe-files-cwd-refresh（middle tab TabButton + 左栏 refresh 钮 v1.5 已退役；cwd 记忆已被 cwd-memory 覆盖）——收尾批处置。
+- **历史拍板继续有效**：密码自读不进上下文；禁截图/vision（DOM 几何硬数据）；探针只删自建数据、用 bun 跑；改 web 文件后必跑 ar-verify-css；format 只用 `bun run format`；React 前加载 vercel-react-best-practices；多端同构；tokens.json 唯一权威；max-sm 断点铁律；单测/e2e systemd-run 2G（**api test 无 2G 限制会 flaky exit 1**）；tmux 红线只 respawn-pane -k。
 
-### 收尾（批 10 后）
+### 进度（已完成 / 待办）
 
-- 删 `scripts/probe-upload-repro.mjs`（诊断脚本，不入库）。
-- 清 test 项目残留：`probe-upload-repro.txt` + `probe-up-dir/`（DELETE API `/api/projects/test/files?path=...`，密码脚本自读）。
-- 交用户统一真机清单（批 9+10 项 + **点 9b：请用户说明上传操作路径**——composer 上传语义 uploads/ 归属待用户澄清后定是否追加批）。
+- ✅ 批 0–8（v1.5 九批）+ 批 9（反馈①②④⑤⑥，`88feaad`）。
+- ✅ 批 10（反馈③⑦⑧⑨a）实现 + 验证 + 双 reviewer + 记档，本 commit 收口。
+- ⬜ 收尾：删 `scripts/probe-upload-repro.mjs`；清 test 项目残留 `probe-upload-repro.txt` + `probe-up-dir/`（DELETE API `/api/projects/test/files?path=...`，密码脚本自读）；probe-files-cwd-refresh 死探针处置（删或归档）；交用户统一真机清单（见下）。
+- ⬜ 点 9b：等用户说明上传操作路径（composer uploads/ 语义）→ 定是否追加批 11。
+- ⬜ reviewer P2 存量记档项随维护批消化（§6.14 批 8/9/10 段）。
 
-## 关键决策（本阶段不可丢）
-
-- **批拆定案**：批 9 = 点①②④⑤⑥（已完成）；批 10 = 点③⑦⑧⑨a；收尾 = 清理 + 清单。点 9b（上传成功落项目根目录而非当前项目）需要用户给出上传操作路径说明，暂缓。
-- **探针 flaky 防线**：弹出 spring 动画进行中 getBoundingClientRect 采到中间帧（亚像素缩放）→ 几何断言前 `waitForTimeout(250)`（--spring-standard-duration: 120ms）。
-- **基线 stash 对照法局限**：stash 后 build --watch 重新编译需 20-30s，立即跑的基线无效；更可靠 = 逻辑推演（本批未触碰的 UI 面 fail = 存量）。
-- **ActionMenu 17px 兜底短路**：`[&_svg:not([class*='size-'])]` 被 ShellIcon 内部实现滑过（span size-4 + svg size-full 含 "size-"）——新消费点必须显式 `size-[17px]`；存量兜底失效面已记档。
-- **历史拍板继续有效**：密码自读不进上下文；禁截图/vision（DOM 几何硬数据）；探针只删自建数据、用 bun 跑；改 web 文件后必跑 ar-verify-css；format 只用 `bun run format`；React 前加载 vercel-react-best-practices；多端同构；tokens.json 唯一权威；max-sm 是本仓移动断点禁 max-md。
-
-## 进度（已完成 / 待办）
-
-- ✅ 批 0–8（v1.5 九批，hash 见 git log）。
-- ✅ 批 9（真机反馈上批）实现 + 验证 + 双 reviewer + 记档，本 commit 收口。
-- ⬜ 批 10（真机反馈下批）实施。
-- ⬜ 收尾清理 + 统一真机清单交用户。
-- ⬜ reviewer P2 存量记档项（redesign-v2.md §6.14 批 8/9 段）随维护批消化。
-
-## 阻塞 / 隐患
+### 阻塞 / 隐患
 
 - 无阻塞。dev 存活 43011/43012。
-- `docs/agents-remote-design-v1.5.zip` untracked 不提交（长期约束）。
-- probe-upload-repro.mjs + test 项目两个上传残留随收尾清理。
+- `docs/agents-remote-design-v1.5.zip` untracked 不提交（长期约束）；`scripts/probe-upload-repro.mjs` untracked 收尾删。
 
-## 易丢的关键上下文
+## 统一真机复验清单（最终交用户版，批 10 完成后）
 
-- **写入污染顽疾（本 session 累计 6 次）**：Edit new_string 写完必须逐字自查再发；修复污染时 old_string 必须从最新 Read 复制。
-- **删 JSX 块高危区**：className 模板串里的插值表达式（`${isActive ? "on" : ""}`）——m9-d 实抓 .tb.on 误删。
-- **portal 挂载晚于宿主 effect**：需要挂 DOM 的副作用一律 state-ref callback（§14），不用 useRef+[]。
-- **hook 返回对象别进 effect deps**；探针材质断言走浏览器序列化归一；session_init 必须手动 seed。
-- mock id 前缀契约 `agent_`/`terminal_`；探针 `bun scripts/*.mjs`；单测/e2e systemd-run 2G；tmux 红线只 respawn-pane -k。
-- Edit 纪律：old_string 从最新 Read 复制；new_string 写完自查再发。
-
-## 统一真机复验清单（最终交用户版，批 10 后补全批 10 项）
-
-**批 9**：
-1. 中栏 tab 无重试图标；分组头无最大化钮（右端 [＋][分屏][编辑][⋯]）
-2. iPhone 行1 面板钮与 ⋯ 钮中心距 = 工具页 [pencil][⋯] 间距
-3. ▾ 菜单打开时 ✓ 当前行滚入视野（实例多溢出时）
-4. terminal 快捷键条未展开也可左右拖动（QuickKeyBar 未展开态拖动——**注：点④归批 9 但展开/收起拖动语义随批 7 输入默认收起改造，真机重点验**）
-5. 中栏分组 ⋯ 菜单项有图标
-6. agent composer 抬高（safe-area 单层避让，无 nav 固定 8px 间隙）
-**批 8**：滚轮横滚手感 / 12px 渐隐 / 附件双路径 / 菜单新观感（45px/17px/圆角14）/ OptionMenu 行高。
+**批 10**：
+1. 会话页行1 ▾ 菜单：跨项目实例在列（行内标注项目名）、点击直接跳转目标项目聚焦该实例；标题 chevron（.sw）开态主色
+2. 全局文件进项目文件夹：列表行与工具区文件树同构（同款行形制/长按右键菜单/分隔线）；文件可拖到中栏开 tab（拖动注入时）
+3. 工具区地址栏：首段=项目图标（任何层级不显项目名文字）；图标与首段路径之间无「/」
+4. 上传：进行中扫动条动画 + 「正在上传 1 个文件」单数文案；**上传成功落点**（点 9b——请说明操作路径与期望）
+**批 9**：中栏 tab 无重试图标/分组头无最大化钮；行1 面板钮与 ⋯ 中心距；▾ 菜单开滚当前行；QuickKeyBar 未展开可拖动；中栏分组 ⋯ 菜单项图标；composer safe-area 抬高。
+**批 8**：滚轮横滚 / 12px 渐隐 / 附件双路径 / 菜单新观感（45px/17px/圆角14）。
 **批 7**：iPad 状态栏审批段 / 终端收起手感 / 子 agent 概览条 / 会话图标 / 插件图标。
 **批 6**：项目行菜单 / 重命名影响提醒 / 删除 sheet。
 **批 5**：历史计数筛选/搜索/五档分组/游标分页/左滑删除/iPad 历史侧栏/右键行菜单。
@@ -80,8 +54,7 @@ v1.5 九批全部完成后，用户真机复验反馈 9 条 → 拆两批消化�
 **批 3**：移动 .fmeta / pencil / ⋯ 菜单 / 空态 / wiki 面板 / FAB。
 **批 2**：三 Tab / 登录直达上次会话 / 会话页无 tab bar。
 **批 1**：行1 导航 / ▾ 切换 / ⋯ 历史+实例信息 / 迷你条退役。
-**前序遗留**：发图批 6 项 + 技能列表批/浮层聚焦批 9 项 + 第五批 reviewer 修复批。
-**待用户澄清**：点 9b 上传操作路径（composer uploads/ 语义）。
+**专项关注（code-review P2）**：桌面 /files 子目录行右键 = 唯一行菜单入口（无 hover ⋯）——验证可发现性；重命名中点文件名中部光标定位（WebKit 触屏 tap 路由）。
 
 ## 提醒
 
@@ -89,4 +62,4 @@ v1.5 九批全部完成后，用户真机复验反馈 9 条 → 拆两批消化�
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-07 03:17；触发原因：批 9 收口（记档 + handoff + commit）——批 10 实施前 checkpoint
+最后更新：2026-10-07 04:30；触发原因：批 10 收口（双审消化 + 记档 + handoff）——commit 前最后 checkpoint

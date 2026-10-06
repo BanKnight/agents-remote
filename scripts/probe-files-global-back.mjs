@@ -90,7 +90,7 @@ async function openPreviewViaFilesNav(page) {
   await page.getByRole("navigation").getByText("文件", { exact: true }).click();
   await page.locator(".gfrow button", { hasText: "proj1" }).waitFor({ timeout: 8000 });
   await page.locator(".gfrow button", { hasText: "proj1" }).click();
-  const row = page.locator("[data-list-row-title]", { hasText: "index.html" });
+  const row = page.locator(".frow .p", { hasText: "index.html" });
   await row.waitFor({ timeout: 8000 });
   await row.click();
   await page.locator('iframe[title="Sandboxed HTML render"]').waitFor({ timeout: 10000 });
@@ -114,20 +114,27 @@ async function run() {
       /\/files\/file\//.test(new URL(page.url()).pathname),
       "点文件后进入预览浮窗 URL（/files/file/proj1/index.html）",
     );
-    await page.getByRole("button", { name: "返回文件列表" }).click();
+    // 批 3 预览 nav 改造后 back = 父目录名（根文件 → 「服务器根」），不再是「返回文件列表」。
+    const backBtn = page.locator(".nav .back");
+    const backText = (await backBtn.textContent())?.trim();
+    record(
+      backText === "服务器根",
+      `批3 语义：back=父目录名（根文件 → 「服务器根」），实际「${backText}」`,
+    );
+    await backBtn.click();
     await page.waitForTimeout(400);
     record(
       new URL(page.url()).pathname === "/files",
       `返回后 URL = /files（实际 ${page.url()}）；修复前 = /projects/proj1`,
     );
     record(
-      await page.locator("[data-list-row-title]", { hasText: "index.html" }).isVisible(),
+      await page.locator(".frow .p", { hasText: "index.html" }).isVisible(),
       "返回后文件列表在场（pop 回 /files 且 cwd=proj1 渲染目录内容）",
     );
 
     console.log("\n===== 2. cwd 记忆保持：返回后仍在 proj1 目录内 =====");
     record(
-      await page.locator("[data-list-row-title]", { hasText: "index.html" }).isVisible(),
+      await page.locator(".frow .p", { hasText: "index.html" }).isVisible(),
       "返回后仍停在 proj1 目录（cwd 记忆未被返回动作重置）",
     );
     await page.close();
@@ -143,7 +150,7 @@ async function run() {
       await page2.getByRole("button", { name: "登录" }).click();
     }
     await page2.locator('iframe[title="Sandboxed HTML render"]').waitFor({ timeout: 10000 });
-    await page2.getByRole("button", { name: "返回文件列表" }).click();
+    await page2.locator(".nav .back").click();
     await page2.waitForTimeout(400);
     record(
       new URL(page2.url()).pathname === "/files",

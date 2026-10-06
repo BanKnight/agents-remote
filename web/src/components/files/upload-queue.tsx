@@ -189,26 +189,36 @@ export function UploadQueueCard() {
   const percent = total > 0 ? Math.round((queue.doneCount / total) * 100) : 0;
   const uploading = queue.items.find((item) => item.status === "uploading");
   const current = uploading ?? queue.items[0]!;
+  // en 单数「1 files queued」瑕疵（真机复验反馈⑨顺带）：translate.ts 简单插值无复数机制，
+  // 单数走专用键（zh 同值无复数问题，键仍补齐保持两文件键集一致）。
+  const count = queue.items.length;
+  const statusText = uploading
+    ? count === 1
+      ? t("files.uploadQueue.uploadingOne")
+      : t("files.uploadQueue.uploading", { count })
+    : count === 1
+      ? t("files.uploadQueue.queuedOne")
+      : t("files.uploadQueue.queued", { count });
 
   return (
     <div
       className="upcard"
       role="status"
-      aria-label={t("files.uploadQueue.uploading", { count: queue.items.length })}
+      aria-label={statusText}
+      // 真机复验反馈⑨：fetch 无进度回调 → uploading 态 CSS 扫动条表达「进行中」（v2-primitives
+      // .upcard[data-state] 消费 index.css 单源 upcard-sweep）；queued/error 挂起时保持
+      // width 静态（doneCount 阶梯仍生效）。
+      data-state={uploading ? "uploading" : "queued"}
     >
       <div className="r1">
-        <span>
-          {uploading
-            ? t("files.uploadQueue.uploading", { count: queue.items.length })
-            : t("files.uploadQueue.queued", { count: queue.items.length })}
-        </span>
+        <span>{statusText}</span>
         <button className="x" type="button" onClick={clearUploadQueue} aria-label={t("cancel")}>
           <ShellIcon className="h-3 w-3" name="close" />
           {t("cancel")}
         </button>
       </div>
       <div className="prog" aria-hidden="true">
-        <i style={{ width: `${percent}%` }} />
+        <i style={uploading ? undefined : { width: `${percent}%` }} />
       </div>
       <div className="d">
         {current.file.name} · {formatBytes(current.file.size)}

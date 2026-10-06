@@ -134,6 +134,8 @@ type DragSourceCardProps = {
   dragRef: WorkbenchPanelRef;
   onDragStart: CardDragStartHandler;
   onSelect: () => void;
+  /** 透传包裹层（FileEntryList .frow 行传 "frow-host"——.frow+.frow 相邻分隔线经 host 接续）。 */
+  className?: string;
 };
 
 /**
@@ -141,7 +143,13 @@ type DragSourceCardProps = {
  * touch-action: pan-y 保留触摸纵向滚动，仅鼠标拖放场景生效（touch pointerType 早 return）。
  * §6.12k 后仅中栏 tabstrip tab chip 源启用（InstanceGrid 卡片源随 4→3 列退役）。
  */
-export function DragSourceCard({ children, dragRef, onDragStart, onSelect }: DragSourceCardProps) {
+export function DragSourceCard({
+  children,
+  className,
+  dragRef,
+  onDragStart,
+  onSelect,
+}: DragSourceCardProps) {
   const { onMouseDown, onPointerDown } = useDragSource<HTMLDivElement>(
     dragRef,
     onDragStart,
@@ -149,7 +157,7 @@ export function DragSourceCard({ children, dragRef, onDragStart, onSelect }: Dra
   );
   return (
     <div
-      className="min-w-0"
+      className={className ? `min-w-0 ${className}` : "min-w-0"}
       onMouseDown={onMouseDown}
       onPointerDown={onPointerDown}
       style={{ touchAction: "pan-y" }}

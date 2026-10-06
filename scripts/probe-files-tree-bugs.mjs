@@ -147,9 +147,11 @@ async function measureScroll(page, label) {
   return record(ok, `${label} Bug 1 文件树可滚动`);
 }
 
-// Bug 2 交互流:hook pushState → 点 ⋯ → 菜单开 → 点菜单外 → 断言不导航。
+// Bug 2 交互流:hook pushState → 触发行菜单 → 菜单开 → 点菜单外 → 断言不导航。
 // 修复前:移动 Dialog sheet scrim dismiss 的 click 按 fiber 冒泡到行 onClick → 打开文件(§4)。
-async function probeDotsClick(page, label) {
+// v1.5 批 10 适配（反馈⑦ .frow 同构）：行尾 ⋯ 钮退役（工具区同构——操作 = 长按/右键菜单），
+// 触发按端分流：触屏 = 长按（useLongPressActions pointerdown 计时）、桌面 = 右键。
+async function probeDotsClick(page, label, isMobile) {
   await page.evaluate(() => {
     window.__navLog = [];
     const origPush = history.pushState;
@@ -163,13 +165,28 @@ async function probeDotsClick(page, label) {
       return origReplace.apply(this, a);
     };
   });
-  const dots = page.locator('button[aria-label$="actions"]').first();
-  if ((await dots.count()) === 0) {
-    console.log(`[${label}] Bug 2: 文件行 ⋯ button 未找到(可能 readOnly 无菜单)`);
-    return record(false, `${label} Bug 2 三点按钮存在`);
+  const row = page.locator(".frow .p").first();
+  if ((await row.count()) === 0) {
+    console.log(`[${label}] Bug 2: 文件行未找到`);
+    return record(false, `${label} Bug 2 行菜单触发`);
   }
   const urlBefore = page.url();
-  await dots.click({ force: true });
+  const box = await row.boundingBox();
+  if (isMobile) {
+    // 触屏长按（pointerType:touch pointerdown 合成 + 800ms > 阈值）——lp.bind 只响应 touch
+    // pointerType，Playwright mouse 的 pointerType=mouse 不触发长按反而派发 click 导航。
+    // 先例 = probe-inspector-row-menus ⑤。
+    await row.dispatchEvent("pointerdown", {
+      bubbles: true,
+      clientX: box.x + box.width / 2,
+      clientY: box.y + box.height / 2,
+      pointerId: 7,
+      pointerType: "touch",
+    });
+    await page.waitForTimeout(800);
+  } else {
+    await page.mouse.click(box.x + 60, box.y + box.height / 2, { button: "right" });
+  }
   await page.waitForTimeout(250);
   const hasMenu = await page.evaluate(() => !!document.querySelector('[role="menu"]'));
   // 批次 6（§6.12j）：05e 菜单 5 项结构断言——文件行菜单项文本序 = 预览/重命名/移动/上传/删除。
@@ -182,7 +199,7 @@ async function probeDotsClick(page, label) {
     // 05e 菜单五项序（批次 6）：预览/重命名/移动/上传/删除；中英双语（探针无 locale → en）
     // + 过滤移动 sheet 形态的 Cancel 项。
     const expect5 = [
-      ["Open Preview", "打开预览"],
+      ["Open preview", "打开预览"],
       ["Rename", "重命名"],
       ["Move to…", "移动到…"],
       ["Upload File…", "上传文件…"],
@@ -219,9 +236,9 @@ async function probeDotsClick(page, label) {
   return menuOk && noNav;
 }
 
-// Bug 3 桌面右键:行上右键(避开 ⋯ 按钮)→ 断言同一 ActionMenu 菜单出现。
+// Bug 3 桌面右键:行上右键 → 断言同一 ActionMenu 菜单出现（.frow 行，批 10 适配定位）。
 async function probeRightClick(page, label) {
-  const rowTitle = page.locator("[data-list-row-title]").first();
+  const rowTitle = page.locator(".frow .p").first();
   if ((await rowTitle.count()) === 0) {
     console.log(`[${label}] Bug 3: 文件行未找到`);
     return record(false, `${label} Bug 3 桌面行右键开菜单`);
@@ -256,6 +273,28 @@ function assertNoMoreVertical() {
   return record(ok, "静态 MoreVertical 零残留");
 }
 
+// 批 10 反馈⑨a:upcard data-state="uploading" CSS 扫动条真命中(选择器层错位防线——
+// 曾把规则写成 .upcard .prog[data-state] 而 data-state 挂 .upcard 根,永不命中)。
+async function assertUploadSweep(page) {
+  const res = await page.evaluate(() => {
+    const mk = (state) => {
+      const host = document.createElement("div");
+      host.className = "upcard";
+      host.dataset.state = state;
+      host.innerHTML = '<div class="prog"><i></i></div>';
+      document.body.appendChild(host);
+      const s = getComputedStyle(host.querySelector("i"));
+      const out = { animationName: s.animationName, widthPct: s.width };
+      host.remove();
+      return out;
+    };
+    return { uploading: mk("uploading"), queued: mk("queued") };
+  });
+  console.log(`\n[静态] Bug 9a 上传扫动条: uploading=${JSON.stringify(res.uploading)}`);
+  const ok = res.uploading.animationName === "upcard-sweep" && res.queued.animationName === "none";
+  return record(ok, "静态 upcard uploading 扫动条命中 / queued 无动画");
+}
+
 async function runViewport(label, viewport, isMobile) {
   const browser = await chromium.launch();
   try {
@@ -270,6 +309,7 @@ async function runViewport(label, viewport, isMobile) {
 
     console.log(`\n========== ${label} /files 根目录层(目录行,readOnly 无菜单) ==========`);
     await measureScroll(page, `${label} 根层`);
+    await assertUploadSweep(page);
 
     // 进入项目(点第一个目录行)→ 文件行(readOnly=false)有 ⋯ 菜单 + 右键。
     await page
@@ -281,7 +321,7 @@ async function runViewport(label, viewport, isMobile) {
 
     console.log(`\n========== ${label} test 项目内(文件行) ==========`);
     await measureScroll(page, `${label} 项目内`);
-    await probeDotsClick(page, `${label} 文件行`);
+    await probeDotsClick(page, `${label} 文件行`, isMobile);
     if (!isMobile) {
       await probeRightClick(page, label);
     }

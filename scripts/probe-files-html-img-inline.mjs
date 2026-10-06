@@ -259,10 +259,8 @@ async function run() {
     // 行定位限定列表行形态（.gfrow=根层项目行；项目层文件行 = ListRow div[role=button]
     // +[data-list-row-title]——getByText 全局首个命中是左侧 nav 侧栏项目行，会误导航去项目页）。
     await page.locator(".gfrow button", { hasText: "proj1" }).click();
-    await page
-      .locator("[data-list-row-title]", { hasText: "index.html" })
-      .waitFor({ timeout: 8000 });
-    await page.locator("[data-list-row-title]", { hasText: "index.html" }).click();
+    await page.locator(".frow .p", { hasText: "index.html" }).waitFor({ timeout: 8000 });
+    await page.locator(".frow .p", { hasText: "index.html" }).click();
     await page.waitForSelector('iframe[title="Sandboxed HTML render"]', { timeout: 10000 });
 
     console.log("\n===== 1. srcDoc 内联状态断言 =====");
@@ -366,7 +364,7 @@ async function run() {
     await page.goto(`${WEB_ORIGIN}/files`);
     await page.waitForSelector("nav[aria-label]", { timeout: 8000 });
     await page.locator(".gfrow button", { hasText: "proj1" }).click();
-    const chartRow = page.locator("[data-list-row-title]", { hasText: "chart.svg" });
+    const chartRow = page.locator(".frow .p", { hasText: "chart.svg" });
     await chartRow.waitFor({ timeout: 8000 });
     await chartRow.click();
     const saveLink = page.locator("a[download]").first();

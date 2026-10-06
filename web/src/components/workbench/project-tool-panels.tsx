@@ -42,8 +42,9 @@ import { CommitSheet } from "../git/commit-sheet";
 import { DiscardDialog } from "../git/discard-dialog";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
 
-/** frow 行尾进入指示 chevron（.ar 内 14×14，SF Symbols chevron.right；与 SettingsChevron 同范式）。 */
-function RowChevron() {
+/** frow 行尾进入指示 chevron（.ar 内 14×14，SF Symbols chevron.right；与 SettingsChevron 同范式）。
+ *  导出供 FileEntryList（全局文件/根作用域 FilesPanel）.frow 行复用——多端同构单源（反馈⑦）。 */
+export function RowChevron() {
   return (
     <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
       <path
@@ -1051,11 +1052,27 @@ export function usePanelToolChip({
               last-child，分隔符 ::after 选择器把「/」错画到末段后、前导 b 又不带分隔
              （DOM 实测 textContent 粘连「proj1src」，真机反馈「地址栏样式错误」主因）。 */}
           <div className="crumb">
+            {/* 真机复验反馈⑧：根段项目名文字 → 项目图标（原型 .crumb .cico 12px——固定宽
+               不随项目名长度挤压路径段；任何层级都不再展示项目名文字）。子目录层根段 =
+              可点回根 button（aria-label 保留项目名）；根层已在根 = 非交互 span（aria-label
+              补可访问名，design-review P1：纯图标对读屏静默）。diverge 记档：原型根态 =
+              图标 + <b>项目名</b>（ipad-workspace.html:93），用户反馈⑧明确「不再展示项目名」
+              优先于原型落图。.cseg 标记 = 抑制其后首段的「/」前导（原型「📁 src / auth」，
+              design-review P2）。 */}
             {crumbSegments.length > 0 ? (
-              <button onClick={() => onPathChange?.("")} type="button">
-                {projectKey}
+              <button
+                aria-label={projectKey}
+                className="cseg"
+                onClick={() => onPathChange?.("")}
+                type="button"
+              >
+                <ShellIcon className="cico" name="project" />
               </button>
-            ) : null}
+            ) : (
+              <span aria-label={projectKey} className="cseg flex-none" role="img">
+                <ShellIcon className="cico" name="project" />
+              </span>
+            )}
             {crumbSegments.slice(0, -1).map((seg, i) => (
               <button
                 key={i}
@@ -1065,7 +1082,7 @@ export function usePanelToolChip({
                 {seg}
               </button>
             ))}
-            <b>{crumbSegments.length > 0 ? crumbSegments[crumbSegments.length - 1] : projectKey}</b>
+            {crumbSegments.length > 0 ? <b>{crumbSegments[crumbSegments.length - 1]}</b> : null}
           </div>
           <button
             className="obtn srch cursor-pointer"

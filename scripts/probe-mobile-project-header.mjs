@@ -123,7 +123,7 @@ function sessionDetail(session) {
   };
 }
 
-async function setupMocks(page, { sessionIds }) {
+async function setupMocks(page, { sessionIds, foreignCandidates = [] }) {
   // POST 新建后 GET 列表要要含新会话（▾ 菜单列表源 = React Query instances，invalidate 后
   // refetch 拿的就是这里）。闭包可变列表；模块级 POST_ADDS 跨 context 复位。
   POST_ADDS.length = 0;
@@ -132,7 +132,7 @@ async function setupMocks(page, { sessionIds }) {
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ projectNames: [projectName], candidates: [] }),
+      body: JSON.stringify({ projectNames: [projectName], candidates: foreignCandidates }),
     }),
   );
   // list GET + 新建 POST 同 URL（agent-sessions），按 method 分派。
@@ -500,6 +500,98 @@ async function run() {
       `back 点击回项目列表（实际 ${new URL(page3.url()).pathname}）`,
     );
     await ctx3.close();
+
+    // ── Part 10：批 10 反馈③——.sw chevron + ▾ 菜单跨项目实例行 ──────────────
+    console.log("\n===== Part 10. .sw chevron + ▾ 跨项目实例行（反馈③）=====");
+    const FOREIGN = [
+      {
+        // wire shape = 扁平（useGlobalInstanceCandidates :1834 映射 ref 嵌套）。
+        projectName: "ops-project",
+        sessionId: "agent_ops-1",
+        status: "running",
+        type: "agent",
+        displayName: "Ops Agent",
+      },
+      {
+        projectName: "ops-project",
+        sessionId: "agent_ops-2",
+        status: "idle",
+        type: "agent",
+        displayName: "Ops Agent B",
+      },
+    ];
+    const ctx4 = await browser.newContext(MOBILE_CTX);
+    const page4 = await ctx4.newPage();
+    await setupMocks(page4, { sessionIds: ["agent_probe-1"], foreignCandidates: FOREIGN });
+    // 外项目实例的 session detail mock（点击跨项目行导航后聚焦面挂载数据）。
+    await page4.route(/\/api\/projects\/ops-project\/agent-sessions(?:\?.*)?$/, (r) =>
+      r.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          sessions: [
+            {
+              id: "agent_ops-1",
+              projectName: "ops-project",
+              provider: "claude",
+              displayName: "Ops Agent",
+              status: "running",
+              createdAt: "2026-07-26T00:00:00.000Z",
+            },
+          ],
+        }),
+      }),
+    );
+    await login(page4);
+    await seedLayout(page4, ["agent_probe-1"], "agent_probe-1");
+    await page4.goto(`${ORIGIN}/projects/proj1/session/agent_probe-1`);
+    await page4.waitForSelector('[data-tab-id="agent_probe-1"]', { timeout: 8000 });
+    // 标题钮内 .sw chevron（批 10：文字 ▾ 退役）——存在 + 合理几何（原语 8×8 旋转盒）。
+    const swGeo = await page4.evaluate(() => {
+      const sw = document.querySelector(".nav h1 button .sw");
+      if (!sw) return null;
+      const r = sw.getBoundingClientRect();
+      return { w: r.width, h: r.height };
+    });
+    ok(swGeo !== null, ".sw chevron 在标题钮内（文字 ▾ 退役）");
+    ok(
+      swGeo !== null && swGeo.w > 4 && swGeo.w < 20 && swGeo.h > 4 && swGeo.h < 20,
+      `.sw 几何在 chevron 合理区间（实际 ${swGeo ? `${swGeo.w}x${swGeo.h}` : "null"}）`,
+    );
+    await openSwitchMenu(page4);
+    const cross = await page4.evaluate(() => {
+      const items = [...document.querySelectorAll('[role="menuitem"]')];
+      const foreign = items.filter((it) => it.textContent?.includes("Ops Agent"));
+      const foreignWithBadge = foreign.filter((it) => it.textContent?.includes("ops-project"));
+      const own = items.find((it) => it.textContent?.includes("Probe Agent A"));
+      return {
+        foreignCount: foreign.length,
+        badgeCount: foreignWithBadge.length,
+        ownHasBadge: own?.textContent?.includes("ops-project") ?? null,
+        ownHasCheck: own?.textContent?.includes("✓") ?? null,
+      };
+    });
+    ok(cross.foreignCount === 2, `外项目实例行 2 条（实际 ${cross.foreignCount}）`);
+    ok(cross.badgeCount === 2, `外项目行带项目名标注 2 条（实际 ${cross.badgeCount}）`);
+    ok(cross.ownHasBadge === false, "本项目行不带项目名标注");
+    ok(cross.ownHasCheck === true, "本项目行带 ✓ 当前标记");
+    // 跨项目行点击 → 直接导航目标项目聚焦目标实例（反馈③核心语义）。
+    const page4Diag = { errors: [] };
+    page4.on("console", (m) => {
+      if (m.type() === "error") page4Diag.errors.push(m.text().slice(0, 160));
+    });
+    await page4.getByRole("menuitem").filter({ hasText: "Ops Agent B" }).click();
+    try {
+      await page4.waitForURL(/\/projects\/ops-project\/session\/agent_ops-2/, { timeout: 8000 });
+    } catch {
+      console.log(`  [diag] 点击后 URL: ${page4.url()}`);
+      console.log(`  [diag] console errors: ${JSON.stringify(page4Diag.errors.slice(0, 4))}`);
+    }
+    ok(
+      /\/projects\/ops-project\/session\/agent_ops-2/.test(new URL(page4.url()).pathname),
+      `跨项目行点击 → 导航目标项目聚焦目标实例（实际 ${page4.url()}）`,
+    );
+    await ctx4.close();
   } finally {
     await browser.close();
   }

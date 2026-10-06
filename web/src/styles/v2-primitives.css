@@ -1358,6 +1358,14 @@
     max-width: 140px;
     flex: none;
   }
+  /* 根段 = 项目图标（单源 components.css :156 1:1，真机复验反馈⑧：地址栏不再展示项目名
+     文字——固定 12px 方块不随项目名长度挤压路径段；消费点 ShellIcon name="project"）。 */
+  .crumb .cico {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    margin-right: 4px;
+  }
   .crumb button {
     font: inherit;
     color: inherit;
@@ -1378,6 +1386,11 @@
     content: "/";
     margin: 0 4px;
     color: var(--ink-3);
+  }
+  /* 根段图标（.cseg）与其后首段路径之间无分隔（原型「📁 src / auth」，反馈⑧——
+     「/」只在路径段之间；design-review P2）。 */
+  .crumb > .cseg + *::before {
+    content: none;
   }
   /* 03o 独立操作 chip（单源 components.css :139-143 1:1）：地址栏行右端搜索钮，
      渐进披露收纳态（中性灰弱于主动作；点按原位展开输入 = 03x）。 */
@@ -1625,8 +1638,13 @@
        .crow/.xrow/.hrow 同族 button 行同护栏。 */
     max-width: 100%;
   }
-  /* 相邻选择器（原型语义）：sect 后首个 frow / 列表首行无线。 */
-  .frow + .frow {
+  /* 相邻选择器（原型语义）：sect 后首个 frow / 列表首行无线。DragSourceCard 包裹层 div
+     打断 .frow + .frow 兄弟链（FileEntryList .frow 化，反馈⑦）→ 四种相邻组合（裸/host）
+     全覆盖——h 不裹 f、f 裹 h、h 裹 h（code-review P2 合并，防两处声明漂移）。 */
+  .frow + .frow,
+  .frow-host + .frow,
+  .frow + .frow-host .frow,
+  .frow-host + .frow-host .frow {
     border-top: 1px solid var(--sep-row);
   }
 
@@ -1668,6 +1686,11 @@
   .frow .ar svg {
     width: 14px;
     height: 14px;
+  }
+  /* 选中行（FileEntryList 与预览联动 selectedFilePath；fill-selected 与 .tree .frow.sel 同
+     token——通栏行不加圆角，缩进树语境的 8px 圆角留在 .tree 作用域内）。 */
+  .frow.sel {
+    background: var(--fill-selected);
   }
   /* ---- 桌面右栏语境分档（[data-desktop-inspector]，先例 ptabs margin-inline）——真机
      反馈 2026-09-29「桌面右栏与设计差距非常大」：05e .tree .frow 31px 密度行（padding
@@ -4315,6 +4338,21 @@
     height: 100%;
     background: var(--c-primary);
     transition: width 0.2s ease;
+  }
+  /* 上传中进度条（真机复验反馈⑨：fetch 无进度回调，doneCount/total 只能阶梯跳变——
+     uploading 态改扫动条表达「进行中」（组件层卡根 data-state 驱动，width inline 不传，
+     keyframes 单源 index.css）；queued/error 态保持 width 静态。 */
+  .upcard[data-state="uploading"] .prog i {
+    width: 30%;
+    animation: upcard-sweep 1.4s var(--ease-standard) infinite;
+  }
+  /* reduce 态不扫动也不定格 30%（会被读成「已完成 30%」）——回退 width:0，进行中语义
+     交由文案（aria-label statusText）承担（design-review P3）。 */
+  @media (prefers-reduced-motion: reduce) {
+    .upcard[data-state="uploading"] .prog i {
+      animation: none;
+      width: 0;
+    }
   }
   .upcard .d {
     font-size: 11px;

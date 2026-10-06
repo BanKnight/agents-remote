@@ -400,9 +400,17 @@ const crumb = await page.evaluate(() => {
   const panel = document.querySelector('[data-inspection-panel="open"]');
   const el = panel?.querySelector(".crumb");
   if (!el) return null;
-  return { text: el.textContent, buttons: el.querySelectorAll("button").length };
+  const first = el.firstElementChild;
+  return {
+    text: el.textContent,
+    firstIsIcon: first?.querySelector("svg") != null,
+    firstText: first?.textContent?.trim() ?? "",
+    buttons: el.querySelectorAll("button").length,
+  };
 });
-ok(crumb?.text.startsWith("proj1"), `crumb 项目名首段（${crumb?.text}）`);
+// 反馈⑧（批 10）：crumb 首段 = 项目图标（cico），任何层级不显项目名文字。
+ok(crumb?.firstIsIcon === true, `crumb 首段=项目图标（反馈⑧）；首段文本「${crumb?.firstText}」`);
+ok(!crumb?.text.startsWith("proj1"), "crumb 无项目名文字（反馈⑧）");
 ok(
   (await page
     .locator('[data-inspection-panel="open"] [data-mobile-tool="files"] .frow')
@@ -672,9 +680,16 @@ await page.waitForTimeout(400);
 ok(
   (await page
     .locator('[role="menu"]')
-    .getByRole("menuitem", { name: /复制链接/ })
+    .getByRole("menuitem", { name: /复制内容/ })
     .count()) === 1,
-  "nav ⋯ 含「复制链接」",
+  "nav ⋯ 含「复制内容」（批 3 wiki-reader pin②：⋯=复制内容/查看 diff）",
+);
+ok(
+  (await page
+    .locator('[role="menu"]')
+    .getByRole("menuitem", { name: /查看 diff/ })
+    .count()) === 1,
+  "nav ⋯ 含「查看 diff」",
 );
 await page.keyboard.press("Escape");
 await page.waitForTimeout(300);

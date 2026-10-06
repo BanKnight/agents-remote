@@ -211,7 +211,9 @@ export const en = {
   "files.capBreadcrumb":
     "Tap “..” or breadcrumbs to go up · tap a file to preview · long-press for actions",
   "files.uploadQueue.uploading": "Uploading {{count}} files",
+  "files.uploadQueue.uploadingOne": "Uploading 1 file",
   "files.uploadQueue.queued": "{{count}} files queued",
+  "files.uploadQueue.queuedOne": "1 file queued",
   "files.uploadQueue.conflict": "Name conflict:",
   "files.uploadQueue.overwrite": "Overwrite",
   "files.uploadQueue.keepBoth": "Keep both",

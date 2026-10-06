@@ -108,12 +108,16 @@ async function readPath(page) {
   return await page.evaluate(() => {
     const crumb = document.querySelector(".crumb");
     if (!crumb) return { last: null, segments: [], hasCrumb: false };
+    // 03o crumb 形态（v1.5 批 10 适配）：段 buttons 在前、当前段 <b> 收尾；根段 = .cico
+    // 项目图标 button（含 svg，排除）。当前段读 <b>（此前读「buttons 末段」= 当前段父级，
+    // 恒差一级）。
     const segments = Array.from(crumb.querySelectorAll("button"))
       .filter((b) => !b.querySelector("svg"))
       .map((b) => (b.textContent ?? "").trim())
       .filter((s) => s.length > 0);
+    const current = crumb.querySelector("b")?.textContent?.trim() ?? null;
     return {
-      last: segments.length > 0 ? segments[segments.length - 1] : null,
+      last: current ?? (segments.length > 0 ? segments[segments.length - 1] : null),
       segments,
       hasCrumb: true,
     };
@@ -126,11 +130,10 @@ async function waitLast(page, expected) {
       (exp) => {
         const crumb = document.querySelector(".crumb");
         if (!crumb) return exp === null;
-        const segs = Array.from(crumb.querySelectorAll("button"))
-          .filter((b) => !b.querySelector("svg"))
-          .map((b) => (b.textContent ?? "").trim())
-          .filter((s) => s.length > 0);
-        return segs.length > 0 ? segs[segs.length - 1] === exp : exp === null;
+        // 与 readPath 同款适配：当前段读 <b>（buttons 末段 = 当前段父级，恒差一级）。
+        const b = crumb.querySelector("b");
+        const last = b?.textContent?.trim() ?? null;
+        return last === exp;
       },
       expected,
       { timeout: 8000 },
@@ -142,7 +145,9 @@ async function waitLast(page, expected) {
 // 文件树收进 InspectionPanel，默认 files 标签激活）。
 async function openProjectFiles(page, projectName) {
   await page.goto(`${WEB_ORIGIN}/projects/${projectName}`);
-  await page.waitForSelector("nav[aria-label]", { timeout: 8000 });
+  // v1.5 批 2 IA 换代适配（2026-10-07 批 10 顺手修）：project scope 无 <nav> tabbar
+  //（会话现场全屏）→ 就绪标志改等行1 .nav .back（‹ 项目）。
+  await page.waitForSelector(".nav .back", { timeout: 8000 });
   await page
     .locator('button[aria-label="检视面板"], button[aria-label="Inspection panel"]')
     .first()

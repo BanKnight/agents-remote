@@ -1,14 +1,5 @@
 import type { ProjectFileEntry, ProjectFilePreviewResponse } from "@agents-remote/shared";
-import {
-  type ComponentProps,
-  type ReactNode,
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MarkdownString } from "../markdown/MarkdownString";
 import { useT } from "../../i18n";
@@ -27,16 +18,14 @@ import { usePromptDialog } from "../shell/prompt-dialog";
 import { useConfirm } from "../shell/confirm-dialog";
 import {
   ActionButton,
-  IconMarker,
-  ListGroup,
-  ListRow,
   ListRowSkeleton,
   LoadingBlock,
   shellSurfaceClasses,
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
 import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
-import { DraggableListRow, type CardDragStartHandler } from "../workbench/drag-source";
+import { DragSourceCard, type CardDragStartHandler } from "../workbench/drag-source";
+import { RowChevron } from "../workbench/project-tool-panels";
 import { relativeTime } from "../workbench/history-list";
 import { ImageViewer } from "./image-viewer";
 import { formatBytes } from "@/lib/format";
@@ -214,7 +203,7 @@ export function FileEntryList({
   }, [renamingPath, onCancelRename]);
 
   const renderActions = useCallback(
-    (entry: ProjectFileEntry) => (
+    (entry: ProjectFileEntry, triggerMode: "button" | "hidden" = "button") => (
       <ActionMenu
         align="end"
         cancelLabel={t("cancel")}
@@ -261,14 +250,20 @@ export function FileEntryList({
           },
         ]}
         trigger={
-          <button
-            className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition hover-capable:opacity-0 hover-capable:group-hover:opacity-100 touch:h-10 touch:w-10 ${shellSurfaceClasses.raisedHover}`}
-            onClick={(e) => e.stopPropagation()}
-            type="button"
-            aria-label={`${entry.name} actions`}
-          >
-            <ShellIcon className="h-4 w-4 text-on-surface-muted" name="ellipsis" />
-          </button>
+          // .frow 行（工具区同构，反馈⑦）无行尾 ⋯ 钮：操作 = 长按/右键菜单（contextMenuPoint），
+          // trigger 仅作 ActionMenu 受控挂载锚。globalCard 总览卡行保留 hover ⋯ 钮（gfrow 形态）。
+          triggerMode === "hidden" ? (
+            <span className="hidden" />
+          ) : (
+            <button
+              className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition hover-capable:opacity-0 hover-capable:group-hover:opacity-100 touch:h-10 touch:w-10 ${shellSurfaceClasses.raisedHover}`}
+              onClick={(e) => e.stopPropagation()}
+              type="button"
+              aria-label={`${entry.name} actions`}
+            >
+              <ShellIcon className="h-4 w-4 text-on-surface-muted" name="ellipsis" />
+            </button>
+          )
         }
         contextMenuPoint={ctx.pointFor(entry.path)}
         onContextMenuClose={ctx.close}
@@ -399,79 +394,99 @@ export function FileEntryList({
 
   return (
     <>
-      <ListGroup ariaLabel="Project files" className="animate-stagger-rows">
+      {/* 真机复验反馈⑦：全局文件进项目文件夹的行与工具区文件树同构 → .frow 形制
+        （03z 单源行：.ic 17px + .p/.p dir + .tm + .ar chevron + 长按/右键菜单）。行间线 =
+        .frow+.frow / .frow-host 组合选择器（DragSourceCard 包裹行经 .frow-host 接续，
+        v2-primitives 单源）；骨架仍是 ListRowSkeleton（FilesToolPanel 同款存量，不动）。 */}
+      <div aria-label="Project files" className="animate-stagger-rows">
         {entries.map((entry) => {
           const selected = entry.path === selectedFilePath;
           const isDirectory = entry.type === "directory";
           const clickable = isDirectory || filesClickable;
           const isRenaming = entry.path === renamingPath;
 
-          const titleContent = isRenaming ? (
-            <span className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-              <input
-                ref={renameInputRef}
-                className="h-7 w-full min-w-0 rounded-lg border border-primary/60 bg-surface-inset/70 px-2 text-[0.82rem] font-semibold text-on-surface font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                type="text"
-                value={renamingName}
-                autoFocus
-                onFocus={(e) => e.target.select()}
-                onBlur={() => onCancelRename()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") onRenameSubmit(entry.path, renamingName);
-                }}
-                onChange={(e) => onRenamingNameChange(e.target.value)}
-              />
-            </span>
-          ) : (
-            <span className="font-mono text-[0.82rem]">{entry.name}</span>
+          // 文件行（非目录 + 已知项目名 + 拖动注入）→ DragSourceCard 包 .frow 拖到中栏开
+          // file tab（inClose 判定命中行根 button：单击走行自身 onClick、拖动走序列，
+          // 与 DraggableListRow 语义一致）；目录/根目录层 → 裸 .frow（无对应 file tab）。
+          // 重命名态行 = div（HTML 内容模型禁 button 含交互式后代 input；此态行本就
+          // 不可交互——onClick/onContextMenu/bind 全部早退，code-review P1）。
+          const rowBody = (
+            <>
+              <span className="ic">
+                <ShellIcon className="size-[17px]" name={isDirectory ? "project" : "file"} />
+              </span>
+              {isRenaming ? (
+                <input
+                  ref={renameInputRef}
+                  className="h-7 w-full min-w-0 rounded-lg border border-primary/60 bg-surface-inset/70 px-2 text-[0.82rem] font-semibold text-on-surface font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  type="text"
+                  value={renamingName}
+                  autoFocus
+                  onFocus={(e) => e.target.select()}
+                  onBlur={() => onCancelRename()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") onRenameSubmit(entry.path, renamingName);
+                  }}
+                  onChange={(e) => onRenamingNameChange(e.target.value)}
+                />
+              ) : (
+                <span className={`p${isDirectory ? " dir" : ""}`}>{entry.name}</span>
+              )}
+              {/* hidden 文件标注占 .tm 槽（.frow 单行行无 subtitle 槽；mtime 让位） */}
+              {entry.hidden ? (
+                <span className="tm">{t("files.hidden")}</span>
+              ) : !isDirectory && entry.mtimeMs ? (
+                <span className="tm">{relativeTime(new Date(entry.mtimeMs).toISOString(), t)}</span>
+              ) : null}
+              <span className="ar">
+                <RowChevron />
+              </span>
+              {isRenaming || readOnly ? null : renderActions(entry, "hidden")}
+            </>
           );
-
-          // 文件行（非目录 + 已知项目名 + 拖动注入）→ DraggableListRow 拖到中栏开 file tab；
-          // 目录/根目录层 → 纯 ListRow（无对应 file tab，不可拖）。设计 §7.2 拖动源泛化。
-          const rowCommon: ComponentProps<typeof ListRow> = {
-            className: "group",
-            marker: (
-              <IconMarker size="sm" tone={isDirectory ? "accent" : "muted"}>
-                <ShellIcon name={isDirectory ? "files-nav" : "file"} className="h-4 w-4" />
-              </IconMarker>
-            ),
-            selected,
-            subtitle: entry.hidden ? t("files.hidden") : undefined,
-            title: titleContent,
-            onClick: isRenaming
-              ? undefined
-              : clickable
-                ? (e) => {
-                    // guardClick 抑制长按后紧随的合成 click(02c pill 同款);§4:移动 sheet
-                    // scrim / 桌面 popover dismiss 的 click 按 fiber 冒泡到行,target 在 body
-                    // 不在行内 → 忽略,否则点 ⋯ 开菜单后再点外会误打开文件/目录。
-                    if (lp.guardClick()) return;
-                    if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node))
-                      return;
-                    if (isDirectory) onOpenDirectory(entry.path);
-                    else onPreviewFile(entry.path);
-                  }
-                : undefined,
-            onContextMenu: isRenaming || readOnly ? undefined : (e) => ctx.openAt(entry.path, e),
-            ...(isRenaming || readOnly ? {} : lp.bind(entry.path)),
-            actions: isRenaming || readOnly ? undefined : renderActions(entry),
-          };
+          const row = isRenaming ? (
+            <div className="frow w-full select-none text-left" key={`${entry.type}:${entry.path}`}>
+              {rowBody}
+            </div>
+          ) : (
+            <button
+              className={`frow w-full cursor-pointer select-none text-left${selected ? " sel" : ""}`}
+              key={`${entry.type}:${entry.path}`}
+              onClick={(e) => {
+                // §4:行内 ActionMenu scrim click 按 fiber 冒泡到行,target 在 body 不在行内
+                // → 忽略;guardClick 抑制长按后紧随的合成 click(02c 同款)。
+                if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node))
+                  return;
+                if (lp.guardClick()) return;
+                if (!clickable) return;
+                if (isDirectory) onOpenDirectory(entry.path);
+                else onPreviewFile(entry.path);
+              }}
+              onContextMenu={readOnly ? undefined : (e) => ctx.openAt(entry.path, e)}
+              type="button"
+              {...(readOnly ? {} : lp.bind(entry.path))}
+            >
+              {rowBody}
+            </button>
+          );
           // TS 在此分支内 narrow onCardDragStart/fileProjectName 到非空（无需 ! 断言）。
           // dragRef.path 全路径 = `${projectName}/${entry.path}`，与 onOpenFile / selectFile 构造一致。
           if (onCardDragStart && fileProjectName && !isDirectory) {
             return (
-              <DraggableListRow
-                key={`${entry.type}:${entry.path}`}
-                {...rowCommon}
+              <DragSourceCard
+                className="frow-host"
                 dragRef={{ kind: "file", path: `${fileProjectName}/${entry.path}` }}
-                onCardDragStart={onCardDragStart}
+                key={`${entry.type}:${entry.path}`}
+                onDragStart={onCardDragStart}
                 onSelect={() => onPreviewFile(entry.path)}
-              />
+              >
+                {row}
+              </DragSourceCard>
             );
           }
-          return <ListRow key={`${entry.type}:${entry.path}`} {...rowCommon} />;
+          return row;
         })}
-      </ListGroup>
+      </div>
     </>
   );
 }

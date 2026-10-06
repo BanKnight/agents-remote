@@ -227,7 +227,8 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
     );
   }
   const lineCount = data.content.split("\n").length;
-  const updated = relativeTime(new Date(data.mtimeMs).toISOString(), t);
+  // mtimeMs 契约 optional（shared ProjectFilePreviewResponse）——缺省不显更新段而非崩预览。
+  const updated = data.mtimeMs ? relativeTime(new Date(data.mtimeMs).toISOString(), t) : "";
   // 完成编辑：dirty 时丢弃确认（与 FilesPanel 换文件守卫同款 dialog 文案）。确认后回渲染
   // 态（预览优先——「完成」= 结束一次编辑动作，回到 md/html 的默认阅读形态；源码再点
   // toggle）。renderMode 仅 md/html（showRenderToggle）消费——非 md/html 不写脏 state。
@@ -289,9 +290,12 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
           {editor.showRenderToggle ? (
             <>
               <span>
+                {/* mtimeMs 缺省（契约 optional）→ 只修行数，不显「· 更新 」空尾段 */}
                 {editor.renderMode === "render"
                   ? updated
-                  : t("files.previewMetaLines", { n: lineCount, time: updated })}
+                  : updated
+                    ? t("files.previewMetaLines", { n: lineCount, time: updated })
+                    : t("files.lineCount", { n: lineCount })}
               </span>
               <RenderModeToggle
                 className="ml-auto"
@@ -300,7 +304,11 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
               />
             </>
           ) : (
-            <span>{t("files.previewMetaLines", { n: lineCount, time: updated })}</span>
+            <span>
+              {updated
+                ? t("files.previewMetaLines", { n: lineCount, time: updated })
+                : t("files.lineCount", { n: lineCount })}
+            </span>
           )}
           <span className="diff flex items-center gap-3">
             <button
@@ -462,7 +470,9 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
     // renderView = md/html 渲染态（metric 段换 size；更新段仅 text 有 mtimeMs 可显）。
     const lineCount = data?.type === "text" ? data.content.split("\n").length : 0;
     const updated =
-      data?.type === "text" ? relativeTime(new Date(data.mtimeMs).toISOString(), t) : "";
+      data?.type === "text" && data.mtimeMs
+        ? relativeTime(new Date(data.mtimeMs).toISOString(), t)
+        : "";
     const isRenderView =
       data?.type === "text" && editor.showRenderToggle && editor.renderMode === "render";
     const paneFmetaText0 = data
@@ -474,7 +484,7 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
       : null;
     const paneFmetaLine = paneFmetaText0
       ? `${paneFmetaText0.typeLabel} · ${paneFmetaText0.metric}${
-          data?.type === "text" ? ` · ${t("files.metaUpdated", { time: updated })}` : ""
+          data?.type === "text" && updated ? ` · ${t("files.metaUpdated", { time: updated })}` : ""
         }`
       : "";
 

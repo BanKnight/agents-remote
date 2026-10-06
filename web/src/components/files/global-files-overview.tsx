@@ -162,8 +162,9 @@ export function GlobalFilesOverview({
           enablePreview={false}
           onOpenFile={onOpenFile}
           onCardDragStart={onCardDragStart}
-          // 卡形态仅根层（10-tab 原型描述的就是根层总览）：子目录层不传 → FilesPanel 退 ListRow
-          //（行内 rename input 所在路径；卡分支无编辑 UI，code review 2026-09-22 修 rename 回归）。
+          // 卡形态仅根层（10-tab 原型描述的就是根层总览）：子目录层不传 → FilesPanel 退
+          // .frow 行（v1.5 批 10 反馈⑦ ListRow 同构替换；行内 rename input 所在路径——
+          // 卡分支无编辑 UI，code review 2026-09-22 修 rename 回归）。
           globalCard={
             globalOverview && (currentPath ?? "") === "" ? { overview: globalOverview } : undefined
           }
