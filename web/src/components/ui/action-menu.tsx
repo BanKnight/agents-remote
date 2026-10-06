@@ -26,8 +26,8 @@ export type ActionMenuItemVariant = "default" | "destructive";
 
 /**
  * 一条菜单项。`items` 在桌面 popover 与移动 action sheet 两条形态间共享同一份声明，
- * 调用方无需关心视口分流。icon 传**裸图标**（不带 size class），两端统一按 `size-4` 渲染
- * （DESIGN.md `action-menu` 条目：禁止散写 `h-3.5`）。
+ * 调用方无需关心视口分流。icon 传**裸图标**（不带 size class），两端统一按 17px 渲染
+ * （v1.5 §5.0 标准档行图标 17；禁止散写 `h-3.5` 等私有尺寸）。
  */
 export type ActionMenuItem = {
   label: string;
@@ -277,15 +277,16 @@ export function useLongPressActions(openAt: (key: string, e: MouseEvent) => void
 
 /**
  * 移动 sheet 菜单项样式（按 variant）。与桌面 `DropdownMenuItem` 共享同一视觉契约
- *（`size-4` icon、`text-sm font-semibold`、destructive=`error`），但移动端用 `min-h-[48px]`
- * 全宽 + `active:` 触摸反馈（非桌面 `focus:`/hover）。抽为纯函数便于单测（见 action-menu.test.ts）。
+ *（17px icon、`text-sm font-semibold`、destructive=`error`），但移动端用全宽 +
+ * `active:` 触摸反馈（非桌面 `focus:`/hover）。抽为纯函数便于单测（见 action-menu.test.ts）。
  */
 export function mobileSheetItemClasses(variant: ActionMenuItemVariant = "default"): string {
   return cn(
     // 按压统一（移动端动效批）：菜单项按下 scale 0.98（行/卡片同档）；裸 transition 收窄为
     // [scale,background-color]（§20 裸 transition = 23 属性大表；§19 scale 须显式列出）。
-    "flex w-full items-center gap-2.5 rounded-lg px-3 min-h-[48px] text-sm font-semibold transition-[scale,background-color] duration-[var(--duration-fast)] active:scale-[0.98]",
-    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+    // v1.5 §5.0 标准档对齐（批 8）：45px 行 / 17px 图标 / 行内 gap 14（此前 48px/16px/10px）。
+    "flex w-full items-center gap-3.5 rounded-lg px-3 min-h-[45px] text-sm font-semibold transition-[scale,background-color] duration-[var(--duration-fast)] active:scale-[0.98]",
+    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px]",
     variant === "destructive"
       ? "text-error active:bg-error/10"
       : "text-on-surface-soft active:bg-on-surface/5",

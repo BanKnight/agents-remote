@@ -1,7 +1,8 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useT } from "../../i18n";
 import { uploadFile } from "@/api/client";
+import { useHScroll } from "@/hooks/use-h-scroll";
 import { LucideIcon } from "@/components/shell/lucide-icon";
 import { cn } from "@/lib/utils";
 import { ActionMenu, type ActionMenuItem } from "./action-menu";
@@ -21,11 +22,42 @@ export const IMAGE_JPEG_QUALITY = 0.8;
 /** 任意文件的上传目录（项目内相对路径；CLI cwd 可见可 Read）。 */
 export const COMPOSER_UPLOAD_DIR = "uploads";
 
+/**
+ * 小文本内联白名单扩展名（v1.5 批 8 附件双路径，spec §4.1）：命中且 ≤1MB → 不上传、
+ * 读全文内联为消息级上下文（「附件 = 消息级上下文不落库」）；其余（含超限文本、PDF/
+ * 二进制）维持 uploads/ 落库路径（用户拍板：超限自动落 uploads/ + 提及行，不再引导）。
+ */
+export const TEXT_INLINE_EXTENSIONS = new Set(["txt", "md", "csv", "json", "log"]);
+/** 小文本内联单文件字节上限。 */
+export const TEXT_INLINE_MAX_BYTES = 1024 * 1024;
+
+/** 纯判定：文件是否走内联路径（白名单扩展名 + ≤1MB）。 */
+export function isInlineTextFile(file: { name: string; size: number }): boolean {
+  const dot = file.name.lastIndexOf(".");
+  const ext = dot === -1 ? "" : file.name.slice(dot + 1).toLowerCase();
+  return TEXT_INLINE_EXTENSIONS.has(ext) && file.size <= TEXT_INLINE_MAX_BYTES;
+}
+
+/**
+ * 附件三路分流单源（批 8）：image 直传 / 白名单小文本内联 / 其余 uploads。pick 占位与
+ * addFiles 分流共用同一判定——两处独立判定会漂移（占位 kind 与分流结果不一致时，
+ * takeSnapshot 按 kind 过滤就收不进快照，内联文本静默丢失）。
+ */
+export function classifyAttachment(file: {
+  type: string;
+  name: string;
+  size: number;
+}): "image" | "text" | "file" {
+  if (file.type.startsWith("image/")) return "image";
+  if (isInlineTextFile(file)) return "text";
+  return "file";
+}
+
 /** 可原样直传（Claude API 支持且体积/尺寸达标时免重编码）的图片类型。 */
 const PASSTHROUGH_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export type ComposerAttachment = {
-  kind: "image" | "file";
+  kind: "image" | "file" | "text";
   id: string;
   name: string;
   status: "uploading" | "ready" | "error";
@@ -37,12 +69,18 @@ export type ComposerAttachment = {
   dataUrl?: string;
   /** file 就绪后填：上传后的项目内相对路径（uploads/…），发送时拼提及行。 */
   path?: string;
+  /** text 就绪后填：文件全文（消息级上下文，随消息发送、不落项目目录）。 */
+  text?: string;
 };
 
-/** 发送瞬间的附件快照：图片块直上 stream-json，文件提及行并入文本（调用方用 t 组好文案）。 */
+/**
+ * 发送瞬间的附件快照：图片块直上 stream-json；uploads 文件提及行与内联文本块（前导行
+ * + fence 包裹，调用方用 t 组好文案）并入文本。
+ */
 export type PendingAttachments = {
   images: Array<{ mediaType: string; data: string }>;
   mentionLines: string[];
+  inlineTexts: string[];
 };
 
 /** 纯判定：是否需要 canvas 重编码（类型不可直传或超最优长边）。GIF/HEIC 等恒 true。 */
@@ -161,7 +199,8 @@ export function useComposerAttachments({ projectName }: { projectName: string })
     async (entries: Array<{ file: File; id: string }>) => {
       for (const { file, id } of entries) {
         if (attachmentsRef.current.length >= COMPOSER_MAX_ATTACHMENTS) break;
-        if (file.type.startsWith("image/")) {
+        const kind = classifyAttachment(file);
+        if (kind === "image") {
           try {
             const norm = await normalizeImageFile(file);
             replace(id, {
@@ -171,6 +210,14 @@ export function useComposerAttachments({ projectName }: { projectName: string })
               data: norm.data,
               dataUrl: norm.dataUrl,
             });
+          } catch {
+            replace(id, { status: "error" });
+          }
+        } else if (kind === "text") {
+          // 小文本白名单 ≤1MB（批 8）：不上传，读全文内联为消息级上下文。
+          try {
+            const text = await file.text();
+            replace(id, { status: "ready", name: file.name, text });
           } catch {
             replace(id, { status: "error" });
           }
@@ -203,7 +250,7 @@ export function useComposerAttachments({ projectName }: { projectName: string })
       commit([
         ...attachmentsRef.current,
         ...entries.map(({ file, id }) => ({
-          kind: file.type.startsWith("image/") ? ("image" as const) : ("file" as const),
+          kind: classifyAttachment(file),
           id,
           name: file.name,
           status: "uploading" as const,
@@ -214,7 +261,10 @@ export function useComposerAttachments({ projectName }: { projectName: string })
     [addFiles, commit],
   );
 
-  /** 发送瞬间快照：就绪图片块 + 就绪文件提及行（i18n 文案在此组）。全空返回 null（纯文本发送）。 */
+  /**
+   * 发送瞬间快照：就绪图片块 + 就绪文件提及行 + 就绪内联文本块（批 8，前导行 + fence
+   * 包裹——i18n 文案在此组，adapter 侧零 i18n 依赖）。全空返回 null（纯文本发送）。
+   */
   const takeSnapshot = useCallback((): PendingAttachments | null => {
     const ready = attachmentsRef.current.filter((a) => a.status === "ready");
     const images = ready
@@ -223,8 +273,14 @@ export function useComposerAttachments({ projectName }: { projectName: string })
     const mentionLines = ready
       .filter((a) => a.kind === "file" && a.path)
       .map((a) => t("claude.attach.fileMention", { path: a.path as string }));
-    if (images.length === 0 && mentionLines.length === 0) return null;
-    return { images, mentionLines };
+    const inlineTexts = ready
+      .filter((a) => a.kind === "text" && a.text != null)
+      .map(
+        (a) =>
+          `${t("claude.attach.textInline", { name: a.name })}\n\`\`\`\n${a.text as string}\n\`\`\``,
+      );
+    if (images.length === 0 && mentionLines.length === 0 && inlineTexts.length === 0) return null;
+    return { images, mentionLines, inlineTexts };
   }, [t]);
 
   const clear = useCallback(() => commit([]), [commit]);
@@ -310,6 +366,7 @@ export function ComposerAttachMenu({ onFiles }: { onFiles: (files: File[]) => vo
       <input
         ref={fileInputRef}
         className="hidden"
+        data-composer-file-input
         multiple
         type="file"
         onChange={(e) => pickFrom(e.currentTarget)}
@@ -318,7 +375,11 @@ export function ComposerAttachMenu({ onFiles }: { onFiles: (files: File[]) => vo
   );
 }
 
-/** 附件 chip 行（composer 卡片内、输入框上方）：图片缩略图 / 文件名+路径，× 移除。 */
+/**
+ * 附件 chip 行（composer 卡片内、输入框上方）：图片缩略图 / 文件名+路径/内联文本名，
+ * × 移除。v1.5 批 8：多图横排滚动（原型 workspace-attach-chips——nowrap 单行 + §7.2
+ * 滚轮横滚与边缘渐隐）+ 聚焦 chip 按 ⌫/Delete 删除（mac-composer-attach 桌面差异）。
+ */
 export function AttachmentChipRow({
   attachments,
   onRemove,
@@ -327,8 +388,16 @@ export function AttachmentChipRow({
   onRemove: (id: string) => void;
 }) {
   const { t } = useT();
+  // chips 增删不触发 scroll/resize，内容 effect 里重算渐隐方向。
+  const hs = useHScroll();
+  useEffect(() => hs.update(), [hs.update, attachments.length]);
   return (
-    <div className="flex flex-wrap gap-2 px-3 pt-2.5" data-composer-attachments>
+    <div
+      className="hfade flex min-w-0 flex-nowrap gap-2 overflow-x-auto px-3 pt-2.5"
+      data-composer-attachments
+      ref={hs.ref}
+      {...hs.fadeProps}
+    >
       {attachments.map((a) => {
         const statusLine =
           a.status === "uploading"
@@ -337,7 +406,19 @@ export function AttachmentChipRow({
               ? t("claude.attach.failed")
               : null;
         return (
-          <div className="relative" data-attachment-chip={a.id} key={a.id}>
+          <div
+            className="relative shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            data-attachment-chip={a.id}
+            key={a.id}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              // 聚焦 chip 按 ⌫/Delete 删除（spec §4.1 桌面差异：hover × / 选中 chip ⌫）。
+              if (e.key === "Backspace" || e.key === "Delete") {
+                e.preventDefault();
+                onRemove(a.id);
+              }
+            }}
+          >
             {a.kind === "image" ? (
               a.dataUrl ? (
                 <img alt={a.name} className="size-12 rounded-lg object-cover" src={a.dataUrl} />

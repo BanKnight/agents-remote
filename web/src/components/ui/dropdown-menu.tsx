@@ -24,7 +24,9 @@ function DropdownMenuContent({
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         className={cn(
-          "z-50 min-w-[10rem] overflow-hidden rounded-xl border border-neutral-line bg-surface-inset/95 p-1.5 text-on-surface-soft shadow-2xl shadow-black/40 backdrop-blur-md",
+          // v1.5 §5.0 族A 锚定浮卡材质单源（components.css：--menu 底 / sep-strong 边 /
+          // r14 圆角）——批 8 浮层两族对齐（02c 取值菜单先例）。
+          "z-50 min-w-[10rem] overflow-hidden rounded-[14px] border border-sep-strong bg-menu p-1.5 text-on-surface-soft shadow-2xl shadow-black/40 backdrop-blur-md",
           // enter 走 spring snappy（与 popover 同档：轻量锚定层）；zoom 幅度、方向
           // 位移（skill §8 hint in direction）与 transform-origin 锚定触发源（§7）
           // 全保持，只换 timing。变量注入机制见 dialog.tsx 同段注释。
@@ -53,10 +55,11 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "relative flex cursor-pointer select-none items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-semibold outline-none transition",
+        // v1.5 §5.0 标准档（02c/09b：45px 行 / 14 字 / 17 图标 / 行内 gap 14）。
+        "relative flex min-h-[45px] cursor-pointer select-none items-center gap-3.5 rounded-lg px-3 py-2.5 text-sm font-semibold outline-none transition",
         "focus:bg-accent focus:text-accent-foreground",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px]",
         variant === "destructive" && "text-error focus:bg-error/10 focus:text-error",
         inset && "pl-8",
         className,
@@ -73,7 +76,8 @@ function DropdownMenuSeparator({
   return (
     <DropdownMenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn("-mx-1 my-1 h-px bg-white/10", className)}
+      // 行间 1px --sep 分隔（v1.5 §5.0 标准档材质），替换存量散写 bg-white/10。
+      className={cn("-mx-1 my-1 h-px bg-sep", className)}
       {...props}
     />
   );

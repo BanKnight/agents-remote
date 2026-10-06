@@ -1426,6 +1426,26 @@
   .wsearch:focus-within {
     border-color: color-mix(in srgb, var(--c-primary) 55%, transparent);
   }
+  /* ---- §7.2 横向标签条指针规范（v1.5 批 8）：溢出边缘 12px 渐隐提示。mask-image
+     不占布局宽；可滚侧出现、滚到头即消失——data-fade-*=“off” 把该侧渐变长度压 0
+     （useHScroll 驱动，滚轮映射见 web/src/hooks/use-h-scroll.ts）。 ---- */
+  .hfade {
+    --fade-l: 12px;
+    --fade-r: 12px;
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      black var(--fade-l),
+      black calc(100% - var(--fade-r)),
+      transparent 100%
+    );
+  }
+  .hfade[data-fade-left="off"] {
+    --fade-l: 0px;
+  }
+  .hfade[data-fade-right="off"] {
+    --fade-r: 0px;
+  }
   /* ---- 检视面板动态标签条（v1.4 03ob，redesign-v2 §6.13 批2）：标签即内容，＋ 新建 /
      ✕ 关闭；几何与 .pill 同族（components.css .ptabs 单源 1:1） ---- */
   .ptabs {

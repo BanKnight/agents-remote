@@ -5003,11 +5003,16 @@ export function useClaudeSession(
         .join("\n");
 
       // 附件快照（composer 发图批）：图片 → stream-json 图片块（api 原样透传 stdin，CLI
-      // 直达模型）；文件 → 就绪路径的提及行并入文本。纯图片（无文本）也发——CLI 接受纯
-      // 图片 content 数组；此前 `textContent.trim()` 单一条件会丢纯图消息。
+      // 直达模型）；uploads 文件 → 就绪路径的提及行并入文本；内联小文本（批 8）→ 前导行
+      // + fence 块并入文本（消息级上下文不落库，文案在 takeSnapshot 组好）。纯图片（无文
+      // 本）也发——CLI 接受纯图片 content 数组；此前 `textContent.trim()` 单一条件会丢纯图消息。
       const pending = pendingAttachmentsRef.current?.takePendingAttachments?.() ?? null;
       const images = pending?.images ?? [];
-      const text = [textContent.trim(), ...(pending?.mentionLines ?? [])]
+      const text = [
+        textContent.trim(),
+        ...(pending?.mentionLines ?? []),
+        ...(pending?.inlineTexts ?? []),
+      ]
         .filter(Boolean)
         .join("\n");
       if (!text && images.length === 0) return;

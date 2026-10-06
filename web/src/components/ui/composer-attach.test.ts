@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { base64Bytes, blobToBase64, needsImageReEncode } from "./composer-attach";
+import {
+  base64Bytes,
+  blobToBase64,
+  classifyAttachment,
+  isInlineTextFile,
+  needsImageReEncode,
+} from "./composer-attach";
 
 describe("composer attach pure helpers", () => {
   describe("needsImageReEncode", () => {
@@ -37,6 +43,34 @@ describe("composer attach pure helpers", () => {
       expect(base64Bytes("")).toBe(0);
       expect(base64Bytes("aGk=")).toBe(3); // "hi" 是 2 字节，"aGk=" 解码 3 字节含 padding 前的 3 数据字符
       expect(base64Bytes("aGVsbG8=")).toBe(6);
+    });
+  });
+
+  describe("isInlineTextFile（批 8 附件双路径分流）", () => {
+    const mb = 1024 * 1024;
+    test("白名单扩展名 ≤1MB → 内联", () => {
+      for (const name of ["a.txt", "b.md", "c.csv", "d.json", "e.log", "F.JSON"]) {
+        expect(isInlineTextFile({ name, size: 100 })).toBe(true);
+      }
+    });
+    test("恰 1MB 边界 → 内联（≤ 判定含边界）", () => {
+      expect(isInlineTextFile({ name: "edge.txt", size: mb })).toBe(true);
+    });
+    test("超 1MB → uploads 路径", () => {
+      expect(isInlineTextFile({ name: "big.log", size: mb + 1 })).toBe(false);
+    });
+    test("非白名单扩展名恒 uploads（含无扩展名/近形扩展）", () => {
+      expect(isInlineTextFile({ name: "doc.pdf", size: 10 })).toBe(false);
+      expect(isInlineTextFile({ name: "bin", size: 10 })).toBe(false);
+      expect(isInlineTextFile({ name: "tsconfig.jsonc", size: 10 })).toBe(false);
+    });
+  });
+
+  describe("classifyAttachment（批 8 三路分流单源：pick 占位与 addFiles 共用）", () => {
+    test("image/* 直传 / 白名单小文本内联 / 其余 uploads", () => {
+      expect(classifyAttachment({ type: "image/png", name: "a.png", size: 10 })).toBe("image");
+      expect(classifyAttachment({ type: "", name: "a.txt", size: 10 })).toBe("text");
+      expect(classifyAttachment({ type: "application/pdf", name: "a.pdf", size: 10 })).toBe("file");
     });
   });
 });

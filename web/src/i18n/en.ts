@@ -460,6 +460,7 @@ export const en = {
   "claude.attach.failed": "Upload failed",
   "claude.attach.remove": "Remove attachment",
   "claude.attach.fileMention": "Attachment: {{path}}",
+  "claude.attach.textInline": "Contents of attachment {{name}}:",
   "claude.composer.permLabel": "Permission mode",
   "claude.composer.modelLabel": "Model",
   "claude.composer.effortLabel": "Reasoning effort",

@@ -23,13 +23,13 @@ describe("optionActiveClasses", () => {
 });
 
 describe("mobileOptionItemClasses", () => {
-  test("共用骨架：全宽 48px 触摸区 + size-4 icon + font-semibold", () => {
+  test("共用骨架：全宽 45px 触摸区（v1.5 §5.0 标准档）+ 17px icon + font-semibold", () => {
     const cls = mobileOptionItemClasses(false, "user");
     expect(cls).toContain("w-full");
-    expect(cls).toContain("min-h-[48px]");
+    expect(cls).toContain("min-h-[45px]");
     expect(cls).toContain("text-sm");
     expect(cls).toContain("font-semibold");
-    expect(cls).toContain("[&_svg:not([class*='size-'])]:size-4");
+    expect(cls).toContain("[&_svg:not([class*='size-'])]:size-[17px]");
   });
 
   test("非 active → on-surface-soft 文字 + on-surface active", () => {

@@ -456,6 +456,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude.attach.failed": "上传失败",
   "claude.attach.remove": "移除附件",
   "claude.attach.fileMention": "附件：{{path}}",
+  "claude.attach.textInline": "附件 {{name}} 内容如下：",
   "claude.composer.permLabel": "权限模式",
   "claude.composer.modelLabel": "模型",
   "claude.composer.effortLabel": "推理深度",

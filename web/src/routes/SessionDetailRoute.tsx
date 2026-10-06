@@ -13,6 +13,7 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 import { getAgentSession, getTerminalSession, sessionStreamUrl } from "../api/client";
+import { useHScroll } from "@/hooks/use-h-scroll";
 import { useT } from "../i18n";
 import type { TranslationKey } from "../i18n/types";
 import { useTheme, type ResolvedTheme } from "../theme";
@@ -1208,10 +1209,14 @@ type QuickKeyBarProps = {
 
 function QuickKeyBar({ canSend, quickKeys, onQuickKey }: QuickKeyBarProps) {
   const { t } = useT();
+  // §7.2（批 8）：窄屏键条溢出时滚轮横滚 + 边缘 12px 渐隐；键数恒定无需内容 effect 重算。
+  const hs = useHScroll();
   return (
     <div
-      className="flex min-w-0 flex-nowrap gap-1.5 overflow-x-auto"
+      className="hfade flex min-w-0 flex-nowrap gap-1.5 overflow-x-auto"
       aria-label={t("session.quickKeys")}
+      ref={hs.ref}
+      {...hs.fadeProps}
     >
       {quickKeys.map((quickKey) => (
         <button

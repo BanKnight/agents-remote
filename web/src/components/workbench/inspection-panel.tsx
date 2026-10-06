@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { useT } from "../../i18n";
+import { useHScroll } from "@/hooks/use-h-scroll";
 import type { PanelTab } from "@/routes/workbench-model";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,10 @@ export function PanelTabBar({
   tabs: PanelTab[];
 }) {
   const { t } = useT();
+  // §7.2（批 8）：标签溢出时滚轮横滚 + 边缘 12px 渐隐；标签数变化不触发 scroll/resize，
+  // 在内容 effect 里重算渐隐方向。
+  const hs = useHScroll();
+  useEffect(() => hs.update(), [hs.update, tabs.length]);
   const tabMeta = (
     tab: PanelTab,
   ): { icon: "project" | "git-nav" | "book" | "file"; label: string } => {
@@ -40,7 +45,13 @@ export function PanelTabBar({
     return { icon: "file", label: tab.path.split("/").pop() || tab.path };
   };
   return (
-    <div className="ptabs shrink-0" data-role="ptabs" role="tablist">
+    <div
+      className="ptabs hfade shrink-0"
+      data-role="ptabs"
+      ref={hs.ref}
+      role="tablist"
+      {...hs.fadeProps}
+    >
       {tabs.map((tab) => {
         const meta = tabMeta(tab);
         const active = tab.id === activeTabId;

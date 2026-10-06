@@ -49,6 +49,7 @@ import {
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
 import { L3WikiReader } from "./mobile-l3";
 import { DragSourceCard } from "./drag-source";
+import { useHScroll } from "@/hooks/use-h-scroll";
 import {
   closeAgentSession,
   closeTerminalSession,
@@ -2111,6 +2112,10 @@ function GroupHeader({
   onToggleMaximize,
 }: GroupHeaderProps) {
   const { t } = useT();
+  // §7.2（批 8）：tabstrip 标签溢出时滚轮横滚 + 边缘 12px 渐隐（右端 ＋/分屏等尾部控件
+  // 在滚动容器外，「尾部控件可达」天然成立）；标签数变化在内容 effect 里重算渐隐方向。
+  const hs = useHScroll();
+  useEffect(() => hs.update(), [hs.update, group.tabs.length]);
   const maximizeLabelKey = isMaximized ? "workbench.panelRestore" : "workbench.panelMaximize";
   // v1.5 批 4（spec §4.5）：tabstrip 右端 [＋][分屏][最大化][编辑][⋯]，⋯ 收尾最右、内容
   // 跟随激活标签（会话/文件两族；git/skill/wikiread/chat/render 无 ⋯ 规格 → 不渲染）。
@@ -2127,7 +2132,11 @@ function GroupHeader({
     <div className="tabstrip">
       {/* h-full 拉满条高（stretch 链：容器 → DragSourceCard → .tb height:100%），active 的
           ::after 下划线才能贴条底。 */}
-      <div className="flex h-full min-w-0 flex-1 gap-4 overflow-x-auto">
+      <div
+        className="flex h-full min-w-0 flex-1 gap-4 overflow-x-auto hfade"
+        ref={hs.ref}
+        {...hs.fadeProps}
+      >
         {group.tabs.map((tab) => (
           <TabChip
             isActive={tabIdOf(tab) === group.activeTabId}

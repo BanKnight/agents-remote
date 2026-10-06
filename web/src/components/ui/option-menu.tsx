@@ -66,16 +66,17 @@ export function optionActiveClasses(accent: OptionMenuAccent = "user"): string {
 
 /** 移动 sheet 选择器项的垂直对齐。`center`（默认）= 单行项垂直居中；`start` = 含 description
  * 的多行项顶部对齐，让 label 顶部跨项对齐（对齐桌面 `DropdownMenuItem` 的 `py-2.5` 顶部基准，
- * 消除 `min-h-[48px]` + `items-center` 在多行/单行项间造成的 label 垂直错位）。 */
+ * 消除 `min-h-[45px]` + `items-center` 在多行/单行项间造成的 label 垂直错位）。 */
 export type OptionItemAlign = "center" | "start";
 
 /**
  * 移动 sheet 选择器项样式（按 active + accent）。与桌面 `DropdownMenuItem` 共享同一视觉契约
- *（`size-4` icon、`text-sm font-semibold`），但移动端用 `min-h-[48px]` 全宽 + `active:`
- * 触摸反馈。active 项叠角色色淡背景 + `opacity-100`（disabled 默认变暗，选择器需保留高亮）。
+ *（v1.5 §5.0 标准档：45px 行 / 17px 图标 / 行内 gap 14 / `text-sm font-semibold`——批 8
+ * 对齐，此前 48px/gap-2.5/size-4），移动端全宽 + `active:` 触摸反馈。active 项叠角色色淡
+ * 背景 + `opacity-100`（disabled 默认变暗，选择器需保留高亮）。
  *
  * `itemAlign='start'` 时 label 顶部 = `py-2.5`（= 桌面端基准），含 description 的多行项与
- * 同菜单的单行项 label 行对齐；`py-2.5` 对单行 `center` 项无视觉影响（`min-h-[48px]` 主导）。
+ * 同菜单的单行项 label 行对齐；`py-2.5` 对单行 `center` 项无视觉影响（`min-h-[45px]` 主导）。
  */
 export function mobileOptionItemClasses(
   isActive: boolean,
@@ -87,9 +88,9 @@ export function mobileOptionItemClasses(
     // 拉伸到 col 宽（= desc 宽）后，短 label 文本在宽 span 内居中，视觉上偏到 desc 中间。
     // 桌面端 DropdownMenuItem 是 `<div>`（UA 默认 left），无需此覆盖。取消按钮 span 显式
     // text-center，不受影响。
-    "flex w-full gap-2.5 rounded-lg px-3 py-2.5 min-h-[48px] text-left text-sm font-semibold transition",
+    "flex w-full gap-3.5 rounded-lg px-3 py-2.5 min-h-[45px] text-left text-sm font-semibold transition",
     itemAlign === "start" ? "items-start" : "items-center",
-    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px]",
     isActive
       ? cn(optionActiveClasses(accent), "opacity-100")
       : "text-on-surface-soft active:bg-on-surface/5",
