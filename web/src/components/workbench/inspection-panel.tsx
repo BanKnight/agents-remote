@@ -19,6 +19,7 @@ export function PanelTabBar({
   onActivateTab,
   onCloseTab,
   onNewTab,
+  open = true,
   tabs,
 }: {
   activeTabId: string;
@@ -26,17 +27,23 @@ export function PanelTabBar({
   onCloseTab: (id: string) => void;
   /** ＋ 新建标签（03ob2 菜单选中值；已开 = 激活幂等，调用方保证）。 */
   onNewTab: (kind: "files" | "git" | "wiki") => void;
+  /** 面板可见性：移动检视面板常驻挂载（closed = invisible translate-x-full），closed 态
+   *  下首滚在 WebKit 可能不生效（不可见子树 scrollIntoView 行为差异，Chromium 复现不了），
+   *  open 进 deps = 「打开工具区」瞬间显式重滚（批 12 反馈①）。桌面右栏条件挂载
+   *（panelOpen ? ... : null）不传 = 恒 true，挂载首跑已覆盖。 */
+  open?: boolean;
   tabs: PanelTab[];
 }) {
   const { t } = useT();
   // §7.2（批 8）：标签溢出时滚轮横滚 + 边缘 12px 渐隐；标签数变化不触发 scroll/resize，
-  // 在内容 effect 里重算渐隐方向。批 11 反馈③：激活标签（aria-selected）变化时滚入视野
-  //——开面板/切标签/新开 file 标签三个时机都滚；无溢出 no-op。
+  // 在内容 effect 里重算渐隐方向。批 11 反馈③：激活标签（aria-selected）变化时滚入视野；
+  // 批 12 反馈①：open 进 deps——面板打开瞬间重滚（closed 态首滚不可靠时唯一可靠时机）。
+  // 无溢出 no-op。
   const hs = useHScroll();
   useEffect(() => {
     hs.update();
     hs.ensureActive('[aria-selected="true"]');
-  }, [activeTabId, tabs.length, hs.ensureActive, hs.update]);
+  }, [activeTabId, open, tabs.length, hs.ensureActive, hs.update]);
   const tabMeta = (
     tab: PanelTab,
   ): { icon: "project" | "git-nav" | "book" | "file"; label: string } => {
@@ -217,6 +224,7 @@ export function InspectionPanel({
             onActivateTab={onActivateTab}
             onCloseTab={onCloseTab}
             onNewTab={onNewTab}
+            open={open}
             tabs={tabs}
           />
           {/* 工具 chip 槽（03o ②：文件树标签 = crumb+收缩搜索；Git = gitchip；Wiki = wsearch） */}

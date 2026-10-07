@@ -31,6 +31,7 @@ const ICONS = [
   "check", // ShellIcon check
   "chevron-left", // RailButton 左栏唤出（M13c reviewer D-P2-4：手写 16 网格退役）
   "chevron-right", // RailButton 右栏唤出（M13c，同上）
+  "chevron-down", // ShellIcon chevron-down（移动 header 实例切换锚，批 12 反馈⑤：CSS 手绘 .sw 退役）
   "clock", // ShellIcon clock
   "download", // ShellIcon download
   "ellipsis", // ShellIcon ellipsis（行菜单）

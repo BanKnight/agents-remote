@@ -457,6 +457,12 @@ async function setupTerminalMocks(page) {
         const row = document.querySelector(".qkey")?.parentElement;
         if (!row) return null;
         const before = { sw: row.scrollWidth, cw: row.clientWidth };
+        // 滚动条隐藏（批 12 反馈②：.hfade 单源 scrollbar-width:none）+ 无滚动条占高。
+        const scrollbar = {
+          sbw: getComputedStyle(row).scrollbarWidth,
+          offH: row.offsetHeight,
+          cliH: row.clientHeight,
+        };
         // 渐隐方向在 wheel 前读（同 P-M2 时序原因）。
         const fades = {
           left: row.getAttribute("data-fade-left"),
@@ -476,6 +482,7 @@ async function setupTerminalMocks(page) {
           cw: before.cw,
           after,
           fades,
+          scrollbar,
         };
       });
       ok(q != null && q.cls.includes("hfade"), "P-T1 qkeys 行 hfade 类在场");
@@ -484,6 +491,14 @@ async function setupTerminalMocks(page) {
       ok(
         q != null && q.fades.left === "off" && q.fades.right === "on",
         `P-T4 渐隐初始方向 左off/右on`,
+      );
+      ok(
+        q != null && q.scrollbar.sbw === "none",
+        `P-T5 滚动条隐藏 scrollbar-width none（批 12 反馈②；实际 ${q?.scrollbar.sbw}）`,
+      );
+      ok(
+        q != null && q.scrollbar.offH === q.scrollbar.cliH,
+        `P-T6 无滚动条占高（offset=${q?.scrollbar.offH} client=${q?.scrollbar.cliH}）`,
       );
       await page.context().close();
     }

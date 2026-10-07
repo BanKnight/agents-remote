@@ -195,11 +195,11 @@ function InstanceSwitchMenu({
           <span className="block truncate">{title}</span>
           {/* runct ●n：项目运行中实例数（9px 绿，原型 .runct） */}
           {runningCount ? <span className="runct">●{runningCount}</span> : null}
-          {/* 实例切换菜单锚（真机复验反馈③：文字「▾」10px 尺寸失真 → .sw 8px 几何 chevron
-            （原型「标题▾」单源，v2-primitives 已物化）；开态主色同原型激活语义。 */}
-          <span
-            aria-hidden
-            className="sw shrink-0 transition-colors group-data-[state=open]:[border-color:var(--c-primary)]"
+          {/* 实例切换菜单锚（批 12 反馈⑤：CSS 手绘 .sw 旋转盒退役 → Lucide 管线单轨；
+            显式尺寸防 WebKit flex 收缩隐形，frontend-notes §15⑤。开态主色用 currentColor。 */}
+          <LucideIcon
+            className="size-3.5 shrink-0 text-ink-2 transition-colors group-data-[state=open]:text-primary"
+            name="chevron-down"
           />
         </button>
       </DropdownMenuTrigger>

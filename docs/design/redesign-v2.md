@@ -1586,6 +1586,15 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **探针**：`probe-files-upload-target`（新）+ `probe-files-tree-bugs`（扩批 11 同构段：双侧 .frow .ic/.ar 在场 + 行贴边 flush=0 + 行 padding 全局 16px / 工具侧分档 14px + 双侧 .crumb .cico/.cseg 同构）。回归：tree-bugs ALL PASS / m4-tools-l3 72 / mobile-project-header 41。
 - **复验**：e2e file-browser 2/2；单测 729 pass；门禁全绿（format / lint 0 warning / typecheck 三包）+ CSS 硬闸 + tokens strict 0 违例。
 
+**批 12（真机反馈第三轮 5 条）**：①打开工具区激活标签入视野（批 11 ③漏「打开」时机）/ ②快捷方式条横滚出现滚动条 / ③终端 composer 高度不增长 / ④文件树地址栏图标不居中 / ⑤顶部三角按钮非 Lucide。
+- **反馈①（打开时机）**：先探针后修（§22 纪律）。Chromium 实测三面——移动 .ptabs 常驻挂载 reload 时 effect 已滚（closed 态 translate-x-full 不影响 scrollIntoView，sl=579 inView）；桌面右栏 ptabs 只渲染 3 结构标签（file/wikiread 批 4 退役出检视器）sw=251 ≤ 右栏最小 16rem=256px **无溢出面，排除**；中栏 tabstrip chips flex 收缩 597px 下 6 tab 不溢出，排除。**代码层可证缺口**：PanelTabBar effect deps `[activeTabId, tabs.length, …]` 不含面板可见性——移动 closed 态首滚在 WebKit 可能不生效（不可见子树 scrollIntoView 行为差异，§14/§21 同族引擎分歧面，Chromium 复现不了），「打开工具区」无任何重试时机。修法 = `open?: boolean`（默认 true）进 deps：打开瞬间显式重滚，幂等无害；InspectionPanel 传 open，桌面 RightPanelTabs 条件挂载不传（恒 true，挂载首跑已覆盖）。
+- **反馈②（滚动条）**：`.hfade` 原语单源补 `scrollbar-width:none` + `::-webkit-scrollbar{display:none}`——渐隐 mask 已提示可滚侧，滚动条是噪音；4 消费者（tabstrip/ptabs/附件 chips/qkeys）统一；`.ptabs` 的重复两条删除（消费点已带 hfade class）。
+- **反馈③（composer 增长）**：SessionInputDrawer 旧 rows = 桌面恒 3 / 移动按显式换行计数（折行不增长）；换 `react-textarea-autosize`（minRows=1 + max-h-32 + cacheMeasurements）**对齐 agent composer**（assistant-ui ComposerInput 同款机制：autosize 组件 + CSS max-height 封顶 128px，内容滚动）。依赖 8.5.9 原是传递依赖（node_modules 已在）→ package.json 显式化，零新增包。
+- **反馈④（crumb 图标偏心）**：DOM 实测根段 span 变体（role=img）偏上 2.6px（上 6.5 / 下 11.5）——`.cseg` 无自身 display 规则，span 在 flex 容器 block-ified 后内部 inline-flex .cico 按基线对齐；button 变体 UA 默认居中正常。修 = `.crumb > .cseg { display:inline-flex; align-items:center }` 归一两种变体。
+- **反馈⑤（.sw 非 Lucide）**：`.sw` = CSS 手绘旋转盒（8×8 border 45°，批 10 从「▾ 文字」改的近似物，仍违单轨 Lucide 纪律 §15）。修 = 白名单加 chevron-down 重生成（47 图标）+ mobile-project-header 换 `<LucideIcon name="chevron-down" className="size-3.5 …">`（显式尺寸防 WebKit 隐形 §15⑤）+ 开态 `group-data-[state=open]:text-primary`（currentColor）+ `.sw` CSS 退役（全仓唯一消费点核实）。LucideIcon 直吃生成物键，不经 ShellIcon TO_LUCIDE（无 SF 名消费点零冗余映射）。
+- **探针**：m4-tools-l3 扩 Part 9（9 标签溢出 fixture，开面板断言激活 tab inView）75/0；mobile-project-header Part 10 断言 .sw→svg（在场 + size-3.5 class + 14px 几何）42/0；batch8-interactions Part T 加 P-T5/T6（scrollbar-width none + 无滚动条占高）27/0。
+- **复验**：e2e 全量 27/27；单测 729 pass；门禁全绿 + CSS 硬闸 + tokens strict 0 违例 + files-tree-bugs ALL PASS（.cseg 改动面回归）。
+
 | 项 | 决策点 | 摊牌时点 |
 | --- | --- | --- |
 | Wiki「让 Agent 读这篇」注入协议 | ~~stdin 指令 vs attachment/引用卡；引用卡状态归属~~ ✅ 已摊牌（D13，§6.2）：stdin prompt + 客户端 per-session 引用 atom | ~~M4 开工前~~ 2026-09-21 |

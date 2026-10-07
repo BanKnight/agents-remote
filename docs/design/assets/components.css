@@ -26,8 +26,6 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 .back::before{content:'';width:10px;height:10px;border-left:2.2px solid var(--c-primary);
               border-bottom:2.2px solid var(--c-primary);transform:rotate(45deg);margin-right:4px}
 .nv-t{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
-.sw{display:inline-block;width:8px;height:8px;border-right:1.8px solid var(--ink-2);
-    border-bottom:1.8px solid var(--ink-2);transform:rotate(45deg) translateY(-2px)}  /* 标题▾ */
 .ic{width:26px;height:26px;display:flex;align-items:center;justify-content:center}
 .ic svg{width:20px;height:20px;stroke:var(--ink-2);fill:none;stroke-width:1.8;
         stroke-linecap:round;stroke-linejoin:round}

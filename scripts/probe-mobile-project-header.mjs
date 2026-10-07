@@ -501,8 +501,8 @@ async function run() {
     );
     await ctx3.close();
 
-    // ── Part 10：批 10 反馈③——.sw chevron + ▾ 菜单跨项目实例行 ──────────────
-    console.log("\n===== Part 10. .sw chevron + ▾ 跨项目实例行（反馈③）=====");
+    // ── Part 10：批 10 反馈③ + 批 12 反馈⑤——切换锚 chevron + ▾ 菜单跨项目实例行 ──────
+    console.log("\n===== Part 10. 切换锚 chevron + ▾ 跨项目实例行（反馈③⑤）=====");
     const FOREIGN = [
       {
         // wire shape = 扁平（useGlobalInstanceCandidates :1834 映射 ref 嵌套）。
@@ -546,17 +546,22 @@ async function run() {
     await seedLayout(page4, ["agent_probe-1"], "agent_probe-1");
     await page4.goto(`${ORIGIN}/projects/proj1/session/agent_probe-1`);
     await page4.waitForSelector('[data-tab-id="agent_probe-1"]', { timeout: 8000 });
-    // 标题钮内 .sw chevron（批 10：文字 ▾ 退役）——存在 + 合理几何（原语 8×8 旋转盒）。
+    // 标题钮内切换锚（批 12 反馈⑤：CSS 手绘 .sw 退役 → Lucide 管线 svg）——svg 在场 +
+    // 显式尺寸（frontend-notes §15⑤：无显式尺寸 WebKit flex 收缩 0×0 隐形）+ size-3.5 几何。
     const swGeo = await page4.evaluate(() => {
-      const sw = document.querySelector(".nav h1 button .sw");
-      if (!sw) return null;
-      const r = sw.getBoundingClientRect();
-      return { w: r.width, h: r.height };
+      const svg = document.querySelector(".nav h1 button svg");
+      if (!svg) return null;
+      const r = svg.getBoundingClientRect();
+      return { w: r.width, h: r.height, cls: svg.getAttribute("class") ?? "" };
     });
-    ok(swGeo !== null, ".sw chevron 在标题钮内（文字 ▾ 退役）");
+    ok(swGeo !== null, "切换锚 svg 在标题钮内（.sw 手绘盒退役 → Lucide）");
     ok(
-      swGeo !== null && swGeo.w > 4 && swGeo.w < 20 && swGeo.h > 4 && swGeo.h < 20,
-      `.sw 几何在 chevron 合理区间（实际 ${swGeo ? `${swGeo.w}x${swGeo.h}` : "null"}）`,
+      swGeo !== null && /size-3\.5/.test(swGeo.cls),
+      `切换锚 svg 显式尺寸 class（size-3.5；实际 ${swGeo ? swGeo.cls : "null"}）`,
+    );
+    ok(
+      swGeo !== null && swGeo.w >= 13 && swGeo.w <= 15 && swGeo.h >= 13 && swGeo.h <= 15,
+      `切换锚 svg 几何 14px 区间（实际 ${swGeo ? `${swGeo.w}x${swGeo.h}` : "null"}）`,
     );
     await openSwitchMenu(page4);
     const cross = await page4.evaluate(() => {

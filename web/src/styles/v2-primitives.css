@@ -50,14 +50,6 @@
     justify-content: center;
     gap: 4px;
   }
-  .sw {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-right: 1.8px solid var(--ink-2);
-    border-bottom: 1.8px solid var(--ink-2);
-    transform: rotate(45deg) translateY(-2px);
-  } /* 标题▾ */
   /* 标题运行徽标（v1.5 单会话化，workspace.html `.runct`）：●n = 项目内运行中实例数 */
   .runct {
     font-size: 9px;
@@ -1387,6 +1379,13 @@
     margin: 0 4px;
     color: var(--ink-3);
   }
+  /* 根段图标（.cseg）垂直居中：button 变体靠 UA 默认居中，span（已在根层 = 非交互
+     role=img）内部 inline-flex .cico 按基线对齐 → 图标顶到行框上部（偏上 ~2.6px，真机
+     反馈④）。显式 inline-flex + align-items:center 归一两种变体。 */
+  .crumb > .cseg {
+    display: inline-flex;
+    align-items: center;
+  }
   /* 根段图标（.cseg）与其后首段路径之间无分隔（原型「📁 src / auth」，反馈⑧——
      「/」只在路径段之间；design-review P2）。 */
   .crumb > .cseg + *::before {
@@ -1452,6 +1451,12 @@
       black calc(100% - var(--fade-r)),
       transparent 100%
     );
+    /* 横滚条隐藏（与 .ptabs 同款，真机反馈②：快捷方式条横滚时画常驻滚动条很违和）——
+       渐隐 mask 已提示可滚侧，滚动条是噪音；单源挂本原语，4 个消费者统一。 */
+    scrollbar-width: none;
+  }
+  .hfade::-webkit-scrollbar {
+    display: none;
   }
   .hfade[data-fade-left="off"] {
     --fade-l: 0px;
@@ -1467,16 +1472,12 @@
     gap: 8px;
     margin: 10px 16px 0;
     overflow-x: auto;
-    /* 横滚条隐藏（与 .pills 同款；桌面窄窗/Android 会画常驻滚动条挤压 30px 标签行） */
-    scrollbar-width: none;
+    /* 横滚条隐藏随 .hfade 单源（消费点挂 hfade class；桌面窄窗/Android 会画常驻滚动条） */
   }
   /* 桌面右栏语境（批3 review m1）：槽距对齐 .glabel2 的 14px（05:104 原型以 margin 上下文
      差异对齐头部；基础 16px 是移动 InspectionPanel 语境）。 */
   [data-desktop-inspector] .ptabs {
     margin-inline: 14px;
-  }
-  .ptabs::-webkit-scrollbar {
-    display: none;
   }
   .ptab {
     flex: none;

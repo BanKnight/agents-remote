@@ -8,6 +8,7 @@ import type {
 } from "@agents-remote/shared";
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import TextareaAutosize from "react-textarea-autosize";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -1119,10 +1120,6 @@ function SessionInputDrawer({
   onSubmit,
 }: SessionInputDrawerProps) {
   const { t } = useT();
-  // Auto-grow from 1 to 3 rows based on explicit newline count (mobile only).
-  const newlines = (input.match(/\n/g) || []).length;
-  const mobileRows = Math.min(newlines + 1, 3);
-  const rows = isDesktop ? 3 : mobileRows;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isDesktop) return;
@@ -1164,13 +1161,19 @@ function SessionInputDrawer({
               <label className="sr-only" htmlFor="session-input">
                 {t("session.sendInput")}
               </label>
-              <textarea
+              {/* 对齐 agent composer（assistant-ui 同款）：react-textarea-autosize 随内容
+                  自动增高（折行也增长，批 12 反馈③——旧实现按显式换行计 rows 不折行），
+                  宽端 min-h 保 spec「默认 ≥3 行」（与 agent 家族 sm:min-h-[4.5rem] 同款），
+                  max-h-32 封顶（128px，CSS max/min-height 胜 inline height）后内容滚动。 */}
+              <TextareaAutosize
                 autoCapitalize="none"
                 autoComplete="off"
                 autoCorrect="off"
-                className="min-w-0 flex-1 resize-none bg-transparent font-mono text-sm leading-[1.35] text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
+                cacheMeasurements
+                className="max-h-32 sm:min-h-[4.5rem] min-w-0 flex-1 resize-none bg-transparent font-mono text-sm leading-[1.35] text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!canSend}
                 id="session-input"
+                minRows={1}
                 placeholder={
                   connectionStatus === "connected"
                     ? sessionType === "agent"
@@ -1178,7 +1181,6 @@ function SessionInputDrawer({
                       : t("session.typeShell")
                     : t("session.disconnected")
                 }
-                rows={rows}
                 spellCheck={false}
                 value={input}
                 onChange={(e) => onInputChange(e.target.value)}

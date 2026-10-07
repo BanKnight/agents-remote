@@ -16,6 +16,7 @@
 //   Part 7 03w files 长按菜单（触屏可达，面板语境）。
 //   Part 8 零销毁滚动位（FilesToolPanel 查询/滚动跨开关保持）+ ?tab= 深链渲染期映射
 //     （面板 open + 激活标签，不写回 URL）。
+//   Part 9 打开面板滚入视野（批 12 反馈①）：9 标签溢出 fixture，PanelTabBar open 依赖重滚。
 //
 // 全 mock API（proj1 不依赖真实项目数据）；密码自读不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v2-m4-tools-l3.mjs
@@ -767,6 +768,70 @@ ok(
   `深链 ?tab=git 映射面板激活 Git 标签（实际 ${deepLink.onText}）`,
 );
 ok(await page.locator(".gitchip").isVisible(), "深链 gitchip 可见");
+
+// ── Part 9：批 12 反馈①——打开工具区时激活标签滚入视野（PanelTabBar open 依赖）────
+// 移动检视面板常驻挂载，closed 态（invisible translate-x-full）下挂载首滚在 WebKit 可能
+// 不生效——open 进 effect deps 后「打开瞬间」显式重滚。fixture：9 标签必溢出，激活最后
+// 一个 file 标签（视野外），开面板后断言入视野。
+console.log("Part 9: 打开面板滚入视野（批 12 反馈①）");
+await gotoWorkbench(page, `${ORIGIN}/projects/${projectName}`);
+await page.waitForSelector('[data-inspection-panel="closed"]', {
+  state: "attached",
+  timeout: 10000,
+});
+await page.evaluate(() => {
+  const files = [
+    "src/alpha.ts",
+    "src/beta.ts",
+    "src/gamma.ts",
+    "src/delta.ts",
+    "src/epsilon.ts",
+    "src/zeta.ts",
+  ];
+  const fileTabs = files.map((p) => ({ id: `file:proj1/${p}`, kind: "file", path: `proj1/${p}` }));
+  localStorage.setItem(
+    "workbenchPanelTabs",
+    JSON.stringify({
+      proj1: [
+        ...fileTabs,
+        { id: "files", kind: "files" },
+        { id: "git", kind: "git" },
+        { id: "wiki", kind: "wiki" },
+      ],
+    }),
+  );
+  localStorage.setItem("workbenchPanelActive", JSON.stringify({ proj1: "file:proj1/src/zeta.ts" }));
+});
+await page.goto(`${ORIGIN}/projects/${projectName}`);
+await page.waitForSelector('[data-inspection-panel="closed"]', {
+  state: "attached",
+  timeout: 10000,
+});
+await openPanel(page);
+const scrollState = await page.evaluate(() => {
+  const bar = document.querySelector('[data-inspection-panel="open"] .ptabs');
+  if (!bar) return null;
+  const tabs = [...bar.querySelectorAll(".ptab")];
+  const on = tabs.find((t) => t.classList.contains("on"));
+  if (!on) return null;
+  const br = bar.getBoundingClientRect();
+  const ar = on.getBoundingClientRect();
+  return {
+    overflow: bar.scrollWidth > bar.clientWidth,
+    nTabs: tabs.length,
+    label: on.getAttribute("aria-label"),
+    inView: ar.left >= br.left - 1 && ar.right <= br.right + 1,
+  };
+});
+ok(
+  scrollState?.overflow === true,
+  `标签条溢出（9 标签 fixture；实际 overflow=${scrollState?.overflow}）`,
+);
+ok(scrollState?.label === "zeta.ts", `激活 = 最后 file 标签（实际 ${scrollState?.label}）`);
+ok(
+  scrollState?.inView === true,
+  `打开面板后激活标签滚入视野（批 12 反馈①；实际 inView=${scrollState?.inView}）`,
+);
 
 console.log(`\n结果：${passCount} pass / ${failCount} fail`);
 await browser.close();
