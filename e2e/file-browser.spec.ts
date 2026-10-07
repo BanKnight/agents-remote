@@ -151,7 +151,10 @@ test("batch-4 file operations: new item sheet, rename, move, delete confirm", as
 
   // ── 03w2 重命名 Alert：右键行 → 菜单「Rename」→ 预填全选覆盖输入 + ✓ Available。──
   await filesBody.locator(".frow", { hasText: fileName }).click({ button: "right" });
-  await page.locator('[role="menuitem"]', { hasText: "Rename" }).click();
+  // 右键菜单弹出动画期间 playwright 对 fixed+transform 弹层的 in-viewport 判定不稳（几何
+  // 实测健康仍恒判视口外、失败点在三条菜单项间漂移；dispatchEvent 直接派发 click，语义
+  // 等价 onSelect，2026-10-08 batch-4 实战）。三处统一。
+  await page.locator('[role="menuitem"]', { hasText: "Rename" }).dispatchEvent("click");
   const renameBox = page.getByRole("dialog");
   await expect(renameBox.getByRole("button", { name: "Rename" })).toBeDisabled(); // 未改名禁用
   await renameBox.getByLabel("Rename").fill(`e2e-b4-${stamp}-renamed.txt`);
@@ -161,7 +164,7 @@ test("batch-4 file operations: new item sheet, rename, move, delete confirm", as
 
   // ── 03w3 移动 sheet：右键 → 「Move to…」→ 当前目录行 ✓ + 点 src 进入 + 移动到此处。──
   await filesBody.locator(".frow", { hasText: `-renamed.txt` }).click({ button: "right" });
-  await page.locator('[role="menuitem"]', { hasText: "Move to…" }).click();
+  await page.locator('[role="menuitem"]', { hasText: "Move to…" }).dispatchEvent("click");
   const moveBox = page.getByRole("dialog");
   await expect(moveBox.locator(".ck")).toHaveText("✓");
   await moveBox.locator(".mvrow", { hasText: "src" }).click();
@@ -173,7 +176,7 @@ test("batch-4 file operations: new item sheet, rename, move, delete confirm", as
 
   // ── 03w4 删除确认：src 层右键 renamed 文件 → confirm 文案（文件版措辞）→ 确认移除。──
   await filesBody.locator(".frow", { hasText: `-renamed.txt` }).click({ button: "right" });
-  await page.locator('[role="menuitem"]', { hasText: "Delete" }).click();
+  await page.locator('[role="menuitem"]', { hasText: "Delete" }).dispatchEvent("click");
   const delBox = page.getByRole("dialog");
   await expect(delBox).toContainText("removed from the project and the Git worktree");
   await delBox.getByRole("button", { name: "Delete", exact: true }).click();

@@ -1662,6 +1662,27 @@ export function dropIntoLeaf(
 }
 
 /**
+ * 分屏 = 复制当前激活 tab 到新 leaf（右侧水平 split；批 13 反馈⑥ 用户拍板 VSCode 复制
+ * 语义，取代旧「分屏并新建终端」）。源 leaf 不动（同 ref 双窗格视图）；targetLeafId 不在树
+ * → 返回 null（调用方保持原 layout）。activeGroupId 设为新 leaf（分屏后焦点随新窗格）；
+ * maximized 清空（分屏退出独占，与 dropIntoLeaf edge 同不变式——否则新窗格被独占态隐藏）。
+ * 注意不能复用 dropIntoLeaf：其 edge 分支对「ref 已存在于 target leaf」是 no-op（单 tab）
+ * 或把 tab 从源 leaf 搬走（多 tab），均非复制语义。
+ */
+export function splitLeafWithActiveTab(
+  layout: WorkbenchLayoutV3,
+  leafId: string,
+): WorkbenchLayoutV3 | null {
+  if (!layout.root) return null;
+  const leaf = findLeafNode(layout.root, leafId);
+  if (!leaf) return null;
+  const active = leaf.tabs.find((t) => tabIdOf(t) === leaf.activeTabId) ?? leaf.tabs[0];
+  const newLeaf = createLeaf(active);
+  const root = splitLeafInTree(layout.root, leafId, newLeaf, "horizontal", false);
+  return { ...layout, root, activeGroupId: newLeaf.id, maximized: null };
+}
+
+/**
  * 拖 gutter 调「某 split 内相邻两 children」的 sizes 占比（设计 §7.4，守恒钳制）。
  * splitId/leftChildId/rightChildId 须匹配树结构（相邻），否则原样返回。
  */
@@ -1747,8 +1768,11 @@ export function projectTabStrip(
       } else if (tab.kind === "file") {
         if (splitFilePath(tab.path).projectName !== projectKey) continue;
       }
-      // skill：全局包含（见 JSDoc）
-      out.push({ leafId: leaf.id, tabId: tabIdOf(tab), ref: tab });
+      // skill：全局包含（见 JSDoc）。同 tabId 去重（批 13 ⑥ review P1：分屏复制语义下同 ref
+      // 可双挂——移动 tab 带无窗格概念，一 tab 一 pill；保首 leaf 位置，桌面窗格视图交桌面投影）。
+      const tabId = tabIdOf(tab);
+      if (out.some((x) => x.tabId === tabId)) continue;
+      out.push({ leafId: leaf.id, tabId, ref: tab });
     }
   }
   return out;

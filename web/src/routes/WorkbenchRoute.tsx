@@ -1,5 +1,4 @@
 import type { GitDiffScope } from "@agents-remote/shared";
-import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -20,7 +19,6 @@ import {
   useRenameSession,
   useScopeInstanceOrder,
 } from "../components/workbench/instance-area";
-import { createTerminalSession } from "../api/client";
 import { useWorkbenchShortcuts } from "../hooks/use-workbench-shortcuts";
 import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
@@ -35,7 +33,10 @@ import { AddMenu } from "../components/files/add-menu";
 import { NewItemSheet } from "../components/files/new-item-sheet";
 import { enqueueUploads } from "../components/files/upload-queue";
 import { MobileMcpDetail } from "../components/workbench/mobile-plugins-detail";
-import { MobilePluginsOverview } from "../components/workbench/mobile-plugins-home";
+import {
+  MobilePluginsOverview,
+  PluginsScopeSegmented,
+} from "../components/workbench/mobile-plugins-home";
 import { MobileMarket, MobileMarketSources } from "../components/workbench/mobile-plugins-market";
 import { SkillTabPreview } from "./plugins-shared";
 import { useT } from "../i18n";
@@ -62,6 +63,7 @@ import {
   setActiveTabInLeaf,
   stickyWorkbenchSearch,
   splitFilePath,
+  splitLeafWithActiveTab,
   useIsDesktopViewport,
   useWorkbenchLayout,
   useWorkbenchNavigate,
@@ -81,6 +83,8 @@ import { FILE_NAV_QUERY_SCOPE, FileTabPreview } from "../components/files/file-p
 import { FilePreviewNavMenu } from "../components/workbench/mobile-l3";
 import { useFilePreview } from "../components/files/use-file-editor";
 import { resolveRootBrowseTarget } from "../components/files/file-browser";
+import { resolveRelativeFilePath } from "../components/files/relative-md-link";
+import { MarkdownLinkContext } from "../components/markdown/markdown-components";
 
 /**
  * workbench 共享 pathless layout 组件（设计 workbench-stable-refactor.md Phase 1）。7 个 workbench
@@ -250,7 +254,6 @@ function WorkbenchContent({
   const { close, holder: closeHolder } = useCloseSession();
   const { holder: renameHolder } = useRenameSession();
   const [layout, update] = useWorkbenchLayout();
-  const queryClient = useQueryClient();
   const { candidates, projectNames } = useGlobalInstanceCandidates(scope);
   const create = useCreateSession(ctx.projectKey);
   const scopeKey = scope.kind === "project" ? scope.key : "global";
@@ -426,38 +429,15 @@ function WorkbenchContent({
     },
     [update],
   );
-  // 分屏按钮（§6.10-3）：一键「分屏并新建终端窗格」（05 原型分屏产物 = pterm）。不走
-  // useCreateSession——分屏需要先拿 ref 做布局 split。顺序敏感（对齐 useCreateSession 的
-  // 「await navigate 先行」时序）：await navigateWorkbench 让 URL focusId 先生效 → prune
-  // effect 的 focusId 保护覆盖新终端 tab（refs 尚未收录它），再 update(dropIntoLeaf
-  // zone=right，复用拖放分屏完整语义：预处理/split/激活/退出最大化)。invalidate 与
-  // useCreateSession 同 keys（列表自愈）。失败静默（与 useCreateSession 同纪律）。
+  // 分屏按钮（§6.10-3）：一键分屏 = 复制当前激活 tab 到新窗格（VSCode 复制语义，批 13
+  // 反馈⑥ 用户拍板「分屏仅分屏」，取代旧「分屏并新建终端」）——splitLeafWithActiveTab
+  // 纯函数从 layout 复制激活 tab 开右侧水平 split（同 ref 双窗格视图，源 leaf 不动）；
+  // leaf 不在树 → null → 保持原 layout。
   const onSplitLeaf = useCallback(
-    async (leafId: string) => {
-      if (scope.kind !== "project") return;
-      try {
-        const data = await createTerminalSession(scope.key);
-        const ref: WorkbenchPanelRef = {
-          kind: "session",
-          projectName: scope.key,
-          sessionId: data.session.id,
-        };
-        await navigateWorkbench(
-          scope,
-          ref.sessionId,
-          stickyWorkbenchSearch({ rightTab, tab: tabFromUrl, leftMode, mode }),
-        );
-        update((prev) => dropIntoLeaf(prev, ref, leafId, "right"));
-        void queryClient.invalidateQueries({ queryKey: ["projects", scope.key] });
-        void queryClient.invalidateQueries({ queryKey: ["overview"] });
-      } catch {
-        // 创建失败：UI 不额外提示。
-      }
+    (leafId: string) => {
+      update((prev) => splitLeafWithActiveTab(prev, leafId) ?? prev);
     },
-    // 闭包依赖（rightTab/tabFromUrl/leftMode/mode）已被 deps 覆盖：stickyWorkbenchSearch
-    // 必须带回当前 search 值，deps 缺失会把旧值回写 URL（切右栏 tab 后立即分屏的窗口）。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scope, update, queryClient, rightTab, tabFromUrl, leftMode, mode],
+    [update],
   );
   // file tab focus URL（设计 §6 决策 2 / workbench-stable-refactor Phase 3）：
   // - 项目文件（projectName === scope.key，scope=project）→ /projects/$key/file/$，splat=项目相对路径
@@ -966,6 +946,7 @@ function WorkbenchContent({
           search: stickyWorkbenchSearch({ leftMode: "files", rightTab, mode }),
         });
       }}
+      onOpenFile={pushToFilePreview}
       onOpenInWorkbench={openPushInWorkbench}
     />
   ) : leftMode === "plugins" ? (
@@ -994,8 +975,13 @@ function WorkbenchContent({
       // 搜索 + MCP 组 + 已安装技能组 + 市场组一页纵览），替代 PluginsPanel 的 skill/mcp 大段切
       // + discover/manage/sources 子 tab。桌面
       // 标题由 MainPageShell 17px h1 承担（09m .mhead h1 形态），内部 30px 大标题隐藏、作用域
-      // 分段限宽对齐 09m seg4 290px。
-      <MainPageShell title={t("nav.plugins")}>
+      // 分段由 actions 槽承载（PluginsScopeSegmented 固定宽 290 = 09m seg4 原型字面值
+      // style="margin:0;width:290px"，批 13 反馈⑦ + design review：max-w 只是上限，短项目名
+      // 下会缩到内容宽、两段不再对半分）。
+      <MainPageShell
+        actions={<PluginsScopeSegmented className="w-[290px]" />}
+        title={t("nav.plugins")}
+      >
         <MobilePluginsOverview hideTitle />
       </MainPageShell>
     )
@@ -1080,6 +1066,7 @@ function WorkbenchContent({
       onCardDragStart={onCardDragStart}
       onCloseTab={onCloseTab}
       onDrop={onDrop}
+      onOpenFile={onOpenFile}
       onOpenGitDiff={onOpenGitFile}
       onResizeSplit={onResizeSplit}
       onSelectTab={onSelectTab}
@@ -1115,14 +1102,19 @@ function WorkbenchContent({
  * .fmeta 元信息行 / 编辑态 .emeta+.aux / unsupported 空态单源），编辑受控共享
  * workbenchFileTabEditingAtom（tabId=file_ 前缀全路径，与中栏 tab 同命名空间、同屏单编辑）。
  * ⋯ 菜单 = 复制内容/复制路径/在工作台打开（根作用域无 Git，无查看 diff——onOpenDiff 不传）。
+ * md 内链（批 13 反馈⑤）：MarkdownLinkContext 以当前 push 文件目录解析相对 href →
+ * onOpenFile（pushToFilePreview，推入态内换目标文件，不退 mainPage）。
  */
 function FilesPushPreview({
   focusId,
   onBack,
+  onOpenFile,
   onOpenInWorkbench,
 }: {
   focusId: string;
   onBack: () => void;
+  /** 相对 .md 链接目标打开（MarkdownLinkContext value；装配点 = pushToFilePreview）。 */
+  onOpenFile: (projectName: string, path: string) => void;
   onOpenInWorkbench: (projectName: string, path: string) => void;
 }) {
   const { t } = useT();
@@ -1169,7 +1161,13 @@ function FilesPushPreview({
           triggerClassName="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
         />
       </header>
-      <FileTabPreview panelRef={panelRef} />
+      {/* md 内链容器（批 13 反馈⑤）：Provider 只包 FileTabPreview（渲染 MarkdownString 的
+          子树），value 以当前 push 文件的目录为基准解析相对 href → 推入态内打开目标文件。 */}
+      <MarkdownLinkContext.Provider
+        value={(href) => onOpenFile(projectName, resolveRelativeFilePath(relativePath, href))}
+      >
+        <FileTabPreview panelRef={panelRef} />
+      </MarkdownLinkContext.Provider>
     </div>
   );
 }

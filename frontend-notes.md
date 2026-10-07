@@ -279,3 +279,13 @@
 **标准做法**：接管分支 stop 后**注册同帧 rAF 矫正写入**（重写 `translateY(base + visualDragY(最新 dy))`）——矫正回调注册序晚于 motion 已排队回调 → 同帧执行序在后 → **paint 前最后写入生效，同帧矫正零跳变**。执行条件 = phase 仍是 dragging 且无回弹/exit controls（松手/关闭的 transform 已归其它路径管，不抢）。**禁 Node 侧定时采样**的老规矩在此失效变体：探针 waitStillTop 的「1 帧静止」可能是慢速尾段误判（帧差 <0.5px ≠ 速度为 0），必须配**硬数值断言兜底**（visShift = 手指位移 ±0.5）——误判时基准偏移必偏出容差。
 
 **来源**：弹层近瞬时档批（2026-10-04）调试实锤；与 §21（动画接管）、§22（取证纪律）、§24（速度继承）同链。
+
+## 26. playwright 对 fixed+transform 弹层的 in-viewport 判定：动画期误判 + 弹层可随输入序列漂移
+
+**现象**：右键菜单 menuitem `click()` 恒「element is outside of the viewport」重试循环至超时（153 次 retry）；`waitForTimeout`/`force: true` 都不能稳定修复，失败点还会在多条 menuitem 间漂移。
+
+**机制**：Radix 弹层 = portal body + `position:fixed` + `transform` 定位（inline matrix）。playwright click 的 in-viewport 判定走 CDP quads（非 evaluate 的 getBoundingClientRect）——enter 动画（zoom spring）期间 quads 是动画中间态，判定不稳；且失败现场 dump 实锤弹层会**随自动化输入序列漂移出视口**（menuRect x=1869 vs 初位 x=1104，scroll 0,0，视口外 589px）——evaluate dump「几何健康」与 click「判视口外」可以同时为真（dump 在 scrollIntoView/输入序列之前）。基线 commit 同挂（非当批改动引入），机器时序决定从偶发变恒定。
+
+**标准做法**：锚定弹层（menu/popover）内的菜单项点击，凡 click 反复「outside of the viewport」且 evaluate 几何证明健康 → 三步排除法：① 隔离环境复刻（自起同拓扑服务）分辨「产品缺陷 vs 测试语境」；② 失败现场 try/catch dump（scroll 位置 + 弹层 rect）分辨「弹层真漂移 vs 引擎误判」；③ 确认测试语境问题后菜单项 click 换 `dispatchEvent("click")`（跳过全部几何判定，语义等价 Radix menuitem 的 onSelect；force 仍会被 quads 判定卡住）。**勿再走**：固定 sleep 等动画（时序敏感，等了照样挂）；`force: true`（quads 判定仍在，弹层真漂移时同样抛错）。
+
+**来源**：批 13 e2e batch-4 排障（2026-10-08，27/27 复绿）；`e2e/file-browser.spec.ts` 三处 dispatchEvent 注释。

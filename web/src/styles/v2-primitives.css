@@ -1695,14 +1695,11 @@
   }
   /* ---- 桌面右栏语境分档（[data-desktop-inspector]，先例 ptabs margin-inline）——真机
      反馈 2026-09-29「桌面右栏与设计差距非常大」：05e .tree .frow 31px 密度行（padding
-     7px 14px、栏边距 14）+ 无 mtime/chevron（03o 移动语义尾件，display:none）+ .sect
-     边距 16→14 + 05i .grow 33px 密度（.crow 分档）。同一 DOM 语境分档，非两套 DOM。 ---- */
+     7px 14px、栏边距 14）+ .sect 边距 16→14 + 05i .grow 33px 密度（.crow 分档）。
+     同一 DOM 语境分档，非两套 DOM。2026-10-08 批13 真机反馈④：「无 mtime/chevron」
+     display:none 分档被推翻已删——.frow .tm/.ar 恢复显示，密度分档仅留 padding。 ---- */
   [data-desktop-inspector] .frow {
     padding: 7px 14px;
-  }
-  [data-desktop-inspector] .frow .tm,
-  [data-desktop-inspector] .frow .ar {
-    display: none;
   }
   [data-desktop-inspector] .sect {
     margin-inline: 14px;
@@ -2211,33 +2208,6 @@
     opacity: 0.5;
     cursor: default;
   }
-  /* 03q 文本预览只读行号渲染（meta 行下方代码区；.kw 关键字高亮 v1 未做——预览以
-     原文呈现，语法高亮随桌面编辑器收敛统一处理）。 */
-  .code {
-    background: var(--bg-codeblock);
-    margin: 0;
-    padding: 10px 0;
-    overflow-x: auto;
-    font-family: ui-monospace, "SF Mono", Consolas, monospace;
-    font-size: 11.5px;
-    line-height: 20px;
-  }
-  .code .ln {
-    display: flex;
-  }
-  .code .no {
-    width: 34px;
-    flex: none;
-    text-align: right;
-    padding-right: 10px;
-    color: var(--ink-3);
-    user-select: none;
-  }
-  .code .tx {
-    color: var(--term-ink);
-    white-space: pre;
-    padding-right: 16px;
-  }
   /* ---- 文件预览元信息行（v1.5 批3，components.css :282-284 单源镜像）：03q/05h/10m2 四容器
      共用——左 = 类型·度量·更新时间，右端 .fright（MD/HTML = 渲染⇄源码分段；wiki 阅读标签 =
      actbtn）。push 容器无 ptabs 时 .fmeta 直贴 nav 下（files-global-preview 原型同款）。 */
@@ -2265,8 +2235,10 @@
   .fmeta .fright .segc {
     flex: none;
   }
-  /* 分段控件（components.css :229-238 单源镜像；span/button 双覆盖——实现层 toggle 用 button
-     保 a11y，原型为 span）。mini = .fmeta 右端内嵌变体（渲染⇄源码）。 */
+  /* 分段控件（components.css :227-235 单源镜像；子代选择器 > span/> button——实现层 toggle
+     用 button 保 a11y，原型为 span；按钮内嵌套 span（truncate/caret）不再吃 flex:1）。
+     mini = .fmeta 右端内嵌变体（渲染⇄源码）。基础块无 margin——页边距由消费点 utility
+     承担（批13 真机反馈④ margin 语境化，原型「页内只补 margin」同语义）。 */
   .segc {
     display: flex;
     height: 32px;
@@ -2274,14 +2246,17 @@
     background: var(--fill-segmented);
     padding: 3px;
   }
-  .segc span,
-  .segc button {
+  .segc > span,
+  .segc > button {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 4px;
     font-size: 13px;
+    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承；
+       自 M6 重复块并入——同 specificity 源序曾由 M6 区供此属性） */
+    line-height: var(--line-height-ui);
     color: var(--ink-2);
     cursor: pointer;
     min-width: 0;
@@ -3054,41 +3029,10 @@
      .psect=09 主页 13px / .dsect=12/13 详情页 12px（sheet 内组标题复用 M4 .sect）；
      .kbtns 取 14 添加表单版，16 审计的实底主钮用 .kbtns .p.solid 变体。 ---- */
 
-  /* 09 作用域分段（全局 / 本项目 · <名> ▾） */
-  .segc {
-    display: flex;
-    margin: 14px 16px 0;
-    height: 32px;
-    border-radius: 10px;
-    background: var(--fill-segmented);
-    padding: 3px;
-  }
-  .segc > * {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    font-size: 13px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
-    color: var(--ink-2);
-    cursor: pointer;
-  }
-  .segc .on {
-    background: var(--segmented-thumb);
-    color: var(--ink-1);
-    font-weight: 600;
-    border-radius: 8px;
-  }
-  .segc .caret {
-    font-size: 9px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
-    /* 触区扩（role=button 可达性）：负 margin 抵消 padding，视觉零变化、命中区扩到 ~22px。 */
-    padding: 8px 6px;
-    margin: -8px -6px;
-  }
+  /* .segc 单源在上文预览区（基础块/子代段/.on/mini），此处仅存 em.n 段内计数变体。
+     （批13 真机反馈④：原 M6 重复块带 margin: 14px 16px 0——同 specificity 源序恒赢，
+     margin 泄漏给全部消费点；已删，margin 由消费点 utility 承担。.segc .caret 随组件面
+     caret Lucide 化退役同批删除。） */
   /* 03n 段内计数（v1.5 批5 规模化：全部/进行中/已结束 段内嵌服务端聚合计数）——计数小一号
      弱色，选中段随 .on 提亮。原型页私 .segc em.n（workspace-session-history :16-17）收编。 */
   .segc em.n {

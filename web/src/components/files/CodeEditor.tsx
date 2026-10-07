@@ -7,7 +7,7 @@ import { extToEditorLanguage } from "./editor-languages";
 // 可编辑代码容器：CodeMirror 6 + oneDark 主题。画布与排印对齐 03q2 编辑态（.ed）与 03q 查看
 // 态（.code，v2-primitives）的**同一规格**：bg-codeblock 全幅、无圆角无边框、上下 10px、
 // 11.5px/20px 等宽、行号列（2026-10-02 用户反馈两轮：①旧 rounded+border「输入框」壳跳变；
-// ②md 源码 toggle（CodeWithLineNumbers）与编辑态字号/行高/行号不同——两处皆因编辑态偏离
+// ②md 源码 toggle 与编辑态字号/行高/行号不同——两处皆因编辑态偏离
 // 原型，对齐后查看/编辑只差语法着色，着色收敛是 spec 既定方向另批做）。用 minimalSetup
 // 而非 basicSetup 省去 fold gutter / 自动补全等重型功能（约省 75KB），行号单独加回
 //（lineNumbers 随 @uiw re-export，零新增依赖）。lineWrapping 让移动端长行自动折行。
@@ -42,7 +42,8 @@ const THEME = EditorView.theme({
 export type CodeEditorProps = {
   value: string;
   name: string;
-  onChange: (value: string) => void;
+  /** 变更回调；只读消费（editable=false）不传——@uiw 内部判函数后才调用，undefined 安全。 */
+  onChange?: (value: string) => void;
   /** 只读展示（v2 §6.10-8 file tab 预览只读化）。默认 true（可编辑，FilesPanel 编辑路径不变）。 */
   editable?: boolean;
   /** EditorView 就绪回调（v1.5 批3 aux 条：撤销/重做走 @codemirror/commands 的 view 命令、

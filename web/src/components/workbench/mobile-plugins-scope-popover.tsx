@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { useT } from "../../i18n";
 import { workbenchLastProjectAtom } from "../../routes/workbench-model";
+import { LucideIcon } from "../shell/lucide-icon";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { useGlobalInstanceCandidates } from "./instance-area";
 import { useCreateProjectDialog } from "../shell/project-setup";
@@ -34,16 +35,18 @@ export function ScopeSwitchPopover() {
     <>
       <Popover open={open} onOpenChange={setOpen}>
         {/* asChild → span：宿主分段控件本身是 button，Trigger 默认再渲染原生 button 会构成
-            button 嵌 button（无效 HTML，点击语义被浏览器修正）；span[role=button] 承载键盘可达。 */}
+            button 嵌 button（无效 HTML，点击语义被浏览器修正）；span[role=button] 承载键盘可达。
+            caret Lucide 化（批 13 反馈⑦）：`.caret` CSS 类退役 → LucideIcon size-3.5（显式
+            尺寸防 WebKit flex 收缩隐形，frontend-notes §15⑤）。 */}
         <PopoverTrigger asChild>
           <span
             aria-label={t("plugins.switchProject")}
-            className="caret cursor-pointer"
+            className="cursor-pointer"
             role="button"
             tabIndex={0}
             onClick={(event) => event.stopPropagation()}
           >
-            ▾
+            <LucideIcon className="size-3.5" name="chevron-down" />
           </span>
         </PopoverTrigger>
         <PopoverContent align="end" className="spop w-[300px] p-0" side="bottom" sideOffset={8}>

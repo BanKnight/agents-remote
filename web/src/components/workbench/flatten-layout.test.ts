@@ -152,15 +152,30 @@ test("flattenLayout: 同 group 多 tab → 1 group + N panel，仅 active 可见
   closeTo(r.panels[0]!.rect, r.panels[1]!.rect);
 });
 
-test("flattenLayout: tab 跨 group 不去重（每个 leaf.tab 一个 panel，sessionId 在树中唯一）", () => {
-  // 语义上 dropIntoGroup 跨组迁移先 removeTabFromLeaf，故同 sessionId 不会出现在两个 leaf。
-  // 这里测「两 group 各自的 tab 互不干扰」，panels 总数 = 总 tab 数。
+test("flattenLayout: tab 跨 group 不去重（每个 leaf.tab 一个 panel）", () => {
+  // dropIntoLeaf 跨组迁移先 removeTabFromLeaf（搬移语义）；splitLeafWithActiveTab（批 13 ⑥
+  // 复制语义）则允许同 ref 双挂——见下方 renderKey 测试。这里测「两 group 各自的 tab 互不干扰」。
   const leafA = createLeaf(ref("p", "s1"), "gA");
   const leafB = createLeaf(ref("p", "s2"), "gB");
   const root = split("sp1", "horizontal", [leafA, leafB]);
   const r = flattenLayout(root, null);
   expect(r.panels).toHaveLength(2);
   expect(r.panels.map((p) => p.tabId).sort()).toEqual(["s1", "s2"]);
+});
+
+test("flattenLayout: 同 ref 双挂（分屏复制语义）→ renderKey 唯一，主份保持 tabId", () => {
+  // 批 13 ⑥ review P1：splitLeafWithActiveTab 源 leaf 不动 → 同 tabId 在两个 leaf 各一份，
+  // 裸 tabId 作 key 会 duplicate key。renderKey = 首份原样、后续份 `${tabId}@${leafId}`。
+  const leafA = createLeaf(ref("p", "s1"), "gA");
+  const leafB = createLeaf(ref("p", "s1"), "gB");
+  const root = split("sp1", "horizontal", [leafA, leafB]);
+  const r = flattenLayout(root, null);
+  expect(r.panels).toHaveLength(2);
+  expect(r.panels.map((p) => p.renderKey)).toEqual(["s1", "s1@gB"]);
+  // 双挂解除（副本 leaf 换成别的 tab）后回归纯 tabId。
+  const single = split("sp1", "horizontal", [leafA, createLeaf(ref("p", "s2"), "gB")]);
+  const r2 = flattenLayout(single, null);
+  expect(r2.panels.map((p) => p.renderKey)).toEqual(["s1", "s2"]);
 });
 
 test("flattenLayout: maximized 指向某 leaf → 该 leaf 占满，其他 leaf hidden", () => {

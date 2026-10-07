@@ -1,7 +1,8 @@
-import { createContext } from "react";
+import { createContext, useContext } from "react";
 import type { Components } from "react-markdown";
 import { CodeBlock } from "./CodeBlock";
 import { ImageThumb } from "../ui/image-lightbox";
+import { isRelativeMdHref } from "../files/relative-md-link";
 
 // react-markdown / assistant-ui 共用的 components override。
 //
@@ -15,6 +16,13 @@ import { ImageThumb } from "../ui/image-lightbox";
 // ClaudeSessionDetailRoute 根部 Provider 提供开启动作；Files md 预览无 Provider，
 // 按钮自然隐藏（html 代码块在文件预览里有 render mode 兜底，无需跳 tab）。
 export const HtmlRenderContext = createContext<((html: string) => void) | null>(null);
+
+// MarkdownLinkContext：md 相对链接（isRelativeMdHref，docs/next.md 等项目内相对 .md）的
+// 打开回调。Provider 缺省 = 相对 .md 链接保持浏览器默认行为（同 HtmlRenderContext 的
+// 优雅降级）；接 Provider 的容器语义 = 打开 href 指向的项目文件。a 组件只把 href 原样
+// 透传（未 resolve）——以当前文件目录解析成项目相对路径的责任在 Provider 侧，用
+// resolveRelativeFilePath（../files/relative-md-link）闭进回调。
+export const MarkdownLinkContext = createContext<((href: string) => void) | null>(null);
 
 function MarkdownImage({ src, alt }: { src: string; alt: string }) {
   if (!src) return null;
@@ -72,9 +80,27 @@ export function isExternalLink(
 
 export const MARKDOWN_COMPONENTS: Components = {
   a: ({ href, children, node: _node, ...rest }) => {
+    const openRelativeMd = useContext(MarkdownLinkContext);
     if (isExternalLink(href)) {
       return (
         <a href={href} target="_blank" rel="noopener noreferrer" {...rest}>
+          {children}
+        </a>
+      );
+    }
+    // 相对 .md 链接：接 Provider 的容器接管点击（打开对应文件），阻断浏览器默认导航
+    //（SPA 下 404）；无 Provider 落到裸 <a> 现行为。href 原样透传，未 resolve。
+    if (typeof href === "string" && openRelativeMd !== null && isRelativeMdHref(href)) {
+      const relativeMdHref = href;
+      return (
+        <a
+          href={href}
+          {...rest}
+          onClick={(event) => {
+            event.preventDefault();
+            openRelativeMd(relativeMdHref);
+          }}
+        >
           {children}
         </a>
       );

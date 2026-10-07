@@ -60,15 +60,25 @@ export type FlatGutter = {
 
 /** PanelRouter 落点：一个面板（session 或 file）的渲染槽位。 */
 export type FlatPanel = {
-  /** 派生 tab id（= React key / sizes key 概念）：session=sessionId，file=`file_${path}`。 */
+  /** 派生 tab id（= sizes key / activeTabId 匹配概念）：session=sessionId，file=`file_${path}`。 */
   tabId: string;
+  /**
+   * React key（批 13 ⑥ review P1：分屏复制语义允许同 ref 双挂——splitLeafWithActiveTab 源
+   * leaf 不动，同 tabId 在两个 leaf 各一份，裸 tabId 作 key 会 duplicate key 未定义行为）。
+   * 规则 = 同 tabId 首个投影原样、后续份 `${tabId}@${leafId}`：主份 key 恒稳（§3 扁平层稳定
+   * key 不变式完整保留——split / 塌缩 / 跨 group 移动 / 切 active 主份永不重挂），双挂副本 key
+   * 含 leafId，副本在双挂态下跨 leaf 移动会重挂一次（副本本就是复制视图，重挂代价可接受；
+   * 双挂解除后回归纯 tabId）。≠ 直接复合 `${groupId}:${tabId}`：那会让所有 tab 跨 group 移动
+   * 都重挂（WS 断 / xterm scrollback 丢），回归 §3。
+   */
+  renderKey: string;
   /** 完整面板引用；消费点直接用，无需从 sessionId+projectName 重构。 */
   ref: WorkbenchPanelRef;
   /** 落点 rect = 所属 group 的 contentRect。 */
   rect: FlatRect;
   /** 是否可见（tabId === 所属 group activeTabId 且该 group 未被 maximized 隐藏）。 */
   visible: boolean;
-  /** 所属 group id（tab 跨 group 移动时此字段变，rect 跟着变，key=tabId 不变 → React 复用）。 */
+  /** 所属 group id（tab 跨 group 移动时此字段变，rect 跟着变，renderKey 不变 → React 复用）。 */
   groupId: string;
 };
 
@@ -100,6 +110,8 @@ export function flattenLayout(root: TreeNode | null, maximized: string | null): 
   const groups: FlatGroup[] = [];
   const gutters: FlatGutter[] = [];
   const panels: FlatPanel[] = [];
+  // 已投影过的 tabId 集（renderKey 去重：双挂时首份原样、后续份带 @leafId 后缀）。
+  const seenTabIds = new Set<string>();
 
   // 递归分配 rect。root 占满 [0,0,1,1]。每个 split 按 direction 把自己的 rect 分给 children
   //（按 sizes 权重，gap 让给 gutter）。leaf 收集 group + 其每个 tab 的 panel。
@@ -171,17 +183,18 @@ export function flattenLayout(root: TreeNode | null, maximized: string | null): 
     });
     // 每个 tab 一个 panel（同 group 多 tab 共享 contentRect，靠 visible 区分）。
     for (const tab of leaf.tabs) {
+      const tabId = tabIdOf(tab);
       panels.push({
         groupId: leaf.id,
         rect: contentRect,
         ref: tab,
-        tabId: tabIdOf(tab),
+        renderKey: seenTabIds.has(tabId) ? `${tabId}@${leaf.id}` : tabId,
+        tabId,
         // maximized 指向其他 leaf 时，本 leaf 全 hidden；指向本 leaf 时只 active tab 可见。
         visible:
-          maximized === null
-            ? tabIdOf(tab) === leaf.activeTabId
-            : isMax && tabIdOf(tab) === leaf.activeTabId,
+          maximized === null ? tabId === leaf.activeTabId : isMax && tabId === leaf.activeTabId,
       });
+      seenTabIds.add(tabId);
     }
   }
 

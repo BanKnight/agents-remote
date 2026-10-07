@@ -225,15 +225,15 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 
 /* ---- 共享：移动端分段控件（作用域/表单二选一/市场双 tab 同一规格；页内只补 margin） ---- */
 .segc{display:flex;height:32px;border-radius:10px;background:var(--fill-segmented);padding:3px}
-.segc span{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;color:var(--ink-2);cursor:pointer;min-width:0}
+.segc > span, .segc > button{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;color:var(--ink-2);cursor:pointer;min-width:0}  /* 子代选择器：实现层用 button 保 a11y，原型为 span；段内嵌套 span 不吃 flex:1 */
 .segc .on{background:var(--segmented-thumb);color:var(--ink-1);font-weight:600;border-radius:8px}
-.segc .caret{font-size:9px}
 .seg4 .on{background:var(--seg-thumb);color:var(--ink-1);font-weight:600}
 .seg4.mini{height:26px;border:0;font-size:12px}  /* Sidebar 内轻量变体：视图切换用，无描边 */
 .seg4.mini span{font-size:12px;border-radius:6px}
 .segc.mini{height:26px;border-radius:8px;padding:2px}  /* 底部状态栏内嵌变体：渲染⇄源码（.fstat 右端） */
 .segc.mini span{font-size:12px;border-radius:6px}
 .segc.mini span{flex:none;padding:0 14px}
+.segc .caret{font-size:9px}  /* 遗留：plugins-tab.html / plugins-skill-menu.html 两个原型页 segc 内仍是 <span class="caret">▾</span>（无页私字号规则，靠本条）。实现侧已 Lucide 化（v2-primitives 无此规则）；随原型页图标迁移后再删本行（design review 批13 P1-2）。 */
 
 /* ---- 共享：Git 底部操作行（三端同构 03m/04d/05i；页内只补 margin） ---- */
 .gacts{display:flex;gap:8px;position:relative}

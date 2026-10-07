@@ -192,29 +192,10 @@ export function RightPanelTabs({
       />
       {/* 工具 chip 槽（03o crumb+搜索 / 03m gitchip / 03p wsearch；与移动 InspectionPanel
           同款槽结构 mx-4 mt-2.5 gap-2——装配单源 usePanelToolChip，右栏不再裸奔「..」行
-          （真机反馈 2026-09-29 Files 标签缺顶部工具行 / Wiki 缺搜索入口）。 */}
+          （真机反馈 2026-09-29 Files 标签缺顶部工具行 / Wiki 缺搜索入口）。批 13 反馈②：
+          行尾「＋」退役，新建/上传入口统一 FAB（tabpanel 容器内，下方）。 */}
       {toolChip ? (
-        <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-2">
-          {toolChip}
-          {activeKind === "files" ? (
-            <AddMenu
-              onNew={() => setNewItemParentPath(cwd)}
-              onUpload={() => {
-                uploadTargetRef.current = cwd;
-                uploadInputRef.current?.click();
-              }}
-              trigger={
-                <button
-                  aria-label={t("files.add")}
-                  className="cursor-pointer text-[15px] font-bold text-primary"
-                  type="button"
-                >
-                  ＋
-                </button>
-              }
-            />
-          ) : null}
-        </div>
+        <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-2">{toolChip}</div>
       ) : null}
       {/* §8 高度链：body 自身必须是 flex container（检视内容 FilesPanel 等是 flex-1 子）；
         relative = 标签叠层 absolute inset-0 的定位基准。 */}
@@ -255,6 +236,23 @@ export function RightPanelTabs({
             </div>
           );
         })}
+        {/* 批 13 反馈②：新建/上传入口统一 FAB（与移动检视面板 renderPanelFab 同构，
+            多端同构原则）。放 tab body 之后渲染保证 z 序；activeKind 守卫 = 仅 files 标签
+            提供（git/wiki 无新建语义）。AddMenu 单源（03oa 两项）+ 目标目录 = cwd atom 单源。 */}
+        {activeKind === "files" ? (
+          <AddMenu
+            onNew={() => setNewItemParentPath(cwd)}
+            onUpload={() => {
+              uploadTargetRef.current = cwd;
+              uploadInputRef.current?.click();
+            }}
+            trigger={
+              <button aria-label={t("files.add")} className="fab cursor-pointer" type="button">
+                <span className="plus" style={{ width: 20, height: 20 }} />
+              </button>
+            }
+          />
+        ) : null}
       </div>
       {/* 03y 新建 sheet + 03oa 上传 picker（toolChip「＋」菜单装配；open = state 非空持有）。
           与移动面板 FAB 装配同构（mobile-workbench renderPanelFab 同款三件）。 */}

@@ -38,6 +38,7 @@ import {
   resizeSplitChildren,
   setActiveTabInLeaf,
   splitFilePath,
+  splitLeafWithActiveTab,
   stickyWorkbenchSearch,
   tabIdOf,
   validateLayoutV3,
@@ -894,6 +895,53 @@ test("dropIntoLeaf: 单 leaf 多 tab，拖其中 1 tab 到自身 left → 拆出
   expect(r.maximized).toBeNull(); // 分屏退出独占
 });
 
+// ── splitLeafWithActiveTab（批 13 反馈⑥：分屏 = 复制当前激活 tab，VSCode 复制语义）──
+
+test("splitLeafWithActiveTab: 单 tab leaf → 两 leaf 各含同 ref、源 tabs 不变、activeGroupId=新 leaf", () => {
+  const l = v3({ root: leaf("g1", ["a"]), activeGroupId: "g1", maximized: "g1" });
+  const r = splitLeafWithActiveTab(l, "g1");
+  expect(r).not.toBeNull();
+  const root = r!.root as SplitNode;
+  expect(shape(root)).toBe("h[(a),(a)]"); // 右侧水平 split，两 leaf 各含同 ref（复制非搬移）
+  const [src, copy] = root.children as LeafNode[];
+  expect(src.id).toBe("g1"); // 源 leaf 不动
+  expect(src.tabs.map(tabIdOf)).toEqual(["a"]);
+  expect(src.activeTabId).toBe("a");
+  expect(copy.tabs.map(tabIdOf)).toEqual(["a"]);
+  expect(copy.activeTabId).toBe("a");
+  expect(r!.activeGroupId).toBe(copy.id); // 分屏后焦点随新窗格
+  expect(r!.maximized).toBeNull(); // 分屏退出独占（否则新窗格被独占态隐藏）
+  valid(r!);
+});
+
+test("splitLeafWithActiveTab: 多 tab leaf → 源 tabs 不变，新 leaf 只含激活 tab", () => {
+  const l = v3({
+    root: {
+      kind: "leaf",
+      id: "g1",
+      activeTabId: "b",
+      tabs: [ref("p", "a"), ref("p", "b"), ref("p", "c")],
+    },
+    activeGroupId: "g1",
+  });
+  const r = splitLeafWithActiveTab(l, "g1");
+  expect(r).not.toBeNull();
+  const root = r!.root as SplitNode;
+  const [src, copy] = root.children as LeafNode[];
+  expect(src.tabs.map(tabIdOf)).toEqual(["a", "b", "c"]); // 源 tabs 原样（不搬走激活 tab）
+  expect(src.activeTabId).toBe("b");
+  expect(copy.tabs.map(tabIdOf)).toEqual(["b"]); // 只复制激活 tab
+  expect(copy.activeTabId).toBe("b");
+  valid(r!);
+});
+
+test("splitLeafWithActiveTab: leafId 不在树 → null", () => {
+  const l = v3({ root: leaf("g1", ["a"]), activeGroupId: "g1" });
+  expect(splitLeafWithActiveTab(l, "zzz")).toBeNull();
+  // 空树（root null）同样 null
+  expect(splitLeafWithActiveTab(EMPTY_WORKBENCH_LAYOUT_V3, "g1")).toBeNull();
+});
+
 // ── resizeSplitChildren ───────────────────────────────────────────────────────
 
 test("resizeSplitChildren: 守恒（左增 = 右减）", () => {
@@ -1014,6 +1062,22 @@ test("projectTabStrip: file tab 按 splitFilePath 首段（项目名）过滤", 
 
 test("projectTabStrip: 空 layout → 空数组", () => {
   expect(projectTabStrip(EMPTY_WORKBENCH_LAYOUT_V3, "p1")).toEqual([]);
+});
+
+test("projectTabStrip: 同 ref 双挂（分屏复制语义）→ pill 去重保首 leaf", () => {
+  // 批 13 ⑥ review P1：splitLeafWithActiveTab 源 leaf 不动，移动端读同一 layout 时同 tabId
+  // 会出现两份——tab 带无窗格概念，一 tab 一 pill，保首 leaf 位置（渲染 key 唯一）。
+  const l = v3({
+    root: {
+      kind: "split",
+      id: "sp1",
+      direction: "horizontal",
+      children: [leaf("g1", ["a"]), leaf("g2", ["a", "b"])],
+      sizes: { g1: 1, g2: 1 },
+    },
+    activeGroupId: "g2",
+  });
+  expect(projectTabStrip(l, "p").map((t) => `${t.leafId}:${t.tabId}`)).toEqual(["g1:a", "g2:b"]);
 });
 
 test("ensureTabOpenLeaf: ref 已在 → 激活", () => {

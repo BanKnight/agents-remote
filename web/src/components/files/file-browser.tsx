@@ -1,7 +1,18 @@
 import type { ProjectFileEntry, ProjectFilePreviewResponse } from "@agents-remote/shared";
-import { type ReactNode, lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MarkdownString } from "../markdown/MarkdownString";
+import { MarkdownLinkContext } from "../markdown/markdown-components";
+import { resolveRelativeFilePath } from "./relative-md-link";
 import { useT } from "../../i18n";
 import { useMobileExitClose } from "../../lib/use-mobile-exit-close";
 import {
@@ -1268,29 +1279,44 @@ export function FilesPanel({
     </aside>
   );
 
+  // md 内链容器接线（批 13 反馈⑤ review P1：检视预览此前漏接 MarkdownLinkContext——渲染态
+  // 相对 .md 链接是死链）。Provider 罩 previewPanel，基准 = 当前预览文件（selectedFilePath，
+  // 项目相对路径），目标经 onOpenFile 既有打开通道（inspection 模式调用方即 FilesToolTab /
+  // workbench-tab-plugin 全局语境——后者不传 onOpenFile，value=null 保持浏览器默认，已知限制）。
+  // useMemo 防每次 render 新箭头造成 context churn（同 P2-4 教训）。
+  const mdLinkOpen = useMemo(
+    () =>
+      onOpenFile && effectiveProjectName && selectedFilePath !== undefined
+        ? (href: string) =>
+            onOpenFile(effectiveProjectName, resolveRelativeFilePath(selectedFilePath, href))
+        : null,
+    [onOpenFile, effectiveProjectName, selectedFilePath],
+  );
   const previewPanel = (
-    <FilePreviewPanel
-      error={editor.preview.error}
-      isLoading={editor.preview.isLoading}
-      preview={previewData}
-      renderMode={showRenderToggle ? editor.renderMode : "source"}
-      saveToggle={saveButton}
-      isHtml={editor.isHtml}
-      isMarkdown={editor.isMarkdown}
-      fileName={selectedFilePath?.split("/").pop() ?? selectedFilePath}
-      editValue={editValue}
-      onEditChange={editor.onEditChange}
-      onClose={clearPreview}
-      onRefresh={editor.refresh}
-      isRefreshing={editor.isRefreshing}
-      onRenderModeChange={editor.onRenderModeChange}
-    />
+    <MarkdownLinkContext.Provider value={mdLinkOpen}>
+      <FilePreviewPanel
+        error={editor.preview.error}
+        isLoading={editor.preview.isLoading}
+        preview={previewData}
+        renderMode={showRenderToggle ? editor.renderMode : "source"}
+        saveToggle={saveButton}
+        isHtml={editor.isHtml}
+        isMarkdown={editor.isMarkdown}
+        fileName={selectedFilePath?.split("/").pop() ?? selectedFilePath}
+        editValue={editValue}
+        onEditChange={editor.onEditChange}
+        onClose={clearPreview}
+        onRefresh={editor.refresh}
+        isRefreshing={editor.isRefreshing}
+        onRenderModeChange={editor.onRenderModeChange}
+      />
+    </MarkdownLinkContext.Provider>
   );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col sm:overflow-hidden">
       <div
-        className={`shrink-0 border-b border-on-surface/5 px-2 py-1.5 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
+        className={`shrink-0 border-b border-on-surface/5 py-1.5 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
       >
         <div
           className="flex min-h-[2.125rem] min-w-0 items-center justify-between gap-3"

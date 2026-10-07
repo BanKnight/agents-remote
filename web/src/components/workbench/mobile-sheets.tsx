@@ -423,9 +423,10 @@ export function MobileSessionHistorySheet({
         open={open}
         title={t("workbench.historyTitle")}
       >
-        {/* 三段计数筛选（03n 编号②：.segc 单源 + 段内嵌服务端聚合计数；sheet 内吃满
-            20px 内容线，覆盖 09 页语境的 16px 页边距 margin）。 */}
-        <div className="segc mx-0 mt-2.5" role="group">
+        {/* 三段计数筛选（03n 编号②：.segc 单源 + 段内嵌服务端聚合计数；margin 走 utility
+            14/16——旧 mx-0 mt-2.5 曾被 unlayered .segc margin 压制从未生效，实际视觉一直是
+            14/16，utility 对齐实际视觉，批13 margin 语境化）。 */}
+        <div className="segc mx-4 mt-3.5" role="group">
           {HISTORY_FILTERS.map((f) => (
             <button
               aria-pressed={filter === f.key}

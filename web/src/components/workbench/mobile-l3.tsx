@@ -66,22 +66,6 @@ const CodeEditor = lazy(() =>
 
 // ── 03q 文件预览（L3）────────────────────────────────────────────────────────
 
-/** 03q 只读行号渲染（.code/.ln/.no/.tx 原语）。文本 preview 全文按行拆分；末行保尾。 */
-function CodeWithLineNumbers({ content }: { content: string }) {
-  const lines = content.split("\n");
-  return (
-    <div className="code" data-role="l3-code">
-      {lines.map((line, i) => (
-        // 行号稳定（i 即 key）；内容行 pre 保留空白。
-        <div className="ln" key={i}>
-          <span className="no">{i + 1}</span>
-          <span className="tx">{line}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /**
  * 扩展名 → .fmeta 类型段标签（workspace-preview 原型英文常量：zh/en 页一致，不走 i18n）。
  * 未知扩展名兜底 = 大写扩展名（.yaml → YAML）；无扩展名 = 大写 basename。
@@ -173,7 +157,8 @@ export type MobileL3FilePreviewProps = {
 
 /**
  * 03q 文件预览页（批次 3 编辑能力下沉：右栏 Inspector 与移动 focus 双端同构单源）。meta 行
- *（N 行 · 更新 relative + 编辑 + 「查看 diff ›」）+ 只读行号渲染；「编辑」进编辑态（CodeEditor
+ *（N 行 · 更新 relative + 编辑 + 「查看 diff ›」）+ 只读源码（CodeEditor editable=false，
+ * 与编辑态同画布——反馈④b：源码⇄渲染⇄编辑切换零跳变）；「编辑」进编辑态（CodeEditor
  * + FileSaveButton + ⌘S，保存/dirty 丢弃确认走 useFileEditor 单源，与 FilesPanel inspection
  * 同 query key 共享缓存）。image → ImageViewer；too_large/unsupported → .cap 简要说明。⋯ 菜单
  *（复制路径/在 Git 中查看 diff）由调用方经 header l3.actions 装配。
@@ -346,7 +331,14 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
         // 内联），与检视面板/中栏 file tab 同一渲染器（onEditChange 不传 = 只读）。
         <PreviewBody editValue="" preview={data} renderMode="render" />
       ) : (
-        <CodeWithLineNumbers content={data.content} />
+        // 源码态 = CodeEditor 只读（反馈④b：与编辑态同一画布，切换不再跳样式）。外层
+        // py-2.5 同编辑态容器（画布上下 10px 由调用方承担，frontend-notes §8 高度链——
+        // flex-1 子要滚，父是 flex container；CodeMirror 内滚）。
+        <div className="flex min-h-0 flex-1 flex-col py-2.5">
+          <Suspense fallback={<CodeEditorFallback />}>
+            <CodeEditor editable={false} name={data.name} value={data.content} />
+          </Suspense>
+        </div>
       )}
       {confirmHolder}
     </div>
@@ -380,8 +372,8 @@ export type FilePreviewPaneProps = {
 
 /**
  * v1.5 预览矩阵·移动：文件预览主体单源（面板标签 / push 容器共用）。预览态 = .fmeta
- *（左 = 类型·度量·更新时间；右端 = MD/HTML 渲染⇄源码 segc.mini）+ CodeWithLineNumbers
- * 源码 / PreviewBody 渲染 / ImageViewer 图片 / .unsupported 空态；编辑态 = .emeta
+ *（左 = 类型·度量·更新时间；右端 = MD/HTML 渲染⇄源码 segc.mini）+ CodeEditor 只读源码
+ * / PreviewBody 渲染 / ImageViewer 图片 / .unsupported 空态；编辑态 = .emeta
  *（编辑中·行数 + ● 未保存变更 + fact 放弃/完成）+ CodeEditor + .aux（撤销/重做/收起键盘，
  * @codemirror/commands view 命令）。finish = dirty 即保存并退出编辑（回渲染态）；discard =
  * dirty 弹确认（files.discardConfirm）后清草稿退出。
@@ -632,7 +624,12 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
             {isRenderView ? (
               <PreviewBody editValue="" preview={data} renderMode="render" />
             ) : (
-              <CodeWithLineNumbers content={data.content} />
+              // 源码态 = CodeEditor 只读（反馈④b：与编辑态同画布 + 同 py-2.5 外层容器）。
+              <div className="flex min-h-0 flex-1 flex-col py-2.5">
+                <Suspense fallback={<CodeEditorFallback />}>
+                  <CodeEditor editable={false} name={data.name} value={data.content} />
+                </Suspense>
+              </div>
             )}
           </>
         )}

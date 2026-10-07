@@ -85,6 +85,9 @@ import {
 import { AgentTerminalPanel, AcpPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { ChatSessionDetailBody } from "../../routes/ChatSessionDetailRoute";
 import { FileTabPreview, FileTabStripActions } from "../files/file-preview-panel";
+import { resolveRootBrowseTarget } from "../files/file-browser";
+import { resolveRelativeFilePath } from "../files/relative-md-link";
+import { MarkdownLinkContext } from "../markdown/markdown-components";
 import { type GitDiffScope } from "@agents-remote/shared";
 import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
 import { SkillTabPreview } from "../../routes/plugins-shared";
@@ -204,6 +207,9 @@ type InstanceAreaProps = {
   onCloseTab: (groupId: string, tabId: string) => void;
   /** v1.5 批 4：GroupHeader file tab ⋯「查看 diff」（WorkbenchRoute onOpenGitFile 透传）。 */
   onOpenGitDiff?: (projectName: string, scope: GitDiffScope, path: string) => void;
+  /** 批 13 反馈⑤ review P1：md 相对链接打开（透传 WorkspaceTree → PanelRouter file 分支，
+   *  MarkdownLinkContext per-panel value）。 */
+  onOpenFile?: (projectName: string, path: string) => void;
   onResizeSplit: (
     splitId: string,
     leftChildId: string,
@@ -247,6 +253,7 @@ export function InstanceArea({
   onSplitLeaf,
   closeInstance,
   onOpenGitDiff,
+  onOpenFile,
 }: InstanceAreaProps) {
   const { t } = useT();
 
@@ -293,6 +300,7 @@ export function InstanceArea({
       refsLoaded={refsLoaded}
       onCloseLeafTab={onCloseTab}
       onOpenGitDiff={onOpenGitDiff}
+      onOpenFile={onOpenFile}
       onResizeSplit={onResizeSplit}
       onSelectTab={onSelectTab}
       onSplitLeaf={onSplitLeaf}
@@ -457,6 +465,11 @@ export function AllSessionsGroupedList({
 
 type PanelRouterProps = {
   panelRef: WorkbenchPanelRef;
+  /** 相对 .md 内链目标打开（批 13 反馈⑤ review P1：MarkdownLinkContext per-panel 下沉——
+   *  中栏顶层单 Provider 用「当前激活 tab」当解析基准，split 多窗格下会按错窗格的文件目录
+   *  解析；下沉到 file 分支后每个 file panel 自带基准，session/git 等 pane 不被误罩（其内的
+   *  相对 .md 链接保持浏览器默认行为）。 */
+  onOpenFile?: (projectName: string, path: string) => void;
 };
 
 /**
@@ -476,13 +489,28 @@ type PanelRouterProps = {
  * 故跳过重渲染 → 滚动保持。panel 自身查询/hook 驱动的更新不受影响（memo 只拦父级重渲染）。
 （memo 惯例，原 InstanceLeftOverview 同款——§6.12k 后已退役）。
  */
-function PanelRouterBase({ panelRef }: PanelRouterProps) {
+function PanelRouterBase({ panelRef, onOpenFile }: PanelRouterProps) {
   // file tab 渲染 FileTabPreview（v1.5 批 4：FilePreviewPane 中栏形态——预览/编辑/渲染三态
   // + editing atom 受控，05h 原型；queryScope="file-nav"，设计 §6 决策 16/18）。
   // path=全路径（含项目名前缀），FileTabPreview 内部 resolveRootBrowseTarget 解析 projectName
   // 走 project preview API（设计 workbench-stable-refactor Phase 3，去 projectName 字段）。
+  // md 内链（批 13 反馈⑤ review P1）：MarkdownLinkContext per-panel——Provider 包本 panel 子树，
+  // value 以**本 panel 的文件**目录为解析基准（split 多窗格下每个 file panel 自带基准，不共用
+  // 「当前激活 tab」）；session/git/skill 等 pane 不被误罩（其内的相对 .md 链接保持浏览器默认）。
   if (panelRef.kind === "file") {
-    return <FileTabPreview panelRef={panelRef} />;
+    const target = resolveRootBrowseTarget(panelRef.path);
+    return (
+      <MarkdownLinkContext.Provider
+        value={
+          onOpenFile && target.kind === "project"
+            ? (href) =>
+                onOpenFile(target.projectName, resolveRelativeFilePath(target.relativePath, href))
+            : null
+        }
+      >
+        <FileTabPreview panelRef={panelRef} />
+      </MarkdownLinkContext.Provider>
+    );
   }
   // wikiread tab 渲染 L3WikiReader（v1.5 批 4，spec §4.6：wiki 阅读进中栏——与移动面板
   // wikiread 标签同一 reader 单源，actbtn「让 Agent 读这篇」随组件自带）。rel 同组页跳转
@@ -494,6 +522,8 @@ function PanelRouterBase({ panelRef }: PanelRouterProps) {
   }
   // skill tab 渲染 SkillTabPreview（只读 SKILL.md 预览，对标 FileTabPreview）。name 来自 tab ref；
   // SkillTabPreview 内部用 DEFAULT_SKILL_AGENT 调 useSkillPreview。中栏 tab 关闭走 tab ✕。
+  // skill 预览内的相对 .md 链接不接 MarkdownLinkContext（已知限制，批 13 review 记档）：skill
+  // 可能来自全局目录（无项目绑定），相对链接没有可靠的解析基准，保持浏览器默认行为。
   if (panelRef.kind === "skill") {
     return <SkillTabPreview name={panelRef.name} />;
   }
@@ -2161,9 +2191,9 @@ function GroupHeader({
           }
         />
       ) : null}
-      {/* 分屏按钮（§6.10-3，05 原型 tabstrip 右侧 rect+分隔线 icon）：一键「分屏并新建终端
-          窗格」——WorkbenchContent onSplitLeaf 创建终端 ref 后 dropIntoLeaf right split（05
-          原型分屏产物 = pterm）。语义与拍板差异见 WorkbenchRoute.onSplitLeaf 注释。 */}
+      {/* 分屏按钮（§6.10-3，05 原型 tabstrip 右侧 rect+分隔线 icon）：一键分屏——复制当前
+          激活 tab 到新窗格（VSCode 语义，批 13 反馈⑥ 用户拍板「分屏仅分屏」）——
+          WorkbenchContent onSplitLeaf 走 workbench-model.splitLeafWithActiveTab。 */}
       <button
         aria-label={t("workbench.splitPane")}
         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
@@ -2408,6 +2438,9 @@ type WorkspaceTreeHandlers = {
   onCloseLeafTab: (leafId: string, tabId: string) => void;
   /** v1.5 批 4：file tab ⋯「查看 diff」= 开中栏 git tab（WorkbenchRoute onOpenGitFile）。 */
   onOpenGitDiff?: (projectName: string, scope: GitDiffScope, path: string) => void;
+  /** 批 13 反馈⑤ review P1：md 相对链接打开（MarkdownLinkContext per-panel value；透传到
+   *  PanelRouter file 分支）。 */
+  onOpenFile?: (projectName: string, path: string) => void;
   onResizeSplit: (
     splitId: string,
     leftChildId: string,
@@ -2415,7 +2448,8 @@ type WorkspaceTreeHandlers = {
     deltaFlex: number,
   ) => void;
   onSelectTab: (leafId: string, tabId: string) => void;
-  /** 分屏按钮（§6.10-3）：在 leafId 右侧分屏并新建终端窗格（WorkbenchContent 实现）。 */
+  /** 分屏按钮（§6.10-3，批 13 反馈⑥）：复制当前激活 tab 到右侧新窗格（VSCode 复制语义，
+   *  WorkbenchRoute.splitLeafWithActiveTab 实现）。 */
   onSplitLeaf: (leafId: string) => void;
   onTabContextMenu: (leafId: string, tabId: string, x: number, y: number) => void;
   onTabDragStart: (ref: WorkbenchPanelRef, event: PointerEvent<HTMLDivElement>) => void;
@@ -2543,14 +2577,14 @@ export function WorkspaceTree({
               ? `absolute z-0 flex min-h-0 min-w-0 flex-col ${isDragging ? "pointer-events-none" : ""}`
               : "hidden"
           }
-          key={p.tabId}
+          key={p.renderKey}
           style={p.visible ? rectStyle(p.rect, WORKBENCH_TAB_BAR_PX) : undefined}
         >
           {/* 面板主体（SessionDetailHeader/ChatHeader 死 UI 已删，2026-09-26 拍板）：
               title/projectName 由 group tab 栏 chip + 中栏 tab 行显示，Files/Git 走中栏顶部 tab，
               +Terminal 走左总览 CreateSessionBar，Retry 走内容区错误态 Notice，Close 由 tab ✕ +
               左总览卡片 close 承担（设计 §11）。 */}
-          <PanelRouter panelRef={p.ref} />
+          <PanelRouter onOpenFile={handlers.onOpenFile} panelRef={p.ref} />
         </div>
       ))}
     </div>

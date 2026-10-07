@@ -180,7 +180,7 @@ export function ProjectSetupPanel({
         </div>
       )}
 
-      <div className="segc" role="tablist">
+      <div className="segc mx-4 mt-3.5" role="tablist">
         <button
           aria-selected={mode === "create"}
           className={mode === "create" ? "on" : ""}

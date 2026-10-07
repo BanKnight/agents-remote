@@ -643,7 +643,7 @@ export const en = {
   "workbench.statusConnecting": "Connecting",
   "workbench.statusInstancesRunning": "{{count}} instances running",
   "workbench.statusPendingApprovals": "{{count}} pending approvals ›",
-  "workbench.splitPane": "Split pane with new terminal",
+  "workbench.splitPane": "Split pane",
   "workbench.historySection": "History",
   "workbench.historyShowEarlier": "Show earlier",
   "workbench.historyBackHint": "Tap the clock again to return to active instances",

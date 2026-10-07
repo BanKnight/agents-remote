@@ -77,7 +77,7 @@ export function NewItemSheet({
 
   const body = (
     <div className="flex flex-col">
-      <div aria-label={t("files.newItemType")} className="segc" role="tablist">
+      <div aria-label={t("files.newItemType")} className="segc mx-4 mt-3.5" role="tablist">
         <span
           aria-selected={kind === "file"}
           className={`cursor-pointer ${kind === "file" ? "on" : ""}`}

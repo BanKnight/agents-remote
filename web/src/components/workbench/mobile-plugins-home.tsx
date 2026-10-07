@@ -12,6 +12,7 @@ import type {
 import { useT } from "../../i18n";
 import { workbenchLastProjectAtom } from "../../routes/workbench-model";
 import { DEFAULT_SKILL_AGENT } from "../../routes/plugins-shared";
+import { useIsMobile } from "../../lib/use-is-mobile";
 import {
   useMcpMarketSearch,
   useMcpServers,
@@ -27,6 +28,7 @@ import {
   useUninstallSkill,
 } from "../../hooks/skills";
 import { ShellIcon } from "../shell/icons";
+import { LucideIcon } from "../shell/lucide-icon";
 import { LargeTitleRow, ListRowSkeleton } from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { useConfirm } from "../shell/confirm-dialog";
@@ -44,8 +46,9 @@ import { pluginsMobileScopeAtom, ScopeSwitchPopover } from "./mobile-plugins-sco
  * MCP 服务器组 → 已安装技能组。
  *
  * 作用域规则（§3.5）：「本项目」= 全局记忆的当前项目（workbenchLastProjectAtom，与工作台标题 ▾
- * 同一份记忆）；▾ 分流：hideTitle（iPad/Mac mainPage）= 09mb 锚定 Popover（ScopeSwitchPopover），
- * iPhone = 03l 半屏 sheet（MobileProjectSwitchSheet）；从未选项目时本项目段渲染空态引导（编号⑥）。
+ * 同一份记忆）；▾ 分流收进 PluginsScopeSegmented 单源（文件末）：移动 = 03l 半屏 sheet
+ *（MobileProjectSwitchSheet），桌面 = 09mb 锚定 Popover（ScopeSwitchPopover）；从未选项目时
+ * 本项目段渲染空态引导（编号⑥）。
  *
  * 能力边界（§6.6 摊牌）：MCP 卡不画「● 已连接 / N 个工具」（McpServerEntry 无运行时状态与工具
  * 清单，后端不 connect），d2 画有据字段（传输类型 + 命令/URL）；技能「有更新」chip 只在手动
@@ -68,13 +71,12 @@ const pluginsMobileQueryAtom = atom("");
 export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boolean }) {
   const { t } = useT();
   const navigate = useNavigate();
-  const [scope, setScope] = useAtom(pluginsMobileScopeAtom);
+  const [scope] = useAtom(pluginsMobileScopeAtom);
   const [query, setQuery] = useAtom(pluginsMobileQueryAtom);
-  // 「本项目」段与工作台同源的上次项目记忆；▾ 切换器写入同一 atom（§3.5 作用域规则）。
-  const [lastProject, setLastProject] = useAtom(workbenchLastProjectAtom);
-  const [switchOpen, setSwitchOpen] = useState(false);
+  // 「本项目」段与工作台同源的上次项目记忆（写入点随 segc 抽取移入 PluginsScopeSegmented
+  // 单源，§3.5 作用域规则）。
+  const [lastProject] = useAtom(workbenchLastProjectAtom);
   const [addMcpOpen, setAddMcpOpen] = useState(false);
-  const createProjectDialog = useCreateProjectDialog();
 
   const projectName = scope === "project" && lastProject ? lastProject : undefined;
   const mcpScope = projectName ? ("project" as const) : ("user" as const);
@@ -222,59 +224,10 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
         />
       </div>
 
-      {/* 作用域分段（.segc）：全局 / 本项目 · <名> ▾（§3.5 编号②）。hideTitle 时限宽 290px
-          对齐 09m seg4（style width:290px）；移动不限（一级页满宽分段）。 */}
-      <div
-        aria-label={t("plugins.scopeAria")}
-        className={`segc${hideTitle ? " max-w-[290px]" : ""}`}
-        role="group"
-      >
-        <button
-          aria-pressed={scope === "global"}
-          className={`cursor-pointer${scope === "global" ? " on" : ""}`}
-          onClick={() => setScope("global")}
-          type="button"
-        >
-          {t("plugins.scopeGlobal")}
-        </button>
-        <button
-          aria-pressed={scope === "project"}
-          className={`cursor-pointer${scope === "project" ? " on" : ""}`}
-          onClick={() => setScope("project")}
-          type="button"
-        >
-          <span className="min-w-0 truncate">
-            {lastProject
-              ? t("plugins.scopeProject", { name: lastProject })
-              : t("plugins.scopeProjectEmpty")}
-          </span>
-          {lastProject ? (
-            hideTitle ? (
-              <ScopeSwitchPopover />
-            ) : (
-              <span
-                aria-label={t("plugins.switchProject")}
-                className="caret cursor-pointer"
-                onClick={(event) => {
-                  // ▾ 只开切换器，不随段落点击切换作用域。
-                  event.stopPropagation();
-                  setSwitchOpen(true);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setSwitchOpen(true);
-                }}
-                role="button"
-                tabIndex={0}
-              >
-                ▾
-              </span>
-            )
-          ) : null}
-        </button>
-      </div>
+      {/* 作用域分段（.segc 单源 PluginsScopeSegmented，文件末）：全局 / 本项目 · <名> ▾
+          （§3.5 编号②）。hideTitle（桌面 mainPage）不再渲染内联段——由 MainPageShell actions
+          承载（限宽 290 对齐 09m seg4）；移动一级页满宽段（margin 由本处 utility 注入）。 */}
+      {hideTitle ? null : <PluginsScopeSegmented className="mx-4 mt-3.5" />}
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
         {scope === "project" && !lastProject ? (
@@ -561,23 +514,12 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
         )}
       </div>
 
-      {/* 03l 切换器（段上 ▾，projectOnly 模式）：插件语境无会话上下文，语义 = 切换项目
-          （真机反馈 2026-09-28）——只渲染项目组头 + 新建行，无会话行。 */}
+      {/* 03l 切换器随 segc 抽取移入 PluginsScopeSegmented（sheet 仅移动形态挂载）。 */}
       <MobileAddMcpSheet
         onOpenChange={setAddMcpOpen}
         open={addMcpOpen}
         projectName={projectName}
         scope={mcpScope}
-      />
-      <MobileProjectSwitchSheet
-        onCreateProject={() => createProjectDialog.openCreate()}
-        onOpenChange={setSwitchOpen}
-        onSwitchProject={(name) => {
-          setLastProject(name);
-          setScope("project");
-        }}
-        open={switchOpen}
-        projectOnly
       />
       {/* 搜索融合安装（编号①）：pending 审计 sheet。技能装全局（sheet 固定），MCP 走 sheet 内
           stabseg 自管 scope。安装成功 invalidate 自动把命中项从「市场 · 安装」行转为已装卡。 */}
@@ -610,5 +552,91 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
       ) : null}
       {confirmHolder}
     </div>
+  );
+}
+
+/** 作用域分段单源（.segc：全局 / 本项目 · <名> ▾）。移动一级页正文顶部满宽（margin 由
+ *  消费方 utility 注入 mx-4 mt-3.5）；桌面 mainPage 标题行右端（actions 槽，限宽 290 对齐
+ *  09m seg4）。▾ 分流（§3.5，多端同构容器分化）：移动 = 03l 半屏 sheet
+ *（MobileProjectSwitchSheet projectOnly——插件语境无会话上下文，语义 = 切换项目，真机反馈
+ *  2026-09-28）；桌面 = 09mb 锚定 Popover（ScopeSwitchPopover）。分流判定 = useIsMobile
+ *（断点与 useIsDesktopViewport 同一 1024px 分界，消费语境互斥）。
+ *
+ * caret Lucide 化（批 13 反馈⑦）：`.caret` CSS 类已退役，span 语义外壳保留（▾ 只开切换器，
+ * 不随段落点击切换作用域——stopPropagation），触区扩 = p-2 -m-2（原 .caret 精神），内文
+ * LucideIcon size-3.5（显式尺寸防 WebKit flex 收缩隐形，frontend-notes §15⑤）。 */
+export function PluginsScopeSegmented({ className }: { className?: string }) {
+  const { t } = useT();
+  const [scope, setScope] = useAtom(pluginsMobileScopeAtom);
+  const [lastProject, setLastProject] = useAtom(workbenchLastProjectAtom);
+  const [switchOpen, setSwitchOpen] = useState(false);
+  const isMobile = useIsMobile();
+  const createProjectDialog = useCreateProjectDialog();
+  return (
+    <>
+      <div
+        aria-label={t("plugins.scopeAria")}
+        className={`segc${className ? ` ${className}` : ""}`}
+        role="group"
+      >
+        <button
+          aria-pressed={scope === "global"}
+          className={`cursor-pointer${scope === "global" ? " on" : ""}`}
+          onClick={() => setScope("global")}
+          type="button"
+        >
+          {t("plugins.scopeGlobal")}
+        </button>
+        <button
+          aria-pressed={scope === "project"}
+          className={`cursor-pointer${scope === "project" ? " on" : ""}`}
+          onClick={() => setScope("project")}
+          type="button"
+        >
+          <span className="min-w-0 truncate">
+            {lastProject
+              ? t("plugins.scopeProject", { name: lastProject })
+              : t("plugins.scopeProjectEmpty")}
+          </span>
+          {lastProject ? (
+            isMobile ? (
+              <span
+                aria-label={t("plugins.switchProject")}
+                className="-m-2 cursor-pointer p-2"
+                onClick={(event) => {
+                  // ▾ 只开切换器，不随段落点击切换作用域。
+                  event.stopPropagation();
+                  setSwitchOpen(true);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setSwitchOpen(true);
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <LucideIcon className="size-3.5" name="chevron-down" />
+              </span>
+            ) : (
+              <ScopeSwitchPopover />
+            )
+          ) : null}
+        </button>
+      </div>
+      {isMobile ? (
+        <MobileProjectSwitchSheet
+          onCreateProject={() => createProjectDialog.openCreate()}
+          onOpenChange={setSwitchOpen}
+          onSwitchProject={(name) => {
+            setLastProject(name);
+            setScope("project");
+          }}
+          open={switchOpen}
+          projectOnly
+        />
+      ) : null}
+    </>
   );
 }

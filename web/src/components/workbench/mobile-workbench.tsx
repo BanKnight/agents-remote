@@ -17,7 +17,9 @@ import { listProjectFiles, listProjectGitBranches } from "../../api/client";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { AddMenu } from "../files/add-menu";
 import { NewItemSheet } from "../files/new-item-sheet";
+import { resolveRelativeFilePath } from "../files/relative-md-link";
 import { enqueueUploads } from "../files/upload-queue";
+import { MarkdownLinkContext } from "../markdown/markdown-components";
 import {
   LargeTitleRow,
   MobilePageHeader,
@@ -352,15 +354,24 @@ function MobileFileFocus({ path }: { path: string }) {
           </>
         )}
       </div>
-      <FilePreviewPane
-        editing={editing}
-        editingActions="nav"
-        onEditingChange={setEditing}
-        path={relPath}
-        projectName={fp}
-        queryScope="file-nav"
-        ref={paneRef}
-      />
+      {/* md 内链容器（批 13 反馈⑤）：Provider 只包 FilePreviewPane，value 以当前预览文件
+          目录为基准解析相对 href → push 页内导航换目标文件（/files/file/$，fp 前缀全路径）。 */}
+      <MarkdownLinkContext.Provider
+        value={(href) => {
+          const resolved = resolveRelativeFilePath(relPath, href);
+          void navigate({ to: "/files/file/$", params: { _splat: `${fp}/${resolved}` } });
+        }}
+      >
+        <FilePreviewPane
+          editing={editing}
+          editingActions="nav"
+          onEditingChange={setEditing}
+          path={relPath}
+          projectName={fp}
+          queryScope="file-nav"
+          ref={paneRef}
+        />
+      </MarkdownLinkContext.Provider>
     </div>
   );
 }
@@ -979,18 +990,24 @@ function MobileProjectWorkbench({
           ) : tab.kind === "file" ? (
             // v1.5 批3 面板预览矩阵：FilePreviewPane 单源（meta 模式——编辑态 fact 放弃/完成
             // 在 .emeta 行；编辑态单例 editingFileTabId 守门「同屏单编辑」）。⋯ 菜单/pencil
-            // 在面板 nav（navActions 装配）， Pane 本体只渲染 fmeta/主体。
+            // 在面板 nav（navActions 装配）， Pane 本体只渲染 fmeta/主体。md 内链容器（批 13
+            // 反馈⑤）：value 以当前预览文件目录解析相对 href → openPanelFileTab 换本面板
+            // file 标签目标（面板不退出）。
             (() => {
               const { projectName: fp, path: relPath } = splitFilePath(tab.path);
               return (
-                <FilePreviewPane
-                  editing={editingFileTabId === tab.id}
-                  editingActions="meta"
-                  onEditingChange={(next) => setEditingFileTabId(next ? tab.id : null)}
-                  path={relPath}
-                  projectName={fp}
-                  queryScope="files"
-                />
+                <MarkdownLinkContext.Provider
+                  value={(href) => openPanelFileTab(resolveRelativeFilePath(relPath, href))}
+                >
+                  <FilePreviewPane
+                    editing={editingFileTabId === tab.id}
+                    editingActions="meta"
+                    onEditingChange={(next) => setEditingFileTabId(next ? tab.id : null)}
+                    path={relPath}
+                    projectName={fp}
+                    queryScope="files"
+                  />
+                </MarkdownLinkContext.Provider>
               );
             })()
           ) : tab.kind === "wikiread" ? (

@@ -639,7 +639,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.statusConnecting": "连接中",
   "workbench.statusInstancesRunning": "{{count}} 实例运行中",
   "workbench.statusPendingApprovals": "{{count}} 项待审批 ›",
-  "workbench.splitPane": "分屏并新建终端",
+  "workbench.splitPane": "分屏",
   "workbench.historySection": "历史会话",
   "workbench.historyShowEarlier": "展开更早",
   "workbench.historyBackHint": "再次点时钟返回活跃实例列表",
