@@ -2108,8 +2108,13 @@ function GroupHeader({
   const { t } = useT();
   // §7.2（批 8）：tabstrip 标签溢出时滚轮横滚 + 边缘 12px 渐隐（右端 ＋/分屏等尾部控件
   // 在滚动容器外，「尾部控件可达」天然成立）；标签数变化在内容 effect 里重算渐隐方向。
+  // 批 11 反馈③：激活标签（.on 下划线类）变化时滚入视野——切 tab/开新 tab/分组头挂载
+  //（工具区打开）三个时机都滚；无溢出 no-op。
   const hs = useHScroll();
-  useEffect(() => hs.update(), [hs.update, group.tabs.length]);
+  useEffect(() => {
+    hs.update();
+    hs.ensureActive(".on");
+  }, [group.activeTabId, group.tabs.length, hs.ensureActive, hs.update]);
   // v1.5 批 4（spec §4.5）：tabstrip 右端 [＋][分屏][编辑][⋯]，⋯ 收尾最右、内容
   // 跟随激活标签（会话/文件两族；git/skill/wikiread/chat/render 无 ⋯ 规格 → 不渲染）。
   // 编辑态只剩结构钮（pencil/⋯ 消失，05h4 原型实证）。编辑判定 = 激活 tabId 与

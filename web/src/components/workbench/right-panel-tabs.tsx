@@ -6,6 +6,7 @@ import { useT } from "../../i18n";
 import {
   type PanelTab,
   ensurePanelTabOpen,
+  workbenchDesktopFilesPathAtom,
   workbenchPanelActiveAtom,
   workbenchPanelTabsAtom,
   BASE_PANEL_TABS,
@@ -100,24 +101,38 @@ export function RightPanelTabs({
     });
     if (id === activePanelTabId) activatePanelTab("files");
   };
+  // 批 11 反馈①：cwd 单一来源 = per-project 持久 atom。此前读 ctx.currentPath——右栏 ctx
+  // 只带 projectKey（WorkbenchRoute rightCtx），恒 undefined → ""，AddMenu 上传/新建恒落
+  // 项目根（用户真机报障）。受控化后 FilesToolTab / toolChip crumb / AddMenu 三处同源。
+  const [filesPathMap, setFilesPathMap] = useAtom(workbenchDesktopFilesPathAtom);
+  const cwd = filesPathMap[projectKey ?? ""] ?? "";
+  // 幂等守卫（值未变返回旧引用，与 activatePanelTab 同款）防高频路径无谓渲染。
+  // projectKey 前置守卫与下方空态早退同判——null 时写 `[projectKey as string]` 会落
+  // "undefined" 键而读恒 ""，值静默丢失（code-review 批 11）。
+  const changeFilesPath = (path: string) => {
+    if (!projectKey) return;
+    setFilesPathMap((prev) => {
+      const cur = prev[projectKey] ?? "";
+      return cur === path ? prev : { ...prev, [projectKey]: path };
+    });
+  };
   // 工具 chip 槽装配单源（usePanelToolChip，与移动 InspectionPanel 同一份——多端同构；
   // 搜索 query 提升透传 Tab 三件套，chip 与列表同 state）。批 4 桌面投影无 wikiread
   //（原 wikiread 无 chip 槽的三元随投影删除）。
   const activeKind = inspectorTabs.find((t0) => t0.id === activePanelTabId)?.kind ?? "files";
   const { filesSearchQuery, setWikiSearchQuery, toolChip, wikiSearchQuery } = usePanelToolChip({
-    currentPath: ctx.currentPath,
+    currentPath: cwd,
     kind: activeKind,
-    onPathChange: ctx.onPathChange,
+    onPathChange: changeFilesPath,
     projectKey: projectKey ?? "",
   });
   // 05e:54 搜索行右端「＋」（第二批缺口补齐：桌面 .links 行 lg:hidden 后新建/上传入口断）——
-  // AddMenu 单源（03oa 两项）装配 toolChip 行尾，与移动面板 FAB 同构；目标目录 = ctx.currentPath
-  //（cwd 与 crumb 受控同源）。siblingNames 走同 key files query 共享缓存（gitDiffForChip 同
+  // AddMenu 单源（03oa 两项）装配 toolChip 行尾，与移动面板 FAB 同构；目标目录 = cwd
+  //（上方 atom 单源）。siblingNames 走同 key files query 共享缓存（gitDiffForChip 同
   // 范式，sheet 开启才启用，零常态网络）。
   const [newItemParentPath, setNewItemParentPath] = useState<string | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const uploadTargetRef = useRef("");
-  const cwd = ctx.currentPath ?? "";
   const filesListing = useQuery({
     enabled: newItemParentPath !== null,
     queryFn: () => listProjectFiles(projectKey ?? "", cwd || undefined),
@@ -221,8 +236,8 @@ export function RightPanelTabs({
             >
               {tab.kind === "files" ? (
                 <FilesToolTab
-                  currentPath={ctx.currentPath}
-                  onPathChange={ctx.onPathChange}
+                  currentPath={cwd}
+                  onPathChange={changeFilesPath}
                   onOpenFile={onOpenFile}
                   projectKey={projectKey}
                   searchQuery={filesSearchQuery}

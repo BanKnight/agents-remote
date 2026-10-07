@@ -295,6 +295,87 @@ async function assertUploadSweep(page) {
   return record(ok, "静态 upcard uploading 扫动条命中 / queued 无动画");
 }
 
+// 批 11 反馈②同构断言:两侧文件树 = 同一份 FileTreeRows/FileCrumb 的 DOM 特征
+// (.ic/.ar/.crumb .cico) + 贴边收敛(容器水平 padding 0,行自身承载 16px;桌面
+// inspector 密度分档 14px——2026-09-29 真机拍板保留)。
+async function probeIsomorphism() {
+  const browser = await chromium.launch();
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    await setupMocks(page);
+    await page.goto(`${WEB_ORIGIN}/`);
+    await page.getByLabel("Password").fill(await readAppPassword());
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.waitForTimeout(800); // 等 session cookie 落定，未登录 goto 一律 401 回登录页
+    // 读一侧树:行 DOM 特征 + 行左缘-容器左缘(贴边) + crumb 同构要素。
+    const readSide = (scopeSel) =>
+      page.evaluate((sel) => {
+        const scope = sel ? document.querySelector(sel) : document;
+        const row = scope ? scope.querySelector(".frow") : null;
+        const crumb = scope ? scope.querySelector(".crumb") : null;
+        if (!row) return { error: "no .frow" };
+        let cont = row.parentElement;
+        let container = null;
+        while (cont) {
+          const s = getComputedStyle(cont);
+          if (s.overflowY === "auto" || s.overflowY === "scroll") {
+            container = cont;
+            break;
+          }
+          cont = cont.parentElement;
+        }
+        const rr = row.getBoundingClientRect();
+        return {
+          ic: !!row.querySelector(".ic"),
+          ar: !!row.querySelector(".ar"),
+          pad: getComputedStyle(row).paddingLeft,
+          flush: container ? rr.left - container.getBoundingClientRect().left : null,
+          crumbIcon: !!(crumb && crumb.querySelector(".cico")),
+          crumbSeg: !!(crumb && crumb.querySelector(".cseg")),
+        };
+      }, scopeSel);
+
+    // 工具侧(桌面右栏 inspector,深链直开 files 标签)。
+    await page.goto(`${WEB_ORIGIN}/projects/dir-00?rightTab=files`);
+    await page.waitForTimeout(800);
+    const tool = await readSide("[data-desktop-inspector]");
+    // 全局侧(/files 进项目文件夹)。
+    await page.goto(`${WEB_ORIGIN}/files`);
+    await page.waitForTimeout(800);
+    await page
+      .getByText("dir-00", { exact: true })
+      .first()
+      .click({ force: true })
+      .catch(() => {});
+    await page.waitForTimeout(600);
+    const glob = await readSide(null);
+
+    console.log(
+      `\n[批11] 同构: 工具侧=${JSON.stringify(tool)}\n          全局侧=${JSON.stringify(glob)}`,
+    );
+    const ok =
+      !tool.error &&
+      !glob.error &&
+      tool.ic &&
+      tool.ar &&
+      tool.crumbIcon &&
+      glob.ic &&
+      glob.ar &&
+      glob.crumbIcon &&
+      glob.crumbSeg &&
+      tool.pad === "14px" &&
+      glob.pad === "16px" &&
+      tool.flush !== null &&
+      glob.flush !== null &&
+      Math.abs(tool.flush) < 1.5 &&
+      Math.abs(glob.flush) < 1.5;
+    return record(ok, "批 11 双侧文件树同构(行 DOM/贴边 0/分档/crumb 图标)");
+  } finally {
+    await browser.close();
+  }
+}
+
 async function runViewport(label, viewport, isMobile) {
   const browser = await chromium.launch();
   try {
@@ -338,6 +419,9 @@ async function runViewport(label, viewport, isMobile) {
     await runViewport("桌面 1280×900", { width: 1280, height: 900 }, false);
   }
   assertNoMoreVertical();
+  if (which !== "mobile") {
+    await probeIsomorphism();
+  }
   console.log(`\n总计: ${allPass ? "ALL PASS" : "有 FAIL"}`);
   process.exit(allPass ? 0 : 1);
 })();

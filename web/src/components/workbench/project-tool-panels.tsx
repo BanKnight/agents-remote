@@ -21,15 +21,15 @@ import {
   searchWiki,
 } from "../../api/client";
 import { enqueueUploads, UploadQueueCard } from "../files/upload-queue";
+import { FileCrumb } from "../files/file-crumb";
+import { FileTreeRows, RowChevron } from "../files/file-tree-rows";
 import { MoveSheet } from "../files/move-sheet";
 import { NewItemSheet } from "../files/new-item-sheet";
 import { RenameDialog } from "../files/rename-dialog";
 import { useConfirm } from "../shell/confirm-dialog";
 import { ListRowSkeleton } from "../shell/shell-primitives";
-import { relativeTime } from "./history-list";
 import { useT } from "../../i18n";
 import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
-import type { TranslateFn } from "../../i18n/types";
 import { ShellIcon } from "../shell/icons";
 import {
   formatAheadBehind,
@@ -41,22 +41,6 @@ import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action
 import { CommitSheet } from "../git/commit-sheet";
 import { DiscardDialog } from "../git/discard-dialog";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
-
-/** frow 行尾进入指示 chevron（.ar 内 14×14，SF Symbols chevron.right；与 SettingsChevron 同范式）。
- *  导出供 FileEntryList（全局文件/根作用域 FilesPanel）.frow 行复用——多端同构单源（反馈⑦）。 */
-export function RowChevron() {
-  return (
-    <svg aria-hidden="true" fill="none" viewBox="0 0 16 16">
-      <path
-        d="M6 3.5 10.5 8 6 12.5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
 
 /** Git 状态角标（badge lg + statusShortLabel；三件套行内 3 处复用，label 单次求值）。 */
 function GitStatusBadge({ status }: { status: GitDiffFileStatus }) {
@@ -339,12 +323,6 @@ export function GitToolPanel({
 
 // ── 03o 文件工具 + 03w 长按菜单（M4）────────────────────────────────────────
 
-/** epoch ms → 相对时间（03o 文件行 .tm）。history-list relativeTime 是 ISO 入参，epoch 转秒级
- * 精度的 Date 后走同一 i18n 管道。 */
-function mtimeRelative(mtimeMs: number, t: TranslateFn): string {
-  return relativeTime(new Date(mtimeMs).toISOString(), t);
-}
-
 export type FilesToolPanelProps = {
   projectName: string;
   /** cwd（可选受控：传 currentPath+onPathChange = 调用方持记忆跨卸载保活，§13 回退语义由
@@ -409,7 +387,6 @@ export function FilesToolPanel({
   }, [diff.data]);
   // 03w 复制路径反馈（sheet 关闭后行下 cap 短暂显示「已复制」）。
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
-  const ctx = useRowContextMenu();
   // 03x 搜索态（query 提升在 mobile-workbench header chip，非空 → 面板渲染结果列表）。
   // keepPreviousData（§6.12o review 修复）：逐键换 query key 时保持上一份结果不闪。
   const trimmedQuery = searchQuery.trim();
@@ -432,9 +409,7 @@ export function FilesToolPanel({
   const [renameTarget, setRenameTarget] = useState<ProjectFileEntry | null>(null);
   const [moveTarget, setMoveTarget] = useState<ProjectFileEntry | null>(null);
   const { confirm, holder: confirmHolder } = useConfirm();
-  // 03w 触屏可达（design-reviewer M4 P2-5）：共享 touch 长按 hook（02c pill 同款，抽自本处
-  // 内联实现）；移动超 slop 或提前松手取消；guardClick 抑制长按后紧随的合成 click。
-  const lp = useLongPressActions(ctx.openAt);
+  // 长按/右键菜单状态收敛 FileTreeRows 内部（批 11 真同构；本层只经 menuItemsFor 注入编排）。
 
   // 写操作公共失败/成功：失效 files 列表 + git diff（rename/move/delete 都可能改两者）。
   const invalidate = () => {
@@ -603,55 +578,22 @@ export function FilesToolPanel({
       {listing.isPending ? (
         <ListRowSkeleton count={5} />
       ) : (
-        entries.map((entry) => {
-          const dirtyFile = dirty.get(entry.path);
-          const isDir = entry.type === "directory";
-          return (
-            <button
-              className="frow w-full cursor-pointer select-none text-left"
-              key={entry.path}
-              onClick={(e) => {
-                // §4:行内 ActionMenu（长按菜单）scrim 点击按 fiber 冒泡到行,target 在 body 不在
-                // 行内 → 忽略,否则关菜单点空白会误进目录/误开预览(用户实测复现)。
-                if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node))
-                  return;
-                if (lp.guardClick()) return;
-                if (isDir) changePath(entry.path);
-                else onOpenFile(projectName, entry.path);
-              }}
-              onContextMenu={(e) => ctx.openAt(entry.path, e)}
-              type="button"
-              {...lp.bind(entry.path)}
-            >
-              {/* 03z pin①：目录行长按/右键 = 上传到此（+ 新建到此）。 */}
-              {isDir ? (
-                <span className="ic">
-                  <ShellIcon name="project" className="h-[17px] w-[17px]" />
-                </span>
-              ) : (
-                <span className="ic">
-                  <ShellIcon name="file" className="h-[17px] w-[17px]" />
-                </span>
-              )}
-              <span className={`p${isDir ? " dir" : ""}`}>{entry.name}</span>
-              {!isDir && entry.mtimeMs !== undefined ? (
-                <span className="tm">{mtimeRelative(entry.mtimeMs, t)}</span>
-              ) : null}
-              {dirtyFile ? <GitStatusBadge status={dirtyFile.status} /> : null}
-              <span className="ar">
-                <RowChevron />
-              </span>
-              {/* 03w 长按/右键菜单：per-row key 受控（contextMenuPoint 仅命中行非空）。 */}
-              <ActionMenu
-                cancelLabel={t("cancel")}
-                contextMenuPoint={ctx.pointFor(entry.path)}
-                items={isDir ? dirMenuItems(entry) : menuItems(entry)}
-                onContextMenuClose={ctx.close}
-                trigger={<span className="hidden" />}
-              />
-            </button>
-          );
-        })
+        /* 批 11 真同构：行 DOM/守卫链/长按右键菜单收敛 FileTreeRows 单源（与 FilesPanel 同一份
+           代码）。items 构造（menuItems/dirMenuItems 按类型分支）/dirty 徽标/diff 编排留容器，
+           经 menuItemsFor/renderTrailing 注入；mtime 渲染统一 FileTreeRows 内部实现
+          （mtimeRelative wrapper 退役）。 */
+        <FileTreeRows
+          entries={entries}
+          menuItemsFor={(entry) =>
+            entry.type === "directory" ? dirMenuItems(entry) : menuItems(entry)
+          }
+          onOpenDirectory={changePath}
+          onPreviewFile={(p) => onOpenFile(projectName, p)}
+          renderTrailing={(entry) => {
+            const dirtyFile = dirty.get(entry.path);
+            return dirtyFile ? <GitStatusBadge status={dirtyFile.status} /> : null;
+          }}
+        />
       )}
       {/* 03z 上传队列卡（.upcard，与桌面 FilesPanel 双端单源）。 */}
       <UploadQueueCard />
@@ -968,7 +910,8 @@ export function usePanelToolChip({
   onPathChange,
   projectKey,
 }: {
-  /** files crumb 目录链（受控 cwd：桌面 = ctx.currentPath / 移动 = filesPath）。 */
+  /** files crumb 目录链（受控 cwd：桌面 = workbenchDesktopFilesPathAtom 经 right-panel-tabs
+   *  受控传入（批 11）/ 移动 = filesPath）。 */
   currentPath?: string;
   /** 激活标签种类（file 预览标签无 chip）。 */
   kind: "git" | "files" | "wiki" | "file";
@@ -1046,44 +989,15 @@ export function usePanelToolChip({
         </div>
       ) : (
         <>
-          {/* 03o 地址栏（.crumb flex:1 撑满行）：段按钮在前、当前段 <b> 收尾（原型
-             「agents-web / src / auth」b=auth——此前 b 恒为项目根、强调段反转）；搜索钮 =
-              独立 .obtn.srch chip 在胶囊右侧（03o 渐进披露）。此前搜索钮塞胶囊内部占
-              last-child，分隔符 ::after 选择器把「/」错画到末段后、前导 b 又不带分隔
-             （DOM 实测 textContent 粘连「proj1src」，真机反馈「地址栏样式错误」主因）。 */}
-          <div className="crumb">
-            {/* 真机复验反馈⑧：根段项目名文字 → 项目图标（原型 .crumb .cico 12px——固定宽
-               不随项目名长度挤压路径段；任何层级都不再展示项目名文字）。子目录层根段 =
-              可点回根 button（aria-label 保留项目名）；根层已在根 = 非交互 span（aria-label
-              补可访问名，design-review P1：纯图标对读屏静默）。diverge 记档：原型根态 =
-              图标 + <b>项目名</b>（ipad-workspace.html:93），用户反馈⑧明确「不再展示项目名」
-              优先于原型落图。.cseg 标记 = 抑制其后首段的「/」前导（原型「📁 src / auth」，
-              design-review P2）。 */}
-            {crumbSegments.length > 0 ? (
-              <button
-                aria-label={projectKey}
-                className="cseg"
-                onClick={() => onPathChange?.("")}
-                type="button"
-              >
-                <ShellIcon className="cico" name="project" />
-              </button>
-            ) : (
-              <span aria-label={projectKey} className="cseg flex-none" role="img">
-                <ShellIcon className="cico" name="project" />
-              </span>
-            )}
-            {crumbSegments.slice(0, -1).map((seg, i) => (
-              <button
-                key={i}
-                onClick={() => onPathChange?.(crumbSegments.slice(0, i + 1).join("/"))}
-                type="button"
-              >
-                {seg}
-              </button>
-            ))}
-            {crumbSegments.length > 0 ? <b>{crumbSegments[crumbSegments.length - 1]}</b> : null}
-          </div>
+          {/* 03o 地址栏（.crumb flex:1 撑满行）：批 11 真同构收敛 FileCrumb 单源（与
+              FilesPanel 头部同一份 DOM；根段图标语义 = 反馈⑧项目图标 + .cseg 抑制「/」
+              前导，均已在 FileCrumb 内部）。搜索钮 = 独立 .obtn.srch chip 在胶囊右侧
+             （03o 渐进披露）。 */}
+          <FileCrumb
+            onNavigate={(p) => onPathChange?.(p)}
+            rootLabel={projectKey}
+            segments={crumbSegments}
+          />
           <button
             className="obtn srch cursor-pointer"
             onClick={() => setFilesSearchOpen(true)}

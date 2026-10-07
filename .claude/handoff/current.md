@@ -1,10 +1,10 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-07（**真机复验反馈批 10 已收口待 commit；剩余 = 收尾清理 + 统一真机清单**）
+> 最后更新：2026-10-07（**批 10 + 收尾全部 commit + push 完毕；等用户真机复验 + 点 9b 答复**）
 
 ## 一句话状态
 
-v1.5 九批 + 真机反馈批 9 全部收口后，**批 10（反馈③⑦⑧⑨a）实现 + 探针 + 双 reviewer 审查 + 消化全部完成**（§6.14 已记档），本 commit 收口。**剩余收尾** = 删 probe-upload-repro.mjs 诊断脚本 + 清 test 项目上传残留（probe-upload-repro.txt / probe-up-dir/）+ probe-files-cwd-refresh 死探针处置 + 交用户统一真机清单（点 9b 请用户说明上传操作路径 composer uploads/ 语义）。
+v1.5 九批 + 真机反馈批 9（`88feaad`）+ **批 10（`5d9966f`）+ 收尾清理（`fa973c6`）全部 push 完毕**。诊断脚本 probe-upload-repro.mjs 已删、test 项目上传残留（probe-upload-repro.txt / probe-up-dir/）已 DELETE API 清除、死探针 probe-files-cwd-refresh 已退役。**当前等待** = 用户按统一真机复验清单复验 + 答复点 9b（上传操作路径与 composer uploads/ 期望语义）→ 决定是否追加批 11。
 
 ## 本 session 焦点（真机复验反馈 → 批 9✅ / 批 10✅ / 收尾）
 
@@ -28,15 +28,16 @@ v1.5 九批 + 真机反馈批 9 全部收口后，**批 10（反馈③⑦⑧⑨a
 ### 进度（已完成 / 待办）
 
 - ✅ 批 0–8（v1.5 九批）+ 批 9（反馈①②④⑤⑥，`88feaad`）。
-- ✅ 批 10（反馈③⑦⑧⑨a）实现 + 验证 + 双 reviewer + 记档，本 commit 收口。
-- ⬜ 收尾：删 `scripts/probe-upload-repro.mjs`；清 test 项目残留 `probe-upload-repro.txt` + `probe-up-dir/`（DELETE API `/api/projects/test/files?path=...`，密码脚本自读）；probe-files-cwd-refresh 死探针处置（删或归档）；交用户统一真机清单（见下）。
-- ⬜ 点 9b：等用户说明上传操作路径（composer uploads/ 语义）→ 定是否追加批 11。
+- ✅ 批 10（反馈③⑦⑧⑨a）`5d9966f`：实现 + 验证 + 双 reviewer + 记档，已 push。
+- ✅ 收尾 `fa973c6`：死探针退役；诊断脚本已删；test 项目残留已清（200/200）。
+- ⬜ 等用户真机复验（统一清单见下）+ 点 9b 答复 → 定是否批 11。
 - ⬜ reviewer P2 存量记档项随维护批消化（§6.14 批 8/9/10 段）。
+- ℹ️ `~/workspace/test/b4diag-*.txt` 两文件（2026-09-28，早于 v1.5）全仓无引用——非本批残留，未动，待用户定夺。
 
 ### 阻塞 / 隐患
 
 - 无阻塞。dev 存活 43011/43012。
-- `docs/agents-remote-design-v1.5.zip` untracked 不提交（长期约束）；`scripts/probe-upload-repro.mjs` untracked 收尾删。
+- `docs/agents-remote-design-v1.5.zip` untracked 不提交（长期约束）。
 
 ## 统一真机复验清单（最终交用户版，批 10 完成后）
 
@@ -62,4 +63,4 @@ v1.5 九批 + 真机反馈批 9 全部收口后，**批 10（反馈③⑦⑧⑨a
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-07 04:30；触发原因：批 10 收口（双审消化 + 记档 + handoff）——commit 前最后 checkpoint
+最后更新：2026-10-07 05:00；触发原因：批 10（`5d9966f`）+ 收尾（`fa973c6`）push 完毕——交付真机清单，等用户复验

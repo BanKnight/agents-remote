@@ -60,5 +60,11 @@ export function useHScroll() {
     "data-fade-right": fade.right ? "on" : "off",
   } as const;
 
-  return { ref, fade, update, fadeProps };
+  // 批 11 反馈③：激活标签滚入视野（无溢出 = no-op；block:"nearest" 防纵向页面联动）。
+  // 调用方在 activeTabId / 内容数量变化的 effect 里调（先 update 后 ensure，同一 effect）。
+  const ensureActive = useCallback((selector: string) => {
+    ref.current?.querySelector(selector)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, []);
+
+  return { ensureActive, fade, fadeProps, ref, update };
 }

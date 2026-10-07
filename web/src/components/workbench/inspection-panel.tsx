@@ -30,9 +30,13 @@ export function PanelTabBar({
 }) {
   const { t } = useT();
   // §7.2（批 8）：标签溢出时滚轮横滚 + 边缘 12px 渐隐；标签数变化不触发 scroll/resize，
-  // 在内容 effect 里重算渐隐方向。
+  // 在内容 effect 里重算渐隐方向。批 11 反馈③：激活标签（aria-selected）变化时滚入视野
+  //——开面板/切标签/新开 file 标签三个时机都滚；无溢出 no-op。
   const hs = useHScroll();
-  useEffect(() => hs.update(), [hs.update, tabs.length]);
+  useEffect(() => {
+    hs.update();
+    hs.ensureActive('[aria-selected="true"]');
+  }, [activeTabId, tabs.length, hs.ensureActive, hs.update]);
   const tabMeta = (
     tab: PanelTab,
   ): { icon: "project" | "git-nav" | "book" | "file"; label: string } => {

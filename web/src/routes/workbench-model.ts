@@ -181,6 +181,18 @@ export const workbenchMobileProjectFilesPathAtom = atomWithLocalOnlyStorage<Reco
 );
 
 /**
+ * 桌面右栏检视面板 files 工具树 cwd 记忆（按项目 key 分组；批 11 反馈①）。此前右栏语境
+ * ctx 只带 projectKey，cwd 由 FilesToolTab 层 useState 自持——AddMenu 上传/新建读
+ * ctx.currentPath 恒空串，上传恒落项目根（用户真机反馈）。受控化到本 atom 后 AddMenu/
+ * toolChip crumb/FilesToolTab 同一来源。localStorage 持久 + 按项目隔离语义与移动端
+ * workbenchMobileProjectFilesPathAtom 完全对称（多端同构：同一行为，各自容器）。
+ */
+export const workbenchDesktopFilesPathAtom = atomWithLocalOnlyStorage<Record<string, string>>(
+  "workbenchDesktopFilesPath",
+  {},
+);
+
+/**
  * 检视面板标签（v1.4 03ob 检视面板，redesign-v2 §6.13 批2；v1.5 批3 加 wiki 阅读标签）：
  * 多标签类浏览器语义——三基础标签（files/git/wiki）不可关，file 预览标签与 wiki 阅读标签
  *（03s：WikiToolPanel 点页面 → 标签内阅读，面板不退出）可 ✕。

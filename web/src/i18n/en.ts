@@ -147,7 +147,6 @@ export const en = {
   "files.done": "Done",
   "files.dropZone": "Drop file to upload",
   "files.root": "root",
-  "files.goRoot": "Go to root",
   "files.hidden": "hidden",
   "files.projectMetaActive": "{{count}} instances · active {{time}}",
   "files.projectMetaIdle": "Idle · active {{time}}",

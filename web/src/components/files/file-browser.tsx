@@ -23,11 +23,12 @@ import {
   shellSurfaceClasses,
 } from "../shell/shell-primitives";
 import { ShellIcon } from "../shell/icons";
-import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
-import { DragSourceCard, type CardDragStartHandler } from "../workbench/drag-source";
-import { RowChevron } from "../workbench/project-tool-panels";
+import { ActionMenu, type ActionMenuItem, useRowContextMenu } from "../ui/action-menu";
+import type { CardDragStartHandler } from "../workbench/drag-source";
 import { relativeTime } from "../workbench/history-list";
 import { ImageViewer } from "./image-viewer";
+import { FileCrumb } from "./file-crumb";
+import { FileTreeRows } from "./file-tree-rows";
 import { formatBytes } from "@/lib/format";
 
 // CodeMirror 体积较大，只在用户打开文本文件 source 预览时按需加载，避免进首屏 chunk。
@@ -75,54 +76,6 @@ export function ResourceStatePanel({
         </p>
       ) : null}
       {children}
-    </div>
-  );
-}
-
-// ── PathBreadcrumb ────────────────────────────────────────────────
-
-type PathBreadcrumbProps = {
-  path: string;
-  onNavigate: (path: string) => void;
-};
-
-export function PathBreadcrumb({ path, onNavigate }: PathBreadcrumbProps) {
-  const { t } = useT();
-  const segments = path.split("/").filter(Boolean);
-  return (
-    <div className="flex min-w-0 flex-wrap items-center gap-0.5 text-xs font-semibold">
-      <button
-        className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-primary"
-        type="button"
-        onClick={() => onNavigate("")}
-        aria-label={t("files.goRoot")}
-      >
-        <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path
-            d="M2 6.5L8 2l6 4.5V14a.5.5 0 01-.5.5h-3.75v-3.75h-3.5V14.5H2.5A.5.5 0 012 14V6.5z"
-            stroke="currentColor"
-            strokeWidth="1.25"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <span>{t("files.root")}</span>
-      </button>
-      {segments.map((segment, index) => {
-        const segmentPath = segments.slice(0, index + 1).join("/");
-        const isLast = index === segments.length - 1;
-        return (
-          <span key={segmentPath} className="flex items-center gap-0.5">
-            <span className="text-on-surface-muted">/</span>
-            <button
-              className={`cursor-pointer rounded-md px-1 py-0.5 transition ${isLast ? "text-on-surface-soft" : "text-on-surface-muted hover:bg-neutral-line/50 hover:text-primary"}`}
-              type="button"
-              onClick={() => onNavigate(segmentPath)}
-            >
-              {segment}
-            </button>
-          </span>
-        );
-      })}
     </div>
   );
 }
@@ -188,88 +141,78 @@ export function FileEntryList({
   globalCard,
 }: FileEntryListProps) {
   const { t } = useT();
-  const renameInputRef = useRef<HTMLInputElement>(null);
   const ctx = useRowContextMenu();
-  // 05e pin①「右键文件行(iPad 长按)」:触屏长按计时(桌面右键走 onContextMenu 独立路径)。
-  const lp = useLongPressActions(ctx.openAt);
 
-  useEffect(() => {
-    if (!renamingPath) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancelRename();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [renamingPath, onCancelRename]);
+  // 05e 菜单 5 项顺序（§6.12j 批次 6）：预览/重命名/移动/上传/删除。目录行无预览语义
+  //（预览 = 文件），只读场景无上传（onUploadClick undefined 不渲染）。批 11 真同构：items
+  // 构造留容器（编排属容器层），ActionMenu 壳与行 DOM 收敛 FileTreeRows 单源。
+  const menuItemsFor = useCallback(
+    (entry: ProjectFileEntry): ActionMenuItem[] => [
+      ...(entry.type !== "directory"
+        ? [
+            {
+              label: t("files.menuOpenPreview"),
+              icon: <ShellIcon name="file" />,
+              onSelect: () => onPreviewFile(entry.path),
+            },
+          ]
+        : []),
+      {
+        label: t("files.rename"),
+        icon: <ShellIcon name="edit" />,
+        onSelect: () => onStartRename(entry.path, entry.name),
+      },
+      ...(onMove
+        ? [
+            {
+              label: t("files.menuMove"),
+              icon: <ShellIcon name="project" />,
+              onSelect: () => onMove?.(entry.path),
+            },
+          ]
+        : []),
+      ...(onUploadClick
+        ? [
+            {
+              label: t("files.menuUpload"),
+              icon: <ShellIcon name="plus" />,
+              onSelect: () => onUploadClick?.(),
+            },
+          ]
+        : []),
+      {
+        label: t("files.delete"),
+        icon: <ShellIcon name="trash" />,
+        onSelect: () => onDelete(entry.path),
+        variant: "destructive",
+      },
+    ],
+    [t, onDelete, onStartRename, onMove, onUploadClick, onPreviewFile],
+  );
 
+  // globalCard 总览卡行（gfrow/gfile 形态）行尾 ⋯ 钮（hover 显隐）：ActionMenu button
+  // trigger 形态（hidden trigger 形态已收敛 FileTreeRows 单源）。
   const renderActions = useCallback(
-    (entry: ProjectFileEntry, triggerMode: "button" | "hidden" = "button") => (
+    (entry: ProjectFileEntry) => (
       <ActionMenu
         align="end"
         cancelLabel={t("cancel")}
-        items={[
-          // 05e 菜单 5 项顺序（§6.12j 批次 6）：预览/重命名/移动/上传/删除。目录行无预览语义
-          //（预览 = 文件），只读场景无上传（onUploadClick undefined 不渲染）。
-          ...(entry.type !== "directory"
-            ? [
-                {
-                  label: t("files.menuOpenPreview"),
-                  icon: <ShellIcon name="file" />,
-                  onSelect: () => onPreviewFile(entry.path),
-                },
-              ]
-            : []),
-          {
-            label: t("files.rename"),
-            icon: <ShellIcon name="edit" />,
-            onSelect: () => onStartRename(entry.path, entry.name),
-          },
-          ...(onMove
-            ? [
-                {
-                  label: t("files.menuMove"),
-                  icon: <ShellIcon name="project" />,
-                  onSelect: () => onMove?.(entry.path),
-                },
-              ]
-            : []),
-          ...(onUploadClick
-            ? [
-                {
-                  label: t("files.menuUpload"),
-                  icon: <ShellIcon name="plus" />,
-                  onSelect: () => onUploadClick?.(),
-                },
-              ]
-            : []),
-          {
-            label: t("files.delete"),
-            icon: <ShellIcon name="trash" />,
-            onSelect: () => onDelete(entry.path),
-            variant: "destructive",
-          },
-        ]}
+        items={menuItemsFor(entry)}
         trigger={
-          // .frow 行（工具区同构，反馈⑦）无行尾 ⋯ 钮：操作 = 长按/右键菜单（contextMenuPoint），
-          // trigger 仅作 ActionMenu 受控挂载锚。globalCard 总览卡行保留 hover ⋯ 钮（gfrow 形态）。
-          triggerMode === "hidden" ? (
-            <span className="hidden" />
-          ) : (
-            <button
-              className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition hover-capable:opacity-0 hover-capable:group-hover:opacity-100 touch:h-10 touch:w-10 ${shellSurfaceClasses.raisedHover}`}
-              onClick={(e) => e.stopPropagation()}
-              type="button"
-              aria-label={`${entry.name} actions`}
-            >
-              <ShellIcon className="h-4 w-4 text-on-surface-muted" name="ellipsis" />
-            </button>
-          )
+          <button
+            className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition hover-capable:opacity-0 hover-capable:group-hover:opacity-100 touch:h-10 touch:w-10 ${shellSurfaceClasses.raisedHover}`}
+            onClick={(e) => e.stopPropagation()}
+            type="button"
+            aria-label={`${entry.name} actions`}
+          >
+            <ShellIcon className="h-4 w-4 text-on-surface-muted" name="ellipsis" />
+          </button>
         }
         contextMenuPoint={ctx.pointFor(entry.path)}
         onContextMenuClose={ctx.close}
       />
     ),
-    [t, onDelete, onStartRename, onMove, ctx.pointFor, ctx.close],
+    [t, menuItemsFor, ctx.pointFor, ctx.close],
   );
 
   // 10-tab 全局文件总览卡形态（移动 /files mainPage 根层，M10 用户反馈⑥）：项目目录行 gfrow
@@ -378,116 +321,54 @@ export function FileEntryList({
   }
 
   // 结构已知（ListRow 网格），用骨架 mirror loaded 网格，padding 由外层 p-3 提供。
-  if (isLoading) return <ListRowSkeleton count={5} />;
+  // error/empty/skeleton 三态各自内缩 px-3（design-review 批 11：批 11 2c 只对 .frow 行
+  // 贴边统一——卡片态带面底/圆角，容器 0px 双边贴边像破版；行容器保持零水平 padding）。
+  if (isLoading)
+    return (
+      <div className="px-3">
+        <ListRowSkeleton count={5} />
+      </div>
+    );
   if (error)
     return (
-      <ResourceStatePanel tone="danger" title={t("files.errorTitle")} message={error.message} />
+      <div className="px-3">
+        <ResourceStatePanel tone="danger" title={t("files.errorTitle")} message={error.message} />
+      </div>
     );
   if (entries.length === 0)
     return (
       <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">
-        <div className="w-full lg:w-auto">
+        <div className="w-full px-3 lg:w-auto">
           <ResourceStatePanel title={t("files.emptyTitle")} message={t("files.emptyDesc")} />
         </div>
       </div>
     );
 
+  // .frow 通用行（批 11 真同构：行 DOM/守卫链/长按右键菜单收敛 FileTreeRows 单源——
+  // 与 FilesToolPanel 同一份代码；items 构造（menuItemsFor）/rename props/拖动注入经 props）。
   return (
-    <>
-      {/* 真机复验反馈⑦：全局文件进项目文件夹的行与工具区文件树同构 → .frow 形制
-        （03z 单源行：.ic 17px + .p/.p dir + .tm + .ar chevron + 长按/右键菜单）。行间线 =
-        .frow+.frow / .frow-host 组合选择器（DragSourceCard 包裹行经 .frow-host 接续，
-        v2-primitives 单源）；骨架仍是 ListRowSkeleton（FilesToolPanel 同款存量，不动）。 */}
-      <div aria-label="Project files" className="animate-stagger-rows">
-        {entries.map((entry) => {
-          const selected = entry.path === selectedFilePath;
-          const isDirectory = entry.type === "directory";
-          const clickable = isDirectory || filesClickable;
-          const isRenaming = entry.path === renamingPath;
-
-          // 文件行（非目录 + 已知项目名 + 拖动注入）→ DragSourceCard 包 .frow 拖到中栏开
-          // file tab（inClose 判定命中行根 button：单击走行自身 onClick、拖动走序列，
-          // 与 DraggableListRow 语义一致）；目录/根目录层 → 裸 .frow（无对应 file tab）。
-          // 重命名态行 = div（HTML 内容模型禁 button 含交互式后代 input；此态行本就
-          // 不可交互——onClick/onContextMenu/bind 全部早退，code-review P1）。
-          const rowBody = (
-            <>
-              <span className="ic">
-                <ShellIcon className="size-[17px]" name={isDirectory ? "project" : "file"} />
-              </span>
-              {isRenaming ? (
-                <input
-                  ref={renameInputRef}
-                  className="h-7 w-full min-w-0 rounded-lg border border-primary/60 bg-surface-inset/70 px-2 text-[0.82rem] font-semibold text-on-surface font-mono focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                  type="text"
-                  value={renamingName}
-                  autoFocus
-                  onFocus={(e) => e.target.select()}
-                  onBlur={() => onCancelRename()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") onRenameSubmit(entry.path, renamingName);
-                  }}
-                  onChange={(e) => onRenamingNameChange(e.target.value)}
-                />
-              ) : (
-                <span className={`p${isDirectory ? " dir" : ""}`}>{entry.name}</span>
-              )}
-              {/* hidden 文件标注占 .tm 槽（.frow 单行行无 subtitle 槽；mtime 让位） */}
-              {entry.hidden ? (
-                <span className="tm">{t("files.hidden")}</span>
-              ) : !isDirectory && entry.mtimeMs ? (
-                <span className="tm">{relativeTime(new Date(entry.mtimeMs).toISOString(), t)}</span>
-              ) : null}
-              <span className="ar">
-                <RowChevron />
-              </span>
-              {isRenaming || readOnly ? null : renderActions(entry, "hidden")}
-            </>
-          );
-          const row = isRenaming ? (
-            <div className="frow w-full select-none text-left" key={`${entry.type}:${entry.path}`}>
-              {rowBody}
-            </div>
-          ) : (
-            <button
-              className={`frow w-full cursor-pointer select-none text-left${selected ? " sel" : ""}`}
-              key={`${entry.type}:${entry.path}`}
-              onClick={(e) => {
-                // §4:行内 ActionMenu scrim click 按 fiber 冒泡到行,target 在 body 不在行内
-                // → 忽略;guardClick 抑制长按后紧随的合成 click(02c 同款)。
-                if (e.target !== e.currentTarget && !e.currentTarget.contains(e.target as Node))
-                  return;
-                if (lp.guardClick()) return;
-                if (!clickable) return;
-                if (isDirectory) onOpenDirectory(entry.path);
-                else onPreviewFile(entry.path);
-              }}
-              onContextMenu={readOnly ? undefined : (e) => ctx.openAt(entry.path, e)}
-              type="button"
-              {...(readOnly ? {} : lp.bind(entry.path))}
-            >
-              {rowBody}
-            </button>
-          );
-          // TS 在此分支内 narrow onCardDragStart/fileProjectName 到非空（无需 ! 断言）。
-          // dragRef.path 全路径 = `${projectName}/${entry.path}`，与 onOpenFile / selectFile 构造一致。
-          if (onCardDragStart && fileProjectName && !isDirectory) {
-            return (
-              <DragSourceCard
-                className="frow-host"
-                dragRef={{ kind: "file", path: `${fileProjectName}/${entry.path}` }}
-                key={`${entry.type}:${entry.path}`}
-                onDragStart={onCardDragStart}
-                onSelect={() => onPreviewFile(entry.path)}
-              >
-                {row}
-              </DragSourceCard>
-            );
-          }
-          return row;
-        })}
-      </div>
-    </>
+    <FileTreeRows
+      entries={entries}
+      filesClickable={filesClickable}
+      fileProjectName={fileProjectName}
+      menuItemsFor={menuItemsFor}
+      onCardDragStart={onCardDragStart}
+      onOpenDirectory={onOpenDirectory}
+      onPreviewFile={onPreviewFile}
+      readOnly={readOnly}
+      selectedFilePath={selectedFilePath}
+      renaming={
+        renamingPath !== null
+          ? {
+              path: renamingPath,
+              name: renamingName,
+              onNameChange: onRenamingNameChange,
+              onSubmit: onRenameSubmit,
+              onCancel: onCancelRename,
+            }
+          : undefined
+      }
+    />
   );
 }
 
@@ -1055,7 +936,7 @@ export function resolveRootBrowseTarget(currentPath: string): RootBrowseTarget {
  *
  * 调用方语义统一（设计 workbench-views §4.1）：`FileEntryList.onOpenDirectory` 传项目
  * 相对 entry.path，经本函数转成完整 currentPath 后再调 `goToPath`；
- * `PathBreadcrumb.onNavigate` 传的 segmentPath 已是完整格式，直接调 `goToPath`。
+ * `FileCrumb.onNavigate` 传的 segmentPath 已是完整格式，直接调 `goToPath`。
  * `goToPath` 单一逻辑直接 `setCurrentPath`，避免单一函数同时服务两种 path 语义
  * 导致某种来源被双前缀或丢前缀。
  */
@@ -1350,9 +1231,10 @@ export function FilesPanel({
     <aside
       className={`min-h-0 min-w-0 flex-1 ${enablePreview ? "sm:flex-none sm:w-[19.375rem] sm:shrink-0 sm:border-r sm:border-neutral-line/60" : "sm:flex-1"} ${isPreviewOpen ? "hidden sm:flex sm:flex-col" : "flex flex-col"}`}
     >
-      <div
-        className={`flex flex-1 min-h-0 flex-col overflow-y-auto pb-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)] ${globalCard ? "" : "px-3"}`}
-      >
+      {/* 批 11 真同构 2c：容器 px-3 移除——两侧 .frow 贴边统一 = 行自身 16px（v2-primitives
+          单源；此前全局侧 12+16=28px vs 工具侧 16px，用户实测「贴边间距不同」）。
+          [data-desktop-inspector] 桌面密度分档（7px 14px）保留不动（2026-09-29 真机拍板）。 */}
+      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto pb-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
         <UploadQueueCard />
         <FileEntryList
           entries={
@@ -1415,7 +1297,17 @@ export function FilesPanel({
           // 内容高 34px = ViewSwitcher 行（h-7 按钮 + p-0.5 border 外壳），使 files header 行
           // 总高 47px 与总览 ViewSwitcher 行一致（批 Q 点 4 收尾：原本 min-h-7=28 → 41px 独树一帜）。
         >
-          <PathBreadcrumb path={currentPath} onNavigate={goToPath} />
+          {/* 批 11 真同构：地址栏收敛 FileCrumb 单源（v1 遗留 PathBreadcrumb 🏠+斜杠段钮
+              退役）。根段可访问名 = 项目名 / 根层「服务器根」；根段图标 = project（SF 名
+              契约 folder 形状）——与 FilesToolPanel .crumb 同一份 DOM。diverge 记档：原型
+              全局文件页无 crumb（.sfield 搜索框），用户同构要求优先。 */}
+          <FileCrumb
+            onNavigate={goToPath}
+            // 根段 aria-label = 导航目的地（恒服务器根），不随当前层级变——项目层级时
+            // 根段点击也是回根（design-review 批 11：同名不同目的地对读屏误导）。
+            rootLabel={t("files.root")}
+            segments={currentPath ? currentPath.split("/") : []}
+          />
           {/* 写操作 actions（New Folder/Upload）只在 inspection 模式（enablePreview=true）渲染；
               FilesLeftPanel 纯导航树（enablePreview=false）不挂写操作——窄左栏（256px）actions 文字
               + breadcrumb 会溢出覆盖 breadcrumb button（click intercept），且写操作语义属中栏 file

@@ -148,7 +148,6 @@ export const zh: Record<TranslationKey, string> = {
   "files.done": "完成",
   "files.dropZone": "拖拽文件以上传",
   "files.root": "根目录",
-  "files.goRoot": "转到根目录",
   "files.hidden": "隐藏",
   "files.projectMetaActive": "{{count}} 实例 · 最近 {{time}}",
   "files.projectMetaIdle": "空闲 · 最近 {{time}}",
