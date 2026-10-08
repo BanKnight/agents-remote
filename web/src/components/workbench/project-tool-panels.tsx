@@ -597,28 +597,21 @@ export function FilesToolPanel({
       )}
       {/* 03z 上传队列卡（.upcard，与桌面 FilesPanel 双端单源）。 */}
       <UploadQueueCard />
-      {/* 03o pin④「增=新建/上传（到当前作用域）」：底部 .links 行（移动检视面板语境；
-          桌面右栏 = 05e:54 顶部搜索行右端「＋」（toolChip 装配承载），lg 隐藏。 */}
-      <div className="links lg:hidden">
-        <button onClick={() => setNewItemParentPath(path)} type="button">
-          {t("files.linkCreate")}
-        </button>
-        <button onClick={() => openUploadPicker(path)} type="button">
-          {t("files.linkUpload")}
-        </button>
-        <input
-          ref={uploadInputRef}
-          className="hidden"
-          type="file"
-          multiple
-          onChange={(e) => {
-            if (e.target.files && e.target.files.length > 0) {
-              enqueueUploads(projectName, uploadTargetDirRef.current, Array.from(e.target.files));
-            }
-            e.target.value = "";
-          }}
-        />
-      </div>
+      {/* 03o pin④ 底部 .links「新建…/上传文件」文字链退役（批 13 追加真机反馈：新建/上传
+          已统一 FAB AddMenu——移动 renderPanelFab，桌面右栏该行本就 lg 隐藏）。hidden input
+          保留：行菜单「上传文件…/上传到此」仍走 openUploadPicker → click。 */}
+      <input
+        ref={uploadInputRef}
+        className="hidden"
+        type="file"
+        multiple
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            enqueueUploads(projectName, uploadTargetDirRef.current, Array.from(e.target.files));
+          }
+          e.target.value = "";
+        }}
+      />
       {copiedPath ? (
         <div className="cap mt-2 px-4">{t("files.copied")}</div>
       ) : (

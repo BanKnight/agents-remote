@@ -1607,25 +1607,6 @@
     color: var(--ink-1);
     cursor: pointer;
   }
-  /* 03o pin④/03z 底部新建/上传文字链（移动检视面板语境；桌面右栏 = 顶部＋入口，
-     lg 隐藏由消费方 utility 承载——05e:54 顶部搜索行右端「＋」）。 */
-  .links {
-    display: flex;
-    gap: 24px;
-    margin: 12px 16px 0;
-    font-size: 13px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
-    font-weight: 600;
-  }
-  .links button {
-    font: inherit;
-    color: var(--c-primary);
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-  }
   .frow {
     display: flex;
     align-items: center;

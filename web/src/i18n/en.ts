@@ -182,7 +182,6 @@ export const en = {
   "files.menuUploadHere": "Upload here",
   "files.create": "Create",
   "files.linkCreate": "New…",
-  "files.linkUpload": "Upload files",
   "files.addUpload": "Upload…",
   "files.newItemTitle": "New",
   "files.newItemType": "Type",

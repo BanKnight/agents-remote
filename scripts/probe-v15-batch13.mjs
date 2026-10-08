@@ -274,6 +274,9 @@ const browser = await chromium.launch();
   await page.getByLabel("检视面板").click();
   await page.waitForSelector('[data-inspection-panel="open"]', { timeout: 5000 });
   await page.waitForTimeout(450);
+  // 追加反馈：files tab 底部 .links「新建…/上传文件」文字链退役（新建/上传统一 FAB）。
+  const linksGone = await page.evaluate(() => document.querySelector(".links") === null);
+  check("2c 检视面板底部 .links 文字链已退役", linksGone);
   await page.locator("button.frow", { hasText: "README.md" }).first().click();
   await page.waitForSelector(".fmeta", { timeout: 8000 });
   await page.waitForTimeout(400);

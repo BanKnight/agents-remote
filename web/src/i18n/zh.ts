@@ -182,7 +182,6 @@ export const zh: Record<TranslationKey, string> = {
   "files.menuUploadHere": "上传到此",
   "files.create": "创建",
   "files.linkCreate": "新建…",
-  "files.linkUpload": "上传文件",
   "files.addUpload": "上传…",
   "files.newItemTitle": "新建",
   "files.newItemType": "类型",
