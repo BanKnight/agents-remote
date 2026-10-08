@@ -221,6 +221,34 @@ async function readMenu(page) {
   });
 }
 
+/** 菜单几何细读（批 14 统一样式）：各 menuitem 的分割线宽度 + 各项内 svg 在场（icon 契约）。
+ *  Tailwind v4 divide-y = `> :not(:last-child)` + border-BOTTOM（v3 是 `~` 兄弟 + top）——
+ *  视觉同为条目间 N-1 条线（原型 .ctx `.row + .row{border-top}` 的等价实现），故断言读
+ *  borderBottomWidth：除末项外恒 1px。 */
+async function readMenuGeometry(page) {
+  return page.evaluate(() => {
+    const menus = [...document.querySelectorAll("[role='menu']")].filter((el) => {
+      const s = getComputedStyle(el);
+      return s.display !== "none" && s.visibility !== "hidden";
+    });
+    const menu = menus[menus.length - 1];
+    if (!menu) return { open: false, items: [] };
+    return {
+      open: true,
+      items: [...menu.querySelectorAll("[role='menuitem']")].map((el) => {
+        const svg = el.querySelector("svg");
+        return {
+          borderDivide: getComputedStyle(el).borderBottomWidth,
+          hasSvg: !!svg,
+          // icon 渲染几何尺寸：ShellIcon（span 兜底 [data-shell-icon]→svg size-full 跟随）
+          // 与 LucideIcon（svg 兜底）两路径统一 17px 标准档（批 14 code review P2）。
+          iconW: svg ? +svg.getBoundingClientRect().width.toFixed(1) : null,
+        };
+      }),
+    };
+  });
+}
+
 /** 行菜单 open 目标态等待（替代右键后死 sleep，负载时段 400ms 不够会误报；超时不抛——
  * 让 readMenu 返回 open:false 走断言 FAIL，不崩探针）。 */
 async function waitMenuOpen(page) {
@@ -316,6 +344,23 @@ try {
   ok(
     menu.items.length === 6 && menu.items.some((x) => x.includes("上传文件")),
     `F2 Files 菜单并集 6 项含上传（实际 ${menu.items.length}：${menu.items.join("/")}）`,
+  );
+  // 批 14 统一样式：条目间分割线（v4 divide-y = 除末项外 borderBottom=1px）+ 全行带 17px 图标 svg。
+  const geo = await readMenuGeometry(page);
+  ok(
+    geo.open &&
+      geo.items.length > 1 &&
+      geo.items[geo.items.length - 1].borderDivide === "0px" &&
+      geo.items.slice(0, -1).every((x) => x.borderDivide === "1px"),
+    `F2b 条目间分割线（除末项 1px；实际 ${JSON.stringify(geo.items.map((x) => x.borderDivide))}）`,
+  );
+  ok(
+    geo.open && geo.items.every((x) => x.hasSvg),
+    `F2c 全行带图标 svg（实际 ${JSON.stringify(geo.items.map((x) => x.hasSvg))}）`,
+  );
+  ok(
+    geo.open && geo.items.every((x) => x.iconW !== null && Math.abs(x.iconW - 17) <= 1),
+    `F2d 图标渲染尺寸 17px 标准档（ShellIcon 裸传经 span 兜底提升；实际 ${JSON.stringify(geo.items.map((x) => x.iconW))}）`,
   );
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);

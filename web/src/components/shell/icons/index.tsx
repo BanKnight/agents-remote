@@ -20,6 +20,7 @@ const TO_LUCIDE = {
   "chevron-left": "chevron-left", // 10m2 推入态返回（mac-files-global-preview mback）
   clock: "clock",
   close: "x",
+  "doc-text": "file-text", // 插件菜单「查看详情」（SF doc.text 带文本线文档；批 14 菜单统一样式）
   download: "download",
   edit: "pencil",
   ellipsis: "ellipsis",
@@ -34,7 +35,9 @@ const TO_LUCIDE = {
   maximize: "maximize-2",
   minus: "minus",
   "pages-nav": "layout-grid",
+  pause: "pause", // 插件菜单「停用」（原型 plugins-skill-menu.html data-symbol="pause"）
   pin: "pin",
+  play: "play", // 插件菜单「启用」（与 pause 配对）
   plus: "plus",
   project: "folder",
   puzzlepiece: "puzzle", // 插件（底部 nav + 桌面 footnav，v1.5 批 7 spec §3.5/§6.2）
@@ -67,6 +70,9 @@ export function ShellIcon({
   // `[&_svg:not([class*='size-'])]:size-4`——否则 Button 内的 ShellIcon svg 被强制 16px，
   // 调用方传的尺寸失效（IconMarker sm 的 h-3.5=14px 被覆盖成 16）。svg size-full 跟随
   // 外层 span（span 由 className 定尺寸），全栈 Button>ShellIcon 的 icon 尺寸由此可靠。
+  // data-shell-icon = 菜单 icon 兜底锚点（DropdownMenuItem / mobileSheetItemClasses 的
+  // `[&_[data-shell-icon]]:size-[17px]`）：内嵌 svg 的 size-full class 会绕过 svg 兜底，
+  // 裸传（默认 size-4=16px）在菜单里需靠 span 锚点被提升到 17px 标准档（批 14）。
   const lucideName = TO_LUCIDE[name as keyof typeof TO_LUCIDE];
   const html = lucideName
     ? `<svg viewBox="${LUCIDE_ICONS[lucideName].viewBox}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="size-full">${LUCIDE_ICONS[lucideName].body}</svg>`
@@ -74,6 +80,7 @@ export function ShellIcon({
   return (
     <span
       className={"inline-flex items-center justify-center " + className}
+      data-shell-icon=""
       dangerouslySetInnerHTML={{ __html: html }}
       aria-hidden="true"
     />

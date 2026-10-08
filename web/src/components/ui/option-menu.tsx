@@ -137,8 +137,10 @@ export function OptionMenu({
   if (presentation === "auto" && isMobile) {
     return (
       <MobileSheet ariaLabel="选择菜单" onOpenChange={setOpen} open={open} trigger={trigger}>
-        {/* .msheet 自带 max-height 内滚（frontend-notes §8），无需内部再设滚动约束 */}
-        <div role="menu">
+        {/* .msheet 自带 max-height 内滚（frontend-notes §8），无需内部再设滚动约束。
+            条目间分割线（批 14 追加反馈）：与桌面 DropdownMenuContent divide-sep 同一
+            线制；取消项进 divide 链（原 my-2 分组线删除，间距由取消项 mt-2 恢复）。 */}
+        <div className="divide-y divide-sep" role="menu">
           {items.map((item, index) => (
             <button
               key={`${item.label}-${index}`}
@@ -167,11 +169,11 @@ export function OptionMenu({
               </span>
             </button>
           ))}
-          <div className="my-2 h-px bg-neutral-line" aria-hidden="true" />
           <button
             type="button"
             role="menuitem"
-            className={mobileOptionItemClasses(false, accent)}
+            // 取消项 mt-2 = iOS 分组间距（同 action-menu 移动分支，design review P2-1）。
+            className={cn(mobileOptionItemClasses(false, accent), "mt-2")}
             onClick={() => setOpen(false)}
           >
             <span className="w-full text-center text-on-surface-muted">
@@ -190,7 +192,10 @@ export function OptionMenu({
         align={align}
         side="top"
         sideOffset={4}
-        className="max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto"
+        // menuHeader（.mh）非 .row——原型 `.row + .row` 线链不含头（workspace-composer-config
+        // .optmenu），divide 基线会给头加 border-bottom，此处按 class 锚点关掉（批 14 design
+        // review P1-1；:where 生成的 divide 是零 specificity，(0,2,0) 稳赢）。
+        className="max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto [&>.mh]:border-b-0"
       >
         {menuHeader}
         {items.map((item, index) => (

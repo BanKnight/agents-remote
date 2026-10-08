@@ -2720,9 +2720,22 @@ type TabContextMenuProps = {
 function TabContextMenu({ anchor, onClose, onKill, onMinimize }: TabContextMenuProps) {
   const { t } = useT();
   const items: ActionMenuItem[] = [
-    { label: t("workbench.tabMinimize"), onSelect: onMinimize },
+    // 菜单 icon 契约（批 14 统一样式：原型 .ctx .row 全行带 17px 图标）。最小化 = close
+    //（x，与 tab ✕ 同语义——上方注释「最小化 = removeTabFromGroup」）；终止 = trash。
+    {
+      icon: <ShellIcon className="size-[17px]" name="close" />,
+      label: t("workbench.tabMinimize"),
+      onSelect: onMinimize,
+    },
     ...(onKill
-      ? [{ label: t("workbench.tabKill"), onSelect: onKill, variant: "destructive" as const }]
+      ? [
+          {
+            icon: <ShellIcon className="size-[17px]" name="trash" />,
+            label: t("workbench.tabKill"),
+            onSelect: onKill,
+            variant: "destructive" as const,
+          },
+        ]
       : []),
   ];
   return (

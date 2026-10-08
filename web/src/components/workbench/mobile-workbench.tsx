@@ -1146,6 +1146,8 @@ function MobileProjectWorkbench({
           cancelLabel={t("cancel")}
           items={[
             {
+              // 菜单 icon 契约（批 14 统一样式）：与 mobile-l3 同 key 菜单同款图标。
+              icon: <ShellIcon className="size-[17px]" name="file" />,
               label: t("files.menuCopyContent"),
               disabled: !activeWikiPage.data,
               onSelect: () => {
@@ -1154,6 +1156,7 @@ function MobileProjectWorkbench({
               },
             },
             {
+              icon: <ShellIcon className="size-[17px]" name="git-nav" />,
               label: t("git.menuViewDiff"),
               onSelect: () =>
                 setPanelDiff({

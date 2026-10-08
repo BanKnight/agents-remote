@@ -27,6 +27,10 @@ function DropdownMenuContent({
           // v1.5 §5.0 族A 锚定浮卡材质单源（components.css：--menu 底 / sep-strong 边 /
           // r14 圆角）——批 8 浮层两族对齐（02c 取值菜单先例）。
           "z-50 min-w-[10rem] overflow-hidden rounded-[14px] border border-sep-strong bg-menu p-1.5 text-on-surface-soft shadow-2xl shadow-black/40 backdrop-blur-md",
+          // 条目间分割线（批 14 追加真机反馈：原型 .ctx `.row + .row{border-top:1px solid
+          // var(--sep)}` 三页铁证；divide = `> * + *` 兄弟线，单源一处全端菜单生效。必须
+          // --sep（divide-sep）——--sep-row 暗色下与菜单底同值会隐身，原型注释同警）。
+          "divide-y divide-sep",
           // enter 走 spring snappy（与 popover 同档：轻量锚定层）；zoom 幅度、方向
           // 位移（skill §8 hint in direction）与 transform-origin 锚定触发源（§7）
           // 全保持，只换 timing。变量注入机制见 dialog.tsx 同段注释。
@@ -59,7 +63,10 @@ function DropdownMenuItem({
         "relative flex min-h-[45px] cursor-pointer select-none items-center gap-3.5 rounded-lg px-3 py-2.5 text-sm font-semibold outline-none transition",
         "focus:bg-accent focus:text-accent-foreground",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px]",
+        // icon 17px 兜底两条：svg（LucideIcon 裸传，无 size class）+ ShellIcon span
+        //（内嵌 svg 是 size-full 绕过上一条，裸传 span 默认 size-4=16px，须按锚点提升）。
+        // 父 class + 属性 (0,2,0) > .size-4 (0,1,0)，菜单内 icon 一律 17px 标准档。
+        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px] [&_[data-shell-icon]]:size-[17px]",
         variant === "destructive" && "text-error focus:bg-error/10 focus:text-error",
         inset && "pl-8",
         className,

@@ -67,6 +67,11 @@ const ICONS = [
   "puzzle", // ShellIcon puzzlepiece（插件：底部 nav + 桌面 footnav，spec §3.5/§6.2）
   "expand", // 终端「展开输入」钮（收起态，03f .xbtn，spec §4.7）
   "shrink", // 终端「收回输入」钮（展开态，与 expand 配对，spec §4.7）
+  // ── 批 14 菜单统一样式（真机反馈第五轮①）：插件长按菜单图标补齐（原型
+  //    plugins-skill-menu.html 铁证：查看详情 doc.text / 停用 pause / 启用 play）──
+  "file-text", // ShellIcon doc-text（插件菜单「查看详情」，SF doc.text 带文本线文档）
+  "pause", // ShellIcon pause（插件菜单「停用」）
+  "play", // ShellIcon play（插件菜单「启用」）
 ];
 
 const entries = [];

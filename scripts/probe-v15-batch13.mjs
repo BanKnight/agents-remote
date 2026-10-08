@@ -277,6 +277,46 @@ const browser = await chromium.launch();
   // 追加反馈：files tab 底部 .links「新建…/上传文件」文字链退役（新建/上传统一 FAB）。
   const linksGone = await page.evaluate(() => document.querySelector(".links") === null);
   check("2c 检视面板底部 .links 文字链已退役", linksGone);
+
+  // 批 14 统一样式：移动 sheet 菜单条目间分割线（原型 .ctx `.row + .row` --sep）+ 全行图标。
+  // 检视面板 files tab = FilesToolPanel/FileTreeRows——无可见 ⋯ 钮（trigger hidden），
+  // 菜单入口 = 行长按（probe-inspector-row-menus L1 同款 pointerType:touch 合成，500ms 阈值）。
+  await page.locator("button.frow", { hasText: "README.md" }).first().dispatchEvent("pointerdown", {
+    bubbles: true,
+    clientX: 200,
+    clientY: 300,
+    pointerId: 7,
+    pointerType: "touch",
+  });
+  await page.waitForTimeout(800);
+  await page.waitForSelector("[role='menu']", { timeout: 5000 });
+  const mgeo = await page.evaluate(() => {
+    const menus = [...document.querySelectorAll("[role='menu']")].filter((el) => {
+      const s = getComputedStyle(el);
+      return s.display !== "none" && s.visibility !== "hidden";
+    });
+    const menu = menus[menus.length - 1];
+    if (!menu) return null;
+    const items = [...menu.querySelectorAll("[role='menuitem']")];
+    return {
+      n: items.length,
+      // Tailwind v4 divide-y = `> :not(:last-child)` border-bottom（条目间 N-1 条线的等价实现）。
+      borders: items.map((el) => getComputedStyle(el).borderBottomWidth),
+      // icon 契约只覆盖业务项——末项 = 取消（iOS action sheet 惯例，无图标）。
+      bizAllSvg: items.slice(0, -1).every((el) => !!el.querySelector("svg")),
+    };
+  });
+  check(
+    "2d sheet 条目间分割线 + 业务项全行图标",
+    !!mgeo &&
+      mgeo.n > 1 &&
+      mgeo.borders[mgeo.borders.length - 1] === "0px" &&
+      mgeo.borders.slice(0, -1).every((b) => b === "1px") &&
+      mgeo.bizAllSvg,
+    mgeo ? `n=${mgeo.n} borders=${mgeo.borders.join("/")} bizAllSvg=${mgeo.bizAllSvg}` : "n/a",
+  );
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
   await page.locator("button.frow", { hasText: "README.md" }).first().click();
   await page.waitForSelector(".fmeta", { timeout: 8000 });
   await page.waitForTimeout(400);

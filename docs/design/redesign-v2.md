@@ -1617,6 +1617,18 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
   - **记档不改**：sheet 内 segc `mx-4` 与 03n/03y 原型 20px 内容线不共宽（36px inset，下批收敛 design P2-3）；.segc line-height / .fab box-shadow 双源镜像属性漂移（design P2-7 diverge 记档）；workbench-tab-plugin 全局 FilesPanel（无 onOpenFile）预览内链 = 浏览器默认（value=null 语义）。
   - **复验**：探针 16/16（+7w）；单测 734（+2 renderKey/去重）；e2e 27/27；门禁全绿 + CSS 硬闸 + tokens strict 0。
 
+**批 14（真机反馈第五轮①：菜单统一样式）**：用户反馈「项目用到的菜单没有统一样式，原型里要求的菜单都是带图标、带条目分割线的，全部检查一下」。原型标尺 = v1.5 §5.0 族A 锚定浮卡（45px 行 / 14 字 / 17 图标 / gap14）+ **条目间分割线** `.ctx .row + .row{border-top:1px solid var(--sep)}`（project-row-menu / plugins-skill-menu / tool-files-row-menu 三页铁证，注释强调必须 --sep——--sep-row 暗色同底隐身）。
+- **实现（divide 单源两处 + icon 补齐）**：桌面 = `DropdownMenuContent` 基线加 `divide-y divide-sep`（ActionMenu 两分支 + OptionMenu 桌面全经此单源；`DropdownMenuSeparator` 全仓无直用消费点）；移动 = ActionMenu/OptionMenu 的 role=menu 容器同类；删除两处「取消前」`my-2 h-px bg-neutral-line` 分组线（取消项进 divide 链，线制同语义）。icon 补齐 4 消费点 10 项（TabContextMenu 最小化=close/终止=trash；wiki ⋯ 复制内容=file/查看 diff=git-nav；插件菜单查看详情=doc-text/停用启用=pause·play/卸载移除=trash destructive）——白名单加 file-text/pause/play 重跑生成（50 图标）+ TO_LUCIDE 三映射。
+- **★ Tailwind v4 divide-y 语义变化**：v3 = `~` 相邻兄弟 + border-top；**v4 = `> :not(:last-child)` + border-bottom**（且包在零 specificity 的 `:where()` 里）。视觉同为条目间 N-1 条线，但 computed 断言必须读 `borderBottomWidth`（除末项 1px、末项 0px）——探针首跑误用 v3 语义断言 borderTop 全 0px 假 FAIL 即此根因。`:where` 零 specificity 后续被两处覆盖修复利用（见 reviewer 消化）。
+- **双 reviewer 消化（code P1×1 + P2×1 / design P1×1 + P2×3，全消化）**：
+  - **code P1（漏网消费方：分区容器菜单）**：`mobile-project-header` 实例切换菜单是 DropdownMenuContent 第 4 个直接消费方（rg 全量 4 处唯此在盘点外），结构 = 标题/滚动列表/钉底动作**三分区容器**非行式——divide 基线造出「标题下多线 + 列表容器 border-bottom 与钉底自带 border-t 叠 2px 双线」。修 = 该处 `divide-y-0`（twMerge 同组覆盖），行间线仍由 InstanceSwitchRow 自带 border-t 承担；m5-sheets 加三分区 border 回归断言。
+  - **design P1-1（.mh 头下多线）**：OptionMenu anchored 形态 `{menuHeader}`（.mh，composer 三选择器）直接作 Content 首子——原型 `.row + .row` 线链不含头（workspace-composer-config .optmenu：.mh 非 .row 不参与）。修 = anchored 分支 `[&>.mh]:border-b-0`（父 class+属性 (0,2,0) 胜 ：where 的 0）；composer toolbar 探针加 .mh borderBottom=0px 断言入 H5。
+  - **code P2（icon 契约与机制错位，35 处裸传实为 16px）**：旧注释「icon 裸传统一 17px」失真——ShellIcon 内嵌 svg 恒 `size-full`（class 含 "size-"）**绕过** svg 兜底选择器，裸传 span 默认 size-4=16px（design-reviewer DOM 实测 15.79px vs project-row-actions 显式 16.92px）。修 = **单源兜底**：ShellIcon span 加 `data-shell-icon` 锚点（零样式效应），DropdownMenuItem + mobileSheetItemClasses 各加 `[&_[data-shell-icon]]:size-[17px]`（specificity 稳赢 .size-4；品牌 logo viewBox 方形无变形风险；OptionMenu 无 icon 字段不涉及）——**35 处裸传消费点零改动统一 17px**，F2d 探针实测 [17×6]。契约注释改准确口径（显式 size-[17px] 亦接受=同值冗余）。
+  - **design P2-1（取消项分组间距）**：删 my-2 后取消与末项只剩紧贴线；iOS action sheet 惯例取消独立分组有组间间隙。修 = 取消项自身 `mt-2`（线制保留——线属业务组末行 border-bottom；原型 .ctx 族无取消行无明文，iOS 惯例兜底）。
+  - **记档不改**：design P2-2 = divide 线两端各内缩 6px（item rounded-lg + Content p-1.5）vs 原型全宽直线——容器差异（移动 sheet 本就 20px 内缩），ProjectRowMenu（全宽 border-t）与 DropdownMenuContent 系（内缩 divide）两族线形并存为已知差异；design P2-3 = 显式 `size-[17px]` 死重量（锚点兜底已归一），历史消费点剥除留后续批。
+- **探针**：`probe-inspector-row-menus`（+F2b 分割线 borderBottom 断言 / +F2c 全行 svg / +F2d 图标 17px 几何）；`probe-v15-batch13`（+2d：移动 sheet 长按开菜单 borders + 业务项图标——files tab 无可见 ⋯ 钮，入口 = 行长按 pointerType:touch 合成）；`probe-v2-m5-sheets`（+三分区 divide-y-0 回归）；`probe-claude-composer-toolbar`（+.mh 无线入 H5）。回归：inspector-row-menus 25 ALL PASS / m5-sheets 83 / batch13 18 / composer-toolbar H5·H6。
+- **复验**：单测 734；e2e 27/27；门禁全绿（format / lint 0 warning / typecheck 三包 / tokens strict 0）+ CSS 硬闸。
+
 | 项 | 决策点 | 摊牌时点 |
 | --- | --- | --- |
 | Wiki「让 Agent 读这篇」注入协议 | ~~stdin 指令 vs attachment/引用卡；引用卡状态归属~~ ✅ 已摊牌（D13，§6.2）：stdin prompt + 客户端 per-session 引用 atom | ~~M4 开工前~~ 2026-09-21 |

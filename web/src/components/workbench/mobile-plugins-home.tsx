@@ -129,20 +129,25 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
     return `${mcpTypeLabel(s, t)} · ${s.url ?? ""}`;
   };
 
-  /** 09b 长按/右键菜单（MCP 卡）：查看详情（仅 global，project 无详情容器）/ 停用（启用）/ 移除… */
+  /** 09b 长按/右键菜单（MCP 卡）：查看详情（仅 global，project 无详情容器）/ 停用（启用）/ 移除…
+   *  icon 契约（批 14 统一样式）：原型 plugins-skill-menu.html 铁证——查看详情 doc.text /
+   *  停用 pause / 启用 play / 卸载 trash，全行 17px。 */
   const mcpMenuItems = (s: McpServerEntry): ActionMenuItem[] => {
     const items: ActionMenuItem[] = [];
     if (!projectName) {
       items.push({
+        icon: <ShellIcon className="size-[17px]" name="doc-text" />,
         label: t("plugins.menuView"),
         onSelect: () => void navigate({ to: "/plugins/mcp/$", params: { _splat: s.name } }),
       });
     }
     items.push({
+      icon: <ShellIcon className="size-[17px]" name={s.disabled ? "play" : "pause"} />,
       label: s.disabled ? t("plugins.menuEnable") : t("plugins.menuDisable"),
       onSelect: () => setMcpDisabled.mutate({ name: s.name, disabled: !s.disabled }),
     });
     items.push({
+      icon: <ShellIcon className="size-[17px]" name="trash" />,
       label: t("mcp.remove"),
       onSelect: () => {
         void confirm({
@@ -164,6 +169,7 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
   const skillMenuItems = (s: InstalledSkill): ActionMenuItem[] => {
     const items: ActionMenuItem[] = [];
     items.push({
+      icon: <ShellIcon className="size-[17px]" name="doc-text" />,
       label: t("plugins.menuView"),
       onSelect: () => {
         if (projectName) {
@@ -177,6 +183,7 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
       },
     });
     items.push({
+      icon: <ShellIcon className="size-[17px]" name={s.disabled ? "play" : "pause"} />,
       label: s.disabled ? t("plugins.menuEnable") : t("plugins.menuDisable"),
       onSelect: () =>
         setSkillDisabled.mutate({
@@ -186,6 +193,7 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
         }),
     });
     items.push({
+      icon: <ShellIcon className="size-[17px]" name="trash" />,
       label: t("skills.uninstall"),
       onSelect: () => {
         void confirm({

@@ -203,7 +203,10 @@ function InstanceSwitchMenu({
           />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="center" className="w-[250px] p-0">
+      {/* 分区容器菜单（标题 / 滚动列表 / 钉底动作三分区），非行式菜单——divide 基线（批 14
+        DropdownMenuContent）会造出「标题下多线 + 列表容器 border-bottom 与钉底自带
+        border-t 双线叠加」，此处关闭；行间线仍由 InstanceSwitchRow 自带 border-t。 */}
+      <DropdownMenuContent align="center" className="w-[250px] divide-y-0 p-0">
         <div className="px-3.5 pb-1.5 pt-2.5 text-[10.5px] font-bold tracking-[0.5px] text-ink-2">
           {t("workbench.switchInstance")}
         </div>

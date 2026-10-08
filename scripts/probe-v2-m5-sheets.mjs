@@ -246,7 +246,24 @@ const grpText = await page.evaluate(() => {
   const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
   return menu?.querySelector("div")?.textContent ?? "";
 });
-ok(grpText.includes("切换实例") === true, `组头「切换实例」（「${grpText.trim()}」）`);
+ok(grpText.includes("切换实例") === true, `组头「切换实例」(「${grpText.trim()}」)`);
+// 批 14 code review P1 回归断言：本菜单 = 分区容器菜单（标题/滚动列表/钉底动作三分区，
+// 非行式），DropdownMenuContent 基线 divide（批 14）须被 divide-y-0 关闭——否则标题
+// border-bottom（改前没有的线）+ 列表容器 border-bottom 与钉底自带 border-t 叠 2px 双线。
+const partBorders = await page.evaluate(() => {
+  const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+  return [...(menu?.children ?? [])].map((el) => ({
+    bottom: getComputedStyle(el).borderBottomWidth,
+    top: getComputedStyle(el).borderTopWidth,
+  }));
+});
+ok(
+  partBorders.length === 3 &&
+    partBorders.slice(0, 2).every((b) => b.bottom === "0px") &&
+    partBorders[2]?.bottom === "0px" &&
+    partBorders[2]?.top === "1px",
+  `三分区 divide-y-0 生效（标题/列表 bottom=0px、钉底 bottom=0px + 自带 top=1px；实际 ${JSON.stringify(partBorders)}）`,
+);
 ok((await page.getByRole("menuitem", { name: /Probe Agent A/ }).count()) === 1, "实例行 A 在");
 ok((await page.getByRole("menuitem", { name: /Probe Agent B/ }).count()) === 1, "实例行 B 在");
 const rowA = page.getByRole("menuitem", { name: /Probe Agent A/ });

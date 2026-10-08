@@ -26,8 +26,11 @@ export type ActionMenuItemVariant = "default" | "destructive";
 
 /**
  * 一条菜单项。`items` 在桌面 popover 与移动 action sheet 两条形态间共享同一份声明，
- * 调用方无需关心视口分流。icon 传**裸图标**（不带 size class），两端统一按 17px 渲染
- * （v1.5 §5.0 标准档行图标 17；禁止散写 `h-3.5` 等私有尺寸）。
+ * 调用方无需关心视口分流。icon 传**裸图标**（ShellIcon / LucideIcon 均可），两端容器
+ * 统一按 17px 渲染——DropdownMenuItem 与 mobileSheetItemClasses 的 svg 兜底 + ShellIcon
+ * span 兜底 `[&_[data-shell-icon]]`（v1.5 §5.0 标准档行图标 17；菜单内 icon 尺寸不是
+ * 调用方自由度，禁止散写 `h-3.5` 等私有尺寸。显式 `size-[17px]` 亦接受=同值冗余，历史
+ * 消费点剥除留后续批，design review P2-3）。
  */
 export type ActionMenuItem = {
   label: string;
@@ -111,7 +114,10 @@ export function ActionMenu({
         {/* 逐项交错入场（移动端动效批）：Radix Portal 每次开 = 全新 DOM，animation
             天然每次播放；菜单项静态无重排 = 无 insertBefore 重播面（frontend-notes
             §17 判定通过）。28ms 步进 × 菜单项数，cap 224ms 兜底长菜单。 */}
-        <div className="animate-stagger-rows" role="menu">
+        {/* 条目间分割线（批 14 追加反馈）：原型 .ctx `.row + .row` --sep 线，divide 单源同
+            桌面 DropdownMenuContent；取消项进 divide 链（原 my-2 分组线删除，线制保留，
+            分组间距由取消项自身 mt-2 恢复）。 */}
+        <div className="animate-stagger-rows divide-y divide-sep" role="menu">
           {items.map((item, index) => (
             <button
               key={`${item.label}-${index}`}
@@ -135,11 +141,12 @@ export function ActionMenu({
               <span>{item.label}</span>
             </button>
           ))}
-          <div className="my-2 h-px bg-neutral-line" aria-hidden="true" />
           <button
             type="button"
             role="menuitem"
-            className={mobileSheetItemClasses("default")}
+            // 取消项与末业务项之间恢复 8px 分组间距（批 14 design review P2-1：iOS action
+            // sheet 取消独立分组惯例；线制保留——线属业务组末行 border-bottom）。
+            className={cn(mobileSheetItemClasses("default"), "mt-2")}
             onClick={(e) => {
               e.stopPropagation();
               onContextMenuClose?.();
@@ -286,7 +293,8 @@ export function mobileSheetItemClasses(variant: ActionMenuItemVariant = "default
     // [scale,background-color]（§20 裸 transition = 23 属性大表；§19 scale 须显式列出）。
     // v1.5 §5.0 标准档对齐（批 8）：45px 行 / 17px 图标 / 行内 gap 14（此前 48px/16px/10px）。
     "flex w-full items-center gap-3.5 rounded-lg px-3 min-h-[45px] text-sm font-semibold transition-[scale,background-color] duration-[var(--duration-fast)] active:scale-[0.98]",
-    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px]",
+    // icon 17px 兜底两条（同 DropdownMenuItem 注释）：svg + ShellIcon span 锚点。
+    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[17px] [&_[data-shell-icon]]:size-[17px]",
     variant === "destructive"
       ? "text-error active:bg-error/10"
       : "text-on-surface-soft active:bg-on-surface/5",

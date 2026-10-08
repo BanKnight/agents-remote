@@ -237,11 +237,20 @@ async function probe(browser, label, contextOptions) {
               iconTop: tr.top,
               menuInViewport: cr.top >= 0 && cr.bottom <= innerHeight,
               mhText: content.querySelector(".mh")?.textContent?.trim() ?? null,
+              // 批 14 design review P1-1：.mh 头非 .row 不参与 .row+.row 线链——divide
+              // 基线（DropdownMenuContent）对头的 border-bottom 须被 [&>.mh]:border-b-0 关掉。
+              mhBorderBottom: content.querySelector(".mh")
+                ? getComputedStyle(content.querySelector(".mh")).borderBottomWidth
+                : null,
             }
           : null;
       });
       v14.mhOk = geo?.mhText === "权限模式" || geo?.mhText === "Permission mode";
+      v14.mhNoBorder = geo?.mhBorderBottom === "0px";
       v14.anchoredAbove = !!geo && geo.menuBottom <= geo.iconTop + 4 && geo.menuInViewport;
+      console.log(
+        `[${label}] .mh 头下无分割线: ${v14.mhNoBorder ? "PASS" : "FAIL"} (borderBottom=${geo?.mhBorderBottom})`,
+      );
       console.log(
         `[${label}] anchored 菜单在图标上方: ${v14.anchoredAbove ? "PASS" : "FAIL"} (menuBottom=${geo?.menuBottom?.toFixed(1)} iconTop=${geo?.iconTop?.toFixed(1)})`,
       );
@@ -322,9 +331,10 @@ async function probe(browser, label, contextOptions) {
       v14n.iicnTints === true &&
       v14n.anchoredAbove === true &&
       v14n.mhOk === true &&
+      v14n.mhNoBorder === true &&
       v14n.send2Ok === true;
     console.log(
-      `H5 窄端 .iicn 形态+三色+anchored菜单+.mh菜单头+send2几何: ${h5 ? "PASS" : "FAIL"} (narrowFormOk=${v14n.narrowFormOk}, tints=${v14n.iicnTints}, anchored=${v14n.anchoredAbove}, mh=${v14n.mhOk}, send2=${v14n.send2Ok})`,
+      `H5 窄端 .iicn 形态+三色+anchored菜单+.mh菜单头(无线)+send2几何: ${h5 ? "PASS" : "FAIL"} (narrowFormOk=${v14n.narrowFormOk}, tints=${v14n.iicnTints}, anchored=${v14n.anchoredAbove}, mh=${v14n.mhOk}, mhNoBorder=${v14n.mhNoBorder}, send2=${v14n.send2Ok})`,
     );
     const h6 = v14d.wideFormOk === true && v14d.send2Ok === true;
     console.log(

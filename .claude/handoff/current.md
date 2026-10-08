@@ -1,45 +1,42 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-08（**批 13 实现 + 双 reviewer 消化完成，待 commit + push + 真机复验**）
+> 最后更新：2026-10-08（**批 14 菜单统一样式实现 + 双 reviewer 消化完成，commit + push 后待用户真机复验**）
 
 ## 一句话状态
 
-批 12（`97c66c7`）push 完毕。**批 13（真机反馈第四轮 7 条）实现 + 探针 + e2e + 双 reviewer（code 3P1+4P2 / design 2P1+5P2）消化完成**，工作区就绪待 commit。七条修复：①右栏 mtime 恢复 ②右栏 FAB 统一 ③crumb 对齐 ④segc 居中 + 源码 CodeMirror 化 ⑤md 内链 per-panel ⑥分屏复制语义 + renderKey 防重 ⑦插件作用域分段对齐 09m（固定宽 290）。
+批 14（真机反馈第五轮①：菜单统一样式——条目间分割线 + 全量 icon）实现、验证、双 reviewer 消化全部完成并记档（redesign-v2.md §6.14 批 14 段）。批 13（`606fb1a`）+ 追加反馈①（`5d4e495`）已 push。
 
-## 本 session 焦点（批 13 全流程）
+## 本 session 焦点（批 14 全流程）
 
 ### 关键决策（本阶段不可丢）
 
-- **⑥ 拍板 renderKey 去重**（code review P1-1）：splitLeafWithActiveTab 复制语义 → 同 ref 双挂 → 裸 tabId key duplicate。**否决复合 key**（`${groupId}:${tabId}` 会让所有 tab 跨 group 移动重挂，回归 frontend-notes §3 铁律——WS 断/scrollback 丢）；FlatPanel 新 renderKey 字段（首份=tabId 恒稳、双挂副本 `${tabId}@${leafId}`），移动 projectTabStrip 去重（一 tab 一 pill 保首 leaf）。单测双挂/解除断言。
-- **⑤ per-panel 下沉**（code P1-2 + design 同发现）：删中栏顶层 Provider（activeTabRefLeaf 基准在 split 多窗格下解析错目录 + 误罩 session pane）。MarkdownLinkContext 包 PanelRouter file 分支（panelRef.path 基准），onOpenFile 沿 InstanceArea→WorkspaceTree→PanelRouter 透传。push 态/移动接线不动。
-- **⑤ 右栏检视预览接线**（code P1-3）：FilesPanel previewPanel 容器包 Provider（selectedFilePath 基准 + onOpenFile 通道 + useMemo 防 churn）；SkillTabPreview 记档已知限制（全局 skill 无项目绑定）。
-- **⑦ 固定宽 290**（design P1-1）：max-w 只是上限，短名缩到内容宽（实测 126px）违原型 width:290px 字面值；修 = `w-[290px]` + 探针 7w 短名断言。
-- **components.css `.segc .caret` 暂留恢复**（design P1-2）：两原型页仍是消费点，实现侧已 Lucide 化；随原型页迁移再删。
-- **e2e dispatchEvent 修正**（batch-4 flaky 排障，frontend-notes §26 沉淀）：playwright 对 fixed+transform 弹层动画期 in-viewport 判定不稳 + 弹层随输入序列漂移；三处 menuitem click 换 dispatchEvent("click")。
+- **divide 单源**：桌面 = DropdownMenuContent 基线 `divide-y divide-sep`（ActionMenu 两分支 + OptionMenu 桌面全经此）；移动 = ActionMenu/OptionMenu role=menu 容器同类。`DropdownMenuSeparator` 无直用消费点。
+- **★ Tailwind v4 divide-y 语义变化**：v3 = `~` 兄弟 + border-top；**v4 = `> :not(:last-child)` + border-bottom**，且包在**零 specificity 的 `:where()`** 里。断言必须读 `borderBottomWidth`（除末项 1px）；零 specificity 正是两处覆盖修复（divide-y-0 / `[&>.mh]:border-b-0`）能稳赢的机制基础。
+- **icon 单源兜底（code P2 消化）**：ShellIcon 内嵌 svg 恒 `size-full` 绕过 svg 兜底选择器，裸传 span 默认 size-4=16px——**35 处既有菜单图标实为 16px**。修 = ShellIcon span 加 `data-shell-icon` 锚点 + DropdownMenuItem/mobileSheetItemClasses 各加 `[&_[data-shell-icon]]:size-[17px]`（父 class+属性 (0,2,0) 稳赢），裸传消费点零改动统一 17px。契约：菜单 icon 不传尺寸，容器统一 17px（显式 size-[17px] 亦接受=冗余，剥除留后续批）。
+- **两个分区容器例外**（divide 基线的 hazard class）：①`mobile-project-header` 实例切换菜单（标题/滚动列表/钉底三分区）= `divide-y-0`；②OptionMenu anchored `.mh` 头（原型 .mh 非 .row 不参与线链）= `[&>.mh]:border-b-0`。
+- **取消项 mt-2**（design P2-1）：iOS action sheet 取消独立分组惯例——线制保留（线属业务组末行），分组间距由取消项自身 mt-2 恢复。
+- **图标白名单 +3**：file-text（doc-text 映射）/ pause / play；重跑 build-icons 生成 50 图标。
+- **记档不改**：divide 线内缩 6px vs 原型全宽线形 = 容器差异已知差异（design P2-2）；显式 size-[17px] 冗余剥除留后续批（design P2-3）。
 
 ### 进度（已完成 / 待办）
 
-- ✅ 批 0–12 全部 push（最新 `97c66c7`）。
-- ✅ 批 13 全流程：实现 → 探针 16/16 → 单测 734（+2）→ e2e 27/27 → 门禁全绿（format/lint 0/typecheck/CSS 硬闸/tokens strict 0）→ 双 reviewer 报告消化（全修 + 记档）→ redesign-v2 §6.14 批 13 段补双 reviewer 消化 bullet。
-- ⬜ **commit + push**（提交面见下）。
+- ✅ 批 0–13 + 追加反馈① 全部 push。
+- ✅ 批 14 全流程：原型标尺三页取证 → 24 消费点盘点 → divide 单源 + 4 消费点 10 项 icon → 三轮探针排障（v4 divide 语义 / 长按合成 / 取消项图标惯例）→ 验证全绿 → 双 reviewer 消化（4 修 + 2 记档）→ redesign-v2 §6.14 批 14 段记档。
+- ✅ 验证：探针 inspector-row-menus 25 ALL PASS（含 F2b 分割线/F2c 图标/F2d 17px 几何）/ m5-sheets 83（含三分区回归）/ batch13 18（含 2d 移动 sheet 长按）/ composer-toolbar H5·H6（含 .mh 无线）/ project-plugins 19 / v2-m6-plugins 92；单测 734；e2e 27/27；门禁全绿 + CSS 硬闸 + tokens strict 0。
+- ⬜ commit + push（本 handoff 一并入库）。
 - ⬜ 用户真机复验（清单见下）。
 
-### 工作区提交面（20+ 文件）
+## 统一真机复验清单（批 13 8 条 + 批 14 追加）
 
-- 核心修复：v2-primitives.css / components.css / file-browser.tsx / right-panel-tabs.tsx / WorkbenchRoute.tsx / mobile-l3.tsx / markdown-components.tsx / relative-md-link.ts（新）/ mobile-plugins-home.tsx / scope-popover（⑦ 组件）+ instance-area.tsx / flatten-layout.ts / workbench-model.ts（⑥ review 修复）
-- 记档：redesign-v2.md / frontend-notes.md（§26）
-- 测试：probe-v15-batch13.mjs（新）/ e2e/file-browser.spec.ts / flatten-layout.test.ts / workbench-model.test.ts
-- `docs/agents-remote-design-v1.5.zip` untracked 不提交（长期约束）。
-
-## 统一真机复验清单（批 13）
-
-1. **右栏文件树 mtime**：文件行右侧相对时间（「x 分钟前」）在场
+1. **右栏文件树 mtime**：文件行右侧相对时间在场
 2. **右栏 FAB**：右下角 ＋ FAB 新建/上传；地址栏行尾无「＋」钮（移动端同构）
-3. **全局文件页地址栏**：与搜索框/卡片左右对齐（16px 内容线）
-4. **检视面板 file tab**：渲染⇄源码 toggle 垂直居中；源码态 = CodeMirror（与编辑态同画布零跳变）；编辑态容器无圆角矩形遗留
-5. **md 内链**：md 渲染态点相对 .md 链接 → 新 tab 打开目标（split 多窗格下按本窗格文件目录解析）；右栏检视预览同理
-6. **分屏**：分屏按钮 = 当前激活 tab 副本双窗格（不再新建终端）；双窗格同 tab 无 console 报错（React key）
-7. **插件作用域分段**：桌面 = 标题行内右端固定宽 290（短名也对半分、长名截断）、caret = Lucide chevron；移动满宽正常
+3. **全局文件页地址栏**：与搜索框/卡片左右对齐
+4. **检视面板 file tab**：渲染⇄源码 toggle 垂直居中；源码态 = CodeMirror
+5. **md 内链**：渲染态点相对 .md 链接 → 新 tab 打开目标
+6. **分屏**：分屏按钮 = 当前激活 tab 副本双窗格；无 console 报错
+7. **插件作用域分段**：桌面标题行内右端固定宽 290、caret = Lucide；移动满宽正常
+8. **检视面板底部文字链退役**：新建/上传统一 FAB；行菜单「上传文件…/上传到此」仍可用
+9. **【批 14】菜单统一样式**：各菜单（文件行右键/长按、tab 右键、插件长按、wiki ⋯、FAB 添加菜单、composer 三选择器）条目间分割线在场 + 全行带图标（插件菜单：查看详情/停用/启用/卸载图标语义）；实例切换菜单与 composer 选择器菜单**头下无多线**、实例切换菜单无双线叠加；移动 sheet 取消项与业务项间有分组间距
 
 ## 提醒
 
@@ -47,4 +44,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-08；触发原因：批 13 实现 + 双 reviewer 消化完成，待 commit + push 交真机清单
+最后更新：2026-10-08；触发原因：批 14 记档完成，commit 前Checkpoint
