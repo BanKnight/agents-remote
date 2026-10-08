@@ -21,7 +21,8 @@ const ICONS = [
   "sparkles", // 模型图标（.iicn.model / .ipill.model，03a，批1）+ ShellIcon sparkles（批4 反馈②）
   "brain", // 推理深度图标（.iicn.eff / .ipill.eff，03a，批1）
   "search", // 文件树收缩搜索钮（03o/10，批2 消费）+ ShellIcon magnifyingglass（批4 反馈②）
-  "panel-left", // 检视面板入口钮（03ab ⑤，批2 消费）
+  "panel-left", // 检视面板入口钮（03ab ⑤，批2；批16 反馈②起消费点改 panel-right，本名保留 =
+  // probe-v16-batch16 负向对照 + 未来左侧面板形制场景）
   "panel-right", // ShellIcon split（分屏按钮 rect+右竖线，批4 反馈②）+ ShellIcon split（批4 反馈②）
   // ── 手绘 SVG 全量换代（2026-09-29 真机反馈②「图标理应都采用 lucide 标准」），
   //    SF 名 → 此名的映射在 icons/index.tsx TO_LUCIDE；品牌件 anthropic/openai 保留手绘 ──
@@ -72,6 +73,10 @@ const ICONS = [
   "file-text", // ShellIcon doc-text（插件菜单「查看详情」，SF doc.text 带文本线文档）
   "pause", // ShellIcon pause（插件菜单「停用」）
   "play", // ShellIcon play（插件菜单「启用」）
+  // ── 批 16 真机反馈①：aux 工具条三钮字符字形跨平台不一致（iOS 对 U+21A9/U+21AA 渲染
+  //    与桌面系统字体不同）→ Lucide 单轨化（frontend-notes §15）──
+  "undo-2", // 文件编辑 .aux「撤销」（LucideIcon 直消费）
+  "redo-2", // 文件编辑 .aux「重做」（与 undo-2 配对）
 ];
 
 const entries = [];

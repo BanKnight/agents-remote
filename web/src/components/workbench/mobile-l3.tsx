@@ -42,6 +42,7 @@ import { GitCommitRow } from "./project-tool-panels";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { relativeTime } from "./history-list";
 import { ShellIcon } from "../shell/icons";
+import { LucideIcon } from "../shell/lucide-icon";
 import {
   WORKBENCH_GIT_TAB_QUERY_SCOPE,
   DiffContent,
@@ -581,29 +582,40 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
                 />
               </Suspense>
             </div>
+            {/* 批 16 反馈①：三钮原为字符（↩/↪/⌄），平台字体渲染差异致两端图标不统一 →
+                Lucide 单轨化（frontend-notes §15，SVG 跨平台一致）。 */}
             <div className="aux">
               <button
+                className="flex items-center gap-1"
                 disabled={!editorView}
                 onClick={() => {
                   if (editorView) undo(editorView);
                 }}
                 type="button"
               >
-                ↩ {t("files.auxUndo")}
+                <LucideIcon className="size-3.5 shrink-0" name="undo-2" />
+                {t("files.auxUndo")}
               </button>
               <button
+                className="flex items-center gap-1"
                 disabled={!editorView}
                 onClick={() => {
                   if (editorView) redo(editorView);
                 }}
                 type="button"
               >
-                ↪ {t("files.auxRedo")}
+                <LucideIcon className="size-3.5 shrink-0" name="redo-2" />
+                {t("files.auxRedo")}
               </button>
               {/* desktop 档无软键盘收起诉求（05h4 原型 .pvaux 仅撤销/重做两钮）。 */}
               {variant === "desktop" ? null : (
-                <button onClick={() => editorView?.contentDOM.blur()} type="button">
-                  ⌄ {t("files.auxDismissKeyboard")}
+                <button
+                  className="flex items-center gap-1"
+                  onClick={() => editorView?.contentDOM.blur()}
+                  type="button"
+                >
+                  <LucideIcon className="size-3.5 shrink-0" name="chevron-down" />
+                  {t("files.auxDismissKeyboard")}
                 </button>
               )}
             </div>
