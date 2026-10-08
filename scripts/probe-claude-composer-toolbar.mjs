@@ -237,8 +237,8 @@ async function probe(browser, label, contextOptions) {
               iconTop: tr.top,
               menuInViewport: cr.top >= 0 && cr.bottom <= innerHeight,
               mhText: content.querySelector(".mh")?.textContent?.trim() ?? null,
-              // 批 14 design review P1-1：.mh 头非 .row 不参与 .row+.row 线链——divide
-              // 基线（DropdownMenuContent）对头的 border-bottom 须被 [&>.mh]:border-b-0 关掉。
+              // 批 14 design review P1-1：.mh 头非 .row 不参与 .row+.row 线链——.menu-sep
+              // 规则内 :not(.mh) 排除（v2-primitives），头无 border 也无伪元素线。
               mhBorderBottom: content.querySelector(".mh")
                 ? getComputedStyle(content.querySelector(".mh")).borderBottomWidth
                 : null,

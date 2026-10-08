@@ -114,10 +114,10 @@ export function ActionMenu({
         {/* 逐项交错入场（移动端动效批）：Radix Portal 每次开 = 全新 DOM，animation
             天然每次播放；菜单项静态无重排 = 无 insertBefore 重播面（frontend-notes
             §17 判定通过）。28ms 步进 × 菜单项数，cap 224ms 兜底长菜单。 */}
-        {/* 条目间分割线（批 14 追加反馈）：原型 .ctx `.row + .row` --sep 线，divide 单源同
-            桌面 DropdownMenuContent；取消项进 divide 链（原 my-2 分组线删除，线制保留，
-            分组间距由取消项自身 mt-2 恢复）。 */}
-        <div className="animate-stagger-rows divide-y divide-sep" role="menu">
+        {/* 条目间分割线（批 14）：.menu-sep 伪元素全宽直线（原型 .ctx .row + .row --sep，
+            v2-primitives 单源；容器无横 padding，--menu-pad-x 默认 0）；取消项进线链，
+            分组间距由取消项自身 mt-2 恢复。 */}
+        <div className="animate-stagger-rows menu-sep" role="menu">
           {items.map((item, index) => (
             <button
               key={`${item.label}-${index}`}
@@ -180,7 +180,12 @@ export function ActionMenu({
     <>
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-        <DropdownMenuContent align={align}>{renderItems()}</DropdownMenuContent>
+        {/* 条目间分割线（批 14）：.menu-sep 伪元素全宽直线（原型 .ctx .row+.row；divide 系
+            border 随 item rounded-lg 上翘被真机否决，v2-primitives 单源）。[--menu-pad-x]
+            与基线 p-1.5 同值，负 inset 抵消内距成全宽。 */}
+        <DropdownMenuContent align={align} className="menu-sep [--menu-pad-x:6px]">
+          {renderItems()}
+        </DropdownMenuContent>
       </DropdownMenu>
       {contextMenuPoint ? (
         <DropdownMenu
@@ -195,7 +200,7 @@ export function ActionMenu({
               style={{ left: contextMenuPoint.x, top: contextMenuPoint.y }}
             />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" side="bottom">
+          <DropdownMenuContent align="start" side="bottom" className="menu-sep [--menu-pad-x:6px]">
             {renderItems()}
           </DropdownMenuContent>
         </DropdownMenu>

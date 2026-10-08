@@ -138,9 +138,9 @@ export function OptionMenu({
     return (
       <MobileSheet ariaLabel="选择菜单" onOpenChange={setOpen} open={open} trigger={trigger}>
         {/* .msheet 自带 max-height 内滚（frontend-notes §8），无需内部再设滚动约束。
-            条目间分割线（批 14 追加反馈）：与桌面 DropdownMenuContent divide-sep 同一
-            线制；取消项进 divide 链（原 my-2 分组线删除，间距由取消项 mt-2 恢复）。 */}
-        <div className="divide-y divide-sep" role="menu">
+            条目间分割线（批 14）：.menu-sep 伪元素全宽直线（同 action-menu 移动分支，
+            容器无横 padding）；取消项进线链，分组间距由取消项 mt-2 恢复。 */}
+        <div className="menu-sep" role="menu">
           {items.map((item, index) => (
             <button
               key={`${item.label}-${index}`}
@@ -192,10 +192,10 @@ export function OptionMenu({
         align={align}
         side="top"
         sideOffset={4}
-        // menuHeader（.mh）非 .row——原型 `.row + .row` 线链不含头（workspace-composer-config
-        // .optmenu），divide 基线会给头加 border-bottom，此处按 class 锚点关掉（批 14 design
-        // review P1-1；:where 生成的 divide 是零 specificity，(0,2,0) 稳赢）。
-        className="max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto [&>.mh]:border-b-0"
+        // 条目间分割线 = .menu-sep 伪元素全宽直线（v2-primitives 单源；.mh 头在规则内
+        // 排除——原型 .optmenu .mh 非 .row 不参与线链）；[--menu-pad-x] 与基线 p-1.5
+        // 同值，负 inset 抵消内距成全宽。
+        className="menu-sep max-h-[var(--radix-dropdown-menu-content-available-height)] overflow-y-auto [--menu-pad-x:6px]"
       >
         {menuHeader}
         {items.map((item, index) => (

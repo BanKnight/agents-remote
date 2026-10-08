@@ -25,12 +25,10 @@ function DropdownMenuContent({
         sideOffset={sideOffset}
         className={cn(
           // v1.5 §5.0 族A 锚定浮卡材质单源（components.css：--menu 底 / sep-strong 边 /
-          // r14 圆角）——批 8 浮层两族对齐（02c 取值菜单先例）。
+          // r14 圆角）——批 8 浮层两族对齐（02c 取值菜单先例）。基线不含分割线：条目间
+          // 线由行式菜单容器显式挂 .menu-sep（v2-primitives 伪元素全宽直线；divide 系
+          // border 随 item rounded-lg 上翘，批 14 真机反馈②否决），分区容器菜单不挂。
           "z-50 min-w-[10rem] overflow-hidden rounded-[14px] border border-sep-strong bg-menu p-1.5 text-on-surface-soft shadow-2xl shadow-black/40 backdrop-blur-md",
-          // 条目间分割线（批 14 追加真机反馈：原型 .ctx `.row + .row{border-top:1px solid
-          // var(--sep)}` 三页铁证；divide = `> * + *` 兄弟线，单源一处全端菜单生效。必须
-          // --sep（divide-sep）——--sep-row 暗色下与菜单底同值会隐身，原型注释同警）。
-          "divide-y divide-sep",
           // enter 走 spring snappy（与 popover 同档：轻量锚定层）；zoom 幅度、方向
           // 位移（skill §8 hint in direction）与 transform-origin 锚定触发源（§7）
           // 全保持，只换 timing。变量注入机制见 dialog.tsx 同段注释。

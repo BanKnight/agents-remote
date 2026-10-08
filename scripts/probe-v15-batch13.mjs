@@ -300,8 +300,12 @@ const browser = await chromium.launch();
     const items = [...menu.querySelectorAll("[role='menuitem']")];
     return {
       n: items.length,
-      // Tailwind v4 divide-y = `> :not(:last-child)` border-bottom（条目间 N-1 条线的等价实现）。
-      borders: items.map((el) => getComputedStyle(el).borderBottomWidth),
+      // 分割线 = .menu-sep 伪元素全宽直线（批 14 真机反馈②：divide border 随 item
+      // rounded-lg 上翘被真机否决）——断言读 ::after（除末项外 content+1px）。
+      seps: items.map((el) => {
+        const a = getComputedStyle(el, "::after");
+        return a.content !== "none" && a.height === "1px";
+      }),
       // icon 契约只覆盖业务项——末项 = 取消（iOS action sheet 惯例，无图标）。
       bizAllSvg: items.slice(0, -1).every((el) => !!el.querySelector("svg")),
     };
@@ -310,10 +314,10 @@ const browser = await chromium.launch();
     "2d sheet 条目间分割线 + 业务项全行图标",
     !!mgeo &&
       mgeo.n > 1 &&
-      mgeo.borders[mgeo.borders.length - 1] === "0px" &&
-      mgeo.borders.slice(0, -1).every((b) => b === "1px") &&
+      mgeo.seps[mgeo.seps.length - 1] === false &&
+      mgeo.seps.slice(0, -1).every((b) => b === true) &&
       mgeo.bizAllSvg,
-    mgeo ? `n=${mgeo.n} borders=${mgeo.borders.join("/")} bizAllSvg=${mgeo.bizAllSvg}` : "n/a",
+    mgeo ? `n=${mgeo.n} seps=${mgeo.seps.join("/")} bizAllSvg=${mgeo.bizAllSvg}` : "n/a",
   );
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);

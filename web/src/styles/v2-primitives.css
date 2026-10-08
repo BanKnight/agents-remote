@@ -335,6 +335,26 @@
     background: var(--tint-orange);
   }
 
+  /* ── 菜单条目间分割线（批 14 真机反馈②）——原型 .ctx/.optmenu `.row + .row` 全宽直线
+     （row 无圆角、容器无 padding）。divide 系 border 沿 item rounded-lg 圆角上翘 +
+     Content p-1.5 两端内缩 = 「带转角的线」，真机否决。改伪元素负 inset 画全宽直线：
+     不随 item 圆角/内距。容器显式挂 .menu-sep（行式菜单语义）；分区容器菜单（实例切换）
+     不挂；.mh 头不参与线链（原型 .mh 非 .row）。--menu-pad-x = 容器横 padding
+     （桌面 Content 6px / 移动 sheet 0），负 inset 抵消成全宽。 */
+  .menu-sep > :not(:last-child):not(.mh) {
+    position: relative;
+  }
+  .menu-sep > :not(:last-child):not(.mh)::after {
+    content: "";
+    position: absolute;
+    left: calc(-1 * var(--menu-pad-x, 0px));
+    right: calc(-1 * var(--menu-pad-x, 0px));
+    bottom: 0;
+    height: 1px;
+    background: var(--sep);
+    pointer-events: none;
+  }
+
   /* 行3 chips（tmux chip）已退役（agent 摘要 chip v1.4 批1、terminal chip 2026-09-28 真机反馈），
      .chips/.chip 类随消费面清空一并删除；插件页 .dchips/.mchips 为独立命名不相关。 */
 

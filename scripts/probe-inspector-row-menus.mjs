@@ -221,10 +221,8 @@ async function readMenu(page) {
   });
 }
 
-/** 菜单几何细读（批 14 统一样式）：各 menuitem 的分割线宽度 + 各项内 svg 在场（icon 契约）。
- *  Tailwind v4 divide-y = `> :not(:last-child)` + border-BOTTOM（v3 是 `~` 兄弟 + top）——
- *  视觉同为条目间 N-1 条线（原型 .ctx `.row + .row{border-top}` 的等价实现），故断言读
- *  borderBottomWidth：除末项外恒 1px。 */
+/** 菜单几何细读（批 14 统一样式）：条目间分割线（.menu-sep 伪元素全宽直线——divide 系
+ *  border 随 item rounded-lg 上翘被真机否决）+ 各项内 svg 在场与 17px 几何。 */
 async function readMenuGeometry(page) {
   return page.evaluate(() => {
     const menus = [...document.querySelectorAll("[role='menu']")].filter((el) => {
@@ -233,12 +231,22 @@ async function readMenuGeometry(page) {
     });
     const menu = menus[menus.length - 1];
     if (!menu) return { open: false, items: [] };
+    const mr = menu.getBoundingClientRect();
+    const mb = getComputedStyle(menu).borderLeftWidth;
     return {
       open: true,
       items: [...menu.querySelectorAll("[role='menuitem']")].map((el) => {
         const svg = el.querySelector("svg");
+        const after = getComputedStyle(el, "::after");
+        const er = el.getBoundingClientRect();
+        const cssLeft = parseFloat(after.left);
         return {
-          borderDivide: getComputedStyle(el).borderBottomWidth,
+          // 分割线 = item 的 ::after：除末项外 content+1px 且负 inset 抵消容器内距——
+          // 线左缘 ≈ 菜单 padding box 左缘（全宽直线，不随 item 圆角）。
+          sepAfter: after.content !== "none" && after.height === "1px",
+          sepFlush:
+            Number.isFinite(cssLeft) &&
+            Math.abs(er.left + cssLeft - (mr.left + parseFloat(mb))) <= 1.5,
           hasSvg: !!svg,
           // icon 渲染几何尺寸：ShellIcon（span 兜底 [data-shell-icon]→svg size-full 跟随）
           // 与 LucideIcon（svg 兜底）两路径统一 17px 标准档（批 14 code review P2）。
@@ -345,14 +353,14 @@ try {
     menu.items.length === 6 && menu.items.some((x) => x.includes("上传文件")),
     `F2 Files 菜单并集 6 项含上传（实际 ${menu.items.length}：${menu.items.join("/")}）`,
   );
-  // 批 14 统一样式：条目间分割线（v4 divide-y = 除末项外 borderBottom=1px）+ 全行带 17px 图标 svg。
+  // 批 14 统一样式：条目间分割线 = .menu-sep 伪元素全宽直线（原型 .ctx .row+.row）+ 全行 17px 图标。
   const geo = await readMenuGeometry(page);
   ok(
     geo.open &&
       geo.items.length > 1 &&
-      geo.items[geo.items.length - 1].borderDivide === "0px" &&
-      geo.items.slice(0, -1).every((x) => x.borderDivide === "1px"),
-    `F2b 条目间分割线（除末项 1px；实际 ${JSON.stringify(geo.items.map((x) => x.borderDivide))}）`,
+      geo.items.slice(0, -1).every((x) => x.sepAfter && x.sepFlush) &&
+      geo.items[geo.items.length - 1].sepAfter === false,
+    `F2b 条目间分割线全宽直线（除末项 ::after 1px 且左缘贴菜单边；实际 ${JSON.stringify(geo.items.map((x) => [x.sepAfter, x.sepFlush]))}）`,
   );
   ok(
     geo.open && geo.items.every((x) => x.hasSvg),
