@@ -1,31 +1,33 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-08（**批 14 首版已 push（`305f4c6`）；真机反馈②「分割线带转角」已根治（.menu-sep 伪元素全宽直线），待 commit + push**）
+> 最后更新：2026-10-08（**全局同构 review 修复批（批 15）三 commit 已完成，待 push + 真机复验**）
 
 ## 一句话状态
 
-批 14 首版（菜单统一样式）已 push（`305f4c6`）；用户真机反馈②「分割线怎么还带转角的」= design P2-2 被否决——**根治 = `.menu-sep` 伪元素负 inset 全宽直线**（v2-primitives 单源），divide 系分割线整体退役，验证全绿待 commit。
+全局同构 review 修复批（批 15）全流程完成：4 域 subagent 审查 → 用户拍板 A+B+C → 批 A（P1 五项收敛 `cf8ea72`）+ 批 B（死代码清理 `659e9c9`）+ 批 C（helper 收敛 `400a49e`）三 commit 全门禁绿 + 双 reviewer 消化完 + e2e 27/27 + 探针回归绿 + 记档完——**待 push + 用户真机复验**。
 
-## 本 session 焦点（批 14 全流程）
+## 本 session 焦点（批 15 全流程）
 
 ### 关键决策（本阶段不可丢）
 
-- **★ 分割线终版机制（真机反馈②）**：原型 `.row + .row` 是**全宽直线**（row 无圆角、容器无 padding）；divide 系 border 沿 item `rounded-lg` 圆角上翘 + Content `p-1.5` 内缩 = 「带转角的线」，真机否决。**`.menu-sep` 伪元素负 inset 全宽直线**（v2-primitives 单源；`--menu-pad-x` 抵消容器横内距：桌面 6px / sheet 0；`:not(.mh)` 排除头）。容器显式挂类 = 行式菜单语义：ActionMenu 桌面两分支 + 移动、OptionMenu 移动 + anchored；分区容器（实例切换）不挂。首版 divide 基线与两例外 hack（divide-y-0 / `[&>.mh]:border-b-0`）全部退役。**教训：线形差异不是「容器差异」可辩护项——线形本身即标尺**。
-- **★ Tailwind v4 divide-y 语义变化（机制记档）**：v3 = `~` 兄弟 + border-top；v4 = `> :not(:last-child)` + border-bottom（`:where()` 零 specificity）。断言读 `borderBottomWidth`。本批末 divide 系已被伪元素方案替代，此条留作机制知识。
-- **icon 单源兜底（code P2 消化）**：ShellIcon 内嵌 svg 恒 `size-full` 绕过 svg 兜底选择器，裸传 span 默认 size-4=16px——**35 处既有菜单图标实为 16px**。修 = ShellIcon span 加 `data-shell-icon` 锚点 + DropdownMenuItem/mobileSheetItemClasses 各加 `[&_[data-shell-icon]]:size-[17px]`（父 class+属性 (0,2,0) 稳赢），裸传消费点零改动统一 17px。契约：菜单 icon 不传尺寸，容器统一 17px（显式 size-[17px] 亦接受=冗余，剥除留后续批）。
-- **取消项 mt-2**（design P2-1）：iOS action sheet 取消独立分组惯例——线制保留（线属业务组末行伪元素），分组间距由取消项自身 mt-2 恢复。
-- **图标白名单 +3**：file-text（doc-text 映射）/ pause / play；重跑 build-icons 生成 50 图标。
-- **记档不改**：显式 size-[17px] 冗余剥除留后续批（design P2-3）。
+- **三批划分**：批 A = P1 五项收敛（实例动作 hook / tab 注册表 hook / 新建上传装配 hook / 历史编排单源 / wiki 桌面 ⋯ 补齐）；批 B = 死代码清理七项；批 C = helper 收敛十项（八实施 + C6/C7 记档跳过——透传空壳/单行共享核违反「无单消费抽象」）。
+- **4 处行为漂移修复**（收敛时统一到正确侧）：①mainPage/全局文件页新建 `siblingNames={[]}` → hook 内置真实 sibling query（重名校验恢复）；②历史标题 → `displayTitleOf`（nativeId 前 8 位兜底）；③resume name trim；④桌面 closePanelTab 补 projectKey 守卫。
+- **closePanelTab 幂等守卫**：`Array.filter` 恒返回新数组，幂等判定必须按 `next.length === list.length`（reviewer 建议的引用比较写法是错的，已修正）。pin 严格门：`sessionType === "agent" && a.pin` 用原始 sessionType 严格判定，未知类型不渲染 pin 项。
+- **批 B+C code-reviewer 结论**：批 C 八项行为逐字等价全部核实；**P2 = 批 B InstanceSwitchRow 图标 15→17px**（ShellIcon 换轨触发批 14 菜单 17px 标准档兜底，字形等价、调用点特异性无法保 15px）——接受 17px + 注释标注 + 交真机确认；C10 isSuccess 快照分歧 / C8 新增 query observer 两项核实不改；useCopyFeedback JSDoc 措辞已修正。
+- **C10 设计**：useProjectInstances 返回加 isSuccess（memo 内随 dataKey 快照——refetch 失败窗口与 live 分歧无害，refs 同期冻结 last-good data）；useScopeInstanceOrder project 分支删本地双 query 改派生。
+- **m10 三条预存失败断言**：git log -S 考古（`4bb596e`）+ mac-plugins-tab.html 原型权威 + redesign-v2 既有记档两处 → 判定 v1.5 换代欠账，记档不动。
 
 ### 进度（已完成 / 待办）
 
-- ✅ 批 0–13 + 追加反馈① 全部 push。
-- ✅ 批 14 首版全流程已 push（`305f4c6`）。
-- ✅ 批 14 真机反馈②（分割线带转角）：根治 = `.menu-sep` 伪元素全宽直线，divide 系退役；探针断言改伪元素（F2b 全宽直线 / 2d seps）+ 三探针注释同步；探针全绿（inspector-row-menus ALL PASS / batch13 18 / m5-sheets 83 / composer-toolbar H5·H6）+ 单测 734 + 门禁全绿（format/lint 0/typecheck 三包/tokens 0/CSS 硬闸）+ 记档更新。
-- ⬜ commit + push（本 handoff 一并入库）。
-- ⬜ 用户真机复验（清单见下）。
+- ✅ 批 A commit `cf8ea72`（14 files +753/-472）+ 批 A 双 reviewer（code 4 项消化 / design 4 项消化）。
+- ✅ 批 B commit `659e9c9`（9 files +19/-66）。
+- ✅ 批 C commit `400a49e`（9 files +137/-125）+ 批 B+C code-reviewer 消化（P2 注释标注 + 2 处 JSDoc 修正）。
+- ✅ 验证：单测 749 / e2e 27/27 / 探针（inspector-row-menus ALL PASS 含 W4 wiki 桌面 ⋯、batch13 18、m5-sheets 83）/ 门禁全绿 ×3 commit / CSS 硬闸 / tokens strict 0。
+- ✅ 记档：redesign-v2.md §6.14 批 15 段 + design_spec §4.5 ⋯ 枚举补 wiki 菜单 + gtd next-actions。
+- ⬜ **push（含 handoff commit）**。
+- ⬜ **用户真机复验**（清单见下）。
 
-## 统一真机复验清单（批 13 8 条 + 批 14 追加）
+## 统一真机复验清单（批 13 8 条 + 批 14 1 条 + 批 15 6 条）
 
 1. **右栏文件树 mtime**：文件行右侧相对时间在场
 2. **右栏 FAB**：右下角 ＋ FAB 新建/上传；地址栏行尾无「＋」钮（移动端同构）
@@ -35,7 +37,13 @@
 6. **分屏**：分屏按钮 = 当前激活 tab 副本双窗格；无 console 报错
 7. **插件作用域分段**：桌面标题行内右端固定宽 290、caret = Lucide；移动满宽正常
 8. **检视面板底部文字链退役**：新建/上传统一 FAB；行菜单「上传文件…/上传到此」仍可用
-9. **【批 14】菜单统一样式**：各菜单（文件行右键/长按、tab 右键、插件长按、wiki ⋯、FAB 添加菜单、composer 三选择器）条目间分割线 = **全宽直线**（无转角、两端贯通到菜单边）+ 全行带图标（插件菜单：查看详情/停用/启用/卸载图标语义）；实例切换菜单与 composer 选择器菜单头下无线；移动 sheet 取消项与业务项间有分组间距
+9. **【批 14】菜单统一样式**：各菜单条目间分割线 = 全宽直线（无转角）+ 全行带图标；实例切换菜单与 composer 选择器菜单头下无线；移动 sheet 取消项有分组间距
+10. **【批 15】实例 ⋯ 菜单两端一致**：桌面 tabstrip ⋯ / 移动 pill 长按（重命名/置顶/关闭）
+11. **【批 15】检视面板 tab CRUD 两端一致**：＋ 新建 / ✕ 关 file·wikiread 标签 / 切换
+12. **【批 15】四处文件页新建/上传 + 重名校验生效**：桌面 mainPage ＋、全局文件页 ＋（此前缺失）输入既有名 → 红字 + 创建禁用
+13. **【批 15】历史行两端标题一致**（含无标题 nativeId 条目）+ 恢复命名预填 + 删除确认文案
+14. **【批 15】桌面 wikiread tab ⋯ 新入口**：复制内容 / 查看 diff（开中栏 git diff wiki/{slug}.md）
+15. **【批 15】批 C 视觉零变化**（唯一已知例外：实例切换菜单图标 15→17px，批 B 换轨触发菜单标准档，方向正确）
 
 ## 提醒
 
@@ -43,4 +51,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-08；触发原因：批 14 记档完成，commit 前Checkpoint
+最后更新：2026-10-08；触发原因：批 15 记档完成，push 前检查点

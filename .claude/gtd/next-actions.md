@@ -9,6 +9,7 @@
 - [x] **M2 IA 骨架**（2026-09-20 完成，commit `2a4d9e1`）：移动 4 Tab（D21）+ 桌面 Sidebar 换代（ActivityBar→`sidebar.tsx` 250px）+ L0 登录页对齐 06 原型 + D4「直达上次位置」跳板；深度模型判定现有路由树已满足；3 行骨架留 M3。**e2e 基线修复**（登录文案 + D21 IA 变更曾致 29/29 全红 → 适配后 29/29 绿）。探针 20/20 + 61/61；四门禁全绿
 - [x] **M3 主页对齐**（2026-09-21 完成，未 commit）：M3-a 项目 Tab + M3-b 三行骨架 + M3-c 工作台逐状态 + M3-d 流内容（turn 终态四件套 + .tray）；design-reviewer「修复后通过」；探针 23+21+24 全绿；范围裁决见总纲 §6.1
 - [x] **M4 工具与深度页**（2026-09-21 完成，未 commit）：三工具态（MobileGitTool/FilesTool/WikiTool，ticon .hl + gitchip/crumb/wsearch chip）+ 六个 L3 组件（file preview/git diff/history/commit/branches/wiki reader，双通道：显式子路由不写 layout + 保活层分流）+ D13 wiki 注入（stdin prompt + workbenchWikiRefsAtom + refnote/引用卡）+ 服务端 R7a/R7b commit 详情端点 + log 分页；探针 37/37；记档 8 条见总纲 §6.3
+- [x] **v1.5 批 13–15**（2026-10-08 完成）：批 13 真机反馈 7 条 + 批 14 菜单统一样式（.menu-sep 全宽直线）+ **批 15 全局同构 review 修复批**（4 域审查 → A P1 五项收敛 / B 死代码七项 / C helper 八项，3 commit `cf8ea72`/`659e9c9`/`400a49e`）——修复 4 处行为漂移（重名校验/历史标题/resume trim/close 守卫）+ wiki 桌面 ⋯ 补齐 + spec §4.5 ⋯ 枚举补 wiki 菜单；细节见 redesign-v2.md §6.14 批 13–15 段
 - [ ] M5 浮层与审批（sheet/popover 体系 + 服务端聚合审批中心，security-reviewer 必过）→ M6–M10（范围见总纲 §6，随进度逐个展开成动作）
 
 ## @harness
