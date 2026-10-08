@@ -8,7 +8,7 @@ import { useIsMobile } from "../../lib/use-is-mobile";
 import { shellSurfaceClasses } from "../shell/shell-primitives";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { MobileSheet } from "../shell/mobile-sheet";
-import { gitDiffListQueryKey, gitLogQueryKey, statusShortLabel } from "./git-diff-viewer";
+import { gitDiffListQueryKey, gitLogQueryKey, GitStatusBadge } from "./git-diff-viewer";
 
 /**
  * 03m2 untracked 行判定：worktree scope + status added + 无 numstat（untracked 来自
@@ -95,7 +95,6 @@ export function CommitSheet({
         <div>
           {files.map((file) => {
             const on = checked.has(file.path);
-            const label = statusShortLabel(file.status);
             return (
               <button
                 aria-pressed={on}
@@ -106,7 +105,7 @@ export function CommitSheet({
               >
                 <span aria-hidden="true" className={`cb ${on ? "on" : ""}`} />
                 <span className="nm">{file.path}</span>
-                <span className={`badge lg ${label}`}>{label}</span>
+                <GitStatusBadge status={file.status} />
               </button>
             );
           })}

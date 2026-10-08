@@ -278,8 +278,9 @@ type InstanceSwitchRowProps = {
 
 /**
  * ▾ 菜单实例行（本项目行与跨项目行同形制，spec §6.2 类型图标 registry 单源）：类型图标
- * （agent = sparkles 主色 / terminal = square-terminal 绿）+ 名 + [项目名标注] + 状态列 +
- * 当前行 ✓（主色，原型 .ck）。
+ * （agent = sparkles 主色 / terminal = square-terminal 绿；ShellIcon SF 名经菜单 17px 标准
+ * 档统一渲染——批 B 由 LucideIcon 15px 换轨，视觉差 15→17px 交真机确认）+ 名 +
+ * [项目名标注] + 状态列 + 当前行 ✓（主色，原型 .ck）。
  */
 function InstanceSwitchRow({
   type,

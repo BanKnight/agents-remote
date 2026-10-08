@@ -38,6 +38,7 @@ import { MarkdownString } from "../markdown/MarkdownString";
 import { useT } from "../../i18n";
 import { ListRowSkeleton, LoadingBlock } from "../shell/shell-primitives";
 import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
+import { GitCommitRow } from "./project-tool-panels";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { relativeTime } from "./history-list";
 import { ShellIcon } from "../shell/icons";
@@ -47,7 +48,7 @@ import {
   formatAheadBehind,
   gitDiffListQueryKey,
   gitFileDiffQueryKey,
-  statusShortLabel,
+  GitStatusBadge,
 } from "../git/git-diff-viewer";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
 import { formatBytes } from "@/lib/format";
@@ -873,7 +874,7 @@ export type L3GitHistoryProps = {
   onOpenCommit: (hash: string) => void;
 };
 
-/** 03t 单条提交行：crow（hash + message + relative）+ csub（author）。 */
+/** 03t 单条提交行：crow（GitCommitRow 单源）+ csub（author）+ 可选日期组头。 */
 function HistoryCommitRow({
   commit,
   groupLabel,
@@ -886,11 +887,7 @@ function HistoryCommitRow({
   return (
     <>
       {groupLabel !== null ? <div className="dlg">{groupLabel}</div> : null}
-      <button className="crow w-full cursor-pointer text-left" onClick={onClick} type="button">
-        <span className="h">{commit.hash}</span>
-        <span className="m">{commit.message}</span>
-        <span className="t">{commit.relativeTime}</span>
-      </button>
+      <GitCommitRow className="w-full cursor-pointer text-left" commit={commit} onClick={onClick} />
       <div className="csub">{commit.author}</div>
     </>
   );
@@ -1023,8 +1020,6 @@ export function L3GitCommit({ projectName, hash }: L3GitCommitProps) {
       <div>
         {files.map((file) => {
           const open = expanded.has(file.path);
-          // badge class 与 label 同源（statusShortLabel 单次求值，同 project-tool-panels GitStatusBadge）。
-          const short = statusShortLabel(file.status);
           return (
             <div key={file.path}>
               <button
@@ -1032,7 +1027,7 @@ export function L3GitCommit({ projectName, hash }: L3GitCommitProps) {
                 onClick={() => toggle(file.path)}
                 type="button"
               >
-                <span className={`badge lg ${short}`}>{short}</span>
+                <GitStatusBadge status={file.status} />
                 <span className="p">{file.path}</span>
                 {file.addedLines !== null && file.removedLines !== null ? (
                   <span className="tm font-mono">

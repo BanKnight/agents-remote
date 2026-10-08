@@ -26,6 +26,17 @@ import { useFilePreview } from "./use-file-editor";
  *  tabstrip 右端 FileTabStripActions（pencil 判定 + ⋯ 菜单）与 body 同 key dedupe 零额外网络。 */
 export const FILE_NAV_QUERY_SCOPE = "file-nav";
 
+/** file tab 目标解析 + 预览 query 接线单源（FileTabPreview body 与 FileTabStripActions 动作
+ *  族同消费——批 C 收敛此前逐字双份）：resolveRootBrowseTarget 解析 projectName/项目相对
+ *  路径 + useFilePreview 同 FILE_NAV_QUERY_SCOPE key（与 body dedupe 零额外网络）。 */
+function useFileTabPreviewTarget(panelRef: FilePanelRef) {
+  const target = resolveRootBrowseTarget(panelRef.path);
+  const projectName = target.kind === "project" ? target.projectName : panelRef.path;
+  const relativePath = target.kind === "project" ? target.relativePath : "";
+  const { data } = useFilePreview(projectName, relativePath, FILE_NAV_QUERY_SCOPE);
+  return { projectName, relativePath, data };
+}
+
 /** file tab body（中栏）：FilePreviewPane desktop 档，编辑态受控于 workbenchFileTabEditingAtom
  *  （值 = 本 tab 的 tabId）。卸载（切 tab/关 tab）cleanup 清 atom（若指向本 tab）——中栏 tab
  *  切换即卸载（非移动叠层保活），切回回预览态（编辑草稿随之丢弃，diverge 记档：原型无切走
@@ -34,9 +45,7 @@ export function FileTabPreview({ panelRef }: { panelRef: FilePanelRef }) {
   const setEditingTabId = useSetAtom(workbenchFileTabEditingAtom);
   const editingNow = useAtomValue(workbenchFileTabEditingAtom) === tabIdOf(panelRef);
   const tabId = tabIdOf(panelRef);
-  const target = resolveRootBrowseTarget(panelRef.path);
-  const projectName = target.kind === "project" ? target.projectName : panelRef.path;
-  const relativePath = target.kind === "project" ? target.relativePath : "";
+  const { projectName, relativePath } = useFileTabPreviewTarget(panelRef);
   useEffect(() => {
     return () => {
       setEditingTabId((prev) => (prev === tabId ? null : prev));
@@ -70,10 +79,7 @@ export function FileTabStripActions({
 }) {
   const { t } = useT();
   const setEditingTabId = useSetAtom(workbenchFileTabEditingAtom);
-  const target = resolveRootBrowseTarget(panelRef.path);
-  const projectName = target.kind === "project" ? target.projectName : panelRef.path;
-  const relativePath = target.kind === "project" ? target.relativePath : "";
-  const { data } = useFilePreview(projectName, relativePath, FILE_NAV_QUERY_SCOPE);
+  const { projectName, relativePath, data } = useFileTabPreviewTarget(panelRef);
   const editable = data?.type === "text";
   return (
     <>

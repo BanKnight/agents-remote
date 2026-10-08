@@ -28,6 +28,7 @@ import {
   buildProjectRows,
   CardGridSkeleton,
   createSessionMenuItems,
+  instanceDot2,
   useCreateSession,
   useGlobalInstanceCandidates,
   useProjectInstances,
@@ -580,12 +581,7 @@ function SideInstanceRow({
         <ShellIcon className="size-full" name={isTerminal ? "terminal" : "sparkles"} />
       </span>
       <span className="min-w-0 truncate">{entry.session.displayName}</span>
-      {isTerminal ? null : (
-        <span
-          aria-hidden="true"
-          className={`dot2 ${running ? "bg-success" : "border-[1.4px] border-ink-2 bg-transparent"}`}
-        />
-      )}
+      {isTerminal ? null : <span aria-hidden="true" className={`dot2 ${instanceDot2(running)}`} />}
     </button>
   );
 }

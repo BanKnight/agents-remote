@@ -10,6 +10,25 @@ import { usePanelToolChip } from "./project-tool-panels";
 import { cn } from "@/lib/utils";
 import type { WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 
+/** 检视标头单源（glabel2「检视」+ 行内 clps「»」折叠钮；空态与主视图两分支同消费——批 C
+ *  收敛此前逐字双份）。 */
+function InspectorHeading({ onCollapse }: { onCollapse: () => void }) {
+  const { t } = useT();
+  return (
+    <div className="glabel2 shrink-0">
+      {t("workbench.inspectorTitle")}
+      <button
+        aria-label={t("workbench.collapseRight")}
+        className="clps cursor-pointer border-none bg-transparent"
+        onClick={onCollapse}
+        type="button"
+      >
+        »
+      </button>
+    </div>
+  );
+}
+
 /**
  * 桌面右栏检视面板容器（v1.4 05:99 ptabs 动态标签，redesign-v2 §6.13 批3）：与移动全屏面板
  * 消费**同一** panelTabs/panelActive atom（per-projectKey，多端同构——标签集/激活项跨端一致），
@@ -98,17 +117,7 @@ export function RightPanelTabs({
     return (
       <div className="flex h-full min-h-0 flex-col">
         {/* 空态同样暴露折叠入口（PanelHeader 退役后 clps 是唯一收起钮）。 */}
-        <div className="glabel2 shrink-0">
-          {t("workbench.inspectorTitle")}
-          <button
-            aria-label={t("workbench.collapseRight")}
-            className="clps cursor-pointer border-none bg-transparent"
-            onClick={onCollapse}
-            type="button"
-          >
-            »
-          </button>
-        </div>
+        <InspectorHeading onCollapse={onCollapse} />
         <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-xs text-on-surface-muted">
           {t("workbench.rightPanelEmpty")}
         </div>
@@ -127,17 +136,7 @@ export function RightPanelTabs({
           «（clps，主色 14px/700，05:103）+ PanelTabBar 动态标签条（批3，seg4 退役）。
           只读语义固定——检视面板全部是只读视图。clps 取代 44px PanelHeader 折叠钮
          （真机反馈 2026-09-29：右栏第一屏与原型完全两样）。 */}
-      <div className="glabel2 shrink-0">
-        {t("workbench.inspectorTitle")}
-        <button
-          aria-label={t("workbench.collapseRight")}
-          className="clps cursor-pointer border-none bg-transparent"
-          onClick={onCollapse}
-          type="button"
-        >
-          »
-        </button>
-      </div>
+      <InspectorHeading onCollapse={onCollapse} />
       <PanelTabBar
         activeTabId={activePanelTabId}
         onActivateTab={activatePanelTab}

@@ -67,6 +67,13 @@ const gitStatusTone = (status: GitDiffFileStatus): ShellTone => {
   }
 };
 
+/** Git 状态角标（badge lg + statusShortLabel 单次求值；project-tool-panels 三件套行内 /
+ *  mobile-l3 提交详情 / commit-sheet 提交文件列表三处复用——全局同构 review 批 C 单源）。 */
+export function GitStatusBadge({ status }: { status: GitDiffFileStatus }) {
+  const label = statusShortLabel(status);
+  return <span className={`badge lg ${label}`}>{label}</span>;
+}
+
 /** ahead/behind 态势箭头串（`↑N ↓N`；0 显 0 不省略——03m gitchip / 04 githead / 03v bcur
  * 同形制）。与前置文本的分隔空格属调用点拼接意图，不进本函数；「有 upstream 才显」
  * 「非 0,0 才显」等门控语义不同，由调用方自判。 */

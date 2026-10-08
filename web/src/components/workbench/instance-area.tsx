@@ -446,11 +446,7 @@ export function AllSessionsGroupedList({
               >
                 <span
                   aria-hidden="true"
-                  className={`dot2 ${
-                    c.status === "running"
-                      ? "bg-success"
-                      : "border-[1.4px] border-ink-2 bg-transparent"
-                  }`}
+                  className={`dot2 ${instanceDot2(c.status === "running")}`}
                 />
                 <span className="min-w-0 truncate">{c.displayName}</span>
               </button>
@@ -689,6 +685,35 @@ export type PanelMeta = {
   /** 状态点（status → tone + i18n label；running 时 pulse）。detail/缓存均未就绪时 undefined。 */
   statusDot?: { label: string; pulse: boolean; tone: ShellTone };
 };
+
+/** tab 显示名兜底链单源（TabChip 与拖拽 DragGhost 同消费——批 C 收敛此前逐字双份）：
+ *  meta 未热时按 kind 兜底（session/chat id 前 12 位 / skill name / render 固定文案 /
+ *  wikiread slug / 其余 path）。 */
+function panelTabLabel(
+  panelRef: WorkbenchPanelRef,
+  meta: PanelMeta | undefined,
+  t: TranslateFn,
+): string {
+  return (
+    meta?.label ??
+    (panelRef.kind === "session"
+      ? panelRef.sessionId.slice(0, 12)
+      : panelRef.kind === "skill"
+        ? panelRef.name
+        : panelRef.kind === "chat"
+          ? panelRef.sessionId.slice(0, 12)
+          : panelRef.kind === "render"
+            ? t("workbench.renderTab")
+            : panelRef.kind === "wikiread"
+              ? panelRef.slug
+              : panelRef.path)
+  );
+}
+
+/** 实例行 dot2 状态点 class 单源（实例切换列表与 workbench-side 侧栏 agent 行同消费——
+ *  批 C 收敛此前逐字双份）：running 实心，其余 1.4px 空心。 */
+export const instanceDot2 = (running: boolean): string =>
+  running ? "bg-success" : "border-[1.4px] border-ink-2 bg-transparent";
 
 export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined {
   const { t } = useT();
@@ -1841,33 +1866,21 @@ export function useScopeInstanceOrder(scope: WorkbenchScope): {
   isLoaded: boolean;
 } {
   const projectKey = scope.kind === "project" ? scope.key : null;
-  const agents = useQuery({
-    enabled: projectKey !== null,
-    queryKey: ["projects", projectKey ?? "", "agent-sessions"],
-    queryFn: () => listAgentSessions(projectKey as string),
-    staleTime: 5_000,
-  });
-  const terminals = useQuery({
-    enabled: projectKey !== null,
-    queryKey: ["projects", projectKey ?? "", "terminal-sessions"],
-    queryFn: () => listTerminalSessions(projectKey as string),
-    staleTime: 5_000,
-  });
+  // project 分支由 useProjectInstances 派生（同 query key dedupe 零额外网络；批 C 收敛此前
+  // 双份 query 装配）。isSuccess 门语义见 useProjectInstances JSDoc。
+  const { instances, isSuccess: projectLoaded } = useProjectInstances(projectKey);
   const { candidates, isLoaded: candidatesLoaded } = useGlobalInstanceCandidates(scope);
   if (scope.kind !== "project") {
     return { refs: rankGlobalInstances(candidates), isLoaded: candidatesLoaded };
   }
-  const refs: SessionPanelRef[] = [];
-  for (const session of agents.data?.sessions ?? []) {
-    refs.push({ kind: "session", projectName: scope.key, sessionId: session.id });
-  }
-  for (const session of terminals.data?.sessions ?? []) {
-    refs.push({ kind: "session", projectName: scope.key, sessionId: session.id });
-  }
+  const refs: SessionPanelRef[] = instances.map((entry) => ({
+    kind: "session" as const,
+    projectName: scope.key,
+    sessionId: entry.session.id,
+  }));
   // isLoaded 用 isSuccess 而非 !isLoading：query 出错时不 prune，避免 API 抖动误清持久化 tab；
   // 留待下次成功加载再判定。gate 在 InstanceArea 的 stale-tab prune effect。
-  const isLoaded = agents.isSuccess && terminals.isSuccess;
-  return { refs, isLoaded };
+  return { refs, isLoaded: projectLoaded };
 }
 
 /**
@@ -1885,6 +1898,10 @@ export type ProjectInstanceEntry = {
 export function useProjectInstances(projectName: string | null): {
   instances: ProjectInstanceEntry[];
   isLoading: boolean;
+  /** agents+terminals 双 query 均成功 settle（出错 false——供 scope 序 prune gate 的
+   *  isLoaded 门语义，见 useScopeInstanceOrder）。memo 内随 dataKey 快照：后台 refetch
+   *  失败窗口与 live 值可分歧，refs 同期冻结于 last-good data，gate 开关均不产生 prune。 */
+  isSuccess: boolean;
 } {
   const agents = useQuery({
     enabled: projectName !== null,
@@ -1900,7 +1917,7 @@ export function useProjectInstances(projectName: string | null): {
   });
   const dataKey = `${projectName ?? ""}|${agents.dataUpdatedAt}|${terminals.dataUpdatedAt}`;
   return useMemo(() => {
-    if (projectName === null) return { instances: [], isLoading: false };
+    if (projectName === null) return { instances: [], isLoading: false, isSuccess: false };
     const instances: ProjectInstanceEntry[] = [
       ...(agents.data?.sessions ?? []).map((session) => ({
         session: session as AgentSession,
@@ -1914,7 +1931,11 @@ export function useProjectInstances(projectName: string | null): {
     // isLoading = 任一 query pending 即算加载中（||）：agent pending + terminal 已回空时，
     // instances 仍空 + isLoading true → 显示骨架；用 && 会让先 resolved 的那个把 isLoading 提前置 false，
     // 首屏空数据时误显空态而非骨架。
-    return { instances, isLoading: agents.isLoading || terminals.isLoading };
+    return {
+      instances,
+      isLoading: agents.isLoading || terminals.isLoading,
+      isSuccess: agents.isSuccess && terminals.isSuccess,
+    };
     // projectName/agents/terminals 由 dataKey fingerprint 覆盖（data 变 → dataUpdatedAt 变）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey]);
@@ -2213,19 +2234,7 @@ function TabChip({
 }: TabChipProps) {
   const { t } = useT();
   const meta = usePanelMeta(panelRef);
-  const label =
-    meta?.label ??
-    (panelRef.kind === "session"
-      ? panelRef.sessionId.slice(0, 12)
-      : panelRef.kind === "skill"
-        ? panelRef.name
-        : panelRef.kind === "chat"
-          ? panelRef.sessionId.slice(0, 12)
-          : panelRef.kind === "render"
-            ? t("workbench.renderTab")
-            : panelRef.kind === "wikiread"
-              ? panelRef.slug
-              : panelRef.path);
+  const label = panelTabLabel(panelRef, meta, t);
   // v1.5 批 4（spec §4.5）：TabChip ℹ 退役——实例信息收敛进 tabstrip 右端 ⋯ 会话菜单
   //（GroupHeader ActiveTabActions，与移动端 ⋯ 菜单同构）；TabChip 留 marker + 文本 + 状态点
   // + ✕。真机复验反馈①（2026-10-06）：tab 上的 AutoRetry 图标撤除（与 ✕ 并排挤占 tab
@@ -2849,19 +2858,7 @@ function DragGhost({
   t: (key: TranslationKey) => string;
 }) {
   const meta = usePanelMeta(panelRef);
-  const label =
-    meta?.label ??
-    (panelRef.kind === "session"
-      ? panelRef.sessionId.slice(0, 12)
-      : panelRef.kind === "skill"
-        ? panelRef.name
-        : panelRef.kind === "chat"
-          ? panelRef.sessionId.slice(0, 12)
-          : panelRef.kind === "render"
-            ? t("workbench.renderTab")
-            : panelRef.kind === "wikiread"
-              ? panelRef.slug
-              : panelRef.path);
+  const label = panelTabLabel(panelRef, meta, t);
   return (
     <div
       ref={ghostRef}

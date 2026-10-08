@@ -1,6 +1,5 @@
 import type {
   GitCommitLogItem,
-  GitDiffFileStatus,
   GitDiffFileSummary,
   GitDiffScope,
   ProjectFileEntry,
@@ -35,17 +34,29 @@ import {
   formatAheadBehind,
   gitDiffListQueryKey,
   gitLogQueryKey,
-  statusShortLabel,
+  GitStatusBadge,
 } from "../git/git-diff-viewer";
 import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 import { CommitSheet } from "../git/commit-sheet";
 import { DiscardDialog } from "../git/discard-dialog";
 import { workbenchWikiRefsAtom } from "../../routes/workbench-model";
 
-/** Git 状态角标（badge lg + statusShortLabel；三件套行内 3 处复用，label 单次求值）。 */
-function GitStatusBadge({ status }: { status: GitDiffFileStatus }) {
-  const label = statusShortLabel(status);
-  return <span className={`badge lg ${label}`}>{label}</span>;
+/** 复制反馈自动清除时长（05e/03w 定值）。 */
+const COPY_FEEDBACK_MS = 2000;
+
+/**
+ * 复制路径反馈单源（05e Git 变更行 / 03w 文件行同款：写入剪贴板 + 行下 cap 短暂显
+ * 「已复制」）。copiedPath 存本次剪贴板串作反馈标识（渲染只判非 null；自动清除比对同串
+ * 即清——旧计时器不取消，重复复制同串会被旧计时提前清掉；跨不同路径复制互不干扰）。
+ */
+function useCopyFeedback() {
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const copyPath = (text: string) => {
+    void navigator.clipboard.writeText(text);
+    setCopiedPath(text);
+    window.setTimeout(() => setCopiedPath((p) => (p === text ? null : p)), COPY_FEEDBACK_MS);
+  };
+  return { copiedPath, copyPath };
 }
 
 /**
@@ -81,10 +92,19 @@ function ToolPanel({
 
 // ── 03m Git 工具（M4）────────────────────────────────────────────────────────
 
-/** 03m「最近提交」crow 行。h=短 hash mono、m=提交消息、t=相对时间。 */
-function GitCommitRow({ commit, onClick }: { commit: GitCommitLogItem; onClick: () => void }) {
+/** 03m「最近提交」crow 行（三件套与移动 03t 提交历史同消费——批 C 单源）。
+ *  h=短 hash mono、m=提交消息、t=相对时间；className 供容器档（移动 w-full）。 */
+export function GitCommitRow({
+  className = "cursor-pointer text-left",
+  commit,
+  onClick,
+}: {
+  className?: string;
+  commit: GitCommitLogItem;
+  onClick: () => void;
+}) {
   return (
-    <button className="crow cursor-pointer text-left" onClick={onClick} type="button">
+    <button className={`crow ${className}`} onClick={onClick} type="button">
       <span className="h">{commit.hash}</span>
       <span className="m">{commit.message}</span>
       <span className="t">{commit.relativeTime}</span>
@@ -149,7 +169,7 @@ export function GitToolPanel({
   const [commitOpen, setCommitOpen] = useState(false);
   const [discardTarget, setDiscardTarget] = useState<GitDiffFileSummary | null>(null);
   // 05e 复制路径反馈（03w 同款：cap 短暂显示「已复制」）。
-  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const { copiedPath, copyPath } = useCopyFeedback();
   // 05e 改动行菜单（02c 单一菜单容器模式：find(pointFor) 命中才挂，行外挂 → scrim 冒泡
   // 不经行；触屏长按 = 同一菜单入口，useLongPressActions）。
   const ctx = useRowContextMenu();
@@ -164,11 +184,7 @@ export function GitToolPanel({
     {
       label: t("files.menuCopyPath"),
       icon: <ShellIcon name="edit" />,
-      onSelect: () => {
-        void navigator.clipboard.writeText(`${projectName}/${file.path}`);
-        setCopiedPath(file.path);
-        window.setTimeout(() => setCopiedPath((p) => (p === file.path ? null : p)), 2000);
-      },
+      onSelect: () => copyPath(`${projectName}/${file.path}`),
     },
     {
       // 03m3 放弃更改入口（行菜单红项）。Dialog 由 holder 条件渲染。
@@ -386,7 +402,7 @@ export function FilesToolPanel({
     return map;
   }, [diff.data]);
   // 03w 复制路径反馈（sheet 关闭后行下 cap 短暂显示「已复制」）。
-  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const { copiedPath, copyPath } = useCopyFeedback();
   // 03x 搜索态（query 提升在 mobile-workbench header chip，非空 → 面板渲染结果列表）。
   // keepPreviousData（§6.12o review 修复）：逐键换 query key 时保持上一份结果不闪。
   const trimmedQuery = searchQuery.trim();
@@ -444,11 +460,7 @@ export function FilesToolPanel({
     {
       label: t("files.menuCopyPath"),
       icon: <ShellIcon name="edit" />,
-      onSelect: () => {
-        void navigator.clipboard.writeText(`${projectName}/${entry.path}`);
-        setCopiedPath(entry.path);
-        window.setTimeout(() => setCopiedPath((p) => (p === entry.path ? null : p)), 2000);
-      },
+      onSelect: () => copyPath(`${projectName}/${entry.path}`),
     },
     ...(dirty.has(entry.path)
       ? [
