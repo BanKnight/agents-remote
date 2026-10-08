@@ -30,7 +30,7 @@ const ActiveDot = (
   <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-success" />
 );
 
-/** 历史 session 加载骨架行数（与左栏 InstanceSkeleton/CardGridSkeleton 同款 UI 常量）。 */
+/** 历史 session 加载骨架行数（与左栏 CardGridSkeleton 同款 UI 常量档：骨架行 3 / 卡片网格 6）。 */
 const HISTORY_SKELETON_ROW_COUNT = 3;
 
 /** 滚动到底自动取下页的提前量（距底 ≤48px 触发 fetchNextPage，§4.2 游标分页）。 */

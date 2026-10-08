@@ -13,15 +13,10 @@ import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 export function AddMenu({
   onNew,
   onUpload,
-  open,
-  onOpenChange,
   trigger,
 }: {
   onNew: () => void;
   onUpload: () => void;
-  /** 半受控开合（可选，ActionMenu 同语义）：程序化打开（FAB 语境无程序化诉求，可不传）。 */
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
   /** 触发元素（FAB ＋ / h1 行 ＋ / 工具栏方钮），ActionMenu asChild 注入 toggle/aria。 */
   trigger: ReactElement<ButtonHTMLAttributes<HTMLButtonElement>>;
 }) {
@@ -38,14 +33,5 @@ export function AddMenu({
       onSelect: onUpload,
     },
   ];
-  return (
-    <ActionMenu
-      align="end"
-      cancelLabel={t("cancel")}
-      items={items}
-      onOpenChange={onOpenChange}
-      open={open}
-      trigger={trigger}
-    />
-  );
+  return <ActionMenu align="end" cancelLabel={t("cancel")} items={items} trigger={trigger} />;
 }

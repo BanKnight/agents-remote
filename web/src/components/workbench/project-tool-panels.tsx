@@ -913,12 +913,10 @@ export function usePanelToolChip({
 }): {
   /** files 搜索 query（调用方透传 FilesToolPanel searchQuery）。 */
   filesSearchQuery: string;
-  /** wiki 搜索 query（调用方透传 WikiToolPanel query）。 */
-  setFilesSearchOpen: (open: boolean) => void;
-  setFilesSearchQuery: (query: string) => void;
-  setWikiSearchOpen: (open: boolean) => void;
+  /** wiki 搜索 query 的 setter（调用方透传 WikiToolPanel onQueryChange）。 */
   setWikiSearchQuery: (query: string) => void;
   toolChip: ReactNode;
+  /** wiki 搜索 query（调用方透传 WikiToolPanel query）。 */
   wikiSearchQuery: string;
 } {
   const { t } = useT();
@@ -1025,9 +1023,6 @@ export function usePanelToolChip({
     ) : undefined;
   return {
     filesSearchQuery,
-    setFilesSearchOpen,
-    setFilesSearchQuery,
-    setWikiSearchOpen,
     setWikiSearchQuery,
     toolChip,
     wikiSearchQuery,

@@ -4,6 +4,7 @@ import { useT } from "../../i18n";
 import { sessionStatusLabel } from "../../routes/console-model";
 import type { GlobalInstanceCandidate } from "../../routes/workbench-model";
 import { LucideIcon } from "../shell/lucide-icon";
+import { ShellIcon } from "../shell/icons";
 import { statusToV2DotClass } from "../shell/shell-primitives";
 import {
   DropdownMenu,
@@ -295,9 +296,9 @@ function InstanceSwitchRow({
       className="justify-start gap-2.5 rounded-none border-t border-sep px-3.5 text-[13.5px] font-normal focus:bg-on-surface/5 first:border-t-0"
       onSelect={onSelect}
     >
-      <LucideIcon
+      <ShellIcon
         className={`size-[15px] shrink-0 ${type === "agent" ? "text-primary" : "text-success"}`}
-        name={type === "agent" ? "sparkles" : "square-terminal"}
+        name={type === "agent" ? "sparkles" : "terminal"}
       />
       <span className={`min-w-0 truncate ${current ? "font-semibold" : ""}`}>{name}</span>
       {badge ? <span className="shrink-0 text-[11px] text-ink-2">{badge}</span> : null}

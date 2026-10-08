@@ -67,7 +67,7 @@ export function optionActiveClasses(accent: OptionMenuAccent = "user"): string {
 /** 移动 sheet 选择器项的垂直对齐。`center`（默认）= 单行项垂直居中；`start` = 含 description
  * 的多行项顶部对齐，让 label 顶部跨项对齐（对齐桌面 `DropdownMenuItem` 的 `py-2.5` 顶部基准，
  * 消除 `min-h-[45px]` + `items-center` 在多行/单行项间造成的 label 垂直错位）。 */
-export type OptionItemAlign = "center" | "start";
+type OptionItemAlign = "center" | "start";
 
 /**
  * 移动 sheet 选择器项样式（按 active + accent）。与桌面 `DropdownMenuItem` 共享同一视觉契约

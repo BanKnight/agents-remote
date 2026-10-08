@@ -241,8 +241,8 @@ export function useRowContextMenu() {
 }
 
 /** 触屏长按触发阈值与位移 slop（03w 定值：iOS Safari 无 contextmenu，必须计时触发）。 */
-export const LONG_PRESS_MS = 500;
-export const LONG_PRESS_SLOP_PX = 10;
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP_PX = 10;
 
 /**
  * 触屏长按 → `useRowContextMenu().openAt`（02c pill / 03w 文件行共享）。移动超 slop 或提前

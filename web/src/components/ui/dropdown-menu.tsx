@@ -74,24 +74,4 @@ function DropdownMenuItem({
   );
 }
 
-function DropdownMenuSeparator({
-  className,
-  ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
-  return (
-    <DropdownMenuPrimitive.Separator
-      data-slot="dropdown-menu-separator"
-      // 行间 1px --sep 分隔（v1.5 §5.0 标准档材质），替换存量散写 bg-white/10。
-      className={cn("-mx-1 my-1 h-px bg-sep", className)}
-      {...props}
-    />
-  );
-}
-
-export {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-};
+export { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem };

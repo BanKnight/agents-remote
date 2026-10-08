@@ -2152,7 +2152,7 @@ export const workbenchLayoutAtom = atomWithStorage<WorkbenchLayoutV3>(
 /**
  * ⌘N（新建实例）→ side 实例组头 plus 的创建菜单受控开合（§6.12k）。
  * 会话级 atom（不持久化）：快捷键 handler set true，菜单 onOpenChange(false) 归零。
- * CreateSessionBar 其余调用点（EmptyInstanceArea/ProjectInstances）不接 atom，保持非受控。
+ * CreateSessionBar（EmptyInstanceArea 唯一调用点）不接 atom，保持非受控。
  */
 export const workbenchCreateMenuOpenAtom = atom(false);
 

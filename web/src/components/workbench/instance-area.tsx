@@ -98,7 +98,8 @@ import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
 /**
- * InstanceCard 固定单列网格 inline style（桌面左总览 / 移动总览共用同源）。设计 §5：左总览
+ * InstanceCard 固定单列网格 inline style（经 CardGridSkeleton 单源共享：桌面左总览 / side
+ * 总览 / 移动总览骨架同消费）。设计 §5：左总览
  * 固定单列卡片清单，`gridTemplateColumns: 1fr` 让卡片宽度始终 = 容器宽，拖宽左总览只让卡片
  * 变宽不增列。不用 `auto-fill minmax`——它会在 ≥440px 自动变 2 列，卡片缩到 minmax 下限
  * 内容拥挤，违反"父容器默认单列宽度排布"。用 inline style 而非 Tailwind 任意值：含括号/
@@ -112,7 +113,7 @@ export const INSTANCE_GRID_STYLE: CSSProperties = {
 export const INSTANCE_SKELETON_ROW_COUNT = 3;
 
 /**
- * 卡片总览加载骨架：自适应网格（与 InstanceGrid 同构，共享 INSTANCE_GRID_STYLE）。每张占位卡
+ * 卡片总览加载骨架：自适应网格（与真实卡片网格同构，共享 INSTANCE_GRID_STYLE）。每张占位卡
  * 模拟 InstanceCard 结构（设计 §7）：raised surface + rounded-lg + p-3 + flex items-start gap-3——
  * 左侧 marker 占位（h-9 w-9 rounded-md，对齐 IconMarker lg 36px）+ 右侧内容栈 3 行，行高对齐真实
  * line-height 行盒（title text-sm h-5=20px / subtitle text-xs h-4=16px / meta text-xs h-4=16px，
@@ -347,7 +348,7 @@ export function InstanceArea({
 
 /**
  * 左总览（批 F：project-only）。global [项目] 总览（原 `GlobalProjectsOverview`，已删）由
- * AllSessionsGroupedList（05g 形态）承载，本组件仅承载 project scope 左栏：CreateSessionBar（创建实例）+ InstanceGrid（grid 单
+ * AllSessionsGroupedList（05g 形态）承载，本组件仅承载 project scope 左栏：CreateSessionBar（创建实例）+ 卡片网格（grid 单
  * 视图，project scope 无视图切换）+ EmptyInstanceArea + CardGridSkeleton。承载于 WorkbenchShell
  * `leftPanel`（DOM 四栏第 1 列）。
  *
@@ -1627,11 +1628,6 @@ type CreateSessionBarProps = {
   isCreating: boolean;
   onCreateAgent: (provider: AgentProvider) => void;
   onCreateTerminal: () => void;
-  /** trigger 额外 className（如全宽 "w-full justify-center"）。默认 inline 紧凑（h-7 px-2）。 */
-  triggerClassName?: string;
-  /** 半受控开合（可选）：传 open 即完全受控（左栏 header 处接 ⌘N atom，见 workbench-model）。 */
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
 };
 
 /**
@@ -1661,24 +1657,19 @@ export function createSessionMenuItems(create: CreateSessionApi, t: TranslateFn)
 /**
  * 创建实例 dropdown（Claude/Codex/Terminal，2c-2 从 left-rail LeftRailCreateBar 改名迁此
  * export）。presentational——消费 useCreateSession 的 createAgent/createTerminal/isCreating。
- * 三处复用：InstanceArea tab bar（inline）、EmptyInstanceArea（inline）、ProjectInstances
- * card（全宽 triggerClassName="w-full justify-center"）。
+ * 唯一调用点 EmptyInstanceArea（inline）。⚠️ ⌘N 受控开合（workbenchCreateMenuOpenAtom）
+ * 挂 side 组头菜单（workbench-side.tsx 走 createSessionMenuItems 单源），不经本组件。
  */
 export function CreateSessionBar({
   isCreating,
   onCreateAgent,
   onCreateTerminal,
-  triggerClassName,
-  open,
-  onOpenChange,
 }: CreateSessionBarProps) {
   const { t } = useT();
   return (
     <ActionMenu
       align="end"
       cancelLabel={t("cancel")}
-      open={open}
-      onOpenChange={onOpenChange}
       items={createSessionMenuItems(
         { createAgent: onCreateAgent, createTerminal: onCreateTerminal, isCreating },
         t,
@@ -1686,7 +1677,7 @@ export function CreateSessionBar({
       trigger={
         <button
           className={actionButtonClasses({
-            className: `group disabled:cursor-not-allowed disabled:opacity-50 ${triggerClassName ?? ""}`,
+            className: "group disabled:cursor-not-allowed disabled:opacity-50",
             compact: true,
             tone: "accent",
           })}
