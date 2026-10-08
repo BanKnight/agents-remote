@@ -608,6 +608,37 @@ async function run() {
       record(fgeo.liveText === "● 2", `live ● running 数（got "${fgeo.liveText}"）`);
       record(fgeo.scrollW <= fgeo.innerW + 1, `无横向溢出（${fgeo.scrollW} ≤ ${fgeo.innerW}）`);
     }
+
+    // ── E2 全局同构 review 批 A-3：全局文件页 ＋ 新建重名校验生效 ──────────
+    // 此前 siblingNames 硬编码 []——输入既有项目名（proj1）应即时红字 + 创建禁用；
+    // 现 hook 内置真实 files query（与页面列表同 key dedupe）。
+    console.log("E2. 全局文件页 ＋ 新建重名校验（A-3 漂移修复）");
+    // 根目录不可写（服务器根）——先点项目行进项目目录（cwd=proj1，＋ 才可写）。
+    await page.locator(".gfrow").filter({ hasText: "proj1" }).getByRole("button").first().click();
+    await page.waitForTimeout(800);
+    await page.getByRole("button", { name: "添加" }).first().click();
+    await page.waitForTimeout(500);
+    await page.getByRole("menuitem", { name: "新建…" }).click();
+    await page.waitForTimeout(700);
+    const nameInput = page.locator("#new-item-name");
+    // 重名源 = 目标目录（proj1 根）已有条目 index.ts（files mock 根层）——直接输入该名。
+    await nameInput.fill("index.ts");
+    await page.waitForTimeout(300);
+    const conflict = await page.evaluate(() => {
+      const alert = document.querySelector('[role="alert"]');
+      const createBtn = [...document.querySelectorAll(".kbtns button")].find(
+        (b) => b.textContent.trim() === "创建",
+      );
+      return {
+        alertText: alert?.textContent?.trim() ?? null,
+        disabled: createBtn ? createBtn.disabled : null,
+      };
+    });
+    record(conflict.alertText !== null, `重名红字行内提示（got "${conflict.alertText}"）`);
+    record(conflict.disabled === true, `重名时创建钮禁用（got disabled=${conflict.disabled}）`);
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(400);
+
     // ── F 问题⑨⑩⑪⑬：项目工作台（chips 工具态/取消回 tab/路径/ticon 间距）─────────
     console.log("F. 项目工作台（问题⑨⑩⑪⑬）");
     await page.goto(`${WEB_ORIGIN}/projects/proj1`);

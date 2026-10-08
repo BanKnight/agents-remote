@@ -7,7 +7,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
@@ -16,9 +15,9 @@ import {
   useCreateSession,
   useGlobalInstanceCandidates,
   useGlobalInstanceRefs,
-  useRenameSession,
   useScopeInstanceOrder,
 } from "../components/workbench/instance-area";
+import { useRenameSession } from "../components/workbench/instance-actions";
 import { useWorkbenchShortcuts } from "../hooks/use-workbench-shortcuts";
 import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
@@ -30,8 +29,7 @@ import { WorkbenchSide } from "../components/workbench/workbench-side";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { GlobalFilesOverview } from "../components/files/global-files-overview";
 import { AddMenu } from "../components/files/add-menu";
-import { NewItemSheet } from "../components/files/new-item-sheet";
-import { enqueueUploads } from "../components/files/upload-queue";
+import { useDirectoryAddActions } from "../components/files/use-directory-add-actions";
 import { MobileMcpDetail } from "../components/workbench/mobile-plugins-detail";
 import {
   MobilePluginsOverview,
@@ -169,9 +167,6 @@ function WorkbenchContent({
   const [globalFilesPath, setGlobalFilesPath] = useState("");
   // 10-mac ④ mainPage h1 行右端 ＋ = 03oa 添加菜单（批4）：项目层语境才可写（服务器根
   // 不可写）。cwd 前缀 = 项目名，拆出 projectName + 项目内相对目录。
-  const [mainPageAddPath, setMainPageAddPath] = useState<string | null>(null);
-  const mainPageUploadInputRef = useRef<HTMLInputElement>(null);
-  const mainPageUploadTargetRef = useRef("");
   const mainPageSlash = globalFilesPath.indexOf("/");
   const mainPageProject =
     mainPageSlash === -1
@@ -181,6 +176,14 @@ function WorkbenchContent({
       : globalFilesPath.slice(0, mainPageSlash);
   const mainPageDir = mainPageSlash === -1 ? "" : globalFilesPath.slice(mainPageSlash + 1);
   const mainPageWritable = mainPageProject.length > 0;
+  // mainPage ＋ 新建/上传装配 = useDirectoryAddActions 双端单源（全局同构 review 批）：
+  // enabled=false（服务器根不可写——无项目名）时动作 no-op；siblingNames = hook 内置真实
+  // files query——此前硬编码 [] 重名校验失效（本批修复）。trigger 形态留本容器。
+  const mainPageAdd = useDirectoryAddActions({
+    dir: mainPageDir,
+    enabled: mainPageWritable,
+    projectName: mainPageProject,
+  });
   // 右栏开合（批3 融合）：运行时真相 = workbenchPanelOpenAtom（与移动检视面板同 atom——
   // 「面板 open ⇒ 右栏展开」单一来源）；workbenchRightCollapsedAtom 降级为持久化**记忆**，
   // mount 时按记忆投影初值（记忆展开 → panelOpen true），此后开合动作只写 panelOpen，
@@ -995,14 +998,8 @@ function WorkbenchContent({
       <MainPageShell
         actions={
           <AddMenu
-            onNew={() => {
-              if (mainPageWritable) setMainPageAddPath(mainPageDir);
-            }}
-            onUpload={() => {
-              if (!mainPageWritable) return;
-              mainPageUploadTargetRef.current = mainPageDir;
-              mainPageUploadInputRef.current?.click();
-            }}
+            onNew={mainPageAdd.addProps.onNew}
+            onUpload={mainPageAdd.addProps.onUpload}
             trigger={
               <button
                 aria-label={t("files.add")}
@@ -1025,33 +1022,10 @@ function WorkbenchContent({
           variant="page"
         />
       </MainPageShell>
-      {mainPageAddPath !== null ? (
-        <NewItemSheet
-          onOpenChange={(next) => {
-            if (!next) setMainPageAddPath(null);
-          }}
-          open
-          parentPath={mainPageAddPath}
-          projectName={mainPageProject}
-          siblingNames={[]}
-        />
-      ) : null}
-      <input
-        className="hidden"
-        multiple
-        onChange={(e) => {
-          if (e.target.files && e.target.files.length > 0) {
-            enqueueUploads(
-              mainPageProject,
-              mainPageUploadTargetRef.current,
-              Array.from(e.target.files),
-            );
-          }
-          e.target.value = "";
-        }}
-        ref={mainPageUploadInputRef}
-        type="file"
-      />
+      {/* 03y 新建 sheet + 03oa 上传 picker（useDirectoryAddActions 单源三件套；重名校验随
+          hook 内置 query 恢复生效）。 */}
+      {mainPageAdd.newItemSheet}
+      {mainPageAdd.uploadInput}
     </>
   );
   const instanceArea = (

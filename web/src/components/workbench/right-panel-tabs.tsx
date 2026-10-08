@@ -1,22 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
 import { useAtom } from "jotai";
-import { useRef, useState } from "react";
-import { listProjectFiles } from "../../api/client";
 import { useT } from "../../i18n";
-import {
-  type PanelTab,
-  ensurePanelTabOpen,
-  workbenchDesktopFilesPathAtom,
-  workbenchPanelActiveAtom,
-  workbenchPanelTabsAtom,
-  BASE_PANEL_TABS,
-  withBasePanelTabs,
-} from "../../routes/workbench-model";
+import { workbenchDesktopFilesPathAtom } from "../../routes/workbench-model";
 import { AddMenu } from "../files/add-menu";
-import { NewItemSheet } from "../files/new-item-sheet";
-import { enqueueUploads } from "../files/upload-queue";
+import { useDirectoryAddActions } from "../files/use-directory-add-actions";
 import { FilesToolTab, GitToolTab, WikiToolTab } from "./workbench-tab-plugin";
 import { PanelTabBar } from "./inspection-panel";
+import { usePanelTabRegistry } from "./use-panel-tab-registry";
 import { usePanelToolChip } from "./project-tool-panels";
 import { cn } from "@/lib/utils";
 import type { WorkbenchTabPluginContext } from "./workbench-tab-plugin";
@@ -54,53 +43,23 @@ export function RightPanelTabs({
 }) {
   const { t } = useT();
   const projectKey = ctx.projectKey;
-  const [panelTabsMap, setPanelTabsMap] = useAtom(workbenchPanelTabsAtom);
-  const [panelActiveMap, setPanelActiveMap] = useAtom(workbenchPanelActiveAtom);
-  // 右栏全 scope 渲染（2026-10-01 起；projectKey=null 的 global 空态分支见下），projectKey 理论
-  // 恒非空；undefined 回退缺省标签表（与移动缺省一致 = [{files}]），null 保留 empty 态兜底。
-  const panelTabs = withBasePanelTabs(
-    (projectKey ? panelTabsMap[projectKey] : undefined) ?? BASE_PANEL_TABS,
-  );
+  // 标签注册表 = usePanelTabRegistry 双端单源（全局同构 review 批：此前本地手写 CRUD 与移动
+  // MobileProjectWorkbench 逐字同构）。
+  const {
+    panelTabs,
+    activePanelTabId: activePanelTabIdRaw,
+    activatePanelTab,
+    newPanelTab,
+    closePanelTab,
+  } = usePanelTabRegistry(projectKey);
   // 桌面投影 = 三结构标签（files/git/wiki）；file/wikiread 留在存储（移动仍消费）不渲染。
   const inspectorTabs = panelTabs.filter(
     (t0) => t0.kind === "files" || t0.kind === "git" || t0.kind === "wiki",
   );
-  const activePanelTabIdRaw = (projectKey ? panelActiveMap[projectKey] : undefined) ?? "files";
   // 激活项指向被投影隐藏的标签（file/wikiread）→ 回退 files（body 全 invisible 死屏防线）。
   const activePanelTabId = inspectorTabs.some((t0) => t0.id === activePanelTabIdRaw)
     ? activePanelTabIdRaw
     : "files";
-  // 幂等守卫：值未变直接返回旧引用（与移动 activatePanelTab 同款）。
-  const activatePanelTab = (id: string) =>
-    setPanelActiveMap((prev) => {
-      const cur = projectKey ? prev[projectKey] : undefined;
-      return cur === id ? prev : { ...prev, [projectKey as string]: id };
-    });
-  // ensure 新增标签（基础标签由 ＋ 菜单/深链映射调用；存在即幂等 no-op）。
-  const ensureTab = (tab: PanelTab) => {
-    if (!projectKey) return;
-    setPanelTabsMap((prev) => {
-      const list = prev[projectKey] ?? BASE_PANEL_TABS;
-      const next = ensurePanelTabOpen(list, tab);
-      if (next === list) return prev;
-      return { ...prev, [projectKey]: next };
-    });
-  };
-  // ＋ 新建标签（03ob2 菜单）：同目标已开 = 激活幂等。
-  const newPanelTab = (kind: "files" | "git" | "wiki") => {
-    ensureTab({ id: kind, kind } as PanelTab);
-    activatePanelTab(kind);
-  };
-  // ✕ 关标签：桌面投影仅三结构标签（不可关）；closePanelTab 保留为 PanelTabBar 契约
-  //（存储中的 file 标签由移动端关闭路径管理）。
-  const closePanelTab = (id: string) => {
-    setPanelTabsMap((prev) => {
-      if (!projectKey) return prev;
-      const list = prev[projectKey] ?? [];
-      return { ...prev, [projectKey]: list.filter((t0) => t0.id !== id) };
-    });
-    if (id === activePanelTabId) activatePanelTab("files");
-  };
   // 批 11 反馈①：cwd 单一来源 = per-project 持久 atom。此前读 ctx.currentPath——右栏 ctx
   // 只带 projectKey（WorkbenchRoute rightCtx），恒 undefined → ""，AddMenu 上传/新建恒落
   // 项目根（用户真机报障）。受控化后 FilesToolTab / toolChip crumb / AddMenu 三处同源。
@@ -127,16 +86,12 @@ export function RightPanelTabs({
     projectKey: projectKey ?? "",
   });
   // 05e:54 搜索行右端「＋」（第二批缺口补齐：桌面 .links 行 lg:hidden 后新建/上传入口断）——
-  // AddMenu 单源（03oa 两项）装配 toolChip 行尾，与移动面板 FAB 同构；目标目录 = cwd
-  //（上方 atom 单源）。siblingNames 走同 key files query 共享缓存（gitDiffForChip 同
-  // 范式，sheet 开启才启用，零常态网络）。
-  const [newItemParentPath, setNewItemParentPath] = useState<string | null>(null);
-  const uploadInputRef = useRef<HTMLInputElement>(null);
-  const uploadTargetRef = useRef("");
-  const filesListing = useQuery({
-    enabled: newItemParentPath !== null,
-    queryFn: () => listProjectFiles(projectKey ?? "", cwd || undefined),
-    queryKey: ["projects", projectKey, "files", cwd],
+  // 新建/上传装配 = useDirectoryAddActions 双端单源（全局同构 review 批：与移动面板 FAB /
+  // mainPage / 全局文件页同一份；siblingNames 内置同 key files query，重名校验生效）。目标
+  // 目录 = cwd（上方 atom 单源），FAB trigger 形态留本容器。
+  const { addProps, newItemSheet, uploadInput } = useDirectoryAddActions({
+    dir: cwd,
+    projectName: projectKey ?? "",
   });
 
   if (!projectKey) {
@@ -241,11 +196,8 @@ export function RightPanelTabs({
             提供（git/wiki 无新建语义）。AddMenu 单源（03oa 两项）+ 目标目录 = cwd atom 单源。 */}
         {activeKind === "files" ? (
           <AddMenu
-            onNew={() => setNewItemParentPath(cwd)}
-            onUpload={() => {
-              uploadTargetRef.current = cwd;
-              uploadInputRef.current?.click();
-            }}
+            onNew={addProps.onNew}
+            onUpload={addProps.onUpload}
             trigger={
               <button aria-label={t("files.add")} className="fab cursor-pointer" type="button">
                 <span className="plus" style={{ width: 20, height: 20 }} />
@@ -254,33 +206,10 @@ export function RightPanelTabs({
           />
         ) : null}
       </div>
-      {/* 03y 新建 sheet + 03oa 上传 picker（toolChip「＋」菜单装配；open = state 非空持有）。
-          与移动面板 FAB 装配同构（mobile-workbench renderPanelFab 同款三件）。 */}
-      {newItemParentPath !== null ? (
-        <NewItemSheet
-          onOpenChange={(next) => {
-            if (!next) setNewItemParentPath(null);
-          }}
-          open
-          parentPath={newItemParentPath}
-          projectName={projectKey}
-          siblingNames={
-            newItemParentPath === cwd ? (filesListing.data?.entries ?? []).map((e) => e.name) : []
-          }
-        />
-      ) : null}
-      <input
-        className="hidden"
-        multiple
-        onChange={(e) => {
-          if (e.target.files && e.target.files.length > 0) {
-            enqueueUploads(projectKey ?? "", uploadTargetRef.current, Array.from(e.target.files));
-          }
-          e.target.value = "";
-        }}
-        ref={uploadInputRef}
-        type="file"
-      />
+      {/* 03y 新建 sheet + 03oa 上传 picker（useDirectoryAddActions 单源三件套，open = 内部
+          state 非空持有；与移动面板 FAB / mainPage / 全局文件页同款）。 */}
+      {newItemSheet}
+      {uploadInput}
     </div>
   );
 }

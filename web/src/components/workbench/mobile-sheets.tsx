@@ -3,20 +3,22 @@
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type {
-  AgentHistoryEntry,
-  AgentHistoryFilter,
-  AgentHistoryGroupKey,
-  ApprovalSummary,
-} from "@agents-remote/shared";
+import type { ApprovalSummary } from "@agents-remote/shared";
 
-import { relativeTime, useResumeAgentSession } from "./history-list";
+import {
+  HISTORY_FILTERS,
+  HISTORY_GROUP_LABEL_KEYS,
+  buildResumeInput,
+  displayTitleOf,
+  relativeTime,
+  rowKey,
+  useResumeAgentSession,
+} from "./history-list";
 import { ApprovalAllowAll } from "./approval-popover";
 import { useConfirm } from "../shell/confirm-dialog";
 import { usePromptDialog } from "../shell/prompt-dialog";
 import { isHotTool, useApprovalCenter } from "../../hooks/use-approvals";
 import { useT } from "../../i18n";
-import type { TranslationKey } from "../../i18n/types";
 import { MobileSheet } from "../shell/mobile-sheet";
 import { ShellIcon } from "../shell/icons";
 import { useGlobalInstanceCandidates } from "./instance-area";
@@ -150,22 +152,6 @@ export function MobileProjectSwitchSheet({
     </MobileSheet>
   );
 }
-
-/** 03n 三段筛选段（值序 = shared AgentHistoryFilter；切段 = 服务端 filter 切片）。 */
-const HISTORY_FILTERS: readonly { key: AgentHistoryFilter; labelKey: TranslationKey }[] = [
-  { key: "all", labelKey: "workbench.historyFilterAll" },
-  { key: "active", labelKey: "workbench.historyFilterRunning" },
-  { key: "ended", labelKey: "workbench.historyFilterClosed" },
-];
-
-/** 03n 五档分组组头文案键（渲染序 = hook groups 的 AGENT_HISTORY_GROUP_ORDER）。 */
-const HISTORY_GROUP_LABEL_KEYS: Record<AgentHistoryGroupKey, TranslationKey> = {
-  today: "workbench.historyGroupToday",
-  yesterday: "workbench.historyGroupYesterday",
-  week: "workbench.historyGroupWeek",
-  month: "workbench.historyGroupMonth",
-  earlier: "workbench.historyGroupEarlier",
-};
 
 /** 左滑露出的删除钮宽（03n 原型 .del 64px；v2-primitives `.hrow.swipe .del` 同源）。 */
 const SWIPE_REVEAL_WIDTH_PX = 64;
@@ -362,32 +348,25 @@ export function MobileSessionHistorySheet({
   }, [tailNode, open, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   /** 行 key：id 缺失退 title/firstMessage/startedAt 兜底，防双空串 key 冲突（code review P2-6 同族）。 */
-  const entryKey = (entry: AgentHistoryEntry) =>
-    entry.claudeSessionId ??
-    entry.acpSessionId ??
-    entry.title ??
-    entry.firstMessage ??
-    entry.startedAt ??
-    "";
+  const entryKey = rowKey;
 
   const openClosedEntry = (entry: (typeof entries)[number]) => {
     void renameDialog
       .prompt({
         title: t("session.namePrompt.resumeTitle"),
         placeholder: t("session.namePrompt.placeholder"),
-        initialValue: entry.title ?? entry.firstMessage ?? "",
+        // 预填标题 = displayTitleOf 单源(此前 inline 无 nativeId 兜底,两端漂移)。
+        initialValue: displayTitleOf(entry),
         confirmLabel: t("session.namePrompt.confirm"),
         cancelLabel: t("cancel"),
         tone: "default",
       })
       .then((displayName) => {
         if (displayName === null) return;
-        // resume 输入装配 = useResumeAgentSession 单源（provider + 原生 session id + 显示名）。
+        // resume 输入装配 = buildResumeInput 单源(provider + 原生 session id + 项目归属)。
         resume({
-          acpSessionId: entry.acpSessionId,
-          claudeSessionId: entry.claudeSessionId,
+          ...buildResumeInput(entry, projectName),
           displayName: displayName.trim() || undefined,
-          provider: entry.provider ?? "claude",
         });
       });
   };
@@ -399,7 +378,7 @@ export function MobileSessionHistorySheet({
       cancelLabel: t("cancel"),
       confirmLabel: t("workbench.historyDeleteConfirmCta"),
       message: t("workbench.historyDeleteConfirmBody", {
-        name: entry.title ?? entry.firstMessage ?? "",
+        name: displayTitleOf(entry),
       }),
       title: t("workbench.historyDeleteConfirmTitle"),
       tone: "danger",

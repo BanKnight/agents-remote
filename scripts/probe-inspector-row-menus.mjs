@@ -479,6 +479,29 @@ try {
     "W3 「打开页面」→ 中栏 wikiread tab（index-1 chip；检视器 wikiread 标签退役）",
   );
 
+  // W4（全局同构 review 批 A-5 桌面补齐）：激活 wikiread tab → tabstrip 右端 ⋯ 菜单 =
+  // WikiReadNavMenu 单源，两项「复制内容/查看 diff」（此前仅移动面板 wikiread 标签有）。
+  const wikiStripMenu = page.locator(".tabstrip").getByRole("button", { name: "更多操作" }).last();
+  await wikiStripMenu.click();
+  await waitMenuOpen(page);
+  menu = await readMenu(page);
+  ok(
+    menu.open && menu.items.length === 2,
+    `W4 wikiread tab ⋯ = 2 项（实际 ${menu.items.join("/")}）`,
+  );
+  ok(
+    menu.items.includes("复制内容") && menu.items.includes("查看 diff"),
+    "W4b ⋯ 含「复制内容」「查看 diff」",
+  );
+  // 「查看 diff」→ 中栏新开 git diff tab（源文件 wiki/{slug}.md 走 file diff 管道的桌面形态）。
+  const wikiDiffItem = page.getByRole("menuitem", { name: "查看 diff" }).first();
+  await wikiDiffItem.click();
+  await page.waitForTimeout(800);
+  ok(
+    (await page.locator(".tabstrip .tb", { hasText: "index-1.md" }).count()) >= 1,
+    "W4c 「查看 diff」→ 中栏 git diff tab（wiki/{slug}.md）",
+  );
+
   // ⑤ 触屏长按（合成 pointerType:touch pointerdown 500ms 阈值）：批 4 页行点入开中栏 tab，
   // 检视器保持列表态（无详情态切换）——直接长按页面行 → 菜单开（iPad 右栏唯一菜单入口）。
   const wikiRow2 = page

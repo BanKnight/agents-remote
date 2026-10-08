@@ -13,12 +13,11 @@ import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import type { GitDiffScope } from "@agents-remote/shared";
-import { listProjectFiles, listProjectGitBranches } from "../../api/client";
-import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
+import { listProjectGitBranches } from "../../api/client";
+import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
 import { AddMenu } from "../files/add-menu";
-import { NewItemSheet } from "../files/new-item-sheet";
+import { useDirectoryAddActions } from "../files/use-directory-add-actions";
 import { resolveRelativeFilePath } from "../files/relative-md-link";
-import { enqueueUploads } from "../files/upload-queue";
 import { MarkdownLinkContext } from "../markdown/markdown-components";
 import {
   LargeTitleRow,
@@ -36,7 +35,6 @@ import { MobilePluginsOverview } from "./mobile-plugins-home";
 import { MobileMarket, MobileMarketSources } from "./mobile-plugins-market";
 import {
   collectLeaves,
-  ensurePanelTabOpen,
   findTabRefLeaf,
   type WorkbenchMobileFocusTab,
   type WorkbenchScope,
@@ -63,12 +61,8 @@ import {
   workbenchMobileGlobalFilesPathAtom,
   workbenchMobileProjectFilesPathAtom,
   workbenchWikiRefsAtom,
-  workbenchPanelActiveAtom,
   workbenchPanelOpenAtom,
-  workbenchPanelTabsAtom,
   type PanelTab,
-  BASE_PANEL_TABS,
-  withBasePanelTabs,
 } from "../../routes/workbench-model";
 
 import {
@@ -85,7 +79,8 @@ import {
 import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 import { MobileProjectHeader } from "./mobile-project-header";
 import { InspectionPanel } from "./inspection-panel";
-import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
+import { useInstanceRowActions } from "./instance-actions";
+import { usePanelTabRegistry } from "./use-panel-tab-registry";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 import {
   FilePreviewNavMenu,
@@ -96,6 +91,7 @@ import {
   L3GitHistory,
   L3WikiReader,
   MobileL3GitDiff,
+  WikiReadNavMenu,
 } from "./mobile-l3";
 import { useFilePreview } from "../files/use-file-editor";
 import {
@@ -105,7 +101,7 @@ import {
   WikiToolPanel,
 } from "./project-tool-panels";
 import { MobileCreateInstanceSheet, MobileSessionHistorySheet } from "./mobile-sheets";
-import { useAgentDetail, useRenameSession, useTerminalDetail } from "./instance-area";
+import { useAgentDetail, useTerminalDetail } from "./instance-area";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { useMeasuredBottomNav } from "../shell/shell-layout";
 
@@ -687,10 +683,17 @@ function MobileProjectWorkbench({
   const activeTool = tool === "files" || tool === "git" || tool === "wiki" ? tool : undefined;
   // 检视面板状态（per-projectKey 标签集/激活项持久化，open 内存级——跨刷新恢复标签不恢复开合）。
   const [panelOpen, setPanelOpen] = useAtom(workbenchPanelOpenAtom);
-  const [panelTabsMap, setPanelTabsMap] = useAtom(workbenchPanelTabsAtom);
-  const [panelActiveMap, setPanelActiveMap] = useAtom(workbenchPanelActiveAtom);
-  const panelTabs = withBasePanelTabs(panelTabsMap[scope.key] ?? BASE_PANEL_TABS);
-  const activePanelTabId = panelActiveMap[scope.key] ?? "files";
+  // 标签注册表 = usePanelTabRegistry 双端单源（全局同构 review 批：此前本地手写 ensure/
+  // activate/newTab/close 与桌面 RightPanelTabs 逐字同构）。移动容器差异 = 关标签随关清
+  // 编辑态单例（下方 wrapper）。
+  const {
+    panelTabs,
+    activePanelTabId,
+    activatePanelTab,
+    ensureTab: ensurePanelTab,
+    newPanelTab,
+    closePanelTab: closePanelTabInStore,
+  } = usePanelTabRegistry(scope.key);
   const activePanelTab = panelTabs.find((tab) => tab.id === activePanelTabId) ?? panelTabs[0];
   // perf-review 批2 M1：面板从未打开过不挂载任何工具面板——invisible 只免 paint，不免渲染/
   // 布局/网络（首访项目页不再多发一发不可见的 files 列表请求）。首次 open 当帧挂载（同一
@@ -709,23 +712,6 @@ function MobileProjectWorkbench({
   // workbench 后重进任意项目不再「不请自来」复开面板；与 atom 注释「开面板是一次显式用户
   // 动作」对齐）。残留 ?tab= 深链复开是拍板 f 的固有代价，记入批3（链接直达接管 URL）。
   useEffect(() => () => setPanelOpen(false), []);
-  const ensurePanelTab = (tab: PanelTab) => {
-    setPanelTabsMap((prev) => {
-      const list = prev[scope.key] ?? BASE_PANEL_TABS;
-      const next = ensurePanelTabOpen(list, tab);
-      if (next === list) return prev;
-      return { ...prev, [scope.key]: next };
-    });
-  };
-  // 幂等守卫（perf-review 批2 m2）：值未变直接返回旧引用——点已激活标签 / URL 深链重复映射
-  // 不再产生多余的全组件重渲染 + localStorage 同步写（与 ensurePanelTab 的 some 守卫对齐）。
-  const activatePanelTab = (id: string) =>
-    setPanelActiveMap((prev) => (prev[scope.key] === id ? prev : { ...prev, [scope.key]: id }));
-  // ＋ 新建标签（03ob2 菜单）：同目标已开 = 激活幂等（03ob 编号①）。
-  const newPanelTab = (kind: "files" | "git" | "wiki") => {
-    ensurePanelTab({ id: kind, kind } as PanelTab);
-    activatePanelTab(kind);
-  };
   // 链接直达（03ab ⑥，v1.4 批3）：树点文件 → file 预览标签新增/激活（不再走中栏 file tab
   // + URL focus 旧体系）。同目标已开 = 激活幂等；面板已在打开态（面板内点击），无需再 open。
   const openPanelFileTab = (path: string) => {
@@ -762,18 +748,9 @@ function MobileProjectWorkbench({
     panelVisible && activeFilePath !== null ? activeFilePath : null,
     "files",
   );
-  // wikiread ⋯ 菜单数据源（wiki-reader 原型 pin②「复制内容」= 页面正文；与 L3WikiReader 同
-  // queryKey dedupe 零额外网络）。panelVisible gate 与 panelPreview 同语义（面板未开不拉）。
-  const activeWikiSlug = panelVisible ? (activeWikiReadTab?.slug ?? null) : null;
-  const activeWikiPage = useWikiPage(scope.key, activeWikiSlug, WIKI_QUERY_SCOPE);
-  // ✕ 关标签：仅 file/wikiread 标签可关（三基础标签不可关）；关激活标签回文件树首标签。
   const closePanelTab = (id: string) => {
-    setPanelTabsMap((prev) => {
-      const list = prev[scope.key] ?? [];
-      return { ...prev, [scope.key]: list.filter((t0) => t0.id !== id) };
-    });
+    closePanelTabInStore(id);
     if (editingFileTabId === id) setEditingFileTabId(null);
-    if (id === activePanelTabId) activatePanelTab("files");
   };
   // URL 兼容（plan 批2 ⑥）：旧 ?tab=files|git|wiki 深链渲染期一次性映射为面板 open+激活
   // 标签（不写回 URL）。幂等——面板内 L3 导航（URL 带 tab=git）重复触发无副作用。
@@ -1024,19 +1001,14 @@ function MobileProjectWorkbench({
       );
     });
   // 面板 FAB（03o ③ / 03oa：文件树标签右下 → 添加菜单两项「新建…/上传…」，批4 启用；
-  // 批2 曾是 disabled 空桩）。目标目录 = 当前 cwd（filesPath，与 FilesToolPanel 受控记忆
-  // 同源）；上传走 03z 队列（enqueueUploads + hidden input，时序安全用 ref）。
-  const panelUploadInputRef = useRef<HTMLInputElement>(null);
-  const panelUploadTargetRef = useRef("");
-  const [panelNewItemParentPath, setPanelNewItemParentPath] = useState<string | null>(null);
+  // 批2 曾是 disabled 空桩）。新建/上传装配 = useDirectoryAddActions 双端单源（全局同构
+  // review 批；调用点在下方 filesPath 之后——TDZ 安全：renderPanelFab 闭包 JSX 调用时序）。
+  // 目标目录 = 当前 cwd（filesPath，与 FilesToolPanel 受控记忆同源）；trigger 形态留本容器。
   const renderPanelFab = () =>
     activePanelTab?.kind === "files" ? (
       <AddMenu
-        onNew={() => setPanelNewItemParentPath(filesPath)}
-        onUpload={() => {
-          panelUploadTargetRef.current = filesPath;
-          panelUploadInputRef.current?.click();
-        }}
+        onNew={panelAdd.addProps.onNew}
+        onUpload={panelAdd.addProps.onUpload}
         trigger={
           <button aria-label={t("files.add")} className="fab cursor-pointer" type="button">
             <span className="plus" style={{ width: 20, height: 20 }} />
@@ -1074,12 +1046,9 @@ function MobileProjectWorkbench({
   const filesPath = projectFilesPaths[scope.key] ?? "";
   const setFilesPath = (path: string) =>
     setProjectFilesPaths((prev) => ({ ...prev, [scope.key]: path }));
-  // FAB 新建的重名即时校验数据源：与面板 FilesToolPanel 同 key 共享缓存（零额外网络）。
-  const panelFilesQuery = useQuery({
-    queryFn: () => listProjectFiles(scope.key, filesPath || undefined),
-    queryKey: ["projects", scope.key, "files", filesPath],
-  });
-  const panelFilesEntries = panelFilesQuery.data?.entries;
+  // FAB 新建/上传装配单源（sibling 重名校验 = hook 内置同 key files query，sheet 开启才
+  // 启用——此前无条件常跑，本批顺带收敛为按需）。
+  const panelAdd = useDirectoryAddActions({ dir: filesPath, projectName: scope.key });
 
   // file/git 预览 focus 的返回（M10 第三轮用户反馈：back = 返回上一层，与 backLabel 语义
   // 对齐——文件预览回文件树父目录（03q back「src/auth」），git diff 回 Git 工具面板（03r
@@ -1137,48 +1106,23 @@ function MobileProjectWorkbench({
       );
     }
     if (activeWikiReadTab) {
-      // wiki-reader 原型 pin②：⋯ = 复制内容 / 查看 diff（wiki 在 Git 内）。复制内容 = 页面
-      // 正文（page 未热时 disabled 防 copy 空）；查看 diff = 源文件 wiki/{slug}.md 走现有
-      // 面板 file diff 管道（from "file" → back = 文件名，与 file 标签同款）。
+      // wiki-reader 原型 pin②:⋯ = 复制内容 / 查看 diff(wiki 在 Git 内)。菜单 =
+      // WikiReadNavMenu 双端单源(A-5,桌面中栏 wikiread tab 同款);查看 diff = 源文件
+      // wiki/{slug}.md 走面板 file diff 管道(from "file" → back = 文件名,与 file 标签同款)。
       return (
-        <ActionMenu
-          align="end"
-          cancelLabel={t("cancel")}
-          items={[
-            {
-              // 菜单 icon 契约（批 14 统一样式）：与 mobile-l3 同 key 菜单同款图标。
-              icon: <ShellIcon className="size-[17px]" name="file" />,
-              label: t("files.menuCopyContent"),
-              disabled: !activeWikiPage.data,
-              onSelect: () => {
-                const body = activeWikiPage.data?.body;
-                if (body !== undefined) void navigator.clipboard.writeText(body);
-              },
-            },
-            {
-              icon: <ShellIcon className="size-[17px]" name="git-nav" />,
-              label: t("git.menuViewDiff"),
-              onSelect: () =>
-                setPanelDiff({
-                  path: `wiki/${activeWikiReadTab.slug}.md`,
-                  scope: "worktree",
-                  from: "file",
-                }),
-            },
-          ]}
-          trigger={
-            <button
-              aria-label={t("workbench.moreActions")}
-              className="ic cursor-pointer"
-              type="button"
-            >
-              <ShellIcon name="ellipsis" />
-            </button>
+        <WikiReadNavMenu
+          onViewDiff={() =>
+            setPanelDiff({
+              path: `wiki/${activeWikiReadTab.slug}.md`,
+              scope: "worktree",
+              from: "file",
+            })
           }
+          projectName={scope.key}
+          slug={activeWikiReadTab.slug}
         />
       );
     }
-    return undefined;
   })();
 
   // ── M4 L3 深度页路由态（显式子路由，不写 layout）──────────────────────────────
@@ -1579,34 +1523,10 @@ function MobileProjectWorkbench({
         >
           {panelEverOpened ? renderPanelChildren() : null}
         </InspectionPanel>
-        {/* 03y 新建 sheet + 03oa 上传 picker（面板 FAB 菜单装配；open = state 非空持有）。 */}
-        {panelNewItemParentPath !== null ? (
-          <NewItemSheet
-            onOpenChange={(next) => {
-              if (!next) setPanelNewItemParentPath(null);
-            }}
-            open
-            parentPath={panelNewItemParentPath}
-            projectName={scope.key}
-            siblingNames={
-              panelNewItemParentPath === filesPath
-                ? (panelFilesEntries ?? []).map((e) => e.name)
-                : []
-            }
-          />
-        ) : null}
-        <input
-          className="hidden"
-          multiple
-          onChange={(e) => {
-            if (e.target.files && e.target.files.length > 0) {
-              enqueueUploads(scope.key, panelUploadTargetRef.current, Array.from(e.target.files));
-            }
-            e.target.value = "";
-          }}
-          ref={panelUploadInputRef}
-          type="file"
-        />
+        {/* 03y 新建 sheet + 03oa 上传 picker（useDirectoryAddActions 单源三件套，open = 内部
+            state 非空持有）。 */}
+        {panelAdd.newItemSheet}
+        {panelAdd.uploadInput}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* 保活面板层（2026-08-17 用户决策「全保活 + 聚焦过即可」；v2 M3-b 起工具态也保持
             hidden 挂载——进出检视面板不卸载 session 面板，WS 不断；v1.4 批2 起面板 open 时
@@ -1822,48 +1742,6 @@ function EmptyProjectState({
 }
 
 /**
- * 实例行「置顶/重命名/关闭」动作装配单源（02c pill 长按菜单 + 03k info sheet .acts footer
- * 双消费；此前 MobileFocusActions 注释宣称同源实为双写，本 hook 收敛）。build(panelRef,
- * sessionType) 返回单行动作的 label+run（pin 仅 agent——dot 状态语言归属 agent，review P3⑦）；
- * 渲染形态与排序留给消费方（菜单项 vs button 行，两端原型各自定）。renameHolder 由调用方渲染
- *（两消费方各自持 useRenameSession 实例，与原双装配行为一致）。
- */
-function useInstanceRowActions(
-  closeInstance: (sessionId: string, type: "agent" | "terminal") => void,
-) {
-  const { t } = useT();
-  const { pinned } = usePinnedSessions();
-  const pinIt = usePinSession();
-  const unpinIt = useUnpinSession();
-  const renameSession = useRenameSession();
-  return {
-    renameHolder: renameSession.holder,
-    build: (panelRef: SessionPanelRef, sessionType: "agent" | "terminal") => {
-      const id = panelRef.sessionId;
-      const pinnedNow = pinned.has(id);
-      return {
-        close: {
-          label: t("workbench.pillCloseSession"),
-          run: () => closeInstance(id, sessionType),
-        },
-        pin:
-          sessionType === "agent"
-            ? {
-                label: pinnedNow ? t("workbench.unpin") : t("workbench.pin"),
-                run: () => (pinnedNow ? unpinIt : pinIt).mutate(id),
-              }
-            : null,
-        rename: {
-          label: t("session.rename"),
-          run: (displayName: string) =>
-            void renameSession.rename(panelRef, sessionType, displayName),
-        },
-      };
-    },
-  };
-}
-
-/**
  * 移动端 chat 模式主体（§3.1）：header 内 mode tab（SessionModeTabs）+ ChatOverview
  *（搜索/新建/列表，桌面/移动同一实现）。点列表行 → /chat/$id 全屏聚焦态（独立路由）。
  */
@@ -1922,9 +1800,6 @@ function MobileFilesOverview() {
   const [globalFilesPath, setGlobalFilesPath] = useAtom(workbenchMobileGlobalFilesPathAtom);
   // 10-tab ④ h1 行右端 ＋ = 03oa 添加菜单：项目层语境才可写（服务器根目录不可写——
   // Project-safe resolver 无项目名）。cwd 前缀 = 项目名，拆出 projectName + 相对目录。
-  const [overviewAddPath, setOverviewAddPath] = useState<string | null>(null);
-  const overviewUploadInputRef = useRef<HTMLInputElement>(null);
-  const overviewUploadTargetRef = useRef("");
   const slash = globalFilesPath.indexOf("/");
   const overviewProject =
     slash === -1
@@ -1934,6 +1809,14 @@ function MobileFilesOverview() {
       : globalFilesPath.slice(0, slash);
   const overviewDir = slash === -1 ? "" : globalFilesPath.slice(slash + 1);
   const overviewWritable = overviewProject.length > 0;
+  // 全局文件页 ＋ 新建/上传装配 = useDirectoryAddActions 双端单源（全局同构 review 批）：
+  // enabled=false 时动作 no-op；siblingNames = hook 内置真实 files query——此前硬编码 []
+  // 重名校验失效（本批修复）。trigger 形态留本容器。
+  const overviewAdd = useDirectoryAddActions({
+    dir: overviewDir,
+    enabled: overviewWritable,
+    projectName: overviewProject,
+  });
   const onOpenFile = (projectName: string, path: string) => {
     void navigate({
       to: "/files/file/$",
@@ -1947,14 +1830,8 @@ function MobileFilesOverview() {
       <LargeTitleRow
         actions={
           <AddMenu
-            onNew={() => {
-              if (overviewWritable) setOverviewAddPath(overviewDir);
-            }}
-            onUpload={() => {
-              if (!overviewWritable) return;
-              overviewUploadTargetRef.current = overviewDir;
-              overviewUploadInputRef.current?.click();
-            }}
+            onNew={overviewAdd.addProps.onNew}
+            onUpload={overviewAdd.addProps.onUpload}
             trigger={
               <button
                 aria-label={t("files.add")}
@@ -1975,33 +1852,10 @@ function MobileFilesOverview() {
           onOpenFile={onOpenFile}
         />
       </div>
-      {overviewAddPath !== null ? (
-        <NewItemSheet
-          onOpenChange={(next) => {
-            if (!next) setOverviewAddPath(null);
-          }}
-          open
-          parentPath={overviewAddPath}
-          projectName={overviewProject}
-          siblingNames={[]}
-        />
-      ) : null}
-      <input
-        className="hidden"
-        multiple
-        onChange={(e) => {
-          if (e.target.files && e.target.files.length > 0) {
-            enqueueUploads(
-              overviewProject,
-              overviewUploadTargetRef.current,
-              Array.from(e.target.files),
-            );
-          }
-          e.target.value = "";
-        }}
-        ref={overviewUploadInputRef}
-        type="file"
-      />
+      {/* 03y 新建 sheet + 03oa 上传 picker（useDirectoryAddActions 单源三件套；重名校验随
+          hook 内置 query 恢复生效）。 */}
+      {overviewAdd.newItemSheet}
+      {overviewAdd.uploadInput}
     </div>
   );
 }

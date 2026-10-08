@@ -659,8 +659,8 @@ export function FilePreviewNavMenu({
   onViewDiff?: () => void;
   /** 桌面全局文件推入态专属（10m2 ②）：切工作台并自动打开中栏文件标签；其余容器不传。 */
   onOpenInWorkbench?: () => void;
-  /** 触发钮 class（桌面 tabstrip 右端 = 与 tabstrip 结构钮同形制 h-6 w-6 / 图标 12px；缺省
-   * 移动 .ic 形制）。 */
+  /** 触发钮 class（桌面 tabstrip 右端 = 与 tabstrip 结构钮同形制 h-6 w-6；缺省
+   * 移动 .ic 形制。⋯ 图标 = ShellIcon 默认 size-4 16px，file/wiki 两消费点同档）。 */
   triggerClassName?: string;
 }) {
   const { t } = useT();
@@ -708,6 +708,58 @@ export function FilePreviewNavMenu({
       label: t("files.menuOpenInWorkbench"),
       icon: <ShellIcon className="size-[17px]" name="split" />,
       onSelect: onOpenInWorkbench,
+    });
+  }
+  return (
+    <ActionMenu
+      align="end"
+      cancelLabel={t("cancel")}
+      items={items}
+      trigger={
+        <button aria-label={t("workbench.moreActions")} className={triggerClassName} type="button">
+          <ShellIcon name="ellipsis" />
+        </button>
+      }
+    />
+  );
+}
+
+/**
+ * wiki 阅读页 ⋯ 菜单(全局同构 review 批 A-5 双端单源 + 桌面补齐):此前仅移动面板
+ * wikiread 标签手写(复制内容/查看 diff),桌面中栏 wikiread tab 无对应入口。useWikiPage
+ * 与阅读器 body 同 queryKey dedupe(零额外网络);page 未热时「复制内容」disabled。
+ * 查看 diff = 容器层管道差异留调用方(移动面板 diff 管道 vs 桌面 onOpenGitDiff)。
+ */
+export function WikiReadNavMenu({
+  projectName,
+  slug,
+  onViewDiff,
+  triggerClassName = "ic cursor-pointer",
+}: {
+  projectName: string;
+  slug: string;
+  /** 「查看 diff」入口(容器不提供则不渲染该项)。 */
+  onViewDiff?: () => void;
+  /** 触发钮 class(桌面 tabstrip 右端 = tabstrip 结构钮形制;缺省移动 .ic 形制)。 */
+  triggerClassName?: string;
+}) {
+  const { t } = useT();
+  const page = useWikiPage(projectName, slug, WIKI_QUERY_SCOPE);
+  const items: ActionMenuItem[] = [
+    {
+      label: t("files.menuCopyContent"),
+      icon: <ShellIcon className="size-[17px]" name="file" />,
+      disabled: !page.data,
+      onSelect: () => {
+        if (page.data) void navigator.clipboard.writeText(page.data.body);
+      },
+    },
+  ];
+  if (onViewDiff) {
+    items.push({
+      label: t("git.menuViewDiff"),
+      icon: <ShellIcon className="size-[17px]" name="git-nav" />,
+      onSelect: onViewDiff,
     });
   }
   return (

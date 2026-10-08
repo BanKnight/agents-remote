@@ -58,14 +58,14 @@ function entryNativeId(entry: AgentHistoryEntry): string {
   return (entryProvider(entry) === "omp" ? entry.acpSessionId : entry.claudeSessionId) ?? "";
 }
 
-/** 行主标题（title → firstMessage → 原生 id 前 8 位兜底，防全空）。 */
-function displayTitleOf(entry: AgentHistoryEntry): string {
+/** 行主标题（title → firstMessage → 原生 id 前 8 位兜底，防全空；单源 export，移动 mobile-sheets 同构消费）。 */
+export function displayTitleOf(entry: AgentHistoryEntry): string {
   return entry.title ?? entry.firstMessage ?? entryNativeId(entry).slice(0, 8);
 }
 
-/** 行 React key / 右键菜单定位 key（id 缺失退 title/firstMessage 兜底，防双空串冲突）。 */
-function rowKey(entry: AgentHistoryEntry): string {
-  return entryNativeId(entry) || entry.title || entry.firstMessage || "";
+/** 行 React key / 右键菜单定位 key（原生 id ‖ title ‖ firstMessage ‖ startedAt 逐级兜底，防全空串冲突；全局同构 review 批统一版，并入移动 entryKey 的 startedAt 终兜底档）。 */
+export function rowKey(entry: AgentHistoryEntry): string {
+  return entryNativeId(entry) || entry.title || entry.firstMessage || (entry.startedAt ?? "");
 }
 
 /** resume「这条会话」的语义单元（provider + 原生 session id + 可选显示名 + 归属项目）。 */
@@ -77,6 +77,23 @@ export type ResumeAgentSessionInput = {
   /** 全局作用域行自带归属项目（04g「全部」段服务端恒填）；缺省回退 hook 级 projectName。 */
   projectName?: string;
 };
+
+/**
+ * 由历史条目构造 resume 输入(全局同构 review 批单源,桌面 activateEntry 与移动
+ * openClosedEntry 共用):displayName 由调用方 trim 后传入(本函数只收 final 值),
+ * provider 缺省 claude。
+ */
+export function buildResumeInput(
+  entry: AgentHistoryEntry,
+  projectName: string | null,
+): ResumeAgentSessionInput {
+  return {
+    acpSessionId: entry.acpSessionId,
+    claudeSessionId: entry.claudeSessionId,
+    projectName: entry.projectName ?? projectName ?? undefined,
+    provider: entry.provider ?? "claude",
+  };
+}
 
 /**
  * 恢复会话为活跃实例（单一管道，桌面 05c 历史、iPad 04g「全部」段与移动 03n sheet 共用）：
@@ -121,14 +138,14 @@ export function useResumeAgentSession(projectName: string | null) {
 }
 
 /** 三段筛选段（值序 = shared AgentHistoryFilter；切段 = 服务端 filter 切片，spec §4.2）。 */
-const HISTORY_FILTERS: readonly { key: AgentHistoryFilter; labelKey: TranslationKey }[] = [
+export const HISTORY_FILTERS: readonly { key: AgentHistoryFilter; labelKey: TranslationKey }[] = [
   { key: "all", labelKey: "workbench.historyFilterAll" },
   { key: "active", labelKey: "workbench.historyFilterRunning" },
   { key: "ended", labelKey: "workbench.historyFilterClosed" },
 ];
 
 /** 五档分组组头文案键（渲染序 = hook groups 的 AGENT_HISTORY_GROUP_ORDER，spec §4.2）。 */
-const HISTORY_GROUP_LABEL_KEYS: Record<AgentHistoryGroupKey, TranslationKey> = {
+export const HISTORY_GROUP_LABEL_KEYS: Record<AgentHistoryGroupKey, TranslationKey> = {
   today: "workbench.historyGroupToday",
   yesterday: "workbench.historyGroupYesterday",
   week: "workbench.historyGroupWeek",
@@ -203,12 +220,11 @@ export function HistoryList({ focusId, projectName }: HistoryListProps) {
       title: t("session.namePrompt.resumeTitle"),
     }).then((name) => {
       if (name !== null) {
+        // displayName trim 单源(全局同构 review 批):空串/纯空白 = 不传,落默认名。
+        const trimmed = name.trim();
         resume({
-          acpSessionId: entry.acpSessionId,
-          claudeSessionId: entry.claudeSessionId,
-          displayName: name || undefined,
-          projectName: entry.projectName ?? projectName ?? undefined,
-          provider: entry.provider ?? "claude",
+          ...buildResumeInput(entry, projectName),
+          displayName: trimmed || undefined,
         });
       }
     });

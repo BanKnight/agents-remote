@@ -47,7 +47,7 @@ import {
   workbenchRenderContentAtom,
 } from "../../routes/workbench-model";
 import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
-import { L3WikiReader } from "./mobile-l3";
+import { L3WikiReader, WikiReadNavMenu } from "./mobile-l3";
 import { DragSourceCard } from "./drag-source";
 import { useHScroll } from "@/hooks/use-h-scroll";
 import {
@@ -62,8 +62,6 @@ import {
   getTerminalSession,
   listAgentSessions,
   listTerminalSessions,
-  renameAgentSession,
-  renameTerminalSession,
   updateAutoRetryConfig,
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
@@ -89,10 +87,10 @@ import { resolveRootBrowseTarget } from "../files/file-browser";
 import { resolveRelativeFilePath } from "../files/relative-md-link";
 import { MarkdownLinkContext } from "../markdown/markdown-components";
 import { type GitDiffScope } from "@agents-remote/shared";
-import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
 import { SkillTabPreview } from "../../routes/plugins-shared";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
+import { useInstanceRowActions } from "./instance-actions";
 import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 
 import { Dialog, DialogContent } from "../ui/dialog";
@@ -1532,60 +1530,6 @@ export function useCloseSession() {
 }
 
 /**
- * 改名实例统一流程（任务 E）。prompt 预填当前 displayName → 按 type 调 rename API → 失效
- * list + detail + global 顶层。与 useCloseSession 同文件同模式（业务 hook 集合）。promptHolder
- * 由调用方渲染（与 closeHolder 并列）。空名 / 未改名 / 用户取消 → no-op（prompt 返回 null）。
- */
-export function useRenameSession() {
-  const { t } = useT();
-  const queryClient = useQueryClient();
-  const { holder: promptHolder, prompt } = usePromptDialog();
-
-  const rename = useCallback(
-    async (
-      ref: SessionPanelRef,
-      type: "agent" | "terminal",
-      currentName: string,
-    ): Promise<boolean> => {
-      const next = await prompt({
-        cancelLabel: t("cancel"),
-        confirmLabel: t("session.rename"),
-        initialValue: currentName,
-        placeholder: t("session.renamePrompt.placeholder"),
-        title: t("session.renamePrompt.title"),
-      });
-      // null=取消；空名/未改动 → 不调 API（路由会 400，避免无谓请求与静默失败）。
-      if (next === null || next === currentName || next.length === 0) return false;
-      try {
-        if (type === "agent") {
-          await renameAgentSession(ref.projectName, ref.sessionId, next);
-        } else {
-          await renameTerminalSession(ref.projectName, ref.sessionId, next);
-        }
-      } catch {
-        // 路由已返回错误码（404 / 400）；UI 不额外提示，失败仍失效缓存让列表自愈。
-      }
-      await Promise.all([
-        queryClient.invalidateQueries({ exact: true, queryKey: ["projects"] }),
-        queryClient.invalidateQueries({ exact: true, queryKey: ["projects", ref.projectName] }),
-        queryClient.invalidateQueries({
-          queryKey: ["projects", ref.projectName, `${type}-sessions`],
-        }),
-        queryClient.invalidateQueries({
-          exact: true,
-          queryKey: ["projects", ref.projectName, `${type}-sessions`, ref.sessionId],
-        }),
-        queryClient.invalidateQueries({ queryKey: ["overview"] }),
-      ]);
-      return true;
-    },
-    [prompt, queryClient, t],
-  );
-
-  return { rename, holder: promptHolder };
-}
-
-/**
  * 创建实例统一流程（2c-2 提取，供中栏 InstanceArea tab bar / 空态 EmptyInstanceArea /
  * 左栏 ProjectInstances card 三处复用）。prompt → 按 type 调 create API → invalidate
  * agent/terminal-sessions + navigate 聚焦新 session。与 useCloseSession 同文件同模式
@@ -2039,9 +1983,10 @@ function PlaceholderPanel({ focusId }: { focusId: string }) {
 
 /**
  * tabstrip 右端 ⋯ 会话菜单（v1.5 批 4，spec §4.5：实例信息/重命名/置顶/关闭会话——与移动
- * ⋯ 菜单同构；TabChip ℹ 退役后桌面实例信息入口。pin 仅 agent（terminal 无置顶，与移动
- * useInstanceRowActions build 同语义）。关闭走 InstanceArea closeInstance（confirm 在
- * useCloseSession 内）。
+ * ⋯ 菜单同构；TabChip ℹ 退役后桌面实例信息入口）。动作语义 = useInstanceRowActions 双端
+ * 单源（全局同构 review 批：此前此处手写与移动 useInstanceRowActions 双写，标签/pin 仅
+ * agent/关闭全同构）；icon 注入与实例信息项（useInstanceInfoActions modal 形态）留桌面容器。
+ * 关闭走 InstanceArea closeInstance（confirm 在 useCloseSession 内）。
  */
 function SessionTabStripActions({
   closeInstance,
@@ -2059,11 +2004,8 @@ function SessionTabStripActions({
     panelRef.projectName,
     "modal",
   );
-  const { pinned } = usePinnedSessions();
-  const pinIt = usePinSession();
-  const unpinIt = useUnpinSession();
-  const renameSession = useRenameSession();
-  const pinnedNow = pinned.has(panelRef.sessionId);
+  const { renameHolder, build } = useInstanceRowActions(closeInstance);
+  const a = build(panelRef, sessionType ?? "agent");
   const items: ActionMenuItem[] = [
     {
       label: t("session.instanceInfo.title"),
@@ -2071,29 +2013,25 @@ function SessionTabStripActions({
       onSelect: openInfo,
     },
     {
-      label: t("session.rename"),
+      label: a.rename.label,
       icon: <ShellIcon className="size-[17px]" name="edit" />,
-      onSelect: () => {
-        void renameSession.rename(
-          panelRef,
-          sessionType ?? "agent",
-          meta?.label ?? panelRef.sessionId,
-        );
-      },
+      onSelect: () => a.rename.run(meta?.label ?? panelRef.sessionId),
     },
-    ...(sessionType === "agent"
+    // pin 保留原严格门（sessionType 原值判定，不随 ?? "agent" 兜底漂移——未知类型会话
+    // 旧行为不渲染 pin，build 兜底只服务 rename/close 的既有语义）。
+    ...(sessionType === "agent" && a.pin
       ? [
           {
-            label: pinnedNow ? t("workbench.unpin") : t("workbench.pin"),
+            label: a.pin.label,
             icon: <ShellIcon className="size-[17px]" name="pin" />,
-            onSelect: () => (pinnedNow ? unpinIt : pinIt).mutate(panelRef.sessionId),
+            onSelect: a.pin.run,
           },
         ]
       : []),
     {
-      label: t("workbench.pillCloseSession"),
+      label: a.close.label,
       icon: <ShellIcon className="size-[17px]" name="close" />,
-      onSelect: () => closeInstance(panelRef.sessionId, sessionType ?? "agent"),
+      onSelect: a.close.run,
     },
   ];
   return (
@@ -2112,7 +2050,7 @@ function SessionTabStripActions({
         }
       />
       {infoHolder}
-      {renameSession.holder}
+      {renameHolder}
     </>
   );
 }
@@ -2146,7 +2084,8 @@ function GroupHeader({
     hs.ensureActive(".on");
   }, [group.activeTabId, group.tabs.length, hs.ensureActive, hs.update]);
   // v1.5 批 4（spec §4.5）：tabstrip 右端 [＋][分屏][编辑][⋯]，⋯ 收尾最右、内容
-  // 跟随激活标签（会话/文件两族；git/skill/wikiread/chat/render 无 ⋯ 规格 → 不渲染）。
+  // 跟随激活标签（会话/文件两族；git/skill/chat/render 无 ⋯ 规格；wikiread ⋯ = 全局同构
+  // review 批 A-5 补齐「复制内容/查看 diff」）。
   // 编辑态只剩结构钮（pencil/⋯ 消失，05h4 原型实证）。编辑判定 = 激活 tabId 与
   // workbenchFileTabEditingAtom 相等。真机复验反馈①：[最大化] 退役（见 tabstrip 内注释）。
   const activeTab = group.tabs.find((tab) => tabIdOf(tab) === group.activeTabId) ?? null;
@@ -2209,6 +2148,22 @@ function GroupHeader({
           归零（workbench-model workbenchLayoutStorage.getItem，防无入口困死）。 */}
       {!editing && activeTab?.kind === "file" ? (
         <FileTabStripActions onOpenDiff={onOpenGitDiff} panelRef={activeTab} />
+      ) : null}
+      {!editing && activeTab?.kind === "wikiread" ? (
+        // wiki 阅读菜单 = WikiReadNavMenu 双端单源(A-5 桌面补齐:此前仅移动面板 wikiread
+        // 标签有 ⋯)。查看 diff = 源文件 wiki/{slug}.md 开中栏 git tab(与 file tab「查看
+        // diff」同管道);triggerClassName 对齐 tabstrip 结构钮形制(h-6 w-6;⋯ 图标 = ShellIcon
+        // 默认 size-4 16px,与 FileTabStripActions ⋯ 同档,非结构钮的 h-3 w-3)。
+        <WikiReadNavMenu
+          onViewDiff={
+            onOpenGitDiff
+              ? () => onOpenGitDiff(activeTab.projectName, "worktree", `wiki/${activeTab.slug}.md`)
+              : undefined
+          }
+          projectName={activeTab.projectName}
+          slug={activeTab.slug}
+          triggerClassName="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+        />
       ) : null}
       {!editing && activeTab?.kind === "session" ? (
         <SessionTabStripActions closeInstance={closeInstance} panelRef={activeTab} />
