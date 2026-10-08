@@ -219,6 +219,7 @@ export const zh: Record<TranslationKey, string> = {
   "markdown.copy": "复制代码",
   "markdown.copied": "已复制",
   "markdown.render": "渲染预览",
+  "markdown.mermaidError": "Mermaid 渲染失败：{{message}}",
 
   // ── Git ──────────────────────────────────────────────────────
   "git.loading": "正在加载 Git 变更...",

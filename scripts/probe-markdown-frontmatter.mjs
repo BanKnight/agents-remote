@@ -117,21 +117,27 @@ async function login(page) {
     .getByLabel("密码")
     .or(page.getByLabel("Password"))
     .fill(await readAppPassword());
-  await page.getByRole("button", { name: /解锁|Unlock/ }).click();
+  await page.getByRole("button", { name: /登录|Sign in/ }).click();
   await page.waitForTimeout(700);
 }
 
 async function openFile(page, fileName, expectedH1) {
-  // ?tab=files 直达中栏 Files tab（WorkbenchMiddleTab，URL search param）。
-  await page.goto(`${WEB_ORIGIN}/projects/${PROJECT}?tab=files`);
-  await page.waitForSelector(`text=${fileName}`, { timeout: 8000 });
-  await page.getByText(fileName, { exact: true }).first().click();
-  // 点文件累积 file tab（旧预览残留 DOM），按 expectedH1 定位本次新预览 visible。
-  await page
-    .locator('section[aria-label="File preview"]')
-    .filter({ hasText: expectedH1 })
-    .first()
-    .waitFor({ state: "visible", timeout: 8000 });
+  // v1.5 桌面打开路径（2026-10-09 修复，?tab=files 深链 v1.5 已退役）：检视面板（右栏）
+  // 文件树行点击 → 中栏 file tab。每次 clean（面板 tab 持久化）保证断言无旧预览残留。
+  await page.evaluate(() => {
+    for (const k of ["workbenchPanelTabs", "workbenchPanelActive"]) {
+      localStorage.removeItem(k);
+    }
+    // 右栏显式展开（折叠态 aside 不渲染 = 零 query 优化，缺此键默认折叠）。
+    localStorage.setItem("workbenchRightCollapsed", JSON.stringify(false));
+  });
+  await page.goto(`${WEB_ORIGIN}/projects/${PROJECT}`);
+  await page.waitForSelector("[data-desktop-inspector]", { timeout: 8000 });
+  await page.waitForTimeout(500);
+  await page.locator("[data-desktop-inspector] button.frow", { hasText: fileName }).first().click();
+  // file tab 打开（.tb 在场）+ 预览正文渲染完成（h1 在场）。
+  await page.waitForSelector(".tb", { timeout: 8000 });
+  await page.waitForSelector(`text=${expectedH1}`, { timeout: 8000 });
 }
 
 async function run() {
@@ -157,27 +163,25 @@ async function run() {
     await setup(page, { "README.md": FRONTMATTER_CONTENT, "plain.md": NO_FRONTMATTER_CONTENT });
     await login(page);
 
-    // 点文件累积 file tab（旧预览残留），preview 按 h1 文本定位当前激活预览。
-    const preview = (h1) =>
-      page.locator('section[aria-label="File preview"]').filter({ hasText: h1 }).first();
-
+    // 断言用 page 级定位（clean 后打开，页面内只有一个 md 预览；中栏 file tab 渲染容器
+    // ≠ section[aria-label="File preview"]——那是右栏 FilesToolPanel 内嵌预览）。
     console.log("\n===== 1. 带 frontmatter 的 .md：FrontmatterCard + 正文 =====");
     await openFile(page, "README.md", "Demo Title");
-    const dlCount1 = await preview("Demo Title").locator("dl").count();
+    const dlCount1 = await page.locator("dl").count();
     record(dlCount1 === 1, `FrontmatterCard dl 渲染（count=${dlCount1}）`);
-    const dtTexts = await preview("Demo Title").locator("dt").allTextContents();
+    const dtTexts = await page.locator("dt").allTextContents();
     record(
       dtTexts.includes("name") && dtTexts.includes("license") && dtTexts.includes("description"),
       `key 渲染（dt=${JSON.stringify(dtTexts)}）`,
     );
-    const ddTexts = await preview("Demo Title").locator("dd").allTextContents();
+    const ddTexts = await page.locator("dd").allTextContents();
     record(
       ddTexts.some((t) => /MIT/.test(t)),
       `value 渲染（dd 含 MIT）`,
     );
-    const h1 = (await preview("Demo Title").locator("h1").first().textContent()) ?? "";
+    const h1 = (await page.locator("h1").first().textContent()) ?? "";
     record(/Demo Title/.test(h1), `正文 h1 渲染（h1="${h1.trim()}"）`);
-    const bodyText1 = await preview("Demo Title").innerText();
+    const bodyText1 = await page.locator("body").innerText();
     record(
       !/name:\s*"demo-skill"/.test(bodyText1),
       "frontmatter 不当正文（旧 bug：yaml 残留当段落——已消失）",
@@ -185,9 +189,12 @@ async function run() {
 
     console.log("\n===== 2. 无 frontmatter 的 .md：不渲染卡片 =====");
     await openFile(page, "plain.md", "Plain Title");
-    const dlCount2 = await preview("Plain Title").locator("dl").count();
-    record(dlCount2 === 0, `无 frontmatter 不渲染卡片（dl count=${dlCount2}）`);
-    const h1b = (await preview("Plain Title").locator("h1").first().textContent()) ?? "";
+    // 中栏 file tab 叠层保活：README 预览 DOM invisible 残留——断言只看激活（可见）层。
+    await page.locator(".tb", { hasText: "plain.md" }).click();
+    await page.waitForTimeout(400);
+    const dlCount2 = await page.locator("dl:visible").count();
+    record(dlCount2 === 0, `无 frontmatter 不渲染卡片（visible dl count=${dlCount2}）`);
+    const h1b = (await page.locator("h1:visible").first().textContent()) ?? "";
     record(/Plain Title/.test(h1b), `正文 h1 渲染（h1="${h1b.trim()}"）`);
   } finally {
     await browser.close();

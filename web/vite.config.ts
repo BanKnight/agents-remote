@@ -105,6 +105,40 @@ export default defineConfig({
         // network wait. /api fetches and WebSocket upgrades aren't navigation
         // requests, so they're untouched (E2E page.route() interception too).
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        // mermaid 依赖树（批 16 mermaid 渲染）改走运行时网络拉取、不进 precache：
+        // 全树 ~3MB（elk/chunk 系/各图类型 Diagram/cytoscape/katex/dagre…），绝大多数
+        // 会话从不包含 mermaid 块，PWA 安装/更新静默全量下载不划算；遇到 mermaid 块时
+        // 动态 import 按需网络加载（在线语义，加载失败降级错误行 + 源码 pre）。名单 =
+        // mermaid 专有命名（本仓代码 chunk 语义命名无冲突）；esm-*.js（shiki）与 d3 系
+        // 小模块 chunk（arc/line/path 等，合计 ~400KB）保留 precache 零风险。chunk-*.js
+        // 现状全为 mermaid 内部 hex chunk，若未来本仓出现无名 chunk 需复核此名单。
+        globIgnores: [
+          "**/mermaid*.js",
+          "**/chunk-*.js",
+          "**/*Diagram-*.js",
+          "**/diagram-*.js",
+          "**/*-definition-*.js",
+          "**/elk-*.js",
+          "**/cytoscape*.js",
+          "**/cose-bilkent-*.js",
+          "**/dagre-*.js",
+          "**/graphlib-*.js",
+          "**/rough.esm-*.js",
+          "**/katex-*.js",
+          "**/railroad-*.js",
+          "**/architecture-*.js",
+          "**/swimlanes-*.js",
+          "**/gitGraph-*.js",
+          "**/cynefin-*.js",
+          "**/packet-*.js",
+          "**/pie-*.js",
+          "**/radar-*.js",
+          "**/treemap-*.js",
+          "**/treeView-*.js",
+          "**/sizeCapture-*.js",
+          "**/src-*.js",
+          "**/info-*.js",
+        ],
         navigateFallback: "index.html",
         // pages 对外 URL /p/... 是直访的静态站点内容,不是 SPA 路由 —— 必须排除,
         // 否则 navigateFallback 会把它 fallback 到 precached index.html(SW 劫持)。

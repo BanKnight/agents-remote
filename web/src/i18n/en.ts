@@ -221,6 +221,7 @@ export const en = {
   "markdown.copy": "Copy code",
   "markdown.copied": "Copied",
   "markdown.render": "Render preview",
+  "markdown.mermaidError": "Mermaid render failed: {{message}}",
 
   // ── Git ──────────────────────────────────────────────────────
   "git.loading": "Loading Git changes...",
