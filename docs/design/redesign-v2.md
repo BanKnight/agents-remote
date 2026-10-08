@@ -1638,6 +1638,19 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **验证**：单测 749（+15 usePanelTabRegistry/useDirectoryAddActions 纯逻辑）；e2e 27/27（batch-4 三处 menuitem dispatchEvent 既有免疫复验）；探针回归 inspector-row-menus ALL PASS（含 W4 wiki 桌面 ⋯）/ batch13 18 / m5-sheets 83；三 commit pre-commit 全门禁 + CSS 硬闸 + tokens strict 0。m10 三条预存失败断言经考古（git log -S `4bb596e` + mac-plugins-tab.html:77 原型权威 + 本档既有记档两处）判定为 v1.5 换代欠账，不动不修探针。
 - **规格同步**：design_spec §4.5 ⋯ 枚举补「wiki 菜单：复制内容/查看 diff」（A-5 桌面新 UI）。
 
+**批 16（真机反馈批，2026-10-09）**：真机复验批 15 后三条反馈，两 commit（8d06e82 / dd35ab8）。
+- **① aux 工具条图标两端不统一**：`.aux` 条两端共用同一段代码（mobile-l3.tsx），三钮 Unicode 字符（↩/↪/⌄）经**平台字体渲染差异**（iOS 对 U+21A9/U+21AA 的字形与桌面系统字体不同）致两端不统一——原型同用字符也难辞其咎。修 = Lucide 单轨化（§15）：白名单 +undo-2/redo-2（chevron-down 已有），`<LucideIcon>` 直消费 lucide 名（不经 TO_LUCIDE SF 映射），显式 `size-3.5`（§15⑤ 锁 WebKit flex 收缩隐形契约）。
+- **② 移动检视面板钮方向反了**：`panel-left` → `panel-right`——面板移动端**右**滑入（InspectionPanel `translate-x-full` closed）、桌面右侧 aside，右侧形制才对（原型 svg 竖线偏右 + 右栏三短线）。panel-left 白名单保留 = probe-v16-batch16 负向对照 + 未来左侧面板形制场景。
+- **③ md 渲染支持 mermaid**：```` ```mermaid ```` 块语言标记即**自动出图**（GitHub 风格；不进 `RENDERABLE_LANGUAGES`——那是「点 eye 才渲染」交互），MarkdownString 管线一处生效全线（聊天流/tool_result/Files 预览/wiki 等 11 个消费方）。要点：
+  - **供应链**：mermaid@12.0.0 精确 pin（12.1.0 发布 <7 天降级，rules/supply-chain）；动态 import 拆独立 chunk 入口零增重。
+  - **沙箱**：`securityLevel: "strict"` 满足 md 渲染语义（禁 htmlLabels/图内脚本/点击导航，secure 列表保护不可被 `%%{init}%%` 降级）；`suppressErrorRendering: true` 错误 bomb 元素根本不创建；theme 随 `data-theme` 切深浅（initialize 全局单例但 render 期间持 config scope，双块并发渲染同主题无分歧）。
+  - **流式防抖 400ms 尾沿**（code-reviewer P1）：聊天流式未闭合块逐 delta 增长，无防抖则每 WS delta 触发一次 parse 抖主线程——停写才渲染；**旧图滞留到新结果就绪再替换**（不闪回源码 pre）；「未完成 ≠ 失败」——防抖窗口内不写错误行，settle 后仍失败才降级错误行（i18n 插值 `{{message}}`）+ 源码 pre 保留。模块级 `mermaidRenderSeq` 保证 render id 唯一（同 id 复用 throw）。
+  - **PWA precache 瘦身**（code-reviewer P1）：mermaid 全树 ~3MB（elk/chunk-*/各 Diagram/cytoscape/katex/dagre）经 workbox `globIgnores` 26 模式出 precache 改运行时按需拉取——实测 precache 36 条目零 mermaid 残留；esm-*.js（shiki）与 d3 系小 chunk 保留 precache 零风险。**改 vite.config 后必须重启 dev web**（§10②）才在 sw.js 生效。
+  - 探针技巧沉淀：mermaid svg 带 `id="mmd-N"` 可精确定位（避开 Copy 按钮 12×12 小图标）；浏览器 innerHTML 把 `<path/>` 展开为 `<path></path>`——svg 形状对比必须两边过 DOMParser 规范化。
+- **双 reviewer 消化**：P1×2 全修（precache 瘦身 + 流式防抖）；P2 修 5（错误行 text-xs 档 / i18n 插值 / mermaid 容器 padding 对齐 pre 路径 / suppressErrorRendering / aux 三处 cursor-pointer 删除——`.aux button` base CSS 已有）；**记档不动 2**：panel-right 与分屏钮 ShellIcon split 同形制异动作（两端今日不共屏，未来同屏需 panel-right-open 类区分）；frontmatter 探针固定 sleep pragmatic 保留。code-reviewer 无问题面：effect 竞态守卫/动态 import 失败路径/状态互斥/id 唯一性/strict 沙箱语义/panel-right 方向语义/i18n 成对/供应链 pin。
+- **验证**：探针 probe-v16-batch16 9/9（mermaid 出图 bbox 非零/pre 替换/非法块错误行+源码保留/面板钮 panel-right 形状/aux 三钮形状+14×14）+ probe-markdown-frontmatter 7/7（顺修 v1.5 换代欠账：login 文案与 openFile 深链路径）+ mobile-project-header 42/42；单测 749 / e2e / 门禁全绿；CSS 硬闸（全量 rebuild 194287 字节）+ tokens strict 0 + sw.js precache 零 mermaid + curl content-type text/css。
+- **e2e 环境插曲**：批 16 树 e2e 挂 acp-session/file-browser 等 2-5 个且失败集合漂移——stash 全部批 16 改动后**基线（78db575 干净树）同挂**（挂点还漂到更早的 user 气泡）→ 判定非批 16 回归，是宿主环境故障：PVE 宿主上另一 VM（vm-302 磁盘镜像）经 loop 设备狂读 468MB/s，本机（宿主角色）内核态 CPU 74%、3 核 load 25-30，时序敏感的 WS mock 流测试全线漂移。待负载回落补跑（交付时若仍高，真机验证不受影响——真机走 prod preview 43012 独立链路）。
+
 | 项 | 决策点 | 摊牌时点 |
 | --- | --- | --- |
 | Wiki「让 Agent 读这篇」注入协议 | ~~stdin 指令 vs attachment/引用卡；引用卡状态归属~~ ✅ 已摊牌（D13，§6.2）：stdin prompt + 客户端 per-session 引用 atom | ~~M4 开工前~~ 2026-09-21 |
