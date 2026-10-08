@@ -109,9 +109,12 @@ export default defineConfig({
         // 全树 ~3MB（elk/chunk 系/各图类型 Diagram/cytoscape/katex/dagre…），绝大多数
         // 会话从不包含 mermaid 块，PWA 安装/更新静默全量下载不划算；遇到 mermaid 块时
         // 动态 import 按需网络加载（在线语义，加载失败降级错误行 + 源码 pre）。名单 =
-        // mermaid 专有命名（本仓代码 chunk 语义命名无冲突）；esm-*.js（shiki）与 d3 系
-        // 小模块 chunk（arc/line/path 等，合计 ~400KB）保留 precache 零风险。chunk-*.js
-        // 现状全为 mermaid 内部 hex chunk，若未来本仓出现无名 chunk 需复核此名单。
+        // mermaid 专有命名（本仓代码 chunk 语义命名无冲突）；esm-*.js 实为 CodeMirror
+        // chunk（CodeEditor/WorkbenchRoute 静态 import，404KB，precache 必需——复审二轮
+        // P3 勘误：非 shiki）保留。mermaid 高频新增图类型（wardley/eventmodeling 等以
+        // 图类型名-hash 命名）会按新名静默泄进 precache，故配套 scripts/ar-verify-precache.mjs
+        // 机检（precache 条目静态 import 被排除 chunk 即 fail），升级 mermaid 后必跑。
+        // chunk-*.js 现状全为 mermaid 内部 hex chunk，若未来本仓出现无名 chunk 需复核此名单。
         globIgnores: [
           "**/mermaid*.js",
           "**/chunk-*.js",
@@ -138,6 +141,11 @@ export default defineConfig({
           "**/sizeCapture-*.js",
           "**/src-*.js",
           "**/info-*.js",
+          "**/wardley-*.js",
+          "**/eventmodeling-*.js",
+          "**/linear-*.js",
+          "**/line-*.js",
+          "**/channel-*.js",
         ],
         navigateFallback: "index.html",
         // pages 对外 URL /p/... 是直访的静态站点内容,不是 SPA 路由 —— 必须排除,

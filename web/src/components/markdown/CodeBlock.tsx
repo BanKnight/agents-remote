@@ -46,6 +46,11 @@ let mermaidRenderSeq = 0;
 // 流式尾沿防抖：聊天流式时未闭合块逐 delta 增长，无防抖则每个 WS delta 都触发一次
 // mermaid parse（大图高频渲染抖主线程）；停写 400ms 才尝试渲染，闭合后最后一帧出图。
 const MERMAID_RENDER_DEBOUNCE_MS = 400;
+// 失败宽限（复审二轮 P1）：防抖只保证「静默」不保证「块闭合」——流式 token 间歇
+// （>400ms 常态）落在未闭合块中段的 parse 失败是「未完成」，宽限期内任一新 delta
+// （effect 重跑取消宽限 timer）即静默不闪错误；真坏的块（已闭合）code 恒定，宽限期满
+// 才降级错误行 + 源码 pre。
+const MERMAID_ERROR_GRACE_MS = 1500;
 
 export function CodeBlock({ code, language }: CodeBlockProps) {
   const { t } = useT();
@@ -69,8 +74,9 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
   useEffect(() => {
     if (!isMermaid) return;
     // 已有旧图时滞留到新结果就绪再替换（流式增长中不闪回源码 pre）；「未完成 ≠ 失败」——
-    // 防抖窗口内不写错误行，settle 后仍失败才降级错误行 + 源码 pre。
+    // 防抖窗口内不写错误行，settle 后仍失败再过宽限期仍无新 delta 才降级错误行 + 源码 pre。
     let cancelled = false;
+    let graceTimer = 0;
     const timer = window.setTimeout(() => {
       void (async () => {
         const id = `mmd-${++mermaidRenderSeq}`;
@@ -93,11 +99,16 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
             setMermaidError(null);
           }
         } catch (error) {
-          // mermaid 失败时可能把错误 bomb 容器（#d<id>）遗留在 body——手动清掉
+          // mermaid 失败时可能把错误 bomb 容器（#d<id>）遗留在 body——手动清掉。
+          // 旧图与错误行都等宽限期满才降级（宽限期内旧图滞留，成功路径会替换它）。
           document.getElementById(`d${id}`)?.remove();
           if (!cancelled) {
-            setMermaidSvg(null);
-            setMermaidError(error instanceof Error ? error.message : String(error));
+            graceTimer = window.setTimeout(() => {
+              if (!cancelled) {
+                setMermaidSvg(null);
+                setMermaidError(error instanceof Error ? error.message : String(error));
+              }
+            }, MERMAID_ERROR_GRACE_MS);
           }
         }
       })();
@@ -105,6 +116,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      window.clearTimeout(graceTimer);
     };
   }, [code, isMermaid, resolved]);
 
@@ -160,12 +172,16 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
         </div>
       </div>
       {isMermaid && mermaidSvg ? (
-        // mermaid 输出的 svg 自带 max-width 内联样式，flex 居中 + 横向滚动兜超宽图；
-        // padding 对齐同卡 pre 路径（pt 避让 header 浮层、px 对齐 0.875rem gutter）。
-        <div
-          className="flex justify-center overflow-x-auto px-3.5 pt-7 pb-3"
-          dangerouslySetInnerHTML={{ __html: mermaidSvg }}
-        />
+        // 外层滚动 + 内层居中两层分离（design 复审 P2）：居中与 overflow 同容器时，
+        // 超宽图（%%{init}%% 关 useMaxWidth 等定宽输出）的溢出起始侧不可滚达；内层
+        // w-fit min-w-full 让窄图居中、宽图整体可滚左缘可达。padding 对齐同卡 pre
+        // 路径（pt 避让 header 浮层、px 对齐 0.875rem gutter）。
+        <div className="overflow-x-auto px-3.5 pt-7 pb-3">
+          <div
+            className="flex w-fit min-w-full justify-center"
+            dangerouslySetInnerHTML={{ __html: mermaidSvg }}
+          />
+        </div>
       ) : (
         <>
           {isMermaid && mermaidError ? (

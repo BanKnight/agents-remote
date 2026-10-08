@@ -115,7 +115,8 @@ export function MobileProjectHeader({
                 真机复验反馈②：与右端 ⋯ 同 .ic 26×26 形制（原型 nav 右端两钮恒 .ic，此前 .ticon
                 19px 无容器 → 与工具页 [pencil][⋯]（恒 .ic）中心距差 3.5px，用户可见不一致）。
                 批 16 反馈②：面板右滑入（InspectionPanel translate-x-full）/ 桌面右 aside，
-                图标用右侧形制（原型 svg 竖线偏右 + 右栏三短线）。 */}
+                图标用右侧形制（panel-right 右竖线，近似原型 svg 竖线偏右；原型的右栏三短线
+                细节在 §15③ Lucide 单轨下无对应物，不手绘模仿）。 */}
             <button
               aria-label={t("workbench.inspectionPanel")}
               className="ic relative cursor-pointer after:absolute after:-inset-2 after:content-['']"
