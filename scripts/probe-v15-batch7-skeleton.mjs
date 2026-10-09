@@ -266,7 +266,36 @@ function seedTwoAgents(socket) {
       xbtnLabel: document.querySelector(".xbtn")?.getAttribute("aria-label"),
     }));
     ok(expandedGeom.textarea === 1, "P1-6 展开态 textarea#session-input 渲染");
-    ok(expandedGeom.submit === 1, "P1-7 展开态双行 composer 的 ⏎ 提交钮在");
+    ok(expandedGeom.submit === 1, "P1-7 展开态双行 composer 的提交钮在");
+    // v1.6 send2 换装（workspace-terminal-input ③）：28×28 r12 主色方形 + 白 arrow-up，
+    // 与会话版 composer-actions 同源形态；itext 纯 mono 无 $ 提示符。
+    const sendBtn = p1.locator('form button[type="submit"]');
+    ok(
+      (await sendBtn.getAttribute("class"))?.includes("send2") === true,
+      "P1-7b 发送钮 = .send2 形态",
+    );
+    const sendBox = await sendBtn.boundingBox();
+    ok(
+      sendBox !== null && Math.abs(sendBox.width - 28) <= 1 && Math.abs(sendBox.height - 28) <= 1,
+      `P1-7c send2 28×28（实际 ${sendBox?.width}×${sendBox?.height}）`,
+    );
+    const sendGeo = await sendBtn.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        radius: s.borderRadius,
+        bg: s.backgroundColor,
+        svg: el.querySelector("svg") !== null,
+      };
+    });
+    ok(
+      sendGeo.radius === "12px" && sendGeo.bg !== "rgba(0, 0, 0, 0)" && sendGeo.svg === true,
+      `P1-7d send2 r12 实心底 + svg 图标（${JSON.stringify(sendGeo)}）`,
+    );
+    const hasDollar = await p1.evaluate(() => {
+      const row = document.querySelector("textarea#session-input")?.parentElement;
+      return row?.textContent?.includes("$") ?? false;
+    });
+    ok(hasDollar === false, "P1-7e itext 行无 $ 提示符（原型 itext 纯 mono）");
     ok(expandedGeom.qkeys >= 8, `P1-8 展开态快捷键条仍在（${expandedGeom.qkeys} 键，上移不消失）`);
     ok(
       expandedGeom.xbtnExpanded === "true" && expandedGeom.xbtnLabel === "收回输入",

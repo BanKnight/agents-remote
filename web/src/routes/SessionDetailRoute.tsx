@@ -29,6 +29,7 @@ import {
 } from "./console-model";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
+import { LucideIcon } from "../components/shell/lucide-icon";
 import { workbenchReconnectRequestAtom } from "./workbench-model";
 
 type SessionDetailProps = {
@@ -1155,9 +1156,6 @@ function SessionInputDrawer({
             className={`flex min-w-0 flex-col rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
           >
             <div className="flex min-w-0 items-start gap-2">
-              <span className="shrink-0 font-mono text-xs leading-[1.35] text-on-surface-muted pt-px">
-                $
-              </span>
               <label className="sr-only" htmlFor="session-input">
                 {t("session.sendInput")}
               </label>
@@ -1187,13 +1185,18 @@ function SessionInputDrawer({
                 onKeyDown={handleKeyDown}
               />
             </div>
+            {/* 控制行（原型 irow）：终端 composer 无三彩/无附件——仅发送钮（v1.6 ⏎ 文字钮
+                换装 .send2 28×28 r12 主色，与会话版 composer-actions 同源形态；⚙ 键位自定义
+                不落，diverge 记档）。onMouseDown preventDefault 保焦 = 移动端发送后键盘不收。 */}
             <div className="mt-1 flex justify-end">
               <button
-                className="shrink-0 rounded-lg px-2 py-1 font-mono text-xs font-semibold text-on-surface-muted transition enabled:cursor-pointer enabled:hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+                className="send2"
                 disabled={!canSend || input.trim().length === 0}
                 type="submit"
+                aria-label={t("claude.composer.send")}
+                title={t("claude.composer.send")}
               >
-                ⏎
+                <LucideIcon name="arrow-up" />
               </button>
             </div>
           </div>
