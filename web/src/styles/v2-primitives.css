@@ -1339,22 +1339,24 @@
   }
   .crumb {
     /* 单源 components.css :152 flex:1（撑满行、搜索 chip 落右侧兄弟位）——此前
-       inline-flex 无 flex:1，短路径下胶囊缩在左侧（真机反馈「地址栏样式不对」实锤）。 */
+       inline-flex 无 flex:1，短路径下胶囊缩在左侧（真机反馈「地址栏样式不对」实锤）。
+       v1.6 升格（components.css :163）：30→34px / 11.5→13px / r15→10 / ink-3→ink-2——
+       与搜索框 sfield 同大小递进（地址行样式合拍）。 */
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
     align-items: center;
     white-space: nowrap;
-    height: 30px;
-    border-radius: 15px;
+    height: 34px;
+    border-radius: 10px;
     background: var(--bg-elevated);
     border: 1px solid var(--sep);
     padding: 0 12px;
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
-    font-size: 11.5px;
+    font-size: 13px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
-    color: var(--ink-3);
+    color: var(--ink-2);
     max-width: 100%;
     overflow: hidden;
   }
@@ -4364,5 +4366,47 @@
     color: var(--ink-1);
     cursor: pointer;
     flex: none;
+  }
+
+  /* ===== v1.6 工作台新增原语（单源 components.css v1.6 diff 1:1） ===== */
+
+  /* 置顶会话条（workspace.html 行1 之下，24px 常驻占位；置顶数 0 时整行不出现）：
+     每颗色点 = 一个置顶会话，点色点 = 一步切换（零销毁）；白环 = 当前；长按 = 名字气泡。 */
+  .pinned {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 24px;
+    padding: 0 16px;
+  }
+  .pdot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex: none;
+    cursor: pointer;
+  }
+  .pdot.cur {
+    /* 当前会话 = 白环描边（components.css :35 1:1） */
+    box-shadow:
+      0 0 0 2px var(--bg-canvas),
+      0 0 0 3.5px var(--ink-1);
+  }
+  /* 行1 标题类型图标（components.css :25 1:1）：Agent=sparkles · 终端=terminal ·
+     Chat=message · 空态项目=folder——区分标题对象类型，零额外空间。stroke 1.8 亮一档，
+     尺寸由此类显式给（防 WebKit flex 收缩隐形，frontend-notes §15⑤）。 */
+  .tticn {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    display: inline-block;
+    vertical-align: -2px;
+    margin-right: 1px;
+    color: var(--ink-2);
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
 }

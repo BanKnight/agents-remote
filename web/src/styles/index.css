@@ -106,6 +106,17 @@
   --c-pin: #bf5af2; /* 置顶/Agent 引用/思考标记 */
   --scrim: rgb(0 0 0 / 0.45); /* 浮层底压暗 */
 
+  /* 置顶会话色板（tokens.json color.session1-8，v1.6 置顶条 .pdot 用——颜色由 sessionId
+     哈希分配，diverge 于 spec §8 的持久化分配：用户拍板 hash 零持久化方案） */
+  --c-session-1: #ff7a70;
+  --c-session-2: #ffb340;
+  --c-session-3: #e3d26f;
+  --c-session-4: #7bc96f;
+  --c-session-5: #4dc4d9;
+  --c-session-6: #6fb1ff;
+  --c-session-7: #96a8ff;
+  --c-session-8: #f272ab;
+
   /* neutral 底（tokens.json color.neutral，命名 = 设计包 tokens.css kebab-case）*/
   --bg-base: #000000; /* 页面分组底 */
   --bg-canvas: #000000; /* 工作区/输出流底 */
@@ -230,6 +241,16 @@ html[data-theme="light"] {
   --c-danger: #ff3b30;
   --c-pin: #af52de;
   --scrim: rgb(0 0 0 / 0.4);
+
+  /* 置顶会话色板浅色档（tokens.json color.session1-8 $value） */
+  --c-session-1: #d6453d;
+  --c-session-2: #c77700;
+  --c-session-3: #a38f1f;
+  --c-session-4: #3e9440;
+  --c-session-5: #1d8fa3;
+  --c-session-6: #2f6fdb;
+  --c-session-7: #5f6fd9;
+  --c-session-8: #d14b85;
 
   --bg-base: #f2f2f7;
   --bg-canvas: #ffffff;
