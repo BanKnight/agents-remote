@@ -687,6 +687,7 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.tabMinimize": "最小化",
   "workbench.moreActions": "更多操作",
   "workbench.switchInstance": "切换实例",
+  "workbench.pinnedSessions": "置顶会话",
   "workbench.menuNewInstance": "新建实例…",
   "workbench.resumeHistory": "恢复历史会话…",
   "workbench.switchTitle": "切换",

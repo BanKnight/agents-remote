@@ -80,6 +80,7 @@ import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workben
 import { MobileProjectHeader } from "./mobile-project-header";
 import { InspectionPanel } from "./inspection-panel";
 import { useInstanceRowActions } from "./instance-actions";
+import { PinnedSessionsBar } from "./pinned-sessions-bar";
 import { usePanelTabRegistry } from "./use-panel-tab-registry";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
 import {
@@ -1503,6 +1504,11 @@ function MobileProjectWorkbench({
           title={headerTitle}
           l3={headerL3}
         />
+        {/* 置顶会话条（v1.6 变更④）：行1 之下 24px 色点行，仅会话聚焦渲染（file/git 等
+            非实例聚焦不占位）；点 = 一步切换、白环 = 当前、长按 = 名字气泡；宽端不设。 */}
+        {focusRef?.kind === "session" && effectiveFocusId ? (
+          <PinnedSessionsBar focusId={effectiveFocusId} onSelectInstance={focusInstance} />
+        ) : null}
         {/* 检视面板（v1.4 03o/03ob）：常驻挂载零销毁，开合 = translate/visibility。工具 chip
           槽/内容按激活标签装配（与退役前主体区工具态同源）；面板内 L3 = headerL3（back 回
           标签条 03u 语义）；closed 时 invisible 防误聚焦。 */}

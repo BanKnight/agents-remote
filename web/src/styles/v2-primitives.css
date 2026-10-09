@@ -4392,6 +4392,47 @@
       0 0 0 2px var(--bg-canvas),
       0 0 0 3.5px var(--ink-1);
   }
+  /* 长按色点的名字气泡（workspace-pinned-bubble :14-18 1:1）：锚定色点右侧行内、箭头指左
+     （向上弹会遮行1 导航，故走行内）；React 侧锚定 = 色点 wrapper（relative inline-flex）内
+     absolute，left 由消费 utility 给。 */
+  .popb {
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--menu);
+    border: 1px solid var(--sep-strong);
+    border-radius: 10px;
+    padding: 5px 11px;
+    font-size: 12.5px;
+    color: var(--ink-1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 6px 20px color-mix(in srgb, #000 22%, transparent);
+    z-index: 12;
+    white-space: nowrap;
+  }
+  .popb::before {
+    content: "";
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-left: none;
+    border-right-color: var(--sep-strong);
+  }
+  .popb::after {
+    content: "";
+    position: absolute;
+    right: calc(100% - 4px);
+    top: 50%;
+    transform: translateY(-50%);
+    border: 4px solid transparent;
+    border-left: none;
+    border-right-color: var(--menu);
+  }
   /* 行1 标题类型图标（components.css :25 1:1）：Agent=sparkles · 终端=terminal ·
      Chat=message · 空态项目=folder——区分标题对象类型，零额外空间。stroke 1.8 亮一档，
      尺寸由此类显式给（防 WebKit flex 收缩隐形，frontend-notes §15⑤）。 */
