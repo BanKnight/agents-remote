@@ -47,7 +47,9 @@ test("authenticated user can create and interact with a Terminal Session", async
   });
 
   await page.getByLabel("Send input").fill('printf "e2e-terminal-baseline-ok\\n"');
-  await page.getByRole("button", { name: "⏎" }).click();
+  // v1.6 批 v6.6：发送钮 ⏎ 文字换装 .send2（aria-label "Send" = claude.composer.send）。
+  // exact 防与 textarea sr-only label "Send input" 子串撞名（同上 Create 先例）。
+  await page.getByRole("button", { name: "Send", exact: true }).click();
 
   // Input clears after send
   await expect(page.getByLabel("Send input")).toHaveValue("", { timeout: 10_000 });
