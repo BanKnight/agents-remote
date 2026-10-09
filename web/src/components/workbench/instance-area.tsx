@@ -59,6 +59,7 @@ import {
   fetchOverviewSubtitles,
   getAgentSession,
   getChatSession,
+  getProject,
   getTerminalSession,
   listAgentSessions,
   listTerminalSessions,
@@ -68,6 +69,13 @@ import { useConfirm } from "../shell/confirm-dialog";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
 import { usePinnedSessions } from "../../hooks/pinned-sessions";
 import { useT } from "../../i18n";
+import {
+  RETRY_DELAY_STEPS_MS,
+  RETRY_MAX_PER_WINDOW_MAX,
+  RETRY_MAX_PER_WINDOW_MIN,
+  formatRetryDelay,
+  stepRetryCount,
+} from "../../lib/retry-config";
 import { claudeBridgeKey, getClaudeBridge } from "../../routes/claude-adapter";
 import { RuntimeConfigDialog, type RuntimeConfigField } from "./runtime-config-dialog";
 import type { TranslateFn, TranslationKey } from "../../i18n/types";
@@ -95,6 +103,7 @@ import { useInstanceRowActions } from "./instance-actions";
 import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 
 import { Dialog, DialogContent } from "../ui/dialog";
+import { MobileSheet } from "../shell/mobile-sheet";
 import { ShellIcon } from "../shell/icons";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
@@ -978,7 +987,17 @@ export function useInstanceInfoActions(
   const infoSheet = useInstanceInfoSheet();
   // 运行配置选择面（第八轮批次 2b）：model/permission/effort 行 onSelect 打开的下钻字段。
   const [runtimeField, setRuntimeField] = useState<RuntimeConfigField | null>(null);
-  const autoRetryEditor = useAutoRetryEditor(panelRef);
+  const autoRetryEditor = useAutoRetryEditor(panelRef, variant);
+  // 会话目录（v1.6 workspace-instance-info）：项目工作目录从项目详情派生，仅 agent 型落行
+  //（终端原型仅 项目/类型 两行）。hook 层常开（openInfo 是闭包不能挂 query），未就绪/失败
+  // 不落行（不伪造）；跨调用同 queryKey dedupe 零额外网络。
+  const projectPath = useQuery({
+    queryKey: ["projects", projectName ?? ""],
+    queryFn: () => getProject(projectName ?? ""),
+    enabled: sessionType === "agent" && !!projectName,
+    select: (data) => data.project.path,
+    staleTime: 60_000,
+  }).data;
   const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
   const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
   const agentSession = sessionType === "agent" ? agentDetail.data?.session : undefined;
@@ -1036,6 +1055,22 @@ export function useInstanceInfoActions(
           ...configOnSelect("effort"),
         });
       }
+      // 自动重试（claude 专用）：行内开关 + 编辑按钮（2026-09-09 用户反馈：原纯文本行
+      // 改操作面直出——开关即切即存，编辑进参数面板）。组件自订阅 query，
+      // 快照 fields 不影响其响应数据变化。v1.6 原型行序 = effort 之后、创建时间之前。
+      if (agentSession.provider === "claude") {
+        fields.push({
+          label: t("session.autoRetry.label"),
+          value: "",
+          action: (
+            <AutoRetrySheetAction
+              onEdit={autoRetryEditor.openEditor}
+              projectName={panelRef.projectName}
+              sessionId={panelRef.sessionId}
+            />
+          ),
+        });
+      }
       if (agentSession.createdAt) {
         fields.push({
           label: t("session.instanceInfo.createdAt"),
@@ -1052,20 +1087,14 @@ export function useInstanceInfoActions(
           wrap: true,
         });
       }
-      // 自动重试（claude 专用）：行内开关 + 编辑按钮（2026-09-09 用户反馈：原纯文本行
-      // 改操作面直出——开关即切即存，编辑进参数 Dialog）。组件自订阅 query，
-      // 快照 fields 不影响其响应数据变化。
-      if (agentSession.provider === "claude") {
+      // 会话目录（v1.6 workspace-instance-info：恢复 ID 之后、累计之前；累计本批不落——
+      // AgentSession 无跨回合累计数据源，记 diverge）：项目工作目录前端派生，mono 换行展示。
+      if (projectPath) {
         fields.push({
-          label: t("session.autoRetry.label"),
-          value: "",
-          action: (
-            <AutoRetrySheetAction
-              onEdit={autoRetryEditor.openEditor}
-              projectName={panelRef.projectName}
-              sessionId={panelRef.sessionId}
-            />
-          ),
+          label: t("session.instanceInfo.sessionDir"),
+          value: projectPath,
+          mono: true,
+          wrap: true,
         });
       }
     } else if (sessionType === "terminal" && terminalSession) {
@@ -1116,12 +1145,13 @@ function formatRanSuffix(iso: string, t: TranslateFn): string {
 
 /**
  * 自动重试配置编辑流程（claude agent 专用，2026-09-07）：info sheet「编辑」入口 →
- * Dialog（开关 + 单行文案 + 参数）预填当前 autoRetry config（缺省 = 默认关 + i18n 默认文案）
- * → 保存调 updateAutoRetryConfig API → invalidate detail/list（与 useRenameSession 同模式）。
- * 2026-09-09 起 info sheet 行内还有轻量开关（switchAutoRetry）：点击直接切换保存，
- * 失败显示错误 + 回滚 UI 态——语义同 AutoRetryEditorDialog 内开关，同一配置的两种操作面。
+ * 编辑面板预填当前 autoRetry config（缺省 = 默认关 + i18n 默认文案）。v1.6（2026-10-09）
+ * 控件化重构：原型 workspace-retry-config 无保存/取消按钮 → **即点即存**——控件改动
+ * 即时 commit（服务端为真相，成功后 invalidate detail/list）；失败显式提示且面板保持
+ * 打开（否则失败看起来像成功）。多端同构（frontend.md 铁律）：控件层 AutoRetryEditorControls
+ * 单份实现，容器分流——移动 = 半屏 sheet（MobileSheet）、桌面 = 居中 Dialog 卡片。
  */
-function useAutoRetryEditor(panelRef: SessionPanelRef) {
+function useAutoRetryEditor(panelRef: SessionPanelRef, variant: "sheet" | "modal") {
   const { t } = useT();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -1147,36 +1177,47 @@ function useAutoRetryEditor(panelRef: SessionPanelRef) {
     setOpen(true);
   };
 
-  const save = async () => {
-    if (!config) return;
-    // 失败显式提示 + 保持对话框打开（否则失败看起来像成功，用户重开发现没生效）。
-    try {
-      await updateAutoRetryConfig(panelRef.projectName, panelRef.sessionId, config);
-    } catch {
-      setSaveError(true);
-      return;
-    }
-    await Promise.all([
-      queryClient.invalidateQueries({
-        exact: true,
-        queryKey: ["projects", panelRef.projectName, "agent-sessions", panelRef.sessionId],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["projects", panelRef.projectName, "agent-sessions"],
-      }),
-    ]);
-    setOpen(false);
-  };
+  // 即点即存：本地先落地（连点 stepper 立即反馈），异步提交；失败保持打开 + 显式错误。
+  const commit = useCallback(
+    async (next: ClaudeAutoRetryConfig) => {
+      setConfig(next);
+      try {
+        await updateAutoRetryConfig(panelRef.projectName, panelRef.sessionId, next);
+      } catch {
+        setSaveError(true);
+        return;
+      }
+      setSaveError(false);
+      await Promise.all([
+        queryClient.invalidateQueries({
+          exact: true,
+          queryKey: ["projects", panelRef.projectName, "agent-sessions", panelRef.sessionId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", panelRef.projectName, "agent-sessions"],
+        }),
+      ]);
+    },
+    [panelRef.projectName, panelRef.sessionId, queryClient],
+  );
 
   const holder =
     open && config ? (
-      <AutoRetryEditorDialog
-        config={config}
-        saveError={saveError}
-        onCancel={() => setOpen(false)}
-        onChange={setConfig}
-        onSave={save}
-      />
+      variant === "sheet" ? (
+        <AutoRetryEditorSheet
+          config={config}
+          onClose={() => setOpen(false)}
+          onCommit={commit}
+          saveError={saveError}
+        />
+      ) : (
+        <AutoRetryEditorDialog
+          config={config}
+          onClose={() => setOpen(false)}
+          onCommit={commit}
+          saveError={saveError}
+        />
+      )
     ) : null;
 
   return { openEditor, holder };
@@ -1309,147 +1350,242 @@ function AutoRetrySheetAction({
   );
 }
 
-// UI 参数单位换算：分钟（用户可读）↔ ms（存储/协议）。maxPerWindow 无量纲直接用。
-const AUTO_RETRY_MINUTE_MS = 60_000;
+/** krow 行样式（原型 retry-config：13px、上下 11px padding、行间 sep-row 线由行 2+ 自带 border-t）。 */
+const RETRY_ROW_CLASSES = "flex items-center py-[11px] text-[13px]";
 
-function AutoRetryEditorDialog({
+/** 文案输入防抖窗口：停顿即存，卸载再 flush 兜底（关面板不丢最后一次输入）。 */
+const MESSAGE_SAVE_DEBOUNCE_MS = 800;
+
+/**
+ * 控件层（v1.6 workspace-retry-config，多端同构单源）：自动重试 toggle 行 / 次数上限
+ * stepper / 重试间隔档位选择器（ActionMenu 点开选档，当前档 ✓）/ 重发文案内联输入 +
+ * kfoot 脚注。移动 sheet 与桌面 Dialog 两容器共享本层（frontend.md 多端同构铁律）。
+ *
+ * 保存时机 = 即点即存（原型无保存/取消按钮）：toggle/stepper/档位即点即 commit；文案输入
+ * 防抖停顿即存、卸载 flush 兜底。保存失败显式提示 + 面板保持打开。
+ */
+function AutoRetryEditorControls({
   config,
+  onCommit,
   saveError,
-  onCancel,
-  onChange,
-  onSave,
 }: {
   config: ClaudeAutoRetryConfig;
+  onCommit: (config: ClaudeAutoRetryConfig) => void;
   saveError: boolean;
-  onCancel: () => void;
-  onChange: (config: ClaudeAutoRetryConfig) => void;
-  onSave: () => void;
 }) {
   const { t } = useT();
-  const inputClasses =
-    "w-full rounded-lg border border-neutral-line bg-surface-inset px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none";
-  const numberInputClasses =
-    "w-full rounded-lg border border-neutral-line bg-surface-inset px-2 py-1.5 text-sm text-on-surface focus:border-primary focus:outline-none";
+  // 文案防抖回调/卸载 flush 需要最新 config（timer 闭包捕获旧值）→ latest ref 模式。
+  const configRef = useRef(config);
+  configRef.current = config;
+  const [messageDraft, setMessageDraft] = useState(config.message);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingMessageRef = useRef<string | null>(null);
+  const flushPendingMessage = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    const pending = pendingMessageRef.current;
+    if (pending !== null) {
+      pendingMessageRef.current = null;
+      onCommit({ ...configRef.current, message: pending });
+    }
+  }, [onCommit]);
+  // 卸载（关面板）flush 最后一次输入；onCommit 目标（hook 层）不随本组件卸载，合法。
+  useEffect(() => () => flushPendingMessage(), [flushPendingMessage]);
+
+  const changeMessage = (value: string) => {
+    setMessageDraft(value);
+    pendingMessageRef.current = value;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(flushPendingMessage, MESSAGE_SAVE_DEBOUNCE_MS);
+  };
 
   // 开关打开时文案为空 → 预填默认（首次启用即有合理值；关闭不改文案）。
   const toggleEnabled = (enabled: boolean) => {
-    onChange({
-      ...config,
-      enabled,
-      message:
-        enabled && !config.message.trim() ? t("session.autoRetry.defaultMessage") : config.message,
-    });
+    const message =
+      enabled && !messageDraft.trim() ? t("session.autoRetry.defaultMessage") : messageDraft;
+    if (message !== messageDraft) setMessageDraft(message);
+    onCommit({ ...config, enabled, message });
   };
 
+  const toggleClasses = `relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${
+    config.enabled ? "bg-primary" : "bg-surface-inset"
+  }`;
+
   return (
-    <Dialog defaultOpen onOpenChange={(next) => !next && onCancel()}>
+    <div>
+      {/* 行1 自动重试开关（原型 krow + toggle）。 */}
+      <div className={RETRY_ROW_CLASSES}>
+        <span className="text-on-surface-soft">{t("session.autoRetry.enable")}</span>
+        <button
+          aria-checked={config.enabled}
+          aria-label={t("session.autoRetry.enable")}
+          className="ml-auto flex cursor-pointer items-center"
+          onClick={() => toggleEnabled(!config.enabled)}
+          role="switch"
+          type="button"
+        >
+          <span className={toggleClasses}>
+            <span
+              className={`inline-block size-5 transform rounded-full shadow transition ${
+                config.enabled
+                  ? "translate-x-[1.375rem] bg-on-primary"
+                  : "translate-x-0.5 bg-on-surface"
+              }`}
+            />
+          </span>
+        </button>
+      </div>
+      {/* 参数三行（enabled 时才可编辑；关闭态置灰保留值）。 */}
+      <div className={config.enabled ? "" : "pointer-events-none opacity-50"}>
+        {/* 行2 次数上限 stepper（原型 .stp：−/＋ 15px 700 primary，值居中 min-w 52）。 */}
+        <div className={`${RETRY_ROW_CLASSES} border-t border-sep-row`}>
+          <span className="text-on-surface-soft">{t("session.autoRetry.maxLabel")}</span>
+          <span className="ml-auto inline-flex items-center overflow-hidden rounded-lg border border-sep-strong">
+            <button
+              aria-label={t("session.autoRetry.decreaseMax")}
+              className="cursor-pointer px-[11px] py-1 text-[15px] font-bold text-primary transition active:bg-primary/10 disabled:cursor-default disabled:opacity-30"
+              disabled={config.maxPerWindow <= RETRY_MAX_PER_WINDOW_MIN}
+              onClick={() =>
+                onCommit({
+                  ...config,
+                  maxPerWindow: stepRetryCount(config.maxPerWindow, -1),
+                })
+              }
+              type="button"
+            >
+              −
+            </button>
+            <span className="min-w-[52px] border-x border-sep-row px-2.5 py-1 text-center text-[12.5px] text-on-surface">
+              {t("session.autoRetry.times", { count: config.maxPerWindow })}
+            </span>
+            <button
+              aria-label={t("session.autoRetry.increaseMax")}
+              className="cursor-pointer px-[11px] py-1 text-[15px] font-bold text-primary transition active:bg-primary/10 disabled:cursor-default disabled:opacity-30"
+              disabled={config.maxPerWindow >= RETRY_MAX_PER_WINDOW_MAX}
+              onClick={() =>
+                onCommit({
+                  ...config,
+                  maxPerWindow: stepRetryCount(config.maxPerWindow, 1),
+                })
+              }
+              type="button"
+            >
+              ＋
+            </button>
+          </span>
+        </div>
+        {/* 行3 重试间隔（原型 .fld 输入框式选择器，点开选档；当前档 ✓）。 */}
+        <div className={`${RETRY_ROW_CLASSES} border-t border-sep-row`}>
+          <span className="text-on-surface-soft">{t("session.autoRetry.delayLabel")}</span>
+          <ActionMenu
+            align="end"
+            items={RETRY_DELAY_STEPS_MS.map((ms) => ({
+              label: formatRetryDelay(ms),
+              onSelect: () => onCommit({ ...config, delayMs: ms }),
+              trailing:
+                config.delayMs === ms ? (
+                  <span className="text-[13px] font-bold text-primary">✓</span>
+                ) : null,
+            }))}
+            trigger={
+              <button
+                aria-label={t("session.autoRetry.delayLabel")}
+                className="ml-auto inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-sep-strong bg-surface-inset px-2.5 py-[5px] text-[12.5px] text-on-surface"
+                type="button"
+              >
+                {formatRetryDelay(config.delayMs)} · {t("session.autoRetry.backoff")}
+                <span className="text-[11px] text-on-surface-muted">›</span>
+              </button>
+            }
+          />
+        </div>
+        {/* 行4 重发文案（原型 .fld 内联输入；原生 caret 替代静态 .crt 光标暗示）。 */}
+        <div className={`${RETRY_ROW_CLASSES} border-t border-sep-row`}>
+          <span className="text-on-surface-soft">{t("session.autoRetry.messageLabel")}</span>
+          <span className="ml-auto inline-flex items-center rounded-lg border border-sep-strong bg-surface-inset px-2.5 py-[5px]">
+            <input
+              aria-label={t("session.autoRetry.messageLabel")}
+              className="w-40 bg-transparent text-[12.5px] text-on-surface placeholder:text-on-surface-muted focus:outline-none"
+              onChange={(e) => changeMessage(e.target.value)}
+              placeholder={t("session.autoRetry.defaultMessage")}
+              type="text"
+              value={messageDraft}
+            />
+          </span>
+        </div>
+      </div>
+      {/* kfoot 脚注（原型 11px ink-2，上缘 sep-row 线）；保存失败行置其上。 */}
+      <div className="mt-0.5 border-t border-sep-row pt-2 text-[11px] text-on-surface-soft">
+        {saveError ? (
+          <p className="pb-1 font-medium text-error" role="alert">
+            {t("session.autoRetry.saveFailed")}
+          </p>
+        ) : null}
+        {t("session.autoRetry.description")}
+      </div>
+    </div>
+  );
+}
+
+/** 移动容器：半屏 sheet（原型 sheet 形态——grab + shd 标题 + 副题 + 控件区）。 */
+function AutoRetryEditorSheet({
+  config,
+  onClose,
+  onCommit,
+  saveError,
+}: {
+  config: ClaudeAutoRetryConfig;
+  onClose: () => void;
+  onCommit: (config: ClaudeAutoRetryConfig) => void;
+  saveError: boolean;
+}) {
+  const { t } = useT();
+  return (
+    <MobileSheet
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      open
+      title={t("session.autoRetry.label")}
+    >
+      <p className="mt-0.5 text-xs font-semibold text-on-surface-soft">
+        {t("session.autoRetry.scopeSubtitle")}
+      </p>
+      <div className="mt-2.5 border-t border-sep-row" />
+      <AutoRetryEditorControls config={config} onCommit={onCommit} saveError={saveError} />
+    </MobileSheet>
+  );
+}
+
+/** 桌面容器：居中 Dialog 卡片（同副题 + 控件区；多端同构只是容器不同）。 */
+function AutoRetryEditorDialog({
+  config,
+  onClose,
+  onCommit,
+  saveError,
+}: {
+  config: ClaudeAutoRetryConfig;
+  onClose: () => void;
+  onCommit: (config: ClaudeAutoRetryConfig) => void;
+  saveError: boolean;
+}) {
+  const { t } = useT();
+  return (
+    <Dialog defaultOpen onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <div
           className={`rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
         >
-          <h2 className="text-base font-semibold text-on-surface">{t("session.autoRetry.edit")}</h2>
-          {/* switch 行（形态对齐 settings-dialog 的 role="switch" toggle）。 */}
-          <button
-            aria-checked={config.enabled}
-            className="mt-3 flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1 text-left transition hover:bg-surface-inset/40"
-            onClick={() => toggleEnabled(!config.enabled)}
-            role="switch"
-            type="button"
-          >
-            <span className="text-sm font-semibold text-on-surface">
-              {t("session.autoRetry.enable")}
-            </span>
-            <span
-              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${config.enabled ? "bg-primary" : "bg-surface-inset"}`}
-            >
-              <span
-                className={`inline-block size-5 transform rounded-full bg-on-surface shadow transition ${config.enabled ? "translate-x-[1.375rem] bg-on-primary" : "translate-x-0.5"}`}
-              />
-            </span>
-          </button>
-          {/* 单行文案 + 参数行（enabled 时才可编辑；关闭态置灰保留值）。 */}
-          <div className={config.enabled ? "" : "pointer-events-none opacity-50"}>
-            <input
-              className={inputClasses}
-              onChange={(e) => onChange({ ...config, message: e.target.value })}
-              placeholder={t("session.autoRetry.defaultMessage")}
-              type="text"
-              value={config.message}
-            />
-            <div className="mt-2 grid grid-cols-3 gap-2">
-              <label className="block">
-                <span className="block text-xs text-on-surface-soft">
-                  {t("session.autoRetry.delayLabel")}
-                </span>
-                <input
-                  className={numberInputClasses}
-                  inputMode="numeric"
-                  min={1}
-                  onChange={(e) =>
-                    onChange({
-                      ...config,
-                      delayMs: Number(e.target.value) * AUTO_RETRY_MINUTE_MS,
-                    })
-                  }
-                  type="number"
-                  value={config.delayMs / AUTO_RETRY_MINUTE_MS}
-                />
-              </label>
-              <label className="block">
-                <span className="block text-xs text-on-surface-soft">
-                  {t("session.autoRetry.maxLabel")}
-                </span>
-                <input
-                  className={numberInputClasses}
-                  inputMode="numeric"
-                  min={1}
-                  onChange={(e) => onChange({ ...config, maxPerWindow: Number(e.target.value) })}
-                  type="number"
-                  value={config.maxPerWindow}
-                />
-              </label>
-              <label className="block">
-                <span className="block text-xs text-on-surface-soft">
-                  {t("session.autoRetry.windowLabel")}
-                </span>
-                <input
-                  className={numberInputClasses}
-                  inputMode="numeric"
-                  min={1}
-                  onChange={(e) =>
-                    onChange({
-                      ...config,
-                      windowMs: Number(e.target.value) * AUTO_RETRY_MINUTE_MS,
-                    })
-                  }
-                  type="number"
-                  value={config.windowMs / AUTO_RETRY_MINUTE_MS}
-                />
-              </label>
-            </div>
-          </div>
-          <p className="mt-2 text-xs text-on-surface-soft">{t("session.autoRetry.description")}</p>
-          {saveError ? (
-            <p className="mt-1 text-xs font-medium text-error" role="alert">
-              {t("session.autoRetry.saveFailed")}
-            </p>
-          ) : null}
-          <div className="mt-4 flex justify-end gap-3">
-            <button
-              className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold transition active:bg-on-surface/10 text-on-surface-soft ${shellSurfaceClasses.workspace}`}
-              onClick={onCancel}
-              type="button"
-            >
-              {t("cancel")}
-            </button>
-            <button
-              className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-bold text-primary transition active:bg-primary/10 ${shellSurfaceClasses.workspace}`}
-              onClick={onSave}
-              type="button"
-            >
-              {t("session.autoRetry.save")}
-            </button>
-          </div>
+          <h2 className="text-base font-semibold text-on-surface">
+            {t("session.autoRetry.label")}
+          </h2>
+          <p className="mt-0.5 text-xs font-semibold text-on-surface-soft">
+            {t("session.autoRetry.scopeSubtitle")}
+          </p>
+          <div className="mt-2.5 border-t border-sep-row" />
+          <AutoRetryEditorControls config={config} onCommit={onCommit} saveError={saveError} />
         </div>
       </DialogContent>
     </Dialog>
@@ -2013,12 +2149,11 @@ function SessionTabStripActions({
   const { t } = useT();
   const meta = usePanelMeta(panelRef);
   const sessionType = inferSessionTypeFromId(panelRef.sessionId);
-  const { openInfo, holder: infoHolder } = useInstanceInfoActions(
-    panelRef,
-    sessionType,
-    panelRef.projectName,
-    "modal",
-  );
+  const {
+    openInfo,
+    holder: infoHolder,
+    autoRetryEditorHolder,
+  } = useInstanceInfoActions(panelRef, sessionType, panelRef.projectName, "modal");
   const { renameHolder, build } = useInstanceRowActions(closeInstance);
   const a = build(panelRef, sessionType ?? "agent");
   // 动作区数据源（同移动端 ⋯ 菜单）：置顶态（✓ 标注）+ 自动重试开关（即点即改；claude
@@ -2094,6 +2229,7 @@ function SessionTabStripActions({
         }
       />
       {infoHolder}
+      {autoRetryEditorHolder}
       {renameHolder}
     </>
   );
