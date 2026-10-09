@@ -23,6 +23,12 @@
 // source 参数与 focusin/focusout 补测是防御性加固，保留。
 import type { KeyboardInset, KeyboardInsetSource } from "./keyboard-inset";
 
+/**
+ * 显示开关（2026-10-09 用户指示先隐藏）：取证期置 true 复现一次读浮层数据，平时 false
+ * 零干扰。改这一行即可切换——文件保留待取证完成后连调用点一并删除。
+ */
+const DEBUG_ENABLED = false;
+
 const MAX_LINES = 12;
 
 let overlay: HTMLDivElement | null = null;
@@ -45,6 +51,7 @@ function render(): void {
 
 /** 键盘事件链记一行（诊断期常开，无开关判定）；顺带把浮层钉到 visual viewport 顶部。 */
 export function kbDebugLog(source: KeyboardInsetSource, inset: KeyboardInset): void {
+  if (!DEBUG_ENABLED) return;
   const vv = window.visualViewport;
   const ih = window.innerHeight;
   const vvH = vv?.height ?? 0;
