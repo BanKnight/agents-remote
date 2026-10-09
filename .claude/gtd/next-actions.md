@@ -13,7 +13,8 @@
 - [x] **v1.5 批 16**（2026-10-09 完成，commit `8d06e82`/`dd35ab8`/`7c499eb`/`f7f4c2a`/`6007d15` 已 push）：真机反馈三条——①aux 工具条三钮 Unicode 字符平台字形不一 → Lucide 单轨化（undo-2/redo-2）；②移动检视面板钮 panel-left→panel-right（右滑入形制）；③md 渲染支持 mermaid（CodeBlock 自动渲染：strict 沙箱 + 400ms 流式防抖 + 1500ms 失败宽限闸 + 失败降级 + precache 瘦身 + 断链机检）；双 reviewer 一轮 + 复审二轮消化 + e2e 27/27 补跑全绿 + 记档 §6.14；**真机再反馈（①二次）已修**：图标 14→16px stroke 保真 + `.aux` height `calc(40px + env(safe-area-inset-bottom))` 修 border-box 压缩贴条顶错位（`6007d15`）
 - [ ] **批 16 真机复验再反馈项**：等用户 iPhone 复验 aux 条两项（图标清晰 Lucide 风格、居中于工具条交互区不贴顶）；其余 19 条清单已反馈「基本都没问题」
 - [x] **批 17 键盘 inset 单源**（2026-10-09 完成，`215d390` + `1280c69` 已 push）：①编辑态 `.aux` 被键盘挡 → visualViewport 观察器单源（`keyboard-inset.ts`）+ `--kb-offset` padding 缩链；②辅助条随键盘切换样式 → `--kb-active` 系数（env chin 避让随键盘在场归零）；多端 = Android `interactive-widget=resizes-content`；双 reviewer 无 P0/P1 + P2×3 消化 + e2e 27/27 + 探针 10/10 + 文档沉淀（research 实施现状 + frontend-notes §27 + redesign-v2 批 17 段）——待用户真机复验（Chromium 对键盘行为结构性失明）
-- [ ] **批 17 真机复验**：编辑态聚焦不被挡 / aux 贴键盘紧凑（无 34px 空隙）/ 键盘收起恢复 / composer 回归无变化 / 键盘偶发不弹排查（focus-shift 风险项）/ Android 编辑态与 composer 被顶起而非遮挡
+- [ ] **批 18 键盘遮挡取证（等真机数据）**：「多次收起弹开后工具条偶发被遮挡」按证据纪律（§22）埋 `keyboard-debug.ts` 诊断浮层（默认常开 + visual viewport 跟随 + src/ih/vv/v/off/root 六字段切分候选根因）+ focusin/focusout 终态补测加固（observeKeyboardInset 新增，批 18）+ 成熟库调研对照（toss/react-simplikit 源码级 → 不引入，机制同源但缺 iOS 26 gate 与流内消费形态；详见 research 文档「成熟库调研对照」章）——**等用户真机复现一次读浮层数据定位断点层**，数据到手后按层修复，随后删通道。
+- [ ] **批 17/18 真机复验**：编辑态聚焦不被挡 / aux 贴键盘紧凑（无 34px 空隙）/ 键盘收起恢复 / composer 回归无变化 / 键盘偶发不弹排查（focus-shift 风险项）/ Android 编辑态与 composer 被顶起而非遮挡 / **批 18 取证操作：进入文件编辑态，反复收起弹开键盘直到工具条被挡出现，然后把屏幕左上角浮层数据读给 Claude**
 - [ ] M5 浮层与审批（sheet/popover 体系 + 服务端聚合审批中心，security-reviewer 必过）→ M6–M10（范围见总纲 §6，随进度逐个展开成动作）
 
 ## @harness

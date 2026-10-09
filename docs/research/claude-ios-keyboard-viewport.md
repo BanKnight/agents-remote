@@ -101,7 +101,31 @@ composer 浮动区消费 `--composer-keyboard-offset` 做 `translateY(−offset)
 - **不要用 `window.scrollTo(0,0)` 对抗** visual-viewport pan：body 被 pin 时 document scroll 本就是 0，`scrollTo` 碰不到 pan 轴，逐帧对抗只会抖动（italomcangussu#16 明确踩过此坑）——这正是之前 `mobile-keyboard.ts` 尝试失败的原因。
 - composer input 的 computed `font-size ≥ 16px`，否则 iOS 聚焦会自动缩放页面（独立坑，建议同时核对）。
 
-## 来源
+## 成熟库调研对照（2026-10-09，批 18）
+
+用户真机反馈「多次收起弹开后工具条仍偶发被遮挡」并提出「是否有成熟库可用、自研不够成熟」的诉求。对市面候选做了源码级对照（toss/react-simplikit 读全四个 keyboard 模块源码；其余候选按 npm/GitHub 元数据核对）。
+
+### 候选与结论
+
+| 库 | 机制 | 结论 |
+|---|---|---|
+| **toss/react-simplikit** `useAvoidKeyboard`/`useKeyboardHeight` | visualViewport `innerHeight − vv.height − vv.offsetTop`、`Math.max(0,…)` 钳 0、resize+scroll 双监听、setTimeout 16ms 节流 + 同值去重、`translateY(−(h+safeAreaBottom))` + CSS transition | **不引入**——机制与我们同源（同公式/同双监听），但缺三样：iOS 26 visible gate（收起强制归零）、rAF 同帧、coarse guard；且 `useAvoidKeyboard` 只有 translateY 浮动形态，不覆盖编辑态流内 padding 缩链 |
+| react-ios-keyboard-viewport（RyoSogawa） | iOS 专用 hook，v0.1.0（2025-04）后无版本迭代 | pre-alpha 嫌疑（版本停更 + 单一 iOS 视角） |
+| @fe-eule/react-keyboard-avoiding-view | RN 概念的 web 平移 | 下载量极低 |
+| @simoneggert/react-modal-sheet | sheet 专用，`env(keyboard-inset-height)` + vv fallback | 场景过窄（sheet 场景我们已有自有体系） |
+| on-screen-keyboard-detector | 可见性检测 | 只有检测无避让 |
+
+**关键认知（调研主结论）**：任何库的底层都是同一套 `window.visualViewport` API——库不改变 iOS 键盘行为，只提供打磨过的封装。react-simplikit 的公式与批 17 单源**逐字相同**（我们即源自同一批社区实证），而它**没有** iOS 26 收起残留 gate（裸 `Math.max(0,…)`——真机上会复现「收起后残留 40px 假 offset」正是我们要防的），替换 = 降级 + 增依赖。toss 库供应链面 OK（0.3.2 发布 9 天 ✓、356 stars、MIT、Toss 出品持续活跃），不是 supply-chain 拒绝，是**能力面不匹配**：两种消费形态（浮动 translateY / 流内 padding 缩链）它只覆盖前者，且缺 iOS 26 gate。
+
+### 「成熟方案」的落地定义（回应自研成熟度诉求）
+
+不引入库不等于维持现状：把单源打磨到「库级成熟」，具体 = ①**可观测性**——`observeKeyboardInset` 回调携带触发源（`KeyboardInsetSource`），真机诊断浮层 `keyboard-debug.ts`（默认常开，sheet-debug 先例形态 + `translateY(vv.offsetTop)` 钉在 visual viewport 顶部，键盘 pan 时仍可读数）打完整事件链（src/ih/vv/v/off/root 六字段切分候选根因空间）；②**终态鲁棒性**——`focusin/focusout` 补测（键盘开合必经焦点切换；iOS 快速连续开合时 vv 事件可能合并丢失终态，focus 时刻补一次测量；此刻 vv 尚未动，旧值写回幂等）；③测试与文档：单测/探针/研究文档（本节）。
+
+### 诊断通道设计说明（keyboard-debug.ts）
+
+- **候选根因空间**（通道字段切分的对象）：①gate 误杀（弹起中途 v=0）②终态事件丢失（用户操作了但 #N 停滞；focusin 有行而 vv 事件无行 = 实锤）③iOS standalone PWA 视口卡死（ih 循环间缩小不恢复 → 公式偏小 → 抬不够）④iOS 26 残留叠加（收起后 off≠0 / 下次弹起 off 剪掉残留量）⑤写入层分叉（root 读回 ≠ off）。
+- **visual viewport 跟随**（本通道特有设计）：fixed top:0 浮层在键盘 pan 后落在可视区外，`translateY(vv.offsetTop)` 钉在 visual viewport 顶部——键盘弹着也能读数。
+- 取证操作：用户复现「多次收起弹开后被遮挡」一次，读浮层最后几行即可定位断点层，按层修复。
 
 **事实**：
 - [CSSOM View Module（scroll delta 分层 / offsetTop 定义）](https://www.w3.org/TR/cssom-view-1)

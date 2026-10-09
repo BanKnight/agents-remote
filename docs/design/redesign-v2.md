@@ -1666,6 +1666,16 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **记档不动（真机清单）**：aux 34px 一步跳变先于键盘到位（~250ms 瞬态，加 transition 会与逐帧 offset 打架，真机确认观感）；Android 下 `resizes-content` 使 mobile-sheet 手势几何基准（`window.innerHeight`）在「键盘开着拖 sheet」场景漂移；Android env 残留（国内设备手势条 inset 普遍 0，预期无害）；pinch-zoom 假阳性（`vv.scale !== 1` 判据备用不预加）。
 - **文档沉淀**：`docs/research/claude-ios-keyboard-viewport.md`「方案方向（待定）」改「实施现状」（监听单源 + 两种消费形态 + 多端分流 + 语义边界）；frontend-notes §27（四段式：现象/机制/标准做法/来源）。
 
+### 批 18：键盘遮挡取证——诊断通道 + 观察器终态补测 + 成熟库调研（2026-10-09）
+
+批 17 真机复验反馈：「工具条在多次的键盘收起弹开中仍偶发被遮挡」+ 诉求「网上是否有对应的库可用，自研解决问题不够成熟，希望一个成熟方案」。
+
+- **证据纪律应用**（frontend-notes「手势 bug 的证据纪律」同款）：真机反复失败的 bug 停止推理修复，先埋诊断通道拿真机第一手数据。候选根因空间五个（gate 误杀 / 终态事件丢失 / iOS standalone PWA 视口卡死致 innerHeight 漂移 / iOS 26 残留叠加 / 写入层分叉），`keyboard-debug.ts` 浮层六字段（src/ih/vv/v/off/root）按切分候选空间设计（sheet-debug 先例教训：埋点字段要能切分候选）。**默认常开 + `translateY(vv.offsetTop)` 钉在 visual viewport 顶部**（键盘 pan 后 fixed top:0 会落在可视区外——键盘 debug 特有设计，sheet-debug 没有这个问题所以先例没这手法）。证据到手随文件删。
+- **观察器防御加固**（不依赖根因、保留）：`observeKeyboardInset` 新增 window focusin/focusout 补测（键盘开合必经焦点切换；iOS 快速连续开合时 vv 事件可能合并丢失终态，focus 时刻补一枪；measure 延迟到 rAF 同帧读当帧 vv——常规开合幂等写回、终态丢失时顺带恢复）；回调加 `KeyboardInsetSource` 触发源溯源参数（composer 调用点不接，向后兼容）。
+- **成熟库调研（源码级）**：toss/react-simplikit `useAvoidKeyboard`/`useKeyboardHeight`/`subscribeKeyboardHeight`/`getKeyboardHeight` 四模块全读——**机制与我们同源**（同公式 `innerHeight − vv.height − vv.offsetTop`、同 resize+scroll 双监听），但缺 iOS 26 visible gate（裸 `Math.max(0,…)` 真机会复现收起残留）、缺 rAF 同帧（setTimeout 16ms 节流）、缺 coarse guard，且 `useAvoidKeyboard` 只有 translateY 浮动形态不覆盖编辑态流内 padding 缩链。**不引入**：替换 = 降级 + 增依赖。供应链面本身 OK（0.3.2 发布 9 天 ✓ / 356 stars / MIT / Toss 活跃），是能力面不匹配。「成熟化」落地 = 可观测性（诊断通道）+ 终态鲁棒性（focus 补测）+ 文档沉淀，对照表见 research 文档「成熟库调研对照」章。
+- **验证**：探针 13/13（新增 4a focusin 补测驱动重算 / 4b 浮层溯源行 / 4c translateY 跟随）；门禁全绿 + e2e 27/27；code-reviewer P0/P1 无、P2×4 消化（注释时序修正 / source 类型收紧 / 探针断言精确化 / `?.` 与 TS 流分析冲突撤回）。
+- **待真机**：用户复现「多次收起弹开后被遮挡」一次，读浮层数据定位断点层 → 按层修复 → 删通道。
+
 | 项 | 决策点 | 摊牌时点 |
 | --- | --- | --- |
 | Wiki「让 Agent 读这篇」注入协议 | ~~stdin 指令 vs attachment/引用卡；引用卡状态归属~~ ✅ 已摊牌（D13，§6.2）：stdin prompt + 客户端 per-session 引用 atom | ~~M4 开工前~~ 2026-09-21 |
