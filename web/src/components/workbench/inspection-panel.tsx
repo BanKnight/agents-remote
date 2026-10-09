@@ -227,9 +227,10 @@ export function InspectionPanel({
             open={open}
             tabs={tabs}
           />
-          {/* 工具 chip 槽（03o ②：文件树标签 = crumb+收缩搜索；Git = gitchip；Wiki = wsearch） */}
+          {/* 工具 chip 槽（03o ②：文件树标签 = crumb+收缩搜索；Git = gitchip；Wiki = wsearch）。
+              gap-1.5 对齐全局文件行2（2026-10-10 真机反馈同构）。 */}
           {toolChip ? (
-            <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-2">{toolChip}</div>
+            <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-1.5">{toolChip}</div>
           ) : null}
         </>
       )}

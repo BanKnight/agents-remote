@@ -955,6 +955,41 @@ export function joinRootBrowseDirectoryPath(target: RootBrowseTarget, entryPath:
   return target.kind === "project" ? `${target.projectName}/${entryPath}` : entryPath;
 }
 
+/**
+ * 全局文件 crumb 根段名：服务器根 basename（真实目录名，rootPath 由 listRootFiles 响应带出）；
+ * rootPath 未回（加载中/项目 listing/mock 探针无此字段）退 i18n 语义名「服务器根」。
+ * v1.6 真机反馈：硬编码 i18n 根名（"agents-remote"）属伪造数据——部署根目录名因机器而异。
+ */
+export function rootDisplayName(rootPath: string | undefined, fallback: string): string {
+  if (!rootPath) return fallback;
+  const segments = rootPath.split("/").filter((segment) => segment.length > 0);
+  return segments[segments.length - 1] ?? fallback;
+}
+
+/**
+ * 03o「..」上一级行（原型首行；2026-10-10 真机反馈同构补齐：此前仅工具区 files 面板有，
+ * 全局文件子目录层缺——父行收敛本单源组件，两容器同一份 DOM）。parentPath 语义（服务端
+ * parentProjectPath）：项目根/服务器根 = null（不渲染，「服务器根无『..』」）；一级子目录 =
+ * ""（空串，点击回项目根）；更深层 = 父相对路径。渲染判定在调用方（两处口径等价）。
+ */
+export function ParentDirRow({
+  onNavigate,
+  parentPath,
+}: {
+  onNavigate: (parentPath: string) => void;
+  parentPath: string;
+}) {
+  return (
+    <button
+      className="frow w-full cursor-pointer text-left"
+      onClick={() => onNavigate(parentPath)}
+      type="button"
+    >
+      <span className="p dir">..</span>
+    </button>
+  );
+}
+
 export type FilesPanelProps = {
   initialPath: string;
   /**
@@ -1253,6 +1288,12 @@ export function FilesPanel({
           [data-desktop-inspector] 桌面密度分档（7px 14px）保留不动（2026-09-29 真机拍板）。 */}
       <div className="flex flex-1 min-h-0 flex-col overflow-y-auto pb-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
         <UploadQueueCard />
+        {/* 03o「..」上一级行（ParentDirRow 单源，与工具区 files 面板同构）：path 非空即渲染
+            （服务端一级子目录 parentPath="" 非空串判定会吞行，故按 path 判）；根层（项目根/
+            服务器根）path="" 不渲染。parentPath ?? "" 兜底旧响应缺字段。 */}
+        {files.data && files.data.path !== "" ? (
+          <ParentDirRow onNavigate={goToPath} parentPath={files.data.parentPath ?? ""} />
+        ) : null}
         <FileEntryList
           entries={
             filter?.trim()
@@ -1330,14 +1371,15 @@ export function FilesPanel({
           // 总高 47px 与总览 ViewSwitcher 行一致（批 Q 点 4 收尾：原本 min-h-7=28 → 41px 独树一帜）。
         >
           {/* 批 11 真同构：地址栏收敛 FileCrumb 单源（v1 遗留 PathBreadcrumb 🏠+斜杠段钮
-              退役）。根段可访问名 = 项目名 / 根层「服务器根」；根段图标 = project（SF 名
-              契约 folder 形状）——与 FilesToolPanel .crumb 同一份 DOM。diverge 记档：原型
-              全局文件页无 crumb（.sfield 搜索框），用户同构要求优先。 */}
+              退役）。根段可访问名 = 真实根目录名（listRootFiles rootPath basename）/
+              「服务器根」兜底；根段图标 = project（SF 名契约 folder 形状）——与
+              FilesToolPanel .crumb 同一份 DOM。diverge 记档：原型全局文件页无 crumb
+             （.sfield 搜索框），用户同构要求优先。 */}
           <FileCrumb
             onNavigate={goToPath}
             // 根段 aria-label = 导航目的地（恒服务器根），不随当前层级变——项目层级时
             // 根段点击也是回根（design-review 批 11：同名不同目的地对读屏误导）。
-            rootLabel={t("files.root")}
+            rootLabel={rootDisplayName(files.data?.rootPath, t("files.rootDirectory"))}
             segments={currentPath ? currentPath.split("/") : []}
           />
           {/* 写操作 actions（New Folder/Upload）只在 inspection 模式（enablePreview=true）渲染；

@@ -22,10 +22,12 @@ import {
 import { enqueueUploads, UploadQueueCard } from "../files/upload-queue";
 import { FileCrumb } from "../files/file-crumb";
 import { FileTreeRows, RowChevron } from "../files/file-tree-rows";
+import { ParentDirRow } from "../files/file-browser";
 import { MoveSheet } from "../files/move-sheet";
 import { NewItemSheet } from "../files/new-item-sheet";
 import { RenameDialog } from "../files/rename-dialog";
 import { useConfirm } from "../shell/confirm-dialog";
+import { CollapsibleSearchRow } from "../shell/collapsible-search";
 import { ListRowSkeleton } from "../shell/shell-primitives";
 import { useT } from "../../i18n";
 import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
@@ -575,15 +577,9 @@ export function FilesToolPanel({
   return (
     <ToolPanel tool="files">
       {/* 03o 目录面包屑 cap（03o 编号①：.. 返回上级）；header toolChip 已有 .crumb 导航，
-        此处只补「..」上一级行保底（原型首行）。 */}
+        此处补「..」上一级行（ParentDirRow 单源，与全局文件子目录层同构同源）。 */}
       {parentPath !== null ? (
-        <button
-          className="frow w-full cursor-pointer text-left"
-          onClick={() => changePath(parentPath)}
-          type="button"
-        >
-          <span className="p dir">..</span>
-        </button>
+        <ParentDirRow onNavigate={changePath} parentPath={parentPath} />
       ) : null}
       {/* 首载骨架（§6.12o 批次 2）：仅 isPending（无缓存数据）显，与 FilesPanel :372 同款
         count=5 默认参数；目录内容到后空目录仍走真空态（无行）。 */}
@@ -968,28 +964,18 @@ export function usePanelToolChip({
       </div>
     ) : kind === "files" ? (
       filesSearchOpen ? (
-        // 03x ①「行2 内容头变搜索框（同 Wiki）」：单源复用 .wsearch（§6.9），聚焦态描边
-        // 由 .wsearch:focus-within 承载。
-        <div className="wsearch">
-          <input
-            autoFocus
-            className="h-6 flex-1 bg-transparent text-[13px] text-ink-1 outline-none placeholder:text-ink-3"
-            onChange={(e) => setFilesSearchQuery(e.target.value)}
-            placeholder={t("files.searchPlaceholder")}
-            value={filesSearchQuery}
-          />
-          <button
-            className="flex cursor-pointer items-center text-ink-2"
-            onClick={() => {
-              setFilesSearchOpen(false);
-              setFilesSearchQuery("");
-            }}
-            type="button"
-            aria-label={t("cancel")}
-          >
-            <ShellIcon className="h-[13px] w-[13px]" name="close" />
-          </button>
-        </div>
+        // 03x ①「行2 内容头变搜索框」：v1.6 真机反馈同构收敛——原 .wsearch chip 内嵌形态
+        // 与全局文件/插件页展开态宽度样式不同，统一 CollapsibleSearchRow 单源
+        //（.psearch + .obtn.srch ✕）。
+        <CollapsibleSearchRow
+          onChange={setFilesSearchQuery}
+          onClose={() => {
+            setFilesSearchOpen(false);
+            setFilesSearchQuery("");
+          }}
+          placeholder={t("files.searchPlaceholder")}
+          value={filesSearchQuery}
+        />
       ) : (
         <>
           {/* 03o 地址栏（.crumb flex:1 撑满行）：批 11 真同构收敛 FileCrumb 单源（与

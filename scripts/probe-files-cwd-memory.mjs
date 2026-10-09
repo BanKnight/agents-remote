@@ -23,6 +23,13 @@ function record(ok, label) {
 
 // 目录树 mock：proj1 = A/B/C/D 链，proj2 = X/y。deletedPath 非空时该路径返回 404。
 function buildTreeMocks({ deletedPath = null } = {}) {
+  // parentPath 语义对齐服务端 parentProjectPath（v1.6 真机反馈③探针化）：项目根 = null；
+  // 一级子目录 = ""（空串，回项目根）；更深层 = 父相对路径。此前 mock 一律 null 会掩盖
+  // FilesPanel「..」行的空串父路径链路。
+  const parentOf = (p) => {
+    if (p === "") return null;
+    return p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+  };
   const proj1 = (p) => {
     const entries =
       p === ""
@@ -42,7 +49,7 @@ function buildTreeMocks({ deletedPath = null } = {}) {
     return {
       projectName: "proj1",
       path: p,
-      parentPath: p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : null,
+      parentPath: parentOf(p),
       entries,
     };
   };
@@ -59,7 +66,7 @@ function buildTreeMocks({ deletedPath = null } = {}) {
     return {
       projectName: "proj2",
       path: p,
-      parentPath: p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : null,
+      parentPath: parentOf(p),
       entries,
     };
   };
@@ -99,6 +106,21 @@ async function setup(page) {
       body: hit.status === 200 ? JSON.stringify(hit.body) : JSON.stringify({}),
     });
   });
+  // 根 listing mock（v1.6 真机反馈②根名真实化）：rootPath 带真实 basename 数据源，Part 7
+  // 断言 crumb 根名 = basename「mock-projects」（不拦则 /files 走真实 PROJECTS_ROOT 列表）。
+  await page.route(/\/api\/root\/files$/, (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        projectName: "",
+        path: "",
+        parentPath: null,
+        rootPath: "/srv/mock-projects",
+        entries: [{ name: "proj1", path: "proj1", type: "directory", hidden: false, size: null }],
+      }),
+    }),
+  );
   return state;
 }
 
@@ -214,6 +236,39 @@ async function run() {
     await waitLast(page, "D");
     record((await readPath(page)).last === "D", "文件树停在 D（breadcrumb 最后段 = D）");
 
+    console.log("\n===== 1b. 工具 chip 搜索展开同构（v1.6 真机反馈④）=====");
+    // 展开态 = CollapsibleSearchRow 单源：.psearch 全宽 + .obtn.srch ✕（与全局文件/插件页
+    // 同构，非旧 .wsearch chip 内嵌）。
+    await page
+      .locator('[data-inspection-panel="open"] button[aria-label="搜索文件"]')
+      .first()
+      .click({ timeout: 4000 });
+    await page.waitForTimeout(300);
+    const searchForm = await page.evaluate(() => {
+      const panel = document.querySelector('[data-inspection-panel="open"]');
+      return {
+        psearch: panel?.querySelector(".psearch") != null,
+        wsearch: panel?.querySelector(".wsearch") != null,
+        close: panel?.querySelector('button[aria-label="关闭搜索"]') != null,
+      };
+    });
+    record(
+      searchForm.psearch && !searchForm.wsearch && searchForm.close,
+      `工具 chip 搜索展开 = .psearch + ✕ 单源（wsearch=${searchForm.wsearch}）`,
+    );
+    // 输入过滤词生效（FilesToolTab searchQuery 透传链）后关闭回 crumb。
+    await page.locator('[data-inspection-panel="open"] .psearch input').fill("file1");
+    await page.waitForTimeout(300);
+    await page.locator('[data-inspection-panel="open"] button[aria-label="关闭搜索"]').click();
+    await page.waitForTimeout(300);
+    record(
+      (await page.evaluate(
+        () =>
+          document.querySelector('[data-inspection-panel="open"]')?.querySelector(".crumb") != null,
+      )) === true,
+      "关闭搜索 → 回 crumb 地址栏（清词收起）",
+    );
+
     console.log("\n===== 2. reload 后仍停在 D（localStorage 记忆）=====");
     await page.reload();
     await reopenPanel(page);
@@ -258,6 +313,52 @@ async function run() {
     await reopenPanel(page);
     await waitLast(page, null);
     record((await readPath(page)).last === null, "回退后记忆已清空（二次 reload 仍在根）");
+
+    console.log("\n===== 7. 全局文件页：根名真实化 + 「..」同构（v1.6 真机反馈②③）=====");
+    await page.goto(`${WEB_ORIGIN}/files`);
+    await page.waitForSelector(".crumb", { timeout: 8000 });
+    await page.waitForTimeout(500);
+    // ② 根名 = rootPath basename（mock rootPath=/srv/mock-projects → 「mock-projects」，
+    //    不再是 i18n 硬编码「服务器根」/「agents-remote」）——rootDisplayName 端到端断言。
+    const rootName = await page.evaluate(
+      () => document.querySelector(".crumb b")?.textContent?.trim() ?? null,
+    );
+    record(
+      rootName === "mock-projects",
+      `根态 crumb 根名 = rootPath basename「mock-projects」（实际 ${rootName ?? "null"}）`,
+    );
+    // 根层行 = globalCard .gfrow（探针先例 probe-files-global-back:91）；点击进项目根。
+    await page.locator(".gfrow button", { hasText: "proj1" }).click({ timeout: 4000 });
+    await waitLast(page, "proj1");
+    // ③ 项目根（path=""）无「..」行——「服务器根/项目根无『..』」规则两端一致。
+    const dotdotAtRoot = await page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll(".frow")).filter((el) =>
+          (el.textContent ?? "").includes(".."),
+        ).length,
+    );
+    record(dotdotAtRoot === 0, `项目根无「..」行（实际 ${dotdotAtRoot}）`);
+    // 进一级子目录 A：真实服务端 parentPath=""（空串）→「..」必须在场（空串 truthy 判定
+    // 会吞行的回归防线，parentOf mock 已对齐真实语义）。
+    await page.locator(".frow .p.dir, .frow .p", { hasText: "A" }).first().click({ timeout: 4000 });
+    await waitLast(page, "A");
+    const dotdotInA = await page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll(".frow")).filter((el) =>
+          (el.textContent ?? "").includes(".."),
+        ).length,
+    );
+    record(dotdotInA >= 1, `一级子目录「..」在场（空串 parentPath 链路，实际 ${dotdotInA}）`);
+    // 点「..」回项目根（parentPath="" → goToPath("")）。
+    await page.locator(".frow").filter({ hasText: ".." }).first().click({ timeout: 4000 });
+    await waitLast(page, "proj1");
+    const dotdotAfterBack = await page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll(".frow")).filter((el) =>
+          (el.textContent ?? "").includes(".."),
+        ).length,
+    );
+    record(dotdotAfterBack === 0, "「..」点击回项目根（行消失）");
   } finally {
     await browser.close();
   }

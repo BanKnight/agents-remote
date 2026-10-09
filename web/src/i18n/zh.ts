@@ -149,7 +149,6 @@ export const zh: Record<TranslationKey, string> = {
   "files.discardConfirm": "放弃「{{name}}」的未保存改动？",
   "files.done": "完成",
   "files.dropZone": "拖拽文件以上传",
-  "files.root": "agents-remote",
   "files.hidden": "隐藏",
   "files.projectMetaActive": "{{count}} 实例 · 最近 {{time}}",
   "files.projectMetaIdle": "空闲 · 最近 {{time}}",

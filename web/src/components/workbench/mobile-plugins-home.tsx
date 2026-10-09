@@ -28,6 +28,7 @@ import {
   useUninstallSkill,
 } from "../../hooks/skills";
 import { ShellIcon } from "../shell/icons";
+import { CollapsibleSearchRow } from "../shell/collapsible-search";
 import { LucideIcon } from "../shell/lucide-icon";
 import { LargeTitleRow, ListRowSkeleton } from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
@@ -237,33 +238,21 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
           />
         </div>
       ) : searchOpen ? (
-        <div className="mx-4 mt-2.5 flex flex-none items-center gap-2">
-          <div className="psearch min-w-0 flex-1">
-            <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
-            <input
-              aria-label={t("plugins.searchPlaceholder")}
-              autoFocus
-              className="w-full bg-transparent text-callout text-ink-1 outline-none placeholder:text-ink-2"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("plugins.searchPlaceholder")}
-              type="search"
-              value={query}
-            />
-          </div>
-          <button
-            aria-label={t("files.closeSearch")}
-            className="obtn srch cursor-pointer"
-            onClick={() => {
+        /* 展开态 = CollapsibleSearchRow 单源（与全局文件行2 同构同源——此前 psearch+✕ 形态
+            已一致，仅容器 gap/placeholder 色微差，一并收敛）。 */
+        <div className="mx-4 mt-2.5 flex flex-none items-center gap-1.5">
+          <CollapsibleSearchRow
+            onChange={setQuery}
+            onClose={() => {
               setSearchOpen(false);
               setQuery("");
             }}
-            type="button"
-          >
-            <ShellIcon aria-hidden="true" name="close" />
-          </button>
+            placeholder={t("plugins.searchPlaceholder")}
+            value={query}
+          />
         </div>
       ) : (
-        <div className="mx-4 mt-2.5 flex flex-none items-center gap-2">
+        <div className="mx-4 mt-2.5 flex flex-none items-center gap-1.5">
           <PluginsScopeSegmented className="min-w-0 flex-1" />
           <button
             aria-label={t("plugins.searchPlaceholder")}

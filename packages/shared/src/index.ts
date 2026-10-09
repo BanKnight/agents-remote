@@ -26,6 +26,12 @@ export type ProjectFileListResponse = {
   path: string;
   parentPath: string | null;
   entries: ProjectFileEntry[];
+  /**
+   * 根 listing（listRootFiles）专属：服务器根绝对路径（realpath 后）。客户端 crumb 根段取
+   * basename 显示真实根目录名——v1.6 真机反馈：硬编码 i18n 根名（"agents-remote"）属伪造
+   * 数据，部署目录名因机器而异。项目 listing 不带此字段。
+   */
+  rootPath?: string;
 };
 
 /** GET files/search 命中项（03x 文件搜索）：相对路径 + 目录/文件 + 元数据（hrow 行渲染）。 */

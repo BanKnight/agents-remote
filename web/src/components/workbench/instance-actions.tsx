@@ -65,8 +65,9 @@ export function useRenameSession() {
  * 实例行「置顶/重命名/关闭」动作装配双端单源（桌面 tabstrip ⋯ SessionTabStripActions + 移动
  * 03k info sheet .acts footer 双消费；原 mobile-workbench 内「单端收敛」——桌面
  * SessionTabStripActions 仍手写同构装配，全局同构 review 批上移至此并接入桌面）。build(
- * panelRef, sessionType) 返回单行动作的 label+run（pin 仅 agent——dot 状态语言归属 agent，
- * review P3⑦）；渲染形态/排序/icon 注入留给消费方（菜单项 vs button 行，两端原型各自定）。
+ * panelRef, sessionType) 返回单行动作的 label+run（pin 无类型门——v1.6 真机反馈终端会话 ⋯
+ * 菜单缺置顶；pinned 链路本就类型无关，v1.5「dot 语言归属 agent」旧口径随置顶条换代失效）；
+ * 渲染形态/排序/icon 注入留给消费方（菜单项 vs button 行，两端原型各自定）。
  * renameHolder 由调用方渲染（useRenameSession.holder 直通，消费方各自持 hook 实例）。
  */
 export function useInstanceRowActions(
@@ -87,13 +88,10 @@ export function useInstanceRowActions(
           label: t("workbench.pillCloseSession"),
           run: () => closeInstance(id, sessionType),
         },
-        pin:
-          sessionType === "agent"
-            ? {
-                label: pinnedNow ? t("workbench.unpin") : t("workbench.pin"),
-                run: () => (pinnedNow ? unpinIt : pinIt).mutate(id),
-              }
-            : null,
+        pin: {
+          label: pinnedNow ? t("workbench.unpin") : t("workbench.pin"),
+          run: () => (pinnedNow ? unpinIt : pinIt).mutate(id),
+        },
         rename: {
           label: t("session.rename"),
           run: (displayName: string) =>

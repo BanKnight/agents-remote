@@ -145,11 +145,12 @@ export function RightPanelTabs({
         tabs={inspectorTabs}
       />
       {/* 工具 chip 槽（03o crumb+搜索 / 03m gitchip / 03p wsearch；与移动 InspectionPanel
-          同款槽结构 mx-4 mt-2.5 gap-2——装配单源 usePanelToolChip，右栏不再裸奔「..」行
-          （真机反馈 2026-09-29 Files 标签缺顶部工具行 / Wiki 缺搜索入口）。批 13 反馈②：
-          行尾「＋」退役，新建/上传入口统一 FAB（tabpanel 容器内，下方）。 */}
+          同款槽结构 mx-4 mt-2.5 gap-1.5（对齐全局文件行2，2026-10-10 真机反馈同构）——装配
+          单源 usePanelToolChip，右栏不再裸奔「..」行（真机反馈 2026-09-29 Files 标签缺顶部
+          工具行 / Wiki 缺搜索入口）。批 13 反馈②：行尾「＋」退役，新建/上传入口统一 FAB
+         （tabpanel 容器内，下方）。 */}
       {toolChip ? (
-        <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-2">{toolChip}</div>
+        <div className="mx-4 mt-2.5 flex shrink-0 items-center gap-1.5">{toolChip}</div>
       ) : null}
       {/* §8 高度链：body 自身必须是 flex container（检视内容 FilesPanel 等是 flex-1 子）；
         relative = 标签叠层 absolute inset-0 的定位基准。 */}

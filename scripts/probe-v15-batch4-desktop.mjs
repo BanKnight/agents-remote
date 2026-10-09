@@ -55,6 +55,18 @@ const AGENTS = [
 
 const HOUR_AGO = Date.now() - 3_600_000;
 
+// 终端实例（Part 4b：v1.6 真机反馈——终端 ⋯ 菜单置顶补齐断言）。
+const TERMINAL = {
+  id: "terminal_probe-term-1",
+  projectName: "proj1",
+  displayName: "term-1",
+  status: "running",
+  updatedAt: "2026-10-10T00:00:00.000Z",
+};
+
+// 置顶集合（有态：POST/DELETE 回显，Part 4b 置顶 ✓ 断言数据源）。
+const PINNED_MOCK = [];
+
 const FILE_ENTRIES = [
   { name: "src", path: "src", type: "directory", hidden: false, size: null },
   { name: "index.ts", path: "index.ts", type: "file", hidden: false, size: 486 },
@@ -135,9 +147,18 @@ async function setupMocks(page) {
       }),
     ),
   );
-  await page.route(/\/api\/state\/overview\/pinned-sessions(\?.*)?$/, (r) =>
-    r.fulfill(json({ sessions: [] })),
-  );
+  // 正则不锚 $（POST/DELETE 带 /{id} 后缀——Part 4b 置顶点击必须被拦，漏拦会落到真实
+  // 后端吃 400；探针纪律：mock 漏路由不报错只静默穿透）。
+  await page.route(/\/api\/state\/overview\/pinned-sessions/, (r) => {
+    const method = r.request().method();
+    const id = decodeURIComponent(r.request().url().split("/pinned-sessions/")[1] ?? "");
+    if (method === "POST" && id && !PINNED_MOCK.includes(id)) PINNED_MOCK.push(id);
+    if (method === "DELETE" && id) {
+      const at = PINNED_MOCK.indexOf(id);
+      if (at >= 0) PINNED_MOCK.splice(at, 1);
+    }
+    return r.fulfill(json({ sessions: [...PINNED_MOCK] }));
+  });
   await page.route(/\/api\/projects\/proj1\/agent-sessions\/[^/]+$/, (r) =>
     r.fulfill(
       json({
@@ -151,7 +172,7 @@ async function setupMocks(page) {
     r.fulfill(json({ sessions: AGENTS })),
   );
   await page.route(/\/api\/projects\/proj1\/terminal-sessions(\?.*)?$/, (r) =>
-    r.fulfill(json({ sessions: [] })),
+    r.fulfill(json({ sessions: [TERMINAL] })),
   );
   await page.route(/\/api\/projects\/proj1\/files(\?.*)?$/, (r) => {
     const path = decodeURIComponent(
@@ -363,6 +384,43 @@ ok(
     /置顶/.test(sessMenuText) &&
     /关闭会话/.test(sessMenuText),
   "③ ⋯ 会话菜单 = 实例信息/重命名/置顶/关闭会话",
+);
+await page.keyboard.press("Escape");
+await page.waitForTimeout(300);
+
+// ───────────── Part 4b 终端 tab ⋯ 会话菜单（v1.6 真机反馈：置顶补齐）─────────────
+console.log("Part 4b 终端 tab ⋯ 会话菜单（置顶补齐）");
+const termRow = page.locator(".sidewin .srow2").filter({ hasText: "term-1" }).first();
+await termRow.click();
+await page.waitForTimeout(900);
+const termChip = tabstrip.locator(".tb", { hasText: "term-1" });
+ok((await termChip.count()) === 1, "① 终端实例行点入 → 中栏 terminal session tab");
+await termChip.click();
+await page.waitForTimeout(400);
+const termDots = tabstrip.locator('[aria-label="更多操作"]');
+ok((await termDots.count()) === 1, "② terminal tab 激活 → tabstrip [⋯]");
+await termDots.click();
+await page.waitForTimeout(400);
+const termMenuText = (await page.locator('[role="menu"]').textContent()) ?? "";
+ok(
+  /实例信息/.test(termMenuText) &&
+    /重命名/.test(termMenuText) &&
+    /置顶/.test(termMenuText) &&
+    /关闭会话/.test(termMenuText),
+  "③ 终端 ⋯ 菜单 = 实例信息/重命名/置顶/关闭会话（置顶补齐）",
+);
+ok(!/自动重试/.test(termMenuText), "④ 终端无自动重试行（claude gate 不放行）");
+// 菜单项 dispatchEvent（§26：锚定弹层内 menuitem click 几何判定会被 Radix fixed+transform 弹层误伤）。
+await page
+  .locator('[role="menu"]')
+  .getByRole("menuitem")
+  .filter({ hasText: "置顶" })
+  .dispatchEvent("click");
+await page.waitForTimeout(800);
+const termMenuAfter = (await page.locator('[role="menu"]').textContent()) ?? "";
+ok(
+  /置顶/.test(termMenuAfter) && /✓/.test(termMenuAfter),
+  "⑤ 终端置顶点击 → 菜单保持开 + ✓ 态标注（keepOpen）",
 );
 await page.keyboard.press("Escape");
 await page.waitForTimeout(300);

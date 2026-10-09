@@ -2183,10 +2183,10 @@ function SessionTabStripActions({
       trailing: <span className="text-xs text-ink-3">›</span>,
       onSelect: openInfo,
     },
-    // pin 保留原严格门（sessionType 原值判定，不随 ?? "agent" 兜底漂移——未知类型会话
-    // 旧行为不渲染 pin，build 兜底只服务 rename/close 的既有语义）。置顶行 = 恒「置顶」
-    // 文案 + ✓ 态标注（v1.6 workspace-more-menu 动作区原型语义）。
-    ...(sessionType === "agent" && a.pin
+    // 置顶行 = 恒「置顶」文案 + ✓ 态标注（v1.6 workspace-more-menu 动作区原型语义）；无类型
+    // 门（v1.6 真机反馈补齐：终端会话同权——服务端 pinned 纯 id 列表无类型语义，置顶条候选
+    // 含 terminal，安全）。
+    ...(a.pin
       ? [
           {
             label: t("workbench.pin"),

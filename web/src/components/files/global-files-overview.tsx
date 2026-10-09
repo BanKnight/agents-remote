@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
+import { useQuery } from "@tanstack/react-query";
 
+import { listRootFiles } from "../../api/client";
 import { useIsMobile } from "../../lib/use-is-mobile";
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
@@ -11,7 +13,8 @@ import {
 import { useGlobalInstanceCandidates } from "../workbench/instance-area";
 import { relativeTime } from "../workbench/history-list";
 import { FileCrumb } from "./file-crumb";
-import { FilesPanel } from "./file-browser";
+import { FilesPanel, rootDisplayName } from "./file-browser";
+import { CollapsibleSearchRow } from "../shell/collapsible-search";
 import { type CardDragStartHandler } from "../workbench/drag-source";
 
 /**
@@ -58,6 +61,9 @@ export function GlobalFilesOverview({
   const [lastProject] = useAtom(workbenchLastProjectAtom);
   // 卡形态统计源：与项目 Tab 同 ["overview"] query（dedupe 零额外网络；10s refetchInterval 同步受益）。
   const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
+  // 根 listing 元数据（rootPath → crumb 根段真实目录名）：与 FilesPanel 同 key 同 fn，
+  // React Query 缓存共享零额外网络（v1.6 真机反馈：根名不硬编码，读服务器真相）。
+  const { data: rootListing } = useQuery({ queryKey: ["root", "files"], queryFn: listRootFiles });
   const [filter, setFilter] = useState("");
   // v1.6 移动搜索收缩（files-global-tab ①：行2 = 地址框 + 收缩搜索钮单行，不再常驻展开
   // 搜索行；点按展开 = 03x 全宽过滤）。桌面（panel/page）保持常驻 .psearch 不变。
@@ -140,43 +146,26 @@ export function GlobalFilesOverview({
         {isMobile && !pageMode ? (
           <div className="flex flex-none items-center gap-1.5">
             {searchOpen ? (
-              <>
-                <div className="psearch min-w-0 flex-1">
-                  <ShellIcon
-                    aria-hidden="true"
-                    className="size-4 flex-none text-ink-2"
-                    name="magnifyingglass"
-                  />
-                  <input
-                    aria-label={t("files.searchPlaceholder")}
-                    autoFocus
-                    className="w-full bg-transparent text-callout text-ink-1 outline-none"
-                    onChange={(e) => setFilter(e.target.value)}
-                    placeholder={t("files.searchPlaceholder")}
-                    ref={searchInputRef}
-                    type="search"
-                    value={filter}
-                  />
-                </div>
-                <button
-                  aria-label={t("files.closeSearch")}
-                  className="obtn srch cursor-pointer"
-                  onClick={() => {
-                    setSearchOpen(false);
-                    setFilter("");
-                  }}
-                  type="button"
-                >
-                  <ShellIcon aria-hidden="true" name="close" />
-                </button>
-              </>
+              /* 展开态 = CollapsibleSearchRow 单源（.psearch + ✕；与插件页/工具 chip 同构）。
+                  ⌘F 聚焦为桌面 gate（移动不 bump），searchInputRef 留在下方桌面常驻分支；
+                  移动展开态 autoFocus 即满足聚焦。 */
+              <CollapsibleSearchRow
+                onChange={setFilter}
+                onClose={() => {
+                  setSearchOpen(false);
+                  setFilter("");
+                }}
+                placeholder={t("files.searchPlaceholder")}
+                value={filter}
+              />
             ) : (
               <>
                 {/* 地址框 = FileCrumb 单源（v1.6 升格 34px/13px/r10）：根段图标 =
-                  project（SF 名 folder 形状）；服务器根态 segments=[] 仅图标。 */}
+                  project（SF 名 folder 形状）；服务器根态 segments=[]，根名 = 真实根目录
+                  basename（rootPath 未回退「服务器根」）。 */}
                 <FileCrumb
                   onNavigate={(path) => onPathChange?.(path)}
-                  rootLabel={t("files.root")}
+                  rootLabel={rootDisplayName(rootListing?.rootPath, t("files.rootDirectory"))}
                   segments={currentPath ? currentPath.split("/") : []}
                 />
                 <button

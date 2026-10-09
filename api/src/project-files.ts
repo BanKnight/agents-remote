@@ -89,7 +89,8 @@ export class ProjectFilesService {
    * 列 PROJECTS_ROOT 一级目录（项目目录），用于全局 files tab 的根目录浏览。
    * 只读入口（用户权限边界：根目录层只读，写操作进入项目子目录后走 project-scoped API）。
    * 复用 listFiles 的 entryFromDirent + compareEntries + 隐藏过滤；projectName 返回 ""
-   *（根层无所属项目，客户端按 currentPath 第一段切换数据源）。
+   *（根层无所属项目，客户端按 currentPath 第一段切换数据源）。rootPath 带真实根目录
+   * 绝对路径（realpath 后）——客户端 crumb 根段显示 basename，不硬编码根名。
    */
   async listRootFiles(): Promise<ProjectFileListResponse> {
     const rootPath = await resolveProjectsRoot(this.projectsRoot);
@@ -114,6 +115,7 @@ export class ProjectFilesService {
         projectName: "",
         path: "",
         parentPath: null,
+        rootPath,
         entries: files.sort(compareEntries),
       };
     } catch {

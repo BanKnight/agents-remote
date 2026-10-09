@@ -130,7 +130,7 @@ function sessionDetail(session) {
   };
 }
 
-async function setupMocks(page, { sessionIds, foreignCandidates = [] }) {
+async function setupMocks(page, { sessionIds, foreignCandidates = [], terminalSessions = [] }) {
   // POST 新建后 GET 列表要要含新会话（▾ 菜单列表源 = React Query instances，invalidate 后
   // refetch 拿的就是这里）。闭包可变列表；模块级 POST_ADDS 跨 context 复位。
   POST_ADDS.length = 0;
@@ -173,7 +173,7 @@ async function setupMocks(page, { sessionIds, foreignCandidates = [] }) {
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ sessions: [] }),
+      body: JSON.stringify({ sessions: terminalSessions }),
     }),
   );
   // 置顶状态（v1.6 ⋯ 菜单动作区 ✓ 标注数据源）：GET 返回闭包数组，POST/DELETE（sessionId
@@ -769,6 +769,69 @@ async function run() {
     );
     await page4.keyboard.press("Escape");
     await ctx4.close();
+
+    // ── Part 12：终端会话 ⋯ 菜单（v1.6 真机反馈补齐：置顶无类型门）──────────────
+    console.log("\n===== Part 12. 终端会话 ⋯ 菜单（置顶补齐 + 自动重试不出现）=====");
+    const ctx5 = await browser.newContext(MOBILE_CTX);
+    const page5 = await ctx5.newPage();
+    await setupMocks(page5, {
+      sessionIds: [],
+      terminalSessions: [
+        {
+          id: "terminal_probe-term-1",
+          projectName: "proj1",
+          displayName: "term-1",
+          status: "running",
+          updatedAt: "2026-10-10T00:00:00.000Z",
+        },
+      ],
+    });
+    await login(page5);
+    await page5.goto(`${ORIGIN}/projects/proj1/session/terminal_probe-term-1`, { timeout: 8000 });
+    await page5.waitForSelector('[data-tab-id="terminal_probe-term-1"]', { timeout: 8000 });
+    await page5.locator('.nav button[aria-label="更多操作"]').click({ timeout: 5000 });
+    await page5.getByRole("menuitem").first().waitFor({ timeout: 5000 });
+    const termLabels = await page5.evaluate(() => {
+      const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+      return [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])].map(
+        (it) => it.textContent?.replace(/[›✓]/g, "").trim() ?? "",
+      );
+    });
+    ok(
+      termLabels.length >= 5 &&
+        termLabels[0].includes("会话历史") &&
+        termLabels[1].includes("实例信息") &&
+        termLabels[2].includes("置顶") &&
+        termLabels[3].includes("重命名") &&
+        termLabels[4].includes("关闭会话") &&
+        !termLabels.some((l) => l.includes("自动重试")),
+      `终端菜单 = 历史/信息/置顶/重命名/关闭（无自动重试；实际 ${JSON.stringify(termLabels)}）`,
+    );
+    // 终端置顶即点即改（keepOpen + ✓）——v1.6 真机反馈核心断言。
+    await page5.getByRole("menuitem").filter({ hasText: "置顶" }).click();
+    await page5
+      .waitForFunction(
+        () => {
+          const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+          const pinRow = [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])].find((it) =>
+            it.textContent?.includes("置顶"),
+          );
+          return pinRow != null && (pinRow.textContent?.includes("✓") ?? false);
+        },
+        undefined,
+        { timeout: 5000 },
+      )
+      .catch(() => {});
+    const termPin = await page5.evaluate(() => {
+      const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+      const pinRow = [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])].find((it) =>
+        it.textContent?.includes("置顶"),
+      );
+      return { menuOpen: menu != null, pinChecked: pinRow?.textContent?.includes("✓") ?? false };
+    });
+    ok(termPin.menuOpen === true && termPin.pinChecked === true, "终端置顶 ✓ 即点即改（keepOpen）");
+    await page5.keyboard.press("Escape");
+    await ctx5.close();
   } finally {
     await browser.close();
   }

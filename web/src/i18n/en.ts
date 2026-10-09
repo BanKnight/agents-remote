@@ -148,7 +148,6 @@ export const en = {
   "files.discardConfirm": 'Discard unsaved changes to "{{name}}"?',
   "files.done": "Done",
   "files.dropZone": "Drop file to upload",
-  "files.root": "agents-remote",
   "files.hidden": "hidden",
   "files.projectMetaActive": "{{count}} instances · active {{time}}",
   "files.projectMetaIdle": "Idle · active {{time}}",

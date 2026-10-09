@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -74,6 +74,9 @@ test("listRootFiles hides only blocklisted entries (.git); other dot items visib
     projectName: "",
     path: "",
     parentPath: null,
+    // v1.6 根名真实化：rootPath = 服务器根绝对路径（realpath 后，macOS /var→/private/var
+    // 符号链接差异故同函数换算），客户端 crumb 根段取 basename。
+    rootPath: await realpath(root),
     entries: [
       { name: ".config", path: ".config", type: "directory", hidden: false, size: null },
       { name: "alpha", path: "alpha", type: "directory", hidden: false, size: null },
