@@ -1,12 +1,12 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-09（**批 16 全链路完成：5+1 commit 已 push（至 6007d15）、e2e 27/27 补跑全绿、真机再反馈（①aux 两项）已修——等用户真机复验再反馈项**）
+> 最后更新：2026-10-09（**批 17 键盘 inset 单源完成并 push（至 `1280c69`）：编辑态避让 + aux 条键盘联动 + Android meta + 文档沉淀——等用户真机复验**）
 
 ## 一句话状态
 
-批 16 三项修复 + 一轮 reviewer 消化 + 复审二轮消化 + **e2e 27/27 补跑全绿（宿主 IO 风暴结束）** + **真机再反馈修复**（aux 图标 14→16px stroke 保真；.aux safe-area height calc 补偿修「图标贴条顶错位」——Chromium env=0 结构性复现不了，border-box height−env 压 content 算术缺陷）全部完成，6 commit（`8d06e82`/`dd35ab8`/`e81b162`/`7c499eb`/`f7f4c2a`/`6007d15`）已 push——**等用户真机复验再反馈项（aux 条两项）**。
+批 16 全链路（含真机再反馈修复 `6007d15`）+ **批 17 键盘 inset 单源**（`215d390` 实现 + `1280c69` 记档）全部 push——批 17 解决用户两个问题：①文件编辑态 `.aux` 条被键盘挡（visualViewport 观察器单源 → `--kb-offset` padding 缩链）②辅助条随键盘切换样式（`--kb-active` 系数，env chin 避让随键盘在场归零）+ Android `interactive-widget=resizes-content`。双 reviewer 无 P0/P1、P2×3 全消化、e2e 27/27、探针 10/10。**等用户真机复验批 17 清单**。
 
-## 本 session 焦点（批 16 全流程）
+## 本 session 焦点（批 16 收尾 + 批 17 键盘 inset）
 
 ### 关键决策（本阶段不可丢）
 
@@ -17,6 +17,8 @@
 - **双 reviewer 消化**：P1×2 全修 + P2 修 5（text-xs 错误档/i18n 插值/容器 padding 对齐/suppressErrorRendering/cursor-pointer 删 3 处——.aux button base 已有）；记档不动 2（panel-right 与分屏钮同形制异动作，两端今日不共屏；frontmatter 探针固定 sleep pragmatic）。
 - **e2e 环境故障判定（重要）**：批 16 树 e2e 挂 2-5 个且失败集合漂移 → **stash 全部批 16 改动跑基线（78db575 干净树）同挂**（挂点漂到更早）→ 非批 16 回归。根因：PVE 宿主上另一 VM（vm-302-disk-0.raw）经 loop2 设备狂读 468MB/s → 本机（宿主角色）内核态 CPU 75%、3 核 load 25-30 → 时序敏感 WS mock 流测试（acp-session/file-browser）全线漂移。VM 302 不在我管辖，不可动。
 - **gitStatus 快照误导**：会话开头快照显示 HEAD=938618a（sheet commit）+ sheet 手感未提交改动——reflog 实证该 commit 从不存在于本 repo，工作区也无 sheet 改动。以 git log/reflog 实际状态为准（HEAD=78db575 批 15 记档，与 summary 吻合）。
+- **批 17 键盘 inset（2026-10-09）**：iOS 键盘 overlay 只缩 visual viewport 不动 layout（WebKit 141832 intentional），CSS/meta 全线失效（`interactive-widget`/VirtualKeyboard iOS 未实现）→ visualViewport JS 唯一路径。监听单源 `keyboard-inset.ts`（resize+scroll 双监听 + rAF 同帧 + visible gate 强制归零 + coarse guard + dispose cancel rAF）；`--kb-offset` 消费二形态：全高面板 padding 缩链（编辑态）、浮动卡片 translateY（composer 既有）；`.aux` 联动 = `env × (1 − var(--kb-active,0))` 键盘在场 chin 归零（**勿作显隐消费**——iOS 26 瞬态误判教训）；Android = meta `interactive-widget=resizes-content` 治本（JS 路径自然休眠不打架）。历史教训：focus 目标自身 padding 骤减致 iOS ~50% 取消键盘触发（aux 非 focus 目标风险低，真机清单保留排查）。
+- **批 17 验证边界**：Chromium 对键盘 vv 行为结构性失明——探针（probe-keyboard-inset 10/10）只证接线（defineProperty mock + dispatchEvent），真实键盘行为必须真机。记档不动 4 项（aux 34px 瞬态跳变观感 / Android sheet 手势基准 / Android env 残留 / pinch-zoom 假阳性）全在真机清单。
 
 ### 进度（已完成 / 待办）
 
@@ -28,7 +30,8 @@
 - ✅ e2e 补跑 27/27 全绿（IO 风暴结束后复证，定时任务已撤）。
 - ✅ push 全部（origin/main = 6007d15）。
 - ✅ 批 15+16 真机复验清单已交（19 条）；用户复验反馈「基本都没问题」，仅清单第 16 条再优化两项 → 已修（6007d15）。
-- ⬜ **用户真机复验再反馈项**：aux 条图标应清晰（16px Lucide）且居中于工具条上部交互区（不再贴条顶）。
+- ✅ 批 17 键盘 inset 全流程（实现 + 双 reviewer + P2 消化 + e2e 27/27 + 探针 10/10 + 文档沉淀四件）→ `215d390` + `1280c69` 已 push。
+- ⬜ **用户真机复验批 17 清单**（见交付说明）：编辑态聚焦不被挡 / aux 贴键盘紧凑 / 收起恢复 / composer 回归 / 键盘偶发不弹排查 / Android 行为。
 
 ## 易丢的关键上下文
 
@@ -66,4 +69,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-09 03:05；触发原因：批 16 记档完成，e2e 补跑等待点检查点
+最后更新：2026-10-09 13:00；触发原因：批 17 全流程完成并 push（1280c69），等用户真机复验
