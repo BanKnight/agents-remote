@@ -1654,6 +1654,18 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 - **真机再反馈（①的二次反馈，2026-10-09，commit `6007d15`）**：真机复验「基本都没问题，除了 1 需要再优化」——「①应该遵守规范使用 lucide 图标」+「②iPhone 中图标和工具条背景出现了错位」。诊断：Chromium 几何探针全对齐（按钮/svg/文字中心一致）→ **WebKit 特有观感 + 一处硬算术缺陷**。两修：**①观感走样根因 = 14px 下 stroke 视觉仅 1.17px**（24 网格 stroke-2），iOS @3x 抗锯齿发虚不像标准 Lucide 线条 → 升 `size-4`（16px，1.33px，Lucide 推荐最小档；「遵守规范」的实义 = Lucide 渲染保真）。**②错位真根因 = `.aux` 的 `height:40px`（border-box）被 `padding-bottom: env(34px)` 压 content 到 6px**，按钮在 6px 里 align-center = 贴条顶——Chromium env=0 复现不了（历史批次漏检原因），纯算术可证。修 = `height: calc(40px + env(...))` 交互区恒 40px、chin 背景延伸不变（§1 单点消费）。**经验沉淀：Chromium 探针对 env() 类真机差异结构性失明，safe-area 消费点的高度声明必须做 border-box 压缩审查**（height 与 padding 同向叠加时 content = height − env，交互区被吞）。
 
+### 批 17：键盘 inset 单源——编辑态避让 + aux 条键盘联动 + 多端适配（2026-10-09，commit `215d390`）
+
+用户复盘「收起键盘」功能时提出两个问题并拍板方向：①业务输入区不再被键盘挡（编辑态 `.aux` 条无避让）；②辅助工具条随键盘弹起切换样式（键盘在场时 safe-area chin 避让不需要，紧凑贴键盘上沿）；多端适配；验证可行后沉淀 docs 文档。
+
+- **监听单源**：`web/src/lib/keyboard-inset.ts` `observeKeyboardInset` + `computeKeyboardInset` 纯函数——visualViewport resize+scroll 双监听、rAF 同帧、`visible = vv.height < innerHeight` 关闭强制归零 gate（iOS 26 残留兜底）、`pointer: coarse` guard、dispose cancel 已入队 rAF（design review P2，原 composer hook 同病一并修）。`use-keyboard-inset.ts` App 根挂载（main.tsx `KeyboardInsetSync`，ThemeSync 同层）写 `:root` 的 `--kb-offset`（px）/ `--kb-active`（0|1）。composer hook 重构至单源，对外行为逐字不变。
+- **消费形态取舍**：编辑态全高面板用 **padding 缩链**（`mobile-l3.tsx` 两处容器消费 `--kb-offset`；translateY 会把顶部推出视口，只适合 composer 浮动卡片）；`.aux` 样式联动 = `env(safe-area-inset-bottom) × (1 − var(--kb-active, 0))`——键盘在场 chin 避让责任转移给键盘，收起态逐字节回退原语义。**`--kb-active` 勿作显隐消费**（iOS 26 瞬态误判教训）。
+- **多端分流**：viewport meta 加 `interactive-widget=resizes-content`——Android Chrome 108+ layout viewport 随键盘缩（流内布局自动让位，JS 公式 ≈0 自然休眠）；iOS 忽略（WebKit 259770）走 JS 路径；Android 真机待验。
+- **两个历史教训贯穿**（composer 注释沉淀）：①`focus-within:pb-` 骤减曾致 iOS ~50% 取消键盘触发——aux 联动是同型 shift 但 aux 非 focus 目标（CodeMirror 焦点行位置不因 aux 缩短移动），风险较低，真机清单保留「键盘偶发不弹」排查项；②keyboardVisible 显隐驱动曾废弃——`--kb-active` 仅作系数。
+- **验证**：单测 754（computeKeyboardInset 6 断言含 visible 门内负值钳 0）；`probe-keyboard-inset.mjs` 10/10（页内 defineProperty mock vv + dispatchEvent 驱动：公式写入、padding 缩链跟随 477px、scroll 路径、收起恢复、落盘 `.aux` 规则锁联动表达式）；回归 batch16 9/9 + composer-attach 20/20；门禁全绿 + e2e 27/27。双 reviewer 无 P0/P1，P2×3 全消化（rAF cancel / 单测钳位用例 / 探针 scroll 路径 + 悬空引用）。
+- **记档不动（真机清单）**：aux 34px 一步跳变先于键盘到位（~250ms 瞬态，加 transition 会与逐帧 offset 打架，真机确认观感）；Android 下 `resizes-content` 使 mobile-sheet 手势几何基准（`window.innerHeight`）在「键盘开着拖 sheet」场景漂移；Android env 残留（国内设备手势条 inset 普遍 0，预期无害）；pinch-zoom 假阳性（`vv.scale !== 1` 判据备用不预加）。
+- **文档沉淀**：`docs/research/claude-ios-keyboard-viewport.md`「方案方向（待定）」改「实施现状」（监听单源 + 两种消费形态 + 多端分流 + 语义边界）；frontend-notes §27（四段式：现象/机制/标准做法/来源）。
+
 | 项 | 决策点 | 摊牌时点 |
 | --- | --- | --- |
 | Wiki「让 Agent 读这篇」注入协议 | ~~stdin 指令 vs attachment/引用卡；引用卡状态归属~~ ✅ 已摊牌（D13，§6.2）：stdin prompt + 客户端 per-session 引用 atom | ~~M4 开工前~~ 2026-09-21 |

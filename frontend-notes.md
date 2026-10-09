@@ -289,3 +289,13 @@
 **标准做法**：锚定弹层（menu/popover）内的菜单项点击，凡 click 反复「outside of the viewport」且 evaluate 几何证明健康 → 三步排除法：① 隔离环境复刻（自起同拓扑服务）分辨「产品缺陷 vs 测试语境」；② 失败现场 try/catch dump（scroll 位置 + 弹层 rect）分辨「弹层真漂移 vs 引擎误判」；③ 确认测试语境问题后菜单项 click 换 `dispatchEvent("click")`（跳过全部几何判定，语义等价 Radix menuitem 的 onSelect；force 仍会被 quads 判定卡住）。**勿再走**：固定 sleep 等动画（时序敏感，等了照样挂）；`force: true`（quads 判定仍在，弹层真漂移时同样抛错）。
 
 **来源**：批 13 e2e batch-4 排障（2026-10-08，27/27 复绿）；`e2e/file-browser.spec.ts` 三处 dispatchEvent 注释。
+
+## 27. 键盘 inset：visualViewport JS 是 iOS 唯一路径（单源观察器 + 两种消费形态）
+
+**现象**（真机实测）：文件编辑态底部 `.aux` 工具条被软键盘挡住；键盘弹起后辅助条需随键盘切换样式（safe-area chin 避让不再需要）。
+
+**机制**：iOS 键盘是 overlay——只缩 visual viewport、不动 layout viewport（WebKit 141832 intentional）。因此 `100vh/dvh`、`env()`、`interactive-widget` meta（WebKit 259770 未实现）、VirtualKeyboard API（230225 未实现）对键盘**全线失效**；`window.visualViewport` JS（iOS 13+）是唯一可靠路径。iOS 26 另有收起残留回归（`offsetTop` 不归零，26.1 已修复，JS gate 兜底）。Android Chrome 108+ 默认只缩 visual（`resizes-visual`），可用 meta 让 layout 跟缩。
+
+**标准做法**：①监听单源 `web/src/lib/keyboard-inset.ts` 的 `observeKeyboardInset`（resize+scroll 双事件、rAF 同帧、`visible = vv.height < innerHeight` 关闭强制归零 gate、`pointer: coarse` guard、dispose cancel rAF），消费方各自写 CSS 变量；②消费形态二选一：**流内全高面板用 padding 缩链**（`pb-[var(--kb-offset,0px)]`——translateY 会把顶部推出视口），**浮动卡片用 translateY**（composer `--composer-keyboard-offset` 先例）；③辅助条样式联动用系数 `env(safe-area-inset-bottom) * (1 - var(--kb-active, 0))`，**`--kb-active` 勿作显隐消费**（iOS 26 键盘动画瞬态误判曾致工具栏不稳定，composer hook 已废弃过该用法）；④Android 治本 = viewport meta `interactive-widget=resizes-content`（layout viewport 随键盘缩 → 流内布局自动让位，JS 公式算出 ≈0 自然休眠，双路径不打架）；⑤**focus 目标自身的 padding 骤减会 layout shift 致 iOS ~50% 取消键盘触发**（composer `focus-within:pb-` 前车之鉴）——键盘联动样式避免作用于 focus 目标所在盒。验证边界：Chromium 对键盘 vv 行为结构性失明（同 §1 env 教训），探针只证接线（页内 defineProperty mock + dispatchEvent，`probe-keyboard-inset.mjs`），真实键盘行为必须真机。
+
+**来源**：commit `215d390`（批 17）；证伪表与 iOS 26 回归调研 `docs/research/claude-ios-keyboard-viewport.md`；composer hook 与 `ClaudeSessionDetailRoute` 内注释（两处历史教训）。

@@ -68,9 +68,31 @@ composer 停在 layout viewport 底部，键盘盖住 visual viewport 下半 →
 - `--app-viewport-height`（CSS 媒体查询：PWA=`100vh` / 非 PWA=`100dvh`）控制 main 高度。这套是为了处理「地址栏」，不是「键盘」——键盘在两种模式下都不改 layout viewport。
 - assistant-ui web 版**无内置 iOS 键盘避让**（`KeyboardAvoidingView` 是 React Native 专用）；composer 定位完全交给应用层，扩展点是 `ThreadPrimitive.Root` / `ComposerPrimitive.Root` 的 `className` / `style`。
 
-## 方案方向（待定，未实现）
+## 实施现状（2026-10-09 批 17 定稿，commit `215d390`）
 
-唯一可靠的 iOS 方案：用 `window.visualViewport` **动态驱动 `--app-viewport-height = vv.height`**（并处理 `offsetTop`），让整个 app 高度跟随可见区。composer 是 flex 流式，会自动落到可见区底部（键盘上方），iOS 就不再需要 scroll-to-reveal，症状 1、3 一起解决。这与现有 `--app-viewport-height` 变量同构，只是从 CSS 媒体查询改成 JS 动态派生。
+上文「动态驱动 `--app-viewport-height = vv.height`」的全局方案**未采用**——实际落地为更局部的两个消费形态，共享同一监听单源：
+
+### 监听单源：`web/src/lib/keyboard-inset.ts`
+
+`observeKeyboardInset(apply)` + `computeKeyboardInset` 纯函数，实施要点即上列社区实证四条：
+
+- `resize` + `scroll` 双监听 + window resize（横竖屏），rAF 与浏览器布局同帧；
+- `visible = vv.height < innerHeight`，关闭时强制归零（绕 iOS 26 残留）；
+- 公式 `innerHeight − vv.height − vv.offsetTop`，负值钳 0；
+- `pointer: coarse` guard（桌面 no-op）+ 无 visualViewport 环境 no-op；dispose 取消已入队 rAF。
+
+### 消费形态一：浮动卡片 translateY（composer，批 8 起）
+
+composer 浮动区消费 `--composer-keyboard-offset` 做 `translateY(−offset)` 上浮——键盘弹起时 composer 已在键盘上方，iOS 判定焦点 input 可见 → 不触发 scroll-to-reveal。悬浮卡片才能用 translate；配套 `--composer-float-inset`（ResizeObserver 实测浮动区高）驱动消息列表 spacer 防遮挡。
+
+### 消费形态二：流内全高面板 padding 缩链（批 17，文件编辑态）
+
+编辑态面板（`mobile-l3.tsx` 两处容器）消费 `--kb-offset` 做 `padding-bottom`：flex 链整体缩短，CodeMirror `flex-1` 收缩、底部 `.aux` 工具条落到键盘上方。全高面板不能用 translate（顶部会被推出视口）。`.aux` 自身另消费 `--kb-active` 系数做样式联动：`env(safe-area-inset-bottom) × (1 − var(--kb-active, 0))`——键盘在场时被顶到键盘上方、不再贴物理屏底，chin 避让责任转移给键盘自带避让，aux 紧凑贴键盘上沿。**`--kb-active` 勿作显隐消费**（iOS 26 动画瞬态误判，composer 曾踩）；联动也不得作用于 focus 目标所在盒（`focus-within:pb-` 骤减曾致 iOS ~50% 取消键盘触发）。
+
+### 多端分流
+
+- viewport meta 加 `interactive-widget=resizes-content`：Android Chrome 108+ 的 layout viewport 随键盘缩，流内布局自动让位；此时 JS 公式算出 ≈0，visualViewport 路径自然休眠，双路径不打架。iOS 忽略（WebKit 259770），走 JS 路径。
+- 已知语义边界（有意保留）：iOS 双指捏合会使 `vv.height < innerHeight` 假阳性 → offset 短暂膨胀、手势结束自愈（composer 同样中招、线上无感）；若真机编辑态捏合跳动明显，再加 `vv.scale !== 1` 跳过判据。
 
 实施要点（来自社区实证）：
 
