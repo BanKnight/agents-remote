@@ -4400,6 +4400,9 @@
     left: calc(100% + 8px);
     top: 50%;
     transform: translateY(-50%);
+    /* 右缘钳宽兜底（右端点位长名不溢出舞台）；消费侧 pinned-sessions-bar 按点位内联
+       精确钳宽（无内联时此兜底生效）。 */
+    max-width: calc(100vw - 48px);
     background: var(--menu);
     border: 1px solid var(--sep-strong);
     border-radius: 10px;
