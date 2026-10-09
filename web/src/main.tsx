@@ -5,6 +5,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nProvider } from "./i18n";
 import { queryClient } from "./lib/query-client";
+import { useKeyboardInsetGlobal } from "./lib/use-keyboard-inset";
 import { restoreLastPath, saveCurrentPath } from "./navigation-persistence";
 import { router } from "./routes/router";
 import { ThemeSync } from "./theme";
@@ -16,6 +17,12 @@ restoreLastPath();
 router.subscribe("onResolved", () => {
   saveCurrentPath(window.location.pathname, window.location.search);
 });
+
+/** 键盘 inset 全局同步（批 17）：visualViewport → :root 的 --kb-offset/--kb-active。 */
+function KeyboardInsetSync() {
+  useKeyboardInsetGlobal();
+  return null;
+}
 
 const root = document.getElementById("root");
 
@@ -32,6 +39,7 @@ createRoot(root).render(
             挂 default store 后 hook 读写与 imperative 写入同源。 */}
         <JotaiProvider store={getDefaultStore()}>
           <ThemeSync />
+          <KeyboardInsetSync />
           <RouterProvider router={router} />
         </JotaiProvider>
       </QueryClientProvider>

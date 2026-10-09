@@ -22,9 +22,12 @@
         } catch (_) {}
       })();
     </script>
+    <!-- interactive-widget=resizes-content：Android Chrome 108+ 键盘随 layout viewport 缩，
+         流内布局自动让位；iOS 忽略（WebKit 259770 未实现），走 visualViewport JS 路径
+         （web/src/lib/keyboard-inset.ts）。 -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <meta name="theme-color" content="#000000" />
     <meta name="mobile-web-app-capable" content="yes" />

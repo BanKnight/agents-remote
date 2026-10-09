@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 
+import { observeKeyboardInset } from "./keyboard-inset";
+
 /**
  * iOS Safari 键盘避让：驱动 claude composer 浮动区的 `--composer-keyboard-offset`
  * CSS 变量（内层 translateY 上抬），让 composer 在键盘弹起时就已浮在键盘上方 →
@@ -8,10 +10,10 @@ import { useEffect } from "react";
  * interactive-widget meta、VirtualKeyboard API 在 iOS 全不触发（见
  * docs/research/claude-ios-keyboard-viewport.md）。
  *
- * 监听 visualViewport 的 resize + scroll（键盘动画收尾 scroll 仍 fire，保证 offset 准确）。
- * 关闭用 visible = vv.height < innerHeight 判断并强制归零，绕过 iOS 26 layout scroll
- * 不复位 bug。不用 window.scrollTo 对抗——body 被 pin 时 document scroll 本就是 0，
- * 碰不到 visual-viewport pan 轴，逐帧对抗只抖动（之前 mobile-keyboard.ts 失败的原因）。
+ * 监听生命周期（resize + scroll 双事件、rAF 同帧、iOS 26 关闭强制归零 gate、
+ * pointer: coarse guard）已提取为 keyboard-inset.ts 单源（批 17），编辑态面板避让
+ * （useKeyboardInsetGlobal → --kb-offset/--kb-active）与本 hook 共用同一观察器；
+ * 本 hook 只保留 composer 专属的消费：变量名 --composer-keyboard-offset + 卸载重置。
  *
  * 第二个 effect：克隆 ShellLayout 的 ResizeObserver→CSS 变量→inset 模式，测浮动区总高
  * 写 `--composer-float-inset`，消息列表底部 spacer 消费，保证滚动到底时最后一条消息
@@ -23,33 +25,12 @@ import { useEffect } from "react";
  */
 export function useComposerKeyboardAvoidance(): void {
   useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return; // 不支持 visualViewport → no-op（桌面浏览器也走这里）
-    // 桌面硬件键盘：visualViewport 不会因键盘变化，显式 guard 避免极少数 viewport 抖动误触发
-    if (!window.matchMedia("(pointer: coarse)").matches) return;
-
     const root = document.documentElement;
-
-    const apply = () => {
-      const visible = vv.height < window.innerHeight;
-      // 视口底被键盘吃掉的高度 = layout viewport 高 - visual viewport 高 - 其顶部偏移。
-      // visible=false 时强制 0，绕过 iOS 26 关键盘后 offset 残留。
-      const offset = visible ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
-      root.style.setProperty("--composer-keyboard-offset", `${offset}px`);
-    };
-
-    // requestAnimationFrame 兜 iOS 关键盘一帧 visualViewport 不一致，与浏览器布局同帧、无魔数超时。
-    const schedule = () => requestAnimationFrame(apply);
-
-    vv.addEventListener("resize", schedule);
-    vv.addEventListener("scroll", schedule);
-    window.addEventListener("resize", schedule); // 横竖屏切换重算
-    apply();
-
+    const dispose = observeKeyboardInset(({ offsetPx }) => {
+      root.style.setProperty("--composer-keyboard-offset", `${offsetPx}px`);
+    });
     return () => {
-      vv.removeEventListener("resize", schedule);
-      vv.removeEventListener("scroll", schedule);
-      window.removeEventListener("resize", schedule);
+      dispose();
       root.style.setProperty("--composer-keyboard-offset", "0px");
     };
   }, []);

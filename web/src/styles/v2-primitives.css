@@ -2348,8 +2348,11 @@
     gap: 26px;
     /* 批 16 真机反馈①再反馈：height 是 border-box，padding-bottom: env(34px) 会把 content
        压到 6px，按钮在 6px 里居中 = 贴条顶（真机「图标与工具条背景错位」根因）。calc 补偿后
-       content 恒 40px，交互区居中恢复；chin 背景延伸语义不变（§1 单点消费）。 */
-    height: calc(40px + env(safe-area-inset-bottom));
+       content 恒 40px，交互区居中恢复；chin 背景延伸语义不变（§1 单点消费）。
+       批 17 键盘联动：键盘在场（--kb-active:1，useKeyboardInsetGlobal 写入）时被顶到键盘
+       上方、不再贴物理屏底，chin 避让责任转移给键盘自带避让 → env 部分归零，紧凑贴键盘
+       上沿。仅作样式微调系数，勿改作显隐类消费（iOS 26 瞬态误判教训，composer hook 注释）。 */
+    height: calc(40px + env(safe-area-inset-bottom) * (1 - var(--kb-active, 0)));
     flex: none;
     background: var(--bg-elevated);
     border-top: 1px solid var(--sep-row);
@@ -2357,7 +2360,7 @@
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
     color: var(--ink-2);
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: calc(env(safe-area-inset-bottom) * (1 - var(--kb-active, 0)));
   }
   .aux button {
     background: none;
