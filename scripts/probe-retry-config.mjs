@@ -40,6 +40,35 @@ function record(ok, label) {
   return ok;
 }
 
+// PUT 串行链（code review v6.4 修复）下，毫秒级连点会让后续 commit 排队数百 ms——
+// 固定 waitForTimeout 窗口看不到 PUT 发出（race）。轮询等 POST 计数到达目标值再断言。
+function waitForPosts(target, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      if (RETRY_POSTS >= target || Date.now() - startedAt > timeoutMs) {
+        clearInterval(timer);
+        resolve(RETRY_POSTS >= target);
+      }
+    }, 100);
+  });
+}
+
+// 等串行队列清空（连续 quietMs 计数无新增），防前序积压 PUT 污染下一段断言基线。
+async function waitForQueueSettled(quietMs = 600) {
+  let last = RETRY_POSTS;
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 200));
+    if (RETRY_POSTS === last) {
+      if (Date.now() - lastChangeAt >= quietMs) return;
+    } else {
+      lastChangeAt = Date.now();
+      last = RETRY_POSTS;
+    }
+  }
+}
+let lastChangeAt = Date.now();
+
 const MOBILE_CTX = {
   viewport: { width: 390, height: 844 },
   locale: "zh-CN",
@@ -66,6 +95,19 @@ function sessionDetail(session) {
 async function setupMocks(page) {
   RETRY_POSTS = 0;
   RETRY_LAST_BODY = null;
+  // 兜底：未 mock 的 API（skill-slash-catalog / auto-retry-status 等深层 query）穿透到真实
+  // api 会 404 → React Query 默认指数退避重试（1s/2s/4s）→ invalidateQueries await 每次
+  // PUT 都等重试序列，串行链渗出被拖到 ~1s/条。Playwright route 后注册优先，specific
+  // route 注册在后自然覆盖；此兜底只接住 specific 未命中的请求。
+  await page.route(/\/api\//, (r) => {
+    // auth 走真实网络（登录要真密码校验），其余未 mock 请求兜 200 空对象。
+    if (/\/api\/auth/.test(r.request().url())) return r.fallback();
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({}),
+    });
+  });
   // 复位模块级 AGENT.autoRetry（上一段 run 的 POST 会污染，跨段断言基线要一致）。
   AGENT.autoRetry = {
     enabled: true,
@@ -214,6 +256,8 @@ async function runMobile() {
     record((await decBtn.isDisabled()) === true, "连点减到下限 1 → − disabled");
     for (let i = 1; i < 3; i++) await incBtn.click();
     await page.waitForTimeout(300);
+    // 连点 37 条 PUT 走串行链，等队列清空再进 Part 3（基线干净）。
+    await waitForQueueSettled();
 
     console.log("\n===== Part 3. 重试间隔档位选择器 =====");
     const delayBtn = page.getByRole("button", { name: "重试间隔" });
@@ -231,11 +275,13 @@ async function runMobile() {
     await menuItem45s.dispatchEvent("click");
     await page.waitForTimeout(500);
     record((await delayBtn.textContent())?.includes("45s") === true, "选档后间隔钮仍 45s");
-    record(RETRY_POSTS === postsBeforeStep + 1, "选档 → POST 发出");
+    record(await waitForPosts(postsBeforeStep + 1), "选档 → POST 发出");
     await delayBtn.click();
     await page.waitForTimeout(600);
     await page.getByRole("menuitem", { name: "2m" }).dispatchEvent("click");
     await page.waitForTimeout(500);
+    // 2m 选档 POST 在串行链上可能晚于下一段 fill 落地，污染 Part 4 的 body 断言基线。
+    await waitForQueueSettled();
     record(
       (await delayBtn.textContent())?.includes("2m · 指数退避") === true,
       "选 2m 档 → 间隔钮 2m · 指数退避",
@@ -246,8 +292,8 @@ async function runMobile() {
     const postsBeforeMsg = RETRY_POSTS;
     await msgInput.fill("换个文案再试一次");
     record(RETRY_POSTS === postsBeforeMsg, "输入立即值不发 POST（防抖中）");
-    await page.waitForTimeout(1400);
-    record(RETRY_POSTS === postsBeforeMsg + 1, "停顿 800ms 后 POST 发出（防抖保存）");
+    // 防抖 800ms 后 flush；串行链下 PUT 发出可能有排队延迟 → 轮询等再断言。
+    record(await waitForPosts(postsBeforeMsg + 1, 4000), "停顿 800ms 后 POST 发出（防抖保存）");
     record(RETRY_LAST_BODY?.config?.message === "换个文案再试一次", "POST body.config 携带新文案");
 
     console.log("\n===== Part 5. toggle 行即点即存 =====");
@@ -258,9 +304,10 @@ async function runMobile() {
       (await toggle.getAttribute("aria-checked")) === "false",
       "点 toggle → aria-checked=false（本地即时）",
     );
-    record(RETRY_POSTS === postsBeforeToggle + 1, "toggle → POST 发出");
+    record(await waitForPosts(postsBeforeToggle + 1), "toggle → POST 发出");
     await toggle.click();
     await page.waitForTimeout(400);
+    await waitForQueueSettled();
 
     console.log("\n===== Part 6. 移动容器形态断言 =====");
     const sheetEl = page.locator('[data-slot="sheet-content"], [role="dialog"]').last();

@@ -8,6 +8,7 @@ import type { TranslationKey } from "../../i18n/types";
 import type { WorkbenchInspectionTab } from "../../routes/workbench-model";
 import { ActionButton } from "../shell/shell-primitives";
 import {
+  FilePreviewNavMenu,
   L3GitBranches,
   L3GitCommit,
   L3GitHistory,
@@ -51,11 +52,24 @@ export type WorkbenchTabPlugin = {
 };
 
 /** 栏内详情态返回条（详情态顶部返回控件，files/git/wiki 三 tab 详情态共用）。 */
-function DetailBackBar({ label, onBack }: { label: string; onBack: () => void }) {
+function DetailBackBar({
+  label,
+  onBack,
+  actions,
+}: {
+  label: string;
+  onBack: () => void;
+  /** 可选右端动作 slot（files 预览态 = FilePreviewNavMenu ⋯，v6.5 后 diff 入口唯一载体；
+   * git/wiki 详情态不传）。 */
+  actions?: ReactNode;
+}) {
   return (
     <div className="shrink-0 border-b border-neutral-line/40 px-3 py-2">
       {/* 非 compact = 移动端自动撑到 min-h-11 触摸目标、桌面保持行内紧凑（§7 渐进增强）。 */}
-      <ActionButton onClick={onBack}>{label}</ActionButton>
+      <div className="flex items-center justify-between gap-2">
+        <ActionButton onClick={onBack}>{label}</ActionButton>
+        {actions}
+      </div>
     </div>
   );
 }
@@ -134,7 +148,20 @@ export function FilesToolTab({
   if (previewPath !== null) {
     return (
       <div className="flex h-full min-h-0 w-full flex-col">
-        <DetailBackBar label={t("files.backToFiles")} onBack={() => setPreviewPath(null)} />
+        <DetailBackBar
+          actions={
+            // v6.5 pencil 退役后「查看 diff」入口唯一载体（code review v6.5：此容器预览态
+            // 曾只返回条无菜单——能力凭空消失，对齐其余四容器「diff 收 ⋯」语义）。
+            <FilePreviewNavMenu
+              onViewDiff={() => setDiffTarget({ path: previewPath, scope: "worktree" })}
+              path={previewPath}
+              projectName={projectKey}
+              queryScope="files"
+            />
+          }
+          label={t("files.backToFiles")}
+          onBack={() => setPreviewPath(null)}
+        />
         <MobileL3FilePreview path={previewPath} projectName={projectKey} />
       </div>
     );

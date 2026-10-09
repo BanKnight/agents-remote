@@ -10,7 +10,7 @@ import type {
   OverviewResponse,
 } from "@agents-remote/shared";
 
-import { usePanelMeta } from "./instance-area";
+import { shortenHomePath, usePanelMeta } from "./instance-area";
 import { instanceNameMemoAtom } from "../../routes/workbench-model";
 import { I18nProvider } from "../../i18n";
 
@@ -173,5 +173,30 @@ describe("usePanelMeta 列表缓存预填（detail 未回时 tab 首帧即显实
       qc,
     );
     await waitFor(() => expect(result.current?.label).toBe("Detail Name"));
+  });
+});
+
+// shortenHomePath = 会话目录行展示缩写（v1.6 CR-P1-3）：纯字符串派生，无 hooks/DOM 依赖。
+describe("shortenHomePath 会话目录 ~ 缩写", () => {
+  const HOME = "/home/deploy";
+
+  it("home 下路径 → ~ 前缀", () => {
+    expect(shortenHomePath("/home/deploy/projects/foo", HOME)).toBe("~/projects/foo");
+  });
+
+  it("path 恰为 home → ~", () => {
+    expect(shortenHomePath(HOME, HOME)).toBe("~");
+  });
+
+  it("非 home 前缀路径原样返回", () => {
+    expect(shortenHomePath("/srv/data", HOME)).toBe("/srv/data");
+  });
+
+  it("home 未提供（旧 API 响应）原样返回", () => {
+    expect(shortenHomePath("/home/deploy/projects/foo")).toBe("/home/deploy/projects/foo");
+  });
+
+  it("前缀相似但非子路径（/home/deploy2）不误缩", () => {
+    expect(shortenHomePath("/home/deploy2/x", HOME)).toBe("/home/deploy2/x");
   });
 });

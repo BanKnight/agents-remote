@@ -97,11 +97,17 @@ async function run() {
     // 点卡片开 tab（活动 group 开新 tab）→ 中栏 group tab 栏出现 session tab chip
     await page.waitForTimeout(500);
 
-    console.log("===== 2. session tab chip ℹ 按钮 → 点击弹居中 modal =====");
-    const infoBtn = page.getByRole("button", { name: "实例信息" });
-    await infoBtn.waitFor({ timeout: 8000 });
-    record(true, "session tab chip 有 ℹ 按钮（aria-label=实例信息）");
-    await infoBtn.click({ timeout: 5000 });
+    console.log("===== 2. tabstrip 右端 ⋯ → 菜单「实例信息 ›」→ 居中 modal =====");
+    // v1.5 批 4 起 TabChip ℹ 退役（instance-area TabChip 注释）：实例信息入口 = tabstrip
+    // 右端 ⋯ 会话菜单第一项（v6.3 三区导航区）。菜单项 dispatchEvent（frontend-notes §26：
+    // 锚定弹层内 menuitem 的 click 几何判定会被 Radix fixed+transform 弹层误伤）。
+    const moreBtn = page.getByRole("button", { name: "更多操作" });
+    await moreBtn.waitFor({ timeout: 8000 });
+    await moreBtn.click({ timeout: 5000 });
+    const infoItem = page.getByRole("menuitem", { name: /实例信息/ });
+    await infoItem.waitFor({ timeout: 5000 });
+    record(true, "⋯ 会话菜单含「实例信息 ›」项（TabChip ℹ 退役后入口）");
+    await infoItem.dispatchEvent("click");
 
     // 居中 modal 断言：dialog-content 无 fixed bottom-0（底部 sheet 特征），是居中 left-1/2 top-1/2
     const dialog = page.locator('[data-slot="dialog-content"][data-state="open"]');

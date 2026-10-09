@@ -102,22 +102,21 @@ async function setup(page) {
   return state;
 }
 
-// 读当前路径：header .crumb chip = <b>{projectKey}</b> + segment buttons（无 svg；搜索
-// 按钮 aria-label=搜索且含 svg，排除）。last = 最后一个 segment；根目录 = 无段。
+// 读当前路径：header .crumb chip = 根段 + segment buttons（无 svg；搜索按钮 aria-label=搜索
+// 且含 svg，排除）。last = 最后一个 segment；根目录 = 无段（v1.6 起根态渲染 <b>{rootLabel}</b>
+// —— 根名文字不是路径段，segments 为空即回根）。
 async function readPath(page) {
   return await page.evaluate(() => {
     const crumb = document.querySelector(".crumb");
     if (!crumb) return { last: null, segments: [], hasCrumb: false };
-    // 03o crumb 形态（v1.5 批 10 适配）：段 buttons 在前、当前段 <b> 收尾；根段 = .cico
-    // 项目图标 button（含 svg，排除）。当前段读 <b>（此前读「buttons 末段」= 当前段父级，
-    // 恒差一级）。
+    // 03o crumb 形态：段 buttons 在前、当前段 <b> 收尾；根段 = .cico 项目图标（含 svg，排除）。
     const segments = Array.from(crumb.querySelectorAll("button"))
       .filter((b) => !b.querySelector("svg"))
       .map((b) => (b.textContent ?? "").trim())
       .filter((s) => s.length > 0);
     const current = crumb.querySelector("b")?.textContent?.trim() ?? null;
     return {
-      last: current ?? (segments.length > 0 ? segments[segments.length - 1] : null),
+      last: segments.length > 0 ? (current ?? segments[segments.length - 1]) : null,
       segments,
       hasCrumb: true,
     };
@@ -130,9 +129,11 @@ async function waitLast(page, expected) {
       (exp) => {
         const crumb = document.querySelector(".crumb");
         if (!crumb) return exp === null;
-        // 与 readPath 同款适配：当前段读 <b>（buttons 末段 = 当前段父级，恒差一级）。
-        const b = crumb.querySelector("b");
-        const last = b?.textContent?.trim() ?? null;
+        // 与 readPath 同款：无段按钮 = 根态（根态 <b> 是根名文字，不是路径段）。
+        const hasSegments =
+          Array.from(crumb.querySelectorAll("button")).filter((b) => !b.querySelector("svg"))
+            .length > 0;
+        const last = hasSegments ? (crumb.querySelector("b")?.textContent?.trim() ?? null) : null;
         return last === exp;
       },
       expected,

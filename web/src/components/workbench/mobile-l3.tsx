@@ -152,16 +152,22 @@ export function paneFmetaText(
 // ── v1.6 批 v6.5「点正文任意处进入编辑」tap 判定 ─────────────────────────────
 // 原型（tool-files-preview ②/workspace-preview ②/files-global-preview ②）：顶部无编辑钮
 //（pencil 退役），点正文命中区最大化。tap = pointerdown 记起点 + click 判位移 ≤ slop
-//（桌面拖选文本、移动滚动惯性不误触发）；button（渲染 toggle 等控件）与 a（渲染态链接）
-// 就近消费不冒泡进编辑。html 渲染态 iframe 内点击不冒泡出 iframe，属已知边界（先切源码）。
+//（桌面拖选文本、移动滚动惯性不误触发）；控件就近消费不冒泡进编辑——button（渲染 toggle
+// 等控件）、a（渲染态链接）、input/textarea/select（渲染态任务清单 checkbox 等）、
+// [contenteditable]（源码画布）与 [role=button]（语义钮）。
+// html 渲染态 iframe 内点击不冒泡出 iframe，属已知边界（先切源码）。
 const TAP_SLOP_PX = 10;
+
+/** 控件排除选择器：命中即不进编辑（就近控件自消费）。 */
+const TAP_EXCLUDE_SELECTOR =
+  "button, a, input, textarea, select, [contenteditable='true'], [role='button']";
 
 function useTapToEdit(onEnter: () => void) {
   const downRef = useRef<{ x: number; y: number } | null>(null);
   return {
     onClick: (e: React.MouseEvent) => {
       const target = e.target as Element;
-      if (target.closest("button") || target.closest("a")) return;
+      if (target.closest(TAP_EXCLUDE_SELECTOR)) return;
       const down = downRef.current;
       downRef.current = null;
       if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX) return;
@@ -221,12 +227,32 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
   }
   const data = editor.previewData;
 
-  // 非 text 类型：image → ImageViewer（缩放/旋转/双击手势工具条）；too_large/unsupported →
-  // .cap 简要说明。三类都带 data-role 根（预览态语义一致，调用方锚点稳定）。confirmHolder
-  // 只在 text 分支渲染（丢弃确认仅编辑态可达，image/cap 分支进不了编辑态）。
+  // .fmeta 单源派生（与 FilePreviewPane 同一 paneFmetaText；v1.6 原型左段 = 类型·度量·
+  // 更新时间，code review v6.5 指出本容器仍走旧 .meta 掉队）。early-return 分支同样消费
+  //（image = 宽×高/size，unsupported/too_large = size——Binary 页 fmeta + 空态与
+  // FilePreviewPane 同构）。imgDims 解码在 image 分支外不适用，恒 null（回落 size 段）。
+  const lineCount = data.type === "text" ? data.content.split("\n").length : 0;
+  // mtimeMs 契约 optional（shared ProjectFilePreviewResponse）——缺省不显更新段而非崩预览。
+  const updated =
+    data.type === "text" && data.mtimeMs
+      ? relativeTime(new Date(data.mtimeMs).toISOString(), t)
+      : "";
+  const fmetaText = paneFmetaText(data, {
+    renderView: data.type === "text" && editor.showRenderToggle && editor.renderMode === "render",
+    lineCountLabel: t("files.lineCount", { n: lineCount }),
+    imgDims: null,
+  });
+
+  // 非 text 类型：image → fmeta + ImageViewer（缩放/旋转/双击手势工具条）；too_large/
+  // unsupported → fmeta + .cap 简要说明。三类都带 data-role 根（预览态语义一致，调用方
+  // 锚点稳定）。confirmHolder 只在 text 分支渲染（丢弃确认仅编辑态可达，image/cap 分支
+  // 进不了编辑态）。
   if (data.type === "image") {
     return (
       <div className="flex min-h-0 flex-1 flex-col" data-role="l3-file-preview">
+        <div className="fmeta">
+          <span>{`${fmetaText.typeLabel} · ${fmetaText.metric}`}</span>
+        </div>
         <ImageViewer alt={data.name} downloadName={data.name} src={data.dataUrl} />
       </div>
     );
@@ -234,6 +260,9 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
   if (data.type !== "text") {
     return (
       <div className="flex min-h-0 flex-1 flex-col" data-role="l3-file-preview">
+        <div className="fmeta">
+          <span>{`${fmetaText.typeLabel} · ${fmetaText.metric}`}</span>
+        </div>
         <div className="cap mt-4 px-4">
           {data.type === "too_large"
             ? t("files.tooLarge", { limit: formatBytes(data.limitBytes) })
@@ -242,9 +271,6 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
       </div>
     );
   }
-  const lineCount = data.content.split("\n").length;
-  // mtimeMs 契约 optional（shared ProjectFilePreviewResponse）——缺省不显更新段而非崩预览。
-  const updated = data.mtimeMs ? relativeTime(new Date(data.mtimeMs).toISOString(), t) : "";
   // 完成编辑：dirty 时丢弃确认（与 FilesPanel 换文件守卫同款 dialog 文案）。确认后回渲染
   // 态（预览优先——「完成」= 结束一次编辑动作，回到 md/html 的默认阅读形态；源码再点
   // toggle）。renderMode 仅 md/html（showRenderToggle）消费——非 md/html 不写脏 state。
@@ -300,33 +326,21 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
           </span>
         </div>
       ) : (
-        <div className="meta">
-          {/* md/html：源码/渲染 toggle（03q3 .mseg 单源 RenderModeToggle，渲染段在前）+
-              元信息行并存（原型 :50——渲染态行数无意义只留时间，源码态行号在旁自明）；
-              非 md/html 恒 previewMetaLines（原形态）。 */}
+        // .fmeta 单源（v1.6 原型：左段 = 类型·度量·更新时间；md/html 右端 = 渲染⇄源码
+        // 分段——FilePreviewPane 同源派生，旧 .meta 行数/时间行退役）。
+        <div className="fmeta">
+          <span>
+            {`${fmetaText.typeLabel} · ${fmetaText.metric}${
+              updated ? ` · ${t("files.metaUpdated", { time: updated })}` : ""
+            }`}
+          </span>
           {editor.showRenderToggle ? (
-            <>
-              <span>
-                {/* mtimeMs 缺省（契约 optional）→ 只修行数，不显「· 更新 」空尾段 */}
-                {editor.renderMode === "render"
-                  ? updated
-                  : updated
-                    ? t("files.previewMetaLines", { n: lineCount, time: updated })
-                    : t("files.lineCount", { n: lineCount })}
-              </span>
-              <RenderModeToggle
-                className="ml-auto"
-                mode={editor.renderMode}
-                onChange={editor.onRenderModeChange}
-              />
-            </>
-          ) : (
-            <span>
-              {updated
-                ? t("files.previewMetaLines", { n: lineCount, time: updated })
-                : t("files.lineCount", { n: lineCount })}
-            </span>
-          )}
+            <RenderModeToggle
+              className="ml-auto"
+              mode={editor.renderMode}
+              onChange={editor.onRenderModeChange}
+            />
+          ) : null}
         </div>
       )}
       {editing ? (

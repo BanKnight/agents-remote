@@ -73,7 +73,7 @@ export function ScopeSwitchPopover() {
                 type="button"
                 onClick={() => pickProject(name)}
               >
-                <span className="nm">{on ? t("plugins.scopeProject", { name }) : name}</span>
+                <span className="nm">{name}</span>
                 {on ? <span className="ck">✓</span> : <span className="ar">›</span>}
               </button>
             );

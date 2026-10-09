@@ -371,8 +371,10 @@ await page.waitForTimeout(300);
 console.log("Part 5 全局文件推入态（mac-files-global-preview）");
 await page.goto(`${ORIGIN}/files`);
 await page.waitForTimeout(1000);
-// 桌面 /files 初始 = 服务器根（全局作用域）——切 seg4「本项目 · proj1」到项目根目录视图。
-const scopeSeg = page.getByText("本项目 · proj1", { exact: true });
+// 桌面 /files 初始 = 服务器根（全局作用域）——切 seg4 项目段「proj1」（v1.6 scopeProject =
+// "{{name}}" 纯项目名）到项目根目录视图。限定 .seg4 容器：页内首处 "proj1" 文本 = 左栏侧栏
+// 项目行（srow2），容器限定防误点。
+const scopeSeg = page.locator(".seg4").getByText("proj1", { exact: true });
 if ((await scopeSeg.count()) > 0) {
   await scopeSeg.click();
   await page.waitForTimeout(800);

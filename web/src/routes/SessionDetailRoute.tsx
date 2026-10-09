@@ -1190,11 +1190,12 @@ function SessionInputDrawer({
                 不落，diverge 记档）。onMouseDown preventDefault 保焦 = 移动端发送后键盘不收。 */}
             <div className="mt-1 flex justify-end">
               <button
-                className="send2"
+                className="send2 disabled:opacity-40 disabled:cursor-default"
                 disabled={!canSend || input.trim().length === 0}
                 type="submit"
                 aria-label={t("claude.composer.send")}
                 title={t("claude.composer.send")}
+                onMouseDown={(e) => e.preventDefault()}
               >
                 <LucideIcon name="arrow-up" />
               </button>

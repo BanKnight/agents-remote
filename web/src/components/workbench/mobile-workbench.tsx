@@ -1190,7 +1190,12 @@ function MobileProjectWorkbench({
   // ⋯ 菜单动作区数据源（v1.6 workspace-more-menu）：置顶态（✓ 标注）+ 自动重试开关
   //（即点即改；空 sessionId gate 在 hook 内，非会话聚焦零请求）。
   const { pinned: pinnedSet } = usePinnedSessions();
-  const focusAutoRetry = useAutoRetryToggle(scope.key, effectiveFocusId ?? "");
+  const focusAutoRetry = useAutoRetryToggle(
+    scope.key,
+    effectiveFocusId ?? "",
+    // skill tab 聚焦等非会话语境传 null 免发注定 404 的 detail 请求（code review v6.3）。
+    focusRef?.kind === "session" ? focusSessionType : null,
+  );
   const focusIsClaude =
     focusSessionType === "agent" && focusAgentDetail.data?.session.provider === "claude";
   // 行1 标题与 runct 徽标（spec §4.1-1）：标题 = 当前聚焦对象名（skill tab 名 / 实例名；
@@ -1389,6 +1394,9 @@ function MobileProjectWorkbench({
         <MobileProjectHeader
           focusId={focusRef?.kind === "session" ? effectiveFocusId : undefined}
           focusType={focusRef?.kind === "session" ? focusSessionType : undefined}
+          focusKind={
+            focusRef?.kind === "session" || focusRef?.kind === "skill" ? focusRef.kind : undefined
+          }
           foreignCandidates={globalCandidates}
           instances={instances}
           onCreateInstance={() => setCreateSheetOpen(true)}

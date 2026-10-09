@@ -38,6 +38,8 @@ import {
   ShellSectionLabel,
   listGroupClasses,
   shellSurfaceClasses,
+  toggleSwitchKnobClasses,
+  toggleSwitchTrackClasses,
 } from "./shell-primitives";
 import { ShellIcon } from "./icons";
 import { useConfirm } from "./confirm-dialog";
@@ -560,11 +562,9 @@ function ClaudeRuntimeContent({
                 {t("settings.enable1mHint")}
               </span>
             </span>
-            <span
-              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${enable1m ? "bg-primary" : "bg-surface-inset"}`}
-            >
+            <span className={toggleSwitchTrackClasses(enable1m)}>
               <span
-                className={`inline-block size-5 transform rounded-full bg-on-primary shadow transition ${enable1m ? "translate-x-[1.375rem]" : "translate-x-0.5"} ${enable1m ? "" : "bg-on-surface"}`}
+                className={`${toggleSwitchKnobClasses} ${enable1m ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
               />
             </span>
           </button>

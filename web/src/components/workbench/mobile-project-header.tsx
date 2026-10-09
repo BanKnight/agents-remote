@@ -33,6 +33,9 @@ type MobileProjectHeaderProps = {
   /** 行1 标题行首类型标（v1.6 workspace.html .tticn：agent=sparkles / terminal=terminal；
    *  空态/插件 tab 等非实例聚焦 = project folder——标题即项目名，与实例类型标区分）。 */
   focusType?: "agent" | "terminal";
+  /** 当前聚焦对象类别（design-review DR-P2-6）：skill tab 聚焦时标题 = skill 名，folder
+   *  「项目」语义错位 → tticn 整体不渲染；session/空态按 focusType 派生。 */
+  focusKind?: "session" | "skill";
   onSelectInstance: (projectName: string, sessionId: string) => void;
   /** ▾ 菜单钉底「＋ 新建实例…」（→ 03j sheet）。 */
   onCreateInstance: () => void;
@@ -73,6 +76,7 @@ export function MobileProjectHeader({
   foreignCandidates,
   focusId,
   focusType,
+  focusKind,
   onSelectInstance,
   onCreateInstance,
   onOpenHistory,
@@ -100,6 +104,7 @@ export function MobileProjectHeader({
           ) : (
             <InstanceSwitchMenu
               focusId={focusId}
+              focusKind={focusKind}
               focusType={focusType}
               foreignCandidates={foreignCandidates}
               instances={instances}
@@ -148,6 +153,8 @@ type InstanceSwitchMenuProps = {
   focusId?: string;
   /** 行1 标题行首类型标（同 MobileProjectHeader.focusType）。 */
   focusType?: "agent" | "terminal";
+  /** 聚焦对象类别（skill 态 tticn 不渲染，见 MobileProjectHeader.focusKind）。 */
+  focusKind?: "session" | "skill";
   onSelectInstance: (projectName: string, sessionId: string) => void;
   onCreateInstance: () => void;
   onOpenHistory: () => void;
@@ -173,6 +180,7 @@ function InstanceSwitchMenu({
   foreignCandidates,
   focusId,
   focusType,
+  focusKind,
   onSelectInstance,
   onCreateInstance,
   onOpenHistory,
@@ -242,13 +250,20 @@ function InstanceSwitchMenu({
           type="button"
         >
           {/* 行1 类型标（v1.6 workspace.html h1 .tticn：行首 sparkles = Agent 会话类型标，
-            区别于项目 folder；terminal = terminal；空态/插件 tab = folder） */}
-          <ShellIcon
-            className="tticn"
-            name={
-              focusType === "agent" ? "sparkles" : focusType === "terminal" ? "terminal" : "project"
-            }
-          />
+            区别于项目 folder；terminal = terminal；空态/插件 tab = folder。skill tab 聚焦
+            标题 = skill 名，folder「项目」语义错位 → 整体不渲染（DR-P2-6）） */}
+          {focusKind === "skill" ? null : (
+            <ShellIcon
+              className="tticn"
+              name={
+                focusType === "agent"
+                  ? "sparkles"
+                  : focusType === "terminal"
+                    ? "terminal"
+                    : "project"
+              }
+            />
+          )}
           <span className="block truncate">{title}</span>
           {/* runct ●n：项目运行中实例数（9px 绿，原型 .runct） */}
           {runningCount ? <span className="runct">●{runningCount}</span> : null}

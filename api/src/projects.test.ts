@@ -30,12 +30,14 @@ test("listProjects returns first-level directories sorted by name", async () => 
     {
       name: "alpha",
       path: join(root, "alpha"),
+      homePath: homedir(),
       agentSessionCount: 0,
       terminalSessionCount: 0,
     },
     {
       name: "zeta",
       path: join(root, "zeta"),
+      homePath: homedir(),
       agentSessionCount: 0,
       terminalSessionCount: 0,
     },

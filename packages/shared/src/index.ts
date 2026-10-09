@@ -1,6 +1,9 @@
 export type Project = {
   name: string;
   path: string;
+  /** 服务端 $HOME（os.homedir()）：web 侧会话目录行做 `~` 缩写的派生源（v1.6）。
+   *  optional——旧 API 响应无此字段，前端缺省时原样展示绝对路径。 */
+  homePath?: string;
   agentSessionCount: number;
   terminalSessionCount: number;
   gitBranch?: string;

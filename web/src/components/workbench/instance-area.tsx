@@ -88,6 +88,8 @@ import {
   type ShellTone,
   statusDotToneBg,
   statusToTone,
+  toggleSwitchKnobClasses,
+  toggleSwitchTrackClasses,
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, AcpPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { ChatSessionDetailBody } from "../../routes/ChatSessionDetailRoute";
@@ -981,7 +983,6 @@ export function useInstanceInfoActions(
   sessionType: "agent" | "terminal" | null | undefined,
   projectName?: string,
   variant: "sheet" | "modal" = "sheet",
-  footer?: ReactNode,
 ) {
   const { t } = useT();
   const infoSheet = useInstanceInfoSheet();
@@ -991,11 +992,11 @@ export function useInstanceInfoActions(
   // 会话目录（v1.6 workspace-instance-info）：项目工作目录从项目详情派生，仅 agent 型落行
   //（终端原型仅 项目/类型 两行）。hook 层常开（openInfo 是闭包不能挂 query），未就绪/失败
   // 不落行（不伪造）；跨调用同 queryKey dedupe 零额外网络。
-  const projectPath = useQuery({
+  const project = useQuery({
     queryKey: ["projects", projectName ?? ""],
     queryFn: () => getProject(projectName ?? ""),
     enabled: sessionType === "agent" && !!projectName,
-    select: (data) => data.project.path,
+    select: (data) => ({ path: data.project.path, home: data.project.homePath }),
     staleTime: 60_000,
   }).data;
   const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
@@ -1088,11 +1089,12 @@ export function useInstanceInfoActions(
         });
       }
       // 会话目录（v1.6 workspace-instance-info：恢复 ID 之后、累计之前；累计本批不落——
-      // AgentSession 无跨回合累计数据源，记 diverge）：项目工作目录前端派生，mono 换行展示。
-      if (projectPath) {
+      // AgentSession 无跨回合累计数据源，记 diverge）：项目工作目录前端派生 + $HOME→~ 缩写
+      //（homePath = API os.homedir() 同源，前端不硬编码 /home），mono 换行展示。
+      if (project) {
         fields.push({
           label: t("session.instanceInfo.sessionDir"),
-          value: projectPath,
+          value: shortenHomePath(project.path, project.home),
           mono: true,
           wrap: true,
         });
@@ -1103,14 +1105,8 @@ export function useInstanceInfoActions(
         value: t("session.instanceInfo.terminal"),
       });
     }
-    // claude 的编辑入口已并入自动重试行内（编辑按钮）；terminal/其他 provider 纯展示无 footer。
-    infoSheet.open(
-      displayName ?? t("session.instanceInfo.title"),
-      fields,
-      variant,
-      footer,
-      statusLine,
-    );
+    // claude 的编辑入口已并入自动重试行内（编辑按钮）；terminal/其他 provider 纯展示。
+    infoSheet.open(displayName ?? t("session.instanceInfo.title"), fields, variant, statusLine);
   };
   const runtimeDialogHolder =
     runtimeField !== null && (panelRef.kind === "session" ? panelRef : null) ? (
@@ -1141,6 +1137,15 @@ function formatRanSuffix(iso: string, t: TranslateFn): string {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return ` · ${t("time.ranHours", { count: hours })}`;
   return ` · ${t("time.ranDays", { count: Math.floor(hours / 24) })}`;
+}
+
+/**
+ * $HOME→~ 缩写（v1.6 workspace-instance-info「会话目录」行，原型 `~/srv/agents-web`）：
+ * home 由 API 提供（os.homedir() 同源，前端不硬编码 /home）；非 home 前缀路径原样展示。
+ */
+export function shortenHomePath(path: string, home?: string): string {
+  if (!home) return path;
+  return path === home || path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
 
 /**
@@ -1178,25 +1183,33 @@ function useAutoRetryEditor(panelRef: SessionPanelRef, variant: "sheet" | "modal
   };
 
   // 即点即存：本地先落地（连点 stepper 立即反馈），异步提交；失败保持打开 + 显式错误。
+  // 并发 PUT 串行化（code review v6.4）：stepper 连点/档位切换/文案防抖 flush 会在毫秒级
+  // 并发多条全量写，HTTP 乱序完成时服务端 last-arrival-wins 停在旧值，invalidate 再把旧值
+  // 拉回 UI（静默分歧直到重开面板）。单飞链保证到达序 = 调用序，前序失败不阻塞后续。
+  const commitQueueRef = useRef<Promise<void>>(Promise.resolve());
   const commit = useCallback(
-    async (next: ClaudeAutoRetryConfig) => {
+    (next: ClaudeAutoRetryConfig) => {
       setConfig(next);
-      try {
-        await updateAutoRetryConfig(panelRef.projectName, panelRef.sessionId, next);
-      } catch {
-        setSaveError(true);
-        return;
-      }
-      setSaveError(false);
-      await Promise.all([
-        queryClient.invalidateQueries({
-          exact: true,
-          queryKey: ["projects", panelRef.projectName, "agent-sessions", panelRef.sessionId],
-        }),
-        queryClient.invalidateQueries({
-          queryKey: ["projects", panelRef.projectName, "agent-sessions"],
-        }),
-      ]);
+      commitQueueRef.current = commitQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            await updateAutoRetryConfig(panelRef.projectName, panelRef.sessionId, next);
+          } catch {
+            setSaveError(true);
+            return;
+          }
+          setSaveError(false);
+          await Promise.all([
+            queryClient.invalidateQueries({
+              exact: true,
+              queryKey: ["projects", panelRef.projectName, "agent-sessions", panelRef.sessionId],
+            }),
+            queryClient.invalidateQueries({
+              queryKey: ["projects", panelRef.projectName, "agent-sessions"],
+            }),
+          ]);
+        });
     },
     [panelRef.projectName, panelRef.sessionId, queryClient],
   );
@@ -1228,7 +1241,13 @@ function useAutoRetryEditor(panelRef: SessionPanelRef, variant: "sheet" | "modal
  * query select 派生（primitive，同 queryKey dedupe 零额外网络）；toggle 读缓存当前 config
  * 只切 enabled（无 config 时按 UI 语言预填默认文案），成功 invalidate detail。
  */
-export function useAutoRetryToggle(projectName: string, sessionId: string) {
+export function useAutoRetryToggle(
+  projectName: string,
+  sessionId: string,
+  /** 调用方会话类型 gate（默认放行）：auto retry 是 agent 专用配置，terminal 会话 /
+   * skill tab 聚焦等非 agent 语境传 false 免发注定 404 的 detail 请求（code review v6.3）。 */
+  sessionType: "agent" | "terminal" | null | undefined = "agent",
+) {
   const { t } = useT();
   const queryClient = useQueryClient();
   const detailKey = ["projects", projectName, "agent-sessions", sessionId] as const;
@@ -1237,8 +1256,9 @@ export function useAutoRetryToggle(projectName: string, sessionId: string) {
     queryFn: () => getAgentSession(projectName, sessionId),
     retry: false,
     staleTime: 60_000,
-    // 空 sessionId（移动 ⋯ 菜单等组件顶层无条件调用的场景，非会话聚焦时）不发起请求。
-    enabled: sessionId !== "",
+    // 空 sessionId（移动 ⋯ 菜单等组件顶层无条件调用的场景，非会话聚焦时）与非 agent
+    // 会话类型不发起请求。
+    enabled: sessionId !== "" && sessionType === "agent",
     select: (data) => data.session.autoRetry?.enabled === true,
   }).data;
   const toggle = useMutation({
@@ -1331,16 +1351,16 @@ function AutoRetrySheetAction({
         role="switch"
         type="button"
       >
-        <span
-          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${on ? "bg-primary" : "bg-surface-inset"}`}
-        >
+        <span className={toggleSwitchTrackClasses(on)}>
           <span
-            className={`inline-block size-5 transform rounded-full shadow transition ${on ? "translate-x-[1.375rem] bg-on-primary" : "translate-x-0.5 bg-on-surface"}`}
+            className={`${toggleSwitchKnobClasses} ${on ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
           />
         </span>
       </button>
+      {/* 「编辑」小钮 = 原型 .ebtn 描边式（11px/700/primary + 主色 55% 描边 r7 透明底；
+        rounded-sm 8px ≈ 原型 7px，取语义档）。 */}
       <button
-        className={`cursor-pointer rounded-lg px-2 py-1 text-xs font-bold text-primary transition active:bg-primary/10 ${shellSurfaceClasses.workspace}`}
+        className="cursor-pointer rounded-sm border border-primary/55 px-[9px] py-[3px] text-[11px] font-bold text-primary transition active:bg-primary/10"
         onClick={onEdit}
         type="button"
       >
@@ -1409,10 +1429,6 @@ function AutoRetryEditorControls({
     onCommit({ ...config, enabled, message });
   };
 
-  const toggleClasses = `relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${
-    config.enabled ? "bg-primary" : "bg-surface-inset"
-  }`;
-
   return (
     <div>
       {/* 行1 自动重试开关（原型 krow + toggle）。 */}
@@ -1426,13 +1442,9 @@ function AutoRetryEditorControls({
           role="switch"
           type="button"
         >
-          <span className={toggleClasses}>
+          <span className={toggleSwitchTrackClasses(config.enabled)}>
             <span
-              className={`inline-block size-5 transform rounded-full shadow transition ${
-                config.enabled
-                  ? "translate-x-[1.375rem] bg-on-primary"
-                  : "translate-x-0.5 bg-on-surface"
-              }`}
+              className={`${toggleSwitchKnobClasses} ${config.enabled ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
             />
           </span>
         </button>
@@ -1457,7 +1469,8 @@ function AutoRetryEditorControls({
             >
               −
             </button>
-            <span className="min-w-[52px] border-x border-sep-row px-2.5 py-1 text-center text-[12.5px] text-on-surface">
+            {/* 值格分隔线 = 原型 .stp b 的 var(--sep)（重一档，v1.6 design review）。 */}
+            <span className="min-w-[52px] border-x border-sep px-2.5 py-1 text-center text-[12.5px] text-on-surface">
               {t("session.autoRetry.times", { count: config.maxPerWindow })}
             </span>
             <button
@@ -1613,8 +1626,9 @@ function formatCreatedAt(iso: string): string {
  * 不含该 session，refetch 校准与乐观一致，无回滚风险。removeQueries detail 由调用方单独处理。
  *
  * 只覆盖两个真正有 useQuery 缓存的 key：["projects", name, "${type}-sessions"]（.sessions）
- * 与 ["overview"]（.candidates，标识 = projectName+type+sessionId）。["projects"] /
- * ["projects", name] 在 web 侧无缓存（组件走 overview 单聚合），no-op。
+ * 与 ["overview"]（.candidates，标识 = projectName+type+sessionId）。["projects", name]
+ * 自 v1.6 起有缓存（useInstanceInfoActions 的会话目录 query 占用该 key，存项目详情
+ * path/homePath）——关会话不影响项目详情，无需清理。
  */
 export function optimisticallyRemoveSession(
   queryClient: QueryClient,
@@ -2159,7 +2173,7 @@ function SessionTabStripActions({
   // 动作区数据源（同移动端 ⋯ 菜单）：置顶态（✓ 标注）+ 自动重试开关（即点即改；claude
   // 会话门——provider 未加载前不渲染，避免闪现）。
   const { pinned: pinnedSet } = usePinnedSessions();
-  const autoRetry = useAutoRetryToggle(panelRef.projectName, panelRef.sessionId);
+  const autoRetry = useAutoRetryToggle(panelRef.projectName, panelRef.sessionId, sessionType);
   const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
   const isClaude = sessionType === "agent" && agentDetail.data?.session.provider === "claude";
   const items: ActionMenuItem[] = [

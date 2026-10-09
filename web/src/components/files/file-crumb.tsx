@@ -2,10 +2,13 @@
 // 与 FilesPanel 的 PathBreadcrumb（v1 遗留 🏠 + 斜杠段钮）是两份独立实现——用户实测
 //「地址栏明显不同」。FileCrumb 收敛同一份 DOM（.crumb 形制：根段图标 + 中间段钮 + <b> 收尾），
 // 差异经 props：
-//   - rootLabel：根段可访问名（tool 语境 = 项目名；global 根层 = 「服务器根」）
+//   - rootLabel：根态展示文字（tool 语境 = 项目名；global 根层 = 产品名，v1.6 原型
+//     files-global-tab「folder + <b>agents-remote</b>」）
 //
 // diverge 记档（redesign-v2 §6.14 批 11）：原型全局文件页（files-global-tab / ipad /
 // mac-files-global）地址栏 = .sfield 搜索框、无 crumb——用户「两树真同构」要求优先于原型落图。
+// v1.6（2026-10-10）原型显式给出根名文字（folder + <b>根名</b>），批 11「纯图标根段」
+// 随之退役：根态 = 图标 + <b>{rootLabel}</b>；子目录层根段回归纯图标回根钮。
 
 import { ShellIcon } from "../shell/icons";
 
@@ -20,15 +23,15 @@ export function FileCrumb({
   segments: string[];
   /** 根段/中间段点击导航（根段 = onNavigate("")）。 */
   onNavigate: (path: string) => void;
-  /** 根段可访问名（纯图标对读屏静默——design-review P1 先例）。 */
+  /** 根态展示文字 + 根段可访问名。 */
   rootLabel: string;
 }) {
   const segments = rawSegments.filter(Boolean);
   return (
     <div className="crumb">
-      {/* 根段（project = SF 名契约的 folder 形状）：子目录层 = 可点回根 button（aria-label =
-        rootLabel）；已在根 = 非交互 span（role="img" 补可访问名，design-review P1：纯图标
-        对读屏静默）。 */}
+      {/* 根段：子目录层 = 纯图标回根钮（aria-label = rootLabel，纯图标对读屏静默由根态
+        文字兜底语义——design-review P1）；已在根 = 图标 + <b>{rootLabel}</b>（v1.6 原型
+        files-global-tab：folder + <b>agents-remote</b>）。 */}
       {segments.length > 0 ? (
         <button
           aria-label={rootLabel}
@@ -39,8 +42,9 @@ export function FileCrumb({
           <ShellIcon className="cico" name="project" />
         </button>
       ) : (
-        <span aria-label={rootLabel} className="cseg flex-none" role="img">
+        <span className="cseg flex-none">
           <ShellIcon className="cico" name="project" />
+          <b>{rootLabel}</b>
         </span>
       )}
       {segments.slice(0, -1).map((seg, i) => (

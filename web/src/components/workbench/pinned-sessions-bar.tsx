@@ -61,6 +61,14 @@ export function pickPinnedColors(pinnedIds: string[]): Map<string, number> {
 /** 长按识别窗口（ms）：iOS 长按放大约 500ms 触发，取同量级。 */
 const LONG_PRESS_MS = 500;
 
+/**
+ * 气泡右缘钳宽几何（与 v2-primitives `.pinned`/`.pdot` 单源同值——CSS 改这里同步）：
+ * 点右缘 = 舞台 padding 16 + 点径 10 + (点径 10 + gap 14)·i；再加气泡 gap 8 + 舞台右余量 24
+ * = 基数 58、步进 24。
+ */
+const PINNED_BUBBLE_RIGHT_BASE = 58;
+const PINNED_DOT_PITCH = 24;
+
 export function PinnedSessionsBar({
   focusId,
   onSelectInstance,
@@ -108,14 +116,14 @@ export function PinnedSessionsBar({
       role="toolbar"
       aria-label={t("workbench.pinnedSessions")}
     >
-      {rows.map(({ id, candidate }) => {
+      {rows.map(({ id, candidate }, index) => {
         const current = id === focusId;
         return (
           <span className="relative inline-flex" key={id}>
             <button
               aria-current={current ? "true" : undefined}
               aria-label={candidate.displayName}
-              className={`pdot cursor-pointer ${current ? "cur" : ""}`}
+              className={`pdot cursor-pointer focus-visible:ring-3 focus-visible:ring-ring/50 relative after:absolute after:-inset-2.5 after:content-[''] ${current ? "cur" : ""}`}
               onClick={() => {
                 if (longPressRef.current) {
                   longPressRef.current = false;
@@ -123,7 +131,12 @@ export function PinnedSessionsBar({
                 }
                 onSelectInstance(candidate.ref.projectName, id);
               }}
-              onPointerCancel={clearTimer}
+              onPointerCancel={() => {
+                clearTimer();
+                // §23 失联清理：500ms 已触发（气泡已弹）后手指被系统取消（滚动抢占/来电）
+                // 时气泡必须同路收起，不能依赖浏览器补发 pointerleave 的实现细节。
+                setBubbleId(null);
+              }}
               onPointerDown={() => {
                 clearTimer();
                 longPressRef.current = false;
@@ -145,7 +158,16 @@ export function PinnedSessionsBar({
               type="button"
             />
             {bubbleId === id ? (
-              <span className="popb" role="status">
+              // 右缘钳宽（code review v6.2）：色点等宽等距（.pinned padding 16 + .pdot 10 +
+              // gap 14 → 点右缘 = 26+24·i），气泡右余量 = 100vw − (点右缘 + gap 8 + 舞台余量
+              // 24)，长名在余量内 truncate，任何点位不溢出右缘（左缘最远 34px 恒安全）。
+              <span
+                className="popb"
+                role="status"
+                style={{
+                  maxWidth: `calc(100vw - ${PINNED_BUBBLE_RIGHT_BASE + PINNED_DOT_PITCH * index}px)`,
+                }}
+              >
                 <span className="min-w-0 truncate font-semibold">{candidate.displayName}</span>
                 <span
                   className={`flex flex-none items-center gap-1 text-[11px] font-normal ${

@@ -35,35 +35,29 @@ type PendingInfo = {
   variant: InfoSheetVariant;
   /** 标题下状态行（03k：「● 运行中 · 已 12 分钟」，success 色小字）；缺省不渲染。 */
   status?: string;
-  /** 可选 footer slot（03k .acts 操作行等）。渲染在 krow 行族下方，样式由调用方自带，本组件不感知语义。 */
-  footer?: ReactNode;
 };
 
 /**
  * 实例信息弹窗（移动端聚焦态 ℹ 按钮 + 桌面中栏 tab ℹ 按钮共用）。仿 useConfirm holder 模式：
- * 调用方 `const { open, holder } = useInstanceInfoSheet()`，`open(title, fields, variant?, {status, footer})`
+ * 调用方 `const { open, holder } = useInstanceInfoSheet()`，`open(title, fields, variant?, status?)`
  * 触发，`{holder}` 渲染到组件树。形态由 variant 决定——`sheet`（默认）= 移动端底部滑出
  *（手指可达 + safe-area 单点消费）；`modal` = 桌面端居中卡片。
  * 结构对齐 03k-sheet-instance-info：grab → shd h2（17px/600）→ 状态行（12px/600 success）→
- * sep-row 分隔 → krow 行族（行间 border-top）→ footer 区。backdrop 点击 / Esc 关闭。
+ * sep-row 分隔 → krow 行族（行间 border-top）。backdrop 点击 / Esc 关闭。
+ * （v1.6：footer slot 退役——03k .acts 动作行随 v6.3 动作上收 ⋯ 菜单消失，信息面板 = 纯
+ * 展示，不再有调用方可装配的 footer 区。）
  */
 export function useInstanceInfoSheet() {
   const [pending, setPending] = useState<PendingInfo | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const open = useCallback(
-    (
-      title: string,
-      fields: InfoField[],
-      variant: InfoSheetVariant = "sheet",
-      footer?: ReactNode,
-      status?: string,
-    ) => {
+    (title: string, fields: InfoField[], variant: InfoSheetVariant = "sheet", status?: string) => {
       if (closeTimerRef.current) {
         clearTimeout(closeTimerRef.current);
         closeTimerRef.current = null;
       }
-      setPending({ fields, footer, status, title, variant });
+      setPending({ fields, status, title, variant });
     },
     [],
   );
@@ -82,7 +76,6 @@ export function useInstanceInfoSheet() {
   const holder = pending ? (
     <InfoSheetDialog
       fields={pending.fields}
-      footer={pending.footer}
       onClose={close}
       status={pending.status}
       title={pending.title}
@@ -95,7 +88,6 @@ export function useInstanceInfoSheet() {
 
 function InfoSheetDialog({
   fields,
-  footer,
   onClose,
   status,
   title,
@@ -149,19 +141,6 @@ function InfoSheetDialog({
           </div>
         ))}
       </dl>
-      {footer ? (
-        // 03k .acts 操作行语义：点击行内按钮（动作已触发）即收起 sheet——委托关闭，调用方
-        // 装配的 footer 无需感知 close（当前消费方 = useInstanceInfoActions 装配的 .acts 动作行，
-        // v1.5 批1 起 MobileFocusActions 已退役）。
-        <div
-          className="mt-1.5"
-          onClick={(e) => {
-            if ((e.target as HTMLElement).closest("button")) onClose();
-          }}
-        >
-          {footer}
-        </div>
-      ) : null}
     </>
   );
 

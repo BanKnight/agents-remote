@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { AuthService } from "./auth";
 import { ClaudeRuntime } from "./claude-runtime";
 import { createFetchHandler } from "./index";
@@ -226,6 +226,7 @@ test("createFetchHandler lists projects for authenticated requests", async () =>
     {
       name: "demo",
       path: join(root, "demo"),
+      homePath: homedir(),
       agentSessionCount: 0,
       terminalSessionCount: 0,
     },

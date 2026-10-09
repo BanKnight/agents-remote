@@ -269,6 +269,22 @@ export function StatusDot({ className, label, pulse = false, tone }: StatusDotPr
   );
 }
 
+/**
+ * iOS toggle 开关形态（v1.6 components.css `.toggle` 单源，:27-30）：on = `--c-success` 绿轨、
+ * off = `--bg-elevated3` 灰轨、knob 恒白（`--on-accent`）。三处消费：settings 1M 开关 /
+ * 实例信息自动重试行 / retry 编辑器——同一 helper 收口防「双标」漂移（v1.6 design review）。
+ * 轨 44×26 r13、knob 20px；调用方 button（role="switch"）包 track，knob 位移由 on/off
+ * utility（`translate-x-[1.375rem]` / `translate-x-0.5`）表达。
+ */
+export function toggleSwitchTrackClasses(on: boolean): string {
+  return `relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition ${
+    on ? "bg-success" : "bg-elevated3"
+  }`;
+}
+
+export const toggleSwitchKnobClasses =
+  "inline-block size-5 transform rounded-full bg-on-accent shadow transition";
+
 type StatusMarkerProps = {
   marker: ReactNode;
   status?: { label: string; tone: ShellTone; pulse?: boolean };

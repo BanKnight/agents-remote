@@ -6,6 +6,7 @@ import type {
   TerminalSession,
 } from "@agents-remote/shared";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { homedir } from "node:os";
 import { mkdir, readdir, realpath, rename, rm, stat } from "node:fs/promises";
 import {
   ProjectPathError,
@@ -345,6 +346,8 @@ export class ProjectService {
       return {
         name: project.name,
         path: project.path,
+        // 会话目录行 $HOME→~ 缩写的派生源（web 侧不硬编码 /home，v1.6 instance-info）。
+        homePath: homedir(),
         agentSessionCount: counts.agentSessionCount,
         terminalSessionCount: counts.terminalSessionCount,
       };
