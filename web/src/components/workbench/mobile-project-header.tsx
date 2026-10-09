@@ -118,7 +118,7 @@ export function MobileProjectHeader({
           <>
             {/* 检视面板单入口（v1.5 行1 右端 [面板]：03 面板钮自行2 迁入；热区扩展同前 M10 语义）。
                 真机复验反馈②：与右端 ⋯ 同 .ic 26×26 形制（原型 nav 右端两钮恒 .ic，此前 .ticon
-                19px 无容器 → 与工具页 [pencil][⋯]（恒 .ic）中心距差 3.5px，用户可见不一致）。
+                19px 无容器 → 与工具页右端 ⋯（恒 .ic）中心距差 3.5px，用户可见不一致）。
                 批 16 反馈②：面板右滑入（InspectionPanel translate-x-full）/ 桌面右 aside，
                 图标用右侧形制（panel-right 右竖线，近似原型 svg 竖线偏右；原型的右栏三短线
                 细节在 §15③ Lucide 单轨下无对应物，不手绘模仿）。 */}

@@ -173,9 +173,9 @@ export function InspectionPanel({
   /** 面板内 L3 主体。 */
   l3Body?: ReactNode;
   /**
-   * 面板 nav 右端动作（v1.5 批3：面板态 = 激活 file 标签的 [pencil][⋯] / wikiread 标签的
-   * ⋯ 复制链接；open 态才渲染——panelVisible gate 由装配层保证）。与 l3.actions 互斥
-   *（L3 形态走 l3.actions）。
+   * 面板 nav 右端动作（v1.5 批3：面板态 = 激活 file 标签的 ⋯ / wikiread 标签的
+   * ⋯ 复制链接；v1.6 pencil 退役——「编辑」= 点正文进入。open 态才渲染——panelVisible
+   * gate 由装配层保证）。与 l3.actions 互斥（L3 形态走 l3.actions）。
    */
   navActions?: ReactNode;
   onActivateTab: (id: string) => void;

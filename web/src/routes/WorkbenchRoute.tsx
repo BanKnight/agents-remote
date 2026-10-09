@@ -75,11 +75,9 @@ import {
   workbenchPanelOpenAtom,
   workbenchPanelTabsAtom,
   workbenchRightCollapsedAtom,
-  workbenchFileTabEditingAtom,
 } from "./workbench-model";
 import { FILE_NAV_QUERY_SCOPE, FileTabPreview } from "../components/files/file-preview-panel";
 import { FilePreviewNavMenu } from "../components/workbench/mobile-l3";
-import { useFilePreview } from "../components/files/use-file-editor";
 import { resolveRootBrowseTarget } from "../components/files/file-browser";
 import { resolveRelativeFilePath } from "../components/files/relative-md-link";
 import { MarkdownLinkContext } from "../components/markdown/markdown-components";
@@ -1071,8 +1069,8 @@ function WorkbenchContent({
 
 /**
  * 10m2 全局文件主区推入态（v1.5 批 4，mac-files-global-preview）：mhead = mback「‹ 全局文件」
- * （蓝字 chevron.left）+ h1 文件名（等宽 700，原型 margin-left:34px）+ 右端 [编辑][⋯]（编辑态
- * pencil 让位 emeta 放弃/完成，⋯ 恒在——编辑态保留）。主体复用 FileTabPreview（desktop 档：
+ * （蓝字 chevron.left）+ h1 文件名（等宽 700，原型 margin-left:34px）+ 右端 ⋯（v1.6 pencil
+ * 退役——「编辑」= 点正文进入；编辑态 emeta 承担放弃/完成）。主体复用 FileTabPreview（desktop 档：
  * .fmeta 元信息行 / 编辑态 .emeta+.aux / unsupported 空态单源），编辑受控共享
  * workbenchFileTabEditingAtom（tabId=file_ 前缀全路径，与中栏 tab 同命名空间、同屏单编辑）。
  * ⋯ 菜单 = 复制内容/复制路径/在工作台打开（根作用域无 Git，无查看 diff——onOpenDiff 不传）。
@@ -1092,16 +1090,12 @@ function FilesPushPreview({
   onOpenInWorkbench: (projectName: string, path: string) => void;
 }) {
   const { t } = useT();
-  const setEditingTabId = useSetAtom(workbenchFileTabEditingAtom);
-  const editingNow = useAtomValue(workbenchFileTabEditingAtom) === focusId;
   const fullPath = parseFileTabId(focusId) ?? "";
   const target = resolveRootBrowseTarget(fullPath);
   const projectName = target.kind === "project" ? target.projectName : fullPath;
   const relativePath = target.kind === "project" ? target.relativePath : "";
   const fileName = relativePath.split("/").pop() ?? relativePath;
   const panelRef = useMemo<FilePanelRef>(() => ({ kind: "file", path: fullPath }), [fullPath]);
-  const { data } = useFilePreview(projectName, relativePath, FILE_NAV_QUERY_SCOPE);
-  const editable = data?.type === "text";
   return (
     <div className="push-preview flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 items-center gap-2.5 px-5 pt-3.5">
@@ -1116,17 +1110,8 @@ function FilesPushPreview({
         <h1 className="ml-[34px] min-w-0 flex-1 truncate font-mono text-[17px] font-bold text-ink-1">
           {fileName}
         </h1>
-        {editable && !editingNow ? (
-          <button
-            aria-label={t("files.edit")}
-            className="inline-flex h-6 w-6 flex-none items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-            onClick={() => setEditingTabId(focusId)}
-            title={t("files.edit")}
-            type="button"
-          >
-            <ShellIcon className="h-3 w-3" name="edit" />
-          </button>
-        ) : null}
+        {/* v1.6：pencil 退役，「编辑」= 点正文任意处进入（FilePreviewPane 内）——mhead 右端
+        只留 ⋯（原型 mac-files-global-preview ②）。 */}
         <FilePreviewNavMenu
           onOpenInWorkbench={() => onOpenInWorkbench(projectName, relativePath)}
           path={relativePath}

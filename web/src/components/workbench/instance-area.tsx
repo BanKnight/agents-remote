@@ -2263,10 +2263,10 @@ function GroupHeader({
     hs.update();
     hs.ensureActive(".on");
   }, [group.activeTabId, group.tabs.length, hs.ensureActive, hs.update]);
-  // v1.5 批 4（spec §4.5）：tabstrip 右端 [＋][分屏][编辑][⋯]，⋯ 收尾最右、内容
+  // v1.5 批 4（spec §4.5）：tabstrip 右端 [＋][分屏][⋯]，⋯ 收尾最右、内容
   // 跟随激活标签（会话/文件两族；git/skill/chat/render 无 ⋯ 规格；wikiread ⋯ = 全局同构
-  // review 批 A-5 补齐「复制内容/查看 diff」）。
-  // 编辑态只剩结构钮（pencil/⋯ 消失，05h4 原型实证）。编辑判定 = 激活 tabId 与
+  // review 批 A-5 补齐「复制内容/查看 diff」；v1.6 pencil 退役——「编辑」= 点正文进入）。
+  // 编辑态只剩结构钮（⋯ 消失，05h4 原型实证）。编辑判定 = 激活 tabId 与
   // workbenchFileTabEditingAtom 相等。真机复验反馈①：[最大化] 退役（见 tabstrip 内注释）。
   const activeTab = group.tabs.find((tab) => tabIdOf(tab) === group.activeTabId) ?? null;
   const editingTabId = useAtomValue(workbenchFileTabEditingAtom);

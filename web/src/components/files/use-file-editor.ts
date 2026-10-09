@@ -25,14 +25,14 @@ type PreviewQuery = ReturnType<typeof useQuery<ProjectFilePreviewResponse, Error
 
 /**
  * 文件预览 query key 单源（useFileEditor 与容器层 nav 动作装配共用——React Query dedupe
- * 同 key 零额外网络，⋯ 菜单/pencil 可见性因此可以挂在容器层）。
+ * 同 key 零额外网络，⋯ 菜单因此可以挂在容器层）。
  */
 export function filePreviewQueryKey(projectName: string, queryScope: string, path: string) {
   return ["projects", projectName, queryScope, "preview", path] as const;
 }
 
 /**
- * 文件预览数据（v1.5 批3 容器层消费：nav [pencil][⋯] 的菜单项条件与复制内容数据源）。
+ * 文件预览数据（v1.5 批3 容器层消费：nav ⋯ 的菜单项条件与复制内容数据源）。
  * 与 useFileEditor 同 key 共享缓存（staleTime 0，挂载即拉最新——与编辑链对齐）。
  */
 export function useFilePreview(projectName: string, path: string | null, queryScope: string) {

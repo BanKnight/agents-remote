@@ -60,9 +60,8 @@ function DetailBackBar({ label, onBack }: { label: string; onBack: () => void })
   );
 }
 
-/** 栏内 diff 详情目标（03r 详情形态：meta 行 + DiffContent）。from = 进入来源——
- * files 预览内「查看 diff ›」进 diff 时返回去向是预览态（非列表），返回标签随之。 */
-type DiffTarget = { path: string; scope: GitDiffScope; from?: "preview" };
+/** 栏内 diff 详情目标（03r 详情形态：meta 行 + DiffContent）。 */
+type DiffTarget = { path: string; scope: GitDiffScope };
 
 /** 栏内 diff 详情态（FilesToolTab 预览链路复用：返回条 + MobileL3GitDiff；GitToolTab 详情
  * 已升级为含历史/commit/分支的详情栈，见 GitDetailState）。 */
@@ -125,7 +124,7 @@ export function FilesToolTab({
   if (diffTarget) {
     return (
       <TabDiffDetail
-        backLabel={diffTarget.from === "preview" ? t("files.backToPreview") : t("git.backToFiles")}
+        backLabel={t("git.backToFiles")}
         onBack={() => setDiffTarget(null)}
         projectKey={projectKey}
         target={diffTarget}
@@ -136,13 +135,7 @@ export function FilesToolTab({
     return (
       <div className="flex h-full min-h-0 w-full flex-col">
         <DetailBackBar label={t("files.backToFiles")} onBack={() => setPreviewPath(null)} />
-        <MobileL3FilePreview
-          onViewDiff={() =>
-            setDiffTarget({ path: previewPath, scope: "worktree", from: "preview" })
-          }
-          path={previewPath}
-          projectName={projectKey}
-        />
+        <MobileL3FilePreview path={previewPath} projectName={projectKey} />
       </div>
     );
   }

@@ -96,7 +96,6 @@ import {
   MobileL3GitDiff,
   WikiReadNavMenu,
 } from "./mobile-l3";
-import { useFilePreview } from "../files/use-file-editor";
 import {
   FilesToolPanel,
   GitToolPanel,
@@ -261,7 +260,7 @@ export function MobileWorkbench({
 
   // file focus（focusId 形如 file_demo/src/index.ts，path=全路径含项目名前缀）：global scope
   // 文件 push 页 = MobileFileFocus（v1.5 批3 files-global-preview：nav back=父目录/h1 文件名/
-  // [pencil][⋯]，无 tabbar——见上方摊牌注释）；project scope 文件走 tab 带已在上分支。
+  // 右端 ⋯，无 tabbar——见上方摊牌注释）；project scope 文件走 tab 带已在上分支。
   if (filePath !== null) {
     return (
       <main
@@ -287,9 +286,10 @@ export function MobileWorkbench({
 /**
  * 移动端全局文件 push 页（v1.5 批3 files-global-preview）：`/file/$path` URL 在移动端用此组件
  * 打开。`path` = 全路径（含项目名前缀）。push 容器 nav = back（父目录名，根 = 服务器根）+
- * h1（文件名）+ 右端 [pencil][⋯]（预览态）/ [放弃][完成]（编辑态，原型 03q2 files-global-
- * preview-edit）；本体 = FilePreviewPane（queryScope "file-nav" 独立 scope，防与项目面板
- * "files" 预览互串缓存）。根作用域无 Git → ⋯ 不传 onViewDiff（菜单无「查看 diff」项）。
+ * h1（文件名）+ 右端 ⋯（v1.6 pencil 退役——「编辑」= 点正文进入）/ [放弃][完成]（编辑态，
+ * 原型 03q2 files-global-preview-edit）；本体 = FilePreviewPane（queryScope "file-nav" 独立
+ * scope，防与项目面板 "files" 预览互串缓存）。根作用域无 Git → ⋯ 不传 onViewDiff（菜单无
+ * 「查看 diff」项）。
  * 返回 = pop 优先回来源（2026-09-30 用户反馈：主路径从全局 /files push 进来 → 回 /files；
  * 项目工作台跨项目打开 → 回该项目），深链直达无来路时兜底回全局文件树。
  */
@@ -303,8 +303,6 @@ function MobileFileFocus({ path }: { path: string }) {
     backNav(() => void navigate({ to: "/files" }));
   };
   const { projectName: fp, path: relPath } = splitFilePath(path);
-  // pencil 可见性数据源（与 Pane 内部 useFileEditor 同 key dedupe，零额外网络）。
-  const preview = useFilePreview(fp, relPath, "file-nav");
   const lastSlash = relPath.lastIndexOf("/");
   // back = 父目录名（原型 `scripts`）；根文件 = 「服务器根」（files.rootDirectory）。
   const backLabel = lastSlash === -1 ? t("files.rootDirectory") : relPath.slice(0, lastSlash);
@@ -336,21 +334,9 @@ function MobileFileFocus({ path }: { path: string }) {
             </button>
           </span>
         ) : (
-          <>
-            {/* pencil 条件渲染（原型 §4.5「编辑钮仅在类型可编辑时出现」）：image/unsupported
-            nav 右端只有 ⋯——与桌面 FileTabStripActions 同模式。 */}
-            {preview.data?.type === "text" ? (
-              <button
-                aria-label={t("files.edit")}
-                className="ic cursor-pointer"
-                onClick={() => setEditing(true)}
-                type="button"
-              >
-                <ShellIcon name="edit" />
-              </button>
-            ) : null}
-            <FilePreviewNavMenu path={relPath} projectName={fp} queryScope="file-nav" />
-          </>
+          // v1.6：pencil 退役，「编辑」= 点正文任意处进入（FilePreviewPane 内）；nav 右端
+          // 只留 ⋯（原型 files-global-preview ③）。
+          <FilePreviewNavMenu path={relPath} projectName={fp} queryScope="file-nav" />
         )}
       </div>
       {/* md 内链容器（批 13 反馈⑤）：Provider 只包 FilePreviewPane，value 以当前预览文件
@@ -738,19 +724,13 @@ function MobileProjectWorkbench({
     scope: GitDiffScope;
     from: "git" | "file" | "files";
   } | null>(null);
-  // v1.5 批3 编辑态单例（03o 原型「同屏单编辑」）：面板层 file 标签编辑态互斥——pencil 进
-  // 入 / 完成·放弃退出（FilePreviewPane finish/discard 回调）；关标签随关清。
+  // v1.5 批3 编辑态单例（03o 原型「同屏单编辑」）：面板层 file 标签编辑态互斥——v1.6 点正
+  // 文进入 / 完成·放弃退出（FilePreviewPane finish/discard 回调）；关标签随关清。
   const [editingFileTabId, setEditingFileTabId] = useState<string | null>(null);
-  // 面板 nav 动作装配源：激活 file/wikiread 标签 + 预览数据（与 FilePreviewPane 同 queryKey
-  // dedupe 零额外网络；panelVisible gate——面板未开不拉）。pencil 可见性 = text 类型。
+  // 面板 nav 动作装配源：激活 file/wikiread 标签（⋯ 菜单数据源 = FilePreviewNavMenu 内部
+  // useFilePreview，同 queryKey dedupe 零额外网络）。
   const activeFileTab = activePanelTab?.kind === "file" ? activePanelTab : null;
   const activeWikiReadTab = activePanelTab?.kind === "wikiread" ? activePanelTab : null;
-  const activeFilePath = activeFileTab ? splitFilePath(activeFileTab.path).path : null;
-  const panelPreview = useFilePreview(
-    scope.key,
-    panelVisible && activeFilePath !== null ? activeFilePath : null,
-    "files",
-  );
   const closePanelTab = (id: string) => {
     closePanelTabInStore(id);
     if (editingFileTabId === id) setEditingFileTabId(null);
@@ -969,10 +949,10 @@ function MobileProjectWorkbench({
             </div>
           ) : tab.kind === "file" ? (
             // v1.5 批3 面板预览矩阵：FilePreviewPane 单源（meta 模式——编辑态 fact 放弃/完成
-            // 在 .emeta 行；编辑态单例 editingFileTabId 守门「同屏单编辑」）。⋯ 菜单/pencil
-            // 在面板 nav（navActions 装配）， Pane 本体只渲染 fmeta/主体。md 内链容器（批 13
-            // 反馈⑤）：value 以当前预览文件目录解析相对 href → openPanelFileTab 换本面板
-            // file 标签目标（面板不退出）。
+            // 在 .emeta 行；编辑态单例 editingFileTabId 守门「同屏单编辑」）。⋯ 菜单在面板
+            // nav（navActions 装配；v1.6 pencil 退役——「编辑」= 点正文进入），Pane 本体只
+            // 渲染 fmeta/主体。md 内链容器（批 13 反馈⑤）：value 以当前预览文件目录解析
+            // 相对 href → openPanelFileTab 换本面板 file 标签目标（面板不退出）。
             (() => {
               const { projectName: fp, path: relPath } = splitFilePath(tab.path);
               return (
@@ -1078,27 +1058,17 @@ function MobileProjectWorkbench({
         }
       : null;
 
-  // 面板 nav 右端动作（v1.5 批3，03o/03s 原型）：file 标签 = [pencil(text 条件渲染)][⋯]（编辑态
-  // pencil 退役仅 ⋯——emeta fact 承担放弃/完成）；wikiread = ⋯ 复制内容/查看 diff（原型
+  // 面板 nav 右端动作（v1.5 批3，03o/03s 原型；v1.6 pencil 退役）：file 标签 = ⋯（编辑 =
+  // 点正文进入，emeta fact 承担放弃/完成）；wikiread = ⋯ 复制内容/查看 diff（原型
   // pin②，wiki 复审 P1-2 对齐）；三基础标签无动作。
   const panelNavActions = (() => {
     if (!panelVisible) return undefined;
     if (activeFileTab) {
-      const editing = editingFileTabId === activeFileTab.id;
       const { path: relPath } = splitFilePath(activeFileTab.path);
       return (
         <div className="flex items-center gap-1">
-          {/* pencil 条件渲染（同 MobileFileFocus——text 才出现，image/unsupported 只有 ⋯）。 */}
-          {editing || panelPreview.data?.type !== "text" ? null : (
-            <button
-              aria-label={t("files.edit")}
-              className="ic cursor-pointer"
-              onClick={() => setEditingFileTabId(activeFileTab.id)}
-              type="button"
-            >
-              <ShellIcon name="edit" />
-            </button>
-          )}
+          {/* v1.6：pencil 退役，「编辑」= 点正文任意处进入（FilePreviewPane 内）——同屏单 ⋯
+          （原型 workspace-preview ②）。 */}
           <FilePreviewNavMenu
             onViewDiff={() => setPanelDiff({ path: relPath, scope: "worktree", from: "file" })}
             path={relPath}
@@ -1240,21 +1210,12 @@ function MobileProjectWorkbench({
           effectiveFocusId ||
           scope.key
         : scope.key;
-  // v1.5 批3 l3Transient file 编辑态（nav [放弃][完成] handle 模式）：focus 变化重置；
-  // preview 数据 gate pencil 可见性（与 keepalive Pane 同 queryKey dedupe）。
+  // v1.5 批3 l3Transient file 编辑态（nav [放弃][完成] handle 模式）：focus 变化重置。
   const [l3FileEditing, setL3FileEditing] = useState(false);
   const l3FilePaneRef = useRef<FilePreviewPaneHandle | null>(null);
   useEffect(() => {
     setL3FileEditing(false);
   }, [effectiveFocusId]);
-  // l3Transient file 的预览数据（pencil 可见性 gate——text 条件渲染；与 Pane 同 queryKey dedupe）。
-  const l3FileTabRef = focusRef?.kind === "file" ? focusRef : null;
-  const l3FilePath = l3FileTabRef ? splitFilePath(l3FileTabRef.path).path : null;
-  const l3FilePreview = useFilePreview(
-    l3FileTabRef ? splitFilePath(l3FileTabRef.path).projectName : "",
-    l3FilePath,
-    "files",
-  );
   // L3 nav 装配（03r/03u/03t/03v；wiki 阅读已迁面板 wikiread 标签——v1.5 批3）。
   // l3Route 优先；file/git focus 由保活层 ref 派生（l3Transient）。
   const l3 = l3Route
@@ -1308,25 +1269,13 @@ function MobileProjectWorkbench({
             </button>
           </span>
         ) : (
-          <>
-            {/* pencil 条件渲染（text 才出现，同 MobileFileFocus/panelNavActions 模式）。 */}
-            {l3FilePreview.data?.type === "text" ? (
-              <button
-                aria-label={t("files.edit")}
-                className="ic cursor-pointer"
-                onClick={() => setL3FileEditing(true)}
-                type="button"
-              >
-                <ShellIcon name="edit" />
-              </button>
-            ) : null}
-            <FilePreviewNavMenu
-              onViewDiff={() => onOpenGitFile(fp, "worktree", relPath)}
-              path={relPath}
-              projectName={fp}
-              queryScope="files"
-            />
-          </>
+          // v1.6：pencil 退役（点正文进入，MobileL3FilePreview 内）；查看 diff 收本 ⋯ 菜单。
+          <FilePreviewNavMenu
+            onViewDiff={() => onOpenGitFile(fp, "worktree", relPath)}
+            path={relPath}
+            projectName={fp}
+            queryScope="files"
+          />
         ),
       };
     }

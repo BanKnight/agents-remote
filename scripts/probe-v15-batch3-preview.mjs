@@ -1,16 +1,17 @@
 // v1.5 批 3 预览矩阵·移动探针（spec §4.5/3.4，DOM 几何硬数据禁截图）。
 //
-// 断言域：
+// 断言域（v1.6 起 pencil 退役：「编辑」= 点正文任意处进入）：
 //   Part 1 面板 file 标签预览态（workspace-preview）：.fmeta = 「TypeScript · N 行 · 更新 …」
-//     + nav [pencil][⋯]（text enabled）+ ⋯ 菜单三项（复制内容/复制路径/查看 diff）+ 无 segc。
-//   Part 2 编辑态：.emeta（fdim 编辑中·N 行 + dirty ● 未保存变更）+ fact 放弃/完成 + .aux
-//     三钮（撤销/重做/收起键盘，贴屏底——P2-2 编辑态去 pb）+ 放弃（clean 直接退 / dirty 弹确认）。
+//     + nav 无 pencil + ⋯（三项：复制内容/复制路径/查看 diff）+ 无 segc。
+//   Part 2 编辑态：点正文进编辑；.emeta（fdim 编辑中·N 行 + dirty ● 未保存变更）+ fact
+//     放弃/完成 + .aux 三钮（撤销/重做/收起键盘，贴屏底——P2-2 编辑态去 pb）+ 放弃
+//    （clean 直接退 / dirty 弹确认）。
 //   Part 3 MD 文件：.fmeta = 「Markdown · …」+ .fright>.segc.mini「渲染|源码」（几何 ≈28px）。
 //   Part 4 unsupported 空态：.unsupported(.big+.t+.d 两行 pre-line) + fmeta = Binary（无
-//     「更新」段——preview 非 text 分支无 mtimeMs，不伪造）+ nav 无 pencil（条件渲染，P1-1）。
+//     「更新」段——preview 非 text 分支无 mtimeMs，不伪造）+ nav 无编辑钮。
 //   Part 5 FAB 实心主色：computed background = c-primary + .plus 白。
 //   Part 6 push 容器（files-global-preview）：.nav back=父目录 + h1 文件名（mono 14px）+
-//     [pencil][⋯]；根文件 back=「服务器根」；无 tabbar；⋯ 仅两项（无查看 diff）。
+//     无 pencil；根文件 back=「服务器根」；无 tabbar；⋯ 仅两项（无查看 diff）。
 //   Part 7 wikiread 标签（wiki-reader）：wiki 深链 → 面板 wikiread 标签 + .fmeta「Markdown ·
 //     … · 更新 …」+ .actbtn「让 Agent 读这篇」+ ⋯ = 复制内容/查看 diff（原型 pin②，P1-2）。
 //
@@ -280,8 +281,7 @@ ok(
 );
 ok((await fileBody.locator(".fmeta .segc").count()) === 0, "⑥ .ts 非 md/html → 无 segc 切换");
 const pencil = page.locator('[data-inspection-panel="open"] .nav [aria-label="编辑"]');
-ok((await pencil.count()) === 1, "⑦ nav [pencil 编辑] 存在");
-ok(!(await pencil.isDisabled()), "⑧ text 文件 pencil enabled");
+ok((await pencil.count()) === 0, "⑦ v1.6 pencil 退役 → nav 无编辑钮");
 const dotsBtn = page.locator('[data-inspection-panel="open"] .nav [aria-label="更多操作"]');
 ok((await dotsBtn.count()) === 1, "⑨ nav [⋯] 存在");
 await dotsBtn.click();
@@ -302,8 +302,12 @@ await page.waitForTimeout(700);
 
 // ───────────────────────── Part 2 编辑态 ─────────────────────────
 console.log("Part 2 编辑态（emeta/aux/fact）");
-await pencil.click();
-await page.waitForTimeout(700);
+// v1.6「点正文任意处进入编辑」：源码态正文（CodeMirror 只读面）click 冒泡进编辑。
+async function tapBodyToEdit() {
+  await page.locator('[data-role="file-preview-pane"] .cm-content').click();
+  await page.waitForTimeout(700);
+}
+await tapBodyToEdit();
 const pane = page.locator('[data-role="file-preview-pane"]');
 const emeta = pane.locator(".emeta");
 ok((await emeta.count()) > 0, "① 编辑态 .emeta 出现");
@@ -330,8 +334,7 @@ await emeta.locator(".fact .giveup").click();
 await page.waitForTimeout(500);
 ok((await pane.locator(".emeta").count()) === 0, "⑦ clean 放弃 → 回预览态");
 // 再进编辑 → 输入产生 dirty → 放弃弹确认 → 确认后退出。
-await pencil.click();
-await page.waitForTimeout(700);
+await tapBodyToEdit();
 await page.locator(".cm-content").click();
 await page.keyboard.type("dirty");
 await page.waitForTimeout(400);
@@ -343,14 +346,14 @@ ok((await confirmBtn.count()) > 0, "⑨ dirty 放弃弹 confirm");
 await confirmBtn.click();
 await page.waitForTimeout(500);
 ok((await pane.locator(".emeta").count()) === 0, "⑩ 确认后退出回预览态");
-// 完成（无改动 finish）→ 回预览态（nav 恢复 pencil）。
-await pencil.click();
+// 完成（无改动 finish）→ 回预览态（v1.6 点正文可再进编辑）。
+await tapBodyToEdit();
 await page.waitForTimeout(700);
 await pane.locator(".emeta .fact button:not(.giveup)").click();
 await page.waitForTimeout(500);
 ok(
-  (await page.locator('[data-inspection-panel="open"] .nav [aria-label="编辑"]').count()) === 1,
-  "⑪ 完成 → nav 恢复 pencil",
+  (await page.locator('[data-inspection-panel="open"] .nav [aria-label="编辑"]').count()) === 0,
+  "⑪ 完成 → 回预览态（nav 无 pencil）",
 );
 
 // ───────────────────────── Part 3 MD segc.mini ─────────────────────────
@@ -388,6 +391,20 @@ ok(
   (await onBtn.count()) === 1 && /渲染/.test((await onBtn.textContent()) ?? ""),
   "⑤ md 默认渲染态（.on = 渲染）",
 );
+// v1.6「点正文任意处进入编辑」·渲染态：点 PreviewBody 正文区（非 button/a）→ 进编辑 +
+// effect 自动切源码（segc「源码」on、CodeMirror 在场）。
+const renderBody = notesBody.locator("div.min-h-0.flex-1").first();
+await renderBody.click();
+await page.waitForTimeout(700);
+const notesPane = page.locator('[data-role="file-preview-pane"]');
+ok((await notesPane.locator(".emeta").count()) > 0, "⑥ 渲染态点正文 → 编辑态（effect 自动切源码）");
+ok(
+  (await notesPane.locator(".cm-editor").count()) > 0,
+  "⑥b 编辑态画布 = 源码 CodeMirror（渲染态已断言无 .cm-editor）",
+);
+await notesPane.locator(".emeta .fact .giveup").click();
+await page.waitForTimeout(500);
+ok((await notesPane.locator(".emeta").count()) === 0, "⑥c 放弃 → 回预览态");
 
 // ───────────────────────── Part 4 unsupported 空态 ─────────────────────────
 console.log("Part 4 unsupported 空态");
@@ -414,7 +431,7 @@ ok(/Binary · /.test(zipFmeta), `⑤ fmeta = Binary · 大小（${zipFmeta.trim(
 ok(!/更新 /.test(zipFmeta), "⑥ 非 text 无 mtimeMs → fmeta 无「更新」段");
 ok(
   (await page.locator('[data-inspection-panel="open"] .nav [aria-label="编辑"]').count()) === 0,
-  "⑦ unsupported → nav 无 pencil 图标钮（text 条件渲染，P1-1）",
+  "⑦ unsupported → nav 无编辑钮（v1.6 pencil 退役恒无）",
 );
 
 // ───────────────────────── Part 5 FAB 实心主色 ─────────────────────────
@@ -441,7 +458,7 @@ const navH1 = (await page.locator("main .nav h1").textContent()) ?? "";
 ok(/index\.ts/.test(navH1), "② h1 = 文件名（index.ts）");
 ok((await page.locator('nav[aria-label="移动端主导航"]').count()) === 0, "③ push 页无 tabbar");
 const pushPencil = page.locator("main .nav [aria-label='编辑']");
-ok((await pushPencil.count()) === 1 && !(await pushPencil.isDisabled()), "④ nav [pencil] enabled");
+ok((await pushPencil.count()) === 0, "④ v1.6 pencil 退役 → push nav 无编辑钮");
 await page.locator("main .nav [aria-label='更多操作']").click();
 await page.waitForTimeout(400);
 const pushMenu = (await page.locator('[role="menu"]').textContent()) ?? "";
@@ -450,10 +467,10 @@ ok(
   "⑤ push ⋯ 仅两项（根作用域无查看 diff）",
 );
 await page.keyboard.press("Escape");
-// §18 同源：sheet 退出动画播完再点 pencil。
+// §18 同源：sheet 退出动画播完再点正文（防 scrim 残留挡点击）。
 await page.waitForTimeout(700);
-// push 编辑态 nav [放弃][完成]。
-await pushPencil.click();
+// push 编辑态 nav [放弃][完成]；v1.6 进编辑 = 点正文任意处。
+await page.locator('[data-role="file-preview-pane"] .cm-content').click();
 await page.waitForTimeout(700);
 const pushFact = (await page.locator("main .nav .fact").textContent()) ?? "";
 ok(/放弃/.test(pushFact) && /完成/.test(pushFact), "⑥ 编辑态 nav .fact = 放弃/完成");

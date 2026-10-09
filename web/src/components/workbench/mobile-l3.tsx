@@ -149,23 +149,46 @@ export function paneFmetaText(
   return { typeLabel, metric: formatBytes(data.size) };
 }
 
+// ── v1.6 批 v6.5「点正文任意处进入编辑」tap 判定 ─────────────────────────────
+// 原型（tool-files-preview ②/workspace-preview ②/files-global-preview ②）：顶部无编辑钮
+//（pencil 退役），点正文命中区最大化。tap = pointerdown 记起点 + click 判位移 ≤ slop
+//（桌面拖选文本、移动滚动惯性不误触发）；button（渲染 toggle 等控件）与 a（渲染态链接）
+// 就近消费不冒泡进编辑。html 渲染态 iframe 内点击不冒泡出 iframe，属已知边界（先切源码）。
+const TAP_SLOP_PX = 10;
+
+function useTapToEdit(onEnter: () => void) {
+  const downRef = useRef<{ x: number; y: number } | null>(null);
+  return {
+    onClick: (e: React.MouseEvent) => {
+      const target = e.target as Element;
+      if (target.closest("button") || target.closest("a")) return;
+      const down = downRef.current;
+      downRef.current = null;
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX) return;
+      onEnter();
+    },
+    onPointerDown: (e: React.PointerEvent) => {
+      downRef.current = { x: e.clientX, y: e.clientY };
+    },
+  };
+}
+
 export type MobileL3FilePreviewProps = {
   projectName: string;
   /** 项目相对路径。 */
   path: string;
-  /** 「查看 diff ›」→ git file focus（M4 L3 diff 呈现）。 */
-  onViewDiff: () => void;
 };
 
 /**
  * 03q 文件预览页（批次 3 编辑能力下沉：右栏 Inspector 与移动 focus 双端同构单源）。meta 行
- *（N 行 · 更新 relative + 编辑 + 「查看 diff ›」）+ 只读源码（CodeEditor editable=false，
- * 与编辑态同画布——反馈④b：源码⇄渲染⇄编辑切换零跳变）；「编辑」进编辑态（CodeEditor
- * + FileSaveButton + ⌘S，保存/dirty 丢弃确认走 useFileEditor 单源，与 FilesPanel inspection
- * 同 query key 共享缓存）。image → ImageViewer；too_large/unsupported → .cap 简要说明。⋯ 菜单
- *（复制路径/在 Git 中查看 diff）由调用方经 header l3.actions 装配。
+ *（N 行 · 更新 relative；v1.6 编辑/查看 diff 钮退役——「编辑」= 点正文任意处进入，
+ *「查看 diff」收 nav ⋯ 菜单）+ 只读源码（CodeEditor editable=false，与编辑态同画布——
+ * 反馈④b：源码⇄渲染⇄编辑切换零跳变）；编辑态（CodeEditor + FileSaveButton + ⌘S，保存/
+ * dirty 丢弃确认走 useFileEditor 单源，与 FilesPanel inspection 同 query key 共享缓存）。
+ * image → ImageViewer；too_large/unsupported → .cap 简要说明。⋯ 菜单（复制内容/复制路径/
+ * 查看 diff）由调用方经 header l3.actions 装配。
  */
-export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3FilePreviewProps) {
+export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewProps) {
   const { t } = useT();
   const { confirm, holder: confirmHolder } = useConfirm();
   // 编辑态（组件内局部；切文件即退出——下方 effect 与 hook 清草稿同步）。
@@ -182,6 +205,12 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
     path,
     projectName,
     queryScope: "files",
+  });
+  // v1.6「点正文任意处进入编辑」（仅查看态 text 分支消费；early return 分支绑不到）。
+  // render 态点正文先切源码（md/html render 态 canEdit gate 恒 false——保存会被 hook 拦）。
+  const tapToEdit = useTapToEdit(() => {
+    editor.onRenderModeChange("source");
+    setEditing(true);
   });
 
   if (editor.preview.isLoading) {
@@ -247,6 +276,7 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
     <div
       className={`flex min-h-0 flex-1 flex-col pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px),var(--kb-offset,0px))] ${editing || isRenderView ? "overflow-hidden" : "overflow-y-auto"}`}
       data-role="l3-file-preview"
+      {...(editing ? {} : tapToEdit)}
     >
       {editing ? (
         // 编辑态操作行：保存（FileSaveButton 统一样式，禁用/保存中/已保存三态）+ 完成。
@@ -297,27 +327,6 @@ export function MobileL3FilePreview({ projectName, path, onViewDiff }: MobileL3F
                 : t("files.lineCount", { n: lineCount })}
             </span>
           )}
-          <span className="diff flex items-center gap-3">
-            <button
-              className="relative cursor-pointer after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-['']"
-              onClick={() => {
-                // render 态点编辑：先切源码（md/html render 态 canEdit gate 恒 false——
-                // 保存会被 hook 拦），编辑器与检视面板 source 态同形态。
-                editor.onRenderModeChange("source");
-                setEditing(true);
-              }}
-              type="button"
-            >
-              {t("files.edit")}
-            </button>
-            <button
-              className="relative cursor-pointer after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-['']"
-              onClick={onViewDiff}
-              type="button"
-            >
-              {t("git.menuViewDiff")} ›
-            </button>
-          </span>
         </div>
       )}
       {editing ? (
@@ -458,6 +467,9 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
     useEffect(() => {
       mirrorHandleRef.current = paneHandle;
     });
+    // v1.6「点正文任意处进入编辑」：查看态 text 分支根容器消费（编辑态 gate 不绑）。
+    // 渲染态点击只需进编辑——effect（editing → source）自动切源码。
+    const tapToEdit = useTapToEdit(() => onEditingChange(true));
     // 外部 ref 通道（nav 模式容器的 finish/discard 入口）；工厂引用同一 paneHandle。
     useImperativeHandle(ref, () => paneHandle);
     // ── .fmeta 派生（text 分支消费 updated/lineLabel；非 text 分支复用 paneFmetaLine）──
@@ -548,6 +560,7 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
       <div
         className={`flex min-h-0 flex-1 flex-col ${variant === "desktop" ? "fdesktop" : ""} ${editing ? "pb-[var(--kb-offset,0px)]" : variant === "desktop" ? "" : "pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"} ${editing || isRenderView ? "overflow-hidden" : "overflow-y-auto"}`}
         data-role="file-preview-pane"
+        {...(editing ? {} : tapToEdit)}
       >
         {editing ? (
           <>

@@ -264,8 +264,8 @@ export const workbenchPanelOpenAtom = atom(false);
 
 /**
  * 中栏 file tab 编辑态（v1.5 批 4，内存级瞬态）：值 = 正在编辑的中栏 file tabId（tabIdOf
- * file ref），null = 无编辑。tabstrip「编辑」pencil 钮（GroupHeader）与 tab body（FileTabPreview
- * → FilePreviewPane 受控 editing）跨组件共享此状态——提升为 atom 避免 WorkspaceTree →
+ * file ref），null = 无编辑。tab body（FileTabPreview → FilePreviewPane 受控 editing；v1.6
+ * 起「编辑」= 点正文进入，pencil 已退役）跨组件共享此状态——提升为 atom 避免 WorkspaceTree →
  * GroupShell/panel 四层 props 穿透；编辑态互斥（同屏单编辑，05h4 原型）：进新编辑自动顶替旧值，
  * 关 tab/切换激活由消费方清理。不持久化：刷新回到预览态（未保存草稿由 useFileEditor 内部
  * query 缓存短时兜底，与移动面板同语义）。

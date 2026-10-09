@@ -4,16 +4,16 @@
 //   Part 1 检视器三结构标签投影（right-panel-tabs）：PanelTabBar 仅 files/git/wiki 三 chip
 //     （file/wikiread 不再进检视器）；files 树点文件 → 检视器无 file 标签、中栏 tabstrip 出现
 //     文件 tab（chip + body .fmeta）。
-//   Part 2 tabstrip 右端动作（05h4）：file tab 激活 = [pencil][⋯]；⋯ 菜单三项（复制内容/
-//     复制路径/查看 diff）；「查看 diff」→ 中栏新增 git tab；pencil → 编辑态（emeta/aux 桌面档
-//     无「收起键盘」）+ 编辑态 tabstrip 只剩结构钮。
+//   Part 2 tabstrip 右端动作（05h4；v1.6 pencil 退役）：file tab 激活 = ⋯；⋯ 菜单三项（复制
+//     内容/复制路径/查看 diff）；「查看 diff」→ 中栏新增 git tab；点正文 → 编辑态（emeta/aux
+//     桌面档无「收起键盘」）+ 编辑态 tabstrip 只剩结构钮。
 //   Part 3 wikiread 进中栏（§4.6）：检视器 wiki 页行点入 → 中栏 wikiread tab + .actbtn
 //     「让 Agent 读这篇」（桌面自动生效，多端同构）。
 //   Part 4 session tab ⋯ 会话菜单：实例信息/重命名/置顶/关闭会话四项。
 //   Part 5 全局文件推入态（10m2，mac-files-global-preview）：/files 点文件 → 主区推入
-//     （mback「全局文件」+ h1 mono 文件名 + [pencil][⋯]），中栏 layout 零写入（返回后无 tab
-//     残留）；⋯ 菜单 = 复制内容/复制路径/在工作台打开（根作用域无查看 diff）；「在工作台打开」
-//     → 中栏 file tab + 退推入态。
+//     （mback「全局文件」+ h1 mono 文件名 + 右端 ⋯），中栏 layout 零写入（返回后无 tab
+//     残留）；⋯ 菜单 = 复制内容/复制路径/在工作台打开（根作用域无查看 diff）；点正文进编辑；
+//     「在工作台打开」→ 中栏 file tab + 退推入态。
 //
 // 全 mock API（无真实数据创建/删除）；密码自读不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v15-batch4-desktop.mjs
@@ -265,10 +265,10 @@ ok(
   "⑥ 检视器无 file 标签 body（预览退役出检视器）",
 );
 
-// ───────────── Part 2 tabstrip 右端 [pencil][⋯]（05h4）─────────────
+// ───────────── Part 2 tabstrip 右端 [⋯]（05h4；v1.6 pencil 退役）─────────────
 console.log("Part 2 tabstrip 右端动作（05h4）");
 const pencil = tabstrip.locator('[aria-label="编辑"]');
-ok((await pencil.count()) === 1, "① file tab 激活 → tabstrip [编辑 pencil]");
+ok((await pencil.count()) === 0, "① v1.6 pencil 退役 → tabstrip 无编辑钮");
 const dots = tabstrip.locator('[aria-label="更多操作"]');
 ok((await dots.count()) === 1, "② tabstrip [⋯] 存在（⋯ 收尾最右）");
 await dots.click();
@@ -287,22 +287,21 @@ await page.locator('[role="menu"]').getByText("查看 diff").click();
 await page.waitForTimeout(800);
 const gitChip = tabstrip.locator(".tb", { hasText: "index.ts" });
 ok((await gitChip.count()) === 2, "④ 「查看 diff」→ 中栏双 tab（file + git）");
-// 切回 file tab 验证 pencil 编辑态。
+// 切回 file tab 验证点正文编辑态（v1.6「点正文任意处进入」）。
 await tabstrip.locator(".tb").nth(0).click();
 await page.waitForTimeout(600);
-await pencil.click();
+await page.locator('[data-role="file-preview-pane"] .cm-content').click();
 await page.waitForTimeout(700);
 const pane = page.locator('[data-role="file-preview-pane"]');
-ok((await pane.locator(".emeta").count()) > 0, "⑤ pencil → 编辑态 .emeta");
+ok((await pane.locator(".emeta").count()) > 0, "⑤ 点正文 → 编辑态 .emeta");
 const auxText = (await pane.locator(".aux").textContent()) ?? "";
 ok(
   /撤销/.test(auxText) && /重做/.test(auxText) && !/收起键盘/.test(auxText),
   "⑥ .aux 桌面档 = 撤销/重做（无收起键盘）",
 );
 ok(
-  (await tabstrip.locator('[aria-label="编辑"]').count()) === 0 &&
-    (await tabstrip.locator('[aria-label="更多操作"]').count()) === 0,
-  "⑦ 编辑态 tabstrip 只剩结构钮（pencil/⋯ 消失）",
+  (await tabstrip.locator('[aria-label="更多操作"]').count()) === 0,
+  "⑦ 编辑态 tabstrip 只剩结构钮（⋯ 消失）",
 );
 // reviewer P2-2：桌面 aux = 38px 无 safe-area env（.pvaux 页私；iPhone 档 40px+env 不动）。
 const auxBox = await pane.locator(".aux").evaluate((el) => {
@@ -316,8 +315,8 @@ ok(
 // clean 放弃回预览态。
 await pane.locator(".emeta .fact .giveup").click();
 await page.waitForTimeout(500);
-ok((await pane.locator(".emeta").count()) === 0, "⑧ 放弃 → 回预览态，pencil 回归");
-ok((await tabstrip.locator('[aria-label="编辑"]').count()) === 1, "⑨ 预览态 pencil 恢复");
+ok((await pane.locator(".emeta").count()) === 0, "⑧ 放弃 → 回预览态");
+ok((await tabstrip.locator('[aria-label="编辑"]').count()) === 0, "⑨ 预览态无 pencil（恒无）");
 
 // ───────────── Part 3 wikiread 进中栏（§4.6）─────────────
 console.log("Part 3 wikiread 进中栏（wiki 检视器 → 中栏 tab）");
@@ -382,7 +381,7 @@ const listFile = page.getByText("index.ts", { exact: true, timeout: 5000 }).firs
 ok((await listFile.count()) > 0, "① /files 全局文件列表在场");
 await listFile.click();
 await page.waitForTimeout(900);
-// 推入态：mback + h1 mono 文件名 + [pencil][⋯]；中栏 layout 零写入。
+// 推入态：mback + h1 mono 文件名 + 右端 ⋯（v1.6 pencil 退役）；中栏 layout 零写入。
 const mback = page.locator("header button", { hasText: "全局文件" });
 ok((await mback.count()) === 1, "② 推入态 mback「‹ 全局文件」");
 const pushH1 = page.locator("h1.font-mono");
@@ -410,6 +409,15 @@ ok(
 ok(!/查看 diff/.test(pushMenu), "⑧ 根作用域无查看 diff");
 await page.keyboard.press("Escape");
 await page.waitForTimeout(300);
+// v1.6 点正文进编辑（推入态 desktop 档 FilePreviewPane 同机制）。
+await page.locator('[data-role="file-preview-pane"] .cm-content').click();
+await page.waitForTimeout(700);
+ok(
+  (await page.locator('[data-role="file-preview-pane"] .emeta').count()) > 0,
+  "⑧b 点正文 → 推入态编辑态 .emeta",
+);
+await page.locator('[data-role="file-preview-pane"] .emeta .fact .giveup').click();
+await page.waitForTimeout(500);
 // ‹ 返回 → 列表（工作台现场零销毁语义由 mback 原地退回承接）。
 await mback.click();
 await page.waitForTimeout(800);

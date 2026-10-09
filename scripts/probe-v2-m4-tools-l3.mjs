@@ -547,7 +547,7 @@ const fileTab = page.locator('.ptabs .ptab[aria-label="README.md"]');
 ok((await fileTab.count()) === 1, "file 标签新增（README.md）");
 ok((await fileTab.getAttribute("aria-selected")) === "true", "file 标签新增即激活");
 // 预览在激活叠层（PanelFileTabBody 单源）：v1.5 批3 起顶部 = .fmeta（类型·度量·更新）+
-// .fright>.segc.mini（md/html 渲染⇄源码），nav 右端 [pencil][⋯]。
+// .fright>.segc.mini（md/html 渲染⇄源码），nav 右端 ⋯（v1.6 pencil 退役）。
 const previewBody = page.locator(
   '[data-panel-tab-body="file:proj1/README.md"] [data-role="file-preview-pane"]',
 );
@@ -562,17 +562,21 @@ ok(
   (await renderBtn.getAttribute("class"))?.includes("on") === true,
   "segc.mini「渲染」on 态（默认渲染）",
 );
-ok((await previewBody.locator(".code .ln").count()) === 0, "渲染态无行号源码");
+ok(
+  (await previewBody.locator(".cm-editor").count()) === 0,
+  "渲染态无源码画布（CodeMirror 不在场）",
+);
 const fileItemLeaks = await page.evaluate(
   () => document.querySelectorAll('[data-tab-id^="file_"]').length,
 );
 ok(fileItemLeaks === 0, `保活层让位（file item 主体区 0 实例；实际 ${fileItemLeaks}）`);
-// toggle「源码」→ 行号形态；nav [pencil] → CodeEditor（renderMode 先切 source，canEdit 恢复）；
+// toggle「源码」→ CodeMirror 只读画布（批 13 CodeMirror 三态，.code 手写行号形态已退役）；
+// 点正文（v1.6 pencil 退役）→ CodeEditor（renderMode 先切 source，canEdit 恢复）；
 // nav [完成] → 回渲染态（预览优先）。
 await segc.getByRole("button", { name: "源码" }).click();
 await page.waitForTimeout(300);
-ok((await previewBody.locator(".code .ln").count()) > 0, "toggle 源码 → 行号形态");
-await page.locator('[data-inspection-panel="open"] .nav [aria-label="编辑"]').click();
+ok((await previewBody.locator(".cm-editor").count()) > 0, "toggle 源码 → CodeMirror 只读画布在场");
+await previewBody.locator(".cm-content").click();
 // CodeEditor lazy chunk + CodeMirror 初始化：等挂载而非固定延时。
 await previewBody.locator(".cm-editor").waitFor({ timeout: 8000 });
 ok(true, "编辑态 CodeEditor 在场");
@@ -619,14 +623,14 @@ ok(
     editorCanvas.hasLineNumbers,
   `编辑态排印/行号对齐 03q2 .ed（font=${editorCanvas?.fontSize} lh=${editorCanvas?.lineHeight} 行号=${editorCanvas?.hasLineNumbers}）`,
 );
-// 面板 file 标签 = editingActions="meta"：完成/放弃在 .emeta .fact（nav 只承载 pencil/⋯）。
+// 面板 file 标签 = editingActions="meta"：完成/放弃在 .emeta .fact（nav 只承载 ⋯）。
 await previewBody.locator(".emeta .fact button").last().click();
 await page.waitForTimeout(400);
 ok(
   await previewBody.locator("h1", { hasText: "probe title" }).isVisible(),
   "完成 → 回渲染态（预览优先）",
 );
-// v1.5 批3：nav 右端 [pencil][⋯]；「查看 diff」收进 ⋯ 菜单（不再行内文字钮）。
+// v1.5 批3：nav 右端 ⋯（v1.6 pencil 退役）；「查看 diff」收进 ⋯ 菜单（不再行内文字钮）。
 const navDots = page.locator('[data-inspection-panel="open"] .nav [aria-label="更多操作"]');
 ok((await navDots.count()) === 1, "nav [⋯] 存在");
 await navDots.click();
