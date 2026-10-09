@@ -1,5 +1,6 @@
-// 批 17 键盘 inset 探针：visualViewport → :root 全局变量（--kb-offset/--kb-active）→
-// 编辑态面板 padding 缩链 + .aux 联动的接线正确性。
+// 批 17/18 键盘 inset 探针：visualViewport → :root 全局变量（--kb-offset/--kb-active）→
+// 编辑态面板 padding 缩链 + .aux 联动的接线正确性（批 17）+ focusin 终态补测与诊断浮层
+// 接线（批 18）。
 // 边界（重要）：Chromium 桌面对真实键盘 visualViewport 行为结构性失明（同 env() 教训）——
 // 本探针用页内 defineProperty mock vv.height + dispatchEvent 驱动，只证「监听在挂、公式
 // 正确、CSS 变量在写、消费端在跟随」；真实键盘行为必须真机验证（机制调研与证伪表见
@@ -247,6 +248,45 @@ async function run() {
       .locator('[data-role="file-preview-pane"]')
       .evaluate((el) => getComputedStyle(el).paddingBottom);
     check("3a 收起后变量归零 + padding 回 0px", restoredPad === "0px", restoredPad);
+
+    console.log("== 批 18：focusin 终态补测 + 诊断浮层 ==");
+    // focusin 兜底路径：只改 vv 值、不 dispatch vv 事件、仅 dispatch focusin（focusin
+    // 冒泡到 window，observeKeyboardInset 批 18 新增监听）→ measure 读当前 vv 值写回。
+    // 锁「focus 监听 → schedule → apply → 变量」这条线。
+    await page.evaluate(() => {
+      const vv = window.visualViewport;
+      Object.defineProperty(vv, "height", { value: 467, configurable: true });
+      Object.defineProperty(vv, "offsetTop", { value: 40, configurable: true });
+      window.dispatchEvent(new FocusEvent("focusin"));
+    });
+    await page.waitForFunction(
+      () => document.documentElement.style.getPropertyValue("--kb-offset") === "337px",
+      { timeout: 5000 },
+    );
+    const focusOffset = await page.evaluate(() =>
+      document.documentElement.style.getPropertyValue("--kb-offset"),
+    );
+    check("4a focusin 补测驱动重算（844-467-40=337px）", focusOffset === "337px", focusOffset);
+
+    const dbg = await page.evaluate(() => {
+      const el = document.querySelector("[data-kb-debug]");
+      return {
+        present: !!el,
+        lastLine: el?.textContent.split("\n").pop() ?? "",
+        transform: el?.style.transform ?? "",
+      };
+    });
+    // 4a 的 focusin dispatch 是最后一个事件 → 最后一行即本次溯源（focusin 值 + root 读回）。
+    check(
+      "4b 诊断浮层在场且最后一行为本次 focusin 行（src 溯源在打点）",
+      dbg.present && dbg.lastLine.includes("focusin") && dbg.lastLine.includes("root=337px"),
+      dbg.lastLine,
+    );
+    check(
+      "4c 浮层钉在 visual viewport 顶部（translateY 跟随 vv.offsetTop）",
+      dbg.transform === "translateY(40px)",
+      dbg.transform,
+    );
 
     await ctx.close();
   } finally {
