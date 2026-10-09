@@ -22,10 +22,23 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 /* ---- 导航行 ---- */
 .nav{display:flex;align-items:center;justify-content:space-between;padding:6px 16px}
 .nav h1,.nv-t{font-size:17px;font-weight:600}
+.tticn{width:15px;height:15px;flex:none;display:inline-block;vertical-align:-2px;margin-right:1px;color:var(--ink-2);fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}  /* 行1 标题类型图标：Agent=sparkles · 终端=terminal · Chat=message · 空态项目=folder（对齐 iPad 页头/侧栏/tabstrip 行首先例——区分标题对象类型，零额外空间） */
+/* ---- 开关（iOS toggle，浮层表单行内用：实例信息自动重试 / 编辑 sheet / MCP 开关） ---- */
+.toggle{display:inline-block;width:44px;height:26px;border-radius:13px;background:var(--c-success);position:relative;flex:none}
+.toggle::after{content:'';position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:#fff}
+.toggle.off{background:var(--bg-elevated3)}
+.toggle.off::after{right:auto;left:3px}
+.ebtn{font-size:11px;font-weight:700;color:var(--c-primary);border:1px solid color-mix(in srgb,var(--c-primary) 55%,transparent);border-radius:7px;padding:3px 9px;margin-left:8px;cursor:pointer}  /* 行内「编辑」小钮（描边式，截图产品同款） */
+/* ---- 置顶会话条（工作台行1 之下，24px 常驻占位；置顶数 0 时整行不出现） ---- */
+.pinned{display:flex;align-items:center;gap:14px;height:24px;padding:0 16px}
+.pdot{width:10px;height:10px;border-radius:50%;flex:none;cursor:pointer}
+.pdot.cur{box-shadow:0 0 0 2px var(--bg-canvas),0 0 0 3.5px var(--ink-1)}  /* 当前会话 = 白环描边 */
 .back{color:var(--c-primary);font-size:15px;display:flex;align-items:center;gap:2px}
 .back::before{content:'';width:10px;height:10px;border-left:2.2px solid var(--c-primary);
               border-bottom:2.2px solid var(--c-primary);transform:rotate(45deg);margin-right:4px}
 .nv-t{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
+.sw{display:inline-block;width:8px;height:8px;border-right:1.8px solid var(--ink-2);
+    border-bottom:1.8px solid var(--ink-2);transform:rotate(45deg) translateY(-2px)}  /* 标题▾ */
 .ic{width:26px;height:26px;display:flex;align-items:center;justify-content:center}
 .ic svg{width:20px;height:20px;stroke:var(--ink-2);fill:none;stroke-width:1.8;
         stroke-linecap:round;stroke-linejoin:round}
@@ -147,9 +160,9 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 .ptab.on{background:var(--tint-blue);border-color:color-mix(in srgb,var(--c-primary) 55%,transparent);color:var(--ink-1);font-weight:600}
 .ptab .x{margin-left:1px;color:var(--ink-3);font-size:11px}
 /* 地址栏（文件树标签）：路径面包屑，点上级段 = 返回上层 */
-.crumb{flex:1;display:flex;align-items:center;height:30px;padding:0 12px;border-radius:15px;
-       background:var(--bg-elevated);border:1px solid var(--sep);font-size:11.5px;white-space:nowrap;
-       overflow:hidden;font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-3)}
+.crumb{flex:1;display:flex;align-items:center;height:34px;padding:0 12px;border-radius:10px;
+       background:var(--bg-elevated);border:1px solid var(--sep);font-size:13px;white-space:nowrap;
+       overflow:hidden;font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-2)}  /* v1.5 升格：30→34px/11.5→13px/r15→10——与搜索框 sfield 同大小递进（地址行样式合拍） */
 .crumb b{color:var(--ink-1);font-weight:400}
 .crumb .cico{width:12px;height:12px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;margin-right:4px}  /* 根段 = 项目图标（固定宽，不随项目名长度） */
 /* 悬浮添加钮（FAB）：文件树标签右下，实心主色蓝底 + 白＋，→ 03oa 菜单（三端同构） */
@@ -225,15 +238,16 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 
 /* ---- 共享：移动端分段控件（作用域/表单二选一/市场双 tab 同一规格；页内只补 margin） ---- */
 .segc{display:flex;height:32px;border-radius:10px;background:var(--fill-segmented);padding:3px}
-.segc > span, .segc > button{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;color:var(--ink-2);cursor:pointer;min-width:0}  /* 子代选择器：实现层用 button 保 a11y，原型为 span；段内嵌套 span 不吃 flex:1 */
+.segc span{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;color:var(--ink-2);cursor:pointer;min-width:0;padding:0 8px}  /* 段内左右 8px：内容（图标/名/▾）不贴段缘 */
+.segc span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}  /* 嵌入项目名过长尾截断（与 seg4 同规格）——全名进切换器 ▾ */
 .segc .on{background:var(--segmented-thumb);color:var(--ink-1);font-weight:600;border-radius:8px}
+.segc .caret{font-size:9px}
 .seg4 .on{background:var(--seg-thumb);color:var(--ink-1);font-weight:600}
 .seg4.mini{height:26px;border:0;font-size:12px}  /* Sidebar 内轻量变体：视图切换用，无描边 */
 .seg4.mini span{font-size:12px;border-radius:6px}
 .segc.mini{height:26px;border-radius:8px;padding:2px}  /* 底部状态栏内嵌变体：渲染⇄源码（.fstat 右端） */
 .segc.mini span{font-size:12px;border-radius:6px}
 .segc.mini span{flex:none;padding:0 14px}
-.segc .caret{font-size:9px}  /* 遗留：plugins-tab.html / plugins-skill-menu.html 两个原型页 segc 内仍是 <span class="caret">▾</span>（无页私字号规则，靠本条）。实现侧已 Lucide 化（v2-primitives 无此规则）；随原型页图标迁移后再删本行（design review 批13 P1-2）。 */
 
 /* ---- 共享：Git 底部操作行（三端同构 03m/04d/05i；页内只补 margin） ---- */
 .gacts{display:flex;gap:8px;position:relative}

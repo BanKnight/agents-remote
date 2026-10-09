@@ -34,7 +34,7 @@
     <div class="nav">
       <span class="back">服务器根</span>
       <h1>README.md</h1>
-      <span class="ic" data-symbol="pencil" title="编辑" style="position:relative"><svg viewBox="-10 -10 20 20"><path d="M-6.5,6.5 l1.2,-4.6 8,-8 3.4,3.4 -8,8 -4.6,1.2 z"/><path d="M2.7,-5.3 l3.4,3.4"/></svg><span class="pin" style="right:-8px;top:-13px">3</span></span>
+      
       <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
     </div>
 
@@ -56,21 +56,20 @@ npm run build
 
     <div class="home"></div>
 
-    <!-- 编号 pin：① push 入口 + 渲染/源码分段（顶部元信息行右端，nav 下） ② 沙箱渲染 ③ 编辑（顶部行右端 pencil 图标钮） ④ html 同款 ⑤ ⋯ 菜单 -->
+    <!-- 编号 pin：① push 入口 + 渲染/源码分段（顶部元信息行右端，nav 下；编辑 = 点正文进入） ② 沙箱渲染 ③ html 同款 ④ ⋯ 菜单 -->
     <span class="pin" style="left:280px;top:176px">2</span>
-    <span class="pin" style="left:330px;top:636px">4</span>
-    <span class="pin" style="left:337px;top:25px">5</span>
+    <span class="pin" style="left:330px;top:636px">3</span>
+    <span class="pin" style="left:337px;top:25px">4</span>
   </div>
 </div>
 
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
-    <li><b>①</b><span>入口 = 全局文件 Tab 点散文件行 push 进入（本页 = push 容器 Markdown 渲染态；工作台内文件 = 面板预览标签（iPhone）/ 中栏标签（iPad·Mac），见 workspace-preview）；‹ 返回「服务器根」列表原位；渲染 ⇄ 源码：分段单源组件随元信息回归顶部，位于顶部元信息行（nav 下）右端（mini 紧凑档），源码态为等宽着色（同 03q），切换不丢失滚动位置</span></li>
+    <li><b>①</b><span>入口 = 全局文件 Tab 点散文件行 push 进入（本页 = push 容器 Markdown 渲染态；工作台内文件 = 面板预览标签（iPhone）/ 中栏标签（iPad·Mac），见 workspace-preview）；‹ 返回「服务器根」列表原位；渲染 ⇄ 源码：分段单源组件随元信息回归顶部，位于顶部元信息行（nav 下）右端（mini 紧凑档），源码态为等宽着色（同 03q），切换不丢失滚动位置；「编辑」= <b>点正文任意处进入</b>：渲染态点正文 = 切源码并进入编辑（分段同步切「源码」），源码态点正文 = 直接进入（03q2 push 同款：完成/放弃/撤销/重做），保存写回后渲染自动刷新</span></li>
     <li><b>②</b><span>渲染视图在沙箱中生成：不执行脚本、不发起外部请求；标题/列表/代码块/引用按预览样式呈现</span></li>
-    <li><b>③</b><span>「编辑」= 顶部行右端主操作（编辑钮在 ⋯ 左侧），进入编辑态（03q2 push 同款：完成/放弃/撤销/重做），保存写回后渲染自动刷新；顶部元信息行（nav 下）= 类型·度量·更新时间 + 渲染⇄源码分段（右端）</span></li>
-    <li><b>④</b><span>HTML 文件同款：渲染预览 + 源码查看；图片文件走查看器（03q4）</span></li>
-    <li><b>⑤</b><span>⋯ 菜单：复制内容 / 复制路径 —— 根作用域无 Git，无「查看 diff」</span></li>
+    <li><b>③</b><span>HTML 文件同款：渲染预览 + 源码查看；图片文件走查看器（03q4）</span></li>
+    <li><b>④</b><span>⋯ 菜单：复制内容 / 复制路径 —— 根作用域无 Git，无「查看 diff」</span></li>
   </ol>
 </div>
 

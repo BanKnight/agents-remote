@@ -2,7 +2,7 @@
 <html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="UTF-8">
-<title>mac-new-instance · Mac 浮层（新建实例 Popover）— HTML 轨</title>
+<title>mac-instance-info-terminal · Mac 浮层（实例信息 Popover · 终端型）— HTML 轨</title>
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/components.css">
 <style>
@@ -15,19 +15,20 @@
 .pinsp{flex:1}
 .chips{padding:8px 12px 0;gap:6px}
 .pane .stream{gap:12px;padding:10px 14px 0}
-/* 新建实例 Popover（本页私）：锚于窗格 ＋，箭头向上，不遮罩窗口 */
-.pop{position:absolute;left:430px;top:90px;width:250px;background:var(--menu);border:1px solid var(--sep-strong);
-     border-radius:14px;box-shadow:0 8px 24px color-mix(in srgb,#000 25%,transparent);z-index:20;padding:4px 0 2px}
-.pop::before{content:"";position:absolute;top:-6px;left:16px;width:12px;height:12px;background:var(--menu);
+/* 实例信息 Popover（本页私）：锚于会话页头右端 ⋯ 正下方，箭头向上，不遮触发点 */
+.pop{position:absolute;left:580px;top:90px;width:310px;background:var(--menu);border:1px solid var(--sep-strong);
+     border-radius:14px;box-shadow:0 6px 20px color-mix(in srgb,#000 22%,transparent);z-index:20;padding:4px 0 2px}
+.pop::before{content:"";position:absolute;top:-6px;right:6px;width:12px;height:12px;background:var(--menu);
              border-top:1px solid var(--sep-strong);border-left:1px solid var(--sep-strong);transform:rotate(45deg)}
-.pop .ttl{font-size:14px;font-weight:700;color:var(--ink-1);padding:8px 14px 6px}
-.prow{display:flex;align-items:center;gap:10px;padding:8px 12px}
-.prow + .prow{border-top:1px solid var(--sep)}
-.prow .tile{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none;font-size:13px;font-weight:700}
-.prow .tx .n{font-size:13px;font-weight:600;color:var(--ink-1)}
-.prow .tx .d{font-size:10.5px;color:var(--ink-2);margin-top:1px;display:block}
-.prow .ar{margin-left:auto;font-size:12px;color:var(--ink-3)}
-.pop .note{font-size:10px;color:var(--ink-3);text-align:center;padding:7px 0 4px;border-top:1px solid var(--sep)}
+.pop .ttl{font-size:14px;font-weight:700;color:var(--ink-1);padding:9px 14px 6px}
+.pr{display:flex;align-items:center;gap:10px;padding:7px 14px;font-size:12.5px;border-top:1px solid var(--sep)}
+.pr .k{color:var(--ink-2)}
+.pr .v{margin-left:auto;color:var(--ink-1);text-align:right}
+.pr .ar{font-size:11px;color:var(--ink-3);margin-left:2px}
+.pr .mono{font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:10.5px}
+.pr .ebtn{margin-left:8px}
+.cap{font-size:12.5px;color:var(--ink-1);background:var(--tint-blue);border:1px solid color-mix(in srgb,var(--c-primary) 30%,transparent);
+     border-radius:8px;padding:6px 10px;margin:0 0 10px}
 </style>
 <script src="assets/theme.js"></script>
 <script src="assets/icons.js"></script>
@@ -55,7 +56,7 @@
         <div class="footnav"><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg></span>全局文件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="puzzlepiece"><path d="M-8.5,6.5 V-4 H-2.7 a2.7,2.7 0 0 1 5.4,0 H8.5 V-1.3 a2.7,2.7 0 0 0 0,5.4 V6.5 Z"/></svg></span>插件</span><span><span class="dicon"><svg viewBox="-10 -10 20 20" data-symbol="gearshape"><circle r="5.6"/><circle r="2.2"/><path d="M0,-5.6 v-2.8 M0,5.6 v2.8 M-5.6,0 h-2.8 M5.6,0 h2.8 M-4,-4 l-2,-2 M4,4 l2,2 M-4,4 l-2,2 M4,-4 l2,-2"/></svg></span>设置</span></div>
       </div>
 
-      <!-- 会话窗格（Popover 覆盖其上，不遮罩窗口） -->
+      <!-- 会话窗格（页头右端 ⋯ = 本图触发点；Popover 覆盖其下，不遮罩窗口） -->
       <div class="pane pcenter">
         <div class="tabstrip">
           <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg>claude·auth<span class="dot" style="margin-left:2px;background:var(--c-success)"></span></span>
@@ -78,17 +79,16 @@
       <div class="pane pterm">
         <div class="tabstrip">
           <span class="tb on" style="font-family:ui-monospace,Consolas,monospace"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg>&gt;_ term·1</span>
-          <span class="moreic" style="margin-left:auto"><svg class="icn" viewBox="-10 -10 20 20" style="stroke:none;fill:currentColor"><circle cx="-6" r="1.6"/><circle r="1.6"/><circle cx="6" r="1.6"/></svg></span>
+          <span class="moreic" style="margin-left:auto;position:relative" title="会话菜单：实例信息 / 重命名 / 置顶 / 关闭会话（终端型无自动重试）"><svg class="icn" viewBox="-10 -10 20 20" style="stroke:none;fill:currentColor"><circle cx="-6" r="1.6"/><circle r="1.6"/><circle cx="6" r="1.6"/></svg><span class="pin" style="right:-12px;top:-9px">1</span></span>
         </div>
         <div class="tterm">
           <div><span class="p">$</span> tmux attach -t dev</div>
           <div><span class="p">$</span> npm run dev</div>
           <div class="tdim">VITE v5.0 ready in 312 ms</div>
-          <div><span class="p">$</span> <span class="cursor"></span></div>
         </div>
       </div>
 
-      <!-- Inspector（本图聚焦浮层，右栏留空） -->
+      <!-- Inspector -->
       <div class="pane pinsp">
         <div class="glabel2">检视 · 只读<span class="clps">»</span></div>
         <div class="ptabs" style="margin:10px 14px 0"><span class="ptab on"><svg viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg>文件树</span><span class="ptab"><svg viewBox="-10 -10 20 20"><circle cx="-6" cy="-6" r="2.6"/><circle cx="-6" cy="6" r="2.6"/><circle cx="6" cy="-6" r="2.6"/><path d="M-6,-3.4 V3.4"/><path d="M6,-3.4 V0 a3.5,3.5 0 0 1 -3.5,3.5 H-3.4"/></svg>Git</span><span class="ptab">Wiki</span>
@@ -96,15 +96,11 @@
       </div>
     </div>
 
-    <!-- 新建实例 Popover（锚于窗格 ＋，箭头向上，不遮罩窗口） -->
+    <!-- 实例信息 Popover（锚于页头 ⋯ 正下方，箭头向上；同位入口：⋯ 菜单 › 实例信息）——终端型：字段集仅 项目 / 类型（无模型/权限/effort/自动重试等 Agent 语义字段） -->
     <div class="pop">
-      <div class="ttl">新建实例</div>
-      <div class="prow"><span class="tile" style="background:var(--tint-blue);color:var(--c-primary)">✦</span><span class="tx"><span class="n">＋ Claude 会话</span><span class="d">模型预设 · opus</span></span><span class="ar">›</span></div>
-      <div class="prow"><span class="tile" style="background:var(--tint-orange);color:var(--c-warning)">⚡</span><span class="tx"><span class="n">＋ OMP 会话</span><span class="d">新运行时 · beta</span></span><span class="ar">›</span></div>
-      <div class="prow"><span class="tile" style="background:color-mix(in srgb,var(--ink-2) 12%,transparent);color:var(--ink-2)">⊞</span><span class="tx"><span class="n">＋ Codex 会话</span><span class="d">默认预设</span></span><span class="ar">›</span></div>
-      <div class="prow"><span class="tile" style="background:var(--tint-green);color:var(--c-success-text)"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-7" width="18" height="14" rx="3.5"/><path d="M-5,-2.5 l3,2.5 -3,2.5"/><path d="M1,3.5 h4.5"/></svg></span><span class="tx"><span class="n">终端（tmux）</span><span class="d">断线内容不丢</span></span><span class="ar">›</span></div>
-      <div class="prow"><span class="tile" style="background:var(--tint-purple);color:var(--c-pin)"><svg class="icn" viewBox="-10 -10 20 20"><path d="M-8,-6 a3,3 0 0 1 3,-3 h10 a3,3 0 0 1 3,3 v6 a3,3 0 0 1 -3,3 h-6 l-4,4 v-4 h0 a3,3 0 0 1 -3,-3 z"/></svg></span><span class="tx"><span class="n">Chat（Pi）</span><span class="d">轻量对话</span></span><span class="ar">›</span></div>
-      <div class="note">模型预设来自 设置 → Runtime</div>
+      <div class="ttl">term·1 <span style="font-size:12px;font-weight:600;color:var(--c-success-text);margin-left:4px">● 运行中</span></div>
+      <div class="pr"><span class="k">项目</span><span class="v">agents-web</span></div>
+      <div class="pr"><span class="k">类型</span><span class="v">终端</span></div>
     </div>
 
     <!-- 状态栏 -->
@@ -114,24 +110,23 @@
     </div>
   </div>
 
-  <!-- 高亮圈：＋ 锚点（相对 stage 内沿） -->
-  <span class="hring" style="left:448px;top:48px;width:34px;height:34px;border-color:var(--c-primary)"></span>
+  <!-- 高亮圈：终端窗格页头右端 ⋯（相对 stage 内沿） -->
+  <span class="hring" style="left:868px;top:50px;width:26px;height:26px;border-color:var(--c-primary)"></span>
 
-  <!-- 编号 pin：① ＋锚点 ② Popover 形制 ③ 同款 Popover ④ Sheet/Alert 分工 -->
-  <span class="pin" style="left:492px;top:42px">1</span>
-  <span class="pin" style="left:700px;top:240px">2</span>
-  <span class="pin" style="left:700px;top:300px">3</span>
-  <span class="pin" style="left:160px;top:238px">4</span>
+  <!-- 编号 pin：① 终端窗格 ⋯（行内）② Popover 形制 ③ 终端型字段集（项目/类型） -->
+  <span class="pin" style="left:902px;top:152px">2</span>
+  <span class="pin" style="left:902px;top:205px">3</span>
 </div>
 
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
+  <p class="cap">终端窗格页头 ⋯ → 实例信息 Popover · 点外部收起（实例信息的字段集按实例类型分化）</p>
   <ol>
-    <li><b>①</b>＋ = 新建实例入口（窗格 tab 条）；桌面浮层 = Popover：锚点弹出、箭头指向来源、不遮罩窗口；Esc / 点击外部关闭</li>
-    <li><b>②</b>五种运行时一列，与手机 03j sheet 同数据同组件；iPad 同样式（无箭头、阴影更浅）</li>
-    <li><b>③</b>同款 Popover：实例信息（03k）、运行配置（点摘要 chip 展开）；模型预设来自 设置 → Runtime</li>
-    <li><b>④</b>打断感强的操作用居中 Sheet / Alert：新建与采用项目、删除、关闭会话确认；会话历史、项目切换 = Sidebar 列表切换（05c，非浮层）</li>
+    <li><b>①</b>终端窗格右端 ⋯ = 会话菜单入口（term·1）；Popover 锚定其正下方、箭头指向触发点，不遮触发点；Esc / 点击外部收起</li>
+    <li><b>②</b>族A 锚定浮卡：形制与 Agent 态完全同款（var(--menu) 底 + 描边 + r14 + 轻阴影；iPad 同样式无箭头）</li>
+    <li><b>③</b>终端型字段集仅 <strong>项目 / 类型</strong>——无 模型/权限/effort/自动重试/恢复 ID 等 Agent 语义字段（自动重试仅 Agent 型有意义；会话菜单同样无「自动重试」项）；重命名 / 置顶 / 关闭动作仍直挂会话菜单 ⋯</li>
   </ol>
+  <p class="cap" style="margin-top:8px">Agent 型全字段态见 mac-instance-info；类型分化由数据驱动（同一 Popover 组件，字段随类型渲染）</p>
 </div>
 
 </body></html>

@@ -57,7 +57,7 @@
       <div class="mhead">
         <span class="mback"><svg viewBox="-10 -10 20 20" data-symbol="chevron.left"><path d="M2,-7 L-4,0 L2,7"/></svg>全局文件<span class="pin" style="right:-26px;top:-1px">1</span></span>
         <h1 class="fname">deploy.sh</h1>
-        <span class="moreic" data-symbol="pencil" title="编辑" style="position:relative"><svg class="icn" viewBox="-10 -10 20 20"><path d="M-6.5,6.5 l1.2,-4.6 8,-8 3.4,3.4 -8,8 -4.6,1.2 z"/><path d="M2.7,-5.3 l3.4,3.4"/></svg><span class="pin" style="right:-10px;top:-14px">3</span></span>
+        
         <span class="moreic" title="文件菜单：复制内容 / 复制路径 / 在工作台打开（根作用域无 Git，无查看 diff）" style="position:relative"><svg class="icn" viewBox="-10 -10 20 20" style="stroke:none;fill:currentColor"><circle cx="-6" r="1.6"/><circle r="1.6"/><circle cx="6" r="1.6"/></svg><span class="pin" style="right:-2px;top:-14px">2</span></span>
       </div>
       <!-- 顶部元信息行（mhead 下）：类型·行数·更新时间；代码页右端空 -->
@@ -77,7 +77,7 @@
         <div class="ln"><span class="no">12</span><span class="tx">  <span class="kw">exit</span> 1</span></div>
         <div class="ln"><span class="no">13</span><span class="tx"><span class="kw">fi</span></span></div>
         <div class="ln"><span class="no">14</span><span class="tx"><span class="kw">echo</span> <span class="str">"deploy ok $(date)"</span></span></div>
-        <span class="pin" style="right:10px;top:8px">4</span>
+        <span class="pin" style="right:10px;top:8px">3</span>
       </div>
     </div>
 
@@ -97,16 +97,15 @@
   </div>
   </div>
 
-  <!-- 编号 pin：① 推入态返回（内联） ② mhead 右端 ⋯ 文件菜单（内联） ③ 编辑（pencil 图标钮内联挂载） ④ 推入态容器（代码面右上，内联） -->
+  <!-- 编号 pin：① 推入态返回（内联） ② mhead 右端 ⋯ 文件菜单（内联；编辑 = 点正文进入） ③ 推入态容器（代码面右上，内联） -->
 </div>
 
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
     <li><b>①</b><span>推入态返回：点「‹ 全局文件」原地退回列表（本轨 ipad-files-global 页）——推入只替换中栏内容，工作台现场（会话标签 / 检视器）原样保留、零销毁；作用域分段与「＋」推入态隐藏、返回后恢复；h1 位 = 文件名（等宽 700）</span></li>
-    <li><b>②</b><span>mhead 右端 ⋯ = 文件菜单（复制内容 / 复制路径 / 在工作台打开；根作用域无 Git，无查看 diff）；大面积 UI 切换仅在点「在工作台打开」时发生：切到该项目工作台并自动打开中栏文件标签（04b/04b2 同一容器）</span></li>
-    <li><b>③</b><span>「编辑」= 顶部行右端主操作（编辑钮在 ⋯ 左侧，iOS 导航栏惯例；03q2 同款编辑态：完成 / 放弃 / 撤销 / 重做），完成写回后顶部元信息行（mhead 下）与代码刷新</span></li>
-    <li><b>④</b><span>推入态容器 ④ iPad 形态：文件预览 = 同一内容组件、仅换容器（中栏标签 04b / iPhone 工作台 pill 03q5 / 主区推入态 10m2），顶部元信息行（mhead 下）.fmeta / ⋯ / 编辑与 03q 家族同构；其余类型态（MD / HTML / 图片 / 不支持）与 Mac 推入态（files-global-preview-md / -image / -unsupported）同构，仅容器换 iPad</span></li>
+    <li><b>②</b><span>mhead 右端 ⋯ = 文件菜单（复制内容 / 复制路径 / 在工作台打开；根作用域无 Git，无查看 diff）；大面积 UI 切换仅在点「在工作台打开」时发生：切到该项目工作台并自动打开中栏文件标签（04b/04b2 同一容器）；「编辑」= <b>点正文任意处进入</b>编辑态（顶部无编辑钮；03q2 同款），完成写回后顶部元信息行（mhead 下）与代码刷新</span></li>
+    <li><b>③</b><span>推入态容器 ③ iPad 形态：文件预览 = 同一内容组件、仅换容器（中栏标签 04b / iPhone 工作台 pill 03q5 / 主区推入态 10m2），顶部元信息行（mhead 下）.fmeta / ⋯ / 编辑与 03q 家族同构；其余类型态（MD / HTML / 图片 / 不支持）与 Mac 推入态（files-global-preview-md / -image / -unsupported）同构，仅容器换 iPad</span></li>
   </ol>
 </div>
 

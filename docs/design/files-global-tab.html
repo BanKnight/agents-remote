@@ -35,9 +35,7 @@
 .file .ic svg{width:17px;height:17px;stroke:var(--ink-2);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}
 .file .p{font-family:ui-monospace,'SF Mono',Consolas,monospace;color:var(--ink-1);flex:1}
 .file .tm{font-size:11px;color:var(--ink-2)}
-.sfield{flex:1;display:flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:15px;
-        background:var(--bg-elevated);border:1px solid var(--sep);font-size:12.5px;color:var(--ink-2)}
-.sfield svg{width:13px;height:13px;flex:none}
+.row2{margin-top:10px}
 </style>
 <script src="assets/theme.js"></script>
 <script src="assets/icons.js"></script>
@@ -51,8 +49,9 @@
   <div class="page">
     <div class="h-row"><h1>文件</h1><div class="h-ic" style="position:relative"><svg viewBox="-10 -10 20 20" data-symbol="plus" title="添加：新建 / 上传"><path d="M0,-6.5 V6.5 M-6.5,0 H6.5"/></svg><span class="pin" style="right:-10px;top:-9px">4</span></div></div>
 
-    <div class="opsrow" style="margin:10px 16px 0">
-      <span class="sfield" style="position:relative"><i data-icon="search"></i>搜索文件与目录<span class="pin" style="right:-10px;top:-9px">1</span></span>
+    <div class="row2" style="gap:6px">
+      <span class="crumb" style="position:relative"><svg class="cico" data-symbol="folder" viewBox="-10 -10 20 20"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg><b style="color:var(--ink-1)">agents-remote</b><span class="pin" style="right:-12px;top:-11px">1</span></span>
+      <span class="obtn srch" title="搜索（点按展开 = 03x）"><i data-icon="search"></i></span>
     </div>
 
     <div class="fcard">
@@ -87,15 +86,15 @@
   </div>
   <div class="home"></div>
 
-  <!-- 编号 pin 已内联锚定：① 搜索钮 ② 项目根 live 行 ③ 根下散文件行 ④「＋」添加钮（行2右端） -->
+  <!-- 编号 pin 已内联锚定：① 地址框根段（agents-remote） ② 项目根 live 行 ③ 根下散文件行 ④「＋」添加钮（行2右端） -->
 </div>
 
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
-    <li><b>①</b><span>与项目文件工具同一组件，作用域 = 服务器根目录（铁律 3）；布局同构：行2 = 常驻展开搜索框（空间足够不收纳；聚焦过滤 = 03x）；「＋」不与搜索同行——与主标题同行（h1 行右端）；服务器根无「..」（搜索与返回上层互斥，仅根目录可搜索）</span></li>
+    <li><b>①</b><span>与项目文件工具同一组件（铁律 3）：<b>行2 = 地址框 + 收缩搜索钮单行</b>（v1.5 升格——地址框与搜索框同大小递进，不再常驻展开搜索行）；根段 = agents-remote（服务器根，无层级可返回）；搜索点按展开 = 03x（全宽过滤）；「＋」与主标题同行不变</span></li>
     <li><b>②</b>项目根目录带 live 标与实例数；点项目文件夹 → 进入其工作台</li>
-    <li><b>③</b><span>行2 搜索框聚焦/输入 = 03x（根作用域；服务器根下的子目录该位置 = 「..」）；点散文件行 → push 预览（03q 家族 = 全局文件语境基准图，根作用域无 Git、⋯ 无查看 diff）；结构/上传操作同 03w/03y/03z</span></li>
+    <li><b>③</b><span>搜索展开后聚焦/输入 = 03x（根作用域；服务器根下的子目录该位置 = 「..」）；点散文件行 → push 预览（03q 家族 = 全局文件语境基准图，根作用域无 Git、⋯ 无查看 diff）；结构/上传操作同 03w/03y/03z</span></li>
     <li><b>④</b><span>「＋」（与主标题同行，h1 行右端）= 添加菜单（03oa）：新建… = 03y（文件/文件夹二选一）、上传… = 03z（到当前作用域）；桌面端 = Sidebar「全局文件」（05/10m 同构）</span></li>
   </ol>
 </div>

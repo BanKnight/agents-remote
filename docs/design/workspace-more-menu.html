@@ -22,6 +22,10 @@
          box-shadow:0 6px 20px color-mix(in srgb,#000 22%,transparent)}
 .mrow{display:flex;align-items:center;gap:14px;height:45px;padding:0 14px;font-size:14px;color:var(--ink-1);cursor:pointer}
 .mrow svg{width:17px;height:17px;flex:none;stroke:var(--ink-1);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.mrow .ar{margin-left:auto;font-size:12px;color:var(--ink-3)}
+.mrow .ck{margin-left:auto;color:var(--c-primary);font-weight:700;font-size:13px}
+.mrow.red{color:var(--c-danger)}
+.mrow.red svg{stroke:var(--c-danger)}
 </style>
 <script src="assets/theme.js"></script>
 <script src="assets/icons.js"></script>
@@ -35,16 +39,21 @@
 
     <div class="nav">
       <span class="back">项目</span>
-      <h1>claude·auth <span class="runct">●2</span> <span class="caret">▾</span></h1>
+      <h1><svg class="tticn" viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg>claude·auth <span class="runct">●2</span> <span class="caret">▾</span></h1>
       <span class="ic" title="检视面板：文件树 / Git / Wiki"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-7.5" width="18" height="15" rx="3"/><path d="M2.5,-7.5 V7.5"/><path d="M5.2,-3.5 h1.6 M5.2,-0.5 h1.6 M5.2,2.5 h1.6"/></svg></span>
       <span class="ic" data-symbol="ellipsis" style="position:relative"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg><span class="pin" style="right:-10px;top:-9px">1</span></span>
     </div>
 
-    <!-- ⋯ 下拉菜单（点按型，无压暗；锚于 ⋯ 正下方右侧） -->
+    <!-- ⋯ 下拉菜单（点按型，无压暗；锚于 ⋯ 正下方右侧）：导航区 + 动作区（自实例信息上收）+ 销毁区 -->
     <div class="navmenu">
-      <div class="mrow" style="position:relative"><i data-icon="clock.arrow.circlepath"></i>会话历史<span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">2</span></div>
+      <div class="mrow" style="position:relative"><i data-icon="clock.arrow.circlepath"></i>会话历史<span class="ar">›</span><span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">2</span></div>
+      <div class="mrow" style="position:relative"><i data-icon="info.circle"></i>实例信息<span class="ar">›</span><span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">3</span></div>
       <div style="height:1px;background:var(--sep)"></div>
-      <div class="mrow" style="position:relative"><i data-icon="info.circle"></i>实例信息<span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">3</span></div>
+      <div class="mrow" style="position:relative"><i data-icon="pin"></i>置顶<span class="ck">✓</span><span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">4</span></div>
+      <div class="mrow"><i data-icon="pencil"></i>重命名…</div>
+      <div class="mrow" style="position:relative"><i data-icon="arrow.clockwise"></i>自动重试<span class="ck">✓</span><span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">5</span></div>
+      <div style="height:1px;background:var(--sep)"></div>
+      <div class="mrow red" style="position:relative"><i data-icon="xmark"></i>关闭会话…<span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">6</span></div>
     </div>
 
     <div class="sub"><span>▸ 2 个子 agent 运行中 · 点按跳转</span><span>›</span></div>
@@ -85,9 +94,12 @@
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
-    <li><b>①</b><span><b>⋯（原 ℹ + ⋯ 合并）</b>：导航右上唯一菜单入口（行1 右端 = [面板][⋯]，低频操作的家，铁律 6：低频操作进 ⋯）；菜单点按型（无压暗），点外部收起</span></li>
-    <li><b>②</b><span>会话历史 → 03n sheet（直开）</span></li>
-    <li><b>③</b><span>实例信息 → 03k sheet（内容原样，仅入口收进菜单；不新增重复入口）</span></li>
+    <li><b>①</b><span><b>⋯（原 ℹ + ⋯ 合并）</b>：导航右上唯一菜单入口（行1 右端 = [面板][⋯]，低频操作的家，铁律 6：低频操作进 ⋯）；菜单点按型（无压暗），点外部收起；行1 标题行首 sparkles = Agent 会话类型标（区别于项目 folder，对齐 iPad 页头先例）</span></li>
+    <li><b>②</b><span>会话历史 → 会话历史 sheet（直开）</span></li>
+    <li><b>③</b><span>实例信息 → 实例信息 sheet：纯信息面板（模型/权限/effort/重试参数/目录/累计）——重命名 / 置顶 / 自动重试 / 关闭已上收本菜单动作区，不重复</span></li>
+    <li><b>④</b><span>置顶 = toggle（✓ = 已置顶，出现在项目 Tab 全局总览可跨项目直达）；重命名… → 影响提醒（有活跃实例时）→ 改名输入</span></li>
+    <li><b>⑤</b><span>自动重试 = toggle 即点即改（✓ = 开，对应错误态倒计时条）；次数 / 间隔 / 重发文案的编辑在 实例信息 › 自动重试（编辑 sheet）</span></li>
+    <li><b>⑥</b><span>关闭会话…（红 · 确认式）：历史保留，可恢复继续（恢复 = resume agent 会话历史）</span></li>
   </ol>
 </div>
 

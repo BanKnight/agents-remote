@@ -61,7 +61,7 @@
         <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg>README.md</span>
         <span class="plus" data-symbol="plus" title="新建标签"></span>
         <span class="moreic" style="margin-left:auto" title="分屏"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-6.5" width="18" height="13" rx="3"/><path d="M3.5,-6.5 V6.5"/></svg></span>
-        <span class="moreic" data-symbol="pencil" title="编辑" style="flex:none"><svg class="icn" viewBox="-10 -10 20 20"><path d="M-6.5,6.5 l1.2,-4.6 8,-8 3.4,3.4 -8,8 -4.6,1.2 z"/><path d="M2.7,-5.3 l3.4,3.4"/></svg></span>
+        
         <span class="moreic" title="文件菜单：复制内容 / 复制路径 / 查看 diff" style="position:relative"><svg class="icn" viewBox="-10 -10 20 20" style="stroke:none;fill:currentColor"><circle cx="-6" r="1.6"/><circle r="1.6"/><circle cx="6" r="1.6"/></svg><span class="pin" style="right:-2px;top:-14px">2</span></span>
       </div>
       <div class="fmeta"><span>Markdown · 1.2 KB · 更新 昨天</span><span class="fright"><span class="segc mini" style="position:relative"><span class="on">渲染</span><span>源码</span><span class="pin" style="right:-14px;top:-11px">4</span></span></span></div>
@@ -110,7 +110,7 @@ npm run deploy</div>
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
     <li><b>①</b><span>检视器文件树点 README.md → 中栏新增/激活文件标签（IDE 模式，与 04b 的 passkey.ts 同一容器）；会话标签退居非激活、点即切回会话</span></li>
-    <li><b>②</b><span>tabstrip 右端 [分屏][编辑][⋯]：⋯ = 文件菜单（复制内容 / 复制路径 / 查看 diff → 中栏 diff 标签）；[编辑] = 顶部行右端主操作（编辑钮在 ⋯ 左侧）；顶部元信息行（tabstrip 下）= 类型·度量·更新时间 + 渲染⇄源码分段（右端）</span></li>
+    <li><b>②</b><span>tabstrip 右端 [分屏][⋯]：⋯ = 文件菜单（复制内容 / 复制路径 / 查看 diff → 中栏 diff 标签）；「编辑」= <b>点正文任意处进入</b>：渲染态点正文 = 切源码并进入编辑（分段同步切「源码」）；顶部元信息行（tabstrip 下）= 类型·度量·更新时间 + 渲染⇄源码分段（右端）</span></li>
     <li><b>③</b><span>检视器只留三个结构标签：文件树 / Git（03t/03u）/ Wiki（03p）＋ 新建——文件预览标签退役至中栏；检视数据跟随项目，与会话解耦</span></li>
     <li><b>④</b><span>渲染 ⇄ 源码分段（顶部元信息行（tabstrip 下）右端，切换不丢滚动位置；本图 = 渲染态默认）：MD 渲染在沙箱中生成——不执行脚本、不发起外部请求；源码态 = 03q 同款等宽着色</span></li>
   </ol>

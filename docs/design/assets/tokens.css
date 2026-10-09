@@ -11,6 +11,11 @@
   --c-warning:#FF9F0A;        --c-warning-text:#FF9F0A;
   --c-danger:#FF453A;
   --c-pin:#BF5AF2;
+  /* session 色板（置顶会话专属色，8 色轮转分配；颜色 = 会话持久属性，取消置顶不回收） */
+  --c-session-1:#FF7A70;      --c-session-2:#FFB340;
+  --c-session-3:#E3D26F;      --c-session-4:#7BC96F;
+  --c-session-5:#4DC4D9;      --c-session-6:#6FB1FF;
+  --c-session-7:#96A8FF;      --c-session-8:#F272AB;
   --scrim:rgba(0,0,0,.45);
   /* neutral 底 */
   --bg-base:#000000;          /* 页面分组底 */
@@ -55,6 +60,11 @@ html[data-theme="light"]{
   --c-warning:#FF9F0A;        --c-warning-text:#E08600;
   --c-danger:#FF3B30;
   --c-pin:#AF52DE;
+  /* session 色板（浅色主题 = 深化值，保证白底可读） */
+  --c-session-1:#D6453D;      --c-session-2:#C77700;
+  --c-session-3:#A38F1F;      --c-session-4:#3E9440;
+  --c-session-5:#1D8FA3;      --c-session-6:#2F6FDB;
+  --c-session-7:#5F6FD9;      --c-session-8:#D14B85;
   --scrim:rgba(0,0,0,.40);
   --bg-base:#F2F2F7;
   --bg-canvas:#FFFFFF;

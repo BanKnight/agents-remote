@@ -32,7 +32,7 @@
   <div class="page">
     <div class="nav">
       <span class="back">项目</span>
-      <span class="nv-t">claude·auth <span class="dot err" style="position:relative"><span class="pin" style="left:-4px;top:-8px">1</span></span> <span class="caret" title="实例切换菜单">▾</span></span>
+      <span class="nv-t"><svg class="tticn" viewBox="-10 -10 20 20" data-symbol="sparkles"><path d="M0,-7 L1.8,-1.8 L7,0 L1.8,1.8 L0,7 L-1.8,1.8 L-7,0 L-1.8,-1.8 Z"/></svg>claude·auth <span class="dot err" style="position:relative"><span class="pin" style="left:-4px;top:-8px">1</span></span> <span class="caret" title="实例切换菜单">▾</span></span>
       <span class="ic" title="检视面板：文件树 / Git / Wiki"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-7.5" width="18" height="15" rx="3"/><path d="M2.5,-7.5 V7.5"/><path d="M5.2,-3.5 h1.6 M5.2,-0.5 h1.6 M5.2,2.5 h1.6"/></svg></span>
       <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
     </div>
@@ -83,8 +83,8 @@
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
-    <li><b>①</b>单会话展示：行1 = 实例名 + 状态点，红点 = 出错（与中断样式区分：中断是流内一条分隔线，不改状态点）；▾ = 实例切换菜单（切换不销毁现场）</li>
-    <li><b>②</b>自动重试倒计时条：可取消或立即重试；次数 / 间隔 / 固定文案在 ⋯ 菜单 › 实例信息 中配置</li>
+    <li><b>①</b>单会话展示：行1 = 会话类型图标（sparkles）+ 实例名 + 状态点，红点 = 出错（与中断样式区分：中断是流内一条分隔线，不改状态点）；▾ = 实例切换菜单（跨项目分组，切换不销毁现场）</li>
+    <li><b>②</b>自动重试倒计时条：可取消或立即重试；开关在 ⋯ 菜单即点即改（✓ toggle）；次数 / 间隔 / 固定文案在 ⋯ 菜单 › 实例信息 › 自动重试 编辑</li>
     <li><b>③</b>错误红卡：API 错误红底等宽字体；与工具卡（中性）、完成横幅（绿）三态分明</li>
     <li><b>④</b>倒计时期间仍可插话；重试会带着插话一起继续</li>
     <li><b>返回</b><span>‹ 项目 = 返回项目 Tab（全局活动/项目行，全屏 push 层，无 tab bar）；会话入口 = 项目 Tab（全局活动会话行 / 项目行）</span></li>

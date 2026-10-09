@@ -59,7 +59,7 @@
           <span class="tb on"><svg viewBox="-10 -10 20 20" data-symbol="doc.text"><path d="M-7,-10 h7 l6.5,6.5 v11.5 a2,2 0 0 1 -2,2 h-11.5 a2,2 0 0 1 -2,-2 v-16 a2,2 0 0 1 2,-2 z"/><path d="M0,-10 v6.5 h6.5"/></svg>passkey.ts</span>
           <span class="plus" data-symbol="plus"></span>
           <span class="moreic" style="margin-left:auto" title="分屏"><svg class="icn" viewBox="-10 -10 20 20"><rect x="-9" y="-6.5" width="18" height="13" rx="3"/><path d="M3.5,-6.5 V6.5"/></svg></span>
-          <span class="moreic" data-symbol="pencil" title="编辑" style="position:relative;flex:none"><svg class="icn" viewBox="-10 -10 20 20"><path d="M-6.5,6.5 l1.2,-4.6 8,-8 3.4,3.4 -8,8 -4.6,1.2 z"/><path d="M2.7,-5.3 l3.4,3.4"/></svg></span>
+          
           <span class="moreic" title="文件菜单：复制内容 / 复制路径 / 查看 diff" style="position:relative;flex:none"><svg class="icn" viewBox="-10 -10 20 20" style="stroke:none;fill:currentColor"><circle cx="-6" r="1.6"/><circle r="1.6"/><circle cx="6" r="1.6"/></svg><span class="pin" style="right:-2px;top:-14px">2</span></span>
         </div>
         <!-- 顶部元信息行（tabstrip 下）：类型·行数·更新时间（代码页右端空） -->
@@ -134,7 +134,7 @@
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
     <li><b>①</b><span>检视器文件树点文件行 → 中栏 tabstrip 新增/激活文件标签（IDE 模式）：文件标签与会话标签同级，会话⇄文件随意切换对比；同一内容组件四种容器——中栏标签（本组）/ 面板标签（iPhone workspace-preview）/ push（全局 files-global-preview 家族）/ 主区推入态（mac-files-global-preview）</span></li>
-    <li><b>②</b><span>tabstrip 右端 [分屏][编辑][⋯]：「编辑」= 顶部行右端主操作（编辑钮在 ⋯ 左侧，iOS 导航栏惯例；05h4 同款）；⋯ = 文件菜单（复制内容 / 复制路径 / 查看 diff → 中栏再开一个 diff 标签，内容同 03r）；顶部元信息行（tabstrip 下，.fmeta）= 类型·度量·更新时间（代码页右端空；MD/HTML 页右端 = 渲染⇄源码分段）——顶部元信息行（tabstrip 下）</span></li>
+    <li><b>②</b><span>tabstrip 右端 [分屏][⋯]：⋯ = 文件菜单（复制内容 / 复制路径 / 查看 diff → 中栏再开一个 diff 标签，内容同 03r）；「编辑」= <b>点正文任意处进入</b>（顶部无编辑钮；05h4 同款编辑态）；顶部元信息行（tabstrip 下，.fmeta）= 类型·度量·更新时间（代码页右端空；MD/HTML 页右端 = 渲染⇄源码分段）——顶部元信息行（tabstrip 下）</span></li>
     <li><b>③</b><span>检视器 ptabs 退役预览标签，只留结构标签：文件树 / Git / Wiki（＋ 新建结构标签保留）；文件预览职责整体移交中栏文件标签</span></li>
     <li><b>④</b><span>代码按语法着色（与 iPhone 03q 同一渲染器）；类型矩阵：文本/代码 = 着色 + 可编辑，md/html = 渲染⇄源码，图片 = 只读查看器，未知二进制 = 「不支持预览」提示 + 顶部元信息行（tabstrip 下）</span></li>
   </ol>

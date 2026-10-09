@@ -72,7 +72,6 @@
         <div class="mhead">
           <span class="mback"><svg viewBox="-10 -10 20 20" data-symbol="chevron.left"><path d="M2,-7 L-4,0 L2,7"/></svg>全局文件<span class="pin" style="right:-26px;top:-1px">1</span></span>
           <h1 class="fname" style="margin-left:34px">hero-banner.png</h1>
-          <span class="moreic" data-symbol="pencil" title="编辑" style="position:relative;flex:none"><svg class="icn" viewBox="-10 -10 20 20"><path d="M-6.5,6.5 l1.2,-4.6 8,-8 3.4,3.4 -8,8 -4.6,1.2 z"/><path d="M2.7,-5.3 l3.4,3.4"/></svg><span class="pin" style="right:-10px;top:-14px">3</span></span>
           <span class="moreic" title="图片菜单：复制路径 / 另存为…（图片二进制，无内容复制与 diff）" style="position:relative;flex:none"><svg class="icn" viewBox="-10 -10 20 20" style="stroke:none;fill:currentColor"><circle cx="-6" r="1.6"/><circle r="1.6"/><circle cx="6" r="1.6"/></svg><span class="pin" style="right:-2px;top:-14px">2</span></span>
         </div>
         <!-- 顶部元信息行（mhead 下）：类型·尺寸·更新时间（只读，右端无操作） -->
@@ -90,7 +89,7 @@
             <span class="t"><svg viewBox="-10 -10 20 20"><rect x="-9" y="-5.5" width="18" height="11" rx="1.5"/><path d="M-9,3.5 h18"/></svg>适应窗口</span>
             <span class="t"><svg viewBox="-10 -10 20 20"><path d="M0,-9 a9,9 0 1,1 -9,9"/><path d="M-9,-4 v4.5 h4.5"/></svg>1 : 1</span>
             <span class="t"><svg viewBox="-10 -10 20 20"><path d="M0,-8 a8,8 0 1,0 8,8"/><path d="M8,-4.5 v5 h-5"/></svg>旋转</span>
-            <span class="pin" style="right:-4px;top:-9px">4</span>
+            <span class="pin" style="right:-4px;top:-9px">3</span>
           </div>
         </div>
       </div>
@@ -103,16 +102,15 @@
     </div>
   </div>
 
-  <!-- 编号 pin：① 推入态返回（内联） ② mhead 右端 ⋯ 图片菜单（内联） ③ 编辑（mhead pencil 图标钮内联挂载） ④ 图片查看器画布操作条（pvtools 内联挂载） -->
+  <!-- 编号 pin：① 推入态返回（内联） ② mhead 右端 ⋯ 图片菜单（内联） ③ 图片查看器画布操作条（pvtools 内联挂载；图片只读无编辑） -->
 </div>
 
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
     <li><b>①</b><span>推入态返回：点「‹ 全局文件」原地退回列表——推入只替换主区内容，工作台现场（会话标签 / 检视器）原样保留、零销毁；返回钮占 h1 位（蓝字 chevron.left + 文字），作用域分段与「＋」在推入态隐藏、返回后恢复；h1 位 = hero-banner.png（等宽 700）</span></li>
-    <li><b>②</b><span>mhead 右端 ⋯ = 图片菜单（复制路径 / 另存为…；图片二进制，无内容复制与 diff，导出副本交给系统工具）；大面积 UI 切换仅在用户点「在工作台打开」时发生：切到该项目工作台并自动打开中栏文件标签（04b/04b2 同一容器）</span></li>
-    <li><b>③</b><span>「编辑」= 顶部行右端主操作位（编辑钮在 ⋯ 左侧，iOS 导航栏惯例；容器④ mhead 结构四类型逐字节同构，pencil 主操作实际服务文本类文件）</span></li>
-    <li><b>④</b><span>图片查看器（只读）：滚轮/双指捏合缩放、拖动平移，zoomtag 实时倍率；画布操作条 = 放大 / 缩小 / 适应窗口 / 1 : 1 / 旋转（与 iPhone 03q4 / 容器②同款，Mac 尺寸稍大）；顶部元信息行（mhead 下） = PNG·尺寸·更新时间，右端为空——本页 = 容器④ 主区推入态 · 图片查看器态，与容器②（mac-tool-files-preview-image）同一内容组件、仅换容器</span></li>
+    <li><b>②</b><span>mhead 右端 ⋯ = 图片菜单（复制路径 / 另存为…；图片二进制，无内容复制与 diff，导出副本交给系统工具）；图片只读，无编辑入口（点正文不进入编辑）；大面积 UI 切换仅在用户点「在工作台打开」时发生：切到该项目工作台并自动打开中栏文件标签（04b/04b2 同一容器）</span></li>
+    <li><b>③</b><span>图片查看器（只读）：滚轮/双指捏合缩放、拖动平移，zoomtag 实时倍率；画布操作条 = 放大 / 缩小 / 适应窗口 / 1 : 1 / 旋转（与 iPhone 03q4 / 容器②同款，Mac 尺寸稍大）；顶部元信息行（mhead 下） = PNG·尺寸·更新时间，右端为空——本页 = 容器④ 主区推入态 · 图片查看器态，与容器②（mac-tool-files-preview-image）同一内容组件、仅换容器</span></li>
   </ol>
 </div>
 

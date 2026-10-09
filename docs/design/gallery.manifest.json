@@ -3,7 +3,7 @@
  "$comment": "图集单一事实源（N8 校验式）：三端各自视图、组内按动线排序；交付前 scripts/audit-gallery.mjs 对账。",
  "badge": {
   "svg": 1,
-  "html": 115
+  "html": 119
  },
  "groups": {
   "iphone": [
@@ -26,9 +26,10 @@
    },
    {
     "title": "工作台骨架与状态",
-    "flow": "工作台 Tab 已退役：会话入口 = 项目 Tab（全局活动会话行 / 项目行）→ 全屏单会话（实例切换 = 标题 ▾）：空闲/错误/子 agent/空态/断线 → 终端/Chat/附件 变体",
+    "flow": "工作台 Tab 已退役：会话入口 = 项目 Tab（全局活动会话行 / 项目行）→ 全屏单会话（实例切换 = 标题 ▾；置顶条色点一步切换）：空闲/错误/子 agent/空态/断线 → 终端/Chat/附件 变体",
     "pages": [
      "workspace.html",
+     "workspace-pinned-bubble.html",
      "workspace-idle.html",
      "workspace-error.html",
      "workspace-subagent.html",
@@ -36,6 +37,7 @@
      "workspace-empty.html",
      "workspace-offline.html",
      "workspace-terminal.html",
+     "workspace-terminal-input.html",
      "workspace-chat.html",
      "workspace-attach-chips.html"
     ],
@@ -43,12 +45,13 @@
    },
    {
     "title": "浮层 · 会话与行菜单",
-    "flow": "标题 ▾ / ＋ / ⋯ 唤起族：实例切换 → 新建/信息/历史/配置/附件来源 → 审批中心 → 行菜单",
+    "flow": "标题 ▾ / ＋ / ⋯ 唤起族：实例切换（跨项目分组）→ 新建/信息/⋯ 菜单（导航+动作）/重试编辑/历史/配置/附件来源 → 审批中心 → 行菜单",
     "pages": [
      "workspace-instance-switch.html",
      "workspace-new-instance.html",
      "workspace-instance-info.html",
      "workspace-more-menu.html",
+     "workspace-retry-config.html",
      "workspace-session-history.html",
      "workspace-composer-config.html",
      "workspace-attach-menu.html",
@@ -224,10 +227,11 @@
    },
    {
     "title": "浮层 · Popover 与右键",
-    "flow": "新建/实例信息/新建文件/审批/项目行右键 → 居中 Sheet → 技能行右键",
+    "flow": "新建/实例信息（Agent/终端 两型字段集）/新建文件/审批/项目行右键 → 居中 Sheet → 技能行右键",
     "pages": [
      "mac-new-instance.html",
      "mac-instance-info.html",
+     "mac-instance-info-terminal.html",
      "mac-tool-files-create.html",
      "mac-approval-center.html",
      "mac-project-new.html",
@@ -325,6 +329,11 @@
    "group": "工作台骨架与状态"
   },
   {
+   "page": "workspace-pinned-bubble.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
    "page": "workspace-idle.html",
    "device": "iphone",
    "group": "工作台骨架与状态"
@@ -360,6 +369,11 @@
    "group": "工作台骨架与状态"
   },
   {
+   "page": "workspace-terminal-input.html",
+   "device": "iphone",
+   "group": "工作台骨架与状态"
+  },
+  {
    "page": "workspace-chat.html",
    "device": "iphone",
    "group": "工作台骨架与状态"
@@ -386,6 +400,11 @@
   },
   {
    "page": "workspace-instance-switch.html",
+   "device": "iphone",
+   "group": "浮层 · 会话与行菜单"
+  },
+  {
+   "page": "workspace-retry-config.html",
    "device": "iphone",
    "group": "浮层 · 会话与行菜单"
   },
@@ -771,6 +790,11 @@
   },
   {
    "page": "mac-instance-info.html",
+   "device": "mac",
+   "group": "浮层 · Popover 与右键"
+  },
+  {
+   "page": "mac-instance-info-terminal.html",
    "device": "mac",
    "group": "浮层 · Popover 与右键"
   },

@@ -60,7 +60,6 @@
         <div class="mhead">
           <span class="mback"><svg viewBox="-10 -10 20 20" data-symbol="chevron.left"><path d="M2,-7 L-4,0 L2,7"/></svg>全局文件<span class="pin" style="right:-26px;top:-1px">1</span></span>
           <h1 class="fname" style="margin-left:34px">data.bin</h1>
-          <span class="moreic" data-symbol="pencil" title="编辑" style="position:relative;flex:none"><svg class="icn" viewBox="-10 -10 20 20"><path d="M-6.5,6.5 l1.2,-4.6 8,-8 3.4,3.4 -8,8 -4.6,1.2 z"/><path d="M2.7,-5.3 l3.4,3.4"/></svg><span class="pin" style="right:-10px;top:-14px">3</span></span>
           <span class="moreic" title="文件菜单：复制内容 / 复制路径 / 在工作台打开（根作用域无 Git，无查看 diff）" style="position:relative;flex:none"><svg class="icn" viewBox="-10 -10 20 20" style="stroke:none;fill:currentColor"><circle cx="-6" r="1.6"/><circle r="1.6"/><circle cx="6" r="1.6"/></svg><span class="pin" style="right:-2px;top:-14px">2</span></span>
         </div>
         <!-- 顶部元信息行（mhead 下）：类型·体积·更新时间（右端为空——无编辑主操作） -->
@@ -84,7 +83,7 @@
     </div>
   </div>
 
-  <!-- 编号 pin：① 推入态返回（内联） ② mhead 右端 ⋯ 文件菜单（内联） ③ 编辑（mhead pencil 图标钮内联挂载） ④ 不支持预览空态（unsupported 内联挂载） -->
+  <!-- 编号 pin：① 推入态返回（内联） ② mhead 右端 ⋯ 文件菜单（内联） ③ 不支持预览空态（unsupported 内联挂载；不可编辑） -->
 </div>
 
 <div class="panel">
@@ -92,8 +91,7 @@
   <ol>
     <li><b>①</b><span>推入态返回：点「‹ 全局文件」原地退回列表——推入只替换主区内容，工作台现场（会话标签 / 检视器）原样保留、零销毁；返回钮占 h1 位（蓝字 chevron.left + 文字），作用域分段与「＋」在推入态隐藏、返回后恢复；h1 位 = data.bin（等宽 700）</span></li>
     <li><b>②</b><span>mhead 右端 ⋯ = 文件菜单（复制内容 / 复制路径 / 在工作台打开；根作用域无 Git，无查看 diff）；大面积 UI 切换仅在用户点「在工作台打开」时发生：切到该项目工作台并自动打开中栏文件标签（04b/04b2 同一容器）</span></li>
-    <li><b>③</b><span>「编辑」= 顶部行右端主操作位（编辑钮在 ⋯ 左侧，iOS 导航栏惯例；容器④ mhead 结构四类型逐字节同构）</span></li>
-    <li><b>④</b><span>不支持预览空态：内容区居中提示（无画布语义——无棋盘、无缩放、无操作条）；处理引导指向 Agent / 终端，不在预览内发明「打开方式」功能；顶部元信息行（mhead 下） = Binary·体积·更新时间，右端为空——本页 = 容器④ 主区推入态 · 未知二进制不支持态（类型矩阵末格，与容器② mac-tool-files-preview-unsupported 同一内容组件、四容器同构、仅换容器）</span></li>
+    <li><b>③</b><span>不支持预览空态：内容区居中提示（无画布语义——无棋盘、无缩放、无操作条）；处理引导指向 Agent / 终端，不在预览内发明「打开方式」功能；不可编辑（点正文不进入编辑）；顶部元信息行（mhead 下） = Binary·体积·更新时间，右端为空——本页 = 容器④ 主区推入态 · 未知二进制不支持态（类型矩阵末格，与容器② mac-tool-files-preview-unsupported 同一内容组件、四容器同构、仅换容器）</span></li>
   </ol>
 </div>
 

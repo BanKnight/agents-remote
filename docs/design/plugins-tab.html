@@ -21,15 +21,10 @@
         background:color-mix(in srgb,var(--bg-tabbar) 97%,transparent)}
 .h-row{display:flex;align-items:flex-end;justify-content:space-between;margin:46px 16px 0}
 .h-row h1{font-size:30px;font-weight:800;color:var(--ink-title)}
-.segc{margin:12px 16px 0}
-
-.segc .nm{min-width:0;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:inherit}
-
 
 /* 标注锚定：pin 挂到目标元素上（自动跟随布局，不手算坐标） */
-.segc span,.search,.sect .r,.sect .upd,.pcard .r1{position:relative}
+.segc span,.sect .r,.sect .upd,.pcard .r1{position:relative}
 .sect .upd{color:var(--c-warning-text)}
-.search{margin:12px 16px 0}
 .sect{font-size:13px;font-weight:600;color:var(--ink-2);margin:16px 16px 6px;display:flex;align-items:center}
 .sect .r{margin-left:auto;font-size:11px;color:var(--c-primary);font-weight:600}
 .pcard{margin:0 16px 10px;background:var(--bg-elevated);border:1px solid var(--sep);border-radius:16px;padding:10px 16px}
@@ -43,6 +38,9 @@
 .mrow .n{font-size:14.5px;font-weight:600;color:var(--ink-1)}
 .mrow .c{margin-left:auto;font-size:11px;color:var(--ink-2)}
 .mrow .ar{font-size:12px;color:var(--ink-3);margin-left:6px}
+/* 作用域段长项目名：名称尾截断（全名进切换器 ▾），caret 永不被截 */
+.segc .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.segc .caret{flex:none}
 </style>
 <script src="assets/theme.js"></script>
 <script src="assets/icons.js"></script>
@@ -57,11 +55,12 @@
     
 <div class="h-row"><h1>插件</h1></div>
 
-    <div class="search"><i data-icon="search" class="sic"></i>搜索已安装与市场<span class="pin" style="right:-12px;top:-16px">1</span></div>
-
-    <div class="segc">
-      <span class="on">全局</span>
-      <span>本项目 · <b class="nm">agents-web</b> <span class="caret">▾</span><span class="pin" style="right:-2px;top:-16px">2</span></span>
+    <div style="display:flex;align-items:center;gap:8px;margin:20px 16px 0">
+      <div class="segc" style="flex:1">
+        <span class="on">全局</span>
+        <span><svg viewBox="-10 -10 20 20" style="width:13px;height:13px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linejoin:round"><path d="M-10,-4.5 a2.5,2.5 0 0 1 2.5,-2.5 h4.1 l2.3,2.7 h8.6 a2.5,2.5 0 0 1 2.5,2.5 v7 a2.5,2.5 0 0 1 -2.5,2.5 h-15 a2.5,2.5 0 0 1 -2.5,-2.5 z"/></svg> <b class="nm">agents-web</b> <span class="caret">▾</span><span class="pin" style="right:-2px;top:-16px">2</span></span>
+      </div>
+      <span class="obtn srch" title="搜索（点按展开 = 过滤已安装与市场）" style="position:relative;flex:none"><i data-icon="search"></i><span class="pin" style="right:-12px;top:-16px">1</span></span>
     </div>
 
     <div class="sect"><span style="display:flex;align-items:center;gap:8px">市场</span><span class="r">管理源 ›<span class="pin" style="right:-12px;top:-9px">3</span></span></div>
@@ -107,8 +106,8 @@
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
-    <li><b>①</b><span>搜索融合市场：结果含已安装与市场两层，未安装项以「市场 · 安装」行出现</span></li>
-    <li><b>②</b><span>作用域切换：全局 / 本项目（▾ 打开切换器 03l；项目名过长时段内尾截断 …）；作用域决定组内插件与注入哪些会话</span></li>
+    <li><b>①</b><span><b>搜索收缩钮</b>（域行右端）：点按展开全宽搜索行，结果融合已安装与市场两层（未安装项以「市场 · 安装」行出现）——独立常驻搜索行退役（样式过重），与文件树收缩搜索（03x）同一模式</span></li>
+    <li><b>②</b><span>作用域切换：全局 / <b>📁 当前项目名</b>（folder 图标替代「本项目」字样——名字本身即语义；▾ 打开切换器；项目名过长时段内尾截断 …，全名进切换器）；作用域决定组内插件与注入哪些会话</span></li>
     <li><b>③</b><span>源维护（MCP 源 + 技能源）：唯一入口「管理源 ›」push 15（‹ 插件 返回；iPhone/Mac 分组头同位）；开关/排序/自定义 URL/纯内网模式</span></li>
     <li><b>④</b><span>MCP 手动配置：「＋ 添加」= 14 表单（名称/传输/启动命令/环境变量，密钥只存服务器）；从市场安装走下方市场 chips</span></li>
     <li><b>⑤</b><span>技能更新聚合：组头「n 个更新 ›」= 更新清单（16 逐个确认）；行内「有更新」橙标在详情内确认</span></li>

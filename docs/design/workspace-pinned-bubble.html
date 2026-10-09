@@ -2,33 +2,22 @@
 <html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="UTF-8">
-<title>workspace-subagent-list · 工作台（子 agent 概览 · 多 agent 展开态）— HTML 轨</title>
+<title>workspace-pinned-bubble · 工作台（置顶会话条 · 长按色点 = 名字气泡）— HTML 轨</title>
 <link rel="stylesheet" href="assets/tokens.css">
 <link rel="stylesheet" href="assets/components.css">
 <style>
 /* 仅本页样式 */
 .nav h1{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;gap:4px}
-.sub{margin:6px 16px 0;padding:6px 12px;border-radius:9px;background:var(--tint-green);
-     font-size:12px;font-weight:600;color:var(--c-success-text);display:flex;justify-content:space-between;
-     position:relative}
-.slist{margin:4px 16px 0;border-radius:12px;background:var(--tint-green);
-       border:1px solid color-mix(in srgb,var(--c-success) 40%,transparent);overflow:hidden;position:relative}
-.srow{display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:13px;font-weight:600;
-      color:var(--ink-1);cursor:pointer;position:relative}
-.srow + .srow{border-top:1px solid color-mix(in srgb,var(--c-success) 25%,transparent)}
-.srow .dot{width:7px;height:7px;border-radius:50%;flex:none}
-.srow .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.srow .tm{margin-left:auto;font-size:11px;font-weight:400;color:var(--ink-2);flex:none;margin-right:14px}
-.srow .ar{color:var(--c-success-text);flex:none}
-.srow.done{color:var(--ink-3)}
-.srow.done .nm{text-decoration:none}
-.subc{border-radius:12px;background:var(--tint-green);
-      border:1px solid color-mix(in srgb,var(--c-success) 40%,transparent);
-      padding:9px 12px;font-size:13px;font-weight:600;color:var(--ink-1);display:flex;align-items:center;gap:8px}
-.subc .st{margin-left:auto;font-size:11.5px;font-weight:400;color:var(--c-success-text)}
-.sub,.tray,.srow{position:relative}
 .runct{font-size:9px;color:var(--c-success-text);font-weight:600;vertical-align:2px}
 .caret{font-size:10px;color:var(--ink-2)}
+.pinned{position:relative}  /* 气泡锚定基准 */
+.popb{position:absolute;left:52px;top:50%;transform:translateY(-50%);background:var(--menu);border:1px solid var(--sep-strong);
+      border-radius:10px;padding:5px 11px;font-size:12.5px;font-weight:600;color:var(--ink-1);display:flex;align-items:center;gap:6px;
+      box-shadow:0 6px 20px color-mix(in srgb,#000 22%,transparent);z-index:12;white-space:nowrap}
+.popb::before{content:"";position:absolute;right:100%;top:50%;transform:translateY(-50%);border:5px solid transparent;border-left:none;border-right-color:var(--sep-strong)}
+.popb::after{content:"";position:absolute;right:calc(100% - 4px);top:50%;transform:translateY(-50%);border:4px solid transparent;border-left:none;border-right-color:var(--menu)}
+.popb .st{font-size:11px;font-weight:400;color:var(--c-success-text)}
+.ring{position:absolute;border:1.8px dashed var(--c-primary);border-radius:50%;pointer-events:none;z-index:15}
 </style>
 <script src="assets/theme.js"></script>
 <script src="assets/icons.js"></script>
@@ -38,6 +27,7 @@
 <div class="stage">
   <div class="island"></div>
   <div class="status"><span>9:41</span><span class="sb-r"><svg width="16" height="10" viewBox="0 0 16 10"><rect x="0" y="6" width="3" height="4" rx="0.5" fill="currentColor"/><rect x="4.5" y="4" width="3" height="6" rx="0.5" fill="currentColor"/><rect x="9" y="2" width="3" height="8" rx="0.5" fill="currentColor"/><rect x="13.5" width="2.5" height="10" rx="0.5" fill="currentColor" opacity="0.4"/></svg><svg width="22" height="11" viewBox="0 0 22 11"><path d="M2,4 A10,9 0 0 1 20,4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M5,7 A7,6.5 0 0 1 17,7" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="11" cy="9.5" r="1.4" fill="currentColor"/></svg><svg width="24" height="11" viewBox="0 0 24 11"><rect x="0.5" y="0.5" width="20" height="10" rx="3" fill="none" stroke="currentColor" opacity="0.4"/><rect x="2" y="2" width="14" height="7" rx="1.5" fill="currentColor"/><rect x="21.5" y="3.5" width="2" height="4" rx="1" fill="currentColor" opacity="0.4"/></svg></span></div>
+
   <div class="page">
 
     <div class="nav">
@@ -47,22 +37,18 @@
       <span class="ic" data-symbol="ellipsis"><svg viewBox="-10 -10 20 20"><circle cx="-6" r="1.7" fill="currentColor" stroke="none"/><circle r="1.7" fill="currentColor" stroke="none"/><circle cx="6" r="1.7" fill="currentColor" stroke="none"/></svg></span>
     </div>
 
-    <!-- 概览条展开态：头行收起 + 逐行列表（多 agent 专用；单 agent 保持单行直跳） -->
-    <div class="sub"><span>▾ 3 个子 agent · 2 运行中<span class="pin" style="left:150px;top:-9px">1</span></span><span>收起</span></div>
-    <div class="slist">
-      <div class="srow"><span class="dot" style="background:var(--c-success)"></span><span class="nm">test-runner</span><span style="font-size:11px;font-weight:400;color:var(--c-success-text)">运行中</span><span class="tm">4m12s</span><span class="ar">›</span><span class="pin" style="right:34px;top:50%;transform:translateY(-50%);margin-right:0">2</span></div>
-      <div class="srow"><span class="dot" style="background:var(--c-success)"></span><span class="nm">doc-writer</span><span style="font-size:11px;font-weight:400;color:var(--c-success-text)">运行中</span><span class="tm">1m38s</span><span class="ar">›</span></div>
-      <div class="srow done"><span class="dot" style="background:var(--ink-3)"></span><span class="nm">doc-writer · 首稿</span><span style="font-size:11px;font-weight:400">完成 ✓</span><span class="tm">1m08s</span><span class="ar">›</span><span class="pin" style="right:34px;top:50%;transform:translateY(-50%);margin-right:0">3</span></div>
-      <div class="srow done"><span class="dot" style="background:var(--ink-3)"></span><span class="nm">refactor-probe</span><span style="font-size:11px;font-weight:400">排队中</span><span class="tm">—</span><span class="ar">›</span><span class="pin" style="right:34px;top:50%;transform:translateY(-50%);margin-right:0">4</span></div>
+    <!-- 置顶会话条：长按第 2 颗色点 → 名字气泡（点外部 / 松手收起） -->
+    <div class="pinned">
+      <span class="pdot cur" style="background:var(--c-session-1)"></span><span style="position:relative;display:inline-flex"><span class="pdot" style="background:var(--c-session-2)"></span><span class="ring" style="left:-8px;top:-8px;width:26px;height:26px"></span><span class="pin" style="right:-8px;top:-9px">1</span></span><span class="popb">codex·api <span class="st">● 运行中</span></span><span class="pdot" style="background:var(--c-session-4)"></span><span class="pdot" style="background:var(--c-session-5)"></span><span class="pin" style="right:-10px;top:50%;transform:translateY(-50%)">2</span>
     </div>
 
-    <div class="stream" style="margin-top:8px">
+    <div class="sub"><span>▸ 2 个子 agent 运行中 · 点按跳转</span><span>›</span></div>
+
+    <div class="stream">
       <div class="task">把 auth 模块迁移到 passkeys，跑通全部测试</div>
       <div class="card"><span class="t">bash · npm run test</span><span class="m">4.2s</span><span class="ok">✓</span></div>
       <div class="card"><span class="t">edit · src/auth/passkey.ts</span><span class="ok" style="font-size:11px">+48</span><span class="ok" style="color:var(--c-danger);font-weight:600;font-size:11px">−12</span><span class="ok">✓</span></div>
       <div class="think">✦ 思考 · 14s ›</div>
-      <div class="subc">▸ 子 agent · test-runner<span class="st">运行中</span></div>
-      <div class="card"><span class="t">grep · 'verifyToken'</span><span class="ok" style="color:var(--c-warning)">⟳</span></div>
       <div class="stat">✓ 上一回合 · 6 轮 · $0.42 · 18.2k tok · 3m12s</div>
     </div>
 
@@ -90,11 +76,8 @@
 <div class="panel">
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
-    <li><b>①</b><span>概览条头行（聚合态）：多 agent 时 =「▾ n 个子 agent · m 运行中」计数条，点按 <b>展开/收起</b> 本列表卡；单 agent 保持 workspace 现行——单行直跳、无列表</span></li>
-    <li><b>②</b><span>行点按 = 跳转到该子 agent 的卡并展开（同 03e 点卡展开）；跳转不改概览条展开状态</span></li>
-    <li><b>③</b><span>完成行置灰置底（排队中 → 运行中 → 完成排序）；新 agent 加入即插行，计数实时更新</span></li>
-    <li><b>④</b><span>全部完成 → 列表自动折叠回单行「✓ n 个子 agent 已完成 · 点按查看」（保留入口），新回合开始时清空</span></li>
-    <li><b>返回</b><span>‹ 项目 = 返回项目 Tab（全局活动/项目行，全屏 push 层，无 tab bar）；会话入口 = 项目 Tab（全局活动会话行 / 项目行）</span></li>
+    <li><b>①</b><span><b>长按色点 = 名字气泡</b>：临时确认「哪颗色是哪个会话」（族A 锚定浮卡，行内于色点右侧、箭头指向该点——向上弹会遮行1 导航，故走行内；点外部 / 松手收起）；气泡 = 会话名 + 运行状态；色点上无长按菜单——置顶/取消置顶管理入口唯一在 ⋯ 菜单</span></li>
+    <li><b>②</b><span><b>置顶会话条</b>（常态见工作台主页）：色点 = 会话持久色（8 色板轮转分配，取消置顶不回收）；点色点 = 一步切换（零销毁）；白环描边 = 当前会话；置顶数 0 时整行不出现</span></li>
   </ol>
 </div>
 

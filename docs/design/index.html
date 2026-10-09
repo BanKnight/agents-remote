@@ -83,7 +83,7 @@ a{color:var(--c-primary);text-decoration:none}
   <div>
     <h1>agents-remote · UI/UX 设计图集 <span>v1.5</span></h1>
     <p class="sub">远程调度与观察 AI Agent · iPhone / iPad / Mac 三端同构 · 规格书见 <a href="design_spec.md">design_spec.md</a></p>
-    <span class="badge">1 张 SVG（图解轨）+ 115 页 HTML 轨 · 主题开关全图联动 · 结构确认版</span>
+    <span class="badge">1 张 SVG（图解轨）+ 119 页 HTML 轨 · 主题开关全图联动 · 结构确认版</span>
   </div>
   <div class="segc" id="seg" title="切换全部页面与图的主题">
     <span data-t="dark" class="on">深色</span><span data-t="light">浅色</span>
@@ -141,12 +141,12 @@ a{color:var(--c-primary);text-decoration:none}
   </figure>
   <figure class="phone" data-page="files-global-tab.html" data-device="iphone">
       <iframe src="files-global-tab.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">L1 · 全局文件</span>文件组件的全局作用域（服务器根）；项目根带 live 标，点项目文件夹进工作台。<br><code>files-global-tab.html</code> · HTML 轨</figcaption>
+      <figcaption><span class="tag">L1 · 全局文件</span>文件组件的全局作用域（服务器根）；行2 = 地址框（根段 agents-remote）+ 收缩搜索钮单行（与工作台同模型）；项目根带 live 标，点项目文件夹进工作台。<br><code>files-global-tab.html</code> · HTML 轨</figcaption>
           <span class="xpand" data-page="files-global-tab.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
   </figure>
   <figure data-page="plugins-tab.html" data-device="iphone">
       <iframe src="plugins-tab.html" loading="lazy" style="width:100%;height:1180px;border:0;display:block"></iframe>
-      <figcaption><span class="tag">L1 · 插件</span>大标题 → 搜索（融合市场层）→ 作用域切换 → 市场分组（chips 一步触达；管理源唯一入口）→ MCP 组（＋ 添加 = 手动配置 14）→ 技能组（＋ 添加 = 直达技能市场 18；更新聚合）；页顶无全局添加按钮。<br><code>plugins-tab.html</code> · HTML 轨</figcaption>
+      <figcaption><span class="tag">L1 · 插件</span>大标题 → 作用域切换 + 搜索收缩钮（域行右端，点按展开融合市场层）→ 市场分组（chips 一步触达；管理源唯一入口）→ MCP 组（＋ 添加 = 手动配置 14）→ 技能组（＋ 添加 = 直达技能市场 18；更新聚合）；页顶无全局添加按钮。<br><code>plugins-tab.html</code> · HTML 轨</figcaption>
           <span class="xpand" data-page="plugins-tab.html" data-w="390" data-h="1180" title="全屏查看">⤢</span>
   </figure>
   <figure class="phone" data-page="settings.html" data-device="iphone">
@@ -160,8 +160,13 @@ a{color:var(--c-primary);text-decoration:none}
     <div class="grid">
   <figure class="phone" data-page="workspace.html" data-device="iphone">
     <iframe src="workspace.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">骨架 · 观察态</span>常驻 2 行 + 滚动收纳（上滚收敛迷你条）；输入框双行 composer：窄端配置三项分别收缩为彩色图标（点图标弹出选项菜单 03a）+ 右端停止/发送互斥方形键；托盘单行胶囊点开展开；标题 ▾ 切项目。<br><code>workspace.html</code> · HTML 轨</figcaption>
+    <figcaption><span class="tag">骨架 · 观察态</span>单会话展示：行1 类型图标+实例名（▾ 切换 / ⋯ 菜单：历史·信息·置顶·重命名·自动重试·关闭）→ 置顶会话条（24px 色点行，点 = 一步切换，长按显名）→ 子 agent 概览条 → composer（窄端三彩色图标 + 停止/发送互斥）→ 审批托盘胶囊。<br><code>workspace.html</code> · HTML 轨</figcaption>
         <span class="xpand" data-page="workspace.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-pinned-bubble.html" data-device="iphone">
+    <iframe src="workspace-pinned-bubble.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">骨架 · 置顶条长按态</span>长按色点 = 名字气泡（临时确认哪颗色是哪个会话；松手/点外部收起）；颜色 = 会话持久属性（8 色板轮转，取消置顶不回收）；置顶管理入口唯一在 ⋯ 菜单。<br><code>workspace-pinned-bubble.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-pinned-bubble.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
   </figure>
   <figure class="phone" data-page="workspace-idle.html" data-device="iphone">
     <iframe src="workspace-idle.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
@@ -195,8 +200,13 @@ a{color:var(--c-primary);text-decoration:none}
   </figure>
   <figure class="phone" data-page="workspace-terminal.html" data-device="iphone">
     <iframe src="workspace-terminal.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">实例 · 终端</span>tmux 实例：无模型 chips；上滑看历史，「↓ 实时」回底；无审批托盘。<br><code>workspace-terminal.html</code> · HTML 轨</figcaption>
+    <figcaption><span class="tag">实例 · 终端（输入收起态）</span>tmux 实例：无模型 chips；快捷键条常驻贴底（点按注入命令行），右端「展开输入」唤出 composer；「↓ 实时」回底；无审批托盘。<br><code>workspace-terminal.html</code> · HTML 轨</figcaption>
         <span class="xpand" data-page="workspace-terminal.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-terminal-input.html" data-device="iphone">
+    <iframe src="workspace-terminal-input.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">实例 · 终端（composer 展开态）</span>快捷键条上移不消失；终端 composer 与会话版同构但有别：mono 命令文本 + 键位自定义 ⚙ + 发送（⇧回车）——无三彩图标、无 ＋ 附件（发送 = 写入 stdin）；⇲ 收回。<br><code>workspace-terminal-input.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-terminal-input.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
   </figure>
   <figure class="phone" data-page="workspace-chat.html" data-device="iphone">
     <iframe src="workspace-chat.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
@@ -219,18 +229,23 @@ a{color:var(--c-primary);text-decoration:none}
   </figure>
   <figure class="phone" data-page="workspace-instance-info.html" data-device="iphone">
     <iframe src="workspace-instance-info.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">浮层 · 实例信息</span>元信息 + 运行配置 + 自动重试；重命名 / 置顶 / 关闭（确认式）。<br><code>workspace-instance-info.html</code> · HTML 轨</figcaption>
+    <figcaption><span class="tag">浮层 · 实例信息</span>纯信息面板：模型/权限/effort/自动重试参数/目录/累计；动作（置顶/重命名/自动重试/关闭）已上收导航 ⋯ 菜单动作区。<br><code>workspace-instance-info.html</code> · HTML 轨</figcaption>
         <span class="xpand" data-page="workspace-instance-info.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
   </figure>
   <figure class="phone" data-page="workspace-more-menu.html" data-device="iphone">
     <iframe src="workspace-more-menu.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">浮层 · 导航 ⋯ 菜单</span>低频集合（铁律 6）：会话历史 → 03n / 实例信息 → 03k，两项直开对应 sheet；旧信息钮退役，导航右上唯一 ⋯。<br><code>workspace-more-menu.html</code> · HTML 轨</figcaption>
+    <figcaption><span class="tag">浮层 · 导航 ⋯ 菜单</span>低频集合三区（铁律 6）：导航区（会话历史 / 实例信息）+ 动作区（置顶 / 重命名 / 自动重试，toggle ✓ 即点即改）+ 销毁区（关闭会话…红）；动作自实例信息上收，对齐宽端会话菜单先例。<br><code>workspace-more-menu.html</code> · HTML 轨</figcaption>
         <span class="xpand" data-page="workspace-more-menu.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
   </figure>
   <figure class="phone" data-page="workspace-instance-switch.html" data-device="iphone">
     <iframe src="workspace-instance-switch.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">浮层 · 实例切换</span>标题 ▾：单会话展示（并行能力保留，pills 常驻撤除）；列表区定高滚动 + 钉底 ＋ 新建实例 / ⟲ 恢复历史会话；切换零销毁（活跃实例与历史互斥）。<br><code>workspace-instance-switch.html</code> · HTML 轨</figcaption>
+    <figcaption><span class="tag">浮层 · 实例切换</span>标题 ▾：跨项目分组（组头 = 项目名，当前项目置顶、其余按最近活动），只列活跃实例一步直达；钉底 ＋ 新建 / ⟲ 恢复历史会话 · 当前项目；切换零销毁（活跃与历史互斥）。<br><code>workspace-instance-switch.html</code> · HTML 轨</figcaption>
         <span class="xpand" data-page="workspace-instance-switch.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
+  </figure>
+  <figure class="phone" data-page="workspace-retry-config.html" data-device="iphone">
+    <iframe src="workspace-retry-config.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
+    <figcaption><span class="tag">浮层 · 自动重试编辑</span>实例信息 › 自动重试 › 进入：开关（与 ⋯ 菜单 toggle 双向同步）+ 次数上限 / 重试间隔（指数退避）/ 重发文案；仅对本会话生效，未改项跟随设置页全局默认。<br><code>workspace-retry-config.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="workspace-retry-config.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
   </figure>
   <figure class="phone" data-page="workspace-session-history.html" data-device="iphone">
     <iframe src="workspace-session-history.html" loading="lazy" style="width:100%;height:1125px;border:0;display:block"></iframe>
@@ -396,7 +411,7 @@ a{color:var(--c-primary);text-decoration:none}
   </figure>
   <figure data-page="files-global-preview-md.html" data-device="iphone">
     <iframe src="files-global-preview-md.html" loading="lazy" style="width:100%;height:1110px;border:0;display:block"></iframe>
-    <figcaption><span class="tag">类型 · Markdown/HTML（渲染⇄源码）</span>[编辑] = 导航右端主操作；渲染 ⇄ 源码 分段收顶部元信息行右端；沙箱渲染（不执行脚本/不发请求），HTML 同款；流式排版无缩放；⋯：复制内容/复制路径（根作用域无查看 diff）。<br><code>files-global-preview-md.html</code> · HTML 轨</figcaption>
+    <figcaption><span class="tag">类型 · Markdown/HTML（渲染⇄源码）</span>编辑 = 点正文任意处进入（渲染态点正文 = 切源码并编辑）；渲染 ⇄ 源码 分段收顶部元信息行右端；沙箱渲染（不执行脚本/不发请求），HTML 同款；流式排版无缩放；⋯：复制内容/复制路径（根作用域无查看 diff）。<br><code>files-global-preview-md.html</code> · HTML 轨</figcaption>
         <span class="xpand" data-page="files-global-preview-md.html" data-w="390" data-h="1110" title="全屏查看">⤢</span>
   </figure>
   <figure data-page="files-global-preview-image.html" data-device="iphone">
@@ -657,8 +672,13 @@ a{color:var(--c-primary);text-decoration:none}
   </figure>
   <figure data-page="mac-instance-info.html" data-device="mac">
     <div class="fit" data-os="0.84" style="height:848px"><iframe src="mac-instance-info.html" loading="lazy" style="width:1288px;height:1009px;transform:scale(0.84)"></iframe></div>
-    <figcaption><span class="tag t-multi">Mac · 实例信息 Popover</span>页头 ⋯ → 实例信息浮卡（状态/自动重试/重命名/置顶/关闭）；点外部收起。<br><code>mac-instance-info.html</code> · HTML 轨</figcaption>
+    <figcaption><span class="tag t-multi">Mac · 实例信息 Popover（Agent 型）</span>页头 ⋯ → 纯信息浮卡：项目/类型/模型/权限/effort/创建时间/恢复 ID/累计；自动重试 = 行内 toggle +「编辑」；动作直挂会话菜单 ⋯。<br><code>mac-instance-info.html</code> · HTML 轨</figcaption>
         <span class="xpand" data-page="mac-instance-info.html" data-w="1288" data-h="848" title="全屏查看">⤢</span>
+  </figure>
+  <figure data-page="mac-instance-info-terminal.html" data-device="mac">
+    <div class="fit" data-os="0.84" style="height:848px"><iframe src="mac-instance-info-terminal.html" loading="lazy" style="width:1288px;height:1009px;transform:scale(0.84)"></iframe></div>
+    <figcaption><span class="tag t-multi">Mac · 实例信息 Popover（终端型）</span>字段集按类型分化：终端型仅 项目/类型——无模型/权限/effort/自动重试等 Agent 语义字段；形制与 Agent 态同款。<br><code>mac-instance-info-terminal.html</code> · HTML 轨</figcaption>
+        <span class="xpand" data-page="mac-instance-info-terminal.html" data-w="1288" data-h="848" title="全屏查看">⤢</span>
   </figure>
   <figure data-page="mac-tool-files-create.html" data-device="mac">
     <div class="fit" data-os="0.84" style="height:823px"><iframe src="mac-tool-files-create.html" loading="lazy" style="width:1288px;height:980px;transform:scale(0.84)"></iframe></div>
