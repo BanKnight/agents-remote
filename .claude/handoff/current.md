@@ -1,10 +1,10 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-09（**批 16 两 commit 已落（8d06e82/dd35ab8），待 e2e 补跑 + push + 真机复验**）
+> 最后更新：2026-10-09（**批 16 全链路完成：5+1 commit 已 push（至 6007d15）、e2e 27/27 补跑全绿、真机再反馈（①aux 两项）已修——等用户真机复验再反馈项**）
 
 ## 一句话状态
 
-批 16 真机反馈三条全实现（aux 图标 Lucide 化 / 检视面板钮右侧形制 / md 支持 mermaid）+ 双 reviewer 消化完 + 探针 9/9 + 门禁全绿 + 记档完，两 commit `8d06e82`/`dd35ab8` 已落——**卡在 e2e：宿主环境故障（VM 302 磁盘 IO 风暴 → 3 核 load 25-30、内核态 CPU 75%），基线干净树同挂已实锤非批 16 回归；等负载回落补跑 e2e → push → 真机复验**。
+批 16 三项修复 + 一轮 reviewer 消化 + 复审二轮消化 + **e2e 27/27 补跑全绿（宿主 IO 风暴结束）** + **真机再反馈修复**（aux 图标 14→16px stroke 保真；.aux safe-area height calc 补偿修「图标贴条顶错位」——Chromium env=0 结构性复现不了，border-box height−env 压 content 算术缺陷）全部完成，6 commit（`8d06e82`/`dd35ab8`/`e81b162`/`7c499eb`/`f7f4c2a`/`6007d15`）已 push——**等用户真机复验再反馈项（aux 条两项）**。
 
 ## 本 session 焦点（批 16 全流程）
 
@@ -24,10 +24,11 @@
 - ✅ 探针：probe-v16-batch16 9/9 新建 + probe-markdown-frontmatter 7/7（顺修 login 文案/openFile v1.5 欠账）+ mobile-project-header 42/42。
 - ✅ 门禁：format/lint 0/typecheck 三包/单测 749/CSS 硬闸（194287 全量 rebuild）/tokens strict 0/两 commit pre-commit 全绿（api 单测一次负载 flaky 重跑 905/0 复绿）。
 - ✅ dev web respawn（vite.config 生效）：sw.js precache 36 条目零 mermaid/chunk-*；curl content-type text/css ✓。
-- ✅ 记档：redesign-v2.md §6.14 批 16 段 + gtd next-actions。
-- ⬜ **e2e 补跑**：等 load <10 跑 `systemd-run --scope --user -p MemoryMax=2G bun run e2e`（27/27 基线）。
-- ⬜ **push 6 commit**（cf8ea72/659e9c9/400a49e/78db575/8d06e82/dd35ab8）。
-- ⬜ **批 15+16 真机复验清单交用户**。
+- ✅ 记档：redesign-v2.md §6.14 批 16 段 + 复审二轮段 + 真机再反馈段 + gtd next-actions。
+- ✅ e2e 补跑 27/27 全绿（IO 风暴结束后复证，定时任务已撤）。
+- ✅ push 全部（origin/main = 6007d15）。
+- ✅ 批 15+16 真机复验清单已交（19 条）；用户复验反馈「基本都没问题」，仅清单第 16 条再优化两项 → 已修（6007d15）。
+- ⬜ **用户真机复验再反馈项**：aux 条图标应清晰（16px Lucide）且居中于工具条上部交互区（不再贴条顶）。
 
 ## 易丢的关键上下文
 
