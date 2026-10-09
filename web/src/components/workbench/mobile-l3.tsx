@@ -593,7 +593,7 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
                 }}
                 type="button"
               >
-                <LucideIcon className="size-3.5 shrink-0" name="undo-2" />
+                <LucideIcon className="size-4 shrink-0" name="undo-2" />
                 {t("files.auxUndo")}
               </button>
               <button
@@ -604,7 +604,7 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
                 }}
                 type="button"
               >
-                <LucideIcon className="size-3.5 shrink-0" name="redo-2" />
+                <LucideIcon className="size-4 shrink-0" name="redo-2" />
                 {t("files.auxRedo")}
               </button>
               {/* desktop 档无软键盘收起诉求（05h4 原型 .pvaux 仅撤销/重做两钮）。 */}
@@ -614,7 +614,7 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
                   onClick={() => editorView?.contentDOM.blur()}
                   type="button"
                 >
-                  <LucideIcon className="size-3.5 shrink-0" name="chevron-down" />
+                  <LucideIcon className="size-4 shrink-0" name="chevron-down" />
                   {t("files.auxDismissKeyboard")}
                 </button>
               )}

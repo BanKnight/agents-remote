@@ -2346,7 +2346,10 @@
     align-items: center;
     justify-content: center;
     gap: 26px;
-    height: 40px;
+    /* 批 16 真机反馈①再反馈：height 是 border-box，padding-bottom: env(34px) 会把 content
+       压到 6px，按钮在 6px 里居中 = 贴条顶（真机「图标与工具条背景错位」根因）。calc 补偿后
+       content 恒 40px，交互区居中恢复；chin 背景延伸语义不变（§1 单点消费）。 */
+    height: calc(40px + env(safe-area-inset-bottom));
     flex: none;
     background: var(--bg-elevated);
     border-top: 1px solid var(--sep-row);
