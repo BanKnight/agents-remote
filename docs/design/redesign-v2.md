@@ -1696,6 +1696,18 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
   - **探针连锁适配 4 件**：retry-config（串行链 PUT 渗出被未 mock 深层 query 的 404 重试退避拖到 ~1s/条 → catch-all 兜底 + waitForPosts 轮询替代固定窗口）；desktop-instance-info（TabChip ℹ v1.5 批 4 已退役 → 改走 tabstrip ⋯ 菜单入口）；cwd-memory（根态 `<b>{rootLabel}</b>` 后根态判定 = 无段按钮）；batch4-desktop（scopeProject 新文案 + `.seg4` 容器限定防误点侧栏项目行）。
   - **验证**：web 771（+shortenHomePath 5）/ api 905 单测全绿；全门禁 + CSS 硬闸 + tokens 机检绿；探针面 9 组全绿（pinned 10 / retry 27 / composer 20 / header 54 / instance-info / batch3 57 / batch4 37 / plugins 19 / cwd-memory / batch7 44）。
 
+### v1.6 真机反馈四联修（2026-10-10，commit `62ad6e3` + 主 commit）
+
+用户真机复验 v1.6 逐条报出四个问题，一轮收敛修复（三探针扩展端到端覆盖）：
+
+- **① 终端会话 ⋯ 菜单缺「置顶」**：pin 链路全程类型无关（服务端 pinned 纯 sessionId 列表、`usePinnedSessions` 无类型语义、`PinnedSessionsBar` 候选含 terminal、`sessionStatusLabel` 支持 terminal）——唯二 agent gate 在 UI 装配层（`instance-actions.tsx` build 三元 + `instance-area.tsx` SessionTabStripActions `sessionType === "agent" &&`），源自 v1.5 review P3⑦「dot 状态语言归属 agent」旧口径，被用户真机反馈推翻。两处删 gate 即通，零后端改动。
+- **② 全局文件根目录名硬编码 "agents-remote" 退役**：v1.6 批 11 按原型示例落了硬编码根名，用户裁决「这明显不合理」= 伪造数据（部署根目录名因机器而异）。数据链 = api `listRootFiles` 返回 `rootPath`（`resolveProjectsRoot` realpath 后）← shared `ProjectFileListResponse.rootPath?` ← web `rootDisplayName()` 取 basename（末段），缺省退 i18n `files.rootDirectory`（「服务器根」）作 fallback；`files.root` 键删除。GlobalFilesOverview 与 FilesPanel 同 `["root","files"]` query key 缓存共享（零额外网络）。
+- **③ 「..」上一级行同构**：此前仅工具区 FilesToolPanel 有（03o 原型首行保底），全局文件/FilesPanel 子目录层缺。抽取 `ParentDirRow` 单源组件（`.frow .p.dir` DOM 与探针选择器不变），FilesPanel 子目录层补行。**渲染判定坑**：服务端 `parentProjectPath` 对一级子目录返回 `""`（dirname→"."）非 null——truthy 判定会吞行，按 `path !== ""` 判定；探针 mock `parentOf` 同步对齐真实语义（A 层 → ""），端到端锁死空串父路径链路。工具区既有 `parentPath !== null` 严格判空口径等价保留。
+- **④ 搜索展开同构**：全局文件/插件页展开态 = `.psearch`（38px/r12）+ `.obtn.srch` ✕（用户认可基准），工具 chip files 搜索却是 `.wsearch`（30px/r15 chip 内嵌，Wiki 同款）不同源点。抽取 `CollapsibleSearchRow` 单源（flex-1 + autoFocus + ✕ 清词收起），三处展开态收敛；⌘F 聚焦 gate 留桌面常驻分支（searchInputRef 不动）；工具 chip 槽容器 gap-2→gap-1.5 对齐全局文件行2。Wiki 面板 `.wsearch` 不动（用户只点名文件树，surgical）。
+- **探针连锁 3 件**：cwd-memory 扩 Part 1b（chip 搜索展开同构断言）+ Part 7（/files 根名 basename 端到端 + 「..」出现/消失/回根全链）；mobile header 扩 Part 12（终端 ⋯ 菜单序 + 置顶 keepOpen ✓）；desktop batch4 扩 Part 4b（终端 tab ⋯ 菜单 + 置顶 dispatchEvent ✓）。**mock 正则教训**：pinned mock 原 `/pinned-sessions(\?.*)?$/` 锚 `$`，Part 4b 的 POST `/pinned-sessions/{id}` 不匹配 → **静默穿透到真实后端吃 400**（探针 mock 漏路由不报错，菜单保持开假象误导排向 keepOpen 链路）——去 `$` 锚修；mobile 探针正则本就无锚（Part 12 一次绿），对照实锤。
+- **验证**：探针 3 组全绿（cwd-memory 15 / mobile header 56 / desktop batch4 42）；单测 api 905（listRootFiles rootPath 断言 + realpath 换算防 macOS 符号链接）/ web 774（+rootDisplayName 3）/ shared 10；lint 0 warning / CSS 硬闸 / tokens 机检绿；dist 特征验证（rootPath 进包 + `files.root` 键消失）。
+- **附带提交**：v1.6 双审残留一枚（`62ad6e3` 置顶气泡 `.popb` 右缘钳宽 CSS 兜底，消费侧内联钳宽已在）。
+
 | 项 | 决策点 | 摊牌时点 |
 | --- | --- | --- |
 | Wiki「让 Agent 读这篇」注入协议 | ~~stdin 指令 vs attachment/引用卡；引用卡状态归属~~ ✅ 已摊牌（D13，§6.2）：stdin prompt + 客户端 per-session 引用 atom | ~~M4 开工前~~ 2026-09-21 |
