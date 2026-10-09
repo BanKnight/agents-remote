@@ -10,6 +10,7 @@ import {
 } from "../../routes/workbench-model";
 import { useGlobalInstanceCandidates } from "../workbench/instance-area";
 import { relativeTime } from "../workbench/history-list";
+import { FileCrumb } from "./file-crumb";
 import { FilesPanel } from "./file-browser";
 import { type CardDragStartHandler } from "../workbench/drag-source";
 
@@ -58,6 +59,9 @@ export function GlobalFilesOverview({
   // 卡形态统计源：与项目 Tab 同 ["overview"] query（dedupe 零额外网络；10s refetchInterval 同步受益）。
   const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
   const [filter, setFilter] = useState("");
+  // v1.6 移动搜索收缩（files-global-tab ①：行2 = 地址框 + 收缩搜索钮单行，不再常驻展开
+  // 搜索行；点按展开 = 03x 全宽过滤）。桌面（panel/page）保持常驻 .psearch 不变。
+  const [searchOpen, setSearchOpen] = useState(false);
   // ⌘F（spec §10.2，10m pin④）聚焦搜索框：计数器信号递增即 focus（桌面 main 整页态由
   // use-workbench-shortcuts gate 后 bump；移动/其他入口不 bump）。
   const searchFocusRequest = useAtomValue(workbenchFilesSearchFocusRequestAtom);
@@ -128,32 +132,87 @@ export function GlobalFilesOverview({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {scopeSeg}
-      {/* 搜索框 = 一级页搜索单源 .psearch（38px/r12 移动 / 34px/r10 桌面，与插件页同款——
-          真机反馈 2026-09-29：全局文件页搜索应与其他页面一致；.sfield 页私 30px 退役）。
-          容器与卡片同边距（移动 px-4 16 / 桌面 px-5 20），lg gap 12 接管 gfcard 桌面档
-          归零的 margin（mbody gap 语义）。 */}
+      {/* 搜索：移动 = 行2 单行（v1.6 files-global-tab ①：地址框 FileCrumb + 收缩搜索钮
+          .obtn.srch，点按展开 = 03x 全宽过滤、✕ 收起清词）；桌面 = 常驻 .psearch（38px/r12
+          移动档 / 34px/r10 桌面档）+ page 态 ⌘F 角标不变。容器与卡片同边距（移动 px-4 16 /
+          桌面 px-5 20），lg gap 12 接管 gfcard 桌面档归零的 margin（mbody gap 语义）。 */}
       <div className="flex min-h-0 flex-1 flex-col px-4 pt-2.5 lg:gap-3 lg:px-5 lg:pt-3">
-        <div className="psearch shrink-0">
-          <ShellIcon
-            aria-hidden="true"
-            className="size-4 flex-none text-ink-2"
-            name="magnifyingglass"
-          />
-          <input
-            aria-label={t("files.searchPlaceholder")}
-            className="w-full bg-transparent text-callout text-ink-1 outline-none"
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder={t("files.searchPlaceholder")}
-            ref={searchInputRef}
-            type="search"
-            value={filter}
-          />
-          {pageMode ? (
-            <span aria-hidden="true" className="flex-none text-[11px] text-ink-3">
-              ⌘F
-            </span>
-          ) : null}
-        </div>
+        {isMobile && !pageMode ? (
+          <div className="flex flex-none items-center gap-1.5">
+            {searchOpen ? (
+              <>
+                <div className="psearch min-w-0 flex-1">
+                  <ShellIcon
+                    aria-hidden="true"
+                    className="size-4 flex-none text-ink-2"
+                    name="magnifyingglass"
+                  />
+                  <input
+                    aria-label={t("files.searchPlaceholder")}
+                    autoFocus
+                    className="w-full bg-transparent text-callout text-ink-1 outline-none"
+                    onChange={(e) => setFilter(e.target.value)}
+                    placeholder={t("files.searchPlaceholder")}
+                    ref={searchInputRef}
+                    type="search"
+                    value={filter}
+                  />
+                </div>
+                <button
+                  aria-label={t("files.closeSearch")}
+                  className="obtn srch cursor-pointer"
+                  onClick={() => {
+                    setSearchOpen(false);
+                    setFilter("");
+                  }}
+                  type="button"
+                >
+                  <ShellIcon aria-hidden="true" name="close" />
+                </button>
+              </>
+            ) : (
+              <>
+                {/* 地址框 = FileCrumb 单源（v1.6 升格 34px/13px/r10）：根段图标 =
+                  project（SF 名 folder 形状）；服务器根态 segments=[] 仅图标。 */}
+                <FileCrumb
+                  onNavigate={(path) => onPathChange?.(path)}
+                  rootLabel={t("files.root")}
+                  segments={currentPath ? currentPath.split("/") : []}
+                />
+                <button
+                  aria-label={t("files.searchPlaceholder")}
+                  className="obtn srch cursor-pointer"
+                  onClick={() => setSearchOpen(true)}
+                  type="button"
+                >
+                  <ShellIcon aria-hidden="true" name="magnifyingglass" />
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="psearch shrink-0">
+            <ShellIcon
+              aria-hidden="true"
+              className="size-4 flex-none text-ink-2"
+              name="magnifyingglass"
+            />
+            <input
+              aria-label={t("files.searchPlaceholder")}
+              className="w-full bg-transparent text-callout text-ink-1 outline-none"
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder={t("files.searchPlaceholder")}
+              ref={searchInputRef}
+              type="search"
+              value={filter}
+            />
+            {pageMode ? (
+              <span aria-hidden="true" className="flex-none text-[11px] text-ink-3">
+                ⌘F
+              </span>
+            ) : null}
+          </div>
+        )}
         <FilesPanel
           filter={filter}
           initialPath=""
@@ -168,6 +227,9 @@ export function GlobalFilesOverview({
           globalCard={
             globalOverview && (currentPath ?? "") === "" ? { overview: globalOverview } : undefined
           }
+          // v1.6 移动：地址栏上移本容器行2（FileCrumb + 收缩搜索钮同行），FilesPanel 内部
+          // 地址栏行隐藏防双 crumb（桌面零变化）。
+          hideCrumbHeader={isMobile && !pageMode ? true : undefined}
         />
       </div>
     </div>

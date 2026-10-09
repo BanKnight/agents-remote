@@ -197,6 +197,7 @@ export const en = {
   "files.moveCreateFolder": "New folder…",
   "files.moveToHere": "Move here",
   "files.deleteDirtyWarn": "This file has uncommitted changes — deleting it will discard them.",
+  "files.closeSearch": "Close search",
   "files.searchPlaceholder": "Search files",
   "files.searchCount": "{{n}} results",
   "files.searchTruncated": "First {{n}} results",

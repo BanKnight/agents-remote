@@ -77,6 +77,9 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
   // 单源，§3.5 作用域规则）。
   const [lastProject] = useAtom(workbenchLastProjectAtom);
   const [addMcpOpen, setAddMcpOpen] = useState(false);
+  // v1.6 搜索收缩（plugins-tab ①：收缩钮落域行右端，独立常驻搜索行退役——03x 同模式；
+  // 桌面 mainPage（hideTitle）保持常驻 .psearch 不变）。
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const projectName = scope === "project" && lastProject ? lastProject : undefined;
   const mcpScope = projectName ? ("project" as const) : ("user" as const);
@@ -217,25 +220,61 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
           = 标题由 MainPageShell 17px h1 承担（09m .mhead 形态）。 */}
       {hideTitle ? null : <LargeTitleRow title={t("plugins.title")} />}
 
-      {/* 搜索（原型 .search 在分段之上，编号①）：本地过滤已装 + 市场融合。.psearch 单源。
-          margin-top 统一 10px（2026-09-29 真机反馈：三页原型页私值 8/12/10 各异致切换跳动，
-          跨页一致优先统一 mt-2.5，与项目/全局文件页同值）。 */}
-      <div className="psearch mx-4 mt-2.5 flex-none">
-        <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
-        <input
-          aria-label={t("plugins.searchPlaceholder")}
-          className="w-full bg-transparent text-callout text-ink-1 outline-none placeholder:text-ink-2"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t("plugins.searchPlaceholder")}
-          type="search"
-          value={query}
-        />
-      </div>
-
-      {/* 作用域分段（.segc 单源 PluginsScopeSegmented，文件末）：全局 / 本项目 · <名> ▾
-          （§3.5 编号②）。hideTitle（桌面 mainPage）不再渲染内联段——由 MainPageShell actions
-          承载（限宽 290 对齐 09m seg4）；移动一级页满宽段（margin 由本处 utility 注入）。 */}
-      {hideTitle ? null : <PluginsScopeSegmented className="mx-4 mt-3.5" />}
+      {/* 搜索（v1.6 plugins-tab ①）：移动 = 域行（segc flex:1）+ 右端收缩搜索钮 .obtn.srch
+          单行，点按展开全宽搜索行（03x 同模式，✕ 收起清词）——独立常驻搜索行退役（样式过
+          重）；桌面 mainPage（hideTitle，seg4 由 MainPageShell actions 承载）保持常驻
+          .psearch。margin-top 统一 10px（2026-09-29 真机反馈：跨页一致优先统一 mt-2.5）。 */}
+      {hideTitle ? (
+        <div className="psearch mx-4 mt-2.5 flex-none">
+          <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
+          <input
+            aria-label={t("plugins.searchPlaceholder")}
+            className="w-full bg-transparent text-callout text-ink-1 outline-none placeholder:text-ink-2"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("plugins.searchPlaceholder")}
+            type="search"
+            value={query}
+          />
+        </div>
+      ) : searchOpen ? (
+        <div className="mx-4 mt-2.5 flex flex-none items-center gap-2">
+          <div className="psearch min-w-0 flex-1">
+            <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
+            <input
+              aria-label={t("plugins.searchPlaceholder")}
+              autoFocus
+              className="w-full bg-transparent text-callout text-ink-1 outline-none placeholder:text-ink-2"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("plugins.searchPlaceholder")}
+              type="search"
+              value={query}
+            />
+          </div>
+          <button
+            aria-label={t("files.closeSearch")}
+            className="obtn srch cursor-pointer"
+            onClick={() => {
+              setSearchOpen(false);
+              setQuery("");
+            }}
+            type="button"
+          >
+            <ShellIcon aria-hidden="true" name="close" />
+          </button>
+        </div>
+      ) : (
+        <div className="mx-4 mt-2.5 flex flex-none items-center gap-2">
+          <PluginsScopeSegmented className="min-w-0 flex-1" />
+          <button
+            aria-label={t("plugins.searchPlaceholder")}
+            className="obtn srch cursor-pointer"
+            onClick={() => setSearchOpen(true)}
+            type="button"
+          >
+            <ShellIcon aria-hidden="true" name="magnifyingglass" />
+          </button>
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
         {scope === "project" && !lastProject ? (
@@ -601,6 +640,11 @@ export function PluginsScopeSegmented({ className }: { className?: string }) {
           onClick={() => setScope("project")}
           type="button"
         >
+          {/* v1.6 plugins-tab：项目段 = folder 图标 + 项目名（图标替代「本项目」字样前缀；
+              空态无项目不加图标）。显式尺寸防 WebKit flex 收缩隐形（§15⑤）。 */}
+          {lastProject ? (
+            <ShellIcon aria-hidden="true" className="size-[13px] flex-none" name="project" />
+          ) : null}
           <span className="min-w-0 truncate">
             {lastProject
               ? t("plugins.scopeProject", { name: lastProject })

@@ -981,6 +981,11 @@ export type FilesPanelProps = {
   onCardDragStart?: CardDragStartHandler;
   /** 名称过滤（大小写不敏感的 includes；10m 桌面整页搜索框用）。undefined/空 = 不过滤。 */
   filter?: string;
+  /**
+   * 隐藏内部地址栏行（v1.6 全局文件一级页：行2 = FileCrumb + 收缩搜索钮由容器承载——
+   * crumb 上移合并进行2，避免双地址栏）。默认 false（桌面左栏/inspection 零变化）。
+   */
+  hideCrumbHeader?: boolean;
 };
 
 export function FilesPanel({
@@ -993,6 +998,7 @@ export function FilesPanel({
   onOpenFile,
   onCardDragStart,
   filter,
+  hideCrumbHeader = false,
 }: FilesPanelProps) {
   const { t } = useT();
   const [internalPath, setInternalPath] = useState(initialPath);
@@ -1316,7 +1322,7 @@ export function FilesPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col sm:overflow-hidden">
       <div
-        className={`shrink-0 border-b border-on-surface/5 py-1.5 ${isPreviewOpen ? "hidden sm:block" : "block"}`}
+        className={`shrink-0 border-b border-on-surface/5 py-1.5 ${hideCrumbHeader ? "hidden" : isPreviewOpen ? "hidden sm:block" : "block"}`}
       >
         <div
           className="flex min-h-[2.125rem] min-w-0 items-center justify-between gap-3"

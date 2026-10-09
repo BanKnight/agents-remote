@@ -196,6 +196,7 @@ export const zh: Record<TranslationKey, string> = {
   "files.moveTitle": "移动到「{{name}}」",
   "files.moveCreateFolder": "新建文件夹…",
   "files.moveToHere": "移动到此处",
+  "files.closeSearch": "关闭搜索",
   "files.searchPlaceholder": "搜索文件",
   "files.searchCount": "{{n}} 个结果",
   "files.searchTruncated": "前 {{n}} 个结果",
