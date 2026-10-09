@@ -30,6 +30,8 @@ const TO_LUCIDE = {
   "files-nav": "file", // 与 file 手绘本就同形（折角文档）
   "folder-plus": "folder-plus",
   "git-nav": "git-branch",
+  // SF clock.arrow.circlepath（⋯ 菜单「会话历史」导航行，v1.6 批 v6.3 workspace-more-menu）
+  "clock.arrow.circlepath": "history",
   info: "info",
   magnifyingglass: "search",
   maximize: "maximize-2",

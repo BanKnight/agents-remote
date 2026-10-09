@@ -1,10 +1,15 @@
 // 移动项目工作台行1 导航探针（v1.5 批1 单会话化，对标 workspace.html / workspace-instance-
-// switch.html；v2 M3-b 旧三行头部探针随行2 退役全面改写）。
+// switch.html；v2 M3-b 旧三行头部探针随行2 退役全面改写；v1.6 批 v6.3 同步三区/组头化/
+// tticn）。
 //   保活纪律（2026-08-17「全保活 + 聚焦过即可」）：▾ 菜单切实例不卸载（WS 不断）
 //   行1（44px 唯一常驻行）：.back「项目」主色 15px + ::before 箭头 + .nv-t 标题 = 实例名
-//     17/600 + runct ●n（running 实例数）+ 右端 [面板][⋯]
-//   ▾ 实例切换菜单（DropdownMenu 锚定浮卡）：组头 + 实例行 + ✓ + 钉底 ＋新建/⟲恢复历史
-//   ⋯ 菜单 = 会话历史 + 实例信息（info sheet .acts footer 三按钮 = 唯一操作入口）
+//     17/600 + 行首 .tticn 类型标（agent=sparkles/terminal=terminal/空态=folder）+
+//     runct ●n（running 实例数）+ 右端 [面板][⋯]
+//   ▾ 实例切换菜单（DropdownMenu 锚定浮卡）：组头「切换实例」+ 项目组头 .mh.g（当前项目
+//     置顶、其余按最近活动）+ 实例行 + 当前行背景高亮（✓ 记号退役）+ 钉底 ＋新建/⟲恢复
+//     （· 当前项目 后缀）
+//   ⋯ 菜单 = v1.6 三区（导航 会话历史›/实例信息› → 动作 置顶✓/重命名/自动重试✓ → 销毁
+//     关闭红）
 //   退役断言：row2/pills/chips/＋/mini 恒不渲染（防回归）
 //   Part 6 检视面板语境：行1 面板钮开面板 → 面板覆盖行1 → ‹ 工作台 关面板 → ▾ 切实例
 //
@@ -104,6 +109,8 @@ const NEW_AGENT = {
 const projectName = "proj1";
 // POST 新建追加进 GET 列表（模拟服务端持久化；▾ 菜单列表源 = instances query）。
 const POST_ADDS = [];
+// 置顶集合 mock（⋯ 菜单置顶 ✓ / 探针跨 context 复位）。
+let PINNED_MOCK = [];
 
 const MOBILE_CTX = {
   viewport: { width: 390, height: 844 },
@@ -127,6 +134,7 @@ async function setupMocks(page, { sessionIds, foreignCandidates = [] }) {
   // POST 新建后 GET 列表要要含新会话（▾ 菜单列表源 = React Query instances，invalidate 后
   // refetch 拿的就是这里）。闭包可变列表；模块级 POST_ADDS 跨 context 复位。
   POST_ADDS.length = 0;
+  PINNED_MOCK = [];
   const known = sessionIds.map((id) => SESSIONS[id]);
   await page.route(/\/api\/overview$/, (r) =>
     r.fulfill({
@@ -168,6 +176,37 @@ async function setupMocks(page, { sessionIds, foreignCandidates = [] }) {
       body: JSON.stringify({ sessions: [] }),
     }),
   );
+  // 置顶状态（v1.6 ⋯ 菜单动作区 ✓ 标注数据源）：GET 返回闭包数组，POST/DELETE（sessionId
+  // 走 path 段）更新后回显——mutation invalidate → refetch 拿最新，菜单 ✓ 实时反映。
+  await page.route(/\/api\/state\/overview\/pinned-sessions/, (r) => {
+    const m = r.request().method();
+    const id = decodeURIComponent(r.request().url().split("/pinned-sessions/")[1] ?? "");
+    if (m === "POST" && id && !PINNED_MOCK.includes(id)) PINNED_MOCK.push(id);
+    if (m === "DELETE" && id) PINNED_MOCK = PINNED_MOCK.filter((x) => x !== id);
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ sessions: PINNED_MOCK }),
+    });
+  });
+  // 自动重试开关（v1.6 ⋯ 菜单动作区即点即改）：POST 回显取反后的 config，response.session
+  // 的 autoRetry 随之变化（detail query invalidate → ✓ 实时反映）。
+  await page.route(/\/auto-retry$/, (r) => {
+    const sid = decodeURIComponent(
+      r
+        .request()
+        .url()
+        .match(/agent-sessions\/([^/]+)\/auto-retry/)?.[1] ?? "",
+    );
+    const s = SESSIONS[sid];
+    const enabled = s?.autoRetry?.enabled !== true;
+    if (s) s.autoRetry = { ...s.autoRetry, enabled };
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ session: { ...s, autoRetry: { enabled } } }),
+    });
+  });
   // 聚焦 session 面板连真实 WS（fake session 不存在 → error，但 panel 容器仍渲染）。
   await page.routeWebSocket(/claude-stream/, (ws) => ws.connectToServer());
 }
@@ -405,7 +444,8 @@ async function run() {
       );
       if (!list) return null;
       const items = [...menu.querySelectorAll('[role="menuitem"]')];
-      const current = items.find((it) => it.textContent?.includes("✓"));
+      // v1.6 当前行 = 背景高亮（✓ 记号退役），aria-current 定位。
+      const current = menu.querySelector('[aria-current="true"]');
       return {
         maxH: getComputedStyle(list).maxHeight,
         itemsCount: items.filter(
@@ -425,7 +465,7 @@ async function run() {
     ok(menuScroll?.maxH === "200px", `列表 max-h 200px 定高（实际 ${menuScroll?.maxH}）`);
     ok(menuScroll?.itemsCount === 6, `实例行 6 条（实际 ${menuScroll?.itemsCount}）`);
     ok(menuScroll?.listScrollable === true, "6 实例溢出 max-h 200px → 列表可滚");
-    ok(menuScroll?.currentInRange === true, "当前行（✓）在列表视野内");
+    ok(menuScroll?.currentInRange === true, "当前行（背景高亮）在列表视野内");
     await page2.keyboard.press("Escape");
     await page2.waitForTimeout(300);
 
@@ -546,10 +586,11 @@ async function run() {
     await seedLayout(page4, ["agent_probe-1"], "agent_probe-1");
     await page4.goto(`${ORIGIN}/projects/proj1/session/agent_probe-1`);
     await page4.waitForSelector('[data-tab-id="agent_probe-1"]', { timeout: 8000 });
-    // 标题钮内切换锚（批 12 反馈⑤：CSS 手绘 .sw 退役 → Lucide 管线 svg）——svg 在场 +
-    // 显式尺寸（frontend-notes §15⑤：无显式尺寸 WebKit flex 收缩 0×0 隐形）+ size-3.5 几何。
+    // 标题钮内：行首 .tticn 类型标（v1.6 workspace.html h1：agent 聚焦 = sparkles）+ 切换锚
+    //（批 12 反馈⑤：CSS 手绘 .sw 退役 → Lucide 管线 svg；size-3.5 显式尺寸防 WebKit 收缩
+    // 隐形 §15⑤）。tticn 几何 15×15 + strokeWidth 1.8（svg 自身显式，attribute 压继承）。
     const swGeo = await page4.evaluate(() => {
-      const svg = document.querySelector(".nav h1 button svg");
+      const svg = document.querySelector(".nav h1 button svg.size-3\\.5");
       if (!svg) return null;
       const r = svg.getBoundingClientRect();
       return { w: r.width, h: r.height, cls: svg.getAttribute("class") ?? "" };
@@ -563,23 +604,53 @@ async function run() {
       swGeo !== null && swGeo.w >= 13 && swGeo.w <= 15 && swGeo.h >= 13 && swGeo.h <= 15,
       `切换锚 svg 几何 14px 区间（实际 ${swGeo ? `${swGeo.w}x${swGeo.h}` : "null"}）`,
     );
+    const tt = await page4.evaluate(() => {
+      const span = document.querySelector(".nav h1 button .tticn");
+      const svg = span?.querySelector("svg");
+      if (!span || !svg) return null;
+      const r = svg.getBoundingClientRect();
+      return { w: r.width, h: r.height, sw: getComputedStyle(svg).strokeWidth };
+    });
+    ok(tt !== null, "行1 类型标 .tticn 在场（v1.6 h1 行首）");
+    ok(
+      tt !== null && tt.w >= 14 && tt.w <= 16 && tt.h >= 14 && tt.h <= 16,
+      `tticn svg 几何 15×15（实际 ${tt ? `${tt.w}x${tt.h}` : "null"}）`,
+    );
+    ok(
+      tt !== null && tt.sw === "1.8px",
+      `tticn svg strokeWidth 1.8（实际 ${tt ? tt.sw : "null"}）`,
+    );
     await openSwitchMenu(page4);
     const cross = await page4.evaluate(() => {
-      const items = [...document.querySelectorAll('[role="menuitem"]')];
+      const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+      const items = [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])];
+      // 组头 = 分组 wrapper（滚动容器 div.max-h-[200px] 直接子 div）的首个子 div。
+      const wrappers = [...(menu?.querySelector("div.max-h-\\[200px\\]")?.children ?? [])];
+      const heads = wrappers.map((w) => w.firstElementChild?.textContent?.trim() ?? "");
       const foreign = items.filter((it) => it.textContent?.includes("Ops Agent"));
+      // v1.6：行内 badge 退役（项目名上收组头）。
       const foreignWithBadge = foreign.filter((it) => it.textContent?.includes("ops-project"));
       const own = items.find((it) => it.textContent?.includes("Probe Agent A"));
       return {
+        heads,
         foreignCount: foreign.length,
         badgeCount: foreignWithBadge.length,
-        ownHasBadge: own?.textContent?.includes("ops-project") ?? null,
-        ownHasCheck: own?.textContent?.includes("✓") ?? null,
+        ownBg: own ? getComputedStyle(own).backgroundColor : "no-own-row",
+        ownHasCheck: own?.textContent?.includes("✓") ?? false,
       };
     });
     ok(cross.foreignCount === 2, `外项目实例行 2 条（实际 ${cross.foreignCount}）`);
-    ok(cross.badgeCount === 2, `外项目行带项目名标注 2 条（实际 ${cross.badgeCount}）`);
-    ok(cross.ownHasBadge === false, "本项目行不带项目名标注");
-    ok(cross.ownHasCheck === true, "本项目行带 ✓ 当前标记");
+    ok(cross.badgeCount === 0, `外项目行内 badge 退役（0 条；实际 ${cross.badgeCount}）`);
+    ok(
+      cross.heads.includes("ops-project"),
+      `外项目组头 = 项目名（组头序 ${JSON.stringify(cross.heads)}）`,
+    );
+    ok(cross.heads[0] === "proj1", `当前项目组置顶（组头序 ${JSON.stringify(cross.heads)}）`);
+    ok(
+      cross.ownBg !== "no-own-row" && cross.ownBg !== "rgba(0, 0, 0, 0)" && cross.ownBg !== "",
+      `本项目当前行 = 背景高亮（bg ${cross.ownBg}）`,
+    );
+    ok(cross.ownHasCheck === false, "本项目行 ✓ 记号退役（v1.6 图例②）");
     // 跨项目行点击 → 直接导航目标项目聚焦目标实例（反馈③核心语义）。
     const page4Diag = { errors: [] };
     page4.on("console", (m) => {
@@ -596,6 +667,107 @@ async function run() {
       /\/projects\/ops-project\/session\/agent_ops-2/.test(new URL(page4.url()).pathname),
       `跨项目行点击 → 导航目标项目聚焦目标实例（实际 ${page4.url()}）`,
     );
+
+    console.log("\n===== Part 11. ⋯ 菜单三区（v1.6 workspace-more-menu）=====");
+    // 回到本项目会话（Part 10 导航到了 ops-project；mock 只覆盖 proj1 + ops agent 列表，
+    // auto-retry/pinned mock 是全局 URL 正则，跨项目同样命中，但 SESSIONS 取值按 sid）。
+    await page4.goto(`${ORIGIN}/projects/proj1/session/agent_probe-1`, { timeout: 8000 });
+    await page4.waitForSelector('[data-tab-id="agent_probe-1"]', { timeout: 8000 });
+    await page4.locator('.nav button[aria-label="更多操作"]').click({ timeout: 5000 });
+    await page4.getByRole("menuitem").first().waitFor({ timeout: 5000 });
+    const zones = await page4.evaluate(() => {
+      const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+      const items = [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])];
+      return items.map((it) => ({
+        label: it.textContent?.replace(/[›✓]/g, "").trim() ?? "",
+        hasArrow: it.textContent?.includes("›") ?? false,
+        hasCheck: it.textContent?.includes("✓") ?? false,
+        color: getComputedStyle(it).color,
+      }));
+    });
+    const labels = zones.map((z) => z.label);
+    // 末项「取消」是 sheet 容器项（非三区内容），断言只看前 6 项。
+    ok(
+      labels.length >= 6 &&
+        labels[0].includes("会话历史") &&
+        labels[1].includes("实例信息") &&
+        labels[2].includes("置顶") &&
+        labels[3].includes("重命名") &&
+        labels[4].includes("自动重试") &&
+        labels[5].includes("关闭会话"),
+      `三区 6 项按原型序（实际 ${JSON.stringify(labels)}）`,
+    );
+    ok(zones[0]?.hasArrow === true && zones[1]?.hasArrow === true, "导航区两行带 › 导航标注");
+    ok(zones[2]?.hasCheck === false, "置顶行未置顶 → 无 ✓");
+    // keepOpen 即点即改：点置顶行 → 菜单保持开 + ✓ 出现（mock POST → invalidate → refetch）。
+    await page4.getByRole("menuitem").filter({ hasText: "置顶" }).click();
+    await page4
+      .waitForFunction(
+        () => {
+          const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+          if (!menu) return false;
+          const items = [...menu.querySelectorAll('[role="menuitem"]')];
+          const pinRow = items.find((it) => it.textContent?.includes("置顶"));
+          return pinRow != null && (pinRow.textContent?.includes("✓") ?? false);
+        },
+        undefined,
+        { timeout: 5000 },
+      )
+      .catch(() => {});
+    const afterPin = await page4.evaluate(() => {
+      const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+      return {
+        menuOpen: menu != null,
+        pinChecked:
+          [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])]
+            .find((it) => it.textContent?.includes("置顶"))
+            ?.textContent?.includes("✓") ?? false,
+      };
+    });
+    ok(afterPin.menuOpen === true, "置顶点击后菜单保持开（keepOpen 即点即改）");
+    ok(afterPin.pinChecked === true, "置顶后 ✓ 态标注出现");
+    // 自动重试行（claude 会话）✓ toggle 同款即点即改。
+    await page4.getByRole("menuitem").filter({ hasText: "自动重试" }).click();
+    await page4
+      .waitForFunction(
+        () => {
+          const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+          if (!menu) return false;
+          const items = [...menu.querySelectorAll('[role="menuitem"]')];
+          const retryRow = items.find((it) => it.textContent?.includes("自动重试"));
+          return retryRow != null && (retryRow.textContent?.includes("✓") ?? false);
+        },
+        undefined,
+        { timeout: 5000 },
+      )
+      .catch(() => {});
+    const afterRetry = await page4.evaluate(() => {
+      const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+      return {
+        menuOpen: menu != null,
+        retryChecked:
+          [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])]
+            .find((it) => it.textContent?.includes("自动重试"))
+            ?.textContent?.includes("✓") ?? false,
+      };
+    });
+    ok(afterRetry.menuOpen === true && afterRetry.retryChecked === true, "自动重试 ✓ 即点即改");
+    // 销毁区关闭行 = 红（error token 色）。读 tokens 实际值对照。
+    const closeColor = await page4.evaluate(() => {
+      const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+      const row = [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])].find((it) =>
+        it.textContent?.includes("关闭会话"),
+      );
+      return row ? getComputedStyle(row).color : null;
+    });
+    const errToken = await page4.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--c-danger").trim(),
+    );
+    ok(
+      closeColor !== null && errToken !== "" && closeColor === hexToRgb(errToken),
+      `关闭行红色 = --c-danger（close=${closeColor} token=${hexToRgb(errToken)}）`,
+    );
+    await page4.keyboard.press("Escape");
     await ctx4.close();
   } finally {
     await browser.close();

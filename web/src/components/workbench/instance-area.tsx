@@ -66,6 +66,7 @@ import {
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { useInstanceInfoSheet, type InfoField } from "../shell/info-sheet";
+import { usePinnedSessions } from "../../hooks/pinned-sessions";
 import { useT } from "../../i18n";
 import { claudeBridgeKey, getClaudeBridge } from "../../routes/claude-adapter";
 import { RuntimeConfigDialog, type RuntimeConfigField } from "./runtime-config-dialog";
@@ -1186,7 +1187,7 @@ function useAutoRetryEditor(panelRef: SessionPanelRef) {
  * query select 派生（primitive，同 queryKey dedupe 零额外网络）；toggle 读缓存当前 config
  * 只切 enabled（无 config 时按 UI 语言预填默认文案），成功 invalidate detail。
  */
-function useAutoRetryToggle(projectName: string, sessionId: string) {
+export function useAutoRetryToggle(projectName: string, sessionId: string) {
   const { t } = useT();
   const queryClient = useQueryClient();
   const detailKey = ["projects", projectName, "agent-sessions", sessionId] as const;
@@ -1195,6 +1196,8 @@ function useAutoRetryToggle(projectName: string, sessionId: string) {
     queryFn: () => getAgentSession(projectName, sessionId),
     retry: false,
     staleTime: 60_000,
+    // 空 sessionId（移动 ⋯ 菜单等组件顶层无条件调用的场景，非会话聚焦时）不发起请求。
+    enabled: sessionId !== "",
     select: (data) => data.session.autoRetry?.enabled === true,
   }).data;
   const toggle = useMutation({
@@ -1994,11 +1997,11 @@ function PlaceholderPanel({ focusId }: { focusId: string }) {
 }
 
 /**
- * tabstrip 右端 ⋯ 会话菜单（v1.5 批 4，spec §4.5：实例信息/重命名/置顶/关闭会话——与移动
- * ⋯ 菜单同构；TabChip ℹ 退役后桌面实例信息入口）。动作语义 = useInstanceRowActions 双端
- * 单源（全局同构 review 批：此前此处手写与移动 useInstanceRowActions 双写，标签/pin 仅
- * agent/关闭全同构）；icon 注入与实例信息项（useInstanceInfoActions modal 形态）留桌面容器。
- * 关闭走 InstanceArea closeInstance（confirm 在 useCloseSession 内）。
+ * tabstrip 右端 ⋯ 会话菜单（v1.6 批 v6.3 三区，与移动 ⋯ 菜单同构：导航区 实例信息 › →
+ * 动作区 置顶 ✓ keepOpen / 重命名… / 自动重试 ✓ keepOpen → 销毁区 关闭… 红。动作语义 =
+ * useInstanceRowActions 双端单源；icon 注入与实例信息项（useInstanceInfoActions modal 形态）
+ * 留桌面容器。关闭走 InstanceArea closeInstance（confirm 在 useCloseSession 内）。区界 =
+ * 区首 mt-2 分组间距（同移动端）。
  */
 function SessionTabStripActions({
   closeInstance,
@@ -2018,31 +2021,60 @@ function SessionTabStripActions({
   );
   const { renameHolder, build } = useInstanceRowActions(closeInstance);
   const a = build(panelRef, sessionType ?? "agent");
+  // 动作区数据源（同移动端 ⋯ 菜单）：置顶态（✓ 标注）+ 自动重试开关（即点即改；claude
+  // 会话门——provider 未加载前不渲染，避免闪现）。
+  const { pinned: pinnedSet } = usePinnedSessions();
+  const autoRetry = useAutoRetryToggle(panelRef.projectName, panelRef.sessionId);
+  const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
+  const isClaude = sessionType === "agent" && agentDetail.data?.session.provider === "claude";
   const items: ActionMenuItem[] = [
     {
       label: t("session.instanceInfo.title"),
       icon: <ShellIcon className="size-[17px]" name="info" />,
+      trailing: <span className="text-xs text-ink-3">›</span>,
       onSelect: openInfo,
     },
-    {
-      label: a.rename.label,
-      icon: <ShellIcon className="size-[17px]" name="edit" />,
-      onSelect: () => a.rename.run(meta?.label ?? panelRef.sessionId),
-    },
     // pin 保留原严格门（sessionType 原值判定，不随 ?? "agent" 兜底漂移——未知类型会话
-    // 旧行为不渲染 pin，build 兜底只服务 rename/close 的既有语义）。
+    // 旧行为不渲染 pin，build 兜底只服务 rename/close 的既有语义）。置顶行 = 恒「置顶」
+    // 文案 + ✓ 态标注（v1.6 workspace-more-menu 动作区原型语义）。
     ...(sessionType === "agent" && a.pin
       ? [
           {
-            label: a.pin.label,
+            label: t("workbench.pin"),
+            className: "mt-2",
             icon: <ShellIcon className="size-[17px]" name="pin" />,
+            trailing: pinnedSet.has(panelRef.sessionId) ? (
+              <span className="text-[13px] font-bold text-primary">✓</span>
+            ) : null,
+            keepOpen: true,
             onSelect: a.pin.run,
           },
         ]
       : []),
     {
+      label: a.rename.label,
+      icon: <ShellIcon className="size-[17px]" name="edit" />,
+      onSelect: () => a.rename.run(meta?.label ?? panelRef.sessionId),
+    },
+    ...(isClaude
+      ? [
+          {
+            label: t("session.autoRetry.label"),
+            icon: <ShellIcon className="size-[17px]" name="rotate" />,
+            trailing: autoRetry.enabled ? (
+              <span className="text-[13px] font-bold text-primary">✓</span>
+            ) : null,
+            disabled: autoRetry.toggle.isPending,
+            keepOpen: true,
+            onSelect: () => autoRetry.toggle.mutate(!autoRetry.enabled),
+          },
+        ]
+      : []),
+    {
       label: a.close.label,
+      className: "mt-2",
       icon: <ShellIcon className="size-[17px]" name="close" />,
+      variant: "destructive",
       onSelect: a.close.run,
     },
   ];

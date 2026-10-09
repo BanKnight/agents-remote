@@ -39,6 +39,15 @@ export type ActionMenuItem = {
   variant?: ActionMenuItemVariant;
   disabled?: boolean;
   /**
+   * 行尾标注（v1.6 ⋯ 菜单：toggle 行右端 ✓ 主色 / 导航行右端 ›），两端右对齐渲染。
+   */
+  trailing?: ReactNode;
+  /**
+   * 点击后保持菜单打开（v1.6 toggle 行「即点即改」：置顶/自动重试切换后 ✓ 实时更新，
+   * 菜单不闪关）。桌面 = Radix onSelect preventDefault；移动 = 跳过 setOpen(false)。
+   */
+  keepOpen?: boolean;
+  /**
    * 逐项显隐/微调类（两端形态同落）。composer 附件菜单「相机」用它做仅触屏显隐
    *（`hidden touch:inline-flex`，能力判定按 pointer media，frontend-notes §7）。
    */
@@ -134,11 +143,14 @@ export function ActionMenu({
                 // 必须同时清（否则 sheet 残留与 onSelect 打开的对话框层叠抢焦点）。
                 onContextMenuClose?.();
                 item.onSelect();
-                setOpen(false);
+                if (!item.keepOpen) setOpen(false);
               }}
             >
               {item.icon}
               <span>{item.label}</span>
+              {item.trailing ? (
+                <span className="ml-auto flex flex-none items-center">{item.trailing}</span>
+              ) : null}
             </button>
           ))}
           <button
@@ -169,10 +181,17 @@ export function ActionMenu({
         variant={item.variant}
         disabled={item.disabled}
         className={item.className}
-        onSelect={() => item.onSelect()}
+        onSelect={(e) => {
+          item.onSelect();
+          // Radix onSelect 默认关菜单；preventDefault 保持打开（toggle 行即点即改）。
+          if (item.keepOpen) e.preventDefault();
+        }}
       >
         {item.icon}
         {item.label}
+        {item.trailing ? (
+          <span className="ml-auto flex flex-none items-center">{item.trailing}</span>
+        ) : null}
       </DropdownMenuItem>
     ));
 

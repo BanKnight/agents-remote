@@ -77,6 +77,8 @@ const ICONS = [
   //    与桌面系统字体不同）→ Lucide 单轨化（frontend-notes §15）──
   "undo-2", // 文件编辑 .aux「撤销」（LucideIcon 直消费）
   "redo-2", // 文件编辑 .aux「重做」（与 undo-2 配对）
+  // ── v1.6 批 v6.3（workspace-more-menu 三区）：会话历史导航行图标 ──
+  "history", // ShellIcon clock.arrow.circlepath（⋯ 菜单「会话历史」，逆时针箭头时钟）
 ];
 
 const entries = [];

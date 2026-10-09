@@ -28,8 +28,11 @@ type MobileProjectHeaderProps = {
   /** 全局活跃实例候选（真机复验反馈③：▾ 菜单跨项目——本项目行由 instances 承载，这里只
    *  消费其它项目部分；数据源 = useGlobalInstanceCandidates 单一 /api/overview 管道）。 */
   foreignCandidates: GlobalInstanceCandidate[];
-  /** 当前聚焦实例 id（菜单行 ✓ 判定；skill/file 等非实例聚焦时菜单无 ✓ 行）。 */
+  /** 当前聚焦实例 id（菜单行高亮判定；skill/file 等非实例聚焦时菜单无高亮行）。 */
   focusId?: string;
+  /** 行1 标题行首类型标（v1.6 workspace.html .tticn：agent=sparkles / terminal=terminal；
+   *  空态/插件 tab 等非实例聚焦 = project folder——标题即项目名，与实例类型标区分）。 */
+  focusType?: "agent" | "terminal";
   onSelectInstance: (projectName: string, sessionId: string) => void;
   /** ▾ 菜单钉底「＋ 新建实例…」（→ 03j sheet）。 */
   onCreateInstance: () => void;
@@ -69,6 +72,7 @@ export function MobileProjectHeader({
   instances,
   foreignCandidates,
   focusId,
+  focusType,
   onSelectInstance,
   onCreateInstance,
   onOpenHistory,
@@ -96,6 +100,7 @@ export function MobileProjectHeader({
           ) : (
             <InstanceSwitchMenu
               focusId={focusId}
+              focusType={focusType}
               foreignCandidates={foreignCandidates}
               instances={instances}
               onCreateInstance={onCreateInstance}
@@ -141,21 +146,24 @@ type InstanceSwitchMenuProps = {
   instances: ProjectInstanceEntry[];
   foreignCandidates: GlobalInstanceCandidate[];
   focusId?: string;
+  /** 行1 标题行首类型标（同 MobileProjectHeader.focusType）。 */
+  focusType?: "agent" | "terminal";
   onSelectInstance: (projectName: string, sessionId: string) => void;
   onCreateInstance: () => void;
   onOpenHistory: () => void;
 };
 
 /**
- * 标题 ▾ 实例切换菜单（v1.5 workspace-instance-switch，族A 锚定浮卡点按型）：组头「切换实例」
- * + 活跃实例列表（类型图标 + 名 + 状态点文案，当前行 ✓；max-h 定高滚动，实例多不挤压）+
- * 钉底「＋ 新建实例…」「⟲ 恢复历史会话…」（与列表间分隔线，永不挤压）。活跃实例与历史互斥
- *（已关闭会话不在列表，走恢复）；空态（无实例）= 列表区空提示 + 仅新建（spec §4.1-1）。
- * 切换零销毁（保活层语义，铁律 2）。
+ * 标题 ▾ 实例切换菜单（v1.6 workspace-instance-switch，族A 锚定浮卡点按型）：组头「切换实例」
+ * + 跨项目分组活跃实例列表（**项目组头 .mh.g** + 类型图标 + 名 + 状态点文案；当前行 =
+ * 背景高亮 fill-selected，✓ 记号退役）+ 钉底「＋ 新建实例… · 当前项目」「⟲ 恢复历史会话…
+ * · 当前项目」（与列表间分隔线，永不挤压）。活跃实例与历史互斥（已关闭会话不在列表，走
+ * 恢复）；空态（无实例）= 列表区空提示 + 仅新建（spec §4.1-1）。切换零销毁（保活层语义，
+ * 铁律 2）。
  *
- * 真机复验反馈③：列表跨项目——本项目行在前（不标注），其它项目活跃实例按项目名分组排后，
- * 行内标注项目名（原型 workspace-instance-switch 是单项目形态，跨项目为反馈驱动的 diverge
- * 扩展）。✓ 只标本项目当前行；跨项目行走 onSelectInstance(projectName, sessionId) 导航。
+ * 分组（v1.6 图例②）：当前项目组置顶（组头 = 项目名），其余项目按最近活动（组内最新
+ * updatedAt）排序；组内行间无线，组间分隔线落在第 2+ 组组头上方。跨项目行走
+ * onSelectInstance(projectName, sessionId) 导航。
  */
 function InstanceSwitchMenu({
   projectName,
@@ -164,12 +172,13 @@ function InstanceSwitchMenu({
   instances,
   foreignCandidates,
   focusId,
+  focusType,
   onSelectInstance,
   onCreateInstance,
   onOpenHistory,
 }: InstanceSwitchMenuProps) {
   const { t } = useT();
-  // 其它项目活跃实例：按项目名分组（组内保持 candidates 序），行内标注项目名。
+  // 跨项目分组（组内保持 candidates 序），组间按最近活动（组内最新 updatedAt）降序。
   const foreignGroups = useMemo(() => {
     const byProject = new Map<string, GlobalInstanceCandidate[]>();
     for (const candidate of foreignCandidates) {
@@ -178,16 +187,52 @@ function InstanceSwitchMenu({
       if (list) list.push(candidate);
       else byProject.set(candidate.ref.projectName, [candidate]);
     }
-    return [...byProject.entries()].sort(([a], [b]) => a.localeCompare(b));
+    const latestActivity = (list: GlobalInstanceCandidate[]) =>
+      Math.max(...list.map((c) => Date.parse(c.updatedAt ?? c.createdAt ?? "")));
+    return [...byProject.entries()].sort(([, a], [, b]) => latestActivity(b) - latestActivity(a));
   }, [foreignCandidates, projectName]);
   const empty = instances.length === 0 && foreignGroups.length === 0;
-  // 菜单打开时把当前行（✓）滚入视野：实例多溢出定高时队尾当前行会视野外——autoFocus 常落
-  // 队尾，不滚则用户看不到自己所在实例。Content 是 portal 子树且仅开态挂载（§14）：mount 跑
-  // 的 effect 拿到 null、open 变化不重跑 [] effect——用 state ref callback，挂载即触发重跑。
+  // 菜单打开时把当前行（背景高亮）滚入视野：实例多溢出定高时队尾当前行会视野外——autoFocus
+  // 常落队尾，不滚则用户看不到自己所在实例。Content 是 portal 子树且仅开态挂载（§14）：
+  // mount 跑的 effect 拿到 null、open 变化不重跑 [] effect——用 state ref callback，挂载即
+  // 触发重跑。
   const [listNode, setListNode] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     listNode?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
   }, [listNode]);
+  // 列表组投影（当前项目组置顶 + foreign 组），组头样式共享（第 2+ 组组头上方分隔线，
+  // 原型 .irow + .mh.g）。
+  const groups = useMemo(
+    () => [
+      ...(instances.length > 0
+        ? [
+            {
+              name: projectName,
+              rows: instances.map((entry) => ({
+                key: entry.session.id,
+                current: entry.session.id === focusId,
+                name: entry.session.displayName,
+                status: entry.session.status,
+                type: entry.type,
+                onSelect: () => onSelectInstance(projectName, entry.session.id),
+              })),
+            },
+          ]
+        : []),
+      ...foreignGroups.map(([foreignProject, list]) => ({
+        name: foreignProject,
+        rows: list.map((candidate) => ({
+          key: `${foreignProject}:${candidate.ref.sessionId}`,
+          current: false,
+          name: candidate.displayName,
+          status: candidate.status,
+          type: candidate.type,
+          onSelect: () => onSelectInstance(foreignProject, candidate.ref.sessionId),
+        })),
+      })),
+    ],
+    [focusId, foreignGroups, instances, onSelectInstance, projectName],
+  );
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -196,6 +241,14 @@ function InstanceSwitchMenu({
           className="group flex h-full w-full cursor-pointer items-center justify-center gap-1.5"
           type="button"
         >
+          {/* 行1 类型标（v1.6 workspace.html h1 .tticn：行首 sparkles = Agent 会话类型标，
+            区别于项目 folder；terminal = terminal；空态/插件 tab = folder） */}
+          <ShellIcon
+            className="tticn"
+            name={
+              focusType === "agent" ? "sparkles" : focusType === "terminal" ? "terminal" : "project"
+            }
+          />
           <span className="block truncate">{title}</span>
           {/* runct ●n：项目运行中实例数（9px 绿，原型 .runct） */}
           {runningCount ? <span className="runct">●{runningCount}</span> : null}
@@ -208,7 +261,7 @@ function InstanceSwitchMenu({
         </button>
       </DropdownMenuTrigger>
       {/* 分区容器菜单（标题 / 滚动列表 / 钉底动作三分区），非行式菜单——不挂 .menu-sep
-        （行式菜单显式语义，v2-primitives）；行间线由 InstanceSwitchRow 自带 border-t。 */}
+        （行式菜单显式语义，v2-primitives）；组内行间无线（v1.6），组间线在组头上方。 */}
       <DropdownMenuContent align="center" className="w-[250px] p-0">
         <div className="px-3.5 pb-1.5 pt-2.5 text-[10.5px] font-bold tracking-[0.5px] text-ink-2">
           {t("workbench.switchInstance")}
@@ -217,35 +270,30 @@ function InstanceSwitchMenu({
           {empty ? (
             <div className="px-3.5 py-3 text-[13px] text-ink-3">{projectName}</div>
           ) : (
-            <>
-              {instances.map((entry) => (
-                <InstanceSwitchRow
-                  current={entry.session.id === focusId}
-                  key={entry.session.id}
-                  name={entry.session.displayName}
-                  onSelect={() => onSelectInstance(projectName, entry.session.id)}
-                  status={entry.session.status}
-                  type={entry.type}
-                />
-              ))}
-              {foreignGroups.map(([foreignProject, list]) =>
-                list.map((candidate) => (
+            groups.map((group, groupIndex) => (
+              <div key={group.name}>
+                <div
+                  className={`px-3.5 pt-2 pb-[3px] text-[10px] font-bold tracking-[0.5px] text-ink-3${groupIndex > 0 ? " border-t border-sep" : ""}`}
+                >
+                  {group.name}
+                </div>
+                {group.rows.map((row) => (
                   <InstanceSwitchRow
-                    badge={foreignProject}
-                    current={false}
-                    key={`${foreignProject}:${candidate.ref.sessionId}`}
-                    name={candidate.displayName}
-                    onSelect={() => onSelectInstance(foreignProject, candidate.ref.sessionId)}
-                    status={candidate.status}
-                    type={candidate.type}
+                    current={row.current}
+                    key={row.key}
+                    name={row.name}
+                    onSelect={row.onSelect}
+                    status={row.status}
+                    type={row.type}
                   />
-                )),
-              )}
-            </>
+                ))}
+              </div>
+            ))
           )}
         </div>
         {/* 钉底两行动作（主色 600，与列表间分隔线，永不挤压；空态仅新建。⟲ 恢复历史是本项目
-          动作——本项目无活跃实例时不渲染，保持「空态菜单仅新建」spec §4.1-1 语义） */}
+          动作——本项目无活跃实例时不渲染，保持「空态菜单仅新建」spec §4.1-1 语义。后缀
+          「· 当前项目」= v1.6 原型 iact 逐字，标动作作用域） */}
         <div className="border-t border-sep-row pb-1">
           <DropdownMenuItem
             className="h-[42px] justify-start gap-2.5 rounded-none px-3.5 text-[13.5px] font-semibold text-primary focus:bg-on-surface/5"
@@ -273,31 +321,23 @@ type InstanceSwitchRowProps = {
   type: "agent" | "terminal";
   name: string;
   status: GlobalInstanceCandidate["status"];
-  /** 非本项目行的行内项目名标注（反馈③跨项目；undefined = 本项目行不标注）。 */
-  badge?: string;
   current: boolean;
   onSelect: () => void;
 };
 
 /**
- * ▾ 菜单实例行（本项目行与跨项目行同形制，spec §6.2 类型图标 registry 单源）：类型图标
- * （agent = sparkles 主色 / terminal = square-terminal 绿；ShellIcon SF 名经菜单 17px 标准
- * 档统一渲染——批 B 由 LucideIcon 15px 换轨，视觉差 15→17px 交真机确认）+ 名 +
- * [项目名标注] + 状态列 + 当前行 ✓（主色，原型 .ck）。
+ * ▾ 菜单实例行（v1.6 .irow：项目分组已上收组头，行内不再标注项目名——badge 退役）：类型
+ * 图标（agent = sparkles 主色 / terminal = square-terminal 绿；ShellIcon SF 名经菜单 17px
+ * 标准档统一渲染——批 B 由 LucideIcon 15px 换轨，视觉差 15→17px 交真机确认）+ 名 + 状态列。
+ * 当前行 = 背景高亮（fill-selected，与 Sidebar selrow 同款；✓ 记号退役，v1.6 图例②），
+ * 名字 600 不变。
  */
-function InstanceSwitchRow({
-  type,
-  name,
-  status,
-  badge,
-  current,
-  onSelect,
-}: InstanceSwitchRowProps) {
+function InstanceSwitchRow({ type, name, status, current, onSelect }: InstanceSwitchRowProps) {
   const { t } = useT();
   return (
     <DropdownMenuItem
       aria-current={current ? "true" : undefined}
-      className="justify-start gap-2.5 rounded-none border-t border-sep px-3.5 text-[13.5px] font-normal focus:bg-on-surface/5 first:border-t-0"
+      className={`justify-start gap-2.5 rounded-none px-3.5 text-[13.5px] font-normal focus:bg-on-surface/5${current ? " bg-fill-selected" : ""}`}
       onSelect={onSelect}
     >
       <ShellIcon
@@ -305,7 +345,6 @@ function InstanceSwitchRow({
         name={type === "agent" ? "sparkles" : "terminal"}
       />
       <span className={`min-w-0 truncate ${current ? "font-semibold" : ""}`}>{name}</span>
-      {badge ? <span className="shrink-0 text-[11px] text-ink-2">{badge}</span> : null}
       {/* 状态列（原型 .st.run = success-text 600 / .st.idle = ink-2） */}
       <span
         className={`ml-auto flex shrink-0 items-center gap-1 text-[11px] ${status === "running" ? "font-semibold text-success-text" : "text-ink-2"}`}
@@ -313,11 +352,6 @@ function InstanceSwitchRow({
         <span className={statusToV2DotClass(status)} />
         {t(sessionStatusLabel(status))}
       </span>
-      {current ? (
-        <span aria-hidden className="shrink-0 text-[12px] font-bold text-primary">
-          ✓
-        </span>
-      ) : null}
     </DropdownMenuItem>
   );
 }

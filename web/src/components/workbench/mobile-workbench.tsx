@@ -70,6 +70,7 @@ import {
   type CreateSessionApi,
   AutoRetryHeaderButton,
   PanelRouter,
+  useAutoRetryToggle,
   useCloseSession,
   useInstanceInfoActions,
   useProjectInstances,
@@ -80,6 +81,7 @@ import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workben
 import { MobileProjectHeader } from "./mobile-project-header";
 import { InspectionPanel } from "./inspection-panel";
 import { useInstanceRowActions } from "./instance-actions";
+import { usePinnedSessions } from "../../hooks/pinned-sessions";
 import { PinnedSessionsBar } from "./pinned-sessions-bar";
 import { usePanelTabRegistry } from "./use-panel-tab-registry";
 import { MobilePrimaryNav } from "../shell/mobile-primary-nav";
@@ -1191,7 +1193,6 @@ function MobileProjectWorkbench({
   // footer：重命名/置顶/关闭）——02c pill 长按菜单随 pills 退役，入口唯一。
   const rowActions = useInstanceRowActions(closeInstance);
   // .acts footer 按钮样式（03k 动作行规格；原 MobileFocusActions actClass 随组件删除上移）。
-  const actClass = "cursor-pointer text-subhead font-semibold";
   // 聚焦实例 detail（行1 标题 + 实例信息装配源）：detail query 与 PanelRouter 同 key，React
   // Query dedupe 零额外网络。hooks 恒调用，enabled 随 sessionType gate（非聚焦 session 时
   // 零网络）。
@@ -1212,35 +1213,16 @@ function MobileProjectWorkbench({
     (focusAgentDetail.data?.session.displayName ??
       focusTerminalDetail.data?.session.displayName ??
       "");
-  // 实例信息 .acts footer（03k 动作行：重命名/置顶/关闭，button 行形态留给 info-sheet 装配）。
+  // 实例行动作（v1.6 变更①：动作上收 ⋯ 菜单动作区——原 03k info sheet .acts footer 退役，
+  // 实例信息 = 纯信息面板）。a = 置顶/重命名/关闭单源动作（useInstanceRowActions 双端单源）。
   const a = rowActions.build(focusPanelRef, focusSessionType ?? "terminal");
-  const focusActs =
-    effectiveFocusId && focusSessionType ? (
-      <div className="flex items-center justify-between border-t border-sep-row pb-1 pt-3.5">
-        <button
-          className={`${actClass} text-primary`}
-          onClick={() => a.rename.run(focusDisplayName)}
-          type="button"
-        >
-          {a.rename.label}
-        </button>
-        {a.pin ? (
-          <button className={`${actClass} text-pin`} onClick={a.pin.run} type="button">
-            {a.pin.label}
-          </button>
-        ) : null}
-        <button className={`${actClass} text-error`} onClick={a.close.run} type="button">
-          {a.close.label}
-        </button>
-      </div>
-    ) : null;
-  const focusInfo = useInstanceInfoActions(
-    focusPanelRef,
-    focusSessionType,
-    scope.key,
-    "sheet",
-    focusActs,
-  );
+  const focusInfo = useInstanceInfoActions(focusPanelRef, focusSessionType, scope.key, "sheet");
+  // ⋯ 菜单动作区数据源（v1.6 workspace-more-menu）：置顶态（✓ 标注）+ 自动重试开关
+  //（即点即改；空 sessionId gate 在 hook 内，非会话聚焦零请求）。
+  const { pinned: pinnedSet } = usePinnedSessions();
+  const focusAutoRetry = useAutoRetryToggle(scope.key, effectiveFocusId ?? "");
+  const focusIsClaude =
+    focusSessionType === "agent" && focusAgentDetail.data?.session.provider === "claude";
   // 行1 标题与 runct 徽标（spec §4.1-1）：标题 = 当前聚焦对象名（skill tab 名 / 实例名；
   // detail 未热时 instanceNameMemo sidecar 兜底防 id 闪现——tab 首帧同款语义），无聚焦对象
   // = 项目名（空态标题即项目名，▾ 菜单内仅新建）。runct ●n = 项目运行中实例数。
@@ -1457,6 +1439,7 @@ function MobileProjectWorkbench({
       >
         <MobileProjectHeader
           focusId={focusRef?.kind === "session" ? effectiveFocusId : undefined}
+          focusType={focusRef?.kind === "session" ? focusSessionType : undefined}
           foreignCandidates={globalCandidates}
           instances={instances}
           onCreateInstance={() => setCreateSheetOpen(true)}
@@ -1465,11 +1448,15 @@ function MobileProjectWorkbench({
               align="end"
               cancelLabel={t("cancel")}
               items={[
-                // v1.5 批1（workspace-more-menu）：⋯ = 会话历史 + 实例信息（原型顺序：历史在前）
-                // ——ℹ 钮入口合并进菜单（MobileFocusActions 退役）；关实例收进实例信息 .acts footer。
+                // v1.6 批 v6.3（workspace-more-menu 三区）：导航区（历史/信息 ›）→ 动作区
+                //（置顶 ✓ keepOpen / 重命名… / 自动重试 ✓ keepOpen）→ 销毁区（关闭… 红）。
+                // 动作上收后 03k info sheet .acts footer 退役（实例信息 = 纯信息面板）；
+                // 区界用区首 mt-2 分组间距（同取消项先例，.menu-sep 全行线制不另立分区线）。
+                // ✓ = 原型 .ck（13px 700 primary）、› = .ar（12px ink-3）。
                 {
                   label: t("workbench.menuHistory"),
-                  icon: <ShellIcon name="restore" />,
+                  icon: <ShellIcon name="clock.arrow.circlepath" />,
+                  trailing: <span className="text-xs text-ink-3">›</span>,
                   onSelect: () => setHistorySheetOpen(true),
                 },
                 ...(effectiveFocusId && focusRef?.kind === "session"
@@ -1477,7 +1464,48 @@ function MobileProjectWorkbench({
                       {
                         label: t("session.instanceInfo.title"),
                         icon: <ShellIcon name="info" />,
+                        trailing: <span className="text-xs text-ink-3">›</span>,
                         onSelect: focusInfo.openInfo,
+                      },
+                      ...(a.pin
+                        ? [
+                            {
+                              label: t("workbench.pin"),
+                              className: "mt-2",
+                              icon: <ShellIcon name="pin" />,
+                              trailing: pinnedSet.has(effectiveFocusId) ? (
+                                <span className="text-[13px] font-bold text-primary">✓</span>
+                              ) : null,
+                              keepOpen: true,
+                              onSelect: () => a.pin?.run(),
+                            },
+                          ]
+                        : []),
+                      {
+                        label: t("session.rename"),
+                        icon: <ShellIcon name="edit" />,
+                        onSelect: () => a.rename.run(focusDisplayName),
+                      },
+                      ...(focusIsClaude
+                        ? [
+                            {
+                              label: t("session.autoRetry.label"),
+                              icon: <ShellIcon name="rotate" />,
+                              trailing: focusAutoRetry.enabled ? (
+                                <span className="text-[13px] font-bold text-primary">✓</span>
+                              ) : null,
+                              disabled: focusAutoRetry.toggle.isPending,
+                              keepOpen: true,
+                              onSelect: () => focusAutoRetry.toggle.mutate(!focusAutoRetry.enabled),
+                            },
+                          ]
+                        : []),
+                      {
+                        label: t("workbench.pillCloseSession"),
+                        className: "mt-2",
+                        icon: <ShellIcon name="close" />,
+                        variant: "destructive" as const,
+                        onSelect: () => a.close.run(),
                       },
                     ]
                   : []),

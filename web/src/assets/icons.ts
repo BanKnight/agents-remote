@@ -58,7 +58,8 @@ export type LucideIconName =
   | "pause"
   | "play"
   | "undo-2"
-  | "redo-2";
+  | "redo-2"
+  | "history";
 
 /** 24 网格 stroke-2 圆头描边（Lucide 规格）；body 为 svg inner 内容。 */
 export const LUCIDE_ICONS = {
@@ -269,6 +270,10 @@ export const LUCIDE_ICONS = {
   "redo-2": {
     viewBox: "0 0 24 24",
     body: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/>',
+  },
+  history: {
+    viewBox: "0 0 24 24",
+    body: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
   },
 } as const satisfies Record<LucideIconName, { viewBox: string; body: string }>;
 
