@@ -19,8 +19,8 @@
 
 - ✅（前段）设置二级 UI 换代 commit `602daef` 已 push；待用户真机验证清单 5 条（redesign-v2.md）。
 - ✅ 问题②修复 + 问题①取证通道 commit `663ae59` 已 push（全门禁绿：format/lint/typecheck/单测 774/CSS 硬闸/落盘 content-type 双 text）。
-- ⬜ **等用户真机（取证 v2 已部署 435d224）**：首组数据 sh=ch=712 + ts=0/tg=- → 所选容器不溢出（选错目标）且转录在触摸前的静置态。v2 已改全列容器 + 全局手势计数——用户操作：杀 PWA 重开 → 全局文件 → 进 22router → **等列表渲染完** → 上滑 → **手势做完/进行中读数**发回（c0..c2 行 + doc 行 + ts/tm/pv/dy 行 + ih/mh/tg 行）。
-- ⬜（取证数据回传后）按字段语义切分候选根因 → 定位 → 修复问题① → 删 files-scroll-debug.ts + main.tsx 挂载点。
+- ⬜ **等用户真机（取证 v3 已部署 15a5044）**：两组数据钉死两个矛盾——①c0（main 内唯一 .overflow-y-auto，class flex.flex-1 = FilesPanel 滚动容器）sh=ch=712 不溢出，但用户看得到下方内容 → 溢出内容在 main 内已知容器之外（可能在 portal/sheet 层）；②ts/tm 两轮恒 0 + tg=- 与「点击导航过页面」物理矛盾 → touch 通道存疑。v3 = 全文档容器扫描 k0..k3 + pointer 对照通道 pc/pm + 计数 localStorage 持久化（键 files-scroll-debug-v3，杀 PWA 不丢）。用户操作：杀 PWA 重开 → 全局文件 → 进 22router → 上滑 → 随时读浮层发回。
+- ⬜（取证数据回传后）按字段语义切分候选根因 → 定位 → 修复问题① → 删 files-scroll-debug.ts + main.tsx 挂载点 + 清 localStorage 键说明。
 
 ## 易丢的关键上下文
 
