@@ -267,21 +267,28 @@ ok(
 console.log("Part 2: 设置 detail（通用语言三态真实切换 + back 文字）");
 await group1.locator(".setrow").nth(1).click();
 await page.waitForTimeout(500);
-const segs = page.locator('[role="group"]');
-ok((await segs.count()) >= 2, "general detail = 外观 + 语言两个 SegmentedControl");
+// v2 二级换代：detail 段 = sect+sgroup 分组（一级同构）+ `.segc` 三态分段（role=tablist）。
+const segs = page.locator(".segc");
+ok((await segs.count()) >= 2, "general detail = 外观 + 语言两个 segc 分段");
 ok(
   (await page.locator("header .back").textContent()) === "设置",
   ".back 返回文字 = 设置（detail 态）",
 );
 ok((await page.getByText("语言").count()) >= 1, "语言段标题可见");
 // 语言三态：切 English → UI 文案变英文（真实切换，非仅状态）。
-const langSeg = page.locator('[aria-label="语言"][role="group"]');
+const langSeg = page.locator('[aria-label="语言"][role="tablist"]');
 ok((await langSeg.locator("button").count()) === 3, "语言分段 = 3 态（跟随系统/中文/English）");
+ok(
+  /var\(--segmented-thumb\)/.test(
+    (await langSeg.locator("button.on").evaluate((el) => getComputedStyle(el).background)) ?? "",
+  ) || (await langSeg.locator("button.on").count()) === 1,
+  "语言分段活动项 .on 在场（segmented-thumb 活动块）",
+);
 await langSeg.locator("button", { hasText: "English" }).click();
 await page.waitForTimeout(400);
 ok((await page.getByText("Language").count()) >= 1, "切 English 后文案变英文（真实语言切换）");
 // 切回中文（localStorage 已写 en；显式切回）。
-await page.locator('[aria-label="Language"][role="group"] button', { hasText: "中文" }).click();
+await page.locator('[aria-label="Language"][role="tablist"] button', { hasText: "中文" }).click();
 await page.waitForTimeout(400);
 ok((await page.getByText("语言").count()) >= 1, "切回中文生效");
 // 回 root → 点 Claude 行进 claude detail。
@@ -297,36 +304,34 @@ await page.locator("header .back").click();
 await page.waitForTimeout(400);
 
 // ── Part 3: 退出登录（确认 Alert + API 调用） ───────────────────────────────
+// 本探针 = 移动视口（390×844）：useConfirm 移动端走 MobileSheet（iOS action sheet——
+// §6.12n 分流后 Dialog 的 data-slot 结构仅桌面存在），断言锚 .msheet 结构。
 console.log("Part 3: 退出登录（useConfirm Alert → POST /api/auth/logout）");
 await page.locator(".logout").click();
-await page.waitForSelector('[data-slot="dialog-content"]', { timeout: 5000 });
+await page.waitForSelector(".msheet", { timeout: 5000 });
 ok(
-  (await page.locator('[data-slot="dialog-content"] h2').textContent())?.includes("退出登录") ===
-    true,
+  (await page.locator(".msheet .shd h2").textContent())?.includes("退出登录") === true,
   "退出确认 Alert 标题",
 );
-const confirmBtn = page
-  .locator('[data-slot="dialog-content"] button', { hasText: "退出登录" })
-  .first();
+const confirmBtn = page.locator(".msheet button", { hasText: "退出登录" }).first();
 ok(
   (await confirmBtn.getAttribute("class"))?.includes("text-error") === true,
   "Alert 确认钮红字（destructive）",
 );
 ok(
-  (await page.locator('[data-slot="dialog-content"]').textContent())?.includes("服务端数据") ===
-    true,
+  (await page.locator(".msheet").textContent())?.includes("服务端数据") === true,
   "Alert 文案说明「服务端数据不受影响」",
 );
 // 取消：不登出。
-await page.locator('[data-slot="dialog-content"] button', { hasText: "取消" }).click();
+await page.locator(".msheet button", { hasText: "取消" }).click();
 await page.waitForTimeout(700);
 ok(logoutPosts === 0, "取消后未调 logout API");
 ok(page.url().endsWith("/settings"), "取消后仍在设置页");
 // 失败路径（security review P2）：登出 API 500 → 行内错误提示 + 不清 auth_ok + 留在应用。
 logoutShouldFail = true;
 await page.locator(".logout").click();
-await page.waitForSelector('[data-slot="dialog-content"]', { timeout: 5000 });
-await page.locator('[data-slot="dialog-content"] button', { hasText: "退出登录" }).first().click();
+await page.waitForSelector(".msheet", { timeout: 5000 });
+await page.locator(".msheet button", { hasText: "退出登录" }).first().click();
 await page.waitForTimeout(1200);
 ok((await page.getByText("退出登录失败").count()) === 1, "登出失败: 行内错误提示可见");
 ok(
@@ -338,8 +343,8 @@ logoutShouldFail = false;
 
 // 确认：调 API + 回登录帧。
 await page.locator(".logout").click();
-await page.waitForSelector('[data-slot="dialog-content"]', { timeout: 5000 });
-await page.locator('[data-slot="dialog-content"] button', { hasText: "退出登录" }).first().click();
+await page.waitForSelector(".msheet", { timeout: 5000 });
+await page.locator(".msheet button", { hasText: "退出登录" }).first().click();
 await page.waitForTimeout(1200);
 ok(logoutPosts === 2, `POST /api/auth/logout 失败+成功共 2 次（实际 ${logoutPosts}）`);
 ok((await page.locator('input[type="password"]').count()) === 1, "登出后回登录帧（密码框可见）");

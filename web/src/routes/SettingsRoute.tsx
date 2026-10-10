@@ -57,9 +57,9 @@ export function SettingsRoute() {
           （design review P1-1 硬数据：两者同色）。detail 态 Card 同样落在 base 上。
           root 态滚动区 pb 消费实测胶囊高度；detail 态 var=0 无额外 pb。 */}
       <div className="flex-1 overflow-y-auto bg-surface-base max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
-        {/* root 态内容自带 16px 边距（.sect/.sgroup margin，对齐 07 原型）；detail 态的
-            Card 无自带外边距，补 px-4 防贴边。 */}
-        <div className={`mx-auto w-full max-w-2xl pb-4 ${isRoot ? "" : "px-4 pt-3"}`}>
+        {/* root/detail 态内容都自带 16px 边距（.sect/.sgroup margin，对齐 07 原型；
+            v2 二级换代：detail 段同用分组语言，不再补 px）。 */}
+        <div className={`mx-auto w-full max-w-2xl pb-4 ${isRoot ? "" : "pt-3"}`}>
           <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
         </div>
       </div>

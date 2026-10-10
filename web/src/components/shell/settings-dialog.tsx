@@ -28,24 +28,14 @@ import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
 import { clearAuthOk } from "../../lib/auth-storage";
 import { isStandaloneDisplay } from "../../lib/display-mode";
+import { useIsMobile } from "@/lib/use-is-mobile";
 import { useTheme } from "../../theme";
-import {
-  ActionButton,
-  ListGroup,
-  ListRow,
-  SegmentedControl,
-  ShellInput,
-  ShellSectionLabel,
-  listGroupClasses,
-  shellSurfaceClasses,
-  toggleSwitchKnobClasses,
-  toggleSwitchTrackClasses,
-} from "./shell-primitives";
+import { toggleSwitchKnobClasses, toggleSwitchTrackClasses } from "./shell-primitives";
 import { ShellIcon } from "./icons";
 import { useConfirm } from "./confirm-dialog";
+import { MobileSheet } from "./mobile-sheet";
 import { ActionMenu } from "../ui/action-menu";
 import { OptionMenu } from "../ui/option-menu";
-import { Card, CardContent } from "../ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../ui/dialog";
 import {
   createClaudePreset,
@@ -66,6 +56,23 @@ import {
 } from "../../api/client";
 
 const TIERS: readonly ClaudeModelTier[] = ["default", "opus", "sonnet", "haiku"];
+
+// ── v2 表单原语（设置二级换代：原型缺位部分按 Apple Settings 语言 + token 自行设计）──
+// 输入框：elevated2 内嵌面 + sep-strong 描边 + r10（对齐 retry .fld 形态，instance-area）。
+const settingsInputClasses =
+  "w-full rounded-[10px] border border-sep-strong bg-elevated2 px-3 py-2 text-sm text-ink-1 placeholder:text-ink-2 transition focus:border-primary focus:outline-none";
+// 主色实心钮（保存）：bg-primary + on-accent 文字 + 按压 scale（移动动效批统一契约）。
+const settingsPrimaryButtonClasses =
+  "cursor-pointer rounded-[10px] bg-primary px-4 py-1.5 text-[13px] font-semibold text-on-accent transition-[scale,background-color,opacity] active:scale-[0.98] disabled:cursor-default disabled:opacity-40";
+// 次级面钮（测试连接）：elevated2 面实感，弱于主钮一档。
+const settingsGhostButtonClasses =
+  "cursor-pointer rounded-[10px] border border-sep-strong bg-elevated2 px-3 py-1.5 text-[13px] text-ink-1 transition-[scale,background-color] active:scale-[0.98] disabled:cursor-default disabled:opacity-40";
+// 文字钮（取消）：无面 muted 文字 + hover 淡底。
+const settingsTextButtonClasses =
+  "cursor-pointer rounded-[10px] px-3 py-1.5 text-[13px] text-ink-2 transition-[scale,background-color] hover:bg-ink-1/5 active:scale-[0.98]";
+
+/** 行内副文本（12px ink-2）——值行/开关行/输入行的 hint 与 sgroup 脚注共用档。 */
+const settingsHintClasses = "mt-0.5 block text-xs leading-5 text-ink-2";
 
 // 新建预设的模型映射默认值：全 tier 别名透传（与 v1 默认 runtime.modelMapping 一致），
 // 用户可在 PresetDialog 内逐 tier 改成具体 ID。定义在此避免 magic literal。
@@ -147,7 +154,7 @@ export function SettingsContent({
   // 失败才替换为错误文案。
   if (!loading && !settings) {
     return (
-      <p className="text-sm text-error">
+      <p className="text-[13px] text-error">
         {settingsQuery.error?.message ?? t("api.settingsFetchFailed")}
       </p>
     );
@@ -194,9 +201,8 @@ export function SettingsContent({
 }
 
 /**
- * 第一层总入口（决策 48）：grouped Card + 2 个 ListRow 胶囊，整行点击进 detail。
- * 复用 DESIGN.md `list` grouped 契约（与预设列表同款）。title-only + 右 chevron
- * （Apple 设置一级项范式）。
+ * 第一层总入口（决策 48）：sect + sgroup 分组（v2 设置分组语言单源），整行点击进 detail。
+ * title-only + 右 chevron（Apple 设置一级项范式）。
  */
 function SettingsRootView({
   settings,
@@ -359,43 +365,68 @@ function SettingsRootView({
  * 通用段 detail（决策 48 + 07 原型「外观 / 语言」两行）：外观三态（跟随系统/明亮/暗黑，
  * `themeAtom` 持久化）+ 语言三态（跟随系统/中文/English，偏好写 i18n localStorage）。
  * 两者同构：都是「全局默认、覆盖系统偏好」的三态选择。
+ * v2 二级换代：sect + sgroup 分组（一级同构）+ `.segc` 三态分段（fill-segmented 底 +
+ * segmented-thumb 活动块），hint 作 kfoot 脚注（原型未覆盖二级，按 Apple 语言补位）。
  */
 function GeneralSection() {
   const { t, pref: langPref, setLang } = useT();
   const { theme, setTheme } = useTheme();
   return (
-    <Card className="border border-neutral-line bg-surface ring-0">
-      <CardContent className="flex flex-col gap-3 p-6">
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-semibold text-on-surface-soft">{t("theme.label")}</p>
-          <p className="text-xs leading-5 text-on-surface-muted">{t("theme.hint")}</p>
+    <div className="flex flex-col">
+      <div className="sect">{t("theme.label")}</div>
+      <div className="sgroup">
+        <div className="py-3">
+          <div aria-label={t("theme.label")} className="segc w-full" role="tablist">
+            {(
+              [
+                { value: "system", label: t("theme.system") },
+                { value: "light", label: t("theme.light") },
+                { value: "dark", label: t("theme.dark") },
+              ] as const
+            ).map((opt) => (
+              <button
+                aria-selected={theme === opt.value}
+                className={theme === opt.value ? "on" : ""}
+                key={opt.value}
+                onClick={() => setTheme(opt.value)}
+                role="tab"
+                type="button"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <SegmentedControl
-          ariaLabel={t("theme.label")}
-          onChange={(value) => setTheme(value)}
-          options={[
-            { value: "system", label: t("theme.system") },
-            { value: "light", label: t("theme.light") },
-            { value: "dark", label: t("theme.dark") },
-          ]}
-          value={theme}
-        />
-        <div className="mt-2 flex flex-col gap-1">
-          <p className="text-sm font-semibold text-on-surface-soft">{t("settings.lang")}</p>
-          <p className="text-xs leading-5 text-on-surface-muted">{t("settings.langHint")}</p>
+      </div>
+      <p className="kfoot mx-4">{t("theme.hint")}</p>
+
+      <div className="sect">{t("settings.lang")}</div>
+      <div className="sgroup">
+        <div className="py-3">
+          <div aria-label={t("settings.lang")} className="segc w-full" role="tablist">
+            {(
+              [
+                { value: "system", label: t("theme.system") },
+                { value: "zh", label: t("settings.langZh") },
+                { value: "en", label: t("settings.langEn") },
+              ] as const
+            ).map((opt) => (
+              <button
+                aria-selected={langPref === opt.value}
+                className={langPref === opt.value ? "on" : ""}
+                key={opt.value}
+                onClick={() => setLang(opt.value)}
+                role="tab"
+                type="button"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <SegmentedControl
-          ariaLabel={t("settings.lang")}
-          onChange={(value) => setLang(value)}
-          options={[
-            { value: "system", label: t("theme.system") },
-            { value: "zh", label: t("settings.langZh") },
-            { value: "en", label: t("settings.langEn") },
-          ]}
-          value={langPref}
-        />
-      </CardContent>
-    </Card>
+      </div>
+      <p className="kfoot mx-4">{t("settings.langHint")}</p>
+    </div>
   );
 }
 
@@ -439,7 +470,7 @@ export function SettingsMainPage() {
             type="button"
             aria-label={t("settings.back")}
             onClick={() => setActiveSection("root")}
-            className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+            className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-2 transition hover:bg-ink-1/5 hover:text-ink-1 active:bg-ink-1/10"
           >
             <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
@@ -456,10 +487,10 @@ export function SettingsMainPage() {
           {isRoot ? t("settings.title") : sectionTitle(activeSection, t)}
         </h1>
       </header>
-      {/* root 态内容自带 16px 边距（.sect/.sgroup margin，对齐 07/07m 原型）→ 容器不再叠
-          padding；detail 态 Card 无自带外边距，走 px-5。 */}
+      {/* root/detail 态内容都自带 16px 边距（.sect/.sgroup margin，对齐 07/07m 原型）→
+          容器不再叠 padding（v2 二级换代：detail 段同用分组语言）。 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={`mx-auto w-full max-w-[560px] pb-6 ${isRoot ? "pt-2.5" : "px-5 pt-3"}`}>
+        <div className={`mx-auto w-full max-w-[560px] pb-6 ${isRoot ? "pt-2.5" : "pt-3"}`}>
           <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
         </div>
       </div>
@@ -523,76 +554,116 @@ function ClaudeRuntimeContent({
     : t("settings.activePresetNone");
 
   return (
-    <div className="flex flex-col gap-3">
-      <Card className="border border-neutral-line bg-surface ring-0">
-        <CardContent className="flex flex-col gap-4 p-3">
-          <Field label={t("settings.activePreset")} hint={t("settings.activePresetHint")}>
-            <OptionMenu
-              align="start"
-              cancelLabel={t("cancel")}
-              trigger={<SelectorTrigger label={selectedLabel} disabled={loading} />}
-              items={[
-                {
-                  label: t("settings.activePresetNone"),
-                  isActive: activePresetId === "",
-                  onSelect: () => setActivePresetId(""),
-                },
-                ...claude.presets.map((p) => ({
-                  label: p.label,
-                  isActive: p.id === activePresetId,
-                  onSelect: () => setActivePresetId(p.id),
-                })),
-              ]}
-            />
-          </Field>
+    <div className="flex flex-col">
+      {/* 运行时三旋钮单组（v2 二级换代：一级同构分组语言；原型未覆盖二级，按 Apple
+          Settings 语言补位）：值行（OptionMenu 整行 trigger，asChild 直接子为原生
+          button——props 直接落地）+ 开关行 + 值行 + 保存行，行间 sep-row 由
+          `.setrow + .setrow` 自动接管。 */}
+      <div className="sgroup">
+        <OptionMenu
+          align="start"
+          cancelLabel={t("cancel")}
+          trigger={
+            <button
+              className="setrow h-auto cursor-pointer py-2.5 disabled:cursor-default disabled:opacity-60"
+              disabled={loading}
+              type="button"
+            >
+              <span className="min-w-0">
+                <span className="block">{t("settings.activePreset")}</span>
+                <span className={settingsHintClasses}>{t("settings.activePresetHint")}</span>
+              </span>
+              <span className="v">
+                {selectedLabel}
+                <span aria-hidden="true" className="ar">
+                  ›
+                </span>
+              </span>
+            </button>
+          }
+          items={[
+            {
+              label: t("settings.activePresetNone"),
+              isActive: activePresetId === "",
+              onSelect: () => setActivePresetId(""),
+            },
+            ...claude.presets.map((p) => ({
+              label: p.label,
+              isActive: p.id === activePresetId,
+              onSelect: () => setActivePresetId(p.id),
+            })),
+          ]}
+        />
 
-          <button
-            type="button"
-            role="switch"
-            aria-checked={enable1m}
-            disabled={loading}
-            onClick={() => !loading && setEnable1m(!enable1m)}
-            className="flex cursor-pointer items-center justify-between gap-3 rounded-lg px-1 py-1 text-left transition hover:bg-surface-inset/40 disabled:cursor-default disabled:opacity-60"
+        <button
+          aria-checked={enable1m}
+          className="setrow h-auto cursor-pointer gap-3 py-2.5 disabled:cursor-default disabled:opacity-60"
+          disabled={loading}
+          onClick={() => !loading && setEnable1m(!enable1m)}
+          role="switch"
+          type="button"
+        >
+          <span className="min-w-0">
+            <span className="block">{t("settings.enable1m")}</span>
+            <span className={settingsHintClasses}>{t("settings.enable1mHint")}</span>
+          </span>
+          <span
+            aria-hidden="true"
+            className={`ml-auto shrink-0 ${toggleSwitchTrackClasses(enable1m)}`}
           >
-            <span className="min-w-0">
-              <span className="block text-sm font-semibold text-on-surface">
-                {t("settings.enable1m")}
-              </span>
-              <span className="block text-xs leading-5 text-on-surface-muted">
-                {t("settings.enable1mHint")}
-              </span>
-            </span>
-            <span className={toggleSwitchTrackClasses(enable1m)}>
-              <span
-                className={`${toggleSwitchKnobClasses} ${enable1m ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
-              />
-            </span>
-          </button>
-
-          <Field label={t("settings.effort")} hint={t("settings.effortHint")}>
-            <OptionMenu
-              align="start"
-              cancelLabel={t("cancel")}
-              trigger={<SelectorTrigger label={effort} disabled={loading} />}
-              items={EFFORT_LEVELS.map((level) => ({
-                label: level,
-                isActive: level === effort,
-                onSelect: () => setEffort(level),
-              }))}
+            <span
+              className={`${toggleSwitchKnobClasses} ${enable1m ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
             />
-          </Field>
+          </span>
+        </button>
 
-          {error && <p className="text-xs text-error">{error}</p>}
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <span className="text-xs text-on-surface-muted">
-              {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
-            </span>
-            <ActionButton tone="accent" onClick={handleSave} disabled={loading || !dirty || saving}>
-              {saving ? t("settings.saving") : t("settings.save")}
-            </ActionButton>
-          </div>
-        </CardContent>
-      </Card>
+        <OptionMenu
+          align="start"
+          cancelLabel={t("cancel")}
+          trigger={
+            <button
+              className="setrow h-auto cursor-pointer py-2.5 disabled:cursor-default disabled:opacity-60"
+              disabled={loading}
+              type="button"
+            >
+              <span className="min-w-0">
+                <span className="block">{t("settings.effort")}</span>
+                <span className={settingsHintClasses}>{t("settings.effortHint")}</span>
+              </span>
+              <span className="v">
+                {effort}
+                <span aria-hidden="true" className="ar">
+                  ›
+                </span>
+              </span>
+            </button>
+          }
+          items={EFFORT_LEVELS.map((level) => ({
+            label: level,
+            isActive: level === effort,
+            onSelect: () => setEffort(level),
+          }))}
+        />
+
+        {/* 保存行（组末行）：左脏态/已保存状态 + 右主色实心钮（显式保存语义不变）。 */}
+        <div className="setrow">
+          <span
+            className={`text-[13px] ${justSaved ? "font-medium text-success-text" : "text-ink-2"}`}
+          >
+            {justSaved ? `✓ ${t("settings.saved")}` : dirty ? t("settings.unsavedChanges") : ""}
+          </span>
+          <button
+            className={`ml-auto ${settingsPrimaryButtonClasses}`}
+            disabled={loading || !dirty || saving}
+            onClick={handleSave}
+            type="button"
+          >
+            {saving ? t("settings.saving") : t("settings.save")}
+          </button>
+        </div>
+      </div>
+
+      {error && <p className="mx-4 mt-2 text-[13px] text-error">{error}</p>}
 
       <PresetListSection presets={claude.presets} loading={loading} />
     </div>
@@ -627,7 +698,7 @@ function AcpRuntimeSection({
   });
   if (providersQuery.isError) {
     return (
-      <p className="text-xs text-error">
+      <p className="text-[13px] text-error">
         {providersQuery.error instanceof Error
           ? providersQuery.error.message
           : t("api.agentProvidersFailed")}
@@ -636,7 +707,7 @@ function AcpRuntimeSection({
   }
   const acpProviders = providersQuery.data?.providers.filter((p) => p.transport === "acp") ?? [];
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col">
       {acpProviders.map((info) => (
         <AcpRuntimeContent
           // key 随加载完成态变（loading → loaded remount 回填 baseUrl 初值）；保存成功后
@@ -709,47 +780,65 @@ function AcpRuntimeContent({
     .join(" / ");
 
   return (
-    <Card className="border border-neutral-line bg-surface ring-0">
-      <CardContent className="flex flex-col gap-4 p-3">
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium text-on-surface">{info.label}</p>
-          <p className="text-xs leading-5 text-on-surface-muted">{t("settings.acpHint")}</p>
-          {envNames ? (
-            <p className="text-xs leading-5 text-on-surface-muted">
-              {t("settings.acpEnvHint")} <span className="font-mono">{envNames}</span>
-            </p>
-          ) : null}
-        </div>
-
-        <Field label={t("settings.apiKey")} hint={t("settings.apiKeyHint")}>
-          <ShellInput
-            value={apiKey}
+    <div>
+      <div className="sect">{info.label}</div>
+      <div className="sgroup">
+        {/* apiKey 输入行（v2 输入形态：elevated2 内嵌 + sep-strong 描边 + r10）。 */}
+        <div className="setrow h-auto flex-col items-stretch gap-1.5 py-2.5">
+          <span className="text-[13px] text-ink-2">{t("settings.apiKey")}</span>
+          <p className="text-xs leading-5 text-ink-2">{t("settings.apiKeyHint")}</p>
+          <input
+            aria-label={t("settings.apiKey")}
+            autoComplete="off"
+            className={settingsInputClasses}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder={hasApiKey ? credentials?.apiKeyMasked : t("settings.acpApiKeyBlank")}
-            autoComplete="off"
+            type="text"
+            value={apiKey}
           />
-        </Field>
+        </div>
 
-        <Field label={t("settings.baseUrl")} hint={t("settings.acpBaseUrlHint")}>
-          <ShellInput
-            value={baseUrl}
+        {/* baseUrl 输入行 */}
+        <div className="setrow h-auto flex-col items-stretch gap-1.5 py-2.5">
+          <span className="text-[13px] text-ink-2">{t("settings.baseUrl")}</span>
+          <p className="text-xs leading-5 text-ink-2">{t("settings.acpBaseUrlHint")}</p>
+          <input
+            aria-label={t("settings.baseUrl")}
+            autoComplete="off"
+            className={settingsInputClasses}
             onChange={(e) => setBaseUrl(e.target.value)}
             placeholder="https://api.anthropic.com"
-            autoComplete="off"
+            type="text"
+            value={baseUrl}
           />
-        </Field>
-
-        {error && <p className="text-xs text-error">{error}</p>}
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <span className="text-xs text-on-surface-muted">
-            {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
-          </span>
-          <ActionButton tone="accent" onClick={handleSave} disabled={loading || !dirty || saving}>
-            {saving ? t("settings.saving") : t("settings.save")}
-          </ActionButton>
         </div>
-      </CardContent>
-    </Card>
+
+        {/* 保存行（组末行）：显式保存语义不变。 */}
+        <div className="setrow">
+          <span
+            className={`text-[13px] ${justSaved ? "font-medium text-success-text" : "text-ink-2"}`}
+          >
+            {justSaved ? `✓ ${t("settings.saved")}` : dirty ? t("settings.unsavedChanges") : ""}
+          </span>
+          <button
+            className={`ml-auto ${settingsPrimaryButtonClasses}`}
+            disabled={loading || !dirty || saving}
+            onClick={handleSave}
+            type="button"
+          >
+            {saving ? t("settings.saving") : t("settings.save")}
+          </button>
+        </div>
+      </div>
+
+      <p className="kfoot mx-4">{t("settings.acpHint")}</p>
+      {envNames ? (
+        <p className="kfoot mx-4">
+          {t("settings.acpEnvHint")} <span className="font-mono">{envNames}</span>
+        </p>
+      ) : null}
+      {error && <p className="mx-4 mt-2 text-[13px] text-error">{error}</p>}
+    </div>
   );
 }
 
@@ -803,65 +892,101 @@ function PiRuntimeContent({
     : t("settings.piActivePresetNone");
 
   return (
-    <div className="flex flex-col gap-3">
-      <Card className="border border-neutral-line bg-surface ring-0">
-        <CardContent className="flex flex-col gap-4 p-3">
-          <p className="text-xs leading-5 text-on-surface-muted">{t("settings.piHint")}</p>
+    <div className="flex flex-col">
+      <div className="sgroup">
+        {/* 值行：激活预设（None = 停用）。 */}
+        <OptionMenu
+          align="start"
+          cancelLabel={t("cancel")}
+          trigger={
+            <button
+              className="setrow h-auto cursor-pointer py-2.5 disabled:cursor-default disabled:opacity-60"
+              disabled={loading}
+              type="button"
+            >
+              <span className="min-w-0">
+                <span className="block">{t("settings.activePreset")}</span>
+                <span className={settingsHintClasses}>{t("settings.piActivePresetHint")}</span>
+              </span>
+              <span className="v">
+                {selectedLabel}
+                <span aria-hidden="true" className="ar">
+                  ›
+                </span>
+              </span>
+            </button>
+          }
+          items={[
+            {
+              label: t("settings.piActivePresetNone"),
+              isActive: activePresetId === "",
+              onSelect: () => setActivePresetId(""),
+            },
+            ...(pi?.presets ?? []).map((p) => ({
+              label: p.label,
+              isActive: p.id === activePresetId,
+              onSelect: () => setActivePresetId(p.id),
+            })),
+          ]}
+        />
 
-          <Field label={t("settings.activePreset")} hint={t("settings.piActivePresetHint")}>
-            <OptionMenu
-              align="start"
-              cancelLabel={t("cancel")}
-              trigger={<SelectorTrigger label={selectedLabel} disabled={loading} />}
-              items={[
-                {
-                  label: t("settings.piActivePresetNone"),
-                  isActive: activePresetId === "",
-                  onSelect: () => setActivePresetId(""),
-                },
-                ...(pi?.presets ?? []).map((p) => ({
-                  label: p.label,
-                  isActive: p.id === activePresetId,
-                  onSelect: () => setActivePresetId(p.id),
-                })),
-              ]}
-            />
-          </Field>
-
-          <Field label={t("settings.firecrawlKey")} hint={t("settings.firecrawlKeyHint")}>
-            <div className="flex gap-2">
-              <ShellInput
-                value={firecrawlKey}
-                onChange={(e) => setFirecrawlKey(e.target.value)}
-                placeholder={
-                  hasFirecrawlKey ? pi?.firecrawlApiKeyMasked : t("settings.firecrawlKeyBlank")
-                }
-                autoComplete="off"
-              />
-              {hasFirecrawlKey && !firecrawlClearing ? (
-                <ActionButton tone="muted" onClick={() => setFirecrawlClearing(true)}>
-                  {t("settings.clear")}
-                </ActionButton>
-              ) : null}
-              {firecrawlClearing ? (
-                <ActionButton tone="muted" onClick={() => setFirecrawlClearing(false)}>
-                  {t("cancel")}
-                </ActionButton>
-              ) : null}
-            </div>
-          </Field>
-
-          {error && <p className="text-xs text-error">{error}</p>}
-          <div className="flex items-center justify-between gap-3 pt-1">
-            <span className="text-xs text-on-surface-muted">
-              {justSaved ? t("settings.saved") : dirty ? t("settings.unsavedChanges") : ""}
-            </span>
-            <ActionButton tone="accent" onClick={handleSave} disabled={loading || !dirty || saving}>
-              {saving ? t("settings.saving") : t("settings.save")}
-            </ActionButton>
+        {/* firecrawl 输入行（清除/取消小钮内嵌行首行右侧）。 */}
+        <div className="setrow h-auto flex-col items-stretch gap-1.5 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[13px] text-ink-2">{t("settings.firecrawlKey")}</span>
+            {hasFirecrawlKey && !firecrawlClearing ? (
+              <button
+                className={`shrink-0 ${settingsTextButtonClasses}`}
+                onClick={() => setFirecrawlClearing(true)}
+                type="button"
+              >
+                {t("settings.clear")}
+              </button>
+            ) : null}
+            {firecrawlClearing ? (
+              <button
+                className={`shrink-0 ${settingsTextButtonClasses}`}
+                onClick={() => setFirecrawlClearing(false)}
+                type="button"
+              >
+                {t("cancel")}
+              </button>
+            ) : null}
           </div>
-        </CardContent>
-      </Card>
+          <p className="text-xs leading-5 text-ink-2">{t("settings.firecrawlKeyHint")}</p>
+          <input
+            aria-label={t("settings.firecrawlKey")}
+            autoComplete="off"
+            className={settingsInputClasses}
+            onChange={(e) => setFirecrawlKey(e.target.value)}
+            placeholder={
+              hasFirecrawlKey ? pi?.firecrawlApiKeyMasked : t("settings.firecrawlKeyBlank")
+            }
+            type="text"
+            value={firecrawlKey}
+          />
+        </div>
+
+        {/* 保存行（组末行）：显式保存语义不变。 */}
+        <div className="setrow">
+          <span
+            className={`text-[13px] ${justSaved ? "font-medium text-success-text" : "text-ink-2"}`}
+          >
+            {justSaved ? `✓ ${t("settings.saved")}` : dirty ? t("settings.unsavedChanges") : ""}
+          </span>
+          <button
+            className={`ml-auto ${settingsPrimaryButtonClasses}`}
+            disabled={loading || !dirty || saving}
+            onClick={handleSave}
+            type="button"
+          >
+            {saving ? t("settings.saving") : t("settings.save")}
+          </button>
+        </div>
+      </div>
+
+      <p className="kfoot mx-4">{t("settings.piHint")}</p>
+      {error && <p className="mx-4 mt-2 text-[13px] text-error">{error}</p>}
 
       <PiPresetListSection presets={pi?.presets ?? []} loading={loading} />
     </div>
@@ -869,9 +994,9 @@ function PiRuntimeContent({
 }
 
 /**
- * pi 预设列表段（v5 presets 体系）：Apple Settings grouped Card + 整行 ListRow 点击进编辑；
- * 新增/编辑走 PiPresetDialog；删除走 confirm + deletePiPreset，即时持久化 + invalidate
- * settings。删除激活预设的级联清空由后端保证。
+ * pi 预设列表段（v5 presets 体系）：sect + sgroup 分组行（v2 设置语言）+ 整行点击进编辑；
+ * 新增/编辑走 PiPresetDialog（移动 sheet / 桌面 Dialog 分流）；删除走 confirm + deletePiPreset，
+ * 即时持久化 + invalidate settings。删除激活预设的级联清空由后端保证。
  */
 function PiPresetListSection({
   presets,
@@ -903,53 +1028,47 @@ function PiPresetListSection({
   };
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <ShellSectionLabel>{t("settings.presets")}</ShellSectionLabel>
-          <p className="mt-1 text-xs leading-5 text-on-surface-muted">
-            {t("settings.piPresetsHint")}
-          </p>
+    <section className="flex flex-col">
+      <div className="sect">{t("settings.presets")}</div>
+      <div className="sgroup">
+        <div className="max-h-72 overflow-y-auto">
+          {loading ? (
+            <div aria-hidden="true">
+              {Array.from({ length: PRESET_SKELETON_ROW_COUNT }, (_, i) => (
+                <div className="setrow h-auto items-center gap-2 py-2.5" key={i}>
+                  <span className="min-w-0 flex-1">
+                    <span className="skeleton-shimmer block h-4 w-28 rounded" />
+                    <span className="skeleton-shimmer mt-1.5 block h-3 w-48 rounded" />
+                  </span>
+                  <span className="skeleton-shimmer size-8 shrink-0 rounded-md" />
+                </div>
+              ))}
+            </div>
+          ) : presets.length === 0 ? (
+            <p className="py-2.5 text-[13px] text-ink-2">{t("settings.piNoPresets")}</p>
+          ) : (
+            presets.map((p) => (
+              <PiPresetRow
+                key={p.id}
+                preset={p}
+                onEdit={() => setEditing(p)}
+                onDelete={() => handleDelete(p)}
+              />
+            ))
+          )}
         </div>
-        <ActionButton tone="accent" onClick={() => setCreating(true)} disabled={loading}>
-          {t("settings.addPreset")}
-        </ActionButton>
+        {/* 添加行（Apple 分组列表添加行惯例）：c-primary 文字 + ＋ 前缀；滚动容器外，
+            与列表段之间 border-t 显式分隔（.setrow + .setrow 隔容器不生效）。 */}
+        <button
+          className="setrow cursor-pointer border-t border-sep-row text-primary disabled:cursor-default disabled:opacity-40"
+          disabled={loading}
+          onClick={() => setCreating(true)}
+          type="button"
+        >
+          ＋ {t("settings.addPreset")}
+        </button>
       </div>
-
-      <Card className="gap-0 border border-neutral-line bg-surface py-0 ring-0">
-        <CardContent className="p-0">
-          <div className="max-h-72 overflow-y-auto">
-            {loading ? (
-              <div aria-hidden="true" className={listGroupClasses()}>
-                {Array.from({ length: PRESET_SKELETON_ROW_COUNT }, (_, i) => (
-                  <div className="flex h-auto w-full items-center px-3 py-2.5" key={i}>
-                    <span className="flex min-w-0 grow items-center justify-between gap-2">
-                      <span className="min-w-0">
-                        <span className="skeleton-shimmer block h-4 w-28 rounded" />
-                        <span className="skeleton-shimmer mt-1.5 block h-3 w-48 rounded" />
-                      </span>
-                      <span className="skeleton-shimmer size-8 shrink-0 rounded-md" />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : presets.length === 0 ? (
-              <p className="px-3 py-3 text-sm text-on-surface-muted">{t("settings.piNoPresets")}</p>
-            ) : (
-              <ListGroup ariaLabel={t("settings.presets")}>
-                {presets.map((p) => (
-                  <PiPresetRow
-                    key={p.id}
-                    preset={p}
-                    onEdit={() => setEditing(p)}
-                    onDelete={() => handleDelete(p)}
-                  />
-                ))}
-              </ListGroup>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <p className="kfoot mx-4">{t("settings.piPresetsHint")}</p>
 
       {(creating || editing) && (
         <PiPresetDialog
@@ -975,53 +1094,61 @@ function PiPresetRow({
   onDelete: () => void;
 }) {
   const { t } = useT();
-  const subtitle = (
-    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs">
-      <span className="text-on-surface">
-        {preset.provider} / {preset.model}
-      </span>
-      {preset.baseUrl ? <span className="text-on-surface-muted">{preset.baseUrl}</span> : null}
-      {preset.apiKeyMasked ? (
-        <span className="text-on-surface-muted">{preset.apiKeyMasked}</span>
-      ) : null}
-    </span>
-  );
-
   return (
-    <ListRow
-      title={preset.label}
-      subtitle={subtitle}
+    <div
+      className="setrow h-auto cursor-pointer gap-2 py-2.5 transition-[scale,background-color] interactive-row active:scale-[0.98]"
       onClick={onEdit}
-      actions={
-        // stopPropagation：⋯ 点击不冒泡触发整行编辑（对齐 file-browser ListRow actions 模式）。
-        <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-          <ActionMenu
-            align="end"
-            cancelLabel={t("cancel")}
-            trigger={
-              <button
-                type="button"
-                aria-label={t("settings.deletePreset")}
-                className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-              >
-                <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
-                  <circle cx="3" cy="8" r="1.5" />
-                  <circle cx="8" cy="8" r="1.5" />
-                  <circle cx="13" cy="8" r="1.5" />
-                </svg>
-              </button>
-            }
-            items={[
-              {
-                label: t("settings.deletePreset"),
-                variant: "destructive",
-                onSelect: onDelete,
-              },
-            ]}
-          />
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onEdit();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{preset.label}</span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-ink-2">
+          <span>
+            {preset.provider} / {preset.model}
+          </span>
+          {preset.baseUrl ? <span>{preset.baseUrl}</span> : null}
+          {preset.apiKeyMasked ? <span>{preset.apiKeyMasked}</span> : null}
         </span>
-      }
-    />
+      </span>
+      <span
+        className="shrink-0"
+        // stopPropagation：⋯ 点击不冒泡触发整行编辑（对齐 file-browser ListRow actions 模式）。
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <ActionMenu
+          align="end"
+          cancelLabel={t("cancel")}
+          trigger={
+            <button
+              aria-label={t("settings.deletePreset")}
+              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-ink-2 transition hover:bg-ink-1/5 hover:text-ink-1 active:bg-ink-1/10"
+              type="button"
+            >
+              <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
+                <circle cx="3" cy="8" r="1.5" />
+                <circle cx="8" cy="8" r="1.5" />
+                <circle cx="13" cy="8" r="1.5" />
+              </svg>
+            </button>
+          }
+          items={[
+            {
+              label: t("settings.deletePreset"),
+              variant: "destructive",
+              onSelect: onDelete,
+            },
+          ]}
+        />
+      </span>
+    </div>
   );
 }
 
@@ -1090,6 +1217,7 @@ function PiPresetDialog({
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const isEdit = preset !== null;
 
   const [label, setLabel] = useState(preset?.label ?? "");
@@ -1167,112 +1295,143 @@ function PiPresetDialog({
     }
   };
 
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <div
-          className={`flex max-h-[85vh] flex-col gap-4 overflow-hidden rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+  const title = isEdit ? t("settings.editPreset") : t("settings.newPreset");
+  // 表单体两端共享（多端同构铁律：行为能力单份，只分容器）。取消 = muted 文字钮、
+  // 保存 = 主色实心钮（v2 钮语言）。
+  const form = (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
+        <Field label={t("settings.label")}>
+          <input
+            aria-label={t("settings.label")}
+            className={settingsInputClasses}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={t("settings.labelHint")}
+            type="text"
+            value={label}
+          />
+        </Field>
+        <Field label={t("settings.piProvider")} hint={t("settings.piProviderHint")}>
+          {/* 双入口单 state：内置选择器（label=显示名/description=id）+ 手填自定义 id
+              （兼容端点）。选内置 → input 同步显示 id；手改 input → trigger 落回 fallback
+              （除非恰好命中内置）。枚举失败静默降级为手填（provider 列表是可选便利）。 */}
+          <div className="flex flex-col gap-2">
+            <ProviderSelect
+              value={provider}
+              onChange={setProvider}
+              fallbackLabel={t("settings.piProviderPick")}
+            />
+            <input
+              aria-label={t("settings.piProvider")}
+              className={settingsInputClasses}
+              onChange={(e) => setProvider(e.target.value)}
+              placeholder="anthropic"
+              type="text"
+              value={provider}
+            />
+          </div>
+        </Field>
+        <Field label={t("settings.piModel")} hint={t("settings.piModelHint")}>
+          <input
+            aria-label={t("settings.piModel")}
+            className={settingsInputClasses}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder="claude-sonnet-5"
+            type="text"
+            value={model}
+          />
+        </Field>
+        {activeAuthType === "oauth" ? (
+          <Field label={t("settings.apiKey")}>
+            <div className="rounded-[10px] border border-sep bg-elevated2 px-3 py-2 text-xs leading-5 text-ink-2">
+              {t("settings.piAuthOauthHint")}
+            </div>
+          </Field>
+        ) : (
+          <Field
+            label={t("settings.apiKey")}
+            hint={
+              isEdit
+                ? t("settings.apiKeyHint")
+                : activeAuthType === "api_key"
+                  ? undefined
+                  : activeAuthType === "both"
+                    ? t("settings.piApiKeyOptionalHint")
+                    : t("settings.piApiKeyLocalHint")
+            }
+          >
+            {/* 明文：个人私有部署无密码管理器必要；placeholder 露 masked 指纹提示已配置。 */}
+            <input
+              aria-label={t("settings.apiKey")}
+              autoComplete="off"
+              className={settingsInputClasses}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={isEdit ? preset?.apiKeyMasked : "sk-ant-..."}
+              type="text"
+              value={apiKey}
+            />
+          </Field>
+        )}
+        <Field label={t("settings.baseUrl")} hint={t("settings.piBaseUrlHint")}>
+          <input
+            aria-label={t("settings.baseUrl")}
+            className={settingsInputClasses}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://api.example.com"
+            type="text"
+            value={baseUrl}
+          />
+        </Field>
+        {showApiSelect && (
+          <Field label={t("settings.piApi")} hint={t("settings.piApiHint")}>
+            <OptionMenu
+              align="start"
+              cancelLabel={t("cancel")}
+              trigger={<SelectorTrigger label={api ?? t("settings.piApiDefault")} />}
+              items={PI_PROVIDER_APIS.map((value) => ({
+                label: value,
+                isActive: value === api,
+                onSelect: () => setApi(value),
+              }))}
+            />
+          </Field>
+        )}
+      </div>
+
+      {error && <p className="text-[13px] text-error">{error}</p>}
+
+      <div className="flex items-center justify-end gap-2">
+        <button className={settingsTextButtonClasses} onClick={onClose} type="button">
+          {t("cancel")}
+        </button>
+        <button
+          className={settingsPrimaryButtonClasses}
+          disabled={saving}
+          onClick={handleSubmit}
+          type="button"
         >
-          <DialogTitle className="text-base font-semibold text-on-surface">
-            {isEdit ? t("settings.editPreset") : t("settings.newPreset")}
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            {isEdit ? t("settings.editPreset") : t("settings.newPreset")}
-          </DialogDescription>
+          {saving ? t("settings.saving") : t("settings.save")}
+        </button>
+      </div>
+    </div>
+  );
 
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-            <Field label={t("settings.label")}>
-              <ShellInput
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder={t("settings.labelHint")}
-              />
-            </Field>
-            <Field label={t("settings.piProvider")} hint={t("settings.piProviderHint")}>
-              {/* 双入口单 state：内置选择器（label=显示名/description=id）+ 手填自定义 id
-                  （兼容端点）。选内置 → input 同步显示 id；手改 input → trigger 落回 fallback
-                  （除非恰好命中内置）。枚举失败静默降级为手填（provider 列表是可选便利）。 */}
-              <div className="flex flex-col gap-2">
-                <ProviderSelect
-                  value={provider}
-                  onChange={setProvider}
-                  fallbackLabel={t("settings.piProviderPick")}
-                />
-                <ShellInput
-                  value={provider}
-                  onChange={(e) => setProvider(e.target.value)}
-                  placeholder="anthropic"
-                />
-              </div>
-            </Field>
-            <Field label={t("settings.piModel")} hint={t("settings.piModelHint")}>
-              <ShellInput
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="claude-sonnet-5"
-              />
-            </Field>
-            {activeAuthType === "oauth" ? (
-              <Field label={t("settings.apiKey")}>
-                <div className="rounded-lg border border-neutral-line/40 bg-surface-raised px-3 py-2 text-xs text-on-surface-muted">
-                  {t("settings.piAuthOauthHint")}
-                </div>
-              </Field>
-            ) : (
-              <Field
-                label={t("settings.apiKey")}
-                hint={
-                  isEdit
-                    ? t("settings.apiKeyHint")
-                    : activeAuthType === "api_key"
-                      ? undefined
-                      : activeAuthType === "both"
-                        ? t("settings.piApiKeyOptionalHint")
-                        : t("settings.piApiKeyLocalHint")
-                }
-              >
-                {/* 明文：个人私有部署无密码管理器必要；placeholder 露 masked 指纹提示已配置。 */}
-                <ShellInput
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={isEdit ? preset?.apiKeyMasked : "sk-ant-..."}
-                  autoComplete="off"
-                />
-              </Field>
-            )}
-            <Field label={t("settings.baseUrl")} hint={t("settings.piBaseUrlHint")}>
-              <ShellInput
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.example.com"
-              />
-            </Field>
-            {showApiSelect && (
-              <Field label={t("settings.piApi")} hint={t("settings.piApiHint")}>
-                <OptionMenu
-                  align="start"
-                  cancelLabel={t("cancel")}
-                  trigger={<SelectorTrigger label={api ?? t("settings.piApiDefault")} />}
-                  items={PI_PROVIDER_APIS.map((value) => ({
-                    label: value,
-                    isActive: value === api,
-                    onSelect: () => setApi(value),
-                  }))}
-                />
-              </Field>
-            )}
-          </div>
-
-          {error && <p className="text-xs text-error">{error}</p>}
-
-          <div className="flex justify-end gap-3">
-            <ActionButton tone="muted" onClick={onClose}>
-              {t("cancel")}
-            </ActionButton>
-            <ActionButton tone="accent" onClick={handleSubmit} disabled={saving}>
-              {saving ? t("settings.saving") : t("settings.save")}
-            </ActionButton>
-          </div>
+  // 移动 = 半屏 sheet（msheet 自带 20px 侧距 + max-height 内滚）；桌面 = 居中 Dialog
+  //（v2 面：bg-elevated + sep 描边 + r20 弹窗档）。
+  if (isMobile) {
+    return (
+      <MobileSheet onOpenChange={(o) => !o && onClose()} open title={title}>
+        <div className="pb-2">{form}</div>
+      </MobileSheet>
+    );
+  }
+  return (
+    <Dialog onOpenChange={(o) => !o && onClose()} open>
+      <DialogContent>
+        <div className="flex max-h-[85vh] flex-col gap-4 overflow-hidden rounded-[20px] border border-sep bg-elevated p-5 shadow-2xl shadow-black/40">
+          <DialogTitle className="text-base font-semibold text-ink-1">{title}</DialogTitle>
+          <DialogDescription className="sr-only">{title}</DialogDescription>
+          <div className="-mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">{form}</div>
         </div>
       </DialogContent>
     </Dialog>
@@ -1280,9 +1439,9 @@ function PiPresetDialog({
 }
 
 /**
- * 预设列表段（决策 4：预设 CRUD 合并进 Claude 运行时段）。Apple Settings grouped Card +
- * 整行 ListRow 点击进编辑；新增/编辑走 PresetDialog；删除走 confirm + deleteClaudePreset，
- * 即时持久化 + invalidate settings。删除激活预设的级联清空由后端保证。
+ * 预设列表段（决策 4：预设 CRUD 合并进 Claude 运行时段）。sect + sgroup 分组行（v2 设置
+ * 语言）+ 整行点击进编辑；新增/编辑走 PresetDialog（移动 sheet / 桌面 Dialog 分流）；删除走
+ * confirm + deleteClaudePreset，即时持久化 + invalidate settings。删除激活预设的级联清空由后端保证。
  */
 function PresetListSection({
   presets,
@@ -1314,53 +1473,47 @@ function PresetListSection({
   };
 
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <ShellSectionLabel>{t("settings.presets")}</ShellSectionLabel>
-          <p className="mt-1 text-xs leading-5 text-on-surface-muted">
-            {t("settings.presetsHint")}
-          </p>
+    <section className="flex flex-col">
+      <div className="sect">{t("settings.presets")}</div>
+      <div className="sgroup">
+        <div className="max-h-72 overflow-y-auto">
+          {loading ? (
+            <div aria-hidden="true">
+              {Array.from({ length: PRESET_SKELETON_ROW_COUNT }, (_, i) => (
+                <div className="setrow h-auto items-center gap-2 py-2.5" key={i}>
+                  <span className="min-w-0 flex-1">
+                    <span className="skeleton-shimmer block h-4 w-28 rounded" />
+                    <span className="skeleton-shimmer mt-1.5 block h-3 w-48 rounded" />
+                  </span>
+                  <span className="skeleton-shimmer size-8 shrink-0 rounded-md" />
+                </div>
+              ))}
+            </div>
+          ) : presets.length === 0 ? (
+            <p className="py-2.5 text-[13px] text-ink-2">{t("settings.noPresets")}</p>
+          ) : (
+            presets.map((p) => (
+              <PresetRow
+                key={p.id}
+                preset={p}
+                onEdit={() => setEditing(p)}
+                onDelete={() => handleDelete(p)}
+              />
+            ))
+          )}
         </div>
-        <ActionButton tone="accent" onClick={() => setCreating(true)} disabled={loading}>
-          {t("settings.addPreset")}
-        </ActionButton>
+        {/* 添加行（Apple 分组列表添加行惯例）：c-primary 文字 + ＋ 前缀；滚动容器外，
+            与列表段之间 border-t 显式分隔（.setrow + .setrow 隔容器不生效）。 */}
+        <button
+          className="setrow cursor-pointer border-t border-sep-row text-primary disabled:cursor-default disabled:opacity-40"
+          disabled={loading}
+          onClick={() => setCreating(true)}
+          type="button"
+        >
+          ＋ {t("settings.addPreset")}
+        </button>
       </div>
-
-      <Card className="gap-0 border border-neutral-line bg-surface py-0 ring-0">
-        <CardContent className="p-0">
-          <div className="max-h-72 overflow-y-auto">
-            {loading ? (
-              <div aria-hidden="true" className={listGroupClasses()}>
-                {Array.from({ length: PRESET_SKELETON_ROW_COUNT }, (_, i) => (
-                  <div className="flex h-auto w-full items-center px-3 py-2.5" key={i}>
-                    <span className="flex min-w-0 grow items-center justify-between gap-2">
-                      <span className="min-w-0">
-                        <span className="skeleton-shimmer block h-4 w-28 rounded" />
-                        <span className="skeleton-shimmer mt-1.5 block h-3 w-48 rounded" />
-                      </span>
-                      <span className="skeleton-shimmer size-8 shrink-0 rounded-md" />
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : presets.length === 0 ? (
-              <p className="px-3 py-3 text-sm text-on-surface-muted">{t("settings.noPresets")}</p>
-            ) : (
-              <ListGroup ariaLabel={t("settings.presets")}>
-                {presets.map((p) => (
-                  <PresetRow
-                    key={p.id}
-                    preset={p}
-                    onEdit={() => setEditing(p)}
-                    onDelete={() => handleDelete(p)}
-                  />
-                ))}
-              </ListGroup>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      <p className="kfoot mx-4">{t("settings.presetsHint")}</p>
 
       {(creating || editing) && (
         <PresetDialog
@@ -1386,50 +1539,58 @@ function PresetRow({
   onDelete: () => void;
 }) {
   const { t } = useT();
-  const subtitle = (
-    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs">
-      {preset.baseUrl ? <span className="text-on-surface">{preset.baseUrl}</span> : null}
-      {preset.apiKeyMasked ? (
-        <span className="text-on-surface-muted">{preset.apiKeyMasked}</span>
-      ) : null}
-    </span>
-  );
-
   return (
-    <ListRow
-      title={preset.label}
-      subtitle={subtitle}
+    <div
+      className="setrow h-auto cursor-pointer gap-2 py-2.5 transition-[scale,background-color] interactive-row active:scale-[0.98]"
       onClick={onEdit}
-      actions={
-        // stopPropagation：⋯ 点击不冒泡触发整行编辑（对齐 file-browser ListRow actions 模式）。
-        <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-          <ActionMenu
-            align="end"
-            cancelLabel={t("cancel")}
-            trigger={
-              <button
-                type="button"
-                aria-label={t("settings.deletePreset")}
-                className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
-              >
-                <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
-                  <circle cx="3" cy="8" r="1.5" />
-                  <circle cx="8" cy="8" r="1.5" />
-                  <circle cx="13" cy="8" r="1.5" />
-                </svg>
-              </button>
-            }
-            items={[
-              {
-                label: t("settings.deletePreset"),
-                variant: "destructive",
-                onSelect: onDelete,
-              },
-            ]}
-          />
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onEdit();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{preset.label}</span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-ink-2">
+          {preset.baseUrl ? <span>{preset.baseUrl}</span> : null}
+          {preset.apiKeyMasked ? <span>{preset.apiKeyMasked}</span> : null}
         </span>
-      }
-    />
+      </span>
+      <span
+        className="shrink-0"
+        // stopPropagation：⋯ 点击不冒泡触发整行编辑（对齐 file-browser ListRow actions 模式）。
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <ActionMenu
+          align="end"
+          cancelLabel={t("cancel")}
+          trigger={
+            <button
+              aria-label={t("settings.deletePreset")}
+              className="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-ink-2 transition hover:bg-ink-1/5 hover:text-ink-1 active:bg-ink-1/10"
+              type="button"
+            >
+              <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden="true">
+                <circle cx="3" cy="8" r="1.5" />
+                <circle cx="8" cy="8" r="1.5" />
+                <circle cx="13" cy="8" r="1.5" />
+              </svg>
+            </button>
+          }
+          items={[
+            {
+              label: t("settings.deletePreset"),
+              variant: "destructive",
+              onSelect: onDelete,
+            },
+          ]}
+        />
+      </span>
+    </div>
   );
 }
 
@@ -1448,6 +1609,7 @@ function PresetDialog({
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const isEdit = preset !== null;
   const presetId = preset?.id ?? null;
 
@@ -1528,128 +1690,150 @@ function PresetDialog({
   const models = modelsQuery.data?.ok ? modelsQuery.data.models : [];
   const modelsLoading = modelsQuery.isFetching && !modelsQuery.data;
 
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <div
-          className={`flex max-h-[85vh] flex-col gap-4 overflow-hidden rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
-        >
-          <DialogTitle className="text-base font-semibold text-on-surface">
-            {isEdit ? t("settings.editPreset") : t("settings.newPreset")}
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            {isEdit ? t("settings.editPreset") : t("settings.newPreset")}
-          </DialogDescription>
+  const title = isEdit ? t("settings.editPreset") : t("settings.newPreset");
+  // 表单体两端共享（多端同构铁律）：取消 = muted 文字钮、保存 = 主色实心钮（v2 钮语言）。
+  const form = (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
+        <Field label={t("settings.label")}>
+          <input
+            aria-label={t("settings.label")}
+            className={settingsInputClasses}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={t("settings.labelHint")}
+            type="text"
+            value={label}
+          />
+        </Field>
+        <Field label={t("settings.baseUrl")} hint={t("settings.baseUrlHint")}>
+          <input
+            aria-label={t("settings.baseUrl")}
+            className={settingsInputClasses}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://api.example.com"
+            type="text"
+            value={baseUrl}
+          />
+        </Field>
+        <Field label={t("settings.apiKey")} hint={isEdit ? t("settings.apiKeyHint") : undefined}>
+          {/* 明文：个人私有部署无密码管理器必要；type=password 会触发浏览器「保存密码」提示。 */}
+          <input
+            aria-label={t("settings.apiKey")}
+            autoComplete="off"
+            className={settingsInputClasses}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={isEdit ? preset?.apiKeyMasked : "sk-ant-..."}
+            type="text"
+            value={apiKey}
+          />
+        </Field>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-            <Field label={t("settings.label")}>
-              <ShellInput
-                value={label}
-                onChange={(e) => setLabel(e.target.value)}
-                placeholder={t("settings.labelHint")}
+        {/* 模型映射（4-tier）：tier 行保持 flex 布局，ModelTierSelect 逻辑零改动只换皮。 */}
+        <div className="flex flex-col gap-2">
+          <p className="text-[13px] text-ink-2">{t("settings.modelMapping")}</p>
+          <p className="text-xs leading-5 text-ink-2">{t("settings.modelMappingHint")}</p>
+          {TIERS.map((tier) => (
+            <div className="flex items-center gap-2" key={tier}>
+              <span className="w-16 shrink-0 text-xs text-ink-2">{t(TIER_LABEL[tier])}</span>
+              <ModelTierSelect
+                models={models}
+                loading={modelsLoading}
+                onChange={(v) => setModelMapping({ ...modelMapping, [tier]: v })}
+                tier={tier}
+                value={modelMapping[tier]}
               />
-            </Field>
-            <Field label={t("settings.baseUrl")} hint={t("settings.baseUrlHint")}>
-              <ShellInput
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.example.com"
-              />
-            </Field>
-            <Field
-              label={t("settings.apiKey")}
-              hint={isEdit ? t("settings.apiKeyHint") : undefined}
+            </div>
+          ))}
+        </div>
+
+        {/* 测试连接：refetch modelsQuery，与 modelMapping 下拉共享同一凭证源。凭证不全
+            （baseUrl 空）时按钮禁用。上游失败 → {ok:false}，前端展示测试结果而非报错 toast。 */}
+        <div className="flex flex-col gap-1.5">
+          <button
+            className={`w-fit ${settingsGhostButtonClasses}`}
+            disabled={modelsQuery.isFetching || saving || !trimmedBaseUrl}
+            onClick={() => modelsQuery.refetch()}
+            type="button"
+          >
+            {modelsQuery.isFetching
+              ? t("settings.testConnectionRunning")
+              : t("settings.testConnection")}
+          </button>
+          {modelsQuery.data && (
+            <p
+              className={`text-[13px] ${modelsQuery.data.ok ? "text-success-text" : "text-error"}`}
             >
-              {/* 明文：个人私有部署无密码管理器必要；type=password 会触发浏览器「保存密码」提示。 */}
-              <ShellInput
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={isEdit ? preset?.apiKeyMasked : "sk-ant-..."}
-                autoComplete="off"
-              />
-            </Field>
+              {modelsQuery.data.ok
+                ? modelsQuery.data.models.length > 0
+                  ? t("settings.testConnectionOk", { count: modelsQuery.data.models.length })
+                  : t("settings.testConnectionOkEmpty")
+                : t("settings.testConnectionFailed", { error: modelsQuery.data.error ?? "" })}
+            </p>
+          )}
+          {modelsQuery.data?.ok && modelsQuery.data.models.length > 0 && (
+            <p className="truncate font-mono text-[11px] text-ink-2">
+              {modelsQuery.data.models.slice(0, 5).join(" · ")}
+            </p>
+          )}
+          {modelsQuery.data?.ok && modelsQuery.data.models.length > 5 && (
+            <button
+              className="flex w-fit cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] text-primary transition hover:bg-primary/10"
+              onClick={() => setModelsOpen(true)}
+              type="button"
+            >
+              {t("settings.viewAllModels", { count: modelsQuery.data.models.length })}
+            </button>
+          )}
+        </div>
+      </div>
 
-            <div className="flex flex-col gap-2">
-              <p className="text-xs font-semibold text-on-surface-soft">
-                {t("settings.modelMapping")}
-              </p>
-              <p className="text-xs leading-5 text-on-surface-muted">
-                {t("settings.modelMappingHint")}
-              </p>
-              {TIERS.map((tier) => (
-                <div key={tier} className="flex items-center gap-2">
-                  <span className="w-16 shrink-0 text-xs text-on-surface-muted">
-                    {t(TIER_LABEL[tier])}
-                  </span>
-                  <ModelTierSelect
-                    tier={tier}
-                    value={modelMapping[tier]}
-                    models={models}
-                    loading={modelsLoading}
-                    onChange={(v) => setModelMapping({ ...modelMapping, [tier]: v })}
-                  />
-                </div>
-              ))}
-            </div>
+      {error && <p className="text-[13px] text-error">{error}</p>}
 
-            {/* 测试连接：refetch modelsQuery，与 modelMapping 下拉共享同一凭证源。凭证不全
-                （baseUrl 空）时按钮禁用。上游失败 → {ok:false}，前端展示测试结果而非报错 toast。 */}
-            <div className="flex flex-col gap-1.5">
-              <ActionButton
-                tone="muted"
-                onClick={() => modelsQuery.refetch()}
-                disabled={modelsQuery.isFetching || saving || !trimmedBaseUrl}
-              >
-                {modelsQuery.isFetching
-                  ? t("settings.testConnectionRunning")
-                  : t("settings.testConnection")}
-              </ActionButton>
-              {modelsQuery.data && (
-                <p className={`text-xs ${modelsQuery.data.ok ? "text-success" : "text-error"}`}>
-                  {modelsQuery.data.ok
-                    ? modelsQuery.data.models.length > 0
-                      ? t("settings.testConnectionOk", { count: modelsQuery.data.models.length })
-                      : t("settings.testConnectionOkEmpty")
-                    : t("settings.testConnectionFailed", { error: modelsQuery.data.error ?? "" })}
-                </p>
-              )}
-              {modelsQuery.data?.ok && modelsQuery.data.models.length > 0 && (
-                <p className="truncate font-mono text-[11px] text-on-surface-muted">
-                  {modelsQuery.data.models.slice(0, 5).join(" · ")}
-                </p>
-              )}
-              {modelsQuery.data?.ok && modelsQuery.data.models.length > 5 && (
-                <button
-                  type="button"
-                  onClick={() => setModelsOpen(true)}
-                  className="flex w-fit cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-primary"
-                >
-                  {t("settings.viewAllModels", { count: modelsQuery.data.models.length })}
-                </button>
-              )}
-            </div>
-          </div>
+      <div className="flex items-center justify-end gap-2">
+        <button className={settingsTextButtonClasses} onClick={onClose} type="button">
+          {t("cancel")}
+        </button>
+        <button
+          className={settingsPrimaryButtonClasses}
+          disabled={saving}
+          onClick={handleSubmit}
+          type="button"
+        >
+          {saving ? t("settings.saving") : t("settings.save")}
+        </button>
+      </div>
+    </div>
+  );
 
-          {error && <p className="text-xs text-error">{error}</p>}
-
-          <div className="flex justify-end gap-3">
-            <ActionButton tone="muted" onClick={onClose}>
-              {t("cancel")}
-            </ActionButton>
-            <ActionButton tone="accent" onClick={handleSubmit} disabled={saving}>
-              {saving ? t("settings.saving") : t("settings.save")}
-            </ActionButton>
-          </div>
+  // 移动 = 半屏 sheet（msheet 自带 20px 侧距 + max-height 内滚）；桌面 = 居中 Dialog
+  //（v2 面：bg-elevated + sep 描边 + r20 弹窗档）。ModelsListDialog 随容器分流。
+  if (isMobile) {
+    return (
+      <>
+        <MobileSheet onOpenChange={(o) => !o && onClose()} open title={title}>
+          <div className="pb-2">{form}</div>
+        </MobileSheet>
+        <ModelsListDialog models={models} onClose={() => setModelsOpen(false)} open={modelsOpen} />
+      </>
+    );
+  }
+  return (
+    <Dialog onOpenChange={(o) => !o && onClose()} open>
+      <DialogContent>
+        <div className="flex max-h-[85vh] flex-col gap-4 overflow-hidden rounded-[20px] border border-sep bg-elevated p-5 shadow-2xl shadow-black/40">
+          <DialogTitle className="text-base font-semibold text-ink-1">{title}</DialogTitle>
+          <DialogDescription className="sr-only">{title}</DialogDescription>
+          <div className="-mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">{form}</div>
         </div>
       </DialogContent>
-      <ModelsListDialog open={modelsOpen} models={models} onClose={() => setModelsOpen(false)} />
+      <ModelsListDialog models={models} onClose={() => setModelsOpen(false)} open={modelsOpen} />
     </Dialog>
   );
 }
 
-// 测试连接拉到 >5 模型时展示完整列表的弹窗。受控 open，与 PresetDialog 自身 Dialog
-// 同级嵌套（两个 Portal 都落 body，内层后挂载 DOM 序靠后，同 stacking context 盖上层，
-// Radix 支持嵌套 focus scope，无需动 z-index）。
+// 测试连接拉到 >5 模型时展示完整列表的弹窗。受控 open，与宿主弹窗同级嵌套（两个 Portal
+// 都落 body，内层后挂载 DOM 序靠后，同 stacking context 盖上层，Radix 支持嵌套 focus
+// scope，无需动 z-index）。容器随宿主分流：移动 sheet / 桌面居中 Dialog。
 function ModelsListDialog({
   open,
   models,
@@ -1660,21 +1844,43 @@ function ModelsListDialog({
   onClose: () => void;
 }) {
   const { t } = useT();
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+  const isMobile = useIsMobile();
+  const list = (
+    <div className="max-h-[50vh] min-h-0 overflow-y-auto">
+      {models.map((m, index) => (
         <div
-          className={`flex max-h-[85vh] flex-col gap-4 overflow-hidden rounded-2xl p-5 shadow-2xl shadow-black/40 ${shellSurfaceClasses.workspace}`}
+          className="break-words border-b border-sep-row py-1.5 font-mono text-xs text-ink-1 last:border-b-0"
+          key={`${m}-${index}`}
         >
+          {m}
+        </div>
+      ))}
+    </div>
+  );
+  if (isMobile) {
+    return (
+      <MobileSheet
+        onOpenChange={(o) => !o && onClose()}
+        open={open}
+        title={t("settings.modelsDialogTitle", { count: models.length })}
+      >
+        <div className="pb-2">{list}</div>
+      </MobileSheet>
+    );
+  }
+  return (
+    <Dialog onOpenChange={(o) => !o && onClose()} open={open}>
+      <DialogContent>
+        <div className="flex max-h-[85vh] flex-col gap-4 overflow-hidden rounded-[20px] border border-sep bg-elevated p-5 shadow-2xl shadow-black/40">
           <div className="flex shrink-0 items-center gap-2">
-            <DialogTitle className="min-w-0 flex-1 truncate text-base font-semibold text-on-surface">
+            <DialogTitle className="min-w-0 flex-1 truncate text-base font-semibold text-ink-1">
               {t("settings.modelsDialogTitle", { count: models.length })}
             </DialogTitle>
             <button
-              type="button"
               aria-label={t("session.close")}
+              className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-2 transition hover:bg-ink-1/5 hover:text-ink-1 active:bg-ink-1/10"
               onClick={onClose}
-              className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-on-surface/5 hover:text-on-surface active:bg-on-surface/10"
+              type="button"
             >
               <ShellIcon className="h-4 w-4" name="close" />
             </button>
@@ -1682,16 +1888,7 @@ function ModelsListDialog({
           <DialogDescription className="sr-only">
             {t("settings.modelsDialogTitle", { count: models.length })}
           </DialogDescription>
-          <div className="max-h-[55vh] min-h-0 overflow-y-auto pr-1">
-            {models.map((m, index) => (
-              <div
-                key={`${m}-${index}`}
-                className="break-words border-b border-neutral-line/60 py-1.5 font-mono text-xs text-on-surface-soft last:border-b-0"
-              >
-                {m}
-              </div>
-            ))}
-          </div>
+          <div className="-mr-1 min-h-0 overflow-y-auto pr-1">{list}</div>
         </div>
       </DialogContent>
     </Dialog>
@@ -1700,13 +1897,13 @@ function ModelsListDialog({
 
 // ── Shared field primitives ──────────────────────────────────────────
 
+/** 弹窗表单字段（v2 语言）：label 13px ink-2 + hint 12px ink-2 + 控件（与 sgroup 内
+ *  输入行同款语言；弹窗无 sgroup 容器，字段直排）。 */
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <div>
-        <p className="text-xs font-semibold text-on-surface-soft">{label}</p>
-        {hint && <p className="text-xs leading-5 text-on-surface-muted">{hint}</p>}
-      </div>
+      <p className="text-[13px] text-ink-2">{label}</p>
+      {hint && <p className="text-xs leading-5 text-ink-2">{hint}</p>}
       {children}
     </div>
   );
@@ -1723,7 +1920,7 @@ const SelectorTrigger = forwardRef<
       ref={ref}
       type="button"
       disabled={disabled}
-      className="inline-flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-neutral-line bg-surface-inset px-3 py-2.5 text-sm text-on-surface transition hover:border-on-surface-muted/40 hover:bg-on-surface/10 disabled:cursor-default disabled:opacity-60"
+      className="inline-flex w-full cursor-pointer items-center justify-between gap-2 rounded-[10px] border border-sep-strong bg-elevated2 px-3 py-2 text-sm text-ink-1 transition hover:bg-elevated3 disabled:cursor-default disabled:opacity-60"
       {...rest}
     >
       <span className="truncate text-left">{label}</span>
@@ -1746,7 +1943,7 @@ const SelectorTrigger = forwardRef<
 });
 
 // tier → model 下拉：选项来自 PresetDialog 层基于凭证拉取的可用模型列表。
-// 模型列表空（凭证不全 / 上游 ok:false / 拉取失败）→ 降级手填 ShellInput，保证用户始终能配置。
+// 模型列表空（凭证不全 / 上游 ok:false / 拉取失败）→ 降级手填输入框，保证用户始终能配置。
 // 选项 = 拉取列表 ∪ 当前值；当前值不在列表时加 (custom) 标记保留旧值。
 function ModelTierSelect({
   tier,
@@ -1769,11 +1966,13 @@ function ModelTierSelect({
   if (unavailable) {
     // 无模型列表（提供商无 /v1/models 端点或拉取失败）→ 直接手填，无切回需求。
     return (
-      <ShellInput
-        value={value}
+      <input
+        aria-label={t(TIER_LABEL[tier])}
+        className={settingsInputClasses}
         onChange={(e) => onChange(e.target.value)}
         placeholder={tier}
-        aria-label={t(TIER_LABEL[tier])}
+        type="text"
+        value={value}
       />
     );
   }
@@ -1781,16 +1980,18 @@ function ModelTierSelect({
   if (editing) {
     return (
       <div className="flex w-full flex-col gap-1">
-        <ShellInput
-          value={value}
+        <input
+          aria-label={t(TIER_LABEL[tier])}
+          className={settingsInputClasses}
           onChange={(e) => onChange(e.target.value)}
           placeholder={tier}
-          aria-label={t(TIER_LABEL[tier])}
+          type="text"
+          value={value}
         />
         <button
-          type="button"
+          className="flex w-fit cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[13px] text-ink-2 transition hover:bg-primary/10 hover:text-primary"
           onClick={() => setEditing(false)}
-          className="flex w-fit cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-on-surface-muted transition hover:bg-neutral-line/50 hover:text-primary"
+          type="button"
         >
           {t("settings.modelSelectBackToList")}
         </button>

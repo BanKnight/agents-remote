@@ -1715,6 +1715,18 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 | Mac 专属件取舍 | ✅ 已拍板（§6.10-3..9）：分屏复用 V3 树 + tabstrip 按钮；Inspector 四段（文件/Git/Wiki/历史；〔2026-09-24 拍板改三段〕）；快捷键 = spec §10.2 原文六条 | 2026-09-22（Q17：spec 原文即全集，无增删） |
 | Git ✦ 来源标注 | 关联数据面（会话提交映射表 vs commit message heuristic） | 暂不做（D12），重开需用户发起 |
 
+### 设置二级 UI 换代：Apple 设计语言 + v2 token（2026-10-10，原型缺位部分自行设计）
+
+用户真机反馈：设置**二级** UI（detail 段 + 预设编辑弹窗）不遵守 Apple 设计语言、不遵循 v2 token 规范——v1.5/v1.6 原型（07/07m）只画了一级分组列表，二级 detail 与预设编辑弹窗原型未覆盖。用户授权按 Apple Settings 语言 + 项目 token 自行设计（**diverge 记档**：后续用户出新原型再校准）。用户拍板**保留显式保存**（脏态提示 + 保存钮，纯视觉改造、行为零变化）。
+
+- **detail 段分组同构**（通用/Claude/Pi/ACP 全部）：Card 块状表单（v1 shadcn 面）→ `sect` + `sgroup` + `setrow` 分组语言（与一级 07 同构，单源 v2-primitives.css）。行型态三种：值选择行 = OptionMenu 整行 trigger（label + settingsHintClasses 行内 hint + `.v` + `.ar` ›，asChild 直接子为原生 button——props 直接落地）；开关行 = 整行 button role="switch" + aria-hidden toggle；输入行 = `setrow h-auto flex-col items-stretch gap-1.5 py-2.5`（label 13px ink-2 + hint + settingsInputClasses 输入框）。保存行 = sgroup 末行 setrow：左状态 span（未保存 ink-2 / ✓ 已保存 `text-success-text`）+ 右 `ml-auto` 主色实心钮（settingsPrimaryButtonClasses，disabled opacity-40）。
+- **通用段**：Card+SegmentedControl×2 → `.segc` 三态分段（role="tablist" + button role="tab" aria-selected + `.on` segmented-thumb 活动块）×2，hint 降为 kfoot 脚注（消费点补 `mx-4` 对齐 sgroup）。段级 hint 全部行内化（settingsHintClasses 12px ink-2）或 kfoot 化；`.setrow + .setrow` 行分隔对隔滚动容器的添加行失效（相邻兄弟选择器），手动 `border-t border-sep-row` 补。
+- **预设列表段**（claude/pi 同构）：max-h-72 滚动容器内 setrow 列表行（双行 label + mono 副文本）+ ⋯ ActionMenu（stopPropagation 防冒泡触发整行编辑）+ sgroup 底 `＋ 添加行`（`text-primary`，Apple 分组添加行惯例，替 ActionButton）。PresetRow 整行可点 = div role="button" + tabIndex + onKeyDown Enter/Space（ListRow 先例契约）。
+- **预设编辑弹窗容器分流**（PresetDialog / PiPresetDialog / ModelsListDialog 三件）：抽共享 form JSX 变量两端同构（多端同构铁律：行为单份，容器分流）；`isMobile ? <MobileSheet> : <Dialog>`（照 ProjectDeleteDialog 范式）。桌面 v2 弹窗面 = DialogContent 内层自绘面 `rounded-[20px] border border-sep bg-elevated p-5 shadow-2xl shadow-black/40`（Radix content 外壳默认类不动）；表单 = Field（13px ink-2 label）+ settingsInputClasses 直排；oauth 提示块 `rounded-[10px] border border-sep bg-elevated2`；取消 = 文字钮、保存 = 主色实心。
+- **类名换代**（触及处全换）：`ShellInput`/`SelectorTrigger` → settingsInputClasses（`border-sep-strong bg-elevated2 r10 focus:border-primary`）；`ActionButton tone="accent"` → settingsPrimaryButtonClasses；`text-on-surface*` → text-ink-1/2；组件本体（ShellInput/SegmentedControl/ActionButton）有其它消费者**不退役**。detail 容器边距连锁：SettingsRoute `px-4 pt-3` → `pt-3`、SettingsMainPage `px-5 pt-3` → `pt-3`（sect/sgroup 自带 margin 0 16px，双重边距即 36px 错位）。
+- **验证**：typecheck / lint（404 files 0w）/ CSS 硬闸 / tokens 机检 / web 单测 774（三跑稳定）全绿；探针 3 件全绿——probe-v2-m7-settings-auth 69/69（Part 2 适配 .segc/[role=tablist] + Part 3 适配 .msheet 移动分流）、probe-settings-acp-dialog 10/10、probe-settings-pi-dialog 32/32（两探针入口从 M2 时代 ActivityBar+SettingsDialog 适配到 M9 桌面壳 footnav→mainPage 路由导航，v2 弹窗面断言锚 DialogContent 内层自绘面——Radix content 外壳默认类非断言目标）；e2e mobile-nav 6 + desktop-side 6 全绿（壳导航/深链不受影响）。
+- **真机清单**：①二级四段分组行形态与一级同构；②segc 三态分段活动块；③预设列表行 + ＋ 添加行 + ⋯；④预设编辑移动半屏 sheet / 桌面居中 Dialog、控件 v2；⑤显式保存语义不变。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。

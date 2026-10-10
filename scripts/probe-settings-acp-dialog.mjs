@@ -1,7 +1,8 @@
-// 探针：设置弹窗 ACP agents 配置区（per-provider 凭据切片）——只读验证 UI 接线，不写真实 settings.yaml。
+// 探针：设置 ACP agents 配置区（per-provider 凭据切片）——只读验证 UI 接线，不写真实 settings.yaml。
 //
 // 覆盖单测（settings-dialog 无组件单测）测不到的真实浏览器行为：
-//   Radix Dialog root view 含 ACP agents 胶囊 → 进 detail → provider 列表来自
+//   桌面壳（M9 mainPage）：footnav 设置按钮路由导航进 SettingsMainPage（root 分组列表）
+//   → 点 ACP agents 入口行进 detail → provider 列表来自
 //   GET /api/agent-providers（profile 注册表投影），只渲染 transport=acp 的卡片（omp），
 //   非 acp transport（claude/codex）不出现。omp 卡：acpHint + 注入 env 名
 //   （ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL，font-mono）+ apiKey placeholder 分态
@@ -59,43 +60,47 @@ async function run() {
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForSelector("nav[aria-label]", { timeout: 10000 });
 
-    // ActivityBar 设置按钮 → 居中 SettingsDialog（root view）。
+    // M9 桌面壳：footnav 设置按钮 = 路由导航进 SettingsMainPage（main 整页，非弹窗——
+    // M2 时代 ActivityBar + SettingsDialog 已退役）。
     await page.getByRole("button", { name: "Settings" }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.waitFor({ timeout: 5000 });
+    await page.getByRole("button", { name: "ACP agents" }).waitFor({ timeout: 5000 });
 
-    console.log("Part 2: root view 含 ACP agents 胶囊");
-    ok(await dialog.getByRole("button", { name: "ACP agents" }).isVisible(), "胶囊 ACP agents");
+    console.log("Part 2: root 分组列表含 ACP agents 入口行");
+    ok(
+      await page.getByRole("button", { name: "ACP agents" }).isVisible(),
+      "入口行 ACP agents（root RUNTIME 组）",
+    );
 
     console.log("Part 3: 进 detail → per-provider 凭据卡（omp）");
-    await dialog.getByRole("button", { name: "ACP agents" }).click();
+    await page.getByRole("button", { name: "ACP agents" }).click();
 
     // 凭据卡依赖 GET /api/agent-providers 异步返回（首帧空数组）——先等首卡渲染。
-    await dialog.getByText("omp", { exact: true }).waitFor({ timeout: 5000 });
-    // 卡片 label = profile 的 label（omp）；通用 hint 文案（acpHint en）。
-    ok(await dialog.getByText("omp", { exact: true }).isVisible(), "omp 凭据卡 label");
+    await page.getByText("omp", { exact: true }).waitFor({ timeout: 5000 });
+    // 卡片 label = profile 的 label（omp，.sect 段标题）；通用 hint 文案（acpHint en，kfoot）。
+    ok(await page.getByText("omp", { exact: true }).isVisible(), "omp 凭据卡 label");
+    // 非 acp transport 的 provider 不渲染（claude/codex 无凭据卡）——detail 段标题
+    // （.sect，每 provider 一枚）恰 1 个 = omp。
+    const sectTexts = await page.locator(".sect").allTextContents();
     ok(
-      await dialog
+      sectTexts.length === 1 && sectTexts[0] === "omp",
+      `凭据卡仅 transport=acp（.sect = [${sectTexts.join(", ")}]）`,
+    );
+    ok(
+      await page
         .getByText("Credentials are injected into the agent process at spawn", { exact: false })
         .isVisible(),
       "acpHint 文案渲染（spawn 注入 + 新会话生效）",
     );
     // env 注入名（profile 投影，font-mono 展示；技术标识不翻译）。
-    const envSpan = dialog.locator("span.font-mono", { hasText: "ANTHROPIC_API_KEY" });
+    const envSpan = page.locator("span.font-mono", { hasText: "ANTHROPIC_API_KEY" });
     ok(
       (await envSpan.count()) === 1 &&
         (await envSpan.textContent()) === "ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL",
       "env hint = ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL（仅 1 处）",
     );
-    // 非 acp transport 的 provider 不渲染（claude/codex 无凭据卡）。
-    ok(
-      (await dialog.getByText("Claude", { exact: true }).count()) === 0 &&
-        (await dialog.getByText("Codex", { exact: true }).count()) === 0,
-      "claude/codex 卡不出现（只渲染 transport=acp）",
-    );
 
     console.log("Part 4: apiKey/baseUrl 输入态（masked 回显 / 未配置空态）");
-    const apiKeyInput = dialog.locator("input").nth(0);
+    const apiKeyInput = page.getByLabel("API key");
     const apiKeyPlaceholder = await apiKeyInput.getAttribute("placeholder");
     // 已配置 → masked（前 7...末 4 或短 key 前 2...末 2）；未配置 → 「Not configured」
     // （凭据 provider 平权：未配置走 agent 自身凭证链，不借用其它 runtime）。两种合法
@@ -110,11 +115,11 @@ async function run() {
       !(apiKeyPlaceholder ?? "").includes("sk-") || isMasked,
       "placeholder 不回显明文 key（masked 规则）",
     );
-    const baseUrlInput = dialog.locator('input[placeholder="https://api.anthropic.com"]');
+    const baseUrlInput = page.locator('input[placeholder="https://api.anthropic.com"]');
     ok(await baseUrlInput.isVisible(), "baseUrl 输入框（明文回填，官方端点 placeholder）");
 
     console.log("Part 5: 初始无 dirty → Save disabled（三态语义入口就绪，不落盘）");
-    const saveButtons = dialog.getByRole("button", { name: "Save", exact: true });
+    const saveButtons = page.getByRole("button", { name: "Save", exact: true });
     ok((await saveButtons.count()) === 1, "仅一张凭据卡一个 Save");
     ok(await saveButtons.isDisabled(), "无改动时 Save disabled");
   } finally {

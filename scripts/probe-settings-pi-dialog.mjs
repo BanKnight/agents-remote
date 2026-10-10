@@ -1,8 +1,10 @@
-// 探针：设置弹窗 pi 配置区（v5 presets 体系）——只读验证 UI 接线，不写真实 settings.yaml。
+// 探针：设置 pi 配置区（v5 presets 体系）——只读验证 UI 接线，不写真实 settings.yaml。
 //
 // 覆盖单测（settings-dialog 无组件单测）测不到的真实浏览器行为：
-//   Radix Dialog 打开 → root view 三胶囊 → 点 Pi runtime 进 detail → Active preset 选择器
-//   （None = 停用）+ Add preset 按钮 + 无预设空态 → 打开 PiPresetDialog → 输入框按 provider
+//   桌面壳（M9 mainPage）：footnav 设置按钮路由导航进 SettingsMainPage → root 分组列表
+//   → 点 Pi 入口行进 detail → Active preset 值行
+//   （None = 停用）+ Add preset 添加行 + 预设列表 → 打开 PiPresetDialog（桌面 Radix
+//   Dialog 居中弹窗）→ 输入框按 provider
 //   authType 适配（api_key/both/unknown → apiKey 输入框；oauth → 提示块无输入框）+ api 下拉仅
 //   baseUrl 非空时渲染 → 关闭 → Back 返回 root。Save 落盘/重启读回/mask 已由 api 单测覆盖
 //   （settings-routes.test.ts），此处不写盘防污染真实 settings.yaml。
@@ -57,47 +59,67 @@ async function run() {
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForSelector("nav[aria-label]", { timeout: 10000 });
 
-    // ActivityBar 设置按钮 → 居中 SettingsDialog（root view = 3 胶囊）。
+    // M9 桌面壳：footnav 设置按钮 = 路由导航进 SettingsMainPage（main 整页分组列表，非弹窗
+    // ——M2 时代 ActivityBar + SettingsDialog 已退役）。
     await page.getByRole("button", { name: "Settings" }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.waitFor({ timeout: 5000 });
+    await page.getByRole("button", { name: "Provider" }).waitFor({ timeout: 5000 });
 
-    console.log("Part 2: root view 三胶囊");
+    console.log("Part 2: root 分组列表（4 组 + 入口行）");
     ok(
-      await dialog.getByRole("button", { name: "Claude runtime" }).isVisible(),
-      "胶囊 Claude runtime",
+      (await page.locator(".sgroup").count()) === 4,
+      "root = 4 组分组容器（通用/RUNTIME/自动重试/服务器）",
     );
-    ok(await dialog.getByRole("button", { name: "Pi runtime" }).isVisible(), "胶囊 Pi runtime");
-    ok(await dialog.getByRole("button", { name: "General" }).isVisible(), "胶囊 General");
-
-    console.log("Part 3: 点 Pi runtime → detail 渲染（activePreset 选择 + 预设列表）");
-    await dialog.getByRole("button", { name: "Pi runtime" }).click();
-
-    // hint（settings.piHint en 文案）——含 "active pi preset" 区分于 label。
+    ok(await page.getByText("General", { exact: true }).isVisible(), "General 段标题");
     ok(
-      await dialog
+      await page.getByRole("button", { name: "Claude model preset" }).isVisible(),
+      "Claude 入口行",
+    );
+    ok(await page.getByRole("button", { name: "Provider" }).isVisible(), "Pi 入口行");
+    ok(await page.getByRole("button", { name: "ACP agents" }).isVisible(), "ACP 入口行");
+
+    console.log("Part 3: 点 Pi 行 → detail 渲染（activePreset 值行 + 预设列表）");
+    await page.getByRole("button", { name: "Provider" }).click();
+
+    // header 标题 = sectionTitle(pi)。
+    ok(
+      (await page.locator("h1").textContent()) === "Pi runtime",
+      "Pi 行 → pi detail（标题 = Pi runtime）",
+    );
+    // hint（settings.piHint en 文案）——kfoot 脚注，含 "active pi preset" 区分于 label。
+    ok(
+      await page
         .getByText("Global chat sessions run on the active pi preset.", { exact: false })
         .isVisible(),
       "pi hint 文案渲染",
     );
-    // Active preset 选择器：无激活时 label = None (pi disabled)。
+    // Active preset 值行（OptionMenu 整行 trigger；无激活时值 = None (pi disabled)）。
     ok(
-      await dialog.getByRole("button", { name: "None (pi disabled)" }).isVisible(),
-      "Active preset 选择器（None = 停用）",
+      await page.getByRole("button", { name: "Active preset" }).isVisible(),
+      "Active preset 值行（OptionMenu 整行 trigger）",
     );
-    // Add preset 按钮 + 无预设空态。
-    ok(await dialog.getByRole("button", { name: "Add preset" }).isVisible(), "Add preset 按钮");
-    ok(
-      await dialog
-        .getByText("No presets yet. Add one to configure a provider and model.", { exact: false })
-        .isVisible(),
-      "无预设空态文案",
+    // Add preset 添加行 + 预设列表（真实后端数据分档：空 → 空态文案；非空 → 行渲染）。
+    ok(await page.getByRole("button", { name: "Add preset" }).isVisible(), "＋ Add preset 添加行");
+    const emptyState = page.getByText(
+      "No presets yet. Add one to configure a provider and model.",
+      { exact: false },
     );
-    // Save（activePreset 选择 Card 的 Save）。
-    ok(await dialog.getByRole("button", { name: "Save" }).isVisible(), "Save 按钮");
+    if ((await emptyState.count()) > 0) {
+      ok(await emptyState.isVisible(), "无预设空态文案（真实 pi 预设为空）");
+    } else {
+      ok(
+        (await page.locator(".sgroup").last().locator(".setrow").count()) > 1,
+        "已有预设行渲染（真实 pi 预设非空）",
+      );
+    }
+    // Save（runtime 组保存行，初始无 dirty → disabled）。
+    const saveBtn = page.getByRole("button", { name: "Save", exact: true });
+    ok((await saveBtn.count()) === 1 && (await saveBtn.isDisabled()), "Save 按钮在场且 disabled");
 
     console.log("Part 4: 打开 PiPresetDialog → 输入框按 provider authType 适配");
-    await dialog.getByRole("button", { name: "Add preset" }).click();
+    await page.getByRole("button", { name: "Add preset" }).click();
+    // 桌面（1280×900）→ Radix Dialog 居中弹窗（移动视口才走 MobileSheet 分流）。
+    const dialog = page.getByRole("dialog");
+    await dialog.waitFor({ timeout: 5000 });
     // 新建态 dialog：label/provider/model/apiKey/baseUrl 5 个输入框（未选 provider → unknown → apiKey 渲染）。
     const inputs = dialog.locator("input");
     const count = await inputs.count();
@@ -186,14 +208,48 @@ async function run() {
     );
     // 关闭 dialog（不保存，防污染真实 settings.yaml）。
     await dialog.getByRole("button", { name: "Cancel" }).click();
+    ok((await page.getByRole("dialog").count()) === 0, "关闭 PiPresetDialog 后弹窗卸载");
     ok(
-      await dialog.getByRole("button", { name: "Add preset" }).isVisible(),
+      await page.getByRole("button", { name: "Add preset" }).isVisible(),
       "关闭 PiPresetDialog 后回 detail",
     );
 
+    console.log("Part 4b: 预设编辑弹窗控件 v2 形态（v2 二级换代断言）");
+    await page.getByRole("button", { name: "Add preset" }).click();
+    await dialog.waitFor({ timeout: 5000 });
+    // 桌面 v2 弹窗面 = DialogContent 内层自绘面（rounded-[20px] + border-sep + bg-elevated，
+    // 多端同构铁律：行为组件单份，两端只差容器）；输入控件 = settingsInputClasses
+    //（elevated2 内嵌 + r10）。Radix content 外壳带默认类，非断言目标。
+    const faceClasses = await page
+      .locator('[data-slot="dialog-content"] > div')
+      .first()
+      .getAttribute("class");
+    ok(
+      faceClasses?.includes("rounded-[20px]") === true &&
+        faceClasses?.includes("border-sep") === true &&
+        faceClasses?.includes("bg-elevated") === true,
+      "弹窗面 v2：rounded-[20px] + border-sep + bg-elevated",
+    );
+    ok(
+      (await page.locator('[data-slot="dialog-content"] input').count()) >= 5,
+      "弹窗内 5 个输入框（label/provider/model/apiKey/baseUrl）",
+    );
+    const firstInputClass =
+      (await page.locator('[data-slot="dialog-content"] input').first().getAttribute("class")) ??
+      "";
+    ok(
+      firstInputClass.includes("bg-elevated2") && firstInputClass.includes("rounded-[10px]"),
+      "输入控件 v2 形态（elevated2 内嵌 + r10）",
+    );
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    ok((await page.getByRole("dialog").count()) === 0, "Part 4b 后弹窗卸载");
+
     console.log("Part 5: Back 返回 root");
-    await dialog.getByRole("button", { name: "Back" }).click();
-    ok(await dialog.getByRole("button", { name: "General" }).isVisible(), "Back 后回 root view");
+    await page.getByRole("button", { name: "Back" }).click();
+    ok(
+      await page.getByText("General", { exact: true }).isVisible(),
+      "Back 后回 root（General 段标题）",
+    );
   } finally {
     await browser.close();
   }

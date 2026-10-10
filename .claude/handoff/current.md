@@ -1,38 +1,39 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-10（**v1.6 真机反馈四联修完成（`62ad6e3` + 主 commit）：终端置顶 / 根名真实化 / 「..」同构 / 搜索展开同构——三探针扩展全绿，等用户真机验证**）
+> 最后更新：2026-10-10（**设置二级 UI 换代完成（未 commit）：detail 四段 + 预设编辑弹窗全量 v2 化——三探针全绿 + e2e 2 spec 绿 + 全门禁绿，待 commit + push + 用户真机验证**）
 
 ## 一句话状态
 
-用户真机复验 v1.6 后逐条报出四个问题，一轮收敛修复完毕并 commit：①终端 ⋯ 菜单补「置顶」（UI 装配层两处 agent gate 退役）；②全局文件根目录名真实化（`rootPath` 数据链 + `rootDisplayName`，硬编码 "agents-remote" 退役）；③「..」上一级行同构（`ParentDirRow` 单源 + **path 非空判定**防一级子目录空串 parentPath 吞行）；④搜索展开同构（`CollapsibleSearchRow` 单源统一三处）。探针 3 组全绿（cwd-memory 15 / mobile header 56 / desktop batch4 42）、单测 api 905 + web 774 + shared 10、门禁 + CSS 硬闸 + tokens 全绿。
+用户真机反馈「设置二级 UI 不遵守 Apple 设计语言 / 不遵循 token 规范」，授权原型缺位部分按 Apple Settings 语言 + v2 token 自行设计（后续原型到位再校准）。detail 四段（通用/Claude/Pi/ACP）全量从 v1 Card 块状表单换代为 sect/sgroup/setrow 分组语言（与一级 07 同构）；三件弹窗（PresetDialog/PiPresetDialog/ModelsListDialog）移动 MobileSheet / 桌面居中 Dialog 分流 + 控件 v2；显式保存语义零变化（用户拍板）。验证：typecheck / lint（404 files 0w）/ CSS 硬闸 / tokens 机检 / web 单测 774、探针 3 件全绿（m7 69/69 + acp 10/10 + pi 32/32）、e2e mobile-nav 6 + desktop-side 6。
 
-## 本 session 焦点（v1.6 真机反馈四联修）
+## 本 session 焦点（设置二级 UI 换代）
 
 ### 关键决策（本阶段不可丢）
 
-- **用户真机反馈即最终裁决**：①终端置顶缺失推翻 v1.5 review P3⑦「dot 语言归属 agent」旧口径——pinned 链路全程类型无关，唯二 gate 在 UI 装配层；②根名 "agents-remote" 是批 11 把原型示例占位当真实值落的硬编码，用户裁决为伪造数据（部署目录名因机器而异）。
-- **「..」渲染判定坑（防回归）**：服务端 `parentProjectPath` 对一级子目录返回 `""`（dirname→"."）非 null——FilesPanel 按 `path !== ""` 判定（truthy 判定会吞行）；工具区既有 `parentPath !== null` 严格判空口径等价保留；探针 mock `parentOf` 对齐真实语义（A 层 → ""）端到端锁死。
-- **探针 mock 正则教训**：pinned mock 原 `/pinned-sessions(\?.*)?$/` 锚 `$`，POST `/pinned-sessions/{id}` 不匹配 → **静默穿透真实后端吃 400**（菜单保持开假象误导排向 keepOpen 链路；诊断三步：PINNED_MOCK dump → 普通 click 对照 → pageerror/console 监听抓 400/404 实锤）→ 去 `$` 锚修。mobile 探针正则本就无锚（Part 12 一次绿）对照实锤。
-- **搜索展开基准**：用户认可的全局文件形态 = `.psearch`（38px/r12 移动档）+ `.obtn.srch` ✕；`CollapsibleSearchRow` 单源三处消费；⌘F 聚焦 gate 留桌面常驻分支（searchInputRef 不动）；Wiki `.wsearch` 不动（用户只点名文件树）。
-- **同 key 缓存共享**：GlobalFilesOverview 容器 `useQuery(["root","files"])` 与 FilesPanel 同 key → dedupe 零额外网络；fallback 用既有 `files.rootDirectory`（「服务器根」）不新增键；探针 mock 无 rootPath 字段自动走 fallback 不破存量探针。
+- **改造范围 = settings-dialog.tsx 单文件主战场**（~2036 行内）：表单原语常量（settingsInputClasses/settingsPrimaryButtonClasses/settingsGhostButtonClasses/settingsTextButtonClasses/settingsHintClasses）文件头单源；ActionButton/ListGroup/ListRow/SegmentedControl/ShellInput/ShellSectionLabel/listGroupClasses/shellSurfaceClasses/Card/CardContent 在本文件退役（组件本体有其它消费者不退役）。
+- **行型态三种**（detail 分组内）：值选择行 = OptionMenu 整行 trigger（asChild 直接子为原生 button——props 直接落地，无需 forwardRef）；开关行 = 整行 button role="switch" + aria-hidden toggle span；输入行 = `setrow h-auto flex-col items-stretch gap-1.5 py-2.5`。保存行 = sgroup 末行 setrow 左状态右主色钮。
+- **行分隔边界**：`.setrow + .setrow` 是相邻兄弟选择器——隔滚动容器（预设列表 max-h-72）的添加行需手动 `border-t border-sep-row`。
+- **弹窗分流**：`isMobile ? <MobileSheet> : <Dialog>`，form 抽 JSX 变量两端共享（多端同构铁律）；桌面 v2 弹窗面 = DialogContent 内层自绘面（`rounded-[20px] border border-sep bg-elevated p-5`）——Radix content 外壳默认类不动，探针 v2 断言锚内层 `> div`（外壳默认类非断言目标）。
+- **容器边距连锁**：sect/sgroup 自带 margin 0 16px → SettingsRoute/SettingsMainPage 的 detail 容器 px 必须去除（否则 36px 双重边距）。
+- **陈旧探针适配**（非本轮回归）：probe-settings-acp-dialog / pi-dialog 入口锚 M2 时代 ActivityBar+SettingsDialog（M9 已退役）——适配为 footnav Settings 路由导航 → SettingsMainPage；断言文案全保留（acpHint 子串/Not configured/Save disabled 语义不变）；pi 探针预设列表断言改真实数据分档（空态/非空都绿）。
+- **diverge 记档**：原型未覆盖二级，按 Apple 语言 + token 自行设计，后续用户出新原型再校准（redesign-v2.md §设置二级换代段）。
 
 ### 进度（已完成 / 待办）
 
-- ✅ 四项修复全部落地 + 主 commit（18 文件 +428/-120）+ `62ad6e3` CSS 残留单独提交。
-- ✅ 探针扩展 3 组：cwd-memory（Part 1b 搜索同构 + Part 7 根名/「..」端到端）/ mobile header Part 12 / desktop batch4 Part 4b。
-- ✅ 单测：api 905（listRootFiles rootPath 断言 + realpath 换算防 macOS 符号链接）/ web 774（+rootDisplayName 3）/ shared 10。
-- ✅ redesign-v2.md 记档（§v1.6 真机反馈四联修段）+ 本 handoff。
-- ⬜ push（下一步动作）。
-- ⬜ 用户真机验证四项修复。
-- ⬜（存量）统一真机复验清单其余项反馈；批 18 键盘取证（`DEBUG_ENABLED=true` 重建恢复浮层）。
+- ✅ 改造全部落地（settings-dialog.tsx + SettingsRoute.tsx 容器边距）。
+- ✅ 探针 3 件全绿：m7 69/69（Part 2 适配 .segc / Part 3 适配 .msheet 移动分流）、acp 10/10、pi 32/32（新增 Part 4b 弹窗 v2 形态断言）。
+- ✅ e2e 连锁：mobile-nav 6 + desktop-side 6 全绿（壳导航/深链不受影响）。
+- ✅ redesign-v2.md 记档（§设置二级 UI 换代段，diverge 标注）。
+- ⬜ commit + push（下一步动作；标准 git add && git commit，尾注 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>）。
+- ⬜ 用户真机验证（清单见 redesign-v2.md 真机清单 5 条：二级分组同构 / segc 活动块 / 预设列表行+添加行+⋯ / 预设编辑 sheet/Dialog 分流 / 显式保存语义）。
+- ⬜（用户 mid-turn 指派，commit 后立即转入）两个全局文件问题：① iPhone 端全局文件无法滚动；② 桌面端全局文件布局与原型（mac-files-global-preview）差别巨大。
 
 ## 易丢的关键上下文
 
-- **v1.6 基线 = `2b25a6c`**；本轮四联修 = 主 commit + `62ad6e3`。
-- useAutoRetryToggle 签名 `(projectName, sessionId, sessionType = "agent")` 不变；terminal/skill 聚焦零脏请求。
-- FileCrumb 根态 = 图标 + `<b>{rootDisplayName(rootPath, t("files.rootDirectory"))}</b>`；子目录层根段 = 纯图标回根钮。
-- `ParentDirRow` / `CollapsibleSearchRow` / `rootDisplayName` 三处新单源，消费点见 redesign-v2 §v1.6 四联修段。
-- 探针跑前照例 touch main.tsx 等 rebuild + 特征串验证（本轮验了 rootPath 进包 + files.root 键消失双特征）。
+- 探针跑前照例 touch main.tsx 等 rebuild（本轮探针直接跑绿 = rebuild 已含改动）。
+- probe-v2-m7 Part 3 锚 .msheet（移动视口 useConfirm 走 MobileSheet，data-slot 结构仅桌面存在）。
+- pi 探针 Part 4b v2 面断言锚 `[data-slot="dialog-content"] > div`（内层自绘面）。
+- 真实后端 pi 预设非空（探针 Part 3 走「已有预设行渲染」分支）。
 - 批 18 键盘取证恢复方法：`web/src/lib/keyboard-debug.ts` `DEBUG_ENABLED=true` → touch main.tsx 重建。
 
 ## 提醒
@@ -41,4 +42,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-10 07:20；触发原因：v1.6 真机反馈四联修完成（三探针全绿 + 全门禁绿 + 记档），push 前检查点
+最后更新：2026-10-10 09:41；触发原因：设置二级 UI 换代完成（探针 3 件 + e2e 2 spec + 全门禁绿），commit 前检查点
