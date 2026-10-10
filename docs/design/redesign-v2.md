@@ -782,6 +782,18 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **探针（任务 C 后）**：probe-loading-states 13/13 保持全绿；全套 e2e 27/27 + 单测 774 + 四门禁 + CSS 硬闸 + tokens 机检全过（5 个 commit 各自验证链完整）。
 
+**2026-10-10 真机反馈 6+1 条（commit `8114ae9`）**：任务 C 代码收口后用户真机检查的第一轮反馈，逐条根因 + 修复：
+
+1. **移动项目页加载态跳变**：项目首页骨架与真实两段结构不符（活动卡/项目卡行形、行内缩）。修 = 骨架 mirror 真实两段（活动卡 `mx-4 mt-[18px]` 壳内 3 行 dot+h-4 名条+ml-auto 时间条、`mx-3 border-t` 分隔；项目卡 `px-3 py-0.5` 壳内 30×30 `rounded-sm` 徽章+名副双条+右徽章条），逐层对齐真实行几何——「同形骨架」标准从行级下沉到**容器壳+行+分隔**三层。
+2. **会话加载两段跳变**：`detail.isLoading` 首段显 LoadingBlock「加载会话」→ 数据到达再显 ChatSkeleton（第二段）→ 气泡，两段骨架串联显「漫长」。修 = ChatSkeleton 搬入 shell-primitives 单源（ClaudeSessionDetailRoute 原定义迁出），AgentPanelRouter isLoading 分支直接显 `<ChatSkeleton />`——第一段即聊天骨架，两段合一段。
+3. **终端加载/重连遮罩 bg 跳变 + 「重连中」背后方框时有时无**：TerminalStatusOverlay 的 animated 遮罩用浅色半透明 scrim，切到黑底 xterm 色跳大；`scrim:false` 贴身卡分支（非全屏）在不同时机出现 = 「方框时有时无」观感。修 = 删 scrim 维度，animated 分支统一 `absolute inset-0 bg-[var(--bg-codeblock)]` 全屏深色（xterm theme.background 同 token，加载/重连全程零色跳）。
+4. **桌面全局文件加载「内容偏左」**：globalOverview 依赖 candidates query，candidates 慢于根 listing 时 globalCard=undefined → FilesPanel 退通用 frow 树（贴左）→ 就绪后翻卡形态（三段翻转）。修 = `globalCard` 加 `pending?: boolean`（FileEntryList + FilesPanel 透传同加），`isLoaded` 门——candidates 未就绪保持卡骨架，三段翻转结构性消失。
+5. **终端 composer ⚙ 键位自定义缺失**：原型 workspace-terminal-input ③「控制行仅键位自定义 ⚙」此前 diverge 不落，用户推翻。修 = `terminalQuickKeysHiddenAtom`（atomWithLocalOnlyStorage localStorage 持久化 hidden id 集）+ SessionDetail 构造 `quickKeysCustomize`（ActionMenu 双端单源，items = sessionQuickKeys 全集 8 键勾选显隐、显示中 = check icon）+ SessionInputDrawer `quickKeysCustomize?: ReactNode` slot（控制行 `justify-between` 左端，undefined 空占位保 send2 靠右）——drawer 只摆位置不新增逻辑，配置留在调用方。
+6. **桌面 mainPage 主标题高度不一致**（files/plugins/settings）：探针实测 header 高 52.0/44.6/35.5px——原型 mhead padding-top 各页不一，实现照抄放大差异。修 = MainPageShell 与 SettingsMainPage header 统一 `h-11 shrink-0` 钉高（**divergence 记档：原型不一致，一致性优先**）。
+7. **「点击进入编辑态，点击渲染态的不支持」（+1 条 mid-turn）**：tap-to-edit 双端 md 渲染态 agent-browser 实测**均通过**（桌面 file tab + 移动面板 tab，点渲染段落/标题 → 进编辑 + 自动切源码）；唯一不支持的是 **html 渲染态**——sandbox iframe 内点击不冒泡出 iframe，事件通路结构性不存在。修 = `PreviewBody` 加 `onActivate`（html iframe `onFocus` 接 tap-to-edit 家族；iframe 聚焦是宿主唯一理论信号），L3/Pane 传入进编辑回调。**边界记档**：headless CDP 实测真实点击后 activeElement=IFRAME 但宿主不派发 focus（程序化 focus() 可触发）——通路保留待真机验证；html 编辑动线兜底 = 渲染⇄源码 toggle 切源码后点正文（已支持）。桌面右栏 inspection 不在 tap-to-edit 家族（常驻编辑形态，刻意设计不动）。
+
+**探针（真机反馈轮）**：四门禁 + CSS 硬闸 + tokens 机检全绿；e2e file-browser 2 + terminal-session 1 + mobile-nav 6 passed；web 单测 774 全绿。tap-to-edit 实测用 agent-browser CLI（iPhone 16 设备模拟 + 真实输入事件），一次性诊断不入库。
+
 ### §6.12p 真机反馈修复：sheet 下拉收起回弹 + 历史 sheet prompt 连带卸载（2026-09-27，commit `0f3c882`）
 
 **① 拖拽 dismiss 回弹（用户真机反馈）**：`endDrag` dismiss 分支曾先清 inline transform 再交 Radix exit 动画——sheet **瞬跳回原位**再从原位滑 16px+fade（「回弹后再消失」）。修复：**保留 inline transform 作为 exit 动画起点**（tw-animate-css 的 exit keyframes 只有 `to` 无 `from`，起始值 = 当前计算样式），inline 变量覆盖 exit 形态——`--tw-exit-translate-y` = 顶边推出视口底+40px 余量（`slide-out-to-bottom-4` 的 16px 不够出屏）、`--tw-exit-opacity: 1`（iOS dismiss 纯滑出不 fade）、200ms ease-in 贴合松手初速度。重开无残留（Radix closed 即 unmount，inline 样式随之消亡）。
