@@ -326,6 +326,8 @@ export const en = {
   "status.error": "Error",
   "status.connected": "Connected",
   "status.ready": "Ready",
+  "error.routeTitle": "Something went wrong",
+  "error.routeRetry": "Retry",
 
   // ── Quick Keys ───────────────────────────────────────────────
   "quickKey.shiftTab": "Shift+Tab",

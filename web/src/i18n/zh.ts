@@ -323,6 +323,8 @@ export const zh: Record<TranslationKey, string> = {
   "status.error": "错误",
   "status.connected": "已连接",
   "status.ready": "就绪",
+  "error.routeTitle": "页面出错了",
+  "error.routeRetry": "重试",
 
   // ── Quick Keys ───────────────────────────────────────────────
   "quickKey.shiftTab": "Shift+Tab",

@@ -6,8 +6,11 @@ import {
   lazyRouteComponent,
   Outlet,
   redirect,
+  useRouter,
   useNavigate,
+  type ErrorComponentProps,
 } from "@tanstack/react-router";
+import { useT } from "../i18n";
 import { AuthGate } from "./AuthGate";
 import {
   parseWorkbenchScope,
@@ -29,6 +32,32 @@ const NotFoundRedirect = () => {
     void navigate({ to: "/" });
   }, [navigate]);
   return null;
+};
+
+// 路由级错误兜底（批 4）：TanStack 库默认错误页 = 英文裸页（0 v2 语汇、无重试出口、PWA 里
+// 用户被锁死）。v2 收编 = token 类居中卡 + 本地化文案 + message 第一手信息 + 重试钮
+//（router.invalidate() 重放当前匹配；懒 chunk 加载失败同路径自愈）。零业务组件依赖——
+// 错误边界语境下业务组件可能正是错误源，且不让 router.tsx 把组件链拉进 entry chunk。
+const RouteErrorFallback = ({ error }: ErrorComponentProps) => {
+  const { t } = useT();
+  const router = useRouter();
+  return (
+    <div className="flex h-screen flex-col items-center justify-center gap-4 p-6">
+      <div className="w-full max-w-sm rounded-2xl border border-sep bg-elevated p-5">
+        <p className="text-[15px] font-semibold text-error">{t("error.routeTitle")}</p>
+        <p className="mt-2 break-words text-[13px] leading-6 text-on-surface-muted">
+          {error instanceof Error ? error.message : String(error)}
+        </p>
+        <button
+          className="mt-4 w-full cursor-pointer rounded-xl bg-primary py-2.5 text-sm font-semibold text-on-primary transition active:scale-[0.97]"
+          onClick={() => void router.invalidate()}
+          type="button"
+        >
+          {t("error.routeRetry")}
+        </button>
+      </div>
+    </div>
+  );
 };
 
 const rootRoute = createRootRoute({
@@ -408,12 +437,16 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({
   routeTree,
+  defaultErrorComponent: RouteErrorFallback,
   // No defaultPendingComponent on purpose: a router-level pending spinner
   // stacks on top of each page's own loading state (project skeleton → terminal
   // reconnect) and reads as multiple chained animations. Each page owns its own
   // loading UI; the router just keeps the previous view visible until the next
   // route is ready, then swaps directly. defaultPreload fetches lazy chunks on
-  // hover/focus so entry is instant without any pending UI.
+  // hover/focus so entry is instant without any pending UI. (加载态审查批 4 补强理由：
+  // pendingComponent 无法只限冷启动——移动端 tap 导航无 hover 预取，未预取的懒路由
+  // chunk 下载期也算 pending transition，设了就会在站内切换插入全局层，违反
+  // 「路由切换保持上一屏」纪律；冷启动空白由各 lazy 页面自管 loading 承接。)
   defaultPreload: "intent",
 });
 
