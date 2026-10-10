@@ -767,6 +767,21 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **探针**：`scripts/probe-loading-states.mjs`（mock API 延迟 700ms，13 断言：git/wiki/历史/插件段 pending 骨架 + 无伪空态 + 数据到后真实渲染、中栏/L3 预览 LoadingBlock ping 圆点 + 文案 + 垂直居中几何；mock 基座 candidates 须含 focus 目标——global scope refs 由 candidates 派生，空则 focus 被 prune）。
 
+**2026-10-10 全站加载态审查（任务 C，四批 + review 消化，commits `ca965a5`/`6224f99`/`6fd7a1c`/`118c8c8`/`cd037aa`）**：UI 重构多轮后加载态与真实结构脱节，全项目复查（工作台重点）。四区盘点（4 并发 subagent + 本人复核；**A 区「ChatSkeleton 双重 padding」系误报撤案**——真实行 `MessagePrimitive.Root` 自带 px-3 sm:px-5，与骨架一致）后分四批修复：
+
+- **批 1 骨架单源换代**：`ListRowSkeleton` 扩 `lines=1|2`（单行档对齐 v2 行原语 .frow/.crow/.srow2/ChatRow ≈40px，marker 同步收窄 h-5 w-5）+ `action=meta|none|square`（**`button` 档后续 review 确认全仓零消费已删除**）；调用点换档（历史/文件树/工具面板/移动 sheets 等 13 处）；容器异形卡（gfcard/pcard）逐行内联垫壳。**P3 diverge 记档**：lines=1 单行条 h-5 w-40 vs v2 真实行文本 lineHeight ±4px——同形骨架标准是行高/结构同形，单条宽度不求像素级一致，不再扩原语。
+- **批 2 错误态收敛 + 伪值家族**：8+ 处 isError 伪空态收敛为两形态——区段级 `ResourceStatePanel tone="danger"`（file-browser :58 export 的段级错误标准件：title key + error.message）+ 搜索类轻量错误行（`px-4 py-2 text-[11.5px] text-error`）；CommitFileDiff P0（isPending 误渲染「无法打开此差异」）；SettingsRootView 值行 pendingValue shimmer；插件组头计数 pending「…」；gitchip data 门（`data != null` 才显计数）。
+- **批 3 会话现场（工作台重点）**：pi streamError 接线（threadBody 顶部错误条）；claude 空会话断线反馈（`everConnected` 门——首连窗口显 ChatSkeleton 防闪「离线中」伪状态，曾连上过才显离线反馈）；终端首连「连接中」vs 重连「重连中」分流（`hasReconnected` = reconnectAttemptsRef>0）；commit/discard mutation pending 按钮文案；MobileFocusBody 深链 projectName null → LoadingBlock。
+- **批 4 路由级**：`defaultErrorComponent` 收编 `RouteErrorFallback`（token 卡 + 本地化 + `router.invalidate()` 重试 + **零业务组件依赖**防 entry chunk 污染 + h-screen 符合根链 100vh）；`defaultPendingComponent` **判定不设**（升级理由：pendingComponent 无法只限冷启动——移动端 tap 导航无 hover 预取，未预取懒 chunk 下载期也算 pending transition，设了即插全局层违反「路由切换保持上一屏」）。
+- **review 消化（design + code 双 reviewer，P1×4/P2×5/P3×2 全修）**，机制层教训：
+  - **useMemo fingerprint 必须显式纳入 isError**：keepPreviousData 场景 `dataUpdatedAt` 在失败路径恒 0 不变 → dataKey 不含 isError 时错误后 fingerprint 与 pending 期相同、缓存命中，错误态分支**不可达**（instance-area dataKey 修复 + hook 透传 error）。
+  - **isError → isLoadingError**（×8：project-tool-panels ×6 / market sources / mcp detail）：isError 含 refetch 失败（有缓存数据时为真），渲染错误态会把已渲染内容顶掉；`isLoadingError` = isError 且 data===undefined 才该渲染错误占位（v5 语义）。
+  - **骨架容器壳逐行垫壳法**：ListRowSkeleton 行硬编码 px-3，放进自带 padding 的卡壳（gfcard 16px）叠加成双重内缩（加载完左跳 12px）——卡内骨架必须逐行内联垫壳（无 px 行条 + mirror 真实行形：gfcard 30×30 徽章块 + 名/副双条 + live 位短条 + sep-row 分隔；mcard 三层 r1/d2/右对齐钮块，两 tab 抽 `MarketCardSkeleton` 本地单源）。钮位错排（骨架把钮放顶行右端）= 加载完钮从右上跳右下 + 卡高差 ~28px。
+  - **scroller（非 flex container）内子元素 flex-1 是死属性**（frontend-notes §8 应用）：居中容器用 `min-h-full`。
+- **记档豁免**：files 目录导航不加 keepPreviousData（目录导航是**新内容语境**非同 query 刷新；§13 cwd 回退 effect 依赖 error，旧目录残显干扰回退观感）；SearchEmptyState / ChatOverview v1 组件族换代（非加载态特有）；assistant 运行占位 user 色（Phase 3 域）。
+
+**探针（任务 C 后）**：probe-loading-states 13/13 保持全绿；全套 e2e 27/27 + 单测 774 + 四门禁 + CSS 硬闸 + tokens 机检全过（5 个 commit 各自验证链完整）。
+
 ### §6.12p 真机反馈修复：sheet 下拉收起回弹 + 历史 sheet prompt 连带卸载（2026-09-27，commit `0f3c882`）
 
 **① 拖拽 dismiss 回弹（用户真机反馈）**：`endDrag` dismiss 分支曾先清 inline transform 再交 Radix exit 动画——sheet **瞬跳回原位**再从原位滑 16px+fade（「回弹后再消失」）。修复：**保留 inline transform 作为 exit 动画起点**（tw-animate-css 的 exit keyframes 只有 `to` 无 `from`，起始值 = 当前计算样式），inline 变量覆盖 exit 形态——`--tw-exit-translate-y` = 顶边推出视口底+40px 余量（`slide-out-to-bottom-4` 的 16px 不够出屏）、`--tw-exit-opacity: 1`（iOS dismiss 纯滑出不 fade）、200ms ease-in 贴合松手初速度。重开无残留（Radix closed 即 unmount，inline 样式随之消亡）。
