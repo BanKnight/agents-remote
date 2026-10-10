@@ -1286,7 +1286,10 @@ export function FilesPanel({
       {/* 批 11 真同构 2c：容器 px-3 移除——两侧 .frow 贴边统一 = 行自身 16px（v2-primitives
           单源；此前全局侧 12+16=28px vs 工具侧 16px，用户实测「贴边间距不同」）。
           [data-desktop-inspector] 桌面密度分档（7px 14px）保留不动（2026-09-29 真机拍板）。 */}
-      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto pb-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]">
+      {/* v1.6 真机反馈：max-lg pb 让位已上移 GlobalFilesOverview 容器（nav 上方截断滚动链，
+          消「内容高落入（净区, 容器高）窗口 → 尾行被 nav 遮 + 零滚动量」死角），自身恢复
+          pb-3 尾部余量——桌面 / 项目 scope（无 nav，var=0）行为不变。 */}
+      <div className="flex flex-1 min-h-0 flex-col overflow-y-auto pb-3">
         <UploadQueueCard />
         {/* 03o「..」上一级行（ParentDirRow 单源，与工具区 files 面板同构）：path 非空即渲染
             （服务端一级子目录 parentPath="" 非空串判定会吞行，故按 path 判）；根层（项目根/

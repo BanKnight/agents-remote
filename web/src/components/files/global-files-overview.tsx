@@ -151,7 +151,12 @@ export function GlobalFilesOverview({
           .obtn.srch，点按展开 = 03x 全宽过滤、✕ 收起清词）；桌面 = 常驻 .psearch（38px/r12
           移动档 / 34px/r10 桌面档）+ page 态 ⌘F 角标不变。容器与卡片同边距（移动 px-4 16 /
           桌面 px-5 20），lg gap 12 接管 gfcard 桌面档归零的 margin（mbody gap 语义）。 */}
-      <div className="flex min-h-0 flex-1 flex-col px-4 pt-2.5 lg:gap-3 lg:px-5 lg:pt-3">
+      {/* v1.6 真机反馈（iPhone 全局文件无法滚动）：滚动容器若全高延伸到屏幕底、仅靠自身
+          pb 让位底部 nav，内容高落入（净区高, 容器高）窗口时——溢出净区的尾行侵入 nav
+          覆盖区被遮挡，但内容底缘 < 容器高 → scrollHeight 判定无溢出 → 零滚动量（死角）。
+          治本 = 本容器 max-lg 在 nav 上方截断滚动链（容器底 = nav 顶），任何超量内容都成
+          真溢出；FilesPanel 滚动容器自身随之恢复 pb-3 小余量。 */}
+      <div className="flex min-h-0 flex-1 flex-col px-4 pt-2.5 max-lg:pb-[var(--shell-mobile-bottom-nav-space,0px)] lg:gap-3 lg:px-5 lg:pt-3">
         {isMobile && !pageMode ? (
           <div className="flex flex-none items-center gap-1.5">
             {searchOpen ? (
