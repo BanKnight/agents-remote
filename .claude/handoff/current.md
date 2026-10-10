@@ -4,7 +4,7 @@
 
 ## 一句话状态
 
-用户 mid-turn 指派两个全局文件问题（v1.6 真机反馈）：① iPhone 端全局文件无法滚动（agents-remote 项目能滚、22router 不能，看得到下方还有内容）；② 桌面端布局与 mac-files-global 原型差别巨大。**②已修**：作用域分段从满宽第二行收进 mhead 标题行内 280px 胶囊（原型 :66），抽 `FilesScopeSeg` 单源组件由 WorkbenchRoute mainPage 装配进 header actions；诊断几何实锤 seg4 x=1104 w=280 两段 137px 与原型完全对齐；三探针回归全绿（cwd-memory / m9-d 67 / batch4 42）。**①转真机取证**：Chromium 移动视口实测滚动链全健康（根层/子目录层 sh=2750/ch=759/canSetScroll ✓、父链每层 flex/min-h-0 核对齐、touch-action/sticky/content-visibility 全排除）→ iOS WebKit 专属 → 按 frontend-notes §22 证据纪律停止推理修复，埋取证浮层 `web/src/lib/files-scroll-debug.ts`（main.tsx 已挂载，DEBUG_ENABLED=true 已进 entry chunk）。commit 663ae59 已 push。
+两个全局文件问题**双双修复完成**：②桌面 seg4 收进标题行（663ae59）✓；①iPhone 滚动死角根因实锤并修复（d067ba8）——**滚动容器全高延伸到屏幕底 + 自身 pb 让位 nav 的模式存在死角**：内容高 ∈（净区高 608, 容器高 712）时（22router ≈680）尾行侵入 nav 覆盖区被遮 + scrollHeight 判定无溢出零滚动量；Safari 视口矮 47px 同内容真溢出可滚——四象限现象（Safari 滚/PWA 不滚/agents-remote 滚/22router 不滚）全部闭合。修复 = GlobalFilesOverview 容器 max-lg:pb-[var(--shell-mobile-bottom-nav-space)] 把滚动链抬到 nav 顶上方 + FilesPanel 滚动容器恢复 pb-3。死角场景诊断 ALL PASS + 回归全绿（cwd-memory/m9-d 67/batch4 42/e2e file-browser 2）。**待用户真机确认滚动恢复后删取证浮层**（files-scroll-debug.ts + main.tsx 挂载点 + localStorage 键 files-scroll-debug-v3）。
 
 ## 本 session 焦点（两个全局文件问题）
 
@@ -19,8 +19,10 @@
 
 - ✅（前段）设置二级 UI 换代 commit `602daef` 已 push；待用户真机验证清单 5 条（redesign-v2.md）。
 - ✅ 问题②修复 + 问题①取证通道 commit `663ae59` 已 push（全门禁绿：format/lint/typecheck/单测 774/CSS 硬闸/落盘 content-type 双 text）。
-- ⬜ **等用户真机（取证 v4 已部署 a959c7c）**：用户关键观察「Safari 能滚 PWA 不能」+「被遮挡的是两个文件，恰被 safe-area 遮挡」→ 主线假设 = **移动端底部让位失效**（FilesPanel 滚动容器 `pb-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]` 是全仓唯一没 `max(16px,…)` 保底的写法；CSS 规则落盘已验证存在；useMeasuredBottomNav 实现健康、mainStyle 四分支全覆盖）。数据吻合：sh=ch=712 = 内容恰填满容器无滚量；Safari 视口矮 47px → 容器矮 → 22router 内容溢出可滚。待 v4 数据定案：k 行新增 y/pb（容器 rect.top + computed padding-bottom）+ nav 行（底部 nav rect）→ 切分「让位失效」vs「内容异常」。
-- ⬜（v4 数据回传后）按几何定案根因 → 修复（候选：FilesPanel pb 加 max 保底对齐全仓写法 / var 注入链修复）→ 删 files-scroll-debug.ts + main.tsx 挂载点 + 清 localStorage 键。
+- ✅ 问题①根因定案并修复（d067ba8 已 push）：v4 数据 + 用户截图几何实锤**死角**——容器全高延伸到屏幕底（y=132 ch=712）+ 自身 pb 让位（pb=104 生效，非失效）→ 净区 608；22router 内容 ≈680 ∈ (608, 712) → 尾行侵入 nav 区（nav y=740 h=104）被遮（package.json 半行实证）+ 内容底缘 680 < 712 → scrollHeight 无溢出零滚量（dy=152 白滑）。Safari 视口矮 47px 同内容真溢出可滚——四象限现象全部闭合。修复 = GlobalFilesOverview 容器 `max-lg:pb-[var(--shell-mobile-bottom-nav-space,0px)]`（滚动链抬到 nav 顶上方）+ FilesPanel 滚动容器恢复 `pb-3`。死角场景诊断（25 行 mock）ALL PASS（容器底=nav 顶、滚动量 236、滚到底尾行底 761 ≤ nav 顶 774）；回归 cwd-memory ALL PASS + m9-d 67 + batch4 42 + e2e file-browser 2 passed。
+- ⬜ **等用户真机确认**：iPhone PWA 全局文件 → 22router → 上滑应正常滚动、滚到底最后行完全可见。确认后**删取证浮层**：`web/src/lib/files-scroll-debug.ts` 整文件 + main.tsx 挂载两处（import + mountFilesScrollDebug() 调用）+ 提示清 localStorage 键 `files-scroll-debug-v3`。
+- ⬜（背景存量，同款死角候选）mobile-projects-home:198 / mobile-plugins-market / plugins-home 等移动 L1 页 = 同款「滚动容器自身 pb 让位」模式，内容高恰落窗口时同样触发；本轮 surgical 只修报告的文件页，其余待用户反馈或统一治理批次推广「父层截断」。
+- ⬜（背景存量）取证浮层 v4 遗留观察：pv=69（pm=221 中 69 次 defaultPrevented）来源未查——若真机修复后仍偶发滚不动，沿 pv 切分 JS 拦截层。
 
 ## 易丢的关键上下文
 
