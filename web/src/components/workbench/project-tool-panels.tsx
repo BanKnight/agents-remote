@@ -22,7 +22,7 @@ import {
 import { enqueueUploads, UploadQueueCard } from "../files/upload-queue";
 import { FileCrumb } from "../files/file-crumb";
 import { FileTreeRows, RowChevron } from "../files/file-tree-rows";
-import { ParentDirRow } from "../files/file-browser";
+import { ParentDirRow, ResourceStatePanel } from "../files/file-browser";
 import { MoveSheet } from "../files/move-sheet";
 import { NewItemSheet } from "../files/new-item-sheet";
 import { RenameDialog } from "../files/rename-dialog";
@@ -221,6 +221,13 @@ export function GitToolPanel({
           // 后台刷新（isFetching）不走此分支，切回不闪。.frow 单行 38px → lines=1 同形
           //（默认双条 62px 会在加载完整体塌缩）。
           <ListRowSkeleton count={3} lines={1} />
+        ) : diff.isError ? (
+          // 错误态（批 2 收敛）：原落「暂无改动」伪空态（失败被当成没有文件）。
+          <ResourceStatePanel
+            message={diff.error.message}
+            title={t("git.loadFailed")}
+            tone="danger"
+          />
         ) : (
           <>
             {files.map((file) => (
@@ -273,6 +280,13 @@ export function GitToolPanel({
               // 首载骨架（§6.12o），同工作区段语义。.crow 单行（hash+message+time）无右尾
               // 元素 → lines=1 + action="none"（默认 square 是幻影右块）。
               <ListRowSkeleton count={2} marker={false} lines={1} action="none" />
+            ) : log.isError ? (
+              // 错误态（批 2 收敛）：原落「暂无提交」伪空态。
+              <ResourceStatePanel
+                message={log.error.message}
+                title={t("git.loadFailed")}
+                tone="danger"
+              />
             ) : (
               <>
                 {commits.map((commit) => (
@@ -570,6 +584,10 @@ export function FilesToolPanel({
           // 纯文案「正在加载文件...」；keepPreviousData 下逐键切 key 不再进入此分支。
           // .xrow 单行（ic + mono path + badge）→ lines=1。
           <ListRowSkeleton count={3} lines={1} />
+        ) : search.isError ? (
+          // 搜索错误行（批 2 收敛）：原落「无匹配」伪空态；轻量形态（market MCP 段先例），
+          // message 为第一手错误信息。
+          <p className="px-4 py-2 text-[11.5px] text-error">{search.error.message}</p>
         ) : matches.length === 0 ? (
           <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("files.searchEmpty")}</div>
         ) : null}
@@ -588,6 +606,14 @@ export function FilesToolPanel({
         .frow 单行 38px → lines=1 同形；目录内容到后空目录仍走真空态（无行）。 */}
       {listing.isPending ? (
         <ListRowSkeleton count={5} lines={1} />
+      ) : listing.isError ? (
+        // 目录错误态（批 2 收敛）：原 FileTreeRows 收空 entries 裸空白。子目录失败由 §13
+        // 回根 effect 兜住自动回根；根目录失败此前无任何反馈（重试随 query refetch）。
+        <ResourceStatePanel
+          message={listing.error.message}
+          title={t("files.errorTitle")}
+          tone="danger"
+        />
       ) : (
         /* 批 11 真同构：行 DOM/守卫链/长按右键菜单收敛 FileTreeRows 单源（与 FilesPanel 同一份
            代码）。items 构造（menuItems/dirMenuItems 按类型分支）/dirty 徽标/diff 编排留容器，
@@ -791,6 +817,9 @@ export function WikiToolPanel({
           // 首载骨架（§6.12o）：防搜索请求在途显「无匹配」伪空态。.wpg 两行 wrap（标题+
           // 摘要）无左 marker → marker=false 保双条。
           <ListRowSkeleton count={2} marker={false} />
+        ) : search.isError ? (
+          // 搜索错误行（批 2 收敛）：原落「没有匹配的页面」伪空态（files 搜索同款轻量形态）。
+          <p className="px-4 py-2 text-[11.5px] text-error">{search.error.message}</p>
         ) : (
           <>
             {matches.map((m) => (
@@ -837,6 +866,13 @@ export function WikiToolPanel({
         // 首载骨架（§6.12o）：防「加载中 = 暂无页面」伪空态；后台刷新（isFetching）不进来。
         // .tgrp 组头 + .wpg 页行树无左 marker，组头单行主导 → marker=false + lines=1。
         <ListRowSkeleton count={3} marker={false} lines={1} />
+      ) : index.isError ? (
+        // 错误态（批 2 收敛）：原落「Agent 通过 wiki MCP 工具写入的页面…」引导文案伪空态。
+        <ResourceStatePanel
+          message={index.error.message}
+          title={t("wiki.loadFailed")}
+          tone="danger"
+        />
       ) : (
         <>
           {groups.map((group) => {
@@ -965,7 +1001,11 @@ export function usePanelToolChip({
             ? ` ${formatAheadBehind(chipBranch.ahead, chipBranch.behind)}`
             : ""}
         </b>
-        <span>{t("git.chipCounts", { worktree, staged })}</span>
+        {/* 计数 data 门（批 2 伪零收敛）：请求在途/失败不渲染「工作区 0 · 暂存 0」伪零，
+            只显分支名段；数据到达后计数出现（branch 与计数同源一次渲染，无二次跳变）。 */}
+        {gitDiffForChip.data != null ? (
+          <span>{t("git.chipCounts", { worktree, staged })}</span>
+        ) : null}
       </div>
     ) : kind === "files" ? (
       filesSearchOpen ? (

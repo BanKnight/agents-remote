@@ -244,6 +244,11 @@ export function MobileMcpDetail({ name }: { name: string }) {
         {servers.isLoading ? (
           // 详情层（§6.12o）单源 LoadingBlock，替换「…」残留（桌面 mainPage 复用本组件同愈）。
           <LoadingBlock className="px-4 py-4" label={t("mcp.loading")} />
+        ) : servers.isError ? (
+          // 错误态（批 2 收敛）：原落「暂无服务器」伪空态（深链直达时失败被当成没配置）。
+          <p className="mx-4 rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
+            {t("api.mcpListFailed")}
+          </p>
         ) : entry ? (
           <div className="cfg">
             <div className="krow">

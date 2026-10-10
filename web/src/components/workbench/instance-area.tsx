@@ -633,6 +633,17 @@ function AgentPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
   // 是工作台中栏最大空白点）；isPending 语义——有缓存数据后本分支不再可达，后台刷新不闪。
   if (detail.isLoading)
     return <LoadingBlock className="min-h-0 flex-1" label={t("workbench.sessionLoading")} />;
+  if (detail.isError) {
+    // 错误态（批 2 收敛）：原落 PlaceholderPanel 裸显 sessionId——404/网络失败被伪装成占位，
+    // 用户无法区分「加载坏了」与「这是占位」。居中 inset 卡形态与 PlaceholderPanel 同构。
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className={`rounded-2xl px-4 py-3 text-xs text-error ${shellSurfaceClasses.inset}`}>
+          {t("workbench.sessionLoadFailed")}
+        </div>
+      </div>
+    );
+  }
   if (detail.data?.session.provider === "claude") {
     return <ChatPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
@@ -652,6 +663,16 @@ function TerminalPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
   const detail = useTerminalDetail(panelRef);
   if (detail.isLoading)
     return <LoadingBlock className="min-h-0 flex-1" label={t("workbench.sessionLoading")} />;
+  if (detail.isError) {
+    // 错误态（批 2 收敛）：同 AgentPanelRouter——失败不再伪装 PlaceholderPanel。
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className={`rounded-2xl px-4 py-3 text-xs text-error ${shellSurfaceClasses.inset}`}>
+          {t("workbench.sessionLoadFailed")}
+        </div>
+      </div>
+    );
+  }
   if (detail.data?.session) {
     return <TerminalPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
@@ -1940,6 +1961,8 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
   candidates: GlobalInstanceCandidate[];
   projectNames: string[];
   isLoaded: boolean;
+  /** overview 请求失败（isLoaded=false 的失败分支专属；调用方据此渲染错误态而非永驻骨架）。 */
+  isError: boolean;
 } {
   const isGlobal = scope.kind === "global";
   const overview = useQuery({
@@ -1965,12 +1988,18 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
   // subtitles.dataUpdatedAt 一并纳入：subtitle 到达触发重算，把第二行 patch 进已渲染卡片。
   const dataKey = `${isGlobal}|${overview.dataUpdatedAt}|${subtitles.dataUpdatedAt}`;
   return useMemo(() => {
-    if (!isGlobal) return { candidates: [], projectNames: [], isLoaded: true };
+    if (!isGlobal) return { candidates: [], projectNames: [], isLoaded: true, isError: false };
     if (overview.data === undefined) {
       // data 未回（首次加载中 / 请求失败）→ isLoaded **false**，守卫 WorkbenchRoute prune effect
       // 不在 refs 空时误清持久化 tab（与原 1+2N 路径 success-only 语义一致：refs 空绝不 prune；
       // 失败时显示骨架而非空态，避免「overview 失败 → 清光全部 session tab」灾难）。
-      return { candidates: [], projectNames: [], isLoaded: false };
+      // isError 让调用方区分两态：加载中显骨架、失败显错误（原实现失败永驻骨架，批 2 收敛）。
+      return {
+        candidates: [],
+        projectNames: [],
+        isLoaded: false,
+        isError: overview.isError,
+      };
     }
     // subtitle 从第二阶段 map 补入（未回则 undefined，卡片退化 2 行）。overview 核心响应不再带 subtitle。
     const subtitleMap = subtitles.data?.subtitles;
@@ -1984,7 +2013,7 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
       type: c.type,
       updatedAt: c.updatedAt,
     }));
-    return { candidates, projectNames: overview.data.projectNames, isLoaded: true };
+    return { candidates, projectNames: overview.data.projectNames, isLoaded: true, isError: false };
     // isGlobal/overview/subtitles 由 dataKey fingerprint 覆盖（data 变 → dataUpdatedAt 变）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey]);

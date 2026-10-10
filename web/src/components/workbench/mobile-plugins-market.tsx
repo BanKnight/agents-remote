@@ -603,7 +603,25 @@ export function MobileMarketSources() {
           <div className="d">{t("plugins.skillsShDesc")}</div>
         </div>
 
-        {/* 自定义源（removeSource 有真实能力，卡内 danger 钮为出口；失败 error 行渲染） */}
+        {/* 自定义源（removeSource 有真实能力，卡内 danger 钮为出口；失败 error 行渲染）。
+            加载/错误分支（批 2 收敛）：原零分支——pending 期列表区直接空（静态卡与添加表单
+            之间裸断）、失败同样空。骨架 = .scard 壳 ×2 垫 shimmer 条（r1 名行 + url 行）。 */}
+        {sources.isLoading ? (
+          <>
+            {[0, 1].map((i) => (
+              <div aria-hidden="true" className="scard" key={i}>
+                <div className="r1">
+                  <span className="skeleton-shimmer block h-5 w-40 rounded" />
+                </div>
+                <span className="skeleton-shimmer mt-1 block h-4 w-56 rounded" />
+              </div>
+            ))}
+          </>
+        ) : sources.isError ? (
+          <p className="mx-4 mt-2 rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
+            {t("plugins.sourcesLoadFailed")}
+          </p>
+        ) : null}
         {list.map((source) => (
           <div className="scard" key={source.id}>
             <div className="r1">

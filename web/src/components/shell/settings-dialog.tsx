@@ -194,7 +194,7 @@ export function SettingsContent({
       body = <GeneralSection />;
       break;
     default:
-      body = <SettingsRootView settings={settings} onNavigate={onNavigate} />;
+      body = <SettingsRootView loading={loading} settings={settings} onNavigate={onNavigate} />;
   }
 
   return body;
@@ -205,9 +205,12 @@ export function SettingsContent({
  * title-only + 右 chevron（Apple 设置一级项范式）。
  */
 function SettingsRootView({
+  loading,
   settings,
   onNavigate,
 }: {
+  /** settings query 首载中：值行显 shimmer 不显伪值（伪零/伪「无」家族，批 2 收敛）。 */
+  loading: boolean;
   settings: GetSettingsResponse["settings"] | undefined;
   onNavigate: (section: SettingsSection) => void;
 }) {
@@ -244,6 +247,11 @@ function SettingsRootView({
     );
   };
 
+  // 伪值收敛（批 2）：loading 期 claude/pi 激活预设、firecrawl、ACP 配置数四行值位渲染
+  // shimmer 条，不渲染「无 / 未设置 / 未配置」伪值；数据到后同槽换真实值。
+  const pendingValue = (
+    <span aria-hidden="true" className="skeleton-shimmer inline-block h-3.5 w-12 rounded" />
+  );
   const claudeActive = settings?.runtimes.claude.activePresetId
     ? (settings.runtimes.claude.presets.find(
         (p) => p.id === settings.runtimes.claude.activePresetId,
@@ -292,25 +300,33 @@ function SettingsRootView({
       {/* RUNTIME 预设（07 第二组）：新建实例时可选；全局默认，会话 ℹ 可覆盖 */}
       <div className="sect">{t("settings.runtimePresets")}</div>
       <div className="sgroup">
-        {row(t("settings.claudePreset"), <>{claudeActive}</>, () => onNavigate("claude"))}
-        {row(t("settings.piProvider"), <>{piActive}</>, () => onNavigate("pi"))}
+        {row(t("settings.claudePreset"), loading ? pendingValue : <>{claudeActive}</>, () =>
+          onNavigate("claude"),
+        )}
+        {row(t("settings.piProvider"), loading ? pendingValue : <>{piActive}</>, () =>
+          onNavigate("pi"),
+        )}
         {row(
           t("settings.firecrawlKey"),
-          hasFirecrawl ? t("settings.keySet") : t("settings.keyUnset"),
+          loading ? pendingValue : hasFirecrawl ? t("settings.keySet") : t("settings.keyUnset"),
           () => onNavigate("pi"),
-          hasFirecrawl ? "ok" : undefined,
+          loading ? undefined : hasFirecrawl ? "ok" : undefined,
         )}
         {/* ACP 段入口（07 原型只画 3 行，但 ACP 是真实 runtime——无入口则配置能力被割裂，
             且与 §6.8 自述「四行含 ACP」一致）。值 = 已配置 provider 数（有据：acp 掩码配置）。 */}
         {row(
           t("settings.section.acp"),
-          <>
-            {acpConfiguredCount > 0
-              ? t("settings.acpConfiguredCount", { n: acpConfiguredCount })
-              : t("settings.acpNotConfigured")}
-          </>,
+          loading ? (
+            pendingValue
+          ) : (
+            <>
+              {acpConfiguredCount > 0
+                ? t("settings.acpConfiguredCount", { n: acpConfiguredCount })
+                : t("settings.acpNotConfigured")}
+            </>
+          ),
           () => onNavigate("acp"),
-          acpConfiguredCount > 0 ? "ok" : undefined,
+          loading ? undefined : acpConfiguredCount > 0 ? "ok" : undefined,
         )}
       </div>
 

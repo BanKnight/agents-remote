@@ -316,7 +316,9 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
             {/* MCP 服务器组（编号④；＋ 添加 = 14 添加 sheet，scope 随当前段；.r 文字钮 =
                 原型 09 L72 组头形态，与技能组头同体系） */}
             <div className="psect">
-              <span>{t("plugins.mcpGroup", { n: mcpList.length })}</span>
+              {/* 组头计数 pending 传「…」（批 2 伪零收敛）：原加载期渲染「· 0」伪零，
+                  数据到达后跳真实数。i18n 模板 {{n}} 数字/字符串同槽。 */}
+              <span>{t("plugins.mcpGroup", { n: servers.isLoading ? "…" : mcpList.length })}</span>
               <button
                 className="r cursor-pointer"
                 onClick={() => setAddMcpOpen(true)}
@@ -422,7 +424,10 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
             {/* 已安装技能组（v1.4 批6 组头：n 个更新 ›（有结果时，点击重检测）+「＋ 添加」→ 18；
                 无更新时检测入口 = 「检查更新」钮（避 GitHub 限速手动触发纪律不变） */}
             <div className="psect">
-              <span>{t("plugins.skillsGroup", { n: skillList.length })}</span>
+              {/* 组头计数 pending 传「…」（批 2 伪零收敛，同 MCP 组头）。 */}
+              <span>
+                {t("plugins.skillsGroup", { n: installed.isLoading ? "…" : skillList.length })}
+              </span>
               {projectName ? null : (
                 <span className="ml-auto flex items-center gap-3">
                   {hasUpdateNames.size > 0 ? (

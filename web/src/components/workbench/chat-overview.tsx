@@ -17,6 +17,7 @@ import {
 } from "../../api/client";
 import { useConfirm } from "../shell/confirm-dialog";
 import { usePromptDialog } from "../shell/prompt-dialog";
+import { ResourceStatePanel } from "../files/file-browser";
 import {
   actionButtonClasses,
   ListGroup,
@@ -89,7 +90,7 @@ export function ChatOverview() {
   const { holder: promptHolder, prompt } = usePromptDialog();
   const { holder: confirmHolder, confirm } = useConfirm();
 
-  const { data, isPending } = useQuery({
+  const { data, isPending, isError, error } = useQuery({
     queryKey: CHAT_SESSIONS_QUERY_KEY,
     queryFn: listChatSessions,
   });
@@ -357,6 +358,13 @@ export function ChatOverview() {
           // ChatRow 无 marker、单行 title + 右 meta 相对时间 → lines=1 + marker=false +
           // action="meta"（默认 marker+双条 ≈62px 对照真实行 ≈44px，加载完 5 行累计塌缩）。
           <ListRowSkeleton count={5} lines={1} marker={false} action="meta" />
+        ) : isError ? (
+          // 错误态（批 2 收敛）：原落「暂无会话」伪空态（empty 已含 !isPending 门但无 error 门）。
+          <ResourceStatePanel
+            message={error?.message}
+            title={t("chat.listLoadFailed")}
+            tone="danger"
+          />
         ) : empty ? (
           <div className="flex flex-1 items-center justify-center p-6 text-center">
             <p className="text-sm text-on-surface-muted">{t("chat.emptyList")}</p>

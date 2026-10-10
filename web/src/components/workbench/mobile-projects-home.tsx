@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useT } from "../../i18n";
 import { RenameDialog } from "../files/rename-dialog";
+import { ResourceStatePanel } from "../files/file-browser";
 import {
   ProjectDeleteDialog,
   ProjectRenameImpactDialog,
@@ -53,7 +54,7 @@ export function MobileProjectsHome() {
   const navigate = useNavigate();
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
   const { openCreate, dialog: createProjectDialog } = useCreateProjectDialog();
-  const { candidates, projectNames, isLoaded } = useGlobalInstanceCandidates({
+  const { candidates, projectNames, isLoaded, isError } = useGlobalInstanceCandidates({
     kind: "global",
   });
   const { pinned } = usePinnedSessions();
@@ -196,7 +197,14 @@ export function MobileProjectsHome() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
-        {!isLoaded ? (
+        {!isLoaded && isError ? (
+          // 错误态（批 2 收敛）：overview 失败原永驻骨架（isLoaded success-only 语义）——
+          // 用户只看到无限加载。轮询 refetchInterval 在场，错误自愈后自动回内容，不加重试钮。
+          <div className="mx-4 mt-[18px]">
+            <ResourceStatePanel title={t("workbench.overviewLoadFailed")} tone="danger" />
+          </div>
+        ) : null}
+        {!isLoaded && !isError ? (
           // 首载骨架（§6.12o）：防 pending 全列表区空白；容器对齐真实卡形，加载完不跳。
           <div className="mx-4 mt-[18px] rounded-xl border border-sep bg-elevated px-3 py-1">
             <ListRowSkeleton count={3} marker={false} />

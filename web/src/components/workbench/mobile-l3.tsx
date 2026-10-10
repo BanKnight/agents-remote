@@ -1110,6 +1110,11 @@ function CommitFileDiff({
     queryKey: ["projects", projectName, "git", "commit-diff", hash, path],
     queryFn: () => getProjectGitCommitFileDiff(projectName, hash, path),
   });
+  // isPending 前置分流（§6.12o 批 2 P0）：原条件把 pending 期 !data 一并判成错误，展开时
+  // 请求在途恒显「无法打开此差异」伪错误；详情层（§6.12o）LoadingBlock，完成/失败后才分流。
+  if (fileDiff.isPending) {
+    return <LoadingBlock className="py-4" label={t("git.loadingDiff")} />;
+  }
   if (fileDiff.isError || !fileDiff.data || fileDiff.data.repository !== true) {
     return <div className="csub">{t("git.fileError")}</div>;
   }
