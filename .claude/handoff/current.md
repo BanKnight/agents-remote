@@ -19,8 +19,8 @@
 
 - ✅（前段）设置二级 UI 换代 commit `602daef` 已 push；待用户真机验证清单 5 条（redesign-v2.md）。
 - ✅ 问题②修复 + 问题①取证通道 commit `663ae59` 已 push（全门禁绿：format/lint/typecheck/单测 774/CSS 硬闸/落盘 content-type 双 text）。
-- ⬜ **等用户真机（取证 v3 已部署 15a5044）**：两组数据钉死两个矛盾——①c0（main 内唯一 .overflow-y-auto，class flex.flex-1 = FilesPanel 滚动容器）sh=ch=712 不溢出，但用户看得到下方内容 → 溢出内容在 main 内已知容器之外（可能在 portal/sheet 层）；②ts/tm 两轮恒 0 + tg=- 与「点击导航过页面」物理矛盾 → touch 通道存疑。v3 = 全文档容器扫描 k0..k3 + pointer 对照通道 pc/pm + 计数 localStorage 持久化（键 files-scroll-debug-v3，杀 PWA 不丢）。用户操作：杀 PWA 重开 → 全局文件 → 进 22router → 上滑 → 随时读浮层发回。
-- ⬜（取证数据回传后）按字段语义切分候选根因 → 定位 → 修复问题① → 删 files-scroll-debug.ts + main.tsx 挂载点 + 清 localStorage 键说明。
+- ⬜ **等用户真机（取证 v4 已部署 a959c7c）**：用户关键观察「Safari 能滚 PWA 不能」+「被遮挡的是两个文件，恰被 safe-area 遮挡」→ 主线假设 = **移动端底部让位失效**（FilesPanel 滚动容器 `pb-3 max-lg:!pb-[var(--shell-mobile-bottom-nav-space,0px)]` 是全仓唯一没 `max(16px,…)` 保底的写法；CSS 规则落盘已验证存在；useMeasuredBottomNav 实现健康、mainStyle 四分支全覆盖）。数据吻合：sh=ch=712 = 内容恰填满容器无滚量；Safari 视口矮 47px → 容器矮 → 22router 内容溢出可滚。待 v4 数据定案：k 行新增 y/pb（容器 rect.top + computed padding-bottom）+ nav 行（底部 nav rect）→ 切分「让位失效」vs「内容异常」。
+- ⬜（v4 数据回传后）按几何定案根因 → 修复（候选：FilesPanel pb 加 max 保底对齐全仓写法 / var 注入链修复）→ 删 files-scroll-debug.ts + main.tsx 挂载点 + 清 localStorage 键。
 
 ## 易丢的关键上下文
 
