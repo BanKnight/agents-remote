@@ -678,12 +678,19 @@ export function ListRowSkeleton({
   count = 4,
   marker = true,
   action = "square",
+  lines = 2,
 }: {
   count?: number;
   /** 左 marker 占位：ListRow 带 icon（文件树）默认 true；无 marker 行（技能 Manage）传 false。 */
   marker?: boolean;
-  /** 右尾占位形状：square=小方块（status/icon，默认），button=文字按钮块（ActionButton），none=无。 */
-  action?: "button" | "none" | "square";
+  /** 右尾占位形状：square=小方块（status/icon，默认），button=文字按钮块（ActionButton），meta=短文本条（相对时间/状态文字），none=无。 */
+  action?: "button" | "meta" | "none" | "square";
+  /**
+   * 文本条档（§6.12o 同形骨架）：2 = title+subtitle 双条（v1 ListRow 带 subtitle 行——历史/页
+   * 面行，默认）；1 = 单行紧凑条（v2 行原语 .frow/.crow/.srow2/ChatRow 一族，行高 ≈40px）。
+   * lines=1 时 marker 同步收窄到 h-5 w-5（v2 行图标 ≈17-20px，28px 幻影方块会撑行高）。
+   */
+  lines?: 1 | 2;
 }) {
   return (
     <div aria-hidden="true" className={listGroupClasses()}>
@@ -692,20 +699,33 @@ export function ListRowSkeleton({
           <span className="flex min-w-0 grow items-center justify-between gap-2">
             <span className="flex min-w-0 items-center gap-3">
               {marker ? (
-                <span aria-hidden="true" className="skeleton-shimmer h-7 w-7 shrink-0 rounded-sm" />
-              ) : null}
-              <span className="min-w-0">
-                <span aria-hidden="true" className="skeleton-shimmer block h-6 w-32 rounded" />
                 <span
                   aria-hidden="true"
-                  className="skeleton-shimmer mt-0.5 block h-4 w-24 rounded"
+                  className={`skeleton-shimmer shrink-0 rounded-sm ${
+                    lines === 1 ? "h-5 w-5" : "h-7 w-7"
+                  }`}
                 />
+              ) : null}
+              <span className="min-w-0">
+                {lines === 1 ? (
+                  <span aria-hidden="true" className="skeleton-shimmer block h-5 w-40 rounded" />
+                ) : (
+                  <>
+                    <span aria-hidden="true" className="skeleton-shimmer block h-6 w-32 rounded" />
+                    <span
+                      aria-hidden="true"
+                      className="skeleton-shimmer mt-0.5 block h-4 w-24 rounded"
+                    />
+                  </>
+                )}
               </span>
             </span>
             {action === "button" ? (
               <span aria-hidden="true" className="skeleton-shimmer h-7 w-16 shrink-0 rounded-xl" />
             ) : action === "square" ? (
               <span aria-hidden="true" className="skeleton-shimmer h-6 w-6 shrink-0 rounded-md" />
+            ) : action === "meta" ? (
+              <span aria-hidden="true" className="skeleton-shimmer h-3 w-10 shrink-0 rounded" />
             ) : null}
           </span>
         </div>

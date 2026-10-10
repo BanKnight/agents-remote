@@ -218,8 +218,9 @@ export function GitToolPanel({
       <div className="px-0">
         {diff.isPending ? (
           // 首载骨架（§6.12o）：仅 isPending（无缓存数据）显，防「加载中 = 无改动」伪空态；
-          // 后台刷新（isFetching）不走此分支，切回不闪。
-          <ListRowSkeleton count={3} />
+          // 后台刷新（isFetching）不走此分支，切回不闪。.frow 单行 38px → lines=1 同形
+          //（默认双条 62px 会在加载完整体塌缩）。
+          <ListRowSkeleton count={3} lines={1} />
         ) : (
           <>
             {files.map((file) => (
@@ -269,8 +270,9 @@ export function GitToolPanel({
           <div className="sect">{t("git.sectRecent")}</div>
           <div>
             {log.isPending ? (
-              // 首载骨架（§6.12o），同工作区段语义。
-              <ListRowSkeleton count={2} marker={false} />
+              // 首载骨架（§6.12o），同工作区段语义。.crow 单行（hash+message+time）无右尾
+              // 元素 → lines=1 + action="none"（默认 square 是幻影右块）。
+              <ListRowSkeleton count={2} marker={false} lines={1} action="none" />
             ) : (
               <>
                 {commits.map((commit) => (
@@ -566,7 +568,8 @@ export function FilesToolPanel({
         {search.isPending ? (
           // 搜索首载骨架（§6.12o review 收敛）：与 wiki 搜索同款 ListRowSkeleton，替换原
           // 纯文案「正在加载文件...」；keepPreviousData 下逐键切 key 不再进入此分支。
-          <ListRowSkeleton count={3} />
+          // .xrow 单行（ic + mono path + badge）→ lines=1。
+          <ListRowSkeleton count={3} lines={1} />
         ) : matches.length === 0 ? (
           <div className="px-4 py-2 text-[12.5px] text-ink-2">{t("files.searchEmpty")}</div>
         ) : null}
@@ -581,10 +584,10 @@ export function FilesToolPanel({
       {parentPath !== null ? (
         <ParentDirRow onNavigate={changePath} parentPath={parentPath} />
       ) : null}
-      {/* 首载骨架（§6.12o 批次 2）：仅 isPending（无缓存数据）显，与 FilesPanel :372 同款
-        count=5 默认参数；目录内容到后空目录仍走真空态（无行）。 */}
+      {/* 首载骨架（§6.12o 批次 2）：仅 isPending（无缓存数据）显，与 FilesPanel 同款 count=5；
+        .frow 单行 38px → lines=1 同形；目录内容到后空目录仍走真空态（无行）。 */}
       {listing.isPending ? (
-        <ListRowSkeleton count={5} />
+        <ListRowSkeleton count={5} lines={1} />
       ) : (
         /* 批 11 真同构：行 DOM/守卫链/长按右键菜单收敛 FileTreeRows 单源（与 FilesPanel 同一份
            代码）。items 构造（menuItems/dirMenuItems 按类型分支）/dirty 徽标/diff 编排留容器，
@@ -785,8 +788,9 @@ export function WikiToolPanel({
       <ToolPanel tool="wiki">
         <div className="sect">{t("wiki.searchPlaceholder")}</div>
         {search.isPending ? (
-          // 首载骨架（§6.12o）：防搜索请求在途显「无匹配」伪空态。
-          <ListRowSkeleton count={2} />
+          // 首载骨架（§6.12o）：防搜索请求在途显「无匹配」伪空态。.wpg 两行 wrap（标题+
+          // 摘要）无左 marker → marker=false 保双条。
+          <ListRowSkeleton count={2} marker={false} />
         ) : (
           <>
             {matches.map((m) => (
@@ -831,7 +835,8 @@ export function WikiToolPanel({
     <ToolPanel tool="wiki">
       {index.isPending ? (
         // 首载骨架（§6.12o）：防「加载中 = 暂无页面」伪空态；后台刷新（isFetching）不进来。
-        <ListRowSkeleton count={3} />
+        // .tgrp 组头 + .wpg 页行树无左 marker，组头单行主导 → marker=false + lines=1。
+        <ListRowSkeleton count={3} marker={false} lines={1} />
       ) : (
         <>
           {groups.map((group) => {

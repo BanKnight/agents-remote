@@ -302,7 +302,7 @@ export function HistoryList({ focusId, projectName }: HistoryListProps) {
       </button>
     </div>
   ) : isFetchingNextPage ? (
-    <div className="px-3 pb-2">
+    <div className="pb-2">
       <HistoryListSkeleton />
     </div>
   ) : !hasNextPage ? (
@@ -348,9 +348,9 @@ export function HistoryList({ focusId, projectName }: HistoryListProps) {
           />
         </div>
         {isLoading ? (
-          <div className="px-3">
-            <HistoryListSkeleton />
-          </div>
+          // 骨架不包 px-3：真实行容器（ListGroup 全宽 + ListRow 自带 px-3）零外层缩进，
+          // 包裹层会叠成 24px 双重缩进，加载完文字左缘跳 12px。
+          <HistoryListSkeleton />
         ) : entries.length === 0 ? (
           isError ? (
             footer

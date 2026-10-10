@@ -26,7 +26,6 @@ import { ChatOverview } from "./chat-overview";
 import {
   AllSessionsGroupedList,
   buildProjectRows,
-  CardGridSkeleton,
   createSessionMenuItems,
   instanceDot2,
   useCreateSession,
@@ -34,6 +33,7 @@ import {
   useProjectInstances,
   type ProjectInstanceEntry,
 } from "./instance-area";
+import { ListRowSkeleton } from "../shell/shell-primitives";
 import { HistoryList } from "./history-list";
 import { SessionModeTabs } from "./mobile-workbench";
 
@@ -224,9 +224,10 @@ export function WorkbenchSide() {
     // 本项目实例分组（microlabel AGENT 会话 / TERMINAL；全空 = 引导行）。
     body =
       projectInstances.isLoading && projectInstances.instances.length === 0 ? (
-        <div className="px-3 py-2">
-          <CardGridSkeleton plain />
-        </div>
+        // 首载骨架（§6.12o 形状换代）：真实结构是 microlabel 组头 + srow2 单行行（34px，
+        // dot + 名），卡形骨架（CardGridSkeleton ≈76px 行）加载完整体塌缩 → 单行行骨架。
+        // dot2 太小不值骨架位、行无右尾元素 → marker=false + action="none"。
+        <ListRowSkeleton count={4} lines={1} marker={false} action="none" />
       ) : projectInstances.instances.length === 0 ? (
         <div className="px-2 py-1 text-caption text-ink-3">{t("workbench.noActiveSessions")}</div>
       ) : (
@@ -269,9 +270,8 @@ export function WorkbenchSide() {
   } else {
     // 「全部」/ global：05g 分组列表（settled gate 防置顶组后到跳变）。
     body = !allSettled ? (
-      <div className="px-3 py-2">
-        <CardGridSkeleton plain />
-      </div>
+      // 同上（§6.12o 形状换代）：AllSessionsGroupedList = 置顶组 + 项目 microlabel + srow2 行。
+      <ListRowSkeleton count={5} lines={1} marker={false} action="none" />
     ) : candidates.length === 0 && projectNames.length === 0 ? (
       <div className="px-2 py-1 text-caption text-ink-3">{t("workbench.globalOverviewEmpty")}</div>
     ) : (

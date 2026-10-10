@@ -434,10 +434,10 @@ export function MobileSessionHistorySheet({
           {isLoading ? (
             // 加载态（M10 第三轮用户反馈「缺少加载态提示」）：isLoading 区分加载与空态，避免
             // 打开即闪「暂无会话」误导。§6.12o 收敛：手写 animate-pulse 灰条 → ListRowSkeleton
-            // 单源（shimmer 单源；.hrow 无 marker/行尾方块 → marker=false + action="none"），
-            // role="status" aria-label 语义保留在外壳。
+            // 单源（shimmer 单源；.hrow 单行 40px：dot + 标题 + 右状态文字 → marker=false +
+            // lines=1 + action="meta"），role="status" aria-label 语义保留在外壳。
             <div aria-label={t("workbench.historyLoading")} role="status">
-              <ListRowSkeleton action="none" count={2} marker={false} />
+              <ListRowSkeleton action="meta" count={2} lines={1} marker={false} />
             </div>
           ) : entries.length === 0 ? (
             isError ? (

@@ -674,6 +674,7 @@ export const en = {
   "wiki.emptyDesc": "Agent-authored pages appear here once written via the wiki MCP tools.",
   "wiki.backToList": "Back to list",
   "wiki.pageMissing": "Wiki page not found",
+  "wiki.pageLoading": "Loading page…",
   "wiki.searchPlaceholder": "Search wiki full text",
   "wiki.searchNoMatch": "No matching pages",
   "wiki.groupUngrouped": "Ungrouped",
@@ -990,6 +991,7 @@ export const en = {
 
   // MCP（外部 server 管理：wrap claude mcp 读写 ~/.claude.json / .mcp.json）
   "mcp.empty": "No MCP servers",
+  "mcp.loading": "Loading configuration…",
   "mcp.add": "Add server",
   "mcp.adding": "Adding…",
   "mcp.remove": "Remove",

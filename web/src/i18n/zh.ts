@@ -669,6 +669,7 @@ export const zh: Record<TranslationKey, string> = {
   "wiki.emptyDesc": "Agent 通过 wiki MCP 工具写入的页面会显示在这里。",
   "wiki.backToList": "返回列表",
   "wiki.pageMissing": "Wiki 页面不存在",
+  "wiki.pageLoading": "正在加载页面…",
   "wiki.searchPlaceholder": "搜索知识库全文",
   "wiki.searchNoMatch": "没有匹配的页面",
   "wiki.groupUngrouped": "未分组",
@@ -967,6 +968,7 @@ export const zh: Record<TranslationKey, string> = {
 
   // MCP（外部 server 管理：wrap claude mcp 读写 ~/.claude.json / .mcp.json）
   "mcp.empty": "暂无 MCP 服务器",
+  "mcp.loading": "正在加载配置…",
   "mcp.add": "添加服务器",
   "mcp.adding": "添加中…",
   "mcp.remove": "移除",

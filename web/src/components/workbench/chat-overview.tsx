@@ -354,7 +354,9 @@ export function ChatOverview() {
         {isPending ? (
           // 首载骨架（§6.12o）：仅 isPending（无缓存数据）显；empty 已含 !isPending 门，
           // 数据到后真空态才显「暂无会话」，后台刷新走下方分组分支不闪骨架。
-          <ListRowSkeleton count={5} />
+          // ChatRow 无 marker、单行 title + 右 meta 相对时间 → lines=1 + marker=false +
+          // action="meta"（默认 marker+双条 ≈62px 对照真实行 ≈44px，加载完 5 行累计塌缩）。
+          <ListRowSkeleton count={5} lines={1} marker={false} action="meta" />
         ) : empty ? (
           <div className="flex flex-1 items-center justify-center p-6 text-center">
             <p className="text-sm text-on-surface-muted">{t("chat.emptyList")}</p>

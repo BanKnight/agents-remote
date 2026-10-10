@@ -17,7 +17,6 @@ import {
 } from "../../hooks/skills";
 import { useAddMcpServer, useMcpMarketSearch, useMcpServers } from "../../hooks/mcp";
 import { ShellIcon } from "../shell/icons";
-import { ListRowSkeleton } from "../shell/shell-primitives";
 import { MobileSheet } from "../shell/mobile-sheet";
 
 /**
@@ -182,9 +181,18 @@ function SkillMarketTab() {
         {showHint ? (
           <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptyMarket")}</p>
         ) : search.isPending ? (
-          // 搜索首载骨架（§6.12o）：market 卡行（名 + 安装量 + 尾安装钮）→ ListRowSkeleton
-          // marker=false + action="button" mirror mcard 几何；原「…」纯文案消解。
-          <ListRowSkeleton action="button" count={3} marker={false} />
+          // 搜索首载骨架（§6.12o 容器壳）：真实行是独立 .mcard 卡（margin 10px 16px 0 +
+          // border sep + r14 + padding 10px 14px），列表骨架加载完每行凭空长出卡壳——
+          // 逐卡垫壳：r1 名条 + 尾安装钮块 + d2 副行条；原「…」纯文案消解。
+          Array.from({ length: 3 }, (_, i) => (
+            <div aria-hidden="true" className="mcard" key={i}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="skeleton-shimmer block h-5 w-40 rounded" />
+                <span className="skeleton-shimmer h-7 w-16 shrink-0 rounded-xl" />
+              </div>
+              <span className="skeleton-shimmer mt-1.5 block h-4 w-24 rounded" />
+            </div>
+          ))
         ) : skills.length === 0 ? (
           <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("skills.empty")}</p>
         ) : (
@@ -303,8 +311,16 @@ function McpMarketTab() {
         {showHint ? (
           <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptyMarket")}</p>
         ) : search.isPending ? (
-          // 搜索首载骨架（§6.12o review 修复）：与 SkillMarketTab 同款，消「…」双形态并存。
-          <ListRowSkeleton action="button" count={3} marker={false} />
+          // 搜索首载骨架（§6.12o 容器壳）：与 SkillMarketTab 同款逐卡垫壳，消「…」双形态并存。
+          Array.from({ length: 3 }, (_, i) => (
+            <div aria-hidden="true" className="mcard" key={i}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="skeleton-shimmer block h-5 w-40 rounded" />
+                <span className="skeleton-shimmer h-7 w-16 shrink-0 rounded-xl" />
+              </div>
+              <span className="skeleton-shimmer mt-1.5 block h-4 w-24 rounded" />
+            </div>
+          ))
         ) : search.error ? (
           <p className="px-4 py-2 text-[11.5px] text-error">{search.error.message}</p>
         ) : servers.length === 0 ? (

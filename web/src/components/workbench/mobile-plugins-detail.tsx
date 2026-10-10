@@ -22,6 +22,7 @@ import {
 import { MarkdownString } from "../markdown/MarkdownString";
 import { useConfirm } from "../shell/confirm-dialog";
 import { MobileSheet } from "../shell/mobile-sheet";
+import { LoadingBlock } from "../shell/shell-primitives";
 import { PluginNav } from "./mobile-plugins-market";
 
 /**
@@ -127,7 +128,8 @@ export function MobileSkillDetail({ name }: { name: string }) {
           <span>{t("skills.skillMdSection")}</span>
         </div>
         {preview.isLoading ? (
-          <p className="px-4 py-2 text-[11.5px] text-ink-2">…</p>
+          // 详情层（§6.12o）单源 LoadingBlock（与桌面同语义 SkillTabPreview 同款），替换「…」残留。
+          <LoadingBlock className="px-4 py-4" label={t("skills.previewLoading")} />
         ) : preview.error ? (
           <p className="mx-4 rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
             {preview.error.message}
@@ -240,7 +242,8 @@ export function MobileMcpDetail({ name }: { name: string }) {
           <span>{t("mcp.detailConfig")}</span>
         </div>
         {servers.isLoading ? (
-          <p className="px-4 py-2 text-[11.5px] text-ink-2">…</p>
+          // 详情层（§6.12o）单源 LoadingBlock，替换「…」残留（桌面 mainPage 复用本组件同愈）。
+          <LoadingBlock className="px-4 py-4" label={t("mcp.loading")} />
         ) : entry ? (
           <div className="cfg">
             <div className="krow">

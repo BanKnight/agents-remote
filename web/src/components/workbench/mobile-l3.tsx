@@ -966,7 +966,9 @@ export function L3GitHistory({ projectName, branch, onOpenCommit }: L3GitHistory
     >
       {log.isPending ? (
         // 首载骨架（§6.12o）：防 meta 行显「HEAD · 共 0 次提交」伪态；后台刷新不进来。
-        <ListRowSkeleton count={4} marker={false} />
+        // .crow 单行（hash+message+time）无右尾元素 → lines=1 + action="none"
+        //（默认 square 是幻影右块；同栈 L3GitBranches 的 action="none" 同款修正）。
+        <ListRowSkeleton count={4} marker={false} lines={1} action="none" />
       ) : (
         <>
           <div className="meta">
@@ -1293,7 +1295,9 @@ export function L3WikiReader({
   if (page.isLoading) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3 pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
-        <ListRowSkeleton count={2} marker={false} />
+        {/* 详情层（§6.12o 分层）：wiki 阅读器是文档内容块（fmeta + MarkdownString 正文），
+            行列表骨架异形——归 LoadingBlock（同栈 file preview / git diff 同款）。 */}
+        <LoadingBlock className="min-h-0 flex-1" label={t("wiki.pageLoading")} />
       </div>
     );
   }

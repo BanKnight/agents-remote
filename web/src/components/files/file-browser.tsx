@@ -231,7 +231,15 @@ export function FileEntryList({
   // overview 按项目名聚合，仅根层有意义——调用方只在根层传 globalCard，子目录层走下方 ListRow
   //（行内 rename input 所在路径）。写操作 actions 保留（M8 全局写边界不受形态影响）。
   if (globalCard) {
-    if (isLoading) return <ListRowSkeleton count={5} />;
+    if (isLoading)
+      return (
+        // 首载骨架（§6.12o 容器壳）：根层真实结构是 .gfcard 卡（border sep + r16 + 卡内
+        // 边距），裸列表骨架会在加载完凭空长出卡壳——骨架包同形 gfcard（gfrow 双行 +
+        // ic 徽章 + live 指示 → 默认双条 + marker + square 已同形）。
+        <div aria-hidden="true" className="gfcard">
+          <ListRowSkeleton count={5} />
+        </div>
+      );
     if (error)
       return (
         <ResourceStatePanel tone="danger" title={t("files.errorTitle")} message={error.message} />
@@ -337,7 +345,9 @@ export function FileEntryList({
   if (isLoading)
     return (
       <div className="px-3">
-        <ListRowSkeleton count={5} />
+        {/* .frow 单行 38px → lines=1 同形（默认双条 62px 加载完整体塌缩）；px-3 包裹是
+            批 11「三态统一内缩」决策，保留。 */}
+        <ListRowSkeleton count={5} lines={1} />
       </div>
     );
   if (error)

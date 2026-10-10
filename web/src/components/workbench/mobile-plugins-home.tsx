@@ -30,7 +30,7 @@ import {
 import { ShellIcon } from "../shell/icons";
 import { CollapsibleSearchRow } from "../shell/collapsible-search";
 import { LucideIcon } from "../shell/lucide-icon";
-import { LargeTitleRow, ListRowSkeleton } from "../shell/shell-primitives";
+import { LargeTitleRow } from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { useConfirm } from "../shell/confirm-dialog";
 import { ActionMenu, useLongPressActions, useRowContextMenu } from "../ui/action-menu";
@@ -326,9 +326,16 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
               </button>
             </div>
             {servers.isPending ? (
-              // 首载骨架（§6.12o）：仅 isPending 显，防 pending 闪「无 MCP」伪空态；
-              // pcard（名 + 副行，无 marker/尾钮）→ marker=false + action="none"。
-              <ListRowSkeleton action="none" count={2} marker={false} />
+              // 首载骨架（§6.12o 容器壳）：仅 isPending 显，防 pending 闪「无 MCP」伪空态。
+              // 真实行是独立 .pcard 卡（margin 0 16px 10px + border sep + r16 + padding
+              // 10px 16px），divide-y 列表骨架会在加载完每行凭空长出卡壳——逐卡垫壳，
+              // 卡内双条 mirror .r1 名 + .d2 副行。
+              Array.from({ length: 2 }, (_, i) => (
+                <div aria-hidden="true" className="pcard" key={i}>
+                  <span className="skeleton-shimmer block h-5 w-40 rounded" />
+                  <span className="skeleton-shimmer mt-1.5 block h-4 w-24 rounded" />
+                </div>
+              ))
             ) : (
               <>
                 {mcpList.map((s) =>
@@ -453,8 +460,13 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
               )}
             </div>
             {installed.isPending ? (
-              // 同上：仅 isPending 显骨架，防 pending 闪「暂无技能」伪空态。
-              <ListRowSkeleton action="none" count={3} marker={false} />
+              // 同上（§6.12o 容器壳）：仅 isPending 显骨架，防 pending 闪「暂无技能」伪空态。
+              Array.from({ length: 3 }, (_, i) => (
+                <div aria-hidden="true" className="pcard" key={i}>
+                  <span className="skeleton-shimmer block h-5 w-40 rounded" />
+                  <span className="skeleton-shimmer mt-1.5 block h-4 w-24 rounded" />
+                </div>
+              ))
             ) : (
               <>
                 {skillList.map((s) => (
