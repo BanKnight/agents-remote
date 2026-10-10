@@ -60,7 +60,7 @@ import { useConfirm } from "../components/shell/confirm-dialog";
 import { tasksExpandedAtom } from "./console-model";
 import { HtmlRenderContext } from "../components/markdown/markdown-components";
 import { useOpenRenderTab } from "./workbench-model";
-import { shellSurfaceClasses } from "../components/shell/shell-primitives";
+import { ChatSkeleton, shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
 import { Dialog, DialogContent } from "../components/ui/dialog";
 import {
@@ -3460,52 +3460,6 @@ export function VirtualizedThreadContent({
           </svg>
         </button>
       )}
-    </div>
-  );
-}
-
-function ChatSkeleton() {
-  // 每行镜像真实气泡（L752 user / L972 assistant）：MessagePrimitive.Root 行（px-3 py-1.5
-  // sm:px-5 + justify-end/start）+ 气泡（max-w-[90%] rounded-2xl 单角 variant bg-* px-4 py-2.5
-  // self-start）。alpha 对齐真实（user-deep/60、surface-raised/70），宽度用 max-w-[90%] 而非
-  // 早期固定百分比（w-3/5 等不对应真实 max-w-[90%]）。内部行用 skeleton-shimmer（与
-  // CardGridSkeleton 范式一致），替代早期 bg-neutral-line 灰条 + 气泡层
-  // skeleton-shimmer 的双重处理——气泡只留底色，扫光交给内部文字行占位条。user 行短
-  //（1-2 行）、assistant 行长（3-4 行）模拟典型对话节奏；行宽不一让气泡宽度由内容决定
-  //（flex item），加载完真实气泡宽度由文字长度决定，行为一致。
-  const rows = [
-    { align: "end", bg: "bg-user-deep/60", corner: "rounded-br-md", lines: ["w-28", "w-20"] },
-    {
-      align: "start",
-      bg: "bg-surface-raised/70",
-      corner: "rounded-bl-md",
-      lines: ["w-40", "w-32", "w-36"],
-    },
-    { align: "end", bg: "bg-user-deep/60", corner: "rounded-br-md", lines: ["w-24"] },
-    {
-      align: "start",
-      bg: "bg-surface-raised/70",
-      corner: "rounded-bl-md",
-      lines: ["w-44", "w-40", "w-36", "w-28"],
-    },
-  ];
-  return (
-    <div className="px-3 sm:px-5" aria-hidden="true">
-      {rows.map((row, i) => (
-        <div
-          key={i}
-          className={`flex py-1.5 ${row.align === "end" ? "justify-end" : "justify-start"}`}
-        >
-          <div className={`max-w-[90%] self-start rounded-2xl ${row.corner} ${row.bg} px-4 py-2.5`}>
-            {row.lines.map((w, j) => (
-              <div
-                className={`skeleton-shimmer h-2.5 rounded ${w}${j > 0 ? " mt-1.5" : ""}`}
-                key={j}
-              />
-            ))}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }

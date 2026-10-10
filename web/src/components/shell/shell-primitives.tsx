@@ -755,6 +755,51 @@ export function LoadingBlock({ label, className }: { label: string; className?: 
   );
 }
 
+/**
+ * 聊天会话首载骨架（mirror 真实气泡行，ClaudeSessionDetailRoute 形状标杆收敛到本单源）：
+ * 每行镜像真实气泡（user 短 1-2 行 / assistant 长 3-4 行），行宽不一让气泡宽度由内容决定
+ *（flex item），与真实「宽度由文字长度决定」行为一致。alpha 对齐真实气泡底（user-deep/60、
+ * surface-raised/70），内部行 skeleton-shimmer 扫光（气泡只留底色）。
+ * aria-hidden：纯装饰占位，读屏不播报（加载完成语义由真实内容出现承载）。
+ */
+export function ChatSkeleton() {
+  const rows = [
+    { align: "end", bg: "bg-user-deep/60", corner: "rounded-br-md", lines: ["w-28", "w-20"] },
+    {
+      align: "start",
+      bg: "bg-surface-raised/70",
+      corner: "rounded-bl-md",
+      lines: ["w-40", "w-32", "w-36"],
+    },
+    { align: "end", bg: "bg-user-deep/60", corner: "rounded-br-md", lines: ["w-24"] },
+    {
+      align: "start",
+      bg: "bg-surface-raised/70",
+      corner: "rounded-bl-md",
+      lines: ["w-44", "w-40", "w-36", "w-28"],
+    },
+  ];
+  return (
+    <div className="px-3 sm:px-5" aria-hidden="true">
+      {rows.map((row, i) => (
+        <div
+          key={i}
+          className={`flex py-1.5 ${row.align === "end" ? "justify-end" : "justify-start"}`}
+        >
+          <div className={`max-w-[90%] self-start rounded-2xl ${row.corner} ${row.bg} px-4 py-2.5`}>
+            {row.lines.map((w, j) => (
+              <div
+                className={`skeleton-shimmer h-2.5 rounded ${w}${j > 0 ? " mt-1.5" : ""}`}
+                key={j}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type MobilePageHeaderProps = {
   actions?: ReactNode;
   back?: { label: string; onClick: () => void };

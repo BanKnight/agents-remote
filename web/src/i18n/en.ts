@@ -73,6 +73,7 @@ export const en = {
   "session.typeShell": "Type shell input...",
   "session.disconnected": "Establishing connection…",
   "session.quickKeys": "Session quick keys",
+  "session.quickKeysCustomize": "Customize keys",
   "session.expandInput": "Expand input",
   "session.collapseInput": "Collapse input",
   "session.namePrompt.createAgent": "Create Agent Session",

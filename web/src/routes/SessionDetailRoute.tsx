@@ -7,7 +7,15 @@ import type {
   TransportStatus,
 } from "@agents-remote/shared";
 import { useQuery } from "@tanstack/react-query";
-import { type FormEvent, type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import TextareaAutosize from "react-textarea-autosize";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Terminal, type ITheme } from "@xterm/xterm";
@@ -29,8 +37,9 @@ import {
 } from "./console-model";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
+import { ActionMenu } from "../components/ui/action-menu";
 import { LucideIcon } from "../components/shell/lucide-icon";
-import { workbenchReconnectRequestAtom } from "./workbench-model";
+import { terminalQuickKeysHiddenAtom, workbenchReconnectRequestAtom } from "./workbench-model";
 
 type SessionDetailProps = {
   projectName: string;
@@ -316,7 +325,40 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
   };
 
   const canSend = canSendToSession(connectionStatus);
-  const quickKeys = sessionQuickKeys(sessionType);
+  // 键位自定义（原型 workspace-terminal-input ③ 落地）：hidden 集（localStorage 持久化）过滤
+  // 快捷键条；⚙ 菜单切换显隐，仅终端 composer 有入口（agent 无）。
+  const [hiddenQuickKeyIds, setHiddenQuickKeyIds] = useAtom(terminalQuickKeysHiddenAtom);
+  const allQuickKeys = sessionQuickKeys(sessionType);
+  const quickKeys = allQuickKeys.filter((k) => !hiddenQuickKeyIds.includes(k.id));
+  const toggleQuickKeyHidden = (id: string) =>
+    setHiddenQuickKeyIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  // ⚙ 键位自定义入口（仅终端 composer，原型 workspace-terminal-input ③「控制行仅键位
+  // 自定义」）：ActionMenu 双端单源（桌面 popover / 移动 sheet），项 = 全集各键勾选显隐
+  //（显示中 = check 图标，点击隐藏；再点恢复）。
+  const quickKeysCustomize =
+    sessionType === "terminal" ? (
+      <ActionMenu
+        align="start"
+        cancelLabel={t("cancel")}
+        items={allQuickKeys.map((k) => ({
+          label: t(k.labelKey),
+          icon: hiddenQuickKeyIds.includes(k.id) ? undefined : <ShellIcon name="check" />,
+          onSelect: () => toggleQuickKeyHidden(k.id),
+        }))}
+        trigger={
+          <button
+            aria-label={t("session.quickKeysCustomize")}
+            className="xbtn cursor-pointer"
+            title={t("session.quickKeysCustomize")}
+            type="button"
+          >
+            <ShellIcon className="h-4 w-4" name="settings" />
+          </button>
+        }
+      />
+    ) : undefined;
 
   // Stable callback for xterm to send raw input bytes over WebSocket
   const sendTerminalInput = useCallback(
@@ -409,6 +451,7 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
         input={input}
         isDesktop={isDesktop}
         quickKeys={quickKeys}
+        quickKeysCustomize={quickKeysCustomize}
         sessionType={sessionType}
         onCollapsedChange={setInputDrawerCollapsed}
         onInputChange={setInput}
@@ -608,15 +651,10 @@ function XtermOutput({
   }, [connectionStatus, onResize]);
 
   const { t } = useT();
-  // 重连 overlay 降级只降遮罩维:connecting 时若终端已有内容(非首次加载),不铺全屏
-  // 遮罩挡已渲染内容,但 spinner + 文案的结构与首连一致(居中同构,见 DESIGN.md
-  // Terminal 连接 overlay 契约)。terminalDataRef 是 ref,但本处随 connectionStatus
-  // 重渲染时读取实时正确。
-  const baseOverlay = terminalOverlay(connectionStatus, t, hasReconnected);
-  const overlay =
-    baseOverlay?.animated && terminalDataRef.current !== null
-      ? { ...baseOverlay, scrim: false }
-      : baseOverlay;
+  // 连接 overlay（真机反馈 2026-10-10 收敛）：首连/重连统一全屏遮罩。原「重连降级」贴身
+  // 浅卡（终端有内容时不铺遮罩）被用户判读为 bug（「有时有方框有时没有」）；浅色
+  // surface-inset 遮罩连上后翻终端黑底 = bg 大跳变。遮罩改终端底色同 token（见组件内注释）。
+  const overlay = terminalOverlay(connectionStatus, t, hasReconnected);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1010,8 +1048,6 @@ function XtermOutput({
 
 type TerminalOverlayState = {
   animated?: boolean;
-  /** animated 分支的遮罩维：true（首连，终端无内容）铺全屏遮罩；false（重连降级）仅贴身轻背景，spinner 结构不变。 */
-  scrim?: boolean;
   tone: "accent" | "danger" | "muted";
   title: string;
 };
@@ -1023,27 +1059,15 @@ function TerminalStatusOverlay({ overlay }: { overlay: TerminalOverlayState }) {
     muted: "border-neutral-line/40 bg-surface-inset/60 text-on-surface-soft shadow-black/20",
   } satisfies Record<TerminalOverlayState["tone"], string>;
 
-  // connecting = transient 态：居中 spinner + 文案（重连降级仅去全屏遮罩，结构不变，
-  // 见 DESIGN.md Terminal 连接 overlay 契约）；error/ended = 终态：顶部 pill。
+  // connecting = transient 态：全屏遮罩（终端底色 token，与 xterm theme.background 同源——
+  // 遮罩→连上零色跳）+ 居中 spinner + 文案；error/ended = 终态：顶部 pill。
+  // 真机反馈 2026-10-10：原浅色 surface-inset 半透明遮罩连上后翻终端黑底跳变大，且重连
+  // 期贴身浅卡被误读为 bug——两者一并收敛为单一全屏形态。
   if (overlay.animated) {
-    const content = (
-      <>
+    return (
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[var(--bg-codeblock)]">
         <TerminalStatusSpinner size="lg" />
         <span className="text-xs font-semibold tracking-wide text-primary">{overlay.title}</span>
-      </>
-    );
-    if (overlay.scrim === false) {
-      return (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl bg-surface-inset/70 px-6 py-5 backdrop-blur-sm">
-            {content}
-          </div>
-        </div>
-      );
-    }
-    return (
-      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-surface-inset/70 backdrop-blur-sm">
-        {content}
       </div>
     );
   }
@@ -1104,6 +1128,8 @@ type SessionInputDrawerProps = {
   input: string;
   isDesktop: boolean;
   quickKeys: SessionQuickKey[];
+  /** 控制行左端入口 slot（终端 = 键位自定义 ⚙；agent/其它 undefined）。undefined 时控制行仅发送钮。 */
+  quickKeysCustomize?: ReactNode;
   sessionType: SessionType;
   onCollapsedChange: (collapsed: boolean) => void;
   onInputChange: (value: string) => void;
@@ -1124,6 +1150,7 @@ function SessionInputDrawer({
   input,
   isDesktop,
   quickKeys,
+  quickKeysCustomize,
   sessionType,
   onCollapsedChange,
   onInputChange,
@@ -1195,10 +1222,12 @@ function SessionInputDrawer({
                 onKeyDown={handleKeyDown}
               />
             </div>
-            {/* 控制行（原型 irow）：终端 composer 无三彩/无附件——仅发送钮（v1.6 ⏎ 文字钮
-                换装 .send2 28×28 r12 主色，与会话版 composer-actions 同源形态；⚙ 键位自定义
-                不落，diverge 记档）。onMouseDown preventDefault 保焦 = 移动端发送后键盘不收。 */}
-            <div className="mt-1 flex justify-end">
+            {/* 控制行（原型 irow）：终端 composer 无三彩/无附件——左端 = ⚙ 键位自定义入口
+               （原型 workspace-terminal-input ③，调用方构造 slot；undefined 时空占位保发送钮
+                靠右），右端 = .send2 28×28 r12 主色发送钮（与会话版 composer-actions 同源形态）。
+                onMouseDown preventDefault 保焦 = 移动端发送后键盘不收。 */}
+            <div className="mt-1 flex items-center justify-between">
+              {quickKeysCustomize ?? <span aria-hidden="true" />}
               <button
                 className="send2 disabled:opacity-40 disabled:cursor-default"
                 disabled={!canSend || input.trim().length === 0}

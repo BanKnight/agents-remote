@@ -214,10 +214,11 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
   });
   // v1.6「点正文任意处进入编辑」（仅查看态 text 分支消费；early return 分支绑不到）。
   // render 态点正文先切源码（md/html render 态 canEdit gate 恒 false——保存会被 hook 拦）。
-  const tapToEdit = useTapToEdit(() => {
+  const enterEditing = () => {
     editor.onRenderModeChange("source");
     setEditing(true);
-  });
+  };
+  const tapToEdit = useTapToEdit(enterEditing);
 
   if (editor.preview.isLoading) {
     return <LoadingBlock className="min-h-0 flex-1" label={t("files.loadingPreview")} />;
@@ -354,7 +355,8 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
       ) : isRenderView ? (
         // 渲染态 = PreviewBody 单源（md → MarkdownString / html → sandbox iframe + 本地资源
         // 内联），与检视面板/中栏 file tab 同一渲染器（onEditChange 不传 = 只读）。
-        <PreviewBody editValue="" preview={data} renderMode="render" />
+        // onActivate = html 点 iframe 也进编辑（iframe 点击不冒泡，宿主只收 focus）。
+        <PreviewBody editValue="" onActivate={enterEditing} preview={data} renderMode="render" />
       ) : (
         // 源码态 = CodeEditor 只读（反馈④b：与编辑态同一画布，切换不再跳样式）。外层
         // py-2.5 同编辑态容器（画布上下 10px 由调用方承担，frontend-notes §8 高度链——
@@ -665,7 +667,14 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
               ) : null}
             </div>
             {isRenderView ? (
-              <PreviewBody editValue="" preview={data} renderMode="render" />
+              // onActivate = html 点 iframe 也进编辑（iframe 点击不冒泡，宿主只收 focus；
+              // editing→source effect 自动切源码）。
+              <PreviewBody
+                editValue=""
+                onActivate={() => onEditingChange(true)}
+                preview={data}
+                renderMode="render"
+              />
             ) : (
               // 源码态 = CodeEditor 只读（反馈④b：与编辑态同画布 + 同 py-2.5 外层容器）。
               <div className="flex min-h-0 flex-1 flex-col py-2.5">

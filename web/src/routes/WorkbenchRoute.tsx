@@ -1153,7 +1153,11 @@ function MainPageShell({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 items-center gap-2 px-5 pt-2.5">
+      {/* header 钉高 44px（真机反馈 2026-10-10：actions 撑高 + items-center 让 h1 基线随
+          actions 高度浮动，三 mainPage 标题高低不一——files 18.3 / plugins 13.3 / settings
+          10.0px）。h1 与 actions 同居 44px 行内居中，标题位置跨页恒定；原型 mhead pt 本身
+          不一（10m:14 / 07m:10），一致性优先 diverge 记档。 */}
+      <header className="flex h-11 shrink-0 items-center gap-2 px-5">
         <h1 className="min-w-0 flex-1 truncate text-[17px] font-bold text-ink-1">{title}</h1>
         {actions}
       </header>

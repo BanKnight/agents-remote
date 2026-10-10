@@ -117,7 +117,8 @@ export function GlobalFilesOverview({
   const isMobile = useIsMobile();
   const pageMode = variant === "page";
   // 卡形态统计源：与项目 Tab 同 ["overview"] query（dedupe 零额外网络；10s refetchInterval 同步受益）。
-  const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
+  // isLoaded 供 globalCard.pending：candidates 未就绪时 FilesPanel 保持骨架（防三段翻转，见 prop 注释）。
+  const { candidates, isLoaded } = useGlobalInstanceCandidates({ kind: "global" });
   // 根 listing 元数据（rootPath → crumb 根段真实目录名）：与 FilesPanel 同 key 同 fn，
   // React Query 缓存共享零额外网络（v1.6 真机反馈：根名不硬编码，读服务器真相）。
   const { data: rootListing } = useQuery({ queryKey: ["root", "files"], queryFn: listRootFiles });
@@ -228,7 +229,9 @@ export function GlobalFilesOverview({
           // .frow 行（v1.5 批 10 反馈⑦ ListRow 同构替换；行内 rename input 所在路径——
           // 卡分支无编辑 UI，code review 2026-09-22 修 rename 回归）。
           globalCard={
-            globalOverview && (currentPath ?? "") === "" ? { overview: globalOverview } : undefined
+            (currentPath ?? "") === ""
+              ? { overview: globalOverview ?? {}, pending: !isLoaded }
+              : undefined
           }
           // v1.6 移动：地址栏上移本容器行2（FileCrumb + 收缩搜索钮同行），FilesPanel 内部
           // 地址栏行隐藏防双 crumb（桌面零变化）。

@@ -82,6 +82,7 @@ import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
   actionButtonClasses,
+  ChatSkeleton,
   LoadingBlock,
   sessionMarker,
   shellSurfaceClasses,
@@ -629,10 +630,12 @@ function HtmlRenderPanel({ id }: { id: string }) {
 function AgentPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
   const { t } = useT();
   const detail = useAgentDetail(panelRef);
-  // LoadingBlock 门（§6.12o 批次 2）：detail query 首载显加载指示而非空白（原 return null
-  // 是工作台中栏最大空白点）；isPending 语义——有缓存数据后本分支不再可达，后台刷新不闪。
-  if (detail.isLoading)
-    return <LoadingBlock className="min-h-0 flex-1" label={t("workbench.sessionLoading")} />;
+  // 首载骨架（§6.12o 批次 2 + 真机反馈 2026-10-10）：detail query 首载显 ChatSkeleton 而非
+  // 独立的 LoadingBlock「加载会话…」段——原两段加载（ping 点 → 气泡骨架）被用户判读为
+  // 分段漫长；claude（主场景）骨架→骨架零跳变衔接。代价：agent/omp 首载窗口（= detail
+  // HTTP RTT，通常 <300ms）短暂显聊天骨架再切真实形态，两害取轻。isPending 语义——有
+  // 缓存数据后本分支不再可达，后台刷新不闪。
+  if (detail.isLoading) return <ChatSkeleton />;
   if (detail.isLoadingError) {
     // 错误态（review 消化）：isLoadingError = isError 且缓存无数据——后台 refetch 失败
     // （staleTime 过期后）不顶掉已渲染面板；形态归一 ResourceStatePanel danger + 第一手 message

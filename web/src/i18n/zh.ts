@@ -75,6 +75,7 @@ export const zh: Record<TranslationKey, string> = {
   "session.typeShell": "输入 Shell 命令...",
   "session.disconnected": "正在建立连接中…",
   "session.quickKeys": "会话快捷键",
+  "session.quickKeysCustomize": "键位自定义",
   "session.expandInput": "展开输入",
   "session.collapseInput": "收回输入",
   "session.namePrompt.createAgent": "创建 Agent 会话",

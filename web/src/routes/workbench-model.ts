@@ -114,6 +114,15 @@ export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
   true,
 );
 
+/**
+ * 终端 composer 快捷键条隐藏集（键位自定义 ⚙，原型 workspace-terminal-input ③ 落地）：
+ * 存被隐藏的 quickKey id 列表（sessionQuickKeys 全集子集），localStorage 持久化。
+ */
+export const terminalQuickKeysHiddenAtom = atomWithLocalOnlyStorage<string[]>(
+  "workbench.terminalQuickKeysHidden",
+  [],
+);
+
 /** 右栏宽度（rem），Stage 0② WorkbenchShell 构造 grid template，Stage 4 resize 单点更新。 */
 export const workbenchRightWidthAtom = atomWithLocalOnlyStorage(
   "workbenchRightWidth",

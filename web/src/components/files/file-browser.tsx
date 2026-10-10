@@ -126,6 +126,10 @@ type FileEntryListProps = {
    *  code review 2026-09-22 修 rename 回归）。缺省 = ListRow 通用行（桌面 / 检视保持现状）。 */
   globalCard?: {
     overview: Record<string, { instances: number; running: number; latestLabel: string }>;
+    /** 统计源（overview candidates）未就绪：即使文件 listing 已到也保持骨架——防「骨架卡 →
+     *  通用树（candidates 慢时数据先行、无统计降级）→ 卡」三段翻转（真机反馈 2026-10-10：
+     *  中间通用树形态在宽 mainPage 里贴左一列窄行，与真实卡布局规则明显不同）。 */
+    pending?: boolean;
   };
 };
 
@@ -231,7 +235,7 @@ export function FileEntryList({
   // overview 按项目名聚合，仅根层有意义——调用方只在根层传 globalCard，子目录层走下方 ListRow
   //（行内 rename input 所在路径）。写操作 actions 保留（M8 全局写边界不受形态影响）。
   if (globalCard) {
-    if (isLoading)
+    if (isLoading || globalCard.pending)
       return (
         // 首载骨架（§6.12o 容器壳 + review 消化）：根层真实结构是 .gfcard 卡（border sep +
         // r16 + 卡内 16px 边距）。逐行内联垫壳而非 ListRowSkeleton——后者行硬编码 px-3 会与
@@ -835,9 +839,19 @@ export type PreviewBodyProps = {
   renderMode: "source" | "render";
   editValue: string;
   onEditChange?: (value: string) => void;
+  /** html 沙箱 iframe 的激活回调（tap-to-edit 家族消费）：iframe 内点击不冒泡出 iframe
+   * （事件通路结构性不存在），宿主唯一能收到的是 focus——点击内文档 → iframe 聚焦 → 触发。
+   * md 分支点击冒泡天然支持，无需此通道。未传 = 行为不变（只读语境）。 */
+  onActivate?: () => void;
 };
 
-export function PreviewBody({ preview, renderMode, editValue, onEditChange }: PreviewBodyProps) {
+export function PreviewBody({
+  onActivate,
+  preview,
+  renderMode,
+  editValue,
+  onEditChange,
+}: PreviewBodyProps) {
   const { t } = useT();
   const [inlinedHtml, setInlinedHtml] = useState<string | null>(null);
   // 内联产物缓存（key = preview 引用）：source↔render 切换、staleTime=0 refetch 未换
@@ -899,12 +913,14 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
       return (
         <div className="flex-1">
           {/* sandbox=""（v1.4 批7，design_spec）：纯静态预览——不执行脚本、不发请求；
-              动态行为交工作台终端里的真实环境。 */}
+              动态行为交工作台终端里的真实环境。onFocus = html 渲染态的 tap-to-edit 通路
+              （iframe 内点击不冒泡，宿主只收 focus；见 onActivate prop 注释）。 */}
           <iframe
             className="w-full h-full border-0"
             sandbox=""
             srcDoc={inlinedHtml}
             title="Sandboxed HTML render"
+            onFocus={onActivate}
           />
         </div>
       );
@@ -1027,6 +1043,10 @@ export type FilesPanelProps = {
   /** 10-tab 卡形态透传 FileEntryList（移动 /files mainPage 根层专用，见 FileEntryListProps 注释）。 */
   globalCard?: {
     overview: Record<string, { instances: number; running: number; latestLabel: string }>;
+    /** 统计源（overview candidates）未就绪：即使文件 listing 已到也保持骨架——防「骨架卡 →
+     *  通用树（candidates 慢时数据先行、无统计降级）→ 卡」三段翻转（真机反馈 2026-10-10：
+     *  中间通用树形态在宽 mainPage 里贴左一列窄行，与真实卡布局规则明显不同）。 */
+    pending?: boolean;
   };
   onPathChange?: (path: string) => void;
   /**

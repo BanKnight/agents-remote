@@ -13,7 +13,7 @@ import {
   useProjectRowFlow,
 } from "../shell/project-row-actions";
 import { ShellIcon } from "../shell/icons";
-import { LargeTitleRow, ListRowSkeleton, statusToV2DotClass } from "../shell/shell-primitives";
+import { LargeTitleRow, statusToV2DotClass } from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 import { relativeTime } from "./history-list";
@@ -209,9 +209,41 @@ export function MobileProjectsHome() {
           </div>
         ) : null}
         {!isLoaded && !isError ? (
-          // 首载骨架（§6.12o）：防 pending 全列表区空白；容器对齐真实卡形，加载完不跳。
-          <div className="mx-4 mt-[18px] rounded-xl border border-sep bg-elevated px-3 py-1">
-            <ListRowSkeleton count={3} marker={false} />
+          // 首载骨架（§6.12o 容器壳 + 真机反馈 2026-10-10 消化）：mirror 真实两段逐行垫壳
+          // （活动卡 dot+名+时间 / 项目卡 30×30 徽章+名副+右徽章）——原 ListRowSkeleton 双条
+          // + 行 px-3 与卡壳 px-3 叠加双重内缩 + 行形不符（右 square 方块 vs 真实徽章条），
+          // 加载完跳变大。
+          <div aria-hidden="true">
+            <div className="mx-4 mt-[18px] rounded-xl border border-sep bg-elevated px-3 py-1">
+              {[0, 1, 2].map((i) => (
+                <div key={i}>
+                  {i > 0 ? <div className="mx-3 border-t border-sep-row" /> : null}
+                  <div className="flex items-center gap-2 py-2">
+                    <span className="skeleton-shimmer h-[7px] w-[7px] shrink-0 rounded-full" />
+                    <span className="skeleton-shimmer h-4 w-28 rounded" />
+                    <span className="ml-auto skeleton-shimmer h-3 w-10 shrink-0 rounded" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mx-4 mb-1.5 mt-[18px]">
+              <span className="skeleton-shimmer block h-3 w-16 rounded" />
+            </div>
+            <div className="mx-4 rounded-xl border border-sep bg-elevated px-3 py-0.5">
+              {[0, 1, 2].map((i) => (
+                <div key={i}>
+                  {i > 0 ? <div className="border-t border-sep-row" /> : null}
+                  <div className="flex items-center gap-2.5 py-2.5">
+                    <span className="skeleton-shimmer h-[30px] w-[30px] shrink-0 rounded-sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="skeleton-shimmer block h-4 w-32 rounded" />
+                      <span className="skeleton-shimmer mt-0.5 block h-3.5 w-40 rounded" />
+                    </span>
+                    <span className="skeleton-shimmer h-4 w-9 shrink-0 rounded-[9px]" />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
         {isLoaded && projectNames.length === 0 ? (

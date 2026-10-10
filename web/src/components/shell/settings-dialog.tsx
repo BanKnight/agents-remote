@@ -480,7 +480,8 @@ export function SettingsMainPage() {
   const isRoot = activeSection === "root";
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 items-center gap-2 px-5 pt-2.5">
+      {/* header 钉高 44px：与 MainPageShell 同串同修（三 mainPage 标题位置跨页恒定）。 */}
+      <header className="flex h-11 shrink-0 items-center gap-2 px-5">
         {isRoot ? null : (
           <button
             type="button"
