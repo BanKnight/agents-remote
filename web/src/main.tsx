@@ -4,6 +4,7 @@ import { getDefaultStore, Provider as JotaiProvider } from "jotai";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nProvider } from "./i18n";
+import { mountFilesScrollDebug } from "./lib/files-scroll-debug";
 import { queryClient } from "./lib/query-client";
 import { useKeyboardInsetGlobal } from "./lib/use-keyboard-inset";
 import { restoreLastPath, saveCurrentPath } from "./navigation-persistence";
@@ -13,6 +14,10 @@ import "./styles/index.css";
 import { registerSW } from "virtual:pwa-register";
 
 restoreLastPath();
+
+// 真机取证通道（一次性工具，证据到手连文件一并删除）：v1.6 iPhone 全局文件无法滚动诊断，
+// 见 lib/files-scroll-debug.ts 文件头字段说明。
+mountFilesScrollDebug();
 
 router.subscribe("onResolved", () => {
   saveCurrentPath(window.location.pathname, window.location.search);

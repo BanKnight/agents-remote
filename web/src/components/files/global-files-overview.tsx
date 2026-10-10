@@ -18,6 +18,66 @@ import { CollapsibleSearchRow } from "../shell/collapsible-search";
 import { type CardDragStartHandler } from "../workbench/drag-source";
 
 /**
+ * 10m pin① 作用域分段（原型 mac-files-global :66：mhead 行内右端 280px 胶囊，h1 左 / seg4 右 /
+ * ＋ 最右）——桌面 mainPage 由调用方装配进 header（MainPageShell actions 位），本组件不再自渲
+ * 满宽第二行（v1.6 真机反馈「桌面全局文件布局与原型差别巨大」：满宽 seg4 把内容区整体下推，
+ * 两段 572px 宽与原型 280px 胶囊相去甚远）。页内切服务器根 / 全局记忆项目（workbenchLastProjectAtom，
+ * 与工作台/插件页同源）；span 键盘可达（Enter/Space），与右栏 Inspector seg4 同构。
+ */
+export function FilesScopeSeg({
+  currentPath,
+  onPathChange,
+}: {
+  /** 受控 cwd（空串 = 服务器根；非空 = 项目名/项目内路径） */
+  currentPath?: string;
+  onPathChange?: (path: string) => void;
+}) {
+  const { t } = useT();
+  const [lastProject] = useAtom(workbenchLastProjectAtom);
+  const inProject = (currentPath ?? "") !== "";
+  return (
+    <div aria-label={t("plugins.scopeAria")} className="seg4 mx-0 w-[280px]" role="tablist">
+      <span
+        aria-selected={!inProject}
+        className={`cursor-pointer ${!inProject ? "on" : ""}`}
+        key="global"
+        onClick={() => onPathChange?.("")}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onPathChange?.("");
+          }
+        }}
+        role="tab"
+        tabIndex={0}
+      >
+        {t("plugins.scopeGlobal")}
+      </span>
+      <span
+        aria-selected={inProject}
+        className={`cursor-pointer ${inProject ? "on" : ""}`}
+        key="project"
+        onClick={() => {
+          if (lastProject) onPathChange?.(lastProject);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (lastProject) onPathChange?.(lastProject);
+          }
+        }}
+        role="tab"
+        tabIndex={0}
+      >
+        {lastProject
+          ? t("plugins.scopeProject", { name: lastProject })
+          : t("plugins.scopeProjectEmpty")}
+      </span>
+    </div>
+  );
+}
+
+/**
  * 全局文件总览共享主体（设计 workbench-stable-refactor Phase 4）。桌面活动栏 [文件] → /files 左栏 +
  * 移动 /files 一级页共用，结束「两端各自改各自」双写。
  *
@@ -56,9 +116,6 @@ export function GlobalFilesOverview({
   const { t } = useT();
   const isMobile = useIsMobile();
   const pageMode = variant === "page";
-  // 10m 作用域（pin①）：「全局」= 服务器根目录；「本项目」= 全局记忆的当前项目（与工作台/
-  // 插件页同源 workbenchLastProjectAtom）——页内切根目录浏览 cwd（currentPath = 项目名）。
-  const [lastProject] = useAtom(workbenchLastProjectAtom);
   // 卡形态统计源：与项目 Tab 同 ["overview"] query（dedupe 零额外网络；10s refetchInterval 同步受益）。
   const { candidates } = useGlobalInstanceCandidates({ kind: "global" });
   // 根 listing 元数据（rootPath → crumb 根段真实目录名）：与 FilesPanel 同 key 同 fn，
@@ -88,56 +145,8 @@ export function GlobalFilesOverview({
     return isMobile || pageMode ? buildGlobalOverview(candidates, t) : undefined;
   }, [isMobile, pageMode, candidates, t]);
 
-  const inProject = (currentPath ?? "") !== "";
-  const scopeSeg =
-    variant === "page" ? (
-      // 10m mhead seg4（原型 :63，width:280px；此处满宽由 seg4 类 margin + 外层收口）：
-      // 全局 / 本项目 · <名>。span 键盘可达（Enter/Space），与右栏 Inspector seg4 同构。
-      <div className="shrink-0 px-4 lg:px-5">
-        <div aria-label={t("plugins.scopeAria")} className="seg4 mx-0 mt-2.5" role="tablist">
-          <span
-            aria-selected={!inProject}
-            className={`cursor-pointer ${!inProject ? "on" : ""}`}
-            key="global"
-            onClick={() => onPathChange?.("")}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onPathChange?.("");
-              }
-            }}
-            role="tab"
-            tabIndex={0}
-          >
-            {t("plugins.scopeGlobal")}
-          </span>
-          <span
-            aria-selected={inProject}
-            className={`cursor-pointer ${inProject ? "on" : ""}`}
-            key="project"
-            onClick={() => {
-              if (lastProject) onPathChange?.(lastProject);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                if (lastProject) onPathChange?.(lastProject);
-              }
-            }}
-            role="tab"
-            tabIndex={0}
-          >
-            {lastProject
-              ? t("plugins.scopeProject", { name: lastProject })
-              : t("plugins.scopeProjectEmpty")}
-          </span>
-        </div>
-      </div>
-    ) : null;
-
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {scopeSeg}
       {/* 搜索：移动 = 行2 单行（v1.6 files-global-tab ①：地址框 FileCrumb + 收缩搜索钮
           .obtn.srch，点按展开 = 03x 全宽过滤、✕ 收起清词）；桌面 = 常驻 .psearch（38px/r12
           移动档 / 34px/r10 桌面档）+ page 态 ⌘F 角标不变。容器与卡片同边距（移动 px-4 16 /

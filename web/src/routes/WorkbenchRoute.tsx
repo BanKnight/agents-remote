@@ -27,7 +27,7 @@ import { SettingsMainPage } from "../components/shell/settings-dialog";
 import { ShellIcon } from "../components/shell/icons";
 import { WorkbenchSide } from "../components/workbench/workbench-side";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
-import { GlobalFilesOverview } from "../components/files/global-files-overview";
+import { FilesScopeSeg, GlobalFilesOverview } from "../components/files/global-files-overview";
 import { AddMenu } from "../components/files/add-menu";
 import { useDirectoryAddActions } from "../components/files/use-directory-add-actions";
 import { MobileMcpDetail } from "../components/workbench/mobile-plugins-detail";
@@ -995,19 +995,24 @@ function WorkbenchContent({
     <>
       <MainPageShell
         actions={
-          <AddMenu
-            onNew={mainPageAdd.addProps.onNew}
-            onUpload={mainPageAdd.addProps.onUpload}
-            trigger={
-              <button
-                aria-label={t("files.add")}
-                className={`flex size-7 items-center justify-center rounded-md border border-neutral-line text-on-surface-soft transition hover:bg-on-surface/5 ${mainPageWritable ? "" : "pointer-events-none opacity-40"}`}
-                type="button"
-              >
-                <ShellIcon className="size-4" name="plus" />
-              </button>
-            }
-          />
+          <>
+            {/* 10m pin① 作用域分段（mac-files-global :66：mhead 行内右端 280px 胶囊——
+                v1.6 真机反馈：此前满宽第二行与原型差别巨大，收进行内）。 */}
+            <FilesScopeSeg currentPath={globalFilesPath} onPathChange={setGlobalFilesPath} />
+            <AddMenu
+              onNew={mainPageAdd.addProps.onNew}
+              onUpload={mainPageAdd.addProps.onUpload}
+              trigger={
+                <button
+                  aria-label={t("files.add")}
+                  className={`flex size-7 items-center justify-center rounded-md border border-neutral-line text-on-surface-soft transition hover:bg-on-surface/5 ${mainPageWritable ? "" : "pointer-events-none opacity-40"}`}
+                  type="button"
+                >
+                  <ShellIcon className="size-4" name="plus" />
+                </button>
+              }
+            />
+          </>
         }
         title={t("nav.globalFiles")}
       >
