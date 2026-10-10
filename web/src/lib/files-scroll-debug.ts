@@ -22,6 +22,11 @@
 //   kN sh/ch/st  document 全域第 N 个 .overflow-y-auto 的三件套 + class 前三个类（识
 //               别它是谁）。sh>ch 的才是溢出容器；手势后 st 前进而 sh>ch = 其实在滚；
 //               st 恒 0 = 引擎不响应或被拦截。
+//   kN y/pb     容器 rect.top（视口坐标）+ computed padding-bottom——y+ch = 底缘位置
+//               （vs nav 顶 = 底部让位几何），pb = 避让 padding 是否生效/值多少
+//               （v4：真机观察「两个文件恰被 safe-area 遮挡」+ sh=ch 无滚量并存，需
+//               底部几何切分「让位失效」vs「内容异常」）。
+//   nav y/h     底部 <nav> 元素 rect.top/height（fixed 胶囊真实占位，对照 var 值）。
 //   doc sh/ch/st document.scrollingElement（body/html 层）——排除「滚的是 body 层」。
 //   tc/te/tca    touchstart/touchend/touchcancel 全局计数（touch 通道活性）。
 //   pc/pm        pointerdown/pointermove 全局计数（对照通道——tc=0 且 pc>0 = touch
@@ -215,9 +220,16 @@ export function mountFilesScrollDebug() {
     const containers = Array.from(document.querySelectorAll<HTMLElement>(".overflow-y-auto"));
     for (const el of containers.slice(0, MAX_CONTAINERS)) {
       const cls = (el.className || "").toString().trim().split(/\s+/).slice(0, 3).join(".");
+      const rect = el.getBoundingClientRect();
+      const pb = getComputedStyle(el).paddingBottom;
       lines.push(
-        `k${containers.indexOf(el)} sh=${el.scrollHeight} ch=${el.clientHeight} st=${Math.round(el.scrollTop)} ${cls}`,
+        `k${containers.indexOf(el)} sh=${el.scrollHeight} ch=${el.clientHeight} st=${Math.round(el.scrollTop)} y=${Math.round(rect.top)} pb=${pb} ${cls}`,
       );
+    }
+    const nav = document.querySelector("nav");
+    if (nav) {
+      const navRect = nav.getBoundingClientRect();
+      lines.push(`nav y=${Math.round(navRect.top)} h=${Math.round(navRect.height)}`);
     }
     const doc = document.scrollingElement;
     if (doc) {
