@@ -3372,7 +3372,16 @@ export function VirtualizedThreadContent({
             it stays true through the one-frame window where assistant-ui hasn't
             pushed storeAdapter→thread.messages yet — keeping the skeleton
             mounted exactly until real content is painted, no blank gap. */}
-        {turns.length === 0 && loading ? <ChatSkeleton /> : null}
+        {turns.length === 0 && loading && !offlineCap ? <ChatSkeleton /> : null}
+        {turns.length === 0 && offlineCap ? (
+          // 空会话断线（批 3）：断线期 loading 恒 true，骨架语义失效（在重连、非加载）——
+          // 原实现 ChatSkeleton 永驻伪加载。换离线反馈（同 cap 文案，重连后 live_end 出内容）。
+          <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+            <p className="text-center text-sm text-on-surface-muted" role="status">
+              {t("claude.offlineCap")}
+            </p>
+          </div>
+        ) : null}
         <div ref={contentRef}>
           <div style={{ position: "relative", height: virtualizer.getTotalSize() }}>
             {items.map((virtualItem) => {

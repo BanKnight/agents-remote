@@ -69,6 +69,7 @@ export function ChatSessionDetailBody({
     runtime,
     connected,
     loading,
+    streamError,
     title: liveTitle,
     onCancel,
     attachments,
@@ -92,6 +93,16 @@ export function ChatSessionDetailBody({
   const threadBody = (
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {streamError ? (
+          // pi 流错误条（批 3 接线）：原 error 帧只进 adapter state 零消费，失败静默。
+          // 非终态（重连 session_init 会清）→ 细横幅不挡操作；message 为第一手错误信息。
+          <div
+            className="shrink-0 border-b border-error/20 bg-error/10 px-4 py-1.5 text-center text-xs text-error"
+            role="alert"
+          >
+            {streamError}
+          </div>
+        ) : null}
         <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <VirtualizedThreadContent loading={loading} retryInfo={retryInfo} sessionId={id} />
           <div

@@ -393,6 +393,7 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
         <div className="relative min-h-0 flex-1 flex flex-col">
           <TerminalOutput
             connectionStatus={connectionStatus}
+            hasReconnected={reconnectAttemptsRef.current > 0}
             terminalDataRef={terminalDataRef}
             terminalWriteRef={terminalWriteRef}
             onResize={sendTerminalResize}
@@ -420,6 +421,8 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
 
 type TerminalCoreProps = {
   connectionStatus: StreamConnectionStatus;
+  /** 经历过断线（SessionDetail 的 reconnectAttempts > 0）：overlay 区分「连接中/重连中」。 */
+  hasReconnected: boolean;
   terminalWriteRef: React.MutableRefObject<((data: string) => void) | null>;
   terminalDataRef: React.MutableRefObject<string | null>;
   onSendInput: (data: string) => void;
@@ -564,6 +567,7 @@ function TerminalOutput(props: TerminalCoreProps) {
 
 function XtermOutput({
   connectionStatus,
+  hasReconnected,
   terminalDataRef,
   terminalWriteRef,
   onSendInput,
@@ -608,7 +612,7 @@ function XtermOutput({
   // 遮罩挡已渲染内容,但 spinner + 文案的结构与首连一致(居中同构,见 DESIGN.md
   // Terminal 连接 overlay 契约)。terminalDataRef 是 ref,但本处随 connectionStatus
   // 重渲染时读取实时正确。
-  const baseOverlay = terminalOverlay(connectionStatus, t);
+  const baseOverlay = terminalOverlay(connectionStatus, t, hasReconnected);
   const overlay =
     baseOverlay?.animated && terminalDataRef.current !== null
       ? { ...baseOverlay, scrim: false }
@@ -1071,9 +1075,15 @@ function TerminalStatusSpinner({ size = "sm" }: { size?: "sm" | "lg" }) {
 const terminalOverlay = (
   status: StreamConnectionStatus,
   t: (key: TranslationKey) => string,
+  /** 经历过断线（reconnectAttempts > 0）：区分首连「连接中」与重连「重连中」。 */
+  hasReconnected: boolean,
 ): TerminalOverlayState | undefined => {
   if (status === "connecting") {
-    return { animated: true, title: t("status.reconnecting"), tone: "accent" };
+    return {
+      animated: true,
+      title: hasReconnected ? t("status.reconnecting") : t("status.connecting"),
+      tone: "accent",
+    };
   }
 
   if (status === "error") {

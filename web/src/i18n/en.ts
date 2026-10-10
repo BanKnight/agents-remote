@@ -283,6 +283,7 @@ export const en = {
   "git.scopeStaged": "Staged",
   "git.commitTitle": "Commit to {{branch}}",
   "git.commitBtn": "Commit ({{n}} files)",
+  "git.committing": "Committing…",
   "git.commitMessagePlaceholder": "Commit message",
   "git.commitEmpty": "No changes to commit",
   "git.menuDiscard": "Discard changes…",
@@ -292,6 +293,7 @@ export const en = {
   "git.discardUntrackedWarn":
     "This file is untracked — discarding deletes the file. This cannot be undone.",
   "git.discardBtn": "Discard changes",
+  "git.discarding": "Discarding…",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.workbench": "Workbench",
@@ -319,6 +321,7 @@ export const en = {
   "status.waitingForInput": "Waiting for input",
   "status.running": "Running",
   "status.reconnecting": "Reconnecting",
+  "status.connecting": "Connecting",
   "status.closed": "Closed",
   "status.error": "Error",
   "status.connected": "Connected",

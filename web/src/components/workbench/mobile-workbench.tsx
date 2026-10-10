@@ -21,6 +21,7 @@ import { resolveRelativeFilePath } from "../files/relative-md-link";
 import { MarkdownLinkContext } from "../markdown/markdown-components";
 import {
   LargeTitleRow,
+  LoadingBlock,
   MobilePageHeader,
   ModeTabGroup,
   shellSurfaceClasses,
@@ -461,7 +462,11 @@ function MobileFocusBody({ focusId, scope }: MobileFocusBodyProps) {
               panelRef={{ kind: "session", projectName, sessionId: focusId }}
             />
           </div>
-        ) : null}
+        ) : (
+          // 深链就绪窗（批 3）：global scope 下 projectName 依赖 layout/order 查找，未就绪时
+          // 原渲染裸空白；PanelRouter 自身首载已有 LoadingBlock 门（§6.12o），此为前置同款。
+          <LoadingBlock className="min-h-0 flex-1" label={t("workbench.sessionLoading")} />
+        )}
         {activePlugin ? (
           <Fragment key={projectName ?? "none"}>{activePlugin.render(ctx)}</Fragment>
         ) : null}

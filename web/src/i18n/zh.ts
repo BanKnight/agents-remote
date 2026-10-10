@@ -281,6 +281,7 @@ export const zh: Record<TranslationKey, string> = {
   "git.scopeStaged": "暂存区",
   "git.commitTitle": "提交到 {{branch}}",
   "git.commitBtn": "提交（{{n}} 个文件）",
+  "git.committing": "提交中…",
   "git.commitMessagePlaceholder": "提交信息",
   "git.commitEmpty": "没有可提交的变更",
   "git.menuDiscard": "放弃更改…",
@@ -289,6 +290,7 @@ export const zh: Record<TranslationKey, string> = {
     "文件将恢复到 {{branch}} 上一次提交的状态；未提交的修改（+{{added}} −{{removed}}）无法撤销。",
   "git.discardUntrackedWarn": "该文件未跟踪——放弃将删除文件，无法撤销。",
   "git.discardBtn": "放弃更改",
+  "git.discarding": "放弃中…",
 
   // ── Navigation ───────────────────────────────────────────────
   "nav.workbench": "工作台",
@@ -316,6 +318,7 @@ export const zh: Record<TranslationKey, string> = {
   "status.waitingForInput": "等待输入",
   "status.running": "运行中",
   "status.reconnecting": "重连中",
+  "status.connecting": "连接中",
   "status.closed": "已关闭",
   "status.error": "错误",
   "status.connected": "已连接",

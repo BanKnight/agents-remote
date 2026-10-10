@@ -125,7 +125,7 @@ export function CommitSheet({
         onClick={() => commitMutation.mutate({ paths: [...checked], message: message.trim() })}
         type="button"
       >
-        {t("git.commitBtn", { n: checked.size })}
+        {commitMutation.isPending ? t("git.committing") : t("git.commitBtn", { n: checked.size })}
       </button>
       {commitMutation.isError ? (
         <div className="mt-1.5 text-[11px] text-error" role="alert">

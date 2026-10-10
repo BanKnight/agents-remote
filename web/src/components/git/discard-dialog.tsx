@@ -82,7 +82,7 @@ export function DiscardDialog({
               onClick={() => discardMutation.mutate()}
               type="button"
             >
-              {t("git.discardBtn")}
+              {discardMutation.isPending ? t("git.discarding") : t("git.discardBtn")}
             </button>
           </div>
         </div>
