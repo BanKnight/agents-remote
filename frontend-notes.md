@@ -299,3 +299,13 @@
 **标准做法**：①监听单源 `web/src/lib/keyboard-inset.ts` 的 `observeKeyboardInset`（resize+scroll 双事件、rAF 同帧、`visible = vv.height < innerHeight` 关闭强制归零 gate、`pointer: coarse` guard、dispose cancel rAF），消费方各自写 CSS 变量；②消费形态二选一：**流内全高面板用 padding 缩链**（`pb-[var(--kb-offset,0px)]`——translateY 会把顶部推出视口），**浮动卡片用 translateY**（composer `--composer-keyboard-offset` 先例）；③辅助条样式联动用系数 `env(safe-area-inset-bottom) * (1 - var(--kb-active, 0))`，**`--kb-active` 勿作显隐消费**（iOS 26 键盘动画瞬态误判曾致工具栏不稳定，composer hook 已废弃过该用法）；④Android 治本 = viewport meta `interactive-widget=resizes-content`（layout viewport 随键盘缩 → 流内布局自动让位，JS 公式算出 ≈0 自然休眠，双路径不打架）；⑤**focus 目标自身的 padding 骤减会 layout shift 致 iOS ~50% 取消键盘触发**（composer `focus-within:pb-` 前车之鉴）——键盘联动样式避免作用于 focus 目标所在盒。验证边界：Chromium 对键盘 vv 行为结构性失明（同 §1 env 教训），探针只证接线（页内 defineProperty mock + dispatchEvent，`probe-keyboard-inset.mjs`），真实键盘行为必须真机。
 
 **来源**：commit `215d390`（批 17）；证伪表与 iOS 26 回归调研 `docs/research/claude-ios-keyboard-viewport.md`；composer hook 与 `ClaudeSessionDetailRoute` 内注释（两处历史教训）。
+
+## 28. 滚动容器「全高 + 自身 padding-bottom 让位」的窗口死角（净区 < 内容 < 容器高 → 零滚量 + 尾行被浮层遮挡）
+
+**现象**：移动 /files 进内容适中（~680px）的项目目录：列表最后 1-2 行被底部 nav/safe-area 遮住，且怎么滑都不动（手势位移有值、scrollTop 恒 0）；内容更多的项目能滚、Safari 视口矮 47px 同一目录能滚——「该页不能滚」呈项目选择性与浏览器形态选择性，极易误判为 iOS WebKit 滚动引擎 bug。
+
+**机制**：滚动容器 `flex-1` 全高延伸到屏幕底（底缘 = 视口底）+ 自身 `padding-bottom` 让位 fixed 底部 nav——净内容区 = clientHeight − pb；而「要不要滚」的判定是「内容底缘 > clientHeight」（scrollHeight = max(内容底缘, clientHeight)，**容器自身的 padding-bottom 不叠加进内容底缘**）。内容高落入 (clientHeight−pb, clientHeight) 窗口时：溢出净区的尾行物理排进 nav 覆盖区（padding 不剪裁内容），但引擎判定无溢出 → 零滚动量——「引擎认为放得下、视觉上放不下」的死角。窗口宽度 = pb 值（104px），内容高恰好落内的项目即触发。
+
+**标准做法**：底部 fixed 浮层（nav/composer）的避让**不要用「容器全高 + 自身 padding」模式**——滚动链在浮层上缘截断（滚动链某父层吃 `pb-[var(--shell-mobile-bottom-nav-space,0px)]`，容器底 = nav 顶）：任何超量内容都是真溢出、滚到底尾行完整可见，窗口死角结构性消失。滚动容器自身的 pb 只作内容尾部小余量（pb-3）。存量同款模式候选：mobile-projects-home:198 / mobile-plugins-*（L1 三页同壳），触发条件同为窗口命中，待统一治理批次推广。
+
+**来源**：v1.6 真机取证（2026-10-10）——取证浮层四轮迭代（v1 选最大容器 → v2 全列容器 → v3 全文档扫描+pointer 对照+localStorage 持久化 → v4 容器/nav 几何）+ 用户截图几何定案；修复 `d067ba8`、通道摘除 `9e073cb`。§22 证据纪律的成功实例：Chromium 全健康的「iOS 专属 bug」实为布局死角，真机第一手数据（pb=104px 生效）一步否证「让位失效」假设。
