@@ -54,7 +54,7 @@ export function MobileProjectsHome() {
   const navigate = useNavigate();
   const [, setFocusTab] = useAtom(workbenchMobileFocusTabAtom);
   const { openCreate, dialog: createProjectDialog } = useCreateProjectDialog();
-  const { candidates, projectNames, isLoaded, isError } = useGlobalInstanceCandidates({
+  const { candidates, projectNames, isLoaded, isError, error } = useGlobalInstanceCandidates({
     kind: "global",
   });
   const { pinned } = usePinnedSessions();
@@ -201,7 +201,11 @@ export function MobileProjectsHome() {
           // 错误态（批 2 收敛）：overview 失败原永驻骨架（isLoaded success-only 语义）——
           // 用户只看到无限加载。轮询 refetchInterval 在场，错误自愈后自动回内容，不加重试钮。
           <div className="mx-4 mt-[18px]">
-            <ResourceStatePanel title={t("workbench.overviewLoadFailed")} tone="danger" />
+            <ResourceStatePanel
+              message={error?.message}
+              title={t("workbench.overviewLoadFailed")}
+              tone="danger"
+            />
           </div>
         ) : null}
         {!isLoaded && !isError ? (

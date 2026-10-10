@@ -670,8 +670,8 @@ export function ListRow({
  *
  * `marker`/`action` 按 ListRow 真实结构裁剪——骨架要与真实行**同形**，否则加载→真实跳变明显：
  * 文件树行带文件图标 marker + 右 status 小元素 → 默认（marker=true, action="square"）；
- * 技能 ManageTab 行无 marker、右侧是 ActionButton 文字按钮（rounded-xl）→ marker={false}
- * action="button"（h-7 w-16 rounded-xl 对齐 ActionButton compact 形状）。
+ * 无 marker 行（技能 Manage / 历史 chat 行）传 marker={false}，右尾按真实行选
+ * meta（相对时间条）/ none（无尾元素）。
  * 外层 listGroupClasses()（plain divide-y）与真实 ListGroup 一致，padding 由调用方提供。
  */
 export function ListRowSkeleton({
@@ -683,8 +683,8 @@ export function ListRowSkeleton({
   count?: number;
   /** 左 marker 占位：ListRow 带 icon（文件树）默认 true；无 marker 行（技能 Manage）传 false。 */
   marker?: boolean;
-  /** 右尾占位形状：square=小方块（status/icon，默认），button=文字按钮块（ActionButton），meta=短文本条（相对时间/状态文字），none=无。 */
-  action?: "button" | "meta" | "none" | "square";
+  /** 右尾占位形状：square=小方块（status/icon，默认），meta=短文本条（相对时间/状态文字），none=无。 */
+  action?: "meta" | "none" | "square";
   /**
    * 文本条档（§6.12o 同形骨架）：2 = title+subtitle 双条（v1 ListRow 带 subtitle 行——历史/页
    * 面行，默认）；1 = 单行紧凑条（v2 行原语 .frow/.crow/.srow2/ChatRow 一族，行高 ≈40px）。
@@ -720,9 +720,7 @@ export function ListRowSkeleton({
                 )}
               </span>
             </span>
-            {action === "button" ? (
-              <span aria-hidden="true" className="skeleton-shimmer h-7 w-16 shrink-0 rounded-xl" />
-            ) : action === "square" ? (
+            {action === "square" ? (
               <span aria-hidden="true" className="skeleton-shimmer h-6 w-6 shrink-0 rounded-md" />
             ) : action === "meta" ? (
               <span aria-hidden="true" className="skeleton-shimmer h-3 w-10 shrink-0 rounded" />

@@ -233,11 +233,24 @@ export function FileEntryList({
   if (globalCard) {
     if (isLoading)
       return (
-        // 首载骨架（§6.12o 容器壳）：根层真实结构是 .gfcard 卡（border sep + r16 + 卡内
-        // 边距），裸列表骨架会在加载完凭空长出卡壳——骨架包同形 gfcard（gfrow 双行 +
-        // ic 徽章 + live 指示 → 默认双条 + marker + square 已同形）。
+        // 首载骨架（§6.12o 容器壳 + review 消化）：根层真实结构是 .gfcard 卡（border sep +
+        // r16 + 卡内 16px 边距）。逐行内联垫壳而非 ListRowSkeleton——后者行硬编码 px-3 会与
+        // 卡壳叠加成 28px 双重内缩（加载完左跳 12px）；行形 mirror gfrow（ic 30×30 徽章块 +
+        // 名/副双条 + live 位短条，行间 sep-row 分隔），行 padding 10px 0 同真实。
         <div aria-hidden="true" className="gfcard">
-          <ListRowSkeleton count={5} />
+          {Array.from({ length: 5 }, (_, i) => (
+            <div
+              className={`flex items-center gap-3 py-2.5${i > 0 ? " border-t border-sep-row" : ""}`}
+              key={i}
+            >
+              <span className="skeleton-shimmer block h-[30px] w-[30px] shrink-0 rounded-lg" />
+              <span className="min-w-0 flex-1">
+                <span className="skeleton-shimmer block h-4 w-32 rounded" />
+                <span className="skeleton-shimmer mt-1.5 block h-3.5 w-24 rounded" />
+              </span>
+              <span className="skeleton-shimmer block h-3 w-8 shrink-0 rounded" />
+            </div>
+          ))}
         </div>
       );
     if (error)

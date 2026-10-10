@@ -49,7 +49,7 @@ const RouteErrorFallback = ({ error }: ErrorComponentProps) => {
           {error instanceof Error ? error.message : String(error)}
         </p>
         <button
-          className="mt-4 w-full cursor-pointer rounded-xl bg-primary py-2.5 text-sm font-semibold text-on-primary transition active:scale-[0.97]"
+          className="mt-4 w-full cursor-pointer rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary transition-[scale,background-color,box-shadow] max-sm:min-h-11 active:scale-[0.97]"
           onClick={() => void router.invalidate()}
           type="button"
         >

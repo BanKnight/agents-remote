@@ -130,6 +130,30 @@ export function MobileMarket() {
 }
 
 /**
+ * mcard 首载骨架 ×3（§6.12o 容器壳 + review 消化）：mirror mcard 三层结构 r1（名 + src chip
+ * 位）→ d2 → r3 右对齐钮。原稿把钮块放顶行右端 = 加载完钮从右上跳右下 + 卡高差 ~28px，
+ * 逐层垫壳后加载完零跳变。SkillMarketTab 与 McpMarketTab 同构消费。
+ */
+function MarketCardSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 3 }, (_, i) => (
+        <div aria-hidden="true" className="mcard" key={i}>
+          <div className="r1">
+            <span className="skeleton-shimmer block h-5 w-40 rounded" />
+            <span className="skeleton-shimmer block h-3.5 w-12 rounded" />
+          </div>
+          <span className="skeleton-shimmer mt-1.5 block h-4 w-24 rounded" />
+          <div className="flex justify-end pt-1.5">
+            <span className="skeleton-shimmer block h-7 w-16 rounded-xl" />
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
  * 18 技能市场段（v2 M6-a 主体下沉，结构不变）：来源 chips → 搜索 → 市场卡（mono 名 + 来源章 +
  * 安装量 + 安装钮）→ 审计 sheet。能力边界沿 M6-a 记档：卡副行只画安装量（skills.sh search 无
  * 简介字段）；安装进度无百分比数据（SkillTaskFrame 只有状态机），pulse 动画无 pct 文字。
@@ -181,18 +205,10 @@ function SkillMarketTab() {
         {showHint ? (
           <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptyMarket")}</p>
         ) : search.isPending ? (
-          // 搜索首载骨架（§6.12o 容器壳）：真实行是独立 .mcard 卡（margin 10px 16px 0 +
-          // border sep + r14 + padding 10px 14px），列表骨架加载完每行凭空长出卡壳——
-          // 逐卡垫壳：r1 名条 + 尾安装钮块 + d2 副行条；原「…」纯文案消解。
-          Array.from({ length: 3 }, (_, i) => (
-            <div aria-hidden="true" className="mcard" key={i}>
-              <div className="flex items-center justify-between gap-3">
-                <span className="skeleton-shimmer block h-5 w-40 rounded" />
-                <span className="skeleton-shimmer h-7 w-16 shrink-0 rounded-xl" />
-              </div>
-              <span className="skeleton-shimmer mt-1.5 block h-4 w-24 rounded" />
-            </div>
-          ))
+          <MarketCardSkeleton />
+        ) : search.error ? (
+          // 搜索错误行（review 消化）：原缺 error 分支落「暂无技能」伪空态（MCP tab 同款先例）。
+          <p className="px-4 py-2 text-[11.5px] text-error">{search.error.message}</p>
         ) : skills.length === 0 ? (
           <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("skills.empty")}</p>
         ) : (
@@ -311,16 +327,7 @@ function McpMarketTab() {
         {showHint ? (
           <p className="px-4 py-2 text-[11.5px] text-ink-2">{t("plugins.emptyMarket")}</p>
         ) : search.isPending ? (
-          // 搜索首载骨架（§6.12o 容器壳）：与 SkillMarketTab 同款逐卡垫壳，消「…」双形态并存。
-          Array.from({ length: 3 }, (_, i) => (
-            <div aria-hidden="true" className="mcard" key={i}>
-              <div className="flex items-center justify-between gap-3">
-                <span className="skeleton-shimmer block h-5 w-40 rounded" />
-                <span className="skeleton-shimmer h-7 w-16 shrink-0 rounded-xl" />
-              </div>
-              <span className="skeleton-shimmer mt-1.5 block h-4 w-24 rounded" />
-            </div>
-          ))
+          <MarketCardSkeleton />
         ) : search.error ? (
           <p className="px-4 py-2 text-[11.5px] text-error">{search.error.message}</p>
         ) : servers.length === 0 ? (
@@ -617,7 +624,7 @@ export function MobileMarketSources() {
               </div>
             ))}
           </>
-        ) : sources.isError ? (
+        ) : sources.isLoadingError ? (
           <p className="mx-4 mt-2 rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
             {t("plugins.sourcesLoadFailed")}
           </p>

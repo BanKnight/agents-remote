@@ -221,7 +221,7 @@ export function GitToolPanel({
           // 后台刷新（isFetching）不走此分支，切回不闪。.frow 单行 38px → lines=1 同形
           //（默认双条 62px 会在加载完整体塌缩）。
           <ListRowSkeleton count={3} lines={1} />
-        ) : diff.isError ? (
+        ) : diff.isLoadingError ? (
           // 错误态（批 2 收敛）：原落「暂无改动」伪空态（失败被当成没有文件）。
           <ResourceStatePanel
             message={diff.error.message}
@@ -280,7 +280,7 @@ export function GitToolPanel({
               // 首载骨架（§6.12o），同工作区段语义。.crow 单行（hash+message+time）无右尾
               // 元素 → lines=1 + action="none"（默认 square 是幻影右块）。
               <ListRowSkeleton count={2} marker={false} lines={1} action="none" />
-            ) : log.isError ? (
+            ) : log.isLoadingError ? (
               // 错误态（批 2 收敛）：原落「暂无提交」伪空态。
               <ResourceStatePanel
                 message={log.error.message}
@@ -584,7 +584,7 @@ export function FilesToolPanel({
           // 纯文案「正在加载文件...」；keepPreviousData 下逐键切 key 不再进入此分支。
           // .xrow 单行（ic + mono path + badge）→ lines=1。
           <ListRowSkeleton count={3} lines={1} />
-        ) : search.isError ? (
+        ) : search.isLoadingError ? (
           // 搜索错误行（批 2 收敛）：原落「无匹配」伪空态；轻量形态（market MCP 段先例），
           // message 为第一手错误信息。
           <p className="px-4 py-2 text-[11.5px] text-error">{search.error.message}</p>
@@ -606,7 +606,7 @@ export function FilesToolPanel({
         .frow 单行 38px → lines=1 同形；目录内容到后空目录仍走真空态（无行）。 */}
       {listing.isPending ? (
         <ListRowSkeleton count={5} lines={1} />
-      ) : listing.isError ? (
+      ) : listing.isLoadingError ? (
         // 目录错误态（批 2 收敛）：原 FileTreeRows 收空 entries 裸空白。子目录失败由 §13
         // 回根 effect 兜住自动回根；根目录失败此前无任何反馈（重试随 query refetch）。
         <ResourceStatePanel
@@ -817,7 +817,7 @@ export function WikiToolPanel({
           // 首载骨架（§6.12o）：防搜索请求在途显「无匹配」伪空态。.wpg 两行 wrap（标题+
           // 摘要）无左 marker → marker=false 保双条。
           <ListRowSkeleton count={2} marker={false} />
-        ) : search.isError ? (
+        ) : search.isLoadingError ? (
           // 搜索错误行（批 2 收敛）：原落「没有匹配的页面」伪空态（files 搜索同款轻量形态）。
           <p className="px-4 py-2 text-[11.5px] text-error">{search.error.message}</p>
         ) : (

@@ -379,6 +379,13 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     },
   );
 
+  // 曾连上过（review 消化）：offlineCap={!connected} 在首连窗口同为 true，空会话离线反馈
+  // 需区分「从未连上」（显骨架）与「连上后断了」（显离线）。effect 写入防 render 期副作用。
+  const everConnectedRef = useRef(false);
+  useEffect(() => {
+    if (connected) everConnectedRef.current = true;
+  }, [connected]);
+
   // 聊天流 ```html 代码块「渲染」→ 工作台 render tab（sandbox iframe）。瞬态：
   // 内容在内存 atom，刷新即失（normalizeRef 恢复时剔除 render tab）。
   const openRenderTab = useOpenRenderTab();
@@ -513,6 +520,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                         scrollerApi={scrollerApiRef}
                         sessionId={sessionId}
                         offlineCap={!connected}
+                        everConnected={everConnectedRef.current}
                         deltaEnter={deltaEnter}
                       />
 
@@ -3173,6 +3181,7 @@ export function VirtualizedThreadContent({
   scrollerApi,
   sessionId = "",
   offlineCap = false,
+  everConnected = false,
   deltaEnter,
 }: {
   /** 服务端 auto-retry pending 轮询开关：仅 claude 会话（有 runtimeKey）开启，ACP/Chat 恒 false。 */
@@ -3185,6 +3194,11 @@ export function VirtualizedThreadContent({
   sessionId?: string;
   /** 03i 流内离线分隔（.cap「离线中 · 此后内容将在重连后补齐」），断线且已有内容时显示。 */
   offlineCap?: boolean;
+  /**
+   * 本次挂载后曾连上过（review 消化）：区分首连（从未连上，turns=0 显骨架）与断线重连
+   * （显空会话离线反馈）——offlineCap={!connected} 在首连窗口同为 true，无此信号首连期
+   * 会先闪「离线中」伪状态再跳回骨架。 */
+  everConnected?: boolean;
   /**
    * delta 重连增量回合新增消息范围 [from, to)：turn.startIndex 落在范围内 → turn 容器
    * 挂淡入动画（仅 delta 重连批次，正常流式新 turn 不加）。null = 无 delta 回合。
@@ -3372,11 +3386,13 @@ export function VirtualizedThreadContent({
             it stays true through the one-frame window where assistant-ui hasn't
             pushed storeAdapter→thread.messages yet — keeping the skeleton
             mounted exactly until real content is painted, no blank gap. */}
-        {turns.length === 0 && loading && !offlineCap ? <ChatSkeleton /> : null}
-        {turns.length === 0 && offlineCap ? (
-          // 空会话断线（批 3）：断线期 loading 恒 true，骨架语义失效（在重连、非加载）——
-          // 原实现 ChatSkeleton 永驻伪加载。换离线反馈（同 cap 文案，重连后 live_end 出内容）。
-          <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+        {turns.length === 0 && loading && !(offlineCap && everConnected) ? <ChatSkeleton /> : null}
+        {turns.length === 0 && offlineCap && everConnected ? (
+          // 空会话断线（批 3，review 两处消化）：断线期 loading 恒 true，骨架语义失效（在重连、
+          // 非加载）——原实现 ChatSkeleton 永驻伪加载。everConnected 门区分首连（显骨架，防
+          // 「离线中」闪现伪状态）；min-h-full 取代 flex-1——scroller 非 flex container，
+          // flex-1 是死属性（frontend-notes §8），文案贴顶不居中。
+          <div className="flex min-h-full items-center justify-center p-6">
             <p className="text-center text-sm text-on-surface-muted" role="status">
               {t("claude.offlineCap")}
             </p>
