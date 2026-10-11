@@ -1,45 +1,44 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-11（**真机反馈第二轮收尾提交 `936b1ed`，验证链九项全绿，待交重写版真机清单**）
+> 最后更新：2026-10-11（**真机反馈第三轮提交 `c0e48d5`，验证链全绿 + 双 reviewer 消化完成，待交真机清单**）
 
 ## 一句话状态
 
-第二轮真机反馈全部收尾并提交：⑤ 键位自定义完整落地（QuickKeysEditor：8 键显隐 + 拖拽/键盘排序，applyQuickKeyOrder 单管道）、7a/7b 编辑动线反转（渲染态纯阅读；.emeta 合并行、.aux 退役）、2' 骨架壳 min-w-0、⑥ 边距统筹收口、标尺文档口径同步（design_spec §4.5 + components.css）、keyboard-debug.ts 退役（tokens 机检零违例硬闸态）。**下一步 = 重写版真机清单交用户复验**（清单见下「易丢的关键上下文」，按「从哪进、做什么动作、应该看到什么」格式）。
+第三轮真机反馈（4+1 条）全部落地并提交：① 编辑态首次光标落点击中处（坐标透传 + posAtCoords 映射）、② .emeta 36px 对齐 .fmeta 零跳变、③ ⚙ 改 .iicn.gear（28×28 无衬底恒显，含桌面 display:none 回归的探针实抓与例外类修复）、④⑤ 快捷键增删改（union 类型 + custom atom + 面板 UI + 行重排 grip 行首/删除收表单）。code/design 双 reviewer 报告全消化（agent 会话 gate / 草稿清理 / maxLength / v2 token 族 / pencil 热区）。**下一步 = 真机清单交用户复验**（清单见「易丢的关键上下文」）。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **QuickKeysEditor**（web/src/components/workbench/quick-keys-editor.tsx）：props 全受控（hiddenIds/keys/onOpenChange/onReorder/onToggleHidden/open/order），配置逻辑归调用方 SessionDetailRoute——照 SessionInputDrawer slot 模式。拖拽 = pointer events + **down 即 setPointerCapture**（grip 专用手柄无点击动作，无需 MobileSheet 6px 起步阈值——§23 pending 失联结构性消失）+ 列表容器 non-passive touchmove preventDefault + 列表 DOM 序恒定行 transform 补位 + 松手 setOrder 与清 transform 同批单次 commit。键盘等价通道：行聚焦 ↑/↓ 换位。
-- **terminalQuickKeysOrderAtom**（workbench-model.ts，localStorage "workbench.terminalQuickKeysOrder"）+ `applyQuickKeyOrder` 纯函数：已知键按存储序排前、缺失尾补、稳定排序、多余 id 忽略——快捷键条渲染与编辑面板共用单一管道；order 与 hidden 正交（顺序含被隐藏键）。
-- **7a/7b 反转口径**（标尺文档已同步 design_spec §4.5 四条 + components.css .fmeta 头注）：md/html **渲染态 = 纯阅读，点正文不进编辑**；编辑动线 = segc 切「源码」后点正文。编辑态行 = `.emeta`（工具钮组撤销/重做/收键盘 + dirty + fact 放弃/完成）；底部 `.aux` 退役上移（编辑器全高）；push 容器（nav 模式）[放弃][完成] 保持在导航右。
-- **z-index 机制记档（design review Chromium 实证）**：transform 建立的 stacking context 不扩展 z-index 适用范围——li 必须 `relative` 才能让拖拽行 `z-1` 提升绘制序。
-- **keyboard-debug.ts 已删除**（批 18 取证收口）：tokens 机检唯一豁免消失，机检从此零违例硬闸态。
-- **review 记档不做**：CenteredDialogCard 提取（13 份拷贝家族，超 surgical 范围）；桌面 20px 内容线三机制统一（数值自洽、机制分立）。
+- **光标落点机制**：源码态只读与编辑态 CodeEditor 是两个独立 CodeMirror 实例——`useTapToEdit(onEnter)` 带点击视口坐标 → `pendingCursorRef` 暂存 → 编辑态 `onCreateEditor` 时 `applyPendingCursor(view, ref.current)`（`view.posAtCoords({x,y})` 返回 `number | null` 直接用，非对象）。`applyPendingCursor` 导出于 mobile-l3.tsx，MobileL3FilePreview + FilePreviewPane 两容器全覆盖。
+- **`.iicn.gear` 例外类**（v2-primitives.css）：`.iicn` 家族带 `@media(min-width:1024px){display:none}`（v1.4 窄端 iicn/宽端 ipill 切换）——⚙ 中性入口不能绑死该家族，`.iicn.gear`（specificity 0,2,0 胜 media 内 0,1,0）恒显 + 无衬底 ink-2。探针曾实抓桌面 `display:"none"` 回归（D0 断言锁住：28×28 无衬底恒显）。
+- **SessionQuickKey union**（console-model.ts）：`BuiltinQuickKey`（labelKey/ariaLabelKey i18n，不可删改）| `CustomQuickKey`（裸文本 label）。判别必须 `"labelKey" in key` / `"label" in key`（TS union 窄化）。`quickKeyLabel`/`quickKeyAria` helper 单源。自定义键发送尾补 `\n`（常用命令一键执行；内置控制序列不补）。id = `custom-${randomUUID}`。order/hidden 残留死 id 由消费端过滤天然忽略。
+- **自定义键仅终端域**（review 修复）：`allQuickKeys` 合并加 `sessionType === "terminal"` gate——否则泄漏进 agent 会话 composer（无 ⚙ 可管理、点按注入 prompt）。
+- **面板行重排**（用户 mid-turn 反馈）：grip 行首（与行尾 toggle 隔整行宽）、删除收进编辑表单左下红字（危险动作显式化）、行尾 pencil 36px 热区（-m-2 p-2.5 同 grip）+ ml-1 缝。表单展开时添加行隐藏。
+- **v2 token 族纪律**（design review）：新代码禁 v1 桥接族（text-on-surface 系，index.css :456 注释明令）——表单已全换 text-ink-1/ink-2 + hover:bg-ink-1/5；字段形态 = settings-dialog 单源「bg-elevated2 内嵌 + sep-strong 描边」（容器无底色）。
 
 ### 进度
 
-- ✅ 第一轮 6+1 条：`8114ae9`（代码）+ `c6b1047`（记档）。
-- ✅ 第二轮收尾：`936b1ed`（32 文件，+942/−378）——QuickKeysEditor 三件套 + 7a/7b + 标尺同步 + review 消化全项。
-- ✅ 验证链九项：format/lint/typecheck 0w + CSS 硬闸 + tokens 0 违例 + 单测 778 + 探针 quick-keys-editor 19/19 / keyboard-inset 10/10 + e2e file-browser 2 / terminal-session 1 / mobile-nav 6。
-- ✅ redesign-v2.md §6.12o 段尾「2026-10-11 真机反馈第二轮」记档完成。
-- ⬜ **重写版真机清单交用户**（下一动作，清单见下）。
-- ⬜ 用户真机复验后按反馈迭代。
+- ✅ 第一轮 6+1 条：`8114ae9` + `c6b1047`。第二轮收尾：`936b1ed` + `5ff5d29`。
+- ✅ 第三轮：`c0e48d5`（11 文件 +418/−36）——4+1 条全落地 + 双 reviewer 消化。
+- ✅ 验证链：format/lint/typecheck 0w + CSS 硬闸 + content-type text/css + tokens 0 违例 + 单测 778 + 探针 quick-keys-editor 29/29 / keyboard-inset 10/10 + e2e terminal-session 1 passed。
+- ✅ redesign-v2.md §6.12o 段尾第三轮记档（含 review 消化）。
+- ⬜ **真机清单交用户**（下一动作）。
 
 ### 阻塞 / 风险
 
-- 无阻塞。html 渲染态 onFocus 通路（第一轮⑦）已随 7a 反转降级——渲染态本就不进编辑，该通路只剩「iframe 聚焦即切源码」的辅助语义，真机验证优先级降低。
+- 无阻塞。光标落点的 posAtCoords 在真机（软键盘弹出、visualViewport 偏移）下的表现 Chromium 探针覆盖不了，靠真机清单第 1 条验证。
 
 ## 易丢的关键上下文
 
-- **重写版真机清单（待交用户，iPhone PWA 实际导航）**：
-  1. **键位编辑面板（新）**：任一终端会话 → 点输入条左「⌃」展开输入抽屉 → 控制行右端 ⚙ → 弹出「自定义快捷键」面板（移动 = 半屏 sheet，桌面 = 居中弹窗）→ 8 行键位：拖右侧手柄上下移 = 排序、点行 = 显隐开关 → 关面板 → 输入条上方快捷键条按新顺序渲染、被关的键消失 → 杀掉 PWA 重开，顺序与显隐保持。
-  2. **渲染态不误触编辑（7a）**：工作台开任一 .md 文件标签（渲染态）→ 点正文任意处 → **不应**进入编辑；点右上「源码」分段切到源码 → 再点正文 → 进入编辑。
-  3. **编辑态工具条上移（7b）**：接上，编辑态看正文上方一行 = 撤销/重做/收键盘（移动）+ 右侧「放弃/完成」；**底部没有工具条了**，编辑器到屏幕底；弹键盘后工具条不被遮挡。
-  4. **加载骨架**：进任一项目工作台，agent 区骨架应撑满整区不偏移；骨架→内容切换无横向跳动。
-  5. **边距**：设置页/插件页/全局文件页桌面宽度下，内容统一距左 20px。
-- tmp/ 已入 .gitignore（真机截图 tmp/IMG_7279.png 不会被误入库）。
-- 设置二级换代真机清单 5 条（任务 A 交付）仍待用户复验。
+- **第三轮真机清单（待交用户，iPhone PWA）**：
+  1. **编辑光标落点**：文件源码态（segc 切「源码」）→ 点正文任意处进编辑 → 光标应落在点击处、键盘弹出可直接输入。
+  2. **行高零跳变**：预览⇄编辑切换，元信息行高度无轻微变化。
+  3. **⚙ 按钮**：终端 composer 展开输入抽屉 → 控制行左端 ⚙ = 28×28 无衬底灰图标，与发送钮同高（不再是蓝色大按钮）。
+  4. **快捷键增删改**：⚙ 面板 → 「＋ 新建快捷键」（居中蓝字）→ 填名称+内容 → 保存 → 快捷键条出现新键，点它 = 发送内容并回车；行尾铅笔改名；进表单左下「删除快捷键」删除；拖拽 = 行首手柄（与开关隔开了，不易误触）；重启保持。
+  5. **面板开关行为**：填了一半表单直接下滑关面板 → 重开不应残留半填内容。
+- 本 session 写入损坏顽疾高发（Edit new_string/old_string 乱码、heredoc 噪声、编造 old_string）——修乱码前先 Read/hexdump 确认精确文本；探针脚本经 PostToolUse formatter 落盘较可靠。
+- 设置二级换代真机清单 5 条（任务 A）+ 第二轮重写版真机清单 5 条仍待用户复验。
 - agent-browser CLI 可用（iPhone 16 设备模拟），一次性 UI 验证优先用它。
 
 ## 提醒
@@ -48,4 +47,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-11 09:05；触发原因：第二轮反馈收尾提交 `936b1ed` + 记档 + handoff save
+最后更新：2026-10-11 11:55；触发原因：第三轮反馈提交 `c0e48d5` + 双 reviewer 消化 + handoff save
