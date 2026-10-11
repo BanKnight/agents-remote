@@ -1076,7 +1076,7 @@ function WorkbenchContent({
  * 10m2 全局文件主区推入态（v1.5 批 4，mac-files-global-preview）：mhead = mback「‹ 全局文件」
  * （蓝字 chevron.left）+ h1 文件名（等宽 700，原型 margin-left:34px）+ 右端 ⋯（v1.6 pencil
  * 退役——「编辑」= 点正文进入；编辑态 emeta 承担放弃/完成）。主体复用 FileTabPreview（desktop 档：
- * .fmeta 元信息行 / 编辑态 .emeta+.aux / unsupported 空态单源），编辑受控共享
+ * .fmeta 元信息行 / 编辑态 .emeta（.aux 已退役）/ unsupported 空态单源），编辑受控共享
  * workbenchFileTabEditingAtom（tabId=file_ 前缀全路径，与中栏 tab 同命名空间、同屏单编辑）。
  * ⋯ 菜单 = 复制内容/复制路径/在工作台打开（根作用域无 Git，无查看 diff——onOpenDiff 不传）。
  * md 内链（批 13 反馈⑤）：MarkdownLinkContext 以当前 push 文件目录解析相对 href →

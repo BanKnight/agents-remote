@@ -850,7 +850,8 @@ type LargeTitleRowProps = {
  * 移动一级页 Large title 行（原型 .h-row：h1 30px/800 ink-title + 右侧 22px 图标组 gap 3.5）。
  * 行高由 h1 决定（第十一轮复验：触屏 touch:h-10 按钮参与行布局会把标题行撑到 52px——
  * 触屏按钮须自带 touch:-my-1 抵消增高，40px 点击区保留，frontend-notes §7 触屏大点击区）。
- * 消费方：项目 / 插件 / 全局文件三个移动一级 tab。
+ * 消费方：项目 / 插件 / 全局文件 / 设置四个移动一级 tab（设置 root 态 2026-10-11 加入——
+ * 边距统筹：原 .nav「‹ 项目 + 居中标题」形态与另三 tab 大标题语言不一致）。
  */
 export function LargeTitleRow({ actions, title }: LargeTitleRowProps) {
   return (

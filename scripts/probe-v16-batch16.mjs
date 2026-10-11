@@ -229,17 +229,22 @@ async function run() {
       // panel 滑入动画（450ms）+ 余量后再取几何（frontend-notes §18）。
       await page.waitForTimeout(700);
       await page.locator("button.frow", { hasText: "README.md" }).first().click();
-      await page.getByRole("button", { name: "编辑", exact: true }).waitFor({ timeout: 8000 });
-      await page.getByRole("button", { name: "编辑", exact: true }).click();
-      // CodeEditor lazy 挂载（CodeMirror 在场）→ aux 条出现。
-      await page.locator(".aux").waitFor({ timeout: 10000 });
+      // v1.6 pencil 退役 + 7a（渲染态不进编辑，真机反馈 2026-10-11）：进编辑动线 =
+      // segc 切源码 → 点正文。md 默认渲染态，先切。
+      await page
+        .locator('[data-role="file-preview-pane"] .segc button', { hasText: "源码" })
+        .click();
+      await page.waitForTimeout(400);
+      await page.locator('[data-role="file-preview-pane"] .cm-content').click();
+      // CodeEditor lazy 挂载（CodeMirror 在场）→ emeta 工具钮出现（7b：aux 上移 emeta 行）。
+      await page.locator(".emeta button").first().waitFor({ timeout: 10000 });
       const auxSpec = [
         { label: "撤销", body: LUCIDE_ICONS["undo-2"].body },
         { label: "重做", body: LUCIDE_ICONS["redo-2"].body },
         { label: "收起键盘", body: LUCIDE_ICONS["chevron-down"].body },
       ];
       for (const { label, body } of auxSpec) {
-        const btn = page.locator(".aux button", { hasText: label });
+        const btn = page.locator(".emeta button", { hasText: label });
         const cnt = await btn.count();
         if (cnt !== 1) {
           check(`3 ${label} 钮唯一在场`, false, `count=${cnt}`);

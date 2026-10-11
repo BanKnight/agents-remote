@@ -179,6 +179,43 @@ function useTapToEdit(onEnter: () => void) {
   };
 }
 
+/**
+ * 编辑态工具钮组（撤销/重做/收起软键盘）：@codemirror/commands view 命令直驱 EditorView。
+ * 真机反馈 2026-10-11（7b）：原 FilePreviewPane 底部 .aux 工具条上移进编辑态首行（用户：
+ * 元信息行去除，空出位置放工具条内容）——编辑器全高，工具钮不再有软键盘遮挡面；MobileL3
+ * 检视页编辑态同批补齐（同构缺口：此前仅 Pane 有 undo/redo）。desktop 档无软键盘收起诉求
+ *（05h4 原型 .pvaux 仅撤销/重做两钮）。
+ */
+function EditorToolButtons({
+  view,
+  showDismiss = true,
+}: {
+  view: EditorView | null;
+  /** 移动档软键盘收起钮（blur 画布）；desktop 档传 false。 */
+  showDismiss?: boolean;
+}) {
+  const { t } = useT();
+  const btn = "flex cursor-pointer items-center gap-1 border-0 bg-none p-0 text-[12px] text-ink-2";
+  return (
+    <>
+      <button className={btn} disabled={!view} onClick={() => view && undo(view)} type="button">
+        <LucideIcon className="size-4 shrink-0" name="undo-2" />
+        {t("files.auxUndo")}
+      </button>
+      <button className={btn} disabled={!view} onClick={() => view && redo(view)} type="button">
+        <LucideIcon className="size-4 shrink-0" name="redo-2" />
+        {t("files.auxRedo")}
+      </button>
+      {showDismiss ? (
+        <button className={btn} onClick={() => view?.contentDOM.blur()} type="button">
+          <LucideIcon className="size-4 shrink-0" name="chevron-down" />
+          {t("files.auxDismissKeyboard")}
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 export type MobileL3FilePreviewProps = {
   projectName: string;
   /** 项目相对路径。 */
@@ -219,6 +256,11 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
     setEditing(true);
   };
   const tapToEdit = useTapToEdit(enterEditing);
+  // 编辑器实例（工具钮组消费；退出编辑/换文件清空——CodeEditor unmount 后旧 view 失效）。
+  const [editorView, setEditorView] = useState<EditorView | null>(null);
+  useEffect(() => {
+    if (!editing) setEditorView(null);
+  }, [editing]);
 
   if (editor.preview.isLoading) {
     return <LoadingBlock className="min-h-0 flex-1" label={t("files.loadingPreview")} />;
@@ -303,13 +345,14 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
     <div
       className={`flex min-h-0 flex-1 flex-col pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px),var(--kb-offset,0px))] ${editing || isRenderView ? "overflow-hidden" : "overflow-y-auto"}`}
       data-role="l3-file-preview"
-      {...(editing ? {} : tapToEdit)}
+      {...(!editing && !isRenderView ? tapToEdit : {})}
     >
       {editing ? (
         // 编辑态操作行：保存（FileSaveButton 统一样式，禁用/保存中/已保存三态）+ 完成。
         // 双按钮包进单个 .diff 容器（auto margin 每份平分剩余空间——两个 .diff 会把首钮
         // 悬在行中部，design-review 批次 3）；裸文本钮加 after 纵向隐形扩区（铁律 9 触达）。
         <div className="meta">
+          <EditorToolButtons view={editorView} />
           <span className="diff flex items-center gap-3">
             <FileSaveButton
               isDirty={editor.isDirty}
@@ -349,14 +392,19 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
         // 编辑态根 overflow-hidden 给确定高度。py-2.5 = 03q2 .ed 的 padding:10px 0（画布全幅）。
         <div className="flex min-h-0 flex-1 flex-col py-2.5">
           <Suspense fallback={<CodeEditorFallback />}>
-            <CodeEditor name={data.name} onChange={editor.onEditChange} value={editor.editValue} />
+            <CodeEditor
+              name={data.name}
+              onCreateEditor={setEditorView}
+              onChange={editor.onEditChange}
+              value={editor.editValue}
+            />
           </Suspense>
         </div>
       ) : isRenderView ? (
         // 渲染态 = PreviewBody 单源（md → MarkdownString / html → sandbox iframe + 本地资源
         // 内联），与检视面板/中栏 file tab 同一渲染器（onEditChange 不传 = 只读）。
-        // onActivate = html 点 iframe 也进编辑（iframe 点击不冒泡，宿主只收 focus）。
-        <PreviewBody editValue="" onActivate={enterEditing} preview={data} renderMode="render" />
+        // 渲染态不进编辑（真机反馈 2026-10-11：渲染态点击进编辑不合理；动线 = segc 切源码）。
+        <PreviewBody editValue="" preview={data} renderMode="render" />
       ) : (
         // 源码态 = CodeEditor 只读（反馈④b：与编辑态同一画布，切换不再跳样式）。外层
         // py-2.5 同编辑态容器（画布上下 10px 由调用方承担，frontend-notes §8 高度链——
@@ -391,9 +439,8 @@ export type FilePreviewPaneProps = {
   onEditingChange: (editing: boolean) => void;
   /** 编辑态动作位置：meta = .emeta fact 放弃/完成；nav = push nav [放弃][完成]（容器渲染）。 */
   editingActions: "meta" | "nav";
-  /** 容器分档（v1.5 批 4，spec §4.5 预览矩阵）：mobile = 面板/push（底部 safe-area 让位 +
-   * .aux 收起键盘钮）；desktop = 中栏 tab/主区推入态（无移动底部空间，aux 仅撤销/重做——
-   * 05h4 原型 .pvaux 两钮）。缺省 mobile（存量调用零改动）。 */
+  /** 容器分档（v1.5 批 4，spec §4.5 预览矩阵）：mobile = 面板/push；desktop = 中栏 tab/
+   * 主区推入态。编辑态工具钮组（撤销/重做/收起键盘）随 7b 上移 .emeta 行、.aux 已退役。 */
   variant?: "mobile" | "desktop";
 };
 
@@ -401,8 +448,8 @@ export type FilePreviewPaneProps = {
  * v1.5 预览矩阵·移动：文件预览主体单源（面板标签 / push 容器共用）。预览态 = .fmeta
  *（左 = 类型·度量·更新时间；右端 = MD/HTML 渲染⇄源码 segc.mini）+ CodeEditor 只读源码
  * / PreviewBody 渲染 / ImageViewer 图片 / .unsupported 空态；编辑态 = .emeta
- *（编辑中·行数 + ● 未保存变更 + fact 放弃/完成）+ CodeEditor + .aux（撤销/重做/收起键盘，
- * @codemirror/commands view 命令）。finish = dirty 即保存并退出编辑（回渲染态）；discard =
+ *（工具钮组撤销/重做/收起键盘 + ● 未保存变更 + fact 放弃/完成，7b 合并行）+ CodeEditor。
+ * finish = dirty 即保存并退出编辑（回渲染态）；discard =
  * dirty 弹确认（files.discardConfirm）后清草稿退出。
  */
 export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPaneProps>(
@@ -567,24 +614,30 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
       );
     }
     // text 分支（编辑/渲染/源码三态）。desktop 档去移动底部 safe-area 让位（中栏/主区推入态
-    // 无 bottom nav，05h 原型四边贴容器）。编辑态去 pb——.aux 是末子元素且自带
-    // env(safe-area-inset-bottom) 单层避让（frontend-notes §1），pb 会把 aux 抬离屏底悬空。
+    // 无 bottom nav，05h 原型四边贴容器）。编辑态去 pb——.emeta 行是首子元素、底部工具条
+    // .aux 已退役（7b），面板底 = 编辑器直落。
     // 编辑态 pb 换 --kb-offset（批 17 键盘避让）：iOS 键盘 overlay 只缩 visual viewport，
-    // 面板 padding-bottom 缩链把 .aux 顶到键盘上方（全高面板只能缩链，translateY 会把
+    // 面板 padding-bottom 缩链让编辑器可滚区落到键盘上方（全高面板只能缩链，translateY 会把
     // 顶部推出视口）；桌面 --kb-offset 恒 0，无影响。
     return (
       <div
         className={`flex min-h-0 flex-1 flex-col ${variant === "desktop" ? "fdesktop" : ""} ${editing ? "pb-[var(--kb-offset,0px)]" : variant === "desktop" ? "" : "pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]"} ${editing || isRenderView ? "overflow-hidden" : "overflow-y-auto"}`}
         data-role="file-preview-pane"
-        {...(editing ? {} : tapToEdit)}
+        {...(!editing && !isRenderView ? tapToEdit : {})}
       >
         {editing ? (
           <>
-            {/* .emeta 事实行：fdim（编辑中·行数）+ dirty（● 未保存变更）恒渲染；fact
-            （放弃/完成）仅 meta 模式——nav 模式（push/l3Transient）上移 nav [放弃][完成]。 */}
+            {/* 编辑态单操作行（7b 真机反馈 2026-10-11）：元信息行去除（「编辑中·N 行」是
+            编辑器自见的冗余），底部 .aux 工具条上移至此（用户：空出的位置放工具条内容）——
+            左 = 撤销/重做/收键盘，右 = meta 模式放弃/完成；nav 模式右端 = dirty 靠右（nav
+            [放弃][完成] 已在容器 nav 栏）。编辑器全高，底部不再有被键盘遮挡的工具条。 */}
             <div className="emeta">
-              <span className="fdim">{t("files.editingMeta", { n: lineCount })}</span>
-              {editor.isDirty ? <span className="dirty">● {t("files.unsavedChanges")}</span> : null}
+              <EditorToolButtons showDismiss={variant !== "desktop"} view={editorView} />
+              {editor.isDirty ? (
+                <span className={`dirty ${editingActions === "nav" ? "ml-auto" : ""}`}>
+                  ● {t("files.unsavedChanges")}
+                </span>
+              ) : null}
               {editingActions === "meta" ? (
                 <span className="fact">
                   <button
@@ -614,43 +667,6 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
                 />
               </Suspense>
             </div>
-            {/* 批 16 反馈①：三钮原为字符（↩/↪/⌄），平台字体渲染差异致两端图标不统一 →
-                Lucide 单轨化（frontend-notes §15，SVG 跨平台一致）。 */}
-            <div className="aux">
-              <button
-                className="flex items-center gap-1"
-                disabled={!editorView}
-                onClick={() => {
-                  if (editorView) undo(editorView);
-                }}
-                type="button"
-              >
-                <LucideIcon className="size-4 shrink-0" name="undo-2" />
-                {t("files.auxUndo")}
-              </button>
-              <button
-                className="flex items-center gap-1"
-                disabled={!editorView}
-                onClick={() => {
-                  if (editorView) redo(editorView);
-                }}
-                type="button"
-              >
-                <LucideIcon className="size-4 shrink-0" name="redo-2" />
-                {t("files.auxRedo")}
-              </button>
-              {/* desktop 档无软键盘收起诉求（05h4 原型 .pvaux 仅撤销/重做两钮）。 */}
-              {variant === "desktop" ? null : (
-                <button
-                  className="flex items-center gap-1"
-                  onClick={() => editorView?.contentDOM.blur()}
-                  type="button"
-                >
-                  <LucideIcon className="size-4 shrink-0" name="chevron-down" />
-                  {t("files.auxDismissKeyboard")}
-                </button>
-              )}
-            </div>
           </>
         ) : (
           <>
@@ -667,14 +683,8 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
               ) : null}
             </div>
             {isRenderView ? (
-              // onActivate = html 点 iframe 也进编辑（iframe 点击不冒泡，宿主只收 focus；
-              // editing→source effect 自动切源码）。
-              <PreviewBody
-                editValue=""
-                onActivate={() => onEditingChange(true)}
-                preview={data}
-                renderMode="render"
-              />
+              // 渲染态不进编辑（真机 2026-10-11）；动线 = segc 切源码后点正文。
+              <PreviewBody editValue="" preview={data} renderMode="render" />
             ) : (
               // 源码态 = CodeEditor 只读（反馈④b：与编辑态同画布 + 同 py-2.5 外层容器）。
               <div className="flex min-h-0 flex-1 flex-col py-2.5">

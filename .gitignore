@@ -13,3 +13,5 @@ test-results/
 .claude/skills/observability
 .codegraph/
 .agents/
+tmp/
+

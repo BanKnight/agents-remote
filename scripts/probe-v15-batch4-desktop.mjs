@@ -315,24 +315,21 @@ await page.locator('[data-role="file-preview-pane"] .cm-content').click();
 await page.waitForTimeout(700);
 const pane = page.locator('[data-role="file-preview-pane"]');
 ok((await pane.locator(".emeta").count()) > 0, "⑤ 点正文 → 编辑态 .emeta");
-const auxText = (await pane.locator(".aux").textContent()) ?? "";
+const auxText = (await pane.locator(".emeta").textContent()) ?? "";
 ok(
   /撤销/.test(auxText) && /重做/.test(auxText) && !/收起键盘/.test(auxText),
-  "⑥ .aux 桌面档 = 撤销/重做（无收起键盘）",
+  "⑥ emeta 桌面档 = 撤销/重做（7b 工具上移；无收起键盘）",
 );
 ok(
   (await tabstrip.locator('[aria-label="更多操作"]').count()) === 0,
   "⑦ 编辑态 tabstrip 只剩结构钮（⋯ 消失）",
 );
-// reviewer P2-2：桌面 aux = 38px 无 safe-area env（.pvaux 页私；iPhone 档 40px+env 不动）。
-const auxBox = await pane.locator(".aux").evaluate((el) => {
+// 7b：.aux 条退役 → 编辑态首行 = .emeta（高 38px，桌面页私 padding 0 26px 0 14px 继承）。
+const emetaBox = await pane.locator(".emeta").evaluate((el) => {
   const s = getComputedStyle(el);
   return { h: s.height, pb: s.paddingBottom };
 });
-ok(
-  auxBox.h === "38px" && auxBox.pb === "0px",
-  `⑦b 桌面 .aux 高 38px 无 env（实际 ${auxBox.h}/pb ${auxBox.pb}）`,
-);
+ok(emetaBox.h === "38px", `⑦b 编辑态行 .emeta 高 38px（实际 ${emetaBox.h}）`);
 // clean 放弃回预览态。
 await pane.locator(".emeta .fact .giveup").click();
 await page.waitForTimeout(500);

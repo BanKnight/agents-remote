@@ -17,8 +17,8 @@
  * - 桌面硬件键盘不改变 visualViewport，pointer: coarse 显式 guard 拦截极少数 viewport
  *   抖动误触发；SSR / 无 visualViewport 环境 no-op。
  *
- * apply 的第二参 source 标注本次计算的触发源（诊断通道 keyboard-debug.ts 消费，用于
- * 真机事件链取证；composer 调用点不接该参数，签名向后兼容）。
+ * apply 的第二参 source 标注本次计算的触发源（原真机取证通道 keyboard-debug.ts 已随
+ * 批 18 取证收口删除；composer 调用点不接该参数，签名向后兼容保留）。
  *
  * 不要用 window.scrollTo 对抗 visual-viewport pan：body 被 pin 时 document scroll 本就
  * 是 0，碰不到 pan 轴，逐帧对抗只抖动（mobile-keyboard.ts 时代失败的原因）。

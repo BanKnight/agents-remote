@@ -76,9 +76,9 @@ test("mobile [settings] deep link still renders settings page (D21: entry moved,
   // 项目页 ⚙）。此处直接 goto 验证路由仍可达。
   await page.goto("/settings");
   await expect(page).toHaveURL(/\/settings$/);
-  // SettingsRoute 渲染（MobilePageHeader title = nav.settings，渲染为 span 非 heading，
-  // 用 header 内 text 断言）。
-  await expect(page.locator("header").first()).toContainText(/设置|Settings/);
+  // SettingsRoute 渲染（root 态 = LargeTitleRow 大标题 h1——边距统筹 2026-10-11 起 root 无
+  // .nav header，锚 h1 断言）。
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(/设置|Settings/);
 });
 
 test("mobile [projects] nav link on landing and /projects", async ({ page }) => {

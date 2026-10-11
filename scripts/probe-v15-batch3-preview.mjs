@@ -311,23 +311,19 @@ await tapBodyToEdit();
 const pane = page.locator('[data-role="file-preview-pane"]');
 const emeta = pane.locator(".emeta");
 ok((await emeta.count()) > 0, "① 编辑态 .emeta 出现");
-const fdimText = (await emeta.locator(".fdim").textContent()) ?? "";
-ok(/编辑中 · \d+ 行/.test(fdimText), `② fdim = ${fdimText.trim()}`);
+ok((await emeta.locator(".fdim").count()) === 0, "② fdim 退役（7b 元信息行去除）");
+const emetaBtns = (await emeta.locator("button").allTextContents()) ?? [];
+ok(
+  emetaBtns.some((x) => /撤销/.test(x)) &&
+    emetaBtns.some((x) => /重做/.test(x)) &&
+    emetaBtns.some((x) => /收起键盘/.test(x)),
+  "②b emeta 行 = 撤销/重做/收起键盘（7b 工具条上移）",
+);
 ok((await emeta.locator(".dirty").count()) === 0, "③ 未改动 → 无 dirty");
 const factText = (await emeta.locator(".fact").textContent()) ?? "";
 ok(/放弃/.test(factText) && /完成/.test(factText), "④ fact = 放弃 + 完成");
-const auxText = (await pane.locator(".aux").textContent()) ?? "";
-ok(
-  /撤销/.test(auxText) && /重做/.test(auxText) && /收起键盘/.test(auxText),
-  "⑤ .aux = 撤销/重做/收起键盘",
-);
-// P2-2：编辑态去 pb → .aux 贴屏底（bottom ≈ 视口高，容差 2px 防亚像素）。
-const auxBox = await pane.locator(".aux").boundingBox();
-const vpH = page.viewportSize()?.height ?? 0;
-ok(
-  auxBox !== null && Math.abs(auxBox.y + auxBox.height - vpH) <= 2,
-  `⑤b 编辑态 .aux 贴屏底（bottom=${(auxBox?.y ?? 0) + (auxBox?.height ?? 0)} / vp=${vpH}）`,
-);
+const auxCount = await pane.locator(".aux").count();
+ok(auxCount === 0, "⑤ .aux 底部工具条退役（7b 工具钮上移 emeta 行）");
 ok((await pane.locator(".cm-editor").count()) > 0, "⑥ CodeMirror 在场");
 // clean 放弃 → 直接退出回预览态。
 await emeta.locator(".fact .giveup").click();
@@ -391,13 +387,18 @@ ok(
   (await onBtn.count()) === 1 && /渲染/.test((await onBtn.textContent()) ?? ""),
   "⑤ md 默认渲染态（.on = 渲染）",
 );
-// v1.6「点正文任意处进入编辑」·渲染态：点 PreviewBody 正文区（非 button/a）→ 进编辑 +
-// effect 自动切源码（segc「源码」on、CodeMirror 在场）。
+// 7a（真机反馈 2026-10-11）：渲染态点击不进编辑——动线 = segc 切源码 → 点正文进编辑。
+// 断言「渲染态点正文零反应」+ 正规动线仍通。
 const renderBody = notesBody.locator("div.min-h-0.flex-1").first();
 await renderBody.click();
 await page.waitForTimeout(700);
 const notesPane = page.locator('[data-role="file-preview-pane"]');
-ok((await notesPane.locator(".emeta").count()) > 0, "⑥ 渲染态点正文 → 编辑态（effect 自动切源码）");
+ok((await notesPane.locator(".emeta").count()) === 0, "⑥ 渲染态点正文不进编辑（7a：阅读交互优先）");
+await notesPane.locator(".fmeta .segc button", { hasText: "源码" }).click();
+await page.waitForTimeout(400);
+await renderBody.click();
+await page.waitForTimeout(700);
+ok((await notesPane.locator(".emeta").count()) > 0, "⑥b 切源码后点正文 → 编辑态（动线保留）");
 ok(
   (await notesPane.locator(".cm-editor").count()) > 0,
   "⑥b 编辑态画布 = 源码 CodeMirror（渲染态已断言无 .cm-editor）",

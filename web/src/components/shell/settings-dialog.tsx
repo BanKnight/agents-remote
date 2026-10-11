@@ -470,7 +470,8 @@ function useLogout() {
 /**
  * 桌面设置 main 整页（07m 原型，v2 M9 批次 d）：并入 mainPage 体系取代 SettingsDialog——
  * side 恒定 sidewin（footnav 设置项 .on 激活由 Sidebar 判定），main = mhead 标题 +
- * 560px 居中 col（对齐原型 .col width:560px margin:0 auto）。两层结构契约同移动
+ * 560px 限宽左对齐列（边距统筹 2026-10-11：对齐另两 mainPage 的左对齐 20px 内容线）。
+ * 两层结构契约同移动
  * SettingsRoute（决策 48：activeSection 外壳持 state，切走 unmount 自然回 root）；
  * detail 态 mhead 加返回箭头、无关闭钮（离开 = footnav 导航别处）。
  */
@@ -504,10 +505,12 @@ export function SettingsMainPage() {
           {isRoot ? t("settings.title") : sectionTitle(activeSection, t)}
         </h1>
       </header>
-      {/* root/detail 态内容都自带 16px 边距（.sect/.sgroup margin，对齐 07/07m 原型）→
-          容器不再叠 padding（v2 二级换代：detail 段同用分组语言）。 */}
+      {/* 内容左对齐限宽列（边距统筹 2026-10-11：三 mainPage 同语言——去 mx-auto 居中形态，
+          px-1 4px + .sect/.sgroup 自带 16px margin = 20px 内容线对齐全局文件页 lg:px-5；
+          -mt-0.5 补偿首组 .sect margin-top 14px → 内容顶 = header 底 + 12px 对齐 lg:pt-3，
+          root/detail 两态统一）。 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={`mx-auto w-full max-w-[560px] pb-6 ${isRoot ? "pt-2.5" : "pt-3"}`}>
+        <div className="-mt-0.5 w-full max-w-[560px] px-1 pb-6">
           <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
         </div>
       </div>

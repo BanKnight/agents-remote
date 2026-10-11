@@ -123,6 +123,17 @@ export const terminalQuickKeysHiddenAtom = atomWithLocalOnlyStorage<string[]>(
   [],
 );
 
+/**
+ * 终端 composer 快捷键条顺序（键位编辑面板拖拽排序，2026-10-11 真机反馈⑤「内容 + 顺序
+ * 编排」）：存 id 全序。未存/新增 id 由消费方归一化（applyQuickKeyOrder：已知键按存储序
+ * 排前，缺失键按默认序尾补，稳定排序）——快捷键条渲染与编辑面板共用同一归一化管道。
+ * localStorage 持久化。与 hidden 集正交：顺序含被隐藏的键。
+ */
+export const terminalQuickKeysOrderAtom = atomWithLocalOnlyStorage<string[]>(
+  "workbench.terminalQuickKeysOrder",
+  [],
+);
+
 /** 右栏宽度（rem），Stage 0② WorkbenchShell 构造 grid template，Stage 4 resize 单点更新。 */
 export const workbenchRightWidthAtom = atomWithLocalOnlyStorage(
   "workbenchRightWidth",

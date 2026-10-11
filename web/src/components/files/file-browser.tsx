@@ -839,19 +839,9 @@ export type PreviewBodyProps = {
   renderMode: "source" | "render";
   editValue: string;
   onEditChange?: (value: string) => void;
-  /** html 沙箱 iframe 的激活回调（tap-to-edit 家族消费）：iframe 内点击不冒泡出 iframe
-   * （事件通路结构性不存在），宿主唯一能收到的是 focus——点击内文档 → iframe 聚焦 → 触发。
-   * md 分支点击冒泡天然支持，无需此通道。未传 = 行为不变（只读语境）。 */
-  onActivate?: () => void;
 };
 
-export function PreviewBody({
-  onActivate,
-  preview,
-  renderMode,
-  editValue,
-  onEditChange,
-}: PreviewBodyProps) {
+export function PreviewBody({ preview, renderMode, editValue, onEditChange }: PreviewBodyProps) {
   const { t } = useT();
   const [inlinedHtml, setInlinedHtml] = useState<string | null>(null);
   // 内联产物缓存（key = preview 引用）：source↔render 切换、staleTime=0 refetch 未换
@@ -913,14 +903,13 @@ export function PreviewBody({
       return (
         <div className="flex-1">
           {/* sandbox=""（v1.4 批7，design_spec）：纯静态预览——不执行脚本、不发请求；
-              动态行为交工作台终端里的真实环境。onFocus = html 渲染态的 tap-to-edit 通路
-              （iframe 内点击不冒泡，宿主只收 focus；见 onActivate prop 注释）。 */}
+              动态行为交工作台终端里的真实环境。渲染态不接 tap-to-edit（真机反馈 2026-10-11：
+              渲染态点击进编辑不合理，阅读视图的点击是选词/链接交互；编辑动线 = segc 切源码）。 */}
           <iframe
             className="w-full h-full border-0"
             sandbox=""
             srcDoc={inlinedHtml}
             title="Sandboxed HTML render"
-            onFocus={onActivate}
           />
         </div>
       );

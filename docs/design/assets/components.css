@@ -290,7 +290,8 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 .cursor{display:inline-block;width:8px;height:15px;background:var(--c-success);vertical-align:-2px}
 .tfoot{font-size:11px;color:var(--ink-3);font-family:ui-monospace,Consolas,monospace;padding:0 14px 8px}
 /* ---- 共享：文件预览顶部元信息行（四容器同构：nav/tabstrip/mhead 下、内容上；与编辑态 emeta 同位异职） ----
-   左 = 类型·度量·更新时间；右 = segc mini 仅 MD/HTML；代码/图片/unsupported 右端空。底部无元信息——底部仅编辑态有 aux（撤销/重做/收起键盘）。 */
+   左 = 类型·度量·更新时间；右 = segc mini 仅 MD/HTML；代码/图片/unsupported 右端空。底部无元信息——底部无任何工具条
+   （编辑态 aux 亦已随 2026-10-11 反馈⑦b 退役上移 .emeta 行）。 */
 .fmeta{display:flex;align-items:center;gap:10px;height:36px;padding:0 16px 0 14px;border-bottom:1px solid var(--sep);font-size:11.5px;color:var(--ink-2);flex:none;position:relative}
 .fmeta .fright{margin-left:auto;display:flex;align-items:center;gap:12px;flex:none}
 .fmeta .fright .segc{flex:none}

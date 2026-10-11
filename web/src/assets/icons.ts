@@ -59,7 +59,8 @@ export type LucideIconName =
   | "play"
   | "undo-2"
   | "redo-2"
-  | "history";
+  | "history"
+  | "grip-vertical";
 
 /** 24 网格 stroke-2 圆头描边（Lucide 规格）；body 为 svg inner 内容。 */
 export const LUCIDE_ICONS = {
@@ -274,6 +275,10 @@ export const LUCIDE_ICONS = {
   history: {
     viewBox: "0 0 24 24",
     body: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  },
+  "grip-vertical": {
+    viewBox: "0 0 24 24",
+    body: '<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>',
   },
 } as const satisfies Record<LucideIconName, { viewBox: string; body: string }>;
 

@@ -226,7 +226,9 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
           重）；桌面 mainPage（hideTitle，seg4 由 MainPageShell actions 承载）保持常驻
           .psearch。margin-top 统一 10px（2026-09-29 真机反馈：跨页一致优先统一 mt-2.5）。 */}
       {hideTitle ? (
-        <div className="psearch mx-4 mt-2.5 flex-none">
+        /* 桌面 mainPage 复用态：内容线 20px / 顶距 12px（边距统筹 2026-10-11，对齐全局文件页
+           lg:px-5 lg:pt-3 与 header px-5）；移动分支（下方）维持 16px/10px。 */
+        <div className="psearch mx-5 mt-3 flex-none">
           <ShellIcon className="size-4 flex-none text-ink-2" name="magnifyingglass" />
           <input
             aria-label={t("plugins.searchPlaceholder")}

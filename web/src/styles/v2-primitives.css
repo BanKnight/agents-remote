@@ -2286,8 +2286,8 @@
     flex: none;
     padding: 0 14px;
   }
-  /* 编辑态元信息行（workspace-preview-edit 页私规格收编：fdim 度量 / dirty 未保存 /
-     fact 收尾动作组——面板容器放行内，push 容器 fact 上移 nav、行内只剩 fdim+dirty）。 */
+  /* 编辑态元信息行（7b 合并后行内 = 工具钮组 + dirty 未保存 + fact 收尾动作组；
+     原「底部 aux 工具条」已随 2026-10-11 反馈⑦b 退役上移本行）。 */
   .emeta {
     flex: none;
     display: flex;
@@ -2297,18 +2297,15 @@
     padding: 0 16px 0 14px;
     border-bottom: 1px solid var(--sep);
   }
-  .emeta .fdim {
-    font-size: 11.5px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
-    color: var(--ink-2);
-    white-space: nowrap;
-  }
   .emeta .dirty {
     font-size: 11px;
     font-weight: 600;
     color: var(--c-warning-text);
     white-space: nowrap;
+    /* 窄屏收缩面：en 长文案 + dirty 时 375px 不挤压 fact（review P2，2026-10-11） */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .emeta .fact {
     margin-left: auto;
@@ -2341,37 +2338,6 @@
     font-weight: 600;
     color: var(--c-primary);
   }
-  /* 编辑态底部 aux 条（workspace-preview-edit）：撤销 / 重做 / 收起键盘（iPhone 形态）；
-     底部交互面单层避让 env（frontend-notes §1）。 */
-  .aux {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 26px;
-    /* 批 16 真机反馈①再反馈：height 是 border-box，padding-bottom: env(34px) 会把 content
-       压到 6px，按钮在 6px 里居中 = 贴条顶（真机「图标与工具条背景错位」根因）。calc 补偿后
-       content 恒 40px，交互区居中恢复；chin 背景延伸语义不变（§1 单点消费）。
-       批 17 键盘联动：键盘在场（--kb-active:1，useKeyboardInsetGlobal 写入）时被顶到键盘
-       上方、不再贴物理屏底，chin 避让责任转移给键盘自带避让 → env 部分归零，紧凑贴键盘
-       上沿。仅作样式微调系数，勿改作显隐类消费（iOS 26 瞬态误判教训，composer hook 注释）。 */
-    height: calc(40px + env(safe-area-inset-bottom) * (1 - var(--kb-active, 0)));
-    flex: none;
-    background: var(--bg-elevated);
-    border-top: 1px solid var(--sep-row);
-    font-size: 12px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
-    color: var(--ink-2);
-    padding-bottom: calc(env(safe-area-inset-bottom) * (1 - var(--kb-active, 0)));
-  }
-  .aux button {
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-  }
   /* v1.5 批4（reviewer P1-1）：桌面两容器 fmeta/emeta 页私 padding 档（.fdesktop = FilePreviewPane
      variant="desktop" 容器标记）。中栏 05h（.pcenter 页私）= 右 26 对齐中栏右缘 / 左 14；
      10m2 推入态（mac-files-global-preview 页私）= 左右 20 对齐 mhead px-5、编辑态 emeta
@@ -2387,12 +2353,6 @@
   }
   .push-preview .fdesktop .emeta {
     padding: 0 26px 0 20px;
-  }
-  /* reviewer P2-2：桌面 aux 无软键盘避让诉求（.pvaux = 38px 无 safe-area，
-     mac-tool-files-preview-edit 页私）；env 仅 iPhone 形态消费。 */
-  .fdesktop .aux {
-    height: 38px;
-    padding-bottom: 0;
   }
   /* 未知二进制「不支持预览」空态（workspace-preview-unsupported 页私规格收编）：无画布语义，
      ⋯ 菜单仅复制路径。 */
@@ -3216,6 +3176,17 @@
     border-color: color-mix(in srgb, var(--c-warning) 50%, transparent);
     color: var(--c-warning-text);
     font-weight: 600;
+  }
+
+  /* 桌面 mainPage 边距提档（真机反馈 2026-10-11 边距统筹）：三类仅插件一级页消费（市场组
+     头 / quick chips / 卡行），桌面随 overview 复用进 mainPage——16px 是移动档，桌面 mainPage
+     内容线统一 20px（对齐全局文件页 px-5 与 header px-5），与 .psearch 的 1024px 分档同模式。 */
+  @media (min-width: 1024px) {
+    .psect,
+    .quick,
+    .pcard {
+      margin-inline: 20px;
+    }
   }
 
   /* 09mb 作用域切换 Popover（iPad/Mac 段上 ▾；iPhone 保持 03l 半屏 sheet）。

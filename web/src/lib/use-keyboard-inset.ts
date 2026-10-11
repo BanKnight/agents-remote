@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 
-import { kbDebugLog } from "./keyboard-debug";
 import { observeKeyboardInset } from "./keyboard-inset";
 
 /**
@@ -20,10 +19,9 @@ import { observeKeyboardInset } from "./keyboard-inset";
 export function useKeyboardInsetGlobal(): void {
   useEffect(() => {
     const root = document.documentElement;
-    const dispose = observeKeyboardInset((inset, source) => {
+    const dispose = observeKeyboardInset((inset) => {
       root.style.setProperty("--kb-offset", `${inset.offsetPx}px`);
       root.style.setProperty("--kb-active", inset.visible ? "1" : "0");
-      kbDebugLog(source, inset);
     });
     return () => {
       dispose();

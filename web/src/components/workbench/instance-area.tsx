@@ -635,7 +635,17 @@ function AgentPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
   // 分段漫长；claude（主场景）骨架→骨架零跳变衔接。代价：agent/omp 首载窗口（= detail
   // HTTP RTT，通常 <300ms）短暂显聊天骨架再切真实形态，两害取轻。isPending 语义——有
   // 缓存数据后本分支不再可达，后台刷新不闪。
-  if (detail.isLoading) return <ChatSkeleton />;
+  // 壳同构（真机反馈 2026-10-11：骨架→面板 bg 色跳变）——ChatPanel/AcpPanel 等真实面板
+  // 都挂 shellSurfaceClasses.runtimeBody（bg-surface-inset/15 叠加），骨架分支裸显 ChatSkeleton
+  // 缺这层 → 骨架期与加载完底色不同。骨架包同款壳，全程底色一致。
+  if (detail.isLoading)
+    return (
+      <div
+        className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+      >
+        <ChatSkeleton />
+      </div>
+    );
   if (detail.isLoadingError) {
     // 错误态（review 消化）：isLoadingError = isError 且缓存无数据——后台 refetch 失败
     // （staleTime 过期后）不顶掉已渲染面板；形态归一 ResourceStatePanel danger + 第一手 message

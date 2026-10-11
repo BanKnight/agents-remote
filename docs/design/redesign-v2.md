@@ -794,6 +794,20 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **探针（真机反馈轮）**：四门禁 + CSS 硬闸 + tokens 机检全绿；e2e file-browser 2 + terminal-session 1 + mobile-nav 6 passed；web 单测 774 全绿。tap-to-edit 实测用 agent-browser CLI（iPhone 16 设备模拟 + 真实输入事件），一次性诊断不入库。
 
+**2026-10-11 真机反馈第二轮（4+1 条 + review 消化）**：用户真机复验第一轮修复的反馈，逐条处置：
+
+1. **键位自定义「很好」/ 骨架「看起来确实不错」**——第一轮 ⑤⑥ 通过。
+2. **2' 资源进入后才加载 + bg 色变化**：instance-area 骨架壳补 `min-w-0`（`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden`，与 Claude/Acp 会话详情路由同构）——flex item 缺 min-w-0 时内容宽可撑破容器，骨架→内容切换瞬时宽度跳变。
+3. **⑤「这个自定义太差了，要快捷方式的内容 + 顺序编排都要做得到」**：第一轮 ⑤ 的 ActionMenu 勾选形态被推翻，落地完整键位编辑面板——新组件 `QuickKeysEditor`（web/src/components/workbench/quick-keys-editor.tsx，props 全受控照 SessionInputDrawer slot 模式）：**内容** = 8 键逐行 toggle 显隐（role="switch"）；**顺序编排** = grip 手柄拖拽排序（pointer events + **down 即 setPointerCapture**——grip 无点击动作无需起步阈值窗口，§23 pending 失联结构性消失；列表容器 non-passive touchmove preventDefault 防滚动抢占；列表 DOM 序恒定、行 transform 补位（§17 同款「结构不动投影动」）；松手 setOrder 与清 transform 同批 setState 单次 commit，换位行零跳变）+ **键盘等价通道**（行聚焦 ↑/↓ 换位）。**顺序单管道**：新 `terminalQuickKeysOrderAtom`（localStorage）+ `applyQuickKeyOrder` 纯函数（已知键按存储序排前、缺失尾补、稳定排序）——快捷键条渲染与编辑面板共用同一归一化管道（UI=f(state)，顺序与 hidden 正交：顺序含被隐藏键）。**双容器分流**：isMobile ? MobileSheet : Dialog（CenteredDialogCard 形态，照 prompt-dialog/AutoRetryEditor 范式）；受控 open 常挂载。**z-index 机制记档（design review Chromium 实证）**：transform 建立的 stacking context 不扩展 z-index 适用范围——li 必须 `relative` 才能让拖拽行 `z-1` 提升绘制序（static 元素 z-index 无效）。新探针 `probe-quick-keys-editor.mjs` 19 断言（移动 sheet 显隐/拖拽跟手/落盘/渲染序 + 桌面 Dialog 分流/重叠带 paint-order `elementFromPoint` 断拖拽行）+ 单测 4 例。
+4. **⑥ 边距统筹**（mid-turn 补充「不仅仅是靠左位置问题，而是一个完整的需要统筹考虑的边距问题」）：桌面 20px 内容线三机制盘点（@media 1024 的 .psect/.quick/.pcard margin-inline / mobile-plugins-home JSX `mx-5 mt-3` / global-files-overview `lg:px-5 lg:pt-3`）数值自洽；settings-dialog `max-w-[560px]` 限宽左对齐对齐另两 mainPage 的 20px 内容线（settings :473 注释）。
+5. **⑦a 渲染态点击进编辑不合理 → 移除**：md/html **渲染态 = 纯阅读，点正文不进编辑**（此前「渲染态点正文 = 切源码并进入编辑」口径作废）；编辑动线 = segc 切「源码」后点正文任意处进入。**⑦b 编辑态元信息去除、工具条上移**：编辑态行 = `.emeta`（工具钮组撤销/重做/收键盘 + dirty 未保存 + fact 收尾动作组放弃/完成，7b 合并行）；底部 `.aux` 工具条退役上移（编辑器全高，无被键盘遮挡的工具条——keyboard inset 问题的结构性消除）；push 容器（nav 模式）[放弃][完成] 保持在导航右。收口动作：`.emeta .fdim` 死规则删除、注释漂移修正 5 处（mobile-l3×3 / file-preview-panel / WorkbenchRoute）、**design 标尺文档口径同步**（design_spec.md §4.5 四条 + components.css .fmeta 头注——渲染态动线/编辑态行3/aux 退役全部按反转后口径改写并标注 2026-10-11 反馈依据）。
+
+**keyboard-debug.ts 退役（批 18 取证收口）**：DEBUG_ENABLED=false 自 2026-10-09、零活跃消费，本批整文件删除 + use-keyboard-inset 调用点清理——**tokens 机检唯一豁免消失，机检从此零违例硬闸态**；keyboard-inset.ts source 参数保留（防御性加固）。
+
+**review 消化（code-reviewer P1×2/P2×8 + design-reviewer P1×2/P2×5）**：已修——拖拽文本选择（select-none）、键盘排序通道、grip 热区扩、probe-keyboard-inset 探针 .aux 存量挂点（demo.ts 恒 source → tap-to-edit 直点 `.cm-content`；删 4b/4c 断言与依赖）、M3 track 断言恒真（选择器取到 knob/label，终修 `button[role="switch"] > span[aria-hidden]` 前后色对比）、M5/D3 取整 substring 脆弱（parseFloat + 容差）、D4b 重叠带 paint-order 断言、`.emeta .dirty` 窄屏收缩面（min-width:0 + ellipsis）、instance-area min-w-0、tmp/ 入 .gitignore。**记档不做**：CenteredDialogCard 提取（13 份拷贝家族，超本轮 surgical 范围，后续批次）；桌面 20px 内容线三机制统一（数值自洽、机制分立，后续批次）。
+
+**验证链（第二轮收口）**：format/lint/typecheck 0w + 单测 778 + CSS 硬闸 + tokens 机检 0 违例 + 探针 quick-keys-editor 19/19 / keyboard-inset 10/10 + e2e 相关 spec 全绿。
+
 ### §6.12p 真机反馈修复：sheet 下拉收起回弹 + 历史 sheet prompt 连带卸载（2026-09-27，commit `0f3c882`）
 
 **① 拖拽 dismiss 回弹（用户真机反馈）**：`endDrag` dismiss 分支曾先清 inline transform 再交 Radix exit 动画——sheet **瞬跳回原位**再从原位滑 16px+fade（「回弹后再消失」）。修复：**保留 inline transform 作为 exit 动画起点**（tw-animate-css 的 exit keyframes 只有 `to` 无 `from`，起始值 = 当前计算样式），inline 变量覆盖 exit 形态——`--tw-exit-translate-y` = 顶边推出视口底+40px 余量（`slide-out-to-bottom-4` 的 16px 不够出屏）、`--tw-exit-opacity: 1`（iOS dismiss 纯滑出不 fade）、200ms ease-in 贴合松手初速度。重开无残留（Radix closed 即 unmount，inline 样式随之消亡）。

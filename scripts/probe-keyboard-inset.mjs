@@ -135,14 +135,16 @@ async function run() {
       timeout: 10000,
     });
 
-    // 到达文件编辑态（检视面板 → 文件行 → 编辑钮 → .aux 在场；batch16 同款路径）。
+    // 到达文件编辑态（检视面板 → 文件行 → segc 切源码 → 点正文进编辑 → .emeta 工具钮在场；
+    // 7a/7b 2026-10-11：pencil「编辑」钮已退役、渲染态不进编辑，.aux 已上移 .emeta 行）。
     await page.getByLabel("检视面板", { exact: true }).click();
     await page.waitForSelector('[data-inspection-panel="open"]', { timeout: 5000 });
     await page.waitForTimeout(700);
     await page.locator("button.frow", { hasText: "demo.ts" }).first().click();
-    await page.getByRole("button", { name: "编辑", exact: true }).waitFor({ timeout: 8000 });
-    await page.getByRole("button", { name: "编辑", exact: true }).click();
-    await page.locator(".aux").waitFor({ timeout: 10000 });
+    // .ts 无渲染形态（恒 source）→ tap-to-edit 直点正文进编辑（CodeEditor lazy，先等在场）。
+    await page.locator('[data-role="file-preview-pane"] .cm-content').waitFor({ timeout: 10000 });
+    await page.locator('[data-role="file-preview-pane"] .cm-content').click();
+    await page.locator(".emeta button").first().waitFor({ timeout: 10000 });
 
     const rootVars = (page) =>
       page.evaluate(() => ({
@@ -181,40 +183,16 @@ async function run() {
       .locator('[data-role="file-preview-pane"]')
       .evaluate((el) => getComputedStyle(el).paddingBottom);
     check("2c 编辑态容器 padding-bottom 跟随缩链（477px）", panePad === "477px", panePad);
-    const auxH = await page.locator(".aux").evaluate((el) => {
+    const emetaH = await page.locator(".emeta").evaluate((el) => {
       const cs = getComputedStyle(el);
       const r = el.getBoundingClientRect();
       return { css: cs.height, box: +r.height.toFixed(1) };
     });
-    // Chromium env(safe-area-inset-bottom)=0 → height 恒 40px（env 乘 (1-1) 的联动项数值为
-    // 0，真机才有非零 env 可辨）。这里断联动表达式不破坏基线 40px。
+    // .aux 退役（7b）后编辑态 chrome 锚 = .emeta 行（工具钮组 + dirty/fact）。
     check(
-      "2d .aux 高度联动后基线保持 40px（env=0 数学退化）",
-      auxH.css === "40px" && auxH.box === 40,
-      `css=${auxH.css} box=${auxH.box}`,
-    );
-    const auxRule = await page.evaluate(() => {
-      // 规则可能嵌在 @layer/@media 块内，递归遍历；产物 minify 后逗号后无空格，宽松 includes。
-      const scan = (rules) => {
-        for (const rule of rules) {
-          if (rule.selectorText === ".aux") return rule.cssText;
-          if (rule.cssRules) {
-            const hit = scan(rule.cssRules);
-            if (hit) return hit;
-          }
-        }
-        return "";
-      };
-      for (const sheet of document.styleSheets) {
-        const hit = scan(sheet.cssRules);
-        if (hit) return hit;
-      }
-      return "";
-    });
-    check(
-      "2e 落盘 .aux 规则含 --kb-active 联动表达式",
-      auxRule.includes("--kb-active") && auxRule.includes("safe-area-inset-bottom"),
-      auxRule.slice(0, 80),
+      "2d .emeta 编辑态行高保持 38px（.aux 退役后 chrome 锚）",
+      emetaH.css === "38px" && emetaH.box === 38,
+      `css=${emetaH.css} box=${emetaH.box}`,
     );
 
     console.log("== scroll 事件路径（键盘动画收尾靠 scroll 保证 offset 准确） ==");
@@ -268,25 +246,7 @@ async function run() {
     );
     check("4a focusin 补测驱动重算（844-467-40=337px）", focusOffset === "337px", focusOffset);
 
-    const dbg = await page.evaluate(() => {
-      const el = document.querySelector("[data-kb-debug]");
-      return {
-        present: !!el,
-        lastLine: el?.textContent.split("\n").pop() ?? "",
-        transform: el?.style.transform ?? "",
-      };
-    });
-    // 4a 的 focusin dispatch 是最后一个事件 → 最后一行即本次溯源（focusin 值 + root 读回）。
-    check(
-      "4b 诊断浮层在场且最后一行为本次 focusin 行（src 溯源在打点）",
-      dbg.present && dbg.lastLine.includes("focusin") && dbg.lastLine.includes("root=337px"),
-      dbg.lastLine,
-    );
-    check(
-      "4c 浮层钉在 visual viewport 顶部（translateY 跟随 vv.offsetTop）",
-      dbg.transform === "translateY(40px)",
-      dbg.transform,
-    );
+    // （原 4b/4c 诊断浮层断言随 keyboard-debug.ts 删除——批 18 取证收口，埋点已不在。）
 
     await ctx.close();
   } finally {

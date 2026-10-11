@@ -37,9 +37,13 @@ import {
 } from "./console-model";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
-import { ActionMenu } from "../components/ui/action-menu";
 import { LucideIcon } from "../components/shell/lucide-icon";
-import { terminalQuickKeysHiddenAtom, workbenchReconnectRequestAtom } from "./workbench-model";
+import { applyQuickKeyOrder, QuickKeysEditor } from "../components/workbench/quick-keys-editor";
+import {
+  terminalQuickKeysHiddenAtom,
+  terminalQuickKeysOrderAtom,
+  workbenchReconnectRequestAtom,
+} from "./workbench-model";
 
 type SessionDetailProps = {
   projectName: string;
@@ -325,39 +329,45 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
   };
 
   const canSend = canSendToSession(connectionStatus);
-  // 键位自定义（原型 workspace-terminal-input ③ 落地）：hidden 集（localStorage 持久化）过滤
-  // 快捷键条；⚙ 菜单切换显隐，仅终端 composer 有入口（agent 无）。
+  // 键位自定义（原型 workspace-terminal-input ③ 落地；2026-10-11 反馈⑤升级为编辑面板）：
+  // 快捷键条渲染序 = order 归一化（用户序在前，未存/新增键按默认序尾补）后过滤 hidden 集
+  //（localStorage 持久化）。快捷键条与编辑面板共用 applyQuickKeyOrder 单一管道。
   const [hiddenQuickKeyIds, setHiddenQuickKeyIds] = useAtom(terminalQuickKeysHiddenAtom);
+  const [quickKeyOrder, setQuickKeyOrder] = useAtom(terminalQuickKeysOrderAtom);
   const allQuickKeys = sessionQuickKeys(sessionType);
-  const quickKeys = allQuickKeys.filter((k) => !hiddenQuickKeyIds.includes(k.id));
+  const quickKeys = applyQuickKeyOrder(allQuickKeys, quickKeyOrder).filter(
+    (k) => !hiddenQuickKeyIds.includes(k.id),
+  );
   const toggleQuickKeyHidden = (id: string) =>
     setHiddenQuickKeyIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   // ⚙ 键位自定义入口（仅终端 composer，原型 workspace-terminal-input ③「控制行仅键位
-  // 自定义」）：ActionMenu 双端单源（桌面 popover / 移动 sheet），项 = 全集各键勾选显隐
-  //（显示中 = check 图标，点击隐藏；再点恢复）。
+  // 自定义」）：开键位编辑面板（QuickKeysEditor：行 = 键名 + 显隐开关 + grip 拖拽排序，
+  // 反馈⑤「内容 + 顺序编排都要做得到」）。
+  const [quickKeysEditorOpen, setQuickKeysEditorOpen] = useState(false);
   const quickKeysCustomize =
     sessionType === "terminal" ? (
-      <ActionMenu
-        align="start"
-        cancelLabel={t("cancel")}
-        items={allQuickKeys.map((k) => ({
-          label: t(k.labelKey),
-          icon: hiddenQuickKeyIds.includes(k.id) ? undefined : <ShellIcon name="check" />,
-          onSelect: () => toggleQuickKeyHidden(k.id),
-        }))}
-        trigger={
-          <button
-            aria-label={t("session.quickKeysCustomize")}
-            className="xbtn cursor-pointer"
-            title={t("session.quickKeysCustomize")}
-            type="button"
-          >
-            <ShellIcon className="h-4 w-4" name="settings" />
-          </button>
-        }
-      />
+      <>
+        <button
+          aria-label={t("session.quickKeysCustomize")}
+          className="xbtn cursor-pointer"
+          onClick={() => setQuickKeysEditorOpen(true)}
+          title={t("session.quickKeysCustomize")}
+          type="button"
+        >
+          <ShellIcon className="h-4 w-4" name="settings" />
+        </button>
+        <QuickKeysEditor
+          hiddenIds={hiddenQuickKeyIds}
+          keys={allQuickKeys}
+          onOpenChange={setQuickKeysEditorOpen}
+          onReorder={setQuickKeyOrder}
+          onToggleHidden={toggleQuickKeyHidden}
+          open={quickKeysEditorOpen}
+          order={quickKeyOrder}
+        />
+      </>
     ) : undefined;
 
   // Stable callback for xterm to send raw input bytes over WebSocket

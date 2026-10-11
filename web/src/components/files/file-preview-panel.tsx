@@ -1,7 +1,7 @@
 // 中栏 file tab 预览（v1.5 批 4，spec §4.5 预览矩阵·桌面）：FilePreviewPane 中栏形态单源
-//（与移动面板/push 同一主体，variant="desktop" 档：无移动底部空间 + aux 无收起键盘钮）。
-// v2 §6.10-8 的「桌面预览只读化」（03q 铁律 7）随 v1.5 正式翻案——05h4 原型中栏文件标签
-// 编辑态（.emeta+.aux / 完成·放弃；v1.6 起「编辑」= 点正文进入），编辑受控态在
+//（与移动面板/push 同一主体，variant="desktop" 档）。v2 §6.10-8 的「桌面预览只读化」
+//（03q 铁律 7）随 v1.5 正式翻案——05h4 原型中栏文件标签编辑态（.emeta 行；底部 .aux 已随
+// 2026-10-11 反馈⑦b 退役上移；「编辑」= 源码态点正文进入），编辑受控态在
 // workbenchFileTabEditingAtom（点正文进编辑的 body 与 tabstrip ⋯ 跨组件共享，同屏单编辑）。
 //
 // `path` = **全路径**（含项目名前缀如 `"demo/src/index.ts"`），内部 `resolveRootBrowseTarget`

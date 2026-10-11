@@ -79,6 +79,8 @@ const ICONS = [
   "redo-2", // 文件编辑 .aux「重做」（与 undo-2 配对）
   // ── v1.6 批 v6.3（workspace-more-menu 三区）：会话历史导航行图标 ──
   "history", // ShellIcon clock.arrow.circlepath（⋯ 菜单「会话历史」，逆时针箭头时钟）
+  // ── 键位自定义面板（2026-10-11 反馈⑤「内容 + 顺序编排」）：拖拽排序手柄 ──
+  "grip-vertical", // 键位编辑面板行拖拽手柄（LucideIcon 直消费）
 ];
 
 const entries = [];
