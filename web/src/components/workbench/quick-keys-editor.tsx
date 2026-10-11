@@ -3,7 +3,11 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { useIsMobile } from "@/lib/use-is-mobile";
 
 import { useT } from "../../i18n";
-import type { SessionQuickKey } from "../../routes/console-model";
+import {
+  quickKeyLabel,
+  type CustomQuickKey,
+  type SessionQuickKey,
+} from "../../routes/console-model";
 import { LucideIcon } from "../shell/lucide-icon";
 import { MobileSheet } from "../shell/mobile-sheet";
 import {
@@ -17,6 +21,9 @@ import { Dialog, DialogContent } from "../ui/dialog";
 const ROW_SHIFT_TRANSITION_MS = 150;
 /** 行距测量兜底（单行不可测相邻差时）：与 tokens rowHeight 44px 同值。 */
 const FALLBACK_ROW_HEIGHT_PX = 44;
+/** 名称长度上限：面板行有 truncate 兜底，.qkey 条 chip 不可收缩（min-width:max-content），
+ * 长名会无限撑宽快捷键条——输入端封口。 */
+const QUICK_KEY_LABEL_MAX = 24;
 
 /**
  * 按用户序归一化：已知 id 按存储序排前，未存/新增键按默认序尾补（稳定排序——同为缺失
@@ -37,11 +44,22 @@ function reorderShift(g: { dy: number; fromIndex: number; unit: number }, count:
   return Math.max(-g.fromIndex, Math.min(count - 1 - g.fromIndex, raw));
 }
 
+/** 自定义键 id（持久化身份，order/hidden 引用同 id）：randomUUID 优先，非 secure context 兜底。 */
+function newCustomKeyId(): string {
+  return typeof crypto.randomUUID === "function"
+    ? `custom-${crypto.randomUUID()}`
+    : `custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 type QuickKeysEditorProps = {
   /** 隐藏集（route 读 terminalQuickKeysHiddenAtom 传入）。 */
   hiddenIds: string[];
-  /** 快捷键全集（sessionQuickKeys，默认序）。 */
+  /** 快捷键全集（内置 sessionQuickKeys + 自定义键合并，默认序）。 */
   keys: SessionQuickKey[];
+  /** 自定义键保存（id 已存在 = 更新，否则创建——route 写 terminalQuickKeysCustomAtom）。 */
+  onSaveCustom: (key: CustomQuickKey) => void;
+  /** 自定义键删除（order/hidden 残留 id 由 applyQuickKeyOrder/hidden 过滤天然忽略）。 */
+  onDeleteCustom: (id: string) => void;
   onOpenChange: (open: boolean) => void;
   /** 拖拽落位提交 id 全序（含被隐藏键——顺序与显隐正交）。 */
   onReorder: (order: string[]) => void;
@@ -70,6 +88,8 @@ type QuickKeysEditorProps = {
 export function QuickKeysEditor({
   hiddenIds,
   keys,
+  onSaveCustom,
+  onDeleteCustom,
   onOpenChange,
   onReorder,
   onToggleHidden,
@@ -79,6 +99,13 @@ export function QuickKeysEditor({
   const { t } = useT();
   const isMobile = useIsMobile();
   const ordered = applyQuickKeyOrder(keys, order);
+  // 自定义键编辑表单（id 空 = 新建）：面板内局部态，关闭面板不自动提交（取消即弃）。
+  const [form, setForm] = useState<{ id: string; label: string; sequence: string } | null>(null);
+  // 面板关闭清草稿：form 挂在常驻挂载的本组件上，scrim/Esc/下滑关面板不触达组件卸载，
+  // 不清则重开带着半填表单（与「取消即弃」语义不一致；code review 2026-10-11）。
+  useEffect(() => {
+    if (!open) setForm(null);
+  }, [open]);
   // 手势真源在 ref（down 即接管、无 pending 阶段）；drag state 是渲染投影（驱动行 transform）。
   const gestureRef = useRef<{
     dy: number;
@@ -170,6 +197,15 @@ export function QuickKeysEditor({
     commitReorder(index, to);
   };
 
+  /** 自定义键保存：裸文本校验（trim 非空）+ id 生成（新建），提交后收表单。 */
+  const saveCustom = () => {
+    if (!form) return;
+    const label = form.label.trim();
+    if (!label || !form.sequence.trim()) return;
+    onSaveCustom({ id: form.id || newCustomKeyId(), label, sequence: form.sequence });
+    setForm(null);
+  };
+
   const shift = drag ? reorderShift(drag, ordered.length) : 0;
   // 行位移（px）：拖拽行跟手；其余行向腾出的空位平移一格（dragging 才有，非拖拽行带
   // transition 平滑换位）。
@@ -183,9 +219,7 @@ export function QuickKeysEditor({
 
   const body = (
     <>
-      <p className="mt-0.5 text-xs font-semibold text-on-surface-soft">
-        {t("session.quickKeysEditorHint")}
-      </p>
+      <p className="mt-0.5 text-xs font-semibold text-ink-2">{t("session.quickKeysEditorHint")}</p>
       <ul
         className="mt-2.5 select-none border-t border-sep-row"
         onPointerCancel={cancelReorder}
@@ -210,6 +244,18 @@ export function QuickKeysEditor({
                 zIndex: draggingRow ? 1 : undefined,
               }}
             >
+              {/* grip 行首（用户补充反馈：开关与拖动相邻易误触）——起手区独占左缘，与
+                  行尾 toggle 隔整行宽，误触结构性消失。纯视觉手柄（aria-hidden；键盘排序
+                  走行 button 的 ↑/↓，见下）。-m-2 抵消 p-2.5：视觉位不变、命中区外扩至
+                  36px（44px 行内惯例向）。touch-none 防浏览器把起手判成滚动（配合容器
+                  preventDefault 双保险）。 */}
+              <span
+                aria-hidden="true"
+                className="-m-2 cursor-grab touch-none p-2.5 text-ink-2 active:cursor-grabbing"
+                onPointerDown={(e) => startReorder(e, i)}
+              >
+                <LucideIcon className="size-4" name="grip-vertical" />
+              </span>
               <button
                 aria-checked={visible}
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-2.5 text-left"
@@ -226,7 +272,7 @@ export function QuickKeysEditor({
                 role="switch"
                 type="button"
               >
-                <span className="min-w-0 flex-1 truncate text-sm">{t(k.labelKey)}</span>
+                <span className="min-w-0 flex-1 truncate text-sm">{quickKeyLabel(k, t)}</span>
                 <span
                   aria-hidden="true"
                   className={`shrink-0 ${toggleSwitchTrackClasses(visible)}`}
@@ -236,20 +282,98 @@ export function QuickKeysEditor({
                   />
                 </span>
               </button>
-              {/* grip = 纯视觉手柄（aria-hidden；键盘排序走行 button 的 ↑/↓，见上）。
-                  -m-2 抵消 p-2.5：视觉位不变、命中区外扩至 36px（44px 行内惯例向）。
-                  touch-none 防浏览器把起手判成滚动（配合容器 preventDefault 双保险）。 */}
-              <span
-                aria-hidden="true"
-                className="-m-2 cursor-grab touch-none p-2.5 text-on-surface-soft active:cursor-grabbing"
-                onPointerDown={(e) => startReorder(e, i)}
-              >
-                <LucideIcon className="size-4" name="grip-vertical" />
-              </span>
+              {/* 自定义键行尾编辑入口（第三轮反馈④增删改）：-m-2 p-2.5 = 36px 热区（grip
+                  同款，44px 行内惯例向）+ ml-1 与行尾 toggle 留缝（design review P2：命中
+                  面紧贴显隐开关 = 本轮⑤误触反馈同族回归）。删除在编辑表单内（危险动作
+                  显式化——行上不留高频误触面）。 */}
+              {"label" in k ? (
+                <button
+                  aria-label={t("session.quickKeysEdit")}
+                  className="-m-2 ml-1 flex shrink-0 cursor-pointer items-center justify-center rounded-md p-2.5 text-ink-2 transition hover:bg-ink-1/5 hover:text-ink-1"
+                  onClick={() => setForm({ id: k.id, label: k.label, sequence: k.sequence })}
+                  title={t("session.quickKeysEdit")}
+                  type="button"
+                >
+                  <LucideIcon className="size-4" name="pencil" />
+                </button>
+              ) : null}
             </li>
           );
         })}
       </ul>
+      {/* 添加行 + 自定义键编辑表单（第三轮反馈④）：Apple 分组列表添加行惯例 = 列表尾
+          「＋」整行居中主色字；表单展开在添加行下方（触发处就近展开，不叠层）。 */}
+      <button
+        className={`mt-1 flex w-full cursor-pointer items-center justify-center gap-2 py-3 text-sm font-semibold text-primary ${
+          form ? "hidden" : ""
+        }`}
+        onClick={() => setForm({ id: "", label: "", sequence: "" })}
+        type="button"
+      >
+        <LucideIcon className="size-4" name="plus" />
+        {t("session.quickKeysAdd")}
+      </button>
+      {form ? (
+        <div className="mt-1 flex flex-col gap-2 rounded-[10px] border border-sep-strong p-3">
+          <label className="text-xs font-semibold text-ink-2" htmlFor="qk-custom-label">
+            {t("session.quickKeysNameLabel")}
+          </label>
+          <input
+            className="w-full rounded-[10px] border border-sep-strong bg-elevated2 px-3 py-2 text-sm text-ink-1 placeholder:text-ink-2 transition focus:border-primary focus:outline-none"
+            id="qk-custom-label"
+            maxLength={QUICK_KEY_LABEL_MAX}
+            onChange={(e) => setForm({ ...form, label: e.target.value })}
+            placeholder={t("session.quickKeysNamePlaceholder")}
+            value={form.label}
+          />
+          <label className="text-xs font-semibold text-ink-2" htmlFor="qk-custom-content">
+            {t("session.quickKeysContentLabel")}
+          </label>
+          <textarea
+            className="w-full resize-none rounded-[10px] border border-sep-strong bg-elevated2 px-3 py-2 font-mono text-sm text-ink-1 placeholder:text-ink-2 transition focus:border-primary focus:outline-none"
+            id="qk-custom-content"
+            onChange={(e) => setForm({ ...form, sequence: e.target.value })}
+            placeholder={t("session.quickKeysContentPlaceholder")}
+            rows={2}
+            value={form.sequence}
+          />
+          <p className="text-xs text-ink-2">{t("session.quickKeysContentHint")}</p>
+          <div className="flex items-center justify-between gap-2">
+            {/* 删除 = 编辑已有键时的显式动作（左下红字；新建态无此钮）——行上不留高频误触面
+               （用户补充反馈：行内控件相邻易误触，危险动作收进表单）。py-2 保移动 sheet
+               语境热区（design review P2，settings 同尺寸是桌面语境）。 */}
+            {form.id ? (
+              <button
+                className="cursor-pointer rounded-[10px] px-3 py-2 text-[13px] font-semibold text-error transition hover:bg-error/5"
+                onClick={() => {
+                  onDeleteCustom(form.id);
+                  setForm(null);
+                }}
+                type="button"
+              >
+                {t("session.quickKeysDelete")}
+              </button>
+            ) : null}
+            <div className="flex gap-2">
+              <button
+                className="cursor-pointer rounded-[10px] px-3 py-2 text-[13px] text-ink-2 transition hover:bg-ink-1/5"
+                onClick={() => setForm(null)}
+                type="button"
+              >
+                {t("cancel")}
+              </button>
+              <button
+                className="cursor-pointer rounded-[10px] bg-primary px-3 py-2 text-[13px] font-semibold text-on-accent disabled:cursor-default disabled:opacity-40"
+                disabled={!form.label.trim() || !form.sequence.trim()}
+                onClick={saveCustom}
+                type="button"
+              >
+                {t("session.quickKeysSave")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 

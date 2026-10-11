@@ -259,6 +259,14 @@
     }
   }
 
+  /* 终端 composer ⚙ 键位自定义入口（2026-10-11 第三轮反馈③）：几何 = .iicn（28×28 r12）
+     但**不参与宽窄端显隐切换**——恒显中性入口（无衬底 ink-2 灰），非 iicn/ipill 彩色 pill
+     家族。specificity 0,2,0 胜 media 内 .iicn{display:none} 的 0,1,0。 */
+  .iicn.gear {
+    display: flex;
+    color: var(--ink-2);
+  }
+
   /* 发送/停止同位互斥（三 adapter 单源 composer-actions 消费；28×28 r12 原型规格）。
      停止态 = 红 tint 底 + 红 60% 边 + ::before 红方块（对齐原型，取代旧实底红） */
   .send2 {
@@ -2293,7 +2301,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 38px;
+    /* 36px = .fmeta 同高（2026-10-11 第三轮反馈②：预览⇄编辑切换行高零跳变） */
+    height: 36px;
     padding: 0 16px 0 14px;
     border-bottom: 1px solid var(--sep);
   }

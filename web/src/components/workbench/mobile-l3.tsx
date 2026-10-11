@@ -162,7 +162,7 @@ const TAP_SLOP_PX = 10;
 const TAP_EXCLUDE_SELECTOR =
   "button, a, input, textarea, select, [contenteditable='true'], [role='button']";
 
-function useTapToEdit(onEnter: () => void) {
+function useTapToEdit(onEnter: (click: { x: number; y: number }) => void) {
   const downRef = useRef<{ x: number; y: number } | null>(null);
   return {
     onClick: (e: React.MouseEvent) => {
@@ -171,12 +171,30 @@ function useTapToEdit(onEnter: () => void) {
       const down = downRef.current;
       downRef.current = null;
       if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX) return;
-      onEnter();
+      // 点击坐标随 onEnter 传出：编辑态 CodeEditor 是新实例（源码态只读实例卸载），
+      // 消费方 posAtCoords 映射光标落点（第三轮反馈①：光标落点击处）。
+      onEnter({ x: e.clientX, y: e.clientY });
     },
     onPointerDown: (e: React.PointerEvent) => {
       downRef.current = { x: e.clientX, y: e.clientY };
     },
   };
+}
+
+/**
+ * tap-to-edit 进编辑后的光标落点（第三轮反馈①「光标位置和点击位置不符」）：编辑态
+ * CodeEditor 是新实例（源码态只读实例随分支切换卸载），点击坐标需由消费方暂存、编辑器
+ * 挂载（onCreateEditor）时映射。源码态与编辑态同画布同规格（反馈④b 零跳变），视口坐标
+ * 直接 posAtCoords 可映射；null（坐标失效/布局未就绪）安全跳过落默认位。消费后由调用方
+ * 清 ref（同一次点击只生效一次）。
+ */
+export function applyPendingCursor(view: EditorView, click: { x: number; y: number } | null) {
+  if (!click) return;
+  const pos = view.posAtCoords({ x: click.x, y: click.y });
+  if (pos != null) {
+    view.dispatch({ selection: { anchor: pos } });
+  }
+  view.focus();
 }
 
 /**
@@ -251,7 +269,10 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
   });
   // v1.6「点正文任意处进入编辑」（仅查看态 text 分支消费；early return 分支绑不到）。
   // render 态点正文先切源码（md/html render 态 canEdit gate 恒 false——保存会被 hook 拦）。
-  const enterEditing = () => {
+  // 点击坐标暂存 ref，编辑态 CodeEditor 挂载时映射光标（第三轮反馈①）。
+  const pendingCursorRef = useRef<{ x: number; y: number } | null>(null);
+  const enterEditing = (click: { x: number; y: number }) => {
+    pendingCursorRef.current = click;
     editor.onRenderModeChange("source");
     setEditing(true);
   };
@@ -394,7 +415,11 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
           <Suspense fallback={<CodeEditorFallback />}>
             <CodeEditor
               name={data.name}
-              onCreateEditor={setEditorView}
+              onCreateEditor={(view) => {
+                setEditorView(view);
+                applyPendingCursor(view, pendingCursorRef.current);
+                pendingCursorRef.current = null;
+              }}
               onChange={editor.onEditChange}
               value={editor.editValue}
             />
@@ -532,7 +557,12 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
     });
     // v1.6「点正文任意处进入编辑」：查看态 text 分支根容器消费（编辑态 gate 不绑）。
     // 渲染态点击只需进编辑——effect（editing → source）自动切源码。
-    const tapToEdit = useTapToEdit(() => onEditingChange(true));
+    // 点击坐标暂存 ref，编辑态 CodeEditor 挂载时映射光标（第三轮反馈①）。
+    const pendingCursorRef = useRef<{ x: number; y: number } | null>(null);
+    const tapToEdit = useTapToEdit((click) => {
+      pendingCursorRef.current = click;
+      onEditingChange(true);
+    });
     // 外部 ref 通道（nav 模式容器的 finish/discard 入口）；工厂引用同一 paneHandle。
     useImperativeHandle(ref, () => paneHandle);
     // ── .fmeta 派生（text 分支消费 updated/lineLabel；非 text 分支复用 paneFmetaLine）──
@@ -661,7 +691,11 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
               <Suspense fallback={<CodeEditorFallback />}>
                 <CodeEditor
                   name={data.name}
-                  onCreateEditor={setEditorView}
+                  onCreateEditor={(view) => {
+                    setEditorView(view);
+                    applyPendingCursor(view, pendingCursorRef.current);
+                    pendingCursorRef.current = null;
+                  }}
                   onChange={editor.onEditChange}
                   value={editor.editValue}
                 />

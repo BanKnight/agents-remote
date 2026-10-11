@@ -189,9 +189,10 @@ async function run() {
       return { css: cs.height, box: +r.height.toFixed(1) };
     });
     // .aux 退役（7b）后编辑态 chrome 锚 = .emeta 行（工具钮组 + dirty/fact）。
+    // 36px = .fmeta 同高（2026-10-11 第三轮反馈②：预览⇄编辑切换行高零跳变）。
     check(
-      "2d .emeta 编辑态行高保持 38px（.aux 退役后 chrome 锚）",
-      emetaH.css === "38px" && emetaH.box === 38,
+      "2d .emeta 编辑态行高保持 36px（= .fmeta 同高，预览⇄编辑零跳变）",
+      emetaH.css === "36px" && emetaH.box === 36,
       `css=${emetaH.css} box=${emetaH.box}`,
     );
 

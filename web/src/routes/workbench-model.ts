@@ -8,6 +8,7 @@ import type {
   GitDiffScope,
   SessionType,
 } from "@agents-remote/shared";
+import type { CustomQuickKey } from "./console-model";
 
 /**
  * 工作台作用域 —— URL 的语义核心（见 docs/design-v1/workbench-redesign.md §1/§7）。
@@ -131,6 +132,16 @@ export const terminalQuickKeysHiddenAtom = atomWithLocalOnlyStorage<string[]>(
  */
 export const terminalQuickKeysOrderAtom = atomWithLocalOnlyStorage<string[]>(
   "workbench.terminalQuickKeysOrder",
+  [],
+);
+
+/**
+ * 终端 composer 自定义快捷键（2026-10-11 真机反馈④「增删改」）：用户自建键全量（无序——
+ * 展示序统一走 terminalQuickKeysOrderAtom 归一化，自定义 id 未存时按默认序尾补在内置键
+ * 后）。localStorage 持久化。id = 创建时生成（持久化身份，order/hidden 引用同 id）。
+ */
+export const terminalQuickKeysCustomAtom = atomWithLocalOnlyStorage<CustomQuickKey[]>(
+  "workbench.terminalQuickKeysCustom",
   [],
 );
 

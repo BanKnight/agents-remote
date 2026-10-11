@@ -32,7 +32,10 @@ import {
   inputDrawerCollapsedAtom,
   isConnectionFresh,
   normalizeSessionTextInput,
+  quickKeyAria,
+  quickKeyLabel,
   sessionQuickKeys,
+  type CustomQuickKey,
   type SessionQuickKey,
 } from "./console-model";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
@@ -40,6 +43,7 @@ import { ShellIcon } from "../components/shell/icons";
 import { LucideIcon } from "../components/shell/lucide-icon";
 import { applyQuickKeyOrder, QuickKeysEditor } from "../components/workbench/quick-keys-editor";
 import {
+  terminalQuickKeysCustomAtom,
   terminalQuickKeysHiddenAtom,
   terminalQuickKeysOrderAtom,
   workbenchReconnectRequestAtom,
@@ -334,7 +338,13 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
   //（localStorage 持久化）。快捷键条与编辑面板共用 applyQuickKeyOrder 单一管道。
   const [hiddenQuickKeyIds, setHiddenQuickKeyIds] = useAtom(terminalQuickKeysHiddenAtom);
   const [quickKeyOrder, setQuickKeyOrder] = useAtom(terminalQuickKeysOrderAtom);
-  const allQuickKeys = sessionQuickKeys(sessionType);
+  const [customQuickKeys, setCustomQuickKeys] = useAtom(terminalQuickKeysCustomAtom);
+  // 自定义键是终端 composer 域（atom 注释口径）：与 ⚙ 入口同 gate——agent 会话
+  // 不泄漏（无 ⚙ 可管理，点按会把命令文本当 prompt 注入）。
+  const allQuickKeys =
+    sessionType === "terminal"
+      ? [...sessionQuickKeys(sessionType), ...customQuickKeys]
+      : sessionQuickKeys(sessionType);
   const quickKeys = applyQuickKeyOrder(allQuickKeys, quickKeyOrder).filter(
     (k) => !hiddenQuickKeyIds.includes(k.id),
   );
@@ -342,6 +352,15 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
     setHiddenQuickKeyIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
+  // 自定义键保存/删除（反馈④增删改）：保存 = id 命中更新、否则追加（幂等写法防表单重提）。
+  const saveCustomQuickKey = (key: CustomQuickKey) =>
+    setCustomQuickKeys((prev) =>
+      prev.some((x) => x.id === key.id)
+        ? prev.map((x) => (x.id === key.id ? key : x))
+        : [...prev, key],
+    );
+  const deleteCustomQuickKey = (id: string) =>
+    setCustomQuickKeys((prev) => prev.filter((x) => x.id !== id));
   // ⚙ 键位自定义入口（仅终端 composer，原型 workspace-terminal-input ③「控制行仅键位
   // 自定义」）：开键位编辑面板（QuickKeysEditor：行 = 键名 + 显隐开关 + grip 拖拽排序，
   // 反馈⑤「内容 + 顺序编排都要做得到」）。
@@ -351,7 +370,7 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
       <>
         <button
           aria-label={t("session.quickKeysCustomize")}
-          className="xbtn cursor-pointer"
+          className="iicn gear cursor-pointer"
           onClick={() => setQuickKeysEditorOpen(true)}
           title={t("session.quickKeysCustomize")}
           type="button"
@@ -361,8 +380,10 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
         <QuickKeysEditor
           hiddenIds={hiddenQuickKeyIds}
           keys={allQuickKeys}
+          onDeleteCustom={deleteCustomQuickKey}
           onOpenChange={setQuickKeysEditorOpen}
           onReorder={setQuickKeyOrder}
+          onSaveCustom={saveCustomQuickKey}
           onToggleHidden={toggleQuickKeyHidden}
           open={quickKeysEditorOpen}
           order={quickKeyOrder}
@@ -408,7 +429,13 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
       return;
     }
 
-    sendMessage({ type: "input", data: quickKey.sequence });
+    // 自定义键 = 常用命令一键执行语义：尾补 \n（用户多行内容自带换行时保持原样）；
+    // 内置键是控制序列（\x03 等），补 \n 会破坏语义——仅自定义键补。
+    const data =
+      "label" in quickKey && !quickKey.sequence.endsWith("\n")
+        ? `${quickKey.sequence}\n`
+        : quickKey.sequence;
+    sendMessage({ type: "input", data });
   };
 
   return (
@@ -1275,14 +1302,14 @@ function QuickKeyBar({ canSend, quickKeys, onQuickKey }: QuickKeyBarProps) {
     >
       {quickKeys.map((quickKey) => (
         <button
-          aria-label={t(quickKey.ariaLabelKey)}
+          aria-label={quickKeyAria(quickKey, t)}
           className="qkey cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
           disabled={!canSend}
           key={quickKey.id}
           type="button"
           onClick={() => onQuickKey(quickKey)}
         >
-          {t(quickKey.labelKey)}
+          {quickKeyLabel(quickKey, t)}
         </button>
       ))}
     </div>

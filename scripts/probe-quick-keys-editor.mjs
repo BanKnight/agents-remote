@@ -2,9 +2,11 @@
 // 行为（DOM 几何硬数据，禁截图）。断言：
 //   Part 1（移动 390×844 zh）：⚙ 开 MobileSheet → 8 行（switch + grip）→ 行点按 toggle
 //     显隐（hidden 落盘 + track 变灰 + sheet 不关）→ grip 拖拽排序（grip stopPropagation
-//     防 sheet 被拖走）→ order 落盘 + 关面板后 .qkey 条渲染序 = 新序（单一管道终验）。
+//     防 sheet 被拖走）→ order 落盘 + 关面板后 .qkey 条渲染序 = 新序（单一管道终验）
+//     → 自定义键增删改全流程（第三轮反馈④：新建表单展开/添加行隐藏 → 保存尾补渲染
+//     → 拖拽提交 order 含 custom id → pencil 改名同步 → 删除后条上消失 + 存储清空）。
 //   Part 2（桌面 1280×900 en）：⚙ 开 Dialog → 拖拽行跟手中段断言（transform = dy）+ 落位
-//     + order 落盘 + 重开面板序保持。
+//     + order 落盘 + 重开面板序保持 + 自定义键同构抽验（新建 → 行数 +1）。
 //
 // mock 照 probe-v15-batch7-skeleton（终端会话纯 mock WS——不开真实 tmux，铁律③）。
 // 用法：bun scripts/probe-quick-keys-editor.mjs
@@ -39,11 +41,12 @@ const json = (body) => ({
   body: JSON.stringify(body),
 });
 
-/** 持久化清理（探针基线：order/hidden 不受上次运行污染）。 */
+/** 持久化清理（探针基线：order/hidden/custom 不受上次运行污染）。 */
 function clean(page) {
   return page.addInitScript(() => {
     localStorage.removeItem("workbench.terminalQuickKeysHidden");
     localStorage.removeItem("workbench.terminalQuickKeysOrder");
+    localStorage.removeItem("workbench.terminalQuickKeysCustom");
   });
 }
 
@@ -217,6 +220,106 @@ const rowLabels = (page) =>
       `M10 .qkey 条渲染序 = 新序（${barOrder.slice(0, 3).join(" ")}）`,
     );
     ok(!barOrder.includes("Ctrl+C"), "M11 hidden 过滤在渲染序之后（Ctrl+C 保持隐藏）");
+
+    // ===== 自定义键增删改（第三轮反馈④；grip 行首重排后同面板内继续）=====
+    await page.getByRole("button", { name: "键位自定义" }).click();
+    await page.waitForSelector(".msheet", { timeout: 5000 });
+    await page.waitForTimeout(500); // sheet enter 弹簧 + 余量
+
+    // 新建：添加行 → 表单展开（添加行隐藏 = 非添加语境）+ 保存初始 disabled
+    await page.getByRole("button", { name: "新建快捷键" }).click();
+    await page.waitForTimeout(200);
+    const addRowHidden = await page.evaluate(() => {
+      const btn = [...document.querySelectorAll(".msheet button")].find((b) =>
+        b.textContent.includes("新建快捷键"),
+      );
+      return btn != null && getComputedStyle(btn).display === "none";
+    });
+    ok(addRowHidden, "M12 表单展开后添加行隐藏（非添加语境）");
+    const formShape = await page.evaluate(() => ({
+      input: document.querySelector(".msheet #qk-custom-label") != null,
+      textarea: document.querySelector(".msheet #qk-custom-content") != null,
+      saveDisabled: [...document.querySelectorAll(".msheet button")].find((b) =>
+        b.textContent.includes("保存"),
+      )?.disabled,
+    }));
+    ok(
+      formShape.input && formShape.textarea && formShape.saveDisabled === true,
+      "M13 表单 = 名称 input + 内容 textarea + 保存初始 disabled",
+    );
+    await page.locator("#qk-custom-label").fill("跑测试");
+    await page.locator("#qk-custom-content").fill("bun run test");
+    const saveEnabled = await page.evaluate(
+      () =>
+        ![...document.querySelectorAll(".msheet button")].find((b) =>
+          b.textContent.includes("保存"),
+        )?.disabled,
+    );
+    ok(saveEnabled, "M14 名称+内容填后保存 enabled");
+    await page.getByRole("button", { name: "保存" }).click();
+    await page.waitForTimeout(200);
+    const afterAdd = await rowLabels(page);
+    ok(
+      afterAdd.length === 9 && afterAdd[8] === "跑测试",
+      `M15 保存 → 行 9 尾补渲染（${afterAdd.slice(7).join("/")}）`,
+    );
+    const barAfterAdd = await page.evaluate(() =>
+      [...document.querySelectorAll(".qkey")].map((el) => el.textContent.trim()),
+    );
+    ok(barAfterAdd.includes("跑测试"), "M16 快捷键条渲染自定义键（单一管道）");
+
+    // 拖拽提交全序（commitReorder 用 ordered 全量 id）→ order 落盘含 custom id
+    const grip0b = page.locator("ul li").nth(0).locator("span.touch-none").first();
+    const gb0b = await grip0b.boundingBox();
+    await page.mouse.move(gb0b.x + gb0b.width / 2, gb0b.y + gb0b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(gb0b.x + gb0b.width / 2, gb0b.y + gb0b.height / 2 + unit * 1.6, {
+      steps: 8,
+    });
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+    const orderWithCustom = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("workbench.terminalQuickKeysOrder") ?? "[]"),
+    );
+    ok(
+      orderWithCustom.at(-1)?.startsWith("custom-"),
+      `M17 拖拽提交 order 含 custom id（尾位=${orderWithCustom.at(-1)}）`,
+    );
+
+    // 编辑改名（pencil 唯一——仅自定义键行有）：面板行 + 条同步更新
+    await page.locator('ul li button[aria-label="编辑快捷键"]').first().click();
+    await page.waitForTimeout(200);
+    await page.locator("#qk-custom-label").fill("跑全量测试");
+    await page.getByRole("button", { name: "保存" }).click();
+    await page.waitForTimeout(200);
+    const afterRename = await rowLabels(page);
+    const barAfterRename = await page.evaluate(() =>
+      [...document.querySelectorAll(".qkey")].map((el) => el.textContent.trim()),
+    );
+    ok(
+      afterRename.includes("跑全量测试") && barAfterRename.includes("跑全量测试"),
+      "M18 pencil 改名 → 面板行 + 条同步",
+    );
+
+    // 删除（表单左下红字钮）：行回 8、条上消失、custom 存储清空
+    await page.locator('ul li button[aria-label="编辑快捷键"]').first().click();
+    await page.waitForTimeout(200);
+    await page.getByRole("button", { name: "删除快捷键" }).click();
+    await page.waitForTimeout(200);
+    const afterDel = await rowLabels(page);
+    const customLs = await page.evaluate(() =>
+      localStorage.getItem("workbench.terminalQuickKeysCustom"),
+    );
+    const barAfterDel = await page.evaluate(() =>
+      [...document.querySelectorAll(".qkey")].map((el) => el.textContent.trim()),
+    );
+    ok(
+      afterDel.length === 8 &&
+        !afterDel.includes("跑全量测试") &&
+        JSON.parse(customLs ?? "[]").length === 0 &&
+        !barAfterDel.includes("跑全量测试"),
+      `M19 删除 → 行 8 + 存储清空 + 条上消失（行=${afterDel.length}）`,
+    );
     await ctx.close();
 
     {
@@ -235,6 +338,18 @@ const rowLabels = (page) =>
 
       // Dialog 分流（桌面 = 居中卡，无 .msheet；桌面 terminal 输入抽屉同默认收起——先展开）
       await page.getByRole("button", { name: "Expand input" }).click();
+      // ⚙ 恒显形态（第三轮反馈③：.iicn.gear 例外类——桌面 28×28 无衬底，不被
+      //   min-width:1024 的 .iicn{display:none} 吞掉；本轮探针曾实抓 display:none 回归）
+      const gearShape = await page.evaluate(() => {
+        const el = document.querySelector(".iicn.gear");
+        const r = el?.getBoundingClientRect();
+        const cs = el ? getComputedStyle(el) : null;
+        return { w: r?.width, h: r?.height, bg: cs?.backgroundColor };
+      });
+      ok(
+        gearShape.w === 28 && gearShape.h === 28 && gearShape.bg === "rgba(0, 0, 0, 0)",
+        `D0 ⚙ = 28×28 无衬底恒显（w=${gearShape.w} h=${gearShape.h} bg=${gearShape.bg}）`,
+      );
       await page.getByRole("button", { name: "Customize keys" }).click();
       await page.waitForSelector('div[data-slot="dialog-content"]', { timeout: 5000 });
       ok((await page.locator(".msheet").count()) === 0, "D1 桌面分流 = Dialog（.msheet 不在场）");
@@ -304,6 +419,14 @@ const rowLabels = (page) =>
         afterReopen[0] === "Esc" && afterReopen[1] === "Shift+Tab",
         `D7 重开面板序保持（${afterReopen.slice(0, 2).join(" ")}）`,
       );
+
+      // 自定义键同构抽验（多端同构：Dialog 容器内同一套增删改内容，第三轮反馈④）
+      await page.getByRole("button", { name: "New key" }).click();
+      await page.locator("#qk-custom-label").fill("Run tests");
+      await page.locator("#qk-custom-content").fill("bun run test");
+      await page.getByRole("button", { name: "Save" }).click();
+      await page.waitForTimeout(200);
+      ok((await rowLabels(page)).length === 9, "D8 自定义键同构：新建 → Dialog 内行 9（容器无关）");
       await ctx2.close();
     }
   } finally {

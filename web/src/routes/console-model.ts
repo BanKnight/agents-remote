@@ -29,12 +29,32 @@ export type ConsoleSectionDefinition = {
   statusKey: TranslationKey;
 };
 
-export type SessionQuickKey = {
+/** 内置键（系统控制序列，i18n 文案；可显隐/排序，不可删改——序列有系统语义）。 */
+export type BuiltinQuickKey = {
   id: string;
   labelKey: TranslationKey;
   ariaLabelKey: TranslationKey;
   sequence: string;
 };
+
+/** 自定义键（2026-10-11 第三轮反馈④「增删改」：用户自建，裸文本名称 + 发送内容）。 */
+export type CustomQuickKey = {
+  id: string;
+  label: string;
+  sequence: string;
+};
+
+export type SessionQuickKey = BuiltinQuickKey | CustomQuickKey;
+
+/** 键显示文案单源（快捷键条 + 编辑面板共用）：内置 = i18n，自定义 = 裸文本。 */
+export function quickKeyLabel(key: SessionQuickKey, t: (k: TranslationKey) => string): string {
+  return "labelKey" in key ? t(key.labelKey) : key.label;
+}
+
+/** 键 aria 文案单源：内置 = ariaLabelKey，自定义 = 与显示文案同文。 */
+export function quickKeyAria(key: SessionQuickKey, t: (k: TranslationKey) => string): string {
+  return "ariaLabelKey" in key ? t(key.ariaLabelKey) : key.label;
+}
 
 export type SessionSendStatus = "connecting" | TransportStatus;
 

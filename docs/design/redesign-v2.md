@@ -808,6 +808,20 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证链（第二轮收口）**：format/lint/typecheck 0w + 单测 778 + CSS 硬闸 + tokens 机检 0 违例 + 探针 quick-keys-editor 19/19 / keyboard-inset 10/10 + e2e 相关 spec 全绿。
 
+**2026-10-11 真机反馈第三轮（4+1 条）**：用户真机复验第二轮交付的细微问题，逐条处置：
+
+1. **① 编辑态首次光标落点不符**：源码态只读 CodeEditor 与编辑态 CodeEditor 是**两个独立 CodeMirror 实例**（条件渲染不同分支）——tap-to-edit 只切状态、点击坐标随实例切换丢失。修复 = `useTapToEdit(onEnter)` 回调带点击视口坐标（`clientX/Y`）→ 消费方 `pendingCursorRef` 暂存 → 编辑态 `onCreateEditor` 时 `view.posAtCoords({x,y})` 映射 + `view.focus()`（源码态与编辑态同画布同规格，视口坐标直接映射；posAtCoords null 安全跳过落默认位）。`applyPendingCursor` 导出纯函数 + 两容器（MobileL3FilePreview / FilePreviewPane）全覆盖。
+2. **② 编辑态元信息行高轻微变化**：预览态 `.fmeta` 36px vs 编辑态 `.emeta` 38px——7b 实现自定值没对齐原型。修 36px 对齐，预览⇄编辑切换行高零跳变（probe-keyboard-inset 2d 断言同步 36px）。
+3. **③ 终端 composer ⚙ 过大**：实现误用 `.xbtn`（34×32 tint-blue 衬底——那是展开输入钮形态）；原型 workspace-terminal-input 控制行 ⚙ = 28×28 r12 无衬底 ink-2。改 `.iicn` 形态。**探针实抓桌面回归**：`.iicn` 家族带 `@media (min-width:1024px){ display:none }`（v1.4「窄端 iicn/宽端 ipill」切换），桌面 ⚙ 直接消失——探针 Part 2 实抓 `iicnDisplay:"none"` 后加 **`.iicn.gear` 例外类**（specificity 0,2,0 胜 media 内 0,1,0；恒显中性入口，非彩色 pill 家族，无衬底 ink-2）+ 探针 D0 断言（28×28 无衬底恒显）锁回归面。
+4. **④ 快捷键要能增删改**（「设置内容应该包括自定义快捷方式的内容，例如增删改，而不仅仅是调整顺序」）：数据模型拆 union——`BuiltinQuickKey`（i18n labelKey/ariaLabelKey + 系统控制序列，可显隐/排序不可删改）| `CustomQuickKey`（裸文本 label + 发送内容）；`quickKeyLabel`/`quickKeyAria` helper（console-model 单源，快捷键条 + 编辑面板共用）。存储新 `terminalQuickKeysCustomAtom`（localStorage）；**顺序仍走 terminalQuickKeysOrderAtom 单一管道**（自定义 id 尾补，排序代码零改动）。自定义键发送时尾补 `\n`（= 常用命令一键执行；内置控制序列不动）；id = `custom-${randomUUID}`（非 secure context 兜底）。面板 UI = 底部「＋ 新建快捷键」整行 + 表单（名称 input + 内容 textarea mono + 取消/保存 disabled=空）+ 行尾 pencil 编辑（自定义键专属）+ 表单左下红字删除钮。
+5. **⑤（mid-turn 补充）面板行布局重排**（「开关和拖动相邻易误触，布局不合理」）：**grip 移行首**独占起手区（与行尾 toggle 隔整行宽，误触结构性消失）；**删除收进编辑表单**（危险动作显式化，行上不留高频误触面）；行尾只留 pencil。表单展开时添加行隐藏（非添加语境）。
+
+**探针扩至 29 断言**（quick-keys-editor）：Part 1 新增 M12-M19 自定义键全流程（表单展开/添加行隐藏 → 保存 disabled→enabled → 保存尾补渲染行 9 → 条上出现 → 拖拽提交 order 含 custom id → pencil 改名面板行+条同步 → 删除行 8 + custom 存储清空 + 条上消失）；Part 2 新增 D0（⚙ gear 几何）+ D8（Dialog 容器同构新建）。
+
+**review 消化（code P1×1/P2×2 + design P1×3/P2×2/P3）**：已修——**自定义键泄漏进 agent 会话**（allQuickKeys 合并加 sessionType==="terminal" gate，与 ⚙ 入口同口径——agent 无 ⚙ 可管理，点按会把命令文本当 prompt 注入）；**表单草稿跨面板开关残留**（open=false 清 form——form 挂常驻组件，scrim/Esc 关面板不触达卸载）；**名称无上限 × .qkey chip 不可收缩**（input maxLength=24 常量封口）；**表单 token 族**（v1 桥接族 on-surface 系全换 v2 语义 ink-1/ink-2 + hover:bg-ink-1/5，字段底色 bg-elevated→bg-elevated2、容器去底色只留描边——对齐 settings-dialog v2 输入形态单源「elevated2 内嵌 + sep-strong 描边」）；**pencil 热区**（28px→grip 同款 -m-2 p-2.5 = 36px + ml-1 与行尾 toggle 留缝——「开关相邻易误触」同族回归，design review 实抓）；**表单钮 py-1.5→py-2**（移动 sheet 语境热区）；**添加行居中 + py-3**（Apple 分组列表惯例补全，44px 热区）。**记档不做**：rounded-[10px] 裸值随批收敛（settings 同写法既有先例）；.iicn.gear svg 16px vs 原型窄端 14px（web .iicn 基类既有宽端档规格，非本批引入）。
+
+**验证链（第三轮收口）**：format/lint/typecheck 0w + 单测 778 + CSS 硬闸 + tokens 0 违例 + 探针 quick-keys-editor 29/29 / keyboard-inset 10/10 + e2e terminal-session 1 passed。
+
 ### §6.12p 真机反馈修复：sheet 下拉收起回弹 + 历史 sheet prompt 连带卸载（2026-09-27，commit `0f3c882`）
 
 **① 拖拽 dismiss 回弹（用户真机反馈）**：`endDrag` dismiss 分支曾先清 inline transform 再交 Radix exit 动画——sheet **瞬跳回原位**再从原位滑 16px+fade（「回弹后再消失」）。修复：**保留 inline transform 作为 exit 动画起点**（tw-animate-css 的 exit keyframes 只有 `to` 无 `from`，起始值 = 当前计算样式），inline 变量覆盖 exit 形态——`--tw-exit-translate-y` = 顶边推出视口底+40px 余量（`slide-out-to-bottom-4` 的 16px 不够出屏）、`--tw-exit-opacity: 1`（iOS dismiss 纯滑出不 fade）、200ms ease-in 贴合松手初速度。重开无残留（Radix closed 即 unmount，inline 样式随之消亡）。
