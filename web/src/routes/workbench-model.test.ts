@@ -24,6 +24,7 @@ import {
   findLeafBySessionId,
   findTabRefLeaf,
   inferSessionTypeFromId,
+  isFilePushPreview,
   isSessionFocusId,
   mergeProjectsWithCandidates,
   migrateLegacyLayout,
@@ -1130,4 +1131,94 @@ test("normalizeRef: 已退役 pluginmcp ref / 残缺 session ref → null（存�
   expect(normalizeRef(pluginmcp)).toBeNull();
   const broken = { kind: "session" } as unknown as Parameters<typeof normalizeRef>[0];
   expect(normalizeRef(broken)).toBeNull();
+});
+
+test("isFilePushPreview: 推入态判据 = leftMode=files + global + file_ focus + view=preview", () => {
+  const global = { kind: "global" as const };
+  // 推入入口（pushToFilePreview）单点写 view=preview：files mainPage 列表点行 → 主区推入预览。
+  expect(
+    isFilePushPreview({
+      scope: global,
+      leftMode: "files",
+      focusId: "file_proj1/README.md",
+      view: "preview",
+    }),
+  ).toBe(true);
+  // 同形 URL 但无 view 标记 = 中栏 file tab（工作台）——真机 bug 回归守卫：点回 file 标签
+  //（onSelectTab/navigateToFile 全局分支）不带 view，不得被推入预览抢占。
+  expect(
+    isFilePushPreview({ scope: global, leftMode: "files", focusId: "file_proj1/README.md" }),
+  ).toBe(false);
+  // leftMode=auto（工作台内 file tab）/ 其他 leftMode 整页态 / project scope 一律非推入态
+  expect(
+    isFilePushPreview({ scope: global, leftMode: undefined, focusId: "file_a/b", view: "preview" }),
+  ).toBe(false);
+  expect(
+    isFilePushPreview({ scope: global, leftMode: "plugins", focusId: "file_a/b", view: "preview" }),
+  ).toBe(false);
+  expect(
+    isFilePushPreview({
+      scope: { kind: "project", key: "proj1" },
+      leftMode: "files",
+      focusId: "file_a/b",
+      view: "preview",
+    }),
+  ).toBe(false);
+  // 非 file_ focus（session / 无 focus）非推入态
+  expect(
+    isFilePushPreview({
+      scope: global,
+      leftMode: "files",
+      focusId: "agent_tab-1",
+      view: "preview",
+    }),
+  ).toBe(false);
+  expect(
+    isFilePushPreview({ scope: global, leftMode: "files", focusId: undefined, view: "preview" }),
+  ).toBe(false);
+});
+
+test("validateWorkbenchSearch: view 白名单（preview 透传，其余省略）", () => {
+  expect(validateWorkbenchSearch({ view: "preview" })).toEqual({ view: "preview" });
+  expect(validateWorkbenchSearch({ view: "nope" })).toEqual({});
+  expect(validateWorkbenchSearch({})).toEqual({});
+  expect(validateWorkbenchSearch({ leftMode: "files", view: "preview" })).toEqual({
+    leftMode: "files",
+    view: "preview",
+  });
+});
+
+test("stickyWorkbenchSearch: view 维度透传（未传即省略——默认工作台语义）", () => {
+  expect(stickyWorkbenchSearch({ leftMode: "files", view: "preview" })).toEqual({
+    leftMode: "files",
+    view: "preview",
+  });
+  expect(stickyWorkbenchSearch({ leftMode: "files" })).toEqual({ leftMode: "files" });
+});
+
+test("deriveWorkbenchRouteContext: /files/file/$ 透传 view（推入态与中栏 tab 同形 URL 消歧）", () => {
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf(
+        "/files/file/$",
+        { _splat: "proj1/README.md" },
+        { leftMode: "files", view: "preview" },
+      ),
+    ),
+  ).toEqual({
+    scope: { kind: "global" },
+    focusId: "file_proj1/README.md",
+    leftMode: "files",
+    view: "preview",
+  });
+  // 同形但无 view = 中栏 file tab（工作台）——ctx 不带 view，isFilePushPreview 判 false。
+  const tabCtx = deriveWorkbenchRouteContext(
+    routeLeaf("/files/file/$", { _splat: "proj1/README.md" }, { leftMode: "files" }),
+  );
+  expect(tabCtx).toEqual({
+    scope: { kind: "global" },
+    focusId: "file_proj1/README.md",
+    leftMode: "files",
+  });
+  expect(isFilePushPreview(tabCtx)).toBe(false);
 });

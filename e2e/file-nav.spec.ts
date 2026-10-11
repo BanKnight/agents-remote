@@ -42,8 +42,8 @@ test("file nav: footnav 全局文件 → 全局树点文件 → 主区推入态�
     .first()
     .click();
 
-  // URL 切到 /files/file/$ 全路径（_splat = demo/src/index.ts；v1.5 批 4 起 sticky 透传
-  // leftMode=files = 10m2 主区推入态）。
+  // URL 切到 /files/file/$ 全路径（_splat = demo/src/index.ts；sticky 透传 leftMode=files +
+  // view=preview = 10m2 主区推入态，推入入口单点写 view 消歧同形 URL——见 isFilePushPreview）。
   await expect(page).toHaveURL(new RegExp(`/files/file/${projectName}/src/index\\.ts(\\?|$)`));
 
   // v1.5 批 4（10m2，mac-files-global-preview）：/files mainPage 点文件 = 主区推入预览

@@ -53,6 +53,7 @@ import {
   ensureTabOpenLeaf,
   findLeafBySessionId,
   findTabRefLeaf,
+  isFilePushPreview,
   parseFileTabId,
   parseGitTabId,
   parseSkillTabId,
@@ -107,6 +108,7 @@ export function WorkbenchLayoutShell() {
       rightTab={ctx.rightTab}
       scope={ctx.scope}
       tab={ctx.tab}
+      view={ctx.view}
     />
   );
 }
@@ -120,11 +122,13 @@ function WorkbenchContent({
   pluginName,
   pluginView,
   mode = "agent",
+  view,
 }: {
   focusId?: string;
   rightTab?: WorkbenchInspectionTab;
   scope: WorkbenchScope;
   tab?: WorkbenchMiddleTab;
+  view?: "preview";
   // leftMode（设计 workbench-stable-refactor Phase 2，粘性化）：global scope 的 mainPage 维度
   //——"files" → 全局文件整页（10m），"plugins" → 插件 mainPage（§6.12j 批次 4 起 = 09m 单页
   // MobilePluginsOverview），"settings" → 设置整页（07m），"auto" → 一级会话页。project scope
@@ -292,9 +296,9 @@ function WorkbenchContent({
     }
     // 10m2 全局文件推入态（v1.5 批 4，mac-files-global-preview）：files mainPage 的 file
     // focusId 是主区推入预览，不进中栏 tab（原型②「大面积 UI 切换仅在点『在工作台打开』时
-    // 发生」）；「在工作台打开」走 openPushInWorkbench 命令式开 tab。工作台内（leftMode=auto）
-    // file focus 仍开 tab，此 gate 不拦。
-    if (leftMode === "files" && scope.kind === "global" && focusId.startsWith("file_")) return;
+    // 发生」）；「在工作台打开」走 openPushInWorkbench 命令式开 tab。中栏 file tab 激活（同形
+    // URL，靠 view 维度区分）仍开 tab，此 gate 不拦。
+    if (isFilePushPreview({ scope, leftMode, focusId, view })) return;
     update((prev) => {
       const found = findLeafBySessionId(prev, focusId);
       if (found) return setActiveTabInLeaf(prev, found.leafId, focusId);
@@ -340,7 +344,7 @@ function WorkbenchContent({
       return ensureTabOpenLeaf(prev, { kind: "session", projectName, sessionId: focusId });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusId, scopeKey, refs.length]);
+  }, [focusId, scopeKey, refs.length, view]);
 
   // stale-tab prune（设计 §7.1）：kill session 后该 session 的 tab 不会自动从 layout 消失。
   // refsLoaded gate 防刷新后 refs 还空把全部持久化 tab 误判 stale 清光。
@@ -450,14 +454,15 @@ function WorkbenchContent({
   // mcp）= 跳回工作台开 tab，navigate sticky search 据此把 leftMode 重置 auto（见各 navigate）。
   // mainPage 激活判定必须**正面枚举**（leftMode 可选，undefined 语义 = auto；若写
   // `leftMode !== "auto"` 则 undefined 也判真——窄态被误判成 mainPage）。focusId 优先于
-  // mainPage：中栏 tab focus（/files/file/$ 等继承 leftMode 透传）必须回工作台渲染 tab。
+  // mainPage：中栏 tab focus（/files/file/$ 等继承 leftMode 透传）必须回工作台渲染 tab
+  //（推入态是同形 URL 的例外，由 view=preview 显式声明——见 isFilePushPreview）。
   const mainPageActive =
     scope.kind === "global" &&
     (leftMode === "files" || leftMode === "plugins" || leftMode === "settings") &&
     (!focusId ||
       // 10m2 全局文件推入态（v1.5 批 4，mac-files-global-preview）：files mainPage 的 file
       // focusId = 主区推入预览（不退工作台）；其余 focusId（L3 详情等）仍优先于 mainPage。
-      (leftMode === "files" && focusId.startsWith("file_")));
+      isFilePushPreview({ scope, leftMode, focusId, view }));
   // 推入态判定（独立变量：focus effect gate 与 desktopMainPage 分流共用）。
   const filesPushActive = mainPageActive && !!focusId;
   const navigateToFile = useCallback(
@@ -497,15 +502,17 @@ function WorkbenchContent({
     [update, navigateToFile],
   );
   // 10m2 推入入口（v1.5 批 4，mac-files-global-preview）：全局文件 mainPage 列表点文件 =
-  // 主区推入预览（leftMode=files + focusId），不写中栏 layout——「大面积 UI 切换仅在点
-  // 『在工作台打开』时发生」（原型②）。桌面 mainPage 专属；移动列表点文件仍走无 search
-  // navigate（leftMode=auto，移动 push 页按 focusId 直渲）。
+  // 主区推入预览（leftMode=files + focusId + view=preview），不写中栏 layout——「大面积 UI
+  // 切换仅在点『在工作台打开』时发生」（原型②）。**推入态单点写 view=preview**（判据见
+  // isFilePushPreview）：中栏 file tab 激活的 URL 与之同形，靠该维度消歧；其余导航不带即默认
+  // 工作台。桌面 mainPage 专属；移动列表点文件仍走无 search navigate（leftMode=auto，移动 push
+  // 页按 focusId 直渲）。
   const pushToFilePreview = useCallback(
     (projectName: string, path: string) => {
       void navigate({
         to: "/files/file/$",
         params: { _splat: `${projectName}/${path}` },
-        search: stickyWorkbenchSearch({ leftMode: "files", rightTab, mode }),
+        search: stickyWorkbenchSearch({ leftMode: "files", rightTab, mode, view: "preview" }),
       });
     },
     [navigate, rightTab, mode],
@@ -785,9 +792,11 @@ function WorkbenchContent({
     onSplit: onSplitLeaf,
     onSelectTab,
     scopeKind: scope.kind,
-    // ⌘F 只在全局文件整页态绑（10m pin④「聚焦搜索框」；其他态不劫持浏览器查找）。
+    // ⌘F 只在全局文件整页态绑（10m pin④「聚焦搜索框」；其他态不劫持浏览器查找）。推入态
+    //（filesPushActive = 单文件预览整页接管）无搜索框，不绑——否则 ⌘F 劫持浏览器查找后
+    // 空转，还会回放陈旧的 focus request bump。
     onFocusFilesSearch:
-      mainPageActive && leftMode === "files"
+      mainPageActive && leftMode === "files" && !filesPushActive
         ? () => setFilesSearchFocusRequest((v) => v + 1)
         : undefined,
   });

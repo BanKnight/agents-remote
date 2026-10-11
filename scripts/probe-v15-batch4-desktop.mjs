@@ -14,6 +14,10 @@
 //     （mback「全局文件」+ h1 mono 文件名 + 右端 ⋯），中栏 layout 零写入（返回后无 tab
 //     残留）；⋯ 菜单 = 复制内容/复制路径/在工作台打开（根作用域无查看 diff）；点正文进编辑；
 //     「在工作台打开」→ 中栏 file tab + 退推入态。
+//   Part 6 file tab 切走再切回 ≠ 推入态（同形 URL 回归）：leftMode=files + session focus 工作台
+//     → 点回 file tab → tabstrip 保持、无推入 h1、切回 tab 为活动（真机 bug 回归守卫）；
+//     裸深链无 view → 按工作台解释（focus effect 自动开 tab，行为变更守卫）；推入态内
+//     md 相对链接换目标 → 仍是推入预览（pushToFilePreview 单点写 view 不丢）。
 //
 // 全 mock API（无真实数据创建/删除）；密码自读不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v15-batch4-desktop.mjs
@@ -100,7 +104,19 @@ const PREVIEWS = {
     name: "README.md",
     size: 64,
     mtimeMs: HOUR_AGO,
-    content: "# proj1\n\nhello **world**\n",
+    // 相对 .md 链接供 Part 6 推入态内换文件断言（MarkdownLinkContext 只接管相对 .md 内链，
+    // 见 relative-md-link.ts isRelativeMdHref；.ts 等非 .md 相对链接走浏览器默认导航 = 既有
+    // 语义）→ pushToFilePreview 保 view。
+    content: "# proj1\n\nhello **world**\n\n[go guide](docs/guide.md)\n",
+  },
+  "docs/guide.md": {
+    type: "text",
+    projectName: "proj1",
+    path: "docs/guide.md",
+    name: "guide.md",
+    size: 128,
+    mtimeMs: HOUR_AGO,
+    content: "# guide\n\npush 内链目标。\n",
   },
   "archive.zip": {
     type: "unsupported",
@@ -324,12 +340,13 @@ ok(
   (await tabstrip.locator('[aria-label="更多操作"]').count()) === 0,
   "⑦ 编辑态 tabstrip 只剩结构钮（⋯ 消失）",
 );
-// 7b：.aux 条退役 → 编辑态首行 = .emeta（高 38px，桌面页私 padding 0 26px 0 14px 继承）。
+// 7b：.aux 条退役 → 编辑态首行 = .emeta（高 36px = .fmeta 同高，c0e48d5 行高零跳变批次；
+// 探针原预置 38px 过期——§29 预置假设漂移）。
 const emetaBox = await pane.locator(".emeta").evaluate((el) => {
   const s = getComputedStyle(el);
   return { h: s.height, pb: s.paddingBottom };
 });
-ok(emetaBox.h === "38px", `⑦b 编辑态行 .emeta 高 38px（实际 ${emetaBox.h}）`);
+ok(emetaBox.h === "36px", `⑦b 编辑态行 .emeta 高 36px（实际 ${emetaBox.h}）`);
 // clean 放弃回预览态。
 await pane.locator(".emeta .fact .giveup").click();
 await page.waitForTimeout(500);
@@ -492,6 +509,71 @@ ok(
   "⑪ 中栏 file tab 已开",
 );
 ok((await page.locator("h1.font-mono").count()) === 0, "⑫ 推入态退出（mainPage 让位工作台）");
+
+// ───────────── Part 6 file tab 切走再切回 ≠ 推入态（同形 URL 回归）─────────────
+// 真机 bug：中栏点走再点回 file 标签 → 整页变全局文件推入预览（tabstrip 与全部 tab 消失）。
+// 根因 = 推入态与「中栏 file tab 激活」URL 完全同形（/files/file/$?leftMode=files，leftMode
+// 粘性透传）；修复 = 推入入口 pushToFilePreview 单点写 view=preview 显式声明推入态（见
+// workbench-model.isFilePushPreview），点 tab 等 sticky 导航不带 view → 按工作台解释。
+console.log("Part 6 file tab 切走再切回（推入态同形 URL 回归）");
+await page.goto(`${ORIGIN}/projects/session/agent_a?leftMode=files`);
+await page.waitForTimeout(1000);
+ok(
+  (await page.locator(".tabstrip").count()) === 1,
+  "① leftMode=files + session focus → 仍工作台（tabstrip 在场）",
+);
+ok((await page.locator("h1.font-mono").count()) === 0, "② 非推入态（无推入 h1 文件名）");
+const backChip = page.locator(".tabstrip .tb", { hasText: "index.ts" }).first();
+ok((await backChip.count()) === 1, "③ file tab chip 在场（切回目标）");
+await backChip.click();
+await page.waitForTimeout(900);
+ok(
+  (await page.locator(".tabstrip").count()) === 1,
+  "④ 点回 file 标签 → 中栏 tabstrip 保持（未被推入预览抢占）",
+);
+ok((await page.locator("h1.font-mono").count()) === 0, "⑤ 无推入态 h1（整页未突变）");
+ok(
+  (await page.locator(".tabstrip .tb.on", { hasText: "index.ts" }).count()) === 1,
+  "⑥ 切回后 file tab 为活动 tab（.on）",
+);
+ok(
+  (await page.locator(".tabstrip .tb", { hasText: "AAA-running" }).count()) === 1,
+  "⑦ 其他 tab 未丢（layout 零损）",
+);
+
+// ⑧ 裸深链（行为变更回归守卫）：旧推入态书签/历史 URL（同形但无 view=preview）现按工作台
+// 解释——focus effect 自动开 tab，不落推入态。推入态只能经列表点行（单点写 view）进入。
+await page.goto(`${ORIGIN}/files/file/proj1/README.md?leftMode=files`);
+await page.waitForTimeout(1000);
+ok((await page.locator(".tabstrip").count()) === 1, "⑧ 裸深链无 view → 工作台（tabstrip 在场）");
+ok(
+  (await page.locator(".tabstrip .tb", { hasText: "README.md" }).count()) === 1,
+  "⑧b 裸深链 → focus effect 自动开 README.md tab",
+);
+ok((await page.locator("h1.font-mono").count()) === 0, "⑧c 裸深链无推入 h1");
+
+// ⑨ 推入态内换文件保 view：相对 .md 内链走 MarkdownLinkContext → pushToFilePreview（单点写
+// view=preview）→ 换目标仍是推入预览，不落工作台（推入态内导航不丢标记）。链接用 .md 内链
+//（isRelativeMdHref 只接管相对 .md；非 .md 相对链接走浏览器默认导航 = 既有语义）。
+await page.goto(`${ORIGIN}/files/file/proj1/README.md?leftMode=files&view=preview`);
+await page.waitForTimeout(1000);
+ok(
+  ((await page.locator("h1.font-mono").textContent()) ?? "") === "README.md",
+  "⑨ 推入态深链 → h1 = README.md",
+);
+const mdLink = page.locator('[data-role="file-preview-pane"] a', { hasText: "go guide" });
+ok((await mdLink.count()) >= 1, "⑨b 推入态 md 渲染相对链接在场");
+await mdLink.first().click();
+await page.waitForTimeout(900);
+ok(
+  ((await page.locator("h1.font-mono").textContent()) ?? "") === "guide.md",
+  "⑨c 点链接 → h1 换 guide.md",
+);
+ok(
+  (await page.locator("header button", { hasText: "全局文件" }).count()) === 1,
+  "⑨d 换目标后仍推入态（mback 在场，view 未丢）",
+);
+ok((await page.locator(".tabstrip").count()) === 0, "⑨e 换目标后无 tabstrip（未落工作台）");
 
 console.log(`\n结果: ${passCount} pass / ${failCount} fail`);
 await browser.close();

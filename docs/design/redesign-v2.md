@@ -1802,6 +1802,16 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **验证**：typecheck / lint（404 files 0w）/ CSS 硬闸 / tokens 机检 / web 单测 774（三跑稳定）全绿；探针 3 件全绿——probe-v2-m7-settings-auth 69/69（Part 2 适配 .segc/[role=tablist] + Part 3 适配 .msheet 移动分流）、probe-settings-acp-dialog 10/10、probe-settings-pi-dialog 32/32（两探针入口从 M2 时代 ActivityBar+SettingsDialog 适配到 M9 桌面壳 footnav→mainPage 路由导航，v2 弹窗面断言锚 DialogContent 内层自绘面——Radix content 外壳默认类非断言目标）；e2e mobile-nav 6 + desktop-side 6 全绿（壳导航/深链不受影响）。
 - **真机清单**：①二级四段分组行形态与一级同构；②segc 三态分段活动块；③预设列表行 + ＋ 添加行 + ⋯；④预设编辑移动半屏 sheet / 桌面居中 Dialog、控件 v2；⑤显式保存语义不变。
 
+### 桌面中栏 file tab 切回被全局文件推入预览抢占：`view` 维度消歧同形 URL（2026-10-11）
+
+用户真机反馈：「中栏中打开的文件，点击其他标签，然后又点击回文件标签，会整个变成全局文件中的预览，非常不协调，整个页面发生变化，非常突然」。**根因 = 同形 URL 两态歧义**：10m2 推入态（`FilesPushPreview`）与「中栏 file tab 激活」的 URL 完全相同（`/files/file/$?leftMode=files`）——leftMode 粘性透传是设计使然（中栏 tab 切换不改左栏），故 leftMode=files 残留（全局文件页/推入态左栏点会话回工作台等路径）+ 点回 file 标签（`onSelectTab → navigateToFile` 全局分支）→ `mainPageActive` 判推入态 → tabstrip 与全部 tab 消失、整页突变。
+
+- **修复 = 推入入口显式声明，其余默认工作台**：新增 URL search 维度 `view`（validator 白名单 `preview`；`WorkbenchRouteContext.view`）。`pushToFilePreview`（列表/树点行 + 推入态内换文件，单点）写 `view=preview`；中栏 tab 激活等其余导航不带 `view` 即默认工作台。推入态判定收敛 `isFilePushPreview`（workbench-model 导出纯函数），focus effect gate 与 `mainPageActive` 两处消费共用——旧 `leftMode=files && file_ 前缀` 判据退役。**行为变更记档**：裸 `/files/file/$?leftMode=files`（旧推入态书签/历史）现按「中栏 file tab（工作台）」解释，聚焦 effect 自动开 tab；推入态只能经列表/树点行进入。
+- **否定方案记档（两轮迭代）**：①`activeTabId` 判据（focusId 是否 layout 活动 tab）——探针 Part 5 实抓否定：文件 tab 恰为活动 tab 时列表点行同样命中 → 推入态被误判掉（list 点行必须仍出推入预览）；②同形分歧的根源是「一个 URL 承两态」，故正确修法是给 exceptional 态（推入）显式标记，而非再找间接信号。
+- **probe-v15-batch4-desktop Part 6 新增 15 断言**（回归守卫）：①-⑦ leftMode=files + session focus = 工作台 → 点回 file chip → tabstrip 保持 / 无推入 h1 / 切回 chip `.on` / 其他 tab 零损；⑧ 裸深链无 view → 按工作台解释（focus effect 自动开 README.md tab，行为变更守卫）；⑨ 推入态内相对 **.md 内链**换目标（README → docs/guide.md）→ 仍是推入预览（h1 换名 / mback 在场 / 无 tabstrip，pushToFilePreview 单点写 view 不丢；链接必须用 .md——`isRelativeMdHref` 只接管相对 .md 内链，非 .md 相对链接走浏览器默认导航 = 既有语义，首版探针误用 .ts 链接实抓该边界）。**探针 57/57**（含批 4 既有推入态 14 断言复绿）；file-nav e2e 绿（推入链不受影响，注释同步 view 语义）。**探针过期断言修复（§29 同族）**：Part 2 ⑦b `.emeta` 高 38px 预置过期（`c0e48d5` 行高零跳变批改为 36 = .fmeta 同高，基线对照证实非当批引入）→ 断言改 36px，探针复绿。
+- **伴生修复（review 消化）**：⌘F gate 加 `!filesPushActive`（推入态主区为单文件预览整页接管、无搜索框——此前 ⌘F 劫持浏览器查找后空转 + 回放陈旧 focus request bump；既有问题非本批引入，变更前后除推入态外行为一致）。
+- **真机清单**：①全局文件页点文件 → 推入预览（mback + mono 文件名）不变；②推入态 ⋯「在工作台打开」→ 中栏 tab 不变；③**中栏 file tab 切走（session/terminal tab）再点回 → 保持工作台 tab（本次修复主断言）**；④推入态左栏点会话回工作台后再点回 file 标签 → 同③；⑤推入态内点正文 .md 相对链接换文件 → 仍是推入预览（h1 换名、无 tabstrip，不整页突变）。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。

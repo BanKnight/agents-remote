@@ -453,6 +453,8 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   approvals?: boolean;
   /** M6-c 市场页双段（17/18 同页 tabseg）：/plugins/market?marketTab=mcp|skill；缺省 skill。 */
   marketTab?: "mcp" | "skill";
+  /** 主区视图形态：`view=preview` = 全局文件推入预览（省略 = 工作台，见 isFilePushPreview）。 */
+  view?: "preview";
 } {
   const result: {
     rightTab?: WorkbenchInspectionTab;
@@ -464,6 +466,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     mode?: WorkbenchMode;
     approvals?: boolean;
     marketTab?: "mcp" | "skill";
+    view?: "preview";
   } = {};
   if (search.approvals === "1" || search.approvals === true) {
     result.approvals = true;
@@ -510,6 +513,10 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   ) {
     result.leftMode = search.leftMode;
   }
+  // 主区视图形态（10m2 推入态显式标记，见 isFilePushPreview）：省略 = 工作台（默认语义）。
+  if (search.view === "preview") {
+    result.view = "preview";
+  }
   if (search.mode === "agent" || search.mode === "chat") {
     result.mode = search.mode;
   }
@@ -536,6 +543,7 @@ export function stickyWorkbenchSearch(input: {
   tab?: WorkbenchMiddleTab;
   leftMode?: "auto" | "files" | "plugins" | "settings";
   mode?: WorkbenchMode;
+  view?: "preview";
 }): WorkbenchSearch {
   return {
     ...(input.rightTab !== undefined ? { rightTab: input.rightTab } : {}),
@@ -544,6 +552,7 @@ export function stickyWorkbenchSearch(input: {
       ? { leftMode: input.leftMode }
       : {}),
     ...(input.mode !== undefined && input.mode !== "agent" ? { mode: input.mode } : {}),
+    ...(input.view !== undefined ? { view: input.view } : {}),
   };
 }
 
@@ -597,6 +606,13 @@ export type WorkbenchRouteContext = {
    * 一级会话页有意义；project scope / 各 focus 路由透传保留，不影响渲染。
    */
   mode?: WorkbenchMode;
+  /**
+   * 主区视图形态（10m2 推入态显式标记，见 isFilePushPreview）：`"preview"` = 全局文件推入预览
+   * （主区整页接管 + mback 返回），省略 = 工作台（默认语义）。该维度存在的唯一理由 = **同形 URL
+   * 消歧**：推入态与「中栏 file tab 激活」同为 `/files/file/$?leftMode=files`，URL 层无从区分，
+   * 故由推入入口显式声明、其余路径默认工作台（推入入口 = pushToFilePreview 单点写）。
+   */
+  view?: "preview";
 };
 
 /**
@@ -610,13 +626,19 @@ export type WorkbenchRouteContext = {
  */
 export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRouteContext {
   const p = leaf.params as Record<string, string | undefined>;
+  // 与 validateWorkbenchSearch 白名单对齐（review P2：漏项会让透传字段在 TS 层静默丢失，
+  // spread 后对象形状与 validator 产物不一致）。
   const s = leaf.search as {
     rightTab?: WorkbenchInspectionTab;
     tab?: WorkbenchMiddleTab;
     gitScope?: GitDiffScope;
     gitCompare?: string;
+    branch?: string;
+    approvals?: boolean;
+    marketTab?: "mcp" | "skill";
     leftMode?: "auto" | "files" | "plugins" | "settings";
     mode?: WorkbenchMode;
+    view?: "preview";
   };
   switch (leaf.fullPath) {
     case "/":
@@ -720,10 +742,11 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
       };
     }
     case "/files/file/$": {
-      // 全局文件 tab focus（Phase 3，leftMode 粘性化修订）：_splat = 全路径（含项目名前缀如
+      // 全局文件 focus（Phase 3，leftMode 粘性化修订）：_splat = 全路径（含项目名前缀如
       // "demo/src/index.ts"）。scope=global；leftMode **不强制**，继承 ...s 透传值——中栏点 file
       // tab 透传当前 leftMode（从 /files 进来=files 保文件树；从 /projects 进来=auto 保项目列表），
       // 中栏 tab 切换不改左栏（VSCode 式，左栏模式只由活动栏控制）。
+      // 同 URL 承载两态（中栏 file tab / 推入预览），`view=preview` 显式标记后者（见 isFilePushPreview）。
       const fullPath = p._splat ? decodeURIComponent(p._splat) : "";
       return {
         scope: { kind: "global" },
@@ -817,6 +840,33 @@ export function isSessionFocusId(focusId: string): boolean {
     parseSkillTabId(focusId) === null &&
     parseGitTabId(focusId) === null &&
     !focusId.startsWith("chat_")
+  );
+}
+
+/**
+ * 全局文件**推入态**判定（10m2，v1.5 批 4 mac-files-global-preview）：files mainPage 列表点文件
+ * = 主区推入预览（`FilesPushPreview`，不写中栏 layout——「大面积 UI 切换仅在点『在工作台打开』
+ * 时发生」，原型②）。判据 = `leftMode=files` + global scope + `file_` focusId + `view=preview`。
+ *
+ * 末项（`view=preview`）不可省：**推入态与「中栏 file tab 激活」的 URL 完全同形**
+ *（`/files/file/$?leftMode=files`）——leftMode 粘性透传是设计使然（中栏 tab 切换不改左栏），
+ * 纯 URL 形状无从区分。曾按「layout 活动 tab 是否即该文件」当区分信号，实测不成立（文件 tab
+ * 恰为活动 tab 时，列表点行也命中该判据 → 推入态被误判掉）；故改为**推入入口显式声明**：
+ * `pushToFilePreview` 单点写 `view=preview`，其余一切路径（中栏 tab 激活 / 列表以外的导航）
+ * 不带即默认工作台。漏此标记 → 「点走再点回 file 标签」被推入预览抢占（tabstrip 与全部 tab
+ * 消失、整页突变；真机反馈）。
+ *
+ * focus effect gate 与 WorkbenchRoute 的 mainPageActive 共用本判定（两处语义同源，不得单点改）。
+ */
+export function isFilePushPreview(
+  ctx: Pick<WorkbenchRouteContext, "scope" | "leftMode" | "focusId" | "view">,
+): boolean {
+  return (
+    ctx.leftMode === "files" &&
+    ctx.scope.kind === "global" &&
+    ctx.focusId !== undefined &&
+    ctx.focusId.startsWith("file_") &&
+    ctx.view === "preview"
   );
 }
 
