@@ -1649,6 +1649,15 @@
        内部 min-width:0 的收缩/ellipsis 全部失效（M10 用户反馈：Git 面板 commit 行横向溢出）。
        .crow/.xrow/.hrow 同族 button 行同护栏。 */
     max-width: 100%;
+    /* 按压统一（移动端动效批），批 11 .frow 化（ListRow → .frow）时未随迁——文件树行按压
+      反馈丢失（probe Part 5 实抓）。写法同 .srow2 家族：scale 是独立 CSS 属性
+      （frontend-notes §19），transition 显式列 scale。 */
+    transition: scale var(--duration-fast) var(--ease-standard);
+  }
+  /* rename 编辑行（根仍是 .frow 的 div，input 占 .p 槽）不参与按压回缩——编辑时在
+     input 内按下/拖选不该让整行动画。 */
+  .frow:active:not(:has(input)) {
+    scale: 0.98;
   }
   /* 相邻选择器（原型语义）：sect 后首个 frow / 列表首行无线。DragSourceCard 包裹层 div
      打断 .frow + .frow 兄弟链（FileEntryList .frow 化，反馈⑦）→ 四种相邻组合（裸/host）

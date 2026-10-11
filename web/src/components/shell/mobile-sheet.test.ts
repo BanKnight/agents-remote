@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { JSDOM } from "jsdom";
 
-import { hasScrollableContent, sampleVelocity, visualDragY } from "./mobile-sheet";
+import { canScrollBack, hasScrollableContent, sampleVelocity, visualDragY } from "./mobile-sheet";
 
 // bun:test 无内置 jsdom 环境——手动建 JSDOM 挂 globalThis（session-detail.test.ts 同款
 // 范式）。每个 test 一个新干净 DOM。
@@ -56,6 +56,62 @@ describe("hasScrollableContent", () => {
     const root = document.createElement("div");
     root.append(fakePane("auto", 200, 200));
     expect(hasScrollableContent(root)).toBe(false);
+  });
+});
+
+// 下滑手势的消费权分档（真机反馈：⚙ 面板长列表从中段下滑把浮层拖下去关了——根自身内滚
+// 的情况 hasScrollableContent 只扫后代判不到，须按手势时刻的滚动位置分档）。
+describe("canScrollBack", () => {
+  /** jsdom 无布局：scrollTop 恒 0，实例级 defineProperty 造「已滚离顶部」fixture。 */
+  function scrolledPane(scrollTop: number): HTMLElement {
+    const pane = fakePane("auto", 500, 200);
+    Object.defineProperty(pane, "scrollTop", { configurable: true, value: scrollTop });
+    return pane;
+  }
+
+  test("起点在已滚离顶部的祖先滚容器内 → true（下滑属列表滚动，sheet 不接管）", () => {
+    const root = document.createElement("div");
+    const pane = scrolledPane(40);
+    const btn = document.createElement("button");
+    pane.append(btn);
+    root.append(pane);
+    expect(canScrollBack(btn, root)).toBe(true);
+  });
+
+  test("滚容器在顶部（scrollTop 0）→ false（无可滚量，交 sheet 下拉收起）", () => {
+    const root = document.createElement("div");
+    const pane = scrolledPane(0);
+    const btn = document.createElement("button");
+    pane.append(btn);
+    root.append(pane);
+    expect(canScrollBack(btn, root)).toBe(false);
+  });
+
+  test("Content 根自身即滚容器且已滚离顶部 → true（长内容 sheet 根内滚）", () => {
+    const root = scrolledPane(220);
+    const hint = document.createElement("p");
+    root.append(hint);
+    expect(canScrollBack(hint, root)).toBe(true);
+    expect(canScrollBack(root, root)).toBe(true); // 起手点即根（padding 区）同样命中
+  });
+
+  test("不越出 Content（Content 之上的滚容器不算）", () => {
+    const outer = scrolledPane(300);
+    const root = document.createElement("div");
+    const hint = document.createElement("p");
+    root.append(hint);
+    outer.append(root);
+    expect(canScrollBack(hint, root)).toBe(false);
+  });
+
+  test("溢出但 overflow-y visible → false（非滚容器，即便 scrollTop > 0）", () => {
+    const root = document.createElement("div");
+    const pane = fakePane("visible", 500, 200);
+    Object.defineProperty(pane, "scrollTop", { configurable: true, value: 80 });
+    const hint = document.createElement("p");
+    pane.append(hint);
+    root.append(pane);
+    expect(canScrollBack(hint, root)).toBe(false);
   });
 });
 

@@ -309,3 +309,13 @@
 **标准做法**：底部 fixed 浮层（nav/composer）的避让**不要用「容器全高 + 自身 padding」模式**——滚动链在浮层上缘截断（滚动链某父层吃 `pb-[var(--shell-mobile-bottom-nav-space,0px)]`，容器底 = nav 顶）：任何超量内容都是真溢出、滚到底尾行完整可见，窗口死角结构性消失。滚动容器自身的 pb 只作内容尾部小余量（pb-3）。存量同款模式候选：mobile-projects-home:198 / mobile-plugins-*（L1 三页同壳），触发条件同为窗口命中，待统一治理批次推广。
 
 **来源**：v1.6 真机取证（2026-10-10）——取证浮层四轮迭代（v1 选最大容器 → v2 全列容器 → v3 全文档扫描+pointer 对照+localStorage 持久化 → v4 容器/nav 几何）+ 用户截图几何定案；修复 `d067ba8`、通道摘除 `9e073cb`。§22 证据纪律的成功实例：Chromium 全健康的「iOS 专属 bug」实为布局死角，真机第一手数据（pb=104px 生效）一步否证「让位失效」假设。
+
+## 29. 手势探针两坑：CDP 合成 touch 不可靠（用真实鼠标+滚轮）与「预置假设漂移」假挂
+
+**现象**：①sheet 手势探针（M22：下滑是否被浮层拖走）首版用 CDP `dispatchTouchEvent` 派发 touch 序列，断言全挂——插桩证明事件逐帧送达（pointermove ptr=touch 到位），但 touchstart hit-test 命中行内手柄、原生滚动不触发、列表在顶部时下滑也不被手势接管。②probe-mobile-motion 1b7「慢拖过阈值收起」恒挂——拖拽跟踪完好（inline 逐帧到位、回弹逻辑对），却总差一点收不回去。
+
+**机制**：①CDP 合成 touch 与真实触控在浏览器内部 hit-test / 滚动引擎路径上不一致（本环境实证：合成 touchstart 的命中与原生滚动行为均异常），**不能作为手势端到端断言的输入**；而 `page.mouse` 走 `Input.dispatchMouseEvent` 真实管线，pointer 序列（down→move×N→up）与滚轮（wheel）行为与真指针一致。②1b7 的拖距 70px 是编写时刻按「sheet h≈214 → 阈值 = max(64, 214×25%) = 64」的**预置假设**取的；菜单加长后 sheet h=390 → 阈值变 97.5 > 70 → 拖距永远够不到判定阈值 → 恒回弹。断言没变、产品没坏，是**环境几何漂移把预置数值变成了过期假设**（与 §10 同族：探针也是软件，会过期）。
+
+**标准做法**：①**手势类断言的输入一律 `page.mouse`**（move→down→6 步拖每步 ~40ms 逐帧采 inline→up），滚动断言用 `page.mouse.wheel`；wheel 一步可滚很远，断言带别卡「部分滚动」（如「滚回量 < 起始值」而非「落在区间内」）。起手点要落在目标元素上：button 行从 padding 条起（`r.left+6`），别按内容估中心。②**探针里的拖距/阈值/尺寸类数值不得取自编写时刻的几何**，按运行时实测自适应（如拖距 = `max(90, sheetH×0.4)`）——UI 内容增删是常态，几何必然漂移；写死数值的探针是定时炸弹。排查假挂先问「断言的预置假设还成立吗」（`git stash` 基线对照分辨当批引入 vs 既有过期）。
+
+**来源**：2026-10-11 sheet 下滑分档批（`canScrollBack`）M22 探针 + probe-mobile-motion 1b7 排障；redesign-v2.md sheet 手势链段。

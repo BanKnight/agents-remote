@@ -6,7 +6,8 @@
 //     → 双 tab（SegmentedControl）+「可用按键」启用 Tab 预置键 → 条上出现 + 点按发 \t
 //     （mock WS input 帧断言）→ 命令 tab 新建（含分组）→ tap 行 = 执行（script+\n 帧 +
 //     面板关）→ 长按菜单四项 → 仅插入（script 无 \n 帧）→ 存量自定义键迁移（旧 custom
-//     localStorage → commands 默认组渲染 + custom atom 清空）。
+//     localStorage → commands 默认组渲染 + custom atom 清空）→ 根内滚长列表下滑手势分档
+//     （中段下滑 = 列表回滚不接管 sheet；回顶后下滑接管收起——page.mouse 真实指针序列）。
 //   Part 2（桌面 1280×900 en）：⚙ 开 Dialog → ⚙ 形态（28×28 无衬底）→ 拖拽行跟手中段
 //     断言（transform = dy）+ 落位 + order 落盘 + 重开面板序保持 → Commands tab 同构
 //     新建 + 右键菜单 Run → script+\n 帧。
@@ -378,6 +379,97 @@ const rowLabels = (page) =>
       `M20 仅插入 → 帧 = script 无 \\n（${JSON.stringify(insertFrames)}）`,
     );
     ok(sheetsLeft === 0, `M21 仅插入后主面板同关（.msheet 残留=${sheetsLeft}）`);
+
+    // ===== 起手面分档 ③：sheet 根自身内滚的长列表下滑手势（2026-10-11 真机反馈）=====
+    // ⚙ 面板 8+24 行远超 sheet 高 → 滚动容器是 `.msheet` 根自身（hasScrollableContent 只扫
+    // 后代判 false）→ 中段下滑曾把浮层拖下去关掉。修复后：滚离顶部时下滑 = 列表回滚
+    //（sheet 不接管），滚回顶部（无可滚量）才归 sheet 下拉收起。输入用真实鼠标指针
+    //（CDP 合成 touch 在此环境的 hit-test/原生滚动不可靠——touchstart 命中行手柄、不触发
+    // 原生滚动，勿走），起点在 sheet 左缘 6px 内边距条（无按钮面，target = 根）。
+    console.log("Part 1 M22: 根内滚长列表下滑 = 列表回滚，不接管 sheet");
+    await page.getByRole("button", { name: "键位自定义" }).click();
+    await page.waitForSelector(".msheet", { timeout: 5000 });
+    await page.waitForTimeout(500); // sheet enter 弹簧 + 余量（frontend-notes §18）
+    const rootGeom = await page.evaluate(() => {
+      const root = document.querySelector(".msheet");
+      return {
+        overflowY: getComputedStyle(root).overflowY,
+        scrollHeight: root.scrollHeight,
+        clientHeight: root.clientHeight,
+        // 与生产谓词 hasScrollableContent 同条件（溢出 + overflow-y auto/scroll）——
+        // 无差别查 scrollHeight 会把 visible 溢出的非滚容器后代误计入，将来假挂。
+        descendantOverflow: [...root.querySelectorAll("*")].filter((n) => {
+          if (n.scrollHeight <= n.clientHeight + 1) return false;
+          const oy = getComputedStyle(n).overflowY;
+          return oy === "auto" || oy === "scroll";
+        }).length,
+      };
+    });
+    ok(
+      rootGeom.overflowY === "auto" &&
+        rootGeom.scrollHeight > rootGeom.clientHeight + 100 &&
+        rootGeom.descendantOverflow === 0,
+      `M22a 滚动容器 = .msheet 根自身（${rootGeom.scrollHeight} > ${rootGeom.clientHeight}，后代无可滚容器）`,
+    );
+    // 内容区起手点：sheet 左缘 6px 内边距条（button 面从 20px 起，此条上 target = 根）。
+    const startX = await page.evaluate(() => {
+      const r = document.querySelector(".msheet").getBoundingClientRect();
+      return Math.round(r.left + 6);
+    });
+    /** 鼠标下滑手势：down → 6 步拖 dy → 逐帧采 sheet inline → 移开指针再 up（防 click）。 */
+    const mouseDragDown = async (y0, dy) => {
+      await page.mouse.move(startX, y0);
+      await page.mouse.down();
+      const frames = [];
+      for (let i = 1; i <= 6; i++) {
+        await page.mouse.move(startX, y0 + (dy * i) / 6, { steps: 1 });
+        await page.waitForTimeout(40);
+        frames.push(await page.evaluate(() => document.querySelector(".msheet").style.transform));
+      }
+      await page.mouse.move(startX, 10);
+      await page.mouse.up();
+      return frames;
+    };
+    await page.evaluate(() => {
+      document.querySelector(".msheet").scrollTop = 220;
+    });
+    await page.waitForTimeout(150);
+    const startY = await page.evaluate(() => {
+      const r = document.querySelector(".msheet").getBoundingClientRect();
+      return Math.round(r.top + r.height / 2);
+    });
+    const midFrames = await mouseDragDown(startY, 90);
+    ok(
+      midFrames.every((f) => f === ""),
+      `M22b 已滚离顶部下滑 → sheet 不接管（逐帧 inline ${JSON.stringify(midFrames)}）`,
+    );
+    // 原生滚动通道未被劫持：指针悬列表上滚轮回滚，scrollTop 减小、sheet 不动。
+    await page.mouse.move(startX + 100, startY);
+    await page.mouse.wheel(0, -150);
+    await page.waitForTimeout(150);
+    const wheelScroll = await page.evaluate(() => document.querySelector(".msheet").scrollTop);
+    ok(wheelScroll < 220, `M22c 滚轮回滚列表（scrollTop 220 → ${wheelScroll}，滚到 0 亦通过）`);
+    // 滚回顶部：无可滚量 → 下滑交还 sheet 下拉收起（原「不可滚整面可拖」档保留）。
+    await page.evaluate(() => {
+      document.querySelector(".msheet").scrollTop = 0;
+    });
+    await page.waitForTimeout(150);
+    // 拖距按实时 dismiss 阈值导出（预置假设漂移防假挂，同 1b7 教训）：6 步 ×40ms 匀速拖的
+    // 松手投影 ≈ dy × 2.25（位移 + 窗口速度 × 300ms），dy = 0.4 × 阈值 → 投影 0.9 × 阈值，
+    // 接管成立且慢速松手回弹（M22e 面板保持开）留 10% 余量。
+    const topDragY = Math.round(Math.max(64, rootGeom.clientHeight * 0.25) * 0.4);
+    const topFrames = await mouseDragDown(startY, topDragY);
+    ok(
+      topFrames.some((f) => f !== ""),
+      `M22d 已回顶部下滑 → sheet 接管（inline 逐帧 ${JSON.stringify(topFrames)}）`,
+    );
+    await page.waitForTimeout(400); // 慢速松手回弹，面板保持开
+    ok(
+      (await page.locator('.msheet[data-state="open"]').count()) === 1,
+      "M22e 接管后慢速松手回弹、面板保持开",
+    );
+    await page.keyboard.press("Escape");
+    await page.locator(".msheet").waitFor({ state: "detached", timeout: 3000 });
 
     // ===== 存量自定义键一次性迁移（两域分离 v2）=====
     const ctxM = await browser.newContext({

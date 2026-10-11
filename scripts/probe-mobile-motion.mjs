@@ -17,8 +17,9 @@
 //     中段 rAF 采样有中间值（真插值非瞬切，§19）+ transitionrun 派发 + 松手释放。
 //   Part 3（移动）：底 nav 项（NavItemContent）按住 scale 0.98 + transition 收窄
 //     [scale, background-color] + fast 档时长。
-//   Part 4（桌面 1440×900，共享行原语）：文件树 ListRow（DraggableListRow）按住
-//     scale 0.98——行按压两端同构（多端同构原则，utility 侧断言）。
+//   Part 4（桌面 1440×900，共享行原语）：侧栏 srow2.inst 行（CSS 单源）按住 scale 0.98。
+//   Part 5（桌面 1440×900，共享行原语）：文件树 .frow 行（批 11 后原语，原 ListRow）按住
+//     scale 0.98——行按压两端同构（多端同构原则）。
 //
 // mock 数据不污染真环境；密码自读，不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-mobile-motion.mjs
@@ -525,18 +526,23 @@ async function waitStillTop(page) {
   await m.locator('.msheet[data-state="open"]').waitFor({ state: "detached", timeout: 3000 });
   await restoreEnter(m);
 
-  // Part 1b7：慢拖过阈值即收起（iOS snap point 投影）——阈值 = max(64, sheet 高 ×25%)，
-  // ActionMenu sheet（h≈214）取 64px；慢速拖 70px（v≈0.05 → 投影 ≈86 ≥ 64）即收起，
-  // 不再要求固定 96px 或高速度（用户实测「慢拖都有回弹」的修复）。
+  // Part 1b7：慢拖过阈值即收起（iOS snap point 投影）——阈值 = max(64, sheet 实时高 ×25%)，
+  // 拖距随之自适应（h×40%，曾按 h≈214 固定 70px，菜单长到 h=390 后 70px 落回弹区假挂）；
+  // 慢速拖（5 步 ×140ms → v ≈ 拖距/700 → 投影 = 拖距 + v×300 ≈ 拖距 ×1.43 ≥ 阈值）即收起，
+  // 不要求高速度（「慢拖都有回弹」的修复）。
   console.log("Part 1b7: 慢拖过阈值即收起（投影判定）");
   await m.locator('[aria-label="更多操作"]').click();
   await m.locator('.msheet[data-state="open"]').waitFor({ timeout: 8000 });
   await m.waitForTimeout(350); // 等 120ms enter 播完 + 余量（§18）
+  // 拖距按 sheet 实时高度自适应（阈值 = max(64, h×25%) 会随菜单项增删漂移——曾按
+  // h≈214 取 70px，菜单长到 h=390 后 70px 落回弹区，慢拖 70px 假挂）。
+  const h7 = (await m.locator(".msheet").boundingBox()).height;
+  const drag7 = Math.max(90, Math.round(h7 * 0.4));
   const grab7 = await m.locator(".msheet .grab").boundingBox();
   await m.mouse.move(grab7.x + grab7.width / 2, grab7.y + grab7.height / 2);
   await m.mouse.down();
   for (let i = 1; i <= 5; i++) {
-    await m.mouse.move(grab7.x + grab7.width / 2, grab7.y + grab7.height / 2 + i * 14);
+    await m.mouse.move(grab7.x + grab7.width / 2, grab7.y + grab7.height / 2 + (i * drag7) / 5);
     await m.waitForTimeout(140);
   }
   await m.mouse.up();
@@ -625,7 +631,7 @@ async function waitStillTop(page) {
     "srow2 行",
   );
 
-  console.log("Part 5: 桌面文件树 ListRow 按住 scale 0.98（共享行原语）");
+  console.log("Part 5: 桌面文件树 .frow 行按住 scale 0.98（共享行原语）");
   await page.goto(`${WEB_ORIGIN}/files`);
   const projRow = page.locator(".gfcard button", { hasText: "proj1" }).first();
   await projRow.waitFor({ timeout: 10000 });
@@ -635,7 +641,7 @@ async function waitStillTop(page) {
     page,
     '[aria-label="Project files"] > :nth-child(1)',
     page.locator('[aria-label="Project files"] > :nth-child(1)').first(),
-    "ListRow 行",
+    ".frow 行",
   );
 
   await ctx.close();

@@ -72,6 +72,27 @@ export function hasScrollableContent(el: HTMLElement): boolean {
 }
 
 /**
+ * 起手点到 Content 之间是否有「已滚离顶部」的滚动容器（含 Content 根自身的 max-height
+ * 内滚——整页型长内容 sheet 如 ⚙ 键位编辑面板，滚动容器就是 `.msheet` 根，`hasScrollableContent`
+ * 只扫后代故对它判 false）。与 hasScrollableContent（**结构**分档：有没有可滚容器）互补——
+ * 本函数判的是**手势时刻的状态**：同一个容器滚到顶部后行为不同。
+ * 下滑手势的消费权按此分档：容器还能往回滚（scrollTop > 0）→ 手势属列表滚动，sheet 不
+ * 接管（真机反馈：设置面板长列表从中段下滑本应往回滚，实际把浮层拖下去关了）；已在顶部
+ * （无可滚量）→ 交给 sheet 下拉收起，与「不可滚 → 整面可拖」同档语义（iOS sheet +
+ * scroll view 同款：滚到顶后下拉才归 sheet）。target 必须在 root 内（pointerdown 冒泡
+ * 保证，纯函数契约防御）；上溯到 Content 为止，不越出 sheet。
+ */
+export function canScrollBack(target: Element, root: HTMLElement): boolean {
+  if (!root.contains(target)) return false;
+  for (let n: Element | null = target; n; n = n.parentElement) {
+    const oy = getComputedStyle(n).overflowY;
+    if ((oy === "auto" || oy === "scroll") && n.scrollTop > 0) return true;
+    if (n === root) break;
+  }
+  return false;
+}
+
+/**
  * 回弹弹簧物理 = motion 库（`animate` 命令式，bounce 0 + duration 0.3 = 临界阻尼；velocity
  * 单位 units/s）。此前手写半隐式欧拉积分 + 数值单测（用户拍板「用库治本，编译有裁剪不
  * 担心体积」后移交库实现——判定/测速层仍在本文件：投影、velocity-first、窗口速度、越顶
@@ -342,11 +363,19 @@ export function MobileSheet({
     // 「打开→按下拖」的反应必然超过 enter 时长——取证时为 450ms，现 120ms 近瞬时档下
     // 「播完后分档」是主路径）：①enter 升起中内容尚未就位无交互意义，整个 Content 可起
     // 拖；②播完后按内容可滚性分——不可滚（菜单/确认框/prompt 等大多数）整个 Content 可
-    // 起拖，可滚（历史/文件/实例信息）维持 grab/shd 窄热区保住列表原生滚动。向下才接管
-    //（moveDrag 判方向），点按与向上滑不受影响。exit 期间（data-state=closed）不放宽。
+    // 起拖，可滚（历史/文件/实例信息）维持 grab/shd 窄热区保住列表原生滚动（含回顶后
+    // ——hasScrollableContent 短路在先，canScrollBack 对它不可达，窄热区是 1b4 锁定的
+    // 恒定行为）；③**根内滚**长内容 sheet（`.msheet` 根自身即滚容器，②判不可滚 → 本应
+    // 整面可拖）起手点在已滚离顶部的滚动容器内时，下滑是「往回滚列表」不接管，滚回
+    // 顶部（canScrollBack false）后恢复整面可拖——canScrollBack 只在这一档生效。
+    // 向下才接管（moveDrag 判方向），点按与向上滑不受影响。exit 期间（closed）不放宽。
     const enterPlaying = enterPlayingRef.current;
     const zone = e.target.closest(".grab") ? "grab" : e.target.closest(".shd") ? "shd" : "content";
-    if (zone === "content" && !enterPlaying && hasScrollableContent(e.currentTarget)) {
+    if (
+      zone === "content" &&
+      !enterPlaying &&
+      (hasScrollableContent(e.currentTarget) || canScrollBack(e.target, e.currentTarget))
+    ) {
       return;
     }
     dragRef.current = { phase: "pending", startY: e.clientY, pointerId: e.pointerId };
