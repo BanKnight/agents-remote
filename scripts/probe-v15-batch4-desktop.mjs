@@ -347,6 +347,16 @@ const emetaBox = await pane.locator(".emeta").evaluate((el) => {
   return { h: s.height, pb: s.paddingBottom };
 });
 ok(emetaBox.h === "36px", `⑦b 编辑态行 .emeta 高 36px（实际 ${emetaBox.h}）`);
+// 2026-10-12 反馈③：撤销/重做可用性联动（桌面中栏 FilePreviewPane 同实现——移动端
+// probe-v15-batch3-preview Part 2b 已断行级/列级落点与 giveup 红，此处证桌面接线生效）。
+const undoBtnD = pane.locator(".emeta button").filter({ hasText: /撤销/ });
+ok((await undoBtnD.isDisabled()) === true, "⑦c 初始撤销钮 disabled（无历史）");
+await page.keyboard.type("x");
+await page.waitForTimeout(400);
+ok((await undoBtnD.isEnabled()) === true, "⑦d 输入后撤销 enabled（undoDepth>0）");
+await undoBtnD.click();
+await page.waitForTimeout(400);
+ok((await undoBtnD.isDisabled()) === true, "⑦e undo 后撤销回 disabled（内容回退保 clean）");
 // clean 放弃回预览态。
 await pane.locator(".emeta .fact .giveup").click();
 await page.waitForTimeout(500);

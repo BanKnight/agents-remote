@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import CodeMirror, { EditorView, Prec, lineNumbers, minimalSetup } from "@uiw/react-codemirror";
+import { redoDepth, undoDepth } from "@codemirror/commands";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { useTheme } from "../../theme";
 import { extToEditorLanguage } from "./editor-languages";
@@ -47,8 +48,16 @@ export type CodeEditorProps = {
   /** 只读展示（v2 §6.10-8 file tab 预览只读化）。默认 true（可编辑，FilesPanel 编辑路径不变）。 */
   editable?: boolean;
   /** EditorView 就绪回调（v1.5 批3 aux 条：撤销/重做走 @codemirror/commands 的 view 命令、
-   * 收起键盘 blur contentDOM——编辑器实例外置给容器层）。 */
+   * 收起键盘 blur contentDOM——编辑器实例外置给容器层）。key=name@historyEpoch：换文件/
+   * 编辑会话边界重建实例时重新触发（容器据此刷新 view 引用）。 */
   onCreateEditor?: (view: EditorView) => void;
+  /** undo 栈可用性（2026-10-12 反馈③「撤销/重做恒灰不符合直觉」）：@codemirror/commands
+   * 的 undoDepth/redoDepth（6.x history 已并入 commands）逐事务上抛；容器侧自行按值
+   * bail-out，无翻转零 re-render。 */
+  onHistoryChange?: (s: { canUndo: boolean; canRedo: boolean }) => void;
+  /** 编辑会话号：递增即重建实例清 undo 栈（放弃/完成的不可逆边界——栈不清则放弃的内容
+   * 再进编辑还能撤回、完成后撤销会把已保存内容退回草稿态，探针 Part 2b 实抓）。 */
+  historyEpoch?: number;
 };
 
 export function CodeEditor({
@@ -56,6 +65,8 @@ export function CodeEditor({
   name,
   onChange,
   onCreateEditor,
+  onHistoryChange,
+  historyEpoch = 0,
   value,
 }: CodeEditorProps) {
   const { resolved } = useTheme();
@@ -79,12 +90,26 @@ export function CodeEditor({
   // .cm-scroller 无法滚动。用 absolute inset-0 把 wrapper 钉在 flex-1 外层内使其高度确定，
   // .cm-editor height:100% 才能解析、.cm-scroller 才会滚动。
   // 画布 = bg-codeblock 全幅（03q2 .ed / 03q .code 同款），上下 10px 由外层调用方 py-2.5 承担。
+  // key=name@historyEpoch：换文件重建（@uiw 对同一实例的 value 整体替换走普通 dispatch 会
+  // 进 undo 栈——跨文件 undo 会把旧文件内容撤进新文件草稿，故重建让历史随文档清零）；epoch
+  // 递增重建（放弃/完成 = 编辑会话不可逆边界，栈不清则放弃的内容还能撤回——探针 Part 2b
+  // 实抓）。同文件三态切换 name/epoch 不变仍复用（④b 零跳变前提）。
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden bg-codeblock [&>div]:absolute [&>div]:inset-0">
       <CodeMirror
+        key={`${name}@${historyEpoch}`}
         value={value}
         onChange={onChange}
         onCreateEditor={onCreateEditor}
+        onUpdate={
+          onHistoryChange
+            ? (vu) =>
+                onHistoryChange({
+                  canRedo: redoDepth(vu.state) > 0,
+                  canUndo: undoDepth(vu.state) > 0,
+                })
+            : undefined
+        }
         editable={editable}
         readOnly={!editable}
         height="100%"

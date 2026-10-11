@@ -2336,11 +2336,13 @@
     flex: none;
   }
   .emeta .fact .giveup {
-    color: var(--ink-2);
+    /* 放弃 = 破坏性动作红（2026-10-12 反馈③「放弃灰色不符合直觉」，推翻原型 ink-2 规格；
+       完成 = 主色保持 .fact 继承）。 */
+    color: var(--c-danger);
   }
   /* nav 版 fact（push 容器编辑态 [放弃][完成]，files-global-preview-edit）：与面板
-     .emeta .fact 同为 span.fact 包双钮，但原型该页字号档不同——放弃 15px 次级 ink-2、
-     完成 14px/600 主色（files-global-preview-edit 页私规格 .giveup/.done）。 */
+     .emeta .fact 同为 span.fact 包双钮，字号档原型页私规格——放弃 15px、完成 14px/600
+     主色（files-global-preview-edit 页私规格 .giveup/.done）。 */
   .nav .fact {
     display: flex;
     align-items: center;
@@ -2349,7 +2351,8 @@
   }
   .nav .fact .giveup {
     font-size: 15px;
-    color: var(--ink-2);
+    /* 同上：放弃 = 破坏性动作红（2026-10-12 反馈③）。 */
+    color: var(--c-danger);
   }
   .nav .fact button:not(.giveup) {
     font-size: 14px;

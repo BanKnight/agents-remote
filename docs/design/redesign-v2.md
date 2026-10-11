@@ -1813,6 +1813,19 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **伴生修复（review 消化）**：⌘F gate 加 `!filesPushActive`（推入态主区为单文件预览整页接管、无搜索框——此前 ⌘F 劫持浏览器查找后空转 + 回放陈旧 focus request bump；既有问题非本批引入，变更前后除推入态外行为一致）。
 - **真机清单**：①全局文件页点文件 → 推入预览（mback + mono 文件名）不变；②推入态 ⋯「在工作台打开」→ 中栏 tab 不变；③**中栏 file tab 切走（session/terminal tab）再点回 → 保持工作台 tab（本次修复主断言）**；④推入态左栏点会话回工作台后再点回 file 标签 → 同③；⑤推入态内点正文 .md 相对链接换文件 → 仍是推入预览（h1 换名、无 tabstrip，不整页突变）。
 
+### 文件编辑态三联修：光标落点击处 + 撤销/重做可用性联动 + 放弃钮红（2026-10-12）
+
+用户真机反馈：①「文件进入编辑态时，很明显光标没有出现在我点击的地方，这一点多端都出现了」；③「文件编辑时，撤销和重做一直处在灰色的状态，不仅是它，哪个放弃按钮也是这样，就不符合直觉」（②终端设置浮层不符 Apple 设计 → 重设计另批推进）。**根因（①③同源）**：三容器（MobileL3FilePreview / FilePreviewPane——覆盖移动 L3 / 检视面板 file 标签 / 桌面中栏 file tab / 全局推入态）源码态与编辑态 CodeEditor 经 `{editing ? <CodeEditor/> : <CodeEditor editable={false}/>}` 三元切换——同位置同类型组件 React 复用实例，`@uiw/react-codemirror` 的 `onCreateEditor` 只在实例首建触发一次 → 容器 `editorView` 恒 null：①点击坐标映射宿主缺失；③旧 `disabled={!view}` 恒真 = 撤销/重做恒灰。放弃钮原型规格 `var(--ink-2)` 与撤销/重做同灰阶 = 破坏性动作无视觉区分。
+
+- **光标修复 = 点击时旧实例就地映射 doc 位置**：tapToEdit 仅绑源码态（`!editing && !isRenderView`）→ tap 时刻源码只读实例必然存活 → 容器持 `editorView` 就地 `posAtCoords(click)` 映射成 **doc 位置**（跨态视口坐标会随布局/焦点漂移，doc 位置语义保真；行号区等 null 退视口坐标兜底走 `applyPendingCursor`）存 `pendingCursorRef`，进编辑后由 `useEffect([editing, editorView])` 消费（pos 直设 selection + focus；click 走 applyPendingCursor）。
+- **撤销/重做可用性 = undoDepth/redoDepth 逐事务上抛**：`@codemirror/commands` 的 `undoDepth(state)/redoDepth(state)`（6.x history 已并入 commands，零新增依赖）；CodeEditor 新 prop `onHistoryChange` 经 `@uiw` 的 `onUpdate` 逐事务上抛 `{canUndo, canRedo}`；容器 `setHist` 函数式同值 bail-out（无翻转零 re-render）。按钮 disabled 绑 hist 而非 view；样式分档 enabled = `text-ink-1 cursor-pointer` / disabled = `text-ink-3 cursor-default`（真 disabled 属性 + 灰 = 不可点）。
+- **会话边界清 undo 栈 = historyEpoch 实例重建（探针 Part 2b 实抓驱动）**：探针实测 undo 栈跨放弃/完成边界存活——放弃确认后内容再进编辑还能撤回（「放弃」的不可逆承诺破产）、完成后撤销把已保存内容退回草稿态（草稿与磁盘不一致）。CodeMirror 无 reset API → CodeEditor 新 prop `historyEpoch`，`key = name@historyEpoch` 递增即重建实例清栈（与既有 `key = name` 换文件重建同机制）；容器 `editSession` 在 finish/discard 时 +1。代价：放弃/完成瞬间源码态实例重建（画布闪帧 + 滚动位置丢失），记档为可接受。
+- **时序安全性（review 遗留问题源码收口）**：`@uiw` 的 view 创建在其 `useLayoutEffect([container, state])`，而 `container` 由其自身 passive effect 晚一拍注入 → `onCreateEditor` 恒晚于容器 `[path]` passive 置空一整个 passive 周期——挂载时置空命中 Object.is bail-out（本来无 view），换文件/epoch 时置空先于新 view 到达，新 view 不会被抹掉。
+- **放弃钮红 = 破坏性动作语义（用户拍板推翻原型 ink-2 规格）**：`.emeta .fact .giveup` 与 `.nav .fact .giveup` 改 `var(--c-danger)`（深 #FF453A / 浅 #FF3B30）。原型 danger 裸文字先例充足（ipad/mac-history-sidebar 的 `.ctxm .mrow.red`、mac-project-row-menu、mac-settings 红字钮、components.css `.diffhead .del`）；`--c-danger-text` 为悬空引用（全仓无定义，原型自身 bug）不用。
+- **接线完整性**：CodeEditor 活跃消费点 = MobileL3FilePreview + FilePreviewPane 双容器全量接线（EditorToolButtons / tapToEdit / historyEpoch / onHistoryChange）；file-browser.tsx FilesPanel 编辑路径（无 EditorToolButtons/tapToEdit）不在本批范围；FilePreviewPanel 无活跃消费者（遗留）。
+- **验证**：全门禁 + CSS 硬闸 + tokens 机检 + web 单测 790 全绿；probe-v15-batch3-preview **70/0**（Part 2b 新增 12 断言：tap 进编辑 / 撤销重做初始双灰 / 光标行级+列级落点击处 / 输入后亮起+dirty / giveup 色 = 页内读 `--c-danger` hex→rgb 换算比对 / 撤销后回灰+redo 亮+dirty 消失 / clean 放弃退出）；probe-v15-batch4-desktop **60/0**（⑦c 初始撤销 disabled / ⑦d 输入后 enabled / ⑦e undo 后回灰保 clean，不打乱 ⑧ clean 放弃路径）。**reviewer 四连 API 故障（unexpected EOF）**，以自查覆盖等价问题域（diff 全读 + 失效路径 + 接线完整性 + design 先例核实 + onCreateEditor 时序源码收口），结论无 P0/P1。
+- **真机清单**：①移动 L3 文件源码态点某行 → 进编辑态光标落在该行点击处；②编辑中撤销/重做初始灰、输入字符后变亮可点，点撤销内容回退；③点「完成」保存后再进编辑 → 撤销灰（不把已保存内容退回草稿）；④放弃（确认后）再进编辑 → 撤销灰；⑤编辑态「放弃」红色、「完成」主色蓝；⑥桌面中栏 file tab 与全局推入态编辑态同①②③。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。

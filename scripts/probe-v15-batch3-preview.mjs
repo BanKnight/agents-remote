@@ -6,6 +6,8 @@
 //   Part 2 编辑态：点正文进编辑；.emeta（fdim 编辑中·N 行 + dirty ● 未保存变更）+ fact
 //     放弃/完成 + .aux 三钮（撤销/重做/收起键盘，贴屏底——P2-2 编辑态去 pb）+ 放弃
 //    （clean 直接退 / dirty 弹确认）。
+//   Part 2b 编辑态工具钮联动（2026-10-12 反馈①③重修）：撤销/重做 disabled→输入→enabled
+//     联动（undoDepth/redoDepth）+ tap 光标行级/列级落点击处 + giveup = --c-danger 红。
 //   Part 3 MD 文件：.fmeta = 「Markdown · …」+ .fright>.segc.mini「渲染|源码」（几何 ≈28px）。
 //   Part 4 unsupported 空态：.unsupported(.big+.t+.d 两行 pre-line) + fmeta = Binary（无
 //     「更新」段——preview 非 text 分支无 mtimeMs，不伪造）+ nav 无编辑钮。
@@ -351,6 +353,64 @@ ok(
   (await page.locator('[data-inspection-panel="open"] .nav [aria-label="编辑"]').count()) === 0,
   "⑪ 完成 → 回预览态（nav 无 pencil）",
 );
+
+// ───────────────────────── Part 2b 编辑态工具钮联动（2026-10-12 反馈①③重修） ─────────────────────────
+// ①③同根（CodeEditor 三态复用 + onCreateEditor 仅首次触发）：撤销/重做可用性联动
+//（undoDepth/redoDepth>0 上抛）+ tap 光标落点击处（doc 位置映射）+ 放弃钮破坏性红。
+console.log("Part 2b 编辑态：撤销/重做联动 + 光标落点 + giveup 红");
+// 从预览态点击第二行行首区域进编辑（click y 也充当光标断言的 tap 落点）。
+const contentB = pane.locator(".cm-content").first();
+const cboxB = await contentB.boundingBox();
+const clickYB = cboxB.y + 30; // 第二行（行高 20px：0-20/20-40，y+30 落第二行中部）
+await page.mouse.click(cboxB.x + 24, clickYB);
+await page.waitForTimeout(700);
+const emetaB = pane.locator(".emeta");
+ok((await emetaB.count()) > 0, "① 点正文进编辑（第二行）");
+const undoBtnB = emetaB.locator("button").filter({ hasText: /撤销/ });
+const redoBtnB = emetaB.locator("button").filter({ hasText: /重做/ });
+ok((await undoBtnB.isDisabled()) === true, "② 初始撤销钮 disabled（无历史）");
+ok((await redoBtnB.isDisabled()) === true, "③ 初始重做钮 disabled（无历史）");
+// 光标落点（反馈①）：cursor 行级对齐点击行 + 列级靠行首（点击 x=+24 → 首列附近）。
+const cursorB = pane.locator(".cm-cursor").first();
+await cursorB.waitFor({ state: "visible", timeout: 5000 });
+const curBoxB = await cursorB.boundingBox();
+ok(
+  curBoxB !== null && Math.abs(curBoxB.y - (cboxB.y + 20)) <= 10,
+  `④ 光标行级落点击行（cursor.y=${curBoxB?.y?.toFixed(1)} vs 第二行顶 ${cboxB.y + 20}）`,
+);
+ok(
+  curBoxB !== null && curBoxB.x < cboxB.x + 44,
+  `⑤ 光标列级靠行首（cursor.x=${curBoxB?.x?.toFixed(1)} < ${cboxB.x + 44}）`,
+);
+// 可用性联动（反馈③）：输入后撤销亮起（undoDepth>0）。
+await page.keyboard.type("dirty");
+await page.waitForTimeout(400);
+ok((await undoBtnB.isEnabled()) === true, "⑥ 输入后撤销钮 enabled");
+ok((await emetaB.locator(".dirty").count()) === 1, "⑦ 输入后 dirty 出现");
+// 放弃钮 = 破坏性红（反馈③后半：灰 = 不可点语义误用，推翻原型 ink-2 规格）。
+const giveupB = emetaB.locator(".fact .giveup");
+const giveupColorB = await giveupB.evaluate((el) => getComputedStyle(el).color);
+const dangerHexB = await giveupB.evaluate(() =>
+  getComputedStyle(document.documentElement).getPropertyValue("--c-danger").trim(),
+);
+const rgbOfB = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+};
+ok(
+  giveupColorB === rgbOfB(dangerHexB),
+  `⑧ giveup 红 = --c-danger（${giveupColorB} vs ${rgbOfB(dangerHexB)}）`,
+);
+// 点撤销 → 内容回退：撤销回 disabled、重做亮起、dirty 消失（undo 真实作用于 view）。
+await undoBtnB.click();
+await page.waitForTimeout(400);
+ok((await undoBtnB.isDisabled()) === true, "⑨ undo 后撤销回 disabled");
+ok((await redoBtnB.isEnabled()) === true, "⑩ undo 后重做 enabled");
+ok((await emetaB.locator(".dirty").count()) === 0, "⑪ undo 后 dirty 消失（内容回退）");
+// clean 放弃退出（顺带覆盖 undo 后放弃走 clean 路径）。
+await emetaB.locator(".fact .giveup").click();
+await page.waitForTimeout(500);
+ok((await emetaB.count()) === 0, "⑫ undo 后 clean 放弃 → 回预览态");
 
 // ───────────────────────── Part 3 MD segc.mini ─────────────────────────
 console.log("Part 3 MD 文件 fmeta + segc.mini");

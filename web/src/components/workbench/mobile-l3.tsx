@@ -12,6 +12,7 @@ import {
   forwardRef,
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -171,8 +172,8 @@ function useTapToEdit(onEnter: (click: { x: number; y: number }) => void) {
       const down = downRef.current;
       downRef.current = null;
       if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > TAP_SLOP_PX) return;
-      // 点击坐标随 onEnter 传出：编辑态 CodeEditor 是新实例（源码态只读实例卸载），
-      // 消费方 posAtCoords 映射光标落点（第三轮反馈①：光标落点击处）。
+      // 点击坐标随 onEnter 传出：消费方优先用点击时仍存活的源码态实例就地映射 doc 位置
+      //（enterEditing），拿不到实例才退视口坐标兜底（第三轮反馈①：光标落点击处）。
       onEnter({ x: e.clientX, y: e.clientY });
     },
     onPointerDown: (e: React.PointerEvent) => {
@@ -182,15 +183,22 @@ function useTapToEdit(onEnter: (click: { x: number; y: number }) => void) {
 }
 
 /**
- * tap-to-edit 进编辑后的光标落点（第三轮反馈①「光标位置和点击位置不符」）：编辑态
- * CodeEditor 是新实例（源码态只读实例随分支切换卸载），点击坐标需由消费方暂存、编辑器
- * 挂载（onCreateEditor）时映射。源码态与编辑态同画布同规格（反馈④b 零跳变），视口坐标
- * 直接 posAtCoords 可映射；null（坐标失效/布局未就绪）安全跳过落默认位。消费后由调用方
- * 清 ref（同一次点击只生效一次）。
+ * tap-to-edit 进编辑后的光标落点兜底（第三轮反馈①「光标位置和点击位置不符」，2026-10-12
+ * 重修见 enterEditing）：主路径 = 点击时旧实例仍在（tapToEdit 仅绑源码态），就地
+ * posAtCoords 映射成 **doc 位置**（跨态视口坐标会被布局/焦点变化漂移，doc 位置语义保真）；
+ * 仅当点击时拿不到实例或映射失败才退回视口坐标兜底（本函数，布局就绪后映射，null 安全
+ * 跳过落默认位）。消费后由调用方清 ref（同一次点击只生效一次）。
  */
 export function applyPendingCursor(view: EditorView, click: { x: number; y: number } | null) {
   if (!click) return;
   const pos = view.posAtCoords({ x: click.x, y: click.y });
+  dispatchPendingCursor(view, pos);
+}
+
+/**
+ * 光标落位共用尾段：pos 有效则设 selection 并聚焦，null 安全跳过（落默认位）。
+ */
+function dispatchPendingCursor(view: EditorView, pos: number | null) {
   if (pos != null) {
     view.dispatch({ selection: { anchor: pos } });
   }
@@ -203,29 +211,54 @@ export function applyPendingCursor(view: EditorView, click: { x: number; y: numb
  * 元信息行去除，空出位置放工具条内容）——编辑器全高，工具钮不再有软键盘遮挡面；MobileL3
  * 检视页编辑态同批补齐（同构缺口：此前仅 Pane 有 undo/redo）。desktop 档无软键盘收起诉求
  *（05h4 原型 .pvaux 仅撤销/重做两钮）。
+ * 真机反馈 2026-10-12（③「撤销/重做恒灰不符合直觉」）：disabled 绑 history 深度（canUndo/
+ * canRedo，CodeEditor onHistoryChange 上抛）而非 view 就绪——无历史/撤到底 = 灰（真禁用），
+ * 有历史 = ink-1 可点（灰 = 不可点语义成立）。
  */
 function EditorToolButtons({
   view,
+  canRedo,
+  canUndo,
   showDismiss = true,
 }: {
   view: EditorView | null;
+  canRedo: boolean;
+  canUndo: boolean;
   /** 移动档软键盘收起钮（blur 画布）；desktop 档传 false。 */
   showDismiss?: boolean;
 }) {
   const { t } = useT();
-  const btn = "flex cursor-pointer items-center gap-1 border-0 bg-none p-0 text-[12px] text-ink-2";
+  const base = "flex items-center gap-1 border-0 bg-none p-0 text-[12px]";
   return (
     <>
-      <button className={btn} disabled={!view} onClick={() => view && undo(view)} type="button">
+      <button
+        className={
+          canUndo ? `${base} cursor-pointer text-ink-1` : `${base} cursor-default text-ink-3`
+        }
+        disabled={!canUndo}
+        onClick={() => view && undo(view)}
+        type="button"
+      >
         <LucideIcon className="size-4 shrink-0" name="undo-2" />
         {t("files.auxUndo")}
       </button>
-      <button className={btn} disabled={!view} onClick={() => view && redo(view)} type="button">
+      <button
+        className={
+          canRedo ? `${base} cursor-pointer text-ink-1` : `${base} cursor-default text-ink-3`
+        }
+        disabled={!canRedo}
+        onClick={() => view && redo(view)}
+        type="button"
+      >
         <LucideIcon className="size-4 shrink-0" name="redo-2" />
         {t("files.auxRedo")}
       </button>
       {showDismiss ? (
-        <button className={btn} onClick={() => view?.contentDOM.blur()} type="button">
+        <button
+          className={`${base} cursor-pointer text-ink-1`}
+          onClick={() => view?.contentDOM.blur()}
+          type="button"
+        >
           <LucideIcon className="size-4 shrink-0" name="chevron-down" />
           {t("files.auxDismissKeyboard")}
         </button>
@@ -254,7 +287,54 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
   const { confirm, holder: confirmHolder } = useConfirm();
   // 编辑态（组件内局部；切文件即退出——下方 effect 与 hook 清草稿同步）。
   const [editing, setEditing] = useState(false);
-  useEffect(() => setEditing(false), [path]);
+  // 撤销/重做可用性（CodeEditor onHistoryChange 逐事务上抛 undoDepth/redoDepth>0）。
+  const [hist, setHist] = useState({ canUndo: false, canRedo: false });
+  const handleHistory = useCallback((s: { canUndo: boolean; canRedo: boolean }) => {
+    setHist((prev) => (prev.canUndo === s.canUndo && prev.canRedo === s.canRedo ? prev : s));
+  }, []);
+  // 编辑会话号（放弃/完成递增 → CodeEditor historyEpoch 递增 → 实例重建清 undo 栈）。
+  const [editSession, setEditSession] = useState(0);
+  // 编辑器实例跨三态复用（源码⇄渲染⇄编辑同画布零跳变；CodeEditor key=name@epoch 换文件/
+  // 会话边界才重建，重建时 onCreateEditor 重新接住新实例）。进出编辑不置空——置空会丢
+  // 撤销/重做驱动与点击坐标映射的宿主（2026-10-12 反馈①③同根：onCreateEditor 仅首次触发）。
+  const [editorView, setEditorView] = useState<EditorView | null>(null);
+  const handleViewReady = useCallback((view: EditorView) => setEditorView(view), []);
+  // v1.6「点正文任意处进入编辑」的点击坐标暂存（进编辑后映射光标，见下方 effect）。
+  const pendingCursorRef = useRef<{ pos?: number; click?: { x: number; y: number } } | null>(null);
+  // 换文件：CodeEditor key=name@epoch 重建实例，容器侧同步丢旧 view 引用、按钮可用性与
+  // 待消费落点（防「tap 后进编辑未消费即切文件」把旧文件 doc 位置带进新文档）。
+  useEffect(() => {
+    setEditing(false);
+    setEditorView(null);
+    setHist({ canUndo: false, canRedo: false });
+    pendingCursorRef.current = null;
+  }, [path]);
+  // v1.6「点正文任意处进入编辑」（仅查看态源码分支消费——渲染态不绑，动线 = segc 切源码；
+  // early return 分支绑不到）。
+  const enterEditing = (click: { x: number; y: number }) => {
+    // 点击时源码只读实例尚在（tapToEdit 仅绑源码态），就地 posAtCoords 映射成 doc 位置——
+    // 跨态视口坐标会被布局/焦点变化漂移，doc 位置语义保真；null（行号区/画布外）退坐标兜底。
+    const pos = editorView?.posAtCoords(click) ?? null;
+    pendingCursorRef.current = pos != null ? { pos } : { click };
+    editor.onRenderModeChange("source");
+    setEditing(true);
+  };
+  const tapToEdit = useTapToEdit(enterEditing);
+  // 进编辑后消费 tap 落点：pos 直设 selection；coords 兜底走 applyPendingCursor（此时
+  // editable reconfigure 已随子组件 effect 先行生效，focus 可弹键盘）。
+  useEffect(() => {
+    if (!editing) return;
+    const view = editorView;
+    const pending = pendingCursorRef.current;
+    if (!view || !pending) return;
+    pendingCursorRef.current = null;
+    if (pending.pos != null) {
+      view.dispatch({ selection: { anchor: pending.pos } });
+      view.focus();
+    } else if (pending.click) {
+      applyPendingCursor(view, pending.click);
+    }
+  }, [editing, editorView]);
   // editable 随 editing 切：非编辑态 canEdit 恒 false（⌘S no-op）。renderMode 由 hook 按文件
   // 名派生默认（md/html → render，换文件随 hook 重置——2026-09-30 用户反馈「可预览的优先
   // 展示预览效果」：md/html 打开即渲染，与桌面 FilePreviewPanel 同款；检视面板 file 标签
@@ -267,22 +347,6 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
     projectName,
     queryScope: "files",
   });
-  // v1.6「点正文任意处进入编辑」（仅查看态 text 分支消费；early return 分支绑不到）。
-  // render 态点正文先切源码（md/html render 态 canEdit gate 恒 false——保存会被 hook 拦）。
-  // 点击坐标暂存 ref，编辑态 CodeEditor 挂载时映射光标（第三轮反馈①）。
-  const pendingCursorRef = useRef<{ x: number; y: number } | null>(null);
-  const enterEditing = (click: { x: number; y: number }) => {
-    pendingCursorRef.current = click;
-    editor.onRenderModeChange("source");
-    setEditing(true);
-  };
-  const tapToEdit = useTapToEdit(enterEditing);
-  // 编辑器实例（工具钮组消费；退出编辑/换文件清空——CodeEditor unmount 后旧 view 失效）。
-  const [editorView, setEditorView] = useState<EditorView | null>(null);
-  useEffect(() => {
-    if (!editing) setEditorView(null);
-  }, [editing]);
-
   if (editor.preview.isLoading) {
     return <LoadingBlock className="min-h-0 flex-1" label={t("files.loadingPreview")} />;
   }
@@ -341,6 +405,8 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
   const finishEditing = () => {
     const backToRender = () => {
       setEditing(false);
+      // 会话号递增：下轮进编辑重建实例清 undo 栈（完成后撤销不得把已保存内容退回草稿态）。
+      setEditSession((s) => s + 1);
       if (editor.showRenderToggle) editor.onRenderModeChange("render");
     };
     if (!editor.isDirty) {
@@ -373,7 +439,7 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
         // 双按钮包进单个 .diff 容器（auto margin 每份平分剩余空间——两个 .diff 会把首钮
         // 悬在行中部，design-review 批次 3）；裸文本钮加 after 纵向隐形扩区（铁律 9 触达）。
         <div className="meta">
-          <EditorToolButtons view={editorView} />
+          <EditorToolButtons canRedo={hist.canRedo} canUndo={hist.canUndo} view={editorView} />
           <span className="diff flex items-center gap-3">
             <FileSaveButton
               isDirty={editor.isDirty}
@@ -414,12 +480,10 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
         <div className="flex min-h-0 flex-1 flex-col py-2.5">
           <Suspense fallback={<CodeEditorFallback />}>
             <CodeEditor
+              historyEpoch={editSession}
               name={data.name}
-              onCreateEditor={(view) => {
-                setEditorView(view);
-                applyPendingCursor(view, pendingCursorRef.current);
-                pendingCursorRef.current = null;
-              }}
+              onCreateEditor={handleViewReady}
+              onHistoryChange={handleHistory}
               onChange={editor.onEditChange}
               value={editor.editValue}
             />
@@ -433,10 +497,17 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
       ) : (
         // 源码态 = CodeEditor 只读（反馈④b：与编辑态同一画布，切换不再跳样式）。外层
         // py-2.5 同编辑态容器（画布上下 10px 由调用方承担，frontend-notes §8 高度链——
-        // flex-1 子要滚，父是 flex container；CodeMirror 内滚）。
+        // flex-1 子要滚，父是 flex container；CodeMirror 内滚）。onCreateEditor 接住实例：
+        // tap 进编辑时 posAtCoords 映射 doc 位置、进编辑态组件复用后仍持有 view。
         <div className="flex min-h-0 flex-1 flex-col py-2.5">
           <Suspense fallback={<CodeEditorFallback />}>
-            <CodeEditor editable={false} name={data.name} value={data.content} />
+            <CodeEditor
+              editable={false}
+              historyEpoch={editSession}
+              name={data.name}
+              onCreateEditor={handleViewReady}
+              value={data.content}
+            />
           </Suspense>
         </div>
       )}
@@ -486,8 +557,29 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
     const { confirm, holder: confirmHolder } = useConfirm();
     const editor = useFileEditor({ editable: editing, path, projectName, queryScope });
     const data = editor.previewData;
-    // 编辑器实例（aux 三钮消费；退出编辑时清空——下方 effect）。
+    // 编辑器实例跨三态复用（源码⇄编辑同画布零跳变；CodeEditor key=name@epoch 换文件/会话
+    // 边界才重建，重建时 onCreateEditor 重新接住新实例）。进出编辑不置空——置空会丢
+    // 撤销/重做驱动与点击坐标映射的宿主（2026-10-12 反馈①③同根：onCreateEditor 仅首次触发）。
     const [editorView, setEditorView] = useState<EditorView | null>(null);
+    const handleViewReady = useCallback((view: EditorView) => setEditorView(view), []);
+    // 撤销/重做可用性（CodeEditor onHistoryChange 逐事务上抛 undoDepth/redoDepth>0）。
+    const [hist, setHist] = useState({ canUndo: false, canRedo: false });
+    const handleHistory = useCallback((s: { canUndo: boolean; canRedo: boolean }) => {
+      setHist((prev) => (prev.canUndo === s.canUndo && prev.canRedo === s.canRedo ? prev : s));
+    }, []);
+    // 编辑会话号（放弃/完成递增 → CodeEditor historyEpoch 递增 → 实例重建清 undo 栈）。
+    const [editSession, setEditSession] = useState(0);
+    // v1.6「点正文任意处进入编辑」的点击坐标暂存（进编辑后映射光标，见下方 effect）。
+    const pendingCursorRef = useRef<{ pos?: number; click?: { x: number; y: number } } | null>(
+      null,
+    );
+    // 换文件：CodeEditor key=name@epoch 重建实例，容器侧同步丢旧 view 引用、按钮可用性与
+    // 待消费落点（防「tap 后进编辑未消费即切文件」把旧文件 doc 位置带进新文档）。
+    useEffect(() => {
+      setEditorView(null);
+      setHist({ canUndo: false, canRedo: false });
+      pendingCursorRef.current = null;
+    }, [path]);
     // handle 内部镜像（editingActions="meta" 的 fact 钮消费——useImperativeHandle 工厂
     // 每次 render 同步同一对象，meta 钮与外部 ref 驱动同一 finish/discard 闭包）。
     const mirrorHandleRef = useRef<FilePreviewPaneHandle | null>(null);
@@ -509,13 +601,11 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
         alive = false;
       };
     }, [data]);
-    // 进编辑先切源码（md/html render 态 canEdit gate 要求 source；退出编辑清 editorView——
-    // 编辑器 unmount；finish/discard 已统一回 render）。
+    // 进编辑先切源码（md/html render 态 canEdit gate 要求 source；finish/discard 已统一回
+    // render）。退出编辑不清 editorView——实例跨三态复用（注释见上方声明处）。
     useEffect(() => {
       if (editing) {
         editor.onRenderModeChange("source");
-      } else {
-        setEditorView(null);
       }
       // onRenderModeChange 是 setState（引用稳定），列 editing 即覆盖。
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -528,12 +618,16 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
       finish: () => {
         if (editor.isSaving) return;
         if (editor.isDirty) editor.handleSave();
+        // 会话号递增：下轮进编辑重建实例清 undo 栈（完成后撤销不得把已保存内容退回草稿态）。
+        setEditSession((s) => s + 1);
         onEditingChange(false);
         if (editor.showRenderToggle) editor.onRenderModeChange("render");
       },
       discard: () => {
         const exit = () => {
           editor.onEditChange(undefined);
+          // 会话号递增：下轮进编辑重建实例清 undo 栈（放弃的内容再进编辑不得撤回）。
+          setEditSession((s) => s + 1);
           if (editor.showRenderToggle) editor.onRenderModeChange("render");
           onEditingChange(false);
         };
@@ -555,14 +649,31 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
     useEffect(() => {
       mirrorHandleRef.current = paneHandle;
     });
-    // v1.6「点正文任意处进入编辑」：查看态 text 分支根容器消费（编辑态 gate 不绑）。
-    // 渲染态点击只需进编辑——effect（editing → source）自动切源码。
-    // 点击坐标暂存 ref，编辑态 CodeEditor 挂载时映射光标（第三轮反馈①）。
-    const pendingCursorRef = useRef<{ x: number; y: number } | null>(null);
-    const tapToEdit = useTapToEdit((click) => {
-      pendingCursorRef.current = click;
+    // v1.6「点正文任意处进入编辑」：查看态源码分支根容器消费（渲染态不绑，动线 = segc 切
+    // 源码；编辑态 gate 不绑；early return 分支绑不到）。
+    const enterEditing = (click: { x: number; y: number }) => {
+      // 点击时源码只读实例尚在（tapToEdit 仅绑源码态），就地 posAtCoords 映射成 doc 位置——
+      // 跨态视口坐标会被布局/焦点变化漂移，doc 位置语义保真；null 退视口坐标兜底。
+      const pos = editorView?.posAtCoords(click) ?? null;
+      pendingCursorRef.current = pos != null ? { pos } : { click };
       onEditingChange(true);
-    });
+    };
+    const tapToEdit = useTapToEdit(enterEditing);
+    // 进编辑后消费 tap 落点：pos 直设 selection；coords 兜底走 applyPendingCursor（此时
+    // editable reconfigure 已随子组件 effect 先行生效，focus 可弹键盘）。
+    useEffect(() => {
+      if (!editing) return;
+      const view = editorView;
+      const pending = pendingCursorRef.current;
+      if (!view || !pending) return;
+      pendingCursorRef.current = null;
+      if (pending.pos != null) {
+        view.dispatch({ selection: { anchor: pending.pos } });
+        view.focus();
+      } else if (pending.click) {
+        applyPendingCursor(view, pending.click);
+      }
+    }, [editing, editorView]);
     // 外部 ref 通道（nav 模式容器的 finish/discard 入口）；工厂引用同一 paneHandle。
     useImperativeHandle(ref, () => paneHandle);
     // ── .fmeta 派生（text 分支消费 updated/lineLabel；非 text 分支复用 paneFmetaLine）──
@@ -662,7 +773,12 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
             左 = 撤销/重做/收键盘，右 = meta 模式放弃/完成；nav 模式右端 = dirty 靠右（nav
             [放弃][完成] 已在容器 nav 栏）。编辑器全高，底部不再有被键盘遮挡的工具条。 */}
             <div className="emeta">
-              <EditorToolButtons showDismiss={variant !== "desktop"} view={editorView} />
+              <EditorToolButtons
+                canRedo={hist.canRedo}
+                canUndo={hist.canUndo}
+                showDismiss={variant !== "desktop"}
+                view={editorView}
+              />
               {editor.isDirty ? (
                 <span className={`dirty ${editingActions === "nav" ? "ml-auto" : ""}`}>
                   ● {t("files.unsavedChanges")}
@@ -690,12 +806,10 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
             <div className="flex min-h-0 flex-1 flex-col py-2.5">
               <Suspense fallback={<CodeEditorFallback />}>
                 <CodeEditor
+                  historyEpoch={editSession}
                   name={data.name}
-                  onCreateEditor={(view) => {
-                    setEditorView(view);
-                    applyPendingCursor(view, pendingCursorRef.current);
-                    pendingCursorRef.current = null;
-                  }}
+                  onCreateEditor={handleViewReady}
+                  onHistoryChange={handleHistory}
                   onChange={editor.onEditChange}
                   value={editor.editValue}
                 />
@@ -721,9 +835,16 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
               <PreviewBody editValue="" preview={data} renderMode="render" />
             ) : (
               // 源码态 = CodeEditor 只读（反馈④b：与编辑态同画布 + 同 py-2.5 外层容器）。
+              // onCreateEditor 接住实例：tap 进编辑时就地映射 doc 位置、复用后仍持有 view。
               <div className="flex min-h-0 flex-1 flex-col py-2.5">
                 <Suspense fallback={<CodeEditorFallback />}>
-                  <CodeEditor editable={false} name={data.name} value={data.content} />
+                  <CodeEditor
+                    editable={false}
+                    historyEpoch={editSession}
+                    name={data.name}
+                    onCreateEditor={handleViewReady}
+                    value={data.content}
+                  />
                 </Suspense>
               </div>
             )}
