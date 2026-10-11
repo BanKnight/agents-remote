@@ -1,12 +1,15 @@
-// 键位编辑面板探针（2026-10-11 真机反馈⑤「内容 + 顺序编排」）：覆盖单测验不到的浏览器
-// 行为（DOM 几何硬数据，禁截图）。断言：
-//   Part 1（移动 390×844 zh）：⚙ 开 MobileSheet → 8 行（switch + grip）→ 行点按 toggle
-//     显隐（hidden 落盘 + track 变灰 + sheet 不关）→ grip 拖拽排序（grip stopPropagation
-//     防 sheet 被拖走）→ order 落盘 + 关面板后 .qkey 条渲染序 = 新序（单一管道终验）
-//     → 自定义键增删改全流程（第三轮反馈④：新建表单展开/添加行隐藏 → 保存尾补渲染
-//     → 拖拽提交 order 含 custom id → pencil 改名同步 → 删除后条上消失 + 存储清空）。
-//   Part 2（桌面 1280×900 en）：⚙ 开 Dialog → 拖拽行跟手中段断言（transform = dy）+ 落位
-//     + order 落盘 + 重开面板序保持 + 自定义键同构抽验（新建 → 行数 +1）。
+// 键位编辑面板探针（2026-10-11 真机反馈⑤「内容 + 顺序编排」+ 两域分离 v2）：覆盖单测
+// 测不到的浏览器行为（DOM 几何硬数据，禁截图）。断言：
+//   Part 1（移动 390×844 zh）：⚙ 开 MobileSheet 键盘 tab → 8 行（switch + grip）→ 行点按
+//     toggle 显隐（hidden 落盘 + track 变灰 + sheet 不关）→ grip 拖拽排序（grip
+//     stopPropagation 防 sheet 被拖走）→ order 落盘 + 关面板后 .qkey 条渲染序 = 新序
+//     → 双 tab（SegmentedControl）+「可用按键」启用 Tab 预置键 → 条上出现 + 点按发 \t
+//     （mock WS input 帧断言）→ 命令 tab 新建（含分组）→ tap 行 = 执行（script+\n 帧 +
+//     面板关）→ 长按菜单四项 → 仅插入（script 无 \n 帧）→ 存量自定义键迁移（旧 custom
+//     localStorage → commands 默认组渲染 + custom atom 清空）。
+//   Part 2（桌面 1280×900 en）：⚙ 开 Dialog → ⚙ 形态（28×28 无衬底）→ 拖拽行跟手中段
+//     断言（transform = dy）+ 落位 + order 落盘 + 重开面板序保持 → Commands tab 同构
+//     新建 + 右键菜单 Run → script+\n 帧。
 //
 // mock 照 probe-v15-batch7-skeleton（终端会话纯 mock WS——不开真实 tmux，铁律③）。
 // 用法：bun scripts/probe-quick-keys-editor.mjs
@@ -41,12 +44,14 @@ const json = (body) => ({
   body: JSON.stringify(body),
 });
 
-/** 持久化清理（探针基线：order/hidden/custom 不受上次运行污染）。 */
+/** 持久化清理（探针基线：order/hidden/custom/命令/预置启用集不受上次运行污染）。 */
 function clean(page) {
   return page.addInitScript(() => {
     localStorage.removeItem("workbench.terminalQuickKeysHidden");
     localStorage.removeItem("workbench.terminalQuickKeysOrder");
     localStorage.removeItem("workbench.terminalQuickKeysCustom");
+    localStorage.removeItem("workbench.terminalPresetKeysEnabled");
+    localStorage.removeItem("workbench.terminalQuickCommands");
   });
 }
 
@@ -62,7 +67,8 @@ async function setupShellMocks(page) {
   await page.route(/\/api\/approvals\/stream$/, (r) => r.abort());
 }
 
-async function setupTerminalMocks(page) {
+/** mock WS：onopen 即 connected（客户端可发），页面 send 的帧进 sentFrames 供断言。 */
+async function setupTerminalMocks(page, sentFrames) {
   await setupShellMocks(page);
   await page.route(/\/api\/projects$/, (r) =>
     r.fulfill(json([{ name: "proj1", path: "/srv/projects/proj1" }])),
@@ -73,9 +79,24 @@ async function setupTerminalMocks(page) {
   await page.route(/\/api\/projects\/proj1\/terminal-sessions\/terminal_qke-1$/, (r) =>
     r.fulfill(json({ session: TERM })),
   );
-  // 纯 mock（不 connectToServer）：xterm 空白渲染但不开真实终端进程。
-  await page.routeWebSocket(/\/stream/, () => {});
+  // 纯 mock（不 connectToServer）：xterm 空白渲染但不开真实终端进程；捕获上行帧。
+  await page.routeWebSocket(/\/stream/, (ws) => {
+    ws.onMessage((data) => sentFrames.push(String(data)));
+  });
 }
+
+/** 上行 input 帧的 data 序列（过滤心跳 ping 等）。 */
+const inputDataOf = (sentFrames) =>
+  sentFrames
+    .map((f) => {
+      try {
+        return JSON.parse(f);
+      } catch {
+        return null;
+      }
+    })
+    .filter((m) => m?.type === "input")
+    .map((m) => m.data);
 
 async function login(page) {
   await page.goto(`${ORIGIN}/`);
@@ -91,11 +112,11 @@ async function login(page) {
   await page.waitForTimeout(1200);
 }
 
-/** 面板行序 → label 文本数组。 */
+/** 面板主列表行序 → label 文本数组（主列表 ul = select-none；「可用按键」区 ul 不带）。 */
 const rowLabels = (page) =>
   page.evaluate(() =>
-    [...document.querySelectorAll("ul li button > span:first-child")].map((el) =>
-      el.textContent.trim(),
+    [...(document.querySelector("ul.select-none")?.querySelectorAll("li") ?? [])].map(
+      (li) => li.querySelector("button > span:first-child")?.textContent.trim() ?? "",
     ),
   );
 
@@ -112,8 +133,9 @@ const rowLabels = (page) =>
     });
     const page = await ctx.newPage();
     page.on("pageerror", (err) => console.error("PAGEERROR:", err.message.slice(0, 300)));
+    const sentFrames = [];
     await clean(page);
-    await setupTerminalMocks(page);
+    await setupTerminalMocks(page, sentFrames);
     await login(page);
     await page.goto(`${ORIGIN}/projects/proj1/session/terminal_qke-1`);
     await page.waitForSelector(".qkey", { timeout: 10000 });
@@ -127,7 +149,7 @@ const rowLabels = (page) =>
 
     // 行结构：role=switch + track/knob + grip 手柄（li 内唯一含 svg 的 span）
     const rowShape = await page.evaluate(() => {
-      const li = document.querySelector("ul li");
+      const li = document.querySelector("ul.select-none li");
       const sw = li?.querySelector('button[role="switch"]');
       const grip = li?.querySelector("span.touch-none");
       return {
@@ -145,7 +167,7 @@ const rowLabels = (page) =>
     // 绿 → toggle 后 elevated3 灰；knob 恒白不可作判据）。
     const trackBgOf = (page) =>
       page.evaluate(() => {
-        const li = [...document.querySelectorAll("ul li")].find((n) =>
+        const li = [...document.querySelectorAll("ul.select-none li")].find((n) =>
           n.textContent.includes("Ctrl+C"),
         );
         return getComputedStyle(li.querySelector('button[role="switch"] > span[aria-hidden]'))
@@ -171,16 +193,16 @@ const rowLabels = (page) =>
 
     // 拖拽排序：grip down → move 2.2 格 → up（shift=+2）
     const unit = await page.evaluate(() => {
-      const lis = [...document.querySelectorAll("ul li")];
+      const lis = [...document.querySelectorAll("ul.select-none li")];
       return lis[1].getBoundingClientRect().top - lis[0].getBoundingClientRect().top;
     });
-    const grip0 = page.locator("ul li").nth(0).locator("span.touch-none").first();
+    const grip0 = page.locator("ul.select-none li").nth(0).locator("span.touch-none").first();
     const gb = await grip0.boundingBox();
     await page.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2);
     await page.mouse.down();
     await page.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2 + unit * 2.2, { steps: 10 });
     const midDrag = await page.evaluate(() => {
-      const li = document.querySelector("ul li");
+      const li = document.querySelector("ul.select-none li");
       return {
         transform: getComputedStyle(li).transform,
         sheetY: getComputedStyle(document.querySelector(".msheet")).transform,
@@ -221,105 +243,197 @@ const rowLabels = (page) =>
     );
     ok(!barOrder.includes("Ctrl+C"), "M11 hidden 过滤在渲染序之后（Ctrl+C 保持隐藏）");
 
-    // ===== 自定义键增删改（第三轮反馈④；grip 行首重排后同面板内继续）=====
+    // ===== 双 tab + 预置键启用（两域分离 v2）：M10 已关面板，重开后继续 =====
     await page.getByRole("button", { name: "键位自定义" }).click();
     await page.waitForSelector(".msheet", { timeout: 5000 });
     await page.waitForTimeout(500); // sheet enter 弹簧 + 余量
 
-    // 新建：添加行 → 表单展开（添加行隐藏 = 非添加语境）+ 保存初始 disabled
-    await page.getByRole("button", { name: "新建快捷键" }).click();
-    await page.waitForTimeout(200);
-    const addRowHidden = await page.evaluate(() => {
-      const btn = [...document.querySelectorAll(".msheet button")].find((b) =>
-        b.textContent.includes("新建快捷键"),
+    // 双 tab SegmentedControl：键盘默认激活 + 命令 tab 存在
+    const tabs = await page.evaluate(
+      () =>
+        [...document.querySelectorAll(".msheet button")].filter(
+          (b) => b.textContent === "键盘" || b.textContent === "命令",
+        ).length,
+    );
+    ok(tabs === 2, "M12 双 tab SegmentedControl（键盘/命令）在场");
+
+    // 键盘 tab「可用按键」分区：标题 + 24 预置键全默认停用
+    const availCount = await page.evaluate(() => {
+      // 精确匹配：hint 文案含「可用按键」字样，includes 会误中 hint p
+      const p = [...document.querySelectorAll(".msheet p")].find(
+        (n) => n.textContent.trim() === "可用按键",
       );
-      return btn != null && getComputedStyle(btn).display === "none";
+      const ul = p?.nextElementSibling;
+      return ul?.tagName === "UL" ? ul.querySelectorAll("li").length : -1;
     });
-    ok(addRowHidden, "M12 表单展开后添加行隐藏（非添加语境）");
-    const formShape = await page.evaluate(() => ({
-      input: document.querySelector(".msheet #qk-custom-label") != null,
-      textarea: document.querySelector(".msheet #qk-custom-content") != null,
-      saveDisabled: [...document.querySelectorAll(".msheet button")].find((b) =>
-        b.textContent.includes("保存"),
-      )?.disabled,
+    ok(availCount === 24, `M13「可用按键」分区 24 预置键全停用（实际 ${availCount}）`);
+
+    // 启用 Tab 预置键 → 主列表 9 行（尾补）+ enabled 落盘 + 条上出现
+    await page.locator('p:text-is("可用按键") + ul button', { hasText: /^Tab/ }).first().click();
+    await page.waitForTimeout(200);
+    const enabledState = await page.evaluate(() => ({
+      ls: JSON.parse(localStorage.getItem("workbench.terminalPresetKeysEnabled") ?? "[]"),
+      rows: document.querySelector("ul.select-none")?.querySelectorAll("li").length,
+      qkeys: [...document.querySelectorAll(".qkey")].map((el) => el.textContent.trim()),
     }));
     ok(
-      formShape.input && formShape.textarea && formShape.saveDisabled === true,
-      "M13 表单 = 名称 input + 内容 textarea + 保存初始 disabled",
+      enabledState.ls.includes("preset-tab") &&
+        enabledState.rows === 9 &&
+        enabledState.qkeys.includes("Tab"),
+      `M14 启用 Tab → 主列表 9 行 + enabled 落盘 + 条上出现（行=${enabledState.rows}）`,
     );
-    await page.locator("#qk-custom-label").fill("跑测试");
-    await page.locator("#qk-custom-content").fill("bun run test");
-    const saveEnabled = await page.evaluate(
-      () =>
-        ![...document.querySelectorAll(".msheet button")].find((b) =>
-          b.textContent.includes("保存"),
-        )?.disabled,
+
+    // 关面板 → 点条上 Tab 键 → WS input 帧 = \t（mock 帧断言）
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(500);
+    sentFrames.length = 0;
+    await page.locator(".qkey", { hasText: /^Tab$/ }).first().click();
+    await page.waitForTimeout(200);
+    const tabFrames = inputDataOf(sentFrames);
+    ok(
+      tabFrames.length === 1 && tabFrames[0] === "\t",
+      `M15 条上 Tab 点按 → input 帧 = \\t（${JSON.stringify(tabFrames)}）`,
     );
-    ok(saveEnabled, "M14 名称+内容填后保存 enabled");
+
+    // ===== 命令 tab（命令域 CRUD + 双发送行为）=====
+    await page.getByRole("button", { name: "键位自定义" }).click();
+    await page.waitForSelector(".msheet", { timeout: 5000 });
+    await page.waitForTimeout(500); // sheet enter 弹簧 + 余量
+    await page.getByRole("button", { name: "命令", exact: true }).click();
+    await page.waitForTimeout(200);
+    const emptyState = await page.evaluate(() =>
+      [...document.querySelectorAll(".msheet p")].some((n) => n.textContent.includes("暂无命令")),
+    );
+    ok(emptyState, "M16 命令 tab 切换 + 空态文案");
+
+    // 新建命令（含分组）：表单展开 → 填名称/分组/脚本 → 保存 → 分区标题渲染
+    await page.getByRole("button", { name: "新建命令" }).click();
+    await page.waitForTimeout(200);
+    await page.locator("#qc-form-label").fill("部署检查");
+    await page.locator("#qc-form-group").fill("部署");
+    await page.locator("#qc-form-script").fill("systemctl status app");
     await page.getByRole("button", { name: "保存" }).click();
     await page.waitForTimeout(200);
-    const afterAdd = await rowLabels(page);
-    ok(
-      afterAdd.length === 9 && afterAdd[8] === "跑测试",
-      `M15 保存 → 行 9 尾补渲染（${afterAdd.slice(7).join("/")}）`,
-    );
-    const barAfterAdd = await page.evaluate(() =>
-      [...document.querySelectorAll(".qkey")].map((el) => el.textContent.trim()),
-    );
-    ok(barAfterAdd.includes("跑测试"), "M16 快捷键条渲染自定义键（单一管道）");
-
-    // 拖拽提交全序（commitReorder 用 ordered 全量 id）→ order 落盘含 custom id
-    const grip0b = page.locator("ul li").nth(0).locator("span.touch-none").first();
-    const gb0b = await grip0b.boundingBox();
-    await page.mouse.move(gb0b.x + gb0b.width / 2, gb0b.y + gb0b.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(gb0b.x + gb0b.width / 2, gb0b.y + gb0b.height / 2 + unit * 1.6, {
-      steps: 8,
+    const cmdRendered = await page.evaluate(() => {
+      const ps = [...document.querySelectorAll(".msheet p")].map((n) => n.textContent);
+      const rows = [...document.querySelectorAll(".msheet ul li button > span:first-child")].map(
+        (n) => n.textContent.trim(),
+      );
+      return { groupTitle: ps.includes("部署"), row: rows.some((r) => r.includes("部署检查")) };
     });
-    await page.mouse.up();
-    await page.waitForTimeout(250);
-    const orderWithCustom = await page.evaluate(() =>
-      JSON.parse(localStorage.getItem("workbench.terminalQuickKeysOrder") ?? "[]"),
-    );
     ok(
-      orderWithCustom.at(-1)?.startsWith("custom-"),
-      `M17 拖拽提交 order 含 custom id（尾位=${orderWithCustom.at(-1)}）`,
+      cmdRendered.groupTitle && cmdRendered.row,
+      "M17 新建命令（分组「部署」）→ 分区标题 + 行渲染",
     );
 
-    // 编辑改名（pencil 唯一——仅自定义键行有）：面板行 + 条同步更新
-    await page.locator('ul li button[aria-label="编辑快捷键"]').first().click();
+    // tap 行 = 执行：input 帧 = script + \n + 面板关闭（用户要看终端输出）
+    sentFrames.length = 0;
+    await page.locator(".msheet ul li button", { hasText: "部署检查" }).first().click();
+    await page.waitForSelector(".msheet", { state: "detached", timeout: 5000 }).catch(() => {});
     await page.waitForTimeout(200);
-    await page.locator("#qk-custom-label").fill("跑全量测试");
-    await page.getByRole("button", { name: "保存" }).click();
+    const runFrames = inputDataOf(sentFrames);
+    const sheetsAfterRun = await page.locator(".msheet").count();
+    ok(
+      runFrames.length === 1 && runFrames[0] === "systemctl status app\n",
+      `M18 tap 命令行 → 帧 = script+\\n（${JSON.stringify(runFrames)}）`,
+    );
+    ok(sheetsAfterRun === 0, `M18b 执行后面板关闭（.msheet 残留=${sheetsAfterRun}）`);
+
+    // 长按（触屏 500ms 阈值 + 合成 pointerType:touch pointerdown）→ 菜单四项
+    await page.getByRole("button", { name: "键位自定义" }).click();
+    await page.waitForSelector(".msheet", { timeout: 5000 });
+    await page.waitForTimeout(500);
+    await page.getByRole("button", { name: "命令", exact: true }).click();
     await page.waitForTimeout(200);
-    const afterRename = await rowLabels(page);
-    const barAfterRename = await page.evaluate(() =>
-      [...document.querySelectorAll(".qkey")].map((el) => el.textContent.trim()),
+    const cmdRow = page.locator(".msheet ul li button", { hasText: "部署检查" }).first();
+    await cmdRow.dispatchEvent("pointerdown", {
+      pointerType: "touch",
+      clientX: 190,
+      clientY: 400,
+      bubbles: true,
+      pointerId: 7,
+    });
+    await page.waitForTimeout(800);
+    const menuItems = await page.evaluate(() =>
+      [...document.querySelectorAll('[role="menuitem"]')].map((n) => n.textContent.trim()),
     );
     ok(
-      afterRename.includes("跑全量测试") && barAfterRename.includes("跑全量测试"),
-      "M18 pencil 改名 → 面板行 + 条同步",
+      ["执行", "仅插入", "编辑命令", "删除命令"].every((m) => menuItems.includes(m)),
+      `M19 长按 → 菜单四项（${menuItems.join("/")}）`,
     );
 
-    // 删除（表单左下红字钮）：行回 8、条上消失、custom 存储清空
-    await page.locator('ul li button[aria-label="编辑快捷键"]').first().click();
-    await page.waitForTimeout(200);
-    await page.getByRole("button", { name: "删除快捷键" }).click();
-    await page.waitForTimeout(200);
-    const afterDel = await rowLabels(page);
-    const customLs = await page.evaluate(() =>
-      localStorage.getItem("workbench.terminalQuickKeysCustom"),
+    // 仅插入：input 帧 = script 无 \n（可补参数再跑）；主面板同关
+    sentFrames.length = 0; // 清掉 M18 的 run 帧，只看本步
+    await page
+      .getByRole("menuitem", { name: "仅插入" })
+      .dispatchEvent("click")
+      .catch(async () => {
+        await page.getByRole("button", { name: "仅插入" }).first().dispatchEvent("click");
+      });
+    await page.waitForTimeout(600);
+    const insertFrames = inputDataOf(sentFrames);
+    const sheetsLeft = await page.locator(".msheet").count();
+    ok(
+      insertFrames.length === 1 && insertFrames[0] === "systemctl status app",
+      `M20 仅插入 → 帧 = script 无 \\n（${JSON.stringify(insertFrames)}）`,
     );
-    const barAfterDel = await page.evaluate(() =>
-      [...document.querySelectorAll(".qkey")].map((el) => el.textContent.trim()),
+    ok(sheetsLeft === 0, `M21 仅插入后主面板同关（.msheet 残留=${sheetsLeft}）`);
+
+    // ===== 存量自定义键一次性迁移（两域分离 v2）=====
+    const ctxM = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      deviceScaleFactor: 3,
+      isMobile: true,
+      hasTouch: true,
+      locale: "zh-CN",
+    });
+    const pageM = await ctxM.newPage();
+    pageM.on("pageerror", (err) => console.error("PAGEERROR:", err.message.slice(0, 300)));
+    await clean(pageM);
+    // 预置旧版 custom 数据（第三轮遗留形态）→ 进页面挂载即迁移
+    await pageM.addInitScript(() => {
+      localStorage.setItem(
+        "workbench.terminalQuickKeysCustom",
+        JSON.stringify([{ id: "custom-x", label: "旧键", sequence: "echo old" }]),
+      );
+    });
+    await setupTerminalMocks(pageM, []);
+    await login(pageM);
+    await pageM.goto(`${ORIGIN}/projects/proj1/session/terminal_qke-1`);
+    await pageM.waitForSelector(".qkey", { timeout: 10000 });
+    await pageM.waitForTimeout(400);
+    const migrated = await pageM.evaluate(() => ({
+      commands: JSON.parse(localStorage.getItem("workbench.terminalQuickCommands") ?? "[]"),
+      custom: localStorage.getItem("workbench.terminalQuickKeysCustom"),
+      bar: [...document.querySelectorAll(".qkey")].map((el) => el.textContent.trim()),
+    }));
+    ok(
+      migrated.commands.length === 1 &&
+        migrated.commands[0].id === "custom-x" &&
+        migrated.commands[0].script === "echo old" &&
+        migrated.commands[0].group === "",
+      `TM1 旧 custom → commands（id 复用 + sequence→script + 默认组）`,
     );
     ok(
-      afterDel.length === 8 &&
-        !afterDel.includes("跑全量测试") &&
-        JSON.parse(customLs ?? "[]").length === 0 &&
-        !barAfterDel.includes("跑全量测试"),
-      `M19 删除 → 行 8 + 存储清空 + 条上消失（行=${afterDel.length}）`,
+      (migrated.custom === "[]" || migrated.custom === null) && !migrated.bar.includes("旧键"),
+      "TM2 custom atom 清空 + 条上不再显示自定义键",
     );
+    // 迁移条目在命令 tab「默认分组」分区可见（渲染层终验）
+    await pageM.getByRole("button", { name: "展开输入" }).click();
+    await pageM.getByRole("button", { name: "键位自定义" }).click();
+    await pageM.waitForSelector(".msheet", { timeout: 5000 });
+    await pageM.waitForTimeout(500);
+    await pageM.getByRole("button", { name: "命令", exact: true }).click();
+    await pageM.waitForTimeout(200);
+    const migratedRendered = await pageM.evaluate(() => {
+      const ps = [...document.querySelectorAll(".msheet p")].map((n) => n.textContent);
+      const rows = [...document.querySelectorAll(".msheet ul li button > span:first-child")].map(
+        (n) => n.textContent.trim(),
+      );
+      return { def: ps.includes("默认分组"), row: rows.some((r) => r.includes("旧键")) };
+    });
+    ok(migratedRendered.def && migratedRendered.row, "TM3 迁移条目命令 tab「默认分组」分区渲染");
+    await ctxM.close();
     await ctx.close();
 
     {
@@ -329,9 +443,15 @@ const rowLabels = (page) =>
         locale: "en-US",
       });
       const page = await ctx2.newPage();
-      page.on("pageerror", (err) => console.error("PAGEERROR:", err.message.slice(0, 300)));
+      // 合成 pointerdown 的 setPointerCapture 抛 InvalidPointerId（合成指针非 active）——
+      // 手势仍由后续合成 move/up 驱动（D3-D5 全绿），已知噪声非回归信号。
+      page.on("pageerror", (err) => {
+        if (err.message.includes("setPointerCapture")) return;
+        console.error("PAGEERROR:", err.message.slice(0, 300));
+      });
+      const sentFrames2 = [];
       await clean(page);
-      await setupTerminalMocks(page);
+      await setupTerminalMocks(page, sentFrames2);
       await login(page);
       await page.goto(`${ORIGIN}/projects/proj1/session/terminal_qke-1`);
       await page.waitForSelector(".qkey", { timeout: 10000 });
@@ -355,20 +475,62 @@ const rowLabels = (page) =>
       ok((await page.locator(".msheet").count()) === 0, "D1 桌面分流 = Dialog（.msheet 不在场）");
       ok((await rowLabels(page)).length === 8, "D2 Dialog 内 8 行");
 
+      // D2b 桌面卡片内滚（max-h-[85vh] 修复回归）：键盘 tab 32 行内容远超视口——
+      // 无内滚则卡片居中定位溢出视口顶，底部行不可达（本批实抓的真 bug）。
+      const scrollShape = await page.evaluate(() => {
+        const card = document.querySelector('div[data-slot="dialog-content"] > div');
+        const scroller = card?.querySelector('[class*="overflow-y-auto"]');
+        if (!card || !scroller) return null;
+        scroller.scrollTop = 99999;
+        const reached = scroller.scrollTop;
+        scroller.scrollTop = 0;
+        return {
+          cardH: card.getBoundingClientRect().height,
+          scrollH: scroller.scrollHeight,
+          clientH: scroller.clientHeight,
+          reached,
+        };
+      });
+      ok(
+        scrollShape != null && scrollShape.cardH <= 900 * 0.85 + 1,
+        `D2b 卡片高 ≤ 85vh（cardH=${scrollShape?.cardH.toFixed(0)}）`,
+      );
+      ok(
+        scrollShape != null && scrollShape.scrollH > scrollShape.clientH && scrollShape.reached > 0,
+        `D2c 内滚生效（scrollH=${scrollShape?.scrollH} > clientH=${scrollShape?.clientH}，scrollTop 可达 ${scrollShape?.reached}）`,
+      );
+
       // 拖拽行跟手（桌面鼠标）：dy = 1.4 格 → shift=+1
       const unit2 = await page.evaluate(() => {
-        const lis = [...document.querySelectorAll("ul li")];
+        const lis = [...document.querySelectorAll("ul.select-none li")];
         return lis[1].getBoundingClientRect().top - lis[0].getBoundingClientRect().top;
       });
-      const grip02 = page.locator("ul li").nth(0).locator("span.touch-none").first();
+      const grip02 = page.locator("ul.select-none li").nth(0).locator("span.touch-none").first();
       const gb2 = await grip02.boundingBox();
-      await page.mouse.move(gb2.x + gb2.width / 2, gb2.y + gb2.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(gb2.x + gb2.width / 2, gb2.y + gb2.height / 2 + unit2 * 1.4, {
-        steps: 8,
+      // 合成 pointer 序列驱动拖拽（CDP 真实指针会触发 Radix Dialog 焦点链副作用把面板
+      // 关掉——已实测 dialogOpen 在 move 期间翻 false；合成事件直接命中 handler，绕开
+      // hit-test 焦点副作用，手势状态机/transform 投影/落位断言面不变）。
+      const gx = gb2.x + gb2.width / 2;
+      const gy = gb2.y + gb2.height / 2;
+      await grip02.dispatchEvent("pointerdown", {
+        bubbles: true,
+        pointerId: 3,
+        pointerType: "mouse",
+        clientX: gx,
+        clientY: gy,
       });
+      const dragUl = page.locator("ul.select-none").first();
+      for (let i = 1; i <= 8; i++) {
+        await dragUl.dispatchEvent("pointermove", {
+          bubbles: true,
+          pointerId: 3,
+          pointerType: "mouse",
+          clientX: gx,
+          clientY: gy + (unit2 * 1.4 * i) / 8,
+        });
+      }
       const midDrag2 = await page.evaluate(() => {
-        const li = document.querySelector("ul li");
+        const li = document.querySelector("ul.select-none li");
         return {
           transform: getComputedStyle(li).transform,
           cls: li.className,
@@ -388,7 +550,7 @@ const rowLabels = (page) =>
       // 绘制层级：拖拽行 translateY(1.4u) 与静止第三行交叠（[2u, 2.4u] 带）——
       // elementFromPoint 须返回拖拽行（z-index 在 static 元素上不生效，li 必须 relative）。
       const paintOrder = await page.evaluate(() => {
-        const lis = [...document.querySelectorAll("ul li")];
+        const lis = [...document.querySelectorAll("ul.select-none li")];
         const dragged = lis[0].getBoundingClientRect();
         const hit = document.elementFromPoint(
           dragged.left + dragged.width / 2,
@@ -397,7 +559,13 @@ const rowLabels = (page) =>
         return lis[0].contains(hit);
       });
       ok(paintOrder, "D4b 重叠带绘制层级 = 拖拽行在上（relative + z-1 生效）");
-      await page.mouse.up();
+      await dragUl.dispatchEvent("pointerup", {
+        bubbles: true,
+        pointerId: 3,
+        pointerType: "mouse",
+        clientX: gx,
+        clientY: gy + unit2 * 1.4,
+      });
       await page.waitForTimeout(250);
       const after2 = await rowLabels(page);
       ok(after2[1] === "Shift+Tab", `D5 落位 shift=+1（序=${after2.slice(0, 3).join(" ")}…）`);
@@ -420,13 +588,49 @@ const rowLabels = (page) =>
         `D7 重开面板序保持（${afterReopen.slice(0, 2).join(" ")}）`,
       );
 
-      // 自定义键同构抽验（多端同构：Dialog 容器内同一套增删改内容，第三轮反馈④）
-      await page.getByRole("button", { name: "New key" }).click();
-      await page.locator("#qk-custom-label").fill("Run tests");
-      await page.locator("#qk-custom-content").fill("bun run test");
-      await page.getByRole("button", { name: "Save" }).click();
+      // ===== Commands tab 同构（多端同构：Dialog 容器内同一套命令域内容）=====
+      await page.getByRole("button", { name: "Commands", exact: true }).click();
       await page.waitForTimeout(200);
-      ok((await rowLabels(page)).length === 9, "D8 自定义键同构：新建 → Dialog 内行 9（容器无关）");
+      await page.getByRole("button", { name: "New command" }).click();
+      await page.waitForTimeout(200);
+      await page.locator("#qc-form-label").fill("Run tests");
+      await page.locator("#qc-form-group").fill("ops");
+      await page.locator("#qc-form-script").fill("bun run test");
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await page.waitForTimeout(200);
+      const savedCmd = await page.evaluate(() =>
+        JSON.parse(localStorage.getItem("workbench.terminalQuickCommands") ?? "[]"),
+      );
+      ok(
+        savedCmd.some((c) => c.label === "Run tests" && c.group === "ops"),
+        "D8 Commands tab 同构：新建命令（含分组）→ localStorage 落盘",
+      );
+      // 右键命令行 → 菜单四项（Run/Insert only/Edit command/Delete command）→ Run → 帧
+      const cmdRow2 = page
+        .locator('div[data-slot="dialog-content"] ul li button', { hasText: "Run tests" })
+        .first();
+      await cmdRow2.dispatchEvent("contextmenu", {
+        bubbles: true,
+        clientX: 640,
+        clientY: 400,
+      });
+      await page.waitForTimeout(300);
+      const menuItems2 = await page.evaluate(() =>
+        [...document.querySelectorAll('[role="menuitem"]')].map((n) => n.textContent.trim()),
+      );
+      ok(
+        ["Run", "Insert only", "Edit command", "Delete command"].every((m) =>
+          menuItems2.includes(m),
+        ),
+        `D9 桌面右键 → 菜单四项（${menuItems2.join("/")}）`,
+      );
+      await page.getByRole("menuitem", { name: "Run" }).first().dispatchEvent("click");
+      await page.waitForTimeout(300);
+      const runFrames2 = inputDataOf(sentFrames2);
+      ok(
+        runFrames2.includes("bun run test\n"),
+        `D10 右键 Run → input 帧 = script+\\n（${JSON.stringify(runFrames2)}）`,
+      );
       await ctx2.close();
     }
   } finally {

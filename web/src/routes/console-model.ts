@@ -37,21 +37,103 @@ export type BuiltinQuickKey = {
   sequence: string;
 };
 
-/** 自定义键（2026-10-11 第三轮反馈④「增删改」：用户自建，裸文本名称 + 发送内容）。 */
+/** 自定义键（2026-10-11 第三轮反馈④「增删改」；两域分离后仅作迁移源——存量键自动
+ * 迁移为快捷命令见 migrateCustomKeysToCommands，键位面板/快捷键条不再消费）。 */
 export type CustomQuickKey = {
   id: string;
   label: string;
   sequence: string;
 };
 
-export type SessionQuickKey = BuiltinQuickKey | CustomQuickKey;
+/** 预置终端键（Termius extended keyboard 对标，2026-10-11 拍板「预置序列清单」）：
+ * 键帽名是跨语言通用术语，裸文本不进 i18n；序列有系统语义，不可改名/改序列。 */
+export type PresetTerminalKey = {
+  id: string;
+  label: string;
+  sequence: string;
+};
 
-/** 键显示文案单源（快捷键条 + 编辑面板共用）：内置 = i18n，自定义 = 裸文本。 */
+export type SessionQuickKey = BuiltinQuickKey | PresetTerminalKey;
+
+/** 快捷命令（Termius snippets 对标，2026-10-11 拍板两域分离）：保存的命令文本面向
+ * shell 执行，与「按键」（控制序列，面向 TUI 程序交互）分域管理、分域呈现——
+ * 命令不占快捷键条，从 ⚙ 面板命令 tab 执行。group = 自由分组标签（空 = 默认组）。 */
+export type QuickCommand = {
+  id: string;
+  label: string;
+  script: string;
+  group: string;
+};
+
+/** 预置终端键目录（「可用按键」分区勾选启用，全部默认停用）：行编辑 Ctrl 系 = shell
+ * readline 行首/行尾/清行高频，PgUp/PgDn/Home/End 与 F 键 = TUI 程序（less/htop/mc）高频。 */
+export const presetTerminalKeys: PresetTerminalKey[] = [
+  { id: "preset-tab", label: "Tab", sequence: "\t" },
+  { id: "preset-ctrl-a", label: "Ctrl+A", sequence: "\x01" },
+  { id: "preset-ctrl-e", label: "Ctrl+E", sequence: "\x05" },
+  { id: "preset-ctrl-u", label: "Ctrl+U", sequence: "\x15" },
+  { id: "preset-ctrl-k", label: "Ctrl+K", sequence: "\x0b" },
+  { id: "preset-ctrl-w", label: "Ctrl+W", sequence: "\x17" },
+  { id: "preset-ctrl-l", label: "Ctrl+L", sequence: "\x0c" },
+  { id: "preset-ctrl-r", label: "Ctrl+R", sequence: "\x12" },
+  { id: "preset-pgup", label: "PgUp", sequence: "\x1b[5~" },
+  { id: "preset-pgdn", label: "PgDn", sequence: "\x1b[6~" },
+  { id: "preset-home", label: "Home", sequence: "\x1b[H" },
+  { id: "preset-end", label: "End", sequence: "\x1b[F" },
+  { id: "preset-f1", label: "F1", sequence: "\x1bOP" },
+  { id: "preset-f2", label: "F2", sequence: "\x1bOQ" },
+  { id: "preset-f3", label: "F3", sequence: "\x1bOR" },
+  { id: "preset-f4", label: "F4", sequence: "\x1bOS" },
+  { id: "preset-f5", label: "F5", sequence: "\x1b[15~" },
+  { id: "preset-f6", label: "F6", sequence: "\x1b[17~" },
+  { id: "preset-f7", label: "F7", sequence: "\x1b[18~" },
+  { id: "preset-f8", label: "F8", sequence: "\x1b[19~" },
+  { id: "preset-f9", label: "F9", sequence: "\x1b[20~" },
+  { id: "preset-f10", label: "F10", sequence: "\x1b[21~" },
+  { id: "preset-f11", label: "F11", sequence: "\x1b[23~" },
+  { id: "preset-f12", label: "F12", sequence: "\x1b[24~" },
+];
+
+/** 命令 id（持久化身份，order 引用同 id 无命令排序——命令按分组分区呈现）：
+ * randomUUID 优先，非 secure context 兜底（同 CustomQuickKey 时代口径）。 */
+export function newCommandId(): string {
+  return typeof crypto.randomUUID === "function"
+    ? `cmd-${crypto.randomUUID()}`
+    : `cmd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** 存量自定义键 → 快捷命令（两域分离一次性迁移）：id 复用（持久化身份延续）、
+ * sequence → script、group 置空（默认组）。 */
+export function migrateCustomKeysToCommands(custom: CustomQuickKey[]): QuickCommand[] {
+  return custom.map((k) => ({ id: k.id, label: k.label, script: k.sequence, group: "" }));
+}
+
+/** 命令按 group 分区（分组标签首现序，items 保持原相对序）。空 group 原值保留，
+ * 「默认」标题由渲染层映射。 */
+export function groupedCommands(
+  commands: QuickCommand[],
+): { group: string; items: QuickCommand[] }[] {
+  const groups: { group: string; items: QuickCommand[] }[] = [];
+  const index = new Map<string, { group: string; items: QuickCommand[] }>();
+  for (const cmd of commands) {
+    const g = index.get(cmd.group);
+    if (g) {
+      g.items.push(cmd);
+    } else {
+      const fresh = { group: cmd.group, items: [cmd] };
+      index.set(cmd.group, fresh);
+      groups.push(fresh);
+    }
+  }
+  return groups;
+}
+
+/** 键显示文案单源（快捷键条 + 编辑面板共用）：内置 = i18n，预置键 = 裸键帽名。 */
 export function quickKeyLabel(key: SessionQuickKey, t: (k: TranslationKey) => string): string {
   return "labelKey" in key ? t(key.labelKey) : key.label;
 }
 
-/** 键 aria 文案单源：内置 = ariaLabelKey，自定义 = 与显示文案同文。 */
+/** 键 aria 文案单源：内置 = ariaLabelKey，预置键 = 与显示文案同文。 */
 export function quickKeyAria(key: SessionQuickKey, t: (k: TranslationKey) => string): string {
   return "ariaLabelKey" in key ? t(key.ariaLabelKey) : key.label;
 }

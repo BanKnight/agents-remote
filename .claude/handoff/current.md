@@ -1,44 +1,45 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-11（**真机反馈第三轮提交 `c0e48d5`，验证链全绿 + 双 reviewer 消化完成，待交真机清单**）
+> 最后更新：2026-10-11（**终端快捷输入 v2 两域分离已实现 + 验证链全绿 + 双 review 消化完成，待 commit + 真机清单交付**）
 
 ## 一句话状态
 
-第三轮真机反馈（4+1 条）全部落地并提交：① 编辑态首次光标落点击中处（坐标透传 + posAtCoords 映射）、② .emeta 36px 对齐 .fmeta 零跳变、③ ⚙ 改 .iicn.gear（28×28 无衬底恒显，含桌面 display:none 回归的探针实抓与例外类修复）、④⑤ 快捷键增删改（union 类型 + custom atom + 面板 UI + 行重排 grip 行首/删除收表单）。code/design 双 reviewer 报告全消化（agent 会话 gate / 草稿清理 / maxLength / v2 token 族 / pencil 热区）。**下一步 = 真机清单交用户复验**（清单见「易丢的关键上下文」）。
+终端快捷输入体系 v2「两域分离」（Termius 对标）落地：域 A 按键（内置 8 键显隐排序 + 24 预置终端键启用制）+ 域 B 快捷命令（label/script/group，tap=执行补 \n、长按/右键=仅插入），存量自定义键一次性迁移为命令（默认组、退出按键条）。⚙ 面板双 tab（SegmentedControl），桌面 Dialog 修了超视口溢出真 bug（max-h-[85vh] 内滚）。验证链全绿：typecheck/lint/format 0w + 单测 781 + CSS/tokens/探针 39/39 + e2e terminal-session。code/design 双 review P0 均无，P1/P2 全消化。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **光标落点机制**：源码态只读与编辑态 CodeEditor 是两个独立 CodeMirror 实例——`useTapToEdit(onEnter)` 带点击视口坐标 → `pendingCursorRef` 暂存 → 编辑态 `onCreateEditor` 时 `applyPendingCursor(view, ref.current)`（`view.posAtCoords({x,y})` 返回 `number | null` 直接用，非对象）。`applyPendingCursor` 导出于 mobile-l3.tsx，MobileL3FilePreview + FilePreviewPane 两容器全覆盖。
-- **`.iicn.gear` 例外类**（v2-primitives.css）：`.iicn` 家族带 `@media(min-width:1024px){display:none}`（v1.4 窄端 iicn/宽端 ipill 切换）——⚙ 中性入口不能绑死该家族，`.iicn.gear`（specificity 0,2,0 胜 media 内 0,1,0）恒显 + 无衬底 ink-2。探针曾实抓桌面 `display:"none"` 回归（D0 断言锁住：28×28 无衬底恒显）。
-- **SessionQuickKey union**（console-model.ts）：`BuiltinQuickKey`（labelKey/ariaLabelKey i18n，不可删改）| `CustomQuickKey`（裸文本 label）。判别必须 `"labelKey" in key` / `"label" in key`（TS union 窄化）。`quickKeyLabel`/`quickKeyAria` helper 单源。自定义键发送尾补 `\n`（常用命令一键执行；内置控制序列不补）。id = `custom-${randomUUID}`。order/hidden 残留死 id 由消费端过滤天然忽略。
-- **自定义键仅终端域**（review 修复）：`allQuickKeys` 合并加 `sessionType === "terminal"` gate——否则泄漏进 agent 会话 composer（无 ⚙ 可管理、点按注入 prompt）。
-- **面板行重排**（用户 mid-turn 反馈）：grip 行首（与行尾 toggle 隔整行宽）、删除收进编辑表单左下红字（危险动作显式化）、行尾 pencil 36px 热区（-m-2 p-2.5 同 grip）+ ml-1 缝。表单展开时添加行隐藏。
-- **v2 token 族纪律**（design review）：新代码禁 v1 桥接族（text-on-surface 系，index.css :456 注释明令）——表单已全换 text-ink-1/ink-2 + hover:bg-ink-1/5；字段形态 = settings-dialog 单源「bg-elevated2 内嵌 + sep-strong 描边」（容器无底色）。
+- **两域分离数据模型**（console-model.ts）：`SessionQuickKey = BuiltinQuickKey | PresetTerminalKey`（CustomQuickKey 退出 union 仅作迁移源）；`QuickCommand = { id, label, script, group }`；`presetTerminalKeys` 24 项全默认停用（Tab/行编辑 Ctrl 系/导航/F 键，键帽名不进 i18n）；`migrateCustomKeysToCommands`（id 复用）+ `groupedCommands`（首现序）纯函数。存储 = `terminalPresetKeysEnabledAtom` / `terminalQuickCommandsAtom`（atomWithLocalOnlyStorage）。
+- **存量自定义键一次性迁移**（SessionDetailRoute effect）：函数式按 id 去重，strict 双跑 no-op；迁移后 custom atom 恒空、**条上不再显示自定义键**（行为变化交付时向用户说明——旧键进命令 tab「默认」组）。
+- **双发送行为**：tap = 执行（script 尾补 \n 除非自带）；长按（触屏 500ms）/桌面右键 = ActionMenu「仅插入」（原样不带回车）+ 执行/编辑/删除。发送成功关面板（用户要看终端输出）。
+- **桌面 Dialog 超视口修复**（探针实抓真 bug）：键盘 tab 8+24 行远超视口高，卡片居中定位溢出视口顶（底部行不可达、tab 栏 out-of-viewport）——照 settings-dialog 高度链 `max-h-[85vh]` + 内滚 + shrink-0 钉 tab 栏。
+- **探针方法记档两条**：① CDP 真实鼠标在 Radix Dialog 内拖拽触发焦点链副作用把面板关掉（dialogOpen 翻 false）→ 桌面拖拽断言改合成 pointer 事件序列直驱 handler；② 行选择器须限定主列表 `ul.select-none`（可用按键分区引入第二个 ul 后裸 `ul li` 不可靠）。
+- **canSend 透传**（design P2）：命令行 disabled:opacity-40 与 .qkey 键帽同口径（不可发送时命令行禁用反馈）。
 
 ### 进度
 
-- ✅ 第一轮 6+1 条：`8114ae9` + `c6b1047`。第二轮收尾：`936b1ed` + `5ff5d29`。
-- ✅ 第三轮：`c0e48d5`（11 文件 +418/−36）——4+1 条全落地 + 双 reviewer 消化。
-- ✅ 验证链：format/lint/typecheck 0w + CSS 硬闸 + content-type text/css + tokens 0 违例 + 单测 778 + 探针 quick-keys-editor 29/29 / keyboard-inset 10/10 + e2e terminal-session 1 passed。
-- ✅ redesign-v2.md §6.12o 段尾第三轮记档（含 review 消化）。
-- ⬜ **真机清单交用户**（下一动作）。
+- ✅ 需求汇总 → 用户四项拍板（呈现结构/按键深度/双发送行为/作用域）→ plan 批准 → 实现
+- ✅ 验证链：typecheck/lint/format 0w + 单测 781（+3 新增）+ CSS 硬闸 + tokens 0 违例 + content-type text/css + 探针 39/39 + e2e terminal-session 1 passed
+- ✅ 双 review 消化（code P1×1/P2×5 + design P1×2/P2×5，P0 均无）——桌面 DialogTitle/正典弹窗面/text-ink-1/hint 统一/i18n 归族/canSend/探针 D2b-D2c/注释对齐
+- ✅ redesign-v2.md §6.12o-2 记档（含 review 消化）
+- ⬜ **commit + 真机清单交用户（下一动作）**
 
 ### 阻塞 / 风险
 
-- 无阻塞。光标落点的 posAtCoords 在真机（软键盘弹出、visualViewport 偏移）下的表现 Chromium 探针覆盖不了，靠真机清单第 1 条验证。
+- 无阻塞。长按手势（500ms）在真机 iOS 上的手感 Chromium 探针覆盖不了（CDP 合成 touch 无真实按压时序），靠真机清单第 3 条验证。
 
 ## 易丢的关键上下文
 
-- **第三轮真机清单（待交用户，iPhone PWA）**：
-  1. **编辑光标落点**：文件源码态（segc 切「源码」）→ 点正文任意处进编辑 → 光标应落在点击处、键盘弹出可直接输入。
-  2. **行高零跳变**：预览⇄编辑切换，元信息行高度无轻微变化。
-  3. **⚙ 按钮**：终端 composer 展开输入抽屉 → 控制行左端 ⚙ = 28×28 无衬底灰图标，与发送钮同高（不再是蓝色大按钮）。
-  4. **快捷键增删改**：⚙ 面板 → 「＋ 新建快捷键」（居中蓝字）→ 填名称+内容 → 保存 → 快捷键条出现新键，点它 = 发送内容并回车；行尾铅笔改名；进表单左下「删除快捷键」删除；拖拽 = 行首手柄（与开关隔开了，不易误触）；重启保持。
-  5. **面板开关行为**：填了一半表单直接下滑关面板 → 重开不应残留半填内容。
-- 本 session 写入损坏顽疾高发（Edit new_string/old_string 乱码、heredoc 噪声、编造 old_string）——修乱码前先 Read/hexdump 确认精确文本；探针脚本经 PostToolUse formatter 落盘较可靠。
-- 设置二级换代真机清单 5 条（任务 A）+ 第二轮重写版真机清单 5 条仍待用户复验。
+- **v2 真机清单（待交用户，iPhone PWA + 桌面）**：
+  1. ⚙ 面板顶部「键盘 / 命令」双 tab 切换（SegmentedControl）
+  2. 键盘 tab「可用按键」分区启用 Tab → 条上出现 Tab 键，点按 = 终端补全（发制表符）
+  3. 命令 tab「＋ 新建命令」（名称/分组/脚本）→ 点行 = 终端立即执行；长按命令行 → 菜单「仅插入」→ 内容上屏未执行，可补参数再回车
+  4. **旧自定义快捷键出现在命令 tab「默认分组」**（不再占按键条——v2 行为变化）
+  5. 桌面：⚙ 面板「Commands」tab → 右键命令行 = 同款菜单（Run/Insert only/Edit/Delete）
+  6. （第三轮清单的 5 条仍待复验——编辑光标落点/行高零跳变/⚙ 样式/快捷键增删改〔已并入命令 tab〕/面板开关行为；第 4 条旧流程已被 v2 取代，以本清单为准）
+- 本 session 写入损坏顽疾高发（Edit new_string/old_string 乱码/截断、「to be verified」类噪声混入）——修乱码前先 Read/hexdump 确认精确文本；**注释定界符陷阱**：注释文案含 `**/` 形态会截断块注释（TS1127 的真根因，先查注释再怀疑工具链/缓存）。
+- 设置二级 5 条 + 第二轮重写版 5 条真机清单仍待用户复验（历史挂起）。
 - agent-browser CLI 可用（iPhone 16 设备模拟），一次性 UI 验证优先用它。
 
 ## 提醒
@@ -47,4 +48,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-11 11:55；触发原因：第三轮反馈提交 `c0e48d5` + 双 reviewer 消化 + handoff save
+最后更新：2026-10-11 15:30；触发原因：终端快捷输入 v2 两域分离实现 + 验证链全绿 + 双 review 消化，commit 前检查点

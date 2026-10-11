@@ -31,11 +31,13 @@ import {
   canSendToSession,
   inputDrawerCollapsedAtom,
   isConnectionFresh,
+  migrateCustomKeysToCommands,
   normalizeSessionTextInput,
+  presetTerminalKeys,
   quickKeyAria,
   quickKeyLabel,
   sessionQuickKeys,
-  type CustomQuickKey,
+  type QuickCommand,
   type SessionQuickKey,
 } from "./console-model";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
@@ -43,6 +45,8 @@ import { ShellIcon } from "../components/shell/icons";
 import { LucideIcon } from "../components/shell/lucide-icon";
 import { applyQuickKeyOrder, QuickKeysEditor } from "../components/workbench/quick-keys-editor";
 import {
+  terminalPresetKeysEnabledAtom,
+  terminalQuickCommandsAtom,
   terminalQuickKeysCustomAtom,
   terminalQuickKeysHiddenAtom,
   terminalQuickKeysOrderAtom,
@@ -338,13 +342,30 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
   //（localStorage 持久化）。快捷键条与编辑面板共用 applyQuickKeyOrder 单一管道。
   const [hiddenQuickKeyIds, setHiddenQuickKeyIds] = useAtom(terminalQuickKeysHiddenAtom);
   const [quickKeyOrder, setQuickKeyOrder] = useAtom(terminalQuickKeysOrderAtom);
+  const [presetEnabledIds, setPresetEnabledIds] = useAtom(terminalPresetKeysEnabledAtom);
   const [customQuickKeys, setCustomQuickKeys] = useAtom(terminalQuickKeysCustomAtom);
-  // 自定义键是终端 composer 域（atom 注释口径）：与 ⚙ 入口同 gate——agent 会话
-  // 不泄漏（无 ⚙ 可管理，点按会把命令文本当 prompt 注入）。
-  const allQuickKeys =
+  const [quickCommands, setQuickCommands] = useAtom(terminalQuickCommandsAtom);
+  // 存量自定义键 → 快捷命令一次性迁移（两域分离 2026-10-11）：旧键退出按键条进命令库
+  //（默认组）。函数式更新按 id 去重——并发/strict 双跑下二次迁移为 no-op（id 唯一），
+  // 迁移后 custom atom 恒空、effect 不再触发。
+  useEffect(() => {
+    if (customQuickKeys.length === 0) return;
+    setQuickCommands((prev) => {
+      const migrated = migrateCustomKeysToCommands(customQuickKeys).filter(
+        (c) => !prev.some((x) => x.id === c.id),
+      );
+      return migrated.length > 0 ? [...migrated, ...prev] : prev;
+    });
+    setCustomQuickKeys([]);
+  }, [customQuickKeys, setCustomQuickKeys, setQuickCommands]);
+  // 快捷键条只放「按键」（内置 8 键 + 已启用预置键；命令退出按键条——两域分离，
+  // 命令从 ⚙ 面板命令 tab 执行）。预置键启用集是终端 composer 域（atom 注释口径）：
+  // 与 ⚙ 入口同 gate——agent 会话不泄漏（无 ⚙ 可管理）。
+  const enabledPresetKeys =
     sessionType === "terminal"
-      ? [...sessionQuickKeys(sessionType), ...customQuickKeys]
-      : sessionQuickKeys(sessionType);
+      ? presetTerminalKeys.filter((p) => presetEnabledIds.includes(p.id))
+      : [];
+  const allQuickKeys = [...sessionQuickKeys(sessionType), ...enabledPresetKeys];
   const quickKeys = applyQuickKeyOrder(allQuickKeys, quickKeyOrder).filter(
     (k) => !hiddenQuickKeyIds.includes(k.id),
   );
@@ -352,19 +373,35 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
     setHiddenQuickKeyIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
-  // 自定义键保存/删除（反馈④增删改）：保存 = id 命中更新、否则追加（幂等写法防表单重提）。
-  const saveCustomQuickKey = (key: CustomQuickKey) =>
-    setCustomQuickKeys((prev) =>
-      prev.some((x) => x.id === key.id)
-        ? prev.map((x) => (x.id === key.id ? key : x))
-        : [...prev, key],
-    );
-  const deleteCustomQuickKey = (id: string) =>
-    setCustomQuickKeys((prev) => prev.filter((x) => x.id !== id));
-  // ⚙ 键位自定义入口（仅终端 composer，原型 workspace-terminal-input ③「控制行仅键位
-  // 自定义」）：开键位编辑面板（QuickKeysEditor：行 = 键名 + 显隐开关 + grip 拖拽排序，
-  // 反馈⑤「内容 + 顺序编排都要做得到」）。
   const [quickKeysEditorOpen, setQuickKeysEditorOpen] = useState(false);
+  const togglePresetKey = (id: string) =>
+    setPresetEnabledIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  // 命令保存/删除（两域分离 2026-10-11）：保存 = id 命中更新、否则追加（幂等写法防表单重提）。
+  const saveQuickCommand = (cmd: QuickCommand) =>
+    setQuickCommands((prev) =>
+      prev.some((x) => x.id === cmd.id)
+        ? prev.map((x) => (x.id === cmd.id ? cmd : x))
+        : [...prev, cmd],
+    );
+  const deleteQuickCommand = (id: string) =>
+    setQuickCommands((prev) => prev.filter((x) => x.id !== id));
+  // 命令执行/仅插入（两域分离 2026-10-11 双发送行为）：run = 脚本尾补 \n（多行脚本自带
+  // 换行时保持原样）；insert = 原样写入不带回车（可补参数再跑）。发送成功关面板——
+  // 用户要看终端输出。
+  const runQuickCommand = (cmd: QuickCommand, mode: "run" | "insert") => {
+    if (!canSend) {
+      return;
+    }
+    const data = mode === "run" && !cmd.script.endsWith("\n") ? `${cmd.script}\n` : cmd.script;
+    if (sendMessage({ type: "input", data })) {
+      setQuickKeysEditorOpen(false);
+    }
+  };
+  // ⚙ 键位自定义入口（仅终端 composer，原型 workspace-terminal-input ③「控制行仅键位
+  // 自定义」）：开键位自定义面板（QuickKeysEditor 双 tab：键盘域显隐/排序/预置键启用 +
+  // 命令域 CRUD/执行，两域分离 2026-10-11）。
   const quickKeysCustomize =
     sessionType === "terminal" ? (
       <>
@@ -378,15 +415,20 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
           <ShellIcon className="h-4 w-4" name="settings" />
         </button>
         <QuickKeysEditor
+          canSend={canSend}
+          commands={quickCommands}
           hiddenIds={hiddenQuickKeyIds}
           keys={allQuickKeys}
-          onDeleteCustom={deleteCustomQuickKey}
+          onDeleteCommand={deleteQuickCommand}
           onOpenChange={setQuickKeysEditorOpen}
           onReorder={setQuickKeyOrder}
-          onSaveCustom={saveCustomQuickKey}
+          onRunCommand={runQuickCommand}
+          onSaveCommand={saveQuickCommand}
           onToggleHidden={toggleQuickKeyHidden}
+          onTogglePresetKey={togglePresetKey}
           open={quickKeysEditorOpen}
           order={quickKeyOrder}
+          presetEnabledIds={presetEnabledIds}
         />
       </>
     ) : undefined;
@@ -429,13 +471,8 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
       return;
     }
 
-    // 自定义键 = 常用命令一键执行语义：尾补 \n（用户多行内容自带换行时保持原样）；
-    // 内置键是控制序列（\x03 等），补 \n 会破坏语义——仅自定义键补。
-    const data =
-      "label" in quickKey && !quickKey.sequence.endsWith("\n")
-        ? `${quickKey.sequence}\n`
-        : quickKey.sequence;
-    sendMessage({ type: "input", data });
+    // 按键 = 控制序列（内置与预置皆是，\x03/\x1b 序列族），补 \n 会破坏语义——原样发。
+    sendMessage({ type: "input", data: quickKey.sequence });
   };
 
   return (

@@ -822,6 +822,22 @@ e2e 侧：middle-tab-left 重写为 desktop-side（side 结构 + footnav 导航�
 
 **验证链（第三轮收口）**：format/lint/typecheck 0w + 单测 778 + CSS 硬闸 + tokens 0 违例 + 探针 quick-keys-editor 29/29 / keyboard-inset 10/10 + e2e terminal-session 1 passed。
 
+### §6.12o-2 终端快捷输入 v2：两域分离——键盘快捷键 / 快捷命令（2026-10-11，Termius 对标，用户四项拍板）
+
+用户对标 Termius：「它既有键盘快捷键发送，也有快捷命令，这两者是不一样的。」官方文档调研（keys extended keyboard + snippets 两页）实证双模型后需求汇总、用户 AskUserQuestion 四项拍板：**① 呈现结构** = 条分区 + ⚙ 面板双 tab（按键条只放按键，命令收进面板命令 tab）；**② 按键深度** = 预置序列清单勾选启用（不做自由组合构造器）；**③ 双发送行为** = tap 执行（内容+回车）/ 长按（桌面右键）仅插入（不带回车可补参数）；**④ 作用域** = 全局 localStorage + 命令自由分组标签。
+
+**数据模型（console-model.ts）**：`SessionQuickKey = BuiltinQuickKey | PresetTerminalKey`（CustomQuickKey 退出 union 仅作迁移源）；`presetTerminalKeys` 24 项全默认停用（Tab/行编辑 Ctrl+A/E/U/K/W/L/R/导航 PgUp PgDn Home End/F1-F12——键帽名跨语言通用不进 i18n，序列 = C0 控制符 + xterm CSI/SS3）；`QuickCommand = { id, label, script, group }`（group 自由文本，空 = 默认组）；`migrateCustomKeysToCommands`（id 复用/sequence→script/group=""）+ `groupedCommands`（首现序分区）纯函数。存储新 `terminalPresetKeysEnabledAtom` / `terminalQuickCommandsAtom`（均 atomWithLocalOnlyStorage）；**存量自定义键一次性迁移**（effect 函数式按 id 去重，strict 双跑 no-op；迁移后 custom atom 恒空、条上不再显示自定义键——行为变化向用户交付说明）。hidden 集（内置显隐）与启用集（预置启停）正交单源。
+
+**呈现（quick-keys-editor.tsx 双 tab 壳 + quick-commands-tab.tsx 命令域单源）**：SegmentedControl（shell-primitives 单源，原生 button 非 Radix Trigger）双 tab；键盘 tab =「条上按键」（8 内置显隐 + grip 拖拽排序全保留，已启用预置键并入可排序）+「可用按键」（24 预置目录行开关启用）；命令 tab = `groupedCommands` 分区列表（组名标题/空组 = i18n「默认分组」）+ 行交互三件套（tap = 执行并关面板；触屏长按 500ms / 桌面右键 → ActionMenu 执行/仅插入/编辑/删除，file-tree-rows 同款 useRowContextMenu + useLongPressActions + guardClick）+ 新建/编辑表单（名称 maxLength 24/分组 datalist 提示既有组名/多行脚本 textarea mono + 编辑态左下红字删除）。双发送行为在 route `runQuickCommand`（run = 脚本尾补 `\n` 除非自带；insert = 原样；发送成功关面板——用户要看终端输出）。
+
+**桌面 Dialog 超视口修复（探针实抓的真 bug）**：键盘 tab 内容（8+24 行）远超视口高，Dialog 卡片居中定位**溢出视口顶**——底部行不可达、tab 栏落视口外点击恒「outside of the viewport」（frontend-notes §26 同形态）。修复照 settings-dialog 同款高度链：卡片 `flex max-h-[85vh] flex-col overflow-hidden` + 标题/tab 栏 `shrink-0` + 内容区 `-mr-1 min-h-0 flex-1 overflow-y-auto pr-1` 内滚。
+
+**探针扩至 36 断言**：M12-M21（双 tab 在场/可用按键 24 项/启用 Tab→条上出现+点击发 `\t` 帧断言/命令新建含分组→分区标题渲染/tap 行=script+`\n` 帧+面板关/长按菜单四项/仅插入=script 无 `\n` 帧）+ TM1-3（localStorage 预置旧 custom → commands 迁移 + custom 清空 + 条上消失 + 默认分组渲染）+ D8-D10（Commands tab 同构新建/桌面右键菜单四项/Run 帧）。**探针方法记档两条**：① CDP 真实鼠标在 Radix Dialog 内做拖拽会触发焦点链副作用把面板关掉（实测 move 期间 dialogOpen 翻 false）——桌面拖拽断言改合成 pointer 事件序列直驱 handler（down→move→up 直接 dispatch 到 grip/ul，手势状态机/transform/落位断言面不变；合成指针的 setPointerCapture 抛 InvalidPointerId 为已知噪声）；② 行选择器须限定主列表 `ul.select-none`——「可用按键」分区引入第二个 ul 后，裸 `ul li` 全局首匹配不再可靠。
+
+**验证链（v2 收口）**：typecheck/lint/format 0w + 单测 781（+3：preset 序列稳定性/迁移幂等/分组分区）+ CSS 硬闸 + tokens 0 违例 + content-type text/css + 探针 quick-keys-editor 39/39 + e2e terminal-session 1 passed。
+
+**review 消化（code P1×1/P2×5 + design P1×2/P2×5，同日）**：已修——**桌面 Dialog 无障碍面**（裸 h2 → `DialogTitle` + `DialogDescription sr-only`，读屏无名弹窗 + Radix Missing Title 告警，照 settings-dialog PresetDialog 同款）；**v1 桥接族漏网**（标题 `text-on-surface` → `text-ink-1`，本面板上一轮表单族已换、h2 漏网）；**弹窗面单源**（`rounded-2xl + shellSurfaceClasses.workspace` 桥接 → redesign-v2.md:1794 正典串 `rounded-[20px] border border-sep bg-elevated`，圆角 16↔20 漂移收敛）；**hint 上跳 6px**（键/命令两 tab 首行 hint mt-2/mt-0.5 不一致 → 统一 mt-0.5）；**i18n 家族劈叉**（`quickCommandRun/Insert` → `quickCommandsRun/Insert` 归复数族）；**不可发送无反馈**（canSend 透传 QuickCommandsTab，行 disabled:opacity-40 与 .qkey 键帽同口径）；**命令表单切 tab 即弃**（口径记档进注释，轻量输入不做跨 tab 保活）；**探针三处**（M18 拆 M18b 显式断面板关、M21 名实对齐「仅插入后主面板同关」、新增 D2b/D2c 桌面内滚回归断言——code review 指出 max-h 修复零回归断言而探针 D2c 实测 scrollH 1542 > clientH 635）；**注释对齐**（terminalQuickKeysCustomAtom「仅迁移源」、quickKeyLabel/Aria「预置键 = 裸键帽名」、QUICK_COMMAND_LABEL_MAX 去死引用）。**记档不做**：onContextMenuClose 无条件 `ctx.close`（file-tree-rows 同款标准接线）已随消化改；命令列表 ≤32 行无 memo/虚拟化（perf review 无发现）。
+
 ### §6.12p 真机反馈修复：sheet 下拉收起回弹 + 历史 sheet prompt 连带卸载（2026-09-27，commit `0f3c882`）
 
 **① 拖拽 dismiss 回弹（用户真机反馈）**：`endDrag` dismiss 分支曾先清 inline transform 再交 Radix exit 动画——sheet **瞬跳回原位**再从原位滑 16px+fade（「回弹后再消失」）。修复：**保留 inline transform 作为 exit 动画起点**（tw-animate-css 的 exit keyframes 只有 `to` 无 `from`，起始值 = 当前计算样式），inline 变量覆盖 exit 形态——`--tw-exit-translate-y` = 顶边推出视口底+40px 余量（`slide-out-to-bottom-4` 的 16px 不够出屏）、`--tw-exit-opacity: 1`（iOS dismiss 纯滑出不 fade）、200ms ease-in 贴合松手初速度。重开无残留（Radix closed 即 unmount，inline 样式随之消亡）。

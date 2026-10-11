@@ -8,7 +8,7 @@ import type {
   GitDiffScope,
   SessionType,
 } from "@agents-remote/shared";
-import type { CustomQuickKey } from "./console-model";
+import type { CustomQuickKey, QuickCommand } from "./console-model";
 
 /**
  * 工作台作用域 —— URL 的语义核心（见 docs/design-v1/workbench-redesign.md §1/§7）。
@@ -136,12 +136,33 @@ export const terminalQuickKeysOrderAtom = atomWithLocalOnlyStorage<string[]>(
 );
 
 /**
- * 终端 composer 自定义快捷键（2026-10-11 真机反馈④「增删改」）：用户自建键全量（无序——
- * 展示序统一走 terminalQuickKeysOrderAtom 归一化，自定义 id 未存时按默认序尾补在内置键
- * 后）。localStorage 持久化。id = 创建时生成（持久化身份，order/hidden 引用同 id）。
+ * 终端 composer 自定义快捷键（仅迁移源——2026-10-11 两域分离 v2 后不再 CRUD：旧版自建
+ * 键挂载时一次性迁移进 terminalQuickCommandsAtom 并清空本 atom，平时恒空）。
  */
 export const terminalQuickKeysCustomAtom = atomWithLocalOnlyStorage<CustomQuickKey[]>(
   "workbench.terminalQuickKeysCustom",
+  [],
+);
+
+/**
+ * 预置终端键启用集（两域分离 2026-10-11 拍板「预置序列清单」）：勾选启用的
+ * presetTerminalKeys id 列表，启用键进快捷键条（排序走 terminalQuickKeysOrderAtom
+ * 归一化）。localStorage 持久化。与 hidden 集正交：hidden 只管内置键显隐，preset 键
+ * 的「条上与否」由本集管理（开关语义在面板内同构）。
+ */
+export const terminalPresetKeysEnabledAtom = atomWithLocalOnlyStorage<string[]>(
+  "workbench.terminalPresetKeysEnabled",
+  [],
+);
+
+/**
+ * 快捷命令库（两域分离 2026-10-11 拍板，Termius snippets 对标）：命令文本域，与按键域
+ * 分离——不占快捷键条，从 ⚙ 面板命令 tab 执行。group = 自由分组标签（空 = 默认组）。
+ * localStorage 持久化，全局作用域（所有终端会话共享）。存量 terminalQuickKeysCustomAtom
+ * 由消费方一次性迁移进本库（migrateCustomKeysToCommands）。
+ */
+export const terminalQuickCommandsAtom = atomWithLocalOnlyStorage<QuickCommand[]>(
+  "workbench.terminalQuickCommands",
   [],
 );
 
