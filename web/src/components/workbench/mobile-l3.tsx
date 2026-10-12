@@ -500,7 +500,9 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
       {editing ? (
         // CodeEditor 根自带 relative+flex-1（内部 absolute 高度链，frontend-notes §8）；
         // 编辑态根 overflow-hidden 给确定高度。py-2.5 = 03q2 .ed 的 padding:10px 0（画布全幅）。
-        <div className="flex min-h-0 flex-1 flex-col py-2.5">
+        // bg-codeblock 挂本容器（2026-10-12 真机反馈②追加）：呼吸区与画布同色——原型 bg 与
+        // padding 同元素、背景绘制覆盖 padding box，透明则 10px 露面板底色成异色带。
+        <div className="flex min-h-0 flex-1 flex-col bg-codeblock py-2.5">
           <Suspense fallback={<CodeEditorFallback />}>
             <CodeEditor
               historyEpoch={editSession}
@@ -520,9 +522,12 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
       ) : (
         // 源码态 = CodeEditor 只读（反馈④b：与编辑态同一画布，切换不再跳样式）。外层
         // py-2.5 同编辑态容器（画布上下 10px 由调用方承担，frontend-notes §8 高度链——
-        // flex-1 子要滚，父是 flex container；CodeMirror 内滚）。onCreateEditor 接住实例：
-        // tap 进编辑时 posAtCoords 映射 doc 位置、进编辑态组件复用后仍持有 view。
-        <div className="flex min-h-0 flex-1 flex-col py-2.5">
+        // flex-1 子要滚，父是 flex container；CodeMirror 内滚）+ bg-codeblock 同色呼吸区
+        // （2026-10-12 真机反馈②追加，原型 bg+padding 同元素绘制语义；桌面中栏 file tab
+        // variant="desktop" 的源码态走本容器——非 PreviewBody，2026-10-12 追批实锤）。
+        // onCreateEditor 接住实例：tap 进编辑时 posAtCoords 映射 doc 位置、进编辑态组件
+        // 复用后仍持有 view。
+        <div className="flex min-h-0 flex-1 flex-col bg-codeblock py-2.5">
           <Suspense fallback={<CodeEditorFallback />}>
             <CodeEditor
               editable={false}
@@ -848,7 +853,7 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
                 </span>
               ) : null}
             </div>
-            <div className="flex min-h-0 flex-1 flex-col py-2.5">
+            <div className="flex min-h-0 flex-1 flex-col bg-codeblock py-2.5">
               <Suspense fallback={<CodeEditorFallback />}>
                 <CodeEditor
                   historyEpoch={editSession}
@@ -885,7 +890,7 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
               // 未回、data.content 还是旧内容，mount 后被 onSuccess 的数据更新触发整篇
               // replace → 滚动还原被冲掉（探针滚动曲线恒 0 实抓）；editValue 在 refetch 回来
               // 后与服务端内容字符串相等 → 不 replace。discard 先清草稿，同样一次到位。
-              <div className="flex min-h-0 flex-1 flex-col py-2.5">
+              <div className="flex min-h-0 flex-1 flex-col bg-codeblock py-2.5">
                 <Suspense fallback={<CodeEditorFallback />}>
                   <CodeEditor
                     editable={false}

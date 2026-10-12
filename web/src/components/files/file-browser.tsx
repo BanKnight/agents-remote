@@ -920,8 +920,11 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
     }
     return (
       // 上下 10px = 03q2 .ed / 03q .code 的 padding:10px 0（水平 0——编辑器画布全幅，
-      // 左缘留白由 .cm-content padding 承担）。
-      <div className="flex min-h-0 flex-1 flex-col py-2.5">
+      // 左缘留白由 .cm-content padding 承担）。bg-codeblock 挂本容器（2026-10-12 真机反馈②
+      // 追加澄清：10px 间隔区此前透明，露出面板底色，与画布 codeblock 色形成异色带——原型
+      // bg 与 padding 同元素、背景绘制天然覆盖 padding box，此处对齐该语义，呼吸区即画布色。
+      // PreviewBody 多端共用，桌面/检视/移动源码态与编辑态一并生效）。
+      <div className="flex min-h-0 flex-1 flex-col bg-codeblock py-2.5">
         <Suspense fallback={<CodeEditorFallback />}>
           <CodeEditor
             value={editValue}

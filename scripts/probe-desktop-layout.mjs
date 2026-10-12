@@ -104,6 +104,7 @@ function setup(page) {
         entries: [
           { name: "src", path: "src", type: "directory", hidden: false, size: 0 },
           { name: "README.md", path: "README.md", type: "file", hidden: false, size: 128 },
+          { name: "main.ts", path: "main.ts", type: "file", hidden: false, size: 96 },
         ],
       }),
     ),
@@ -117,6 +118,19 @@ function setup(page) {
         name: "README.md",
         size: 128,
         content: LONG_MD_TEXT,
+        mtimeMs: now,
+      }),
+    ),
+  );
+  void page.route(/\/api\/projects\/proj1\/files\/preview\?.*path=main\.ts/, (r) =>
+    r.fulfill(
+      json({
+        type: "text",
+        projectName: PROJECT,
+        path: "main.ts",
+        name: "main.ts",
+        size: 96,
+        content: "const x = 1;\nconsole.log(x);\n",
         mtimeMs: now,
       }),
     ),
@@ -262,6 +276,31 @@ try {
     );
     check("把手已图标化（.grip svg 在场，字体 fallback 免疫）", p4.hasSvg);
   }
+  console.log("== Part 5：源码态画布间隔区 bg 覆盖 ==");
+  // 非 md 文件默认源码态（CodeMirror）。fmeta 分割线与画布之间的 10px 呼吸区（py-2.5）
+  // 必须被 codeblock 色覆盖（原型 .ed/.code bg+padding 同元素绘制语义）——透明则露出面板
+  // 底色形成异色带（2026-10-12 真机反馈②追加澄清）。
+  await page.goto(`${ORIGIN}/projects/${PROJECT}/file/main.ts`);
+  await page.waitForSelector("main .cm-editor", { timeout: 15000 });
+  await page.waitForTimeout(500);
+  const p5 = await page.evaluate(() => {
+    // .cm-editor 最近 bg-codeblock 祖先 = CodeEditor 根；再上一层 = py-2.5 呼吸区容器
+    //（该容器现也挂 bg-codeblock——DOM 序在 CodeEditor 根之前，不能全局 find 取首个）。
+    const cm = document.querySelector("main .cm-editor");
+    const canvas = cm?.closest("[class*='bg-codeblock']");
+    const wrap = canvas?.parentElement;
+    return {
+      canvasBg: canvas ? getComputedStyle(canvas).backgroundColor : null,
+      wrapBg: wrap ? getComputedStyle(wrap).backgroundColor : null,
+      transparent: "rgba(0, 0, 0, 0)",
+    };
+  });
+  check("CodeEditor 画布在场", !!p5.canvasBg);
+  check(`呼吸区容器 bg 非透明（实测 ${p5.wrapBg}）`, !!p5.wrapBg && p5.wrapBg !== p5.transparent);
+  check(
+    `呼吸区 bg == 画布 bg（${p5.wrapBg} == ${p5.canvasBg}）`,
+    !!p5.wrapBg && p5.wrapBg === p5.canvasBg,
+  );
 
   await ctx.close();
 } finally {

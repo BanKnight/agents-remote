@@ -1862,6 +1862,16 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **验证**：全门禁（format/lint --deny-warnings/typecheck/test 793）+ CSS 硬闸 + tokens 机检全绿；新探针 `probe-desktop-layout` **14/14**（560 列左 315=右 315 / 分隔线连续 panel==壳 @1px / panel 双缘齐平 250.0-1440.0 / fmeta 左缘对齐 / h1 mt=0px 且 fmeta→h1 间隔 24px=纯 sm:p-6 padding / grip 胶囊 Δ=0.00px + .grip svg 在场防字体回退）；`probe-grid-panel` **14/14** 回归（分屏/gutter 拖拽/键盘/reduced-motion 面无回归）；flatten-layout 单测断言随满铺反转 11/11。
 - **真机清单**：①桌面设置页内容列居中（两侧留白对称），header 标题仍贴左；②桌面中栏任意 tab 内容与窗格两侧齐平（无细缝）、窗格间分隔线连续不断裂；③文件预览渲染态元信息行→首行标题间隔收紧为纯容器 padding（iPhone 与桌面一致；聊天流以标题开头的消息头部顶隙同步收紧）；④分屏后 group 间把手为 grip-vertical 图标且居中（任何缩放下不偏移）。
 
+#### 追批：源码态画布呼吸区 bg 覆盖（2026-10-12，用户澄清③）
+
+用户澄清③的原始指向 = **源码态**（CodeMirror 画布）与 fmeta 分割线之间的间隔，「连内容的 bg 色都没覆盖到」——非渲染态间隔（渲染态间隔修复保留，两案并行）。定位与修正：
+
+- **根因**：`py-2.5`（上下 10px，原型 `.ed`/`.code` 的 padding:10px 0）挂在外层**透明**容器，`bg-codeblock`（深 `#0d0d0f` / 浅 `#f6f6f8`）只挂在 CodeEditor 根——CSS 背景绘制覆盖 padding box 的语义在原型是 bg+padding **同元素**成立，实现拆层后 10px 呼吸区露出面板底色 = 与画布成异色带。
+- **结构实锤（纠正本批前段表述）**：源码态容器有**两套**——PreviewBody（file-browser.tsx，移动 L3 检视/推入预览的源码态）与 **MobileL3FilePreview 自有容器**（mobile-l3.tsx ×4：编辑态 ×2 + 源码态 ×2；**桌面中栏 file tab 走 variant="desktop" 的自有容器而非 PreviewBody**，`fdesktop` 类诊断实锤）。前段「PreviewBody 一处修复两端生效」对源码态不成立。
+- **修复**：PreviewBody 源码容器 + mobile-l3 四容器统一挂 `bg-codeblock`（呼吸区即画布色；10px 是原型设计值保留）。
+- **验证**：探针新增 Part 5 三断言（画布在场 / 呼吸区容器 bg 非透明 / 呼吸区 bg == 画布 bg）→ `probe-desktop-layout` **16/16**；全门禁 + CSS 硬闸 + tokens 机检全绿。
+- **排查插曲（记档防再踩）**：首轮探针 FAIL 曾误判「build 未生效」——实为探针 `find` 取首个 `bg-codeblock` 元素命中了新染色的外层容器本身（其 parent 自然透明）；改 `.cm-editor` `closest` 定位 CodeEditor 根后复测通过。**dist 新旧 class 串并存 ≠ 旧代码在跑**：mobile-l3 四处同款旧串与其新改串共存于同一 chunk，计数对照（旧 4 新 1）才是判别法。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。
