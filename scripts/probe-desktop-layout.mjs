@@ -1,0 +1,272 @@
+// 桌面中栏排版断言探针（2026-10-12 真机反馈三联修）。
+// Part 1 设置页 560px 居中列（07m `.col{width:560px;margin:0 auto}`）——mx-auto 在场。
+// Part 2 中栏满铺——file tab panel 落点与 group 壳/中栏根左右齐平（contentRect 无内缩）。
+// Part 3 渲染态首元素 margin-top 压平——md 渲染容器 first-child mt=0（间隔收敛到纯容器 padding）。
+// Part 4 分屏 grip——胶囊中心 == gutter 中心 + .grip svg 在场（图标化防回归，字体 fallback 免疫）。
+// PASS/FAIL 断言式；bun scripts/probe-desktop-layout.mjs
+import { chromium } from "@playwright/test";
+import { readAppPassword } from "./lib/deploy-config.mjs";
+
+const ORIGIN = "http://127.0.0.1:43012";
+const PROJECT = "proj1";
+let pass = 0;
+let fail = 0;
+function check(name, ok, detail) {
+  if (ok) {
+    pass++;
+    console.log(`  ✓ ${name}`);
+  } else {
+    fail++;
+    console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ""}`);
+  }
+}
+const json = (body) => ({
+  status: 200,
+  contentType: "application/json",
+  body: JSON.stringify(body),
+});
+const now = Date.now();
+
+const LONG_MD = ["# 标题", ""];
+for (let i = 1; i <= 60; i++) LONG_MD.push(`第 ${i} 行：占位段落，用来撑高文档。`);
+const LONG_MD_TEXT = LONG_MD.join("\n");
+
+function setup(page) {
+  void page.route(/\/api\/overview$/, (r) =>
+    r.fulfill(
+      json({
+        projectNames: [PROJECT],
+        candidates: [
+          {
+            type: "agent",
+            projectName: PROJECT,
+            sessionId: "agent_layout-1",
+            displayName: "布局探针会话",
+            status: "idle",
+            provider: "claude",
+            createdAt: "2026-07-26T00:00:00.000Z",
+          },
+        ],
+      }),
+    ),
+  );
+  void page.route(new RegExp(`/api/projects/${PROJECT}/agent-sessions(?:\\?.*)?$`), (r) =>
+    r.fulfill(
+      json({
+        sessions: [
+          {
+            id: "agent_layout-1",
+            projectName: PROJECT,
+            provider: "claude",
+            displayName: "布局探针会话",
+            status: "idle",
+            createdAt: "2026-07-26T00:00:00.000Z",
+          },
+        ],
+      }),
+    ),
+  );
+  void page.route(new RegExp(`/api/projects/${PROJECT}/agent-sessions/agent_layout-1$`), (r) =>
+    r.fulfill(
+      json({
+        session: {
+          id: "agent_layout-1",
+          projectName: PROJECT,
+          provider: "claude",
+          displayName: "布局探针会话",
+          status: "idle",
+          createdAt: "2026-07-26T00:00:00.000Z",
+        },
+        availableModels: ["sonnet"],
+        availablePermissionModes: ["default"],
+      }),
+    ),
+  );
+  void page.route(new RegExp(`/api/projects/${PROJECT}/terminal-sessions(?:\\?.*)?$`), (r) =>
+    r.fulfill(json({ sessions: [] })),
+  );
+  void page.route(/\/api\/root\/files(?:\?.*)?$/, (r) =>
+    r.fulfill(
+      json({
+        projectName: "",
+        path: "",
+        parentPath: null,
+        entries: [{ name: "proj1", type: "directory", path: "proj1", hidden: false, size: 0 }],
+      }),
+    ),
+  );
+  void page.route(/\/api\/projects\/proj1\/files(?:\?.*)?$/, (r) =>
+    r.fulfill(
+      json({
+        projectName: PROJECT,
+        path: "",
+        parentPath: null,
+        entries: [
+          { name: "src", path: "src", type: "directory", hidden: false, size: 0 },
+          { name: "README.md", path: "README.md", type: "file", hidden: false, size: 128 },
+        ],
+      }),
+    ),
+  );
+  void page.route(/\/api\/projects\/proj1\/files\/preview\?.*path=README\.md/, (r) =>
+    r.fulfill(
+      json({
+        type: "text",
+        projectName: PROJECT,
+        path: "README.md",
+        name: "README.md",
+        size: 128,
+        content: LONG_MD_TEXT,
+        mtimeMs: now,
+      }),
+    ),
+  );
+  void page.routeWebSocket(/stream/, (ws) => ws.connectToServer());
+}
+
+async function login(page) {
+  await page.goto(`${ORIGIN}/`);
+  await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+  await page.getByLabel("访问密码").fill(await readAppPassword());
+  await page.getByRole("button", { name: "登录" }).click();
+  await page.waitForTimeout(700);
+}
+
+const browser = await chromium.launch();
+try {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "zh-CN" });
+  const page = await ctx.newPage();
+  setup(page);
+  await login(page);
+
+  console.log("== Part 1：设置页 560px 居中列 ==");
+  await page.goto(`${ORIGIN}/projects?leftMode=settings`);
+  await page.waitForTimeout(1200);
+  const s = await page.evaluate(() => {
+    const col = document.querySelector("main .max-w-\\[560px\\]");
+    if (!col) return null;
+    const b = col.getBoundingClientRect();
+    return { left: b.x, right: b.x + b.width, viewport: window.innerWidth };
+  });
+  check("560 列在场", !!s);
+  if (s) {
+    const leftGap = s.left - 250; // 中栏左缘 = side 250
+    const rightGap = s.viewport - s.right;
+    check(
+      `居中（左 ${leftGap.toFixed(1)}px ≈ 右 ${rightGap.toFixed(1)}px）`,
+      Math.abs(leftGap - rightGap) <= 2,
+      `leftGap=${leftGap.toFixed(1)} rightGap=${rightGap.toFixed(1)}`,
+    );
+  }
+
+  console.log("== Part 2：中栏满铺（file tab panel 落点齐平） ==");
+  await page.goto(`${ORIGIN}/projects/${PROJECT}/file/README.md`);
+  await page.waitForTimeout(1500);
+  const p2 = await page.evaluate(() => {
+    const rb = (el) => {
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { x: b.x, w: b.width, right: b.x + b.width };
+    };
+    const root = document.querySelector("main div.relative.h-full.w-full");
+    const panel = [...(root?.children ?? [])].find((c) =>
+      (c.className || "").toString().includes("absolute z-0"),
+    );
+    const fmeta = document.querySelector("main .fmeta");
+    // 分隔线连续性（review P1 盲区封堵）：panel 满铺后会盖住 group 壳 border-r 的内容段——
+    // 内容段线必须由 panel 自带同 x 补画（tab 段 group 壳 + 内容段 panel 连续）。
+    const shell = document.querySelector("main [data-drop-group]");
+    return {
+      root: rb(root),
+      panel: rb(panel),
+      fmeta: rb(fmeta),
+      panelBrW: panel ? getComputedStyle(panel).borderRightWidth : null,
+      shellBrW: shell ? getComputedStyle(shell).borderRightWidth : null,
+      panelBrX: panel ? panel.getBoundingClientRect().right - 0.5 : null,
+      shellBrX: shell ? shell.getBoundingClientRect().right - 0.5 : null,
+    };
+  });
+  check("panel 落点在场", !!p2.panel);
+  check(
+    `分隔线连续（panel border ${p2.panelBrW} @${p2.panelBrX?.toFixed(1)} == 壳 border ${p2.shellBrW} @${p2.shellBrX?.toFixed(1)}）`,
+    p2.panelBrW === "1px" && p2.shellBrW === "1px" && Math.abs(p2.panelBrX - p2.shellBrX) <= 0.5,
+    `panelBrW=${p2.panelBrW} shellBrW=${p2.shellBrW} Δx=${(p2.panelBrX - p2.shellBrX).toFixed(2)}`,
+  );
+  if (p2.panel && p2.root) {
+    check(
+      `panel 左缘 == 中栏根左缘（${p2.panel.x.toFixed(1)} vs ${p2.root.x.toFixed(1)}）`,
+      Math.abs(p2.panel.x - p2.root.x) <= 1,
+      `Δ=${(p2.panel.x - p2.root.x).toFixed(2)}`,
+    );
+    check(
+      `panel 右缘 == 中栏根右缘（${p2.panel.right.toFixed(1)} vs ${(p2.root.x + p2.root.w).toFixed(1)}）`,
+      Math.abs(p2.panel.right - (p2.root.x + p2.root.w)) <= 1,
+      `Δ=${(p2.panel.right - p2.root.x - p2.root.w).toFixed(2)}`,
+    );
+  }
+  if (p2.fmeta && p2.panel) {
+    check(
+      `fmeta 左缘 == panel 左缘`,
+      Math.abs(p2.fmeta.x - p2.panel.x) <= 1,
+      `Δ=${(p2.fmeta.x - p2.panel.x).toFixed(2)}`,
+    );
+  }
+
+  console.log("== Part 3：渲染态首元素 margin-top 压平 ==");
+  // 渲染容器 = fmeta 的父容器内的 overflow-auto 直接子（PreviewBody md 分支）；断言目标 =
+  // MARKDOWN_CLASS div 内的首子 h1（mt-4 的真实携带者）computed marginTop。
+  const p3 = await page.evaluate(() => {
+    const fmeta = document.querySelector("main .fmeta");
+    const wrap = fmeta?.parentElement?.querySelector(":scope > .overflow-auto");
+    const h1 = wrap?.querySelector("h1");
+    if (!fmeta || !wrap || !h1) return null;
+    const fb = fmeta.getBoundingClientRect();
+    const hb = h1.getBoundingClientRect();
+    return {
+      h1: true,
+      mt: getComputedStyle(h1).marginTop,
+      gap: hb.top - fb.bottom,
+    };
+  });
+  check("渲染态 h1 在场（fmeta → overflow 容器 → MARKDOWN_CLASS → h1）", !!p3?.h1);
+  check(`h1 margin-top = 0px（实测 ${p3?.mt}）`, p3?.mt === "0px");
+  // 几何复验：fmeta 底 → h1 顶的可见间隔 = 纯容器 padding（桌面 sm:p-6 = 24px），≤ 26px。
+  check(
+    `fmeta→h1 间隔收敛到容器 padding（实测 ${p3 ? p3.gap.toFixed(1) : "—"}px ≤ 26px）`,
+    !!p3 && p3.gap > 0 && p3.gap <= 26,
+  );
+
+  console.log("== Part 4：分屏 grip 居中 + 图标化 ==");
+  await page.goto(`${ORIGIN}/projects/${PROJECT}`);
+  await page.waitForTimeout(800);
+  await page.locator('button:has-text("布局探针会话")').first().click();
+  await page.waitForTimeout(1000);
+  await page.getByRole("button", { name: "分屏", exact: true }).first().click();
+  await page.waitForTimeout(900);
+  const p4 = await page.evaluate(() => {
+    const capsule = document.querySelector("main .grip");
+    if (!capsule) return null;
+    const cb = capsule.getBoundingClientRect();
+    const gb = capsule.parentElement.getBoundingClientRect();
+    return {
+      capsuleCenter: cb.x + cb.width / 2,
+      gutterCenter: gb.x + gb.width / 2,
+      hasSvg: !!capsule.querySelector("svg"),
+    };
+  });
+  check("grip 在场", !!p4);
+  if (p4) {
+    check(
+      `胶囊中心 == gutter 中心（Δ=${Math.abs(p4.capsuleCenter - p4.gutterCenter).toFixed(2)}px）`,
+      Math.abs(p4.capsuleCenter - p4.gutterCenter) <= 0.5,
+    );
+    check("把手已图标化（.grip svg 在场，字体 fallback 免疫）", p4.hasSvg);
+  }
+
+  await ctx.close();
+} finally {
+  await browser.close();
+}
+
+console.log(fail === 0 ? `\nPASS (${pass}/${pass + fail})` : `\nFAIL (${pass}/${pass + fail})`);
+process.exit(fail === 0 ? 0 : 1);

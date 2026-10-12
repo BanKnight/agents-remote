@@ -89,14 +89,6 @@ export type FlatLayout = {
   panels: FlatPanel[];
 };
 
-/** group 边框圆角等内边距占根容器的比例（contentRect 相对 rect 的内缩）。
- *
- *  注：tab 栏高度是固定 px（GroupHeader `h-9`=36px），**不**用归一化比例表达——归一化比例只在
- *  容器恰好 900px 时等于 36px，矮容器（iPad 横屏 ~750px）下归一化偏移 < 36px，会让面板顶部
- *  盖住 GroupHeader 下半（"tab 下半被遮挡"）。tab 栏偏移交表现层 CSS calc 固定 px 下推
- *  （见 instance-area.tsx 的 `rectStyle(r, insetTopPx)`），contentRect 此处不再含 tab 栏偏移。 */
-const GROUP_PADDING_RATIO = 0.005;
-
 /**
  * 把 n 叉树布局投影成扁平数组（设计 §7.8）。纯函数，无副作用，可独立单测。
  *
@@ -164,15 +156,11 @@ export function flattenLayout(root: TreeNode | null, maximized: string | null): 
     const isMax = maximized === leaf.id;
     // maximized 时该 leaf 占满根容器（其他 leaf 仍走 walk 但 visible=false 见下）。
     const groupRect = isMax ? { x: 0, y: 0, w: 1, h: 1 } : rect;
-    const pad = GROUP_PADDING_RATIO;
     // contentRect 不含 tab 栏偏移：tab 栏固定 36px 无法用归一化精确表达，交表现层 CSS calc 下推。
-    // 仅左右 + 底 pad 内缩；y === groupRect.y（顶部由表现层 rectStyle 的 insetTopPx 下推 36px）。
-    const contentRect: FlatRect = {
-      x: groupRect.x + pad,
-      y: groupRect.y,
-      w: groupRect.w - 2 * pad,
-      h: groupRect.h - pad,
-    };
+    // y === groupRect.y（顶部由表现层 rectStyle 的 insetTopPx 下推 36px）。满铺（2026-10-12
+    // 真机反馈②：原 GROUP_PADDING_RATIO 左右/底内缩是「浮动卡片缝」残留——group 壳自
+    // 2026-09-29 拍板平面拼接无边框，内缩成纯边缝无视觉补偿；panel 落点与 group 壳齐平）。
+    const contentRect: FlatRect = { ...groupRect };
     groups.push({
       activeTabId: leaf.activeTabId,
       contentRect,

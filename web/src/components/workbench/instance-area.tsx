@@ -108,6 +108,7 @@ import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 import { Dialog, DialogContent } from "../ui/dialog";
 import { MobileSheet } from "../shell/mobile-sheet";
 import { ShellIcon } from "../shell/icons";
+import { LucideIcon } from "../shell/lucide-icon";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
 /**
@@ -2607,7 +2608,9 @@ function SplitGutter({ orientation, rect, splitRect, onResize }: SplitGutterProp
       }
     >
       {/* 拖拽手柄视觉（§6.10-3，05 原型 `.grip` ⋮⋮ 块压分隔线中点；row 方向旋转 90°）。
-          纯视觉——事件由父 gutter 统一接（grip 凸出部分也冒泡到 gutter handler）。 */}
+          字符 → Lucide grip-vertical（2026-10-12 真机反馈③：U+22EE 文本字形随系统
+          fallback 宽度/基线不定，视觉中点在部分环境偏移——SVG 显式尺寸定形，居中不再
+          依赖字体渲染。纯视觉——事件由父 gutter 统一接（grip 凸出部分也冒泡到 gutter handler）。 */}
       <div
         className="grip"
         style={
@@ -2616,7 +2619,7 @@ function SplitGutter({ orientation, rect, splitRect, onResize }: SplitGutterProp
             : { left: "50%", top: "50%", transform: "translate(-50%, -50%)" }
         }
       >
-        ⋮⋮
+        <LucideIcon className="size-3" name="grip-vertical" />
       </div>
     </div>
   );
@@ -2764,11 +2767,17 @@ export function WorkspaceTree({
           splitRect={g.splitRect}
         />
       ))}
+      {/* panel 自带 border-r（2026-10-12 review P1）：contentRect 满铺后 panel（z-0、后序绘制）
+          盖住 group 壳 border-r 的内容区段——分隔线只剩 tab 栏段线头；内容段线由 panel 同 x
+          补画，tab 段（group 壳）+ 内容段（panel）连续（原型 .pane 分隔线形制，border-box 下
+          右缘几何不变）。 */}
       {flat.panels.map((p) => (
         <div
           className={
             p.visible
-              ? `absolute z-0 flex min-h-0 min-w-0 flex-col ${isDragging ? "pointer-events-none" : ""}`
+              ? `absolute z-0 flex min-h-0 min-w-0 flex-col border-r border-neutral-line ${
+                  isDragging ? "pointer-events-none" : ""
+                }`
               : "hidden"
           }
           key={p.renderKey}

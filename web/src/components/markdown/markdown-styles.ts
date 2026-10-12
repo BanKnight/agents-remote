@@ -6,8 +6,13 @@
 // [overflow-wrap:anywhere]（第九轮）：容器级长词断行——无空格超长 URL 等串不撑破容器。
 // overflow-wrap 可继承，一处声明覆盖全部后代；anywhere 把断点计入 min-content（比 break-word
 // 在嵌套约束链下更稳）。仅词超容器宽时介入，正常文本零视觉变化。
+// [&>*:first-child]:mt-0（2026-10-12 真机反馈② review P2 收编单源）：首块标题（h1 mt-4）与
+// 消费方容器 padding 叠加出异常顶隙（聊天流气泡 py-3、Files 预览 p-4/sm:p-6）——容器自带
+// padding 即足够，首元素 margin-top 压平。收在 MARKDOWN_CLASS 单源 = 聊天流与文件预览两端
+// 统一生效；特异性 (0,2,0) 高于下方 [&_h1]:mt-4（0,1,1），frontmatter 在场时首子是
+// FrontmatterCard dl（无 mt）天然无感。
 export const MARKDOWN_CLASS =
-  "text-sm leading-relaxed text-on-surface [overflow-wrap:anywhere] " +
+  "text-sm leading-relaxed text-on-surface [overflow-wrap:anywhere] [&>*:first-child]:mt-0 " +
   "[&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-bold " +
   "[&_h2]:mt-3 [&_h2]:mb-2 [&_h2]:text-base [&_h2]:font-bold " +
   "[&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold " +

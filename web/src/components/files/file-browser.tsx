@@ -894,6 +894,9 @@ export function PreviewBody({ preview, renderMode, editValue, onEditChange }: Pr
     if (renderMode === "render") {
       if (preview.name.endsWith(".md")) {
         return (
+          // fmeta→首行间隔（2026-10-12 真机反馈②）由 MARKDOWN_CLASS 单源修（首元素 mt 压平，
+          // review P2-4 从本容器的两层选择器收编）：此处只留容器 padding（移动 p-4 / 桌面
+          // sm:p-6），与源码态 py-2.5 同为设计值。
           <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
             <MarkdownString text={preview.content} />
           </div>

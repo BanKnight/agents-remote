@@ -1850,6 +1850,18 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **验证**：全门禁（format/lint --deny-warnings/typecheck/test 793）+ CSS 硬闸 + tokens 机检全绿；`probe-files-live-refresh` **7/7**（轮询计数 / md 折行 / ts 不折行 / 完成后留源码态 / 滚动位保持不跳 0 不漂移 / 放弃后留源码态），探针断言与定位全部 scope 化（`[data-role="file-preview-pane"]` / nav 栏 / .msheet confirm 三向分离）。
 - **真机清单**：①md/html 文件源码态进编辑 → 完成/放弃后留在源码态（不再跳回渲染），滚动位大致保持（视口变高时浏览器 clamp 到文档尾部附近属预期）；②工作台顶部 ▾ 切换实例浮层——钉底「＋新建实例/⟲恢复历史」两行恢复 42px 紧凑档，与上方实例行间距规律；③桌面端放置不动，外部改文件/git 操作后 ~10s 内文件树/git 面板自动刷新（页面切后台自动暂停；移动检视面板关闭后停止轮询）；④md/txt 源码态长段自动折行，代码文件（ts/py/json 等）横向滚动不折行。
 
+### 桌面中栏排版三联修：设置页居中恢复 + 中栏满铺 + 渲染态间隔 + grip 图标化（2026-10-12）
+
+用户桌面 Edge（Chromium）真机反馈三条：①「桌面端面板排版理应是特殊的，内容是居中才对，不应该是偏左的……我怀疑你是改主标题那次将范围扩大了」；②「桌面端中栏的每个标签中，工作区内容两侧距离父容器还有一个边距……文件预览中内容距离顶部的元信息行也有一个很奇怪的间隔（iPhone 也有后者）」；③「group 之间可拖动的组件，图标处在父容器的偏右位置」。诊断探针 + 原型对照 + git 考古三向定位：
+
+- **① 设置页 560px 居中列恢复**：07m 原型 `.col{width:560px;margin:0 auto}` = 居中列，与 mac-files-global 的 `.main` 全宽贴左**本应不同**（设置页特殊排版，用户记忆「原来就是这样的」）。git 考古实锤 = 2026-10-11「边距统筹」批（8114ae9 同夜）「三 mainPage 同语言」误删 `mx-auto`——探针实测删后 560 列 x=250（左 0 / 右 630）。修复 = 恢复 `mx-auto`（header h-11 钉高不动，原型 mhead 本就全宽仅 .col 居中）。
+- **②前半 contentRect 满铺**：flattenLayout 的 contentRect 左右/底内缩 GROUP_PADDING_RATIO（0.005，panel 落点缩 ~5.9px）是「浮动卡片」形制残留——group 壳自 2026-09-29 拍板「满铺无卡片缝」平面拼接，内缩成纯边缝无视觉补偿。修复 = contentRect 满铺 `{...groupRect}`（tab 栏 36px 偏移仍交表现层 rectStyle 的 insetTopPx CSS calc 下推）；`SPLIT_GAP_RATIO`（gutter 功能缝）保留。
+- **②后半 渲染态首元素间隔压平**：PreviewBody md 渲染容器 p-4/sm:p-6 与 MARKDOWN_CLASS `[&_h1]:mt-4` 叠加 → fmeta→h1 32/40px 空隙（源码态 py-2.5 仅 10px 对照）。**结构关键**：MarkdownString 自带一层 MARKDOWN_CLASS div，首元素 h1 是它的首子而非容器直接首子——初版 `[&>*:first-child]:mt-0` 压平的是外层 div（无 margin）无效，改 `[&>*>:first-child]:mt-0` 两层选择器（特异性 (0,2,0) > `[&_h1]:mt-4` (0,1,1) 必胜）。PreviewBody 多端共用（移动 L3 / 中栏 file tab / 推入预览），一处修复两端生效；frontmatter 场景首子是 FrontmatterCard dl（无 mt）天然无此问题。
+- **③ grip 图标化根治**：Chromium 探针实测 grip 胶囊/字符/gutter 三盒中心偏差 ≤0.01px（几何居中）——「偏右」感知来自「⋮⋮」**文本字形**（U+22EE 数学符号区，字符盒宽随系统 fallback 漂移：Linux 1.5px / Windows Cambria Math / Mac 各异）。修复 = `<LucideIcon name="grip-vertical" className="size-3"/>`（SVG 显式尺寸定形，frontend-notes §15 铁律；已在管线白名单，quick-keys-editor 同款先例），字体 fallback 整类不确定性消除；.grip 胶囊（15×30）与 rotate 机制不动。
+- **reviewer 消化（无 P0，1 P1 + 3 P2：1 修 1 收编 1 清理 1 记档）**：**P1 满铺后分隔线断裂**（本批引入）——panel（z-0、后序绘制）满铺后盖住 group 壳 border-r 内容段，线只剩 tab 栏段线头；修复 = panel 容器补同款 `border-r border-neutral-line`（同一 x 连续补画，border-box 下右缘几何不变），探针补「分隔线连续」断言封盲区。**P2-2** = v2-primitives.css .grip 的 font-size/line-height/letter-spacing 三条对 SVG 子已无效 → 删（`color: var(--ink-2)` 保留供 stroke=currentColor 继承；设计包 components.css .grip 不动——原型 HTML 仍以文本形制消费，实现已图标化的决策以本段记档为准）。**P2-4 收编单源** = `[&>*:first-child]:mt-0` 修进 MARKDOWN_CLASS（聊天流气泡 py-3 同款首块顶隙一并修；语义比消费方两层选择器精确），file-browser 容器恢复纯 padding。**P2-3 记档不修（非本次引入，超出本批范围）** = 设置页内容线 = px-1(4px) + .sgroup margin(16px) = 20px，与 07m 原型 `.col` 无横向 padding 的贴列缘形制有偏差；px-1 是被否决批残留（注释理由在居中恢复后失效），收敛回原型需动移动/桌面共用 .sgroup 的 margin 分档，待用户后续反馈再动。
+- **验证**：全门禁（format/lint --deny-warnings/typecheck/test 793）+ CSS 硬闸 + tokens 机检全绿；新探针 `probe-desktop-layout` **14/14**（560 列左 315=右 315 / 分隔线连续 panel==壳 @1px / panel 双缘齐平 250.0-1440.0 / fmeta 左缘对齐 / h1 mt=0px 且 fmeta→h1 间隔 24px=纯 sm:p-6 padding / grip 胶囊 Δ=0.00px + .grip svg 在场防字体回退）；`probe-grid-panel` **14/14** 回归（分屏/gutter 拖拽/键盘/reduced-motion 面无回归）；flatten-layout 单测断言随满铺反转 11/11。
+- **真机清单**：①桌面设置页内容列居中（两侧留白对称），header 标题仍贴左；②桌面中栏任意 tab 内容与窗格两侧齐平（无细缝）、窗格间分隔线连续不断裂；③文件预览渲染态元信息行→首行标题间隔收紧为纯容器 padding（iPhone 与桌面一致；聊天流以标题开头的消息头部顶隙同步收紧）；④分屏后 group 间把手为 grip-vertical 图标且居中（任何缩放下不偏移）。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。

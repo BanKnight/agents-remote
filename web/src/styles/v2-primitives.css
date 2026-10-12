@@ -1003,10 +1003,6 @@
     align-items: center;
     justify-content: center;
     color: var(--ink-2);
-    font-size: 9px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
-    letter-spacing: -1.5px;
     z-index: 5;
   }
   .tterm {
