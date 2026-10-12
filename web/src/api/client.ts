@@ -345,6 +345,21 @@ export async function deleteFile(projectName: string, path: string): Promise<Del
   });
 }
 
+/**
+ * API 错误（fetchJson 非 2xx 抛出）。code = 服务端结构化错误码（响应体 {error:{code,...}}）
+ * 透传，供调用方按码分流（例：PROJECT_GIT_FILE_NOT_CHANGED → 无变更空态而非伪错误）；
+ * message 保持本地化文案 + status——既有错误渲染零变化，code 是纯增量。
+ */
+export class ApiClientError extends Error {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "ApiClientError";
+    this.code = code;
+  }
+}
+
 /** 上传目标同名冲突（服务端 409，03z 行内三选的数据信号）。 */
 export class UploadConflictError extends Error {
   readonly code = "PROJECT_FILE_TARGET_EXISTS";
@@ -1548,15 +1563,24 @@ const fetchJson = async <T>(
         return retryResponse.json();
       }
 
-      throw new Error(`${resolveTranslation(failureKey)}: ${retryResponse.status}`);
+      throw new ApiClientError(`${resolveTranslation(failureKey)}: ${retryResponse.status}`);
     }
 
     window.dispatchEvent(new CustomEvent("auth:unauthenticated"));
-    throw new Error(`${resolveTranslation(failureKey)}: ${response.status}`);
+    throw new ApiClientError(`${resolveTranslation(failureKey)}: ${response.status}`);
   }
 
   if (!response.ok) {
-    throw new Error(`${resolveTranslation(failureKey)}: ${response.status}`);
+    // 服务端结构化错误（{error:{code,...}}）的 code 透传到 Error 对象，供按码分流；
+    // message 保持本地化文案 + status 不变。非 JSON 体解析失败 → code undefined，行为同旧。
+    let code: string | undefined;
+    try {
+      const body = (await response.json()) as { error?: { code?: unknown } };
+      if (typeof body?.error?.code === "string") code = body.error.code;
+    } catch {
+      // 非 JSON 响应体（网关错误页等）——无 code，同旧行为。
+    }
+    throw new ApiClientError(`${resolveTranslation(failureKey)}: ${response.status}`, code);
   }
 
   return response.json();

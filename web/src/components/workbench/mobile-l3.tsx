@@ -21,6 +21,7 @@ import {
 } from "react";
 
 import {
+  ApiClientError,
   getProjectGitCommitDetail,
   getProjectGitCommitFileDiff,
   getProjectGitFileDiff,
@@ -206,26 +207,25 @@ function dispatchPendingCursor(view: EditorView, pos: number | null) {
 }
 
 /**
- * 编辑态工具钮组（撤销/重做/收起软键盘）：@codemirror/commands view 命令直驱 EditorView。
+ * 编辑态工具钮组（撤销/重做）：@codemirror/commands view 命令直驱 EditorView。
  * 真机反馈 2026-10-11（7b）：原 FilePreviewPane 底部 .aux 工具条上移进编辑态首行（用户：
  * 元信息行去除，空出位置放工具条内容）——编辑器全高，工具钮不再有软键盘遮挡面；MobileL3
- * 检视页编辑态同批补齐（同构缺口：此前仅 Pane 有 undo/redo）。desktop 档无软键盘收起诉求
- *（05h4 原型 .pvaux 仅撤销/重做两钮）。
+ * 检视页编辑态同批补齐（同构缺口：此前仅 Pane 有 undo/redo）。05h4 原型 .pvaux 即撤销/
+ * 重做两钮。
  * 真机反馈 2026-10-12（③「撤销/重做恒灰不符合直觉」）：disabled 绑 history 深度（canUndo/
  * canRedo，CodeEditor onHistoryChange 上抛）而非 view 就绪——无历史/撤到底 = 灰（真禁用），
  * 有历史 = ink-1 可点（灰 = 不可点语义成立）。
+ * 真机反馈 2026-10-12（五联②）：「收起键盘」钮退役（软键盘系统自带收起，blur 钮无用）——
+ * showDismiss prop 与 i18n files.auxDismissKeyboard 整链删除。
  */
 function EditorToolButtons({
   view,
   canRedo,
   canUndo,
-  showDismiss = true,
 }: {
   view: EditorView | null;
   canRedo: boolean;
   canUndo: boolean;
-  /** 移动档软键盘收起钮（blur 画布）；desktop 档传 false。 */
-  showDismiss?: boolean;
 }) {
   const { t } = useT();
   const base = "flex items-center gap-1 border-0 bg-none p-0 text-[12px]";
@@ -253,16 +253,6 @@ function EditorToolButtons({
         <LucideIcon className="size-4 shrink-0" name="redo-2" />
         {t("files.auxRedo")}
       </button>
-      {showDismiss ? (
-        <button
-          className={`${base} cursor-pointer text-ink-1`}
-          onClick={() => view?.contentDOM.blur()}
-          type="button"
-        >
-          <LucideIcon className="size-4 shrink-0" name="chevron-down" />
-          {t("files.auxDismissKeyboard")}
-        </button>
-      ) : null}
     </>
   );
 }
@@ -820,15 +810,10 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
           <>
             {/* 编辑态单操作行（7b 真机反馈 2026-10-11）：元信息行去除（「编辑中·N 行」是
             编辑器自见的冗余），底部 .aux 工具条上移至此（用户：空出的位置放工具条内容）——
-            左 = 撤销/重做/收键盘，右 = meta 模式放弃/完成；nav 模式右端 = dirty 靠右（nav
+            左 = 撤销/重做，右 = meta 模式放弃/完成；nav 模式右端 = dirty 靠右（nav
             [放弃][完成] 已在容器 nav 栏）。编辑器全高，底部不再有被键盘遮挡的工具条。 */}
             <div className="emeta">
-              <EditorToolButtons
-                canRedo={hist.canRedo}
-                canUndo={hist.canUndo}
-                showDismiss={variant !== "desktop"}
-                view={editorView}
-              />
+              <EditorToolButtons canRedo={hist.canRedo} canUndo={hist.canUndo} view={editorView} />
               {editor.isDirty ? (
                 <span className={`dirty ${editingActions === "nav" ? "ml-auto" : ""}`}>
                   ● {t("files.unsavedChanges")}
@@ -1087,6 +1072,12 @@ export function MobileL3GitDiff({ projectName, path, scope }: MobileL3GitDiffPro
     return <LoadingBlock className="min-h-0 flex-1" label={t("git.loadingDiff")} />;
   }
   if (fileDiff.isError || !fileDiff.data || fileDiff.data.repository !== true) {
+    // PROJECT_GIT_FILE_NOT_CHANGED = 无变更非错误，显「没有变更」（2026-10-12 反馈③）。
+    if (
+      fileDiff.error instanceof ApiClientError &&
+      fileDiff.error.code === "PROJECT_GIT_FILE_NOT_CHANGED"
+    )
+      return <div className="cap mt-4 px-4">{t("git.noChanges")}</div>;
     return <div className="cap mt-4 px-4">{t("git.fileError")}</div>;
   }
 
@@ -1268,6 +1259,7 @@ export function L3GitCommit({ projectName, hash }: L3GitCommitProps) {
     return <LoadingBlock className="min-h-0 flex-1" label={t("git.loadingDiff")} />;
   }
   if (detail.isError || !detail.data || detail.data.repository !== true) {
+    // commit 详情（getCommitDetail）只抛 scope/路径错误，无 NOT_CHANGED 语义——单分支即可。
     return <div className="cap mt-4 px-4">{t("git.fileError")}</div>;
   }
   const { meta, files } = detail.data;
@@ -1344,6 +1336,12 @@ function CommitFileDiff({
     return <LoadingBlock className="py-4" label={t("git.loadingDiff")} />;
   }
   if (fileDiff.isError || !fileDiff.data || fileDiff.data.repository !== true) {
+    // PROJECT_GIT_FILE_NOT_CHANGED = 无变更非错误，显「没有变更」（2026-10-12 反馈③）。
+    if (
+      fileDiff.error instanceof ApiClientError &&
+      fileDiff.error.code === "PROJECT_GIT_FILE_NOT_CHANGED"
+    )
+      return <div className="csub">{t("git.noChanges")}</div>;
     return <div className="csub">{t("git.fileError")}</div>;
   }
   return <DiffContent diff={fileDiff.data.diff} filePath={path} />;

@@ -200,7 +200,6 @@ export const zh: Record<TranslationKey, string> = {
   "files.unsavedChanges": "未保存变更",
   "files.auxUndo": "撤销",
   "files.auxRedo": "重做",
-  "files.auxDismissKeyboard": "收起键盘",
   "files.rootDirectory": "服务器根",
   "files.unsupportedTitle": "不支持预览",
   "files.unsupportedDesc": "该文件类型暂不支持在应用内查看\n内容处理可交给 Agent 或终端",

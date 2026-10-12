@@ -74,6 +74,12 @@ export const shellSurfaceClasses = {
   warning: "border border-warning/25 bg-warning/10",
 };
 
+/**
+ * 聊天流滚动区 padding 单源（VirtualizedThreadContent scroller 与首载骨架壳同消费）——
+ * 首载两段（detail 骨架 → 历史回放骨架）边距一致，切换不跳变（2026-10-12 反馈⑤）。
+ */
+export const chatScrollPaddingClasses = "px-3 py-4 sm:px-5";
+
 type IconMarkerProps = {
   children: ReactNode;
   size?: "sm" | "md" | "lg";
@@ -389,7 +395,7 @@ export function ResizeGutter({ edge, onResize }: ResizeGutterProps) {
   return (
     <div
       aria-hidden
-      className={`absolute bottom-0 top-0 z-20 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 ${
+      className={`absolute bottom-0 top-0 z-20 w-1 cursor-split-col bg-transparent transition-colors hover:bg-primary/30 ${
         edge === "right" ? "right-0" : "left-0"
       }`}
       onPointerCancel={endDrag}

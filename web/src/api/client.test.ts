@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+  ApiClientError,
   closeAgentSession,
   closeTerminalSession,
   createAgentSession,
@@ -228,6 +229,43 @@ test("web api client calls Project Git diff routes with encoded paths", async ()
   expect(calls[2][0]).toBe(
     "/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/git/diff/file?scope=staged&path=README.md",
   );
+});
+
+// bun test 环境无 navigator，resolveTranslation 依赖它——错误路径测试 stub 之（同文件
+// globalThis.fetch 直改惯例，不还原）。
+function stubNavigatorLanguage() {
+  Object.defineProperty(globalThis, "navigator", {
+    value: { language: "zh-CN" },
+    configurable: true,
+  });
+}
+
+test("web api client surfaces structured error codes on non-2xx", async () => {
+  stubNavigatorLanguage();
+  globalThis.fetch = (async () =>
+    Response.json(
+      { error: { code: "PROJECT_GIT_FILE_NOT_CHANGED", message: "Git file is not changed" } },
+      { status: 422 },
+    )) as typeof fetch;
+
+  const err = await getProjectGitFileDiff("proj", "worktree", "README.md").then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(err).toBeInstanceOf(ApiClientError);
+  expect((err as ApiClientError).code).toBe("PROJECT_GIT_FILE_NOT_CHANGED");
+});
+
+test("web api client keeps code undefined for non-JSON error bodies", async () => {
+  stubNavigatorLanguage();
+  globalThis.fetch = (async () => new Response("Bad Gateway", { status: 502 })) as typeof fetch;
+
+  const err = await getProjectGitFileDiff("proj", "worktree", "README.md").then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(err).toBeInstanceOf(ApiClientError);
+  expect((err as ApiClientError).code).toBeUndefined();
 });
 
 test("web api client calls Project-scoped Agent session routes", async () => {

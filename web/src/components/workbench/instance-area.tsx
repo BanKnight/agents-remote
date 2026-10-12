@@ -82,6 +82,7 @@ import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { sessionStatusLabel } from "../../routes/console-model";
 import {
   actionButtonClasses,
+  chatScrollPaddingClasses,
   ChatSkeleton,
   LoadingBlock,
   sessionMarker,
@@ -642,7 +643,7 @@ function AgentPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
   if (detail.isLoading)
     return (
       <div
-        className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+        className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody} ${chatScrollPaddingClasses}`}
       >
         <ChatSkeleton />
       </div>
@@ -2536,7 +2537,7 @@ function TabChip({
 //（DropZoneOverlay onPointerMove 用，L2254/2294）。
 
 type SplitGutterProps = {
-  /** gutter 朝向（设计 §7.4）：col=横向相邻 group 间列宽（cursor-col-resize）；row=纵向行间高度。 */
+  /** gutter 朝向（设计 §7.4）：col=横向相邻 group 间列宽（cursor-split-col）；row=纵向行间高度。 */
   orientation: "col" | "row";
   /** gutter 自身的归一化 rect（0~1，相对共享根容器）——absolute 定位用，是两 children 之间的缝隙位置。 */
   rect: FlatRect;
@@ -2585,7 +2586,7 @@ function SplitGutter({ orientation, rect, splitRect, onResize }: SplitGutterProp
   return (
     <div
       aria-hidden
-      className={`absolute z-10 rounded-full bg-on-surface/5 transition-colors hover:bg-on-surface/20 ${isRow ? "cursor-row-resize" : "cursor-col-resize"}`}
+      className={`absolute z-10 rounded-full bg-on-surface/5 transition-colors hover:bg-on-surface/20 ${isRow ? "cursor-split-row" : "cursor-split-col"}`}
       onPointerCancel={endDrag}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

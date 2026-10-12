@@ -27,7 +27,7 @@
 .pved .ln{display:flex}
 .pved .no{width:34px;flex:none;text-align:right;padding-right:10px;color:var(--ink-3)}
 .pved .tx{color:var(--term-ink);white-space:pre}
-/* 底部 aux 条：撤销 / 重做 / 收起键盘（触屏形态收起键盘让位；桌面 05h 无「收起键盘」） */
+/* 底部 aux 条：撤销 / 重做（「收起键盘」钮 2026-10-12 全端退役——软键盘系统自带收起） */
 .pvaux{display:flex;align-items:center;justify-content:center;gap:26px;height:38px;margin:10px 14px 0;flex:none;
        background:var(--bg-elevated);border:1px solid var(--sep);border-radius:10px;font-size:12px;color:var(--ink-2)}
 </style>
@@ -93,7 +93,7 @@
         <div class="ln"><span class="no">13</span><span class="tx">}</span></div>
       </div>
       <!-- aux：撤销 / 重做 / 收起键盘 -->
-      <div class="pvaux"><span>↩ 撤销</span><span>↪ 重做</span><span>⌄ 收起键盘</span></div>
+      <div class="pvaux"><span>↩ 撤销</span><span>↪ 重做</span></div>
     </div>
 
     <!-- 右栏：检视 · 编辑中（结构标签：文件树 / Git / Wiki；预览标签退役至中栏） -->
@@ -129,7 +129,7 @@
   <h4>编号说明（与图内 pin 一一对应）</h4>
   <ol>
     <li><b>①</b><span>检视器文件树点 passkey.ts → 中栏新增/激活文件标签并进入编辑态（IDE 模式，与 04b 同一容器）；会话标签退居非激活、点即切回会话</span></li>
-    <li><b>②</b><span>元信息行右端 = 放弃 / 完成（无 ⋯，tabstrip 只剩 [分屏]）：「完成」= 保存写回文件并作为后续 diff 对比基准；放弃 = 取消编辑不留痕（灰 / 蓝主次分明）；橙色 ● = 未保存变更点，保存或放弃后消失；编辑态全文本类共用（代码/文本/MD/HTML 同机制，等宽明文不着色），aux 条 = 撤销 / 重做 / 收起键盘（触屏形态收起键盘让位；桌面 05h 形态无「收起键盘」），写锁冲突 = 等待 / 强制编辑（自动生成前后对比）</span></li>
+    <li><b>②</b><span>元信息行右端 = 放弃 / 完成（无 ⋯，tabstrip 只剩 [分屏]）：「完成」= 保存写回文件并作为后续 diff 对比基准；放弃 = 取消编辑不留痕（灰 / 蓝主次分明）；橙色 ● = 未保存变更点，保存或放弃后消失；编辑态全文本类共用（代码/文本/MD/HTML 同机制，等宽明文不着色），aux 条 = 撤销 / 重做（「收起键盘」钮 2026-10-12 全端退役），写锁冲突 = 等待 / 强制编辑（自动生成前后对比）</span></li>
     <li><b>③</b><span>检视器只留三个结构标签：文件树 / Git（03t/03u）/ Wiki（03p）＋ 新建——文件预览标签退役至中栏；检视数据跟随项目，与会话解耦；标题切换 = 检视 · 编辑中</span></li>
   </ol>
 </div>

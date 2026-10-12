@@ -311,7 +311,7 @@ function InstanceSwitchMenu({
           「· 当前项目」= v1.6 原型 iact 逐字，标动作作用域） */}
         <div className="border-t border-sep-row pb-1">
           <DropdownMenuItem
-            className="h-[42px] min-h-[42px] justify-start gap-2.5 rounded-none px-3.5 text-[13.5px] font-semibold text-primary focus:bg-on-surface/5"
+            className="h-[42px] min-h-[42px] justify-start gap-[9px] rounded-none px-3.5 text-[13.5px] font-semibold text-primary focus:bg-on-surface/5"
             onSelect={onCreateInstance}
           >
             <span className="w-4 shrink-0 text-center text-[15px] font-bold leading-none">＋</span>
@@ -319,7 +319,7 @@ function InstanceSwitchMenu({
           </DropdownMenuItem>
           {instances.length === 0 ? null : (
             <DropdownMenuItem
-              className="h-[42px] min-h-[42px] justify-start gap-2.5 rounded-none px-3.5 text-[13.5px] font-semibold text-primary focus:bg-on-surface/5"
+              className="h-[42px] min-h-[42px] justify-start gap-[9px] rounded-none px-3.5 text-[13.5px] font-semibold text-primary focus:bg-on-surface/5"
               onSelect={onOpenHistory}
             >
               <span className="w-4 shrink-0 text-center text-[15px] font-bold leading-none">⟲</span>
@@ -352,7 +352,7 @@ function InstanceSwitchRow({ type, name, status, current, onSelect }: InstanceSw
   return (
     <DropdownMenuItem
       aria-current={current ? "true" : undefined}
-      className={`justify-start gap-2.5 rounded-none px-3.5 text-[13.5px] font-normal focus:bg-on-surface/5${current ? " bg-fill-selected" : ""}`}
+      className={`h-[40px] min-h-[40px] justify-start gap-[9px] rounded-none px-3.5 text-[13.5px] font-normal focus:bg-on-surface/5${current ? " bg-fill-selected" : ""}`}
       onSelect={onSelect}
     >
       <ShellIcon

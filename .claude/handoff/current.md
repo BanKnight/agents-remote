@@ -1,27 +1,28 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-12（**反馈②③④⑤ 四联修全绿已记档待 commit；用户新补桌面中栏排版三联在 inbox 待开工**）
+> 最后更新：2026-10-13（**真机反馈第二轮五联修已 commit，真机清单 5 条已交，等用户复验**）
 
 ## 一句话状态
 
-真机反馈四联修（②编辑后回源码 / ③切换浮层钉底档 / ④文件树·git 轮询 / ⑤换行分档）实现 + reviewer 消化（无 P0；2 P1 + 3 P2 全修）+ 探针 7/7 + 全门禁/双闸全绿 + redesign-v2.md 记档完成。**待 commit → 真机清单交用户 → ①（sheet 下拉热区）拍板问题一并交**。用户新补三条桌面中栏排版反馈（面板居中/标签贴边距+预览顶间隔/gutter 图标偏右）已记 inbox。
+真机反馈第二轮五联修（浮层行高/收起键盘退役/diff 空态/cursor 双主题/两段加载单源）实现 + 双 reviewer（9 条全消化：删两处死分支、@layer 归层、cursor 三把手全量、标尺三处同步等）+ probe-ui-polish **13/13** + 回归两探针 16/16、14/14 + 全门禁绿 + redesign-v2.md 记档（含 ：1846 旧拍板修正）+ inbox 清空 + handoff 滚动，commit 后交真机清单。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **reviewer P1-2 实锤**：refetchInterval 只 gate document 可见性（v5.100 queryObserver 源码），CSS invisible 保活容器仍轮询；移动检视关闭态经 `pollingEnabled={panelVisible && active}` 停，桌面非激活标签接受（切回即新）。轮询常量单源 `lib/query-client.ts` 的 `PANEL_POLL_MS = 10_000`（4 消费点：FilesPanel files / FilesToolPanel listing+diff / GitToolPanel diff+log）。
-- **滚动还原两个衍生坑（探针实抓）**：①同步设 scrollTop 会被 CodeMirror 异步首帧 measure clamp（481→7）——必须 `view.requestMeasure({read, write})`；②查看态 CodeEditor value 必须 `editor.editValue`（草稿优先）而非 `data.content`——refetch 未回时旧 content 触发整篇 replace 冲掉还原（曲线恒 0）。还原值可能小于记录值 = 物理 clamp（.emeta→.fmeta + pb 变化视口变高），内容锚点无更优解，记档接受。
-- **探针定位实标**：push 预览（/files）是 editingActions="nav"——完成/放弃在 nav 栏非容器内（meta 模式才在 .emeta）；断言 scope `[data-role="file-preview-pane"]`、按钮 scope `.nav`、sheet confirm scope `.msheet` 三向分离。
+- **③ 只分流的可达面 = 4 处**：服务端 NOT_CHANGED 只从 fileDiff :133/:157、getCommitFileDiff :354/:366、compareFileDiff :513/:534 发射；**getCommitDetail（commit 总览）与 listDiff（git 总览）从不发**——初版在两处总览加的分流是死代码，review 实锤后删。**mock 探针打虚构场景也能全绿，先核服务端发射点再写断言**。NOT_CHANGED 真实 HTTP status = 400（`projectGitDiffErrorResponse` 默认分支）。
+- **③ 治本位 = fetchJson**：`ApiClientError extends Error { code? }` + 非 2xx 解析 body.error.code 透传（非 JSON 体 code undefined 同旧行为；401 两条路径同批对齐 ApiClientError）。message 保持本地化文案不变，全站错误渲染零变化。
+- **① 实例行 `h-[40px] min-h-[40px]` 双写**：单写 min-h 会被 DropdownMenuItem 基线 py-2.5 + preflight 行高 1.5 撑破到 40.24（design review 实测），h 锁死后实测 39.99。gap 对齐原型 9px（`gap-[9px]`）。redesign-v2.md :1846 旧拍板（45px「有意升档不改」）已记档修正 = 真机否决回归原型。
+- **④ cursor 三把手全量**：自定义 SVG data-URI cursor 双主题（暗=黑衬线白主/亮=白衬线黑主，热点 12 12，fallback 原生关键字），SplitGutter / 桌面 shell ColumnResizeGutter / shell-primitives ResizeGutter 全换 `cursor-split-col`/`cursor-split-row`；规则包 `@layer components`（同名 layer 块合并语义）；Safari 不渲染 SVG cursor 静默回退原生（WebKit 限制，graceful degradation 记档知情）。
+- **⑤ `chatScrollPaddingClasses` 单源**（shell-primitives 导出，`px-3 py-4 sm:px-5`）：detail 骨架壳 + VirtualizedThreadContent scroller + FullscreenReader 展开阅读滚区三处消费——两段加载骨架几何一致（探针实测 x/y 全等 1271.0/64.0）。
 
 ### 进度
 
-- ✅ ②③④⑤ 实现 + 新探针 probe-files-live-refresh 7/7
-- ✅ code-reviewer 完成（无 P0；2 P1 + 3 P2 全部消化修复并复验）
-- ✅ 全门禁（format/lint/typecheck/test 793）+ CSS 硬闸 + tokens 机检全绿
-- ✅ redesign-v2.md 记档（:1841 后新段）+ handoff 快照 20261012-1333.md
-- ⬜ **commit（下一动作）→ 真机清单 + ①拍板交用户**
-- ⬜ 新批：桌面中栏排版三联（inbox，含「改主标题那次范围扩大」回归排查线索）
+- ✅ 五联修实现：①浮层 40px/9px 回归原型；②收起键盘整链退役（mobile-l3 + i18n zh/en + design_spec.md 两处 + iPad 原型 .pvaux 同批同步）；③错误码透传 + 4 可达消费点分流（mobile-l3 单文件/commit 单文件 + git-diff-viewer + …… 见记档）；④cursor 三把手 + v2-primitives.css 归层；⑤chatScrollPaddingClasses 三消费点
+- ✅ 双 reviewer 消化：code（7 P2：死分支×2 删、401 对齐、navigator stub helper、shell cursor、Safari 知情、hasApiCode 不采纳）+ design（4 P1 + 3 P2：标尺三处同步、@layer 归层、出处标注、h 锁死、FullscreenReader 收编、注释同步、mock 400 对齐）
+- ✅ 验证矩阵：format/lint 0 warning/typecheck/test web **795**（含 client.test 2 新 case：code 透传 + 非 JSON 体）/ CSS 硬闸 / tokens 0 违例 / probe-ui-polish **13/13** / probe-desktop-layout **16/16** / probe-grid-panel **14/14**
+- ✅ redesign-v2.md 记档（五联修段 + :1846 旧拍板修正）+ inbox 清空 + 快照 20261013-0152.md
+- ✅ commit（13+ 文件；pre-commit 全门禁绿）→ 真机清单 5 条已交用户
 
 ### 阻塞 / 风险
 
@@ -29,11 +30,11 @@
 
 ## 易丢的关键上下文
 
-- **① 拍板材料（commit 后与真机清单一并交用户，AskUserQuestion）**：技术事实 = iOS UISheetPresentationController 默认即「不可滚 sheet 整面可拖 + 可滚 sheet 滚到顶续拉 dismiss」，grabber 只是视觉指示非唯一热区；当前分档（e1ae5a6）正对齐该默认；「grabber-only 全量窄热区」是合法变体但会复发 2026-10-03 真机取实的「打开即下拉」bug（人的「打开→按下拖」反应必然超过 450ms enter 窗口）。选项：A 保持现状（对齐 iOS 原生，推荐）/ B 全量 grabber-only（不建议，复发 e1ae5a6 已修 bug）。
-- **新批三联（inbox 已记）**：①桌面端面板排版应居中（怀疑改主标题批次范围扩大波及，与全局文件/插件布局差异回归）；②桌面中栏标签工作区两侧贴边距 + 文件预览内容距顶部元信息行奇怪间隔（iPhone 也有后者）；③桌面中栏 group 间 gutter 图标偏右。
-- **历史挂起真机清单**：终端 ⚙ 面板换代 5 条（869e62a 已交）+ ①③ 三联修 6 条（527d1b9 已交）+ 更早批次（snapshots/）。
-- vite watch 漏 CSS：改 web 包后 touch web/src/main.tsx 重建 + `node scripts/ar-verify-css.mjs`；探针用 bun + systemd-run 2G。
-- 本批工作区 9 路径：mobile-l3.tsx（②+滚动还原）/ mobile-project-header.tsx（③）/ file-browser.tsx + project-tool-panels.tsx + mobile-workbench.tsx + query-client.ts（④）/ editor-languages.{ts,test} + CodeEditor.tsx（⑤）/ 探针新文件 / redesign-v2.md + inbox.md（记档）。
+- **真机清单 5 条（交付用户）**：①切换浮层实例行 40px 收紧（行间空白不松散）；②编辑辅助条无「收起键盘」（undo/redo 保留）；③查看 diff 与远端一致时显「没有变更」（git 面板文件行 → 单文件 diff、commit 内单文件两路）；④明亮主题拖拽把手 cursor 深色可见（中栏分屏缝 + 桌面左右栏边缝三处）、暗色白色不变、**Safari 仍原生白（WebKit 不支持 SVG cursor，已知降级）**；⑤两段加载骨架无跳变。
+- **写路径 NOT_CHANGED 挂起**（code review 顺带发现，批次范围外）：`project-git-write.ts:210` commit/discard 时勾选文件已被外部提交仍以通用错误呈现——如需同款「没有变更」体验另开条目（inbox）。
+- **上一批（db77df4 + b941d3d 已交真机清单 4 条）**：桌面中栏排版三联修 + 源码态追批；再上一批四联修（6cbf80d）。
+- vite watch 漏 CSS：改 web 包后 touch web/src/main.tsx 重建 + `node scripts/ar-verify-css.mjs`；探针用 `systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`。
+- 本批工作区路径：mobile-project-header / mobile-l3 / zh+en / client.ts+test / git-diff-viewer / project-tool-panels / shell-primitives / workbench-shell / instance-area / ClaudeSessionDetailRoute / v2-primitives.css / design_spec.md / ipad-tool-files-preview-edit.html / probe-ui-polish.mjs（新）/ redesign-v2.md / inbox.md / handoff。
 
 ## 提醒
 
@@ -41,4 +42,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-12 13:33；触发原因：反馈②③④⑤ 收尾记档 + handoff 滚动，commit 前检查点
+最后更新：2026-10-13 01:52；触发原因：五联修收尾记档 + handoff 滚动，commit 前检查点

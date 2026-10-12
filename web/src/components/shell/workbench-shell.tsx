@@ -293,7 +293,7 @@ function ColumnResizeGutter({
       aria-valuemax={max}
       aria-valuemin={min}
       aria-valuenow={value}
-      className={`absolute bottom-0 top-0 z-20 w-1 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 focus-visible:bg-primary/60 focus-visible:outline-none ${
+      className={`absolute bottom-0 top-0 z-20 w-1 cursor-split-col bg-transparent transition-colors hover:bg-primary/30 focus-visible:bg-primary/60 focus-visible:outline-none ${
         side === "left" ? "right-0" : "left-0"
       }`}
       onKeyDown={onKeyDown}

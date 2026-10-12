@@ -60,7 +60,11 @@ import { useConfirm } from "../components/shell/confirm-dialog";
 import { tasksExpandedAtom } from "./console-model";
 import { HtmlRenderContext } from "../components/markdown/markdown-components";
 import { useOpenRenderTab } from "./workbench-model";
-import { ChatSkeleton, shellSurfaceClasses } from "../components/shell/shell-primitives";
+import {
+  chatScrollPaddingClasses,
+  ChatSkeleton,
+  shellSurfaceClasses,
+} from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
 import { Dialog, DialogContent } from "../components/ui/dialog";
 import {
@@ -658,7 +662,7 @@ function FullscreenReader({
             </svg>
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-5">{children}</div>
+        <div className={`flex-1 overflow-y-auto ${chatScrollPaddingClasses}`}>{children}</div>
         {footer}
       </DialogContent>
     </Dialog>
@@ -3379,7 +3383,7 @@ export function VirtualizedThreadContent({
       <SubagentOverviewBar onJump={scrollToMessage} />
       <div
         ref={scrollerRef}
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-5"
+        className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden ${chatScrollPaddingClasses}`}
       >
         {/* Skeleton shows while turns===0 (nothing painted yet). loading is
             flipped false by a deferred effect on the render after live_end, so

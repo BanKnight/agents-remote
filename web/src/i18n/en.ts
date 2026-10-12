@@ -200,7 +200,6 @@ export const en = {
   "files.unsavedChanges": "Unsaved changes",
   "files.auxUndo": "Undo",
   "files.auxRedo": "Redo",
-  "files.auxDismissKeyboard": "Hide keyboard",
   "files.rootDirectory": "Server root",
   "files.unsupportedTitle": "Preview not supported",
   "files.unsupportedDesc":

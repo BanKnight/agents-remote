@@ -4449,3 +4449,39 @@
     stroke-width: 1.8;
   }
 }
+
+/* ── 分屏 gutter 拖拽 cursor（2026-10-12 反馈④）─────────────────────────────
+   浏览器内置 col/row-resize 位图为白色双箭头（Chromium 固定资源，不随页面主题），
+   明亮主题白底上不可见——自定义 SVG cursor 为分屏专用件（SplitGutter/ColumnResizeGutter/
+   ResizeGutter 三把手），设计轨 components.css 无原型、SVG data-URI 无法消费 var()（黑白
+   硬编码是唯一机制）——app 实现件，app 端自维护。同文件主体 @layer components 合并归层
+   （同名 layer 块合并语义），保持页面 utility 可覆盖层序契约。 */
+@layer components {
+  .cursor-split-col {
+    cursor:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23000000' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m11 17-5-5 5-5'/%3E%3Cpath d='m13 7 5 5-5 5'/%3E%3C/g%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m11 17-5-5 5-5'/%3E%3Cpath d='m13 7 5 5-5 5'/%3E%3C/g%3E%3C/svg%3E")
+        12 12,
+      col-resize;
+  }
+
+  html[data-theme="light"] .cursor-split-col {
+    cursor:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m11 17-5-5 5-5'/%3E%3Cpath d='m13 7 5 5-5 5'/%3E%3C/g%3E%3Cg fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m11 17-5-5 5-5'/%3E%3Cpath d='m13 7 5 5-5 5'/%3E%3C/g%3E%3C/svg%3E")
+        12 12,
+      col-resize;
+  }
+
+  .cursor-split-row {
+    cursor:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23000000' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 11 5-5 5 5'/%3E%3Cpath d='m7 13 5 5 5-5'/%3E%3C/g%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 11 5-5 5 5'/%3E%3Cpath d='m7 13 5 5 5-5'/%3E%3C/g%3E%3C/svg%3E")
+        12 12,
+      row-resize;
+  }
+
+  html[data-theme="light"] .cursor-split-row {
+    cursor:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='4.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 11 5-5 5 5'/%3E%3Cpath d='m7 13 5 5 5-5'/%3E%3C/g%3E%3Cg fill='none' stroke='%23000000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 11 5-5 5 5'/%3E%3Cpath d='m7 13 5 5 5-5'/%3E%3C/g%3E%3C/svg%3E")
+        12 12,
+      row-resize;
+  }
+}
