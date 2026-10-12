@@ -3,7 +3,7 @@ import CodeMirror, { EditorView, Prec, lineNumbers, minimalSetup } from "@uiw/re
 import { redoDepth, undoDepth } from "@codemirror/commands";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { useTheme } from "../../theme";
-import { extToEditorLanguage } from "./editor-languages";
+import { extToEditorLanguage, shouldWrapInEditor } from "./editor-languages";
 
 // 可编辑代码容器：CodeMirror 6 + oneDark 主题。画布与排印对齐 03q2 编辑态（.ed）与 03q 查看
 // 态（.code，v2-primitives）的**同一规格**：bg-codeblock 全幅、无圆角无边框、上下 10px、
@@ -11,7 +11,8 @@ import { extToEditorLanguage } from "./editor-languages";
 // ②md 源码 toggle 与编辑态字号/行高/行号不同——两处皆因编辑态偏离
 // 原型，对齐后查看/编辑只差语法着色，着色收敛是 spec 既定方向另批做）。用 minimalSetup
 // 而非 basicSetup 省去 fold gutter / 自动补全等重型功能（约省 75KB），行号单独加回
-//（lineNumbers 随 @uiw re-export，零新增依赖）。lineWrapping 让移动端长行自动折行。
+//（lineNumbers 随 @uiw re-export，零新增依赖）。自动换行按文件类型分档（shouldWrapInEditor）：
+// md/txt 散文折行、源码横向滚动——依据见 editor-languages.ts 注释。
 //
 // 受控 value/onChange：value 是可序列化的纯文本，阶段 3 离线草稿可在此基础上挂接 CodeMirror 的
 // initialState.json（EditorState.toJSON/fromJSON）做 IndexedDB 持久化，无需改动此组件契约。
@@ -81,7 +82,7 @@ export function CodeEditor({
       ...(isDark ? [oneDark] : []),
       Prec.highest(THEME),
       ...extToEditorLanguage(name),
-      EditorView.lineWrapping,
+      ...(shouldWrapInEditor(name) ? [EditorView.lineWrapping] : []),
     ],
     [name, isDark],
   );

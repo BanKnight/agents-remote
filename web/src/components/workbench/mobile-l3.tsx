@@ -301,13 +301,18 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
   const handleViewReady = useCallback((view: EditorView) => setEditorView(view), []);
   // v1.6「点正文任意处进入编辑」的点击坐标暂存（进编辑后映射光标，见下方 effect）。
   const pendingCursorRef = useRef<{ pos?: number; click?: { x: number; y: number } } | null>(null);
+  // 完成/放弃退出编辑的滚动位暂存：editSession++ 重建实例（清 undo 栈）会让源码态跳回顶部
+  //（旧流程被「切渲染态」掩盖），exit 时记录、新实例 view 到达后还原（见下方 effect）。
+  const pendingScrollRef = useRef<number | null>(null);
   // 换文件：CodeEditor key=name@epoch 重建实例，容器侧同步丢旧 view 引用、按钮可用性与
-  // 待消费落点（防「tap 后进编辑未消费即切文件」把旧文件 doc 位置带进新文档）。
+  // 待消费落点（防「tap 后进编辑未消费即切文件」把旧文件 doc 位置带进新文档；滚动位同理
+  // 不跨文件还原）。
   useEffect(() => {
     setEditing(false);
     setEditorView(null);
     setHist({ canUndo: false, canRedo: false });
     pendingCursorRef.current = null;
+    pendingScrollRef.current = null;
   }, [path]);
   // v1.6「点正文任意处进入编辑」（仅查看态源码分支消费——渲染态不绑，动线 = segc 切源码；
   // early return 分支绑不到）。
@@ -335,12 +340,30 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
       applyPendingCursor(view, pending.click);
     }
   }, [editing, editorView]);
+  // 退出编辑后还原滚动位（编辑从源码进来、退出留源码态，用户停在原地看内容——跳顶即
+  // 破功）。重建时序：旧实例 unmount（editorView 仍指 detached 旧 view，isConnected gate
+  // 跳过不消费）→ 新实例 mount → onCreateEditor 更新 editorView → effect 还原并清 ref。
+  // 设置走 view.requestMeasure 的 write 阶段：CodeMirror 首帧几何 measure 是异步的，
+  // 同步设 scrollTop 会在 contentHeight 就位前被 clamp（实测 481→7）。
+  useEffect(() => {
+    if (editing) return;
+    const view = editorView;
+    const top = pendingScrollRef.current;
+    if (!view || top == null || !view.scrollDOM.isConnected) return;
+    pendingScrollRef.current = null;
+    view.requestMeasure({
+      read: () => top,
+      write: (value) => {
+        if (view.scrollDOM.isConnected) view.scrollDOM.scrollTop = value;
+      },
+    });
+  }, [editing, editorView]);
   // editable 随 editing 切：非编辑态 canEdit 恒 false（⌘S no-op）。renderMode 由 hook 按文件
   // 名派生默认（md/html → render，换文件随 hook 重置——2026-09-30 用户反馈「可预览的优先
   // 展示预览效果」：md/html 打开即渲染，与桌面 FilePreviewPanel 同款；检视面板 file 标签
   // PanelFileTabBody 与移动 L3 双端同源）。
-  // 点「编辑」时先 setRenderMode("source")——md/html render 态的 canEdit gate 要求 source，
-  // 且「完成」后回到渲染态（预览优先）。
+  // 点「编辑」时先 setRenderMode("source")——md/html render 态的 canEdit gate 要求 source；
+  // 「完成/放弃」后留在源码态（2026-10-12 用户反馈：编辑从源码进来，退出原路返回）。
   const editor = useFileEditor({
     editable: editing,
     path,
@@ -399,18 +422,18 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
       </div>
     );
   }
-  // 完成编辑：dirty 时丢弃确认（与 FilesPanel 换文件守卫同款 dialog 文案）。确认后回渲染
-  // 态（预览优先——「完成」= 结束一次编辑动作，回到 md/html 的默认阅读形态；源码再点
+  // 完成编辑：dirty 时丢弃确认（与 FilesPanel 换文件守卫同款 dialog 文案）。确认后留在
+  // 源码态（2026-10-12 用户反馈：编辑从源码进来，退出原路返回；md/html 想看渲染再点
   // toggle）。renderMode 仅 md/html（showRenderToggle）消费——非 md/html 不写脏 state。
   const finishEditing = () => {
-    const backToRender = () => {
+    const backToSource = () => {
+      pendingScrollRef.current = editorView?.scrollDOM.scrollTop ?? null;
       setEditing(false);
       // 会话号递增：下轮进编辑重建实例清 undo 栈（完成后撤销不得把已保存内容退回草稿态）。
       setEditSession((s) => s + 1);
-      if (editor.showRenderToggle) editor.onRenderModeChange("render");
     };
     if (!editor.isDirty) {
-      backToRender();
+      backToSource();
       return;
     }
     void confirm({
@@ -420,7 +443,7 @@ export function MobileL3FilePreview({ projectName, path }: MobileL3FilePreviewPr
       confirmLabel: t("files.discard"),
       tone: "default",
     }).then((ok) => {
-      if (ok) backToRender();
+      if (ok) backToSource();
     });
   };
 
@@ -545,8 +568,8 @@ export type FilePreviewPaneProps = {
  *（左 = 类型·度量·更新时间；右端 = MD/HTML 渲染⇄源码 segc.mini）+ CodeEditor 只读源码
  * / PreviewBody 渲染 / ImageViewer 图片 / .unsupported 空态；编辑态 = .emeta
  *（工具钮组撤销/重做/收起键盘 + ● 未保存变更 + fact 放弃/完成，7b 合并行）+ CodeEditor。
- * finish = dirty 即保存并退出编辑（回渲染态）；discard =
- * dirty 弹确认（files.discardConfirm）后清草稿退出。
+ * finish = dirty 即保存并退出编辑（留源码态，原路返回）；discard =
+ * dirty 弹确认（files.discardConfirm）后清草稿退出（同样留源码态）。
  */
 export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPaneProps>(
   function FilePreviewPane(
@@ -573,12 +596,17 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
     const pendingCursorRef = useRef<{ pos?: number; click?: { x: number; y: number } } | null>(
       null,
     );
+    // 完成/放弃退出编辑的滚动位暂存：editSession++ 重建实例（清 undo 栈）会让源码态跳回
+    // 顶部，exit 时记录、新实例 view 到达后还原（见下方 effect）。
+    const pendingScrollRef = useRef<number | null>(null);
     // 换文件：CodeEditor key=name@epoch 重建实例，容器侧同步丢旧 view 引用、按钮可用性与
-    // 待消费落点（防「tap 后进编辑未消费即切文件」把旧文件 doc 位置带进新文档）。
+    // 待消费落点（防「tap 后进编辑未消费即切文件」把旧文件 doc 位置带进新文档；滚动位
+    // 同理不跨文件还原）。
     useEffect(() => {
       setEditorView(null);
       setHist({ canUndo: false, canRedo: false });
       pendingCursorRef.current = null;
+      pendingScrollRef.current = null;
     }, [path]);
     // handle 内部镜像（editingActions="meta" 的 fact 钮消费——useImperativeHandle 工厂
     // 每次 render 同步同一对象，meta 钮与外部 ref 驱动同一 finish/discard 闭包）。
@@ -601,8 +629,8 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
         alive = false;
       };
     }, [data]);
-    // 进编辑先切源码（md/html render 态 canEdit gate 要求 source；finish/discard 已统一回
-    // render）。退出编辑不清 editorView——实例跨三态复用（注释见上方声明处）。
+    // 进编辑先切源码（md/html render 态 canEdit gate 要求 source）；finish/discard 留在
+    // 源码态（2026-10-12 用户反馈：原路返回）。退出编辑不清 editorView——实例跨三态复用。
     useEffect(() => {
       if (editing) {
         editor.onRenderModeChange("source");
@@ -618,17 +646,17 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
       finish: () => {
         if (editor.isSaving) return;
         if (editor.isDirty) editor.handleSave();
+        pendingScrollRef.current = editorView?.scrollDOM.scrollTop ?? null;
         // 会话号递增：下轮进编辑重建实例清 undo 栈（完成后撤销不得把已保存内容退回草稿态）。
         setEditSession((s) => s + 1);
         onEditingChange(false);
-        if (editor.showRenderToggle) editor.onRenderModeChange("render");
       },
       discard: () => {
         const exit = () => {
+          pendingScrollRef.current = editorView?.scrollDOM.scrollTop ?? null;
           editor.onEditChange(undefined);
           // 会话号递增：下轮进编辑重建实例清 undo 栈（放弃的内容再进编辑不得撤回）。
           setEditSession((s) => s + 1);
-          if (editor.showRenderToggle) editor.onRenderModeChange("render");
           onEditingChange(false);
         };
         if (!editor.isDirty) {
@@ -673,6 +701,23 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
       } else if (pending.click) {
         applyPendingCursor(view, pending.click);
       }
+    }, [editing, editorView]);
+    // 退出编辑后还原滚动位（finish/discard 后留源码态，用户停在原地看内容——editSession++
+    // 重建实例会跳顶）。旧实例 detach 期间（editorView 仍指旧 view）isConnected gate 跳过
+    // 不消费，新实例 onCreateEditor 更新 editorView 后本 effect 还原并清 ref。设置走
+    // view.requestMeasure 的 write 阶段（CodeMirror 首帧 measure 异步，同步设会被 clamp）。
+    useEffect(() => {
+      if (editing) return;
+      const view = editorView;
+      const top = pendingScrollRef.current;
+      if (!view || top == null || !view.scrollDOM.isConnected) return;
+      pendingScrollRef.current = null;
+      view.requestMeasure({
+        read: () => top,
+        write: (value) => {
+          if (view.scrollDOM.isConnected) view.scrollDOM.scrollTop = value;
+        },
+      });
     }, [editing, editorView]);
     // 外部 ref 通道（nav 模式容器的 finish/discard 入口）；工厂引用同一 paneHandle。
     useImperativeHandle(ref, () => paneHandle);
@@ -836,6 +881,10 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
             ) : (
               // 源码态 = CodeEditor 只读（反馈④b：与编辑态同画布 + 同 py-2.5 外层容器）。
               // onCreateEditor 接住实例：tap 进编辑时就地映射 doc 位置、复用后仍持有 view。
+              // value 用 editValue（草稿优先）而非 data.content：完成保存的退出瞬间 refetch
+              // 未回、data.content 还是旧内容，mount 后被 onSuccess 的数据更新触发整篇
+              // replace → 滚动还原被冲掉（探针滚动曲线恒 0 实抓）；editValue 在 refetch 回来
+              // 后与服务端内容字符串相等 → 不 replace。discard 先清草稿，同样一次到位。
               <div className="flex min-h-0 flex-1 flex-col py-2.5">
                 <Suspense fallback={<CodeEditorFallback />}>
                   <CodeEditor
@@ -843,7 +892,7 @@ export const FilePreviewPane = forwardRef<FilePreviewPaneHandle, FilePreviewPane
                     historyEpoch={editSession}
                     name={data.name}
                     onCreateEditor={handleViewReady}
-                    value={data.content}
+                    value={editor.editValue}
                   />
                 </Suspense>
               </div>

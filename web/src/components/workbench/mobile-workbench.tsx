@@ -911,6 +911,7 @@ function MobileProjectWorkbench({
                 onOpenFile={(_projectName, p) => openPanelFileTab(p)}
                 onOpenGitFile={(f) => setPanelDiff({ path: f.path, scope: f.scope, from: "files" })}
                 onPathChange={setFilesPath}
+                pollingEnabled={panelVisible && active}
                 projectName={scope.key}
                 searchQuery={filesSearchQuery}
               />
@@ -940,6 +941,7 @@ function MobileProjectWorkbench({
                     to: "/projects/$key/git/branches",
                   });
                 }}
+                pollingEnabled={panelVisible && active}
                 projectName={scope.key}
               />
             </div>

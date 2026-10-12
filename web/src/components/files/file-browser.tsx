@@ -14,6 +14,7 @@ import { MarkdownString } from "../markdown/MarkdownString";
 import { MarkdownLinkContext } from "../markdown/markdown-components";
 import { resolveRelativeFilePath } from "./relative-md-link";
 import { useT } from "../../i18n";
+import { PANEL_POLL_MS } from "../../lib/query-client";
 import { useMobileExitClose } from "../../lib/use-mobile-exit-close";
 import {
   listProjectFiles,
@@ -1096,6 +1097,10 @@ export function FilesPanel({
       isRootListing
         ? listRootFiles()
         : listProjectFiles(effectiveProjectName ?? "", effectiveRelativePath),
+    // 轮询（2026-10-12 反馈④：放置不动时文件树不因外部变化刷新——无 WS 文件事件通道且
+    // 全局 refetchOnWindowFocus=false）。页面隐藏自动暂停；本面板挂载即路由可见，
+    // 无需面板级 gate（节奏单源 PANEL_POLL_MS）。
+    refetchInterval: PANEL_POLL_MS,
   });
   const editor = useFileEditor({
     editable: true,

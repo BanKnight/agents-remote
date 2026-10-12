@@ -48,3 +48,14 @@ export function extToEditorLanguage(name: string): Extension[] {
   const factory = EXT_TO_EDITOR_LANG[name.slice(dot + 1).toLowerCase()];
   return factory ? [factory()] : [];
 }
+
+// 编辑器自动换行按文件类型分档（2026-10-12 用户反馈⑤）：散文类折行（长段落阅读优先），
+// 源码/结构化文件不折行（缩进与结构依赖视觉对齐，折行破坏可读性——VS Code / GitHub blob
+// 的默认取向同款）。白名单只收纯散文扩展；mdx 等「散文 + 代码混合」按源码处理不折。
+const WRAPPING_EXTS: ReadonlySet<string> = new Set(["md", "markdown", "txt"]);
+
+export function shouldWrapInEditor(name: string): boolean {
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return false;
+  return WRAPPING_EXTS.has(name.slice(dot + 1).toLowerCase());
+}

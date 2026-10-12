@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { extToEditorLanguage } from "./editor-languages";
+import { extToEditorLanguage, shouldWrapInEditor } from "./editor-languages";
 
 describe("extToEditorLanguage", () => {
   test("returns a single-element extension array for known code extensions", () => {
@@ -27,5 +27,29 @@ describe("extToEditorLanguage", () => {
   test("is case-insensitive on the extension", () => {
     expect(extToEditorLanguage("App.TSX")).toHaveLength(1);
     expect(extToEditorLanguage("MAIN.PY")).toHaveLength(1);
+  });
+});
+
+describe("shouldWrapInEditor", () => {
+  test("prose files wrap", () => {
+    expect(shouldWrapInEditor("README.md")).toBe(true);
+    expect(shouldWrapInEditor("notes.markdown")).toBe(true);
+    expect(shouldWrapInEditor("todo.txt")).toBe(true);
+    expect(shouldWrapInEditor("ReadMe.MD")).toBe(true);
+  });
+
+  test("code and structured files do not wrap", () => {
+    expect(shouldWrapInEditor("index.ts")).toBe(false);
+    expect(shouldWrapInEditor("main.py")).toBe(false);
+    expect(shouldWrapInEditor("config.json")).toBe(false);
+    expect(shouldWrapInEditor("page.html")).toBe(false);
+    // 散文 + 代码混合按源码处理。
+    expect(shouldWrapInEditor("post.mdx")).toBe(false);
+    expect(shouldWrapInEditor("notes.yaml")).toBe(false);
+  });
+
+  test("unknown extensions and extension-less names do not wrap", () => {
+    expect(shouldWrapInEditor("file.unknownext")).toBe(false);
+    expect(shouldWrapInEditor("Makefile")).toBe(false);
   });
 });

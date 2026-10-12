@@ -6,6 +6,7 @@ import type {
   WikiIndexResponse,
 } from "@agents-remote/shared";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PANEL_POLL_MS } from "../../lib/query-client";
 import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -124,6 +125,10 @@ export type GitToolPanelProps = {
   onOpenCommit?: (hash: string) => void;
   onOpenHistory?: () => void;
   onOpenBranches?: () => void;
+  /** diff/log 轮询开关（2026-10-12 反馈④；默认开）。容器不可见时传 false 停轮询——
+   * 移动检视面板关闭态（invisible 保活）传 panelVisible；桌面右栏非激活标签保持默认
+   * （切回即新，本地开销可接受）。 */
+  pollingEnabled?: boolean;
 };
 
 /**
@@ -141,6 +146,7 @@ export function GitToolPanel({
   onOpenCommit,
   onOpenHistory,
   onOpenBranches,
+  pollingEnabled = true,
 }: GitToolPanelProps) {
   const { t } = useT();
   // gitDiffListQueryKey 单源 key（workbench-git-left scope）——header gitchip / 移动工具面板 /
@@ -148,6 +154,10 @@ export function GitToolPanel({
   const diff = useQuery({
     queryKey: gitDiffListQueryKey(projectName),
     queryFn: () => listProjectGitDiff(projectName),
+    // 轮询（2026-10-12 反馈④：放置不动时工作区改动不因外部 git 操作刷新——无 WS git
+    // 事件通道且全局 refetchOnWindowFocus=false）。页面隐藏自动暂停；invisible 保活容器
+    // 由 pollingEnabled gate（节奏单源 PANEL_POLL_MS）。
+    refetchInterval: pollingEnabled ? PANEL_POLL_MS : false,
   });
   // 03m 最近提交：请求不带 branch（后端默认分支），key 的 branch 维度恒 ""——与
   // L3GitHistory（显式 branch 维度）key 同形但不共享缓存。前端 slice 3 条。
@@ -156,8 +166,10 @@ export function GitToolPanel({
     enabled: onOpenCommit != null,
     queryKey: gitLogQueryKey(projectName),
     queryFn: () => getProjectGitLog(projectName),
+    refetchInterval: pollingEnabled ? PANEL_POLL_MS : false,
   });
   // links「分支 (N)」计数；与分支页 query 同 key。onOpenBranches 不传不拉（段装配门控）。
+  // 分支列表变化频率极低（本地 git 操作才变，伴随页面操作自会 invalidate），不轮询。
   const branches = useQuery({
     enabled: onOpenBranches != null,
     queryKey: ["projects", projectName, "git", "branches"],
@@ -369,6 +381,8 @@ export type FilesToolPanelProps = {
   onOpenFile: (projectName: string, path: string) => void;
   /** 03w/05e「在 Git 中查看 diff」（移动 = git file focus；右栏 = 栏内 diff 详情态）。 */
   onOpenGitFile: (file: { path: string; scope: GitDiffScope }) => void;
+  /** listing/diff 轮询开关（2026-10-12 反馈④；默认开）。语义同 GitToolPanel.pollingEnabled。 */
+  pollingEnabled?: boolean;
 };
 
 /**
@@ -385,6 +399,7 @@ export function FilesToolPanel({
   onPathChange,
   onOpenFile,
   onOpenGitFile,
+  pollingEnabled = true,
 }: FilesToolPanelProps) {
   const { t } = useT();
   const queryClient = useQueryClient();
@@ -393,9 +408,12 @@ export function FilesToolPanel({
   const path = currentPathProp ?? internalPath;
   const changePath = onPathChange ?? setInternalPath;
   // 与 FilesPanel 同 key（queryScope "files"）——工具面板与浮层文件树共享缓存。
+  // 轮询（2026-10-12 反馈④：放置不动时文件树不因外部变化刷新）；invisible 保活容器由
+  // pollingEnabled gate（节奏单源 PANEL_POLL_MS，与 FilesPanel 的同 key observer 各自持）。
   const listing = useQuery({
     queryKey: ["projects", projectName, "files", path],
     queryFn: () => listProjectFiles(projectName, path || undefined),
+    refetchInterval: pollingEnabled ? PANEL_POLL_MS : false,
   });
   // 路径不存在回退（§13，与 FilesPanel 受控模式同语义）：持久化 cwd 记忆指向已删除目录时
   // listing 报错 → 回根 + changePath("") 清记忆（queryKey 变化时新查询 pending、error 归零
@@ -409,6 +427,8 @@ export function FilesToolPanel({
   const diff = useQuery({
     queryKey: gitDiffListQueryKey(projectName),
     queryFn: () => listProjectGitDiff(projectName),
+    // 同 GitToolPanel diff：轮询让文件行的 git badge 随外部 git 操作刷新（反馈④）。
+    refetchInterval: pollingEnabled ? PANEL_POLL_MS : false,
   });
   // path → 改动态（worktree 改动优先；03o 编号③「git 工作区改动态 join 文件浏览」）。
   const dirty = useMemo(() => {
