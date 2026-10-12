@@ -1826,6 +1826,18 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **验证**：全门禁 + CSS 硬闸 + tokens 机检 + web 单测 790 全绿；probe-v15-batch3-preview **70/0**（Part 2b 新增 12 断言：tap 进编辑 / 撤销重做初始双灰 / 光标行级+列级落点击处 / 输入后亮起+dirty / giveup 色 = 页内读 `--c-danger` hex→rgb 换算比对 / 撤销后回灰+redo 亮+dirty 消失 / clean 放弃退出）；probe-v15-batch4-desktop **60/0**（⑦c 初始撤销 disabled / ⑦d 输入后 enabled / ⑦e undo 后回灰保 clean，不打乱 ⑧ clean 放弃路径）。**reviewer 四连 API 故障（unexpected EOF）**，以自查覆盖等价问题域（diff 全读 + 失效路径 + 接线完整性 + design 先例核实 + onCreateEditor 时序源码收口），结论无 P0/P1。
 - **真机清单**：①移动 L3 文件源码态点某行 → 进编辑态光标落在该行点击处；②编辑中撤销/重做初始灰、输入字符后变亮可点，点撤销内容回退；③点「完成」保存后再进编辑 → 撤销灰（不把已保存内容退回草稿）；④放弃（确认后）再进编辑 → 撤销灰；⑤编辑态「放弃」红色、「完成」主色蓝；⑥桌面中栏 file tab 与全局推入态编辑态同①②③。
 
+### 终端 ⚙ 快捷输入面板 Apple 换代：segc + inset grouped + 语义分组（2026-10-12，反馈②）
+
+用户真机反馈②「终端的设置，浮层的布局以及组件等，很明显没有遵循 apple 的设计，因此我不准备测试这部分，你需要重新设计我才能根据新设计来测试」。诊断四偏差：①v1 SegmentedControl 残留（非 .segc 单源）；②通栏贴边列表（非 inset grouped 卡片）；③散写分区标题/提示（非 .sect/.kfoot 档）；④命令编辑表单画框式（非 inset grouped 规范）。经 AskUserQuestion 用户拍板两项：**完整换代**（行为零变化）+ **「可用按键」24 预置键按语义分组**（行编辑/导航/功能键三卡，行编辑与导航键带 readline 语义副文本；F 键行为随宿主程序无通用语义，不配）。
+
+- **消费的全部是 v2-primitives 单源类，零新增 CSS**：`.segc`（32px 高 segmented，`role="tablist"` + `button role="tab" aria-selected` + `.on` 白 thumb，settings-dialog 同款；原生 button 非 Radix Trigger——嵌套 modal 内 Trigger 失效，frontend-notes §5）；`.sect` 组标题 / `.sgroup` inset 卡片 / `.setrow` 44px 行（`.v` 副文本 / `.v.mono` 脚本预览）；`.kfoot` 脚注；toggle 44×26 沿 shell-primitives。
+- **容器 margin 中和**：.msheet 自带 `padding: 0 20px 12px`、桌面 Dialog 卡片 `p-5`，`.sect/.sgroup` 单源自带 16px 水平 margin 会双重边距（settings 批「36px 错位」同款教训）→ 消费点 wrapper `[&_.sect]:mx-0 [&_.sgroup]:mx-0`（移动 body 与桌面内滚区两处）。
+- **数据模型**：`PresetTerminalKey` 加 `group: "editing" | "nav" | "fn"` + `descKey?: TranslationKey`（24 项全配：tab + 8 个 Ctrl 系 = editing 带 descKey；PgUp/PgDn/Home/End = nav 带 descKey；F1–F12 = fn 不配）；i18n `session.presetGroup*` 3 键 + `session.presetDesc*` 12 键 ×2 语言。单测断言分组完整性（group 全法值 / 每组非空 / 非 fn 组全带 descKey / fn 组全无）。
+- **表单原语单源抽取**：settings-dialog 的五个类串（input/primary/ghost/text button/hint）抽到 `shell/settings-form-classes.ts`，quick-commands-tab 表单复用同档——类串散写两处必然漂移。
+- **行为零变化清单（重写面自查口径）**：拖拽排序（pointer capture + transform 补偿 + touchmove preventDefault + 落位单 commit）、键盘 ↑↓ 换位、行点按显隐/启用、命令 tap 执行/长按+右键菜单（guardClick + fiber 冒泡 contains 判断）、命令 CRUD 校验与落盘、custom→commands 迁移、面板关闭清草稿——全部原样保留。
+- **验证**：全门禁（format/lint --deny-warnings/typecheck/test 790）+ CSS 硬闸 + tokens 机检全绿；probe-quick-keys-editor **44/0**（适配四处选择器漂移：M13 改数非主列表 `ul.sgroup` li 并断言 3 张分组卡、M14 `.sgroup:not(.select-none)` 定位、M17/TM3 组标题收集加 `div.sect`、tab 切换 `getByRole("tab")`——segc 按钮带 `role="tab"` 后 `getByRole("button")` 按 ARIA 角色树不再命中，M12 的 DOM tag 选择器不受影响故曾假绿）。code-reviewer 复核：六个指定检查点全核实（拖拽状态机/命令 CRUD/24 序列/五类串/margin 中和/i18n 逐字一致），1 P1（表单展开时添加行仅 hidden 留 `.sgroup` 壳塌缩成 2px 细线 → 整卡条件渲染修复）+ 3 P2 已修（主列表行与 switchRow 统一 `gap-3` 口径、桌面 tabsBar 移回滚动区外钉顶防滚走、表单删除钮 `py-1.5` 对齐同行动作钮）；`.segc` 32px 命中区 vs 旧 44px 属设计系统既定取舍不动。
+- **真机清单**：①⚙ 面板顶部「键盘/命令」白 thumb 分段控件，点切流畅；②键盘 tab = 「条上按键」inset 卡片（grip 拖拽排序 + 开关）+ 下方「可用按键 · 行编辑/导航/功能键」三张分组卡（行带语义副文本），启用后键上浮进主列表；③命令 tab = 分组 inset 卡片 + 行右对齐 mono 脚本预览 + 「＋ 新建命令」；④命令编辑表单 = 内嵌分组卡（名称/分组/脚本 + 删除红字/取消/保存主钮）；⑤移动 sheet 与桌面 Dialog 两端形态一致。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。

@@ -1,28 +1,40 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 import { useIsMobile } from "@/lib/use-is-mobile";
 
 import { useT } from "../../i18n";
+import type { TranslationKey } from "../../i18n/types";
 import {
   presetTerminalKeys,
   quickKeyLabel,
+  type PresetKeyGroup,
   type QuickCommand,
   type SessionQuickKey,
 } from "../../routes/console-model";
 import { LucideIcon } from "../shell/lucide-icon";
 import { MobileSheet } from "../shell/mobile-sheet";
-import {
-  SegmentedControl,
-  toggleSwitchKnobClasses,
-  toggleSwitchTrackClasses,
-} from "../shell/shell-primitives";
+import { toggleSwitchKnobClasses, toggleSwitchTrackClasses } from "../shell/shell-primitives";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../ui/dialog";
 import { QuickCommandsTab } from "./quick-commands-tab";
 
 /** 非拖拽行的换位过渡（滑入腾出的空位）；拖拽行 inline 摘 transition 恒跟手。 */
 const ROW_SHIFT_TRANSITION_MS = 150;
-/** 行距测量兜底（单行不可测相邻差时）：与 tokens rowHeight 44px 同值。 */
+/** 行距测量兜底（单行不可测相邻差时）：.setrow 固定行高 44px 同值。 */
 const FALLBACK_ROW_HEIGHT_PX = 44;
+
+/** 可用按键语义分组呈现序与标题（2026-10-12 反馈② Apple 分组惯例，用户拍板）。 */
+const PRESET_GROUP_ORDER: readonly PresetKeyGroup[] = ["editing", "nav", "fn"];
+const PRESET_GROUP_TITLE: Record<PresetKeyGroup, TranslationKey> = {
+  editing: "session.presetGroupEditing",
+  fn: "session.presetGroupFn",
+  nav: "session.presetGroupNav",
+};
 
 /**
  * 按用户序归一化：已知 id 按存储序排前，未存/新增键按默认序尾补（稳定排序——同为缺失
@@ -81,6 +93,12 @@ type QuickKeysEditorProps = {
  * 文本，QuickCommandsTab 单源）。多端同构只是容器不同：移动 = MobileSheet 半屏 sheet、
  * 桌面 = 居中 Dialog（照 prompt-dialog 分流范式）。状态不进本组件（atoms 由 route 读传
  * 入，与 SessionInputDrawer slot 模式一致——配置逻辑归调用方）。
+ *
+ * v2 组件换代（2026-10-12 反馈②，用户拍板「完整换代」）：tab 条 = `.segc`（role=tablist
+ * + aria-selected + `.on` 白 thumb，settings-dialog 同款）；列表 = `.sect` 组标题 +
+ * `.sgroup` inset 卡片 + `.setrow` 44px 行（可用按键按语义分组）；容器（移动 sheet /
+ * 桌面 Dialog）不改，容器自带水平内距故 `[&_.sect/_.sgroup]:mx-0` 中和单源 margin 防
+ * 双重边距（settings 批同款教训）。
  *
  * 拖拽排序（frontend-notes §14 真机验证组合）：pointer events 驱动 + down 即
  * setPointerCapture（grip 是专用手柄无点击动作，无需 MobileSheet 的起步阈值保 click 合成；
@@ -216,15 +234,40 @@ export function QuickKeysEditor({
     return 0;
   };
 
-  // 「可用按键」= 预置目录未启用项（启用后进主列表可排序；停用回本区）。
+  // 「可用按键」= 预置目录未启用项（启用后进主列表可排序；停用回本区），按语义分组
+  // 分卡片（PRESET_GROUP_ORDER 序，空组不渲染）。
   const availablePresets = presetTerminalKeys.filter((p) => !presetEnabledIds.includes(p.id));
+
+  /** 开关行（.setrow 44px）：label 副文本（可选 .v）+ .toggle 44×26。 */
+  const switchRow = (opts: {
+    checked: boolean;
+    descKey?: TranslationKey;
+    label: string;
+    onToggle: () => void;
+  }) => (
+    <button
+      aria-checked={opts.checked}
+      className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+      onClick={opts.onToggle}
+      role="switch"
+      type="button"
+    >
+      <span className="min-w-0 flex-1 truncate">{opts.label}</span>
+      {opts.descKey ? <span className="v shrink-0">{t(opts.descKey)}</span> : null}
+      <span aria-hidden="true" className={`shrink-0 ${toggleSwitchTrackClasses(opts.checked)}`}>
+        <span
+          className={`${toggleSwitchKnobClasses} ${opts.checked ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
+        />
+      </span>
+    </button>
+  );
 
   const keysBody = (
     <>
-      <p className="mt-0.5 text-xs font-semibold text-ink-2">{t("session.quickKeysEditorHint")}</p>
-      <p className="mb-1 mt-3 text-xs font-semibold text-ink-2">{t("session.quickKeysOnBar")}</p>
+      <p className="kfoot">{t("session.quickKeysEditorHint")}</p>
+      <div className="sect">{t("session.quickKeysOnBar")}</div>
       <ul
-        className="select-none border-t border-sep-row"
+        className="sgroup select-none"
         onPointerCancel={cancelReorder}
         onPointerMove={moveReorder}
         onPointerUp={endReorder}
@@ -236,9 +279,7 @@ export function QuickKeysEditor({
           const draggingRow = drag?.fromIndex === i;
           return (
             <li
-              className={`relative flex items-center border-b border-sep-row last:border-b-0 ${
-                draggingRow ? "z-1 rounded-lg bg-elevated2 shadow-lg" : ""
-              }`}
+              className={`setrow relative ${draggingRow ? "z-1 rounded-lg bg-elevated2 shadow-lg" : ""}`}
               key={k.id}
               style={{
                 transform: offset !== 0 ? `translateY(${offset}px)` : undefined,
@@ -249,19 +290,18 @@ export function QuickKeysEditor({
             >
               {/* grip 行首（用户补充反馈：开关与拖动相邻易误触）——起手区独占左缘，与
                   行尾 toggle 隔整行宽，误触结构性消失。纯视觉手柄（aria-hidden；键盘排序
-                  走行 button 的 ↑/↓，见下）。-m-2 抵消 p-2.5：视觉位不变、命中区外扩至
-                  36px（44px 行内惯例向）。touch-none 防浏览器把起手判成滚动（配合容器
-                  preventDefault 双保险）。 */}
+                  走行 button 的 ↑/↓，见下）。36px 方形热区居中于 44px 行。touch-none
+                  防浏览器把起手判成滚动（配合容器 preventDefault 双保险）。 */}
               <span
                 aria-hidden="true"
-                className="-m-2 cursor-grab touch-none p-2.5 text-ink-2 active:cursor-grabbing"
+                className="flex size-9 shrink-0 cursor-grab touch-none items-center justify-center text-ink-2 active:cursor-grabbing"
                 onPointerDown={(e) => startReorder(e, i)}
               >
                 <LucideIcon className="size-4" name="grip-vertical" />
               </span>
               <button
                 aria-checked={visible}
-                className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-2.5 text-left"
+                className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
                 onClick={() => ("labelKey" in k ? onToggleHidden(k.id) : onTogglePresetKey(k.id))}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowUp") {
@@ -275,7 +315,7 @@ export function QuickKeysEditor({
                 role="switch"
                 type="button"
               >
-                <span className="min-w-0 flex-1 truncate text-sm">{quickKeyLabel(k, t)}</span>
+                <span className="min-w-0 flex-1 truncate">{quickKeyLabel(k, t)}</span>
                 <span
                   aria-hidden="true"
                   className={`shrink-0 ${toggleSwitchTrackClasses(visible)}`}
@@ -289,49 +329,54 @@ export function QuickKeysEditor({
           );
         })}
       </ul>
-      {/* 可用按键区（预置键目录未启用项）：行开关 off 态，点按 = 启用（进主列表可排序）。
-          与主列表同一行契约（switch row），但不参与拖拽排序（排序只对条上按键有意义）。 */}
-      {availablePresets.length > 0 ? (
-        <>
-          <p className="mb-1 mt-4 text-xs font-semibold text-ink-2">
-            {t("session.quickKeysAvailable")}
-          </p>
-          <ul className="border-t border-sep-row">
-            {availablePresets.map((p) => (
-              <li className="flex items-center border-b border-sep-row last:border-b-0" key={p.id}>
-                <button
-                  aria-checked={false}
-                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-2.5 text-left"
-                  onClick={() => onTogglePresetKey(p.id)}
-                  role="switch"
-                  type="button"
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm">{p.label}</span>
-                  <span
-                    aria-hidden="true"
-                    className={`shrink-0 ${toggleSwitchTrackClasses(false)}`}
-                  >
-                    <span className={`${toggleSwitchKnobClasses} translate-x-0.5`} />
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
+      {PRESET_GROUP_ORDER.map((group) => {
+        const items = availablePresets.filter((p) => p.group === group);
+        if (items.length === 0) return null;
+        return (
+          <Fragment key={group}>
+            <div className="sect">
+              {t("session.quickKeysAvailable")} · {t(PRESET_GROUP_TITLE[group])}
+            </div>
+            <ul className="sgroup">
+              {items.map((p) => (
+                <li className="setrow" key={p.id}>
+                  {switchRow({
+                    checked: false,
+                    descKey: p.descKey,
+                    label: p.label,
+                    onToggle: () => onTogglePresetKey(p.id),
+                  })}
+                </li>
+              ))}
+            </ul>
+          </Fragment>
+        );
+      })}
     </>
   );
 
   const tabsBar = (
-    <SegmentedControl
-      ariaLabel={t("session.quickKeysCustomize")}
-      onChange={setTab}
-      options={[
-        { value: "keys", label: t("session.quickKeysTabKeys") },
-        { value: "commands", label: t("session.quickKeysTabCommands") },
-      ]}
-      value={tab}
-    />
+    // .segc（components.css 单源镜像，settings-dialog 同款）：role=tablist + aria-selected
+    // + .on 白 thumb。原生 button 非 Radix Trigger（嵌套 modal 内 Trigger 失效，§5）。
+    <div aria-label={t("session.quickKeysCustomize")} className="segc w-full" role="tablist">
+      {(
+        [
+          { value: "keys", label: t("session.quickKeysTabKeys") },
+          { value: "commands", label: t("session.quickKeysTabCommands") },
+        ] as const
+      ).map((opt) => (
+        <button
+          aria-selected={tab === opt.value}
+          className={tab === opt.value ? "on" : ""}
+          key={opt.value}
+          onClick={() => setTab(opt.value)}
+          role="tab"
+          type="button"
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
   );
 
   const tabBody =
@@ -348,11 +393,13 @@ export function QuickKeysEditor({
       />
     );
 
+  // 容器（.msheet / 桌面卡片）自带水平内距，中和 .sect/.sgroup 单源 16px margin 防双重
+  // 边距（settings 批「36px 错位」教训）；kfoot 无 margin 随容器内距对齐卡片。
   const body = (
-    <>
+    <div className="[&_.sect]:mx-0 [&_.sgroup]:mx-0">
       <div className="mt-2.5">{tabsBar}</div>
       {tabBody}
-    </>
+    </div>
   );
 
   if (isMobile) {
@@ -372,11 +419,14 @@ export function QuickKeysEditor({
           <DialogDescription className="sr-only">
             {t("session.quickKeysCustomize")}
           </DialogDescription>
-          <div className="mt-2.5 shrink-0">{tabsBar}</div>
-          {/* 内容可滚（settings-dialog 同款高度链）：键盘 tab 8 行 + 24 预置键远超视口，
+          {/* 内容可滚（settings-dialog 同款高度链）：键盘 tab 8 行 + 分组预置键远超视口，
               无内滚则卡片居中定位溢出视口顶——底部行不可达（探针 D 系实抓）。 */}
-          <div className="-mr-1 mt-1 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
-            {tabBody}
+          <div className="mt-3 shrink-0">{tabsBar}</div>
+          {/* 内容可滚（settings-dialog 同款高度链）：键盘 tab 8 行 + 分组预置键远超视口，
+              无内滚则卡片居中定位溢出视口顶——底部行不可达（探针 D 系实抓）。tab 条钉顶
+              不随滚（review P2：钉/滚两态不一致）。 */}
+          <div className="-mr-1 flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
+            <div className="[&_.sect]:mx-0 [&_.sgroup]:mx-0">{tabBody}</div>
           </div>
         </div>
       </DialogContent>

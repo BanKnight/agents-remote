@@ -45,9 +45,18 @@ export type CustomQuickKey = {
   sequence: string;
 };
 
+/** 预置键语义分组（2026-10-12 反馈② Apple 分组惯例：可用按键区按语义分卡片呈现——
+ * 24 项平铺不可扫读）。editing = shell readline 行编辑（含 Tab 补全），nav = TUI 翻页/
+ * 跳转，fn = F 功能键。 */
+export type PresetKeyGroup = "editing" | "nav" | "fn";
+
 /** 预置终端键（Termius extended keyboard 对标，2026-10-11 拍板「预置序列清单」）：
- * 键帽名是跨语言通用术语，裸文本不进 i18n；序列有系统语义，不可改名/改序列。 */
+ * 键帽名是跨语言通用术语，裸文本不进 i18n；序列有系统语义，不可改名/改序列。
+ * group = 语义分组（可用按键区分卡片），descKey = 行副文本（readline 语义说明；
+ * F 键行为随宿主程序无通用语义，不配）。 */
 export type PresetTerminalKey = {
+  descKey?: TranslationKey;
+  group: PresetKeyGroup;
   id: string;
   label: string;
   sequence: string;
@@ -68,30 +77,102 @@ export type QuickCommand = {
 /** 预置终端键目录（「可用按键」分区勾选启用，全部默认停用）：行编辑 Ctrl 系 = shell
  * readline 行首/行尾/清行高频，PgUp/PgDn/Home/End 与 F 键 = TUI 程序（less/htop/mc）高频。 */
 export const presetTerminalKeys: PresetTerminalKey[] = [
-  { id: "preset-tab", label: "Tab", sequence: "\t" },
-  { id: "preset-ctrl-a", label: "Ctrl+A", sequence: "\x01" },
-  { id: "preset-ctrl-e", label: "Ctrl+E", sequence: "\x05" },
-  { id: "preset-ctrl-u", label: "Ctrl+U", sequence: "\x15" },
-  { id: "preset-ctrl-k", label: "Ctrl+K", sequence: "\x0b" },
-  { id: "preset-ctrl-w", label: "Ctrl+W", sequence: "\x17" },
-  { id: "preset-ctrl-l", label: "Ctrl+L", sequence: "\x0c" },
-  { id: "preset-ctrl-r", label: "Ctrl+R", sequence: "\x12" },
-  { id: "preset-pgup", label: "PgUp", sequence: "\x1b[5~" },
-  { id: "preset-pgdn", label: "PgDn", sequence: "\x1b[6~" },
-  { id: "preset-home", label: "Home", sequence: "\x1b[H" },
-  { id: "preset-end", label: "End", sequence: "\x1b[F" },
-  { id: "preset-f1", label: "F1", sequence: "\x1bOP" },
-  { id: "preset-f2", label: "F2", sequence: "\x1bOQ" },
-  { id: "preset-f3", label: "F3", sequence: "\x1bOR" },
-  { id: "preset-f4", label: "F4", sequence: "\x1bOS" },
-  { id: "preset-f5", label: "F5", sequence: "\x1b[15~" },
-  { id: "preset-f6", label: "F6", sequence: "\x1b[17~" },
-  { id: "preset-f7", label: "F7", sequence: "\x1b[18~" },
-  { id: "preset-f8", label: "F8", sequence: "\x1b[19~" },
-  { id: "preset-f9", label: "F9", sequence: "\x1b[20~" },
-  { id: "preset-f10", label: "F10", sequence: "\x1b[21~" },
-  { id: "preset-f11", label: "F11", sequence: "\x1b[23~" },
-  { id: "preset-f12", label: "F12", sequence: "\x1b[24~" },
+  {
+    descKey: "session.presetDescTab",
+    group: "editing",
+    id: "preset-tab",
+    label: "Tab",
+    sequence: "\t",
+  },
+  {
+    descKey: "session.presetDescCtrlA",
+    group: "editing",
+    id: "preset-ctrl-a",
+    label: "Ctrl+A",
+    sequence: "\x01",
+  },
+  {
+    descKey: "session.presetDescCtrlE",
+    group: "editing",
+    id: "preset-ctrl-e",
+    label: "Ctrl+E",
+    sequence: "\x05",
+  },
+  {
+    descKey: "session.presetDescCtrlU",
+    group: "editing",
+    id: "preset-ctrl-u",
+    label: "Ctrl+U",
+    sequence: "\x15",
+  },
+  {
+    descKey: "session.presetDescCtrlK",
+    group: "editing",
+    id: "preset-ctrl-k",
+    label: "Ctrl+K",
+    sequence: "\x0b",
+  },
+  {
+    descKey: "session.presetDescCtrlW",
+    group: "editing",
+    id: "preset-ctrl-w",
+    label: "Ctrl+W",
+    sequence: "\x17",
+  },
+  {
+    descKey: "session.presetDescCtrlL",
+    group: "editing",
+    id: "preset-ctrl-l",
+    label: "Ctrl+L",
+    sequence: "\x0c",
+  },
+  {
+    descKey: "session.presetDescCtrlR",
+    group: "editing",
+    id: "preset-ctrl-r",
+    label: "Ctrl+R",
+    sequence: "\x12",
+  },
+  {
+    descKey: "session.presetDescPgUp",
+    group: "nav",
+    id: "preset-pgup",
+    label: "PgUp",
+    sequence: "\x1b[5~",
+  },
+  {
+    descKey: "session.presetDescPgDn",
+    group: "nav",
+    id: "preset-pgdn",
+    label: "PgDn",
+    sequence: "\x1b[6~",
+  },
+  {
+    descKey: "session.presetDescHome",
+    group: "nav",
+    id: "preset-home",
+    label: "Home",
+    sequence: "\x1b[H",
+  },
+  {
+    descKey: "session.presetDescEnd",
+    group: "nav",
+    id: "preset-end",
+    label: "End",
+    sequence: "\x1b[F",
+  },
+  { group: "fn", id: "preset-f1", label: "F1", sequence: "\x1bOP" },
+  { group: "fn", id: "preset-f2", label: "F2", sequence: "\x1bOQ" },
+  { group: "fn", id: "preset-f3", label: "F3", sequence: "\x1bOR" },
+  { group: "fn", id: "preset-f4", label: "F4", sequence: "\x1bOS" },
+  { group: "fn", id: "preset-f5", label: "F5", sequence: "\x1b[15~" },
+  { group: "fn", id: "preset-f6", label: "F6", sequence: "\x1b[17~" },
+  { group: "fn", id: "preset-f7", label: "F7", sequence: "\x1b[18~" },
+  { group: "fn", id: "preset-f8", label: "F8", sequence: "\x1b[19~" },
+  { group: "fn", id: "preset-f9", label: "F9", sequence: "\x1b[20~" },
+  { group: "fn", id: "preset-f10", label: "F10", sequence: "\x1b[21~" },
+  { group: "fn", id: "preset-f11", label: "F11", sequence: "\x1b[23~" },
+  { group: "fn", id: "preset-f12", label: "F12", sequence: "\x1b[24~" },
 ];
 
 /** 命令 id（持久化身份，order 引用同 id 无命令排序——命令按分组分区呈现）：

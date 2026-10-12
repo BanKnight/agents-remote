@@ -258,19 +258,27 @@ const rowLabels = (page) =>
     );
     ok(tabs === 2, "M12 双 tab SegmentedControl（键盘/命令）在场");
 
-    // 键盘 tab「可用按键」分区：标题 + 24 预置键全默认停用
-    const availCount = await page.evaluate(() => {
-      // 精确匹配：hint 文案含「可用按键」字样，includes 会误中 hint p
-      const p = [...document.querySelectorAll(".msheet p")].find(
-        (n) => n.textContent.trim() === "可用按键",
-      );
-      const ul = p?.nextElementSibling;
-      return ul?.tagName === "UL" ? ul.querySelectorAll("li").length : -1;
+    // 键盘 tab「可用按键」分区（语义分组 v2）：3 张分组卡（div.sect 标题 + ul.sgroup）
+    // 合计 24 预置键全默认停用（主列表 ul 带 select-none，排除）
+    const avail = await page.evaluate(() => {
+      const groups = [...document.querySelectorAll(".msheet div.sect")].filter((n) =>
+        n.textContent.startsWith("可用按键"),
+      ).length;
+      const rows = [...document.querySelectorAll(".msheet ul.sgroup")]
+        .filter((u) => !u.classList.contains("select-none"))
+        .reduce((n, u) => n + u.querySelectorAll("li").length, 0);
+      return { groups, rows };
     });
-    ok(availCount === 24, `M13「可用按键」分区 24 预置键全停用（实际 ${availCount}）`);
+    ok(
+      avail.groups === 3 && avail.rows === 24,
+      `M13「可用按键」3 张语义分组卡 24 预置键全停用（组=${avail.groups} 行=${avail.rows}）`,
+    );
 
     // 启用 Tab 预置键 → 主列表 9 行（尾补）+ enabled 落盘 + 条上出现
-    await page.locator('p:text-is("可用按键") + ul button', { hasText: /^Tab/ }).first().click();
+    await page
+      .locator(".msheet ul.sgroup:not(.select-none) button", { hasText: /^Tab/ })
+      .first()
+      .click();
     await page.waitForTimeout(200);
     const enabledState = await page.evaluate(() => ({
       ls: JSON.parse(localStorage.getItem("workbench.terminalPresetKeysEnabled") ?? "[]"),
@@ -300,7 +308,7 @@ const rowLabels = (page) =>
     await page.getByRole("button", { name: "键位自定义" }).click();
     await page.waitForSelector(".msheet", { timeout: 5000 });
     await page.waitForTimeout(500); // sheet enter 弹簧 + 余量
-    await page.getByRole("button", { name: "命令", exact: true }).click();
+    await page.getByRole("tab", { name: "命令", exact: true }).click();
     await page.waitForTimeout(200);
     const emptyState = await page.evaluate(() =>
       [...document.querySelectorAll(".msheet p")].some((n) => n.textContent.includes("暂无命令")),
@@ -316,7 +324,10 @@ const rowLabels = (page) =>
     await page.getByRole("button", { name: "保存" }).click();
     await page.waitForTimeout(200);
     const cmdRendered = await page.evaluate(() => {
-      const ps = [...document.querySelectorAll(".msheet p")].map((n) => n.textContent);
+      // 分组标题 = div.sect（语义分组换代后）；p 兜底空态文案
+      const ps = [...document.querySelectorAll(".msheet p, .msheet div.sect")].map(
+        (n) => n.textContent,
+      );
       const rows = [...document.querySelectorAll(".msheet ul li button > span:first-child")].map(
         (n) => n.textContent.trim(),
       );
@@ -344,7 +355,7 @@ const rowLabels = (page) =>
     await page.getByRole("button", { name: "键位自定义" }).click();
     await page.waitForSelector(".msheet", { timeout: 5000 });
     await page.waitForTimeout(500);
-    await page.getByRole("button", { name: "命令", exact: true }).click();
+    await page.getByRole("tab", { name: "命令", exact: true }).click();
     await page.waitForTimeout(200);
     const cmdRow = page.locator(".msheet ul li button", { hasText: "部署检查" }).first();
     await cmdRow.dispatchEvent("pointerdown", {
@@ -515,10 +526,13 @@ const rowLabels = (page) =>
     await pageM.getByRole("button", { name: "键位自定义" }).click();
     await pageM.waitForSelector(".msheet", { timeout: 5000 });
     await pageM.waitForTimeout(500);
-    await pageM.getByRole("button", { name: "命令", exact: true }).click();
+    await pageM.getByRole("tab", { name: "命令", exact: true }).click();
     await pageM.waitForTimeout(200);
     const migratedRendered = await pageM.evaluate(() => {
-      const ps = [...document.querySelectorAll(".msheet p")].map((n) => n.textContent);
+      // 分组标题 = div.sect（语义分组换代后）；p 兜底空态文案
+      const ps = [...document.querySelectorAll(".msheet p, .msheet div.sect")].map(
+        (n) => n.textContent,
+      );
       const rows = [...document.querySelectorAll(".msheet ul li button > span:first-child")].map(
         (n) => n.textContent.trim(),
       );
@@ -681,7 +695,7 @@ const rowLabels = (page) =>
       );
 
       // ===== Commands tab 同构（多端同构：Dialog 容器内同一套命令域内容）=====
-      await page.getByRole("button", { name: "Commands", exact: true }).click();
+      await page.getByRole("tab", { name: "Commands", exact: true }).click();
       await page.waitForTimeout(200);
       await page.getByRole("button", { name: "New command" }).click();
       await page.waitForTimeout(200);

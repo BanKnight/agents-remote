@@ -4,6 +4,11 @@ import { useT } from "../../i18n";
 import { groupedCommands, newCommandId, type QuickCommand } from "../../routes/console-model";
 import { LucideIcon } from "../shell/lucide-icon";
 import {
+  settingsInputClasses,
+  settingsPrimaryButtonClasses,
+  settingsTextButtonClasses,
+} from "../shell/settings-form-classes";
+import {
   ActionMenu,
   useLongPressActions,
   useRowContextMenu,
@@ -90,23 +95,18 @@ export function QuickCommandsTab({
 
   return (
     <>
-      <p className="mt-0.5 text-xs font-semibold text-ink-2">{t("session.quickCommandsHint")}</p>
+      <p className="kfoot">{t("session.quickCommandsHint")}</p>
       {commands.length === 0 && !form ? (
         <p className="py-6 text-center text-sm text-ink-2">{t("session.quickCommandsEmpty")}</p>
       ) : null}
       {groups.map((g) => (
         <section key={g.group || "default"}>
-          <p className="mb-1 mt-3 text-xs font-semibold text-ink-2">
-            {g.group || t("session.quickCommandsDefaultGroup")}
-          </p>
-          <ul className="border-t border-sep-row">
+          <div className="sect">{g.group || t("session.quickCommandsDefaultGroup")}</div>
+          <ul className="sgroup">
             {g.items.map((cmd) => (
-              <li
-                className="relative flex items-center border-b border-sep-row last:border-b-0"
-                key={cmd.id}
-              >
+              <li className="setrow relative" key={cmd.id}>
                 <button
-                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-2.5 text-left disabled:cursor-default disabled:opacity-40"
+                  className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-3 text-left disabled:cursor-default disabled:opacity-40"
                   disabled={!canSend}
                   onClick={(e) => {
                     // ActionMenu scrim click 按 fiber 冒泡到行（frontend-notes §4）：target 在
@@ -120,15 +120,13 @@ export function QuickCommandsTab({
                   type="button"
                   {...lp.bind(cmd.id)}
                 >
-                  <span className="min-w-0 flex-1 truncate text-sm">{cmd.label}</span>
-                  <span className="shrink-0 font-mono text-xs text-ink-2">
-                    {scriptPreview(cmd.script)}
-                  </span>
+                  <span className="min-w-0 flex-1 truncate">{cmd.label}</span>
+                  <span className="v mono shrink-0 truncate">{scriptPreview(cmd.script)}</span>
                 </button>
-                {/* 行尾编辑入口（36px 热区同键盘 tab pencil 口径：-m-2 p-2.5 + ml-1 缝）。 */}
+                {/* 行尾编辑入口（36px 热区：size-9 居中于 44px 行，同键盘 tab grip 口径）。 */}
                 <button
                   aria-label={t("session.quickCommandsEdit")}
-                  className="-m-2 ml-1 flex shrink-0 cursor-pointer items-center justify-center rounded-md p-2.5 text-ink-2 transition hover:bg-ink-1/5 hover:text-ink-1"
+                  className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-2 transition hover:bg-ink-1/5 hover:text-ink-1"
                   onClick={() => setForm({ ...cmd })}
                   title={t("session.quickCommandsEdit")}
                   type="button"
@@ -147,89 +145,102 @@ export function QuickCommandsTab({
           </ul>
         </section>
       ))}
-      {/* 添加行 + 命令编辑表单（键盘 tab 添加行/表单同款布局：表单展开时隐藏添加行）。 */}
-      <button
-        className={`mt-1 flex w-full cursor-pointer items-center justify-center gap-2 py-3 text-sm font-semibold text-primary ${
-          form ? "hidden" : ""
-        }`}
-        onClick={() => setForm({ id: "", label: "", script: "", group: "" })}
-        type="button"
-      >
-        <LucideIcon className="size-4" name="plus" />
-        {t("session.quickCommandsAdd")}
-      </button>
+      {/* 添加行 + 命令编辑表单（键盘 tab 添加行/表单同款布局：表单展开时移除添加行——
+          review P1：仅 hidden 按钮会留 .sgroup 壳塌缩成 2px 细线悬在表单上方）。 */}
+      {form ? null : (
+        <div className="mt-3">
+          <div className="sgroup">
+            <button
+              className="setrow w-full cursor-pointer items-center justify-center gap-2 font-semibold text-primary"
+              onClick={() => setForm({ id: "", label: "", script: "", group: "" })}
+              type="button"
+            >
+              <LucideIcon className="size-4" name="plus" />
+              {t("session.quickCommandsAdd")}
+            </button>
+          </div>
+        </div>
+      )}
       {form ? (
-        <div className="mt-1 flex flex-col gap-2 rounded-[10px] border border-sep-strong p-3">
-          <label className="text-xs font-semibold text-ink-2" htmlFor="qc-form-label">
-            {t("session.quickCommandsNameLabel")}
-          </label>
-          <input
-            className="w-full rounded-[10px] border border-sep-strong bg-elevated2 px-3 py-2 text-sm text-ink-1 placeholder:text-ink-2 transition focus:border-primary focus:outline-none"
-            id="qc-form-label"
-            maxLength={QUICK_COMMAND_LABEL_MAX}
-            onChange={(e) => setForm({ ...form, label: e.target.value })}
-            placeholder={t("session.quickCommandsNamePlaceholder")}
-            value={form.label}
-          />
-          <label className="text-xs font-semibold text-ink-2" htmlFor="qc-form-group">
-            {t("session.quickCommandsGroupLabel")}
-          </label>
-          {/* 分组 = 自由文本标签 + datalist 提示既有组名（空 = 默认分组；不做组管理页）。 */}
-          <input
-            className="w-full rounded-[10px] border border-sep-strong bg-elevated2 px-3 py-2 text-sm text-ink-1 placeholder:text-ink-2 transition focus:border-primary focus:outline-none"
-            id="qc-form-group"
-            list="qc-group-options"
-            onChange={(e) => setForm({ ...form, group: e.target.value })}
-            placeholder={t("session.quickCommandsGroupPlaceholder")}
-            value={form.group}
-          />
-          <datalist id="qc-group-options">
-            {knownGroups.map((g) => (
-              <option key={g} value={g} />
-            ))}
-          </datalist>
-          <label className="text-xs font-semibold text-ink-2" htmlFor="qc-form-script">
-            {t("session.quickCommandsScriptLabel")}
-          </label>
-          <textarea
-            className="w-full resize-none rounded-[10px] border border-sep-strong bg-elevated2 px-3 py-2 font-mono text-sm text-ink-1 placeholder:text-ink-2 transition focus:border-primary focus:outline-none"
-            id="qc-form-script"
-            onChange={(e) => setForm({ ...form, script: e.target.value })}
-            placeholder={t("session.quickCommandsScriptPlaceholder")}
-            rows={3}
-            value={form.script}
-          />
-          <div className="flex items-center justify-between gap-2">
-            {/* 删除 = 编辑已有命令时的显式动作（左下红字；新建态无此钮）——危险动作
-               收进表单，行上不留高频误触面（键盘 tab 同款口径）。 */}
-            {form.id ? (
-              <button
-                className="cursor-pointer rounded-[10px] px-3 py-2 text-[13px] font-semibold text-error transition hover:bg-error/5"
-                onClick={() => {
-                  onDelete(form.id);
-                  setForm(null);
-                }}
-                type="button"
-              >
-                {t("session.quickCommandsDelete")}
-              </button>
-            ) : null}
-            <div className="flex gap-2">
-              <button
-                className="cursor-pointer rounded-[10px] px-3 py-2 text-[13px] text-ink-2 transition hover:bg-ink-1/5"
-                onClick={() => setForm(null)}
-                type="button"
-              >
-                {t("cancel")}
-              </button>
-              <button
-                className="cursor-pointer rounded-[10px] bg-primary px-3 py-2 text-[13px] font-semibold text-on-accent disabled:cursor-default disabled:opacity-40"
-                disabled={!form.label.trim() || !form.script.trim()}
-                onClick={saveCommand}
-                type="button"
-              >
-                {t("session.quickCommandsSave")}
-              </button>
+        <div className="mt-3">
+          <div className="sgroup">
+            <div className="setrow h-auto flex-col items-stretch gap-1.5 py-2.5">
+              <label className="text-[13px] text-ink-2" htmlFor="qc-form-label">
+                {t("session.quickCommandsNameLabel")}
+              </label>
+              <input
+                className={settingsInputClasses}
+                id="qc-form-label"
+                maxLength={QUICK_COMMAND_LABEL_MAX}
+                onChange={(e) => setForm({ ...form, label: e.target.value })}
+                placeholder={t("session.quickCommandsNamePlaceholder")}
+                value={form.label}
+              />
+            </div>
+            <div className="setrow h-auto flex-col items-stretch gap-1.5 py-2.5">
+              <label className="text-[13px] text-ink-2" htmlFor="qc-form-group">
+                {t("session.quickCommandsGroupLabel")}
+              </label>
+              {/* 分组 = 自由文本标签 + datalist 提示既有组名（空 = 默认分组；不做组管理页）。 */}
+              <input
+                className={settingsInputClasses}
+                id="qc-form-group"
+                list="qc-group-options"
+                onChange={(e) => setForm({ ...form, group: e.target.value })}
+                placeholder={t("session.quickCommandsGroupPlaceholder")}
+                value={form.group}
+              />
+              <datalist id="qc-group-options">
+                {knownGroups.map((g) => (
+                  <option key={g} value={g} />
+                ))}
+              </datalist>
+            </div>
+            <div className="setrow h-auto flex-col items-stretch gap-1.5 py-2.5">
+              <label className="text-[13px] text-ink-2" htmlFor="qc-form-script">
+                {t("session.quickCommandsScriptLabel")}
+              </label>
+              <textarea
+                className={`${settingsInputClasses} resize-none font-mono`}
+                id="qc-form-script"
+                onChange={(e) => setForm({ ...form, script: e.target.value })}
+                placeholder={t("session.quickCommandsScriptPlaceholder")}
+                rows={3}
+                value={form.script}
+              />
+            </div>
+            <div className="setrow h-auto gap-2 py-2.5">
+              {/* 删除 = 编辑已有命令时的显式动作（左下红字；新建态无此钮）——危险动作
+                 收进表单，行上不留高频误触面（键盘 tab 同款口径）。 */}
+              {form.id ? (
+                <button
+                  className="cursor-pointer rounded-[10px] px-3 py-1.5 text-[13px] font-semibold text-error transition-[scale,background-color] hover:bg-error/5 active:scale-[0.98]"
+                  onClick={() => {
+                    onDelete(form.id);
+                    setForm(null);
+                  }}
+                  type="button"
+                >
+                  {t("session.quickCommandsDelete")}
+                </button>
+              ) : null}
+              <div className="ml-auto flex gap-2">
+                <button
+                  className={settingsTextButtonClasses}
+                  onClick={() => setForm(null)}
+                  type="button"
+                >
+                  {t("cancel")}
+                </button>
+                <button
+                  className={settingsPrimaryButtonClasses}
+                  disabled={!form.label.trim() || !form.script.trim()}
+                  onClick={saveCommand}
+                  type="button"
+                >
+                  {t("session.quickCommandsSave")}
+                </button>
+              </div>
             </div>
           </div>
         </div>

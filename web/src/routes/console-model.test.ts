@@ -93,6 +93,19 @@ test("preset terminal keys keep stable VT/xterm control sequences", () => {
   const ids = presetTerminalKeys.map((k) => k.id);
   expect(new Set(ids).size).toBe(ids.length);
   expect(presetTerminalKeys.every((k) => k.label && k.sequence)).toBe(true);
+  // 语义分组（2026-10-12 反馈②）：group 全法值、每组非空、编辑/导航键带行副文本
+  //（F 键行为随宿主程序无通用语义，不配）。
+  const groups = new Set(presetTerminalKeys.map((k) => k.group));
+  expect([...groups].every((g) => ["editing", "nav", "fn"].includes(g))).toBe(true);
+  for (const g of ["editing", "nav", "fn"] as const) {
+    expect(presetTerminalKeys.some((k) => k.group === g)).toBe(true);
+  }
+  expect(
+    presetTerminalKeys
+      .filter((k) => k.group !== "fn")
+      .every((k) => typeof k.descKey === "string" && k.descKey.length > 0),
+  ).toBe(true);
+  expect(presetTerminalKeys.filter((k) => k.group === "fn").every((k) => !k.descKey)).toBe(true);
 
   const byId = new Map(presetTerminalKeys.map((k) => [k.id, k]));
   // Tab / 行编辑 Ctrl 系（C0 控制字符）。

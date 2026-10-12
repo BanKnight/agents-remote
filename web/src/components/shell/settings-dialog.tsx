@@ -25,6 +25,13 @@ import {
 } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
+import {
+  settingsGhostButtonClasses,
+  settingsHintClasses,
+  settingsInputClasses,
+  settingsPrimaryButtonClasses,
+  settingsTextButtonClasses,
+} from "./settings-form-classes";
 import type { TranslationKey } from "../../i18n/types";
 import { clearAuthOk } from "../../lib/auth-storage";
 import { isStandaloneDisplay } from "../../lib/display-mode";
@@ -56,23 +63,6 @@ import {
 } from "../../api/client";
 
 const TIERS: readonly ClaudeModelTier[] = ["default", "opus", "sonnet", "haiku"];
-
-// ── v2 表单原语（设置二级换代：原型缺位部分按 Apple Settings 语言 + token 自行设计）──
-// 输入框：elevated2 内嵌面 + sep-strong 描边 + r10（对齐 retry .fld 形态，instance-area）。
-const settingsInputClasses =
-  "w-full rounded-[10px] border border-sep-strong bg-elevated2 px-3 py-2 text-sm text-ink-1 placeholder:text-ink-2 transition focus:border-primary focus:outline-none";
-// 主色实心钮（保存）：bg-primary + on-accent 文字 + 按压 scale（移动动效批统一契约）。
-const settingsPrimaryButtonClasses =
-  "cursor-pointer rounded-[10px] bg-primary px-4 py-1.5 text-[13px] font-semibold text-on-accent transition-[scale,background-color,opacity] active:scale-[0.98] disabled:cursor-default disabled:opacity-40";
-// 次级面钮（测试连接）：elevated2 面实感，弱于主钮一档。
-const settingsGhostButtonClasses =
-  "cursor-pointer rounded-[10px] border border-sep-strong bg-elevated2 px-3 py-1.5 text-[13px] text-ink-1 transition-[scale,background-color] active:scale-[0.98] disabled:cursor-default disabled:opacity-40";
-// 文字钮（取消）：无面 muted 文字 + hover 淡底。
-const settingsTextButtonClasses =
-  "cursor-pointer rounded-[10px] px-3 py-1.5 text-[13px] text-ink-2 transition-[scale,background-color] hover:bg-ink-1/5 active:scale-[0.98]";
-
-/** 行内副文本（12px ink-2）——值行/开关行/输入行的 hint 与 sgroup 脚注共用档。 */
-const settingsHintClasses = "mt-0.5 block text-xs leading-5 text-ink-2";
 
 // 新建预设的模型映射默认值：全 tier 别名透传（与 v1 默认 runtime.modelMapping 一致），
 // 用户可在 PresetDialog 内逐 tier 改成具体 ID。定义在此避免 magic literal。
