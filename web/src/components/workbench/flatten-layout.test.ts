@@ -72,18 +72,18 @@ test("flattenLayout: 横向 2 split → 两组左右各半 + 1 col gutter", () =
   const root = split("sp1", "horizontal", [leafA, leafB]);
   const r = flattenLayout(root, null);
   expect(r.groups).toHaveLength(2);
-  // gA 在左半，gB 在右半（扣掉 gutter gap 后约各半）。
+  // gA 在左半，gB 在右半（sash 模式 gap=0，紧贴各半）。
   expect(r.groups[0]!.id).toBe("gA");
   expect(r.groups[1]!.id).toBe("gB");
-  closeTo(r.groups[0]!.rect, { h: 1, w: 0.498, x: 0, y: 0 }); // (1-0.004)/2 = 0.498
-  closeTo(r.groups[1]!.rect, { h: 1, w: 0.498, x: 0.502, y: 0 });
+  closeTo(r.groups[0]!.rect, { h: 1, w: 0.5, x: 0, y: 0 });
+  closeTo(r.groups[1]!.rect, { h: 1, w: 0.5, x: 0.5, y: 0 });
   expect(r.gutters).toHaveLength(1);
   expect(r.gutters[0]!.orientation).toBe("col");
   expect(r.gutters[0]!.splitId).toBe("sp1");
   expect(r.gutters[0]!.leftChildId).toBe("gA");
   expect(r.gutters[0]!.rightChildId).toBe("gB");
-  // gutter 在两组之间。
-  closeTo(r.gutters[0]!.rect, { h: 1, w: 0.004, x: 0.498, y: 0 });
+  // gutter 定位在两组交界（主轴宽 0，sash 模式视觉交给壳层 border-r）。
+  closeTo(r.gutters[0]!.rect, { h: 1, w: 0, x: 0.5, y: 0 });
   expect(r.panels).toHaveLength(2);
   expect(r.panels[0]!.tabId).toBe("s1");
   expect(r.panels[1]!.tabId).toBe("s2");
@@ -97,9 +97,9 @@ test("flattenLayout: 纵向 2 split → 两组上下各半 + 1 row gutter", () =
   const root = split("sp1", "vertical", [leafA, leafB]);
   const r = flattenLayout(root, null);
   expect(r.gutters[0]!.orientation).toBe("row");
-  closeTo(r.groups[0]!.rect, { h: 0.498, w: 1, x: 0, y: 0 });
-  closeTo(r.groups[1]!.rect, { h: 0.498, w: 1, x: 0, y: 0.502 });
-  closeTo(r.gutters[0]!.rect, { h: 0.004, w: 1, x: 0, y: 0.498 });
+  closeTo(r.groups[0]!.rect, { h: 0.5, w: 1, x: 0, y: 0 });
+  closeTo(r.groups[1]!.rect, { h: 0.5, w: 1, x: 0, y: 0.5 });
+  closeTo(r.gutters[0]!.rect, { h: 0, w: 1, x: 0, y: 0.5 });
 });
 
 test("flattenLayout: sizes 不均 → 按权重分配（2:1）", () => {
@@ -107,9 +107,9 @@ test("flattenLayout: sizes 不均 → 按权重分配（2:1）", () => {
   const leafB = createLeaf(ref("p", "s2"), "gB");
   const root = split("sp1", "horizontal", [leafA, leafB], { gA: 2, gB: 1 });
   const r = flattenLayout(root, null);
-  // available = 1 - 0.004 = 0.996；A 占 2/3 = 0.664，B 占 1/3 = 0.332。
-  closeTo(r.groups[0]!.rect, { h: 1, w: 0.664, x: 0, y: 0 });
-  closeTo(r.groups[1]!.rect, { h: 1, w: 0.332, x: 0.668, y: 0 });
+  // available = 1（gap=0）；A 占 2/3 ≈ 0.667，B 占 1/3 ≈ 0.333。
+  closeTo(r.groups[0]!.rect, { h: 1, w: 2 / 3, x: 0, y: 0 });
+  closeTo(r.groups[1]!.rect, { h: 1, w: 1 / 3, x: 2 / 3, y: 0 });
 });
 
 test("flattenLayout: 嵌套 split（A | [B—C]）→ 3 leaf + 2 gutter，rect 连乘", () => {
@@ -122,10 +122,10 @@ test("flattenLayout: 嵌套 split（A | [B—C]）→ 3 leaf + 2 gutter，rect �
   expect(r.groups).toHaveLength(3);
   expect(r.gutters).toHaveLength(2);
   // gA 占左半（横向），inner 占右半；gB/gC 在右半内上下各半。
-  closeTo(r.groups[0]!.rect, { h: 1, w: 0.498, x: 0, y: 0 }); // gA
-  // gB 右半上半：x≈0.502, y=0, w≈0.498, h≈0.498
-  closeTo(r.groups[1]!.rect, { h: 0.498, w: 0.498, x: 0.502, y: 0 });
-  closeTo(r.groups[2]!.rect, { h: 0.498, w: 0.498, x: 0.502, y: 0.502 });
+  closeTo(r.groups[0]!.rect, { h: 1, w: 0.5, x: 0, y: 0 }); // gA
+  // gB 右半上半：x=0.5, y=0, w=0.5, h=0.5
+  closeTo(r.groups[1]!.rect, { h: 0.5, w: 0.5, x: 0.5, y: 0 });
+  closeTo(r.groups[2]!.rect, { h: 0.5, w: 0.5, x: 0.5, y: 0.5 });
   // 一个 col gutter（sp1，gA|inner）+ 一个 row gutter（spInner，gB|gC）。
   const colG = r.gutters.find((g) => g.splitId === "sp1")!;
   const rowG = r.gutters.find((g) => g.splitId === "spInner")!;

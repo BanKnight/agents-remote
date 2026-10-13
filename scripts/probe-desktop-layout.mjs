@@ -250,7 +250,7 @@ try {
     !!p3 && p3.gap > 0 && p3.gap <= 26,
   );
 
-  console.log("== Part 4：分屏 grip 居中 + 图标化 ==");
+  console.log("== Part 4：分屏 sash（窗格紧贴 + 把手压交界线）==");
   await page.goto(`${ORIGIN}/projects/${PROJECT}`);
   await page.waitForTimeout(800);
   await page.locator('button:has-text("布局探针会话")').first().click();
@@ -262,36 +262,42 @@ try {
     if (!capsule) return null;
     const cb = capsule.getBoundingClientRect();
     const gb = capsule.parentElement.getBoundingClientRect();
-    // 缝中心：gutter 左右紧邻的两 group（右缘贴 gutter 左缘 / 左缘贴 gutter 右缘）中点——
-    // gutter 视觉条必须铺满占位缝（2026-10-13 真机反馈：固定 4px 条贴缝左缘 = 缝内透明段 +
-    // 把手偏离缝中心）。row gutter（横条）x 轴 seam 不适用，返回 null 跳过断言。
+    // sash 检查（2026-10-13 紧贴拍板）：两 group 紧贴，交界线 x = 左 group 右缘 = 右 group 左缘；
+    // 命中区以交界线为中心的透明条（固定 10px）。按「最贴近命中区中心线」找相邻 group
+    //（命中区半宽 5px + 亚像素余量）。row gutter（横条）x 轴不适用，字段置 null → 断言失败。
+    //（2026-10-13 code review P2-5 措辞校正：并非「跳过」，是响亮失败；当前 Part 4 场景恒为 col。）
     const gc = gb.x + gb.width / 2;
     const isCol = gb.width < gb.height;
     const rects = [...document.querySelectorAll("main [data-drop-group]")].map((g) =>
       g.getBoundingClientRect(),
     );
     const left = isCol
-      ? rects.filter((r) => Math.abs(r.right - gb.left) < 8).sort((a, b) => b.right - a.right)[0]
+      ? rects.filter((r) => r.right <= gc + 12).sort((a, b) => b.right - a.right)[0]
       : undefined;
     const right = isCol
-      ? rects.filter((r) => Math.abs(r.left - gb.right) < 8).sort((a, b) => a.left - b.left)[0]
+      ? rects.filter((r) => r.left >= gc - 12).sort((a, b) => a.left - b.left)[0]
       : undefined;
     return {
       capsuleCenter: cb.x + cb.width / 2,
+      flushGap: left && right ? right.left - left.right : null,
       gutterCenter: gc,
-      seamCenter: left && right ? (left.right + right.left) / 2 : null,
+      borderX: left && right ? left.right : null,
       hasSvg: !!capsule.querySelector("svg"),
     };
   });
   check("grip 在场", !!p4);
   if (p4) {
     check(
-      `胶囊中心 == gutter 中心（Δ=${Math.abs(p4.capsuleCenter - p4.gutterCenter).toFixed(2)}px）`,
+      `胶囊中心 == 命中区中心（Δ=${Math.abs(p4.capsuleCenter - p4.gutterCenter).toFixed(2)}px）`,
       Math.abs(p4.capsuleCenter - p4.gutterCenter) <= 0.5,
     );
     check(
-      `gutter 中心 == 两 group 缝中心（Δ=${p4.seamCenter === null ? "—" : Math.abs(p4.gutterCenter - p4.seamCenter).toFixed(2)}px）`,
-      p4.seamCenter !== null && Math.abs(p4.gutterCenter - p4.seamCenter) <= 0.2,
+      `两 group 紧贴无缝（gap=${p4.flushGap === null ? "—" : p4.flushGap.toFixed(3)}px ≤ 0.2px）`,
+      p4.flushGap !== null && Math.abs(p4.flushGap) <= 0.2,
+    );
+    check(
+      `命中区中心 == 两 group 交界线（Δ=${p4.borderX === null ? "—" : Math.abs(p4.gutterCenter - p4.borderX).toFixed(2)}px）`,
+      p4.borderX !== null && Math.abs(p4.gutterCenter - p4.borderX) <= 0.2,
     );
     check("把手已图标化（.grip svg 在场，字体 fallback 免疫）", p4.hasSvg);
   }

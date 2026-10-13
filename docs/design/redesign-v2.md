@@ -1894,6 +1894,18 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **验证**：全门禁 + CSS 硬闸 + tokens 机检全绿；`probe-desktop-layout` **17/17**（Part 4 新增「gutter 中心 == 两 group 缝中心 Δ≤0.2px」断言封盲区，实测 Δ=0.01px——修前此值 0.39px）；`probe-grid-panel` **14/14** 回归（右栏 gutter 拖拽面无耦合）。
 - **真机清单**：①多分屏任意两条缝均匀（无透明深色段），把手胶囊在缝正中；②桌面左右栏边缝视觉不变（本批未动 ColumnResizeGutter/ResizeGutter）。
 
+### 第三轮返工：分屏窗格紧贴无缝（gap 归零）+ sash 式把手压交界线（2026-10-13，语义拍板修正）
+
+上一修（视觉条铺满缝，commit `172f146`）真机复核被否决：「还是不对……右边的那一个距离左边那个**就应该是没有缝**才对」「把手还是一样偏」。**语义拍板修正：用户诉求从来不是「缝内均匀」，而是窗格之间根本不该有缝**——参照 VS Code（用户点名）：两面板之间只有一根线，拖拽把手放在这根线上，除此之外面板内部没有任何边缝；且「边缝只在第二三个窗格（左侧）、第一个没有」——每格左侧的缝 = 与左邻窗格之间的 gutter 占位，第 1 格左侧是中栏边缘自然没有。上一修把透明段填匀只是把「空缝」变成「色缝」，缝本身仍是窗格之间的空隙；把手悬在空隙中间（数学居中于缝）而非窗格交界上 = 持续感知「偏」。
+
+- **修复 = sash 模式**（VS Code 分隔条形制）：①`SPLIT_GAP_RATIO` 0.004 → **0**（flatten-layout.ts）——窗格紧贴，walk 结构不动（gutterTotal 自然退化；gutters 数组照常生成，rect 主轴宽 = 0、定位在交界处）；②SplitGutter 改**交界线上的透明命中区**（instance-area.tsx）：`SPLIT_SASH_HIT_PX = 10`，`left: calc(pct(rect.x) - 5px)` 居中于交界线（row 对称），色条删除（常显全透明、仅 `hover:bg-on-surface/10`）；③grip 胶囊 50%/translate 居中不动——胶囊中心 = 命中区中心 = 交界线；④分隔视觉交给 panel/group 壳既有 `border-r border-neutral-line`（1px，上批满铺批补画连续）——零新增描边。
+- **panel 内容区 inset 排查**（用户追加线索「tab 里面还有边缝、只在第 2/3 格出现」）：一次性诊断实锤 3 窗格 inset 链全 0（panel 左/内容左/header 左 inset 均 0.00px、padding 全 0、窗格精确紧贴）——「tab 里面的缝」不是面板内容 inset，就是每格左侧的旧 gutter 缝本身，gap 归零即治本。
+- **验证**：flatten-layout 单测反转 11/11（0.5 系 + `2/3`/`1/3` 分数表达式）；`probe-desktop-layout` **18/18**（Part 4 改 sash 断言：两 group 紧贴 gap=**0.000px**、命中区中心==交界线 Δ=**0.00px**、胶囊中心==命中区中心 Δ=**0.00px**、svg 图标化）；`probe-grid-panel` **14/14** 回归；全门禁 + CSS 硬闸 + tokens 机检全绿。
+- **拖拽语义不变**：onResize(ratioDelta) = delta / splitSize（splitRect 主轴归一化 × 根容器像素），与命中区 width 无关；命中区 10px = 交界线两侧各 5px，setPointerCapture 锁指针同前。
+- **双 reviewer 消化（code P1×1 + P2×2 / design P2×2 同根因归并）**：①**row 方向交界线消失**（code P1，必修）——壳层/panel 只有 border-r 无 border-b，被删常显色条原承担上下分屏的横线；修 = SplitGutter row 分支常显 1px `bg-neutral-line` 线（与把手同中心；col 不画——壳层 border-r 已兜住，居中线亚像素错位会糊双线）。「两面板间只有一根线」不分方向。②**拖动态 gutter 死带加宽**（双 reviewer 一致）：拖 tab 时 10px 命中区 elementFromPoint 命中 gutter → zone=null 投递死带（旧 4.77px 扩 10px）；修 = isDragging 透传 `pointer-events-none`（与 panel 层同策略）。③**maximized 态 gutter 未过滤**（design P2）：独占窗格中部横贯 z-10 命中带，点击被吞、拖拽隐改隐藏窗格 sizes；修 = `maximized === null` 才渲染 gutters。④注释/探针措辞校正 ×2（row 线语义、「null → 失败」非「跳过」）。
+- **记录不改**：gutter 无键盘 resize 通道（a11y backlog，既有形态）；`.grip` 垂直 50% vs 原型 44% 既有小偏差；命中区覆盖窗格边缘 5px（sash 固有取舍，VS Code 同款，真机确认滚动条/文本选择可接受即可）。
+- **真机清单**：①两/三窗格紧贴无缝（交界处仅 1px 线），把手胶囊压在交界线正中；②上下分屏的交界横线在场且把手压线；③拖拽/悬停反馈正常；④PWA 需强刷确认新 bundle（排除旧缓存干扰）。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。

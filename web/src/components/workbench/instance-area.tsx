@@ -2539,22 +2539,26 @@ function TabChip({
 type SplitGutterProps = {
   /** gutter 朝向（设计 §7.4）：col=横向相邻 group 间列宽（cursor-split-col）；row=纵向行间高度。 */
   orientation: "col" | "row";
-  /** gutter 自身的归一化 rect（0~1，相对共享根容器）——absolute 定位用，是两 children 之间的缝隙位置。 */
+  /** gutter 自身的归一化 rect（0~1，相对共享根容器）——absolute 定位用，是两 children 的交界线位置。 */
   rect: FlatRect;
   /** 所属 split 的归一化 rect（0~1）；gutter 算 ratio 时用 splitRect 的主轴像素尺寸作分母。 */
   splitRect: FlatRect;
   /** 拖拽增量（本次 move 的 delta / split 主轴像素尺寸，无量纲比例）；上层按 split totalFlex 转 deltaFlex。 */
   onResize: (ratioDelta: number) => void;
+  /** tab 拖投进行中：命中区 pointer-events-none 豁免，让 DropZoneOverlay 的 elementFromPoint
+   *  穿透到下层 group（否则 10px 命中区成投递死带——与 panel 层同策略）。 */
+  dragging: boolean;
 };
 
 /**
- * 相邻区域分隔条（设计 §7.3/§7.4，§7.8 扁平化）。absolute 定位到 `rect`（两 children 之间的缝隙），
- * pointer-event 增量拖拽：每次 move 算 delta（col=clientX / split 像素宽，row=clientY / split 像素高）
- * → onResize(ratioDelta)；上层 onResizeSplit 基于 split totalFlex 转 deltaFlex 更新 sizes（守恒钳制）。
+ * 相邻区域分隔条（设计 §7.3/§7.4，§7.8 扁平化；2026-10-13 sash 模式）。absolute 定位到 `rect`
+ * （两 children 的交界线），以交界线为中心渲染固定宽度透明命中区，pointer-event 增量拖拽：
+ * 每次 move 算 delta（col=clientX / split 像素宽，row=clientY / split 像素高）→ onResize(ratioDelta)；
+ * 上层 onResizeSplit 基于 split totalFlex 转 deltaFlex 更新 sizes（守恒钳制）。
  * split 像素尺寸 = splitRect 主轴归一化长度 × 根容器像素尺寸（offsetParent = 共享 relative 根）。
  * setPointerCapture 锁指针到 gutter，拖拽时即使滑过面板仍持续触发。
  */
-function SplitGutter({ orientation, rect, splitRect, onResize }: SplitGutterProps) {
+function SplitGutter({ dragging, onResize, orientation, rect, splitRect }: SplitGutterProps) {
   const gutterRef = useRef<HTMLDivElement>(null);
   const lastPos = useRef<number | null>(null);
   const isRow = orientation === "row";
@@ -2586,23 +2590,37 @@ function SplitGutter({ orientation, rect, splitRect, onResize }: SplitGutterProp
   return (
     <div
       aria-hidden
-      className={`absolute z-10 rounded-full bg-on-surface/5 transition-colors hover:bg-on-surface/20 ${isRow ? "cursor-split-row" : "cursor-split-col"}`}
+      className={`absolute z-10 transition-colors hover:bg-on-surface/10 ${dragging ? "pointer-events-none" : ""} ${isRow ? "cursor-split-row" : "cursor-split-col"}`}
       onPointerCancel={endDrag}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       ref={gutterRef}
-      // 视觉条 = 占位缝同宽同位（2026-10-13 反馈①②同根因：原固定 4px 条贴缝左缘，
-      // 归一化占位（SPLIT_GAP_RATIO×中栏宽，视口 1440 / 中栏 ~1192px 时 4.77px）右侧
-      // 露透明深缝 =「奇怪边距」，把手偏离缝中心。铺满后 grip 居中恒等于缝中心；
-      // 嵌套窄缝不再溢出压面板。
-      style={{
-        height: pct(rect.h),
-        left: pct(rect.x),
-        top: pct(rect.y),
-        width: pct(rect.w),
-      }}
+      // sash 命中区（2026-10-13 真机拍板：窗格紧贴无缝）：gap 归零后 rect 主轴宽 = 0，
+      // 命中区改为以交界线（rect.x/y）为中心的固定宽度透明条，把手胶囊压在交界线上；
+      // 分隔视觉 col 方向由 panel/group 壳的 1px border-r 承担，row 方向壳层无 border-b、
+      // 由下方常显 1px 线承担。
+      style={
+        isRow
+          ? {
+              height: `${SPLIT_SASH_HIT_PX}px`,
+              left: pct(rect.x),
+              top: `calc(${pct(rect.y)} - ${SPLIT_SASH_HIT_PX / 2}px)`,
+              width: pct(rect.w),
+            }
+          : {
+              height: pct(rect.h),
+              left: `calc(${pct(rect.x)} - ${SPLIT_SASH_HIT_PX / 2}px)`,
+              top: pct(rect.y),
+              width: `${SPLIT_SASH_HIT_PX}px`,
+            }
+      }
     >
+      {/* row 方向（上下窗格）壳层无 border-b，交界线由这条常显 1px 线承担（与把手同中心）；
+          col 方向不画——壳层 border-r 已兜住，居中线与 border-r 亚像素错位会糊成双线。 */}
+      {isRow ? (
+        <div aria-hidden className="absolute inset-x-0 top-1/2 h-px bg-neutral-line" />
+      ) : null}
       {/* 拖拽手柄视觉（§6.10-3，05 原型 `.grip` ⋮⋮ 块压分隔线中点；row 方向旋转 90°）。
           字符 → Lucide grip-vertical（2026-10-12 真机反馈③：U+22EE 文本字形随系统
           fallback 宽度/基线不定，视觉中点在部分环境偏移——SVG 显式尺寸定形，居中不再
@@ -2671,6 +2689,10 @@ function pct(n: number): string {
  *  改由 `rectStyle` 的 insetTopPx 用 CSS calc 把面板顶部下推固定 32px——无论容器多高都精确对齐
  *  GroupHeader 底，不再"矮容器下 tab 下半被面板遮挡"。改 GroupHeader 高度时必须同步改此常量。 */
 const WORKBENCH_TAB_BAR_PX = 32;
+
+/** sash 命中区宽度 px（2026-10-13 sash 模式）：gap 归零后窗格紧贴，SplitGutter 以交界线为中心
+ *  渲染此宽度的透明命中区（交界线两侧各半），把手胶囊居中于命中区 = 压在交界线上。 */
+const SPLIT_SASH_HIT_PX = 10;
 
 /** 归一化 rect → React absolute 定位 style（left/top/width/height 百分比）。
  *
@@ -2752,17 +2774,28 @@ export function WorkspaceTree({
           onTabDragStart={handlers.onTabDragStart}
         />
       ))}
-      {flat.gutters.map((g) => (
-        <SplitGutter
-          key={g.id}
-          onResize={(ratio) =>
-            handlers.onResizeSplit(g.splitId, g.leftChildId, g.rightChildId, ratio * g.totalFlex)
-          }
-          orientation={g.orientation}
-          rect={g.rect}
-          splitRect={g.splitRect}
-        />
-      ))}
+      {/* maximized（独占）时不渲染 gutter：独占窗格 rect 占满根容器，gutter 命中区会横贯
+          独占面板中部（z-10 > panel z-0）——点击被吞、拖拽会隐改隐藏窗格的 sizes（解除独占后
+          布局莫名变化）。独占态无 resize 语义（design review P2-1）。 */}
+      {maximized === null
+        ? flat.gutters.map((g) => (
+            <SplitGutter
+              dragging={isDragging}
+              key={g.id}
+              onResize={(ratio) =>
+                handlers.onResizeSplit(
+                  g.splitId,
+                  g.leftChildId,
+                  g.rightChildId,
+                  ratio * g.totalFlex,
+                )
+              }
+              orientation={g.orientation}
+              rect={g.rect}
+              splitRect={g.splitRect}
+            />
+          ))
+        : null}
       {/* panel 自带 border-r（2026-10-12 review P1）：contentRect 满铺后 panel（z-0、后序绘制）
           盖住 group 壳 border-r 的内容区段——分隔线只剩 tab 栏段线头；内容段线由 panel 同 x
           补画，tab 段（group 壳）+ 内容段（panel）连续（原型 .pane 分隔线形制，border-box 下
