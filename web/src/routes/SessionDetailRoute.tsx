@@ -1246,76 +1246,84 @@ function SessionInputDrawer({
     <section
       className={`min-w-0 px-3 py-2 sm:px-4 sm:py-2.5 max-lg:pb-[calc(0.5rem+max(env(safe-area-inset-bottom,0px),var(--shell-mobile-bottom-nav-space,0px)))] ${shellSurfaceClasses.runtimeComposer}`}
     >
-      <div className="flex min-w-0 items-center gap-1.5">
-        <div className="min-w-0 flex-1">
-          <QuickKeyBar canSend={canSend} quickKeys={quickKeys} onQuickKey={onQuickKey} />
-        </div>
-        <button
-          className="xbtn cursor-pointer"
-          type="button"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? t("session.expandInput") : t("session.collapseInput")}
-          title={collapsed ? t("session.expandInput") : t("session.collapseInput")}
-          onClick={() => onCollapsedChange(!collapsed)}
-        >
-          <ShellIcon className="h-4 w-4" name={collapsed ? "expand" : "shrink"} />
-        </button>
-      </div>
-      {!collapsed ? (
-        <form className="mt-2" onSubmit={onSubmit}>
-          <div
-            className={`flex min-w-0 flex-col rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
-          >
-            <div className="flex min-w-0 items-start gap-2">
-              <label className="sr-only" htmlFor="session-input">
-                {t("session.sendInput")}
-              </label>
-              {/* 对齐 agent composer（assistant-ui 同款）：react-textarea-autosize 随内容
-                  自动增高（折行也增长，批 12 反馈③——旧实现按显式换行计 rows 不折行），
-                  宽端 min-h 保 spec「默认 ≥3 行」（与 agent 家族 sm:min-h-[4.5rem] 同款），
-                  max-h-32 封顶（128px，CSS max/min-height 胜 inline height）后内容滚动。 */}
-              <TextareaAutosize
-                autoCapitalize="none"
-                autoComplete="off"
-                autoCorrect="off"
-                cacheMeasurements
-                className="max-h-32 sm:min-h-[4.5rem] min-w-0 flex-1 resize-none bg-transparent font-mono text-sm leading-[1.35] text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={!canSend}
-                id="session-input"
-                minRows={1}
-                placeholder={
-                  connectionStatus === "connected"
-                    ? sessionType === "agent"
-                      ? t("session.typePrompt")
-                      : t("session.typeShell")
-                    : t("session.disconnected")
-                }
-                spellCheck={false}
-                value={input}
-                onChange={(e) => onInputChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-            </div>
-            {/* 控制行（原型 irow）：终端 composer 无三彩/无附件——左端 = ⚙ 键位自定义入口
-               （原型 workspace-terminal-input ③，调用方构造 slot；undefined 时空占位保发送钮
-                靠右），右端 = .send2 28×28 r12 主色发送钮（与会话版 composer-actions 同源形态）。
-                onMouseDown preventDefault 保焦 = 移动端发送后键盘不收。 */}
-            <div className="mt-1 flex items-center justify-between">
-              {quickKeysCustomize ?? <span aria-hidden="true" />}
-              <button
-                className="send2 disabled:opacity-40 disabled:cursor-default"
-                disabled={!canSend || input.trim().length === 0}
-                type="submit"
-                aria-label={t("claude.composer.send")}
-                title={t("claude.composer.send")}
-                onMouseDown={(e) => e.preventDefault()}
-              >
-                <LucideIcon name="arrow-up" />
-              </button>
-            </div>
+      {/* 宽度对齐 agent composer：内容组限宽 max-w-2xl（672px）居中（agent 同款
+          mx-auto w-full max-w-2xl），中栏很宽时不再横跨全宽（真机反馈 2026-10-14
+          「默认宽高参考 agent，那边刚刚好」）。min-w-0 保窄面板不溢出。 */}
+      <div className="mx-auto w-full max-w-2xl min-w-0">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <div className="min-w-0 flex-1">
+            <QuickKeyBar canSend={canSend} quickKeys={quickKeys} onQuickKey={onQuickKey} />
           </div>
-        </form>
-      ) : null}
+          <button
+            className="xbtn cursor-pointer"
+            type="button"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? t("session.expandInput") : t("session.collapseInput")}
+            title={collapsed ? t("session.expandInput") : t("session.collapseInput")}
+            onClick={() => onCollapsedChange(!collapsed)}
+          >
+            <ShellIcon className="h-4 w-4" name={collapsed ? "expand" : "shrink"} />
+          </button>
+        </div>
+        {!collapsed ? (
+          <form className="mt-2" onSubmit={onSubmit}>
+            <div
+              className={`flex min-w-0 flex-col rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
+            >
+              <div className="flex min-w-0 items-start gap-2">
+                <label className="sr-only" htmlFor="session-input">
+                  {t("session.sendInput")}
+                </label>
+                {/* 对齐 agent composer（assistant-ui 同款）：react-textarea-autosize 随内容
+                    自动增高（折行也增长，批 12 反馈③——旧实现按显式换行计 rows 不折行），
+                    min-h 基线 [2.5rem] / 宽端 sm:[4.5rem] 与 agent 逐字同款；max-h-32 封顶
+                    （128px，CSS max/min-height 胜 inline height）后内容滚动。行高走 text-sm
+                    捆绑（整数 20px）——原 leading-[1.35]（18.9px 非整数）是输入框 1px 级
+                    滚动量的首要嫌疑（真机反馈 2026-10-14「易出上下滚动条、折叠再展开即消」；
+                    agent 侧整数行高无此现象），随批对齐消除。 */}
+                <TextareaAutosize
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  cacheMeasurements
+                  className="min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] min-w-0 flex-1 resize-none bg-transparent font-mono text-sm text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={!canSend}
+                  id="session-input"
+                  minRows={1}
+                  placeholder={
+                    connectionStatus === "connected"
+                      ? sessionType === "agent"
+                        ? t("session.typePrompt")
+                        : t("session.typeShell")
+                      : t("session.disconnected")
+                  }
+                  spellCheck={false}
+                  value={input}
+                  onChange={(e) => onInputChange(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                />
+              </div>
+              {/* 控制行（原型 irow）：终端 composer 无三彩/无附件——左端 = ⚙ 键位自定义入口
+                 （原型 workspace-terminal-input ③，调用方构造 slot；undefined 时空占位保发送钮
+                  靠右），右端 = .send2 28×28 r12 主色发送钮（与会话版 composer-actions 同源形态）。
+                  onMouseDown preventDefault 保焦 = 移动端发送后键盘不收。 */}
+              <div className="mt-1 flex items-center justify-between">
+                {quickKeysCustomize ?? <span aria-hidden="true" />}
+                <button
+                  className="send2 disabled:opacity-40 disabled:cursor-default"
+                  disabled={!canSend || input.trim().length === 0}
+                  type="submit"
+                  aria-label={t("claude.composer.send")}
+                  title={t("claude.composer.send")}
+                  onMouseDown={(e) => e.preventDefault()}
+                >
+                  <LucideIcon name="arrow-up" />
+                </button>
+              </div>
+            </div>
+          </form>
+        ) : null}
+      </div>
     </section>
   );
 }
