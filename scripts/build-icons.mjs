@@ -33,6 +33,11 @@ const ICONS = [
   "chevron-left", // RailButton 左栏唤出（M13c reviewer D-P2-4：手写 16 网格退役）
   "chevron-right", // RailButton 右栏唤出（M13c，同上）
   "chevron-down", // ShellIcon chevron-down（移动 header 实例切换锚，批 12 反馈⑤：CSS 手绘 .sw 退役）
+  // 折叠栏整栏（.clps 图标化，2026-10-13 真机反馈：文字字形「‹」「»」非 Lucide 规范且可点区仅 4.7px；
+  // 初版双角 chevron 同日被真机复核否决 → panel 侧栏面板+折叠方向箭头（tokens icon.mapping 同步），
+  // 与展开钮单角 chevron 同规范配套，14px）
+  "panel-left-close", // 左栏项目组 ghead 行尾折叠钮（面板+左指箭头 = 收向左）
+  "panel-right-close", // 右栏 glabel2 行首折叠钮（面板+右指箭头 = 收向右）
   "clock", // ShellIcon clock
   "download", // ShellIcon download
   "ellipsis", // ShellIcon ellipsis（行菜单）

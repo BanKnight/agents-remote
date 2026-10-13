@@ -12,6 +12,7 @@ import {
   workbenchLastProjectAtom,
 } from "../../routes/workbench-model";
 import { RenameDialog } from "../files/rename-dialog";
+import { LucideIcon } from "../shell/lucide-icon";
 import { ShellIcon } from "../shell/icons";
 import {
   ProjectDeleteDialog,
@@ -64,7 +65,7 @@ import { SessionModeTabs } from "./mobile-workbench";
  *
  * 挂点：WorkbenchShell `sidebar` prop（grid 第 0 列 aside，仅 ≥lg 渲染）。移动端不消费本组件。
  */
-export function WorkbenchSide() {
+export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }) {
   const { t } = useT();
   // leftMode 默认 "auto"（URL 省略 = auto 语义；WorkbenchRoute 解构默认同口径——focus 路由
   // derive 继承透传不写键，side 直读 context 需自带默认）。
@@ -385,6 +386,19 @@ export function WorkbenchSide() {
           type="button"
         >
           <span className="plus" />
+        </button>
+        {/* 折叠入口 = 项目组 ghead 行内折叠钮（2026-10-13 真机验收反转：栏内缘把手钮遮挡
+            视线被否改行内；第二轮反馈：文字字形「‹」非规范形制且可点区仅 4.7px → 图标化；
+            初版双角 chevron 同日被真机复核否决 → panel 侧栏面板+折叠方向箭头（与展开钮
+            单角 chevron 同规范配套）14px + 20×20 容器式热区（不撑高组头，第一行同线不破）
+            + touch:after 扩至 28px）。 */}
+        <button
+          aria-label={t("workbench.collapseLeft")}
+          className="clps flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border-none bg-transparent touch:relative touch:after:absolute touch:after:-inset-1 touch:after:content-['']"
+          onClick={onCollapseLeft}
+          type="button"
+        >
+          <LucideIcon name="panel-left-close" />
         </button>
       </div>
       <div className="shrink-0">

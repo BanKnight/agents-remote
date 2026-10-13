@@ -938,7 +938,12 @@ function WorkbenchContent({
     [update, navigateToWiki, rightPanelProjectKey],
   );
   const rightPanel = panelOpen ? (
-    <RightPanelTabs ctx={rightCtx} onOpenFile={onOpenFile} onOpenWiki={onOpenWiki} />
+    <RightPanelTabs
+      ctx={rightCtx}
+      onCollapse={closeDesktopPanel}
+      onOpenFile={onOpenFile}
+      onOpenWiki={onOpenWiki}
+    />
   ) : null;
   // 桌面 §6.10-9（M9 批次 d，对齐 09m/10m 原型 IA）：global scope 且 leftMode=plugins/files 时,
   // 插件/全局文件是 **main 整页**（原型 side sidewin 恒定不随导航切换、main 切内容），实例区让位
@@ -1066,10 +1071,10 @@ function WorkbenchContent({
   return (
     <WorkbenchShell
       leftOpen={leftOpen}
-      onLeftOpenChange={setLeftOpen}
+      onLeftExpand={() => setLeftOpen(true)}
       rightOpen={panelOpen}
-      onRightOpenChange={(open) => (open ? openDesktopPanel() : closeDesktopPanel())}
-      sidebar={<WorkbenchSide />}
+      onRightExpand={openDesktopPanel}
+      sidebar={<WorkbenchSide onCollapseLeft={() => setLeftOpen(false)} />}
       rightPanel={desktopMainPage ? null : rightPanel}
       rightPanelCollapsible={!desktopMainPage}
       statusBar={<StatusBar />}

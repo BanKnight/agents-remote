@@ -660,6 +660,22 @@
     gap: 6px;
     margin: 8px 4px;
   }
+  /* 栏折叠钮 .clps（左栏项目组 ghead 行尾 + 右栏 glabel2 行首共用，2026-10-13 真机反馈②：
+     文字字形「‹」「»」可点区仅 4.7px 宽且非规范形制 → 图标化；同日复核定 panel-*-close
+     侧栏面板+折叠方向箭头（tokens.json icon.mapping「panel.left.close=折叠左栏 ·
+     panel.right.close=折叠右栏」，与展开钮单角 chevron 同规范配套）14px + 20×20 热区；
+     两钮位置镜像贴中栏——左栏行尾 = 左栏右缘、右栏行首 = 右栏左缘（.glabel2 .clps 规则）。
+     原型 HTML 的 <span class="clps">»</span> 文字字形是静态稿形态，实现以 tokens 为准
+     不回头改原型）。盒尺寸/居中在 JSX 走 utilities（同排「＋」h-5 w-5 写法），此处只管色
+     与内嵌 svg 规格（消费方 CSS 定尺寸 = frontend-notes §15⑤ 契约，同 .clk/.dicon svg 先例）。 */
+  .clps {
+    color: var(--c-primary);
+  }
+  .clps svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+  }
   .ghead .tt {
     font-size: 12px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
@@ -1044,6 +1060,11 @@
     padding: 10px 14px 2px;
     display: flex;
     align-items: center;
+  }
+  /* 右栏折叠钮在 glabel2 行首（真机反馈③对称性：两栏折叠钮都要贴中栏——左栏在 ghead
+     行尾 = 左栏右缘，右栏在行首 = 右栏左缘）；margin-right 与左栏 ghead 的 gap 6px 同档。 */
+  .glabel2 .clps {
+    margin-right: 6px;
   }
   .badge {
     /* v1.4 单源对齐（components.css :270「桌面=03m 同规格 22×19」）：22×19 · r4 · 11px · 700 */

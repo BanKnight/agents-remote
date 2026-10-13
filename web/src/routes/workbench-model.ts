@@ -180,7 +180,7 @@ export const workbenchRightWidthAtom = atomWithLocalOnlyStorage(
 
 /**
  * 桌面左栏开合（2026-10-13 真机反馈：左栏与右栏同款可折叠）。localStorage 持久化、默认展开；
- * 受控消费在 WorkbenchShell（leftOpen/onLeftOpenChange），收起态 aside 不渲染 + 中栏左缘
+ * 受控消费在 WorkbenchShell（leftOpen/onLeftExpand），收起态 aside 不渲染 + 中栏左缘
  * RailButton 唤出。单 atom 形制（右栏的「运行时 atom + 折叠记忆恢复源」双 atom 是批3 历史演进，
  * 左栏新写不复制）。getOnInit：折叠态刷新时首帧即按 false 渲染（aside 不挂载、query 不跑、
  * 无 280ms 收起动画闪）——缺省时持久化值 post-paint 才落地（code review P1 消化）。

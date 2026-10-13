@@ -329,3 +329,13 @@
 **标准做法**：①**grid item 会被条件渲染增删时，槽位必须显式钉位**（`lg:col-start-1/2/3`），不依赖 auto-placement 顺序——「谁在场谁入座」，出现/消失不重排他者；②断言布局用**容器量度**（section 宽 == 视口宽）而非按钮位置（按钮贴缘不能区分「真贴缘」与「容器塌缩后随迁」）；③诊断口诀：`right-0` 元素 rect 右缘出现在错位处 + `elementsFromPoint` 栈首是容器自身 → 先查该元素的实际 containing block（宽 0 的定位父级），再查父级为何塌。
 
 **来源**：2026-10-13 桌面三栏批（左栏折叠）探针实锤（右栏唤出钮 x=-24 对照 + 命中栈无 section）；与 frontend-notes §3「结构关系是 state」同族——渲染结构（几个 item 在场）变化会改变布局语义，槽位契约要显式化。
+
+## 31. 伪元素扩热区会被祖先 `overflow` 裁剪：命中区必须按「未被裁的实际量度」验收
+
+**现象**（2026-10-13 可点性批实测）：RailButton（栏收起后贴中栏边缘的唤出钮）声明「`touch:after:-inset-x-2` 左右各 +8px → 40px 热区」，真机 iPad 上用户「点很多次都没反应，只有中间一小块能点响」；实测该伪元素被 section/grid/main 三层 `overflow:hidden` 裁掉**外侧**一半——声明 40px、实际 32px。同批折叠钮更甚：裸文字字形当钮（「‹」4.67×19.59px、「»」7.8×19.59px）。
+
+**机制**：`overflow:hidden` 祖先**既裁绘制也裁命中测试**——被裁区域的伪元素（乃至元素自身）对 `elementFromPoint`/点击不可见。伪元素扩热区在「按钮贴容器边缘」场景必然裁掉向外的半边；且 Tailwind 声明的是意图（-inset-x-2），不是实际命中量度。另有叠加因素：`hover:text-on-surface` 与常态 `text-on-surface-soft` 在浅色主题下同物化 `var(--ink-1)` = hover 反馈空操作，「看得见但点了像没点」。
+
+**标准做法**：①**命中区 ⊇ 视觉**：要么把真实盒做到目标尺寸（本批定案 22×56 实底小舌——初拍 44×56 命中=视觉后经真机复核「宽度太离谱，至少剪一半」；44px 是 HIG 档但宽度以用户真机复核为准），要么扩区只朝**内侧**（内容侧）——贴容器边缘时外侧必被裁；②验收断言用 `elementFromPoint` 采样**实际命中**（四边中点全命中自身 + 框外若干 px 不命中），不能只读 `getBoundingClientRect`（rect 证的是盒、不是可点区）；③icon 按钮（如 `.clps`）用「容器式热区」：button 尺寸走 utilities（`h-5 w-5`）+ 内嵌小图标（消费方 CSS 定尺寸，§15⑤），裸文字字形（无 padding 的 span/button）可点区=字形宽，是伪钮；④hover 反馈以 computed 实测为准，与常态同物化即视为无反馈（换 `hover:bg-on-surface/5`）。
+
+**来源**：commit 桌面三栏可点性批（RailButton 22×56 + `.clps` 图标化 20×20 热区）；与 §7（点击区口径 touch variant）、§30（auto-placement 塌缩同样靠命中栈实锤）同族。

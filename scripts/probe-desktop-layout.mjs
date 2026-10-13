@@ -333,7 +333,7 @@ try {
   await page.waitForTimeout(800);
   await page.locator('button:has-text("布局探针会话")').first().click();
   await page.waitForTimeout(1000);
-  // 左栏折叠闭环：把手钮（左栏右缘）→ 折叠 → 中栏左缘 RailButton 唤出 → 恢复。
+  // 左栏折叠闭环：ghead 行内折叠钮（panel 侧栏图标）→ 折叠 → 中栏左缘 RailButton 唤出 → 恢复。
   // 前置：确保右栏收起（「中栏吃满」断言的隐含前提；未来 Part 重排防假挂）。
   if (await page.$("main aside.lg\\:flex")) {
     await page.getByRole("button", { name: "收起右栏" }).click();
@@ -345,26 +345,38 @@ try {
     const side = document.querySelector("main .side");
     const grid = side?.closest("[style*='--workbench-side-col']");
     const sideCol = grid ? getComputedStyle(grid).gridTemplateColumns.split(" ")[0] : null;
-    // 左栏把手钮几何（防「顺手统一宽度」漂移 + 镜像贴缘）。
-    const leftAside = document.querySelector("main aside.lg\\:block");
-    const foldBtn = leftAside?.querySelector("button[aria-label='收起左栏']");
+    // 左栏折叠入口 = 项目组 ghead 行内折叠钮（panel 侧栏图标 14px，ghead 首行内不在悬浮层；
+    // 2026-10-13 真机反馈②文字字形退役、同日复核定 panel-*-close 形制）。svg 显式尺寸 =
+    // frontend-notes §15⑤ 契约（裸 svg WebKit flex 收缩 0×0，必须锁几何非零）；
+    // rect 侧栏框 = panel 形制身份。
+    const foldBtn = document.querySelector("main .ghead button[aria-label='收起左栏']");
+    const icon = foldBtn?.querySelector("svg");
+    const ir = icon?.getBoundingClientRect();
     return {
       sideLeft: side?.getBoundingClientRect().left ?? null,
       sideCol,
-      foldBtn: foldBtn ? foldBtn.getBoundingClientRect() : null,
-      asideRight: leftAside?.getBoundingClientRect().right ?? null,
+      foldIcon: icon
+        ? {
+            w: +ir.width.toFixed(1),
+            h: +ir.height.toFixed(1),
+            viewBox: icon.getAttribute("viewBox"),
+            // divider 路径身份：panel-left-close 竖线在 x=9（M9 3v18）——left/right 换装
+            // 或回退 chevrons（无 rect/divider）都会红（panelRect 只能辨形制辨不了方向）。
+            leftDivider: icon.innerHTML.includes("M9 3v18"),
+          }
+        : null,
     };
   });
-  check("左栏把手钮在场 + 左栏 .side 在场", p6a.sideLeft !== null);
+  check("左栏 .side 在场（行内折叠钮由下条断言兜住）", p6a.sideLeft !== null);
   if (p6a.sideLeft !== null) {
     check(`左栏轨道宽 = side 宽（${p6a.sideCol}）`, p6a.sideCol !== null && p6a.sideCol !== "0px");
     check(
-      `左栏把手钮贴 aside 右缘（Δ=${p6a.foldBtn ? Math.abs(p6a.foldBtn.right - p6a.asideRight).toFixed(2) : "—"}px）`,
-      !!p6a.foldBtn && Math.abs(p6a.foldBtn.right - p6a.asideRight) <= 2,
-    );
-    check(
-      `把手钮 w-4 档位（宽 ${p6a.foldBtn?.width.toFixed(0)}px）`,
-      !!p6a.foldBtn && Math.abs(p6a.foldBtn.width - 16) <= 1,
+      `折叠钮已图标化 panel-left-close（svg ${p6a.foldIcon ? `${p6a.foldIcon.w}×${p6a.foldIcon.h}` : "—"} · viewBox ${p6a.foldIcon?.viewBox ?? "—"}）`,
+      p6a.foldIcon !== null &&
+        Math.abs(p6a.foldIcon.w - 14) <= 0.5 &&
+        Math.abs(p6a.foldIcon.h - 14) <= 0.5 &&
+        p6a.foldIcon.viewBox === "0 0 24 24" &&
+        p6a.foldIcon.leftDivider === true,
     );
   }
   await foldLeft.click();
@@ -376,10 +388,33 @@ try {
     );
     const section = document.querySelector("main section");
     const sr = section?.getBoundingClientRect();
+    // RailButton 命中契约（2026-10-13 拍板「命中=视觉」）：可见盒 = 可点区，四边中点全
+    // 命中、框外（中栏内容侧）无隐形扩区——旧 24×80 + 伪元素声明 40px 实被祖先
+    // overflow:hidden 裁到 32px（frontend-notes §31）；真机复核宽度剪半 44→22。此处按
+    // 实际命中验收防回归。
+    const rb = expandBtn?.getBoundingClientRect();
+    const hitSelf = (x, y) => {
+      if (!expandBtn) return false;
+      const el = document.elementFromPoint(x, y);
+      return !!el && (el === expandBtn || expandBtn.contains(el));
+    };
+    const rail = rb
+      ? {
+          w: +rb.width.toFixed(1),
+          h: +rb.height.toFixed(1),
+          edges:
+            hitSelf(rb.x + 1, rb.y + rb.height / 2) &&
+            hitSelf(rb.x + rb.width - 1, rb.y + rb.height / 2) &&
+            hitSelf(rb.x + rb.width / 2, rb.y + 1) &&
+            hitSelf(rb.x + rb.width / 2, rb.y + rb.height - 1),
+          outsideClean: !hitSelf(rb.x + rb.width + 6, rb.y + rb.height / 2),
+        }
+      : null;
     return {
       sideGone: !side,
       expandBtnLeft: expandBtn?.getBoundingClientRect().left ?? null,
       expandBtnLeftEdge: expandBtn ? Math.abs(expandBtn.getBoundingClientRect().left) < 2 : false,
+      rail,
       // 收起态轨道归 0（grid 模板解析后第一轨 0px）。
       sideCol: (() => {
         const grid = document.querySelector("main [style*='--workbench-side-col']");
@@ -391,13 +426,19 @@ try {
       viewport: window.innerWidth,
     };
   });
-  check("点把手 → 左栏 aside 消失", p6b.sideGone === true);
-  check(`点把手 → 轨道归 0（实测 ${p6b.sideCol}）`, p6b.sideCol === "0px");
+  check("点行内钮 → 左栏 aside 消失", p6b.sideGone === true);
+  check(`点行内钮 → 轨道归 0（实测 ${p6b.sideCol}）`, p6b.sideCol === "0px");
   check(
     `中栏吃满视口（宽 ${p6b.sectionWidth?.toFixed(1)} vs ${p6b.viewport}）`,
     p6b.sectionWidth !== null && Math.abs(p6b.sectionWidth - p6b.viewport) <= 2,
     `sectionWidth=${p6b.sectionWidth}`,
   );
+  check(
+    `唤出钮 22×56 实底小舌（实测 ${p6b.rail ? `${p6b.rail.w}×${p6b.rail.h}` : "—"}）`,
+    p6b.rail !== null && Math.abs(p6b.rail.w - 22) <= 0.5 && Math.abs(p6b.rail.h - 56) <= 0.5,
+  );
+  check("唤出钮命中=视觉（四边中点全命中自身）", p6b.rail?.edges === true);
+  check("唤出钮无隐形扩区（框外 6px 不命中）", p6b.rail?.outsideClean === true);
   check(
     `中栏左缘 RailButton（展开左栏）贴视口左缘（x=${p6b.expandBtnLeft?.toFixed(1)}）`,
     p6b.expandBtnLeft !== null && p6b.expandBtnLeftEdge,
@@ -407,7 +448,7 @@ try {
   await page.waitForTimeout(500);
   check("点唤出钮 → 左栏恢复", !!(await page.$("main .side")));
 
-  // 右栏把手钮 + 交界单线：先唤出右栏（默认收起），量把手位置 + aside 无 border-l。
+  // 右栏行内钮 + 交界单线：先唤出右栏（默认收起），量行内钮 + aside 无 border-l。
   await page.getByRole("button", { name: "展开右栏" }).click();
   await page.waitForTimeout(500);
   const p6c = await page.evaluate(() => {
@@ -419,39 +460,55 @@ try {
       g.getBoundingClientRect(),
     );
     const rightmost = groups.length ? Math.max(...groups.map((r) => r.right)) : null;
-    const clps = document.querySelector("main .clps");
+    // 右栏折叠入口 = glabel2 行首 clps 折叠钮（panel 侧栏图标 14px，2026-10-13 真机反馈②
+    // 文字字形「»」退役、同日复核定 panel-*-close 形制）。divider 路径 = 方向身份。
+    const clps = aside.querySelector(".glabel2 .clps");
+    const clpsSvg = clps?.querySelector("svg");
+    const cr = clpsSvg?.getBoundingClientRect();
+    const clpsR = clps?.getBoundingClientRect();
     return {
       asideLeft: ar.left,
       borderLeft: getComputedStyle(aside).borderLeftWidth,
       rightmostGroupRight: rightmost,
-      clpsGone: !clps,
-      // 把手钮 = aside 内 aria-label「收起右栏」的按钮。
-      foldBtn: (() => {
-        const b = aside.querySelector("button[aria-label='收起右栏']");
-        return b ? b.getBoundingClientRect() : null;
-      })(),
+      // 对称性（真机反馈③）：右栏折叠钮在 glabel2 行首 = 贴中栏（与左栏 ghead 行尾
+      // = 左栏右缘镜像）；量「钮左缘 − aside 左缘」锁位，行尾（margin-left:auto）回潮即红。
+      clpsOffset: clpsR ? +(clpsR.left - ar.left).toFixed(1) : null,
+      clpsIcon: clpsSvg
+        ? {
+            w: +cr.width.toFixed(1),
+            h: +cr.height.toFixed(1),
+            viewBox: clpsSvg.getAttribute("viewBox"),
+            // panel-right-close 竖线在 x=15（M15 3v18）——方向身份，同 p6a leftDivider。
+            rightDivider: clpsSvg.innerHTML.includes("M15 3v18"),
+          }
+        : null,
+      clpsText: clps ? clps.textContent.trim() : null,
     };
   });
   check("右栏 aside 在场", !!p6c);
   if (p6c) {
     check(`右栏 aside 无 border-l（实测 ${p6c.borderLeft}）`, p6c.borderLeft === "0px");
     check(
+      `右栏折叠钮贴中栏（钮左缘−aside 左缘 = ${p6c.clpsOffset ?? "—"}px ≤ 24）`,
+      p6c.clpsOffset !== null && p6c.clpsOffset >= 0 && p6c.clpsOffset <= 24,
+    );
+    check(
       `最右 group 右缘 == aside 左缘（Δ=${p6c.rightmostGroupRight === null ? "—" : Math.abs(p6c.asideLeft - p6c.rightmostGroupRight).toFixed(2)}px）`,
       p6c.rightmostGroupRight !== null && Math.abs(p6c.asideLeft - p6c.rightmostGroupRight) <= 0.2,
     );
-    check("行内 clps「»」已退役（不在场）", p6c.clpsGone === true);
     check(
-      `右栏把手钮贴 aside 左缘（Δ=${p6c.foldBtn ? Math.abs(p6c.foldBtn.left - p6c.asideLeft).toFixed(2) : "—"}px）`,
-      !!p6c.foldBtn && Math.abs(p6c.foldBtn.left - p6c.asideLeft) <= 2,
-    );
-    check(
-      `右栏把手钮 w-4 档位（宽 ${p6c.foldBtn?.width.toFixed(0)}px）`,
-      !!p6c.foldBtn && Math.abs(p6c.foldBtn.width - 16) <= 1,
+      `右栏行内折叠钮已图标化 panel-right-close（svg ${p6c.clpsIcon ? `${p6c.clpsIcon.w}×${p6c.clpsIcon.h}` : "—"} · 文字残留「${p6c.clpsText ?? "—"}」）`,
+      p6c.clpsIcon !== null &&
+        Math.abs(p6c.clpsIcon.w - 14) <= 0.5 &&
+        Math.abs(p6c.clpsIcon.h - 14) <= 0.5 &&
+        p6c.clpsIcon.viewBox === "0 0 24 24" &&
+        p6c.clpsIcon.rightDivider === true &&
+        p6c.clpsText === "",
     );
   }
   await page.getByRole("button", { name: "收起右栏" }).click();
   await page.waitForTimeout(500);
-  check("点右栏把手 → 右栏收起", !(await page.$("main aside.lg\\:flex")));
+  check("点右栏行内钮 → 右栏收起", !(await page.$("main aside.lg\\:flex")));
 
   await ctx.close();
 } finally {

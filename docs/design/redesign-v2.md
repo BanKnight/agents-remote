@@ -630,7 +630,7 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 - 4 目的地导航退役 → footnav 三项（全局文件/插件/设置）；
 - 实例卡片网格与手风琴项目卡退役 → srow2 行列表，点行开 tab 替代拖放（05g pin⑤；side 行不可拖）；
 - middle tabs 退役：历史 → side 实例组头时钟切 05c 列表态（再点返回）；插件 → footnav mainPage（09m 单页三段）；
-- ProjectSwitcher ▾ / PanelHeader title / 左栏折叠（**2026-10-13 三栏批反转**：左栏恢复可折叠，见「真机反馈·桌面三栏批」小节）/ 左栏 resize 整套退役（04 pin③ 标题无 ▾）；
+- ProjectSwitcher ▾ / PanelHeader title / 左栏折叠（**2026-10-13 三栏批反转**：左栏恢复可折叠，折叠入口 = 栏头行内钮，见「真机验收反转·折叠钮行内化」小节）/ 左栏 resize 整套退役（04 pin③ 标题无 ▾）；
 - aprow 移入 side，gate 放开为**全局聚合**（04 pin④：任何桌面 scope approvals>0 渲染）；
 - **项目行操作（重命名/删除/置顶）随手风琴退役——记档不做**，创建入口保留 ghead plus（重开需用户发起）。
 
@@ -1921,6 +1921,32 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 **验证**：`probe-desktop-layout` **34/34**（Part 6：左栏折叠闭环 + 中栏吃满 1440 + 左右把手贴缘镜像 Δ=0.00 + w-4 档位 ×2 + 单线 + clps 退役）；`probe-grid-panel` **14/14** 回归；m9-d F11-F14 绿（F12/F12b 改口）；web 单测 795 + typecheck + CSS 硬闸 + tokens 机检全绿。
 
 **真机清单**：①左栏把手钮（右缘竖直居中）点击折叠 → 中栏吃满、中栏左缘唤出钮；刷新后折叠态保持且**无闪开动画**（getOnInit）；②右栏把手钮（左缘）折叠；原「检视」行内「»」不再出现；③右栏↔中栏交界仅 1px 线（双线收敛）；左栏交界线连续（把手钮段不断线）；④右栏拖宽正常（把手钮覆盖段除外）；⑤**暗色主题下左栏把手钮可发现性**（design P1 必验项；隐形则下批换材质）；⑥iPad 触屏：把手钮热区不吞中栏边缘点击（单向扩验证）；⑦PWA 强刷。
+
+### 真机验收反转·折叠钮行内化：把手钮退役（2026-10-13）
+
+三栏批（`f5f58bc`）真机验收：**绝大多数没问题，但栏内缘竖条把手钮遮挡视线**——用户拍板改回**行内方案**（即本批刚退役的 glabel2 行内 clps 形制）。落地：①右栏**整体恢复**原行内 clps「»」（right-panel-tabs.tsx + m9-d 探针 `git checkout f5f58bc~1 --` 整文件恢复）；②左栏照搬同款形制——项目组 ghead 行尾「‹」（WorkbenchSide 新 prop `onCollapseLeft`，装配点直写 workbenchLeftOpenAtom 不经 Shell；「‹」指左 = 收向左，与「»」指右镜像对称）；③新增 `.ghead .clps`（与 `.glabel2 .clps` 同款 primary / 700 / 14px / line-height-ui，**无** margin-left:auto——ghead 行尾推位由「＋」的 ml-auto 承担，本钮排在其后，间距走 ghead 自身 gap 6px）；④EdgeFoldButton 组件 + props + 左右两处调用全删（左栏 aside 随之删 relative）。
+
+**全部保留不动**：col-start 钉位修复、交界单线收敛、RailButton 唤出钮、workbenchLeftOpenAtom + getOnInit、EmptyInstanceArea border-r、i18n 四 key。probe-desktop-layout Part 6 断言反转（p6a = 左栏行内钮在 ghead 内且文字形非 svg 把手；p6c = 右栏 clps「»」在场）+ 三处「点把手」文案同步「点行内钮」。上一小节的「把手钮形态拍板」「暗色把手可发现性」「触屏热区单向扩」三条随钮退役（文字保留作决策史，不再是现行形制）。
+
+**验证**：CSS 硬闸 + dist 双 clps 规则落盘确认（`.ghead` 版无 margin-left:auto / `.glabel2` 版有）+ tokens 机检 + typecheck；`probe-desktop-layout` **31/31**（Part 6：行内钮在 ghead 内且文字形非 svg + 折叠闭环 + 中栏吃满 1440 + RailButton 贴缘 + 右栏 clps「»」在场 + 行内钮收起闭环）；`probe-grid-panel` **14/14** 回归；m9-d **67/67**（F12「检视 · 只读»」/ F12b .clps 在场恢复原断言）；web 单测 **795**。
+
+**真机清单**（①②的字形/可点性面已被下一小节图标化批取代）：①左栏项目组 ghead 行尾「‹」点击折叠 → 中栏吃满 + 中栏左缘唤出钮闭环；刷新折叠态保持且无闪开动画（getOnInit）；②右栏「检视」行尾「»」折叠 → 唤出闭环；③右栏↔中栏交界 1px 单线不变、左栏交界线连续；④右栏拖宽正常；⑤PWA 强刷。
+
+### 真机反馈②·可点性修：折叠钮 panel 图标化 + 展开钮 22×56（2026-10-13，三轮反馈定案）
+
+行内化版真机验收两条新反馈：①「折叠按钮，这两个图标看起来没有遵守我们的规范，都比较的小，比较难点击到」；②「展开按钮看起来整体比较大，但是点起来总觉得好像点不准」——澄清 = **真命中失败**（「点了很多次都没反应，很细心去点才能触发」；iPad 触屏；「只有中间一小块能点响」），不是缺反馈。**同日第三轮真机复核再三条**：③展开钮「宽度实在太离谱了，至少可以剪一半」；④两栏收起钮「应该是对称性的存在……左栏的靠中栏的位置，右栏的却不是」；⑤折叠钮图标「我记得有一个图标是有点像工作台的侧边栏按钮的样式，里面多了一个箭头表示侧边栏的折叠方向，应该用那两个才是真正的配套的」（展开钮单角 chevron 形制认可）。
+
+**实测硬数据**（一次性诊断脚本 `elementFromPoint` 采样，用后已删）：折叠钮裸字形钮 **4.67×19.59px**（左）/ **7.8×19.59px**（右）——远低于 WCAG 2.5.8 的 24px；RailButton 24×80，声明的「`touch:after` ±8px → 40px」被 section/grid/main 三层 `overflow:hidden` **裁掉外侧一半、实际只有 32px**（overflow 既裁绘制也裁命中测试），且 `hover:text-on-surface` 与常态 `text-on-surface-soft` 同物化 `var(--ink-1)` = 反馈空操作。
+
+**用户拍板（三轮演进）**：折叠钮 = 图标化 **14px**（对齐设计包同排档位 `.ghead .clk`/原 `.clps` 14px）+ **20×20 容器式热区**（不撑高组头 = 三栏第一行同线不破；`touch:after:-inset-1` 扩至 28px，与同排「＋」/时钟同款），图标初拍双角 chevron、第三轮复核定案 **panel 侧栏面板+折叠方向箭头**（`panel-left-close`/`panel-right-close`——用户指出这才是「真正配套」的形制，与展开钮单角 chevron 同规范）；展开钮 = **实底小舌**（命中区 = 视觉，去掉被裁的隐形扩区；高 80→56），初拍 44×56、第三轮真机复核「宽度剪半」定案 **22×56**；右栏折叠钮**行首贴中栏**（第三轮对称性反馈：与左栏 ghead 行尾 = 左栏右缘镜像）。
+
+**落地**：①`build-icons.mjs` 白名单 `panel-left-close`/`panel-right-close` + 重跑生成（初版 chevrons-left/right 从未提交即被替换，无零消费残留；**不加 TO_LUCIDE**——消费点用 `<LucideIcon>` 直连，与同特性 RailButton 的 chevron-left/right 同写法）；tokens icon.mapping 同步 `panel.left.close=折叠左栏 · panel.right.close=折叠右栏`（设计包单源与实现一致）；②`.clps` 两条文字字形规则合并为 `.clps{color:var(--c-primary)}` + `.clps svg{14×14}`（盒尺寸/居中走 JSX utilities）；③两折叠钮 `<LucideIcon name="panel-left-close"/"panel-right-close">` + `flex h-5 w-5 shrink-0` + `touch:after:-inset-1`（补 `shrink-0` = 上批 code review P2 收口）；④右栏折叠钮**移 glabel2 行首**（原行尾 `margin-left:auto` → 行首 `margin-right:6px`，与左栏 ghead 的 gap 6px 同档）；⑤RailButton `h-20 w-6`→`h-14 w-5.5`（22×56）、删 `touch:after:*` 四段、hover/active 用**表面阶梯下探**（`hover:bg-surface-inset` → `active:bg-elevated3`，两主题均保持实底）——初版 `hover:bg-on-surface/5` 是 color-mix 半透明**替换**背景而非叠加，深色主题 hover 瞬间小舌沉入黑色中栏失去实底（design review P1 否决），`hover:text-on-surface` 保留无害（与常态同物化 `var(--ink-1)`，两主题 computed 均零变化）；⑥命名收口（code review P2 消化）：Shell 两开合 prop 只承担「唤出」→ **`onLeftExpand/onRightExpand: () => void`**，装配点删不可达 false 分支（`onRightExpand={openDesktopPanel}`）。
+
+**假说与证据边界**：「只有中间一小块能点响」在 Chromium 探针里命中栈全正常（24×80 全命中自身）——WebKit 真机侧机制未定位（用户拍板不为此装 WebKit）；本批交付的是**几何契约**（22×56 所见即可点、框外不抢点击）+ 真实 hover 反馈，探针按**实际命中**验收（四边中点 `elementFromPoint` + 框外 6px 不命中），真机复验交用户。
+
+**验证**：CSS 硬闸 + tokens 机检 + typecheck + web 单测 **795** + `probe-desktop-layout` **35/35**（Part 6：两折叠钮 svg 14×14 · viewBox 24 网格 · **divider 路径方向身份断言**（左 `M9 3v18` / 右 `M15 3v18`——防左右换装与回退 chevrons 形制）、右栏钮行首贴中栏（钮左缘−aside 左缘 = 14px ≤ 24）、RailButton 22×56、四边中点命中、框外 6px 不命中）+ `probe-desktop-tri-column-firstline`（F4/F5 首行中心 16 vs tab 15.5——20×20 盒不撑高组头）+ `probe-grid-panel` **14/14** + m9-d **68/68**（F12「检视 · 只读」svg 不入 textContent / F12b panel 形制 / F12c `.clps` 色仍指 `var(--c-primary)`）+ 交付 checklist `content-type: text/css`。
+
+**真机清单**：①左栏「项目」行尾折叠钮：**panel 侧栏面板+左指箭头**图标、点行尾任意处都能收起；②右栏「检视」**行首**折叠钮：panel 面板+右指箭头（两钮贴中栏镜像对称）；③折叠后中栏边缘 22×56 实底小舌：所见即可点（条内任意处唤出、条外不抢中栏点击）、按下/hover 有反馈（表面阶梯下探）；④三栏第一行仍同一水平线；⑤折叠/唤出闭环 + 刷新保持；⑥触屏折叠钮 28px 热区不误触相邻「＋」；⑦**浅色主题下 22×56 小舌的可发现性**（填充与中栏近同色，可视性靠描边+阴影——design review P2 记录，真机若反馈不可见则换 `bg-surface-inset` 常态底或描边加深一档）；⑧PWA 强刷。
 
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 

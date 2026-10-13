@@ -33,22 +33,26 @@ type WorkbenchShellProps = {
   children: ReactNode;
   /**
    * 桌面合并 Sidebar（§6.12k：项目组 + seg4 + 实例组 + footnav 三项，05/04 原型
-   * 恒定 side 单栏），grid 第 0 列。2026-10-13 起可折叠（真机反馈与右栏同款）：
+   * 恒定 side 单栏），grid 第 0 列。2026-10-13 起可折叠（真机反馈与右栏同款；折叠入口 =
+   * sidebar 内项目组 ghead 行内 panel-left-close 图标钮，onCollapseLeft）：
    * false = aside 不渲染 + 中栏左缘 RailButton 唤出；真相 = workbenchLeftOpenAtom。
    */
   sidebar?: ReactNode;
-  /** 左栏开合（受控，真相 = workbenchLeftOpenAtom，localStorage 持久化默认展开）。 */
+  /** 左栏开合（受控，真相 = workbenchLeftOpenAtom，localStorage 持久化默认展开）。
+   *  Shell 只管唤出（onLeftExpand）；折叠 = sidebar 内项目组 ghead 行内钮（onCollapseLeft，
+   *  装配点直写同 atom，不经 Shell——右栏 clps 同口径）。 */
   leftOpen: boolean;
-  /** 左栏开合统一入口（栏内缘把手钮 false / 中栏左缘 RailButton true）。 */
-  onLeftOpenChange: (open: boolean) => void;
+  /** 左栏唤出入口（中栏左缘 RailButton，恒 true——折叠不经 Shell）。 */
+  onLeftExpand: () => void;
   /**
    * 右栏展开态（运行时真相 = workbenchPanelOpenAtom，WorkbenchContent 单点写入并同步
    * rightCollapsed 记忆——批3 融合）。false = aside 不渲染（避免 inspection query）、
    * 中栏边缘渲染唤出钮。
    */
   rightOpen: boolean;
-  /** 右栏开合统一入口（唤出钮 true / 栏内缘 EdgeFoldButton false）。 */
-  onRightOpenChange: (open: boolean) => void;
+  /** 右栏唤出入口（中栏右缘 RailButton，恒 true——折叠 = rightPanel 内 glabel2 行内钮
+   *  经 onCollapse 直写 atom，不经 Shell）。 */
+  onRightExpand: () => void;
   /** 右栏：inspection tab（Stage 3 接入）。收起时上层传 null（避免 inspection query）。 */
   rightPanel?: ReactNode;
   /**
@@ -73,7 +77,7 @@ type WorkbenchShellProps = {
  * 该侧消失、中栏对应边缘出现唤出按钮；中栏是工作台主体，恒 minmax(0, 1fr) 吃剩余
  * （右栏固定宽，见 rightColumn 注释），不可收起。
  *
- * 纯布局容器，不持业务 state：右栏开合受控（rightOpen/onRightOpenChange，真相 =
+ * 纯布局容器，不持业务 state：右栏开合受控（rightOpen/onRightExpand，真相 =
  * workbenchPanelOpenAtom）、宽度来自 workbench-model.ts 的 atom，三列内容由 props 注入。
  */
 export function WorkbenchShell({
@@ -82,8 +86,8 @@ export function WorkbenchShell({
   rightOpen,
   rightPanel,
   rightPanelCollapsible,
-  onLeftOpenChange,
-  onRightOpenChange,
+  onLeftExpand,
+  onRightExpand,
   sidebar,
   statusBar,
 }: WorkbenchShellProps) {
@@ -137,14 +141,7 @@ export function WorkbenchShell({
             视觉由 side 内容自带（.side/.sidewin：bg-sidebar + border-r + h-full）。
             收起态整个 aside 不渲染（右栏同形制）：轨道归 0px + query 不跑。 */}
         {leftOpen ? (
-          <aside className="relative hidden min-h-0 min-w-0 lg:col-start-1 lg:block">
-            {sidebar}
-            <EdgeFoldButton
-              label={t("workbench.collapseLeft")}
-              onClick={() => onLeftOpenChange(false)}
-              side="left"
-            />
-          </aside>
+          <aside className="hidden min-h-0 min-w-0 lg:col-start-1 lg:block">{sidebar}</aside>
         ) : null}
 
         {/* col-start 显式钉位：aside 双双不渲染时 section 是 grid 唯一 item，auto-placement
@@ -152,18 +149,10 @@ export function WorkbenchShell({
             （hit-test 全哑，探针实锤 x=0 是塌缩巧合非贴缘）。三栏槽位显式化后，谁在场谁入座。 */}
         <section className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden lg:col-start-2">
           {!leftOpen ? (
-            <RailButton
-              label={t("workbench.expandLeft")}
-              onClick={() => onLeftOpenChange(true)}
-              side="left"
-            />
+            <RailButton label={t("workbench.expandLeft")} onClick={onLeftExpand} side="left" />
           ) : null}
           {!rightOpen && rightCollapsible ? (
-            <RailButton
-              label={t("workbench.expandRight")}
-              onClick={() => onRightOpenChange(true)}
-              side="right"
-            />
+            <RailButton label={t("workbench.expandRight")} onClick={onRightExpand} side="right" />
           ) : null}
           {children}
         </section>
@@ -172,15 +161,9 @@ export function WorkbenchShell({
           <aside
             className={`relative hidden min-h-0 min-w-0 flex-col overflow-hidden lg:col-start-3 lg:flex ${shellSurfaceClasses.sidebar}`}
           >
-            {/* 折叠入口 = 栏内缘 EdgeFoldButton（2026-10-13 真机反馈：折叠钮挪到右栏左缘，
-               与左栏把手钮左右对称；原 glabel2 行内 clps「»」退役）。§8 高度链：body 自身
-               必须是 flex container，flex-1 子的约束才传得下去（FilesPanel 根 flex-1 依赖
-               此层；overflow 只裁不传约束）。 */}
-            <EdgeFoldButton
-              label={t("workbench.collapseRight")}
-              onClick={() => onRightOpenChange(false)}
-              side="right"
-            />
+            {/* §8 高度链：body 自身必须是 flex container，flex-1 子的约束才传得下去
+               （FilesPanel 根 flex-1 依赖此层；overflow 只裁不传约束）。折叠入口 =
+               rightPanel 内 glabel2 行首 clps 图标钮（onCollapse 链）。 */}
             <div className="flex min-h-0 flex-1 overflow-hidden">{rightPanel}</div>
             {/* 宽度拖拽 gutter（2026-10-01 拍板「右栏宽度确实要有拖拽效果」）：aside 在即渲染
                （原 `{rightOpen ? null : …}` 位于仅 rightPanel 非空才渲染的 aside 内，而
@@ -206,75 +189,30 @@ export function WorkbenchShell({
 type RailButtonProps = {
   label: string;
   onClick: () => void;
-  /** side = 中栏哪一缘（left = 钮在中栏左缘）——⚠️ 与 EdgeFoldButton 的 side（所在栏）语义相反。 */
+  /** side = 中栏哪一缘（left = 钮在中栏左缘）。 */
   side: "left" | "right";
 };
 
-/** 栏收起后，贴中栏边缘的唤出按钮（absolute overlay，不占 grid 轨道）。实底 +
- * 描边 + 实色图标：/60 半透明白在浅色主题下与中栏背景几乎同色，真机不可发现
- *（2026-09-30 用户反馈「折叠后展开按钮不见了」——DOM 在场但视觉隐形）。
- * 触屏扩热区（w-6=24px 恰压 WCAG 2.5.8 最小值，touch:after 左右各 +8px → 40px，
- * frontend-notes §7 点击区口径；h-20=80px 已足）。shadow-sm 是第十批可发现性修复
- * 的一部分（5e06b5d），保留。图标单轨 Lucide（spec §10.3，M13c 手写 16 网格退役）。 */
+/** 栏收起后，贴中栏边缘的唤出按钮（absolute overlay，不占 grid 轨道）。22×56 实底小舌
+ *（2026-10-13 真机反馈「看起来大、点不准，点很多次才触发」拍板 44×56 命中=视觉，用户
+ * 真机复核「宽度太离谱，至少剪一半」→ 22×56 定案）：命中区 = 视觉——所见即可点，无
+ * 隐形区。前史三课：①/60 半透明白真机不可发现（2026-09-30 反馈）→ 实底+描边+阴影
+ *（5e06b5d）；②旧形制 24×80 + touch:after 声明「±8px → 40px」实际被祖先 overflow:hidden
+ * 裁掉外侧一半只剩 32px（frontend-notes §31）；③hover/active 用表面阶梯下探
+ *（hover:bg-surface-inset → active:bg-elevated3，两主题均保持实底）——`bg-on-surface/5`
+ * 是 color-mix 半透明**替换**背景而非叠加，深色主题 hover 瞬间小舌沉入黑色中栏失去实底
+ *（design review P1 实测）；hover:text-on-surface 保留无害（与常态同物化，零变化）。
+ * shadow-sm 保留。图标单轨 Lucide（spec §10.3）。 */
 function RailButton({ label, onClick, side }: RailButtonProps) {
   return (
     <button
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={`absolute top-1/2 z-20 flex h-20 w-6 -translate-y-1/2 items-center justify-center border-neutral-line bg-surface-raised text-on-surface-soft shadow-sm transition hover:text-on-surface active:bg-on-surface/10 touch:after:absolute touch:after:-inset-x-2 touch:after:inset-y-0 touch:after:content-[''] ${
+      className={`absolute top-1/2 z-20 flex h-14 w-5.5 -translate-y-1/2 items-center justify-center border-neutral-line bg-surface-raised text-on-surface-soft shadow-sm transition hover:bg-surface-inset hover:text-on-surface active:bg-elevated3 ${
         side === "left"
           ? "left-0 rounded-r-lg border-y border-r"
           : "right-0 rounded-l-lg border-y border-l"
-      }`}
-    >
-      <LucideIcon
-        className="h-3.5 w-3.5"
-        name={side === "left" ? "chevron-left" : "chevron-right"}
-      />
-    </button>
-  );
-}
-
-type EdgeFoldButtonProps = {
-  label: string;
-  onClick: () => void;
-  /** side = 所在栏：left = 左栏（钮贴左栏右缘）/ right = 右栏（钮贴右栏左缘）。 */
-  side: "left" | "right";
-};
-
-/**
- * 栏内缘折叠把手钮（2026-10-13 真机反馈，RailButton 的展开态孪生）：常显窄竖条贴栏内缘、
- * 竖直居中，点击折叠所在栏；与收起后出现在中栏边缘的 RailButton 唤出钮左右对称（左栏钮在
- * 其右缘、右栏钮在其左缘镜像位）。材质与 RailButton 同源（实底 + 描边 + shadow）。
- *
- * ⚠️ side 语义与 RailButton 相反：这里 side = 所在栏（left = 钮在左栏右缘）；RailButton 的
- * side = 中栏哪一缘（left = 钮在中栏左缘）。定位/圆角/热区分支恰互为镜像——改材质/几何时
- * 两个组件要对照改（design review P2 记录）。
- *
- * 覆盖面声明（plan 拍板接受 + review 补记）：①右栏钮 z-30 h-20 覆盖内缘 ColumnResizeGutter
- * （拖宽，全高 w-1 z-20）中段——点击中段 = 折叠，拖宽抓 gutter 上下段；②左栏钮压住 .side
- * border-right 80px 段（边界线由钮自身 border-r 延续不断线）+ sidebar 行内容右缘中段；③
- * 右栏钮压面板行内容左缘。触屏（touch:after）热区只向所在栏**内侧**扩 8px（不朝交界/中栏
- * 溢出吞中栏点击——code review P2 消化），桌面 fine pointer 无扩区。
- *
- * 尺寸豁免记录：w-4=16px 低于 RailButton 的 24px（后者注释明写恰压 WCAG 2.5.8）——窄条
- * 形态是拍板值，桌面 pointer:fine 无最低尺寸约束、触屏经 touch:after 扩区补偿。
- *
- * 已知风险（design review P1，真机必验）：暗色主题下 bg-surface-raised ≈ bg-sidebar
- * （fill 对比 ~1.0:1），可发现性依赖描边 + chevron 字形；若真机确认隐形，备选 =
- * bg-surface-inset + border-sep-strong（下批处理）。
- */
-function EdgeFoldButton({ label, onClick, side }: EdgeFoldButtonProps) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={onClick}
-      className={`absolute top-1/2 z-30 flex h-20 w-4 -translate-y-1/2 items-center justify-center border-neutral-line bg-surface-raised text-on-surface-soft shadow-sm transition hover:text-on-surface active:bg-on-surface/10 touch:after:absolute touch:after:inset-y-0 touch:after:content-[''] ${
-        side === "left"
-          ? "right-0 rounded-l-lg border-y border-l border-r touch:after:-left-2 touch:after:right-0"
-          : "left-0 rounded-r-lg border-y border-r touch:after:left-0 touch:after:-right-2"
       }`}
     >
       <LucideIcon

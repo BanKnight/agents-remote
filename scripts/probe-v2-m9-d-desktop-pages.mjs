@@ -543,10 +543,29 @@ async function sideOverviewVisible(page) {
       if (!aside) return null;
       const label = aside.querySelector(".glabel2");
       const ptab = aside.querySelector(".ptab");
-      // 折叠入口已迁右栏左缘把手钮（2026-10-13 三栏批），行内 clps「»」退役。
-      const clps = aside.querySelector(".clps");
+      // 右栏折叠钮 = glabel2 行首 clps（panel-right-close 图标 14px；2026-10-13 真机反馈②
+      // 文字字形「»」退役、同日复核定 panel-*-close 形制）。svg 显式尺寸 = frontend-notes
+      // §15⑤ 契约（裸 svg WebKit 收缩 0×0）。
+      const clps = label?.querySelector(".clps");
+      const clpsSvg = clps?.querySelector("svg");
+      const cr = clpsSvg?.getBoundingClientRect();
+      // 主色参照（.clps 规则仅存属性 = color:var(--c-primary)，锁死防无声漂移）。
+      const ref = document.createElement("span");
+      ref.style.color = "var(--c-primary)";
+      document.body.appendChild(ref);
+      const primaryResolved = getComputedStyle(ref).color;
+      ref.remove();
       return {
-        clpsGone: !clps,
+        clpsIcon: clpsSvg
+          ? {
+              w: +cr.width.toFixed(1),
+              h: +cr.height.toFixed(1),
+              viewBox: clpsSvg.getAttribute("viewBox"),
+              panelRect: !!clpsSvg.querySelector("rect"),
+            }
+          : null,
+        clpsColor: clps ? getComputedStyle(clps).color : null,
+        primaryResolved,
         label: label
           ? label.textContent.trim()
           : aside.textContent.includes("检视")
@@ -558,11 +577,23 @@ async function sideOverviewVisible(page) {
     });
     ok(insp !== null, "F11 右栏 Inspector 渲染");
     if (insp) {
-      // 折叠入口 = 右栏左缘把手钮（2026-10-13 三栏批迁移）；行内 clps「»」退役防回归。
-      ok(insp.label === "检视 · 只读", `F12 glabel2「检视 · 只读」（实际 ${insp.label}）`);
+      // glabel2 行内折叠钮 = panel-right-close 图标（05:103 折叠语义；2026-10-13 反馈②
+      // 图标化后 textContent 回归纯「检视 · 只读」——svg 不入 textContent）。
       ok(
-        insp.clpsGone === true,
-        `F12b 行内 .clps 已退役（实际 ${insp.clpsGone ? "不在" : "在场"}）`,
+        insp.label === "检视 · 只读",
+        `F12 glabel2「检视 · 只读」+ 行内折叠钮（实际 ${insp.label}）`,
+      );
+      ok(
+        insp.clpsIcon !== null &&
+          Math.abs(insp.clpsIcon.w - 14) <= 0.5 &&
+          Math.abs(insp.clpsIcon.h - 14) <= 0.5 &&
+          insp.clpsIcon.viewBox === "0 0 24 24" &&
+          insp.clpsIcon.panelRect === true,
+        `F12b .clps 折叠钮已图标化 panel 形制（实际 ${insp.clpsIcon ? `${insp.clpsIcon.w}×${insp.clpsIcon.h} ${insp.clpsIcon.viewBox}` : "无 svg"}）`,
+      );
+      ok(
+        insp.clpsColor === insp.primaryResolved,
+        `F12c .clps 色仍指主色 var(--c-primary)（实际 ${insp.clpsColor} vs 主色 ${insp.primaryResolved}）`,
       );
       ok(insp.ptabH === 30, `F13 .ptab 高 30px（实际 ${insp.ptabH}）`);
       ok(
