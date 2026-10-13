@@ -1944,11 +1944,11 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **假说与证据边界**：「只有中间一小块能点响」在 Chromium 探针里命中栈全正常（24×80 全命中自身）——WebKit 真机侧机制未定位（用户拍板不为此装 WebKit）；本批交付的是**几何契约**（22×56 所见即可点、框外不抢点击）+ 真实 hover 反馈，探针按**实际命中**验收（四边中点 `elementFromPoint` + 框外 6px 不命中），真机复验交用户。
 
-**验证**：CSS 硬闸 + tokens 机检 + typecheck + web 单测 **795** + `probe-desktop-layout` **35/35**（Part 6：两折叠钮 svg 14×14 · viewBox 24 网格 · **divider 路径方向身份断言**（左 `M9 3v18` / 右 `M15 3v18`——防左右换装与回退 chevrons 形制）、右栏钮行首贴中栏（钮左缘−aside 左缘 = 14px ≤ 24）、RailButton 22×56、四边中点命中、框外 6px 不命中）+ `probe-desktop-tri-column-firstline`（F4/F5 首行中心 16 vs tab 15.5——20×20 盒不撑高组头）+ `probe-grid-panel` **14/14** + m9-d **68/68**（F12「检视 · 只读」svg 不入 textContent / F12b panel 形制 / F12c `.clps` 色仍指 `var(--c-primary)`）+ 交付 checklist `content-type: text/css`。
+**验证**：CSS 硬闸 + tokens 机检 + typecheck + web 单测 **795** + `probe-desktop-layout` **37/37**（Part 6：两折叠钮 svg 14×14 · viewBox 24 网格 · **divider 路径方向身份断言**（左 `M9 3v18` / 右 `M15 3v18`——防左右换装与回退 chevrons 形制）、右栏钮行首贴中栏（钮左缘−aside 左缘 = 14px ≤ 24）、**cursor = 原生默认箭头（实测 default，两钮各一）**、RailButton 22×56、四边中点命中、框外 6px 不命中）+ `probe-desktop-tri-column-firstline`（F4/F5 首行中心 16 vs tab 15.5——20×20 盒不撑高组头）+ `probe-grid-panel` **14/14** + m9-d **68/68**（F12「检视 · 只读」svg 不入 textContent / F12b panel 形制 / F12c `.clps` 色为中性 `var(--ink-2)`，实测 `rgb(142,142,147)`）+ 交付 checklist `content-type: text/css`。
 
 **真机清单**：①左栏「项目」行尾折叠钮：**panel 侧栏面板+左指箭头**图标、点行尾任意处都能收起；②右栏「检视」**行首**折叠钮：panel 面板+右指箭头（两钮贴中栏镜像对称）；③折叠后中栏边缘 22×56 实底小舌：所见即可点（条内任意处唤出、条外不抢中栏点击）＋按下/hover 有反馈（表面阶梯下探）；④三栏第一行仍同一水平线；⑤折叠/唤出闭环 + 刷新保持；⑥触屏折叠钮 28px 热区不误触相邻「＋」；⑦**浅色主题下 22×56 小舌的可发现性**（填充与中栏近同色，可视性靠描边+阴影——design review P2 记录，真机若反馈不可见则换 `bg-surface-inset` 常态底或描边加深一档）；⑧PWA 强刷。
 
-**验收微调（同日真机复核后拍板，随批落地）**：折叠钮色 = **ink-2 中性**（原型文字稿 `.clps` 本是 `var(--c-primary)` 主蓝，用户「不要用蓝色，实在太突出了」→ 降一档与组头标题同档）；cursor = **UA 默认箭头**（「接近原生」，不设手型 `cursor-pointer`；UA button 默认即 default）。探针加守卫：m9-d F12c 参照改中性（防回潮主蓝）、p6a/p6c `cursor === "default"`。
+**验收微调（同日真机复核后拍板，随批落地）**：折叠钮色 = **ink-2 中性**（原型文字稿 `.clps` 本是 `var(--c-primary)` 主蓝，用户「不要用蓝色，实在太突出了」→ 降一档与组头标题同档）；cursor = **UA 默认箭头**（「接近原生」，不设手型 `cursor-pointer`；UA button 默认即 default）。探针加守卫：m9-d F12c 参照改中性（防回潮主蓝）、p6a/p6c `cursor === "default"`。落地后全套绿：`probe-desktop-layout` **37/37**（+cursor 断言 ×2）、m9-d **68/68**（F12c 实测 `rgb(142,142,147)` = ink-2）、单测 795 · typecheck · CSS 硬闸 · tokens 机检。
 
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
