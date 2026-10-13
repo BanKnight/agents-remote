@@ -190,5 +190,7 @@ export function flattenLayout(root: TreeNode | null, maximized: string | null): 
   return { groups, gutters, panels };
 }
 
-/** split 内 children 之间的 gap（归一化，约 4px / 容器宽）。 */
+/** split 内 children 之间的 gap（归一化，约 4px / 容器主轴长度，col=宽 / row=高，随视口缩放）。
+ * SplitGutter 视觉条消费 pct(rect) 铺满该占位（2026-10-13 真机反馈：固定 4px 视觉条与归一化
+ * 占位脱节，缝内露透明段/条溢出压面板），缝隙无透明段、把手恒居缝中心。 */
 const SPLIT_GAP_RATIO = 0.004;

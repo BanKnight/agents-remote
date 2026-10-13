@@ -262,9 +262,24 @@ try {
     if (!capsule) return null;
     const cb = capsule.getBoundingClientRect();
     const gb = capsule.parentElement.getBoundingClientRect();
+    // 缝中心：gutter 左右紧邻的两 group（右缘贴 gutter 左缘 / 左缘贴 gutter 右缘）中点——
+    // gutter 视觉条必须铺满占位缝（2026-10-13 真机反馈：固定 4px 条贴缝左缘 = 缝内透明段 +
+    // 把手偏离缝中心）。row gutter（横条）x 轴 seam 不适用，返回 null 跳过断言。
+    const gc = gb.x + gb.width / 2;
+    const isCol = gb.width < gb.height;
+    const rects = [...document.querySelectorAll("main [data-drop-group]")].map((g) =>
+      g.getBoundingClientRect(),
+    );
+    const left = isCol
+      ? rects.filter((r) => Math.abs(r.right - gb.left) < 8).sort((a, b) => b.right - a.right)[0]
+      : undefined;
+    const right = isCol
+      ? rects.filter((r) => Math.abs(r.left - gb.right) < 8).sort((a, b) => a.left - b.left)[0]
+      : undefined;
     return {
       capsuleCenter: cb.x + cb.width / 2,
-      gutterCenter: gb.x + gb.width / 2,
+      gutterCenter: gc,
+      seamCenter: left && right ? (left.right + right.left) / 2 : null,
       hasSvg: !!capsule.querySelector("svg"),
     };
   });
@@ -273,6 +288,10 @@ try {
     check(
       `胶囊中心 == gutter 中心（Δ=${Math.abs(p4.capsuleCenter - p4.gutterCenter).toFixed(2)}px）`,
       Math.abs(p4.capsuleCenter - p4.gutterCenter) <= 0.5,
+    );
+    check(
+      `gutter 中心 == 两 group 缝中心（Δ=${p4.seamCenter === null ? "—" : Math.abs(p4.gutterCenter - p4.seamCenter).toFixed(2)}px）`,
+      p4.seamCenter !== null && Math.abs(p4.gutterCenter - p4.seamCenter) <= 0.2,
     );
     check("把手已图标化（.grip svg 在场，字体 fallback 免疫）", p4.hasSvg);
   }

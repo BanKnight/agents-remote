@@ -1885,6 +1885,15 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **验证**：全门禁（format/lint --deny-warnings/typecheck/test web 795）+ CSS 硬闸 + tokens 机检全绿；新探针 `probe-ui-polish` **13/13**（浮层行高 39.99/钉底 41.99/组间线 1px；单文件 diff「没有变更」+ 无伪错误；「收起键盘」不在场 + undo 在场；两段骨架 x/y 全等 1271.0/64.0；cursor 双主题首描边色切换）；`probe-desktop-layout` **16/16** + `probe-grid-panel` **14/14** 回归。mock 基座修正记档：listDiff 从不发 NOT_CHANGED（改正常 200 + 文件列表）；NOT_CHANGED 真实 HTTP status = 400（`projectGitDiffErrorResponse` 默认分支）。
 - **真机清单**：①切换会话浮层：实例行高收紧回归原型 40px（行间空白不再松散；标题头/组头/钉底节奏不变）；②文件编辑辅助条：「收起键盘」钮已删（undo/redo 保留）；③查看 diff：文件与远端一致时（git 面板文件行进入的单文件 diff，含 commit 内单文件）显示「没有变更」，不再报「无法打开此差异」；④明亮主题：拖拽把手（中栏分屏缝/桌面左右栏边缝）双箭头 cursor 深色可见，暗色维持白色；Safari 拖拽把手 cursor 仍为原生白色（WebKit 不支持 SVG cursor，已知降级）；⑤会话加载→记录加载两段骨架位置一致无跳变。
 
+### 真机反馈第三轮：多分屏 gutter 缝「奇怪边距」+ 把手偏离缝中心（2026-10-13，同根因双症状）
+
+用户桌面真机反馈两条：①「拖拽把手又出现了图标不在容器居中」；②「桌面端多分屏时，第 2 个开始，他们距离左侧的分屏有个奇怪的边距」。诊断探针（一次性脚本，数据留存本段）实锤 3-group 线性分屏（视口 1440 / 中栏 ~1192px）：每条缝占位 = SPLIT_GAP_RATIO×中栏宽 = 4.77px，SplitGutter 视觉条硬编码 4px 且定位在缝左缘 → 缝右侧 0.77px 透明段露出 workspace 异色底（=「奇怪的边距」，宽屏透明段更宽）；grip 胶囊在 4px 条内居中 Δ=0（上批图标化修复完好）但视觉条整体贴缝左缘 → 把手偏离缝中心 (0.004×W−4)/2（=「把手不在容器居中」）。**两条反馈同根因 = 归一化占位与固定像素视觉条脱节**；「又出现了」的真相 = 上批修胶囊内居中（字体 fallback）、本批修 gutter 条在缝内的居中——不同层，症状相似。连点「分屏」按钮产生线性 3 children（两缝几何一致）；嵌套（异方向分屏）时内层缝可小于 4px → 视觉条溢出压面板，同修法覆盖。
+
+- **修复 = SplitGutter 视觉条铺满占位缝**（instance-area.tsx）：`width/height: "4px"` → `pct(rect.w/h)`（col/row 分支合并为单对象）；透明缝消失（整缝 = gutter 色）、grip 居中恒等于缝中心、拖拽 ratio 计算零影响（rect 数据不动）、嵌套窄缝不再溢出压面板、拖拽命中区 = 全缝（手感正向）。SPLIT_GAP_RATIO 数值 0.004 不动（上批拍板保留；缝宽随视口 4.8-7px 缩放是归一化语义的自然结果）。
+- **reviewer 消化（无 P0/P1，4 P2 全修）**：命中区变宽无回归（children rect 与 gutter rect 互斥，DropZoneOverlay 链路行为零变化）/ row 方向合并语义对称 / 注释两处精度（1440 是视口宽、中栏才是 0.004 的乘数；gap 主轴方向 col=宽 row=高）/ 探针 filter 删多余跨越分支只认邻接 + row gutter 方向 guard 防假红。
+- **验证**：全门禁 + CSS 硬闸 + tokens 机检全绿；`probe-desktop-layout` **17/17**（Part 4 新增「gutter 中心 == 两 group 缝中心 Δ≤0.2px」断言封盲区，实测 Δ=0.01px——修前此值 0.39px）；`probe-grid-panel` **14/14** 回归（右栏 gutter 拖拽面无耦合）。
+- **真机清单**：①多分屏任意两条缝均匀（无透明深色段），把手胶囊在缝正中；②桌面左右栏边缝视觉不变（本批未动 ColumnResizeGutter/ResizeGutter）。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。

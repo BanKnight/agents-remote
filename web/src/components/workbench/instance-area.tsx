@@ -2592,21 +2592,16 @@ function SplitGutter({ orientation, rect, splitRect, onResize }: SplitGutterProp
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       ref={gutterRef}
-      style={
-        isRow
-          ? {
-              height: "4px",
-              left: pct(rect.x),
-              top: pct(rect.y),
-              width: pct(rect.w),
-            }
-          : {
-              height: pct(rect.h),
-              left: pct(rect.x),
-              top: pct(rect.y),
-              width: "4px",
-            }
-      }
+      // 视觉条 = 占位缝同宽同位（2026-10-13 反馈①②同根因：原固定 4px 条贴缝左缘，
+      // 归一化占位（SPLIT_GAP_RATIO×中栏宽，视口 1440 / 中栏 ~1192px 时 4.77px）右侧
+      // 露透明深缝 =「奇怪边距」，把手偏离缝中心。铺满后 grip 居中恒等于缝中心；
+      // 嵌套窄缝不再溢出压面板。
+      style={{
+        height: pct(rect.h),
+        left: pct(rect.x),
+        top: pct(rect.y),
+        width: pct(rect.w),
+      }}
     >
       {/* 拖拽手柄视觉（§6.10-3，05 原型 `.grip` ⋮⋮ 块压分隔线中点；row 方向旋转 90°）。
           字符 → Lucide grip-vertical（2026-10-12 真机反馈③：U+22EE 文本字形随系统
