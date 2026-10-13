@@ -1,40 +1,49 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-13（**三栏可点性修三轮反馈定案版完成全套验证 + 双 reviewer 消化，待 commit + 真机清单**）
+> 最后更新：2026-10-14（**终端 composer 修已 commit `a5ffdfe`，真机清单待用户复核**；上一批三栏可点性修已全部落地，其真机清单用户表示「暂时先这样，后续再来检查」）
 
 ## 一句话状态
 
-三栏可点性修（真机反馈②③定案）：折叠钮 = panel-left-close / panel-right-close 侧栏面板+折叠方向箭头 14px + 20×20 热区（用户点名「真正配套」形制，tokens icon.mapping 同步）；右栏折叠钮移 glabel2 **行首**（与左栏 ghead 行尾镜像贴中栏）；RailButton **22×56** 实底小舌（44×56 被真机复核「宽度剪半」否决；hover/active = 表面阶梯下探 bg-surface-inset/elevated3，color-mix 半透明替换背景在深色主题 hover 会沉底被 design review P1 否决）。全套验证绿：probe-desktop-layout 35/35（divider 方向身份断言）、m9-d 68/68（F12c 主色断言）、tri-column ALL PASS、grid-panel 14/14、单测 795、typecheck、CSS 硬闸、tokens。双 reviewer（code+design）全消化（P2-1 tokens 格式重排已收敛为 1 行 diff）。待 commit + 真机清单交付。
+终端 composer 修（真机反馈两条，**均针对输入框**）已 commit `a5ffdfe`：①宽度对齐 agent——快捷键条 + composer 卡整组限宽 `max-w-2xl`（672px）居中（agent 同款 `mx-auto w-full max-w-2xl`），不再横跨全宽；②输入框滚动条口径修——textarea 补 `min-h-[2.5rem]` 基线 + 删 `leading-[1.35]`（18.9px 非整数行高是 1px 级滚动量的首要嫌疑，agent 侧 text-sm 捆绑整数行高无此现象），行高走 text-sm 捆绑（整数 20px）。诊断探针改后实测（桌面 1440×900 + iPad 1180×820）：card=672 居中（leftGap=rightGap）、lh=20px、正常步骤滚动量全 0（600 字符 roll=32px 为 max-h 封顶预期）。验证：typecheck 0、probe-v15-batch7-skeleton 44/44、m9-d 68/68、单测 795、CSS 硬闸（200307 字节 + content-type text/css）、tokens 机检、pre-commit 全门禁绿。**剩真机清单交用户复核**（PWA 强刷后）。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **折叠钮图标形制三轮演进**：文字字形「‹」「»」（可点区 4.7px）→ 图标化双角 chevron → 用户真机复核定 **panel-*-close**（「侧边栏按钮样式+内箭头表示折叠方向，那两个才是真正配套的」）。tokens.json icon.mapping 同步 `panel.left.close=折叠左栏 · panel.right.close=折叠右栏`（$description 诚实标注 Lucide 实名非 SF 对照）。
-- **RailButton 22×56**：命中=视觉拍板（44×56）后被真机复核「宽度太离谱，至少剪一半」→ `h-14 w-5.5` 定案；浅色主题填充与中栏近同色（可视性靠描边+阴影）记入真机清单必验项。
-- **hover 反馈的正确形制（design review P1）**：`bg-on-surface/5` 生成 `color-mix(... 5%, transparent)` 是**替换**背景非叠加——深色主题 hover 瞬间小舌沉入黑色中栏；改表面阶梯下探 `hover:bg-surface-inset` → `active:bg-elevated3`（两主题保持实底）。
-- **右栏折叠钮行首对称**（真机反馈③）：`.glabel2 .clps{margin-right:6px}`（原 margin-left:auto 删），与左栏 ghead 行尾（gap 6px）镜像。
-- **tokens.json 与 PostToolUse oxfmt hook 的冲突**：Edit tokens.json 必被 hook 全量重排（454 行噪音）。本批解法 = `git checkout HEAD --` 恢复 + 手写零上下文 patch + `git apply --unidiff-zero`（patch 文件放 /tmp 非 .json 扩展名，hook 不触发），diff 收敛为 1 行。**此冲突是系统性问题**（tokens.json 紧凑单行风格 vs oxfmt 展开风格），下次改 tokens.json 优先沿用此路径。
+**本批（终端 composer 修）：**
+
+- **两处 composer 同库异构**：终端 SessionInputDrawer 与 agent（assistant-ui ComposerPrimitive.Input）都用 react-textarea-autosize 8.5.9——差异全在用法参数与样式。agent composer 口径（「刚刚好」参照，零改动）：外层 padding 全宽 + 内容 `mx-auto w-full max-w-2xl`（672px）居中 + textarea `min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem]`、行高 text-sm 捆绑整数 20px。
+- **滚动条首要嫌疑与处置**：非整数行高 18.9px 下 autosize 写入的 inline height 与 WebKit 整数化的 scrollHeight/clientHeight 可差 1px → 唯一 overflow:auto 的 textarea 出滚动条；折叠 = `!collapsed` 条件渲染卸载 → 展开重挂 autosize 重新初始化 → 消失——与用户描述吻合。Chromium 探针滚动量恒 0 不可复现（WebKit 特有），按口径对齐消除嫌疑 + 交真机复核（不装 WebKit）。
+- **宽度对齐结构决策**：快捷键条 + form 一起进 `mx-auto w-full max-w-2xl min-w-0` 内容组（与 agent「整块 composer 限宽」同构），不用「只限 form」避免上宽下窄断裂；展开钮随内容组（中栏不很宽时居中可接受，真机反馈再调）。
+- **max-h-32 封顶滚动是预期行为**：内容 160px > 128px 上限时 roll>0（600 字符折行 roll=32px）符合「封顶后内容滚动」设计意图，非 bug。
+- **collapse 分族不动**（spec 既定）：terminal 默认收起 / agent 默认展开；快捷键条常驻（收起态也在，展开时上移不消失）。
+
+**上一批（三栏可点性修，全部落地）：**
+
+- **折叠钮图标形制三轮演进**：文字字形「‹」「»」（可点区 4.7px）→ 图标化双角 chevron → 用户真机复核定 **panel-*-close**。tokens.json icon.mapping 同步。
+- **RailButton 22×56**：命中=视觉拍板（44×56）后被真机复核「宽度太离谱，至少剪一半」→ `h-14 w-5.5` 定案。
+- **hover 反馈（design review P1）**：`bg-on-surface/5` 是替换背景非叠加，深色主题 hover 沉底；改表面阶梯 `hover:bg-surface-inset` → `active:bg-elevated3`。
+- **折叠钮色与 cursor 契约**：`.clps{color:var(--ink-2)}`（#8E8E93 中性，「不要用蓝色」）；cursor 走 UA 默认箭头（删 `cursor-pointer`，不设手型）。探针守卫：p6a/p6c `cursor === "default"`、m9-d F12c 中性参照断言。
+- **tokens.json 与 PostToolUse oxfmt hook 冲突**：Edit tokens.json 必被 hook 全量重排。解法 = `git checkout HEAD --` 恢复 + 手写零上下文 patch 到 /tmp + `git apply --unidiff-zero`。**系统性问题**，下次改 tokens.json 优先沿用此路径。
 
 ### 进度
 
-- ✅ 反馈 A（宽度剪半 22×56）/ B（右栏钮行首对称）/ C（panel-*-close 图标）全部落地
-- ✅ 探针同步：p6b 22×56、p6a/p6c divider 方向身份断言（`M9 3v18`/`M15 3v18`，防左右换装+回退 chevrons）、clpsOffset ≤24、m9-d F12b panelRect + F12c 主色
-- ✅ 双 reviewer 消化：code（P2-1 tokens 重排 / P2-2 注释落后 / P2-3 divider / P3-4 标签 / P3-5 clpsColor 死采集 / P3-6 阈值收紧）+ design（P1-1 hover 沉底 / P2-3 注释残留 / P2-4 记档表述 / P2-5 浅色可视性记录 / P2-6 暂存区）——P3-7 className 两处重复 reviewer 自评可接受不动
-- ✅ docs 记档：redesign-v2.md 三轮反馈小节（含落地⑤ hover 口径修正+验证段终值）、design_spec :375、frontend-notes §31（22×56 定案口径）、tokens.json mapping、inbox.md
-- ⏳ commit（**必须 `git add` 全量覆盖**——right-panel-tabs.tsx / probe-v2-m9-d 的暂存区是「»」文字字形错误中间版，工作区才是终版）→ 真机清单交付
+- ✅ 终端 composer 修 `a5ffdfe`：SessionDetailRoute.tsx（SessionInputDrawer wrapper + textarea 口径）+ design_spec §4.7 记档 + inbox.md 记档；诊断脚本 `_diag-composer-scroll.mjs` 已删（一次性不入库）
+- ✅ 上一批三栏可点性修全部落地：`5fabc9b` + `06e004e` + `595100b`，37/37 + 68/68 + 单测 795 全绿；真机清单用户回复「暂时先这样，后续再来检查」（搁置）
+- ⏳ **本批真机清单交用户**（见下）——唯一待办
 
 ### 阻塞 / 风险
 
-- **本 session Edit 写通道 typo ×3**（probe-desktop-layout 的 `foldToFixed`、把替换文本写反、design_spec 重复句尾）——均已读回修复且全套探针/门禁绿后无残留；大中文串 Edit 后必须 Read 回读。
-- **frontend-notes §31 曾用 `cat >>` heredoc 追加**（文件编辑纪律违规，本 session 第二次）——内容已 tail 核验无损；本批后续 §31 修正已回归内置 Edit。
+- 无阻塞。滚动条根因是 WebKit 特有 sub-pixel 假设（静态分析 + 口径对齐消除），Chromium 桌面侧不可复现——若真机复验仍有滚动条，需按 §22 纪律埋真机诊断通道取第一手数据，不盲猜第 N+1 轮。
 
 ## 易丢的关键上下文
 
-- **真机清单（commit 后交用户）**：①左栏「项目」行尾折叠钮：panel 侧栏面板+左指箭头图标、点行尾任意处都能收起；②右栏「检视」**行首**折叠钮：panel 面板+右指箭头（两钮贴中栏镜像对称）；③折叠后中栏边缘 22×56 实底小舌：所见即可点、按下/hover 有反馈（表面阶梯下探）；④三栏第一行仍同一水平线；⑤折叠/唤出闭环 + 刷新保持（localStorage）；⑥触屏折叠钮 28px 热区不误触相邻「＋」；⑦**浅色主题 22×56 小舌可发现性**（填充≈中栏色，靠描边+阴影；不可见则下批换 bg-surface-inset 常态底或描边加深）；⑧PWA 强刷。
-- 「只有中间一小块能点响」的 WebKit 真机侧机制未定位（用户否决装 WebKit）——本批交付几何契约（命中=视觉、框外不抢点击）+ elementFromPoint 实测验收，真机复验交用户。
-- 探针纪律：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；脚本必须放 repo scripts/ 下。
-- probe-desktop-layout Part 6 现含 divider 方向身份断言——未来换折叠图标必须同步该断言（M9→新名）。
+- **本批真机清单（交用户）**：①终端 composer 宽度与 agent 一致（672px 限宽居中，不再横跨全宽；含快捷键条整组）；②输入框不再出现纵向滚动条（含输入多行→删除、键盘弹起收起后）；③高度手感与 agent 一致（min-h 基线 40px/宽端 72px、max-h-32 封顶后内容滚动是预期）；④**PWA 强刷后复核**。
+- 上一批三栏清单 9 项（中性灰折叠钮 / 原生箭头 / 行首行尾镜像 / 22×56 小舌 / 第一行水平线 / 折叠唤出闭环 / 触屏热区 / 浅色小舌可发现性 / PWA 强刷）——用户已说「暂时先这样，我后续再来检查」，搁置待用户主动复核。
+- 探针纪律：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；脚本必须放 repo scripts/ 下；一次性诊断（无断言价值）不入库、用后删。
+- React 受控 textarea 探针设值：`Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set` + `dispatchEvent(new Event("input", { bubbles: true }))`；Playwright `evaluate` 只收 1 个 arg，多参数须包对象。
+- probe-desktop-layout Part 6 现含 divider 方向身份断言（`M9 3v18`/`M15 3v18`）+ cursor default 断言——未来换折叠图标/加手型必须同步该断言。
+- session-input 的 composer 断言只在 probe-v15-batch7-skeleton.mjs（44/44）；m9-d 无 composer 断言。
 
 ## 提醒
 
@@ -42,4 +51,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-13 22:31；触发原因：三轮反馈定案版收尾（验证绿 + 双 reviewer 消化完，commit 前）
+最后更新：2026-10-14 02:05；触发原因：终端 composer 修收尾（commit a5ffdfe + docs/inbox 记档 + 删诊断脚本 + handoff save + 真机清单交付前）
