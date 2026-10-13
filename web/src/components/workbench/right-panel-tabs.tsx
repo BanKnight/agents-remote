@@ -16,14 +16,16 @@ import type { WorkbenchTabPluginContext } from "./workbench-tab-plugin";
  *  「»」退役 → 图标化；初版双角 chevron 同日被真机复核否决 → panel 侧栏面板+折叠方向
  *  箭头，14px / 20×20 容器式热区 + touch:after 扩至 28px，tokens icon.mapping 同步）。
  *  钮在**行首**（真机反馈③对称性：左栏折叠钮在 ghead 行尾 = 贴中栏，右栏也必须贴
- *  中栏 = 本行行首；箭头指右 = 收向右，方向语义不变）。 */
+ *  中栏 = 本行行首；箭头指右 = 收向右，方向语义不变）。色 = ink-2 中性、cursor 走
+ *  UA 默认箭头不设手型（同日真机验收拍板「不要蓝色太突出 / cursor 接近原生」，
+ *  规则见 v2-primitives .clps）。 */
 function InspectorHeading({ onCollapse }: { onCollapse: () => void }) {
   const { t } = useT();
   return (
     <div className="glabel2 shrink-0">
       <button
         aria-label={t("workbench.collapseRight")}
-        className="clps flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border-none bg-transparent touch:relative touch:after:absolute touch:after:-inset-1 touch:after:content-['']"
+        className="clps flex h-5 w-5 shrink-0 items-center justify-center border-none bg-transparent touch:relative touch:after:absolute touch:after:-inset-1 touch:after:content-['']"
         onClick={onCollapse}
         type="button"
       >

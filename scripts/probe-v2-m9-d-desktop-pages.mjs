@@ -549,11 +549,12 @@ async function sideOverviewVisible(page) {
       const clps = label?.querySelector(".clps");
       const clpsSvg = clps?.querySelector("svg");
       const cr = clpsSvg?.getBoundingClientRect();
-      // 主色参照（.clps 规则仅存属性 = color:var(--c-primary)，锁死防无声漂移）。
+      // ink-2 中性参照（.clps 规则仅存属性 = color:var(--ink-2)，2026-10-13 验收拍板
+      // 「不要蓝色太突出」降中性；锁死防无声漂移回主蓝）。
       const ref = document.createElement("span");
-      ref.style.color = "var(--c-primary)";
+      ref.style.color = "var(--ink-2)";
       document.body.appendChild(ref);
-      const primaryResolved = getComputedStyle(ref).color;
+      const neutralResolved = getComputedStyle(ref).color;
       ref.remove();
       return {
         clpsIcon: clpsSvg
@@ -565,7 +566,7 @@ async function sideOverviewVisible(page) {
             }
           : null,
         clpsColor: clps ? getComputedStyle(clps).color : null,
-        primaryResolved,
+        neutralResolved,
         label: label
           ? label.textContent.trim()
           : aside.textContent.includes("检视")
@@ -592,8 +593,8 @@ async function sideOverviewVisible(page) {
         `F12b .clps 折叠钮已图标化 panel 形制（实际 ${insp.clpsIcon ? `${insp.clpsIcon.w}×${insp.clpsIcon.h} ${insp.clpsIcon.viewBox}` : "无 svg"}）`,
       );
       ok(
-        insp.clpsColor === insp.primaryResolved,
-        `F12c .clps 色仍指主色 var(--c-primary)（实际 ${insp.clpsColor} vs 主色 ${insp.primaryResolved}）`,
+        insp.clpsColor === insp.neutralResolved,
+        `F12c .clps 色为中性 var(--ink-2)（实际 ${insp.clpsColor} vs 中性 ${insp.neutralResolved}）`,
       );
       ok(insp.ptabH === 30, `F13 .ptab 高 30px（实际 ${insp.ptabH}）`);
       ok(

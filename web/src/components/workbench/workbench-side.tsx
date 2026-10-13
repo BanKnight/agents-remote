@@ -391,10 +391,11 @@ export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }
             视线被否改行内；第二轮反馈：文字字形「‹」非规范形制且可点区仅 4.7px → 图标化；
             初版双角 chevron 同日被真机复核否决 → panel 侧栏面板+折叠方向箭头（与展开钮
             单角 chevron 同规范配套）14px + 20×20 容器式热区（不撑高组头，第一行同线不破）
-            + touch:after 扩至 28px）。 */}
+            + touch:after 扩至 28px）。色 ink-2 中性 + cursor UA 默认箭头（同日验收拍板，
+            不设手型——规则见 v2-primitives .clps）。 */}
         <button
           aria-label={t("workbench.collapseLeft")}
-          className="clps flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center border-none bg-transparent touch:relative touch:after:absolute touch:after:-inset-1 touch:after:content-['']"
+          className="clps flex h-5 w-5 shrink-0 items-center justify-center border-none bg-transparent touch:relative touch:after:absolute touch:after:-inset-1 touch:after:content-['']"
           onClick={onCollapseLeft}
           type="button"
         >

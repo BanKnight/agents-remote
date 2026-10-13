@@ -355,6 +355,9 @@ try {
     return {
       sideLeft: side?.getBoundingClientRect().left ?? null,
       sideCol,
+      // cursor UA 默认箭头（2026-10-13 验收拍板「接近原生」，不设手型；回潮加
+      // cursor-pointer 即红）。
+      foldCursor: foldBtn ? getComputedStyle(foldBtn).cursor : null,
       foldIcon: icon
         ? {
             w: +ir.width.toFixed(1),
@@ -377,6 +380,10 @@ try {
         Math.abs(p6a.foldIcon.h - 14) <= 0.5 &&
         p6a.foldIcon.viewBox === "0 0 24 24" &&
         p6a.foldIcon.leftDivider === true,
+    );
+    check(
+      `折叠钮 cursor = 原生默认箭头（实测 ${p6a.foldCursor ?? "—"}）`,
+      p6a.foldCursor === "default",
     );
   }
   await foldLeft.click();
@@ -483,6 +490,8 @@ try {
           }
         : null,
       clpsText: clps ? clps.textContent.trim() : null,
+      // 同 p6a foldCursor：UA 默认箭头契约。
+      clpsCursor: clps ? getComputedStyle(clps).cursor : null,
     };
   });
   check("右栏 aside 在场", !!p6c);
@@ -504,6 +513,10 @@ try {
         p6c.clpsIcon.viewBox === "0 0 24 24" &&
         p6c.clpsIcon.rightDivider === true &&
         p6c.clpsText === "",
+    );
+    check(
+      `右栏折叠钮 cursor = 原生默认箭头（实测 ${p6c.clpsCursor ?? "—"}）`,
+      p6c.clpsCursor === "default",
     );
   }
   await page.getByRole("button", { name: "收起右栏" }).click();

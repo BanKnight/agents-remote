@@ -665,11 +665,15 @@
      侧栏面板+折叠方向箭头（tokens.json icon.mapping「panel.left.close=折叠左栏 ·
      panel.right.close=折叠右栏」，与展开钮单角 chevron 同规范配套）14px + 20×20 热区；
      两钮位置镜像贴中栏——左栏行尾 = 左栏右缘、右栏行首 = 右栏左缘（.glabel2 .clps 规则）。
-     原型 HTML 的 <span class="clps">»</span> 文字字形是静态稿形态，实现以 tokens 为准
-     不回头改原型）。盒尺寸/居中在 JSX 走 utilities（同排「＋」h-5 w-5 写法），此处只管色
-     与内嵌 svg 规格（消费方 CSS 定尺寸 = frontend-notes §15⑤ 契约，同 .clk/.dicon svg 先例）。 */
+     色 = ink-2 中性（2026-10-13 真机验收拍板「不要用蓝色，太突出」——原型文字稿
+     .clps 本是 var(--c-primary)，用户复核否决；降一档与组头标题 .tt 同档不抢眼）。
+     cursor 走 button UA 默认箭头（同批拍板「接近原生」，不设手型——JSX 也不加
+     cursor-pointer）。原型 HTML 的 <span class="clps">»</span> 文字字形是静态稿形态，
+     实现以 tokens 为准不回头改原型）。盒尺寸/居中在 JSX 走 utilities（同排「＋」h-5 w-5
+     写法），此处只管色与内嵌 svg 规格（消费方 CSS 定尺寸 = frontend-notes §15⑤ 契约，
+     同 .clk/.dicon svg 先例）。 */
   .clps {
-    color: var(--c-primary);
+    color: var(--ink-2);
   }
   .clps svg {
     width: 14px;
