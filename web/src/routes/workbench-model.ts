@@ -75,7 +75,13 @@ export const WORKBENCH_RIGHT_PANEL_MAX_REM = 40;
 // 跨窗口同步已禁用：atomWithStorage 默认经 storage.subscribe 监听 window storage 事件，多窗口/tab
 // 实时同步。个人布局无需跨窗口一致——多窗口独立布局更符合预期，且避免多窗口测试时互相干扰。
 // atomWithLocalOnlyStorage 用无 subscribe 的 storage：仍持久化（刷新保持），但不再跨窗口广播。
-const atomWithLocalOnlyStorage = <T>(key: string, initialValue: T) => {
+// options 透传 jotai（getOnInit: atom 创建时同步读 storage 定初值——否则持久化值要等
+// onMount 的 useEffect（post-paint）才落地，首帧按 initialValue 渲染 = 折叠态刷新闪开）。
+const atomWithLocalOnlyStorage = <T>(
+  key: string,
+  initialValue: T,
+  options?: { getOnInit?: boolean },
+) => {
   // 直接定义 sync storage（无 subscribe）：
   // - 无 subscribe → atomWithStorage 不监听 window storage 事件 → 跨窗口不同步。
   // - 仍读写 localStorage → 刷新保持。
@@ -101,7 +107,7 @@ const atomWithLocalOnlyStorage = <T>(key: string, initialValue: T) => {
       localStorage.removeItem(k);
     },
   };
-  return atomWithStorage(key, initialValue, storage);
+  return atomWithStorage(key, initialValue, storage, options);
 };
 
 /**
@@ -171,6 +177,17 @@ export const workbenchRightWidthAtom = atomWithLocalOnlyStorage(
   "workbenchRightWidth",
   WORKBENCH_RIGHT_PANEL_DEFAULT_REM,
 );
+
+/**
+ * 桌面左栏开合（2026-10-13 真机反馈：左栏与右栏同款可折叠）。localStorage 持久化、默认展开；
+ * 受控消费在 WorkbenchShell（leftOpen/onLeftOpenChange），收起态 aside 不渲染 + 中栏左缘
+ * RailButton 唤出。单 atom 形制（右栏的「运行时 atom + 折叠记忆恢复源」双 atom 是批3 历史演进，
+ * 左栏新写不复制）。getOnInit：折叠态刷新时首帧即按 false 渲染（aside 不挂载、query 不跑、
+ * 无 280ms 收起动画闪）——缺省时持久化值 post-paint 才落地（code review P1 消化）。
+ */
+export const workbenchLeftOpenAtom = atomWithLocalOnlyStorage("workbenchLeftOpen", true, {
+  getOnInit: true,
+});
 
 /**
  * 中栏二级导航 tab（设计文档 workbench-views.md）。URL `?tab` 是唯一真相（省略 = overview）；

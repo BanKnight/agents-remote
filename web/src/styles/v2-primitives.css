@@ -1045,14 +1045,6 @@
     display: flex;
     align-items: center;
   }
-  .glabel2 .clps {
-    margin-left: auto;
-    color: var(--c-primary);
-    font-weight: 700;
-    font-size: 14px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
-  }
   .badge {
     /* v1.4 单源对齐（components.css :270「桌面=03m 同规格 22×19」）：22×19 · r4 · 11px · 700 */
     width: 22px;

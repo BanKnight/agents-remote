@@ -662,7 +662,9 @@ export const en = {
   "claude.offlineCap": "—— Offline · new content will backfill after reconnect ——",
 
   // ── Workbench（三栏工作台外壳）──────────────────────────────
+  "workbench.collapseLeft": "Collapse left panel",
   "workbench.collapseRight": "Collapse right panel",
+  "workbench.expandLeft": "Expand left panel",
   "workbench.expandRight": "Expand right panel",
   "workbench.resizeRightPanel": "Resize right panel",
   "workbench.createMenu": "+ Create",

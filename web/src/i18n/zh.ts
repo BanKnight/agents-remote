@@ -657,7 +657,9 @@ export const zh: Record<TranslationKey, string> = {
   "claude.offlineCap": "—— 离线中 · 此后内容将在重连后补齐 ——",
 
   // ── Workbench（三栏工作台外壳）──────────────────────────────
+  "workbench.collapseLeft": "收起左栏",
   "workbench.collapseRight": "收起右栏",
+  "workbench.expandLeft": "展开左栏",
   "workbench.expandRight": "展开右栏",
   "workbench.resizeRightPanel": "调整右栏宽度",
   "workbench.createMenu": "+ 新建",

@@ -2166,7 +2166,12 @@ function EmptyInstanceArea({
 }) {
   const { t } = useT();
   return (
-    <div className="flex h-full items-center justify-center p-6" data-drop-empty="">
+    // border-r 兜「中栏空态 + 右栏展开」交界（空态无 group/panel、无人画线；与窗格态的
+    // panel border-r 同 x——2026-10-13 双线收敛批：右栏 aside border-l 已删）。
+    <div
+      className="flex h-full items-center justify-center border-r border-neutral-line p-6"
+      data-drop-empty=""
+    >
       <div
         className={`flex min-h-32 flex-1 flex-col items-center justify-center gap-3 rounded-2xl ${shellSurfaceClasses.inset}`}
       >

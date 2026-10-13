@@ -10,23 +10,11 @@ import { usePanelToolChip } from "./project-tool-panels";
 import { cn } from "@/lib/utils";
 import type { WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 
-/** 检视标头单源（glabel2「检视」+ 行内 clps「»」折叠钮；空态与主视图两分支同消费——批 C
- *  收敛此前逐字双份）。 */
-function InspectorHeading({ onCollapse }: { onCollapse: () => void }) {
+/** 检视标头单源（glabel2「检视」；空态与主视图两分支同消费）。行内 clps「»」折叠钮已
+ *  退役（2026-10-13 真机反馈：折叠入口唯一化为栏内缘 EdgeFoldButton，workbench-shell）。 */
+function InspectorHeading() {
   const { t } = useT();
-  return (
-    <div className="glabel2 shrink-0">
-      {t("workbench.inspectorTitle")}
-      <button
-        aria-label={t("workbench.collapseRight")}
-        className="clps cursor-pointer border-none bg-transparent"
-        onClick={onCollapse}
-        type="button"
-      >
-        »
-      </button>
-    </div>
-  );
+  return <div className="glabel2 shrink-0">{t("workbench.inspectorTitle")}</div>;
 }
 
 /**
@@ -48,13 +36,10 @@ function InspectorHeading({ onCollapse }: { onCollapse: () => void }) {
  */
 export function RightPanelTabs({
   ctx,
-  onCollapse,
   onOpenFile,
   onOpenWiki,
 }: {
   ctx: WorkbenchTabPluginContext;
-  /** glabel2 行内 clps「»」收起右栏（05:103 原型折叠语义；装配点传 closeDesktopPanel）。 */
-  onCollapse: () => void;
   /** 树点文件 → 中栏 file tab（WorkbenchRoute.onOpenFile）。 */
   onOpenFile: (projectName: string, path: string) => void;
   /** wiki 页行点入 → 中栏 wikiread tab（WorkbenchRoute.onOpenWiki）。 */
@@ -116,8 +101,7 @@ export function RightPanelTabs({
   if (!projectKey) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        {/* 空态同样暴露折叠入口（PanelHeader 退役后 clps 是唯一收起钮）。 */}
-        <InspectorHeading onCollapse={onCollapse} />
+        <InspectorHeading />
         <div className="flex min-h-0 flex-1 items-center justify-center p-4 text-center text-xs text-on-surface-muted">
           {t("workbench.rightPanelEmpty")}
         </div>
@@ -132,11 +116,10 @@ export function RightPanelTabs({
        pre/diff 的 min-content 会把本根撑到数千 px，seg4 span flex:1 均分后被裁成
        「只剩文件」——用户复验实测 13850px，§6.12l 条 11）。 */
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col" data-desktop-inspector="">
-      {/* 检视标头（§6.12j 对齐 05:99/05:103 原型：glabel2「检视 · 只读」+ 行内右端折叠
-          «（clps，主色 14px/700，05:103）+ PanelTabBar 动态标签条（批3，seg4 退役）。
-          只读语义固定——检视面板全部是只读视图。clps 取代 44px PanelHeader 折叠钮
-         （真机反馈 2026-09-29：右栏第一屏与原型完全两样）。 */}
-      <InspectorHeading onCollapse={onCollapse} />
+      {/* 检视标头（§6.12j 对齐 05:99 原型：glabel2「检视 · 只读」+ PanelTabBar 动态标签条
+          （批3，seg4 退役）。只读语义固定——检视面板全部是只读视图。行内 clps 折叠钮已
+          退役（2026-10-13，见 InspectorHeading）。 */}
+      <InspectorHeading />
       <PanelTabBar
         activeTabId={activePanelTabId}
         onActivateTab={activatePanelTab}

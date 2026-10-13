@@ -319,3 +319,13 @@
 **标准做法**：①**手势类断言的输入一律 `page.mouse`**（move→down→6 步拖每步 ~40ms 逐帧采 inline→up），滚动断言用 `page.mouse.wheel`；wheel 一步可滚很远，断言带别卡「部分滚动」（如「滚回量 < 起始值」而非「落在区间内」）。起手点要落在目标元素上：button 行从 padding 条起（`r.left+6`），别按内容估中心。②**探针里的拖距/阈值/尺寸类数值不得取自编写时刻的几何**，按运行时实测自适应（如拖距 = `max(90, sheetH×0.4)`）——UI 内容增删是常态，几何必然漂移；写死数值的探针是定时炸弹。排查假挂先问「断言的预置假设还成立吗」（`git stash` 基线对照分辨当批引入 vs 既有过期）。
 
 **来源**：2026-10-11 sheet 下滑分档批（`canScrollBack`）M22 探针 + probe-mobile-motion 1b7 排障；redesign-v2.md sheet 手势链段。
+
+## 30. grid item 条件渲染 + auto-placement：唯一 item 塌进 0px 轨道（显式 col-start 钉位）
+
+**现象**：三栏 grid（`grid-cols-[250px_minmax(0,1fr)_0px]`）左栏、右栏都收起（两侧 aside 条件渲染移除）后，**中栏整个消失**——中栏内 `left-0` 的唤出钮 hit-test 全哑（`elementsFromPoint` 栈里无按钮、无 section，栈首是 grid 自身背景）；收在另一侧的 `right-0` 唤出钮 `getBoundingClientRect` 报 **x=-24**（右缘落在 x=0）。
+
+**机制**：**CSS Grid auto-placement 按 item 出现顺序填充轨道，条件渲染移除 item 后剩余 item 自动重排进靠前轨道**——三 item 齐时 [aside, section, aside] 恰好各归各位（auto-placement 与显式布局同结果，**掩盖了依赖**）；双收态只剩 section 一个 item，被塞进第 1 轨（side-col `0px`）→ section 宽 0 + `overflow-hidden` 裁掉 paint（`getBoundingClientRect` 照报塌缩几何）。`left-0` 按钮恰在 x=0「看起来贴左缘」，位置断言全被这个塌缩巧合骗过；`right-0` 按钮 x=-24 露馅。历史场景左栏恒驻 → items 恒 ≥2 → 从未踩中。
+
+**标准做法**：①**grid item 会被条件渲染增删时，槽位必须显式钉位**（`lg:col-start-1/2/3`），不依赖 auto-placement 顺序——「谁在场谁入座」，出现/消失不重排他者；②断言布局用**容器量度**（section 宽 == 视口宽）而非按钮位置（按钮贴缘不能区分「真贴缘」与「容器塌缩后随迁」）；③诊断口诀：`right-0` 元素 rect 右缘出现在错位处 + `elementsFromPoint` 栈首是容器自身 → 先查该元素的实际 containing block（宽 0 的定位父级），再查父级为何塌。
+
+**来源**：2026-10-13 桌面三栏批（左栏折叠）探针实锤（右栏唤出钮 x=-24 对照 + 命中栈无 section）；与 frontend-notes §3「结构关系是 state」同族——渲染结构（几个 item 在场）变化会改变布局语义，槽位契约要显式化。

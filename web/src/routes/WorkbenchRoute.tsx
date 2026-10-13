@@ -73,6 +73,7 @@ import {
   workbenchLastProjectAtom,
   workbenchLastSessionAtom,
   workbenchPanelActiveAtom,
+  workbenchLeftOpenAtom,
   workbenchPanelOpenAtom,
   workbenchPanelTabsAtom,
   workbenchRightCollapsedAtom,
@@ -192,6 +193,9 @@ function WorkbenchContent({
   // 记忆由 open/close 包装同步镜像（单一入口保证一致）。卸载复位（断点切换/离开工作台
   // 不残留——移动 MobileProjectWorkbench 批2 M2 同款）。
   const [panelOpen, setPanelOpen] = useAtom(workbenchPanelOpenAtom);
+  // 左栏开合（2026-10-13）：单 atom 持久化（localStorage），WorkbenchShell 受控消费——
+  // 无右栏的「运行时 + 记忆镜像」双 atom 形制（批3 历史演进，左栏不复制）。
+  const [leftOpen, setLeftOpen] = useAtom(workbenchLeftOpenAtom);
   // 折叠记忆只读（mount 投影初值）；写入走 openDesktopPanel/closeDesktopPanel 镜像。
   const rightCollapsedMem = useAtomValue(workbenchRightCollapsedAtom);
   const setRightCollapsed = useSetAtom(workbenchRightCollapsedAtom);
@@ -934,12 +938,7 @@ function WorkbenchContent({
     [update, navigateToWiki, rightPanelProjectKey],
   );
   const rightPanel = panelOpen ? (
-    <RightPanelTabs
-      ctx={rightCtx}
-      onCollapse={closeDesktopPanel}
-      onOpenFile={onOpenFile}
-      onOpenWiki={onOpenWiki}
-    />
+    <RightPanelTabs ctx={rightCtx} onOpenFile={onOpenFile} onOpenWiki={onOpenWiki} />
   ) : null;
   // 桌面 §6.10-9（M9 批次 d，对齐 09m/10m 原型 IA）：global scope 且 leftMode=plugins/files 时,
   // 插件/全局文件是 **main 整页**（原型 side sidewin 恒定不随导航切换、main 切内容），实例区让位
@@ -1066,6 +1065,8 @@ function WorkbenchContent({
   );
   return (
     <WorkbenchShell
+      leftOpen={leftOpen}
+      onLeftOpenChange={setLeftOpen}
       rightOpen={panelOpen}
       onRightOpenChange={(open) => (open ? openDesktopPanel() : closeDesktopPanel())}
       sidebar={<WorkbenchSide />}

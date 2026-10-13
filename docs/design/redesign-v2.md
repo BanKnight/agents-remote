@@ -630,7 +630,7 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 - 4 目的地导航退役 → footnav 三项（全局文件/插件/设置）；
 - 实例卡片网格与手风琴项目卡退役 → srow2 行列表，点行开 tab 替代拖放（05g pin⑤；side 行不可拖）；
 - middle tabs 退役：历史 → side 实例组头时钟切 05c 列表态（再点返回）；插件 → footnav mainPage（09m 单页三段）；
-- ProjectSwitcher ▾ / PanelHeader title / 左栏折叠 / 左栏 resize 整套退役（04 pin③ 标题无 ▾）；
+- ProjectSwitcher ▾ / PanelHeader title / 左栏折叠（**2026-10-13 三栏批反转**：左栏恢复可折叠，见「真机反馈·桌面三栏批」小节）/ 左栏 resize 整套退役（04 pin③ 标题无 ▾）；
 - aprow 移入 side，gate 放开为**全局聚合**（04 pin④：任何桌面 scope approvals>0 渲染）；
 - **项目行操作（重命名/删除/置顶）随手风琴退役——记档不做**，创建入口保留 ghead plus（重开需用户发起）。
 
@@ -1905,6 +1905,22 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **双 reviewer 消化（code P1×1 + P2×2 / design P2×2 同根因归并）**：①**row 方向交界线消失**（code P1，必修）——壳层/panel 只有 border-r 无 border-b，被删常显色条原承担上下分屏的横线；修 = SplitGutter row 分支常显 1px `bg-neutral-line` 线（与把手同中心；col 不画——壳层 border-r 已兜住，居中线亚像素错位会糊双线）。「两面板间只有一根线」不分方向。②**拖动态 gutter 死带加宽**（双 reviewer 一致）：拖 tab 时 10px 命中区 elementFromPoint 命中 gutter → zone=null 投递死带（旧 4.77px 扩 10px）；修 = isDragging 透传 `pointer-events-none`（与 panel 层同策略）。③**maximized 态 gutter 未过滤**（design P2）：独占窗格中部横贯 z-10 命中带，点击被吞、拖拽隐改隐藏窗格 sizes；修 = `maximized === null` 才渲染 gutters。④注释/探针措辞校正 ×2（row 线语义、「null → 失败」非「跳过」）。
 - **记录不改**：gutter 无键盘 resize 通道（a11y backlog，既有形态）；`.grip` 垂直 50% vs 原型 44% 既有小偏差；命中区覆盖窗格边缘 5px（sash 固有取舍，VS Code 同款，真机确认滚动条/文本选择可接受即可）。
 - **真机清单**：①两/三窗格紧贴无缝（交界处仅 1px 线），把手胶囊压在交界线正中；②上下分屏的交界横线在场且把手压线；③拖拽/悬停反馈正常；④PWA 需强刷确认新 bundle（排除旧缓存干扰）。
+
+### 真机反馈·桌面三栏批：左栏可折叠 + 折叠钮对称挪位 + 交界双线收敛（2026-10-13）
+
+三条反馈落地：①左栏桌面可折叠（与右栏同款）②右栏折叠钮从 glabel2 行内「»」挪到右栏**左缘**（与左栏把手钮左右对称）③右栏↔中栏交界双线收敛（删右栏 aside `border-l border-neutral-line/80`，交界线由中栏 group/panel 既有 `border-r` 单线承担，与左栏 `.side` border-right 形制对称；EmptyInstanceArea 根补 border-r 兜空态）。
+形态拍板（AskUserQuestion）：折叠钮 = **栏内缘竖条把手钮**（新组件 EdgeFoldButton，RailButton 展开态孪生）——左栏钮贴左栏右缘、右栏钮贴右栏左缘，`absolute top-1/2` 竖直居中、常显、h-20 w-4、材质与 RailButton 同源（实底+描边+shadow+chevron 指栏所在侧）。状态 = 单 `workbenchLeftOpenAtom`（atomWithLocalOnlyStorage + `getOnInit`）。
+右栏行内 clps「»」随之退役（折叠入口唯一化）。
+
+**调试实锤的 grid auto-placement 真 bug**：探针 Part 6 唤出钮 click 恒超时（「grid intercepts pointer events」），三轮诊断实锤——aside 双双不渲染时中栏 section 是 grid 唯一 item，**auto-placement 把它塞进第 1 轨（side-col 0px）→ 中栏宽 0**：`right-0` 唤出钮 rect x=-24（右缘=containing block 右缘 0）、`elementsFromPoint` 栈无按钮无 section、按钮随 section 被 overflow-hidden 裁掉；此前「RailButton 贴左缘 x=0」断言通过是塌缩巧合。修复 = 三 grid item 显式 `lg:col-start-1/2/3` 钉位（谁在场谁入座）；探针补「中栏吃满视口」容器量度断言防回归。教训沉淀 frontend-notes **§30**。历史场景左栏恒驻 → items≥2 → auto-placement 恰好各归各位，从未暴露。
+
+**双 reviewer 消化（code 2P1+6P2 / design 2P1+6P2）**：①**getOnInit 缺失**（code P1）——atomWithLocalOnlyStorage 未传 getOnInit 时持久化值 post-paint 才落地，折叠态刷新首帧按展开渲染（aside 挂载跑 query + 280ms 收起动画闪，架空「收起态零 query」目标）；修 = 工厂加 options 透传、左栏 atom 传 `getOnInit: true`。②**m9-d 旧探针撞退役**（code P1）——F12/F12b 断言 clps 文案/在场，反转 = 「检视 · 只读」+ clps 不在场防回归。③**左钮盖断 .side border-right 80px**（design P1）——右栏交界线连续（panel border-r 在钮外侧）而左栏断线不对称；修 = side="left" 补 border-r，边界线由钮自身延续。④**触屏热区单向扩**（code P2）——`touch:after:-inset-x-2` 双向外扩会朝中栏溢 8px 吞点击（左栏 aside 无 overflow-hidden），改按所在栏**内侧**单向扩。⑤clps 死 CSS 删（`.glabel2 .clps` 孤儿规则）+ 注释套件（side 语义相反警告 / 覆盖面声明 ×3 / WCAG 豁免 / 暗色风险）+ 探针把手钮几何断言 ×3（贴缘镜像 + w-4 档位）+ 前置防御（Part 6 左栏折叠前确保右栏收起）+ m9-d F12b 诊断文案。⑥**决策反转改口**（design P2-7）——§6.12k「左栏折叠整套退役」加反转指针、design_spec §10.3「» 折叠整栏」改口。
+
+**记录不改**：暗色主题左把手可发现性（design P1：fill 对比 ~1.0:1，可发现性依赖描边+chevron；真机必验，备选材质 bg-surface-inset + border-sep-strong 已记入组件注释，确认隐形下批换）；refs 加载窗口交界线缺一帧（code P2-8，非阻塞）；探针 class 选择器/固定 sleep（全探针既有形态）；`hover:text-on-surface` no-op（两 token 同物化 var(--ink-1)，继承自 RailButton 既有形态）。
+
+**验证**：`probe-desktop-layout` **34/34**（Part 6：左栏折叠闭环 + 中栏吃满 1440 + 左右把手贴缘镜像 Δ=0.00 + w-4 档位 ×2 + 单线 + clps 退役）；`probe-grid-panel` **14/14** 回归；m9-d F11-F14 绿（F12/F12b 改口）；web 单测 795 + typecheck + CSS 硬闸 + tokens 机检全绿。
+
+**真机清单**：①左栏把手钮（右缘竖直居中）点击折叠 → 中栏吃满、中栏左缘唤出钮；刷新后折叠态保持且**无闪开动画**（getOnInit）；②右栏把手钮（左缘）折叠；原「检视」行内「»」不再出现；③右栏↔中栏交界仅 1px 线（双线收敛）；左栏交界线连续（把手钮段不断线）；④右栏拖宽正常（把手钮覆盖段除外）；⑤**暗色主题下左栏把手钮可发现性**（design P1 必验项；隐形则下批换材质）；⑥iPad 触屏：把手钮热区不吞中栏边缘点击（单向扩验证）；⑦PWA 强刷。
 
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
