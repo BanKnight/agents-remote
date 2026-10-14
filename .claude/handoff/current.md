@@ -1,28 +1,26 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-14（**终端 composer 卡形制全对齐 agent 已 commit `641e7d5`，真机清单待用户复核**；本日早批：空隙结构同构 `488ad68`、xterm 滚动条隐藏 + 发送按钮统一 `ae2397b`——发送按钮已获用户真机验收 ✅，滚动条用户待多测）
+> 最后更新：2026-10-14（**浮层关闭回焦蓝环修复已 commit `7b83976`，真机清单待用户复核**；同日早批：卡形制全对齐 `641e7d5`、空隙结构同构 `488ad68`、xterm 滚动条 + 发送按钮 `ae2397b`——发送按钮已验收 ✅）
 
 ## 一句话状态
 
-用户拍板「故意保留的差异，除快捷键条外都应对齐 agent」→ 卡形制全对齐 commit `641e7d5`：圆角 rounded-2xl→rounded-xl（16→12px）、font-mono→sans、code 面描边→agent 卡骨架逐字同款（border-on-surface/10 + bg-surface-raised/60 + 毛玻璃 + focus-within 亮边）；min-w-0 窄面板约束保留。快捷键条常驻不参与对齐（功能行）。验证全绿（batch7 46/46、typecheck 0、单测 795、CSS 硬闸、tokens 机检）。**剩真机清单交用户复核**。
+用户反馈「▾ 切换浮层关闭后标题行出蓝色选中框，点空白消失」→ 成因实锤（Radix onCloseAutoFocus 回焦 × WebKit 对 tap 后脚本 focus 判 :focus-visible × 整行裸 button）→ 修法 = InstanceSwitchMenu + MobileSheet 基座统一 `onCloseAutoFocus` preventDefault（commit `7b83976`）。验证全绿（focus-policy 探针 6/6 含新关闭断言、header 探针 56/56、typecheck 0、单测 795、CSS 硬闸、tokens 机检）。**剩真机清单交用户**。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **「min-h 逐字同款 ≠ 高度同款」**：空态渲染高度由「min-height 与自带 padding 的关系」决定——agent 把 14px padding 装进 72px min-h 里，终端把 72px 全给内容区再把空隙放卡片上。数值相同的类名掩盖了结构分叉。修法选**结构同构**而非数值补偿（min-h 改 calc）：未来 agent 调口径终端照抄同一结构，不再有隐性两套数值。
-- **「保留刻意差异」已被用户反转（2026-10-14）**：圆角/字体/卡形制三项全对齐 agent（`641e7d5`），**唯快捷键条常驻保留**（整区比 agent 高 ~40px 是功能行，spec §4.7 既定）——后续 composer 口径改动以 agent 为标尺同步终端，勿再以「原型 03f 形制」为由保留终端特有形制。
-- 原型复核：改后终端卡空隙（10/14/8）≈ workspace-terminal-input `.composer{padding:10px 12px 8px}`，形制不背叛。
-- **（沿用）发送按钮统一已验收**：showSend = `hasInput && !inputDisabled` 三处（claude/pi/acp），isMobileComposer 仅驱动 Enter 分族。
+- **浮层「关闭不回焦」已成文两族通用约定**（spec §5.0）：移动浮层关闭后焦点不程序化返还 trigger——WebKit 视觉蓝环 + 触屏无键盘焦点诉求，落 body 零感知。落点 = InstanceSwitchMenu（▾）+ **MobileSheet 基座**（⋯ sheet / AddMenu / ActionMenu 移动形态全部随之覆盖）；**桌面 Dialog/DropdownMenu 不拦**（键盘回焦是正确 a11y，Chromium 无视觉 bug）。
+- **勿用 CSS outline 压制此类环**——症状端修复且扑灭键盘焦点指示；机制层修 = 拦回焦。
+- **（沿用）composer 口径以 agent 为标尺**：卡形制/空隙结构已同构（`641e7d5`/`488ad68`），后续 composer 改动照抄 agent 结构。
 - **（沿用）xterm 滚动条**：真身 = 内置 vscode 浮层滚动条（frontend-notes §32），CSS 双隐藏已落地，用户待多测。
-- **（沿用）本 session Edit 写通道不稳**：小步 Edit + 写后 Read/sed 回读。
+- **（沿用）本 session Edit 写通道不稳**：小步 Edit + 写后回读；注释块缩进易差一空格，old_string 先 Read 实际内容。
 - **（沿用）tokens.json Edit 与 PostToolUse oxfmt hook 冲突**：走 git checkout + /tmp patch + apply 路径。
 
 ### 进度
 
-- ✅ 终端 composer 空隙结构同构 agent `488ad68`（SessionDetailRoute.tsx + batch7 P1-9b 守卫 + design_spec §4.7 + inbox.md；handoff current.md 随批入库）
-- ✅ 终端 composer 卡形制全对齐 agent `641e7d5`（圆角 12 / sans / agent 浮卡骨架；P1-7e 文案同步）
-- ✅ xterm 滚动条隐藏 + 发送按钮统一 `ae2397b`；发送按钮真机验收 ✅
+- ✅ 浮层关闭回焦蓝环 `7b83976`（mobile-project-header.tsx + mobile-sheet.tsx + 探针 A/B 关闭断言 + frontend-notes §33 + spec §5.0 + inbox）
+- ✅ 卡形制全对齐 `641e7d5` / 空隙同构 `488ad68` / 滚动条+发送按钮 `ae2397b`（发送按钮真机验收 ✅）
 - ⏳ **真机清单交用户**（见下）——唯一待办
 
 ### 阻塞 / 风险
@@ -32,13 +30,14 @@
 ## 易丢的关键上下文
 
 - **本批真机清单（交用户，PWA 强刷后）**：
-  1. **终端展开态输入框与 agent 观感一致**：高度（空态卡高 108/76）+ 卡形制（圆角 12 / sans 字体 / 浮卡衬底 + focus 亮边）。
-  2. **快捷键条仍常驻**（终端整区比 agent 高 ~40px 是功能行，预期保留）。
-  3. 滚动条复核（上批遗留）：终端区域跑一段时间输出积累后不再出现纵向滚动条——用户说要多测试才能测试到位，待用户结论。
-  4. **PWA 强刷后复核**。
-- batch7 P1-9b 守卫：card-pt=0px / textarea pt=10px pb=4px / 底行 36px——未来若有人往卡上加回 padding 会抓。
+  1. **▾ 切换浮层关闭后标题行无蓝色选中框**（本批主目标）。
+  2. **⋯ sheet 关闭后 ⋯ 按钮无蓝环**（同机制推广面，未报但同修）。
+  3. 终端 composer 与 agent 观感一致（空态卡高 108/76 + 圆角 12/sans/浮卡衬底）+ 快捷键条常驻（上上批遗留复核）。
+  4. 滚动条复核（早批遗留）：终端跑一段时间输出后不再出现纵向滚动条。
+  5. **PWA 强刷后复核**。
+- 探针新断言：probe-sheet-focus-policy A/B「关闭不回焦 trigger」——B 关闭后 activeElement 的 tag（BODY vs 偶发 BUTTON）有非确定性时序漂移，但断言方向（非 FAB/非 INPUT）稳定，勿因 tag 漂移误判挂。
 - 探针纪律（沿用）：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；一次性诊断不入库用后删。
-- composer 口径参照系（claude:3686 卡骨架 / :3698 textarea 类串 / :3756 底行）：终端侧已同构，后续 composer 口径改动以 agent 为标尺同步终端。
+- composer 口径参照系（claude:3686 卡骨架 / :3698 textarea / :3756 底行）：终端侧已同构。
 
 ## 提醒
 
@@ -46,4 +45,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-14 09:30；触发原因：卡形制全对齐批收尾（commit 641e7d5 + handoff 滚动）
+最后更新：2026-10-14 10:10；触发原因：浮层关闭回焦批收尾（commit 7b83976 + handoff 滚动）
