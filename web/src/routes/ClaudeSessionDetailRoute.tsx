@@ -68,6 +68,7 @@ import {
 import { ShellIcon } from "../components/shell/icons";
 import { Dialog, DialogContent } from "../components/ui/dialog";
 import {
+  ContextUsageIndicator,
   EffortSelector,
   ModelSelector,
   PermissionModeSelector,
@@ -360,6 +361,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     resolvedModel,
     modelSwitchVersion,
     permissionMode,
+    contextTokens,
     aiTitle,
     agentName,
     loading,
@@ -572,6 +574,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                                 availableModelResolved={availableModelResolved}
                                 modelSwitchVersion={modelSwitchVersion}
                                 permissionMode={permissionMode}
+                                contextTokens={contextTokens}
                                 availablePermissionModes={availablePermissionModes}
                                 projectName={projectName}
                                 sessionId={sessionId}
@@ -3551,6 +3554,7 @@ function ComposerWithInterrupt({
   availableModelResolved,
   modelSwitchVersion,
   permissionMode,
+  contextTokens,
   availablePermissionModes,
   projectName,
   sessionId,
@@ -3569,6 +3573,7 @@ function ComposerWithInterrupt({
   availableModelResolved?: Record<string, string>;
   modelSwitchVersion: number;
   permissionMode?: string;
+  contextTokens?: number;
   availablePermissionModes: string[];
   projectName: string;
   sessionId: string;
@@ -3765,6 +3770,7 @@ function ComposerWithInterrupt({
             permissionMode={permissionMode}
           />
           <EffortSelector currentEffort={currentEffort} onSelectEffort={onSelectEffort} />
+          <ContextUsageIndicator contextTokens={contextTokens} />
           <ComposerStopSend
             onCancel={onCancel}
             send={sendComposer}

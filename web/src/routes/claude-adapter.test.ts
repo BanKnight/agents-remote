@@ -3932,6 +3932,17 @@ describe("normalizeChatStream", () => {
     expect(items).toHaveLength(0);
   });
 
+  test("system.context_usage produces no item (scalar-only, folded by applyMessageScalarState)", () => {
+    const items = normalizeChatStream([
+      {
+        type: "system",
+        subtype: "context_usage",
+        contextTokens: 31324,
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(0);
+  });
+
   test("compact_boundary + summary + attachments merge into one compact-block", () => {
     const items = normalizeChatStream([
       compactBoundary(),

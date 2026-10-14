@@ -504,6 +504,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude.composer.permLabel": "权限模式",
   "claude.composer.modelLabel": "模型",
   "claude.composer.effortLabel": "推理深度",
+  "claude.composer.contextUsageLabel": "上下文占用",
   "claude.blockedByPendingAction": "请先确认上方操作",
   "claude.disconnected": "正在建立连接中…",
   "claude.plan.title": "计划",

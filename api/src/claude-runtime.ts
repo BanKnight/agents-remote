@@ -33,14 +33,16 @@ export function buildSeedInitLine(
   model?: string,
   permissionMode?: string,
   modelAlias?: string,
+  contextTokens?: number,
 ): string | undefined {
-  if (!model && !permissionMode && !modelAlias) return undefined;
+  if (!model && !permissionMode && !modelAlias && contextTokens === undefined) return undefined;
   return JSON.stringify({
     type: "system",
     subtype: "seed_init",
     ...(model ? { model } : {}),
     ...(modelAlias ? { modelAlias } : {}),
     ...(permissionMode ? { permissionMode } : {}),
+    ...(contextTokens !== undefined ? { contextTokens } : {}),
   });
 }
 
@@ -136,6 +138,32 @@ export function extractSkillReloadFromStdoutLine(parsed: Record<string, unknown>
   return texts.some((t) => /Reloaded skills:\s+\d+\s+skills/i.test(t));
 }
 
+// Fold the context-window scale from a live assistant message's usage block.
+// Each assistant message carries the FINAL usage of its API call, where
+// input + cache_creation + cache_read is exactly the context the next call
+// will see — i.e. the conversation's current context size (JSONL 实证：
+// "usage":{"input_tokens":30079,"cache_creation_input_tokens":0,
+// "cache_read_input_tokens":0,...}). output_tokens is this-turn output, not
+// context, so it is excluded. Extracted as a pure function so the parse is
+// unit-testable (cf. extractModelFromStdoutLine); the live carrier is the
+// assistant stdout row (real new rows only — JSONL replay never reaches
+// processStdoutLine).
+export function extractContextTokensFromStdoutLine(
+  parsed: Record<string, unknown> | null,
+): number | undefined {
+  if (!parsed || parsed.type !== "assistant") return undefined;
+  const message = parsed.message as { usage?: Record<string, unknown> } | undefined;
+  const usage = message?.usage;
+  if (!usage) return undefined;
+  const input = typeof usage.input_tokens === "number" ? usage.input_tokens : 0;
+  const cacheCreation =
+    typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : 0;
+  const cacheRead =
+    typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : 0;
+  const total = input + cacheCreation + cacheRead;
+  return total > 0 ? total : undefined;
+}
+
 type ClaudeProcess = {
   proc: BunSubprocess;
   generation: number;
@@ -147,6 +175,7 @@ type ClaudeProcess = {
   modelAlias?: string;
   permissionMode?: string;
   effort?: EffortLevel;
+  contextTokens?: number;
 };
 
 /** 审批中心登记上下文：ClaudeProcess 已有字段，can_use_tool 登记时随行（registry 无需反查）。 */
@@ -299,7 +328,11 @@ export class ClaudeRuntime implements RuntimeResources {
   getSessionState(sessionName: string) {
     const state = this.processes.get(sessionName);
     if (!state) return null;
-    return { model: state.model, permissionMode: state.permissionMode };
+    return {
+      model: state.model,
+      permissionMode: state.permissionMode,
+      contextTokens: state.contextTokens,
+    };
   }
 
   // Resolve a model id for a runtime control_request{set_model}. Passthrough:
@@ -490,7 +523,12 @@ export class ClaudeRuntime implements RuntimeResources {
     // Scalar seed init: system.init is stdout-only (absent from JSONL/tail), so on
     // reconnect the client's scalar fold has no seed. Inject a synthetic init with
     // the CURRENT model/permissionMode before history.
-    const seedInitLine = buildSeedInitLine(proc.model, proc.permissionMode, proc.modelAlias);
+    const seedInitLine = buildSeedInitLine(
+      proc.model,
+      proc.permissionMode,
+      proc.modelAlias,
+      proc.contextTokens,
+    );
 
     return relay.addSubscriber(
       onData,
@@ -749,6 +787,7 @@ export class ClaudeRuntime implements RuntimeResources {
     this.capturePermissionModeFromLine(sessionName, parsed);
     this.captureModelFromLine(sessionName, parsed);
     this.captureSkillReloadFromLine(sessionName, parsed);
+    this.captureContextUsageFromLine(sessionName, parsed);
     this.captureApprovalRequestFromLine(sessionName, parsed);
     this.captureApprovalSettledFromLine(sessionName, parsed);
     this.autoRetry.handleStdoutLine(
@@ -896,6 +935,34 @@ export class ClaudeRuntime implements RuntimeResources {
     const state = this.processes.get(sessionName);
     if (!state) return;
     this.onSkillReload?.(sessionName);
+  }
+
+  // Fold the context-token scalar from live assistant usage. Unlike model this
+  // has no metadata persistence (nothing downstream spawns with it — it is
+  // display state): it lives on proc state and re-enters replay via
+  // buildSeedInitLine's contextTokens. On change, broadcast a synthetic
+  // context_usage frame via relay.injectLine (broadcast-only, skill_catalog
+  // 同款 — never buffered; seed_init re-carries the durable value on
+  // reconnect). Fold BEFORE relay.handleStdoutLine so the broadcast ordering
+  // matches captureModelFromLine's position in processStdoutLine. When the
+  // relay does not exist yet (spawn before first stream()), the fold still
+  // lands in proc state and the seed carries it on the first subscribe.
+  private captureContextUsageFromLine(
+    sessionName: string,
+    parsed: Record<string, unknown> | null,
+  ): void {
+    const next = extractContextTokensFromStdoutLine(parsed);
+    if (next === undefined) return;
+    const state = this.processes.get(sessionName);
+    if (!state) return;
+    if (state.contextTokens === next) return;
+    state.contextTokens = next;
+    const relay = this.relays.get(sessionName);
+    if (relay && !relay.isDestroyed) {
+      relay.injectLine(
+        JSON.stringify({ type: "system", subtype: "context_usage", contextTokens: next }),
+      );
+    }
   }
 }
 

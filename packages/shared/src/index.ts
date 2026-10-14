@@ -1635,6 +1635,23 @@ export type ClaudeSeedInit = {
   subtype: "seed_init";
   model?: string;
   permissionMode?: string;
+  // 会话标量：当前上下文 token 规模（最后一条 assistant 消息的
+  // input + cache_creation + cache_read）。与 model/permissionMode 同族——
+  // live 期间经 captureUsageFromLine 折叠进 proc state，这里随 seed 回放恢复。
+  contextTokens?: number;
+};
+
+// Server-synthesized context-usage scalar update. Broadcast-only via
+// relay.injectLine (never buffered into liveLines/history): the durable value
+// lives in proc state and re-enters replay through the seed_init contextTokens
+// field, so buffering the frame would double-carry the same scalar. Emitted on
+// each assistant message that moves the folded value. First scalar on the
+// 统一会话标量管道 (采集层 → api 标量 → WS 单管道 → 前端统一组件)；后续
+// mod/终端模式采集源接入同一管道。
+export type ClaudeContextUsageChanged = {
+  type: "system";
+  subtype: "context_usage";
+  contextTokens: number;
 };
 
 // Server-synthesized notification that the skill/slash catalog changed (e.g. after
@@ -2456,6 +2473,7 @@ export type SessionStreamServerMessage =
   | ClaudeSystemInit
   | ClaudeSeedInit
   | ClaudeSkillCatalogChanged
+  | ClaudeContextUsageChanged
   | ClaudeCompactBoundary
   | ClaudeStatusMessage
   | ClaudeApiRetry

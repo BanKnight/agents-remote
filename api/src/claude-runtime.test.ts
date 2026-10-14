@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import {
   buildSeedInitLine,
+  extractContextTokensFromStdoutLine,
   extractModelFromStdoutLine,
   extractSkillReloadFromStdoutLine,
   buildSpawnEnv,
@@ -262,6 +263,84 @@ test("captureModelFromLine does not fire onModelChange for non-switch local-comm
 
   expect(calls).toEqual([]);
   expect(runtime.getSessionState("rt-key")?.model).toBe("old");
+});
+
+test("extractContextTokensFromStdoutLine folds usage input+cache_creation+cache_read", () => {
+  // JSONL/stream-json 实证形状：assistant 行 message.usage 三项之和 = 下一轮
+  // 调用将看到的上下文规模；output_tokens 是本 turn 输出，不计入。
+  expect(
+    extractContextTokensFromStdoutLine({
+      type: "assistant",
+      message: {
+        usage: {
+          input_tokens: 30079,
+          cache_creation_input_tokens: 1200,
+          cache_read_input_tokens: 45,
+          output_tokens: 333,
+        },
+      },
+    }),
+  ).toBe(31324);
+  // 缺 cache 字段（旧 CLI / 非缓存路径）→ 按 0 折算。
+  expect(
+    extractContextTokensFromStdoutLine({
+      type: "assistant",
+      message: { usage: { input_tokens: 500, output_tokens: 10 } },
+    }),
+  ).toBe(500);
+  // 非 assistant 行 / 无 usage / 全零 → 均不产标量。
+  expect(
+    extractContextTokensFromStdoutLine({ type: "user", message: { usage: {} } }),
+  ).toBeUndefined();
+  expect(extractContextTokensFromStdoutLine(null)).toBeUndefined();
+  expect(
+    extractContextTokensFromStdoutLine({
+      type: "assistant",
+      message: { usage: { input_tokens: 0, output_tokens: 5 } },
+    }),
+  ).toBeUndefined();
+});
+
+test("buildSeedInitLine includes contextTokens and stays undefined without any scalar", () => {
+  const parsed = JSON.parse(buildSeedInitLine(undefined, undefined, undefined, 31324)!) as Record<
+    string,
+    unknown
+  >;
+  expect(parsed).toMatchObject({ type: "system", subtype: "seed_init", contextTokens: 31324 });
+  expect(parsed).not.toHaveProperty("model");
+});
+
+test("captureContextUsageFromLine folds proc state and is a no-op on unchanged value", () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string; contextTokens?: number }>;
+    captureContextUsageFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+  };
+  internal.processes.set("rt-key", { sessionId: "internal-session-id" });
+
+  const line = {
+    type: "assistant",
+    message: {
+      usage: { input_tokens: 1000, cache_read_input_tokens: 200, output_tokens: 30 },
+    },
+  };
+  internal.captureContextUsageFromLine("rt-key", line);
+  expect(runtime.getSessionState("rt-key")?.contextTokens).toBe(1200);
+
+  // 相同值不重复折（幂等——每条 assistant 消息都过这里，值未动不触发）。
+  internal.captureContextUsageFromLine("rt-key", line);
+  expect(runtime.getSessionState("rt-key")?.contextTokens).toBe(1200);
+
+  // 值变化跟随折新（上下文随对话增长）。
+  internal.captureContextUsageFromLine("rt-key", {
+    type: "assistant",
+    message: { usage: { input_tokens: 2000, output_tokens: 10 } },
+  });
+  expect(runtime.getSessionState("rt-key")?.contextTokens).toBe(2000);
+
+  // 非 assistant 行不动 state。
+  internal.captureContextUsageFromLine("rt-key", { type: "user", message: {} });
+  expect(runtime.getSessionState("rt-key")?.contextTokens).toBe(2000);
 });
 
 test("capturePermissionModeFromLine folds state.permissionMode and fires onPermissionModeChange with the internal sessionId", () => {

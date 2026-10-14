@@ -509,6 +509,7 @@ export const en = {
   "claude.composer.permLabel": "Permission mode",
   "claude.composer.modelLabel": "Model",
   "claude.composer.effortLabel": "Reasoning effort",
+  "claude.composer.contextUsageLabel": "Context usage",
   "claude.blockedByPendingAction": "Please confirm the action above first",
   "claude.disconnected": "Establishing connection…",
   "claude.plan.title": "Plan",

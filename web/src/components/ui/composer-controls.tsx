@@ -199,6 +199,31 @@ export function ModelSelector({
   );
 }
 
+/** 上下文规模 → 紧凑显示串（纯函数，单测直测）。<1k 原值；<100k 一位小数 k；
+ * <1M 整数 k；≥1M 一位小数 M。 */
+export function formatContextTokens(tokens: number): string {
+  if (tokens < 1000) return String(tokens);
+  if (tokens < 100_000) return `${(tokens / 1000).toFixed(1)}k`;
+  if (tokens < 1_000_000) return `${Math.round(tokens / 1000)}k`;
+  return `${(tokens / 1_000_000).toFixed(1)}M`;
+}
+
+/** 上下文占用指示（统一会话标量管道第一个标量的显示端）。纯显示非交互（无菜单），
+ * 故不复用 SelectorTrigger 双形态（窄端 .iicn 无数字形态对纯信息无意义），用
+ * selector 行同级轻量文本；值为空（未有 assistant 消息）不渲染。 */
+export function ContextUsageIndicator({ contextTokens }: { contextTokens?: number }) {
+  const { t } = useT();
+  if (contextTokens === undefined) return null;
+  return (
+    <span
+      aria-label={t("claude.composer.contextUsageLabel")}
+      className="inline-flex select-none items-center text-[0.65rem] font-medium tabular-nums text-on-surface-soft"
+    >
+      {formatContextTokens(contextTokens)}
+    </span>
+  );
+}
+
 export function PermissionModeSelector({
   currentMode,
   availableModes,
