@@ -1,10 +1,10 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-14（**浮层关闭回焦蓝环修复已 commit `7b83976`，真机清单待用户复核**；同日早批：卡形制全对齐 `641e7d5`、空隙结构同构 `488ad68`、xterm 滚动条 + 发送按钮 `ae2397b`——发送按钮已验收 ✅）
+> 最后更新：2026-10-14（**浮层关闭回焦批真机验收通过 ✅（用户「非常棒，都没问题」）**；同日批次全部收口：卡形制全对齐 `641e7d5`、空隙结构同构 `488ad68`、xterm 滚动条 + 发送按钮 `ae2397b`、浮层回焦 `7b83976`）
 
 ## 一句话状态
 
-用户反馈「▾ 切换浮层关闭后标题行出蓝色选中框，点空白消失」→ 成因实锤（Radix onCloseAutoFocus 回焦 × WebKit 对 tap 后脚本 focus 判 :focus-visible × 整行裸 button）→ 修法 = InstanceSwitchMenu + MobileSheet 基座统一 `onCloseAutoFocus` preventDefault（commit `7b83976`）。验证全绿（focus-policy 探针 6/6 含新关闭断言、header 探针 56/56、typecheck 0、单测 795、CSS 硬闸、tokens 机检）。**剩真机清单交用户**。
+浮层关闭回焦蓝环批（`7b83976`）已获用户真机验收通过——今日四批全部收口，无遗留待办；滚动条项用户此前表示「需多测试」，随日常使用自然观察即可。
 
 ## 本 session 焦点
 
@@ -19,9 +19,9 @@
 
 ### 进度
 
-- ✅ 浮层关闭回焦蓝环 `7b83976`（mobile-project-header.tsx + mobile-sheet.tsx + 探针 A/B 关闭断言 + frontend-notes §33 + spec §5.0 + inbox）
+- ✅ 浮层关闭回焦蓝环 `7b83976` **真机验收通过（2026-10-14 用户确认）**（mobile-project-header.tsx + mobile-sheet.tsx + 探针 A/B 关闭断言 + frontend-notes §33 + spec §5.0 + inbox）
 - ✅ 卡形制全对齐 `641e7d5` / 空隙同构 `488ad68` / 滚动条+发送按钮 `ae2397b`（发送按钮真机验收 ✅）
-- ⏳ **真机清单交用户**（见下）——唯一待办
+- 无待办。
 
 ### 阻塞 / 风险
 
@@ -29,12 +29,7 @@
 
 ## 易丢的关键上下文
 
-- **本批真机清单（交用户，PWA 强刷后）**：
-  1. **▾ 切换浮层关闭后标题行无蓝色选中框**（本批主目标）。
-  2. **⋯ sheet 关闭后 ⋯ 按钮无蓝环**（同机制推广面，未报但同修）。
-  3. 终端 composer 与 agent 观感一致（空态卡高 108/76 + 圆角 12/sans/浮卡衬底）+ 快捷键条常驻（上上批遗留复核）。
-  4. 滚动条复核（早批遗留）：终端跑一段时间输出后不再出现纵向滚动条。
-  5. **PWA 强刷后复核**。
+- **「关闭不回焦」两族通用约定已落地**（spec §5.0）：移动浮层（▾ + MobileSheet 基座全量）关闭焦点落 body；桌面浮层保留回焦。未来新增移动浮层组件沿用此约定（frontend-notes §33）。
 - 探针新断言：probe-sheet-focus-policy A/B「关闭不回焦 trigger」——B 关闭后 activeElement 的 tag（BODY vs 偶发 BUTTON）有非确定性时序漂移，但断言方向（非 FAB/非 INPUT）稳定，勿因 tag 漂移误判挂。
 - 探针纪律（沿用）：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；一次性诊断不入库用后删。
 - composer 口径参照系（claude:3686 卡骨架 / :3698 textarea / :3756 底行）：终端侧已同构。
@@ -45,4 +40,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-14 10:10；触发原因：浮层关闭回焦批收尾（commit 7b83976 + handoff 滚动）
+最后更新：2026-10-14 10:20；触发原因：浮层关闭回焦批真机验收通过，今日四批全部收口
