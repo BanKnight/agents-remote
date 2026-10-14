@@ -1,9 +1,15 @@
 import { forwardRef, useContext, useEffect, useRef, useState } from "react";
 
-import { EFFORT_LEVELS, type ClaudeContextUsage, type EffortLevel } from "@agents-remote/shared";
+import {
+  EFFORT_LEVELS,
+  type ClaudeContextUsage,
+  type ContextUsageCategory,
+  type EffortLevel,
+} from "@agents-remote/shared";
 
 import { ClaudeBridgeContext } from "../../routes/claude-adapter";
 import { useT } from "../../i18n";
+import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import {
   modelDisplayLabel,
   PERMISSION_MODE_LABELS,
@@ -221,6 +227,51 @@ export function formatContextTokens(tokens: number): string {
 export const USAGE_WARN_PCT = 70;
 export const USAGE_DANGER_PCT = 85;
 
+// 分类图例映射（CLI get_context_usage categories 的稳定 name → 色点 class + i18n key）。
+// 色全部走语义 token（v2-primitives.css .u-cat-* 定义 --u-dot）；CLI 终端 color 名不采。
+// 未知名中性兜底（u-cat-sysprompt）。
+const CONTEXT_USAGE_CATEGORY_STYLES: Record<string, { dotClass: string; i18nKey: TranslationKey }> =
+  {
+    "System prompt": {
+      dotClass: "u-cat-sysprompt",
+      i18nKey: "claude.composer.contextUsageCatSystemPrompt",
+    },
+    "System tools": {
+      dotClass: "u-cat-systools",
+      i18nKey: "claude.composer.contextUsageCatSystemTools",
+    },
+    "Custom agents": {
+      dotClass: "u-cat-agents",
+      i18nKey: "claude.composer.contextUsageCatCustomAgents",
+    },
+    "Memory files": {
+      dotClass: "u-cat-memory",
+      i18nKey: "claude.composer.contextUsageCatMemoryFiles",
+    },
+    Skills: { dotClass: "u-cat-skills", i18nKey: "claude.composer.contextUsageCatSkills" },
+    Messages: { dotClass: "u-cat-messages", i18nKey: "claude.composer.contextUsageCatMessages" },
+    "Autocompact buffer": {
+      dotClass: "u-cat-buffer",
+      i18nKey: "claude.composer.contextUsageCatAutocompact",
+    },
+    "Free space": {
+      dotClass: "u-cat-free",
+      i18nKey: "claude.composer.contextUsageCatFreeSpace",
+    },
+  };
+
+// kind 优先于 name（buffer/free 形态固定），已知名查表，未知名中性兜底。
+const categoryDotClass = (cat: ContextUsageCategory): string => {
+  if (cat.kind === "buffer") return "u-cat-buffer";
+  if (cat.kind === "free") return "u-cat-free";
+  return CONTEXT_USAGE_CATEGORY_STYLES[cat.name]?.dotClass ?? "u-cat-sysprompt";
+};
+
+const categoryLabel = (cat: ContextUsageCategory, t: TranslateFn): string => {
+  const key = CONTEXT_USAGE_CATEGORY_STYLES[cat.name]?.i18nKey;
+  return key ? t(key) : cat.name;
+};
+
 /** 占用百分比 → 档位（纯函数，单测直测）。档位驱动三档变色（CSS 语义 token 映射）
  * 与浮层进度条 fill 色。 */
 export function contextUsageLevel(pct: number): "ok" | "warn" | "danger" {
@@ -255,8 +306,10 @@ export function ContextUsageRing({ pct }: { pct: number }) {
 }
 
 /** 上下文占用指示（统一会话标量管道第一个标量的显示端）。环形仪表 trigger + 族A
- * 锚定浮层（进度条 + 已用/窗口上限 + 明细四行）。无 usage 数据（未有 assistant 消息）
- * 不渲染。**布局交调用方**：本组件不带 ml-auto——.send2 也是 margin-left:auto，两个
+ * 锚定浮层（进度条 + 已用/窗口上限 + 明细区）。明细区**替换式**：有 categories
+ * （get_context_usage 权威分类）显示分段堆叠条 + 分类图例；无（JSONL seed 刚恢复/
+ * stdout 折算帧）回退 usage 四行。无 usage 数据（未有 assistant 消息）不渲染。
+ * **布局交调用方**：本组件不带 ml-auto——.send2 也是 margin-left:auto，两个
  * auto margin 会均分剩余空间把本组件推到正中；「右组」由调用方把本组件与 Stop/Send
  * 同包一个 ml-auto 容器实现（容器内无剩余空间，.send2 的 auto 归零）。 */
 export function ContextUsageIndicator({ contextUsage }: { contextUsage?: ClaudeContextUsage }) {
@@ -301,17 +354,48 @@ export function ContextUsageIndicator({ contextUsage }: { contextUsage?: ClaudeC
               {formatContextTokens(contextUsage.contextWindow)}
             </span>
           </div>
-          <div className="u-bar">
-            <div className="u-bar-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
-          </div>
-          <div className="u-rows">
-            {rows.map(([label, value]) => (
-              <div className="u-row" key={label}>
-                <span>{label}</span>
-                <span className="u-row-val">{formatContextTokens(value)}</span>
+          {contextUsage.categories?.length ? (
+            <>
+              {/* 分段堆叠条：used+buffer 各占 tokens/window 宽，free 段不渲染（track 即
+                  free）；宽度取窗口而非 totalTokens——分段总览覆盖整个窗口刻度。 */}
+              <div className="u-bar">
+                {contextUsage.categories
+                  .filter((c) => c.kind !== "free" && c.tokens > 0)
+                  .map((c) => (
+                    <span
+                      className={`u-bar-seg ${categoryDotClass(c)}`}
+                      key={c.name}
+                      style={{ width: `${(c.tokens / contextUsage.contextWindow) * 100}%` }}
+                    />
+                  ))}
               </div>
-            ))}
-          </div>
+              <div className="u-rows">
+                {contextUsage.categories.map((c) => (
+                  <div className="u-row u-row-cat" key={c.name}>
+                    <span className="u-row-name">
+                      <span aria-hidden="true" className={`u-dot ${categoryDotClass(c)}`} />
+                      {categoryLabel(c, t)}
+                    </span>
+                    <span className="u-row-val">{formatContextTokens(c.tokens)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="u-bar">
+                <div className="u-bar-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
+              </div>
+              <div className="u-rows">
+                {rows.map(([label, value]) => (
+                  <div className="u-row" key={label}>
+                    <span>{label}</span>
+                    <span className="u-row-val">{formatContextTokens(value)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </PopoverContent>
       </Popover>
     </>

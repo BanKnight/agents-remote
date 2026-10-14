@@ -346,6 +346,48 @@ test("extractContextUsageFromControlResponse folds authoritative totalTokens/max
       },
     }),
   ).toEqual({ contextTokens: 94836, contextWindow: 230000 });
+  // categories 同步折算：剔除 CLI 终端 color/percentage/squareFullness，kind 透传；
+  // kind 非三态的整条丢弃；空/缺 categories 不带字段。
+  expect(
+    extractContextUsageFromControlResponse({
+      type: "control_response",
+      response: {
+        subtype: "success",
+        request_id: "ctx-usage-x",
+        response: {
+          totalTokens: 94836,
+          maxTokens: 230000,
+          categories: [
+            { name: "System prompt", tokens: 9025, color: "promptBorder", kind: "used" },
+            { name: "Messages", tokens: 50613, color: "x", kind: "used", percentage: 22 },
+            { name: "Autocompact buffer", tokens: 33000, color: "inactive", kind: "buffer" },
+            { name: "Free space", tokens: 102164, color: "promptBorder", kind: "free" },
+            { name: "Corrupt", tokens: 5, kind: "weird" },
+            { name: 42, tokens: 5, kind: "used" },
+          ],
+        },
+      },
+    }),
+  ).toEqual({
+    contextTokens: 94836,
+    contextWindow: 230000,
+    categories: [
+      { name: "System prompt", tokens: 9025, kind: "used" },
+      { name: "Messages", tokens: 50613, kind: "used" },
+      { name: "Autocompact buffer", tokens: 33000, kind: "buffer" },
+      { name: "Free space", tokens: 102164, kind: "free" },
+    ],
+  });
+  expect(
+    extractContextUsageFromControlResponse({
+      type: "control_response",
+      response: {
+        subtype: "success",
+        request_id: "x",
+        response: { totalTokens: 100, maxTokens: 200, categories: [] },
+      },
+    }),
+  ).toEqual({ contextTokens: 100, contextWindow: 200 });
   // error 应答 / 缺字段 / 非 control_response → 均不产标量。
   expect(
     extractContextUsageFromControlResponse({

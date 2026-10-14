@@ -2,7 +2,9 @@
 // 1 live context_usage 帧(明细全字段)到达 → 控制行出现环形仪表 trigger + 百分比 + 档位;
 // 2 danger 帧触发 lvl-danger 三档变色;
 // 3 点开浮层:进度条宽度 = 占用比 + 汇总(已用/窗口) + 明细四行;
-// 4 断开重连 → seed_init.contextUsage 恢复百分比与档位(回放恢复面)。
+// 4 无分类帧的浮层回退四行明细;
+// 5 分类帧(get_context_usage categories)→ 替换式明细:分段堆叠条 + 图例;
+// 6 无分类后续帧 → 保留上次分类(防闪变);7 断开重连 → seed 恢复 + 无分类回退四行。
 // 密码由脚本自读,不进 agent 上下文。用法:bun scripts/probe-context-usage.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
@@ -130,8 +132,40 @@ try {
         send(frame(31324, 30079, 1200, 45, 333));
         setTimeout(() => {
           send(frame(172000, 100000, 20000, 51000, 1000));
-          // 数值断言窗口过后断开,触发连接 2(seed 恢复面)。
-          setTimeout(() => ws.close({ code: 1000, reason: "server restart" }), 600);
+          setTimeout(() => {
+            // 分类帧(get_context_usage 权威分类形态):used 99000 = 50% ok 档;含 1 个
+            // 未知名(Mystery category)验证中性兜底。
+            send({
+              type: "system",
+              subtype: "context_usage",
+              contextTokens: 99000,
+              inputTokens: 40000,
+              cacheCreationTokens: 0,
+              cacheReadTokens: 59000,
+              contextWindow: 200000,
+              outputTokens: 800,
+              categories: [
+                { name: "System prompt", tokens: 9025, kind: "used" },
+                { name: "System tools", tokens: 28032, kind: "used" },
+                { name: "Custom agents", tokens: 68, kind: "used" },
+                { name: "Memory files", tokens: 1009, kind: "used" },
+                { name: "Skills", tokens: 6089, kind: "used" },
+                { name: "Messages", tokens: 50613, kind: "used" },
+                { name: "Mystery category", tokens: 4164, kind: "used" },
+                { name: "Autocompact buffer", tokens: 33000, kind: "buffer" },
+                { name: "Free space", tokens: 68000, kind: "free" },
+              ],
+            });
+            setTimeout(() => {
+              // 无分类帧(stdout 折算帧形态):61% 数值更新,categories 缺省 → 前端
+              // 保留上一次分类(防闪变断言的驱动帧)。
+              send(frame(122000, 60000, 2000, 60000, 900));
+              // 数值断言窗口过后断开,触发连接 2(seed 恢复面)。
+              // close 延迟要覆盖断言 5/6 的浮层交互窗口(50%/61% 两次 click+断言),
+              // 否则 seed_init 抢先把显示覆盖成 89% 造成假挂。
+              setTimeout(() => ws.close({ code: 1000, reason: "server restart" }), 2500);
+            }, 800);
+          }, 1200);
         }, 600);
       }, 400);
       return;
@@ -231,7 +265,64 @@ try {
   );
   await page.keyboard.press("Escape");
 
-  // ── 5 重连:seed_init.contextUsage 恢复 89% danger 档 ──
+  // ── 5 分类帧(frame3,50% 带 categories):替换式明细 = 分段堆叠条 + 图例 9 行 ──
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector(
+        `button[aria-label^="上下文占用"], button[aria-label^="Context usage"]`,
+      );
+      return (el?.textContent ?? "").includes("50%");
+    },
+    { timeout: 5000 },
+  );
+  await usage.click();
+  await pop.waitFor({ state: "visible", timeout: 5000 });
+  const catPopText = (await pop.textContent()) ?? "";
+  const segCount = await pop.locator(".u-bar-seg").count();
+  const legendCount = await pop.locator(".u-row-cat").count();
+  // 分段宽度和 = (used+buffer)/window = 132000/200000 = 0.66(free 段不渲染)。
+  const segWidthsSum = await pop.locator(".u-bar-seg").evaluateAll((segs) =>
+    segs.reduce((acc, el) => {
+      const w = parseFloat(getComputedStyle(el).width);
+      return acc + w / el.parentElement.getBoundingClientRect().width;
+    }, 0),
+  );
+  // 各 seg 必须与 .u-bar 同一横排(top 对齐)——.u-bar 无 flex 时块级 seg 竖排堆叠、
+  // 被 height+overflow:hidden 裁到只剩第一段,而 width 断言测不出该塌法(design review P0)。
+  const segsAligned = await pop.locator(".u-bar-seg").evaluateAll((segs) => {
+    const trackTop = segs[0]?.parentElement.getBoundingClientRect().top ?? NaN;
+    return segs.every((el) => Math.abs(el.getBoundingClientRect().top - trackTop) < 0.5);
+  });
+  check(
+    "5 分类帧替换式:8 段分段条(used7+buffer,free 不渲染,横排对齐) + 图例 9 行(未知名原样) + 分段宽和",
+    segCount === 8 &&
+      legendCount === 9 &&
+      segsAligned &&
+      catPopText.includes("Mystery category") &&
+      (["系统提示词", "System prompt"].some((k) => catPopText.includes(k)) ||
+        ["对话消息", "Messages"].some((k) => catPopText.includes(k))) &&
+      Math.abs(segWidthsSum - 0.66) < 0.05,
+    `seg=${segCount} legend=${legendCount} sum=${segWidthsSum.toFixed(3)} aligned=${segsAligned}`,
+  );
+  await page.keyboard.press("Escape");
+
+  // ── 6 无分类后续帧(frame4,61%):categories 缺省 → 保留上一次分类(防闪变) ──
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector(
+        `button[aria-label^="上下文占用"], button[aria-label^="Context usage"]`,
+      );
+      return (el?.textContent ?? "").includes("61%");
+    },
+    { timeout: 5000 },
+  );
+  await usage.click();
+  await pop.waitFor({ state: "visible", timeout: 5000 });
+  const keptLegend = await pop.locator(".u-row-cat").count();
+  check("6 无分类帧保留上次分类(图例仍 9 行)", keptLegend === 9, `legend=${keptLegend}`);
+  await page.keyboard.press("Escape");
+
+  // ── 7 重连:seed_init.contextUsage 恢复 89% danger 档 ──
   await page.waitForFunction(
     () => {
       const el = document.querySelector(
@@ -242,9 +333,23 @@ try {
     },
     { timeout: 10000 },
   );
-  check("5 重连后 seed_init 恢复 89% danger", true);
+  check("7 重连后 seed_init 恢复 89% danger", true);
+  // seed 无 categories(JSONL 形态)→ 替换式回退:四行明细 + 单色 u-bar-fill。
+  await usage.click();
+  await pop.waitFor({ state: "visible", timeout: 5000 });
+  const seedText = (await pop.textContent()) ?? "";
+  const seedLegend = await pop.locator(".u-row-cat").count();
+  const seedFill = await pop.locator(".u-bar-fill").count();
+  check(
+    "7b seed 无分类回退四行(u-bar-fill + 输入/缓存读,图例 0 行)",
+    seedLegend === 0 &&
+      seedFill === 1 &&
+      ["输入", "Input"].some((k) => seedText.includes(k)) &&
+      ["缓存读", "Cache read"].some((k) => seedText.includes(k)),
+    `legend=${seedLegend} fill=${seedFill}`,
+  );
 
-  // ── 6 右组几何(spec 4.1-3「UI 平衡偏右」):输入触发 Send 后,usage trigger 落在
+  // ── 8 右组几何(spec 4.1-3「UI 平衡偏右」):输入触发 Send 后,usage trigger 落在
   // 卡片右半(左缘 > 卡片中点)且紧贴 send2(间距 = 右组 gap 8px)——防两个 auto margin
   // 均分剩余空间把 usage 推回正中的回归。 ──
   const composerBox = page.locator("form textarea, [data-slot] textarea").first();
@@ -270,7 +375,7 @@ try {
     };
   });
   check(
-    "6 右组几何:usage 偏右(左缘>卡片中点) + 紧贴 send2(gap≈8px)",
+    "8 右组几何:usage 偏右(左缘>卡片中点) + 紧贴 send2(gap≈8px)",
     geo !== null && geo.left > geo.cardMid && Math.abs(geo.gap - 8) < 2,
     JSON.stringify(geo),
   );

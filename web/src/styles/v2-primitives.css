@@ -343,6 +343,10 @@
   }
 
   .u-bar {
+    /* flex：分段堆叠条的多段 .u-bar-seg 必须横排（块级子元素会竖排堆叠、被
+       height+overflow:hidden 裁到只剩第一段——design review P0 实测）；单段
+       .u-bar-fill 回退分支在 flex row 下几何不变。 */
+    display: flex;
     margin-top: 8px;
     height: 5px;
     border-radius: 9999px;
@@ -374,6 +378,71 @@
   .u-row-val {
     color: var(--ink-1);
     font-variant-numeric: tabular-nums;
+  }
+
+  /* 分类明细（spec 4.1-3 分类批）：分段堆叠条 + 图例色点。色 = 设计系统语义 token
+     重映射（CLI 终端 color 名不采）；.u-cat-* 同时落在 .u-bar-seg 与 .u-dot 上，
+     经 --u-dot 变量统一供色。未知名走 .u-cat-sysprompt 中性兜底。 */
+  .u-bar-seg {
+    display: block;
+    height: 100%;
+    background: var(--u-dot);
+  }
+
+  .u-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border-radius: 9999px;
+    background: var(--u-dot, var(--ink-2));
+  }
+
+  .u-row-cat {
+    align-items: center;
+  }
+
+  .u-row-cat .u-row-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .u-cat-sysprompt {
+    --u-dot: var(--ink-2);
+  }
+
+  .u-cat-systools {
+    --u-dot: var(--c-primary);
+  }
+
+  .u-cat-agents {
+    --u-dot: var(--c-pin);
+  }
+
+  .u-cat-memory {
+    --u-dot: var(--c-success-text);
+  }
+
+  .u-cat-skills {
+    --u-dot: var(--c-warning-text);
+  }
+
+  .u-cat-messages {
+    --u-dot: var(--c-session-5);
+  }
+
+  /* buffer = --ink-3 全不透明（design review P1 数值实算：sep-strong@0.45 叠 track
+     后双主题每通道差仅 ~7-9，与 free 底不可辨；ink-3 与 track 差 ≥30 且保持
+     「比 free 弱一档」层级）。 */
+  .u-cat-buffer {
+    --u-dot: var(--ink-3);
+  }
+
+  .u-cat-free.u-dot {
+    background: transparent;
+    border: 1.5px solid var(--sep-strong);
   }
 
   @media (min-width: 1024px) {

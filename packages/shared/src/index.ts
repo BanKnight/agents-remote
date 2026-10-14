@@ -1630,11 +1630,23 @@ export type ClaudeSystemInit = {
 // and client render both treat it as a non-init system message: it folds scalars via
 // a dedicated seed_init branch and is never rendered (model / permissionMode surface
 // in the session header).
+// 上下文构成分类（CLI get_context_usage 应答的 categories 折算，/context 口径）。
+// name = CLI 稳定字符串（System prompt 等，未知名原样透传）；kind 三态：used（已用）、
+// buffer（autocompact 预留）、free（剩余）。CLI 自带的终端 color 名不进协议——web 按
+// name 重映射设计系统语义 token。
+export type ContextUsageCategory = {
+  name: string;
+  tokens: number;
+  kind: "used" | "buffer" | "free";
+};
+
 // 会话上下文占用量明细（统一会话标量管道第一个标量）。contextTokens = input +
 // cache_creation + cache_read（CLI assistant usage 折算口径，即实际占用窗口的量）；
 // outputTokens = 最后一条 assistant 消息的本轮输出（不计入占用，仅明细展示）；
-// contextWindow = 窗口上限（api spawn 时从 resolved model ID 的 [1m] 后缀判定，
-// 前端不自行派生——模型切换/1M 切换后由 api 侧重算随帧纠正）。
+// contextWindow = 窗口上限（api 侧权威：get_context_usage 的 maxTokens，autocompact
+// 感知；JSONL/推断路径回落 [1m] 后缀判定，前端不自行派生）。
+// categories 仅 get_context_usage 控制应答携带（JSONL seed 与 stdout 折算帧均无）；
+// 前端对缺省帧保留上一次分类（防样式闪变）。
 export type ClaudeContextUsage = {
   contextTokens: number;
   inputTokens: number;
@@ -1642,6 +1654,7 @@ export type ClaudeContextUsage = {
   cacheReadTokens: number;
   outputTokens: number;
   contextWindow: number;
+  categories?: ContextUsageCategory[];
 };
 
 export type ClaudeSeedInit = {

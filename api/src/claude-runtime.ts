@@ -7,6 +7,7 @@ import {
   type ClaudeContextUsage,
   type ClaudeControlRequest,
   type ClaudePreset,
+  type ContextUsageCategory,
   type EffortLevel,
 } from "@agents-remote/shared";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
@@ -247,9 +248,14 @@ const CONTEXT_USAGE_CONTROL_TIMEOUT_MS = 5000;
 // 窗口——比 [1m] 后缀推断更权威）。detail:"summary" 不调 token-count API（从最近
 // response usage + 本地估算回答）。应答是 CLI 权威结构化数据，天然免疫网关流式占位行。
 // summary 应答不带 usage 明细（input/cache 分解），明细字段由调用方另行补齐。
+// categories 同步折算（CLI 终端 color/单项 percentage 不采，kind 非三态的整条丢弃）。
+// 控制应答折算的统一形状（waiter/方法签名共用）。
+type ContextUsageControlResult = Pick<ClaudeContextUsage, "contextTokens" | "contextWindow"> & {
+  categories?: ContextUsageCategory[];
+};
 export function extractContextUsageFromControlResponse(
   parsed: Record<string, unknown> | null,
-): Pick<ClaudeContextUsage, "contextTokens" | "contextWindow"> | undefined {
+): ContextUsageControlResult | undefined {
   if (!parsed || parsed.type !== "control_response") return undefined;
   const envelope = parsed.response as
     | { subtype?: unknown; response?: Record<string, unknown> }
@@ -260,7 +266,27 @@ export function extractContextUsageFromControlResponse(
   const max = typeof inner.maxTokens === "number" ? inner.maxTokens : -1;
   // total ≤ 0（空会话 resume 渲染 0% 违背「无数据不渲染」）或 max ≤ 0 均视为无效。
   if (total <= 0 || max <= 0) return undefined;
-  return { contextTokens: total, contextWindow: max };
+  const KINDS = new Set(["used", "buffer", "free"]);
+  const rawCategories = Array.isArray(inner.categories) ? inner.categories : [];
+  const categories = rawCategories
+    .map((c) => c as Record<string, unknown>)
+    .filter(
+      (c): c is Record<string, unknown> =>
+        typeof c.name === "string" &&
+        typeof c.tokens === "number" &&
+        typeof c.kind === "string" &&
+        KINDS.has(c.kind),
+    )
+    .map((c) => ({
+      name: c.name as string,
+      tokens: c.tokens as number,
+      kind: c.kind as ContextUsageCategory["kind"],
+    }));
+  return {
+    contextTokens: total,
+    contextWindow: max,
+    ...(categories.length > 0 ? { categories } : {}),
+  };
 }
 
 // 纯函数：spawn/模型切换时的窗口上限判定。判定依据与 buildSpawnEnv 的 [1m] 注入
@@ -368,7 +394,7 @@ export class ClaudeRuntime implements RuntimeResources {
   private readonly contextUsageWaiters = new Map<
     string,
     {
-      resolve: (v: Pick<ClaudeContextUsage, "contextTokens" | "contextWindow"> | undefined) => void;
+      resolve: (v: ContextUsageControlResult | undefined) => void;
       timer: ReturnType<typeof setTimeout>;
     }
   >();
@@ -1122,17 +1148,13 @@ export class ClaudeRuntime implements RuntimeResources {
   // 服务端主动发起 get_context_usage 控制请求（与客户端 set_model 同一条 stdin/stdout
   // 控制通道，CLI 应答经 stdout 回来由 captureControlResponseFromLine 结算）。不走
   // write()——那会 cancelPending 自动重试，而这不是用户输入，直写 stdin 绕开。
-  async getContextUsage(
-    sessionName: string,
-  ): Promise<Pick<ClaudeContextUsage, "contextTokens" | "contextWindow"> | undefined> {
+  async getContextUsage(sessionName: string): Promise<ContextUsageControlResult | undefined> {
     const proc = this.processes.get(sessionName);
     if (!proc || proc.proc.exitCode !== null) return undefined;
     const stdin = proc.proc.stdin;
     if (typeof stdin === "number" || !stdin) return undefined;
     const requestId = `ctx-usage-${randomUUID()}`;
-    const promise = new Promise<
-      Pick<ClaudeContextUsage, "contextTokens" | "contextWindow"> | undefined
-    >((resolve) => {
+    const promise = new Promise<ContextUsageControlResult | undefined>((resolve) => {
       const timer = setTimeout(() => {
         if (this.contextUsageWaiters.delete(requestId)) resolve(undefined);
       }, CONTEXT_USAGE_CONTROL_TIMEOUT_MS);
@@ -1185,10 +1207,16 @@ export class ClaudeRuntime implements RuntimeResources {
         cacheCreationTokens: detail?.cacheCreationTokens ?? 0,
         cacheReadTokens: detail?.cacheReadTokens ?? 0,
         outputTokens: detail?.outputTokens ?? 0,
+        ...(control.categories ? { categories: control.categories } : {}),
       };
+      // 三元去重：tokens/window/分类任一变化都要广播（窗口独变、分类首次到达同理）。
+      const categoriesUnchanged =
+        JSON.stringify(state.contextUsage?.categories ?? null) ===
+        JSON.stringify(next.categories ?? null);
       if (
         state.contextUsage?.contextTokens === next.contextTokens &&
-        state.contextWindow === control.contextWindow
+        state.contextWindow === control.contextWindow &&
+        categoriesUnchanged
       ) {
         return;
       }

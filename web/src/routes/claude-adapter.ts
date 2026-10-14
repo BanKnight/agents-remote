@@ -3940,14 +3940,17 @@ export function useClaudeSession(
         // 字段守卫（对齐 seed path 的 if (seed.contextUsage)）：缺字段会让
         // pct = NaN 渲染进环弧 dasharray 与百分比文本。
         if (frame.contextTokens === undefined || frame.contextWindow === undefined) return;
-        setContextUsage({
+        // 帧不带 categories（stdout 折算帧）时保留上一次分类——否则 turn 中途的折算帧
+        // 会把控制帧带来的分类打掉，浮层在「分类 ↔ 四行」间闪变，turn 结束才变回。
+        setContextUsage((prev) => ({
           contextTokens: frame.contextTokens,
           inputTokens: frame.inputTokens,
           cacheCreationTokens: frame.cacheCreationTokens,
           cacheReadTokens: frame.cacheReadTokens,
           outputTokens: frame.outputTokens,
           contextWindow: frame.contextWindow,
-        });
+          categories: frame.categories ?? prev?.categories,
+        }));
         return;
       }
 
