@@ -2,6 +2,7 @@ import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   type ClaudeAutoRetryConfig,
+  type ClaudeContextUsage,
   type ClaudeControlRequest,
   type ClaudePreset,
   type EffortLevel,
@@ -33,16 +34,16 @@ export function buildSeedInitLine(
   model?: string,
   permissionMode?: string,
   modelAlias?: string,
-  contextTokens?: number,
+  contextUsage?: ClaudeContextUsage,
 ): string | undefined {
-  if (!model && !permissionMode && !modelAlias && contextTokens === undefined) return undefined;
+  if (!model && !permissionMode && !modelAlias && !contextUsage) return undefined;
   return JSON.stringify({
     type: "system",
     subtype: "seed_init",
     ...(model ? { model } : {}),
     ...(modelAlias ? { modelAlias } : {}),
     ...(permissionMode ? { permissionMode } : {}),
-    ...(contextTokens !== undefined ? { contextTokens } : {}),
+    ...(contextUsage ? { contextUsage } : {}),
   });
 }
 
@@ -148,9 +149,9 @@ export function extractSkillReloadFromStdoutLine(parsed: Record<string, unknown>
 // unit-testable (cf. extractModelFromStdoutLine); the live carrier is the
 // assistant stdout row (real new rows only — JSONL replay never reaches
 // processStdoutLine).
-export function extractContextTokensFromStdoutLine(
+export function extractContextUsageFromStdoutLine(
   parsed: Record<string, unknown> | null,
-): number | undefined {
+): Omit<ClaudeContextUsage, "contextWindow"> | undefined {
   if (!parsed || parsed.type !== "assistant") return undefined;
   const message = parsed.message as { usage?: Record<string, unknown> } | undefined;
   const usage = message?.usage;
@@ -160,8 +161,41 @@ export function extractContextTokensFromStdoutLine(
     typeof usage.cache_creation_input_tokens === "number" ? usage.cache_creation_input_tokens : 0;
   const cacheRead =
     typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : 0;
-  const total = input + cacheCreation + cacheRead;
-  return total > 0 ? total : undefined;
+  const output = typeof usage.output_tokens === "number" ? usage.output_tokens : 0;
+  const contextTokens = input + cacheCreation + cacheRead;
+  // 占用三项全 0（如纯输出占位行）不构成有效标量，维持「无数据不渲染」语义。
+  return contextTokens > 0
+    ? {
+        contextTokens,
+        inputTokens: input,
+        cacheCreationTokens: cacheCreation,
+        cacheReadTokens: cacheRead,
+        outputTokens: output,
+      }
+    : undefined;
+}
+
+// 窗口上限档位（token）：resolved model ID 带 [1m] 后缀 ⇒ 1M，否则 200k。
+export const CONTEXT_WINDOW_DEFAULT = 200_000;
+export const CONTEXT_WINDOW_1M = 1_000_000;
+
+// 纯函数：spawn/模型切换时的窗口上限判定。判定依据与 buildSpawnEnv 的 [1m] 注入
+// 同源（settings-store resolveModelId 拼 [1m]、buildAvailableAliases 映射 alias→
+// resolved ID）：显式 --model 带 [1m] 直判 1M；alias 经 spawn 时记录的映射查裸 ID
+//（buildAvailableAliases 有映射必同时发裸 tier 键，无需查 [1m] 变体键）；未传
+// --model 时 CLI 回落 sonnet 默认，同映射查 sonnet。查不到（无预设 view / 脏值）
+// 回落 200k。已知误差：opusplan 的 Plan Mode 实际走 OPUS env（buildSpawnEnv 注释），
+// 若 opus 带映射带 [1m] 而 Plan Mode 期间窗口应按 opus——CLI 动态决定无法静态判对，
+// 恒判 sonnet（普通模式语义），勿当精确语义引用。
+export function resolveContextWindow(
+  model: string | undefined,
+  resolvedAliases: Record<string, string> | undefined,
+): number {
+  if (model?.endsWith("[1m]")) return CONTEXT_WINDOW_1M;
+  const tier = !model || model === "opusplan" ? "sonnet" : model;
+  const resolved = resolvedAliases?.[tier];
+  if (resolved?.endsWith("[1m]")) return CONTEXT_WINDOW_1M;
+  return CONTEXT_WINDOW_DEFAULT;
 }
 
 type ClaudeProcess = {
@@ -175,7 +209,11 @@ type ClaudeProcess = {
   modelAlias?: string;
   permissionMode?: string;
   effort?: EffortLevel;
-  contextTokens?: number;
+  contextUsage?: Omit<ClaudeContextUsage, "contextWindow">;
+  /** 窗口上限（spawn/模型切换时由 resolveContextWindow 判定，随帧下发）。 */
+  contextWindow: number;
+  /** spawn 时的 alias→resolved ID 映射（buildAvailableAliases(view).resolved），窗口判定用。 */
+  resolvedAliases?: Record<string, string>;
 };
 
 /** 审批中心登记上下文：ClaudeProcess 已有字段，can_use_tool 登记时随行（registry 无需反查）。 */
@@ -331,7 +369,9 @@ export class ClaudeRuntime implements RuntimeResources {
     return {
       model: state.model,
       permissionMode: state.permissionMode,
-      contextTokens: state.contextTokens,
+      contextUsage: state.contextUsage
+        ? { ...state.contextUsage, contextWindow: state.contextWindow }
+        : undefined,
     };
   }
 
@@ -527,7 +567,7 @@ export class ClaudeRuntime implements RuntimeResources {
       proc.model,
       proc.permissionMode,
       proc.modelAlias,
-      proc.contextTokens,
+      proc.contextUsage ? { ...proc.contextUsage, contextWindow: proc.contextWindow } : undefined,
     );
 
     return relay.addSubscriber(
@@ -584,6 +624,11 @@ export class ClaudeRuntime implements RuntimeResources {
     );
 
     const generation = this.nextGeneration++;
+    // 窗口上限判定：与实际 --model 同源（sanitize 后值），alias 经 spawn 时记录的
+    // alias→resolved 映射查 [1m]；映射随 proc state 存档，captureModelFromLine 模型
+    // 切换时用新 model 重算窗口（GUI 切 [1m] 变体后无需重启进程即纠正）。
+    const spawnSafeModel = sanitizePersistedModel(model);
+    const resolvedAliases = view ? buildAvailableAliases(view).resolved : undefined;
     this.processes.set(sessionName, {
       proc,
       generation,
@@ -595,6 +640,8 @@ export class ClaudeRuntime implements RuntimeResources {
       modelAlias: model,
       permissionMode,
       effort: resolvedEffort,
+      contextWindow: resolveContextWindow(spawnSafeModel, resolvedAliases),
+      resolvedAliases,
     });
 
     // Create relay immediately (before stdout starts) so messages aren't lost
@@ -917,6 +964,25 @@ export class ClaudeRuntime implements RuntimeResources {
     if (!state) return;
     state.model = next;
     state.modelAlias = next;
+    // 模型切换可能改窗口档位（切 [1m] 变体）：用新 model + spawn 时映射重算。窗口
+    // 变化且已有 usage 标量时立即补发一帧——切完模型可能长时间无新 assistant 消息，
+    // 等下一条 usage 帧才纠正的话在线前端百分比/档位一直按旧窗口算（1M 会话按 200k
+    // 显示 86% danger，实际 17%）。
+    const nextWindow = resolveContextWindow(next, state.resolvedAliases);
+    if (nextWindow !== state.contextWindow) {
+      state.contextWindow = nextWindow;
+      const relay = this.relays.get(sessionName);
+      if (relay && !relay.isDestroyed && state.contextUsage) {
+        relay.injectLine(
+          JSON.stringify({
+            type: "system",
+            subtype: "context_usage",
+            ...state.contextUsage,
+            contextWindow: nextWindow,
+          }),
+        );
+      }
+    }
     this.onModelChange?.(state.sessionId, next);
   }
 
@@ -940,7 +1006,7 @@ export class ClaudeRuntime implements RuntimeResources {
   // Fold the context-token scalar from live assistant usage. Unlike model this
   // has no metadata persistence (nothing downstream spawns with it — it is
   // display state): it lives on proc state and re-enters replay via
-  // buildSeedInitLine's contextTokens. On change, broadcast a synthetic
+  // buildSeedInitLine's contextUsage. On change, broadcast a synthetic
   // context_usage frame via relay.injectLine (broadcast-only, skill_catalog
   // 同款 — never buffered; seed_init re-carries the durable value on
   // reconnect). Fold BEFORE relay.handleStdoutLine so the broadcast ordering
@@ -951,16 +1017,21 @@ export class ClaudeRuntime implements RuntimeResources {
     sessionName: string,
     parsed: Record<string, unknown> | null,
   ): void {
-    const next = extractContextTokensFromStdoutLine(parsed);
+    const next = extractContextUsageFromStdoutLine(parsed);
     if (next === undefined) return;
     const state = this.processes.get(sessionName);
     if (!state) return;
-    if (state.contextTokens === next) return;
-    state.contextTokens = next;
+    if (state.contextUsage?.contextTokens === next.contextTokens) return;
+    state.contextUsage = next;
     const relay = this.relays.get(sessionName);
     if (relay && !relay.isDestroyed) {
       relay.injectLine(
-        JSON.stringify({ type: "system", subtype: "context_usage", contextTokens: next }),
+        JSON.stringify({
+          type: "system",
+          subtype: "context_usage",
+          ...next,
+          contextWindow: state.contextWindow,
+        }),
       );
     }
   }

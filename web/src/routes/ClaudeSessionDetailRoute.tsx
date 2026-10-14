@@ -107,7 +107,11 @@ import {
   type TurnStatusTone,
 } from "./claude-adapter";
 import { SubagentOverviewBar, agentCardExpandSignalAtom } from "./claude-subagent-overview";
-import type { ClaudeFileHistorySnapshot, EffortLevel } from "@agents-remote/shared";
+import type {
+  ClaudeContextUsage,
+  ClaudeFileHistorySnapshot,
+  EffortLevel,
+} from "@agents-remote/shared";
 
 // ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
 //
@@ -361,7 +365,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     resolvedModel,
     modelSwitchVersion,
     permissionMode,
-    contextTokens,
+    contextUsage,
     aiTitle,
     agentName,
     loading,
@@ -574,7 +578,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                                 availableModelResolved={availableModelResolved}
                                 modelSwitchVersion={modelSwitchVersion}
                                 permissionMode={permissionMode}
-                                contextTokens={contextTokens}
+                                contextUsage={contextUsage}
                                 availablePermissionModes={availablePermissionModes}
                                 projectName={projectName}
                                 sessionId={sessionId}
@@ -3554,7 +3558,7 @@ function ComposerWithInterrupt({
   availableModelResolved,
   modelSwitchVersion,
   permissionMode,
-  contextTokens,
+  contextUsage,
   availablePermissionModes,
   projectName,
   sessionId,
@@ -3573,7 +3577,7 @@ function ComposerWithInterrupt({
   availableModelResolved?: Record<string, string>;
   modelSwitchVersion: number;
   permissionMode?: string;
-  contextTokens?: number;
+  contextUsage?: ClaudeContextUsage;
   availablePermissionModes: string[];
   projectName: string;
   sessionId: string;
@@ -3770,13 +3774,18 @@ function ComposerWithInterrupt({
             permissionMode={permissionMode}
           />
           <EffortSelector currentEffort={currentEffort} onSelectEffort={onSelectEffort} />
-          <ContextUsageIndicator contextTokens={contextTokens} />
-          <ComposerStopSend
-            onCancel={onCancel}
-            send={sendComposer}
-            showSend={showSend}
-            showStop={showStop}
-          />
+          {/* 右组（spec 4.1-3 上下文占用指示「UI 平衡偏右」）：usage + Stop/Send 同包一个
+              ml-auto 容器——.send2 自身也是 margin-left:auto，若 usage 单独 ml-auto 会与它
+              均分剩余空间（usage 落正中）；容器内无剩余空间，.send2 的 auto 归零。 */}
+          <div className="ml-auto flex items-center gap-2">
+            <ContextUsageIndicator contextUsage={contextUsage} />
+            <ComposerStopSend
+              onCancel={onCancel}
+              send={sendComposer}
+              showSend={showSend}
+              showStop={showStop}
+            />
+          </div>
         </div>
         {slashItems.length > 0 ? (
           <ComposerPrimitive.Unstable_TriggerPopover

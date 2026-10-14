@@ -2,11 +2,12 @@ import { expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import {
   buildSeedInitLine,
-  extractContextTokensFromStdoutLine,
+  extractContextUsageFromStdoutLine,
   extractModelFromStdoutLine,
   extractSkillReloadFromStdoutLine,
   buildSpawnEnv,
   resolveActivePresetCreds,
+  resolveContextWindow,
   sanitizePersistedModel,
   ClaudeRuntime,
 } from "./claude-runtime";
@@ -265,11 +266,11 @@ test("captureModelFromLine does not fire onModelChange for non-switch local-comm
   expect(runtime.getSessionState("rt-key")?.model).toBe("old");
 });
 
-test("extractContextTokensFromStdoutLine folds usage input+cache_creation+cache_read", () => {
+test("extractContextUsageFromStdoutLine folds usage input+cache_creation+cache_read", () => {
   // JSONL/stream-json 实证形状：assistant 行 message.usage 三项之和 = 下一轮
-  // 调用将看到的上下文规模；output_tokens 是本 turn 输出，不计入。
+  // 调用将看到的上下文规模；output_tokens 是本 turn 输出，不计入（仅明细展示）。
   expect(
-    extractContextTokensFromStdoutLine({
+    extractContextUsageFromStdoutLine({
       type: "assistant",
       message: {
         usage: {
@@ -280,43 +281,63 @@ test("extractContextTokensFromStdoutLine folds usage input+cache_creation+cache_
         },
       },
     }),
-  ).toBe(31324);
+  ).toEqual({
+    contextTokens: 31324,
+    inputTokens: 30079,
+    cacheCreationTokens: 1200,
+    cacheReadTokens: 45,
+    outputTokens: 333,
+  });
   // 缺 cache 字段（旧 CLI / 非缓存路径）→ 按 0 折算。
   expect(
-    extractContextTokensFromStdoutLine({
+    extractContextUsageFromStdoutLine({
       type: "assistant",
       message: { usage: { input_tokens: 500, output_tokens: 10 } },
     }),
-  ).toBe(500);
+  ).toEqual({
+    contextTokens: 500,
+    inputTokens: 500,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    outputTokens: 10,
+  });
   // 非 assistant 行 / 无 usage / 全零 → 均不产标量。
   expect(
-    extractContextTokensFromStdoutLine({ type: "user", message: { usage: {} } }),
+    extractContextUsageFromStdoutLine({ type: "user", message: { usage: {} } }),
   ).toBeUndefined();
-  expect(extractContextTokensFromStdoutLine(null)).toBeUndefined();
+  expect(extractContextUsageFromStdoutLine(null)).toBeUndefined();
   expect(
-    extractContextTokensFromStdoutLine({
+    extractContextUsageFromStdoutLine({
       type: "assistant",
       message: { usage: { input_tokens: 0, output_tokens: 5 } },
     }),
   ).toBeUndefined();
 });
 
-test("buildSeedInitLine includes contextTokens and stays undefined without any scalar", () => {
-  const parsed = JSON.parse(buildSeedInitLine(undefined, undefined, undefined, 31324)!) as Record<
+test("buildSeedInitLine includes contextUsage and stays undefined without any scalar", () => {
+  const usage = {
+    contextTokens: 31324,
+    inputTokens: 30079,
+    cacheCreationTokens: 1200,
+    cacheReadTokens: 45,
+    outputTokens: 333,
+    contextWindow: 200_000,
+  };
+  const parsed = JSON.parse(buildSeedInitLine(undefined, undefined, undefined, usage)!) as Record<
     string,
     unknown
   >;
-  expect(parsed).toMatchObject({ type: "system", subtype: "seed_init", contextTokens: 31324 });
+  expect(parsed).toMatchObject({ type: "system", subtype: "seed_init", contextUsage: usage });
   expect(parsed).not.toHaveProperty("model");
 });
 
 test("captureContextUsageFromLine folds proc state and is a no-op on unchanged value", () => {
   const runtime = new ClaudeRuntime(tmpdir());
   const internal = runtime as unknown as {
-    processes: Map<string, { sessionId: string; contextTokens?: number }>;
+    processes: Map<string, { sessionId: string; contextUsage?: unknown; contextWindow: number }>;
     captureContextUsageFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
   };
-  internal.processes.set("rt-key", { sessionId: "internal-session-id" });
+  internal.processes.set("rt-key", { sessionId: "internal-session-id", contextWindow: 200_000 });
 
   const line = {
     type: "assistant",
@@ -325,22 +346,54 @@ test("captureContextUsageFromLine folds proc state and is a no-op on unchanged v
     },
   };
   internal.captureContextUsageFromLine("rt-key", line);
-  expect(runtime.getSessionState("rt-key")?.contextTokens).toBe(1200);
+  expect(runtime.getSessionState("rt-key")?.contextUsage).toEqual({
+    contextTokens: 1200,
+    inputTokens: 1000,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 200,
+    outputTokens: 30,
+    contextWindow: 200_000,
+  });
 
   // 相同值不重复折（幂等——每条 assistant 消息都过这里，值未动不触发）。
   internal.captureContextUsageFromLine("rt-key", line);
-  expect(runtime.getSessionState("rt-key")?.contextTokens).toBe(1200);
+  expect(runtime.getSessionState("rt-key")?.contextUsage?.contextTokens).toBe(1200);
 
   // 值变化跟随折新（上下文随对话增长）。
   internal.captureContextUsageFromLine("rt-key", {
     type: "assistant",
     message: { usage: { input_tokens: 2000, output_tokens: 10 } },
   });
-  expect(runtime.getSessionState("rt-key")?.contextTokens).toBe(2000);
+  expect(runtime.getSessionState("rt-key")?.contextUsage?.contextTokens).toBe(2000);
 
   // 非 assistant 行不动 state。
   internal.captureContextUsageFromLine("rt-key", { type: "user", message: {} });
-  expect(runtime.getSessionState("rt-key")?.contextTokens).toBe(2000);
+  expect(runtime.getSessionState("rt-key")?.contextUsage?.contextTokens).toBe(2000);
+});
+
+test("resolveContextWindow: [1m] suffix ⇒ 1M, alias via resolved map, fallback 200k", () => {
+  // 显式 [1m] 具体 ID。
+  expect(resolveContextWindow("claude-sonnet-5-5[1m]", undefined)).toBe(1_000_000);
+  // alias 经 spawn 时映射（含 [1m] 变体键的裸 alias 键查裸 ID）。
+  expect(
+    resolveContextWindow("sonnet", {
+      sonnet: "claude-sonnet-5-5",
+      "sonnet[1m]": "claude-sonnet-5-5[1m]",
+    }),
+  ).toBe(200_000);
+  expect(
+    resolveContextWindow("sonnet[1m]", {
+      sonnet: "claude-sonnet-5-5",
+      "sonnet[1m]": "claude-sonnet-5-5[1m]",
+    }),
+  ).toBe(1_000_000);
+  // 未传 --model → CLI 回落 sonnet 默认，同映射查。
+  expect(resolveContextWindow(undefined, { sonnet: "claude-sonnet-5-5[1m]" })).toBe(1_000_000);
+  // opusplan 普通模式 = sonnet env。
+  expect(resolveContextWindow("opusplan", { sonnet: "claude-sonnet-5-5[1m]" })).toBe(1_000_000);
+  // 查不到（无映射/脏值）→ 200k。
+  expect(resolveContextWindow("sonnet", undefined)).toBe(200_000);
+  expect(resolveContextWindow("some-unknown-model", { sonnet: "claude-sonnet-5-5" })).toBe(200_000);
 });
 
 test("capturePermissionModeFromLine folds state.permissionMode and fires onPermissionModeChange with the internal sessionId", () => {

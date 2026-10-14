@@ -1,6 +1,6 @@
 import { forwardRef, useContext, useEffect, useRef, useState } from "react";
 
-import { EFFORT_LEVELS, type EffortLevel } from "@agents-remote/shared";
+import { EFFORT_LEVELS, type ClaudeContextUsage, type EffortLevel } from "@agents-remote/shared";
 
 import { ClaudeBridgeContext } from "../../routes/claude-adapter";
 import { useT } from "../../i18n";
@@ -11,6 +11,7 @@ import {
   resolveDisplayModelId,
 } from "@/lib/model-labels";
 import { LucideIcon, type LucideIconName } from "@/components/shell/lucide-icon";
+import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { OptionMenu } from "./option-menu";
 
 /**
@@ -32,13 +33,20 @@ import { OptionMenu } from "./option-menu";
 const SelectorTrigger = forwardRef<
   HTMLButtonElement,
   React.ComponentPropsWithoutRef<"button"> & {
-    /** .iicn/.ipill 的语义色变体（perm/model/eff）。 */
-    accent: "perm" | "model" | "eff";
-    icon: LucideIconName;
+    /** .iicn/.ipill 的语义色变体（perm/model/eff/usage）。 */
+    accent: "perm" | "model" | "eff" | "usage";
+    /** Lucide 图标名（icon 形态必传；badge 形态省略——前部渲染环形仪表）。 */
+    icon?: LucideIconName;
     /** 宽端 pill 前置图标（原型 04f：perm/eff 有图标、model 省图标——全名已长）。 */
     pillIcon?: LucideIconName;
+    /** usage 形态：badge（环形仪表）渲染进 .iicn/.ipill 前部、children（百分比）进
+     * .iicn 尾部——三 selector 的 icon 形态不受影响（badge 缺省走 LucideIcon）。 */
+    badge?: React.ReactNode;
+    /** 三档变色 class 后缀（lvl-ok/lvl-warn/lvl-danger；CSS 按档映射语义 token）。 */
+    level?: "ok" | "warn" | "danger";
   }
->(function SelectorTrigger({ accent, icon, pillIcon, ...rest }, ref) {
+>(function SelectorTrigger({ accent, icon, pillIcon, badge, level, ...rest }, ref) {
+  const lvl = level ? ` lvl-${level}` : "";
   return (
     <button
       ref={ref}
@@ -46,11 +54,12 @@ const SelectorTrigger = forwardRef<
       type="button"
       {...rest}
     >
-      <span className={`iicn ${accent}`}>
-        <LucideIcon name={icon} />
+      <span className={`iicn ${accent}${lvl}`}>
+        {badge ?? (icon ? <LucideIcon name={icon} /> : null)}
+        {badge ? <span className="u-pct">{rest.children as React.ReactNode}</span> : null}
       </span>
-      <span className={`ipill ${accent}`}>
-        {pillIcon ? <LucideIcon name={pillIcon} /> : null}
+      <span className={`ipill ${accent}${lvl}`}>
+        {badge ?? (pillIcon ? <LucideIcon name={pillIcon} /> : null)}
         <span className="min-w-0 truncate">{rest.children as React.ReactNode}</span>
         <span aria-hidden="true" className="text-[9px] opacity-75">
           ▾
@@ -208,19 +217,104 @@ export function formatContextTokens(tokens: number): string {
   return `${(tokens / 1_000_000).toFixed(1)}M`;
 }
 
-/** 上下文占用指示（统一会话标量管道第一个标量的显示端）。纯显示非交互（无菜单），
- * 故不复用 SelectorTrigger 双形态（窄端 .iicn 无数字形态对纯信息无意义），用
- * selector 行同级轻量文本；值为空（未有 assistant 消息）不渲染。 */
-export function ContextUsageIndicator({ contextTokens }: { contextTokens?: number }) {
-  const { t } = useT();
-  if (contextTokens === undefined) return null;
+// 三档阈值（spec 4.1-3 拍板：≤70 正常 / >70 警告 / >85 危险；命名常量禁魔数）。
+export const USAGE_WARN_PCT = 70;
+export const USAGE_DANGER_PCT = 85;
+
+/** 占用百分比 → 档位（纯函数，单测直测）。档位驱动三档变色（CSS 语义 token 映射）
+ * 与浮层进度条 fill 色。 */
+export function contextUsageLevel(pct: number): "ok" | "warn" | "danger" {
+  if (pct > USAGE_DANGER_PCT) return "danger";
+  if (pct > USAGE_WARN_PCT) return "warn";
+  return "ok";
+}
+
+/** 环形仪表（spec 4.1-3）：弧 = 占用弧长（12 点起顺时针，stroke-dasharray），track =
+ * 全环软色；`stroke=currentColor` 继承档位色。环心刻意不放数字/图标——SVG 需随窄端
+ * 14px / 浮层 28px 双尺寸缩放，环心文字缩到不可读，百分比固定环外旁注（ZCode 同构）。 */
+export function ContextUsageRing({ pct }: { pct: number }) {
+  const radius = 8.25;
+  const circumference = 2 * Math.PI * radius;
+  const filled = Math.min(pct, 100);
   return (
-    <span
-      aria-label={t("claude.composer.contextUsageLabel")}
-      className="inline-flex select-none items-center text-[0.65rem] font-medium tabular-nums text-on-surface-soft"
-    >
-      {formatContextTokens(contextTokens)}
-    </span>
+    <svg aria-hidden="true" className="u-ring" viewBox="0 0 22 22">
+      <circle className="u-ring-track" cx="11" cy="11" r={radius} />
+      {/* filled=0 不渲染弧：round linecap 对零长 dash 仍画出一个档色残点。 */}
+      {filled > 0 ? (
+        <circle
+          className="u-ring-arc"
+          cx="11"
+          cy="11"
+          r={radius}
+          strokeDasharray={`${(filled / 100) * circumference} ${circumference}`}
+          transform="rotate(-90 11 11)"
+        />
+      ) : null}
+    </svg>
+  );
+}
+
+/** 上下文占用指示（统一会话标量管道第一个标量的显示端）。环形仪表 trigger + 族A
+ * 锚定浮层（进度条 + 已用/窗口上限 + 明细四行）。无 usage 数据（未有 assistant 消息）
+ * 不渲染。**布局交调用方**：本组件不带 ml-auto——.send2 也是 margin-left:auto，两个
+ * auto margin 会均分剩余空间把本组件推到正中；「右组」由调用方把本组件与 Stop/Send
+ * 同包一个 ml-auto 容器实现（容器内无剩余空间，.send2 的 auto 归零）。 */
+export function ContextUsageIndicator({ contextUsage }: { contextUsage?: ClaudeContextUsage }) {
+  const { t } = useT();
+  if (!contextUsage || contextUsage.contextWindow <= 0) return null;
+  const pct = (contextUsage.contextTokens / contextUsage.contextWindow) * 100;
+  const level = contextUsageLevel(pct);
+  const pctLabel = `${Math.round(pct)}%`;
+  const rows: Array<[string, number]> = [
+    [t("claude.composer.contextUsageInput"), contextUsage.inputTokens],
+    [t("claude.composer.contextUsageCacheRead"), contextUsage.cacheReadTokens],
+    [t("claude.composer.contextUsageCacheWrite"), contextUsage.cacheCreationTokens],
+    [t("claude.composer.contextUsageOutput"), contextUsage.outputTokens],
+  ];
+  return (
+    <>
+      <Popover>
+        <PopoverTrigger asChild>
+          <SelectorTrigger
+            accent="usage"
+            aria-label={`${t("claude.composer.contextUsageLabel")} ${pctLabel}`}
+            badge={<ContextUsageRing pct={pct} />}
+            level={level}
+          >
+            {pctLabel}
+          </SelectorTrigger>
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          className={`u-pop u-lvl-${level}`}
+          // 关闭不回焦 trigger（frontend-notes §33）：Radix 默认程序化回焦 × WebKit 对
+          // tap 后脚本 focus 仍判 :focus-visible → iOS PWA 关浮层后 pill 出系统蓝环；
+          // 移动端无键盘焦点诉求，结构性免疫引擎分歧。
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          side="top"
+        >
+          <div className="flex items-center gap-2">
+            <ContextUsageRing pct={pct} />
+            <span className="text-sm font-semibold tabular-nums text-ink-1">{pctLabel}</span>
+            <span className="ml-auto text-xs tabular-nums text-ink-2">
+              {formatContextTokens(contextUsage.contextTokens)} /{" "}
+              {formatContextTokens(contextUsage.contextWindow)}
+            </span>
+          </div>
+          <div className="u-bar">
+            <div className="u-bar-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
+          </div>
+          <div className="u-rows">
+            {rows.map(([label, value]) => (
+              <div className="u-row" key={label}>
+                <span>{label}</span>
+                <span className="u-row-val">{formatContextTokens(value)}</span>
+              </div>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }
 

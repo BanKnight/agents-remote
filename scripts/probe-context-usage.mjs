@@ -1,7 +1,8 @@
-// 探针:上下文占用标量管道(统一会话标量管道 P0,2026-10-14)。验证浏览器真实链路:
-// 1 live context_usage 帧到达 → composer 控制行出现 token 显示、帧更新数值随之变;
-// 2 断开重连 → seed_init.contextTokens 恢复显示(回放恢复面);
-// 3 幂等值不重复渲染(DOM 文本与标量一致)。
+// 探针:上下文占用指示(v1.6 环形仪表重做批,2026-10-14)。验证浏览器真实链路:
+// 1 live context_usage 帧(明细全字段)到达 → 控制行出现环形仪表 trigger + 百分比 + 档位;
+// 2 danger 帧触发 lvl-danger 三档变色;
+// 3 点开浮层:进度条宽度 = 占用比 + 汇总(已用/窗口) + 明细四行;
+// 4 断开重连 → seed_init.contextUsage 恢复百分比与档位(回放恢复面)。
 // 密码由脚本自读,不进 agent 上下文。用法:bun scripts/probe-context-usage.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
@@ -107,20 +108,48 @@ try {
       send({ type: "history_end" });
       send({ type: "live_start", count: 0 });
       send({ type: "live_end" });
-      // live 阶段推两帧 context_usage:31.3k → 40.2k(随 assistant usage 折算)。
+      // live 阶段推帧 context_usage(明细全字段,随 assistant usage 折算):
+      // 31324/200000 = 15.7% → 16% ok 档 → 172000/200000 = 86% danger 档。
+      const frame = (
+        contextTokens,
+        inputTokens,
+        cacheCreationTokens,
+        cacheReadTokens,
+        outputTokens,
+      ) => ({
+        type: "system",
+        subtype: "context_usage",
+        contextTokens,
+        inputTokens,
+        cacheCreationTokens,
+        cacheReadTokens,
+        outputTokens,
+        contextWindow: 200000,
+      });
       setTimeout(() => {
-        send({ type: "system", subtype: "context_usage", contextTokens: 31324 });
+        send(frame(31324, 30079, 1200, 45, 333));
         setTimeout(() => {
-          send({ type: "system", subtype: "context_usage", contextTokens: 40200 });
+          send(frame(172000, 100000, 20000, 51000, 1000));
           // 数值断言窗口过后断开,触发连接 2(seed 恢复面)。
           setTimeout(() => ws.close({ code: 1000, reason: "server restart" }), 600);
         }, 600);
       }, 400);
       return;
     }
-    // 连接 2:seed_init 带 contextTokens 恢复(回放路径)。
+    // 连接 2:seed_init.contextUsage 带明细对象恢复(回放路径)。178000/200000 = 89%。
     send({ type: "session_init", resume: true, replay: "full" });
-    send({ type: "system", subtype: "seed_init", contextTokens: 55100 });
+    send({
+      type: "system",
+      subtype: "seed_init",
+      contextUsage: {
+        contextTokens: 178000,
+        inputTokens: 120000,
+        cacheCreationTokens: 20000,
+        cacheReadTokens: 38000,
+        outputTokens: 900,
+        contextWindow: 200000,
+      },
+    });
     send({ type: "history_start", count: 2 });
     send(userMsg("uuid-u1", "第一条提问"));
     send(assistantMsg("uuid-a1", "a1", "第一条回答"));
@@ -137,42 +166,114 @@ try {
   const turnLocator = page.locator("[data-turn-message-ids]");
   await turnLocator.first().waitFor({ state: "visible", timeout: 15000 });
 
-  // 显示位:composer 控制行的上下文指示(aria-label 定位,值在元素文本)。
-  const usage = page.locator(`span[aria-label="上下文占用"], span[aria-label="Context usage"]`);
+  // 显示位:composer 控制行的上下文占用指示(aria-label trigger 按钮,百分比在元素文本;
+  // 窄端 .iicn.usage / 宽端 .ipill.usage 双形态,任一可见)。
+  const usage = page.locator(
+    `button[aria-label^="上下文占用"], button[aria-label^="Context usage"]`,
+  );
 
   // ── 1 未有标量时不渲染 ──
   check("1 未有 context_usage 帧时不渲染指示", (await usage.count()) === 0);
 
-  // ── 2 第一帧 31324 → "31.3k" ──
+  // ── 2 首帧 31324/200k → "16%" ok 档(无 warn/danger class)──
   await usage.waitFor({ state: "visible", timeout: 5000 });
   const v1 = (await usage.textContent()) ?? "";
-  check("2 首帧折算显示 31.3k", v1.trim() === "31.3k", v1.trim());
+  const cls1 = await usage.evaluate((el) => el.innerHTML);
+  check(
+    "2 首帧显示 16% + ok 档(无 lvl-warn/lvl-danger)",
+    v1.includes("16%") && !cls1.includes("lvl-warn") && !cls1.includes("lvl-danger"),
+    v1.trim(),
+  );
 
-  // ── 3 第二帧 40200 → "40.2k"(标量随帧更新)──
+  // ── 3 danger 帧 172000/200k → "86%" + lvl-danger(三档变色)──
   await page.waitForFunction(
-    (expected) => {
+    () => {
       const el = document.querySelector(
-        `span[aria-label="上下文占用"], span[aria-label="Context usage"]`,
+        `button[aria-label^="上下文占用"], button[aria-label^="Context usage"]`,
       );
-      return el?.textContent?.trim() === expected;
+      return el?.querySelector(".lvl-danger") !== null;
     },
-    "40.2k",
     { timeout: 5000 },
   );
-  check("3 帧更新后显示 40.2k", true);
+  check("3 danger 档帧 86% + lvl-danger class", true);
 
-  // ── 4 重连:seed_init.contextTokens=55100 恢复 → "55.1k" ──
+  // ── 4 点开浮层:进度条 + 汇总 + 明细四行 ──
+  await usage.click();
+  const pop = page.locator(".u-pop");
+  await pop.waitFor({ state: "visible", timeout: 5000 });
+  const popText = (await pop.textContent()) ?? "";
+  const barOk = await pop.locator(".u-bar-fill").evaluate((el) => {
+    const w = parseFloat(getComputedStyle(el).width);
+    const track = el.parentElement.getBoundingClientRect().width;
+    return Math.abs(w / track - 0.86) < 0.02;
+  });
+  // 档位色接线：浮层容器挂 u-lvl-*，环弧/进度条 fill 的 currentColor 继承容器档位色
+  //（P1 回归锁——computed 是 rgb() 形态而 token 原值是 hex，逐处一致性对比而非字面比较；
+  // 另对照 track 是 --sep 中性色，证明 fill 不是默认继承）。
+  const lvlWired = await pop.evaluate((el) => {
+    if (!el.className.includes("u-lvl-danger")) return false;
+    const c = getComputedStyle(el).color;
+    const fill = getComputedStyle(el.querySelector(".u-bar-fill")).backgroundColor;
+    const arc = getComputedStyle(el.querySelector(".u-ring-arc")).stroke;
+    const track = getComputedStyle(el.querySelector(".u-ring-track")).stroke;
+    return c === fill && fill === arc && fill !== track;
+  });
+  check(
+    "4 浮层明细(进度条 86% + 汇总 172k/200k + 四行明细)",
+    popText.includes("172k / 200k") &&
+      ["输入", "Input"].some((k) => popText.includes(k)) &&
+      ["缓存读", "Cache read"].some((k) => popText.includes(k)) &&
+      ["缓存写", "Cache write"].some((k) => popText.includes(k)) &&
+      ["本轮输出", "This turn"].some((k) => popText.includes(k)) &&
+      barOk &&
+      lvlWired,
+    popText.slice(0, 120),
+  );
+  await page.keyboard.press("Escape");
+
+  // ── 5 重连:seed_init.contextUsage 恢复 89% danger 档 ──
   await page.waitForFunction(
-    (expected) => {
+    () => {
       const el = document.querySelector(
-        `span[aria-label="上下文占用"], span[aria-label="Context usage"]`,
+        `button[aria-label^="上下文占用"], button[aria-label^="Context usage"]`,
       );
-      return el?.textContent?.trim() === expected;
+      const txt = el?.textContent ?? "";
+      return txt.includes("89%") && el?.querySelector(".lvl-danger") !== null;
     },
-    "55.1k",
     { timeout: 10000 },
   );
-  check("4 重连后 seed_init 恢复 55.1k", true);
+  check("5 重连后 seed_init 恢复 89% danger", true);
+
+  // ── 6 右组几何(spec 4.1-3「UI 平衡偏右」):输入触发 Send 后,usage trigger 落在
+  // 卡片右半(左缘 > 卡片中点)且紧贴 send2(间距 = 右组 gap 8px)——防两个 auto margin
+  // 均分剩余空间把 usage 推回正中的回归。 ──
+  const composerBox = page.locator("form textarea, [data-slot] textarea").first();
+  await composerBox.fill("hi");
+  await page.waitForFunction(() => document.querySelector(".send2") !== null, { timeout: 5000 });
+  const geo = await page.evaluate(() => {
+    const btn = document.querySelector(
+      `button[aria-label^="上下文占用"], button[aria-label^="Context usage"]`,
+    );
+    const send = document.querySelector(".send2");
+    if (!btn || !send) return null;
+    const card = btn.closest("form") ?? btn.closest("[class*='composer']") ?? btn.parentElement;
+    const b = btn.getBoundingClientRect();
+    const sd = send.getBoundingClientRect();
+    return {
+      left: b.left,
+      right: b.right,
+      sendLeft: sd.left,
+      cardMid: card
+        ? card.getBoundingClientRect().left + card.getBoundingClientRect().width / 2
+        : 0,
+      gap: sd.left - b.right,
+    };
+  });
+  check(
+    "6 右组几何:usage 偏右(左缘>卡片中点) + 紧贴 send2(gap≈8px)",
+    geo !== null && geo.left > geo.cardMid && Math.abs(geo.gap - 8) < 2,
+    JSON.stringify(geo),
+  );
 
   console.log(`\n${pass} pass, ${fail} fail`);
   process.exitCode = fail === 0 ? 0 : 1;

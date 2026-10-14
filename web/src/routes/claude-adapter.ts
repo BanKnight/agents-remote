@@ -2,6 +2,8 @@ import { createContext, useCallback, useEffect, useMemo, useRef, useState } from
 import type { ExternalStoreAdapter, AppendMessage, ThreadMessageLike } from "@assistant-ui/react";
 import type {
   ClaudeAttachment,
+  ClaudeContextUsage,
+  ClaudeContextUsageChanged,
   ClaudeControlResponse,
   ClaudeQueueOperation,
   ClaudeUserImageBlock,
@@ -2649,13 +2651,13 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       // value.
       if (subtype === "init") continue;
 
-      // seed_init: replay-time scalar seed (model / permissionMode / contextTokens).
+      // seed_init: replay-time scalar seed (model / permissionMode / contextUsage).
       // Same as init — folded by applyMessageScalarState and shown in the session
       // header. No bubble.
       if (subtype === "seed_init") continue;
 
       // context_usage: 服务端合成的上下文规模标量广播,标量由
-      // applyMessageScalarState 折算(contextTokens),不产聊天气泡、不落 fallback。
+      // applyMessageScalarState 折算(contextUsage),不产聊天气泡、不落 fallback。
       if (subtype === "context_usage") continue;
 
       // turn_duration: turn-end stats (durationMs + token budget). Pure display
@@ -3909,7 +3911,7 @@ export function useClaudeSession(
       }
 
       // system.seed_init: scalar seed injected on replay. Carries only
-      // model/permissionMode/contextTokens (tools/skills/mcp come from the REST
+      // model/permissionMode/contextUsage (tools/skills/mcp come from the REST
       // catalog, not the seed). Distinct subtype from live system.init so this
       // folds scalar state without the full init payload.
       if (msg.type === "system" && sm.subtype === "seed_init") {
@@ -3917,7 +3919,7 @@ export function useClaudeSession(
           model?: string;
           modelAlias?: string;
           permissionMode?: string;
-          contextTokens?: number;
+          contextUsage?: ClaudeContextUsage;
         };
         // currentModel 只收 alias（REST 种子 / seed_init / switchModel / typed set-echo），
         // 优先 seed.modelAlias（服务端始终 alias 语义）；system.init 的 concrete model 不进
@@ -3926,16 +3928,26 @@ export function useClaudeSession(
         if (seed.modelAlias ?? seed.model) setCurrentModel(seed.modelAlias ?? seed.model);
         if (seed.model) setResolvedModel(seed.model);
         if (seed.permissionMode) setPermissionMode(seed.permissionMode);
-        if (seed.contextTokens !== undefined) setContextTokens(seed.contextTokens);
+        if (seed.contextUsage) setContextUsage(seed.contextUsage);
         return;
       }
 
-      // system.context_usage: 服务端合成的上下文规模标量广播（broadcast-only，
-      // 不进 liveLines/history——持久值由 seed_init.contextTokens 回放恢复）。
+      // system.context_usage: 服务端合成的上下文占用明细标量广播（broadcast-only，
+      // 不进 liveLines/history——持久值由 seed_init.contextUsage 回放恢复）。
       // scalar-only：折标量即 return，不产渲染 item。
       if (msg.type === "system" && sm.subtype === "context_usage") {
-        const frame = msg as { contextTokens?: number };
-        if (frame.contextTokens !== undefined) setContextTokens(frame.contextTokens);
+        const frame = msg as ClaudeContextUsageChanged;
+        // 字段守卫（对齐 seed path 的 if (seed.contextUsage)）：缺字段会让
+        // pct = NaN 渲染进环弧 dasharray 与百分比文本。
+        if (frame.contextTokens === undefined || frame.contextWindow === undefined) return;
+        setContextUsage({
+          contextTokens: frame.contextTokens,
+          inputTokens: frame.inputTokens,
+          cacheCreationTokens: frame.cacheCreationTokens,
+          cacheReadTokens: frame.cacheReadTokens,
+          outputTokens: frame.outputTokens,
+          contextWindow: frame.contextWindow,
+        });
         return;
       }
 
@@ -4262,9 +4274,9 @@ export function useClaudeSession(
   const [resolvedModel, setResolvedModel] = useState<string | undefined>(initialModel);
   const [modelSwitchVersion, setModelSwitchVersion] = useState(0);
   const [permissionMode, setPermissionMode] = useState<string | undefined>(initialPermissionMode);
-  // 上下文规模标量（统一会话标量管道第一个标量）：live 靠 context_usage 帧、
-  // 回放靠 seed_init.contextTokens 恢复；均为 broadcast-only 标量，无渲染 item。
-  const [contextTokens, setContextTokens] = useState<number | undefined>();
+  // 上下文占用明细标量（统一会话标量管道第一个标量）：live 靠 context_usage 帧、
+  // 回放靠 seed_init.contextUsage 恢复；均为 broadcast-only 标量，无渲染 item。
+  const [contextUsage, setContextUsage] = useState<ClaudeContextUsage | undefined>();
   // opusplanActive: whether currentModel is the opusplan alias. Derived purely
   // from currentModel (effect below) — no network probe.
   const [opusplanActive, setOpusplanActive] = useState<boolean | undefined>();
@@ -5107,7 +5119,7 @@ export function useClaudeSession(
     modelSwitchVersion,
     opusplanActive,
     permissionMode,
-    contextTokens,
+    contextUsage,
     aiTitle,
     agentName,
     loading,

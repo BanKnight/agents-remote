@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatContextTokens } from "./composer-controls";
+import { contextUsageLevel, formatContextTokens } from "./composer-controls";
 
 // 上下文占用标量的显示格式纯函数（统一会话标量管道显示端）。标量折算/回放恢复
 // 属 applyMessageScalarState（hook 内 useState），由 normalizeChatStream scalar-only
@@ -25,5 +25,25 @@ describe("formatContextTokens", () => {
   test("≥1M 一位小数 M", () => {
     expect(formatContextTokens(1000000)).toBe("1.0M");
     expect(formatContextTokens(1536000)).toBe("1.5M");
+  });
+});
+
+// 三档阈值契约（spec 4.1-3 拍板：≤70 正常 / >70 警告 / >85 危险）。档位驱动
+// .iicn/.ipill usage 变体与浮层的三档变色（CSS 语义 token 映射）。
+describe("contextUsageLevel", () => {
+  test("≤70% ok", () => {
+    expect(contextUsageLevel(0)).toBe("ok");
+    expect(contextUsageLevel(15.7)).toBe("ok");
+    expect(contextUsageLevel(70)).toBe("ok");
+  });
+
+  test(">70% 且 ≤85% warn", () => {
+    expect(contextUsageLevel(70.1)).toBe("warn");
+    expect(contextUsageLevel(85)).toBe("warn");
+  });
+
+  test(">85% danger", () => {
+    expect(contextUsageLevel(85.1)).toBe("danger");
+    expect(contextUsageLevel(100)).toBe("danger");
   });
 });

@@ -1630,20 +1630,33 @@ export type ClaudeSystemInit = {
 // and client render both treat it as a non-init system message: it folds scalars via
 // a dedicated seed_init branch and is never rendered (model / permissionMode surface
 // in the session header).
+// 会话上下文占用量明细（统一会话标量管道第一个标量）。contextTokens = input +
+// cache_creation + cache_read（CLI assistant usage 折算口径，即实际占用窗口的量）；
+// outputTokens = 最后一条 assistant 消息的本轮输出（不计入占用，仅明细展示）；
+// contextWindow = 窗口上限（api spawn 时从 resolved model ID 的 [1m] 后缀判定，
+// 前端不自行派生——模型切换/1M 切换后由 api 侧重算随帧纠正）。
+export type ClaudeContextUsage = {
+  contextTokens: number;
+  inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  outputTokens: number;
+  contextWindow: number;
+};
+
 export type ClaudeSeedInit = {
   type: "system";
   subtype: "seed_init";
   model?: string;
   permissionMode?: string;
-  // 会话标量：当前上下文 token 规模（最后一条 assistant 消息的
-  // input + cache_creation + cache_read）。与 model/permissionMode 同族——
-  // live 期间经 captureUsageFromLine 折叠进 proc state，这里随 seed 回放恢复。
-  contextTokens?: number;
+  // 会话标量：上下文占用量明细。与 model/permissionMode 同族——live 期间经
+  // captureUsageFromLine 折叠进 proc state，这里随 seed 回放恢复全字段。
+  contextUsage?: ClaudeContextUsage;
 };
 
 // Server-synthesized context-usage scalar update. Broadcast-only via
 // relay.injectLine (never buffered into liveLines/history): the durable value
-// lives in proc state and re-enters replay through the seed_init contextTokens
+// lives in proc state and re-enters replay through the seed_init contextUsage
 // field, so buffering the frame would double-carry the same scalar. Emitted on
 // each assistant message that moves the folded value. First scalar on the
 // 统一会话标量管道 (采集层 → api 标量 → WS 单管道 → 前端统一组件)；后续
@@ -1651,8 +1664,7 @@ export type ClaudeSeedInit = {
 export type ClaudeContextUsageChanged = {
   type: "system";
   subtype: "context_usage";
-  contextTokens: number;
-};
+} & ClaudeContextUsage;
 
 // Server-synthesized notification that the skill/slash catalog changed (e.g. after
 // /reload-skills succeeded). Broadcast-only — never buffered into liveLines/history
