@@ -205,9 +205,11 @@ async function probe(browser, label, contextOptions, isMac) {
     console.log(
       `D3 Mac Cmd+Enter 换行: ${d3 ? "PASS" : "FAIL"} (value=${JSON.stringify(desktopMac.cmdEnter?.value)}, defaultPrevented=${desktopMac.cmdEnter?.lastKey?.defaultPrevented})`,
     );
-    // D4: 桌面无 Send 按钮（Enter=发送，isCoarsePointer=false → showSend=false）。
-    const d4 = desktop.sendCount === 0;
-    console.log(`D4 桌面无 Send 按钮: ${d4 ? "PASS" : "FAIL"} (sendCount=${desktop.sendCount})`);
+    // D4: 桌面有输入即显示 Send（发送按钮两端统一 2026-10-14：不做桌面/移动两套规则）。
+    const d4 = desktop.sendCount === 1;
+    console.log(
+      `D4 桌面有输入时 Send 在（按钮两端统一）: ${d4 ? "PASS" : "FAIL"} (sendCount=${desktop.sendCount})`,
+    );
 
     // M1: 移动 plain Enter 换行（回归保护）。
     const m1 = mobile.plainEnter.value.includes("\n");
@@ -225,10 +227,10 @@ async function probe(browser, label, contextOptions, isMac) {
     console.log(
       `C1 误报触屏宽屏台式机 plain Enter 不换行(=发送): ${c1 ? "PASS" : "FAIL"} (coarse=${coarseDesktop.coarse}, value=${JSON.stringify(coarseDesktop.plainEnter.value)}, formSubmit=${coarseDesktop.plainEnter.formSubmitFired})`,
     );
-    // C2: 该环境无 ↑ Send 按钮（判为桌面 → showSend=false）。
-    const c2 = coarseDesktop.sendCount === 0;
+    // C2: 该环境同样显示 Send（按钮两端统一后按宽度不再区分，仅 Enter 行为仍分族）。
+    const c2 = coarseDesktop.sendCount === 1;
     console.log(
-      `C2 误报触屏宽屏台式机无 Send 按钮: ${c2 ? "PASS" : "FAIL"} (coarse=${coarseDesktop.coarse}, sendCount=${coarseDesktop.sendCount})`,
+      `C2 误报触屏宽屏台式机 Send 在（按钮两端统一）: ${c2 ? "PASS" : "FAIL"} (coarse=${coarseDesktop.coarse}, sendCount=${coarseDesktop.sendCount})`,
     );
 
     const allPass = d1 && d2 && d3 && d4 && m1 && m2 && c1 && c2;

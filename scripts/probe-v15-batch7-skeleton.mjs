@@ -321,6 +321,25 @@ function seedTwoAgents(socket) {
     );
     ok(afterReload === 0, `P1-12 reload 后收起态保持（textarea count ${afterReload}）`);
 
+    // xterm 滚动条隐藏守卫（2026-10-14 真机反馈「终端区域出现滚动条，明显不应该」）：
+    // 滚动条真身 = xterm 6 内置 vscode 浮层滚动条（.xterm-scrollable-element > .scrollbar，
+    // scrollback 有滚动量时 slider 浮现）+ .xterm-viewport 原生条（Linux/Win 经典滚动条环境）。
+    // 本项目滚动语义 = 滚轮/触摸全走 tmux copy-mode（frontend-notes §6），本地滚动条是纯
+    // 视觉噪音 → v2-primitives 终端段 CSS 双隐藏。mock 环境即可断言 computed。
+    const sbGuard = await p1.evaluate(() => {
+      const bar = document.querySelector(".xterm .xterm-scrollable-element > .scrollbar");
+      const vp = document.querySelector(".xterm-viewport");
+      if (!bar || !vp) return { bar: "missing", sbw: "missing" };
+      return {
+        bar: getComputedStyle(bar).display,
+        sbw: getComputedStyle(vp).scrollbarWidth,
+      };
+    });
+    ok(
+      sbGuard.bar === "none" && sbGuard.sbw === "none",
+      `P1-12b xterm 滚动条隐藏（scrollbar display=${sbGuard.bar} / viewport scrollbar-width=${sbGuard.sbw}）`,
+    );
+
     // agent（codex 形态）默认展开（分族语义：spec 只约束终端默认收起；agent 档默认 false
     // 与旧行为一致）。codex 会话复用同一 mock 域。
     await p1.goto(`${ORIGIN}/projects/proj1/session/agent_b7-2`);

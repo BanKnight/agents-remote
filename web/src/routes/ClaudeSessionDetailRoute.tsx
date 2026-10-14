@@ -3656,11 +3656,13 @@ function ComposerWithInterrupt({
   const attachmentCount = attachments.attachments.length;
   const hasUploadingAttachment = attachments.attachments.some((a) => a.status === "uploading");
   const hasInput = !isEmpty || attachmentCount > 0;
-  // 卡片内底行 Stop/Send 互斥占同一槽位（ml-auto 右对齐），Send 覆盖 Stop——有 Send 时（移动模式有
-  // 输入）不显示 Stop。Send 仅移动模式（hasInput && isMobileComposer）；Stop 在 Send 未占用时显示
-  //（running && !showSend）——桌面无 Send，running 总显示 Stop（零回归）。底行恒渲染 → textarea
-  // 上方位置稳定不跳变。断开时 Send 隐藏（不可发送），Stop 仍可（interrupt 走 sendToSocket 自带兜底）。
-  const showSend = hasInput && isMobileComposer && !inputDisabled;
+  // 卡片内底行 Stop/Send 互斥占同一槽位（ml-auto 右对齐），Send 覆盖 Stop——有 Send 时（有
+  // 输入）不显示 Stop。发送按钮规则两端统一（2026-10-14 真机反馈「不做两套规则，和移动端
+  // 共享一套」）：桌面/移动都是 hasInput && !inputDisabled 即显示（此前桌面恒无 Send、仅移动
+  // 显式 Send）。Stop 在 Send 未占用时显示（running && !showSend）：running 且输入框有草稿时
+  // Send 压过 Stop（与移动端同规则）。底行恒渲染 → textarea 上方位置稳定不跳变。断开时 Send
+  // 隐藏（不可发送），Stop 仍可（interrupt 走 sendToSocket 自带兜底）。
+  const showSend = hasInput && !inputDisabled;
   const showStop = running && !!onCancel && !blocked && !showSend;
 
   // 统一发送入口（两条路径共用：桌面 Enter / 卡片内 Send 钮）：

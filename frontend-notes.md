@@ -339,3 +339,13 @@
 **标准做法**：①**命中区 ⊇ 视觉**：要么把真实盒做到目标尺寸（本批定案 22×56 实底小舌——初拍 44×56 命中=视觉后经真机复核「宽度太离谱，至少剪一半」；44px 是 HIG 档但宽度以用户真机复核为准），要么扩区只朝**内侧**（内容侧）——贴容器边缘时外侧必被裁；②验收断言用 `elementFromPoint` 采样**实际命中**（四边中点全命中自身 + 框外若干 px 不命中），不能只读 `getBoundingClientRect`（rect 证的是盒、不是可点区）；③icon 按钮（如 `.clps`）用「容器式热区」：button 尺寸走 utilities（`h-5 w-5`）+ 内嵌小图标（消费方 CSS 定尺寸，§15⑤），裸文字字形（无 padding 的 span/button）可点区=字形宽，是伪钮；④hover 反馈以 computed 实测为准，与常态同物化即视为无反馈（换 `hover:bg-on-surface/5`）。
 
 **来源**：commit 桌面三栏可点性批（RailButton 22×56 + `.clps` 图标化 20×20 热区）；与 §7（点击区口径 touch variant）、§30（auto-placement 塌缩同样靠命中栈实锤）同族。
+
+## 32. xterm 6 滚动条真身是内置 vscode 浮层滚动条：`.xterm-viewport` 不是滚动发生地
+
+**现象**（2026-10-14 真机反馈「terminal 很容易出现上下滚动条，折叠 composer 使屏幕变化后不出现」）：终端输出区出现纵向滚动条；初步归因到 composer 输入框的 sub-pixel 行高（前批）被诊断实证**否定**。诊断探针量 `.xterm-viewport` 滚动量恒 0、`.xterm-rows`/`.xterm-scroll-area` 均不存在——按旧版 xterm DOM 找滚动机制全部扑空。
+
+**机制**：xterm 6 重构了滚动——DOM 是 `.xterm > .xterm-viewport（遗留层，内部空）+ .xterm-scrollable-element（vscode ScrollableElement 移植，真实滚动发生地）+ canvas`；滚动条 = **内置浮层 `.scrollbar.vertical > .slider`**（有滚动量时浮现，slider 背景色由 xterm **运行时注入 `<style>`**（theme scrollbarSliderBackground），非 xterm.css 静态规则）。`.xterm-viewport` 的 `overflow-y: scroll` 只是遗留（overlay 滚动条环境不可见）。「折叠 composer 后消失」= 区域变高 → customFit rows 变多 → 消化少量 scrollback 溢出 → 滚动量归 0（数值巧合不稳定，scrollback 多时仍会出）。
+
+**标准做法**：①**量对元素**——xterm 6 滚动几何量 `.xterm-scrollable-element`（clientHeight/scrollHeight），别量 `.xterm-viewport`（恒等于容器）；②隐藏指示器 = `.xterm .xterm-scrollable-element > .scrollbar { display: none }`（与注入 style 的 slider background 是**不同属性，无源序竞争**——注入 style 永远在文档最后，同属性 CSS 对抗必输）+ `.xterm-viewport` `scrollbar-width: none` / `::-webkit-scrollbar` none（Linux/Win 经典滚动条环境兜底）；③内部滚动机制不动（overflow-y 保持，非 mouse-mode 滚轮兜底仍在）。本项目语义：滚轮/触摸全走 tmux copy-mode（§6），本地 buffer 滚动条纯视觉噪音。守卫：probe-v15-batch7-skeleton P1-12b（computed display/scrollbar-width）。
+
+**来源**：2026-10-14 终端滚动条批（v2-primitives 终端段 + `_diag-xterm-scrollbar.mjs` 一次性诊断：se roll=128px / slider 14×89 → 修复后 rect=0×0）；与 §6（tmux copy-mode 滚动语义）同链。

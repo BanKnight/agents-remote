@@ -1278,9 +1278,9 @@ function SessionInputDrawer({
                     自动增高（折行也增长，批 12 反馈③——旧实现按显式换行计 rows 不折行），
                     min-h 基线 [2.5rem] / 宽端 sm:[4.5rem] 与 agent 逐字同款；max-h-32 封顶
                     （128px，CSS max/min-height 胜 inline height）后内容滚动。行高走 text-sm
-                    捆绑（整数 20px）——原 leading-[1.35]（18.9px 非整数）是输入框 1px 级
-                    滚动量的首要嫌疑（真机反馈 2026-10-14「易出上下滚动条、折叠再展开即消」；
-                    agent 侧整数行高无此现象），随批对齐消除。 */}
+                    捆绑（整数 20px）——18.9px 非整数行高（原 leading-[1.35]）与 agent 不一致，
+                    2026-10-14 随批对齐（口径统一，非滚动条修复：真机「终端区域滚动条」后经
+                    诊断实证为 xterm 内置滚动条，见 v2-primitives 终端段隐藏规则注释）。 */}
                 <TextareaAutosize
                   autoCapitalize="none"
                   autoComplete="off"

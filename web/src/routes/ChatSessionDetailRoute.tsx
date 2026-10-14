@@ -196,7 +196,10 @@ function ComposerWithInterruptPi({
   const inputDisabled = disconnected;
   const running = isRunning;
   const hasInput = !isEmpty;
-  const showSend = hasInput && isMobileComposer && !inputDisabled;
+  // 发送按钮规则两端统一（2026-10-14 真机反馈「不做两套规则，和移动端共享一套」）：此前
+  // 仅移动模式显式 Send（hasInput && isMobileComposer），桌面恒无。isMobileComposer 仍驱动
+  // Enter 键行为分族（下方 onKeyDown），按钮规则不再分族。
+  const showSend = hasInput && !inputDisabled;
   const showStop = running && !disconnected && !showSend && !!onCancel;
 
   const handleFiles = (files: FileList | null) => {

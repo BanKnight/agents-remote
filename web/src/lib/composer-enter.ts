@@ -4,11 +4,11 @@ import { useState } from "react";
 // workbench 桌面布局同用 min-width:1024px（见 web/src/routes/workbench-model.ts）。
 export const COMPOSER_DESKTOP_MIN_WIDTH_PX = 1024;
 
-// 是否走「移动 composer 模式」（Enter 换行 + 卡片内显式 Send）。
+// 是否走「移动 composer 模式」（Enter 换行；发送按钮显隐已两端统一，不再由本判定驱动）。
 // 判定 = 触屏 **且** 窄屏。只看 `pointer: coarse` 不够：远程桌面 / 某些特殊环境会把
-// 非触屏的宽屏台式机误报成 coarse=true，导致 Enter 被当成移动软键盘换行、并冒出 Send 按钮。
-// 叠加「窄屏」后，宽屏台式机（无论 coarse 是否误报）恒为 false → 走桌面 Enter=发送、无 Send；
-// 真手机（触屏 + 窄屏）为 true → 保持 Enter 换行 + 显式 Send，移动端不回归。
+// 非触屏的宽屏台式机误报成 coarse=true，导致 Enter 被当成移动软键盘换行。
+// 叠加「窄屏」后，宽屏台式机（无论 coarse 是否误报）恒为 false → 走桌面 Enter=发送；
+// 真手机（触屏 + 窄屏）为 true → 保持 Enter 换行，移动端不回归。
 export function isMobileComposerMode(opts: { coarse: boolean; wide: boolean }): boolean {
   return opts.coarse && !opts.wide;
 }
@@ -48,8 +48,9 @@ export function insertNewlineAtCursor(
 /**
  * 移动 composer 模式 + 平台判定的 mount 时一次性快照（三 adapter composer 单源，此前
  * ClaudeSessionDetailRoute/ChatSessionDetailRoute(Pi)/AcpSessionDetailRoute 各自 useState
- * 四连逐字重复）。isMobileComposer 驱动「Enter 换行 + 卡片内显式 Send」；isMac 供桌面
- * Enter 键分支（Cmd+Enter 换行）。
+ * 四连逐字重复）。isMobileComposer 仅驱动 Enter 键行为分族（移动 Enter 换行 / 桌面
+ * Enter 发送）；发送按钮显隐已两端统一（hasInput && !inputDisabled），不再由它驱动。
+ * isMac 供桌面 Enter 键分支（Cmd+Enter 换行）。
  */
 export function useComposerEnterPolicy(): { isMac: boolean; isMobileComposer: boolean } {
   const [isMobileComposer] = useState(() => {

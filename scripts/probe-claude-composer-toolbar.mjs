@@ -111,18 +111,20 @@ async function probe(browser, label, contextOptions) {
   const sendCount = await sendBtn.count();
   console.log(`[${label}] focus+输入"hi"后 sendButton count = ${sendCount}`);
 
-  // 卡片内底行 selectors 计数：回退后 selectors 恒留卡片内底行（不再移出到外部工具栏）。
-  // 统计卡片边框 div 内（含 textarea）的 Model/Perm/Effort selector trigger 数。
+  // 卡片内底行 selectors 计数：selectors 恒留卡片内底行（不再移出到外部工具栏）。
+  // 统计卡片边框 div 内（含 textarea）的 Model/Perm/Effort selector + 附件菜单 trigger 数
+  // （批 8 附件双路径 565868e 在卡片内加了第 4 个 aria-haspopup，2026-10-14 校准口径 3→4）。
   const floatRoot = page.locator("[data-composer-float]");
   const cardBorder = floatRoot.locator("div.rounded-xl, .rounded-xl").first();
   const cardSelectorCount = await cardBorder
     .locator("button[aria-haspopup]")
     .count()
     .catch(() => 0);
-  console.log(`[${label}] 获焦后 卡片内 selector trigger 数 = ${cardSelectorCount}（3=留卡片内）`);
+  console.log(`[${label}] 获焦后 卡片内 selector trigger 数 = ${cardSelectorCount}（4=留卡片内）`);
 
   // .send2 几何在「输入态」测（send 可见时）；点 send 后输入清空 .send2 即 unmount，
-  // v14 段（点击后）只能拿到 null——desktop idle 无 Stop/Send，无 .send2 = 产品行为。
+  // v14 段（点击后）只能拿到 null。按钮两端统一（2026-10-14）后桌面输入态也有 .send2
+  // （走几何分支校验 28×28 r12）；null 兜底保留（发送清空后的 unmount 态）。
   const send2Box = await page
     .locator(".send2")
     .first()
@@ -290,10 +292,10 @@ async function probe(browser, label, contextOptions) {
     });
 
     console.log("\n=== 判定 ===");
-    // H3: 桌面 coarse=false 且输入后无独立 Send（桌面 Enter=发送，isCoarsePointer=false → showSend=false）
-    const h3 = desktop.coarse === false && desktop.sendCount === 0;
+    // H3: 桌面 coarse=false 且输入后有独立 Send（按钮两端统一 2026-10-14，宽度不再区分显隐）
+    const h3 = desktop.coarse === false && desktop.sendCount === 1;
     console.log(
-      `H3 桌面无独立 Send: ${h3 ? "PASS" : "FAIL"} (coarse=${desktop.coarse}, sendCount=${desktop.sendCount})`,
+      `H3 桌面有输入时 Send 在（按钮两端统一）: ${h3 ? "PASS" : "FAIL"} (coarse=${desktop.coarse}, sendCount=${desktop.sendCount})`,
     );
     // H2: mobile coarse=true 且 focus+输入后卡片内 sendButton 渲染（hasInput && isCoarsePointer → showSend）
     const h2 = mobile.coarse === true && mobile.sendCount === 1;
@@ -311,8 +313,9 @@ async function probe(browser, label, contextOptions) {
     console.log(
       `H1b 发送按钮出现不导致textarea跳变: ${h1b ? "PASS" : "FAIL"} (跳变=${mobile.jump.toFixed(1)}px)`,
     );
-    // H4: selectors 恒留卡片内底行（不再移出到外部工具栏）——3 个 selector trigger 在卡片边框内
-    const h4 = mobile.cardSelectorCount === 3;
+    // H4: selectors 恒留卡片内底行（不再移出到外部工具栏）——3 selector + 附件菜单 = 4 个
+    // trigger 在卡片边框内（批 8 附件双路径后校准，2026-10-14）。
+    const h4 = mobile.cardSelectorCount === 4;
     console.log(
       `H4 selectors 留卡片内: ${h4 ? "PASS" : "FAIL"} (卡片内selector=${mobile.cardSelectorCount})`,
     );

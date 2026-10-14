@@ -180,7 +180,7 @@ L3 深层详情（移动端顶部返回式；桌面 = 右栏对应分段）
 - **空态**（03h）：项目无实例 → 不渲染 pill 条，中央空态卡（主按钮新建 Agent）+ 项目工具仍可用；无任何项目 → 主按钮变「新建/采用项目」（08）。
 - **断线**（03i）：导航上方橙横幅（自动重连指数退避 + 立即重试）；pill/摘要/托盘全部冻结变灰**不销毁**；输入禁用；重连按缺口回放。
 - Chat/Pi（03g）：气泡式轻量对话；无审批/子 agent；长按 pill 置顶/重命名/关闭。
-- 终端（03f）：无模型 chips；上滑看历史 + 「↓ 实时」回底；tmux 断线内容不丢；无审批托盘。**输入框默认收起**（终端以输出为主、输入框不占常驻高度）：快捷键条常驻贴底（esc/ctrl/tab/方向键/管道点按即注入），右端「展开输入」钮唤出 composer（⚙ 键位自定义移入 composer 控制行；⇧回车发送；再点 ⇲ 收回；展开时快捷键条上移不消失）。**展开态 composer 宽高口径 = agent 家族同款（2026-10-14 真机反馈）**：内容组（快捷键条 + composer 卡）限宽 `max-w-2xl`（672px）居中，不再横跨全宽；textarea min-h 基线 `[2.5rem]`/宽端 `sm:[4.5rem]`、max-h-32 封顶、行高走 `text-sm` 捆绑（整数 20px）——原 `leading-[1.35]`（18.9px 非整数）是输入框 1px 级滚动量的首要嫌疑（「易出上下滚动条、折叠再展开即消」，agent 侧整数行高无此现象），随批对齐消除。
+- 终端（03f）：无模型 chips；上滑看历史 + 「↓ 实时」回底；tmux 断线内容不丢；无审批托盘。**输入框默认收起**（终端以输出为主、输入框不占常驻高度）：快捷键条常驻贴底（esc/ctrl/tab/方向键/管道点按即注入），右端「展开输入」钮唤出 composer（⚙ 键位自定义移入 composer 控制行；⇧回车发送；再点 ⇲ 收回；展开时快捷键条上移不消失）。**展开态 composer 宽高口径 = agent 家族同款（2026-10-14 真机反馈）**：内容组（快捷键条 + composer 卡）限宽 `max-w-2xl`（672px）居中，不再横跨全宽；textarea min-h 基线 `[2.5rem]`/宽端 `sm:[4.5rem]`、max-h-32 封顶、行高走 `text-sm` 捆绑（整数 20px）——原 `leading-[1.35]`（18.9px 非整数）与 agent 不一致，随批对齐（**归因修正 2026-10-14**：真机「上下滚动条」经诊断实证在**终端输出区**而非输入框，见下句）。**终端输出区滚动条隐藏（同日反馈「很明显不应该出现」）**：滚动条真身 = xterm 6 内置 vscode 浮层滚动条（`.xterm-scrollable-element > .scrollbar`，scrollback 有滚动量时 slider 浮现；折叠 composer 区域变高、rows 消化少量溢出才暂时消失——数值巧合非修复）；本项目滚动语义 = 滚轮/触摸全走 tmux copy-mode（frontend-notes §6），本地 buffer（scrollback 5000）滚动条为纯视觉噪音 → CSS 双隐藏（`.scrollbar` display:none + `.xterm-viewport` scrollbar-width:none / ::-webkit-scrollbar none，v2-primitives 终端段；内部滚动机制不动，非 mouse-mode 滚轮兜底保留）。
 
 ## 5. 浮层清单（容器规则：手机=sheet，桌面=Popover/Sheet/Alert，见 05d）
 

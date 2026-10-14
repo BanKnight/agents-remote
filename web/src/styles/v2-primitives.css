@@ -4196,6 +4196,24 @@
     border: 1px solid color-mix(in srgb, var(--c-primary) 55%, transparent);
     color: var(--c-primary);
   }
+  /* xterm 滚动条隐藏（真机反馈 2026-10-14「terminal 很容易出现上下滚动条……很明显不应该
+     出现」）：滚动条真身 = xterm 6 内置 vscode 浮层滚动条（.xterm-scrollable-element >
+     .scrollbar，scrollback 有滚动量时 slider 浮现；xterm 另运行时注入 <style> 只写
+     slider 的 background，display:none 与之不同属性、无源序竞争）。本项目滚动语义 =
+     滚轮/触摸全走 tmux copy-mode（frontend-notes §6），本地 buffer 滚动条是纯视觉噪音
+     ——输出积累超一屏即出现；折叠 composer 使区域变高、rows 消化少量溢出才暂时消失
+     （数值巧合不稳定）——隐藏指示器本身。.xterm-viewport 的原生 overflow 条
+     （Linux/Windows 经典滚动条环境）双保险一并隐藏（overflow-y: scroll 不动，xterm
+     非 mouse-mode 滚轮兜底仍在，只是无指示器）。 */
+  .xterm .xterm-scrollable-element > .scrollbar {
+    display: none;
+  }
+  .xterm .xterm-viewport {
+    scrollbar-width: none;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar {
+    display: none;
+  }
   /* 03d `.count` 取消/立即重试按钮组（r1 右侧）+ 蓝色主按钮。 */
   .count .btns {
     margin-left: auto;
