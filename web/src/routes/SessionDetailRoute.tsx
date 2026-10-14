@@ -1268,8 +1268,11 @@ function SessionInputDrawer({
         {!collapsed ? (
           <form className="mt-2" onSubmit={onSubmit}>
             {/* 空隙结构同构 agent composer（卡无 padding，空隙全在 textarea/底行自带
-                padding）——卡高与 agent 逐像素一致。 */}
-            <div className={`flex min-w-0 flex-col rounded-2xl ${shellSurfaceClasses.code}`}>
+                padding）——卡高与 agent 逐像素一致。卡形制（圆角 12/描边/浮起衬底/毛玻璃/
+                focus 边框亮起）= ClaudeSessionDetailRoute 卡骨架逐字同款（2026-10-14 用户
+                拍板「除快捷键条外全对齐 agent」，原 code 面描边 + rounded-2xl 退役）；
+                min-w-0 是窄面板防溢出的终端特有约束，保留。 */}
+            <div className="flex min-w-0 flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
               <div className="flex min-w-0 items-start gap-2">
                 <label className="sr-only" htmlFor="session-input">
                   {t("session.sendInput")}
@@ -1290,7 +1293,7 @@ function SessionInputDrawer({
                   autoComplete="off"
                   autoCorrect="off"
                   cacheMeasurements
-                  className="min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] min-w-0 flex-1 resize-none px-3.5 pt-2.5 pb-1 bg-transparent font-mono text-sm text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] min-w-0 flex-1 resize-none px-3.5 pt-2.5 pb-1 bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={!canSend}
                   id="session-input"
                   minRows={1}

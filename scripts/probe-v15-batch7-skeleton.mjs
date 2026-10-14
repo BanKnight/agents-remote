@@ -295,7 +295,10 @@ function seedTwoAgents(socket) {
       const row = document.querySelector("textarea#session-input")?.parentElement;
       return row?.textContent?.includes("$") ?? false;
     });
-    ok(hasDollar === false, "P1-7e itext 行无 $ 提示符（原型 itext 纯 mono）");
+    ok(
+      hasDollar === false,
+      "P1-7e itext 行无 $ 提示符（字体已随批对齐 agent sans，断言只查提示符）",
+    );
     ok(expandedGeom.qkeys >= 8, `P1-8 展开态快捷键条仍在（${expandedGeom.qkeys} 键，上移不消失）`);
     ok(
       expandedGeom.xbtnExpanded === "true" && expandedGeom.xbtnLabel === "收回输入",
