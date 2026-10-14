@@ -1,11 +1,15 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   buildSeedInitLine,
+  extractContextUsageFromControlResponse,
   extractContextUsageFromStdoutLine,
   extractModelFromStdoutLine,
   extractSkillReloadFromStdoutLine,
   buildSpawnEnv,
+  readLastContextUsageFromJsonlFile,
   resolveActivePresetCreds,
   resolveContextWindow,
   sanitizePersistedModel,
@@ -288,19 +292,34 @@ test("extractContextUsageFromStdoutLine folds usage input+cache_creation+cache_r
     cacheReadTokens: 45,
     outputTokens: 333,
   });
-  // 缺 cache 字段（旧 CLI / 非缓存路径）→ 按 0 折算。
+  // 缺 cache 字段（旧 CLI / 非缓存路径）→ 按 0 折算（阈值以上）。
   expect(
     extractContextUsageFromStdoutLine({
       type: "assistant",
-      message: { usage: { input_tokens: 500, output_tokens: 10 } },
+      message: { usage: { input_tokens: 5000, output_tokens: 10 } },
     }),
   ).toEqual({
-    contextTokens: 500,
-    inputTokens: 500,
+    contextTokens: 5000,
+    inputTokens: 5000,
     cacheCreationTokens: 0,
     cacheReadTokens: 0,
     outputTokens: 10,
   });
+  // 网关流式占位行（真实会话 JSONL 实证：chatcmpl-* 中间块带
+  // {input:1, output:1, cache:0}）→ 低于阈值丢弃，防「最后一条胜出」把标量拉成 0%。
+  expect(
+    extractContextUsageFromStdoutLine({
+      type: "assistant",
+      message: {
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+      },
+    }),
+  ).toBeUndefined();
   // 非 assistant 行 / 无 usage / 全零 → 均不产标量。
   expect(
     extractContextUsageFromStdoutLine({ type: "user", message: { usage: {} } }),
@@ -312,6 +331,74 @@ test("extractContextUsageFromStdoutLine folds usage input+cache_creation+cache_r
       message: { usage: { input_tokens: 0, output_tokens: 5 } },
     }),
   ).toBeUndefined();
+});
+
+test("extractContextUsageFromControlResponse folds authoritative totalTokens/maxTokens", () => {
+  // CLI 2.1.299 get_context_usage 应答实证形状（success envelope 内层 totalTokens /
+  // maxTokens；summary 不带 usage 明细，明细字段由调用方另行补齐）。
+  expect(
+    extractContextUsageFromControlResponse({
+      type: "control_response",
+      response: {
+        subtype: "success",
+        request_id: "ctx-usage-x",
+        response: { totalTokens: 94836, maxTokens: 230000, percentage: 41, model: "x" },
+      },
+    }),
+  ).toEqual({ contextTokens: 94836, contextWindow: 230000 });
+  // error 应答 / 缺字段 / 非 control_response → 均不产标量。
+  expect(
+    extractContextUsageFromControlResponse({
+      type: "control_response",
+      response: { subtype: "error", request_id: "ctx-usage-x" },
+    }),
+  ).toBeUndefined();
+  expect(
+    extractContextUsageFromControlResponse({
+      type: "control_response",
+      response: { subtype: "success", request_id: "x", response: { totalTokens: 100 } },
+    }),
+  ).toBeUndefined();
+  expect(extractContextUsageFromControlResponse({ type: "result" })).toBeUndefined();
+  expect(extractContextUsageFromControlResponse(null)).toBeUndefined();
+});
+
+test("readLastContextUsageFromJsonlFile takes last valid usage, skips placeholders/partial lines", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ctx-usage-jsonl-"));
+  try {
+    const filePath = join(dir, "session.jsonl");
+    // 真实会话 JSONL 形状：真实 usage 行与网关占位行（total=1）交错，最后可能是占位行；
+    // 尾窗边界可能切出半行（首行解析失败须跳过）。
+    const assistantLine = (usage: Record<string, number>) =>
+      `${JSON.stringify({ type: "assistant", message: { usage } })}\n`;
+    writeFileSync(
+      filePath,
+      [
+        `{"partial": trunca\n`, // 跨窗口边界半行（窗口 ≥ 文件大小时不可能出现，容忍即可）
+        assistantLine({ input_tokens: 3290, cache_read_input_tokens: 90752, output_tokens: 12 }),
+        assistantLine({
+          input_tokens: 1,
+          output_tokens: 1,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        }),
+      ].join(""),
+    );
+    expect(readLastContextUsageFromJsonlFile(filePath)).toEqual({
+      contextTokens: 94042,
+      inputTokens: 3290,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 90752,
+      outputTokens: 12,
+    });
+    // 只有占位行 → 无有效数据。
+    writeFileSync(filePath, assistantLine({ input_tokens: 1, output_tokens: 1 }));
+    expect(readLastContextUsageFromJsonlFile(filePath)).toBeUndefined();
+    // 文件缺失 → undefined。
+    expect(readLastContextUsageFromJsonlFile(join(dir, "missing.jsonl"))).toBeUndefined();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("buildSeedInitLine includes contextUsage and stays undefined without any scalar", () => {

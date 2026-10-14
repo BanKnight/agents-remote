@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
@@ -18,6 +20,7 @@ import {
 import { getAgentProviderProfile } from "./agent-provider-profiles";
 import { buildMcpInjectorForProvider } from "./mcp-injector";
 import { sanitizePersistedModel } from "./model-id";
+import { claudeJsonlPath } from "./session-routes";
 import { ClaudeAutoRetryWatch } from "./claude-auto-retry";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
@@ -149,6 +152,14 @@ export function extractSkillReloadFromStdoutLine(parsed: Record<string, unknown>
 // unit-testable (cf. extractModelFromStdoutLine); the live carrier is the
 // assistant stdout row (real new rows only — JSONL replay never reaches
 // processStdoutLine).
+// 网关占位 usage 的判定阈值：部分网关（chatcmpl-* 消息 ID）对每个 API 调用的流式
+// 中间消息（stop_reason 缺省的 thinking/tool_use/text 中间块）也带 usage，但是占位值
+// {input_tokens:1, output_tokens:1, cache_*:0}——真实 usage 只在收尾行。「最后一条
+// 胜出」的 capture 语义会被占位行拉成 0%（JSONL 实证：total=94042 真实行与 total=1
+// 占位行交错）。真实上下文至少是整条 system prompt（数千 token 起），阈值与占位值（1）
+// 隔开足够数量级。
+export const MIN_VALID_CONTEXT_TOKENS = 1000;
+
 export function extractContextUsageFromStdoutLine(
   parsed: Record<string, unknown> | null,
 ): Omit<ClaudeContextUsage, "contextWindow"> | undefined {
@@ -163,8 +174,9 @@ export function extractContextUsageFromStdoutLine(
     typeof usage.cache_read_input_tokens === "number" ? usage.cache_read_input_tokens : 0;
   const output = typeof usage.output_tokens === "number" ? usage.output_tokens : 0;
   const contextTokens = input + cacheCreation + cacheRead;
-  // 占用三项全 0（如纯输出占位行）不构成有效标量，维持「无数据不渲染」语义。
-  return contextTokens > 0
+  // 占用低于阈值（三项全 0 的纯输出占位行、网关流式中间行）不构成有效标量，丢弃
+  // 以维持「无数据不渲染」语义与真实值不被覆盖。
+  return contextTokens >= MIN_VALID_CONTEXT_TOKENS
     ? {
         contextTokens,
         inputTokens: input,
@@ -178,6 +190,78 @@ export function extractContextUsageFromStdoutLine(
 // 窗口上限档位（token）：resolved model ID 带 [1m] 后缀 ⇒ 1M，否则 200k。
 export const CONTEXT_WINDOW_DEFAULT = 200_000;
 export const CONTEXT_WINDOW_1M = 1_000_000;
+
+// JSONL 回填扫描的尾部窗口：usage 行（含长 text content）可达数十 KB，1MB 窗口
+// 保证一般情况下尾部必含多条完整 assistant 行；再早的历史轮次对本标量无意义。
+const JSONL_USAGE_TAIL_BYTES = 1024 * 1024;
+
+// Resume 恢复（seed_init.contextUsage）：contextUsage 是 live-only 折算标量，API 重启
+// 或 resume 重拉 CLI 后新 proc 没有它——会话明明有消息却不见指示，不合理。JSONL 是
+// 唯一权威源：从尾部往前找最后一条带有效 usage 的 assistant 行折算（与 live 提取共用
+// 同一函数，占位过滤同款生效——JSONL 里同样混有网关占位行）。读到即写回 proc state，
+// seed 随带恢复；下轮 live 由新帧接管。
+export function readLastContextUsageFromJsonl(
+  projectPath: string,
+  claudeSessionId: string,
+): Omit<ClaudeContextUsage, "contextWindow"> | undefined {
+  return readLastContextUsageFromJsonlFile(claudeJsonlPath(projectPath, claudeSessionId));
+}
+
+// 按路径的核心实现（claudeJsonlPath 绑定 homedir 不可注入，测试直接喂临时文件）。
+export function readLastContextUsageFromJsonlFile(
+  filePath: string,
+): Omit<ClaudeContextUsage, "contextWindow"> | undefined {
+  let fd: number | undefined;
+  try {
+    fd = openSync(filePath, "r");
+    const size = fstatSync(fd).size;
+    if (size === 0) return undefined;
+    // 位读尾窗，不整文件读入（长会话数百 MB 同步读会阻塞事件循环；同款反模式
+    // session-relay readLastCompactBlock 注释里又警告过）。
+    const readStart = Math.max(0, size - JSONL_USAGE_TAIL_BYTES);
+    const buf = Buffer.alloc(size - readStart);
+    const bytesRead = readSync(fd, buf, 0, buf.length, readStart);
+    const lines = buf.subarray(0, bytesRead).toString("utf8").split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const usage = extractContextUsageFromStdoutLine(JSON.parse(lines[i]));
+        if (usage) return usage;
+      } catch {
+        // skip malformed / 跨窗口边界的半行
+      }
+    }
+  } catch {
+    // JSONL 缺失/不可读（新会话尚未落盘等）——无恢复，维持 undefined
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+  return undefined;
+}
+
+// 控制请求等待超时：CLI 本地应答毫秒级；上限覆盖 turn 进行中排队等慢场景。
+const CONTEXT_USAGE_CONTROL_TIMEOUT_MS = 5000;
+
+// 权威上下文占用（control_request{get_context_usage} 应答折算，CLI 2.1.299+）：
+// totalTokens = CLI 自身 /context 口径的已用量（system prompt/tools/memory/messages
+// 合计），maxTokens = autocompact 感知的真实窗口（settings 配置 buffer 时大于模型裸
+// 窗口——比 [1m] 后缀推断更权威）。detail:"summary" 不调 token-count API（从最近
+// response usage + 本地估算回答）。应答是 CLI 权威结构化数据，天然免疫网关流式占位行。
+// summary 应答不带 usage 明细（input/cache 分解），明细字段由调用方另行补齐。
+export function extractContextUsageFromControlResponse(
+  parsed: Record<string, unknown> | null,
+): Pick<ClaudeContextUsage, "contextTokens" | "contextWindow"> | undefined {
+  if (!parsed || parsed.type !== "control_response") return undefined;
+  const envelope = parsed.response as
+    | { subtype?: unknown; response?: Record<string, unknown> }
+    | undefined;
+  if (!envelope || envelope.subtype !== "success" || !envelope.response) return undefined;
+  const inner = envelope.response;
+  const total = typeof inner.totalTokens === "number" ? inner.totalTokens : -1;
+  const max = typeof inner.maxTokens === "number" ? inner.maxTokens : -1;
+  // total ≤ 0（空会话 resume 渲染 0% 违背「无数据不渲染」）或 max ≤ 0 均视为无效。
+  if (total <= 0 || max <= 0) return undefined;
+  return { contextTokens: total, contextWindow: max };
+}
 
 // 纯函数：spawn/模型切换时的窗口上限判定。判定依据与 buildSpawnEnv 的 [1m] 注入
 // 同源（settings-store resolveModelId 拼 [1m]、buildAvailableAliases 映射 alias→
@@ -279,6 +363,15 @@ export function resolveActivePresetCreds(
 export class ClaudeRuntime implements RuntimeResources {
   private readonly processes = new Map<string, ClaudeProcess>();
   private readonly relays = new Map<string, ClaudeSessionRelay>();
+  // get_context_usage 控制请求的等待方（request_id → 结算 + 超时 timer）。客户端发起的
+  // 控制请求（set_model 等）应答无 waiter，captureControlResponseFromLine 安全 no-op。
+  private readonly contextUsageWaiters = new Map<
+    string,
+    {
+      resolve: (v: Pick<ClaudeContextUsage, "contextTokens" | "contextWindow"> | undefined) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
   private readonly runDir: string;
   private readonly settingsStore?: SettingsStore;
   private readonly mcpPort?: number;
@@ -560,6 +653,17 @@ export class ClaudeRuntime implements RuntimeResources {
       });
     }
 
+    // Resume 恢复（两段）：① JSONL 同步先行——seed 立即带上最后一条有效 assistant
+    // usage（占位行同款过滤），WS 首字节零等待；② get_context_usage 控制请求
+    // fire-and-forget（CLI 2.1.299+，totalTokens/maxTokens 免疫网关占位行、窗口
+    // autocompact 感知），应答后经 refreshContextUsageFromControl 覆盖权威值并广播。
+    // 不在 addSubscriber 前同步 await 控制——CLI mid-turn 排队/不支持时会把 WS 首字节
+    // 拖到 5s 超时（review P1）。
+    if (!proc.contextUsage && proc.claudeSessionId) {
+      proc.contextUsage = readLastContextUsageFromJsonl(proc.projectPath, proc.claudeSessionId);
+      void this.refreshContextUsageFromControl(sessionName);
+    }
+
     // Scalar seed init: system.init is stdout-only (absent from JSONL/tail), so on
     // reconnect the client's scalar fold has no seed. Inject a synthetic init with
     // the CURRENT model/permissionMode before history.
@@ -835,6 +939,8 @@ export class ClaudeRuntime implements RuntimeResources {
     this.captureModelFromLine(sessionName, parsed);
     this.captureSkillReloadFromLine(sessionName, parsed);
     this.captureContextUsageFromLine(sessionName, parsed);
+    this.captureControlResponseFromLine(sessionName, parsed);
+    if (parsed?.type === "result") this.refreshContextUsageFromControl(sessionName);
     this.captureApprovalRequestFromLine(sessionName, parsed);
     this.captureApprovalSettledFromLine(sessionName, parsed);
     this.autoRetry.handleStdoutLine(
@@ -1013,6 +1119,95 @@ export class ClaudeRuntime implements RuntimeResources {
   // matches captureModelFromLine's position in processStdoutLine. When the
   // relay does not exist yet (spawn before first stream()), the fold still
   // lands in proc state and the seed carries it on the first subscribe.
+  // 服务端主动发起 get_context_usage 控制请求（与客户端 set_model 同一条 stdin/stdout
+  // 控制通道，CLI 应答经 stdout 回来由 captureControlResponseFromLine 结算）。不走
+  // write()——那会 cancelPending 自动重试，而这不是用户输入，直写 stdin 绕开。
+  async getContextUsage(
+    sessionName: string,
+  ): Promise<Pick<ClaudeContextUsage, "contextTokens" | "contextWindow"> | undefined> {
+    const proc = this.processes.get(sessionName);
+    if (!proc || proc.proc.exitCode !== null) return undefined;
+    const stdin = proc.proc.stdin;
+    if (typeof stdin === "number" || !stdin) return undefined;
+    const requestId = `ctx-usage-${randomUUID()}`;
+    const promise = new Promise<
+      Pick<ClaudeContextUsage, "contextTokens" | "contextWindow"> | undefined
+    >((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.contextUsageWaiters.delete(requestId)) resolve(undefined);
+      }, CONTEXT_USAGE_CONTROL_TIMEOUT_MS);
+      this.contextUsageWaiters.set(requestId, { resolve, timer });
+    });
+    try {
+      stdin.write(
+        `${JSON.stringify({
+          type: "control_request",
+          request_id: requestId,
+          request: { subtype: "get_context_usage", detail: "summary" },
+        })}\n`,
+      );
+    } catch {
+      this.contextUsageWaiters.delete(requestId);
+      return undefined;
+    }
+    return promise;
+  }
+
+  // stdout 的 control_response 结算：只服务本类发起的 get_context_usage（waiter 匹配）；
+  // 客户端发起的控制请求应答无 waiter，安全 no-op。
+  private captureControlResponseFromLine(
+    sessionName: string,
+    parsed: Record<string, unknown> | null,
+  ): void {
+    if (!parsed || parsed.type !== "control_response") return;
+    const requestId = (parsed.response as { request_id?: unknown } | undefined)?.request_id;
+    if (typeof requestId !== "string") return;
+    const waiter = this.contextUsageWaiters.get(requestId);
+    if (!waiter) return;
+    this.contextUsageWaiters.delete(requestId);
+    clearTimeout(waiter.timer);
+    waiter.resolve(extractContextUsageFromControlResponse(parsed));
+  }
+
+  // turn 结束（result 帧）权威刷新：流式 usage 折算会被网关占位行污染（extract 已过滤
+  // 兜底），且分母是模型裸窗口推断；CLI 应答是权威口径（totalTokens/maxTokens）。
+  // 异步补发控制请求，成功则覆盖 contextTokens/contextWindow 并广播。明细四行保留折算
+  // 值（summary 应答不带 usage 明细）。
+  private refreshContextUsageFromControl(sessionName: string): void {
+    void this.getContextUsage(sessionName).then((control) => {
+      if (!control) return;
+      const state = this.processes.get(sessionName);
+      if (!state) return;
+      const detail = state.contextUsage;
+      const next = {
+        contextTokens: control.contextTokens,
+        inputTokens: detail?.inputTokens ?? 0,
+        cacheCreationTokens: detail?.cacheCreationTokens ?? 0,
+        cacheReadTokens: detail?.cacheReadTokens ?? 0,
+        outputTokens: detail?.outputTokens ?? 0,
+      };
+      if (
+        state.contextUsage?.contextTokens === next.contextTokens &&
+        state.contextWindow === control.contextWindow
+      ) {
+        return;
+      }
+      state.contextUsage = next;
+      state.contextWindow = control.contextWindow;
+      const relay = this.relays.get(sessionName);
+      if (relay && !relay.isDestroyed) {
+        relay.injectLine(
+          JSON.stringify({
+            type: "system",
+            subtype: "context_usage",
+            ...next,
+            contextWindow: control.contextWindow,
+          }),
+        );
+      }
+    });
+  }
+
   private captureContextUsageFromLine(
     sessionName: string,
     parsed: Record<string, unknown> | null,
