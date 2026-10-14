@@ -1,41 +1,40 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-14（**上下文占用指示重做批已 commit `6904d94`**——环形仪表+三档+浮层；同日：标量管道 P0 `c8de11e`、claude-code 2.1.299 `52fc6d0`、浮层回焦 `7b83976`/`8eb4a4e`、卡形制/空隙/滚动条/发送钮数批）
+> 最后更新：2026-10-15（**上下文占用权威化批已 commit `fe5e396`**——get_context_usage 控制通道 + resume 恢复 + 占位过滤；同日上线：环形仪表重做批 `6904d94`）
 
 ## 一句话状态
 
-上下文占用指示显示端重做批已交付（`6904d94`）：P0 文本版升级为**环形仪表 + 百分比 + 三档变色 + Popover 细节浮层**（用户拍板 ZCode 同构），控制行右组成组。全门禁绿（单测 1722、探针 6/6 含档位色继承链+右组几何、CSS/tokens 闸过），双 reviewer 审查消化完毕。**待真机验收**。
+上下文占用指示权威化批已交付（`fe5e396`）：修复用户测试会话 39efb784 实测两 bug（resume 后不显示、live 对话中不更新），路径升级为 **CLI 原生 `get_context_usage` 控制通道**（用户指路 + 探针实证）。全门禁绿（api 单测 911 含新增用例、code-reviewer P1×2/P3×2 全消化），api dev 已 respawn。**待真机验收**。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **架构共识（讨论定调，指导后续所有状态批）**：采集层（per-agent × per-mode）→ 统一会话标量 state（api）→ WS 单管道 → 前端统一组件。①**mod 不写入 stream-json 流**（协议流由 CLI 内部 writer 管理，无此 API）；其数据走旁路（HTTP/文件）由 api 收敛进同一 WS 广播，前端协议零新增。②**终端模式状态不用 OSC**（tmux 吞未知序列）——正解 = 同一个 bridge mod 在终端交互式会话照跑（官方表格：terminal = hooks Yes）。③未来 pi/acp 双模式 = 各自 runtime 两种进程形态，标量走同一广播，tmux 管理复用 `tmux-runtime.ts`。
-- **重做批实现要点（在 P0 骨架上扩展）**：①协议双形态——`seed_init.contextUsage` 嵌套对象（回放恢复全字段）/ `context_usage` 帧平铺（live 广播）；②窗口上限 = `resolveContextWindow` 纯函数（`[1m]` 后缀 ⇒ 1M、alias 经 spawn 时记录的 resolvedAliases 映射查、无 model 回落 sonnet、opusplan 恒判 sonnet——Plan Mode 走 OPUS env 的已知误差注释在案）；③`captureModelFromLine` 切模型重算窗口且**变化即补发帧**（不等下一条 usage 帧，防在线前端分母陈旧）；④环形 SVG 环心留空（双尺寸缩放环心元素不可读，百分比环外旁注——与 plan「环心 gauge」的偏差及理由已写进 spec）；⑤**右组成组**：usage 单独 ml-auto 会与 `.send2` 的 auto 均分剩余空间落正中——usage+Stop/Send 同包一个 ml-auto 容器（容器内 auto 归零）；⑥浮层 `.u-lvl-*` 只管 color（fill 继承），tint 底仅 `.iicn/.ipill` 变体（防浮层面被 tint 污染）。
-- **自查抓到真 bug（已在批内修）**：`normalizeChatStream` 的 system 分支尾部 fallback（`messageToThreadLike` 对无 content 帧返回非 null system 摘要）会把 `context_usage` 渲染成噪音气泡——补 `continue` 短路 + 单测锁定。
-- **CLI stdout 时序认知（诊断踩坑得出）**：claude CLI 在**收到首条 stdin 消息前不吐任何 stdout**（不主动发 system/init）——产品链路无碍（前端 prompt 驱动），但「等 init 再发 prompt」的探针/诊断脚本会死锁。
-- **（沿用）CLI 2.1.299 升级**：OSC 7501 headless pipe 不可达（TTY-only）；modelMapping env 注入免疫 alias 漂移；「关闭不回焦」两族约定（spec §5.0 / frontend-notes §33）。
+- **【本批核心】get_context_usage 权威通道**：CLI 2.1.299 原生支持 `control_request{subtype:"get_context_usage", detail:"summary"}`（与 set_model 同一条 stdin/stdout 控制通道），应答 `{totalTokens, maxTokens, rawMaxTokens?, percentage, model, categories[], gridRows[], autocompactSource}`。**探针实证：--resume 后、首条用户消息前即应答**（CLI 不主动吐 stdout，但控制请求是 stdin 输入会得到应答——手写诊断脚本别再「等 init」死锁）。`totalTokens`=CLI /context 口径已用量；`maxTokens`=**autocompact 感知真实窗口**（settings 配 buffer 时 > 模型裸窗口，如 230000 = 200k+30k），比 `[1m]` 后缀推断的 `resolveContextWindow` 权威；summary 不调 token-count API、不带 usage 明细（input/cache 分解）。
+- **resume 恢复两段式（review P1 后定形）**：①JSONL 尾部位读（`readLastContextUsageFromJsonl`，1MB 窗 openSync/readSync **不整文件读**、占位行同款过滤）同步先行 → seed 零等待；②控制请求 fire-and-forget → `refreshContextUsageFromControl` 覆盖权威 `contextTokens/contextWindow` 并广播（**绝不在 addSubscriber 前同步 await**——CLI mid-turn 排队/不支持时 WS 首字节被拖到 5s 超时）。
+- **占位 usage 过滤**：网关（chatcmpl-* 消息 ID）对流式中间消息（stop_reason 缺省的 thinking/tool_use/text 中间块）发占位 usage `{input_tokens:1, output_tokens:1, cache:0}`，真实 usage 只在收尾行——「最后一条胜出」被拉成 0%。修 = `MIN_VALID_CONTEXT_TOKENS=1000`（真实上下文至少整条 system prompt，与占位值隔数量级）；stdout 折算保留为中途渐进更新，占位过滤是防线。
+- **turn 结束权威刷新**：`result` 帧触发 `refreshContextUsageFromControl`——异步控制请求，成功则覆盖 + 广播 `context_usage` 帧；dedupe 条件 = contextTokens 与 contextWindow **双同**才跳过（窗口独变也要广播）。
+- **waiter 机制**：`contextUsageWaiters` Map（request_id → {resolve, timer}），stdin **直写**（绕开 `write()` 的 autoRetry.cancelPending——控制探测不是用户输入）；captureControlResponseFromLine 只结算有 waiter 的应答（客户端 set_model 应答安全 no-op）；结算/超时双路径 clearTimeout。
+- **（沿用）架构共识**：采集层 → 统一会话标量 state（api）→ WS 单管道 → 前端统一组件；协议双形态 `seed_init.contextUsage`（嵌套恢复）/ `context_usage` 帧平铺（live 广播）；环形仪表 + 三档 + 浮层显示端已交付（`6904d94`），右组成组、`.u-lvl-*` 只管 color。
 
 ### 进度
 
-- ✅ **会话标量统一管道 P0** `c8de11e` + **显示端重做（环形仪表+三档+浮层）** `6904d94`（双 reviewer 消化：design P1 浮层档位接线断线 + code P2 补发帧 + P3×5 全修）
-- ✅ **spec §4.1-3「上下文占用指示」条目成文**（双形态/三档/浮层/右组/数据契约 + 验收清单项）
-- ✅ claude-code 升级 2.1.299 `52fc6d0`；浮层回焦 `7b83976` 真机验收通过
-- ⏳ **下一批候选（已拍板方向，待排期）**：①**双模式切换**（idle-only 可逆视角切换、终端模式审批让位、UI 入口「在终端打开」/「回到对话」）；②mod 采集批（bridge mod 旁路 → 同一管道）；③插件管理 UI。
+- ✅ **权威化批** `fe5e396`：两 bug 修复 + 控制通道 + JSONL 回填 + 占位过滤；code-reviewer 消化（P1×2：stream 不同步 await / 位读尾窗；P3×2：total≤0 不渲染 / timer 清理；测试补 JSONL 读取三态）
+- ✅ 环形仪表重做批 `6904d94`（前批，显示端已就绪）
+- ⏳ **真机清单（合并两批）**：①resume 测试会话 39efb784 应立即显示 ~41% 环形指示（230k 窗口，JSONL 先行 → 权威值毫秒级覆盖）；②live 对话一轮：数值随收尾行渐进更新、turn 结束权威刷新、不再闪 0%；③控制行右组形态/环弧与百分比一致/浮层明细/双形态（沿用前批清单）
+- ⏳ **下一批候选（已拍板方向待排期）**：①双模式切换；②mod 采集批；③插件管理 UI；④浮层升级素材：get_context_usage 的 `categories[]`（System prompt/tools/Messages/Skills/Memory 分解）可做浮层分类明细展示（本批未动 UI）
 
 ### 阻塞 / 风险
 
-- 无阻塞。**本批真机清单**：①控制行右组形态（usage 环+百分比紧贴 Send 左侧，非正中）；②环弧与百分比一致性；③点开浮层（进度条/汇总/明细四行/档位色）；④窄/宽端双形态（iPhone .iicn 28×28 tint 底 / ≥1024 .ipill）；⑤发一轮消息后数值更新。**未完成验证（沿用）**：真实 WS 端到端链路（分类器拦）——建议真机顺带复核。
+- 无阻塞。真实 WS 端到端链路（分类器拦）继续由真机复验兜底。
 
 ## 易丢的关键上下文
 
-- **P0 标量管道骨架**（后续批照此扩展）：shared `ClaudeContextUsageChanged`（平铺明细）+ `seed_init.contextUsage`（嵌套）→ api `captureContextUsageFromLine` + `resolveContextWindow` + `buildSeedInitLine(…, contextUsage)` → session-relay knownSubtypes → web `applyMessageScalarState`（contextUsage 对象）+ normalizeChatStream 短路 → `ContextUsageIndicator`（环形仪表，右组容器）。
-- **探针定位口径**：aria-label 现带数值（a11y）——`button[aria-label^="上下文占用"]` 前缀匹配，精确匹配会失配。
-- **探针**：`scripts/probe-context-usage.mjs`（4 断言：无标量不渲染 / 帧折算 / 更新 / 重连 seed 恢复）。
-- **CLI 探查结论**（延续）：`/tmp/cc-changelog.md`（2.1.269-299）；2.1.288 后台 Bash 限时 30min、2.1.285 `-p` 默认 auto mode 均待真实使用观察。
-- 探针纪律（沿用）：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；一次性诊断不入库用后删（本批 `_diag-usage-e2e.mjs` 已删）。
-- 会话清理端点 = `POST /api/projects/<p>/agent-sessions/<id>/close`（**不是 DELETE**——DELETE 会命中项目删除路由）。
-- 验证用测试项目（PROJECTS_ROOT/test），不在正式项目建 session。
+- **探针结论**（CLI 二进制 strings + 实跑实证）：`get_context_usage` 在 vTo set（`get_usage/mcp_status/get_context_usage/stop_task/background_tasks`——疑似空闲期白名单）；zod schema `zo=` 处；应答经 `sendControlRequest` 通道。categories 项形如 `{name:"System prompt", tokens:9025, color, kind:"used"|"buffer"|"free"}`，used 之和 = totalTokens。
+- **关键落点**（api/src/claude-runtime.ts）：`MIN_VALID_CONTEXT_TOKENS`(:152 附近)、`readLastContextUsageFromJsonl(File)`(位读+按路径核心可测)、`extractContextUsageFromControlResponse`(total≤0 无效)、`getContextUsage`/`captureControlResponseFromLine`/`refreshContextUsageFromControl`、processStdoutLine 挂载序（…contextUsage → controlResponse → result 触发 refresh）、stream() 两段恢复块。
+- **JSONL 路径规则**：`claudeJsonlPath`（session-routes.ts:506）= `~/.claude/projects/<slug>/<claudeSessionId>.jsonl`，slug=cwd 非字母数字全转 `-`。
+- **探针纪律**（沿用）：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；一次性诊断不入库（本批 `/tmp/_diag-get-context-usage.mjs` 已删）；CLI 子进程在 cgroup 内时 MemoryMax 放宽到 4G。
+- **会话清理端点** = `POST /api/projects/<p>/agent-sessions/<id>/close`（不是 DELETE）；验证用 PROJECTS_ROOT/test 测试项目。
 
 ## 提醒
 
@@ -43,4 +42,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-14（晚）；触发原因：上下文占用指示重做批收尾（commit 6904d94 + 记档）
+最后更新：2026-10-15 01:30；触发原因：上下文占用权威化批收尾（commit fe5e396 + handoff 记档）
