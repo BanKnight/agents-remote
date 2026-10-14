@@ -529,9 +529,15 @@ export function MobileSheet({
              打架（键盘推挤视口打断动画），且这类输入（搜索/命名/表单）低频——聚焦应是
              用户点输入框的主动行为。统一在基座拦 Radix 的 initial focus（内容首元素
              恰为输入框时会被默认聚焦，如切换 sheet 搜索框/MCP 添加名称框），消费方
-             显式 autoFocus 也一并失效；关闭焦点返还（onCloseAutoFocus）不受影响。
-             桌面居中 Dialog（ui/dialog.tsx）无键盘推挤问题，保持默认聚焦不动。 */
+             显式 autoFocus 也一并失效。桌面居中 Dialog（ui/dialog.tsx）无键盘推挤问题，
+             保持默认聚焦不动。 */
           onOpenAutoFocus={(e) => e.preventDefault()}
+          /* 关闭也不回焦 trigger（2026-10-14 同向延伸）：Radix 关闭默认程序化 focus 返还
+             trigger，WebKit 对 tap 后的脚本 focus 仍判 :focus-visible → 浏览器默认蓝环
+             （⋯ sheet 关闭后 ⋯ 按钮出环实证面，▾ 菜单先行修复）；触屏无键盘焦点诉求，
+             焦点落 body 零感知差异。桌面 Dialog/DropdownMenu 不拦（键盘焦点返还是正确
+             a11y 行为，Chromium 无环）。frontend-notes §33。 */
+          onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <div aria-hidden="true" className="grab touch-none" />
           {title || headerExtra || aside ? (

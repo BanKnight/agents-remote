@@ -8,6 +8,9 @@
 // 断言核心 = sheet 打开后 document.activeElement 非 INPUT（软键盘不唤起）；对照断言
 // 锚输入框在场，防 sheet 未开导致断言空转。桌面面（居中 Dialog 保留聚焦惯例）零代码
 // 改动，不在浏览器探针面（路径深），交真机/桌面清单抽查。
+// 2026-10-14 扩展关闭面：Radix onCloseAutoFocus 已在基座/▾ 菜单 preventDefault（WebKit
+// 对 tap 后脚本 focus 判 :focus-visible → 浏览器默认蓝环，frontend-notes §33）——断言
+// 关闭后 activeElement 非 trigger。Chromium 断不了 WebKit 视觉环，这里证接线；视觉交真机。
 // 密码自读不打印。web DOM 探针前置过 ar-verify-css 三道闸。
 // 用法：bun scripts/probe-sheet-focus-policy.mjs
 import { chromium } from "@playwright/test";
@@ -65,6 +68,17 @@ async function assertSheetNoFocus(page, inputLocator, label) {
         "A 实例切换菜单",
       );
       await page.keyboard.press("Escape");
+      // 关闭不回焦 trigger：先等浮层真关闭防空转（未关时焦点在 content 内也"不是
+      // trigger"会造成假 PASS），再断 activeElement 非 trigger。
+      await page.getByRole("menuitem", { name: /新建实例/ }).waitFor({ state: "detached" });
+      const aClosed = await page.evaluate(() => ({
+        tag: document.activeElement?.tagName ?? "null",
+        isTrigger: document.activeElement === document.querySelector(".nv-t button"),
+      }));
+      check(
+        `A 实例切换菜单: 关闭不回焦 trigger（activeElement=${aClosed.tag}）`,
+        !aClosed.isTrigger,
+      );
       await page.context().close();
     }
 
@@ -88,6 +102,16 @@ async function assertSheetNoFocus(page, inputLocator, label) {
       await page.getByRole("menuitem", { name: "新建…" }).click();
       await assertSheetNoFocus(page, page.getByLabel("名称"), "B 文件新建 sheet");
       await page.keyboard.press("Escape");
+      await page.getByLabel("名称").waitFor({ state: "detached" });
+      const bClosed = await page.evaluate(() => ({
+        tag: document.activeElement?.tagName ?? "null",
+        isTrigger:
+          document.activeElement === document.querySelector('button[aria-label="添加"].fab'),
+      }));
+      check(
+        `B 文件新建 sheet: 关闭不回焦 FAB trigger（activeElement=${bClosed.tag}）`,
+        !bClosed.isTrigger,
+      );
       await page.context().close();
     }
   } finally {

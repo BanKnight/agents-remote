@@ -349,3 +349,13 @@
 **标准做法**：①**量对元素**——xterm 6 滚动几何量 `.xterm-scrollable-element`（clientHeight/scrollHeight），别量 `.xterm-viewport`（恒等于容器）；②隐藏指示器 = `.xterm .xterm-scrollable-element > .scrollbar { display: none }`（与注入 style 的 slider background 是**不同属性，无源序竞争**——注入 style 永远在文档最后，同属性 CSS 对抗必输）+ `.xterm-viewport` `scrollbar-width: none` / `::-webkit-scrollbar` none（Linux/Win 经典滚动条环境兜底）；③内部滚动机制不动（overflow-y 保持，非 mouse-mode 滚轮兜底仍在）。本项目语义：滚轮/触摸全走 tmux copy-mode（§6），本地 buffer 滚动条纯视觉噪音。守卫：probe-v15-batch7-skeleton P1-12b（computed display/scrollbar-width）。
 
 **来源**：2026-10-14 终端滚动条批（v2-primitives 终端段 + `_diag-xterm-scrollbar.mjs` 一次性诊断：se roll=128px / slider 14×89 → 修复后 rect=0×0）；与 §6（tmux copy-mode 滚动语义）同链。
+
+## 33. Radix 浮层关闭回焦 × WebKit `:focus-visible`：关闭后 trigger 出浏览器默认蓝环
+
+**现象**（2026-10-14 真机反馈）：移动工作台 ▾ 切换浮层关闭后，标题行出现**整行蓝色选中框**，点空白才消失；Chromium 桌面/探针无此现象。同机制面：⋯ sheet 关闭后 ⋯ 按钮同款（环小未报）。
+
+**机制**：三层叠加——① Radix 关闭默认 `onCloseAutoFocus` 程序化 focus 回 trigger（键盘 a11y 默认：关菜单后焦点不丢）；② WebKit 对「tap 后的脚本 focus」仍判 `:focus-visible`（Chromium 按最后输入 modality 判定，pointer tap 后脚本 focus 不匹配）→ 浏览器默认 focus ring（iOS 系统蓝）显示；③ trigger 是 `h-full w-full` 整行裸 button（无 outline 处理）→ 环包整行。「点空白消失」= 焦点移走环即消失，与机制吻合。项目 CSS 6 处 focus 规则均不覆盖 trigger → 排除项目样式来源。
+
+**标准做法**：浮层组件（DropdownMenuContent / Dialog Content）加 `onCloseAutoFocus={(e) => e.preventDefault()}`——无聚焦元素即无环，**结构性免疫引擎分歧**（同 §7/§32 家族：WebKit 视觉 Chromium 复现不了，探针断 `document.activeElement` 证接线，视觉交真机）。本项目落点：InstanceSwitchMenu + **MobileSheet 基座**（全移动 sheet 统一，含 ActionMenu 移动形态/⋯/AddMenu）；桌面 Dialog/DropdownMenu **不拦**（键盘焦点返还是正确 a11y 行为，Chromium 无环）。**勿用 CSS `outline-none` 压制**——症状端修复且扑灭键盘焦点指示。取舍 = 关闭后焦点落 body：触屏无键盘焦点诉求零感知；该默认在桌面键盘场景才有价值。
+
+**来源**：2026-10-14 浮层关闭回焦批（mobile-project-header.tsx + mobile-sheet.tsx + probe-sheet-focus-policy.mjs A/B 关闭断言）；「点空白消失」用户观察佐证链。

@@ -277,7 +277,17 @@ function InstanceSwitchMenu({
       </DropdownMenuTrigger>
       {/* 分区容器菜单（标题 / 滚动列表 / 钉底动作三分区），非行式菜单——不挂 .menu-sep
         （行式菜单显式语义，v2-primitives）；组内行间无线（v1.6），组间线在组头上方。 */}
-      <DropdownMenuContent align="center" className="w-[250px] p-0">
+      {/* 关闭不回焦 trigger（2026-10-14 真机反馈「关掉后标题行多出蓝色选中框」）：Radix
+        关闭默认程序化 focus 回 trigger（键盘 a11y 默认），WebKit 对 tap 后的脚本 focus
+        仍判 :focus-visible → 浏览器默认蓝环包住整行裸 button（h-full w-full，无 outline
+        处理）；点空白焦点移走即消失 = 机制吻合。preventDefault 结构性免疫引擎分歧
+        （frontend-notes §33）；取舍 = 键盘焦点落 body，本组件仅移动 header 点按场景消费，
+        可接受（桌面 DropdownMenu 不拦，键盘焦点返还语义保留）。 */}
+      <DropdownMenuContent
+        align="center"
+        className="w-[250px] p-0"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <div className="px-3.5 pb-1.5 pt-2.5 text-[10.5px] font-bold tracking-[0.5px] text-ink-2">
           {t("workbench.switchInstance")}
         </div>
