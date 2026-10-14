@@ -12,7 +12,8 @@
 > 🔄 真机验收反转（2026-10-13）：把手钮遮挡视线被否 → 折叠钮行内化反转批（右栏恢复 glabel2 行内钮 / 左栏项目组 ghead 行尾钮，其余三栏批成果全保留）；同日第二轮真机反馈（图标非规范形制 + 可点区仅 4.7px / 展开钮点不准）→ 可点性修批：折叠钮图标化 + 20×20 热区、RailButton 命中=视觉实底小舌；同日第三轮复核三条（展开钮宽度剪半 → 22×56 / 两栏折叠钮贴中栏镜像对称 → 右栏移行首 / 图标形制 → panel-left/right-close 侧栏面板+折叠方向箭头）。待本版真机验收通过后删除本节。
 > ✅ 终端 composer 修（2026-10-14 真机反馈两条，均针对输入框）：①宽度对齐 agent——快捷键条 + composer 卡整组限宽 `max-w-2xl`（672px）居中，不再横跨全宽；②输入框纵向滚动条口径修——textarea 补 `min-h-[2.5rem]` 基线 + 删 `leading-[1.35]`（18.9px 非整数行高是 1px 级滚动量的首要嫌疑，agent 侧整数行高无此现象），随批消除。诊断探针改后实测：card=672 居中、lh=20px、正常步骤滚动量全 0（600 字符 roll=32px 为 max-h 封顶预期）；WebKit 真机复验交用户。
 > ✅ 滚动条归因修正 + xterm 滚动条隐藏（2026-10-14 用户指出上批第②条理解错了——滚动条在 **xterm 区域**非输入框）：诊断实证滚动条真身 = xterm 6 内置 vscode 浮层滚动条（`.xterm-scrollable-element > .scrollbar`，se roll=128px/slider 14×89 实锤；折叠消失 = rows 消化溢出的数值巧合），非输入框 sub-pixel（frontend-notes §32）；修复 = CSS 双隐藏（scrollbar display:none + viewport scrollbar-width:none，内部滚动机制不动），守卫 batch7 P1-12b。
-> ✅ 发送按钮两端统一（2026-10-14「不做两套规则」）：agent composer（claude/pi/acp）showSend 删 `isMobileComposer` 条件——桌面也有输入即显示 Send（`hasInput && !inputDisabled`）；isMobileComposer 保留驱动 Enter 键分族（移动换行/桌面发送）。探针 D4/C2/H3 反转 + H4 口径校准 3→4（批 8 附件菜单为基线遗留第 4 个 trigger）。
+> ✅ 发送按钮两端统一（2026-10-14「不做两套规则」）：agent composer（claude/pi/acp）showSend 删 `isMobileComposer` 条件——桌面也有输入即显示 Send（`hasInput && !inputDisabled`）；isMobileComposer 保留驱动 Enter 键分族（移动换行/桌面发送）。探针 D4/C2/H3 反转 + H4 口径校准 3→4（批 8 附件菜单为基线遗留第 4 个 trigger）。**真机验收通过（2026-10-14 用户复核）**。
+> ✅ 终端 composer 空隙结构同构 agent（2026-10-14 复核「终端高度明显比 agent 高」）：min-h 数值前批已逐字同款，但空隙结构不同构——agent 72px 含 textarea 自带 14px 纵向 padding、终端 72px 纯内容区，空态卡高 120 vs 108px；修正 = 卡去 `px-3 py-2`、空隙移交 textarea（`px-3.5 pt-2.5 pb-1`）+ 底行（`h-9` + `px-2.5 pb-2 pt-0.5`），卡高 108/76 两端一致。圆角 16 与 mono 为终端原型形制保留；快捷键条常驻（整区高 40px 是功能行非口径偏差）。守卫 batch7 P1-9b。
 
 1. **左栏桌面端可折叠**：左栏（sidebar）目前在桌面端不能折叠，希望与右栏同款支持。
 2. **右栏折叠按钮挪位**：右栏（inspector）折叠按钮现在在其右侧，希望挪到右栏**左侧**——与左栏折叠按钮在其右侧形成左右对称。

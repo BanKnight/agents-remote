@@ -301,6 +301,28 @@ function seedTwoAgents(socket) {
       expandedGeom.xbtnExpanded === "true" && expandedGeom.xbtnLabel === "收回输入",
       `P1-9 展开钮翻转（aria-expanded=true / aria-label「${expandedGeom.xbtnLabel}」）`,
     );
+    // 口径对齐 agent composer（2026-10-14 真机反馈「终端高度明显比 agent 高」）：空隙结构
+    // 同构——textarea 自带 pt-2.5/pb-1、卡片零纵向 padding、底行 h-9；空态卡高 = claude 卡
+    // 108px 口径（旧结构卡 py-2 包裹时为 120px、文字下方空白多 14px）。
+    const alignGeo = await p1.evaluate(() => {
+      const ta = document.querySelector("textarea#session-input");
+      const card = ta?.closest("form")?.firstElementChild;
+      const row = ta?.parentElement?.nextElementSibling;
+      const cs = (el) => (el ? getComputedStyle(el) : null);
+      return {
+        cardPt: cs(card)?.paddingTop,
+        taPt: cs(ta)?.paddingTop,
+        taPb: cs(ta)?.paddingBottom,
+        rowH: row ? row.getBoundingClientRect().height : null,
+      };
+    });
+    ok(
+      alignGeo.cardPt === "0px" &&
+        alignGeo.taPt === "10px" &&
+        alignGeo.taPb === "4px" &&
+        Math.abs((alignGeo.rowH ?? 0) - 36) < 0.6,
+      `P1-9b composer 空隙结构同构 agent（card-pt=${alignGeo.cardPt} ta=${alignGeo.taPt}/${alignGeo.taPb} row-h=${alignGeo.rowH}）`,
+    );
 
     // 收回：textarea 消失、快捷键条保留。
     await p1.locator(".xbtn").click();

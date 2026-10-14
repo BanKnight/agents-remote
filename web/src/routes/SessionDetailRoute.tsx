@@ -1267,9 +1267,9 @@ function SessionInputDrawer({
         </div>
         {!collapsed ? (
           <form className="mt-2" onSubmit={onSubmit}>
-            <div
-              className={`flex min-w-0 flex-col rounded-2xl px-3 py-2 ${shellSurfaceClasses.code}`}
-            >
+            {/* 空隙结构同构 agent composer（卡无 padding，空隙全在 textarea/底行自带
+                padding）——卡高与 agent 逐像素一致。 */}
+            <div className={`flex min-w-0 flex-col rounded-2xl ${shellSurfaceClasses.code}`}>
               <div className="flex min-w-0 items-start gap-2">
                 <label className="sr-only" htmlFor="session-input">
                   {t("session.sendInput")}
@@ -1280,13 +1280,17 @@ function SessionInputDrawer({
                     （128px，CSS max/min-height 胜 inline height）后内容滚动。行高走 text-sm
                     捆绑（整数 20px）——18.9px 非整数行高（原 leading-[1.35]）与 agent 不一致，
                     2026-10-14 随批对齐（口径统一，非滚动条修复：真机「终端区域滚动条」后经
-                    诊断实证为 xterm 内置滚动条，见 v2-primitives 终端段隐藏规则注释）。 */}
+                    诊断实证为 xterm 内置滚动条，见 v2-primitives 终端段隐藏规则注释）。
+                    px-3.5/pt-2.5/pb-1 = agent 逐字同款：min-h 数值同而空隙结构不同构时，
+                    agent 的 72px 含 14px 纵向 padding、终端 72px 是纯内容区——空态文字下方
+                    空白 52 vs 38px、卡高 120 vs 108px（真机反馈 2026-10-14「终端高度明显比
+                    agent 高」）。空隙移交 textarea/底行自带后两端卡高一致。 */}
                 <TextareaAutosize
                   autoCapitalize="none"
                   autoComplete="off"
                   autoCorrect="off"
                   cacheMeasurements
-                  className="min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] min-w-0 flex-1 resize-none bg-transparent font-mono text-sm text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] min-w-0 flex-1 resize-none px-3.5 pt-2.5 pb-1 bg-transparent font-mono text-sm text-on-surface outline-none placeholder:text-on-surface-muted disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={!canSend}
                   id="session-input"
                   minRows={1}
@@ -1306,8 +1310,9 @@ function SessionInputDrawer({
               {/* 控制行（原型 irow）：终端 composer 无三彩/无附件——左端 = ⚙ 键位自定义入口
                  （原型 workspace-terminal-input ③，调用方构造 slot；undefined 时空占位保发送钮
                   靠右），右端 = .send2 28×28 r12 主色发送钮（与会话版 composer-actions 同源形态）。
-                  onMouseDown preventDefault 保焦 = 移动端发送后键盘不收。 */}
-              <div className="mt-1 flex items-center justify-between">
+                  onMouseDown preventDefault 保焦 = 移动端发送后键盘不收。h-9 + pt-0.5/pb-2 +
+                  px-2.5 = agent 底行逐字同款（卡无 padding 后水平空隙也移交各行，见上）。 */}
+              <div className="flex h-9 items-center justify-between px-2.5 pb-2 pt-0.5">
                 {quickKeysCustomize ?? <span aria-hidden="true" />}
                 <button
                   className="send2 disabled:opacity-40 disabled:cursor-default"
