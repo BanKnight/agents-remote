@@ -1,10 +1,10 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-15（**真机反馈三连修 `443118f`**：TabChip done 灰点单源回归 + `.dot.finished` 撞名椭圆 + 统计计数 x/y 化；5 态化批 `9d5421f`）
+> 最后更新：2026-10-15（**命名/计数回调 `541099c`**：`.dot.done` 回归 + 横幅改名 `.complete`、runct 恢复 ●n、0 实例显示 —；前批 `443118f`/`9d5421f`）
 
 ## 一句话状态
 
-5 态化批（`9d5421f`）+ 真机反馈三连修（`443118f`）已交付：①TabChip done 灰点（statusDot 数据源直带 instanceDot2 class，全端状态点单源）；②`.dot.done` 与 03c 完成横幅裸类 `.done` 撞名拉椭圆 → 改名 `.dot.finished` + 探针补几何断言（教训 frontend-notes §34）；③统计计数六处 x/y 化（working/总实例，防「0 = 没实例」误读，用户拍板）。探针 14/14、全门禁绿、web 已 respawn。**待真机验收**。
+5 态化批（`9d5421f`）+ 三连修（`443118f`）+ 命名/计数回调（`541099c`）已交付：状态点全端单源（TabChip/左栏/移动同 instanceDot2 与 .dot.done）；撞名消解走「改消费面小的一方」（横幅 `.done→.complete`，非改状态点名）；计数 x/y 只在项目语境（状态栏/全局活动段/项目卡/10-tab 卡），工作台 header runct 保持 ●n，0 实例显示 —。探针 14/14、全门禁绿、web 已 respawn。**待真机验收**。
 
 ## 本 session 焦点
 
