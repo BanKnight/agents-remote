@@ -758,7 +758,7 @@ function panelTabLabel(
 
 /** 实例行 dot2 状态点 class 单源（实例切换列表与 workbench-side 侧栏 agent 行同消费——
  *  批 C 收敛此前逐字双份）：turn 活跃与结果态着色实心（working 绿 / blocked 橙 /
- *  error 红 / done 绿——与移动端 .dot.finished 同为绿实心，spec §3.2「状态点语义全局统一」，
+ *  error 红 / done 绿——与移动端 .dot.done 同为绿实心，spec §3.2「状态点语义全局统一」，
  *  防桌面空心/移动实心分叉），静息态（idle/closed）1.4px 空心。 */
 export const instanceDot2 = (status: AgentSession["status"] | TerminalSession["status"]): string =>
   status === "working" || status === "running"

@@ -366,6 +366,6 @@
 
 **机制**：CSS 类名全局作用域。新加 `.dot` 原语变体取短语义词（`done`）时，与 v2-primitives.css 里**既有裸原型类**（03c 完成横幅 `.done{display:flex;padding;border;border-radius:12px}`）撞名——两条规则同落在 dot span 上，横幅盒模型覆盖 7px 圆点几何。JSX 侧 `className` 字符串断言与 computed 背景色断言都对**盒模型污染**完全盲（背景色恰与横幅 tint-green 语义接近还互相印证）。
 
-**标准做法**：①**新增 CSS 变体类名落盘前先查撞名**：`rg "^\s*\.NAME\s*\{|[^-\w]\.NAME[ ,{:.]"` 扫 v2-primitives.css + components.css（含裸类、`.x .NAME` 后代选择器），无命中才用；②**几何断言是 class 断言的必备补集**——凡新增/改名字体类/圆点类/徽章类，探针必须量 `getBoundingClientRect`（7×7 正圆这类硬数值），只断 className 与背景色会放过盒模型污染；③UI 语义命名冲突优先改**新变体**名（如 `done→finished`），不动存量原型类（消费面大）。
+**标准做法**：①**新增 CSS 变体类名落盘前先查撞名**：`rg "^\s*\.NAME\s*\{|[^-\w]\.NAME[ ,{:.]"` 扫 v2-primitives.css + components.css（含裸类、`.x .NAME` 后代选择器），无命中才用；②**几何断言是 class 断言的必备补集**——凡新增/改名字体类/圆点类/徽章类，探针必须量 `getBoundingClientRect`（7×7 正圆这类硬数值），只断 className 与背景色会放过盒模型污染；③**命名冲突改消费面小的那一方**（无论新旧）：首版改新变体名（`done→finished`）被用户否决——状态名（OSC 7501）是协议层单源，CSS 变体跟随它才命名统一，「done 成最奇怪的那个」是大忌；改存量方（横幅 `.done→.complete`，全仓仅 1 个消费点）才是正解，判定依据 = `rg` 数清两方消费点再裁决。
 
 **来源**：commit `443118f`（`.dot.finished` 改名 + 探针 2b 几何断言）；`scripts/_diag-dot-geometry.mjs` 一次性诊断实锤（done 26×22/flex、working 7×7/block）。

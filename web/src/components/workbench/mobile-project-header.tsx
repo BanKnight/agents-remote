@@ -21,9 +21,9 @@ type MobileProjectHeaderProps = {
    * 空态 / 自动聚焦瞬态 = 项目名。
    */
   title: string;
-  /** runct ●x/y 微标：项目实例 working/总数（用户拍板 2026-10-15，原型 `.runct` ●n 的
-   *  x/y 化——纯 working 数的 0 会被误读为「没有实例」）；无实例不渲染。 */
-  runningBadge?: { active: number; total: number };
+  /** runct ●n 微标：项目运行中实例数（原型 workspace.html `.runct`）；0 不渲染。
+   *  2026-10-15 用户拍板：工作台 header 顶部的圆点不做 x/y——统计理念只属于项目页。 */
+  runningCount?: number;
   /** 项目活跃实例（▾ 实例切换菜单列表源 = useProjectInstances 单一数据管道）。 */
   instances: ProjectInstanceEntry[];
   /** 全局活跃实例候选（真机复验反馈③：▾ 菜单跨项目——本项目行由 instances 承载，这里只
@@ -72,7 +72,7 @@ type MobileProjectHeaderProps = {
 export function MobileProjectHeader({
   projectName,
   title,
-  runningBadge,
+  runningCount,
   instances,
   foreignCandidates,
   focusId,
@@ -113,7 +113,7 @@ export function MobileProjectHeader({
               onOpenHistory={onOpenHistory}
               onSelectInstance={onSelectInstance}
               projectName={projectName}
-              runningBadge={runningBadge}
+              runningCount={runningCount}
               title={title}
             />
           )}
@@ -148,7 +148,7 @@ export function MobileProjectHeader({
 type InstanceSwitchMenuProps = {
   projectName: string;
   title: string;
-  runningBadge?: { active: number; total: number };
+  runningCount?: number;
   instances: ProjectInstanceEntry[];
   foreignCandidates: GlobalInstanceCandidate[];
   focusId?: string;
@@ -176,7 +176,7 @@ type InstanceSwitchMenuProps = {
 function InstanceSwitchMenu({
   projectName,
   title,
-  runningBadge,
+  runningCount,
   instances,
   foreignCandidates,
   focusId,
@@ -266,13 +266,8 @@ function InstanceSwitchMenu({
             />
           )}
           <span className="block truncate">{title}</span>
-          {/* runct ●x/y：项目实例 working/总数（9px 绿，原型 .runct ●n 的 x/y 化）；
-            无实例才不渲染——0 working 仍显示，防「0 = 没实例」误读（用户拍板 2026-10-15）。 */}
-          {runningBadge && runningBadge.total > 0 ? (
-            <span className="runct">
-              ●{runningBadge.active}/{runningBadge.total}
-            </span>
-          ) : null}
+          {/* runct ●n：项目运行中实例数（9px 绿，原型 .runct） */}
+          {runningCount ? <span className="runct">●{runningCount}</span> : null}
           {/* 实例切换菜单锚（批 12 反馈⑤：CSS 手绘 .sw 旋转盒退役 → Lucide 管线单轨；
             显式尺寸防 WebKit flex 收缩隐形，frontend-notes §15⑤。开态主色用 currentColor。 */}
           <LucideIcon

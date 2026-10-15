@@ -257,17 +257,19 @@ export function MobileProjectsHome() {
               <span className="text-footnote font-semibold text-ink-2">
                 {t("home.globalActivity")}
               </span>
-              {/* x/y = working/总实例（用户拍板 2026-10-15）：纯 working 数的 0 会被误读为
-                  「没有实例」——分子分母同显消除歧义，working>0 才用绿色强调。 */}
-              {runningCount > 0 ? (
-                <span className="text-footnote font-semibold text-success-text">
+              {/* x/y = working/总实例（用户拍板 2026-10-15）：分子分母同显消除「0 = 没实例」
+                  误读，working>0 绿、=0 灰；无实例不显示（0/0 无信息量，用户反馈同日）。 */}
+              {candidates.length > 0 ? (
+                <span
+                  className={
+                    runningCount > 0
+                      ? "text-footnote font-semibold text-success-text"
+                      : "text-footnote text-ink-2"
+                  }
+                >
                   ● {t("home.nRunning", { active: runningCount, total: candidates.length })}
                 </span>
-              ) : (
-                <span className="text-footnote text-ink-2">
-                  ● {t("home.nRunning", { active: 0, total: candidates.length })}
-                </span>
-              )}
+              ) : null}
             </div>
             <div className="mx-4 rounded-xl border border-sep bg-elevated px-3 py-1">
               {/* 审批行（原型 02 .ap-row tint-orange，pending=0 隐藏）：入口①（§6.4）。 */}
@@ -405,11 +407,15 @@ export function MobileProjectsHome() {
                       <span className="ml-auto flex-none rounded-[9px] bg-tint-green px-2 py-0.5 text-micro font-semibold text-success-text">
                         ● {row.running}/{row.instances.length}
                       </span>
-                    ) : (
-                      // 0 working 也显示 x/y（用户拍板 2026-10-15）：「—」会让人猜不出项目内
-                      // 实例数；灰 x/y 保持「总数可见」。
+                    ) : row.instances.length > 0 ? (
+                      // 0 working 也显示 x/y（用户拍板 2026-10-15）：灰 x/y 保持总数可见。
                       <span className="ml-auto flex-none rounded-[9px] bg-fill-search px-2 py-0.5 text-micro font-semibold text-ink-2">
                         ● 0/{row.instances.length}
+                      </span>
+                    ) : (
+                      // 0 实例：— 优于 0/0（用户反馈 2026-10-15）。
+                      <span className="ml-auto flex-none rounded-[9px] bg-fill-search px-2 py-0.5 text-micro font-semibold text-ink-2">
+                        —
                       </span>
                     )}
                   </button>

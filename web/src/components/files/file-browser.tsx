@@ -311,10 +311,10 @@ export function FileEntryList({
                         ) : null}
                       </span>
                     </button>
-                    {/* x/y = working/总实例（用户拍板 2026-10-15）：0 时也显示，防误读
-                        「无实例」；working>0 绿、=0 灰。 */}
+                    {/* x/y = working/总实例（用户拍板 2026-10-15）；无统计（0 实例）显示
+                        「—」，0/0 无信息量（用户反馈同日）。 */}
                     <span className={active ? "live" : "live off"}>
-                      ● {stat?.running ?? 0}/{stat?.instances ?? 0}
+                      {stat && stat.instances > 0 ? `● ${stat.running}/${stat.instances}` : "—"}
                     </span>
                     {rowActions(entry)}
                   </div>

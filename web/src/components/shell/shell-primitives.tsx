@@ -264,7 +264,7 @@ export function statusToV2DotClass(
   // 同口径；联合宽入时 agent 侧不会出现该值）。
   if (status === "running") return "dot run";
   if (status === "error") return "dot err";
-  if (status === "done") return "dot finished";
+  if (status === "done") return "dot done";
   return "dot idle";
 }
 

@@ -170,7 +170,7 @@ export function SubagentOverviewBar({ onJump }: { onJump: (index: number) => voi
               <button
                 key={entry.index}
                 type="button"
-                className={"subrow cursor-pointer " + (isRunning ? "" : "done")}
+                className={"subrow cursor-pointer " + (isRunning ? "" : "complete")}
                 onClick={() => {
                   // 跳转 + 一次性展开信号；不碰 expanded = 跳转不改概览条展开状态。
                   setExpandSignal({ index: entry.index });

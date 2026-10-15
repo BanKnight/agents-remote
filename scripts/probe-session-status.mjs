@@ -1,6 +1,6 @@
 // 探针:agent 会话状态 5 态化(v1.6,2026-10-15,OSC 7501 对齐)。验证浏览器真实链路:
 // 1 全局活动卡 dot 5 态 class 映射(idle/working/blocked/done/error);
-// 2 .dot.finished 新变体真实落盘(computed 背景 = --c-success,与 .dot.run 同色——防 CSS
+// 2 .dot.done 落盘(computed 背景 = --c-success,与 .dot.run 同色——防 CSS
 //   未落盘 utility 缺失的假绿,frontend-notes §10);
 // 3 rankGlobalInstances 排序:blocked > error > working > idle/done > terminal;
 // 4 「运行中」计数只计 working(blocked/done 不计入,用户拍板);
@@ -113,7 +113,7 @@ try {
   const expectClass = {
     working: "dot run",
     blocked: "dot warn",
-    done: "dot finished",
+    done: "dot done",
     error: "dot err",
     idle: "dot idle",
   };
@@ -122,11 +122,11 @@ try {
     check(`1 dot class ${name} → "${cls}"`, got === cls, `got="${got}"`);
   }
 
-  // ── 2 .dot.finished 落盘:computed 背景 = --c-success(与 .dot.run 相同)──
+  // ── 2 .dot.done 落盘:computed 背景 = --c-success(与 .dot.run 相同)──
   const doneBg = await rowDot("done").evaluate((el) => getComputedStyle(el).backgroundColor);
   const runBg = await rowDot("working").evaluate((el) => getComputedStyle(el).backgroundColor);
   check(
-    "2 .dot.finished 落盘(背景色与 .dot.run 同为 success)",
+    "2 .dot.done 落盘(背景色与 .dot.run 同为 success)",
     doneBg === runBg && doneBg !== "rgba(0, 0, 0, 0)",
     `${doneBg} vs ${runBg}`,
   );
