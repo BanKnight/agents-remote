@@ -102,7 +102,11 @@ import { type GitDiffScope } from "@agents-remote/shared";
 import { SkillTabPreview } from "../../routes/plugins-shared";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
-import { useInstanceRowActions, useSessionModeSwitch } from "./instance-actions";
+import {
+  sessionModeSwitchPendingAtom,
+  useInstanceRowActions,
+  useSessionModeSwitch,
+} from "./instance-actions";
 import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 
 import { Dialog, DialogContent } from "../ui/dialog";
@@ -625,7 +629,31 @@ function HtmlRenderPanel({ id }: { id: string }) {
   );
 }
 
+/**
+ * Agent 会话面板路由 + 双模式切换进行中细条（2026-10-15 真机反馈）：菜单点击即关浮层后，
+ * POST /mode 同步窗口（1-3s：杀 headless + tmux spawn + CLI 启动）内面板顶部渲染 spinner
+ * 细条承接「进行中」反馈——不替换面板（上一形态保持在场），符合「页面自管加载态、保持上
+ * 一屏、ready 直接切」的既有拍板。细条读 sessionModeSwitchPendingAtom（useSessionModeSwitch
+ * 的 onMutate/onSettled 维护），只对命中的会话显示。
+ */
 function AgentPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
+  const { t } = useT();
+  const pendingSessionId = useAtomValue(sessionModeSwitchPendingAtom);
+  const switching = pendingSessionId === panelRef.sessionId;
+  return (
+    <>
+      {switching ? (
+        <div className="flex shrink-0 items-center gap-1.5 px-3 py-1.5">
+          <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-assistant/40 border-t-assistant" />
+          <span className="text-xs text-on-surface-soft">{t("session.modeSwitch.pending")}</span>
+        </div>
+      ) : null}
+      <AgentPanelRouterInner panelRef={panelRef} />
+    </>
+  );
+}
+
+function AgentPanelRouterInner({ panelRef }: { panelRef: SessionPanelRef }) {
   const { t } = useT();
   const detail = useAgentDetail(panelRef);
   // 首载骨架（§6.12o 批次 2 + 真机反馈 2026-10-10）：detail query 首载显 ChatSkeleton 而非
@@ -2308,7 +2336,9 @@ function SessionTabStripActions({
               />
             ),
             disabled: !modeSwitchable || modeSwitch.isPending,
-            keepOpen: true,
+            // 不 keepOpen（真机反馈 2026-10-15）：点击即关浮层，进行中反馈由面板顶部细条承接
+            //（AgentPanelRouter 读 sessionModeSwitchPendingAtom）——浮层悬着等 POST 返回
+            // 才有变化，观感像「点了没反应」。
             onSelect: () =>
               modeSwitch.mutate({
                 projectName: panelRef.projectName,

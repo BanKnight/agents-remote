@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { atom, useSetAtom } from "jotai";
 import type { AgentSessionMode } from "@agents-remote/shared";
 import {
   ApiClientError,
@@ -69,6 +70,13 @@ export function useRenameSession() {
 }
 
 /**
+ * 双模式切换进行中标记（按 sessionId），AgentPanelRouter 消费：pending 时在面板顶部渲染
+ * spinner 细条——POST /mode 同步等 1-3s（杀 headless + tmux spawn + CLI 启动），菜单点击
+ * 即关（不 keepOpen）后这个细条就是唯一的进行中反馈。
+ */
+export const sessionModeSwitchPendingAtom = atom<string | null>(null);
+
+/**
  * 双模式切换（chat ↔ terminal，2026-10-15）：POST mode → 失效详情 + 列表 + 全局顶层。
  * detail 必须失效重取——渲染分流（AgentPanelRouter 的 mode 分支）读的就是 detail.mode。
  * 失败走 confirm 弹窗提示 + 手动重试（切回对话失败 = pane 已杀、headless 未起，服务端
@@ -80,9 +88,11 @@ export function useSessionModeSwitch() {
   const { t } = useT();
   const { confirm, holder } = useConfirm();
   const queryClient = useQueryClient();
+  const setPending = useSetAtom(sessionModeSwitchPendingAtom);
   const modeSwitch = useMutation({
     mutationFn: (vars: { projectName: string; sessionId: string; mode: AgentSessionMode }) =>
       switchAgentSessionMode(vars.projectName, vars.sessionId, vars.mode),
+    onMutate: (vars) => setPending(vars.sessionId),
     onError: (error, vars) => {
       const conflict = error instanceof ApiClientError && error.code === "SESSION_STATE_CONFLICT";
       void confirm({
@@ -95,8 +105,9 @@ export function useSessionModeSwitch() {
         if (retry) modeSwitch.mutate(vars);
       });
     },
-    onSettled: (_data, _error, vars) =>
-      Promise.all([
+    onSettled: (_data, _error, vars) => {
+      setPending(null);
+      return Promise.all([
         queryClient.invalidateQueries({
           exact: true,
           queryKey: ["projects", vars.projectName, "agent-sessions", vars.sessionId],
@@ -105,7 +116,8 @@ export function useSessionModeSwitch() {
           queryKey: ["projects", vars.projectName, "agent-sessions"],
         }),
         queryClient.invalidateQueries({ queryKey: ["overview"] }),
-      ]),
+      ]);
+    },
   });
   return { modeSwitch, holder };
 }

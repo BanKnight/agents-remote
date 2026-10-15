@@ -34,6 +34,9 @@ async function mockModeApi(page: Page, state: ModeState) {
       const body = route.request().postDataJSON() as { mode?: string };
       state.posted.push(body);
       if (body.mode === "chat" || body.mode === "terminal") state.mode = body.mode;
+      // 真实 POST /mode 是同步等服务端切完才返回（1-3s）；mock 给 300ms 短延时让 pending
+      // 细条（AgentPanelRouter 顶部 spinner）在断言窗口内可观测，否则瞬时 fulfill 会闪过。
+      await new Promise((resolve) => setTimeout(resolve, 300));
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -120,16 +123,23 @@ test("chat 形态 ⋯ 显示「在终端打开」，点击发 POST /mode 后面�
   await expect(modeItem).toBeVisible();
   await modeItem.click();
 
+  // 点击即关浮层（keepOpen 已删，真机反馈 2026-10-15）：菜单项消失。
+  await expect(modeItem).toBeHidden();
+
   // 点击 → POST /mode {mode:"terminal"}（服务端另有 idle-only 守卫，此处只证 web 侧发出）。
   await expect.poll(() => state.posted.length).toBeGreaterThan(0);
   expect(state.posted.at(-1)).toEqual({ mode: "terminal" });
 
-  // 形态落定后 AgentPanelRouter 分流：ChatPanel 撤下、终端面板（xterm）顶上。
+  // POST 同步窗口内面板顶部显 pending 细条（spinner + 文案）——keepOpen 删除后唯一的进行中反馈。
+  await expect(page.getByText("Switching session mode…")).toBeVisible();
+
+  // 形态落定后 AgentPanelRouter 分流：ChatPanel 撤下、终端面板（xterm）顶上，细条消失。
   await expect(page.locator(".xterm")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Switching session mode…")).toBeHidden();
   await expect(page.getByPlaceholder("Ask Claude...")).toHaveCount(0);
 
-  // keepOpen 项：菜单不自动关，同一项就地翻转成「回到对话」（无需重新打开——Radix 打开态会对
-  // trigger 加 aria-hidden，重开是测试人为动作，不是用户路径）。
+  // 菜单已关 → 重开断言同一项翻转成「回到对话」。
+  await page.getByRole("button", { name: "More actions" }).click();
   await expect(page.getByRole("menuitem", { name: "Back to chat" })).toBeVisible();
 });
 
@@ -148,6 +158,8 @@ test("terminal 形态直接进入：渲染终端面板，⋯ 显示「回到对�
   await expect(backItem).toBeVisible();
   await backItem.click();
 
+  // 点击即关浮层（keepOpen 已删）：菜单项消失。
+  await expect(backItem).toBeHidden();
   await expect.poll(() => state.posted.length).toBeGreaterThan(0);
   expect(state.posted.at(-1)).toEqual({ mode: "chat" });
   await expect(page.getByPlaceholder("Ask Claude...")).toBeVisible({ timeout: 15_000 });

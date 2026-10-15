@@ -1478,7 +1478,8 @@ function MobileProjectWorkbench({
                                 />
                               ),
                               disabled: !focusModeSwitchable || focusModeSwitch.isPending,
-                              keepOpen: true,
+                              // 不 keepOpen（真机反馈 2026-10-15）：点击即关浮层，进行中反馈由面板
+                              // 顶部细条承接（AgentPanelRouter 读 sessionModeSwitchPendingAtom）。
                               onSelect: () =>
                                 focusModeSwitch.mutate({
                                   projectName: scope.key,
