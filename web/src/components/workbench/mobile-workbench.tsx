@@ -82,7 +82,7 @@ import {
 import { WORKBENCH_TAB_PLUGINS, type WorkbenchTabPluginContext } from "./workbench-tab-plugin";
 import { MobileProjectHeader } from "./mobile-project-header";
 import { InspectionPanel } from "./inspection-panel";
-import { useInstanceRowActions } from "./instance-actions";
+import { useInstanceRowActions, useSessionModeSwitch } from "./instance-actions";
 import { usePinnedSessions } from "../../hooks/pinned-sessions";
 import { PinnedSessionsBar } from "./pinned-sessions-bar";
 import { usePanelTabRegistry } from "./use-panel-tab-registry";
@@ -1206,6 +1206,15 @@ function MobileProjectWorkbench({
   );
   const focusIsClaude =
     focusSessionType === "agent" && focusAgentDetail.data?.session.provider === "claude";
+  // 双模式（2026-10-15，与桌面 SessionTabStripActions 同构）：terminal 形态 = CLI 原生 TUI
+  //（无 stdin 控制通道 → 自动重试让位）；切换门槛严格 idle-only。
+  const focusSessionMode = focusAgentDetail.data?.session.mode ?? "chat";
+  const focusTerminalMode = focusIsClaude && focusSessionMode === "terminal";
+  const focusModeSwitchable =
+    focusIsClaude &&
+    focusAgentDetail.data?.session.status !== "working" &&
+    focusAgentDetail.data?.session.status !== "blocked";
+  const focusModeSwitch = useSessionModeSwitch();
   // 行1 标题与 runct 徽标（spec §4.1-1）：标题 = 当前聚焦对象名（skill tab 名 / 实例名；
   // detail 未热时 instanceNameMemo sidecar 兜底防 id 闪现——tab 首帧同款语义），无聚焦对象
   // = 项目名（空态标题即项目名，▾ 菜单内仅新建）。runct ●n = 项目运行中实例数。
@@ -1454,6 +1463,32 @@ function MobileProjectWorkbench({
                         onSelect: () => a.rename.run(focusDisplayName),
                       },
                       ...(focusIsClaude
+                        ? [
+                            {
+                              label: focusModeSwitchable
+                                ? t(
+                                    focusSessionMode === "terminal"
+                                      ? "session.backToChat"
+                                      : "session.openInTerminal",
+                                  )
+                                : t("session.modeSwitch.busy"),
+                              icon: (
+                                <ShellIcon
+                                  name={focusSessionMode === "terminal" ? "chat" : "terminal"}
+                                />
+                              ),
+                              disabled: !focusModeSwitchable || focusModeSwitch.isPending,
+                              keepOpen: true,
+                              onSelect: () =>
+                                focusModeSwitch.mutate({
+                                  projectName: scope.key,
+                                  sessionId: effectiveFocusId,
+                                  mode: focusSessionMode === "terminal" ? "chat" : "terminal",
+                                }),
+                            },
+                          ]
+                        : []),
+                      ...(focusIsClaude && !focusTerminalMode
                         ? [
                             {
                               label: t("session.autoRetry.label"),

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import {
   buildSeedInitLine,
   extractContextUsageFromControlResponse,
@@ -9,6 +9,7 @@ import {
   extractModelFromStdoutLine,
   extractSkillReloadFromStdoutLine,
   buildSpawnEnv,
+  buildTuiSpawnArgs,
   readLastContextUsageFromJsonlFile,
   resolveActivePresetCreds,
   resolveContextWindow,
@@ -16,6 +17,7 @@ import {
   ClaudeRuntime,
 } from "./claude-runtime";
 import type { ClaudeModelMapping, ClaudePreset } from "@agents-remote/shared";
+import { claudeJsonlPath } from "./session-routes";
 import type { SettingsStore } from "./settings-store";
 
 test("buildSeedInitLine uses seed_init subtype so server-side init capture skips it", () => {
@@ -988,6 +990,101 @@ test("close 路径显式收口审批（exited 回调被 generation 守卫挡下�
   // close 先 delete 再 kill → exited 回调的 isCurrentGeneration 恒 false，收口只能在此显式触发。
   expect(settled).toEqual(["rt-key"]);
   expect(internal.processes.has("rt-key")).toBe(false);
+});
+
+test("close silent（双模式切换）：不广播 closed、不触发审批 settled，进程照杀", async () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  const settled: string[] = [];
+  runtime.setOnApprovalRuntimeSettled((runtimeKey) => settled.push(runtimeKey));
+  const statusCalls: Array<{ sessionId: string; status: string }> = [];
+  runtime.setOnSessionStatusChange((sessionId, status) => statusCalls.push({ sessionId, status }));
+  const internal = runtime as unknown as {
+    processes: Map<string, { sessionId: string; projectName: string; proc: { kill(): void } }>;
+  };
+  let killed = false;
+  internal.processes.set("rt-key", {
+    projectName: "demo",
+    sessionId: "agent_1",
+    proc: {
+      kill: () => {
+        killed = true;
+      },
+    },
+  });
+
+  await runtime.close("rt-key", { silent: true });
+  // 会话没关，只是换进程形态（headless → tmux）：不广播 closed、审批收口交编排方 clearRuntime。
+  expect(killed).toBe(true);
+  expect(statusCalls).toEqual([]);
+  expect(settled).toEqual([]);
+  expect(internal.processes.has("rt-key")).toBe(false);
+});
+
+// ── buildTuiSpawnArgs：TUI（终端）形态 argv（双模式，2026-10-15）─────────────
+
+test("buildTuiSpawnArgs 无审批参数、无流参数，带 resume/session-id 与规范名", () => {
+  const args = buildTuiSpawnArgs({
+    claudeSessionId: "3f2a4b6c-1111-2222-3333-444455556666",
+    resume: true,
+    model: "claude-opus-5-5",
+    permissionMode: "auto",
+    effort: "high",
+    mcpArgs: ["--mcp-config", '{"mcpServers":{}}'],
+  });
+  expect(args).toEqual([
+    "claude",
+    "--resume",
+    "3f2a4b6c-1111-2222-3333-444455556666",
+    "--model",
+    "claude-opus-5-5",
+    "--permission-mode",
+    "auto",
+    "--effort",
+    "high",
+    "--mcp-config",
+    '{"mcpServers":{}}',
+  ]);
+  // 审批让位（CLI 自己的 TUI 弹审批）+ 无 stream 可解析：三个 headless 专属参数都不带。
+  expect(args).not.toContain("--permission-prompt-tool");
+  expect(args).not.toContain("--output-format");
+  expect(args).not.toContain("--verbose");
+  expect(args).not.toContain("--input-format");
+});
+
+test("buildTuiSpawnArgs 未落盘（JSONL 不存在）走 --session-id", () => {
+  const args = buildTuiSpawnArgs({ claudeSessionId: "abc", resume: false });
+  expect(args).toEqual(["claude", "--session-id", "abc"]);
+});
+
+test("resolveTuiSpawn 按 JSONL 存在性判定 resume/session-id（与 headless spawn 同口径）", async () => {
+  const runtime = new ClaudeRuntime(mkdtempSync(join(tmpdir(), "ar-tui-spawn-run-")));
+  // 唯一 slug 项目路径放 home 内（claudeJsonlPath 落 ~/.claude/projects/<slug>/），清理只动自建目录。
+  const projectPath = mkdtempSync(join(homedir(), ".ar-test-tui-spawn-"));
+  const claudeSessionId = "3f2a4b6c-1111-2222-3333-444455556666";
+  const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
+  try {
+    // 全新 id：JSONL 尚未落盘 → --session-id（CLI 实测该参数只接全新 id）。
+    expect(
+      await runtime.resolveTuiSpawn({
+        projectName: "demo",
+        projectPath,
+        claudeSessionId,
+        permissionMode: "auto",
+      }),
+    ).toEqual(["claude", "--session-id", claudeSessionId, "--permission-mode", "auto"]);
+    // 已有 JSONL（会话跑过）→ --resume 接续（--resume 对不存在 id 硬失败）。
+    mkdirSync(dirname(jsonlPath), { recursive: true });
+    writeFileSync(jsonlPath, "");
+    const resumed = await runtime.resolveTuiSpawn({
+      projectName: "demo",
+      projectPath,
+      claudeSessionId,
+    });
+    expect(resumed.slice(0, 3)).toEqual(["claude", "--resume", claudeSessionId]);
+  } finally {
+    rmSync(projectPath, { recursive: true, force: true });
+    rmSync(dirname(jsonlPath), { recursive: true, force: true });
+  }
 });
 
 // ── turn 状态机(5 态,OSC 7501 对齐)─────────────────────────────────────────

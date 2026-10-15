@@ -28,7 +28,7 @@ export type ClaudeWebSocketData = {
 /** injectUserPrompt 的 discriminated result（controller 层不构造 Response，路由层 map）。 */
 export type SessionPromptInjectResult =
   | SessionPromptInjectResponse
-  | { delivered: false; reason: "session_not_found" | "empty_text" };
+  | { delivered: false; reason: "session_not_found" | "empty_text" | "terminal_mode" };
 
 type StreamSocket = {
   data?: unknown;
@@ -271,6 +271,18 @@ export class ClaudeStreamController {
       `[claude-stream] metadata found=${!!metadata} claudeSessionId=${metadata?.claudeSessionId ?? "none"}`,
     );
 
+    // 双模式守卫（agent-tui）：terminal 形态的 claude 会话没有 headless 进程可拉——拉起会与
+    // tmux pane 里的 CLI 同 claudeSessionId 双写 JSONL。前端 terminal 形态渲染
+    // AgentTerminalPanel（session-stream），不应连 claude-stream；误连时回明确错误。
+    if (metadata?.mode === "terminal") {
+      send(socket, {
+        type: "error",
+        code: "SESSION_STATE_CONFLICT",
+        message: "Session is in terminal mode",
+      });
+      return;
+    }
+
     // Ensure the Claude process is running (respawn with --resume if needed)
     await this.claudeRuntime.ensureRunning(
       data.runtimeKey,
@@ -447,6 +459,13 @@ export class ClaudeStreamController {
     }
     if (text.trim().length === 0) {
       return { delivered: false, reason: "empty_text" };
+    }
+
+    // 双模式守卫（agent-tui）：terminal 形态没有 headless stdin 可注入（stdin 直写会进
+    // tmux pane 的 CLI——那是交互式 TUI，控制协议不存在）。auto-retry 注入等消费方收到
+    // terminal_mode 后静默跳过。
+    if (metadata.mode === "terminal") {
+      return { delivered: false, reason: "terminal_mode" };
     }
 
     const runtimeKey = metadata.runtimeKey;

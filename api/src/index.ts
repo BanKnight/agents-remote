@@ -26,6 +26,7 @@ import { ApprovalCenter } from "./approval-center";
 import { ClaudeRuntime } from "./claude-runtime";
 import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
 import { ClaudeStreamController, handleClaudeStreamUpgrade } from "./claude-stream";
+import { AgentTuiController } from "./agent-tui";
 import {
   applyAuthRefresh,
   handleAuthMe,
@@ -84,6 +85,7 @@ type FetchHandlerOptions = {
   claudeRuntime?: ClaudeRuntime;
   claudeStreamController?: ClaudeStreamController;
   approvalCenter?: ApprovalCenter;
+  agentTui?: AgentTuiController;
   acpStreamController?: AcpStreamController;
   piStreamController?: PiStreamController;
   projectFilesService?: ProjectFilesService;
@@ -407,11 +409,15 @@ export const createFetchHandler =
               jsonError(
                 result.reason === "session_not_found"
                   ? "SESSION_NOT_FOUND"
-                  : "SESSION_TYPE_INVALID",
+                  : result.reason === "terminal_mode"
+                    ? "SESSION_STATE_CONFLICT"
+                    : "SESSION_TYPE_INVALID",
                 result.reason === "session_not_found"
                   ? "Session not found"
-                  : "Prompt text must not be empty",
-                result.reason === "session_not_found" ? 404 : 400,
+                  : result.reason === "terminal_mode"
+                    ? "Session is in terminal mode"
+                    : "Prompt text must not be empty",
+                result.reason === "session_not_found" ? 404 : 409,
               ),
             );
           }
@@ -522,6 +528,7 @@ export const createFetchHandler =
         options.projectsRoot,
         options.sessionRegistry,
         options.settingsStore,
+        options.agentTui,
       );
 
       if (sessionResponse) {
@@ -1541,14 +1548,31 @@ export const startApi = async () => {
   });
   const claudePermissionModes = await parseClaudePermissionModes();
   console.log(`[startup] Claude permission modes: ${claudePermissionModes.join(", ")}`);
+  // 双模式编排（agent-tui）：runtime 分发（exists/close）要按会话形态落 tmux/headless，
+  // 而编排器自身依赖 approvalCenter（在其后装配）——先声明、后赋值，闭包内引用。
+  let agentTui: AgentTuiController | undefined;
   const runtime: RuntimeResources = {
     exists: async (sessionName) => {
-      if (isClaudeSessionName(sessionName)) return claudeRuntime.exists(sessionName);
+      if (isClaudeSessionName(sessionName)) {
+        // 双模式（agent-tui）：terminal 形态的 claude 会话存活面在 tmux pane（headless
+        // 进程已让位），探活要落 tmuxRuntime；chat 形态照旧进程内存活。
+        if ((await sessionRegistry.getAgentModeByRuntimeKey(sessionName)) === "terminal") {
+          return tmuxRuntime.exists(sessionName);
+        }
+        return claudeRuntime.exists(sessionName);
+      }
       if (isAcpSessionName(sessionName)) return acpRuntime.exists(sessionName);
       return tmuxRuntime.exists(sessionName);
     },
     close: async (sessionName) => {
       if (isClaudeSessionName(sessionName)) {
+        if ((await sessionRegistry.getAgentModeByRuntimeKey(sessionName)) === "terminal") {
+          // terminal 形态关停：headless 内存清理（silent——会话在关，不广播 closed）+
+          // tmux pane 关停 + watcher/状态文件清理。
+          await claudeRuntime.close(sessionName, { silent: true });
+          agentTui?.teardownTerminal(sessionName);
+          return tmuxRuntime.close(sessionName);
+        }
         return claudeRuntime.close(sessionName);
       }
       if (isAcpSessionName(sessionName)) {
@@ -1644,6 +1668,22 @@ export const startApi = async () => {
   // M5-b 审批中心（§6.4）：runtime 广播 can_use_tool 登记 + turn 收口；会话内托盘应答经
   // 控制器转发时同步注销（同一 stdin 管道的两条应答入口共用一个登记表）。
   const approvalCenter = new ApprovalCenter(claudeRuntime, sessionRegistry);
+  // 双模式编排（chat ↔ terminal）：tmux pane 起 CLI 原生形态 + hooks 状态文件 watcher。
+  agentTui = new AgentTuiController({
+    runDir: runtimePaths.runDir,
+    registry: sessionRegistry,
+    claudeRuntime,
+    tmuxRuntime,
+    approvalCenter,
+  });
+  // API 重启恢复（双模式）：terminal 形态会话的 tmux pane 独立于 API 存活，但内存里的
+  // fs.watch 随进程消失——按落盘 mode 重挂状态文件 watcher，否则重启后 TUI 状态点停更。
+  // 失败非致命（最坏只是状态点停更），不拖垮 API 启动。
+  try {
+    await agentTui.hydrate(await sessionRegistry.listTerminalModeSessions());
+  } catch (error) {
+    console.error("[startup] agent-tui hydrate failed", error);
+  }
   claudeRuntime.setOnApprovalRequest((info, request) =>
     approvalCenter.registerFromRuntime(info, request),
   );
@@ -1734,6 +1774,7 @@ export const startApi = async () => {
     idleTimeout: SKILL_REQUEST_IDLE_TIMEOUT_SECONDS,
     fetch: createFetchHandler(auth, {
       approvalCenter,
+      agentTui,
       claudeRuntime,
       claudeStreamController,
       acpStreamController,

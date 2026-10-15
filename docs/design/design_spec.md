@@ -180,6 +180,7 @@ L3 深层详情（移动端顶部返回式；桌面 = 右栏对应分段）
 ### 4.7 特殊状态
 - **空态**（03h）：项目无实例 → 不渲染 pill 条，中央空态卡（主按钮新建 Agent）+ 项目工具仍可用；无任何项目 → 主按钮变「新建/采用项目」（08）。
 - **断线**（03i）：导航上方橙横幅（自动重连指数退避 + 立即重试）；pill/摘要/托盘全部冻结变灰**不销毁**；输入禁用；重连按缺口回放。
+- **双模式（GUI 对话 ↔ TUI 终端，2026-10-15）**：同一 claude 会话可切换两种运行形态——**对话**（headless 流式渲染 ChatPanel + web 审批卡）／**终端**（tmux 交互式 CLI，xterm 面板渲染），同一个 claudeSessionId 接力、JSONL 是唯一权威（终端里跑的轮次切回对话后经回放可见）。**入口**：导航 ⋯ 菜单动作区一项「在终端打开」／「回到对话」（双端同构，仅 claude 会话渲染）；**切换门槛严格 idle-only**——working/blocked 时该项禁用并改显「执行中，本轮结束后可切换」（绝不丢 turn）。**形态影响**：终端形态下**审批让位**（CLI 自己的 TUI 弹审批，web 审批卡/审批中心不参与）、**自动重试让位**（注入走 headless stdin，终端无此通道）、运行时模型/effort 切换禁用；状态点仍走 5 态语义，终端形态下由 CLI hooks 旁路采集**关键三态**（发消息→working、审批→blocked、turn 结束→done；error 态覆盖不到，接受——不强求全对上）。**凭证边界**：终端形态 = CLI 原生形态，凭证与模型参数走 CLI 自身配置，**多 preset 场景下用机器默认而非会话 preset**（本部署单网关无实际影响）。
 - Chat/Pi（03g）：气泡式轻量对话；无审批/子 agent；长按 pill 置顶/重命名/关闭。
 - 终端（03f）：无模型 chips；上滑看历史 + 「↓ 实时」回底；tmux 断线内容不丢；无审批托盘。**输入框默认收起**（终端以输出为主、输入框不占常驻高度）：快捷键条常驻贴底（esc/ctrl/tab/方向键/管道点按即注入），右端「展开输入」钮唤出 composer（⚙ 键位自定义移入 composer 控制行；⇧回车发送；再点 ⇲ 收回；展开时快捷键条上移不消失）。**展开态 composer 宽高口径 = agent 家族同款（2026-10-14 真机反馈）**：内容组（快捷键条 + composer 卡）限宽 `max-w-2xl`（672px）居中，不再横跨全宽；textarea min-h 基线 `[2.5rem]`/宽端 `sm:[4.5rem]`、max-h-32 封顶、行高走 `text-sm` 捆绑（整数 20px）——原 `leading-[1.35]`（18.9px 非整数）与 agent 不一致，随批对齐（**归因修正 2026-10-14**：真机「上下滚动条」经诊断实证在**终端输出区**而非输入框，见下句）。**空隙结构同构 agent（同日复核「终端高度明显比 agent 高」）**：min-h 数值同而空隙结构不同构——agent 的 72px 含 textarea 自带 `px-3.5 pt-2.5 pb-1`（14px 纵向 padding）、终端 72px 是纯内容区，空态文字下方空白 52 vs 38px、卡高 120 vs 108px；修正 = 卡去 `px-3 py-2`、空隙移交 textarea + 底行（`h-9` + `px-2.5 pb-2 pt-0.5`，agent 逐字同款），空态卡高 108/76（宽/窄端）两端一致。**卡形制全对齐 agent（2026-10-14 用户拍板「除快捷键条外全对齐」）**：圆角 12（rounded-xl）/ 描边 + 浮起衬底 + 毛玻璃 + focus 边框亮起 = agent 卡骨架逐字同款，原 code 面描边 + rounded-2xl + mono 字体退役。**终端输出区滚动条隐藏（同日反馈「很明显不应该出现」）**：滚动条真身 = xterm 6 内置 vscode 浮层滚动条（`.xterm-scrollable-element > .scrollbar`，scrollback 有滚动量时 slider 浮现；折叠 composer 区域变高、rows 消化少量溢出才暂时消失——数值巧合非修复）；本项目滚动语义 = 滚轮/触摸全走 tmux copy-mode（frontend-notes §6），本地 buffer（scrollback 5000）滚动条为纯视觉噪音 → CSS 双隐藏（`.scrollbar` display:none + `.xterm-viewport` scrollbar-width:none / ::-webkit-scrollbar none，v2-primitives 终端段；内部滚动机制不动，非 mouse-mode 滚轮兜底保留）。
 
@@ -277,6 +278,7 @@ Project    { id, name, path, created_at, sort }   # 删除 = 移出管理（inst
 Instance   { id, project_id, type: agent|terminal|chat,
              name(别名,≤显示截断), runtime, model?, permission?, effort?,
              auto_retry{on,max,interval,text}, status: running|idle|error|closed,
+             mode: chat|terminal,   # 双模式运行形态（仅 claude agent 会话写 terminal；缺省 chat）
              pinned, color_index?, created_at, last_active_at }   # color_index = 置顶时分配的色板位（1–8，最小未用索引）；取消置顶不清除（再置顶颜色不变，颜色记忆连续）
 Session    { id, instance_id, messages[], attachments[], turns, cost_usd, tokens, replay_cursor }
 Approval   { id, instance_id, payload, created_at, status: pending|approved|denied }

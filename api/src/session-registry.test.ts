@@ -209,8 +209,9 @@ test("SessionRegistry.setModel persists a mid-session model switch to metadata",
     await readFile(join(runDir, "sessions", "agent_setmodel456.json"), "utf8"),
   );
   expect(metadata.model).toBe("claude-haiku-4-5-20251001");
-  // setModel only updates model; claudeSessionId is untouched.
-  expect(metadata.claudeSessionId).toBeUndefined();
+  // setModel only updates model; claudeSessionId untouched（双模式后在创建时已钉死，
+  // 此处只证「不被 setModel 改写」）。
+  expect(metadata.claudeSessionId).toBe(agent.claudeSessionId);
 });
 
 test("SessionRegistry.setModel is a no-op when the session metadata file is missing", async () => {
@@ -246,6 +247,64 @@ test("SessionRegistry.setAgentSessionStatus is a no-op when the session metadata
   await expect(
     registry.setAgentSessionStatus("agent_nonexistent_id", "working"),
   ).resolves.toBeUndefined();
+});
+
+// ── 双模式（2026-10-15）：形态落盘 + runtimeKey 反查（index.ts exists/close 分发用）──
+
+test("SessionRegistry.setAgentSessionMode persists mode without bumping updatedAt", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_mode78901234",
+  });
+
+  const agent = await registry.createAgentSession({ project, provider: "claude" });
+  // 缺省形态 = chat（headless stream-json）。
+  expect(agent.mode).toBeUndefined();
+
+  await registry.setAgentSessionMode(agent.id, "terminal");
+
+  const metadata = JSON.parse(
+    await readFile(join(runDir, "sessions", "agent_mode78901234.json"), "utf8"),
+  );
+  expect(metadata.mode).toBe("terminal");
+  // updatedAt 语义 = 活动时间，形态写不 bump（同 setAgentSessionStatus）。
+  expect(metadata.updatedAt).toBe(agent.updatedAt);
+  // 详情/列表透出（agentSessionFromMetadata）。
+  const listed = await registry.listAgentSessions(project.name);
+  expect(listed[0]?.mode).toBe("terminal");
+});
+
+test("SessionRegistry.getAgentModeByRuntimeKey maps runtimeKey → mode", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_modemap1234",
+  });
+  const agent = await registry.createAgentSession({ project, provider: "claude" });
+  const runtimeKey = await registry.getAgentRuntimeKey(project.name, agent.id);
+  expect(runtimeKey).toBeTruthy();
+
+  // chat 形态：mode 未写 → undefined（index.ts 落 headless 分支）。
+  expect(await registry.getAgentModeByRuntimeKey(runtimeKey!)).toBeUndefined();
+  await registry.setAgentSessionMode(agent.id, "terminal");
+  expect(await registry.getAgentModeByRuntimeKey(runtimeKey!)).toBe("terminal");
+  // 未知 runtimeKey → undefined。
+  expect(await registry.getAgentModeByRuntimeKey("ar-agent-claude-nope")).toBeUndefined();
+});
+
+test("createAgentSession pins a fresh claudeSessionId for claude (双模式可切前提)", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_pin12345678",
+  });
+  const agent = await registry.createAgentSession({ project, provider: "claude" });
+  // 钉死 id：--session-id 全新 id 专用，出生即定 → 此后 TUI 切换随时可 --resume。
+  expect(agent.claudeSessionId).toMatch(/^[0-9a-f-]{36}$/);
+  // 非 claude provider 不钉（ACP 走 acpSessionId）。
+  const omp = await registry.createAgentSession({ project, provider: "omp" });
+  expect(omp.claudeSessionId).toBeUndefined();
 });
 
 test("SessionRegistry.parseMetadata normalizes stale agent statuses to idle on read", async () => {

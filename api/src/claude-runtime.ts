@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, fstatSync, openSync, readSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
@@ -386,6 +386,33 @@ export function buildSpawnEnv(
   return env;
 }
 
+// ── TUI（终端）形态 spawn（双模式，2026-10-15）────────────────────────────────
+// CLI 原生形态：纯 argv、零 env 注入（用户拍板）——凭证走 CLI 自身配置；参数全部来自
+// 会话 metadata。审批让位 = 不带 --permission-prompt-tool（CLI 自己的 TUI 弹审批，
+// can_use_tool 帧天然不存在）；stream-json/--verbose 同理不带（无流可解析）。
+
+/** TUI tmux pane 命令 argv（纯函数，单测锁定「无审批参数、有 resume/session-id」）。
+ *  resume 语义与 headless spawn 同一判定（JSONL 存在 = --resume，不存在 = --session-id）。 */
+export function buildTuiSpawnArgs(input: {
+  claudeSessionId: string;
+  resume: boolean;
+  /** 已解析的规范模型名（alias→resolved 查表，消 CLI 自身别名表的网关 422 面）。 */
+  model?: string;
+  permissionMode?: string;
+  effort?: EffortLevel;
+  mcpArgs?: string[];
+}): string[] {
+  return [
+    "claude",
+    input.resume ? "--resume" : "--session-id",
+    input.claudeSessionId,
+    ...(input.model ? ["--model", input.model] : []),
+    ...(input.permissionMode ? ["--permission-mode", input.permissionMode] : []),
+    ...(input.effort ? ["--effort", input.effort] : []),
+    ...(input.mcpArgs ?? []),
+  ];
+}
+
 // 纯函数：从 settings 解析 claude runtime 激活预设的凭证。activePresetId 命中 → 返回
 // {apiKey, baseUrl}；未激活/未命中/无 presets → undefined（spawn 回退继承父进程 env）。
 // v2 起预设恒 anthropic（claude 端点），无需 protocol 守卫。导出供测试。
@@ -554,18 +581,24 @@ export class ClaudeRuntime implements RuntimeResources {
     return alive;
   }
 
-  async close(sessionName: string): Promise<void> {
+  async close(sessionName: string, opts?: { silent?: boolean }): Promise<void> {
     const proc = this.processes.get(sessionName);
     if (proc) {
       // close 信号先于 processes.delete(applyStatusSignal 需 state 在场):详情页在关
       // 停瞬间收到 session_status{closed} 帧;closed 不落盘(index.ts 装配处短路——
       // closeAgentSession 紧随 removeMetadata,异步写会竞态复活刚删的 metadata)。
-      this.applyStatusSignal(sessionName, { kind: "close" });
+      // silent（双模式切换专用）：会话没关,只是换进程形态——不广播 closed、不走审批
+      // settled 回调(agent-tui 编排方自行 clearRuntime),其余清理照旧。
+      if (!opts?.silent) {
+        this.applyStatusSignal(sessionName, { kind: "close" });
+      }
       proc.proc.kill();
       this.processes.delete(sessionName);
       // close 路径的审批收口：exited 回调带 isCurrentGeneration 守卫，processes 已 delete 后
       // 守卫恒 false 不触发——在此显式清 registry，否则残留「存活」僵尸卡片（reviewer P2）。
-      this.onApprovalRuntimeSettled?.(sessionName);
+      if (!opts?.silent) {
+        this.onApprovalRuntimeSettled?.(sessionName);
+      }
     }
     this.autoRetry.destroySession(sessionName);
 
@@ -803,10 +836,19 @@ export class ClaudeRuntime implements RuntimeResources {
     // mcpPort 未配置或 runtime 不支持 → mcpArgs 空,agent 不连 hub(降级,不阻塞 spawn)。
     const mcpArgs = this.buildMcpArgs(projectName);
 
+    // spawn 形态判定(--session-id 实测语义:全新 id 专用,已存在报 "already in use";
+    // --resume 对不存在 id 硬失败 "No conversation found")——JSONL 存在 = --resume 接续,
+    // 不存在 = --session-id 全新。创建即钉 claudeSessionId(双模式)后,该判定天然覆盖
+    // 「创建后未发消息就重启 API」边角(同 id 仍未占用,--session-id 可复用)。
+    const resume = claudeSessionId
+      ? existsSync(claudeJsonlPath(projectPath, claudeSessionId))
+      : false;
+
     const proc = this.spawnClaudeDirect(
       sessionName,
       projectPath,
       claudeSessionId,
+      resume,
       resolvedModel,
       permissionMode,
       resolvedEffort,
@@ -893,6 +935,7 @@ export class ClaudeRuntime implements RuntimeResources {
     sessionName: string,
     projectPath: string,
     claudeSessionId?: string,
+    resume = false,
     model?: string,
     permissionMode?: string,
     effort?: EffortLevel,
@@ -915,7 +958,13 @@ export class ClaudeRuntime implements RuntimeResources {
       "stdio",
       ...(permissionMode ? ["--permission-mode", permissionMode] : []),
       ...(safeModel ? ["--model", safeModel] : []),
-      ...(claudeSessionId ? ["--resume", claudeSessionId] : []),
+      // JSONL 存在 = --resume 接续;不存在 = --session-id 全新钉 id(双模式,spawnAndStart
+      // 判定)。未钉 claudeSessionId 的存量路径两者都不带(CLI 自生成 id,system.init 捕获)。
+      ...(claudeSessionId
+        ? resume
+          ? ["--resume", claudeSessionId]
+          : ["--session-id", claudeSessionId]
+        : []),
       ...mcpArgs,
     ];
 
@@ -934,10 +983,39 @@ export class ClaudeRuntime implements RuntimeResources {
     return proc;
   }
 
-  // 读 settingsStore 算 spawn 输入：model（alias 透传，CLI 经 env 解析）、effort
-  //（metadata 优先 ?? 全局默认）、激活预设凭证（apiKey 只在此处读出注入 env，不存 process
-  // state、不进日志）、view（交给 buildSpawnEnv 注入 ANTHROPIC_DEFAULT_*_MODEL）。
-  // settingsStore 缺失或读失败 → 回退 metadata 原值 + 继承父进程 env（现状不坏）。
+  /** TUI 形态 spawn 输入（双模式编排用，agent-tui 调）：纯 argv 零 env（用户拍板——凭证走
+   *  CLI 自身配置，参数全来自会话 metadata）。审批让位 = argv 不带 --permission-prompt-tool。
+   *  模型别名查表出规范名（与 headless spawn 同源映射，消 CLI 自身别名表的网关 422 面）；
+   *  effort 缺省回落 settings 默认（resolveSpawnInputs 同源）。 */
+  async resolveTuiSpawn(metadata: {
+    projectName: string;
+    projectPath: string;
+    claudeSessionId?: string;
+    modelAlias?: string;
+    model?: string;
+    permissionMode?: string;
+    effort?: EffortLevel;
+  }): Promise<string[]> {
+    if (!metadata.claudeSessionId) {
+      throw new Error("TUI mode requires a pinned claudeSessionId");
+    }
+    const { resolvedEffort, view } = await this.resolveSpawnInputs(
+      metadata.modelAlias ?? metadata.model,
+      metadata.effort,
+    );
+    const resolvedAliases = view ? buildAvailableAliases(view).resolved : undefined;
+    const rawModel = sanitizePersistedModel(metadata.modelAlias ?? metadata.model);
+    const model = rawModel ? (resolvedAliases?.[rawModel] ?? rawModel) : undefined;
+    return buildTuiSpawnArgs({
+      claudeSessionId: metadata.claudeSessionId,
+      resume: existsSync(claudeJsonlPath(metadata.projectPath, metadata.claudeSessionId)),
+      model,
+      permissionMode: metadata.permissionMode,
+      effort: resolvedEffort,
+      mcpArgs: this.buildMcpArgs(metadata.projectName),
+    });
+  }
+
   private async resolveSpawnInputs(
     model: string | undefined,
     effort: EffortLevel | undefined,

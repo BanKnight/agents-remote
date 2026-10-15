@@ -1,6 +1,7 @@
 import type {
   AgentProvider,
   AgentSession,
+  AgentSessionMode,
   AgentSessionStatus,
   ApiErrorCode,
   ClaudeAutoRetryConfig,
@@ -41,6 +42,8 @@ export type SessionMetadata = {
   effort?: EffortLevel;
   /** 自动重试注入配置（claude）；缺省 = 默认关。 */
   autoRetry?: ClaudeAutoRetryConfig;
+  /** 运行形态（双模式）；缺省 chat。仅 claude agent 会话写 terminal（agent-tui 切换时落盘）。 */
+  mode?: AgentSessionMode;
 };
 
 export type RuntimeStream = {
@@ -282,6 +285,15 @@ export class SessionRegistry {
     await this.writeMetadata({ ...metadata, status });
   }
 
+  /** 双模式形态落盘（agent-tui 切换时调）。不 bump updatedAt——同 setAgentSessionStatus，
+   *  mode 是运行形态不是活动。metadata 缺失（已关闭）静默忽略。 */
+  async setAgentSessionMode(sessionId: string, mode: AgentSessionMode): Promise<void> {
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
+    if (!metadata || metadata.type !== "agent") return;
+    await this.writeMetadata({ ...metadata, mode });
+  }
+
   async setModel(sessionId: string, model: string): Promise<void> {
     await this.ensureLoaded();
     const metadata = this.index.get(sessionId);
@@ -508,6 +520,34 @@ export class SessionRegistry {
     return metadata?.provider === "claude" ? metadata.runtimeKey : undefined;
   }
 
+  /** 双模式形态分发（index.ts runtime.exists/close 的 claude 名分支用）：terminal 形态的
+   *  claude 会话存活面在 tmux pane（headless 进程已让位），探活/关闭要落 tmuxRuntime。
+   *  O(n) 内存索引扫描（exists/close 低频路径）。undefined = 非 agent / chat 形态。 */
+  async getAgentModeByRuntimeKey(runtimeKey: string): Promise<AgentSessionMode | undefined> {
+    await this.ensureLoaded();
+    for (const metadata of this.index.values()) {
+      if (metadata.type === "agent" && metadata.runtimeKey === runtimeKey) return metadata.mode;
+    }
+    return undefined;
+  }
+
+  /** 双模式恢复（API 重启）：全部 terminal 形态的 agent 会话（跨 project，纯读，参照
+   *  listCandidateSubtitles 的只读范式——绝不调 keepIfRuntimeExists，那有 removeMetadata 副作用）。
+   *  编排器启动时用它重挂状态文件 watcher：tmux pane 独立于 API 存活，但内存里的 fs.watch
+   *  随进程消失，不重挂则 TUI 状态点停更。 */
+  async listTerminalModeSessions(): Promise<
+    Array<{ id: string; runtimeKey: string; status: SessionMetadata["status"] }>
+  > {
+    await this.ensureLoaded();
+    return Array.from(this.index.values())
+      .filter((metadata) => metadata.type === "agent" && metadata.mode === "terminal")
+      .map((metadata) => ({
+        id: metadata.id,
+        runtimeKey: metadata.runtimeKey,
+        status: metadata.status,
+      }));
+  }
+
   async getTerminalSession(
     projectName: string,
     sessionId: string,
@@ -518,12 +558,17 @@ export class SessionRegistry {
   }
 
   async createAgentSession(input: CreateAgentSessionInput): Promise<AgentSession> {
+    // claude 新会话创建即钉 claudeSessionId（双模式，2026-10-15）：--session-id 实测全新
+    // id 专用（spawn 以 JSONL 存在性判定 resume/session-id），此后 TUI 切换随时可
+    // --resume。恢复历史（input.claudeSessionId）沿用传入值。
+    const claudeSessionId =
+      input.claudeSessionId ?? (input.provider === "claude" ? randomUUID() : undefined);
     const metadata = await this.createMetadata({
       project: input.project,
       type: "agent",
       provider: input.provider,
       displayName: input.displayName,
-      claudeSessionId: input.claudeSessionId,
+      claudeSessionId,
       acpSessionId: input.acpSessionId,
       model: input.model,
       permissionMode: input.permissionMode,
@@ -1005,6 +1050,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   claudeSessionId: metadata.claudeSessionId,
   acpSessionId: metadata.acpSessionId,
   autoRetry: metadata.autoRetry,
+  mode: metadata.mode,
   updatedAt: metadata.updatedAt,
 });
 

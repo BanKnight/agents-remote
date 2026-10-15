@@ -122,6 +122,10 @@ export const zh: Record<TranslationKey, string> = {
   "session.rename": "重命名",
   "session.renamePrompt.title": "重命名会话",
   "session.renamePrompt.placeholder": "会话名称",
+  // ── 双模式（GUI 对话 ↔ TUI 终端，2026-10-15）──────────────────
+  "session.openInTerminal": "在终端打开",
+  "session.backToChat": "回到对话",
+  "session.modeSwitch.busy": "执行中，本轮结束后可切换",
 
   // ── 移动聚焦态实例信息浮窗 (ℹ) ──────────────────────────────
   "session.instanceInfo.title": "实例信息",
@@ -435,6 +439,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.agentSessionCloseFailed": "Agent 会话关闭失败",
   "api.agentSessionRenameFailed": "Agent 会话重命名失败",
   "api.agentSessionAutoRetryFailed": "自动重试消息更新失败",
+  "api.agentSessionModeSwitchFailed": "会话形态切换失败",
   "api.terminalSessionListFailed": "Terminal 会话列表获取失败",
   "api.terminalSessionCreationFailed": "Terminal 会话创建失败",
   "api.terminalSessionDetailFailed": "Terminal 会话详情获取失败",

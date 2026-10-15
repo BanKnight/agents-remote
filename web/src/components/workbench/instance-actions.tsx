@@ -1,6 +1,11 @@
 import { useCallback } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { renameAgentSession, renameTerminalSession } from "../../api/client";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { AgentSessionMode } from "@agents-remote/shared";
+import {
+  renameAgentSession,
+  renameTerminalSession,
+  switchAgentSessionMode,
+} from "../../api/client";
 import { useT } from "../../i18n";
 import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
 import type { SessionPanelRef } from "../../routes/workbench-model";
@@ -59,6 +64,31 @@ export function useRenameSession() {
   );
 
   return { rename, holder: promptHolder };
+}
+
+/**
+ * 双模式切换（chat ↔ terminal，2026-10-15）：POST mode → 失效详情 + 列表 + 全局顶层。
+ * detail 必须失效重取——渲染分流（AgentPanelRouter 的 mode 分支）读的就是 detail.mode。
+ * 失败不额外提示（路由已返回 error code；缓存失效让列表自愈），消费方需要 toast 时读
+ * mutation.isError。双端 ⋯ 菜单共用（桌面 SessionTabStripActions / 移动 moreMenu）。
+ */
+export function useSessionModeSwitch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { projectName: string; sessionId: string; mode: AgentSessionMode }) =>
+      switchAgentSessionMode(vars.projectName, vars.sessionId, vars.mode),
+    onSettled: (_data, _error, vars) =>
+      Promise.all([
+        queryClient.invalidateQueries({
+          exact: true,
+          queryKey: ["projects", vars.projectName, "agent-sessions", vars.sessionId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", vars.projectName, "agent-sessions"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["overview"] }),
+      ]),
+  });
 }
 
 /**

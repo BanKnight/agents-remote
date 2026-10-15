@@ -119,6 +119,10 @@ export const en = {
   "session.namePrompt.placeholder": "Session name (optional)",
   "session.namePrompt.confirm": "Create",
   "session.rename": "Rename",
+  // ── Dual mode (GUI chat ↔ TUI terminal, 2026-10-15) ──────────
+  "session.openInTerminal": "Open in terminal",
+  "session.backToChat": "Back to chat",
+  "session.modeSwitch.busy": "Running — switchable after this turn",
   "session.renamePrompt.title": "Rename session",
   "session.renamePrompt.placeholder": "Session name",
 
@@ -440,6 +444,7 @@ export const en = {
   "api.agentSessionCloseFailed": "Agent session close failed",
   "api.agentSessionRenameFailed": "Failed to rename agent session",
   "api.agentSessionAutoRetryFailed": "Failed to update auto-retry message",
+  "api.agentSessionModeSwitchFailed": "Failed to switch session mode",
   "api.terminalSessionListFailed": "Terminal session list failed",
   "api.terminalSessionCreationFailed": "Terminal session creation failed",
   "api.terminalSessionDetailFailed": "Terminal session detail failed",

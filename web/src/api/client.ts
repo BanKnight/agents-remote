@@ -1,6 +1,7 @@
 import type {
   AgentHistoryFilter,
   AgentProvider,
+  AgentSessionMode,
   AutoRetryStatusResponse,
   AgentSessionDetailResponse,
   AuthMeResponse,
@@ -56,6 +57,8 @@ import type {
   ClaudeAutoRetryConfig,
   UpdateAutoRetryRequest,
   UpdateAutoRetryResponse,
+  SwitchAgentSessionModeRequest,
+  SwitchAgentSessionModeResponse,
   SaveFileRequest,
   SaveFileResponse,
   SessionPromptInjectRequest,
@@ -676,6 +679,24 @@ export async function closeAgentSession(
     "api.agentSessionCloseFailed",
     {
       method: "POST",
+    },
+  );
+}
+
+/** 双模式切换（chat ↔ terminal，2026-10-15）：同一会话换运行形态——服务端杀当前形态进程、
+ *  以同 claudeSessionId 重启另一形态。严格 idle-only（working/blocked → 409）。 */
+export async function switchAgentSessionMode(
+  projectName: string,
+  sessionId: string,
+  mode: AgentSessionMode,
+): Promise<SwitchAgentSessionModeResponse> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/mode`,
+    "api.agentSessionModeSwitchFailed",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode } satisfies SwitchAgentSessionModeRequest),
     },
   );
 }

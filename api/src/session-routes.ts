@@ -18,7 +18,10 @@ import type {
   RenameTerminalSessionResponse,
   UpdateAutoRetryRequest,
   UpdateAutoRetryResponse,
+  SwitchAgentSessionModeRequest,
+  SwitchAgentSessionModeResponse,
 } from "@agents-remote/shared";
+import type { AgentTuiController } from "./agent-tui";
 import {
   deleteAgentHistoryEntry,
   getLastAssistantMessage,
@@ -43,6 +46,7 @@ export const handleSessionRoutes = async (
   projectsRoot: string,
   registry: SessionRegistry,
   settingsStore?: SettingsStore,
+  agentTui?: AgentTuiController,
 ) => {
   const historyMatch = matchAgentHistoryRoute(url.pathname);
   if (historyMatch && request.method === "DELETE" && historyMatch.sessionId) {
@@ -93,7 +97,14 @@ export const handleSessionRoutes = async (
     const project = await resolveProjectPath(projectsRoot, match.projectName);
 
     if (match.resource === "agent-sessions") {
-      return handleAgentSessionRoute(request, registry, project, match.sessionId, settingsStore);
+      return handleAgentSessionRoute(
+        request,
+        registry,
+        project,
+        match.sessionId,
+        settingsStore,
+        agentTui,
+      );
     }
 
     return handleTerminalSessionRoute(request, registry, project, match.sessionId);
@@ -112,6 +123,7 @@ const handleAgentSessionRoute = async (
   project: { name: string; path: string },
   sessionId: string | undefined,
   settingsStore?: SettingsStore,
+  agentTui?: AgentTuiController,
 ) => {
   if (!sessionId && request.method === "GET") {
     const sessions = await registry.listAgentSessions(project.name);
@@ -280,6 +292,46 @@ const handleAgentSessionRoute = async (
     return Response.json(response);
   }
 
+  // 双模式切换（2026-10-15）：chat ↔ terminal（headless stream-json ↔ tmux 交互式 CLI）。
+  // 守卫全表：非 claude → 404（对消费面隐藏能力）；无钉死 claudeSessionId → 400；
+  // working/blocked → 409（严格 idle-only，绝不丢 turn）；同 mode 幂等直返。
+  if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/mode")) {
+    if (!agentTui) {
+      return undefined;
+    }
+    const body = await readJson<SwitchAgentSessionModeRequest>(request);
+    if (body.mode !== "chat" && body.mode !== "terminal") {
+      return jsonError("SESSION_METADATA_ERROR", `Invalid mode: ${String(body.mode)}`, 400);
+    }
+
+    const metadata = await registry.getAgentMetadata(project.name, sessionId);
+    if (!metadata || metadata.provider !== "claude") {
+      return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+    }
+    if (!metadata.claudeSessionId) {
+      return jsonError("SESSION_NOT_CONFIGURED", "Session has no pinned claude session id", 400);
+    }
+    if (metadata.status === "working" || metadata.status === "blocked") {
+      return jsonError(
+        "SESSION_STATE_CONFLICT",
+        "Mode switch requires an idle session (working/blocked)",
+        409,
+      );
+    }
+
+    // 同 mode 幂等：直返当前形态，不起停进程（编排器内亦有同判，此处省一次无谓 spawn）。
+    if ((metadata.mode ?? "chat") !== body.mode) {
+      await agentTui.switchMode(metadata, body.mode);
+    }
+
+    const session = await registry.getAgentSession(project.name, sessionId);
+    if (!session) {
+      return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+    }
+    const response: SwitchAgentSessionModeResponse = { session };
+    return Response.json(response);
+  }
+
   return undefined;
 };
 
@@ -425,7 +477,10 @@ const matchSessionRoute = (pathname: string) => {
   // 6 段 = session/{action}；terminal-sessions 的 auto-retry 由 handler fall-through 404。
   if (
     segments.length === 6 &&
-    (segments[5] === "close" || segments[5] === "rename" || segments[5] === "auto-retry")
+    (segments[5] === "close" ||
+      segments[5] === "rename" ||
+      segments[5] === "auto-retry" ||
+      segments[5] === "mode")
   ) {
     const sessionId = decodePathSegment(segments[4]);
     return sessionId ? { projectName, resource, sessionId } : undefined;

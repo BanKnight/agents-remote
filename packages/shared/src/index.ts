@@ -1140,6 +1140,12 @@ export type SessionType = "agent" | "terminal";
 
 export type TransportStatus = "connected" | "disconnected" | "ended" | "error";
 
+/** Agent 会话运行形态（双模式，2026-10-15）：chat = headless stream-json（GUI 对话流，
+ *  宿主注入 preset env + web 审批接管）；terminal = tmux 交互式 claude（xterm attach，
+ *  CLI 原生形态——凭证走 CLI 自身配置、审批由 CLI 自己的 TUI 承接）。同一 claudeSessionId
+ *  两种形态间 --resume 接力，JSONL 是唯一权威；缺省 chat。 */
+export type AgentSessionMode = "chat" | "terminal";
+
 export type AgentSession = {
   id: string;
   projectName: string;
@@ -1156,6 +1162,8 @@ export type AgentSession = {
   acpSessionId?: string;
   /** 自动重试注入配置（claude）；缺省 = 默认关。 */
   autoRetry?: ClaudeAutoRetryConfig;
+  /** 运行形态（双模式）；缺省 chat。仅 claude provider 支持 terminal。 */
+  mode?: AgentSessionMode;
   lastAssistantMessage?: string;
   updatedAt?: string;
 };
@@ -1361,6 +1369,15 @@ export type UpdateAutoRetryRequest = {
 };
 
 export type UpdateAutoRetryResponse = {
+  session: AgentSession;
+};
+
+/** POST agent-sessions/:id/mode 请求（双模式切换，严格 idle-only 由服务端守卫）。 */
+export type SwitchAgentSessionModeRequest = {
+  mode: AgentSessionMode;
+};
+
+export type SwitchAgentSessionModeResponse = {
   session: AgentSession;
 };
 

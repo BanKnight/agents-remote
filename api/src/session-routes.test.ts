@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { projectToSlug } from "./agent-history";
+import type { AgentTuiController } from "./agent-tui";
 import { ompSessionSlug } from "./omp-history";
 import { SessionRegistry } from "./session-registry";
 import { handleSessionRoutes } from "./session-routes";
@@ -118,4 +119,121 @@ test("POST agent-sessions（provider=omp）透传 acpSessionId；未知 provider
   });
   const badRes = await handleSessionRoutes(badReq, new URL(badReq.url), projectsRoot, registry);
   expect(badRes?.status).toBe(400);
+});
+
+// ── 双模式切换路由（mode 动作，2026-10-15）：守卫全表 ────────────────────────
+
+/** 编排器 stub：记录目标 + 落盘（真实 tmux/CLI 起停在 agent-tui.test.ts 覆盖）。 */
+const stubTui = (calls: string[]) =>
+  ({
+    async switchMode(metadata: { id: string }, target: "chat" | "terminal") {
+      calls.push(`${metadata.id}:${target}`);
+      await registry.setAgentSessionMode(metadata.id, target);
+    },
+  }) as unknown as AgentTuiController;
+
+const modeRequest = (sessionId: string, mode: unknown) => {
+  const req = new Request(
+    `http://localhost/api/projects/mergeproj/agent-sessions/${sessionId}/mode`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mode }),
+    },
+  );
+  return { req, url: new URL(req.url) };
+};
+
+async function seedAgentSession(provider: string): Promise<string> {
+  const session = await registry.createAgentSession({
+    project: { name: "mergeproj", path: "" },
+    provider,
+  });
+  return session.id;
+}
+
+test("POST mode：chat→terminal 落盘并交给编排器；同 mode 幂等不重起", async () => {
+  const sessionId = await seedAgentSession("claude");
+  const calls: string[] = [];
+  const agentTui = stubTui(calls);
+
+  const { req, url } = modeRequest(sessionId, "terminal");
+  const res = await handleSessionRoutes(req, url, projectsRoot, registry, undefined, agentTui);
+  expect(res?.status).toBe(200);
+  const body = (await res!.json()) as { session: { mode?: string } };
+  expect(body.session.mode).toBe("terminal");
+  expect(calls).toEqual([`${sessionId}:terminal`]);
+
+  // 同 mode（已是 terminal）幂等：直返当前形态，不再起停进程。
+  const again = modeRequest(sessionId, "terminal");
+  const againRes = await handleSessionRoutes(
+    again.req,
+    again.url,
+    projectsRoot,
+    registry,
+    undefined,
+    agentTui,
+  );
+  expect(againRes?.status).toBe(200);
+  const againBody = (await againRes!.json()) as { session: { mode?: string } };
+  expect(againBody.session.mode).toBe("terminal");
+  expect(calls).toHaveLength(1);
+});
+
+test("POST mode：working / blocked → 409（严格 idle-only，绝不丢 turn）", async () => {
+  const sessionId = await seedAgentSession("claude");
+  const calls: string[] = [];
+  const agentTui = stubTui(calls);
+
+  for (const busy of ["working", "blocked"] as const) {
+    await registry.setAgentSessionStatus(sessionId, busy);
+    const { req, url } = modeRequest(sessionId, "terminal");
+    const res = await handleSessionRoutes(req, url, projectsRoot, registry, undefined, agentTui);
+    expect(res?.status).toBe(409);
+    const busyBody = (await res!.json()) as { error: { code: string } };
+    expect(busyBody.error.code).toBe("SESSION_STATE_CONFLICT");
+  }
+  expect(calls).toEqual([]);
+
+  // done / error 是「最近一轮结果态」不是运行中——可切。
+  await registry.setAgentSessionStatus(sessionId, "done");
+  const { req, url } = modeRequest(sessionId, "terminal");
+  const res = await handleSessionRoutes(req, url, projectsRoot, registry, undefined, agentTui);
+  expect(res?.status).toBe(200);
+});
+
+test("POST mode：非 claude provider → 404；非法 mode → 400；未装配编排器 → 不接管", async () => {
+  const ompId = await seedAgentSession("omp");
+  const calls: string[] = [];
+  const agentTui = stubTui(calls);
+
+  const notClaude = modeRequest(ompId, "terminal");
+  const notClaudeRes = await handleSessionRoutes(
+    notClaude.req,
+    notClaude.url,
+    projectsRoot,
+    registry,
+    undefined,
+    agentTui,
+  );
+  expect(notClaudeRes?.status).toBe(404);
+  expect(calls).toEqual([]);
+
+  const claudeId = await seedAgentSession("claude");
+  const badMode = modeRequest(claudeId, "gui");
+  const badModeRes = await handleSessionRoutes(
+    badMode.req,
+    badMode.url,
+    projectsRoot,
+    registry,
+    undefined,
+    agentTui,
+  );
+  expect(badModeRes?.status).toBe(400);
+  const badModeBody = (await badModeRes!.json()) as { error: { code: string } };
+  expect(badModeBody.error.code).toBe("SESSION_METADATA_ERROR");
+
+  // 未装配编排器（E2E / 旧调用）：mode 路由不接管，落到后续 handler。
+  const noTui = modeRequest(claudeId, "terminal");
+  expect(await handleSessionRoutes(noTui.req, noTui.url, projectsRoot, registry)).toBeUndefined();
 });

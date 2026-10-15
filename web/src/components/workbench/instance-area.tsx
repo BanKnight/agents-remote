@@ -102,7 +102,7 @@ import { type GitDiffScope } from "@agents-remote/shared";
 import { SkillTabPreview } from "../../routes/plugins-shared";
 import { GitFileDiffPanel } from "../git/git-diff-viewer";
 import { relativeTime } from "./history-list";
-import { useInstanceRowActions } from "./instance-actions";
+import { useInstanceRowActions, useSessionModeSwitch } from "./instance-actions";
 import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 
 import { Dialog, DialogContent } from "../ui/dialog";
@@ -657,7 +657,9 @@ function AgentPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
       />
     );
   }
-  if (detail.data?.session.provider === "claude") {
+  // 双模式（2026-10-15）：terminal 形态的 claude 会话渲染终端面板（xterm + session-stream
+  // WS → tmuxRuntime.attach），不走 ChatPanel——同一会话两种进程形态，JSONL 是唯一权威。
+  if (detail.data?.session.provider === "claude" && detail.data.session.mode !== "terminal") {
     return <ChatPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
   // ACP transport 类 provider（当前只有 omp）→ AcpPanel。按 transport 判定：加其它 ACP CLI
@@ -2255,6 +2257,15 @@ function SessionTabStripActions({
   const autoRetry = useAutoRetryToggle(panelRef.projectName, panelRef.sessionId, sessionType);
   const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
   const isClaude = sessionType === "agent" && agentDetail.data?.session.provider === "claude";
+  // 双模式（2026-10-15）：mode=terminal = CLI 原生 TUI 形态（无 stdin 控制通道 → 自动重试
+  // 注入/模型切换让位）；切换门槛严格 idle-only（working/blocked 禁用，绝不丢 turn）。
+  const sessionMode = agentDetail.data?.session.mode ?? "chat";
+  const terminalMode = isClaude && sessionMode === "terminal";
+  const modeSwitchable =
+    isClaude &&
+    agentDetail.data?.session.status !== "working" &&
+    agentDetail.data?.session.status !== "blocked";
+  const modeSwitch = useSessionModeSwitch();
   const items: ActionMenuItem[] = [
     {
       label: t("session.instanceInfo.title"),
@@ -2285,6 +2296,31 @@ function SessionTabStripActions({
       onSelect: () => a.rename.run(meta?.label ?? panelRef.sessionId),
     },
     ...(isClaude
+      ? [
+          {
+            label: modeSwitchable
+              ? t(sessionMode === "terminal" ? "session.backToChat" : "session.openInTerminal")
+              : t("session.modeSwitch.busy"),
+            icon: (
+              <ShellIcon
+                className="size-[17px]"
+                name={sessionMode === "terminal" ? "chat" : "terminal"}
+              />
+            ),
+            disabled: !modeSwitchable || modeSwitch.isPending,
+            keepOpen: true,
+            onSelect: () =>
+              modeSwitch.mutate({
+                projectName: panelRef.projectName,
+                sessionId: panelRef.sessionId,
+                mode: sessionMode === "terminal" ? "chat" : "terminal",
+              }),
+          },
+        ]
+      : []),
+    // 自动重试注入走 headless stdin——terminal 形态无控制通道（服务端 injectUserPrompt
+    // 拒绝），菜单项随之让位。
+    ...(isClaude && !terminalMode
       ? [
           {
             label: t("session.autoRetry.label"),

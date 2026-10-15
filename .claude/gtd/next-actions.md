@@ -17,6 +17,12 @@
 - [ ] **批 17/18 真机复验**：编辑态聚焦不被挡 / aux 贴键盘紧凑（无 34px 空隙）/ 键盘收起恢复 / composer 回归无变化 / 键盘偶发不弹排查（focus-shift 风险项）/ Android 编辑态与 composer 被顶起而非遮挡 / **批 18 取证操作：进入文件编辑态，反复收起弹开键盘直到工具条被挡出现，然后把屏幕左上角浮层数据读给 Claude**
 - [ ] M5 浮层与审批（sheet/popover 体系 + 服务端聚合审批中心，security-reviewer 必过）→ M6–M10（范围见总纲 §6，随进度逐个展开成动作）
 
+## @双模式（Agent 会话 GUI 对话 ↔ TUI 终端）
+
+- [x] **双模式批实现**（2026-10-15 完成）：同一 claudeSessionId 在 chat（headless）↔ terminal（tmux 交互式 CLI）接力，JSONL 唯一权威；严格 idle-only；hooks 状态旁路关键三态；审批让位零代码；hydrate 重启重挂 watcher。门禁全绿（api 950 / shared 10 / web 803）+ 探针 24/24 + e2e 2/2（既有 27 全绿）；细节见 `.claude/gtd/inbox.md` 2026-10-15 ✅ 条
+- [ ] **双模式真机验收（交用户）**：GUI 发一轮 → ⋯ 在终端打开 → xterm 是同一会话（历史在）→ TUI 跑一轮（状态点 working→done）→ ⋯ 回到对话 → GUI 气泡含 TUI 轮次 → TUI 内触发审批（CLI 自己弹，web 无卡）；顺带暴露 TUI 凭证边界
+- [ ] **双模式批 reviewer 补跑**：本环境 subagent API 面故障（unexpected EOF ×6）→ 下 session 补 code-reviewer + design-reviewer 复核本批
+
 ## @harness
 
 - [x] **harness 改造收尾验证**（2026-09-19，完成）——三项实测全过：①重启会话，SessionStart 注入 KB 级 current.md（非旧版 589KB）；②`/handoff save` 实测通过（快照 20260919-0317 已归档）；③`/gtd inbox` 实测通过（追加捕获条目后自清理）。（hook 单测 + 四门禁已过，commit `db5b0fd`）
