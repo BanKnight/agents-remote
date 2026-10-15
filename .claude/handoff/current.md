@@ -1,10 +1,10 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-15（**agent 状态点 5 态化批已 commit `9d5421f`**——OSC 7501 对齐；同日早前：分类明细批 `dbbf669`、权威化批 `fe5e396`）
+> 最后更新：2026-10-15（**真机反馈三连修 `443118f`**：TabChip done 灰点单源回归 + `.dot.finished` 撞名椭圆 + 统计计数 x/y 化；5 态化批 `9d5421f`）
 
 ## 一句话状态
 
-5 态化批已交付（`9d5421f`）：turn 状态机 idle/working/blocked/done/error + closed，语义对齐 Program Status Protocol（OSC 7501）。api 纯状态机 → metadata 落盘 + session_status 帧广播 + seed 回放恢复（与 fe5e396 统一标量管道同构）。code/design 双 reviewer 报告全消化（P1×6/P2×3 修复 + P3 记档 inbox），探针 9/9、全门禁绿（api 931 + web 803）、dev 已 respawn、CSS text/css。**待真机验收**。
+5 态化批（`9d5421f`）+ 真机反馈三连修（`443118f`）已交付：①TabChip done 灰点（statusDot 数据源直带 instanceDot2 class，全端状态点单源）；②`.dot.done` 与 03c 完成横幅裸类 `.done` 撞名拉椭圆 → 改名 `.dot.finished` + 探针补几何断言（教训 frontend-notes §34）；③统计计数六处 x/y 化（working/总实例，防「0 = 没实例」误读，用户拍板）。探针 14/14、全门禁绿、web 已 respawn。**待真机验收**。
 
 ## 本 session 焦点
 
