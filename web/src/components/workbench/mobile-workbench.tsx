@@ -1209,8 +1209,8 @@ function MobileProjectWorkbench({
   // 行1 标题与 runct 徽标（spec §4.1-1）：标题 = 当前聚焦对象名（skill tab 名 / 实例名；
   // detail 未热时 instanceNameMemo sidecar 兜底防 id 闪现——tab 首帧同款语义），无聚焦对象
   // = 项目名（空态标题即项目名，▾ 菜单内仅新建）。runct ●n = 项目运行中实例数。
-  // runct ●n = 项目运行中实例数（header 顶部圆点不做 x/y——统计理念只属于项目页，
-  // 2026-10-15 用户拍板）。
+  // runct ● 指示点（有运行中实例即亮，不显示数字——header 聚焦的是会话，统计属于
+  // 项目页，2026-10-15 用户拍板）。
   const runningCount = useMemo(
     () => instances.reduce((n, e) => n + (countsAsRunning(e.type, e.session.status) ? 1 : 0), 0),
     [instances],

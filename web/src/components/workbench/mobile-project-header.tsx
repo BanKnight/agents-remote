@@ -21,8 +21,7 @@ type MobileProjectHeaderProps = {
    * 空态 / 自动聚焦瞬态 = 项目名。
    */
   title: string;
-  /** runct ●n 微标：项目运行中实例数（原型 workspace.html `.runct`）；0 不渲染。
-   *  2026-10-15 用户拍板：工作台 header 顶部的圆点不做 x/y——统计理念只属于项目页。 */
+  /** runct ● 指示点：项目有运行中实例（原型 workspace.html `.runct` 去数字化）；0 不渲染。 */
   runningCount?: number;
   /** 项目活跃实例（▾ 实例切换菜单列表源 = useProjectInstances 单一数据管道）。 */
   instances: ProjectInstanceEntry[];
@@ -266,8 +265,9 @@ function InstanceSwitchMenu({
             />
           )}
           <span className="block truncate">{title}</span>
-          {/* runct ●n：项目运行中实例数（9px 绿，原型 .runct） */}
-          {runningCount ? <span className="runct">●{runningCount}</span> : null}
+          {/* runct ●：项目有运行中实例的指示点（9px 绿，原型 .runct 去数字化——工作台
+            header 聚焦的是会话，数字统计只属于项目页，2026-10-15 用户拍板） */}
+          {runningCount ? <span className="runct">●</span> : null}
           {/* 实例切换菜单锚（批 12 反馈⑤：CSS 手绘 .sw 旋转盒退役 → Lucide 管线单轨；
             显式尺寸防 WebKit flex 收缩隐形，frontend-notes §15⑤。开态主色用 currentColor。 */}
           <LucideIcon
