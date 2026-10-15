@@ -359,3 +359,13 @@
 **标准做法**：浮层组件（DropdownMenuContent / Dialog Content）加 `onCloseAutoFocus={(e) => e.preventDefault()}`——无聚焦元素即无环，**结构性免疫引擎分歧**（同 §7/§32 家族：WebKit 视觉 Chromium 复现不了，探针断 `document.activeElement` 证接线，视觉交真机）。本项目落点：InstanceSwitchMenu + **MobileSheet 基座**（全移动 sheet 统一，含 ActionMenu 移动形态/⋯/AddMenu）；桌面 Dialog/DropdownMenu **不拦**（键盘焦点返还是正确 a11y 行为，Chromium 无环）。**勿用 CSS `outline-none` 压制**——症状端修复且扑灭键盘焦点指示。取舍 = 关闭后焦点落 body：触屏无键盘焦点诉求零感知；该默认在桌面键盘场景才有价值。
 
 **来源**：2026-10-14 浮层关闭回焦批（mobile-project-header.tsx + mobile-sheet.tsx + probe-sheet-focus-policy.mjs A/B 关闭断言）；「点空白消失」用户观察佐证链。
+
+## 34. CSS 变体类名撞裸原型类：`.dot.done` 被 03c 完成横幅 `.done{display:flex}` 拉成椭圆
+
+**现象**（2026-10-15 真机）：移动项目页 done 状态圆点是 26×22 大椭圆；探针 14 断言全绿（只断 class 字符串 + computed 背景色）假绿放行。
+
+**机制**：CSS 类名全局作用域。新加 `.dot` 原语变体取短语义词（`done`）时，与 v2-primitives.css 里**既有裸原型类**（03c 完成横幅 `.done{display:flex;padding;border;border-radius:12px}`）撞名——两条规则同落在 dot span 上，横幅盒模型覆盖 7px 圆点几何。JSX 侧 `className` 字符串断言与 computed 背景色断言都对**盒模型污染**完全盲（背景色恰与横幅 tint-green 语义接近还互相印证）。
+
+**标准做法**：①**新增 CSS 变体类名落盘前先查撞名**：`rg "^\s*\.NAME\s*\{|[^-\w]\.NAME[ ,{:.]"` 扫 v2-primitives.css + components.css（含裸类、`.x .NAME` 后代选择器），无命中才用；②**几何断言是 class 断言的必备补集**——凡新增/改名字体类/圆点类/徽章类，探针必须量 `getBoundingClientRect`（7×7 正圆这类硬数值），只断 className 与背景色会放过盒模型污染；③UI 语义命名冲突优先改**新变体**名（如 `done→finished`），不动存量原型类（消费面大）。
+
+**来源**：commit `443118f`（`.dot.finished` 改名 + 探针 2b 几何断言）；`scripts/_diag-dot-geometry.mjs` 一次性诊断实锤（done 26×22/flex、working 7×7/block）。
