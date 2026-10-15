@@ -46,6 +46,7 @@ async function seed() {
   const tmuxCommands: string[] = [];
   let tmuxClosed = 0;
   const cleared: string[] = [];
+  const modeSwitched: string[] = [];
   const claudeRuntime = {
     async close(key: string, opts?: { silent?: boolean }) {
       closeCalls.push({ key, silent: opts?.silent });
@@ -76,6 +77,7 @@ async function seed() {
     claudeRuntime,
     tmuxRuntime,
     approvalCenter,
+    onModeSwitched: (key) => modeSwitched.push(key),
   });
   return {
     controller,
@@ -89,6 +91,7 @@ async function seed() {
     ensureCalls,
     tmuxCommands,
     cleared,
+    modeSwitched,
     tmuxClosed: () => tmuxClosed,
   };
 }
@@ -149,9 +152,10 @@ test("switchToTerminal：silent 关 headless → 落 settings/状态文件（060
     `'claude' '--resume' '${h.metadata.claudeSessionId}' '--mcp-config' '{"a":"b c"}'`,
   ]);
 
-  // 形态落盘（详情/列表透出）。
+  // 形态落盘（详情/列表透出）+ 多端跟随回调（关该会话全部 claude-stream WS）。
   const session = await registry.getAgentSession(project.name, h.sessionId);
   expect(session?.mode).toBe("terminal");
+  expect(h.modeSwitched).toEqual([h.runtimeKey]);
   h.controller.teardownTerminal(h.runtimeKey);
 });
 
@@ -224,6 +228,8 @@ test("switchToChat：拆 watcher/删文件 → 关 tmux → --resume 起 headles
 
   const session = await registry.getAgentSession(project.name, h.sessionId);
   expect(session?.mode).toBe("chat");
+  // 多端跟随回调：terminal→chat 方向同样发出（chat 侧防御性 no-op，见实现注释）。
+  expect(h.modeSwitched).toEqual([h.runtimeKey, h.runtimeKey]);
 
   // 状态文件/settings 随会话形态清理（文件不存在 = 删成功）。
   await expect(readFile(statusPath(h.runtimeKey), "utf8")).rejects.toThrow();

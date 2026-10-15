@@ -512,6 +512,15 @@ export class ClaudeStreamController {
     }
   }
 
+  /** 双模式切换（agent-tui 编排完成回调）：关掉该会话全部 claude-stream WS——
+   *  set_runtime_effort 同款「持久化后关 WS → 各客户端自动重连」先例。多端打开同一会话时，
+   *  未切换端的重连会撞 open() 的 terminal 守卫（SESSION_STATE_CONFLICT）→ 客户端识别该帧
+   *  停止重连并失效 detail → AgentPanelRouter 按新 mode 自动换渲染形态（跟随切换）。 */
+  closeSessionSockets(runtimeKey: string): void {
+    const sockets = [...(this.socketsByRuntimeKey.get(runtimeKey) ?? [])];
+    for (const socket of sockets) socket.close();
+  }
+
   private async startStream(socket: StreamSocket, data: NonNullable<ClaudeWebSocketData>) {
     const emit: BatchEmit = (frame) => {
       if (frame instanceof Uint8Array) {

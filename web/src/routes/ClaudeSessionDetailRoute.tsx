@@ -385,9 +385,17 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     detail.data?.session.modelAlias ?? detail.data?.session.model,
     detail.data?.session.permissionMode,
     // composer 附件接线（发图批）：onNew 发送瞬间取快照组帧、成功后清 chips。
+    // onModeConflict（多端跟随）：会话被其它端切成 terminal → 失效 detail，AgentPanelRouter
+    // 重读 mode 换渲染终端面板（本端 ChatPanel 随之分流撤下）。
     {
       takePendingAttachments: composerAttachments.takeSnapshot,
       clearPendingAttachments: composerAttachments.clear,
+      onModeConflict: () => {
+        void queryClient.invalidateQueries({
+          exact: true,
+          queryKey: ["projects", projectName, "agent-sessions", sessionId],
+        });
+      },
     },
   );
 

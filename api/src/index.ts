@@ -1675,6 +1675,9 @@ export const startApi = async () => {
     claudeRuntime,
     tmuxRuntime,
     approvalCenter,
+    // 多端跟随（2026-10-16）：切换完成后关该会话全部 claude-stream WS——未切换端重连被
+    // terminal 守卫拒（SESSION_STATE_CONFLICT），客户端失效 detail 自动换渲染形态。
+    onModeSwitched: (runtimeKey) => claudeStreamController.closeSessionSockets(runtimeKey),
   });
   // API 重启恢复（双模式）：terminal 形态会话的 tmux pane 独立于 API 存活，但内存里的
   // fs.watch 随进程消失——按落盘 mode 重挂状态文件 watcher，否则重启后 TUI 状态点停更。

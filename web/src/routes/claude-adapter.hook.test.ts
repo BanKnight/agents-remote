@@ -191,6 +191,37 @@ describe("useClaudeSession websocket lifecycle", () => {
     }
   });
 
+  test("SESSION_STATE_CONFLICT error frame stops reconnect and fires onModeConflict", async () => {
+    vi.useFakeTimers();
+    try {
+      const onModeConflict = vi.fn();
+      renderHook(() => useClaudeSession("proj", "sess", undefined, undefined, { onModeConflict }));
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+      const socket = MockSocket.instances[0];
+      act(() => socket.open());
+
+      // 多端跟随（2026-10-16）：另一端切 terminal 后本端重连撞 open() 守卫——识别该帧
+      // → 通知外层失效 detail + 关 socket；onclose 不再 scheduleReconnect（500ms 后无新
+      // socket = 重连已停，防与 AgentPanelRouter 换形态后的新面板叠连）。
+      act(() => {
+        socket.emit({
+          type: "error",
+          code: "SESSION_STATE_CONFLICT",
+          message: "Session is in terminal mode",
+        } as never);
+      });
+      expect(onModeConflict).toHaveBeenCalledTimes(1);
+      expect(socket.readyState).toBe(MockSocket.CLOSED);
+
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(MockSocket.instances).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("handles replay, switch model, and control_request branches", async () => {
     const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));

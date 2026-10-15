@@ -62,6 +62,9 @@ export class AgentTuiController {
       claudeRuntime: ClaudeRuntime;
       tmuxRuntime: TmuxRuntime;
       approvalCenter?: ApprovalCenter;
+      /** 切换完成回调（两个方向都发）：index.ts 接 claude-stream 关该会话全部 WS——
+       *  多端打开同一会话时，未切换端靠「重连被守卫拒 / 面板 ended」跟随新形态。 */
+      onModeSwitched?: (runtimeKey: string) => void;
     },
   ) {}
 
@@ -115,6 +118,8 @@ export class AgentTuiController {
     this.tuiStatus.set(runtimeKey, spawnInitialStatus(metadata.status));
     this.startWatcher(runtimeKey, metadata.id);
     approvalCenter?.clearRuntime(runtimeKey);
+    // 6) 多端跟随：关该会话全部 claude-stream WS（此时 mode 已落盘，未切换端重连被守卫拒）。
+    this.deps.onModeSwitched?.(runtimeKey);
   }
 
   private async switchToChat(metadata: SessionMetadata): Promise<void> {
@@ -135,6 +140,9 @@ export class AgentTuiController {
       spawnInitialStatus(metadata.status),
     );
     await registry.setAgentSessionMode(metadata.id, "chat");
+    // 多端跟随：terminal→chat 方向未切换端经「pane 被 kill → 面板收 ended → 失效 detail」
+    // 跟随；此处关 claude-stream WS 是防御性 no-op（terminal 期本就没有 chat WS）。
+    this.deps.onModeSwitched?.(runtimeKey);
   }
 
   /** 终端形态拆除（切回 chat / 会话关闭共用）：停 watcher + 删状态/settings 文件 + 清基线。

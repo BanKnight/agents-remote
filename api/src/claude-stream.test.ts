@@ -436,4 +436,21 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     expect(err.type).toBe("error");
     expect(err.code).toBe("SESSION_RUNTIME_ERROR");
   });
+
+  test("closeSessionSockets closes all sockets of the session (mode-switch follow)", async () => {
+    const { controller } = makeController();
+    const a = makeSocket();
+    const b = makeSocket();
+    await controller.open(a);
+    await controller.open(b);
+    // 未登记的 runtimeKey / 无 socket：no-op 不抛。
+    controller.closeSessionSockets("ar-claude-claude-demo-other");
+    expect(a.closeCalls).toBe(0);
+    expect(b.closeCalls).toBe(0);
+    // agent-tui onModeSwitched 接线：切换完成后关该会话全部 WS → 客户端重连撞 terminal
+    // 守卫（open() 回 SESSION_STATE_CONFLICT）→ 停止重连并失效 detail 跟随新形态。
+    controller.closeSessionSockets("ar-claude-claude-demo-sess-1");
+    expect(a.closeCalls).toBe(1);
+    expect(b.closeCalls).toBe(1);
+  });
 });

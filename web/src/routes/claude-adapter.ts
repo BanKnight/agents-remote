@@ -3837,9 +3837,12 @@ export function useClaudeSession(
   initialModel?: string,
   initialPermissionMode?: string,
   // composer 附件接线（发图批）：ref 持有（onNew 依赖稳定），发送瞬间取快照组帧。
+  // onModeConflict（多端跟随，2026-10-16）：另一端把会话切成 terminal 形态后，本端重连撞
+  // open() 的 terminal 守卫（SESSION_STATE_CONFLICT）→ 停止重连 + 通知外层失效 detail。
   options?: {
     takePendingAttachments?: () => PendingAttachments | null;
     clearPendingAttachments?: () => void;
+    onModeConflict?: () => void;
   },
 ) {
   const [connectionVersion, setConnectionVersion] = useState(0);
@@ -3879,6 +3882,9 @@ export function useClaudeSession(
   // composer 附件接线（发图批）：ref 持有 options，onNew 依赖保持 [sendToSocket] 不变。
   const pendingAttachmentsRef = useRef(options);
   pendingAttachmentsRef.current = options;
+  // onModeConflict 同样经 ref 进 WS effect 闭包（回调身份不稳定，不能进依赖）。
+  const onModeConflictRef = useRef(options?.onModeConflict);
+  onModeConflictRef.current = options?.onModeConflict;
 
   // ── Scalar state updater ──────────────────────────────────────────
   // Applies per-message scalar state updates (tasks, model, etc.).
@@ -4659,6 +4665,10 @@ export function useClaudeSession(
 
     let cancelled = false;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    // 多端跟随（2026-10-16）：重连撞 terminal 守卫（SESSION_STATE_CONFLICT）= 会话已被
+    // 其它端切成 terminal 形态——停止重连（ChatPanel 马上被 AgentPanelRouter 撤下），
+    // onclose 据此跳过 scheduleReconnect。
+    let modeConflict = false;
 
     // Reset on session change or initial mount; reconnect otherwise.
     if (isSessionChange || connectionVersion === 0) {
@@ -4759,6 +4769,15 @@ export function useClaudeSession(
         const raw = event.data as string;
         const msg = JSON.parse(raw) as SessionStreamServerMessage;
         if (isSocketLoggingEnabled()) console.log("[claude-adapter] ws recv", msg);
+
+        // terminal 守卫拒绝（多端跟随）：会话已在其它端切成 terminal 形态。关 socket 并停止
+        // 重连，通知外层失效 detail → AgentPanelRouter 重读 mode 换渲染 terminal 面板。
+        if (msg.type === "error" && (msg as { code?: string }).code === "SESSION_STATE_CONFLICT") {
+          modeConflict = true;
+          onModeConflictRef.current?.();
+          socket.close();
+          return;
+        }
 
         // ── Batch markers ────────────────────────────────────────────
         // Start markers are transport control — never render.
@@ -4952,7 +4971,7 @@ export function useClaudeSession(
     };
 
     socket.onclose = () => {
-      if (!cancelled) {
+      if (!cancelled && !modeConflict) {
         socketRef.current = null;
         setConnected(false);
         setLoading(true);

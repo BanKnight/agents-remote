@@ -27,7 +27,11 @@ const sessionBody = (state: ModeState) => ({
   availablePermissionModes: ["default", "bypassPermissions"],
 });
 
-async function mockModeApi(page: Page, state: ModeState) {
+async function mockModeApi(
+  page: Page,
+  state: ModeState,
+  onClaudeSocket?: (ws: { send: (data: string) => void; close: () => void }) => void,
+) {
   await page.route(
     new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/mode$`),
     async (route) => {
@@ -83,11 +87,13 @@ async function mockModeApi(page: Page, state: ModeState) {
     });
   });
   // 两条 WS 都 mock（假会话在服务端不存在，真 upgrade 会 404）：claude-stream（chat 面板）
-  // 回 pong 维持半开自愈；session-stream（终端面板）只挂不断。
+  // 回 pong 维持半开自愈；session-stream（终端面板）只挂不断。onClaudeSocket 供「多端跟随」
+  // 用例从 mock 服务端侧推帧/关连接（模拟另一端切换后服务端关 WS）。
   for (const suffix of ["claude-stream", "stream"]) {
     await page.routeWebSocket(
       new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/${suffix}`),
       (ws) => {
+        if (suffix === "claude-stream") onClaudeSocket?.(ws);
         ws.onMessage((data) => {
           try {
             const msg = JSON.parse(String(data)) as { type?: string };
@@ -164,4 +170,31 @@ test("terminal 形态直接进入：渲染终端面板，⋯ 显示「回到对�
   expect(state.posted.at(-1)).toEqual({ mode: "chat" });
   await expect(page.getByPlaceholder("Ask Claude...")).toBeVisible({ timeout: 15_000 });
   await expect(page.locator(".xterm")).toHaveCount(0);
+});
+
+test("多端跟随：其它端把会话切成 terminal 后，本端 ChatPanel 自动换渲染终端面板", async ({
+  page,
+}) => {
+  const state: ModeState = { mode: "chat", posted: [] };
+  const claudeSockets: Array<{ send: (data: string) => void; close: () => void }> = [];
+  await mockModeApi(page, state, (ws) => claudeSockets.push(ws));
+  await signIn(page);
+  await page.goto(`/projects/${projectName}/agent-sessions/${fakeSessionId}/claude`);
+
+  // 本端以 chat 形态打开（未发起切换的旁观端）。
+  await expect(page.getByPlaceholder("Ask Claude...")).toBeVisible({ timeout: 15_000 });
+
+  // 模拟另一端切换完成：服务端 mode 落盘 terminal + 关该会话全部 claude-stream WS。
+  // 真链路 = 客户端重连撞 open() 守卫收 SESSION_STATE_CONFLICT；此处直接推同款错误帧
+  // （close 前推帧 = 重连路径的终态等价，只证 web 侧分支）。
+  state.mode = "terminal";
+  for (const ws of claudeSockets) {
+    ws.send(JSON.stringify({ type: "error", code: "SESSION_STATE_CONFLICT", message: "x" }));
+    ws.close();
+  }
+
+  // 跟随：onModeConflict 失效 detail → refetch 返回 terminal → AgentPanelRouter 换渲染
+  // 终端面板（xterm），ChatPanel 撤下。
+  await expect(page.locator(".xterm")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByPlaceholder("Ask Claude...")).toHaveCount(0);
 });

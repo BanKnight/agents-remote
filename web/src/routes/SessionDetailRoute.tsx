@@ -6,7 +6,7 @@ import type {
   TerminalSession,
   TransportStatus,
 } from "@agents-remote/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type FormEvent,
   type ReactNode,
@@ -125,6 +125,7 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
     return () => media.removeEventListener("change", handler);
   }, []);
 
+  const queryClient = useQueryClient();
   const detail = useQuery<SessionDetailResponse>({
     queryKey: ["projects", projectName, `${sessionType}-sessions`, sessionId],
     queryFn: () =>
@@ -225,6 +226,16 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
         if (message.type === "ended") {
           setConnectionStatus("ended");
           setSessionStatus("closed");
+          // 多端跟随（2026-10-16）：agent 会话 pane 退出可能是其它端切回 chat 形态（tmux 被
+          // kill）——失效 detail 让 AgentPanelRouter 重读 mode 换渲染 ChatPanel；pane 内
+          // /exit 时 mode 仍是 terminal，refetch 无形态变化（重连循环每次 ended 重触发，
+          // 服务端切完模式后一次 refetch 即收敛）。
+          if (sessionType === "agent") {
+            void queryClient.invalidateQueries({
+              exact: true,
+              queryKey: ["projects", projectName, "agent-sessions", sessionId],
+            });
+          }
           return;
         }
 
