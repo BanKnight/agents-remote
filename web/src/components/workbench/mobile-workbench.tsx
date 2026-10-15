@@ -1214,7 +1214,7 @@ function MobileProjectWorkbench({
     focusIsClaude &&
     focusAgentDetail.data?.session.status !== "working" &&
     focusAgentDetail.data?.session.status !== "blocked";
-  const focusModeSwitch = useSessionModeSwitch();
+  const { modeSwitch: focusModeSwitch, holder: focusModeSwitchHolder } = useSessionModeSwitch();
   // 行1 标题与 runct 徽标（spec §4.1-1）：标题 = 当前聚焦对象名（skill tab 名 / 实例名；
   // detail 未热时 instanceNameMemo sidecar 兜底防 id 闪现——tab 首帧同款语义），无聚焦对象
   // = 项目名（空态标题即项目名，▾ 菜单内仅新建）。runct ●n = 项目运行中实例数。
@@ -1668,6 +1668,8 @@ function MobileProjectWorkbench({
       {focusInfo.holder}
       {focusInfo.autoRetryEditorHolder}
       {focusInfo.runtimeDialogHolder}
+      {/* 双模式切换失败弹窗（useSessionModeSwitch confirm.holder，2026-10-15）。 */}
+      {focusModeSwitchHolder}
       {/* M5-a 浮层（portal 渲染，位置无谓，随 holders 常驻顶层）：03j 新建实例 / 03n 历史 /
         08 新建项目。03l 项目切换 sheet 在项目语境无入口（v1.5 批 2：‹ 项目 = 项目 Tab 根，
         项目列表即切换器；插件语境的 03l 切换器仍在 mobile-plugins-home）。 */}

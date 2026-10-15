@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { AgentSessionMode } from "@agents-remote/shared";
 import {
+  ApiClientError,
   renameAgentSession,
   renameTerminalSession,
   switchAgentSessionMode,
@@ -9,6 +10,7 @@ import {
 import { useT } from "../../i18n";
 import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
 import type { SessionPanelRef } from "../../routes/workbench-model";
+import { useConfirm } from "../shell/confirm-dialog";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
 /**
@@ -69,14 +71,30 @@ export function useRenameSession() {
 /**
  * 双模式切换（chat ↔ terminal，2026-10-15）：POST mode → 失效详情 + 列表 + 全局顶层。
  * detail 必须失效重取——渲染分流（AgentPanelRouter 的 mode 分支）读的就是 detail.mode。
- * 失败不额外提示（路由已返回 error code；缓存失效让列表自愈），消费方需要 toast 时读
- * mutation.isError。双端 ⋯ 菜单共用（桌面 SessionTabStripActions / 移动 moreMenu）。
+ * 失败走 confirm 弹窗提示 + 手动重试（切回对话失败 = pane 已杀、headless 未起，服务端
+ * 不自动回滚——重试即重走 switchMode，一般即恢复）；409（严格 idle-only 拒绝）用「执行中」
+ * 文案而非通用失败。双端 ⋯ 菜单共用（桌面 SessionTabStripActions / 移动 moreMenu），
+ * holder 由调用方渲染（confirm.holder 同 rename/close 惯例）。
  */
 export function useSessionModeSwitch() {
+  const { t } = useT();
+  const { confirm, holder } = useConfirm();
   const queryClient = useQueryClient();
-  return useMutation({
+  const modeSwitch = useMutation({
     mutationFn: (vars: { projectName: string; sessionId: string; mode: AgentSessionMode }) =>
       switchAgentSessionMode(vars.projectName, vars.sessionId, vars.mode),
+    onError: (error, vars) => {
+      const conflict = error instanceof ApiClientError && error.code === "SESSION_STATE_CONFLICT";
+      void confirm({
+        cancelLabel: t("cancel"),
+        confirmLabel: t("session.retry"),
+        message: conflict ? t("session.modeSwitch.busy") : t("api.agentSessionModeSwitchFailed"),
+        title: t("session.modeSwitch.failedTitle"),
+        tone: "accent",
+      }).then((retry) => {
+        if (retry) modeSwitch.mutate(vars);
+      });
+    },
     onSettled: (_data, _error, vars) =>
       Promise.all([
         queryClient.invalidateQueries({
@@ -89,6 +107,7 @@ export function useSessionModeSwitch() {
         queryClient.invalidateQueries({ queryKey: ["overview"] }),
       ]),
   });
+  return { modeSwitch, holder };
 }
 
 /**

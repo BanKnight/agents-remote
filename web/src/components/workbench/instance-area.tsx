@@ -2265,7 +2265,7 @@ function SessionTabStripActions({
     isClaude &&
     agentDetail.data?.session.status !== "working" &&
     agentDetail.data?.session.status !== "blocked";
-  const modeSwitch = useSessionModeSwitch();
+  const { modeSwitch, holder: modeSwitchHolder } = useSessionModeSwitch();
   const items: ActionMenuItem[] = [
     {
       label: t("session.instanceInfo.title"),
@@ -2360,6 +2360,7 @@ function SessionTabStripActions({
       {infoHolder}
       {autoRetryEditorHolder}
       {renameHolder}
+      {modeSwitchHolder}
     </>
   );
 }

@@ -123,6 +123,7 @@ export const en = {
   "session.openInTerminal": "Open in terminal",
   "session.backToChat": "Back to chat",
   "session.modeSwitch.busy": "Running — switchable after this turn",
+  "session.modeSwitch.failedTitle": "Switch failed",
   "session.renamePrompt.title": "Rename session",
   "session.renamePrompt.placeholder": "Session name",
 
