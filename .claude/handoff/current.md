@@ -1,28 +1,27 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-15（**上下文占用权威化批已 commit `fe5e396`**——get_context_usage 控制通道 + resume 恢复 + 占位过滤；同日上线：环形仪表重做批 `6904d94`）
+> 最后更新：2026-10-15（**上下文占用分类明细批已 commit `dbbf669`**——categories[] 分段堆叠条 + 图例替换式；同日早前：权威化批 `fe5e396`）
 
 ## 一句话状态
 
-上下文占用指示权威化批已交付（`fe5e396`）：修复用户测试会话 39efb784 实测两 bug（resume 后不显示、live 对话中不更新），路径升级为 **CLI 原生 `get_context_usage` 控制通道**（用户指路 + 探针实证）。全门禁绿（api 单测 911 含新增用例、code-reviewer P1×2/P3×2 全消化），api dev 已 respawn。**待真机验收**。
+分类明细批已交付（`dbbf669`）：get_context_usage 应答的 `categories[]` 上浮浮层——**替换式**（有分类 = 分段堆叠条 + 9 行图例；无分类回退 usage 四行；帧缺分类保留上一次防闪变）。design-reviewer P0/P1/P2 全消化，探针 9/9 全绿，全门禁绿，web/api dev 已 respawn。**待真机验收**。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **【本批核心】get_context_usage 权威通道**：CLI 2.1.299 原生支持 `control_request{subtype:"get_context_usage", detail:"summary"}`（与 set_model 同一条 stdin/stdout 控制通道），应答 `{totalTokens, maxTokens, rawMaxTokens?, percentage, model, categories[], gridRows[], autocompactSource}`。**探针实证：--resume 后、首条用户消息前即应答**（CLI 不主动吐 stdout，但控制请求是 stdin 输入会得到应答——手写诊断脚本别再「等 init」死锁）。`totalTokens`=CLI /context 口径已用量；`maxTokens`=**autocompact 感知真实窗口**（settings 配 buffer 时 > 模型裸窗口，如 230000 = 200k+30k），比 `[1m]` 后缀推断的 `resolveContextWindow` 权威；summary 不调 token-count API、不带 usage 明细（input/cache 分解）。
-- **resume 恢复两段式（review P1 后定形）**：①JSONL 尾部位读（`readLastContextUsageFromJsonl`，1MB 窗 openSync/readSync **不整文件读**、占位行同款过滤）同步先行 → seed 零等待；②控制请求 fire-and-forget → `refreshContextUsageFromControl` 覆盖权威 `contextTokens/contextWindow` 并广播（**绝不在 addSubscriber 前同步 await**——CLI mid-turn 排队/不支持时 WS 首字节被拖到 5s 超时）。
-- **占位 usage 过滤**：网关（chatcmpl-* 消息 ID）对流式中间消息（stop_reason 缺省的 thinking/tool_use/text 中间块）发占位 usage `{input_tokens:1, output_tokens:1, cache:0}`，真实 usage 只在收尾行——「最后一条胜出」被拉成 0%。修 = `MIN_VALID_CONTEXT_TOKENS=1000`（真实上下文至少整条 system prompt，与占位值隔数量级）；stdout 折算保留为中途渐进更新，占位过滤是防线。
-- **turn 结束权威刷新**：`result` 帧触发 `refreshContextUsageFromControl`——异步控制请求，成功则覆盖 + 广播 `context_usage` 帧；dedupe 条件 = contextTokens 与 contextWindow **双同**才跳过（窗口独变也要广播）。
-- **waiter 机制**：`contextUsageWaiters` Map（request_id → {resolve, timer}），stdin **直写**（绕开 `write()` 的 autoRetry.cancelPending——控制探测不是用户输入）；captureControlResponseFromLine 只结算有 waiter 的应答（客户端 set_model 应答安全 no-op）；结算/超时双路径 clearTimeout。
-- **（沿用）架构共识**：采集层 → 统一会话标量 state（api）→ WS 单管道 → 前端统一组件；协议双形态 `seed_init.contextUsage`（嵌套恢复）/ `context_usage` 帧平铺（live 广播）；环形仪表 + 三档 + 浮层显示端已交付（`6904d94`），右组成组、`.u-lvl-*` 只管 color。
+- **【本批】替换式明细**：`categories?.length` → 分段堆叠条（`.u-bar-seg` width=tokens/window%，free 段不渲染 = track 底）+ 图例行（`.u-row-cat` 色点 + i18n 名 + formatContextTokens）；无 → 原 usage 四行。`context_usage` 帧 `categories: frame.categories ?? prev?.categories` 保留上次（防 stdout 折算帧打掉分类闪变）。
+- **八类色映射**（v2-primitives.css `.u-cat-*`，CLI 终端 color 名不采）：System prompt `--ink-2` / System tools `--c-primary` / Custom agents `--c-pin` / Memory files `--c-success-text` / Skills `--c-warning-text` / Messages `--c-session-5` / **buffer `--ink-3` 全不透明**（design review P1 数值实算：原 sep-strong@0.45 叠 track 双主题每通道差仅 7-9 不可辨，改定方案）/ free 空心描边。未知名原样透传 + `u-cat-sysprompt` 中性兜底。
+- **design review P0（险些漏网）**：`.u-bar` 原无 `display:flex`，块级 `.u-bar-seg` 竖排堆叠被 height+overflow:hidden 裁到只剩第一段，**width 断言测不出该塌法**——已修 flex + 探针补「各 seg top 与 .u-bar 对齐」几何断言（aligned=true 顺带证明新 CSS 真实落盘生效）。
+- **（沿用权威化批 `fe5e396`）**：CLI 原生 `get_context_usage` 控制通道（stdin 直写 + waiter 5s 超时）；resume 两段式（JSONL 尾部位读先行 + 控制请求 fire-and-forget）；`MIN_VALID_CONTEXT_TOKENS=1000` 占位过滤；result 帧触发权威刷新。
+- **P2 已知取舍（记入 spec）**：保留分类期间图例数值滞后于头部已用汇总，至下一次控制应答收敛——非 bug。
 
 ### 进度
 
-- ✅ **权威化批** `fe5e396`：两 bug 修复 + 控制通道 + JSONL 回填 + 占位过滤；code-reviewer 消化（P1×2：stream 不同步 await / 位读尾窗；P3×2：total≤0 不渲染 / timer 清理；测试补 JSONL 读取三态）
-- ✅ 环形仪表重做批 `6904d94`（前批，显示端已就绪）
-- ⏳ **真机清单（合并两批）**：①resume 测试会话 39efb784 应立即显示 ~41% 环形指示（230k 窗口，JSONL 先行 → 权威值毫秒级覆盖）；②live 对话一轮：数值随收尾行渐进更新、turn 结束权威刷新、不再闪 0%；③控制行右组形态/环弧与百分比一致/浮层明细/双形态（沿用前批清单）
-- ⏳ **下一批候选（已拍板方向待排期）**：①双模式切换；②mod 采集批；③插件管理 UI；④浮层升级素材：get_context_usage 的 `categories[]`（System prompt/tools/Messages/Skills/Memory 分解）可做浮层分类明细展示（本批未动 UI）
+- ✅ **分类明细批** `dbbf669`：shared/api/adapter/组件/CSS/i18n/spec/单测/探针全链路；design-reviewer P0×1/P1×1/P2×1/P3×3 消化（P3 未知名兜底同灰、free 冗余行已顺手删、zh 夹英文名属诚实兜底不动）
+- ✅ 权威化批 `fe5e396` + 环形仪表批 `6904d94`（前批）
+- ⏳ **真机清单（三批合并）**：①resume 测试会话 39efb784 立即显示 ~41%（230k 窗口）；②live 对话渐进更新 + turn 结束权威刷新、不闪 0%；③分类批：浮层分段堆叠条/图例色点双主题可辨（**重点看 buffer 段 --ink-3 与 free 底是否分得开**）、resume 四行 → 权威帧到达分类的平滑切换；④控制行右组形态/三档变色（沿用）
+- ⏳ **下一批（已拍板待开工）**：**agent 状态点 5 态化**——working/waiting/idle/done/error 取代会话行单一绿点（用户原话「遵守标准，做成 5 个状态」）；涉及 api 状态推导管道 + 协议 + 列表/详情 UI；**开工前进 plan mode**。
 
 ### 阻塞 / 风险
 
@@ -30,11 +29,13 @@
 
 ## 易丢的关键上下文
 
-- **探针结论**（CLI 二进制 strings + 实跑实证）：`get_context_usage` 在 vTo set（`get_usage/mcp_status/get_context_usage/stop_task/background_tasks`——疑似空闲期白名单）；zod schema `zo=` 处；应答经 `sendControlRequest` 通道。categories 项形如 `{name:"System prompt", tokens:9025, color, kind:"used"|"buffer"|"free"}`，used 之和 = totalTokens。
-- **关键落点**（api/src/claude-runtime.ts）：`MIN_VALID_CONTEXT_TOKENS`(:152 附近)、`readLastContextUsageFromJsonl(File)`(位读+按路径核心可测)、`extractContextUsageFromControlResponse`(total≤0 无效)、`getContextUsage`/`captureControlResponseFromLine`/`refreshContextUsageFromControl`、processStdoutLine 挂载序（…contextUsage → controlResponse → result 触发 refresh）、stream() 两段恢复块。
-- **JSONL 路径规则**：`claudeJsonlPath`（session-routes.ts:506）= `~/.claude/projects/<slug>/<claudeSessionId>.jsonl`，slug=cwd 非字母数字全转 `-`。
-- **探针纪律**（沿用）：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；一次性诊断不入库（本批 `/tmp/_diag-get-context-usage.mjs` 已删）；CLI 子进程在 cgroup 内时 MemoryMax 放宽到 4G。
-- **会话清理端点** = `POST /api/projects/<p>/agent-sessions/<id>/close`（不是 DELETE）；验证用 PROJECTS_ROOT/test 测试项目。
+- **探针结论**：CLI 应答 categories 项 `{name, tokens, color, kind:"used"|"buffer"|"free"}`，used 之和 = totalTokens，全体之和 = maxTokens；`gridRows`/单项 `percentage` 不采。
+- **探针 mock 结构坑**：routeWebSocket handler 里 `if (index === 1) { …; return; }` 的 **return 不可丢**——丢了连接 1 也执行 seed 块，89% 提前覆盖全部帧时序（本次改造曾弄丢导致 3 断言假挂，靠 git diff 对照 HEAD 找回）。
+- **探针 close 时序**：连接 1 ws.close 延迟（现 2500ms）必须覆盖断言 5/6 浮层交互窗口，否则 seed_init 抢先覆盖成 89% 假挂。
+- **关键落点**：`CONTEXT_USAGE_CATEGORY_STYLES`（composer-controls.tsx，name → dotClass + i18nKey）；`categoryDotClass` kind 优先于 name；`.u-cat-*`（v2-primitives.css u-pop 块）；adapter context_usage 分支。
+- **JSONL 路径规则**：`~/.claude/projects/<slug>/<claudeSessionId>.jsonl`，slug=cwd 非字母数字全转 `-`。
+- **探针纪律**（沿用）：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；一次性诊断不入库；验证用 PROJECTS_ROOT/test。
+- **会话清理端点** = `POST /api/projects/<p>/agent-sessions/<id>/close`（不是 DELETE）。
 
 ## 提醒
 
@@ -42,4 +43,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-15 01:30；触发原因：上下文占用权威化批收尾（commit fe5e396 + handoff 记档）
+最后更新：2026-10-15（分类明细批 commit dbbf669 + handoff 记档）

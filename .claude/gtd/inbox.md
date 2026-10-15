@@ -26,3 +26,8 @@
 ## 2026-10-13 五联修 review 挂起项
 
 1. **git 写路径的 NOT_CHANGED 空态**：commit/放弃时勾选文件已被外部提交（`project-git-write.ts:210` 抛 PROJECT_GIT_FILE_NOT_CHANGED）仍以通用错误呈现——读路径五联③已做「没有变更」空态，写路径如需同款体验可另开批（来源：code review 顺带发现，五联修范围外）。
+
+## 2026-10-15 agent 状态点 5 态化 review 挂起项(P3,低频)
+
+1. **effort 确认门双数据源不一致**(code-review P3-10):`runtime-config-dialog.tsx` 的 effort 重启确认门读 REST detail(10s 概率滞后),`ClaudeSessionDetailRoute` 同一门读 WS 实时 `sessionStatus` 标量——两入口对「turn 进行中」判定可能瞬时不同。如需收敛,给 dialog 加 prop 透传实时标量(涉及调用链扩散)。
+2. **config 读改写并发窗口**(code-review P3-11,既有):runtime-config 保存为「读 metadata → 改 → 整体写回」,并发保存可能丢更新——属既有模式,本批不扩面。

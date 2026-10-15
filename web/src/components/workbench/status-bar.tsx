@@ -1,6 +1,7 @@
 import { useApprovals } from "../../hooks/use-approvals";
 import { useT } from "../../i18n";
 import { useIsDesktopViewport } from "../../routes/workbench-model";
+import { countsAsRunning } from "../shell/shell-primitives";
 import { ApprovalPopover } from "./approval-popover";
 import { useGlobalInstanceCandidates } from "./instance-area";
 
@@ -26,7 +27,7 @@ export function StatusBar() {
   );
   const { approvals } = useApprovals(isDesktop);
   if (!isDesktop) return null;
-  const runningCount = candidates.filter((candidate) => candidate.status === "running").length;
+  const runningCount = candidates.filter((c) => countsAsRunning(c.type, c.status)).length;
 
   return (
     <div aria-label={t("workbench.statusBarAria")} className="sbar" role="status">

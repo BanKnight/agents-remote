@@ -3,6 +3,7 @@ import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
+  type AgentSessionStatus,
   type ClaudeAutoRetryConfig,
   type ClaudeContextUsage,
   type ClaudeControlRequest,
@@ -11,6 +12,11 @@ import {
   type EffortLevel,
 } from "@agents-remote/shared";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
+import {
+  type AgentStatusSignal,
+  nextAgentSessionStatus,
+  spawnInitialStatus,
+} from "./agent-session-status";
 import { ClaudeSessionRelay } from "./session-relay";
 import {
   SettingsStore,
@@ -22,7 +28,7 @@ import { getAgentProviderProfile } from "./agent-provider-profiles";
 import { buildMcpInjectorForProvider } from "./mcp-injector";
 import { sanitizePersistedModel } from "./model-id";
 import { claudeJsonlPath } from "./session-routes";
-import { ClaudeAutoRetryWatch } from "./claude-auto-retry";
+import { ClaudeAutoRetryWatch, isErrorResultLine } from "./claude-auto-retry";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
@@ -39,8 +45,11 @@ export function buildSeedInitLine(
   permissionMode?: string,
   modelAlias?: string,
   contextUsage?: ClaudeContextUsage,
+  sessionStatus?: AgentSessionStatus,
 ): string | undefined {
-  if (!model && !permissionMode && !modelAlias && !contextUsage) return undefined;
+  if (!model && !permissionMode && !modelAlias && !contextUsage && !sessionStatus) {
+    return undefined;
+  }
   return JSON.stringify({
     type: "system",
     subtype: "seed_init",
@@ -48,6 +57,7 @@ export function buildSeedInitLine(
     ...(modelAlias ? { modelAlias } : {}),
     ...(permissionMode ? { permissionMode } : {}),
     ...(contextUsage ? { contextUsage } : {}),
+    ...(sessionStatus ? { sessionStatus } : {}),
   });
 }
 
@@ -324,6 +334,9 @@ type ClaudeProcess = {
   contextWindow: number;
   /** spawn 时的 alias→resolved ID 映射（buildAvailableAliases(view).resolved），窗口判定用。 */
   resolvedAliases?: Record<string, string>;
+  /** turn 状态（OSC 7501 对齐）: 统一会话标量管道第二个标量。spawn 初始 idle，
+   *  经 applyStatusSignal 迁移；广播 session_status 帧 + 落盘 metadata（跨重启）。 */
+  sessionStatus: AgentSessionStatus;
 };
 
 /** 审批中心登记上下文：ClaudeProcess 已有字段，can_use_tool 登记时随行（registry 无需反查）。 */
@@ -418,6 +431,10 @@ export class ClaudeRuntime implements RuntimeResources {
     | ((info: ClaudeApprovalRequestInfo, request: ClaudeControlRequest) => void)
     | null = null;
   private onApprovalRuntimeSettled: ((runtimeKey: string) => void) | null = null;
+  // turn 状态迁移出口：metadata 落盘（session-registry，跨重启权威）+ REST 快照。
+  // 广播在 applyStatusSignal 内直接 injectLine（与 context_usage 同款 broadcast-only）。
+  private onSessionStatusChange: ((sessionId: string, status: AgentSessionStatus) => void) | null =
+    null;
   // 自动重试注入配置源（index.ts 从 SessionRegistry metadata 读 autoRetry config）。
   private autoRetryConfigProvider:
     | ((
@@ -438,6 +455,8 @@ export class ClaudeRuntime implements RuntimeResources {
           // 进程已死/已销毁——注入尽力而为，定时器随 destroySession 清理。
         });
         this.injectLiveLine(sessionName, echoLine);
+        // retry 注入本质 = 自动替用户发了一条消息 → user_input 迁移(working)。
+        this.applyStatusSignal(sessionName, { kind: "user_input" });
       },
     });
   }
@@ -472,6 +491,10 @@ export class ClaudeRuntime implements RuntimeResources {
 
   setOnApprovalRuntimeSettled(cb: (runtimeKey: string) => void) {
     this.onApprovalRuntimeSettled = cb;
+  }
+
+  setOnSessionStatusChange(cb: (sessionId: string, status: AgentSessionStatus) => void) {
+    this.onSessionStatusChange = cb;
   }
 
   setAutoRetryConfigProvider(
@@ -534,6 +557,10 @@ export class ClaudeRuntime implements RuntimeResources {
   async close(sessionName: string): Promise<void> {
     const proc = this.processes.get(sessionName);
     if (proc) {
+      // close 信号先于 processes.delete(applyStatusSignal 需 state 在场):详情页在关
+      // 停瞬间收到 session_status{closed} 帧;closed 不落盘(index.ts 装配处短路——
+      // closeAgentSession 紧随 removeMetadata,异步写会竞态复活刚删的 metadata)。
+      this.applyStatusSignal(sessionName, { kind: "close" });
       proc.proc.kill();
       this.processes.delete(sessionName);
       // close 路径的审批收口：exited 回调带 isCurrentGeneration 守卫，processes 已 delete 后
@@ -559,6 +586,9 @@ export class ClaudeRuntime implements RuntimeResources {
       metadata.modelAlias ?? metadata.model,
       metadata.permissionMode,
       metadata.effort,
+      // 重启恢复:落盘 done/error 存活到被替换(spawnInitialStatus 归一;metadata.status
+      // 类型是含 terminal "running" 的宽联合,归一收窄)。
+      spawnInitialStatus(metadata.status),
     );
   }
 
@@ -571,6 +601,8 @@ export class ClaudeRuntime implements RuntimeResources {
     model?: string,
     permissionMode?: string,
     effort?: EffortLevel,
+    /** respawn 恢复路径与 startAgent 同口径(spawnInitialStatus 归一)。 */
+    initialStatus?: AgentSessionStatus,
   ): Promise<void> {
     const existing = this.processes.get(sessionName);
     if (existing) {
@@ -603,6 +635,7 @@ export class ClaudeRuntime implements RuntimeResources {
       model,
       permissionMode,
       effort,
+      initialStatus,
     );
   }
 
@@ -630,6 +663,32 @@ export class ClaudeRuntime implements RuntimeResources {
     if (relay && !relay.isDestroyed) {
       relay.injectLiveLine(line);
     }
+  }
+
+  /** turn 状态迁移的唯一入口(状态机 = agent-session-status.ts 纯函数)。无迁移短路;
+   *  有迁移:proc state 更新 → session_status 帧广播(broadcast-only,与 context_usage
+   *  同款)→ onSessionStatusChange(落盘 metadata,跨重启权威)。 */
+  private applyStatusSignal(sessionName: string, signal: AgentStatusSignal): void {
+    const state = this.processes.get(sessionName);
+    if (!state) return;
+    const next = nextAgentSessionStatus(state.sessionStatus, signal);
+    if (!next) return;
+    state.sessionStatus = next;
+    this.injectLiveLine(
+      sessionName,
+      JSON.stringify({ type: "system", subtype: "session_status", status: next }),
+    );
+    this.onSessionStatusChange?.(state.sessionId, next);
+  }
+
+  /** 用户提交消息(STDIN 注入 echo 行)→ working。claude-stream message()/injectUserPrompt 调。 */
+  reportUserInput(runtimeKey: string): void {
+    this.applyStatusSignal(runtimeKey, { kind: "user_input" });
+  }
+
+  /** 审批收口(ApprovalCenter 回调)→ 回 working。 */
+  reportApprovalSettled(runtimeKey: string): void {
+    this.applyStatusSignal(runtimeKey, { kind: "approval_settled" });
   }
 
   // ── 自动重试待发注入的控制桥（M8 03d `.count` 取消/立即重试）──────────────
@@ -698,6 +757,7 @@ export class ClaudeRuntime implements RuntimeResources {
       proc.permissionMode,
       proc.modelAlias,
       proc.contextUsage ? { ...proc.contextUsage, contextWindow: proc.contextWindow } : undefined,
+      proc.sessionStatus,
     );
 
     return relay.addSubscriber(
@@ -731,6 +791,8 @@ export class ClaudeRuntime implements RuntimeResources {
     model?: string,
     permissionMode?: string,
     effort?: EffortLevel,
+    /** 重启恢复带入的初始状态(落盘 done/error 存活到被替换);缺省 idle。 */
+    initialStatus?: AgentSessionStatus,
   ): Promise<void> {
     const { resolvedModel, resolvedEffort, providerCreds, view } = await this.resolveSpawnInputs(
       model,
@@ -772,6 +834,7 @@ export class ClaudeRuntime implements RuntimeResources {
       effort: resolvedEffort,
       contextWindow: resolveContextWindow(spawnSafeModel, resolvedAliases),
       resolvedAliases,
+      sessionStatus: initialStatus ?? "idle",
     });
 
     // Create relay immediately (before stdout starts) so messages aren't lost
@@ -800,6 +863,10 @@ export class ClaudeRuntime implements RuntimeResources {
     void proc.exited.then((code) => {
       console.log(`[claude] process exited with code ${code}: ${sessionName}`);
       if (this.isCurrentGeneration(sessionName, generation)) {
+        // 进程死亡(崩溃/被杀;close 主动路径已先发 closed 并 delete,此处守卫为 false
+        // 不会重复)→ turn 必死,补 error 信号,否则 working/blocked 卡死到重启(review P1-1)。
+        // 须在 processes.delete 前:applyStatusSignal 读 proc state 且要向仍存活的 relay 广播。
+        this.applyStatusSignal(sessionName, { kind: "turn_result", isError: true });
         this.processes.delete(sessionName);
         this.autoRetry.destroySession(sessionName);
         this.onApprovalRuntimeSettled?.(sessionName);
@@ -969,6 +1036,7 @@ export class ClaudeRuntime implements RuntimeResources {
     if (parsed?.type === "result") this.refreshContextUsageFromControl(sessionName);
     this.captureApprovalRequestFromLine(sessionName, parsed);
     this.captureApprovalSettledFromLine(sessionName, parsed);
+    this.captureTurnResultFromLine(sessionName, parsed);
     this.autoRetry.handleStdoutLine(
       sessionName,
       this.processes.get(sessionName)?.sessionId ?? "",
@@ -1035,6 +1103,8 @@ export class ClaudeRuntime implements RuntimeResources {
     }
     const state = this.processes.get(sessionName);
     if (!state) return;
+    // 与 ApprovalRegistry 同一采集点登记 blocked(等审批):同一行源,非第二条管道。
+    this.applyStatusSignal(sessionName, { kind: "approval_requested" });
     this.onApprovalRequest?.(
       { runtimeKey: sessionName, projectName: state.projectName, sessionId: state.sessionId },
       {
@@ -1051,6 +1121,21 @@ export class ClaudeRuntime implements RuntimeResources {
     parsed: Record<string, unknown> | null,
   ): void {
     if (parsed?.type === "result") this.onApprovalRuntimeSettled?.(sessionName);
+  }
+
+  // result 帧 = turn 边界：迁移 done/error(状态机)。放 captureApprovalSettledFromLine
+  // 之后——同帧先 settled 回 working、再被 done/error 覆盖,最终态正确。复用
+  // isErrorResultLine(auto-retry 同源判定,单一代码路径)。
+  private captureTurnResultFromLine(
+    sessionName: string,
+    parsed: Record<string, unknown> | null,
+  ): void {
+    if (parsed?.type === "result") {
+      this.applyStatusSignal(sessionName, {
+        kind: "turn_result",
+        isError: isErrorResultLine(parsed),
+      });
+    }
   }
 
   // Fold current permissionMode from live stdout so the replay seed init carries

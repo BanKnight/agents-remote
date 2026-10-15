@@ -581,13 +581,13 @@ function SideInstanceRow({
   entry: ProjectInstanceEntry;
   onSelect: (sessionId: string) => void;
 }) {
-  const running = entry.session.status === "running";
+  const working = entry.session.status === "working";
   const isTerminal = entry.type === "terminal";
   return (
     <button
       aria-current={active ? "true" : undefined}
       className={`srow2 inst w-full cursor-pointer text-left ${active ? "selrow" : ""} ${
-        isTerminal ? "font-mono text-caption text-ink-2" : running ? "font-semibold" : "text-ink-2"
+        isTerminal ? "font-mono text-caption text-ink-2" : working ? "font-semibold" : "text-ink-2"
       }`}
       onClick={() => onSelect(entry.session.id)}
       type="button"
@@ -596,7 +596,9 @@ function SideInstanceRow({
         <ShellIcon className="size-full" name={isTerminal ? "terminal" : "sparkles"} />
       </span>
       <span className="min-w-0 truncate">{entry.session.displayName}</span>
-      {isTerminal ? null : <span aria-hidden="true" className={`dot2 ${instanceDot2(running)}`} />}
+      {isTerminal ? null : (
+        <span aria-hidden="true" className={`dot2 ${instanceDot2(entry.session.status)}`} />
+      )}
     </button>
   );
 }

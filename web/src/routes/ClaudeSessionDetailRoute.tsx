@@ -63,6 +63,7 @@ import { useOpenRenderTab } from "./workbench-model";
 import {
   chatScrollPaddingClasses,
   ChatSkeleton,
+  isTurnActive,
   shellSurfaceClasses,
 } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
@@ -366,6 +367,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     modelSwitchVersion,
     permissionMode,
     contextUsage,
+    sessionStatus,
     aiTitle,
     agentName,
     loading,
@@ -406,7 +408,9 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
   // and invalidate the detail query — effort has no stream signal, so the
   // selector only sees the new value after the refetch.
   const onSelectEffort = async (effort: EffortLevel) => {
-    if (session?.status === "running") {
+    // turn 活跃门优先消费 WS 实时标量（session_status 帧），REST detail（10s 轮询）兜底——
+    // blocked 也打断 turn，语义同拦。
+    if (session && isTurnActive(sessionStatus ?? session.status)) {
       const ok = await confirm({
         title: t("claude.effort.restartTitle"),
         message: t("claude.effort.restartConfirmRunning"),

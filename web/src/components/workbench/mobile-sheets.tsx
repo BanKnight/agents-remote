@@ -23,15 +23,13 @@ import { MobileSheet } from "../shell/mobile-sheet";
 import { ShellIcon } from "../shell/icons";
 import { useGlobalInstanceCandidates } from "./instance-area";
 import type { CreateSessionApi } from "./instance-area";
-import { ListRowSkeleton, statusToV2DotClass } from "../shell/shell-primitives";
+import {
+  countsAsRunning,
+  ListRowSkeleton,
+  isTurnActive,
+  statusToV2DotClass,
+} from "../shell/shell-primitives";
 import { useHistoryQuery } from "./use-history-query";
-
-/** 会话状态 → dot 变体（run 绿实心 / err 红实心 / idle 空心描边；03l d2 与 11 acard 共用）。 */
-function sessDotClass(status: string): string {
-  if (status === "running") return "run";
-  if (status === "error") return "err";
-  return "idle";
-}
 
 /**
  * 03l 项目切换 sheet（nav 标题 ▾ 入口）：按项目分组的活跃会话一步切换（原 2 跳变 1 跳）。
@@ -120,7 +118,7 @@ export function MobileProjectSwitchSheet({
               <button
                 className={`sess w-full cursor-pointer text-left${
                   candidate.ref.sessionId === currentSessionId ? " on" : ""
-                }${candidate.status === "running" || candidate.status === "error" ? "" : " off"}`}
+                }${isTurnActive(candidate.status) || countsAsRunning(candidate.type, candidate.status) || candidate.status === "error" ? "" : " off"}`}
                 key={candidate.ref.sessionId}
                 onClick={() => {
                   onOpenChange(false);
@@ -128,7 +126,7 @@ export function MobileProjectSwitchSheet({
                 }}
                 type="button"
               >
-                <span className={`sd ${sessDotClass(candidate.status)}`} />
+                <span className={statusToV2DotClass(candidate.status)} />
                 {candidate.displayName}
               </button>
             ))
@@ -460,7 +458,7 @@ export function MobileSessionHistorySheet({
                     const r1 = (
                       <span className="r1">
                         {/* 已结束行无 dot（原型 03n end 行只有文字，reviewer P2-6）。 */}
-                        {running ? <span className={statusToV2DotClass("running")} /> : null}
+                        {running ? <span className={statusToV2DotClass("working")} /> : null}
                         <span className="min-w-0 flex-1 truncate">
                           {entry.title ?? entry.firstMessage ?? time}
                         </span>

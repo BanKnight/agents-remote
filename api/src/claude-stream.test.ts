@@ -203,6 +203,8 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       injectLiveLine: (key: string, line: string) => {
         injections.push({ key, line });
       },
+      // turn 状态机 user_input 信号（状态迁移断言归 claude-runtime.test.ts）。
+      reportUserInput: (_key: string) => {},
       // Default passthrough = default config (alias mapping, 1m off): the
       // controller forwards the model unchanged. Tests inject a resolver to
       // simulate modelMapping/1m resolution.

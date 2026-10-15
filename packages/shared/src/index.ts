@@ -1126,7 +1126,13 @@ export type TestClaudePresetRequest = {
   baseUrl?: string;
 };
 
-export type AgentSessionStatus = "running" | "idle" | "closed" | "error";
+/** Agent 会话 turn 状态,语义对齐 Program Status Protocol(OSC 7501)的 states:
+ *  idle=静止等下一条指令(初始/恢复后);working=turn 进行中;blocked=等用户
+ *  (等审批,对应标准 kind=permission);done=最近一轮正常完成,存活到被替换
+ *  (survives until replaced,程序侧无查看追踪);error=最近一轮失败停止。
+ *  closed 是会话生命周期终态(仅关闭响应携带,不落盘)——标准外补充。用户再发
+ *  消息即翻回 working;blocked 优先于 working。Terminal/Chat 会话不走本类型。 */
+export type AgentSessionStatus = "idle" | "working" | "blocked" | "done" | "error" | "closed";
 
 export type TerminalSessionStatus = "running" | "closed" | "error";
 
@@ -1665,6 +1671,9 @@ export type ClaudeSeedInit = {
   // 会话标量：上下文占用量明细。与 model/permissionMode 同族——live 期间经
   // captureUsageFromLine 折叠进 proc state，这里随 seed 回放恢复全字段。
   contextUsage?: ClaudeContextUsage;
+  // 会话标量：turn 状态（OSC 7501 对齐）。live 期间经 session_status 帧折叠进
+  // proc state，这里随 seed 回放恢复；持久权威在 session metadata（跨 API 重启）。
+  sessionStatus?: AgentSessionStatus;
 };
 
 // Server-synthesized context-usage scalar update. Broadcast-only via
@@ -1678,6 +1687,16 @@ export type ClaudeContextUsageChanged = {
   type: "system";
   subtype: "context_usage";
 } & ClaudeContextUsage;
+
+// Server-synthesized session turn-status update (OSC 7501 对齐). Broadcast-only
+// via relay.injectLine (never buffered): the durable value lives in session
+// metadata (REST 快照 + 跨重启恢复) and re-enters replay through the seed_init
+// sessionStatus field. 统一会话标量管道第二个标量。
+export type ClaudeSessionStatusChanged = {
+  type: "system";
+  subtype: "session_status";
+  status: AgentSessionStatus;
+};
 
 // Server-synthesized notification that the skill/slash catalog changed (e.g. after
 // /reload-skills succeeded). Broadcast-only — never buffered into liveLines/history
@@ -2499,6 +2518,7 @@ export type SessionStreamServerMessage =
   | ClaudeSeedInit
   | ClaudeSkillCatalogChanged
   | ClaudeContextUsageChanged
+  | ClaudeSessionStatusChanged
   | ClaudeCompactBoundary
   | ClaudeStatusMessage
   | ClaudeApiRetry

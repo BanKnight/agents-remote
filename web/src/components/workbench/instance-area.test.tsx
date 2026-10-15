@@ -96,7 +96,7 @@ describe("usePanelMeta 列表缓存预填（detail 未回时 tab 首帧即显实
           projectName: "proj1",
           sessionId: AGENT_SESSION.id,
           displayName: "Overview Name",
-          status: "running",
+          status: "working",
           provider: "claude",
         },
       ],

@@ -273,6 +273,15 @@ export class SessionRegistry {
   // claude-runtime spawnClaudeDirect). Triggered via ClaudeRuntime onModelChange
   // when a <local-command-stdout>Set model to (id)</local-command-stdout> echo is
   // folded. Only updates model; claudeSessionId is untouched.
+  /** turn 状态机唯一落盘点(onSessionStatusChange 回调)。不 bump updatedAt——updatedAt
+   *  语义 = 活动时间(归 recordActivity),status 写不污染它。metadata 缺失(已关闭)静默忽略。 */
+  async setAgentSessionStatus(sessionId: string, status: AgentSessionStatus): Promise<void> {
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
+    if (!metadata || metadata.type !== "agent") return;
+    await this.writeMetadata({ ...metadata, status });
+  }
+
   async setModel(sessionId: string, model: string): Promise<void> {
     await this.ensureLoaded();
     const metadata = this.index.get(sessionId);
@@ -696,7 +705,9 @@ export class SessionRegistry {
       type: input.type,
       provider: input.provider,
       displayName: input.displayName ?? defaultDisplayName(input.type, input.provider, id),
-      status: "running",
+      // agent = idle(turn 状态机初始态,OSC 7501 对齐——旧值 "running" 是进程存活语义,
+      // 从不翻转,绿点永不灭即本批要修的缺陷);terminal = running(tmux 会话起来即存活)。
+      status: input.type === "agent" ? "idle" : "running",
       runtimeKey: createRuntimeKey(input.project.name, input.type, input.provider, id),
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -932,6 +943,19 @@ const parseMetadata = (raw: string): SessionMetadata | undefined => {
   // 前端回落 model / 默认展示。
   parsed.model = sanitizePersistedModel(parsed.model);
   parsed.modelAlias = sanitizePersistedModel(parsed.modelAlias);
+
+  // turn 状态恢复归一(仅 agent;OSC 7501 对齐):①存量 metadata 恒 "running"(旧版从不
+  // 更新)= 进程存活语义 → 按 idle 解释;②"working"/"blocked" 意味着 API 上次退出时 turn
+  // 在飞——CLI 子进程随之已死、ApprovalRegistry 已清空,turn 不可能恢复,统一降级 idle
+  // (恢复后待输入)。done/error/idle 按值存活(survives until replaced)。内存层归一,
+  // 不重写磁盘。
+  if (parsed.type === "agent") {
+    // 存量磁盘值仍是宽 string(旧版写 "running"),归一比较按原值走,不窄化。
+    const status = parsed.status as string;
+    if (status === "running" || status === "working" || status === "blocked") {
+      parsed.status = "idle";
+    }
+  }
 
   return parsed as SessionMetadata;
 };

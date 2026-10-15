@@ -207,17 +207,34 @@ export function StatusPill({ label, tone = "default", value }: StatusPillProps) 
 }
 
 /**
- * 状态枚举 → StatusPill tone（DESIGN status-pill 四态映射）。running→success、
- * idle→warning（等待输入）、error→danger、其余（closed 等）→muted。与 StatusPill 配套：
- * tone 决定药丸配色，label 由调用方用 sessionStatusLabel + t 生成（i18n 不进本层）。
+ * 状态枚举 → StatusPill tone（5 态，OSC 7501 对齐）。working→success、blocked→warning、
+ * error→danger、idle/done→muted（done 是「最近一轮完成」的结果态，非活跃）；terminal
+ * "running"（进程存活语义，不走 turn 状态机）→success。label 由调用方用 sessionStatusLabel
+ * + t 生成（i18n 不进本层）。
  */
 export function statusToTone(
   status: AgentSession["status"] | TerminalSession["status"],
 ): ShellTone {
-  if (status === "running") return "success";
-  if (status === "idle") return "warning";
+  if (status === "running" || status === "working") return "success";
+  if (status === "blocked") return "warning";
   if (status === "error") return "danger";
   return "muted";
+}
+
+/** turn 进行中谓词（working 或 blocked 等待审批——blocked 是 turn 内的暂停而非结束）。
+ *  effort 切换确认门等「会打断进行中 turn 的操作」消费。 */
+export function isTurnActive(status: AgentSession["status"] | TerminalSession["status"]): boolean {
+  return status === "working" || status === "blocked";
+}
+
+/** 「运行中」计数谓词（spec §4.2：项目/全局运行计数）——agent 计 working（turn 活跃）；
+ *  terminal 无 turn 语义，进程存活（running）照常计入。五个计数消费点共用本单源，
+ *  勿在各处手写条件（review P1-3：曾漏 terminal running 掉出计数）。 */
+export function countsAsRunning(
+  type: "agent" | "terminal",
+  status: AgentSession["status"] | TerminalSession["status"],
+): boolean {
+  return type === "agent" ? status === "working" : status === "running";
 }
 
 /** status → dot 底色 utility（statusToTone 的渲染投影）。导出供 v2 页面直接消费
@@ -232,18 +249,22 @@ export const statusDotToneBg: Record<ShellTone, string> = {
 };
 
 /**
- * status → v2 原语 dot class（v2-primitives.css 的 .dot run/idle/err/warn，03 系列原型语义：
- * 绿=运行 红=出错 灰=闲置/closed 橙=待审批）。与 statusToTone 的 idle→warning（琥珀）刻意
- * 不同——v2 页面圆点状态一律消费本映射（.dot 原语自带 7×7 圆），禁私设第二套 status→色。
- * 待审批覆盖运行绿（原型 02 L80：act-row 待审批会话 dot=c-warning——等输入语义优先于运行态）。
+ * status → v2 原语 dot class（v2-primitives.css 的 .dot run/idle/err/warn/done，OSC 7501
+ * 对齐 5 态：绿脉=working 橙=blocked 红=error 绿静止=done 灰=idle/closed）。与 statusToTone
+ * 的 done 分歧是刻意的：dot 保留成功语义色彩（与 idle 区分「最近一轮成功」），pill 是文字
+ * 色、done 非活跃故降级 muted——勿当缺陷修成一致。v2 页面圆点状态一律消费本映射（.dot
+ * 原语自带 7×7 圆），禁私设第二套 status→色。
  */
 export function statusToV2DotClass(
   status: AgentSession["status"] | TerminalSession["status"],
-  opts?: { needsApproval?: boolean },
 ): string {
-  if (opts?.needsApproval) return "dot warn";
+  if (status === "blocked") return "dot warn";
+  if (status === "working") return "dot run";
+  // terminal 的 running（进程存活）：与 working 同绿脉（statusToTone 的 running→success
+  // 同口径；联合宽入时 agent 侧不会出现该值）。
   if (status === "running") return "dot run";
   if (status === "error") return "dot err";
+  if (status === "done") return "dot done";
   return "dot idle";
 }
 

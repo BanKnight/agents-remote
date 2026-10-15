@@ -171,7 +171,8 @@ export function PinnedSessionsBar({
                 <span className="min-w-0 truncate font-semibold">{candidate.displayName}</span>
                 <span
                   className={`flex flex-none items-center gap-1 text-[11px] font-normal ${
-                    candidate.status === "running" ? "text-success-text" : "text-ink-2"
+                    // 文字色只强调 working;blocked/error 语义由 dot 色承载,文字保持 ink-2 降噪。
+                    candidate.status === "working" ? "text-success-text" : "text-ink-2"
                   }`}
                 >
                   <span className={statusToV2DotClass(candidate.status)} />

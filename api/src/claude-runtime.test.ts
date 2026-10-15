@@ -989,3 +989,97 @@ test("close 路径显式收口审批（exited 回调被 generation 守卫挡下�
   expect(settled).toEqual(["rt-key"]);
   expect(internal.processes.has("rt-key")).toBe(false);
 });
+
+// ── turn 状态机(5 态,OSC 7501 对齐)─────────────────────────────────────────
+
+type StatusHarness = {
+  runtime: ClaudeRuntime;
+  internal: {
+    processes: Map<string, Record<string, unknown>>;
+    relays: Map<string, { isDestroyed: boolean; injectLiveLine: (line: string) => void }>;
+    captureTurnResultFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+    captureApprovalRequestFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+  };
+  injected: string[];
+  statusCalls: Array<{ sessionId: string; status: string }>;
+};
+
+function seedStatusHarness(initial: string): StatusHarness {
+  const runtime = new ClaudeRuntime(tmpdir());
+  const injected: string[] = [];
+  const statusCalls: Array<{ sessionId: string; status: string }> = [];
+  runtime.setOnSessionStatusChange((sessionId, status) => statusCalls.push({ sessionId, status }));
+  const internal = runtime as unknown as StatusHarness["internal"];
+  internal.processes.set("rt-key", {
+    sessionId: "agent_1",
+    projectName: "demo",
+    sessionStatus: initial,
+  });
+  internal.relays.set("rt-key", {
+    isDestroyed: false,
+    injectLiveLine: (line) => injected.push(line),
+  });
+  return { runtime, internal, injected, statusCalls };
+}
+
+test("turn 状态机: result(is_error=false) → done,广播 session_status 帧 + 落盘回调", () => {
+  const h = seedStatusHarness("working");
+  h.internal.captureTurnResultFromLine("rt-key", { type: "result", is_error: false });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("done");
+  expect(h.injected).toEqual([
+    JSON.stringify({ type: "system", subtype: "session_status", status: "done" }),
+  ]);
+  expect(h.statusCalls).toEqual([{ sessionId: "agent_1", status: "done" }]);
+});
+
+test("turn 状态机: result(is_error=true) → error", () => {
+  const h = seedStatusHarness("working");
+  h.internal.captureTurnResultFromLine("rt-key", { type: "result", is_error: true });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("error");
+  expect(h.statusCalls).toEqual([{ sessionId: "agent_1", status: "error" }]);
+});
+
+test("turn 状态机: can_use_tool 行 → blocked(与审批登记同一采集点)", () => {
+  const h = seedStatusHarness("working");
+  h.internal.captureApprovalRequestFromLine("rt-key", {
+    type: "control_request",
+    request_id: "req-1",
+    request: { subtype: "can_use_tool", input: { command: "ls" } },
+  });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("blocked");
+});
+
+test("turn 状态机: reportApprovalSettled blocked→working;非 blocked 防御忽略", () => {
+  const h = seedStatusHarness("blocked");
+  h.runtime.reportApprovalSettled("rt-key");
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("working");
+
+  const idle = seedStatusHarness("idle");
+  idle.runtime.reportApprovalSettled("rt-key");
+  expect(idle.internal.processes.get("rt-key")?.sessionStatus).toBe("idle");
+  expect(idle.statusCalls).toEqual([]);
+});
+
+test("turn 状态机: reportUserInput done→working;working 幂等无迁移", () => {
+  const h = seedStatusHarness("done");
+  h.runtime.reportUserInput("rt-key");
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("working");
+
+  const working = seedStatusHarness("working");
+  working.runtime.reportUserInput("rt-key");
+  expect(working.internal.processes.get("rt-key")?.sessionStatus).toBe("working");
+  expect(working.statusCalls).toEqual([]);
+});
+
+test("turn 状态机: closed 吸收后续信号;close 幂等", () => {
+  const h = seedStatusHarness("working");
+  const internal = h.internal as StatusHarness["internal"] & {
+    applyStatusSignal: (name: string, signal: { kind: string }) => void;
+  };
+  internal.applyStatusSignal("rt-key", { kind: "close" });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("closed");
+
+  // closed 后 result/approval 不再翻状态。
+  h.internal.captureTurnResultFromLine("rt-key", { type: "result", is_error: false });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("closed");
+});

@@ -370,9 +370,10 @@ function InstanceSwitchRow({ type, name, status, current, onSelect }: InstanceSw
         name={type === "agent" ? "sparkles" : "terminal"}
       />
       <span className={`min-w-0 truncate ${current ? "font-semibold" : ""}`}>{name}</span>
-      {/* 状态列（原型 .st.run = success-text 600 / .st.idle = ink-2） */}
+      {/* 状态列（原型 .st.run = success-text 600 / .st.idle = ink-2）；文字色只强调 working,
+          blocked/error 语义由 dot 色承载,文字 ink-2 降噪。 */}
       <span
-        className={`ml-auto flex shrink-0 items-center gap-1 text-[11px] ${status === "running" ? "font-semibold text-success-text" : "text-ink-2"}`}
+        className={`ml-auto flex shrink-0 items-center gap-1 text-[11px] ${status === "working" ? "font-semibold text-success-text" : "text-ink-2"}`}
       >
         <span className={statusToV2DotClass(status)} />
         {t(sessionStatusLabel(status))}

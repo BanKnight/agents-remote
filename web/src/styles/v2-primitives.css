@@ -119,6 +119,18 @@
   }
   .dot.run {
     background: var(--c-success);
+    /* working 绿点脉动（spec §4.2）——与 done（同色静止）在列表无文字场景的可辨性靠它。 */
+    animation: dot-pulse 2s var(--ease-standard, ease-in-out) infinite;
+  }
+  @keyframes dot-pulse {
+    50% {
+      opacity: 0.4;
+    }
+  }
+  /* done（OSC 7501「最近一轮完成」）：与 working 同 --c-success 但静止（无 dot-pulse）
+   * ——结果态静息；脉动差异是列表场景两态唯一可辨面。 */
+  .dot.done {
+    background: var(--c-success);
   }
   .dot.idle {
     background: var(--ink-2);
@@ -2886,21 +2898,6 @@
   }
   .sess.off {
     color: var(--ink-2);
-  }
-  .sess .sd {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex: none;
-  }
-  .sess .sd.run {
-    background: var(--c-success);
-  }
-  .sess .sd.err {
-    background: var(--c-danger);
-  }
-  .sess .sd.idle {
-    border: 1.4px solid var(--ink-2);
   }
   .gempty {
     font-size: 12px;

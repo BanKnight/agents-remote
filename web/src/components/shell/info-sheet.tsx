@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 import { Dialog, DialogContent } from "../ui/dialog";
 import { MobileSheet, SHEET_UNMOUNT_DELAY_MS } from "./mobile-sheet";
-import { shellSurfaceClasses } from "./shell-primitives";
+import { shellSurfaceClasses, type ShellTone } from "./shell-primitives";
 
 /**
  * 信息字段（03k .krow 行族）：k = label 弱化色（text-ink-2），v = value 主体色右对齐（ml-auto）。
@@ -35,6 +35,18 @@ type PendingInfo = {
   variant: InfoSheetVariant;
   /** 标题下状态行（03k：「● 运行中 · 已 12 分钟」，success 色小字）；缺省不渲染。 */
   status?: string;
+  /** 状态行着色（statusToTone 映射）；缺省 success（历史行为——调用方未升级前恒绿）。 */
+  statusTone?: ShellTone;
+};
+
+/** 状态行 tone → 文字色（仅状态行小字使用，与 statusDotToneBg 同族投影）。 */
+const STATUS_TEXT_TONE_CLASS: Record<ShellTone, string> = {
+  default: "text-on-surface-muted",
+  accent: "text-primary",
+  success: "text-success-text",
+  warning: "text-warning-text",
+  danger: "text-error-text",
+  muted: "text-on-surface-muted",
 };
 
 /**
@@ -52,12 +64,18 @@ export function useInstanceInfoSheet() {
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const open = useCallback(
-    (title: string, fields: InfoField[], variant: InfoSheetVariant = "sheet", status?: string) => {
+    (
+      title: string,
+      fields: InfoField[],
+      variant: InfoSheetVariant = "sheet",
+      status?: string,
+      statusTone?: ShellTone,
+    ) => {
       if (closeTimerRef.current) {
         clearTimeout(closeTimerRef.current);
         closeTimerRef.current = null;
       }
-      setPending({ fields, status, title, variant });
+      setPending({ fields, status, statusTone, title, variant });
     },
     [],
   );
@@ -90,6 +108,7 @@ function InfoSheetDialog({
   fields,
   onClose,
   status,
+  statusTone = "success",
   title,
   variant,
 }: PendingInfo & { onClose: () => void }) {
@@ -97,7 +116,9 @@ function InfoSheetDialog({
     <>
       {/* 标题由 MobileSheet 的 shd 承担（§6.12n 迁移，原 h2 消解） */}
       {status ? (
-        <p className="mt-0.5 text-caption font-semibold text-success-text">{status}</p>
+        <p className={`mt-0.5 text-caption font-semibold ${STATUS_TEXT_TONE_CLASS[statusTone]}`}>
+          {status}
+        </p>
       ) : null}
       <div className="mt-2.5 border-t border-sep-row" />
       <dl className="divide-y divide-sep-row">

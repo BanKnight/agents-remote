@@ -362,7 +362,7 @@ test("createFetchHandler supports Project-scoped Agent and Terminal session APIs
     id: "agent_test123456",
     projectName: "hello world 中文",
     provider: "claude",
-    status: "running",
+    status: "idle",
   });
   expect(createTerminal.status).toBe(200);
   expect(terminalBody.session).toMatchObject({

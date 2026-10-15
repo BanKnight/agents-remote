@@ -6,6 +6,7 @@ import { listRootFiles } from "../../api/client";
 import { useIsMobile } from "../../lib/use-is-mobile";
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
+import { countsAsRunning } from "../shell/shell-primitives";
 import {
   workbenchFilesSearchFocusRequestAtom,
   workbenchLastProjectAtom,
@@ -252,7 +253,7 @@ function buildGlobalOverview(
     const name = c.ref.projectName;
     const stat = stats.get(name) ?? { instances: 0, running: 0, latestAt: "" };
     stat.instances += 1;
-    if (c.status === "running") stat.running += 1;
+    if (countsAsRunning(c.type, c.status)) stat.running += 1;
     const at = c.updatedAt ?? c.createdAt ?? "";
     if (at > stat.latestAt) stat.latestAt = at;
     stats.set(name, stat);

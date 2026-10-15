@@ -84,6 +84,7 @@ import {
   actionButtonClasses,
   chatScrollPaddingClasses,
   ChatSkeleton,
+  countsAsRunning,
   LoadingBlock,
   sessionMarker,
   shellSurfaceClasses,
@@ -416,7 +417,7 @@ export function AllSessionsGroupedList({
   );
   const rowClasses = (c: GlobalInstanceCandidate) =>
     `srow2 inst w-full cursor-pointer text-left ${c.ref.sessionId === focusId ? "selrow" : ""} ${
-      c.status === "running" ? "font-semibold" : "text-ink-2"
+      c.status === "working" ? "font-semibold" : "text-ink-2"
     }`;
   return (
     <div className="pb-2">
@@ -459,10 +460,7 @@ export function AllSessionsGroupedList({
                 onClick={() => focusRow(c)}
                 type="button"
               >
-                <span
-                  aria-hidden="true"
-                  className={`dot2 ${instanceDot2(c.status === "running")}`}
-                />
+                <span aria-hidden="true" className={`dot2 ${instanceDot2(c.status)}`} />
                 <span className="min-w-0 truncate">{c.displayName}</span>
               </button>
             ))
@@ -761,9 +759,19 @@ function panelTabLabel(
 }
 
 /** 实例行 dot2 状态点 class 单源（实例切换列表与 workbench-side 侧栏 agent 行同消费——
- *  批 C 收敛此前逐字双份）：running 实心，其余 1.4px 空心。 */
-export const instanceDot2 = (running: boolean): string =>
-  running ? "bg-success" : "border-[1.4px] border-ink-2 bg-transparent";
+ *  批 C 收敛此前逐字双份）：turn 活跃与结果态着色实心（working 绿 / blocked 橙 /
+ *  error 红 / done 绿——与移动端 .dot.done 同为绿实心，spec §3.2「状态点语义全局统一」，
+ *  防桌面空心/移动实心分叉），静息态（idle/closed）1.4px 空心。 */
+export const instanceDot2 = (status: AgentSession["status"] | TerminalSession["status"]): string =>
+  status === "working" || status === "running"
+    ? "bg-success"
+    : status === "blocked"
+      ? "bg-warning"
+      : status === "error"
+        ? "bg-error"
+        : status === "done"
+          ? "bg-success"
+          : "border-[1.4px] border-ink-2 bg-transparent";
 
 export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined {
   const { t } = useT();
@@ -907,7 +915,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
         marker: sessionMarker("agent", "xs"),
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
-          pulse: session.status === "running",
+          pulse: session.status === "working",
           tone: statusToTone(session.status),
         },
       };
@@ -929,7 +937,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
         marker: sessionMarker("terminal", "xs"),
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
-          pulse: session.status === "running",
+          pulse: session.status === "working" || session.status === "running",
           tone: statusToTone(session.status),
         },
       };
@@ -1144,7 +1152,14 @@ export function useInstanceInfoActions(
       });
     }
     // claude 的编辑入口已并入自动重试行内（编辑按钮）；terminal/其他 provider 纯展示。
-    infoSheet.open(displayName ?? t("session.instanceInfo.title"), fields, variant, statusLine);
+    // 状态行随 statusToTone 着色（working 绿/blocked 橙/error 红/其余 muted）——修旧恒绿缺陷。
+    infoSheet.open(
+      displayName ?? t("session.instanceInfo.title"),
+      fields,
+      variant,
+      statusLine,
+      statusNow ? statusToTone(statusNow) : undefined,
+    );
   };
   const runtimeDialogHolder =
     runtimeField !== null && (panelRef.kind === "session" ? panelRef : null) ? (
@@ -1959,7 +1974,7 @@ export function buildProjectRows(
           latest = c;
           latestAt = at;
         }
-        if (c.status === "running") running += 1;
+        if (countsAsRunning(c.type, c.status)) running += 1;
       }
       return { instances, latest, name, running };
     });

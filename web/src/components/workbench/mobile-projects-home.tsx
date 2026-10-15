@@ -13,7 +13,7 @@ import {
   useProjectRowFlow,
 } from "../shell/project-row-actions";
 import { ShellIcon } from "../shell/icons";
-import { LargeTitleRow, statusToV2DotClass } from "../shell/shell-primitives";
+import { countsAsRunning, LargeTitleRow, statusToV2DotClass } from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 import { relativeTime } from "./history-list";
@@ -63,8 +63,6 @@ export function MobileProjectsHome() {
   // M5-b 审批中心：ap-row 入口（原型 02 .ap-row，pending=0 隐藏）+ 11 sheet。?approvals=1
   //（tray 标题入口②）→ 挂载即开；关闭时清参避免返回键死循环。
   const { approvals } = useApprovals(true);
-  // 批9：待审批会话 id 集（活动卡 dot 橙的判定源；useMemo 保引用稳定）。
-  const approvalSessionIds = useMemo(() => new Set(approvals.map((a) => a.sessionId)), [approvals]);
   const search = useSearch({ strict: false });
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   useEffect(() => {
@@ -115,7 +113,7 @@ export function MobileProjectsHome() {
   }, [candidates, pinned, query]);
 
   const runningCount = useMemo(
-    () => candidates.filter((c) => c.status === "running").length,
+    () => candidates.filter((c) => countsAsRunning(c.type, c.status)).length,
     [candidates],
   );
 
@@ -291,13 +289,9 @@ export function MobileProjectsHome() {
                       type="button"
                     >
                       <span className="flex items-center gap-2 py-2">
-                        {/* v2 .dot 原语（批9）：绿=运行 红=出错 灰=闲置；待审批覆盖橙
-                            （原型 02 L80 act-row dot=c-warning）。 */}
-                        <span
-                          className={statusToV2DotClass(row.candidate.status, {
-                            needsApproval: approvalSessionIds.has(row.candidate.ref.sessionId),
-                          })}
-                        />
+                        {/* v2 .dot 原语（批9）：5 态映射（working 绿脉 / blocked 橙 / error 红 /
+                            done 绿静止 / idle 灰）——待审批橙已服务端化（blocked），删前端覆盖。 */}
+                        <span className={statusToV2DotClass(row.candidate.status)} />
                         <span className="min-w-0 flex-1 truncate text-subhead font-semibold text-ink-1">
                           {row.candidate.displayName}
                         </span>

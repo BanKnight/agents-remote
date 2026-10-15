@@ -5,6 +5,7 @@ import { useMatches, useNavigate, useRouter, type AnyRouteMatch } from "@tanstac
 import type {
   AgentProvider,
   AgentSessionStatus,
+  TerminalSessionStatus,
   GitDiffScope,
   SessionType,
 } from "@agents-remote/shared";
@@ -2022,8 +2023,9 @@ function validateNodeV3(node: TreeNode, errors: string[]): void {
 /** 全局实例区候选：聚合所有项目活跃实例 + 排序/展示所需字段。 */
 export type GlobalInstanceCandidate = {
   ref: SessionPanelRef;
-  /** AgentSessionStatus 涵盖 terminal 状态子集，统一 agent/terminal 状态语义。 */
-  status: AgentSessionStatus;
+  /** agent=5 态 turn 状态（OSC 7501 对齐）；terminal=进程三态（running/closed/error）。
+   *  两联合有交集（closed/error），消费方按 type 分流语义。 */
+  status: AgentSessionStatus | TerminalSessionStatus;
   type: "agent" | "terminal";
   /** 实例显示名（移动全局列表行 / 全局面板标题）。 */
   displayName: string;
@@ -2038,16 +2040,23 @@ export type GlobalInstanceCandidate = {
 };
 
 /**
- * 全局实例区铺开排序（设计文档 §4）：needs-interaction（agent 非运行，如 idle/error）
- * > running agent > terminal > 其他。最需要关注的实例排最前。稳定排序（同 rank 保持
- * 聚合顺序，即项目次序 → sessions 次序）。纯函数，便于测试。
+ * 全局实例区铺开排序（设计文档 §4）：5 态分级 blocked（等审批，最需用户介入）>
+ * error > working（进行中）> idle/done（静息/结果）> terminal。最需要关注的实例排最前。
+ * 稳定排序（同 rank 保持聚合顺序，即项目次序 → sessions 次序）。纯函数，便于测试。
  */
 export function rankGlobalInstances(candidates: GlobalInstanceCandidate[]): SessionPanelRef[] {
   const rank = (candidate: GlobalInstanceCandidate): number => {
-    if (candidate.type === "agent" && candidate.status !== "running") return 0;
-    if (candidate.type === "agent") return 1;
-    if (candidate.type === "terminal") return 2;
-    return 3;
+    if (candidate.type === "terminal") return 4;
+    switch (candidate.status) {
+      case "blocked":
+        return 0;
+      case "error":
+        return 1;
+      case "working":
+        return 2;
+      default:
+        return 3;
+    }
   };
   return [...candidates]
     .map((candidate, index) => ({ candidate, index }))

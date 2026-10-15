@@ -39,11 +39,21 @@ export class ApprovalCenter {
   private broadcasting = false;
   private dirty = false;
 
+  /** 该 runtime 最后一张审批卡注销回调（index.ts 接 claudeRuntime.reportApprovalSettled →
+   *  状态机 blocked → working）。多卡并存时仅在清空后触发一次。 */
+  onRuntimeApprovalsSettled: ((runtimeKey: string) => void) | null = null;
+
   constructor(
     private readonly claudeRuntime: ClaudeRuntime,
     private readonly sessionRegistry: SessionRegistry,
   ) {
     this.registry.onChange = () => this.scheduleBroadcast();
+  }
+
+  /** 注销后统一收口：该 runtime 已无 pending 才触发 settled（状态机 idle/done 下误触发
+   *  由迁移表防御性忽略）。 */
+  private notifySettledIfEmpty(runtimeKey: string): void {
+    if (!this.registry.hasRuntime(runtimeKey)) this.onRuntimeApprovalsSettled?.(runtimeKey);
   }
 
   /** runtime 侧登记入口（index.ts 接 claudeRuntime.setOnApprovalRequest）。 */
@@ -88,6 +98,7 @@ export class ApprovalCenter {
     if (!aliveKeys.has(record.runtimeKey)) {
       // 进程已死：残留卡片清掉，客户端下一帧快照即消失（断线冻结语义归 UI）。
       this.registry.clearRuntime(record.runtimeKey);
+      this.notifySettledIfEmpty(record.runtimeKey);
       return { delivered: false, reason: "runtime_dead" };
     }
 
@@ -107,10 +118,12 @@ export class ApprovalCenter {
       await this.claudeRuntime.write(record.runtimeKey, `${JSON.stringify(response)}\n`);
     } catch {
       this.registry.clearRuntime(record.runtimeKey);
+      this.notifySettledIfEmpty(record.runtimeKey);
       return { delivered: false, reason: "runtime_dead" };
     }
 
     this.registry.unregister(record.runtimeKey, record.controlRequestId);
+    this.notifySettledIfEmpty(record.runtimeKey);
     void this.sessionRegistry.recordActivity(record.sessionId);
     return { delivered: true };
   }
@@ -118,10 +131,12 @@ export class ApprovalCenter {
   /** 会话内托盘应答路径的注销（index.ts 接控制器转发钩子）。 */
   unregisterForwarded(runtimeKey: string, controlRequestId: string): void {
     this.registry.unregister(runtimeKey, controlRequestId);
+    this.notifySettledIfEmpty(runtimeKey);
   }
 
   clearRuntime(runtimeKey: string): void {
     this.registry.clearRuntime(runtimeKey);
+    this.notifySettledIfEmpty(runtimeKey);
   }
 
   // ── WS 频道 ──

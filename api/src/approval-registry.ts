@@ -90,6 +90,11 @@ export class ApprovalRegistry {
     return all;
   }
 
+  /** 该 runtime 是否仍有 pending 卡（状态机 approval_settled 判定：最后一张注销才回 working）。 */
+  hasRuntime(runtimeKey: string): boolean {
+    return this.entries.has(runtimeKey);
+  }
+
   find(
     projectName: string,
     sessionId: string,

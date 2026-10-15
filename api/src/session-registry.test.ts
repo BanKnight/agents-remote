@@ -220,6 +220,55 @@ test("SessionRegistry.setModel is a no-op when the session metadata file is miss
   ).resolves.toBeUndefined();
 });
 
+test("SessionRegistry.setAgentSessionStatus persists turn status without bumping updatedAt", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_status78901",
+  });
+
+  const agent = await registry.createAgentSession({ project, provider: "claude" });
+  // 新会话初始 idle（5 态 turn 状态机，OSC 7501 对齐）。
+  expect(agent.status).toBe("idle");
+
+  await registry.setAgentSessionStatus(agent.id, "working");
+
+  const metadata = JSON.parse(
+    await readFile(join(runDir, "sessions", "agent_status78901.json"), "utf8"),
+  );
+  expect(metadata.status).toBe("working");
+  // updatedAt 语义 = 活动时间（归 recordActivity），status 写不 bump。
+  expect(metadata.updatedAt).toBe(agent.updatedAt);
+});
+
+test("SessionRegistry.setAgentSessionStatus is a no-op when the session metadata file is missing", async () => {
+  const registry = new SessionRegistry({ runDir, now: fixedNow });
+  await expect(
+    registry.setAgentSessionStatus("agent_nonexistent_id", "working"),
+  ).resolves.toBeUndefined();
+});
+
+test("SessionRegistry.parseMetadata normalizes stale agent statuses to idle on read", async () => {
+  // 存量 metadata 恒 "running"（旧版从不翻转）；API 重启已杀 CLI 子进程，
+  // working/blocked 的 turn 必死——读取时归一 idle（内存层，不重写磁盘）。
+  for (const stale of ["running", "working", "blocked"] as const) {
+    const registry = new SessionRegistry({
+      runDir,
+      now: fixedNow,
+      createId: () => "agent_normstale001",
+    });
+    await registry.createAgentSession({ project, provider: "claude" });
+    const file = join(runDir, "sessions", "agent_normstale001.json");
+    const raw = JSON.parse(await readFile(file, "utf8"));
+    raw.status = stale;
+    await writeFile(file, JSON.stringify(raw));
+
+    const reread = new SessionRegistry({ runDir, now: fixedNow });
+    const session = await reread.getAgentSession(project.name, "agent_normstale001");
+    expect(session?.status).toBe("idle");
+  }
+});
+
 test("SessionRegistry.setEffort persists a runtime effort level to metadata", async () => {
   const registry = new SessionRegistry({
     runDir,

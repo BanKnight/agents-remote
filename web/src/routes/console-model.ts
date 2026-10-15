@@ -338,11 +338,24 @@ export function projectSummary(project: Project) {
 export function sessionStatusLabel(
   status: AgentSession["status"] | TerminalSession["status"],
 ): TranslationKey {
+  if (status === "working") {
+    return "status.running";
+  }
+
+  if (status === "blocked") {
+    return "status.blocked";
+  }
+
+  if (status === "done") {
+    return "status.done";
+  }
+
   if (status === "idle") {
     return "status.waitingForInput";
   }
 
   if (status === "running") {
+    // terminal 专属（进程存活语义，不走 turn 状态机）。
     return "status.running";
   }
 

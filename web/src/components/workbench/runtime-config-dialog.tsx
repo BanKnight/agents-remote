@@ -16,7 +16,7 @@ import { ShellIcon } from "../shell/icons";
 import type { InfoSheetVariant } from "../shell/info-sheet";
 import { MobileSheet, SHEET_UNMOUNT_DELAY_MS } from "../shell/mobile-sheet";
 import { Dialog, DialogContent } from "../ui/dialog";
-import { shellSurfaceClasses } from "../shell/shell-primitives";
+import { isTurnActive, shellSurfaceClasses } from "../shell/shell-primitives";
 import { useConfirm } from "../shell/confirm-dialog";
 
 /**
@@ -125,7 +125,7 @@ export function RuntimeConfigDialog({
     } else {
       // effort = CLI 重启（--resume 重连），running 中切换会打断当前 turn——与会话页
       // onSelectEffort 同款 danger confirm；无流内信号，detail 失效重取后才见新值。
-      if (session?.status === "running") {
+      if (session && isTurnActive(session.status)) {
         const ok = await confirm({
           cancelLabel: t("cancel"),
           confirmLabel: t("claude.effort.restart"),

@@ -1,11 +1,13 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExternalStoreAdapter, AppendMessage, ThreadMessageLike } from "@assistant-ui/react";
 import type {
+  AgentSessionStatus,
   ClaudeAttachment,
   ClaudeContextUsage,
   ClaudeContextUsageChanged,
   ClaudeControlResponse,
   ClaudeQueueOperation,
+  ClaudeSessionStatusChanged,
   ClaudeUserImageBlock,
   EffortLevel,
   SessionStreamServerMessage,
@@ -2660,6 +2662,10 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       // applyMessageScalarState 折算(contextUsage),不产聊天气泡、不落 fallback。
       if (subtype === "context_usage") continue;
 
+      // session_status: 服务端合成的 turn 状态标量广播(broadcast-only),由
+      // applyMessageScalarState 折算(sessionStatus),不产聊天气泡、不落 fallback。
+      if (subtype === "session_status") continue;
+
       // turn_duration: turn-end stats (durationMs + token budget). Pure display
       // message with no scalar side effect — drop it.
       if (subtype === "turn_duration") continue;
@@ -3920,6 +3926,7 @@ export function useClaudeSession(
           modelAlias?: string;
           permissionMode?: string;
           contextUsage?: ClaudeContextUsage;
+          sessionStatus?: AgentSessionStatus;
         };
         // currentModel 只收 alias（REST 种子 / seed_init / switchModel / typed set-echo），
         // 优先 seed.modelAlias（服务端始终 alias 语义）；system.init 的 concrete model 不进
@@ -3929,6 +3936,16 @@ export function useClaudeSession(
         if (seed.model) setResolvedModel(seed.model);
         if (seed.permissionMode) setPermissionMode(seed.permissionMode);
         if (seed.contextUsage) setContextUsage(seed.contextUsage);
+        if (seed.sessionStatus) setSessionStatus(seed.sessionStatus);
+        return;
+      }
+
+      // system.session_status: 服务端合成的 turn 状态标量广播（broadcast-only，
+      // 不进 liveLines/history——持久值由 seed_init.sessionStatus 回放恢复）。
+      // scalar-only：折标量即 return，不产渲染 item。
+      if (msg.type === "system" && sm.subtype === "session_status") {
+        const frame = msg as ClaudeSessionStatusChanged;
+        if (frame.status) setSessionStatus(frame.status);
         return;
       }
 
@@ -4280,6 +4297,9 @@ export function useClaudeSession(
   // 上下文占用明细标量（统一会话标量管道第一个标量）：live 靠 context_usage 帧、
   // 回放靠 seed_init.contextUsage 恢复；均为 broadcast-only 标量，无渲染 item。
   const [contextUsage, setContextUsage] = useState<ClaudeContextUsage | undefined>();
+  // turn 状态标量（5 态，OSC 7501 对齐）：live 靠 session_status 帧、回放靠
+  // seed_init.sessionStatus 恢复；broadcast-only 标量，无渲染 item。
+  const [sessionStatus, setSessionStatus] = useState<AgentSessionStatus | undefined>();
   // opusplanActive: whether currentModel is the opusplan alias. Derived purely
   // from currentModel (effect below) — no network probe.
   const [opusplanActive, setOpusplanActive] = useState<boolean | undefined>();
@@ -5123,6 +5143,7 @@ export function useClaudeSession(
     opusplanActive,
     permissionMode,
     contextUsage,
+    sessionStatus,
     aiTitle,
     agentName,
     loading,

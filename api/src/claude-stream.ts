@@ -7,6 +7,7 @@ import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, type RuntimeResources, type RuntimeStream } from "./session-registry";
 import { EFFORT_LEVELS, type AgentSessionStatus, type SessionType } from "@agents-remote/shared";
+import { spawnInitialStatus } from "./agent-session-status";
 import type { ClaudeRuntime } from "./claude-runtime";
 
 type UpgradeServer = {
@@ -280,6 +281,8 @@ export class ClaudeStreamController {
       metadata?.modelAlias ?? metadata?.model,
       metadata?.permissionMode,
       metadata?.effort,
+      // respawn 恢复:落盘 done/error 存活到被替换(spawnInitialStatus 归一)。
+      metadata?.status ? spawnInitialStatus(metadata.status) : undefined,
     );
 
     // History and live cache are replayed from the relay on connect.
@@ -413,6 +416,8 @@ export class ClaudeStreamController {
             uuid: `injected-${crypto.randomUUID()}`,
           });
           this.claudeRuntime.injectLiveLine(data.runtimeKey, echo);
+          // 状态机 user_input 信号（idle/done/error/blocked → working）。
+          this.claudeRuntime.reportUserInput(data.runtimeKey);
         }
       }
     } catch {
@@ -455,6 +460,7 @@ export class ClaudeStreamController {
       metadata.modelAlias ?? metadata.model,
       metadata.permissionMode,
       metadata.effort,
+      metadata.status ? spawnInitialStatus(metadata.status) : undefined,
     );
 
     const frame: ClaudeStreamClientMessage = {
@@ -472,6 +478,8 @@ export class ClaudeStreamController {
       uuid: `injected-${crypto.randomUUID()}`,
     });
     this.claudeRuntime.injectLiveLine(runtimeKey, echo);
+    // 状态机 user_input 信号（与 WS user 分支同一语义）。
+    this.claudeRuntime.reportUserInput(runtimeKey);
     return { delivered: true, projectName, sessionId };
   }
 

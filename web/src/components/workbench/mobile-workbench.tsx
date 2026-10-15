@@ -20,6 +20,7 @@ import { useDirectoryAddActions } from "../files/use-directory-add-actions";
 import { resolveRelativeFilePath } from "../files/relative-md-link";
 import { MarkdownLinkContext } from "../markdown/markdown-components";
 import {
+  countsAsRunning,
   LargeTitleRow,
   LoadingBlock,
   MobilePageHeader,
@@ -1209,7 +1210,7 @@ function MobileProjectWorkbench({
   // detail 未热时 instanceNameMemo sidecar 兜底防 id 闪现——tab 首帧同款语义），无聚焦对象
   // = 项目名（空态标题即项目名，▾ 菜单内仅新建）。runct ●n = 项目运行中实例数。
   const runningCount = useMemo(
-    () => instances.reduce((n, e) => n + (e.session.status === "running" ? 1 : 0), 0),
+    () => instances.reduce((n, e) => n + (countsAsRunning(e.type, e.session.status) ? 1 : 0), 0),
     [instances],
   );
   const instanceNameMemo = useAtomValue(instanceNameMemoAtom);

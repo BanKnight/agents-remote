@@ -356,6 +356,8 @@ export const en = {
   // ── Session Status ───────────────────────────────────────────
   "status.waitingForInput": "Waiting for input",
   "status.running": "Running",
+  "status.blocked": "Waiting for approval",
+  "status.done": "Done",
   "status.reconnecting": "Reconnecting",
   "status.connecting": "Connecting",
   "status.closed": "Closed",

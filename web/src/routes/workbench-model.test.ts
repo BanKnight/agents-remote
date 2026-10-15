@@ -378,20 +378,28 @@ const candidate = (
   type: "agent" | "terminal",
 ) => ({ ref: ref(project, sessionId), status, type });
 
-test("rankGlobalInstances: needs-interaction > running agent > terminal", () => {
+test("rankGlobalInstances: blocked > error > working > idle > terminal", () => {
   const ranked = rankGlobalInstances([
     candidate("p", "term1", "running", "terminal"),
-    candidate("p", "agent-run", "running", "agent"),
+    candidate("p", "agent-working", "working", "agent"),
     candidate("p", "agent-idle", "idle", "agent"),
+    candidate("p", "agent-error", "error", "agent"),
+    candidate("p", "agent-blocked", "blocked", "agent"),
   ]);
-  expect(ranked.map((r) => r.sessionId)).toEqual(["agent-idle", "agent-run", "term1"]);
+  expect(ranked.map((r) => r.sessionId)).toEqual([
+    "agent-blocked",
+    "agent-error",
+    "agent-working",
+    "agent-idle",
+    "term1",
+  ]);
 });
 
 test("rankGlobalInstances: 同 rank 保持聚合原序（稳定）", () => {
   const ranked = rankGlobalInstances([
-    candidate("p1", "a1", "running", "agent"),
-    candidate("p2", "a2", "running", "agent"),
-    candidate("p1", "a3", "running", "agent"),
+    candidate("p1", "a1", "working", "agent"),
+    candidate("p2", "a2", "working", "agent"),
+    candidate("p1", "a3", "working", "agent"),
   ]);
   expect(ranked.map((r) => r.sessionId)).toEqual(["a1", "a2", "a3"]);
 });

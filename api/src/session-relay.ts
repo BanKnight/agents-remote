@@ -212,6 +212,7 @@ export class ClaudeSessionRelay {
         "seed_init",
         "skill_catalog_changed",
         "context_usage",
+        "session_status",
         "thinking_tokens",
         "api_retry",
         "compact_boundary",

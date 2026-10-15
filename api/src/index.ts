@@ -1,4 +1,5 @@
 import type {
+  AgentSessionStatus,
   ApprovalRespondRequest,
   AutoRetryStatusResponse,
   CreateProjectRequest,
@@ -15,6 +16,7 @@ import type {
   WikiIndexResponse,
   WikiSearchResponse,
 } from "@agents-remote/shared";
+import type { TerminalSessionStatus } from "@agents-remote/shared";
 import type { UploadConflictPolicy } from "@agents-remote/shared";
 import { AgentRuntime } from "./agent-runtime";
 import { AcpRuntime, resolveAcpCredentials } from "./acp-runtime";
@@ -110,7 +112,7 @@ type WebSocketData =
       projectName: string;
       sessionId: string;
       runtimeKey: string;
-      status: "running" | "idle" | "closed" | "error";
+      status: AgentSessionStatus | TerminalSessionStatus;
     }
   | {
       kind: "claude-stream";
@@ -118,7 +120,7 @@ type WebSocketData =
       projectName: string;
       sessionId: string;
       runtimeKey: string;
-      status: "running" | "idle" | "closed" | "error";
+      status: AgentSessionStatus;
     }
   | {
       kind: "pi-stream";
@@ -1651,6 +1653,16 @@ export const startApi = async () => {
   claudeStreamController.setOnControlResponseForwarded((runtimeKey, requestId) =>
     approvalCenter.unregisterForwarded(runtimeKey, requestId),
   );
+  // turn 状态机装配：迁移落盘（metadata 权威，跨重启恢复）；审批收口 → blocked 回 working
+  //（多卡时最后一张注销才触发，见 approval-center.notifySettledIfEmpty）。
+  // closed 不落盘：close 路径紧随 removeMetadata，异步写会竞态复活刚删的 metadata
+  //（review P2-7）；closed 语义仅在关闭响应中出现（协议约定，见 shared 注释）。
+  claudeRuntime.setOnSessionStatusChange((sessionId, status) => {
+    if (status === "closed") return;
+    void sessionRegistry.setAgentSessionStatus(sessionId, status);
+  });
+  approvalCenter.onRuntimeApprovalsSettled = (runtimeKey) =>
+    claudeRuntime.reportApprovalSettled(runtimeKey);
   // 自动重试注入配置源：调度时刻从 metadata fresh 读 config（缺省/enabled:false=不调度）。
   claudeRuntime.setAutoRetryConfigProvider((sessionId) =>
     sessionRegistry.getAgentAutoRetryConfig(sessionId),
