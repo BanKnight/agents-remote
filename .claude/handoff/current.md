@@ -4,7 +4,7 @@
 
 ## 一句话状态
 
-双模式批实现全部落地：同一 claude 会话（同 claudeSessionId / runtimeKey）在 **chat（headless stream-json）↔ terminal（tmux 交互式 CLI）** 两形态间接力，JSONL 唯一权威；切换严格 idle-only；TUI 状态靠 hooks 写状态文件旁路（关键三态）；审批/自动重试在 TUI 让位。门禁全绿（api 950 / shared 10 / web 803）、`probe-session-mode` 18/18、`probe-agent-tui-hydrate` 6/6（含真实 API 重启验证）。**subagent reviewer 面全挂（API unexpected EOF 连续 5 次），改自审 + fork 自审兜底**；**待提交 + 待真机验收**。
+双模式批实现全部落地：同一 claude 会话（同 claudeSessionId / runtimeKey）在 **chat（headless stream-json）↔ terminal（tmux 交互式 CLI）** 两形态间接力，JSONL 唯一权威；切换严格 idle-only；TUI 状态靠 hooks 写状态文件旁路（关键三态）；审批/自动重试在 TUI 让位。门禁全绿（api 950 / shared 10 / web 803）、`probe-session-mode` 18/18、`probe-agent-tui-hydrate` 6/6（含真实 API 重启验证）。**subagent reviewer 面全挂（API unexpected EOF 连续 5 次），改自审 + fork 自审兜底**；**已提交 `26b0450`（未 push）+ 待真机验收**。
 
 ## 本 session 焦点
 
@@ -28,7 +28,7 @@
 - ✅ 探针：`probe-session-mode.mjs` 18/18（含新断言「pane 内 CLI 真起来」——实测捕获到真实 CLI TUI 状态行 `1 agent / Sonnet 5 / master / test`，证 argv 全链被 CLI 接受）、`probe-agent-tui-hydrate.mjs` 6/6（**会重启 ar-dev api**，勿在他人使用中跑）
 - ✅ 门禁：format/lint/typecheck 0 warning、全量单测 0 fail、`ar-verify-css.mjs` + `ar-verify-tokens.mjs` 通过
 - ✅ **UI e2e**：新增 `e2e/session-mode.spec.ts` 2 条（本批入口原本无 e2e 覆盖）——chat 形态 ⋯ 显示「在终端打开」+ 点击发 `POST /mode` + 面板换 xterm + keepOpen 项就地翻转「回到对话」；terminal 形态直接进入渲染终端面板 + 点「回到对话」切回 ChatPanel。跑法 `bun run scripts/run-e2e.ts session-mode.spec.ts`（透传 spec 路径）。含新 spec 的全量 e2e：既有 27 条全绿（对拍新 api 代码）+ 新 2 条 2/2。
-- ⏳ **待提交**（本批自审完毕，见下「阻塞」——reviewer 面不可用）
+- ✅ **已提交 `26b0450`**（本批自审完毕，见下「阻塞」——reviewer 面不可用；未 push，等用户指令）
 - ⏳ **真机清单（交用户）**：GUI 发一轮 → ⋯ 在终端打开 → xterm 出现且是同一会话（历史在）→ TUI 里跑一轮（状态点 working→done）→ ⋯ 回到对话 → GUI 气泡含 TUI 轮次 → TUI 内触发审批（CLI 自己弹，web 无卡）
 - ⏳ 前两批真机清单（5 态化批 + 上下文占用三批合并）仍未验收
 
@@ -53,4 +53,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-15（双模式批实现完毕：门禁全绿 + 探针 24/24 + 自审兜底）
+最后更新：2026-10-15（双模式批实现完毕并提交 `26b0450`：门禁全绿 + 探针 24/24 + 自审兜底）

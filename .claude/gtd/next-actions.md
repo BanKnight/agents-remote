@@ -19,7 +19,7 @@
 
 ## @双模式（Agent 会话 GUI 对话 ↔ TUI 终端）
 
-- [x] **双模式批实现**（2026-10-15 完成）：同一 claudeSessionId 在 chat（headless）↔ terminal（tmux 交互式 CLI）接力，JSONL 唯一权威；严格 idle-only；hooks 状态旁路关键三态；审批让位零代码；hydrate 重启重挂 watcher。门禁全绿（api 950 / shared 10 / web 803）+ 探针 24/24 + e2e 2/2（既有 27 全绿）；细节见 `.claude/gtd/inbox.md` 2026-10-15 ✅ 条
+- [x] **双模式批实现**（2026-10-15 完成）：同一 claudeSessionId 在 chat（headless）↔ terminal（tmux 交互式 CLI）接力，JSONL 唯一权威；严格 idle-only；hooks 状态旁路关键三态；审批让位零代码；hydrate 重启重挂 watcher。门禁全绿（api 950 / shared 10 / web 803）+ 探针 24/24 + e2e 2/2（既有 27 全绿）；commit `26b0450`；细节见 `.claude/gtd/inbox.md` 2026-10-15 ✅ 条
 - [ ] **双模式真机验收（交用户）**：GUI 发一轮 → ⋯ 在终端打开 → xterm 是同一会话（历史在）→ TUI 跑一轮（状态点 working→done）→ ⋯ 回到对话 → GUI 气泡含 TUI 轮次 → TUI 内触发审批（CLI 自己弹，web 无卡）；顺带暴露 TUI 凭证边界
 - [ ] **双模式批 reviewer 补跑**：本环境 subagent API 面故障（unexpected EOF ×6）→ 下 session 补 code-reviewer + design-reviewer 复核本批
 
