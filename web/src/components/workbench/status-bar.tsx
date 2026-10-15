@@ -27,14 +27,19 @@ export function StatusBar() {
   );
   const { approvals } = useApprovals(isDesktop);
   if (!isDesktop) return null;
-  const runningCount = candidates.filter((c) => countsAsRunning(c.type, c.status)).length;
+  // 计数 x/y（working/总实例，用户拍板 2026-10-15）：纯 working 数字会让「0」被误读为
+  // 「没有实例」——分子分母同显消除歧义；terminal 存活（running）照常计入分子。
+  const activeCount = candidates.filter((c) => countsAsRunning(c.type, c.status)).length;
+  const totalCount = candidates.length;
 
   return (
     <div aria-label={t("workbench.statusBarAria")} className="sbar" role="status">
       <span aria-hidden="true" className={`dot2 ${isLoaded ? "bg-success" : "bg-on-surface/30"}`} />
       <span>{isLoaded ? t("workbench.statusConnected") : t("workbench.statusConnecting")}</span>
       <span aria-hidden="true">·</span>
-      <span>{t("workbench.statusInstancesRunning", { count: runningCount })}</span>
+      <span>
+        {t("workbench.statusInstancesRunning", { active: activeCount, total: totalCount })}
+      </span>
       {approvals.length > 0 ? (
         <ApprovalPopover approvals={approvals}>
           <button

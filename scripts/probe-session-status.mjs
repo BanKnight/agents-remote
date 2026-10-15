@@ -1,6 +1,6 @@
 // 探针:agent 会话状态 5 态化(v1.6,2026-10-15,OSC 7501 对齐)。验证浏览器真实链路:
 // 1 全局活动卡 dot 5 态 class 映射(idle/working/blocked/done/error);
-// 2 .dot.done 新变体真实落盘(computed 背景 = --c-success,与 .dot.run 同色——防 CSS
+// 2 .dot.finished 新变体真实落盘(computed 背景 = --c-success,与 .dot.run 同色——防 CSS
 //   未落盘 utility 缺失的假绿,frontend-notes §10);
 // 3 rankGlobalInstances 排序:blocked > error > working > idle/done > terminal;
 // 4 「运行中」计数只计 working(blocked/done 不计入,用户拍板);
@@ -113,7 +113,7 @@ try {
   const expectClass = {
     working: "dot run",
     blocked: "dot warn",
-    done: "dot done",
+    done: "dot finished",
     error: "dot err",
     idle: "dot idle",
   };
@@ -122,14 +122,24 @@ try {
     check(`1 dot class ${name} → "${cls}"`, got === cls, `got="${got}"`);
   }
 
-  // ── 2 .dot.done 落盘:computed 背景 = --c-success(与 .dot.run 相同)──
+  // ── 2 .dot.finished 落盘:computed 背景 = --c-success(与 .dot.run 相同)──
   const doneBg = await rowDot("done").evaluate((el) => getComputedStyle(el).backgroundColor);
   const runBg = await rowDot("working").evaluate((el) => getComputedStyle(el).backgroundColor);
   check(
-    "2 .dot.done 落盘(背景色与 .dot.run 同为 success)",
+    "2 .dot.finished 落盘(背景色与 .dot.run 同为 success)",
     doneBg === runBg && doneBg !== "rgba(0, 0, 0, 0)",
     `${doneBg} vs ${runBg}`,
   );
+
+  // ── 2b dot 几何:5 态全 7×7 正圆(防变体类名与原型裸类撞名——.dot.done 曾被 03c
+  //    完成横幅 .done{display:flex;padding;border} 拉成 26×22 椭圆,真机实锤)──
+  for (const [name] of Object.entries(expectClass)) {
+    const g = await rowDot(name).evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return [Math.round(r.width), Math.round(r.height)];
+    });
+    check(`2b dot 几何 ${name} 7×7 正圆`, g[0] === 7 && g[1] === 7, `got ${g[0]}×${g[1]}`);
+  }
 
   // ── 3 排序:活动卡行序 blocked > error > working > idle/done > terminal ──
   // 行文本带活动时间缀("3m ago"),剥掉再比名字序。
@@ -153,8 +163,9 @@ try {
     order.join(" | "),
   );
 
-  // ── 4 运行中计数:agent working + terminal running 各计 1(blocked/done/error/idle 不计)──
-  // 文案 key home.nRunning:「{{count}} 进行中」。
+  // ── 4 计数 x/y(working/总实例,用户拍板 2026-10-15):agent working + terminal running
+  //    各计 1 → 2/6(6 = 5 agent + 1 terminal);blocked/done/error/idle 只进分母。
+  //    文案 key home.nRunning:「{{active}}/{{total}} 进行中」。 ──
   await page.waitForFunction(
     () =>
       document.body.textContent?.includes("进行中") ||
@@ -169,8 +180,8 @@ try {
     return el?.textContent ?? "";
   });
   check(
-    "4 计数 working+terminal running=2(blocked/done 不计入,review P1-3)",
-    /(^|[^0-9])2\s*(进行中|running)/.test(countText),
+    "4 计数 x/y = 2/6(working+terminal running 进分子,余者只进分母)",
+    /(^|[^0-9])2\/6\s*(进行中|running)/.test(countText),
     countText.trim(),
   );
 

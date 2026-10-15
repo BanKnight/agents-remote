@@ -127,9 +127,11 @@
       opacity: 0.4;
     }
   }
-  /* done（OSC 7501「最近一轮完成」）：与 working 同 --c-success 但静止（无 dot-pulse）
-   * ——结果态静息；脉动差异是列表场景两态唯一可辨面。 */
-  .dot.done {
+  /* finished（OSC 7501「最近一轮完成」）：与 working 同 --c-success 但静止（无 dot-pulse）
+   * ——结果态静息；脉动差异是列表场景两态唯一可辨面。⚠️ 变体名不得用 `done`——与
+   * 03c 完成横幅裸类 `.done`（display:flex+padding+border）撞名，横幅盒模型全落在
+   * 7px 圆点上拉成椭圆（2026-10-15 真机实锤）。 */
+  .dot.finished {
     background: var(--c-success);
   }
   .dot.idle {

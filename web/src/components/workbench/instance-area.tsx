@@ -88,8 +88,6 @@ import {
   LoadingBlock,
   sessionMarker,
   shellSurfaceClasses,
-  type ShellTone,
-  statusDotToneBg,
   statusToTone,
   toggleSwitchKnobClasses,
   toggleSwitchTrackClasses,
@@ -731,7 +729,7 @@ export type PanelMeta = {
   /** 显示名（detail.displayName；detail 未回时从列表缓存预填，见 usePanelMeta）。 */
   label?: string;
   /** 状态点（status → tone + i18n label；running 时 pulse）。detail/缓存均未就绪时 undefined。 */
-  statusDot?: { label: string; pulse: boolean; tone: ShellTone };
+  statusDot?: { label: string; dotClass: string; pulse: boolean };
 };
 
 /** tab 显示名兜底链单源（TabChip 与拖拽 DragGhost 同消费——批 C 收敛此前逐字双份）：
@@ -760,7 +758,7 @@ function panelTabLabel(
 
 /** 实例行 dot2 状态点 class 单源（实例切换列表与 workbench-side 侧栏 agent 行同消费——
  *  批 C 收敛此前逐字双份）：turn 活跃与结果态着色实心（working 绿 / blocked 橙 /
- *  error 红 / done 绿——与移动端 .dot.done 同为绿实心，spec §3.2「状态点语义全局统一」，
+ *  error 红 / done 绿——与移动端 .dot.finished 同为绿实心，spec §3.2「状态点语义全局统一」，
  *  防桌面空心/移动实心分叉），静息态（idle/closed）1.4px 空心。 */
 export const instanceDot2 = (status: AgentSession["status"] | TerminalSession["status"]): string =>
   status === "working" || status === "running"
@@ -915,8 +913,10 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
         marker: sessionMarker("agent", "xs"),
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
+          // 点色单源 instanceDot2（与左栏/实例切换行同管道，spec「状态点语义全局统一」）——
+          // 勿走 statusDotToneBg[statusToTone]：done 会降级 muted 灰，与绿实心分叉。
+          dotClass: instanceDot2(session.status),
           pulse: session.status === "working",
-          tone: statusToTone(session.status),
         },
       };
     }
@@ -937,8 +937,8 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
         marker: sessionMarker("terminal", "xs"),
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
+          dotClass: instanceDot2(session.status),
           pulse: session.status === "working" || session.status === "running",
-          tone: statusToTone(session.status),
         },
       };
     }
@@ -2505,9 +2505,11 @@ function TabChip({
       {/* tabstrip .tb 单源形制（§6.12j，v2-primitives .tabstrip .tb）：12.5px 文本 + on 态
           ink-1 600 + ::after 2.5px 主色下划线（absolute bottom，随 .tb on 类自动来）。v1.5 批 7
           §6.2 行首类型 marker 回归（sparkles/terminal/message 同一 registry，与 DragGhost 同源
-          meta.marker），状态点移名称后（状态点 tone 消费 statusDotToneBg 禁私设映射；
-          session/terminal tab 有，file/git/skill/chat/render 无 → 纯文本，与原型非 session tab
-          一致）。✕ 是 tab 特有动作保留接线（触屏常显、hover 环境显隐，frontend-notes §7）。 */}
+          meta.marker），状态点移名称后（状态点色消费 meta.statusDot.dotClass = instanceDot2
+          单源——与左栏/实例切换行同管道，spec「状态点语义全局统一」，勿走 tone 映射
+          （done 会降 muted 灰分叉）；session/terminal tab 有，file/git/skill/chat/render
+          无 → 纯文本，与原型非 session tab 一致）。✕ 是 tab 特有动作保留接线（触屏常显、
+          hover 环境显隐，frontend-notes §7）。 */}
       <div
         className={`tb group/tab shrink-0 cursor-pointer ${isActive ? "on" : ""}`}
         onContextMenu={(event) => {
@@ -2526,7 +2528,7 @@ function TabChip({
         {meta?.statusDot ? (
           <span
             aria-label={meta.statusDot.label}
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotToneBg[meta.statusDot.tone]}${
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.statusDot.dotClass}${
               meta.statusDot.pulse ? " animate-pulse" : ""
             }`}
             role="img"

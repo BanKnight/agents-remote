@@ -53,7 +53,8 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 .dot{width:7px;height:7px;border-radius:50%;flex:none}
 .dot.run{background:var(--c-success);animation:dot-pulse 2s ease-in-out infinite}
 @keyframes dot-pulse{50%{opacity:.4}}
-.dot.done{background:var(--c-success)}
+/* 变体名不得用 `done`（与 03c 完成横幅裸类 .done 撞名，2026-10-15 实锤拉椭圆） */
+.dot.finished{background:var(--c-success)}
 .dot.idle{background:var(--ink-2)}
 .dot.warn{background:var(--c-warning)}
 .dot.err{background:var(--c-danger)}

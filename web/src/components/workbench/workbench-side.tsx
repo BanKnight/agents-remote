@@ -426,9 +426,12 @@ export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }
                 </span>
                 <span className="min-w-0 truncate">{row.name}</span>
                 {row.running > 0 ? (
-                  <span className="live">● {row.running}</span>
+                  <span className="live">
+                    ● {row.running}/{row.instances.length}
+                  </span>
                 ) : (
-                  <span className="live off">—</span>
+                  // 0 working 也显示 x/y（用户拍板 2026-10-15，与移动项目卡同语义）。
+                  <span className="live off">● 0/{row.instances.length}</span>
                 )}
               </button>
               {/* 项目行菜单 open 期间触发行 dashed ring 高亮（原型 .ring，两端共用常量）；
