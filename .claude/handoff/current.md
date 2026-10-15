@@ -4,7 +4,7 @@
 
 ## 一句话状态
 
-双模式批实现全部落地：同一 claude 会话（同 claudeSessionId / runtimeKey）在 **chat（headless stream-json）↔ terminal（tmux 交互式 CLI）** 两形态间接力，JSONL 唯一权威；切换严格 idle-only；TUI 状态靠 hooks 写状态文件旁路（关键三态）；审批/自动重试在 TUI 让位。门禁全绿（api 950 / shared 10 / web 803）、`probe-session-mode` 18/18、`probe-agent-tui-hydrate` 6/6（含真实 API 重启验证）。**subagent reviewer 面全挂（API unexpected EOF 连续 5 次），改自审 + fork 自审兜底**；**已提交 `26b0450` + `ad91e97`（fail-closed 顺序修复，未 push）+ 待真机验收**。
+双模式批实现全部落地：同一 claude 会话（同 claudeSessionId / runtimeKey）在 **chat（headless stream-json）↔ terminal（tmux 交互式 CLI）** 两形态间接力，JSONL 唯一权威；切换严格 idle-only；TUI 状态靠 hooks 写状态文件旁路（关键三态）；审批/自动重试在 TUI 让位。门禁全绿（api 950 / shared 10 / web 803）、`probe-session-mode` 18/18、`probe-agent-tui-hydrate` 6/6（含真实 API 重启验证）。**subagent reviewer 面全挂（API unexpected EOF 连续 5 次），改自审 + fork 自审兜底**；**已提交 `26b0450` + `ad91e97` + `0d2801c`（均未 push）+ 待真机验收**。
 
 ## 本 session 焦点
 
@@ -20,6 +20,7 @@
 - **双写 JSONL 防线**：claude-stream `open()` + `injectUserPrompt()` 双守卫（terminal 形态拒绝，error code `SESSION_STATE_CONFLICT` / reason `terminal_mode`）。
 - **hydrate（API 重启恢复）**：tmux pane 独立于 API 存活、但 fs.watch 随进程消失 → `startApi` 装配后 `await agentTui.hydrate(await registry.listTerminalModeSessions())`（纯读访问器，不调 keepIfRuntimeExists）；状态文件在才挂；基线 `spawnInitialStatus(status)`（parseMetadata 已把 TUI 期 working/blocked 归一 idle）。**失败非致命**（try/catch + console.error，不拖垮 API 启动）。
 - **起 pane 失败回滚（`ad91e97` fail-closed）**：`setAgentSessionMode("terminal")` **先**于 `startCommand`（写失败 → 不起 pane，方向安全）；`startCommand` 抛错 → 形态退回 chat + `teardownTerminal` 清文件（不留「有 hooks 文件却无 pane」或「档案 terminal 却无 pane」半态）。回滚落 `mode:"chat"` 显式值（registry 无删字段 API，缺省 chat 语义等价）。
+- **切换失败 UI（`0d2801c`，用户拍板）**：失败走 `useConfirm` 弹窗（toast 体系不存在，复用既有 confirm 惯例）+「重试」按钮重新 mutate（服务端不自动回滚 → 用户手动重试即恢复）；409 显「执行中，本轮结束后可切换」。自审 P3 三条裁决：#1 已修（`ad91e97`）、#2 以此弹窗收口、#3（菜单可用性读 60s stale detail，纯 UX 噪音）**用户拍板暂不修**。
 
 ### 进度
 
