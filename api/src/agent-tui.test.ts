@@ -128,7 +128,7 @@ test("TUI_STATUS_SIGNAL_BY_TOKEN 三 token 映射关键三态信号", () => {
 
 // ── switchToTerminal ────────────────────────────────────────────────────
 
-test("switchToTerminal：silent 关 headless → 落 settings/状态文件（0600）→ tmux 起 CLI → mode 落盘", async () => {
+test("switchToTerminal：silent 关 headless → 落 settings/状态文件（0600）→ mode 落盘 → tmux 起 CLI", async () => {
   const h = await seed();
   await h.controller.switchMode(h.metadata, "terminal");
 
@@ -155,7 +155,7 @@ test("switchToTerminal：silent 关 headless → 落 settings/状态文件（060
   h.controller.teardownTerminal(h.runtimeKey);
 });
 
-test("switchToTerminal 起 pane 失败：回滚文件、形态仍 chat（不留半态）", async () => {
+test("switchToTerminal 起 pane 失败：形态退回 chat、回滚文件（不留半态）", async () => {
   const h = await seed();
   const failing = new AgentTuiController({
     runDir,
@@ -173,7 +173,9 @@ test("switchToTerminal 起 pane 失败：回滚文件、形态仍 chat（不留�
   await expect(failing.switchMode(h.metadata, "terminal")).rejects.toThrow("tmux down");
   // teardownTerminal 的 rm 是 fire-and-forget（关闭路径不阻塞），等一拍再断言。
   await new Promise((r) => setTimeout(r, 50));
-  expect((await registry.getAgentSession(project.name, h.sessionId))?.mode).toBeUndefined();
+  // 形态先落盘（fail-closed，见 switchToTerminal 注释）→ 失败后必须退回 chat，
+  // 否则留下「档案 terminal 却无 pane」的半态。
+  expect((await registry.getAgentSession(project.name, h.sessionId))?.mode).toBe("chat");
   await expect(readFile(statusPath(h.runtimeKey), "utf8")).rejects.toThrow();
   await expect(readFile(settingsPath(h.runtimeKey), "utf8")).rejects.toThrow();
 });

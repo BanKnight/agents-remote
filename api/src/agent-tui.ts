@@ -95,18 +95,23 @@ export class AgentTuiController {
       { mode: 0o600 },
     );
     await writeFile(this.statusPath(runtimeKey), "", { mode: 0o600 });
-    // 3) tmux pane 起 CLI 原生形态（argv 全来自会话 metadata，见 resolveTuiSpawn）。
+    // 3) **形态先落盘，再起 pane**：顺序有意为之（fail-closed 方向）——若先起 pane 后落盘，
+    //    落盘失败会留下「tmux 里 CLI 在跑、档案仍是 chat」，此时 claude-stream 放行，headless
+    //    会用 --resume 拉起同一个 id = 双写 JSONL。先落盘则最坏是「档案 terminal + 无 pane」，
+    //    方向安全：claude-stream 一律拒绝，重试「回到对话」即自愈。
+    await registry.setAgentSessionMode(metadata.id, "terminal");
+    // 4) tmux pane 起 CLI 原生形态（argv 全来自会话 metadata，见 resolveTuiSpawn）。
     const args = await claudeRuntime.resolveTuiSpawn(metadata);
     try {
       await tmuxRuntime.startCommand(metadata, args.map(shellQuote).join(" "));
     } catch (error) {
-      // 起 pane 失败（tmux server 不可达等）：回滚刚写的 settings/状态文件，形态保持 chat——
-      // 不留「有 hooks 文件却无 pane 无 watcher」的半态。
+      // 起 pane 失败（tmux server 不可达等）：形态退回 chat + 清掉刚写的 settings/状态文件——
+      // 不留「有 hooks 文件却无 pane 无 watcher」或「档案说 terminal 却无 pane」的半态。
+      await registry.setAgentSessionMode(metadata.id, "chat");
       this.teardownTerminal(runtimeKey);
       throw error;
     }
-    // 4) 形态落盘 + watcher 挂载 + 审批登记清底（idle-only 已排除 blocked，兜底）。
-    await registry.setAgentSessionMode(metadata.id, "terminal");
+    // 5) watcher 挂载 + 审批登记清底（idle-only 已排除 blocked，兜底）。
     this.tuiStatus.set(runtimeKey, spawnInitialStatus(metadata.status));
     this.startWatcher(runtimeKey, metadata.id);
     approvalCenter?.clearRuntime(runtimeKey);
