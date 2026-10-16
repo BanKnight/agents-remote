@@ -141,6 +141,7 @@ export const zh: Record<TranslationKey, string> = {
   "session.runtimeConfig.unavailable": "会话未连接，暂不可配置",
   "session.instanceInfo.createdAt": "创建时间",
   "session.instanceInfo.resumeId": "恢复 ID",
+  "session.instanceInfo.cost": "累计费用",
   "session.instanceInfo.sessionDir": "会话目录",
   "session.autoRetry.label": "自动重试",
   "session.autoRetry.editShort": "编辑",
@@ -642,6 +643,8 @@ export const zh: Record<TranslationKey, string> = {
   "claude.attachment.selected_lines_in_ide": "已选中行",
   "claude.attachment.diagnostics": "诊断信息",
   "claude.attachment.goal_status": "目标状态",
+  "claude.attachment.remote_session_change": "远程会话变更",
+  "claude.attachment.environment": "环境信息",
 
   // ── Context compaction block ─────────────────────────────────────
   "claude.compact.title": "上下文已压缩",

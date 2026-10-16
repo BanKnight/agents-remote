@@ -1,52 +1,52 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-15（**双模式批（GUI 对话 ↔ TUI 终端）** 实现完毕、全门禁绿、探针 24/24；前批 5 态化 `9d5421f` + 命名/计数回调批 `541099c`）
+> 最后更新：2026-10-16（左栏布局 + CLI 2.1.299 新协议批——实现/review/门禁全绿，**未 commit**）
 
 ## 一句话状态
 
-双模式批实现全部落地：同一 claude 会话（同 claudeSessionId / runtimeKey）在 **chat（headless stream-json）↔ terminal（tmux 交互式 CLI）** 两形态间接力，JSONL 唯一权威；切换严格 idle-only；TUI 状态靠 hooks 写状态文件旁路（关键三态）；审批/自动重试在 TUI 让位。门禁全绿（api 950 / shared 10 / web 803）、`probe-session-mode` 18/18、`probe-agent-tui-hydrate` 6/6（含真实 API 重启验证）。**subagent reviewer 面全挂（API unexpected EOF 连续 5 次），改自审 + fork 自审兜底**；**已提交 `26b0450` + `ad91e97` + `0d2801c`（均未 push）+ 待真机验收**。
+两项用户反馈已实现并经 code/design 双 review 消化：**①桌面左栏项目列表** `max-h-[40%]`+内部滚动（项目多时列表自滚、会话区保底 ≥8 行，探针 7/7）；**②CLI 2.1.299 四类新协议**全接入单管道——`cost-state` → 标量 state + ℹ 信息面「累计费用」行（第四标量）、`system/permission_check_status` → 投影 skip（客户端全隐身，纯内部信号）、attachment `remote_session_change`/`environment` → ATTACHMENT_CONFIG 可读卡片（rendered body）。门禁全绿（format/lint/typecheck + api 953 + web 809 + shared 10 + CSS 硬闸 + tokens 机检）、session-mode e2e 3/3、左栏探针 7/7。**未 commit（等用户指令）**。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **TUI = CLI 原生形态，纯 argv、零 env 注入**（用户两次拍板）：参数全来自会话 metadata，凭证走 CLI 自身配置；**不注入 preset env**。唯一保留一次查表（非 env）：model 别名 → 规范名（`buildAvailableAliases().resolved`，消 CLI 自身别名表的网关 422 面）。多 preset 凭证边界（TUI 用机器默认而非会话 preset）已记 spec §4.7。
-- **spawn 形态判定 = JSONL 存在性**（CLI 2.1.299 实测）：`--session-id <uuid>` 全新 id 专用（已存在报错）、`--resume <id>` 对不存在 id 硬失败 → `existsSync(claudeJsonlPath(...))` 定 `--resume` / `--session-id`。创建即钉 claudeSessionId（`createAgentSession` 生成 uuid），故新会话出生即可切 TUI。
-- **审批让位零代码**：TUI argv 不带 `--permission-prompt-tool stdio` → 无 can_use_tool 帧 → 审批中心天然收不到。
-- **TUI 状态三态（hooks 旁路）**：`--settings <file>`（runDir 下 0600）挂 UserPromptSubmit→`user_input`、Stop→`turn_done`、Notification→`approval`，hook 纯 shell `printf %s token > 状态文件`；api `fs.watch` 该文件 → 复用 `nextAgentSessionStatus` + `setAgentSessionStatus`。信号表 `TUI_STATUS_SIGNAL_BY_TOKEN`（未知 token 无信号）。**error 态 hooks 覆盖不到 = 接受的取舍**（用户「关键几个对上就行」）。
-- **切换门槛严格 idle-only**：working/blocked → 409 `SESSION_STATE_CONFLICT`（绝不丢 turn）；同 mode 幂等短路（路由 + 编排器双层）。
-- **runtime 分发按 mode**：`runtime.exists/close` 的 claude 名分支查 `getAgentModeByRuntimeKey` → terminal 走 tmuxRuntime（headless 已让位）；close 路径 `claudeRuntime.close(silent)` + `agentTui.teardownTerminal` + `tmuxRuntime.close`。
-- **`close(sessionName, { silent: true })`**：不广播 closed、不走审批 settled 回调（会话没关只是换形态），kill/processes.delete/autoRetry.destroySession/relay 清理照旧。
-- **双写 JSONL 防线**：claude-stream `open()` + `injectUserPrompt()` 双守卫（terminal 形态拒绝，error code `SESSION_STATE_CONFLICT` / reason `terminal_mode`）。
-- **hydrate（API 重启恢复）**：tmux pane 独立于 API 存活、但 fs.watch 随进程消失 → `startApi` 装配后 `await agentTui.hydrate(await registry.listTerminalModeSessions())`（纯读访问器，不调 keepIfRuntimeExists）；状态文件在才挂；基线 `spawnInitialStatus(status)`（parseMetadata 已把 TUI 期 working/blocked 归一 idle）。**失败非致命**（try/catch + console.error，不拖垮 API 启动）。
-- **起 pane 失败回滚（`ad91e97` fail-closed）**：`setAgentSessionMode("terminal")` **先**于 `startCommand`（写失败 → 不起 pane，方向安全）；`startCommand` 抛错 → 形态退回 chat + `teardownTerminal` 清文件（不留「有 hooks 文件却无 pane」或「档案 terminal 却无 pane」半态）。回滚落 `mode:"chat"` 显式值（registry 无删字段 API，缺省 chat 语义等价）。
-- **切换失败 UI（`0d2801c`，用户拍板）**：失败走 `useConfirm` 弹窗（toast 体系不存在，复用既有 confirm 惯例）+「重试」按钮重新 mutate（服务端不自动回滚 → 用户手动重试即恢复）；409 显「执行中，本轮结束后可切换」。自审 P3 三条裁决：#1 已修（`ad91e97`）、#2 以此弹窗收口、#3（菜单可用性读 60s stale detail，纯 UX 噪音）**用户拍板暂不修**。
+- **cost-state = 统一会话标量管道第四标量**（同族 contextUsage/sessionStatus）：Pass 1 `applyMessageScalarState` latest-wins 整帧覆盖（`totalCostUSD` 数字守卫）；Pass 2 normalize skip（不落兜底 = 不刷屏）；消费面 = ℹ 信息面一行（`bridge.getCostState` 打开瞬间快照；bridge 身份稳定，闭包经 `costStateRef` 读最新）。**无数据不落行**。
+- **ℹ 信息面行序（design review P2-1 已修）**：恢复 ID → 会话目录 → **累计费用（最后一行，两份原型位）**；原插入位置在会话目录之前，与紧邻注释矛盾，已移到 `if (project)` 块之后。
+- **单标量子集 diverge 记档**：原型「6 轮 · $1.28 · 52k tok」→ 现只显 `$X.XX`（modelUsage/时长/行数已在 ClaudeCostState，待 UI 扩展，不伪造推算值）。
+- **costState 恢复缺口（code review P2-1，记档接受）**：relay 在 compact_boundary 清空 history+live 缓冲 → compaction 后断线重连若 JSONL 未落该帧，ℹ 累计费用行暂缺，直到下一帧自愈；治本需 relay 持久 last frame + seed_init 回种（对标 contextUsage），属后续批次。已写入协议文档 `#### cost-state` 处理方法 §1。
+- **attachment 两个新子类型不列 case（code review P3-2 消化）**：`handleAttachment` default 同为 `makeAttachmentBubble`，显式 case 零行为差异 → 删除，真实契约落在 `ATTACHMENT_CONFIG` 两个条目（badge = pr→commit→url / cwd 尾段；body = `renderedBody` 提取 `rendered[].content`）；测试改写为断言 config 条目（含 badge 值 + body 非空 + 无 rendered 时 null 优雅降级）。`ATTACHMENT_CONFIG` 因此 export。
+- **api `knownSubtypes` 收编 `permission_check_status`**（code review P3-3）：免每次权限检查打 `[relay] unknown system subtype` 日志。
+- **zh 标签 `claude.attachment.environment` = 「环境信息」**（design P3-1）：一手样本既有启动快照帧又有 changes 帧，「变更」不覆盖快照语义。
+- **session-mode e2e test 1 是负载敏感竞态（非本批引入）**：pending 细条窗口 ≈ POST 往返（mock 300ms），断言原排在「菜单关闭 + poll」之后，高负载时被甩出窗口（高负载 4/4 挂、同代码低负载复绿 + HEAD 基线对照实锤）。修复 = **pending 断言紧接 click**（竞态免疫），非改产品。
 
 ### 进度
 
-- ✅ 实现：`api/src/agent-tui.ts`（新）+ `claude-runtime.ts`（buildTuiSpawnArgs/resolveTuiSpawn/close silent/spawn 形态判定）+ `claude-stream.ts`（双守卫）+ `index.ts`（runtime 分发 + 装配 + hydrate）+ `session-registry.ts`（mode 字段/setAgentSessionMode/getAgentModeByRuntimeKey/listTerminalModeSessions/钉 claudeSessionId）+ `session-routes.ts`（POST `/mode`）+ shared 类型 + web（AgentPanelRouter 分流 + 双端 ⋯ 菜单项 + useSessionModeSwitch + i18n + spec §4.7/§8）
-- ✅ 测试：`agent-tui.test.ts` 9 条、`claude-runtime.test.ts`（buildTuiSpawnArgs ×2 + close silent + **resolveTuiSpawn 真实 JSONL 判定**）、`session-registry.test.ts` 3 条、`session-routes.test.ts` 3 条守卫
-- ✅ 探针：`probe-session-mode.mjs` 18/18（含新断言「pane 内 CLI 真起来」——实测捕获到真实 CLI TUI 状态行 `1 agent / Sonnet 5 / master / test`，证 argv 全链被 CLI 接受）、`probe-agent-tui-hydrate.mjs` 6/6（**会重启 ar-dev api**，勿在他人使用中跑）
-- ✅ 门禁：format/lint/typecheck 0 warning、全量单测 0 fail、`ar-verify-css.mjs` + `ar-verify-tokens.mjs` 通过
-- ✅ **UI e2e**：新增 `e2e/session-mode.spec.ts` 2 条（本批入口原本无 e2e 覆盖）——chat 形态 ⋯ 显示「在终端打开」+ 点击发 `POST /mode` + 面板换 xterm + keepOpen 项就地翻转「回到对话」；terminal 形态直接进入渲染终端面板 + 点「回到对话」切回 ChatPanel。跑法 `bun run scripts/run-e2e.ts session-mode.spec.ts`（透传 spec 路径）。含新 spec 的全量 e2e：既有 27 条全绿（对拍新 api 代码）+ 新 2 条 2/2。
-- ✅ **已提交 `26b0450`**（本批自审完毕，见下「阻塞」——reviewer 面不可用；未 push，等用户指令）
-- ⏳ **真机清单（交用户）**：GUI 发一轮 → ⋯ 在终端打开 → xterm 出现且是同一会话（历史在）→ TUI 里跑一轮（状态点 working→done）→ ⋯ 回到对话 → GUI 气泡含 TUI 轮次 → TUI 内触发审批（CLI 自己弹，web 无卡）
-- ⏳ 前两批真机清单（5 态化批 + 上下文占用三批合并）仍未验收
+- ✅ 左栏：`workbench-side.tsx:405` wrapper `shrink-0` → `shrink-0 max-h-[40%] overflow-y-auto`；探针 `scripts/probe-side-projects-scroll.mjs`（mock /api/overview 撑 40 项目）7/7
+- ✅ 协议四类：shared 类型（`ClaudeCostModelUsage`/`ClaudeCostState`/两个 Attachment 子类型）、adapter（标量分支 + 两处 skip + getCostState）、attachment-bubble（两 config 条目 + `renderedBody`）、instance-area（ℹ 累计费用行）、i18n zh/en 三 key、协议文档（cost-state 专节 + permission_check_status 小节 + attachment 两子类型 + 26 种子类型）
+- ✅ 双 review 消化：code 1×P2 + 9×P3（P2-1 记档、P3-2/P3-3/P3-9 已修，P3-5/6/7/8 判定不动/接受）；design P2-1 已修 + P3 三项处理
+- ✅ 门禁全绿 + e2e 3/3 + 探针 7/7；ar-verify-css 通过（content-type text/css）+ tokens 0 违例
+- ⏳ **未 commit**（个人项目直接 main；等用户指令）
+- ⏳ **本批真机清单（交用户）**：
+  1. 多项目下左栏项目列表**内部滚动**，下方会话列表仍可点选/操作（40% 上限是否合适留调参口，改一个类名）
+  2. 跑一轮会话看 ℹ 信息面「累计费用」行随 API 调用增长（恢复 ID → 会话目录 → 累计费用 的行序）
+  3. 触发远程会话变更 / 环境帧，attachment 卡片显示可读正文（badge = PR/commit 或目录尾段）
+  4. 权限检查不再出 `system · permission_check_status` 调试气泡
+- ⏳ 历史挂起：前两批真机清单（5 态化 + 上下文占用）与新批清单未验收；长期测试项用户后续给结果
+- ⏳ 功能批候选：mod 采集批 / 插件管理 UI / PTY+OSC 7501
+- ⏳ P3 挂起：git 写路径 NOT_CHANGED 空态 / effort 确认门双数据源 / config 读改写并发窗口 / ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗（~1s，记档）
 
 ### 阻塞 / 风险
 
-- **subagent API 面故障**：code-reviewer / design-reviewer / 后续重试全部 `API Error: unexpected EOF`（连续 5 次，含 resume 与全新 spawn）→ 本批审查由**主 agent 自审 + fork 自审**替代。**下个 session 若 API 恢复，建议补跑 code-reviewer + design-reviewer 复核本批**。
-- **TUI 凭证边界**：tmux pane 继承 tmux server 的环境（本仓 startCommand 不传 env）——若机器默认环境无 ANTHROPIC_* 凭证，TUI 内 CLI 可能未认证。用户已拍板「凭证走 CLI 自身配置」，真机清单第一条即可暴露。
-- pane 内 `/exit`：tmux session 结束 → attach onExit → 前端 ended；metadata 保留 `mode=terminal`（会话仍可 `--resume`），入口仍可「回到对话」（idle-only 门槛内）。
+- 无。左栏 40% 上限的实际观感需真机确认（唯一留口）。
 
 ## 易丢的关键上下文
 
-- **`--effort` 是真实 CLI flag**（2.1.299 `claude --help` 实证），与 headless 的 env 路径（`CLAUDE_CODE_EFFORT_LEVEL`）不同——TUI 走 argv 是刻意（零 env 决策），勿改回 env。
-- **`--permission-mode` 合法取值**：acceptEdits / auto / bypassPermissions / manual / dontAsk / plan（白名单 `agent-provider-profiles.ts`，启动时 `claude --help` 解析预热）。
-- **`listTerminalModeSessions` 纯读**：绝不能改成 keepIfRuntimeExists（有 removeMetadata 破坏性副作用）。
-- **`getAgentModeByRuntimeKey` 是 O(n) 内存扫描**（exists/close 路径）；n≈数十，未做索引缓存，若将来会话数暴涨再考虑。
-- **TUI 状态文件路径** `runDir/agent-status/<runtimeKey>`、settings `runDir/agent-settings/<runtimeKey>.json`（0600，随形态切换/会话关闭清理）。
-- **探针纪律**（沿用）：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；验证用 PROJECTS_ROOT/test；会话清理 = `POST /api/projects/<p>/agent-sessions/<id>/close`。
+- **`ℹ 信息面` 是打开瞬间快照**（非响应式）：新增字段一律经 bridge getter + ref 镜像读取，不改 bridge 身份（deps 仅 [sendToSocket]）。
+- **探针阈值纪律（§29）**：栏内 chrome 区 ≈180px 不随栏高缩放 → 会话区保底用**绝对地板**（8×34px）而非栏高百分比。
+- **`ATTACHMENT_CONFIG` 现为 export**：新增 attachment 子类型的真契约 = config 条目（icon/labelKey/badge/body），不再加 handleAttachment case。
+- **协议文档 cost-state 节**：JSONL 是否落盘未证实（仅 WS 帧实证）；compact 清缓冲缺口已记档。
+- 探针跑法：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；e2e 同法 + `-- e2e/xxx.spec.ts`；验证用 PROJECTS_ROOT/test。
+- **e2e/单测高负载会假挂**（本次实测：session-mode test 1 + api 2 例），判「本批引入 vs 环境」先降负载复跑或用 stash 基线对照，别在源码层空转。
 
 ## 提醒
 
@@ -54,4 +54,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-15（双模式批实现完毕并提交 `26b0450`：门禁全绿 + 探针 24/24 + 自审兜底）
+最后更新：2026-10-16（左栏布局 + CLI 2.1.299 新协议批，未 commit）

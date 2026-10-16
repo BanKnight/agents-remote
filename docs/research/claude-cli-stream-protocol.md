@@ -578,6 +578,51 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 
 ---
 
+#### `cost-state` — 会话累计费用/用量标量帧（CLI 2.1.299+）
+
+**含义**：会话级累计费用与用量（总费用 + 分模型明细）。发现于 CLI 2.1.299（2026-10 用户报告）；JSONL 侧是否落盘未证实（至少 WS 实时帧形态实证）。
+
+**字段**（实证样本，2026-10）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `type` | `"cost-state"` | 消息类型（无 `uuid`/`subtype`） |
+| `sessionId` | string? | 会话 UUID |
+| `totalCostUSD` | number | 会话累计费用（USD） |
+| `totalAPIDuration` / `totalAPIDurationWithoutRetries` / `totalToolDuration` / `totalDuration` | number? | 各类累计时长（ms） |
+| `totalLinesAdded` / `totalLinesRemoved` | number? | 累计代码行变更 |
+| `startTime` | number? | 起始 epoch ms |
+| `modelUsage` | Record\<model, {inputTokens, outputTokens, thinkingTokens, cacheReadInputTokens, cacheCreationInputTokens, webSearchRequests, costUSD}\> | 分模型用量/费用明细 |
+| `hasUnknownModelCost` | boolean? | 是否含未识别模型费用 |
+
+**处理方法**（统一会话标量管道第四个标量）：
+
+1. **服务端 relay**：不过滤——低频小帧进 `liveLines`，重连重放即恢复最新值（对标 context_usage 需 seed_init 回种不同，cost 无服务端持久值，靠重放自愈）。**已知缺口（2026-10 review）**：relay 在 `compact_boundary` 时清空 `historyLines`+`liveLines`，若 JSONL 未落 cost-state 帧，则 compaction 后断线重连 → 重放无帧 → ℹ「累计费用」行暂缺，直到下一次 API 调用出新帧自愈（消费端「无帧不落行」已容错）。治本需 relay 持久 last cost 帧 + seed_init 回种（对标 contextUsage 管道），属后续批次。
+2. **客户端标量**：`applyMessageScalarState` latest-wins 整帧覆盖 `setCostState(frame)`（`totalCostUSD` 字段守卫）；消费面 = ℹ 信息面「累计费用」行（`bridge.getCostState` 打开瞬间快照，无帧不落行）。
+3. **客户端渲染**：normalize skip——不产聊天气泡、不落 fallback（每帧一条，落兜底即杂音刷屏）。
+4. **modelUsage 明细**本轮只存不展（后续要分模型费用再扩）。
+
+---
+
+#### `system.permission_check_status` — 内部权限检查生命周期信号（CLI 2.1.299+）
+
+**含义**：CLI 权限检查管线内部信号（审批链路遥测），对控制面无 UI 价值。发现于 CLI 2.1.299（2026-10 用户报告）。
+
+```json
+{
+  "type": "system",
+  "subtype": "permission_check_status",
+  "tool_use_id": "call_0y6bs0wv",
+  "status": "done",
+  "uuid": "…",
+  "session_id": "…"
+}
+```
+
+**处理方法**：投影 skip——不产聊天气泡、不落 fallback、无可存标量（每次权限检查一条，落兜底即调试气泡刷屏）。
+
+---
+
 ### 消息树：主对话与侧链
 
 Claude CLI 会话中，主 agent 可以通过 `TaskCreate` 或 Workflow 创建子 agent。这些子 agent 拥有自己的独立对话循环，其消息在 JSONL 中形成**侧链（sidechain）**——以主对话为干、子 agent 对话为枝的消息树。
@@ -2085,6 +2130,8 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 | `system/permission_denied` | 自动权限拒绝 | 低 | 2026-06 新发现的类型，字段: `decision_reason`, `decision_reason_type`, `message`, `tool_name`, `tool_use_id` |
 | `tool_progress` | 工具运行中瞬态进度（heartbeat/bash_progress/repl_call/agent_api_retry） | 无 | 2026-09 新发现（CLI 2.1.268+）。纯瞬态：relay broadcast 但不进 liveLines；客户端 heartbeat 变体挂 tool-call part 的已耗时 |
 | `system/vcs_state_changed` | agent 会话内 git 操作（commit/push/merge/rebase） | 无 | 2026-09 新发现（CLI 2.1.268+）。触发 Git 工作区 query invalidate + 流内轻量行；kind 为开放枚举 |
+| `cost-state` | 会话累计费用/用量标量帧 | 低 | 2026-10 新发现（CLI 2.1.299+）。latest-wins 折 `costState` 标量（ℹ 信息面「累计费用」行）；不产聊天气泡。relay liveLines **保留**该帧（低频小帧，重连重放恢复最新值）；JSONL 侧是否落盘未证实 |
+| `system/permission_check_status` | 内部权限检查生命周期信号（`tool_use_id` + `status`） | 无 | 2026-10 新发现（CLI 2.1.299+）。纯内部信号，投影 skip 不落 fallback（每次权限检查一条，落兜底即调试气泡刷屏） |
 
 ### JSONL 独有（CLI stdout 不输出）
 
@@ -2096,7 +2143,7 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 
 | 类型 | 含义 | Resume 恢复价值 |
 |---|---|---|
-| `attachment` (24 种子类型) | 运行时附件：MCP 指令、skill 列表、命令权限、模式变更等 | **核心** — 可完整重建 MCP servers、skills、slash command 权限、plan/auto 模式状态 |
+| `attachment` (26 种子类型) | 运行时附件：MCP 指令、skill 列表、命令权限、模式变更等 | **核心** — 可完整重建 MCP servers、skills、slash command 权限、plan/auto 模式状态 |
 | `last-prompt` | 上次用户 prompt 文本 | **高** — 可用作 UI 输入回显或 draft 恢复 |
 | `user.permissionMode` | 每条 user 消息上的 permission mode 快照 | **高** — 恢复每个 turn 的 permission mode 上下文（153 条样本） |
 | `permission-mode` | 权限模式变更独立事件 | 中 — 恢复 permission mode 显示（仅 7 条样本） |
@@ -2105,7 +2152,7 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 
 ---
 
-#### `attachment` — 运行时附件（24 种子类型）
+#### `attachment` — 运行时附件（26 种子类型，含 2.1.299+ 新增 remote_session_change / environment）
 
 **含义**：`attachment` 是 CLI 运行时的非对话内容记录。它记录 MCP 服务器指令变更、skill 列表更新、命令权限、模式切换、文件编辑等运行时状态。**每条 attachment 都是对某个状态的增量更新**。
 
@@ -2430,6 +2477,78 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
     "prompt": "完成本change之后，你需要汇报给我...",
     "commandMode": "prompt"
   }
+}
+```
+
+---
+
+##### 会话与环境（CLI 2.1.299+ 新增）
+
+**`remote_session_change`** — 远程会话变更（commit/PR attribution）
+
+**含义**：commit/PR attribution 注入（GitHub 集成会话）。`url`/`commit`/`pr` 均可空；`rendered` 携带注入模型的 system-reminder 文本。UI 消费：可读卡片（标题 + rendered 正文）。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"remote_session_change"` | 子类型 |
+| `attachment.url` | string \| null | 关联 PR URL |
+| `attachment.commit` | string \| null | commit attribution 文本 |
+| `attachment.pr` | string \| null | PR attribution 文本 |
+| `attachment.sendUserFileHint` | boolean? | UI 提示开关 |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "uuid": "2770ff39-…",
+  "attachment": {
+    "type": "remote_session_change",
+    "url": null,
+    "commit": "Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+    "pr": "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "sendUserFileHint": false
+  },
+  "rendered": [{ "content": "<system-reminder>\nAttribution for git commits…" }]
+}
+```
+
+---
+
+**`environment`** — 环境快照 / 变更
+
+**含义**：会话启动时的环境快照（snapshot 全量）与 cwd 变化增量（changes 数组，仅变化时携带）。UI 消费：可读卡片（标题 + cwd badge + rendered 正文）。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `attachment.type` | `"environment"` | 子类型 |
+| `attachment.snapshot` | object | 环境快照 |
+| `attachment.snapshot.workingDirectory` | string | 主工作目录 |
+| `attachment.snapshot.isWorktree` | boolean | 是否 worktree |
+| `attachment.snapshot.isGitRepo` | boolean | 是否 git 仓库 |
+| `attachment.snapshot.additionalWorkingDirectories` | string[] | 附加工作目录 |
+| `attachment.snapshot.platform` | string | 平台 |
+| `attachment.snapshot.shell` | string | shell |
+| `attachment.snapshot.osVersion` | string? | OS 版本 |
+| `attachment.changes` | {field, from}[]? | 变化增量（仅变化帧携带） |
+
+示例：
+```json
+{
+  "type": "attachment",
+  "attachment": {
+    "type": "environment",
+    "snapshot": {
+      "workingDirectory": "/home/deploy/workspace/agents-remote/docs/design",
+      "isWorktree": false,
+      "isGitRepo": true,
+      "additionalWorkingDirectories": [],
+      "platform": "linux",
+      "shell": "bash",
+      "osVersion": "Linux 6.17.2-2-pve"
+    },
+    "changes": [{ "field": "workingDirectory", "from": "/home/deploy/workspace/agents-remote" }]
+  },
+  "rendered": [{ "content": "<system-reminder>\n# Environment update\n - Primary working directory: …" }]
 }
 ```
 

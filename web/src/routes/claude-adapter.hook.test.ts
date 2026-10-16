@@ -1636,3 +1636,45 @@ describe("useClaudeSession vcs_state_changed (Git query refresh)", () => {
     }
   });
 });
+
+describe("useClaudeSession cost-state 标量（CLI 2.1.299+）", () => {
+  const costFrame = (total: number): SessionStreamServerMessage =>
+    ({
+      type: "cost-state",
+      sessionId: "s-1",
+      totalCostUSD: total,
+      totalAPIDuration: 1000,
+      modelUsage: { "claude-opus-5[1m]": { costUSD: total } },
+    }) as unknown as SessionStreamServerMessage;
+
+  test("cost-state 帧折 costState 标量（latest-wins），不产聊天气泡", async () => {
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    const before = result.current.storeAdapter.messages.length;
+    act(() => {
+      socket.emit(costFrame(1.5));
+      socket.emit(costFrame(2.25));
+    });
+
+    // latest-wins：后者覆盖前者。
+    expect(result.current.costState?.totalCostUSD).toBe(2.25);
+    // scalar-only：不进渲染列表。
+    expect(result.current.storeAdapter.messages.length).toBe(before);
+  });
+
+  test("bridge.getCostState 快照读取（ℹ 信息面数据通道）", async () => {
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    expect(result.current.bridge.getCostState?.()).toBeUndefined();
+    act(() => {
+      socket.emit(costFrame(7.5));
+    });
+    expect(result.current.bridge.getCostState?.()?.totalCostUSD).toBe(7.5);
+  });
+});

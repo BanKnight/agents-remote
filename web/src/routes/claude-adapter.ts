@@ -6,6 +6,7 @@ import type {
   ClaudeContextUsage,
   ClaudeContextUsageChanged,
   ClaudeControlResponse,
+  ClaudeCostState,
   ClaudeQueueOperation,
   ClaudeSessionStatusChanged,
   ClaudeUserImageBlock,
@@ -329,6 +330,9 @@ export type ClaudeBridge = {
           | { phase: "end"; error?: "interrupted" | "failed" },
       ) => void)
     | null;
+  // ℹ 信息面快照读取（非响应式，同 registry 取用语义）：会话累计费用标量（cost-state
+  // latest-wins）。经 ref 镜像，bridge 身份稳定不因标量更新抖动（openInfo 打开瞬间读一次）。
+  getCostState?: () => ClaudeCostState | undefined;
 };
 
 export const ClaudeBridgeContext = createContext<ClaudeBridge | null>(null);
@@ -989,6 +993,9 @@ export function handleAttachment(msg: ClaudeAttachment): AttachmentResult {
     case "selected_lines_in_ide":
     case "diagnostics":
     case "goal_status":
+      // remote_session_change / environment（CLI 2.1.299+，commit/PR attribution 与环境
+      // 快照）无需在此列 case——default 同为 makeAttachmentBubble，渲染差异全由
+      // attachment-bubble 的 ATTACHMENT_CONFIG 条目承载（契约测试见 claude-adapter.test.ts）。
       return { bubble: makeAttachmentBubble(att.type, msg) };
 
     // total_tokens_reminder: model-facing token budget reminder that the CLI
@@ -2666,6 +2673,11 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       // applyMessageScalarState 折算(sessionStatus),不产聊天气泡、不落 fallback。
       if (subtype === "session_status") continue;
 
+      // permission_check_status: CLI 2.1.299+ 内部权限检查生命周期信号
+      // (tool_use_id + status)，无 UI 价值——skip 不落 fallback（每次权限检查
+      // 一条，落兜底即调试气泡刷屏）。
+      if (subtype === "permission_check_status") continue;
+
       // turn_duration: turn-end stats (durationMs + token budget). Pure display
       // message with no scalar side effect — drop it.
       if (subtype === "turn_duration") continue;
@@ -3077,6 +3089,11 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // atis-latch: CLI-internal session state latch, consumed by the CLI itself
     // on resume (last-wins merge). No chat value — skip silently.
     if (msg.type === "atis-latch") continue;
+
+    // cost-state: 会话累计费用/用量标量帧（CLI 2.1.299+），Pass 1 已由
+    // applyMessageScalarState 折 costState 标量——不产聊天气泡、不落 fallback
+    // （每帧一条，落兜底即杂音气泡刷屏）。
+    if (msg.type === "cost-state") continue;
 
     // control_request: attach request_id as controlRequestId to the matching
     // tool-call part. Same pattern as tool_result and task_progress above.
@@ -3977,6 +3994,14 @@ export function useClaudeSession(
         return;
       }
 
+      // cost-state: CLI 2.1.299+ 会话累计费用/用量标量帧。latest-wins：每帧整体覆盖
+      // （帧自带全量累计值，无 delta 合并）。totalCostUSD 字段守卫（缺字段没有展示价值）。
+      if (msg.type === "cost-state") {
+        const frame = msg as ClaudeCostState;
+        if (typeof frame.totalCostUSD === "number") setCostState(frame);
+        return;
+      }
+
       // system.api_retry: 纯实时流重试信号（不进 JSONL，回放看不到）。合并为单个
       // retryInfo 标量驱动 RetryIndicator——网络波动常连续多条（attempt 1→max），
       // 逐条 inline 会刷屏，故只更新标量、不在 normalizeChatStream 产 item。
@@ -4306,6 +4331,11 @@ export function useClaudeSession(
   // turn 状态标量（5 态，OSC 7501 对齐）：live 靠 session_status 帧、回放靠
   // seed_init.sessionStatus 恢复；broadcast-only 标量，无渲染 item。
   const [sessionStatus, setSessionStatus] = useState<AgentSessionStatus | undefined>();
+  // 会话累计费用/用量标量（CLI 2.1.299+ cost-state）：live 靠 WS 帧 latest-wins；回放靠
+  // liveLines 重放恢复（relay 保留该帧）。消费面 = ℹ 信息面「累计费用」行（bridge.getCostState）。
+  const [costState, setCostState] = useState<ClaudeCostState | undefined>();
+  const costStateRef = useRef(costState);
+  costStateRef.current = costState;
   // opusplanActive: whether currentModel is the opusplan alias. Derived purely
   // from currentModel (effect below) — no network probe.
   const [opusplanActive, setOpusplanActive] = useState<boolean | undefined>();
@@ -4621,6 +4651,7 @@ export function useClaudeSession(
         });
       },
       onCompact: null,
+      getCostState: () => costStateRef.current,
     }),
     [sendToSocket],
   );
@@ -5171,6 +5202,7 @@ export function useClaudeSession(
     permissionMode,
     contextUsage,
     sessionStatus,
+    costState,
     aiTitle,
     agentName,
     loading,

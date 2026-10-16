@@ -140,6 +140,7 @@ export const en = {
   "session.runtimeConfig.unavailable": "Session not connected",
   "session.instanceInfo.createdAt": "Created",
   "session.instanceInfo.resumeId": "Resume ID",
+  "session.instanceInfo.cost": "Total cost",
   "session.instanceInfo.sessionDir": "Session directory",
   "session.autoRetry.label": "Auto-retry",
   "session.autoRetry.editShort": "Edit",
@@ -647,6 +648,8 @@ export const en = {
   "claude.attachment.selected_lines_in_ide": "Selected lines",
   "claude.attachment.diagnostics": "Diagnostics",
   "claude.attachment.goal_status": "Goal status",
+  "claude.attachment.remote_session_change": "Remote session change",
+  "claude.attachment.environment": "Environment",
 
   // ── Context compaction block ─────────────────────────────────────
   "claude.compact.title": "Context compacted",

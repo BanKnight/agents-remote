@@ -1167,15 +1167,27 @@ export function useInstanceInfoActions(
           wrap: true,
         });
       }
-      // 会话目录（v1.6 workspace-instance-info：恢复 ID 之后、累计之前；累计本批不落——
-      // AgentSession 无跨回合累计数据源，记 diverge）：项目工作目录前端派生 + $HOME→~ 缩写
-      //（homePath = API os.homedir() 同源，前端不硬编码 /home），mono 换行展示。
+      // 会话目录（v1.6 workspace-instance-info：恢复 ID 之后、累计之前）：项目工作目录
+      // 前端派生 + $HOME→~ 缩写（homePath = API os.homedir() 同源，前端不硬编码 /home），
+      // mono 换行展示。
       if (project) {
         fields.push({
           label: t("session.instanceInfo.sessionDir"),
           value: shortenHomePath(project.path, project.home),
           mono: true,
           wrap: true,
+        });
+      }
+      // 累计费用（两份原型 v1.6/mac 的最后一行位）：原「AgentSession 无跨回合累计数据源，
+      // 记 diverge」的数据源缺口由 CLI 2.1.299+ cost-state 帧补上。bridge.getCostState
+      // 打开瞬间快照（同 sheet 其它行语义）；chat 主体未挂载 / 尚无帧 → 不落行（无数据
+      // 不渲染）。单标量子集 diverge 记档：原型「6 轮 · $1.28 · 52k tok」→ 现只显 $（其余
+      // 字段已入 ClaudeCostState，待 UI 扩展，不伪造推算值）。
+      const costState = isClaude ? runtimeBridge?.getCostState?.() : undefined;
+      if (costState && typeof costState.totalCostUSD === "number") {
+        fields.push({
+          label: t("session.instanceInfo.cost"),
+          value: `$${costState.totalCostUSD.toFixed(2)}`,
         });
       }
     } else if (sessionType === "terminal" && terminalSession) {

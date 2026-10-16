@@ -49,6 +49,7 @@ import type {
   NormalizedPart,
   TaskInfo,
 } from "./claude-adapter";
+import { ATTACHMENT_CONFIG } from "../components/assistant-ui/attachment-bubble";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -3550,6 +3551,24 @@ describe("handleAttachment", () => {
     expect(result.bubble).toBeDefined();
     expect(result.stateOps).toBeUndefined();
   });
+
+  test("remote_session_change / environment 渲染契约 = ATTACHMENT_CONFIG 条目", () => {
+    // CLI 2.1.299+ 两个 attachment 无专属 handleAttachment 分支（default 即
+    // makeAttachmentBubble），真实行为全在 config 条目——断言条目在场（labelKey 指向
+    // i18n、body 提取 rendered、badge 取归属/目录），而非断言那条零差异的 case。
+    const rendered = [{ content: "# Environment\ncwd: /x/y" }];
+    const rsc = ATTACHMENT_CONFIG.remote_session_change;
+    expect(rsc?.labelKey).toBe("claude.attachment.remote_session_change");
+    expect(rsc?.badge?.({ attachment: { url: null, commit: "abc1234", pr: "PR-9" } })).toBe("PR-9");
+    expect(rsc?.body?.({ attachment: {}, rendered })).not.toBeNull();
+
+    const env = ATTACHMENT_CONFIG.environment;
+    expect(env?.labelKey).toBe("claude.attachment.environment");
+    expect(env?.badge?.({ attachment: { snapshot: { workingDirectory: "/x/y" } } })).toBe("y");
+    expect(env?.body?.({ attachment: {}, rendered })).not.toBeNull();
+    // 无 rendered 帧 → body 返回 null（只显标题，优雅降级）。
+    expect(rsc?.body?.({ attachment: {}, rendered: [] })).toBeNull();
+  });
 });
 
 // ── normalizeChatStream / renderChatStream Unit Tests ───────────────────
@@ -3939,6 +3958,29 @@ describe("normalizeChatStream", () => {
         subtype: "context_usage",
         contextTokens: 31324,
       } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(0);
+  });
+
+  test("system.permission_check_status produces no item (internal signal, no fallback)", () => {
+    // CLI 2.1.299+ 内部权限检查生命周期信号（tool_use_id + status），无 UI 价值——
+    // skip 不落 fallback（每次权限检查一条，落兜底即调试气泡刷屏）。
+    const items = normalizeChatStream([
+      {
+        type: "system",
+        subtype: "permission_check_status",
+        tool_use_id: "call_x",
+        status: "done",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(0);
+  });
+
+  test("cost-state frame produces no item (scalar-only, folded by applyMessageScalarState)", () => {
+    // CLI 2.1.299+ 会话累计费用/用量标量帧——Pass 1 折 costState 标量，
+    // normalizeChatStream 不产 item、不落 fallback（每帧一条，落兜底即杂音刷屏）。
+    const items = normalizeChatStream([
+      { type: "cost-state", totalCostUSD: 1.5 } as unknown as SessionStreamServerMessage,
     ]);
     expect(items).toHaveLength(0);
   });

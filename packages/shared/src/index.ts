@@ -1726,6 +1726,33 @@ export type ClaudeSkillCatalogChanged = {
   subtype: "skill_catalog_changed";
 };
 
+// CLI 2.1.299+ cost-state：会话累计费用/用量标量帧（WS 实时推送；latest-wins 折标量，
+// 不产聊天气泡）。CLI 原生帧原值透传（协议状态机用原值驱动，提取层不预翻译）。
+// 回放恢复：relay liveLines 保留该帧，重连重放即恢复最新值。
+export type ClaudeCostModelUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  thinkingTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  webSearchRequests?: number;
+  costUSD?: number;
+};
+export type ClaudeCostState = {
+  type: "cost-state";
+  sessionId?: string;
+  totalCostUSD: number;
+  totalAPIDuration?: number;
+  totalAPIDurationWithoutRetries?: number;
+  totalToolDuration?: number;
+  totalLinesAdded?: number;
+  totalLinesRemoved?: number;
+  totalDuration?: number;
+  startTime?: number;
+  modelUsage?: Record<string, ClaudeCostModelUsage>;
+  hasUnknownModelCost?: boolean;
+};
+
 export type SlashCommandInfo = {
   name: string;
   description: string;
@@ -1838,7 +1865,8 @@ export type ClaudeAttachmentEnvelope = {
   version?: string;
   gitBranch?: string;
   slug?: string;
-  // CLI 渲染后注入模型的 system-reminder 块（部分子类型携带，UI 不消费）
+  // CLI 渲染后注入模型的 system-reminder 块（部分子类型携带；UI 仅
+  // remote_session_change / environment 两个子类型以可读卡片消费，其余不消费）
   rendered?: { content: string }[];
 };
 
@@ -2089,6 +2117,35 @@ export type AttachmentTotalTokensReminder = {
   };
 };
 
+// 远程会话变更（CLI 2.1.299+）：commit/PR attribution 注入。url/commit/pr 均可空，
+// rendered 为注入模型的 system-reminder 块（UI 以可读卡片消费）。
+export type AttachmentRemoteSessionChange = {
+  attachment: {
+    type: "remote_session_change";
+    url: string | null;
+    commit: string | null;
+    pr: string | null;
+    sendUserFileHint?: boolean;
+  };
+};
+
+// 环境快照/变更（CLI 2.1.299+）：会话启动快照 + cwd 变化增量（changes 可缺省）。
+export type AttachmentEnvironment = {
+  attachment: {
+    type: "environment";
+    snapshot: {
+      workingDirectory: string;
+      isWorktree: boolean;
+      isGitRepo: boolean;
+      additionalWorkingDirectories: string[];
+      platform: string;
+      shell: string;
+      osVersion?: string;
+    };
+    changes?: Array<{ field: string; from: string }>;
+  };
+};
+
 export type AttachmentContent =
   | AttachmentMcpInstructionsDelta["attachment"]
   | AttachmentSkillListing["attachment"]
@@ -2114,7 +2171,9 @@ export type AttachmentContent =
   | AttachmentSelectedLinesInIde["attachment"]
   | AttachmentDiagnostics["attachment"]
   | AttachmentGoalStatus["attachment"]
-  | AttachmentTotalTokensReminder["attachment"];
+  | AttachmentTotalTokensReminder["attachment"]
+  | AttachmentRemoteSessionChange["attachment"]
+  | AttachmentEnvironment["attachment"];
 
 // 完整 attachment 消息（信封 + 子类型）
 export type ClaudeAttachment = ClaudeAttachmentEnvelope & {
@@ -2559,6 +2618,7 @@ export type SessionStreamServerMessage =
   | ClaudeToolProgress
   | ClaudeVcsStateChanged
   | ClaudeResult
+  | ClaudeCostState
   | ClaudeControlRequest
   | ClaudeControlResponse
   | {

@@ -402,7 +402,9 @@ export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }
           <LucideIcon name="panel-left-close" />
         </button>
       </div>
-      <div className="shrink-0">
+      {/* 上限高度 + 内部滚动（2026-10-16 项目过多挤压会话区）：项目少时零差异，
+          项目多时列表自身滚，下方会话区（flex-1）保底可用。 */}
+      <div className="max-h-[40%] shrink-0 overflow-y-auto">
         {projectRows.map((row) => {
           const selected = isProject && scope.key === row.name;
           return (

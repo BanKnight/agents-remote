@@ -224,6 +224,8 @@ export class ClaudeSessionRelay {
         "task_updated",
         "task_notification",
         "vcs_state_changed",
+        // CLI 2.1.299+：权限检查状态（纯内部信号；客户端投影跳过，服务端仅收录免 unknown 日志）
+        "permission_check_status",
       ]);
       if (subtype && !knownSubtypes.has(subtype)) {
         console.log(

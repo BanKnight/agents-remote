@@ -185,9 +185,24 @@ function selectedLinesBody(raw: Record<string, unknown>): ReactNode | null {
   );
 }
 
-// ── Config entries for all 23 subtypes ──────────────────────────────────
+// remote_session_change / environment（CLI 2.1.299+）的 rendered 注入块
+//（envelope.rendered: {content:string}[]，CLI 渲染给模型的 system-reminder 文本）。
+function renderedBody(raw: Record<string, unknown>): ReactNode | null {
+  const rendered = raw.rendered as Array<{ content?: string }> | undefined;
+  if (!Array.isArray(rendered)) return null;
+  const text = rendered
+    .map((block) => (typeof block?.content === "string" ? block.content : ""))
+    .filter(Boolean)
+    .join("\n\n");
+  if (!text) return null;
+  return (
+    <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-48">{text}</pre>
+  );
+}
 
-const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
+// ── Config entries（每 subtype 一条）─────────────────────────────────────
+
+export const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
   // Mode transitions — simple system bubble, no body
   plan_mode: { icon: "plan", labelKey: "claude.attachment.plan_mode" },
   plan_mode_exit: { icon: "plan", labelKey: "claude.attachment.plan_mode_exit" },
@@ -311,6 +326,29 @@ const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
       }
       return condition ? `condition: ${condition}` : null;
     },
+  },
+
+  // Remote session / environment（CLI 2.1.299+）— collapsible rendered 注入内容
+  remote_session_change: {
+    icon: "globe",
+    labelKey: "claude.attachment.remote_session_change",
+    badge: (raw) => {
+      const a = raw.attachment as Record<string, unknown>;
+      const attribution = (a?.pr as string) ?? (a?.commit as string) ?? (a?.url as string);
+      return attribution ? attribution.slice(0, 60) : null;
+    },
+    body: renderedBody,
+  },
+  environment: {
+    icon: "terminal",
+    labelKey: "claude.attachment.environment",
+    badge: (raw) => {
+      const a = raw.attachment as Record<string, unknown>;
+      const snapshot = a?.snapshot as { workingDirectory?: string } | undefined;
+      const cwd = snapshot?.workingDirectory;
+      return cwd ? cwd.split("/").pop() || cwd : null;
+    },
+    body: renderedBody,
   },
 };
 
