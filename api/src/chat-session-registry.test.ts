@@ -318,3 +318,27 @@ test("parseMetadata: pinned/archivedAt 缺失字段兼容（旧 JSON）", async 
   expect(session?.pinned).toBeUndefined();
   expect(session?.archivedAt).toBeUndefined();
 });
+
+test("patchMetadata 并发不变量：Promise.all 并发 mutator 后字段全在（P3-11 丢更新修复）", async () => {
+  let t = new Date("2026-08-18T00:00:00.000Z");
+  const { registry, dir } = newRegistry({
+    now: () => t,
+    createId: () => "chat_concurrent",
+  });
+  await registry.createChatSession();
+
+  // 跨分钟边界：保证 recordActivityChat 不被同分钟短路、真写盘。
+  t = new Date("2026-08-18T00:01:30.000Z");
+
+  await Promise.all([
+    registry.renameChatSession("chat_concurrent", "并发标题"),
+    registry.recordActivityChat("chat_concurrent"),
+    registry.setPinned("chat_concurrent", true),
+  ]);
+
+  // 终态不变量：三个 mutator 的字段必须同时落盘（修复前读改写跨 await 互相覆盖必丢其一）。
+  const raw = JSON.parse(await readFile(join(dir, "chat_concurrent.json"), "utf8"));
+  expect(raw.displayName).toBe("并发标题");
+  expect(raw.pinned).toBe(true);
+  expect(raw.updatedAt).toBe("2026-08-18T00:01:00.000Z");
+});

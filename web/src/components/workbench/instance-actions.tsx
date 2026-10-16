@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { atom, useSetAtom } from "jotai";
 import type { AgentSessionMode } from "@agents-remote/shared";
 import {
-  ApiClientError,
+  isApiErrorCode,
   renameAgentSession,
   renameTerminalSession,
   switchAgentSessionMode,
@@ -95,7 +95,7 @@ export function useSessionModeSwitch() {
       switchAgentSessionMode(vars.projectName, vars.sessionId, vars.mode),
     onMutate: (vars) => setPending((prev) => new Set(prev).add(vars.sessionId)),
     onError: (error, vars) => {
-      const conflict = error instanceof ApiClientError && error.code === "SESSION_STATE_CONFLICT";
+      const conflict = isApiErrorCode(error, "SESSION_STATE_CONFLICT");
       void confirm({
         cancelLabel: t("cancel"),
         confirmLabel: t("session.retry"),

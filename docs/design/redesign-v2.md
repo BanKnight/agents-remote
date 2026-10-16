@@ -1950,6 +1950,10 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **验收微调（同日真机复核后拍板，随批落地）**：折叠钮色 = **ink-2 中性**（原型文字稿 `.clps` 本是 `var(--c-primary)` 主蓝，用户「不要用蓝色，实在太突出了」→ 降一档与组头标题同档）；cursor = **UA 默认箭头**（「接近原生」，不设手型 `cursor-pointer`；UA button 默认即 default）。探针加守卫：m9-d F12c 参照改中性（防回潮主蓝）、p6a/p6c `cursor === "default"`。落地后全套绿：`probe-desktop-layout` **37/37**（+cursor 断言 ×2）、m9-d **68/68**（F12c 实测 `rgb(142,142,147)` = ink-2）、单测 795 · typecheck · CSS 硬闸 · tokens 机检。
 
+### P3 清理批（2026-10-16，三项 code-review 挂起项收口）
+
+①**git 写路径「无变更」空态**：commit/discard 命中 `PROJECT_GIT_FILE_NOT_CHANGED`/`PROJECT_GIT_NOTHING_TO_COMMIT` → 中性空态（`role="status"` + `text-[12.5px] text-ink-2`，复用 `git.noChanges` 零新增 key，与读路径空态同档——初版 11px 经 design review 指出与同 sheet `commitEmpty` 两档字号后统一 12.5px）+ onError invalidate diff 列表（陈旧行消失）+ commit-sheet 勾选剪枝 effect（deps [files] 只删不加）；非语义码保留红字 alert。新增 `isApiErrorCode` helper（client.ts，instanceof+code 判定单源），既有 4 处内联判断机械替换零行为差。**顺带发现记档**：`PROJECT_GIT_IDENTITY_MISSING`（git 身份未配置）也显示「Git 提交失败： 400」——语义不同（配置问题非无变更），待后续给专属文案。读/写路径「无变更」双 key 分工记档（design P3-2）：`commitEmpty`=列表本来就空 vs `noChanges`=动作落空，非漂移。②**effort 确认门同源**（P3-10）：`runtime-config-dialog` danger confirm 改读 WS 实时 `sessionStatus` 标量（bridge `getSessionStatus` getter，照抄 getCostState ref 镜像模式），REST detail 兜底，与会话页同源。已知限制记档（code P3-4）：WS 断开后标量不重置，可能读到陈旧 `working` 多弹一次 confirm——误判方向是安全侧，不修。③**metadata 读改写原子化**（P3-11）：两 registry 各设 `patchMetadata` 单入口（读 index→合并→回写 index 三步在 async 同步段完成 = 同帧原子）+ `persistMetadata`（persistQueue promise 链串行化，队列链 catch 吞错不阻断后续）；session-registry 14 处 + chat 7 处读改写迁移；recordActivity 分钟截断短路挪进 patch fn；两 registry 各加 Promise.all 并发不变量测试（旧实现必挂）。review 消化：P1 恢复 chat 两个 fire-and-forget 的 `.catch(console.warn)`（persistMetadata 返回原始 task，队列链 catch 不保护返回值，void 会泄漏 unhandled rejection）；P2 create 路径恢复「先落盘成功再进内存 index」旧序（防写盘失败出幻影会话；patch 路径先内存是同步段原子所需不动）；P3 读写视图短暂分叉（写盘失败内存已新）已在 docstring 记档属预期。验证：门禁全绿 + api 955 + web 815 + e2e git-diff 2/2 + CSS 硬闸 + tokens 机检。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。

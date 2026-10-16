@@ -21,11 +21,11 @@ import {
 } from "react";
 
 import {
-  ApiClientError,
   getProjectGitCommitDetail,
   getProjectGitCommitFileDiff,
   getProjectGitFileDiff,
   getProjectGitLog,
+  isApiErrorCode,
   listAgentSessions,
   listProjectGitBranches,
   listProjectGitDiff,
@@ -1073,10 +1073,7 @@ export function MobileL3GitDiff({ projectName, path, scope }: MobileL3GitDiffPro
   }
   if (fileDiff.isError || !fileDiff.data || fileDiff.data.repository !== true) {
     // PROJECT_GIT_FILE_NOT_CHANGED = 无变更非错误，显「没有变更」（2026-10-12 反馈③）。
-    if (
-      fileDiff.error instanceof ApiClientError &&
-      fileDiff.error.code === "PROJECT_GIT_FILE_NOT_CHANGED"
-    )
+    if (isApiErrorCode(fileDiff.error, "PROJECT_GIT_FILE_NOT_CHANGED"))
       return <div className="cap mt-4 px-4">{t("git.noChanges")}</div>;
     return <div className="cap mt-4 px-4">{t("git.fileError")}</div>;
   }
@@ -1337,10 +1334,7 @@ function CommitFileDiff({
   }
   if (fileDiff.isError || !fileDiff.data || fileDiff.data.repository !== true) {
     // PROJECT_GIT_FILE_NOT_CHANGED = 无变更非错误，显「没有变更」（2026-10-12 反馈③）。
-    if (
-      fileDiff.error instanceof ApiClientError &&
-      fileDiff.error.code === "PROJECT_GIT_FILE_NOT_CHANGED"
-    )
+    if (isApiErrorCode(fileDiff.error, "PROJECT_GIT_FILE_NOT_CHANGED"))
       return <div className="csub">{t("git.noChanges")}</div>;
     return <div className="csub">{t("git.fileError")}</div>;
   }

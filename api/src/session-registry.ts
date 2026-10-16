@@ -133,6 +133,9 @@ export class SessionRegistry {
   private readonly runtime: RuntimeResources;
   /** 内存索引：sessionId → metadata，source of truth。启动 load 一次，写操作事件维护。 */
   private readonly index = new Map<string, SessionMetadata>();
+  /** 落盘串行化队列（P3-11）：persistMetadata 经 promise 链排队，磁盘写入顺序 = 排队
+   *  顺序，后到者的文件内容必含先到者字段。链上 catch 吞错防单次 IO 失败阻断后续。 */
+  private persistQueue: Promise<void> = Promise.resolve();
   private indexLoadPromise: Promise<void> | null = null;
   /** 存活 runtimeKey 集合缓存（list-sessions + claude 进程内），TTL 见 ALIVE_TTL_MS。 */
   private aliveCache: { keys: Set<string>; expiresAt: number } | null = null;
@@ -241,34 +244,31 @@ export class SessionRegistry {
     model?: string,
   ): Promise<void> {
     await this.ensureLoaded();
-    const metadata = this.index.get(sessionId);
-    if (!metadata) return;
-    const updated: SessionMetadata = {
-      ...metadata,
-      claudeSessionId,
-      updatedAt: this.now().toISOString(),
-    };
     // system.init 回传的是 CLI 解析后的具体 ID（干净）；仍过同一道闸，保持「model 入盘
     // 必经 model-id.ts」的单源约束（脏串宁可弃用也不落盘）。
-    if (model) {
-      const safe = sanitizePersistedModel(model);
-      if (safe) updated.model = safe;
-    }
-    await this.writeMetadata(updated);
+    await this.patchMetadata(sessionId, (metadata) => {
+      const updated: SessionMetadata = {
+        ...metadata,
+        claudeSessionId,
+        updatedAt: this.now().toISOString(),
+      };
+      if (model) {
+        const safe = sanitizePersistedModel(model);
+        if (safe) updated.model = safe;
+      }
+      return updated;
+    });
   }
 
   // ACP session id backfill：startAgent 内 session/new 返回后回调写入（镜像
   // setClaudeSessionId；API 重启后 spawn+loadSession 恢复会话靠它）。
   async setAcpSessionId(sessionId: string, acpSessionId: string): Promise<void> {
     await this.ensureLoaded();
-    const metadata = this.index.get(sessionId);
-    if (!metadata) return;
-    const updated: SessionMetadata = {
+    await this.patchMetadata(sessionId, (metadata) => ({
       ...metadata,
       acpSessionId,
       updatedAt: this.now().toISOString(),
-    };
-    await this.writeMetadata(updated);
+    }));
   }
 
   // Persist a mid-session model switch to metadata.model, so API restart /
@@ -280,35 +280,34 @@ export class SessionRegistry {
    *  语义 = 活动时间(归 recordActivity),status 写不污染它。metadata 缺失(已关闭)静默忽略。 */
   async setAgentSessionStatus(sessionId: string, status: AgentSessionStatus): Promise<void> {
     await this.ensureLoaded();
-    const metadata = this.index.get(sessionId);
-    if (!metadata || metadata.type !== "agent") return;
-    await this.writeMetadata({ ...metadata, status });
+    await this.patchMetadata(sessionId, (metadata) =>
+      metadata.type !== "agent" ? undefined : { ...metadata, status },
+    );
   }
 
   /** 双模式形态落盘（agent-tui 切换时调）。不 bump updatedAt——同 setAgentSessionStatus，
    *  mode 是运行形态不是活动。metadata 缺失（已关闭）静默忽略。 */
   async setAgentSessionMode(sessionId: string, mode: AgentSessionMode): Promise<void> {
     await this.ensureLoaded();
-    const metadata = this.index.get(sessionId);
-    if (!metadata || metadata.type !== "agent") return;
-    await this.writeMetadata({ ...metadata, mode });
+    await this.patchMetadata(sessionId, (metadata) =>
+      metadata.type !== "agent" ? undefined : { ...metadata, mode },
+    );
   }
 
   async setModel(sessionId: string, model: string): Promise<void> {
     await this.ensureLoaded();
-    const metadata = this.index.get(sessionId);
-    if (!metadata) return;
     // 写边界归一（读边界 parseMetadata 也有同一道闸）：model 经 claude-runtime 已 sanitize，
     // 此处再兜一次防未来新调用点漏过——剥不出合法 token 则整体跳过（保留已存值）。
-    const safe = sanitizePersistedModel(model);
-    if (!safe) return;
-    const updated: SessionMetadata = {
-      ...metadata,
-      model: safe,
-      modelAlias: safe,
-      updatedAt: this.now().toISOString(),
-    };
-    await this.writeMetadata(updated);
+    await this.patchMetadata(sessionId, (metadata) => {
+      const safe = sanitizePersistedModel(model);
+      if (!safe) return undefined;
+      return {
+        ...metadata,
+        model: safe,
+        modelAlias: safe,
+        updatedAt: this.now().toISOString(),
+      };
+    });
   }
 
   // Persist a mid-session permission-mode switch to metadata.permissionMode, so
@@ -319,28 +318,22 @@ export class SessionRegistry {
   // Symmetric to setModel above.
   async setPermissionMode(sessionId: string, permissionMode: string): Promise<void> {
     await this.ensureLoaded();
-    const metadata = this.index.get(sessionId);
-    if (!metadata) return;
-    const updated: SessionMetadata = {
+    await this.patchMetadata(sessionId, (metadata) => ({
       ...metadata,
       permissionMode,
       updatedAt: this.now().toISOString(),
-    };
-    await this.writeMetadata(updated);
+    }));
   }
 
   // Persist the runtime effort level so an API restart (--resume) re-applies it via
   // CLAUDE_CODE_EFFORT_LEVEL env in spawnClaudeDirect. Symmetric to setModel/setPermissionMode.
   async setEffort(sessionId: string, effort: EffortLevel): Promise<void> {
     await this.ensureLoaded();
-    const metadata = this.index.get(sessionId);
-    if (!metadata) return;
-    const updated: SessionMetadata = {
+    await this.patchMetadata(sessionId, (metadata) => ({
       ...metadata,
       effort,
       updatedAt: this.now().toISOString(),
-    };
-    await this.writeMetadata(updated);
+    }));
   }
 
   // Persist the claude auto-retry injection config (enabled:false = off).
@@ -357,13 +350,14 @@ export class SessionRegistry {
       return undefined;
     }
 
-    const updated: SessionMetadata = {
-      ...metadata,
+    // project 校验走前置 getMetadata，patch 基于 index 新值合并（校验与写之间并发
+    // 关闭会话时 patch 返回 undefined，调用方拿到 undefined 而非投影旧值）。
+    const updated = await this.patchMetadata(sessionId, (current) => ({
+      ...current,
       autoRetry,
       updatedAt: this.now().toISOString(),
-    };
-    await this.writeMetadata(updated);
-    return agentSessionFromMetadata(updated);
+    }));
+    return updated ? agentSessionFromMetadata(updated) : undefined;
   }
 
   // Read the claude auto-retry injection config by sessionId only (no project
@@ -644,13 +638,13 @@ export class SessionRegistry {
       return undefined;
     }
 
-    const renamed: SessionMetadata = {
-      ...metadata,
+    // 同 setAgentAutoRetryConfig：project 校验前置，patch 基于 index 新值合并。
+    const renamed = await this.patchMetadata(sessionId, (current) => ({
+      ...current,
       displayName,
       updatedAt: this.now().toISOString(),
-    };
-    await this.writeMetadata(renamed);
-    return agentSessionFromMetadata(renamed);
+    }));
+    return renamed ? agentSessionFromMetadata(renamed) : undefined;
   }
 
   async renameTerminalSession(
@@ -664,13 +658,13 @@ export class SessionRegistry {
       return undefined;
     }
 
-    const renamed: SessionMetadata = {
-      ...metadata,
+    // 同 renameAgentSession：project 校验前置，patch 基于 index 新值合并。
+    const renamed = await this.patchMetadata(sessionId, (current) => ({
+      ...current,
       displayName,
       updatedAt: this.now().toISOString(),
-    };
-    await this.writeMetadata(renamed);
-    return terminalSessionFromMetadata(renamed);
+    }));
+    return renamed ? terminalSessionFromMetadata(renamed) : undefined;
   }
 
   /**
@@ -681,16 +675,15 @@ export class SessionRegistry {
    */
   async recordActivity(sessionId: string): Promise<void> {
     await this.ensureLoaded();
-    const metadata = this.index.get(sessionId);
-    if (!metadata) return;
-    const truncatedMs =
-      Math.floor(this.now().getTime() / SessionRegistry.ACTIVITY_MINUTE_MS) *
-      SessionRegistry.ACTIVITY_MINUTE_MS;
-    const truncatedIso = new Date(truncatedMs).toISOString();
-    if (metadata.updatedAt === truncatedIso) return;
-    const updated: SessionMetadata = { ...metadata, updatedAt: truncatedIso };
-    this.index.set(sessionId, updated);
-    await this.writeMetadata(updated);
+    // 分钟截断短路挪进 patch fn（返回 undefined = 同分钟，跳过内存回写与落盘）。
+    await this.patchMetadata(sessionId, (metadata) => {
+      const truncatedMs =
+        Math.floor(this.now().getTime() / SessionRegistry.ACTIVITY_MINUTE_MS) *
+        SessionRegistry.ACTIVITY_MINUTE_MS;
+      const truncatedIso = new Date(truncatedMs).toISOString();
+      if (metadata.updatedAt === truncatedIso) return undefined;
+      return { ...metadata, updatedAt: truncatedIso };
+    });
   }
 
   private async listMetadata(type: SessionType, projectName: string) {
@@ -765,7 +758,10 @@ export class SessionRegistry {
       effort: input.effort,
     };
 
-    await this.writeMetadata(metadata);
+    // 纯新建（无读改写）：先落盘成功再进内存 index——写盘失败时 create reject、list 不见
+    // 幻影条目（patch 路径的「先内存」是同步段原子所需，新建无此约束，恢复旧序）。
+    await this.persistMetadata(metadata);
+    this.index.set(metadata.id, metadata);
     return metadata;
   }
 
@@ -859,12 +855,48 @@ export class SessionRegistry {
     }
   }
 
-  private async writeMetadata(metadata: SessionMetadata) {
-    await this.ensureSessionsDir();
-    await writeFile(this.metadataPath(metadata.id), `${JSON.stringify(metadata, null, 2)}\n`, {
-      mode: 0o600,
+  /**
+   * 元数据变更单入口（P3-11 并发丢失修复）：读 index → patch 合并 → 回写 index 三步在
+   * **同步段**内完成（async 函数首个 await 前同帧原子，并发 mutator 读到的必是前者合并
+   * 结果）；落盘经 persistQueue 串行化并 await 本次写盘完成（保持旧 writeMetadata 的
+   * await 持久性语义——调用方 await 返回后磁盘必已含本次字段，测试断言紧跟读盘不竞态）。
+   * 旧实现 `index.get → 合并 → writeMetadata`（读与写盘跨多个 await）存在静默丢更新：
+   * 并发 mutator（如高频 recordActivity vs setModel/setPermissionMode）互相覆盖字段，且
+   * 磁盘可能落旧版本。对齐仓库先例 withStashLock / state.yaml writeQueue（单进程控制面
+   * 足够）。patch 返回 undefined = 无需变更（recordActivity 同分钟短路）或入参被拒
+   *（model sanitize 不通过 / type 守卫不匹配），短路跳过内存回写与落盘。
+   * 返回合并后的 metadata（供调用方投影 AgentSession/TerminalSession），会话不存在或
+   * 短路时返回 undefined。注意写盘失败时内存已更新而 API 返回错误——list 读内存会立即见
+   * 新值，读写视图短暂分叉属预期（磁盘由下一次写补齐）。
+   */
+  private async patchMetadata(
+    sessionId: string,
+    patch: (metadata: SessionMetadata) => SessionMetadata | undefined,
+  ): Promise<SessionMetadata | undefined> {
+    const current = this.index.get(sessionId);
+    if (!current) return undefined;
+    const updated = patch(current);
+    if (!updated) return undefined;
+    this.index.set(sessionId, updated);
+    await this.persistMetadata(updated);
+    return updated;
+  }
+
+  /**
+   * 落盘（串行化）：排队进 persistQueue，自身含 ensureSessionsDir + writeFile，不回写
+   * index（index 所有权归 patchMetadata / createMetadata）。返回值供需要等待本次写盘
+   * 的调用方；队列链上 catch 吞错——内存 index 已是最新，单次 IO 失败不阻断后续排队，
+   * 磁盘落后由下一次写补齐。
+   */
+  private persistMetadata(metadata: SessionMetadata): Promise<void> {
+    const task = this.persistQueue.then(async () => {
+      await this.ensureSessionsDir();
+      await writeFile(this.metadataPath(metadata.id), `${JSON.stringify(metadata, null, 2)}\n`, {
+        mode: 0o600,
+      });
     });
-    this.index.set(metadata.id, metadata);
+    this.persistQueue = task.catch(() => {});
+    return task;
   }
 
   private async readMetadataFile(fileName: string) {

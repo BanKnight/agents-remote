@@ -3,9 +3,9 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
-  ApiClientError,
   getProjectGitCompareFileDiff,
   getProjectGitFileDiff,
+  isApiErrorCode,
 } from "../../api/client";
 import { useT } from "../../i18n";
 import { useTheme } from "../../theme";
@@ -198,8 +198,7 @@ export function GitFileDiffPanel(props: GitFileDiffPanelProps) {
             label={t("git.loadingDiff")}
           />
         ) : fileDiff.error ? (
-          fileDiff.error instanceof ApiClientError &&
-          fileDiff.error.code === "PROJECT_GIT_FILE_NOT_CHANGED" ? (
+          isApiErrorCode(fileDiff.error, "PROJECT_GIT_FILE_NOT_CHANGED") ? (
             // 无变更 ≠ 错误（2026-10-12 反馈③）：服务端对无变更文件抛语义码
             // PROJECT_GIT_FILE_NOT_CHANGED，按码显「没有变更」空态而非伪错误。
             <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-6 lg:justify-center lg:pt-0">

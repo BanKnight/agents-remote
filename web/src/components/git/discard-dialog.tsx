@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type { GitDiffFileSummary } from "@agents-remote/shared";
-import { discardProjectGit } from "../../api/client";
+import { discardProjectGit, isApiErrorCode } from "../../api/client";
 import { useT } from "../../i18n";
 import { shellSurfaceClasses } from "../shell/shell-primitives";
 import { gitDiffListQueryKey, gitLogQueryKey } from "./git-diff-viewer";
@@ -33,6 +33,15 @@ export function DiscardDialog({
   const queryClient = useQueryClient();
   const discardMutation = useMutation({
     mutationFn: () => discardProjectGit(projectName, [file.path]),
+    // 命中「无变更」语义码 = 该文件已被外部提交/还原——失效列表让陈旧行消失（弹层
+    // 保持打开显中性文案，文案分流见下）。
+    onError: (error) => {
+      if (isApiErrorCode(error, "PROJECT_GIT_FILE_NOT_CHANGED")) {
+        void queryClient.invalidateQueries({ queryKey: gitDiffListQueryKey(projectName) });
+        // 同 onSuccess：前缀失效全分支 log key。
+        void queryClient.invalidateQueries({ queryKey: gitLogQueryKey(projectName).slice(0, 4) });
+      }
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: gitDiffListQueryKey(projectName) });
       // 同 CommitSheet：前缀失效全分支 log key。
@@ -64,9 +73,16 @@ export function DiscardDialog({
             </p>
           )}
           {discardMutation.isError ? (
-            <div className="mt-1.5 text-[11px] text-error" role="alert">
-              {discardMutation.error.message}
-            </div>
+            isApiErrorCode(discardMutation.error, "PROJECT_GIT_FILE_NOT_CHANGED") ? (
+              // 无变更 ≠ 错误（读路径同语义写路径版）：中性文案，列表已随 onError 刷新。
+              <div className="mt-1.5 text-[12.5px] text-ink-2" role="status">
+                {t("git.noChanges")}
+              </div>
+            ) : (
+              <div className="mt-1.5 text-[11px] text-error" role="alert">
+                {discardMutation.error.message}
+              </div>
+            )
           ) : null}
           <div className="mt-3 flex border-t border-neutral-line">
             <button

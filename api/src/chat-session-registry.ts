@@ -22,6 +22,8 @@ export class ChatSessionRegistry {
   private readonly createId: () => string;
   private indexLoadPromise: Promise<void> | undefined;
   private readonly index = new Map<string, ChatSession>();
+  /** 落盘串行化队列（P3-11，与 SessionRegistry.persistQueue 同型）：写盘顺序 = 排队顺序。 */
+  private persistQueue: Promise<void> = Promise.resolve();
   /** closeChatSession 前置钩子（销毁 pi 进程内 AgentSession + 清理 pi JSONL，Phase 3 接入）。 */
   private closeHook: ((id: string) => Promise<void> | void) | undefined;
 
@@ -85,21 +87,20 @@ export class ChatSessionRegistry {
       createdAt: now,
       updatedAt: now,
     };
-    await this.writeMetadata(session);
+    // 纯新建（无读改写）：先落盘成功再进内存 index——写盘失败时 create reject、list 不见
+    // 幻影条目（patch 路径的「先内存」是同步段原子所需，新建无此约束，恢复旧序）。
+    await this.persistMetadata(session);
+    this.index.set(session.id, session);
     return session;
   }
 
   async renameChatSession(id: string, displayName: string): Promise<ChatSession | undefined> {
     await this.ensureIndexLoaded();
-    const session = this.index.get(id);
-    if (!session) return undefined;
-    const updated: ChatSession = {
+    return this.patchMetadata(id, (session) => ({
       ...session,
       displayName: this.resolveDisplayName(displayName),
       updatedAt: this.now().toISOString(),
-    };
-    await this.writeMetadata(updated);
-    return updated;
+    }));
   }
 
   /**
@@ -132,17 +133,15 @@ export class ChatSessionRegistry {
 
   /**
    * piSessionId backfill（Phase 3）：幂等——仅当值变化时更新。先同步更内存 index（list/get 立即可见），
-   * 写盘 fire-and-forget（事件回调路径不阻塞，避免与事件流竞态）。
+   * 写盘 fire-and-forget（事件回调路径不阻塞，避免与事件流竞态）；catch 只告警不抛——
+   * patchMetadata 的 persistMetadata 返回原始 task（队列链 catch 不保护返回值），void 会泄漏
+   * unhandled rejection。
    */
   setPiSessionId(id: string, piSessionId: string): void {
     if (!piSessionId) return;
-    const session = this.index.get(id);
-    if (!session || session.piSessionId === piSessionId) return;
-    const updated: ChatSession = { ...session, piSessionId };
-    this.index.set(id, updated);
-    void this.writeMetadata(updated).catch((error) => {
-      console.warn(`[chat-sessions] setPiSessionId write failed: ${id}`, error);
-    });
+    this.patchMetadata(id, (session) =>
+      session.piSessionId === piSessionId ? undefined : { ...session, piSessionId },
+    ).catch((error) => console.warn(`[chat-sessions] setPiSessionId write failed: ${id}`, error));
   }
 
   /**
@@ -151,13 +150,10 @@ export class ChatSessionRegistry {
    */
   setChatTitle(id: string, title: string): void {
     if (!title) return;
-    const session = this.index.get(id);
-    if (!session || session.displayName === title) return;
-    const updated: ChatSession = { ...session, displayName: title };
-    this.index.set(id, updated);
-    void this.writeMetadata(updated).catch((error) => {
-      console.warn(`[chat-sessions] setChatTitle write failed: ${id}`, error);
-    });
+    // fire-and-forget + catch 告警（同 setPiSessionId）。
+    this.patchMetadata(id, (session) =>
+      session.displayName === title ? undefined : { ...session, displayName: title },
+    ).catch((error) => console.warn(`[chat-sessions] setChatTitle write failed: ${id}`, error));
   }
 
   /**
@@ -166,15 +162,15 @@ export class ChatSessionRegistry {
    */
   async recordActivityChat(id: string): Promise<void> {
     await this.ensureIndexLoaded();
-    const session = this.index.get(id);
-    if (!session) return;
-    const truncatedMs =
-      Math.floor(this.now().getTime() / ChatSessionRegistry.ACTIVITY_MINUTE_MS) *
-      ChatSessionRegistry.ACTIVITY_MINUTE_MS;
-    const truncatedIso = new Date(truncatedMs).toISOString();
-    if (session.updatedAt === truncatedIso) return;
-    const updated: ChatSession = { ...session, updatedAt: truncatedIso };
-    await this.writeMetadata(updated);
+    // 分钟截断短路挪进 patch fn（返回 undefined = 同分钟，跳过内存回写与落盘）。
+    await this.patchMetadata(id, (session) => {
+      const truncatedMs =
+        Math.floor(this.now().getTime() / ChatSessionRegistry.ACTIVITY_MINUTE_MS) *
+        ChatSessionRegistry.ACTIVITY_MINUTE_MS;
+      const truncatedIso = new Date(truncatedMs).toISOString();
+      if (session.updatedAt === truncatedIso) return undefined;
+      return { ...session, updatedAt: truncatedIso };
+    });
   }
 
   /**
@@ -183,12 +179,11 @@ export class ChatSessionRegistry {
    */
   async setPinned(id: string, pinned: boolean): Promise<ChatSession | undefined> {
     await this.ensureIndexLoaded();
+    // 幂等短路保留原值返回语义（值不变返回现值，不触发落盘）。
     const session = this.index.get(id);
     if (!session) return undefined;
     if (session.pinned === pinned) return session;
-    const updated: ChatSession = { ...session, pinned };
-    await this.writeMetadata(updated);
-    return updated;
+    return this.patchMetadata(id, (current) => ({ ...current, pinned }));
   }
 
   /**
@@ -197,12 +192,14 @@ export class ChatSessionRegistry {
    */
   async setArchived(id: string, archivedAt: string | null): Promise<ChatSession | undefined> {
     await this.ensureIndexLoaded();
+    // 幂等短路保留原值返回语义（同 setPinned）。
     const session = this.index.get(id);
     if (!session) return undefined;
     if ((session.archivedAt ?? null) === archivedAt) return session;
-    const updated: ChatSession = { ...session, archivedAt: archivedAt ?? undefined };
-    await this.writeMetadata(updated);
-    return updated;
+    return this.patchMetadata(id, (current) => ({
+      ...current,
+      archivedAt: archivedAt ?? undefined,
+    }));
   }
 
   private resolveDisplayName(displayName: string | undefined): string {
@@ -210,12 +207,37 @@ export class ChatSessionRegistry {
     return trimmed && trimmed.length > 0 ? trimmed : DEFAULT_CHAT_TITLE;
   }
 
-  private async writeMetadata(session: ChatSession): Promise<void> {
-    await this.ensureSessionsDir();
-    await writeFile(this.metadataPath(session.id), `${JSON.stringify(session, null, 2)}\n`, {
-      mode: 0o600,
+  /**
+   * 元数据变更单入口（P3-11 并发丢失修复，与 SessionRegistry.patchMetadata 同型）：
+   * 读 index → 合并 → 回写 index 三步在**同步段**内完成（同帧原子），落盘经 persistQueue
+   * 串行化并 await 本次写盘完成。patch 返回 undefined = 短路（幂等命中 / 分钟截断短路），
+   * 跳过回写与落盘。fire-and-forget 调用方（setPiSessionId/setChatTitle）——async 首个
+   * await 前的合并段同步执行，内存 index 立即可见；写盘失败时内存已更新而调用方不知情，
+   * 读写视图短暂分叉属预期（磁盘由下一次写补齐，调用方 catch 只告警）。
+   */
+  private async patchMetadata(
+    id: string,
+    patch: (session: ChatSession) => ChatSession | undefined,
+  ): Promise<ChatSession | undefined> {
+    const current = this.index.get(id);
+    if (!current) return undefined;
+    const updated = patch(current);
+    if (!updated) return undefined;
+    this.index.set(id, updated);
+    await this.persistMetadata(updated);
+    return updated;
+  }
+
+  /** 落盘（串行化，不回写 index）。队列链 catch 吞错：单次 IO 失败不阻断后续排队。 */
+  private persistMetadata(session: ChatSession): Promise<void> {
+    const task = this.persistQueue.then(async () => {
+      await this.ensureSessionsDir();
+      await writeFile(this.metadataPath(session.id), `${JSON.stringify(session, null, 2)}\n`, {
+        mode: 0o600,
+      });
     });
-    this.index.set(session.id, session);
+    this.persistQueue = task.catch(() => {});
+    return task;
   }
 
   private async readMetadataFile(fileName: string): Promise<ChatSession | undefined> {

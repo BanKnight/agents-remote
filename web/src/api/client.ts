@@ -363,6 +363,12 @@ export class ApiClientError extends Error {
   }
 }
 
+/** 按服务端结构化错误码判错（instanceof + code 取值的是否收窄单源）。写路径同语义
+ *  多枚码的分流直接连调（PROJECT_GIT_NOTHING_TO_COMMIT 与 NOT_CHANGED 同「无变更」
+ *  语义族），避免各消费点再手写 instanceof 判断漂移。 */
+export const isApiErrorCode = (error: unknown, code: string): error is ApiClientError =>
+  error instanceof ApiClientError && error.code === code;
+
 /** 上传目标同名冲突（服务端 409，03z 行内三选的数据信号）。 */
 export class UploadConflictError extends Error {
   readonly code = "PROJECT_FILE_TARGET_EXISTS";

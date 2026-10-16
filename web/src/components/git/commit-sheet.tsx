@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import type { GitDiffFileSummary } from "@agents-remote/shared";
-import { commitProjectGit } from "../../api/client";
+import { commitProjectGit, isApiErrorCode } from "../../api/client";
 import { useT } from "../../i18n";
 import { useIsMobile } from "../../lib/use-is-mobile";
 import { shellSurfaceClasses } from "../shell/shell-primitives";
@@ -59,10 +59,30 @@ export function CommitSheet({
       setMessage("");
     }
   }, [open]);
+  // 列表刷新后剪掉已不在变更集里的勾选（如命中「无变更」后刷新、外部已提交的行），
+  // 防对不存在行再次提交踩同一错；只删不加，用户对其余行的勾选保留。
+  useEffect(() => {
+    setChecked((prev) => {
+      if (prev.size === 0) return prev;
+      const present = new Set(files.map((f) => f.path));
+      const next = new Set([...prev].filter((path) => present.has(path)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [files]);
 
   const commitMutation = useMutation({
     mutationFn: ({ paths, message: m }: { paths: string[]; message: string }) =>
       commitProjectGit(projectName, paths, m),
+    // 「无变更 ≠ 错误」写路径版：命中语义码 = 勾选文件已被外部提交/还原或 add 后无内容
+    // 可提交（NOTHING_TO_COMMIT 同语义族）——失效 diff 列表让陈旧行消失（文案分流见下）。
+    onError: (error) => {
+      if (
+        isApiErrorCode(error, "PROJECT_GIT_FILE_NOT_CHANGED") ||
+        isApiErrorCode(error, "PROJECT_GIT_NOTHING_TO_COMMIT")
+      ) {
+        void queryClient.invalidateQueries({ queryKey: gitDiffListQueryKey(projectName) });
+      }
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: gitDiffListQueryKey(projectName) });
       // 故意去掉 branch 尾维度：按前缀失效全分支 log key（当前分支 HEAD 变了，历史页
@@ -128,9 +148,18 @@ export function CommitSheet({
         {commitMutation.isPending ? t("git.committing") : t("git.commitBtn", { n: checked.size })}
       </button>
       {commitMutation.isError ? (
-        <div className="mt-1.5 text-[11px] text-error" role="alert">
-          {commitMutation.error.message}
-        </div>
+        isApiErrorCode(commitMutation.error, "PROJECT_GIT_FILE_NOT_CHANGED") ||
+        isApiErrorCode(commitMutation.error, "PROJECT_GIT_NOTHING_TO_COMMIT") ? (
+          // 无变更 ≠ 错误（读路径 git-diff-viewer 同语义写路径版）：中性文案，列表已随
+          // onError 刷新。
+          <div className="mt-1.5 text-[12.5px] text-ink-2" role="status">
+            {t("git.noChanges")}
+          </div>
+        ) : (
+          <div className="mt-1.5 text-[11px] text-error" role="alert">
+            {commitMutation.error.message}
+          </div>
+        )
       ) : null}
     </div>
   );

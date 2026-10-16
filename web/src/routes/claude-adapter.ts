@@ -333,6 +333,11 @@ export type ClaudeBridge = {
   // ℹ 信息面快照读取（非响应式，同 registry 取用语义）：会话累计费用标量（cost-state
   // latest-wins）。经 ref 镜像，bridge 身份稳定不因标量更新抖动（openInfo 打开瞬间读一次）。
   getCostState?: () => ClaudeCostState | undefined;
+  // ℹ 运行配置选择面快照读取（非响应式）：WS 实时 turn 状态标量（session_status
+  // latest-wins）。effort 确认门「turn 进行中」判定用——REST detail 有轮询滞后，
+  // 两入口判定必须同源（P3-10；兜底语义对齐 ClaudeSessionDetailRoute 的
+  // sessionStatus ?? session.status）。
+  getSessionStatus?: () => AgentSessionStatus | undefined;
 };
 
 export const ClaudeBridgeContext = createContext<ClaudeBridge | null>(null);
@@ -4331,6 +4336,8 @@ export function useClaudeSession(
   // turn 状态标量（5 态，OSC 7501 对齐）：live 靠 session_status 帧、回放靠
   // seed_init.sessionStatus 恢复；broadcast-only 标量，无渲染 item。
   const [sessionStatus, setSessionStatus] = useState<AgentSessionStatus | undefined>();
+  const sessionStatusRef = useRef(sessionStatus);
+  sessionStatusRef.current = sessionStatus;
   // 会话累计费用/用量标量（CLI 2.1.299+ cost-state）：live 靠 WS 帧 latest-wins；回放靠
   // liveLines 重放恢复（relay 保留该帧）。消费面 = ℹ 信息面「累计费用」行（bridge.getCostState）。
   const [costState, setCostState] = useState<ClaudeCostState | undefined>();
@@ -4652,6 +4659,7 @@ export function useClaudeSession(
       },
       onCompact: null,
       getCostState: () => costStateRef.current,
+      getSessionStatus: () => sessionStatusRef.current,
     }),
     [sendToSocket],
   );

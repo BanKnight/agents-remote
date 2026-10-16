@@ -1050,3 +1050,32 @@ test("recordActivity bumps updatedAt to the minute and short-circuits within the
     "2026-05-25T00:02:00.000Z",
   );
 });
+
+test("patchMetadata 并发不变量：Promise.all 并发 mutator 后三字段全在（P3-11 丢更新修复）", async () => {
+  let currentTime = new Date("2026-05-25T00:00:00.000Z");
+  const registry = new SessionRegistry({
+    runDir,
+    now: () => currentTime,
+    createId: () => "agent_concurren01",
+  });
+  const agent = await registry.createAgentSession({ project, provider: "claude" });
+
+  // 跨分钟边界：保证 recordActivity 不被同分钟短路、真写盘。
+  currentTime = new Date("2026-05-25T00:01:30.000Z");
+
+  await Promise.all([
+    registry.setModel(agent.id, "claude-opus-5-5"),
+    registry.recordActivity(agent.id),
+    registry.setPermissionMode(agent.id, "acceptEdits"),
+  ]);
+
+  // 终态不变量：三个 mutator 的字段必须同时落盘（修复前读改写跨 await 互相覆盖必丢其一）。
+  // updatedAt 终态合法值有二（合并顺序决定，均非陈旧值）：setModel/setPermissionMode 写
+  // 完整 now() ISO，recordActivity 写整分钟截断。
+  const raw = JSON.parse(
+    await readFile(join(runDir, "sessions", "agent_concurren01.json"), "utf8"),
+  );
+  expect(raw.model).toBe("claude-opus-5-5");
+  expect(raw.permissionMode).toBe("acceptEdits");
+  expect(["2026-05-25T00:01:30.000Z", "2026-05-25T00:01:00.000Z"]).toContain(raw.updatedAt);
+});
