@@ -313,7 +313,10 @@ function ColumnResizeGutter({
       aria-valuemax={max}
       aria-valuemin={min}
       aria-valuenow={value}
-      className={`absolute bottom-0 top-0 z-20 w-1 cursor-split-col bg-transparent transition-colors hover:bg-primary/30 focus-visible:bg-primary/60 focus-visible:outline-none ${
+      // touch-none（2026-10-16 平板真机反馈）：触摸拖宽被 WebKit 滚动引擎抢手势
+      //（pointercancel）= 拖不动；touch-action:none 手势留在分隔条（详见 instance-area
+      // SplitGutter 同款注释）。右栏↔中栏这条是三栏布局里唯一可拖的分割线。
+      className={`absolute bottom-0 top-0 z-20 w-1 touch-none cursor-split-col bg-transparent transition-colors hover:bg-primary/30 focus-visible:bg-primary/60 focus-visible:outline-none ${
         side === "left" ? "right-0" : "left-0"
       }`}
       onKeyDown={onKeyDown}

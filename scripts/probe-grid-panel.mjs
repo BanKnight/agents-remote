@@ -186,6 +186,15 @@ async function awaitGridTransitionRun(page) {
   await page.waitForTimeout(500); // 280ms + 余量
   const open = await gridState(page);
   ok(open && open.thirdCol === RIGHT_REM_PX, `展开终态第三轨 = 352px(实测 ${open?.thirdCol})`);
+  // touch-action 契约(2026-10-16 平板真机反馈「分割线拖不动」):分隔条必须
+  // touch-action:none——缺了它 WebKit 把触摸拖动判给滚动引擎发 pointercancel = 平板
+  // 拖不动(鼠标不受此管,桌面探针量不出行为、只能锁 computed contract)。gutter 在
+  // 展开态右栏 aside 内,折叠态不在 DOM,故断言放展开后。
+  const gutterTouchAction = await page.evaluate(() => {
+    const el = document.querySelector('[aria-label="调整右栏宽度"]');
+    return el ? getComputedStyle(el).touchAction : null;
+  });
+  ok(gutterTouchAction === "none", `gutter touch-action = none(实测 ${gutterTouchAction})`);
 
   // ── Part 3:拖宽 1:1(pointerdown 摘 transition,up 恢复) ──
   console.log("Part 3: 拖宽期间 transition 摘除,松手恢复");

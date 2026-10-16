@@ -2700,7 +2700,11 @@ function SplitGutter({ dragging, onResize, orientation, rect, splitRect }: Split
   return (
     <div
       aria-hidden
-      className={`absolute z-10 transition-colors hover:bg-on-surface/10 ${dragging ? "pointer-events-none" : ""} ${isRow ? "cursor-split-row" : "cursor-split-col"}`}
+      // touch-none（2026-10-16 平板真机反馈「分屏分割线拖不动」）：pointerdown 的
+      // preventDefault 挡不住 WebKit 滚动引擎抢手势（触摸拖动先判给 pan，判走即发
+      // pointercancel = 拖拽死，鼠标不受此管）——touch-action:none 让手势留在 sash，
+      // 指针事件持续流。与 drag-source/image-viewer 的触摸手势防护同款。
+      className={`absolute z-10 touch-none transition-colors hover:bg-on-surface/10 ${dragging ? "pointer-events-none" : ""} ${isRow ? "cursor-split-row" : "cursor-split-col"}`}
       onPointerCancel={endDrag}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
