@@ -4,6 +4,9 @@
 //  2. [REST] POST /mode terminal → 200 且 mode 落盘；详情回读一致。
 //  3. [WS]   形态切到 terminal 后 session-stream 可 attach（= tmux pane 真在）；
 //            claude-stream 被守卫拒绝（SESSION_STATE_CONFLICT，防同 id 双写 JSONL）。
+//  3.5 [真链路] CLI 真加载 hooks（--settings，review P1-1 断链修复实证）：tmux send-keys
+//            提交一句话 → UserPromptSubmit hook printf 写状态文件（此前 argv 漏 --settings，
+//            状态文件恒空、TUI 状态点停更）。
 //  4. [REST] 切换门槛严格 idle-only：状态文件注入 user_input 翻 working → POST mode 409。
 //  5. [REST] 状态文件信号驱动状态机（关键三态）：turn_done → done。
 //  6. [REST] POST /mode chat → 200；状态/settings 文件随之清理。
@@ -178,6 +181,22 @@ try {
     JSON.stringify(claudeFrames.slice(0, 1)),
   );
 
+  // 3.5 CLI 真加载 hooks（--settings 断链修复实证）：向 pane 提交一句话，UserPromptSubmit
+  // hook（经 --settings 挂载）printf 写状态文件——不再手工写 token，验证「CLI → hook →
+  // 状态文件」全链。轮询状态文件本体而非 detail.status（后者还叠了 watcher/状态机层）。
+  const send = Bun.spawnSync(["tmux", "send-keys", "-t", runtimeKey, "probe hook verify", "Enter"]);
+  check(send.exitCode === 0, "tmux send-keys 提交触发语", `exit=${send.exitCode}`);
+  let hookToken = "";
+  for (let i = 0; i < 100 && hookToken !== "user_input"; i++) {
+    hookToken = (await readFile(statusPath(runtimeKey), "utf8").catch(() => "")).trim();
+    if (hookToken !== "user_input") await sleep(100);
+  }
+  check(
+    hookToken === "user_input",
+    "CLI 真加载 hooks：UserPromptSubmit 写状态文件（--settings 接通）",
+    `token=${hookToken || "(空)"}`,
+  );
+
   // 4/5 状态文件信号驱动状态机（关键三态）+ idle-only 门槛
   await writeFile(statusPath(runtimeKey), "user_input");
   let observed = "";
@@ -250,8 +269,11 @@ try {
   }
 } finally {
   // 清理：只关自建会话（terminal 形态走 tmux kill 路径；状态/settings 文件随 close 拆除）。
-  if (claudeId) await closeSession(claudeId);
-  if (ompId) await closeSession(ompId);
+  // PROBE_KEEP=1 跳过（调试挂起现场用，手动清理）。
+  if (process.env.PROBE_KEEP !== "1") {
+    if (claudeId) await closeSession(claudeId);
+    if (ompId) await closeSession(ompId);
+  }
 }
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "SOME FAILED"}: ${pass} pass / ${fail} fail`);
