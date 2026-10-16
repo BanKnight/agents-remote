@@ -133,14 +133,16 @@ test("chat 形态 ⋯ 显示「在终端打开」，点击发 POST /mode 后面�
   await modeItem.click();
 
   // 点击即关浮层（keepOpen 已删，真机反馈 2026-10-15）：菜单项消失。
+  // pending 细条紧接 click 断言（keepOpen 删除后唯一的进行中反馈）：细条窗口 ≈ POST
+  // 往返（mock 300ms），若排在下面的菜单关闭断言/poll 之后，机器负载一高就会被窗口甩开
+  //（2026-10-16 高负载连挂、同代低负载复绿实锤的竞态）。
+  await expect(page.getByText("Switching session mode…")).toBeVisible();
+
   await expect(modeItem).toBeHidden();
 
   // 点击 → POST /mode {mode:"terminal"}（服务端另有 idle-only 守卫，此处只证 web 侧发出）。
   await expect.poll(() => state.posted.length).toBeGreaterThan(0);
   expect(state.posted.at(-1)).toEqual({ mode: "terminal" });
-
-  // POST 同步窗口内面板顶部显 pending 细条（spinner + 文案）——keepOpen 删除后唯一的进行中反馈。
-  await expect(page.getByText("Switching session mode…")).toBeVisible();
 
   // 形态落定后 AgentPanelRouter 分流：ChatPanel 撤下、终端面板（xterm）顶上，细条消失。
   await expect(page.locator(".xterm")).toBeVisible({ timeout: 15_000 });
