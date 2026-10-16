@@ -1056,6 +1056,21 @@ test("buildTuiSpawnArgs 未落盘（JSONL 不存在）走 --session-id", () => {
   expect(args).toEqual(["claude", "--session-id", "abc"]);
 });
 
+test("buildTuiSpawnArgs settingsPath 挂 --settings（hooks 断链修复 P1-1），缺省不带", () => {
+  const withSettings = buildTuiSpawnArgs({
+    claudeSessionId: "abc",
+    resume: true,
+    settingsPath: "/run/agent-settings/k.json",
+  });
+  // --settings 紧随 --resume id 之后（hooks 是 TUI 状态采集的唯一挂载点，漏传 = 状态文件
+  // 恒空、TUI 期状态点停更——P1-1 实锤的断链）。
+  expect(withSettings).toContain("--settings");
+  expect(withSettings.indexOf("--settings")).toBe(withSettings.indexOf("--resume") + 2);
+  expect(withSettings[withSettings.indexOf("--settings") + 1]).toBe("/run/agent-settings/k.json");
+  // 缺省不带（CLI 不加载额外 hooks）。
+  expect(buildTuiSpawnArgs({ claudeSessionId: "abc", resume: true })).not.toContain("--settings");
+});
+
 test("resolveTuiSpawn 按 JSONL 存在性判定 resume/session-id（与 headless spawn 同口径）", async () => {
   const runtime = new ClaudeRuntime(mkdtempSync(join(tmpdir(), "ar-tui-spawn-run-")));
   // 唯一 slug 项目路径放 home 内（claudeJsonlPath 落 ~/.claude/projects/<slug>/），清理只动自建目录。

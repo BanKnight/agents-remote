@@ -400,6 +400,9 @@ export function buildTuiSpawnArgs(input: {
   model?: string;
   permissionMode?: string;
   effort?: EffortLevel;
+  /** hooks settings 文件路径（TUI 状态采集三 hook 的挂载点）——缺省则不传，CLI 不加载任何
+   *  额外 hooks。漏传 = 状态文件恒空、TUI 期状态点停更（review P1-1 实锤过的断链）。 */
+  settingsPath?: string;
   mcpArgs?: string[];
 }): string[] {
   return [
@@ -409,6 +412,7 @@ export function buildTuiSpawnArgs(input: {
     ...(input.model ? ["--model", input.model] : []),
     ...(input.permissionMode ? ["--permission-mode", input.permissionMode] : []),
     ...(input.effort ? ["--effort", input.effort] : []),
+    ...(input.settingsPath ? ["--settings", input.settingsPath] : []),
     ...(input.mcpArgs ?? []),
   ];
 }
@@ -995,6 +999,8 @@ export class ClaudeRuntime implements RuntimeResources {
     model?: string;
     permissionMode?: string;
     effort?: EffortLevel;
+    /** hooks settings 文件路径（agent-tui 传入）；缺省不传 --settings。 */
+    settingsPath?: string;
   }): Promise<string[]> {
     if (!metadata.claudeSessionId) {
       throw new Error("TUI mode requires a pinned claudeSessionId");
@@ -1012,6 +1018,7 @@ export class ClaudeRuntime implements RuntimeResources {
       model,
       permissionMode: metadata.permissionMode,
       effort: resolvedEffort,
+      settingsPath: metadata.settingsPath,
       mcpArgs: this.buildMcpArgs(metadata.projectName),
     });
   }

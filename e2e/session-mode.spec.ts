@@ -20,6 +20,9 @@ const sessionBody = (state: ModeState) => ({
     provider: "claude",
     displayName: "Claude Agent (e2e-mode)",
     status: "idle",
+    // P3-8（review 消化）：无钉 claudeSessionId 的会话切换入口禁用——mock 必须带 id，
+    // 否则菜单项恒禁用（legacy 文案）。
+    claudeSessionId: "3f2a4b6c-1111-2222-3333-444455556666",
     mode: state.mode,
     createdAt: new Date().toISOString(),
   },

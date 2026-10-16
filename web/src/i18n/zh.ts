@@ -126,6 +126,7 @@ export const zh: Record<TranslationKey, string> = {
   "session.openInTerminal": "在终端打开",
   "session.backToChat": "回到对话",
   "session.modeSwitch.busy": "执行中，本轮结束后可切换",
+  "session.modeSwitch.legacy": "该会话未绑定 CLI 会话，无法切换",
   "session.modeSwitch.pending": "正在切换运行形态…",
   "session.modeSwitch.failedTitle": "切换失败",
 

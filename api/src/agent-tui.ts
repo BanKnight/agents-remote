@@ -54,6 +54,9 @@ export class AgentTuiController {
   private readonly watchers = new Map<string, FSWatcher>();
   /** TUI 期状态基线（本模块自持，不动 claudeRuntime.processes——那是 headless 形态的账本）。 */
   private readonly tuiStatus = new Map<string, AgentSessionStatus>();
+  /** 模式切换串行锁（per-runtimeKey，review P2-4）：多端同时打开同一会话时两台设备
+   *  并发点切换会互相拆台（A 的回滚拆掉 B 刚起的 pane，回滚本身制造双写面）。排队执行。 */
+  private readonly switchLocks = new Map<string, Promise<void>>();
 
   constructor(
     private readonly deps: {
@@ -76,20 +79,29 @@ export class AgentTuiController {
     return join(this.deps.runDir, "agent-settings", `${runtimeKey}.json`);
   }
 
-  /** 模式切换唯一入口（路由 mode 动作调用）。同 mode 幂等 no-op。 */
+  /** 模式切换唯一入口（路由 mode 动作调用）。同 mode 幂等 no-op；同会话并发请求
+   *  串行化（锁内重读最新 metadata——入参快照在排队等待期间可能已过期）。 */
   async switchMode(metadata: SessionMetadata, target: AgentSessionMode): Promise<void> {
-    if ((metadata.mode ?? "chat") === target) return;
-    if (target === "terminal") await this.switchToTerminal(metadata);
-    else await this.switchToChat(metadata);
+    const runtimeKey = metadata.runtimeKey;
+    const prev = (this.switchLocks.get(runtimeKey) ?? Promise.resolve()).catch(() => {});
+    const run = prev.then(async () => {
+      const fresh = await this.deps.registry.getAgentMetadata(metadata.projectName, metadata.id);
+      if (!fresh || (fresh.mode ?? "chat") === target) return;
+      if (target === "terminal") await this.switchToTerminal(fresh);
+      else await this.switchToChat(fresh);
+    });
+    this.switchLocks.set(runtimeKey, run);
+    try {
+      await run;
+    } finally {
+      if (this.switchLocks.get(runtimeKey) === run) this.switchLocks.delete(runtimeKey);
+    }
   }
 
   private async switchToTerminal(metadata: SessionMetadata): Promise<void> {
     const { claudeRuntime, tmuxRuntime, registry, approvalCenter } = this.deps;
     const runtimeKey = metadata.runtimeKey;
-    // 1) headless 让位：silent 关（不广播 closed、不走审批 settled 回调；autoRetry
-    //    destroySession / relay 清理照旧）。
-    await claudeRuntime.close(runtimeKey, { silent: true });
-    // 2) hooks settings（0600，随会话生命周期清理）+ 状态文件（先建空文件，fs.watch 才有 inode 可挂）。
+    // 1) hooks settings（0600，随会话生命周期清理）+ 状态文件（先建空文件，fs.watch 才有 inode 可挂）。
     await mkdir(join(this.deps.runDir, "agent-settings"), { recursive: true });
     await mkdir(join(this.deps.runDir, "agent-status"), { recursive: true });
     await writeFile(
@@ -98,13 +110,22 @@ export class AgentTuiController {
       { mode: 0o600 },
     );
     await writeFile(this.statusPath(runtimeKey), "", { mode: 0o600 });
-    // 3) **形态先落盘，再起 pane**：顺序有意为之（fail-closed 方向）——若先起 pane 后落盘，
-    //    落盘失败会留下「tmux 里 CLI 在跑、档案仍是 chat」，此时 claude-stream 放行，headless
-    //    会用 --resume 拉起同一个 id = 双写 JSONL。先落盘则最坏是「档案 terminal + 无 pane」，
-    //    方向安全：claude-stream 一律拒绝，重试「回到对话」即自愈。
+    // 2) **形态先落盘，再杀 headless / 起 pane**：顺序有意为之（fail-closed 方向）——mode
+    //    落盘后 claude-stream 一律拒绝（open/injectUserPrompt 双守卫），此后才关 headless：
+    //    「close（进程未注册 = no-op）与落盘之间」新连接撞 ensureRunning 的双写窗口被压到
+    //    只剩「早已过守卫的 in-flight spawn」（窗口 ~1s，review P1-2：残余面记档接受）。
+    //    先落盘则最坏是「档案 terminal + 无 pane」，方向安全：claude-stream 一律拒绝，
+    //    重试「回到对话」即自愈。
     await registry.setAgentSessionMode(metadata.id, "terminal");
-    // 4) tmux pane 起 CLI 原生形态（argv 全来自会话 metadata，见 resolveTuiSpawn）。
-    const args = await claudeRuntime.resolveTuiSpawn(metadata);
+    // 3) headless 让位：silent 关（不广播 closed、不走审批 settled 回调；autoRetry
+    //    destroySession / relay 清理照旧）。
+    await claudeRuntime.close(runtimeKey, { silent: true });
+    // 4) tmux pane 起 CLI 原生形态（argv 全来自会话 metadata，见 resolveTuiSpawn；
+    //    settingsPath 接通 hooks——CLI 真正加载三 hook，review P1-1 断链修复）。
+    const args = await claudeRuntime.resolveTuiSpawn({
+      ...metadata,
+      settingsPath: this.settingsPath(runtimeKey),
+    });
     try {
       await tmuxRuntime.startCommand(metadata, args.map(shellQuote).join(" "));
     } catch (error) {
@@ -127,6 +148,11 @@ export class AgentTuiController {
     const runtimeKey = metadata.runtimeKey;
     this.teardownTerminal(runtimeKey);
     await tmuxRuntime.close(runtimeKey);
+    // **mode 先于 ensureRunning 落盘**（review P2-3）：pane 已死、headless 未起，此刻写
+    // mode=chat 没有双写窗口；若先起 headless 后落盘，ensureRunning 失败会留下「pane 死 +
+    // 档案 terminal」的全堵半态。先落盘则失败态 = 档案 chat + 无进程，下次任一端打开会话
+    // 时 claude-stream ensureRunning 正常拉起 headless——半态自愈。
+    await registry.setAgentSessionMode(metadata.id, "chat");
     // headless 复位（--resume 同 id；spawnInitialStatus 归一与 startAgent/claude-stream 同口径）。
     await claudeRuntime.ensureRunning(
       runtimeKey,
@@ -139,7 +165,6 @@ export class AgentTuiController {
       metadata.effort,
       spawnInitialStatus(metadata.status),
     );
-    await registry.setAgentSessionMode(metadata.id, "chat");
     // 多端跟随：terminal→chat 方向未切换端经「pane 被 kill → 面板收 ended → 失效 detail」
     // 跟随；此处关 claude-stream WS 是防御性 no-op（terminal 期本就没有 chat WS）。
     this.deps.onModeSwitched?.(runtimeKey);

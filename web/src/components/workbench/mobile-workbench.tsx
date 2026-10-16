@@ -1210,10 +1210,14 @@ function MobileProjectWorkbench({
   //（无 stdin 控制通道 → 自动重试让位）；切换门槛严格 idle-only。
   const focusSessionMode = focusAgentDetail.data?.session.mode ?? "chat";
   const focusTerminalMode = focusIsClaude && focusSessionMode === "terminal";
-  const focusModeSwitchable =
-    focusIsClaude &&
-    focusAgentDetail.data?.session.status !== "working" &&
-    focusAgentDetail.data?.session.status !== "blocked";
+  // 存量会话无钉 claudeSessionId 无法 --resume（review P3-8：禁用 + 原因文案，防必败弹窗循环）。
+  const focusModeSwitchBlockedReason = !focusAgentDetail.data?.session.claudeSessionId
+    ? t("session.modeSwitch.legacy")
+    : focusAgentDetail.data?.session.status === "working" ||
+        focusAgentDetail.data?.session.status === "blocked"
+      ? t("session.modeSwitch.busy")
+      : undefined;
+  const focusModeSwitchable = focusIsClaude && focusModeSwitchBlockedReason === undefined;
   const { modeSwitch: focusModeSwitch, holder: focusModeSwitchHolder } = useSessionModeSwitch();
   // 行1 标题与 runct 徽标（spec §4.1-1）：标题 = 当前聚焦对象名（skill tab 名 / 实例名；
   // detail 未热时 instanceNameMemo sidecar 兜底防 id 闪现——tab 首帧同款语义），无聚焦对象
@@ -1465,13 +1469,13 @@ function MobileProjectWorkbench({
                       ...(focusIsClaude
                         ? [
                             {
-                              label: focusModeSwitchable
-                                ? t(
-                                    focusSessionMode === "terminal"
-                                      ? "session.backToChat"
-                                      : "session.openInTerminal",
-                                  )
-                                : t("session.modeSwitch.busy"),
+                              label:
+                                focusModeSwitchBlockedReason ??
+                                t(
+                                  focusSessionMode === "terminal"
+                                    ? "session.backToChat"
+                                    : "session.openInTerminal",
+                                ),
                               icon: (
                                 <ShellIcon
                                   name={focusSessionMode === "terminal" ? "chat" : "terminal"}

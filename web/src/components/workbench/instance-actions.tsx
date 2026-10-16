@@ -70,11 +70,12 @@ export function useRenameSession() {
 }
 
 /**
- * 双模式切换进行中标记（按 sessionId），AgentPanelRouter 消费：pending 时在面板顶部渲染
- * spinner 细条——POST /mode 同步等 1-3s（杀 headless + tmux spawn + CLI 启动），菜单点击
- * 即关（不 keepOpen）后这个细条就是唯一的进行中反馈。
+ * 双模式切换进行中标记（按 sessionId 集合），AgentPanelRouter 消费：pending 时在面板顶部
+ * 渲染 spinner 细条——POST /mode 同步等 1-3s（杀 headless + tmux spawn + CLI 启动），菜单
+ * 点击即关（不 keepOpen）后这个细条就是唯一的进行中反馈。集合而非单值：多 tab / 分屏同时
+ * 各有一会话在切换时互不互踩（review P3-6）。
  */
-export const sessionModeSwitchPendingAtom = atom<string | null>(null);
+export const sessionModeSwitchPendingAtom = atom<ReadonlySet<string>>(new Set<string>());
 
 /**
  * 双模式切换（chat ↔ terminal，2026-10-15）：POST mode → 失效详情 + 列表 + 全局顶层。
@@ -92,7 +93,7 @@ export function useSessionModeSwitch() {
   const modeSwitch = useMutation({
     mutationFn: (vars: { projectName: string; sessionId: string; mode: AgentSessionMode }) =>
       switchAgentSessionMode(vars.projectName, vars.sessionId, vars.mode),
-    onMutate: (vars) => setPending(vars.sessionId),
+    onMutate: (vars) => setPending((prev) => new Set(prev).add(vars.sessionId)),
     onError: (error, vars) => {
       const conflict = error instanceof ApiClientError && error.code === "SESSION_STATE_CONFLICT";
       void confirm({
@@ -106,7 +107,11 @@ export function useSessionModeSwitch() {
       });
     },
     onSettled: (_data, _error, vars) => {
-      setPending(null);
+      setPending((prev) => {
+        const next = new Set(prev);
+        next.delete(vars.sessionId);
+        return next;
+      });
       return Promise.all([
         queryClient.invalidateQueries({
           exact: true,

@@ -195,7 +195,9 @@ describe("useClaudeSession websocket lifecycle", () => {
     vi.useFakeTimers();
     try {
       const onModeConflict = vi.fn();
-      renderHook(() => useClaudeSession("proj", "sess", undefined, undefined, { onModeConflict }));
+      const { result } = renderHook(() =>
+        useClaudeSession("proj", "sess", undefined, undefined, { onModeConflict }),
+      );
       await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
       const socket = MockSocket.instances[0];
       act(() => socket.open());
@@ -212,6 +214,9 @@ describe("useClaudeSession websocket lifecycle", () => {
       });
       expect(onModeConflict).toHaveBeenCalledTimes(1);
       expect(socket.readyState).toBe(MockSocket.CLOSED);
+      // P3-7：连接态一并清理（connected/loading 归零），不留假连接态给其它消费面。
+      expect(result.current.connected).toBe(false);
+      expect(result.current.loading).toBe(false);
 
       act(() => {
         vi.advanceTimersByTime(1000);

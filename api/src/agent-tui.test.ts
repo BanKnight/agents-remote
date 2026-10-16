@@ -51,8 +51,17 @@ async function seed() {
     async close(key: string, opts?: { silent?: boolean }) {
       closeCalls.push({ key, silent: opts?.silent });
     },
-    async resolveTuiSpawn() {
-      return ["claude", "--resume", metadata.claudeSessionId!, "--mcp-config", '{"a":"b c"}'];
+    async resolveTuiSpawn(m?: { claudeSessionId?: string; settingsPath?: string }) {
+      // 回显 settingsPath：断言「CLI 真的拿到 --settings」（P1-1 断链修复的控制器级锁定）。
+      return [
+        "claude",
+        "--resume",
+        m?.claudeSessionId ?? "",
+        "--settings",
+        m?.settingsPath ?? "",
+        "--mcp-config",
+        '{"a":"b c"}',
+      ];
     },
     async ensureRunning(...args: unknown[]) {
       ensureCalls.push(args);
@@ -131,7 +140,7 @@ test("TUI_STATUS_SIGNAL_BY_TOKEN 三 token 映射关键三态信号", () => {
 
 // ── switchToTerminal ────────────────────────────────────────────────────
 
-test("switchToTerminal：silent 关 headless → 落 settings/状态文件（0600）→ mode 落盘 → tmux 起 CLI", async () => {
+test("switchToTerminal：落 settings/状态文件（0600）→ mode 落盘 → silent 关 headless → tmux 起 CLI（--settings 接通）", async () => {
   const h = await seed();
   await h.controller.switchMode(h.metadata, "terminal");
 
@@ -147,9 +156,10 @@ test("switchToTerminal：silent 关 headless → 落 settings/状态文件（060
   expect(await readFile(statusPath(h.runtimeKey), "utf8")).toBe("");
   expect((await stat(statusPath(h.runtimeKey))).mode & 0o777).toBe(0o600);
 
-  // tmux 命令：argv 逐个单引号包裹（inline JSON 的引号/空格原样抵达 CLI）。
+  // tmux 命令：argv 逐个单引号包裹（inline JSON 的引号/空格原样抵达 CLI）；--settings
+  // 在列 = hooks 真被 CLI 加载（P1-1 断链修复，此前 argv 漏带 → 状态文件恒空）。
   expect(h.tmuxCommands).toEqual([
-    `'claude' '--resume' '${h.metadata.claudeSessionId}' '--mcp-config' '{"a":"b c"}'`,
+    `'claude' '--resume' '${h.metadata.claudeSessionId}' '--settings' '${join(runDir, "agent-settings", `${h.runtimeKey}.json`)}' '--mcp-config' '{"a":"b c"}'`,
   ]);
 
   // 形态落盘（详情/列表透出）+ 多端跟随回调（关该会话全部 claude-stream WS）。
@@ -189,6 +199,45 @@ test("switchMode 同 mode 幂等：不重复起进程", async () => {
   await h.controller.switchMode(h.metadata, "chat");
   expect(h.closeCalls).toEqual([]);
   expect(h.tmuxCommands).toEqual([]);
+});
+
+test("switchMode 并发请求串行化：排队 + 锁内重读最新 mode（review P2-4）", async () => {
+  const h = await seed();
+  // startCommand 挂闸：第一个切换（chat→terminal）卡在起 pane，第二个请求（→chat）必须排队。
+  let releasePane: (() => void) | undefined;
+  const paneGate = new Promise<void>((resolve) => {
+    releasePane = resolve;
+  });
+  const gatedPaneStarts: string[] = [];
+  let gatedPaneCloses = 0;
+  const gated = new AgentTuiController({
+    runDir,
+    registry,
+    claudeRuntime: h.claudeRuntime,
+    tmuxRuntime: {
+      startCommand: (_metadata: unknown, command: string) => {
+        gatedPaneStarts.push(command);
+        return paneGate;
+      },
+      async close() {
+        gatedPaneCloses += 1;
+      },
+    } as unknown as TmuxRuntime,
+  });
+  const p1 = gated.switchMode(h.metadata, "terminal");
+  const p2 = gated.switchMode(h.metadata, "chat");
+  // 第二个请求在锁上排队（第一个还没放行——p2 若已执行 chat 方向，pane 会被 close）。
+  await new Promise((r) => setTimeout(r, 30));
+  expect(gatedPaneStarts).toHaveLength(1); // p1 已推进到起 pane（记录后挂闸）
+  expect(gatedPaneCloses).toBe(0); // p2 仍在排队，chat 方向未执行
+  releasePane?.();
+  await Promise.all([p1, p2]);
+
+  // 最终 mode=chat（第二个请求在锁内重读到 mode=terminal，执行 chat 方向）；
+  // 两个方向都真实执行过（tmux 起了 pane、也关了 pane）。
+  expect((await registry.getAgentSession(project.name, h.sessionId))?.mode).toBe("chat");
+  expect(gatedPaneStarts).toHaveLength(1);
+  expect(gatedPaneCloses).toBe(1);
 });
 
 // ── 状态文件 watcher（关键三态）──────────────────────────────────────────

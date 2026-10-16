@@ -417,7 +417,13 @@ export const createFetchHandler =
                   : result.reason === "terminal_mode"
                     ? "Session is in terminal mode"
                     : "Prompt text must not be empty",
-                result.reason === "session_not_found" ? 404 : 409,
+                // 404 = 会话不存在；409 = terminal 形态守卫（状态冲突）；400 = 其余
+                //（empty_text 等请求自身非法——review P2-5：此前误并入 409）。
+                result.reason === "session_not_found"
+                  ? 404
+                  : result.reason === "terminal_mode"
+                    ? 409
+                    : 400,
               ),
             );
           }

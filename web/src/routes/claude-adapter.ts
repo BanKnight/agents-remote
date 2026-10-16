@@ -4971,7 +4971,15 @@ export function useClaudeSession(
     };
 
     socket.onclose = () => {
-      if (!cancelled && !modeConflict) {
+      // modeConflict 关闭同样清理连接态（review P3-7）：面板即将被撤下，但残留 connected/
+      // loading 会让其它消费面读到假连接态；只跳过重连（重连注定再撞守卫）。
+      if (modeConflict) {
+        if (socketRef.current === socket) socketRef.current = null;
+        setConnected(false);
+        setLoading(false);
+        return;
+      }
+      if (!cancelled) {
         socketRef.current = null;
         setConnected(false);
         setLoading(true);
