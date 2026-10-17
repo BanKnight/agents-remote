@@ -73,7 +73,14 @@ export class AgentTuiController {
        *  的 done/blocked 才有推送（blocked 无审批登记详情，payload 不带 toolName）。 */
       onStatusChanged?: (sessionId: string, status: AgentSessionStatus) => void;
     },
-  ) {}
+  ) {
+    // hooks 命令把状态文件路径单引号包裹（buildTuiHooksSettings）——runDir 出自服务端
+    // 配置（~/.agents-remote），构造时显式断言不含单引号，否则 hook 命令会被截断
+    // （security review P3：把隐式前提显式化，fail-fast 在装配期而非静默断链）。
+    if (deps.runDir.includes("'")) {
+      throw new Error(`runDir must not contain single quotes: ${deps.runDir}`);
+    }
+  }
 
   private statusPath(runtimeKey: string): string {
     return join(this.deps.runDir, "agent-status", runtimeKey);
@@ -126,11 +133,13 @@ export class AgentTuiController {
     await claudeRuntime.close(runtimeKey, { silent: true });
     // 4) tmux pane 起 CLI 原生形态（argv 全来自会话 metadata，见 resolveTuiSpawn；
     //    settingsPath 接通 hooks——CLI 真正加载三 hook，review P1-1 断链修复）。
-    const args = await claudeRuntime.resolveTuiSpawn({
-      ...metadata,
-      settingsPath: this.settingsPath(runtimeKey),
-    });
+    //    resolveTuiSpawn 同在 try 内（code review P2：spawn 解析失败同走回滚，不留
+    //    「mode=terminal + 有 hooks 文件却无 pane」半态）。
     try {
+      const args = await claudeRuntime.resolveTuiSpawn({
+        ...metadata,
+        settingsPath: this.settingsPath(runtimeKey),
+      });
       await tmuxRuntime.startCommand(metadata, args.map(shellQuote).join(" "));
     } catch (error) {
       // 起 pane 失败（tmux server 不可达等）：形态退回 chat + 清掉刚写的 settings/状态文件——
@@ -194,13 +203,19 @@ export class AgentTuiController {
     sessions: Array<{ id: string; runtimeKey: string; status: SessionMetadata["status"] }>,
   ): Promise<void> {
     for (const { id, runtimeKey, status } of sessions) {
-      const exists = await stat(this.statusPath(runtimeKey)).then(
-        () => true,
-        () => false,
-      );
-      if (!exists) continue;
-      this.tuiStatus.set(runtimeKey, spawnInitialStatus(status));
-      this.startWatcher(runtimeKey, id);
+      // per-session 容错（code review P2）：单会话异常（如文件在 stat 后、watch() 同步
+      // 抛 ENOENT 的窗口）只跳过该会话，不连坐其余 terminal 会话的 watcher 重挂。
+      try {
+        const exists = await stat(this.statusPath(runtimeKey)).then(
+          () => true,
+          () => false,
+        );
+        if (!exists) continue;
+        this.tuiStatus.set(runtimeKey, spawnInitialStatus(status));
+        this.startWatcher(runtimeKey, id);
+      } catch (error) {
+        console.warn(`[agent-tui] hydrate ${runtimeKey} failed:`, error);
+      }
     }
   }
 

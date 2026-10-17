@@ -1711,8 +1711,9 @@ export const startApi = async () => {
   };
   // PWA 通知出口（GUI 与 terminal 两条采集源共用，统一管道）：done/error/blocked 即
   // 「需要人关注」；sessionName 异步回填，payload 深链服务端拼好。fire-and-forget，
-  // 失败仅告警。GUI 的 blocked 不经此（由 approval-center 登记回调发，带 toolName 详情，
-  // status 出口再发会双通知）；terminal 的 blocked 无审批登记，经此补齐推送。
+  // 失败仅告警。gate 放行 blocked 是 terminal 采集源所需；**GUI 采集源（下方
+  // setOnSessionStatusChange）只对 done/error 调用**——GUI 的 blocked 由 approval-center
+  // 登记回调发（带 toolName 详情），status 出口再发会同帧双通知（code review P1）。
   const notifyPushStatus = (sessionId: string, status: AgentSessionStatus) => {
     if (status !== "done" && status !== "error" && status !== "blocked") return;
     void (async () => {
@@ -1762,7 +1763,10 @@ export const startApi = async () => {
   claudeRuntime.setOnSessionStatusChange((sessionId, status) => {
     if (status === "closed") return;
     void sessionRegistry.setAgentSessionStatus(sessionId, status);
-    notifyPushStatus(sessionId, status);
+    // 仅 done/error 经 status 出口：GUI 的 blocked 由 approval-center 登记回调发（带
+    // toolName 详情），此处再发会同帧双通知（code review P1 修复——gate 放行 blocked
+    // 是 terminal 采集源所需，GUI 侧必须排除）。
+    if (status === "done" || status === "error") notifyPushStatus(sessionId, status);
   });
   approvalCenter.onRuntimeApprovalsSettled = (runtimeKey) =>
     claudeRuntime.reportApprovalSettled(runtimeKey);

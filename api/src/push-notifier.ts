@@ -1,4 +1,4 @@
-import { createPrivateKey, createSign } from "node:crypto";
+import { createPrivateKey, createSign, type KeyObject } from "node:crypto";
 import { generateRequestDetails } from "web-push";
 import type { PushMessagePayload, PushNotificationKind } from "@agents-remote/shared";
 import type { SettingsStore } from "./settings-store";
@@ -146,21 +146,35 @@ const goneStatus = (reason: unknown): number => {
 // （aes128gcm/ECDH）不受影响仍走库产物。
 const VAPID_SUBJECT_PLACEHOLDER = "mailto:agents-remote@invalid";
 
+// createPrivateKey 的 JWK 导入每次发送重建（解析 + EC 导入）有常量开销——PushKeyManager
+// 进程内返回同一 VapidKeys 实例，按对象身份 WeakMap 缓存派生 KeyObject 复用；换钥（重启
+// 后新实例）自然失效（code review P3）。
+const vapidPrivateKeyCache = new WeakMap<VapidKeys, KeyObject>();
+
+const vapidPrivateKey = (vapid: VapidKeys): KeyObject => {
+  let key = vapidPrivateKeyCache.get(vapid);
+  if (!key) {
+    const raw = Buffer.from(vapid.publicKey, "base64url"); // 65B：0x04 || x || y
+    key = createPrivateKey({
+      key: {
+        kty: "EC",
+        crv: "P-256",
+        x: raw.subarray(1, 33).toString("base64url"),
+        y: raw.subarray(33, 65).toString("base64url"),
+        d: vapid.privateKey,
+      },
+      format: "jwk",
+    });
+    vapidPrivateKeyCache.set(vapid, key);
+  }
+  return key;
+};
+
 /** 自实现 VAPID JWT（RFC 8292，无 sub）：库版 Authorization 因强制 subject 不可用，
  *  签名逻辑很短（ES256 + aud/exp 两声明）不值得引新依赖。derToJose 语义：ECDSA DER 签名
  *  → JOSE raw（r||s 各 32B 左零填充）。 */
 export const signVapidAuthorization = (endpoint: string, vapid: VapidKeys): string => {
-  const raw = Buffer.from(vapid.publicKey, "base64url"); // 65B：0x04 || x || y
-  const privateKey = createPrivateKey({
-    key: {
-      kty: "EC",
-      crv: "P-256",
-      x: raw.subarray(1, 33).toString("base64url"),
-      y: raw.subarray(33, 65).toString("base64url"),
-      d: vapid.privateKey,
-    },
-    format: "jwk",
-  });
+  const privateKey = vapidPrivateKey(vapid);
   const encode = (value: object): string =>
     Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
   const header = encode({ typ: "JWT", alg: "ES256" });
@@ -173,6 +187,11 @@ export const signVapidAuthorization = (endpoint: string, vapid: VapidKeys): stri
   // DER 签名（SEQUENCE{INTEGER r, INTEGER s}）→ raw：逐 INTEGER 去符号填充位后左补零。
   let offset = 2;
   const readInt = (): Buffer => {
+    // 形状断言（security review P3）：DER 异常（截断/误用）显式抛错而非越界读出静默
+    // 错误签名。sign() 产物恒合法，此路实际不可达——纯防御。
+    if (offset + 2 > der.length || offset + 2 + der[offset + 1] > der.length) {
+      throw new Error("malformed DER ECDSA signature");
+    }
     const len = der[offset + 1];
     let value = der.subarray(offset + 2, offset + 2 + len);
     offset += 2 + len;
