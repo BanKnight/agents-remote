@@ -32,6 +32,12 @@ const SUBSCRIPTION_GONE_STATUS = new Set([404, 410]);
 /** VAPID token 有效期（RFC 8292 建议值，上限 24h）。 */
 const VAPID_TTL_SECONDS = 12 * 60 * 60;
 
+/** 推送消息在推送服务（APNs）的暂存时长：设备不可达期间 APNs 代存，回来即补送，
+ *  过期即丢弃。取 APNs 上限 24h——「该知道的事完全不知道」远比「迟到的事件快照
+ *  可能已失效」代价大（通知点进会话看到的是实时状态，过时只影响提醒本身）；
+ *  用户拍板无脑顶格（2026-10-17）。 */
+const PUSH_TTL_SECONDS = 24 * 60 * 60;
+
 export const pushTitle = (info: { projectName: string; sessionName?: string }): string =>
   info.sessionName || info.projectName;
 
@@ -193,7 +199,7 @@ const defaultSend =
           publicKey: vapid.publicKey,
           privateKey: vapid.privateKey,
         },
-        TTL: 3600,
+        TTL: PUSH_TTL_SECONDS,
       },
     );
     const response = await fetch(subscription.endpoint, {
