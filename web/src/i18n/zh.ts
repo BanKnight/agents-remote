@@ -955,6 +955,28 @@ export const zh: Record<TranslationKey, string> = {
   "settings.logoutConfirm":
     "清除本设备的登录凭证。服务端数据与 Agent 会话不受影响，重新登录即可恢复访问。",
 
+  // Web Push notifications（PWA 通知批：设置页逐类开关）
+  "settings.section.notifications": "通知",
+  "settings.notifications.status": "推送通知",
+  "settings.notifications.statusHint": "会话需要人关注时发系统通知",
+  "settings.notifications.enable": "开启",
+  "settings.notifications.disable": "关闭",
+  "settings.notifications.enabled": "已开启",
+  "settings.notifications.off": "未开启",
+  "settings.notifications.needsPwa": "需先添加到主屏幕",
+  "settings.notifications.deniedHint": "通知已在系统设置中被阻止，请到系统设置为本应用开启",
+  "settings.notifications.kindBlocked": "等待审批",
+  "settings.notifications.kindBlockedHint": "工具调用需要你确认",
+  "settings.notifications.kindDone": "任务完成",
+  "settings.notifications.kindDoneHint": "Agent 回合结束",
+  "settings.notifications.kindError": "任务出错",
+  "settings.notifications.kindErrorHint": "回合以错误结束",
+  "settings.notifications.kindDisabledHint": "请先开启推送通知",
+  "settings.notifications.kindsTitle": "通知类型",
+  "api.pushSubscribeFailed": "推送通知开启失败",
+  "api.pushUnsubscribeFailed": "推送通知关闭失败",
+  "api.settingsUpdateFailed": "设置保存失败",
+
   // Plugins（插件入口：skill + mcp 两层作用域，导航重命名为 /plugins）
   "plugins.title": "插件",
   "plugins.switchProject": "切换项目",

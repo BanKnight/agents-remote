@@ -1,4 +1,4 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode, useState } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AUTO_RETRY_DEFAULT,
@@ -22,6 +22,7 @@ import {
   type UpdateClaudePresetRequest,
   type UpdatePiPresetRequest,
   type UpdatePiRuntimeRequest,
+  type PushNotificationKind,
 } from "@agents-remote/shared";
 
 import { useT } from "../../i18n";
@@ -35,6 +36,13 @@ import {
 import type { TranslationKey } from "../../i18n/types";
 import { clearAuthOk } from "../../lib/auth-storage";
 import { isStandaloneDisplay } from "../../lib/display-mode";
+import {
+  canUsePush,
+  disablePush,
+  enablePush,
+  getPushSubscription,
+  pushPermission,
+} from "../../lib/push";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { useTheme } from "../../theme";
 import { toggleSwitchKnobClasses, toggleSwitchTrackClasses } from "./shell-primitives";
@@ -58,6 +66,7 @@ import {
   updateAcpRuntime,
   updateClaudePreset,
   updateClaudeRuntime,
+  updateNotificationSettings,
   updatePiPreset,
   updatePiRuntime,
 } from "../../api/client";
@@ -100,7 +109,7 @@ const TIER_LABEL: Record<ClaudeModelTier, TranslationKey> = {
 };
 
 /** 设置页两层结构的 section 标识（决策 48，Apple 设置范式）。外壳持有、SettingsContent 接 props。 */
-export type SettingsSection = "root" | "claude" | "pi" | "acp" | "general";
+export type SettingsSection = "root" | "claude" | "pi" | "acp" | "general" | "notifications";
 
 /** 各 section 的 header 标题（桌面弹窗 header / 移动 MobilePageHeader 共用）。 */
 export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT>["t"]): string => {
@@ -113,6 +122,8 @@ export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT
       return t("settings.section.acp");
     case "general":
       return t("settings.section.general");
+    case "notifications":
+      return t("settings.section.notifications");
     default:
       return t("settings.title");
   }
@@ -183,6 +194,9 @@ export function SettingsContent({
     case "general":
       body = <GeneralSection />;
       break;
+    case "notifications":
+      body = <NotificationsSection />;
+      break;
     default:
       body = <SettingsRootView loading={loading} settings={settings} onNavigate={onNavigate} />;
   }
@@ -207,6 +221,13 @@ function SettingsRootView({
   const { t, pref: langPref } = useT();
   const { theme } = useTheme();
   const [standalone] = useState(() => isStandaloneDisplay());
+  // push 订阅态（入口行值位；NotificationsSection 里变更后 invalidate/refetch 这里不动，
+  // 简单 local refetch：focus 时读 getPushSubscription——subscription 是 SW 持久态，读它即可。
+  const [pushOn, setPushOn] = useState(false);
+  useEffect(() => {
+    if (!standalone) return;
+    void getPushSubscription().then((s) => setPushOn(Boolean(s)));
+  }, [standalone]);
   const { confirm, holder: confirmHolder } = useConfirm();
   const logoutMutation = useLogout();
 
@@ -354,6 +375,18 @@ function SettingsRootView({
           undefined,
           standalone ? "ok" : undefined,
         )}
+        {/* 通知入口（PWA 通知批）：值 = push 订阅态；非 standalone 显「需添加到主屏幕」 */}
+        {row(
+          t("settings.section.notifications"),
+          <>
+            {standalone
+              ? pushOn
+                ? t("settings.notifications.enabled")
+                : t("settings.notifications.off")
+              : t("settings.notifications.needsPwa")}
+          </>,
+          standalone ? () => onNavigate("notifications") : undefined,
+        )}
       </div>
 
       <button className="logout" onClick={handleLogout} type="button">
@@ -432,6 +465,144 @@ function GeneralSection() {
         </div>
       </div>
       <p className="kfoot mx-4">{t("settings.langHint")}</p>
+    </div>
+  );
+}
+
+const KIND_LABEL: Record<PushNotificationKind, TranslationKey> = {
+  blocked: "settings.notifications.kindBlocked",
+  done: "settings.notifications.kindDone",
+  error: "settings.notifications.kindError",
+};
+
+const KIND_HINT: Record<PushNotificationKind, TranslationKey> = {
+  blocked: "settings.notifications.kindBlockedHint",
+  done: "settings.notifications.kindDoneHint",
+  error: "settings.notifications.kindErrorHint",
+};
+
+/**
+ * 通知 detail（PWA 通知批）：推送开关（手势内 enable/disable，权限 denied 显系统设置指引）
+ * + 三类事件 toggle（偏好存服务端，PUT /api/settings/notifications）。
+ * 非支持环境（非 standalone / 无 PushManager）整组降级：推送行显「需添加到主屏幕」。
+ */
+function NotificationsSection() {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+  const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: getSettings });
+  const [subscribed, setSubscribed] = useState<boolean | null>(null);
+  const [denied, setDenied] = useState(false);
+  const [actionError, setActionError] = useState(false);
+
+  useEffect(() => {
+    setDenied(pushPermission() === "denied");
+    void getPushSubscription().then((s) => setSubscribed(Boolean(s)));
+  }, []);
+
+  const settingsMutation = useMutation({
+    mutationFn: updateNotificationSettings,
+    // 成败都失效：等待往返后以服务端值刷新（弱网下 toggle 短暂滞后属实况，非乐观 UI）。
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ["settings"] }),
+  });
+
+  const pushMutation = useMutation({
+    mutationFn: async (enable: boolean) => {
+      if (enable) {
+        await enablePush();
+      } else {
+        await disablePush();
+      }
+    },
+    onSuccess: () => {
+      setActionError(false);
+      void getPushSubscription().then((s) => setSubscribed(Boolean(s)));
+      setDenied(pushPermission() === "denied");
+    },
+    onError: () => {
+      setActionError(true);
+      setDenied(pushPermission() === "denied");
+    },
+  });
+
+  const supported = canUsePush();
+  // subscribed=null = 探测中（不渲染开关误导）；denied 时推送行仍可点（点了无意义，
+  // hint 指引系统设置）。
+  const pushBusy = pushMutation.isPending;
+  const kindToggleDisabled = subscribed !== true || settingsMutation.isPending;
+
+  const kindRow = (kind: PushNotificationKind) => {
+    const on = settingsQuery.data?.settings.notifications?.[kind] ?? true;
+    return (
+      <button
+        aria-checked={on}
+        className="setrow h-auto cursor-pointer gap-3 py-2.5 disabled:cursor-default disabled:opacity-60"
+        disabled={kindToggleDisabled}
+        onClick={() => settingsMutation.mutate({ [kind]: !on })}
+        role="switch"
+        type="button"
+      >
+        <span className="min-w-0">
+          <span className="block">{t(KIND_LABEL[kind])}</span>
+          <span className={settingsHintClasses}>{t(KIND_HINT[kind])}</span>
+          {kindToggleDisabled ? (
+            <span className={settingsHintClasses}>
+              {t("settings.notifications.kindDisabledHint")}
+            </span>
+          ) : null}
+        </span>
+        <span aria-hidden="true" className={`ml-auto shrink-0 ${toggleSwitchTrackClasses(on)}`}>
+          <span
+            className={`${toggleSwitchKnobClasses} ${on ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
+          />
+        </span>
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex flex-col">
+      <div className="sect">{t("settings.section.notifications")}</div>
+      <div className="sgroup">
+        <button
+          aria-checked={subscribed === true}
+          className="setrow h-auto cursor-pointer gap-3 py-2.5 disabled:cursor-default disabled:opacity-60"
+          disabled={!supported || pushBusy}
+          onClick={() => pushMutation.mutate(subscribed !== true)}
+          role="switch"
+          type="button"
+        >
+          <span className="min-w-0">
+            <span className="block">{t("settings.notifications.status")}</span>
+            <span className={settingsHintClasses}>{t("settings.notifications.statusHint")}</span>
+            {!supported ? (
+              <span className={settingsHintClasses}>{t("settings.notifications.needsPwa")}</span>
+            ) : null}
+            {denied ? (
+              <span className={settingsHintClasses}>{t("settings.notifications.deniedHint")}</span>
+            ) : null}
+            {actionError ? (
+              <span className="mt-0.5 block text-xs text-error">
+                {t("api.pushSubscribeFailed")}
+              </span>
+            ) : null}
+          </span>
+          <span
+            aria-hidden="true"
+            className={`ml-auto shrink-0 ${toggleSwitchTrackClasses(subscribed === true)}`}
+          >
+            <span
+              className={`${toggleSwitchKnobClasses} ${subscribed === true ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
+            />
+          </span>
+        </button>
+      </div>
+
+      <div className="sect">{t("settings.notifications.kindsTitle")}</div>
+      <div className="sgroup">
+        {kindRow("blocked")}
+        {kindRow("done")}
+        {kindRow("error")}
+      </div>
     </div>
   );
 }

@@ -90,10 +90,29 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      devOptions: { enabled: true },
-      workbox: {
-        skipWaiting: true,
-        clientsClaim: true,
+      // injectManifest 的 dev SW 是 ESM（sw.ts 原样 transform），须 module 注册；
+      // generateSW 时代的 dev SW 是 IIFE（classic），迁移后此项必须显式化。
+      // navigateFallback 给 dev 的 __WB_MANIFEST 注入 index.html 条目——否则 dev SW 顶层
+      // createHandlerBoundToURL('index.html') 抛 non-precached-url，SW evaluate 失败。
+      devOptions: { enabled: true, type: "module", navigateFallback: "index.html" },
+      // injectManifest 策略（PWA Web Push 批）：自定义 src/sw.ts 承载 push /
+      // notificationclick handler，同时保留原 generateSW 的全量 precache +
+      // navigateFallback 行为（sw.ts 手写 precacheAndRoute + NavigationRoute，
+      // navigateFallback/navigateFallbackDenylist/skipWaiting/clientsClaim 是
+      // generateSW 专有选项，injectManifest 下必须在 sw.ts 内自行实现）。
+      // ⚠️ strategies 不显式指定时恒 generateSW（只写 injectManifest 块不切换，
+      // build 日志 mode 行可核实）。
+      strategies: "injectManifest",
+      // sw 源文件 = src/sw.ts（srcDir 默认 public/，须显式指到 src/）。
+      srcDir: "src",
+      filename: "sw.ts",
+      // injectManifest 的 manifest 只含 vite bundle 产物；public/ 静态文件须 includeAssets
+      // 补进 precache。⚠️ webmanifest 不能列这里——插件自动注入的条目 revision 与 public
+      // 拷贝不同 → workbox add-to-cache-list-conflicting-entries → SW evaluate 直接失败。
+      includeAssets: ["icons/**/*"],
+      // injectionPoint 默认即 self.__WB_MANIFEST。
+      injectManifest: {
+        injectionPoint: "self.__WB_MANIFEST",
         // Precache every build artifact — JS/CSS chunks (incl. vendor-terminal
         // and vendor-assistant), index.html, icons, fonts — and serve them
         // straight from the precache. index.html is included so the SW, the
@@ -147,10 +166,9 @@ export default defineConfig({
           "**/line-*.js",
           "**/channel-*.js",
         ],
-        navigateFallback: "index.html",
-        // pages 对外 URL /p/... 是直访的静态站点内容,不是 SPA 路由 —— 必须排除,
-        // 否则 navigateFallback 会把它 fallback 到 precached index.html(SW 劫持)。
-        navigateFallbackDenylist: [/^\/p\//],
+        // navigateFallback/navigateFallbackDenylist 是 generateSW 专有——injectManifest
+        // 下由 sw.ts 的 NavigationRoute(createHandlerBoundToURL("index.html"),
+        // { denylist: [/^\/p\//] }) 等价实现。
       },
       manifest: {
         name: "智控 · AI 远程控制台",

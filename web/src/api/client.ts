@@ -129,6 +129,11 @@ import type {
   ApprovalRespondRequest,
   ApprovalRespondResponse,
   ApprovalsSnapshotResponse,
+  PushSubscribeRequest,
+  PushUnsubscribeRequest,
+  PushVapidPublicKeyResponse,
+  UpdateNotificationSettingsRequest,
+  UpdateNotificationSettingsResponse,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
 import { resolveTranslation } from "../i18n/translate";
@@ -944,6 +949,38 @@ export function createEchoSocket() {
 
 export async function getSettings(): Promise<GetSettingsResponse> {
   return fetchJson("/api/settings", "api.settingsFetchFailed");
+}
+
+// ── Settings: Web Push 通知（PWA 通知批）────────────────────────────
+
+export async function getVapidPublicKey(): Promise<PushVapidPublicKeyResponse> {
+  return fetchJson("/api/push/vapid-public-key", "api.pushSubscribeFailed");
+}
+
+export async function subscribePush(input: PushSubscribeRequest): Promise<{ ok: true }> {
+  return fetchJson("/api/push/subscriptions", "api.pushSubscribeFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies PushSubscribeRequest),
+  });
+}
+
+export async function unsubscribePush(input: PushUnsubscribeRequest): Promise<{ ok: true }> {
+  return fetchJson("/api/push/subscriptions", "api.pushUnsubscribeFailed", {
+    method: "DELETE",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies PushUnsubscribeRequest),
+  });
+}
+
+export async function updateNotificationSettings(
+  input: UpdateNotificationSettingsRequest,
+): Promise<UpdateNotificationSettingsResponse> {
+  return fetchJson("/api/settings/notifications", "api.settingsUpdateFailed", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies UpdateNotificationSettingsRequest),
+  });
 }
 
 export async function createClaudePreset(

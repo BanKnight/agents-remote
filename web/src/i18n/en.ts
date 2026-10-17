@@ -970,6 +970,29 @@ export const en = {
   "settings.logoutConfirm":
     "Clears the sign-in credential on this device. Server data and agent sessions are unaffected; sign in again to restore access.",
 
+  // Web Push notifications（PWA 通知批：设置页逐类开关）
+  "settings.section.notifications": "Notifications",
+  "settings.notifications.status": "Push notifications",
+  "settings.notifications.statusHint": "System notifications when a session needs attention",
+  "settings.notifications.enable": "Enable",
+  "settings.notifications.disable": "Turn off",
+  "settings.notifications.enabled": "On",
+  "settings.notifications.off": "Off",
+  "settings.notifications.needsPwa": "Add to Home Screen first",
+  "settings.notifications.deniedHint":
+    "Notifications are blocked in system settings. Enable them for this app there.",
+  "settings.notifications.kindBlocked": "Waiting for approval",
+  "settings.notifications.kindBlockedHint": "A tool call needs your confirmation",
+  "settings.notifications.kindDone": "Task completed",
+  "settings.notifications.kindDoneHint": "The agent turn finished",
+  "settings.notifications.kindError": "Task failed",
+  "settings.notifications.kindErrorHint": "The turn ended with an error",
+  "settings.notifications.kindDisabledHint": "Turn on push notifications first",
+  "settings.notifications.kindsTitle": "Notification types",
+  "api.pushSubscribeFailed": "Failed to enable push notifications",
+  "api.pushUnsubscribeFailed": "Failed to turn off push notifications",
+  "api.settingsUpdateFailed": "Failed to save settings",
+
   // Plugins（插件入口：skill + mcp 两层作用域，导航重命名为 /plugins）
   "plugins.title": "Plugins",
   "plugins.switchProject": "Switch project",

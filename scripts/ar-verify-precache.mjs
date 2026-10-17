@@ -25,7 +25,9 @@ try {
   process.exit(0);
 }
 
-const precacheUrls = [...sw.matchAll(/url:"([^"]+)"/g)].map((m) => m[1]);
+// manifest 条目两种形态：generateSW IIFE minify 后 `url:"assets/x.js"`（key 无引号）；
+// injectManifest ES bundle 后 `{"url":"assets/x.js"}`（key 带引号）。正则兼容两者。
+const precacheUrls = [...sw.matchAll(/url"?\s*:\s*"([^"]+)"/g)].map((m) => m[1]);
 const precacheJs = new Set(
   precacheUrls
     .filter((u) => u.startsWith("assets/") && u.endsWith(".js"))
