@@ -1962,6 +1962,13 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 
 **双 review 消化（code + security，均无 P1）**：已修——①SW `tag` 去 kind 只留 sessionId（同会话后到通知顶掉旧卡，注释与行为原本相反，P2）；②PushKeyManager `readOrCreate` single-flight（首启「设置页拉公钥」与「第一条 notify」并发双生成 + tmp 竞态可致内存/磁盘密钥永久分叉 → 重启后全推送 403 且不在清理集，P2）；③推送 endpoint 须 `https:` URL + 长度上限 2048/512（认证后盲 SSRF + 撑盘纵深，security P3）；④非 gone 发送失败补 `console.warn`（否则「为什么没收到推送」无从排查）；⑤denied hint 改 mount 时计算（原只在 mutation 后算，曾拒权用户进页面看不到指引）；⑥「乐观 UI」注释改实况（实际等 PUT+invalidate 往返）。记档不修——入口行 pushOn 与 section subscribed 两份本地 state（简化维度重复非错误）；store upsert/removeMany 读改写并发窗口（单用户低频 last-write-wins 可接受）；服务端通知文案暂只中文（payload 结构化留将来）；VAPID 换钥后旧订阅 401/403 无自愈（换钥属灾难恢复场景，届时全员重订）。
 
+**真机排障闭环（2026-10-17，`ecf5be9` + `e58d1a6`）——「开启成功但收不到通知」根因两枚**：
+
+- **根因一（发送 403）**：VAPID sub `mailto:agents-remote@localhost` 被 **APNs 拒 403 `BadJwtToken`**——与运行时（Node/Bun 复测同挂）、签名实现（web-push jws 链 / 自实现 RFC 8292 同挂）、传输（Bun fetch / curl 重放同挂）全无关，**唯一变量是 sub 的域名**：localhost → 任意合法域名，同密钥同订阅立即 201。APNs 对 sub 只做格式面拒绝，报错文案有误导性（BadJwtToken 而非 invalid subject）。修复 = `VAPID_SUBJECT` 常量换 `mailto:notify@bannight.com`。
+- **排障弯路记档（误诊「web-push 在 Bun 下签名无效」）**：本地验签把 JWT 的 raw (IEEE P1363) 签名直接喂给 `crypto.verify`——**Node/Bun 的 verify 对 EC key 默认期待 DER 签名**，raw 输入恒 FAIL → 「自实现验签失败」实为验签方法错；用 joseToDer 回转后验签 PASS，Node 原生 web-push 同样 403 才推翻误诊（自实现签名已回退，保留库原链路）。**验签教训：ES256 JWT 验签必须 raw→DER 转换（或 `dsaEncoding: "ieee-p1363"`，Bun 不支持该参数），「本地验签 FAIL」先查验签代码再怀疑被验对象**。
+- **根因二（TUI 期间不推送）**：terminal 形态状态旁路（hooks 状态文件 watcher）只写 registry 不触达 pushNotifier——turn 在 TUI 期间完成/审批提示时不推送。补 `AgentTuiController.onStatusChanged` 出口（迁移全发，gate 在消费侧）+ index.ts `notifyPushStatus` 共享函数：GUI 状态机（done/error）与 terminal watcher（done/blocked）两条采集源同一出口；GUI 的 blocked 不经此（approval-center 登记回调带 toolName 详情，status 出口再发会双通知）。
+- **排障方法面**：①「服务端发送无失败日志」≠「发送成功」——成功无日志（warn 仅失败路径），须主动构造测试推送分离变量；②变体实验定案模式：固定其余全部、只变一个变量（sub 域名）逐个试，两发 201 即破案；③一次性诊断脚本放 `/tmp` 或跑后立删——放 `scripts/` 会被 format 门禁扫到（本批踩过）。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。

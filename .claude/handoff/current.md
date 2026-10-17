@@ -1,10 +1,10 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-17（PWA Web Push 通知批，三 commit 已 push 至 main：`75890b2` + `591da88` + `c37ccf8`）
+> 最后更新：2026-10-17（PWA 通知真机排障闭环：`e58d1a6` TUI 推送链 + `ecf5be9` VAPID sub 修复，已 push；api 已 respawn）
 
 ## 一句话状态
 
-**PWA Web Push 通知批完成并 push（三 commit 已上远端 main）**：iOS 16.4+ standalone PWA 锁屏/后台可收系统通知，三类触发（等待审批 blocked / turn 完成 done / 出错 error），设置页逐类开关（偏好存服务端 settings.yaml `notifications` 域，页面冻结时服务端 gate 可读）。全链落地：Spike 1（web-push 分支 C：只用加密层 + Bun fetch 发送）→ Spike 2（generateSW→injectManifest 迁移，真修通）→ shared 类型 → api（VAPID 密钥/订阅存储/notifier/路由 + 装配接线）→ web（自写 sw.ts push handler + 客户端订阅 + 设置 section）→ 单测/e2e/双 review 消化。门禁全绿：api 985 + shared 10 + web 825 单测、e2e pwa-installable/mobile-nav/desktop-side、CSS 硬闸 + tokens 机检 + precache 无断链。
+**PWA 通知真机排障闭环 + TUI 期间推送补齐（`e58d1a6` + `ecf5be9` 已 push，api 已 respawn）**：真机「开启成功但收不到通知」根因 = **VAPID sub 的 `mailto:...@localhost` 域名被 APNs 拒 403 BadJwtToken**（与 Node/Bun、签名实现、fetch/curl 全无关，换域名同密钥同订阅立即 201；用户真机已收到测试推送，端到端全通）。另补齐 terminal 形态 done/blocked 推送（hooks 状态文件 watcher 加 `onStatusChanged` 出口 → 与 GUI 同一 `notifyPushStatus` 出口）。排障途中误诊「web-push 在 Bun 下签名无效」已证伪回退（验签方法错：raw 签名直接喂期待 DER 的 crypto.verify 恒 FAIL）。
 
 ## 本 session 焦点
 
@@ -18,14 +18,14 @@
 
 ### 进度
 
-- ✅ Spike 1/2（分支 C 定案；injectManifest 真修通）+ Phase 1 shared + Phase 2 api + Phase 3 web SW + Phase 4 设置 UI + Phase 5 测试
-- ✅ 单测：api 新建 4 文件 + 扩展 2（+30，全量 985）；web 新建 `lib/push.test.ts` + `settings-notifications.test.tsx`（+10，全量 825）；shared 10
-- ✅ e2e `pwa-installable.spec.ts` 扩展（SW 文本含 push/notificationclick handler）——1 passed；mobile-nav 6 + desktop-side 6 过
-- ✅ 双 review（code + security，均无 P1）消化完毕
-- ✅ commit `75890b2`（shared+api）+ `591da88`（web）+ `c37ccf8`（docs）；已 push（用户拍板）
-- ⏳ **本批真机清单（交用户，需 HTTPS tunnel 域名——LAN http 无法 subscribe）**：①添加到主屏幕 standalone 打开；②设置→通知开启权限弹窗 granted；③另一端触发审批 → 锁屏/后台收 blocked；④done / error 通知；⑤通知点击：后台聚焦跳深链、被杀冷启进深链；⑥前台正盯着不弹；⑦关「任务完成」开关后不再收 done（服务端读偏好）；⑧卸载 PWA 后 api 下次发送 404 自动清订阅；⑨iPhone + 桌面 Chrome 各自订阅互不影响；⑩发新 build autoUpdate 后 push handler 仍在
-- ⏳ 历史挂起：前几批真机清单未验收；`PROJECT_GIT_IDENTITY_MISSING` 专属文案；ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗
-- ⏳ 功能批候选：pi/acp/chat 会话推送（同款回调接入）/ mod 采集批 / 插件管理 UI
+- ✅ Spike 1/2 + Phase 1-5 + 双 review 消化 + 三 commit push（`75890b2`/`591da88`/`c37ccf8`）
+- ✅ 小项：`PROJECT_GIT_IDENTITY_MISSING` 专属文案（`6021ae7`）
+- ✅ 真机排障闭环：②开关开启已通；测试推送真机已收到（「判别/变体实验」弹窗）= 端到端全通
+- ✅ **根因修复（`ecf5be9`）**：VAPID sub `mailto:...@localhost` 被 APNs 拒 403 BadJwtToken → 换 `mailto:notify@bannight.com`（`push-notifier.ts` VAPID_SUBJECT 常量）
+- ✅ **TUI 推送链补齐（`e58d1a6`）**：`AgentTuiController.onStatusChanged` 出口 + index.ts `notifyPushStatus` 共享函数（GUI done/error 与 terminal done/blocked 同一出口；GUI blocked 仍走 approval-center 防双通知）
+- ⏳ **本批真机清单剩余（api 已 respawn 加载全部修复，可验）**：③GUI turn 完成 + PWA 后台 → 收 done；④TUI 模式 turn 完成 → 收 done（新链路）；⑤TUI 审批提示 → 收 blocked（payload 无 toolName，文案「等待审批：工具调用」）；⑥点击通知深链；⑦关「任务完成」开关不收；⑧卸载清订阅；⑨多设备；⑩autoUpdate 后 handler 仍在；⑪前台正盯着不弹（设计行为）
+- ⏳ 历史挂起：前几批真机清单未验收；ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗
+- ⏳ 功能批候选：mod 采集批 / 插件管理 UI / PTY+OSC 7501
 
 ### 阻塞 / 风险
 
