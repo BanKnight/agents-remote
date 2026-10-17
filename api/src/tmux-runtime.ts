@@ -197,8 +197,11 @@ export class TmuxRuntime implements RuntimeResources {
       },
     });
 
-    // proc.exited 与顶层 onExit 双挂去重（Bun 历史有 onExit 不触发 issue）。
+    // proc.exited 与顶层 onExit 双挂去重（Bun 历史有 onExit 不触发 issue）；refresh 定时器
+    // 清理在此单点执行（then 回调是微任务，执行时下方 const 已初始化；重复 clear 无害）。
     void proc.exited.then((code) => {
+      clearTimeout(refreshTimer);
+      clearInterval(periodicTimer);
       if (exited) return;
       exited = true;
       for (const cb of exitCbs) cb(code ?? null);
@@ -272,10 +275,6 @@ export class TmuxRuntime implements RuntimeResources {
       },
       onExit(cb) {
         exitCbs.add(cb);
-        void proc.exited.then(() => {
-          clearTimeout(refreshTimer);
-          clearInterval(periodicTimer);
-        });
       },
     };
   }
