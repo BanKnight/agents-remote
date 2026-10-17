@@ -1,43 +1,43 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-17（PWA 通知真机排障闭环：`e58d1a6` TUI 推送链 + `ecf5be9` VAPID sub 修复，已 push；api 已 respawn）
+> 最后更新：2026-10-18（terminal 行首残留根因修复 + 推送语义化 + 横幅样式恢复，三 commit 已 push）
 
 ## 一句话状态
 
-**PWA 通知真机排障闭环 + TUI 期间推送补齐（`e58d1a6` + `ecf5be9` 已 push，api 已 respawn）**：真机「开启成功但收不到通知」根因 = **VAPID sub 的 `mailto:...@localhost` 域名被 APNs 拒 403 BadJwtToken**（与 Node/Bun、签名实现、fetch/curl 全无关，换域名同密钥同订阅立即 201；用户真机已收到测试推送，端到端全通）。另补齐 terminal 形态 done/blocked 推送（hooks 状态文件 watcher 加 `onStatusChanged` 出口 → 与 GUI 同一 `notifyPushStatus` 出口）。排障途中误诊「web-push 在 Bun 下签名无效」已证伪回退（验签方法错：raw 签名直接喂期待 DER 的 crypto.verify 恒 FAIL）。
+**terminal 行首残留 bug 取证闭环并修复**：字节级三步取证（live 对照 → reset+回放 0 分歧复现 → refresh-client 愈合）定案根因 = **tmux client 增量 diff 发射与自身屏幕模型失同步**（pane 恒干净、帧流被污染、turn 期间持续再种子）；修复 = `tmux-runtime.ts` attach 三层防护（600ms churn 全重绘 + **5s 周期 × 15s 活动窗 refresh-client**），实测 settle 内容分歧归零。同批交付用户 mid-turn 两需求：推送 title 语义化「项目 · 会话」+ `.done→.complete` 横幅类名漏改补齐。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **技术路线 = Web Push 服务端推送**（前端 `new Notification()` 在 iOS PWA 切后台被 WebKit 冻结，否决）。web-push 只取 `generateRequestDetails` 加密产物（aes128gcm 密文 + VAPID headers），HTTP 由 Bun fetch 承担（sendNotification 内置走 node:https，Bun 下不可用——Spike 1 实证）。
-- **偏好存服务端**（settings.yaml `notifications` 域，non-optional normalize 补默认全 true，**不 bump schemaVersion**）——页面冻结时服务端推送必须能读偏好。
-- **injectManifest 迁移四坑 + dev SW 两坑**（全在 redesign-v2.md 记档）：strategies 必须显式；`srcDir: "src"`；`includeAssets: ["icons/**/*"]` 补 public 静态件；**webmanifest 绝不能列 includeAssets**（conflicting-entries → SW evaluate 失败）；dev SW 是 ESM → `devOptions.type: "module"`；dev `__WB_MANIFEST` 为 `[]` → `devOptions.navigateFallback: "index.html"`。**SW evaluate 失败原文唯一抓取路径 = CDP `ServiceWorker.enable` + `workerErrorReported`**。
-- **SW 语义**：push handler 前台抑制（`clients.matchAll` 任一 visible 即不弹）；`tag: payload.sessionId`（**只 sessionId 不带 kind**，同会话后到通知顶掉旧卡——review P2 修正）；notificationclick 有窗口 focus+navigate / 无窗口 openWindow（iOS 冷启）。
-- **review 消化**：single-flight（PushKeyManager `readOrCreate`，防首启并发双生成密钥致内存/磁盘分叉 → 重签名全 403）；endpoint 限 https + 长度上限（盲 SSRF 纵深）；非 gone 失败补 warn；denied hint mount 时计算。记档不修：双份订阅态 local state、store 并发窗口（单用户低频）、服务端文案暂只中文、VAPID 换钥无自愈。
+- **残留根因链**（取证定案，勿再重查）：①残留 = 捕获字节流的确定函数（reset+回放同流 0 分歧复现，跨实例可复现、与分帧方式无关）；②pane（server 模型）恒干净 → 污染在 tmux client 发射层；③仅全重绘愈合（resize/折叠 composer = 同机制）；④失同步在 turn 输出流期间持续再种子 → 一次性 refresh 无效；⑤残留集中在 col1-2 margin = tmux diff「跳过未变前缀」优化盲区。Bun PTY 读路径 20MB raw 测试零丢失（排除 api 侧）。
+- **双解析器对照的几何伪差陷阱**：回放 pane 是 40 行（status 占 1 行）而帧流写给 41 行 client（`ESC[1;41r`），「1 行偏移」不是解析器分歧——排查时必须先核对两侧几何再下结论。
+- **推送 title** = `{projectName} · {sessionName}`，无 sessionName 回落项目名（`pushTitle`，`e365ded`）。
+- **横幅样式丢失根因**：`541099c` 把裸类 `.done` 改名 `.complete`（让位 `.dot` 状态点变体）时消费点清点漏了 `ClaudeSessionDetailRoute.tsx` 的 `done mt-2`（提交声称 1 个消费点实际 2 个）——frontend-notes §34 的「改名 rg 清点」教训反例，`8cbe266` 补齐。
 
 ### 进度
 
-- ✅ Spike 1/2 + Phase 1-5 + 双 review 消化 + 三 commit push（`75890b2`/`591da88`/`c37ccf8`）
-- ✅ 小项：`PROJECT_GIT_IDENTITY_MISSING` 专属文案（`6021ae7`）
-- ✅ 真机排障闭环：②开关开启已通；测试推送真机已收到（「判别/变体实验」弹窗）= 端到端全通
-- ✅ **根因修复（`ecf5be9`）**：VAPID sub `mailto:...@localhost` 被 APNs 拒 403 BadJwtToken → 换 `mailto:notify@bannight.com`（`push-notifier.ts` VAPID_SUBJECT 常量）
-- ✅ **TUI 推送链补齐（`e58d1a6`）**：`AgentTuiController.onStatusChanged` 出口 + index.ts `notifyPushStatus` 共享函数（GUI done/error 与 terminal done/blocked 同一出口；GUI blocked 仍走 approval-center 防双通知）
-- ⏳ **本批真机清单剩余（api 已 respawn 加载全部修复，可验）**：③GUI turn 完成 + PWA 后台 → 收 done；④TUI 模式 turn 完成 → 收 done（新链路）；⑤TUI 审批提示 → 收 blocked（payload 无 toolName，文案「等待审批：工具调用」）；⑥点击通知深链；⑦关「任务完成」开关不收；⑧卸载清订阅；⑨多设备；⑩autoUpdate 后 handler 仍在；⑪前台正盯着不弹（设计行为）
-- ⏳ 历史挂起：前几批真机清单未验收；ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗
-- ⏳ 功能批候选：mod 采集批 / 插件管理 UI / PTY+OSC 7501
+- ✅ `63fae51` fix(api): tmux attach 周期 refresh-client 自愈（行首残留根因修复）
+- ✅ `e365ded` feat(api): 推送通知 title 语义化「项目 · 会话」
+- ✅ `8cbe266` fix(web): 完成横幅样式恢复（.complete 类名补齐）
+- ✅ 教训沉淀 `.claude/rules/claude-debugging.md`「tmux attach 渲染失同步」节
+- ✅ web 交付 checklist：CSS 硬闸 + content-type text/css + `.complete` 规则在 prod 产物
+- ⏳ **待用户真机验收**：terminal 残留自愈体感（中途瞬时残留 ≤5s 愈合，不再驻留）；推送通知 title 是否达意；气泡「✓ 完成 · N 轮…」样式恢复
+- ⏳ 历史挂起：PWA 通知真机清单剩余项（③-⑪）；ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗
+- ⏳ 功能批候选：mod 采集批 / 插件管理 UI / PTY+OSC 7501 / pi/acp 推送
 
 ### 阻塞 / 风险
 
-- 无。push 待用户指令（个人项目 main 直开，前批 push 均用户明示）。
-- 真机验证**必须 HTTPS**（Web Push subscribe 要求 secure context）；LAN http 下设置页只会显示降级态。
+- 无阻塞。修复类小 commit 直接 push 节奏沿用。
+- 中途瞬时残留仍会出现（≤5s 窗口）——周期 refresh 是自愈不是阻断；若真机体感仍差，可调小 `ATTACH_REFRESH_INTERVAL_MS`（带宽代价 ~全屏/次）。
 
 ## 易丢的关键上下文
 
-- **本仓 jsdom 测试三坑**（`settings-notifications.test.tsx` 内注释）：①`window.matchMedia` 未实现须 stub；②模块顶层装 DOM 全局会被前序文件 afterEach 清掉（`mobile-sheet.test.ts` 删 globalThis.window/document）→ 模块加载期装一次 + beforeEach 再装；③**`@testing-library/react` 的 `screen` 不可用**——import 期绑定 document.body 快照，无 document 窗口首次求值即永久退化抛错（全量跑挂、单文件跑绿）→ 一律用 `render()` 返回 view 内查询。
-- **探针/e2e/单测跑法**：`systemd-run --scope --user -p MemoryMax=2G bun …`；e2e 自起 vite dev（`bun run e2e <name>`，一次一个 spec 名）。
-- **验证用 PROJECTS_ROOT/test 项目**，不在正式项目建 session。
-- dev 服务：ar-dev tmux，web=prod build 端口 43012，api=dev 43011；改 vite.config 后必须 respawn web。
+- **诊断方法论**（下次类似问题直接复用）：live xterm vs capture-pane 对照 → 捕获 WS 帧史（Playwright `framereceived`，帧是 `{type:"output", data}`）→ 同实例 reset+回放 → refresh-client 愈合实验。一次性诊断脚本不进 scripts/（`_diag-` 前缀，用后删）。
+- **api 侧 5s 周期 refresh 已加载**（respawn 过）；参数在 `tmux-runtime.ts` 顶部三个导出常量。
+- **本仓 jsdom 测试三坑**（`settings-notifications.test.tsx` 内注释）：matchMedia stub / 顶层 DOM 全局被清 / 无 `screen`。
+- **探针/e2e/单测跑法**：`systemd-run --scope --user -p MemoryMax=2G bun …`；探针用 `bun` 跑不用 node。
+- 验证用 PROJECTS_ROOT/test 项目；web=prod build 43012、api=dev 43011（ar-dev tmux）；改 vite.config 后 respawn web。
 
 ## 提醒
 
@@ -45,4 +45,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-17 10:40（PWA 通知批三 commit 已 push；触发原因：push 后状态同步）
+最后更新：2026-10-18 03:20（三 commit push + 规则沉淀；触发原因：terminal 残留批闭环）

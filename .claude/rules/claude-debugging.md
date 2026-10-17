@@ -63,3 +63,11 @@ relay.activate() 已在 spawn 时完成：resume 才 readHistoryFromJsonl() 定�
 - 遇到协议格式、流式消息、实时流/历史回放差异、E2E 页面现象与实现不一致的问题时，必须先对齐三层第一手信息：**客户端日志、服务端日志、原始 JSONL/协议记录**，再下结论。
 - 不要只看 UI 现象或凭印象猜字段；必须先确认真实消息顺序、真实字段名、哪一层做了变换、合并或过滤。
 - 做 E2E 或手工调试时，不仅要看页面结果，也要同时检查客户端和服务端日志；消息/协议类问题默认把日志作为验收材料的一部分。
+
+## tmux attach 渲染失同步（terminal 行首残留，2026-10-18 取证定案）
+
+- **现象**：terminal 模式行首残留旧帧字符（集中在 col1-2 margin——tmux diff「跳过未变前缀」优化的盲区），浏览器 resize / 折叠 composer 愈合。
+- **机制**：tmux client 的增量 diff 发射与其自身屏幕模型失同步——pane（server 模型）恒干净、浏览器收到的字节流被污染；只有全重绘（`refresh-client`）能愈合；且失同步在 turn 输出流期间持续再种子，一次性 refresh 挡不住。
+- **取证方法（三步定根因）**：① live 对照 xterm buffer vs `capture-pane`；② reset + 回放捕获的帧史（同一实例），0 分歧 = 残留是字节流的确定函数；③ `refresh-client` 后 0 分歧 = 发射层失同步实锤。**注意**：与 tmux VTE 做双解析器对照时，回放 pane 是 40 行（status 占 1 行）而帧流是给 41 行 client 写的（`ESC[1;41r`），「1 行偏移」是回放几何伪差、不是解析器分歧——别被骗。
+- **修复落点**：`api/src/tmux-runtime.ts` attach 三层防护（600ms churn 全重绘 + 5s 周期 × 15s 活动窗 refresh + close/onExit 清理定时器）。
+- **勿再走**：「Bun PTY 读路径丢字节」假设（20MB raw 完整性测试零丢失）；「xterm.js 解析 bug」假设（检查点逐写入对照两解析器全程一致）；attach 一次性 refresh 当终态修复（再种子挡不住）。
