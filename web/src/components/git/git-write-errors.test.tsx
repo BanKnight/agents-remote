@@ -185,6 +185,18 @@ describe("CommitSheet 无变更分流", () => {
     expect(view.queryByRole("alert")).toBeNull();
   });
 
+  test("IDENTITY_MISSING → 中性配置指引文案（role=status，无红字 alert）", async () => {
+    commitProjectGitMock.mockImplementation(async () => {
+      throw new ApiClientError("Git 提交失败: 400", "PROJECT_GIT_IDENTITY_MISSING");
+    });
+    const view = renderCommitSheet();
+    await submitCommitAndFail(view);
+    await waitFor(() => expect(view.getByRole("status")).toBeTruthy());
+    expect(view.getByRole("status").textContent).toContain("git config --global");
+    expect(view.getByRole("status").className).not.toContain("text-error");
+    expect(view.queryByRole("alert")).toBeNull();
+  });
+
   test("非语义码错误 → 保留 role=alert 红字原样", async () => {
     commitProjectGitMock.mockImplementation(async () => {
       throw new ApiClientError("Git 提交失败: 500");

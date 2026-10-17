@@ -273,6 +273,8 @@ export const zh: Record<TranslationKey, string> = {
   // Git 列表内（查看 diff）；文件行在文件语境，动作是跳 Git 面板（在 Git 中查看 diff）。
   "git.menuViewDiff": "查看 diff",
   "git.noChanges": "没有变更",
+  "git.identityMissing":
+    "Git 身份未配置：请先在服务器配置 git config --global user.name 与 user.email，再重试提交",
   "git.selectPrompt": "选择变更文件",
   "git.selectDesc": "统一差异输出以只读方式显示。",
   "git.loadingDiff": "正在加载差异...",

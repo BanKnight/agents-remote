@@ -276,6 +276,8 @@ export const en = {
   // change rows are already inside the Git list ("View diff"); file rows navigate to Git.
   "git.menuViewDiff": "View diff",
   "git.noChanges": "No changes",
+  "git.identityMissing":
+    "Git identity is not configured: run git config --global user.name and user.email on the server, then retry",
   "git.selectPrompt": "Select a changed file",
   "git.selectDesc": "Unified diff output is shown read-only.",
   "git.loadingDiff": "Loading diff...",

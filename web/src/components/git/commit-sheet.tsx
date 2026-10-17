@@ -155,6 +155,11 @@ export function CommitSheet({
           <div className="mt-1.5 text-[12.5px] text-ink-2" role="status">
             {t("git.noChanges")}
           </div>
+        ) : isApiErrorCode(commitMutation.error, "PROJECT_GIT_IDENTITY_MISSING") ? (
+          // 身份未配置 = 可自行修复的配置问题：中性指引文案，非错误红字（P3 批挂起项）。
+          <div className="mt-1.5 text-[12.5px] text-ink-2" role="status">
+            {t("git.identityMissing")}
+          </div>
         ) : (
           <div className="mt-1.5 text-[11px] text-error" role="alert">
             {commitMutation.error.message}
