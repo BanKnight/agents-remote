@@ -1,52 +1,43 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-16（左栏布局 + CLI 2.1.299 新协议批——实现/review/门禁全绿，**未 commit**）
+> 最后更新：2026-10-17（PWA Web Push 通知批 `75890b2` + `591da88`，本地未 push）
 
 ## 一句话状态
 
-两项用户反馈已实现并经 code/design 双 review 消化：**①桌面左栏项目列表** `max-h-[40%]`+内部滚动（项目多时列表自滚、会话区保底 ≥8 行，探针 7/7）；**②CLI 2.1.299 四类新协议**全接入单管道——`cost-state` → 标量 state + ℹ 信息面「累计费用」行（第四标量）、`system/permission_check_status` → 投影 skip（客户端全隐身，纯内部信号）、attachment `remote_session_change`/`environment` → ATTACHMENT_CONFIG 可读卡片（rendered body）。门禁全绿（format/lint/typecheck + api 953 + web 809 + shared 10 + CSS 硬闸 + tokens 机检）、session-mode e2e 3/3、左栏探针 7/7。**未 commit（等用户指令）**。
+**PWA Web Push 通知批完成并 commit（两 commit，未 push）**：iOS 16.4+ standalone PWA 锁屏/后台可收系统通知，三类触发（等待审批 blocked / turn 完成 done / 出错 error），设置页逐类开关（偏好存服务端 settings.yaml `notifications` 域，页面冻结时服务端 gate 可读）。全链落地：Spike 1（web-push 分支 C：只用加密层 + Bun fetch 发送）→ Spike 2（generateSW→injectManifest 迁移，真修通）→ shared 类型 → api（VAPID 密钥/订阅存储/notifier/路由 + 装配接线）→ web（自写 sw.ts push handler + 客户端订阅 + 设置 section）→ 单测/e2e/双 review 消化。门禁全绿：api 985 + shared 10 + web 825 单测、e2e pwa-installable/mobile-nav/desktop-side、CSS 硬闸 + tokens 机检 + precache 无断链。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **cost-state = 统一会话标量管道第四标量**（同族 contextUsage/sessionStatus）：Pass 1 `applyMessageScalarState` latest-wins 整帧覆盖（`totalCostUSD` 数字守卫）；Pass 2 normalize skip（不落兜底 = 不刷屏）；消费面 = ℹ 信息面一行（`bridge.getCostState` 打开瞬间快照；bridge 身份稳定，闭包经 `costStateRef` 读最新）。**无数据不落行**。
-- **ℹ 信息面行序（design review P2-1 已修）**：恢复 ID → 会话目录 → **累计费用（最后一行，两份原型位）**；原插入位置在会话目录之前，与紧邻注释矛盾，已移到 `if (project)` 块之后。
-- **单标量子集 diverge 记档**：原型「6 轮 · $1.28 · 52k tok」→ 现只显 `$X.XX`（modelUsage/时长/行数已在 ClaudeCostState，待 UI 扩展，不伪造推算值）。
-- **costState 恢复缺口（code review P2-1，记档接受）**：relay 在 compact_boundary 清空 history+live 缓冲 → compaction 后断线重连若 JSONL 未落该帧，ℹ 累计费用行暂缺，直到下一帧自愈；治本需 relay 持久 last frame + seed_init 回种（对标 contextUsage），属后续批次。已写入协议文档 `#### cost-state` 处理方法 §1。
-- **attachment 两个新子类型不列 case（code review P3-2 消化）**：`handleAttachment` default 同为 `makeAttachmentBubble`，显式 case 零行为差异 → 删除，真实契约落在 `ATTACHMENT_CONFIG` 两个条目（badge = pr→commit→url / cwd 尾段；body = `renderedBody` 提取 `rendered[].content`）；测试改写为断言 config 条目（含 badge 值 + body 非空 + 无 rendered 时 null 优雅降级）。`ATTACHMENT_CONFIG` 因此 export。
-- **api `knownSubtypes` 收编 `permission_check_status`**（code review P3-3）：免每次权限检查打 `[relay] unknown system subtype` 日志。
-- **zh 标签 `claude.attachment.environment` = 「环境信息」**（design P3-1）：一手样本既有启动快照帧又有 changes 帧，「变更」不覆盖快照语义。
-- **session-mode e2e test 1 是负载敏感竞态（非本批引入）**：pending 细条窗口 ≈ POST 往返（mock 300ms），断言原排在「菜单关闭 + poll」之后，高负载时被甩出窗口（高负载 4/4 挂、同代码低负载复绿 + HEAD 基线对照实锤）。修复 = **pending 断言紧接 click**（竞态免疫），非改产品。
+- **技术路线 = Web Push 服务端推送**（前端 `new Notification()` 在 iOS PWA 切后台被 WebKit 冻结，否决）。web-push 只取 `generateRequestDetails` 加密产物（aes128gcm 密文 + VAPID headers），HTTP 由 Bun fetch 承担（sendNotification 内置走 node:https，Bun 下不可用——Spike 1 实证）。
+- **偏好存服务端**（settings.yaml `notifications` 域，non-optional normalize 补默认全 true，**不 bump schemaVersion**）——页面冻结时服务端推送必须能读偏好。
+- **injectManifest 迁移四坑 + dev SW 两坑**（全在 redesign-v2.md 记档）：strategies 必须显式；`srcDir: "src"`；`includeAssets: ["icons/**/*"]` 补 public 静态件；**webmanifest 绝不能列 includeAssets**（conflicting-entries → SW evaluate 失败）；dev SW 是 ESM → `devOptions.type: "module"`；dev `__WB_MANIFEST` 为 `[]` → `devOptions.navigateFallback: "index.html"`。**SW evaluate 失败原文唯一抓取路径 = CDP `ServiceWorker.enable` + `workerErrorReported`**。
+- **SW 语义**：push handler 前台抑制（`clients.matchAll` 任一 visible 即不弹）；`tag: payload.sessionId`（**只 sessionId 不带 kind**，同会话后到通知顶掉旧卡——review P2 修正）；notificationclick 有窗口 focus+navigate / 无窗口 openWindow（iOS 冷启）。
+- **review 消化**：single-flight（PushKeyManager `readOrCreate`，防首启并发双生成密钥致内存/磁盘分叉 → 重签名全 403）；endpoint 限 https + 长度上限（盲 SSRF 纵深）；非 gone 失败补 warn；denied hint mount 时计算。记档不修：双份订阅态 local state、store 并发窗口（单用户低频）、服务端文案暂只中文、VAPID 换钥无自愈。
 
 ### 进度
 
-- ✅ 左栏：`workbench-side.tsx:405` wrapper `shrink-0` → `shrink-0 max-h-[40%] overflow-y-auto`；探针 `scripts/probe-side-projects-scroll.mjs`（mock /api/overview 撑 40 项目）7/7
-- ✅ 协议四类：shared 类型（`ClaudeCostModelUsage`/`ClaudeCostState`/两个 Attachment 子类型）、adapter（标量分支 + 两处 skip + getCostState）、attachment-bubble（两 config 条目 + `renderedBody`）、instance-area（ℹ 累计费用行）、i18n zh/en 三 key、协议文档（cost-state 专节 + permission_check_status 小节 + attachment 两子类型 + 26 种子类型）
-- ✅ 双 review 消化：code 1×P2 + 9×P3（P2-1 记档、P3-2/P3-3/P3-9 已修，P3-5/6/7/8 判定不动/接受）；design P2-1 已修 + P3 三项处理
-- ✅ 门禁全绿 + e2e 3/3 + 探针 7/7；ar-verify-css 通过（content-type text/css）+ tokens 0 违例
-- ⏳ **未 commit**（个人项目直接 main；等用户指令）
-- ⏳ **本批真机清单（交用户）**：
-  1. 多项目下左栏项目列表**内部滚动**，下方会话列表仍可点选/操作（40% 上限是否合适留调参口，改一个类名）
-  2. 跑一轮会话看 ℹ 信息面「累计费用」行随 API 调用增长（恢复 ID → 会话目录 → 累计费用 的行序）
-  3. 触发远程会话变更 / 环境帧，attachment 卡片显示可读正文（badge = PR/commit 或目录尾段）
-  4. 权限检查不再出 `system · permission_check_status` 调试气泡
-- ⏳ 历史挂起：前两批真机清单（5 态化 + 上下文占用）与新批清单未验收；长期测试项用户后续给结果
-- ⏳ 功能批候选：mod 采集批 / 插件管理 UI / PTY+OSC 7501
-- ⏳ P3 挂起：git 写路径 NOT_CHANGED 空态 / effort 确认门双数据源 / config 读改写并发窗口 / ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗（~1s，记档）
+- ✅ Spike 1/2（分支 C 定案；injectManifest 真修通）+ Phase 1 shared + Phase 2 api + Phase 3 web SW + Phase 4 设置 UI + Phase 5 测试
+- ✅ 单测：api 新建 4 文件 + 扩展 2（+30，全量 985）；web 新建 `lib/push.test.ts` + `settings-notifications.test.tsx`（+10，全量 825）；shared 10
+- ✅ e2e `pwa-installable.spec.ts` 扩展（SW 文本含 push/notificationclick handler）——1 passed；mobile-nav 6 + desktop-side 6 过
+- ✅ 双 review（code + security，均无 P1）消化完毕
+- ✅ commit `75890b2`（shared+api）+ `591da88`（web）；**未 push**
+- ⏳ **本批真机清单（交用户，需 HTTPS tunnel 域名——LAN http 无法 subscribe）**：①添加到主屏幕 standalone 打开；②设置→通知开启权限弹窗 granted；③另一端触发审批 → 锁屏/后台收 blocked；④done / error 通知；⑤通知点击：后台聚焦跳深链、被杀冷启进深链；⑥前台正盯着不弹；⑦关「任务完成」开关后不再收 done（服务端读偏好）；⑧卸载 PWA 后 api 下次发送 404 自动清订阅；⑨iPhone + 桌面 Chrome 各自订阅互不影响；⑩发新 build autoUpdate 后 push handler 仍在
+- ⏳ 历史挂起：前几批真机清单未验收；`PROJECT_GIT_IDENTITY_MISSING` 专属文案；ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗
+- ⏳ 功能批候选：pi/acp/chat 会话推送（同款回调接入）/ mod 采集批 / 插件管理 UI
 
 ### 阻塞 / 风险
 
-- 无。左栏 40% 上限的实际观感需真机确认（唯一留口）。
+- 无。push 待用户指令（个人项目 main 直开，前批 push 均用户明示）。
+- 真机验证**必须 HTTPS**（Web Push subscribe 要求 secure context）；LAN http 下设置页只会显示降级态。
 
 ## 易丢的关键上下文
 
-- **`ℹ 信息面` 是打开瞬间快照**（非响应式）：新增字段一律经 bridge getter + ref 镜像读取，不改 bridge 身份（deps 仅 [sendToSocket]）。
-- **探针阈值纪律（§29）**：栏内 chrome 区 ≈180px 不随栏高缩放 → 会话区保底用**绝对地板**（8×34px）而非栏高百分比。
-- **`ATTACHMENT_CONFIG` 现为 export**：新增 attachment 子类型的真契约 = config 条目（icon/labelKey/badge/body），不再加 handleAttachment case。
-- **协议文档 cost-state 节**：JSONL 是否落盘未证实（仅 WS 帧实证）；compact 清缓冲缺口已记档。
-- 探针跑法：`systemd-run --scope --user -p MemoryMax=2G bun scripts/X.mjs`；e2e 同法 + `-- e2e/xxx.spec.ts`；验证用 PROJECTS_ROOT/test。
-- **e2e/单测高负载会假挂**（本次实测：session-mode test 1 + api 2 例），判「本批引入 vs 环境」先降负载复跑或用 stash 基线对照，别在源码层空转。
+- **本仓 jsdom 测试三坑**（`settings-notifications.test.tsx` 内注释）：①`window.matchMedia` 未实现须 stub；②模块顶层装 DOM 全局会被前序文件 afterEach 清掉（`mobile-sheet.test.ts` 删 globalThis.window/document）→ 模块加载期装一次 + beforeEach 再装；③**`@testing-library/react` 的 `screen` 不可用**——import 期绑定 document.body 快照，无 document 窗口首次求值即永久退化抛错（全量跑挂、单文件跑绿）→ 一律用 `render()` 返回 view 内查询。
+- **探针/e2e/单测跑法**：`systemd-run --scope --user -p MemoryMax=2G bun …`；e2e 自起 vite dev（`bun run e2e <name>`，一次一个 spec 名）。
+- **验证用 PROJECTS_ROOT/test 项目**，不在正式项目建 session。
+- dev 服务：ar-dev tmux，web=prod build 端口 43012，api=dev 43011；改 vite.config 后必须 respawn web。
 
 ## 提醒
 
@@ -54,4 +45,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-16（左栏布局 + CLI 2.1.299 新协议批，未 commit）
+最后更新：2026-10-17 10:33（PWA 通知批 commit `75890b2` + `591da88`，未 push；触发原因：批次收尾）

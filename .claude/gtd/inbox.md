@@ -32,3 +32,7 @@
 
 1. ~~**effort 确认门双数据源不一致**(code-review P3-10)~~ ✅ 2026-10-16 P3 清理批收口（bridge `getSessionStatus` getter，零 prop 透传，与会话页同源）。
 2. ~~**config 读改写并发窗口**(code-review P3-11,既有)~~ ✅ 2026-10-16 P3 清理批收口（两 registry patchMetadata 同步段原子 + persistQueue 串行化，全量原子化，并发不变量测试护住）。
+
+## 2026-10-17 PWA Web Push 通知批 ✅ 完成（commit `75890b2` + `591da88`，未 push；真机清单待验）
+
+用户需求：PWA 在「会话状态变更且需要人关注」时发系统通知。已拍板：Web Push 服务端推送（iOS 16.4+ standalone）；三类触发（等待审批/turn 完成/出错）；设置页逐类开关（偏好存服务端 settings.yaml）。计划文件 `~/.claude/plans/toasty-sprouting-star.md`。顺序：Spike 1（web-push Bun 兼容）/ Spike 2（injectManifest 迁移）→ shared 类型 → api 全链 → web SW+设置 UI → e2e → 真机清单。不做/记档：逐会话开关、badge、pi/acp 推送等（见计划）。双 review 消化与 injectManifest 排障见 `docs/design/redesign-v2.md` 本批记档；真机清单见 handoff/current.md（需 HTTPS tunnel）。
