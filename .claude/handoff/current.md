@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-17（PWA Web Push 通知批 `75890b2` + `591da88`，本地未 push）
+> 最后更新：2026-10-17（PWA Web Push 通知批，三 commit 已 push 至 main：`75890b2` + `591da88` + `c37ccf8`）
 
 ## 一句话状态
 
@@ -45,4 +45,4 @@
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
 ---
-最后更新：2026-10-17 10:33（PWA 通知批 commit `75890b2` + `591da88`，未 push；触发原因：批次收尾）
+最后更新：2026-10-17 10:40（PWA 通知批三 commit 已 push；触发原因：push 后状态同步）
