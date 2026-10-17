@@ -38,8 +38,10 @@ const VAPID_TTL_SECONDS = 12 * 60 * 60;
  *  用户拍板无脑顶格（2026-10-17）。 */
 const PUSH_TTL_SECONDS = 24 * 60 * 60;
 
+// title = 「项目 · 会话」（语义化，2026-10-18 用户反馈「看不出通知从哪个项目哪个会话
+// 发出来」）；会话名缺省回落项目名。
 export const pushTitle = (info: { projectName: string; sessionName?: string }): string =>
-  info.sessionName || info.projectName;
+  info.sessionName ? `${info.projectName} · ${info.sessionName}` : info.projectName;
 
 export const pushBody = (kind: PushNotificationKind, info: PushNotifyInfo): string => {
   if (kind === "blocked") {

@@ -148,7 +148,7 @@ test("payload 形状：title=sessionName、blocked body 拼工具名与摘要、
   const { payload, subscription } = calls[0];
   expect(subscription.endpoint).toBe("https://push.example/ep-1");
   expect(payload.kind).toBe("blocked");
-  expect(payload.title).toBe("重构登录页");
+  expect(payload.title).toBe("demo-app · 重构登录页");
   expect(payload.body).toBe("等待审批：Bash · rm -rf /tmp/x");
   // 深链：/projects/{projectName}/session/{sessionId}，各段 encodeURIComponent。
   expect(payload.url).toBe("/projects/demo-app/session/agent_1");
