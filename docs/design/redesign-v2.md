@@ -1969,6 +1969,8 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **根因二（TUI 期间不推送）**：terminal 形态状态旁路（hooks 状态文件 watcher）只写 registry 不触达 pushNotifier——turn 在 TUI 期间完成/审批提示时不推送。补 `AgentTuiController.onStatusChanged` 出口（迁移全发，gate 在消费侧）+ index.ts `notifyPushStatus` 共享函数：GUI 状态机（done/error）与 terminal watcher（done/blocked）两条采集源同一出口；GUI 的 blocked 不经此（approval-center 登记回调带 toolName 详情，status 出口再发会双通知）。
 - **排障方法面**：①「服务端发送无失败日志」≠「发送成功」——成功无日志（warn 仅失败路径），须主动构造测试推送分离变量；②变体实验定案模式：固定其余全部、只变一个变量（sub 域名）逐个试，两发 201 即破案；③一次性诊断脚本放 `/tmp` 或跑后立删——放 `scripts/` 会被 format 门禁扫到（本批踩过）。
 
+**方案终态与二轮 review 消化（2026-10-17，`c2a1cb3` + `2195d29` + `672e970`）**：换域名修复被用户否决（「任何硬编码域名都无法代表任意部署者的地址」）→ 终态 = **sub 完全不声明**（RFC 8292 可选声明，无 sub 实测 201；web-push 库 subject 强制非空，vapidDetails 传占位值仅为过校验，Authorization 由自实现 ES256 JWT 覆盖）+ **PUSH_TTL 顶格 24h**（APNs 上限；用户拍板「错过代价 > 过时提醒代价」）。二轮 review（TUI 链落库后）P1×1 + P2×2 + P3×3 全修：GUI blocked 双通知（status 出口仅 done/error，gate 放行 blocked 是 terminal 采集源所需）；resolveTuiSpawn 进 try 防切换半态；hydrate per-session 容错防 watch() 同步抛 ENOENT 连坐；runDir 单引号构造期 fail-fast；JWK 导入按 VapidKeys 对象身份 WeakMap 缓存；DER readInt 边界断言（防御性，sign() 产物恒合法）。
+
 ## 附录：v1→v2 token 映射表（M0 交付，M1 施工图）
 
 > v2 CSS 变量命名以设计包 `assets/tokens.css` 为准（kebab-case 直译 tokens.json）。
