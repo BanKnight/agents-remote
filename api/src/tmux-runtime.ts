@@ -13,6 +13,18 @@ import type {
  */
 export const TMUX_CMD_TIMEOUT_MS = 5_000;
 
+/** attach 后强制 client 全重绘的延时：须晚于「PTY 80x24 → 浏览器首连 resize」的 churn 窗口，
+ *  又要在 TUI 启动输出流早期生效。 */
+export const ATTACH_REFRESH_DELAY_MS = 600;
+
+/** 周期 refresh-client 的检查间隔（活动判定见 ATTACH_REFRESH_ACTIVE_MS）。 */
+export const ATTACH_REFRESH_INTERVAL_MS = 5_000;
+
+/** 「最近有输出」判定窗：now - lastDataAt 落在窗内才触发周期 refresh——turn 输出期间
+ *  每 ≤5s 全重绘一次自愈 tmux client-diff 失同步（行首残留根因，2026-10-18 取证），
+ *  空闲会话零刷新零带宽。 */
+export const ATTACH_REFRESH_ACTIVE_MS = 15_000;
+
 export const runTmux = (args: string[]) =>
   new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn("tmux", args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -160,6 +172,7 @@ export class TmuxRuntime implements RuntimeResources {
     const cols = opts.cols > 0 ? opts.cols : 80;
     const rows = opts.rows > 0 ? opts.rows : 24;
     let exited = false;
+    let lastDataAt = 0;
     const exitCbs = new Set<(code: number | null) => void>();
 
     const proc = Bun.spawn(["tmux", "attach", "-t", runtimeKey], {
@@ -169,6 +182,7 @@ export class TmuxRuntime implements RuntimeResources {
         rows,
         name: "xterm-256color",
         data(_terminal, data) {
+          lastDataAt = Date.now();
           try {
             onData(typeof data === "string" ? data : Buffer.from(data).toString("utf8"));
           } catch (error) {
@@ -190,6 +204,36 @@ export class TmuxRuntime implements RuntimeResources {
       for (const cb of exitCbs) cb(code ?? null);
     });
 
+    // tmux client-diff 失同步防护（2026-10-18 取证定案）：行首残留的根因是 tmux client 的
+    // 增量 diff 发射与其自身屏幕模型失同步——pane（server 模型）恒干净、浏览器收到的字节流
+    // 被污染（reset+回放同流 0 分歧复现残留），只有 refresh-client 全重绘能愈合（resize/
+    // 折叠 composer 有效是同一机制），且失同步在 turn 输出流期间持续再种子——一次性 refresh
+    // 挡不住。三层防护：① spawn 后 600ms 全重绘一次（attach churn 窗）；② 周期检查：最近
+    // ATTACH_REFRESH_ACTIVE_MS 内有输出则全重绘（turn 期间秒级自愈，空闲零开销）；③ 均
+    // 用 list-clients 枚举该会话全部 client（多 tab 多 client 一并补发），client 已退出则
+    // 失败忽略。close/onExit 时取消定时器（下方）。
+    const refreshClients = () => {
+      void runTmux(["list-clients", "-t", runtimeKey, "-F", "#{client_name}"])
+        .then((result) =>
+          Promise.all(
+            result.stdout
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .map((client) => runTmux(["refresh-client", "-t", client])),
+          ),
+        )
+        .catch(() => undefined);
+    };
+    const refreshTimer = setTimeout(() => {
+      if (exited) return;
+      refreshClients();
+    }, ATTACH_REFRESH_DELAY_MS);
+    const periodicTimer = setInterval(() => {
+      if (exited) return;
+      if (Date.now() - lastDataAt <= ATTACH_REFRESH_ACTIVE_MS) refreshClients();
+    }, ATTACH_REFRESH_INTERVAL_MS);
+
     return {
       write(data) {
         if (exited) return;
@@ -208,6 +252,8 @@ export class TmuxRuntime implements RuntimeResources {
         }
       },
       close() {
+        clearTimeout(refreshTimer);
+        clearInterval(periodicTimer);
         if (exited) return;
         try {
           proc.kill("SIGTERM");
@@ -226,6 +272,10 @@ export class TmuxRuntime implements RuntimeResources {
       },
       onExit(cb) {
         exitCbs.add(cb);
+        void proc.exited.then(() => {
+          clearTimeout(refreshTimer);
+          clearInterval(periodicTimer);
+        });
       },
     };
   }
