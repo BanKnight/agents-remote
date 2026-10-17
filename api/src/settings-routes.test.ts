@@ -993,3 +993,63 @@ test("POST /presets/test-models 上游失败 → {ok:false}（不抛）", async 
   expect(body.ok).toBe(false);
   expect(body.error).toBeTruthy();
 });
+
+// ── PUT /api/settings/notifications（PWA 通知逐类开关，partial 语义）──
+
+test("GET /api/settings 响应组装含 notifications 域（缺省全开）", async () => {
+  const store = await makeStore();
+  const res = await handleSettingsRoutes(
+    makeRequest("GET", "/api/settings"),
+    makeUrl("/api/settings"),
+    store,
+  );
+
+  expect(res?.status).toBe(200);
+  const body = await res!.json();
+  expect(body.settings.notifications).toEqual({ blocked: true, done: true, error: true });
+});
+
+test("PUT /api/settings/notifications 部分字段更新：只传 done:false，blocked/error 保持原值", async () => {
+  const store = await makeStore();
+
+  // 先固化基线：blocked 关、error 开。
+  const seed = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/notifications", { blocked: false, error: true }),
+    makeUrl("/api/settings/notifications"),
+    store,
+  );
+  expect(seed?.status).toBe(200);
+
+  // 只动 done，blocked/error 不被重置为默认。
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/notifications", { done: false }),
+    makeUrl("/api/settings/notifications"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  const body = await res!.json();
+  expect(body).toEqual({ settings: { blocked: false, done: false, error: true } });
+
+  // 偏好确实落盘（notifyInner 读的是服务端存储，不是内存态）。
+  const persisted = await store.read();
+  expect(persisted.notifications).toEqual({ blocked: false, done: false, error: true });
+});
+
+test("PUT /api/settings/notifications 非法值（非 boolean）= 不改，非法键丢弃", async () => {
+  const store = await makeStore();
+
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/notifications", {
+      done: false,
+      blocked: "yes",
+      error: 1,
+      unknownKey: true,
+    }),
+    makeUrl("/api/settings/notifications"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  const body = await res!.json();
+  // blocked/error 非 boolean → 回落当前值（缺省 true）；只 done 生效。
+  expect(body).toEqual({ settings: { blocked: true, done: false, error: true } });
+});

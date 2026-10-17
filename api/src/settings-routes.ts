@@ -27,6 +27,8 @@ import {
   type UpdateClaudePresetRequest,
   type UpdateClaudeRuntimeRequest,
   type UpdateClaudeRuntimeResponse,
+  type UpdateNotificationSettingsRequest,
+  type UpdateNotificationSettingsResponse,
   type UpdatePiPresetRequest,
   type UpdatePiRuntimeRequest,
   type UpdatePiRuntimeResponse,
@@ -37,6 +39,7 @@ import { getCachedPiBuiltinProviders } from "./pi-providers";
 import { listProviderModels } from "./settings-models";
 import {
   SettingsStore,
+  DEFAULT_NOTIFICATIONS,
   maskApiKey,
   toMaskedAcpCredentials,
   toMaskedAcpRuntime,
@@ -76,7 +79,35 @@ export const handleSettingsRoutes = async (
           acp: toMaskedAcpRuntime(state.runtimes.acp),
         },
         skills: { sources: state.skills?.sources ?? [] },
+        notifications: state.notifications ?? { ...DEFAULT_NOTIFICATIONS },
       },
+    };
+    return Response.json(response);
+  }
+
+  // PUT /api/settings/notifications —— 通知逐类开关（partial，未提键 = 不改）。
+  // 偏好存服务端是硬约束：推送在页面被冻结/关闭时发出，notifyInner 必须能读到最新偏好。
+  if (url.pathname === "/api/settings/notifications" && request.method === "PUT") {
+    const body = await readJson<UpdateNotificationSettingsRequest>(request);
+    const updated = await store.update((s) => ({
+      ...s,
+      notifications: {
+        blocked:
+          typeof body.blocked === "boolean"
+            ? body.blocked
+            : (s.notifications?.blocked ?? DEFAULT_NOTIFICATIONS.blocked),
+        done:
+          typeof body.done === "boolean"
+            ? body.done
+            : (s.notifications?.done ?? DEFAULT_NOTIFICATIONS.done),
+        error:
+          typeof body.error === "boolean"
+            ? body.error
+            : (s.notifications?.error ?? DEFAULT_NOTIFICATIONS.error),
+      },
+    }));
+    const response: UpdateNotificationSettingsResponse = {
+      settings: updated.notifications ?? { ...DEFAULT_NOTIFICATIONS },
     };
     return Response.json(response);
   }

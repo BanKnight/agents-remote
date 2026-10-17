@@ -18,6 +18,7 @@ import {
   type ClaudePresetMasked,
   type ClaudeRuntimeConfig,
   type EffortLevel,
+  type NotificationSettings,
   type PiPreset,
   type PiPresetMasked,
   type PiProviderApi,
@@ -65,6 +66,14 @@ export const DEFAULT_CLAUDE_RUNTIME: ClaudeRuntimeConfig = {
 
 // pi 未启用默认态：presets 空 + activePresetId 空。cloneDefault/migrateV1ToV2/normalize 共用。
 export const DEFAULT_PI_RUNTIME: PiRuntimeConfig = { presets: [], activePresetId: "" };
+
+// 通知逐类开关默认全开（PWA 通知批）。cloneDefaultSettings / migrateV1ToV2 / normalizeSettings
+// 三处共用，防字面量漂移。
+export const DEFAULT_NOTIFICATIONS = {
+  blocked: true,
+  done: true,
+  error: true,
+} as const satisfies NotificationSettings;
 
 export type SettingsStoreOptions = { path?: string };
 
@@ -460,6 +469,8 @@ export function migrateV1ToV2(parsed: unknown): SettingsState {
       acp: {},
     },
     skills: { sources: [] },
+    // v1 迁移目标态：通知开关默认全开（与 normalizeSettings 默认一致）。
+    notifications: { ...DEFAULT_NOTIFICATIONS },
   };
 }
 
@@ -495,6 +506,17 @@ export function normalizeSettings(parsed: unknown): SettingsState {
       acp: normalizeAcp(root.runtimes?.acp),
     },
     skills: { sources: normalizeSkillSources(root.skills?.sources) },
+    notifications: normalizeNotificationSettings(root.notifications),
+  };
+}
+
+/** 通知逐类开关宽松规整：逐键判 boolean，非 boolean 一律取默认 true（未知键丢弃）。 */
+function normalizeNotificationSettings(input: unknown): NotificationSettings {
+  const raw = (input ?? {}) as Record<string, unknown>;
+  return {
+    blocked: typeof raw.blocked === "boolean" ? raw.blocked : DEFAULT_NOTIFICATIONS.blocked,
+    done: typeof raw.done === "boolean" ? raw.done : DEFAULT_NOTIFICATIONS.done,
+    error: typeof raw.error === "boolean" ? raw.error : DEFAULT_NOTIFICATIONS.error,
   };
 }
 
@@ -531,6 +553,7 @@ function cloneDefaultSettings(): SettingsState {
       acp: {},
     },
     skills: { sources: [] },
+    notifications: { ...DEFAULT_NOTIFICATIONS },
   };
 }
 

@@ -43,6 +43,9 @@ export class ApprovalCenter {
    *  状态机 blocked → working）。多卡并存时仅在清空后触发一次。 */
   onRuntimeApprovalsSettled: ((runtimeKey: string) => void) | null = null;
 
+  /** 审批卡登记回调（PWA 通知批：index.ts 接 pushNotifier.notify("blocked", ...)）。 */
+  onApprovalRegistered: ((record: ApprovalRecord) => void) | null = null;
+
   constructor(
     private readonly claudeRuntime: ClaudeRuntime,
     private readonly sessionRegistry: SessionRegistry,
@@ -72,6 +75,7 @@ export class ApprovalCenter {
       createdAt: new Date().toISOString(),
     };
     this.registry.register(record);
+    this.onApprovalRegistered?.(record);
   }
 
   /** §6.4 快照：判活 + 显示名回填。 */

@@ -933,7 +933,54 @@ export type SettingsState = {
   skills?: {
     sources: SkillSource[];
   };
+  // Web Push 通知逐类开关（optional；normalizeSettings 补默认全 true）。存服务端是硬约束：
+  // 推送在页面被冻结/关闭时发出，服务端必须能读到用户偏好。
+  notifications?: NotificationSettings;
 };
+
+// ── Web Push 通知（PWA 服务端推送，iOS 16.4+ standalone）────────────────
+// 触发场景三类（PWA 通知批）：等待审批 / turn 完成 / 出错。CLI 崩溃走
+// turn_result{isError:true} → error，与正常出错同出口。
+
+/** 通知逐类开关（键 = PushNotificationKind）。默认全 true（normalizeSettings 补齐）。 */
+export type NotificationSettings = { blocked: boolean; done: boolean; error: boolean };
+
+export type PushNotificationKind = "blocked" | "done" | "error";
+
+/** SW push handler 的 payload（服务端 JSON.stringify 后经 web-push aes128gcm 加密发送）。 */
+export type PushMessagePayload = {
+  kind: PushNotificationKind;
+  /** 服务端拼好（sessionName 优先，缺省 projectName）；SW 原样展示。 */
+  title: string;
+  /** 服务端拼好；SW 原样展示。 */
+  body: string;
+  /** 会话深链 /projects/{projectName}/session/{sessionId}；notificationclick 导航用。 */
+  url: string;
+  projectName: string;
+  sessionId: string;
+  sessionName?: string;
+  /** 仅 blocked。 */
+  toolName?: string;
+  /** 仅 blocked。 */
+  inputSummary?: string;
+  sentAt: string;
+};
+
+export type PushVapidPublicKeyResponse = { publicKey: string };
+
+export type PushSubscribeRequest = {
+  subscription: {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+  };
+};
+
+export type PushUnsubscribeRequest = { endpoint: string };
+
+/** 通知逐类开关更新（partial；未提键 = 不改）。 */
+export type UpdateNotificationSettingsRequest = Partial<NotificationSettings>;
+
+export type UpdateNotificationSettingsResponse = { settings: NotificationSettings };
 
 // ── 业务状态柱（state.yaml，state-store.ts）─────────────────────────
 // AppModules = 业务状态模块注册表，是「往 state 新增顶层域」的唯一扩展点：
@@ -970,6 +1017,8 @@ export type GetSettingsResponse = {
     skills: {
       sources: SkillSource[];
     };
+    // Web Push 通知逐类开关（normalizeSettings 恒补齐，无敏感字段不 mask）。
+    notifications: NotificationSettings;
   };
 };
 

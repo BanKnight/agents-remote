@@ -66,6 +66,10 @@ import { SettingsStore } from "./settings-store";
 import { StateStore } from "./state-store";
 import { handleStateRoutes } from "./state-routes";
 import { handleSettingsRoutes } from "./settings-routes";
+import { PushKeyManager } from "./push-keys";
+import { PushSubscriptionStore } from "./push-subscription-store";
+import { PushNotifier } from "./push-notifier";
+import { handlePushRoutes } from "./push-routes";
 import { handleSkillRoutes } from "./skill-market";
 import { handleSkillDisableRoutes } from "./skill-disable";
 import { handleSkillUpdateRoutes } from "./skill-update";
@@ -99,6 +103,8 @@ type FetchHandlerOptions = {
   chatSessionRegistry?: ChatSessionRegistry;
   settingsStore?: SettingsStore;
   stateStore?: StateStore;
+  pushKeys?: PushKeyManager;
+  pushSubscriptions?: PushSubscriptionStore;
 };
 
 type WebSocketData =
@@ -259,6 +265,15 @@ export const createFetchHandler =
       });
       if (skillDisableResponse) {
         return withRefresh(skillDisableResponse);
+      }
+      if (options.pushKeys && options.pushSubscriptions) {
+        const pushResponse = await handlePushRoutes(request, url, {
+          keys: options.pushKeys,
+          subscriptions: options.pushSubscriptions,
+        });
+        if (pushResponse) {
+          return withRefresh(pushResponse);
+        }
       }
     }
 
@@ -1674,6 +1689,26 @@ export const startApi = async () => {
   // M5-b 审批中心（§6.4）：runtime 广播 can_use_tool 登记 + turn 收口；会话内托盘应答经
   // 控制器转发时同步注销（同一 stdin 管道的两条应答入口共用一个登记表）。
   const approvalCenter = new ApprovalCenter(claudeRuntime, sessionRegistry);
+  // PWA Web Push 通知批：VAPID 密钥/订阅落盘 ~/.agents-remote/（0o600），fire-and-forget
+  // 发送（内部自带 catch）；blocked 走审批登记回调，done/error 走会话状态机出口。
+  const pushKeys = new PushKeyManager();
+  const pushSubscriptions = new PushSubscriptionStore();
+  const pushNotifier = new PushNotifier({
+    keys: pushKeys,
+    subscriptions: pushSubscriptions,
+    settings: settingsStore,
+  });
+  approvalCenter.onApprovalRegistered = async (record) => {
+    // sessionName 异步回填（registry 内部才知道 displayName）。
+    const described = await sessionRegistry.describeSessionById(record.sessionId);
+    void pushNotifier.notify("blocked", {
+      projectName: record.projectName,
+      sessionId: record.sessionId,
+      ...(described?.displayName ? { sessionName: described.displayName } : {}),
+      toolName: record.toolName,
+      inputSummary: record.inputSummary,
+    });
+  };
   // 双模式编排（chat ↔ terminal）：tmux pane 起 CLI 原生形态 + hooks 状态文件 watcher。
   agentTui = new AgentTuiController({
     runDir: runtimePaths.runDir,
@@ -1709,6 +1744,19 @@ export const startApi = async () => {
   claudeRuntime.setOnSessionStatusChange((sessionId, status) => {
     if (status === "closed") return;
     void sessionRegistry.setAgentSessionStatus(sessionId, status);
+    // PWA 通知批：done/error 即「需要人关注」的终态（CLI 崩溃已走同出口）；sessionName
+    // 异步回填，payload 深链服务端拼好。fire-and-forget，失败仅告警。
+    if (status === "done" || status === "error") {
+      void (async () => {
+        const described = await sessionRegistry.describeSessionById(sessionId);
+        if (!described) return;
+        void pushNotifier.notify(status, {
+          projectName: described.projectName,
+          sessionId,
+          ...(described.displayName ? { sessionName: described.displayName } : {}),
+        });
+      })();
+    }
   });
   approvalCenter.onRuntimeApprovalsSettled = (runtimeKey) =>
     claudeRuntime.reportApprovalSettled(runtimeKey);
@@ -1799,6 +1847,8 @@ export const startApi = async () => {
       chatSessionRegistry,
       settingsStore,
       stateStore,
+      pushKeys,
+      pushSubscriptions,
     }),
     websocket: {
       open(ws) {

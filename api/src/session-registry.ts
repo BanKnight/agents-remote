@@ -369,6 +369,17 @@ export class SessionRegistry {
     return this.index.get(sessionId)?.autoRetry;
   }
 
+  // Push 通知回填用（PWA 通知批）：仅按 sessionId 读内存索引，无 project 校验、
+  // 无 runtime 探活——状态回调只有 id，projectName 在 registry 内部才知道。
+  async describeSessionById(
+    sessionId: string,
+  ): Promise<{ projectName: string; displayName?: string } | undefined> {
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
+    if (!metadata) return undefined;
+    return { projectName: metadata.projectName, displayName: metadata.displayName };
+  }
+
   async countSessions(projectName: string) {
     // 直接用 listMetadata 计数（读内存索引 + 批量探活过滤），不走 listTerminalSessions
     // ——后者会对每个 terminal spawn capture-pane 提 lastCommand，但 count 只需数量，是纯浪费。

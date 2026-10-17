@@ -103,6 +103,7 @@ test("SettingsStore.write then read round-trips and keeps 0o600 file mode + sche
       acp: {},
     },
     skills: { sources: [] },
+    notifications: { blocked: true, done: true, error: true },
   };
   await store.write(state);
 
@@ -683,6 +684,7 @@ test("migrateV1ToV2: 非 object 输入 → 返回默认结构（不抛错）", (
       acp: {},
     },
     skills: { sources: [] },
+    notifications: { blocked: true, done: true, error: true },
   });
   expect(migrateV1ToV2("junk")).toEqual({
     runtimes: {
@@ -691,6 +693,7 @@ test("migrateV1ToV2: 非 object 输入 → 返回默认结构（不抛错）", (
       acp: {},
     },
     skills: { sources: [] },
+    notifications: { blocked: true, done: true, error: true },
   });
 });
 
