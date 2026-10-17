@@ -128,6 +128,11 @@ const goneStatus = (reason: unknown): number => {
   return typeof status === "number" ? status : 0;
 };
 
+// VAPID sub 联系地址：**不能用 localhost 域**——APNs 对 mailto:...@localhost 直接
+// 403 BadJwtToken（真机通知排障 2026-10-17 实锤：Node/Bun、自实现/库签名、curl/fetch
+// 全部复现，换域名同密钥同订阅立即 201）。
+const VAPID_SUBJECT = "mailto:notify@bannight.com";
+
 const defaultSend =
   (keys: { readOrCreate(): Promise<VapidKeys> }): PushSendFn =>
   async (subscription, payload) => {
@@ -140,7 +145,7 @@ const defaultSend =
       JSON.stringify(payload),
       {
         vapidDetails: {
-          subject: "mailto:agents-remote@localhost",
+          subject: VAPID_SUBJECT,
           publicKey: vapid.publicKey,
           privateKey: vapid.privateKey,
         },
