@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { createPublicKey, verify } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +8,7 @@ import type {
   PushMessagePayload,
   SettingsState,
 } from "@agents-remote/shared";
-import { PushNotifier, type PushSendFn } from "./push-notifier";
+import { PushNotifier, signVapidAuthorization, type PushSendFn } from "./push-notifier";
 import { PushSubscriptionStore } from "./push-subscription-store";
 import type { SettingsStore } from "./settings-store";
 
@@ -249,4 +250,71 @@ test("无订阅 → send 不被调（也不触发 removeMany）", async () => {
   await notifier.notify("blocked", INFO);
   expect(calls).toHaveLength(0);
   expect(removedCalls).toHaveLength(0);
+});
+
+// ── VAPID JWT 自签名（无 sub；APNs 对 localhost 域 403 BadJwtToken 的根因修复）─────
+
+test("signVapidAuthorization：无 sub JWT，本地 node:crypto 验签 PASS（raw→DER 转换）", () => {
+  const { generateKeyPairSync } = require("node:crypto");
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const pubJwk = publicKey.export({ format: "jwk" }) as { x: string; y: string };
+  const privJwk = privateKey.export({ format: "jwk" }) as { d: string };
+  const vapid = {
+    publicKey: Buffer.concat([
+      Buffer.from([0x04]),
+      Buffer.from(pubJwk.x, "base64url"),
+      Buffer.from(pubJwk.y, "base64url"),
+    ]).toString("base64url"),
+    privateKey: privJwk.d,
+  };
+
+  const auth = signVapidAuthorization("https://web.push.apple.com/v1/abc", vapid);
+  const m = /^vapid t=([^,]+), k=(.+)$/.exec(auth);
+  expect(m).not.toBeNull();
+  const [, token, key] = m!;
+  expect(key).toBe(vapid.publicKey);
+
+  const [h64, p64, s64] = token.split(".");
+  expect(JSON.parse(Buffer.from(h64, "base64url").toString())).toEqual({
+    typ: "JWT",
+    alg: "ES256",
+  });
+  const payload = JSON.parse(Buffer.from(p64, "base64url").toString()) as {
+    aud: string;
+    exp: number;
+    sub?: unknown;
+  };
+  expect(payload.aud).toBe("https://web.push.apple.com");
+  expect(payload.exp).toBeGreaterThan(Date.now() / 1000);
+  // sub 必须缺席（硬编码域名无法代表任意部署者的地址；APNs 对 localhost 拒 403）。
+  expect("sub" in payload).toBe(false);
+
+  const sig = Buffer.from(s64, "base64url");
+  expect(sig.length).toBe(64); // ES256 raw（r||s 各 32B）
+  const raw = Buffer.from(vapid.publicKey, "base64url");
+  const pub = createPublicKey({
+    key: {
+      kty: "EC",
+      crv: "P-256",
+      x: raw.subarray(1, 33).toString("base64url"),
+      y: raw.subarray(33, 65).toString("base64url"),
+    },
+    format: "jwk",
+  });
+  // crypto.verify 对 EC key 默认期待 DER：raw 签名须回转 DER 再验（验签方法教训见
+  // redesign-v2 本批排障记档——raw 直喂恒 FAIL 曾致误诊）。
+  const asInt = (b: Buffer): Buffer => {
+    let v = b;
+    if (v[0] === 0) v = v.subarray(1);
+    if (v[0] & 0x80) v = Buffer.concat([Buffer.from([0]), v]);
+    return Buffer.concat([Buffer.from([0x02, v.length]), v]);
+  };
+  const der = Buffer.concat([
+    Buffer.from([0x30]),
+    (() => {
+      const body = Buffer.concat([asInt(sig.subarray(0, 32)), asInt(sig.subarray(32))]);
+      return Buffer.concat([Buffer.from([body.length]), body]);
+    })(),
+  ]);
+  expect(verify("sha256", Buffer.from(`${h64}.${p64}`), pub, der)).toBe(true);
 });

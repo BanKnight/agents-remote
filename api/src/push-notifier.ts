@@ -1,3 +1,4 @@
+import { createPrivateKey, createSign } from "node:crypto";
 import { generateRequestDetails } from "web-push";
 import type { PushMessagePayload, PushNotificationKind } from "@agents-remote/shared";
 import type { SettingsStore } from "./settings-store";
@@ -27,6 +28,9 @@ export type PushSendFn = (
 ) => Promise<void>;
 
 const SUBSCRIPTION_GONE_STATUS = new Set([404, 410]);
+
+/** VAPID token 有效期（RFC 8292 建议值，上限 24h）。 */
+const VAPID_TTL_SECONDS = 12 * 60 * 60;
 
 export const pushTitle = (info: { projectName: string; sessionName?: string }): string =>
   info.sessionName || info.projectName;
@@ -128,10 +132,50 @@ const goneStatus = (reason: unknown): number => {
   return typeof status === "number" ? status : 0;
 };
 
-// VAPID sub 联系地址：**不能用 localhost 域**——APNs 对 mailto:...@localhost 直接
-// 403 BadJwtToken（真机通知排障 2026-10-17 实锤：Node/Bun、自实现/库签名、curl/fetch
-// 全部复现，换域名同密钥同订阅立即 201）。
-const VAPID_SUBJECT = "mailto:notify@bannight.com";
+// VAPID sub（RFC 8292 的联系地址声明）**不发**：它是可选声明（SHOULD 非 MUST），且
+// APNs 对 mailto:...@localhost 直接 403 BadJwtToken（真机排障 2026-10-17 实锤，报错
+// 文案误导性极强）；而任何硬编码域名都无法代表「任意部署者的地址」——不发 sub 让每个
+// 部署零配置合规（无 sub 实测 201）。web-push 库的 subject 校验强制非空，故 vapidDetails
+// 传占位值仅为通过库校验（其只用于拼库版 Authorization 头，下方会被自签名覆盖）；加密层
+// （aes128gcm/ECDH）不受影响仍走库产物。
+const VAPID_SUBJECT_PLACEHOLDER = "mailto:agents-remote@invalid";
+
+/** 自实现 VAPID JWT（RFC 8292，无 sub）：库版 Authorization 因强制 subject 不可用，
+ *  签名逻辑很短（ES256 + aud/exp 两声明）不值得引新依赖。derToJose 语义：ECDSA DER 签名
+ *  → JOSE raw（r||s 各 32B 左零填充）。 */
+export const signVapidAuthorization = (endpoint: string, vapid: VapidKeys): string => {
+  const raw = Buffer.from(vapid.publicKey, "base64url"); // 65B：0x04 || x || y
+  const privateKey = createPrivateKey({
+    key: {
+      kty: "EC",
+      crv: "P-256",
+      x: raw.subarray(1, 33).toString("base64url"),
+      y: raw.subarray(33, 65).toString("base64url"),
+      d: vapid.privateKey,
+    },
+    format: "jwk",
+  });
+  const encode = (value: object): string =>
+    Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+  const header = encode({ typ: "JWT", alg: "ES256" });
+  const payload = encode({
+    aud: new URL(endpoint).origin,
+    exp: Math.floor(Date.now() / 1000) + VAPID_TTL_SECONDS,
+  });
+  const secured = `${header}.${payload}`;
+  const der = createSign("sha256").update(Buffer.from(secured)).sign(privateKey);
+  // DER 签名（SEQUENCE{INTEGER r, INTEGER s}）→ raw：逐 INTEGER 去符号填充位后左补零。
+  let offset = 2;
+  const readInt = (): Buffer => {
+    const len = der[offset + 1];
+    let value = der.subarray(offset + 2, offset + 2 + len);
+    offset += 2 + len;
+    if (value.length > 32) value = value.subarray(value.length - 32);
+    return Buffer.concat([Buffer.alloc(32 - value.length, 0), value]);
+  };
+  const signature = Buffer.concat([readInt(), readInt()]);
+  return `vapid t=${secured}.${signature.toString("base64url")}, k=${vapid.publicKey}`;
+};
 
 const defaultSend =
   (keys: { readOrCreate(): Promise<VapidKeys> }): PushSendFn =>
@@ -145,7 +189,7 @@ const defaultSend =
       JSON.stringify(payload),
       {
         vapidDetails: {
-          subject: VAPID_SUBJECT,
+          subject: VAPID_SUBJECT_PLACEHOLDER,
           publicKey: vapid.publicKey,
           privateKey: vapid.privateKey,
         },
@@ -154,7 +198,10 @@ const defaultSend =
     );
     const response = await fetch(subscription.endpoint, {
       method: details.method,
-      headers: details.headers as Record<string, string>,
+      headers: {
+        ...(details.headers as Record<string, string>),
+        Authorization: signVapidAuthorization(subscription.endpoint, vapid),
+      },
       // Buffer 不在 BodyInit 类型内（运行时同源 ArrayBuffer 视图，包一层即过）。
       body: details.body ? new Uint8Array(details.body) : undefined,
     });
