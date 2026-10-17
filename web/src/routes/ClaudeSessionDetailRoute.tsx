@@ -851,7 +851,9 @@ function TurnStatsFooter({ stats }: { stats: TurnStats }) {
 
   if (tone === "completed") {
     return (
-      <div className="done mt-2" role="status">
+      // .complete 绿横幅（03c）：类名源自 .done（541099c 改名让位 .dot 状态点变体），
+      // 当时消费点清点漏了本处——补齐（frontend-notes §34）。
+      <div className="complete mt-2" role="status">
         <span className="min-w-0 flex-1 truncate">
           ✓ {t(TURN_STATUS_LABEL[tone])}
           {tailParts.length > 0 ? ` · ${tailParts.join(" · ")}` : ""}
