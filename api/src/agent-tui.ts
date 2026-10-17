@@ -68,6 +68,10 @@ export class AgentTuiController {
       /** 切换完成回调（两个方向都发）：index.ts 接 claude-stream 关该会话全部 WS——
        *  多端打开同一会话时，未切换端靠「重连被守卫拒 / 面板 ended」跟随新形态。 */
       onModeSwitched?: (runtimeKey: string) => void;
+      /** 状态迁移出口（working/done/blocked 全发，gate 在消费侧）：index.ts 接 push
+       *  通知——与 GUI 状态机（setOnSessionStatusChange）同一出口同一管道，terminal 形态
+       *  的 done/blocked 才有推送（blocked 无审批登记详情，payload 不带 toolName）。 */
+      onStatusChanged?: (sessionId: string, status: AgentSessionStatus) => void;
     },
   ) {}
 
@@ -222,5 +226,6 @@ export class AgentTuiController {
     if (!next || next === current) return;
     this.tuiStatus.set(runtimeKey, next);
     void this.deps.registry.setAgentSessionStatus(sessionId, next);
+    this.deps.onStatusChanged?.(sessionId, next);
   }
 }

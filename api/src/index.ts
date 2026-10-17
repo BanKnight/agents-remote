@@ -1709,6 +1709,22 @@ export const startApi = async () => {
       inputSummary: record.inputSummary,
     });
   };
+  // PWA 通知出口（GUI 与 terminal 两条采集源共用，统一管道）：done/error/blocked 即
+  // 「需要人关注」；sessionName 异步回填，payload 深链服务端拼好。fire-and-forget，
+  // 失败仅告警。GUI 的 blocked 不经此（由 approval-center 登记回调发，带 toolName 详情，
+  // status 出口再发会双通知）；terminal 的 blocked 无审批登记，经此补齐推送。
+  const notifyPushStatus = (sessionId: string, status: AgentSessionStatus) => {
+    if (status !== "done" && status !== "error" && status !== "blocked") return;
+    void (async () => {
+      const described = await sessionRegistry.describeSessionById(sessionId);
+      if (!described) return;
+      void pushNotifier.notify(status, {
+        projectName: described.projectName,
+        sessionId,
+        ...(described.displayName ? { sessionName: described.displayName } : {}),
+      });
+    })();
+  };
   // 双模式编排（chat ↔ terminal）：tmux pane 起 CLI 原生形态 + hooks 状态文件 watcher。
   agentTui = new AgentTuiController({
     runDir: runtimePaths.runDir,
@@ -1719,6 +1735,8 @@ export const startApi = async () => {
     // 多端跟随（2026-10-16）：切换完成后关该会话全部 claude-stream WS——未切换端重连被
     // terminal 守卫拒（SESSION_STATE_CONFLICT），客户端失效 detail 自动换渲染形态。
     onModeSwitched: (runtimeKey) => claudeStreamController.closeSessionSockets(runtimeKey),
+    // terminal 形态状态迁移（hooks 状态文件 watcher）→ push 通知（与 GUI 同出口）。
+    onStatusChanged: (sessionId, status) => notifyPushStatus(sessionId, status),
   });
   // API 重启恢复（双模式）：terminal 形态会话的 tmux pane 独立于 API 存活，但内存里的
   // fs.watch 随进程消失——按落盘 mode 重挂状态文件 watcher，否则重启后 TUI 状态点停更。
@@ -1744,19 +1762,7 @@ export const startApi = async () => {
   claudeRuntime.setOnSessionStatusChange((sessionId, status) => {
     if (status === "closed") return;
     void sessionRegistry.setAgentSessionStatus(sessionId, status);
-    // PWA 通知批：done/error 即「需要人关注」的终态（CLI 崩溃已走同出口）；sessionName
-    // 异步回填，payload 深链服务端拼好。fire-and-forget，失败仅告警。
-    if (status === "done" || status === "error") {
-      void (async () => {
-        const described = await sessionRegistry.describeSessionById(sessionId);
-        if (!described) return;
-        void pushNotifier.notify(status, {
-          projectName: described.projectName,
-          sessionId,
-          ...(described.displayName ? { sessionName: described.displayName } : {}),
-        });
-      })();
-    }
+    notifyPushStatus(sessionId, status);
   });
   approvalCenter.onRuntimeApprovalsSettled = (runtimeKey) =>
     claudeRuntime.reportApprovalSettled(runtimeKey);

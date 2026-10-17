@@ -47,6 +47,7 @@ async function seed() {
   let tmuxClosed = 0;
   const cleared: string[] = [];
   const modeSwitched: string[] = [];
+  const statusEvents: Array<{ sessionId: string; status: string }> = [];
   const claudeRuntime = {
     async close(key: string, opts?: { silent?: boolean }) {
       closeCalls.push({ key, silent: opts?.silent });
@@ -87,6 +88,7 @@ async function seed() {
     tmuxRuntime,
     approvalCenter,
     onModeSwitched: (key) => modeSwitched.push(key),
+    onStatusChanged: (sessionId, status) => statusEvents.push({ sessionId, status }),
   });
   return {
     controller,
@@ -101,6 +103,7 @@ async function seed() {
     tmuxCommands,
     cleared,
     modeSwitched,
+    statusEvents,
     tmuxClosed: () => tmuxClosed,
   };
 }
@@ -257,6 +260,26 @@ test("状态文件信号驱动状态机：user_input→working / approval→bloc
   await new Promise((r) => setTimeout(r, 50));
   expect((await registry.getAgentSession(project.name, h.sessionId))?.status).toBe("done");
   h.controller.teardownTerminal(h.runtimeKey);
+});
+
+test("onStatusChanged 跟随状态迁移全发（push 通知出口）：working/done/blocked 到位，garbage 不发，teardown 后不发", async () => {
+  const h = await seed();
+  await h.controller.switchMode(h.metadata, "terminal");
+
+  await writeFile(statusPath(h.runtimeKey), "user_input");
+  expect(await waitForStatus(h.sessionId, "working")).toBe("working");
+  await writeFile(statusPath(h.runtimeKey), "turn_done");
+  expect(await waitForStatus(h.sessionId, "done")).toBe("done");
+  expect(h.statusEvents).toEqual([
+    { sessionId: h.sessionId, status: "working" },
+    { sessionId: h.sessionId, status: "done" },
+  ]);
+
+  h.controller.teardownTerminal(h.runtimeKey);
+  // teardown 拆 watcher 后写文件不再触发（通知出口随生命周期收敛）。
+  await writeFile(statusPath(h.runtimeKey), "approval");
+  await new Promise((r) => setTimeout(r, 50));
+  expect(h.statusEvents).toHaveLength(2);
 });
 
 // ── switchToChat ───────────────────────────────────────────────────────
