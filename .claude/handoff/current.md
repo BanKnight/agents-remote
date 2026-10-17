@@ -4,7 +4,7 @@
 
 ## 一句话状态
 
-**PWA Web Push 通知批完成并 commit（两 commit，未 push）**：iOS 16.4+ standalone PWA 锁屏/后台可收系统通知，三类触发（等待审批 blocked / turn 完成 done / 出错 error），设置页逐类开关（偏好存服务端 settings.yaml `notifications` 域，页面冻结时服务端 gate 可读）。全链落地：Spike 1（web-push 分支 C：只用加密层 + Bun fetch 发送）→ Spike 2（generateSW→injectManifest 迁移，真修通）→ shared 类型 → api（VAPID 密钥/订阅存储/notifier/路由 + 装配接线）→ web（自写 sw.ts push handler + 客户端订阅 + 设置 section）→ 单测/e2e/双 review 消化。门禁全绿：api 985 + shared 10 + web 825 单测、e2e pwa-installable/mobile-nav/desktop-side、CSS 硬闸 + tokens 机检 + precache 无断链。
+**PWA Web Push 通知批完成并 push（三 commit 已上远端 main）**：iOS 16.4+ standalone PWA 锁屏/后台可收系统通知，三类触发（等待审批 blocked / turn 完成 done / 出错 error），设置页逐类开关（偏好存服务端 settings.yaml `notifications` 域，页面冻结时服务端 gate 可读）。全链落地：Spike 1（web-push 分支 C：只用加密层 + Bun fetch 发送）→ Spike 2（generateSW→injectManifest 迁移，真修通）→ shared 类型 → api（VAPID 密钥/订阅存储/notifier/路由 + 装配接线）→ web（自写 sw.ts push handler + 客户端订阅 + 设置 section）→ 单测/e2e/双 review 消化。门禁全绿：api 985 + shared 10 + web 825 单测、e2e pwa-installable/mobile-nav/desktop-side、CSS 硬闸 + tokens 机检 + precache 无断链。
 
 ## 本 session 焦点
 
@@ -22,7 +22,7 @@
 - ✅ 单测：api 新建 4 文件 + 扩展 2（+30，全量 985）；web 新建 `lib/push.test.ts` + `settings-notifications.test.tsx`（+10，全量 825）；shared 10
 - ✅ e2e `pwa-installable.spec.ts` 扩展（SW 文本含 push/notificationclick handler）——1 passed；mobile-nav 6 + desktop-side 6 过
 - ✅ 双 review（code + security，均无 P1）消化完毕
-- ✅ commit `75890b2`（shared+api）+ `591da88`（web）；**未 push**
+- ✅ commit `75890b2`（shared+api）+ `591da88`（web）+ `c37ccf8`（docs）；已 push（用户拍板）
 - ⏳ **本批真机清单（交用户，需 HTTPS tunnel 域名——LAN http 无法 subscribe）**：①添加到主屏幕 standalone 打开；②设置→通知开启权限弹窗 granted；③另一端触发审批 → 锁屏/后台收 blocked；④done / error 通知；⑤通知点击：后台聚焦跳深链、被杀冷启进深链；⑥前台正盯着不弹；⑦关「任务完成」开关后不再收 done（服务端读偏好）；⑧卸载 PWA 后 api 下次发送 404 自动清订阅；⑨iPhone + 桌面 Chrome 各自订阅互不影响；⑩发新 build autoUpdate 后 push handler 仍在
 - ⏳ 历史挂起：前几批真机清单未验收；`PROJECT_GIT_IDENTITY_MISSING` 专属文案；ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗
 - ⏳ 功能批候选：pi/acp/chat 会话推送（同款回调接入）/ mod 采集批 / 插件管理 UI

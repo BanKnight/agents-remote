@@ -492,7 +492,8 @@ function NotificationsSection() {
   const settingsQuery = useQuery({ queryKey: ["settings"], queryFn: getSettings });
   const [subscribed, setSubscribed] = useState<boolean | null>(null);
   const [denied, setDenied] = useState(false);
-  const [actionError, setActionError] = useState(false);
+  // 失败时存完整文案（前缀文案 + 底层 error.message）——真机排障靠它读出断在哪一步。
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     setDenied(pushPermission() === "denied");
@@ -514,12 +515,14 @@ function NotificationsSection() {
       }
     },
     onSuccess: () => {
-      setActionError(false);
+      setActionError(null);
       void getPushSubscription().then((s) => setSubscribed(Boolean(s)));
       setDenied(pushPermission() === "denied");
     },
-    onError: () => {
-      setActionError(true);
+    onError: (error, enable) => {
+      const message = error instanceof Error ? error.message : String(error);
+      const prefix = t(enable ? "api.pushSubscribeFailed" : "api.pushUnsubscribeFailed");
+      setActionError(`${prefix}：${message}`);
       setDenied(pushPermission() === "denied");
     },
   });
@@ -581,9 +584,7 @@ function NotificationsSection() {
               <span className={settingsHintClasses}>{t("settings.notifications.deniedHint")}</span>
             ) : null}
             {actionError ? (
-              <span className="mt-0.5 block text-xs text-error">
-                {t("api.pushSubscribeFailed")}
-              </span>
+              <span className="mt-0.5 block text-xs text-error">{actionError}</span>
             ) : null}
           </span>
           <span
