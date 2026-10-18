@@ -7,6 +7,7 @@ import {
 } from "@assistant-ui/react";
 import { useT } from "../i18n";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
+import { useComposerInsetDebugBadge } from "../lib/use-composer-inset-debug-badge";
 import { useComposerDraft } from "../lib/composer-draft";
 import {
   decideDesktopEnterAction,
@@ -41,6 +42,7 @@ export function AcpChatPanel({
   );
 
   useComposerKeyboardAvoidance();
+  useComposerInsetDebugBadge();
 
   // RetryInfo 是 claude 专属（ACP 无重试 UI），传 null——RetryIndicator null 时 no-op。
   const retryInfo: RetryInfo | null = null;

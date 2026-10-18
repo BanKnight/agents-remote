@@ -45,6 +45,7 @@ import { formatDuration, formatTokenCount } from "../lib/utils";
 import { isDebugButtonEnabled, isPerfTraceEnabled } from "../lib/debug-flags";
 import { ComposerStopSend } from "../components/ui/composer-actions";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
+import { useComposerInsetDebugBadge } from "../lib/use-composer-inset-debug-badge";
 import {
   decideDesktopEnterAction,
   insertNewlineAtCursor,
@@ -342,6 +343,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
   const { confirm, holder } = useConfirm();
 
   useComposerKeyboardAvoidance();
+  useComposerInsetDebugBadge();
 
   const detail = useQuery({
     queryKey: ["projects", projectName, "agent-sessions", sessionId],
