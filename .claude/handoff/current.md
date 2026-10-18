@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-18 14:20（终端残留修复 `130645b` + 完成横幅换行修复 `e6d291a` 均已提交推送）
+> 最后更新：2026-10-18 19:11（assistant-ui 升级 0.15.27 + legacy API 迁移已提交推送 `a4fe583`）
 
 ## 一句话状态
 
@@ -15,6 +15,7 @@
 - **#5340 与本 bug 无关**：DECSET 2026 是 tmux **3.7** 才引入（3.5a/3.6b 收到即忽略），claude ≥2.1.200 按「tmux ≥3.4」发同步标记，版本门槛本身错位。**已写入规则：勿再据 #5340 归因**。
 - **A/B 方法（可复用）**：确定性负载 = 画 30 行「2 空格缩进 + 长文本」，再交替「自列 3 整行擦空」/「自列 3 重写文本」逼出 `ESC[r;3H ESC[K` + 裸 LF + 文本；用 `@xterm/headless` 按 live 时序（80x24 收前缀 → resize → 收余下）回放，与 pane 真值比对。**只发擦除、不跟文本的负载看不见分歧**（两侧 trim 后同为空串）。
 - **tmux 3.8 仍保留在 `/opt/tmux-3.8`（未进 PATH，用户拍板保留）**，本机默认 `/usr/bin/tmux` 仍是 3.5a、**未动**。
+- **传递依赖豁免记录（2026-10-18 用户拍板「记录豁免」）**：assistant-ui 升级带进的传递依赖中有 6 个解析到「发布 <7 天」——`@assistant-ui/core` 0.3.29(2.2d)、`store` 0.3.21(2.2d)、`tap` 0.9.23(6.0d)、`assistant-stream` 0.3.52(2.2d)、`radix-ui` 1.8.1(5.1d)、`zod` 4.6.7(5.3d)。**按 `supply-chain.md` 豁免条款放行**（「官方稳定但发布 <7 天」＝成熟库常规迭代）：全部是上层库 caret 声明的**补丁级区间内**版本（已核实「声明下限」core 0.3.26 / store 0.3.19 / tap 0.9.22 / assistant-stream 0.3.49 / radix-ui 1.7.0 / zod 4.6.5 **全部 ≥7 天**）；且 `bun.lock` 已提交、当前依赖图确定性锁死，漂移只在 lockfile 被删除重建时才可能——届时这些版本早已 ≥7 天。**未加 `overrides`**（避免降级波及 web/api 自身也在用的 radix-ui / zod）。记录：Claude；拍板：用户。
 
 ### 进度
 
@@ -25,6 +26,9 @@
 - ✅ **commit `130645b` + push**（origin/main；`b5353df..130645b`）
 - ✅ 一次性诊断产物已清（`/tmp/_diag-ab-*.sh`、`/tmp/abrun`、`/tmp/tmux-build`；保留 `/opt/tmux-3.8` 与 `/tmp/tmux-1000` 非我所有）
 - ✅ **完成横幅统计串截断修复 `e6d291a` + push**（用户 2026-10-18 反馈「内容过长被截断」→ 指示「让它换行吧」）：`ClaudeSessionDetailRoute.tsx` `TurnStatsFooter` 的 completed 分支统计 span `truncate`→`break-words`（`.complete`/`.complete .tm` 无 nowrap，故零 CSS 改动）。验证 = 真实产物 CSS 注入 markup 的 DOM 几何 A/B **9/9 通过**（旧版 nowrap+ellipsis 单行 scroll 677 vs client 221 确被截；新版 white-space:normal + overflow-wrap:break-word 4 行换行、不横向溢出、宽度不变）。门禁全绿 + CSS 硬闸过
+- ✅ **assistant-ui 升级 `a4fe583` + push**（用户 2026-10-18 指示「按规则更新聊天流第三方库」；先汇报、批准「按计划升 + 移除孤儿」后动手）：`@assistant-ui/react` 0.14.13→**0.15.27**、`@assistant-ui/react-markdown` ^0.14.1→**0.14.20**（精确钉版，发布 8/9 天）；移除孤儿 `@assistant-ui/react-syntax-highlighter`（全仓零消费，高亮走底层 `react-syntax-highlighter` 16.x `PrismLight`）。0.15 完成 v0.12 起的 legacy 废弃周期，迁移 4 类共 13 处调用点 + 1 处重命名类：`useComposerRuntime()`→`useAui().composer`、`useMessage()`→`useAuiState((s) => s.message)`、`api.thread().append()`→`api.thread.append()`、`ComposerPrimitive.Unstable_TriggerPopover*`→`TriggerPopover*`
+- ✅ 升级验证：typecheck 全仓 ✅；单测 api 987 / shared 10 / web 826 全绿；**e2e 30/30 ✅**；CSS 硬闸 ✅；precache 校验 ✅；43012 已 respawn
+- ✅ code-reviewer 审查升级**通过（无 correctness finding）**——逐条核实：`useMessage()` 旧实现本就订阅整份 message state（`createStateHookForRuntime` 无 selector → `useSyncExternalStore`），新写法订阅粒度**等价、无重渲染放大**；`useAui()` 调用点全部在 `AssistantRuntimeProvider` 内（含共享 `composer-draft.ts`）；全仓 grep 迁移类残留 **0 命中**；精确钉版在 bun 下确实锁死
 - ⏳ **待用户真机验收**：terminal 行首残留是否彻底消失（不再需要 5s 自愈）；完成横幅长统计串换行效果；推送通知 title 是否达意
 - ⏳ 历史挂起：PWA 通知真机清单剩余项（③-⑪）；ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗
 - ⏳ 功能批候选：mod 采集批 / 插件管理 UI / PTY+OSC 7501 / pi/acp 推送
@@ -38,7 +42,7 @@
 
 ## 易丢的关键上下文
 
-- **本 session 唯一 web 改动**曾只有 `8cbe266`（`.complete` 类名补齐，落在消息流 `TurnStatsFooter` 内，不在 composer 区）；composer 抬高与该改动无关。
+- **排查「composer 无故被抬高」时**，当时唯一的 web 改动是 `8cbe266`（`.complete` 类名补齐，落在消息流 `TurnStatsFooter` 内、不在 composer 区）——故该时点可排除它。此后 web 又落了 `e6d291a`（横幅换行）与 `a4fe583`（assistant-ui 升级）。
 - **A/B 证据已抄进规则文档（`.claude/rules/claude-debugging.md`），一次性产物已清**（`/tmp/_diag-ab-*.sh` / `/tmp/abrun` / `/tmp/tmux-build`）。若需复现：规则文档内含确定性负载配方（画 30 行「2 空格缩进 + 长文本」→ 交替「自列 3 擦空」/「自列 3 重写」逼出 `ESC[r;3H ESC[K` + 裸 LF + 文本）+ `@xterm/headless` 按 live 时序回放法。
 - **隔离 tmux server 已全部收掉**（ab35/ab38/render）；生产 `ar-dev`/`novels-dev`/`router22` 全程未受影响（前后 `tmux list-sessions` 一致）。
 - **本仓 jsdom 测试三坑**（`settings-notifications.test.tsx` 内注释）：matchMedia stub / 顶层 DOM 全局被清 / 无 `screen`。
@@ -51,4 +55,4 @@
 - 到达里程碑或感知将 compact 时，主动 `/handoff save`。
 
 ---
-最后更新：2026-10-18 14:20（触发原因：完成横幅截断修复提交推送 e6d291a + 一次性探针清理）
+最后更新：2026-10-18 19:11（触发原因：assistant-ui 升级 0.15.27 + legacy API 迁移提交推送 `a4fe583`；含传递依赖豁免记录）
