@@ -1,6 +1,22 @@
 import { describe, expect, test } from "bun:test";
 
-import { listGroupClasses, listRowClasses } from "./shell-primitives";
+import { countsAsRunning, listGroupClasses, listRowClasses } from "./shell-primitives";
+
+describe("countsAsRunning", () => {
+  test("agent = turn 在飞(working/blocked;blocked 是 turn 内等审批的暂停)", () => {
+    expect(countsAsRunning("agent", "working")).toBe(true);
+    expect(countsAsRunning("agent", "blocked")).toBe(true);
+    expect(countsAsRunning("agent", "done")).toBe(false);
+    expect(countsAsRunning("agent", "idle")).toBe(false);
+    expect(countsAsRunning("agent", "error")).toBe(false);
+  });
+
+  test("terminal = 进程存活(running),closed/error 不计入", () => {
+    expect(countsAsRunning("terminal", "running")).toBe(true);
+    expect(countsAsRunning("terminal", "closed")).toBe(false);
+    expect(countsAsRunning("terminal", "error")).toBe(false);
+  });
+});
 
 describe("listGroupClasses", () => {
   test("plain 连续行：divide-y + neutral-line/40 separator", () => {

@@ -397,6 +397,8 @@ export type OverviewCandidate = {
   displayName: string;
   status: AgentSessionStatus | TerminalSessionStatus;
   provider?: AgentProvider;
+  /** 运行形态（仅 agent 会话携带；缺省 chat）。terminal 原生会话无此字段。 */
+  mode?: AgentSessionMode;
   updatedAt?: string;
   createdAt?: string;
   /** 卡片第二行（terminal=lastCommand / agent=lastAssistantMessage）；缺失则卡片不显第二行。 */

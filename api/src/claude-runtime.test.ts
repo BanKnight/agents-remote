@@ -1110,6 +1110,7 @@ type StatusHarness = {
     processes: Map<string, Record<string, unknown>>;
     relays: Map<string, { isDestroyed: boolean; injectLiveLine: (line: string) => void }>;
     captureTurnResultFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+    captureTurnActivityFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
     captureApprovalRequestFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
   };
   injected: string[];
@@ -1181,6 +1182,40 @@ test("turn 状态机: reportUserInput done→working;working 幂等无迁移", (
   working.runtime.reportUserInput("rt-key");
   expect(working.internal.processes.get("rt-key")?.sessionStatus).toBe("working");
   expect(working.statusCalls).toEqual([]);
+});
+
+test("turn 状态机: assistant 帧 → turn_activity(error/done 滞留翻回 working);synthetic/error assistant 不触发", () => {
+  // CLI 自启 turn(task-notification 消费等)无 user_input 信号——assistant 帧即 turn 活跃。
+  const errorCase = seedStatusHarness("error");
+  errorCase.internal.captureTurnActivityFromLine("rt-key", {
+    type: "assistant",
+    model: "claude-sonnet-5",
+  });
+  expect(errorCase.internal.processes.get("rt-key")?.sessionStatus).toBe("working");
+
+  const doneCase = seedStatusHarness("done");
+  doneCase.internal.captureTurnActivityFromLine("rt-key", { type: "assistant" });
+  expect(doneCase.internal.processes.get("rt-key")?.sessionStatus).toBe("working");
+
+  // 非正常 assistant 帧(合成/错误信封)= 不是真实 turn 活跃,不触发。
+  const synthetic = seedStatusHarness("done");
+  synthetic.internal.captureTurnActivityFromLine("rt-key", {
+    type: "assistant",
+    model: "<synthetic>",
+  });
+  expect(synthetic.internal.processes.get("rt-key")?.sessionStatus).toBe("done");
+
+  const apiError = seedStatusHarness("done");
+  apiError.internal.captureTurnActivityFromLine("rt-key", {
+    type: "assistant",
+    isApiErrorMessage: true,
+  });
+  expect(apiError.internal.processes.get("rt-key")?.sessionStatus).toBe("done");
+
+  // 非 assistant 行不触发。
+  const other = seedStatusHarness("error");
+  other.internal.captureTurnActivityFromLine("rt-key", { type: "system", subtype: "init" });
+  expect(other.internal.processes.get("rt-key")?.sessionStatus).toBe("error");
 });
 
 test("turn 状态机: closed 吸收后续信号;close 幂等", () => {

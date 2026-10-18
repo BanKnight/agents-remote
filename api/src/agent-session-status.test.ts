@@ -20,6 +20,15 @@ describe("nextAgentSessionStatus", () => {
     expect(nextAgentSessionStatus("working", { kind: "user_input" })).toBeUndefined();
   });
 
+  test("turn_activity 与 user_input 同迁移表:error/done → working(CLI 自启 turn 翻回),blocked 忽略,working 幂等,closed 吸收", () => {
+    expect(nextAgentSessionStatus("error", { kind: "turn_activity" })).toBe("working");
+    expect(nextAgentSessionStatus("done", { kind: "turn_activity" })).toBe("working");
+    expect(nextAgentSessionStatus("idle", { kind: "turn_activity" })).toBe("working");
+    expect(nextAgentSessionStatus("blocked", { kind: "turn_activity" })).toBeUndefined();
+    expect(nextAgentSessionStatus("working", { kind: "turn_activity" })).toBeUndefined();
+    expect(nextAgentSessionStatus("closed", { kind: "turn_activity" })).toBeUndefined();
+  });
+
   test("working + approval_requested → blocked;其他态防御性忽略", () => {
     expect(nextAgentSessionStatus("working", { kind: "approval_requested" })).toBe("blocked");
     expect(nextAgentSessionStatus("idle", { kind: "approval_requested" })).toBeUndefined();

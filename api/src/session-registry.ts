@@ -1074,6 +1074,7 @@ const metadataToCandidate = (metadata: SessionMetadata, subtitle?: string): Over
   displayName: metadata.displayName,
   status: metadata.status,
   provider: metadata.provider,
+  mode: metadata.mode,
   updatedAt: metadata.updatedAt,
   createdAt: metadata.createdAt,
   subtitle,

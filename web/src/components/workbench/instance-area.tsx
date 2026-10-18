@@ -2092,6 +2092,7 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
     const candidates: GlobalInstanceCandidate[] = overview.data.candidates.map((c) => ({
       createdAt: c.createdAt,
       displayName: c.displayName,
+      mode: c.mode,
       provider: c.provider,
       ref: { kind: "session", projectName: c.projectName, sessionId: c.sessionId },
       status: c.status,

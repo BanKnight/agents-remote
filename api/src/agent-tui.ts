@@ -2,9 +2,9 @@
 // 形态（headless stream-json ↔ tmux 交互式 CLI）间接力，JSONL 是唯一权威。TUI 形态 =
 // CLI 原生形态（纯 argv、零 env 注入，凭证走 CLI 自身配置——用户拍板）；审批让位 = argv
 // 不带 --permission-prompt-tool（CLI 自己的 TUI 弹审批，can_use_tool 帧天然不存在）。
-// tmux 吞 OSC → 状态采集走 hooks 写状态文件旁路（--settings 挂三 hook，纯 shell printf
-// 落盘，本模块 fs.watch 消费），信号复用 agent-session-status 状态机（关键三态：
-// working/done/blocked；error 态 hooks 覆盖不到——接受，GUI 侧照旧）。
+// tmux 吞 OSC → 状态采集走 hooks 写状态文件旁路（--settings 挂六个 hook，纯 shell printf
+// 落盘，本模块 fs.watch 消费），信号复用 agent-session-status 状态机（working/done/
+// blocked/error 四态；error 经 StopFailure hook 覆盖）。
 
 import { watch, type FSWatcher } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -24,24 +24,38 @@ export const TUI_STATUS_SIGNAL_BY_TOKEN: {
   [token: string]:
     | { kind: "user_input" }
     | { kind: "turn_result"; isError: boolean }
-    | { kind: "approval_requested" };
+    | { kind: "approval_requested" }
+    | { kind: "approval_settled" };
 } = {
   user_input: { kind: "user_input" },
   turn_done: { kind: "turn_result", isError: false },
+  turn_error: { kind: "turn_result", isError: true },
   approval: { kind: "approval_requested" },
+  turn_continue: { kind: "approval_settled" },
 };
 
-/** TUI hooks settings 文件内容（纯函数，单测锁定三 hook + 写文件命令）。每个 hook 只做
+/** TUI hooks settings 文件内容（纯函数，单测锁定六 hook + 写文件命令）。每个 hook 只做
  *  「printf token > 状态文件」：UserPromptSubmit → user_input（turn 开始）、Stop →
- *  turn_done（turn 正常结束）、Notification → approval（审批/等输入提示）。状态文件路径
- *  单引号包裹——runDir 出自服务端配置（~/.agents-remote），不含单引号。 */
+ *  turn_done（turn 正常结束）、StopFailure → turn_error（turn 因 API 错误结束）、
+ *  PostToolUse → turn_continue（工具执行完 = 审批已解决，blocked 退出的 settled 信号）、
+ *  PermissionRequest → approval（真权限申请）；Notification 只收 permission_prompt 类型
+ *  （CLI 的 Notification 还含 idle_prompt 空闲提示等——无 matcher 会把空闲当审批挂起，
+ *  状态机 blocked 下忽略 user_input，整个 turn 钉死 blocked）。状态文件路径单引号包裹
+ *  ——runDir 出自服务端配置（~/.agents-remote），不含单引号。 */
 export function buildTuiHooksSettings(statusFilePath: string) {
   const hookCommand = (token: string) => `printf %s ${token} > '${statusFilePath}'`;
+  const hookEntry = (token: string, matcher?: string) => ({
+    ...(matcher ? { matcher } : {}),
+    hooks: [{ type: "command" as const, command: hookCommand(token) }],
+  });
   return {
     hooks: {
-      UserPromptSubmit: [{ hooks: [{ type: "command", command: hookCommand("user_input") }] }],
-      Stop: [{ hooks: [{ type: "command", command: hookCommand("turn_done") }] }],
-      Notification: [{ hooks: [{ type: "command", command: hookCommand("approval") }] }],
+      UserPromptSubmit: [hookEntry("user_input")],
+      Stop: [hookEntry("turn_done")],
+      StopFailure: [hookEntry("turn_error")],
+      PostToolUse: [hookEntry("turn_continue")],
+      PermissionRequest: [hookEntry("approval")],
+      Notification: [hookEntry("approval", "permission_prompt")],
     },
   };
 }

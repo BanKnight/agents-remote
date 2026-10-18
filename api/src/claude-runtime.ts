@@ -28,7 +28,11 @@ import { getAgentProviderProfile } from "./agent-provider-profiles";
 import { buildMcpInjectorForProvider } from "./mcp-injector";
 import { sanitizePersistedModel } from "./model-id";
 import { claudeJsonlPath } from "./session-routes";
-import { ClaudeAutoRetryWatch, isErrorResultLine } from "./claude-auto-retry";
+import {
+  ClaudeAutoRetryWatch,
+  isNormalAssistantLine,
+  isErrorResultLine,
+} from "./claude-auto-retry";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
@@ -1121,6 +1125,7 @@ export class ClaudeRuntime implements RuntimeResources {
     if (parsed?.type === "result") this.refreshContextUsageFromControl(sessionName);
     this.captureApprovalRequestFromLine(sessionName, parsed);
     this.captureApprovalSettledFromLine(sessionName, parsed);
+    this.captureTurnActivityFromLine(sessionName, parsed);
     this.captureTurnResultFromLine(sessionName, parsed);
     this.autoRetry.handleStdoutLine(
       sessionName,
@@ -1206,6 +1211,19 @@ export class ClaudeRuntime implements RuntimeResources {
     parsed: Record<string, unknown> | null,
   ): void {
     if (parsed?.type === "result") this.onApprovalRuntimeSettled?.(sessionName);
+  }
+
+  // CLI 自启 turn 的活跃证据：task-notification 消费/subagent hand-back 等开的新 turn
+  // 不经过我们 stdin（无 user_input 信号），error/done 滞留由 assistant 帧翻回 working
+  // （对齐客户端 computeRunningCount 的 turn 口径）。复用 isNormalAssistantLine
+  // （auto-retry 同源判定：排除 synthetic/isApiErrorMessage/error 帧）。
+  private captureTurnActivityFromLine(
+    sessionName: string,
+    parsed: Record<string, unknown> | null,
+  ): void {
+    if (isNormalAssistantLine(parsed)) {
+      this.applyStatusSignal(sessionName, { kind: "turn_activity" });
+    }
   }
 
   // result 帧 = turn 边界：迁移 done/error(状态机)。放 captureApprovalSettledFromLine

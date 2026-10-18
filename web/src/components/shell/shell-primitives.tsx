@@ -227,14 +227,16 @@ export function isTurnActive(status: AgentSession["status"] | TerminalSession["s
   return status === "working" || status === "blocked";
 }
 
-/** 「运行中」计数谓词（spec §4.2：项目/全局运行计数）——agent 计 working（turn 活跃）；
- *  terminal 无 turn 语义，进程存活（running）照常计入。五个计数消费点共用本单源，
- *  勿在各处手写条件（review P1-3：曾漏 terminal running 掉出计数）。 */
+/** 「运行中」计数谓词（spec §4.2：项目/全局运行计数）——agent = turn 在飞（working/blocked，
+ *  与 isTurnActive 同表：blocked 是 turn 内等审批的暂停而非结束；chat 与 terminal 形态统一，
+ *  TUI 形态经 hooks 采集后 status 忠实反映 turn）；terminal = 进程存活（running，原生 shell
+ *  会话无 turn 语义）。五个计数消费点共用本单源，勿在各处手写条件（review P1-3：曾漏
+ *  terminal running 掉出计数）。 */
 export function countsAsRunning(
   type: "agent" | "terminal",
   status: AgentSession["status"] | TerminalSession["status"],
 ): boolean {
-  return type === "agent" ? status === "working" : status === "running";
+  return type === "agent" ? isTurnActive(status) : status === "running";
 }
 
 /** status → dot 底色 utility（statusToTone 的渲染投影）。导出供 v2 页面直接消费

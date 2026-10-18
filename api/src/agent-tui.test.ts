@@ -123,20 +123,36 @@ async function waitForStatus(sessionId: string, expected: string) {
 
 // ── hooks settings 生成（纯函数）──────────────────────────────────────────
 
-test("buildTuiHooksSettings 三 hook 各写一个 token 到状态文件", () => {
+test("buildTuiHooksSettings 六 hook 各写一个 token 到状态文件；Notification 带 permission_prompt matcher", () => {
   const settings = buildTuiHooksSettings("/run/agent-status/key1");
-  expect(Object.keys(settings.hooks).sort()).toEqual(["Notification", "Stop", "UserPromptSubmit"]);
+  expect(Object.keys(settings.hooks).sort()).toEqual([
+    "Notification",
+    "PermissionRequest",
+    "PostToolUse",
+    "Stop",
+    "StopFailure",
+    "UserPromptSubmit",
+  ]);
   const command = (name: keyof typeof settings.hooks) =>
     settings.hooks[name][0]?.hooks[0]?.command ?? "";
   expect(command("UserPromptSubmit")).toBe("printf %s user_input > '/run/agent-status/key1'");
   expect(command("Stop")).toBe("printf %s turn_done > '/run/agent-status/key1'");
+  expect(command("StopFailure")).toBe("printf %s turn_error > '/run/agent-status/key1'");
+  expect(command("PostToolUse")).toBe("printf %s turn_continue > '/run/agent-status/key1'");
+  expect(command("PermissionRequest")).toBe("printf %s approval > '/run/agent-status/key1'");
   expect(command("Notification")).toBe("printf %s approval > '/run/agent-status/key1'");
+  // 根因 A 主修：matcher 限定 permission_prompt——idle_prompt 等其它 Notification 类型不再写 approval。
+  expect(settings.hooks.Notification[0]?.matcher).toBe("permission_prompt");
+  // 其余 hook 无 matcher（匹配全部事件）。
+  expect(settings.hooks.Stop[0]?.matcher).toBeUndefined();
 });
 
-test("TUI_STATUS_SIGNAL_BY_TOKEN 三 token 映射关键三态信号", () => {
+test("TUI_STATUS_SIGNAL_BY_TOKEN 五 token 映射状态机信号", () => {
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.user_input).toEqual({ kind: "user_input" });
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_done).toEqual({ kind: "turn_result", isError: false });
+  expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_error).toEqual({ kind: "turn_result", isError: true });
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.approval).toEqual({ kind: "approval_requested" });
+  expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_continue).toEqual({ kind: "approval_settled" });
   // 未知 token = 无信号（空文件防御）。
   expect(TUI_STATUS_SIGNAL_BY_TOKEN[""]).toBeUndefined();
 });
@@ -151,9 +167,16 @@ test("switchToTerminal：落 settings/状态文件（0600）→ mode 落盘 → 
   expect(h.closeCalls).toEqual([{ key: h.runtimeKey, silent: true }]);
   expect(h.cleared).toEqual([h.runtimeKey]);
 
-  // settings 文件：0600 + 三 hook 内容。
+  // settings 文件：0600 + 六 hook 内容。
   const settings = JSON.parse(await readFile(settingsPath(h.runtimeKey), "utf8"));
-  expect(Object.keys(settings.hooks).sort()).toEqual(["Notification", "Stop", "UserPromptSubmit"]);
+  expect(Object.keys(settings.hooks).sort()).toEqual([
+    "Notification",
+    "PermissionRequest",
+    "PostToolUse",
+    "Stop",
+    "StopFailure",
+    "UserPromptSubmit",
+  ]);
   expect((await stat(settingsPath(h.runtimeKey))).mode & 0o777).toBe(0o600);
   // 状态文件先建空（fs.watch 才有 inode 可挂）。
   expect(await readFile(statusPath(h.runtimeKey), "utf8")).toBe("");
@@ -259,6 +282,26 @@ test("状态文件信号驱动状态机：user_input→working / approval→bloc
   await writeFile(statusPath(h.runtimeKey), "garbage");
   await new Promise((r) => setTimeout(r, 50));
   expect((await registry.getAgentSession(project.name, h.sessionId))?.status).toBe("done");
+  h.controller.teardownTerminal(h.runtimeKey);
+});
+
+test("状态文件信号 blocked 退出与 error 收口：turn_continue→working / turn_error→error / error 后 user_input 翻回", async () => {
+  const h = await seed();
+  await h.controller.switchMode(h.metadata, "terminal");
+
+  // user_input → working；approval → blocked；turn_continue（PostToolUse）= 审批已解决 → 回 working。
+  await writeFile(statusPath(h.runtimeKey), "user_input");
+  expect(await waitForStatus(h.sessionId, "working")).toBe("working");
+  await writeFile(statusPath(h.runtimeKey), "approval");
+  expect(await waitForStatus(h.sessionId, "blocked")).toBe("blocked");
+  await writeFile(statusPath(h.runtimeKey), "turn_continue");
+  expect(await waitForStatus(h.sessionId, "working")).toBe("working");
+
+  // turn_error（StopFailure）→ error；error 态被下一轮 user_input 翻回 working（不滞留）。
+  await writeFile(statusPath(h.runtimeKey), "turn_error");
+  expect(await waitForStatus(h.sessionId, "error")).toBe("error");
+  await writeFile(statusPath(h.runtimeKey), "user_input");
+  expect(await waitForStatus(h.sessionId, "working")).toBe("working");
   h.controller.teardownTerminal(h.runtimeKey);
 });
 

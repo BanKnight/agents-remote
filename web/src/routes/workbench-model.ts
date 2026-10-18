@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useMatches, useNavigate, useRouter, type AnyRouteMatch } from "@tanstack/react-router";
 import type {
   AgentProvider,
+  AgentSessionMode,
   AgentSessionStatus,
   TerminalSessionStatus,
   GitDiffScope,
@@ -2031,6 +2032,8 @@ export type GlobalInstanceCandidate = {
   displayName: string;
   /** agent provider（terminal 无）。 */
   provider?: AgentProvider;
+  /** 运行形态（仅 agent 会话携带；缺省 chat）。terminal 原生会话无此字段。 */
+  mode?: AgentSessionMode;
   /** 最后活动时间（卡片 activity meta，ISO；来自 session.updatedAt）。 */
   updatedAt?: string;
   /** 创建时间（卡片 activity meta fallback；AgentSession 有，terminal 无）。 */
