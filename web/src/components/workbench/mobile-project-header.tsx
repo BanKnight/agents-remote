@@ -186,6 +186,10 @@ function InstanceSwitchMenu({
   onOpenHistory,
 }: InstanceSwitchMenuProps) {
   const { t } = useT();
+  // 标题圆点跟聚焦对象类型走（2026-10-19 用户拍板）：聚焦会话 = 会话本身的状态点
+  // （与 ▾ 浮层行同款 statusToV2DotClass，消「浮层黄点/标题恒绿」的观感冲突）；
+  // 非会话聚焦（skill/空态）维持 runct 项目 running 指示。
+  const focusedStatus = instances.find((entry) => entry.session.id === focusId)?.session.status;
   // 跨项目分组（组内保持 candidates 序），组间按最近活动（组内最新 updatedAt）降序。
   const foreignGroups = useMemo(() => {
     const byProject = new Map<string, GlobalInstanceCandidate[]>();
@@ -265,9 +269,14 @@ function InstanceSwitchMenu({
             />
           )}
           <span className="block truncate">{title}</span>
-          {/* runct ●：项目有运行中实例的指示点（9px 绿，原型 .runct 去数字化——工作台
-            header 聚焦的是会话，数字统计只属于项目页，2026-10-15 用户拍板） */}
-          {runningCount ? <span className="runct">●</span> : null}
+          {/* 聚焦会话 → 会话状态点（.dot 原语 7×7，单源 statusToV2DotClass）；非会话聚焦
+            → runct ●（项目有运行中实例，9px 绿，原型 .runct 去数字化——数字统计只属于
+            项目页，2026-10-15 用户拍板） */}
+          {focusedStatus ? (
+            <span className={statusToV2DotClass(focusedStatus)} />
+          ) : runningCount ? (
+            <span className="runct">●</span>
+          ) : null}
           {/* 实例切换菜单锚（批 12 反馈⑤：CSS 手绘 .sw 旋转盒退役 → Lucide 管线单轨；
             显式尺寸防 WebKit flex 收缩隐形，frontend-notes §15⑤。开态主色用 currentColor。 */}
           <LucideIcon
