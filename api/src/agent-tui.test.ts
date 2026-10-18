@@ -123,12 +123,13 @@ async function waitForStatus(sessionId: string, expected: string) {
 
 // ── hooks settings 生成（纯函数）──────────────────────────────────────────
 
-test("buildTuiHooksSettings 六 hook 各写一个 token 到状态文件；Notification 带 permission_prompt matcher", () => {
+test("buildTuiHooksSettings 七 hook 各写一个 token 到状态文件；Notification 带 permission_prompt matcher", () => {
   const settings = buildTuiHooksSettings("/run/agent-status/key1");
   expect(Object.keys(settings.hooks).sort()).toEqual([
     "Notification",
     "PermissionRequest",
     "PostToolUse",
+    "PostToolUseFailure",
     "Stop",
     "StopFailure",
     "UserPromptSubmit",
@@ -139,6 +140,8 @@ test("buildTuiHooksSettings 六 hook 各写一个 token 到状态文件；Notifi
   expect(command("Stop")).toBe("printf %s turn_done > '/run/agent-status/key1'");
   expect(command("StopFailure")).toBe("printf %s turn_error > '/run/agent-status/key1'");
   expect(command("PostToolUse")).toBe("printf %s turn_continue > '/run/agent-status/key1'");
+  // 工具失败同样是「审批已解决」的证据（CLI 与 PostToolUse 互斥 fire）——blocked 不滞留。
+  expect(command("PostToolUseFailure")).toBe("printf %s turn_continue > '/run/agent-status/key1'");
   expect(command("PermissionRequest")).toBe("printf %s approval > '/run/agent-status/key1'");
   expect(command("Notification")).toBe("printf %s approval > '/run/agent-status/key1'");
   // 根因 A 主修：matcher 限定 permission_prompt——idle_prompt 等其它 Notification 类型不再写 approval。
@@ -167,12 +170,13 @@ test("switchToTerminal：落 settings/状态文件（0600）→ mode 落盘 → 
   expect(h.closeCalls).toEqual([{ key: h.runtimeKey, silent: true }]);
   expect(h.cleared).toEqual([h.runtimeKey]);
 
-  // settings 文件：0600 + 六 hook 内容。
+  // settings 文件：0600 + 七 hook 内容。
   const settings = JSON.parse(await readFile(settingsPath(h.runtimeKey), "utf8"));
   expect(Object.keys(settings.hooks).sort()).toEqual([
     "Notification",
     "PermissionRequest",
     "PostToolUse",
+    "PostToolUseFailure",
     "Stop",
     "StopFailure",
     "UserPromptSubmit",

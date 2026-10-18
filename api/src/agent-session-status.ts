@@ -24,8 +24,9 @@ export function nextAgentSessionStatus(
     case "turn_activity":
       // 用户再发消息即翻回 working(done/error 是「最近一轮」结果态,被替换);
       // working 下幂等(无迁移),closed 吸收一切。
-      // blocked 下忽略(OSC 7501 blocked 优先):审批挂起期间 CLI 停在等审批,
-      // 不会有新 turn 活跃/插话,收到即信号错序——等 settled 信号回 working。
+      // blocked 下忽略(OSC 7501 blocked 优先):blocked 的退出由 settled 驱动——
+      // 审批挂起期间的插话由 CLI 排队、后台任务的 assistant 帧照达,都不能替代
+      // settled 信号,翻 working 会谎报审批已解决。
       return current === "idle" || current === "done" || current === "error"
         ? "working"
         : undefined;

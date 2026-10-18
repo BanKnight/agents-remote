@@ -2,7 +2,7 @@
 // 形态（headless stream-json ↔ tmux 交互式 CLI）间接力，JSONL 是唯一权威。TUI 形态 =
 // CLI 原生形态（纯 argv、零 env 注入，凭证走 CLI 自身配置——用户拍板）；审批让位 = argv
 // 不带 --permission-prompt-tool（CLI 自己的 TUI 弹审批，can_use_tool 帧天然不存在）。
-// tmux 吞 OSC → 状态采集走 hooks 写状态文件旁路（--settings 挂六个 hook，纯 shell printf
+// tmux 吞 OSC → 状态采集走 hooks 写状态文件旁路（--settings 挂七个 hook，纯 shell printf
 // 落盘，本模块 fs.watch 消费），信号复用 agent-session-status 状态机（working/done/
 // blocked/error 四态；error 经 StopFailure hook 覆盖）。
 
@@ -34,10 +34,12 @@ export const TUI_STATUS_SIGNAL_BY_TOKEN: {
   turn_continue: { kind: "approval_settled" },
 };
 
-/** TUI hooks settings 文件内容（纯函数，单测锁定六 hook + 写文件命令）。每个 hook 只做
+/** TUI hooks settings 文件内容（纯函数，单测锁定七 hook + 写文件命令）。每个 hook 只做
  *  「printf token > 状态文件」：UserPromptSubmit → user_input（turn 开始）、Stop →
  *  turn_done（turn 正常结束）、StopFailure → turn_error（turn 因 API 错误结束）、
- *  PostToolUse → turn_continue（工具执行完 = 审批已解决，blocked 退出的 settled 信号）、
+ *  PostToolUse / PostToolUseFailure → turn_continue（工具执行完/失败 = 审批已解决，
+ *  blocked 退出的 settled 信号——CLI 二者互斥 fire，只挂 PostToolUse 会让
+ *  「approve 后工具失败」的 blocked 滞留到下一个成功工具或 Stop 才收口）、
  *  PermissionRequest → approval（真权限申请）；Notification 只收 permission_prompt 类型
  *  （CLI 的 Notification 还含 idle_prompt 空闲提示等——无 matcher 会把空闲当审批挂起，
  *  状态机 blocked 下忽略 user_input，整个 turn 钉死 blocked）。状态文件路径单引号包裹
@@ -54,6 +56,7 @@ export function buildTuiHooksSettings(statusFilePath: string) {
       Stop: [hookEntry("turn_done")],
       StopFailure: [hookEntry("turn_error")],
       PostToolUse: [hookEntry("turn_continue")],
+      PostToolUseFailure: [hookEntry("turn_continue")],
       PermissionRequest: [hookEntry("approval")],
       Notification: [hookEntry("approval", "permission_prompt")],
     },

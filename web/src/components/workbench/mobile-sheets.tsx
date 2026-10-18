@@ -23,12 +23,7 @@ import { MobileSheet } from "../shell/mobile-sheet";
 import { ShellIcon } from "../shell/icons";
 import { useGlobalInstanceCandidates } from "./instance-area";
 import type { CreateSessionApi } from "./instance-area";
-import {
-  countsAsRunning,
-  ListRowSkeleton,
-  isTurnActive,
-  statusToV2DotClass,
-} from "../shell/shell-primitives";
+import { countsAsRunning, ListRowSkeleton, statusToV2DotClass } from "../shell/shell-primitives";
 import { useHistoryQuery } from "./use-history-query";
 
 /**
@@ -118,7 +113,7 @@ export function MobileProjectSwitchSheet({
               <button
                 className={`sess w-full cursor-pointer text-left${
                   candidate.ref.sessionId === currentSessionId ? " on" : ""
-                }${isTurnActive(candidate.status) || countsAsRunning(candidate.type, candidate.status) || candidate.status === "error" ? "" : " off"}`}
+                }${countsAsRunning(candidate.type, candidate.status) || candidate.status === "error" ? "" : " off"}`}
                 key={candidate.ref.sessionId}
                 onClick={() => {
                   onOpenChange(false);
