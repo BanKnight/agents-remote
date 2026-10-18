@@ -1,48 +1,51 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-18（terminal 行首残留根因修复 + 推送语义化 + 横幅样式恢复，三 commit 已 push）
+> 最后更新：2026-10-18 13:10（terminal 行首残留**真根因定案**：推翻上轮的 client-diff 失同步诊断，改为 app 侧 `convertEol:true`）
 
 ## 一句话状态
 
-**terminal 行首残留 bug 取证闭环并修复**：字节级三步取证（live 对照 → reset+回放 0 分歧复现 → refresh-client 愈合）定案根因 = **tmux client 增量 diff 发射与自身屏幕模型失同步**（pane 恒干净、帧流被污染、turn 期间持续再种子）；修复 = `tmux-runtime.ts` attach 三层防护（600ms churn 全重绘 + **5s 周期 × 15s 活动窗 refresh-client**），实测 settle 内容分歧归零。同批交付用户 mid-turn 两需求：推送 title 语义化「项目 · 会话」+ `.done→.complete` 横幅类名漏改补齐。
+**terminal 行首残留根因第二轮取证定案并修复**：真根因 = **app 侧 xterm 的 `convertEol: true` 误解析 tmux 的裸 LF**（tmux 用 terminfo `cud1=\n` 做「下移一行」并靠它隐式携带列位；置 true 把 LF 当 CR+LF → 文本左移 2 列 + 行尾残留）。**与 tmux 版本无关，升级 tmux 不能修**——确定性负载 A/B：3.5a 与 3.8 在 `convertEol:true` 下逐行相同的 6 行分歧，置 `false` 后两版都 0 行。修复 = `SessionDetailRoute.tsx` 改 `convertEol:false` + 撤掉上轮按误诊加的 5s 周期 `refresh-client` 层。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **残留根因链**（取证定案，勿再重查）：①残留 = 捕获字节流的确定函数（reset+回放同流 0 分歧复现，跨实例可复现、与分帧方式无关）；②pane（server 模型）恒干净 → 污染在 tmux client 发射层；③仅全重绘愈合（resize/折叠 composer = 同机制）；④失同步在 turn 输出流期间持续再种子 → 一次性 refresh 无效；⑤残留集中在 col1-2 margin = tmux diff「跳过未变前缀」优化盲区。Bun PTY 读路径 20MB raw 测试零丢失（排除 api 侧）。
-- **双解析器对照的几何伪差陷阱**：回放 pane 是 40 行（status 占 1 行）而帧流写给 41 行 client（`ESC[1;41r`），「1 行偏移」不是解析器分歧——排查时必须先核对两侧几何再下结论。
-- **推送 title** = `{projectName} · {sessionName}`，无 sessionName 回落项目名（`pushTitle`，`e365ded`）。
-- **横幅样式丢失根因**：`541099c` 把裸类 `.done` 改名 `.complete`（让位 `.dot` 状态点变体）时消费点清点漏了 `ClaudeSessionDetailRoute.tsx` 的 `done mt-2`（提交声称 1 个消费点实际 2 个）——frontend-notes §34 的「改名 rg 清点」教训反例，`8cbe266` 补齐。
+- **真根因链**（勿再重查）：`ESC[r;3H ESC[K` + **裸 LF** + 文本（tmux 靠 LF 隐式带列位、不重发 CUP）→ `convertEol:true` 把 LF 当 CR+LF → 光标回列 0 → 文本左移 2 列 + `ESC[K` 从列 0 起擦 ≠ pane 从列 2 起擦 → **行首 1-2 列残留**（col1-2 margin 现象由此确切解释，不用再借「diff 跳过未变前缀盲区」）。**字节流完全正确、无失同步**。
+- **上轮诊断被推翻**：上轮「tmux client 增量 diff 发射层失同步、只有全重绘能愈合」是**误诊**——错在**回放实验用了同一个 `convertEol:true`**，无法区分「流坏了」vs「解析器配错了」。教训：凡「同配置回放复现」类实验，必须再做**单变量对照（只改解析器配置）**才能把归因落到流或解析器。
+- **#5340 与本 bug 无关**：DECSET 2026 是 tmux **3.7** 才引入（3.5a/3.6b 收到即忽略），claude ≥2.1.200 按「tmux ≥3.4」发同步标记，版本门槛本身错位。**已写入规则：勿再据 #5340 归因**。
+- **A/B 方法（可复用）**：确定性负载 = 画 30 行「2 空格缩进 + 长文本」，再交替「自列 3 整行擦空」/「自列 3 重写文本」逼出 `ESC[r;3H ESC[K` + 裸 LF + 文本；用 `@xterm/headless` 按 live 时序（80x24 收前缀 → resize → 收余下）回放，与 pane 真值比对。**只发擦除、不跟文本的负载看不见分歧**（两侧 trim 后同为空串）。
+- **tmux 3.8 仍保留在 `/opt/tmux-3.8`（未进 PATH，用户拍板保留）**，本机默认 `/usr/bin/tmux` 仍是 3.5a、**未动**。
 
 ### 进度
 
-- ✅ `63fae51` fix(api): tmux attach 周期 refresh-client 自愈（行首残留根因修复）
-- ✅ `e365ded` feat(api): 推送通知 title 语义化「项目 · 会话」
-- ✅ `8cbe266` fix(web): 完成横幅样式恢复（.complete 类名补齐）
-- ✅ 教训沉淀 `.claude/rules/claude-debugging.md`「tmux attach 渲染失同步」节
-- ✅ web 交付 checklist：CSS 硬闸 + content-type text/css + `.complete` 规则在 prod 产物
-- ⏳ **待用户真机验收**：terminal 残留自愈体感（中途瞬时残留 ≤5s 愈合，不再驻留）；推送通知 title 是否达意；气泡「✓ 完成 · N 轮…」样式恢复
+- ✅ 根因定案 + 修复落地（未提交）：`web/src/routes/SessionDetailRoute.tsx` `convertEol:false`；`api/src/tmux-runtime.ts` 撤 5s 周期 refresh 层（保留 600ms attach churn 全重绘）
+- ✅ 门禁全绿（format:check / lint / typecheck；api 987 / web 826 / shared 10）；CSS 硬闸过；dist 产物已落 `convertEol:!1`（无 `!0` 残留），重建时间晚于源文件
+- ✅ 规则文档纠正：`.claude/rules/claude-debugging.md` 该节重写（真根因 + A/B 证据 + 「勿再据 #5340 归因」+ 第一轮误诊教训）
+- ⏳ code-reviewer 审查这处改动（后台跑）
+- ⏳ 待 commit + push
+- ⏳ **待用户真机验收**：terminal 行首残留是否彻底消失（不再需要 5s 自愈）；推送通知 title 是否达意；气泡「✓ 完成 · N 轮…」样式恢复
 - ⏳ 历史挂起：PWA 通知真机清单剩余项（③-⑪）；ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗
 - ⏳ 功能批候选：mod 采集批 / 插件管理 UI / PTY+OSC 7501 / pi/acp 推送
 
 ### 阻塞 / 风险
 
-- 无阻塞。修复类小 commit 直接 push 节奏沿用。
-- 中途瞬时残留仍会出现（≤5s 窗口）——周期 refresh 是自愈不是阻断；若真机体感仍差，可调小 `ATTACH_REFRESH_INTERVAL_MS`（带宽代价 ~全屏/次）。
+- 无阻塞。
+- **`convertEol:false` 的行为面**：该 xterm 实例的字节源唯一（`message.type === "output"` = tmux attach PTY），仓库内 `convertEol` 仅此 1 处消费、无测试依赖、无别处依赖 true 的行为——故 `false` 严格正确。若将来出现非 tmux 的纯文本流喂进这个终端，需重新评估。
+- **composer「无故被抬高」**（用户 2026-10-18 报、随即自愈，拍板「不用管了」）：诊断结论 = 唯一能抬升底边且能自愈的变量是 `--composer-keyboard-offset`（`keyboard-inset.ts:46` 的 `visible = vvHeight < innerHeight` 宽口径启发式，无法区分「软键盘」与「浏览器 chrome 动画/缩放/键盘残留导致的视口瞬态」）。**未修、未埋探针**——若日后再现，按 frontend-notes §22 埋默认常开的浮层打 `vv.height / innerHeight / vv.offsetTop / vv.scale` + 该 CSS 变量。
 
 ## 易丢的关键上下文
 
-- **诊断方法论**（下次类似问题直接复用）：live xterm vs capture-pane 对照 → 捕获 WS 帧史（Playwright `framereceived`，帧是 `{type:"output", data}`）→ 同实例 reset+回放 → refresh-client 愈合实验。一次性诊断脚本不进 scripts/（`_diag-` 前缀，用后删）。
-- **api 侧 5s 周期 refresh 已加载**（respawn 过）；参数在 `tmux-runtime.ts` 顶部三个导出常量。
+- **本 session 唯一 web 改动**曾只有 `8cbe266`（`.complete` 类名补齐，落在消息流 `TurnStatsFooter` 内，不在 composer 区）；composer 抬高与该改动无关。
+- **诊断产物（一次性、`/tmp`，未进 scripts/）**：`/tmp/_diag-ab-det.sh`（确定性负载 harness）、`/tmp/abrun/_wl-v2.sh`（能逼出可见分歧的负载）、`/tmp/xt/replay.mjs`（xterm headless 回放器，按 live 时序）、`/tmp/abrun/v23{5,8}.*`（两臂字节流 + pane 真值）。结论已抄进规则，产物可随时清。
+- **隔离 tmux server 已全部收掉**（ab35/ab38/render）；生产 `ar-dev`/`novels-dev`/`router22` 全程未受影响（前后 `tmux list-sessions` 一致）。
 - **本仓 jsdom 测试三坑**（`settings-notifications.test.tsx` 内注释）：matchMedia stub / 顶层 DOM 全局被清 / 无 `screen`。
 - **探针/e2e/单测跑法**：`systemd-run --scope --user -p MemoryMax=2G bun …`；探针用 `bun` 跑不用 node。
 - 验证用 PROJECTS_ROOT/test 项目；web=prod build 43012、api=dev 43011（ar-dev tmux）；改 vite.config 后 respawn web。
 
 ## 提醒
 
-- 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
-- 到达里程碑或感知将 compact 时，主动 /handoff save。
+- 开干前读 `.claude/gtd/next-actions.md`；守 `.claude/constitution.md` 底线。
+- 到达里程碑或感知将 compact 时，主动 `/handoff save`。
 
 ---
-最后更新：2026-10-18 03:20（三 commit push + 规则沉淀；触发原因：terminal 残留批闭环）
+最后更新：2026-10-18 13:10（触发原因：terminal 残留真根因定案，纠正上轮误诊）

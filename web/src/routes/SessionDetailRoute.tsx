@@ -760,7 +760,12 @@ function XtermOutput({
       scrollback: 5000,
       scrollOnUserInput: false,
       smoothScrollDuration: 0,
-      convertEol: true,
+      // 必须 false：tmux client 用 terminfo 的 cud1 能力「下移一行」，xterm-256color 下 cud1=裸 LF，
+      // 且它靠这个 LF 隐式携带列位——典型序列 `ESC[r;3H ESC[K` + LF + 文本（下一行首个变更同列时
+      // 不重发 CUP）。置 true 会把 LF 当 CR+LF，光标回列 0 → 整行左移 2 列、行首 1-2 列残留旧帧
+      // 字符（就是行首残留的根因；2026-10-18 单变量 A/B：tmux 3.5a/3.8 均 6 行分歧 → 置 false 后 0 行）。
+      // 本终端的字节源唯一（tmux attach 的 PTY），不存在依赖「裸 LF 当换行」的文本流。
+      convertEol: false,
       customGlyphs: true,
       rescaleOverlappingGlyphs: true,
       macOptionIsMeta: true,
