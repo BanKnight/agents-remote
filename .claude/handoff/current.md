@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-18 13:10（terminal 行首残留**真根因定案**：推翻上轮的 client-diff 失同步诊断，改为 app 侧 `convertEol:true`）
+> 最后更新：2026-10-18 13:50（terminal 行首残留修复**已提交推送** `130645b`，review 通过）
 
 ## 一句话状态
 
@@ -18,11 +18,12 @@
 
 ### 进度
 
-- ✅ 根因定案 + 修复落地（未提交）：`web/src/routes/SessionDetailRoute.tsx` `convertEol:false`；`api/src/tmux-runtime.ts` 撤 5s 周期 refresh 层（保留 600ms attach churn 全重绘）
-- ✅ 门禁全绿（format:check / lint / typecheck；api 987 / web 826 / shared 10）；CSS 硬闸过；dist 产物已落 `convertEol:!1`（无 `!0` 残留），重建时间晚于源文件
+- ✅ 根因定案 + 修复落地：`web/src/routes/SessionDetailRoute.tsx` `convertEol:false`；`api/src/tmux-runtime.ts` 撤 5s 周期 refresh 层（保留 600ms attach churn 全重绘）
+- ✅ 门禁全绿（format:check / lint / typecheck；api 987 / web 826 / shared 10）；CSS 硬闸过；dist 产物已落 `convertEol:!1`（无 `!0` 残留）
 - ✅ 规则文档纠正：`.claude/rules/claude-debugging.md` 该节重写（真根因 + A/B 证据 + 「勿再据 #5340 归因」+ 第一轮误诊教训）
-- ⏳ code-reviewer 审查这处改动（后台跑）
-- ⏳ 待 commit + push
+- ✅ code-reviewer 审查**通过（无 finding）**——逐项复核：convertEol 引用面全仓 1 处、字节源唯一（terminalWriteRef ← session-stream.ts:136 ← tmux attach data 回调）、删除符号零引用、定时器双路径清理完备。唯一可选建议（`SessionDetailRoute.tsx` 注释「行尾残留旧字」措辞与真根因打架）已修
+- ✅ **commit `130645b` + push**（origin/main；`b5353df..130645b`）
+- ✅ 一次性诊断产物已清（`/tmp/_diag-ab-*.sh`、`/tmp/abrun`、`/tmp/tmux-build`；保留 `/opt/tmux-3.8` 与 `/tmp/tmux-1000` 非我所有）
 - ⏳ **待用户真机验收**：terminal 行首残留是否彻底消失（不再需要 5s 自愈）；推送通知 title 是否达意；气泡「✓ 完成 · N 轮…」样式恢复
 - ⏳ 历史挂起：PWA 通知真机清单剩余项（③-⑪）；ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗
 - ⏳ 功能批候选：mod 采集批 / 插件管理 UI / PTY+OSC 7501 / pi/acp 推送
@@ -36,7 +37,7 @@
 ## 易丢的关键上下文
 
 - **本 session 唯一 web 改动**曾只有 `8cbe266`（`.complete` 类名补齐，落在消息流 `TurnStatsFooter` 内，不在 composer 区）；composer 抬高与该改动无关。
-- **诊断产物（一次性、`/tmp`，未进 scripts/）**：`/tmp/_diag-ab-det.sh`（确定性负载 harness）、`/tmp/abrun/_wl-v2.sh`（能逼出可见分歧的负载）、`/tmp/xt/replay.mjs`（xterm headless 回放器，按 live 时序）、`/tmp/abrun/v23{5,8}.*`（两臂字节流 + pane 真值）。结论已抄进规则，产物可随时清。
+- **A/B 证据已抄进规则文档（`.claude/rules/claude-debugging.md`），一次性产物已清**（`/tmp/_diag-ab-*.sh` / `/tmp/abrun` / `/tmp/tmux-build`）。若需复现：规则文档内含确定性负载配方（画 30 行「2 空格缩进 + 长文本」→ 交替「自列 3 擦空」/「自列 3 重写」逼出 `ESC[r;3H ESC[K` + 裸 LF + 文本）+ `@xterm/headless` 按 live 时序回放法。
 - **隔离 tmux server 已全部收掉**（ab35/ab38/render）；生产 `ar-dev`/`novels-dev`/`router22` 全程未受影响（前后 `tmux list-sessions` 一致）。
 - **本仓 jsdom 测试三坑**（`settings-notifications.test.tsx` 内注释）：matchMedia stub / 顶层 DOM 全局被清 / 无 `screen`。
 - **探针/e2e/单测跑法**：`systemd-run --scope --user -p MemoryMax=2G bun …`；探针用 `bun` 跑不用 node。
@@ -48,4 +49,4 @@
 - 到达里程碑或感知将 compact 时，主动 `/handoff save`。
 
 ---
-最后更新：2026-10-18 13:10（触发原因：terminal 残留真根因定案，纠正上轮误诊）
+最后更新：2026-10-18 13:50（触发原因：终端残留修复提交推送 + review 通过 + 诊断产物清理）
