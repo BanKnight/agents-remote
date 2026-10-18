@@ -853,8 +853,9 @@ function TurnStatsFooter({ stats }: { stats: TurnStats }) {
     return (
       // .complete 绿横幅（03c）：类名源自 .done（541099c 改名让位 .dot 状态点变体），
       // 当时消费点清点漏了本处——补齐（frontend-notes §34）。
+      // 文本不 truncate、允许换行（2026-10-18 用户反馈：统计串过长被省略号截断）。
       <div className="complete mt-2" role="status">
-        <span className="min-w-0 flex-1 truncate">
+        <span className="min-w-0 flex-1 break-words">
           ✓ {t(TURN_STATUS_LABEL[tone])}
           {tailParts.length > 0 ? ` · ${tailParts.join(" · ")}` : ""}
         </span>
