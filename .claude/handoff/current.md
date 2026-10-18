@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-18 13:50（terminal 行首残留修复**已提交推送** `130645b`，review 通过）
+> 最后更新：2026-10-18 14:20（终端残留修复 `130645b` + 完成横幅换行修复 `e6d291a` 均已提交推送）
 
 ## 一句话状态
 
@@ -24,13 +24,15 @@
 - ✅ code-reviewer 审查**通过（无 finding）**——逐项复核：convertEol 引用面全仓 1 处、字节源唯一（terminalWriteRef ← session-stream.ts:136 ← tmux attach data 回调）、删除符号零引用、定时器双路径清理完备。唯一可选建议（`SessionDetailRoute.tsx` 注释「行尾残留旧字」措辞与真根因打架）已修
 - ✅ **commit `130645b` + push**（origin/main；`b5353df..130645b`）
 - ✅ 一次性诊断产物已清（`/tmp/_diag-ab-*.sh`、`/tmp/abrun`、`/tmp/tmux-build`；保留 `/opt/tmux-3.8` 与 `/tmp/tmux-1000` 非我所有）
-- ⏳ **待用户真机验收**：terminal 行首残留是否彻底消失（不再需要 5s 自愈）；推送通知 title 是否达意；气泡「✓ 完成 · N 轮…」样式恢复
+- ✅ **完成横幅统计串截断修复 `e6d291a` + push**（用户 2026-10-18 反馈「内容过长被截断」→ 指示「让它换行吧」）：`ClaudeSessionDetailRoute.tsx` `TurnStatsFooter` 的 completed 分支统计 span `truncate`→`break-words`（`.complete`/`.complete .tm` 无 nowrap，故零 CSS 改动）。验证 = 真实产物 CSS 注入 markup 的 DOM 几何 A/B **9/9 通过**（旧版 nowrap+ellipsis 单行 scroll 677 vs client 221 确被截；新版 white-space:normal + overflow-wrap:break-word 4 行换行、不横向溢出、宽度不变）。门禁全绿 + CSS 硬闸过
+- ⏳ **待用户真机验收**：terminal 行首残留是否彻底消失（不再需要 5s 自愈）；完成横幅长统计串换行效果；推送通知 title 是否达意
 - ⏳ 历史挂起：PWA 通知真机清单剩余项（③-⑪）；ℹ 配置行 terminal 让位 / in-flight ensureRunning 竞态窗
 - ⏳ 功能批候选：mod 采集批 / 插件管理 UI / PTY+OSC 7501 / pi/acp 推送
 
 ### 阻塞 / 风险
 
 - 无阻塞。
+- **推送通知跳转偶发打不开**（用户 2026-10-18 报「大部分可以、小部分不行」，拍板继续观察）：已核 deep-link 构造链（`push-notifier.ts` `deepLink` → `sw.ts` `notificationclick`→`focusOrOpen`）与路由/tab id 口径**结构正确、非 id 错配**。剩余候选（按可能度）：① 跳转前会话已被关闭/删除 → 详情 404；② SW `focusOrOpen` 选中 client 的 `navigate` 失败且 `openWindow` 兜底也失败；③ 项目名含非 ASCII（如中文）在 `encodeURIComponent` 链路上的边界。**未修，等用户第一手数据**（失败那次的 project/session + 地址栏 URL）再定位。
 - **`convertEol:false` 的行为面**：该 xterm 实例的字节源唯一（`message.type === "output"` = tmux attach PTY），仓库内 `convertEol` 仅此 1 处消费、无测试依赖、无别处依赖 true 的行为——故 `false` 严格正确。若将来出现非 tmux 的纯文本流喂进这个终端，需重新评估。
 - **composer「无故被抬高」**（用户 2026-10-18 报、随即自愈，拍板「不用管了」）：诊断结论 = 唯一能抬升底边且能自愈的变量是 `--composer-keyboard-offset`（`keyboard-inset.ts:46` 的 `visible = vvHeight < innerHeight` 宽口径启发式，无法区分「软键盘」与「浏览器 chrome 动画/缩放/键盘残留导致的视口瞬态」）。**未修、未埋探针**——若日后再现，按 frontend-notes §22 埋默认常开的浮层打 `vv.height / innerHeight / vv.offsetTop / vv.scale` + 该 CSS 变量。
 
@@ -49,4 +51,4 @@
 - 到达里程碑或感知将 compact 时，主动 `/handoff save`。
 
 ---
-最后更新：2026-10-18 13:50（触发原因：终端残留修复提交推送 + review 通过 + 诊断产物清理）
+最后更新：2026-10-18 14:20（触发原因：完成横幅截断修复提交推送 e6d291a + 一次性探针清理）
