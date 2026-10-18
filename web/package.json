@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@agents-remote/shared": "workspace:*",
-    "@assistant-ui/react": "^0.14.13",
+    "@assistant-ui/react": "0.15.27",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-go": "^6.0.1",

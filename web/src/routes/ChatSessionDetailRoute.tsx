@@ -4,8 +4,8 @@ import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
   ThreadPrimitive,
+  useAui,
   useAuiState,
-  useComposerRuntime,
 } from "@assistant-ui/react";
 import { useEffect, useRef } from "react";
 import { getChatSession } from "../api/client";
@@ -185,7 +185,7 @@ function ComposerWithInterruptPi({
   const { t } = useT();
   const isRunning = useAuiState((s) => s.thread.isRunning);
   const isEmpty = useAuiState((s) => s.composer.isEmpty);
-  const composer = useComposerRuntime();
+  const composer = useAui().composer;
   const { isMac, isMobileComposer } = useComposerEnterPolicy();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 

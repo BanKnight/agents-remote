@@ -27,9 +27,7 @@ import {
   type Unstable_TriggerItem,
   useAui,
   useAuiState,
-  useComposerRuntime,
   useExternalStoreRuntime,
-  useMessage,
   groupPartByType,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
@@ -580,7 +578,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                               }
                             />
                           ) : null}
-                          <ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                          <ComposerPrimitive.TriggerPopoverRoot>
                             <ComposerPrimitive.Root>
                               <ComposerWithInterrupt
                                 opusplanActive={opusplanActive}
@@ -603,7 +601,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                                 attachments={composerAttachments}
                               />
                             </ComposerPrimitive.Root>
-                          </ComposerPrimitive.Unstable_TriggerPopoverRoot>
+                          </ComposerPrimitive.TriggerPopoverRoot>
                           {aiTitle ? (
                             <div className="mt-1 flex justify-end px-1">
                               <span className="select-none max-w-[80%] truncate rounded-md bg-assistant-deep/40 px-2 py-0.5 text-[0.6rem] text-assistant whitespace-nowrap">
@@ -710,7 +708,7 @@ function UserImageView({ image }: { image: string }) {
 }
 
 function UserChatBubble() {
-  const message = useMessage();
+  const message = useAuiState((s) => s.message);
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -870,7 +868,7 @@ function TurnStatsFooter({ stats }: { stats: TurnStats }) {
 }
 
 function AssistantChatBubble() {
-  const message = useMessage();
+  const message = useAuiState((s) => s.message);
   const isEmpty =
     !message.content || (Array.isArray(message.content) && message.content.length === 0);
   const msgStatus = (message as { status?: { type?: string } }).status;
@@ -1025,7 +1023,7 @@ function AssistantChatBubble() {
 
 function ReasoningGroup({ running, children }: { running: boolean; children: React.ReactNode }) {
   const { t } = useT();
-  const message = useMessage();
+  const message = useAuiState((s) => s.message);
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const estimatedTokens =
     typeof custom?.estimatedTokens === "number" ? custom.estimatedTokens : null;
@@ -1054,7 +1052,7 @@ function ReasoningGroup({ running, children }: { running: boolean; children: Rea
 // ── Synthetic Body: rendered inside parent bubble when a child message has isSynthetic: true ──
 
 function SyntheticBodyView() {
-  const message = useMessage();
+  const message = useAuiState((s) => s.message);
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const syntheticBody = custom?.syntheticBody as string | undefined;
   if (!syntheticBody) return null;
@@ -1112,7 +1110,7 @@ function SyntheticBodyRow({ body }: { body: string }) {
 }
 
 function ApiErrorAttachments() {
-  const message = useMessage();
+  const message = useAuiState((s) => s.message);
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const apiErrors = custom?.apiErrors as ApiErrorAttachment[] | undefined;
   if (!apiErrors || apiErrors.length === 0) return null;
@@ -1314,7 +1312,7 @@ function RawDebugPopover({
 // Detects known system-level types (file-history-snapshot) and renders a
 // structured view; falls back to raw text for observation.
 function SystemChatBubble() {
-  const message = useMessage();
+  const message = useAuiState((s) => s.message);
   const custom = message.metadata?.custom as Record<string, unknown> | undefined;
   const { t } = useT();
   const isMobile = useIsMobile();
@@ -2320,7 +2318,7 @@ type AskUserQuestionCustom = {
 function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
   const { t } = useT();
   const bridge = useContext(ClaudeBridgeContext);
-  const composer = useComposerRuntime();
+  const composer = useAui().composer;
   const custom = useAuiState(
     (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as AskUserQuestionCustom,
   );
@@ -3541,7 +3539,7 @@ function SlashCommandPopoverItem({
     }
   }, [isHighlighted]);
   return (
-    <ComposerPrimitive.Unstable_TriggerPopoverItem
+    <ComposerPrimitive.TriggerPopoverItem
       ref={ref}
       item={item}
       index={index}
@@ -3561,7 +3559,7 @@ function SlashCommandPopoverItem({
           </span>
         ) : null}
       </span>
-    </ComposerPrimitive.Unstable_TriggerPopoverItem>
+    </ComposerPrimitive.TriggerPopoverItem>
   );
 }
 
@@ -3649,7 +3647,7 @@ function ComposerWithInterrupt({
   // Enter submits). append() drives the message through onNew → sendToSocket without
   // depending on composer text state, so it races cleanly against insertDirective.
   const api = useAui();
-  const composer = useComposerRuntime();
+  const composer = api.composer;
   const lastKeyRef = useRef<string>("");
   const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
 
@@ -3692,13 +3690,13 @@ function ComposerWithInterrupt({
   // 统一发送入口（两条路径共用：桌面 Enter / 卡片内 Send 钮）：
   // ① 任一附件上传中 → 暂缓（提及行未就绪，放行会静默丢附件；chip 的「上传中…」自解释）；
   // ② 纯附件无文本 → composer.send() 的空文本路径不可靠（assistant-ui isEmpty 语义），走
-  //    api.thread().append 直驱 onNew（slash 命令先例 :3894）；占位空格被 onNew trim 掉，
+  //    api.thread.append 直驱 onNew（slash 命令先例 :3894）；占位空格被 onNew trim 掉，
   //    文件提及行经附件快照并入帧文本，纯图成 image-only content。
   // ③ 有文本 → 原生 composer.send()（图片/提及行经 takePendingAttachments 快照随帧）。
   const sendComposer = () => {
     if (inputDisabled || hasUploadingAttachment) return;
     if (attachmentCount > 0 && isEmpty) {
-      api.thread().append(" ");
+      api.thread.append(" ");
     } else {
       composer.send();
     }
@@ -3803,23 +3801,23 @@ function ComposerWithInterrupt({
           </div>
         </div>
         {slashItems.length > 0 ? (
-          <ComposerPrimitive.Unstable_TriggerPopover
+          <ComposerPrimitive.TriggerPopover
             char="/"
             adapter={slash.adapter}
             className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-on-surface/10 bg-surface-inset/95 p-1 shadow-2xl backdrop-blur"
           >
-            <ComposerPrimitive.Unstable_TriggerPopover.Action
+            <ComposerPrimitive.TriggerPopover.Action
               formatter={cliSlashFormatter}
               onExecute={(item) => {
                 slash.action.onExecute?.(item);
                 if (lastKeyRef.current === "Enter") {
-                  api.thread().append(`/${item.id}`);
+                  api.thread.append(`/${item.id}`);
                   composer.setText("");
                 }
                 lastKeyRef.current = "";
               }}
             />
-            <ComposerPrimitive.Unstable_TriggerPopoverItems>
+            <ComposerPrimitive.TriggerPopoverItems>
               {(items) =>
                 items.map((item, index) => (
                   <SlashCommandPopoverItem
@@ -3830,8 +3828,8 @@ function ComposerWithInterrupt({
                   />
                 ))
               }
-            </ComposerPrimitive.Unstable_TriggerPopoverItems>
-          </ComposerPrimitive.Unstable_TriggerPopover>
+            </ComposerPrimitive.TriggerPopoverItems>
+          </ComposerPrimitive.TriggerPopover>
         ) : null}
       </div>
       {/* 外部工具栏已废弃：工具/按钮收回卡片内部底行（见上方）。曾用 focus + keyboardVisible

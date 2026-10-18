@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { useAuiState, useComposerRuntime } from "@assistant-ui/react";
+import { useAui, useAuiState } from "@assistant-ui/react";
 
 // Composer 草稿持久化（2026-10-02 用户需求）：输入内容只要未发送 / 未主动删除，就一直保留——
 // 刷新、PWA 重开、切会话回来都在。三个 agent composer（claude / pi / acp，全部 assistant-ui
@@ -36,7 +36,7 @@ export function saveComposerDraft(storageKey: string, text: string): void {
 }
 
 export function useComposerDraft(storageKey: string) {
-  const composer = useComposerRuntime();
+  const composer = useAui().composer;
   const text = useAuiState((s) => s.composer.text);
   const lastSavedRef = useRef<{ key: string; text: string } | null>(null);
 

@@ -6,8 +6,8 @@ import { JSDOM } from "jsdom";
 import type { ReactNode } from "react";
 import {
   AssistantRuntimeProvider,
+  useAui,
   useAuiState,
-  useComposerRuntime,
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
 import { useComposerDraft } from "./composer-draft";
@@ -26,7 +26,7 @@ beforeEach(() => {
 function useDraftProbe(storageKey: string) {
   useComposerDraft(storageKey);
   const text = useAuiState((s) => s.composer.text);
-  const composer = useComposerRuntime();
+  const composer = useAui().composer;
   return { text, composer };
 }
 
