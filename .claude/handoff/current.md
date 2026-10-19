@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-19 16:52（TUI hooks 结构化采集 + 子 agent 信号过滤落地，3151b0b 未推）
+> 最后更新：2026-10-19 17:05（TUI hooks 结构化采集 + 子 agent 信号过滤已推送 61ac98b..94e462e）
 
 ## 一句话状态
 
@@ -19,12 +19,11 @@
 
 - ✅ 壳/内容分离三 commit 已 push（04b4568..61ac98b）
 - ✅ `3151b0b` TUI hooks 结构化采集 + 子 agent 信号过滤（5 files：agent-tui.ts/.test、index.ts、push-notifier.ts、probe-session-mode.mjs）
-- ⏳ **1 commit 未推**（3151b0b）——等用户确认后 push
+- ✅ **已推送** `61ac98b..94e462e main -> main`（3151b0b + 94e462e handoff）
 
 ### 待办
 
-- **push 3151b0b**（待用户确认）
-- **真机验收**：① 子 agent 运行中出错/完成不再触发主会话 error 红点与 push；② 主 turn 正常 done/error 照常通知；③ TUI blocked push 带工具名（「等待审批：Bash · …」）；④ 老会话（升级前 spawn 的 TUI pane）状态点仍正常（fallback）
+- **真机验收**：① 子 agent 运行中出错/完成不再触发主会话 error 红点与 push；② 主 turn 正常 done/error 照常通知；③ TUI blocked push 带工具名（「等待审批：Bash · …」）；④ 老会话（升级前 spawn 的 TUI pane）状态点仍正常（fallback）——**旧会话想让新能力立即生效 = 切一次模式**（chat→terminal），切换会重启 pane、丢 scrollback，对话内容经 --resume 保留
 - **composer 哨兵观察**：等真机 `[inset-debug]` 数据 → 拆临时诊断件
 - 历史挂起：推送通知跳转偶发失败（等第一手数据）；PWA 通知清单剩余项
 
