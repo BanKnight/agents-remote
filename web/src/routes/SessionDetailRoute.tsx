@@ -1136,13 +1136,15 @@ function XtermOutput({
   );
 }
 
-type TerminalOverlayState = {
+export type TerminalOverlayState = {
   animated?: boolean;
   tone: "accent" | "danger" | "muted";
   title: string;
 };
 
-function TerminalStatusOverlay({ overlay }: { overlay: TerminalOverlayState }) {
+/** 终端连接态遮罩（connecting 全屏 spinner / error·ended 顶部 pill）。导出供
+ *  AgentPanelRouter 首载骨架复用（terminal 形态会话在 detail 未回时直接显本遮罩）。 */
+export function TerminalStatusOverlay({ overlay }: { overlay: TerminalOverlayState }) {
   const pillToneClasses = {
     accent: "border-primary/25 bg-primary/10 text-primary shadow-primary/20",
     danger: "border-error/30 bg-error/10 text-error shadow-error/20",

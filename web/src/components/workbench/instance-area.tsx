@@ -17,6 +17,7 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tansta
 import type {
   AgentProvider,
   AgentSession,
+  AgentSessionMode,
   ClaudeAutoRetryConfig,
   ListAgentSessionsResponse,
   ListTerminalSessionsResponse,
@@ -94,6 +95,7 @@ import {
 } from "../shell/shell-primitives";
 import { AgentTerminalPanel, AcpPanel, ChatPanel, TerminalPanel } from "./instance-panel";
 import { ChatSessionDetailBody } from "../../routes/ChatSessionDetailRoute";
+import { TerminalStatusOverlay } from "../../routes/SessionDetailRoute";
 import { FileTabPreview, FileTabStripActions } from "../files/file-preview-panel";
 import { ResourceStatePanel, resolveRootBrowseTarget } from "../files/file-browser";
 import { resolveRelativeFilePath } from "../files/relative-md-link";
@@ -654,18 +656,63 @@ function AgentPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
   );
 }
 
+/**
+ * 已知运行形态（双模式首载分派）：detail 未回时按「detail 缓存 → 项目列表缓存 →
+ * overview 缓存 → sidecar 记忆」取 mode。terminal 形态会话在 detail 首载窗口直接显
+ * 终端连接态，不再先闪聊天骨架（2026-10-19 用户真机反馈：后台恢复/深链进 TUI 会话，
+ * 聊天骨架 → 终端加载态两段跳变）。全部 miss（首次打开、缓存未热）返回 undefined，
+ * 调用方维持原 ChatSkeleton 兜底。
+ */
+function useKnownAgentMode(
+  panelRef: SessionPanelRef,
+  detailMode?: AgentSessionMode,
+): AgentSessionMode | undefined {
+  // 三个 disabled useQuery 同 key 只读缓存不发请求（与 usePanelMeta 同范式）。
+  const agentList = useQuery<ListAgentSessionsResponse>({
+    enabled: false,
+    queryFn: () => listAgentSessions(panelRef.projectName),
+    queryKey: ["projects", panelRef.projectName, "agent-sessions"],
+  });
+  const overviewCache = useQuery<OverviewResponse>({
+    enabled: false,
+    queryFn: fetchOverview,
+    queryKey: ["overview"],
+  });
+  const memo = useAtomValue(instanceNameMemoAtom)[panelRef.sessionId]?.mode;
+  return (
+    detailMode ??
+    agentList.data?.sessions.find((s) => s.id === panelRef.sessionId)?.mode ??
+    overviewCache.data?.candidates.find(
+      (c) => c.sessionId === panelRef.sessionId && c.projectName === panelRef.projectName,
+    )?.mode ??
+    memo
+  );
+}
+
 function AgentPanelRouterInner({ panelRef }: { panelRef: SessionPanelRef }) {
   const { t } = useT();
   const detail = useAgentDetail(panelRef);
+  const knownMode = useKnownAgentMode(panelRef, detail.data?.session.mode);
+  // 形态记忆写回（terminal/chat）：供下次冷启动（后台恢复/深链）首载直接选对骨架。
+  useInstanceNameMemoWriter(panelRef, detail.data?.session);
   // 首载骨架（§6.12o 批次 2 + 真机反馈 2026-10-10）：detail query 首载显 ChatSkeleton 而非
   // 独立的 LoadingBlock「加载会话…」段——原两段加载（ping 点 → 气泡骨架）被用户判读为
-  // 分段漫长；claude（主场景）骨架→骨架零跳变衔接。代价：agent/omp 首载窗口（= detail
-  // HTTP RTT，通常 <300ms）短暂显聊天骨架再切真实形态，两害取轻。isPending 语义——有
-  // 缓存数据后本分支不再可达，后台刷新不闪。
+  // 分段漫长；claude（主场景）骨架→骨架零跳变衔接。双模式修正（2026-10-19）：已知
+  // terminal 形态直接显终端连接态（与 SessionDetail 首连遮罩同款，detail 回来零跳变），
+  // 聊天骨架只服务 chat/omp 与形态未知场景。isPending 语义——有缓存数据后本分支不再
+  // 可达，后台刷新不闪。
   // 壳同构（真机反馈 2026-10-11：骨架→面板 bg 色跳变）——ChatPanel/AcpPanel 等真实面板
   // 都挂 shellSurfaceClasses.runtimeBody（bg-surface-inset/15 叠加），骨架分支裸显 ChatSkeleton
   // 缺这层 → 骨架期与加载完底色不同。骨架包同款壳，全程底色一致。
-  if (detail.isLoading)
+  if (detail.isLoading) {
+    if (knownMode === "terminal")
+      return (
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <TerminalStatusOverlay
+            overlay={{ animated: true, title: t("status.connecting"), tone: "accent" }}
+          />
+        </div>
+      );
     return (
       <div
         className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody} ${chatScrollPaddingClasses}`}
@@ -673,6 +720,7 @@ function AgentPanelRouterInner({ panelRef }: { panelRef: SessionPanelRef }) {
         <ChatSkeleton />
       </div>
     );
+  }
   if (detail.isLoadingError) {
     // 错误态（review 消化）：isLoadingError = isError 且缓存无数据——后台 refetch 失败
     // （staleTime 过期后）不顶掉已渲染面板；形态归一 ResourceStatePanel danger + 第一手 message
@@ -988,22 +1036,29 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
  */
 export function useInstanceNameMemoWriter(
   panelRef: WorkbenchPanelRef,
-  session: { displayName: string } | undefined,
+  session: { displayName: string; mode?: AgentSessionMode } | undefined,
 ) {
   const setMemo = useSetAtom(instanceNameMemoAtom);
   const sessionId = panelRef.kind === "session" ? panelRef.sessionId : undefined;
   const sessionType = sessionId ? inferSessionTypeFromId(sessionId) : undefined;
   const displayName = session?.displayName;
+  const mode = session?.mode;
   useEffect(() => {
     if (!sessionId || !sessionType || !displayName) return;
     setMemo((prev) => {
       const entry = prev[sessionId];
-      if (entry && entry.name === displayName && entry.type === sessionType) {
+      if (
+        entry &&
+        entry.name === displayName &&
+        entry.type === sessionType &&
+        entry.mode === mode
+      ) {
         return prev;
       }
-      return { ...prev, [sessionId]: { name: displayName, type: sessionType } };
+      // mode 一并记忆（双模式）：terminal 会话冷启动首载按它直接显终端连接态。
+      return { ...prev, [sessionId]: { name: displayName, type: sessionType, mode } };
     });
-  }, [sessionId, sessionType, displayName, setMemo]);
+  }, [sessionId, sessionType, displayName, mode, setMemo]);
 }
 
 /**
@@ -1025,6 +1080,7 @@ function cachedSessionFromLists(
   | {
       displayName: string;
       status: AgentSession["status"] | TerminalSession["status"];
+      mode?: AgentSessionMode;
     }
   | undefined {
   const inProjectList =
@@ -1034,6 +1090,8 @@ function cachedSessionFromLists(
     return {
       displayName: inProjectList.displayName,
       status: inProjectList.status,
+      // TerminalSession 无 mode（terminal 原生会话无运行形态）——in 收窄。
+      mode: "mode" in inProjectList ? inProjectList.mode : undefined,
     };
   }
   const candidate = overviewCache.data?.candidates.find(
@@ -1042,6 +1100,7 @@ function cachedSessionFromLists(
   if (!candidate) return undefined;
   return {
     displayName: candidate.displayName,
+    mode: candidate.mode,
     status: candidate.status,
   };
 }
