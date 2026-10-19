@@ -24,7 +24,8 @@
 - ✅ `3cb505a` 移动标题圆点跟聚焦类型走
 - ✅ `0413fae` composer 取证角标（临时诊断件）
 - ✅ `832708e` composer 修复（init 800ms 短窗复核）+ 自动哨兵（localStorage 环形 + POST `/api/debug/inset-report` → api console.warn）；43012 构建落盘已验证（`init-settle` 在 entry、`inset-report` 在会话路由 chunk、CSS content-type 正常）
-- ⏳ **5 commit 未推**（origin/main ahead 5）——等用户确认后 push
+- ✅ `c051fd9` idle 文案改「空闲中」/「Idle」（i18n key `status.waitingForInput` → `status.idle`）+ 恢复历史会话初始态 `done`（`createAgentSession` 按是否传入已有 session id 注入 `initialStatus`；新建仍 idle）。**用户拍板 2026-10-19**：恢复前是 done、恢复后显示灰点「等待输入」有误导性。
+- ⏳ **`c051fd9` 未推**（`36c5f9c` 及之前 6 个已推）——等用户确认后 push
 
 ### 待办
 
