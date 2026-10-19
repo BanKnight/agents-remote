@@ -28,11 +28,20 @@ export type KeyboardInset = { offsetPx: number; visible: boolean };
 
 export type KeyboardInsetSource =
   | "init"
+  | "init-settle"
   | "vv-resize"
   | "vv-scroll"
   | "win-resize"
   | "focusin"
   | "focusout";
+
+/**
+ * 挂载短窗复核时长：init 单点采样可能踩「PWA 启动 / 后台恢复瞬态 vv」（2026-10-19
+ * composer 抬高 bug：通知深链 → SW navigateFallback 完整文档加载 → 页面挂载瞬间
+ * vv.height < innerHeight 短暂成立 → 非零 offset 写入 → 无事件纠正而卡住）。窗口内
+ * 每帧重测幂等写回，vv 稳定后自然写正（正常启动同值写入无副作用）。
+ */
+const INIT_SETTLE_WINDOW_MS = 800;
 
 /**
  * 键盘吃掉的视口高度（纯函数，单测覆盖）：layout viewport 高 − visual viewport 高 −
@@ -88,8 +97,22 @@ export function observeKeyboardInset(
   window.addEventListener("focusout", onFocusOut);
   apply(measure(), "init");
 
+  // 挂载短窗复核（composer 抬高 bug 修复）：窗口内每帧重测幂等写回——init 采样落在
+  // 启动/恢复瞬态时，vv 稳定帧会把正确值写回（异常 offset 被冲掉），正常启动则同值
+  // 无副作用。窗口结束恢复纯事件驱动。
+  let settleRafId = 0;
+  const settleStartedAt = performance.now();
+  const settleLoop = () => {
+    apply(measure(), "init-settle");
+    if (performance.now() - settleStartedAt < INIT_SETTLE_WINDOW_MS) {
+      settleRafId = requestAnimationFrame(settleLoop);
+    }
+  };
+  settleRafId = requestAnimationFrame(settleLoop);
+
   return () => {
     cancelAnimationFrame(rafId);
+    cancelAnimationFrame(settleRafId);
     vv.removeEventListener("resize", onVvResize);
     vv.removeEventListener("scroll", onVvScroll);
     window.removeEventListener("resize", onWinResize);

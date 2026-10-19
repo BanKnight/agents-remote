@@ -237,6 +237,18 @@ export const createFetchHandler =
       return response;
     };
 
+    // 【临时诊断端点——composer 抬高 bug 取证用（2026-10-19），定案后随前端角标
+    // （use-composer-inset-debug-badge.ts）一起拆。收 PWA 端 visualViewport / composer
+    // offset 哨兵记录，仅打服务端日志不落盘。】
+    if (url.pathname === "/api/debug/inset-report" && request.method === "POST") {
+      const body: unknown = await request.json().catch(() => null);
+      if (!Array.isArray(body)) {
+        return new Response("expected JSON array", { status: 400 });
+      }
+      console.warn("[inset-debug]", JSON.stringify(body).slice(0, 4096));
+      return withRefresh(Response.json({ ok: true }));
+    }
+
     if (options.settingsStore) {
       const settingsResponse = await handleSettingsRoutes(request, url, options.settingsStore);
       if (settingsResponse) {
