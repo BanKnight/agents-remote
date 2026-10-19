@@ -940,6 +940,12 @@ export function approvalsStreamUrl() {
   return `${protocol}//${globalThis.location.host}/api/approvals/stream`;
 }
 
+/** 会话壳统一推送（壳/内容分离）：壳元数据变更推全量快照，Workbench 根常开订阅。 */
+export function sessionsStreamUrl() {
+  const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${globalThis.location.host}/api/sessions/stream`;
+}
+
 export function createEchoSocket() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return new WebSocket(`${protocol}//${window.location.host}/api/ws/echo`);

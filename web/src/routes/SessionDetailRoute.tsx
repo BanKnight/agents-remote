@@ -104,7 +104,6 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
   }, [reconnectRequest, connectionStatus, sessionId, setReconnectRequest]);
   // Only shown for unrecoverable failures (protocol error, session ended)
   const [fatalError, setFatalError] = useState<string | null>(null);
-  const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const terminalDataRef = useRef<string | null>(null);
   const terminalWriteRef = useRef<((data: string) => void) | null>(null);
   // 最新 fit 出的容器尺寸：sendTerminalResize 写入，connect() 构造 WS URL 时读出，
@@ -133,15 +132,9 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
         ? getAgentSession(projectName, sessionId)
         : getTerminalSession(projectName, sessionId),
   });
-  const isEnded = connectionStatus === "ended" || sessionStatus === "closed";
-
-  // Seed initial sessionStatus from the detail query; subsequent updates come
-  // from WebSocket status messages.
-  useEffect(() => {
-    if (detail.data?.session.status) {
-      setSessionStatus((prev) => prev ?? detail.data.session.status);
-    }
-  }, [detail.data?.session.status]);
+  // 会话壳状态（closed 等）不走本通道：session-stream 服务端只发 transport 态，
+  // 壳由 sessions-stream 广播保鲜（use-session-shells invalidate detail）。
+  const isEnded = connectionStatus === "ended";
 
   // Each mount (or reconnect) bumps this so stale-socket events are ignored.
   const connGeneration = useRef(0);
@@ -215,17 +208,16 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
           if (message.status === "connected") {
             lastPongRef.current = Date.now();
           }
+          // transport-only：非 transport 态（会话壳状态）服务端不发，防御性忽略——
+          // 壳状态由 sessions-stream 通道维护，不在此消费。
           if (isTransportStatus(message.status)) {
             setConnectionStatus(message.status);
-          } else {
-            setSessionStatus(message.status);
           }
           return;
         }
 
         if (message.type === "ended") {
           setConnectionStatus("ended");
-          setSessionStatus("closed");
           // 多端跟随（2026-10-16）：agent 会话 pane 退出可能是其它端切回 chat 形态（tmux 被
           // kill）——失效 detail 让 AgentPanelRouter 重读 mode 换渲染 ChatPanel；pane 内
           // /exit 时 mode 仍是 terminal，refetch 无形态变化（重连循环每次 ended 重触发，

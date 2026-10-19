@@ -367,7 +367,6 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     modelSwitchVersion,
     permissionMode,
     contextUsage,
-    sessionStatus,
     aiTitle,
     agentName,
     loading,
@@ -416,9 +415,10 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
   // and invalidate the detail query — effort has no stream signal, so the
   // selector only sees the new value after the refetch.
   const onSelectEffort = async (effort: EffortLevel) => {
-    // turn 活跃门优先消费 WS 实时标量（session_status 帧），REST detail（10s 轮询）兜底——
-    // blocked 也打断 turn，语义同拦。
-    if (session && isTurnActive(sessionStatus ?? session.status)) {
+    // turn 活跃门读 REST detail 的 status——壳状态由 sessions-stream 广播保鲜
+    //（invalidate detail query），无需再从 chat 流取 WS 实时标量。blocked 也打断
+    // turn，语义同拦。
+    if (session && isTurnActive(session.status)) {
       const ok = await confirm({
         title: t("claude.effort.restartTitle"),
         message: t("claude.effort.restartConfirmRunning"),

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { JSDOM } from "jsdom";
-import type { AgentSessionStatus, SessionStreamServerMessage } from "@agents-remote/shared";
+import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { useClaudeSession } from "./claude-adapter";
 import { queryClient } from "../lib/query-client";
 import { setSocketLoggingEnabled } from "../lib/debug-flags";
@@ -1679,26 +1679,6 @@ describe("useClaudeSession cost-state 标量（CLI 2.1.299+）", () => {
   });
 });
 
-describe("useClaudeSession sessionStatus 标量（turn 状态）", () => {
-  const statusFrame = (status: AgentSessionStatus): SessionStreamServerMessage =>
-    ({ type: "system", subtype: "session_status", status }) as SessionStreamServerMessage;
-
-  test("bridge.getSessionStatus 镜像 WS 实时标量（effort 确认门同源，P3-10）", async () => {
-    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
-    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
-    const socket = MockSocket.instances[0];
-    act(() => socket.open());
-
-    // 无帧时 undefined（消费方兜底 REST detail 的 session.status）。
-    expect(result.current.bridge.getSessionStatus?.()).toBeUndefined();
-    act(() => {
-      socket.emit(statusFrame("working"));
-    });
-    expect(result.current.bridge.getSessionStatus?.()).toBe("working");
-    // latest-wins：新帧覆盖旧值。
-    act(() => {
-      socket.emit(statusFrame("idle"));
-    });
-    expect(result.current.bridge.getSessionStatus?.()).toBe("idle");
-  });
-});
+// session_status 标量（原 describe「useClaudeSession sessionStatus 标量」）已随壳/内容
+// 分离拆除（2026-10-19）：壳状态走 sessions-stream（use-session-shells），chat 流不再
+// 承载 turn 状态——消费面读 REST detail（sessions-stream invalidate 保鲜）。

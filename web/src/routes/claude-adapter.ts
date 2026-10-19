@@ -1,14 +1,12 @@
 import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExternalStoreAdapter, AppendMessage, ThreadMessageLike } from "@assistant-ui/react";
 import type {
-  AgentSessionStatus,
   ClaudeAttachment,
   ClaudeContextUsage,
   ClaudeContextUsageChanged,
   ClaudeControlResponse,
   ClaudeCostState,
   ClaudeQueueOperation,
-  ClaudeSessionStatusChanged,
   ClaudeUserImageBlock,
   EffortLevel,
   SessionStreamServerMessage,
@@ -333,11 +331,6 @@ export type ClaudeBridge = {
   // ℹ 信息面快照读取（非响应式，同 registry 取用语义）：会话累计费用标量（cost-state
   // latest-wins）。经 ref 镜像，bridge 身份稳定不因标量更新抖动（openInfo 打开瞬间读一次）。
   getCostState?: () => ClaudeCostState | undefined;
-  // ℹ 运行配置选择面快照读取（非响应式）：WS 实时 turn 状态标量（session_status
-  // latest-wins）。effort 确认门「turn 进行中」判定用——REST detail 有轮询滞后，
-  // 两入口判定必须同源（P3-10；兜底语义对齐 ClaudeSessionDetailRoute 的
-  // sessionStatus ?? session.status）。
-  getSessionStatus?: () => AgentSessionStatus | undefined;
 };
 
 export const ClaudeBridgeContext = createContext<ClaudeBridge | null>(null);
@@ -2674,10 +2667,6 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       // applyMessageScalarState 折算(contextUsage),不产聊天气泡、不落 fallback。
       if (subtype === "context_usage") continue;
 
-      // session_status: 服务端合成的 turn 状态标量广播(broadcast-only),由
-      // applyMessageScalarState 折算(sessionStatus),不产聊天气泡、不落 fallback。
-      if (subtype === "session_status") continue;
-
       // permission_check_status: CLI 2.1.299+ 内部权限检查生命周期信号
       // (tool_use_id + status)，无 UI 价值——skip 不落 fallback（每次权限检查
       // 一条，落兜底即调试气泡刷屏）。
@@ -3954,7 +3943,6 @@ export function useClaudeSession(
           modelAlias?: string;
           permissionMode?: string;
           contextUsage?: ClaudeContextUsage;
-          sessionStatus?: AgentSessionStatus;
         };
         // currentModel 只收 alias（REST 种子 / seed_init / switchModel / typed set-echo），
         // 优先 seed.modelAlias（服务端始终 alias 语义）；system.init 的 concrete model 不进
@@ -3964,16 +3952,6 @@ export function useClaudeSession(
         if (seed.model) setResolvedModel(seed.model);
         if (seed.permissionMode) setPermissionMode(seed.permissionMode);
         if (seed.contextUsage) setContextUsage(seed.contextUsage);
-        if (seed.sessionStatus) setSessionStatus(seed.sessionStatus);
-        return;
-      }
-
-      // system.session_status: 服务端合成的 turn 状态标量广播（broadcast-only，
-      // 不进 liveLines/history——持久值由 seed_init.sessionStatus 回放恢复）。
-      // scalar-only：折标量即 return，不产渲染 item。
-      if (msg.type === "system" && sm.subtype === "session_status") {
-        const frame = msg as ClaudeSessionStatusChanged;
-        if (frame.status) setSessionStatus(frame.status);
         return;
       }
 
@@ -4333,11 +4311,6 @@ export function useClaudeSession(
   // 上下文占用明细标量（统一会话标量管道第一个标量）：live 靠 context_usage 帧、
   // 回放靠 seed_init.contextUsage 恢复；均为 broadcast-only 标量，无渲染 item。
   const [contextUsage, setContextUsage] = useState<ClaudeContextUsage | undefined>();
-  // turn 状态标量（5 态，OSC 7501 对齐）：live 靠 session_status 帧、回放靠
-  // seed_init.sessionStatus 恢复；broadcast-only 标量，无渲染 item。
-  const [sessionStatus, setSessionStatus] = useState<AgentSessionStatus | undefined>();
-  const sessionStatusRef = useRef(sessionStatus);
-  sessionStatusRef.current = sessionStatus;
   // 会话累计费用/用量标量（CLI 2.1.299+ cost-state）：live 靠 WS 帧 latest-wins；回放靠
   // liveLines 重放恢复（relay 保留该帧）。消费面 = ℹ 信息面「累计费用」行（bridge.getCostState）。
   const [costState, setCostState] = useState<ClaudeCostState | undefined>();
@@ -4659,7 +4632,6 @@ export function useClaudeSession(
       },
       onCompact: null,
       getCostState: () => costStateRef.current,
-      getSessionStatus: () => sessionStatusRef.current,
     }),
     [sendToSocket],
   );
@@ -5209,7 +5181,6 @@ export function useClaudeSession(
     opusplanActive,
     permissionMode,
     contextUsage,
-    sessionStatus,
     costState,
     aiTitle,
     agentName,

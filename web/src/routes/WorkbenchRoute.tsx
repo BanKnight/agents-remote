@@ -18,6 +18,7 @@ import {
   useScopeInstanceOrder,
 } from "../components/workbench/instance-area";
 import { useRenameSession } from "../components/workbench/instance-actions";
+import { useSessionShells } from "../hooks/use-session-shells";
 import { useWorkbenchShortcuts } from "../hooks/use-workbench-shortcuts";
 import { MobileWorkbench } from "../components/workbench/mobile-workbench";
 import { type WorkbenchTabPluginContext } from "../components/workbench/workbench-tab-plugin";
@@ -151,6 +152,9 @@ function WorkbenchContent({
   const isDesktop = useIsDesktopViewport();
   const navigateWorkbench = useWorkbenchNavigate();
   const navigate = useNavigate();
+  // 会话壳统一推送（壳/内容分离）：根常开单订阅，壳变更（状态机/mode/rename/close，
+  // 任意采集源）亚秒级投影进 ["overview"] 缓存 + 按需 invalidate 列表/detail。
+  useSessionShells();
   // D4「直达上次位置」：进入 project scope 即记忆 key，`/` 跳板无会话记忆时据此恢复。
   const [, setLastProjectKey] = useAtom(workbenchLastProjectAtom);
   useEffect(() => {

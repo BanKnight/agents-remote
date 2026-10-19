@@ -125,9 +125,9 @@ export function RuntimeConfigDialog({
     } else {
       // effort = CLI 重启（--resume 重连），running 中切换会打断当前 turn——与会话页
       // onSelectEffort 同款 danger confirm；无流内信号，detail 失效重取后才见新值。
-      // turn 判定优先读 WS 实时标量（bridge.getSessionStatus），REST detail 兜底——
-      // detail 有轮询滞后，两入口必须同源（P3-10；对齐 ClaudeSessionDetailRoute）。
-      if (session && isTurnActive(bridge.getSessionStatus?.() ?? session.status)) {
+      // turn 判定读 REST detail 的 status——壳状态由 sessions-stream 广播保鲜
+      //（invalidate detail query），两入口自然同源。
+      if (session && isTurnActive(session.status)) {
         const ok = await confirm({
           cancelLabel: t("cancel"),
           confirmLabel: t("claude.effort.restart"),
