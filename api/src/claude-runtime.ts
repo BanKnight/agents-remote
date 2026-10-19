@@ -707,18 +707,16 @@ export class ClaudeRuntime implements RuntimeResources {
   }
 
   /** turn 状态迁移的唯一入口(状态机 = agent-session-status.ts 纯函数)。无迁移短路;
-   *  有迁移:proc state 更新 → session_status 帧广播(broadcast-only,与 context_usage
-   *  同款)→ onSessionStatusChange(落盘 metadata,跨重启权威)。 */
+   *  有迁移:proc state 更新(seed_init.sessionStatus 的源) → onSessionStatusChange
+   *  (落盘 metadata,跨重启权威 → registry.onMetadataChanged → sessions-stream 广播)。
+   *  壳状态不寄生 chat 消息流（原 injectLiveLine session_status 帧已拆，2026-10-19
+   *  壳/内容分离重构）。 */
   private applyStatusSignal(sessionName: string, signal: AgentStatusSignal): void {
     const state = this.processes.get(sessionName);
     if (!state) return;
     const next = nextAgentSessionStatus(state.sessionStatus, signal);
     if (!next) return;
     state.sessionStatus = next;
-    this.injectLiveLine(
-      sessionName,
-      JSON.stringify({ type: "system", subtype: "session_status", status: next }),
-    );
     this.onSessionStatusChange?.(state.sessionId, next);
   }
 

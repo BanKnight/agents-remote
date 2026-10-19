@@ -1135,13 +1135,13 @@ function seedStatusHarness(initial: string): StatusHarness {
   return { runtime, internal, injected, statusCalls };
 }
 
-test("turn 状态机: result(is_error=false) → done,广播 session_status 帧 + 落盘回调", () => {
+test("turn 状态机: result(is_error=false) → done,落盘回调（壳不注入 chat 流,经 sessions-stream 广播）", () => {
   const h = seedStatusHarness("working");
   h.internal.captureTurnResultFromLine("rt-key", { type: "result", is_error: false });
   expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("done");
-  expect(h.injected).toEqual([
-    JSON.stringify({ type: "system", subtype: "session_status", status: "done" }),
-  ]);
+  // 壳/内容分离（2026-10-19）：壳状态不寄生 chat 消息流（原 session_status injectLiveLine
+  // 帧已拆），唯一出口 = 落盘回调 → registry.onMetadataChanged → sessions-stream。
+  expect(h.injected).toEqual([]);
   expect(h.statusCalls).toEqual([{ sessionId: "agent_1", status: "done" }]);
 });
 

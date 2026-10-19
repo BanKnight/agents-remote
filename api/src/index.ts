@@ -52,6 +52,7 @@ import { join, resolve } from "node:path";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { handleSessionRoutes } from "./session-routes";
 import { SessionRegistry, type RuntimeResources } from "./session-registry";
+import { SessionShellHub } from "./session-shell-hub";
 import { ChatSessionRegistry, DEFAULT_CHAT_TITLE } from "./chat-session-registry";
 import { handleChatSessionRoutes } from "./chat-session-routes";
 import { startChatIdleRecycler } from "./chat-idle-recycler";
@@ -89,6 +90,7 @@ type FetchHandlerOptions = {
   claudeRuntime?: ClaudeRuntime;
   claudeStreamController?: ClaudeStreamController;
   approvalCenter?: ApprovalCenter;
+  sessionShellHub?: SessionShellHub;
   agentTui?: AgentTuiController;
   acpStreamController?: AcpStreamController;
   piStreamController?: PiStreamController;
@@ -113,6 +115,9 @@ type WebSocketData =
     }
   | {
       kind: "approvals-stream";
+    }
+  | {
+      kind: "sessions-stream";
     }
   | {
       kind: "session-stream";
@@ -332,6 +337,14 @@ export const createFetchHandler =
       const approvalsUpgrade = options.approvalCenter.handleUpgrade(request, auth, server);
       if (approvalsUpgrade.matched) {
         return withRefresh(approvalsUpgrade.response);
+      }
+    }
+
+    // sessions-stream upgrade（会话壳频道，全局无项目作用域，鉴权同 approvals-stream）。
+    if (options.sessionShellHub) {
+      const sessionsUpgrade = options.sessionShellHub.handleUpgrade(request, auth, server);
+      if (sessionsUpgrade.matched) {
+        return withRefresh(sessionsUpgrade.response);
       }
     }
 
@@ -1701,6 +1714,10 @@ export const startApi = async () => {
   // M5-b 审批中心（§6.4）：runtime 广播 can_use_tool 登记 + turn 收口；会话内托盘应答经
   // 控制器转发时同步注销（同一 stdin 管道的两条应答入口共用一个登记表）。
   const approvalCenter = new ApprovalCenter(claudeRuntime, sessionRegistry);
+  // 会话壳统一推送（壳/内容分离）：registry 变更（状态机/mode/rename/close 经
+  // patchMetadata/create/remove 单入口）→ hub 全量快照合并广播。runtime 层零感知。
+  const sessionShellHub = new SessionShellHub(sessionRegistry);
+  sessionRegistry.onMetadataChanged = () => sessionShellHub.scheduleBroadcast();
   // PWA Web Push 通知批：VAPID 密钥/订阅落盘 ~/.agents-remote/（0o600），fire-and-forget
   // 发送（内部自带 catch）；blocked 走审批登记回调，done/error 走会话状态机出口。
   const pushKeys = new PushKeyManager();
@@ -1853,6 +1870,7 @@ export const startApi = async () => {
     idleTimeout: SKILL_REQUEST_IDLE_TIMEOUT_SECONDS,
     fetch: createFetchHandler(auth, {
       approvalCenter,
+      sessionShellHub,
       agentTui,
       claudeRuntime,
       claudeStreamController,
@@ -1884,6 +1902,9 @@ export const startApi = async () => {
         }
         if (ws.data?.kind === "approvals-stream") {
           approvalCenter.open(ws);
+        }
+        if (ws.data?.kind === "sessions-stream") {
+          sessionShellHub.open(ws);
         }
         if (ws.data?.kind === "acp-stream") {
           acpStreamController.open(ws).catch((err) => {
@@ -1927,6 +1948,9 @@ export const startApi = async () => {
         }
         if (ws.data?.kind === "approvals-stream") {
           approvalCenter.close(ws);
+        }
+        if (ws.data?.kind === "sessions-stream") {
+          sessionShellHub.close(ws);
         }
         if (ws.data?.kind === "acp-stream") {
           acpStreamController.close(ws);

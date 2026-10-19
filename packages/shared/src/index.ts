@@ -411,6 +411,17 @@ export type OverviewResponse = {
   candidates: OverviewCandidate[];
 };
 
+/** 会话壳元数据（/api/sessions/stream 快照行）：OverviewCandidate 去掉慢填充的 subtitle。
+ *  壳 = 会话本身的可同步标量（status/mode/displayName 等）；内容（chat 消息流/终端字节流）
+ *  走各自通道，壳统一走 sessions-stream 推送（不寄生任何内容流）。 */
+export type SessionShell = Omit<OverviewCandidate, "subtitle">;
+
+/** sessions-stream WS（服务端→客户端）：任何壳变更推全量快照（同 approvals-stream 语义）。 */
+export type SessionShellsStreamServerMessage = {
+  type: "sessions";
+  sessions: SessionShell[];
+};
+
 /**
  * GET /api/overview/subtitles 响应：sessionId → 卡片第二行（terminal lastCommand / agent lastAssistantMessage）。
  * overview 第二阶段异步补全通道——核心列表（OverviewResponse）毫秒级返回后，前端再拉此 map 把
@@ -1756,16 +1767,6 @@ export type ClaudeContextUsageChanged = {
   subtype: "context_usage";
 } & ClaudeContextUsage;
 
-// Server-synthesized session turn-status update (OSC 7501 对齐). Broadcast-only
-// via relay.injectLine (never buffered): the durable value lives in session
-// metadata (REST 快照 + 跨重启恢复) and re-enters replay through the seed_init
-// sessionStatus field. 统一会话标量管道第二个标量。
-export type ClaudeSessionStatusChanged = {
-  type: "system";
-  subtype: "session_status";
-  status: AgentSessionStatus;
-};
-
 // Server-synthesized notification that the skill/slash catalog changed (e.g. after
 // /reload-skills succeeded). Broadcast-only — never buffered into liveLines/history
 // (reconnects re-fetch via REST), so it reaches only currently-connected clients.
@@ -2645,7 +2646,6 @@ export type SessionStreamServerMessage =
   | ClaudeSeedInit
   | ClaudeSkillCatalogChanged
   | ClaudeContextUsageChanged
-  | ClaudeSessionStatusChanged
   | ClaudeCompactBoundary
   | ClaudeStatusMessage
   | ClaudeApiRetry

@@ -7,6 +7,7 @@ import type {
   ClaudeAutoRetryConfig,
   EffortLevel,
   OverviewCandidate,
+  SessionShell,
   SessionType,
   TerminalSession,
   TerminalSessionStatus,
@@ -143,6 +144,12 @@ export class SessionRegistry {
   private aliveInFlight: Promise<Set<string>> | null = null;
   /** capture-pane 输出缓存（runtimeKey → {content, expiresAt}），TTL 见 CAPTURE_TTL_MS。 */
   private readonly captureCache = new Map<string, { content: string; expiresAt: number }>();
+
+  /** 壳元数据变更回调（装配期注入，index.ts 接 SessionShellHub.scheduleBroadcast）：
+   *  patchMetadata（非短路）/ createMetadata / removeMetadata 后触发。无 payload——
+   *  消费方全量快照（合并广播语义），任何采集源（chat 状态机/TUI hooks/rename/close）
+   *  经 registry 写入自动进同一推送通道，runtime 层零感知广播。 */
+  onMetadataChanged: (() => void) | null = null;
 
   constructor(options: SessionRegistryOptions) {
     this.sessionsDir = join(options.runDir, "sessions");
@@ -451,6 +458,49 @@ export class SessionRegistry {
     return live
       .filter((metadata): metadata is SessionMetadata => metadata !== null)
       .map((metadata) => metadataToCandidate(metadata));
+  }
+
+  /**
+   * 会话壳快照（/api/sessions/stream 用）：listAllCandidates 的纯读版——存活口径一致
+   * （terminal 需活；claude+claudeSessionId / omp+acpSessionId 有恢复抓手恒保留；TTL 窗口
+   * 内刚 spawn 的走新鲜 exists 二次确认），但**不做 removeMetadata 破坏性清理**——广播环
+   * 内禁破坏（快照→删→onMetadataChanged→再广播的递归面），registry 清理仍归 overview REST
+   * 的 keepIfRuntimeExists。探测失败保守全含（同 listCandidateSubtitles 回退）。
+   */
+  async listAllShells(): Promise<SessionShell[]> {
+    await this.ensureLoaded();
+    const entries = Array.from(this.index.values()).sort((left, right) => {
+      const byProject = left.projectName.localeCompare(right.projectName);
+      if (byProject !== 0) return byProject;
+      if (left.type !== right.type) return left.type === "agent" ? -1 : 1;
+      return left.createdAt.localeCompare(right.createdAt);
+    });
+    let alive: Set<string> | null;
+    try {
+      alive = await this.getAliveKeys();
+    } catch {
+      alive = null; // 探测不可信：保守全含。
+    }
+    const shells: SessionShell[] = [];
+    for (const metadata of entries) {
+      if (alive && !alive.has(metadata.runtimeKey)) {
+        const hasRecovery =
+          metadata.type === "agent" &&
+          ((metadata.provider === "claude" && metadata.claudeSessionId) ||
+            (metadata.provider === "omp" && metadata.acpSessionId));
+        if (!hasRecovery) {
+          try {
+            if (this.runtime.exists && !(await this.runtime.exists(metadata.runtimeKey))) {
+              continue; // 快照判死 + 新鲜确认：只从快照排除，不删 registry。
+            }
+          } catch {
+            // 探测不可信：保守保留。
+          }
+        }
+      }
+      shells.push(metadataToCandidate(metadata));
+    }
+    return shells;
   }
 
   /**
@@ -781,6 +831,7 @@ export class SessionRegistry {
     // 幻影条目（patch 路径的「先内存」是同步段原子所需，新建无此约束，恢复旧序）。
     await this.persistMetadata(metadata);
     this.index.set(metadata.id, metadata);
+    this.onMetadataChanged?.();
     return metadata;
   }
 
@@ -898,6 +949,7 @@ export class SessionRegistry {
     if (!updated) return undefined;
     this.index.set(sessionId, updated);
     await this.persistMetadata(updated);
+    this.onMetadataChanged?.();
     return updated;
   }
 
@@ -937,6 +989,7 @@ export class SessionRegistry {
     if (metadata) this.captureCache.delete(metadata.runtimeKey);
     await rm(this.metadataPath(sessionId), { force: true });
     this.index.delete(sessionId);
+    this.onMetadataChanged?.();
   }
 
   private async ensureSessionsDir() {

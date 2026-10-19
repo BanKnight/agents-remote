@@ -1096,3 +1096,47 @@ test("patchMetadata 并发不变量：Promise.all 并发 mutator 后三字段全
   expect(raw.permissionMode).toBe("acceptEdits");
   expect(["2026-05-25T00:01:30.000Z", "2026-05-25T00:01:00.000Z"]).toContain(raw.updatedAt);
 });
+
+// ── onMetadataChanged（壳/内容分离：sessions-stream 广播触发源，index.ts 接 SessionShellHub）──
+
+test("onMetadataChanged: create/patch/remove 触发；recordActivity 同分钟短路不触发", async () => {
+  let currentTime = new Date("2026-05-25T00:00:00.000Z");
+  const registry = new SessionRegistry({
+    runDir,
+    now: () => currentTime,
+    createId: (type) => (type === "agent" ? "agent_evt12345678" : "terminal_evt123456"),
+    runtime: {
+      async exists() {
+        return false;
+      },
+      async close() {},
+    },
+  } as never);
+  const events: string[] = [];
+  registry.onMetadataChanged = () => events.push("changed");
+
+  await registry.createAgentSession({ project, provider: "claude" });
+  expect(events).toEqual(["changed"]);
+
+  // patchMetadata（非短路路径）：状态变更触发。
+  await registry.setAgentSessionStatus("agent_evt12345678", "working");
+  expect(events).toEqual(["changed", "changed"]);
+
+  // recordActivity 同分钟短路（updatedAt 截断值不变 → 不写内存）→ 不触发。
+  await registry.recordActivity("agent_evt12345678");
+  expect(events).toEqual(["changed", "changed"]);
+
+  // 跨分钟 recordActivity 真写 → 触发（壳可见 updatedAt 之外的排序面也可能变）。
+  currentTime = new Date("2026-05-25T00:01:30.000Z");
+  await registry.recordActivity("agent_evt12345678");
+  expect(events).toEqual(["changed", "changed", "changed"]);
+
+  await registry.closeTerminalSession(project.name, "terminal_missing");
+  expect(events).toEqual(["changed", "changed", "changed"]); // 未命中不触发
+
+  await registry.createTerminalSession({ project });
+  expect(events.length).toBe(4);
+
+  await registry.closeTerminalSession(project.name, "terminal_evt123456");
+  expect(events.length).toBe(5); // removeMetadata → 触发
+});
