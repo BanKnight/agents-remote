@@ -351,7 +351,7 @@ export function sessionStatusLabel(
   }
 
   if (status === "idle") {
-    return "status.waitingForInput";
+    return "status.idle";
   }
 
   if (status === "running") {

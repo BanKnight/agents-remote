@@ -364,7 +364,7 @@ export const en = {
   "section.gitStatus": "Read-only",
 
   // ── Session Status ───────────────────────────────────────────
-  "status.waitingForInput": "Waiting for input",
+  "status.idle": "Idle",
   "status.running": "Running",
   "status.blocked": "Waiting for approval",
   "status.done": "Done",

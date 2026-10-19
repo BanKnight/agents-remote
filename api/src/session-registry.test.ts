@@ -307,6 +307,23 @@ test("createAgentSession pins a fresh claudeSessionId for claude (双模式可�
   expect(omp.claudeSessionId).toBeUndefined();
 });
 
+test("createAgentSession 恢复历史（传入已有 session id）初始态 done 而非 idle", async () => {
+  // 历史条目来自已落盘 JSONL = 至少完整跑过一轮；展示 idle 会把「重开会话」说成
+  // 一轮都没跑过（2026-10-19 真机反馈）。新建会话仍 idle。
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_resume123456",
+  });
+  const resumed = await registry.createAgentSession({
+    project,
+    provider: "claude",
+    claudeSessionId: "11111111-2222-3333-4444-555555555555",
+  });
+  expect(resumed.status).toBe("done");
+  expect(resumed.claudeSessionId).toBe("11111111-2222-3333-4444-555555555555");
+});
+
 test("SessionRegistry.parseMetadata normalizes stale agent statuses to idle on read", async () => {
   // 存量 metadata 恒 "running"（旧版从不翻转）；API 重启已杀 CLI 子进程，
   // working/blocked 的 turn 必死——读取时归一 idle（内存层，不重写磁盘）。

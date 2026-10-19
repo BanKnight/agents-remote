@@ -42,7 +42,7 @@ test("session detail path uses project and internal session id", () => {
 });
 
 test("session status labels distinguish waiting input", () => {
-  expect(sessionStatusLabel("idle")).toBe("status.waitingForInput");
+  expect(sessionStatusLabel("idle")).toBe("status.idle");
   expect(sessionStatusLabel("running")).toBe("status.running");
   expect(sessionStatusLabel("closed")).toBe("status.closed");
   expect(sessionStatusLabel("error")).toBe("status.error");

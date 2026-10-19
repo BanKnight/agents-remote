@@ -360,7 +360,7 @@ export const zh: Record<TranslationKey, string> = {
   "section.gitStatus": "只读",
 
   // ── Session Status ───────────────────────────────────────────
-  "status.waitingForInput": "等待输入",
+  "status.idle": "空闲中",
   "status.running": "运行中",
   "status.blocked": "待审批",
   "status.done": "已完成",

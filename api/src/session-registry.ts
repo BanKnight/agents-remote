@@ -568,6 +568,10 @@ export class SessionRegistry {
     // --resume。恢复历史（input.claudeSessionId）沿用传入值。
     const claudeSessionId =
       input.claudeSessionId ?? (input.provider === "claude" ? randomUUID() : undefined);
+    // 恢复历史（传入了已有 session id）：该会话至少完整跑过一轮（历史条目来自已落盘
+    // JSONL），初始态展示「最近一轮完成」而非 idle——idle 会让「切形态/重开会话」看起来
+    // 像一轮都没跑过（2026-10-19 用户真机反馈）。真实结果由下一次 turn 覆盖。
+    const resumed = Boolean(input.claudeSessionId || input.acpSessionId);
     const metadata = await this.createMetadata({
       project: input.project,
       type: "agent",
@@ -578,6 +582,7 @@ export class SessionRegistry {
       model: input.model,
       permissionMode: input.permissionMode,
       effort: input.effort,
+      initialStatus: resumed ? "done" : "idle",
     });
 
     try {
@@ -743,6 +748,8 @@ export class SessionRegistry {
     model?: string;
     permissionMode?: string;
     effort?: EffortLevel;
+    /** agent 会话初始 turn 状态（createAgentSession 按新建/恢复区分注入）；缺省 idle。 */
+    initialStatus?: AgentSessionStatus;
   }) {
     const id = this.createId(input.type);
     const timestamp = this.now().toISOString();
@@ -756,7 +763,8 @@ export class SessionRegistry {
       displayName: input.displayName ?? defaultDisplayName(input.type, input.provider, id),
       // agent = idle(turn 状态机初始态,OSC 7501 对齐——旧值 "running" 是进程存活语义,
       // 从不翻转,绿点永不灭即本批要修的缺陷);terminal = running(tmux 会话起来即存活)。
-      status: input.type === "agent" ? "idle" : "running",
+      // 恢复历史时由调用方注入 done——见 createAgentSession 注释。
+      status: input.type === "agent" ? (input.initialStatus ?? "idle") : "running",
       runtimeKey: createRuntimeKey(input.project.name, input.type, input.provider, id),
       createdAt: timestamp,
       updatedAt: timestamp,
