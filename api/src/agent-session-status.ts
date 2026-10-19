@@ -10,6 +10,8 @@ export type AgentStatusSignal =
   | { kind: "user_input" } // 用户提交消息 / auto-retry 注入生效(= 自动替用户发消息)
   | { kind: "turn_activity" } // CLI 自启 turn 的证据(stdout assistant 帧:task-notification 消费/subagent
   // hand-back 等不经用户输入的 turn)——error/done 滞留由此翻回 working
+  | { kind: "turn_continue" } // TUI 工具执行完/失败(PostToolUse 系 hooks):turn 存活证据。chat 链
+  // turn_activity 的 TUI 等价物,但 blocked 下有效(工具真执行了 = 审批真解决了)
   | { kind: "approval_requested" } // can_use_tool 登记;仅 working → blocked
   | { kind: "approval_settled" } // 该 runtime 最后一张审批卡注销,回 working
   | { kind: "turn_result"; isError: boolean } // result 帧
@@ -30,6 +32,13 @@ export function nextAgentSessionStatus(
       return current === "idle" || current === "done" || current === "error"
         ? "working"
         : undefined;
+    case "turn_continue":
+      // 工具执行完/失败 = turn 存活(TUI PostToolUse 系)。blocked → working(settled 本源:
+      // 审批通过工具才执行);error/done/idle 滞留被现实翻正(turn 在飞——StopFailure 后
+      // CLI 恢复继续跑,红点滞留到 turn 结束的真根因,2026-10-19 用户真机反馈);working
+      // 幂等;closed 吸收。
+      if (current === "closed" || current === "working") return undefined;
+      return "working";
     case "approval_requested":
       // 审批只能出现在 turn 中;idle/done/error 下收到 = 信号错序,防御性忽略。
       return current === "working" ? "blocked" : undefined;

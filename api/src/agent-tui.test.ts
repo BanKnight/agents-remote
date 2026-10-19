@@ -140,7 +140,7 @@ test("buildTuiHooksSettings 七 hook 各写一个 token 到状态文件；Notifi
   expect(command("Stop")).toBe("printf %s turn_done > '/run/agent-status/key1'");
   expect(command("StopFailure")).toBe("printf %s turn_error > '/run/agent-status/key1'");
   expect(command("PostToolUse")).toBe("printf %s turn_continue > '/run/agent-status/key1'");
-  // 工具失败同样是「审批已解决」的证据（CLI 与 PostToolUse 互斥 fire）——blocked 不滞留。
+  // 工具失败同样是 turn 存活的证据（CLI 与 PostToolUse 互斥 fire）——blocked 不滞留。
   expect(command("PostToolUseFailure")).toBe("printf %s turn_continue > '/run/agent-status/key1'");
   expect(command("PermissionRequest")).toBe("printf %s approval > '/run/agent-status/key1'");
   expect(command("Notification")).toBe("printf %s approval > '/run/agent-status/key1'");
@@ -155,7 +155,7 @@ test("TUI_STATUS_SIGNAL_BY_TOKEN 五 token 映射状态机信号", () => {
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_done).toEqual({ kind: "turn_result", isError: false });
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_error).toEqual({ kind: "turn_result", isError: true });
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.approval).toEqual({ kind: "approval_requested" });
-  expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_continue).toEqual({ kind: "approval_settled" });
+  expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_continue).toEqual({ kind: "turn_continue" });
   // 未知 token = 无信号（空文件防御）。
   expect(TUI_STATUS_SIGNAL_BY_TOKEN[""]).toBeUndefined();
 });
@@ -304,6 +304,10 @@ test("状态文件信号 blocked 退出与 error 收口：turn_continue→workin
   // turn_error（StopFailure）→ error；error 态被下一轮 user_input 翻回 working（不滞留）。
   await writeFile(statusPath(h.runtimeKey), "turn_error");
   expect(await waitForStatus(h.sessionId, "error")).toBe("error");
+  // error 自愈主路径（2026-10-19 红点滞留修复）：StopFailure 后 CLI 恢复继续跑，PostToolUse
+  // 持续触发 turn_continue → working（无需等用户输入）。
+  await writeFile(statusPath(h.runtimeKey), "turn_continue");
+  expect(await waitForStatus(h.sessionId, "working")).toBe("working");
   await writeFile(statusPath(h.runtimeKey), "user_input");
   expect(await waitForStatus(h.sessionId, "working")).toBe("working");
   h.controller.teardownTerminal(h.runtimeKey);

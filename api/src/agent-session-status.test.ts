@@ -29,6 +29,17 @@ describe("nextAgentSessionStatus", () => {
     expect(nextAgentSessionStatus("closed", { kind: "turn_activity" })).toBeUndefined();
   });
 
+  test("turn_continue(TUI PostToolUse 系):blocked/error/done/idle → working,working 幂等,closed 吸收", () => {
+    // blocked → working = settled 本源(审批通过工具才执行);error → working = StopFailure
+    // 后 CLI 恢复继续跑的自愈(红点滞留到 turn 结束的真根因)。
+    expect(nextAgentSessionStatus("blocked", { kind: "turn_continue" })).toBe("working");
+    expect(nextAgentSessionStatus("error", { kind: "turn_continue" })).toBe("working");
+    expect(nextAgentSessionStatus("done", { kind: "turn_continue" })).toBe("working");
+    expect(nextAgentSessionStatus("idle", { kind: "turn_continue" })).toBe("working");
+    expect(nextAgentSessionStatus("working", { kind: "turn_continue" })).toBeUndefined();
+    expect(nextAgentSessionStatus("closed", { kind: "turn_continue" })).toBeUndefined();
+  });
+
   test("working + approval_requested → blocked;其他态防御性忽略", () => {
     expect(nextAgentSessionStatus("working", { kind: "approval_requested" })).toBe("blocked");
     expect(nextAgentSessionStatus("idle", { kind: "approval_requested" })).toBeUndefined();

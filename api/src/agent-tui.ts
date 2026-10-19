@@ -24,26 +24,27 @@ export const TUI_STATUS_SIGNAL_BY_TOKEN: {
   [token: string]:
     | { kind: "user_input" }
     | { kind: "turn_result"; isError: boolean }
-    | { kind: "approval_requested" }
-    | { kind: "approval_settled" };
+    | { kind: "turn_continue" }
+    | { kind: "approval_requested" };
 } = {
   user_input: { kind: "user_input" },
   turn_done: { kind: "turn_result", isError: false },
   turn_error: { kind: "turn_result", isError: true },
   approval: { kind: "approval_requested" },
-  turn_continue: { kind: "approval_settled" },
+  turn_continue: { kind: "turn_continue" },
 };
 
 /** TUI hooks settings 文件内容（纯函数，单测锁定七 hook + 写文件命令）。每个 hook 只做
  *  「printf token > 状态文件」：UserPromptSubmit → user_input（turn 开始）、Stop →
  *  turn_done（turn 正常结束）、StopFailure → turn_error（turn 因 API 错误结束）、
- *  PostToolUse / PostToolUseFailure → turn_continue（工具执行完/失败 = 审批已解决，
- *  blocked 退出的 settled 信号——CLI 二者互斥 fire，只挂 PostToolUse 会让
- *  「approve 后工具失败」的 blocked 滞留到下一个成功工具或 Stop 才收口）、
- *  PermissionRequest → approval（真权限申请）；Notification 只收 permission_prompt 类型
- *  （CLI 的 Notification 还含 idle_prompt 空闲提示等——无 matcher 会把空闲当审批挂起，
- *  状态机 blocked 下忽略 user_input，整个 turn 钉死 blocked）。状态文件路径单引号包裹
- *  ——runDir 出自服务端配置（~/.agents-remote），不含单引号。 */
+ *  PostToolUse / PostToolUseFailure → turn_continue（工具执行完/失败 = turn 存活证据：
+ *  blocked 审批已解决回 working + error 滞留自愈——StopFailure 后 CLI 恢复继续跑时
+ *  PostToolUse 持续触发，只当 settled 用会让红点滞留到 turn 结束；CLI 二者互斥 fire，
+ *  只挂 PostToolUse 会让「approve 后工具失败」的 blocked 滞留到下一个成功工具或 Stop
+ *  才收口）、PermissionRequest → approval（真权限申请）；Notification 只收
+ *  permission_prompt 类型（CLI 的 Notification 还含 idle_prompt 空闲提示等——无 matcher
+ *  会把空闲当审批挂起，状态机 blocked 下忽略 user_input，整个 turn 钉死 blocked）。
+ *  状态文件路径单引号包裹——runDir 出自服务端配置（~/.agents-remote），不含单引号。 */
 export function buildTuiHooksSettings(statusFilePath: string) {
   const hookCommand = (token: string) => `printf %s ${token} > '${statusFilePath}'`;
   const hookEntry = (token: string, matcher?: string) => ({
