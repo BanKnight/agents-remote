@@ -1,47 +1,51 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-19 08:06（composer 修复 + 自动哨兵落地，5 commit 未推）
+> 最后更新：2026-10-19 10:28（首载骨架分派 + TUI error 红点滞留修复，3 commit 未推）
 
 ## 一句话状态
 
-**composer「无故抬高」bug 修复 + 自动哨兵落地（`832708e`）**：keyboard-inset.ts 挂载 800ms 短窗复核（治 init 单点采样踩启动瞬态 vv）+ off>0 记录落 localStorage 并 POST `/api/debug/inset-report` 打服务端日志（用户零操作）。等待真机哨兵数据验证后拆临时诊断件。
+**TUI 圆点红点滞留根因修复（`776cd8b`）+ agent+terminal 首载骨架按形态分派（`872170b`）**。用户批评「圆点不该这么多 bug，是方案问题」——定位实锤：TUI 与 chat 两条采集链信号不对称，`turn_continue` 被窄化成 approval_settled（只服务 blocked），error 滞留无自愈。已升格独立信号对齐 chat 链 turn_activity 完备度。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **「在跑」口径（用户拍板）**：agent = turn 在飞（`isTurnActive`：working/blocked，TUI 空闲不算）；terminal = 进程存活（running）。`countsAsRunning` 单源，6 个消费点。
-- **标题圆点跟聚焦类型走（2026-10-19 用户拍板，`3cb505a`）**：聚焦 agent/terminal 会话 = 会话状态点（`statusToV2DotClass`，与 ▾ 浮层行同源）；skill/空态维持 runct 项目指示。旧「runct 恒绿」设计被用户否定。
-- **composer 抬高 bug 机制链（已定案并修复，`832708e`）**：通知入口 10-17 上线（`591da88`/`75890b2`）→ `focusOrOpen` 的 `client.navigate` 被 SW `navigateFallback`（sw.ts:24）拦成**完整文档加载** → 页面挂载 init 单点采样踩「启动/恢复瞬态 vv」（`vv.height < innerHeight` 短暂成立）→ 写入非零 offset；切会话同 path 不 remount（router.tsx:313）无重采样 → 卡住；键盘周期事件到达即自愈。**「为何半年没问题」= 入口 10-17 才有**。修复 = init 采样后 800ms 短窗复核（每帧幂等写回）；验证 = 自动哨兵数据（不再是用户手动读角标）。
-- **「修复 + 自动哨兵」（2026-10-19 用户 AskUserQuestion 拍板）**：偶发场景用户手动等复现成本高 → 哨兵自动收数据（off>0 → localStorage 环形 20 条 → POST 临时端点 → api `[inset-debug]` 日志）；临时诊断件（角标 hook + api 端点）**定案后一并拆除**。
-- **浮层黄点（blocked）实锤**：本会话 TUI pane 的 hooks settings 是旧版（pane 10-18 14:02 spawn，早于 `8d2d98e`；CLI 只在 spawn 时加载 hooks）——旧 Notification 无 matcher，turn 中任何 CLI 通知都被写成 approval → working 翻 blocked。turn 结束 Stop→done 自愈；根治 = 用户择机切形态换新（会杀掉本会话进程）。
-- **530 事件（2026-10-19 晨，已解决）**：旧 tunnel 进程（非 systemd 承载）死亡，死因无 journal 记录；用户重启恢复。现在 tunnel 由 systemd `cloudflared.service` 管（`Restart=on-failure`）。web/api 全程健康。
+- **TUI/chat 采集链信号对称性（2026-10-19 红点修复的核心教训）**：同一语义「turn 存活」在 chat 链 = `turn_activity`（assistant 帧，error/done→working 自愈，blocked 下忽略），在 TUI 链 = `turn_continue`（PostToolUse 系）。修复后 `turn_continue` 是独立信号：blocked→working（settled 本源：审批通过工具才执行）+ error/done/idle→working 自愈 + working 幂等 + closed 吸收。**与 turn_activity 的唯一语义差异 = blocked 下有效**（工具真执行了 = 审批真解决了；chat 的 assistant 帧在 blocked 下必须忽略，否则谎报审批已解决）。
+- **红点完整机制链（2026-10-19 用户真机反馈「在跑却红点」）**：StopFailure（turn 因 API 错误结束）→ `turn_error` → metadata error → CLI/agent 恢复继续跑，PostToolUse 持续触发但旧映射翻不回 working → error 滞留到 turn 结束 Stop→done。**agent 自主连续干活（用户不输入）的会话尤其重灾**（无 user_input 信号来翻正）。本会话（remote）自己就是受害者。
+- **「在跑」口径（用户拍板）**：agent = turn 在飞（`isTurnActive`：working/blocked）；terminal = 进程存活（running）。`countsAsRunning` 单源。
+- **标题圆点跟聚焦类型走（`3cb505a`）**：聚焦 agent/terminal 会话 = 会话状态点；skill/空态维持 runct 项目指示。
+- **composer 抬高 bug**：已修复（`832708e`，init 800ms 短窗复核）+ 自动哨兵；等真机 `[inset-debug]` 数据，定案后拆临时诊断件。
+- **首载骨架分派（`872170b`）**：已知 terminal 形态直接显终端遮罩（`TerminalStatusOverlay` 从 SessionDetailRoute 导出复用），聊天骨架只服务 chat/omp/未知。形态来源优先级：detail 缓存 → agent 列表缓存 → overview 缓存 → `instanceNameMemoAtom` sidecar（localStorage，覆盖 PWA 冷启动缓存全空）。边界：首次打开（memo 也没有）仍闪一次聊天骨架。
 
-### 进度（本 session 5 commit，均过全门禁）
+### 进度（本 session 累计 8 commit）
 
-- ✅ `8d2d98e` 会话状态数据层修正（三层根因 A/B/C + mode 透传；端到端实跑验证）
-- ✅ `da916b5` code-review 消化：P3 三项（blocked 注释理由修正 / PostToolUseFailure 补挂成七 hook / mobile-sheets 冗余收敛）；review 结论「无 P0-P2」
+- ✅ `8d2d98e` 会话状态数据层修正（三层根因 A/B/C + mode 透传）
+- ✅ `da916b5` code-review 消化（P3 三项）
 - ✅ `3cb505a` 移动标题圆点跟聚焦类型走
-- ✅ `0413fae` composer 取证角标（临时诊断件）
-- ✅ `832708e` composer 修复（init 800ms 短窗复核）+ 自动哨兵（localStorage 环形 + POST `/api/debug/inset-report` → api console.warn）；43012 构建落盘已验证（`init-settle` 在 entry、`inset-report` 在会话路由 chunk、CSS content-type 正常）
-- ✅ `c051fd9` idle 文案改「空闲中」/「Idle」（i18n key `status.waitingForInput` → `status.idle`）+ 恢复历史会话初始态 `done`（`createAgentSession` 按是否传入已有 session id 注入 `initialStatus`；新建仍 idle）。**用户拍板 2026-10-19**：恢复前是 done、恢复后显示灰点「等待输入」有误导性。
-- ⏳ **`c051fd9` 未推**（`36c5f9c` 及之前 6 个已推）——等用户确认后 push
+- ✅ `0413fae` + `832708e` composer 取证角标 + 修复 + 自动哨兵
+- ✅ `c051fd9` idle 文案「空闲中」+ 恢复历史初始态 done（已 push）
+- ✅ `04b4568` handoff（未推）
+- ✅ `872170b` 首载骨架按形态分派（web 三文件；全门禁绿 + CSS 硬闸 ✓ + 落盘 content-type ✓）
+- ✅ `776cd8b` TUI turn_continue 独立信号（api 四文件；api 992/web 828/shared 10 全绿）
+- ⏳ **3 commit 未推**（04b4568 / 872170b / 776cd8b）——等用户确认后 push
 
 ### 待办
 
-- **composer 哨兵观察**：用户真机正常使用（零操作），下次 composer 再抬高时查 api 日志 `[inset-debug]` 行判读（判读口径见 `use-composer-inset-debug-badge.ts` 文件头注释）→ 确认修复有效/若复发按数据定位 → 定案后拆临时诊断件（`use-composer-inset-debug-badge.ts` + 三路由挂载点 + api `/api/debug/inset-report` 分支）
-- **push 5 commit**（待用户确认）
-- 真机验收清单：① 标题圆点状态色；② 浮层黄点自愈（本 turn Stop 后）；③ 存量 TUI 切形态后状态流转；④ 22router/novels 下个 turn 红点消除
-- 历史挂起：推送通知跳转偶发失败（等第一手数据）；PWA 通知清单剩余项；mod 采集批 / 插件管理 UI 等功能批候选
+- **push 3 commit**（待用户确认）
+- **真机验收**：① TUI 会话再遇红点是否自愈（PostToolUse 一触发即翻 working；前端刷新仍依赖 refetch，见下）；② 后台打开 TUI 会话首载直接显终端遮罩不闪聊天骨架；③ 标题圆点状态色；④ 22router/novels 红点（数据层已自愈，本轮修复后不会再产生）
+- **已知残留面（未修，待用户决策）**：terminal 会话状态变化**无 WS 实时推送**（chat 链有 session_status 帧 injectLiveLine 广播，terminal 只落盘 metadata + 推送通知）——前端圆点更新靠 REST refetch（staleTime 60s / refetchOnWindowFocus）。metadata 快照修复后已正确，滞留的只是前端刷新窗口。要做实时需 terminal 链接通广播（relay 已销毁，需新通道），改动面较大。
+- **composer 哨兵观察**：等 `[inset-debug]` 数据 → 定案后拆临时诊断件
+- 历史挂起：推送通知跳转偶发失败（等第一手数据）；PWA 通知清单剩余项
 
 ## 易丢的关键上下文
 
-- **overview API curl**：auth token 不是 `token-secret` 文件（curl 返回 `{"error":...}`），auth 走 HttpOnly cookie（fetch 同源自动携带）。
-- **api runDir** = `/run/user/1000/agents-remote/`（XDG_RUNTIME_DIR 派生，`runtime-dir.ts`）；agent-settings/agent-status 在其下。
-- **本会话 TUI pane（ar-agent-claude-agents-remote-bd3bacc9-agent_06e39a）hooks 仍旧版**——别 respawn 该 pane（= 杀本会话）；黄点噪音 turn 结束自愈。
-- **cloudflared 现归 systemd 管**：`systemctl status cloudflared`；旧手动进程已不在。
-- **探针跑法**：`systemd-run --scope --user -p MemoryMax=2G bun …`；探针用 bun 不用 node；编辑文件一律内置 Read/Edit/Write（本 session python 脚本改文件被分类器拦）。
-- **哨兵上报链路**：web badge hook（HttpOnly cookie 自动携带，无需 token 头）→ api `/api/debug/inset-report`（`/api/` 统一守卫后分支，自动鉴权）→ `console.warn("[inset-debug]", ...)` 截断 4KB。查日志：tmux ar-dev api pane 或 journald。
+- **overview API curl**：auth 走 HttpOnly cookie（fetch 同源自动携带），token-secret 文件不是 curl 头。
+- **api runDir** = `/run/user/1000/agents-remote/`；agent-status/ 下是 TUI hooks 瞬时 token 文件（`cat` 即读当前信号），sessions/ 下是权威 metadata。
+- **本会话 TUI pane（agent_c73156）hooks 是新版**（08:32 spawn，含七 hook）——红点修复对它即时生效。
+- **cloudflared 归 systemd 管**（`Restart=on-failure`）。
+- **探针跑法**：`systemd-run --scope --user -p MemoryMax=2G bun …`；探针用 bun 不用 node；编辑一律内置 Read/Edit/Write。
+- **哨兵链路**：web badge hook → api `/api/debug/inset-report` → `console.warn("[inset-debug]")`；查 tmux ar-dev api pane 或 journald。
+- **状态机测试注意**：agent-tui.test.ts 的 watcher 集成测试偶发 fs.watch 时序 flaky（首跑挂重跑过），非代码问题。
 
 ---
-最后更新：2026-10-19 08:06（触发原因：composer 修复 + 自动哨兵批落地，5 commit 待推）
+最后更新：2026-10-19 10:28（触发原因：首载骨架 + 红点修复双批落地，3 commit 待推）
