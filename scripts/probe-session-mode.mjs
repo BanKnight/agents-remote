@@ -5,10 +5,10 @@
 //  3. [WS]   形态切到 terminal 后 session-stream 可 attach（= tmux pane 真在）；
 //            claude-stream 被守卫拒绝（SESSION_STATE_CONFLICT，防同 id 双写 JSONL）。
 //  3.5 [真链路] CLI 真加载 hooks（--settings，review P1-1 断链修复实证）：tmux send-keys
-//            提交一句话 → UserPromptSubmit hook printf 写状态文件（此前 argv 漏 --settings，
-//            状态文件恒空、TUI 状态点停更）。
-//  4. [REST] 切换门槛严格 idle-only：状态文件注入 user_input 翻 working → POST mode 409。
-//  5. [REST] 状态文件信号驱动状态机（关键三态）：turn_done → done。
+//            提交一句话 → UserPromptSubmit hook 把 stdin JSON（hook_event_name 等）cat 落盘
+//            状态文件（此前 argv 漏 --settings，状态文件恒空、TUI 状态点停更）。
+//  4. [REST] 切换门槛严格 idle-only：状态文件注入 UserPromptSubmit JSON 翻 working → POST mode 409。
+//  5. [REST] 状态文件信号驱动状态机（关键三态）：Stop JSON → done；旧 token 格式 fallback 兼容。
 //  6. [REST] POST /mode chat → 200；状态/settings 文件随之清理。
 //  7. [WS]   切回 chat 后 claude-stream 可连（收到非错误帧）；session-stream 随之失效。
 //  8. [REST] 非 claude provider（omp）→ /mode 404（能力对消费面隐藏）。
@@ -186,25 +186,31 @@ try {
   // 状态文件」全链。轮询状态文件本体而非 detail.status（后者还叠了 watcher/状态机层）。
   const send = Bun.spawnSync(["tmux", "send-keys", "-t", runtimeKey, "probe hook verify", "Enter"]);
   check(send.exitCode === 0, "tmux send-keys 提交触发语", `exit=${send.exitCode}`);
-  let hookToken = "";
-  for (let i = 0; i < 100 && hookToken !== "user_input"; i++) {
-    hookToken = (await readFile(statusPath(runtimeKey), "utf8").catch(() => "")).trim();
-    if (hookToken !== "user_input") await sleep(100);
+  let hookEvent = "";
+  for (let i = 0; i < 100 && hookEvent !== "UserPromptSubmit"; i++) {
+    const raw = (await readFile(statusPath(runtimeKey), "utf8").catch(() => "")).trim();
+    try {
+      hookEvent = JSON.parse(raw)?.hook_event_name ?? "";
+    } catch {
+      hookEvent = "";
+    }
+    if (hookEvent !== "UserPromptSubmit") await sleep(100);
   }
   check(
-    hookToken === "user_input",
-    "CLI 真加载 hooks：UserPromptSubmit 写状态文件（--settings 接通）",
-    `token=${hookToken || "(空)"}`,
+    hookEvent === "UserPromptSubmit",
+    "CLI 真加载 hooks：UserPromptSubmit stdin JSON 落盘（--settings 接通 + 结构化采集）",
+    `event=${hookEvent || "(空)"}`,
   );
 
-  // 4/5 状态文件信号驱动状态机（关键三态）+ idle-only 门槛
-  await writeFile(statusPath(runtimeKey), "user_input");
+  // 4/5 状态文件信号驱动状态机（关键三态）+ idle-only 门槛。信号 = hook JSON（新格式主路径）。
+  const writeSignal = (obj) => writeFile(statusPath(runtimeKey), JSON.stringify(obj));
+  await writeSignal({ hook_event_name: "UserPromptSubmit" });
   let observed = "";
   for (let i = 0; i < 100 && observed !== "working"; i++) {
     observed = (await getDetail(claudeId))?.status ?? "";
     if (observed !== "working") await sleep(50);
   }
-  check(observed === "working", "状态文件 user_input → working", observed);
+  check(observed === "working", "状态文件 UserPromptSubmit JSON → working", observed);
   const busySwitch = await postMode(claudeId, "chat");
   check(
     busySwitch.status === 409 && busySwitch.body.error?.code === "SESSION_STATE_CONFLICT",
@@ -212,19 +218,38 @@ try {
     `status=${busySwitch.status} code=${busySwitch.body.error?.code}`,
   );
 
-  await writeFile(statusPath(runtimeKey), "approval");
+  await writeSignal({
+    hook_event_name: "PermissionRequest",
+    tool_name: "Bash",
+    tool_input: { command: "ls" },
+  });
   for (let i = 0; i < 100 && observed !== "blocked"; i++) {
     observed = (await getDetail(claudeId))?.status ?? "";
     if (observed !== "blocked") await sleep(50);
   }
-  check(observed === "blocked", "状态文件 approval → blocked", observed);
+  check(observed === "blocked", "状态文件 PermissionRequest JSON → blocked", observed);
 
+  await writeSignal({ hook_event_name: "Stop" });
+  for (let i = 0; i < 100 && observed !== "done"; i++) {
+    observed = (await getDetail(claudeId))?.status ?? "";
+    if (observed !== "done") await sleep(50);
+  }
+  check(observed === "done", "状态文件 Stop JSON → done（主路径）", observed);
+
+  // 旧 token 格式 fallback 兼容（升级前 spawn 的长驻 pane 仍写 token）。
+  await writeFile(statusPath(runtimeKey), "user_input");
+  observed = "";
+  for (let i = 0; i < 100 && observed !== "working"; i++) {
+    observed = (await getDetail(claudeId))?.status ?? "";
+    if (observed !== "working") await sleep(50);
+  }
+  check(observed === "working", "状态文件旧 token user_input → working（fallback 兼容）", observed);
   await writeFile(statusPath(runtimeKey), "turn_done");
   for (let i = 0; i < 100 && observed !== "done"; i++) {
     observed = (await getDetail(claudeId))?.status ?? "";
     if (observed !== "done") await sleep(50);
   }
-  check(observed === "done", "状态文件 turn_done → done", observed);
+  check(observed === "done", "状态文件旧 token turn_done → done（fallback 兼容）", observed);
 
   // 6 切回 chat
   const toChat = await postMode(claudeId, "chat");

@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ApprovalCenter } from "./approval-center";
-import { AgentTuiController, buildTuiHooksSettings, TUI_STATUS_SIGNAL_BY_TOKEN } from "./agent-tui";
+import {
+  AgentTuiController,
+  buildTuiHooksSettings,
+  type AgentTuiStatusContext,
+  parseTuiHookEvent,
+  TUI_STATUS_SIGNAL_BY_TOKEN,
+} from "./agent-tui";
 import type { ClaudeRuntime } from "./claude-runtime";
 import { SessionRegistry } from "./session-registry";
 import type { TmuxRuntime } from "./tmux-runtime";
@@ -47,7 +53,11 @@ async function seed() {
   let tmuxClosed = 0;
   const cleared: string[] = [];
   const modeSwitched: string[] = [];
-  const statusEvents: Array<{ sessionId: string; status: string }> = [];
+  const statusEvents: Array<{
+    sessionId: string;
+    status: string;
+    context?: AgentTuiStatusContext;
+  }> = [];
   const claudeRuntime = {
     async close(key: string, opts?: { silent?: boolean }) {
       closeCalls.push({ key, silent: opts?.silent });
@@ -88,7 +98,8 @@ async function seed() {
     tmuxRuntime,
     approvalCenter,
     onModeSwitched: (key) => modeSwitched.push(key),
-    onStatusChanged: (sessionId, status) => statusEvents.push({ sessionId, status }),
+    onStatusChanged: (sessionId, status, context) =>
+      statusEvents.push({ sessionId, status, ...(context ? { context } : {}) }),
   });
   return {
     controller,
@@ -123,7 +134,7 @@ async function waitForStatus(sessionId: string, expected: string) {
 
 // ── hooks settings 生成（纯函数）──────────────────────────────────────────
 
-test("buildTuiHooksSettings 七 hook 各写一个 token 到状态文件；Notification 带 permission_prompt matcher", () => {
+test("buildTuiHooksSettings 七 hook 均为 cat 落盘完整 JSON；Notification 带 permission_prompt matcher", () => {
   const settings = buildTuiHooksSettings("/run/agent-status/key1");
   expect(Object.keys(settings.hooks).sort()).toEqual([
     "Notification",
@@ -136,21 +147,22 @@ test("buildTuiHooksSettings 七 hook 各写一个 token 到状态文件；Notifi
   ]);
   const command = (name: keyof typeof settings.hooks) =>
     settings.hooks[name][0]?.hooks[0]?.command ?? "";
-  expect(command("UserPromptSubmit")).toBe("printf %s user_input > '/run/agent-status/key1'");
-  expect(command("Stop")).toBe("printf %s turn_done > '/run/agent-status/key1'");
-  expect(command("StopFailure")).toBe("printf %s turn_error > '/run/agent-status/key1'");
-  expect(command("PostToolUse")).toBe("printf %s turn_continue > '/run/agent-status/key1'");
+  // 每个 hook 同一条命令：stdin（完整 hook JSON）原样落盘（token → JSON 结构化采集升级）。
+  expect(command("UserPromptSubmit")).toBe("cat > '/run/agent-status/key1'");
+  expect(command("Stop")).toBe("cat > '/run/agent-status/key1'");
+  expect(command("StopFailure")).toBe("cat > '/run/agent-status/key1'");
+  expect(command("PostToolUse")).toBe("cat > '/run/agent-status/key1'");
   // 工具失败同样是 turn 存活的证据（CLI 与 PostToolUse 互斥 fire）——blocked 不滞留。
-  expect(command("PostToolUseFailure")).toBe("printf %s turn_continue > '/run/agent-status/key1'");
-  expect(command("PermissionRequest")).toBe("printf %s approval > '/run/agent-status/key1'");
-  expect(command("Notification")).toBe("printf %s approval > '/run/agent-status/key1'");
+  expect(command("PostToolUseFailure")).toBe("cat > '/run/agent-status/key1'");
+  expect(command("PermissionRequest")).toBe("cat > '/run/agent-status/key1'");
+  expect(command("Notification")).toBe("cat > '/run/agent-status/key1'");
   // 根因 A 主修：matcher 限定 permission_prompt——idle_prompt 等其它 Notification 类型不再写 approval。
   expect(settings.hooks.Notification[0]?.matcher).toBe("permission_prompt");
   // 其余 hook 无 matcher（匹配全部事件）。
   expect(settings.hooks.Stop[0]?.matcher).toBeUndefined();
 });
 
-test("TUI_STATUS_SIGNAL_BY_TOKEN 五 token 映射状态机信号", () => {
+test("TUI_STATUS_SIGNAL_BY_TOKEN 五 token 映射状态机信号（存量 pane 兼容 fallback）", () => {
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.user_input).toEqual({ kind: "user_input" });
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_done).toEqual({ kind: "turn_result", isError: false });
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_error).toEqual({ kind: "turn_result", isError: true });
@@ -158,6 +170,58 @@ test("TUI_STATUS_SIGNAL_BY_TOKEN 五 token 映射状态机信号", () => {
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_continue).toEqual({ kind: "turn_continue" });
   // 未知 token = 无信号（空文件防御）。
   expect(TUI_STATUS_SIGNAL_BY_TOKEN[""]).toBeUndefined();
+});
+
+test("parseTuiHookEvent：hook JSON 主路径（六事件名映射 + agent_id/toolName 提取）", () => {
+  expect(parseTuiHookEvent('{"hook_event_name":"UserPromptSubmit"}')?.signal).toEqual({
+    kind: "user_input",
+  });
+  expect(parseTuiHookEvent('{"hook_event_name":"Stop"}')?.signal).toEqual({
+    kind: "turn_result",
+    isError: false,
+  });
+  expect(
+    parseTuiHookEvent('{"hook_event_name":"StopFailure","error":"rate_limit"}')?.signal,
+  ).toEqual({ kind: "turn_result", isError: true });
+  expect(parseTuiHookEvent('{"hook_event_name":"PostToolUse","tool_name":"Bash"}')?.signal).toEqual(
+    {
+      kind: "turn_continue",
+    },
+  );
+  expect(parseTuiHookEvent('{"hook_event_name":"PostToolUseFailure"}')?.signal).toEqual({
+    kind: "turn_continue",
+  });
+  expect(
+    parseTuiHookEvent('{"hook_event_name":"Notification","message":"Claude needs your permission"}')
+      ?.signal,
+  ).toEqual({ kind: "approval_requested" });
+  // PermissionRequest：tool_name/tool_input 提取（blocked push 详情）。
+  const permission = parseTuiHookEvent(
+    '{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"ls"}}',
+  );
+  expect(permission?.signal).toEqual({ kind: "approval_requested" });
+  expect(permission?.toolName).toBe("Bash");
+  expect(permission?.toolInput).toEqual({ command: "ls" });
+  // 主 agent 事件无 agent_id 字段（子 agent 判定依据）。
+  expect(parseTuiHookEvent('{"hook_event_name":"Stop"}')?.agentId).toBeUndefined();
+});
+
+test("parseTuiHookEvent：agent_id 提取 + 防御性忽略（坏 JSON/未知事件/裸值/空 agent_id）", () => {
+  // 子 agent 上下文：agent_id 字段存在（deepwiki 确认仅子 agent 注入）。
+  expect(
+    parseTuiHookEvent('{"hook_event_name":"StopFailure","agent_id":"agent-abc"}')?.agentId,
+  ).toBe("agent-abc");
+  // 坏 JSON → 旧 token fallback 路径（兼容升级前 spawn 的长驻 pane）。
+  expect(parseTuiHookEvent("user_input")?.signal).toEqual({ kind: "user_input" });
+  expect(parseTuiHookEvent("turn_done")?.signal).toEqual({ kind: "turn_result", isError: false });
+  // 坏 JSON 且非已知 token → null。
+  expect(parseTuiHookEvent("garbage")).toBeNull();
+  // 合法 JSON 但非 hook 事件形状（无 hook_event_name / 未知事件名 / JSON 裸值）。
+  expect(parseTuiHookEvent('{"foo":1}')).toBeNull();
+  expect(parseTuiHookEvent('{"hook_event_name":"SubagentStop"}')).toBeNull();
+  expect(parseTuiHookEvent("123")).toBeNull();
+  // agent_id 空串 = 视为不存在（不触发子 agent 过滤）。
+  expect(parseTuiHookEvent('{"hook_event_name":"Stop","agent_id":""}')?.agentId).toBeUndefined();
 });
 
 // ── switchToTerminal ────────────────────────────────────────────────────
@@ -272,41 +336,103 @@ test("switchMode 并发请求串行化：排队 + 锁内重读最新 mode（revi
 
 // ── 状态文件 watcher（关键三态）──────────────────────────────────────────
 
-test("状态文件信号驱动状态机：user_input→working / approval→blocked / turn_done→done", async () => {
+test("状态文件 JSON 信号驱动状态机：user_input→working / approval→blocked / turn_done→done；旧 token fallback 兼容", async () => {
   const h = await seed();
   await h.controller.switchMode(h.metadata, "terminal");
 
+  await writeFile(statusPath(h.runtimeKey), '{"hook_event_name":"UserPromptSubmit"}');
+  expect(await waitForStatus(h.sessionId, "working")).toBe("working");
+  await writeFile(
+    statusPath(h.runtimeKey),
+    '{"hook_event_name":"PermissionRequest","tool_name":"Bash"}',
+  );
+  expect(await waitForStatus(h.sessionId, "blocked")).toBe("blocked");
+  await writeFile(statusPath(h.runtimeKey), '{"hook_event_name":"Stop"}');
+  expect(await waitForStatus(h.sessionId, "done")).toBe("done");
+  // 旧 token 格式（升级前 spawn 的长驻 pane）走 fallback，信号照常。
   await writeFile(statusPath(h.runtimeKey), "user_input");
   expect(await waitForStatus(h.sessionId, "working")).toBe("working");
-  await writeFile(statusPath(h.runtimeKey), "approval");
-  expect(await waitForStatus(h.sessionId, "blocked")).toBe("blocked");
-  await writeFile(statusPath(h.runtimeKey), "turn_done");
-  expect(await waitForStatus(h.sessionId, "done")).toBe("done");
-  // 未知 token 无迁移（防御性忽略，不动状态）。
+  // 未知内容（坏 JSON + 非已知 token）无迁移（防御性忽略，不动状态）。
   await writeFile(statusPath(h.runtimeKey), "garbage");
   await new Promise((r) => setTimeout(r, 50));
-  expect((await registry.getAgentSession(project.name, h.sessionId))?.status).toBe("done");
+  expect((await registry.getAgentSession(project.name, h.sessionId))?.status).toBe("working");
   h.controller.teardownTerminal(h.runtimeKey);
 });
 
-test("状态文件信号 blocked 退出与 error 收口：turn_continue→working / turn_error→error / error 后 user_input 翻回", async () => {
+test("子 agent 信号过滤：StopFailure/Stop/PostToolUse 带 agent_id 不驱动主会话；PermissionRequest 带 agent_id 照常 blocked", async () => {
+  const h = await seed();
+  await h.controller.switchMode(h.metadata, "terminal");
+  await writeFile(statusPath(h.runtimeKey), '{"hook_event_name":"UserPromptSubmit"}');
+  expect(await waitForStatus(h.sessionId, "working")).toBe("working");
+
+  // 子 agent 的错误/完成/继续：主 agent 关注的事，不驱动主会话状态（误报 error 红点 + push 的根源）。
+  const eventsBefore = h.statusEvents.length;
+  // 逐条写 + 间隔：fs.watch 回调读「回调时刻」的最新内容，背靠背写会互相覆盖、中间内容
+  // 从未被读到——负断言会空洞通过（过滤被删也全绿）。间隔确保每条 JSON 被独立读取。
+  const subagentWrites = [
+    '{"hook_event_name":"StopFailure","agent_id":"agent-abc","error":"api_error"}',
+    '{"hook_event_name":"Stop","agent_id":"agent-abc"}',
+    '{"hook_event_name":"PostToolUse","agent_id":"agent-abc"}',
+  ];
+  for (const raw of subagentWrites) {
+    await writeFile(statusPath(h.runtimeKey), raw);
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  await new Promise((r) => setTimeout(r, 80));
+  expect((await registry.getAgentSession(project.name, h.sessionId))?.status).toBe("working");
+  expect(h.statusEvents).toHaveLength(eventsBefore);
+
+  // 审批例外（2026-10-19 用户拍板）：CLI 真阻塞等人，子 agent 的 PermissionRequest 照常
+  // 推进状态机（并经 onStatusChanged 附带工具详情）。
+  await writeFile(
+    statusPath(h.runtimeKey),
+    '{"hook_event_name":"PermissionRequest","agent_id":"agent-abc","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"}}',
+  );
+  expect(await waitForStatus(h.sessionId, "blocked")).toBe("blocked");
+  h.controller.teardownTerminal(h.runtimeKey);
+});
+
+test("onStatusChanged 的 approval context：PermissionRequest JSON 附带 toolName/inputSummary（push blocked 详情）", async () => {
+  const h = await seed();
+  await h.controller.switchMode(h.metadata, "terminal");
+  await writeFile(statusPath(h.runtimeKey), '{"hook_event_name":"UserPromptSubmit"}');
+  expect(await waitForStatus(h.sessionId, "working")).toBe("working");
+
+  await writeFile(
+    statusPath(h.runtimeKey),
+    '{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/x"}}',
+  );
+  expect(await waitForStatus(h.sessionId, "blocked")).toBe("blocked");
+  expect(h.statusEvents).toEqual([
+    { sessionId: h.sessionId, status: "working" },
+    {
+      sessionId: h.sessionId,
+      status: "blocked",
+      context: { toolName: "Bash", inputSummary: "Bash: rm -rf /tmp/x" },
+    },
+  ]);
+  h.controller.teardownTerminal(h.runtimeKey);
+});
+
+test("状态文件信号 blocked 退出与 error 收口：JSON 主路径（PostToolUseFailure/StopFailure/PostToolUse）+ 旧 token fallback 交织", async () => {
   const h = await seed();
   await h.controller.switchMode(h.metadata, "terminal");
 
-  // user_input → working；approval → blocked；turn_continue（PostToolUse）= 审批已解决 → 回 working。
-  await writeFile(statusPath(h.runtimeKey), "user_input");
+  // user_input（JSON）→ working；approval（旧 token fallback）→ blocked；
+  // PostToolUseFailure（JSON）= 审批已解决（工具失败也是执行了）→ 回 working。
+  await writeFile(statusPath(h.runtimeKey), '{"hook_event_name":"UserPromptSubmit"}');
   expect(await waitForStatus(h.sessionId, "working")).toBe("working");
   await writeFile(statusPath(h.runtimeKey), "approval");
   expect(await waitForStatus(h.sessionId, "blocked")).toBe("blocked");
-  await writeFile(statusPath(h.runtimeKey), "turn_continue");
+  await writeFile(statusPath(h.runtimeKey), '{"hook_event_name":"PostToolUseFailure"}');
   expect(await waitForStatus(h.sessionId, "working")).toBe("working");
 
-  // turn_error（StopFailure）→ error；error 态被下一轮 user_input 翻回 working（不滞留）。
-  await writeFile(statusPath(h.runtimeKey), "turn_error");
+  // StopFailure（JSON）→ error；error 态被下一轮翻回 working（不滞留）。
+  await writeFile(statusPath(h.runtimeKey), '{"hook_event_name":"StopFailure"}');
   expect(await waitForStatus(h.sessionId, "error")).toBe("error");
   // error 自愈主路径（2026-10-19 红点滞留修复）：StopFailure 后 CLI 恢复继续跑，PostToolUse
   // 持续触发 turn_continue → working（无需等用户输入）。
-  await writeFile(statusPath(h.runtimeKey), "turn_continue");
+  await writeFile(statusPath(h.runtimeKey), '{"hook_event_name":"PostToolUse"}');
   expect(await waitForStatus(h.sessionId, "working")).toBe("working");
   await writeFile(statusPath(h.runtimeKey), "user_input");
   expect(await waitForStatus(h.sessionId, "working")).toBe("working");

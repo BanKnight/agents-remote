@@ -26,7 +26,7 @@ import { ApprovalCenter } from "./approval-center";
 import { ClaudeRuntime } from "./claude-runtime";
 import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
 import { ClaudeStreamController, handleClaudeStreamUpgrade } from "./claude-stream";
-import { AgentTuiController } from "./agent-tui";
+import { AgentTuiController, type AgentTuiStatusContext } from "./agent-tui";
 import {
   applyAuthRefresh,
   handleAuthMe,
@@ -1743,7 +1743,13 @@ export const startApi = async () => {
   // 失败仅告警。gate 放行 blocked 是 terminal 采集源所需；**GUI 采集源（下方
   // setOnSessionStatusChange）只对 done/error 调用**——GUI 的 blocked 由 approval-center
   // 登记回调发（带 toolName 详情），status 出口再发会同帧双通知（code review P1）。
-  const notifyPushStatus = (sessionId: string, status: AgentSessionStatus) => {
+  // context 仅 terminal 采集源携带（hooks JSON 的 PermissionRequest 详情，与 GUI 的
+  // approval-center 详情对齐）；chat 侧不传。
+  const notifyPushStatus = (
+    sessionId: string,
+    status: AgentSessionStatus,
+    context?: AgentTuiStatusContext,
+  ) => {
     if (status !== "done" && status !== "error" && status !== "blocked") return;
     void (async () => {
       const described = await sessionRegistry.describeSessionById(sessionId);
@@ -1752,6 +1758,7 @@ export const startApi = async () => {
         projectName: described.projectName,
         sessionId,
         ...(described.displayName ? { sessionName: described.displayName } : {}),
+        ...context,
       });
     })();
   };
@@ -1766,7 +1773,7 @@ export const startApi = async () => {
     // terminal 守卫拒（SESSION_STATE_CONFLICT），客户端失效 detail 自动换渲染形态。
     onModeSwitched: (runtimeKey) => claudeStreamController.closeSessionSockets(runtimeKey),
     // terminal 形态状态迁移（hooks 状态文件 watcher）→ push 通知（与 GUI 同出口）。
-    onStatusChanged: (sessionId, status) => notifyPushStatus(sessionId, status),
+    onStatusChanged: (sessionId, status, context) => notifyPushStatus(sessionId, status, context),
   });
   // API 重启恢复（双模式）：terminal 形态会话的 tmux pane 独立于 API 存活，但内存里的
   // fs.watch 随进程消失——按落盘 mode 重挂状态文件 watcher，否则重启后 TUI 状态点停更。

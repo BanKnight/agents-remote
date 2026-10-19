@@ -2,9 +2,11 @@
 // 形态（headless stream-json ↔ tmux 交互式 CLI）间接力，JSONL 是唯一权威。TUI 形态 =
 // CLI 原生形态（纯 argv、零 env 注入，凭证走 CLI 自身配置——用户拍板）；审批让位 = argv
 // 不带 --permission-prompt-tool（CLI 自己的 TUI 弹审批，can_use_tool 帧天然不存在）。
-// tmux 吞 OSC → 状态采集走 hooks 写状态文件旁路（--settings 挂七个 hook，纯 shell printf
-// 落盘，本模块 fs.watch 消费），信号复用 agent-session-status 状态机（working/done/
-// blocked/error 四态；error 经 StopFailure hook 覆盖）。
+// tmux 吞 OSC → 状态采集走 hooks 写状态文件旁路（--settings 挂七个 hook，hook stdin 的
+// 完整 JSON 经 cat 落盘，本模块 fs.watch + parseTuiHookEvent 消费；JSON 携带 hook_event_name/
+// agent_id/tool_name 等结构化字段——agent_id 用于过滤子 agent 信号：子 agent 的错误/完成是
+// 主 agent 关注的事，不驱动主会话状态），信号复用 agent-session-status 状态机（working/
+// done/blocked/error 四态；error 经 StopFailure hook 覆盖）。
 
 import { watch, type FSWatcher } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -12,13 +14,20 @@ import { join } from "node:path";
 
 import type { AgentSessionMode, AgentSessionStatus } from "@agents-remote/shared";
 
-import { nextAgentSessionStatus, spawnInitialStatus } from "./agent-session-status";
+import {
+  nextAgentSessionStatus,
+  spawnInitialStatus,
+  type AgentStatusSignal,
+} from "./agent-session-status";
 import type { ApprovalCenter } from "./approval-center";
+import { summarizeControlInput } from "./approval-registry";
 import type { ClaudeRuntime } from "./claude-runtime";
 import type { SessionMetadata, SessionRegistry } from "./session-registry";
 import type { TmuxRuntime } from "./tmux-runtime";
 
-/** TUI 状态文件 token → 状态机信号（hooks printf 写入的纯 token，无密钥无路径）。
+/** TUI 状态文件旧格式 token → 状态机信号。**存量 pane 兼容 fallback**：升级前 spawn 的
+ *  TUI pane（独立于 API 存活）仍写旧 printf token 格式，API 升级后 watcher 继续读到——
+ *  parseTuiHookEvent 在 JSON 解析失败时查此表。pane 随会话生命周期自然消亡后可移除。
  *  空文件/未知 token = 无信号（防御性忽略）。 */
 export const TUI_STATUS_SIGNAL_BY_TOKEN: {
   [token: string]:
@@ -34,32 +43,91 @@ export const TUI_STATUS_SIGNAL_BY_TOKEN: {
   turn_continue: { kind: "turn_continue" },
 };
 
-/** TUI hooks settings 文件内容（纯函数，单测锁定七 hook + 写文件命令）。每个 hook 只做
- *  「printf token > 状态文件」：UserPromptSubmit → user_input（turn 开始）、Stop →
- *  turn_done（turn 正常结束）、StopFailure → turn_error（turn 因 API 错误结束）、
- *  PostToolUse / PostToolUseFailure → turn_continue（工具执行完/失败 = turn 存活证据：
- *  blocked 审批已解决回 working + error 滞留自愈——StopFailure 后 CLI 恢复继续跑时
- *  PostToolUse 持续触发，只当 settled 用会让红点滞留到 turn 结束；CLI 二者互斥 fire，
- *  只挂 PostToolUse 会让「approve 后工具失败」的 blocked 滞留到下一个成功工具或 Stop
- *  才收口）、PermissionRequest → approval（真权限申请）；Notification 只收
+/** hook stdin JSON 的 hook_event_name → 状态机信号（新格式主路径）。
+ *  Notification 依赖 settings 的 permission_prompt matcher 限类型，服务端不重复判。 */
+const TUI_SIGNAL_BY_EVENT: { [event: string]: AgentStatusSignal } = {
+  UserPromptSubmit: { kind: "user_input" },
+  Stop: { kind: "turn_result", isError: false },
+  StopFailure: { kind: "turn_result", isError: true },
+  PostToolUse: { kind: "turn_continue" },
+  PostToolUseFailure: { kind: "turn_continue" },
+  PermissionRequest: { kind: "approval_requested" },
+  Notification: { kind: "approval_requested" },
+};
+
+/** 状态文件读取上限（security review：hook stdin 整体落盘，PostToolUse 的 tool_response
+ *  模型可控大小，超限整体跳过——信号字段都在前部，正常事件远小于此）。 */
+const TUI_STATUS_FILE_MAX_BYTES = 1024 * 1024;
+
+/** 状态迁移附带上下文：目前仅 approval 带 toolName/inputSummary（blocked push 详情，
+ *  与 GUI 采集源 approvalCenter 登记回调的 payload 对齐）。 */
+export type AgentTuiStatusContext = { toolName?: string; inputSummary?: string };
+
+export type TuiHookEvent = {
+  signal: AgentStatusSignal;
+  /** hook stdin 的 agent_id：仅子 agent 上下文存在（主 agent 事件无此字段）。 */
+  agentId?: string;
+  /** 仅 PermissionRequest 提供（Notification 无 tool_name，push 文案回落默认）。 */
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+};
+
+/** 状态文件内容 → hook 事件（纯函数）。主路径 = hook stdin JSON（cat 落盘）；解析失败
+ *  回落旧 token 表（存量 pane 兼容，见 TUI_STATUS_SIGNAL_BY_TOKEN）；都不中 = null。 */
+export function parseTuiHookEvent(raw: string): TuiHookEvent | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    const legacy = TUI_STATUS_SIGNAL_BY_TOKEN[raw.trim()];
+    return legacy ? { signal: legacy } : null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const record = parsed as Record<string, unknown>;
+  const eventName = record.hook_event_name;
+  if (typeof eventName !== "string") return null;
+  const signal = TUI_SIGNAL_BY_EVENT[eventName];
+  if (!signal) return null;
+  return {
+    signal,
+    ...(typeof record.agent_id === "string" && record.agent_id ? { agentId: record.agent_id } : {}),
+    ...(typeof record.tool_name === "string" && record.tool_name
+      ? { toolName: record.tool_name }
+      : {}),
+    ...(record.tool_input !== null &&
+    typeof record.tool_input === "object" &&
+    !Array.isArray(record.tool_input)
+      ? { toolInput: record.tool_input as Record<string, unknown> }
+      : {}),
+  };
+}
+
+/** TUI hooks settings 文件内容（纯函数，单测锁定七 hook + 写文件命令）。每个 hook 都把
+ *  stdin（CLI 传入的完整 hook JSON：hook_event_name/session_id/agent_id/tool_name 等）
+ *  原样落进状态文件（cat >）：UserPromptSubmit（turn 开始）、Stop（turn 正常结束）、
+ *  StopFailure（turn 因 API 错误结束）、PostToolUse / PostToolUseFailure（工具执行完/
+ *  失败 = turn 存活证据：blocked 审批已解决回 working + error 滞留自愈——StopFailure 后
+ *  CLI 恢复继续跑时 PostToolUse 持续触发，只当 settled 用会让红点滞留到 turn 结束；CLI
+ *  二者互斥 fire，只挂 PostToolUse 会让「approve 后工具失败」的 blocked 滞留到下一个成功
+ *  工具或 Stop 才收口）、PermissionRequest（真权限申请）；Notification 只收
  *  permission_prompt 类型（CLI 的 Notification 还含 idle_prompt 空闲提示等——无 matcher
  *  会把空闲当审批挂起，状态机 blocked 下忽略 user_input，整个 turn 钉死 blocked）。
  *  状态文件路径单引号包裹——runDir 出自服务端配置（~/.agents-remote），不含单引号。 */
 export function buildTuiHooksSettings(statusFilePath: string) {
-  const hookCommand = (token: string) => `printf %s ${token} > '${statusFilePath}'`;
-  const hookEntry = (token: string, matcher?: string) => ({
+  const hookCommand = `cat > '${statusFilePath}'`;
+  const hookEntry = (matcher?: string) => ({
     ...(matcher ? { matcher } : {}),
-    hooks: [{ type: "command" as const, command: hookCommand(token) }],
+    hooks: [{ type: "command" as const, command: hookCommand }],
   });
   return {
     hooks: {
-      UserPromptSubmit: [hookEntry("user_input")],
-      Stop: [hookEntry("turn_done")],
-      StopFailure: [hookEntry("turn_error")],
-      PostToolUse: [hookEntry("turn_continue")],
-      PostToolUseFailure: [hookEntry("turn_continue")],
-      PermissionRequest: [hookEntry("approval")],
-      Notification: [hookEntry("approval", "permission_prompt")],
+      UserPromptSubmit: [hookEntry()],
+      Stop: [hookEntry()],
+      StopFailure: [hookEntry()],
+      PostToolUse: [hookEntry()],
+      PostToolUseFailure: [hookEntry()],
+      PermissionRequest: [hookEntry()],
+      Notification: [hookEntry("permission_prompt")],
     },
   };
 }
@@ -88,8 +156,13 @@ export class AgentTuiController {
       onModeSwitched?: (runtimeKey: string) => void;
       /** 状态迁移出口（working/done/blocked 全发，gate 在消费侧）：index.ts 接 push
        *  通知——与 GUI 状态机（setOnSessionStatusChange）同一出口同一管道，terminal 形态
-       *  的 done/blocked 才有推送（blocked 无审批登记详情，payload 不带 toolName）。 */
-      onStatusChanged?: (sessionId: string, status: AgentSessionStatus) => void;
+       *  的 done/blocked 才有推送；approval 迁移附带 context（toolName/inputSummary，
+       *  取自 PermissionRequest hook JSON——旧 token 格式无此信息，context 省略）。 */
+      onStatusChanged?: (
+        sessionId: string,
+        status: AgentSessionStatus,
+        context?: AgentTuiStatusContext,
+      ) => void;
     },
   ) {
     // hooks 命令把状态文件路径单引号包裹（buildTuiHooksSettings）——runDir 出自服务端
@@ -100,12 +173,19 @@ export class AgentTuiController {
     }
   }
 
+  /** 状态/settings 文件路径。组合后单引号断言（构造期只断言了 runDir 段）：实际嵌入
+   *  hook 命令 shell 串的是组合值，runtimeKey 段（session 前缀/会话 id）若含单引号同样
+   *  会截断命令——fail-fast 与真实嵌入串一致（security review P3）。 */
   private statusPath(runtimeKey: string): string {
-    return join(this.deps.runDir, "agent-status", runtimeKey);
+    const p = join(this.deps.runDir, "agent-status", runtimeKey);
+    if (p.includes("'")) throw new Error(`status path must not contain single quotes: ${p}`);
+    return p;
   }
 
   private settingsPath(runtimeKey: string): string {
-    return join(this.deps.runDir, "agent-settings", `${runtimeKey}.json`);
+    const p = join(this.deps.runDir, "agent-settings", `${runtimeKey}.json`);
+    if (p.includes("'")) throw new Error(`settings path must not contain single quotes: ${p}`);
+    return p;
   }
 
   /** 模式切换唯一入口（路由 mode 动作调用）。同 mode 幂等 no-op；同会话并发请求
@@ -241,24 +321,55 @@ export class AgentTuiController {
     // 防御性：同 runtimeKey 旧 watcher 先拆（switchToTerminal 重入不叠挂）。
     this.watchers.get(runtimeKey)?.close();
     const watcher = watch(this.statusPath(runtimeKey), () => {
-      void readFile(this.statusPath(runtimeKey), "utf8")
-        .then((raw) => this.applyStatusSignal(runtimeKey, sessionId, raw))
-        .catch(() => {});
+      void this.consumeStatusFile(runtimeKey, sessionId).catch(() => {});
     });
     // 状态文件被删等 IO 异常 = 状态采集静默退化（关键三态不强求，见文件头）。
     watcher.on("error", () => {});
     this.watchers.set(runtimeKey, watcher);
   }
 
+  /** 读取状态文件 → 状态机。超限跳过：hook stdin 整体落盘（PostToolUse 携带完整
+   *  tool_response，模型可控大小），信号判定只消费顶层标量——超限文件整体放弃（丢一次
+   *  信号可接受，后续事件自愈；turn_continue 的自愈链在 CLI 截断大输出的常态下不受影响），
+   *  不给 API 进程留「全文读 + 同步 parse 大 JSON」的内存/放大面（security review）。 */
+  private async consumeStatusFile(runtimeKey: string, sessionId: string): Promise<void> {
+    const path = this.statusPath(runtimeKey);
+    const size = await stat(path).then(
+      (s) => s.size,
+      () => 0,
+    );
+    if (size > TUI_STATUS_FILE_MAX_BYTES) {
+      console.warn(
+        `[agent-tui] status file over ${TUI_STATUS_FILE_MAX_BYTES}B, skipped: ${runtimeKey} (${size}B)`,
+      );
+      return;
+    }
+    const raw = await readFile(path, "utf8");
+    this.applyStatusSignal(runtimeKey, sessionId, raw);
+  }
+
   private applyStatusSignal(runtimeKey: string, sessionId: string, raw: string): void {
-    const signal = TUI_STATUS_SIGNAL_BY_TOKEN[raw.trim()];
-    if (!signal) return;
+    const event = parseTuiHookEvent(raw);
+    if (!event) return;
+    // 子 agent 信号过滤：错误/完成/继续是主 agent 自行处理的内部事件（子 agent 的
+    // StopFailure 带 agent_id，曾致主会话误报 error 红点 + push）；审批例外——CLI 真
+    // 阻塞等人，过滤会让会话静默挂起（2026-10-19 用户拍板保留）。
+    if (event.agentId && event.signal.kind !== "approval_requested") return;
     const current = this.tuiStatus.get(runtimeKey);
     if (current === undefined) return;
-    const next = nextAgentSessionStatus(current, signal);
+    const next = nextAgentSessionStatus(current, event.signal);
     if (!next || next === current) return;
     this.tuiStatus.set(runtimeKey, next);
     void this.deps.registry.setAgentSessionStatus(sessionId, next);
-    this.deps.onStatusChanged?.(sessionId, next);
+    // approval 附带工具详情（PermissionRequest JSON 有 tool_name/tool_input；Notification
+    // 无 tool_name → context 省略，push 文案回落「等待审批：工具调用」）。
+    const context: AgentTuiStatusContext | undefined =
+      event.signal.kind === "approval_requested" && event.toolName
+        ? {
+            toolName: event.toolName,
+            inputSummary: summarizeControlInput(event.toolName, event.toolInput ?? {}),
+          }
+        : undefined;
+    this.deps.onStatusChanged?.(sessionId, next, context);
   }
 }

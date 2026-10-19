@@ -40,13 +40,22 @@ const PUSH_TTL_SECONDS = 24 * 60 * 60;
 
 // title = 「项目 · 会话」（语义化，2026-10-18 用户反馈「看不出通知从哪个项目哪个会话
 // 发出来」）；会话名缺省回落项目名。
+
+/** toolName 截断上限：外部供入的任意字符串（TUI hooks 路径取自 PermissionRequest JSON），
+ *  超长值会撑爆 Web Push 载荷致 413 丢通知——body 与 payload 对称截断（security review
+ *  P3；inputSummary 已由 summarizeControlInput 截 80，此处补齐 toolName 同级防护）。 */
+const TOOL_NAME_MAX_CHARS = 40;
+
+const clampToolName = (name: string): string =>
+  name.length > TOOL_NAME_MAX_CHARS ? `${name.slice(0, TOOL_NAME_MAX_CHARS)}…` : name;
+
 export const pushTitle = (info: { projectName: string; sessionName?: string }): string =>
   info.sessionName ? `${info.projectName} · ${info.sessionName}` : info.projectName;
 
 export const pushBody = (kind: PushNotificationKind, info: PushNotifyInfo): string => {
   if (kind === "blocked") {
     const summary = info.inputSummary ? ` · ${info.inputSummary}` : "";
-    return `等待审批：${info.toolName ?? "工具调用"}${summary}`;
+    return `等待审批：${info.toolName ? clampToolName(info.toolName) : "工具调用"}${summary}`;
   }
   return kind === "done" ? "任务已完成" : "任务出错，请查看会话";
 };
@@ -101,7 +110,7 @@ export class PushNotifier {
       sentAt: new Date().toISOString(),
     };
     if (info.sessionName) payload.sessionName = info.sessionName;
-    if (info.toolName) payload.toolName = info.toolName;
+    if (info.toolName) payload.toolName = clampToolName(info.toolName);
     if (info.inputSummary) payload.inputSummary = info.inputSummary;
 
     const outcomes = await Promise.allSettled(
