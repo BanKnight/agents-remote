@@ -23,6 +23,14 @@
 - [ ] **双模式真机验收（交用户）**：GUI 发一轮 → ⋯ 在终端打开 → xterm 是同一会话（历史在）→ TUI 跑一轮（状态点 working→done）→ ⋯ 回到对话 → GUI 气泡含 TUI 轮次 → TUI 内触发审批（CLI 自己弹，web 无卡）；顺带暴露 TUI 凭证边界
 - [ ] **双模式批 reviewer 补跑**：本环境 subagent API 面故障（unexpected EOF ×6）→ 下 session 补 code-reviewer + design-reviewer 复核本批
 
+## @mcp-apps（总纲与路线状态：docs/research/mcp-apps-hosting.md §10）
+
+- [x] **阶段 0-3 全部提交**（2026-10-20）：`9ec70ab` 阶段 0（保留名守卫 + mcpInject 投影）→ `5975eec` 阶段 2（ar-hub 扩 ui + wiki_read_page display tool）→ `0de7979` 阶段 3（宿主 MVP：web 卡片 + api 回源路由）→ `bd24a55` 调研主文档 §1-§10 + 两份深素材 notes；全门禁绿（api 1016 / shared 10 / web 848）
+- [ ] **真机验证（交用户）**：test 项目（`~/.agents-remote/mcp.json` 已 wiki+ui 双开）创建 claude 会话让 agent 调 `wiki_read_page` → 验证 wiki 页沙箱卡片渲染（标题/tags/markdown 列表）+ 回退路径（ui 关项目旧回放显「应用视图不可用」）；移动/桌面双端
+- [ ] **阶段 3 reviewer 审查消化**：code-reviewer + security-reviewer 后台跑中（2026-10-20 启动），结论回来消化修复
+- [ ] 阶段 4（反向 tools/call + ui/message → composer 管道）按需启动——届时评估 ext-apps SDK（peer SDK 2.x 冲突）+ Codex snake_case `structured_content` 分支
+- [ ] 阶段 5（hub skills 分发 skills/list-get）等上游 CLI client 跟进 SEP-2640
+
 ## @harness
 
 - [x] **harness 改造收尾验证**（2026-09-19，完成）——三项实测全过：①重启会话，SessionStart 注入 KB 级 current.md（非旧版 589KB）；②`/handoff save` 实测通过（快照 20260919-0317 已归档）；③`/gtd inbox` 实测通过（追加捕获条目后自清理）。（hook 单测 + 四门禁已过，commit `db5b0fd`）

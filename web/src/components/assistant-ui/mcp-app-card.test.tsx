@@ -121,17 +121,19 @@ describe("McpAppCard", () => {
     expect(frame.getAttribute("srcdoc") ?? frame.srcDoc).toContain("<!doctype html>");
   });
 
-  test("load 后 postMessage 喂 structuredContent（ui/notifications/tool-result 形状）", async () => {
-    const { view } = renderCard(SC);
+  // NOTE: jsdom auto-fires load on srcdoc iframe mount, consuming the
+  // first-feed slot (fedForRef). Subsequent feeds go through the update
+  // effect, which posts to the SAME window we fed — spy the native
+  // contentWindow to observe them.
+  test("structuredContent 更新重发（ui/notifications/tool-result 形状）", async () => {
+    const { rerender, view } = renderCard(SC);
     await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
     const frame = view.container.querySelector("iframe") as HTMLIFrameElement;
+    const nativeWin = frame.contentWindow as Window;
     const postSpy = mock(() => {});
-    Object.defineProperty(frame, "contentWindow", {
-      configurable: true,
-      value: { postMessage: postSpy },
-    });
-    fireEvent.load(frame);
-    expect(postSpy).toHaveBeenCalledTimes(1);
+    Object.defineProperty(nativeWin, "postMessage", { configurable: true, value: postSpy });
+    rerender({ ...SC, title: "Arch v1.1" });
+    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(1));
     const payload = postSpy.mock.calls[0][0] as {
       jsonrpc: string;
       method: string;
@@ -139,24 +141,40 @@ describe("McpAppCard", () => {
     };
     expect(payload.jsonrpc).toBe("2.0");
     expect(payload.method).toBe("ui/notifications/tool-result");
-    expect(payload.params.structuredContent).toEqual(SC);
+    expect(payload.params.structuredContent).toEqual({ ...SC, title: "Arch v1.1" });
   });
 
-  test("load 后 structuredContent 更新触发重发", async () => {
+  test("multiple structuredContent updates each re-send", async () => {
     const { rerender, view } = renderCard(SC);
     await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
     const frame = view.container.querySelector("iframe") as HTMLIFrameElement;
+    const nativeWin = frame.contentWindow as Window;
+    const postSpy = mock(() => {});
+    Object.defineProperty(nativeWin, "postMessage", { configurable: true, value: postSpy });
+    rerender({ ...SC, title: "Arch v2" });
+    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(1));
+    rerender({ ...SC, title: "Arch v3" });
+    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(2));
+    const second = postSpy.mock.calls[1][0] as { params: { structuredContent: { title: string } } };
+    expect(second.params.structuredContent.title).toBe("Arch v3");
+  });
+
+  test("same-template reload (in-frame navigation) never receives data", async () => {
+    const { rerender, view } = renderCard(SC);
+    await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
+    const frame = view.container.querySelector("iframe") as HTMLIFrameElement;
+    // Simulate the frame navigating itself to another document: contentWindow
+    // becomes a NEW window, srcDoc unchanged -> load refires.
     const postSpy = mock(() => {});
     Object.defineProperty(frame, "contentWindow", {
       configurable: true,
       value: { postMessage: postSpy },
     });
     fireEvent.load(frame);
-    const updated = { ...SC, title: "Arch v2" };
-    rerender(updated);
-    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(2));
-    const second = postSpy.mock.calls[1][0] as { params: { structuredContent: { title: string } } };
-    expect(second.params.structuredContent.title).toBe("Arch v2");
+    rerender({ ...SC, title: "Arch v9" });
+    // Let the update effect run before asserting the negative.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(postSpy).toHaveBeenCalledTimes(0);
   });
 
   test("回源失败显示不可用提示（非坏卡）", async () => {
@@ -166,5 +184,54 @@ describe("McpAppCard", () => {
     const { view } = renderCard(SC);
     await waitFor(() => expect(view.container.textContent).toContain("应用视图不可用"));
     expect(view.container.querySelector("iframe")).toBeNull();
+  });
+});
+
+// Integration: tool-card metadata.custom -> renderer props -> HubWikiPageToolUI.
+// Guards the cross-layer seam where structuredContent was silently dropped
+// (2026-10-20 code-review P0: card path was unreachable in production).
+const { buildToolCardToolProps, getToolRenderer } = await import("./tool-ui-registry");
+const { ClaudeBridgeContext } = await import("../../routes/claude-adapter");
+
+const WIKI_TOOL = "mcp__ar-hub__wiki_read_page";
+const WIKI_CUSTOM = {
+  argsText: JSON.stringify({ slug: "arch" }),
+  result: "ok",
+  structuredContent: SC,
+};
+
+describe("MCP Apps tool-card integration", () => {
+  test("buildToolCardToolProps forwards structuredContent into metadata", () => {
+    const props = buildToolCardToolProps(WIKI_CUSTOM, WIKI_TOOL);
+    const metadata = props.metadata as Record<string, unknown>;
+    expect(metadata.structuredContent).toEqual(SC);
+
+    const plain = buildToolCardToolProps({ result: "x" }, "Bash");
+    expect((plain.metadata as Record<string, unknown>).structuredContent).toBeUndefined();
+  });
+
+  test("HubWikiPageToolUI renders sandboxed iframe from built props", async () => {
+    const HubRenderer = getToolRenderer(WIKI_TOOL);
+    const props = buildToolCardToolProps(WIKI_CUSTOM, WIKI_TOOL);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+      createElement(
+        I18nProvider,
+        null,
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(
+            ClaudeBridgeContext.Provider,
+            { value: { projectName: "test" } },
+            createElement(HubRenderer as never, props as never),
+          ),
+        ),
+      ),
+    );
+    await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
+    const frame = view.container.querySelector("iframe") as HTMLIFrameElement;
+    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(frame.getAttribute("srcdoc") ?? "").toContain("<!doctype html>");
   });
 });

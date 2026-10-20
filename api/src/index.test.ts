@@ -974,6 +974,27 @@ test("createFetchHandler serves MCP ui resource (token-guarded, ui-gated)", asyn
     { upgrade: () => false },
   );
   expect(unknown.status).toBe(404);
+
+  // 原型链键不入表(hasOwnProperty 守卫):__proto__/constructor → 404 而非 200 {}。
+  for (const uri of ["__proto__", "constructor", "toString"]) {
+    const proto = await handler(
+      new Request(`http://localhost/api/projects/demo/mcp-ui-resource?uri=${uri}`, { headers }),
+      { upgrade: () => false },
+    );
+    expect(proto.status).toBe(404);
+  }
+
+  // project 不存在 → 404(readProjectMcpConfig 内部 resolver 抛 → catch)。
+  const missing = await handler(
+    new Request(
+      "http://localhost/api/projects/no-such-project/mcp-ui-resource?uri=ui://ar-hub/wiki-page",
+      {
+        headers,
+      },
+    ),
+    { upgrade: () => false },
+  );
+  expect(missing.status).toBe(404);
 });
 
 test("createFetchHandler protects pages config and validates writes", async () => {

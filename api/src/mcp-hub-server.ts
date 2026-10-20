@@ -45,12 +45,15 @@ const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
 const WIKI_PAGE_UI_URI = "ui://ar-hub/wiki-page";
 
 /**
- * wiki 页卡片 MVP 模板：零外部依赖(CSP resourceDomains 缺省 'none')。宿主按 MCP Apps 桥
- * 下发 `ui/notifications/tool-result`,卡片取 structuredContent(kind="wiki-page")做基本
- * 结构化渲染(标题/列表/代码/粗体,转义防注入)。渲染质量是宿主 MVP 后的迭代面,管道优先。
+ * wiki 页卡片 MVP 模板：零外部依赖。CSP meta `default-src 'none'` 禁 connect/img/form
+ * ——即便未来 esc 出现转义缺口,帧内脚本也无法把 wiki 数据外发(2026-10-20 security
+ * review 补;宿主侧 postMessage 喂数据另由 mcp-app-card 的同模板重载守卫挡)。宿主按
+ * MCP Apps 桥下发 `ui/notifications/tool-result`,卡片取 structuredContent
+ * (kind="wiki-page")做基本结构化渲染(标题/列表/代码/粗体,转义防注入)。渲染质量是
+ * 宿主 MVP 后的迭代面,管道优先。
  */
 const WIKI_PAGE_APP_HTML = `<!doctype html>
-<html><head><meta charset="utf-8"><style>
+<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'"><style>
   body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:16px;background:#fff;color:#111;line-height:1.55}
   h1{font-size:1.3em;margin:.2em 0 .6em}h2{font-size:1.15em;margin:1em 0 .4em}h3{font-size:1em;margin:.8em 0 .3em}
   code{background:#f2f2f2;border-radius:4px;padding:.1em .35em;font-size:.92em}
@@ -311,16 +314,13 @@ const buildRequestServer = (
   if (wikiEnabled || uiEnabled) {
     registerWikiTools(server, project, wikiService, wikiEnabled, uiEnabled);
     if (uiEnabled) {
-      server.registerResource(
-        "wiki-page",
-        WIKI_PAGE_UI_URI,
-        { mimeType: MCP_APP_MIME_TYPE },
-        () => ({
-          contents: [
-            { uri: WIKI_PAGE_UI_URI, mimeType: MCP_APP_MIME_TYPE, text: WIKI_PAGE_APP_HTML },
-          ],
-        }),
-      );
+      // resources/read 查 HUB_UI_RESOURCES 单源表——与 HTTP 路由同一份数据,
+      // 新增 UI 资源只改表,注册处不复制模板(防复制漂移,2026-10-20 review)。
+      for (const [uri, resource] of Object.entries(HUB_UI_RESOURCES)) {
+        server.registerResource(uri, uri, { mimeType: resource.mimeType }, async () => ({
+          contents: [{ uri, mimeType: resource.mimeType, text: resource.html }],
+        }));
+      }
     }
   }
   return server;

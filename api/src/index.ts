@@ -1296,8 +1296,9 @@ const handleWikiRoute = async (
 // GET /api/projects/{name}/mcp-ui-resource?uri=ui://ar-hub/wiki-page
 // web 宿主读 hub UI 资源 HTML(JSON 包裹,前端 srcdoc 注入)。hub 恒 loopback,浏览器
 // 够不着——api 进程内经 HUB_UI_RESOURCES 单源表直读(与 hub 注册同源,无复制漂移面)。
-// 仅 project 存在且 mcp.json ui 开时服务;uri 不在表内 / ui 未开 / project 不存在 → 404
-// (不暴露具体原因,与 hub 的 project 校验同原则)。
+// 仅 project 存在且 mcp.json ui 开时服务;uri 不在表内 / ui 未开 / project 不存在 → 404。
+// 鉴权在前(requireHttpAuth),错误细分只暴露给已认证 owner——ui 忘开等自查诊断有真实
+// 价值,非匿名枚举面(2026-10-20 security-review 裁定,注释如实化)。
 const handleMcpUiResourceRoute = async (
   request: Request,
   url: URL,
@@ -1318,12 +1319,17 @@ const handleMcpUiResourceRoute = async (
     return undefined;
   }
   const uri = url.searchParams.get("uri") ?? "";
-  const resource = HUB_UI_RESOURCES[uri];
+  // hasOwnProperty 守卫:裸索引会命中原型链(uri=constructor/__proto__ 等返回继承
+  // 属性,绕过 404 判定,序列化成 {}——security-review 2026-10-20)。
+  const resource = Object.prototype.hasOwnProperty.call(HUB_UI_RESOURCES, uri)
+    ? HUB_UI_RESOURCES[uri]
+    : undefined;
   if (!resource) {
     return jsonError("PROJECT_FILE_NOT_FOUND", `Unknown UI resource: ${uri}`, 404);
   }
   try {
-    await resolveProjectPath(projectsRoot, projectName);
+    // readProjectMcpConfig 内部已过 resolveProjectPath(project 不存在 → ProjectPathError
+    // 透传)——不再单独调用,每请求省一轮 fs resolver 往返(2026-10-20 code-review)。
     const config = await readProjectMcpConfig(projectsRoot, projectName);
     if (config?.capabilities?.ui !== true) {
       return jsonError("PROJECT_FILE_NOT_FOUND", "MCP ui capability is disabled", 404);

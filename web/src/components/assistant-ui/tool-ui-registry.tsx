@@ -692,6 +692,36 @@ export function getToolRenderer(toolName: string): ToolRenderer {
   return GenericToolUI;
 }
 
+// tool-card metadata.custom → renderer props 重建（SystemChatBubble 消费，单源于此）。
+// custom 新增键且 renderer 需要消费时必须在此转发——漏转发 = renderer 侧恒 undefined
+// （structuredContent 曾因 route 内联重建漏键导致整条卡片主路径不可达，2026-10-20
+// code-review P0）。导出供单测断言键转发不回退。
+export function buildToolCardToolProps(
+  custom: Record<string, unknown> | undefined,
+  toolName: string,
+): Record<string, unknown> {
+  const controlRequestId = custom?.controlRequestId as string | undefined;
+  return {
+    toolName,
+    argsText: (custom?.argsText as string) ?? "{}",
+    result: custom?.result as string | undefined,
+    resultImages: custom?.resultImages as ExtractedImage[] | undefined,
+    status:
+      custom?.result != null || custom?.isError === true
+        ? { type: "complete" as const }
+        : { type: "running" as const },
+    isError: custom?.isError === true,
+    isInterrupted: custom?.isInterrupted === true,
+    metadata: {
+      skillContent: custom?.skillContent,
+      controlRequestId,
+      permissionDenied: custom?.permissionDenied,
+      heartbeatElapsedSeconds: custom?.heartbeatElapsedSeconds as number | undefined,
+      structuredContent: custom?.structuredContent,
+    },
+  };
+}
+
 function safeParseArgs(argsText: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(argsText);

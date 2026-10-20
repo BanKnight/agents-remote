@@ -78,7 +78,10 @@ import {
   ComposerAttachMenu,
   useComposerAttachments,
 } from "../components/ui/composer-attach";
-import { getToolRenderer } from "../components/assistant-ui/tool-ui-registry";
+import {
+  buildToolCardToolProps,
+  getToolRenderer,
+} from "../components/assistant-ui/tool-ui-registry";
 import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
 import { CompactBlock } from "../components/assistant-ui/compact-block";
@@ -1342,26 +1345,10 @@ function SystemChatBubble() {
           active: boolean;
         }
       | undefined;
-    const argsText = (custom?.argsText as string) ?? "{}";
     const controlRequestId = custom?.controlRequestId as string | undefined;
-    const toolProps = {
-      toolName,
-      argsText,
-      result: custom?.result as string | undefined,
-      resultImages: custom?.resultImages as ExtractedImage[] | undefined,
-      status:
-        custom?.result != null || custom?.isError === true
-          ? { type: "complete" as const }
-          : { type: "running" as const },
-      isError: custom?.isError === true,
-      isInterrupted: custom?.isInterrupted === true,
-      metadata: {
-        skillContent: custom?.skillContent,
-        controlRequestId,
-        permissionDenied: custom?.permissionDenied,
-        heartbeatElapsedSeconds: custom?.heartbeatElapsedSeconds as number | undefined,
-      },
-    } as Record<string, unknown>;
+    // custom → renderer props 重建单源于 registry 的 buildToolCardToolProps
+    // （内联字面量曾漏 structuredContent 致卡片主路径不可达，2026-10-20）。
+    const toolProps = buildToolCardToolProps(custom, toolName);
     const ToolUI = CustomUI;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ToolUIAny = ToolUI as React.ComponentType<any>;

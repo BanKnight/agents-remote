@@ -61,10 +61,18 @@ export function McpAppCard({
   });
 
   const frameRef = useRef<HTMLIFrameElement | null>(null);
-  const loadedRef = useRef(false);
+  // Feed-once guard. Only the FIRST load of a given template gets the initial
+  // postMessage, and re-sends (structuredContent updates) only go to the exact
+  // window we fed. A later onLoad on the same srcDoc means script inside the
+  // frame navigated the frame itself (reachable only via a future escaping
+  // bug) — a navigated document must never receive data. (security-review
+  // 2026-10-20: postMessage "*" x onLoad refire chain cut)
+  const fedForRef = useRef<string | null>(null);
+  const fedWinRef = useRef<Window | null>(null);
   const postToolResult = () => {
-    const win = frameRef.current?.contentWindow;
-    if (!win) return;
+    const frame = frameRef.current;
+    const win = frame?.contentWindow;
+    if (!frame || !win || win !== fedWinRef.current) return;
     win.postMessage(
       {
         jsonrpc: "2.0",
@@ -78,9 +86,9 @@ export function McpAppCard({
     );
   };
   // Re-send when structuredContent updates after load. Before load the effect
-  // skips (document not ready); onLoad posts the latest value.
+  // skips (window not fed yet); onLoad posts the latest value.
   useEffect(() => {
-    if (loadedRef.current) postToolResult();
+    postToolResult();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structuredContent]);
 
@@ -102,7 +110,12 @@ export function McpAppCard({
       ref={frameRef}
       className={`mt-2 w-full overflow-hidden rounded-lg border border-neutral-line/40 bg-white ${heightClassName}`}
       onLoad={() => {
-        loadedRef.current = true;
+        const frame = frameRef.current;
+        const html = resource.data?.html;
+        if (!frame || html == null) return;
+        if (fedForRef.current === html) return; // same-template refire = in-frame navigation
+        fedForRef.current = html;
+        fedWinRef.current = frame.contentWindow;
         postToolResult();
       }}
       sandbox="allow-scripts"
