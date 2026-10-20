@@ -1655,6 +1655,7 @@ function MobileProjectWorkbench({
                 create={create}
                 onBrowseTools={() => handleToolChange("files")}
                 onCreateInstance={() => setCreateSheetOpen(true)}
+                onOpenHistory={() => setHistorySheetOpen(true)}
               />
             )
           ) : null}
@@ -1742,16 +1743,19 @@ function MobileWikiRefBar({ projectName, sessionId }: { projectName: string; ses
  * 03h 空态卡（v2 M3-c，对标 docs/design/03h-workspace-empty.html）：项目无可聚焦实例时主体 =
  * .empty 卡（大图标容器 + 标题/副文 + CTA「新建 Agent」）+ 项目工具引导 link。CTA 与 row2 ＋
  * 同一入口（M5-a：03j 新建实例 sheet，编号②「主按钮 → 新建实例 sheet」）；
- * link 进 files 工具态（03h 编号③「工具是项目级，仍可用」）。
+ * link 进 files 工具态（03h 编号③「工具是项目级，仍可用」）。主 CTA 下另有 tinted 次按钮
+ * 「从历史恢复」（2026-10-19）→ 03n 历史浮层（iOS filled → tinted → 文字链三级动作层级）。
  */
 function EmptyProjectState({
   create,
   onBrowseTools,
   onCreateInstance,
+  onOpenHistory,
 }: {
   create: CreateSessionApi;
   onBrowseTools: () => void;
   onCreateInstance: () => void;
+  onOpenHistory: () => void;
 }) {
   const { t } = useT();
   return (
@@ -1771,6 +1775,14 @@ function EmptyProjectState({
           type="button"
         >
           {t("workbench.emptyCta")}
+        </button>
+        <button
+          className="mx-auto mt-3 flex h-10 w-[200px] cursor-pointer items-center justify-center gap-1.5 rounded-full bg-primary/15 text-sm font-semibold text-primary transition active:opacity-80"
+          onClick={onOpenHistory}
+          type="button"
+        >
+          <ShellIcon aria-hidden className="size-4" name="clock.arrow.circlepath" />
+          {t("workbench.emptyResume")}
         </button>
       </div>
       <button

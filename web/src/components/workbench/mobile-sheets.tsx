@@ -6,7 +6,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ApprovalSummary } from "@agents-remote/shared";
 
 import {
-  HISTORY_FILTERS,
   HISTORY_GROUP_LABEL_KEYS,
   buildResumeInput,
   displayTitleOf,
@@ -148,6 +147,8 @@ export function MobileProjectSwitchSheet({
 
 /** 左滑露出的删除钮宽（03n 原型 .del 64px；v2-primitives `.hrow.swipe .del` 同源）。 */
 const SWIPE_REVEAL_WIDTH_PX = 64;
+/** 置顶「最近」组条数（移动历史浮层：最近 7 条无视时间档，附加在五档时间组之前）。 */
+const RECENT_GROUP_SIZE = 7;
 /** 手势轴向判定阈值：|dx|、|dy| 都越过才判向（tap slop 内不接管，保行体 click 合成）。 */
 const SWIPE_AXIS_PX = 8;
 /** 松手吸附判定：滑过露出宽一半 = 常开，否则收回。 */
@@ -277,12 +278,14 @@ function HistorySwipeRow({
 
 /**
  * 03n 会话历史 sheet（nav ⋯ →「会话历史」入口，编号①）：v1.5 批5 规模化查询模型（spec §4.2
- * 会话历史查询）——三段计数筛选（.segc + 段内服务端聚合计数）+ 按名搜索 + 五档分组组头
- *（.gh 随数据出现）+ 游标分页三态尾（滚动到底自动 +20 / 没有更多 / 失败重试）+ 左滑删除
- *（closed 行，二次确认）。数据走 useHistoryQuery 单源管道（与桌面 05c / iPad 04g 同构消费），
- * 旧「客户端全量 + 折叠窗口」（useHistorySessions + useHistoryRecentWindow）退役。
- * hasActiveSession 行点击 = 聚焦既有实例（activeSessionId，不新建，无删除入口）；closed 行
- * 点按 = prompt 命名 → resume 复用同 id。end 行 d2 轮次/费用原型数据无来源不画（诚实呈现）。
+ * 会话历史查询）——按名搜索 + 分组组头（.gh 随数据出现）+ 游标分页三态尾（滚动到底自动 +20 /
+ * 没有更多 / 失败重试）+ 左滑删除（closed 行，二次确认）。移动浮层不再提供进行中/已结束
+ * 筛选段（2026-10-19 拍板）：恒展示全部，并在五档时间组之前附加「最近」组（最近
+ * RECENT_GROUP_SIZE 条，无视时间档）；原有五档时间组完整保留、照常收录各自条目。
+ * 桌面 05c / iPad 04g 仍保留三段筛选。
+ * 数据走 useHistoryQuery 单源管道（三端同构消费）。hasActiveSession 行点击 = 聚焦既有实例
+ *（activeSessionId，不新建，无删除入口）；closed 行点按 = prompt 命名 → resume 复用同 id。
+ * end 行 d2 轮次/费用原型数据无来源不画（诚实呈现）。
  */
 export function MobileSessionHistorySheet({
   onFocusExisting,
@@ -297,15 +300,13 @@ export function MobileSessionHistorySheet({
   projectName: string;
 }) {
   const { t } = useT();
-  // open gate：sheet 常驻挂载（open 只控显隐），不打开不发查询；filter/search UI 态由 hook
-  // 代管（§6.10 视图态不持久化）。v1.5 批5 规模化：服务端查询（三段筛选计数 + 搜索 + 游标
-  // 分页）+ 五档分组派生，取代客户端全量拉取 + 折叠窗口。
+  // open gate：sheet 常驻挂载（open 只控显隐），不打开不发查询；search UI 态由 hook
+  // 代管（§6.10 视图态不持久化）。v1.5 批5 规模化：服务端查询（搜索 + 游标分页）+ 分组
+  // 派生；移动恒 filter=all，另置顶最近 RECENT_GROUP_SIZE 条的「最近」组。
   const {
-    counts,
     deleteEntry,
     entries,
     fetchNextPage,
-    filter,
     groups,
     hasNextPage,
     isError,
@@ -313,9 +314,8 @@ export function MobileSessionHistorySheet({
     isLoading,
     refetch,
     search,
-    setFilter,
     setSearch,
-  } = useHistoryQuery({ projectName, enabled: open });
+  } = useHistoryQuery({ projectName, enabled: open, recentCount: RECENT_GROUP_SIZE });
   const { resume } = useResumeAgentSession(projectName);
   const renameDialog = usePromptDialog();
   const confirmDialog = useConfirm();
@@ -395,23 +395,6 @@ export function MobileSessionHistorySheet({
         open={open}
         title={t("workbench.historyTitle")}
       >
-        {/* 三段计数筛选（03n 编号②：.segc 单源 + 段内嵌服务端聚合计数；margin 走 utility
-            14/16——旧 mx-0 mt-2.5 曾被 unlayered .segc margin 压制从未生效，实际视觉一直是
-            14/16，utility 对齐实际视觉，批13 margin 语境化）。 */}
-        <div className="segc mx-4 mt-3.5" role="group">
-          {HISTORY_FILTERS.map((f) => (
-            <button
-              aria-pressed={filter === f.key}
-              className={`cursor-pointer${filter === f.key ? " on" : ""}`}
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              type="button"
-            >
-              {t(f.labelKey)}
-              <em className="n">{counts[f.key]}</em>
-            </button>
-          ))}
-        </div>
         {/* 搜索（03n 编号③：服务端按会话名过滤；行原语 = 03l 切换 sheet 同款紧凑搜索）。 */}
         <div className="mt-2 flex h-9 items-center gap-2 rounded-md bg-elevated2 px-3">
           <ShellIcon className="size-[15px] flex-none text-ink-2" name="magnifyingglass" />
@@ -442,7 +425,7 @@ export function MobileSessionHistorySheet({
             )
           ) : (
             <>
-              {/* 五档分组组头（03n 编号④：gh 随数据出现；组内序 = 服务端倒序入桶保序）。 */}
+              {/* 分组组头（「最近」置顶 + 五档时间组；gh 随数据出现，组内序 = 服务端倒序保序）。 */}
               {groups.map((group) => (
                 <div key={group.key}>
                   <div className="gh">{t(HISTORY_GROUP_LABEL_KEYS[group.key])}</div>

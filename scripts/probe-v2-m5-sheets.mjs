@@ -7,8 +7,10 @@
 //     「已结束」过滤空态。
 //   Part 3 03j 新建实例 sheet：▾ 菜单钉底「＋ 新建实例…」→ .msheet + srow/tile 36×36 +
 //     Claude 行点击 → 命名 prompt 弹窗（row2 ＋ 已退役）。
-//   Part 4 ⋯ › 实例信息 → info sheet .acts 动作行（重命名/置顶/关闭三按钮；02c pill 长按
-//     菜单随 pills 退役，操作入口唯一）。
+//   Part 4 ⋯ 菜单动作区（置顶/重命名/关闭 destructive）+ 实例信息 = 纯信息面板（.acts
+//     footer 随 v1.6 动作上收退役）。
+//   Part 6 03h 空态卡「从历史恢复」入口（2026-10-19）：空项目（无实例）→ .empty-card 双按钮
+//     （主 CTA filled + tinted 次按钮同几何带图标）→ 点次按钮开 03n + 空提示「暂无会话」。
 //
 // 全 mock API（proj1 不依赖真实项目数据）；密码自读不进 agent 上下文、不打印值。
 // 用法：bun scripts/probe-v2-m5-sheets.mjs
@@ -233,10 +235,8 @@ await page
 const navTitle = await page.locator(".nav h1 button").textContent();
 ok(navTitle?.includes("Probe Agent A") === true, `标题 = 实例名（「${navTitle?.trim()}」）`);
 ok(navTitle?.includes(projectName) === false, "标题非项目名（单会话化）");
-ok(
-  (await page.locator(".nav .runct").textContent())?.includes("1") === true,
-  "runct ●1（probe-1 running）",
-);
+// 2026-10-15 拍板：聚焦会话时 runct 数字徽标退役，改渲染会话状态点（.dot.run）。
+ok((await page.locator(".nav .dot.run").count()) === 1, "聚焦会话状态点 = 运行中（.dot.run）");
 // 点标题 → DropdownMenu 浮卡（族A 锚定型，非 .msheet）。
 await page.locator(".nav h1 button").click();
 await page.getByRole("menuitem").first().waitFor({ timeout: 5000 });
@@ -268,13 +268,12 @@ ok((await page.getByRole("menuitem", { name: /Probe Agent B/ }).count()) === 1, 
 const rowA = page.getByRole("menuitem", { name: /Probe Agent A/ });
 ok((await rowA.textContent())?.includes("运行中") === true, "实例行含状态文案（运行中）");
 ok((await rowA.locator("svg").count()) >= 1, "实例行类型图标在");
-const ckCount = await page.evaluate(() => {
+// v1.6 图例②：当前行 = 背景高亮 + aria-current（✓ 记号退役）。
+const currentCount = await page.evaluate(() => {
   const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
-  return [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])].filter((el) =>
-    el.textContent?.includes("✓"),
-  ).length;
+  return [...(menu?.querySelectorAll('[role="menuitem"][aria-current="true"]') ?? [])].length;
 });
-ok(ckCount === 1, `当前行 ✓ 恰 1（agent_probe-1 聚焦；实际 ${ckCount}）`);
+ok(currentCount === 1, `当前行 aria-current 恰 1（agent_probe-1 聚焦；实际 ${currentCount}）`);
 // 钉底两行动作。
 const pinNew = page.getByRole("menuitem", { name: /新建实例/ });
 const pinResume = page.getByRole("menuitem", { name: /恢复历史会话/ });
@@ -311,38 +310,26 @@ ok(
   (await page.locator(".msheet .shd .aside").textContent())?.includes(projectName) === true,
   "shd aside = 项目名",
 );
-// 三段计数筛选（03n 编号②）：.segc 三段 + 段内计数 = 服务端聚合（counts 全量口径）。
-ok((await page.locator(".msheet .segc").count()) === 1, "segc 分段容器 = 1");
-ok(
-  (await page.locator(".msheet .segc button").count()) === 3,
-  "segc 三段 = 3 个 button（.segc 限定）",
-);
-const segCounts = await page.locator(".msheet .segc button em.n").allTextContents();
-ok(
-  JSON.stringify(segCounts) === JSON.stringify(["17", "1", "16"]),
-  `segc 段内计数 = 全部17/进行中1/已结束16（got ${JSON.stringify(segCounts)}）`,
-);
-const segPressed = await page
-  .locator(".msheet .segc button")
-  .evaluateAll((els) => els.map((el) => el.getAttribute("aria-pressed")));
-ok(
-  JSON.stringify(segPressed) === JSON.stringify(["true", "false", "false"]),
-  `默认段 = 全部（aria-pressed ${JSON.stringify(segPressed)}）`,
-);
 // 搜索框（03n 编号③）：placeholder + 受控 input。
 ok(
   (await page.locator('.msheet input[placeholder="搜索历史会话"]').count()) === 1,
   "搜索框在（placeholder 搜索历史会话）",
 );
-// 五档分组组头（03n 编号④）：gh 随数据出现（首页 12 条横跨五档）。
+// 移动浮层不再提供进行中/已结束筛选段（2026-10-19 拍板：直接展示全部）。
+ok((await page.locator(".msheet .segc").count()) === 0, "移动历史浮层无 .segc 筛选段");
+// 分组组头：「最近」置顶 + 五档时间组（mock 前 7 条被剥入最近组，其余 5 条全为更早）。
 const ghTexts = await page.locator(".msheet .gh").allTextContents();
 ok(
-  JSON.stringify(ghTexts) === JSON.stringify(["今天", "昨天", "7 天内", "30 天内", "更早"]),
-  `五档组头按序出现（got ${JSON.stringify(ghTexts)}）`,
+  JSON.stringify(ghTexts) === JSON.stringify(["最近", "今天", "昨天", "7 天内", "30 天内", "更早"]),
+  `组头 = 最近 + 原有五档（got ${JSON.stringify(ghTexts)}）`,
 );
 ok(
-  (await page.locator(".msheet .hrow").count()) === 12,
-  "hrow = 12（首页游标分页，mock 页大小 12）",
+  (await page.locator(".msheet .gh").first().locator("xpath=..").locator(".hrow").count()) === 7,
+  "「最近」组 = 最近 7 条（RECENT_GROUP_SIZE）",
+);
+ok(
+  (await page.locator(".msheet .hrow").count()) === 19,
+  "hrow = 19（首页 12 条 + 最近组附加 7 条）",
 );
 // 游标三态（首页）：hasNextPage = 哨兵在场、「没有更多」不在。
 ok((await page.locator("[data-history-tail]").count()) === 1, "游标哨兵在场（hasNextPage）");
@@ -350,30 +337,21 @@ ok(
   (await page.locator(".msheet", { hasText: "没有更多" }).count()) === 0,
   "「没有更多」不在（还有下一页）",
 );
-// 切段筛选（服务端 filter 切片；keepPreviousData 不闪骨架）。已结束 = 16 条、首页 12。
-await page.locator(".msheet .segc button", { hasText: "已结束" }).click();
-await page.waitForTimeout(300);
-ok((await page.locator(".msheet .hrow").count()) === 12, "「已结束」段 hrow = 12（16 条首页游标）");
-// 进行中段 = 1 行（服务端 filter=active）。
-await page.locator(".msheet .segc button", { hasText: "进行中" }).click();
-await page.waitForTimeout(300);
-ok((await page.locator(".msheet .hrow").count()) === 1, "「进行中」段 hrow = 1");
 // P1 守卫：活跃态（running）行点击 = 聚焦既有实例，不得 resume（否则新建重复实例）。
 resumePosts = [];
 await page.locator(".msheet .hrow").first().click();
 await page.waitForTimeout(400);
 ok(resumePosts.length === 0, `running 行点击不 resume（POST数 ${resumePosts.length}）`);
 ok((await page.locator(".msheet").count()) === 0, "running 行点击关 sheet（聚焦既有实例路径）");
-// 重开（filter 态持久 = 进行中），复位「全部」供后续 closed 行断言。
+// 重开（移动恒展示全部，无筛选态需复位）。
 await page.locator('.nav button[aria-label="更多操作"]').click();
 await page.waitForTimeout(300);
 await page.getByRole("menuitem", { name: "会话历史" }).click();
 await page.waitForSelector('.msheet .shd h2:has-text("会话历史")', { timeout: 5000 });
-await page.locator(".msheet .segc button", { hasText: "全部" }).click();
-await page.waitForTimeout(300);
 // P2-5/6 状态层级：running 行 r1 字重 600、无 end 变体；closed 行 400 且无 dot。
-const runningRow = page.locator(".msheet .hrow").filter({ hasText: "Probe Agent A" });
-const closedRow = page.locator(".msheet .hrow").filter({ hasText: "Probe Agent B" });
+// 「最近」组与时间组各含一份（附加展示），断言取首次出现。
+const runningRow = page.locator(".msheet .hrow").filter({ hasText: "Probe Agent A" }).first();
+const closedRow = page.locator(".msheet .hrow").filter({ hasText: "Probe Agent B" }).first();
 ok(
   (await runningRow.getAttribute("class"))?.includes("end") === false,
   "running 行无 end/idle 变体",
@@ -398,11 +376,11 @@ await page.evaluate(() => {
   if (el) el.scrollTop = el.scrollHeight;
 });
 await page.waitForFunction(
-  () => document.querySelectorAll(".msheet .hrow").length === 17,
+  () => document.querySelectorAll(".msheet .hrow").length === 24,
   undefined,
   { timeout: 5000 },
 );
-ok(true, "滚动到底自动追加第二页（hrow 12 → 17）");
+ok(true, "滚动到底自动追加第二页（hrow 19 → 24）");
 ok(
   historyUrls.some((u) => u.includes("cursor=12")),
   "追加请求带 cursor=12（游标续拉）",
@@ -429,6 +407,29 @@ await swipeRow.scrollIntoViewIfNeeded();
 let sw = await swipeState();
 ok(sw !== null, "swipe 行可定位（Probe Old 3）");
 ok(sw?.covered === true, "rest 态删除钮被行体遮盖（elementFromPoint = 行体）");
+// rest 态行体须盖满容器全高（含上下 padding 带）：否则绝对定位 .del 的 tint-red 从
+// padding 带露出，表现为列表右端的暗红条（2026-10-19 真机反馈的根因断言）。
+const restGeometry = await page.evaluate(() => {
+  const row = [...document.querySelectorAll(".msheet .hrow.swipe")].find((n) =>
+    n.textContent?.includes("Probe Old 3"),
+  );
+  if (!row) return null;
+  const del = row.querySelector(".del");
+  const body = row.querySelector(".hbody");
+  if (!del || !body) return null;
+  const d = del.getBoundingClientRect();
+  const b = body.getBoundingClientRect();
+  return {
+    coversFullHeight: b.top <= d.top && b.bottom >= d.bottom,
+    topCovered: document.elementFromPoint(d.x + d.width / 2, d.top + 3) !== del,
+    bottomCovered: document.elementFromPoint(d.x + d.width / 2, d.bottom - 3) !== del,
+  };
+});
+ok(restGeometry?.coversFullHeight === true, "rest 态行体覆盖删除钮全高（无 padding 露红）");
+ok(
+  restGeometry?.topCovered === true && restGeometry?.bottomCovered === true,
+  `删除钮上下缘均被行体遮盖（top=${restGeometry?.topCovered} bottom=${restGeometry?.bottomCovered}）`,
+);
 const bb = await swipeRow.locator(".hbody").boundingBox();
 await page.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
 await page.mouse.down();
@@ -476,27 +477,27 @@ ok(
   `DELETE /agent-history/c1aude-old-3（${JSON.stringify(deletePosts)}）`,
 );
 ok(deletePosts[0]?.url.includes("provider=claude") === true, "DELETE 带 provider=claude");
-ok((await page.locator(".msheet .hrow").count()) === 16, "删除后 hrow = 16");
+ok((await page.locator(".msheet .hrow").count()) === 23, "删除后 hrow = 23（16 时间行 + 最近 7）");
 // 搜索（03n 编号③）：服务端按名过滤（hook 300ms debounce → queryKey 变化重拉）。
 const searchBox = page.locator('.msheet input[placeholder="搜索历史会话"]');
 await searchBox.fill("Probe Week 2");
 await page.waitForFunction(
-  () => document.querySelectorAll(".msheet .hrow").length === 1,
+  () => document.querySelectorAll(".msheet .hrow").length === 2,
   undefined,
   { timeout: 5000 },
 );
-ok(true, "搜索过滤后仅 1 行（Probe Week 2）");
+ok(true, "搜索过滤后 2 行（最近组 + 7 天内组各 1）");
 ok(
   historyUrls.at(-1)?.includes("search=Probe+Week+2") === true,
   "查询带 search 参数（服务端过滤）",
 );
 await searchBox.fill("");
 await page.waitForFunction(
-  () => document.querySelectorAll(".msheet .hrow").length === 16,
+  () => document.querySelectorAll(".msheet .hrow").length === 23,
   undefined,
   { timeout: 5000 },
 );
-ok(true, "清空搜索恢复 16 行（删除后全量）");
+ok(true, "清空搜索恢复 23 行（删除后全量 + 最近组）");
 // 失败重试态（03n 底部三态）：GET 置 500（后注册路由优先）→ 新词 = 全新查询失败
 // （retry:1 后置败）→ 列表位「加载失败 · 点按重试」；摘掉 500 后点按重试恢复。
 const failHistory = (r) =>
@@ -523,7 +524,7 @@ ok(
 );
 await searchBox.fill("");
 await page.waitForFunction(
-  () => document.querySelectorAll(".msheet .hrow").length === 16,
+  () => document.querySelectorAll(".msheet .hrow").length === 23,
   undefined,
   { timeout: 5000 },
 );
@@ -591,34 +592,36 @@ ok(
 await page.getByRole("button", { name: "取消" }).click();
 await page.waitForTimeout(300);
 
-// ── Part 4: ⋯ › 实例信息 sheet（v1.5：pill 长按菜单退役，操作收进 info .acts footer）──
-console.log("Part 4: ⋯ 菜单「实例信息」→ info sheet .acts 动作行（重命名/置顶/关闭）");
+// ── Part 4: ⋯ 菜单动作区（v1.6 变更①：动作上收 ⋯ 菜单；实例信息 = 纯信息面板）──
+console.log("Part 4: ⋯ 菜单动作区（置顶/重命名/关闭）+ 实例信息纯信息面板");
 await page.goto(`${ORIGIN}/projects/${projectName}/session/agent_probe-1`);
 await page.waitForSelector(".nav h1 button", { timeout: 10000 });
 const cdp = await ctx.newCDPSession(page);
 await page.locator('button[aria-label="更多操作"]').click();
+await page.getByRole("menuitem").first().waitFor({ timeout: 5000 });
+const actionItems = await page.evaluate(() => {
+  const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
+  return [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])].map((el) => ({
+    label: el.textContent?.trim() ?? "",
+    color: getComputedStyle(el).color,
+  }));
+});
+ok(actionItems.some((i) => i.label.includes("置顶")) === true, "动作区含「置顶」（agent 实例）");
+ok(actionItems.some((i) => i.label.includes("重命名")) === true, "动作区含「重命名」");
+const closeItem = actionItems.find((i) => i.label.includes("关闭"));
+ok(closeItem !== undefined, "销毁区含「关闭会话」");
+ok(
+  closeItem !== undefined &&
+    closeItem.color !== actionItems.find((i) => i.label.includes("重命名"))?.color,
+  `关闭项 destructive 着色（color=${closeItem?.color}）`,
+);
+// 实例信息 = 纯信息面板（.acts footer 随动作上收退役）。
 await page.getByRole("menuitem", { name: "实例信息" }).click();
 await page.waitForSelector('.msheet .shd h2:has-text("实例信息")', { timeout: 5000 });
 ok(true, "⋯ → 实例信息 → info sheet 打开");
-// .acts footer 三按钮（useInstanceRowActions 单源装配：置顶仅 agent；关闭 = destructive 红）。
-// 定位收窄到 info sheet dialog（菜单 sheet exit 动画期双 .msheet 共存窗口，Part 2 同款）。
-const actsText = await page.getByRole("dialog", { name: "实例信息" }).evaluate((el) => {
-  const footer = [...el.querySelectorAll("div")].find((d) =>
-    [...d.querySelectorAll("button")].some((b) => b.textContent?.includes("重命名")),
-  );
-  return footer
-    ? [...footer.querySelectorAll("button")].map((b) => ({
-        label: b.textContent?.trim(),
-        color: getComputedStyle(b).color,
-      }))
-    : [];
-});
-ok(actsText.length === 3, `.acts 三按钮（重命名/置顶/关闭；实际 ${actsText.length}）`);
-ok(actsText.some((b) => b.label?.includes("置顶")) === true, "置顶按钮在（agent 实例）");
-const closeBtn = actsText.find((b) => b.label?.includes("关闭"));
 ok(
-  (closeBtn?.color ?? "") !== "" && (closeBtn?.color ?? "") !== "rgb(0, 0, 0)",
-  `关闭按钮有 destructive 着色（color=${closeBtn?.color}）`,
+  (await page.getByRole("dialog", { name: "实例信息" }).locator(".acts").count()) === 0,
+  "实例信息为纯信息面板（.acts 动作行已退役）",
 );
 // sheet 关闭（Esc）→ 无残留。
 await page.keyboard.press("Escape");
@@ -714,6 +717,95 @@ ok(
 );
 await page.keyboard.press("Escape");
 await page.waitForTimeout(400);
+
+// ── Part 6: 03h 空态卡「从历史恢复」入口 ────────────────────────────────────
+// 独立 context + 空 mock（agent-sessions=[] 触发空态条件「无实例无聚焦」；agent-history=[]
+// 断言 sheet 空提示）。放探针末尾，不污染前面各 part 的 AGENTS mock 前置。
+console.log("Part 6: 03h 空态卡「从历史恢复」入口（tinted 次按钮 → 03n）");
+const emptyCtx = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  deviceScaleFactor: 3,
+  isMobile: true,
+  hasTouch: true,
+  locale: "zh-CN",
+});
+const emptyPage = await emptyCtx.newPage();
+const emptyJson = (body) => ({
+  status: 200,
+  contentType: "application/json",
+  body: JSON.stringify(body),
+});
+await emptyPage.route(/\/api\/overview$/, (r) =>
+  r.fulfill(emptyJson({ projectNames: [projectName], candidates: [] })),
+);
+await emptyPage.route(/pinned-sessions/, (r) => r.fulfill(emptyJson({ sessions: [] })));
+await emptyPage.route(new RegExp(`/api/projects/${projectName}/agent-sessions(?:\\?.*)?$`), (r) =>
+  r.fulfill(emptyJson({ sessions: [] })),
+);
+// useProjectInstances 同时查 agent+terminal 两 query（isLoading = 任一 pending）——漏 mock
+// terminal-sessions 会让 isLoading 卡 true，空态永不落定（骨架卡住）。
+await emptyPage.route(
+  new RegExp(`/api/projects/${projectName}/terminal-sessions(?:\\?.*)?$`),
+  (r) => r.fulfill(emptyJson({ sessions: [] })),
+);
+await emptyPage.route(new RegExp(`/api/projects/${projectName}/agent-history(?:\\?.*)?$`), (r) =>
+  r.fulfill(
+    emptyJson({
+      entries: [],
+      counts: { all: 0, active: 0, ended: 0 },
+      nextCursor: null,
+      filter: "all",
+    }),
+  ),
+);
+await emptyPage.routeWebSocket(/stream/, (ws) => ws.connectToServer());
+await login(emptyPage);
+await emptyPage.goto(`${ORIGIN}/projects/${projectName}`);
+await emptyPage.waitForSelector(".empty-card", { timeout: 10000 });
+ok(true, "空项目（无实例）渲染 .empty-card 空态卡");
+// 次按钮几何/着色（iOS tinted：半透明 primary 底 + 图标 + 与主按钮同几何、纵向堆叠）。
+const resumeCta = await emptyPage.evaluate(() => {
+  const buttons = [...document.querySelectorAll(".empty-card button")];
+  const main = buttons.find((b) => b.textContent?.includes("新建 Agent"));
+  const sub = buttons.find((b) => b.textContent?.includes("从历史恢复"));
+  if (!main || !sub) return null;
+  const m = main.getBoundingClientRect();
+  const s = sub.getBoundingClientRect();
+  const bg = getComputedStyle(sub).backgroundColor;
+  // computed 对 color-mix 返回 oklab()/color() 新语法（frontend-notes §2：oklab 需换算）——
+  // 取「右括号前最后一个数值」当 alpha（rgba 4 参与 oklab `/ 0.15` 两种形态都命中）。
+  const nums = bg.match(/[\d.]+/g) ?? [];
+  const alpha = nums.length >= 4 ? Number(nums.at(-1)) : 1;
+  return {
+    w: Math.round(s.width),
+    h: Math.round(s.height),
+    alpha,
+    hasIcon: sub.querySelector("svg") !== null,
+    sameWidth: Math.abs(m.width - s.width) < 1,
+    stackedBelow: s.top >= m.bottom - 1,
+  };
+});
+ok(resumeCta !== null, "空态卡含「从历史恢复」次按钮");
+ok(
+  resumeCta?.w === 200 && resumeCta?.h === 40,
+  `次按钮同主按钮几何（${resumeCta?.w}×${resumeCta?.h} = 200×40）`,
+);
+ok((resumeCta?.alpha ?? 1) < 0.5, `次按钮 tinted 半透明底（alpha ${resumeCta?.alpha} < 0.5）`);
+ok(resumeCta?.hasIcon === true, "次按钮带 clock 图标（ShellIcon svg 在场）");
+ok(
+  resumeCta?.sameWidth === true && resumeCta?.stackedBelow === true,
+  "次按钮与主按钮等宽、纵向堆叠于其下",
+);
+// 点次按钮 → 03n 历史浮层打开（空数据 = 诚实空提示，不闪加载后落空）。
+await emptyPage.getByRole("button", { name: "从历史恢复" }).click();
+await emptyPage.waitForSelector('.msheet .shd h2:has-text("会话历史")', { timeout: 5000 });
+ok(true, "点「从历史恢复」→ 03n 历史浮层打开");
+await emptyPage.waitForSelector('.msheet p:has-text("暂无会话")', { timeout: 5000 });
+ok(true, "空历史显示「暂无会话」诚实空提示（无骨架误导）");
+await emptyPage.keyboard.press("Escape");
+await emptyPage.waitForTimeout(400);
+ok((await emptyPage.locator(".msheet").count()) === 0, "Esc 关闭历史浮层");
+await emptyCtx.close();
 
 console.log(`\n结果: ${passCount} pass / ${failCount} fail`);
 await browser.close();

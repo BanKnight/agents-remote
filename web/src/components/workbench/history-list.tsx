@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type {
   AgentHistoryEntry,
   AgentHistoryFilter,
-  AgentHistoryGroupKey,
+  AgentHistoryGroup,
 } from "@agents-remote/shared";
 import { createAgentSession } from "../../api/client";
 import { useT } from "../../i18n";
@@ -145,7 +145,8 @@ export const HISTORY_FILTERS: readonly { key: AgentHistoryFilter; labelKey: Tran
 ];
 
 /** 五档分组组头文案键（渲染序 = hook groups 的 AGENT_HISTORY_GROUP_ORDER，spec §4.2）。 */
-export const HISTORY_GROUP_LABEL_KEYS: Record<AgentHistoryGroupKey, TranslationKey> = {
+export const HISTORY_GROUP_LABEL_KEYS: Record<AgentHistoryGroup, TranslationKey> = {
+  recent: "workbench.historyGroupRecent",
   today: "workbench.historyGroupToday",
   yesterday: "workbench.historyGroupYesterday",
   week: "workbench.historyGroupWeek",

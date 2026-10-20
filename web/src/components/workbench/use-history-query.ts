@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   AgentHistoryEntry,
   AgentHistoryFilter,
+  AgentHistoryGroup,
   AgentHistoryGroupKey,
 } from "@agents-remote/shared";
 import { agentHistoryGroupKey, AGENT_HISTORY_GROUP_ORDER } from "@agents-remote/shared";
@@ -36,13 +37,17 @@ const scopeQueryKey = (projectName: string | null) => [
  * - filter/search 是容器持有的 UI 态（§6.10 视图态不持久化），本 hook 代管。
  * - 游标分页：fetchNextPage 追加 +20；hasNextPage=false 且已加载 → 底部「没有更多」。
  * - counts 从已加载首页取（服务端 search 后 filter 前聚合，同 key 下每页相同）。
- * - groups = 五档分组派生（今天/昨天/7 天内/30 天内/更早），服务端倒序入桶保组内有序。
+ * - groups = 五档分组派生（今天/昨天/7 天内/30 天内/更早），服务端倒序入桶保组内有序；
+ *   `recentCount` 启用时另取最近 N 条置顶为「最近」组（非时间档，附加展示；时间组仍
+ *   完整收录各自条目，不做剥离）。
  */
 export function useHistoryQuery(opts: {
   /** 项目作用域项目名；null = 全局作用域（跨项目列表，行带 projectName 限定符）。 */
   projectName: string | null;
   /** false 时不发查询（常驻挂载的浮层消费方传「打开才拉」）。 */
   enabled: boolean;
+  /** 置顶「最近」组的条数（移动历史浮层传 7）；缺省/0 = 不启用。 */
+  recentCount?: number;
 }) {
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<AgentHistoryFilter>("all");
@@ -79,7 +84,9 @@ export function useHistoryQuery(opts: {
   // 计数段：同 queryKey 下每页 counts 相同（服务端同一份 matched 流切窗），取首页。
   const counts = history.data?.pages.at(0)?.counts ?? HISTORY_COUNTS_ZERO;
 
-  // 五档分组派生（纯函数 shared 单源；服务端已倒序，入桶保序）。
+  // 五档分组派生（纯函数 shared 单源；服务端已倒序，入桶保序）。recentCount 启用时
+  // 「最近」组附加置顶（取最近 N 条），时间组照常完整归组——用户明确原有分组不可去。
+  const recentCount = opts.recentCount ?? 0;
   const groups = useMemo(() => {
     const now = new Date();
     const buckets = new Map<AgentHistoryGroupKey, AgentHistoryEntry[]>();
@@ -89,11 +96,15 @@ export function useHistoryQuery(opts: {
       if (bucket) bucket.push(entry);
       else buckets.set(key, [entry]);
     }
-    return AGENT_HISTORY_GROUP_ORDER.flatMap((key) => {
+    const result: { key: AgentHistoryGroup; entries: AgentHistoryEntry[] }[] = [];
+    const recent = recentCount > 0 ? entries.slice(0, recentCount) : [];
+    if (recent.length > 0) result.push({ key: "recent", entries: recent });
+    for (const key of AGENT_HISTORY_GROUP_ORDER) {
       const bucket = buckets.get(key);
-      return bucket && bucket.length > 0 ? [{ key, entries: bucket }] : [];
-    });
-  }, [entries]);
+      if (bucket && bucket.length > 0) result.push({ key, entries: bucket });
+    }
+    return result;
+  }, [entries, recentCount]);
 
   const deleteMutation = useMutation({
     mutationFn: (entry: AgentHistoryEntry) =>
