@@ -10,6 +10,7 @@ test("getAgentProviderProfile returns internal Claude and Codex profiles", () =>
     displayNamePrefix: "Claude Agent",
     capabilities: {
       history: "native",
+      mcpInject: "native",
     },
     availableModels: ["sonnet", "opus", "haiku"],
   });
@@ -21,6 +22,7 @@ test("getAgentProviderProfile returns internal Claude and Codex profiles", () =>
     displayNamePrefix: "Codex Agent",
     capabilities: {
       history: "unsupported",
+      mcpInject: "unsupported",
     },
   });
 });
@@ -34,6 +36,7 @@ test("omp profile 走 acp transport（provider 粒度 = CLI，transport = 协议
     displayNamePrefix: "OMP Agent",
     capabilities: {
       history: "native",
+      mcpInject: "unsupported",
     },
     // 凭据注入声明：env 变量名是 CLI 固有属性（omp 的 anthropic 形态）；切片未配置时
     // 不注入，回落 omp 自身凭证链（provider 平权，不借用其它 runtime 的配置）。

@@ -1117,7 +1117,12 @@ export type AgentProviderInfo = {
   label: string;
   transport: AgentProviderTransport;
   displayNamePrefix: string;
-  capabilities: { history: "unsupported" | "native" };
+  capabilities: {
+    history: "unsupported" | "native";
+    /** ar-hub 注入能力（spawn 能否带 MCP 配置）。unsupported = 会话照常可跑，只是连不上
+     *  hub（静默降级，非错误帧；能力判定单源于服务端 profile，前端不按 provider 硬编码）。 */
+    mcpInject: "unsupported" | "native";
+  };
   credentialsEnv?: { apiKeyEnv: string; baseUrlEnv?: string };
 };
 
@@ -1344,6 +1349,12 @@ export type DeleteAgentHistoryResponse = {
  * 纯函数派生（三端同规则），组头文案走 i18n。
  */
 export type AgentHistoryGroupKey = "today" | "yesterday" | "week" | "month" | "earlier";
+
+/**
+ * 历史列表组键：五档时间组 + 「最近」聚合组。后者不是时间档（由消费方按最近 N 条
+ * 自取，无视时间窗口），仅移动历史浮层置顶展示。
+ */
+export type AgentHistoryGroup = AgentHistoryGroupKey | "recent";
 
 /** 五档分组顺序（渲染排序固定，不随出现顺序漂移）。 */
 export const AGENT_HISTORY_GROUP_ORDER: AgentHistoryGroupKey[] = [

@@ -122,6 +122,37 @@ describe("sanitizeMcpName", () => {
   });
 });
 
+describe("isReservedMcpName / 保留名守卫", () => {
+  it("add 拒绝 ar-hub 与 ar- 前缀（防劫持 spawn 注入的系统 server）", async () => {
+    runCliTool.mockResolvedValue(ok());
+    for (const name of ["ar-hub", "ar-anything", "ar-wiki"]) {
+      await expect(
+        addMcpServer({ name, type: "http", url: "https://x.io/mcp" }, "user", {}),
+      ).rejects.toThrow(/reserved/);
+    }
+    // CLI 一次都不该被调（守卫在 spawn 之前）。
+    expect(runCliTool).not.toHaveBeenCalled();
+  });
+
+  it("update 同样拒绝保留名", async () => {
+    runCliTool.mockResolvedValue(ok());
+    await expect(
+      updateMcpServer({ name: "ar-hub", type: "http", url: "https://x.io/mcp" }, "user", {}),
+    ).rejects.toThrow(/reserved/);
+    expect(runCliTool).not.toHaveBeenCalled();
+  });
+
+  it("非保留名不受影响（前缀边界：ar 前缀精确匹配，不含 arh/ar_x 等）", async () => {
+    runCliTool.mockResolvedValue(ok());
+    await addMcpServer(
+      { name: "archive-tools", type: "http", url: "https://x.io/mcp" },
+      "user",
+      {},
+    );
+    expect(runCliTool).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("addMcpServer", () => {
   it("builds stdio argv with name before -e and -- before command", async () => {
     runCliTool.mockResolvedValue(ok());

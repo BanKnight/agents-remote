@@ -22,6 +22,10 @@ export type AgentProviderProfile = {
   displayNamePrefix: string;
   capabilities: {
     history: "unsupported" | "native";
+    /** ar-hub 注入能力（mcp-injector 的 canInject 单源声明）。unsupported = spawn 不带
+     *  MCP 配置，会话照常可跑（静默降级非错误；MCP_INJECT_UNSUPPORTED 错误码留给未来
+     *  「显式要求注入但不支持」场景）。 */
+    mcpInject: "unsupported" | "native";
   };
   credentials?: AgentProviderCredentialsSpec;
   availableModels?: string[];
@@ -94,6 +98,7 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
     displayNamePrefix: "Claude Agent",
     capabilities: {
       history: "native",
+      mcpInject: "native",
     },
     // Claude Code standard model aliases — portable tier identifiers that the
     // CLI resolves to the latest model version at runtime.
@@ -107,6 +112,7 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
     displayNamePrefix: "Codex Agent",
     capabilities: {
       history: "unsupported",
+      mcpInject: "unsupported", // Codex 走 tmux 非直拉，无 argv 注入抽象（见 mcp-injector.ts）。
     },
   },
   // omp（Oh My Pi CLI）：走 ACP 协议对接（transport "acp"，`omp acp` 子命令）。ACP 是协议
@@ -124,6 +130,7 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
     displayNamePrefix: "OMP Agent",
     capabilities: {
       history: "native",
+      mcpInject: "unsupported", // ACP transport 无 spawn argv 注入通道。
     },
     credentials: {
       env: { apiKey: "ANTHROPIC_API_KEY", baseUrl: "ANTHROPIC_BASE_URL" },
@@ -147,7 +154,10 @@ export const listAgentProviderInfo = (): AgentProviderInfo[] =>
     label: p.label,
     transport: p.transport,
     displayNamePrefix: p.displayNamePrefix,
-    capabilities: p.capabilities,
+    capabilities: {
+      history: p.capabilities.history,
+      mcpInject: p.capabilities.mcpInject,
+    },
     ...(p.credentials
       ? {
           credentialsEnv: {

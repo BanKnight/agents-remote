@@ -58,6 +58,25 @@ export function sanitizeMcpName(input: unknown): string {
   return input;
 }
 
+/**
+ * 系统 server 保留名：`ar-hub`（spawn 注入的系统 server，mcp-injector.ts）+ `ar-` 前缀
+ * （未来系统 server 命名空间）。同名会被 Claude Code 合并进工具列表、劫持系统工具身份，
+ * add/update 拒绝（互不干扰前提：用户能管自己的 server，动不了我们的）；
+ * remove/enable 不拦——历史遗留的同名条目要能清理（否则永远删不掉）。
+ */
+export function isReservedMcpName(name: string): boolean {
+  return name === "ar-hub" || name.startsWith("ar-");
+}
+
+function assertNotReservedMcpName(name: string): void {
+  if (isReservedMcpName(name)) {
+    throw new McpError(
+      "MCP_CONFIG_INVALID",
+      `MCP server name "${name}" is reserved (names starting with "ar-" belong to agents-remote)`,
+    );
+  }
+}
+
 function trimResult(r: CliToolResult): string {
   return (r.stderr.trim() || r.stdout.trim() || `exit code ${r.exitCode}`).slice(0, 500);
 }
@@ -276,6 +295,7 @@ export async function addMcpServer(
   context: { projectsRoot?: string; projectName?: string },
 ): Promise<AddMcpServerResponse> {
   const name = sanitizeMcpName(req.name);
+  assertNotReservedMcpName(name);
   const cwd = await resolveProjectCwd(scope, context);
   const tail = buildAddArgs(name, req, scope);
   const result = await runCliTool([CLAUDE_BIN, "mcp", "add", ...tail], {
@@ -347,6 +367,7 @@ export async function updateMcpServer(
   context: { projectsRoot?: string; projectName?: string },
 ): Promise<UpdateMcpServerResponse> {
   const name = sanitizeMcpName(req.name);
+  assertNotReservedMcpName(name);
   const cwd = await resolveProjectCwd(scope, context);
   // 1. 先读旧配置（回滚用）——在 remove 之前读，remove 后文件已无此条目。
   const oldList = await readScopeServers(scope, cwd);
