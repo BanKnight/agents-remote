@@ -46,10 +46,13 @@ test("authenticated user can browse Project files and preview text and images", 
   const rootNames = await files
     .locator('[data-panel-tab-body="files"] .frow .p')
     .evaluateAll((nodes) => nodes.map((node) => node.textContent ?? ""));
-  // 目录在前（.config/src），文件按 localeCompare（.env.example 首位）。
+  // 目录在前（.agents-remote/.config/src/wiki），文件按 localeCompare（.env.example 首位）。
+  // .agents-remote（mcp.json）与 wiki（intro.md）= mcp-app-card.spec.ts 的 MCP Apps 面。
   expect(rootNames).toEqual([
+    ".agents-remote",
     ".config",
     "src",
+    "wiki",
     ".env.example",
     "logo.svg",
     "notes.txt",

@@ -26,6 +26,19 @@ const main = async () => {
     join(projectPath, "logo.svg"),
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40"><text x="4" y="24">file-browser-e2e-image-ok</text></svg>',
   );
+  // MCP Apps 卡片 e2e 面：ui 能力开（mcp-ui-resource / mcp-hub-tools-call 路由的
+  // 门控）+ wiki 页。页标题与 mcp-app-card.spec.ts mock 帧里的 stale 内容刻意不同
+  // ——刷新钮点击后模板渲染 api 代理真实读到的本文件，标题变化即锁死全链。
+  await mkdir(join(projectPath, ".agents-remote"), { recursive: true });
+  await writeFile(
+    join(projectPath, ".agents-remote", "mcp.json"),
+    JSON.stringify({ capabilities: { ui: true } }),
+  );
+  await mkdir(join(projectPath, "wiki"), { recursive: true });
+  await writeFile(
+    join(projectPath, "wiki", "intro.md"),
+    "---\ntitle: Fresh Wiki Page\ntags:\n  - e2e\n---\n\n# Fresh body\n\nhub wiki service e2e content ok\n",
+  );
   await git(projectPath, ["init"]);
   await git(projectPath, ["config", "user.email", "e2e@example.com"]);
   await git(projectPath, ["config", "user.name", "E2E User"]);
