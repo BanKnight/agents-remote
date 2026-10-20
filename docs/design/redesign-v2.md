@@ -2033,3 +2033,11 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 ### 浅色对比度已知限制（上游 tokens.json 取值）
 
 浅色档 `--c-warning-text: #e08600`（对 #fff ≈ 2.77:1）与 `--c-success-text: #28a745`（≈ 3.13:1）低于 WCAG AA 4.5:1——上游 tokens.json `$value` 即此值，深色档达标。短期约束：这两色仅用于 ≥600 字重的小型标签（badge/tray/otherlbl，设计包样式已是粗体），不做正文色。加深取值留 M3 主页对齐时与设计包一起校订（tokens.json 是唯一数值源，实现侧不私改）。
+
+### §6.14b 真机反馈修复：历史浮层「最近」组 + 空态恢复入口 + 设置行 iOS grouped 对齐（2026-10-19~20）
+
+**① 历史浮层「最近」置顶组**（真机反馈：找最近会话要在时间档里翻）：`useHistoryQuery` 加 `recentCount`（移动历史浮层传 7）——最近 N 条置顶为「最近」组（**非时间档，附加展示**；时间组仍完整收录各自条目，不做剥离）；shared `AgentHistoryGroup` 扩展（`AGENT_HISTORY_GROUP_ORDER` 头插 `recent`）+ i18n `workbench.historyGroupRecent`；`HISTORY_GROUP_LABEL_KEYS` 换 `AgentHistoryGroup` 键型。probe-v2-m5-sheets 同步 recent 组断言。
+
+**② 03h 空态「从历史恢复」tinted 次按钮**：`EmptyProjectState` 主 CTA 下加 tinted 次按钮（h-10 w-[200px] rounded-full `bg-primary/15` + `clock.arrow.circlepath` 图标）→ 打开 03n 历史浮层——iOS filled → tinted → 文字链三级动作层级；`onOpenHistory` prop 注入（mobile-workbench 装配 `setHistorySheetOpen`）。
+
+**③ 设置行 iOS grouped list 对齐**（四轮真机迭代收口）：root/detail 全部值行的「›」字符（12px）换 **RowChevron** 共享件（`file-tree-rows.tsx` 既有件，16 网格 strokeWidth 2 → 14px 时线宽 1.75px；Lucide 24 网格同尺寸仅 1.17px，比字符还弱）；**chevron 列提出 `.v` 贴行右缘**（`.setrow .ar` = flex 尾部子元素，全行 x 对齐——iOS grouped 铁律；旧结构箭头在值列内跟值走，位置随值长短漂移）；**值列防 flex 压缩**（`.v { flex-shrink: 0; max-width: 60% }` + 6 处 label 列 `flex-1`——detail 两行 cell 的 label basis = hint max-content 曾把值压到 17px）。⚠️ 机制沉淀：行尾 chevron **勿用 ShellIcon/LucideIcon**——其 svg 挂 utilities 层 `.size-full`，`.ar svg` 定尺寸规则（components 层）被 cascade layers 压过（曾致 chevron 撑成 194px 巨图挤爆值列）；RowChevron 裸 svg 无 class，消费方尺寸规则独占生效。probe-v2-m7-settings-auth 加 chevron 列对齐（6 行 right 极差 <0.5px）+ 垂直居中 + 值列无截断断言，77 断言全绿。
