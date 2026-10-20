@@ -47,6 +47,7 @@ import { useIsMobile } from "@/lib/use-is-mobile";
 import { useTheme } from "../../theme";
 import { toggleSwitchKnobClasses, toggleSwitchTrackClasses } from "./shell-primitives";
 import { ShellIcon } from "./icons";
+import { RowChevron } from "../files/file-tree-rows";
 import { useConfirm } from "./confirm-dialog";
 import { MobileSheet } from "./mobile-sheet";
 import { ActionMenu } from "../ui/action-menu";
@@ -238,15 +239,15 @@ function SettingsRootView({
       <>
         {label}
         {value === null ? null : (
-          <span className={`v${valueClass ? ` ${valueClass}` : ""}`}>
-            {value}
-            {onClick ? (
-              <span aria-hidden="true" className="ar">
-                ›
-              </span>
-            ) : null}
-          </span>
+          <span className={`v${valueClass ? ` ${valueClass}` : ""}`}>{value}</span>
         )}
+        {/* chevron 列贴行右缘（iOS grouped list：各行箭头 x 对齐），不进 .v——
+            值列截断 overflow:hidden 会裁掉 baseline 下沉的 svg，且跟值走位置不一。 */}
+        {value !== null && onClick ? (
+          <span className="ar">
+            <RowChevron />
+          </span>
+        ) : null}
       </>
     );
     return onClick ? (
@@ -544,7 +545,7 @@ function NotificationsSection() {
         role="switch"
         type="button"
       >
-        <span className="min-w-0">
+        <span className="min-w-0 flex-1">
           <span className="block">{t(KIND_LABEL[kind])}</span>
           <span className={settingsHintClasses}>{t(KIND_HINT[kind])}</span>
           {kindToggleDisabled ? (
@@ -574,7 +575,7 @@ function NotificationsSection() {
           role="switch"
           type="button"
         >
-          <span className="min-w-0">
+          <span className="min-w-0 flex-1">
             <span className="block">{t("settings.notifications.status")}</span>
             <span className={settingsHintClasses}>{t("settings.notifications.statusHint")}</span>
             {!supported ? (
@@ -750,19 +751,17 @@ function ClaudeRuntimeContent({
           cancelLabel={t("cancel")}
           trigger={
             <button
-              className="setrow h-auto cursor-pointer py-2.5 disabled:cursor-default disabled:opacity-60"
+              className="setrow h-auto cursor-pointer py-3 disabled:cursor-default disabled:opacity-60"
               disabled={loading}
               type="button"
             >
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="block">{t("settings.activePreset")}</span>
                 <span className={settingsHintClasses}>{t("settings.activePresetHint")}</span>
               </span>
-              <span className="v">
-                {selectedLabel}
-                <span aria-hidden="true" className="ar">
-                  ›
-                </span>
+              <span className="v">{selectedLabel}</span>
+              <span className="ar">
+                <RowChevron />
               </span>
             </button>
           }
@@ -782,13 +781,13 @@ function ClaudeRuntimeContent({
 
         <button
           aria-checked={enable1m}
-          className="setrow h-auto cursor-pointer gap-3 py-2.5 disabled:cursor-default disabled:opacity-60"
+          className="setrow h-auto cursor-pointer gap-3 py-3 disabled:cursor-default disabled:opacity-60"
           disabled={loading}
           onClick={() => !loading && setEnable1m(!enable1m)}
           role="switch"
           type="button"
         >
-          <span className="min-w-0">
+          <span className="min-w-0 flex-1">
             <span className="block">{t("settings.enable1m")}</span>
             <span className={settingsHintClasses}>{t("settings.enable1mHint")}</span>
           </span>
@@ -807,19 +806,17 @@ function ClaudeRuntimeContent({
           cancelLabel={t("cancel")}
           trigger={
             <button
-              className="setrow h-auto cursor-pointer py-2.5 disabled:cursor-default disabled:opacity-60"
+              className="setrow h-auto cursor-pointer py-3 disabled:cursor-default disabled:opacity-60"
               disabled={loading}
               type="button"
             >
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="block">{t("settings.effort")}</span>
                 <span className={settingsHintClasses}>{t("settings.effortHint")}</span>
               </span>
-              <span className="v">
-                {effort}
-                <span aria-hidden="true" className="ar">
-                  ›
-                </span>
+              <span className="v">{effort}</span>
+              <span className="ar">
+                <RowChevron />
               </span>
             </button>
           }
@@ -1089,15 +1086,13 @@ function PiRuntimeContent({
               disabled={loading}
               type="button"
             >
-              <span className="min-w-0">
+              <span className="min-w-0 flex-1">
                 <span className="block">{t("settings.activePreset")}</span>
                 <span className={settingsHintClasses}>{t("settings.piActivePresetHint")}</span>
               </span>
-              <span className="v">
-                {selectedLabel}
-                <span aria-hidden="true" className="ar">
-                  ›
-                </span>
+              <span className="v">{selectedLabel}</span>
+              <span className="ar">
+                <RowChevron />
               </span>
             </button>
           }

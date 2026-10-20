@@ -207,11 +207,30 @@ const rowBox = await page.locator(".setrow").first().boundingBox();
 ok(rowBox !== null && rowBox.height >= 44, `.setrow 几何高 ≥44px（实际 ${rowBox?.height}）`);
 const logoutBox = await page.locator(".logout").boundingBox();
 ok(logoutBox !== null && logoutBox.height >= 44, `.logout 几何高 ≥44px`);
-// `.back` 设计语言：可见返回文字「项目」。
-ok(
-  (await page.locator("header .back").textContent()) === "项目",
-  ".back 返回文字 = 项目（root 态）",
+// chevron 列贴右缘对齐（2026-10-20 真机反馈「箭头位置五花八门」）：.ar 提出 .v 作 flex
+// 尾部子元素后，所有带箭头行的 .ar 右缘必须全等（iOS grouped list 铁律）。
+const arRights = await page.evaluate(() =>
+  [...document.querySelectorAll(".sgroup .setrow .ar")].map(
+    (el) => el.getBoundingClientRect().right,
+  ),
 );
+ok(
+  arRights.length >= 6 && Math.max(...arRights) - Math.min(...arRights) < 0.5,
+  `chevron 列贴右缘对齐（${arRights.length} 行，right 极差 ${arRights.length ? (Math.max(...arRights) - Math.min(...arRights)).toFixed(2) : "n/a"}px < 0.5）`,
+);
+// 箭头 svg 垂直居中于行（span.ar display:flex 消 svg baseline 下沉）。
+const arV = await page.evaluate(() => {
+  const ar = document.querySelector(".sgroup .setrow .ar");
+  const a = ar.getBoundingClientRect();
+  const r = ar.closest(".setrow").getBoundingClientRect();
+  return { arMid: a.y + a.height / 2, rowMid: r.y + r.height / 2 };
+});
+ok(
+  Math.abs(arV.arMid - arV.rowMid) < 1,
+  `箭头垂直居中于行（|Δmid| ${Math.abs(arV.arMid - arV.rowMid).toFixed(2)}px < 1）`,
+);
+// root 态无 header .back（2026-10-11 边距统筹：root = LargeTitleRow 一级 tab 大标题，
+// 「‹ 项目」back 退役；.back 样式断言挪 Part 2 detail 态）。
 // 几何/样式硬数据（design review 建议补）：.sgroup 圆角/底/描边、.sect 字号与墨色、
 // .logout 圆角与 danger 色、.back 主色 15px。
 const sgStyle = await page
@@ -252,16 +271,6 @@ const dangerHex = await page.evaluate(() =>
   getComputedStyle(document.documentElement).getPropertyValue("--c-danger").trim(),
 );
 ok(logoutStyle.color !== "rgb(0, 0, 0)", `.logout 红字有实色（--c-danger=${dangerHex}）`);
-const backStyle = await page.locator("header .back").evaluate((el) => {
-  const s = getComputedStyle(el);
-  const before = getComputedStyle(el, "::before");
-  return { size: s.fontSize, color: s.color, chevron: before.borderLeftWidth };
-});
-ok(backStyle.size === "15px", `.back 字号 15px（实际 ${backStyle.size}）`);
-ok(
-  Number.parseFloat(backStyle.chevron) >= 2,
-  `.back ::before chevron ≥2px（CSS 2.2px，浏览器取整报 ${backStyle.chevron}）`,
-);
 
 // ── Part 2: 设置 detail（general 语言三态 + claude） ────────────────────────
 console.log("Part 2: 设置 detail（通用语言三态真实切换 + back 文字）");
@@ -299,6 +308,66 @@ await page.waitForTimeout(500);
 ok(
   (await page.locator("header .nv-t").textContent()) === "Claude 运行时",
   "Claude 行 → claude detail（标题 = Claude 运行时）",
+);
+// Claude 预设区几何（2026-10-20 iOS grouped 对齐批）：箭头 chevron SVG 14px（原字符「›」
+// 12px 太弱难辨，真机反馈）+ 与值 6px 间距 + 值列 max-width 截断 + 行呼吸 py 12px。
+const cta = await page.evaluate(() => {
+  const rows = [...document.querySelectorAll(".sgroup .setrow")];
+  const preset = rows.find((r) => r.textContent?.includes("激活预设"));
+  const ar = preset?.querySelector(".ar");
+  if (!preset || !ar) return null;
+  const svg = ar.querySelector("svg");
+  const sr = svg?.getBoundingClientRect();
+  const v = preset.querySelector(".v");
+  return {
+    svgW: sr ? Math.round(sr.width) : 0,
+    svgH: sr ? Math.round(sr.height) : 0,
+    // .ar 已提出 .v（贴行右缘）；值-箭头间距 = .v 的 margin-right。
+    vMr: getComputedStyle(v).marginRight,
+    arRight: ar.getBoundingClientRect().right,
+    rowRight: preset.getBoundingClientRect().right,
+    vMaxW: getComputedStyle(v).maxWidth,
+    py: getComputedStyle(preset.closest("button") ?? preset).paddingTop,
+  };
+});
+ok(cta !== null, "Claude detail 激活预设行在场");
+ok(
+  cta?.svgW === 14 && cta?.svgH === 14,
+  `箭头 chevron SVG 14×14（实测 ${cta?.svgW}×${cta?.svgH}）`,
+);
+ok(cta?.vMr === "6px", `值-箭头间距 = .v margin-right 6px（实测 ${cta?.vMr}）`);
+// 箭头贴行右缘（.ar flex 尾部子元素）。
+ok(
+  cta !== null && Math.abs(cta.rowRight - cta.arRight) < 0.5,
+  `箭头贴行右缘（行-箭头 right 差 ${cta ? Math.abs(cta.rowRight - cta.arRight).toFixed(2) : "n/a"}px < 0.5）`,
+);
+// computed max-width 百分比不解析成 px（返回指定值 "60%"），按百分比断言。
+ok(cta?.vMaxW === "60%", `值列 max-width 60% 截断在场（实测 ${cta?.vMaxW}）`);
+ok(cta?.py === "12px", `行呼吸 py 12px（实测 ${cta?.py}）`);
+// 值列不被 flex 收缩压缩（2026-10-20 真机反馈「值很多被截断」：label 列 basis=hint
+// max-content 曾把值压到 17px）——短值必须完整显示（scrollWidth == 宽度）。
+const vClipped = await page.evaluate(() =>
+  [...document.querySelectorAll(".sgroup .setrow .v")]
+    .filter((v) => (v.textContent ?? "").trim().length > 0)
+    .map((v) => ({
+      text: (v.textContent ?? "").trim(),
+      clipped: v.scrollWidth > v.getBoundingClientRect().width + 1,
+    })),
+);
+ok(
+  vClipped.length >= 2 && vClipped.every((x) => !x.clipped),
+  `detail 值列无截断（${vClipped.map((x) => `${x.text}:${x.clipped ? "截断" : "完整"}`).join(" / ")}）`,
+);
+// `.back` 样式断言（原 Part 1 root 态断言随 root back 退役挪此；样式规格不变）。
+const backStyle = await page.locator("header .back").evaluate((el) => {
+  const s = getComputedStyle(el);
+  const before = getComputedStyle(el, "::before");
+  return { size: s.fontSize, chevron: before.borderLeftWidth };
+});
+ok(backStyle.size === "15px", `.back 字号 15px（实际 ${backStyle.size}）`);
+ok(
+  Number.parseFloat(backStyle.chevron) >= 2,
+  `.back ::before chevron ≥2px（CSS 2.2px，浏览器取整报 ${backStyle.chevron}）`,
 );
 await page.locator("header .back").click();
 await page.waitForTimeout(400);

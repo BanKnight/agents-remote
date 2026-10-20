@@ -3030,12 +3030,16 @@
   .hrow.swipe {
     position: relative;
     overflow: hidden;
+    /* 行内边距下沉到 .hbody：.del 绝对定位铺满整行（含原 padding 区），padding 留在容器上
+       会让 rest 态行体遮不住上下 padding 带 → 右端露出 tint-red 暗红条。 */
+    padding: 0;
   }
   .hrow.swipe .hbody {
     position: relative;
     z-index: 1;
     display: block;
     width: 100%;
+    padding: 10px 0;
     text-align: left;
     background: var(--bg-elevated);
     transition: transform var(--duration-exit, 150ms);
@@ -4221,10 +4225,20 @@
   }
   .setrow .v {
     margin-left: auto;
+    margin-right: 6px;
+    /* 值列不被 flex 收缩压缩（detail 两行 cell 的 label 列 basis=hint max-content 会把
+       值压到 17px）；截断只由 max-width 兜底。 */
+    flex-shrink: 0;
     font-size: 13px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
     color: var(--ink-2);
+    /* 值列截断（iOS Settings 值列语义；info-sheet max-w-[60%] 同档）：长预设名不再挤压
+       label 列；.ar flex:none 保箭头永不被截。 */
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .setrow .v.ok {
     color: var(--c-success-text);
@@ -4235,13 +4249,24 @@
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
     line-height: var(--line-height-ui);
   }
-  /* 批次 e：ink-3 双主题 1.86/1.68 < WCAG 3:1 UI 下限，提 ink-2（5.94/3.26） */
+  /* 批次 e：ink-3 双主题 1.86/1.68 < WCAG 3:1 UI 下限，提 ink-2（5.94/3.26）。
+     2026-10-20：字符「›」12px 换 RowChevron（.frow .ar 同款共享件：16 网格 strokeWidth2，
+     14px 时线宽 1.75px——Lucide 24 网格 stroke2 同尺寸仅 1.17px，比字符还细、真机无感）；
+     iPhone 值行箭头太弱难辨（真机反馈）；值-箭头 6px 间距移到 .v margin-right；
+     箭头提出 .v 作 .setrow flex 尾部子元素——iOS grouped list chevron 列贴行右缘对齐
+     （旧结构箭头在 .v 内跟值走，位置随值长短漂移＝用户「五花八门」反馈）。
+     注意：勿用 ShellIcon/LucideIcon 消费行尾 chevron——其 svg 挂 utilities 层 .size-full，
+     .ar svg 定尺寸规则（components 层）会被 cascade layers 压过（曾致 chevron 撑成 194px 巨图挤爆值列）；
+     RowChevron 裸 svg 无 class，此处尺寸规则独占生效。 */
   .setrow .ar {
-    font-size: 12px;
-    /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */
-    line-height: var(--line-height-ui);
+    display: flex;
+    align-items: center;
+    flex: none;
     color: var(--ink-2);
-    margin-left: 2px;
+  }
+  .setrow .ar svg {
+    width: 14px;
+    height: 14px;
   }
   /* 退出登录（原型 .logout：elevated 底 + 描边 + 居中红字） */
   .logout {
