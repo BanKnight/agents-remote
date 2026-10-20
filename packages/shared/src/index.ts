@@ -819,7 +819,10 @@ export type SkillTaskFrame = {
 // wiki/browser 是后续能力域。定位见 docs/research/inbox/mcp-hub-positioning.md。
 
 // 能力域标识。首期 wiki 能力域;后续加 browser 等再扩 union。
-export type McpCapability = "wiki";
+/** hub 能力域（per-project mcp.json capabilities 开关键）。
+ *  wiki = wiki_* 三工具；ui = MCP Apps（`io.modelcontextprotocol/ui` 扩展声明 +
+ *  `ui://ar-hub/*` 资源供给 + wiki 工具 UI 关联）。 */
+export type McpCapability = "wiki" | "ui";
 
 // per-project MCP 配置(PROJECTS_ROOT/{project}/.agents-remote/mcp.json)。
 // 只管能力域开关,不描述 server(hub 是单数,server 描述由基座代码 own)。

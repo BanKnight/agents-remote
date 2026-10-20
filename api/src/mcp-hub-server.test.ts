@@ -31,7 +31,16 @@ const callToolBody = (id: number, name: string, args: Record<string, unknown>) =
 // MCP 响应是 SSE(event: message\ndata: <json>),created 等值被嵌套在 content[].text 的
 // JSON 字符串里多层转义。解析首条 data 取 JSON-RPC result,断言语义而非文本匹配。
 type McpSseResult = {
-  result?: { content?: { text?: string }[]; isError?: boolean };
+  result?: {
+    content?: { text?: string }[];
+    isError?: boolean;
+    structuredContent?: Record<string, unknown>;
+    capabilities?: {
+      extensions?: Record<string, unknown>;
+      tools?: unknown;
+      resources?: unknown;
+    };
+  };
 };
 const parseSseResult = async (res: Response): Promise<McpSseResult> => {
   const text = await res.text();
@@ -219,5 +228,129 @@ describe("MCP hub server (stateless, loopback)", () => {
     const text = await res.text();
     expect(text).toContain('"isError":true');
     expect(text).toContain("not found");
+  });
+
+  // ── ui 能力域(SEP-1865 MCP Apps:扩展声明 + ui:// 资源 + wiki_read_page display tool)──
+
+  const readResourceBody = (id: number, uri: string) =>
+    JSON.stringify({ jsonrpc: "2.0", id, method: "resources/read", params: { uri } });
+
+  it("ui=true declares MCP Apps extension + resources capability in initialize result", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: initBody(40),
+    });
+    const capabilities = (await parseSseResult(res)).result?.capabilities;
+    expect(capabilities?.extensions?.["io.modelcontextprotocol/ui"]).toEqual({
+      mimeTypes: ["text/html;profile=mcp-app"],
+    });
+    expect(capabilities?.resources).toBeDefined();
+  });
+
+  it("ui=false (wiki only) declares no extensions and read tool has no _meta (regression)", async () => {
+    await writeMcpConfig("test", { wiki: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: initBody(41),
+    });
+    const capabilities = (await parseSseResult(res)).result?.capabilities;
+    expect(capabilities?.extensions).toBeUndefined();
+
+    const toolsRes = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: listToolsBody(42),
+    });
+    const text = await toolsRes.text();
+    expect(text).toContain("wiki_read_page");
+    expect(text).not.toContain('"_meta"');
+  });
+
+  it("ui=true attaches _meta.ui.resourceUri on wiki_read_page tool definition", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: listToolsBody(43),
+    });
+    const { result } = await parseSseResult(res);
+    const tools = (result as unknown as { tools?: { name: string; _meta?: unknown }[] }).tools;
+    const read = tools?.find((t) => t.name === "wiki_read_page");
+    expect(read?._meta).toEqual({
+      ui: { resourceUri: "ui://ar-hub/wiki-page", visibility: ["model", "app"] },
+    });
+  });
+
+  it("ui=true wiki_read_page returns structuredContent for the web host", async () => {
+    // 双开:ui 单开时 wiki_write_page 不注册(见上用例),准备数据用 write 需 wiki 同开。
+    await writeMcpConfig("test", { wiki: true, ui: true });
+    // 准备一页 wiki。
+    await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(44, "wiki_write_page", {
+        slug: "ui-card",
+        title: "UI Card",
+        content: "# Head\n\n- item1\n- item2",
+        tags: ["demo"],
+      }),
+    });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(45, "wiki_read_page", { slug: "ui-card" }),
+    });
+    const sc = (await parseSseResult(res)).result?.structuredContent as Record<string, unknown>;
+    expect(sc.kind).toBe("wiki-page");
+    expect(sc.slug).toBe("ui-card");
+    expect(sc.title).toBe("UI Card");
+    expect(sc.tags).toEqual(["demo"]);
+    expect(sc.markdown).toContain("item1");
+  });
+
+  it("ui=true serves ui://ar-hub/wiki-page HTML via resources/read", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: readResourceBody(46, "ui://ar-hub/wiki-page"),
+    });
+    const { result } = await parseSseResult(res);
+    const contents = (
+      result as unknown as {
+        contents?: { uri: string; mimeType: string; text: string }[];
+      }
+    ).contents;
+    expect(contents?.[0]?.uri).toBe("ui://ar-hub/wiki-page");
+    expect(contents?.[0]?.mimeType).toBe("text/html;profile=mcp-app");
+    expect(contents?.[0]?.text).toContain("<!doctype html>");
+    expect(contents?.[0]?.text).toContain("ui/notifications/tool-result");
+  });
+
+  it("ui 单开(wiki 关)只注册 wiki_read_page(list/write 不泄露)", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: listToolsBody(47),
+    });
+    const text = await res.text();
+    expect(text).toContain("wiki_read_page");
+    expect(text).not.toContain("wiki_list_pages");
+    expect(text).not.toContain("wiki_write_page");
+  });
+
+  it("resources/read on unknown ui:// uri returns protocol error", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: readResourceBody(48, "ui://ar-hub/no-such"),
+    });
+    const text = await res.text();
+    expect(text).toContain('"code":-32602'); // invalid params:resource not found
   });
 });
