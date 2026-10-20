@@ -1,7 +1,7 @@
 # MCP Apps / Skills over MCP 宿主化落地：调研汇总与落地路线
 
 > 调研批次主文档（2026-10-20）。深素材：[mcp-apps-spec-notes.md](./mcp-apps-spec-notes.md)（规范 + ext-apps SDK）、[mcp-cli-ecosystem-notes.md](./mcp-cli-ecosystem-notes.md)（三家 CLI 生态 + 本机活体探针）。
-> 落地状态锚点：阶段 0（`9ec70ab`）、阶段 2（`5975eec`）、阶段 3（`0de7979`）已提交；本文档沉淀决策与路线，供阶段 4/5 与后续能力域扩展引用。
+> 落地状态锚点：阶段 0（`9ec70ab`）、阶段 2（`5975eec`）、阶段 3（`0de7979`）已提交；阶段 4 反向通道（`1578ca9`）+ e2e 收口（`7392a2d`）；阶段 5 hub skills 分发已实现（见 §10）；本文档沉淀决策与路线，供后续能力域扩展引用。
 
 ## 1. 背景
 
@@ -28,8 +28,8 @@ agents-remote 是网页控制平面，远程管理服务器上的 Agent 会话�
 
 1. Final 状态，extension `io.modelcontextprotocol/skills`；**最终规范 = `skills/list` / `skills/get` 两方法**。早期草案的 `skill://index.json` + resource template 已在 v1 收缩时移除——旧方案不再引用。
 2. **三家 CLI 均未实现 client**（Claude Code 2.1.299 / Codex 0.145.0 / ZCode v3.15.1 实测均不协商该扩展）。
-3. SDK 侧 skills 支持未发布（TS PR open）→ hub 侧若先行需 `setRequestHandler` 手写。
-4. **裁定**：hub skills 分发推迟到阶段 5（等上游 CLI client 跟进）；枚举能力随实现走，不预造 UI。
+3. SDK 侧 skills 支持未发布（TS PR open）→ hub 侧先行 = `setRequestHandler` 手写（SDK 1.30 对非 tools/call 的 setRequestHandler 走默认注册路径，自造 zod schema 按 method literal 索引，与内部自装 handler 并存——已读 SDK 源码验证）。
+4. **裁定（2026-10-20 更新）**：hub 侧 server 先行落地（用户拍板「等他们 CLI 支持的时候直接对上」）；消费方（三家 CLI）仍等上游，枚举能力随实现走，不预造 UI。MCP Inspector 2.11 已原生消费 skills/get（本机实测），是现成的第三方 host 验证面。
 
 ## 4. 与现有实现的结构性差异
 
@@ -103,7 +103,24 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 | 3 | 宿主 MVP：流信号检测 → 卡片投影 → api 回源路由 → 沙箱 iframe | ✅ `0de7979` + 审查修复 `7d098a7` |
 | 3.5 | 主题变量化 + 高度自适应（ZCode §11 立即项） | ✅ `2347552` |
 | 4 | 反向通道：ui/initialize 握手 + tools/call 刷新 + ui/message 再推理 | ✅ `1578ca9` |
-| 5 | hub skills 分发（skills/list-get）+ 上游 CLI client 跟进 | 等上游 |
+| 4.5 | e2e 收口：mcp-app-card.spec.ts（全链零 mock）+ run-e2e 预置 | ✅ `7392a2d` |
+| 5 | hub skills 分发（SEP-2640 skills/list-get + skill:// 资源读取） | ✅ 本批（Inspector 2.11 实测过） |
+| 6 | 上游 CLI client 消费（协商扩展后 skills 直达 agent） | 等上游 |
+
+**阶段 5 协议面（实现 vs 明确不做）**：
+
+| 面 | 实现 |
+| --- | --- |
+| 扩展声明 | `capabilities.extensions["io.modelcontextprotocol/skills"] = {}`（skills 开关时）+ 同声明 resources capability（SEP MUST） |
+| `skills/list` | 实时扫描本地 skills 磁盘文件（项目 `.claude/skills` + 全局 `~/.claude/skills` 并集,claude-code 口径）;entry = uri/frontmatter/resources 完整清单（sha256 digest+size,含 SKILL.md 自身）;CacheableResult（ttlMs 300s/cacheScope private）;offset cursor 分页（量级小单页全量） |
+| `skills/get` | manifest URI 精确查找;非本 server 的 skill → -32602;无分页 |
+| `resources/read`（skill://） | `ResourceTemplate("skill://{+resourcePath}")` 模板注册（保留展开匹配多段路径）;清单精确命中才读 + resolve/startsWith 双道防穿越;mimeType text/markdown |
+
+明确不做（有意收窄）：`resources/directory/read`（不声明 directoryRead）、请求 `params._meta` 三键校验（client 侧 MUST,server 宽容）、server 侧 512 文件/16MiB 限额**校验报错**（host 侧职责;server 侧仅做超限整体跳过的 DoS 防护,不校验不报错——见审查结论 P1-2）、web 控制面（「不预造 UI」裁定;web 无 capabilities 编辑 UI）。
+
+**阶段 5 关键取舍**：① **数据源 = 本地 skills 同一批磁盘文件**（单一数据源,无第二份存储;与 CLI 文件发现同源,web 管理面现成）;② **分发口径 = claude-code 目录约定**（项目 + 全局 `~/.claude/skills` 并集,同名项目 scope 胜出与 slash catalog 同口径;codex 目录暂不分发——hub 服务 claude 为主,Codex 仅提交时快照）;③ **SDK 1.30 手写桥**（自造 zod schema 经 `server.server.setRequestHandler`,与内部 tools/resources handler 并存——官方 TS 支持落地后再迁移）;④ **每请求实时扫描**（hub 无状态;清单精确命中才读 = 防穿越第一道,digest 与内容必然一致 = SEP 读时校验模型天然满足）;⑤ name 缺失 → 目录名兜底（URI 末段=frontmatter.name 恒自洽;与本地系统 `fm.name \|\| entry` 同口径）。验证：hub 真 HTTP 测试 9 用例 + **MCP Inspector 2.11 真 host 实测三方法全过**（skills/list / skills/get / resources/read）+ 全门禁绿。
+
+**阶段 5 审查结论（2026-10-21,security-reviewer 已消化）**：0 安全漏洞（主链防穿越经实验验证成立：清单精确匹配 + 不 decode + resolve 包含检查）;2 P1 + 2 P2 已修——**P1-1 清单读回不对称**（中文/空格/含 `..` 字样文件名「列出即承诺」却读不回 → 扫描时建 uri→实际相对路径 Map,读取查表,消灭反向构造）;**P1-2 无上限全量扫描**（SEP 固定上限未实现 → 单 skill >512 文件或 >16MiB 整体跳过 + digest 流式化,防 1GB 参考数据文件把请求 buffer 顶爆）;**P2-1 根级 symlink 跟随**（stat 跟随与内部条目不跟随口径矛盾 → realpath 后校验仍在 skills 根之下,与 skill-market 口径对齐）;**P2-2 cacheScope "public"**（本机 per-project 私有数据 → "private"）。info 三条：frontmatter 平铺 KV 拍扁嵌套 YAML（互操作债,官方 SDK 落地迁移时一并处理——含嵌套 frontmatter 的 skill 经本 hub 分发的 entry 恒过不了严格 host 的逐字段比对）、同 name 冲突留痕（已加 sort + warn）、home 注入参数无害（保持现状）。
 
 **阶段 4 协议面（实现 vs 明确不做）**：
 
@@ -124,7 +141,8 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 
 **待验证/待补**：
 
-- 真机会话端到端（test 项目 wiki+ui 双开，agent 真调 wiki_read_page 看卡片 + 阶段 4 刷新钮/追问条）——交真机清单；e2e 待最终里程碑后统一（用户拍板 2026-10-20）。
+- 真机会话端到端（test 项目 wiki+ui 双开，agent 真调 wiki_read_page 看卡片 + 阶段 4 刷新钮/追问条）——交真机清单；e2e 已完成（`7392a2d`）。
+- 阶段 5 后续：上游 CLI 运行时 client 跟进后的端到端消费验证（等上游）；Codex 提交时快照导入的真实消费走 OpenAI 插件提交流程，届时按其限额（≤5 skills/10 分页等）复核兼容性。
 - 宿主在 `initialized` 通知前发 `tool-result`/`host-context-changed` 与 SEP 顺序要求（MUST NOT）不符——自家模板两种顺序都处理，接外部 app 时治理。
 - fedWinRef/revokedRef 守卫面（帧内导航检测、feed 前请求路径）目前靠引擎时序与设计推演，无测试锁「feed 之前到达的请求」分支（jsdom 构造困难；reviewer 判定无需补写）。
 - Codex `structured_content` 的 web 宿主消费（snake_case 字段名分支）——接入 Codex 宿主卡时做。

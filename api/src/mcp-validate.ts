@@ -29,10 +29,10 @@ export class McpError extends Error {
 }
 
 /**
- * 能力域名（McpCapability）校验：只接受已知能力域（"wiki" / "ui"）。
+ * 能力域名（McpCapability）校验：只接受已知能力域（"wiki" / "ui" / "skills"）。
  * 拒绝空、null byte、未知值——防注入/路径穿越，也防配置拼写错误静默失效。
  */
-const ALLOWED_CAPABILITIES: ReadonlySet<McpCapability> = new Set(["wiki", "ui"]);
+const ALLOWED_CAPABILITIES: ReadonlySet<McpCapability> = new Set(["wiki", "ui", "skills"]);
 
 export function sanitizeCapability(input: unknown): McpCapability {
   if (typeof input !== "string" || input.length === 0 || input.includes("\0")) {

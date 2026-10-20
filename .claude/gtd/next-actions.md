@@ -27,10 +27,10 @@
 
 - [x] **阶段 0-3 全部提交**（2026-10-20）：`9ec70ab` 阶段 0（保留名守卫 + mcpInject 投影）→ `5975eec` 阶段 2（ar-hub 扩 ui + wiki_read_page display tool）→ `0de7979` 阶段 3（宿主 MVP：web 卡片 + api 回源路由）→ `bd24a55` 调研主文档 §1-§10 + 两份深素材 notes → `7d098a7` 双 reviewer 消化（P0 卡片主路径断点修复）→ `2f3d090` 审查结论 → `a71da6b` ZCode §11 → `2347552` 主题变量化 + 高度自适应（ZCode 立即项；模板探针 13/13）；全门禁绿（api 1016 / shared 10 / web 852）
 - [ ] **真机验证（清单已交用户，随时可看）**：test 项目 wiki+ui 双开 + 测试页 `wiki/mcp-app-card-demo.md` 已就位——卡片渲染（标题/tags/markdown）+ 主题两态跟随 + 高度自适应 + 回退路径；移动/桌面双端
-- [ ] **e2e 收口（最终里程碑完成后统一写，用户拍板 2026-10-20）**：mock WS 帧 + routeWebSocket 模式（先例 chat-session.spec.ts / claude-windowing.spec.ts）——断言卡片 iframe 渲染 + 主题/高度 + 回退；不 mock mcp-ui-resource REST（顺带测 api 路由 + HUB_UI_RESOURCES 单源表）
+- [x] **e2e 收口**（2026-10-20 完成，commit `7392a2d`）：`e2e/mcp-app-card.spec.ts`（WS mock 只喂流帧，此后零 mock——ui-resource REST + 宿主桥握手 + tools/call 代理真实链 + ui/message 确认闸→WS user 帧 + 取消路径；stale 标题→刷新变 Fresh 锁死全链；lang=zh 锁 locale 源）+ run-e2e.ts 预置 demo 面文件 + file-browser 期望列表补两目录；全套 e2e 31/31 + 门禁全绿
 - [x] **阶段 4 反向通道完成**（2026-10-20，`1578ca9` 实现 + `9072dd1` 双 reviewer 消化）：ui/initialize 握手（hostContext theme/locale）+ tools/call 刷新（api 代理直调 service，双侧白名单）+ ui/message 再推理（useConfirm 同意闸 → bridge.sendMessage）+ ping；ext-apps SDK 再评估结论 = 继续手写桥；双 reviewer 均 0 P0/P1，主修 = 导航守卫 revokedRef 重构（WindowProxy 跨导航恒定）+ locale 改应用语言源 + 模板 listener source 校验 + sendRequest 超时/防重入；验证：组件 15/15 + api 路由 29/29 + 模板探针 20/20 + 全门禁绿
 - [ ] **阶段 4 真机验证追加两条**（随现有清单）：①刷新钮 → 卡片内容回灌（改 wiki 页后点刷新见新内容）；②追问输入 → 确认框 → 确认后新 turn 出现在会话流（取消不发）
-- [ ] 阶段 5（hub skills 分发 skills/list-get）等上游 CLI client 跟进 SEP-2640
+- [x] **阶段 5 hub skills 分发完成**（2026-10-21，用户拍板「等他们 CLI 支持的时候直接对上」）：`mcp-skills.ts`（数据源 = 本地 skills 同批磁盘文件,项目+全局并集同名项目胜出）+ hub `registerSkillResources`（自造 zod schema setRequestHandler×2 + ResourceTemplate skill:// 资源读取）+ McpCapability 加 "skills"（shared union + validate Set）;hub 真 HTTP 9 用例 + **MCP Inspector 2.11 真 host 实测三方法全过** + security-reviewer 消化（0 漏洞;P1×2 修复 = uri→path 查表消灭反向构造 + SEP 上限 512/16MiB 超限跳过流式 digest,P2×2 = 根级 symlink realpath 校验 + cacheScope private）+ 全门禁绿（api 1026）;主文档 §3/§10 已更新;上游 CLI client 消费 = 新阶段 6（等上游）
 
 ## @harness
 

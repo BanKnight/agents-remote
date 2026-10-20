@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { startMcpHubServer, type McpHubServer } from "./mcp-hub-server";
 import { ProjectWikiService } from "./project-wiki";
 
@@ -51,17 +51,21 @@ const parseSseResult = async (res: Response): Promise<McpSseResult> => {
 
 describe("MCP hub server (stateless, loopback)", () => {
   let projectsRoot: string;
+  let home: string;
   let hub: McpHubServer;
   let baseUrl: string;
 
   beforeEach(async () => {
     projectsRoot = await mkdtemp(join(tmpdir(), "ar-mcp-"));
     await mkdir(join(projectsRoot, "test"), { recursive: true });
+    // skills 全局 scope 的假 home(测试注入,不碰真实 ~/.claude/skills)。
+    home = await mkdtemp(join(tmpdir(), "ar-mcp-home-"));
     // port 0:OS 分配空闲端口,避免与 dev 服务撞端口。
     hub = startMcpHubServer({
       port: 0,
       projectsRoot,
       wikiService: new ProjectWikiService(projectsRoot),
+      home,
     });
     baseUrl = `http://127.0.0.1:${hub.port}`;
   });
@@ -69,6 +73,7 @@ describe("MCP hub server (stateless, loopback)", () => {
   afterEach(async () => {
     hub.stop();
     await rm(projectsRoot, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
   });
 
   it("initialize returns 200 and no Mcp-Session-Id (stateless)", async () => {
@@ -352,5 +357,276 @@ describe("MCP hub server (stateless, loopback)", () => {
     });
     const text = await res.text();
     expect(text).toContain('"code":-32602'); // invalid params:resource not found
+  });
+
+  // ── skills 能力域(SEP-2640:扩展声明 + skills/list-get + skill:// 资源读取)──
+
+  const skillsListBody = (id: number, cursor?: string) =>
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      method: "skills/list",
+      params: cursor ? { cursor } : {},
+    });
+
+  const skillsGetBody = (id: number, uri: string) =>
+    JSON.stringify({ jsonrpc: "2.0", id, method: "skills/get", params: { uri } });
+
+  /** 在指定 scope 写一个 skill fixture(SKILL.md + 可选 supporting files)。 */
+  const writeSkillFixture = async (
+    scope: "project" | "global",
+    dirName: string,
+    frontmatter: string,
+    extraFiles?: Record<string, string>,
+  ) => {
+    const dir =
+      scope === "project"
+        ? join(projectsRoot, "test", ".claude", "skills", dirName)
+        : join(home, ".claude", "skills", dirName);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "SKILL.md"), `---\n${frontmatter}\n---\n\n# Body\n\nskill body ok\n`);
+    for (const [rel, content] of Object.entries(extraFiles ?? {})) {
+      const abs = join(dir, ...rel.split("/"));
+      await mkdir(dirname(abs), { recursive: true });
+      await writeFile(abs, content);
+    }
+  };
+
+  it("skills=true declares SEP-2640 extension + resources capability", async () => {
+    await writeMcpConfig("test", { skills: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: initBody(50),
+    });
+    const capabilities = (await parseSseResult(res)).result?.capabilities;
+    expect(capabilities?.extensions?.["io.modelcontextprotocol/skills"]).toEqual({});
+    expect(capabilities?.resources).toBeDefined();
+  });
+
+  it("skills/list returns full SEP entry (uri/frontmatter/resources with digest+size)", async () => {
+    await writeMcpConfig("test", { skills: true });
+    await writeSkillFixture(
+      "project",
+      "demo-skill",
+      "name: demo-skill\ndescription: Demo skill for hub tests",
+      { "scripts/helper.md": "helper content" },
+    );
+    // 无 frontmatter name → 目录名兜底(URI 末段=frontmatter.name 自洽)。
+    await writeSkillFixture("project", "fallback-skill", "description: no name here");
+
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: skillsListBody(51),
+    });
+    const { result } = await parseSseResult(res);
+    const list = result as unknown as {
+      resultType?: string;
+      ttlMs?: number;
+      cacheScope?: string;
+      nextCursor?: string;
+      skills?: {
+        uri: string;
+        frontmatter: Record<string, string>;
+        resources: { uri: string; digest: string; size: number }[];
+      }[];
+    };
+    expect(list.resultType).toBe("complete");
+    expect(list.ttlMs).toBe(300_000);
+    expect(list.cacheScope).toBe("private");
+    expect(list.nextCursor).toBeUndefined(); // 单页全量(≤50 条)。
+
+    const demo = list.skills?.find((s) => s.uri === "skill://demo-skill/SKILL.md");
+    expect(demo?.frontmatter).toEqual({
+      name: "demo-skill",
+      description: "Demo skill for hub tests",
+    });
+    expect(demo?.resources).toHaveLength(2);
+    const manifest = demo?.resources.find((r) => r.uri === "skill://demo-skill/SKILL.md");
+    expect(manifest?.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(manifest?.size).toBeGreaterThan(0);
+    const helper = demo?.resources.find((r) => r.uri === "skill://demo-skill/scripts/helper.md");
+    expect(helper?.size).toBe("helper content".length);
+    expect(helper?.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+    // name 缺失 → 目录名兜底。
+    const fallback = list.skills?.find((s) => s.uri === "skill://fallback-skill/SKILL.md");
+    expect(fallback?.frontmatter.name).toBe("fallback-skill");
+    expect(fallback?.frontmatter.description).toBe("no name here");
+  });
+
+  it("skills off → skills/list is method not found (-32601)", async () => {
+    await writeMcpConfig("test", {});
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: skillsListBody(52),
+    });
+    const text = await res.text();
+    expect(text).toContain('"code":-32601');
+  });
+
+  it("skills/get returns the entry for a listed skill; unknown uri → -32602", async () => {
+    await writeMcpConfig("test", { skills: true });
+    await writeSkillFixture("project", "demo-skill", "name: demo-skill\ndescription: D");
+
+    const ok = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: skillsGetBody(53, "skill://demo-skill/SKILL.md"),
+    });
+    const { result } = await parseSseResult(ok);
+    const skill = (result as unknown as { skill?: { uri: string; resultType?: string } }).skill;
+    expect(skill?.uri).toBe("skill://demo-skill/SKILL.md");
+    expect((result as unknown as { resultType: string }).resultType).toBe("complete");
+    expect((result as unknown as { cacheScope: string }).cacheScope).toBe("private");
+
+    const missing = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: skillsGetBody(54, "skill://no-such/SKILL.md"),
+    });
+    expect(await missing.text()).toContain('"code":-32602');
+  });
+
+  it("resources/read serves SKILL.md and nested supporting file; manifest-外 → -32602", async () => {
+    await writeMcpConfig("test", { skills: true });
+    await writeSkillFixture("project", "demo-skill", "name: demo-skill\ndescription: D", {
+      "scripts/helper.md": "helper content",
+    });
+
+    const manifest = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: readResourceBody(55, "skill://demo-skill/SKILL.md"),
+    });
+    const { result } = await parseSseResult(manifest);
+    const contents = (
+      result as unknown as { contents?: { uri: string; mimeType: string; text: string }[] }
+    ).contents;
+    expect(contents?.[0]?.uri).toBe("skill://demo-skill/SKILL.md");
+    expect(contents?.[0]?.mimeType).toBe("text/markdown");
+    expect(contents?.[0]?.text).toContain("skill body ok");
+
+    const helper = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: readResourceBody(56, "skill://demo-skill/scripts/helper.md"),
+    });
+    const helperResult = await parseSseResult(helper);
+    const helperText = (helperResult.result as unknown as { contents?: { text: string }[] })
+      ?.contents?.[0]?.text;
+    expect(helperText).toBe("helper content");
+
+    // 清单外(遍历形状)→ -32602:只 serve 扫描时列出的文件。
+    const traversal = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: readResourceBody(57, "skill://demo-skill/../../etc/passwd"),
+    });
+    expect(await traversal.text()).toContain('"code":-32602');
+  });
+
+  it("global scope merges; same-name skill: project scope wins", async () => {
+    await writeMcpConfig("test", { skills: true });
+    // 全局 only 的 skill。
+    await writeSkillFixture("global", "global-only", "name: global-only\ndescription: from global");
+    // 同名双 scope:项目版 description 不同 → 断言项目版胜出。
+    await writeSkillFixture("project", "shared", "name: shared\ndescription: project version");
+    await writeSkillFixture("global", "shared", "name: shared\ndescription: global version");
+
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: skillsListBody(58),
+    });
+    const { result } = await parseSseResult(res);
+    const skills = (
+      result as unknown as { skills?: { uri: string; frontmatter: Record<string, string> }[] }
+    ).skills;
+    expect(skills?.map((s) => s.uri)).toContain("skill://global-only/SKILL.md");
+    const shared = skills?.filter((s) => s.uri === "skill://shared/SKILL.md");
+    expect(shared).toHaveLength(1);
+    expect(shared?.[0]?.frontmatter.description).toBe("project version");
+  });
+
+  it("resources/read returns non-ASCII / space / dotdot-named listed files (uri→path map)", async () => {
+    await writeMcpConfig("test", { skills: true });
+    await writeSkillFixture("project", "demo-skill", "name: demo-skill\ndescription: D", {
+      "中文笔记.md": "chinese content",
+      "space name.md": "spaced content",
+      "a..b.md": "dotdot content",
+    });
+
+    // 清单「列出即承诺」:三个文件 uri 都在 resources 里。
+    const list = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: skillsListBody(59),
+    });
+    const { result } = await parseSseResult(list);
+    const uris = (
+      result as unknown as { skills?: { resources: { uri: string }[] }[] }
+    ).skills?.flatMap((s) => s.resources.map((r) => r.uri));
+    const cases: [string, string][] = [
+      ["中文笔记.md", "chinese content"],
+      ["space name.md", "spaced content"],
+      ["a..b.md", "dotdot content"],
+    ];
+    for (const [rel, expected] of cases) {
+      const uri = `skill://demo-skill/${encodeURIComponent(rel)}`;
+      expect(uris).toContain(uri);
+      const res = await fetch(`${baseUrl}/mcp/test`, {
+        method: "POST",
+        headers: MCP_HEADERS,
+        body: readResourceBody(60 + cases.findIndex(([r]) => r === rel), uri),
+      });
+      const { result: readResult } = await parseSseResult(res);
+      expect(
+        (readResult as unknown as { contents?: { text: string }[] })?.contents?.[0]?.text,
+      ).toBe(expected);
+    }
+  });
+
+  it("skill exceeding SEP limits (512 files) is skipped entirely", async () => {
+    await writeMcpConfig("test", { skills: true });
+    const dir = join(projectsRoot, "test", ".claude", "skills", "oversized");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "SKILL.md"), "---\nname: oversized\n---\n\nbody\n");
+    for (let i = 0; i < 513; i++) await writeFile(join(dir, `f${i}.txt`), "x");
+    await writeSkillFixture("project", "demo-skill", "name: demo-skill\ndescription: D");
+
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: skillsListBody(70),
+    });
+    const { result } = await parseSseResult(res);
+    const uris = (result as unknown as { skills?: { uri: string }[] }).skills?.map((s) => s.uri);
+    expect(uris).not.toContain("skill://oversized/SKILL.md"); // 超上限整体跳过,不出非法截断 entry。
+    expect(uris).toContain("skill://demo-skill/SKILL.md"); // 正常 skill 不受影响。
+  });
+
+  it("skill dir symlink pointing outside the skills root is not served", async () => {
+    await writeMcpConfig("test", { skills: true });
+    // 外部目录(在 projectsRoot 下但不在任何 skills 根之下)。
+    const outside = join(projectsRoot, "outside-skill-source");
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, "SKILL.md"), "---\nname: evil-skill\n---\n\noutside\n");
+    const link = join(projectsRoot, "test", ".claude", "skills", "alias");
+    await mkdir(dirname(link), { recursive: true });
+    await symlink(outside, link);
+    await writeSkillFixture("project", "demo-skill", "name: demo-skill\ndescription: D");
+
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: skillsListBody(71),
+    });
+    const { result } = await parseSseResult(res);
+    const uris = (result as unknown as { skills?: { uri: string }[] }).skills?.map((s) => s.uri);
+    expect(uris).not.toContain("skill://evil-skill/SKILL.md"); // 根级 symlink → 外部,不分发。
+    expect(uris).toContain("skill://demo-skill/SKILL.md"); // 正常 skill 不受影响。
   });
 });

@@ -1,7 +1,18 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { homedir } from "node:os";
 import { z } from "zod";
 import { readProjectMcpConfig } from "./mcp-config.js";
+import {
+  collectProjectSkills,
+  decodeSkillCursor,
+  findHubSkill,
+  readSkillResourceText,
+  resolveSkillResource,
+  skillsPageSize,
+  type HubSkill,
+} from "./mcp-skills.js";
 import { resolveProjectRelativePath } from "./project-paths.js";
 import { ProjectWikiService } from "./project-wiki.js";
 
@@ -17,7 +28,9 @@ import { ProjectWikiService } from "./project-wiki.js";
  * - Origin/Host 校验:防 DNS rebinding,只接受 loopback。
  *
  * 能力域工具按 per-project mcp.json 的 capabilities 开关注册(wiki:list/read/write;
- * ui:MCP Apps 扩展声明 + `ui://ar-hub/*` 资源供给 + wiki_read_page 的 UI 关联);
+ * ui:MCP Apps 扩展声明 + `ui://ar-hub/*` 资源供给 + wiki_read_page 的 UI 关联;
+ * skills:SEP-2640 扩展声明 + skills/list-get + skill:// 资源读取,数据源 = 本地
+ * skills 同一批磁盘文件,见 mcp-skills.ts);
  * 未开启的 project 仍是空壳(agent 自带文件工具且 cwd=projectPath,基线文件读写不进 hub)。
  * 后续能力域(browser 等)按同一 capabilities 开关在此扩展。
  *
@@ -34,6 +47,8 @@ export type StartMcpHubServerOptions = {
   projectsRoot: string;
   // wiki 能力域单一数据源:MCP 工具(producer)与 HTTP 路由(consumer)共享同一 service。
   wikiService: ProjectWikiService;
+  // skills 全局 scope 的 home 定位(~/.claude/skills),测试注入临时目录;缺省 homedir()。
+  home?: string;
 };
 
 const MCP_PATH_PREFIX = "/mcp/";
@@ -41,6 +56,10 @@ const MCP_PATH_PREFIX = "/mcp/";
 /** MCP Apps（SEP-1865）扩展标识与 UI 资源媒体类型。 */
 const MCP_APPS_EXTENSION = "io.modelcontextprotocol/ui";
 const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
+/** Skills over MCP（SEP-2640）扩展标识。不声明 directoryRead(可选方法 resources/directory/read 不做)。 */
+const MCP_SKILLS_EXTENSION = "io.modelcontextprotocol/skills";
+/** SEP-2549 CacheableResult REQUIRED 字段(skills/list-get 响应;与 tools/list 同语义)。 */
+const SKILLS_TTL_MS = 300_000;
 /** wiki 页卡片的 ui:// 资源 URI（全局模板,与 project 无关——数据经 tool-result 喂给卡片）。 */
 const WIKI_PAGE_UI_URI = "ui://ar-hub/wiki-page";
 
@@ -455,27 +474,130 @@ const registerWikiTools = (
 };
 
 /**
+ * 注册 skills 能力域（SEP-2640 Skills over MCP）:skills/list + skills/get + skill://
+ * 资源读取（标准 resources/read——SEP 无 skills/read）。声明扩展即 MUST 实现两方法。
+ *
+ * SDK 1.30 无任何 skills schema 支持(TS 支持在 typescript-sdk#2818,未发版)——两方法
+ * 以自造 zod schema 经 server.server.setRequestHandler 注册(McpServer 暴露的底层 Server
+ * 透传;按 method literal 索引,与内部自装的 tools/resources handler 并存,SDK 对非
+ * tools/call 走默认注册路径)。官方支持落地后迁移。
+ *
+ * 数据面走 collectProjectSkills 实时扫描(每请求一次,单请求内三处复用,digest 与内容
+ * 必然一致);文件读取在清单里精确命中才读(resolveSkillResource + readSkillResourceText
+ * 双道防穿越)。resources/directory/read 有意不做(扩展声明不带 directoryRead)。
+ */
+const registerSkillResources = (
+  server: McpServer,
+  project: string,
+  projectsRoot: string,
+  home: string,
+): void => {
+  const toEntry = ({ uri, frontmatter, resources }: HubSkill): HubSkill => ({
+    uri,
+    frontmatter,
+    resources,
+  });
+
+  server.server.setRequestHandler(
+    z.object({
+      method: z.literal("skills/list"),
+      params: z
+        .object({
+          cursor: z.string().optional(),
+          _meta: z.unknown().optional(),
+        })
+        .optional(),
+    }),
+    async (request) => {
+      const skills = await collectProjectSkills(projectsRoot, project, home);
+      const start = decodeSkillCursor(request.params?.cursor);
+      const page = skills.slice(start, start + skillsPageSize());
+      return {
+        resultType: "complete",
+        skills: page.map(toEntry),
+        ttlMs: SKILLS_TTL_MS,
+        // 本机 per-project 私有数据,cacheScope 用 private(不允许共享缓存跨会话复用)。
+        cacheScope: "private",
+        ...(start + page.length < skills.length ? { nextCursor: String(start + page.length) } : {}),
+      };
+    },
+  );
+
+  server.server.setRequestHandler(
+    z.object({
+      method: z.literal("skills/get"),
+      params: z.object({ uri: z.string(), _meta: z.unknown().optional() }).optional(),
+    }),
+    async (request) => {
+      const skills = await collectProjectSkills(projectsRoot, project, home);
+      const skill = findHubSkill(skills, request.params?.uri ?? "");
+      if (!skill) {
+        // SEP-2640:非本 server 所服务的 skill → -32602(与 resources/read 未知资源同码)。
+        throw new McpError(ErrorCode.InvalidParams, `Unknown skill: ${request.params?.uri ?? ""}`);
+      }
+      return {
+        resultType: "complete",
+        skill: toEntry(skill),
+        ttlMs: SKILLS_TTL_MS,
+        cacheScope: "private",
+      };
+    },
+  );
+
+  // skill:// 文件读取走标准 resources/read。ResourceTemplate `{+resourcePath}` 保留
+  // 展开匹配多段路径(实测 SDK 1.30 UriTemplate:skill://name/SKILL.md 与嵌套文件皆
+  // 命中);与 ui:// 的精确资源注册并存,SDK 按 uri 先精确后模板分发。
+  server.registerResource(
+    "skill-files",
+    new ResourceTemplate("skill://{+resourcePath}", { list: undefined }),
+    { mimeType: "text/markdown" },
+    async (uri) => {
+      const skills = await collectProjectSkills(projectsRoot, project, home);
+      const found = resolveSkillResource(skills, uri.toString());
+      if (!found) {
+        throw new McpError(ErrorCode.InvalidParams, `Unknown skill resource: ${uri.toString()}`);
+      }
+      const text = await readSkillResourceText(found.skill, found.relativePath);
+      if (text === null) {
+        throw new McpError(ErrorCode.InvalidParams, `Unreadable skill resource: ${uri.toString()}`);
+      }
+      return {
+        contents: [{ uri: uri.toString(), mimeType: "text/markdown", text }],
+      };
+    },
+  );
+};
+
+/**
  * 为单个请求构造 McpServer(无状态:每请求新建,不缓存)。按能力开关决定 capabilities 与
  * 注册面:全关时空 capabilities(基座空壳行为保留)。uiEnabled 时声明 MCP Apps 扩展
  * (initialize result 的 capabilities.extensions,client 侧据此判定宿主能力)并注册
  * ui:// 资源(Host 经 resources/read 取 HTML 渲染;CLI 2.1.281 起不把 UI 资源列进
  * resources/list,故未开 ui 时无需藏资源——资源本身只在 ui 开时注册)。
+ * skillsEnabled 时声明 SEP-2640 扩展(声明即 MUST 同时声明 resources capability,
+ * 并实现 skills/list-get)。
  */
 const buildRequestServer = (
   project: string,
   wikiService: ProjectWikiService,
   wikiEnabled: boolean,
   uiEnabled: boolean,
+  skillsEnabled: boolean,
+  projectsRoot: string,
+  home: string,
 ): McpServer => {
   const server = new McpServer(
     { name: "ar-hub", version: "0.0.0" },
     {
       capabilities: {
         ...(wikiEnabled || uiEnabled ? { tools: { listChanged: false } } : {}),
-        ...(uiEnabled
+        ...(uiEnabled || skillsEnabled ? { resources: { subscribe: false } } : {}),
+        ...(uiEnabled || skillsEnabled
           ? {
-              resources: { subscribe: false },
-              extensions: { [MCP_APPS_EXTENSION]: { mimeTypes: [MCP_APP_MIME_TYPE] } },
+              extensions: {
+                ...(uiEnabled ? { [MCP_APPS_EXTENSION]: { mimeTypes: [MCP_APP_MIME_TYPE] } } : {}),
+                ...(skillsEnabled ? { [MCP_SKILLS_EXTENSION]: {} } : {}),
+              },
             }
           : {}),
       },
@@ -493,11 +615,14 @@ const buildRequestServer = (
       }
     }
   }
+  if (skillsEnabled) {
+    registerSkillResources(server, project, projectsRoot, home);
+  }
   return server;
 };
 
 export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServer => {
-  const { port, projectsRoot, wikiService } = options;
+  const { port, projectsRoot, wikiService, home = homedir() } = options;
 
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -531,10 +656,12 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
       //     config 非法(JSON/结构错)→ 降级全关(不阻塞 agent 连接),仅记 warn。
       let wikiEnabled = false;
       let uiEnabled = false;
+      let skillsEnabled = false;
       try {
         const config = await readProjectMcpConfig(projectsRoot, project);
         wikiEnabled = config?.capabilities?.wiki === true;
         uiEnabled = config?.capabilities?.ui === true;
+        skillsEnabled = config?.capabilities?.skills === true;
       } catch (error) {
         console.warn(
           `[mcp-hub] mcp.json invalid project=${project}: ${error instanceof Error ? error.message : String(error)}`,
@@ -546,7 +673,15 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
         const transport = new WebStandardStreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
         });
-        const mcp = buildRequestServer(project, wikiService, wikiEnabled, uiEnabled);
+        const mcp = buildRequestServer(
+          project,
+          wikiService,
+          wikiEnabled,
+          uiEnabled,
+          skillsEnabled,
+          projectsRoot,
+          home,
+        );
         await mcp.connect(transport);
         return await transport.handleRequest(req);
       } catch (error) {
