@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getProjectMcpUiResource } from "../../api/client";
 import { useT } from "../../i18n";
@@ -69,10 +69,25 @@ export function McpAppCard({
   // 2026-10-20: postMessage "*" x onLoad refire chain cut)
   const fedForRef = useRef<string | null>(null);
   const fedWinRef = useRef<Window | null>(null);
+  // Content-driven height reported by the template (ZCode visualize 参考:
+  // frame follows content instead of a fixed card height).
+  const [frameHeight, setFrameHeight] = useState<number | null>(null);
+  // Host theme follows the app's data-theme (":root" = dark, light override).
+  const sendHostContext = () => {
+    const frame = frameRef.current;
+    const win = frame?.contentWindow;
+    if (!frame || !win || win !== fedWinRef.current) return;
+    const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    win.postMessage(
+      { jsonrpc: "2.0", method: "ui/notifications/host-context-changed", params: { theme } },
+      "*",
+    );
+  };
   const postToolResult = () => {
     const frame = frameRef.current;
     const win = frame?.contentWindow;
     if (!frame || !win || win !== fedWinRef.current) return;
+    sendHostContext();
     win.postMessage(
       {
         jsonrpc: "2.0",
@@ -85,6 +100,31 @@ export function McpAppCard({
       "*",
     );
   };
+  // Template reports its content height; clamp to sane bounds.
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const frame = frameRef.current;
+      if (!frame || event.source !== frame.contentWindow) return;
+      const data = event.data as { method?: string; params?: { height?: unknown } } | null;
+      if (data?.method !== "ui/notifications/size-changed") return;
+      const h = data.params?.height;
+      if (typeof h === "number" && Number.isFinite(h)) {
+        setFrameHeight(Math.min(10000, Math.max(120, Math.round(h))));
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+  // Re-sync the frame when the user switches the app theme.
+  useEffect(() => {
+    const observer = new MutationObserver(() => sendHostContext());
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Re-send when structuredContent updates after load. Before load the effect
   // skips (window not fed yet); onLoad posts the latest value.
   useEffect(() => {
@@ -109,6 +149,8 @@ export function McpAppCard({
     <iframe
       ref={frameRef}
       className={`mt-2 w-full overflow-hidden rounded-lg border border-neutral-line/40 bg-white ${heightClassName}`}
+      // Template-reported content height overrides the fallback height class.
+      style={frameHeight != null ? { height: frameHeight } : undefined}
       onLoad={() => {
         const frame = frameRef.current;
         const html = resource.data?.html;

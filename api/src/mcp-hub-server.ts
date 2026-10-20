@@ -54,15 +54,17 @@ const WIKI_PAGE_UI_URI = "ui://ar-hub/wiki-page";
  */
 const WIKI_PAGE_APP_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'"><style>
-  body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:16px;background:#fff;color:#111;line-height:1.55}
+  :root{--bg:#0f1115;--fg:#e6e8ea;--muted:#9aa3ad;--code-bg:rgba(255,255,255,.08);--pre-bg:#16181d;--pre-border:#2a2f37;--link:#6cb6ff;--tag-bg:rgba(99,153,255,.15);--tag-fg:#9cc0ff}
+  :root[data-theme="light"]{--bg:#fff;--fg:#111;--muted:#777;--code-bg:#f2f2f2;--pre-bg:#f6f6f6;--pre-border:#e3e3e3;--link:#0a66c2;--tag-bg:#eef3f8;--tag-fg:#345}
+  body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);line-height:1.55}
   h1{font-size:1.3em;margin:.2em 0 .6em}h2{font-size:1.15em;margin:1em 0 .4em}h3{font-size:1em;margin:.8em 0 .3em}
-  code{background:#f2f2f2;border-radius:4px;padding:.1em .35em;font-size:.92em}
-  pre{background:#f6f6f6;border:1px solid #e3e3e3;border-radius:8px;padding:10px 12px;overflow:auto}
+  code{background:var(--code-bg);border-radius:4px;padding:.1em .35em;font-size:.92em}
+  pre{background:var(--pre-bg);border:1px solid var(--pre-border);border-radius:8px;padding:10px 12px;overflow:auto}
   pre code{background:none;padding:0}
   ul,ol{padding-left:1.4em}li{margin:.15em 0}
-  a{color:#0a66c2}
-  .meta{color:#777;font-size:.82em;margin-bottom:.8em}
-  .tag{display:inline-block;background:#eef3f8;color:#345;border-radius:999px;padding:.1em .6em;margin-right:.35em;font-size:.78em}
+  a{color:var(--link)}
+  .meta{color:var(--muted);font-size:.82em;margin-bottom:.8em}
+  .tag{display:inline-block;background:var(--tag-bg);color:var(--tag-fg);border-radius:999px;padding:.1em .6em;margin-right:.35em;font-size:.78em}
 </style></head>
 <body>
   <h1 id="title"></h1>
@@ -117,11 +119,34 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
     window.addEventListener("message", function (e) {
       var msg = e.data;
       if (!msg || typeof msg !== "object") return;
+      if (msg.method === "ui/notifications/host-context-changed") {
+        var theme = msg.params && msg.params.theme;
+        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+        reportSize();
+        return;
+      }
       if (msg.method === "ui/notifications/tool-result") {
         var p = msg.params || {};
         render(p.structuredContent || (p.content && p.content[0] && p.content[0]._meta) || null);
+        reportSize();
       }
     });
+    // Height adapts to content (host pins the iframe to reported height).
+    // Measure body.scrollHeight, NOT documentElement.scrollHeight: the latter
+    // is max(content, viewport) so short content reports the viewport height
+    // and the dedupe then swallows every real update. body is height:auto so
+    // its scrollHeight is exactly the content height regardless of viewport.
+    var lastSize = -1;
+    function reportSize() {
+      var h = Math.ceil(document.body.scrollHeight);
+      if (h === lastSize || !h) return;
+      lastSize = h;
+      parent.postMessage({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height: h } }, "*");
+    }
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(reportSize).observe(document.body);
+    }
+    window.addEventListener("load", reportSize);
   </script>
 </body></html>`;
 

@@ -124,7 +124,13 @@ describe("McpAppCard", () => {
   // NOTE: jsdom auto-fires load on srcdoc iframe mount, consuming the
   // first-feed slot (fedForRef). Subsequent feeds go through the update
   // effect, which posts to the SAME window we fed — spy the native
-  // contentWindow to observe them.
+  // contentWindow to observe them. Each re-send is 2 messages:
+  // host-context-changed (theme) + tool-result (data).
+  const toolResultCalls = (postSpy: { mock: { calls: unknown[][] } }) =>
+    postSpy.mock.calls.filter(
+      (c) => (c[0] as { method?: string })?.method === "ui/notifications/tool-result",
+    );
+
   test("structuredContent 更新重发（ui/notifications/tool-result 形状）", async () => {
     const { rerender, view } = renderCard(SC);
     await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
@@ -133,8 +139,8 @@ describe("McpAppCard", () => {
     const postSpy = mock(() => {});
     Object.defineProperty(nativeWin, "postMessage", { configurable: true, value: postSpy });
     rerender({ ...SC, title: "Arch v1.1" });
-    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(1));
-    const payload = postSpy.mock.calls[0][0] as {
+    await waitFor(() => expect(toolResultCalls(postSpy).length).toBe(1));
+    const payload = toolResultCalls(postSpy)[0][0] as {
       jsonrpc: string;
       method: string;
       params: { structuredContent: unknown };
@@ -142,6 +148,9 @@ describe("McpAppCard", () => {
     expect(payload.jsonrpc).toBe("2.0");
     expect(payload.method).toBe("ui/notifications/tool-result");
     expect(payload.params.structuredContent).toEqual({ ...SC, title: "Arch v1.1" });
+    // Host context rides along (theme sync).
+    const methods = postSpy.mock.calls.map((c) => (c[0] as { method?: string })?.method);
+    expect(methods).toContain("ui/notifications/host-context-changed");
   });
 
   test("multiple structuredContent updates each re-send", async () => {
@@ -152,10 +161,12 @@ describe("McpAppCard", () => {
     const postSpy = mock(() => {});
     Object.defineProperty(nativeWin, "postMessage", { configurable: true, value: postSpy });
     rerender({ ...SC, title: "Arch v2" });
-    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(toolResultCalls(postSpy).length).toBe(1));
     rerender({ ...SC, title: "Arch v3" });
-    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(2));
-    const second = postSpy.mock.calls[1][0] as { params: { structuredContent: { title: string } } };
+    await waitFor(() => expect(toolResultCalls(postSpy).length).toBe(2));
+    const second = toolResultCalls(postSpy)[1][0] as {
+      params: { structuredContent: { title: string } };
+    };
     expect(second.params.structuredContent.title).toBe("Arch v3");
   });
 
@@ -185,7 +196,45 @@ describe("McpAppCard", () => {
     await waitFor(() => expect(view.container.textContent).toContain("应用视图不可用"));
     expect(view.container.querySelector("iframe")).toBeNull();
   });
+
+  test("size-changed 消息驱动 iframe 高度（source 校验）", async () => {
+    const { view } = renderWindowHeightCase();
+    const frame = await waitForIframe(view);
+    const win = frame.contentWindow as Window;
+    const MsgEvent = dom.window.MessageEvent;
+    window.dispatchEvent(
+      new MsgEvent("message", {
+        source: win,
+        data: {
+          jsonrpc: "2.0",
+          method: "ui/notifications/size-changed",
+          params: { height: 640.4 },
+        },
+      }),
+    );
+    await waitFor(() => expect(frame.style.height).toBe("640px"));
+    // 无 source（或 source 不匹配）的消息不得驱动高度。
+    window.dispatchEvent(
+      new MsgEvent("message", {
+        data: {
+          jsonrpc: "2.0",
+          method: "ui/notifications/size-changed",
+          params: { height: 200 },
+        },
+      }),
+    );
+    expect(frame.style.height).toBe("640px");
+  });
 });
+
+function renderWindowHeightCase() {
+  return renderCard(SC);
+}
+
+async function waitForIframe(view: ReturnType<typeof render>) {
+  await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
+  return view.container.querySelector("iframe") as HTMLIFrameElement;
+}
 
 // Integration: tool-card metadata.custom -> renderer props -> HubWikiPageToolUI.
 // Guards the cross-layer seam where structuredContent was silently dropped
