@@ -997,6 +997,83 @@ test("createFetchHandler serves MCP ui resource (token-guarded, ui-gated)", asyn
   expect(missing.status).toBe(404);
 });
 
+test("createFetchHandler proxies MCP app tools/call (token-guarded, ui-gated, allowlisted)", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler, projectWikiService } = createTestHandler();
+  await projectWikiService.writePage("demo", "intro", {
+    title: "Introduction",
+    content: "# Hello\n\nworld",
+    tags: ["a"],
+  });
+  const headers = authHeader(auth);
+  const call = (body: unknown, name = "demo") =>
+    handler(
+      new Request(`http://localhost/api/projects/${name}/mcp-hub-tools-call`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      }),
+      { upgrade: () => false },
+    );
+
+  // 鉴权在前:无 token → 401。
+  const blocked = await handler(
+    new Request("http://localhost/api/projects/demo/mcp-hub-tools-call", { method: "POST" }),
+    { upgrade: () => false },
+  );
+  expect(blocked.status).toBe(401);
+
+  // ui 未开(无 mcp.json)→ 404(不暴露原因)。
+  const disabled = await call({ name: "wiki_read_page", arguments: { slug: "intro" } });
+  expect(disabled.status).toBe(404);
+
+  // 开 ui。
+  await mkdir(join(root, "demo", ".agents-remote"), { recursive: true });
+  await writeFile(
+    join(root, "demo", ".agents-remote", "mcp.json"),
+    JSON.stringify({ capabilities: { ui: true } }),
+  );
+
+  // 白名单外(即使页面存在)→ 404。
+  const unknownTool = await call({ name: "fs_read", arguments: { path: "/etc" } });
+  expect(unknownTool.status).toBe(404);
+  // 原型链键不入表(hasOwnProperty 守卫)。
+  const protoTool = await call({ name: "constructor", arguments: {} });
+  expect(protoTool.status).toBe(404);
+
+  // 白名单内 + 页面存在 → CallToolResult 形状(content + structuredContent,与 hub 工具同包装)。
+  const ok = await call({ name: "wiki_read_page", arguments: { slug: "intro" } });
+  expect(ok.status).toBe(200);
+  const okJson = await ok.json();
+  expect(okJson.content).toEqual([{ type: "text", text: expect.any(String) }]);
+  expect(okJson.structuredContent).toEqual({
+    kind: "wiki-page",
+    slug: "intro",
+    title: "Introduction",
+    tags: ["a"],
+    markdown: "# Hello\n\nworld\n",
+  });
+
+  // 白名单内但页面不存在 → ProjectWikiError NOT_FOUND → 404。
+  const missingPage = await call({ name: "wiki_read_page", arguments: { slug: "nope" } });
+  expect(missingPage.status).toBe(404);
+  expect((await missingPage.json()).error.code).toBe("PROJECT_FILE_NOT_FOUND");
+
+  // project 不存在 → 404。
+  const missingProject = await call(
+    { name: "wiki_read_page", arguments: { slug: "intro" } },
+    "no-such-project",
+  );
+  expect(missingProject.status).toBe(404);
+
+  // GET 方法不匹配 → 代理路由不接(落到下游通用路由,非 200 即可,不绑死下游形状)。
+  const wrongMethod = await handler(
+    new Request("http://localhost/api/projects/demo/mcp-hub-tools-call", { headers }),
+    { upgrade: () => false },
+  );
+  expect(wrongMethod.status).not.toBe(200);
+});
+
 test("createFetchHandler protects pages config and validates writes", async () => {
   await mkdir(join(root, "demo"));
   const { auth, handler } = createTestHandler();

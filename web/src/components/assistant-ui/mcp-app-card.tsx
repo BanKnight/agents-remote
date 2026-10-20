@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getProjectMcpUiResource } from "../../api/client";
+import { callProjectMcpHubTool, getProjectMcpUiResource } from "../../api/client";
 import { useT } from "../../i18n";
+import { useConfirm } from "../shell/confirm-dialog";
 
 export const WIKI_PAGE_APP_URI = "ui://ar-hub/wiki-page";
 
@@ -46,13 +47,18 @@ export function McpAppCard({
   uri,
   structuredContent,
   heightClassName = "h-[420px]",
+  onSendPrompt,
 }: {
   projectName: string;
   uri: string;
   structuredContent: unknown;
   heightClassName?: string;
+  /** ui/message 确认后的发送出口（renderer 注入 bridge.sendMessage）。 */
+  onSendPrompt?: (text: string) => void;
 }) {
   const { t } = useT();
+  // ui/message user-consent gate (SEP MAY-require; ZCode sendFollowUpMessage 同款).
+  const { confirm, holder } = useConfirm();
   // Template is static per deployment; avoid refetching on every card mount.
   const resource = useQuery({
     queryKey: ["projects", projectName, "mcp-ui-resource", uri],
@@ -73,13 +79,18 @@ export function McpAppCard({
   // frame follows content instead of a fixed card height).
   const [frameHeight, setFrameHeight] = useState<number | null>(null);
   // Host theme follows the app's data-theme (":root" = dark, light override).
+  const hostTheme = (): "light" | "dark" =>
+    document.documentElement.dataset.theme === "light" ? "light" : "dark";
   const sendHostContext = () => {
     const frame = frameRef.current;
     const win = frame?.contentWindow;
     if (!frame || !win || win !== fedWinRef.current) return;
-    const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
     win.postMessage(
-      { jsonrpc: "2.0", method: "ui/notifications/host-context-changed", params: { theme } },
+      {
+        jsonrpc: "2.0",
+        method: "ui/notifications/host-context-changed",
+        params: { theme: hostTheme() },
+      },
       "*",
     );
   };
@@ -100,12 +111,110 @@ export function McpAppCard({
       "*",
     );
   };
+  // Reverse-channel request dispatcher (SEP-1865 阶段 4). Reads of
+  // confirm/t/onSendPrompt must see latest render values -> latest-ref pattern,
+  // the long-lived message listener forwards requests here.
+  const requestDispatcherRef = useRef<(event: MessageEvent) => Promise<void>>(() =>
+    Promise.resolve(),
+  );
+  requestDispatcherRef.current = async (event) => {
+    const frame = frameRef.current;
+    const win = frame?.contentWindow;
+    if (!frame || !win || event.source !== win) return;
+    const data = event.data as {
+      id: number;
+      method: string;
+      params?: {
+        name?: unknown;
+        arguments?: Record<string, unknown>;
+        role?: unknown;
+        content?: { type?: unknown; text?: unknown };
+      };
+    } | null;
+    if (!data || typeof data.id !== "number" || typeof data.method !== "string") return;
+
+    const reply = (result: unknown) => {
+      // By reply time the frame may have navigated (confirm await window) —
+      // only answer to the window we actually fed.
+      if (win !== fedWinRef.current) return;
+      win.postMessage({ jsonrpc: "2.0", id: data.id, result }, "*");
+    };
+    const replyError = (code: number, message: string) => {
+      if (win !== fedWinRef.current) return;
+      win.postMessage({ jsonrpc: "2.0", id: data.id, error: { code, message } }, "*");
+    };
+
+    if (data.method === "ui/initialize") {
+      reply({
+        protocolVersion: "2026-01-26",
+        hostInfo: { name: "agents-remote", version: "0.0.0" },
+        hostCapabilities: {},
+        hostContext: { theme: hostTheme(), locale: navigator.language },
+      });
+      return;
+    }
+    if (data.method === "ping") {
+      reply({});
+      return;
+    }
+    if (data.method === "tools/call") {
+      // App-callable allowlist (defense in depth; api enforces its own table).
+      const name = typeof data.params?.name === "string" ? data.params.name : "";
+      if (name !== "wiki_read_page") {
+        replyError(-32602, `unknown app tool: ${name}`);
+        return;
+      }
+      const args = data.params?.arguments ?? {};
+      try {
+        const result = await callProjectMcpHubTool(projectName, "wiki_read_page", args);
+        reply(result);
+      } catch (error) {
+        replyError(-32000, error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+    if (data.method === "ui/message") {
+      const text = data.params?.content?.text;
+      if (typeof text !== "string" || text.length === 0) {
+        replyError(-32602, "ui/message requires content.text");
+        return;
+      }
+      if (!onSendPrompt) {
+        replyError(-32600, "sending is not available here");
+        return;
+      }
+      const ok = await confirm({
+        title: t("claude.mcpApp.followUpTitle"),
+        message: text,
+        confirmLabel: t("claude.composer.send"),
+        cancelLabel: t("cancel"),
+        tone: "default",
+      });
+      if (!ok) {
+        replyError(-32600, "rejected by the user");
+        return;
+      }
+      onSendPrompt(text);
+      reply({});
+      return;
+    }
+    replyError(-32601, `method not found: ${data.method}`);
+  };
   // Template reports its content height; clamp to sane bounds.
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const frame = frameRef.current;
       if (!frame || event.source !== frame.contentWindow) return;
-      const data = event.data as { method?: string; params?: { height?: unknown } } | null;
+      const data = event.data as {
+        method?: string;
+        params?: { height?: unknown };
+        id?: number;
+      } | null;
+      // Requests (id+method) forward to the latest-ref dispatcher.
+      if (typeof data?.id === "number" && typeof data.method === "string") {
+        void requestDispatcherRef.current(event);
+        return;
+      }
       if (data?.method !== "ui/notifications/size-changed") return;
       const h = data.params?.height;
       if (typeof h === "number" && Number.isFinite(h)) {
@@ -146,24 +255,27 @@ export function McpAppCard({
   }
 
   return (
-    <iframe
-      ref={frameRef}
-      className={`mt-2 w-full overflow-hidden rounded-lg border border-neutral-line/40 bg-white ${heightClassName}`}
-      // Template-reported content height overrides the fallback height class.
-      style={frameHeight != null ? { height: frameHeight } : undefined}
-      onLoad={() => {
-        const frame = frameRef.current;
-        const html = resource.data?.html;
-        if (!frame || html == null) return;
-        if (fedForRef.current === html) return; // same-template refire = in-frame navigation
-        fedForRef.current = html;
-        fedWinRef.current = frame.contentWindow;
-        postToolResult();
-      }}
-      sandbox="allow-scripts"
-      srcDoc={resource.data.html}
-      title="MCP app"
-    />
+    <>
+      <iframe
+        ref={frameRef}
+        className={`mt-2 w-full overflow-hidden rounded-lg border border-neutral-line/40 bg-white ${heightClassName}`}
+        // Template-reported content height overrides the fallback height class.
+        style={frameHeight != null ? { height: frameHeight } : undefined}
+        onLoad={() => {
+          const frame = frameRef.current;
+          const html = resource.data?.html;
+          if (!frame || html == null) return;
+          if (fedForRef.current === html) return; // same-template refire = in-frame navigation
+          fedForRef.current = html;
+          fedWinRef.current = frame.contentWindow;
+          postToolResult();
+        }}
+        sandbox="allow-scripts"
+        srcDoc={resource.data.html}
+        title="MCP app"
+      />
+      {holder}
+    </>
   );
 }
 

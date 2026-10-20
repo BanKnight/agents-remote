@@ -615,6 +615,8 @@ export const en = {
   "claude.tool.mcp": "MCP",
   "claude.tool.wikiReadPage": "Wiki Page",
   "claude.mcpApp.unavailable": "App view unavailable",
+  "claude.mcpApp.followUpTitle": "Send to session",
+  "api.mcpHubToolCallFailed": "Tool call failed",
   "claude.tool.glob": "Glob",
   "claude.tool.grep": "Grep",
   "claude.tool.notebook": "Notebook",

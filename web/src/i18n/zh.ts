@@ -610,6 +610,8 @@ export const zh: Record<TranslationKey, string> = {
   "claude.tool.mcp": "MCP",
   "claude.tool.wikiReadPage": "Wiki 页面",
   "claude.mcpApp.unavailable": "应用视图不可用",
+  "claude.mcpApp.followUpTitle": "发送到会话",
+  "api.mcpHubToolCallFailed": "工具调用失败",
   "claude.tool.glob": "文件匹配",
   "claude.tool.grep": "搜索",
   "claude.tool.notebook": "笔记本",

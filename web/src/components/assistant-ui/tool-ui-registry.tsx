@@ -673,6 +673,7 @@ const HubWikiPageToolUI: ToolCallMessagePartComponent = (props) => {
           projectName={projectName}
           uri={WIKI_PAGE_APP_URI}
           structuredContent={structuredContent}
+          onSendPrompt={(text) => bridge?.sendMessage(text)}
         />
       ) : (
         <div className="px-1 py-2 text-xs text-on-surface-muted">

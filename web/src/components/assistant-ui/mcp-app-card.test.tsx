@@ -4,13 +4,18 @@
 // - 模板回源成功 → iframe srcdoc + load 后 postMessage 喂 structuredContent
 // - structuredContent 更新（load 后）→ 重发
 // - 回源失败（ui 关 / 网络）→ 不可用提示而非坏卡
+// - 反向通道（阶段 4）：ui/initialize / ping / tools/call 白名单代理 / ui/message 确认闸
 //
 // jsdom 全局安装与 mock 模式同 settings-notifications.test.tsx 头注；RTL cleanup 手动。
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { JSDOM } from "jsdom";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "https://app.example/" });
-dom.window.matchMedia = (() => ({ matches: false })) as unknown as typeof dom.window.matchMedia;
+dom.window.matchMedia = (() => ({
+  matches: false,
+  addEventListener: () => {},
+  removeEventListener: () => {},
+})) as unknown as typeof dom.window.matchMedia;
 
 const DOM_GLOBAL_KEYS = [
   "Event",
@@ -20,9 +25,16 @@ const DOM_GLOBAL_KEYS = [
   "MouseEvent",
   "PointerEvent",
   "Node",
+  "NodeFilter",
   "Element",
   "HTMLElement",
   "HTMLIFrameElement",
+  "HTMLInputElement",
+  "HTMLButtonElement",
+  "HTMLTextAreaElement",
+  "HTMLAnchorElement",
+  "HTMLSelectElement",
+  "HTMLLabelElement",
   "getComputedStyle",
   "MutationObserver",
 ] as const;
@@ -46,10 +58,15 @@ const resourceMock = mock(async () => ({
   mimeType: "text/html;profile=mcp-app",
   html: TEMPLATE_HTML,
 }));
+const toolCallMock = mock(async () => ({
+  content: [{ type: "text", text: "page" }],
+  structuredContent: { kind: "wiki-page", slug: "arch", title: "Arch refreshed", markdown: "# v2" },
+}));
 const actualApi = await import("../../api/client");
 mock.module("../../api/client", () => ({
   ...actualApi,
   getProjectMcpUiResource: resourceMock,
+  callProjectMcpHubTool: toolCallMock,
 }));
 
 const { cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
@@ -68,14 +85,18 @@ beforeEach(() => {
     mimeType: "text/html;profile=mcp-app",
     html: TEMPLATE_HTML,
   }));
+  toolCallMock.mockClear();
 });
 
-function renderCard(structuredContent: unknown): {
+function renderCard(
+  structuredContent: unknown,
+  options?: { onSendPrompt?: (text: string) => void },
+): {
   rerender: (sc: unknown) => void;
   view: ReturnType<typeof render>;
 } {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = render(
+  const el = (sc: unknown) =>
     createElement(
       I18nProvider,
       null,
@@ -85,27 +106,14 @@ function renderCard(structuredContent: unknown): {
         createElement(McpAppCard, {
           projectName: "test",
           uri: "ui://ar-hub/wiki-page",
-          structuredContent,
+          structuredContent: sc,
+          onSendPrompt: options?.onSendPrompt,
         }),
       ),
-    ),
-  );
-  const rerender = (sc: unknown) => {
-    view.rerender(
-      createElement(
-        I18nProvider,
-        null,
-        createElement(
-          QueryClientProvider,
-          { client },
-          createElement(McpAppCard, {
-            projectName: "test",
-            uri: "ui://ar-hub/wiki-page",
-            structuredContent: sc,
-          }),
-        ),
-      ),
     );
+  const view = render(el(structuredContent));
+  const rerender = (sc: unknown) => {
+    view.rerender(el(sc));
   };
   return { rerender, view };
 }
@@ -224,6 +232,146 @@ describe("McpAppCard", () => {
       }),
     );
     expect(frame.style.height).toBe("640px");
+  });
+});
+
+// 阶段 4 反向通道：帧内 JSON-RPC 请求（id+method）由 latest-ref dispatcher 处理，
+// 应答走原生 contentWindow.postMessage。spy 原生 postMessage 后从 frame window
+// 派发请求消息，断言按 id 回包的 result/error。
+describe("McpAppCard reverse channel", () => {
+  const postFromFrame = (frame: HTMLIFrameElement, data: unknown) => {
+    window.dispatchEvent(
+      new dom.window.MessageEvent("message", { source: frame.contentWindow as Window, data }),
+    );
+  };
+  const replyFor = (
+    postSpy: { mock: { calls: unknown[][] } },
+    id: number,
+  ): { result?: unknown; error?: { code: number; message: string } } | undefined => {
+    const hits = postSpy.mock.calls
+      .filter((c) => (c[0] as { id?: number })?.id === id)
+      .map((c) => c[0] as { result?: unknown; error?: { code: number; message: string } });
+    return hits[0];
+  };
+
+  // 已喂过数据的卡片（jsdom 自动 load 消耗首喂槽）+ 原生 postMessage spy。
+  async function fedCard(options?: { onSendPrompt?: (text: string) => void }) {
+    const rendered = renderCard(SC, options);
+    const frame = await waitForIframe(rendered.view);
+    const postSpy = mock(() => {});
+    Object.defineProperty(frame.contentWindow, "postMessage", {
+      configurable: true,
+      value: postSpy,
+    });
+    return { frame, postSpy, view: rendered.view };
+  }
+
+  test("ui/initialize 应答 hostInfo + hostContext（无确认框）", async () => {
+    const { frame, postSpy } = await fedCard();
+    postFromFrame(frame, {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "ui/initialize",
+      params: { appInfo: { name: "ar-wiki-page" }, protocolVersion: "2026-01-26" },
+    });
+    await waitFor(() => expect(replyFor(postSpy, 1)).toBeDefined());
+    const result = replyFor(postSpy, 1)?.result as {
+      protocolVersion: string;
+      hostInfo: { name: string };
+      hostCapabilities: Record<string, never>;
+      hostContext: { theme: string; locale: string };
+    };
+    expect(result.protocolVersion).toBe("2026-01-26");
+    expect(result.hostInfo.name).toBe("agents-remote");
+    expect(result.hostCapabilities).toEqual({});
+    expect(result.hostContext.theme).toBe("dark");
+    expect(typeof result.hostContext.locale).toBe("string");
+    expect(document.body.textContent).not.toContain("发送到会话");
+  });
+
+  test("ping 应答空 result；未知方法应答 -32601", async () => {
+    const { frame, postSpy } = await fedCard();
+    postFromFrame(frame, { jsonrpc: "2.0", id: 2, method: "ping" });
+    postFromFrame(frame, { jsonrpc: "2.0", id: 3, method: "resources/read", params: {} });
+    await waitFor(() => expect(replyFor(postSpy, 3)).toBeDefined());
+    expect(replyFor(postSpy, 2)?.result).toEqual({});
+    expect(replyFor(postSpy, 3)?.error?.code).toBe(-32601);
+  });
+
+  test("tools/call 白名单内代理 api 并回 CallToolResult", async () => {
+    const { frame, postSpy } = await fedCard();
+    postFromFrame(frame, {
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: { name: "wiki_read_page", arguments: { slug: "arch" } },
+    });
+    await waitFor(() => expect(replyFor(postSpy, 4)).toBeDefined());
+    expect(toolCallMock).toHaveBeenCalledWith("test", "wiki_read_page", { slug: "arch" });
+    expect(replyFor(postSpy, 4)?.result).toEqual(await toolCallMock.mock.results[0]!.value);
+  });
+
+  test("tools/call 白名单外应答 -32602 且不触 api", async () => {
+    const { frame, postSpy } = await fedCard();
+    postFromFrame(frame, {
+      jsonrpc: "2.0",
+      id: 5,
+      method: "tools/call",
+      params: { name: "fs_read", arguments: {} },
+    });
+    await waitFor(() => expect(replyFor(postSpy, 5)).toBeDefined());
+    expect(replyFor(postSpy, 5)?.error?.code).toBe(-32602);
+    expect(toolCallMock).not.toHaveBeenCalled();
+  });
+
+  test("ui/message 确认后回调 onSendPrompt 并回 {}", async () => {
+    const onSendPrompt = mock(() => {});
+    const { frame, postSpy } = await fedCard({ onSendPrompt });
+    postFromFrame(frame, {
+      jsonrpc: "2.0",
+      id: 6,
+      method: "ui/message",
+      params: { role: "user", content: { type: "text", text: "解释一下架构" } },
+    });
+    // 确认框出现（用户同意闸，SEP-1865 host SHOULD gate）。
+    await waitFor(() => expect(document.body.textContent).toContain("发送到会话"));
+    const sendButton = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent === "发送",
+    );
+    expect(sendButton).toBeDefined();
+    fireEvent.click(sendButton as HTMLElement);
+    await waitFor(() => expect(onSendPrompt).toHaveBeenCalledWith("解释一下架构"));
+    await waitFor(() => expect(replyFor(postSpy, 6)?.result).toEqual({}));
+  });
+
+  test("ui/message 取消应答 -32600 且不发送", async () => {
+    const onSendPrompt = mock(() => {});
+    const { frame, postSpy } = await fedCard({ onSendPrompt });
+    postFromFrame(frame, {
+      jsonrpc: "2.0",
+      id: 7,
+      method: "ui/message",
+      params: { role: "user", content: { type: "text", text: "取消我" } },
+    });
+    await waitFor(() => expect(document.body.textContent).toContain("发送到会话"));
+    const cancelButton = [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent === "取消",
+    );
+    fireEvent.click(cancelButton as HTMLElement);
+    await waitFor(() => expect(replyFor(postSpy, 7)?.error?.code).toBe(-32600));
+    expect(onSendPrompt).not.toHaveBeenCalled();
+  });
+
+  test("无 onSendPrompt 时 ui/message 应答 -32600（无确认框）", async () => {
+    const { frame, postSpy } = await fedCard();
+    postFromFrame(frame, {
+      jsonrpc: "2.0",
+      id: 8,
+      method: "ui/message",
+      params: { role: "user", content: { type: "text", text: "无处可发" } },
+    });
+    await waitFor(() => expect(replyFor(postSpy, 8)?.error?.code).toBe(-32600));
+    expect(document.body.textContent).not.toContain("发送到会话");
   });
 });
 

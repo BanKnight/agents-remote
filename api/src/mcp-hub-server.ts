@@ -51,6 +51,10 @@ const WIKI_PAGE_UI_URI = "ui://ar-hub/wiki-page";
  * MCP Apps 桥下发 `ui/notifications/tool-result`,卡片取 structuredContent
  * (kind="wiki-page")做基本结构化渲染(标题/列表/代码/粗体,转义防注入)。渲染质量是
  * 宿主 MVP 后的迭代面,管道优先。
+ *
+ * 反向通道（阶段 4）:ui/initialize 握手(theme/locale 经 hostContext 注入)→
+ * initialized;tools/call(刷新钮,宿主白名单代理直调 service,不触发 turn);
+ * ui/message(追问条,宿主确认框后经 bridge.sendMessage 触发新 turn)。
  */
 const WIKI_PAGE_APP_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'"><style>
@@ -65,11 +69,20 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
   a{color:var(--link)}
   .meta{color:var(--muted);font-size:.82em;margin-bottom:.8em}
   .tag{display:inline-block;background:var(--tag-bg);color:var(--tag-fg);border-radius:999px;padding:.1em .6em;margin-right:.35em;font-size:.78em}
+  .bar{display:flex;justify-content:flex-end;margin:-.4em 0 .8em}
+  .bar-btn{background:none;border:1px solid var(--pre-border);color:var(--fg);border-radius:6px;padding:.15em .7em;font-size:.82em;cursor:pointer;font-family:inherit}
+  .bar-btn:hover{background:var(--code-bg)}
+  .bar-btn:disabled{opacity:.5;cursor:default}
+  .ask{display:flex;gap:.5em;margin-top:1em;padding-top:.8em;border-top:1px solid var(--pre-border)}
+  .ask input{flex:1;background:var(--code-bg);border:1px solid var(--pre-border);border-radius:6px;padding:.3em .6em;color:var(--fg);font:inherit;font-size:.9em;min-width:0}
+  .ask input:focus{outline:1px solid var(--link)}
 </style></head>
 <body>
   <h1 id="title"></h1>
   <div class="meta" id="meta"></div>
+  <div class="bar"><button id="refresh" type="button" class="bar-btn"></button></div>
   <div id="body"></div>
+  <div class="ask"><input id="ask-input" type="text"><button id="ask-send" type="button" class="bar-btn"></button></div>
   <script>
     "use strict";
     var esc = function (s) {
@@ -107,9 +120,13 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
       flushList();
       return out.join("");
     };
+    var slug = "";
+    var currentTitle = "";
     var render = function (data) {
       if (!data || data.kind !== "wiki-page") return;
-      document.getElementById("title").textContent = data.title || data.slug || "";
+      slug = data.slug || "";
+      currentTitle = data.title || data.slug || "";
+      document.getElementById("title").textContent = currentTitle;
       var tags = Array.isArray(data.tags) && data.tags.length
         ? data.tags.map(function (t) { return '<span class="tag">' + esc(t) + "</span>"; }).join("")
         : "";
@@ -119,6 +136,18 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
     window.addEventListener("message", function (e) {
       var msg = e.data;
       if (!msg || typeof msg !== "object") return;
+      if (typeof msg.id === "number") {
+        var entry = pending[msg.id];
+        if (!entry) return;
+        // A JSON-RPC response carries exactly one of result/error. An id-only
+        // message is our own request echoing back through parent===self
+        // (file:// probes, self-embedded frames) — never treat it as a reply.
+        if (!("result" in msg) && !("error" in msg)) return;
+        delete pending[msg.id];
+        if (msg.error) entry.reject(new Error((msg.error && msg.error.message) || "request failed"));
+        else entry.resolve(msg.result);
+        return;
+      }
       if (msg.method === "ui/notifications/host-context-changed") {
         var theme = msg.params && msg.params.theme;
         if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
@@ -147,6 +176,94 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
       new ResizeObserver(reportSize).observe(document.body);
     }
     window.addEventListener("load", reportSize);
+
+    // JSON-RPC request bridge (SEP-1865 reverse channel): id-multiplexed.
+    var reqSeq = 0;
+    var pending = {};
+    var sendRequest = function (method, params) {
+      return new Promise(function (resolve, reject) {
+        var id = ++reqSeq;
+        pending[id] = { resolve: resolve, reject: reject };
+        parent.postMessage({ jsonrpc: "2.0", id: id, method: method, params: params }, "*");
+      });
+    };
+    // Locale via hostContext (SEP standard channel; template has no host i18n pipe).
+    var loc = "";
+    var DICT = {
+      en: { refresh: "Refresh", ask: "Ask the agent about this page...", send: "Send" },
+      zh: { refresh: "刷新", ask: "向 agent 追问本页…", send: "发送" },
+    };
+    var dict = DICT.en;
+    var applyLocale = function () {
+      document.getElementById("refresh").textContent = dict.refresh;
+      document.getElementById("ask-input").placeholder = dict.ask;
+      document.getElementById("ask-send").textContent = dict.send;
+    };
+    applyLocale();
+
+    // Refresh: app-side tools/call straight to host proxy (no agent turn).
+    document.getElementById("refresh").addEventListener("click", function () {
+      var btn = this;
+      if (btn.disabled || !slug) return;
+      btn.disabled = true;
+      sendRequest("tools/call", { name: "wiki_read_page", arguments: { slug: slug } })
+        .then(function (result) {
+          var sc = result && result.structuredContent;
+          if (sc) render(sc);
+          reportSize();
+        })
+        .catch(function () {})
+        .then(function () {
+          btn.disabled = false;
+        });
+    });
+
+    // Ask: ui/message follow-up (host confirms with the user before sending).
+    var askBox = document.getElementById("ask-input");
+    var askSend = function () {
+      var text = (askBox.value || "").trim();
+      if (!text || !slug) return;
+      var wrapped =
+        loc.indexOf("zh") === 0
+          ? "关于 wiki 页「" + currentTitle + "」：" + text
+          : 'About the wiki page "' + currentTitle + '": ' + text;
+      sendRequest("ui/message", { role: "user", content: { type: "text", text: wrapped } })
+        .then(function () {
+          askBox.value = "";
+        })
+        .catch(function () {});
+    };
+    document.getElementById("ask-send").addEventListener("click", askSend);
+    askBox.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        askSend();
+      }
+    });
+
+    // Handshake: ui/initialize -> apply hostContext -> initialized notification.
+    sendRequest("ui/initialize", {
+      appInfo: { name: "ar-wiki-page", version: "0.0.0" },
+      appCapabilities: {},
+      protocolVersion: "2026-01-26",
+    })
+      .then(function (result) {
+        var ctx = (result && result.hostContext) || {};
+        if (ctx.theme === "light" || ctx.theme === "dark") {
+          document.documentElement.dataset.theme = ctx.theme;
+        }
+        if (typeof ctx.locale === "string" && ctx.locale) {
+          loc = ctx.locale;
+          dict = DICT[loc.indexOf("zh") === 0 ? "zh" : "en"] || DICT.en;
+          applyLocale();
+        }
+        reportSize();
+        parent.postMessage(
+          { jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} },
+          "*",
+        );
+      })
+      .catch(function () {});
   </script>
 </body></html>`;
 
@@ -160,6 +277,23 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
 export const HUB_UI_RESOURCES: Record<string, { mimeType: string; html: string }> = {
   [WIKI_PAGE_UI_URI]: { mimeType: MCP_APP_MIME_TYPE, html: WIKI_PAGE_APP_HTML },
 };
+
+/**
+ * wiki 页 → display tool structuredContent 包装（hub registerTool 与 api 侧
+ * HUB_APP_TOOLS 白名单代理共用,防两处漂移）。字段契约 = 模板 render() 消费的
+ * kind/slug/title/tags/markdown。
+ */
+export const wikiPageStructuredContent = (page: {
+  slug: string;
+  frontmatter: { title: string; tags: string[] };
+  body: string;
+}) => ({
+  kind: "wiki-page" as const,
+  slug: page.slug,
+  title: page.frontmatter.title,
+  tags: page.frontmatter.tags,
+  markdown: page.body,
+});
 
 /**
  * 解析 `/mcp/{project}` URL 的 project 段(encoded)。返回 undefined 表示 URL 不合法。
@@ -290,17 +424,7 @@ const registerWikiTools = (
         const page = await wikiService.readPage(project, slug);
         return {
           content: [{ type: "text" as const, text: JSON.stringify(page) }],
-          ...(uiEnabled
-            ? {
-                structuredContent: {
-                  kind: "wiki-page",
-                  slug: page.slug,
-                  title: page.frontmatter.title,
-                  tags: page.frontmatter.tags,
-                  markdown: page.body,
-                },
-              }
-            : {}),
+          ...(uiEnabled ? { structuredContent: wikiPageStructuredContent(page) } : {}),
         };
       } catch (error) {
         return wikiErrorResponse(error);

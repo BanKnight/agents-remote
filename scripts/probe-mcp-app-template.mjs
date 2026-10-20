@@ -114,7 +114,7 @@ try {
   // 4. 高度上报：渲染后模板应发出 size-changed（取最后一条 = 渲染后的高度；
   //    首条是空模板初始上报，height≈44 属正常）。
   await page.waitForTimeout(100);
-  const msgs = await page.evaluate(() => window.__msgs);
+  let msgs = await page.evaluate(() => window.__msgs);
   const sizeMsgs = msgs.filter(
     (m) =>
       m && m.method === "ui/notifications/size-changed" && typeof m.params?.height === "number",
@@ -142,7 +142,114 @@ try {
   const darkAgain = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   assert("theme back to dark", darkAgain === "rgb(15, 17, 21)", darkAgain);
 
-  // 6. 零 pageerror。
+  // 6. 握手：模板加载即发 ui/initialize 请求（file:// 回环 → 收集器收到）。
+  msgs = await page.evaluate(() => window.__msgs);
+  const initReq = msgs.find((m) => m && m.method === "ui/initialize");
+  assert(
+    "handshake ui/initialize request sent",
+    !!initReq,
+    JSON.stringify(initReq?.params?.appInfo ?? null),
+  );
+
+  // 7. 应答 hostContext{light, zh-CN} → initialized 通知 + locale 文案应用。
+  await page.evaluate((id) => {
+    window.postMessage(
+      {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          protocolVersion: "2026-01-26",
+          hostInfo: { name: "agents-remote", version: "0.0.0" },
+          hostCapabilities: {},
+          hostContext: { theme: "light", locale: "zh-CN" },
+        },
+      },
+      "*",
+    );
+  }, initReq?.id ?? 0);
+  await page.waitForTimeout(50);
+  msgs = await page.evaluate(() => window.__msgs);
+  assert(
+    "initialized notification after handshake reply",
+    msgs.some((m) => m && m.method === "ui/notifications/initialized"),
+  );
+  const localeState = await page.evaluate(() => ({
+    refresh: document.getElementById("refresh").textContent,
+    placeholder: document.getElementById("ask-input").getAttribute("placeholder"),
+  }));
+  assert(
+    "locale zh applied (refresh btn + ask placeholder)",
+    localeState.refresh === "刷新" && localeState.placeholder === "向 agent 追问本页…",
+    JSON.stringify(localeState),
+  );
+
+  // 8. 刷新钮：点击 → tools/call 请求（arguments.slug 取当前页）→ 应答新
+  //    structuredContent → 标题更新 + 按钮恢复。
+  await page.click("#refresh");
+  await page.waitForTimeout(50);
+  msgs = await page.evaluate(() => window.__msgs);
+  const refreshReq = [...msgs].reverse().find((m) => m && m.method === "tools/call");
+  assert(
+    "refresh sends tools/call with current slug",
+    refreshReq?.params?.name === "wiki_read_page" &&
+      refreshReq?.params?.arguments?.slug === "probe",
+    JSON.stringify(refreshReq?.params ?? null),
+  );
+  await page.evaluate((id) => {
+    window.postMessage(
+      {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [{ type: "text", text: "{}" }],
+          structuredContent: {
+            kind: "wiki-page",
+            slug: "probe",
+            title: "Refreshed Page",
+            tags: ["a"],
+            markdown: "# v2",
+          },
+        },
+      },
+      "*",
+    );
+  }, refreshReq?.id ?? 0);
+  await page.waitForTimeout(50);
+  const refreshed = await page.evaluate(() => ({
+    title: document.getElementById("title").textContent,
+    refreshDisabled: document.getElementById("refresh").disabled,
+  }));
+  assert(
+    "refresh applies new structuredContent + button re-enabled",
+    refreshed.title === "Refreshed Page" && refreshed.refreshDisabled === false,
+    JSON.stringify(refreshed),
+  );
+
+  // 9. 追问条：输入文本 + 点发送 → ui/message 请求（role=user + 前缀包装）→
+  //    应答 {} 后输入框清空。
+  await page.fill("#ask-input", "这块为什么这样设计");
+  await page.click("#ask-send");
+  await page.waitForTimeout(50);
+  msgs = await page.evaluate(() => window.__msgs);
+  const askReq = [...msgs].reverse().find((m) => m && m.method === "ui/message");
+  const askText =
+    typeof askReq?.params?.content?.text === "string" ? askReq.params.content.text : "";
+  assert(
+    "ask sends ui/message with wrapped text",
+    askReq?.params?.role === "user" &&
+      askReq?.params?.content?.type === "text" &&
+      askText.includes("Refreshed Page") &&
+      askText.includes("这块为什么这样设计"),
+    askText,
+  );
+  await page.evaluate((id) => {
+    window.postMessage({ jsonrpc: "2.0", id, result: {} }, "*");
+  }, askReq?.id ?? 0);
+  await page.waitForTimeout(50);
+  const askCleared = await page.evaluate(() => document.getElementById("ask-input").value);
+  assert("ask input cleared after reply", askCleared === "", askCleared);
+
+  // 10. 零 pageerror。
   assert("no page errors", pageErrors.length === 0, pageErrors.join("; "));
 } finally {
   await browser.close();

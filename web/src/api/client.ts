@@ -504,6 +504,27 @@ export async function getProjectMcpUiResource(
 }
 
 /**
+ * 卡片反向 tools/call 的 api 代理(SEP-1865 阶段 4)。api 侧 HUB_APP_TOOLS 白名单
+ * 门控（未开 ui / 非名单工具 → 404）,返回 hub 工具 CallToolResult 形状
+ * {content, structuredContent?}。
+ */
+export async function callProjectMcpHubTool(
+  projectName: string,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ content: Array<{ type: string; text: string }>; structuredContent?: unknown }> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/mcp-hub-tools-call`,
+    "api.mcpHubToolCallFailed",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, arguments: args }),
+    },
+  );
+}
+
+/**
  * pages serve 的对外干净 URL（/p/{name}{urlPath}）。web vite proxy 把 /p/{name}{urlPath}
  * rewrite 到 /api/projects/{name}/pages{urlPath}（见 web/vite.config.ts）。浏览器直访新标签页:
  * HttpOnly cookie Path=/ 自动携带——public 根免登录,token 根凭已登录态 cookie 放行。

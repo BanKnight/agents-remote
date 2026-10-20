@@ -77,7 +77,7 @@ import { handleSkillUpdateRoutes } from "./skill-update";
 import { handleSkillTaskEvents } from "./skill-tasks";
 import { handleMcpRoutes } from "./mcp-management";
 import { handleMcpMarketRoutes } from "./mcp-market";
-import { HUB_UI_RESOURCES, startMcpHubServer } from "./mcp-hub-server";
+import { HUB_UI_RESOURCES, startMcpHubServer, wikiPageStructuredContent } from "./mcp-hub-server";
 import { readProjectMcpConfig } from "./mcp-config";
 import { canUpgradeWebSocket } from "./ws-auth";
 
@@ -638,6 +638,18 @@ export const createFetchHandler =
       const uiResourceResponse = await handleMcpUiResourceRoute(request, url, options.projectsRoot);
       if (uiResourceResponse) {
         return withRefresh(uiResourceResponse);
+      }
+    }
+
+    if (options.projectWikiService && options.projectsRoot) {
+      const toolsCallResponse = await handleMcpHubToolsCallRoute(
+        request,
+        url,
+        options.projectsRoot,
+        options.projectWikiService,
+      );
+      if (toolsCallResponse) {
+        return withRefresh(toolsCallResponse);
       }
     }
 
@@ -1339,6 +1351,86 @@ const handleMcpUiResourceRoute = async (
     return jsonError("PROJECT_NOT_FOUND", "Project not found", 404);
   }
   return Response.json({ mimeType: resource.mimeType, html: resource.html });
+};
+
+// POST /api/projects/{name}/mcp-hub-tools-call  body {name, arguments}
+// web 宿主卡片反向 tools/call 的 api 代理(SEP-1865 阶段 4):hub 恒 loopback(浏览器
+// 够不着)且真无状态(每请求新建 server+transport),经 HTTP 打 hub 需每请求
+// initialize→tools/call 序列且实例不共享——api 与 hub 同进程共享 ProjectWikiService
+// 单源,直调 service(同 handleWikiRoute 模式,「MCP 工具 producer 与 HTTP consumer
+// 都调它」)。白名单 = app-callable 工具显式映射(卡片可调的 hub 工具面),未列入 → 404;
+// 非法 body 的 name 落 "" 同样 miss。ui 门控同 mcp-ui-resource(404 不暴露原因),
+// 鉴权在统一 /api/ token 守卫。
+const HUB_APP_TOOLS: Record<
+  string,
+  (service: ProjectWikiService, project: string, args: Record<string, unknown>) => Promise<unknown>
+> = {
+  wiki_read_page: async (service, project, args) => {
+    const slug = typeof args.slug === "string" ? args.slug : "";
+    const page = await service.readPage(project, slug);
+    return {
+      content: [{ type: "text", text: JSON.stringify(page) }],
+      structuredContent: wikiPageStructuredContent(page),
+    };
+  },
+};
+
+const handleMcpHubToolsCallRoute = async (
+  request: Request,
+  url: URL,
+  projectsRoot: string,
+  projectWikiService: ProjectWikiService,
+): Promise<Response | undefined> => {
+  if (request.method !== "POST") return undefined;
+  const prefix = "/api/projects/";
+  if (!url.pathname.startsWith(prefix)) return undefined;
+  const rest = url.pathname.slice(prefix.length);
+  const infix = "/mcp-hub-tools-call";
+  if (!rest.endsWith(infix)) return undefined;
+  const encodedName = rest.slice(0, -infix.length);
+  if (encodedName.length === 0 || encodedName.includes("/")) return undefined;
+  let projectName: string;
+  try {
+    projectName = decodeURIComponent(encodedName);
+  } catch {
+    return undefined;
+  }
+  let body: { name?: unknown; arguments?: unknown } = {};
+  try {
+    body = (await request.json()) as { name?: unknown; arguments?: unknown };
+  } catch {
+    // 非法 JSON → body 空对象 → name "" → 白名单 miss 404。
+  }
+  const toolName = typeof body.name === "string" ? body.name : "";
+  const toolArgs =
+    typeof body.arguments === "object" && body.arguments !== null
+      ? (body.arguments as Record<string, unknown>)
+      : {};
+  // hasOwnProperty 守卫同 ui-resource(原型链键不透,security-review 2026-10-20)。
+  const handler = Object.prototype.hasOwnProperty.call(HUB_APP_TOOLS, toolName)
+    ? HUB_APP_TOOLS[toolName]
+    : undefined;
+  if (!handler) {
+    return jsonError("PROJECT_FILE_NOT_FOUND", `Unknown app tool: ${toolName}`, 404);
+  }
+  try {
+    const config = await readProjectMcpConfig(projectsRoot, projectName);
+    if (config?.capabilities?.ui !== true) {
+      return jsonError("PROJECT_FILE_NOT_FOUND", "MCP ui capability is disabled", 404);
+    }
+  } catch {
+    // project 不存在 / 路径越界 / mcp.json 非法 → 404(不暴露具体原因,与 hub 同原则)。
+    return jsonError("PROJECT_NOT_FOUND", "Project not found", 404);
+  }
+  try {
+    const result = await handler(projectWikiService, projectName, toolArgs);
+    return Response.json(result);
+  } catch (error) {
+    if (error instanceof ProjectWikiError) {
+      return projectWikiErrorResponse(error);
+    }
+    throw error;
+  }
 };
 
 type ProjectGitDiffPathMatch = {
