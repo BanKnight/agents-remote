@@ -1,10 +1,10 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-20 13:32（MCP Apps 阶段 0-3 全部提交 + 调研主文档汇总提交 + reviewer 审查进行中）
+> 最后更新：2026-10-20 14:05（MCP Apps 阶段 0-3 + 主文档 + 双 reviewer 审查消化全部提交）
 
 ## 一句话状态
 
-**MCP Apps 阶段 0-3 全部落地提交完毕**：`9ec70ab`（阶段 0 保留名守卫 + mcpInject 投影）→ `5975eec`（阶段 2 ar-hub 扩 ui + wiki_read_page display tool）→ `0de7979`（阶段 3 宿主 MVP：web 卡片 + api 回源路由，含提交拆分——composer hunk 精确留在工作区）→ `bd24a55`（调研主文档 `docs/research/mcp-apps-hosting.md` §1-§10 + 两份深素材 notes）。全门禁绿（api 1016 / shared 10 / web 848）。code-reviewer + security-reviewer 后台审查阶段 3 中。**待用户真机验证**：test 项目（wiki+ui 双开已就绪）创建 claude 会话让 agent 调 `wiki_read_page` 看卡片渲染。composer 第二次埋点批仍挂起工作区**刻意不提交**。
+**MCP Apps 阶段 0-3 全部落地提交 + 双 reviewer 审查已消化**：`9ec70ab`（阶段 0）→ `5975eec`（阶段 2）→ `0de7979`（阶段 3 宿主 MVP）→ `bd24a55`（调研主文档 §1-§10）→ `7d098a7`（reviewer 修复：P0 卡片主路径断点 + 安全低危三项 + 建议三项）。全门禁绿（api 1016 / shared 10 / web 851）。**待用户真机验证**：test 项目（wiki+ui 双开已就绪）创建 claude 会话让 agent 调 `wiki_read_page` 看卡片渲染。composer 第二次埋点批仍挂起工作区**刻意不提交**。
 
 ## 本 session 焦点
 
@@ -14,7 +14,7 @@
 - **五项架构决策（已记录主文档 §8）**：① ext-apps SDK vs 手写桥 → MVP 手写 JSON-RPC 桥（观察者宿主桥面极小，单 notification；SDK 2.x peer 冲突阶段 4 再评估）；② 双 iframe vs 单层沙箱 → 单层 `sandbox="allow-scripts"`（资源是自家系统模板无第三方篡改面；无 allow-same-origin = opaque origin 无回传面）；③ UI 关联判定 → display tool 名单 + kind 双条件（CLI 不透传 `_meta`）；④ ui-resource 路由 → api 进程内 `HUB_UI_RESOURCES` 单源表直读（hub 与 api 同进程、hub 恒 loopback）；⑤ skills 分发 → 阶段 5（三家 CLI 均无 client）。
 - **阶段 3 web 数据流全链（已实现）**：hub tool result structuredContent → CLI user 帧顶层 `tool_use_result` envelope（唯一通道，S1 实测 text content 会被文本化降级）→ normalizeChatStream 挂 `part.structuredResult`（既有管道）→ renderChatStream 仅当 envelope 带 structuredContent 键时投影进卡片 metadata（普通 Bash envelope 无此键 = 零增量）→ `HubWikiPageToolUI` kind 守卫 → `McpAppCard` iframe srcdoc + postMessage `ui/notifications/tool-result`。
 - **循环依赖解法**：renderer 壳 `HubWikiPageToolUI` 留在 tool-ui-registry（registry → mcp-app-card 单向依赖）；mcp-app-card.tsx 禁 import registry（曾踩 TDZ：registry 模块体 set 时 mcp-app-card 未初始化完）。
-- **postMessage 细节**：srcdoc iframe opaque origin → targetOrigin 必须 `"*"`；load 后发（onLoad 置 loadedRef + structuredContent 变化 effect 重发，load 前 effect 跳过）。
+- **postMessage 细节**：srcdoc iframe opaque origin → targetOrigin 必须 `"*"`；feed-once 守卫（`7d098a7`）：onLoad 只在「新模板首次加载」喂数据（`fedForRef`=html），同模板重载=帧内导航不喂；structuredContent 更新经 effect 重发但校验 `contentWindow === fedWinRef`（导航后不喂）。模板 CSP meta `default-src 'none'` 禁 connect/img/form（XSS 缺口也无法外发）。⚠️ jsdom 会自 mount 自动 fire load——测试断言用原生 contentWindow 装 spy。
 - **保留名守卫（阶段 0）**：`isReservedMcpName` = `name === "ar-hub" || name.startsWith("ar-")`；`ar.wiki`/`archive-tools` 不在保留域（`ar-` 是连字符）。
 - **CLI 注入机制（活体实测）**：Claude `--mcp-config` 同名合并 = flag 全赢整条替换（劫持不可能，守卫第二道防线；enterprise managed-mcp.json 存在时 flag 注入 exit(1)）；Codex `-c` 深合并（snake_case `structured_content`）；ZCode 只能预写配置文件（注入无保障需冲突检测）。
 - **composer 抬高 bug（2026-10-19）**：「第二次埋点」（1s 心跳 + 全量序列）挂起工作区等真机长期观察，**不提交**。

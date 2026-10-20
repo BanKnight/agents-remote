@@ -66,6 +66,8 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
   → iframe（sandbox="allow-scripts" srcdoc=模板）load 后 postMessage ui/notifications/tool-result
 ```
 
+> ⚠️ 链上曾有一个断点（`0de7979` 引入）：SystemChatBubble 把 custom 重建为 renderer props 时漏转发 structuredContent，守卫恒假、卡片整链生产路径零执行——两段单测各自全绿夹出集成断点（2026-10-20 code-review P0）。`7d098a7` 修复：重建抽成 registry 导出纯函数 `buildToolCardToolProps`（单源）+ 集成断言（custom → renderer → iframe）。
+
 模板 HTML 供给：api 的 `HUB_UI_RESOURCES` 单源表（hub resources/read 注册与 `/api/projects/{name}/mcp-ui-resource` HTTP 投喂共用，无复制漂移面；hub 恒 loopback 浏览器够不着）。路由鉴权在前、ui 开关门控、404 不暴露原因。
 
 ## 7. 现状审计（互不干扰）
@@ -98,9 +100,11 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 | 0 | 保留名守卫 + mcpInject 能力投影 | ✅ `9ec70ab` |
 | 1 | Spike S1-S4 | ✅ 全闭环（见 §9） |
 | 2 | ar-hub 扩 ui + wiki_read_page display tool + ALLOWED_CAPABILITIES 扩集 | ✅ `5975eec` |
-| 3 | 宿主 MVP：流信号检测 → 卡片投影 → api 回源路由 → 沙箱 iframe | ✅ `0de7979` |
+| 3 | 宿主 MVP：流信号检测 → 卡片投影 → api 回源路由 → 沙箱 iframe | ✅ `0de7979` + 审查修复 `7d098a7` |
 | 4 | 反向通道：卡片→宿主 tools/call + ui/message → composer 管道 | 未开工（按需） |
 | 5 | hub skills 分发（skills/list-get）+ 上游 CLI client 跟进 | 等上游 |
+
+**审查结论（2026-10-20，`7d098a7` 已消化）**：code-reviewer 1 严重（route 重建漏转发 structuredContent = 卡片主路径不可达，见 §6 断点注）+ 3 建议；security-reviewer 0 高/中危、3 低危（postMessage 导航守卫 + CSP meta 治本 / 原型链索引 / 404 注释）。全门禁绿 api 1016 / shared 10 / web 851。
 
 **待验证/待补**：
 
