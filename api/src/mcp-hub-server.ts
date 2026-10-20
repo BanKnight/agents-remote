@@ -134,6 +134,10 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
       document.getElementById("body").innerHTML = renderBlocks(data.markdown || "");
     };
     window.addEventListener("message", function (e) {
+      // Only the host (parent; self under file:// probes where parent===self)
+      // may talk to us — scripted sibling frames must not forge responses or
+      // tool-result notifications (security-review 2026-10-20 P2-3).
+      if (e.source !== parent) return;
       var msg = e.data;
       if (!msg || typeof msg !== "object") return;
       if (typeof msg.id === "number") {
@@ -178,13 +182,22 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
     window.addEventListener("load", reportSize);
 
     // JSON-RPC request bridge (SEP-1865 reverse channel): id-multiplexed.
+    // Requests time out so a swallowed reply (revoked frame, unmounted card)
+    // can't leave a button disabled forever or a pending entry resident.
     var reqSeq = 0;
     var pending = {};
+    var REQUEST_TIMEOUT_MS = 15000;
     var sendRequest = function (method, params) {
       return new Promise(function (resolve, reject) {
         var id = ++reqSeq;
         pending[id] = { resolve: resolve, reject: reject };
         parent.postMessage({ jsonrpc: "2.0", id: id, method: method, params: params }, "*");
+        setTimeout(function () {
+          if (pending[id]) {
+            delete pending[id];
+            reject(new Error(method + " timed out"));
+          }
+        }, REQUEST_TIMEOUT_MS);
       });
     };
     // Locale via hostContext (SEP standard channel; template has no host i18n pipe).
@@ -219,10 +232,15 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
     });
 
     // Ask: ui/message follow-up (host confirms with the user before sending).
+    // In-flight guard mirrors the refresh button: Enter auto-repeat / double
+    // clicks must not stack requests (host confirm gate is single-resolver).
     var askBox = document.getElementById("ask-input");
+    var askBusy = false;
     var askSend = function () {
+      if (askBusy) return;
       var text = (askBox.value || "").trim();
       if (!text || !slug) return;
+      askBusy = true;
       var wrapped =
         loc.indexOf("zh") === 0
           ? "关于 wiki 页「" + currentTitle + "」：" + text
@@ -231,7 +249,10 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
         .then(function () {
           askBox.value = "";
         })
-        .catch(function () {});
+        .catch(function () {})
+        .then(function () {
+          askBusy = false;
+        });
     };
     document.getElementById("ask-send").addEventListener("click", askSend);
     askBox.addEventListener("keydown", function (e) {

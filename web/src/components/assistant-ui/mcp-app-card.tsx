@@ -56,7 +56,7 @@ export function McpAppCard({
   /** ui/message 确认后的发送出口（renderer 注入 bridge.sendMessage）。 */
   onSendPrompt?: (text: string) => void;
 }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   // ui/message user-consent gate (SEP MAY-require; ZCode sendFollowUpMessage 同款).
   const { confirm, holder } = useConfirm();
   // Template is static per deployment; avoid refetching on every card mount.
@@ -68,13 +68,20 @@ export function McpAppCard({
 
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   // Feed-once guard. Only the FIRST load of a given template gets the initial
-  // postMessage, and re-sends (structuredContent updates) only go to the exact
-  // window we fed. A later onLoad on the same srcDoc means script inside the
-  // frame navigated the frame itself (reachable only via a future escaping
-  // bug) — a navigated document must never receive data. (security-review
-  // 2026-10-20: postMessage "*" x onLoad refire chain cut)
+  // postMessage; fedWinRef doubles as the "load fired" signal for re-sends
+  // (structuredContent updates skip until then) and is nulled on navigation.
+  // A later onLoad on the same srcDoc means script inside the frame navigated
+  // the frame itself (reachable only via a future escaping bug) — a navigated
+  // document must never receive data. (security-review 2026-10-20: postMessage
+  // "*" x onLoad refire chain cut; P2-1: WindowProxy identity can't detect
+  // navigation — see revokedRef)
   const fedForRef = useRef<string | null>(null);
   const fedWinRef = useRef<Window | null>(null);
+  // In-frame navigation detection (security-review 2026-10-20 P2-1): iframe
+  // contentWindow is a stable WindowProxy — identity comparison can NOT detect
+  // a navigated document. A second onLoad with the same srcDoc IS the
+  // navigation signal; from then on no data flows in either direction.
+  const revokedRef = useRef(false);
   // Content-driven height reported by the template (ZCode visualize 参考:
   // frame follows content instead of a fixed card height).
   const [frameHeight, setFrameHeight] = useState<number | null>(null);
@@ -134,13 +141,14 @@ export function McpAppCard({
     if (!data || typeof data.id !== "number" || typeof data.method !== "string") return;
 
     const reply = (result: unknown) => {
-      // By reply time the frame may have navigated (confirm await window) —
-      // only answer to the window we actually fed.
-      if (win !== fedWinRef.current) return;
+      // Requests can arrive before onLoad fires the first feed (handshake runs
+      // during document parse) — do NOT gate replies on fedWinRef, only on the
+      // navigation revocation. event.source was already verified above.
+      if (revokedRef.current) return;
       win.postMessage({ jsonrpc: "2.0", id: data.id, result }, "*");
     };
     const replyError = (code: number, message: string) => {
-      if (win !== fedWinRef.current) return;
+      if (revokedRef.current) return;
       win.postMessage({ jsonrpc: "2.0", id: data.id, error: { code, message } }, "*");
     };
 
@@ -148,8 +156,12 @@ export function McpAppCard({
       reply({
         protocolVersion: "2026-01-26",
         hostInfo: { name: "agents-remote", version: "0.0.0" },
-        hostCapabilities: {},
-        hostContext: { theme: hostTheme(), locale: navigator.language },
+        // Declare what we actually answer (code-review 2026-10-20: an empty
+        // capabilities object contradicts our live ui/message support).
+        hostCapabilities: { message: {} },
+        // App language preference (resolved "zh"/"en"), not navigator.language
+        // — the browser locale can diverge from the in-app language setting.
+        hostContext: { theme: hostTheme(), locale: lang },
       });
       return;
     }
@@ -265,7 +277,13 @@ export function McpAppCard({
           const frame = frameRef.current;
           const html = resource.data?.html;
           if (!frame || html == null) return;
-          if (fedForRef.current === html) return; // same-template refire = in-frame navigation
+          if (fedForRef.current === html) {
+            // same-template refire = in-frame navigation: revoke all data flow
+            // (WindowProxy is stable, so this is the only reliable signal).
+            revokedRef.current = true;
+            fedWinRef.current = null;
+            return;
+          }
           fedForRef.current = html;
           fedWinRef.current = frame.contentWindow;
           postToolResult();

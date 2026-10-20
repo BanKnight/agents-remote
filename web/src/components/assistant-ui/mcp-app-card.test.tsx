@@ -182,16 +182,26 @@ describe("McpAppCard", () => {
     const { rerender, view } = renderCard(SC);
     await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
     const frame = view.container.querySelector("iframe") as HTMLIFrameElement;
-    // Simulate the frame navigating itself to another document: contentWindow
-    // becomes a NEW window, srcDoc unchanged -> load refires.
+    // WindowProxy identity is stable across navigations (contentWindow returns
+    // the same proxy), so a real in-frame navigation shows up as a second load
+    // with the SAME window — not as a new contentWindow object. Spy the native
+    // window and refire load to simulate it.
+    const nativeWin = frame.contentWindow as Window;
     const postSpy = mock(() => {});
-    Object.defineProperty(frame, "contentWindow", {
-      configurable: true,
-      value: { postMessage: postSpy },
-    });
-    fireEvent.load(frame);
+    Object.defineProperty(nativeWin, "postMessage", { configurable: true, value: postSpy });
+    fireEvent.load(frame); // same srcDoc refire = in-frame navigation
     rerender({ ...SC, title: "Arch v9" });
     // Let the update effect run before asserting the negative.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(postSpy).toHaveBeenCalledTimes(0);
+    // Reverse channel is revoked too: requests from the navigated document
+    // (same WindowProxy) get no reply.
+    window.dispatchEvent(
+      new dom.window.MessageEvent("message", {
+        source: nativeWin,
+        data: { jsonrpc: "2.0", id: 99, method: "ping" },
+      }),
+    );
     await new Promise((r) => setTimeout(r, 30));
     expect(postSpy).toHaveBeenCalledTimes(0);
   });
@@ -278,14 +288,15 @@ describe("McpAppCard reverse channel", () => {
     const result = replyFor(postSpy, 1)?.result as {
       protocolVersion: string;
       hostInfo: { name: string };
-      hostCapabilities: Record<string, never>;
+      hostCapabilities: { message: Record<string, never> };
       hostContext: { theme: string; locale: string };
     };
     expect(result.protocolVersion).toBe("2026-01-26");
     expect(result.hostInfo.name).toBe("agents-remote");
-    expect(result.hostCapabilities).toEqual({});
+    expect(result.hostCapabilities).toEqual({ message: {} });
     expect(result.hostContext.theme).toBe("dark");
-    expect(typeof result.hostContext.locale).toBe("string");
+    // App language preference (localStorage lang=zh), not navigator.language.
+    expect(result.hostContext.locale).toBe("zh");
     expect(document.body.textContent).not.toContain("发送到会话");
   });
 
