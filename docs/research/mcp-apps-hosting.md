@@ -113,3 +113,37 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 - 细粒度 CLI 源码深挖 subagent（Claude Code / Codex / ZCode 内部实现）成果丢失于 session 压缩；阶段 4/5 需要时重跑。
 - `CLAUDE_CODE_MCP_APPS_HOST` 实验通道的版本漂移监控——仅作 POC 备选记录。
 
+## 11. 参考实现：ZCode Gen UI（visualize Skill，2026-10-20 精读）
+
+来源：ZCode v3.15.1（commit `aac4755`，2026-10-10）「Add UI plugins and inline Gen UI experiences」；`SKILL.md` 全文精读（`apps/zcode-cli/packages/visualize-plugin/skills/visualize/SKILL.md`，配套 `gen-ui-output.ts` / `visualize-skill-gate.ts` / `references/` / `widgets/` / `examples/`）。
+
+**机制五条**：
+
+1. **Agent 生成 HTML 片段写文件**：产物是 fragment（无 doctype/html/head/body），写到宿主提供的 session 输出目录（绝对路径、禁 symlink 与 parent traversal），体积 <1MB（大数据集须聚合/降采样）。
+2. **内容引用而非内联**：最终回复里发一行 `::visualize{"path":"<abs>/<title>.html"}`（可带 `"mode":"wide"`）；宿主只渲染**已完成的 assistant 消息**。
+3. **宿主 sandbox iframe 渲染**：frame 起始 240px、随内容高度自适应到上限 10000px、5px paint gutter；片段内禁 fetch/XHR/WS，静态资源只许 CDN allowlist（cdnjs/esm.sh/jsdelivr/unpkg/fonts.googleapis/gstatic/bunny，越界静默失败）。
+4. **交互分层**：普通交互（滑块/图表/表单）纯客户端 JS 本地完成；需要继续推理时调 `await window.zcode.sendFollowUpMessage({ prompt, title })`——宿主弹确认对话框（title ≤250 字符），用户确认后才发新 turn。
+5. **状态持久**：`window.zcode.widgetState` 读取、`setWidgetState({ modelContent, privateContent })` 保存（<16KiB，整快照替换）；`modelContent` 可进模型（best-effort，不保证投递，保存不触发 turn），`privateContent` 仅供 UI 恢复；`zcode:set_globals` 事件应用宿主注入状态。
+
+**宿主侧规范（对我们有直接约束力）**：CSS 变量注入（`--background/--foreground/--card/--primary/--viz-series-1..6` 等）且**强制 theme-aware**（禁硬编码浅/深色、禁 Tailwind 字面色）；宿主 utility 设计系统（`.card/.btn/.form-*/.table/.viz-*`）+ Lucide 全局，禁自造样式；可访问性硬要求（语义 HTML、44px 粗指针目标、320px 最窄宽、`role=alert` 校验错误）；导出走 `scripts/render.py` 包独立 HTML。
+
+**与我们的对照**：
+
+| 维度 | ZCode visualize | 我们（MCP Apps 宿主 MVP） |
+| --- | --- | --- |
+| UI 来源 | Agent 每次生成 HTML 片段（生成式） | hub 预置模板 + structuredContent（确定性视图） |
+| 传输 | 文件路径引用 `::visualize{path}` | tool result `structuredContent` + `_meta.ui.resourceUri` |
+| 渲染 | sandbox iframe（读文件） | sandbox iframe（srcdoc 模板） |
+| 数据注入 | fragment 内联写死 | postMessage `ui/notifications/tool-result` |
+| 再推理 | `sendFollowUpMessage`（宿主确认框） | 阶段 4：SEP-1865 `ui/message` → composer |
+| 状态 | widgetState 16KiB（modelContent 可进模型） | 无（阶段 4+） |
+| 主题 | 宿主 CSS 变量注入，theme-aware 强制 | 模板硬编码浅色（**缺口**） |
+| 安全 | CSP CDN allowlist + 路径校验 + 1MB 上限 | CSP `default-src 'none'` + opacity-origin 沙箱 |
+
+**落地启示**：
+
+- **立即（阶段 3 尾巴，低成本）**：① wiki 模板主题变量化——当前硬编码 `#fff/#111`，深色主题是刺眼白块（code-reviewer 已标记为后续迭代面），改为消费宿主 CSS 变量或 `prefers-color-scheme`；② iframe 高度自适应——ZCode 随内容高伸缩；我们固定 `h-[420px]`，长 wiki 页只能内滚，可改 `ResizeObserver` 上报高度。
+- **阶段 4（反向通道）**：`ui/message` 的宿主确认面参考 `sendFollowUpMessage({ prompt, title })`——title 作确认框标题、prompt 带用户所选值；状态持久参考 `modelContent`/`privateContent` 二分（模型可见 vs 仅 UI）。
+- **长期（生成式 UI 能力域）**：若做「Agent 生成卡片」（对应 ZCode visualize 路线），必备防线来自其规范——片段体积上限、输出目录路径校验（禁 symlink/穿越）、CDN allowlist、导出渲染器。这与 MCP Apps 是**互补的两条轨道**（确定性视图 vs 生成式界面），共用同一沙箱渲染基座；ZCode 自己也两条都做（visualize Skill + MCP Apps 可编辑画布）。
+
+
