@@ -101,14 +101,32 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 | 1 | Spike S1-S4 | ✅ 全闭环（见 §9） |
 | 2 | ar-hub 扩 ui + wiki_read_page display tool + ALLOWED_CAPABILITIES 扩集 | ✅ `5975eec` |
 | 3 | 宿主 MVP：流信号检测 → 卡片投影 → api 回源路由 → 沙箱 iframe | ✅ `0de7979` + 审查修复 `7d098a7` |
-| 4 | 反向通道：卡片→宿主 tools/call + ui/message → composer 管道 | 未开工（按需） |
+| 3.5 | 主题变量化 + 高度自适应（ZCode §11 立即项） | ✅ `2347552` |
+| 4 | 反向通道：ui/initialize 握手 + tools/call 刷新 + ui/message 再推理 | ✅ `1578ca9` |
 | 5 | hub skills 分发（skills/list-get）+ 上游 CLI client 跟进 | 等上游 |
+
+**阶段 4 协议面（实现 vs 明确不做）**：
+
+| View → Host 请求 | 实现 |
+| --- | --- |
+| `ui/initialize` | 应答 hostInfo + hostCapabilities + hostContext{theme, locale}；模板应用后回 `ui/notifications/initialized` |
+| `tools/call` | 双侧白名单（web 本地 + api `HUB_APP_TOOLS`）→ api 代理直调 `ProjectWikiService` → CallToolResult 回帧（不触发 turn） |
+| `ui/message` | `useConfirm` 用户同意闸 → `bridge.sendMessage(text)` → 新 turn；取消/无回调 → error -32600 |
+| `ping` | 应答 `{}` |
+
+明确不做（有意收窄）：`resources/read` 转发、`ui/open-link`、`ui/request-display-mode`、`ui/update-model-context`、`sampling`、`ui/download-file`、sandbox-proxy、`ui/resource-teardown`。
+
+**阶段 4 关键取舍**：① ext-apps SDK 再评估结论 = **继续手写桥**（双向 request/response 约 +60 行；SDK 2.x peer 冲突未解、自家模板无互操作诉求——§8 决策①维持）；② tools/call **代理直调 service 不过 MCP 协议层**——hub 真无状态（每 HTTP 请求新建 McpServer+transport，initialize→tools/call 实例不共享），经 HTTP 打 hub 每请求都要走完整序列且 loopback 端口校验麻烦；api 与 hub 同进程共享 `ProjectWikiService` 单源（`handleWikiRoute` 先例模式），`structuredContent` 包装抽 `wikiPageStructuredContent` 共享纯函数防漂移；③ 发送回调**零新管道**——renderer 已持有 `ClaudeBridgeContext`，`bridge.sendMessage` 是现成干净面（running 时 assistant-ui 排队非禁发）；④ 模板反向请求的 id-only 消息守卫——JSON-RPC 2.0 应答必含 `result` 或 `error`，无二者的 id 消息是 `parent === self` 回环请求（file:// 探针/自嵌帧），不得当应答（无此守卫时模板会自吞请求、真应答遭丢——探针实抓）。
 
 **审查结论（2026-10-20，`7d098a7` 已消化）**：code-reviewer 1 严重（route 重建漏转发 structuredContent = 卡片主路径不可达，见 §6 断点注）+ 3 建议；security-reviewer 0 高/中危、3 低危（postMessage 导航守卫 + CSP meta 治本 / 原型链索引 / 404 注释）。全门禁绿 api 1016 / shared 10 / web 851。
 
+**阶段 4 审查结论（2026-10-20，`9072dd1` 已消化）**：code/security 双 reviewer 均 0 P0/P1；P2 三主修 = ①帧内导航检测失效（WindowProxy 跨导航恒定，身份比较无效 → onLoad 同模板 refire 即导航信号，`revokedRef` 正反向全断 + 单测改真实语义）；②模板 listener 补 `e.source !== parent` 校验；③hostContext.locale 取错源（navigator.language ≠ 应用语言偏好 → 改 useT 的 lang）。另：真实 Chromium 诊断实锤「iframe load 先于帧内 postMessage 到达」——握手应答时序窗口不存在（reply 仍挂 revokedRef 以消除引擎顺序依赖）；模板 sendRequest 加 15s 超时 + askSend 防重入。info 记录：宿主在 initialized 前发 tool-result 与 notes §79/§124 的 MUST NOT 顺序不符（自家模板两序都处理，接外部 app 时治理）；-32600 双语义；body 无大小上限（与既有路由同水位）。
+
 **待验证/待补**：
 
-- 真机会话端到端（test 项目 wiki+ui 双开，agent 真调 wiki_read_page 看卡片）——交真机清单。
+- 真机会话端到端（test 项目 wiki+ui 双开，agent 真调 wiki_read_page 看卡片 + 阶段 4 刷新钮/追问条）——交真机清单；e2e 待最终里程碑后统一（用户拍板 2026-10-20）。
+- 宿主在 `initialized` 通知前发 `tool-result`/`host-context-changed` 与 SEP 顺序要求（MUST NOT）不符——自家模板两种顺序都处理，接外部 app 时治理。
+- fedWinRef/revokedRef 守卫面（帧内导航检测、feed 前请求路径）目前靠引擎时序与设计推演，无测试锁「feed 之前到达的请求」分支（jsdom 构造困难；reviewer 判定无需补写）。
 - Codex `structured_content` 的 web 宿主消费（snake_case 字段名分支）——接入 Codex 宿主卡时做。
 - 细粒度 CLI 源码深挖 subagent（Claude Code / Codex / ZCode 内部实现）成果丢失于 session 压缩；阶段 4/5 需要时重跑。
 - `CLAUDE_CODE_MCP_APPS_HOST` 实验通道的版本漂移监控——仅作 POC 备选记录。
@@ -135,10 +153,10 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 | 传输 | 文件路径引用 `::visualize{path}` | tool result `structuredContent` + `_meta.ui.resourceUri` |
 | 渲染 | sandbox iframe（读文件） | sandbox iframe（srcdoc 模板） |
 | 数据注入 | fragment 内联写死 | postMessage `ui/notifications/tool-result` |
-| 再推理 | `sendFollowUpMessage`（宿主确认框） | 阶段 4：SEP-1865 `ui/message` → composer |
-| 状态 | widgetState 16KiB（modelContent 可进模型） | 无（阶段 4+） |
-| 主题 | 宿主 CSS 变量注入，theme-aware 强制 | 模板硬编码浅色（**缺口**） |
-| 安全 | CSP CDN allowlist + 路径校验 + 1MB 上限 | CSP `default-src 'none'` + opacity-origin 沙箱 |
+| 再推理 | `sendFollowUpMessage`（宿主确认框） | ✅ 阶段 4：SEP-1865 `ui/message` → 宿主确认框 → composer 管道 |
+| 状态 | widgetState 16KiB（modelContent 可进模型） | 无（阶段 5+，按需） |
+| 主题 | 宿主 CSS 变量注入，theme-aware 强制 | ✅ 模板 CSS 变量双态（`:root` 深色基准 + light 覆盖）+ hostContext/host-context-changed 同步 |
+| 安全 | CSP CDN allowlist + 路径校验 + 1MB 上限 | CSP `default-src 'none'` + opacity-origin 沙箱 + 双侧 tools/call 白名单 |
 
 **落地启示**：
 

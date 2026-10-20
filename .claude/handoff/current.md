@@ -1,52 +1,51 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-20 14:05（MCP Apps 阶段 0-3 + 主文档 + 双 reviewer 审查消化全部提交）
+> 最后更新：2026-10-20 20:45（MCP Apps 阶段 4 完成：`1578ca9` 实现 + `9072dd1` 双 reviewer 消化，全链收尾）
 
 ## 一句话状态
 
-**MCP Apps 阶段 0-3 全部落地提交 + 双 reviewer 审查已消化**：`9ec70ab`（阶段 0）→ `5975eec`（阶段 2）→ `0de7979`（阶段 3 宿主 MVP）→ `bd24a55`（调研主文档 §1-§10）→ `7d098a7`（reviewer 修复：P0 卡片主路径断点 + 安全低危三项 + 建议三项）。全门禁绿（api 1016 / shared 10 / web 851）。**待用户真机验证**：test 项目（wiki+ui 双开已就绪）创建 claude 会话让 agent 调 `wiki_read_page` 看卡片渲染。composer 第二次埋点批仍挂起工作区**刻意不提交**。
+**MCP Apps 阶段 0-4 全部提交且双 reviewer 审查消化完毕**：…→`2347552`（主题+高度）→`1578ca9`（阶段 4 反向通道）→**`9072dd1`（reviewer 修复批：导航守卫 revokedRef 重构 + locale 源修正 + hostCapabilities 声明 + 模板超时/防重入）**。双 reviewer 均 0 P0/P1；全门禁绿（api 1017 / shared 10 / web 859）；模板探针 20/20；api 已 respawn + health OK。**待用户真机验证**（清单见下）。composer 第二次埋点批仍挂起工作区**刻意不提交**。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **MCP Apps 落地总纲（用户拍板）**：「调研完之后就开始落地，除非有需要我拍板的内容否则就全部逐个按里程碑全部实现」。阶段 4（反向 tools/call + ui/message → composer）按需、阶段 5（SEP-2640）等上游。
-- **五项架构决策（已记录主文档 §8）**：① ext-apps SDK vs 手写桥 → MVP 手写 JSON-RPC 桥（观察者宿主桥面极小，单 notification；SDK 2.x peer 冲突阶段 4 再评估）；② 双 iframe vs 单层沙箱 → 单层 `sandbox="allow-scripts"`（资源是自家系统模板无第三方篡改面；无 allow-same-origin = opaque origin 无回传面）；③ UI 关联判定 → display tool 名单 + kind 双条件（CLI 不透传 `_meta`）；④ ui-resource 路由 → api 进程内 `HUB_UI_RESOURCES` 单源表直读（hub 与 api 同进程、hub 恒 loopback）；⑤ skills 分发 → 阶段 5（三家 CLI 均无 client）。
-- **阶段 3 web 数据流全链（已实现）**：hub tool result structuredContent → CLI user 帧顶层 `tool_use_result` envelope（唯一通道，S1 实测 text content 会被文本化降级）→ normalizeChatStream 挂 `part.structuredResult`（既有管道）→ renderChatStream 仅当 envelope 带 structuredContent 键时投影进卡片 metadata（普通 Bash envelope 无此键 = 零增量）→ `HubWikiPageToolUI` kind 守卫 → `McpAppCard` iframe srcdoc + postMessage `ui/notifications/tool-result`。
-- **循环依赖解法**：renderer 壳 `HubWikiPageToolUI` 留在 tool-ui-registry（registry → mcp-app-card 单向依赖）；mcp-app-card.tsx 禁 import registry（曾踩 TDZ：registry 模块体 set 时 mcp-app-card 未初始化完）。
-- **postMessage 细节**：srcdoc iframe opaque origin → targetOrigin 必须 `"*"`；feed-once 守卫（`7d098a7`）：onLoad 只在「新模板首次加载」喂数据（`fedForRef`=html），同模板重载=帧内导航不喂；structuredContent 更新经 effect 重发但校验 `contentWindow === fedWinRef`（导航后不喂）。模板 CSP meta `default-src 'none'` 禁 connect/img/form（XSS 缺口也无法外发）。⚠️ jsdom 会自 mount 自动 fire load——测试断言用原生 contentWindow 装 spy。
-- **保留名守卫（阶段 0）**：`isReservedMcpName` = `name === "ar-hub" || name.startsWith("ar-")`；`ar.wiki`/`archive-tools` 不在保留域（`ar-` 是连字符）。
-- **CLI 注入机制（活体实测）**：Claude `--mcp-config` 同名合并 = flag 全赢整条替换（劫持不可能，守卫第二道防线；enterprise managed-mcp.json 存在时 flag 注入 exit(1)）；Codex `-c` 深合并（snake_case `structured_content`）；ZCode 只能预写配置文件（注入无保障需冲突检测）。
-- **composer 抬高 bug（2026-10-19）**：「第二次埋点」（1s 心跳 + 全量序列）挂起工作区等真机长期观察，**不提交**。
+- **MCP Apps 落地总纲（用户拍板）**：「调研完之后就开始落地，除非有需要我拍板的内容否则就全部逐个按里程碑全部实现」。**e2e 推迟到最终里程碑完成后统一写**（用户拍板 2026-10-20：中途探针/单测做开发期验证，最终靠 e2e，效率更好）。
+- **阶段 4 取舍（已实现，主文档 §10 已记）**：① ext-apps SDK 再评估结论 = **继续手写桥**（+60 行 vs peer 冲突未解）；② tools/call **代理直调 ProjectWikiService** 不过 MCP 协议层（hub 真无状态；同进程单源；`HUB_APP_TOOLS` 白名单显式映射；`wikiPageStructuredContent` 共享纯函数防漂移）；③ 发送回调**零新管道**（renderer 已持 `ClaudeBridgeContext`，`bridge.sendMessage` = sendToSocket user 帧，不抛错面）；④ 确认框复用 `useConfirm`（双端分流）；⑤ 协议面只做四方法，其余 -32601。
+- **阶段 4 协议链**：模板 `sendRequest`（id 多路复用 + pending map）→ postMessage 请求 → web 宿主 `McpAppCard` latest-ref dispatcher（`event.source` 校验 → 按 method 分派 → `reply/replyError` 均校验 `fedWinRef`）→ tools/call 走 `callProjectMcpHubTool`（POST 代理）→ ui/message 走 confirm 闸 → `onSendPrompt`（tool-ui-registry 注入 `bridge?.sendMessage`）。
+- **模板回环守卫（新，探针实抓）**：id 消息无 `result`/`error` 时不得当应答——JSON-RPC 2.0 应答必含其一；无此守卫时 file:// 探针（parent===self）下模板自吞请求、真应答遭丢（locale/刷新/追问三条探针假 FAIL 的共同根因）。真实 iframe 环境 parent≠self 不触发，但守卫是协议正确性。
+- **历史决策（不重复展开，见主文档 §8）**：单层沙箱（allow-scripts 无 same-origin）；display tool 名单 + kind 双条件；HUB_UI_RESOURCES 单源表；postMessage targetOrigin 必须 `"*"`（opaque origin）；feed-once + fedWinRef 守卫；高度量 `body.scrollHeight`（非 documentElement）。
 
 ### 进度
 
-- ✅ 阶段 0（`9ec70ab`）→ 阶段 2（`5975eec`）→ 阶段 3（`0de7979`）→ 调研主文档（`bd24a55`）
-- ✅ Spike S1-S4 全闭环（主文档 §9；S1 关键：`structuredContent` 原样透传、`_meta` 不透传、CLI 从不 read ui://）
-- ✅ 主文档 `docs/research/mcp-apps-hosting.md` §1-§10 + `mcp-apps-spec-notes.md` + `mcp-cli-ecosystem-notes.md` + index.md 条目
-- ✅ 交付 checklist：ar-verify-css ✓、CSS content-type text/css ✓、touch main.tsx rebuild 后 `h-[420px]` utility 落盘 ✓
-- ⏳ code-reviewer + security-reviewer 审阶段 3（后台运行中，结论待消化）
-- ⏳ 真机验证清单待交用户（见待办）
+- ✅ 阶段 4 实现全链：模板（request 基建/握手/locale DICT/刷新钮/追问条）+ api 路由 + web client + i18n 两键 + McpAppCard dispatcher + renderer 接线
+- ✅ 验证：组件测试 15/15（新增 7 条反向通道用例）+ api 路由测试 29/29 + 模板探针 20/20（握手往返/locale 应用/刷新回灌/追问包装/输入清空）
+- ✅ 全门禁 + CSS 硬闸 + touch main.tsx 完整 rebuild（产物含 `mcpHubToolCallFailed`/`unknown app tool`）+ content-type text/css
+- ✅ 提交 `1578ca9`（hunk 拆分：composer inset-report 两处 hunk 留工作区）+ api respawn + health
+- ✅ 双 reviewer（code/security）审查完成：均 0 P0/P1；security 3 P2（导航检测失效/握手时序窗口[实测不存在]/listener source 校验）+ code 3 P2（同导航问题/locale 取错源/hostCapabilities 矛盾）+ info 若干 → 修复批 `9072dd1`（组件 15/15 + 探针 20/20 + 全门禁 + CSS 闸 + content-type）
+- ✅ 主文档 §10（阶段表 + 协议面表 + 取舍记录 + 阶段 4 审查结论 + 待验证/待补）与 §11 对照表更新；index.md 更新；GTD 更新
+- ⏳ 真机验证清单交付用户（既有清单 + 阶段 4 两条追加）
 
 ### 待办
 
-- **真机验证（唯一无法自动化收尾部分）**：test 项目 `/home/deploy/workspace/test/.agents-remote/mcp.json` 已 `{wiki:true,ui:true}` 双开——创建 claude 会话让 agent 调 `wiki_read_page` 验证卡片渲染（标题/tags/markdown 列表）+ 回退路径（ui 关项目旧回放显「应用视图不可用」）；双端（移动/桌面）。
-- **TUI hooks 批真机长期观察**（旧批）：① 子 agent 出错/完成不再红点+push；② 主 turn 通知照常；③ blocked push 带工具名
-- 历史挂起：推送通知跳转偶发失败（等第一手数据）
-- **挂起批（工作区，刻意不提交）**：composer 第二次埋点（api/src/index.ts inset-report hunk、web/src/lib/keyboard-inset.ts + test、use-composer-inset-debug-badge.ts）等真机数据
-- 阶段 4 按需启动（届时评估 ext-apps SDK + Codex snake_case 分支）；阶段 5 等上游 CLI
+- **真机验证（交用户）**：既有清单（卡片渲染 + 主题两态 + 高度自适应 + 回退，移动/桌面双端）**追加两条**：①刷新钮点击 → 改 wiki 页后点刷新见新内容回灌（按钮文案应随应用语言显中文）；②追问输入 → 确认框 → 确认后新 turn 出现在会话流（取消不发；Enter 可发送）
+- **e2e 收口**（最终里程碑后统一）：GTD 已记
+- **e2e 收口**（最终里程碑后统一）：GTD 已记（mock WS 帧 + routeWebSocket 先例；mcp-ui-resource REST 不 mock）
+- 挂起批（工作区，刻意不提交）：composer 第二次埋点（api/src/index.ts inset-report hunk + web/src/lib 三件）等真机数据
+- TUI hooks 批真机长期观察；阶段 5 等上游 CLI
 
 ## 易丢的关键上下文
 
-- **生成层损坏对策（本段 8 次事故结晶）**：长内容+中文注释混合易坏；小步 Edit + 纯英文骨架 + 每次写入后 `rg "placeholder|broken|占位|GARBAGE"` 校验。连续两次写入失败就停。
-- **提交拆分手法**：混合 hunk 用 `git diff` 导出 + awk 过滤目标 hunk + `git apply --cached` 精选 stage；提交本体用标准 `git add && git commit`。
-- **subagent 成果丢失裁定**：4 个细粒度 CLI 调研 subagent 成果丢失于 session 压缩且未落盘（ListAgents 证实不可达）——已有素材（S1 一手 + 两份 notes 89KB）足够支撑主文档，CLI 深挖在主文档「待补」标注，阶段 4/5 需要时重跑。
-- **bun 解析全局 playwright 1.64.1**（要 chromium-1248，缓存只有 1223）→ 探针 import 改 `from "@playwright/test"` 且放项目 scripts/ 下临时跑（`_diag-` 纪律用后删）。
-- **MCP 面板错误呈现机制**：前端直接显示服务端 `error.message`，无按 code 的 i18n 映射——新增错误文案写服务端 message 即可。
-- **capabilities 投影**：`/api/agent-providers` 的 `capabilities.mcpInject` 是注入能力唯一单源。
-- **⚠️ bun --watch 不因「新建文件」触发重启**；api 改动交付前 `respawn-pane -k -t ar-dev:0`。
-- **探针跑法**：`systemd-run --scope --user -p MemoryMax=2G bun …`；探针用 bun 不用 node；编辑一律内置 Read/Edit/Write。
+- **iframe WindowProxy 跨导航恒定**（本批 reviewer 实锤）：`contentWindow` 返回的 proxy 在帧导航后身份不变——**身份比较检测不了帧内导航**；导航信号 = onLoad 同模板 refire（`revokedRef` 模型）。同理「event.source === contentWindow」校验在导航后仍为 true，反向通道熔断只能靠 revokedRef。
+- **真实 Chromium 时序实测**：srcdoc iframe 的 load 事件**先于**帧内解析期 postMessage 到达宿主（`["load","message"]`）——onLoad 才设的守卫不会丢握手应答；但 reply 已改挂 revokedRef，不依赖该引擎顺序。
+- **TS 模板字符串转义坑**：`WIKI_PAGE_APP_HTML` 里内嵌 JS 的 `\"` 会被 TS 求值成裸 `"` → 浏览器端 SyntaxError（实抓）。内嵌 JS 用单引号字符串包双引号。**改模板后探针必跑**（语法错误 = 20 断言连锁 FAIL + pageerror "Unexpected string"）。
+- **探针 parent===self 回环**：file:// 直开模板时 postMessage 到 parent 会回环到模板自身 listener——请求（id 无 result）会先于真应答被自吞。守卫已加（协议正确性）；探针里「请求先于应答」的断言顺序也因此成立。
+- **jsdom + Radix Dialog 测试坑（本批结晶）**：需要全局 `NodeFilter` + `HTMLInputElement`/`HTMLButtonElement` 等类（FocusScope 读裸全局）；matchMedia mock 必须带 `addEventListener/removeEventListener`（useIsMobile effect）；Dialog portal 在 body，按钮用 `document.body.querySelectorAll("button")` 找；`mock.module` factory 里要显式加 `callProjectMcpHubTool: toolCallMock`。
+- **生成层损坏对策（历史 8 次事故结晶）**：小步 Edit + 纯英文骨架 + 每次写入后校验；连续两次写入失败就停。本段再次验证（一次 new_string 自丢 `currentTitle` 拼接，靠 rg 回读抓到）。
+- **提交拆分手法**：混合 hunk 用 `git diff` 导出 + awk 过滤目标 hunk + `git apply --cached`；awk：`/^@@/ { skip = ($0 ~ /目标 hunk header/) } !skip { print }`。
+- **api 测试事实**：jsonError 响应形状 = `{error:{code,message}}`；writePage 存盘 content 补尾随 `\n`（readPage body 带它）；wiki 路径 = `{root}/{project}/wiki/{slug}.md`。
+- **探针跑法**：`systemd-run --scope --user -p MemoryMax=2G bun …`；用 bun 不用 node；`_diag-` 前缀一次性脚本用后删。
 - **tmux**：`ar-dev:0` = api、`ar-dev:1` = web；标准重启 `respawn-pane -k`；绝不 kill server。
 
 ---
-最后更新：2026-10-20 13:32（触发原因：MCP Apps 阶段 0-3 提交链完成 + 主文档汇总 + 里程碑 handoff）
+最后更新：2026-10-20 20:45（触发原因：阶段 4 完成链收尾——`1578ca9` 实现 + `9072dd1` reviewer 消化 + 文档/GTD 更新）
