@@ -927,6 +927,55 @@ test("createFetchHandler serves wiki index and single page (token-guarded, read-
   expect(missing.status).toBe(404);
 });
 
+test("createFetchHandler serves MCP ui resource (token-guarded, ui-gated)", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  // 鉴权在前:无 token → 401。
+  const blocked = await handler(
+    new Request("http://localhost/api/projects/demo/mcp-ui-resource?uri=ui://ar-hub/wiki-page"),
+    { upgrade: () => false },
+  );
+  expect(blocked.status).toBe(401);
+
+  // ui 未开(无 mcp.json)→ 404(不暴露原因)。
+  const disabled = await handler(
+    new Request("http://localhost/api/projects/demo/mcp-ui-resource?uri=ui://ar-hub/wiki-page", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  expect(disabled.status).toBe(404);
+
+  // 开 ui → 200 { mimeType, html }。
+  await mkdir(join(root, "demo", ".agents-remote"), { recursive: true });
+  await writeFile(
+    join(root, "demo", ".agents-remote", "mcp.json"),
+    JSON.stringify({ capabilities: { ui: true } }),
+  );
+  const ok = await handler(
+    new Request("http://localhost/api/projects/demo/mcp-ui-resource?uri=ui://ar-hub/wiki-page", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  expect(ok.status).toBe(200);
+  const okJson = await ok.json();
+  expect(okJson.mimeType).toBe("text/html;profile=mcp-app");
+  expect(okJson.html).toContain("<!doctype html>");
+  expect(okJson.html).toContain("ui/notifications/tool-result");
+
+  // 未知 uri → 404。
+  const unknown = await handler(
+    new Request("http://localhost/api/projects/demo/mcp-ui-resource?uri=ui://ar-hub/no-such", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  expect(unknown.status).toBe(404);
+});
+
 test("createFetchHandler protects pages config and validates writes", async () => {
   await mkdir(join(root, "demo"));
   const { auth, handler } = createTestHandler();

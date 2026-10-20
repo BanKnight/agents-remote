@@ -1,0 +1,170 @@
+// @vitest-environment jsdom
+
+// McpAppCard（MCP Apps 宿主卡片）行为单测：
+// - 模板回源成功 → iframe srcdoc + load 后 postMessage 喂 structuredContent
+// - structuredContent 更新（load 后）→ 重发
+// - 回源失败（ui 关 / 网络）→ 不可用提示而非坏卡
+//
+// jsdom 全局安装与 mock 模式同 settings-notifications.test.tsx 头注；RTL cleanup 手动。
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { JSDOM } from "jsdom";
+
+const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "https://app.example/" });
+dom.window.matchMedia = (() => ({ matches: false })) as unknown as typeof dom.window.matchMedia;
+
+const DOM_GLOBAL_KEYS = [
+  "Event",
+  "CustomEvent",
+  "FocusEvent",
+  "KeyboardEvent",
+  "MouseEvent",
+  "PointerEvent",
+  "Node",
+  "Element",
+  "HTMLElement",
+  "HTMLIFrameElement",
+  "getComputedStyle",
+  "MutationObserver",
+] as const;
+
+function installDomGlobals() {
+  globalThis.window = dom.window as unknown as Window & typeof globalThis;
+  globalThis.document = dom.window.document as unknown as Document;
+  globalThis.navigator = dom.window.navigator as unknown as Navigator;
+  globalThis.localStorage = dom.window.localStorage;
+  for (const key of DOM_GLOBAL_KEYS) {
+    globalThis[key] = dom.window[key as keyof typeof dom.window] as never;
+  }
+}
+
+installDomGlobals();
+
+const TEMPLATE_HTML =
+  '<!doctype html><html><head></head><body><div id="body"></div><script>0</script></body></html>';
+
+const resourceMock = mock(async () => ({
+  mimeType: "text/html;profile=mcp-app",
+  html: TEMPLATE_HTML,
+}));
+const actualApi = await import("../../api/client");
+mock.module("../../api/client", () => ({
+  ...actualApi,
+  getProjectMcpUiResource: resourceMock,
+}));
+
+const { cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
+const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const { createElement } = await import("react");
+const { I18nProvider } = await import("../../i18n/context");
+const { McpAppCard } = await import("./mcp-app-card");
+
+afterEach(() => cleanup());
+
+beforeEach(() => {
+  installDomGlobals();
+  localStorage.setItem("lang", "zh");
+  resourceMock.mockClear();
+  resourceMock.mockImplementation(async () => ({
+    mimeType: "text/html;profile=mcp-app",
+    html: TEMPLATE_HTML,
+  }));
+});
+
+function renderCard(structuredContent: unknown): {
+  rerender: (sc: unknown) => void;
+  view: ReturnType<typeof render>;
+} {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(
+    createElement(
+      I18nProvider,
+      null,
+      createElement(
+        QueryClientProvider,
+        { client },
+        createElement(McpAppCard, {
+          projectName: "test",
+          uri: "ui://ar-hub/wiki-page",
+          structuredContent,
+        }),
+      ),
+    ),
+  );
+  const rerender = (sc: unknown) => {
+    view.rerender(
+      createElement(
+        I18nProvider,
+        null,
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(McpAppCard, {
+            projectName: "test",
+            uri: "ui://ar-hub/wiki-page",
+            structuredContent: sc,
+          }),
+        ),
+      ),
+    );
+  };
+  return { rerender, view };
+}
+
+const SC = { kind: "wiki-page", slug: "arch", title: "Arch", markdown: "# Arch" };
+
+describe("McpAppCard", () => {
+  test("fetch 后渲染 iframe（srcdoc = 模板 html）", async () => {
+    const { view } = renderCard(SC);
+    await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
+    const frame = view.container.querySelector("iframe") as HTMLIFrameElement;
+    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(frame.getAttribute("srcdoc") ?? frame.srcDoc).toContain("<!doctype html>");
+  });
+
+  test("load 后 postMessage 喂 structuredContent（ui/notifications/tool-result 形状）", async () => {
+    const { view } = renderCard(SC);
+    await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
+    const frame = view.container.querySelector("iframe") as HTMLIFrameElement;
+    const postSpy = mock(() => {});
+    Object.defineProperty(frame, "contentWindow", {
+      configurable: true,
+      value: { postMessage: postSpy },
+    });
+    fireEvent.load(frame);
+    expect(postSpy).toHaveBeenCalledTimes(1);
+    const payload = postSpy.mock.calls[0][0] as {
+      jsonrpc: string;
+      method: string;
+      params: { structuredContent: unknown };
+    };
+    expect(payload.jsonrpc).toBe("2.0");
+    expect(payload.method).toBe("ui/notifications/tool-result");
+    expect(payload.params.structuredContent).toEqual(SC);
+  });
+
+  test("load 后 structuredContent 更新触发重发", async () => {
+    const { rerender, view } = renderCard(SC);
+    await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
+    const frame = view.container.querySelector("iframe") as HTMLIFrameElement;
+    const postSpy = mock(() => {});
+    Object.defineProperty(frame, "contentWindow", {
+      configurable: true,
+      value: { postMessage: postSpy },
+    });
+    fireEvent.load(frame);
+    const updated = { ...SC, title: "Arch v2" };
+    rerender(updated);
+    await waitFor(() => expect(postSpy).toHaveBeenCalledTimes(2));
+    const second = postSpy.mock.calls[1][0] as { params: { structuredContent: { title: string } } };
+    expect(second.params.structuredContent.title).toBe("Arch v2");
+  });
+
+  test("回源失败显示不可用提示（非坏卡）", async () => {
+    resourceMock.mockImplementation(async () => {
+      throw new Error("404");
+    });
+    const { view } = renderCard(SC);
+    await waitFor(() => expect(view.container.textContent).toContain("应用视图不可用"));
+    expect(view.container.querySelector("iframe")).toBeNull();
+  });
+});

@@ -123,6 +123,17 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
 </body></html>`;
 
 /**
+ * hub UI 资源单源表（uri → { mimeType, html }）：hub 注册（agent 经 resources/read 读）
+ * 与 api HTTP 路由（web 宿主经 /api/projects/{name}/mcp-ui-resource 读,hub 恒 loopback
+ * 浏览器够不着）共用同一份模板,无复制漂移面。资源是我们自己的系统模板（非第三方
+ * server 作者资产）,篡改面不存在——SEP-1865 双 iframe 沙箱(外层独立 origin 承载 CSP
+ * HTTP 头)是第三方 server 接入时的强化面,web 宿主 MVP 用单层 sandbox iframe。
+ */
+export const HUB_UI_RESOURCES: Record<string, { mimeType: string; html: string }> = {
+  [WIKI_PAGE_UI_URI]: { mimeType: MCP_APP_MIME_TYPE, html: WIKI_PAGE_APP_HTML },
+};
+
+/**
  * 解析 `/mcp/{project}` URL 的 project 段(encoded)。返回 undefined 表示 URL 不合法。
  * project 段强制不含 `/`(一级目录名),允许 encoded 形式。
  */

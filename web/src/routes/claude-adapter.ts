@@ -303,6 +303,9 @@ export function resolveAutoPermissionMode(available: readonly string[]): "auto" 
 }
 
 export type ClaudeBridge = {
+  // 会话归属 project（tool 渲染层按需回源 api 资源用——MCP Apps display tool 卡片经此
+  // 拼 mcp-ui-resource URL；bridge 是 renderer 唯一可达的会话上下文面）。
+  projectName: string;
   respondToControlRequest: (
     requestId: string,
     updatedInput: Record<string, unknown>,
@@ -3495,6 +3498,18 @@ export function renderChatStream(
                   : {}),
                 ...(part.permissionDenied ? { permissionDenied: part.permissionDenied } : {}),
                 ...(part.backgroundTask ? { backgroundTask: part.backgroundTask } : {}),
+                // MCP Apps display tool（SEP-1865）：CLI 把 MCP tool result 的
+                // structuredContent 原样透传进 tool_use_result envelope（web 宿主卡片唯一
+                // 数据通道）。仅当 envelope 带 structuredContent 键时透传（普通 Bash 等工具
+                // 的 envelope 无此键 → 卡片 metadata 零增量）。
+                ...(part.structuredResult != null &&
+                typeof part.structuredResult === "object" &&
+                "structuredContent" in part.structuredResult
+                  ? {
+                      structuredContent: (part.structuredResult as { structuredContent: unknown })
+                        .structuredContent,
+                    }
+                  : {}),
               };
               messages.push({
                 role: "system",
@@ -4547,6 +4562,7 @@ export function useClaudeSession(
 
   const bridge = useMemo<ClaudeBridge>(
     () => ({
+      projectName,
       respondToControlRequest(requestId, updatedInput, permissionUpdates) {
         const allowResponse: Record<string, unknown> = {
           behavior: "allow",

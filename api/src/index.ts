@@ -77,7 +77,8 @@ import { handleSkillUpdateRoutes } from "./skill-update";
 import { handleSkillTaskEvents } from "./skill-tasks";
 import { handleMcpRoutes } from "./mcp-management";
 import { handleMcpMarketRoutes } from "./mcp-market";
-import { startMcpHubServer } from "./mcp-hub-server";
+import { HUB_UI_RESOURCES, startMcpHubServer } from "./mcp-hub-server";
+import { readProjectMcpConfig } from "./mcp-config";
 import { canUpgradeWebSocket } from "./ws-auth";
 
 type UpgradeServer = {
@@ -630,6 +631,13 @@ export const createFetchHandler =
       const wikiResponse = await handleWikiRoute(request, url, options.projectWikiService);
       if (wikiResponse) {
         return withRefresh(wikiResponse);
+      }
+    }
+
+    if (options.projectsRoot) {
+      const uiResourceResponse = await handleMcpUiResourceRoute(request, url, options.projectsRoot);
+      if (uiResourceResponse) {
+        return withRefresh(uiResourceResponse);
       }
     }
 
@@ -1283,6 +1291,48 @@ const handleWikiRoute = async (
     }
     throw error;
   }
+};
+
+// GET /api/projects/{name}/mcp-ui-resource?uri=ui://ar-hub/wiki-page
+// web 宿主读 hub UI 资源 HTML(JSON 包裹,前端 srcdoc 注入)。hub 恒 loopback,浏览器
+// 够不着——api 进程内经 HUB_UI_RESOURCES 单源表直读(与 hub 注册同源,无复制漂移面)。
+// 仅 project 存在且 mcp.json ui 开时服务;uri 不在表内 / ui 未开 / project 不存在 → 404
+// (不暴露具体原因,与 hub 的 project 校验同原则)。
+const handleMcpUiResourceRoute = async (
+  request: Request,
+  url: URL,
+  projectsRoot: string,
+): Promise<Response | undefined> => {
+  if (request.method !== "GET") return undefined;
+  const prefix = "/api/projects/";
+  if (!url.pathname.startsWith(prefix)) return undefined;
+  const rest = url.pathname.slice(prefix.length);
+  const infix = "/mcp-ui-resource";
+  if (!rest.endsWith(infix)) return undefined;
+  const encodedName = rest.slice(0, -infix.length);
+  if (encodedName.length === 0 || encodedName.includes("/")) return undefined;
+  let projectName: string;
+  try {
+    projectName = decodeURIComponent(encodedName);
+  } catch {
+    return undefined;
+  }
+  const uri = url.searchParams.get("uri") ?? "";
+  const resource = HUB_UI_RESOURCES[uri];
+  if (!resource) {
+    return jsonError("PROJECT_FILE_NOT_FOUND", `Unknown UI resource: ${uri}`, 404);
+  }
+  try {
+    await resolveProjectPath(projectsRoot, projectName);
+    const config = await readProjectMcpConfig(projectsRoot, projectName);
+    if (config?.capabilities?.ui !== true) {
+      return jsonError("PROJECT_FILE_NOT_FOUND", "MCP ui capability is disabled", 404);
+    }
+  } catch {
+    // project 不存在 / 路径越界 / mcp.json 非法 → 404(不暴露具体原因,与 hub 同原则)。
+    return jsonError("PROJECT_NOT_FOUND", "Project not found", 404);
+  }
+  return Response.json({ mimeType: resource.mimeType, html: resource.html });
 };
 
 type ProjectGitDiffPathMatch = {

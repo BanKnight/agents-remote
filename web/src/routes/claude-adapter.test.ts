@@ -4907,3 +4907,88 @@ describe("atis-latch / total_tokens_reminder (CLI 2.1.268 JSONL 噪音静默)", 
     expect(items.some((i) => i.kind === "assistant")).toBe(true);
   });
 });
+
+describe("MCP Apps display tool (structuredContent 透传)", () => {
+  // user() helper 不支持顶层 tool_use_result envelope，display tool 场景直接构造。
+  const userWithStructuredResult = (
+    toolUseId: string,
+    structuredContent: Record<string, unknown>,
+  ): SessionStreamServerMessage =>
+    ({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: toolUseId, content: "ok" }],
+      },
+      tool_use_result: {
+        type: "tool_result",
+        structuredContent,
+      },
+    }) as unknown as SessionStreamServerMessage;
+
+  test("structuredContent 经 tool_use_result envelope 透传到 tool-card custom", () => {
+    const structuredContent = {
+      kind: "wiki-page",
+      slug: "arch",
+      title: "Arch",
+      tags: ["demo"],
+      markdown: "# Arch\n\n- a\n- b",
+    };
+    const raw: SessionStreamServerMessage[] = [
+      assistant("a1", [
+        {
+          type: "tool_use",
+          id: "tu-wiki",
+          name: "mcp__ar-hub__wiki_read_page",
+          input: { slug: "arch" },
+        },
+      ]),
+      userWithStructuredResult("tu-wiki", structuredContent),
+      result("success"),
+    ];
+
+    const items = normalizeChatStream(raw);
+    const part = items
+      .flatMap((i) => (i.kind === "assistant" ? i.parts : []))
+      .find((p) => p.type === "tool-call" && p.toolCallId === "tu-wiki");
+    // Pass 1: envelope 原样挂在 part.structuredResult（既有管道，S1 实测通道）。
+    expect((part as { structuredResult?: unknown }).structuredResult).toEqual({
+      type: "tool_result",
+      structuredContent,
+    });
+
+    const rendered = renderChatStream(items);
+    const card = rendered.find((m) => {
+      const c = m.metadata?.custom as Record<string, unknown> | undefined;
+      return c?.systemMessageType === "tool-card" && c?.toolName === "mcp__ar-hub__wiki_read_page";
+    });
+    expect(card).toBeDefined();
+    const custom = card?.metadata?.custom as Record<string, unknown>;
+    // Pass 2: 仅 envelope 带 structuredContent 键时投影给渲染层。
+    expect(custom.structuredContent).toEqual(structuredContent);
+  });
+
+  test("普通工具 envelope（无 structuredContent 键）卡片 metadata 零增量", () => {
+    const raw: SessionStreamServerMessage[] = [
+      assistant("a1", [{ type: "tool_use", id: "tu-bash", name: "Bash", input: {} }]),
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "tu-bash", content: "done" }],
+        },
+        tool_use_result: { type: "tool_result", stdout: "done" },
+      } as unknown as SessionStreamServerMessage,
+      result("success"),
+    ];
+
+    const rendered = renderChatStream(normalizeChatStream(raw));
+    const card = rendered.find((m) => {
+      const c = m.metadata?.custom as Record<string, unknown> | undefined;
+      return c?.systemMessageType === "tool-card" && c?.toolName === "Bash";
+    });
+    expect(card).toBeDefined();
+    const custom = card?.metadata?.custom as Record<string, unknown>;
+    expect("structuredContent" in custom).toBe(false);
+  });
+});

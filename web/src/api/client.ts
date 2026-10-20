@@ -484,6 +484,25 @@ export async function searchWiki(projectName: string, query: string): Promise<Wi
   );
 }
 
+// ── MCP Apps（SEP-1865）宿主侧：ui:// 资源回源 ────────────────────────────────
+
+/** mcp-ui-resource 响应：hub UI 资源单源表投喂的模板（宿主 iframe srcdoc 注入）。 */
+export type McpUiResourceResponse = { mimeType: string; html: string };
+
+/**
+ * 取 hub UI 资源模板（ui://ar-hub/wiki-page 等）。ui 能力开关门控——未开项目 404
+ * （不暴露原因原则）；渲染侧按 error 回退普通 tool 卡渲染。
+ */
+export async function getProjectMcpUiResource(
+  projectName: string,
+  uri: string,
+): Promise<McpUiResourceResponse> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/mcp-ui-resource?uri=${encodeURIComponent(uri)}`,
+    "api.mcpUiResourceFailed",
+  );
+}
+
 /**
  * pages serve 的对外干净 URL（/p/{name}{urlPath}）。web vite proxy 把 /p/{name}{urlPath}
  * rewrite 到 /api/projects/{name}/pages{urlPath}（见 web/vite.config.ts）。浏览器直访新标签页:

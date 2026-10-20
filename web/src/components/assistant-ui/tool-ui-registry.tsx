@@ -6,6 +6,7 @@ import { ImageThumb } from "../ui/image-lightbox";
 import { formatDuration } from "../../lib/utils";
 import { CollapsibleSection } from "./collapsible-section";
 import { ToolHead, type ToolHeadStatus, ToolIcon } from "./tool-head";
+import { McpAppCard, WIKI_PAGE_APP_URI, isWikiPageStructuredContent } from "./mcp-app-card";
 
 function makeToolRenderer(config: {
   icon: string;
@@ -631,6 +632,58 @@ toolRegistry.set("find", PiFindToolUI);
 // pi firecrawl customTools
 toolRegistry.set("firecrawl_search", FirecrawlSearchToolUI);
 toolRegistry.set("firecrawl_scrape", FirecrawlScrapeToolUI);
+
+// ── MCP Apps display tool（SEP-1865）宿主卡片 ────────────────────────────────
+// wiki_read_page 的展示面：structuredContent 合法 → McpAppCard 沙箱 iframe（模板经
+// mcp-ui-resource 回源,postMessage 喂数据）;running/错误/中断/回放缺 envelope/未知 kind
+// → 完全回退通用 MCP 卡（复用既有 running/中断/错误语义）。renderer 壳放本文件避免
+// import 环（mcp-app-card 不得反向 import registry）。
+const HubWikiPageToolUI: ToolCallMessagePartComponent = (props) => {
+  const { argsText, status } = props;
+  const { t } = useT();
+  const bridge = useContext(ClaudeBridgeContext);
+  const metadata = (props as Record<string, unknown>).metadata as
+    | Record<string, unknown>
+    | undefined;
+  const structuredContent = metadata?.structuredContent;
+
+  if (
+    status.type === "running" ||
+    (props as Record<string, unknown>).isError === true ||
+    (props as Record<string, unknown>).isInterrupted === true ||
+    !isWikiPageStructuredContent(structuredContent)
+  ) {
+    return <MCPToolRenderer {...props} />;
+  }
+
+  const args = safeParseArgs(argsText);
+  const slug = typeof args.slug === "string" ? args.slug : "";
+  const projectName = bridge?.projectName ?? "";
+  return (
+    <div className="my-1">
+      <ToolHead
+        icon="read"
+        badge={t("claude.tool.wikiReadPage")}
+        badgeClassName="bg-user/15 text-user-soft"
+        detail={slug}
+        status="completed"
+      />
+      {projectName ? (
+        <McpAppCard
+          projectName={projectName}
+          uri={WIKI_PAGE_APP_URI}
+          structuredContent={structuredContent}
+        />
+      ) : (
+        <div className="px-1 py-2 text-xs text-on-surface-muted">
+          {t("claude.mcpApp.unavailable")}
+        </div>
+      )}
+    </div>
+  );
+};
+
+toolRegistry.set("mcp__ar-hub__wiki_read_page", HubWikiPageToolUI);
 
 export function getToolRenderer(toolName: string): ToolRenderer {
   const exact = toolRegistry.get(toolName);
