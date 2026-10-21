@@ -30,6 +30,26 @@ function topLevelUuidIs(line: string, uuid: string): boolean {
   }
 }
 
+/**
+ * CLI 双出口对 MCP 工具结果 structuredContent 的字段位置不同:stdout(live 路径)
+ * 写 `tool_use_result.structuredContent`(web MCP Apps 卡片的唯一消费位),JSONL
+ * (history 回放路径)写 `mcpMeta.structuredContent`。不归一 = API 重启后从 JSONL
+ * 回放的 MCP 卡全部丢 structuredContent、走通用卡回退——live 正常、replay 退化的
+ * 时序型失真(2026-10-21 README 卡实测实锤:live 渲染成功,重启后回放走通用卡)。
+ * 在回放入口把 JSONL 行补齐成 live 形状——单一管道原则,web 客户端零分支。
+ * 返回归一化后的行;无需归一化(mcpMeta 缺失 / live 形状已在)时原样返回。
+ */
+export function normalizeHistoryMcpLine(parsed: Record<string, unknown>, rawLine: string): string {
+  const mcpMeta = parsed.mcpMeta as { structuredContent?: unknown } | undefined;
+  if (!mcpMeta || mcpMeta.structuredContent === undefined) return rawLine;
+  const toolUseResult = parsed.tool_use_result as Record<string, unknown> | undefined;
+  if (toolUseResult?.structuredContent !== undefined) return rawLine;
+  return JSON.stringify({
+    ...parsed,
+    tool_use_result: { ...toolUseResult, structuredContent: mcpMeta.structuredContent },
+  });
+}
+
 export class ClaudeSessionRelay {
   private historyLines: string[] = [];
   private liveLines: string[] = [];
@@ -371,7 +391,9 @@ export class ClaudeSessionRelay {
       if (!trimmed) continue;
       try {
         const parsed = JSON.parse(trimmed);
-        if (parsed && typeof parsed === "object") lines.push(trimmed);
+        if (parsed && typeof parsed === "object") {
+          lines.push(normalizeHistoryMcpLine(parsed as Record<string, unknown>, trimmed));
+        }
       } catch {
         /* skip malformed */
       }

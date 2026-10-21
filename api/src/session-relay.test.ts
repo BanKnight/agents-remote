@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import {
   ClaudeSessionRelay,
   HISTORY_TAIL_SCAN_BYTES,
+  normalizeHistoryMcpLine,
   sliceLastCompactBlock,
 } from "./session-relay";
 import { claudeJsonlPath } from "./session-routes";
@@ -135,6 +136,78 @@ test("ClaudeSessionRelay sends history batch before output batch for resume", as
 
   const outputMessages = messages.slice(outputStart + 1, outputEnd);
   expect(outputMessages).toEqual([JSON.parse(bufferLine)]);
+
+  relay.destroy();
+});
+
+// 回放归一化(2026-10-21 README 卡实测实锤):CLI 双出口对 MCP 工具结果的
+// structuredContent 字段位置不同——JSONL 写 mcpMeta.structuredContent,stdout
+// (live)写 tool_use_result.structuredContent(web 卡片唯一消费位)。不归一 =
+// API 重启后回放的 MCP 卡全部走通用卡回退。断言:①mcpMeta 形状行被补齐;
+// ②live 形状行不重复注入;③普通行原样透传。
+test("normalizeHistoryMcpLine hoists mcpMeta.structuredContent to the live shape", () => {
+  const sc = { kind: "file-preview", path: "README.md", size: 4150, content: "# hi" };
+  const jsonlShape = {
+    type: "user",
+    uuid: "u1",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "call_1", content: "x" }],
+    },
+    mcpMeta: { structuredContent: sc },
+  };
+  const normalized = JSON.parse(normalizeHistoryMcpLine(jsonlShape, JSON.stringify(jsonlShape)));
+  expect(normalized.tool_use_result).toEqual({ structuredContent: sc });
+  expect(normalized.mcpMeta).toEqual({ structuredContent: sc });
+
+  const liveShape = {
+    type: "user",
+    uuid: "u2",
+    tool_use_result: { content: "x", structuredContent: { kind: "git-status" } },
+  };
+  const untouched = JSON.parse(normalizeHistoryMcpLine(liveShape, JSON.stringify(liveShape)));
+  expect(untouched).toEqual(liveShape);
+
+  const plain = { type: "assistant", uuid: "u3" };
+  expect(normalizeHistoryMcpLine(plain, JSON.stringify(plain))).toBe(JSON.stringify(plain));
+});
+
+test("ClaudeSessionRelay replay normalizes JSONL mcpMeta into the live shape", async () => {
+  const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
+  const claudeSessionId = "relay-replay-mcp-meta";
+  const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
+  cleanupDirs.add(dirname(jsonlPath));
+
+  await mkdir(dirname(jsonlPath), { recursive: true });
+  const sc = { kind: "file-preview", path: "README.md", size: 4150, content: "# hi" };
+  const jsonlLine = JSON.stringify({
+    type: "user",
+    uuid: "uuid-mcp-1",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "call_1", content: "payload" }],
+    },
+    mcpMeta: { structuredContent: sc },
+  });
+  await writeFile(jsonlPath, `${jsonlLine}\n`);
+
+  const relay = new ClaudeSessionRelay();
+  await relay.activate(projectPath, claudeSessionId);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const historyStart = messages.findIndex((msg) => msg.type === "history_start");
+  const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
+  const historyMessages = messages.slice(historyStart + 1, historyEnd);
+  expect(historyMessages).toHaveLength(1);
+  expect(historyMessages[0].tool_use_result).toEqual({ structuredContent: sc });
 
   relay.destroy();
 });
