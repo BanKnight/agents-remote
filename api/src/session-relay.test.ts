@@ -142,8 +142,11 @@ test("ClaudeSessionRelay sends history batch before output batch for resume", as
 
 // 回放归一化(2026-10-21 README 卡实测实锤):CLI 双出口对 MCP 工具结果的
 // structuredContent 字段位置不同——JSONL 写 mcpMeta.structuredContent,stdout
-// (live)写 tool_use_result.structuredContent(web 卡片唯一消费位)。不归一 =
-// API 重启后回放的 MCP 卡全部走通用卡回退。断言:①mcpMeta 形状行被补齐;
+// (live)写 tool_use_result.structuredContent(web 卡片唯一消费位),JSONL 顶层
+// toolUseResult(camel)是 sc 直接序列化的**字符串**——web 端 `toolUseResult ??
+// tool_use_result` 优先取 camel,字符串的 structuredResult 过不了投影的
+// typeof==="object" 闸。不归一 = API 重启后回放的 MCP 卡全部走通用卡回退。
+// 断言:①mcpMeta 形状行被补齐(snake envelope 注入 + camel 字符串键删除);
 // ②live 形状行不重复注入;③普通行原样透传。
 test("normalizeHistoryMcpLine hoists mcpMeta.structuredContent to the live shape", () => {
   const sc = { kind: "file-preview", path: "README.md", size: 4150, content: "# hi" };
@@ -154,10 +157,12 @@ test("normalizeHistoryMcpLine hoists mcpMeta.structuredContent to the live shape
       role: "user",
       content: [{ type: "tool_result", tool_use_id: "call_1", content: "x" }],
     },
+    toolUseResult: JSON.stringify(sc),
     mcpMeta: { structuredContent: sc },
   };
   const normalized = JSON.parse(normalizeHistoryMcpLine(jsonlShape, JSON.stringify(jsonlShape)));
   expect(normalized.tool_use_result).toEqual({ structuredContent: sc });
+  expect(normalized.toolUseResult).toBeUndefined();
   expect(normalized.mcpMeta).toEqual({ structuredContent: sc });
 
   const liveShape = {

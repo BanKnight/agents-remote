@@ -31,11 +31,14 @@ function topLevelUuidIs(line: string, uuid: string): boolean {
 }
 
 /**
- * CLI 双出口对 MCP 工具结果 structuredContent 的字段位置不同:stdout(live 路径)
- * 写 `tool_use_result.structuredContent`(web MCP Apps 卡片的唯一消费位),JSONL
- * (history 回放路径)写 `mcpMeta.structuredContent`。不归一 = API 重启后从 JSONL
- * 回放的 MCP 卡全部丢 structuredContent、走通用卡回退——live 正常、replay 退化的
- * 时序型失真(2026-10-21 README 卡实测实锤:live 渲染成功,重启后回放走通用卡)。
+ * CLI 双出口对 MCP 工具结果的结构化载荷形状不同:stdout(live 路径)顶层
+ * `tool_use_result`(snake)是 envelope 对象,structuredContent 键在
+ * `tool_use_result.structuredContent`(web MCP Apps 卡片的唯一消费位);JSONL
+ * (history 回放路径)顶层 `toolUseResult`(camel)是 structuredContent 直接
+ * JSON.stringify 的**字符串**(另有 `mcpMeta.structuredContent` 对象)。不归一 =
+ * API 重启后从 JSONL 回放的 MCP 卡全部丢 structuredContent、走通用卡回退——live
+ * 正常、replay 退化的时序型失真(2026-10-21 README 卡实测实锤:live 渲染成功,
+ * 重启后回放走通用卡)。
  * 在回放入口把 JSONL 行补齐成 live 形状——单一管道原则,web 客户端零分支。
  * 返回归一化后的行;无需归一化(mcpMeta 缺失 / live 形状已在)时原样返回。
  */
@@ -46,6 +49,10 @@ export function normalizeHistoryMcpLine(parsed: Record<string, unknown>, rawLine
   if (toolUseResult?.structuredContent !== undefined) return rawLine;
   return JSON.stringify({
     ...parsed,
+    // camel `toolUseResult` 是 sc 的字符串序列化,web 端 `toolUseResult ??
+    // tool_use_result` 优先取 camel → structuredResult 停在 string → 投影的
+    // `typeof === "object"` 闸不命中、sc 丢失。undefined 值经 stringify 整键删除。
+    toolUseResult: undefined,
     tool_use_result: { ...toolUseResult, structuredContent: mcpMeta.structuredContent },
   });
 }
