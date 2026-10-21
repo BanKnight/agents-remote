@@ -9,6 +9,8 @@ test-results/
 !.env.example
 # Claude Code 项目级 MCP 配置(本机开发环境接入面,经 agents-remote MCP 管理面写入)
 .mcp.json
+# agents-remote 项目运行时配置(capabilities 开关等,机器本地)
+.agents-remote/
 .claude/handoff/snapshots/
 .claude/worktrees/
 # assistant-ui skills 安装机制生成的 symlink，指向 gitignored 的 .agents/skills/
