@@ -3,6 +3,9 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { homedir } from "node:os";
 import { z } from "zod";
+import purifySource from "dompurify/dist/purify.min.js" with { type: "text" };
+import markedSource from "marked/marked.min.js" with { type: "text" };
+import mermaidSource from "mermaid/dist/mermaid.min.js" with { type: "text" };
 import { readProjectMcpConfig } from "./mcp-config.js";
 import {
   collectProjectSkills,
@@ -64,7 +67,11 @@ const SKILLS_TTL_MS = 300_000;
 const WIKI_PAGE_UI_URI = "ui://ar-hub/wiki-page";
 
 /**
- * wiki 页卡片 MVP 模板：零外部依赖。CSP meta `default-src 'none'` 禁 connect/img/form
+ * wiki 页卡片模板：渲染库构建期内联（marked + DOMPurify + mermaid,Bun text import
+ * 直读 node_modules dist,无生成文件;CSP 回归零运行时外域——2026-10-21 调研定案:
+ * ext-apps 官方示例/OpenAI Apps SDK/ZCode UI Plugin 三处一致走打包,纯 MCP Apps 宿主
+ * 0 个 CDN 先例,CDN 的回放/离线空白违背 spec「MAY prefetch and cache」设计初衷,
+ * 见 docs/research/mcp-app-rendering-survey.md）。CSP `default-src 'none'` 禁 connect/form
  * ——即便未来 esc 出现转义缺口,帧内脚本也无法把 wiki 数据外发(2026-10-20 security
  * review 补;宿主侧 postMessage 喂数据另由 mcp-app-card 的同模板重载守卫挡)。宿主按
  * MCP Apps 桥下发 `ui/notifications/tool-result`,卡片取 structuredContent
@@ -75,8 +82,8 @@ const WIKI_PAGE_UI_URI = "ui://ar-hub/wiki-page";
  * initialized;tools/call(刷新钮,宿主白名单代理直调 service,不触发 turn);
  * ui/message(追问条,宿主确认框后经 bridge.sendMessage 触发新 turn)。
  */
-const WIKI_PAGE_APP_HTML = `<!doctype html>
-<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'"><style>
+const WIKI_PAGE_APP_TEMPLATE = `<!doctype html>
+<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:"><style>
   :root{--bg:#0f1115;--fg:#e6e8ea;--muted:#9aa3ad;--code-bg:rgba(255,255,255,.08);--pre-bg:#16181d;--pre-border:#2a2f37;--link:#6cb6ff;--tag-bg:rgba(99,153,255,.15);--tag-fg:#9cc0ff}
   :root[data-theme="light"]{--bg:#fff;--fg:#111;--muted:#777;--code-bg:#f2f2f2;--pre-bg:#f6f6f6;--pre-border:#e3e3e3;--link:#0a66c2;--tag-bg:#eef3f8;--tag-fg:#345}
   body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);line-height:1.55}
@@ -95,6 +102,12 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
   .ask{display:flex;gap:.5em;margin-top:1em;padding-top:.8em;border-top:1px solid var(--pre-border)}
   .ask input{flex:1;background:var(--code-bg);border:1px solid var(--pre-border);border-radius:6px;padding:.3em .6em;color:var(--fg);font:inherit;font-size:.9em;min-width:0}
   .ask input:focus{outline:1px solid var(--link)}
+  table{border-collapse:collapse;margin:.6em 0}
+  th,td{border:1px solid var(--pre-border);padding:.35em .6em;text-align:left}
+  th{background:var(--code-bg)}
+  blockquote{border-left:3px solid var(--pre-border);margin:.6em 0;padding:.1em .8em;color:var(--muted)}
+  .mermaid-box{margin:.6em 0;overflow:auto}
+  .mermaid-box svg{max-width:100%;height:auto}
 </style></head>
 <body>
   <h1 id="title"></h1>
@@ -102,6 +115,9 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
   <div class="bar"><button id="refresh" type="button" class="bar-btn"></button></div>
   <div id="body"></div>
   <div class="ask"><input id="ask-input" type="text"><button id="ask-send" type="button" class="bar-btn"></button></div>
+  <script>/*__AR_LIB_MARKED__*/</script>
+  <script>/*__AR_LIB_PURIFY__*/</script>
+  <script>/*__AR_LIB_MERMAID__*/;window.mermaid = window.mermaid || (__esbuild_esm_mermaid_nm && __esbuild_esm_mermaid_nm.mermaid);</script>
   <script>
     "use strict";
     var esc = function (s) {
@@ -139,10 +155,55 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
       flushList();
       return out.join("");
     };
+    // rich 渲染管线:marked parse → DOMPurify 白名单过滤 → mermaid 围栏出图。
+    // 渲染库构建期内联(上方独立 <script>,零运行时外域);任何异常回落 legacy
+    // renderBlocks(上方极简渲染器)兜底。
+    var mermaidSeq = 0;
+    var mermaidInited = false;
+    var mermaidTheme = function () {
+      return document.documentElement.dataset.theme === "light" ? "default" : "dark";
+    };
+    var upgradeMermaidBlocks = function (root) {
+      if (typeof mermaid === "undefined") return;
+      if (!mermaidInited) {
+        mermaid.initialize({ startOnLoad: false, theme: mermaidTheme() });
+        mermaidInited = true;
+      }
+      var blocks = root.querySelectorAll("pre > code.language-mermaid");
+      var i = 0;
+      var next = function () {
+        if (i >= blocks.length) { reportSize(); return; }
+        var block = blocks[i++];
+        var holder = block.closest ? block.closest("pre") : null;
+        mermaid.render("ar-mmd-" + ++mermaidSeq, block.textContent || "")
+          .then(function (r) {
+            if (holder) {
+              var box = document.createElement("div");
+              box.className = "mermaid-box";
+              box.innerHTML = r.svg;
+              holder.replaceWith(box);
+            }
+          })
+          .catch(function () {}) // 单块渲染失败保持代码块原样,不阻断其余块。
+          .then(next);
+      };
+      next();
+    };
+    var renderBody = function (md) {
+      var bodyEl = document.getElementById("body");
+      try {
+        bodyEl.innerHTML = DOMPurify.sanitize(marked.parse(String(md || "")));
+        upgradeMermaidBlocks(bodyEl);
+      } catch (e) {
+        bodyEl.innerHTML = renderBlocks(md);
+      }
+    };
     var slug = "";
     var currentTitle = "";
+    var lastData = null;
     var render = function (data) {
       if (!data || data.kind !== "wiki-page") return;
+      lastData = data;
       slug = data.slug || "";
       currentTitle = data.title || data.slug || "";
       document.getElementById("title").textContent = currentTitle;
@@ -150,7 +211,7 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
         ? data.tags.map(function (t) { return '<span class="tag">' + esc(t) + "</span>"; }).join("")
         : "";
       document.getElementById("meta").innerHTML = tags;
-      document.getElementById("body").innerHTML = renderBlocks(data.markdown || "");
+      renderBody(data.markdown || "");
     };
     window.addEventListener("message", function (e) {
       // Only the host (parent; self under file:// probes where parent===self)
@@ -173,7 +234,16 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
       }
       if (msg.method === "ui/notifications/host-context-changed") {
         var theme = msg.params && msg.params.theme;
-        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+        if (theme === "light" || theme === "dark") {
+          var prev = document.documentElement.dataset.theme;
+          document.documentElement.dataset.theme = theme;
+          // 主题实际变化时:mermaid 图是主题内嵌的 SVG,须重初始化 + 全量重渲染;
+          // 纯 CSS 变量部分幂等,重渲染无副作用。
+          if (prev !== theme) {
+            if (mermaidInited) mermaid.initialize({ startOnLoad: false, theme: mermaidTheme() });
+            if (lastData) render(lastData);
+          }
+        }
         reportSize();
         return;
       }
@@ -306,6 +376,21 @@ const WIKI_PAGE_APP_HTML = `<!doctype html>
       .catch(function () {});
   </script>
 </body></html>`;
+
+/**
+ * 库 dist 内联的两个防御:
+ * 1. `<\/script` 转义——现行三库产物已无字面 `</script`(esbuild/terser 转义),防未来
+ *    版本引入后提前终止 script 标签;JS 字符串里 \/ 语义等价 /。
+ * 2. replace 用函数形式——minified 库源码 $ 序列丰富,字符串替换串的 $&/$` 会被展开。
+ */
+const inlineLibScript = (source: string): string => source.replace(/<\/script/gi, "<\\/script");
+
+/** 模板 + 三库内联 = 最终 ui:// 资源(构建期一次拼接,运行时零外域)。 */
+const WIKI_PAGE_APP_HTML = WIKI_PAGE_APP_TEMPLATE.replace("/*__AR_LIB_MARKED__*/", () =>
+  inlineLibScript(markedSource),
+)
+  .replace("/*__AR_LIB_PURIFY__*/", () => inlineLibScript(purifySource))
+  .replace("/*__AR_LIB_MERMAID__*/", () => inlineLibScript(mermaidSource));
 
 /**
  * hub UI 资源单源表（uri → { mimeType, html }）：hub 注册（agent 经 resources/read 读）

@@ -74,7 +74,7 @@ try {
             title: "Probe <img src=x onerror=alert(1)>",
             tags: ["a", "b"],
             markdown:
-              "# Heading\n\n- item one\n- item two\n\n`code` and **bold**\n\n```js\nvar x = 1;\n```\n\n<script>window.__xss=1</script>",
+              "# Heading\n\n- item one\n- item two\n\n`code` and **bold**\n\n| h1 | h2 |\n| --- | --- |\n| a | b |\n\n<b>raw html</b>\n\n<script>window.__xss=1</script>\n\n```mermaid\ngraph TD\n  A --> B\n```\n\n```js\nvar x = 1;\n```",
           },
         },
       },
@@ -93,7 +93,12 @@ try {
     code: document.querySelector("#body code")?.textContent ?? "",
     preLen: document.querySelectorAll("#body pre").length,
     xssExecuted: window.__xss === 1,
+    xssScriptInBody: document.querySelectorAll("#body script").length,
+    tableCells: document.querySelectorAll("#body th").length,
+    rawHtmlB: document.querySelector("#body b")?.textContent ?? "",
     scriptCount: document.querySelectorAll("script").length,
+    inlineScripts: [...document.querySelectorAll("script")].filter((s) => !s.hasAttribute("src"))
+      .length,
   }));
   assert(
     "title rendered (text intact, no img element)",
@@ -107,9 +112,53 @@ try {
     rendered.bold === "bold" && rendered.code === "code",
     `${rendered.bold}/${rendered.code}`,
   );
-  assert("code block rendered", rendered.preLen === 1, String(rendered.preLen));
-  assert("XSS script escaped (not executed)", rendered.xssExecuted !== true);
-  assert("no extra script elements", rendered.scriptCount === 1, String(rendered.scriptCount));
+  // 渲染时刻的 pre 数 = js 块 + mermaid 围栏（升级前）= 2；升级后余 1 在 mermaid 断言后复验。
+  assert("code blocks rendered pre-upgrade", rendered.preLen === 2, String(rendered.preLen));
+  // rich 管线（marked + DOMPurify）：raw <script> 被剥除（元素移除），非 legacy 转义。
+  assert(
+    "XSS script stripped (not executed)",
+    rendered.xssExecuted !== true && rendered.xssScriptInBody === 0,
+    `exec=${rendered.xssExecuted} inBody=${rendered.xssScriptInBody}`,
+  );
+  assert("table rendered", rendered.tableCells === 2, String(rendered.tableCells));
+  assert(
+    "raw html passthrough (whitelisted b tag)",
+    rendered.rawHtmlB === "raw html",
+    rendered.rawHtmlB,
+  );
+  // 构建期内联 3 库 + 1 主脚本，全部无 src（零外域——CSP script-src 'unsafe-inline' 契约）。
+  assert(
+    "scripts all inline (3 libs + 1 main)",
+    rendered.scriptCount === 4 && rendered.inlineScripts === 4,
+    `${rendered.scriptCount}/${rendered.inlineScripts}`,
+  );
+
+  // mermaid 围栏 → 异步升级为 SVG（渲染库首次 initialize + render 较慢，轮询等待）。
+  let mermaidState;
+  try {
+    await page.waitForSelector("#body .mermaid-box svg", { timeout: 8000 });
+    mermaidState = await page.evaluate(() => ({
+      boxes: document.querySelectorAll("#body .mermaid-box").length,
+      nodes: document.querySelectorAll("#body .mermaid-box svg g").length,
+      leftover: document.querySelectorAll("#body pre code.language-mermaid").length,
+    }));
+  } catch {
+    mermaidState = { boxes: 0, nodes: 0, leftover: -1 };
+  }
+  assert(
+    "mermaid fence upgraded to svg",
+    mermaidState.boxes === 1 && mermaidState.nodes > 0 && mermaidState.leftover === 0,
+    JSON.stringify(mermaidState),
+  );
+  // 升级后 js 代码块独存且内容完整（升级不误伤普通围栏）。
+  const preCode = await page.evaluate(
+    () => document.querySelector("#body pre code")?.textContent ?? "",
+  );
+  assert(
+    "code block intact after mermaid upgrade",
+    preCode.includes("var x = 1"),
+    preCode.slice(0, 20),
+  );
 
   // 4. 高度上报：渲染后模板应发出 size-changed（取最后一条 = 渲染后的高度；
   //    首条是空模板初始上报，height≈44 属正常）。
@@ -141,6 +190,21 @@ try {
   await page.waitForTimeout(50);
   const darkAgain = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   assert("theme back to dark", darkAgain === "rgb(15, 17, 21)", darkAgain);
+
+  // 主题切换触发 mermaid 全量重渲染（异步）——SVG 重建回来。
+  try {
+    await page.waitForFunction(
+      () => document.querySelectorAll("#body .mermaid-box svg").length === 1,
+      { timeout: 8000 },
+    );
+    assert("mermaid re-rendered after theme switch", true);
+  } catch {
+    assert(
+      "mermaid re-rendered after theme switch",
+      false,
+      String(await page.evaluate(() => document.querySelectorAll("#body .mermaid-box").length)),
+    );
+  }
 
   // 6. 握手：模板加载即发 ui/initialize 请求（file:// 回环 → 收集器收到）。
   msgs = await page.evaluate(() => window.__msgs);
@@ -224,6 +288,11 @@ try {
     refreshed.title === "Refreshed Page" && refreshed.refreshDisabled === false,
     JSON.stringify(refreshed),
   );
+  // 新 markdown 无 mermaid 围栏 → 全量重写后旧 SVG 盒不残留。
+  const mermaidGone = await page.evaluate(
+    () => document.querySelectorAll("#body .mermaid-box").length,
+  );
+  assert("refresh without mermaid clears boxes", mermaidGone === 0, String(mermaidGone));
 
   // 9. 追问条：输入文本 + 点发送 → ui/message 请求（role=user + 前缀包装）→
   //    应答 {} 后输入框清空。

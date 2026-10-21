@@ -1311,6 +1311,13 @@ const handleWikiRoute = async (
 // 仅 project 存在且 mcp.json ui 开时服务;uri 不在表内 / ui 未开 / project 不存在 → 404。
 // 鉴权在前(requireHttpAuth),错误细分只暴露给已认证 owner——ui 忘开等自查诊断有真实
 // 价值,非匿名枚举面(2026-10-20 security-review 裁定,注释如实化)。
+// 响应体缓存 + gzip:模板构建期内联 mermaid 后 ~5.65MB,JSON 序列化与压缩是表内容的
+// 纯函数——每进程各做一次,请求按 Accept-Encoding 协商回缓存字节(Bun.serve 无内置
+// HTTP 压缩;浏览器 fetch 自动解压,传输 ~1.2MB)。
+const mcpUiResourceBodyCache = new Map<
+  string,
+  { plain: Uint8Array<ArrayBuffer>; gzipped: Uint8Array<ArrayBuffer> }
+>();
 const handleMcpUiResourceRoute = async (
   request: Request,
   url: URL,
@@ -1350,7 +1357,24 @@ const handleMcpUiResourceRoute = async (
     // project 不存在 / 路径越界 / mcp.json 非法 → 404(不暴露具体原因,与 hub 同原则)。
     return jsonError("PROJECT_NOT_FOUND", "Project not found", 404);
   }
-  return Response.json({ mimeType: resource.mimeType, html: resource.html });
+  let body = mcpUiResourceBodyCache.get(uri);
+  if (!body) {
+    const plain = JSON.stringify({ mimeType: resource.mimeType, html: resource.html });
+    body = {
+      plain: new TextEncoder().encode(plain),
+      gzipped: Bun.gzipSync(new TextEncoder().encode(plain)),
+    };
+    mcpUiResourceBodyCache.set(uri, body);
+  }
+  const responseHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+    Vary: "Accept-Encoding",
+  };
+  if ((request.headers.get("accept-encoding") ?? "").includes("gzip")) {
+    responseHeaders["Content-Encoding"] = "gzip";
+    return new Response(body.gzipped, { headers: responseHeaders });
+  }
+  return new Response(body.plain, { headers: responseHeaders });
 };
 
 // POST /api/projects/{name}/mcp-hub-tools-call  body {name, arguments}

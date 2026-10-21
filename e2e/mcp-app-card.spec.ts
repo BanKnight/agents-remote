@@ -45,6 +45,9 @@ function collectConsoleErrors(page: Page) {
 test("MCP Apps card: template host + handshake locale + tools/call refresh + ui/message confirm gate", async ({
   page,
 }) => {
+  // 模板构建期内联 mermaid（5.65MB srcdoc）——iframe 相关步骤在受限环境下
+  // 慢 3-5 倍，全链 ~36s；默认 30s timeout 不够（trace 实测步骤全过、总时长超限）。
+  test.setTimeout(90_000);
   const assertNoConsoleErrors = collectConsoleErrors(page);
 
   // 应用语言偏好 = zh（localStorage 直设；默认 system 会跟浏览器 en-US）。

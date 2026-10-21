@@ -86,6 +86,7 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 | UI 关联判定 | display tool 名单 + kind 双条件 | CLI 不透传 _meta（S1 实测）；未知名单回退通用卡 |
 | ui-resource 路由 | api 进程内单源表直读 | hub 与 api 同进程；hub 恒 loopback |
 | skills 分发时机 | 阶段 5 | 三家 CLI 无 client；SDK 无 skills 支持 |
+| 渲染库供给：CDN vs 构建期内联 vs 手写 | **构建期内联**（marked + DOMPurify + mermaid，Bun text import 直读 dist） | ext-apps 官方示例 / OpenAI Apps SDK / ZCode UI Plugin 三方一致；CDN 路线回放/离线空白、CSP 放宽；手写 30 行是 XSS 藏身处。详见 [mcp-app-rendering-survey.md](./mcp-app-rendering-survey.md) |
 
 ## 9. Spike 结论（S1-S4）
 
@@ -105,6 +106,7 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 | 4 | 反向通道：ui/initialize 握手 + tools/call 刷新 + ui/message 再推理 | ✅ `1578ca9` |
 | 4.5 | e2e 收口：mcp-app-card.spec.ts（全链零 mock）+ run-e2e 预置 | ✅ `7392a2d` |
 | 5 | hub skills 分发（SEP-2640 skills/list-get + skill:// 资源读取） | ✅ 本批（Inspector 2.11 实测过） |
+| 5.5 | 卡片富渲染：marked + DOMPurify + mermaid 12 构建期内联 + api 路由 gzip | ✅ 2026-10-21（见渲染调研报告） |
 | 6 | 上游 CLI client 消费（协商扩展后 skills 直达 agent） | 等上游 |
 
 **阶段 5 协议面（实现 vs 明确不做）**：
@@ -121,6 +123,8 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 **阶段 5 关键取舍**：① **数据源 = 本地 skills 同一批磁盘文件**（单一数据源,无第二份存储;与 CLI 文件发现同源,web 管理面现成）;② **分发口径 = claude-code 目录约定**（项目 + 全局 `~/.claude/skills` 并集,同名项目 scope 胜出与 slash catalog 同口径;codex 目录暂不分发——hub 服务 claude 为主,Codex 仅提交时快照）;③ **SDK 1.30 手写桥**（自造 zod schema 经 `server.server.setRequestHandler`,与内部 tools/resources handler 并存——官方 TS 支持落地后再迁移）;④ **每请求实时扫描**（hub 无状态;清单精确命中才读 = 防穿越第一道,digest 与内容必然一致 = SEP 读时校验模型天然满足）;⑤ name 缺失 → 目录名兜底（URI 末段=frontmatter.name 恒自洽;与本地系统 `fm.name \|\| entry` 同口径）。验证：hub 真 HTTP 测试 9 用例 + **MCP Inspector 2.11 真 host 实测三方法全过**（skills/list / skills/get / resources/read）+ 全门禁绿。
 
 **阶段 5 审查结论（2026-10-21,security-reviewer 已消化）**：0 安全漏洞（主链防穿越经实验验证成立：清单精确匹配 + 不 decode + resolve 包含检查）;2 P1 + 2 P2 已修——**P1-1 清单读回不对称**（中文/空格/含 `..` 字样文件名「列出即承诺」却读不回 → 扫描时建 uri→实际相对路径 Map,读取查表,消灭反向构造）;**P1-2 无上限全量扫描**（SEP 固定上限未实现 → 单 skill >512 文件或 >16MiB 整体跳过 + digest 流式化,防 1GB 参考数据文件把请求 buffer 顶爆）;**P2-1 根级 symlink 跟随**（stat 跟随与内部条目不跟随口径矛盾 → realpath 后校验仍在 skills 根之下,与 skill-market 口径对齐）;**P2-2 cacheScope "public"**（本机 per-project 私有数据 → "private"）。info 三条：frontmatter 平铺 KV 拍扁嵌套 YAML（互操作债,官方 SDK 落地迁移时一并处理——含嵌套 frontmatter 的 skill 经本 hub 分发的 entry 恒过不了严格 host 的逐字段比对）、同 name 冲突留痕（已加 sort + warn）、home 注入参数无害（保持现状）。
+
+**阶段 5.5 卡片富渲染（2026-10-21,调研定案 + 实现）**：真机发现卡片只支持 legacy 手写渲染（mermaid/SVG/表格/富 HTML 不可渲染）→ 调研定案**构建期内联**（[mcp-app-rendering-survey.md](./mcp-app-rendering-survey.md)：ext-apps 官方示例 / OpenAI Apps SDK / ZCode UI Plugin 三方一致;CDN 路线回放/离线空白）。实现：marked 15.0.12 + DOMPurify 3.2.6 + **mermaid 12.0.0**（与 web 包统一版本,接受 5.4MB;Bun text import 直读 dist,`</script` 防御转义,无生成文件）→ 模板 rich 管线（`marked.parse → DOMPurify.sanitize → innerHTML`,mermaid 围栏逐块升级 SVG,异常回落 legacy renderBlocks;主题切换重初始化重渲染）;CSP 维持 `default-src 'none'`（零外域,比 CDN 路线更严）。配套：api mcp-ui-resource 路由 **gzip 协商**（响应体缓存 + Bun.gzipSync,5.65MB → ~1.2MB,Bun.serve 无内置 HTTP 压缩）;e2e spec timeout 提 90s（5.65MB srcdoc 在 2G cgroup 全链 36s）。验证：模板探针 26/26（mermaid SVG/表格/HTML 直通/script 剥除/主题重渲染/刷新清残留）+ e2e 31/31 + api 29/29 + web 859。后续：**轻/重模板分流**（无 mermaid 页 ~60KB 轻模板）是传输重量的彻底解法;真机加载比之前慢是预期（5.4MB parse）。流式渲染调研结论：全部为聊天流而生,卡片整篇数据不需要（见调研报告 §4）;沙箱双份依赖是 SEP-1865 隔离模型的固有代价（§5）。
 
 **阶段 4 协议面（实现 vs 明确不做）**：
 

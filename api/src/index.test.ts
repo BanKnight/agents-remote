@@ -966,6 +966,28 @@ test("createFetchHandler serves MCP ui resource (token-guarded, ui-gated)", asyn
   expect(okJson.html).toContain("<!doctype html>");
   expect(okJson.html).toContain("ui/notifications/tool-result");
 
+  // Accept-Encoding: gzip → Content-Encoding: gzip + 字节数收缩(5.65MB 模板传输
+  // ~1.2MB);解压后 JSON 与 identity 等价。无 accept-encoding → identity 明文。
+  const gz = await handler(
+    new Request("http://localhost/api/projects/demo/mcp-ui-resource?uri=ui://ar-hub/wiki-page", {
+      headers: { ...headers, "Accept-Encoding": "gzip" },
+    }),
+    { upgrade: () => false },
+  );
+  expect(gz.status).toBe(200);
+  expect(gz.headers.get("content-encoding")).toBe("gzip");
+  const gzBytes = new Uint8Array(await gz.arrayBuffer());
+  expect(gzBytes.byteLength).toBeLessThan(okJson.html.length / 2);
+  const gzJson = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(gzBytes)));
+  expect(gzJson.html).toBe(okJson.html);
+  const identity = await handler(
+    new Request("http://localhost/api/projects/demo/mcp-ui-resource?uri=ui://ar-hub/wiki-page", {
+      headers,
+    }),
+    { upgrade: () => false },
+  );
+  expect(identity.headers.get("content-encoding")).toBeNull();
+
   // 未知 uri → 404。
   const unknown = await handler(
     new Request("http://localhost/api/projects/demo/mcp-ui-resource?uri=ui://ar-hub/no-such", {
