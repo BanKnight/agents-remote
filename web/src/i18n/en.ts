@@ -620,6 +620,7 @@ export const en = {
   "claude.tool.projectSettings": "Settings",
   "claude.tool.readFile": "File Preview",
   "claude.mcpApp.unavailable": "App view unavailable",
+  "claude.mcpApp.expand": "Open fullscreen",
   "claude.mcpApp.followUpTitle": "Send to session",
   "api.mcpHubToolCallFailed": "Tool call failed",
   "claude.tool.glob": "Glob",

@@ -90,7 +90,7 @@ beforeEach(() => {
 
 function renderCard(
   structuredContent: unknown,
-  options?: { onSendPrompt?: (text: string) => void },
+  options?: { onSendPrompt?: (text: string) => void; fill?: boolean },
 ): {
   rerender: (sc: unknown) => void;
   view: ReturnType<typeof render>;
@@ -107,6 +107,7 @@ function renderCard(
           projectName: "test",
           uri: "ui://ar-hub/wiki-page",
           structuredContent: sc,
+          fillHeight: options?.fill,
           onSendPrompt: options?.onSendPrompt,
         }),
       ),
@@ -215,9 +216,37 @@ describe("McpAppCard", () => {
     expect(view.container.querySelector("iframe")).toBeNull();
   });
 
-  test("size-changed 消息驱动 iframe 高度（source 校验）", async () => {
+  test("size-changed 消息驱动 iframe 高度（钳高 + source 校验）", async () => {
     const { view } = renderWindowHeightCase();
     const frame = await waitForIframe(view);
+    const win = frame.contentWindow as Window;
+    const MsgEvent = dom.window.MessageEvent;
+    const send = (height: number, withSource = true) =>
+      window.dispatchEvent(
+        new MsgEvent("message", {
+          ...(withSource ? { source: win } : {}),
+          data: {
+            jsonrpc: "2.0",
+            method: "ui/notifications/size-changed",
+            params: { height },
+          },
+        }),
+      );
+    // 上报超上限 → 钳到 FRAME_MAX_HEIGHT_PX（420），内容超出在 iframe 文档内滚。
+    send(640.4);
+    await waitFor(() => expect(frame.style.height).toBe("420px"));
+    // 未触顶透传。
+    send(380);
+    await waitFor(() => expect(frame.style.height).toBe("380px"));
+    // 无 source（或 source 不匹配）的消息不得驱动高度。
+    send(200, false);
+    expect(frame.style.height).toBe("380px");
+  });
+
+  test("fillHeight（全屏放大态）忽略上报高度 + 去 mt-2", async () => {
+    const { view } = renderWindowHeightCase({ fill: true });
+    const frame = await waitForIframe(view);
+    expect(frame.className).not.toContain("mt-2");
     const win = frame.contentWindow as Window;
     const MsgEvent = dom.window.MessageEvent;
     window.dispatchEvent(
@@ -230,18 +259,8 @@ describe("McpAppCard", () => {
         },
       }),
     );
-    await waitFor(() => expect(frame.style.height).toBe("640px"));
-    // 无 source（或 source 不匹配）的消息不得驱动高度。
-    window.dispatchEvent(
-      new MsgEvent("message", {
-        data: {
-          jsonrpc: "2.0",
-          method: "ui/notifications/size-changed",
-          params: { height: 200 },
-        },
-      }),
-    );
-    expect(frame.style.height).toBe("640px");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(frame.style.height).toBe("");
   });
 });
 
@@ -386,8 +405,8 @@ describe("McpAppCard reverse channel", () => {
   });
 });
 
-function renderWindowHeightCase() {
-  return renderCard(SC);
+function renderWindowHeightCase(options?: { fill?: boolean }) {
+  return renderCard(SC, options);
 }
 
 async function waitForIframe(view: ReturnType<typeof render>) {

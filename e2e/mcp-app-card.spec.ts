@@ -43,6 +43,60 @@ function collectConsoleErrors(page: Page) {
   };
 }
 
+// Session detail / list / overview mocks：让 fake 会话进 workbench 且 stale-tab
+// prune 不删 tab（先例 claude-windowing.spec.ts）。三个用例同构，抽此处共用。
+async function setupMcpSession(page: Page, sessionId: string, displayName: string) {
+  const sessionShape = {
+    id: sessionId,
+    projectName,
+    provider: "claude",
+    displayName,
+    status: "idle",
+    createdAt: new Date().toISOString(),
+  };
+  await page.route(
+    new RegExp(`/api/projects/${projectName}/agent-sessions/${sessionId}$`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          session: sessionShape,
+          availableModels: ["sonnet"],
+          availablePermissionModes: ["default"],
+        }),
+      });
+    },
+  );
+  await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions$`), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ sessions: [sessionShape] }),
+    });
+  });
+  await page.route(new RegExp("/api/overview$"), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        projectNames: [projectName],
+        candidates: [
+          {
+            type: "agent",
+            projectName,
+            sessionId,
+            displayName,
+            status: "idle",
+            provider: "claude",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+  });
+}
+
 test("MCP Apps card: template host + handshake locale + tools/call refresh + ui/message confirm gate", async ({
   page,
 }) => {
@@ -58,67 +112,8 @@ test("MCP Apps card: template host + handshake locale + tools/call refresh + ui/
     localStorage.setItem("lang", "zh");
   });
 
-  // Session detail / list / overview mocks：让 fake 会话进 workbench 且 stale-tab
-  // prune 不删 tab（先例 claude-windowing.spec.ts）。
-  await page.route(
-    new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}$`),
-    async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          session: {
-            id: fakeSessionId,
-            projectName,
-            provider: "claude",
-            displayName: "Claude Agent (e2e-mcp-app)",
-            status: "idle",
-            createdAt: new Date().toISOString(),
-          },
-          availableModels: ["sonnet"],
-          availablePermissionModes: ["default"],
-        }),
-      });
-    },
-  );
-  await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions$`), async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        sessions: [
-          {
-            id: fakeSessionId,
-            projectName,
-            provider: "claude",
-            displayName: "Claude Agent (e2e-mcp-app)",
-            status: "idle",
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }),
-    });
-  });
-  await page.route(new RegExp("/api/overview$"), async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        projectNames: [projectName],
-        candidates: [
-          {
-            type: "agent",
-            projectName,
-            sessionId: fakeSessionId,
-            displayName: "Claude Agent (e2e-mcp-app)",
-            status: "idle",
-            provider: "claude",
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }),
-    });
-  });
+  // Session detail / list / overview mocks（共用 helper）。
+  await setupMcpSession(page, fakeSessionId, "Claude Agent (e2e-mcp-app)");
 
   // WS mock：窗口帧 + wiki_read_page 流帧；收集客户端上行（ui/message 确认后的
   // bridge.sendMessage 应在此出现为 {type:"user"} 帧）。
@@ -276,65 +271,7 @@ test("MCP Apps git status card: stale mock → real listDiff refresh round-trip"
     localStorage.setItem("lang", "zh");
   });
 
-  await page.route(
-    new RegExp(`/api/projects/${projectName}/agent-sessions/${gitSessionId}$`),
-    async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          session: {
-            id: gitSessionId,
-            projectName,
-            provider: "claude",
-            displayName: "Claude Agent (e2e-mcp-git)",
-            status: "idle",
-            createdAt: new Date().toISOString(),
-          },
-          availableModels: ["sonnet"],
-          availablePermissionModes: ["default"],
-        }),
-      });
-    },
-  );
-  await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions$`), async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        sessions: [
-          {
-            id: gitSessionId,
-            projectName,
-            provider: "claude",
-            displayName: "Claude Agent (e2e-mcp-git)",
-            status: "idle",
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }),
-    });
-  });
-  await page.route(new RegExp("/api/overview$"), async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        projectNames: [projectName],
-        candidates: [
-          {
-            type: "agent",
-            projectName,
-            sessionId: gitSessionId,
-            displayName: "Claude Agent (e2e-mcp-git)",
-            status: "idle",
-            provider: "claude",
-            createdAt: new Date().toISOString(),
-          },
-        ],
-      }),
-    });
-  });
+  await setupMcpSession(page, gitSessionId, "Claude Agent (e2e-mcp-git)");
 
   await page.routeWebSocket(
     new RegExp(`/api/projects/${projectName}/agent-sessions/${gitSessionId}/claude-stream`),
@@ -424,6 +361,173 @@ test("MCP Apps git status card: stale mock → real listDiff refresh round-trip"
   await expect(frame.locator("#title")).toHaveText("Git 变更 · main", { timeout: 15_000 });
   await expect(frame.locator("#meta")).toHaveText("3 个文件变更");
   await expect(frame.locator("tr", { hasText: "notes.txt" })).toBeVisible();
+
+  assertNoConsoleErrors();
+});
+
+// 限高 + 全屏放大(限高放大批):流内卡片高度钳到 FRAME_MAX_HEIGHT_PX(420,超出
+// 在 iframe 文档内滚——模板 html/body 无 overflow 声明,UA 滚动机制接管);放大钮
+// (ToolHead trailing 槽)开全屏 Dialog 内嵌第二个 McpAppCard 实例(fillHeight:
+// 忽略上报高度撑满 body)。用例同时锁:
+//   ① 双实例独立喂数据(frameLocator 内 #title 实证)② fill 模式 inline style 抑制
+//   ③ Radix focus trap × sandbox iframe 不抢焦(iframe 内追问可发出)+ 确认闸
+//     (z-50 后挂载)经 portal DOM 序压在全屏层上 ④ 关闭销毁第二实例、流内钳高不变。
+const tallSessionId = "agent_e2e-test-session-mcp-tall";
+const TALL_SC = {
+  kind: "wiki-page",
+  slug: "intro",
+  title: "Tall Title",
+  tags: ["e2e"],
+  markdown: Array.from({ length: 400 }, (_, i) => `tall-para-${i} 内容灌水行`).join("\n\n"),
+};
+
+test("MCP Apps card: in-flow height clamp + fullscreen enlarge", async ({ page }) => {
+  // 双 iframe(5.65MB srcdoc ×2 parse)在受限环境更慢,给足超时。
+  test.setTimeout(150_000);
+  const assertNoConsoleErrors = collectConsoleErrors(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("lang", "zh");
+  });
+
+  await setupMcpSession(page, tallSessionId, "Claude Agent (e2e-mcp-tall)");
+
+  await page.routeWebSocket(
+    new RegExp(`/api/projects/${projectName}/agent-sessions/${tallSessionId}/claude-stream`),
+    (ws) => {
+      ws.onMessage((data) => {
+        try {
+          const msg = JSON.parse(String(data)) as Record<string, unknown>;
+          if (msg.type === "ping") {
+            ws.send(JSON.stringify({ type: "pong" }));
+          }
+        } catch {
+          /* non-JSON frames ignored */
+        }
+      });
+      const frames = [
+        { type: "session_init", resume: false },
+        { type: "history_start", count: 0 },
+        { type: "history_end" },
+        { type: "live_start", count: 3 },
+        {
+          type: "assistant",
+          uuid: "t1",
+          message: {
+            id: "msg-t1",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "tu-e2e-tall",
+                name: "mcp__ar-hub__wiki_read_page",
+                input: { slug: "intro" },
+              },
+            ],
+          },
+        },
+        {
+          type: "user",
+          uuid: "tu1",
+          message: {
+            role: "user",
+            content: [
+              { type: "tool_result", tool_use_id: "tu-e2e-tall", content: "wiki page payload" },
+            ],
+          },
+          tool_use_result: { structuredContent: TALL_SC },
+        },
+        {
+          type: "assistant",
+          uuid: "t2",
+          message: {
+            id: "msg-t2",
+            role: "assistant",
+            content: [{ type: "text", text: "Tall 卡已就绪。" }],
+          },
+        },
+        { type: "live_end" },
+      ];
+      for (const frame of frames) ws.send(JSON.stringify(frame));
+    },
+  );
+
+  await page.goto("/");
+  await page.getByLabel("访问密码").fill(password);
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible({
+    timeout: 15_000,
+  });
+
+  await page.goto(`/projects/${projectName}/agent-sessions/${tallSessionId}/claude`);
+  await expect(page.getByText("Tall 卡已就绪。")).toBeVisible({ timeout: 15_000 });
+
+  // 1. 流内钳高:上报内容高(400 段 ≫420)被钳到 420,iframe 文档内滚。
+  //    (frameLocator 在打开全屏前创建并仅在此前使用——全屏开后同选择器会匹配两个。)
+  const card = page.locator('iframe[title="MCP app"]');
+  const flowFrame = page.frameLocator('iframe[title="MCP app"]');
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(flowFrame.locator("#title")).toHaveText("Tall Title", { timeout: 15_000 });
+  await page.waitForFunction(() => {
+    const el = document.querySelector('iframe[title="MCP app"]');
+    return el instanceof HTMLIFrameElement && el.style.height !== "";
+  });
+  expect(await card.evaluate((el) => el.style.height)).toBe("420px");
+  const cardBox = await card.boundingBox();
+  expect(cardBox?.height ?? 0).toBeLessThanOrEqual(421);
+  // 全屏打开前唯一的 srcdoc 帧 = 流内卡内文档;直接拿 Frame evaluate。
+  const flowInner = page
+    .frames()
+    .find((f) => f.url().startsWith("about:srcdoc") && f.parentFrame() !== null);
+  expect(flowInner).toBeDefined();
+  const innerScroll = await flowInner!.evaluate(() => ({
+    contentH: document.body.scrollHeight,
+    scrolled: window.scrollY,
+  }));
+  expect(innerScroll.contentH).toBeGreaterThan(420);
+
+  // 2. 放大钮(ToolHead trailing)→ 全屏 Dialog + 第二实例(fillHeight)。
+  await page.getByRole("button", { name: "放大查看" }).click();
+  const fullscreen = page.locator('[data-slot="dialog-content"]');
+  await expect(fullscreen).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('iframe[title="MCP app"]')).toHaveCount(2);
+  // 双实例独立喂数据:全屏内模板渲染出 mock stale 标题(宿主 postMessage 喂的是
+  // 同一份 structuredContent,两实例各自完成 load → feed)。
+  const fsFrame = fullscreen.frameLocator('iframe[title="MCP app"]');
+  await expect(fsFrame.locator("#title")).toHaveText("Tall Title", { timeout: 15_000 });
+
+  // 3. fill 几何:inline height 被抑制(空)、撑满 body(>420)、文档内滚未滚动。
+  const fsCard = fullscreen.locator('iframe[title="MCP app"]');
+  expect(await fsCard.evaluate((el) => el.style.height)).toBe("");
+  const fsBox = await fsCard.boundingBox();
+  expect(fsBox?.height ?? 0).toBeGreaterThan(420);
+  // 全屏内文档:从 iframe elementHandle 取 contentFrame(srcdoc 帧有两份,不能按 url 找)。
+  const fsHandle = await fsCard.elementHandle();
+  const fsInner = (await fsHandle?.contentFrame()) ?? undefined;
+  if (!fsInner) throw new Error("fullscreen content frame not found");
+  const fsScroll = await fsInner.evaluate(() => ({
+    contentH: document.body.scrollHeight,
+    viewportH: window.innerHeight,
+    scrolled: window.scrollY,
+  }));
+  expect(fsScroll.contentH).toBeGreaterThan(fsScroll.viewportH);
+  expect(fsScroll.scrolled).toBe(0);
+
+  // 4. focus trap × sandbox iframe + 确认闸 z 序:iframe 内聚焦后(父 activeElement
+  //    = iframe 元素)Radix FocusScope 判 contained 不抢焦 → 追问可发出;确认 dialog
+  //    (z-50,后挂载)必须经 portal DOM 序可见地压在全屏层上。走取消路径收尾。
+  await fsFrame.locator("#ask-input").fill("全屏内追问");
+  await fsFrame.locator("#ask-send").click();
+  const confirmDialog = page.getByRole("dialog").filter({ hasText: "发送到会话" });
+  await expect(confirmDialog).toBeVisible({ timeout: 10_000 });
+  await confirmDialog.getByRole("button", { name: "取消" }).click();
+  await expect(confirmDialog).not.toBeVisible();
+  await expect(fullscreen).toBeVisible();
+
+  // 5. 关闭销毁:✕ → Dialog 卸载第二实例;流内卡钳高不变。
+  await fullscreen.getByRole("button", { name: "关闭" }).click();
+  await expect(fullscreen).not.toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('iframe[title="MCP app"]')).toHaveCount(1);
+  expect(await card.evaluate((el) => el.style.height)).toBe("420px");
 
   assertNoConsoleErrors();
 });

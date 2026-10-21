@@ -11,6 +11,14 @@ export const SESSION_OVERVIEW_APP_URI = "ui://ar-hub/session-overview";
 export const SETTINGS_PREVIEW_APP_URI = "ui://ar-hub/settings-preview";
 export const FILE_PREVIEW_APP_URI = "ui://ar-hub/file-preview";
 
+/**
+ * 流内卡片高度上限：模板上报的内容高钳到此后，iframe 文档视口小于内容 →
+ * iframe 文档级出滚动条（模板 html/body 无 overflow 声明，UA 默认滚动机制接管）。
+ * 与默认 fallback 类名 "h-[420px]" 同档；类名不可从此常量派生（Tailwind 静态扫描），
+ * 两处需手工同步。
+ */
+const FRAME_MAX_HEIGHT_PX = 420;
+
 export type WikiPageStructuredContent = {
   kind: "wiki-page";
   slug: string;
@@ -165,6 +173,7 @@ export function McpAppCard({
   uri,
   structuredContent,
   heightClassName = "h-[420px]",
+  fillHeight = false,
   onSendPrompt,
   allowedToolName = "wiki_read_page",
 }: {
@@ -172,6 +181,12 @@ export function McpAppCard({
   uri: string;
   structuredContent: unknown;
   heightClassName?: string;
+  /**
+   * 全屏放大态：忽略 size-changed 上报（不写 inline height，撑满由调用方
+   * heightClassName 决定），内容在 iframe 文档内滚。两处必须一起关——
+   * listener 跳过 setFrameHeight + inline style 抑制，否则首份上报会压掉 h-full。
+   */
+  fillHeight?: boolean;
   /** ui/message 确认后的发送出口（renderer 注入 bridge.sendMessage）。 */
   onSendPrompt?: (text: string) => void;
   /**
@@ -353,14 +368,16 @@ export function McpAppCard({
         return;
       }
       if (data?.method !== "ui/notifications/size-changed") return;
+      // fillHeight（全屏放大态）：高度交给调用方，上报不消费（inline style 同步抑制）。
+      if (fillHeight) return;
       const h = data.params?.height;
       if (typeof h === "number" && Number.isFinite(h)) {
-        setFrameHeight(Math.min(10000, Math.max(120, Math.round(h))));
+        setFrameHeight(Math.min(FRAME_MAX_HEIGHT_PX, Math.max(120, Math.round(h))));
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [fillHeight]);
   // Re-sync the frame when the user switches the app theme.
   useEffect(() => {
     const observer = new MutationObserver(() => sendHostContext());
@@ -395,9 +412,10 @@ export function McpAppCard({
     <>
       <iframe
         ref={frameRef}
-        className={`mt-2 w-full overflow-hidden rounded-lg border border-neutral-line/40 bg-white ${heightClassName}`}
-        // Template-reported content height overrides the fallback height class.
-        style={frameHeight != null ? { height: frameHeight } : undefined}
+        className={`${fillHeight ? "" : "mt-2 "}w-full overflow-hidden rounded-lg border border-neutral-line/40 bg-white ${heightClassName}`}
+        // Template-reported content height overrides the fallback height class
+        // (clamped to FRAME_MAX_HEIGHT_PX in flow; suppressed when fillHeight).
+        style={!fillHeight && frameHeight != null ? { height: frameHeight } : undefined}
         onLoad={() => {
           const frame = frameRef.current;
           const html = resource.data?.html;

@@ -615,6 +615,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude.tool.projectSettings": "项目设置",
   "claude.tool.readFile": "文件预览",
   "claude.mcpApp.unavailable": "应用视图不可用",
+  "claude.mcpApp.expand": "放大查看",
   "claude.mcpApp.followUpTitle": "发送到会话",
   "api.mcpHubToolCallFailed": "工具调用失败",
   "claude.tool.glob": "文件匹配",

@@ -1,8 +1,10 @@
-import { useContext, type ReactNode } from "react";
+import { useContext, useState, type ReactNode } from "react";
 import { type ToolCallMessagePartComponent } from "@assistant-ui/react";
 import { ClaudeBridgeContext, type ExtractedImage } from "../../routes/claude-adapter";
 import { useT, type TranslateFn, type TranslationKey } from "../../i18n";
 import { ImageThumb } from "../ui/image-lightbox";
+import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
+import { ShellIcon } from "../shell/icons";
 import { formatDuration } from "../../lib/utils";
 import { CollapsibleSection } from "./collapsible-section";
 import { ToolHead, type ToolHeadStatus, ToolIcon } from "./tool-head";
@@ -671,6 +673,8 @@ const makeMcpAppCardToolUI = (config: {
       | Record<string, unknown>
       | undefined;
     const structuredContent = metadata?.structuredContent;
+    // 全屏放大态。须在 fallback return 之前（hook 规则）。
+    const [fullscreen, setFullscreen] = useState(false);
 
     if (
       status.type === "running" ||
@@ -687,13 +691,25 @@ const makeMcpAppCardToolUI = (config: {
     const projectName = bridge?.projectName ?? "";
     return (
       <div className="my-1">
-        <ToolHead
-          icon={icon}
-          badge={t(badgeKey)}
-          badgeClassName="bg-user/15 text-user-soft"
-          detail={detailText}
-          status="completed"
-        />
+        <div className="flex items-center gap-1.5 text-xs min-w-0">
+          <ToolHead
+            icon={icon}
+            badge={t(badgeKey)}
+            badgeClassName="bg-user/15 text-user-soft"
+            detail={detailText}
+            status="completed"
+          />
+          {projectName ? (
+            <button
+              type="button"
+              aria-label={t("claude.mcpApp.expand")}
+              className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-on-surface-muted transition hover:bg-on-surface/5 touch:h-10 touch:w-10"
+              onClick={() => setFullscreen(true)}
+            >
+              <ShellIcon name="maximize" className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
         {projectName ? (
           <McpAppCard
             projectName={projectName}
@@ -707,6 +723,66 @@ const makeMcpAppCardToolUI = (config: {
             {t("claude.mcpApp.unavailable")}
           </div>
         )}
+        {projectName ? (
+          <Dialog open={fullscreen} onOpenChange={(open) => !open && setFullscreen(false)}>
+            <DialogContent
+              // 全屏三件套照 FullscreenReader（inset-0 经 twMerge 干掉 left-1/2 top-1/2、
+              // translate-x-0/y-0 中和 -translate-1/2、sm:max-w-none 解除桌面 512px 钳制）。
+              // 唯独不设 z-[100]：本卡 ui/message 确认闸（ConfirmDialog/MobileSheet 均
+              // z-50,后挂载）必须经 portal DOM 序压在本层上,设 z-100 会把确认框遮死;
+              // 页面 chrome 最高 z-40,DOM 序兜得住。
+              className="fixed inset-0 max-w-none sm:max-w-none w-full translate-x-0 translate-y-0 flex flex-col border-0 bg-surface-inset/95 backdrop-blur-sm"
+              style={{
+                paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)",
+                paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.75rem)",
+                paddingLeft: "max(env(safe-area-inset-left, 0px), 0.75rem)",
+                paddingRight: "max(env(safe-area-inset-right, 0px), 0.75rem)",
+              }}
+              aria-describedby={undefined}
+            >
+              <DialogTitle className="sr-only">{t(badgeKey)}</DialogTitle>
+              <div className="flex items-center gap-2 rounded-t-lg border-b border-neutral-line/60 bg-surface-raised/60 px-3 py-2 sm:px-5">
+                <ToolIcon name={icon} className="h-4 w-4 shrink-0" />
+                <span className="min-w-0 truncate text-xs font-medium text-on-surface-soft">
+                  {t(badgeKey)}
+                </span>
+                {detailText ? (
+                  <span className="min-w-0 truncate text-xs text-on-surface-muted">
+                    {detailText}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => setFullscreen(false)}
+                  className="ml-auto cursor-pointer rounded p-2 text-on-surface-muted transition hover:bg-neutral-line/60 hover:text-on-surface"
+                  aria-label={t("session.close")}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M4 4l8 8M12 4l-8 8"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+              {/* 第二实例（第一个 iframe 不跨容器移动）：fillHeight 撑满 body、内容
+                  iframe 文档内滚;同 props 同 queryKey,模板走缓存零二次回源。 */}
+              <div className="flex-1 overflow-y-auto p-2 sm:p-3">
+                <McpAppCard
+                  fillHeight
+                  heightClassName="block h-full"
+                  projectName={projectName}
+                  uri={uri}
+                  structuredContent={structuredContent}
+                  allowedToolName={cardToolName}
+                  onSendPrompt={(text) => bridge?.sendMessage(text)}
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+        ) : null}
       </div>
     );
   };
