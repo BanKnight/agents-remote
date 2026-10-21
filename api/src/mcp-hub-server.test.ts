@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { startMcpHubServer, type McpHubServer } from "./mcp-hub-server";
+import { ProjectFilesService } from "./project-files";
+import { ProjectGitDiffService } from "./project-git-diff";
 import { ProjectWikiService } from "./project-wiki";
+import { SessionRegistry } from "./session-registry";
 
 const MCP_HEADERS = {
   "Content-Type": "application/json",
@@ -65,6 +68,9 @@ describe("MCP hub server (stateless, loopback)", () => {
       port: 0,
       projectsRoot,
       wikiService: new ProjectWikiService(projectsRoot),
+      gitDiffService: new ProjectGitDiffService(projectsRoot),
+      sessionRegistry: new SessionRegistry({ runDir: join(projectsRoot, ".runtime") }),
+      filesService: new ProjectFilesService(projectsRoot),
       home,
     });
     baseUrl = `http://127.0.0.1:${hub.port}`;
@@ -357,6 +363,281 @@ describe("MCP hub server (stateless, loopback)", () => {
     });
     const text = await res.text();
     expect(text).toContain('"code":-32602'); // invalid params:resource not found
+  });
+
+  // ── git 能力域(display tool git_status/git_log,注册条件 = uiEnabled && gitDiffService 注入)──
+
+  const git = async (projectPath: string, args: string[]) => {
+    const process = Bun.spawn({
+      cmd: ["git", "-C", projectPath, ...args],
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(process.stdout).text(),
+      new Response(process.stderr).text(),
+      process.exited,
+    ]);
+    if (exitCode !== 0) {
+      throw new Error(`git ${args.join(" ")} failed: ${stderr || stdout}`);
+    }
+    return stdout;
+  };
+
+  const initRepository = async (projectPath: string) => {
+    await git(projectPath, ["init"]);
+    await git(projectPath, ["config", "user.email", "test@example.com"]);
+    await git(projectPath, ["config", "user.name", "Test User"]);
+  };
+
+  it("ui=true registers git display tools with _meta.ui.resourceUri", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: listToolsBody(60),
+    });
+    const { result } = await parseSseResult(res);
+    const tools = (result as unknown as { tools?: { name: string; _meta?: unknown }[] }).tools;
+    const status = tools?.find((t) => t.name === "git_status");
+    const log = tools?.find((t) => t.name === "git_log");
+    expect(status?._meta).toEqual({
+      ui: { resourceUri: "ui://ar-hub/git-status", visibility: ["model", "app"] },
+    });
+    expect(log?._meta).toEqual({
+      ui: { resourceUri: "ui://ar-hub/git-log", visibility: ["model", "app"] },
+    });
+  });
+
+  it("git_status returns structuredContent for a dirty git project", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const projectPath = join(projectsRoot, "test");
+    await initRepository(projectPath);
+    await writeFile(join(projectPath, "a.txt"), "one\n");
+    await git(projectPath, ["add", "."]);
+    await git(projectPath, ["commit", "-m", "initial"]);
+    await writeFile(join(projectPath, "a.txt"), "one changed\n");
+    await writeFile(join(projectPath, "new.txt"), "brand new\n");
+
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(61, "git_status", {}),
+    });
+    const { result } = await parseSseResult(res);
+    expect(result?.isError).toBeUndefined();
+    const sc = result?.structuredContent as Record<string, unknown>;
+    expect(sc.kind).toBe("git-status");
+    expect(sc.clean).toBe(false);
+    expect(typeof sc.branch).toBe("string");
+    const files = sc.files as {
+      path: string;
+      status: string;
+      scope: string;
+      addedLines: number | null;
+      removedLines: number | null;
+    }[];
+    // worktree 修改项带 numstat 行数;untracked 项在列(行数为 null,不绑枚举)。
+    const modified = files.find((f) => f.path === "a.txt");
+    expect(modified).toMatchObject({ status: "modified", addedLines: 1, removedLines: 1 });
+    expect(files.some((f) => f.path === "new.txt")).toBe(true);
+  });
+
+  it("git_status on non-git project degrades to text-only (no structuredContent)", async () => {
+    await writeMcpConfig("test", { ui: true });
+    // beforeEach 建的 test 目录未 git init → listDiff 走 union 分支(repository:false)。
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(62, "git_status", {}),
+    });
+    const { result } = await parseSseResult(res);
+    expect(result?.isError).toBeUndefined();
+    expect(result?.content?.[0]?.text).toBe("Project is not a Git repository");
+    expect(result?.structuredContent).toBeUndefined();
+  });
+
+  it("git_log returns commit history structuredContent", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const projectPath = join(projectsRoot, "test");
+    await initRepository(projectPath);
+    await writeFile(join(projectPath, "a.txt"), "one\n");
+    await git(projectPath, ["add", "."]);
+    await git(projectPath, ["commit", "-m", "initial"]);
+    await writeFile(join(projectPath, "a.txt"), "one changed\n");
+    await git(projectPath, ["add", "."]);
+    await git(projectPath, ["commit", "-m", "second"]);
+
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(63, "git_log", {}),
+    });
+    const { result } = await parseSseResult(res);
+    expect(result?.isError).toBeUndefined();
+    const sc = result?.structuredContent as Record<string, unknown>;
+    expect(sc.kind).toBe("git-log");
+    expect(sc.total).toBe(2);
+    const commits = sc.commits as {
+      hash: string;
+      message: string;
+      author: string;
+      relativeTime: string;
+    }[];
+    expect(commits[0].message).toBe("second");
+    expect(commits[0].hash.length).toBeGreaterThan(0);
+    expect(commits[0].author).toBe("Test User");
+    expect(commits[0].relativeTime.length).toBeGreaterThan(0);
+  });
+
+  it("ui=false (wiki only) does not register git tools", async () => {
+    await writeMcpConfig("test", { wiki: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: listToolsBody(64),
+    });
+    const text = await res.text();
+    expect(text).toContain("wiki_list_pages");
+    expect(text).not.toContain("git_status");
+  });
+
+  it("git tools require gitDiffService injection (hub started without it)", async () => {
+    // 主 hub 已带 gitDiffService → 换起一个不带的,验证注入缺席时 ui=true 也不注册 git 工具。
+    hub.stop();
+    hub = startMcpHubServer({
+      port: 0,
+      projectsRoot,
+      wikiService: new ProjectWikiService(projectsRoot),
+      home,
+    });
+    baseUrl = `http://127.0.0.1:${hub.port}`;
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: listToolsBody(65),
+    });
+    const text = await res.text();
+    expect(text).toContain("wiki_read_page");
+    expect(text).not.toContain("git_status");
+    expect(text).not.toContain("git_log");
+  });
+
+  // ── session/settings 能力域（铺卡批第二批;注册条件见各自 register 函数）──
+
+  it("ui=true registers session_overview + project_settings with _meta", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: listToolsBody(66),
+    });
+    const { result } = await parseSseResult(res);
+    const tools = (result as unknown as { tools?: { name: string; _meta?: unknown }[] }).tools;
+    expect(tools?.find((t) => t.name === "session_overview")?._meta).toEqual({
+      ui: { resourceUri: "ui://ar-hub/session-overview", visibility: ["model", "app"] },
+    });
+    expect(tools?.find((t) => t.name === "project_settings")?._meta).toEqual({
+      ui: { resourceUri: "ui://ar-hub/settings-preview", visibility: ["model", "app"] },
+    });
+  });
+
+  it("session_overview returns per-project scoped empty overview", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(67, "session_overview", {}),
+    });
+    const { result } = await parseSseResult(res);
+    expect(result?.isError).toBeUndefined();
+    const sc = result?.structuredContent as Record<string, unknown>;
+    expect(sc.kind).toBe("session-overview");
+    expect(sc.projectName).toBe("test");
+    // 空索引 → counts/sessions 空面(造活会话需探活注入,链路面由 e2e/真机验)。
+    expect(sc.counts).toEqual({});
+    expect(sc.sessions).toEqual([]);
+  });
+
+  it("project_settings returns capabilities + mcpServers names/types only (no secrets)", async () => {
+    await writeMcpConfig("test", { wiki: true, ui: true });
+    // 项目根 .mcp.json 外部 server fixture:command/args/env 全带——塑形层必须剥净。
+    await writeFile(
+      join(projectsRoot, "test", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          demo: {
+            command: "npx",
+            args: ["-y", "some-server"],
+            env: { API_TOKEN: "sk-secret-value" },
+          },
+        },
+      }),
+    );
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(68, "project_settings", {}),
+    });
+    const { result } = await parseSseResult(res);
+    expect(result?.isError).toBeUndefined();
+    const sc = result?.structuredContent as Record<string, unknown>;
+    expect(sc.kind).toBe("settings-preview");
+    expect(sc.projectName).toBe("test");
+    expect(sc.capabilities).toEqual({ wiki: true, ui: true });
+    expect(sc.mcpServers).toEqual([{ name: "demo", type: "stdio" }]);
+    // 安全红线:整个 structuredContent 不出现命令行/密钥面(键名与值双重断言)。
+    const serialized = JSON.stringify(sc);
+    expect(serialized).not.toContain("command");
+    expect(serialized).not.toContain("args");
+    expect(serialized).not.toContain("env");
+    expect(serialized).not.toContain("API_TOKEN");
+    expect(serialized).not.toContain("sk-secret-value");
+  });
+
+  // ── read_file 能力域（文件预览卡,富模板与 wiki-page 共用）──
+
+  it("ui=true registers read_file with _meta; call returns file-preview structuredContent", async () => {
+    await writeMcpConfig("test", { ui: true });
+    await writeFile(join(projectsRoot, "test", "demo.md"), "# Title\n\nbody line\n");
+
+    const listRes = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: listToolsBody(69),
+    });
+    const { result: listResult } = await parseSseResult(listRes);
+    const tools = (listResult as unknown as { tools?: { name: string; _meta?: unknown }[] }).tools;
+    expect(tools?.find((t) => t.name === "read_file")?._meta).toEqual({
+      ui: { resourceUri: "ui://ar-hub/file-preview", visibility: ["model", "app"] },
+    });
+
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(70, "read_file", { path: "demo.md" }),
+    });
+    const { result } = await parseSseResult(res);
+    expect(result?.isError).toBeUndefined();
+    const sc = result?.structuredContent as Record<string, unknown>;
+    expect(sc.kind).toBe("file-preview");
+    expect(sc.path).toBe("demo.md");
+    expect(sc.name).toBe("demo.md");
+    expect(typeof sc.size).toBe("number");
+    expect(sc.content).toContain("body line");
+  });
+
+  it("read_file on missing path returns isError (not a crash)", async () => {
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(71, "read_file", { path: "no-such.md" }),
+    });
+    const { result } = await parseSseResult(res);
+    expect(result?.isError).toBe(true);
+    expect(result?.structuredContent).toBeUndefined();
   });
 
   // ── skills 能力域(SEP-2640:扩展声明 + skills/list-get + skill:// 资源读取)──

@@ -5,6 +5,7 @@ const projectName = process.env.E2E_PROJECT_NAME ?? "demo";
 // agent_ 前缀 = workbench PanelRouter 按 id 前缀路由到 claude ChatPanel（同
 // claude-windowing.spec.ts 头注）。
 const fakeSessionId = "agent_e2e-test-session-mcp-app";
+const gitSessionId = "agent_e2e-test-session-mcp-git";
 
 // MCP Apps 卡片端到端（SEP-1865 阶段 4 全链）：WS mock 只负责喂流帧
 // （assistant tool_use → user tool_result + tool_use_result envelope），此后
@@ -248,6 +249,181 @@ test("MCP Apps card: template host + handshake locale + tools/call refresh + ui/
   await page.waitForTimeout(500);
   expect(sentFrames.filter((f) => f.type === "user").length).toBe(userFrameCount);
   await expect(frame.locator("#ask-input")).toHaveValue("这条不该被发送");
+
+  assertNoConsoleErrors();
+});
+
+// git 变更卡全链（铺卡批）：mock 帧喂 mcp__ar-hub__git_status + stale
+// structuredContent（branch=stale-branch-x + clean=true,与 demo 真实状态相反）→
+// 卡片渲染 stale → 刷新钮走真实 mcp-hub-tools-call 代理 → 真实
+// ProjectGitDiffService.listDiff(demo) → 回灌真实工作区态（3 文件 + main 分支）。
+// demo 预置恒 3 文件（README worktree 改 + src/index.ts staged 新增 + notes.txt
+// untracked）,分支名被 run-e2e 固定为 main——刷新后断言可精确匹配。
+// ui/message 确认闸/握手 locale/高度自适应与卡无关的桥行为已由 wiki 用例锁定,
+// 此用例不重复。
+const GIT_STALE_SC = {
+  kind: "git-status",
+  branch: "stale-branch-x",
+  clean: true,
+  files: [],
+};
+
+test("MCP Apps git status card: stale mock → real listDiff refresh round-trip", async ({
+  page,
+}) => {
+  const assertNoConsoleErrors = collectConsoleErrors(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("lang", "zh");
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/${projectName}/agent-sessions/${gitSessionId}$`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          session: {
+            id: gitSessionId,
+            projectName,
+            provider: "claude",
+            displayName: "Claude Agent (e2e-mcp-git)",
+            status: "idle",
+            createdAt: new Date().toISOString(),
+          },
+          availableModels: ["sonnet"],
+          availablePermissionModes: ["default"],
+        }),
+      });
+    },
+  );
+  await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions$`), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sessions: [
+          {
+            id: gitSessionId,
+            projectName,
+            provider: "claude",
+            displayName: "Claude Agent (e2e-mcp-git)",
+            status: "idle",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+  });
+  await page.route(new RegExp("/api/overview$"), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        projectNames: [projectName],
+        candidates: [
+          {
+            type: "agent",
+            projectName,
+            sessionId: gitSessionId,
+            displayName: "Claude Agent (e2e-mcp-git)",
+            status: "idle",
+            provider: "claude",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.routeWebSocket(
+    new RegExp(`/api/projects/${projectName}/agent-sessions/${gitSessionId}/claude-stream`),
+    (ws) => {
+      ws.onMessage((data) => {
+        try {
+          const msg = JSON.parse(String(data)) as Record<string, unknown>;
+          if (msg.type === "ping") {
+            ws.send(JSON.stringify({ type: "pong" }));
+          }
+        } catch {
+          /* non-JSON frames ignored */
+        }
+      });
+      const frames = [
+        { type: "session_init", resume: false },
+        { type: "history_start", count: 0 },
+        { type: "history_end" },
+        { type: "live_start", count: 3 },
+        {
+          type: "assistant",
+          uuid: "g1",
+          message: {
+            id: "msg-g1",
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "tu-e2e-git",
+                name: "mcp__ar-hub__git_status",
+                input: {},
+              },
+            ],
+          },
+        },
+        {
+          type: "user",
+          uuid: "gu1",
+          message: {
+            role: "user",
+            content: [
+              { type: "tool_result", tool_use_id: "tu-e2e-git", content: "git status payload" },
+            ],
+          },
+          tool_use_result: { structuredContent: GIT_STALE_SC },
+        },
+        {
+          type: "assistant",
+          uuid: "g2",
+          message: {
+            id: "msg-g2",
+            role: "assistant",
+            content: [{ type: "text", text: "Git 变更卡已就绪。" }],
+          },
+        },
+        { type: "live_end" },
+      ];
+      for (const frame of frames) ws.send(JSON.stringify(frame));
+    },
+  );
+
+  await page.goto("/");
+  await page.getByLabel("访问密码").fill(password);
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible({
+    timeout: 15_000,
+  });
+
+  await page.goto(`/projects/${projectName}/agent-sessions/${gitSessionId}/claude`);
+  await expect(page.getByText("Git 变更卡已就绪。")).toBeVisible({ timeout: 15_000 });
+
+  // 1. kind 守卫命中 → 沙箱 iframe 卡片（而非通用 MCP tool 卡回退）。
+  const card = page.locator('iframe[title="MCP app"]');
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  await expect(card).toHaveAttribute("sandbox", "allow-scripts");
+  const frame = page.frameLocator('iframe[title="MCP app"]');
+
+  // 2. stale 渲染（握手 zh 后）：branch stale-branch-x + 工作区干净。
+  await expect(frame.locator("#title")).toHaveText("Git 变更 · stale-branch-x", {
+    timeout: 15_000,
+  });
+  await expect(frame.locator("#meta")).toHaveText("工作区干净");
+
+  // 3. 刷新全链：tools/call → 真实代理 → listDiff(demo) → 回灌。stale branch 变
+  //    main、clean 变 3 文件表,notes.txt（untracked）在列。
+  await frame.locator("#refresh").click();
+  await expect(frame.locator("#title")).toHaveText("Git 变更 · main", { timeout: 15_000 });
+  await expect(frame.locator("#meta")).toHaveText("3 个文件变更");
+  await expect(frame.locator("tr", { hasText: "notes.txt" })).toBeVisible();
 
   assertNoConsoleErrors();
 });

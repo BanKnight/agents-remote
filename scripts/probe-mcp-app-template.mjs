@@ -318,6 +318,141 @@ try {
   const askCleared = await page.evaluate(() => document.getElementById("ask-input").value);
   assert("ask input cleared after reply", askCleared === "", askCleared);
 
+  // 9.5 file-preview kind(富模板双 kind 共用面的回归防线):.md 走富渲染(h1),
+  //     非 .md 包 fence;刷新/追问请求按 kind 分派(read_file + 当前 path)。
+  await page.evaluate(() => {
+    window.postMessage(
+      {
+        jsonrpc: "2.0",
+        method: "ui/notifications/tool-result",
+        params: {
+          structuredContent: {
+            kind: "file-preview",
+            path: "docs/README.md",
+            name: "README.md",
+            size: 1024,
+            content: "# File Heading\n\nfile body",
+          },
+        },
+      },
+      "*",
+    );
+  });
+  await page.waitForTimeout(50);
+  const fileMd = await page.evaluate(() => ({
+    title: document.getElementById("title").textContent,
+    meta: document.getElementById("meta").textContent,
+    h1: document.querySelector("#body h1")?.textContent ?? "",
+  }));
+  assert(
+    "file-preview .md renders rich (h1 via marked)",
+    fileMd.title === "README.md" &&
+      fileMd.meta.includes("docs/README.md") &&
+      fileMd.h1 === "File Heading",
+    JSON.stringify(fileMd),
+  );
+  await page.evaluate(() => {
+    window.postMessage(
+      {
+        jsonrpc: "2.0",
+        method: "ui/notifications/tool-result",
+        params: {
+          structuredContent: {
+            kind: "file-preview",
+            path: "src/app.py",
+            name: "app.py",
+            size: 64,
+            content: "print('hi')",
+          },
+        },
+      },
+      "*",
+    );
+  });
+  await page.waitForTimeout(50);
+  const fileTxt = await page.evaluate(() => ({
+    pre: document.querySelector("#body pre code")?.textContent ?? "",
+    headings: document.querySelectorAll("#body h1").length,
+  }));
+  assert(
+    "file-preview non-md wrapped in fence (no rich heading)",
+    fileTxt.pre.includes("print('hi')") && fileTxt.headings === 0,
+    JSON.stringify(fileTxt),
+  );
+  await page.click("#refresh");
+  await page.waitForTimeout(50);
+  msgs = await page.evaluate(() => window.__msgs);
+  const fileRefresh = [...msgs].reverse().find((m) => m && m.method === "tools/call");
+  assert(
+    "file-preview refresh dispatches read_file with current path",
+    fileRefresh?.params?.name === "read_file" &&
+      fileRefresh?.params?.arguments?.path === "src/app.py",
+    JSON.stringify(fileRefresh?.params ?? null),
+  );
+  await page.evaluate((id) => {
+    window.postMessage(
+      { jsonrpc: "2.0", id, result: { content: [], structuredContent: null } },
+      "*",
+    );
+  }, fileRefresh?.id ?? 0);
+  await page.fill("#ask-input", "这个文件做什么");
+  await page.click("#ask-send");
+  await page.waitForTimeout(50);
+  msgs = await page.evaluate(() => window.__msgs);
+  const fileAsk = [...msgs].reverse().find((m) => m && m.method === "ui/message");
+  const fileAskText =
+    typeof fileAsk?.params?.content?.text === "string" ? fileAsk.params.content.text : "";
+  assert(
+    "file-preview ask wraps with file context prefix",
+    fileAskText.includes("关于文件「app.py") && fileAskText.includes("这个文件做什么"),
+    fileAskText,
+  );
+  await page.evaluate((id) => {
+    window.postMessage({ jsonrpc: "2.0", id, result: {} }, "*");
+  }, fileAsk?.id ?? 0);
+
+  // 9.6 legacy 兜底渲染器(renderBlocks,rich 管线抛异常时回落):标题/加粗命中,
+  //     纯文本不被误包 strong(P2-1 转义层级回归防线)。
+  await page.evaluate(() => {
+    const throwing = () => {
+      throw new Error("probe: force legacy fallback");
+    };
+    window.marked = { parse: throwing };
+    window.DOMPurify = { sanitize: throwing };
+  });
+  await page.evaluate(() => {
+    window.postMessage(
+      {
+        jsonrpc: "2.0",
+        method: "ui/notifications/tool-result",
+        params: {
+          structuredContent: {
+            kind: "wiki-page",
+            slug: "probe",
+            title: "Fallback",
+            markdown: "# Fallback Heading\n\nplain text line\n\n**real bold** and `code`",
+          },
+        },
+      },
+      "*",
+    );
+  });
+  await page.waitForTimeout(50);
+  const fallback = await page.evaluate(() => ({
+    h1: document.querySelector("#body h1")?.textContent ?? "",
+    plainStrong: [...document.querySelectorAll("#body p strong")].map((s) => s.textContent),
+    bold: document.querySelector("#body p strong")?.textContent ?? "",
+    code: document.querySelector("#body p code")?.textContent ?? "",
+  }));
+  assert(
+    "legacy fallback renders headings + real bold, plain text untouched",
+    fallback.h1 === "Fallback Heading" &&
+      fallback.bold === "real bold" &&
+      fallback.code === "code" &&
+      !fallback.plainStrong.includes("plain text line"),
+    JSON.stringify(fallback),
+  );
+
   // 10. 零 pageerror。
   assert("no page errors", pageErrors.length === 0, pageErrors.join("; "));
 } finally {

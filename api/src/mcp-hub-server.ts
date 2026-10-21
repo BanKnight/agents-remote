@@ -3,9 +3,15 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { homedir } from "node:os";
 import { z } from "zod";
-import purifySource from "dompurify/dist/purify.min.js" with { type: "text" };
-import markedSource from "marked/marked.min.js" with { type: "text" };
-import mermaidSource from "mermaid/dist/mermaid.min.js" with { type: "text" };
+import {
+  FILE_PREVIEW_UI_URI,
+  GIT_LOG_UI_URI,
+  GIT_STATUS_UI_URI,
+  HUB_UI_RESOURCES,
+  SESSION_OVERVIEW_UI_URI,
+  SETTINGS_PREVIEW_UI_URI,
+  WIKI_PAGE_UI_URI,
+} from "./mcp-app-templates.js";
 import { readProjectMcpConfig } from "./mcp-config.js";
 import {
   collectProjectSkills,
@@ -17,7 +23,11 @@ import {
   type HubSkill,
 } from "./mcp-skills.js";
 import { resolveProjectRelativePath } from "./project-paths.js";
+import { ProjectGitDiffService } from "./project-git-diff.js";
+import { ProjectFilesService } from "./project-files.js";
 import { ProjectWikiService } from "./project-wiki.js";
+import { listProjectMcpServers } from "./mcp-management.js";
+import type { SessionRegistry } from "./session-registry.js";
 
 /**
  * MCP Hub 基座 server —— 无状态 Streamable HTTP,绑 127.0.0.1,只给本机 agent 用。
@@ -50,6 +60,13 @@ export type StartMcpHubServerOptions = {
   projectsRoot: string;
   // wiki 能力域单一数据源:MCP 工具(producer)与 HTTP 路由(consumer)共享同一 service。
   wikiService: ProjectWikiService;
+  // git 能力域数据源(display tool git_status/git_log 的 producer)。可选:不注入则
+  // 不注册 git 工具(测试可只测 wiki 面)。
+  gitDiffService?: ProjectGitDiffService;
+  // session_overview display tool 的数据源。可选:不注入则不注册该工具。
+  sessionRegistry?: SessionRegistry;
+  // read_file display tool 的数据源。可选:不注入则不注册该工具。
+  filesService?: ProjectFilesService;
   // skills 全局 scope 的 home 定位(~/.claude/skills),测试注入临时目录;缺省 homedir()。
   home?: string;
 };
@@ -63,345 +80,11 @@ const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
 const MCP_SKILLS_EXTENSION = "io.modelcontextprotocol/skills";
 /** SEP-2549 CacheableResult REQUIRED 字段(skills/list-get 响应;与 tools/list 同语义)。 */
 const SKILLS_TTL_MS = 300_000;
-/** wiki 页卡片的 ui:// 资源 URI（全局模板,与 project 无关——数据经 tool-result 喂给卡片）。 */
-const WIKI_PAGE_UI_URI = "ui://ar-hub/wiki-page";
-
-/**
- * wiki 页卡片模板：渲染库构建期内联（marked + DOMPurify + mermaid,Bun text import
- * 直读 node_modules dist,无生成文件;CSP 回归零运行时外域——2026-10-21 调研定案:
- * ext-apps 官方示例/OpenAI Apps SDK/ZCode UI Plugin 三处一致走打包,纯 MCP Apps 宿主
- * 0 个 CDN 先例,CDN 的回放/离线空白违背 spec「MAY prefetch and cache」设计初衷,
- * 见 docs/research/mcp-app-rendering-survey.md）。CSP `default-src 'none'` 禁 connect/form
- * ——即便未来 esc 出现转义缺口,帧内脚本也无法把 wiki 数据外发(2026-10-20 security
- * review 补;宿主侧 postMessage 喂数据另由 mcp-app-card 的同模板重载守卫挡)。宿主按
- * MCP Apps 桥下发 `ui/notifications/tool-result`,卡片取 structuredContent
- * (kind="wiki-page")做基本结构化渲染(标题/列表/代码/粗体,转义防注入)。渲染质量是
- * 宿主 MVP 后的迭代面,管道优先。
- *
- * 反向通道（阶段 4）:ui/initialize 握手(theme/locale 经 hostContext 注入)→
- * initialized;tools/call(刷新钮,宿主白名单代理直调 service,不触发 turn);
- * ui/message(追问条,宿主确认框后经 bridge.sendMessage 触发新 turn)。
- */
-const WIKI_PAGE_APP_TEMPLATE = `<!doctype html>
-<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:"><style>
-  :root{--bg:#0f1115;--fg:#e6e8ea;--muted:#9aa3ad;--code-bg:rgba(255,255,255,.08);--pre-bg:#16181d;--pre-border:#2a2f37;--link:#6cb6ff;--tag-bg:rgba(99,153,255,.15);--tag-fg:#9cc0ff}
-  :root[data-theme="light"]{--bg:#fff;--fg:#111;--muted:#777;--code-bg:#f2f2f2;--pre-bg:#f6f6f6;--pre-border:#e3e3e3;--link:#0a66c2;--tag-bg:#eef3f8;--tag-fg:#345}
-  body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:16px;background:var(--bg);color:var(--fg);line-height:1.55}
-  h1{font-size:1.3em;margin:.2em 0 .6em}h2{font-size:1.15em;margin:1em 0 .4em}h3{font-size:1em;margin:.8em 0 .3em}
-  code{background:var(--code-bg);border-radius:4px;padding:.1em .35em;font-size:.92em}
-  pre{background:var(--pre-bg);border:1px solid var(--pre-border);border-radius:8px;padding:10px 12px;overflow:auto}
-  pre code{background:none;padding:0}
-  ul,ol{padding-left:1.4em}li{margin:.15em 0}
-  a{color:var(--link)}
-  .meta{color:var(--muted);font-size:.82em;margin-bottom:.8em}
-  .tag{display:inline-block;background:var(--tag-bg);color:var(--tag-fg);border-radius:999px;padding:.1em .6em;margin-right:.35em;font-size:.78em}
-  .bar{display:flex;justify-content:flex-end;margin:-.4em 0 .8em}
-  .bar-btn{background:none;border:1px solid var(--pre-border);color:var(--fg);border-radius:6px;padding:.15em .7em;font-size:.82em;cursor:pointer;font-family:inherit}
-  .bar-btn:hover{background:var(--code-bg)}
-  .bar-btn:disabled{opacity:.5;cursor:default}
-  .ask{display:flex;gap:.5em;margin-top:1em;padding-top:.8em;border-top:1px solid var(--pre-border)}
-  .ask input{flex:1;background:var(--code-bg);border:1px solid var(--pre-border);border-radius:6px;padding:.3em .6em;color:var(--fg);font:inherit;font-size:.9em;min-width:0}
-  .ask input:focus{outline:1px solid var(--link)}
-  table{border-collapse:collapse;margin:.6em 0}
-  th,td{border:1px solid var(--pre-border);padding:.35em .6em;text-align:left}
-  th{background:var(--code-bg)}
-  blockquote{border-left:3px solid var(--pre-border);margin:.6em 0;padding:.1em .8em;color:var(--muted)}
-  .mermaid-box{margin:.6em 0;overflow:auto}
-  .mermaid-box svg{max-width:100%;height:auto}
-</style></head>
-<body>
-  <h1 id="title"></h1>
-  <div class="meta" id="meta"></div>
-  <div class="bar"><button id="refresh" type="button" class="bar-btn"></button></div>
-  <div id="body"></div>
-  <div class="ask"><input id="ask-input" type="text"><button id="ask-send" type="button" class="bar-btn"></button></div>
-  <script>/*__AR_LIB_MARKED__*/</script>
-  <script>/*__AR_LIB_PURIFY__*/</script>
-  <script>/*__AR_LIB_MERMAID__*/;window.mermaid = window.mermaid || (__esbuild_esm_mermaid_nm && __esbuild_esm_mermaid_nm.mermaid);</script>
-  <script>
-    "use strict";
-    var esc = function (s) {
-      return String(s).replace(/[&<>"']/g, function (c) {
-        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-      });
-    };
-    var inline = function (s) {
-      return esc(s)
-        .replace(/\`([^\`]+)\`/g, "<code>$1</code>")
-        .replace(/\\*\\*([^*]+)\\*\\*/g, "<strong>$1</strong>");
-    };
-    var renderBlocks = function (md) {
-      var out = [], lines = String(md).split(/\\r?\\n/), i = 0, inCode = false, codeBuf = [], listBuf = null;
-      var flushList = function () {
-        if (listBuf) { out.push("<ul>" + listBuf.map(function (l) { return "<li>" + inline(l) + "</li>"; }).join("") + "</ul>"); listBuf = null; }
-      };
-      for (; i < lines.length; i++) {
-        var line = lines[i];
-        if (/^\`\`\`/.test(line)) {
-          if (inCode) { out.push("<pre><code>" + esc(codeBuf.join("\\n")) + "</code></pre>"); codeBuf = []; inCode = false; }
-          else { flushList(); inCode = true; }
-          continue;
-        }
-        if (inCode) { codeBuf.push(line); continue; }
-        var h = line.match(/^(#{1,3})\\s+(.*)$/);
-        if (h) { flushList(); out.push("<h" + h[1].length + ">" + inline(h[2]) + "</h" + h[1].length + ">"); continue; }
-        var li = line.match(/^[-*]\\s+(.*)$/);
-        if (li) { listBuf = listBuf || []; listBuf.push(li[1]); continue; }
-        flushList();
-        if (line.trim() === "") continue;
-        out.push("<p>" + inline(line) + "</p>");
-      }
-      if (inCode && codeBuf.length) out.push("<pre><code>" + esc(codeBuf.join("\\n")) + "</code></pre>");
-      flushList();
-      return out.join("");
-    };
-    // rich 渲染管线:marked parse → DOMPurify 白名单过滤 → mermaid 围栏出图。
-    // 渲染库构建期内联(上方独立 <script>,零运行时外域);任何异常回落 legacy
-    // renderBlocks(上方极简渲染器)兜底。
-    var mermaidSeq = 0;
-    var mermaidInited = false;
-    var mermaidTheme = function () {
-      return document.documentElement.dataset.theme === "light" ? "default" : "dark";
-    };
-    var upgradeMermaidBlocks = function (root) {
-      if (typeof mermaid === "undefined") return;
-      if (!mermaidInited) {
-        mermaid.initialize({ startOnLoad: false, theme: mermaidTheme() });
-        mermaidInited = true;
-      }
-      var blocks = root.querySelectorAll("pre > code.language-mermaid");
-      var i = 0;
-      var next = function () {
-        if (i >= blocks.length) { reportSize(); return; }
-        var block = blocks[i++];
-        var holder = block.closest ? block.closest("pre") : null;
-        mermaid.render("ar-mmd-" + ++mermaidSeq, block.textContent || "")
-          .then(function (r) {
-            if (holder) {
-              var box = document.createElement("div");
-              box.className = "mermaid-box";
-              box.innerHTML = r.svg;
-              holder.replaceWith(box);
-            }
-          })
-          .catch(function () {}) // 单块渲染失败保持代码块原样,不阻断其余块。
-          .then(next);
-      };
-      next();
-    };
-    var renderBody = function (md) {
-      var bodyEl = document.getElementById("body");
-      try {
-        bodyEl.innerHTML = DOMPurify.sanitize(marked.parse(String(md || "")));
-        upgradeMermaidBlocks(bodyEl);
-      } catch (e) {
-        bodyEl.innerHTML = renderBlocks(md);
-      }
-    };
-    var slug = "";
-    var currentTitle = "";
-    var lastData = null;
-    var render = function (data) {
-      if (!data || data.kind !== "wiki-page") return;
-      lastData = data;
-      slug = data.slug || "";
-      currentTitle = data.title || data.slug || "";
-      document.getElementById("title").textContent = currentTitle;
-      var tags = Array.isArray(data.tags) && data.tags.length
-        ? data.tags.map(function (t) { return '<span class="tag">' + esc(t) + "</span>"; }).join("")
-        : "";
-      document.getElementById("meta").innerHTML = tags;
-      renderBody(data.markdown || "");
-    };
-    window.addEventListener("message", function (e) {
-      // Only the host (parent; self under file:// probes where parent===self)
-      // may talk to us — scripted sibling frames must not forge responses or
-      // tool-result notifications (security-review 2026-10-20 P2-3).
-      if (e.source !== parent) return;
-      var msg = e.data;
-      if (!msg || typeof msg !== "object") return;
-      if (typeof msg.id === "number") {
-        var entry = pending[msg.id];
-        if (!entry) return;
-        // A JSON-RPC response carries exactly one of result/error. An id-only
-        // message is our own request echoing back through parent===self
-        // (file:// probes, self-embedded frames) — never treat it as a reply.
-        if (!("result" in msg) && !("error" in msg)) return;
-        delete pending[msg.id];
-        if (msg.error) entry.reject(new Error((msg.error && msg.error.message) || "request failed"));
-        else entry.resolve(msg.result);
-        return;
-      }
-      if (msg.method === "ui/notifications/host-context-changed") {
-        var theme = msg.params && msg.params.theme;
-        if (theme === "light" || theme === "dark") {
-          var prev = document.documentElement.dataset.theme;
-          document.documentElement.dataset.theme = theme;
-          // 主题实际变化时:mermaid 图是主题内嵌的 SVG,须重初始化 + 全量重渲染;
-          // 纯 CSS 变量部分幂等,重渲染无副作用。
-          if (prev !== theme) {
-            if (mermaidInited) mermaid.initialize({ startOnLoad: false, theme: mermaidTheme() });
-            if (lastData) render(lastData);
-          }
-        }
-        reportSize();
-        return;
-      }
-      if (msg.method === "ui/notifications/tool-result") {
-        var p = msg.params || {};
-        render(p.structuredContent || (p.content && p.content[0] && p.content[0]._meta) || null);
-        reportSize();
-      }
-    });
-    // Height adapts to content (host pins the iframe to reported height).
-    // Measure body.scrollHeight, NOT documentElement.scrollHeight: the latter
-    // is max(content, viewport) so short content reports the viewport height
-    // and the dedupe then swallows every real update. body is height:auto so
-    // its scrollHeight is exactly the content height regardless of viewport.
-    var lastSize = -1;
-    function reportSize() {
-      var h = Math.ceil(document.body.scrollHeight);
-      if (h === lastSize || !h) return;
-      lastSize = h;
-      parent.postMessage({ jsonrpc: "2.0", method: "ui/notifications/size-changed", params: { height: h } }, "*");
-    }
-    if (typeof ResizeObserver !== "undefined") {
-      new ResizeObserver(reportSize).observe(document.body);
-    }
-    window.addEventListener("load", reportSize);
-
-    // JSON-RPC request bridge (SEP-1865 reverse channel): id-multiplexed.
-    // Requests time out so a swallowed reply (revoked frame, unmounted card)
-    // can't leave a button disabled forever or a pending entry resident.
-    var reqSeq = 0;
-    var pending = {};
-    var REQUEST_TIMEOUT_MS = 15000;
-    var sendRequest = function (method, params) {
-      return new Promise(function (resolve, reject) {
-        var id = ++reqSeq;
-        pending[id] = { resolve: resolve, reject: reject };
-        parent.postMessage({ jsonrpc: "2.0", id: id, method: method, params: params }, "*");
-        setTimeout(function () {
-          if (pending[id]) {
-            delete pending[id];
-            reject(new Error(method + " timed out"));
-          }
-        }, REQUEST_TIMEOUT_MS);
-      });
-    };
-    // Locale via hostContext (SEP standard channel; template has no host i18n pipe).
-    var loc = "";
-    var DICT = {
-      en: { refresh: "Refresh", ask: "Ask the agent about this page...", send: "Send" },
-      zh: { refresh: "刷新", ask: "向 agent 追问本页…", send: "发送" },
-    };
-    var dict = DICT.en;
-    var applyLocale = function () {
-      document.getElementById("refresh").textContent = dict.refresh;
-      document.getElementById("ask-input").placeholder = dict.ask;
-      document.getElementById("ask-send").textContent = dict.send;
-    };
-    applyLocale();
-
-    // Refresh: app-side tools/call straight to host proxy (no agent turn).
-    document.getElementById("refresh").addEventListener("click", function () {
-      var btn = this;
-      if (btn.disabled || !slug) return;
-      btn.disabled = true;
-      sendRequest("tools/call", { name: "wiki_read_page", arguments: { slug: slug } })
-        .then(function (result) {
-          var sc = result && result.structuredContent;
-          if (sc) render(sc);
-          reportSize();
-        })
-        .catch(function () {})
-        .then(function () {
-          btn.disabled = false;
-        });
-    });
-
-    // Ask: ui/message follow-up (host confirms with the user before sending).
-    // In-flight guard mirrors the refresh button: Enter auto-repeat / double
-    // clicks must not stack requests (host confirm gate is single-resolver).
-    var askBox = document.getElementById("ask-input");
-    var askBusy = false;
-    var askSend = function () {
-      if (askBusy) return;
-      var text = (askBox.value || "").trim();
-      if (!text || !slug) return;
-      askBusy = true;
-      var wrapped =
-        loc.indexOf("zh") === 0
-          ? "关于 wiki 页「" + currentTitle + "」：" + text
-          : 'About the wiki page "' + currentTitle + '": ' + text;
-      sendRequest("ui/message", { role: "user", content: { type: "text", text: wrapped } })
-        .then(function () {
-          askBox.value = "";
-        })
-        .catch(function () {})
-        .then(function () {
-          askBusy = false;
-        });
-    };
-    document.getElementById("ask-send").addEventListener("click", askSend);
-    askBox.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        askSend();
-      }
-    });
-
-    // Handshake: ui/initialize -> apply hostContext -> initialized notification.
-    sendRequest("ui/initialize", {
-      appInfo: { name: "ar-wiki-page", version: "0.0.0" },
-      appCapabilities: {},
-      protocolVersion: "2026-01-26",
-    })
-      .then(function (result) {
-        var ctx = (result && result.hostContext) || {};
-        if (ctx.theme === "light" || ctx.theme === "dark") {
-          document.documentElement.dataset.theme = ctx.theme;
-        }
-        if (typeof ctx.locale === "string" && ctx.locale) {
-          loc = ctx.locale;
-          dict = DICT[loc.indexOf("zh") === 0 ? "zh" : "en"] || DICT.en;
-          applyLocale();
-        }
-        reportSize();
-        parent.postMessage(
-          { jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} },
-          "*",
-        );
-      })
-      .catch(function () {});
-  </script>
-</body></html>`;
-
-/**
- * 库 dist 内联的两个防御:
- * 1. `<\/script` 转义——现行三库产物已无字面 `</script`(esbuild/terser 转义),防未来
- *    版本引入后提前终止 script 标签;JS 字符串里 \/ 语义等价 /。
- * 2. replace 用函数形式——minified 库源码 $ 序列丰富,字符串替换串的 $&/$` 会被展开。
- */
-const inlineLibScript = (source: string): string => source.replace(/<\/script/gi, "<\\/script");
-
-/** 模板 + 三库内联 = 最终 ui:// 资源(构建期一次拼接,运行时零外域)。 */
-const WIKI_PAGE_APP_HTML = WIKI_PAGE_APP_TEMPLATE.replace("/*__AR_LIB_MARKED__*/", () =>
-  inlineLibScript(markedSource),
-)
-  .replace("/*__AR_LIB_PURIFY__*/", () => inlineLibScript(purifySource))
-  .replace("/*__AR_LIB_MERMAID__*/", () => inlineLibScript(mermaidSource));
-
-/**
- * hub UI 资源单源表（uri → { mimeType, html }）：hub 注册（agent 经 resources/read 读）
- * 与 api HTTP 路由（web 宿主经 /api/projects/{name}/mcp-ui-resource 读,hub 恒 loopback
- * 浏览器够不着）共用同一份模板,无复制漂移面。资源是我们自己的系统模板（非第三方
- * server 作者资产）,篡改面不存在——SEP-1865 双 iframe 沙箱(外层独立 origin 承载 CSP
- * HTTP 头)是第三方 server 接入时的强化面,web 宿主 MVP 用单层 sandbox iframe。
- */
-export const HUB_UI_RESOURCES: Record<string, { mimeType: string; html: string }> = {
-  [WIKI_PAGE_UI_URI]: { mimeType: MCP_APP_MIME_TYPE, html: WIKI_PAGE_APP_HTML },
-};
+// 模板与 HUB_UI_RESOURCES 单源已迁至 ./mcp-app-templates.ts（铺卡批,2026-10-21）:
+// buildCardTemplate(spec) = 共享基座（桥/握手/主题/高度/locale/刷新/追问）+ 按 kind
+// 渲染段 + 轻重库开关（轻 = 零库结构化卡,富 = marked+DOMPurify+mermaid,构建期内联）。
+// wiki-page 产物行为以模板探针 26/26 为回归标准。
+export { HUB_UI_RESOURCES } from "./mcp-app-templates.js";
 
 /**
  * wiki 页 → display tool structuredContent 包装（hub registerTool 与 api 侧
@@ -419,6 +102,161 @@ export const wikiPageStructuredContent = (page: {
   tags: page.frontmatter.tags,
   markdown: page.body,
 });
+
+/**
+ * git 变更 → git-status 卡 structuredContent（hub registerTool 与 api 侧 HUB_APP_TOOLS
+ * 代理共用,防两处漂移）。clean = files 空(工作区/staged/untracked 全净);branch 取
+ * GitBranchStatus.name(detached 降级仍有名)。
+ */
+export const gitStatusStructuredContent = (list: {
+  files: {
+    path: string;
+    status: string;
+    scope: string;
+    addedLines: number | null;
+    removedLines: number | null;
+  }[];
+  branch?: { name: string };
+}) => ({
+  kind: "git-status" as const,
+  branch: list.branch?.name,
+  clean: list.files.length === 0,
+  files: list.files.map((f) => ({
+    path: f.path,
+    status: f.status,
+    scope: f.scope,
+    addedLines: f.addedLines,
+    removedLines: f.removedLines,
+  })),
+});
+
+/**
+ * git 提交历史 → git-log 卡 structuredContent(共用同上)。commits 裁到卡契约四字段
+ * (isoDate 等不进卡)。
+ */
+export const gitLogStructuredContent = (log: {
+  branch: string;
+  total: number;
+  commits: { hash: string; message: string; author: string; relativeTime: string }[];
+}) => ({
+  kind: "git-log" as const,
+  branch: log.branch,
+  total: log.total,
+  commits: log.commits.map((c) => ({
+    hash: c.hash,
+    message: c.message,
+    author: c.author,
+    relativeTime: c.relativeTime,
+  })),
+});
+
+/**
+ * 会话候选 → session-overview 卡 structuredContent（hub registerTool 与 api 侧
+ * HUB_APP_TOOLS 代理共用,防两处漂移）。registry 是全局单例,project 维度收窄在此
+ * 做;counts 按 status 归并;sessions 裁到卡契约四字段（sessionId/provider 等不进卡）。
+ */
+export const sessionOverviewStructuredContent = (
+  projectName: string,
+  candidates: {
+    projectName: string;
+    displayName: string;
+    type: string;
+    status: string;
+    updatedAt?: string;
+  }[],
+) => {
+  const scoped = candidates.filter((c) => c.projectName === projectName);
+  const counts: Record<string, number> = {};
+  for (const s of scoped) {
+    counts[s.status] = (counts[s.status] ?? 0) + 1;
+  }
+  return {
+    kind: "session-overview" as const,
+    projectName,
+    counts,
+    sessions: scoped.map((s) => ({
+      displayName: s.displayName,
+      type: s.type,
+      status: s.status,
+      updatedAt: s.updatedAt,
+    })),
+  };
+};
+
+/**
+ * 项目 MCP 配置 → settings-preview 卡 structuredContent(共用同上)。
+ * 安全红线:mcpServers 只取 {name,type}——command/args/env/url/headers 等命令行与
+ * 密钥面绝不进卡（密钥不入库、不回显）;capabilities 值恒 boolean,原样透传。
+ */
+export const settingsPreviewStructuredContent = (
+  projectName: string,
+  capabilities: Partial<Record<string, boolean>> | undefined,
+  servers: { name: string; type: string }[],
+) => ({
+  kind: "settings-preview" as const,
+  projectName,
+  capabilities: capabilities ?? {},
+  mcpServers: servers.map((s) => ({ name: s.name, type: s.type })),
+});
+
+/**
+ * 文件预览 → file-preview 卡 structuredContent(共用同上)。只有 text 分支进卡;
+ * image/unsupported/too_large 由调用方回退纯 text(web 侧 kind 守卫不命中 → 通用卡)。
+ * content 全文进卡(卡面即预览),md 文件由模板富渲染,其余按代码 fence 渲染。
+ */
+export const filePreviewStructuredContent = (preview: {
+  type: string;
+  path: string;
+  name: string;
+  size: number;
+  content?: string;
+}) => ({
+  kind: "file-preview" as const,
+  path: preview.path,
+  name: preview.name,
+  size: preview.size,
+  content: preview.content ?? "",
+});
+
+/** 非 text 文件的纯 text 回退文案(hub/api 双面 handler 共用,防逐字漂移)。 */
+export const filePreviewFallbackText = (preview: {
+  type: string;
+  name: string;
+  limitBytes?: number;
+}): string =>
+  preview.type === "image"
+    ? `Image file (not previewable in card): ${preview.name}`
+    : preview.type === "too_large"
+      ? `File too large to preview: ${preview.name} (${preview.limitBytes} byte limit)`
+      : `Unsupported file type: ${preview.name}`;
+
+/**
+ * settings-preview 卡数据读取(hub/api 双面 handler 共用):config 非法/缺失降级空面,
+ * server 列表读取失败降级 [](预览卡不因 config 问题失败)。返回值只含塑形输入,
+ * 密钥面剥离在 settingsPreviewStructuredContent。
+ */
+export const readSettingsPreviewData = async (
+  projectsRoot: string,
+  project: string,
+): Promise<{
+  capabilities: Partial<Record<string, boolean>> | undefined;
+  servers: { name: string; type: string }[];
+}> => {
+  let capabilities: Partial<Record<string, boolean>> | undefined;
+  try {
+    capabilities = (await readProjectMcpConfig(projectsRoot, project))?.capabilities;
+  } catch {
+    capabilities = {};
+  }
+  let servers: { name: string; type: string }[] = [];
+  try {
+    const listed = await listProjectMcpServers(projectsRoot, project);
+    servers = listed.servers.map((s) => ({ name: s.name, type: s.type }));
+  } catch {
+    servers = [];
+  }
+  return { capabilities, servers };
+};
 
 /**
  * 解析 `/mcp/{project}` URL 的 project 段(encoded)。返回 undefined 表示 URL 不合法。
@@ -559,6 +397,152 @@ const registerWikiTools = (
 };
 
 /**
+ * 注册 git display tool 两枚(git_status/git_log,铺卡批 2026-10-21)。纯卡片工具——
+ * 注册条件 = gitDiffService 注入 && uiEnabled(调用方守卫),无 wiki 那种「无 UI 也有
+ * 数据价值」双态,故 _meta 恒带。git_status 非 git 仓库走 listDiff 的 union 分支
+ * (纯 text 无 structuredContent,卡片不亮);git_log 非 git 抛 ProjectGitDiffError →
+ * wikiErrorResponse 同款 isError 返回(agent 看到语义化错误而非崩溃)。
+ */
+const registerGitTools = (
+  server: McpServer,
+  project: string,
+  gitDiffService: ProjectGitDiffService,
+): void => {
+  server.registerTool(
+    "git_status",
+    {
+      description:
+        "Summarize the current Git working tree changes (staged + worktree + untracked) of the current project as a UI card. Call this after finishing code edits to show the user what changed.",
+      inputSchema: {},
+      _meta: { ui: { resourceUri: GIT_STATUS_UI_URI, visibility: ["model", "app"] } },
+    },
+    async () => {
+      const list = await gitDiffService.listDiff(project);
+      if (!list.repository) {
+        return {
+          content: [{ type: "text" as const, text: "Project is not a Git repository" }],
+        };
+      }
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(list) }],
+        structuredContent: gitStatusStructuredContent(list),
+      };
+    },
+  );
+
+  server.registerTool(
+    "git_log",
+    {
+      description:
+        "Show recent commit history of the current project as a UI card. Optionally limit the number of commits (default 10, max 50).",
+      inputSchema: { limit: z.number().int().min(1).max(50).optional() },
+      _meta: { ui: { resourceUri: GIT_LOG_UI_URI, visibility: ["model", "app"] } },
+    },
+    async ({ limit }) => {
+      const log = await gitDiffService.listCommits(project, undefined, limit ?? 10);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(log) }],
+        structuredContent: gitLogStructuredContent(log),
+      };
+    },
+  );
+};
+
+/**
+ * 注册 session_overview display tool（会话概览卡,铺卡批第二批 2026-10-21）。
+ * 注册条件 = sessionRegistry 注入 && uiEnabled(调用方守卫)。handler 拉全局候选后
+ * 按本 project 收窄(收窄在塑形层 sessionOverviewStructuredContent 做)。
+ */
+const registerSessionTools = (
+  server: McpServer,
+  project: string,
+  sessionRegistry: SessionRegistry,
+): void => {
+  server.registerTool(
+    "session_overview",
+    {
+      description:
+        "Show an overview of all live sessions (agent/terminal) in the current project as a UI card, including per-status counts.",
+      inputSchema: {},
+      _meta: { ui: { resourceUri: SESSION_OVERVIEW_UI_URI, visibility: ["model", "app"] } },
+    },
+    async () => {
+      const candidates = await sessionRegistry.listAllCandidates();
+      const sc = sessionOverviewStructuredContent(project, candidates);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(sc) }],
+        structuredContent: sc,
+      };
+    },
+  );
+};
+
+/**
+ * 注册 project_settings display tool(设置预览卡)。数据源 = 纯读函数(.agents-remote/
+ * mcp.json capabilities + 项目根 .mcp.json 外部 server),无需依赖注入——注册条件只看
+ * uiEnabled。config 非法/缺失降级空面(与 hub 3b 步同语义:预览卡不因 config 问题失败)。
+ * structuredContent 安全红线见 settingsPreviewStructuredContent(只 name/type)。
+ */
+const registerSettingsTools = (server: McpServer, project: string, projectsRoot: string): void => {
+  server.registerTool(
+    "project_settings",
+    {
+      description:
+        "Preview the current project's MCP configuration (capability switches and external MCP servers — names and types only, never secrets or commands) as a UI card.",
+      inputSchema: {},
+      _meta: { ui: { resourceUri: SETTINGS_PREVIEW_UI_URI, visibility: ["model", "app"] } },
+    },
+    async () => {
+      const { capabilities, servers } = await readSettingsPreviewData(projectsRoot, project);
+      const sc = settingsPreviewStructuredContent(project, capabilities, servers);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(sc) }],
+        structuredContent: sc,
+      };
+    },
+  );
+};
+
+/**
+ * 注册 read_file display tool(文件预览卡,富模板与 wiki-page 共用同一份 HTML)。
+ * 注册条件 = filesService 注入 && uiEnabled。text 分支 → 富渲染卡;image/unsupported/
+ * too_large → 纯 text 描述(web kind 守卫不命中 → 通用 MCP 卡回退)。路径越界/不存在等
+ * ProjectFilesError → isError 语义化返回(同 wikiErrorResponse 风格,不抛崩连接)。
+ */
+const registerFileTools = (
+  server: McpServer,
+  project: string,
+  filesService: ProjectFilesService,
+): void => {
+  server.registerTool(
+    "read_file",
+    {
+      description:
+        "Read a file in the current project and show it as a preview card (markdown renders rich; other text files render as code). Paths are project-relative.",
+      inputSchema: { path: z.string() },
+      _meta: { ui: { resourceUri: FILE_PREVIEW_UI_URI, visibility: ["model", "app"] } },
+    },
+    async ({ path }) => {
+      try {
+        const preview = await filesService.previewFile(project, path);
+        if (preview.type !== "text") {
+          return {
+            content: [{ type: "text" as const, text: filePreviewFallbackText(preview) }],
+          };
+        }
+        const sc = filePreviewStructuredContent(preview);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(sc) }],
+          structuredContent: sc,
+        };
+      } catch (error) {
+        return wikiErrorResponse(error);
+      }
+    },
+  );
+};
+
+/**
  * 注册 skills 能力域（SEP-2640 Skills over MCP）:skills/list + skills/get + skill://
  * 资源读取（标准 resources/read——SEP 无 skills/read）。声明扩展即 MUST 实现两方法。
  *
@@ -665,6 +649,9 @@ const registerSkillResources = (
 const buildRequestServer = (
   project: string,
   wikiService: ProjectWikiService,
+  gitDiffService: ProjectGitDiffService | undefined,
+  sessionRegistry: SessionRegistry | undefined,
+  filesService: ProjectFilesService | undefined,
   wikiEnabled: boolean,
   uiEnabled: boolean,
   skillsEnabled: boolean,
@@ -703,11 +690,31 @@ const buildRequestServer = (
   if (skillsEnabled) {
     registerSkillResources(server, project, projectsRoot, home);
   }
+  if (gitDiffService && uiEnabled) {
+    registerGitTools(server, project, gitDiffService);
+  }
+  if (sessionRegistry && uiEnabled) {
+    registerSessionTools(server, project, sessionRegistry);
+  }
+  if (uiEnabled) {
+    registerSettingsTools(server, project, projectsRoot);
+  }
+  if (filesService && uiEnabled) {
+    registerFileTools(server, project, filesService);
+  }
   return server;
 };
 
 export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServer => {
-  const { port, projectsRoot, wikiService, home = homedir() } = options;
+  const {
+    port,
+    projectsRoot,
+    wikiService,
+    gitDiffService,
+    sessionRegistry,
+    filesService,
+    home = homedir(),
+  } = options;
 
   const server = Bun.serve({
     hostname: "127.0.0.1",
@@ -761,6 +768,9 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
         const mcp = buildRequestServer(
           project,
           wikiService,
+          gitDiffService,
+          sessionRegistry,
+          filesService,
           wikiEnabled,
           uiEnabled,
           skillsEnabled,

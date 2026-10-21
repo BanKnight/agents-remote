@@ -1096,6 +1096,60 @@ test("createFetchHandler proxies MCP app tools/call (token-guarded, ui-gated, al
   expect(wrongMethod.status).not.toBe(200);
 });
 
+test("createFetchHandler proxies MCP app read_file and git_log tools", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler } = createTestHandler();
+  await writeFile(join(root, "demo", "notes.txt"), "# Hello\n\nworld");
+  await writeFile(join(root, "demo", "pic.png"), "not-a-real-png");
+  const headers = authHeader(auth);
+  const call = (body: unknown) =>
+    handler(
+      new Request(`http://localhost/api/projects/demo/mcp-hub-tools-call`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      }),
+      { upgrade: () => false },
+    );
+
+  // 开 ui(与 wiki 代理用例同款)。
+  await mkdir(join(root, "demo", ".agents-remote"), { recursive: true });
+  await writeFile(
+    join(root, "demo", ".agents-remote", "mcp.json"),
+    JSON.stringify({ capabilities: { ui: true } }),
+  );
+
+  // read_file text 分支 → 200 CallToolResult(file-preview structuredContent)。
+  const ok = await call({ name: "read_file", arguments: { path: "notes.txt" } });
+  expect(ok.status).toBe(200);
+  const okJson = await ok.json();
+  expect(okJson.content).toEqual([{ type: "text", text: expect.any(String) }]);
+  expect(okJson.structuredContent).toEqual({
+    kind: "file-preview",
+    path: "notes.txt",
+    name: "notes.txt",
+    size: expect.any(Number),
+    content: "# Hello\n\nworld",
+  });
+
+  // read_file 非 text(image)→ 纯 text 回退文案,无 structuredContent(web kind
+  // 守卫不命中 → 通用 MCP 卡)。
+  const img = await call({ name: "read_file", arguments: { path: "pic.png" } });
+  expect(img.status).toBe(200);
+  const imgJson = await img.json();
+  expect(imgJson.structuredContent).toBeUndefined();
+  expect(imgJson.content[0].text).toContain("Image file (not previewable in card): pic.png");
+
+  // read_file 路径穿越 → ProjectFilesError → 结构化错误(非 200)。
+  const escape = await call({ name: "read_file", arguments: { path: "../secret.txt" } });
+  expect(escape.status).toBeGreaterThanOrEqual(400);
+
+  // git_log 非 git 目录 → ProjectGitDiffError NOT_REPOSITORY → 400。
+  const log = await call({ name: "git_log", arguments: {} });
+  expect(log.status).toBe(400);
+  expect((await log.json()).error.code).toBe("PROJECT_GIT_NOT_REPOSITORY");
+});
+
 test("createFetchHandler protects pages config and validates writes", async () => {
   await mkdir(join(root, "demo"));
   const { auth, handler } = createTestHandler();

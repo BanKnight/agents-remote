@@ -6,7 +6,21 @@ import { ImageThumb } from "../ui/image-lightbox";
 import { formatDuration } from "../../lib/utils";
 import { CollapsibleSection } from "./collapsible-section";
 import { ToolHead, type ToolHeadStatus, ToolIcon } from "./tool-head";
-import { McpAppCard, WIKI_PAGE_APP_URI, isWikiPageStructuredContent } from "./mcp-app-card";
+import {
+  FILE_PREVIEW_APP_URI,
+  GIT_LOG_APP_URI,
+  GIT_STATUS_APP_URI,
+  McpAppCard,
+  SESSION_OVERVIEW_APP_URI,
+  SETTINGS_PREVIEW_APP_URI,
+  WIKI_PAGE_APP_URI,
+  isFilePreviewStructuredContent,
+  isGitLogStructuredContent,
+  isGitStatusStructuredContent,
+  isSessionOverviewStructuredContent,
+  isSettingsPreviewStructuredContent,
+  isWikiPageStructuredContent,
+} from "./mcp-app-card";
 
 function makeToolRenderer(config: {
   icon: string;
@@ -634,57 +648,150 @@ toolRegistry.set("firecrawl_search", FirecrawlSearchToolUI);
 toolRegistry.set("firecrawl_scrape", FirecrawlScrapeToolUI);
 
 // ── MCP Apps display tool（SEP-1865）宿主卡片 ────────────────────────────────
-// wiki_read_page 的展示面：structuredContent 合法 → McpAppCard 沙箱 iframe（模板经
-// mcp-ui-resource 回源,postMessage 喂数据）;running/错误/中断/回放缺 envelope/未知 kind
-// → 完全回退通用 MCP 卡（复用既有 running/中断/错误语义）。renderer 壳放本文件避免
-// import 环（mcp-app-card 不得反向 import registry）。
-const HubWikiPageToolUI: ToolCallMessagePartComponent = (props) => {
-  const { argsText, status } = props;
-  const { t } = useT();
-  const bridge = useContext(ClaudeBridgeContext);
-  const metadata = (props as Record<string, unknown>).metadata as
-    | Record<string, unknown>
-    | undefined;
-  const structuredContent = metadata?.structuredContent;
+// structuredContent 合法 → McpAppCard 沙箱 iframe（模板经 mcp-ui-resource 回源,
+// postMessage 喂数据）;running/错误/中断/回放缺 envelope/未知 kind → 完全回退通用
+// MCP 卡（复用既有 running/中断/错误语义）。renderer 壳放本文件避免 import 环
+// （mcp-app-card 不得反向 import registry）。
+const makeMcpAppCardToolUI = (config: {
+  uri: string;
+  /** tools/call 反向通道 allowlist（与 McpAppCard 的 allowedToolName 同值）。 */
+  cardToolName: string;
+  kindGuard: (value: unknown) => boolean;
+  icon: string;
+  badgeKey: TranslationKey;
+  /** ToolHead detail 行（wiki=slug,git=branch）。 */
+  detail?: (sc: Record<string, unknown>, args: Record<string, unknown>) => string | null;
+}): ToolCallMessagePartComponent => {
+  const { uri, cardToolName, kindGuard, icon, badgeKey, detail } = config;
+  return (props) => {
+    const { argsText, status } = props;
+    const { t } = useT();
+    const bridge = useContext(ClaudeBridgeContext);
+    const metadata = (props as Record<string, unknown>).metadata as
+      | Record<string, unknown>
+      | undefined;
+    const structuredContent = metadata?.structuredContent;
 
-  if (
-    status.type === "running" ||
-    (props as Record<string, unknown>).isError === true ||
-    (props as Record<string, unknown>).isInterrupted === true ||
-    !isWikiPageStructuredContent(structuredContent)
-  ) {
-    return <MCPToolRenderer {...props} />;
-  }
+    if (
+      status.type === "running" ||
+      (props as Record<string, unknown>).isError === true ||
+      (props as Record<string, unknown>).isInterrupted === true ||
+      !kindGuard(structuredContent)
+    ) {
+      return <MCPToolRenderer {...props} />;
+    }
 
-  const args = safeParseArgs(argsText);
-  const slug = typeof args.slug === "string" ? args.slug : "";
-  const projectName = bridge?.projectName ?? "";
-  return (
-    <div className="my-1">
-      <ToolHead
-        icon="read"
-        badge={t("claude.tool.wikiReadPage")}
-        badgeClassName="bg-user/15 text-user-soft"
-        detail={slug}
-        status="completed"
-      />
-      {projectName ? (
-        <McpAppCard
-          projectName={projectName}
-          uri={WIKI_PAGE_APP_URI}
-          structuredContent={structuredContent}
-          onSendPrompt={(text) => bridge?.sendMessage(text)}
+    const args = safeParseArgs(argsText);
+    const sc = structuredContent as Record<string, unknown>;
+    const detailText = detail ? detail(sc, args) : null;
+    const projectName = bridge?.projectName ?? "";
+    return (
+      <div className="my-1">
+        <ToolHead
+          icon={icon}
+          badge={t(badgeKey)}
+          badgeClassName="bg-user/15 text-user-soft"
+          detail={detailText}
+          status="completed"
         />
-      ) : (
-        <div className="px-1 py-2 text-xs text-on-surface-muted">
-          {t("claude.mcpApp.unavailable")}
-        </div>
-      )}
-    </div>
-  );
+        {projectName ? (
+          <McpAppCard
+            projectName={projectName}
+            uri={uri}
+            structuredContent={structuredContent}
+            allowedToolName={cardToolName}
+            onSendPrompt={(text) => bridge?.sendMessage(text)}
+          />
+        ) : (
+          <div className="px-1 py-2 text-xs text-on-surface-muted">
+            {t("claude.mcpApp.unavailable")}
+          </div>
+        )}
+      </div>
+    );
+  };
 };
 
-toolRegistry.set("mcp__ar-hub__wiki_read_page", HubWikiPageToolUI);
+toolRegistry.set(
+  "mcp__ar-hub__wiki_read_page",
+  makeMcpAppCardToolUI({
+    uri: WIKI_PAGE_APP_URI,
+    cardToolName: "wiki_read_page",
+    kindGuard: isWikiPageStructuredContent,
+    icon: "read",
+    badgeKey: "claude.tool.wikiReadPage",
+    detail: (_sc, args) => (typeof args.slug === "string" ? args.slug : null),
+  }),
+);
+
+toolRegistry.set(
+  "mcp__ar-hub__git_status",
+  makeMcpAppCardToolUI({
+    uri: GIT_STATUS_APP_URI,
+    cardToolName: "git_status",
+    kindGuard: isGitStatusStructuredContent,
+    icon: "edit",
+    badgeKey: "claude.tool.gitStatus",
+    detail: (sc) => (typeof sc.branch === "string" ? sc.branch : null),
+  }),
+);
+
+toolRegistry.set(
+  "mcp__ar-hub__git_log",
+  makeMcpAppCardToolUI({
+    uri: GIT_LOG_APP_URI,
+    cardToolName: "git_log",
+    kindGuard: isGitLogStructuredContent,
+    icon: "history",
+    badgeKey: "claude.tool.gitLog",
+    detail: (sc) => (typeof sc.branch === "string" ? sc.branch : null),
+  }),
+);
+
+toolRegistry.set(
+  "mcp__ar-hub__session_overview",
+  makeMcpAppCardToolUI({
+    uri: SESSION_OVERVIEW_APP_URI,
+    cardToolName: "session_overview",
+    kindGuard: isSessionOverviewStructuredContent,
+    icon: "agent",
+    badgeKey: "claude.tool.sessionOverview",
+    detail: (sc) => {
+      const counts = sc.counts as Record<string, number>;
+      const summary = Object.entries(counts)
+        .map(([k, v]) => `${k} ${v}`)
+        .join(" · ");
+      return summary || null;
+    },
+  }),
+);
+
+toolRegistry.set(
+  "mcp__ar-hub__project_settings",
+  makeMcpAppCardToolUI({
+    uri: SETTINGS_PREVIEW_APP_URI,
+    cardToolName: "project_settings",
+    kindGuard: isSettingsPreviewStructuredContent,
+    icon: "mcp",
+    badgeKey: "claude.tool.projectSettings",
+    detail: (sc) => {
+      const servers = sc.mcpServers as unknown[];
+      return servers.length > 0 ? `${servers.length} MCP` : null;
+    },
+  }),
+);
+
+toolRegistry.set(
+  "mcp__ar-hub__read_file",
+  makeMcpAppCardToolUI({
+    uri: FILE_PREVIEW_APP_URI,
+    cardToolName: "read_file",
+    kindGuard: isFilePreviewStructuredContent,
+    icon: "read",
+    badgeKey: "claude.tool.readFile",
+    detail: (sc) => (typeof sc.path === "string" ? sc.path : null),
+  }),
+);
 
 export function getToolRenderer(toolName: string): ToolRenderer {
   const exact = toolRegistry.get(toolName);

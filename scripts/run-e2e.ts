@@ -40,6 +40,9 @@ const main = async () => {
     "---\ntitle: Fresh Wiki Page\ntags:\n  - e2e\n---\n\n# Fresh body\n\nhub wiki service e2e content ok\n",
   );
   await git(projectPath, ["init"]);
+  // 分支名固定 main（init 默认名跟本机 init.defaultBranch 走,断言需确定性;
+  // unborn branch 上 rename 合法,git ≥2.28）。
+  await git(projectPath, ["branch", "-m", "main"]);
   await git(projectPath, ["config", "user.email", "e2e@example.com"]);
   await git(projectPath, ["config", "user.name", "E2E User"]);
   await git(projectPath, ["add", "."]);

@@ -77,7 +77,18 @@ import { handleSkillUpdateRoutes } from "./skill-update";
 import { handleSkillTaskEvents } from "./skill-tasks";
 import { handleMcpRoutes } from "./mcp-management";
 import { handleMcpMarketRoutes } from "./mcp-market";
-import { HUB_UI_RESOURCES, startMcpHubServer, wikiPageStructuredContent } from "./mcp-hub-server";
+import {
+  filePreviewFallbackText,
+  filePreviewStructuredContent,
+  gitLogStructuredContent,
+  gitStatusStructuredContent,
+  HUB_UI_RESOURCES,
+  readSettingsPreviewData,
+  sessionOverviewStructuredContent,
+  settingsPreviewStructuredContent,
+  startMcpHubServer,
+  wikiPageStructuredContent,
+} from "./mcp-hub-server";
 import { readProjectMcpConfig } from "./mcp-config";
 import { canUpgradeWebSocket } from "./ws-auth";
 
@@ -646,7 +657,13 @@ export const createFetchHandler =
         request,
         url,
         options.projectsRoot,
-        options.projectWikiService,
+        {
+          wiki: options.projectWikiService,
+          gitDiff: options.projectGitDiffService,
+          sessionRegistry: options.sessionRegistry,
+          files: options.projectFilesService,
+          projectsRoot: options.projectsRoot,
+        },
       );
       if (toolsCallResponse) {
         return withRefresh(toolsCallResponse);
@@ -1385,16 +1402,92 @@ const handleMcpUiResourceRoute = async (
 // 都调它」)。白名单 = app-callable 工具显式映射(卡片可调的 hub 工具面),未列入 → 404;
 // 非法 body 的 name 落 "" 同样 miss。ui 门控同 mcp-ui-resource(404 不暴露原因),
 // 鉴权在统一 /api/ token 守卫。
+// 卡片反向 tools/call 的依赖面:wiki 恒在(runtime 装配守卫);gitDiff 可选(未注入时
+// git 工具 handler 抛错——测试只注入 wiki 面时 git 卡不可调)。后续能力域在此扩展。
+type HubAppToolDeps = {
+  wiki: ProjectWikiService;
+  gitDiff: ProjectGitDiffService | undefined;
+  sessionRegistry: SessionRegistry | undefined;
+  files: ProjectFilesService | undefined;
+  projectsRoot: string;
+};
+
 const HUB_APP_TOOLS: Record<
   string,
-  (service: ProjectWikiService, project: string, args: Record<string, unknown>) => Promise<unknown>
+  (deps: HubAppToolDeps, project: string, args: Record<string, unknown>) => Promise<unknown>
 > = {
-  wiki_read_page: async (service, project, args) => {
+  wiki_read_page: async (deps, project, args) => {
     const slug = typeof args.slug === "string" ? args.slug : "";
-    const page = await service.readPage(project, slug);
+    const page = await deps.wiki.readPage(project, slug);
     return {
       content: [{ type: "text", text: JSON.stringify(page) }],
       structuredContent: wikiPageStructuredContent(page),
+    };
+  },
+  git_status: async (deps, project) => {
+    if (!deps.gitDiff) {
+      throw new Error("Git service unavailable");
+    }
+    const list = await deps.gitDiff.listDiff(project);
+    if (!list.repository) {
+      return {
+        content: [{ type: "text", text: "Project is not a Git repository" }],
+      };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(list) }],
+      structuredContent: gitStatusStructuredContent(list),
+    };
+  },
+  session_overview: async (deps, project) => {
+    if (!deps.sessionRegistry) {
+      throw new Error("Session registry unavailable");
+    }
+    const candidates = await deps.sessionRegistry.listAllCandidates();
+    const sc = sessionOverviewStructuredContent(project, candidates);
+    return {
+      content: [{ type: "text", text: JSON.stringify(sc) }],
+      structuredContent: sc,
+    };
+  },
+  read_file: async (deps, project, args) => {
+    if (!deps.files) {
+      throw new Error("Files service unavailable");
+    }
+    const path = typeof args.path === "string" ? args.path : "";
+    const preview = await deps.files.previewFile(project, path);
+    if (preview.type !== "text") {
+      // image/unsupported/too_large 不进卡(web kind 守卫不命中 → 通用 MCP 卡)。
+      return { content: [{ type: "text", text: filePreviewFallbackText(preview) }] };
+    }
+    const sc = filePreviewStructuredContent(preview);
+    return {
+      content: [{ type: "text", text: JSON.stringify(sc) }],
+      structuredContent: sc,
+    };
+  },
+  project_settings: async (deps, project) => {
+    // 与 hub 侧 registerSettingsTools 同款降级语义(readSettingsPreviewData 共用)。
+    const { capabilities, servers } = await readSettingsPreviewData(deps.projectsRoot, project);
+    const sc = settingsPreviewStructuredContent(project, capabilities, servers);
+    return {
+      content: [{ type: "text", text: JSON.stringify(sc) }],
+      structuredContent: sc,
+    };
+  },
+  git_log: async (deps, project, args) => {
+    if (!deps.gitDiff) {
+      throw new Error("Git service unavailable");
+    }
+    // 卡契约同 hub 侧 registerTool:默认 10 上限 50(schema 同款)。
+    const limit =
+      typeof args.limit === "number" && Number.isFinite(args.limit)
+        ? Math.min(Math.max(Math.trunc(args.limit), 1), 50)
+        : 10;
+    const log = await deps.gitDiff.listCommits(project, undefined, limit);
+    return {
+      content: [{ type: "text", text: JSON.stringify(log) }],
+      structuredContent: gitLogStructuredContent(log),
     };
   },
 };
@@ -1403,7 +1496,7 @@ const handleMcpHubToolsCallRoute = async (
   request: Request,
   url: URL,
   projectsRoot: string,
-  projectWikiService: ProjectWikiService,
+  deps: HubAppToolDeps,
 ): Promise<Response | undefined> => {
   if (request.method !== "POST") return undefined;
   const prefix = "/api/projects/";
@@ -1447,11 +1540,17 @@ const handleMcpHubToolsCallRoute = async (
     return jsonError("PROJECT_NOT_FOUND", "Project not found", 404);
   }
   try {
-    const result = await handler(projectWikiService, projectName, toolArgs);
+    const result = await handler(deps, projectName, toolArgs);
     return Response.json(result);
   } catch (error) {
     if (error instanceof ProjectWikiError) {
       return projectWikiErrorResponse(error);
+    }
+    if (error instanceof ProjectGitDiffError) {
+      return projectGitDiffErrorResponse(error);
+    }
+    if (error instanceof ProjectFilesError) {
+      return projectFilesErrorResponse(error);
     }
     throw error;
   }
@@ -1757,13 +1856,6 @@ export const startApi = async () => {
       resolveAcpCredentials(await settingsStore.read(), provider),
   });
   const projectWikiService = new ProjectWikiService(config.projectsRoot);
-  // MCP hub:无状态 Streamable HTTP server,绑 127.0.0.1,只给本机 agent 用。
-  // 起 hub 后,spawn agent 时 --mcp-config 注入 http://127.0.0.1:{mcpPort}/mcp/{project}。
-  const mcpHub = startMcpHubServer({
-    port: config.mcpPort,
-    projectsRoot: config.projectsRoot,
-    wikiService: projectWikiService,
-  });
   const claudePermissionModes = await parseClaudePermissionModes();
   console.log(`[startup] Claude permission modes: ${claudePermissionModes.join(", ")}`);
   // 双模式编排（agent-tui）：runtime 分发（exists/close）要按会话形态落 tmux/headless，
@@ -1830,6 +1922,20 @@ export const startApi = async () => {
     },
   };
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
+  // MCP hub:无状态 Streamable HTTP server,绑 127.0.0.1,只给本机 agent 用。
+  // 起 hub 后,spawn agent 时 --mcp-config 注入 http://127.0.0.1:{mcpPort}/mcp/{project}。
+  // 位置在 sessionRegistry 之后(session_overview 卡数据源;返回值只在启动日志消费)。
+  const mcpHub = startMcpHubServer({
+    port: config.mcpPort,
+    projectsRoot: config.projectsRoot,
+    wikiService: projectWikiService,
+    // git display tool(git_status/git_log)数据源。service 无状态(构造只存 root),
+    // 与 HTTP 路由面的 ProjectGitDiffService 实例并存,无共享可变状态。
+    gitDiffService: new ProjectGitDiffService(config.projectsRoot),
+    sessionRegistry,
+    // read_file display tool 数据源。同上:无状态 service,与 HTTP 面实例并存。
+    filesService: new ProjectFilesService(config.projectsRoot),
+  });
   // chat 会话元数据持久目录：~/.agents-remote/chat-sessions/（跨重启保留，非 tmpfs runDir；
   // 与 pi SessionManager JSONL 历史同持久语义，设计 docs/design-v1/workbench-views.md §3.1）。
   const chatSessionsDir = resolve(homedir(), ".agents-remote/chat-sessions");

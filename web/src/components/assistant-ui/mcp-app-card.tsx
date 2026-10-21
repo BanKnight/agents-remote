@@ -5,6 +5,11 @@ import { useT } from "../../i18n";
 import { useConfirm } from "../shell/confirm-dialog";
 
 export const WIKI_PAGE_APP_URI = "ui://ar-hub/wiki-page";
+export const GIT_STATUS_APP_URI = "ui://ar-hub/git-status";
+export const GIT_LOG_APP_URI = "ui://ar-hub/git-log";
+export const SESSION_OVERVIEW_APP_URI = "ui://ar-hub/session-overview";
+export const SETTINGS_PREVIEW_APP_URI = "ui://ar-hub/settings-preview";
+export const FILE_PREVIEW_APP_URI = "ui://ar-hub/file-preview";
 
 export type WikiPageStructuredContent = {
   kind: "wiki-page";
@@ -21,6 +26,119 @@ export function isWikiPageStructuredContent(value: unknown): value is WikiPageSt
     record.kind === "wiki-page" &&
     typeof record.slug === "string" &&
     typeof record.markdown === "string"
+  );
+}
+
+// 契约与 api 侧 gitStatusStructuredContent/gitLogStructuredContent（mcp-hub-server.ts）
+// 对齐;守卫只验 kind + 关键字段（卡片对恶意/漂移数据的最小信任面）。
+export type GitStatusStructuredContent = {
+  kind: "git-status";
+  branch?: string;
+  clean: boolean;
+  files: {
+    path: string;
+    status: string;
+    scope: string;
+    addedLines: number | null;
+    removedLines: number | null;
+  }[];
+};
+
+export function isGitStatusStructuredContent(value: unknown): value is GitStatusStructuredContent {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.kind === "git-status" && typeof record.clean === "boolean" && Array.isArray(record.files)
+  );
+}
+
+export type GitLogStructuredContent = {
+  kind: "git-log";
+  branch: string;
+  total: number;
+  commits: {
+    hash: string;
+    message: string;
+    author: string;
+    relativeTime: string;
+  }[];
+};
+
+export function isGitLogStructuredContent(value: unknown): value is GitLogStructuredContent {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.kind === "git-log" && typeof record.total === "number" && Array.isArray(record.commits)
+  );
+}
+
+export type SessionOverviewStructuredContent = {
+  kind: "session-overview";
+  projectName: string;
+  counts: Record<string, number>;
+  sessions: {
+    displayName: string;
+    type: string;
+    status: string;
+    updatedAt?: string;
+  }[];
+};
+
+export function isSessionOverviewStructuredContent(
+  value: unknown,
+): value is SessionOverviewStructuredContent {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.kind === "session-overview" &&
+    typeof record.projectName === "string" &&
+    typeof record.counts === "object" &&
+    record.counts !== null &&
+    Array.isArray(record.sessions)
+  );
+}
+
+export type SettingsPreviewStructuredContent = {
+  kind: "settings-preview";
+  projectName: string;
+  capabilities: Record<string, boolean>;
+  mcpServers: {
+    name: string;
+    type: string;
+  }[];
+};
+
+export function isSettingsPreviewStructuredContent(
+  value: unknown,
+): value is SettingsPreviewStructuredContent {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.kind === "settings-preview" &&
+    typeof record.projectName === "string" &&
+    typeof record.capabilities === "object" &&
+    record.capabilities !== null &&
+    Array.isArray(record.mcpServers)
+  );
+}
+
+export type FilePreviewStructuredContent = {
+  kind: "file-preview";
+  path: string;
+  name: string;
+  size: number;
+  content: string;
+};
+
+export function isFilePreviewStructuredContent(
+  value: unknown,
+): value is FilePreviewStructuredContent {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.kind === "file-preview" &&
+    typeof record.path === "string" &&
+    typeof record.content === "string"
   );
 }
 
@@ -48,6 +166,7 @@ export function McpAppCard({
   structuredContent,
   heightClassName = "h-[420px]",
   onSendPrompt,
+  allowedToolName = "wiki_read_page",
 }: {
   projectName: string;
   uri: string;
@@ -55,6 +174,12 @@ export function McpAppCard({
   heightClassName?: string;
   /** ui/message 确认后的发送出口（renderer 注入 bridge.sendMessage）。 */
   onSendPrompt?: (text: string) => void;
+  /**
+   * tools/call 反向通道允许的 tool 名（host 侧 allowlist,与 api 侧 HUB_APP_TOOLS
+   * 白名单双层防御）。卡片刷新钮调用的就是自己的 tool（git 卡刷 git_status）,
+   * 故每卡对应一个名字;缺省 wiki_read_page 保持既有调用方零改动。
+   */
+  allowedToolName?: string;
 }) {
   const { t, lang } = useT();
   // ui/message user-consent gate (SEP MAY-require; ZCode sendFollowUpMessage 同款).
@@ -169,16 +294,16 @@ export function McpAppCard({
       reply({});
       return;
     }
-    if (data.method === "tools/call") {
+    if (data.method === "tools/call" && typeof data.params?.name === "string") {
       // App-callable allowlist (defense in depth; api enforces its own table).
-      const name = typeof data.params?.name === "string" ? data.params.name : "";
-      if (name !== "wiki_read_page") {
+      const name = data.params.name;
+      if (name !== allowedToolName) {
         replyError(-32602, `unknown app tool: ${name}`);
         return;
       }
-      const args = data.params?.arguments ?? {};
+      const args = data.params.arguments ?? {};
       try {
-        const result = await callProjectMcpHubTool(projectName, "wiki_read_page", args);
+        const result = await callProjectMcpHubTool(projectName, allowedToolName, args);
         reply(result);
       } catch (error) {
         replyError(-32000, error instanceof Error ? error.message : String(error));
