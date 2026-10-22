@@ -7,9 +7,19 @@ import type {
   CanvasSceneResponse,
 } from "@agents-remote/shared";
 import { randomBytes } from "node:crypto";
-import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { ProjectPathError, resolveProjectPath } from "./project-paths";
+import { isInsideOrSelf, ProjectPathError, resolveProjectPath } from "./project-paths";
 
 // 画布文档存储（Excalidraw ⭄对话循环，docs/research/mcp-apps-hosting.md §12.2 契约）：
 // agent 经 ar-hub 四工具（create_diagram / read_scene / apply_operations / export_diagram）
@@ -33,6 +43,8 @@ const CANVAS_MAX_ELEMENT_BYTES = 16 * 1024;
 const CANVAS_MAX_ELEMENT_ID_CHARS = 128;
 /** operationId 幂等表上限（超限 FIFO 淘汰最旧，防文档无界增长）。 */
 export const CANVAS_MAX_OPERATION_IDS = 128;
+/** 单次 apply_operations 的操作条数上限（与元素上限同档，防单请求内存放大）。 */
+export const CANVAS_MAX_OPERATIONS = CANVAS_MAX_ELEMENTS;
 /** docId 形态（服务生成 `canvas-` + 8 hex；入参按此校验防路径注入）。 */
 const DOC_ID_PATTERN = /^canvas-[0-9a-f]{8}$/;
 
@@ -90,6 +102,7 @@ export const normalizeCanvasElements = (elements: unknown): CanvasElement[] => {
   }
   const seen = new Set<string>();
   const normalized: CanvasElement[] = [];
+  let totalBytes = 0;
   for (const raw of elements) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
       throw invalid("Canvas element must be an object");
@@ -104,8 +117,15 @@ export const normalizeCanvasElements = (elements: unknown): CanvasElement[] => {
       throw invalid("Canvas element id must be a unique non-empty string");
     }
     seen.add(id);
-    if (Buffer.byteLength(JSON.stringify(raw), "utf8") > CANVAS_MAX_ELEMENT_BYTES) {
+    const elementBytes = Buffer.byteLength(JSON.stringify(raw), "utf8");
+    if (elementBytes > CANVAS_MAX_ELEMENT_BYTES) {
       throw invalid(`Canvas element exceeds ${CANVAS_MAX_ELEMENT_BYTES} bytes`);
+    }
+    // 累计闸在物化过程中生效：5000 × 16KiB 全过单项闸仍可达 78MiB，不能等
+    // 全部进内存、JSON.stringify 完才由写侧 6MiB 闸兜底。
+    totalBytes += elementBytes;
+    if (totalBytes > CANVAS_MAX_BYTES) {
+      throw invalid(`Canvas doc exceeds ${CANVAS_MAX_BYTES} bytes`);
     }
     normalized.push(raw as CanvasElement);
   }
@@ -116,6 +136,9 @@ export const normalizeCanvasElements = (elements: unknown): CanvasElement[] => {
 export const normalizeCanvasOperations = (operations: unknown): CanvasOperation[] => {
   if (!Array.isArray(operations) || operations.length === 0) {
     throw invalid("Canvas operations must be a non-empty array");
+  }
+  if (operations.length > CANVAS_MAX_OPERATIONS) {
+    throw invalid(`Canvas operations exceed ${CANVAS_MAX_OPERATIONS} entries`);
   }
   const normalized: CanvasOperation[] = [];
   for (const raw of operations) {
@@ -165,10 +188,17 @@ const normalizeExpectedRevision = (expectedRevision: unknown): number => {
   return expectedRevision;
 };
 
+/** 幂等表是普通对象的键空间：`Object.prototype` 上的名字作键会命中原型链
+ *  （假重放 → 写操作被静默丢弃）、写侧还会改写局部对象的原型。直接拒绝。 */
+const RESERVED_OPERATION_IDS = new Set(["__proto__", "prototype", "constructor"]);
+
 const normalizeOperationId = (operationId: unknown): string | undefined => {
   if (operationId === undefined) return undefined;
   if (typeof operationId !== "string" || operationId.length === 0 || operationId.length > 128) {
     throw invalid("operationId must be a string of at most 128 chars");
+  }
+  if (RESERVED_OPERATION_IDS.has(operationId)) {
+    throw invalid(`operationId is reserved: ${operationId}`);
   }
   return operationId;
 };
@@ -261,7 +291,7 @@ export class ProjectCanvasService {
     return this.enqueue(projectName, docId, async (projectPath) => {
       const doc = await this.readDocByPath(projectPath, docId);
 
-      const replayed = operationId !== undefined ? doc.operations[operationId] : undefined;
+      const replayed = findReplay(doc, operationId);
       if (replayed) {
         return {
           id: doc.id,
@@ -322,7 +352,7 @@ export class ProjectCanvasService {
     return this.enqueue(projectName, docId, async (projectPath) => {
       const doc = await this.readDocByPath(projectPath, docId);
 
-      const replayed = operationId !== undefined ? doc.operations[operationId] : undefined;
+      const replayed = findReplay(doc, operationId);
       if (replayed) {
         return {
           id: doc.id,
@@ -387,6 +417,40 @@ export class ProjectCanvasService {
     return join(projectPath, CANVAS_DIR, `${docId}.json`);
   }
 
+  /**
+   * 画布目录链的物理边界校验（读写两侧共用）：路径已存在时不得是 symlink，
+   * 且 realpath 后仍须在项目内——防项目内预置 `.agents-remote/canvas -> 外部目录`
+   * 把画布读写穿出项目根（恶意仓库可直接提交该链接，agent 也有写权）。
+   * 不存在（ENOENT）时按「待创建」放行：父级已在本函数先一步验过。
+   */
+  private async assertPathSafe(projectPath: string, targetPath: string): Promise<void> {
+    let info;
+    try {
+      info = await lstat(targetPath);
+    } catch (error) {
+      if (isNotFoundError(error)) return;
+      throw new ProjectCanvasError("PROJECT_FS_ERROR", "Unable to inspect canvas path");
+    }
+    if (info.isSymbolicLink()) {
+      throw new ProjectCanvasError(
+        "PROJECT_PATH_OUTSIDE_ROOT",
+        "Canvas path must not be a symlink",
+      );
+    }
+    let realTarget: string;
+    try {
+      realTarget = await realpath(targetPath);
+    } catch {
+      throw new ProjectCanvasError("PROJECT_FS_ERROR", "Unable to resolve canvas path");
+    }
+    if (!isInsideOrSelf(projectPath, realTarget)) {
+      throw new ProjectCanvasError(
+        "PROJECT_PATH_OUTSIDE_ROOT",
+        "Canvas path must stay inside the project",
+      );
+    }
+  }
+
   private async docExists(projectPath: string, docId: string): Promise<boolean> {
     try {
       await readFile(this.docPath(projectPath, docId));
@@ -402,9 +466,18 @@ export class ProjectCanvasService {
   }
 
   private async readDocByPath(projectPath: string, docId: string): Promise<CanvasDoc> {
+    const docPath = this.docPath(projectPath, docId);
+    const canvasDir = dirname(docPath);
+    await this.assertPathSafe(projectPath, dirname(canvasDir));
+    await this.assertPathSafe(projectPath, canvasDir);
     let raw: string;
     try {
-      raw = await readFile(this.docPath(projectPath, docId), "utf8");
+      // 落盘文件可能被项目内写盘方（agent / 恶意仓库）构造：先看大小再整读。
+      const info = await stat(docPath);
+      if (info.size > CANVAS_MAX_BYTES) {
+        throw invalid(`Canvas doc exceeds ${CANVAS_MAX_BYTES} bytes`);
+      }
+      raw = await readFile(docPath, "utf8");
     } catch (error) {
       if (error instanceof ProjectCanvasError) throw error;
       if (isNotFoundError(error)) {
@@ -425,15 +498,53 @@ export class ProjectCanvasService {
     if (
       doc.schemaVersion !== CANVAS_SCHEMA_VERSION ||
       typeof doc.id !== "string" ||
+      // 文档 id 必须与文件名绑定：写回时 doc.id 会作为目标路径（writeDoc），
+      // 从磁盘读回的 id 不校验 = 预置文件可把任意路径变成写入目标。
+      doc.id !== docId ||
+      !DOC_ID_PATTERN.test(doc.id) ||
       typeof doc.title !== "string" ||
       typeof doc.revision !== "number" ||
+      !Number.isInteger(doc.revision) ||
+      doc.revision < 1 ||
       !Array.isArray(doc.elements) ||
       typeof doc.operations !== "object" ||
-      doc.operations === null
+      doc.operations === null ||
+      Array.isArray(doc.operations)
     ) {
       throw new ProjectCanvasError("PROJECT_CANVAS_INVALID", "Canvas doc has an invalid shape");
     }
-    return parsed as CanvasDoc;
+    // 元素与幂等表同样复检：畸形项（null / 非对象 / 缺 id）若放过，会在
+    // filter/map 处崩成未捕获 TypeError（500），也会把垃圾写回下一代文档。
+    const elements = normalizeCanvasElements(doc.elements);
+    const operations: CanvasDoc["operations"] = Object.create(null);
+    const entries = Object.entries(doc.operations as Record<string, unknown>);
+    if (entries.length > CANVAS_MAX_OPERATION_IDS) {
+      throw new ProjectCanvasError("PROJECT_CANVAS_INVALID", "Canvas doc has an invalid shape");
+    }
+    for (const [id, record] of entries) {
+      if (
+        !record ||
+        typeof record !== "object" ||
+        Array.isArray(record) ||
+        typeof (record as { revision?: unknown }).revision !== "number"
+      ) {
+        throw new ProjectCanvasError(
+          "PROJECT_CANVAS_INVALID",
+          "Canvas doc has an invalid operation record",
+        );
+      }
+      operations[id] = record as { revision: number; appliedAt: string };
+    }
+    // 只重建已知字段：磁盘上的额外顶层键不随文档世代传递（写入侧不做放大器）。
+    return {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      id: doc.id,
+      title: normalizeCanvasTitle(doc.title),
+      revision: doc.revision,
+      updatedAt: typeof doc.updatedAt === "string" ? doc.updatedAt : "",
+      elements,
+      operations,
+    };
   }
 
   private async writeDoc(projectPath: string, doc: CanvasDoc): Promise<void> {
@@ -445,10 +556,20 @@ export class ProjectCanvasService {
         `Canvas doc exceeds ${CANVAS_MAX_BYTES} bytes`,
       );
     }
+    // 纵深防御：doc.id 决定目标路径，写前再过一次形态闸（readDocByPath 已绑定
+    // 文件名，但 service 内部调用不应依赖单一守卫）。
+    if (!DOC_ID_PATTERN.test(doc.id)) {
+      throw new ProjectCanvasError("PROJECT_CANVAS_INVALID", "Canvas doc id is invalid");
+    }
     const targetPath = this.docPath(projectPath, doc.id);
+    const canvasDir = dirname(targetPath);
     const tempPath = `${targetPath}.${process.pid}.tmp`;
     try {
-      await mkdir(dirname(targetPath), { recursive: true, mode: 0o700 });
+      // 先验 `.agents-remote`（防其被预置成指向项目外的 symlink 后 mkdir 顺路
+      // 在外部建目录），再建 canvas 目录并复验——写入全程不得穿出项目根。
+      await this.assertPathSafe(projectPath, dirname(canvasDir));
+      await mkdir(canvasDir, { recursive: true, mode: 0o700 });
+      await this.assertPathSafe(projectPath, canvasDir);
       await writeFile(tempPath, payload, { mode: 0o600 });
       await chmod(tempPath, 0o600);
       await rename(tempPath, targetPath);
@@ -480,6 +601,9 @@ const parseElementIds = (elementIds: unknown): Set<string> | undefined => {
   if (!Array.isArray(elementIds)) {
     throw invalid("elementIds must be an array of element ids");
   }
+  if (elementIds.length > CANVAS_MAX_ELEMENTS) {
+    throw invalid(`elementIds must not exceed ${CANVAS_MAX_ELEMENTS} entries`);
+  }
   const ids = new Set<string>();
   for (const id of elementIds) {
     if (typeof id !== "string" || id.length === 0) {
@@ -488,6 +612,17 @@ const parseElementIds = (elementIds: unknown): Set<string> | undefined => {
     ids.add(id);
   }
   return ids;
+};
+
+/** 幂等表查找只认自有属性：`doc.operations["__proto__"]` 会命中原型链得到真值，
+ *  把本次写操作误判成重放而静默丢弃。 */
+const findReplay = (
+  doc: CanvasDoc,
+  operationId: string | undefined,
+): { revision: number; appliedAt: string } | undefined => {
+  if (operationId === undefined) return undefined;
+  if (!Object.prototype.hasOwnProperty.call(doc.operations, operationId)) return undefined;
+  return doc.operations[operationId];
 };
 
 const assertRevision = (doc: CanvasDoc, expectedRevision: number): void => {
@@ -505,7 +640,9 @@ const finalizeDoc = (
   elements: CanvasElement[],
   operationId: string | undefined,
 ): CanvasDoc => {
-  const operations: CanvasDoc["operations"] = {};
+  // null 原型：键空间是调用方给的 operationId，普通对象上 `operations["__proto__"] = x`
+  // 会触发原型 setter（记录丢失 + 局部原型被改写）。
+  const operations: CanvasDoc["operations"] = Object.create(null) as CanvasDoc["operations"];
   const entries = Object.entries(doc.operations);
   const overflow = entries.length + (operationId !== undefined ? 1 : 0) - CANVAS_MAX_OPERATION_IDS;
   for (const [id, record] of entries.slice(Math.max(overflow, 0))) {

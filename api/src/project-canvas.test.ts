@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -295,6 +295,80 @@ test("docs near the byte cap are rejected at write time", async () => {
   const scene = await service().readScene("demo", created.id);
   expect(scene.revision).toBe(1);
   expect(scene.elements.map((el) => el.id)).toEqual(["e1"]);
+});
+
+// ── 落盘内容的边界（security review 2026-10-22 回归）──────────────────
+
+test("disk doc whose id does not match its filename is rejected (no path binding escape)", async () => {
+  const canvasDir = join(root, "demo", ".agents-remote", "canvas");
+  await mkdir(canvasDir, { recursive: true });
+  // 预置文档把 id 指向项目外：若 id 被当作写回目标路径，apply 就会穿出 PROJECTS_ROOT。
+  await writeFile(
+    join(canvasDir, "canvas-11111111.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: "../../../../escaped/canvas-22222222",
+      title: "t",
+      revision: 1,
+      updatedAt: new Date().toISOString(),
+      elements: [createElement("e1")],
+      operations: {},
+    }),
+  );
+  await expect(service().readScene("demo", "canvas-11111111")).rejects.toThrow(ProjectCanvasError);
+  await expect(
+    service().applyOperations("demo", "canvas-11111111", {
+      operations: [{ op: "update", elementId: "e1", patch: { x: 1 } }],
+      expectedRevision: 1,
+    }),
+  ).rejects.toThrow(ProjectCanvasError);
+});
+
+test("malformed on-disk elements are rejected instead of crashing later", async () => {
+  const canvasDir = join(root, "demo", ".agents-remote", "canvas");
+  await mkdir(canvasDir, { recursive: true });
+  await writeFile(
+    join(canvasDir, "canvas-33333333.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: "canvas-33333333",
+      title: "t",
+      revision: 1,
+      updatedAt: new Date().toISOString(),
+      elements: [null, "x", 3],
+      operations: {},
+    }),
+  );
+  await expect(service().readScene("demo", "canvas-33333333")).rejects.toThrow(ProjectCanvasError);
+});
+
+test("canvas dir that is a symlink is rejected (no write-through)", async () => {
+  const outside = await mkdtemp(join(tmpdir(), "agents-remote-canvas-outside-"));
+  try {
+    await mkdir(join(root, "demo", ".agents-remote"), { recursive: true });
+    await symlink(outside, join(root, "demo", ".agents-remote", "canvas"));
+    await expect(
+      service().createDiagram("demo", { title: "t", elements: [createElement("e1")] }),
+    ).rejects.toThrow(ProjectCanvasError);
+    expect(await readdir(outside)).toEqual([]);
+  } finally {
+    await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("reserved operationIds are rejected instead of hitting the prototype chain", async () => {
+  const created = await createDoc();
+  for (const operationId of ["__proto__", "constructor", "prototype"]) {
+    await expect(
+      service().applyOperations("demo", created.id, {
+        operations: [{ op: "update", elementId: "e1", patch: { x: 1 } }],
+        expectedRevision: 1,
+        operationId,
+      }),
+    ).rejects.toThrow(ProjectCanvasError);
+  }
+  // 文档未被这些被拒的调用改动。
+  expect((await service().readScene("demo", created.id)).revision).toBe(1);
 });
 
 test("service maps path errors to project error codes", async () => {

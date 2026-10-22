@@ -25,7 +25,12 @@ import {
   type HubSkill,
 } from "./mcp-skills.js";
 import { resolveProjectRelativePath } from "./project-paths.js";
-import { ProjectCanvasError, ProjectCanvasService } from "./project-canvas.js";
+import {
+  CANVAS_MAX_ELEMENTS,
+  CANVAS_MAX_OPERATIONS,
+  ProjectCanvasError,
+  ProjectCanvasService,
+} from "./project-canvas.js";
 import { ProjectGitDiffService } from "./project-git-diff.js";
 import { ProjectFilesService } from "./project-files.js";
 import { ProjectWikiService } from "./project-wiki.js";
@@ -631,7 +636,7 @@ const registerCanvasTools = (
         "Create a canvas diagram document (Excalidraw-style elements) and show it as an interactive canvas card. Returns { id, title, revision, elements }.",
       inputSchema: {
         title: z.string(),
-        elements: z.array(z.record(z.string(), z.unknown())),
+        elements: z.array(z.record(z.string(), z.unknown())).max(CANVAS_MAX_ELEMENTS),
       },
       _meta: { ui: { resourceUri: CANVAS_APP_URI, visibility: ["model", "app"] } },
     },
@@ -655,7 +660,7 @@ const registerCanvasTools = (
         "Read the current scene of a canvas document. Pass elementIds to limit the response to a selection (missing ids are ignored). Returns { id, title, revision, elements }.",
       inputSchema: {
         id: z.string(),
-        elementIds: z.array(z.string()).optional(),
+        elementIds: z.array(z.string()).max(CANVAS_MAX_ELEMENTS).optional(),
       },
       _meta: { ui: { resourceUri: CANVAS_APP_URI, visibility: ["model", "app"] } },
     },
@@ -679,17 +684,19 @@ const registerCanvasTools = (
         "Apply add/update/remove operations to canvas elements by stable element id (update is a shallow merge patch; the element id can not be changed). Pass the revision you read as expectedRevision; a mismatch is a conflict — re-read and retry. Pass an operationId to make retries idempotent. Returns the full scene at the new revision.",
       inputSchema: {
         id: z.string(),
-        operations: z.array(
-          z.union([
-            z.object({ op: z.literal("add"), element: z.record(z.string(), z.unknown()) }),
-            z.object({
-              op: z.literal("update"),
-              elementId: z.string(),
-              patch: z.record(z.string(), z.unknown()),
-            }),
-            z.object({ op: z.literal("remove"), elementId: z.string() }),
-          ]),
-        ),
+        operations: z
+          .array(
+            z.union([
+              z.object({ op: z.literal("add"), element: z.record(z.string(), z.unknown()) }),
+              z.object({
+                op: z.literal("update"),
+                elementId: z.string(),
+                patch: z.record(z.string(), z.unknown()),
+              }),
+              z.object({ op: z.literal("remove"), elementId: z.string() }),
+            ]),
+          )
+          .max(CANVAS_MAX_OPERATIONS),
         expectedRevision: z.number().int().min(1),
         operationId: z.string().optional(),
       },
