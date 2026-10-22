@@ -29,6 +29,7 @@ import type {
   GitDiscardResponse,
   GitDiffScope,
   GitCompareFileDiffResponse,
+  GenUiSessionState,
   GitFileDiffResponse,
   HealthResponse,
   ListAgentSessionsResponse,
@@ -521,6 +522,43 @@ export async function callProjectMcpHubTool(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, arguments: args }),
     },
+  );
+}
+
+// ── Gen UI（生成式界面）：生成页 HTML 与 widgetState 读写 ─────────────────────
+
+/** 生成页 HTML（`::gen-ui` 标记引用的 `.agents-remote/gen-ui/` 内文件）。 */
+export async function getProjectGenUiFile(
+  projectName: string,
+  path: string,
+): Promise<{ mimeType: string; html: string }> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/gen-ui-file?path=${encodeURIComponent(path)}`,
+    "api.genUiFileFailed",
+  );
+}
+
+/** 读会话 widgetState（GenUiWidgetCard seed 桥用；缺文件返回空态）。 */
+export async function getProjectGenUiState(
+  projectName: string,
+  sessionId: string,
+): Promise<GenUiSessionState> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/gen-ui-state?sessionId=${encodeURIComponent(sessionId)}`,
+    "api.genUiStateFailed",
+  );
+}
+
+/** 覆盖写会话 widgetState（GenUiWidgetCard 防抖 PUT；api 侧串行原子写 + 16KiB 硬闸）。 */
+export async function putProjectGenUiState(
+  projectName: string,
+  sessionId: string,
+  state: GenUiSessionState,
+): Promise<GenUiSessionState> {
+  return fetchJson(
+    `/api/projects/${encodeURIComponent(projectName)}/gen-ui-state?sessionId=${encodeURIComponent(sessionId)}`,
+    "api.genUiStateFailed",
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(state) },
   );
 }
 

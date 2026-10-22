@@ -37,6 +37,9 @@ import {
   normalizeAttachmentTaskStatus,
   normalizeChatStream,
   renderChatStream,
+  parseGenUiMarkerLine,
+  scanGenUiMarkers,
+  stripGenUiContextBlock,
   resolveAutoPermissionMode,
   isCompactWindowUserNoise,
   sortTasks,
@@ -4990,5 +4993,168 @@ describe("MCP Apps display tool (structuredContent 透传)", () => {
     expect(card).toBeDefined();
     const custom = card?.metadata?.custom as Record<string, unknown>;
     expect("structuredContent" in custom).toBe(false);
+  });
+});
+
+// ── Gen UI 标记扫描/回流块剥离（M1.b）────────────────────────────────
+
+describe("gen-ui marker scanning (M1.b)", () => {
+  const marker = (path: string) => `::gen-ui{"path":"${path}"}`;
+
+  test("parseGenUiMarkerLine parses valid payloads and rejects malformed ones", () => {
+    expect(parseGenUiMarkerLine('::gen-ui{"path":".agents-remote/gen-ui/a.html"}')).toEqual({
+      path: ".agents-remote/gen-ui/a.html",
+    });
+    expect(
+      parseGenUiMarkerLine(
+        '  ::gen-ui{"path":".agents-remote/gen-ui/a.html","title":"滑块","mode":"wide"}',
+      ),
+    ).toEqual({
+      path: ".agents-remote/gen-ui/a.html",
+      title: "滑块",
+      mode: "wide",
+    });
+    // 非标记行 / path 越界 / 不完整 / 尾随内容 / 非对象载荷 / 纯前缀。
+    expect(parseGenUiMarkerLine("普通文本 ::gen-ui{...} 不在行首")).toBeNull();
+    expect(parseGenUiMarkerLine('::gen-ui{"path":"mcp.json"}')).toBeNull();
+    expect(
+      parseGenUiMarkerLine('::gen-ui{"path":".agents-remote/gen-ui/a.html"} extra'),
+    ).toBeNull();
+    expect(parseGenUiMarkerLine("::gen-ui[1,2]")).toBeNull();
+    expect(parseGenUiMarkerLine("::gen-ui   ")).toBeNull();
+    expect(parseGenUiMarkerLine("::gen-ui{broken")).toBeNull();
+  });
+
+  test("scanGenUiMarkers returns null fast-path when no marker substring present", () => {
+    expect(scanGenUiMarkers("hello world")).toBeNull();
+  });
+
+  test("scanGenUiMarkers strips complete markers and keeps other text", () => {
+    const scanned = scanGenUiMarkers(`before\n${marker(".agents-remote/gen-ui/a.html")}\nafter`);
+    expect(scanned?.text).toBe("before\nafter");
+    expect(scanned?.markers).toEqual([{ path: ".agents-remote/gen-ui/a.html" }]);
+    expect(scanGenUiMarkers(`before\n${marker(".agents-remote/gen-ui/a.html")}`)).toEqual({
+      text: "before",
+      markers: [{ path: ".agents-remote/gen-ui/a.html" }],
+    });
+  });
+
+  test("scanGenUiMarkers keeps incomplete marker line (streams converge next pass)", () => {
+    // 不完整行:无标记产出、无文本改动(返回 null = 原样)——流式下一轮全量重算收敛。
+    const scanned = scanGenUiMarkers(`before\n::gen-ui{"path":".agents-remote/gen-ui/a`);
+    expect(scanned).toBeNull();
+  });
+
+  test("scanGenUiMarkers keeps invalid-JSON marker lines as literal text", () => {
+    const scanned = scanGenUiMarkers("before\n::gen-ui{bad json}\nafter");
+    expect(scanned).toBeNull();
+  });
+
+  test("scanGenUiMarkers dedupes identical paths in normalize (first wins)", () => {
+    const raw = [
+      assistant("m1", [
+        {
+          type: "text",
+          text: `${marker(".agents-remote/gen-ui/a.html")}\n${marker(".agents-remote/gen-ui/a.html")}`,
+        },
+      ]),
+      result("success"),
+    ];
+    const widgets = normalizeChatStream(raw).filter((i) => i.kind === "gen-ui-widget");
+    expect(widgets).toHaveLength(1);
+  });
+
+  test("scanGenUiMarkers keeps raw gen-ui substring mid-line (not a marker)", () => {
+    expect(scanGenUiMarkers('x ::gen-ui{"path":"mcp.json"} y')).toBeNull();
+  });
+});
+
+describe("gen-ui widget item pipeline (M1.b)", () => {
+  test("assistant marker line projects to gen-ui-widget item with text stripped", () => {
+    const raw = [
+      assistant("m1", [
+        {
+          type: "text",
+          text: '好的,我来生成一个滑块演示页。\n::gen-ui{"path":".agents-remote/gen-ui/slider-demo.html","title":"滑块演示"}',
+        },
+      ]),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const widget = items.find((i) => i.kind === "gen-ui-widget");
+    expect(widget).toEqual(
+      expect.objectContaining({
+        kind: "gen-ui-widget",
+        path: ".agents-remote/gen-ui/slider-demo.html",
+        title: "滑块演示",
+      }),
+    );
+    const textItem = items.find(
+      (i): i is Extract<ChatStreamItem, { kind: "assistant" }> => i.kind === "assistant",
+    );
+    expect(textItem?.parts[0]).toEqual(
+      expect.objectContaining({ type: "text", text: "好的,我来生成一个滑块演示页。" }),
+    );
+  });
+
+  test("assistant marker-only text leaves no empty text part", () => {
+    const raw = [
+      assistant("m1", [
+        { type: "text", text: '::gen-ui{"path":".agents-remote/gen-ui/solo.html"}' },
+      ]),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    const textItem = items.find(
+      (i): i is Extract<ChatStreamItem, { kind: "assistant" }> => i.kind === "assistant",
+    );
+    expect(textItem?.parts).toHaveLength(0);
+    expect(items.filter((i) => i.kind === "gen-ui-widget")).toHaveLength(1);
+  });
+
+  test("user-prompt text keeps gen-ui markers unscanned (assistant-only scan)", () => {
+    const raw = [
+      user([{ type: "text", text: '::gen-ui{"path":".agents-remote/gen-ui/x.html"}' }]),
+      result("success"),
+    ];
+    const items = normalizeChatStream(raw);
+    expect(
+      items.filter(
+        (i): i is Extract<ChatStreamItem, { kind: "gen-ui-widget" }> => i.kind === "gen-ui-widget",
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+describe("gen-ui 回流块剥离(user 文本)", () => {
+  test("stripGenUiContextBlock removes trailing gen-ui-context block", () => {
+    expect(
+      stripGenUiContextBlock(
+        "please adjust\n\n<gen-ui-context>\n[gen-ui-widget ...]\n</gen-ui-context>",
+      ),
+    ).toBe("please adjust");
+  });
+
+  test("stripGenUiContextBlock fast-path without the block", () => {
+    expect(stripGenUiContextBlock("just text")).toBe("just text");
+  });
+});
+
+describe("gen-ui render mapping (M1.b)", () => {
+  test("gen-ui-widget item maps to system message with genUiPath metadata", () => {
+    const raw = [
+      assistant("m1", [
+        { type: "text", text: '::gen-ui{"path":".agents-remote/gen-ui/demo.html"}' },
+      ]),
+      result("success"),
+    ];
+    const rendered = renderChatStream(normalizeChatStream(raw));
+    const card = rendered.find((m) => {
+      const c = m.metadata?.custom as Record<string, unknown> | undefined;
+      return c?.systemMessageType === "gen-ui-widget";
+    });
+    expect(card).toBeDefined();
+    const custom = card?.metadata?.custom as Record<string, unknown>;
+    expect(custom.genUiPath).toBe(".agents-remote/gen-ui/demo.html");
   });
 });

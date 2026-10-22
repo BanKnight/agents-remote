@@ -37,6 +37,7 @@ import {
 } from "./http-auth";
 import { ProjectFilesService, ProjectFilesError } from "./project-files";
 import { ProjectPagesError, ProjectPagesService } from "./project-pages";
+import { buildGenUiContextBlock, ProjectGenUiError, ProjectGenUiService } from "./project-gen-ui";
 import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
 import { ProjectGitWriteError, ProjectGitWriteService } from "./project-git-write";
 import { ProjectWikiError, ProjectWikiService } from "./project-wiki";
@@ -108,6 +109,7 @@ type FetchHandlerOptions = {
   piStreamController?: PiStreamController;
   projectFilesService?: ProjectFilesService;
   projectPagesService?: ProjectPagesService;
+  projectGenUiService?: ProjectGenUiService;
   projectWikiService?: ProjectWikiService;
   projectGitDiffService?: ProjectGitDiffService;
   projectGitWriteService?: ProjectGitWriteService;
@@ -649,6 +651,13 @@ export const createFetchHandler =
       const uiResourceResponse = await handleMcpUiResourceRoute(request, url, options.projectsRoot);
       if (uiResourceResponse) {
         return withRefresh(uiResourceResponse);
+      }
+    }
+
+    if (options.projectGenUiService) {
+      const genUiResponse = await handleGenUiRoute(request, url, options.projectGenUiService);
+      if (genUiResponse) {
+        return withRefresh(genUiResponse);
       }
     }
 
@@ -1392,6 +1401,85 @@ const handleMcpUiResourceRoute = async (
     return new Response(body.gzipped, { headers: responseHeaders });
   }
   return new Response(body.plain, { headers: responseHeaders });
+};
+
+// GET /api/projects/{name}/gen-ui-file?path=<gen-ui 相对路径>
+// 生成页 HTML 供给端点（ZCode Gen UI 契约对齐，service 层门控 gen-ui capability +
+// GET /api/projects/{name}/gen-ui-file?path=<项目根相对路径>
+// 生成页 HTML(≤1MB + 路径双校验)。JSON 契约（shared GenUiFileResponse）——web
+// fetchJson 直消费；CSP 不在此响应头：srcdoc 继承宿主 CSP（响应头对 srcdoc 无效），
+// 真防线 = web 拼装层 meta 注入 + sandbox allow-scripts（见 gen-ui-widget-card.tsx）。
+// 鉴权在前（fetch 主入口），错误细分只暴露给已认证 owner（同 mcp-ui-resource 裁定）。
+// GET/PUT /api/projects/{name}/gen-ui-state?sessionId=<web 会话 id>
+// 会话 widgetState 读写（双槽 ≤16KiB 硬闸在 service）。PUT body 整体覆盖写，粗闸
+// 64KB 文本先行（防大 body 撑内存）再 JSON.parse。
+const handleGenUiRoute = async (
+  request: Request,
+  url: URL,
+  service: ProjectGenUiService,
+): Promise<Response | undefined> => {
+  const prefix = "/api/projects/";
+  if (!url.pathname.startsWith(prefix)) return undefined;
+  const rest = url.pathname.slice(prefix.length);
+  const suffix = "/gen-ui-file";
+  const isFile = rest?.endsWith(suffix);
+  const stateSuffix = "/gen-ui-state";
+  const isState = rest?.endsWith(stateSuffix);
+  if (!isFile && !isState) return undefined;
+  const encodedName = rest!.slice(0, -(isFile ? suffix : stateSuffix).length);
+  if (encodedName.length === 0) return undefined;
+  if (encodedName.includes("/")) return undefined;
+  let projectName: string;
+  try {
+    projectName = decodeURIComponent(encodedName);
+  } catch {
+    return undefined;
+  }
+
+  try {
+    if (isFile) {
+      if (request.method !== "GET") return undefined;
+      const filePath = url.searchParams.get("path") ?? "";
+      const file = await service.readGenUiFile(projectName, filePath);
+      // shared GenUiFileResponse JSON 契约(web fetchJson 直消费)。CSP 不在此处:
+      // srcdoc 继承宿主 CSP(HTTP 响应头对 srcdoc 无效),真防线是 web 拼装层的
+      // meta 注入 + sandbox allow-scripts;JSON 响应直接打开也无脚本执行面。
+      return Response.json({ mimeType: "text/html", html: file.html });
+    }
+    // gen-ui-state
+    const sessionId = url.searchParams.get("sessionId") ?? "";
+    if (sessionId.length === 0) {
+      return jsonError("PROJECT_GEN_UI_INVALID", "sessionId is required", 400);
+    }
+    if (request.method === "GET") {
+      const state = await service.readGenUiState(projectName, sessionId);
+      return Response.json(state);
+    }
+    if (request.method === "PUT") {
+      const raw = await request.text();
+      if (raw.length > 64_000) {
+        return jsonError("PROJECT_GEN_UI_INVALID", "Gen UI state body too large", 413);
+      }
+      const parsed: unknown = JSON.parse(raw);
+      const saved = await service.saveGenUiState(projectName, sessionId, parsed);
+      return Response.json(saved);
+    }
+    return undefined;
+  } catch (error) {
+    if (error instanceof ProjectGenUiError) {
+      const status =
+        error.code === "PROJECT_NOT_FOUND" || error.code === "PROJECT_FILE_NOT_FOUND"
+          ? 404
+          : error.code === "PROJECT_FS_ERROR"
+            ? 500
+            : 400;
+      return jsonError(error.code, error.message, status);
+    }
+    if (error instanceof SyntaxError) {
+      return jsonError("PROJECT_GEN_UI_INVALID", "Gen UI state body is not valid JSON", 400);
+    }
+    throw error;
+  }
 };
 
 // POST /api/projects/{name}/mcp-hub-tools-call  body {name, arguments}
@@ -2142,6 +2230,13 @@ export const startApi = async () => {
   );
   const projectFilesService = new ProjectFilesService(config.projectsRoot);
   const projectPagesService = new ProjectPagesService(config.projectsRoot);
+  // Gen UI 供给面（M1.a）：HTML 供给 + widgetState 读写 + 回流块组装（经 loader 注入
+  // claude-stream——控制器不反向依赖 project-gen-ui，同 setOnControlResponseForwarded 模式）。
+  const projectGenUiService = new ProjectGenUiService(config.projectsRoot);
+  claudeStreamController.setGenUiContextLoader(async (projectName, sessionId) => {
+    const state = await projectGenUiService.readGenUiState(projectName, sessionId);
+    return buildGenUiContextBlock(state);
+  });
   const projectGitDiffService = new ProjectGitDiffService(config.projectsRoot);
   const projectGitWriteService = new ProjectGitWriteService(config.projectsRoot);
   // 全局 idleTimeout：MCP 同步 spawn（mcp-management runCliTool 默认 60s）静默期需覆盖，
@@ -2163,6 +2258,7 @@ export const startApi = async () => {
       piStreamController,
       projectFilesService,
       projectPagesService,
+      projectGenUiService,
       projectWikiService,
       projectGitDiffService,
       projectGitWriteService,

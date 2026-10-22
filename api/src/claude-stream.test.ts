@@ -306,6 +306,53 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     expect(writes).toEqual(cases.map((c) => `${JSON.stringify(c)}\n`));
   });
 
+  test("gen-ui loader block is appended to WS user frame; live echo stays clean", async () => {
+    const { controller, writes, injections } = makeController();
+    controller.setGenUiContextLoader(async () => "<gen-ui-context>BLOCK</gen-ui-context>");
+    const socket = makeSocket();
+    const msg = {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "hi" }] },
+    };
+    await controller.message(socket, JSON.stringify(msg));
+    expect(writes).toHaveLength(1);
+    const forwarded = JSON.parse(writes[0]!) as {
+      message: { content: Array<{ type: string; text: string }> };
+    };
+    // 用户原始 part 原样保留,回流块作为追加 text part。
+    expect(forwarded.message.content[0]).toEqual({ type: "text", text: "hi" });
+    expect(forwarded.message.content[1]?.text).toBe("<gen-ui-context>BLOCK</gen-ui-context>");
+    // live echo 用原始 parsed(不含块)——注入给订阅者的回显是用户原文。
+    expect(injections).toHaveLength(1);
+    const echo = JSON.parse(injections[0]!.line) as { message: { content: unknown[] } };
+    expect(echo.message.content).toHaveLength(1);
+  });
+
+  test("gen-ui loader failure does not block the prompt", async () => {
+    const { controller, writes } = makeController();
+    controller.setGenUiContextLoader(async () => {
+      throw new Error("state read exploded");
+    });
+    const socket = makeSocket();
+    const msg = {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "hi" }] },
+    };
+    await controller.message(socket, JSON.stringify(msg));
+    expect(writes).toEqual([`${JSON.stringify(msg)}\n`]);
+  });
+
+  test("injectUserPrompt appends gen-ui block to the composed text", async () => {
+    const { controller, writes } = makeController();
+    controller.setGenUiContextLoader(async () => "<gen-ui-context>BLOCK</gen-ui-context>");
+    await controller.injectUserPrompt("demo", "sess-1", "please adjust");
+    expect(writes).toHaveLength(1);
+    const frame = JSON.parse(writes[0]!) as { message: { content: Array<{ text: string }> } };
+    expect(frame.message.content[0]?.text).toBe(
+      "please adjust\n\n<gen-ui-context>BLOCK</gen-ui-context>",
+    );
+  });
+
   test("unrecognized message type is silently dropped (not forwarded, no error)", async () => {
     const { controller, writes } = makeController();
     const socket = makeSocket();

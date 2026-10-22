@@ -227,6 +227,12 @@ export class ClaudeStreamController {
   // registry 注销——审批中心卡片即时消失，不等 turn result。index.ts 装配，控制器不反向依赖。
   private onControlResponseForwarded: ((runtimeKey: string, requestId: string) => void) | null =
     null;
+  // Gen UI 状态回流（M1.a）：发送 prompt 前经此装载器读会话 widgetState、组装
+  // <gen-ui-context> 块（project-gen-ui.ts）。index.ts 装配（控制器不反向依赖
+  // project-gen-ui），未装配 = 无操作（回流通路整体缺席，prompt 原样发送）。
+  private genUiContextLoader:
+    | ((projectName: string, sessionId: string) => Promise<string | undefined>)
+    | null = null;
 
   constructor(
     private readonly claudeRuntime: ClaudeRuntime,
@@ -236,6 +242,38 @@ export class ClaudeStreamController {
 
   setOnControlResponseForwarded(cb: (runtimeKey: string, requestId: string) => void) {
     this.onControlResponseForwarded = cb;
+  }
+
+  setGenUiContextLoader(
+    cb: (projectName: string, sessionId: string) => Promise<string | undefined>,
+  ) {
+    this.genUiContextLoader = cb;
+  }
+
+  /**
+   * Gen UI 回流块装载：loader 未装配 / 读 state 失败时返回 undefined（prompt 照发，
+   * 回流是增强面不是关键路径——state 读失败绝不阻断用户消息）。 */
+  private async loadGenUiContext(
+    projectName: string,
+    sessionId: string,
+  ): Promise<string | undefined> {
+    if (!this.genUiContextLoader) return undefined;
+    try {
+      return await this.genUiContextLoader(projectName, sessionId);
+    } catch (error) {
+      console.error("[claude-stream] gen-ui context load failed, sending prompt without it", error);
+      return undefined;
+    }
+  }
+
+  /** injectUserPrompt 与 WS user 分支共用：用户原文 + Gen UI 回流块（有活页才追加）。 */
+  private async composeUserText(
+    projectName: string,
+    sessionId: string,
+    text: string,
+  ): Promise<string> {
+    const block = await this.loadGenUiContext(projectName, sessionId);
+    return block ? `${text}\n\n${block}` : text;
   }
 
   private registerSocket(runtimeKey: string, socket: StreamSocket): void {
@@ -403,6 +441,21 @@ export class ClaudeStreamController {
             forwarded = { ...parsed, request: { ...parsed.request, model: resolved } };
           }
         }
+        // Gen UI 回流（M1.a）：user 帧写 stdin 前追加 <gen-ui-context> text part——用户
+        // 原始 content 原样保留（live echo 仍用 parsed，不含块；JSONL 由 CLI 写 forwarded
+        // 版本，回放侧渲染时剥块显示，见 web normalizeChatStream M1.b）。
+        if (parsed.type === "user") {
+          const block = await this.loadGenUiContext(data.projectName, data.sessionId);
+          if (block) {
+            forwarded = {
+              ...parsed,
+              message: {
+                ...parsed.message,
+                content: [...parsed.message.content, { type: "text", text: block }],
+              },
+            };
+          }
+        }
         console.log(`[claude-stream] message ${parsed.type}: ${data.runtimeKey}`);
         await this.claudeRuntime.write(data.runtimeKey, JSON.stringify(forwarded) + "\n");
         // 用户消息 / 权限响应 / 控制请求都算 session 活动 → bump updatedAt（分钟截断，同分钟短路）。
@@ -484,7 +537,10 @@ export class ClaudeStreamController {
 
     const frame: ClaudeStreamClientMessage = {
       type: "user",
-      message: { role: "user", content: [{ type: "text", text }] },
+      message: {
+        role: "user",
+        content: [{ type: "text", text: await this.composeUserText(projectName, sessionId, text) }],
+      },
     };
     console.log(`[claude-stream] inject dialog: ${runtimeKey}`);
     await this.claudeRuntime.write(runtimeKey, JSON.stringify(frame) + "\n");

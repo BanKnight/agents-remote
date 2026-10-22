@@ -306,6 +306,8 @@ export type ClaudeBridge = {
   // 会话归属 project（tool 渲染层按需回源 api 资源用——MCP Apps display tool 卡片经此
   // 拼 mcp-ui-resource URL；bridge 是 renderer 唯一可达的会话上下文面）。
   projectName: string;
+  // 会话实例名（gen-ui widgetState 读写按 `${projectName}` + 此 id 定位 state 文件）。
+  sessionId: string;
   respondToControlRequest: (
     requestId: string,
     updatedInput: Record<string, unknown>,
@@ -1928,6 +1930,20 @@ export type ChatStreamItem =
       _rawSnapshots: SessionStreamServerMessage[];
     }
   | {
+      // Gen UI 生成页（M1.b）：assistant 文本行的 `::gen-ui{...}` 标记投影出的卡片。
+      // 标记行从文本中剥离（完整才投影；流式中不完整 → 行文本不显示、暂不投影，
+      // 下一轮全量重算自然收敛）；解析失败（完整但非法 JSON）→ 保留原行文本不静默吞。
+      // live/replay 同函数零分支（单一管道）。
+      kind: "gen-ui-widget";
+      /** 生成页路径（相对项目根，必须落在 .agents-remote/gen-ui/ 内）。 */
+      path: string;
+      title?: string;
+      /** 宽模式保留字段（M1.c 渲染层消费）。 */
+      mode?: "wide";
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
+  | {
       // CLI slash-command / bash echo feedback rendered as a command card
       // (Dialog popup). Aggregates the command-input tags (<command-name>,
       // <command-message>, <command-args>, <bash-input>) and the command-output
@@ -1982,6 +1998,97 @@ export type ChatStreamItem =
       _rawSnapshots: SessionStreamServerMessage[];
     }
   | { kind: "fallback"; ui: ThreadMessageLike };
+
+// ── Gen UI 标记解析（M1.b，ZCode ::visualize 同构）────────────────────
+
+/** 标记前缀。assistant 文本一行 `::gen-ui{"path":...,"title":...,"mode":"wide"?}`。 */
+export const GEN_UI_MARKER = "::gen-ui";
+
+/** 标记载荷形状（服务端 gen-ui 相对路径约定同 api 侧 isGenUiRelativePath）。 */
+export type GenUiMarkerPayload = {
+  path: string;
+  title?: string;
+  mode?: "wide";
+};
+
+/** 解析单条标记行：`::gen-ui{...}` JSON 载荷。返回 null = 该行不是完整合法标记
+ *  （非标记 / 流式中不完整 / JSON 非法——调用方按「保留原行」处理，不静默吞）。 */
+export const parseGenUiMarkerLine = (line: string): GenUiMarkerPayload | null => {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith(GEN_UI_MARKER)) return null;
+  const payload = trimmed.slice(GEN_UI_MARKER.length).trim();
+  if (!payload.startsWith("{") || !payload.endsWith("}")) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const { path, title, mode } = parsed as Record<string, unknown>;
+  // path 守卫:必须落在 .agents-remote/gen-ui/ 内(web 侧镜像 api isGenUiRelativePath)。
+  if (typeof path !== "string" || !path.startsWith(".agents-remote/gen-ui/")) {
+    return null;
+  }
+  if (path.includes("\0") || isAbsoluteWeb(path)) return null;
+  if (title !== undefined && typeof title !== "string") return null;
+  if (mode !== undefined && mode !== "wide") return null;
+  return {
+    path,
+    ...(typeof title === "string" && title.length > 0 ? { title } : {}),
+    ...(mode === "wide" ? { mode } : {}),
+  };
+};
+
+const isAbsoluteWeb = (p: string) =>
+  p.startsWith("/") || p.startsWith("\\\\") || /^[A-Za-z]:/.test(p);
+
+/**
+ * 把 assistant text 按行扫描成 (保留文本段 | gen-ui 标记) 序列。语义:
+ * - 行首完整合法标记 → 产出 marker,该行从文本剥离;
+ * - 行首标记但载荷不完整/非法 JSON → **保留原行**(用户看得到 agent 的坏标记,
+ *   不静默吞内容;流式中「半截 JSON」行会被误保留,下一轮全量重算收敛后消失);
+ * - 非标记行原样保留。
+ * 保留段合并回 text 保留原始换行结构。无标记时返回 null(调用方零成本快速路径)。
+ */
+export const scanGenUiMarkers = (
+  text: string,
+): { text: string; markers: GenUiMarkerPayload[] } | null => {
+  if (!text.includes(GEN_UI_MARKER)) return null;
+  const lines = text.split("\n");
+  const kept: string[] = [];
+  const markers: GenUiMarkerPayload[] = [];
+  let changed = false;
+  for (const line of lines) {
+    if (line.trimStart().startsWith(GEN_UI_MARKER)) {
+      const payload = parseGenUiMarkerLine(line);
+      if (payload) {
+        markers.push(payload);
+        changed = true;
+        continue;
+      }
+      // 不完整/非法:保留原行(流式中半截行下一轮收敛;完整非法让用户看到)。
+      kept.push(line);
+      continue;
+    }
+    kept.push(line);
+  }
+  if (!changed) return null;
+  return { text: kept.join("\n"), markers };
+};
+
+// ── Gen UI 回流块剥离（user 文本投影）────────────────────────────────
+
+/**
+ * user 文本投影前剥离 `<gen-ui-context>` 回流块：api 在 WS/REST 注入路径把块追加
+ * 进写 CLI stdin 的 user 帧（JSONL 由 CLI 记录 forwarded 版本 → 回放带块；live echo
+ * 用原始 parsed 不含块）。剥掉让两端显示一致——数据完整保留（JSONL 是唯一权威），
+ * 渲染层过滤。
+ */
+export const stripGenUiContextBlock = (text: string): string => {
+  if (!text.includes("<gen-ui-context>")) return text;
+  return text.replace(/<gen-ui-context>[\s\S]*?<\/gen-ui-context>/, "").replace(/\s+$/, "");
+};
 
 // Tool names that spawn a subagent and stream child messages via
 // parent_tool_use_id. Only these tool-calls get head-body-tail rendering;
@@ -2475,6 +2582,40 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         const part = processContentBlock(block as RawContentBlock);
         if (part) target.parts.push(part as NormalizedPart);
       }
+      // Gen UI 标记扫描（M1.b）：text part 中的 `::gen-ui{...}` 行剥离投影成
+      // gen-ui-widget item（卡片跟在 assistant 文本后）。扫描是纯函数，流式增量
+      // 全量重算天然收敛（不完整标记行文本暂不显示、暂不投影）；live/replay 同
+      // 函数零分支。同 path 重复标记 → 只保留首个（重复出现常见于 agent 重述）。
+      const genUiMarkers: GenUiMarkerPayload[] = [];
+      for (let i = 0; i < target.parts.length; i += 1) {
+        const part = target.parts[i]!;
+        if (part.type !== "text") continue;
+        const scanned = scanGenUiMarkers(part.text);
+        if (!scanned) continue;
+        genUiMarkers.push(...scanned.markers);
+        if (scanned.text.length > 0) {
+          target.parts[i] = { ...part, text: scanned.text };
+        } else {
+          // 标记是 text part 的全部内容 → part 删除（不渲染空气泡）。
+          target.parts.splice(i, 1);
+          i -= 1;
+        }
+      }
+      if (genUiMarkers.length > 0) {
+        const seen = new Set<string>();
+        for (const marker of genUiMarkers) {
+          if (seen.has(marker.path)) continue;
+          seen.add(marker.path);
+          items.push({
+            kind: "gen-ui-widget",
+            path: marker.path,
+            title: marker.title,
+            mode: marker.mode,
+            sourceUuids: [...target.sourceUuids],
+            _rawSnapshots: [...target._rawSnapshots],
+          });
+        }
+      }
       // Parent assistant message belongs to every tool-call part it produced.
       for (const part of target.parts) {
         if (part.type === "tool-call") {
@@ -2599,7 +2740,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       // 也产 item——此前落到下方 dropped 分支丢气泡）。
       const { images: userImages } = extractUserBubbleContent(msg.message.content);
       if (texts.length > 0 || userImages.length > 0) {
-        const promptText = texts.join("\n");
+        const promptText = stripGenUiContextBlock(texts.join("\n"));
         items.push({
           kind: "user-prompt",
           text: promptText,
@@ -2633,7 +2774,7 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
         items.push({
           kind: "user-prompt",
-          text: rawContent,
+          text: stripGenUiContextBlock(rawContent),
           sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
           _rawSnapshots: [msg],
         });
@@ -3747,6 +3888,23 @@ export function renderChatStream(
         });
         break;
       }
+      case "gen-ui-widget": {
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "" }],
+          metadata: {
+            custom: {
+              sourceUuids: [...item.sourceUuids],
+              _rawMessages: item._rawSnapshots,
+              systemMessageType: "gen-ui-widget",
+              genUiPath: item.path,
+              genUiTitle: item.title,
+              genUiMode: item.mode,
+            },
+          },
+        });
+        break;
+      }
       case "turn-end": {
         // Stamp per-turn stats onto the turn's last assistant bubble (the
         // footer caption), scoped to this turn's message range so we never
@@ -4563,6 +4721,7 @@ export function useClaudeSession(
   const bridge = useMemo<ClaudeBridge>(
     () => ({
       projectName,
+      sessionId,
       respondToControlRequest(requestId, updatedInput, permissionUpdates) {
         const allowResponse: Record<string, unknown> = {
           behavior: "allow",

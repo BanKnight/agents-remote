@@ -184,6 +184,67 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 
 - **立即（阶段 3 尾巴，低成本）**：① wiki 模板主题变量化——当前硬编码 `#fff/#111`，深色主题是刺眼白块（code-reviewer 已标记为后续迭代面），改为消费宿主 CSS 变量或 `prefers-color-scheme`；② iframe 高度自适应——ZCode 随内容高伸缩；我们固定 `h-[420px]`，长 wiki 页只能内滚，可改 `ResizeObserver` 上报高度。
 - **阶段 4（反向通道）**：`ui/message` 的宿主确认面参考 `sendFollowUpMessage({ prompt, title })`——title 作确认框标题、prompt 带用户所选值；状态持久参考 `modelContent`/`privateContent` 二分（模型可见 vs 仅 UI）。
-- **长期（生成式 UI 能力域）**：若做「Agent 生成卡片」（对应 ZCode visualize 路线），必备防线来自其规范——片段体积上限、输出目录路径校验（禁 symlink/穿越）、CDN allowlist、导出渲染器。这与 MCP Apps 是**互补的两条轨道**（确定性视图 vs 生成式界面），共用同一沙箱渲染基座；ZCode 自己也两条都做（visualize Skill + MCP Apps 可编辑画布）。
+- **长期（生成式 UI 能力域）**：若做「Agent 生成卡片」（对应 ZCode visualize 路线），必备防线来自其规范——片段体积上限、输出目录路径校验（禁 symlink/穿越）、CDN allowlist、导出渲染器。这与 MCP Apps 是**互补的两条轨道**（确定性视图 vs 生成式界面），共用同一沙箱渲染基座；ZCode 自己也两条都做（visualize Skill + MCP Apps 可编辑画布）。→ 已立项（2026-10-22），见 §12.5。
+
+## 12. UI Plugin 官方契约 + Gen UI 契约更新 + 立项决策（2026-10-22 精读）
+
+来源：`UI_PLUGIN.md`（zai-org/ZCode main，v3.15.1，commit `aac4755` 2026-10-10；461 行全文抓取）。§11 的 visualize 源码精读仍有效，本节补官方文档版契约与增量信息。
+
+### 12.1 UI Plugin 是什么（定位）
+
+**MCP Apps 的插件化封装 + 侧栏持久面板 + 市场分发**。页面用官方 `@modelcontextprotocol/ext-apps` SDK（无 ZCode 专用 SDK），锁定页面 SDK 2.0.0 / MCP 服务 SDK 1.29.0。
+
+- **平台硬边界（原文）**：「交互页面目前用于 ZCode Desktop 的本地工作区。Web、手机和远程工作区保留普通 MCP 工具记录，不把这些路径视为已经支持交互面板」。渲染宿主 = Electron：沙箱在 `packages/desktop/src/main/pluginSandbox/`（main）+ `plugin-sandbox/`（renderer，aliasApi）。
+- **manifest 三件套**（`.zcode-plugin/plugin.json`）：① `mcpServers`（stdio，业务逻辑+数据）；② `ui.surfaces[]`（`id` / `title` i18n / `server` 名 / `resourceUri: ui://<name>/<page>.html` / `availability: "session"`）——侧栏持久面板声明，面板非一次性卡片、后续工具继续操作同一份文档；③ 工具定义 `_meta.ui.resourceUri` + `_meta.ui.surface` 把工具结果路由到面板。server 须实际注册 `ui://` 资源返回 `text/html;profile=mcp-app`。`ui.surfaces` 可省略（仅内联页面）。
+- **分发**：独立 `zcode-plugins` marketplace repo + `zcode.cjs plugins marketplace add/install/enable`；PR 模板强制声明插件类型（UI Plugin / 普通插件 / 不适用）。
+- **页面变量**：`${ZCODE_PLUGIN_ROOT}`（插件目录）/ `${ZCODE_PROJECT_DIR}`（工作区）/ `${ZCODE_PLUGIN_DATA}`（持久数据）；页面经服务执行文件操作，无 Node / 任意文件访问。
+
+### 12.2 Excalidraw：画布⇄对话循环（工具表全录，画布立项直接参照）
+
+五步循环：Agent `create_diagram` 画初稿（侧栏开可编辑画板）→ 用户手动编辑，页面 `commit_scene` 保存（revision）→ 用户框选元素右键**「引用选区到对话」**（`updateModelContext`，输入区出现插件上下文徽标）→ 发追问（Agent 收到问题+选区）→ Agent `read_scene` → `apply_operations` 按**稳定元素 ID** 局部修改（不重画全图；用户编辑与工具编辑共用撤销栈）。
+
+| 工具 | 调用方 | 关键语义 |
+| --- | --- | --- |
+| `create_diagram` | 模型、页面 | `title`+`elements` 新建；返回文档 ID 和版本 |
+| `open_diagram` | 模型、页面 | 按 `id` 打开或按 `path` 导入工作区 `.excalidraw`（二选一） |
+| `read_scene` | 模型、页面 | 当前版本+元素摘要；`elementIds` 限定选区 |
+| `apply_operations` | 模型、页面 | 按元素 ID 增改删；携带 `expectedRevision` + `operationId` |
+| `export_diagram` | 模型、页面 | 导出原生 `.excalidraw`；版本检查，覆盖需 `overwrite: true` |
+| `commit_scene` | 仅页面 | 提交编辑草稿，版本冲突检查 |
+| `list_diagrams` / `save_copy` / `save_image` | 仅页面 | 列文档 / 另存 / PNG·SVG 写工作区 |
+
+并发与容量：`expectedRevision` 冲突时保留本页草稿可另存；相同操作重试复用 `operationId`；业务文档 SQLite 按工作区隔离；每文档 ≤5000 元素 / 6 MiB；编辑器与字体随包提供不依赖 CDN；撤销历史仅当前活编辑器不跨重启。
+
+### 12.3 平台能力边界（UI Plugin 轨道）
+
+| 项 | 值 |
+| --- | --- |
+| HTML 资源上限 | 16 MiB；页面资源读取 8 MiB |
+| 初始工具结果 | `structuredContent` 64 KiB / `content` 32 KiB / 页面元数据 16 KiB（超限省略+标记，页面从服务重读） |
+| widgetState | 宿主内存级（会话内重建可恢复，应用重启不保证）；`experimental["zcode/widgetState"]` 能力协商 |
+| 网络/原生权限 | 字体/WASM 随包优先；CSP 放宽须资源 `_meta["zcode/csp"]` 声明；camera/mic/geo/clipboard 需声明+宿主/系统授权，默认不可用 |
+| ZCode 比我们多的 API 面 | `createSamplingMessage`（应用内模型调用；我们阶段 4 已裁定不做）、`registerTool`/`onlisttools`（页面注册工具给模型调）、`updateModelContext`（选区引用）、资源订阅（`resources/subscribe` + 通知）、`requestDisplayMode`、`downloadFile`、`openLink` |
+
+宿主源码导航（UI Plugin 轨道）：`packages/ui/src/plugin-ui/`（能力声明/交互端口/handlers/资源订阅）+ `plugin-ui/CONTRACT.md`（页面保留/回收/恢复）+ `packages/services/src/plugin-ui-bridge/` + 桌面集成测试 `packages/desktop/scripts/mcp-apps-host-e2e.mjs`。
+
+### 12.4 Gen UI 官方契约（§11 的文档版确认 + 增量）
+
+§11 机制五条全部得到官方文档印证。**增量信息**：
+
+- **专用输出目录**：「桌面端会向 Agent 提供当前会话的专用输出目录。生成的 HTML 保存在该目录，由宿主加载，**不写入项目工作区**；页面状态按工作区和会话隔离」。
+- **展开/收起保留同一个活页面**（含「复制当前界面为图片」）——不是双实例：ZCode 宿主做了 DOM 迁移；我们 McpAppCard 因 React 换父必卸载（frontend-notes §3）选第二实例，同一问题的不同取舍，记档不跟进。
+- **能力收窄明确**：Gen UI 页面**不提供 `callTool`、MCP 资源读取、Node 或任意文件访问**；需要插件服务执行操作时用 UI Plugin。生成物零提权——值得照抄的收窄线。
+- **`sendFollowUpMessage`**：「没有有效用户操作时需要确认，失效或只读会话不能发送」——与 §11 第 4 条确认闸一致，官方文档版语义补全。
+- **`setWidgetState({ modelContent, privateContent })`**：合计 ≤16 KiB 整快照替换，**只有 `modelContent` 进下一轮模型上下文**（`privateContent` 仅供 UI 恢复）；`zcode:set_globals` 事件 `detail.globals` 应用宿主注入状态。
+- **Tweak 体系**：页面注册控件后，宿主提供滑块/颜色/开关/选项调整入口，支持重置、原始效果预览、明确提交——依赖页面注册控件协议，立项定为后续增量决策点（见 §12.5）。
+- **两轨道关系（官方）**：「两者虽都可能出现 `window.zcode`，可用方法和状态结构不同，**不能混用**」；UI Plugin 的开发调试在独立 `zcode-plugins` 仓库（`feat/ui-plugin` 分支，主仓库公开分支尚未建好）。
+- 规格与测试入口：`packages/ui/src/gen-ui/CONTRACT.md`（Gen UI 契约）；`apps/zcode-cli/packages/visualize-plugin/skills/visualize/references/api.md` + `tweak.md`；桌面集成验证 `node packages/desktop/scripts/gen-ui-e2e.mjs`。
+
+### 12.5 立项决策（2026-10-22 用户拍板）
+
+1. **生成式 UI：完整版，不做 MVP**。范围 = §12.4 契约全能力面：visualize 型 skill（输出目录+标记）→ 标记扫描（live/回放同管道）→ McpAppCard 基座沙箱变体（无 MCP Apps 握手、注入迷你桥；CSP 不放松）→ 迷你桥四能力（widgetState 读 / setWidgetState 双槽 ≤16KiB 硬闸 / sendFollowUpMessage 确认闸 / set_globals 事件）→ 状态回流（活页 modelContent 组装进下一轮 prompt）→ 回放恢复。ZCode 防线照抄：体积上限、路径校验（禁 symlink/穿越）、能力收窄。Tweak = 显式后续增量。
+2. **画布：两批**。批 1 最小闭环 = ar-hub 四工具（照抄 §12.2 表，`expectedRevision`+`operationId` 语义）+ 文档存储（api 数据目录，revision 计数）+ excalidraw 富模板 + callServerTool 代理（ar-hub 进程内，iframe→postMessage→api 直调链，比外部 server 架构短——我们的独特优势）；**前置实验半天**：excalidraw standalone 单文件打包（体积/无 React 环境/中文字体 fallback）。批 2 = updateModelContext 选区引用循环（协议新方法 + composer「插件上下文」chip + CLI stdin prompt 注入格式——我们上游 Claude CLI 非自控 loop，须序列化进 prompt）。
+3. **架构取舍**：画布 MVP 流内卡片形态（每次 apply 新版本刷新），侧栏常驻面板（工作台右栏）留升级路径；**绕开 registerTool**（反向调用链高成本；迂回 = agent 直调 ar-hub 工具 + 页面随工具结果刷新，ZCode 官方流程 agent 本就只调服务端工具）。
+4. **落地次序**：生成式 UI 先（纯增量、零实验风险）→ 画布批 1 → 画布批 2；两条轨道共享沙箱基座与确认闸。GTD inbox 已捕获（2026-10-22 两条）。
 
 

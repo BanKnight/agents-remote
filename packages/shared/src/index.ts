@@ -138,6 +138,33 @@ export type PagesConfigResponse = { config: PagesConfig };
 export type UpdatePagesConfigRequest = { roots: PagesRoot[] };
 export type UpdatePagesConfigResponse = { config: PagesConfig };
 
+// ── Gen UI（生成式界面，ZCode Gen UI 契约对齐）──────────────────────────
+
+/** GET /api/projects/{name}/gen-ui-file 响应：生成页 HTML 单文件（≤1MB，service 层闸）。 */
+export type GenUiFileResponse = {
+  mimeType: "text/html";
+  html: string;
+};
+
+/** 单个生成页的 widgetState（双槽契约：只有 modelContent 进下轮上下文）。 */
+export type GenUiWidgetState = {
+  /** 生成页路径，相对项目根，必须落在 `.agents-remote/gen-ui/` 内。 */
+  path: string;
+  title?: string;
+  /** 进模型上下文的槽（回流组装 `<gen-ui-context>` 块的唯一来源）。 */
+  modelContent?: string;
+  /** 仅本浏览器会话的私有槽（不进上下文、不回流）。 */
+  privateContent?: string;
+  updatedAt: string;
+};
+
+/** 会话级 widgetState 存储（`.agents-remote/gen-ui/state/{sessionId}.json`）。
+ *  双槽合计 ≤16KiB 硬闸（写入侧）；widgets ≤32 项；同 path 覆盖。 */
+export type GenUiSessionState = {
+  schemaVersion: 1;
+  widgets: GenUiWidgetState[];
+};
+
 export type GitDiffScope = "worktree" | "staged";
 
 export type GitDiffFileStatus = "modified" | "added" | "deleted" | "renamed";
@@ -822,8 +849,10 @@ export type SkillTaskFrame = {
 /** hub 能力域（per-project mcp.json capabilities 开关键）。
  *  wiki = wiki_* 三工具；ui = MCP Apps（`io.modelcontextprotocol/ui` 扩展声明 +
  *  `ui://ar-hub/*` 资源供给 + wiki 工具 UI 关联）；skills = Skills over MCP
- *  （SEP-2640 `io.modelcontextprotocol/skills` 扩展 + skills/list/get + skill:// 资源）。 */
-export type McpCapability = "wiki" | "ui" | "skills";
+ *  （SEP-2640 `io.modelcontextprotocol/skills` 扩展 + skills/list/get + skill:// 资源）；
+ *  gen-ui = 生成式 UI（agent 生成 HTML 到 `.agents-remote/gen-ui/` + `::gen-ui` 标记 +
+ *  widgetState 持久/回流，契约 docs/research/mcp-apps-hosting.md §12.4）。 */
+export type McpCapability = "wiki" | "ui" | "skills" | "gen-ui";
 
 // per-project MCP 配置(PROJECTS_ROOT/{project}/.agents-remote/mcp.json)。
 // 只管能力域开关,不描述 server(hub 是单数,server 描述由基座代码 own)。
@@ -2750,6 +2779,7 @@ export type ApiErrorCode =
   | "PROJECT_FS_ERROR"
   | "PROJECT_PAGES_CONFIG_INVALID"
   | "PROJECT_PAGES_ROOT_CONFLICT"
+  | "PROJECT_GEN_UI_INVALID"
   | "PROJECT_DELETE_FAILED"
   | "SESSION_NOT_FOUND"
   | "SESSION_RUNTIME_MISSING"

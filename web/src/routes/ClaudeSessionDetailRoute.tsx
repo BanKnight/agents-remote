@@ -82,6 +82,7 @@ import {
   buildToolCardToolProps,
   getToolRenderer,
 } from "../components/assistant-ui/tool-ui-registry";
+import { GenUiWidgetMessage } from "../components/assistant-ui/gen-ui-widget-card";
 import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
 import { CompactBlock } from "../components/assistant-ui/compact-block";
@@ -1435,6 +1436,16 @@ function SystemChatBubble() {
         ) : (
           <div className="w-full">{inner}</div>
         )}
+        <RawDebugTooltip custom={custom} className="absolute -top-1 right-0.5" />
+      </MessagePrimitive.Root>
+    );
+  }
+
+  // Gen UI widget card（`::gen-ui` 标记投影，claude-adapter 产 custom）。
+  if (systemMessageType === "gen-ui-widget") {
+    return (
+      <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
+        <GenUiWidgetMessage custom={custom} />
         <RawDebugTooltip custom={custom} className="absolute -top-1 right-0.5" />
       </MessagePrimitive.Root>
     );
