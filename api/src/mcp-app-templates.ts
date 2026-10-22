@@ -20,9 +20,12 @@ import canvasExcalidrawSource from "./assets/canvas/dist/excalidraw.bundle.js" w
  * WIKI_PAGE_APP_TEMPLATE,基座 JS 与原模板逐句对应,勿改转义层级——TS 模板字符串里
  * `\\s` 输出 `\s`、`\`` 输出反引号）。
  *
- * 安全（2026-10-20 security review 沿革）：CSP `default-src 'none'` 禁 connect/form
- * ——即便 esc 出现转义缺口帧内脚本也无法外发数据；帧内 listener 校验 e.source ===
- * parent（file:// 探针 parent===self 放行）。
+ * 安全（2026-10-20 security review 沿革 + 2026-10-23 收敛批补强）：CSP
+ * `default-src 'none'` 使 connect-src 回退被禁——fetch/XHR/WS 外发全拦;
+ * `form-action 'none'` 显式禁表单外发（form-action 不回退 default-src,须单列——
+ * 之前只有注释声称禁 form,实际没禁,本批补上）。模板自有资产立场:全部 JS/CSS
+ * 内联,零外域请求;帧内 listener 校验 e.source === parent（file:// 探针
+ * parent===self 放行）。
  */
 
 export type CardTemplateSpec = {
@@ -391,7 +394,7 @@ ${markdownPipeline}
 };
 
 const buildCardTemplate = (spec: CardTemplateSpec): string => `<!doctype html>
-<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; ${spec.cspResourceDirectives ?? "img-src https: data:"}"><style>${CARD_CSS}${spec.withLibs ? "" : KIND_CSS}${spec.withCanvasBundle ? canvasExcalidrawCss : ""}${spec.extraCss ?? ""}</style></head>
+<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; form-action 'none'; ${spec.cspResourceDirectives ?? "img-src https: data:"}"><style>${CARD_CSS}${spec.withLibs ? "" : KIND_CSS}${spec.withCanvasBundle ? canvasExcalidrawCss : ""}${spec.extraCss ?? ""}</style></head>
 <body>
   <h1 id="title"></h1>
   <div class="meta" id="meta"></div>
@@ -648,12 +651,23 @@ const CANVAS_KIND_JS = `
     var excReady = false;
     var docId = "";
     var docRevision = 0;
-    // 回声抑制 = 服务端已知态指纹：onChange 场景与服务端已知几何相同 → settle 回声
-    // 跳过 commit。excalidraw 的 settle onChange 轮次/时机不可预测（mount/字体加载
-    // 拖尾),时间窗盖不住——指纹对比是语义判定,天然覆盖全部回声形态。指纹只取
-    // id+几何/样式字段子集:excalidraw onChange 的元素形态（内部全集）与服务端存储
-    // 形态（提交原样)不同空间,完整 stringify 恒不等;子集提取跨形态稳定。
+    // 回声抑制 = 已知态指纹：onChange 场景与已知几何相同 → settle 回声跳过 commit。
+    // excalidraw 的 settle onChange 轮次/时机不可预测（mount/字体加载拖尾),时间窗
+    // 盖不住——指纹对比是语义判定,天然覆盖全部回声形态。
+    // 指纹基线必须与 onChange 同一形态空间:excalidraw restore 会给 sparse 元素补
+    // 默认值,服务端 face（可能 sparse）直接做基线,首个内部形态 onChange 必误判
+    // 成用户编辑 → 空转 commit → 同 doc 其它卡 revision 全过期 → 冲突级联。
+    // 所以基线不在 mount/apply 时取服务端 face,而是置 baselinePending,等首个
+    // onChange（restore 后内部形态)定基线;commit 回显（提交原样=内部形态)同步基线。
     var lastServerKey = "";
+    var baselinePending = false;
+    // 同 revision 只拉一次全量（truncated→read_scene 守卫:响应链任何一环又返回
+    // truncated 面时,防无守卫请求循环）。
+    var fullSceneFetchedRevision = -1;
+    // commit 串行化:在途 commit 的 RTT 内若防抖到期,新编辑排队（最新覆盖）,
+    // 在途落地后以已更新的 docRevision 重发——否则必带旧 revision 撞假冲突。
+    var commitInFlight = false;
+    var queuedElements = null;
     var commitTimer = 0;
     var commitSeq = 0;
     var COMMIT_DEBOUNCE_MS = 600;
@@ -666,6 +680,7 @@ const CANVAS_KIND_JS = `
           saveErr: "保存失败",
           truncated: "元素过多，正文从服务端拉取",
           noRuntime: "画布运行时不可用",
+          imgSkip: "画布暂不支持图片元素，图片不会被保存",
         };
       }
       return {
@@ -674,6 +689,7 @@ const CANVAS_KIND_JS = `
         saveErr: "Save failed",
         truncated: "Scene truncated; fetching full elements",
         noRuntime: "Canvas runtime unavailable",
+        imgSkip: "Image elements are not saved by this canvas yet",
       };
     };
     var updateMeta = function (data) {
@@ -695,19 +711,33 @@ const CANVAS_KIND_JS = `
       if (data.truncated) { requestFullScene(); return; }
       if (!Array.isArray(data.elements)) return;
       exc.setElements(data.elements);
-      lastServerKey = sceneKey(data.elements);
+      // setElements 后首个 onChange 是 restore 后内部形态 → 重定基线（见变量区注释）。
+      lastServerKey = "";
+      baselinePending = true;
     };
     var requestFullScene = function () {
       if (!docId) return;
+      // 守卫（记账在响应侧）：「已向该 revision 要过全量、拿回的仍是 truncated」
+      // 才停手——防 truncated→read_scene→又 truncated 的无守卫请求循环。全量
+      // 成功重置为 -1,冲突重载路径（同一 revision 可能多次 409→重拉）不受限。
+      // 若把记账放请求侧,同 revision 二次冲突会被误挡,拿不到重载。
+      if (fullSceneFetchedRevision === docRevision) return;
       sendRequest("tools/call", { name: "read_scene", arguments: { id: docId } })
         .then(function (result) {
           var sc = result && result.structuredContent;
-          if (sc) render(sc);
+          if (sc) {
+            fullSceneFetchedRevision = sc.truncated ? docRevision : -1;
+            render(sc);
+          }
         })
-        .catch(function () {});
+        .catch(function () {
+          fullSceneFetchedRevision = -1;
+        });
     };
     var sceneKey = function (elements) {
-      // 子集指纹：id + 几何/样式核心字段（settle 回声不改这些;用户改任意其一即变）。
+      // 子集指纹：id + 几何/样式核心字段。settle 回声不改这些;用户改任意其一即变。
+      // 补齐易漏的语义字段:圆角/字体/对齐/行高/箭头/分组/链接——settle 拖尾改这些
+      // 不常见,但 agent apply_operations 改它们时若漏进指纹,提交会被误判成回声丢掉。
       var keys = [];
       for (var i = 0; i < elements.length; i++) {
         var el = elements[i];
@@ -716,7 +746,11 @@ const CANVAS_KIND_JS = `
           [el.id, el.type, el.x, el.y, el.width, el.height, el.angle,
             el.strokeColor, el.backgroundColor, el.fillStyle, el.strokeWidth,
             el.strokeStyle, el.roughness, el.opacity, el.text, el.fontSize,
-            (el.points || []).join(";")].join("|"),
+            (el.points || []).join(";"),
+            JSON.stringify(el.roundness || null), el.fontFamily || "",
+            el.textAlign || "", String(el.lineHeight || ""),
+            el.startArrowhead || "", el.endArrowhead || "",
+            (el.groupIds || []).join(","), el.link || ""].join("|"),
         );
       }
       return keys.join("\\n");
@@ -724,15 +758,31 @@ const CANVAS_KIND_JS = `
     var commitScene = function (elements) {
       if (!docId || !excReady) return;
       var payload = [];
+      var hasImage = false;
       for (var i = 0; i < elements.length; i++) {
         var el = elements[i];
-        if (el && !el.isDeleted) payload.push(el);
+        if (!el || el.isDeleted) continue;
+        if (el.type === "image") hasImage = true;
+        payload.push(el);
       }
-      // settle 回声（mount/字体拖尾的重复 onChange）:场景与服务端已知态几何相同 →
-      // 不提交。时间窗盖不住不可预测的 settle 时机,指纹对比是语义判定。
+      // 指纹基线定标：首个 onChange 是 restore 后的内部形态,与它对齐后后续 onChange
+      // 才可比。此前直接提交会把「restore 补默认」误判成用户编辑 → 空转 commit。
+      if (baselinePending) {
+        lastServerKey = sceneKey(payload);
+        baselinePending = false;
+        return;
+      }
+      // settle 回声（mount/字体拖尾的重复 onChange）:场景与已知态相同 → 不提交。
       if (lastServerKey && sceneKey(payload) === lastServerKey) {
         return;
       }
+      // 串行化:在途 commit 的 RTT 内防抖到期 → 最新编辑排队,落地后重发
+      // （docRevision 已被 .then 更新,重发不带旧 revision）。
+      if (commitInFlight) {
+        queuedElements = payload;
+        return;
+      }
+      commitInFlight = true;
       commitSeq += 1;
       var t = canvasText();
       sendRequest("tools/call", {
@@ -749,23 +799,45 @@ const CANVAS_KIND_JS = `
           if (sc && typeof sc.revision === "number") {
             docRevision = sc.revision;
             // meta 读 lastData：同步显新 rev，否则保存成功后 meta 恒显旧 revision。
-            if (lastData) lastData.revision = sc.revision;
+            if (lastData) {
+              lastData.revision = sc.revision;
+              lastData.truncated = false;
+              if (Array.isArray(sc.elements)) {
+                lastData.elements = sc.elements;
+                lastData.elementCount = sc.elements.length;
+              }
+            }
           }
+          // 提交回显 = 提交原样 = 内部形态 → 直接做新基线（覆盖基线对齐的空间要求）。
           if (sc && Array.isArray(sc.elements)) lastServerKey = sceneKey(sc.elements);
-          setNote("");
+          baselinePending = false;
+          setNote(hasImage ? t.imgSkip : "");
         })
         .catch(function (err) {
           var msg = String((err && err.message) || err);
           if (msg.indexOf("REVISION_CONFLICT") >= 0) {
             // agent 在编辑期间改过画布：服务端为准重载（本地草稿丢弃并提示）。
+            // 排队编辑一并丢弃——重载带来的才是服务端真相,带着旧 revision 重发
+            // 只会再撞一次冲突。
+            queuedElements = null;
             setNote(t.stale);
             requestFullScene();
             return;
           }
           setNote(t.saveErr + ": " + msg);
+        })
+        .then(function () {
+          // 成败都释放（冲突分支 return 前已清 queued;这里对它无害——queued 为 null）。
+          commitInFlight = false;
+          if (queuedElements) {
+            var q = queuedElements;
+            queuedElements = null;
+            commitScene(q);
+          }
         });
     };
     var renderKind = function (data) {
+      var prevRevision = docRevision;
       docId = typeof data.id === "string" ? data.id : "";
       docRevision = typeof data.revision === "number" ? data.revision : 0;
       cardTitle = data.title || docId;
@@ -793,11 +865,20 @@ const CANVAS_KIND_JS = `
             }, COMMIT_DEBOUNCE_MS);
           },
         });
-        // 服务端已知态基线（含 truncated 空 mount:后续 read_scene 全量回来会更新）。
-        lastServerKey = sceneKey(!data.truncated && Array.isArray(data.elements) ? data.elements : []);
+        // 基线不在此取服务端 face:restore 会补默认值,内部形态 onChange 必与
+        // sparse/异构 face 错位 → 空转 commit。等首个 onChange 定内部形态基线
+        // （commitScene 的 baselinePending 分支）。
+        baselinePending = true;
+        lastServerKey = "";
+        if (data.truncated) requestFullScene();
       } else {
         exc.setTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
-        applyRemoteScene(data);
+        // re-render（主题/locale 切换）与 refresh 钮同 revision → 服务端无新变化,
+        // 不用 lastData 覆写 setElements（会把用户未保存的中间笔画弹回已知态）。
+        // revision 前进（agent push/冲突重载）或 truncated → 走 apply 链。
+        if (data.truncated || data.revision !== prevRevision) {
+          applyRemoteScene(data);
+        }
       }
     };
     var getRefreshRequest = function () {

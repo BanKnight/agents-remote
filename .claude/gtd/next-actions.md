@@ -36,7 +36,7 @@
 ## @gen-ui-canvas（总纲：docs/research/mcp-apps-hosting.md §12；一手契约 §12.4 Gen UI + §12.2 画布工具表；计划 ~/.claude/plans/toasty-sprouting-star.md）
 
 - [x] **M1 生成式 UI 完整版**（2026-10-22 完成）——代码 `9e134cb`(a/b/c) + `f004276`(d skill 交付+端到端) + `183f2b5`(reviewer 三报告收敛批)。验收数字：门禁全绿（api 1072 / shared 10 / web 883 pass，typecheck+lint 0 warning）；探针 `probe-gen-ui-widget.mjs` 17/17；e2e `mcp-app-card.spec.ts` 3/3；test 项目端到端全链（生成→卡渲染→拖滑块→state PUT 42→重开恢复→追问回流带 value 42→agent 答「42」→标记不进气泡→零 pageError）+ API 重启回放恢复。契约见 `docs/research/mcp-apps-hosting.md` §11/§12.4。
-- [ ] **M2 画布批 1（最小闭环）**：0 前置实验(excalidraw standalone 单文件打包,失败回炉报告用户)→ 1 ar-hub 四工具(create/read_scene/apply_operations/export;expectedRevision+operationId;HUB_APP_TOOLS 直调)→ 2 CANVAS 模板 + commit_scene 提交链(allowedToolNames 多名)+ toolRegistry 注册 → 3 验证;验收:单测并发语义 + 浏览器探针(agent 画→改→局部改闭环)+ security-reviewer 必过
+- [x] **M2 画布批 1（最小闭环）**（2026-10-23 完成）——代码 `96d6c0c`(M2.1 四工具+project-canvas 存储 expectedRevision/operationId) + `5542580`/`ae6bfe3`(security 收敛:落盘 id 绑定/原型键/symlink/容量闸/apply-adds 字节闸) + `424791f`(M2.2 模板+commit_scene 提交链+web 四工具注册) + `d84d55c`(M2.3 echo 指纹抑制+REVISION_CONFLICT 错误码通道+探针)。前置实验结论(可行,gzip 1.46MB,iframe 预聚焦坑)见 `7efb647`→hosting.md §12.6。验收数字:探针 `probe-mcp-app-canvas.mjs` 3 轮 20/20;单测并发语义全绿;门禁全绿(format/lint/typecheck/test 1990 pass/CSS 硬闸);reviewer code+security 并行(报告收敛批随 M3 或独立提交)。已知限制:多卡焦点互抢后回卡首次拖画失效(M2.0 坑双卡变体,真机清单)。
 - [ ] **M3 画布批 2（选区引用循环）**：ui/update-model-context 协议方法 + composer chip + 发送时 prompt 注入;验收:端到端闭环(画图→选节点→改选区)+ 探针 + reviewer
 
 ## @harness

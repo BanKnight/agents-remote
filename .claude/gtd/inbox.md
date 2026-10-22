@@ -36,3 +36,15 @@
 ## 2026-10-17 PWA Web Push 通知批 ✅ 完成（commit `75890b2` + `591da88`，未 push；真机清单待验）
 
 用户需求：PWA 在「会话状态变更且需要人关注」时发系统通知。已拍板：Web Push 服务端推送（iOS 16.4+ standalone）；三类触发（等待审批/turn 完成/出错）；设置页逐类开关（偏好存服务端 settings.yaml）。计划文件 `~/.claude/plans/toasty-sprouting-star.md`。顺序：Spike 1（web-push Bun 兼容）/ Spike 2（injectManifest 迁移）→ shared 类型 → api 全链 → web SW+设置 UI → e2e → 真机清单。不做/记档：逐会话开关、badge、pi/acp 推送等（见计划）。双 review 消化与 injectManifest 排障见 `docs/design/redesign-v2.md` 本批记档；真机清单见 handoff/current.md（需 HTTPS tunnel）。
+
+## 2026-10-22 生成式 UI（Gen UI）完整版立项
+
+用户拍板：**不做 MVP，按完整版做**——ZCode Gen UI 契约全能力面：①visualize 型 skill（agent 生成单文件 HTML 到会话专用输出目录，标记引用）②标记扫描 live/回放同管道（单一管道原则）③McpAppCard 基座沙箱变体（无 MCP Apps 握手，注入迷你桥；CSP `default-src 'none'` 硬前提不放松）④迷你桥四能力：`widgetState` 读 / `setWidgetState({modelContent, privateContent})` 双槽（合计 ≤16KiB 硬闸，只有 modelContent 进下轮上下文）/ `sendFollowUpMessage` 确认闸（无有效用户操作须确认，失效/只读会话拒发）/ `zcode:set_globals` 主题状态事件 ⑤状态回流（活页 modelContent 组装进下一轮 prompt）⑥回放恢复（标记在 JSONL + 文件在会话目录 + widgetState 按会话存）。ZCode 防线照抄：体积上限、输出目录路径校验（禁 symlink/穿越）、能力收窄（生成页无 callTool/资源/Node/文件）。Tweak 宿主控件体系 = 显式决策点（建议后续增量，依赖页面注册控件协议）。一手材料与契约细节：`docs/research/mcp-apps-hosting.md` §11（visualize 源码精读）+ §12（官方契约 + 立项决策）。
+
+## 2026-10-22 画布式能力（Excalidraw 型「画布⇄对话」循环）立项
+
+两批推进（2026-10-22 讨论定案，可行性结论：可以复现、代价中等、每段有存量先例）：
+- **批 1 画布最小闭环**：ar-hub 四工具照抄 ZCode Excalidraw 工具表（create_diagram / read_scene / apply_operations / export_diagram，`expectedRevision` 版本冲突 + `operationId` 幂等语义）+ 文档存储（api 数据目录，revision 计数）+ excalidraw 富模板（消费 structuredContent 渲染，用户编辑经页面提交）+ callServerTool 代理（ar-hub 进程内 → iframe→postMessage→api 直调链，比外部 server 架构短）。**前置实验（半天）**：excalidraw standalone 单文件打包验证（体积 / 无 React 环境 / 中文字体 fallback）。
+- **批 2 选区引用循环**：协议新方法 updateModelContext（页面→宿主选区上下文）+ composer「插件上下文」chip（可见可删）+ 发送时序列化进 CLI stdin prompt 的格式设计（我们上游 Claude CLI 非自控 loop，须 prompt 注入）。
+- 架构决策：MVP 流内卡片形态（每次 apply 新版本刷新），侧栏常驻面板（工作台右栏）留升级路径；**明确绕开 registerTool**（模型反调页面工具，反向调用链高成本；迂回 = agent 直调 ar-hub 工具 + 页面随工具结果刷新，ZCode 官方流程 agent 本就只调服务端工具）。
+- 一手材料：`docs/research/mcp-apps-hosting.md` §12.2 工具表全录 + §12.5 决策记录。

@@ -245,15 +245,23 @@ export const filePreviewFallbackText = (preview: {
  * 白名单代理共用，防两处漂移）。SEP-1865 上限：初始 structuredContent 64KiB——
  * 超限时元素降级为摘要（id/type/x/y/width/height）+ truncated 标记，模板（M2.2）
  * 据 truncated 走 read_scene 拉全量；text content 侧恒全量（模型消费面）。
+ *
+ * opts.full：跳过降摘要恒回全量。仅卡片反向通道（HUB_APP_TOOLS 直调,web 宿主
+ * REST 代理回 frame）使用——48KiB 闸管的是 CLI 消息通道的初始 tool-result,
+ * 反向通道响应不经 CLI,若也降摘要,模板 truncated→read_scene→又 truncated
+ * 形成无守卫请求循环（code review P0）。
  */
 const CANVAS_SC_MAX_BYTES = 48 * 1024;
 
-export const canvasSceneStructuredContent = (scene: {
-  id: string;
-  title: string;
-  revision: number;
-  elements: CanvasElement[];
-}): Record<string, unknown> => {
+export const canvasSceneStructuredContent = (
+  scene: {
+    id: string;
+    title: string;
+    revision: number;
+    elements: CanvasElement[];
+  },
+  opts?: { full?: boolean },
+): Record<string, unknown> => {
   const full = {
     kind: "canvas-doc" as const,
     id: scene.id,
@@ -262,7 +270,7 @@ export const canvasSceneStructuredContent = (scene: {
     elementCount: scene.elements.length,
     elements: scene.elements,
   };
-  if (Buffer.byteLength(JSON.stringify(full), "utf8") <= CANVAS_SC_MAX_BYTES) {
+  if (opts?.full || Buffer.byteLength(JSON.stringify(full), "utf8") <= CANVAS_SC_MAX_BYTES) {
     return full;
   }
   return {

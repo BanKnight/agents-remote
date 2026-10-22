@@ -477,8 +477,13 @@ export function McpAppCard({
           postToolResult();
           // M2.0 实锤的 excalidraw 首画失效修复：宿主预聚焦抢在用户首次点击
           // 之前,win:focus 的按下态清除不再发生在首画路径上（preventScroll
-          // 避免宿主页面滚动跳位）。
-          if (autoFocusFrame) frame.focus({ preventScroll: true });
+          // 避免宿主页面滚动跳位）。用户正在输入（composer/追问框聚焦）时不抢
+          // —— onLoad 晚于用户点击输入框的场景,抢焦会把光标打回画布丢输入。
+          const ae = document.activeElement;
+          const userTyping =
+            ae instanceof HTMLElement &&
+            (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable);
+          if (autoFocusFrame && !userTyping) frame.focus({ preventScroll: true });
         }}
         sandbox="allow-scripts"
         srcDoc={resource.data.html}

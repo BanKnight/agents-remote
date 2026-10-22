@@ -110,11 +110,14 @@ await page.addInitScript(() => localStorage.setItem("lang", "zh"));
 
 const hubCalls = [];
 let commitShouldConflict = false;
+// read_scene 返回值可切换：冲突重载段回 sceneV7;truncated 守卫段故意回
+// truncated 面——验证守卫斩断 truncated→read→又 truncated 请求循环。
+let readSceneResponse = sceneV7;
 await page.route(/\/api\/projects\/test\/mcp-hub-tools-call/, async (r) => {
   const body = r.request().postDataJSON();
   hubCalls.push(body);
   if (body.name === "read_scene") {
-    await r.fulfill(toolResult(sceneV7));
+    await r.fulfill(toolResult(readSceneResponse));
     return;
   }
   if (body.name === "commit_scene") {
@@ -370,9 +373,13 @@ assert(
 );
 const echoCommits = hubCalls
   .slice(callsBeforeEcho)
-  .filter((c) => c.name === "commit_scene" && c.arguments?.expectedRevision === 4);
+  .filter(
+    (c) =>
+      c.name === "commit_scene" &&
+      (c.arguments?.expectedRevision === 4 || c.arguments?.expectedRevision === 5),
+  );
 assert(
-  "echo suppression: no echo commit from the pushed card (rev 4)",
+  "echo suppression: no echo commit from either card (rev 4/5)",
   echoCommits.length === 0,
   `echoCommits=${echoCommits.length}`,
 );
@@ -426,11 +433,89 @@ assert(
   metaV7.includes("已重新加载") && metaV7.startsWith("r7"),
   JSON.stringify(metaV7),
 );
+// 冲突处理完毕——后续段恢复正常 commit 语义（不复位则后续 commit 全 409）。
+commitShouldConflict = false;
 assert(
   // 首画 1 + 第二卡 mount settle 逃窗 0-1（时序相关,非回声语义）+ 二画 1。
   "no commit retry storm after conflict",
   hubCalls.filter((c) => c.name === "commit_scene").length <= 3,
   `commits=${hubCalls.filter((c) => c.name === "commit_scene").length}`,
+);
+
+// ── 6. truncated face → read_scene 守卫（响应又 truncated 时斩断请求循环） ──
+// 第三卡 mount(truncated) → requestFullScene → mock 故意回 truncated 面 →
+// render → applyRemoteScene → requestFullScene → fullSceneFetchedRevision 守卫
+// 挡 → read_scene 不再增长。无守卫的旧模板这里会无限循环打爆 mock。
+readSceneResponse = {
+  kind: "canvas-doc",
+  id: "canvas-probe1",
+  title: "探针画布",
+  revision: 9,
+  elementCount: 3,
+  truncated: true,
+  elements: [],
+};
+const readCallsBeforeTrunc = hubCalls.filter((c) => c.name === "read_scene").length;
+socket.send(
+  JSON.stringify({
+    type: "assistant",
+    uuid: "uuid-canvas-3",
+    message: {
+      role: "assistant",
+      content: [
+        {
+          type: "tool_use",
+          id: "tu-canvas-3",
+          name: "mcp__ar-hub__read_scene",
+          input: { id: "canvas-probe1" },
+        },
+      ],
+    },
+  }),
+);
+socket.send(
+  JSON.stringify({
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "tu-canvas-3", content: "ok" }],
+    },
+    tool_use_result: {
+      type: "tool_result",
+      structuredContent: {
+        kind: "canvas-doc",
+        id: "canvas-probe1",
+        title: "探针画布",
+        revision: 9,
+        elementCount: 3,
+        truncated: true,
+        elements: [],
+      },
+    },
+  }),
+);
+await sleep(2500);
+assert(
+  "truncated face renders a third card",
+  (await frames.count()) === 3,
+  `frames=${await frames.count()}`,
+);
+const metaTrunc = await frames
+  .nth(2)
+  .contentFrame()
+  .locator("#meta")
+  .textContent()
+  .catch(() => "");
+assert(
+  "truncated meta shows r9 + fetch note",
+  metaTrunc.startsWith("r9") && metaTrunc.includes("元素过多"),
+  metaTrunc,
+);
+await sleep(1500);
+assert(
+  "guard breaks the fetch loop: read_scene stays at +1",
+  hubCalls.filter((c) => c.name === "read_scene").length === readCallsBeforeTrunc + 1,
+  `readCalls=${hubCalls.filter((c) => c.name === "read_scene").length}`,
 );
 
 // ── 汇总 ────────────────────────────────────────────────────────────────────

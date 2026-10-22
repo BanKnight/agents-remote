@@ -880,64 +880,26 @@ toolRegistry.set(
   }),
 );
 
-// ── 画布四工具（M2.2）：同一张画布卡，反向通道 = read_scene 刷新 + commit_scene
-// 回存（allowedToolNames 多名形态）；autoFocusFrame 修 excalidraw 首画失效
-// （M2.0 实验实锤）。agent 侧走 apply_operations，卡片只在 tool-result 喂数时渲染。
-toolRegistry.set(
-  "mcp__ar-hub__create_diagram",
-  makeMcpAppCardToolUI({
-    uri: CANVAS_APP_URI,
-    cardToolName: "create_diagram",
-    kindGuard: isCanvasDocStructuredContent,
-    icon: "canvas",
-    badgeKey: "claude.tool.canvasDoc",
-    detail: (sc) => (typeof sc.title === "string" ? sc.title : null),
-    allowedToolNames: ["read_scene", "commit_scene"],
-    autoFocusFrame: true,
-  }),
-);
-
-toolRegistry.set(
-  "mcp__ar-hub__read_scene",
-  makeMcpAppCardToolUI({
-    uri: CANVAS_APP_URI,
-    cardToolName: "read_scene",
-    kindGuard: isCanvasDocStructuredContent,
-    icon: "canvas",
-    badgeKey: "claude.tool.canvasDoc",
-    detail: (sc) => (typeof sc.title === "string" ? sc.title : null),
-    allowedToolNames: ["read_scene", "commit_scene"],
-    autoFocusFrame: true,
-  }),
-);
-
-toolRegistry.set(
-  "mcp__ar-hub__apply_operations",
-  makeMcpAppCardToolUI({
-    uri: CANVAS_APP_URI,
-    cardToolName: "apply_operations",
-    kindGuard: isCanvasDocStructuredContent,
-    icon: "canvas",
-    badgeKey: "claude.tool.canvasDoc",
-    detail: (sc) => (typeof sc.title === "string" ? sc.title : null),
-    allowedToolNames: ["read_scene", "commit_scene"],
-    autoFocusFrame: true,
-  }),
-);
-
-toolRegistry.set(
-  "mcp__ar-hub__export_diagram",
-  makeMcpAppCardToolUI({
-    uri: CANVAS_APP_URI,
-    cardToolName: "export_diagram",
-    kindGuard: isCanvasDocStructuredContent,
-    icon: "canvas",
-    badgeKey: "claude.tool.canvasDoc",
-    detail: (sc) => (typeof sc.title === "string" ? sc.title : null),
-    allowedToolNames: ["read_scene", "commit_scene"],
-    autoFocusFrame: true,
-  }),
-);
+// ── 画布工具（M2.2）：三个有 face 的工具同一张画布卡，反向通道 = read_scene
+// 刷新 + commit_scene 回存（allowedToolNames 多名形态）；autoFocusFrame 修
+// excalidraw 首画失效（M2.0 实验实锤）。export_diagram 不注册——hub 不返回
+// canvas-doc face（M2 只出 svg 文本），注册恒走通用卡回退 = 死代码。
+const CANVAS_FACE_TOOLS = ["create_diagram", "read_scene", "apply_operations"] as const;
+for (const tool of CANVAS_FACE_TOOLS) {
+  toolRegistry.set(
+    `mcp__ar-hub__${tool}`,
+    makeMcpAppCardToolUI({
+      uri: CANVAS_APP_URI,
+      cardToolName: tool,
+      kindGuard: isCanvasDocStructuredContent,
+      icon: "canvas",
+      badgeKey: "claude.tool.canvasDoc",
+      detail: (sc) => (typeof sc.title === "string" ? sc.title : null),
+      allowedToolNames: ["read_scene", "commit_scene"],
+      autoFocusFrame: true,
+    }),
+  );
+}
 
 export function getToolRenderer(toolName: string): ToolRenderer {
   const exact = toolRegistry.get(toolName);

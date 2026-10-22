@@ -1595,8 +1595,10 @@ const HUB_APP_TOOLS: Record<
       structuredContent: gitLogStructuredContent(log),
     };
   },
-  // 画布四工具（M2.1）：与 hub 侧 registerCanvasTools 同契约（直调 service + 共用
-  // canvasSceneStructuredContent 塑形）。web 卡片 tools/call 刷新/提交走这里。
+  // 画布四工具（M2.1）：与 hub 侧 registerCanvasTools 同契约（直调 service）。
+  // structuredContent 走 {full:true}——这里是卡片反向通道（web 宿主 REST 代理）,
+  // 不经 CLI 消息,若过 48KiB 降摘要,模板 truncated→read_scene→又 truncated 会
+  // 死循环;48KiB 闸只管 hub 侧（agent 消费面）。
   create_diagram: async (deps, project, args) => {
     if (!deps.canvas) {
       throw new Error("Canvas service unavailable");
@@ -1607,7 +1609,7 @@ const HUB_APP_TOOLS: Record<
     });
     return {
       content: [{ type: "text", text: JSON.stringify(scene) }],
-      structuredContent: canvasSceneStructuredContent(scene),
+      structuredContent: canvasSceneStructuredContent(scene, { full: true }),
     };
   },
   read_scene: async (deps, project, args) => {
@@ -1621,7 +1623,7 @@ const HUB_APP_TOOLS: Record<
     );
     return {
       content: [{ type: "text", text: JSON.stringify(scene) }],
-      structuredContent: canvasSceneStructuredContent(scene),
+      structuredContent: canvasSceneStructuredContent(scene, { full: true }),
     };
   },
   apply_operations: async (deps, project, args) => {
@@ -1639,7 +1641,7 @@ const HUB_APP_TOOLS: Record<
     );
     return {
       content: [{ type: "text", text: JSON.stringify(scene) }],
-      structuredContent: canvasSceneStructuredContent(scene),
+      structuredContent: canvasSceneStructuredContent(scene, { full: true }),
     };
   },
   export_diagram: async (deps, project, args) => {
@@ -1672,7 +1674,7 @@ const HUB_APP_TOOLS: Record<
     );
     return {
       content: [{ type: "text", text: JSON.stringify(scene) }],
-      structuredContent: canvasSceneStructuredContent(scene),
+      structuredContent: canvasSceneStructuredContent(scene, { full: true }),
     };
   },
 };
