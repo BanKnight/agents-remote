@@ -9,6 +9,7 @@ import { formatDuration } from "../../lib/utils";
 import { CollapsibleSection } from "./collapsible-section";
 import { ToolHead, type ToolHeadStatus, ToolIcon } from "./tool-head";
 import {
+  CANVAS_APP_URI,
   FILE_PREVIEW_APP_URI,
   GIT_LOG_APP_URI,
   GIT_STATUS_APP_URI,
@@ -16,6 +17,7 @@ import {
   SESSION_OVERVIEW_APP_URI,
   SETTINGS_PREVIEW_APP_URI,
   WIKI_PAGE_APP_URI,
+  isCanvasDocStructuredContent,
   isFilePreviewStructuredContent,
   isGitLogStructuredContent,
   isGitStatusStructuredContent,
@@ -658,13 +660,18 @@ const makeMcpAppCardToolUI = (config: {
   uri: string;
   /** tools/call 反向通道 allowlist（与 McpAppCard 的 allowedToolName 同值）。 */
   cardToolName: string;
+  /** tools/call 白名单多名形态（画布卡：read_scene + commit_scene）。 */
+  allowedToolNames?: string[];
+  /** onLoad 后宿主预聚焦 iframe（仅画布卡,M2.0 首画失效修复）。 */
+  autoFocusFrame?: boolean;
   kindGuard: (value: unknown) => boolean;
   icon: string;
   badgeKey: TranslationKey;
   /** ToolHead detail 行（wiki=slug,git=branch）。 */
   detail?: (sc: Record<string, unknown>, args: Record<string, unknown>) => string | null;
 }): ToolCallMessagePartComponent => {
-  const { uri, cardToolName, kindGuard, icon, badgeKey, detail } = config;
+  const { uri, cardToolName, allowedToolNames, autoFocusFrame, kindGuard, icon, badgeKey, detail } =
+    config;
   return (props) => {
     const { argsText, status } = props;
     const { t } = useT();
@@ -716,6 +723,8 @@ const makeMcpAppCardToolUI = (config: {
             uri={uri}
             structuredContent={structuredContent}
             allowedToolName={cardToolName}
+            allowedToolNames={allowedToolNames}
+            autoFocusFrame={autoFocusFrame}
             onSendPrompt={(text) => bridge?.sendMessage(text)}
           />
         ) : (
@@ -777,6 +786,8 @@ const makeMcpAppCardToolUI = (config: {
                   uri={uri}
                   structuredContent={structuredContent}
                   allowedToolName={cardToolName}
+                  allowedToolNames={allowedToolNames}
+                  autoFocusFrame={autoFocusFrame}
                   onSendPrompt={(text) => bridge?.sendMessage(text)}
                 />
               </div>
@@ -866,6 +877,65 @@ toolRegistry.set(
     icon: "read",
     badgeKey: "claude.tool.readFile",
     detail: (sc) => (typeof sc.path === "string" ? sc.path : null),
+  }),
+);
+
+// ── 画布四工具（M2.2）：同一张画布卡，反向通道 = read_scene 刷新 + commit_scene
+// 回存（allowedToolNames 多名形态）；autoFocusFrame 修 excalidraw 首画失效
+// （M2.0 实验实锤）。agent 侧走 apply_operations，卡片只在 tool-result 喂数时渲染。
+toolRegistry.set(
+  "mcp__ar-hub__create_diagram",
+  makeMcpAppCardToolUI({
+    uri: CANVAS_APP_URI,
+    cardToolName: "create_diagram",
+    kindGuard: isCanvasDocStructuredContent,
+    icon: "canvas",
+    badgeKey: "claude.tool.canvasDoc",
+    detail: (sc) => (typeof sc.title === "string" ? sc.title : null),
+    allowedToolNames: ["read_scene", "commit_scene"],
+    autoFocusFrame: true,
+  }),
+);
+
+toolRegistry.set(
+  "mcp__ar-hub__read_scene",
+  makeMcpAppCardToolUI({
+    uri: CANVAS_APP_URI,
+    cardToolName: "read_scene",
+    kindGuard: isCanvasDocStructuredContent,
+    icon: "canvas",
+    badgeKey: "claude.tool.canvasDoc",
+    detail: (sc) => (typeof sc.title === "string" ? sc.title : null),
+    allowedToolNames: ["read_scene", "commit_scene"],
+    autoFocusFrame: true,
+  }),
+);
+
+toolRegistry.set(
+  "mcp__ar-hub__apply_operations",
+  makeMcpAppCardToolUI({
+    uri: CANVAS_APP_URI,
+    cardToolName: "apply_operations",
+    kindGuard: isCanvasDocStructuredContent,
+    icon: "canvas",
+    badgeKey: "claude.tool.canvasDoc",
+    detail: (sc) => (typeof sc.title === "string" ? sc.title : null),
+    allowedToolNames: ["read_scene", "commit_scene"],
+    autoFocusFrame: true,
+  }),
+);
+
+toolRegistry.set(
+  "mcp__ar-hub__export_diagram",
+  makeMcpAppCardToolUI({
+    uri: CANVAS_APP_URI,
+    cardToolName: "export_diagram",
+    kindGuard: isCanvasDocStructuredContent,
+    icon: "canvas",
+    badgeKey: "claude.tool.canvasDoc",
+    detail: (sc) => (typeof sc.title === "string" ? sc.title : null),
+    allowedToolNames: ["read_scene", "commit_scene"],
+    autoFocusFrame: true,
   }),
 );
 

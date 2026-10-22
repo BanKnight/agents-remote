@@ -10,6 +10,7 @@ export const GIT_LOG_APP_URI = "ui://ar-hub/git-log";
 export const SESSION_OVERVIEW_APP_URI = "ui://ar-hub/session-overview";
 export const SETTINGS_PREVIEW_APP_URI = "ui://ar-hub/settings-preview";
 export const FILE_PREVIEW_APP_URI = "ui://ar-hub/file-preview";
+export const CANVAS_APP_URI = "ui://ar-hub/canvas";
 
 /**
  * 流内卡片高度上限：模板上报的内容高钳到此后，iframe 文档视口小于内容 →
@@ -150,6 +151,29 @@ export function isFilePreviewStructuredContent(
   );
 }
 
+// 画布卡（M2.2,契约 = api canvasSceneStructuredContent）：全量面带 elements;
+// 超 48KiB 降摘要面（truncated + 摘要元素）由模板走 read_scene 拉全量。
+export type CanvasDocStructuredContent = {
+  kind: "canvas-doc";
+  id: string;
+  title: string;
+  revision: number;
+  elementCount: number;
+  elements?: unknown[];
+  truncated?: boolean;
+};
+
+export function isCanvasDocStructuredContent(value: unknown): value is CanvasDocStructuredContent {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.kind === "canvas-doc" &&
+    typeof record.id === "string" &&
+    typeof record.revision === "number" &&
+    typeof record.elementCount === "number"
+  );
+}
+
 /**
  * MCP Apps (SEP-1865) web host card. Data channel: CLI passes hub tool result
  * `structuredContent` verbatim via the user-frame `tool_use_result` envelope
@@ -176,6 +200,8 @@ export function McpAppCard({
   fillHeight = false,
   onSendPrompt,
   allowedToolName = "wiki_read_page",
+  allowedToolNames,
+  autoFocusFrame = false,
 }: {
   projectName: string;
   uri: string;
@@ -195,6 +221,17 @@ export function McpAppCard({
    * 故每卡对应一个名字;缺省 wiki_read_page 保持既有调用方零改动。
    */
   allowedToolName?: string;
+  /**
+   * tools/call 白名单多名形态（画布卡：read_scene 刷新 + commit_scene 回存）。
+   * 提供时覆盖 allowedToolName；缺省回落单名,既有调用方零改动。
+   */
+  allowedToolNames?: string[];
+  /**
+   * onLoad 后宿主预聚焦 iframe（M2.0 实验实锤：首次点击 iframe 获焦的 win:focus
+   * 会清掉 excalidraw 按下态,第一次拖画/框选必然无效;预聚焦后首画可用）。
+   * 仅画布卡开启——聚焦抢夺对其它卡是纯回归。
+   */
+  autoFocusFrame?: boolean;
 }) {
   const { t, lang } = useT();
   // ui/message user-consent gate (SEP MAY-require; ZCode sendFollowUpMessage 同款).
@@ -207,6 +244,8 @@ export function McpAppCard({
   });
 
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  // tools/call 白名单（多名形态覆盖单名缺省;host 侧防御层,api HUB_APP_TOOLS 是另一层）。
+  const allowedNames = allowedToolNames ?? [allowedToolName];
   // Feed-once guard. Only the FIRST load of a given template gets the initial
   // postMessage; fedWinRef doubles as the "load fired" signal for re-sends
   // (structuredContent updates skip until then) and is nulled on navigation.
@@ -312,13 +351,13 @@ export function McpAppCard({
     if (data.method === "tools/call" && typeof data.params?.name === "string") {
       // App-callable allowlist (defense in depth; api enforces its own table).
       const name = data.params.name;
-      if (name !== allowedToolName) {
+      if (!allowedNames.includes(name)) {
         replyError(-32602, `unknown app tool: ${name}`);
         return;
       }
       const args = data.params.arguments ?? {};
       try {
-        const result = await callProjectMcpHubTool(projectName, allowedToolName, args);
+        const result = await callProjectMcpHubTool(projectName, name, args);
         reply(result);
       } catch (error) {
         replyError(-32000, error instanceof Error ? error.message : String(error));
@@ -431,6 +470,10 @@ export function McpAppCard({
           fedForRef.current = html;
           fedWinRef.current = frame.contentWindow;
           postToolResult();
+          // M2.0 实锤的 excalidraw 首画失效修复：宿主预聚焦抢在用户首次点击
+          // 之前,win:focus 的按下态清除不再发生在首画路径上（preventScroll
+          // 避免宿主页面滚动跳位）。
+          if (autoFocusFrame) frame.focus({ preventScroll: true });
         }}
         sandbox="allow-scripts"
         srcDoc={resource.data.html}

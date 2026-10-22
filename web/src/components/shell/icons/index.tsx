@@ -16,6 +16,7 @@ const TO_LUCIDE = {
   bolt: "zap",
   book: "book-open",
   chat: "message-square",
+  canvas: "shapes", // 画布卡（M2.2 canvas-doc 四工具 ToolHead/全屏头，几何形状组）
   check: "check",
   "chevron-left": "chevron-left", // 10m2 推入态返回（mac-files-global-preview mback）
   clock: "clock",

@@ -1655,6 +1655,26 @@ const HUB_APP_TOOLS: Record<
       content: [{ type: "text", text: JSON.stringify(exported) }],
     };
   },
+  // 画布卡用户编辑回存（仅 web 卡片链；hub/agent 侧不注册——agent 改画布走
+  // apply_operations 的按元素寻址语义,全量快照替换是页面编辑形态）。
+  commit_scene: async (deps, project, args) => {
+    if (!deps.canvas) {
+      throw new Error("Canvas service unavailable");
+    }
+    const scene = await deps.canvas.commitScene(
+      project,
+      typeof args.id === "string" ? args.id : "",
+      {
+        elements: args.elements,
+        expectedRevision: args.expectedRevision,
+        operationId: args.operationId,
+      },
+    );
+    return {
+      content: [{ type: "text", text: JSON.stringify(scene) }],
+      structuredContent: canvasSceneStructuredContent(scene),
+    };
+  },
 };
 
 const handleMcpHubToolsCallRoute = async (

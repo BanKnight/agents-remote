@@ -86,6 +86,8 @@ const ICONS = [
   "history", // ShellIcon clock.arrow.circlepath（⋯ 菜单「会话历史」，逆时针箭头时钟）
   // ── 键位自定义面板（2026-10-11 反馈⑤「内容 + 顺序编排」）：拖拽排序手柄 ──
   "grip-vertical", // 键位编辑面板行拖拽手柄（LucideIcon 直消费）
+  // ── M2.2 画布卡（gen-ui-canvas）：canvas-doc 四工具的 ToolHead/全屏头图标 ──
+  "shapes", // ShellIcon canvas（画布卡，几何形状组）
 ];
 
 const entries = [];

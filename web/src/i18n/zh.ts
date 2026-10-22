@@ -616,6 +616,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude.tool.sessionOverview": "会话概览",
   "claude.tool.projectSettings": "项目设置",
   "claude.tool.readFile": "文件预览",
+  "claude.tool.canvasDoc": "画布",
   "claude.mcpApp.unavailable": "应用视图不可用",
   "claude.mcpApp.expand": "放大查看",
   "claude.mcpApp.followUpTitle": "发送到会话",

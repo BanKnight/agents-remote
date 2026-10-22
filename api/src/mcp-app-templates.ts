@@ -1,6 +1,9 @@
 import purifySource from "dompurify/dist/purify.min.js" with { type: "text" };
 import markedSource from "marked/marked.min.js" with { type: "text" };
 import mermaidSource from "mermaid/dist/mermaid.min.js" with { type: "text" };
+// 画布卡 excalidraw standalone 产物（vendored 生成物,重建配方见 assets/canvas/README.md）。
+import canvasExcalidrawCss from "./assets/canvas/dist/excalidraw.bundle.css" with { type: "text" };
+import canvasExcalidrawSource from "./assets/canvas/dist/excalidraw.bundle.js" with { type: "text" };
 
 /**
  * MCP Apps 卡片模板单源（ui:// 资源的 HTML 供给,自 mcp-hub-server.ts 迁出）。
@@ -41,6 +44,13 @@ export type CardTemplateSpec = {
   withMermaid: boolean;
   /** kind 特有 CSS（状态徽章等）,追加在基座之后。 */
   extraCss?: string;
+  /** 内联 excalidraw standalone 产物（画布卡专用,assets/canvas/README.md）。 */
+  withCanvasBundle?: boolean;
+  /** kind 特有 body 结构（缺省 `<div id="body"></div>`;画布卡换 exc 容器）。 */
+  bodyHtml?: string;
+  /** CSP 尾段（img/font 等资源指令;缺省 `img-src https: data:`。整段替换非追加——
+   *  CSP 同名指令首条生效,画布要 blob:/font-src 必须换掉缺省 img-src）。 */
+  cspResourceDirectives?: string;
 };
 
 export const WIKI_PAGE_UI_URI = "ui://ar-hub/wiki-page";
@@ -381,16 +391,17 @@ ${markdownPipeline}
 };
 
 const buildCardTemplate = (spec: CardTemplateSpec): string => `<!doctype html>
-<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src https: data:"><style>${CARD_CSS}${spec.withLibs ? "" : KIND_CSS}</style></head>
+<html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; ${spec.cspResourceDirectives ?? "img-src https: data:"}"><style>${CARD_CSS}${spec.withLibs ? "" : KIND_CSS}${spec.withCanvasBundle ? canvasExcalidrawCss : ""}${spec.extraCss ?? ""}</style></head>
 <body>
   <h1 id="title"></h1>
   <div class="meta" id="meta"></div>
   <div class="bar"><button id="refresh" type="button" class="bar-btn"></button></div>
-  <div id="body"></div>
+  ${spec.bodyHtml ?? '<div id="body"></div>'}
   <div class="ask"><input id="ask-input" type="text"><button id="ask-send" type="button" class="bar-btn"></button></div>
   <script>/*__AR_LIB_MARKED__*/</script>
   <script>/*__AR_LIB_PURIFY__*/</script>
   <script>/*__AR_LIB_MERMAID__*/</script>
+  <script>/*__AR_LIB_CANVAS__*/</script>
   <script>
 ${baseScript(spec)}
 ${spec.renderKindJs}
@@ -414,6 +425,9 @@ const buildCardHtml = (spec: CardTemplateSpec): string =>
       spec.withMermaid
         ? `${inlineLibScript(mermaidSource)};window.mermaid = window.mermaid || (__esbuild_esm_mermaid_nm && __esbuild_esm_mermaid_nm.mermaid);`
         : "",
+    )
+    .replace("/*__AR_LIB_CANVAS__*/", () =>
+      spec.withCanvasBundle ? inlineLibScript(canvasExcalidrawSource) : "",
     );
 
 // ---------------------------------------------------------------------------
@@ -617,8 +631,158 @@ const SETTINGS_PREVIEW_KIND_JS = `
 `;
 
 // ---------------------------------------------------------------------------
+// 画布卡（M2.2）：excalidraw 场景渲染 + 用户编辑 commit_scene 回存。
+// 双向循环 = agent 四工具（create/read/apply/export,structuredContent.kind =
+// "canvas-doc"）喂数据;用户在 excalidraw 里改 → onChange 防抖 → tools/call
+// commit_scene（expectedRevision 乐观锁 + operationId 幂等,web 卡专属工具,agent
+// 侧不可见）。冲突（编辑期间 agent 改过）→ 服务端为准重载 + note 提示。
+// ---------------------------------------------------------------------------
+
+const CANVAS_KIND_CSS = `
+  #exc-root{height:240px;border:1px solid var(--pre-border);border-radius:8px;overflow:hidden}
+  #exc-root .excalidraw-container,#exc-root .excalidraw{width:100%;height:100%}
+`;
+
+const CANVAS_KIND_JS = `
+    var exc = null;              // ARCanvasBundle.mount 控制器
+    var excReady = false;
+    var docId = "";
+    var docRevision = 0;
+    // 远端写入的 onChange 回声抑制：apply 后短窗内的第一次 onChange 视为回声，
+    // 不触发 commit（300ms 覆盖 updateScene 的 React 提交批次）。
+    var echoUntil = 0;
+    var commitTimer = 0;
+    var commitSeq = 0;
+    var COMMIT_DEBOUNCE_MS = 600;
+    var noteText = "";
+    var canvasText = function () {
+      if (loc.indexOf("zh") === 0) {
+        return {
+          elems: "个元素",
+          stale: "画布刚被 agent 更新，已重新加载",
+          saveErr: "保存失败",
+          truncated: "元素过多，正文从服务端拉取",
+          noRuntime: "画布运行时不可用",
+        };
+      }
+      return {
+        elems: "elements",
+        stale: "Canvas was updated by the agent; reloaded",
+        saveErr: "Save failed",
+        truncated: "Scene truncated; fetching full elements",
+        noRuntime: "Canvas runtime unavailable",
+      };
+    };
+    var updateMeta = function (data) {
+      var t = canvasText();
+      var count = typeof data.elementCount === "number"
+        ? data.elementCount
+        : (Array.isArray(data.elements) ? data.elements.length : 0);
+      var parts = ["r" + data.revision, count + " " + t.elems];
+      if (data.truncated) parts.push(t.truncated);
+      if (noteText) parts.push(noteText);
+      document.getElementById("meta").textContent = parts.join(" · ");
+    };
+    var setNote = function (text) {
+      noteText = text;
+      if (lastData) { updateMeta(lastData); }
+    };
+    var applyRemoteScene = function (data) {
+      if (!exc || !excReady || !data) return;
+      if (data.truncated) { requestFullScene(); return; }
+      if (!Array.isArray(data.elements)) return;
+      echoUntil = Date.now() + 300;
+      exc.setElements(data.elements);
+    };
+    var requestFullScene = function () {
+      if (!docId) return;
+      sendRequest("tools/call", { name: "read_scene", arguments: { id: docId } })
+        .then(function (result) {
+          var sc = result && result.structuredContent;
+          if (sc) render(sc);
+        })
+        .catch(function () {});
+    };
+    var commitScene = function (elements) {
+      if (!docId || !excReady) return;
+      var payload = [];
+      for (var i = 0; i < elements.length; i++) {
+        var el = elements[i];
+        if (el && !el.isDeleted) payload.push(el);
+      }
+      commitSeq += 1;
+      var t = canvasText();
+      sendRequest("tools/call", {
+        name: "commit_scene",
+        arguments: {
+          id: docId,
+          elements: payload,
+          expectedRevision: docRevision,
+          operationId: "web-" + Date.now() + "-" + commitSeq,
+        },
+      })
+        .then(function (result) {
+          var sc = result && result.structuredContent;
+          if (sc && typeof sc.revision === "number") docRevision = sc.revision;
+          setNote("");
+        })
+        .catch(function (err) {
+          var msg = String((err && err.message) || err);
+          if (msg.indexOf("REVISION_CONFLICT") >= 0) {
+            // agent 在编辑期间改过画布：服务端为准重载（本地草稿丢弃并提示）。
+            setNote(t.stale);
+            requestFullScene();
+            return;
+          }
+          setNote(t.saveErr + ": " + msg);
+        });
+    };
+    var renderCanvas = function (data) {
+      docId = typeof data.id === "string" ? data.id : "";
+      docRevision = typeof data.revision === "number" ? data.revision : 0;
+      cardTitle = data.title || docId;
+      document.getElementById("title").textContent = cardTitle;
+      updateMeta(data);
+      var excRoot = document.getElementById("exc-root");
+      if (!excRoot || typeof ARCanvasBundle === "undefined") {
+        if (!exc) document.getElementById("meta").textContent = canvasText().noRuntime;
+        return;
+      }
+      if (!exc) {
+        exc = ARCanvasBundle.mount(excRoot, {
+          elements: !data.truncated && Array.isArray(data.elements) ? data.elements : [],
+          langCode: loc.indexOf("zh") === 0 ? "zh-CN" : "en",
+          theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
+          onReady: function () {
+            excReady = true;
+            reportSize();
+          },
+          onChange: function (elements) {
+            if (Date.now() < echoUntil) { echoUntil = 0; return; }
+            if (commitTimer) clearTimeout(commitTimer);
+            commitTimer = setTimeout(function () {
+              commitTimer = 0;
+              commitScene(elements);
+            }, COMMIT_DEBOUNCE_MS);
+          },
+        });
+      } else {
+        exc.setTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
+        applyRemoteScene(data);
+      }
+    };
+    var getRefreshRequest = function () {
+      return { name: "read_scene", arguments: { id: docId } };
+    };
+    getAskPrefix = function () {
+      return loc.indexOf("zh") === 0 ? "关于画布「" : 'About the canvas "';
+    };
+`;
+
+// ---------------------------------------------------------------------------
 // 六卡 spec 与最终 HTML。轻卡 ×4（零库）;富卡 ×1（wiki-page + file-preview 共用,
-// 两 uri 指向同一份 HTML 常量）。appName 沿用 "ar-wiki-page"（探针/e2e 锁定值）。
+// 两 uri 指向同一份 HTML 常量）;画布卡 ×1（excalidraw standalone,assets/canvas）。
+// appName 沿用 "ar-wiki-page"（探针/e2e 锁定值）。
 // ---------------------------------------------------------------------------
 
 const RICH_SPEC: CardTemplateSpec = {
@@ -676,6 +840,24 @@ const SETTINGS_PREVIEW_SPEC: CardTemplateSpec = {
   renderKindJs: SETTINGS_PREVIEW_KIND_JS,
 };
 
+/** 画布卡 spec（excalidraw standalone;产物与重建配方见 assets/canvas/README.md）。
+ *  CSP 尾段整段替换：img 需 blob:（excalidraw 内部位图）、font 需 data:（内联字体）。 */
+const CANVAS_SPEC: CardTemplateSpec = {
+  withLibs: false,
+  withMermaid: false,
+  appName: "ar-canvas-doc",
+  kinds: ["canvas-doc"],
+  askPrefixZh: "关于画布「",
+  askPrefixEn: 'About the canvas "',
+  askPlaceholderEn: "Ask the agent to edit this canvas...",
+  askPlaceholderZh: "让 agent 改这张画布…",
+  renderKindJs: CANVAS_KIND_JS,
+  extraCss: CANVAS_KIND_CSS,
+  withCanvasBundle: true,
+  bodyHtml: '<div id="exc-root"></div>',
+  cspResourceDirectives: "img-src https: data: blob:; font-src data:",
+};
+
 /** 富模板 HTML（wiki-page + file-preview 共用）。 */
 const RICH_APP_HTML = buildCardHtml(RICH_SPEC);
 
@@ -695,4 +877,5 @@ export const HUB_UI_RESOURCES: Record<string, { mimeType: string; html: string }
     mimeType: "text/html;profile=mcp-app",
     html: buildCardHtml(SETTINGS_PREVIEW_SPEC),
   },
+  [CANVAS_APP_URI]: { mimeType: "text/html;profile=mcp-app", html: buildCardHtml(CANVAS_SPEC) },
 };

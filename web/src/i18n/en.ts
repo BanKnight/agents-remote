@@ -621,6 +621,7 @@ export const en = {
   "claude.tool.sessionOverview": "Sessions",
   "claude.tool.projectSettings": "Settings",
   "claude.tool.readFile": "File Preview",
+  "claude.tool.canvasDoc": "Canvas",
   "claude.mcpApp.unavailable": "App view unavailable",
   "claude.mcpApp.expand": "Open fullscreen",
   "claude.mcpApp.followUpTitle": "Send to session",
