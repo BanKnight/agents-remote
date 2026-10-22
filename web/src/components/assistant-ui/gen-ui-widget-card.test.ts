@@ -47,6 +47,13 @@ describe("assembleGenUiDoc", () => {
     expect(GEN_UI_HTML_CSP).toContain("connect-src 'none'");
     expect(GEN_UI_HTML_CSP).toContain("form-action 'none'");
   });
+
+  test("bridge adapts slot types both ways (write stringify / read parse)", () => {
+    // 页面两侧拿 JSON 原形:写侧非字符串槽自动序列化,读侧字符串槽自动反序列化。
+    const doc = assembleGenUiDoc("<p>hi</p>", boot);
+    expect(doc).toContain("JSON.stringify(v)");
+    expect(doc).toContain("JSON.parse(v)");
+  });
 });
 
 // ── mergeWidgetState（setWidgetState → 会话 state 合并）──────────────────

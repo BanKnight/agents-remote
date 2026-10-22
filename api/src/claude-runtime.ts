@@ -28,6 +28,7 @@ import { getAgentProviderProfile } from "./agent-provider-profiles";
 import { buildMcpInjectorForProvider } from "./mcp-injector";
 import { sanitizePersistedModel } from "./model-id";
 import { claudeJsonlPath } from "./session-routes";
+import { ensureGenUiSkill } from "./project-gen-ui";
 import {
   ClaudeAutoRetryWatch,
   isNormalAssistantLine,
@@ -841,6 +842,10 @@ export class ClaudeRuntime implements RuntimeResources {
     // MCP hub 注入:按 provider 取注入器构造 --mcp-config args。
     // mcpPort 未配置或 runtime 不支持 → mcpArgs 空,agent 不连 hub(降级,不阻塞 spawn)。
     const mcpArgs = this.buildMcpArgs(projectName);
+
+    // gen-ui skill 交付(capability 开启时幂等写 .claude/skills/gen-ui/SKILL.md;
+    // 内部吞错只记日志——skill 缺失降级为 agent 不知道 gen-ui,绝不阻塞 spawn)。
+    await ensureGenUiSkill(projectPath).catch(() => {});
 
     // spawn 形态判定(--session-id 实测语义:全新 id 专用,已存在报 "already in use";
     // --resume 对不存在 id 硬失败 "No conversation found")——JSONL 存在 = --resume 接续,

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   buildGenUiContextBlock,
+  ensureGenUiSkill,
   genUiRelativePath,
   isGenUiRelativePath,
   normalizeSessionState,
@@ -312,4 +313,59 @@ test("buildGenUiContextBlock assembles widget blocks from modelContent only", ()
   expect(block).toContain('[gen-ui-widget path=".agents-remote/gen-ui/slider.html" title="滑块"]');
   expect(block).toContain('{"value":42}');
   expect(block).not.toContain("browser-secret");
+});
+
+// ── ensureGenUiSkill(M1.d:capability 开启时幂等交付 skill)──────────────
+
+test("ensureGenUiSkill writes the skill when gen-ui is enabled", async () => {
+  await enableGenUi();
+  await ensureGenUiSkill(join(root, "demo"));
+  const skill = await readFile(
+    join(root, "demo", ".claude", "skills", "gen-ui", "SKILL.md"),
+    "utf8",
+  );
+  expect(skill).toContain("name: gen-ui");
+  expect(skill).toContain("::gen-ui");
+  expect(skill).toContain("gen-ui-skill-version: 2");
+  // 桥两槽传 JSON 值的契约(第二轮迭代核心):读侧已反序列化、写侧宿主自动序列化。
+  expect(skill).toContain("已反序列化回原形");
+  expect(skill).toContain("宿主自动序列化落盘");
+});
+
+test("ensureGenUiSkill is idempotent for the same version", async () => {
+  await enableGenUi();
+  const skillPath = join(root, "demo", ".claude", "skills", "gen-ui", "SKILL.md");
+  await ensureGenUiSkill(join(root, "demo"));
+  const first = await readFile(skillPath, "utf8");
+  // 手工改动后重跑:同版本标记在场 → 不覆写(用户的本地改动保留)。
+  await writeFile(skillPath, `${first}LOCAL EDIT`);
+  await ensureGenUiSkill(join(root, "demo"));
+  expect(await readFile(skillPath, "utf8")).toBe(`${first}LOCAL EDIT`);
+});
+
+test("ensureGenUiSkill overwrites stale versions and skips when disabled", async () => {
+  await enableGenUi();
+  const skillPath = join(root, "demo", ".claude", "skills", "gen-ui", "SKILL.md");
+  await mkdir(dirname(skillPath), { recursive: true });
+  await writeFile(skillPath, "old content\ngen-ui-skill-version: 1\n");
+  await ensureGenUiSkill(join(root, "demo"));
+  expect(await readFile(skillPath, "utf8")).toContain("gen-ui-skill-version: 2");
+
+  // capability 关闭:已有文件不动,未开启项目不写新文件。
+  await writeMcpConfig({ capabilities: {} });
+  await writeFile(skillPath, "keep me\n");
+  await ensureGenUiSkill(join(root, "demo"));
+  expect(await readFile(skillPath, "utf8")).toBe("keep me\n");
+  const missing = await readFile(
+    join(root, "demo", ".claude", "skills", "gen-ui", "SKILL.md"),
+    "utf8",
+  );
+  expect(missing).toBe("keep me\n");
+});
+
+test("ensureGenUiSkill no-ops on missing project config", async () => {
+  // 无 mcp.json(enoent)→ 静默跳过,不创建任何文件,不抛错。
+  await ensureGenUiSkill(join(root, "demo"));
+  const exists = await stat(join(root, "demo", ".claude")).catch(() => null);
+  expect(exists).toBeNull();
 });

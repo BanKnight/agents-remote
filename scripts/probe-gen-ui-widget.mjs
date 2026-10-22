@@ -38,9 +38,9 @@ body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; }
 <input id="slider" type="range" min="0" max="100" value="0">
 <button id="send">Send to agent</button>
 <script>
-var init = zcode.widgetState && zcode.widgetState.modelContent
-  ? JSON.parse(zcode.widgetState.modelContent)
-  : { value: 0 };
+// 桥对象契约(与真实 agent 生成页同款):读侧槽值已是原形对象(桥 parse 过),
+// 写侧直接传对象(桥 stringify 落盘)——页面零序列化代码。
+var init = (zcode.widgetState && zcode.widgetState.modelContent) || { value: 0 };
 document.getElementById("v").textContent = String(init.value);
 document.getElementById("slider").value = String(init.value);
 window.__themeEvents = [];
@@ -50,7 +50,7 @@ window.addEventListener("zcode:set_globals", function (e) {
 document.getElementById("slider").addEventListener("input", function () {
   var value = Number(this.value);
   document.getElementById("v").textContent = String(value);
-  zcode.setWidgetState({ modelContent: JSON.stringify({ value: value }) });
+  zcode.setWidgetState({ modelContent: { value: value } });
 });
 document.getElementById("send").addEventListener("click", function () {
   zcode.sendFollowUpMessage("把滑块调到 " + document.getElementById("v").textContent);
@@ -197,7 +197,8 @@ assert("srcdoc frame found", frame !== null);
 if (frame) {
   const seededValue = await frame.evaluate(() => {
     const s = window.zcode && window.zcode.widgetState;
-    return s && s.modelContent ? JSON.parse(s.modelContent).value : null;
+    // 存储是字符串 '{"value":7}',桥 parse 后页面拿对象——直接消费原形。
+    return s && s.modelContent && typeof s.modelContent === "object" ? s.modelContent.value : null;
   });
   assert("bridge widgetState seed value=7", seededValue === 7, `value=${seededValue}`);
   const sliderValue = await frame.locator("#slider").inputValue();

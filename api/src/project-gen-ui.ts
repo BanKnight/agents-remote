@@ -9,6 +9,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { realpath } from "node:fs/promises";
 import { isInsideOrSelf, ProjectPathError, resolveProjectPath } from "./project-paths";
 import { readProjectMcpConfig } from "./mcp-config";
+import { parseMcpProjectConfig } from "./mcp-validate";
 
 // Gen UI（生成式界面）：agent 经 visualize 型 skill 生成单文件 HTML 到项目
 // `.agents-remote/gen-ui/`，assistant 文本以 `::gen-ui{...}` 标记引用；web 宿主卡片
@@ -343,5 +344,82 @@ export class ProjectGenUiService {
 const validateSessionId = (sessionId: string) => {
   if (!SESSION_ID_PATTERN.test(sessionId)) {
     throw new ProjectGenUiError("PROJECT_GEN_UI_INVALID", "Invalid session id");
+  }
+};
+
+// ── visualize skill 交付(M1.d)──────────────────────────────────────────
+
+/** skill 版本标记:内容迭代后 bump,ensureGenUiSkill 按标记判重(旧版本覆写升级)。 */
+const GEN_UI_SKILL_VERSION = 2;
+
+/**
+ * gen-ui skill 文本(Claude CLI 从 spawn cwd = 项目根自动加载 `.claude/skills/`)。
+ * 契约与上文 service 侧一致:输出目录、桥 API、回流语义、标记格式。
+ */
+const GEN_UI_SKILL_MD = `---
+name: gen-ui
+description: 生成式界面(HTML 小部件)。当用户需要交互式界面(滑块、表单、画布、图表选择器等)来表达或收集结构化状态时使用。生成单文件 HTML 到约定目录,并在回复中以 ::gen-ui 标记引用,用户在界面上的操作状态会自动回流到你。
+---
+
+# gen-ui — 生成式界面
+
+## 什么时候用
+
+- 用户描述了需要「拖动 / 调参 / 选择 / 勾选」类交互(如"给我一个滑块试试")
+- 你需要用户回传结构化状态(数值、选项、点位、排序)
+
+## 生成规范
+
+1. **单文件 HTML**,写到相对项目根的 \`.agents-remote/gen-ui/<slug>-<4位随机>.html\`(目录不存在先创建;随机后缀防覆盖,如 \`slider-a3f2.html\`)。≤1MB;**禁止任何网络请求**(宿主 CSP 断网),图片等资源全部内联。
+2. **完整文档**(含 <!doctype html>)。浅色 / 深色主题都要成立:初始读 \`window.zcode.theme\`("light" / "dark"),并监听 \`zcode:set_globals\` 事件跟随切换(\`e.detail.theme\`)。
+3. **桥 API**(宿主注入到 window.zcode,直接可用):
+   - \`zcode.widgetState\` → \`{modelContent?, privateContent?}\`:上次保存的状态,槽值已反序列化回原形(对象/数组/字符串)。**启动时先读它恢复界面**(刷新 / 重开会话不丢)。
+   - \`zcode.setWidgetState({modelContent, privateContent})\` → 状态写回宿主。交互发生时调用(拖动、选择等)。**两槽直接传 JSON 值(对象/数组)即可**,宿主自动序列化落盘。\`modelContent\` 会回流进下一轮对话上下文,\`privateContent\` 仅用户浏览器可见(如草稿),序列化后各 ≤12000 字符。
+   - \`zcode.sendFollowUpMessage(text)\` → 以用户消息发送文本(宿主会先向用户弹确认,通过后才发)。适合"应用到对话"类按钮,**勿高频调用**。
+4. **modelContent 只放模型需要的字段**(尽量精简——比如滑块只存 \`{ value: 42 }\`,不存中间过程)。
+5. 界面文案跟随 \`zcode.locale\`("zh" / "en")。
+
+## 引用格式
+
+生成后在**回复文本另起一行**(JSON 独占一行):
+
+\`\`\`
+::gen-ui{"path":".agents-remote/gen-ui/<文件名>","title":"<界面名>"}
+\`\`\`
+
+- \`path\` 必须以 \`.agents-remote/gen-ui/\` 开头(相对项目根),否则宿主拒绝渲染。
+- \`title\` 为界面显示名(建议与用户语言一致)。
+- 需要宽幅界面(图表、画布)时加 \`,"mode":"wide"\`。
+
+<!-- gen-ui-skill-version: ${GEN_UI_SKILL_VERSION} -->
+`;
+
+/**
+ * 幂等交付 gen-ui skill 到项目 `.claude/skills/gen-ui/SKILL.md`(capability 开启时;
+ * spawn 前调用,Claude CLI 从项目根自动加载)。版本标记不一致即覆写升级;任何失败
+ * 只记日志不抛——skill 缺失降级为「agent 不知道 gen-ui」,绝不阻塞 spawn。
+ */
+export const ensureGenUiSkill = async (projectPath: string): Promise<void> => {
+  let enabled = false;
+  try {
+    // spawn 路径拿到的已是 resolve 过的项目目录,直接读配置(不走 readProjectMcpConfig
+    // 的 projectsRoot+name 二次 resolve);mcp.json 缺失/非法 = 未开启。
+    const raw = await readFile(join(projectPath, ".agents-remote", "mcp.json"), "utf8").catch(
+      () => null,
+    );
+    enabled = raw != null && parseMcpProjectConfig(raw)?.capabilities?.["gen-ui"] === true;
+  } catch {
+    return;
+  }
+  if (!enabled) return;
+
+  const skillPath = join(projectPath, ".claude", "skills", "gen-ui", "SKILL.md");
+  try {
+    const existing = await readFile(skillPath, "utf8").catch(() => "");
+    if (existing.includes(`gen-ui-skill-version: ${GEN_UI_SKILL_VERSION}`)) return;
+    await mkdir(dirname(skillPath), { recursive: true, mode: 0o755 });
+    await writeFile(skillPath, GEN_UI_SKILL_MD, { mode: 0o644 });
+  } catch (error) {
+    console.error("[gen-ui] ensure skill failed:", error);
   }
 };

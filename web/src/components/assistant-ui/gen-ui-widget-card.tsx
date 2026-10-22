@@ -55,15 +55,29 @@ type GenUiBoot = {
 const BRIDGE_SCRIPT = `<script>
 (function () {
   var boot = window.__GEN_UI_BOOT__ || {};
+  // 槽值类型适配:页面作者传 JSON 值(对象/数组)最自然,字符串只在宿主存储层存在
+  // ——写侧自动序列化,读侧自动反序列化(非 JSON 文本原样),页面两侧拿到的都是原形。
+  var normSlot = function (v) {
+    if (v === undefined || v === null) return undefined;
+    return typeof v === "string" ? v : JSON.stringify(v);
+  };
+  var parseSlot = function (v) {
+    if (typeof v !== "string") return v;
+    try { return JSON.parse(v); } catch (e) { return v; }
+  };
+  var bootState = boot.widgetState || {};
   var zcode = {
     version: 1,
     theme: boot.theme,
     locale: boot.locale,
-    widgetState: boot.widgetState,
+    widgetState: {
+      modelContent: parseSlot(bootState.modelContent),
+      privateContent: parseSlot(bootState.privateContent)
+    },
     setWidgetState: function (state) {
       parent.postMessage({ source: "gen-ui", type: "set-state",
-        modelContent: state && typeof state.modelContent === "string" ? state.modelContent : undefined,
-        privateContent: state && typeof state.privateContent === "string" ? state.privateContent : undefined
+        modelContent: normSlot(state && state.modelContent),
+        privateContent: normSlot(state && state.privateContent)
       }, "*");
     },
     sendFollowUpMessage: function (text) {
