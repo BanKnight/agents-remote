@@ -38,6 +38,7 @@ import {
 import { ProjectFilesService, ProjectFilesError } from "./project-files";
 import { ProjectPagesError, ProjectPagesService } from "./project-pages";
 import { buildGenUiContextBlock, ProjectGenUiError, ProjectGenUiService } from "./project-gen-ui";
+import { ProjectCanvasError, ProjectCanvasService } from "./project-canvas";
 import { ProjectGitDiffError, ProjectGitDiffService } from "./project-git-diff";
 import { ProjectGitWriteError, ProjectGitWriteService } from "./project-git-write";
 import { ProjectWikiError, ProjectWikiService } from "./project-wiki";
@@ -79,6 +80,7 @@ import { handleSkillTaskEvents } from "./skill-tasks";
 import { handleMcpRoutes } from "./mcp-management";
 import { handleMcpMarketRoutes } from "./mcp-market";
 import {
+  canvasSceneStructuredContent,
   filePreviewFallbackText,
   filePreviewStructuredContent,
   gitLogStructuredContent,
@@ -110,6 +112,7 @@ type FetchHandlerOptions = {
   projectFilesService?: ProjectFilesService;
   projectPagesService?: ProjectPagesService;
   projectGenUiService?: ProjectGenUiService;
+  projectCanvasService?: ProjectCanvasService;
   projectWikiService?: ProjectWikiService;
   projectGitDiffService?: ProjectGitDiffService;
   projectGitWriteService?: ProjectGitWriteService;
@@ -671,6 +674,7 @@ export const createFetchHandler =
           gitDiff: options.projectGitDiffService,
           sessionRegistry: options.sessionRegistry,
           files: options.projectFilesService,
+          canvas: options.projectCanvasService,
           projectsRoot: options.projectsRoot,
         },
       );
@@ -1296,6 +1300,22 @@ const projectWikiErrorResponse = (error: ProjectWikiError) => {
   return jsonError(error.code, error.message, 400);
 };
 
+// 画布错误 → HTTP(web 卡片 tools/call 链消费)。冲突 → 409(与 400 语义区分:
+// 调用方数据过期而非非法);NOT_FOUND → 404;FS_ERROR → 500;其余(输入非法/
+// 越界)→ 400。
+const projectCanvasErrorResponse = (error: ProjectCanvasError) => {
+  if (error.code === "PROJECT_CANVAS_REVISION_CONFLICT") {
+    return jsonError(error.code, error.message, 409);
+  }
+  if (error.code === "PROJECT_NOT_FOUND" || error.code === "PROJECT_FILE_NOT_FOUND") {
+    return jsonError(error.code, error.message, 404);
+  }
+  if (error.code === "PROJECT_FS_ERROR") {
+    return jsonError(error.code, error.message, 500);
+  }
+  return jsonError(error.code, error.message, 400);
+};
+
 // GET /api/projects/{name}/wiki        → list pages({ pages: [...] })
 // GET /api/projects/{name}/wiki/{slug} → read page(WikiPage)
 // 写只经 MCP 工具(agent producer);HTTP consumer 只读。已在统一 token 守卫后。
@@ -1493,6 +1513,7 @@ type HubAppToolDeps = {
   gitDiff: ProjectGitDiffService | undefined;
   sessionRegistry: SessionRegistry | undefined;
   files: ProjectFilesService | undefined;
+  canvas: ProjectCanvasService | undefined;
   projectsRoot: string;
 };
 
@@ -1574,6 +1595,66 @@ const HUB_APP_TOOLS: Record<
       structuredContent: gitLogStructuredContent(log),
     };
   },
+  // 画布四工具（M2.1）：与 hub 侧 registerCanvasTools 同契约（直调 service + 共用
+  // canvasSceneStructuredContent 塑形）。web 卡片 tools/call 刷新/提交走这里。
+  create_diagram: async (deps, project, args) => {
+    if (!deps.canvas) {
+      throw new Error("Canvas service unavailable");
+    }
+    const scene = await deps.canvas.createDiagram(project, {
+      title: args.title,
+      elements: args.elements,
+    });
+    return {
+      content: [{ type: "text", text: JSON.stringify(scene) }],
+      structuredContent: canvasSceneStructuredContent(scene),
+    };
+  },
+  read_scene: async (deps, project, args) => {
+    if (!deps.canvas) {
+      throw new Error("Canvas service unavailable");
+    }
+    const scene = await deps.canvas.readScene(
+      project,
+      typeof args.id === "string" ? args.id : "",
+      args.elementIds,
+    );
+    return {
+      content: [{ type: "text", text: JSON.stringify(scene) }],
+      structuredContent: canvasSceneStructuredContent(scene),
+    };
+  },
+  apply_operations: async (deps, project, args) => {
+    if (!deps.canvas) {
+      throw new Error("Canvas service unavailable");
+    }
+    const scene = await deps.canvas.applyOperations(
+      project,
+      typeof args.id === "string" ? args.id : "",
+      {
+        operations: args.operations,
+        expectedRevision: args.expectedRevision,
+        operationId: args.operationId,
+      },
+    );
+    return {
+      content: [{ type: "text", text: JSON.stringify(scene) }],
+      structuredContent: canvasSceneStructuredContent(scene),
+    };
+  },
+  export_diagram: async (deps, project, args) => {
+    if (!deps.canvas) {
+      throw new Error("Canvas service unavailable");
+    }
+    const exported = await deps.canvas.exportDiagram(
+      project,
+      typeof args.id === "string" ? args.id : "",
+      { expectedRevision: args.expectedRevision },
+    );
+    return {
+      content: [{ type: "text", text: JSON.stringify(exported) }],
+    };
+  },
 };
 
 const handleMcpHubToolsCallRoute = async (
@@ -1635,6 +1716,9 @@ const handleMcpHubToolsCallRoute = async (
     }
     if (error instanceof ProjectFilesError) {
       return projectFilesErrorResponse(error);
+    }
+    if (error instanceof ProjectCanvasError) {
+      return projectCanvasErrorResponse(error);
     }
     throw error;
   }
@@ -1940,6 +2024,8 @@ export const startApi = async () => {
       resolveAcpCredentials(await settingsStore.read(), provider),
   });
   const projectWikiService = new ProjectWikiService(config.projectsRoot);
+  // 画布四工具数据源（hub MCP 面 + web 卡片 tools/call 面共用同一 service 实例）。
+  const projectCanvasService = new ProjectCanvasService(config.projectsRoot);
   const claudePermissionModes = await parseClaudePermissionModes();
   console.log(`[startup] Claude permission modes: ${claudePermissionModes.join(", ")}`);
   // 双模式编排（agent-tui）：runtime 分发（exists/close）要按会话形态落 tmux/headless，
@@ -2019,6 +2105,9 @@ export const startApi = async () => {
     sessionRegistry,
     // read_file display tool 数据源。同上:无状态 service,与 HTTP 面实例并存。
     filesService: new ProjectFilesService(config.projectsRoot),
+    // 画布四工具(create_diagram/read_scene/apply_operations/export_diagram)数据源。
+    // service 无状态(构造只存 root),与 HTTP 面实例并存。
+    canvasService: projectCanvasService,
   });
   // chat 会话元数据持久目录：~/.agents-remote/chat-sessions/（跨重启保留，非 tmpfs runDir；
   // 与 pi SessionManager JSONL 历史同持久语义，设计 docs/design-v1/workbench-views.md §3.1）。
@@ -2255,6 +2344,7 @@ export const startApi = async () => {
       projectFilesService,
       projectPagesService,
       projectGenUiService,
+      projectCanvasService,
       projectWikiService,
       projectGitDiffService,
       projectGitWriteService,

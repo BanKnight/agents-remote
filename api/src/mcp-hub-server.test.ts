@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { startMcpHubServer, type McpHubServer } from "./mcp-hub-server";
+import { ProjectCanvasService } from "./project-canvas";
 import { ProjectFilesService } from "./project-files";
 import { ProjectGitDiffService } from "./project-git-diff";
 import { ProjectWikiService } from "./project-wiki";
@@ -909,5 +910,112 @@ describe("MCP hub server (stateless, loopback)", () => {
     const uris = (result as unknown as { skills?: { uri: string }[] }).skills?.map((s) => s.uri);
     expect(uris).not.toContain("skill://evil-skill/SKILL.md"); // 根级 symlink → 外部,不分发。
     expect(uris).toContain("skill://demo-skill/SKILL.md"); // 正常 skill 不受影响。
+  });
+});
+
+// ── 画布四工具(M2.1):ui 开 + canvasService 注入时注册,契约 §12.2 ────────
+
+describe("MCP hub server (canvas tools)", () => {
+  let projectsRoot: string;
+  let home: string;
+  let hub: McpHubServer;
+  let baseUrl: string;
+
+  beforeEach(async () => {
+    projectsRoot = await mkdtemp(join(tmpdir(), "ar-mcp-canvas-"));
+    home = await mkdtemp(join(tmpdir(), "ar-mcp-canvas-home-"));
+    await mkdir(join(projectsRoot, "test", ".agents-remote"), { recursive: true });
+    await writeFile(
+      join(projectsRoot, "test", ".agents-remote", "mcp.json"),
+      JSON.stringify({ capabilities: { ui: true } }),
+    );
+    hub = startMcpHubServer({
+      port: 0,
+      projectsRoot,
+      wikiService: new ProjectWikiService(projectsRoot),
+      canvasService: new ProjectCanvasService(projectsRoot),
+      home,
+    });
+    baseUrl = `http://127.0.0.1:${hub.port}`;
+  });
+
+  afterEach(async () => {
+    hub.stop();
+    await rm(projectsRoot, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  });
+
+  const createDiagram = async (id: number, elements: unknown[]) =>
+    fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(id, "create_diagram", { title: "架构图", elements }),
+    });
+
+  it("tools/list exposes the four canvas tools with _meta.ui.resourceUri", async () => {
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: listToolsBody(1),
+    });
+    const text = await res.text();
+    for (const name of ["create_diagram", "read_scene", "apply_operations", "export_diagram"]) {
+      expect(text).toContain(`"${name}"`);
+    }
+    expect(text).toContain("ui://ar-hub/canvas");
+  });
+
+  it("create_diagram then read_scene round-trips through the canvas service", async () => {
+    const created = await parseSseResult(
+      await createDiagram(2, [{ id: "e1", type: "rectangle", x: 1, y: 2, width: 3, height: 4 }]),
+    );
+    const createdSc = created.result?.structuredContent as Record<string, unknown>;
+    expect(createdSc.kind).toBe("canvas-doc");
+    expect(createdSc.revision).toBe(1);
+    const docId = createdSc.id as string;
+
+    const scene = await parseSseResult(
+      await fetch(`${baseUrl}/mcp/test`, {
+        method: "POST",
+        headers: MCP_HEADERS,
+        body: callToolBody(3, "read_scene", { id: docId }),
+      }),
+    );
+    const sceneSc = scene.result?.structuredContent as Record<string, unknown>;
+    expect(sceneSc.revision).toBe(1);
+    expect((sceneSc.elements as { id: string }[]).map((el) => el.id)).toEqual(["e1"]);
+
+    // 局部修改:revision 2 + patch 生效。
+    const applied = await parseSseResult(
+      await fetch(`${baseUrl}/mcp/test`, {
+        method: "POST",
+        headers: MCP_HEADERS,
+        body: callToolBody(4, "apply_operations", {
+          id: docId,
+          operations: [{ op: "update", elementId: "e1", patch: { x: 42 } }],
+          expectedRevision: 1,
+          operationId: "op-a",
+        }),
+      }),
+    );
+    const appliedSc = applied.result?.structuredContent as Record<string, unknown>;
+    expect(appliedSc.revision).toBe(2);
+    expect((appliedSc.elements as { id: string; x: number }[])[0].x).toBe(42);
+
+    // 冲突 → isError + 重读提示(agent 可自纠)。
+    const conflict = await parseSseResult(
+      await fetch(`${baseUrl}/mcp/test`, {
+        method: "POST",
+        headers: MCP_HEADERS,
+        body: callToolBody(5, "apply_operations", {
+          id: docId,
+          operations: [{ op: "remove", elementId: "e1" }],
+          expectedRevision: 1,
+        }),
+      }),
+    );
+    expect(conflict.result?.isError).toBe(true);
+    expect(conflict.result?.content?.[0]?.text).toContain("PROJECT_CANVAS_REVISION_CONFLICT");
+    expect(conflict.result?.content?.[0]?.text).toContain("read_scene");
   });
 });

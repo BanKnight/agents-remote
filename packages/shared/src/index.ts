@@ -165,6 +165,49 @@ export type GenUiSessionState = {
   widgets: GenUiWidgetState[];
 };
 
+// ── Canvas（画布文档，Excalidraw ⭄对话循环，契约 §12.2）────────────────
+
+/** 画布元素：excalidraw 原生元素形状由前端渲染层拥有，api 视作带稳定 id 的
+ *  不透明 JSON 对象（只校验 id 存在/唯一与大小闸，不深校验字段）。 */
+export type CanvasElement = { id: string } & Record<string, unknown>;
+
+/** 画布操作（apply_operations 语义：按元素 id 增改删）。update 为浅合并 patch。 */
+export type CanvasOperation =
+  | { op: "add"; element: CanvasElement }
+  | { op: "update"; elementId: string; patch: Record<string, unknown> }
+  | { op: "remove"; elementId: string };
+
+/** 画布文档落盘结构（`.agents-remote/canvas/{docId}.json`）。
+ *  operations = operationId 幂等表（同 id 重放直接复用结果，FIFO 淘汰最旧）。 */
+export type CanvasDoc = {
+  schemaVersion: 1;
+  id: string;
+  title: string;
+  revision: number;
+  updatedAt: string;
+  elements: CanvasElement[];
+  operations: Record<string, { revision: number; appliedAt: string }>;
+};
+
+/** read_scene / create_diagram / apply_operations 的场景响应。 */
+export type CanvasSceneResponse = {
+  id: string;
+  title: string;
+  revision: number;
+  elements: CanvasElement[];
+  /** apply 幂等重放时 true（元素未变，revision 为该 op 首次落盘值）。 */
+  duplicate?: boolean;
+};
+
+/** export_diagram：导出 excalidraw 原生 JSON（可保存为 .excalidraw 文件）。 */
+export type CanvasExportResponse = {
+  id: string;
+  title: string;
+  revision: number;
+  /** excalidraw 文件格式内容（JSON.stringify 后的 {type:"excalidraw",...}）。 */
+  content: string;
+};
+
 export type GitDiffScope = "worktree" | "staged";
 
 export type GitDiffFileStatus = "modified" | "added" | "deleted" | "renamed";
@@ -2780,6 +2823,8 @@ export type ApiErrorCode =
   | "PROJECT_PAGES_CONFIG_INVALID"
   | "PROJECT_PAGES_ROOT_CONFLICT"
   | "PROJECT_GEN_UI_INVALID"
+  | "PROJECT_CANVAS_INVALID"
+  | "PROJECT_CANVAS_REVISION_CONFLICT"
   | "PROJECT_DELETE_FAILED"
   | "SESSION_NOT_FOUND"
   | "SESSION_RUNTIME_MISSING"

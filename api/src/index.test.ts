@@ -5,6 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { AuthService } from "./auth";
 import { ClaudeRuntime } from "./claude-runtime";
 import { createFetchHandler } from "./index";
+import { ProjectCanvasService } from "./project-canvas";
 import { ProjectFilesService } from "./project-files";
 import { ProjectGitDiffService } from "./project-git-diff";
 import { ProjectPagesService } from "./project-pages";
@@ -40,6 +41,7 @@ const createTestHandler = () => {
   const projectGitDiffService = new ProjectGitDiffService(root);
   const projectPagesService = new ProjectPagesService(root);
   const projectWikiService = new ProjectWikiService(root);
+  const projectCanvasService = new ProjectCanvasService(root);
 
   return {
     auth,
@@ -50,6 +52,7 @@ const createTestHandler = () => {
       projectGitDiffService,
       projectPagesService,
       projectWikiService,
+      projectCanvasService,
       projectService,
       projectsRoot: root,
       sessionRegistry,
@@ -1148,6 +1151,75 @@ test("createFetchHandler proxies MCP app read_file and git_log tools", async () 
   const log = await call({ name: "git_log", arguments: {} });
   expect(log.status).toBe(400);
   expect((await log.json()).error.code).toBe("PROJECT_GIT_NOT_REPOSITORY");
+});
+
+test("createFetchHandler proxies canvas tools (create/read/apply + revision conflict as 409)", async () => {
+  await mkdir(join(root, "demo"));
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+  const call = (body: unknown) =>
+    handler(
+      new Request(`http://localhost/api/projects/demo/mcp-hub-tools-call`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      }),
+      { upgrade: () => false },
+    );
+
+  await mkdir(join(root, "demo", ".agents-remote"), { recursive: true });
+  await writeFile(
+    join(root, "demo", ".agents-remote", "mcp.json"),
+    JSON.stringify({ capabilities: { ui: true } }),
+  );
+
+  // create → 200 CallToolResult(canvas-doc structuredContent)。
+  const created = await call({
+    name: "create_diagram",
+    arguments: { title: "画布", elements: [{ id: "e1", type: "rectangle" }] },
+  });
+  expect(created.status).toBe(200);
+  const createdJson = await created.json();
+  expect(createdJson.structuredContent.kind).toBe("canvas-doc");
+  const docId = createdJson.structuredContent.id as string;
+
+  // read_scene → 元素回读。
+  const scene = await call({ name: "read_scene", arguments: { id: docId } });
+  expect(scene.status).toBe(200);
+  expect((await scene.json()).structuredContent.elements).toEqual([
+    { id: "e1", type: "rectangle" },
+  ]);
+
+  // apply_operations → revision 2。
+  const applied = await call({
+    name: "apply_operations",
+    arguments: {
+      id: docId,
+      operations: [{ op: "update", elementId: "e1", patch: { x: 5 } }],
+      expectedRevision: 1,
+    },
+  });
+  expect(applied.status).toBe(200);
+  expect((await applied.json()).structuredContent.revision).toBe(2);
+
+  // 过期 expectedRevision → ProjectCanvasError 冲突 → 409(非 400/500)。
+  const conflict = await call({
+    name: "apply_operations",
+    arguments: {
+      id: docId,
+      operations: [{ op: "remove", elementId: "e1" }],
+      expectedRevision: 1,
+    },
+  });
+  expect(conflict.status).toBe(409);
+  expect((await conflict.json()).error.code).toBe("PROJECT_CANVAS_REVISION_CONFLICT");
+
+  // export_diagram → 原生 excalidraw JSON(响应 envelope 的 content 字段内嵌文件内容)。
+  const exported = await call({ name: "export_diagram", arguments: { id: docId } });
+  expect(exported.status).toBe(200);
+  const exportedJson = await exported.json();
+  const envelope = JSON.parse(exportedJson.content[0].text) as { content: string };
+  expect(JSON.parse(envelope.content).type).toBe("excalidraw");
 });
 
 test("createFetchHandler protects pages config and validates writes", async () => {

@@ -49,6 +49,8 @@ export const GIT_LOG_UI_URI = "ui://ar-hub/git-log";
 export const SESSION_OVERVIEW_UI_URI = "ui://ar-hub/session-overview";
 export const SETTINGS_PREVIEW_UI_URI = "ui://ar-hub/settings-preview";
 export const FILE_PREVIEW_UI_URI = "ui://ar-hub/file-preview";
+/** 画布卡片资源（M2.2 接 CANVAS spec；M2.1 工具 _meta 先指此 uri）。 */
+export const CANVAS_APP_URI = "ui://ar-hub/canvas";
 
 /** 基座 CSS：双主题变量 + 排版 + bar/ask/meta/table 组件（与原 wiki 模板一致）。 */
 const CARD_CSS = `

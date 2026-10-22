@@ -3,7 +3,9 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { homedir } from "node:os";
 import { z } from "zod";
+import type { CanvasElement } from "@agents-remote/shared";
 import {
+  CANVAS_APP_URI,
   FILE_PREVIEW_UI_URI,
   GIT_LOG_UI_URI,
   GIT_STATUS_UI_URI,
@@ -23,6 +25,7 @@ import {
   type HubSkill,
 } from "./mcp-skills.js";
 import { resolveProjectRelativePath } from "./project-paths.js";
+import { ProjectCanvasError, ProjectCanvasService } from "./project-canvas.js";
 import { ProjectGitDiffService } from "./project-git-diff.js";
 import { ProjectFilesService } from "./project-files.js";
 import { ProjectWikiService } from "./project-wiki.js";
@@ -67,6 +70,8 @@ export type StartMcpHubServerOptions = {
   sessionRegistry?: SessionRegistry;
   // read_file display tool 的数据源。可选:不注入则不注册该工具。
   filesService?: ProjectFilesService;
+  // 画布四工具的数据源（M2.1）。可选:不注入则不注册(测试可只测 wiki 面)。
+  canvasService?: ProjectCanvasService;
   // skills 全局 scope 的 home 定位(~/.claude/skills),测试注入临时目录;缺省 homedir()。
   home?: string;
 };
@@ -229,6 +234,58 @@ export const filePreviewFallbackText = (preview: {
     : preview.type === "too_large"
       ? `File too large to preview: ${preview.name} (${preview.limitBytes} byte limit)`
       : `Unsupported file type: ${preview.name}`;
+
+/**
+ * 画布场景 → canvas 卡 structuredContent（hub registerTool 与 api 侧 HUB_APP_TOOLS
+ * 白名单代理共用，防两处漂移）。SEP-1865 上限：初始 structuredContent 64KiB——
+ * 超限时元素降级为摘要（id/type/x/y/width/height）+ truncated 标记，模板（M2.2）
+ * 据 truncated 走 read_scene 拉全量；text content 侧恒全量（模型消费面）。
+ */
+const CANVAS_SC_MAX_BYTES = 48 * 1024;
+
+export const canvasSceneStructuredContent = (scene: {
+  id: string;
+  title: string;
+  revision: number;
+  elements: CanvasElement[];
+}): Record<string, unknown> => {
+  const full = {
+    kind: "canvas-doc" as const,
+    id: scene.id,
+    title: scene.title,
+    revision: scene.revision,
+    elementCount: scene.elements.length,
+    elements: scene.elements,
+  };
+  if (Buffer.byteLength(JSON.stringify(full), "utf8") <= CANVAS_SC_MAX_BYTES) {
+    return full;
+  }
+  return {
+    kind: "canvas-doc" as const,
+    id: scene.id,
+    title: scene.title,
+    revision: scene.revision,
+    elementCount: scene.elements.length,
+    elements: scene.elements.map(canvasElementSummary),
+    truncated: true,
+  };
+};
+
+/** 元素摘要（truncated 降级面 + 卡片选择态回显用）。 */
+export const canvasElementSummary = (element: CanvasElement): Record<string, unknown> => {
+  const pick = (key: string) =>
+    typeof (element as Record<string, unknown>)[key] === "number"
+      ? (element as Record<string, unknown>)[key]
+      : undefined;
+  return {
+    id: element.id,
+    type: typeof element.type === "string" ? element.type : "unknown",
+    ...(pick("x") !== undefined ? { x: pick("x") } : {}),
+    ...(pick("y") !== undefined ? { y: pick("y") } : {}),
+    ...(pick("width") !== undefined ? { width: pick("width") } : {}),
+    ...(pick("height") !== undefined ? { height: pick("height") } : {}),
+  };
+};
 
 /**
  * settings-preview 卡数据读取(hub/api 双面 handler 共用):config 非法/缺失降级空面,
@@ -543,6 +600,143 @@ const registerFileTools = (
 };
 
 /**
+ * 注册画布四工具（M2.1，契约 §12.2）：create_diagram / read_scene / apply_operations /
+ * export_diagram。注册条件 = canvasService 注入 && uiEnabled。工具结果 text = 全量 JSON
+ * （模型消费面）；structuredContent = canvasSceneStructuredContent（卡片面，超限降摘要）。
+ * ProjectCanvasError → isError 语义化返回（revision 冲突附重读提示，agent 可自纠重试）。
+ */
+const registerCanvasTools = (
+  server: McpServer,
+  project: string,
+  canvasService: ProjectCanvasService,
+): void => {
+  const canvasErrorResponse = (error: unknown) => {
+    if (error instanceof ProjectCanvasError) {
+      const hint =
+        error.code === "PROJECT_CANVAS_REVISION_CONFLICT"
+          ? " Re-read the scene (read_scene) and retry with the current revision."
+          : "";
+      return {
+        isError: true as const,
+        content: [{ type: "text" as const, text: `[${error.code}] ${error.message}${hint}` }],
+      };
+    }
+    throw error;
+  };
+
+  server.registerTool(
+    "create_diagram",
+    {
+      description:
+        "Create a canvas diagram document (Excalidraw-style elements) and show it as an interactive canvas card. Returns { id, title, revision, elements }.",
+      inputSchema: {
+        title: z.string(),
+        elements: z.array(z.record(z.string(), z.unknown())),
+      },
+      _meta: { ui: { resourceUri: CANVAS_APP_URI, visibility: ["model", "app"] } },
+    },
+    async ({ title, elements }) => {
+      try {
+        const scene = await canvasService.createDiagram(project, { title, elements });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(scene) }],
+          structuredContent: canvasSceneStructuredContent(scene),
+        };
+      } catch (error) {
+        return canvasErrorResponse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "read_scene",
+    {
+      description:
+        "Read the current scene of a canvas document. Pass elementIds to limit the response to a selection (missing ids are ignored). Returns { id, title, revision, elements }.",
+      inputSchema: {
+        id: z.string(),
+        elementIds: z.array(z.string()).optional(),
+      },
+      _meta: { ui: { resourceUri: CANVAS_APP_URI, visibility: ["model", "app"] } },
+    },
+    async ({ id, elementIds }) => {
+      try {
+        const scene = await canvasService.readScene(project, id, elementIds);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(scene) }],
+          structuredContent: canvasSceneStructuredContent(scene),
+        };
+      } catch (error) {
+        return canvasErrorResponse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "apply_operations",
+    {
+      description:
+        "Apply add/update/remove operations to canvas elements by stable element id (update is a shallow merge patch; the element id can not be changed). Pass the revision you read as expectedRevision; a mismatch is a conflict — re-read and retry. Pass an operationId to make retries idempotent. Returns the full scene at the new revision.",
+      inputSchema: {
+        id: z.string(),
+        operations: z.array(
+          z.union([
+            z.object({ op: z.literal("add"), element: z.record(z.string(), z.unknown()) }),
+            z.object({
+              op: z.literal("update"),
+              elementId: z.string(),
+              patch: z.record(z.string(), z.unknown()),
+            }),
+            z.object({ op: z.literal("remove"), elementId: z.string() }),
+          ]),
+        ),
+        expectedRevision: z.number().int().min(1),
+        operationId: z.string().optional(),
+      },
+      _meta: { ui: { resourceUri: CANVAS_APP_URI, visibility: ["model", "app"] } },
+    },
+    async ({ id, operations, expectedRevision, operationId }) => {
+      try {
+        const scene = await canvasService.applyOperations(project, id, {
+          operations,
+          expectedRevision,
+          operationId,
+        });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(scene) }],
+          structuredContent: canvasSceneStructuredContent(scene),
+        };
+      } catch (error) {
+        return canvasErrorResponse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "export_diagram",
+    {
+      description:
+        "Export a canvas document as native Excalidraw JSON (savable as a .excalidraw file). Optionally verify the revision first.",
+      inputSchema: {
+        id: z.string(),
+        expectedRevision: z.number().int().min(1).optional(),
+      },
+      _meta: { ui: { resourceUri: CANVAS_APP_URI, visibility: ["model", "app"] } },
+    },
+    async ({ id, expectedRevision }) => {
+      try {
+        const exported = await canvasService.exportDiagram(project, id, { expectedRevision });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(exported) }],
+        };
+      } catch (error) {
+        return canvasErrorResponse(error);
+      }
+    },
+  );
+};
+
+/**
  * 注册 skills 能力域（SEP-2640 Skills over MCP）:skills/list + skills/get + skill://
  * 资源读取（标准 resources/read——SEP 无 skills/read）。声明扩展即 MUST 实现两方法。
  *
@@ -652,6 +846,7 @@ const buildRequestServer = (
   gitDiffService: ProjectGitDiffService | undefined,
   sessionRegistry: SessionRegistry | undefined,
   filesService: ProjectFilesService | undefined,
+  canvasService: ProjectCanvasService | undefined,
   wikiEnabled: boolean,
   uiEnabled: boolean,
   skillsEnabled: boolean,
@@ -702,6 +897,9 @@ const buildRequestServer = (
   if (filesService && uiEnabled) {
     registerFileTools(server, project, filesService);
   }
+  if (canvasService && uiEnabled) {
+    registerCanvasTools(server, project, canvasService);
+  }
   return server;
 };
 
@@ -713,6 +911,7 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
     gitDiffService,
     sessionRegistry,
     filesService,
+    canvasService,
     home = homedir(),
   } = options;
 
@@ -771,6 +970,7 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
           gitDiffService,
           sessionRegistry,
           filesService,
+          canvasService,
           wikiEnabled,
           uiEnabled,
           skillsEnabled,
