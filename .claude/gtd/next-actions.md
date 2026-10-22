@@ -33,7 +33,14 @@
 - [x] **阶段 5 hub skills 分发完成**（2026-10-21，用户拍板「等他们 CLI 支持的时候直接对上」）：`mcp-skills.ts`（数据源 = 本地 skills 同批磁盘文件,项目+全局并集同名项目胜出）+ hub `registerSkillResources`（自造 zod schema setRequestHandler×2 + ResourceTemplate skill:// 资源读取）+ McpCapability 加 "skills"（shared union + validate Set）;hub 真 HTTP 9 用例 + **MCP Inspector 2.11 真 host 实测三方法全过** + security-reviewer 消化（0 漏洞;P1×2 修复 = uri→path 查表消灭反向构造 + SEP 上限 512/16MiB 超限跳过流式 digest,P2×2 = 根级 symlink realpath 校验 + cacheScope private）+ 全门禁绿（api 1026）;主文档 §3/§10 已更新;上游 CLI client 消费 = 新阶段 6（等上游）
 - [x] **阶段 5.5 卡片富渲染完成**（2026-10-21，调研定案构建期内联）：真机发现卡片 mermaid/SVG/表格/富 HTML 不可渲染 → 两路调研（渲染库供给三路线 + 流式渲染）→ 用户拍板构建期打包 + mermaid 一并 + 版本统一 12（依赖冗余收敛:与 web 包同版本,锁文件单点）→ marked 15.0.12 + DOMPurify 3.2.6 + mermaid 12.0.0 Bun text import 构建期内联（`</script` 防御转义,CSP 维持零外域）→ 模板 rich 管线（sanitize → innerHTML → mermaid 围栏升级 SVG,异常回落 legacy,主题切换重渲染）+ api mcp-ui-resource 路由 gzip 协商（5.65MB→~1.2MB）+ e2e spec timeout 90s（5.65MB srcdoc 全链 36s@2G cgroup）+ SDK 意外升级 1.32.1 验证接受（1026 全绿）;验证:模板探针 26/26 + e2e 31/31 + api 29/29 + web 859;文档:调研报告 mcp-app-rendering-survey.md + 主文档 §8/§10;**后续:轻/重模板分流**（无 mermaid 页 ~60KB 轻模板）
 
+## @gen-ui-canvas（总纲：docs/research/mcp-apps-hosting.md §12；一手契约 §12.4 Gen UI + §12.2 画布工具表；计划 ~/.claude/plans/toasty-sprouting-star.md）
+
+- [x] **M1 生成式 UI 完整版**（2026-10-22 完成）——代码 `9e134cb`(a/b/c) + `f004276`(d skill 交付+端到端) + `183f2b5`(reviewer 三报告收敛批)。验收数字：门禁全绿（api 1072 / shared 10 / web 883 pass，typecheck+lint 0 warning）；探针 `probe-gen-ui-widget.mjs` 17/17；e2e `mcp-app-card.spec.ts` 3/3；test 项目端到端全链（生成→卡渲染→拖滑块→state PUT 42→重开恢复→追问回流带 value 42→agent 答「42」→标记不进气泡→零 pageError）+ API 重启回放恢复。契约见 `docs/research/mcp-apps-hosting.md` §11/§12.4。
+- [ ] **M2 画布批 1（最小闭环）**：0 前置实验(excalidraw standalone 单文件打包,失败回炉报告用户)→ 1 ar-hub 四工具(create/read_scene/apply_operations/export;expectedRevision+operationId;HUB_APP_TOOLS 直调)→ 2 CANVAS 模板 + commit_scene 提交链(allowedToolNames 多名)+ toolRegistry 注册 → 3 验证;验收:单测并发语义 + 浏览器探针(agent 画→改→局部改闭环)+ security-reviewer 必过
+- [ ] **M3 画布批 2（选区引用循环）**：ui/update-model-context 协议方法 + composer chip + 发送时 prompt 注入;验收:端到端闭环(画图→选节点→改选区)+ 探针 + reviewer
+
 ## @harness
+
 
 - [x] **harness 改造收尾验证**（2026-09-19，完成）——三项实测全过：①重启会话，SessionStart 注入 KB 级 current.md（非旧版 589KB）；②`/handoff save` 实测通过（快照 20260919-0317 已归档）；③`/gtd inbox` 实测通过（追加捕获条目后自清理）。（hook 单测 + 四门禁已过，commit `db5b0fd`）
 - [x] **memory 清理**（2026-09-19，完成）——13 条 workflow 体系记忆（workflow_intents_* / workflow_skill_* / describe_project_* / first_roadmap_* 等）归档至 `memory/archived-20260919/`（可恢复；移出 MEMORY.md 索引即不再被加载），同步清理 3 处交叉引用；跨项目工程铁律类记忆（single-pipeline / no-screenshot / commit 纪律等）全部保留。
