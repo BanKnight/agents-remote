@@ -248,3 +248,17 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 4. **落地次序**：生成式 UI 先（纯增量、零实验风险）→ 画布批 1 → 画布批 2；两条轨道共享沙箱基座与确认闸。GTD inbox 已捕获（2026-10-22 两条）。
 
 
+
+### 12.6 M2.0 前置实验结论（2026-10-22，excalidraw standalone 单文件）
+
+**判定：可行，进 M2.1/M2.2。** 打包管线（实验实证）：
+
+- **依赖**：`@excalidraw/excalidraw@0.18.1`（npm latest，2026-04-20 发布，供应链 ≥7 天 ✅；peer `react ^17||^18||^19`，实测 react@19.3.1 可用）。打包 = vite 8（rolldown）lib mode IIFE + `@vitejs/plugin-react` + `inlineDynamicImports` + `process.env.NODE_ENV=production` define。
+- **体积**：全量 7.6MB raw / 2.36MB gzip —— 大头是 `@excalidraw/mermaid-to-excalidraw` 拖进的 mermaid 全量。**alias stub 掉 mermaid 后 3.94MB raw / 1.46MB gzip**（目标 <3MB ✅），CSS 另计 244KB raw / 102KB gzip。stub 导出 `parseMermaidToExcalidraw` 抛错——M2 画布不需要 mermaid 导入。
+- **CSP srcdoc 运行 ✅**：`default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:` 的 srcdoc（sandbox="allow-scripts"）2~3s 挂载，画布/工具栏/场景全渲染，零 page error。
+- **⚠️ 首次点击画图失效（实验实锤的坑）**：首次点击 iframe → iframe 获焦（`win:focus`）→ excalidraw 的 `maybeCleanupAfterMissingPointerUp`（挂 ownerWindow focus 事件）把按下态立即清成 up → **第一次拖画/框选必然无效**（后续点击 iframe 已聚焦则正常；顶层页面无此问题）。修复 = **宿主在 iframe onLoad 后 `iframe.focus()` 预聚焦**（实证：预聚焦后 focus 事件消失、CDP mouse 拖画 PASS）。M2.2 模板/卡片宿主必须带这条。
+- **API prop 名**：0.18 是 `excalidrawAPI`（回调拿 imperative API；旧文档的 `onExcalidrawAPI` 已不存在——实验里回调不触发才定位到）。中文场景元素 `updateScene` 注入/渲染正常，`langCode: "zh-CN"` 生效。
+- **opaque origin 无 localStorage**（SecurityError 被 excalidraw 内部容错，不崩）：excalidraw 自身持久化不可用——预期内，画布状态持久化走我们的 `project-canvas` 存储，不依赖 excalidraw 本地存储。
+- **worker 被 CSP 阻断**（字体子集 worker）：实验期间未产生 page error；影响面 = 导出图片/字体子集化（M2 裁定不做导出图片，如未来要做再放宽 `worker-src blob:` 并重验）。
+- **调试手法沉淀**：① 探针拿 srcdoc frame 用 `elementHandle.contentFrame()`——frame.url 判定不稳定（初值 `about:blank`、就绪后继承宿主 URL）；② 页内合成 PointerEvent 对照不可靠（合成 pointerId 无真实活动指针，excalidraw `setPointerCapture` 必抛 NotFoundError 且污染其指针状态机）；③ 判「首次点击失效」看 canvas DOM 事件序列 + window focus 事件时序。
+- 实验产物在 `/tmp/exc-probe`（打包配置 src/main.tsx + vite.config.ts + stubs/mermaid.ts），M2.2 入仓时按此复刻。

@@ -1,10 +1,10 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-22(M1 生成式 UI 完整版收尾:reviewer 收敛批 `183f2b5`，探针 17/17 + e2e 3/3 全绿)
+> 最后更新:2026-10-22(M2.0 excalidraw 前置实验完成,判定可行;M1 已提交 da7ccda)
 
 ## 一句话状态
 
-**M1 生成式 UI 完整版已完成并提交**（`9e134cb` a/b/c + `f004276` d + `183f2b5` reviewer 收敛）。agent 经 gen-ui skill 生成单文件 HTML → 回复里 `::gen-ui{...}` 标记 → 流内卡片沙箱渲染 + 迷你 `window.zcode` 桥（widgetState 双槽 / setWidgetState 防抖 PUT / sendFollowUpMessage 确认闸 / 主题事件）→ 用户交互状态经 `<gen-ui-context>` 回流进下一轮 prompt。**下一步是 M2 画布批 1（M2.0 excalidraw 打包实验）**。
+**M1 生成式 UI 完整版已收尾提交**(`9e134cb`/`f004276`/`183f2b5` reviewer 收敛 + `da7ccda` handoff)。**M2.0 excalidraw 前置实验完成,判定可行**——单文件打包 3.94MB raw / **1.46MB gzip**(mermaid stub 后),CSP srcdoc 运行全过,实锤并修复「iframe 首次点击获焦 → excalidraw 清按下态 → 首次拖画失效」的坑(宿主 `iframe.focus()` 预聚焦)。结论全文见 `docs/research/mcp-apps-hosting.md` §12.6。**下一步 M2.1 ar-hub 画布四工具 + project-canvas 存储**。
 
 ## 本 session 焦点
 
@@ -19,12 +19,9 @@
 
 ### 进度
 
-- ✅ M1.a api 基座(gen-ui 文件/state 端点 + 回流组装)
-- ✅ M1.b web 投影(`::gen-ui` 标记 → ChatStreamItem, live/replay 同函数零分支)
-- ✅ M1.c GenUiWidgetCard + 迷你桥 + 全屏第二实例 + 探针
-- ✅ M1.d gen-ui skill 交付(ensureGenUiSkill)+ test 项目端到端 + 真实回放核验
-- ✅ reviewer 三报告统一收敛(`183f2b5`):回流注入口径/state 边界/skill 守卫/flushPut 竞态/图标 sparkles/i18n + 6 项新单测
-- ✅ 验证:全门禁绿(api 1072 / shared 10 / web 883)、CSS 硬闸、tokens 机检(report 模式仅挂起批 1 处)、探针 17/17、e2e mcp-app-card 3/3
+- ✅ M1.a-d 全部(`9e134cb`/`f004276`) + reviewer 收敛(`183f2b5`)+ handoff(`da7ccda`)
+- ✅ **M2.0 excalidraw 前置实验(2026-10-22)**:可行判定 + 结论入 hosting.md §12.6。要点:`@excalidraw/excalidraw@0.18.1`(react 19 兼容)、vite lib IIFE、mermaid stub → gzip 1.46MB、CSP srcdoc OK、**`excalidrawAPI` prop**(非 onExcalidrawAPI)、**iframe 预聚焦修复首次点击失效**、localStorage/opaque origin 被 excalidraw 容错、实验产物 /tmp/exc-probe
+- ⏳ M2.1 ar-hub 四工具 + project-canvas.ts 存储(expectedRevision + operationId)
 
 ### 待办
 
