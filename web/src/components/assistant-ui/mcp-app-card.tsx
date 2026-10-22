@@ -360,7 +360,12 @@ export function McpAppCard({
         const result = await callProjectMcpHubTool(projectName, name, args);
         reply(result);
       } catch (error) {
-        replyError(-32000, error instanceof Error ? error.message : String(error));
+        // fetchJson 的 message 是本地化文案+status,结构化错误码在 ApiClientError.code
+        // （如 PROJECT_CANVAS_REVISION_CONFLICT）。前置成 [CODE] 前缀进 message,
+        // 模板侧按子串分流（画布卡 REVISION_CONFLICT → 过期重载）才有的认。
+        const code = (error as { code?: unknown } | null)?.code;
+        const msg = error instanceof Error ? error.message : String(error);
+        replyError(-32000, typeof code === "string" && code ? `[${code}] ${msg}` : msg);
       }
       return;
     }

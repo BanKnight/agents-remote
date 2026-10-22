@@ -648,9 +648,12 @@ const CANVAS_KIND_JS = `
     var excReady = false;
     var docId = "";
     var docRevision = 0;
-    // 远端写入的 onChange 回声抑制：apply 后短窗内的第一次 onChange 视为回声，
-    // 不触发 commit（300ms 覆盖 updateScene 的 React 提交批次）。
-    var echoUntil = 0;
+    // 回声抑制 = 服务端已知态指纹：onChange 场景与服务端已知几何相同 → settle 回声
+    // 跳过 commit。excalidraw 的 settle onChange 轮次/时机不可预测（mount/字体加载
+    // 拖尾),时间窗盖不住——指纹对比是语义判定,天然覆盖全部回声形态。指纹只取
+    // id+几何/样式字段子集:excalidraw onChange 的元素形态（内部全集）与服务端存储
+    // 形态（提交原样)不同空间,完整 stringify 恒不等;子集提取跨形态稳定。
+    var lastServerKey = "";
     var commitTimer = 0;
     var commitSeq = 0;
     var COMMIT_DEBOUNCE_MS = 600;
@@ -691,8 +694,8 @@ const CANVAS_KIND_JS = `
       if (!exc || !excReady || !data) return;
       if (data.truncated) { requestFullScene(); return; }
       if (!Array.isArray(data.elements)) return;
-      echoUntil = Date.now() + 300;
       exc.setElements(data.elements);
+      lastServerKey = sceneKey(data.elements);
     };
     var requestFullScene = function () {
       if (!docId) return;
@@ -703,12 +706,32 @@ const CANVAS_KIND_JS = `
         })
         .catch(function () {});
     };
+    var sceneKey = function (elements) {
+      // 子集指纹：id + 几何/样式核心字段（settle 回声不改这些;用户改任意其一即变）。
+      var keys = [];
+      for (var i = 0; i < elements.length; i++) {
+        var el = elements[i];
+        if (!el) continue;
+        keys.push(
+          [el.id, el.type, el.x, el.y, el.width, el.height, el.angle,
+            el.strokeColor, el.backgroundColor, el.fillStyle, el.strokeWidth,
+            el.strokeStyle, el.roughness, el.opacity, el.text, el.fontSize,
+            (el.points || []).join(";")].join("|"),
+        );
+      }
+      return keys.join("\\n");
+    };
     var commitScene = function (elements) {
       if (!docId || !excReady) return;
       var payload = [];
       for (var i = 0; i < elements.length; i++) {
         var el = elements[i];
         if (el && !el.isDeleted) payload.push(el);
+      }
+      // settle 回声（mount/字体拖尾的重复 onChange）:场景与服务端已知态几何相同 →
+      // 不提交。时间窗盖不住不可预测的 settle 时机,指纹对比是语义判定。
+      if (lastServerKey && sceneKey(payload) === lastServerKey) {
+        return;
       }
       commitSeq += 1;
       var t = canvasText();
@@ -723,7 +746,12 @@ const CANVAS_KIND_JS = `
       })
         .then(function (result) {
           var sc = result && result.structuredContent;
-          if (sc && typeof sc.revision === "number") docRevision = sc.revision;
+          if (sc && typeof sc.revision === "number") {
+            docRevision = sc.revision;
+            // meta 读 lastData：同步显新 rev，否则保存成功后 meta 恒显旧 revision。
+            if (lastData) lastData.revision = sc.revision;
+          }
+          if (sc && Array.isArray(sc.elements)) lastServerKey = sceneKey(sc.elements);
           setNote("");
         })
         .catch(function (err) {
@@ -737,7 +765,7 @@ const CANVAS_KIND_JS = `
           setNote(t.saveErr + ": " + msg);
         });
     };
-    var renderCanvas = function (data) {
+    var renderKind = function (data) {
       docId = typeof data.id === "string" ? data.id : "";
       docRevision = typeof data.revision === "number" ? data.revision : 0;
       cardTitle = data.title || docId;
@@ -758,7 +786,6 @@ const CANVAS_KIND_JS = `
             reportSize();
           },
           onChange: function (elements) {
-            if (Date.now() < echoUntil) { echoUntil = 0; return; }
             if (commitTimer) clearTimeout(commitTimer);
             commitTimer = setTimeout(function () {
               commitTimer = 0;
@@ -766,6 +793,8 @@ const CANVAS_KIND_JS = `
             }, COMMIT_DEBOUNCE_MS);
           },
         });
+        // 服务端已知态基线（含 truncated 空 mount:后续 read_scene 全量回来会更新）。
+        lastServerKey = sceneKey(!data.truncated && Array.isArray(data.elements) ? data.elements : []);
       } else {
         exc.setTheme(document.documentElement.dataset.theme === "light" ? "light" : "dark");
         applyRemoteScene(data);
