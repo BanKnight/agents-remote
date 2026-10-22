@@ -371,6 +371,51 @@ test("reserved operationIds are rejected instead of hitting the prototype chain"
   expect((await service().readScene("demo", created.id)).revision).toBe(1);
 });
 
+test("doc file that is a symlink is not followed on read", async () => {
+  const outside = await mkdtemp(join(tmpdir(), "agents-remote-canvas-outside-"));
+  try {
+    const canvasDir = join(root, "demo", ".agents-remote", "canvas");
+    await mkdir(canvasDir, { recursive: true });
+    // 外部预置一份合法形状的 doc，项目内 canvas-44444444 指向它：读不得穿越。
+    const target = join(outside, "secret.json");
+    await writeFile(
+      target,
+      JSON.stringify({
+        schemaVersion: 1,
+        id: "canvas-44444444",
+        title: "secret",
+        revision: 1,
+        updatedAt: new Date().toISOString(),
+        elements: [createElement("e1")],
+        operations: {},
+      }),
+    );
+    await symlink(target, join(canvasDir, "canvas-44444444.json"));
+    await expect(service().readScene("demo", "canvas-44444444")).rejects.toThrow(
+      ProjectCanvasError,
+    );
+    // 外部目标文件未被改动。
+    expect(JSON.parse(await readFile(target, "utf8")).title).toBe("secret");
+  } finally {
+    await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("applyOperations rejects adds whose cumulative bytes exceed the doc cap", async () => {
+  const created = await createDoc();
+  // 每元素过 16KiB 单项闸，累计 >6MiB：闸在合并循环内生效，不等写侧 payload 兜底。
+  const fat = Array.from({ length: 500 }, (_, i) =>
+    createElement(`fat-${i}`, { data: "x".repeat(14 * 1024) }),
+  );
+  await expect(
+    service().applyOperations("demo", created.id, {
+      operations: fat.map((element) => ({ op: "add", element })),
+      expectedRevision: 1,
+    }),
+  ).rejects.toThrow("exceeds");
+  expect((await service().readScene("demo", created.id)).revision).toBe(1);
+});
+
 test("service maps path errors to project error codes", async () => {
   await expect(
     service().createDiagram("no-such-project", { title: "t", elements: [] }),

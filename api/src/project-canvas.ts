@@ -14,7 +14,6 @@ import {
   readFile,
   realpath,
   rename,
-  stat,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -304,10 +303,17 @@ export class ProjectCanvasService {
 
       assertRevision(doc, expectedRevision);
       const byId = new Map(doc.elements.map((el) => [el.id, el]));
+      // add 的累计字节闸与 normalizeCanvasElements 同款：存量文档 ≤6MiB（写侧闸），
+      // 单次 adds 也限 ≤6MiB——峰值有界，不等 writeDoc payload 闸才拒。
+      let addedBytes = 0;
       for (const operation of operations) {
         if (operation.op === "add") {
           if (byId.has(operation.element.id)) {
             throw invalid(`Canvas element already exists: ${operation.element.id}`);
+          }
+          addedBytes += Buffer.byteLength(JSON.stringify(operation.element), "utf8");
+          if (addedBytes > CANVAS_MAX_BYTES) {
+            throw invalid(`Canvas doc exceeds ${CANVAS_MAX_BYTES} bytes`);
           }
           byId.set(operation.element.id, operation.element);
         } else if (operation.op === "update") {
@@ -472,8 +478,15 @@ export class ProjectCanvasService {
     await this.assertPathSafe(projectPath, canvasDir);
     let raw: string;
     try {
-      // 落盘文件可能被项目内写盘方（agent / 恶意仓库）构造：先看大小再整读。
-      const info = await stat(docPath);
+      // 落盘文件可能被项目内写盘方（agent / 恶意仓库）构造：lstat 拒 symlink
+      // （预置链接指向外项目/外部的 doc 不跟随），先看大小再整读。
+      const info = await lstat(docPath);
+      if (info.isSymbolicLink()) {
+        throw new ProjectCanvasError(
+          "PROJECT_PATH_OUTSIDE_ROOT",
+          "Canvas doc must not be a symlink",
+        );
+      }
       if (info.size > CANVAS_MAX_BYTES) {
         throw invalid(`Canvas doc exceeds ${CANVAS_MAX_BYTES} bytes`);
       }
