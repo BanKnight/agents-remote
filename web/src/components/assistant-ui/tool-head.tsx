@@ -26,6 +26,10 @@ export const ToolIcons: Record<string, string> = {
   // Skill: a spark / star — clearer than a puzzle piece for an invoked capability.
   skill:
     '<path d="M12 2l1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5L12 2z" fill="currentColor"/>',
+  // Gen UI: a sparkles cluster (same family as `skill`; the badge marks a
+  // generated interactive surface).
+  sparkles:
+    '<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M5 3v4M19 17v4M3 5h4M17 19h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
   // Web search: magnifying glass with a small globe ring.
   webSearch:
     '<circle cx="11" cy="11" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M16 16l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M11 5a6 6 0 010 12" stroke="currentColor" stroke-width="1.5" opacity="0.5"/>',

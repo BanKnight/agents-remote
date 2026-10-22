@@ -8,6 +8,7 @@ import { jsonError } from "./http-auth";
 import { SessionRegistry, type RuntimeResources, type RuntimeStream } from "./session-registry";
 import { EFFORT_LEVELS, type AgentSessionStatus, type SessionType } from "@agents-remote/shared";
 import { spawnInitialStatus } from "./agent-session-status";
+import { ProjectGenUiError } from "./project-gen-ui";
 import type { ClaudeRuntime } from "./claude-runtime";
 
 type UpgradeServer = {
@@ -261,6 +262,11 @@ export class ClaudeStreamController {
     try {
       return await this.genUiContextLoader(projectName, sessionId);
     } catch (error) {
+      // capability 关闭(默认态)→ readGenUiState 统一抛 NOT_FOUND:预期条件当静默
+      // 无回流,不算故障(否则每条用户消息刷一条错误日志)。
+      if (error instanceof ProjectGenUiError && error.code === "PROJECT_FILE_NOT_FOUND") {
+        return undefined;
+      }
       console.error("[claude-stream] gen-ui context load failed, sending prompt without it", error);
       return undefined;
     }
@@ -444,7 +450,13 @@ export class ClaudeStreamController {
         // Gen UI 回流（M1.a）：user 帧写 stdin 前追加 <gen-ui-context> text part——用户
         // 原始 content 原样保留（live echo 仍用 parsed，不含块；JSONL 由 CLI 写 forwarded
         // 版本，回放侧渲染时剥块显示，见 web normalizeChatStream M1.b）。
-        if (parsed.type === "user") {
+        // tool_result 上行帧(sendToolResult)不是用户文本,混入块会污染 CLI 上下文
+        // → 不追加(仅纯文本 user 帧回流)。
+        if (
+          parsed.type === "user" &&
+          Array.isArray(parsed.message.content) &&
+          !parsed.message.content.some((b) => (b as { type?: string }).type === "tool_result")
+        ) {
           const block = await this.loadGenUiContext(data.projectName, data.sessionId);
           if (block) {
             forwarded = {

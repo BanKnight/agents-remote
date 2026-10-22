@@ -192,10 +192,10 @@ test("MCP Apps card: template host + handshake locale + tools/call refresh + ui/
   await expect(page.getByText("Wiki 页已读取。")).toBeVisible({ timeout: 15_000 });
 
   // 1. 卡片渲染：沙箱 iframe + 宿主喂数据后的模板 render（mock 帧的 stale 内容）。
-  const card = page.locator('iframe[title="MCP app"]');
+  const card = page.locator('iframe[data-testid="mcp-app-frame"]');
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card).toHaveAttribute("sandbox", "allow-scripts");
-  const frame = page.frameLocator('iframe[title="MCP app"]');
+  const frame = page.frameLocator('iframe[data-testid="mcp-app-frame"]');
   await expect(frame.locator("#title")).toHaveText("Stale Title", { timeout: 15_000 });
   await expect(frame.locator(".tag", { hasText: "e2e" })).toBeVisible();
   await expect(frame.getByText("old mock content")).toBeVisible();
@@ -344,10 +344,10 @@ test("MCP Apps git status card: stale mock → real listDiff refresh round-trip"
   await expect(page.getByText("Git 变更卡已就绪。")).toBeVisible({ timeout: 15_000 });
 
   // 1. kind 守卫命中 → 沙箱 iframe 卡片（而非通用 MCP tool 卡回退）。
-  const card = page.locator('iframe[title="MCP app"]');
+  const card = page.locator('iframe[data-testid="mcp-app-frame"]');
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card).toHaveAttribute("sandbox", "allow-scripts");
-  const frame = page.frameLocator('iframe[title="MCP app"]');
+  const frame = page.frameLocator('iframe[data-testid="mcp-app-frame"]');
 
   // 2. stale 渲染（握手 zh 后）：branch stale-branch-x + 工作区干净。
   await expect(frame.locator("#title")).toHaveText("Git 变更 · stale-branch-x", {
@@ -463,12 +463,12 @@ test("MCP Apps card: in-flow height clamp + fullscreen enlarge", async ({ page }
 
   // 1. 流内钳高:上报内容高(400 段 ≫420)被钳到 420,iframe 文档内滚。
   //    (frameLocator 在打开全屏前创建并仅在此前使用——全屏开后同选择器会匹配两个。)
-  const card = page.locator('iframe[title="MCP app"]');
-  const flowFrame = page.frameLocator('iframe[title="MCP app"]');
+  const card = page.locator('iframe[data-testid="mcp-app-frame"]');
+  const flowFrame = page.frameLocator('iframe[data-testid="mcp-app-frame"]');
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(flowFrame.locator("#title")).toHaveText("Tall Title", { timeout: 15_000 });
   await page.waitForFunction(() => {
-    const el = document.querySelector('iframe[title="MCP app"]');
+    const el = document.querySelector('iframe[data-testid="mcp-app-frame"]');
     return el instanceof HTMLIFrameElement && el.style.height !== "";
   });
   expect(await card.evaluate((el) => el.style.height)).toBe("420px");
@@ -489,14 +489,14 @@ test("MCP Apps card: in-flow height clamp + fullscreen enlarge", async ({ page }
   await page.getByRole("button", { name: "放大查看" }).click();
   const fullscreen = page.locator('[data-slot="dialog-content"]');
   await expect(fullscreen).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('iframe[title="MCP app"]')).toHaveCount(2);
+  await expect(page.locator('iframe[data-testid="mcp-app-frame"]')).toHaveCount(2);
   // 双实例独立喂数据:全屏内模板渲染出 mock stale 标题(宿主 postMessage 喂的是
   // 同一份 structuredContent,两实例各自完成 load → feed)。
-  const fsFrame = fullscreen.frameLocator('iframe[title="MCP app"]');
+  const fsFrame = fullscreen.frameLocator('iframe[data-testid="mcp-app-frame"]');
   await expect(fsFrame.locator("#title")).toHaveText("Tall Title", { timeout: 15_000 });
 
   // 3. fill 几何:inline height 被抑制(空)、撑满 body(>420)、文档内滚未滚动。
-  const fsCard = fullscreen.locator('iframe[title="MCP app"]');
+  const fsCard = fullscreen.locator('iframe[data-testid="mcp-app-frame"]');
   expect(await fsCard.evaluate((el) => el.style.height)).toBe("");
   const fsBox = await fsCard.boundingBox();
   expect(fsBox?.height ?? 0).toBeGreaterThan(420);
@@ -526,7 +526,7 @@ test("MCP Apps card: in-flow height clamp + fullscreen enlarge", async ({ page }
   // 5. 关闭销毁:✕ → Dialog 卸载第二实例;流内卡钳高不变。
   await fullscreen.getByRole("button", { name: "关闭" }).click();
   await expect(fullscreen).not.toBeVisible({ timeout: 10_000 });
-  await expect(page.locator('iframe[title="MCP app"]')).toHaveCount(1);
+  await expect(page.locator('iframe[data-testid="mcp-app-frame"]')).toHaveCount(1);
   expect(await card.evaluate((el) => el.style.height)).toBe("420px");
 
   assertNoConsoleErrors();

@@ -412,7 +412,8 @@ export function McpAppCard({
     <>
       <iframe
         ref={frameRef}
-        className={`${fillHeight ? "" : "mt-2 "}w-full overflow-hidden rounded-lg border border-neutral-line/40 bg-white ${heightClassName}`}
+        className={`${fillHeight ? "" : "mt-2 "}w-full overflow-hidden rounded-lg border border-neutral-line/40 bg-canvas ${heightClassName}`}
+        data-testid="mcp-app-frame"
         // Template-reported content height overrides the fallback height class
         // (clamped to FRAME_MAX_HEIGHT_PX in flow; suppressed when fillHeight).
         style={!fillHeight && frameHeight != null ? { height: frameHeight } : undefined}
@@ -433,7 +434,7 @@ export function McpAppCard({
         }}
         sandbox="allow-scripts"
         srcDoc={resource.data.html}
-        title="MCP app"
+        title={t("claude.mcpApp.frameTitle")}
       />
       {holder}
     </>

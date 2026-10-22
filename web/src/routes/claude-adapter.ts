@@ -1938,7 +1938,8 @@ export type ChatStreamItem =
       /** 生成页路径（相对项目根，必须落在 .agents-remote/gen-ui/ 内）。 */
       path: string;
       title?: string;
-      /** 宽模式保留字段（M1.c 渲染层消费）。 */
+      /** 宽模式预留字段：当前渲染层未消费（卡片恒撑满消息列宽）。保留解析以备
+       *  后续宽幅/侧栏承载形态。 */
       mode?: "wide";
       sourceUuids: string[];
       _rawSnapshots: SessionStreamServerMessage[];

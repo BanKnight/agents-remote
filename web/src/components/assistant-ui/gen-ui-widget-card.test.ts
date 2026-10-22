@@ -111,4 +111,23 @@ describe("mergeWidgetState", () => {
       "new",
     );
   });
+
+  test("caps the widget list at 32 entries, evicting the oldest", () => {
+    // api hard-gates >32 widgets with a 400, which would silently break state
+    // persistence for the whole session — the merge must stay under the cap.
+    const seeded: GenUiSessionState = {
+      schemaVersion: 1,
+      widgets: Array.from({ length: 32 }, (_, i) => ({
+        path: `.agents-remote/gen-ui/w${i}.html`,
+        modelContent: `v${i}`,
+        updatedAt: new Date(2026, 0, 1, 0, i).toISOString(),
+      })),
+    };
+    const next = mergeWidgetState(seeded, ".agents-remote/gen-ui/new.html", undefined, {
+      modelContent: "fresh",
+    });
+    expect(next.widgets).toHaveLength(32);
+    expect(next.widgets.some((w) => w.path === ".agents-remote/gen-ui/w0.html")).toBe(false);
+    expect(next.widgets.at(-1)?.path).toBe(".agents-remote/gen-ui/new.html");
+  });
 });

@@ -4,7 +4,7 @@ import type {
   GenUiSessionState,
   GenUiWidgetState,
 } from "@agents-remote/shared";
-import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { realpath } from "node:fs/promises";
 import { isInsideOrSelf, ProjectPathError, resolveProjectPath } from "./project-paths";
@@ -37,7 +37,7 @@ export const GEN_UI_MAX_WIDGETS = 32;
 /** title 单值上限（回流块里逐字注入，防单值撑爆 state）。 */
 const GEN_UI_MAX_TITLE_CHARS = 200;
 /** modelContent / privateContent 单槽上限（合计闸之外的防单值爆炸）。 */
-const GEN_UI_MAX_SLOT_CHARS = 12_000;
+const GEN_UI_MAX_SLOT_CHARS = 8_000;
 /** sessionId 文件名形态校验（agent_xxx；防路径注入——sessionId 直接进文件名）。 */
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
@@ -84,7 +84,10 @@ export const isGenUiRelativePath = (projectRelativePath: string): boolean => {
   const target = resolve("/", projectRelativePath);
   // 等于 gen-ui 根本身（目录路径，无文件名）不算合法生成页路径。
   if (target === genUiRoot) return false;
-  return isInsideOrSelf(genUiRoot, target);
+  if (!isInsideOrSelf(genUiRoot, target)) return false;
+  // state/ 子树排除:state JSON 是会话隔离数据,被当 HTML 渲染可跨会话串读并经桥转写回流。
+  const relFromRoot = target.slice(genUiRoot.length + 1);
+  return relFromRoot !== GEN_UI_STATE_DIR && !relFromRoot.startsWith(`${GEN_UI_STATE_DIR}/`);
 };
 
 /** 项目根相对路径 → gen-ui 相对路径（`<relative-to-project>` 去 `.agents-remote/gen-ui/` 前缀）。
@@ -155,6 +158,11 @@ export const normalizeSessionState = (parsed: unknown): GenUiSessionState => {
  * 组装回流块（claude-stream 发送 prompt 前消费）：只取 modelContent 非空的活页。
  * 空态返回 undefined（调用方不附加任何内容）。
  */
+// modelContent 来自不可信页面:伪造块边界 token 可拆散回流块结构(早闭合/伪造
+// 兄弟 widget)。中性化 = 边界 token 前插零宽空格,视觉可读但不再匹配块语法;
+// path/title 走 JSON.stringify 本就结构安全。
+const GEN_UI_BOUNDARY_TOKEN = /\[\/?gen-ui-widget[^\]\n]*\]|<\/?gen-ui-context>/g;
+
 export const buildGenUiContextBlock = (state: GenUiSessionState): string | undefined => {
   const widgets = state.widgets.filter(
     (widget) => typeof widget.modelContent === "string" && widget.modelContent.length > 0,
@@ -164,7 +172,8 @@ export const buildGenUiContextBlock = (state: GenUiSessionState): string | undef
     const attrs = `path=${JSON.stringify(widget.path)}${
       widget.title ? ` title=${JSON.stringify(widget.title)}` : ""
     }`;
-    return `[gen-ui-widget ${attrs}]\n${widget.modelContent}\n[/gen-ui-widget]`;
+    const content = (widget.modelContent ?? "").replace(GEN_UI_BOUNDARY_TOKEN, "​$&");
+    return `[gen-ui-widget ${attrs}]\n${content}\n[/gen-ui-widget]`;
   });
   return `<gen-ui-context>\n以下状态快照来自用户在本会话中交互的生成式界面组件（HTML 小部件），记录其当前状态。当用户消息引用界面操作（如"拖到了 42"、"选中了节点 A"）时，以这些状态为准。\n${parts.join(
     "\n",
@@ -259,7 +268,13 @@ export class ProjectGenUiService {
       await mkdir(dirname(statePath), { recursive: true, mode: 0o700 });
       await writeFile(tempPath, payload, { mode: 0o600 });
       await chmod(tempPath, 0o600);
-      await rename(tempPath, statePath);
+      try {
+        await rename(tempPath, statePath);
+      } catch (error) {
+        // rename 失败路径清掉 temp,防 .tmp 残留随失败次数累积。
+        await unlink(tempPath).catch(() => {});
+        throw error;
+      }
     };
     const next = (this.writeQueues.get(key) ?? Promise.resolve()).catch(() => {}).then(write);
     this.writeQueues.set(key, next);
@@ -350,7 +365,7 @@ const validateSessionId = (sessionId: string) => {
 // ── visualize skill 交付(M1.d)──────────────────────────────────────────
 
 /** skill 版本标记:内容迭代后 bump,ensureGenUiSkill 按标记判重(旧版本覆写升级)。 */
-const GEN_UI_SKILL_VERSION = 2;
+const GEN_UI_SKILL_VERSION = 4;
 
 /**
  * gen-ui skill 文本(Claude CLI 从 spawn cwd = 项目根自动加载 `.claude/skills/`)。
@@ -374,7 +389,7 @@ description: 生成式界面(HTML 小部件)。当用户需要交互式界面(�
 2. **完整文档**(含 <!doctype html>)。浅色 / 深色主题都要成立:初始读 \`window.zcode.theme\`("light" / "dark"),并监听 \`zcode:set_globals\` 事件跟随切换(\`e.detail.theme\`)。
 3. **桥 API**(宿主注入到 window.zcode,直接可用):
    - \`zcode.widgetState\` → \`{modelContent?, privateContent?}\`:上次保存的状态,槽值已反序列化回原形(对象/数组/字符串)。**启动时先读它恢复界面**(刷新 / 重开会话不丢)。
-   - \`zcode.setWidgetState({modelContent, privateContent})\` → 状态写回宿主。交互发生时调用(拖动、选择等)。**两槽直接传 JSON 值(对象/数组)即可**,宿主自动序列化落盘。\`modelContent\` 会回流进下一轮对话上下文,\`privateContent\` 仅用户浏览器可见(如草稿),序列化后各 ≤12000 字符。
+   - \`zcode.setWidgetState({modelContent, privateContent})\` → 状态写回宿主。交互发生时调用(拖动、选择等)。**两槽直接传 JSON 值(对象/数组)即可**,宿主自动序列化落盘。\`modelContent\` 会回流进下一轮对话上下文,\`privateContent\` 仅用户浏览器可见(如草稿),序列化后各 ≤8000 字符。
    - \`zcode.sendFollowUpMessage(text)\` → 以用户消息发送文本(宿主会先向用户弹确认,通过后才发)。适合"应用到对话"类按钮,**勿高频调用**。
 4. **modelContent 只放模型需要的字段**(尽量精简——比如滑块只存 \`{ value: 42 }\`,不存中间过程)。
 5. 界面文案跟随 \`zcode.locale\`("zh" / "en")。
@@ -389,7 +404,8 @@ description: 生成式界面(HTML 小部件)。当用户需要交互式界面(�
 
 - \`path\` 必须以 \`.agents-remote/gen-ui/\` 开头(相对项目根),否则宿主拒绝渲染。
 - \`title\` 为界面显示名(建议与用户语言一致)。
-- 需要宽幅界面(图表、画布)时加 \`,"mode":"wide"\`。
+
+6. **禁止页面导航**:不要改 \`location\`/跳转外部 URL——生成页只在卡片 iframe 内呈现,导航会脱离宿主(内容也随之中断)。
 
 <!-- gen-ui-skill-version: ${GEN_UI_SKILL_VERSION} -->
 `;
@@ -415,8 +431,19 @@ export const ensureGenUiSkill = async (projectPath: string): Promise<void> => {
 
   const skillPath = join(projectPath, ".claude", "skills", "gen-ui", "SKILL.md");
   try {
-    const existing = await readFile(skillPath, "utf8").catch(() => "");
+    const info = await lstat(skillPath).catch(() => null);
+    if (info?.isSymbolicLink()) {
+      // 不跟随 symlink 覆写(realpath 家规;能种 symlink 的主体本有写权,但不做覆盖放大器)。
+      console.error("[gen-ui] skill path is a symlink, skipping:", skillPath);
+      return;
+    }
+    const existing = info ? await readFile(skillPath, "utf8").catch(() => "") : "";
     if (existing.includes(`gen-ui-skill-version: ${GEN_UI_SKILL_VERSION}`)) return;
+    if (existing.length > 0 && !/gen-ui-skill-version: \d+/.test(existing)) {
+      // 存在但无本仓版本标记 = 用户手写的同名 skill → 不静默覆盖。
+      console.error("[gen-ui] skill exists without version marker, leaving untouched:", skillPath);
+      return;
+    }
     await mkdir(dirname(skillPath), { recursive: true, mode: 0o755 });
     await writeFile(skillPath, GEN_UI_SKILL_MD, { mode: 0o644 });
   } catch (error) {

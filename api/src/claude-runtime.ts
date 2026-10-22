@@ -845,7 +845,7 @@ export class ClaudeRuntime implements RuntimeResources {
 
     // gen-ui skill 交付(capability 开启时幂等写 .claude/skills/gen-ui/SKILL.md;
     // 内部吞错只记日志——skill 缺失降级为 agent 不知道 gen-ui,绝不阻塞 spawn)。
-    await ensureGenUiSkill(projectPath).catch(() => {});
+    await ensureGenUiSkill(projectPath);
 
     // spawn 形态判定(--session-id 实测语义:全新 id 专用,已存在报 "already in use";
     // --resume 对不存在 id 硬失败 "No conversation found")——JSONL 存在 = --resume 接续,

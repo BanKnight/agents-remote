@@ -1403,8 +1403,6 @@ const handleMcpUiResourceRoute = async (
   return new Response(body.plain, { headers: responseHeaders });
 };
 
-// GET /api/projects/{name}/gen-ui-file?path=<gen-ui 相对路径>
-// 生成页 HTML 供给端点（ZCode Gen UI 契约对齐，service 层门控 gen-ui capability +
 // GET /api/projects/{name}/gen-ui-file?path=<项目根相对路径>
 // 生成页 HTML(≤1MB + 路径双校验)。JSON 契约（shared GenUiFileResponse）——web
 // fetchJson 直消费；CSP 不在此响应头：srcdoc 继承宿主 CSP（响应头对 srcdoc 无效），
@@ -1441,9 +1439,7 @@ const handleGenUiRoute = async (
       if (request.method !== "GET") return undefined;
       const filePath = url.searchParams.get("path") ?? "";
       const file = await service.readGenUiFile(projectName, filePath);
-      // shared GenUiFileResponse JSON 契约(web fetchJson 直消费)。CSP 不在此处:
-      // srcdoc 继承宿主 CSP(HTTP 响应头对 srcdoc 无效),真防线是 web 拼装层的
-      // meta 注入 + sandbox allow-scripts;JSON 响应直接打开也无脚本执行面。
+      // 纯 JSON 响应(shared GenUiFileResponse):即便直接打开也无脚本执行面。
       return Response.json({ mimeType: "text/html", html: file.html });
     }
     // gen-ui-state

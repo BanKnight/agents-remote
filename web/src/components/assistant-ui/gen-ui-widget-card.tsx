@@ -27,6 +27,8 @@ const FRAME_MAX_HEIGHT_PX = 420;
 const FRAME_MIN_HEIGHT_PX = 120;
 /** setWidgetState 防抖窗口（滑块拖动类高频调用合并成一次 PUT）。 */
 const GEN_UI_STATE_PUT_DEBOUNCE_MS = 800;
+/** 会话 state 活页上限（与 api GEN_UI_MAX_WIDGETS 硬闸对齐）。 */
+const GEN_UI_MAX_WIDGETS = 32;
 
 /**
  * srcdoc 文档的策略（唯一生效层——srcdoc 继承宿主 CSP，HTTP 响应头无效）。meta CSP
@@ -159,10 +161,14 @@ export const mergeWidgetState = (
       : {}),
     updatedAt: new Date().toISOString(),
   };
-  return {
-    schemaVersion: 1,
-    widgets: [...state.widgets.filter((w) => w.path !== path), widget],
-  };
+  const merged = [...state.widgets.filter((w) => w.path !== path), widget];
+  // 上限 32 与 api 硬闸对齐:超限 PUT 恒 400,该会话全部状态持久化会静默失效。
+  // 淘汰最旧(updatedAt 是 ISO 串,字典序 = 时间序),新写条目必然保留。
+  if (merged.length > GEN_UI_MAX_WIDGETS) {
+    merged.sort((a, b) => (a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0));
+    merged.splice(0, merged.length - GEN_UI_MAX_WIDGETS);
+  }
+  return { schemaVersion: 1, widgets: merged };
 };
 
 // ── 卡片本体（iframe + 桥宿主侧）──────────────────────────────────────────
@@ -238,18 +244,24 @@ export function GenUiWidgetCard({
 
   // setWidgetState → 防抖 PUT（卸载 flush，防抖窗口内关卡片不丢最后一次写）。
   const putTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingPutRef = useRef<GenUiSessionState | null>(null);
+  // PUT 失败轻提示（用户写入的状态没落盘,不能静默吞）。
+  const [saveFailed, setSaveFailed] = useState(false);
   const flushPut = async () => {
+    const hadPending = putTimerRef.current != null;
     if (putTimerRef.current) {
       clearTimeout(putTimerRef.current);
       putTimerRef.current = null;
     }
-    const pending = pendingPutRef.current;
-    pendingPutRef.current = null;
-    if (!pending) return;
+    if (!hadPending) return;
+    // 读 queryClient 当前值而非 set-state 时刻的快照:同会话有多个写者(inline + 全屏
+    // 第二实例、多张卡)时,旧快照可能落后于其后合并的结果,旧快照落盘会永久丢新更新。
+    const latest = queryClient.getQueryData<GenUiSessionState>(stateKey);
+    if (!latest) return;
     try {
-      await putProjectGenUiState(projectName, sessionId, pending);
+      await putProjectGenUiState(projectName, sessionId, latest);
+      setSaveFailed(false);
     } catch (error) {
+      setSaveFailed(true);
       console.error("[gen-ui-widget] state save failed", error);
     }
   };
@@ -303,7 +315,6 @@ export function GenUiWidgetCard({
       if (slots.modelContent === undefined && slots.privateContent === undefined) return;
       const next = mergeWidgetState(current, path, title, slots);
       queryClient.setQueryData(stateKey, next);
-      pendingPutRef.current = next;
       if (putTimerRef.current) clearTimeout(putTimerRef.current);
       putTimerRef.current = setTimeout(() => void flushPut(), GEN_UI_STATE_PUT_DEBOUNCE_MS);
       return;
@@ -346,9 +357,7 @@ export function GenUiWidgetCard({
   if (file.isError || sessionState.isError || !srcDoc) {
     // 能力关掉后的旧回放 / 网络失败：轻量内联提示，不出破卡。
     return (
-      <div className="px-1 py-2 text-xs text-on-surface-muted">
-        {t("claude.mcpApp.unavailable")}
-      </div>
+      <div className="px-1 py-2 text-xs text-on-surface-muted">{t("claude.genUi.unavailable")}</div>
     );
   }
 
@@ -356,7 +365,7 @@ export function GenUiWidgetCard({
     <>
       <iframe
         ref={frameRef}
-        className={`${fillHeight ? "" : "mt-2 "}w-full overflow-hidden rounded-lg border border-neutral-line/40 bg-white ${heightClassName}`}
+        className={`${fillHeight ? "" : "mt-2 "}w-full overflow-hidden rounded-lg border border-neutral-line/40 bg-canvas ${heightClassName}`}
         // 桥上报的内容高覆盖 fallback 高度类（钳到 [120, 420]；fillHeight 抑制）。
         style={!fillHeight && frameHeight != null ? { height: frameHeight } : undefined}
         onLoad={() => {
@@ -369,8 +378,13 @@ export function GenUiWidgetCard({
         }}
         sandbox="allow-scripts"
         srcDoc={srcDoc}
-        title={title ?? "Generated UI"}
+        title={title ?? t("claude.genUi.widget")}
       />
+      {saveFailed ? (
+        <div className="mt-1 px-1 text-xs text-on-surface-muted">
+          {t("claude.genUi.stateFailed")}
+        </div>
+      ) : null}
       {holder}
     </>
   );
@@ -413,7 +427,7 @@ export function GenUiWidgetMessage({ custom }: { custom: Record<string, unknown>
   if (!card) {
     return (
       <div className="my-1 px-1 py-2 text-xs text-on-surface-muted">
-        {t("claude.mcpApp.unavailable")}
+        {t("claude.genUi.unavailable")}
       </div>
     );
   }
