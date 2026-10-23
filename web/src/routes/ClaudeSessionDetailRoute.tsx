@@ -66,6 +66,11 @@ import {
   shellSurfaceClasses,
 } from "../components/shell/shell-primitives";
 import { ShellIcon } from "../components/shell/icons";
+import { LucideIcon } from "../components/shell/lucide-icon";
+import {
+  canvasSelectionContextAtom,
+  type CanvasSelectionContext,
+} from "../lib/canvas-context-model";
 import { Dialog, DialogContent } from "../components/ui/dialog";
 import {
   ContextUsageIndicator,
@@ -362,6 +367,11 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
   // composer 附件（发图批）：状态挂 route 顶层（适配器 useClaudeSession 的取快照回调在
   // 此接线；ComposerWithInterrupt 深层经 props 消费）。
   const composerAttachments = useComposerAttachments({ projectName });
+  // 画布选区待发上下文（M3）：卡片「引用」写 atom → chip 展示 → 发送时取走并入
+  // prompt。ref 镜像供 adapter options 的 take 回调读最新值（同附件 ref 纪律）。
+  const [canvasCtx, setCanvasCtx] = useAtom(canvasSelectionContextAtom);
+  const canvasCtxRef = useRef(canvasCtx);
+  canvasCtxRef.current = canvasCtx;
 
   const {
     storeAdapter,
@@ -393,6 +403,8 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     {
       takePendingAttachments: composerAttachments.takeSnapshot,
       clearPendingAttachments: composerAttachments.clear,
+      takePendingModelContext: () => canvasCtxRef.current,
+      clearPendingModelContext: () => setCanvasCtx(null),
       onModeConflict: () => {
         void queryClient.invalidateQueries({
           exact: true,
@@ -605,6 +617,8 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                                 currentEffort={session?.effort}
                                 onSelectEffort={onSelectEffort}
                                 attachments={composerAttachments}
+                                canvasContext={canvasCtx}
+                                onRemoveCanvasContext={() => setCanvasCtx(null)}
                               />
                             </ComposerPrimitive.Root>
                           </ComposerPrimitive.TriggerPopoverRoot>
@@ -3582,6 +3596,8 @@ function ComposerWithInterrupt({
   currentEffort,
   onSelectEffort,
   attachments,
+  canvasContext,
+  onRemoveCanvasContext,
 }: {
   opusplanActive: boolean | undefined;
   currentModel?: string;
@@ -3602,6 +3618,9 @@ function ComposerWithInterrupt({
   onSelectEffort: (effort: EffortLevel) => void;
   /** composer 附件草稿状态（发图批；useComposerAttachments 返回值）。 */
   attachments: ReturnType<typeof useComposerAttachments>;
+  /** 待发画布选区（M3 引用循环;画布卡「引用到对话」写入）。 */
+  canvasContext: CanvasSelectionContext | null;
+  onRemoveCanvasContext: () => void;
 }) {
   const { t } = useT();
   // thread.isRunning drives the stop overlay for assistant turns; compactStatus
@@ -3708,6 +3727,26 @@ function ComposerWithInterrupt({
         {/* 附件 chip 行（发图批）：图片缩略图 / 文件名+路径，× 移除；任一上传中会暂缓发送。 */}
         {attachmentCount > 0 ? (
           <AttachmentChipRow attachments={attachments.attachments} onRemove={attachments.remove} />
+        ) : null}
+        {/* 画布选区 chip（M3 引用循环）：卡片「引用到对话」写入的待发上下文，× 移除；
+            发送时并入 prompt（adapter onNew 单点）。 */}
+        {canvasContext ? (
+          <div className="flex min-w-0 px-3 pt-2.5">
+            <div className="flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-inset px-2 py-1.5">
+              <LucideIcon className="size-3.5 shrink-0 text-primary" name="shapes" />
+              <span className="min-w-0 truncate text-xs font-medium text-on-surface-soft">
+                {canvasContext.title} · {canvasContext.elements.length}
+              </span>
+              <button
+                aria-label={t("claude.canvasCtx.remove")}
+                className="inline-flex size-4 cursor-pointer items-center justify-center rounded-full text-on-surface-muted transition hover:bg-on-surface/10"
+                onClick={onRemoveCanvasContext}
+                type="button"
+              >
+                <LucideIcon className="size-3.5" name="x" />
+              </button>
+            </div>
+          </div>
         ) : null}
         <ComposerPrimitive.Input
           placeholder={

@@ -14,6 +14,10 @@ import type {
 import { isCompactBoundarySubtype } from "@agents-remote/shared";
 import { claudeStreamUrl } from "../api/client";
 import type { PendingAttachments } from "@/components/ui/composer-attach";
+import {
+  formatCanvasSelectionContext,
+  type CanvasSelectionContext,
+} from "../lib/canvas-context-model";
 import { isConnectionFresh } from "./console-model";
 import { isPerfTraceEnabled, isSocketLoggingEnabled } from "../lib/debug-flags";
 import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
@@ -4026,6 +4030,9 @@ export function useClaudeSession(
   // open() 的 terminal 守卫（SESSION_STATE_CONFLICT）→ 停止重连 + 通知外层失效 detail。
   options?: {
     takePendingAttachments?: () => PendingAttachments | null;
+    // 画布选区待发上下文（M3）：发送瞬间取走并入 prompt（同附件快照模式）。
+    takePendingModelContext?: () => CanvasSelectionContext | null;
+    clearPendingModelContext?: () => void;
     clearPendingAttachments?: () => void;
     onModeConflict?: () => void;
   },
@@ -4067,6 +4074,9 @@ export function useClaudeSession(
   // composer 附件接线（发图批）：ref 持有 options，onNew 依赖保持 [sendToSocket] 不变。
   const pendingAttachmentsRef = useRef(options);
   pendingAttachmentsRef.current = options;
+  // 画布选区待发上下文（M3）同款 ref 镜像。
+  const pendingModelContextRef = useRef(options);
+  pendingModelContextRef.current = options;
   // onModeConflict 同样经 ref 进 WS effect 闭包（回调身份不稳定，不能进依赖）。
   const onModeConflictRef = useRef(options?.onModeConflict);
   onModeConflictRef.current = options?.onModeConflict;
@@ -5280,7 +5290,10 @@ export function useClaudeSession(
       // 本）也发——CLI 接受纯图片 content 数组；此前 `textContent.trim()` 单一条件会丢纯图消息。
       const pending = pendingAttachmentsRef.current?.takePendingAttachments?.() ?? null;
       const images = pending?.images ?? [];
+      const modelCtx = pendingModelContextRef.current?.takePendingModelContext?.() ?? null;
+      const modelCtxBlock = modelCtx ? formatCanvasSelectionContext(modelCtx) : null;
       const text = [
+        modelCtxBlock,
         textContent.trim(),
         ...(pending?.mentionLines ?? []),
         ...(pending?.inlineTexts ?? []),
@@ -5303,6 +5316,7 @@ export function useClaudeSession(
         message: { role: "user", content },
       });
       pendingAttachmentsRef.current?.clearPendingAttachments?.();
+      pendingModelContextRef.current?.clearPendingModelContext?.();
     },
     [sendToSocket],
   );

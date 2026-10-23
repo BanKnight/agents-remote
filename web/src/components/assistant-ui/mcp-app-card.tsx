@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSetAtom } from "jotai";
 import { callProjectMcpHubTool, getProjectMcpUiResource } from "../../api/client";
+import {
+  canvasSelectionContextAtom,
+  isCanvasSelectionContext,
+} from "../../lib/canvas-context-model";
 import { useT } from "../../i18n";
 import { useConfirm } from "../shell/confirm-dialog";
 
@@ -234,6 +239,9 @@ export function McpAppCard({
   autoFocusFrame?: boolean;
 }) {
   const { t, lang } = useT();
+  // 画布选区「待发上下文」写入（M3）：ui/update-model-context 分支经此落 jotai 单槽;
+  // 消费方在 ClaudeSessionDetailRoute（chip + 发送时并入 prompt）。
+  const setCanvasContext = useSetAtom(canvasSelectionContextAtom);
   // ui/message user-consent gate (SEP MAY-require; ZCode sendFollowUpMessage 同款).
   const { confirm, holder } = useConfirm();
   // Template is static per deployment; avoid refetching on every card mount.
@@ -367,6 +375,18 @@ export function McpAppCard({
         const msg = error instanceof Error ? error.message : String(error);
         replyError(-32000, typeof code === "string" && code ? `[${code}] ${msg}` : msg);
       }
+      return;
+    }
+    if (data.method === "ui/update-model-context") {
+      // 画布选区引用（M3）：模板传 {kind,docId,title,revision,elements}——校验形状后
+      // 写「待发画布选区」单槽（atom,latest-wins）;composer chip 展示,发送时并入
+      // prompt（claude-adapter onNew）。校验失败拒槽（卡片对反向通道数据最小信任面）。
+      if (!isCanvasSelectionContext(data.params)) {
+        replyError(-32602, "invalid update-model-context params");
+        return;
+      }
+      setCanvasContext(data.params);
+      reply({});
       return;
     }
     if (data.method === "ui/message") {

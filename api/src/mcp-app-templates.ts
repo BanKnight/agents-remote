@@ -668,6 +668,11 @@ const CANVAS_KIND_JS = `
     // 在途落地后以已更新的 docRevision 重发——否则必带旧 revision 撞假冲突。
     var commitInFlight = false;
     var queuedElements = null;
+    // 选区引用（M3）：bundle onSelectionChanged 推完整元素;引用按钮点击时精简成
+    // {id,type,x,y,width,height,text} 发 ui/update-model-context（宿主写「待发
+    // 画布选区」,随下一条消息注入 prompt——agent 收到形如 [画布选区] 的块）。
+    var selectedElements = [];
+    var citeTimer = 0;
     var commitTimer = 0;
     var commitSeq = 0;
     var COMMIT_DEBOUNCE_MS = 600;
@@ -681,6 +686,8 @@ const CANVAS_KIND_JS = `
           truncated: "元素过多，正文从服务端拉取",
           noRuntime: "画布运行时不可用",
           imgSkip: "画布暂不支持图片元素，图片不会被保存",
+          citeN: "引用 {n} 个元素到对话",
+          cited: "已引用 ✓",
         };
       }
       return {
@@ -690,6 +697,8 @@ const CANVAS_KIND_JS = `
         truncated: "Scene truncated; fetching full elements",
         noRuntime: "Canvas runtime unavailable",
         imgSkip: "Image elements are not saved by this canvas yet",
+        citeN: "Cite {n} element(s) to chat",
+        cited: "Cited ✓",
       };
     };
     var updateMeta = function (data) {
@@ -836,6 +845,18 @@ const CANVAS_KIND_JS = `
           }
         });
     };
+    var updateCite = function () {
+      var bar = document.getElementById("cite-bar");
+      var btn = document.getElementById("cite");
+      if (!bar || !btn) return;
+      var t = canvasText();
+      if (!selectedElements.length) {
+        bar.hidden = true;
+        return;
+      }
+      bar.hidden = false;
+      btn.textContent = t.citeN.replace("{n}", String(selectedElements.length));
+    };
     var renderKind = function (data) {
       var prevRevision = docRevision;
       docId = typeof data.id === "string" ? data.id : "";
@@ -853,7 +874,9 @@ const CANVAS_KIND_JS = `
           elements: !data.truncated && Array.isArray(data.elements) ? data.elements : [],
           langCode: loc.indexOf("zh") === 0 ? "zh-CN" : "en",
           theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
+          // 调试/测试口：探针读场景元素与视口态（不进任何产品路径）。
           onReady: function () {
+            window.__arCanvasCtrl = exc;
             excReady = true;
             reportSize();
           },
@@ -864,7 +887,52 @@ const CANVAS_KIND_JS = `
               commitScene(elements);
             }, COMMIT_DEBOUNCE_MS);
           },
+          onSelectionChanged: function (selected) {
+            selectedElements = Array.isArray(selected) ? selected : [];
+            updateCite();
+          },
         });
+        // 引用按钮（M3）：绑定一次（renderKind 会跑多次,click listener 不能重挂）。
+        // 精简 payload 只带 agent 够用的语义字段——发全量内部形态会把 seed/version
+        // 等噪声灌进 prompt。
+        var citeBtn = document.getElementById("cite");
+        if (citeBtn) {
+          citeBtn.addEventListener("click", function () {
+            if (!selectedElements.length) return;
+            var payload = [];
+            for (var i = 0; i < selectedElements.length; i++) {
+              var el = selectedElements[i];
+              if (!el) continue;
+              payload.push({
+                id: el.id,
+                type: el.type,
+                x: el.x,
+                y: el.y,
+                width: el.width,
+                height: el.height,
+                text: el.text || "",
+              });
+            }
+            sendRequest("ui/update-model-context", {
+              kind: "canvas-selection",
+              docId: docId,
+              title: cardTitle,
+              revision: docRevision,
+              elements: payload,
+            })
+              .then(function () {
+                citeBtn.textContent = canvasText().cited;
+                if (citeTimer) clearTimeout(citeTimer);
+                citeTimer = setTimeout(function () {
+                  citeTimer = 0;
+                  updateCite();
+                }, 1500);
+              })
+              .catch(function (err) {
+                setNote(canvasText().saveErr + ": " + String((err && err.message) || err));
+              });
+          });
+        }
         // 基线不在此取服务端 face:restore 会补默认值,内部形态 onChange 必与
         // sparse/异构 face 错位 → 空转 commit。等首个 onChange 定内部形态基线
         // （commitScene 的 baselinePending 分支）。
@@ -964,7 +1032,8 @@ const CANVAS_SPEC: CardTemplateSpec = {
   renderKindJs: CANVAS_KIND_JS,
   extraCss: CANVAS_KIND_CSS,
   withCanvasBundle: true,
-  bodyHtml: '<div id="exc-root"></div>',
+  bodyHtml:
+    '<div id="exc-root"></div><div class="bar" id="cite-bar" hidden><button id="cite" type="button" class="bar-btn"></button></div>',
   cspResourceDirectives: "img-src https: data: blob:; font-src data:",
 };
 

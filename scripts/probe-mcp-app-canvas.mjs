@@ -518,6 +518,91 @@ assert(
   `readCalls=${hubCalls.filter((c) => c.name === "read_scene").length}`,
 );
 
+// ── 7. 选区引用循环（M3）：选中 → 引用 → chip → 发送注入 prompt ─────────────
+// 上行帧收集（routeWebSocket 的 onMessage 拦 client→server 帧）。
+const sentUserFrames = [];
+socket.onMessage((data) => sentUserFrames.push(String(data)));
+// 冲突重载后第一卡 = r7：el-a (80,80,200,90)。选中走调试口 selectElements：
+// CDP 合成点击在多卡 iframe 获焦竞态下 up 丢失（cursorButton 冻结 down、选中
+// 落在幽灵 id 上,焦点归还/空白点击/分离 down-up 均实测无效）——真实点击路径的
+// 真机验证留真机清单。API 选中走 excalidraw 正常 onChange → syncSelection →
+// 模板回调,数据链路与真实点击同管道。
+await frame.locator("#exc-root").evaluate((el) => el.scrollIntoView({ block: "center" }));
+await sleep(300);
+await frame.evaluate(() => {
+  window.__arCanvasCtrl?.selectElements(["el-a"]);
+});
+// 调试口转正断言：API 选中后 bundle 侧 selectedIds 必含 el-a（syncSelection 管道）。
+const selectedOk = await waitFor(() =>
+  frame
+    .evaluate(() => window.__arCanvasCtrl?.getSelected().some((el) => el.id === "el-a") ?? false)
+    .catch(() => false),
+);
+assert("selectElements marks el-a selected", selectedOk);
+const citeBarShown = await waitFor(() =>
+  frame
+    .locator("#cite-bar")
+    .evaluate((el) => !el.hidden)
+    .catch(() => false),
+);
+assert("selecting an element shows the cite bar", citeBarShown);
+// 点「引用」→ ui/update-model-context → 宿主写待发上下文 → composer chip 出现。
+await frame.locator("#cite").evaluate((el) => el.click());
+const sampleChip = async () => {
+  const deadline = Date.now() + 8000;
+  for (;;) {
+    if ((await page.getByText("探针画布 · 1").count()) > 0) return true;
+    if (Date.now() > deadline) return false;
+    await sleep(120);
+  }
+};
+const chipShown = await sampleChip();
+assert("cite click → composer chip appears", chipShown);
+// chip 移除（✕）→ 消失;再引用恢复（latest-wins 单槽）。
+// 真实用户路径：✕ 是宿主按钮,点击让 iframe 失焦 → excalidraw blur 清选区 →
+// 引用按钮被 handler 静默拒绝（无请求）。再引用必须重新点选元素——这不是
+// 缺陷,是 excalidraw 选中态的自然生命周期,断言按此路径走。
+await page
+  .getByRole("button", { name: "移除画布选区" })
+  .click()
+  .catch(() => {});
+await sleep(200);
+assert("chip ✕ removes the pending context", (await page.getByText("探针画布 · 1").count()) === 0);
+// chip 出现/消失改变 composer 高度 → 第一卡位置漂移——重选同样走调试口,
+// 等引用条回来（✕ 宿主点击让 iframe 失焦 → excalidraw blur 清选区,与真机一致）。
+await frame.evaluate(() => {
+  window.__arCanvasCtrl?.selectElements(["el-a"]);
+});
+await waitFor(() =>
+  frame
+    .locator("#cite-bar")
+    .evaluate((el) => !el.hidden)
+    .catch(() => false),
+);
+await frame.locator("#cite").evaluate((el) => el.click());
+const chipRestored = await sampleChip();
+assert("re-cite restores the chip", chipRestored);
+// composer 填文本 → 发送 → onNew 并入 [画布选区] 块 → WS user 帧 + chip 清槽。
+await page.getByRole("textbox").fill("把选中的矩形改成蓝色");
+await page.getByRole("button", { name: "发送" }).click();
+const promptCarried = await waitFor(() =>
+  sentUserFrames.some((f) => {
+    try {
+      const m = JSON.parse(f);
+      return (
+        m.type === "user" &&
+        JSON.stringify(m.message?.content ?? []).includes("画布选区") &&
+        JSON.stringify(m.message?.content ?? []).includes("el-a")
+      );
+    } catch {
+      return false;
+    }
+  }),
+);
+assert("send → prompt carries the canvas selection block", promptCarried);
+await waitFor(() => page.getByText("探针画布 · 1").count() === 0);
+assert("chip cleared after send", (await page.getByText("探针画布 · 1").count()) === 0);
+
 // ── 汇总 ────────────────────────────────────────────────────────────────────
 await browser.close();
 const failed = results.filter((r) => !r.ok);

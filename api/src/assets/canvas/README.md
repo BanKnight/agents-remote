@@ -69,6 +69,8 @@ type MountOptions = {
   theme?: "light" | "dark";
   onReady?: () => void;
   onChange?: (elements: readonly unknown[]) => void;
+  /** 选区变化（id 集合 diff 后推）：M3 引用循环,选中的完整元素列表。 */
+  onSelectionChanged?: (selected: readonly unknown[]) => void;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -81,6 +83,29 @@ const mount = (container: HTMLElement, options: MountOptions) => {
   const root = createRoot(container);
   // setTheme 走重渲染(theme 是 react prop):initialData 用 latestElements,
   // 场景内容在重渲染间保留(选择态等 UI 态重置,可接受)。
+  const selectedIds = new Set<string>();
+  const syncSelection = (elements: readonly unknown[], appState: AnyApi) => {
+    if (!options.onSelectionChanged) return;
+    const next = new Set<string>(
+      Object.keys((appState?.selectedElementIds ?? {}) as Record<string, unknown>),
+    );
+    // updateScene 全量替换后,onChange 的 elements 数组带 isDeleted 残骸,且
+    // selectedElementIds 残留已删元素 id——直接 filter 会把 deleted 残骸上报成
+    // 「选中」。先按「在场且未删除」收缩,再比对。
+    const selected = elements.filter(
+      (el) =>
+        !(el as { isDeleted?: boolean }).isDeleted && next.has((el as { id?: string }).id ?? ""),
+    );
+    if (
+      selected.length === selectedIds.size &&
+      selected.every((el) => selectedIds.has((el as { id?: string }).id ?? ""))
+    ) {
+      return;
+    }
+    selectedIds.clear();
+    for (const el of selected) selectedIds.add((el as { id?: string }).id ?? "");
+    options.onSelectionChanged(selected);
+  };
   const renderApp = () => {
     root.render(
       <div style={{ width: "100%", height: "100%" }}>
@@ -94,8 +119,9 @@ const mount = (container: HTMLElement, options: MountOptions) => {
             appState: { langCode: options.langCode === "en" ? "en" : "zh-CN" },
           }}
           theme={theme}
-          onChange={(elements: readonly unknown[]) => {
+          onChange={(elements: readonly unknown[], appState: AnyApi) => {
             latestElements = elements;
+            syncSelection(elements, appState);
             options.onChange?.(elements);
           }}
           UIOptions={{
@@ -123,7 +149,31 @@ const mount = (container: HTMLElement, options: MountOptions) => {
       renderApp();
     },
     getElements() {
-      return api ? api.getScene().elements : latestElements;
+      return api ? api.getSceneElements() : latestElements;
+    },
+    /** 当前选中的完整元素（快照读取,模板引用按钮点击时取）。 */
+    getSelected() {
+      const els = api ? api.getSceneElements() : latestElements;
+      return els.filter((el: AnyApi) => selectedIds.has(el?.id ?? ""));
+    },
+    /** 调试/测试口：视口与选中态排查用（探针断言视口平移残留）。 */
+    getAppState() {
+      return api ? api.getAppState() : null;
+    },
+    /** 调试/测试口：含 deleted 残骸的全量元素（选中态幽灵排查用）。 */
+    getAllElementsIncludingDeleted() {
+      return api ? api.getSceneElementsIncludingDeleted() : [];
+    },
+    /** 调试/测试口：程序化选中（CDP 点击在 iframe 获焦竞态下 up 丢失,绕开输入层）。 */
+    selectElements(ids: readonly string[]) {
+      if (!api) return;
+      // 先清空再设置：同值 updateScene 不触发 onChange（重选同元素时宿主回调不来）。
+      api.updateScene({ appState: { selectedElementIds: {} } });
+      if (ids.length > 0) {
+        api.updateScene({
+          appState: { selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])) },
+        });
+      }
     },
     destroy() {
       root.unmount();
@@ -145,3 +195,10 @@ IIFE 下替换为 `{}`）——该 worker 本就被画布 CSP 阻断(M2.0 实验
 
 2026-10-22 M2.2 入仓(@excalidraw/excalidraw 0.18.1 / react 19.3.1 / vite 8.3.5 /
 @vitejs/plugin-react 6.1.2;js 4.36MB raw / 1.43MB gzip,css 244KB)。
+
+2026-10-23 M3 重建：`onSelectionChanged` 选区 diff 通道（`syncSelection` 先按
+「在场且未删除」收缩再比对——`updateScene` 全量替换后 `isDeleted` 残骸会被
+误报成选中）+ `getSelected` 快照口 + 三个调试/测试口（`getAppState` /
+`getAllElementsIncludingDeleted` / `selectElements`，仅探针用，不进产品路径）。
+**同步修正潜伏 bug**：`getElements` 原调 `api.getScene()`（0.18 无此方法），
+改 `getSceneElements()`——该口此前从未被调用故未暴露。
