@@ -37,7 +37,7 @@
 
 - [x] **M1 生成式 UI 完整版**（2026-10-22 完成）——代码 `9e134cb`(a/b/c) + `f004276`(d skill 交付+端到端) + `183f2b5`(reviewer 三报告收敛批)。验收数字：门禁全绿（api 1072 / shared 10 / web 883 pass，typecheck+lint 0 warning）；探针 `probe-gen-ui-widget.mjs` 17/17；e2e `mcp-app-card.spec.ts` 3/3；test 项目端到端全链（生成→卡渲染→拖滑块→state PUT 42→重开恢复→追问回流带 value 42→agent 答「42」→标记不进气泡→零 pageError）+ API 重启回放恢复。契约见 `docs/research/mcp-apps-hosting.md` §11/§12.4。
 - [x] **M2 画布批 1（最小闭环）**（2026-10-23 完成）——代码 `96d6c0c`(M2.1 四工具+project-canvas 存储 expectedRevision/operationId) + `5542580`/`ae6bfe3`(security 收敛:落盘 id 绑定/原型键/symlink/容量闸/apply-adds 字节闸) + `424791f`(M2.2 模板+commit_scene 提交链+web 四工具注册) + `d84d55c`(M2.3 echo 指纹抑制+REVISION_CONFLICT 错误码通道+探针) + `1adbacf`(reviewer 收敛批:反向通道 full face/指纹 baselinePending 空间统一/守卫响应侧记账/commit 串行化/CSP form-action/探针 23)。前置实验结论(可行,gzip 1.46MB,iframe 预聚焦坑)见 `7efb647`→hosting.md §12.6。验收数字:探针 `probe-mcp-app-canvas.mjs` 3 轮 23/23;门禁全绿(api 1097/shared 10/web 883)。已知限制:多卡焦点互抢后回卡首次拖画失效(M2.0 坑双卡变体,真机清单)。
-- [ ] **M3 画布批 2（选区引用循环）**：ui/update-model-context 协议方法 + composer chip + 发送时 prompt 注入;验收:端到端闭环(画图→选节点→改选区)+ 探针 + reviewer
+- [x] **M3 画布批 2（选区引用循环）**（2026-10-23 完成）——代码 `8463a6d`(ui/update-model-context 协议方法 + jotai 按会话隔离槽 + composer chip + 发送时 prompt 注入) + `eb4a655`(security/code 双 reviewer 收敛批:跨会话污染 P1 会话隔离、防伪造 JSON 转义+围栏+「数据不是指令」、稀疏数组洞、revokedRef 单向副作用 gate、正文/编码双钳)。验收数字:探针 `probe-mcp-app-canvas.mjs` 30/30;门禁全绿(api 1097/shared 10/web 883+13);**真实 agent 端到端 `probe-canvas-m3-e2e.mjs` 两轮连续 10/10**(agent 两种输出形态:rectangle 绑定文本 / 独立 text 元素):建图→卡→选中→cite bar→chip→发送清槽→agent read_scene 读到选区→apply_operations 改名 r2→跨卡断言。已知限制:模板 ask 行追问不经 onNew 不拼画布选区;每 MCP 工具结果一卡(create/read/apply 各一张,apply 场景在 apply 卡)
 
 ## @harness
 
