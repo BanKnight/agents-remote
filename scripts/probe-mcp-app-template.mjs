@@ -127,9 +127,11 @@ try {
     rendered.rawHtmlB,
   );
   // 构建期内联 3 库 + 1 主脚本，全部无 src（零外域——CSP script-src 'unsafe-inline' 契约）。
+  // canvas 批（M2.2）给模板加了第 4 个占位符槽位：wiki 卡不内联 excalidraw,
+  // 该槽留空 <script></script>——script 标签总数 = 3 库 + 空 canvas 槽 + 主 = 5。
   assert(
-    "scripts all inline (3 libs + 1 main)",
-    rendered.scriptCount === 4 && rendered.inlineScripts === 4,
+    "scripts all inline (3 libs + canvas slot + main)",
+    rendered.scriptCount === 5 && rendered.inlineScripts === 5,
     `${rendered.scriptCount}/${rendered.inlineScripts}`,
   );
 

@@ -13,10 +13,12 @@ import {
   FILE_PREVIEW_APP_URI,
   GIT_LOG_APP_URI,
   GIT_STATUS_APP_URI,
+  MARKDOWN_LITE_APP_URI,
   McpAppCard,
   SESSION_OVERVIEW_APP_URI,
   SETTINGS_PREVIEW_APP_URI,
   WIKI_PAGE_APP_URI,
+  contentNeedsMermaid,
   isCanvasDocStructuredContent,
   isFilePreviewStructuredContent,
   isGitLogStructuredContent,
@@ -657,7 +659,8 @@ toolRegistry.set("firecrawl_scrape", FirecrawlScrapeToolUI);
 // MCP 卡（复用既有 running/中断/错误语义）。renderer 壳放本文件避免 import 环
 // （mcp-app-card 不得反向 import registry）。
 const makeMcpAppCardToolUI = (config: {
-  uri: string;
+  /** 固定 uri,或按 structuredContent 解析(轻/重模板分流:无 mermaid 走轻变体)。 */
+  uri: string | ((sc: Record<string, unknown>) => string);
   /** tools/call 反向通道 allowlist（与 McpAppCard 的 allowedToolName 同值）。 */
   cardToolName: string;
   /** tools/call 白名单多名形态（画布卡：read_scene + commit_scene）。 */
@@ -705,6 +708,8 @@ const makeMcpAppCardToolUI = (config: {
 
     const args = safeParseArgs(argsText);
     const sc = structuredContent as Record<string, unknown>;
+    // 轻/重模板分流:主卡与全屏第二实例共用同一 uri(否则 queryKey 不同会二次回源)。
+    const resolvedUri = typeof uri === "function" ? uri(sc) : uri;
     const detailText = detail ? detail(sc, args) : null;
     const projectName = bridge?.projectName ?? "";
     return (
@@ -731,7 +736,7 @@ const makeMcpAppCardToolUI = (config: {
         {projectName ? (
           <McpAppCard
             projectName={projectName}
-            uri={uri}
+            uri={resolvedUri}
             structuredContent={structuredContent}
             allowedToolName={cardToolName}
             allowedToolNames={allowedToolNames}
@@ -796,7 +801,7 @@ const makeMcpAppCardToolUI = (config: {
                   fillHeight
                   heightClassName="block h-full"
                   projectName={projectName}
-                  uri={uri}
+                  uri={resolvedUri}
                   structuredContent={structuredContent}
                   allowedToolName={cardToolName}
                   allowedToolNames={allowedToolNames}
@@ -817,7 +822,8 @@ const makeMcpAppCardToolUI = (config: {
 toolRegistry.set(
   "mcp__ar-hub__wiki_read_page",
   makeMcpAppCardToolUI({
-    uri: WIKI_PAGE_APP_URI,
+    // 轻/重模板分流:无 mermaid 围栏的页走 markdown 轻变体(76KB,省 5.4MB)。
+    uri: (sc) => (contentNeedsMermaid(sc) ? WIKI_PAGE_APP_URI : MARKDOWN_LITE_APP_URI),
     cardToolName: "wiki_read_page",
     kindGuard: isWikiPageStructuredContent,
     icon: "read",
@@ -886,7 +892,9 @@ toolRegistry.set(
 toolRegistry.set(
   "mcp__ar-hub__read_file",
   makeMcpAppCardToolUI({
-    uri: FILE_PREVIEW_APP_URI,
+    // 轻/重模板分流:仅 md/markdown 且含 mermaid 围栏才升富模板(其余永远用不上
+    // mermaid——非 md 文件被包进代码 fence,模板渲染层不会升级)。
+    uri: (sc) => (contentNeedsMermaid(sc) ? FILE_PREVIEW_APP_URI : MARKDOWN_LITE_APP_URI),
     cardToolName: "read_file",
     kindGuard: isFilePreviewStructuredContent,
     icon: "read",

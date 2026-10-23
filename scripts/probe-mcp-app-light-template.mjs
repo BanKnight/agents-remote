@@ -1,7 +1,7 @@
-// MCP Apps 轻模板浏览器探针（git-status / git-log 卡）：真实 Chromium 内验证零库
-// 结构化卡的渲染/XSS 转义/主题/高度上报/刷新回灌/追问条。单测（jsdom）不执行
-// srcdoc 内脚本——主题切换、esc 转义、表格渲染只有真浏览器能断言。模板经 bun
-// TS import 从单源表直取。富卡行为由 probe-mcp-app-template.mjs（26 断言）守护。
+// MCP Apps 轻模板浏览器探针（git-status / git-log / markdown-lite 卡）：真实 Chromium 内
+// 验证零库结构化卡 + markdown 轻变体的渲染/XSS 转义/主题/高度上报/刷新回灌/追问条。
+// 单测（jsdom）不执行 srcdoc 内脚本——主题切换、esc 转义、表格渲染只有真浏览器能断言。
+// 模板经 bun TS import 从单源表直取。富卡行为由 probe-mcp-app-template.mjs（26 断言）守护。
 //
 // 跑法：bun scripts/probe-mcp-app-light-template.mjs
 import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
@@ -12,8 +12,9 @@ import { HUB_UI_RESOURCES } from "../api/src/mcp-hub-server.ts";
 
 const GIT_STATUS_HTML = HUB_UI_RESOURCES["ui://ar-hub/git-status"].html;
 const GIT_LOG_HTML = HUB_UI_RESOURCES["ui://ar-hub/git-log"].html;
+const MD_LITE_HTML = HUB_UI_RESOURCES["ui://ar-hub/markdown-lite"]?.html;
 const RICH_HTML = HUB_UI_RESOURCES["ui://ar-hub/wiki-page"].html;
-if (!GIT_STATUS_HTML || !GIT_LOG_HTML || !RICH_HTML) {
+if (!GIT_STATUS_HTML || !GIT_LOG_HTML || !MD_LITE_HTML || !RICH_HTML) {
   console.error("FAIL: templates missing from HUB_UI_RESOURCES");
   process.exit(1);
 }
@@ -46,6 +47,22 @@ assert(
     !GIT_STATUS_HTML.includes("renderBody") &&
     !GIT_LOG_HTML.includes("upgradeMermaidBlocks"),
 );
+
+// ── 静态:markdown 轻变体（轻/重模板分流,2026-10-23）──
+// 供给面:lite <150KB、markdown 真管线在、mermaid 运行时不在（esbuild bundle 导出桥
+// 是库内联唯一特征——模板自身的 upgradeMermaidBlocks 守卫函数 lite 也有）。
+assert(
+  "markdown-lite template is light (<150KB)",
+  MD_LITE_HTML.length < 150_000,
+  `${(MD_LITE_HTML.length / 1024).toFixed(1)}KB`,
+);
+assert(
+  "markdown-lite keeps markdown pipeline (marked+DOMPurify)",
+  MD_LITE_HTML.includes("renderBody") &&
+    MD_LITE_HTML.includes("marked.parse") &&
+    MD_LITE_HTML.includes("DOMPurify"),
+);
+assert("markdown-lite has no mermaid runtime", !MD_LITE_HTML.includes("__esbuild_esm_mermaid_nm"));
 
 const dir = mkdtempSync(join(tmpdir(), "ar-mcp-light-"));
 const browser = await chromium.launch();
@@ -371,6 +388,76 @@ try {
     );
 
     assert("git-log no page errors", pageErrors.length === 0, pageErrors.join("; "));
+    await page.close();
+  }
+
+  // ── markdown-lite 卡（轻/重模板分流,2026-10-23）──
+  {
+    const { page, pageErrors } = await openCard("markdown-lite", MD_LITE_HTML);
+    // 1. 喂含表格 + 标题 + 行内格式的 wiki 数据（无 mermaid 围栏）。
+    await feedToolResult(page, {
+      kind: "wiki-page",
+      slug: "demo",
+      title: "Lite Demo",
+      markdown: [
+        "# Heading 1",
+        "",
+        "| col a | col b |",
+        "| --- | --- |",
+        "| 1 | 2 |",
+        "",
+        "some `code` and **bold** text",
+        "",
+        "```mermaid",
+        "graph TD",
+        "A-->B",
+        "```",
+      ].join("\n"),
+    });
+    await page.waitForTimeout(100);
+    const rendered = await page.evaluate(() => ({
+      title: document.getElementById("title").textContent,
+      tableRows: document.querySelectorAll("#body table tr").length,
+      h1: document.querySelector("#body h1")?.textContent ?? "",
+      code: document.querySelector("#body code")?.textContent ?? "",
+      strong: document.querySelectorAll("#body strong").length,
+      // mermaid 围栏在 lite 下必须保持代码块（typeof mermaid === "undefined" 守卫）。
+      mermaidPre: document.querySelectorAll("#body pre > code.language-mermaid").length,
+      mermaidBoxes: document.querySelectorAll("#body .mermaid-box").length,
+    }));
+    assert(
+      "markdown-lite renders table/h1/inline formats",
+      rendered.title === "Lite Demo" &&
+        rendered.tableRows === 2 &&
+        rendered.h1 === "Heading 1" &&
+        rendered.code === "code" &&
+        rendered.strong === 1,
+      JSON.stringify(rendered),
+    );
+    assert(
+      "markdown-lite keeps mermaid fence as code block",
+      rendered.mermaidPre === 1 && rendered.mermaidBoxes === 0,
+      JSON.stringify(rendered),
+    );
+
+    // 2. 主题切换（lite 与富卡同基座 CSS 变量）。
+    await feedHostContext(page, { theme: "light" });
+    await page.waitForTimeout(50);
+    const lightBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    assert("markdown-lite follows host theme", lightBg === "rgb(255, 255, 255)", lightBg);
+
+    // 3. 追问条（lite 展开 RICH_SPEC 继承 wiki 专用前缀「关于 wiki 页「」）。
+    await page.fill("#ask-input", "总结一下这页");
+    await page.click("#ask-send");
+    await page.waitForTimeout(50);
+    const mLite = await msgs(page);
+    const askLite = [...mLite].reverse().find((x) => x && x.method === "ui/message");
+    assert("markdown-lite ask reaches host", askLite?.params?.role === "user");
+    await page.evaluate((id) => {
+      window.postMessage({ jsonrpc: "2.0", id, result: {} }, "*");
+    }, askLite?.id ?? 0);
+
+    assert("markdown-lite no page errors", pageErrors.length === 0, pageErrors.join("; "));
     await page.close();
   }
 } finally {

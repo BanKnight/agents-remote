@@ -100,10 +100,17 @@ async function setupMcpSession(page: Page, sessionId: string, displayName: strin
 test("MCP Apps card: template host + handshake locale + tools/call refresh + ui/message confirm gate", async ({
   page,
 }) => {
-  // 模板构建期内联 mermaid（5.65MB srcdoc）——iframe 相关步骤在受限环境下
-  // 慢 3-5 倍，全链 ~36s；默认 30s timeout 不够（trace 实测步骤全过、总时长超限）。
+  // 轻/重模板分流（2026-10-23）：STALE_SC 无 mermaid 围栏 → 宿主选 markdown-lite
+  // 轻变体（~76KB，回源 uri 断言见步骤 1），全链显著快于富卡（原 5.65MB srcdoc
+  // 全链 ~36s）。90s 上限保留作环境波动余量。
   test.setTimeout(90_000);
   const assertNoConsoleErrors = collectConsoleErrors(page);
+  // 记录模板回源 uri（轻/重分流的端到端证据：无 mermaid 内容必须请求 lite）。
+  const requestedUris: string[] = [];
+  await page.route("**/mcp-ui-resource*", async (route) => {
+    requestedUris.push(route.request().url());
+    await route.continue();
+  });
 
   // 应用语言偏好 = zh（localStorage 直设；默认 system 会跟浏览器 en-US）。
   // hostContext.locale 应取应用偏好而非 navigator.language——模板按钮文案是
@@ -195,6 +202,13 @@ test("MCP Apps card: template host + handshake locale + tools/call refresh + ui/
   const card = page.locator('iframe[data-testid="mcp-app-frame"]');
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card).toHaveAttribute("sandbox", "allow-scripts");
+  // 轻/重分流：无 mermaid 内容 → 回源请求必须命中 markdown-lite（前端判定
+  // contentNeedsMermaid 的端到端锁）。
+  await expect
+    .poll(() => requestedUris.some((u) => u.includes("uri=ui%3A%2F%2Far-hub%2Fmarkdown-lite")), {
+      timeout: 10_000,
+    })
+    .toBe(true);
   const frame = page.frameLocator('iframe[data-testid="mcp-app-frame"]');
   await expect(frame.locator("#title")).toHaveText("Stale Title", { timeout: 15_000 });
   await expect(frame.locator(".tag", { hasText: "e2e" })).toBeVisible();
@@ -373,12 +387,21 @@ test("MCP Apps git status card: stale mock → real listDiff refresh round-trip"
 //   ③ Radix focus trap × sandbox iframe 不抢焦(iframe 内追问可发出)+ 确认闸
 //     (z-50 后挂载)经 portal DOM 序压在全屏层上 ④ 关闭销毁第二实例、流内钳高不变。
 const tallSessionId = "agent_e2e-test-session-mcp-tall";
+// 含 mermaid 围栏 → contentNeedsMermaid 判 true → 宿主保持富模板（轻/重分流的
+// 另一侧锁,与 case1 的 lite 断言互补）。
 const TALL_SC = {
   kind: "wiki-page",
   slug: "intro",
   title: "Tall Title",
   tags: ["e2e"],
-  markdown: Array.from({ length: 400 }, (_, i) => `tall-para-${i} 内容灌水行`).join("\n\n"),
+  markdown: [
+    ...Array.from({ length: 400 }, (_, i) => `tall-para-${i} 内容灌水行`),
+    "",
+    "```mermaid",
+    "graph TD",
+    "A-->B",
+    "```",
+  ].join("\n\n"),
 };
 
 test("MCP Apps card: in-flow height clamp + fullscreen enlarge", async ({ page }) => {
@@ -467,6 +490,9 @@ test("MCP Apps card: in-flow height clamp + fullscreen enlarge", async ({ page }
   const flowFrame = page.frameLocator('iframe[data-testid="mcp-app-frame"]');
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(flowFrame.locator("#title")).toHaveText("Tall Title", { timeout: 15_000 });
+  // 富模板锁：mermaid 围栏异步升级为 SVG（轻/重分流的 rich 侧证据——lite 会把
+  // 围栏保持为代码块；首渲染含 mermaid initialize，在受限环境较慢）。
+  await expect(flowFrame.locator("#body .mermaid-box svg")).toBeVisible({ timeout: 30_000 });
   await page.waitForFunction(() => {
     const el = document.querySelector('iframe[data-testid="mcp-app-frame"]');
     return el instanceof HTMLIFrameElement && el.style.height !== "";

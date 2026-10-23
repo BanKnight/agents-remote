@@ -537,3 +537,88 @@ describe("MCP Apps tool-card integration", () => {
     expect(frame.getAttribute("srcdoc") ?? "").toContain("<!doctype html>");
   });
 });
+
+// 轻/重模板分流（2026-10-23）：无 mermaid 内容走 markdown 轻变体（宿主侧降级,
+// 工具 _meta 仍声明富 uri）。判定宁宽不窄——误判 lite 的唯一后果是围栏按代码块
+// 显示,误判 rich 只是多传 5.4MB。
+const { contentNeedsMermaid, MARKDOWN_LITE_APP_URI, WIKI_PAGE_APP_URI } =
+  await import("./mcp-app-card");
+
+describe("contentNeedsMermaid", () => {
+  const wiki = (markdown: unknown) => ({ kind: "wiki-page", slug: "s", title: "t", markdown });
+  const preview = (path: string, content: unknown) => ({
+    kind: "file-preview",
+    path,
+    content,
+  });
+
+  test("wiki-page: mermaid 围栏（```/~~~、缩进、大小写、blockquote/list 前缀）→ true", () => {
+    expect(contentNeedsMermaid(wiki("# t\n\n```mermaid\ngraph TD\nA-->B\n```\n"))).toBe(true);
+    expect(contentNeedsMermaid(wiki("~~~mermaid\ngraph TD\n```\n"))).toBe(true);
+    expect(contentNeedsMermaid(wiki("前文\n\n  ```MERMAID\ngraph TD\n  ```\n"))).toBe(true);
+    // blockquote/list 前缀形态:marked 15.0.12 实测渲染成 language-mermaid 且富模板
+    // 升级出图——漏判会把图静默降级成代码块(code-review P1 修复的回归锁)。
+    expect(contentNeedsMermaid(wiki("> ```mermaid\n> graph TD\n> A-->B\n```"))).toBe(true);
+    expect(contentNeedsMermaid(wiki("- ```mermaid\n  graph TD\n  A-->B\n  ```"))).toBe(true);
+    expect(contentNeedsMermaid(wiki(">> ```mermaid\ngraph TD\n```"))).toBe(true);
+  });
+
+  test("wiki-page: 无围栏或仅文字提及 mermaid → false", () => {
+    expect(contentNeedsMermaid(wiki("# t\n\n- item\n"))).toBe(false);
+    expect(contentNeedsMermaid(wiki("用 mermaid 画图吧（正文提及,无围栏）"))).toBe(false);
+    expect(contentNeedsMermaid(wiki("```\ngraph TD\n```\n"))).toBe(false); // info 空 = 普通围栏
+    expect(contentNeedsMermaid(wiki(undefined))).toBe(false);
+  });
+
+  test("file-preview: 仅 md/markdown 路径且含围栏 → true;非 md 永不升级", () => {
+    expect(contentNeedsMermaid(preview("docs/a.md", "```mermaid\ngraph TD\n```\n"))).toBe(true);
+    expect(contentNeedsMermaid(preview("a.markdown", "```mermaid\ngraph TD\n```"))).toBe(true);
+    expect(contentNeedsMermaid(preview("README.MD", "```mermaid\nx\n```"))).toBe(true);
+    expect(contentNeedsMermaid(preview("docs/a.md", "无围栏正文"))).toBe(false);
+    // 非 md 文件被模板包进代码 fence,渲染层不会升级 mermaid——围栏存在也判 false。
+    expect(contentNeedsMermaid(preview("src/a.ts", "```mermaid\ngraph TD\n```"))).toBe(false);
+    expect(contentNeedsMermaid(preview("src/a.ts", "plain"))).toBe(false);
+  });
+
+  test("未知 kind / 非对象 → false（走轻）", () => {
+    expect(contentNeedsMermaid({ kind: "git-status", branch: "main" })).toBe(false);
+    expect(contentNeedsMermaid(null)).toBe(false);
+    expect(contentNeedsMermaid("```mermaid\ngraph TD\n```")).toBe(false);
+  });
+});
+
+describe("registry lite/rich uri selection", () => {
+  const renderWikiCard = async (sc: unknown) => {
+    const HubRenderer = getToolRenderer(WIKI_TOOL);
+    const custom = { ...WIKI_CUSTOM, structuredContent: sc };
+    const props = buildToolCardToolProps(custom, WIKI_TOOL);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(
+      createElement(
+        I18nProvider,
+        null,
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(
+            ClaudeBridgeContext.Provider,
+            { value: { projectName: "test" } },
+            createElement(HubRenderer as never, props as never),
+          ),
+        ),
+      ),
+    );
+    await waitFor(() => expect(view.container.querySelector("iframe")).not.toBeNull());
+    view.unmount();
+  };
+
+  test("无 mermaid 的 wiki sc 回源 markdown-lite", async () => {
+    await renderWikiCard(SC);
+    expect(resourceMock.mock.calls.some((c) => c[1] === MARKDOWN_LITE_APP_URI)).toBe(true);
+  });
+
+  test("含 mermaid 围栏的 wiki sc 回源富模板", async () => {
+    await renderWikiCard({ ...SC, markdown: "# t\n```mermaid\ngraph TD\nA-->B\n```\n" });
+    expect(resourceMock.mock.calls.some((c) => c[1] === WIKI_PAGE_APP_URI)).toBe(true);
+  });
+});

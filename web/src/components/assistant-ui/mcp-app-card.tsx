@@ -18,6 +18,8 @@ export const SESSION_OVERVIEW_APP_URI = "ui://ar-hub/session-overview";
 export const SETTINGS_PREVIEW_APP_URI = "ui://ar-hub/settings-preview";
 export const FILE_PREVIEW_APP_URI = "ui://ar-hub/file-preview";
 export const CANVAS_APP_URI = "ui://ar-hub/canvas";
+/** markdown 轻变体（无 mermaid；wiki-page / file-preview 共用，内容不需要 mermaid 时选它）。 */
+export const MARKDOWN_LITE_APP_URI = "ui://ar-hub/markdown-lite";
 
 /**
  * 流内卡片高度上限：模板上报的内容高钳到此后，iframe 文档视口小于内容 →
@@ -156,6 +158,36 @@ export function isFilePreviewStructuredContent(
     typeof record.path === "string" &&
     typeof record.content === "string"
   );
+}
+
+/**
+ * 卡片内容是否需要 mermaid（→ 富模板；否则走 markdown 轻变体）。
+ *
+ * 判据与模板渲染逻辑逐字对齐（api mcp-app-templates.ts FILE_PREVIEW_KIND_JS）：
+ * file-preview 只有 `\.(md|markdown)$` 走 marked，其余被包进四反引号 fence，
+ * 永不升级 mermaid；wiki-page 恒按 markdown 渲染。
+ *
+ * 围栏匹配放宽（不锚行首、3+ 反引号/波浪号、大小写）——marked 会把 blockquote/
+ * list 前缀（`> ```mermaid`、`- ```mermaid`）的围栏也渲染成 `language-mermaid`
+ * 代码块并被富模板升级出图（marked 15.0.12 实测），这些形态必须判 rich；
+ * **宁可多升富**：误判为 lite 的唯一后果是 mermaid 围栏显示为代码块（内容不丢），
+ * 误判为富只是多传 5.4MB。
+ */
+export function contentNeedsMermaid(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  let text: unknown;
+  if (record.kind === "wiki-page") {
+    text = record.markdown;
+  } else if (record.kind === "file-preview") {
+    const path = typeof record.path === "string" ? record.path : "";
+    if (!/\.(md|markdown)$/i.test(path)) return false;
+    text = record.content;
+  } else {
+    return false;
+  }
+  if (typeof text !== "string") return false;
+  return /`{3,}[ \t]*mermaid\b|~{3,}[ \t]*mermaid\b/i.test(text);
 }
 
 // 画布卡（M2.2,契约 = api canvasSceneStructuredContent）：全量面带 elements;

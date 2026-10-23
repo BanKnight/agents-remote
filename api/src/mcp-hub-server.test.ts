@@ -342,6 +342,26 @@ describe("MCP hub server (stateless, loopback)", () => {
     expect(contents?.[0]?.text).toContain("ui/notifications/tool-result");
   });
 
+  it("ui=true serves ui://ar-hub/markdown-lite via resources/read", async () => {
+    // 轻/重模板分流:宿主按内容选变体,资源供给面必须能读出 lite 模板
+    // （markdown 管线在、mermaid 库不在——供给断言见 mcp-app-templates.test.ts）。
+    await writeMcpConfig("test", { ui: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: readResourceBody(71, "ui://ar-hub/markdown-lite"),
+    });
+    const { result } = await parseSseResult(res);
+    const contents = (
+      result as unknown as {
+        contents?: { uri: string; mimeType: string; text: string }[];
+      }
+    ).contents;
+    expect(contents?.[0]?.uri).toBe("ui://ar-hub/markdown-lite");
+    expect(contents?.[0]?.mimeType).toBe("text/html;profile=mcp-app");
+    expect(contents?.[0]?.text).toContain("<!doctype html>");
+  });
+
   it("ui 单开(wiki 关)只注册 wiki_read_page(list/write 不泄露)", async () => {
     await writeMcpConfig("test", { ui: true });
     const res = await fetch(`${baseUrl}/mcp/test`, {

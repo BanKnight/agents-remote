@@ -62,6 +62,14 @@ export const GIT_LOG_UI_URI = "ui://ar-hub/git-log";
 export const SESSION_OVERVIEW_UI_URI = "ui://ar-hub/session-overview";
 export const SETTINGS_PREVIEW_UI_URI = "ui://ar-hub/settings-preview";
 export const FILE_PREVIEW_UI_URI = "ui://ar-hub/file-preview";
+/**
+ * markdown 轻变体（wiki-page + file-preview 共用）：同富模板但**不含 mermaid**
+ * （marked + DOMPurify，实测 76KB raw vs 富卡 5.39MB）。工具 `_meta.ui.resourceUri`
+ * 仍声明富 uri——是否降级是**本项目宿主**按内容决定的渲染策略（CLI 不透传
+ * `_meta.ui`，见 docs/research/mcp-apps-hosting.md §5），外部 host 拿到的仍是全能力。
+ * 选变体的判据在 web（`contentNeedsMermaid`，mcp-app-card.tsx）。
+ */
+export const MARKDOWN_LITE_UI_URI = "ui://ar-hub/markdown-lite";
 /** 画布卡片资源（M2.2 接 CANVAS spec；M2.1 工具 _meta 先指此 uri）。 */
 export const CANVAS_APP_URI = "ui://ar-hub/canvas";
 
@@ -959,7 +967,8 @@ const CANVAS_KIND_JS = `
 
 // ---------------------------------------------------------------------------
 // 六卡 spec 与最终 HTML。轻卡 ×4（零库）;富卡 ×1（wiki-page + file-preview 共用,
-// 两 uri 指向同一份 HTML 常量）;画布卡 ×1（excalidraw standalone,assets/canvas）。
+// 两 uri 指向同一份 HTML 常量）;**markdown 轻变体 ×1**（同富卡但无 mermaid,
+// 两 kind 共用,web 宿主按内容选它）;画布卡 ×1（excalidraw standalone,assets/canvas）。
 // appName 沿用 "ar-wiki-page"（探针/e2e 锁定值）。
 // ---------------------------------------------------------------------------
 
@@ -973,6 +982,15 @@ const RICH_SPEC: CardTemplateSpec = {
   renderKindJs: RICH_KIND_JS,
   withLibs: true,
   withMermaid: true,
+};
+
+/** markdown 轻变体：与富卡唯一差别 = 不内联 mermaid（marked + DOMPurify 保留）。
+ *  无 mermaid 的内容走它，省掉 5.4MB 的传输/parse；mermaid 围栏在 lite 下按普通
+ *  代码块显示（upgradeMermaidBlocks 的 typeof mermaid 守卫）。 */
+const MD_LITE_SPEC: CardTemplateSpec = {
+  ...RICH_SPEC,
+  appName: "ar-markdown-lite",
+  withMermaid: false,
 };
 
 const LIGHT_BASE = {
@@ -1039,10 +1057,13 @@ const CANVAS_SPEC: CardTemplateSpec = {
 
 /** 富模板 HTML（wiki-page + file-preview 共用）。 */
 const RICH_APP_HTML = buildCardHtml(RICH_SPEC);
+/** markdown 轻变体 HTML（无 mermaid；两 kind 共用，web 宿主按内容选它）。 */
+const MD_LITE_APP_HTML = buildCardHtml(MD_LITE_SPEC);
 
 export const HUB_UI_RESOURCES: Record<string, { mimeType: string; html: string }> = {
   [WIKI_PAGE_UI_URI]: { mimeType: "text/html;profile=mcp-app", html: RICH_APP_HTML },
   [FILE_PREVIEW_UI_URI]: { mimeType: "text/html;profile=mcp-app", html: RICH_APP_HTML },
+  [MARKDOWN_LITE_UI_URI]: { mimeType: "text/html;profile=mcp-app", html: MD_LITE_APP_HTML },
   [GIT_STATUS_UI_URI]: {
     mimeType: "text/html;profile=mcp-app",
     html: buildCardHtml(GIT_STATUS_SPEC),
