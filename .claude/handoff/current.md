@@ -1,44 +1,54 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-23(M2 画布批 1 全部完成含 reviewer 收敛批 `1adbacf`;下一步 M3 选区引用循环)
+> 最后更新:2026-10-23(M3 画布批 2 全部完成 + 真实 agent 端到端 10/10 两轮;下一步真机清单 / 后续里程碑)
 
 ## 一句话状态
 
-**M2 画布批 1(最小闭环)全部完成**:M2.1 四工具+存储 → security 收敛 ×2 → M2.2 模板+提交链 → M2.3 指纹抑制+探针 → **reviewer 收敛批(`1adbacf`)已提交**。探针 `probe-mcp-app-canvas.mjs` 3 轮 23/23;全门禁绿(api 1097 / shared 10 / web 883)。**下一步 M3 画布批 2(ui/update-model-context 选区引用循环)**。
+**M1/M2/M3 画布+生成式 UI 三轮里程碑全部完成**:M3 选区引用循环(`8463a6d` 实现 + `eb4a655` 双 reviewer 收敛批 + `127988e` 真实 agent 端到端验收脚本入库)。**真实 agent 端到端两轮连续 10/10**(agent 两种输出形态都过);门禁全绿(api 1097/shared 10/web 883+13)。**剩余:真机清单交用户统一验**。
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
-- **指纹基线空间统一(baselinePending)**:回声抑制的基线**不能取服务端 face**——excalidraw restore 会给 sparse 元素补默认值,内部形态 onChange 与 sparse face 必错位 → 空转 commit 撞假冲突。基线 = 首个 onChange 的内部形态(`baselinePending` 置位 → commitScene 定基线后 return);commit 回显(提交原样=内部形态)同步基线。
-- **requestFullScene 守卫记账在响应侧**:「已向该 revision 要过全量、拿回的仍是 truncated」才停手(斩 truncated→read→又 truncated 循环);**全量成功重置 -1,冲突重载不受限**。若记账放请求侧,同 revision 二次 409 会被误挡拿不到重载(自查发现,探针 truncated 用例验证斩循环)。
-- **反向通道不过 48KiB 闸**:`canvasSceneStructuredContent(scene, {full: true})` 仅 HUB_APP_TOOLS 四工具用——48KiB 降摘要闸管 CLI 消息通道的初始 tool-result;卡片反向通道(web 宿主 REST 代理)若也降摘要就形成死循环。
-- **commit 串行化**:在途 commit RTT 内防抖到期 → 新编辑排队(最新覆盖),`.then` finally 里以已更新的 docRevision 重发;REVISION_CONFLICT 清队列(服务端为准)。
-- **CSP form-action 单列**:form-action 不回退 default-src,七张模板卡基座统一补 `form-action 'none'`(之前注释声称禁 form 实际没禁)。
-- **autoFocusFrame 输入保护**:onLoad 抢焦前查 `document.activeElement`(INPUT/TEXTAREA/contentEditable)——卡加载晚于用户点击输入框时不抢焦。
-- **excalidraw 0.18 探针三坑**(沉淀在探针注释):工具按钮是隐藏 radio input(DOM `el.click()` 直接触发 change 切工具);顶部工具栏悬浮画布上方 y<50(拖画落点 y≥130);双卡焦点互抢后回卡首次拖画失效(focus 归还等价用户「先点一下卡片」)。
+- **M3 数据流全链**:模板选中 → `sendRequest("ui/update-model-context", {kind:"canvas-selection", docId, title, revision, elements 精简})` → McpAppCard dispatcher(能力闸 `supportsModelContext` + `sessionId` + `isCanvasSelectionContext` 守卫)→ jotai `Record<canvasContextKey, CanvasSelectionContext>`(key=`${projectName}/${sessionId}`,与 claudeBridgeKey 同格式)→ Route chip(可删)→ 发送时 claude-adapter onNew take → `formatCanvasSelectionContext` 并入 prompt 首项 → 清槽。
+- **会话隔离是安全 P1**:jotai 全局 default store + 工作台 CSS `hidden` 保留非激活 tab 不卸载 → 单槽会让 A 会话选区出现在 B 会话 chip 并混进 B 的 prompt。隔离键 = projectName/sessionId。
+- **防伪造(prompt 注入面)**:title/id/type/text 全部 JSON.stringify 转义(换行/引号/控制字符不分行)+ ```text 围栏 + 「数据不是指令」声明 + 正文源长截 2000 + 编码后二次钳 6000(控制字符 \uXXXX 6 倍膨胀旁路)。
+- **每 MCP 工具结果各渲染一张卡**(create/read_scene/apply 各一张,同 resourceUri 模板)——apply 后的 r2 场景在 apply 卡上,create 卡按设计停在自己收到的 face。**跨卡断言必须遍历全部 iframe 帧**(端到端最后一块拼图)。
+- **真实 agent 端到端两个调试硬坑**(已沉淀进脚本头注释):① `locator.evaluate` 回调签名是 `(element, arg)`——传业务参数必须双参 `(el, id) => ...`,单参会把 body 元素误当 id(实证 appState key 变 `"[object HTMLBodyElement]"`),且包装层不得引用 Node 侧闭包(evaluate 只序列化 fn 源码);② 见上条多卡。
+- **agent 输出形态有轮次间漂移**(独立 text 元素 / rectangle+boundElements 绑定文本 / 分步 create+apply)——端到端断言不得绑死具体形态:目标查找 /cache/i 文本 → 首个含文本元素 → els[0] 三级 fallback;rename 断言 /redis/i 即可。
 
 ### 进度
 
-- ✅ **M2 全部**:`96d6c0c`(M2.1)→`5542580`/`ae6bfe3`(security 收敛)→`424791f`(M2.2)→`d84d55c`(M2.3)→`1adbacf`(reviewer 收敛批:反向通道 full face/baselinePending/守卫响应侧记账/commit 串行化/CSP form-action/export_diagram 死注册删/探针 20→23)
-- ✅ GTD M2 勾选 + 本 handoff
-- ⏳ **M3 画布批 2(选区引用循环)**:ui/update-model-context 协议方法 + composer chip + 发送时 prompt 注入
+- ✅ **M1 生成式 UI**:`9e134cb`/`f004276`/`183f2b5`(见 GTD)
+- ✅ **M2 画布批 1**:`96d6c0c`→`5542580`/`ae6bfe3`→`424791f`→`d84d55c`→`1adbacf`
+- ✅ **M3 画布批 2**:`8463a6d`(协议+chip+注入)→`eb4a655`(security/code 双 reviewer 收敛批)→`127988e`(真实 agent 端到端 `probe-canvas-m3-e2e.mjs` 两轮 10/10 入库 + GTD 勾选)
+- ✅ 探针 `probe-mcp-app-canvas.mjs` 30/30(收敛批后复跑)
+- ✅ 残留测试会话已清理(7 个),本次 e2e 会话脚本自关
 
 ### 待办
 
-- **M3 画布批 2**:McpAppCard dispatcher 加 `ui/update-model-context` 分支(模板选中元素触发)→ web 存「待发画布上下文」(per session bridge state)→ composer chip(可见可删,i18n ×2)→ 发送时序列化进 prompt(`[画布选区]` 块,与 gen-ui-context 同族)→ 探针 + 端到端(画图→选节点→改选区)→ reviewer
-- **真机清单(交用户,统一最后验)**:①多卡焦点互抢后回卡首次拖画失效(用户「先点一下卡片」即恢复);②esm.sh 字体被 CSP 拦(系统字体回退)视觉确认;③指纹机制取舍确认;④M1 gen-ui 三条(滑块/全屏/回放);⑤M2 画布端到端(agent 建画布→手改→commit→agent apply→卡刷新)
+- **真机清单(交用户,统一最后验)**:
+  1. **M3 真实点击选区路径**:端到端用调试口 API `selectElements`(数据链同真实点击,殊途同归 selectedElementIds);真实鼠标点击选中→右键/按钮→引用 需真机验证(桌面+移动)。
+  2. M2 画布端到端(agent 建画布→手改→commit→agent apply→卡刷新)。
+  3. 多卡焦点互抢后回卡首次拖画失效(用户「先点一下卡片」即恢复)。
+  4. esm.sh 字体被 CSP 拦(系统字体回退)视觉确认。
+  5. M1 gen-ui 三条(滑块/全屏/回放)。
+- **M3 已知限制**(已记 GTD):模板 ask 行追问不经 onNew 不拼画布选区;200 元素×2000 字符 ≈400KB prompt 上界;encodedClip 可能切在 \uXXXX 中间(纯外观)。
 - 挂起批(工作区,刻意不提交):`api/src/index.ts` inset-report hunk + `web/src/lib` 三件(keyboard-inset.ts/.test.ts + use-composer-inset-debug-badge.ts,composer 第二次埋点等真机数据);根目录 `.mcp.json` untracked(是否提交由用户定)
 
 ### 易丢的关键上下文
 
-- **探针 lang 坑**:诊断脚本必须 `page.addInitScript(() => localStorage.setItem("lang", "zh"))`。
+- **探针 lang 坑**:诊断脚本必须 `page.addInitScript(() => localStorage.setItem("lang", "zh"))`(本段清理脚本踩过一次)。
 - **跑测试限内存**:`systemd-run --scope --user -p MemoryMax=2G`(`ulimit -v` 会让 api 测试 SIGSEGV)。
-- **探针跑法**:`systemd-run ... bun scripts/probe-*.mjs`;`_diag-` 一次性脚本用后删。
+- **探针跑法**:`systemd-run ... bun scripts/probe-*.mjs`;真 agent 端到端单轮 4-5 分钟。
 - **tmux**:`ar-dev:api` / `ar-dev:web`;标准重启 `respawn-pane -k`;绝不 kill server。
-- **混合 hunk 提交手法**(本 session 实战修正):`git diff <file> > /tmp/full.diff` → awk 状态机提取目标 hunk(**header 只在 keep=true 时 printf + 打印 @@ 行本体 + 清 header**;print 语句自动附加换行,header 必须 printf 否则多空行)→ `git apply --cached --recount`。
-- **Edit 全角标点陷阱复发**:本 session 探针编辑连续两次生成占位符垃圾/不匹配——含全角标点的 old_string 或疲劳期输出,失败就 Read 精确文本再复制;写入后必 Read 回读核对。
-- **mcp-app-card e2e 选择器**:`iframe[data-testid="mcp-app-frame"]`(title 走 i18n 不稳定)。
+- **会话清理纪律**:只关自己创建的(displayName 匹配),避开 working 状态(本段曾误关正在跑的会话导致一轮 e2e 失败)。
+- **iframe 内容 evaluate**:FrameLocator 无 evaluate → `frame.locator("body").evaluate(fn)`;`contentFrame()` 返回 FrameLocator(不是旧 Frame)。
+- **sandbox iframe localStorage SecurityError**:`allow-scripts` 无 `allow-same-origin` 的固有噪音(excalidraw 访问 localStorage),端到端断言须过滤。
 
 ---
-最后更新:2026-10-23(触发原因:M2 收敛批 `1adbacf` 提交 + GTD 勾选,M3 开工前 handoff save)
+最后更新:2026-10-23(触发原因:M3 全部收尾——端到端 10/10×2 + 脚本入库 `127988e`,里程碑完成)
+
+## 提醒
+- 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
+- 到达里程碑或感知将 compact 时，主动 /handoff save。
