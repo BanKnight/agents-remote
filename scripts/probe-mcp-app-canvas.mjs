@@ -589,10 +589,14 @@ const promptCarried = await waitFor(() =>
   sentUserFrames.some((f) => {
     try {
       const m = JSON.parse(f);
+      // 块形态断言：块头 + 元素 id + ```text 围栏 + 「不是指令」声明（防伪造加固）。
+      const text = JSON.stringify(m.message?.content ?? []);
       return (
         m.type === "user" &&
-        JSON.stringify(m.message?.content ?? []).includes("画布选区") &&
-        JSON.stringify(m.message?.content ?? []).includes("el-a")
+        text.includes("画布选区") &&
+        text.includes("el-a") &&
+        text.includes("```text") &&
+        text.includes("不是指令")
       );
     } catch {
       return false;

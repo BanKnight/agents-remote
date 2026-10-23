@@ -68,6 +68,7 @@ import {
 import { ShellIcon } from "../components/shell/icons";
 import { LucideIcon } from "../components/shell/lucide-icon";
 import {
+  canvasContextKey,
   canvasSelectionContextAtom,
   type CanvasSelectionContext,
 } from "../lib/canvas-context-model";
@@ -368,10 +369,26 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
   // 此接线；ComposerWithInterrupt 深层经 props 消费）。
   const composerAttachments = useComposerAttachments({ projectName });
   // 画布选区待发上下文（M3）：卡片「引用」写 atom → chip 展示 → 发送时取走并入
-  // prompt。ref 镜像供 adapter options 的 take 回调读最新值（同附件 ref 纪律）。
-  const [canvasCtx, setCanvasCtx] = useAtom(canvasSelectionContextAtom);
+  // prompt。atom 按会话隔离（workbench 用 CSS hidden 保留非激活 tab,全局单槽会让
+  // A 会话的选区混进 B 会话的 prompt）;ref 镜像供 adapter options 的 take 回调读
+  // 最新值（同附件 ref 纪律）。
+  const [canvasState, setCanvasState] = useAtom(canvasSelectionContextAtom);
+  const canvasKey = canvasContextKey(projectName, sessionId);
+  const canvasCtx = canvasState[canvasKey] ?? null;
   const canvasCtxRef = useRef(canvasCtx);
   canvasCtxRef.current = canvasCtx;
+  const clearCanvasContext = () => {
+    setCanvasState((prev) => {
+      if (!(canvasKey in prev)) return prev;
+      const next = { ...prev };
+      delete next[canvasKey];
+      return next;
+    });
+  };
+  // 未发送即关闭会话：条目是纯内存残留（keyed 读取无跨会话泄漏）,卸载时清自己的 key。
+  // 前提：sessionId/projectName 在挂载期不变（ChatPanel 按会话 key 挂载）,空依赖闭包
+  // 捕获首渲染的 canvasKey 是正确语义;若二者变为可变,此处需改为依赖驱动。
+  useEffect(() => () => clearCanvasContext(), []);
 
   const {
     storeAdapter,
@@ -404,7 +421,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
       takePendingAttachments: composerAttachments.takeSnapshot,
       clearPendingAttachments: composerAttachments.clear,
       takePendingModelContext: () => canvasCtxRef.current,
-      clearPendingModelContext: () => setCanvasCtx(null),
+      clearPendingModelContext: clearCanvasContext,
       onModeConflict: () => {
         void queryClient.invalidateQueries({
           exact: true,
@@ -618,7 +635,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                                 onSelectEffort={onSelectEffort}
                                 attachments={composerAttachments}
                                 canvasContext={canvasCtx}
-                                onRemoveCanvasContext={() => setCanvasCtx(null)}
+                                onRemoveCanvasContext={clearCanvasContext}
                               />
                             </ComposerPrimitive.Root>
                           </ComposerPrimitive.TriggerPopoverRoot>

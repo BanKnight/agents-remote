@@ -71,9 +71,13 @@ mock.module("../../api/client", () => ({
 
 const { cleanup, fireEvent, render, waitFor } = await import("@testing-library/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const { getDefaultStore } = await import("jotai");
 const { createElement } = await import("react");
 const { I18nProvider } = await import("../../i18n/context");
 const { McpAppCard } = await import("./mcp-app-card");
+const canvasCtxModel = await import("../../lib/canvas-context-model");
+const { canvasSelectionContextAtom } = canvasCtxModel;
+type CanvasSelectionContext = import("../../lib/canvas-context-model").CanvasSelectionContext;
 
 afterEach(() => cleanup());
 
@@ -90,7 +94,12 @@ beforeEach(() => {
 
 function renderCard(
   structuredContent: unknown,
-  options?: { onSendPrompt?: (text: string) => void; fill?: boolean },
+  options?: {
+    onSendPrompt?: (text: string) => void;
+    fill?: boolean;
+    sessionId?: string;
+    supportsModelContext?: boolean;
+  },
 ): {
   rerender: (sc: unknown) => void;
   view: ReturnType<typeof render>;
@@ -109,6 +118,8 @@ function renderCard(
           structuredContent: sc,
           fillHeight: options?.fill,
           onSendPrompt: options?.onSendPrompt,
+          sessionId: options?.sessionId,
+          supportsModelContext: options?.supportsModelContext,
         }),
       ),
     );
@@ -284,7 +295,11 @@ describe("McpAppCard reverse channel", () => {
   };
 
   // 已喂过数据的卡片（jsdom 自动 load 消耗首喂槽）+ 原生 postMessage spy。
-  async function fedCard(options?: { onSendPrompt?: (text: string) => void }) {
+  async function fedCard(options?: {
+    onSendPrompt?: (text: string) => void;
+    sessionId?: string;
+    supportsModelContext?: boolean;
+  }) {
     const rendered = renderCard(SC, options);
     const frame = await waitForIframe(rendered.view);
     const postSpy = mock(() => {});
@@ -402,6 +417,66 @@ describe("McpAppCard reverse channel", () => {
     });
     await waitFor(() => expect(replyFor(postSpy, 8)?.error?.code).toBe(-32600));
     expect(document.body.textContent).not.toContain("发送到会话");
+  });
+
+  // M3 画布选区引用：能力按卡片收窄 + 形状守卫 + 按会话 key 写入。
+  const validSelection = (): CanvasSelectionContext => ({
+    kind: "canvas-selection",
+    docId: "canvas-1",
+    title: "架构图",
+    revision: 3,
+    elements: [{ id: "el-a", type: "rectangle", x: 0, y: 0, width: 10, height: 10, text: "" }],
+  });
+
+  test("update-model-context：能力未开 → -32601 且不写 atom", async () => {
+    const store = getDefaultStore();
+    const { frame, postSpy } = await fedCard({ sessionId: "s-m3-off" });
+    postFromFrame(frame, {
+      jsonrpc: "2.0",
+      id: 9,
+      method: "ui/update-model-context",
+      params: validSelection(),
+    });
+    await waitFor(() => expect(replyFor(postSpy, 9)?.error?.code).toBe(-32601));
+    expect(store.get(canvasSelectionContextAtom)["test/s-m3-off"]).toBeUndefined();
+  });
+
+  test("update-model-context：画布卡写入按会话 key 并回 {}", async () => {
+    const store = getDefaultStore();
+    const { frame, postSpy } = await fedCard({ sessionId: "s-m3", supportsModelContext: true });
+    postFromFrame(frame, {
+      jsonrpc: "2.0",
+      id: 10,
+      method: "ui/update-model-context",
+      params: validSelection(),
+    });
+    await waitFor(() => expect(replyFor(postSpy, 10)?.result).toEqual({}));
+    expect(store.get(canvasSelectionContextAtom)["test/s-m3"]?.docId).toBe("canvas-1");
+    store.set(canvasSelectionContextAtom, {});
+  });
+
+  test("update-model-context：元素超量 → -32602 带可读原因且不写", async () => {
+    const store = getDefaultStore();
+    const { frame, postSpy } = await fedCard({ sessionId: "s-m3-bad", supportsModelContext: true });
+    postFromFrame(frame, {
+      jsonrpc: "2.0",
+      id: 11,
+      method: "ui/update-model-context",
+      params: {
+        ...validSelection(),
+        elements: Array.from({ length: 201 }, (_, i) => ({
+          id: `el-${i}`,
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+          text: "",
+        })),
+      },
+    });
+    await waitFor(() => expect(replyFor(postSpy, 11)?.error?.message).toContain("too many"));
+    expect(store.get(canvasSelectionContextAtom)["test/s-m3-bad"]).toBeUndefined();
   });
 });
 

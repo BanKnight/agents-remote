@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
 import { callProjectMcpHubTool, getProjectMcpUiResource } from "../../api/client";
 import {
+  CANVAS_SELECTION_MAX_ELEMENTS,
+  canvasContextKey,
   canvasSelectionContextAtom,
   isCanvasSelectionContext,
 } from "../../lib/canvas-context-model";
@@ -207,6 +209,8 @@ export function McpAppCard({
   allowedToolName = "wiki_read_page",
   allowedToolNames,
   autoFocusFrame = false,
+  sessionId,
+  supportsModelContext = false,
 }: {
   projectName: string;
   uri: string;
@@ -237,10 +241,21 @@ export function McpAppCard({
    * 仅画布卡开启——聚焦抢夺对其它卡是纯回归。
    */
   autoFocusFrame?: boolean;
+  /**
+   * 会话归属（画布选区待发上下文的隔离键,与 bridge.sessionId 同源）。缺省时
+   * ui/update-model-context 一律拒绝——宁可不写,不落进别的会话。
+   */
+  sessionId?: string;
+  /**
+   * 卡片能否发 ui/update-model-context（默认 false）。反向通道能力按卡片收窄:
+   * 仅画布模板需要,其它模板（wiki/git/…）不得静默改写用户下一条消息。
+   */
+  supportsModelContext?: boolean;
 }) {
   const { t, lang } = useT();
-  // 画布选区「待发上下文」写入（M3）：ui/update-model-context 分支经此落 jotai 单槽;
-  // 消费方在 ClaudeSessionDetailRoute（chip + 发送时并入 prompt）。
+  // 画布选区「待发上下文」写入（M3）：ui/update-model-context 分支经此落 jotai
+  // 按会话隔离的表（canvasContextKey）;消费方在 ClaudeSessionDetailRoute
+  // （chip + 发送时并入 prompt）。
   const setCanvasContext = useSetAtom(canvasSelectionContextAtom);
   // ui/message user-consent gate (SEP MAY-require; ZCode sendFollowUpMessage 同款).
   const { confirm, holder } = useConfirm();
@@ -315,6 +330,9 @@ export function McpAppCard({
     const frame = frameRef.current;
     const win = frame?.contentWindow;
     if (!frame || !win || event.source !== win) return;
+    // 导航撤销挡的是「单向副作用」而不只是回包：撤销后 reply/replyError 本就不发,
+    // 但 tools/call 代理与 update-model-context 写入在此之前——必须整条入口掐断。
+    if (revokedRef.current) return;
     const data = event.data as {
       id: number;
       method: string;
@@ -379,13 +397,29 @@ export function McpAppCard({
     }
     if (data.method === "ui/update-model-context") {
       // 画布选区引用（M3）：模板传 {kind,docId,title,revision,elements}——校验形状后
-      // 写「待发画布选区」单槽（atom,latest-wins）;composer chip 展示,发送时并入
+      // 写「待发画布选区」表（按会话 key,latest-wins）;composer chip 展示,发送时并入
       // prompt（claude-adapter onNew）。校验失败拒槽（卡片对反向通道数据最小信任面）。
-      if (!isCanvasSelectionContext(data.params)) {
-        replyError(-32602, "invalid update-model-context params");
+      // 能力按卡片收窄：只有声明 supportsModelContext 的模板（画布）可写。
+      if (!supportsModelContext || !sessionId) {
+        replyError(-32601, "ui/update-model-context not supported by this app");
         return;
       }
-      setCanvasContext(data.params);
+      if (!isCanvasSelectionContext(data.params)) {
+        // 全选大文档是正常操作——超量时给可读原因（模板 setNote 原样显示）,其余
+        // 形状错误保持通用文案（不向帧内泄露守卫细节）。
+        const raw = data.params as { elements?: unknown[] } | null;
+        const count = Array.isArray(raw?.elements) ? raw.elements.length : 0;
+        replyError(
+          -32602,
+          count > CANVAS_SELECTION_MAX_ELEMENTS
+            ? `too many selected elements (max ${CANVAS_SELECTION_MAX_ELEMENTS}, got ${count}); deselect some first`
+            : "invalid update-model-context params",
+        );
+        return;
+      }
+      const key = canvasContextKey(projectName, sessionId);
+      const context = data.params;
+      setCanvasContext((prev) => ({ ...prev, [key]: context }));
       reply({});
       return;
     }

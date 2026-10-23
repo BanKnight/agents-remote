@@ -664,14 +664,25 @@ const makeMcpAppCardToolUI = (config: {
   allowedToolNames?: string[];
   /** onLoad 后宿主预聚焦 iframe（仅画布卡,M2.0 首画失效修复）。 */
   autoFocusFrame?: boolean;
+  /** 是否允许该模板发 ui/update-model-context（仅画布卡,默认关）。 */
+  supportsModelContext?: boolean;
   kindGuard: (value: unknown) => boolean;
   icon: string;
   badgeKey: TranslationKey;
   /** ToolHead detail 行（wiki=slug,git=branch）。 */
   detail?: (sc: Record<string, unknown>, args: Record<string, unknown>) => string | null;
 }): ToolCallMessagePartComponent => {
-  const { uri, cardToolName, allowedToolNames, autoFocusFrame, kindGuard, icon, badgeKey, detail } =
-    config;
+  const {
+    uri,
+    cardToolName,
+    allowedToolNames,
+    autoFocusFrame,
+    supportsModelContext,
+    kindGuard,
+    icon,
+    badgeKey,
+    detail,
+  } = config;
   return (props) => {
     const { argsText, status } = props;
     const { t } = useT();
@@ -725,6 +736,8 @@ const makeMcpAppCardToolUI = (config: {
             allowedToolName={cardToolName}
             allowedToolNames={allowedToolNames}
             autoFocusFrame={autoFocusFrame}
+            sessionId={bridge?.sessionId}
+            supportsModelContext={supportsModelContext}
             onSendPrompt={(text) => bridge?.sendMessage(text)}
           />
         ) : (
@@ -788,6 +801,8 @@ const makeMcpAppCardToolUI = (config: {
                   allowedToolName={cardToolName}
                   allowedToolNames={allowedToolNames}
                   autoFocusFrame={autoFocusFrame}
+                  sessionId={bridge?.sessionId}
+                  supportsModelContext={supportsModelContext}
                   onSendPrompt={(text) => bridge?.sendMessage(text)}
                 />
               </div>
@@ -897,6 +912,7 @@ for (const tool of CANVAS_FACE_TOOLS) {
       detail: (sc) => (typeof sc.title === "string" ? sc.title : null),
       allowedToolNames: ["read_scene", "commit_scene"],
       autoFocusFrame: true,
+      supportsModelContext: true,
     }),
   );
 }

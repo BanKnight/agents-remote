@@ -134,8 +134,9 @@ hub wiki_read_page（ui 开时带 _meta + structuredContent）
 | `tools/call` | 双侧白名单（web 本地 + api `HUB_APP_TOOLS`）→ api 代理直调 `ProjectWikiService` → CallToolResult 回帧（不触发 turn） |
 | `ui/message` | `useConfirm` 用户同意闸 → `bridge.sendMessage(text)` → 新 turn；取消/无回调 → error -32600 |
 | `ping` | 应答 `{}` |
+| `ui/update-model-context` | M3 画布选区引用（2026-10-23）：模板发 `{kind:"canvas-selection",docId,title,revision,elements}` → 宿主 `isCanvasSelectionContext` 形状守卫 → jotai 单槽（latest-wins）→ composer chip（可见可删）→ 发送时 `formatCanvasSelectionContext` 并入 prompt 首项并清槽。SEP 原语义是「宿主存上下文随请求发送」；我们上游是 Claude CLI（非自控 loop），落地形态 = 序列化进 prompt 的 `[画布选区]` 文本块 |
 
-明确不做（有意收窄）：`resources/read` 转发、`ui/open-link`、`ui/request-display-mode`、`ui/update-model-context`、`sampling`、`ui/download-file`、sandbox-proxy、`ui/resource-teardown`。
+明确不做（有意收窄）：`resources/read` 转发、`ui/open-link`、`ui/request-display-mode`、`sampling`、`ui/download-file`、sandbox-proxy、`ui/resource-teardown`。
 
 **阶段 4 关键取舍**：① ext-apps SDK 再评估结论 = **继续手写桥**（双向 request/response 约 +60 行；SDK 2.x peer 冲突未解、自家模板无互操作诉求——§8 决策①维持）；② tools/call **代理直调 service 不过 MCP 协议层**——hub 真无状态（每 HTTP 请求新建 McpServer+transport，initialize→tools/call 实例不共享），经 HTTP 打 hub 每请求都要走完整序列且 loopback 端口校验麻烦；api 与 hub 同进程共享 `ProjectWikiService` 单源（`handleWikiRoute` 先例模式），`structuredContent` 包装抽 `wikiPageStructuredContent` 共享纯函数防漂移；③ 发送回调**零新管道**——renderer 已持有 `ClaudeBridgeContext`，`bridge.sendMessage` 是现成干净面（running 时 assistant-ui 排队非禁发）；④ 模板反向请求的 id-only 消息守卫——JSON-RPC 2.0 应答必含 `result` 或 `error`，无二者的 id 消息是 `parent === self` 回环请求（file:// 探针/自嵌帧），不得当应答（无此守卫时模板会自吞请求、真应答遭丢——探针实抓）。
 
