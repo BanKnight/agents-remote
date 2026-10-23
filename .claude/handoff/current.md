@@ -1,29 +1,28 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-24(轻/重模板分流收尾 `1f6251d`+`e6518a9`;213 序列的 1/2 完成,剩 3=M5 浮层与审批)
+> 最后更新:2026-10-24(M5–M10 收口核实——v2 里程碑全部完成,记录修正;等待用户提新需求)
 
 ## 一句话状态
 
-**MCP Apps 阶段 5.6 轻/重模板分流完成并提交**:无 mermaid 的 markdown 卡改走 76KB 轻变体(富卡 5.39MB),e2e case1 全链 36s→12.7s;code-review P1(围栏正则漏判面)已修。**此前 213 序列第 2 项(双模式 reviewer 补跑)亦已收口**(GTD 勾选)。**下一步 = 第 3 项:M5 浮层与审批**(sheet/popover 体系 + 服务端聚合审批中心,security-reviewer 必过)。
+**v2 UI 重构 M0–M10 实际已全部完成(2026-09-21/22)**:本 session 三路调研 + git log 实锤后收口——总纲 §6 里程碑表 M6–M10 行补 ✅ 标注、GTD 漏勾的「M5 浮层与审批 → M6–M10」条目勾选修正、handoff 更正。**此前「213 之 3 = M5 待做」是过期 GTD 条目造成的误判**,213 序列实际全部完结。等待用户提新需求。
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
-- **轻/重分流的分工**:供给在 api(`MARKDOWN_LITE_UI_URI` = RICH_SPEC 关 withMermaid 的构建期变体,HUB_UI_RESOURCES 注册后 resources/read + api gzip 路由零改动自动获得);**选择在 web 宿主渲染策略**(`contentNeedsMermaid(sc)` + registry uri 函数形态按 structuredContent 解析)。工具 `_meta` 不动——CLI 不透传 `_meta.ui`,外部 host 仍拿富 uri 全能力。
-- **code-review P1(围栏正则)**:首版正则锚行首 + 恰好三反引号,漏判 blockquote/list 前缀形态(`> ```mermaid`、`- ```mermaid`)——**marked 15.0.12 实测这些形态真渲染 language-mermaid 且富模板升级出图**。修复 = 去行首锚 + `{3,}`;判定宁宽不窄(误判 lite 唯一后果是围栏按代码块显示,误判 rich 只多传 5.4MB)。在 api 包内跑 marked 验证的方法可复用:`cd api && bun -e 'const {marked} = await import("marked")...'`(根 workspace 解析不到,api 包才有依赖)。
-- **探针预置假设漂移又一例(§29)**:富卡探针「script 数 = 4」断言自 M2.2 canvas 批起过期(canvas 占位符使模板恒有 5 个 script 标签,含 1 个空 canvas 槽)——本批回归时才暴露,已修注释+断言。
-- **双模式 reviewer 补跑收口(2026-10-23)**:code+design 已于 10-16 跑成并全修(`dcae8c6`),HEAD 复核全在位;security 面 subagent 故障改自查,结论无新增 P0/P1,两项候选判不改(事件窗口不能盲 consume 防陈旧 approval 复活;`void rm` 仅残留临时文件)。
+- **GTD 过期条目的代价(教训)**:「M5 浮层与审批 → M6–M10」漏勾条目让后续多个 session(含本 session)误判「M5 待做」并向用户汇报,用户「开始吧」基于错误前提——**里程碑完成状态要以总纲 §6 表 + 收口补记小节为准,GTD 勾选状态可能滞后**;发现「待办」与「文档记录」矛盾时,先查收口补记再动手。
+- **M5–M10 完成证据链**(收口核实依据):M5 `1814270`(security 五红线全过,审批中心全链三方调研实锤在位)→ M6 `fb49dde`(探针 59/59)→ M7 `1bddc9c`(68/68)→ M8 `4ae8098`(65/65)→ M9 四批次 `4681642`/`d59e1ad`/`2ce3531`/`579ca24` → M10 `95443b2` 总验收(spec §9 25 项矩阵)+ §6.12 用户 iPhone 总验证 8 问题全修。各收口补记:总纲 §6.5/§6.7/§6.8b/§6.9b/§6.10/§6.11/§6.12。
+- 审批中心现状补充(三路调研之一):全链(registry/center/REST/WS/web 三层 UI/双模式让位/hooks 旁路)完整在位;已知缺口清单(terminal 形态不进审批中心=设计如此、AskUserQuestion 全局中心语义存疑、整页刷新会话内审批态丢失等 8 项)见调研报告,均为记档级非缺陷。
 
 ### 进度
 
-- ✅ **213 之 2:双模式批 reviewer 补跑**(GTD 勾选,2026-10-23)
-- ✅ **213 之 1:轻/重模板分流**:`1f6251d`(实现 11 文件)+ `e6518a9`(GTD 哈希补记)。验证:api 单测 5+1 / web 单测 7 / 探针 33/33 / 富卡探针 31/31 / e2e 3/3(case1 36s→12.7s,case3 加 mermaid 围栏锁富路径)
+- ✅ **213 序列全部完结**:1 轻重分流 `1f6251d`、2 双模式 reviewer 补跑、3 = M5(早已完成,本 session 收口)
+- ✅ **M5–M10 文档收口**:总纲表 + GTD + handoff 三处修正(本批 commit)
 - 挂起批(工作区,刻意不提交):`api/src/index.ts` inset-report hunk + `web/src/lib` 三件(keyboard-inset.ts/.test.ts + use-composer-inset-debug-badge.ts,composer 第二次埋点等真机数据);根目录 `.mcp.json` untracked(是否提交由用户定)
 
 ### 待办
 
-- **213 之 3:M5 浮层与审批**(sheet/popover 体系 + 服务端聚合审批中心,security-reviewer 必过)→ 之后 M6–M10
+- **用户新需求(待提)**:用户已选「其他新需求」方向,具体内容待用户说明。
 - **真机清单(交用户,统一最后验)**:
   1. M3 真实点击选区路径(端到端用调试口 API,真实鼠标点击→引用 需真机)
   2. M2 画布端到端(agent 建画布→手改→commit→agent apply→卡刷新)
@@ -32,19 +31,20 @@
   5. M1 gen-ui 三条(滑块/全屏/回放)
   6. MCP Apps 卡片:轻/重分流后 wiki 页/文件预览加载显著变快(主观感受);含 mermaid 图的页仍出图(升富路径)
 - 双模式真机验收(交用户):GUI↔TUI 接力全链
+- 长期方向(未排期):画布 C 路线(外部 MCP App 托管)、多 agent 编排(OPC)、MCP skills 阶段 6(等上游 CLI)
 
 ### 易丢的关键上下文
 
 - **探针 lang 坑**:`page.addInitScript(() => localStorage.setItem("lang", "zh"))`。
 - **跑测试限内存**:`systemd-run --scope --user -p MemoryMax=2G`。
 - **e2e 单 spec**:`bun run e2e mcp-app-card.spec.ts`(run-e2e.ts 支持透传 spec 路径,自起隔离 api+web)。
-- **探针点击后必须 waitForTimeout**:postMessage 异步入队,click 后立读 `__msgs` 会竞态(本批 markdown-lite ask 断言踩过,50ms 解决)。
+- **探针点击后必须 waitForTimeout**:postMessage 异步入队,click 后立读 `__msgs` 会竞态(50ms 解决)。
 - **tmux**:`ar-dev:api` / `ar-dev:web`;标准重启 `respawn-pane -k`;绝不 kill server。
 - **iframe 内容 evaluate**:`frame.locator("body").evaluate(fn)`;`contentFrame()` 返回 FrameLocator。
 - **sandbox iframe localStorage SecurityError**:excalidraw 访问 localStorage 的固有噪音,断言须过滤。
 
 ---
-最后更新:2026-10-24(触发原因:阶段 5.6 轻/重模板分流收尾提交,213 序列 1/2 完成)
+最后更新:2026-10-24(触发原因:M5–M10 收口核实,213 序列完结)
 
 ## 提醒
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。

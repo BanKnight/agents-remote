@@ -15,7 +15,7 @@
 - [x] **批 17 键盘 inset 单源**（2026-10-09 完成，`215d390` + `1280c69` 已 push）：①编辑态 `.aux` 被键盘挡 → visualViewport 观察器单源（`keyboard-inset.ts`）+ `--kb-offset` padding 缩链；②辅助条随键盘切换样式 → `--kb-active` 系数（env chin 避让随键盘在场归零）；多端 = Android `interactive-widget=resizes-content`；双 reviewer 无 P0/P1 + P2×3 消化 + e2e 27/27 + 探针 10/10 + 文档沉淀（research 实施现状 + frontend-notes §27 + redesign-v2 批 17 段）——待用户真机复验（Chromium 对键盘行为结构性失明）
 - [ ] **批 18 键盘遮挡取证（等真机数据）**：「多次收起弹开后工具条偶发被遮挡」按证据纪律（§22）埋 `keyboard-debug.ts` 诊断浮层（默认常开 + visual viewport 跟随 + src/ih/vv/v/off/root 六字段切分候选根因）+ focusin/focusout 终态补测加固（observeKeyboardInset 新增，批 18）+ 成熟库调研对照（toss/react-simplikit 源码级 → 不引入，机制同源但缺 iOS 26 gate 与流内消费形态；详见 research 文档「成熟库调研对照」章）——**等用户真机复现一次读浮层数据定位断点层**，数据到手后按层修复，随后删通道。
 - [ ] **批 17/18 真机复验**：编辑态聚焦不被挡 / aux 贴键盘紧凑（无 34px 空隙）/ 键盘收起恢复 / composer 回归无变化 / 键盘偶发不弹排查（focus-shift 风险项）/ Android 编辑态与 composer 被顶起而非遮挡 / **批 18 取证操作：进入文件编辑态，反复收起弹开键盘直到工具条被挡出现，然后把屏幕左上角浮层数据读给 Claude**
-- [ ] M5 浮层与审批（sheet/popover 体系 + 服务端聚合审批中心，security-reviewer 必过）→ M6–M10（范围见总纲 §6，随进度逐个展开成动作）
+- [x] M5 浮层与审批 + M6–M10 全序列（**实际 2026-09-21/22 已全部完成，2026-10-24 收口核实补记——此条为漏勾过期条目**）：M5 `1814270`（security 五红线全过）→ M6 `fb49dde` → M7 `1bddc9c` → M8 `4ae8098` → M9 四批次（`4681642`/`d59e1ad`/`2ce3531`/`579ca24`）→ M10 `95443b2` 总验收 + 用户真机反馈 8 问题全修；证据 = 总纲 §6.4–§6.12 收口补记 + 探针 45+26/59/68/65 + e2e 29/29（详见总纲 §6 表）
 
 ## @双模式（Agent 会话 GUI 对话 ↔ TUI 终端）
 
