@@ -11,7 +11,7 @@ import type {
   EffortLevel,
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
-import { isCompactBoundarySubtype } from "@agents-remote/shared";
+import { isCompactBoundarySubtype, isOneClickApprovable } from "@agents-remote/shared";
 import { claudeStreamUrl } from "../api/client";
 import type { PendingAttachments } from "@/components/ui/composer-attach";
 import {
@@ -664,7 +664,8 @@ export function deriveStatus(input: {
 // control_request (controlRequestId stamped, no result, not interrupted).
 // This is the same predicate makeToolRenderer's needsPermission renders
 // inline — the tray is a second projection of the same data (UI = f(state)),
-// not a separate pipeline. ExitPlanMode / AskUserQuestion are excluded:
+// not a separate pipeline. ExitPlanMode / AskUserQuestion are excluded
+//（谓词单源 shared isOneClickApprovable，服务端审批中心登记同口径）:
 // their approval UIs carry extra decisions (mode selection / answer
 // submission) that a one-click tray row can't express; their composer-blocked
 // semantics remain covered by pendingInteraction.
@@ -707,7 +708,7 @@ export function collectPendingApprovals(chatStream: ChatStreamItem[]): PendingAp
     for (const part of item.parts) {
       if (part.type !== "tool-call") continue;
       if (!part.controlRequestId || part.result || part.isInterrupted) continue;
-      if (part.toolName === "ExitPlanMode" || part.toolName === "AskUserQuestion") continue;
+      if (!isOneClickApprovable(part.toolName)) continue;
       const ownerMeta = item.bodyParentToolUseId
         ? agentMeta.get(item.bodyParentToolUseId)
         : undefined;

@@ -16,6 +16,7 @@
 - [ ] **批 18 键盘遮挡取证（等真机数据）**：「多次收起弹开后工具条偶发被遮挡」按证据纪律（§22）埋 `keyboard-debug.ts` 诊断浮层（默认常开 + visual viewport 跟随 + src/ih/vv/v/off/root 六字段切分候选根因）+ focusin/focusout 终态补测加固（observeKeyboardInset 新增，批 18）+ 成熟库调研对照（toss/react-simplikit 源码级 → 不引入，机制同源但缺 iOS 26 gate 与流内消费形态；详见 research 文档「成熟库调研对照」章）——**等用户真机复现一次读浮层数据定位断点层**，数据到手后按层修复，随后删通道。
 - [ ] **批 17/18 真机复验**：编辑态聚焦不被挡 / aux 贴键盘紧凑（无 34px 空隙）/ 键盘收起恢复 / composer 回归无变化 / 键盘偶发不弹排查（focus-shift 风险项）/ Android 编辑态与 composer 被顶起而非遮挡 / **批 18 取证操作：进入文件编辑态，反复收起弹开键盘直到工具条被挡出现，然后把屏幕左上角浮层数据读给 Claude**
 - [x] M5 浮层与审批 + M6–M10 全序列（**实际 2026-09-21/22 已全部完成，2026-10-24 收口核实补记——此条为漏勾过期条目**）：M5 `1814270`（security 五红线全过）→ M6 `fb49dde` → M7 `1bddc9c` → M8 `4ae8098` → M9 四批次（`4681642`/`d59e1ad`/`2ce3531`/`579ca24`）→ M10 `95443b2` 总验收 + 用户真机反馈 8 问题全修；证据 = 总纲 §6.4–§6.12 收口补记 + 探针 45+26/59/68/65 + e2e 29/29（详见总纲 §6 表）
+- [x] **审批中心补强批**（2026-10-24，M5 收口核实后立项）：①服务端登记排除 ExitPlanMode/AskUserQuestion（shared `isOneClickApprovable` 谓词单源，web 托盘同源切换——respond 通用 allow 对两类语义错误，blocked 信号保留、PWA push 随排除消失拍板接受）；②approvals WS 断线重连（refCount>0 时 500ms 固定间隔 + 防重入 + unmount 取消，消化 M5 code-reviewer P3 记档）。记档不修三条（审批卡无持久化=live 缓冲重放可恢复 / subagent 归属=登记帧无字段 / ACP request_permission 接入=新功能另批）见总纲 §6.5 补强批段。验证：单测 api +2/shared +1/web +3 + 探针 43/43 零改动 + 四门禁 + CSS 硬闸全绿
 
 ## @双模式（Agent 会话 GUI 对话 ↔ TUI 终端）
 

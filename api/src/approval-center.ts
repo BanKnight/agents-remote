@@ -5,6 +5,7 @@ import type {
   ApprovalsStreamServerMessage,
   ClaudeControlResponse,
 } from "@agents-remote/shared";
+import { isOneClickApprovable } from "@agents-remote/shared";
 import { ApprovalRegistry, summarizeControlInput, type ApprovalRecord } from "./approval-registry";
 import type { AuthService } from "./auth";
 import type { ClaudeApprovalRequestInfo, ClaudeRuntime } from "./claude-runtime";
@@ -64,6 +65,13 @@ export class ApprovalCenter {
     info: ClaudeApprovalRequestInfo,
     request: { request_id: string; request: { tool_name: string; input: Record<string, unknown> } },
   ): void {
+    // §6.5 补强批：ExitPlanMode / AskUserQuestion 不进中心——respond 的通用 allow
+    //（回填原 input）对两者语义错误（前者缺 permission_updates 不切模式、后者缺
+    // answers），与客户端托盘 collectPendingApprovals 同谓词单源（shared
+    // isOneClickApprovable）。排除在入口 → onApprovalRegistered（PWA push）一并
+    // 消失；blocked 状态信号在 runtime 采集层（captureApprovalRequestFromLine 的
+    // applyStatusSignal）先行发出，不受影响。会话内完整审批 UI 正常处理这两类。
+    if (!isOneClickApprovable(request.request.tool_name)) return;
     const record: ApprovalRecord = {
       runtimeKey: info.runtimeKey,
       projectName: info.projectName,

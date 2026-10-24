@@ -6,6 +6,7 @@ import {
   COMPACT_BOUNDARY_SUBTYPES,
   EFFORT_LEVELS,
   isCompactBoundarySubtype,
+  isOneClickApprovable,
 } from "./index";
 import type {
   AgentSession,
@@ -321,4 +322,14 @@ test("agentHistoryGroupKey 五档分组边界（v1.5 批5）", () => {
   expect(agentHistoryGroupKey("not-a-date", now)).toBe("earlier");
   // 组头渲染顺序固定
   expect(AGENT_HISTORY_GROUP_ORDER).toEqual(["today", "yesterday", "week", "month", "earlier"]);
+});
+
+test("isOneClickApprovable excludes the two complex-approval tools", () => {
+  // 一键 allow/deny 表达不了真实应答的两类（§6.5 补强批谓词单源）
+  expect(isOneClickApprovable("ExitPlanMode")).toBe(false);
+  expect(isOneClickApprovable("AskUserQuestion")).toBe(false);
+  // 普通工具照常可一键应答
+  expect(isOneClickApprovable("Bash")).toBe(true);
+  expect(isOneClickApprovable("Write")).toBe(true);
+  expect(isOneClickApprovable("Task")).toBe(true);
 });

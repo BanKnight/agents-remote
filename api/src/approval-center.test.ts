@@ -91,3 +91,48 @@ test("onApprovalRegistered: 多卡逐张触发；回调未挂（null）不炸", 
   expect(() => register(bare, "rt-x", "req-c")).not.toThrow();
   expect(bare.registry.list()).toHaveLength(1);
 });
+
+// ── §6.5 补强批：复杂审批两类不进中心（与客户端托盘 collectPendingApprovals 同口径）──
+
+test("registerFromRuntime: ExitPlanMode / AskUserQuestion 不登记且不触发 onApprovalRegistered", () => {
+  const center = makeCenter();
+  const registered: string[] = [];
+  center.onApprovalRegistered = (record) => registered.push(record.controlRequestId);
+
+  // respond 的通用 allow（回填原 input）对这两类语义错误 → 登记入口排除。
+  center.registerFromRuntime(
+    { runtimeKey: "rt-key", projectName: "demo", sessionId: "agent_1" },
+    {
+      request_id: "req-plan",
+      request: { tool_name: "ExitPlanMode", input: { plan: "..." } },
+    },
+  );
+  center.registerFromRuntime(
+    { runtimeKey: "rt-key", projectName: "demo", sessionId: "agent_1" },
+    {
+      request_id: "req-ask",
+      request: { tool_name: "AskUserQuestion", input: { questions: [] } },
+    },
+  );
+
+  expect(center.registry.list()).toHaveLength(0);
+  expect(registered).toEqual([]);
+});
+
+test("registerFromRuntime: 排除不误伤——混合批次只登记应登记的", () => {
+  const center = makeCenter();
+
+  register(center, "rt-key", "req-bash");
+  center.registerFromRuntime(
+    { runtimeKey: "rt-key", projectName: "demo", sessionId: "agent_1" },
+    {
+      request_id: "req-ask",
+      request: { tool_name: "AskUserQuestion", input: { questions: [] } },
+    },
+  );
+
+  const cards = center.registry.list();
+  expect(cards).toHaveLength(1);
+  expect(cards[0]?.controlRequestId).toBe("req-bash");
+  expect(cards[0]?.toolName).toBe("Bash");
+});

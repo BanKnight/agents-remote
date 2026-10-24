@@ -20,10 +20,12 @@ export const APPROVALS_QUERY_KEY = ["approvals"] as const;
 // queryClient 写入行为一致）。
 let approvalsWsRefCount = 0;
 let approvalsWsSocket: WebSocket | null = null;
+let approvalsWsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const APPROVALS_WS_RECONNECT_MS = 500;
 
-function connectApprovalsStream(getClient: () => ReturnType<typeof useQueryClient>): void {
-  approvalsWsRefCount += 1;
-  if (approvalsWsSocket) return;
+function openApprovalsSocket(getClient: () => ReturnType<typeof useQueryClient>): void {
+  // 防重入：已有连接或已排重连时不再开（onclose 双发、重连等待期新实例挂载均不叠连）。
+  if (approvalsWsSocket || approvalsWsReconnectTimer) return;
   const queryClient = getClient();
   const socket = new WebSocket(approvalsStreamUrl());
   approvalsWsSocket = socket;
@@ -40,22 +42,43 @@ function connectApprovalsStream(getClient: () => ReturnType<typeof useQueryClien
   socket.onclose = () => {
     // 连接断开清引用：后续实例卸载时 refCount 已归零守卫，不再对已关闭 socket 二次 close。
     if (approvalsWsSocket === socket) approvalsWsSocket = null;
+    // §6.5 补强批：断线自愈——仍有订阅者时 500ms 固定间隔重连（间隔抄 claude-adapter
+    // scheduleReconnect；心跳不做，15s REST refetch 兜底已在）。服务端 open 即推全量
+    // 快照，重连零额外同步。refCount=0（主动关闭路径）不重连。
+    if (approvalsWsRefCount > 0 && !approvalsWsReconnectTimer) {
+      approvalsWsReconnectTimer = setTimeout(() => {
+        approvalsWsReconnectTimer = null;
+        openApprovalsSocket(getClient);
+      }, APPROVALS_WS_RECONNECT_MS);
+    }
   };
+}
+
+function connectApprovalsStream(getClient: () => ReturnType<typeof useQueryClient>): void {
+  approvalsWsRefCount += 1;
+  openApprovalsSocket(getClient);
 }
 
 function disconnectApprovalsStream(): void {
   approvalsWsRefCount -= 1;
-  if (approvalsWsRefCount === 0 && approvalsWsSocket) {
-    approvalsWsSocket.close();
-    approvalsWsSocket = null;
+  if (approvalsWsRefCount === 0) {
+    // 全部消费面卸载：取消 pending 重连 + 关连接（onclose 到达时 refCount 已 0，不再排）。
+    if (approvalsWsReconnectTimer) {
+      clearTimeout(approvalsWsReconnectTimer);
+      approvalsWsReconnectTimer = null;
+    }
+    if (approvalsWsSocket) {
+      approvalsWsSocket.close();
+      approvalsWsSocket = null;
+    }
   }
 }
 
 /**
  * 全局待审批快照。enabled 期间持有 WS 订阅（模块级引用计数单订阅）：连接即推全量
  *（open 时服务端先发一帧），之后任何 registry 变更推全量 → setQueryData 整体替换。
- * WS 断线由 REST fallback 兜底（refetchOnWindowFocus 全局关 → 显式 refetchInterval
- * 兜底 15s，仅 enabled 期）。
+ * WS 断线自愈：仍有订阅者时 500ms 固定间隔重连（§6.5 补强批）；REST fallback 兜底
+ *（refetchOnWindowFocus 全局关 → 显式 refetchInterval 兜底 15s，仅 enabled 期）。
  */
 export function useApprovals(enabled: boolean) {
   const queryClient = useQueryClient();

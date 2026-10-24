@@ -2641,6 +2641,18 @@ export type ApprovalsStreamServerMessage = {
   approvals: ApprovalSummary[];
 };
 
+// ── 审批一键应答排除（§6.5 补强批，谓词单源：服务端审批中心 + 客户端会话内托盘共消费）──
+// 这两类 control_request 一键 allow/deny 表达不了真实应答：ExitPlanMode 需带
+// permission_updates 才切模式；AskUserQuestion 需回传 answers。回填原 input 的通用
+// allow 对两者语义错误 → 全局审批中心（ApprovalCenter 登记入口）与会话内托盘
+//（collectPendingApprovals）统一排除。会话内完整 UI（复杂审批卡）不受影响，两类
+// 请求仍在会话页正常渲染与应答。
+export const NON_ONE_CLICK_APPROVAL_TOOLS = ["ExitPlanMode", "AskUserQuestion"] as const;
+
+export function isOneClickApprovable(toolName: string): boolean {
+  return !(NON_ONE_CLICK_APPROVAL_TOOLS as readonly string[]).includes(toolName);
+}
+
 export type SessionStreamClientMessage =
   | {
       type: "input";

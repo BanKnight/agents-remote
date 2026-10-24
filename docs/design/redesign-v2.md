@@ -230,6 +230,13 @@ M5 = 浮层体系 + 审批中心（总纲 §6），基于现状盘点拍板：
   - **P3 已修 2 项**：`parsed.response.request_id` 补可选链；approval-center 帧构造抽 `frame()` 单源 + `sendSnapshot` 挂 catch（对齐 claude-stream open 纪律）。**P3 记档 5 项**：并发 respond 同 requestId 双写（CLI 按 id 去重无害）、`resolveSessionNames` 串行 IO、`summarizeControlInput` 先 stringify 后截断、hot 启发跑在截断后摘要上（假阴性/假阳性，仅颜色）、approvals WS 无重连心跳（15s refetch 兜底）。
 - **security-reviewer（M5-b 服务端）**：**五条红线全过**（鉴权覆盖 / PROJECTS_ROOT 不逃逸 / 注入面 / 密钥 / 回调装配），无 P1。P2-1 = code-reviewer P2-2 同一处（close 注销缺口，两方独立发现互相印证），已修。P3-1 = code 的 P2-1（input null，已修）；P3-2/P3-3 已修。**关键核验**：`validateProjectName` 拒绝 `/\`/`\0`/`.`/`..`，respond 的 projectName 仅作 registry 匹配键不入文件系统路径；整帧 `JSON.stringify` 保证单帧边界，无用户可控字符串拼接；完整 input 只存服务端内存，协议只出 80 字符摘要。
 
+**审批中心补强批（2026-10-24，M5 收口核实后消化 reviewer 记档与调研缺口）**：
+
+- **修复① 服务端登记排除（谓词单源）**：`ApprovalCenter.registerFromRuntime` 入口按 shared 新谓词 `isOneClickApprovable` 排除 ExitPlanMode / AskUserQuestion——respond 的通用 allow（回填原 input）对两者语义错误（前者缺 `permission_updates` 不切模式、后者缺 answers），客户端托盘 `collectPendingApprovals` 原本就排除，本批两投影口径单源化（web 侧 L710 一行切换同一谓词）。排除点在 center 入口：registry 纯内存层不懂工具语义、`onApprovalRegistered`（PWA push）随排除消失（拍板接受）、blocked 状态信号在 runtime 采集层（`applyStatusSignal`）先行发出不受影响、会话内完整审批 UI 正常处理两类。
+- **修复② approvals WS 断线重连**：`use-approvals` 模块级订阅抽 `openApprovalsSocket` + reconnect timer——仍有订阅者（refCount>0）时 500ms 固定间隔重连（消化 code-reviewer P3 记档「approvals WS 无重连心跳」；心跳不做，15s refetch 兜底已在）；防重入守卫（socket/timer 任一在即不重开）+ unmount 取消 pending 重连；服务端 open 即推全量快照，重连零额外同步。`use-session-shells` 同为无重连范式（10s refetch 自洽）本批不动，如需对齐另起小批。
+- **记档不修（拍板）**：① 审批卡无持久化——relay live 缓冲会重放 control_request 帧（runtime 存活时刷新可恢复），真实缺口（runtime 重启/resume）已随 CLI 进程死亡 → `clearRuntime` 探活清卡自然失效，无需补持久化；② 中心卡无 subagent 归属（会话内托盘有 owner chip）——登记帧 `ClaudeControlRequest` 无归属字段，补齐需服务端新增跨行关联态（agent tool_use ↔ body 工具），痛感低另批评估；③ ACP `request_permission` 接入审批中心（现为静默自动 allow）——需 ApprovalCenter transport 抽象 + AcpRuntime pending Promise + 应答映射，是新功能非补缺，另批立项。
+- **验证**：单测 api +2（两类不登记且不触发回调 / 混合批次不误伤）+ shared +1（谓词本体）+ web +3（500ms 重连续喂同一 cache 含防重入双发 / unmount 取消 / 主动关闭不重连）；探针 `probe-v2-m5-approvals.mjs` 43/43 零改动（mock 边界在服务端之外，「排除」断言的正确归属是 api 单测）；四门禁 + CSS 硬闸全绿（api 1104 / shared 11 / web 907）。
+
 ## §6.6 M6 开工摊牌（2026-09-21）
 
 M6 = 插件 Tab + 市场体系（原型 09/12/13/14/15/16/17/18）。基于现状盘点（`PluginsRoute.tsx` 1014 行现有三 tab：Discover/Manage/Sources + `McpPanel`；后端 `/api/skills/{search,installed,preview,install,uninstall,updates,update,sources,task/:id/events}` + `/api/mcp{,/add,/remove,/update}`）逐条对齐：
