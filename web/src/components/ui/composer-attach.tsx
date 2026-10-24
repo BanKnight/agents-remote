@@ -121,6 +121,34 @@ export async function blobToBase64(blob: Blob): Promise<string> {
  * 解码失败（极少数非浏览器可解码类型漏入）且类型可直传 → 交 CLI 下采样；否则抛错（chip 报失败）。
  * iOS 相册 HEIC 经 `<input accept="image/*">` 已被系统转成 JPEG，正常不落此分支。
  */
+/**
+ * 单张图片归一化超时（真机取证 2026-10-24：iPhone 上 4 张 12MP 并发 createImageBitmap +
+ * canvas 重编码，数分钟仍停留「处理中」——WebKit 大图并发解码/编码压力下 promise 极慢
+ * 甚至永挂，而整条链无超时兜底 = 用户无限等）。超时判失败（chip 显「处理失败」终态），
+ * 不取消底层任务、仅放弃等待。
+ */
+export const IMAGE_NORMALIZE_TIMEOUT_MS = 20_000;
+
+/** Promise 超时包装：超时 reject 带 label 的 Error,底层任务继续跑(无法取消)。 */
+function withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`timeout after ${IMAGE_NORMALIZE_TIMEOUT_MS}ms: ${label}`)),
+      IMAGE_NORMALIZE_TIMEOUT_MS,
+    );
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
 export async function normalizeImageFile(file: File): Promise<{
   mediaType: string;
   data: string;
@@ -211,31 +239,37 @@ export function useComposerAttachments({ projectName }: { projectName: string })
 
   const addFiles = useCallback(
     async (entries: Array<{ file: File; id: string }>) => {
-      // 本地处理（image/text）并行推进——各 chip 独立 ready，多图不再互相阻塞；文件上传
-      // 保持串行（服务端 keepBoth 同名派生是 stat→write 窗口，并行同名会相撞）——两组互不等待。
+      // 本地处理（text）与文件上传互不等待;image 归一化走串行链——iPhone 真机 4 张 12MP
+      // 并发 createImageBitmap + canvas 数分钟不完成(WebKit 解码/内存双重压力,见
+      // IMAGE_NORMALIZE_TIMEOUT_MS 注释),串行一张张亮起也更符合「逐张就绪」的感知;
+      // 文件上传保持串行（服务端 keepBoth 同名派生是 stat→write 窗口，并行同名会相撞）。
       const local: Promise<void>[] = [];
       const onError = (id: string) => {
         const stale = attachmentsRef.current.find((a) => a.id === id);
         if (stale?.previewUrl) URL.revokeObjectURL(stale.previewUrl);
         replace(id, { status: "error", previewUrl: undefined });
       };
+      let imageChain: Promise<void> = Promise.resolve();
       for (const { file, id } of entries) {
         if (attachmentsRef.current.length >= COMPOSER_MAX_ATTACHMENTS) break;
         const kind = classifyAttachment(file);
         if (kind === "image") {
-          local.push(
-            normalizeImageFile(file)
-              .then((norm) =>
-                replace(id, {
-                  status: "ready",
-                  name: file.name,
-                  mediaType: norm.mediaType,
-                  data: norm.data,
-                  dataUrl: norm.dataUrl,
-                }),
-              )
-              .catch(() => onError(id)),
-          );
+          imageChain = imageChain.then(async () => {
+            try {
+              const norm = await withTimeout(normalizeImageFile(file), `normalize ${file.name}`);
+              replace(id, {
+                status: "ready",
+                name: file.name,
+                mediaType: norm.mediaType,
+                data: norm.data,
+                dataUrl: norm.dataUrl,
+              });
+            } catch (e) {
+              // console 留阶段线索(Safari 连 iPhone 的 Web Inspector 可查):超时/解码失败。
+              console.error("[composer-attach] image normalize failed:", file.name, e);
+              onError(id);
+            }
+          });
         } else if (kind === "text") {
           // 小文本白名单 ≤1MB（批 8）：不上传，读全文内联为消息级上下文。
           local.push(
@@ -265,6 +299,7 @@ export function useComposerAttachments({ projectName }: { projectName: string })
           }
         }
       }
+      local.push(imageChain);
       await Promise.all(local);
     },
     [projectName, replace],
