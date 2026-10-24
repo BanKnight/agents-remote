@@ -1,23 +1,24 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-24(M5–M10 收口核实——v2 里程碑全部完成,记录修正;等待用户提新需求)
+> 最后更新:2026-10-24(审批中心补强批完成 `2d6705a`;v2 收口核实 + 补强两批连做;等待用户提新需求)
 
 ## 一句话状态
 
-**v2 UI 重构 M0–M10 实际已全部完成(2026-09-21/22)**:本 session 三路调研 + git log 实锤后收口——总纲 §6 里程碑表 M6–M10 行补 ✅ 标注、GTD 漏勾的「M5 浮层与审批 → M6–M10」条目勾选修正、handoff 更正。**此前「213 之 3 = M5 待做」是过期 GTD 条目造成的误判**,213 序列实际全部完结。等待用户提新需求。
+**审批中心补强批完成**:①服务端登记排除 ExitPlanMode/AskUserQuestion(shared `isOneClickApprovable` 谓词单源,与客户端托盘口径一致)②approvals WS 断线重连(500ms + 防重入);code-reviewer 通过(2 P3 记档),单测 +6/探针 43/43/全门禁绿,commit `2d6705a`。**此前本 session 完成了 v2 里程碑 M5–M10 收口核实**(`81f0707`,全部早已于 2026-09-21/22 完成)。等待用户提新需求。
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
-- **GTD 过期条目的代价(教训)**:「M5 浮层与审批 → M6–M10」漏勾条目让后续多个 session(含本 session)误判「M5 待做」并向用户汇报,用户「开始吧」基于错误前提——**里程碑完成状态要以总纲 §6 表 + 收口补记小节为准,GTD 勾选状态可能滞后**;发现「待办」与「文档记录」矛盾时,先查收口补记再动手。
-- **M5–M10 完成证据链**(收口核实依据):M5 `1814270`(security 五红线全过,审批中心全链三方调研实锤在位)→ M6 `fb49dde`(探针 59/59)→ M7 `1bddc9c`(68/68)→ M8 `4ae8098`(65/65)→ M9 四批次 `4681642`/`d59e1ad`/`2ce3531`/`579ca24` → M10 `95443b2` 总验收(spec §9 25 项矩阵)+ §6.12 用户 iPhone 总验证 8 问题全修。各收口补记:总纲 §6.5/§6.7/§6.8b/§6.9b/§6.10/§6.11/§6.12。
-- 审批中心现状补充(三路调研之一):全链(registry/center/REST/WS/web 三层 UI/双模式让位/hooks 旁路)完整在位;已知缺口清单(terminal 形态不进审批中心=设计如此、AskUserQuestion 全局中心语义存疑、整页刷新会话内审批态丢失等 8 项)见调研报告,均为记档级非缺陷。
+- **GTD 过期条目的代价(教训)**:「M5 浮层与审批 → M6–M10」漏勾条目让多个 session 误判「M5 待做」——**完成状态以总纲 §6 表 + 收口补记为准,GTD 勾选可能滞后**;发现矛盾先查收口补记再动手。
+- **审批补强批的拍板**:排除而非完整分派——AskUserQuestion/ExitPlanMode 的一键 allow 语义错误,但完整分派(mode 选择/answers 表单)与会话内 UI 重复承载违反多端同构;排除点在 ApprovalCenter 入口(非 registry 层),blocked 状态信号保留,PWA push 随排除消失(用户拍板接受)。缺口 3(审批卡持久化)调研证明无真实对象(live 缓冲重放可恢复 + runtime 重启自然失效);缺口 5(ACP request_permission 接入)是新功能另批,修复方向已记档(transport 抽象 + pending Promise)。
+- **code-review P3-①(混合审批提前收口,记档)**:Bash 卡与被排除的复杂审批同时 pending 时,应答已登记卡会误触发 approval_settled(blocked→working)——仅状态点失真、应答后自愈;彻底修需从「排除登记」改「登记+不进快照标记」,待 ACP 批一并评估。
+- **fake timers × react-query 测试坑**:notifyManager 用 setTimeout(0) 调度通知,fake timers 冻结下 emit 帧后需 `vi.advanceTimersByTime(1)` 冲刷,否则断言读到旧值(本批 web 测试踩过)。
 
 ### 进度
 
-- ✅ **213 序列全部完结**:1 轻重分流 `1f6251d`、2 双模式 reviewer 补跑、3 = M5(早已完成,本 session 收口)
-- ✅ **M5–M10 文档收口**:总纲表 + GTD + handoff 三处修正(本批 commit)
+- ✅ **v2 收口核实**:`81f0707`(总纲表 M6–M10 补 ✅ + GTD 漏勾修正 + handoff)
+- ✅ **审批中心补强批**:`2d6705a`(两修复 + 三记档 + 2 P3 记档;api 1104/shared 11/web 907 全绿)
 - 挂起批(工作区,刻意不提交):`api/src/index.ts` inset-report hunk + `web/src/lib` 三件(keyboard-inset.ts/.test.ts + use-composer-inset-debug-badge.ts,composer 第二次埋点等真机数据);根目录 `.mcp.json` untracked(是否提交由用户定)
 
 ### 待办
@@ -31,7 +32,7 @@
   5. M1 gen-ui 三条(滑块/全屏/回放)
   6. MCP Apps 卡片:轻/重分流后 wiki 页/文件预览加载显著变快(主观感受);含 mermaid 图的页仍出图(升富路径)
 - 双模式真机验收(交用户):GUI↔TUI 接力全链
-- 长期方向(未排期):画布 C 路线(外部 MCP App 托管)、多 agent 编排(OPC)、MCP skills 阶段 6(等上游 CLI)
+- 长期方向(未排期):画布 C 路线(外部 MCP App 托管)、多 agent 编排(OPC)、MCP skills 阶段 6(等上游 CLI)、审批中心后续批(subagent 归属关联态 / ACP request_permission 接入,修复方向在总纲 §6.5 补强段)
 
 ### 易丢的关键上下文
 
@@ -44,7 +45,7 @@
 - **sandbox iframe localStorage SecurityError**:excalidraw 访问 localStorage 的固有噪音,断言须过滤。
 
 ---
-最后更新:2026-10-24(触发原因:M5–M10 收口核实,213 序列完结)
+最后更新:2026-10-24(触发原因:审批中心补强批收尾)
 
 ## 提醒
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
