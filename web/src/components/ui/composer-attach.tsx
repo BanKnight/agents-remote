@@ -588,11 +588,9 @@ export function AttachmentChipRow({
                   />
                   {a.status === "uploading" ? (
                     <>
-                      {/* 处理中语义可视化：底部 scrim 条（真机反馈「右下角转圈圈不知道在干嘛」
-                          ——光有 spinner 无文案，本地归一化在 iPhone 大图上要好几秒）。 */}
-                      <span className="absolute inset-x-0 bottom-0 truncate bg-black/50 px-0.5 py-0.5 text-center text-micro leading-none text-white">
-                        {t("claude.attach.processing")}
-                      </span>
+                      {/* 处理中 = 变暗遮罩 + 右下角 spinner,完成即消失——布局 do the
+                          explaining,不加文字标签(用户准则:避免次要标签和描述)。 */}
+                      <span className="absolute inset-0 bg-black/45" />
                       <span className="absolute bottom-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-surface-raised/90 shadow-sm">
                         <span className="size-2.5 animate-spin rounded-full border-2 border-on-surface-muted/30 border-t-on-surface-soft" />
                       </span>

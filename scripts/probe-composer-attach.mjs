@@ -241,14 +241,15 @@ async function waitForFrame(page, frames, cursor, pred, label) {
       await page.locator('input[type="file"][accept="image/*"][multiple]').setInputFiles(PNG_FILE);
       await page.locator('[data-attachment-chip] img[src^="blob:"]').waitFor({ timeout: 8000 });
       check("Part2: 图片 chip 选完即显示原图缩略图（blob: objectURL，不等归一化）", true);
-      // 归一化完成后 chip 无「处理中/上传中」占位文案（img 恒用 previewUrl 原图）。
+      // 归一化完成后 chip 为干净 ready 态：无错误/上传占位文案（处理中是纯视觉遮罩，
+      // 布局自解释——不出现文字标签）。
       await page.waitForFunction(
         () => {
           const chip = document.querySelector("[data-attachment-chip]");
           const text = chip?.textContent ?? "";
           return (
             chip?.querySelector("img[src^='blob:']") != null &&
-            !text.includes("处理中") &&
+            !text.includes("处理失败") &&
             !text.includes("上传中")
           );
         },
