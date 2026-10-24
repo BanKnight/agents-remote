@@ -178,6 +178,9 @@ export async function normalizeImageFile(file: File): Promise<{
 export function useComposerAttachments({ projectName }: { projectName: string }) {
   const { t } = useT();
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  // 超出上限被忽略的张数（pick 时累计）：chip 行尾「+N」提示的数据源；任何 remove/clear
+  // 清零（提示是一次性的，用户再操作后旧数字失效）。
+  const [overflowCount, setOverflowCount] = useState(0);
   // ref 镜像：异步上传/归一化回写时读最新值（cap 判定、按 id 替换），避免闭包旧态。
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const idRef = useRef(0);
@@ -200,6 +203,7 @@ export function useComposerAttachments({ projectName }: { projectName: string })
       for (const a of attachmentsRef.current) {
         if (a.id === id && a.previewUrl) URL.revokeObjectURL(a.previewUrl);
       }
+      setOverflowCount(0);
       commit(attachmentsRef.current.filter((a) => a.id !== id));
     },
     [commit],
@@ -276,6 +280,10 @@ export function useComposerAttachments({ projectName }: { projectName: string })
         Math.max(0, COMPOSER_MAX_ATTACHMENTS - attachmentsRef.current.length),
       );
       if (usable.length === 0) return;
+      // 超出上限的部分不静默丢：计数进「+N」提示 chip（真机反馈 7 张只进 4 张无任何说明）。
+      if (files.length > usable.length) {
+        setOverflowCount((n) => n + files.length - usable.length);
+      }
       const entries = usable.map((file) => ({
         file,
         id: `att-${++idRef.current}`,
@@ -324,6 +332,7 @@ export function useComposerAttachments({ projectName }: { projectName: string })
     for (const a of attachmentsRef.current) {
       if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
     }
+    setOverflowCount(0);
     commit([]);
   }, [commit]);
 
@@ -337,7 +346,7 @@ export function useComposerAttachments({ projectName }: { projectName: string })
     [],
   );
 
-  return { attachments, pick, remove, takeSnapshot, clear };
+  return { attachments, overflowCount, pick, remove, takeSnapshot, clear };
 }
 
 /**
@@ -435,9 +444,12 @@ export function ComposerAttachMenu({ onFiles }: { onFiles: (files: File[]) => vo
 export function AttachmentChipRow({
   attachments,
   onRemove,
+  overflowCount = 0,
 }: {
   attachments: ComposerAttachment[];
   onRemove: (id: string) => void;
+  /** 超出上限被忽略的张数：>0 时行尾显示「+N」提示 chip（一次性，remove/clear 后消失）。 */
+  overflowCount?: number;
 }) {
   const { t } = useT();
   // 点击 chip 放大查看原图（复用聊天流 ImageLightbox：Radix 全屏 + ImageViewer 手势）。
@@ -506,9 +518,16 @@ export function AttachmentChipRow({
                     src={a.previewUrl ?? a.dataUrl}
                   />
                   {a.status === "uploading" ? (
-                    <span className="absolute bottom-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-surface-raised/90 shadow-sm">
-                      <span className="size-2.5 animate-spin rounded-full border-2 border-on-surface-muted/30 border-t-on-surface-soft" />
-                    </span>
+                    <>
+                      {/* 处理中语义可视化：底部 scrim 条（真机反馈「右下角转圈圈不知道在干嘛」
+                          ——光有 spinner 无文案，本地归一化在 iPhone 大图上要好几秒）。 */}
+                      <span className="absolute inset-x-0 bottom-0 truncate bg-black/50 px-0.5 py-0.5 text-center text-micro leading-none text-white">
+                        {t("claude.attach.processing")}
+                      </span>
+                      <span className="absolute bottom-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-surface-raised/90 shadow-sm">
+                        <span className="size-2.5 animate-spin rounded-full border-2 border-on-surface-muted/30 border-t-on-surface-soft" />
+                      </span>
+                    </>
                   ) : null}
                 </button>
               ) : (
@@ -556,9 +575,26 @@ export function AttachmentChipRow({
           </div>
         );
       })}
+      {/* 超出上限提示 chip：只计数不承载文件（被忽略的选入不进草稿），× 任一 chip 后消失。 */}
+      {overflowCount > 0 ? (
+        <div
+          aria-label={t("claude.attach.overflow", {
+            count: overflowCount,
+            max: COMPOSER_MAX_ATTACHMENTS,
+          })}
+          className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-surface-inset text-sm font-medium text-on-surface-muted"
+          title={t("claude.attach.overflow", {
+            count: overflowCount,
+            max: COMPOSER_MAX_ATTACHMENTS,
+          })}
+        >
+          +{overflowCount}
+        </div>
+      ) : null}
       {lightbox ? (
         <ImageLightbox
           alt={lightbox.name}
+          showDownload={false}
           src={lightbox.previewUrl ?? lightbox.dataUrl ?? ""}
           onOpenChange={(open) => {
             if (!open) setLightboxId(null);

@@ -252,6 +252,22 @@ async function waitForFrame(page, frames, cursor, pred, label) {
       await page.locator('[data-attachment-chip] button[aria-label="probe.png"]').click();
       await page.locator("[role='dialog'] img").waitFor({ timeout: 5000 });
       check("Part2: 点击 chip 打开全屏 lightbox（ImageViewer）", true);
+      // composer 草稿预览不显示「另存」（showDownload=false，草稿图无处可存）；关闭钮
+      // top = safe-area(env 桌面=0)+12px——真机裸 top-3 落状态栏区内被系统吃（关不掉根因）。
+      // 先等 enter 弹簧（zoom 0.96→1 ~525ms）播完再取几何——动画中间态采样得偏移值
+      //（首跑 closeTop=14 即 0.995 中间态，§18 家族坑）。
+      await page.waitForTimeout(700);
+      const lb = await page.evaluate(() => {
+        const dlg = document.querySelector("[role='dialog']");
+        const close = dlg?.querySelector('button[aria-label="关闭"]');
+        const r = close?.getBoundingClientRect();
+        return {
+          hasDownload: dlg?.querySelector("a[download]") != null,
+          closeTop: r ? Math.round(r.top) : null,
+        };
+      });
+      check("Part2: composer lightbox 无「另存」按钮（showDownload=false）", !lb.hasDownload);
+      check("Part2: 关闭钮 top = env(桌面 0)+12px", lb.closeTop === 12, `closeTop=${lb.closeTop}`);
       await page.keyboard.press("Escape");
       await page.locator("[role='dialog']").waitFor({ state: "detached", timeout: 5000 });
       check("Part2: Esc 关闭 lightbox", true);
@@ -332,6 +348,34 @@ async function waitForFrame(page, frames, cursor, pred, label) {
           c[0]?.source?.data === TINY_PNG_BASE64 && c[1]?.source?.data === TINY_PNG_BASE64,
         );
       }
+
+      // Part 3c: 上限截断提示——选 5 张只进 4 张（上限），行尾「+1」提示 chip 在场；
+      // × 任一 chip 后提示消失（一次性）。
+      await page
+        .locator('input[type="file"][accept="image/*"][multiple]')
+        .setInputFiles([PNG_FILE, PNG_FILE, PNG_FILE, PNG_FILE, PNG_FILE]);
+      await page.waitForFunction(
+        () => document.querySelectorAll("[data-attachment-chip] img[src^='blob:']").length === 4,
+        undefined,
+        { timeout: 8000 },
+      );
+      const ov = page.locator('[aria-label*="另有"]');
+      check("Part3c: 5 张选入只进 4 张（上限）", true);
+      check("Part3c: 行尾「+1」提示 chip 在场", (await ov.count()) === 1);
+      await page.locator('[data-attachment-chip] button[aria-label="移除附件"]').first().click();
+      check("Part3c: × 后提示 chip 消失（一次性）", (await ov.count()) === 0);
+      // 清场：逐张 × 到空（防污染 Part4 的 chip 计数断言）。
+      let remaining = await page.locator("[data-attachment-chip]").count();
+      while (remaining > 0) {
+        await page.locator('[data-attachment-chip] button[aria-label="移除附件"]').first().click();
+        await page.waitForFunction(
+          (n) => document.querySelectorAll("[data-attachment-chip]").length < n,
+          remaining,
+          { timeout: 5000 },
+        );
+        remaining = await page.locator("[data-attachment-chip]").count();
+      }
+      check("Part3c: 清场后无 chips", (await page.locator("[data-attachment-chip]").count()) === 0);
 
       // Part 4: 文件 pick（mock 上传）→ chip 就绪显示路径 → 提及行并入帧文本
       await page.locator('input[type="file"]:not([accept])').setInputFiles(PDF_FILE);

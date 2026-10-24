@@ -35,6 +35,8 @@ export type ImageViewerProps = {
   alt: string;
   /** 另存建议文件名（a[download]）；缺省从 src 推导（dataUrl mime → image.<ext>）。 */
   downloadName?: string;
+  /** 是否显示「另存」按钮（默认 true）；composer 草稿预览传 false——还没发送的图无处可存。 */
+  showDownload?: boolean;
 };
 
 /** src 推导下载名：调用方（lightbox）没有真名时的兜底。 */
@@ -68,7 +70,7 @@ function suggestDownloadName(src: string): string {
  * transform：img 绝对定位 left-1/2 top-1/2 + `translate(-50%,-50%)` 居中，再叠加用户的
  * translate(x,y) rotate(deg) scale(scale)，transform-origin center。
  */
-export function ImageViewer({ src, alt, downloadName }: ImageViewerProps) {
+export function ImageViewer({ src, alt, downloadName, showDownload = true }: ImageViewerProps) {
   const { t } = useT();
   const canvasRef = useRef<HTMLDivElement>(null);
   // transform 的 ref 镜像：手势回调读最新值而不重绑 listener（与 FilesPanel saveShortcut 同款范式）。
@@ -251,14 +253,16 @@ export function ImageViewer({ src, alt, downloadName }: ImageViewerProps) {
           <ShellIcon className="size-4" name="maximize" />
         </ViewerButton>
         {/* 另存 = a[download]（同源/blob URL 浏览器直接落盘；dataUrl 同样成立）。 */}
-        <a
-          aria-label={t("files.imageDownload")}
-          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-primary/10 hover:text-primary active:bg-primary/20"
-          download={downloadName ?? suggestDownloadName(src)}
-          href={src}
-        >
-          <ShellIcon className="size-4" name="download" />
-        </a>
+        {showDownload ? (
+          <a
+            aria-label={t("files.imageDownload")}
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-on-surface-soft transition hover:bg-primary/10 hover:text-primary active:bg-primary/20"
+            download={downloadName ?? suggestDownloadName(src)}
+            href={src}
+          >
+            <ShellIcon className="size-4" name="download" />
+          </a>
+        ) : null}
       </div>
     </div>
   );

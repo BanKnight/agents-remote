@@ -3743,7 +3743,11 @@ function ComposerWithInterrupt({
       <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
         {/* 附件 chip 行（发图批）：图片缩略图 / 文件名+路径，× 移除；任一上传中会暂缓发送。 */}
         {attachmentCount > 0 ? (
-          <AttachmentChipRow attachments={attachments.attachments} onRemove={attachments.remove} />
+          <AttachmentChipRow
+            attachments={attachments.attachments}
+            onRemove={attachments.remove}
+            overflowCount={attachments.overflowCount}
+          />
         ) : null}
         {/* 画布选区 chip（M3 引用循环）：卡片「引用到对话」写入的待发上下文，× 移除；
             发送时并入 prompt（adapter onNew 单点）。 */}

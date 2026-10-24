@@ -522,6 +522,7 @@ export const en = {
   "claude.attach.ready": "Uploaded",
   "claude.attach.failed": "Upload failed",
   "claude.attach.processFailed": "Processing failed",
+  "claude.attach.overflow": "Attachment limit ({{max}}) reached, {{count}} more not added",
   "claude.attach.remove": "Remove attachment",
   "claude.attach.fileMention": "Attachment: {{path}}",
   "claude.attach.textInline": "Contents of attachment {{name}}:",

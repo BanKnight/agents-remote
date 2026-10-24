@@ -47,10 +47,13 @@ export function ImageLightbox({
   src,
   alt,
   onOpenChange,
+  showDownload = true,
 }: {
   src: string;
   alt: string;
   onOpenChange: (open: boolean) => void;
+  /** 透传 ImageViewer 的「另存」开关；composer 草稿预览传 false（还没发送的图无处可存）。 */
+  showDownload?: boolean;
 }) {
   const { t } = useT();
   return (
@@ -64,15 +67,18 @@ export function ImageLightbox({
         //    max-w-none 去不掉它 → 桌面被钳到 512px（256→512 之间表现为内容偏左）。
         className="fixed inset-0 z-[100] max-w-none sm:max-w-none w-full translate-x-0 translate-y-0 flex flex-col border-0 bg-black/95 p-0"
       >
+        {/* 关闭钮 top 叠 safe-area：standalone PWA viewport-fit=cover 下裸 top-3(12px) 落在
+            状态栏/灵动岛区内，被系统 UI 覆盖、点击被吃（§1 家族）——真机「关不掉」的根因。
+            env=0 的桌面回落到 12px 不变。 */}
         <button
           aria-label={t("session.close")}
-          className="absolute right-3 top-3 z-10 flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-white/80 transition hover:bg-white/10 hover:text-white"
+          className="absolute right-3 top-[calc(env(safe-area-inset-top,0px)+0.75rem)] z-10 flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-white/80 transition hover:bg-white/10 hover:text-white"
           onClick={() => onOpenChange(false)}
           type="button"
         >
           ✕
         </button>
-        <ImageViewer alt={alt} src={src} />
+        <ImageViewer alt={alt} showDownload={showDownload} src={src} />
       </DialogContent>
     </Dialog>
   );
