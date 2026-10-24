@@ -506,7 +506,7 @@ export function AttachmentChipRow({
                 </div>
               )
             ) : (
-              <div className="flex w-36 flex-col gap-0.5 rounded-lg bg-surface-inset px-2 py-1.5">
+              <div className="relative flex w-36 flex-col gap-0.5 rounded-lg bg-surface-inset px-2 py-1.5">
                 <span className="truncate text-xs font-medium text-on-surface-soft">{a.name}</span>
                 <span
                   className={cn(
@@ -516,8 +516,10 @@ export function AttachmentChipRow({
                 >
                   {statusLine ?? a.path}
                 </span>
+                {/* 进度条绝对定位落在卡片 padding 区内：流内会多占一行（2px+gap），
+                    uploading→ready 瞬间 chip 高度塌 4px → composer 卡片跳动。 */}
                 {a.status === "uploading" ? (
-                  <span className="h-0.5 w-full overflow-hidden rounded-full bg-on-surface/10">
+                  <span className="absolute inset-x-2 bottom-1 h-0.5 overflow-hidden rounded-full bg-on-surface/10">
                     <span
                       className="block h-full rounded-full bg-primary transition-[width]"
                       style={{ width: `${a.progress ?? 0}%` }}

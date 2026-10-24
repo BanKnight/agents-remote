@@ -379,6 +379,7 @@ async function waitForFrame(page, frames, cursor, pred, label) {
             return {
               percent: m ? Number(m[1]) : null,
               barWidth: bar?.style.width ?? "",
+              chipHeight: Math.round(chip.getBoundingClientRect().height * 100) / 100,
             };
           },
           undefined,
@@ -396,10 +397,17 @@ async function waitForFrame(page, frames, cursor, pred, label) {
         up != null && up.barWidth !== "",
         `barWidth=${up?.barWidth ?? "null"}`,
       );
-      await page
-        .locator("[data-attachment-chip]", { hasText: UPLOAD_BIG })
-        .waitFor({ timeout: 8000 });
+      const readyChip = page.locator("[data-attachment-chip]", { hasText: UPLOAD_BIG });
+      await readyChip.waitFor({ timeout: 8000 });
       check("Part4b: 响应后 chip 就绪显示 uploads/ 路径", true);
+      // 几何防回归（禁截图）：进度条必须绝对定位，uploading→ready 高度零变化——
+      // 流内会多占一行，完成瞬间 chip 塌 4px 让 composer 卡片跳动。
+      const readyH = await readyChip.evaluate((el) => el.getBoundingClientRect().height);
+      check(
+        "Part4b: uploading→ready chip 高度不变（进度条不占流）",
+        up != null && Math.abs(readyH - up.chipHeight) < 0.5,
+        `uploading=${up?.chipHeight ?? "null"} ready=${readyH}`,
+      );
       // 清残留：× 移除 4b 文件 chip（未发送），避免污染 Part 5/6 的 chip 计数断言。
       await page
         .locator("[data-attachment-chip]", { hasText: UPLOAD_BIG })
