@@ -545,8 +545,13 @@ export async function previewInstalledSkill(
   // sanitize 拒绝 dot-segment/`/`/null byte，锁死在 agent skills 目录内（路径穿越不可达）。
   const safeName = sanitizeSkillName(name);
   // 项目 scope：读 <projectRoot>/.<agentHome>/skills/<name>；全局 scope：读 ~/.<agentHome>/skills/<name>。
+  // （cwd 是 projectRoot 本身，skills CLI 的安装位置在其下 .<agentHome>/skills——与
+  // scanInstalledSkillsFromFs 的目录口径一致；此前漏拼中缀导致项目预览恒 404。）
   const cwd = projectCtx ? await resolveProjectSkillCwd(projectCtx) : undefined;
-  const dir = join(cwd ?? agentGlobalSkillsDir(agent, resolveSkillsHome(deps)), safeName);
+  const skillsDir = cwd
+    ? join(cwd, AGENT_SKILLS_HOME_DIR[agent], "skills")
+    : agentGlobalSkillsDir(agent, resolveSkillsHome(deps));
+  const dir = join(skillsDir, safeName);
   let content: string;
   try {
     content = await readFile(join(dir, SKILL_MD), "utf8"); // 跟随 symlink 读 canonical SKILL.md

@@ -319,6 +319,48 @@ describe("previewInstalledSkill", () => {
       previewInstalledSkill("nope", "claude-code", { settingsStore: store, skillsHome: home }),
     ).rejects.toMatchObject({ code: "SKILL_PREVIEW_FAILED" });
   });
+
+  // 项目 scope：读 <projectRoot>/.claude/skills/<name>（2026-10-24 回归：此前漏拼
+  // .<agentHome>/skills 中缀，项目预览恒 404——修复批让请求首次真实打到该端点才暴露）。
+  it("reads project-scoped skill from <projectRoot>/.claude/skills", async () => {
+    const projectsRoot = await mkdtemp(join(tmpdir(), "ar-skill-projects-"));
+    try {
+      const dir = join(projectsRoot, "demo", ".claude", "skills", "proj-only");
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        join(dir, "SKILL.md"),
+        "---\nname: proj-only\ndescription: Project scoped\n---\n# PROJ\nproject body",
+      );
+      const res = await previewInstalledSkill(
+        "proj-only",
+        "claude-code",
+        { settingsStore: store },
+        { projectsRoot, projectKey: "demo" },
+      );
+      expect(res.name).toBe("proj-only");
+      expect(res.description).toBe("Project scoped");
+      expect(res.content).toContain("project body");
+    } finally {
+      await rm(projectsRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("throws SKILL_PREVIEW_FAILED for missing project-scoped skill", async () => {
+    const projectsRoot = await mkdtemp(join(tmpdir(), "ar-skill-projects-"));
+    try {
+      await mkdir(join(projectsRoot, "demo"), { recursive: true });
+      await expect(
+        previewInstalledSkill(
+          "proj-only",
+          "claude-code",
+          { settingsStore: store },
+          { projectsRoot, projectKey: "demo" },
+        ),
+      ).rejects.toMatchObject({ code: "SKILL_PREVIEW_FAILED" });
+    } finally {
+      await rm(projectsRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("skill sources CRUD", () => {

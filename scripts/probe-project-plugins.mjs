@@ -89,6 +89,26 @@ async function sectionA(browser) {
     );
     const skillNames = (realSkills.skills ?? []).map((s) => s.name);
     const serverNames = (realServers.servers ?? []).map((s) => s.name);
+    if (skillNames.length > 0) {
+      // 真实后端项目 preview 200（2026-10-24 教训：段 C mock 断言只证「项目 API 被调」，
+      // 拦不住真实 API 自身的路径 bug——项目预览恒 404 漏网。用真实列表第一个技能名，
+      // 不预置具体技能存在（§29 数据驱动））。
+      const preview = await page.evaluate(
+        async ([proj, name]) => {
+          const r = await fetch(
+            `/api/projects/${proj}/skills/preview?name=${encodeURIComponent(name)}&agent=claude-code`,
+          );
+          const body = await r.json();
+          return { status: r.status, content: typeof body?.content === "string" };
+        },
+        [projectName, skillNames[0]],
+      );
+      check(
+        "A3c 真实后端项目 preview → 200 且含 content（首个已装技能）",
+        preview.status === 200 && preview.content,
+        `name=${skillNames[0]} got ${preview.status}`,
+      );
+    }
     if (skillNames.length === 0) {
       await page
         .getByText("暂无已安装技能", { exact: false })
