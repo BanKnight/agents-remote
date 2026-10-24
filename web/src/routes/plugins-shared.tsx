@@ -12,7 +12,7 @@ import { useSkillPreview } from "../hooks/skills";
 
 /**
  * 默认 skill agent（SkillTabPreview / 移动插件页共用）。当前固定 claude-code——单 agent，
- * tabId 不编码 agent（`skill_${name}` 足够去重）；未来支持 codex 同名 skill 再扩展。
+ * tabId 不编码 agent（`skill_${projectName}/${name}` 已按项目去重）；未来支持 codex 同名 skill 再扩展。
  */
 export const DEFAULT_SKILL_AGENT: SkillAgent = "claude-code";
 
@@ -32,8 +32,9 @@ export function parseEnvLines(text: string): Record<string, string> | undefined 
 }
 
 /**
- * skill 详情预览面板（中栏 skill tab / 全局插件详情深度页共用，对标 FileTabPreview）。
- * 只读渲染本地 SKILL.md（useSkillPreview → MarkdownString）——无编辑无保存（区别于 FileTabPreview
+ * skill 详情预览面板（中栏 skill tab / 插件详情深度页共用，对标 FileTabPreview）。
+ * projectName 非空 = 项目段技能（走项目 preview API）；只读渲染本地 SKILL.md
+ *（useSkillPreview → MarkdownString）——无编辑无保存（区别于 FileTabPreview
  * 可编辑）。**不带 h4 标题栏**：SKILL.md 正文自带 `# H1` 标题，再加 h4 会重复（区别于 FilePreviewPanel
  * 保留 h4——文件正文不带 `# 标题` 不重复）；section 直接从 loading/error/内容态开始。桌面由
  * PanelRouter 渲染、移动由插件详情深度页（mobile-workbench pluginView 分流）渲染 body。顶层组件

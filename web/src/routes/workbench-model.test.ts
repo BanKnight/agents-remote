@@ -74,21 +74,23 @@ test("inferSessionTypeFromId reads agent_/terminal_ prefix", () => {
   expect(inferSessionTypeFromId("unknown_abc")).toBeUndefined();
 });
 
-test("tabIdOf: session/file/git/skill 各 kind 编码（skill = skill_${name}，第 4 种 tab kind）", () => {
+test("tabIdOf: session/file/git/skill 各 kind 编码（skill = skill_${projectName}/${name}）", () => {
   expect(tabIdOf(ref("p", "a"))).toBe("a");
   expect(tabIdOf({ kind: "file", path: "p1/src/index.ts" })).toBe("file_p1/src/index.ts");
   expect(tabIdOf({ kind: "git", projectName: "p1", scope: "worktree", path: "a.ts" })).toBe(
     "git_worktree/a.ts",
   );
-  // skill tab：tabId = skill_${name}（agent 维度不编码，当前单 agent claude-code，YAGNI）
-  expect(tabIdOf({ kind: "skill", name: "tdd" })).toBe("skill_tdd");
+  // skill tab：tabId = skill_${projectName}/${name}（项目段进 id——项目/全局可能同名，须自包含 scope）
+  expect(tabIdOf({ kind: "skill", projectName: "p1", name: "tdd" })).toBe("skill_p1/tdd");
   // chat 会话：tabId = sessionId（无 projectName；chat_ 前缀与 agent_/terminal_ 互斥去重安全）
   expect(tabIdOf({ kind: "chat", sessionId: "chat_abc" })).toBe("chat_abc");
 });
 
-test("parseSkillTabId: skill_${name} → name；非 skill tabId → null", () => {
-  expect(parseSkillTabId("skill_tdd")).toBe("tdd");
-  expect(parseSkillTabId("skill_my-skill")).toBe("my-skill");
+test("parseSkillTabId: skill_${projectName}/${name} → { projectName, name }；非 skill/旧格式 → null", () => {
+  expect(parseSkillTabId("skill_p1/tdd")).toEqual({ projectName: "p1", name: "tdd" });
+  expect(parseSkillTabId("skill_demo/my-skill")).toEqual({ projectName: "demo", name: "my-skill" });
+  // 旧格式（无项目段，2026-10-24 前持久化的 skill tab）→ null
+  expect(parseSkillTabId("skill_tdd")).toBeNull();
   // 非 skill tabId（session/file/git）→ null
   expect(parseSkillTabId("agent_abc")).toBeNull();
   expect(parseSkillTabId("file_p1/src/index.ts")).toBeNull();
@@ -106,7 +108,7 @@ test("isSessionFocusId: session focus 正例 + 前缀/字面量排除族（与 f
   expect(isSessionFocusId("gitcommit_abc123")).toBe(false);
   expect(isSessionFocusId("wiki_home")).toBe(false);
   expect(isSessionFocusId("file_p1/src/index.ts")).toBe(false);
-  expect(isSessionFocusId("skill_tdd")).toBe(false);
+  expect(isSessionFocusId("skill_p1/tdd")).toBe(false);
   expect(isSessionFocusId("git_worktree/a.ts")).toBe(false);
   // gitcmp_ 前缀（compare 模式 git tab）同为排除（与 focus effect 分流判定一致）。
   expect(isSessionFocusId("gitcmp_main~feat/a.ts")).toBe(false);
@@ -307,6 +309,32 @@ test("deriveWorkbenchRouteContext: 全局 skill 详情 /plugins/skill/$ → plug
     pluginName: "tdd",
     leftMode: "plugins",
   });
+  // ?pluginProject=<项目名>：项目段技能详情（同页，数据走项目 API）；scope 仍 global
+  //（详情页非工作台 tab 体系，返回回插件页）。
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/plugins/skill/$", { _splat: "tdd" }, { pluginProject: "p1" }),
+    ),
+  ).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+    pluginView: "skill",
+    pluginName: "tdd",
+    pluginProject: "p1",
+    leftMode: "plugins",
+  });
+  // 空串不收（白名单只收非空字符串）→ 无 pluginProject 键
+  expect(
+    deriveWorkbenchRouteContext(
+      routeLeaf("/plugins/skill/$", { _splat: "tdd" }, { pluginProject: "" }),
+    ),
+  ).toEqual({
+    scope: { kind: "global" },
+    focusId: undefined,
+    pluginView: "skill",
+    pluginName: "tdd",
+    leftMode: "plugins",
+  });
 });
 
 test("deriveWorkbenchRouteContext: 全局 MCP 详情 /plugins/mcp/$ → pluginView 深度页（无 focusId）", () => {
@@ -348,10 +376,10 @@ test("deriveWorkbenchRouteContext: git focus 编码 git_${scope}/${path}，gitSc
   });
 });
 
-test("deriveWorkbenchRouteContext: project skill focus /projects/$key/skill/$ → scope project + focusId=skill_${name}（移动 tab 带）", () => {
+test("deriveWorkbenchRouteContext: project skill focus /projects/$key/skill/$ → scope project + focusId=skill_${key}/${name}（移动 tab 带）", () => {
   expect(
     deriveWorkbenchRouteContext(routeLeaf("/projects/$key/skill/$", { key: "p1", _splat: "tdd" })),
-  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "skill_tdd" });
+  ).toEqual({ scope: { kind: "project", key: "p1" }, focusId: "skill_p1/tdd" });
   // 空 splat → 无 focus（对标 /plugins/skill/$ 边界）
   expect(
     deriveWorkbenchRouteContext(routeLeaf("/projects/$key/skill/$", { key: "p1", _splat: "" })),
@@ -1000,8 +1028,8 @@ test("activeTabRefLeaf: 活动 leaf 活动 tab / null", () => {
 
 // ── projectTabStrip（移动端项目 tab 带投影，设计 workbench-views §7.7）──────────
 
-test("projectTabStrip: 跨项目过滤——session/file/git 按项目归属，skill 全局包含", () => {
-  // 两 leaf 两项目：g1 = p1 会话 + p2 会话 + file(p1) + skill；g2 = p2 会话 + git(p1)
+test("projectTabStrip: 跨项目过滤——session/file/git/skill 全按项目归属", () => {
+  // 两 leaf 两项目：g1 = p1 会话 + p2 会话 + file(p1) + skill(p1)；g2 = p2 会话 + git(p1)
   const l = v3({
     root: split("s1", "horizontal", [
       {
@@ -1012,7 +1040,7 @@ test("projectTabStrip: 跨项目过滤——session/file/git 按项目归属，s
           ref("p1", "a"),
           ref("p2", "x"),
           { kind: "file", path: "p1/src/index.ts" },
-          { kind: "skill", name: "tdd" },
+          { kind: "skill", projectName: "p1", name: "tdd" },
         ],
       },
       {
@@ -1031,25 +1059,25 @@ test("projectTabStrip: 跨项目过滤——session/file/git 按项目归属，s
   expect(projectTabStrip(l, "p1").map((t) => `${t.leafId}:${t.tabId}`)).toEqual([
     "g1:a",
     "g1:file_p1/src/index.ts",
-    "g1:skill_tdd",
+    "g1:skill_p1/tdd",
     "g2:git_worktree/a.ts",
   ]);
-  // p2 strip：x + skill + b（skill 全局包含）；file/git 属 p1 被过滤
-  expect(projectTabStrip(l, "p2").map((t) => t.tabId)).toEqual(["x", "skill_tdd", "b"]);
+  // p2 strip：x + b；file/git/skill 属 p1 被过滤（skill 不再跨项目泄漏）
+  expect(projectTabStrip(l, "p2").map((t) => t.tabId)).toEqual(["x", "b"]);
 });
 
-test("projectTabStrip: skill 无 projectName 字段，任何项目的 strip 都包含（刻意全局例外）", () => {
+test("projectTabStrip: skill 按 projectName 过滤（不再全局包含）", () => {
   const l = v3({
     root: {
       kind: "leaf",
       id: "g1",
-      activeTabId: "skill_tdd",
-      tabs: [{ kind: "skill", name: "tdd" }],
+      activeTabId: "skill_p1/tdd",
+      tabs: [{ kind: "skill", projectName: "p1", name: "tdd" }],
     },
     activeGroupId: "g1",
   });
-  expect(projectTabStrip(l, "any-project").map((t) => t.ref.kind)).toEqual(["skill"]);
-  expect(projectTabStrip(l, "another").map((t) => t.tabId)).toEqual(["skill_tdd"]);
+  expect(projectTabStrip(l, "p1").map((t) => t.ref.kind)).toEqual(["skill"]);
+  expect(projectTabStrip(l, "another").map((t) => t.tabId)).toEqual([]);
 });
 
 test("projectTabStrip: file tab 按 splitFilePath 首段（项目名）过滤", () => {
@@ -1123,9 +1151,18 @@ test("tabIdOf + ensureTabOpenLeaf: render tab 用 id 原样编码，可开可激
 test("normalizeRef: render ref → null（瞬态内容不落盘，持久化恢复时被 normalizeTree 剔除）", () => {
   // 持久化恢复链：storage.getItem → normalizeLayoutV3 → normalizeTree → normalizeRef。
   // render 的 html 在内存 atom（刷新即失），恢复一个空 render tab 是坏状态 → null 丢弃；
-  // 其余 kind 原样保留（session 抽样对照）。
+  // 其余 kind 原样保留（session/skill 抽样对照）。
   expect(normalizeRef({ kind: "render", id: "render_x" })).toBeNull();
   expect(normalizeRef(ref("p", "a"))).toEqual(ref("p", "a"));
+  expect(normalizeRef({ kind: "skill", projectName: "p1", name: "tdd" })).toEqual({
+    kind: "skill",
+    projectName: "p1",
+    name: "tdd",
+  });
+  // 旧持久化 skill ref 无 projectName（2026-10-24 前，数据源不明可能读错同名技能）→ null 丢弃。
+  expect(
+    normalizeRef({ kind: "skill", name: "tdd" } as unknown as Parameters<typeof normalizeRef>[0]),
+  ).toBeNull();
 });
 
 test("normalizeRef: 已退役 pluginmcp ref / 残缺 session ref → null（存量清洗兜底，§6.12h）", () => {

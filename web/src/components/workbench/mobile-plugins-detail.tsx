@@ -39,16 +39,20 @@ import { PluginNav } from "./mobile-plugins-market";
  * hasUpdate 出 chip + CTA → update 202 + SSE waitForSkillTask（hook 内置乐观 hasUpdate:false，
  * 完成后 chip/CTA 消失）。SKILL.md 正文段是实现扩展（有据：useSkillPreview 读本地文件），保留
  * v1 起的只读预览能力。
+ *
+ * 项目作用域（?pluginProject，2026-10-24）：同一页承载项目段技能——数据全走项目 API，
+ * dmeta 作用域行显示「本项目 · <项目>」，无更新检测（项目无 updates 数据源）。
  */
-export function MobileSkillDetail({ name }: { name: string }) {
+export function MobileSkillDetail({ name, projectName }: { name: string; projectName?: string }) {
   const { t } = useT();
   const navigate = useNavigate();
   const updates = useCheckSkillUpdates(DEFAULT_SKILL_AGENT);
-  const preview = useSkillPreview(name, DEFAULT_SKILL_AGENT);
-  const update = useUpdateSkill();
-  const uninstall = useUninstallSkill();
-  const installed = useInstalledSkills(DEFAULT_SKILL_AGENT);
-  const setDisabled = useSetSkillDisabled();
+  // projectName 非空 = 项目段技能：preview/停用/卸载/更新全走项目 API（项目技能只在项目目录）。
+  const preview = useSkillPreview(name, DEFAULT_SKILL_AGENT, projectName);
+  const update = useUpdateSkill(projectName);
+  const uninstall = useUninstallSkill(projectName);
+  const installed = useInstalledSkills(DEFAULT_SKILL_AGENT, projectName);
+  const setDisabled = useSetSkillDisabled(projectName);
   const { confirm, holder } = useConfirm();
 
   const skillEntry = (installed.data?.skills ?? []).find((s) => s.name === name);
@@ -65,7 +69,9 @@ export function MobileSkillDetail({ name }: { name: string }) {
     : null;
 
   // 「有更新」仅手动检测出结果后出现（updates.data undefined = 尚未检测），与 09 列表 chip 同源。
-  const hasUpdate = (updates.data?.updates ?? []).some((u) => u.name === name && u.hasUpdate);
+  // 项目段无更新检测数据源（服务端无项目 updates 路由）：屏蔽全局检测缓存，防同名技能误报。
+  const hasUpdate =
+    !projectName && (updates.data?.updates ?? []).some((u) => u.name === name && u.hasUpdate);
   // back pop 优先（导航栈同族，第十一轮复验）；深链直达无来路时 push /plugins 兜底。
   const backNav = useWorkbenchBack();
   const back = () => backNav(() => void navigate({ to: "/plugins" }));
@@ -83,7 +89,14 @@ export function MobileSkillDetail({ name }: { name: string }) {
           </div>
         ) : null}
         <div className="dmeta">
-          {[sourceLabel, t("plugins.scopeGlobal")].filter(Boolean).join(" · ")}
+          {[
+            sourceLabel,
+            projectName
+              ? t("plugins.scopeProjectValue", { name: projectName })
+              : t("plugins.scopeGlobal"),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </div>
         {preview.data?.description ? <div className="ddesc">{preview.data.description}</div> : null}
 

@@ -59,8 +59,8 @@ import { pluginsMobileScopeAtom, ScopeSwitchPopover } from "./mobile-plugins-sco
  * 长按/右键卡（09b）：查看详情 / 停用（停止注入）/ 卸载…（红，确认后走服务端 rename/rm）；
  * 停用 = 批6 服务端语义（目录 rename 进停用区，防复活四点配套）。
  *
- * 深度页（M6-b 已落地）：技能卡 → /plugins/skill/$（12，global）/ /projects/$key/skill/$
- *（project，tab 带路径）；MCP 卡 → /plugins/mcp/$（13，仅 global——project scope MCP 无详情
+ * 深度页（M6-b 已落地）：技能卡 → /plugins/skill/$（12，global）/ 同 URL + ?pluginProject
+ *（project，详情数据走项目 API）；MCP 卡 → /plugins/mcp/$（13，仅 global——project scope MCP 无详情
  * 容器，记档）；MCP ＋ → 14 添加 sheet（scope 随段）；技能 ＋ 添加 → 技能市场（18）；
  * 管理源 › → /plugins/sources（15）。
  */
@@ -83,6 +83,14 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
   const [searchOpen, setSearchOpen] = useState(false);
 
   const projectName = scope === "project" && lastProject ? lastProject : undefined;
+  // 技能详情导航单点（code review P2 收敛：点击/键盘/长按菜单三处同参）——项目段带
+  // ?pluginProject（详情数据走项目 API），global 不带；同走插件域深度页，返回自然回插件页。
+  const openSkillDetail = (name: string) =>
+    void navigate({
+      to: "/plugins/skill/$",
+      params: { _splat: name },
+      search: projectName ? { pluginProject: projectName } : {},
+    });
   const mcpScope = projectName ? ("project" as const) : ("user" as const);
   const servers = useMcpServers(mcpScope, projectName);
   const installed = useInstalledSkills(DEFAULT_SKILL_AGENT, projectName);
@@ -175,16 +183,7 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
     items.push({
       icon: <ShellIcon className="size-[17px]" name="doc-text" />,
       label: t("plugins.menuView"),
-      onSelect: () => {
-        if (projectName) {
-          void navigate({
-            to: "/projects/$key/skill/$",
-            params: { key: projectName, _splat: s.name },
-          });
-        } else {
-          void navigate({ to: "/plugins/skill/$", params: { _splat: s.name } });
-        }
-      },
+      onSelect: () => openSkillDetail(s.name),
     });
     items.push({
       icon: <ShellIcon className="size-[17px]" name={s.disabled ? "play" : "pause"} />,
@@ -483,33 +482,17 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
                     role="button"
                     tabIndex={0}
                     onClick={(e) => {
-                      // 技能卡点入详情：global → /plugins/skill/$（12）；project → 项目 tab 带路径
-                      //（skill preview 随项目 scope 查，/plugins/skill/$ 只承载 global）。
                       if (
                         e.target !== e.currentTarget &&
                         !e.currentTarget.contains(e.target as Node)
                       )
                         return;
                       if (longPress.guardClick()) return;
-                      if (projectName) {
-                        void navigate({
-                          to: "/projects/$key/skill/$",
-                          params: { key: projectName, _splat: s.name },
-                        });
-                      } else {
-                        void navigate({ to: "/plugins/skill/$", params: { _splat: s.name } });
-                      }
+                      openSkillDetail(s.name);
                     }}
                     onKeyDown={(e) => {
                       if (e.key !== "Enter" && e.key !== " ") return;
-                      if (projectName) {
-                        void navigate({
-                          to: "/projects/$key/skill/$",
-                          params: { key: projectName, _splat: s.name },
-                        });
-                      } else {
-                        void navigate({ to: "/plugins/skill/$", params: { _splat: s.name } });
-                      }
+                      openSkillDetail(s.name);
                     }}
                     onContextMenu={(e) => ctx.openAt(`skill:${s.name}`, e)}
                     {...longPress.bind(`skill:${s.name}`)}

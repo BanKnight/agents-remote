@@ -106,6 +106,7 @@ export function WorkbenchLayoutShell() {
       leftMode={ctx.leftMode}
       mode={ctx.mode}
       pluginName={ctx.pluginName}
+      pluginProject={ctx.pluginProject}
       pluginView={ctx.pluginView}
       rightTab={ctx.rightTab}
       scope={ctx.scope}
@@ -122,6 +123,7 @@ function WorkbenchContent({
   tab: tabFromUrl,
   leftMode = "auto",
   pluginName,
+  pluginProject,
   pluginView,
   mode = "agent",
   view,
@@ -143,6 +145,8 @@ function WorkbenchContent({
   pluginView?: "home" | "market" | "sources" | "skill" | "mcp";
   // 插件深度页条目名（第八轮）：pluginView="skill"/"mcp" 时为 skill/server 名。
   pluginName?: string;
+  // 项目作用域技能详情（?pluginProject=<项目名>）：非空 = 该项目的技能（数据走项目 API）。
+  pluginProject?: string;
   // 一级会话页模式（设计 workbench-views.md §3.1）：agent = 现有三栏会话网格；chat = 全局
   // 会话列表（不绑项目，pi SDK 嵌入，Phase 1 列表 CRUD + 占位 detail）。URL `?mode=` 维度，
   // 默认 agent。仅 global scope 一级会话页有意义。
@@ -314,9 +318,16 @@ function WorkbenchContent({
       if (filePath !== null) {
         return ensureTabOpenLeaf(prev, { kind: "file", path: filePath });
       }
-      const skillName = parseSkillTabId(focusId);
-      if (skillName !== null) {
-        return ensureTabOpenLeaf(prev, { kind: "skill", name: skillName });
+      const skillParsed = parseSkillTabId(focusId);
+      if (skillParsed !== null) {
+        // skill tab 自包含项目（tabId 内的 projectName 与 URL key 同源）：preview 走项目 API。
+        // 仅 project scope 开 tab（global 技能详情是 /plugins/skill/$ 深度页，无 focusId）。
+        if (scope.kind !== "project") return prev;
+        return ensureTabOpenLeaf(prev, {
+          kind: "skill",
+          projectName: skillParsed.projectName,
+          name: skillParsed.name,
+        });
       }
       const gitParsed = parseGitTabId(focusId);
       if (gitParsed !== null) {
@@ -593,34 +604,19 @@ function WorkbenchContent({
     },
     [navigate, rightTab, leftMode, mode],
   );
-  // skill tab focus URL（对标 navigateToFile 的 project/global 分流，2026-08-16 scope-aware 化）：
-  // - 项目 scope → /projects/$key/skill/$（skill 停在项目内，与 file/git 同语义；focus effect 全局
-  //   处理 skill tab，无 scope gate）。
-  // - 全局/其他 → /plugins/skill/$（skill 的 global 规范 URL，leftMode 继承 ?leftMode 透传——从
-  //   /plugins 进来=plugins 保插件管理左栏，中栏 tab 切换不改左栏，VSCode 式）。
+  // skill tab focus URL：恒 /projects/$key/skill/$（项目段技能；2026-10-24 起 skill tab 自带
+  // projectName，项目取 ref 而非当前 scope——桌面单一跨 scope layout 下 tab 可来自别的项目）。
+  // global 技能不再进 tab（/plugins/skill/$ 深度页承载，见 workbench-model）。
   const navigateToSkill = useCallback(
-    (name: string) => {
-      if (scope.kind === "project") {
-        void navigate({
-          to: "/projects/$key/skill/$",
-          params: { key: scope.key, _splat: name },
-          // focus 导航剔除 tab 维度（focus 与工具互斥，同 navigateToFile 注释）。
-          search: stickyWorkbenchSearch({ rightTab, leftMode, mode }),
-        });
-        return;
-      }
+    (projectName: string, name: string) => {
       void navigate({
-        to: "/plugins/skill/$",
-        params: { _splat: name },
-        // mainPage 态同 navigateToFile：leftMode 重置 auto，退出插件整页进工作台看 tab。
-        search: stickyWorkbenchSearch({
-          leftMode: mainPageActive ? "auto" : leftMode,
-          rightTab,
-          mode,
-        }),
+        to: "/projects/$key/skill/$",
+        params: { key: projectName, _splat: name },
+        // focus 导航剔除 tab 维度（focus 与工具互斥，同 navigateToFile 注释）。
+        search: stickyWorkbenchSearch({ rightTab, leftMode, mode }),
       });
     },
-    [navigate, scope, rightTab, leftMode, mode, mainPageActive],
+    [navigate, rightTab, leftMode, mode],
   );
   // tab ✕ = 最小化（设计 §7.2）：removeTabFromLeaf 从 leaf 移除 tab，session 存活；file tab
   // 移除（file 无生命周期，✕ 即从布局消失）。focusId 被关后回退到新 active tab 的 focus URL。
@@ -680,9 +676,12 @@ function WorkbenchContent({
         return;
       }
       if (active.kind === "skill") {
-        // skill URL 固定 global（/plugins/skill/$）；仅当前已是 global 才导航，否则保 project scope。
-        if (scope.kind === "global") void navigateToSkill(active.name);
-        else void navigateWorkbench(scope, undefined, search);
+        // skill tab 固定项目 URL：当前 scope 就是该 tab 的项目才导航，否则清 focus 保 scope。
+        if (scope.kind === "project" && active.projectName === scope.key) {
+          void navigateToSkill(active.projectName, active.name);
+        } else {
+          void navigateWorkbench(scope, undefined, search);
+        }
         return;
       }
       if (active.kind === "render") {
@@ -747,7 +746,7 @@ function WorkbenchContent({
         return;
       }
       if (ref?.kind === "skill") {
-        void navigateToSkill(ref.name);
+        void navigateToSkill(ref.projectName, ref.name);
         return;
       }
       if (ref?.kind === "wikiread") {
@@ -845,7 +844,7 @@ function WorkbenchContent({
       if (ref.mode === "compare")
         void navigateToGitCompareFile(ref.projectName, ref.base, ref.compare, ref.path);
       else void navigateToGitFile(ref.projectName, ref.scope, ref.path);
-    } else if (ref.kind === "skill") void navigateToSkill(ref.name);
+    } else if (ref.kind === "skill") void navigateToSkill(ref.projectName, ref.name);
     else if (ref.kind === "chat")
       // chat 无 projectName：保 scope，focus URL=sessionId（与 onSelectTab chat 分支同模式）。
       navigateWorkbench(
@@ -907,6 +906,7 @@ function WorkbenchContent({
         focusId={focusId}
         leftMode={leftMode}
         pluginName={pluginName}
+        pluginProject={pluginProject}
         pluginView={pluginView}
         mode={mode}
         onOpenGitFile={onOpenGitFile}
@@ -972,7 +972,8 @@ function WorkbenchContent({
     //（复用 tab 时代同款组件；不写 layout、无 tabstrip chip），home = 插件管理整页。
     pluginView === "skill" && pluginName ? (
       <MainPageShell title={t("nav.plugins")}>
-        <SkillTabPreview name={pluginName} />
+        {/* 项目段技能详情同页（?pluginProject）：传 projectName 走项目 preview API。 */}
+        <SkillTabPreview name={pluginName} projectName={pluginProject} />
       </MainPageShell>
     ) : pluginView === "mcp" && pluginName ? (
       <MainPageShell title={t("nav.plugins")}>

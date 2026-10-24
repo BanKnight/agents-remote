@@ -77,19 +77,69 @@ async function sectionA(browser) {
     check("A3 未知项目 skills → 404", s3 === 404, `got ${s3}`);
     check("A3b 项目级 disable 端点路由通（未装技能 → 400 而非 404）", s4 === 400, `got ${s4}`);
 
-    // 项目段空态（test 项目无技能/MCP）：两个空态文案 + 组头无检测/添加入口（projectName ? null）。
-    await page
-      .getByText("暂无已安装技能", { exact: false })
-      .waitFor({ state: "visible", timeout: 10_000 });
-    check("A4 项目段技能空态（test 无技能）", true);
+    // 项目段渲染按运行时真实数据断言（frontend-notes §29：预置假设会随开发批次漂移——
+    // test 项目内容不是恒定的，如 gen-ui 批次装过技能）。空列表 → 空态文案；否则逐个真实名出卡。
+    const [realSkills, realServers] = await page.evaluate(
+      (proj) =>
+        Promise.all([
+          fetch(`/api/projects/${proj}/skills?agent=claude-code`).then((r) => r.json()),
+          fetch(`/api/projects/${proj}/mcp`).then((r) => r.json()),
+        ]),
+      projectName,
+    );
+    const skillNames = (realSkills.skills ?? []).map((s) => s.name);
+    const serverNames = (realServers.servers ?? []).map((s) => s.name);
+    if (skillNames.length === 0) {
+      await page
+        .getByText("暂无已安装技能", { exact: false })
+        .waitFor({ state: "visible", timeout: 10_000 });
+      check("A4 项目段技能空态（真实列表为空）", true);
+    } else {
+      // 轮询等待列表请求落 DOM（review P3：真实后端可能慢于固定 sleep，写死时长是假挂源）。
+      await page
+        .waitForFunction(
+          (names) => names.every((n) => document.body.innerText.includes(n)),
+          skillNames,
+          { timeout: 15_000 },
+        )
+        .catch(() => {});
+      const missing = [];
+      for (const name of skillNames) {
+        if ((await page.locator(".pcard", { hasText: name }).count()) === 0) missing.push(name);
+      }
+      check(
+        "A4 项目段逐个渲染真实技能卡",
+        missing.length === 0,
+        `real=${JSON.stringify(skillNames)} missing=${JSON.stringify(missing)}`,
+      );
+    }
     check(
       "A5 项目段技能组头无「检查更新/＋ 添加」入口（仅全局段有；MCP 组头＋两段共有）",
       (await page.locator(".psect", { hasText: "已安装技能" }).locator("button.r").count()) === 0,
     );
-    check(
-      "A6 项目段 MCP 空态（test 无 .mcp.json）",
-      (await page.getByText("暂无 MCP 服务器", { exact: false }).count()) > 0,
-    );
+    if (serverNames.length === 0) {
+      check(
+        "A6 项目段 MCP 空态（真实列表为空）",
+        (await page.getByText("暂无 MCP 服务器", { exact: false }).count()) > 0,
+      );
+    } else {
+      await page
+        .waitForFunction(
+          (names) => names.every((n) => document.body.innerText.includes(n)),
+          serverNames,
+          { timeout: 15_000 },
+        )
+        .catch(() => {});
+      const missing = [];
+      for (const name of serverNames) {
+        if ((await page.locator(".pcard", { hasText: name }).count()) === 0) missing.push(name);
+      }
+      check(
+        "A6 项目段逐个渲染真实 MCP 卡",
+        missing.length === 0,
+        `real=${JSON.stringify(serverNames)} missing=${JSON.stringify(missing)}`,
+      );
+    }
   } finally {
     await page.context().close();
   }
@@ -132,7 +182,7 @@ async function sectionB(browser) {
     },
   ];
   const disablePosts = [];
-  await page.route(`**/api/projects/${projectName}/skills?*`, (r) =>
+  await page.route(`**/api/projects/${projectName}/skills?agent=*`, (r) =>
     r.fulfill(json({ skills: projectSkills })),
   );
   await page.route(`**/api/projects/${projectName}/skills/disable`, (r) => {
@@ -252,6 +302,122 @@ async function sectionB(browser) {
   }
 }
 
+// ── 段 C：项目技能详情走插件域深度页（2026-10-24 修复的端到端回归）──
+// 覆盖三件事：①项目段技能卡 → /plugins/skill/$?pluginProject（不再进项目工作台 tab 体系）；
+// ②详情数据走项目 preview API，全局 preview 零调用（项目/全局同名技能不再读错）；
+// ③‹ 返回一次即回 /plugins 且项目段仍选中（bug ②「返回路径不对」）。
+// 另验 C 批次根因：/projects/$key/skill/$ 仍可用，其 tab preview 也走项目 API。
+async function sectionC(browser) {
+  console.log("\n== C. 项目技能详情（插件域深度页 + 项目 preview API）==");
+  const ctx = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    locale: "zh-CN",
+  });
+  const page = await ctx.newPage();
+  const projectSkills = [
+    {
+      name: "pskill",
+      path: `/projects/${projectName}/.claude/skills/pskill`,
+      scope: "project",
+      agents: ["claude-code"],
+      description: "项目级技能示例",
+      source: "acme/skills",
+    },
+  ];
+  let projectPreviewCalls = 0;
+  let globalPreviewCalls = 0;
+  const previewBody = {
+    name: "pskill",
+    description: "项目级技能示例",
+    content: "# pskill\n\n项目技能正文",
+    source: "acme/skills",
+  };
+  await page.route(`**/api/projects/${projectName}/skills?agent=*`, (r) =>
+    r.fulfill(json({ skills: projectSkills })),
+  );
+  await page.route(`**/api/projects/${projectName}/skills/preview?*`, (r) => {
+    projectPreviewCalls += 1;
+    return r.fulfill(json(previewBody));
+  });
+  // 全局 preview：被调用即记数（不断言返回内容——本项目技能在全局不存在，真调会 404）。
+  await page.route("**/api/skills/preview?*", (r) => {
+    globalPreviewCalls += 1;
+    return r.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+  });
+  try {
+    await page.addInitScript(() => {
+      localStorage.setItem("lang", "zh");
+      localStorage.setItem("workbench.lastProjectKey", JSON.stringify("test"));
+    });
+    await login(page);
+    await page.goto(`${WEB_ORIGIN}/plugins`);
+    await page.locator(".segc button").nth(1).click();
+    await page.waitForTimeout(400);
+
+    const card = page.locator(".pcard", { hasText: "pskill" }).first();
+    await card.waitFor({ state: "visible", timeout: 10_000 });
+    await card.click();
+    await page.waitForTimeout(800);
+
+    const url = new URL(page.url());
+    check(
+      "C1 项目技能卡 → /plugins/skill/pskill?pluginProject=test（插件域深度页）",
+      url.pathname === "/plugins/skill/pskill" &&
+        url.searchParams.get("pluginProject") === projectName,
+      page.url(),
+    );
+    await page.locator(".dmeta").first().waitFor({ state: "visible", timeout: 10_000 });
+    check(
+      "C2 详情数据走项目 preview API（≥1 次），全局 preview 零调用",
+      projectPreviewCalls >= 1 && globalPreviewCalls === 0,
+      `project=${projectPreviewCalls} global=${globalPreviewCalls}`,
+    );
+    check(
+      "C3 正文渲染项目 SKILL.md（mock 内容），非全局同名数据",
+      (await page.getByText("项目技能正文", { exact: false }).count()) >= 1,
+    );
+    check(
+      "C4 dmeta 作用域行 = 本项目 · test",
+      ((await page.locator(".dmeta").first().textContent()) ?? "").includes(
+        `本项目 · ${projectName}`,
+      ),
+      (await page.locator(".dmeta").first().textContent()) ?? "",
+    );
+    check(
+      "C5 项目段无「有更新」chip / 更新 CTA（服务端无项目 updates 数据源）",
+      (await page.locator(".dchip.up").count()) === 0 &&
+        (await page.locator("button.cta").count()) === 0,
+    );
+
+    // ‹ 返回：一次 pop 即回插件页（不进项目工作台），项目段保持选中。
+    await page.locator("button.back").click();
+    await page.waitForTimeout(500);
+    const backUrl = new URL(page.url());
+    check(
+      "C6 ‹ 返回一次直达 /plugins（bug ②：返回路径正确）",
+      backUrl.pathname === "/plugins",
+      page.url(),
+    );
+    check(
+      "C7 返回后项目段仍选中（作用域记忆不丢）",
+      (await page.locator(".segc button").nth(1).getAttribute("aria-pressed")) === "true",
+    );
+
+    // C 批次根因：项目工作台 skill tab（/projects/$key/skill/$）的 preview 同样走项目 API。
+    const beforeTab = projectPreviewCalls;
+    const beforeGlobal = globalPreviewCalls;
+    await page.goto(`${WEB_ORIGIN}/projects/${projectName}/skill/pskill`);
+    await page.waitForTimeout(1200);
+    check(
+      "C8 /projects/$key/skill/$ 的 tab preview 走项目 API（全局零调用）",
+      projectPreviewCalls > beforeTab && globalPreviewCalls === beforeGlobal,
+      `project +${projectPreviewCalls - beforeTab} global +${globalPreviewCalls - beforeGlobal}`,
+    );
+  } finally {
+    await ctx.close();
+  }
+}
+
 (async () => {
   // web DOM 探针强制前置：CSS 落盘三道闸不过则整体 fail，不跑 DOM 断言。
   const css = await verifyCssFlushed({
@@ -267,6 +433,7 @@ async function sectionB(browser) {
   try {
     await sectionA(browser);
     await sectionB(browser);
+    await sectionC(browser);
   } finally {
     await browser.close();
   }

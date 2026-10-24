@@ -1007,6 +1007,7 @@ export const zh: Record<TranslationKey, string> = {
   "plugins.scopeGlobal": "全局",
   "plugins.scopeProject": "{{name}}",
   "plugins.scopeProjectEmpty": "本项目",
+  "plugins.scopeProjectValue": "本项目 · {{name}}",
   "plugins.scopeAria": "插件作用域",
   "plugins.pickProject": "去工作台选择项目",
   "plugins.pickProjectHint": "选择一个项目后，可管理注入该项目 Agent 会话的技能与 MCP 服务器",

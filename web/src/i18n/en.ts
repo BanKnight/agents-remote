@@ -1023,6 +1023,7 @@ export const en = {
   "plugins.scopeGlobal": "Global",
   "plugins.scopeProject": "{{name}}",
   "plugins.scopeProjectEmpty": "This project",
+  "plugins.scopeProjectValue": "This project · {{name}}",
   "plugins.scopeAria": "Plugins scope",
   "plugins.pickProject": "Pick a project in the workbench",
   "plugins.pickProjectHint":

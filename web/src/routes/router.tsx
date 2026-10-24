@@ -178,8 +178,9 @@ const projectGitFocusRoute = createRoute({
 });
 
 // 项目内 skill 详情 tab focus（2026-08-16 移动工作台重设计，对标 /projects/$key/file/$）：_splat 捕获
-// skill name，scope=project（skill 停在项目内，与 file/git 同语义）。layout 解析 _splat 为
-// focusId=`skill_${name}`（useWorkbenchRouteContext，与 tabIdOf 一致，focus effect 全局处理）。
+// skill name，scope=project（skill 停在项目内，与 file/git 同语义）。layout 解析为
+// focusId=`skill_${projectName}/${name}`（useWorkbenchRouteContext，与 tabIdOf 一致——项目/全局
+// 可能同名技能，tab 自包含 scope；focus effect 据此带 projectName 开 tab）。
 const projectSkillFocusRoute = createRoute({
   getParentRoute: () => workbenchLayoutRoute,
   path: "/projects/$key/skill/$",

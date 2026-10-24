@@ -232,15 +232,19 @@ ok(
   "h1 大标题「插件」",
 );
 ok((await page.locator(".segc button").count()) === 2, "segc 作用域分段 = 2 段");
-// 段序：搜索在 segc 之上（v1.4 批6）。
+// 段序：域行在内容区之上（v1.6 plugins-tab ①改版：移动 = segc + 收缩搜索钮同行，常驻
+// .psearch 已退役——探针旧断言按 10-04 前实现写的，已过期，§29）。
 ok(
   (await page.evaluate(() => {
-    const search = document.querySelector(".psearch");
     const segc = document.querySelector(".segc");
-    if (!search || !segc) return false;
-    return (search.compareDocumentPosition(segc) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    const srchBtn = document.querySelector(".obtn.srch");
+    if (!segc || !srchBtn) return false;
+    return (
+      (srchBtn.compareDocumentPosition(segc) & Node.DOCUMENT_POSITION_CONTAINED_BY) !== 0 ||
+      (segc.compareDocumentPosition(srchBtn) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+    );
   })) === true,
-  "段序：搜索框在作用域分段之上",
+  "段序：segc 与收缩搜索钮同域行（v1.6 展开式搜索）",
 );
 ok(
   (await page.locator(".segc button.on").textContent())?.includes("全局") === true,
@@ -291,6 +295,8 @@ ok(
 await page.waitForSelector(".quick .q", { timeout: 5000 });
 ok((await page.locator(".quick .q").count()) === 2, "quick chips = 2（MCP 市场 + 技能市场）");
 // 搜索融合（编号①）：搜索「tdd」→ 市场命中 docs-writer →「市场 · 安装」行插组尾。
+// v1.6 展开式搜索（5004c1a）后 searchbox 需先点 .obtn.srch 展开（§29 探针过期修复）。
+await page.locator(".obtn.srch").click();
 await page.getByRole("searchbox").first().fill("tdd");
 await page.waitForSelector(".mrow", { timeout: 5000 });
 ok((await page.locator(".pcard").count()) === 1, "搜索「tdd」后 pcard = 1（tdd 已装）");
@@ -300,7 +306,9 @@ ok(
 );
 await page.getByRole("searchbox").first().fill("");
 await page.waitForTimeout(300);
-// 「本项目」段：从未选项目 → 空态引导（编号⑥）。
+// 展开态搜索行替换 segc 行（v1.6 同构）：清词后点 ✕ 收起 → segc 复位（§29 探针过期修复）。
+await page.locator('button[aria-label="关闭搜索"]').click();
+await page.waitForTimeout(300);
 await page.locator(".segc button").nth(1).click();
 await page.waitForTimeout(300);
 ok(
@@ -508,6 +516,18 @@ ok(
   (await page.locator(".mchips .chip2.on").textContent())?.includes("skills.sh") === true,
   "来源 chip「✓ 官方 skills.sh」恒 on",
 );
+// 市场 tab 切换 = 同页视图状态，走 replace 不污染历史栈（2026-10-24 bug③：此前每次切 tab
+// 历史 +1，「返回」要多点 N 次才回 /plugins）。断言 history.length 零增长 + 一次 back 直达。
+{
+  const histBefore = await page.evaluate(() => window.history.length);
+  await page.locator(".tabseg button", { hasText: "MCP" }).click();
+  await page.waitForTimeout(400);
+  await page.locator(".tabseg button", { hasText: "技能" }).click();
+  await page.waitForTimeout(400);
+  const histAfter = await page.evaluate(() => window.history.length);
+  ok(histAfter === histBefore, `市场 tab 切换零历史增长（${histBefore} → ${histAfter}）`);
+  ok(page.url().endsWith("/plugins/market?marketTab=skill"), "切回技能段 URL 仍 ?marketTab=skill");
+}
 // query <2 字符时 mcard 不渲染（emptyMarket 提示态）；填搜索框出结果。
 await page.getByRole("searchbox").first().fill("docs");
 await page.waitForSelector(".mcard", { timeout: 5000 });
@@ -565,6 +585,15 @@ await page.locator(".addsrc").click();
 await page.waitForTimeout(300);
 ok((await page.locator(".addsrc").count()) === 0, "addsrc 点击后切换为表单");
 ok((await page.locator('input[aria-label="owner/repo"]').count()) === 1, "repo 字段可见");
+// 返回层级（2026-10-24 bug③ 端到端）：切过市场 tab 后 sources ‹ → 市场页 ‹ → /plugins，各一层。
+{
+  await page.locator("header .back").first().click();
+  await page.waitForTimeout(500);
+  ok(page.url().includes("/plugins/market"), "sources ‹ 返回市场页（一层）");
+  await page.locator("header .back").first().click();
+  await page.waitForTimeout(500);
+  ok(page.url().endsWith("/plugins"), "市场页 ‹ 返回 /plugins（切过 tab 仍只一层）");
+}
 
 // ── Part 7: 09b 长按菜单 + 停用闭环 + 搜索融合安装 + 09mb 作用域 Popover ──────
 console.log("Part 7: 09b 长按菜单（查看详情/停用/卸载）+ 停用 chip + 审计 sheet 复用 + 09mb");
@@ -663,8 +692,10 @@ ok(
 await page.locator("header .back").first().click();
 await page.waitForTimeout(500);
 
-// 搜索融合 → 审计 sheet 复用（编号①安装链路）。docs-writer 已在 Part 5 装过（已装去重是
-// 正确行为），换未安装的 code-style 验证行渲染 + 点击进审计 sheet。
+// 搜索融合 → 审计 sheet 处理（编号①安装链路）。docs-writer 已在 Part 5 装过（已装去重是
+// 正确行为），换未安装的 code-style 验证行渲染 + 点击进审计 sheet。主页经 SPA 导航返回后
+// searchOpen 复位 → 需重新点 .obtn.srch 展开（§29 探针过期修复）。
+await page.locator(".obtn.srch").click();
 await page.getByRole("searchbox").first().fill("style");
 await page.waitForSelector(".mrow", { timeout: 5000 });
 await page.locator(".mrow", { hasText: "code-style" }).click();

@@ -290,6 +290,22 @@ M6 = 插件 Tab + 市场体系（原型 09/12/13/14/15/16/17/18）。基于现�
 
 **待定项汇总（M6 记档 + reviewer P3 记录）**：SKILL.md beacon 面（security P3①）、env 内存既有面（security P3②）、project scope MCP 详情入口（记档 13）、死码 CSS 按需重落（P3-5）——均已记入 M8 缺口清单跟踪。
 
+## §6.7b 插件域三 bug 修复（2026-10-24）
+
+用户真机反馈三问题：「项目作用域无法查看技能 / 返回路径不对 / 市场源每切一次标签返回多一层」。三根因（file:line 实锤）：①项目技能卡 → `/projects/$key/skill/$` 开 skill tab，tab ref 无 scope 维度 → `PanelRouterBase` 不传 projectName → preview 查**全局** API → 项目独有技能 404、与全局同名则**静默展示全局 SKILL.md（错数据）**；②点卡被甩进项目工作台，✕ 关 tab 后停在项目工作台回不到插件页；③市场页 tabseg 切换 navigate 默认 push，每切一次历史 +1。
+
+**修复（三批，A/C 分两次 commit）**：
+
+- **A（bug③）**：`mobile-plugins-market.tsx` tabseg 两处 `navigate` 加 `replace: true`（tab=同页视图状态不进历史栈；仓库已有 replace 先例）。back 原走 `useWorkbenchBack()` pop 不变。
+- **B（bug①②）**：项目技能详情改走插件域深度页 `/plugins/skill/$?pluginProject=<key>`（与 global 同范式，返回 pop 自然回插件页）。`workbench-model.ts` 加 `pluginProject` 搜索维度（validate 白名单非空才收 + derive 显式返回）；透传链 WorkbenchRoute→MobileWorkbench→MobileSkillDetail / 桌面 `SkillTabPreview`；`MobileSkillDetail` project 化（hooks 全传 projectName、`hasUpdate` 加 `!projectName` 守卫——项目无 updates 数据源防全局缓存同名误报、dmeta 作用域行「本项目 · <名>」新 i18n 键 `plugins.scopeProjectValue`）；`mobile-plugins-home` 技能卡点击/键盘/长按菜单项目分支改道（一处改两端生效——该组件兼桌面 home）。
+- **C（bug① 根因闭环）**：工作台内 skill tab 自带 scope——`SkillPanelRef` 加必填 `projectName`，tabId 复合编码 `skill_${projectName}/${name}`（wikiread 先例），`parseSkillTabId` 反解旧格式返 null；focus effect 仅 project scope 开 tab；`navigateToSkill(projectName, name)` 恒走项目 URL（删已无入口的 global 分支）；`onCloseTab` skill 分支统一「清 focus 保 scope」；`projectTabStrip` skill 并入按项目过滤（skill 不再跨项目泄漏进别的项目 tab 带）；`normalizeRef` 旧无 projectName 的持久化 skill tab **丢弃**（用户拍板接受丢一次旧坏 tab——那些 tab 本来就打不开/读错数据）。
+
+**验证**：单测 `workbench-model.test.ts` 105 全绿（复合 tabId/旧格式 null/project focusId/projectTabStrip 过滤/normalizeRef 丢弃/pluginProject 派生含空串不收）；探针 `probe-project-plugins.mjs` 27/27（新增 C 段 8 断言：点卡→URL `?pluginProject`、项目 preview 被调且**全局 preview 零调用**、正文 mock 内容、dmeta「本项目 · test」、无更新 chip/CTA、‹ 返回一次直达 /plugins、项目段记忆保持、`/projects/$key/skill/$` tab 也走项目 API）；`probe-v2-m6-plugins.mjs` 96/96（新增市场 tab 切换零历史增长 + sources/market 两层返回各一层）；全门禁（api 1104/shared 11/web 907）+ CSS 硬闸。
+
+**reviewer 结果**（code-reviewer，无 P0/P1）：P2×1 已修——三处技能详情导航 if/else 收敛为 `openSkillDetail` 单点（点击/键盘/长按菜单同参）。P3×5：①isSessionFocusId 旧格式语义反转（当前不可达，已加注释言明前提）；②桌面深页无作用域标识（多端同构记档，同记档①）；③探针 list 路由 glob `skills?*` 收紧 `skills?agent=*`；④段 A 固定 sleep 改 waitForFunction 轮询；⑤本文档 isSessionFocusId 段过时描述已补。全部消化复验。
+
+**记档**：①「桌面技能详情仍只读预览」（无停用/卸载动作面）既有不一致维持（plan 明确不做）；②项目级更新检测不做（需项目锁 hash + GitHub Trees 比对，超范围）；③探针 §29 过期修复——M6 探针 Part 1 的 `.psearch` 常驻搜索断言与 `searchbox` 直用按 **v1.6 plugins-tab 搜索改版（5004c1a，10-10）之前的旧实现**写的，10-10 起即假挂（期间未全量跑过），本批同步修（展开钮先行 + 清词后点 ✕ 复位 segc + 段序断言改域行）；`probe-project-plugins.mjs` A 段「项目段空态」按 test 项目无技能的旧前提写的，gen-ui 技能装进 test 项目后假挂，改数据驱动断言。
+
 ## §6.8 M7 开工摊牌（2026-09-21）
 
 M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）。基于现状盘点（`settings-dialog.tsx` SettingsContent 两层结构 root→claude/pi/acp/general + 移动 `SettingsRoute` + 桌面 `SettingsDialog` 共享；`AuthGate.tsx` 登录帧 M2 已基本完整；后端 settings API 全套 + auth login/me；**无 logout 端点**）逐条对齐：
@@ -1550,7 +1566,7 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - **三 Tab（`mobile-primary-nav.tsx`）**：删「工作台」Link 项（铁律 4：它不再是导航目的地 = 项目的工作现场，入口 = 项目 Tab），`columns` 4→3，三 Tab = 项目（`folder`）/ 文件（`doc.text`）/ 插件（`pages-nav`，puzzlepiece 换代留批 7）。active 判定：`projectsActive = /projects 精确 || /projects/session/ 前缀 || ^/projects/[^/]+(/|$)`（覆盖 L1 列表页 + project 现场 + global 会话聚焦——项目 Tab = 会话的家）；files/plugins 按前缀。
 - **会话现场无 tab bar（`mobile-workbench.tsx`）**：`useMeasuredBottomNav(scope.kind === "project" ? null : <MobilePrimaryNav />)`（null 安全：ref null → height 0 不渲染）——project scope（浏览态自动聚焦 / URL 聚焦 / L3 深层）不挂 nav，底部空间让给工作流（spec §3.3 全屏 push 层）；global scope（项目列表 / 文件 / 插件）与 global 文件 push（`/files/file/$`）保持挂载（§3.4「tab bar 可见且文件激活」）。`--composer-gap` 无 nav 项时 env 相消、pb 收敛为纯 4px 间隙（会话现场 composer 贴底）。files-global-preview 的 tabbar 归属留批 3 摊牌。
 - **恢复现场（spec §3.1：登录/启动默认直达上次会话）**：`workbenchLastSessionAtom`（`workbench.lastSession`，`{k,id}|null`，`atomWithLocalOnlyStorage`）+ `WORKBENCH_LAST_SESSION_KEY`（router beforeLoad 读原始值不经过 atom 实例）。`router.tsx` indexRoute `beforeLoad` 三级跳板：lastSession 有值 → `/projects/$key/session/$id`（恢复现场直达）；无 → `workbench.lastProjectKey` → `/projects/$key`（D4 遗产次级兜底）；再无 → `/projects`（冷启动）。redirect 用 `replace` 仍在 workbench pathless layout 内（壳不卸载、WS 保活）。
-- **`isSessionFocusId` 契约层纯函数**（`workbench-model.ts`）：session tab 的 tabId === sessionId（无前缀，V3 多态基石）→ 排除法判非 session：排除 `githistory`/`gitbranches` 字面量 + `gitcommit_`/`wiki_`/`file_`/`skill_`/`git_`/`chat_` 前缀族；与 WorkbenchRoute focus effect 分流判定同源（新增带前缀 tab 族时两处同步）。**两处写入 effect 互斥**：WorkbenchContent（URL 聚焦 session 时写，`:145` 要求 focusId 真）+ MobileProjectWorkbench 浏览态（autoFocus 聚焦时写，`:753` 要求 focusId 假）——浏览态停留也是「上次会话」，不加则 `instances[0]` 排序漂移会把 `/` 恢复到非用户停留实例。
+- **`isSessionFocusId` 契约层纯函数**（`workbench-model.ts`）：session tab 的 tabId === sessionId（无前缀，V3 多态基石）→ 排除法判非 session：排除 `githistory`/`gitbranches` 字面量 + `gitcommit_`/`wiki_`/`file_`/`skill_`/`git_`/`chat_` 前缀族；与 WorkbenchRoute focus effect 分流判定同源（新增带前缀 tab 族时两处同步）。**skill 前缀语义更新（2026-10-24）**：skill tabId 改复合编码 `skill_${projectName}/${name}`，旧无项目段格式 `parseSkillTabId` 返 null（不再被排除——但该面不可达：focusId 恒新格式派生、布局恢复经 normalizeRef 先丢旧 ref）。**两处写入 effect 互斥**：WorkbenchContent（URL 聚焦 session 时写，`:145` 要求 focusId 真）+ MobileProjectWorkbench 浏览态（autoFocus 聚焦时写，`:753` 要求 focusId 假）——浏览态停留也是「上次会话」，不加则 `instances[0]` 排序漂移会把 `/` 恢复到非用户停留实例。
 - **★ 审查实抓缺陷（本轮修复）**：浏览态写入 effect 初版未守门——`autoFocusId` 可能是 **skill tab id**（`projectTabIds` 集合含 `kind === "skill"`，layout activeTab 属本项目 skill 时命中），会把 `skill_xxx` 存成 lastSession → `/` 跳到无效 `/projects/$key/session/skill_xxx`。修复 = 写入前过 `isSessionFocusId(autoFocusId)`（与写入/跳板三处同源判定）；单测 `skill_tdd → false` 覆盖 + 探针 Part 2.5 集成验证（skill focus 不写恢复记忆）。
 - **03l `MobileProjectSwitchSheet` 死代码清理**：批 1 记档的 diverge③在此收口——`mobile-workbench` 消费点（`setSwitchSheetOpen` 无开启点，▾ 已开浮卡非 sheet）整段删除 + import 清理；`mobile-plugins-home` 插件语境消费保留（plugins-tab.html:111「作用域切换：全局/本项目 ▾」）。
 - **失效边界记档**：会话被关闭后恢复记忆不清（关闭动作分散、无全局失效通知面）——深链落 detail 404 面板、行1 ‹ 项目可返回；优雅回退随批 5 历史规模化摊牌。

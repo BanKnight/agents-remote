@@ -125,6 +125,8 @@ type MobileWorkbenchProps = {
   pluginView?: "home" | "market" | "sources" | "skill" | "mcp";
   /** 插件详情深度页条目名（第八轮）：pluginView="skill"/"mcp" 时为 skill/server 名。 */
   pluginName?: string;
+  /** 项目作用域技能详情（?pluginProject）：非空 = 该项目的技能（数据走项目 API）。 */
+  pluginProject?: string;
   /** 项目工具原位（v2 M3-b：?tab=files/git/wiki，与桌面 middle tab 同构；WorkbenchRoute 注入 ctx.tab）。
    * v1.4 批2 起仅作 URL 兼容入口（渲染期映射为检视面板 open+激活标签），不再驱动主体切换。 */
   tool?: WorkbenchMiddleTab;
@@ -159,6 +161,7 @@ export function MobileWorkbench({
   focusId,
   leftMode,
   pluginName,
+  pluginProject,
   pluginView,
   mode,
   onOpenGitFile,
@@ -240,8 +243,8 @@ export function MobileWorkbench({
             <MobileMarketSources />
           ) : pluginView === "skill" && pluginName ? (
             // 12 技能详情深度页（第八轮 pluginView 化：原 focusId=skill_ 直渲分支退役，
-            // /plugins/skill/$ 不再写保活 tab 体系）。
-            <MobileSkillDetail name={pluginName} />
+            // /plugins/skill/$ 不再写保活 tab 体系）。pluginProject 非空 = 项目段技能。
+            <MobileSkillDetail name={pluginName} projectName={pluginProject} />
           ) : pluginView === "mcp" && pluginName ? (
             // 13 MCP 详情深度页（同上，原 focusId=pluginmcp_ 分支与 tab kind 一并退役）。
             <MobileMcpDetail name={pluginName} />
@@ -762,7 +765,7 @@ function MobileProjectWorkbench({
   // 其它项目部分（InstanceSwitchMenu 内 filter+分组）。
   const { candidates: globalCandidates } = useGlobalInstanceCandidates({ kind: "global" });
 
-  // tab 带（中栏投影）：projectTabStrip 过滤当前项目 tab（skill 全局包含）。v2 起 pills 只装
+  // tab 带（中栏投影）：projectTabStrip 过滤当前项目 tab（含 skill，均按项目过滤）。v2 起 pills 只装
   // 实例（+skill 兼职 pill）；file/git tab 由工具 ticon 承载，skillTabs 派生给 header pills。
   const stripItems = useMemo(() => projectTabStrip(layout, scope.key), [layout, scope.key]);
   // flatMap 三元 narrow（filter 谓词不带 type guard 不收窄 ref union）。

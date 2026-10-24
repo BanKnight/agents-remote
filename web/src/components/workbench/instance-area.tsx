@@ -532,12 +532,12 @@ function PanelRouterBase({ panelRef, onOpenFile }: PanelRouterProps) {
   if (panelRef.kind === "wikiread") {
     return <WikireadTabBody panelRef={panelRef} />;
   }
-  // skill tab 渲染 SkillTabPreview（只读 SKILL.md 预览，对标 FileTabPreview）。name 来自 tab ref；
-  // SkillTabPreview 内部用 DEFAULT_SKILL_AGENT 调 useSkillPreview。中栏 tab 关闭走 tab ✕。
-  // skill 预览内的相对 .md 链接不接 MarkdownLinkContext（已知限制，批 13 review 记档）：skill
-  // 可能来自全局目录（无项目绑定），相对链接没有可靠的解析基准，保持浏览器默认行为。
+  // skill tab 渲染 SkillTabPreview（只读 SKILL.md 预览，对标 FileTabPreview）。name/projectName
+  // 来自 tab ref（2026-10-24 起 tab 必带项目，preview 走项目 API——项目/全局可能同名技能）。
+  // 中栏 tab 关闭走 tab ✕。skill 预览内的相对 .md 链接不接 MarkdownLinkContext（已知限制，
+  // 批 13 review 记档）：相对链接没有可靠的解析基准，保持浏览器默认行为。
   if (panelRef.kind === "skill") {
-    return <SkillTabPreview name={panelRef.name} />;
+    return <SkillTabPreview name={panelRef.name} projectName={panelRef.projectName} />;
   }
   // git tab 渲染 GitFileDiffPanel（自带 file diff query，设计 workbench-layout-fix 阶段 3）。
   // projectName/scope/path 来自 tab ref 固定；不传 onClose（中栏 tab 关闭走 tab ✕，非移动浮层）。

@@ -107,7 +107,10 @@ export function MobileMarket() {
         <button
           aria-selected={marketTab === "mcp"}
           className={`cursor-pointer${marketTab === "mcp" ? " on" : ""}`}
-          onClick={() => void navigate({ to: "/plugins/market", search: { marketTab: "mcp" } })}
+          onClick={() =>
+            // replace：tab 是同页视图状态，不进历史栈（否则每切一次返回就多一层）。
+            void navigate({ to: "/plugins/market", search: { marketTab: "mcp" }, replace: true })
+          }
           role="tab"
           type="button"
         >
@@ -116,7 +119,10 @@ export function MobileMarket() {
         <button
           aria-selected={marketTab === "skill"}
           className={`cursor-pointer${marketTab === "skill" ? " on" : ""}`}
-          onClick={() => void navigate({ to: "/plugins/market", search: { marketTab: "skill" } })}
+          onClick={() =>
+            // replace：同上，切 tab 不污染历史栈。
+            void navigate({ to: "/plugins/market", search: { marketTab: "skill" }, replace: true })
+          }
           role="tab"
           type="button"
         >

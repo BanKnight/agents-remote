@@ -472,6 +472,11 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   approvals?: boolean;
   /** M6-c 市场页双段（17/18 同页 tabseg）：/plugins/market?marketTab=mcp|skill；缺省 skill。 */
   marketTab?: "mcp" | "skill";
+  /**
+   * 项目作用域技能详情（/plugins/skill/$?pluginProject=<项目名>）：项目段技能卡点入走插件域
+   * 深度页（与 global 同一页），该维度承载「在哪个项目的 scope 下预览」；省略 = 全局技能。
+   */
+  pluginProject?: string;
   /** 主区视图形态：`view=preview` = 全局文件推入预览（省略 = 工作台，见 isFilePushPreview）。 */
   view?: "preview";
 } {
@@ -485,6 +490,7 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
     mode?: WorkbenchMode;
     approvals?: boolean;
     marketTab?: "mcp" | "skill";
+    pluginProject?: string;
     view?: "preview";
   } = {};
   if (search.approvals === "1" || search.approvals === true) {
@@ -492,6 +498,9 @@ export function validateWorkbenchSearch(search: Record<string, unknown>): {
   }
   if (search.marketTab === "mcp" || search.marketTab === "skill") {
     result.marketTab = search.marketTab;
+  }
+  if (typeof search.pluginProject === "string" && search.pluginProject.length > 0) {
+    result.pluginProject = search.pluginProject;
   }
   if (
     search.rightTab === "files" ||
@@ -615,6 +624,11 @@ export type WorkbenchRouteContext = {
    * 渲染层据此取详情数据；market/sources/home 为 undefined。
    */
   pluginName?: string;
+  /**
+   * 项目作用域技能详情（/plugins/skill/$?pluginProject=<项目名>）：非空 = 该项目的技能
+   * （preview/停用/卸载均走项目 API），省略 = 全局技能。仅 pluginView="skill" 消费。
+   */
+  pluginProject?: string;
   rightTab?: WorkbenchInspectionTab;
   tab?: WorkbenchMiddleTab;
   gitScope?: GitDiffScope;
@@ -655,6 +669,7 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
     branch?: string;
     approvals?: boolean;
     marketTab?: "mcp" | "skill";
+    pluginProject?: string;
     leftMode?: "auto" | "files" | "plugins" | "settings";
     mode?: WorkbenchMode;
     view?: "preview";
@@ -701,17 +716,21 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
         pluginView: "sources",
       };
     case "/plugins/skill/$": {
-      // 全局 skill 详情深度页（第八轮迁移，对齐 market/sources pluginView 范式）：_splat = skill
+      // skill 详情深度页（第八轮迁移，对齐 market/sources pluginView 范式）：_splat = skill
       // name → pluginName。**无 focusId**（不进保活 tab 体系——旧版 focusId=skill_ 会往工作台
       // layout 持久化塞 tab，多端都不成立，§6.12h）；leftMode 强制 "plugins"（深度页属插件域，
-      // deep link 无 leftMode 也渲染插件详情）。项目内 skill 走 /projects/$key/skill/$ 保留 tab 机制。
+      // deep link 无 leftMode 也渲染插件详情）。**项目段技能卡也走本页**（?pluginProject=<项目名>，
+      // 2026-10-24 修复：此前项目技能分流 /projects/$key/skill/$ 开 tab，tab 无 scope 维度 →
+      // preview 查全局 → 项目技能打不开/读错数据，返回也落在项目工作台）。
       const skillName = p._splat ? decodeURIComponent(p._splat) : "";
       return {
         scope: { kind: "global" },
         focusId: undefined,
+        ...s,
         pluginView: "skill",
         pluginName: skillName || undefined,
-        ...s,
+        // 空串归一（validateWorkbenchSearch 已剔空串，此处兜底裸 search 调用）。
+        pluginProject: s.pluginProject || undefined,
         leftMode: "plugins",
       };
     }
@@ -792,13 +811,13 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
     }
     case "/projects/$key/skill/$": {
       // 项目内 skill 详情 tab focus（2026-08-16 移动工作台重设计，对标 /projects/$key/file/$）：
-      // _splat = skill name，focusId=`skill_${name}`（与 tabIdOf 一致，focus effect 全局处理）。
-      // scope=project 让 skill 停在项目内（桌面/移动项目 scope 点 skill 不再跳出项目 URL，
-      // 与 file/git 同语义；全局 /plugins/skill/$ 仍是 skill 的 global 规范 URL）。
+      // _splat = skill name，focusId=`skill_${projectName}/${name}`（与 tabIdOf 一致，项目段编码在
+      // tabId 内——项目/全局可能同名，tab 必须自包含 scope；focus effect 据此带 projectName 开 tab）。
       const skillName = p._splat ? decodeURIComponent(p._splat) : "";
+      const key = p.key ?? "";
       return {
-        scope: { kind: "project", key: p.key ?? "" },
-        focusId: skillName ? `skill_${skillName}` : undefined,
+        scope: { kind: "project", key },
+        focusId: skillName && key ? `skill_${key}/${skillName}` : undefined,
         ...s,
       };
     }
@@ -850,6 +869,9 @@ export function parseWikiFocusId(focusId: string): string | undefined {
  * 的分流判定同源——排除法集中一处，新增带前缀 tab 族时同步补这里。
  */
 export function isSessionFocusId(focusId: string): boolean {
+  // 注意（review P3 记档）：旧格式 skill tabId（`skill_${name}` 无项目段）parseSkillTabId 返 null
+  // → 会被归为 session focus；该面当前不可达——focusId 只从 /projects/$key/skill/$ 派生（恒新格式），
+  // 布局恢复经 normalizeRef 先丢旧 ref。若未来新增旧格式 focusId 来源，这里需同步。
   return (
     focusId !== "githistory" &&
     focusId !== "gitbranches" &&
@@ -1008,11 +1030,13 @@ export type GitPanelRef = {
 /**
  * skill 详情面板引用（对标 FilePanelRef）。name = skill 名（如 `"tdd"`）——Manage tab 点已装
  * skill 行开/激活中栏 skill tab，只读预览本地 SKILL.md。不带 agent 字段：当前 PluginsPanel 固定
- * 单 agent，渲染层用 `DEFAULT_SKILL_AGENT`（"claude-code"），tabId=`skill_${name}` 足够去重；
- * 未来支持 codex 同名 skill 再扩展（YAGNI）。
+ * 单 agent，渲染层用 `DEFAULT_SKILL_AGENT`（"claude-code"）；未来支持 codex 同名 skill 再扩展（YAGNI）。
+ * projectName 必填（2026-10-24 修复）：项目与全局可能有同名技能，preview 数据源也不同
+ *（项目目录 vs 全局目录），tab 必须自包含 scope 维度；tabId 编码项目（`skill_${projectName}/${name}`）。
  */
 export type SkillPanelRef = {
   kind: "skill";
+  projectName: string;
   name: string;
 };
 
@@ -1042,7 +1066,7 @@ export type RenderPanelRef = {
  * V3 面板引用（判别联合，设计 §6 决策 18）。session/file/git/skill/wikiread tab 同处 group+tab。
  * session tab 的 tabId === sessionId（值不变 → localStorage 零迁移、session 路径零回归）；
  * file tab 的 tabId = `file_${path}`、git scope tab = `git_${scope}/${path}`、git compare tab =
- * `gitcmp_${base}~${compare}/${path}`（R5）、skill tab = `skill_${name}`、wikiread tab =
+ * `gitcmp_${base}~${compare}/${path}`（R5）、skill tab = `skill_${projectName}/${name}`、wikiread tab =
  * `wikiread_${projectName}/${slug}`（前缀互斥）。
  */
 export type WorkbenchPanelRef =
@@ -1072,7 +1096,7 @@ export function tabIdOf(ref: WorkbenchPanelRef): string {
   if (ref.kind === "chat") return ref.sessionId;
   if (ref.kind === "render") return ref.id;
   if (ref.kind === "file") return `file_${ref.path}`;
-  if (ref.kind === "skill") return `skill_${ref.name}`;
+  if (ref.kind === "skill") return `skill_${ref.projectName}/${ref.name}`;
   if (ref.kind === "wikiread") return `wikiread_${ref.projectName}/${ref.slug}`;
   return ref.mode === "compare"
     ? `gitcmp_${ref.base}~${ref.compare}/${ref.path}`
@@ -1084,9 +1108,16 @@ export function parseFileTabId(tabId: string): string | null {
   return tabId.startsWith("file_") ? tabId.slice("file_".length) : null;
 }
 
-/** 从 skill tab id（`skill_${name}`）反解 skill name；非 skill tab id 返 null（路由 skill focus 用）。 */
-export function parseSkillTabId(tabId: string): string | null {
-  return tabId.startsWith("skill_") ? tabId.slice("skill_".length) : null;
+/**
+ * 从 skill tab id（`skill_${projectName}/${name}`）反解 projectName + skill name；非 skill tab id
+ * 或旧格式（无项目段的 `skill_${name}`）返 null（路由 skill focus 用）。
+ */
+export function parseSkillTabId(tabId: string): { projectName: string; name: string } | null {
+  if (!tabId.startsWith("skill_")) return null;
+  const rest = tabId.slice("skill_".length);
+  const slashIdx = rest.indexOf("/");
+  if (slashIdx <= 0) return null;
+  return { projectName: rest.slice(0, slashIdx), name: rest.slice(slashIdx + 1) };
 }
 
 /**
@@ -1162,7 +1193,13 @@ export function normalizeRef(ref: WorkbenchPanelRef): WorkbenchPanelRef | null {
           scope: ref.scope,
         };
   }
-  if (ref.kind === "skill") return { kind: "skill", name: ref.name };
+  // 旧持久化 skill ref 无 projectName（tabId 也是无 scope 的 `skill_${name}`）：数据源不明
+  //（可能读的是全局同名技能），恢复成空 tab 只会展示错内容 → null 丢弃（用户重新点开即得正确 tab）。
+  if (ref.kind === "skill") {
+    const projectName = (ref as { projectName?: unknown }).projectName;
+    if (typeof projectName !== "string" || !projectName) return null;
+    return { kind: "skill", projectName, name: ref.name };
+  }
   if (ref.kind === "wikiread") {
     return { kind: "wikiread", projectName: ref.projectName, slug: ref.slug };
   }
@@ -1870,9 +1907,9 @@ export type ProjectTabStripItem = {
 
 /**
  * 移动项目 tab 带纯投影：从共享 layout（workbenchLayoutV4）派生「当前项目」的打开 tab 集合（设计
- * workbench-views §7.7）。过滤规则——session/git tab 用 projectName；file tab 从全路径首段取项目名
- * （splitFilePath，与 resolveRootBrowseTarget 同语义）；skill tab 无 projectName（全局资源、跨项目小
- * 集合），**刻意例外全部包含**——「tab 带只显示当前项目」针对的是 session 跨项目污染，skill 不在此列。
+ * workbench-views §7.7）。过滤规则——session/git/skill tab 用 projectName；file tab 从全路径首段取
+ * 项目名（splitFilePath，与 resolveRootBrowseTarget 同语义）。skill 自 2026-10-24 起带 projectName
+ *（项目段技能进项目目录，跨项目泄漏会让别的项目 tab 带出现打不开的 tab），与其它 tab 同规则过滤。
  * 返回 { leafId, tabId, ref }[]，供移动 tab 带 onSelectTab(leafId, tabId) / onCloseTab(leafId, tabId)
  * 直接消费（session 存活、✕ = 最小化 removeTabFromLeaf）。
  */
@@ -1884,12 +1921,12 @@ export function projectTabStrip(
   const out: ProjectTabStripItem[] = [];
   for (const leaf of collectLeaves(layout.root)) {
     for (const tab of leaf.tabs) {
-      if (tab.kind === "session" || tab.kind === "git") {
+      if (tab.kind === "session" || tab.kind === "git" || tab.kind === "skill") {
         if (tab.projectName !== projectKey) continue;
       } else if (tab.kind === "file") {
         if (splitFilePath(tab.path).projectName !== projectKey) continue;
       }
-      // skill：全局包含（见 JSDoc）。同 tabId 去重（批 13 ⑥ review P1：分屏复制语义下同 ref
+      // 同 tabId 去重（批 13 ⑥ review P1：分屏复制语义下同 ref
       // 可双挂——移动 tab 带无窗格概念，一 tab 一 pill；保首 leaf 位置，桌面窗格视图交桌面投影）。
       const tabId = tabIdOf(tab);
       if (out.some((x) => x.tabId === tabId)) continue;
