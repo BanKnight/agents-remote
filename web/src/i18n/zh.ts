@@ -517,6 +517,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude.attach.ready": "已上传",
   "claude.attach.failed": "上传失败",
   "claude.attach.processFailed": "处理失败",
+  "claude.attach.retry": "重试处理",
   "claude.attach.overflow": "已达单条消息上限（{{max}} 张），另有 {{count}} 张未添加",
   "claude.attach.remove": "移除附件",
   "claude.attach.fileMention": "附件：{{path}}",

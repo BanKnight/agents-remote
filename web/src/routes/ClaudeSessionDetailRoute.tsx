@@ -3746,6 +3746,7 @@ function ComposerWithInterrupt({
           <AttachmentChipRow
             attachments={attachments.attachments}
             onRemove={attachments.remove}
+            onRetry={attachments.retry}
             overflowCount={attachments.overflowCount}
           />
         ) : null}

@@ -50,6 +50,13 @@ const BIG_PDF = {
 };
 const UPLOAD_PATH = "uploads/probe-attach.pdf";
 const COMPOSER_TEXTAREA = 'textarea[placeholder="向 Claude 提问..."]';
+// Part 8 失败重试 fixture:image/* 分流进 image,但内容非图 → createImageBitmap 失败且
+// 类型不在直传白名单 → normalizeImageFile throw → error 终态(灰底重试 chip)。
+const BROKEN_IMAGE = {
+  name: "probe-broken.png",
+  mimeType: "image/x-probe-broken",
+  buffer: Buffer.from("not an image at all"),
+};
 
 const results = [];
 function check(name, cond, detail = "") {
@@ -551,6 +558,29 @@ async function waitForFrame(page, frames, cursor, pred, label) {
         return ev.defaultPrevented;
       });
       check("Part7: 纯文本 paste 不拦（defaultPrevented=false）", textPaste === false);
+
+      // Part 8: 失败重试（灰底 chip 整块可点 + 右下角 ↻ 暗示）——坏图进 error 终态,
+      // 点重试再失败仍终态(循环可用,不误开 lightbox),× 清场。
+      await page
+        .locator('input[type="file"][accept="image/*"][multiple]')
+        .setInputFiles(BROKEN_IMAGE);
+      const retryBtn = page.locator('[data-attachment-chip] button[aria-label^="重试处理"]');
+      await retryBtn.waitFor({ timeout: 8000 });
+      check("Part8: 坏图 → 灰底「处理失败」chip 整块可点重试", true);
+      await retryBtn.click();
+      await page.waitForFunction(
+        () => {
+          const chip = document.querySelector("[data-attachment-chip]");
+          return chip?.textContent?.includes("处理失败") && chip?.querySelector("img") == null;
+        },
+        undefined,
+        { timeout: 8000 },
+      );
+      check("Part8: 重试再失败仍 error 终态（循环可用）", true);
+      await page.locator('[data-attachment-chip] button[aria-label="移除附件"]').click();
+      await page
+        .locator("[data-composer-attachments]")
+        .waitFor({ state: "detached", timeout: 5000 });
       await page.context().close();
     }
 

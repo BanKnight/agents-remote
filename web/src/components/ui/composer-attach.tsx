@@ -71,6 +71,8 @@ export type ComposerAttachment = {
   data?: string;
   /** image 就绪后填：chip 缩略图兜底 dataUrl（previewUrl 的后备显示源）。 */
   dataUrl?: string;
+  /** image 占位即持有原始 File（失败重试的输入）；不参与发送快照（takeSnapshot 只取 data）。 */
+  file?: File;
   /** file uploading 期：XHR 真实字节进度 0–100（onprogress 事件驱动）。 */
   progress?: number;
   /** file 就绪后填：上传后的项目内相对路径（uploads/…），发送时拼提及行。 */
@@ -225,6 +227,16 @@ export function useComposerAttachments({ projectName }: { projectName: string })
     [commit],
   );
 
+  // 归一化/上传失败的统一回写：revoke 占位原图 + error 终态（previewUrl 清空）。
+  const failAttachment = useCallback(
+    (id: string) => {
+      const stale = attachmentsRef.current.find((a) => a.id === id);
+      if (stale?.previewUrl) URL.revokeObjectURL(stale.previewUrl);
+      replace(id, { status: "error", previewUrl: undefined });
+    },
+    [replace],
+  );
+
   // objectURL 生命周期：remove/clear/卸载三个出口全量 revoke（image chip 的 previewUrl）。
   const remove = useCallback(
     (id: string) => {
@@ -244,11 +256,6 @@ export function useComposerAttachments({ projectName }: { projectName: string })
       // IMAGE_NORMALIZE_TIMEOUT_MS 注释),串行一张张亮起也更符合「逐张就绪」的感知;
       // 文件上传保持串行（服务端 keepBoth 同名派生是 stat→write 窗口，并行同名会相撞）。
       const local: Promise<void>[] = [];
-      const onError = (id: string) => {
-        const stale = attachmentsRef.current.find((a) => a.id === id);
-        if (stale?.previewUrl) URL.revokeObjectURL(stale.previewUrl);
-        replace(id, { status: "error", previewUrl: undefined });
-      };
       let imageChain: Promise<void> = Promise.resolve();
       for (const { file, id } of entries) {
         if (attachmentsRef.current.length >= COMPOSER_MAX_ATTACHMENTS) break;
@@ -267,7 +274,7 @@ export function useComposerAttachments({ projectName }: { projectName: string })
             } catch (e) {
               // console 留阶段线索(Safari 连 iPhone 的 Web Inspector 可查):超时/解码失败。
               console.error("[composer-attach] image normalize failed:", file.name, e);
-              onError(id);
+              failAttachment(id);
             }
           });
         } else if (kind === "text") {
@@ -276,7 +283,7 @@ export function useComposerAttachments({ projectName }: { projectName: string })
             file
               .text()
               .then((text) => replace(id, { status: "ready", name: file.name, text }))
-              .catch(() => onError(id)),
+              .catch(() => failAttachment(id)),
           );
         } else {
           try {
@@ -295,14 +302,37 @@ export function useComposerAttachments({ projectName }: { projectName: string })
             });
             replace(id, { status: "ready", path: res.entry.path });
           } catch {
-            onError(id);
+            failAttachment(id);
           }
         }
       }
       local.push(imageChain);
       await Promise.all(local);
     },
-    [projectName, replace],
+    [failAttachment, projectName, replace],
+  );
+
+  /** 失败重试（image 专属）：置回 uploading + 重建原图 objectURL,重跑归一化(带超时)。 */
+  const retry = useCallback(
+    (id: string) => {
+      const target = attachmentsRef.current.find((a) => a.id === id);
+      if (!target?.file || target.status !== "error") return;
+      replace(id, { status: "uploading", previewUrl: URL.createObjectURL(target.file) });
+      void withTimeout(normalizeImageFile(target.file), `retry ${target.file.name}`)
+        .then((norm) =>
+          replace(id, {
+            status: "ready",
+            mediaType: norm.mediaType,
+            data: norm.data,
+            dataUrl: norm.dataUrl,
+          }),
+        )
+        .catch((e) => {
+          console.error("[composer-attach] image normalize retry failed:", target.file?.name, e);
+          failAttachment(id);
+        });
+    },
+    [failAttachment, replace],
   );
 
   // 每类先占位（uploading）再异步回写——图片 chip 选完即在场且带 previewUrl 原图缩略图
@@ -332,7 +362,8 @@ export function useComposerAttachments({ projectName }: { projectName: string })
             id,
             name: file.name,
             status: "uploading" as const,
-            ...(kind === "image" ? { previewUrl: URL.createObjectURL(file) } : {}),
+            // image 带 file 引用（失败重试的输入）+ objectURL 原图缩略图（同步零成本）。
+            ...(kind === "image" ? { file, previewUrl: URL.createObjectURL(file) } : {}),
           };
         }),
       ]);
@@ -381,7 +412,7 @@ export function useComposerAttachments({ projectName }: { projectName: string })
     [],
   );
 
-  return { attachments, overflowCount, pick, remove, takeSnapshot, clear };
+  return { attachments, overflowCount, pick, remove, retry, takeSnapshot, clear };
 }
 
 /**
@@ -479,10 +510,13 @@ export function ComposerAttachMenu({ onFiles }: { onFiles: (files: File[]) => vo
 export function AttachmentChipRow({
   attachments,
   onRemove,
+  onRetry,
   overflowCount = 0,
 }: {
   attachments: ComposerAttachment[];
   onRemove: (id: string) => void;
+  /** image 失败重试（灰底 chip 整块可点）。 */
+  onRetry: (id: string) => void;
   /** 超出上限被忽略的张数：>0 时行尾显示「+N」提示 chip（一次性，remove/clear 后消失）。 */
   overflowCount?: number;
 }) {
@@ -566,9 +600,20 @@ export function AttachmentChipRow({
                   ) : null}
                 </button>
               ) : (
-                <div className="flex size-12 items-center justify-center rounded-lg bg-surface-inset px-1 text-center text-micro text-on-surface-muted">
+                // 灰底 = error 终态（uploading 期恒有 previewUrl 走不到这）：整块可点重试
+                //（命中区 ⊇ 视觉，§31），右下角 ↻ 是 affordance 暗示（用户拍板的右下角交互槽）。
+                <button
+                  aria-label={`${t("claude.attach.retry")} ${a.name}`}
+                  className="relative flex size-12 cursor-pointer items-center justify-center rounded-lg bg-surface-inset px-1 text-center text-micro text-on-surface-muted"
+                  onClick={() => onRetry(a.id)}
+                  type="button"
+                >
                   {statusLine ?? t("claude.attach.processing")}
-                </div>
+                  <LucideIcon
+                    className="absolute bottom-0.5 right-0.5 size-3 text-on-surface-soft"
+                    name="rotate-cw"
+                  />
+                </button>
               )
             ) : (
               <div className="relative flex w-36 flex-col gap-0.5 rounded-lg bg-surface-inset px-2 py-1.5">
