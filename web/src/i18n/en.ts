@@ -521,6 +521,7 @@ export const en = {
   "claude.attach.processing": "Processing…",
   "claude.attach.ready": "Uploaded",
   "claude.attach.failed": "Upload failed",
+  "claude.attach.processFailed": "Processing failed",
   "claude.attach.remove": "Remove attachment",
   "claude.attach.fileMention": "Attachment: {{path}}",
   "claude.attach.textInline": "Contents of attachment {{name}}:",

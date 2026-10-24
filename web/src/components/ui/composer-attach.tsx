@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { useT } from "../../i18n";
 import { uploadFileWithProgress } from "@/api/client";
@@ -465,20 +465,29 @@ export function AttachmentChipRow({
                 : t("claude.attach.uploading")
               : t("claude.attach.processing")
             : a.status === "error"
-              ? t("claude.attach.failed")
+              ? a.kind === "file"
+                ? t("claude.attach.failed")
+                : t("claude.attach.processFailed")
               : null;
+        // ⌫/Delete 删除（spec §4.1 桌面差异：hover × / 选中 chip ⌫）。焦点目标分档：
+        // image chip 的可交互元素是 zoom 按钮（⌫ 挂钮上），外层不再产生额外 tab 停靠；
+        // file/text chip 无内嵌按钮，⌫ 留在外层 div。
+        const handleDeleteKey = (e: KeyboardEvent) => {
+          if (e.key === "Backspace" || e.key === "Delete") {
+            e.preventDefault();
+            onRemove(a.id);
+          }
+        };
         return (
           <div
             className="relative shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             data-attachment-chip={a.id}
             key={a.id}
-            tabIndex={0}
+            tabIndex={a.kind === "image" ? undefined : 0}
             onKeyDown={(e) => {
-              // 聚焦 chip 按 ⌫/Delete 删除（spec §4.1 桌面差异：hover × / 选中 chip ⌫）。
-              if (e.key === "Backspace" || e.key === "Delete") {
-                e.preventDefault();
-                onRemove(a.id);
-              }
+              // 焦点在内部按钮时由按钮的 handler 处理，这里跳过防冒泡双触发。
+              if (e.target !== e.currentTarget) return;
+              handleDeleteKey(e);
             }}
           >
             {a.kind === "image" ? (
@@ -487,11 +496,13 @@ export function AttachmentChipRow({
                   aria-label={a.name}
                   className="relative block size-12 cursor-zoom-in overflow-hidden rounded-lg"
                   onClick={() => setLightboxId(a.id)}
+                  onKeyDown={handleDeleteKey}
                   type="button"
                 >
                   <img
                     alt={a.name}
                     className="size-12 rounded-lg object-cover"
+                    draggable={false}
                     src={a.previewUrl ?? a.dataUrl}
                   />
                   {a.status === "uploading" ? (
@@ -501,7 +512,7 @@ export function AttachmentChipRow({
                   ) : null}
                 </button>
               ) : (
-                <div className="flex size-12 items-center justify-center rounded-lg bg-surface-inset px-1 text-center text-[10px] leading-3 text-on-surface-muted">
+                <div className="flex size-12 items-center justify-center rounded-lg bg-surface-inset px-1 text-center text-micro text-on-surface-muted">
                   {statusLine ?? t("claude.attach.processing")}
                 </div>
               )
@@ -510,7 +521,7 @@ export function AttachmentChipRow({
                 <span className="truncate text-xs font-medium text-on-surface-soft">{a.name}</span>
                 <span
                   className={cn(
-                    "truncate text-[10px]",
+                    "truncate text-micro",
                     a.status === "error" ? "text-error" : "text-on-surface-muted",
                   )}
                 >
@@ -528,13 +539,19 @@ export function AttachmentChipRow({
                 ) : null}
               </div>
             )}
+            {/* × 命中区与视觉盘分离：触屏命中 36px（默认方向，§7 无害取向），盘恒 20px、
+                中心位置两态重合（-right-3.5+size-9 ↔ -right-1.5+size-5）；本批起缩略图
+                本身是 zoom 按钮，点偏即开 lightbox，误触代价高。不朝外伪元素扩——chips 行
+                overflow-x-auto 会裁掉（§31）。 */}
             <button
               aria-label={t("claude.attach.remove")}
-              className="absolute -right-1.5 -top-1.5 inline-flex size-5 cursor-pointer items-center justify-center rounded-full bg-surface-raised text-on-surface-muted shadow-sm transition active:bg-on-surface/10"
+              className="absolute -right-3.5 -top-3.5 flex size-9 cursor-pointer items-center justify-center rounded-full hover-capable:-right-1.5 hover-capable:-top-1.5 hover-capable:size-5"
               onClick={() => onRemove(a.id)}
               type="button"
             >
-              <LucideIcon className="size-4" name="x" />
+              <span className="flex size-5 items-center justify-center rounded-full bg-surface-raised text-on-surface-muted shadow-sm transition active:bg-on-surface/10">
+                <LucideIcon className="size-4" name="x" />
+              </span>
             </button>
           </div>
         );
