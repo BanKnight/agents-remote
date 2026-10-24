@@ -512,6 +512,8 @@ export const zh: Record<TranslationKey, string> = {
   "claude.attach.camera": "相机",
   "claude.attach.file": "文件",
   "claude.attach.uploading": "上传中…",
+  "claude.attach.uploadingPercent": "上传中 {{percent}}%",
+  "claude.attach.processing": "处理中…",
   "claude.attach.ready": "已上传",
   "claude.attach.failed": "上传失败",
   "claude.attach.remove": "移除附件",

@@ -517,6 +517,8 @@ export const en = {
   "claude.attach.camera": "Camera",
   "claude.attach.file": "File",
   "claude.attach.uploading": "Uploading…",
+  "claude.attach.uploadingPercent": "Uploading {{percent}}%",
+  "claude.attach.processing": "Processing…",
   "claude.attach.ready": "Uploaded",
   "claude.attach.failed": "Upload failed",
   "claude.attach.remove": "Remove attachment",

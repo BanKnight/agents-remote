@@ -410,6 +410,46 @@ export async function uploadFile(
   return uploadFormData(projectFileUploadPath(projectName, directoryPath), file, conflict);
 }
 
+/**
+ * XHR 上传变体（fetch 无上传进度回调——两处记档见 uploadFormData/upload-queue；composer
+ * 附件文件 chip 需要真实字节百分比）。鉴权同 fetch：HttpOnly cookie 同源自动携带。
+ * uploadFile 保持 fetch 版不动——upload-queue / rootUploadFile 等存量调用零影响。
+ */
+export function uploadFileWithProgress(
+  projectName: string,
+  directoryPath: string,
+  file: File,
+  opts?: { conflict?: UploadConflictPolicy; onProgress?: (percent: number) => void },
+): Promise<UploadFileResponse> {
+  const { conflict, onProgress } = opts ?? {};
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", projectFileUploadPath(projectName, directoryPath));
+    xhr.responseType = "json";
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable && e.total > 0) {
+        onProgress((e.loaded / e.total) * 100);
+      }
+    };
+    xhr.onerror = () => reject(new Error(resolveTranslation("api.projectFileUploadFailed")));
+    xhr.onload = () => {
+      if (xhr.status === 409) {
+        reject(new UploadConflictError(resolveTranslation("api.projectFileUploadFailed")));
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(`${resolveTranslation("api.projectFileUploadFailed")}: ${xhr.status}`));
+        return;
+      }
+      resolve(xhr.response as UploadFileResponse);
+    };
+    const formData = new FormData();
+    formData.append("file", file);
+    if (conflict) formData.append("conflict", conflict);
+    xhr.send(formData);
+  });
+}
+
 /** 上传到 PROJECTS_ROOT 根层（03o pin④「增=新建/上传到当前作用域」，M8 全局文件写边界）。 */
 export async function rootUploadFile(
   file: File,

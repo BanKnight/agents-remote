@@ -38,6 +38,16 @@ const PDF_FILE = {
   mimeType: "application/pdf",
   buffer: Buffer.from("%PDF-1.4 probe attach"),
 };
+// Part 4b 进度断言用大文件 + 延迟响应：sending 瞬间完成（progress 至少派发 100% 一档），
+// 600ms 响应延迟保证 uploading 态有稳定观察窗口。
+const BIG_PDF = {
+  name: "probe-attach-big.pdf",
+  mimeType: "application/pdf",
+  buffer: Buffer.concat([
+    Buffer.from("%PDF-1.4 probe big attach"),
+    Buffer.alloc(2 * 1024 * 1024, 0x61),
+  ]),
+};
 const UPLOAD_PATH = "uploads/probe-attach.pdf";
 const COMPOSER_TEXTAREA = 'textarea[placeholder="向 Claude 提问..."]';
 
@@ -220,12 +230,31 @@ async function waitForFrame(page, frames, cursor, pred, label) {
       );
       await page.keyboard.press("Escape");
 
-      // Part 2: 图片 pick → chip → Enter 发送 → 上行帧含 base64 图片块 + 文本块
+      // Part 2: 图片 pick → chip（选完即有 blob: 原图缩略图）→ 点击放大 lightbox → Enter 发送
       await page.locator('input[type="file"][accept="image/*"][multiple]').setInputFiles(PNG_FILE);
-      await page
-        .locator('[data-attachment-chip] img[src^="data:image/png;base64,"]')
-        .waitFor({ timeout: 8000 });
-      check("Part2: 图片 chip 在场（缩略图 dataUrl）", true);
+      await page.locator('[data-attachment-chip] img[src^="blob:"]').waitFor({ timeout: 8000 });
+      check("Part2: 图片 chip 选完即显示原图缩略图（blob: objectURL，不等归一化）", true);
+      // 归一化完成后 chip 无「处理中/上传中」占位文案（img 恒用 previewUrl 原图）。
+      await page.waitForFunction(
+        () => {
+          const chip = document.querySelector("[data-attachment-chip]");
+          const text = chip?.textContent ?? "";
+          return (
+            chip?.querySelector("img[src^='blob:']") != null &&
+            !text.includes("处理中") &&
+            !text.includes("上传中")
+          );
+        },
+        undefined,
+        { timeout: 8000 },
+      );
+      // 点击缩略图 → 全屏 lightbox（ImageViewer）；Esc 关闭。
+      await page.locator('[data-attachment-chip] button[aria-label="probe.png"]').click();
+      await page.locator("[role='dialog'] img").waitFor({ timeout: 5000 });
+      check("Part2: 点击 chip 打开全屏 lightbox（ImageViewer）", true);
+      await page.keyboard.press("Escape");
+      await page.locator("[role='dialog']").waitFor({ state: "detached", timeout: 5000 });
+      check("Part2: Esc 关闭 lightbox", true);
       const composer = page.locator(COMPOSER_TEXTAREA);
       await composer.fill("看看这张图");
       await composer.press("Enter");
@@ -275,6 +304,35 @@ async function waitForFrame(page, frames, cursor, pred, label) {
         );
       }
 
+      // Part 3b: 多图并行——一次选 2 张，两 chip 独立就绪（互不阻塞），发送帧含两图片块。
+      await page
+        .locator('input[type="file"][accept="image/*"][multiple]')
+        .setInputFiles([PNG_FILE, PNG_FILE]);
+      await page.waitForFunction(
+        () => document.querySelectorAll("[data-attachment-chip] img[src^='blob:']").length === 2,
+        undefined,
+        { timeout: 8000 },
+      );
+      check("Part3b: 两张图片 chip 各自有原图缩略图（blob:）", true);
+      await composer.press("Enter");
+      const frame3b = await waitForFrame(
+        page,
+        frames,
+        cursor,
+        (f) =>
+          f.type === "user" &&
+          Array.isArray(f.message?.content) &&
+          f.message.content.filter((b) => b.type === "image").length === 2,
+        "Part3b: 上行帧含两图片块",
+      );
+      if (frame3b) {
+        const c = frame3b.message.content;
+        check(
+          "Part3b: 双图帧 content[0..1] 均 base64 png 透传",
+          c[0]?.source?.data === TINY_PNG_BASE64 && c[1]?.source?.data === TINY_PNG_BASE64,
+        );
+      }
+
       // Part 4: 文件 pick（mock 上传）→ chip 就绪显示路径 → 提及行并入帧文本
       await page.locator('input[type="file"]:not([accept])').setInputFiles(PDF_FILE);
       await page
@@ -297,6 +355,57 @@ async function waitForFrame(page, frames, cursor, pred, label) {
           `text=${c[0]?.text ?? "?"}`,
         );
       }
+
+      // Part 4b: 文件上传真实进度（XHR onprogress 通道）——延迟响应 + 大文件。CDP route
+      // 拦截会吞掉 upload progress 事件（测试语境限制,frontend-notes §26 同族），百分比
+      // 推进交真机清单；探针断言与 progress 事件解耦：uploading 期「上传中」文案 + 进度条
+      // 元素在场（渲染只看 status），响应后 ready 显示 path。
+      const UPLOAD_BIG = "uploads/probe-attach-big.pdf";
+      await page.route(new RegExp(`/api/projects/${PROBE_PROJECT}/files/upload`), async (r) => {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        await r.fulfill(
+          pageJson({ entry: { path: UPLOAD_BIG, name: "probe-attach-big.pdf", kind: "file" } }),
+        );
+      });
+      await page.locator('input[type="file"]:not([accept])').setInputFiles(BIG_PDF);
+      const up = await page
+        .waitForFunction(
+          () => {
+            const chips = [...document.querySelectorAll("[data-attachment-chip]")];
+            const chip = chips.find((c) => (c.textContent ?? "").includes("上传中"));
+            if (!chip) return null;
+            const m = (chip.textContent ?? "").match(/上传中 (\d+)%/);
+            const bar = chip.querySelector("span[style*='width']");
+            return {
+              percent: m ? Number(m[1]) : null,
+              barWidth: bar?.style.width ?? "",
+            };
+          },
+          undefined,
+          { timeout: 5000 },
+        )
+        .then((h) => h?.jsonValue())
+        .catch(() => null);
+      check(
+        "Part4b: uploading 期 chip 显示「上传中」（CDP 拦截下百分比可缺）",
+        up != null,
+        JSON.stringify(up),
+      );
+      check(
+        "Part4b: 进度条元素在场（inline width,渲染只看 status）",
+        up != null && up.barWidth !== "",
+        `barWidth=${up?.barWidth ?? "null"}`,
+      );
+      await page
+        .locator("[data-attachment-chip]", { hasText: UPLOAD_BIG })
+        .waitFor({ timeout: 8000 });
+      check("Part4b: 响应后 chip 就绪显示 uploads/ 路径", true);
+      // 清残留：× 移除 4b 文件 chip（未发送），避免污染 Part 5/6 的 chip 计数断言。
+      await page
+        .locator("[data-attachment-chip]", { hasText: UPLOAD_BIG })
+        .locator('button[aria-label="移除附件"]')
+        .click();
+      await page.locator("[data-attachment-chip]").waitFor({ state: "detached", timeout: 5000 });
 
       // Part 5: 下行渲染——mock WS 推含 image block 的 user 行 → 气泡 <img>（Pass 1 不丢图）
       const before = await page.locator("img[src^='data:image/png;base64,']").count();
@@ -362,9 +471,7 @@ async function waitForFrame(page, frames, cursor, pred, label) {
           new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: dt }),
         );
       }, TINY_PNG_BASE64);
-      await page
-        .locator('[data-attachment-chip] img[src^="data:image/png;base64,"]')
-        .waitFor({ timeout: 8000 });
+      await page.locator('[data-attachment-chip] img[src^="blob:"]').waitFor({ timeout: 8000 });
       check("Part7: 粘贴图片 → chip 缩略图在场", true);
       await composer.press("Enter");
       const frame7 = await waitForFrame(

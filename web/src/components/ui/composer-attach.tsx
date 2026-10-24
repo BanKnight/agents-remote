@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useT } from "../../i18n";
-import { uploadFile } from "@/api/client";
+import { uploadFileWithProgress } from "@/api/client";
 import { useHScroll } from "@/hooks/use-h-scroll";
 import { LucideIcon } from "@/components/shell/lucide-icon";
 import { cn } from "@/lib/utils";
 import { ActionMenu, type ActionMenuItem } from "./action-menu";
+import { ImageLightbox } from "./image-lightbox";
 
 /** 单条消息附件上限（防 WS 帧失控；超出部分忽略）。 */
 export const COMPOSER_MAX_ATTACHMENTS = 4;
@@ -61,12 +62,17 @@ export type ComposerAttachment = {
   id: string;
   name: string;
   status: "uploading" | "ready" | "error";
+  /** image 占位期即有（原图 objectURL）：chip 选完立即显示真实内容，不等归一化；
+   *  同时是 lightbox「查看原图」的源（比归一化 dataUrl 更原真）。remove/clear 时 revoke。 */
+  previewUrl?: string;
   /** image 就绪后填：直传 CLI 的媒体类型（重编码后恒 image/jpeg）。 */
   mediaType?: string;
   /** image 就绪后填：裸 base64（无 data: 前缀）——stream-json source.data 直接消费。 */
   data?: string;
-  /** image 就绪后填：chip 缩略图 dataUrl。 */
+  /** image 就绪后填：chip 缩略图兜底 dataUrl（previewUrl 的后备显示源）。 */
   dataUrl?: string;
+  /** file uploading 期：XHR 真实字节进度 0–100（onprogress 事件驱动）。 */
+  progress?: number;
   /** file 就绪后填：上传后的项目内相对路径（uploads/…），发送时拼提及行。 */
   path?: string;
   /** text 就绪后填：文件全文（消息级上下文，随消息发送、不落项目目录）。 */
@@ -188,8 +194,12 @@ export function useComposerAttachments({ projectName }: { projectName: string })
     [commit],
   );
 
+  // objectURL 生命周期：remove/clear/卸载三个出口全量 revoke（image chip 的 previewUrl）。
   const remove = useCallback(
     (id: string) => {
+      for (const a of attachmentsRef.current) {
+        if (a.id === id && a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+      }
       commit(attachmentsRef.current.filter((a) => a.id !== id));
     },
     [commit],
@@ -197,45 +207,59 @@ export function useComposerAttachments({ projectName }: { projectName: string })
 
   const addFiles = useCallback(
     async (entries: Array<{ file: File; id: string }>) => {
+      // 本地处理（image/text）并行推进——各 chip 独立 ready，多图不再互相阻塞；文件上传
+      // 保持串行（服务端 keepBoth 同名派生是 stat→write 窗口，并行同名会相撞）——两组互不等待。
+      const local: Promise<void>[] = [];
+      const onError = (id: string) => {
+        const stale = attachmentsRef.current.find((a) => a.id === id);
+        if (stale?.previewUrl) URL.revokeObjectURL(stale.previewUrl);
+        replace(id, { status: "error", previewUrl: undefined });
+      };
       for (const { file, id } of entries) {
         if (attachmentsRef.current.length >= COMPOSER_MAX_ATTACHMENTS) break;
         const kind = classifyAttachment(file);
         if (kind === "image") {
-          try {
-            const norm = await normalizeImageFile(file);
-            replace(id, {
-              status: "ready",
-              name: file.name,
-              mediaType: norm.mediaType,
-              data: norm.data,
-              dataUrl: norm.dataUrl,
-            });
-          } catch {
-            replace(id, { status: "error" });
-          }
+          local.push(
+            normalizeImageFile(file)
+              .then((norm) =>
+                replace(id, {
+                  status: "ready",
+                  name: file.name,
+                  mediaType: norm.mediaType,
+                  data: norm.data,
+                  dataUrl: norm.dataUrl,
+                }),
+              )
+              .catch(() => onError(id)),
+          );
         } else if (kind === "text") {
           // 小文本白名单 ≤1MB（批 8）：不上传，读全文内联为消息级上下文。
-          try {
-            const text = await file.text();
-            replace(id, { status: "ready", name: file.name, text });
-          } catch {
-            replace(id, { status: "error" });
-          }
+          local.push(
+            file
+              .text()
+              .then((text) => replace(id, { status: "ready", name: file.name, text }))
+              .catch(() => onError(id)),
+          );
         } else {
           try {
-            const res = await uploadFile(projectName, COMPOSER_UPLOAD_DIR, file, "keepBoth");
+            const res = await uploadFileWithProgress(projectName, COMPOSER_UPLOAD_DIR, file, {
+              conflict: "keepBoth",
+              onProgress: (percent) => replace(id, { progress: percent }),
+            });
             replace(id, { status: "ready", path: res.entry.path });
           } catch {
-            replace(id, { status: "error" });
+            onError(id);
           }
         }
       }
+      await Promise.all(local);
     },
     [projectName, replace],
   );
 
-  // 每类先占位（uploading）再异步回写——图片归一化期间 chip 即在场（缩略图稍后补上）。
-  // 占位 id 在此唯一生成并随 entry 直通 addFiles（addFiles 复用 id 做 replace，防错位）。
+  // 每类先占位（uploading）再异步回写——图片 chip 选完即在场且带 previewUrl 原图缩略图
+  // （URL.createObjectURL 同步零成本，不等归一化）。占位 id 在此唯一生成并随 entry 直通
+  // addFiles（addFiles 复用 id 做 replace，防错位）。
   const pick = useCallback(
     (files: File[]) => {
       const usable = files.slice(
@@ -254,6 +278,9 @@ export function useComposerAttachments({ projectName }: { projectName: string })
           id,
           name: file.name,
           status: "uploading" as const,
+          ...(classifyAttachment(file) === "image"
+            ? { previewUrl: URL.createObjectURL(file) }
+            : {}),
         })),
       ]);
       void addFiles(entries);
@@ -283,7 +310,22 @@ export function useComposerAttachments({ projectName }: { projectName: string })
     return { images, mentionLines, inlineTexts };
   }, [t]);
 
-  const clear = useCallback(() => commit([]), [commit]);
+  const clear = useCallback(() => {
+    for (const a of attachmentsRef.current) {
+      if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+    }
+    commit([]);
+  }, [commit]);
+
+  // 卸载兜底（切会话丢草稿时 objectURL 不泄漏）；ref 恒指最新，卸载时即全部在册。
+  useEffect(
+    () => () => {
+      for (const a of attachmentsRef.current) {
+        if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
+      }
+    },
+    [],
+  );
 
   return { attachments, pick, remove, takeSnapshot, clear };
 }
@@ -388,6 +430,11 @@ export function AttachmentChipRow({
   onRemove: (id: string) => void;
 }) {
   const { t } = useT();
+  // 点击 chip 放大查看原图（复用聊天流 ImageLightbox：Radix 全屏 + ImageViewer 手势）。
+  // 记 id 而非 src：chip 在 lightbox 开着时被移除（×/⌫）→ previewUrl 已 revoke，按 id
+  // 失配即关闭，防渲染已失效的 blob: URL。
+  const [lightboxId, setLightboxId] = useState<string | null>(null);
+  const lightbox = attachments.find((a) => a.id === lightboxId && (a.previewUrl || a.dataUrl));
   // chips 增删不触发 scroll/resize，内容 effect 里重算渐隐方向。
   const hs = useHScroll();
   useEffect(() => hs.update(), [hs.update, attachments.length]);
@@ -399,9 +446,14 @@ export function AttachmentChipRow({
       {...hs.fadeProps}
     >
       {attachments.map((a) => {
+        // 本地处理（image/text）语义「处理中」；文件网络上传语义「上传中」（+真实字节百分比）。
         const statusLine =
           a.status === "uploading"
-            ? t("claude.attach.uploading")
+            ? a.kind === "file"
+              ? a.progress != null
+                ? t("claude.attach.uploadingPercent", { percent: Math.round(a.progress) })
+                : t("claude.attach.uploading")
+              : t("claude.attach.processing")
             : a.status === "error"
               ? t("claude.attach.failed")
               : null;
@@ -420,11 +472,27 @@ export function AttachmentChipRow({
             }}
           >
             {a.kind === "image" ? (
-              a.dataUrl ? (
-                <img alt={a.name} className="size-12 rounded-lg object-cover" src={a.dataUrl} />
+              a.previewUrl || a.dataUrl ? (
+                <button
+                  aria-label={a.name}
+                  className="relative block size-12 cursor-zoom-in overflow-hidden rounded-lg"
+                  onClick={() => setLightboxId(a.id)}
+                  type="button"
+                >
+                  <img
+                    alt={a.name}
+                    className="size-12 rounded-lg object-cover"
+                    src={a.previewUrl ?? a.dataUrl}
+                  />
+                  {a.status === "uploading" ? (
+                    <span className="absolute bottom-0.5 right-0.5 flex size-4 items-center justify-center rounded-full bg-surface-raised/90 shadow-sm">
+                      <span className="size-2.5 animate-spin rounded-full border-2 border-on-surface-muted/30 border-t-on-surface-soft" />
+                    </span>
+                  ) : null}
+                </button>
               ) : (
                 <div className="flex size-12 items-center justify-center rounded-lg bg-surface-inset px-1 text-center text-[10px] leading-3 text-on-surface-muted">
-                  {statusLine ?? t("claude.attach.uploading")}
+                  {statusLine ?? t("claude.attach.processing")}
                 </div>
               )
             ) : (
@@ -438,6 +506,14 @@ export function AttachmentChipRow({
                 >
                   {statusLine ?? a.path}
                 </span>
+                {a.status === "uploading" ? (
+                  <span className="h-0.5 w-full overflow-hidden rounded-full bg-on-surface/10">
+                    <span
+                      className="block h-full rounded-full bg-primary transition-[width]"
+                      style={{ width: `${a.progress ?? 0}%` }}
+                    />
+                  </span>
+                ) : null}
               </div>
             )}
             <button
@@ -451,6 +527,15 @@ export function AttachmentChipRow({
           </div>
         );
       })}
+      {lightbox ? (
+        <ImageLightbox
+          alt={lightbox.name}
+          src={lightbox.previewUrl ?? lightbox.dataUrl ?? ""}
+          onOpenChange={(open) => {
+            if (!open) setLightboxId(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
