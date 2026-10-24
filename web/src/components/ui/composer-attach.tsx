@@ -242,9 +242,18 @@ export function useComposerAttachments({ projectName }: { projectName: string })
           );
         } else {
           try {
+            // 进度回写两重收敛：chip 已被 × 移除则停写；整数百分点未变不重渲染
+            //（setAttachments 挂在无 memo 边界的顶层，每个 XHR chunk 都触发全树 reconcile）。
+            let lastPercent = -1;
             const res = await uploadFileWithProgress(projectName, COMPOSER_UPLOAD_DIR, file, {
               conflict: "keepBoth",
-              onProgress: (percent) => replace(id, { progress: percent }),
+              onProgress: (percent) => {
+                const pct = Math.round(percent);
+                if (pct === lastPercent) return;
+                if (!attachmentsRef.current.some((a) => a.id === id)) return;
+                lastPercent = pct;
+                replace(id, { progress: pct });
+              },
             });
             replace(id, { status: "ready", path: res.entry.path });
           } catch {
@@ -273,15 +282,16 @@ export function useComposerAttachments({ projectName }: { projectName: string })
       }));
       commit([
         ...attachmentsRef.current,
-        ...entries.map(({ file, id }) => ({
-          kind: classifyAttachment(file),
-          id,
-          name: file.name,
-          status: "uploading" as const,
-          ...(classifyAttachment(file) === "image"
-            ? { previewUrl: URL.createObjectURL(file) }
-            : {}),
-        })),
+        ...entries.map(({ file, id }) => {
+          const kind = classifyAttachment(file);
+          return {
+            kind,
+            id,
+            name: file.name,
+            status: "uploading" as const,
+            ...(kind === "image" ? { previewUrl: URL.createObjectURL(file) } : {}),
+          };
+        }),
       ]);
       void addFiles(entries);
     },
