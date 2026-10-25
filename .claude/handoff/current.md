@@ -1,15 +1,16 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-25(composer 附件三改已交付并提交 cc8534d;用户真机复测通过)
+> 最后更新:2026-10-25(composer 抬高卡死修复提交 551b724:焦点不变式门闩;真机 8 样本实锤,待用户真机复测)
 
 ## 一句话状态
 
-**composer 附件三改已落地并提交(cc8534d),用户真机复测通过**(8 张全亮、点 + 直达系统面板)。核心修复 = 附件上限 cap 判定误吞满额批(`baseCount = length - entries.length` 按入册序号放行)。三改 = ①多图挂死修复 ②上限 4→8(+ api WS `maxPayloadLength` 48MB)③加号收敛为一键直达系统面板。已过全门禁 + CSS 硬闸 + 探针全绿。**下一任务 = composer 位置 bug**;`web/src/lib` 三件(keyboard-inset 取证)仍留工作区作该任务工具。
+**composer 抬高卡死已修复(551b724):焦点不变式门闩**——真机 8 样本(用户截图)实锤卡死态全部 `focus=BODY`(iOS 键盘不可能在场)+ `var 334-351px` + src 全是 settle 源;根因 = 加载/回前台时 vv 过渡态被 settle 采样写入、终态 vv 事件永远不来。修复 = `measure()` 单点收口:无 editable 聚焦强制 `{0,false}`。探针 11/11、单测 910 pass、全门禁过。**待用户真机复测**(键盘开→切 app→回 / 正常切 app / 切会话)。
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
+- **composer 抬高卡死修复(551b724,2026-10-25)**:真机 8 样本(badge 格式 `vv {vvH}/{innerH} t{top} off {off} var {varOff} src {src} {vis} {focus} age {age}ms {nav} fb {floatBottom}`)解码铁证——`focus=BODY` + `var 334-351px` + src 全 settle 源 = iOS 不变式级不可能状态。修复 = measure() 焦点门闩(无 INPUT/TEXTAREA/contenteditable 聚焦强制归零),单点收口全部写入路径;卡死态任何焦点变化/bg-fg 自愈。附带修 pinch-zoom 误抬 + `--kb-active` 误激活。残余记档不修:editable 聚焦期间 vv 冻结(8 样本无此形态,自愈路径在)。**既有测试语义被证伪**:原用例全在 BODY 焦点下期望非零 offset——随门闩一起改成 editable 预置。探针 Part 5 = 真实 blur + shrunk 回归闸。
 - **多图挂死真凶(2026-10-25 实锤)**:addFiles 循环 `attachmentsRef.current.length >= COMPOSER_MAX_ATTACHMENTS` 判定在 pick 已 commit 本批后执行——满额 4 张第一圈 break,零张处理。**修复 = `baseCount = length - entries.length` 按入册序号放行**(pick 的 usable slice 仍保证总量;循环判定只防处理中途追加新批超总量)。验证:真实链路 4 张 12MP 全 ready(角标 `at2 ready 4/4`)/ 探针 37 绿 / 服务端 `[attach-debug]` 收到 batch 4 真实样本。
 - **测试纪律(用户拍板强化)**:mock 探针验证逻辑,**交付前必须真实链路测试**(test 项目真实会话页 + 真实数据,零 mock)+ e2e;部署类改动(新 API 路由/埋点上报)验收 = 带鉴权直打真实端点看状态码。mock 探针的拦截式自证会把服务端断点挡在被测路径外(本次 attach-report 404 即此)。
 - **今晚 dev 进程假死两起**:①web vite build --watch 假死(6 天进程,touch 无效)→ respawn 全量重建;②api bun --watch 不热重载新路由(attach-report 404,带鉴权验证抓到)→ respawn 后 200。**「写了路由」≠「进程里有路由」;watch 假死第一动作 = respawn-pane,别 touch+轮询。**
@@ -28,13 +29,13 @@
 
 - ✅ composer 附件 8 commit 全链(主批+3 review 消化+4 真机反馈批);探针 36/36 全绿;redesign-v2.md §6.13 记档
 - ✅ cc8534d:composer 附件三改(cap bug 修复 + 上限 8 + WS 48MB + 一键直达 + 取证三件套);全门禁(api/shared/web 全绿)+ CSS 硬闸 + 探针全绿;**用户真机复测通过**(8 张全亮、点 + 直达系统面板)
-- 挂起批(工作区,刻意不提交):`web/src/lib` 三件(keyboard-inset.ts/.test.ts + use-composer-inset-debug-badge.ts,composer 抬高 bug 取证等真机数据)
+- ✅ 551b724:composer 抬高卡死修复(焦点门闩)+ inset-debug badge 二次埋点入库;探针 11/11、单测 910、全门禁过
 
 ### 待办
 
-- **下一任务(用户明确排序):composer 位置 bug**——App Switcher 截图已有;顶部 `src init-settle visible BODY age 2467ms navigate fb 8x` = 挂起批 keyboard-inset debug badge 输出,可作线索;取证工具 = 工作区 `web/src/lib` 三件 + api `/api/debug/inset-report`
+- **立即:用户真机复测抬高修复**(杀 PWA 重开等 10s 自动刷新):①键盘开着切 app → 回来 composer 应落底;②正常态切 app 回来不抬高;③切会话不抬高。角标仍常开,若再现卡死读 badge 尾部字段继续取证
+- inset-debug 取证件(551b724 入库:`use-composer-inset-debug-badge.ts` + api `/api/debug/inset-report`)在抬高定案后拆;attach 取证三件套(`use-attach-debug.ts` + composer-attach 打点 + `/api/debug/attach-report` + `probe-attach-debug.mjs`)在多图稳定后拆
 - i18n 孤儿键记档不删:`claude.attach.ready`(「已上传」,更早遗留,非本批产物)
-- 临时取证残留(定案后拆):`use-attach-debug.ts` + composer-attach 打点 + api `/api/debug/attach-report` + `probe-attach-debug.mjs`
 - e2e 基线:32 直接绿 + mcp-app-card 1 个 flaky(重跑绿,与本批无关)
 - 既有真机清单(统一最后验):composer 附件四条(文件百分比/lightbox 手势)/ 插件域五条 / M3 选区引用 / M2 画布 / 键盘 inset 等
 - 记档不修:失败态 `text-error` 对比度低于 AA(dangerText token 另批);文件 chip w-36 卡片 vs 原型横向 pill 另批对齐
@@ -50,4 +51,4 @@
 - design-reviewer 网络中断重试即可;收敛 prompt(单文件+限定审查点)成功率高。
 
 ---
-最后更新:2026-10-25(触发原因:composer 附件三改提交 cc8534d + 用户真机复测通过)
+最后更新:2026-10-25(触发原因:composer 抬高卡死修复提交 551b724,待真机复测)
