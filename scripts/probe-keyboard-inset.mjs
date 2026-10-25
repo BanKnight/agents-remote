@@ -249,6 +249,21 @@ async function run() {
 
     // （原 4b/4c 诊断浮层断言随 keyboard-debug.ts 删除——批 18 取证收口，埋点已不在。）
 
+    console.log("== 焦点门闩（2026-10-25 真机 8 样本回归闸） ==");
+    // 真机卡死形态：focus=BODY（无 editable 聚焦，iOS 键盘不可能在场）+ vv 停留在过期
+    // shrunk 值 + 大 offset 写死无人纠正（8 样本 var 334-351px 卡 24s-118s）。真实 blur
+    // 掉 CodeMirror（activeElement → body）后 vv 保持 shrunk，事件路径必须写 0 而非 337px。
+    await page.evaluate(() => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) active.blur();
+      window.dispatchEvent(new FocusEvent("focusout"));
+    });
+    await page.waitForFunction(
+      () => document.documentElement.style.getPropertyValue("--kb-offset") === "0px",
+      { timeout: 5000 },
+    );
+    check("5a BODY 焦点下 vv shrunk 仍强制归零（focusout 事件路径）", true, "337px→0px");
+
     await ctx.close();
   } finally {
     await browser.close();
