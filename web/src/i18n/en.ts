@@ -511,11 +511,8 @@ export const en = {
   // ── Claude ────────────────────────────────────────────────────
   "claude.inputPlaceholder": "Ask Claude...",
   "claude.composer.send": "Send",
-  // Composer attachments (image batch): + menu items + chip labels.
+  // Composer attachments (image batch): + button + chip labels.
   "claude.attach.add": "Add attachment",
-  "claude.attach.photo": "Photo",
-  "claude.attach.camera": "Camera",
-  "claude.attach.file": "File",
   "claude.attach.uploading": "Uploading…",
   "claude.attach.uploadingPercent": "Uploading {{percent}}%",
   "claude.attach.processing": "Processing…",

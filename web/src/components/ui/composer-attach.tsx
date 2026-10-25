@@ -2,14 +2,19 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "re
 
 import { useT } from "../../i18n";
 import { uploadFileWithProgress } from "@/api/client";
+import { attachDebug } from "@/lib/use-attach-debug";
 import { useHScroll } from "@/hooks/use-h-scroll";
 import { LucideIcon } from "@/components/shell/lucide-icon";
 import { cn } from "@/lib/utils";
-import { ActionMenu, type ActionMenuItem } from "./action-menu";
 import { ImageLightbox } from "./image-lightbox";
 
-/** 单条消息附件上限（防 WS 帧失控；超出部分忽略）。 */
-export const COMPOSER_MAX_ATTACHMENTS = 4;
+/**
+ * 单条消息附件上限（超出部分忽略）。8 = 用户拍板（2026-10-25）；最坏体量 8 × 单图 5MB
+ * ≈ 40MB base64：CF tunnel 代理层对 WS 帧无大小硬限（Workers 运行时的 1→32MiB 上限
+ * 不适用于 tunnel），真正受闸的是 api 侧 Bun WS `maxPayloadLength`（api/index.ts 显式
+ * 48MB，须与本值联动——调这里先看那边）。典型真机照片归一化后 400KB–2MB/张，远低于最坏值。
+ */
+export const COMPOSER_MAX_ATTACHMENTS = 8;
 /** vision 最优长边（Anthropic 推荐内）；超过即 canvas 重编码。 */
 export const IMAGE_MAX_EDGE_PX = 1568;
 /**
@@ -156,12 +161,24 @@ export async function normalizeImageFile(file: File): Promise<{
   data: string;
   dataUrl: string;
 }> {
+  const t0 = performance.now();
+  attachDebug({ stage: "start", name: file.name, size: file.size });
   let bitmap: ImageBitmap | null = null;
   try {
     bitmap = await createImageBitmap(file);
   } catch {
     bitmap = null;
   }
+  attachDebug(
+    bitmap
+      ? { stage: "bitmap", name: file.name, ms: Math.round(performance.now() - t0) }
+      : {
+          stage: "bitmap",
+          name: file.name,
+          err: "decode-fail",
+          ms: Math.round(performance.now() - t0),
+        },
+  );
   if (!bitmap) {
     if (PASSTHROUGH_IMAGE_TYPES.has(file.type)) {
       const data = await blobToBase64(file);
@@ -169,6 +186,11 @@ export async function normalizeImageFile(file: File): Promise<{
       if (base64Bytes(data) > IMAGE_MAX_BYTES) {
         throw new Error(`image exceeds ${IMAGE_MAX_BYTES} bytes: ${file.name}`);
       }
+      attachDebug({
+        stage: "passthrough",
+        name: file.name,
+        ms: Math.round(performance.now() - t0),
+      });
       return { mediaType: file.type, data, dataUrl: `data:${file.type};base64,${data}` };
     }
     throw new Error(`unsupported image type: ${file.type || "unknown"}`);
@@ -178,6 +200,11 @@ export async function normalizeImageFile(file: File): Promise<{
       const data = await blobToBase64(file);
       // 尺寸达标 ≠ 体积达标（tEXt 块/噪声 PNG）：超限不透传，落重编码（可解码必有 bitmap）。
       if (base64Bytes(data) <= IMAGE_MAX_BYTES) {
+        attachDebug({
+          stage: "passthrough",
+          name: file.name,
+          ms: Math.round(performance.now() - t0),
+        });
         return { mediaType: file.type, data, dataUrl: `data:${file.type};base64,${data}` };
       }
     }
@@ -190,6 +217,7 @@ export async function normalizeImageFile(file: File): Promise<{
     canvas.getContext("2d")?.drawImage(bitmap, 0, 0, w, h);
     const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
     const data = dataUrl.slice(dataUrl.indexOf(",") + 1);
+    attachDebug({ stage: "encode", name: file.name, ms: Math.round(performance.now() - t0) });
     // 重编码产物兜底闸（1568px q0.8 常规远小于上限；此处防极端构造）。
     if (base64Bytes(data) > IMAGE_MAX_BYTES) {
       throw new Error(`image exceeds ${IMAGE_MAX_BYTES} bytes after re-encode: ${file.name}`);
@@ -257,13 +285,34 @@ export function useComposerAttachments({ projectName }: { projectName: string })
       // 文件上传保持串行（服务端 keepBoth 同名派生是 stat→write 窗口，并行同名会相撞）。
       const local: Promise<void>[] = [];
       let imageChain: Promise<void> = Promise.resolve();
-      for (const { file, id } of entries) {
-        if (attachmentsRef.current.length >= COMPOSER_MAX_ATTACHMENTS) break;
+      // 取证打点(§22):batch 入队张数 + 链内序号,真机日志一眼分「挂死 vs 超时兜底」。
+      const imageEntries = entries.filter((e) => classifyAttachment(e.file) === "image");
+      if (imageEntries.length > 0) {
+        attachDebug({ stage: "batch", n: imageEntries.length });
+      }
+      let imageIndex = 0;
+      // cap 判定基于「本批入册前」的存量:pick 已把本批 commit 进 ref,循环里直接读
+      // length 会把本批算进占用——恰好满额的一批(4 张)第一圈就 break,一张都不处理
+      // (2026-10-25 真实链路实锤:4 张永卡 uploading,2/3 张没事)。按入册序号放行本批,
+      // 总量上限仍由 pick 的 usable slice 保证;这里只防「处理中途又 pick 了新批」的超总量。
+      const baseCount = attachmentsRef.current.length - entries.length;
+      for (const [entryIdx, { file, id }] of entries.entries()) {
+        if (baseCount + entryIdx >= COMPOSER_MAX_ATTACHMENTS) break;
         const kind = classifyAttachment(file);
         if (kind === "image") {
+          imageIndex += 1;
+          const seq = imageIndex;
           imageChain = imageChain.then(async () => {
+            const t0 = performance.now();
             try {
               const norm = await withTimeout(normalizeImageFile(file), `normalize ${file.name}`);
+              attachDebug({
+                stage: "ready",
+                i: seq,
+                n: imageEntries.length,
+                ms: Math.round(performance.now() - t0),
+                name: file.name,
+              });
               replace(id, {
                 status: "ready",
                 name: file.name,
@@ -273,6 +322,14 @@ export function useComposerAttachments({ projectName }: { projectName: string })
               });
             } catch (e) {
               // console 留阶段线索(Safari 连 iPhone 的 Web Inspector 可查):超时/解码失败。
+              attachDebug({
+                stage: "failed",
+                i: seq,
+                n: imageEntries.length,
+                ms: Math.round(performance.now() - t0),
+                name: file.name,
+                err: String((e as Error)?.message ?? e).slice(0, 96),
+              });
               console.error("[composer-attach] image normalize failed:", file.name, e);
               failAttachment(id);
             }
@@ -318,16 +375,28 @@ export function useComposerAttachments({ projectName }: { projectName: string })
       const target = attachmentsRef.current.find((a) => a.id === id);
       if (!target?.file || target.status !== "error") return;
       replace(id, { status: "uploading", previewUrl: URL.createObjectURL(target.file) });
+      const t0 = performance.now();
       void withTimeout(normalizeImageFile(target.file), `retry ${target.file.name}`)
-        .then((norm) =>
+        .then((norm) => {
+          attachDebug({
+            stage: "ready",
+            ms: Math.round(performance.now() - t0),
+            name: target.file?.name,
+          });
           replace(id, {
             status: "ready",
             mediaType: norm.mediaType,
             data: norm.data,
             dataUrl: norm.dataUrl,
-          }),
-        )
+          });
+        })
         .catch((e) => {
+          attachDebug({
+            stage: "failed",
+            ms: Math.round(performance.now() - t0),
+            name: target.file?.name,
+            err: String((e as Error)?.message ?? e).slice(0, 96),
+          });
           console.error("[composer-attach] image normalize retry failed:", target.file?.name, e);
           failAttachment(id);
         });
@@ -416,82 +485,38 @@ export function useComposerAttachments({ projectName }: { projectName: string })
 }
 
 /**
- * composer 卡片底行最左「＋」附件菜单（发图批）：图片 / 相机（仅触屏）/ 文件。
- * 相机显隐按 pointer media（frontend-notes §7 能力判定）：默认常显（触屏/未知方向无害），
- * hover-capable 设备隐藏（桌面「相机」打开选图器是误导）。Chromium 模拟不了 media，
- * 触屏可见性交真机清单。图片/相机走 accept="image/*"（相机加 capture 直唤后摄，桌面忽略），
- * 文件无 accept（任意类型）。选中文件统一交 onFiles 由调用方分类（image/* 内联、其余上传）。
+ * composer 卡片底行最左「＋」附件入口（2026-10-25 一键直达收敛，用户拍板）：点 + 直接
+ * 触发系统文件选择面板，不再叠加自有菜单——iOS 对 <input type=file> 本就强制弹系统
+ * 分支面板（拍照/照片图库/选取文件），此前自有菜单与它功能重叠（用户真机反馈）。
+ * input 不设 accept（面板给全部分支，桌面开文件选择器）；选中文件统一交 onFiles 由
+ * 调用方分类（image/* 内联、白名单小文本内联、其余上传）。
  */
 export function ComposerAttachMenu({ onFiles }: { onFiles: (files: File[]) => void }) {
   const { t } = useT();
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const items: ActionMenuItem[] = [
-    {
-      label: t("claude.attach.photo"),
-      icon: <LucideIcon name="image" />,
-      onSelect: () => imageInputRef.current?.click(),
-    },
-    {
-      label: t("claude.attach.camera"),
-      icon: <LucideIcon name="camera" />,
-      // 默认常显、hover-capable（桌面）隐藏——见组件注释。
-      className: "hover-capable:hidden",
-      onSelect: () => cameraInputRef.current?.click(),
-    },
-    {
-      label: t("claude.attach.file"),
-      icon: <LucideIcon name="paperclip" />,
-      onSelect: () => fileInputRef.current?.click(),
-    },
-  ];
-
-  const pickFrom = (input: HTMLInputElement | null) => {
-    const files = Array.from(input?.files ?? []);
+  const pickFrom = (input: HTMLInputElement) => {
+    const files = Array.from(input.files ?? []);
     // 允许重复选同一文件：清 value，否则同路径二次选择不触发 onChange。
-    if (input) input.value = "";
+    input.value = "";
     if (files.length > 0) onFiles(files);
   };
 
   return (
     <>
-      <ActionMenu
-        align="start"
-        cancelLabel={t("cancel")}
-        items={items}
-        trigger={
-          <button
-            type="button"
-            aria-label={t("claude.attach.add")}
-            title={t("claude.attach.add")}
-            className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-xl text-on-surface-muted transition active:bg-on-surface/5"
-          >
-            {/* 尺寸类必须显式给（全仓唯一裸用曾在真机 WebKit 翻车）：svg 无 width/height
-                时 Chromium flex 收缩给非零值、WebKit 收缩到 0×0——按钮占位可点但图形隐形。 */}
-            <LucideIcon className="size-4" name="plus" />
-          </button>
-        }
-      />
+      <button
+        type="button"
+        aria-label={t("claude.attach.add")}
+        title={t("claude.attach.add")}
+        className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-xl text-on-surface-muted transition active:bg-on-surface/5"
+        onClick={() => inputRef.current?.click()}
+      >
+        {/* 尺寸类必须显式给（全仓唯一裸用曾在真机 WebKit 翻车）：svg 无 width/height
+            时 Chromium flex 收缩给非零值、WebKit 收缩到 0×0——按钮占位可点但图形隐形。 */}
+        <LucideIcon className="size-4" name="plus" />
+      </button>
       <input
-        ref={imageInputRef}
-        accept="image/*"
-        className="hidden"
-        multiple
-        type="file"
-        onChange={(e) => pickFrom(e.currentTarget)}
-      />
-      <input
-        ref={cameraInputRef}
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        type="file"
-        onChange={(e) => pickFrom(e.currentTarget)}
-      />
-      <input
-        ref={fileInputRef}
+        ref={inputRef}
         className="hidden"
         data-composer-file-input
         multiple

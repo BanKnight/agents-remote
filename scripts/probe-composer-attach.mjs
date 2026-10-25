@@ -1,11 +1,10 @@
-// 探针：composer 发图批（2026-10-04）——+ 菜单（图片/相机/文件）、图片内联 stream-json、
-// 文件上传 uploads/ 提及行、纯附件发送（append 兜底）、下行图片气泡渲染、chip 移除。
+// 探针：composer 发图批（2026-10-04）——+ 一键直达系统文件选择器（2026-10-25 收敛，
+// 无自有菜单）、图片内联 stream-json、文件上传 uploads/ 提及行、纯附件发送（append 兜底）、
+// 下行图片气泡渲染、chip 移除。
 // 全程 mock API + mock claude-stream WS（routeWebSocket）：上行捕获进 frames 断言组帧
 //（{type:"user", message:{role,content:[图片块?,文本块?]}}）——小 PNG 达标直传，
 // source.data 与常量精确比对；重编码判定逻辑由 composer-attach 单测覆盖，不在本探针面。
 // 下行推含 image block 的 user 行 → 断言气泡 <img src^=data:image> 渲染（禁截图，DOM 硬数据）。
-// 桌面 1280×800 断言相机项 hover-capable:hidden；移动 390×844 断言 sheet 形态相机项常显
-//（默认方向；§7 pointer media Chromium 模拟不了，触屏真机交清单）。
 // 密码自读不打印；web DOM 探针前置过 ar-verify-css 三道闸；对真实后端只登录只读，不写数据。
 // 用法：bun scripts/probe-composer-attach.mjs
 import { chromium } from "@playwright/test";
@@ -75,16 +74,6 @@ async function login(page) {
   await page.getByLabel("访问密码").fill(await readAppPassword());
   await page.getByRole("button", { name: "登录" }).click();
   await page.waitForSelector('input[type="password"]', { state: "detached", timeout: 15000 });
-}
-
-/** 页面内：按文案找 menuitem，回 { inDom, display }（display:none = CSS 隐藏的硬证据）。 */
-function menuItemInfo(page, label) {
-  return page.evaluate((label) => {
-    const el = [...document.querySelectorAll('[role="menuitem"]')].find((n) =>
-      n.textContent?.includes(label),
-    );
-    return el ? { inDom: true, display: getComputedStyle(el).display } : { inDom: false };
-  }, label);
 }
 
 async function setupAttachMocks(page, frames) {
@@ -204,24 +193,17 @@ async function waitForFrame(page, frames, cursor, pred, label) {
       const cursor = { i: 0 };
       const socket = await openSessionPage(page, frames);
 
-      // Part 1: + 按钮与菜单（相机项桌面隐藏）
+      // Part 1: + 按钮一键直达（2026-10-25 用户拍板：无自有菜单，点 + 直接触发系统
+      // 文件选择面板——iOS 对 <input type=file> 强制弹系统分支面板（拍照/图库/文件），
+      // 此前自有菜单与它功能重叠）。
       const addBtn = page.getByRole("button", { name: "添加附件" });
       await addBtn.waitFor({ state: "visible", timeout: 8000 });
       check("Part1: + 按钮在场（aria-label=添加附件）", true);
-      await addBtn.click();
-      await page
-        .getByRole("menuitem", { name: "图片" })
-        .waitFor({ state: "visible", timeout: 5000 });
-      check(
-        "Part1: 菜单含 图片/文件",
-        await page.getByRole("menuitem", { name: "文件" }).isVisible(),
-      );
-      const cam = await menuItemInfo(page, "相机");
-      check(
-        "Part1: 桌面相机项不可见（hover-capable:hidden）",
-        !cam.inDom || cam.display === "none",
-        `inDom=${cam.inDom} display=${cam.display ?? "-"}`,
-      );
+      const [chooser] = await Promise.all([
+        page.waitForEvent("filechooser", { timeout: 5000 }),
+        addBtn.click(),
+      ]);
+      check("Part1: 点 + 一键直达系统文件选择器（无自有菜单，multiple）", chooser.isMultiple());
       // 图标显式尺寸契约（真机 WebKit 裸 svg 在 flex 里收缩 0×0——图形隐形但按钮可点，
       // Chromium 探针复现不了该差异，锁「有显式尺寸」防回归）。
       const plusSvg = await page.evaluate(() => {
@@ -235,10 +217,9 @@ async function waitForFrame(page, frames, cursor, pred, label) {
         !!plusSvg && plusSvg.w === 16 && plusSvg.h === 16,
         `w=${plusSvg?.w ?? "null"} h=${plusSvg?.h ?? "null"}`,
       );
-      await page.keyboard.press("Escape");
 
       // Part 2: 图片 pick → chip（选完即有 blob: 原图缩略图）→ 点击放大 lightbox → Enter 发送
-      await page.locator('input[type="file"][accept="image/*"][multiple]').setInputFiles(PNG_FILE);
+      await page.locator('input[type="file"]:not([accept])').setInputFiles(PNG_FILE);
       await page.locator('[data-attachment-chip] img[src^="blob:"]').waitFor({ timeout: 8000 });
       check("Part2: 图片 chip 选完即显示原图缩略图（blob: objectURL，不等归一化）", true);
       // 归一化完成后 chip 为干净 ready 态：无错误/上传占位文案（处理中是纯视觉遮罩，
@@ -306,7 +287,7 @@ async function waitForFrame(page, frames, cursor, pred, label) {
       }
 
       // Part 3: 纯附件发送（无文本 → append(" ") 兜底）→ 帧仅图片块
-      await page.locator('input[type="file"][accept="image/*"][multiple]').setInputFiles(PNG_FILE);
+      await page.locator('input[type="file"]:not([accept])').setInputFiles(PNG_FILE);
       await page.locator("[data-attachment-chip]").waitFor({ timeout: 8000 });
       await composer.press("Enter");
       const frame3 = await waitForFrame(
@@ -329,9 +310,7 @@ async function waitForFrame(page, frames, cursor, pred, label) {
       }
 
       // Part 3b: 多图并行——一次选 2 张，两 chip 独立就绪（互不阻塞），发送帧含两图片块。
-      await page
-        .locator('input[type="file"][accept="image/*"][multiple]')
-        .setInputFiles([PNG_FILE, PNG_FILE]);
+      await page.locator('input[type="file"]:not([accept])').setInputFiles([PNG_FILE, PNG_FILE]);
       await page.waitForFunction(
         () => document.querySelectorAll("[data-attachment-chip] img[src^='blob:']").length === 2,
         undefined,
@@ -357,19 +336,30 @@ async function waitForFrame(page, frames, cursor, pred, label) {
         );
       }
 
-      // Part 3c: 上限截断提示——选 5 张只进 4 张（上限），行尾「+1」提示 chip 在场；
-      // × 任一 chip 后提示消失（一次性）。
+      // Part 3c: 上限截断提示——选 9 张只进 8 张（上限 COMPOSER_MAX_ATTACHMENTS=8），
+      // 行尾「+1」提示 chip 在场；× 任一 chip 后提示消失（一次性）。
       await page
-        .locator('input[type="file"][accept="image/*"][multiple]')
-        .setInputFiles([PNG_FILE, PNG_FILE, PNG_FILE, PNG_FILE, PNG_FILE]);
+        .locator('input[type="file"]:not([accept])')
+        .setInputFiles(Array.from({ length: 9 }, () => PNG_FILE));
       await page.waitForFunction(
-        () => document.querySelectorAll("[data-attachment-chip] img[src^='blob:']").length === 4,
+        () => document.querySelectorAll("[data-attachment-chip] img[src^='blob:']").length === 8,
         undefined,
         { timeout: 8000 },
       );
       const ov = page.locator('[aria-label*="另有"]');
-      check("Part3c: 5 张选入只进 4 张（上限）", true);
+      check("Part3c: 9 张选入只进 8 张（上限）", true);
       check("Part3c: 行尾「+1」提示 chip 在场", (await ov.count()) === 1);
+      // 满额批回归闸（2026-10-25 真实链路实锤的盲区）：4 张必须全部 ready（uploading
+      // 遮罩消失）——cap 判定曾误用入册后 length，满额批第一圈 break 一张都不处理，
+      // 此处只等 blob img 恒假绿（img 选完即有，与处理完成无关）。
+      await page.waitForFunction(
+        () =>
+          document.querySelectorAll("[data-attachment-chip]").length === 8 &&
+          document.querySelectorAll("[data-attachment-chip] span.absolute.inset-0").length === 0,
+        undefined,
+        { timeout: 15000 },
+      );
+      check("Part3c: 满额批 8 张全部 ready（cap 不吞本批）", true);
       await page.locator('[data-attachment-chip] button[aria-label="移除附件"]').first().click();
       check("Part3c: × 后提示 chip 消失（一次性）", (await ov.count()) === 0);
       // 清场：逐张 × 到空（防污染 Part4 的 chip 计数断言）。
@@ -500,7 +490,7 @@ async function waitForFrame(page, frames, cursor, pred, label) {
       check("Part5: 下行 user 行（含 image block）渲染气泡 img", downOk, `before=${before}`);
 
       // Part 6: chip × 移除
-      await page.locator('input[type="file"][accept="image/*"][multiple]').setInputFiles(PNG_FILE);
+      await page.locator('input[type="file"]:not([accept])').setInputFiles(PNG_FILE);
       await page.locator("[data-attachment-chip]").waitFor({ timeout: 8000 });
       const xSvg = await page.evaluate(() => {
         const svg = document.querySelector(
@@ -562,9 +552,7 @@ async function waitForFrame(page, frames, cursor, pred, label) {
 
       // Part 8: 失败重试（灰底 chip 整块可点 + 右下角 ↻ 暗示）——坏图进 error 终态,
       // 点重试再失败仍终态(循环可用,不误开 lightbox),× 清场。
-      await page
-        .locator('input[type="file"][accept="image/*"][multiple]')
-        .setInputFiles(BROKEN_IMAGE);
+      await page.locator('input[type="file"]:not([accept])').setInputFiles(BROKEN_IMAGE);
       const retryBtn = page.locator('[data-attachment-chip] button[aria-label^="重试处理"]');
       await retryBtn.waitFor({ timeout: 8000 });
       check("Part8: 坏图 → 灰底「处理失败」chip 整块可点重试", true);
@@ -585,8 +573,8 @@ async function waitForFrame(page, frames, cursor, pred, label) {
       await page.context().close();
     }
 
-    // ── Part M：移动 viewport → ActionMenu sheet 形态，相机项常显（默认方向；
-    // hover-capable:hidden 不命中即常显，触屏 media 真值交真机清单）──
+    // ── Part M：移动 viewport → 一键直达（无自有菜单/sheet，点 + 直接触发系统面板；
+    // iOS 系统面板自带拍照/图库/文件，触屏 media 分档已无消费面）──
     {
       const page = await (
         await browser.newContext({
@@ -597,16 +585,11 @@ async function waitForFrame(page, frames, cursor, pred, label) {
         })
       ).newPage();
       await openSessionPage(page, []);
-      await page.getByRole("button", { name: "添加附件" }).click();
-      await page
-        .getByRole("menuitem", { name: "相机" })
-        .waitFor({ state: "visible", timeout: 6000 });
-      const camM = await menuItemInfo(page, "相机");
-      check(
-        "PartM: 移动 sheet 相机项常显（默认方向）",
-        camM.inDom && camM.display !== "none",
-        `display=${camM.display ?? "-"}`,
-      );
+      const [chooser] = await Promise.all([
+        page.waitForEvent("filechooser", { timeout: 6000 }),
+        page.getByRole("button", { name: "添加附件" }).click(),
+      ]);
+      check("PartM: 移动点 + 一键直达系统文件选择器（无自有菜单）", chooser.isMultiple());
       await page.context().close();
     }
   } finally {

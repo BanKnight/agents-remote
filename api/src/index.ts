@@ -259,15 +259,26 @@ export const createFetchHandler =
       return response;
     };
 
-    // 【临时诊断端点——composer 抬高 bug 取证用（2026-10-19），定案后随前端角标
-    // （use-composer-inset-debug-badge.ts）一起拆。收 PWA 端 visualViewport / composer
-    // offset 哨兵记录，仅打服务端日志不落盘。】
+    // 【临时诊断端点——composer 抬高 bug 取证用（2026-10-19 复发后重新启用），定案后
+    // 随前端角标（use-composer-inset-debug-badge.ts）一起拆。收 PWA 端哨兵样本，
+    // 仅打服务端日志不落盘。】
     if (url.pathname === "/api/debug/inset-report" && request.method === "POST") {
       const body: unknown = await request.json().catch(() => null);
       if (!Array.isArray(body)) {
         return new Response("expected JSON array", { status: 400 });
       }
-      console.warn("[inset-debug]", JSON.stringify(body).slice(0, 4096));
+      console.warn("[inset-debug]", JSON.stringify(body).slice(0, 8192));
+      return withRefresh(Response.json({ ok: true }));
+    }
+
+    // 【临时诊断端点——composer 多图归一化挂死取证用(2026-10-25),定案后随前端
+    // use-attach-debug.ts + composer-attach 打点一起拆。收 attach-debug 样本,仅打日志。】
+    if (url.pathname === "/api/debug/attach-report" && request.method === "POST") {
+      const body: unknown = await request.json().catch(() => null);
+      if (!Array.isArray(body)) {
+        return new Response("expected JSON array", { status: 400 });
+      }
+      console.warn("[attach-debug]", JSON.stringify(body).slice(0, 8192));
       return withRefresh(Response.json({ ok: true }));
     }
 
@@ -2380,6 +2391,10 @@ export const startApi = async () => {
       pushSubscriptions,
     }),
     websocket: {
+      // Bun 默认 16MB 超限即断连(1009)。附件 base64 走单条上行帧:8 张 × 单图 5MB
+      // ≈ 40MB 最坏(web COMPOSER_MAX_ATTACHMENTS 注释有推导),48MB = 40MB + JSON
+      // 包壳余量;两处须联动——调 web 侧上限先看这里。
+      maxPayloadLength: 48 * 1024 * 1024,
       open(ws) {
         if (ws.data?.kind === "session-stream") {
           void streamController.open(ws);

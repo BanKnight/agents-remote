@@ -506,11 +506,8 @@ export const zh: Record<TranslationKey, string> = {
   // ── Claude ────────────────────────────────────────────────────
   "claude.inputPlaceholder": "向 Claude 提问...",
   "claude.composer.send": "发送",
-  // composer 附件（发图批）：+ 菜单三项 + chip 文案。zh 冒号半角无空格。
+  // composer 附件（发图批）：+ 按钮 + chip 文案。zh 冒号半角无空格。
   "claude.attach.add": "添加附件",
-  "claude.attach.photo": "图片",
-  "claude.attach.camera": "相机",
-  "claude.attach.file": "文件",
   "claude.attach.uploading": "上传中…",
   "claude.attach.uploadingPercent": "上传中 {{percent}}%",
   "claude.attach.processing": "处理中…",
