@@ -174,10 +174,11 @@ export const createFetchHandler =
   async (request: Request, server: UpgradeServer) => {
     const url = new URL(request.url);
 
-    // /p/{project}{path} 短路径 → /api/projects/{project}/pages{path}：vite proxy 退役
-    // 后由 api 自承接（部署形态批）。正则与 encode 语义逐字对齐 vite.config.ts 的
-    // rewrite（project 段保留 encoded 形式，matchProjectPagesPath 统一 decode）；
-    // rewrite 后公开根豁免 / per-root token 鉴权自动复用既有 pages serve 管道。
+    // /p/{project}{path} 短路径 → /api/projects/{project}/pages{path}：dev 形态的
+    // vite proxy 仍并行存在，此处承接的是无 proxy 的直连/生产形态（api 内置静态
+    // serve，部署形态批）。正则与 encode 语义逐字对齐 vite.config.ts 的 rewrite
+    // （project 段保留 encoded 形式，matchProjectPagesPath 统一 decode）；rewrite
+    // 后公开根豁免 / per-root token 鉴权自动复用既有 pages serve 管道。
     if (url.pathname.startsWith("/p/")) {
       const shortPath = url.pathname.match(/^\/p\/([^/]+)(\/.*)?$/);
       if (shortPath) url.pathname = `/api/projects/${shortPath[1]}/pages${shortPath[2] ?? ""}`;
@@ -256,8 +257,9 @@ export const createFetchHandler =
 
     // 静态 web 产物兜底（部署形态批）：非 /api 路径先试静态面（WEB_DIST_DIR 启用时），
     // 命中即返回；未命中继续走下方原管道（/api 鉴权或 404）。SPA 壳公开语义与
-    // vite preview 时代一致——数据全部在鉴权后的 /api/* 后面。
-    if (options.staticWeb && !url.pathname.startsWith("/api/")) {
+    // vite preview 时代一致——数据全部在鉴权后的 /api/* 后面。裸 /api（无尾斜杠，
+    // 原语义 404）同样不进静态兜底，保持不被 SPA fallback 吞掉。
+    if (options.staticWeb && !url.pathname.startsWith("/api/") && url.pathname !== "/api") {
       const staticResponse = await options.staticWeb(url.pathname, request);
       if (staticResponse) return staticResponse;
     }

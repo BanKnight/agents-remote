@@ -62,15 +62,23 @@ export const createStaticWebHandler = (distDir: string): StaticWebHandler => {
   // root 与 realRoot 在工厂创建时各算一次：realRoot 是 realpath 语义的边界真值
   //（distDir 本身可能经 symlink 到达），后续所有命中校验都以它为界。
   const root = resolve(distDir);
-  const realRootPromise = realpath(root);
+  // 拒绝兜底 undefined：运行期 dist 被删时不让工厂期的 promise 变 unhandled
+  // rejection、也不让后续请求 500——realRoot 为 undefined 走 fail-closed 404。
+  const realRootPromise = realpath(root).catch(() => undefined);
 
   const serveFile = (fsPath: string, pathname: string, request: Request): Response | undefined => {
     // fsPath 的存在性与 realpath 边界由调用侧保证；Bun.file 按扩展名自动带 Content-Type。
     const file = Bun.file(fsPath);
-    const headers = {
+    const headers: Record<string, string> = {
       "Cache-Control": isHashedAsset(pathname) ? CACHE_IMMUTABLE : CACHE_NO_CACHE,
     };
-    if (request.method === "HEAD") return new Response(null, { status: 200, headers });
+    // HEAD 与 GET 头对称（缓存代理语义）：body 置 null，但保留 Content-Type/Length。
+    if (request.method === "HEAD") {
+      return new Response(null, {
+        status: 200,
+        headers: { ...headers, "Content-Type": file.type, "Content-Length": String(file.size) },
+      });
+    }
     return new Response(file, { status: 200, headers });
   };
 
@@ -100,7 +108,7 @@ export const createStaticWebHandler = (distDir: string): StaticWebHandler => {
       } catch {
         return undefined;
       }
-      if (real !== realRoot && !real.startsWith(`${realRoot}/`)) return notFound();
+      if (!realRoot || (real !== realRoot && !real.startsWith(`${realRoot}/`))) return notFound();
       return serveFile(fsPath, pathname, request);
     };
 
@@ -109,6 +117,8 @@ export const createStaticWebHandler = (distDir: string): StaticWebHandler => {
     let target: string;
     try {
       const s = await stat(requestPath);
+      // 文件命中直接复用 stat 结果（热路径少一次 syscall）；仅目录→index.html
+      // 分支（target 变了）才需要补 stat 验 index 存在。
       target = s.isDirectory() ? resolve(requestPath, "index.html") : requestPath;
     } catch {
       // 未命中：无扩展名 → SPA fallback；有扩展名 → 404（不吞坏 asset 链接）。
@@ -116,10 +126,13 @@ export const createStaticWebHandler = (distDir: string): StaticWebHandler => {
       target = resolve(root, "index.html");
     }
     // 统一收口：目录缺 index.html / dist 缺 fallback index.html → 404（目录列表关）。
-    try {
-      await stat(target);
-    } catch {
-      return notFound();
+    // 文件命中分支 target === requestPath，已由上方 stat 确认存在，不重复 stat。
+    if (target !== requestPath) {
+      try {
+        await stat(target);
+      } catch {
+        return notFound();
+      }
     }
     return (await serveIfInside(target)) ?? notFound();
   };

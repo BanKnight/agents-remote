@@ -27,6 +27,7 @@ services:
     container_name: agents-remote
     restart: unless-stopped # 崩溃/宿主重启自动拉起（systemd 语义的 docker 版）
     init: true # tini 收割 tmux/claude 子进程树，防 zombie 累积
+    security_opt: ["no-new-privileges:true"] # 与 entrypoint root→gosu 降权兼容（降权不是获取新特权）
     stop_grace_period: 30s
     ports:
       - "${PORT:-8080}:4311" # 入口单端口：web 静态 + /api + /p/ 全在这（api 内置静态 serve）

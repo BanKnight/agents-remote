@@ -1,4 +1,6 @@
 # agents-remote 系统 service 模板（部署形态批，2026-10-27）。
+# 注意：这是本机模板——User/WorkingDirectory/ExecStart 硬编码 deploy 用户的路径，
+# 换机器/用户部署时按注释行逐项改（或改造成 %i/EnvironmentFile 参数化）。
 #
 # 安装（宿主机上执行一次）：
 #   1. cd /home/deploy/workspace/agents-remote && bun run build   # api/dist + web/dist
@@ -9,6 +11,8 @@
 # 静态 web 由 api 内置 serve（WEB_DIST_DIR 指向仓库内构建产物）。端口沿用 config.yaml
 # 的 api_port——与本机 ar-dev dev 服务（43011）并存时改 config.yaml 端口错开。
 # 资源约束：MemoryMax/TasksMax 罩住整棵 agent 子进程树（claude/tmux/node）。
+# 加固：基础项（写路径全在 /home/deploy 下，与 ProtectSystem=full 兼容；
+# ProtectHome 不可用——home 即数据目录；重沙箱需实测 agent 子进程树后再加）。
 
 [Unit]
 Description=agents-remote (web control plane for remote agents)
@@ -27,6 +31,11 @@ RestartSec=3
 # 资源约束（用户目标：约束资源使用）
 MemoryMax=4G
 TasksMax=512
+# 基础加固（无副作用项）
+NoNewPrivileges=true
+PrivateTmp=true
+RestrictSUIDSGID=true
+ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target

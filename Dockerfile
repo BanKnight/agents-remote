@@ -30,8 +30,9 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 # bun 运行时（静态入 glibc 链，node:22-slim 的 debian 基可直接跑）。
 COPY --from=oven/bun:1 /usr/local/bin/bun /usr/local/bin/bun
-# codex CLI：npm 分发（原生二进制经 optional deps 落位）；版本可用 --build-arg 钉。
-ARG CODEX_VERSION=latest
+# codex CLI：npm 分发（原生二进制经 optional deps 落位）。默认钉版本（供应链规则：
+# 发布 ≥7 天才 bump，升级显式改这里）；--build-arg CODEX_VERSION=latest 可覆盖。
+ARG CODEX_VERSION=0.163.0
 RUN npm install -g --silent @openai/codex@${CODEX_VERSION} && npm cache clean --force
 
 ENV NODE_ENV=production \

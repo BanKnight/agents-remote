@@ -1,44 +1,50 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-26(回放缓存迁 IndexedDB 批:实现+双 reviewer 消化全部完成)
+> 最后更新:2026-10-27(部署形态批:实现+commit 落地+compose 冒烟全绿,双 reviewer 审查中)
 
 ## 一句话状态
 
-**「回放缓存迁 IndexedDB」批全部完成:3 commit(9e8215b 存储层 + ae11ded 原子改 + fe4f496 review 消化),双 reviewer 零 P0(perf 0 P0/P1 净改善;code 1 P1 已修=项目清扫硬删化),探针复验全绿,产物已重建——用户真机已确认「极大提升」(核心验收通过),剩余真机清单项随时可验。**
+**「Docker/compose/systemd 部署」批实现完成:commit `66bc12e` 落地(api 内置静态 serve + /p/ rewrite + Dockerfile/entrypoint/compose/CI/unit/文档),docker build 成功,compose 冒烟 15 项断言全绿(崩溃自愈/落点树/CLI 链/mem limit),全门禁 951 pass 0 fail——双 reviewer(code+security)后台审查中,消化后待用户确认推 tag 触发 CI(外发动作)。**
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
-- **「瞬出时有时无」根因(2026-10-26 定案)**:不是 LRU 代码 bug,是容量参数与真实数据规模不匹配——实测三窗口(22router 2.89M / agents-remote 1.44M / novels 2.75M)合计 4.44M > localStorage 全局 cap 2.5M,快速轮切稳态互驱逐全 miss;窗口内容动态波动在临界值附近来回跨越 = 「时好时坏」。**附带正确性问题**:旧单 entry 字符 cap 1.5M 在偷偷丢头截断两个大会话的落盘窗口。用户拍板迁 IndexedDB(iOS 动态配额数百 MB 级)。
-- **常量拆分**:`REPLAY_CACHE_MAX_ENTRY_CHARS`(1.5M 一常量三用途)删除 → `REPLAY_WINDOW_MAX_CHARS=8M`(内存摊还+单行毒化) + **落盘不截断**(600 行窗口原样缓存) + `REPLAY_CACHE_MAX_TOTAL_CHARS=50M`(全局 LRU 预算,meta.chars 口径,~17 个大会话)。
-- **三层架构**:adapter(恢复 await+3s 超时竞速 / flush·clear fire-and-forget) → cache 逻辑层(签名异步化、永 reject、同步段先快照) → `ReplayCacheStore` 接口(seam 注入) → store 实现(IDB 生产 / mem 测试)。零新依赖。
-- **恢复异步化竞态面**:async IIFE + `Promise.race([loadReplayCache, 3s→null])` + 双守卫(cancelled + gen 快照)——迟到恢复 bail 不串窗口;重连分支同步开连零新增延迟。StrictMode 用例 diag 实证:首轮 IIFE `cancelled=true` bail、第二轮命中应用。
-- **hook 测试断言坑(本批实测)**:`rawMessagesRef` 是 commit 后的 effect 派生(claude-adapter.ts:4090)——socket 建立同步先于 commit,断言必须 waitFor 不能同步读;`MockSocket.instances` 数组跨本测试累计(first 实例的 socket 占 [0]),断言索引按累计算。
-- **探针 IDB 预写两坑(首批实测)**:①值必须存**对象**(存 JSON 字符串被 loadReplayCache 形状校验拒收);②upgrade 必须建全 entries+meta 双 store——残缺 DB(缺 meta)让应用所有写 tx 静默死,tombstone 写不进去 → 假 FAIL。预写时机 = 登录后先 evaluate 直写再导航(不用 addInitScript,IDB 异步写与应用首个恢复读竞态)。
-- **用户否决项(仍有效)**:缩回放缓存窗口换命中率——恢复语义完整性 > 命中率,勿再提(本批「落盘不截断」正是修复)。
+- **生产形态(用户拍板)**:web 静态由 **api 内置静态 serve**(`WEB_DIST_DIR` env 启用,未设=关闭 dev 零影响)——单进程单端口承载 web 静态 + `/api`(HTTP+WS) + `/p/`,tunnel 语义不变。**本批核心交付 = GitHub CI 打容器镜像给别人用**;本机 ar-dev 不迁移(用户「暂时不着急」);systemd 提供系统级模板。
+- **会话记录指定目录(用户要求,容器场景)**:零应用改动,compose 三卷收口 `./data/`——`data/home`→`/home/agent`(.claude 登录态+JSONL/.codex/.agents-remote)、`data/run`→`/data/run`(AGENTS_REMOTE_RUN_DIR:token-secret+sessions/*.json)、`data/projects`→`/data/projects`(PROJECTS_ROOT)。备份=备份 `data/`。
+- **CONFIG_REQUIRED 硬阻塞不改 api 代码**:entrypoint 首启引导——config.yaml 不存在且 APP_PASSWORD 有值 → umask 077 写最小 yaml(app_password/projects_root/api_port 4311/web_port 4311/web_api_base_url /api)。
+- **镜像策略**:多阶段 builder(oven/bun:1 全量装+build+`--production` 裁剪)→ runtime(node:22-slim 自带 node 供 skills CLI;apt tmux/git/gosu;claude CLI 随 node_modules/.bin;codex npm -g 内置;omp 非 npm 不内置)。agent uid/gid 1000 对齐宿主(bind mount 属主一致)。单架构 amd64,workflow 注释留多架构扩展位。
+- **ENTRYPOINT/CMD 分离**:entrypoint 做初始化(root chown→gosu 降权→config 引导)后 `exec "$@"`,CMD 缺省 `bun /app/api/dist/index.js`——`docker run image sh` 可透传调试。
+- **restart policy 语义**:「崩溃自愈」验证用容器内杀 bun(kill -9)→ restarts=1 ✓;`docker kill`/`stop` 不触发重启是 Docker 语义(手动停止),非配置问题。
 
 ### 进度
 
-- ✅ Step 1:`replay-cache-store.ts` 新建(接口七方法 + IDB/mem 双实现 + sweepLegacy)+ 11 测试绿;commit `9e8215b`。
-- ✅ Step 2:cache 层重写(17 测试)+ adapter effect 重排 + 消费点 void 化 + hook 测试改造(6 用例异步化 + 新增竞态/超时降级 2 用例);探针改造(remount 断言改 evaluate 内联 async IDB 读 + cleanup 预写改先写后导航);commit `ae11ded`。
-- ✅ 双 reviewer 消化(perf:0 P0/P1 净改善,meta 扫描 <0.1% 主线程、save 净省 10-30ms、内存峰值更低;code:1 P1 已修=项目清扫硬删化消灭 rename-A→B→A 静默失效陷阱,3 P2 已修=withDb 类型诚实化/metaChars 死代码/注释漂移;perf P2-1=配额重试 evict 不重复);commit `fe4f496`。
-- ✅ 收尾复验:全门禁绿(web 951)、产物重建、remount 探针 7/7、cleanup 探针 4/4;**用户真机反馈「确实有了极大的提升」(核心验收=三大会话轮切稳态全命中,通过)**。
+- ✅ Step 1:api 内置静态 serve(`static-web.ts` ~125 行:decode 拒绝/null byte/`..`段 404/realpath 前缀校验拦 symlink 逃逸/SPA fallback 三态/assets immutable+入口 no-cache)+ index.ts `/p/` rewrite(handler 顶部正则规范化,复用 pages serve 管道:公开根豁免/per-root token 鉴权/ETag)+ 13 用例 + /p/ 集成用例。
+- ✅ Step 2:裸跑冒烟 8 项(临时端口 43199+临时 HOME,不碰 ar-dev)。
+- ✅ Step 3:全部部署文件落盘+docker build 成功+compose 冒烟 15 项全绿:
+  - build 三坑修复:①国内网络 Docker Hub 直连重置→宿主惯例 `docker.1ms.run` mirror 前缀 pull 后 tag 回标准名(Dockerfile 保持标准名);②oven/bun 无 git→builder apt 装 git+`git init -q .`(根 package.json prepare 需要);③`.dockerignore` 的 `**/dist` 误伤 git 入库的 `api/src/assets/canvas/dist/`(excalidraw bundle,api 源码 import 依赖)→加 `!` 例外链;④node:22-slim 自带 node 用户占 uid 1000→先 userdel 再建 agent。
+  - 冒烟断言:/ 200 SPA 壳(与容器 dist 一致)/api/health ok/assets JS+CSS immutable/sw no-cache/未知无扩展名 fallback 200/未知有扩展名 404//api 未鉴权 401 JSON//p/ 未知项目 PROJECT_NOT_FOUND JSON 404/data 落点树+0600+宿主属主/CLI 全链(claude 2.1.299/codex 0.164.0/tmux 3.3a/git 2.39.5/node 22.23.4/bun 1.4.4)/进程链 docker-init→gosu→bun uid1000/崩溃自愈 restarts=1→healthy/mem limit 4G。
+- ✅ Step 4 部分:全门禁绿;commit `66bc12e`(pre-commit 全门禁过)+ 前置 `fefdc10`(IDB 批 handoff 补交);双 reviewer 后台审查中。
+- ⏳ Step 5:推 tag `v*` 触发 CI → GHCR(外发动作,**执行前单独向用户确认**)。
 
 ### 待办
 
-- **剩余真机清单(用户有空时)**:①大会话进入→切走→杀 PWA→重进(恢复即现 + delta);②大窗口恢复完整(2.9M 会话不丢头);③关会话/删项目/改名清扫(改名改回不失效——fe4f496 硬删语义);④升级后首次进入(旧 localStorage 清理一次全量自愈);⑤弱网重连。
-- **记档不修**(本批新增 4 条):50M 预算满载边界(现阶段 5× 余量,大会话数逼近 17 时 bump);3s 竞速败者迟到物化(~12MB 瞬时,仅真挂起时发生);流式期写放大(~1-2GB/h 闪存,有界可接受);handleBinaryBatch decompress 后不检查 cancelled(本批之前已存在、正交,如修属另一批)。
-- **记档不修**(不变):claude-stream open() terminal 守卫不 close;spawnAndStart relay.activate() 无 catch;relay.destroy() 不关 socket;pi/acp 无 since 通道。
-- **既有待办不变**:React #310 跨 lg 断点崩溃立批;批 16/17/18 真机复验(见 next-actions);取证件待拆;e2e 基线;M2.0 多卡焦点互抢。
+- 双 reviewer 报告回来 → 消化(必要时修复补 commit)。
+- 推 tag 前向用户确认 → GH Actions 绿 + `docker pull` 冒烟。
+- 交用户真机/使用清单。
+- **既有待办不变**:IDB 批剩余真机清单 5 项;React #310 跨 lg 断点崩溃立批;批 16/17/18 真机复验;取证件待拆;e2e 基线;M2.0 多卡焦点互抢。
 
 ### 易丢的关键上下文
 
-- 墓碑语义链:clearReplayCache = store.tombstone(写 removed 标记);putUnlessTombstone 单 tx 内 get→墓碑? false:put——删除语义对 save 单向闸,LRU 淘汰墓碑后自然重试自愈。
-- IDB 引擎防御:所有 request 在 request 回调内同步发起(不跨 await 用 tx);open 失败缓存 null → 本页面加载内永久降级(隐私模式零噪音)。
-- save 同步段铁律:pushReplayLine 会原地 push raw 数组——capByLines/deriveAnchor/join 必须在首个 await 前。
-- 探针跑法 `bun scripts/probe-*.mjs`;测试限内存 `systemd-run --scope --user -p MemoryMax=2G`;commit 尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`,标准 `git add && git commit`。
-- RTL waitFor 在 bun fake timers 下推进虚拟时钟 ~1ms(上批教训);「差 1ms」容差断言分两段推进。
+- **冒烟环境残留清理坑**:compose bind mount 首启由 docker daemon 以 root 建目录——宿主 deploy 删不掉,清理用 `docker run --rm --entrypoint sh -v $PWD/data:/data agents-remote:local -c 'rm -rf /data/...'`(镜像内 root);`docker run` 传参已被 ENTRYPOINT 透传修复,但覆盖入口仍需 `--entrypoint`。
+- **index.html 里有字面 `assets/index-XXXX.js`**(vite 内嵌注释文本),grep 提取 asset 名会误抓——用 `docker exec ls /app/web/dist/assets/` 取真实 chunk 名;宿主与镜像构建批次 hash 不同,验证以容器内为准。
+- **数据落点权威表**在 docker-compose.yml 顶部注释 + docs/runbooks/deployment.md。
+- web 包零改动(静态产物已可移植);dev 链路零改动(ar-dev + vite preview + HMR 照旧);`/api/*` 语义零变化。
+- commit 尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`,标准 `git add && git commit`。
 
 ---
-最后更新:2026-10-26(触发原因:IDB 迁移批实现+提交完成,双探针全绿,等 reviewer)
+最后更新:2026-10-27(触发原因:部署批 Step 1-4 主体完成,双 reviewer 审查中,handoff save 防丢失)
+
+## 提醒
+- 开干前读 .claude/gtd/next-actions.md;守 .claude/constitution.md 底线。
+- 到达里程碑或感知将 compact 时,主动 /handoff save。

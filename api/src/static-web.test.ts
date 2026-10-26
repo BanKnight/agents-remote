@@ -111,3 +111,15 @@ test("resolveWebDistDir 关闭语义：未配置时 handler 不该被创建（�
   const closed = await resolveWebDistDir({ WEB_DIST_DIR: "" });
   expect(closed).toBeUndefined();
 });
+
+test("工厂后 dist 被删：404 且不抛（realRoot 拒绝兜底 fail-closed）", async () => {
+  // realRootPromise 在工厂期发起，运行期目录被删（容器重建/清理竞态）时拒绝须被
+  // 兜住——unhandled rejection 会让进程级测试/运行时报错，这里无论 realpath 竞速
+  // 输赢（realRoot 有值/undefined 两条路径）都收敛到 404，且 bun test 对未处理
+  // rejection 会 fail，天然覆盖兜底。
+  const volatile = await mkdtemp(join(tmpdir(), "agents-remote-static-gone-"));
+  const h = createStaticWebHandler(volatile);
+  await rm(volatile, { recursive: true, force: true });
+  const response = await h("/whatever", get("/whatever"));
+  expect(response?.status).toBe(404);
+});

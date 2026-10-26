@@ -16,10 +16,12 @@ fi
 CONFIG_DIR="${HOME}/.agents-remote"
 CONFIG_FILE="${CONFIG_DIR}/config.yaml"
 if [ ! -f "$CONFIG_FILE" ] && [ -n "${APP_PASSWORD:-}" ]; then
-  mkdir -p "$CONFIG_DIR"
   umask 077
+  mkdir -p "$CONFIG_DIR"
+  # 密码刻意不写入 config.yaml：APP_PASSWORD env 在 applyEnvOverrides 中覆盖
+  # （api/src/config.ts），文件里只放非敏感值——密码只存在于容器 env，避免
+  # 在挂载卷上留下随备份扩散的明文副本，也避免 heredoc 拼接特殊字符破坏 YAML。
   cat > "$CONFIG_FILE" <<EOF
-app_password: "${APP_PASSWORD}"
 projects_root: "${PROJECTS_ROOT:-/data/projects}"
 api_port: ${API_PORT:-4311}
 web_port: ${WEB_PORT:-4311}

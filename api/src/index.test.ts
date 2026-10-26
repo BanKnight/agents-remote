@@ -907,6 +907,31 @@ test("createFetchHandler rewrites /p/ short paths onto the pages serve pipeline"
   expect(await allowed.text()).toBe("<h1>cjk</h1>");
 });
 
+test("createFetchHandler keeps bare /api out of the static fallback", async () => {
+  // 裸 /api（无尾斜杠）原语义是 404 JSON；静态兜底若只查 startsWith("/api/") 会把
+  // 它吞成 SPA 壳。stub 静态面记录进入的 pathname：/api 与 /api/* 都不进，非 api
+  // 路径正常进入。
+  const seen: string[] = [];
+  const auth = new AuthService({
+    appPassword: "secret",
+    tokenSecret: "test-secret",
+    now: () => new Date("2026-05-24T00:00:00.000Z"),
+  });
+  const handler = createFetchHandler(auth, {
+    staticWeb: async (pathname) => {
+      seen.push(pathname);
+      return undefined;
+    },
+  });
+
+  const bare = await handler(new Request("http://localhost/api"), { upgrade: () => false });
+  expect(bare.status).toBe(404);
+  await handler(new Request("http://localhost/api/whatever"), { upgrade: () => false });
+  await handler(new Request("http://localhost/"), { upgrade: () => false });
+
+  expect(seen).toEqual(["/"]);
+});
+
 test("createFetchHandler requires token auth for token pages roots", async () => {
   await mkdir(join(root, "demo", "site"), { recursive: true });
   await writeFile(join(root, "demo", "site", "index.html"), "<h1>secret</h1>");
