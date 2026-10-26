@@ -1,14 +1,18 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-26(增量回放跨 remount 恢复提交 081b51b;待用户真机复测)
+> 最后更新:2026-10-26(丢弃策略补全提交 da43ba1:毒化 + 删除清扫墓碑;待用户真机复测 081b51b+da43ba1)
 
 ## 一句话状态
 
-**聊天记录同步量优化补全已落地并提交(081b51b)**:`d565ba4` 的增量回放锚活在组件内存,切走会话再切回 / PWA 被回收重载 / 刷新 = remount = 锚随 rawMessages 丢失 → 每次全量回放(用户观察「每次重连都从旧的地方加载到最新」)。修复 = 把「窗口尾锚 + 原始 JSON 行窗口 + resume 语义」持久化到 localStorage,remount 时恢复窗口即刻呈现 + WS 带 `?since=` → 服务端 `replay=delta` 只补增量。单测(12+5)全绿、全门禁过、真链路探针 7/7 绿。**待用户真机复测**(iPhone PWA 切走会话再切回 / 杀 PWA 重开进会话 → 直接看到最新,无「从旧加载」过程)。
+**回放缓存丢弃策略补全已提交(da43ba1)**——用户对照三场景提醒核查:①长期没用打开快(已有行为满足,锚 miss 自动 full 回退);②一直用内存/存储稳定(修「至少保留一行」被超大单行击穿——本机 JSONL 实测 2.5MB tool_result 行真实存在;毒化=整窗放弃+墓碑);③删除的项目不留残余(接 useProjectRowActions/useCloseSession 显式清扫;跨设备靠全局 2.5M+LRU 硬上界兜底)。关键机制**墓碑**:clearReplayCache 写 removed 标记 entry、saveReplayCache 读到即拒写——卸载 cleanup flush 的迟到重写不复活已删缓存(真链路探针实抓该竞态)。前一批 081b51b(跨 remount 增量回放恢复)同待真机复测。
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
+
+- **丢弃策略分层(da43ba1,2026-10-26)**:内存窗 = 行数(1200→600) + 字符(1.5M)双 cap、组件卸载即释放;落盘 = 单 entry 600 行/1.5M chars + 全局 2.5M chars(UTF-16 口径)+ savedAt LRU;生命周期 = 项目删除/重命名清前缀(useProjectRowActions onSettled 从 variables 取参——onSettled 出错时 data undefined)、agent 会话删除清单 key(useCloseSession);跨设备残留 = 全局 cap 硬上界兜底。**毒化**:单行 > REPLAY_CACHE_MAX_ENTRY_CHARS(1.5M) → 整窗放弃 + replayPoisonedRef 短路采集/调度/flush + 墓碑持久(重放还会再遇到大行,永久挡掉避免反复失败循环;LRU 淘汰墓碑自愈)。
+- **墓碑 = 写者纪律**:cache 层单一写者,删除语义对 save 单向生效。直接 removeItem 被「面板卸载 cleanup replayFlush 重写」竞态覆盖(探针 ④ 实抓:清完读回仍是完整 entry);写 removed 标记 entry 后 loadReplayCache 既有校验(无 cursorUuid)天然拒收,saveReplayCache 开头 parse existing 查 removed。墓碑 ~80B 随 LRU 淘汰。
+- **探针教训(da43ba1 实抓)**:UI 按 id 前缀推断会话类型(inferSessionTypeFromId)——探针自建会话必须用服务端返回的 agent_ 真实 id 打开页面/预写 key,自造标记 id 不被识别为 agent,删除流程走不到 agent 分支。
 
 - **非 bug 的诊断结论**:增量回放(reconnect delta)本身工作正常——服务端日志实证同页面断线重连大量 `replay=delta`。缺口纯粹是**锚的持久化范围**:设计只覆盖「连接级重连」,不覆盖「组件级 remount」。修复属 `state-sync-principles.md` 的「上下文不足」难题:客户端要保住自己的上下文(锚 + 锚点处数据)才能按需同步。
 - **无损论证**:当前 full replay 的数据源本就只有 relay 内存缓冲(`historyLines` = last compact block ≤8MB + `liveLines` ≤10k 行)。持久化窗口 ≥ 该量级即**不牺牲任何现状可得的消息**——这是选「持久化原始行窗口」而不是「只存锚 + 重新拉历史」的核心理由(后者需要新 API 且会引入新的上下文不足)。
@@ -26,9 +30,9 @@
 
 ### 进度
 
-- ✅ 081b51b:增量回放跨 remount 恢复(新 `web/src/lib/claude-replay-cache.ts` + adapter 采集/恢复/落盘 + cache 单测 12 + hook 用例 5 + 真链路探针)。perf-reviewer P1 四条(P1-1 落盘热路径全窗重写、P1-2 逐行调度、P1-3 内存窗无字符 cap、P2 savedAt parse)全部消化进返工。
-- ✅ 全门禁:format/lint/typecheck 0,api 1106 / shared 11 / web 927 全 0 fail;`node scripts/ar-verify-css.mjs` 过。
-- ✅ 真链路探针 `scripts/probe-replay-cache-remount.mjs` 7/7(test 项目零 mock:localStorage entry `cursor=065e8084… rawChars=957741 lines=8`,切回后 URL 带 `?since=065e8084…`,服务端 `[relay] addSubscriber … replay=delta(history+0/live+8)`)。
+- ✅ da43ba1:丢弃策略补全(毒化 + 删除清扫墓碑)。cache 单测 +3、hook 毒化用例 1;全仓 api 1106 / shared 11 / web 932 全 0 fail;新探针 `probe-replay-cache-cleanup.mjs` 真链路 4/4(自建会话→预写 entry→打开不清理→UI 关闭后只剩墓碑);remount 探针回归 7/7。
+- ✅ 081b51b:增量回放跨 remount 恢复(新 `web/src/lib/claude-replay-cache.ts` + adapter 采集/恢复/落盘 + cache 单测 12 + hook 用例 5 + 真链路探针)。perf-reviewer P1 四条全部消化进返工。
+- ✅ 全门禁:format/lint/typecheck 0;`node scripts/ar-verify-css.mjs` 过。
 
 ### 待办
 
