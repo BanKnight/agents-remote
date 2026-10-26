@@ -5,7 +5,11 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { JSDOM } from "jsdom";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
-import { useClaudeSession, SESSION_INIT_WATCHDOG_MS } from "./claude-adapter";
+import {
+  useClaudeSession,
+  SESSION_INIT_WATCHDOG_MS,
+  WS_CONNECT_TIMEOUT_MS,
+} from "./claude-adapter";
 import {
   replayCacheKey,
   saveReplayCache,
@@ -227,6 +231,72 @@ describe("useClaudeSession websocket lifecycle", () => {
         vi.advanceTimersByTime(500); // scheduleReconnect 的 500ms 退避
       });
       await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("connect watchdog closes a socket stuck in CONNECTING and reconnects", async () => {
+    // 2026-10-26「一直在连接中」批：既有全部自愈机制（session_init 看门狗/心跳/退避）
+    // 都武装在 onopen 之后——握手挂起（onopen 永不到）期间 CONNECTING 裸奔，UI 停在
+    // 「正在建立连接中…」直到系统级 TCP 超时。连接级看门狗在 new WebSocket 后武装，
+    // 到期 close → onclose → 退避重连自愈。
+    vi.useFakeTimers();
+    try {
+      renderHook(() => useClaudeSession("proj", "sess"));
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+      const socket = MockSocket.instances[0];
+      // 握手未落定：不调 open()，模拟挂起的握手。
+      expect(socket.readyState).toBe(MockSocket.CONNECTING);
+
+      // 未到点不误杀。分两段推进而非「差 1ms」：本看门狗武装在 effect 内（waitFor 之前），
+      // 而 RTL 的 waitFor 在 fake timers 下会推进虚拟时钟 ~1ms（实测）——「差 1ms」的余量
+      // 会被这 1ms 吃满导致提前 fire。半程断言对这类毫秒级内部偏移鲁棒。
+      act(() => {
+        vi.advanceTimersByTime(WS_CONNECT_TIMEOUT_MS / 2);
+      });
+      expect(socket.readyState).toBe(MockSocket.CONNECTING);
+
+      // 到期：砍掉挂死的握手。
+      act(() => {
+        vi.advanceTimersByTime(WS_CONNECT_TIMEOUT_MS / 2 + 1);
+      });
+      expect(socket.readyState).toBe(MockSocket.CLOSED);
+
+      // 到期：砍掉挂死的握手。
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(socket.readyState).toBe(MockSocket.CLOSED);
+
+      act(() => {
+        vi.advanceTimersByTime(500); // scheduleReconnect 的 500ms 退避
+      });
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("connect watchdog hands off to session_init watchdog on open (no double-fire)", async () => {
+    // onopen 落定必须解除连接级看门狗（clear 后同一 timer 槽转武装 session_init 看门狗）——
+    // 否则旧 timer 泄漏并在 open 后 10s 误杀活连接（活 socket 被砍 = 无谓断线循环）。
+    vi.useFakeTimers();
+    try {
+      renderHook(() => useClaudeSession("proj", "sess"));
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+      const socket = MockSocket.instances[0];
+      act(() => socket.open());
+
+      // 跨两个看门狗时长之和推进：session_init 看门狗已被 session_init 到达解除，
+      // 连接级看门狗若未在 onopen 时解除，此处必误杀（timer 相加仍在窗口内）。
+      act(() => {
+        socket.emit({ type: "session_init", resume: false, replay: "full" } as never);
+      });
+      act(() => {
+        vi.advanceTimersByTime(WS_CONNECT_TIMEOUT_MS + SESSION_INIT_WATCHDOG_MS);
+      });
+      expect(socket.readyState).toBe(MockSocket.OPEN);
     } finally {
       vi.useRealTimers();
     }

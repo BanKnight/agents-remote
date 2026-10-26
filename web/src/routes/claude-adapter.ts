@@ -379,6 +379,15 @@ export const SESSION_INIT_WATCHDOG_MS = 15_000;
 export const RECONNECT_BASE_MS = 500;
 export const RECONNECT_MAX_MS = 30_000;
 
+// 连接级看门狗：new WebSocket 后 onopen 前的 CONNECTING 态自愈。既有全部自愈机制
+// （session_init 看门狗/心跳 half-open 检测/退避重连）都武装在 onopen 之后——握手挂起
+// （WebKit/中间层对「刚 close 就对同地址重连」的竞态，快速切换会话时高频 new/close 触发）
+// 期间 socket 停在 CONNECTING、onclose 永不到来，UI 停在「正在建立连接中…」直到系统级
+// TCP 超时（分钟级），退出会话页重进即愈。10s 足够覆盖移动网络+边缘握手（正常 <1s、
+// 慢数秒）；误报代价只是一次退避重连。warn 带会话标识 = 真机取证通道
+//（2026-10-26「一直在连接中」批）。
+export const WS_CONNECT_TIMEOUT_MS = 10_000;
+
 export function claudeBridgeKey(projectName: string, sessionId: string): string {
   return `${projectName}/${sessionId}`;
 }
@@ -5094,8 +5103,22 @@ export function useClaudeSession(
     socket.binaryType = "arraybuffer";
     socketRef.current = socket;
 
+    // 连接级看门狗：CONNECTING 态（onopen 前）的唯一自愈——握手挂起时 onclose 不会来、
+    // 其余机制都还没武装。到期 close → onclose → 既有退避重连；onopen 时 clearWatchdog
+    // 后同一 timer 槽转武装 session_init 看门狗（阶段接力）。
+    watchdogTimer = setTimeout(() => {
+      watchdogTimer = null;
+      console.warn(
+        `[claude-adapter] connect watchdog fired after ${WS_CONNECT_TIMEOUT_MS}ms in CONNECTING — closing hung handshake to reconnect (${projectName}/${sessionId})`,
+      );
+      socket.close();
+    }, WS_CONNECT_TIMEOUT_MS);
+
     socket.onopen = () => {
       console.log("[claude-adapter] ws open");
+      // 握手落定：解除连接级看门狗（下方 session_init 看门狗接管同一 timer 槽，
+      // 不 clear 会泄漏旧 timer 并在 open 后 10s 误杀活连接）。
+      clearWatchdog();
       lastPongRef.current = Date.now();
       setConnected(true);
       // session_init 看门狗（SESSION_INIT_WATCHDOG_MS）：open 后服务端必先发 session_init。
