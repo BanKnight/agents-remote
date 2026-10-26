@@ -3226,6 +3226,12 @@ function MessageRouter({
 // Only a scrollTop DECREASE larger than this unpins (filters sub-pixel jitter);
 // our programmatic auto-scrolls only increase scrollTop, so they can never unpin.
 const CHAT_SCROLL_UP_EPS = 2;
+/**
+ * 离线提示淡出窗口：capLeaving 保留时长 = --duration-exit（150ms，styles/index.css）+
+ * 一帧余量。退出动画时长经 [--tw-animation-duration:var(--duration-exit)] 显式消费同一
+ * token——改 token 时此处注释即同步点，防隐式默认值双源失配。
+ */
+const OFFLINE_CAP_EXIT_MS = 200;
 // Within this distance of the bottom counts as "pinned" → repin is stable
 // even when content keeps growing mid-stream.
 const CHAT_BOTTOM_THRESHOLD = 32;
@@ -3299,6 +3305,27 @@ export function VirtualizedThreadContent({
   // ── Scroll container ──────────────────────────────────────────────
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  // ── 离线提示条（03i 悬浮化，2026-10-26 用户拍板）──
+  // 原流内分隔占真实高度，重连卸载 = 内容上移一截（用户报「重连后布局跳动」）。悬浮在
+  // composer 上方（回底浮球同层）后，出现/消失都是纯视觉层、滚动内容零移动。capLeaving
+  // 只为播淡出：offlineCap true→false 时保留一拍卸载（OFFLINE_CAP_EXIT_MS），mount 即
+  // false / 从未离线不播（防骨架期闪现淡出残影）。
+  const [capLeaving, setCapLeaving] = useState(false);
+  const prevOfflineRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const was = prevOfflineRef.current;
+    prevOfflineRef.current = offlineCap;
+    if (offlineCap) {
+      // 断线（重新）出现：取消进行中的淡出。
+      setCapLeaving(false);
+      return;
+    }
+    if (was !== true) return;
+    setCapLeaving(true);
+    const timer = setTimeout(() => setCapLeaving(false), OFFLINE_CAP_EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [offlineCap]);
 
   // ── Sticky-to-bottom ──────────────────────────────────────────────
   // stickyRef = "auto-follow new content". Our programmatic auto-scrolls
@@ -3492,13 +3519,27 @@ export function VirtualizedThreadContent({
             })}
           </div>
         </div>
-        {offlineCap && turns.length > 0 ? (
-          <div className="cap px-3 pb-2 sm:px-5" role="status">
-            {t("claude.offlineCap")}
-          </div>
-        ) : null}
         <div aria-hidden style={{ height: "var(--composer-float-inset, 1rem)" }} />
       </div>
+      {(offlineCap || capLeaving) && turns.length > 0 ? (
+        // 离线提示悬浮胶囊（回底浮球同层）。wrapper inset-x-10 给浮球留右下安全区——
+        // zh 胶囊 241px 实测互不叠，en 文案 306px 会撞浮球，max-w-full 限宽后自动换行。
+        // 整链 pointer-events-none：纯指示条（role=status 无交互），不挡下方滚动触摸。
+        // 淡出必须 fill-mode-forwards（frontend-notes §9）：tw-animate-css 默认 fill-mode:none
+        // 会播完闪回原位一帧才被卸载；时长显式消费 --duration-exit（§16 变量注入惯例）。
+        <div className="pointer-events-none absolute inset-x-10 bottom-[calc(var(--composer-float-inset,1rem)+0.375rem)] z-10 flex justify-center lg:inset-x-12 lg:bottom-4">
+          <div
+            role="status"
+            className={`cap max-w-full rounded-full bg-surface/95 px-3.5 py-1.5 shadow-lg backdrop-blur-sm ${
+              capLeaving
+                ? "animate-out fill-mode-forwards fade-out [--tw-animation-duration:var(--duration-exit)]"
+                : "animate-in fade-in slide-in-from-bottom-1"
+            }`}
+          >
+            {t("claude.offlineCap")}
+          </div>
+        </div>
+      ) : null}
       {showScrollButton && (
         <button
           type="button"
