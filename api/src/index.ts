@@ -63,6 +63,7 @@ import { handlePiStreamUpgrade, PiStreamController } from "./pi-stream";
 import { handleSessionStreamUpgrade, SessionStreamController } from "./session-stream";
 import { TmuxRuntime } from "./tmux-runtime";
 import { loadConfig } from "./config";
+import { createStaticWebHandler, resolveWebDistDir, type StaticWebHandler } from "./static-web";
 import { StartupError } from "./startup-error";
 import { migrateLegacyUserFiles } from "./migrate-legacy-config";
 import { SettingsStore } from "./settings-store";
@@ -124,6 +125,8 @@ type FetchHandlerOptions = {
   stateStore?: StateStore;
   pushKeys?: PushKeyManager;
   pushSubscriptions?: PushSubscriptionStore;
+  /** WEB_DIST_DIR 启用时的静态 web 产物兜底（部署形态批）；未启用时缺省 = 关闭。 */
+  staticWeb?: StaticWebHandler;
 };
 
 type WebSocketData =
@@ -170,6 +173,15 @@ export const createFetchHandler =
   (auth: AuthService, options: FetchHandlerOptions = {}) =>
   async (request: Request, server: UpgradeServer) => {
     const url = new URL(request.url);
+
+    // /p/{project}{path} 短路径 → /api/projects/{project}/pages{path}：vite proxy 退役
+    // 后由 api 自承接（部署形态批）。正则与 encode 语义逐字对齐 vite.config.ts 的
+    // rewrite（project 段保留 encoded 形式，matchProjectPagesPath 统一 decode）；
+    // rewrite 后公开根豁免 / per-root token 鉴权自动复用既有 pages serve 管道。
+    if (url.pathname.startsWith("/p/")) {
+      const shortPath = url.pathname.match(/^\/p\/([^/]+)(\/.*)?$/);
+      if (shortPath) url.pathname = `/api/projects/${shortPath[1]}/pages${shortPath[2] ?? ""}`;
+    }
 
     if (url.pathname === "/api/health" && request.method === "GET") {
       return Response.json({ ok: true, service: "api" } satisfies HealthResponse);
@@ -241,6 +253,14 @@ export const createFetchHandler =
     }
 
     let authRefreshToken: import("./auth").TokenIssue | undefined;
+
+    // 静态 web 产物兜底（部署形态批）：非 /api 路径先试静态面（WEB_DIST_DIR 启用时），
+    // 命中即返回；未命中继续走下方原管道（/api 鉴权或 404）。SPA 壳公开语义与
+    // vite preview 时代一致——数据全部在鉴权后的 /api/* 后面。
+    if (options.staticWeb && !url.pathname.startsWith("/api/")) {
+      const staticResponse = await options.staticWeb(url.pathname, request);
+      if (staticResponse) return staticResponse;
+    }
 
     if (url.pathname.startsWith("/api/")) {
       const authResult = requireHttpAuth(request, auth);
@@ -2363,10 +2383,14 @@ export const startApi = async () => {
   // per-request server.timeout(req,0) 自给自足（skill-tasks.ts），不再依赖此全局值。
   // 完整撤除此 hack 待 MCP 也异步化。list/preview 已 FS 直读（~0.1s）不受影响。
   const SKILL_REQUEST_IDLE_TIMEOUT_SECONDS = 255;
+  // 静态 web 产物目录（WEB_DIST_DIR）：未配置/目录不存在 → undefined = 关闭静态面
+  //（dev 形态由 vite preview 承载 web，零影响）。
+  const webDistDir = await resolveWebDistDir();
   const server = Bun.serve<WebSocketData>({
     port: config.apiPort,
     idleTimeout: SKILL_REQUEST_IDLE_TIMEOUT_SECONDS,
     fetch: createFetchHandler(auth, {
+      staticWeb: webDistDir ? createStaticWebHandler(webDistDir) : undefined,
       approvalCenter,
       sessionShellHub,
       agentTui,

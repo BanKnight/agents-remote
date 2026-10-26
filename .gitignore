@@ -22,4 +22,6 @@ test-results/
 .codegraph/
 .agents/
 tmp/
+# docker compose 部署的会话数据卷（./data/ 映射，见 docker-compose.yml 落点表）
+data/
 

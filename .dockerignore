@@ -1,0 +1,22 @@
+# 构建上下文瘦身：builder 阶段只需要源码 + 包清单 + lockfile。
+node_modules
+**/node_modules
+**/dist
+# 例外：canvas 预构建 bundle 入库（.gitignore 同款豁免），api 源码 import 依赖。
+!api/src/assets/canvas/dist
+!api/src/assets/canvas/dist/**
+**/dev-dist
+.git
+.github
+.claude
+.codegraph
+.agents-remote
+test-results
+playwright-report
+data
+e2e
+docs
+scripts
+*.md
+.env
+.env.*

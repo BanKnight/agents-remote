@@ -852,6 +852,61 @@ test("createFetchHandler serves pages public roots with ETag, index default page
   expect(missing.status).toBe(404);
 });
 
+test("createFetchHandler rewrites /p/ short paths onto the pages serve pipeline", async () => {
+  // 部署形态批：vite proxy 的 /p/ rewrite 退役后由 api 自承接——rewrite 后公开根
+  // 豁免 / per-root token 鉴权 / ETag 全部复用既有管道（语义与 vite.config.ts 逐字对齐）。
+  await mkdir(join(root, "demo", "site"), { recursive: true });
+  await writeFile(join(root, "demo", "site", "index.html"), "<h1>hello</h1>");
+  await mkdir(join(root, "hello world 中文", "docs"), { recursive: true });
+  await writeFile(join(root, "hello world 中文", "docs", "index.html"), "<h1>cjk</h1>");
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  const put = await handler(
+    new Request("http://localhost/api/projects/demo/pages/config", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ roots: [{ urlPath: "/", fsDir: "site", auth: "public" }] }),
+    }),
+    { upgrade: () => false },
+  );
+  expect(put.status).toBe(200);
+
+  // cjk 项目：config API 对 encoded 项目名同样可用（/docs 根 = token 鉴权面）。
+  const putCjk = await handler(
+    new Request("http://localhost/api/projects/hello%20world%20%E4%B8%AD%E6%96%87/pages/config", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ roots: [{ urlPath: "/docs", fsDir: "docs", auth: "token" }] }),
+    }),
+    { upgrade: () => false },
+  );
+  expect(putCjk.status).toBe(200);
+
+  // 公开根：/p/demo/ → 根默认页；/p/demo/index.html 同内容。
+  const served = await handler(new Request("http://localhost/p/demo/"), { upgrade: () => false });
+  expect(served.status).toBe(200);
+  expect(await served.text()).toBe("<h1>hello</h1>");
+  const file = await handler(new Request("http://localhost/p/demo/index.html"), {
+    upgrade: () => false,
+  });
+  expect(file.status).toBe(200);
+  expect(await file.text()).toBe("<h1>hello</h1>");
+
+  // encoded 项目名（空格/中文）透传不二次解码 → decode 后命中。
+  const cjkPath = "http://localhost/p/hello%20world%20%E4%B8%AD%E6%96%87/docs/";
+  const token = auth.login("secret").token;
+
+  // token 根经 /p/ 同样受 token 鉴权：未带 → 401；?token= → 200。
+  const blocked = await handler(new Request(cjkPath), { upgrade: () => false });
+  expect(blocked.status).toBe(401);
+  const allowed = await handler(new Request(`${cjkPath}?token=${token}`), {
+    upgrade: () => false,
+  });
+  expect(allowed.status).toBe(200);
+  expect(await allowed.text()).toBe("<h1>cjk</h1>");
+});
+
 test("createFetchHandler requires token auth for token pages roots", async () => {
   await mkdir(join(root, "demo", "site"), { recursive: true });
   await writeFile(join(root, "demo", "site", "index.html"), "<h1>secret</h1>");

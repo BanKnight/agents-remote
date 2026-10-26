@@ -1,0 +1,32 @@
+# agents-remote 系统 service 模板（部署形态批，2026-10-27）。
+#
+# 安装（宿主机上执行一次）：
+#   1. cd /home/deploy/workspace/agents-remote && bun run build   # api/dist + web/dist
+#   2. sudo cp deploy/agents-remote.service /etc/systemd/system/
+#   3. sudo systemctl daemon-reload && sudo systemctl enable --now agents-remote
+#
+# 与 docker 形态的差异：配置走既有 ~/.agents-remote/config.yaml（必填值已就位时零 env）；
+# 静态 web 由 api 内置 serve（WEB_DIST_DIR 指向仓库内构建产物）。端口沿用 config.yaml
+# 的 api_port——与本机 ar-dev dev 服务（43011）并存时改 config.yaml 端口错开。
+# 资源约束：MemoryMax/TasksMax 罩住整棵 agent 子进程树（claude/tmux/node）。
+
+[Unit]
+Description=agents-remote (web control plane for remote agents)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/home/deploy/workspace/agents-remote
+Environment=WEB_DIST_DIR=/home/deploy/workspace/agents-remote/web/dist
+ExecStart=/home/deploy/.bun/bin/bun /home/deploy/workspace/agents-remote/api/dist/index.js
+Restart=always
+RestartSec=3
+# 资源约束（用户目标：约束资源使用）
+MemoryMax=4G
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

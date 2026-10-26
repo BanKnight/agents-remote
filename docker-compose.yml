@@ -1,0 +1,51 @@
+# agents-remote 开箱部署模板（2026-10-27 部署形态批）。
+#
+# 快速上手：
+#   1. cp .env.example .env 并设置 APP_PASSWORD（登录密码）
+#   2. docker compose up -d
+#   3. 浏览器开 http://<host>:${PORT:-8080}，用 APP_PASSWORD 登录
+#
+# ── 会话记录落点（备份 = 备份整个 ./data/ 目录）────────────────────────────
+#   ./data/home/.claude/projects/<项目>/<会话>.jsonl   Claude 会话权威历史（含 OAuth 登录态 ~/.claude）
+#   ./data/home/.codex/                                Codex CLI 会话与登录态
+#   ./data/home/.agents-remote/                        应用配置 config.yaml、用户设置（含 API key preset）、
+#                                                      chat 元数据 chat-sessions/、pi 历史 chat-sessions/pi-jsonl/、
+#                                                      push 密钥 push-vapid.json
+#   ./data/run/sessions/*.json                         实例/会话元数据（跨重启恢复的权威）
+#   ./data/run/token-secret                            登录 token 签名密钥（丢了所有设备掉线，可接受）
+#   ./data/projects/                                   项目工作区（PROJECTS_ROOT，agent 操作的真实文件）
+#
+# 已知取舍（文档 docs/runbooks/deployment.md 详述）：容器重启会丢容器内 tmux 会话，
+# 运行中的 agent/terminal 实例进程随容器消亡；元数据已持久，重启后在 UI 里重新拉起即可。
+
+services:
+  agents-remote:
+    image: ghcr.io/banknight/agents-remote:latest
+    # 本地自行构建：注释上面 image 行、启用下面两行。
+    # build: .
+    # image: agents-remote:local
+    container_name: agents-remote
+    restart: unless-stopped # 崩溃/宿主重启自动拉起（systemd 语义的 docker 版）
+    init: true # tini 收割 tmux/claude 子进程树，防 zombie 累积
+    stop_grace_period: 30s
+    ports:
+      - "${PORT:-8080}:4311" # 入口单端口：web 静态 + /api + /p/ 全在这（api 内置静态 serve）
+    environment:
+      APP_PASSWORD: ${APP_PASSWORD:?请在 .env 设置 APP_PASSWORD（登录密码）}
+      PROJECTS_ROOT: /data/projects
+      API_PORT: "4311"
+      WEB_PORT: "4311" # 仅 config 校验必填；web 静态已由 api 承载，无独立 web 端口
+      MCP_PORT: "4313" # 容器内 127.0.0.1 自用，不对外
+      AGENTS_REMOTE_RUN_DIR: /data/run
+    volumes:
+      - ./data/home:/home/agent
+      - ./data/run:/data/run
+      - ./data/projects:/data/projects
+    mem_limit: ${MEM_LIMIT:-4g} # 罩住整棵 agent 子进程树（claude/tmux/node）；4G 起步，大会话多可上调
+    pids_limit: ${PIDS_LIMIT:-512}
+    healthcheck: # /api/health 免鉴权；镜像内也有 HEALTHCHECK，这里显式写便于按部署调参
+      test: ["CMD", "bun", "-e", "const r = await fetch('http://127.0.0.1:4311/api/health'); if (!r.ok) process.exit(1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

@@ -69,35 +69,35 @@ bun run dev
 
 ## 生产部署
 
-### 构建
+生产形态是**单进程单端口**：api 内置静态 serve（`WEB_DIST_DIR` 指向 `web/dist`），同一端口承载 web 静态 + `/api`（HTTP+WS）+ `/p/` 短路径；Cloudflare Tunnel / 反向代理只需把流量指向这一个端口。
+
+```text
+浏览器 ──→ Cloudflare Tunnel / 反向代理 ──→ api 进程（web 静态 + /api/* + /p/*）
+```
+
+### Docker Compose（推荐）
+
+```bash
+git clone https://github.com/BanKnight/agents-remote.git
+cd agents-remote
+cp .env.example .env    # 设置 APP_PASSWORD（登录密码）
+docker compose up -d
+# 浏览器开 http://<host>:8080
+```
+
+镜像由 CI 发布（`git tag v<semver>` 触发 GitHub Actions → GHCR）；升级 `docker compose pull && docker compose up -d`。会话记录（Claude 历史、Codex 会话、应用设置、项目文件）全部落在 `./data/` 目录，备份 = 备份该目录——详见 [Deployment Runbook](./docs/runbooks/deployment.md) 的落点表。
+
+### systemd（裸机自托管）
 
 ```bash
 bun run build
+sudo cp deploy/agents-remote.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now agents-remote
 ```
 
-构建产物输出到各 package 的 `dist/` 目录。
+配置走 `~/.agents-remote/config.yaml`；资源约束（`MemoryMax`）与自动重启（`Restart=always`）已内置在单元里。
 
-### 部署架构
-
-```text
-浏览器 ──→ Cloudflare Tunnel / 反向代理 ──→ Web 静态资源
-                                              ──→ /api/*  → API 服务
-                                              ──→ /api/ws/* → WebSocket (需 upgrade 支持)
-```
-
-推荐使用 tmux 管理 API 进程，固定端口避免漂移：
-
-```bash
-# 创建 tmux session
-tmux new-session -d -s ar-dev
-
-# 在 tmux 内启动 API
-tmux send-keys -t ar-dev 'bun run --filter @agents-remote/api dev' Enter
-```
-
-### 环境变量（可选）
-
-可通过环境变量覆盖 `config.yaml` 中的配置：
+### 环境变量（可选，优先于 config.yaml）
 
 | 变量 | 说明 |
 |---|---|
@@ -105,7 +105,11 @@ tmux send-keys -t ar-dev 'bun run --filter @agents-remote/api dev' Enter
 | `PROJECTS_ROOT` | 项目目录根路径 |
 | `API_PORT` | API 端口（默认 43011）|
 | `WEB_PORT` | Web 端口（默认 43012）|
-| `AGENTS_REMOTE_RUN_DIR` | 运行时目录（默认 /run/agents-remote）|
+| `MCP_PORT` | 内嵌 MCP hub 端口（默认 43013，仅 127.0.0.1）|
+| `WEB_DIST_DIR` | web 构建产物目录；设置后 api 直接 serve 静态站点 |
+| `AGENTS_REMOTE_RUN_DIR` | 运行时目录（token-secret + 会话元数据）|
+
+三种形态的完整手册（compose 落点表 / 裸 docker run / systemd / CI 发布 / troubleshooting）：[docs/runbooks/deployment.md](./docs/runbooks/deployment.md)。
 
 ### PWA
 
