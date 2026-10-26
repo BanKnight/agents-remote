@@ -1,44 +1,43 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-26(连接级看门狗批:快速切换「一直在连接中」修复)
+> 最后更新:2026-10-26(回放缓存迁 IndexedDB 批:三大会话互驱逐根治)
 
 ## 一句话状态
 
-**「骨架永驻」修复(3ce63b5)已上线并复测通过;紧随其后用户发现新现象「有些会话一直在连接中,退出项目页重进迅速连上」——已定位为 CONNECTING 态裸奔(握手挂起时所有自愈机制都没武装),本批加「连接级看门狗」(new WebSocket 后武装 10s,onopen 转武装 session_init 看门狗)修复,待提交 + 真机复测。api dev 已于上批按用户授权重启(服务端修复生效)。**
+**「回放缓存迁 IndexedDB」批实现完成并已提交(9e8215b 存储层纯新增 + ae11ded 签名原子改),双探针全绿(remount 7/7 + cleanup 4/4),web 产物已重建、双 reviewer 后台审查中——审查消化后交用户真机清单(核心验收:三大会话快速轮切稳态全命中)。**
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
-- **「一直在连接中」根因链(2026-10-26)**:chat 形态「正在建立连接中…」= composer placeholder(`ClaudeSessionDetailRoute.tsx:3831`),驱动 = WS `connected=false`。既有全部自愈(session_init 看门狗/心跳 half-open/退避重连)都武装在 `onopen` 之后——**握手挂起(WebKit/中间层对「刚 close 就对同地址重连」的竞态,快速切换会话高频触发)期间 CONNECTING 裸奔**:onclose 不来、无超时、无重连,UI 停到系统级 TCP 超时(分钟级)。退出会话页 = 组件卸载强砍挂死 socket,重进 = 全新连接秒连——与用户观察完全吻合。**排除法硬证据**:服务端 open 失败已被上批 error+close 覆盖、open 后哑已被 15s 看门狗覆盖,用户仍见长时「连接中」→ 必是 onopen 之前。
-- **修复 = 连接级看门狗**(`WS_CONNECT_TIMEOUT_MS = 10_000`):`new WebSocket` 后武装 → 到期 `console.warn`(带 project/session,取证通道)+ `socket.close()` → onclose → 既有退避重连;`onopen` 首行 `clearWatchdog()` 后同一 timer 槽转武装 session_init 看门狗(阶段接力,不 clear 会泄漏旧 timer 并误杀活连接)。误报代价 = 一次 500ms 退避重连。
-- **测试坑(第一手数据)**:RTL 的 `waitFor` 在 bun fake timers 下会**推进虚拟时钟 ~1ms**——武装点在 waitFor 之前的定时器测试,「差 1ms 到期」的容差断言必挂(9999+1 恰好到点)。修法:分两段推进(半程断言未误杀 + 剩余半程+1 断言到期),对毫秒级偏移鲁棒。既有看门狗测试没踩坑是因为武装点在 waitFor 之后。
-- **骨架永驻根因链(上批)**:socket open 后回放帧没到(订阅从未建立)——服务端 open() metadata/ensureRunning 裸奔 try/catch 外 + startStream catch 不 close;修复四件套 = 两 catch 对称 close + ensureActive 守卫 + 15s session_init 看门狗 + 指数退避(500ms×2ⁿ cap 30s)。
-- **用户否决「缩回放缓存窗口换命中率」(2026-10-26)**:切会话有时骨架(缓存 miss)有时直接呈现(命中)是设计内两路径,用户确认现状可接受;缩窗口提案被否——「正确性都受到影响,耗费巨大」。恢复语义完整性 > 命中率,勿再提。
-- **前批决策仍有效**:全宽实底状态条(dc1dd4d)、墓碑写者纪律(da43ba1)、增量回放跨 remount 恢复(081b51b)、composer 抬高焦点门闩(551b724)。
+- **「瞬出时有时无」根因(2026-10-26 定案)**:不是 LRU 代码 bug,是容量参数与真实数据规模不匹配——实测三窗口(22router 2.89M / agents-remote 1.44M / novels 2.75M)合计 4.44M > localStorage 全局 cap 2.5M,快速轮切稳态互驱逐全 miss;窗口内容动态波动在临界值附近来回跨越 = 「时好时坏」。**附带正确性问题**:旧单 entry 字符 cap 1.5M 在偷偷丢头截断两个大会话的落盘窗口。用户拍板迁 IndexedDB(iOS 动态配额数百 MB 级)。
+- **常量拆分**:`REPLAY_CACHE_MAX_ENTRY_CHARS`(1.5M 一常量三用途)删除 → `REPLAY_WINDOW_MAX_CHARS=8M`(内存摊还+单行毒化) + **落盘不截断**(600 行窗口原样缓存) + `REPLAY_CACHE_MAX_TOTAL_CHARS=50M`(全局 LRU 预算,meta.chars 口径,~17 个大会话)。
+- **三层架构**:adapter(恢复 await+3s 超时竞速 / flush·clear fire-and-forget) → cache 逻辑层(签名异步化、永 reject、同步段先快照) → `ReplayCacheStore` 接口(seam 注入) → store 实现(IDB 生产 / mem 测试)。零新依赖。
+- **恢复异步化竞态面**:async IIFE + `Promise.race([loadReplayCache, 3s→null])` + 双守卫(cancelled + gen 快照)——迟到恢复 bail 不串窗口;重连分支同步开连零新增延迟。StrictMode 用例 diag 实证:首轮 IIFE `cancelled=true` bail、第二轮命中应用。
+- **hook 测试断言坑(本批实测)**:`rawMessagesRef` 是 commit 后的 effect 派生(claude-adapter.ts:4090)——socket 建立同步先于 commit,断言必须 waitFor 不能同步读;`MockSocket.instances` 数组跨本测试累计(first 实例的 socket 占 [0]),断言索引按累计算。
+- **探针 IDB 预写两坑(首批实测)**:①值必须存**对象**(存 JSON 字符串被 loadReplayCache 形状校验拒收);②upgrade 必须建全 entries+meta 双 store——残缺 DB(缺 meta)让应用所有写 tx 静默死,tombstone 写不进去 → 假 FAIL。预写时机 = 登录后先 evaluate 直写再导航(不用 addInitScript,IDB 异步写与应用首个恢复读竞态)。
+- **用户否决项(仍有效)**:缩回放缓存窗口换命中率——恢复语义完整性 > 命中率,勿再提(本批「落盘不截断」正是修复)。
 
 ### 进度
 
-- ✅ 上批 3ce63b5(骨架永驻)+ 5dafbed(handoff)已提交;api dev 已重启,用户复测「切了很多次没发现问题」。
-- ✅ 本批:连接级看门狗实现 + 2 个新测试(CONNECTING 挂死关闭重连 / onopen 转接不双杀)。门禁:web 937 全绿、typecheck 三包、format+lint 0 warning、CSS 硬闸过、web 产物已重建含 `connect watchdog fired`。
+- ✅ Step 1:`replay-cache-store.ts` 新建(接口七方法 + IDB/mem 双实现 + sweepLegacy)+ 11 测试绿;commit `9e8215b`。
+- ✅ Step 2:cache 层重写(17 测试)+ adapter effect 重排 + 消费点 void 化 + hook 测试改造(6 用例异步化 + 新增竞态/超时降级 2 用例);探针改造(remount 断言改 evaluate 内联 async IDB 读 + cleanup 预写改先写后导航);commit `ae11ded`。
+- ✅ 验证:web 951 全绿 / typecheck 三包 / lint+format 0 warning / CSS 硬闸过;`respawn-pane -k` ar-dev web 重建;`rg "agents-remote-replay-cache" web/dist/assets/ChatSessionDetailRoute-*.js` 验产物;content-type text/css ✓;remount 探针 7/7(真实 IDB 落盘 1.22M 窗口 + delta)+ cleanup 探针 4/4(墓碑 `{savedAt,v,removed:true}` 覆盖)。
+- 🔄 双 reviewer(code + perf)后台审查中——报告回来后消化、必要时修复补 commit。
 
 ### 待办
 
-- **真机复测(iPhone PWA)**——本批核心验证:①持续快速切换会话,观察「一直在连接中」是否消失;②若仍复现,Console 的 `connect watchdog fired` warn 即第一手数据(说明重连也失败,下一轮查握手失败方);③前批清单:回放缓存三场景/飞行模式横幅/composer 抬高(骨架永驻已复测通过)。
-- **记档不修**(勿重复调查):claude-stream `open()` terminal 形态守卫(error 帧后只 return 不 close,socket 半留);`spawnAndStart` 的 `relay.activate()` 无 catch;`relay.destroy()` 静默清订阅者不关 socket;pi/acp 无 since 通道。
-- **既有 bug 立批**:React #310 跨 lg 断点切换崩溃(390 进页 setViewportSize 1280)。
-- 取证件待拆(inset-report/use-attach-debug);e2e 基线 32+1 flaky;既有真机清单(composer 附件四条/插件域五条/M3 选区/M2 画布/键盘 inset)统一最后验。
+- **reviewer 消化**(进行中)→ **真机清单交用户**:①大会话进入→切走→杀 PWA→重进(恢复即现 + delta);②**三大会话快速轮切 ×N(核心验收:稳态全命中,不再互驱逐)**;③大窗口恢复完整(不截断);④关会话/删项目清扫;⑤升级后首次进入(旧 localStorage 清理 + 一次全量回放自愈,sweepLegacy 在 createIdbReplayStore 工厂体开头);⑥弱网重连。
+- **记档不修**(不变):claude-stream open() terminal 守卫不 close;spawnAndStart relay.activate() 无 catch;relay.destroy() 不关 socket;pi/acp 无 since 通道。
+- **既有待办不变**:React #310 跨 lg 断点崩溃立批;批 16/17/18 真机复验(见 next-actions);取证件待拆;e2e 基线;M2.0 多卡焦点互抢。
 
 ### 易丢的关键上下文
 
-- **两条 warn 语义**:`session_init watchdog fired` = open 后无回放帧(服务端订阅问题);`connect watchdog fired ... in CONNECTING` = 握手挂起(网络/中间层)。真机复现时先看是哪种,决定查哪层。
-- 连接看门狗与 session_init 看门狗共用 `watchdogTimer` 槽:onopen 必须先 clear 再武装(否则 10s 后误杀活连接)。
-- 探针跑法 `bun scripts/probe-*.mjs`;跑测试限内存 `systemd-run --scope --user -p MemoryMax=2G`;编辑文件一律内置 Read/Edit/Write。
-- commit:标准 `git add && git commit`,尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`;禁 `git commit <paths>` / `--git-dir`。
+- 墓碑语义链:clearReplayCache = store.tombstone(写 removed 标记);putUnlessTombstone 单 tx 内 get→墓碑? false:put——删除语义对 save 单向闸,LRU 淘汰墓碑后自然重试自愈。
+- IDB 引擎防御:所有 request 在 request 回调内同步发起(不跨 await 用 tx);open 失败缓存 null → 本页面加载内永久降级(隐私模式零噪音)。
+- save 同步段铁律:pushReplayLine 会原地 push raw 数组——capByLines/deriveAnchor/join 必须在首个 await 前。
+- 探针跑法 `bun scripts/probe-*.mjs`;测试限内存 `systemd-run --scope --user -p MemoryMax=2G`;commit 尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`,标准 `git add && git commit`。
+- RTL waitFor 在 bun fake timers 下推进虚拟时钟 ~1ms(上批教训);「差 1ms」容差断言分两段推进。
 
 ---
-最后更新:2026-10-26(触发原因:连接级看门狗批实现完成)
-
-## 提醒
-- 开干前读 .claude/gtd/next-actions.md;守 .claude/constitution.md 底线。
-- 到达里程碑或感知将 compact 时,主动 /handoff save。
+最后更新:2026-10-26(触发原因:IDB 迁移批实现+提交完成,双探针全绿,等 reviewer)

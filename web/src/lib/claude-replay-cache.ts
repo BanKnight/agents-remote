@@ -117,9 +117,11 @@ export async function saveReplayCache(key: string, resume: boolean, raw: string[
     try {
       await store.putUnlessTombstone(key, entry);
     } catch {
-      // 配额等存储失败：淘汰后重试一次；仍失败被外层 catch 静默放弃。
+      // 配额等存储失败：淘汰后重试一次——重试路径的 evict 已跑，成功即收口返回
+      //（不再走下方例行 evict 重复扫描）；仍失败被外层 catch 静默放弃。
       await evictForCapacity(store, key);
       await store.putUnlessTombstone(key, entry);
+      return;
     }
     // 例行全局 cap 收口（listMeta 只读小记录；正常路径淘汰是零 victims 的空扫）。
     await evictForCapacity(store, key);
@@ -142,16 +144,21 @@ export async function clearReplayCache(key: string): Promise<void> {
 }
 
 /**
- * 项目级清扫：删除/重命名项目后调用——旧前缀的 key 永远不会再被命中，残留纯属占用。
- * 每个 key 立墓碑（同 clearReplayCache；硬删挡不住迟到 flush 重写）。跨设备清不掉
- * （存储是 per-device），那部分由全局 cap + savedAt LRU 兜底。
+ * 项目级清扫：删除/重命名项目后调用——旧前缀的 key 永远不会再被命中（load 按当前
+ * 项目名构造 key），残留纯属占用。**硬删而非墓碑**（code-review P1）：旧前缀上墓碑
+ * 挡迟到 flush 的收益为零（复活的 entry 落在旧前缀 = 不可读垃圾，LRU 兜底足够），
+ * 而墓碑的代价是 rename A→B→A 陷阱——A 的全部 key 带墓碑后 putUnlessTombstone 恒
+ * false，该项目缓存静默失效直到 LRU 把墓碑挤掉（数天量级）。硬删下所有交错都语义
+ * 有效：迟到 flush 复活的 entry 要么不可读（旧前缀），要么改回后重新可读且内容仍是
+ * 该会话的真实历史窗口（恢复后 delta 补齐）。跨设备清不掉（存储是 per-device），
+ * 那部分由全局 cap + savedAt LRU 兜底。
  */
 export async function clearProjectReplayCache(projectName: string): Promise<void> {
   try {
     const store = getStore();
     if (!store) return;
     const prefix = `${REPLAY_CACHE_PREFIX}${encodeURIComponent(projectName)}/`;
-    for (const key of await store.listKeys(prefix)) await store.tombstone(key);
+    await store.deleteMany(await store.listKeys(prefix));
   } catch {
     // ignore
   }

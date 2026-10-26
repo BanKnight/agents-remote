@@ -84,11 +84,14 @@ describe("claude-replay-cache 读写往返", () => {
     expect(typeof (tomb as { savedAt: number }).savedAt).toBe("number");
   });
 
-  test("项目级清扫后 save 同 key 不复活", async () => {
+  test("项目级清扫 = 硬删：清扫后同 key 可重新写入（无 rename-back 墓碑陷阱）", async () => {
+    // 墓碑语义的 rename A→B→A 陷阱：A 的 key 带墓碑后 putUnlessTombstone 恒 false，
+    // 该项目缓存静默失效直到 LRU 把墓碑挤掉（数天）——硬删下重新进入照常缓存。
     await saveReplayCache(replayCacheKey("proj", "s1"), false, [line("u1")]);
     await clearProjectReplayCache("proj");
-    await saveReplayCache(replayCacheKey("proj", "s1"), false, [line("u2")]);
     expect(await loadReplayCache(replayCacheKey("proj", "s1"))).toBeNull();
+    await saveReplayCache(replayCacheKey("proj", "s1"), false, [line("u2")]);
+    expect((await loadReplayCache(replayCacheKey("proj", "s1")))!.cursorUuid).toBe("u2");
   });
 
   test("clearProjectReplayCache 只清本项目全部会话，不碰其他项目/非缓存键", async () => {

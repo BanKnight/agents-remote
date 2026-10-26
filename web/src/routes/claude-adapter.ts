@@ -4590,7 +4590,8 @@ export function useClaudeSession(
 
   const cursorRef = useRef<string | null>(null);
   // ── 跨 remount 回放缓存（claude-replay-cache.ts）──
-  // 锚 + raw 窗口持久化到 localStorage，remount 恢复后 WS 带 since → 服务端 delta 只补
+  // 锚 + raw 窗口持久化到 IndexedDB（2026-10-26 自 localStorage 迁入，存储层
+  // replay-cache-store.ts），remount 恢复后 WS 带 since → 服务端 delta 只补
   // 离开期间的增量（连接级 delta 的锚活在内存，页面级重建后必全量——用户观察的「每次
   // 重连都从旧的地方加载到最新」缺口）。行采集在 ingestion 侧（原始 JSON 行，不含
   // batch_boundary 合成 divider），恢复 = 逐行 parse 走现有 processBatch，零新处理路径。

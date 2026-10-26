@@ -127,7 +127,7 @@ export function createIdbReplayStore(): ReplayCacheStore | null {
           req.onsuccess = () => resolve((req.result as StoredRecord | undefined) ?? null);
           req.onerror = () => reject(req.error ?? new Error("indexedDB get failed"));
         });
-      });
+      }, null);
     },
     putUnlessTombstone(key, entry) {
       return withDb((db) => {
@@ -146,7 +146,7 @@ export function createIdbReplayStore(): ReplayCacheStore | null {
           );
         };
         return txAsPromise(tx).then(() => !blocked);
-      });
+      }, false);
     },
     remove(key) {
       return withDb((db) => {
@@ -154,7 +154,7 @@ export function createIdbReplayStore(): ReplayCacheStore | null {
         tx.objectStore(REPLAY_CACHE_ENTRY_STORE).delete(key);
         tx.objectStore(REPLAY_CACHE_META_STORE).delete(key);
         return txAsPromise(tx);
-      });
+      }, undefined);
     },
     deleteMany(keys) {
       return withDb(async (db) => {
@@ -164,7 +164,7 @@ export function createIdbReplayStore(): ReplayCacheStore | null {
           tx.objectStore(REPLAY_CACHE_META_STORE).delete(key);
         }
         await txAsPromise(tx);
-      });
+      }, undefined);
     },
     listKeys(prefix) {
       return withDb(async (db) => {
@@ -177,7 +177,7 @@ export function createIdbReplayStore(): ReplayCacheStore | null {
             );
           req.onerror = () => reject(req.error ?? new Error("indexedDB getAllKeys failed"));
         });
-      });
+      }, []);
     },
     tombstone(key) {
       return withDb(async (db) => {
@@ -189,7 +189,7 @@ export function createIdbReplayStore(): ReplayCacheStore | null {
           key,
         );
         await txAsPromise(tx);
-      });
+      }, undefined);
     },
     listMeta() {
       return withDb(async (db) => {
@@ -209,16 +209,16 @@ export function createIdbReplayStore(): ReplayCacheStore | null {
           };
           valuesReq.onerror = () => reject(valuesReq.error ?? new Error("indexedDB getAll failed"));
         });
-      });
+      }, []);
     },
   };
 }
 
-/** openReplayDb 失败（null）时操作级 no-op 的小包装。 */
-function withDb<T>(fn: (db: IDBDatabase) => Promise<T>): Promise<T> {
+/** openReplayDb 失败（null）时操作级 no-op 的小包装：返回 fallback（类型化的空值）。 */
+function withDb<T>(fn: (db: IDBDatabase) => Promise<T>, fallback: T): Promise<T> {
   return (async () => {
     const db = await openReplayDb();
-    if (!db) return undefined as T;
+    if (!db) return fallback;
     return await fn(db);
   })();
 }
@@ -272,9 +272,6 @@ export function createMemReplayStore() {
     /** 注入任意对象（坏形状/墓碑），测 load 侧校验与墓碑拦截。 */
     rawPut(key: string, record: unknown): void {
       entries.set(key, record as StoredRecord);
-    },
-    metaChars(key: string): number | undefined {
-      return meta.get(key)?.chars;
     },
   };
 }
