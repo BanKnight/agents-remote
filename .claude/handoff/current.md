@@ -30,6 +30,7 @@
 
 ### 进度
 
+- ✅ bd5ac6e:离线提示条悬浮化(03i 流内分隔→composer 上方悬浮胶囊,重连卸载不再布局跳动;capLeaving 淡出状态机 + --duration-exit 单源;design-reviewer P2×2+P3×1 全消化)。**真机待验:飞行模式 3s 再关,提示浮现/淡出且内容不跳**。
 - ✅ da43ba1:丢弃策略补全(毒化 + 删除清扫墓碑)。cache 单测 +3、hook 毒化用例 1;全仓 api 1106 / shared 11 / web 932 全 0 fail;新探针 `probe-replay-cache-cleanup.mjs` 真链路 4/4(自建会话→预写 entry→打开不清理→UI 关闭后只剩墓碑);remount 探针回归 7/7。
 - ✅ 081b51b:增量回放跨 remount 恢复(新 `web/src/lib/claude-replay-cache.ts` + adapter 采集/恢复/落盘 + cache 单测 12 + hook 用例 5 + 真链路探针)。perf-reviewer P1 四条全部消化进返工。
 - ✅ 全门禁:format/lint/typecheck 0;`node scripts/ar-verify-css.mjs` 过。
