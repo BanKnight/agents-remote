@@ -77,6 +77,7 @@ import {
   formatRetryDelay,
   stepRetryCount,
 } from "../../lib/retry-config";
+import { clearReplayCache, replayCacheKey } from "../../lib/claude-replay-cache";
 import { claudeBridgeKey, getClaudeBridge } from "../../routes/claude-adapter";
 import { RuntimeConfigDialog, type RuntimeConfigField } from "./runtime-config-dialog";
 import type { TranslateFn, TranslationKey } from "../../i18n/types";
@@ -1844,6 +1845,11 @@ export function useCloseSession() {
       }
     } catch {
       // 会话已结束 / 不存在（404）—— close 幂等，仍失效缓存让卡片/面板消失。
+    }
+    // 会话没了，跨 remount 回放缓存（claude-replay-cache）也不再有意义——本地即时清扫，
+    // 不等 LRU。terminal 会话没有回放缓存，不扫。跨设备残留由全局 cap + LRU 兜底。
+    if (type === "agent") {
+      clearReplayCache(replayCacheKey(ref.projectName, ref.sessionId));
     }
     queryClient.removeQueries({
       exact: true,

@@ -13,6 +13,8 @@
 // 容量治理：单 entry 双 cap（行数 + 字符数，超限截头保尾）；全局字符 cap + savedAt
 // LRU 淘汰；QuotaExceededError 淘汰最旧后重试一次，仍失败静默放弃。空窗口 / 窗口内
 // 无可推导锚 → removeItem（对齐 composer-draft 空串清档），不生成垃圾 entry。
+// 生命周期：项目/会话删除时显式清扫（clearProjectReplayCache / clearReplayCache，
+// 消费点见 useProjectRowActions / useCloseSession）；跨设备残留由全局 cap + LRU 兜底。
 //
 // 字符 cap 用 string.length 而非 TextEncoder 字节数：localStorage 配额按 UTF-16 code
 // units 计，length 是同量纲（1 个 code unit = 2 字节），且免去每次 flush 全窗口 encode。
@@ -68,6 +70,16 @@ export function loadReplayCache(key: string): ReplayCacheEntry | null {
 export function saveReplayCache(key: string, resume: boolean, raw: string[]): void {
   if (typeof localStorage === "undefined") return;
   try {
+    // 墓碑：会话/项目删除后（clearReplayCache），卸载 cleanup 等迟到的 flush 不得复活
+    // 缓存——写者只有本层，墓碑是删除语义对 save 的单向闸。墓碑随 LRU 淘汰后自然重试。
+    const existing = localStorage.getItem(key);
+    if (existing) {
+      try {
+        if ((JSON.parse(existing) as { removed?: unknown }).removed === true) return;
+      } catch {
+        // 损坏 entry：允许覆盖。
+      }
+    }
     const lines = trimLines(raw);
     // 锚由窗口自身推导（单一真相）：调用方持有的「最后一条已处理 uuid」可能落后于
     // 采集窗口（history 批次先采集、history_end 才 processBatch），也可能被截头丢出
@@ -100,10 +112,41 @@ export function saveReplayCache(key: string, resume: boolean, raw: string[]): vo
   }
 }
 
+/**
+ * 清档并立墓碑：写一条 removed 标记 entry（loadReplayCache 的既有校验天然拒收——墓碑
+ * 无 cursorUuid/raw）。直接 removeItem 挡不住「清完 → 面板卸载 cleanup flush 重写」的
+ * 竞态（flush 是迟到的最后写者），墓碑让删除语义对 save 单向生效。
+ */
 export function clearReplayCache(key: string): void {
   if (typeof localStorage === "undefined") return;
   try {
-    localStorage.removeItem(key);
+    localStorage.setItem(
+      key,
+      JSON.stringify({ savedAt: Date.now(), v: 1, removed: true } satisfies
+        | StoredEntry
+        | { removed: true }),
+    );
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * 项目级清扫：删除/重命名项目后调用——旧前缀的 key 永远不会再被命中（loadReplayCache
+ * 按新 project 名构造 key），残留纯属占用。每个 key 立墓碑（同 clearReplayCache）。
+ * 跨设备清不掉（localStorage 是 per-device），那部分由全局 cap + savedAt LRU 兜底
+ * （总占用硬上界 REPLAY_CACHE_MAX_TOTAL_CHARS）。
+ */
+export function clearProjectReplayCache(projectName: string): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    const prefix = `${REPLAY_CACHE_PREFIX}${encodeURIComponent(projectName)}/`;
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix)) keys.push(k);
+    }
+    for (const k of keys) clearReplayCache(k);
   } catch {
     // ignore
   }

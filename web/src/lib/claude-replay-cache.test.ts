@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { JSDOM } from "jsdom";
 
 import {
+  clearProjectReplayCache,
   clearReplayCache,
   loadReplayCache,
   replayCacheKey,
@@ -83,6 +84,44 @@ describe("claude-replay-cache 读写往返", () => {
     saveReplayCache(KEY, false, [line("u1")]);
     clearReplayCache(KEY);
     expect(loadReplayCache(KEY)).toBeNull();
+  });
+
+  test("墓碑：clear 后 save 不复活（迟到的 flush 不覆盖删除语义）", () => {
+    saveReplayCache(KEY, false, [line("u1")]);
+    clearReplayCache(KEY);
+    saveReplayCache(KEY, false, [line("u2")]);
+    expect(loadReplayCache(KEY)).toBeNull();
+    // 墓碑本身是合法 entry（带 savedAt 参与 LRU），可被 readSavedAt 读到。
+    const tomb = dom.window.localStorage.getItem(KEY)!;
+    expect(JSON.parse(tomb).removed).toBe(true);
+    expect(typeof JSON.parse(tomb).savedAt).toBe("number");
+  });
+
+  test("项目级清扫后 save 同 key 不复活", () => {
+    saveReplayCache(replayCacheKey("proj", "s1"), false, [line("u1")]);
+    clearProjectReplayCache("proj");
+    saveReplayCache(replayCacheKey("proj", "s1"), false, [line("u2")]);
+    expect(loadReplayCache(replayCacheKey("proj", "s1"))).toBeNull();
+  });
+
+  test("clearProjectReplayCache 只清本项目全部会话，不碰其他项目/非缓存键", () => {
+    saveReplayCache(replayCacheKey("proj", "s1"), false, [line("u1")]);
+    saveReplayCache(replayCacheKey("proj", "s2"), false, [line("u2")]);
+    saveReplayCache(replayCacheKey("other", "s1"), false, [line("u3")]);
+    dom.window.localStorage.setItem("composerDraft:x", "keep");
+    clearProjectReplayCache("proj");
+    expect(loadReplayCache(replayCacheKey("proj", "s1"))).toBeNull();
+    expect(loadReplayCache(replayCacheKey("proj", "s2"))).toBeNull();
+    expect(loadReplayCache(replayCacheKey("other", "s1"))).not.toBeNull();
+    expect(dom.window.localStorage.getItem("composerDraft:x")).toBe("keep");
+  });
+
+  test("clearProjectReplayCache 项目名含 / 时按编码前缀匹配（不误伤前缀同名项目）", () => {
+    saveReplayCache(replayCacheKey("a/b", "s"), false, [line("u1")]);
+    saveReplayCache(replayCacheKey("a", "b/s"), false, [line("u2")]);
+    clearProjectReplayCache("a/b");
+    expect(loadReplayCache(replayCacheKey("a/b", "s"))).toBeNull();
+    expect(loadReplayCache(replayCacheKey("a", "b/s"))).not.toBeNull();
   });
 });
 

@@ -15,6 +15,7 @@ import { isCompactBoundarySubtype, isOneClickApprovable } from "@agents-remote/s
 import { claudeStreamUrl } from "../api/client";
 import type { PendingAttachments } from "@/components/ui/composer-attach";
 import {
+  clearReplayCache,
   loadReplayCache,
   replayCacheKey,
   saveReplayCache,
@@ -4572,9 +4573,17 @@ export function useClaudeSession(
   // 内存窗口的字符总量（与落盘同一口径）：采集侧按「行数 + 字符」双 cap 裁剪，防大
   // tool_result 让常驻 ref 无界增长（此前字符 cap 只作用于落盘副本，从不回写）。
   const replayCharsRef = useRef(0);
+  // 毒化：窗口内出现单行超预算的原始行（真实 JSONL 有 MB 级 tool_result）时，行数/字符
+  // cap 的「至少保留一行」兜底会让它击穿全部预算——常驻内存 + 落盘 entry 超预算触发全局
+  // 淘汰误删其他会话缓存 + 反复 stringify 浪费。处置 = 整窗放弃（清盘 + 本会话不再采集
+  // 落盘），remount 自然走全量——缓存是增强能力，不能安全缓存就明确不缓存。大行在 JSONL
+  // 里永久存在，重放还会再遇到它：clearReplayCache 立持久墓碑挡住后续所有写（含跨
+  // remount），LRU 淘汰墓碑后自然重试（自愈）。会话切换时 ref 复位（毒化不跨会话传染）。
+  const replayPoisonedRef = useRef(false);
   const replayDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const replayMaxWaitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const replayFlush = useCallback(() => {
+    if (replayPoisonedRef.current) return;
     if (replayDebounceRef.current) {
       clearTimeout(replayDebounceRef.current);
       replayDebounceRef.current = null;
@@ -4593,6 +4602,7 @@ export function useClaudeSession(
   //（thinking_tokens/assistant 逐条到达），长回合期间永不落盘、PWA 被杀丢整个回合——
   // maxWait 强制周期性落盘。gen 漂移检查见 replayGenRef 注释。
   const scheduleReplayFlush = useCallback(() => {
+    if (replayPoisonedRef.current) return;
     replayCleanRef.current = false;
     const gen = replayGenRef.current;
     if (replayDebounceRef.current) clearTimeout(replayDebounceRef.current);
@@ -4614,6 +4624,20 @@ export function useClaudeSession(
    * （同宏任务里只有最后一次生效）。
    */
   const pushReplayLine = useCallback((line: string) => {
+    if (replayPoisonedRef.current) return;
+    // 单行超 entry 预算 = 无法在不违反「单 entry ≤ 预算」的前提下缓存（截断的 JSON 行
+    // parse 不了），毒化整窗放弃——阈值复用 REPLAY_CACHE_MAX_ENTRY_CHARS（单行 ≤ entry
+    // 预算，「至少保留一行」的兜底才有意义）。
+    if (line.length > REPLAY_CACHE_MAX_ENTRY_CHARS) {
+      replayPoisonedRef.current = true;
+      replayLinesRef.current = [];
+      replayCharsRef.current = 0;
+      // clean=true 让到点的 flush 短路（窗口已空写不出 entry）；已排队的 timer 由
+      // replayFlush 开头的 poisoned 检查兜住。
+      replayCleanRef.current = true;
+      if (replayKeyRef.current) clearReplayCache(replayKeyRef.current);
+      return;
+    }
     replayLinesRef.current.push(line);
     replayCharsRef.current += line.length + 1;
     const lines = replayLinesRef.current;
@@ -4989,6 +5013,8 @@ export function useClaudeSession(
       resetSessionState();
       replayLinesRef.current = [];
       replayCharsRef.current = 0;
+      // 上一会话的毒化不传染：新会话/重挂载重新尝试缓存（大行只属于触发它的那个会话）。
+      replayPoisonedRef.current = false;
       replayKeyRef.current = replayCacheKey(projectName, sessionId);
       // Connection state belongs to the socket lifecycle (onopen/onclose), not to
       // resetSessionState — which is ALSO invoked from the onmessage session_init

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { deleteProject, getProject, renameProject } from "@/api/client";
+import { clearProjectReplayCache } from "@/lib/claude-replay-cache";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { useT } from "../../i18n";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
@@ -335,12 +336,19 @@ export function useProjectRowActions() {
   };
   const renameMutation = useMutation({
     mutationFn: ({ from, to }: { from: string; to: string }) => renameProject(from, to),
-    onSettled: invalidate,
+    // 旧项目名的回放缓存 key 不会再被命中（load 按新名构造 key），改名即清扫残留。
+    onSettled: (_data, _error, { from }) => {
+      clearProjectReplayCache(from);
+      invalidate();
+    },
   });
   const deleteMutation = useMutation({
     mutationFn: ({ deleteFiles, name }: { deleteFiles: boolean; name: string }) =>
       deleteProject(name, { deleteFiles }),
-    onSettled: invalidate,
+    onSettled: (_data, _error, { name }) => {
+      clearProjectReplayCache(name);
+      invalidate();
+    },
   });
   return { deleteMutation, renameMutation };
 }

@@ -6,7 +6,11 @@ import { StrictMode } from "react";
 import { JSDOM } from "jsdom";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { useClaudeSession } from "./claude-adapter";
-import { replayCacheKey, saveReplayCache } from "../lib/claude-replay-cache";
+import {
+  replayCacheKey,
+  saveReplayCache,
+  REPLAY_CACHE_MAX_ENTRY_CHARS,
+} from "../lib/claude-replay-cache";
 import { queryClient } from "../lib/query-client";
 import { setSocketLoggingEnabled } from "../lib/debug-flags";
 import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
@@ -1834,5 +1838,38 @@ describe("useClaudeSession 跨 remount 回放缓存恢复", () => {
     // 实现不读它（缓存损坏不传播），断言「行内推导优先」。
     expect(MockSocket.instances[0]!.url).toContain("since=uuid-2");
     um();
+  });
+
+  test("毒化：单行超 entry 预算 → 整窗放弃 + 墓碑持久（重挂载不再缓存，LRU 过期自愈）", async () => {
+    const first = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+    act(() => {
+      // 单行超 REPLAY_CACHE_MAX_ENTRY_CHARS 的真实形态 = MB 级 tool_result（本机
+      // JSONL 实测 2.5MB 行存在）；这里用大 text 造同尺寸行。
+      socket.emit(assistantMsg("uuid-big", "big", "x".repeat(REPLAY_CACHE_MAX_ENTRY_CHARS)));
+    });
+    act(() => {
+      socket.emit(assistantMsg("uuid-1", "a1", "first"));
+    });
+    // 渲染面不受毒化影响（两条都在）；unmount flush 被毒化短路 → 无可用缓存（墓碑）。
+    expect(first.result.current.storeAdapter.messages).toHaveLength(2);
+    first.unmount();
+    expect(JSON.parse(localStorage.getItem("claudeReplayCache:proj/sess")!).removed).toBe(true);
+
+    // 重挂载：load 读到墓碑 → 无恢复（URL 无 since）；save 同被墓碑挡——大行在 JSONL 里
+    // 永久存在，重挂载 full 重放还会再遇到它，永久挡掉避免每次进入重试失败循环；LRU
+    // 淘汰墓碑后自然重试（自愈）。
+    const second = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    const reconnect = MockSocket.instances[1]!;
+    expect(reconnect.url).not.toContain("since=");
+    act(() => reconnect.open());
+    act(() => {
+      reconnect.emit(assistantMsg("uuid-2", "a2", "again"));
+    });
+    second.unmount();
+    expect(JSON.parse(localStorage.getItem("claudeReplayCache:proj/sess")!).removed).toBe(true);
   });
 });
