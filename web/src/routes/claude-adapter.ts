@@ -19,8 +19,8 @@ import {
   loadReplayCache,
   replayCacheKey,
   saveReplayCache,
-  REPLAY_CACHE_MAX_ENTRY_CHARS,
   REPLAY_CACHE_MAX_LINES,
+  REPLAY_WINDOW_MAX_CHARS,
 } from "../lib/claude-replay-cache";
 import {
   formatCanvasSelectionContext,
@@ -387,6 +387,13 @@ export const RECONNECT_MAX_MS = 30_000;
 // 慢数秒）；误报代价只是一次退避重连。warn 带会话标识 = 真机取证通道
 //（2026-10-26「一直在连接中」批）。
 export const WS_CONNECT_TIMEOUT_MS = 10_000;
+
+// 跨 remount 回放缓存的恢复超时（IDB 迁移批）：恢复链是「IDB 读 → processBatch →
+// URL 锚 → new WebSocket」，IDB 读挂起的最坏面必须是一次全量回放而非骨架永驻（对齐
+// 骨架永驻批的教训：任何「等一个可能不来的东西」都要有到期）。IDB 正常读 10-30ms，
+// 3s 已覆盖极端慢读；超时后迟到结果被 race 丢弃（败者无 continuation，不会注入已
+// 连接会话）。
+export const RESTORE_TIMEOUT_MS = 3_000;
 
 export function claudeBridgeKey(projectName: string, sessionId: string): string {
   return `${projectName}/${sessionId}`;
@@ -4620,8 +4627,10 @@ export function useClaudeSession(
     }
     if (replayCleanRef.current || !replayKeyRef.current) return;
     // 锚不传：cache 层从窗口尾逆序推导（与恢复端 processBatch 的行内推导同源）——
-    // cursorRef 可能落后于采集窗口（history 批次先采集、history_end 才 processBatch）。
-    saveReplayCache(replayKeyRef.current, isResumeRef.current, replayLinesRef.current);
+    // cursorRef 可能落后于采集行窗口（history 批次先采集、history_end 才 processBatch）。
+    // save 是异步的且同步段先快照（cache 层注释）：fire-and-forget，gen 漂移后迟到的
+    // 写被墓碑/换代检查与「写者只有本层」纪律兜住。
+    void saveReplayCache(replayKeyRef.current, isResumeRef.current, replayLinesRef.current);
     replayCleanRef.current = true;
   }, []);
   // trailing debounce + maxWait：纯 debounce 在连续流式期间被每条 append 无限重置
@@ -4651,17 +4660,18 @@ export function useClaudeSession(
    */
   const pushReplayLine = useCallback((line: string) => {
     if (replayPoisonedRef.current) return;
-    // 单行超 entry 预算 = 无法在不违反「单 entry ≤ 预算」的前提下缓存（截断的 JSON 行
-    // parse 不了），毒化整窗放弃——阈值复用 REPLAY_CACHE_MAX_ENTRY_CHARS（单行 ≤ entry
-    // 预算，「至少保留一行」的兜底才有意义）。
-    if (line.length > REPLAY_CACHE_MAX_ENTRY_CHARS) {
+    // 单行超窗口预算 = 病态大行（真实数据里最大窗口 2.9M，8M 是病态防线），毒化整窗
+    // 放弃——阈值复用 REPLAY_WINDOW_MAX_CHARS（单行 ≤ 窗口预算，「至少保留一行」的
+    // 兜底才有意义）。IDB 版此阈值从 1.5M 放大到 8M：落盘不截断后，被旧版截断的 2.9M
+    // 窗口原样缓存；超 8M 的行放弃缓存整窗（不能安全缓存就明确不缓存）。
+    if (line.length > REPLAY_WINDOW_MAX_CHARS) {
       replayPoisonedRef.current = true;
       replayLinesRef.current = [];
       replayCharsRef.current = 0;
       // clean=true 让到点的 flush 短路（窗口已空写不出 entry）；已排队的 timer 由
       // replayFlush 开头的 poisoned 检查兜住。
       replayCleanRef.current = true;
-      if (replayKeyRef.current) clearReplayCache(replayKeyRef.current);
+      if (replayKeyRef.current) void clearReplayCache(replayKeyRef.current);
       return;
     }
     replayLinesRef.current.push(line);
@@ -4674,11 +4684,12 @@ export function useClaudeSession(
       replayCharsRef.current = kept.reduce((sum, l) => sum + l.length + 1, 0);
       return;
     }
-    // 字符 cap 与落盘同口径：超限从头部丢行（锚在尾部天然保留；窗口首行落在回合
-    // 中间已由恢复路径容忍，见「回合中间起点」单测）。摊还 O(1)：每行只被丢一次。
-    if (replayCharsRef.current > REPLAY_CACHE_MAX_ENTRY_CHARS) {
+    // 字符 cap 与落盘同口径（窗口进 save 前已被这里剪过）：超限从头部丢行（锚在尾部
+    // 天然保留；窗口首行落在回合中间已由恢复路径容忍，见「回合中间起点」单测）。
+    // 摊还 O(1)：每行只被丢一次。IDB 版从 1.5M 放大到 8M（落盘不截断的内存面）。
+    if (replayCharsRef.current > REPLAY_WINDOW_MAX_CHARS) {
       let start = 0;
-      while (replayCharsRef.current > REPLAY_CACHE_MAX_ENTRY_CHARS && start < lines.length - 1) {
+      while (replayCharsRef.current > REPLAY_WINDOW_MAX_CHARS && start < lines.length - 1) {
         replayCharsRef.current -= lines[start]!.length + 1;
         start += 1;
       }
@@ -5054,6 +5065,7 @@ export function useClaudeSession(
       // 上一会话的毒化不传染：新会话/重挂载重新尝试缓存（大行只属于触发它的那个会话）。
       replayPoisonedRef.current = false;
       replayKeyRef.current = replayCacheKey(projectName, sessionId);
+      const replayKey = replayKeyRef.current;
       // Connection state belongs to the socket lifecycle (onopen/onclose), not to
       // resetSessionState — which is ALSO invoked from the onmessage session_init
       // branch on every (re)connect, after onopen already set connected=true.
@@ -5067,384 +5079,410 @@ export function useClaudeSession(
       // 公式修正）；isResumeRef 写回窗口快照（孤儿 tool_use 的 interrupted 语义）。
       // ⚠️ 恢复路径不得注入 batch_boundary divider——「恢复行数 = raw 增量 1:1」是
       // liveStart 公式与 delta 回合 liveStart 基准的共同前提。
-      const cached = loadReplayCache(replayKeyRef.current);
-      if (cached) {
-        const parsed: SessionStreamServerMessage[] = [];
-        for (const line of cached.raw) {
-          try {
-            parsed.push(JSON.parse(line) as SessionStreamServerMessage);
-          } catch {
-            // skip malformed cached line
+      // IDB 版为异步读（10-30ms 落在 resetSessionState 已置的 loading 骨架帧内）：
+      // 超时竞速（RESTORE_TIMEOUT_MS）= IDB 挂起的最坏面是一次全量回放而非骨架永驻
+      //（对齐骨架永驻批的教训）；双守卫（cancelled + gen 快照）挡「恢复窗口内卸载/
+      // 切换会话」的迟到应用——旧 IIFE 醒来即 bail，不应用旧窗口、不为旧会话开连。
+      const gen = replayGenRef.current;
+      void (async () => {
+        const cached = await Promise.race([
+          loadReplayCache(replayKey),
+          new Promise<null>((r) => setTimeout(() => r(null), RESTORE_TIMEOUT_MS)),
+        ]);
+        if (cancelled || gen !== replayGenRef.current) return;
+        if (cached) {
+          const parsed: SessionStreamServerMessage[] = [];
+          for (const line of cached.raw) {
+            try {
+              parsed.push(JSON.parse(line) as SessionStreamServerMessage);
+            } catch {
+              // skip malformed cached line
+            }
+          }
+          if (parsed.length > 0) {
+            // messageMapRef 重建 + scalar 折叠 + cursorRef 推导全在 processBatch 内；
+            // 恢复行里已有 batch 内容，无 divider（缓存行不含合成行），1:1 成立。
+            processBatch(parsed);
+            liveStartRef.current = parsed.length;
+            isResumeRef.current = cached.resume;
+            setLoading(false);
+            replayLinesRef.current = [...cached.raw];
+            replayCharsRef.current = cached.raw.reduce((sum, line) => sum + line.length + 1, 0);
+            replayCleanRef.current = true;
           }
         }
-        if (parsed.length > 0) {
-          // messageMapRef 重建 + scalar 折叠 + cursorRef 推导全在 processBatch 内；
-          // 恢复行里已有 batch 内容，无 divider（缓存行不含合成行），1:1 成立。
-          processBatch(parsed);
-          liveStartRef.current = parsed.length;
-          isResumeRef.current = cached.resume;
-          setLoading(false);
-          replayLinesRef.current = [...cached.raw];
-          replayCharsRef.current = cached.raw.reduce((sum, line) => sum + line.length + 1, 0);
-          replayCleanRef.current = true;
-        }
-      }
+        openConnection();
+      })();
     } else {
       setLoading(true);
+      // 重连：同步开连——不读缓存、锚取现有 cursorRef（重连零新增延迟、零重复恢复）。
+      openConnection();
     }
 
-    // 重连锚：本地已持有的最后一条消息 uuid（ref 同步维护）。服务端命中 → 增量补齐；
-    // 未命中/无锚 → 全量（session_init.replay 区分）。首连/session 切换刚 reset 过 =
-    // 无 query（构造必须在 reset 之后，否则会把上一会话的锚带进新会话的 URL）。
-    const url = claudeStreamUrl(projectName, sessionId, cursorRef.current ?? undefined);
-    const socket = new WebSocket(url);
-    // Receive the gzipped history/live replay batches as ArrayBuffer so they can
-    // be detected via `instanceof ArrayBuffer` and decompressed before buffering.
-    socket.binaryType = "arraybuffer";
-    socketRef.current = socket;
+    // 开连段（原 effect 主体顺序段，IDB 迁移批封装为函数）：URL 依赖恢复出的
+    // cursorRef，首挂/切会话时必须等异步恢复完成——由两个分支在正确时机调用（函数
+    // 声明提升：else 分支的提前调用合法）。socket 经 socketRef 暴露给 cleanup。
+    function openConnection() {
+      // 重连锚：本地已持有的最后一条消息 uuid（ref 同步维护）。服务端命中 → 增量补齐；
+      // 未命中/无锚 → 全量（session_init.replay 区分）。首连/session 切换刚 reset 过 =
+      // 无 query（构造必须在 reset 之后，否则会把上一会话的锚带进新会话的 URL）。
+      const url = claudeStreamUrl(projectName, sessionId, cursorRef.current ?? undefined);
+      const socket = new WebSocket(url);
+      // Receive the gzipped history/live replay batches as ArrayBuffer so they can
+      // be detected via `instanceof ArrayBuffer` and decompressed before buffering.
+      socket.binaryType = "arraybuffer";
+      socketRef.current = socket;
 
-    // 连接级看门狗：CONNECTING 态（onopen 前）的唯一自愈——握手挂起时 onclose 不会来、
-    // 其余机制都还没武装。到期 close → onclose → 既有退避重连；onopen 时 clearWatchdog
-    // 后同一 timer 槽转武装 session_init 看门狗（阶段接力）。
-    watchdogTimer = setTimeout(() => {
-      watchdogTimer = null;
-      console.warn(
-        `[claude-adapter] connect watchdog fired after ${WS_CONNECT_TIMEOUT_MS}ms in CONNECTING — closing hung handshake to reconnect (${projectName}/${sessionId})`,
-      );
-      socket.close();
-    }, WS_CONNECT_TIMEOUT_MS);
-
-    socket.onopen = () => {
-      console.log("[claude-adapter] ws open");
-      // 握手落定：解除连接级看门狗（下方 session_init 看门狗接管同一 timer 槽，
-      // 不 clear 会泄漏旧 timer 并在 open 后 10s 误杀活连接）。
-      clearWatchdog();
-      lastPongRef.current = Date.now();
-      setConnected(true);
-      // session_init 看门狗（SESSION_INIT_WATCHDOG_MS）：open 后服务端必先发 session_init。
-      // 超时未到 = open 但从未订阅的半死连接（pong 照常，心跳/浏览器都发现不了），主动
-      // close → onclose → 重连自愈；warn 留取证（见常量注释）。
+      // 连接级看门狗：CONNECTING 态（onopen 前）的唯一自愈——握手挂起时 onclose 不会来、
+      // 其余机制都还没武装。到期 close → onclose → 既有退避重连；onopen 时 clearWatchdog
+      // 后同一 timer 槽转武装 session_init 看门狗（阶段接力）。
       watchdogTimer = setTimeout(() => {
         watchdogTimer = null;
         console.warn(
-          `[claude-adapter] session_init watchdog fired after ${SESSION_INIT_WATCHDOG_MS}ms — closing silent socket to reconnect (${projectName}/${sessionId})`,
+          `[claude-adapter] connect watchdog fired after ${WS_CONNECT_TIMEOUT_MS}ms in CONNECTING — closing hung handshake to reconnect (${projectName}/${sessionId})`,
         );
         socket.close();
-      }, SESSION_INIT_WATCHDOG_MS);
-      // 应用层心跳:每 HEARTBEAT_INTERVAL_MS 发 ping,重置 cloudflare/NAT/Bun 三层
-      // idle 超时,防前台空闲被中间层静默断开(浏览器无法发协议层 ping,只能 JSON)。
-      heartbeatTimer = setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: "ping" }));
-          // half-open 检测:ping 已发但若距上次 pong 超时,说明对端不回 pong(连接静默断,
-          // readyState 仍 OPEN 但数据进黑洞)。主动 close → onclose → scheduleReconnect 自愈。
-          if (Date.now() - lastPongRef.current > PONG_TIMEOUT_MS) {
-            console.log("[claude-adapter] pong timeout — closing half-open socket");
-            socket.close();
-          }
-        }
-      }, HEARTBEAT_INTERVAL_MS);
-    };
+      }, WS_CONNECT_TIMEOUT_MS);
 
-    const decompressGzip = async (buf: ArrayBuffer): Promise<string> => {
-      const stream = new Response(buf).body!.pipeThrough(new DecompressionStream("gzip"));
-      return await new Response(stream).text();
-    };
-
-    // Binary frame = one gzipped history/live replay batch. Decompress and push
-    // into the currently-open batch buffer. The text branch in handleFrame still
-    // buffers per-row text frames, which is how the server's gzip-failure
-    // fallback is delivered — the client needs no explicit fallback switch.
-    const handleBinaryBatch = async (buf: ArrayBuffer) => {
-      const t0 = performance.now();
-      const text = await decompressGzip(buf);
-      const target = historyBatchRef.current ?? liveBatchRef.current;
-      const kind = historyBatchRef.current != null ? "history" : "live";
-      if (!target) {
-        console.error(
-          "[claude-adapter] compressed batch arrived outside a batch window — dropping",
-        );
-        return;
-      }
-      let rows = 0;
-      if (text.length > 0) {
-        for (const line of text.split("\n")) {
-          try {
-            const parsed = JSON.parse(line) as SessionStreamServerMessage;
-            target.push(parsed);
-            pushReplayLine(line);
-            // Mirror handleTextFrame's ws recv log so the (compressed) history
-            // and live batches are also visible row-by-row when socket logging
-            // is on — otherwise only the text-frame batch markers show up.
-            if (isSocketLoggingEnabled()) console.log("[claude-adapter] ws recv", parsed);
-            rows++;
-          } catch {
-            // skip malformed batch line
-          }
-        }
-        // 整批只调度一次（批内逐行调度只有最后一次生效，纯浪费）。
-        scheduleReplayFlush();
-      }
-      // historyDecompress = client CPU added by compression (DecompressionStream +
-      // per-line parse). historyBlobBytes = compressed wire size. Together with
-      // historyRecv: transfer ≈ historyRecv − historyDecompress.
-      recordSample(`${kind}Decompress`, performance.now() - t0, rows);
-      recordSample(`${kind}BlobBytes`, 0, buf.byteLength);
-    };
-
-    // Synchronous handling for text frames (control markers, real-time rows, and
-    // the server's per-row gzip-failure fallback). Kept synchronous so latency
-    // and the text-only test paths are unchanged when no blob is in flight.
-    const handleTextFrame = (event: MessageEvent) => {
-      if (cancelled) return;
-      // Arrival probe: while a history batch is open, time each frame's arrival
-      // (inter-arrival gap) and processing (parse+dispatch+push) so the report can
-      // separate network work from client work. See resetArrival/reportArrival.
-      const trackArrival = isPerfTraceEnabled() && historyBatchRef.current != null;
-      const arriveMs = trackArrival ? performance.now() : 0;
-      try {
-        const raw = event.data as string;
-        const msg = JSON.parse(raw) as SessionStreamServerMessage;
-        if (isSocketLoggingEnabled()) console.log("[claude-adapter] ws recv", msg);
-
-        // terminal 守卫拒绝（多端跟随）：会话已在其它端切成 terminal 形态。关 socket 并停止
-        // 重连，通知外层失效 detail → AgentPanelRouter 重读 mode 换渲染 terminal 面板。
-        if (msg.type === "error" && (msg as { code?: string }).code === "SESSION_STATE_CONFLICT") {
-          modeConflict = true;
-          onModeConflictRef.current?.();
+      socket.onopen = () => {
+        console.log("[claude-adapter] ws open");
+        // 握手落定：解除连接级看门狗（下方 session_init 看门狗接管同一 timer 槽，
+        // 不 clear 会泄漏旧 timer 并在 open 后 10s 误杀活连接）。
+        clearWatchdog();
+        lastPongRef.current = Date.now();
+        setConnected(true);
+        // session_init 看门狗（SESSION_INIT_WATCHDOG_MS）：open 后服务端必先发 session_init。
+        // 超时未到 = open 但从未订阅的半死连接（pong 照常，心跳/浏览器都发现不了），主动
+        // close → onclose → 重连自愈；warn 留取证（见常量注释）。
+        watchdogTimer = setTimeout(() => {
+          watchdogTimer = null;
+          console.warn(
+            `[claude-adapter] session_init watchdog fired after ${SESSION_INIT_WATCHDOG_MS}ms — closing silent socket to reconnect (${projectName}/${sessionId})`,
+          );
           socket.close();
+        }, SESSION_INIT_WATCHDOG_MS);
+        // 应用层心跳:每 HEARTBEAT_INTERVAL_MS 发 ping,重置 cloudflare/NAT/Bun 三层
+        // idle 超时,防前台空闲被中间层静默断开(浏览器无法发协议层 ping,只能 JSON)。
+        heartbeatTimer = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "ping" }));
+            // half-open 检测:ping 已发但若距上次 pong 超时,说明对端不回 pong(连接静默断,
+            // readyState 仍 OPEN 但数据进黑洞)。主动 close → onclose → scheduleReconnect 自愈。
+            if (Date.now() - lastPongRef.current > PONG_TIMEOUT_MS) {
+              console.log("[claude-adapter] pong timeout — closing half-open socket");
+              socket.close();
+            }
+          }
+        }, HEARTBEAT_INTERVAL_MS);
+      };
+
+      const decompressGzip = async (buf: ArrayBuffer): Promise<string> => {
+        const stream = new Response(buf).body!.pipeThrough(new DecompressionStream("gzip"));
+        return await new Response(stream).text();
+      };
+
+      // Binary frame = one gzipped history/live replay batch. Decompress and push
+      // into the currently-open batch buffer. The text branch in handleFrame still
+      // buffers per-row text frames, which is how the server's gzip-failure
+      // fallback is delivered — the client needs no explicit fallback switch.
+      const handleBinaryBatch = async (buf: ArrayBuffer) => {
+        const t0 = performance.now();
+        const text = await decompressGzip(buf);
+        const target = historyBatchRef.current ?? liveBatchRef.current;
+        const kind = historyBatchRef.current != null ? "history" : "live";
+        if (!target) {
+          console.error(
+            "[claude-adapter] compressed batch arrived outside a batch window — dropping",
+          );
           return;
         }
+        let rows = 0;
+        if (text.length > 0) {
+          for (const line of text.split("\n")) {
+            try {
+              const parsed = JSON.parse(line) as SessionStreamServerMessage;
+              target.push(parsed);
+              pushReplayLine(line);
+              // Mirror handleTextFrame's ws recv log so the (compressed) history
+              // and live batches are also visible row-by-row when socket logging
+              // is on — otherwise only the text-frame batch markers show up.
+              if (isSocketLoggingEnabled()) console.log("[claude-adapter] ws recv", parsed);
+              rows++;
+            } catch {
+              // skip malformed batch line
+            }
+          }
+          // 整批只调度一次（批内逐行调度只有最后一次生效，纯浪费）。
+          scheduleReplayFlush();
+        }
+        // historyDecompress = client CPU added by compression (DecompressionStream +
+        // per-line parse). historyBlobBytes = compressed wire size. Together with
+        // historyRecv: transfer ≈ historyRecv − historyDecompress.
+        recordSample(`${kind}Decompress`, performance.now() - t0, rows);
+        recordSample(`${kind}BlobBytes`, 0, buf.byteLength);
+      };
 
-        // ── Batch markers ────────────────────────────────────────────
-        // Start markers are transport control — never render.
-        // End markers render as a horizontal divider only when the
-        // batch contained at least one visible content bubble.
-        if (msg.type === "session_init") {
-          // 订阅建立的第一帧——看门狗完成使命（delta/full 都算，见常量注释）；
-          // 重连成功归零退避计数。
-          clearWatchdog();
-          reconnectAttemptRef.current = 0;
-          if (msg.replay === "delta" && cursorRef.current != null) {
-            // delta 重连：服务端确认了 since 锚，接下来只补锚后的行——保留全部 state
-            //（rawMessages/scalars/tasks/UI 都不动），不 reset、不置 isResume（没有
-            // turn 被打断；增量段若悬空，补齐的 result 会正常闭合它）。
-            deltaReplayRef.current = true;
-            // 镜像而非闭包：恢复场景 effect 重跑不重建闭包，闭包里 rawMessages/rendered
-            // 是 mount 渲染的空数组——读闭包 = liveStart 落进恢复窗口内部（假 running）
-            // + 淡入动画覆盖整个恢复窗口。
-            replayCursorRef.current = rawMessagesRef.current.length;
-            // from 取 rendered 空间：turn.startIndex 是 renderChatStream 投影的索引，
-            // rawMessages.length（raw 空间）在有 HiddenDropped/合并的会话里普遍偏大，
-            // 混用 = 没有任何 turn 命中范围。
-            setDeltaEnter({
-              from: renderedMessagesRef.current.length,
-              to: Number.POSITIVE_INFINITY,
-            });
+      // Synchronous handling for text frames (control markers, real-time rows, and
+      // the server's per-row gzip-failure fallback). Kept synchronous so latency
+      // and the text-only test paths are unchanged when no blob is in flight.
+      const handleTextFrame = (event: MessageEvent) => {
+        if (cancelled) return;
+        // Arrival probe: while a history batch is open, time each frame's arrival
+        // (inter-arrival gap) and processing (parse+dispatch+push) so the report can
+        // separate network work from client work. See resetArrival/reportArrival.
+        const trackArrival = isPerfTraceEnabled() && historyBatchRef.current != null;
+        const arriveMs = trackArrival ? performance.now() : 0;
+        try {
+          const raw = event.data as string;
+          const msg = JSON.parse(raw) as SessionStreamServerMessage;
+          if (isSocketLoggingEnabled()) console.log("[claude-adapter] ws recv", msg);
+
+          // terminal 守卫拒绝（多端跟随）：会话已在其它端切成 terminal 形态。关 socket 并停止
+          // 重连，通知外层失效 detail → AgentPanelRouter 重读 mode 换渲染 terminal 面板。
+          if (
+            msg.type === "error" &&
+            (msg as { code?: string }).code === "SESSION_STATE_CONFLICT"
+          ) {
+            modeConflict = true;
+            onModeConflictRef.current?.();
+            socket.close();
+            return;
+          }
+
+          // ── Batch markers ────────────────────────────────────────────
+          // Start markers are transport control — never render.
+          // End markers render as a horizontal divider only when the
+          // batch contained at least one visible content bubble.
+          if (msg.type === "session_init") {
+            // 订阅建立的第一帧——看门狗完成使命（delta/full 都算，见常量注释）；
+            // 重连成功归零退避计数。
+            clearWatchdog();
+            reconnectAttemptRef.current = 0;
+            if (msg.replay === "delta" && cursorRef.current != null) {
+              // delta 重连：服务端确认了 since 锚，接下来只补锚后的行——保留全部 state
+              //（rawMessages/scalars/tasks/UI 都不动），不 reset、不置 isResume（没有
+              // turn 被打断；增量段若悬空，补齐的 result 会正常闭合它）。
+              deltaReplayRef.current = true;
+              // 镜像而非闭包：恢复场景 effect 重跑不重建闭包，闭包里 rawMessages/rendered
+              // 是 mount 渲染的空数组——读闭包 = liveStart 落进恢复窗口内部（假 running）
+              // + 淡入动画覆盖整个恢复窗口。
+              replayCursorRef.current = rawMessagesRef.current.length;
+              // from 取 rendered 空间：turn.startIndex 是 renderChatStream 投影的索引，
+              // rawMessages.length（raw 空间）在有 HiddenDropped/合并的会话里普遍偏大，
+              // 混用 = 没有任何 turn 命中范围。
+              setDeltaEnter({
+                from: renderedMessagesRef.current.length,
+                to: Number.POSITIVE_INFINITY,
+              });
+              if (isSocketLoggingEnabled())
+                console.log(
+                  "[claude-adapter] session_init delta replay from=",
+                  renderedMessagesRef.current.length,
+                );
+            } else {
+              // Full replay (or pre-delta server) — discard all state from the prior
+              // connection before replaying history/output batches.
+              resetSessionState();
+              isResumeRef.current = msg.resume ?? false;
+              if (isSocketLoggingEnabled())
+                console.log("[claude-adapter] session_init resume=", isResumeRef.current);
+            }
+            return;
+          }
+          // seed_init: replay-time scalar seed (model/permissionMode), sent between
+          // session_init and history_start (session-relay.ts addSubscriber) so the
+          // scalar fold has a value before the gzip history batch. It is
+          // connection-level metadata, NOT message-stream content — fold its
+          // scalars and return without appending to rawMessages or touching loading.
+          // Falling through to per-message dispatch would setLoading(false) before
+          // any content arrives, opening a window where the skeleton gate hides
+          // (loading=false ∧ hasRenderedContent=false ∧ turns=[]) then re-shows at
+          // live_end — the resume-open skeleton flicker.
+          if (msg.type === "system" && (msg as { subtype?: string }).subtype === "seed_init") {
+            applyMessageScalarState(msg);
+            return;
+          }
+          if (msg.type === "history_start") {
+            markOnce("historyLoad");
+            // Count starts so the report surfaces a StrictMode/reconnect double-load
+            // (historyStart.count > 1) that would otherwise inflate loadE2E/historyRecv.
+            count("historyStart");
+            resetArrival();
+            historyBatchRef.current = [];
+            if (isSocketLoggingEnabled())
+              console.log("[claude-adapter] history batch start, count=", msg.count);
+            return;
+          }
+          if (msg.type === "history_end") {
+            const batch = historyBatchRef.current ?? [];
+            historyBatchRef.current = null;
+            // history_start → history_end wall-clock = the WS reception/transfer phase
+            // (everything before this point was onmessage buffering). Read without
+            // clearing so live_end's loadE2E can still measure from the same start.
+            const recvStart = peekMark("historyLoad");
+            const recvMs = recvStart != null ? performance.now() - recvStart : 0;
+            if (recvStart != null) measureFrom("historyRecv", recvStart, batch.length);
+            // Break historyRecv down: how much was client processing vs waiting for
+            // frames to arrive. procTotal ≪ recvMs + even gaps ⇒ network, not client.
+            reportArrival(recvMs);
+            // The history segment occupies rawMessages[base..base+batch.length)
+            // (processBatch appends 1:1). The live + instantaneous region starts at
+            // base + batch.length — capture it BEFORE processBatch so the re-render
+            // it triggers reads the new value. Full replay: base = 0. Delta replay:
+            // base = replayCursorRef（session_init 记增量起点；此处同步 += batch.length
+            // ——updater 到下次 render 才执行,同宏任务连续处理多 batch 时 state.length
+            // 不可读）。Empty history (non-resume) leaves liveStart at its 0 reset.
+            if (deltaReplayRef.current) {
+              liveStartRef.current = replayCursorRef.current + batch.length;
+            } else {
+              liveStartRef.current = batch.length;
+            }
+            processBatch(batch);
+            // 缓存落盘调度（批末一次，批内只入窗）。
+            scheduleReplayFlush();
+            if (deltaReplayRef.current) {
+              replayCursorRef.current += batch.length;
+            }
+            // Inject a batch divider whenever the batch carried any messages at
+            // all; whether it actually renders is decided in renderChatStream
+            // (visible-neighbor rule), so this stays a pure state append. Delta
+            // replay skips the divider — the incremental rows continue the same
+            // stream the user is already looking at; a mid-conversation boundary
+            // would render as a bogus「历史」split.
+            if (batch.length > 0 && !deltaReplayRef.current) {
+              appendRawMessages([
+                {
+                  type: "system",
+                  subtype: "batch_boundary",
+                } as unknown as SessionStreamServerMessage,
+              ]);
+            }
             if (isSocketLoggingEnabled())
               console.log(
-                "[claude-adapter] session_init delta replay from=",
-                renderedMessagesRef.current.length,
+                "[claude-adapter] history batch end, processed",
+                batch.length,
+                "messages",
               );
-          } else {
-            // Full replay (or pre-delta server) — discard all state from the prior
-            // connection before replaying history/output batches.
-            resetSessionState();
-            isResumeRef.current = msg.resume ?? false;
+            return;
+          }
+          if (msg.type === "live_start") {
+            liveBatchRef.current = [];
             if (isSocketLoggingEnabled())
-              console.log("[claude-adapter] session_init resume=", isResumeRef.current);
+              console.log("[claude-adapter] live batch start, count=", msg.count);
+            return;
           }
-          return;
-        }
-        // seed_init: replay-time scalar seed (model/permissionMode), sent between
-        // session_init and history_start (session-relay.ts addSubscriber) so the
-        // scalar fold has a value before the gzip history batch. It is
-        // connection-level metadata, NOT message-stream content — fold its
-        // scalars and return without appending to rawMessages or touching loading.
-        // Falling through to per-message dispatch would setLoading(false) before
-        // any content arrives, opening a window where the skeleton gate hides
-        // (loading=false ∧ hasRenderedContent=false ∧ turns=[]) then re-shows at
-        // live_end — the resume-open skeleton flicker.
-        if (msg.type === "system" && (msg as { subtype?: string }).subtype === "seed_init") {
+          if (msg.type === "live_end") {
+            const batch = liveBatchRef.current ?? [];
+            liveBatchRef.current = null;
+            processBatch(batch);
+            // 缓存落盘调度（批末一次，批内只入窗）。
+            scheduleReplayFlush();
+            // delta 回合封口：to 不能在此处取值——renderedMessages 是 rawMessages 的
+            // memo，同宏任务内增量还没投影。置 pending，由下方 effect 在投影落地后
+            // 用最新 renderedMessages.length 收口并延迟摘除动画 class。
+            if (deltaReplayRef.current) {
+              deltaReplayRef.current = false;
+              deltaClosePendingRef.current = true;
+            }
+            // No divider here: the boundary lives at the history/live junction
+            // (injected at history_end), not at the tail of the live batch.
+            // Defer setLoading(false) to the next render (the effect below): flipping
+            // it synchronously here would land loading=false in the same batch as
+            // setRawMessages, one frame before assistant-ui pushes storeAdapter→
+            // thread.messages, so the gate (turns===0 && loading) would drop the
+            // skeleton with turns still empty — a blank flash. The effect runs after
+            // commit, landing loading=false on the same render turns catches up.
+            liveEndPendingRef.current = true;
+            if (isSocketLoggingEnabled())
+              console.log("[claude-adapter] live batch end, processed", batch.length, "messages");
+            return;
+          }
+
+          if (msg.type === "pong") {
+            lastPongRef.current = Date.now();
+            return;
+          }
+
+          // In batch collection — buffer, don't process yet
+          if (historyBatchRef.current) {
+            historyBatchRef.current.push(msg);
+            pushReplayLine(raw);
+            if (trackArrival) tickArrival(arriveMs, performance.now() - arriveMs);
+            return;
+          }
+          if (liveBatchRef.current) {
+            liveBatchRef.current.push(msg);
+            pushReplayLine(raw);
+            return;
+          }
+
+          // ── Per-message dispatch (live, after batches) ───────────────
+          const liveUuid = getMessageUuid(msg);
+          if (liveUuid) {
+            messageMapRef.current.set(liveUuid, msg);
+            cursorRef.current = liveUuid;
+          }
+          pushReplayLine(raw);
+          scheduleReplayFlush();
+          appendRawMessages([msg]);
           applyMessageScalarState(msg);
-          return;
+          setLoading(false);
+        } catch {
+          // skip
         }
-        if (msg.type === "history_start") {
-          markOnce("historyLoad");
-          // Count starts so the report surfaces a StrictMode/reconnect double-load
-          // (historyStart.count > 1) that would otherwise inflate loadE2E/historyRecv.
-          count("historyStart");
-          resetArrival();
-          historyBatchRef.current = [];
-          if (isSocketLoggingEnabled())
-            console.log("[claude-adapter] history batch start, count=", msg.count);
-          return;
-        }
-        if (msg.type === "history_end") {
-          const batch = historyBatchRef.current ?? [];
-          historyBatchRef.current = null;
-          // history_start → history_end wall-clock = the WS reception/transfer phase
-          // (everything before this point was onmessage buffering). Read without
-          // clearing so live_end's loadE2E can still measure from the same start.
-          const recvStart = peekMark("historyLoad");
-          const recvMs = recvStart != null ? performance.now() - recvStart : 0;
-          if (recvStart != null) measureFrom("historyRecv", recvStart, batch.length);
-          // Break historyRecv down: how much was client processing vs waiting for
-          // frames to arrive. procTotal ≪ recvMs + even gaps ⇒ network, not client.
-          reportArrival(recvMs);
-          // The history segment occupies rawMessages[base..base+batch.length)
-          // (processBatch appends 1:1). The live + instantaneous region starts at
-          // base + batch.length — capture it BEFORE processBatch so the re-render
-          // it triggers reads the new value. Full replay: base = 0. Delta replay:
-          // base = replayCursorRef（session_init 记增量起点；此处同步 += batch.length
-          // ——updater 到下次 render 才执行,同宏任务连续处理多 batch 时 state.length
-          // 不可读）。Empty history (non-resume) leaves liveStart at its 0 reset.
-          if (deltaReplayRef.current) {
-            liveStartRef.current = replayCursorRef.current + batch.length;
-          } else {
-            liveStartRef.current = batch.length;
-          }
-          processBatch(batch);
-          // 缓存落盘调度（批末一次，批内只入窗）。
-          scheduleReplayFlush();
-          if (deltaReplayRef.current) {
-            replayCursorRef.current += batch.length;
-          }
-          // Inject a batch divider whenever the batch carried any messages at
-          // all; whether it actually renders is decided in renderChatStream
-          // (visible-neighbor rule), so this stays a pure state append. Delta
-          // replay skips the divider — the incremental rows continue the same
-          // stream the user is already looking at; a mid-conversation boundary
-          // would render as a bogus「历史」split.
-          if (batch.length > 0 && !deltaReplayRef.current) {
-            appendRawMessages([
-              {
-                type: "system",
-                subtype: "batch_boundary",
-              } as unknown as SessionStreamServerMessage,
-            ]);
-          }
-          if (isSocketLoggingEnabled())
-            console.log("[claude-adapter] history batch end, processed", batch.length, "messages");
-          return;
-        }
-        if (msg.type === "live_start") {
-          liveBatchRef.current = [];
-          if (isSocketLoggingEnabled())
-            console.log("[claude-adapter] live batch start, count=", msg.count);
-          return;
-        }
-        if (msg.type === "live_end") {
-          const batch = liveBatchRef.current ?? [];
-          liveBatchRef.current = null;
-          processBatch(batch);
-          // 缓存落盘调度（批末一次，批内只入窗）。
-          scheduleReplayFlush();
-          // delta 回合封口：to 不能在此处取值——renderedMessages 是 rawMessages 的
-          // memo，同宏任务内增量还没投影。置 pending，由下方 effect 在投影落地后
-          // 用最新 renderedMessages.length 收口并延迟摘除动画 class。
-          if (deltaReplayRef.current) {
-            deltaReplayRef.current = false;
-            deltaClosePendingRef.current = true;
-          }
-          // No divider here: the boundary lives at the history/live junction
-          // (injected at history_end), not at the tail of the live batch.
-          // Defer setLoading(false) to the next render (the effect below): flipping
-          // it synchronously here would land loading=false in the same batch as
-          // setRawMessages, one frame before assistant-ui pushes storeAdapter→
-          // thread.messages, so the gate (turns===0 && loading) would drop the
-          // skeleton with turns still empty — a blank flash. The effect runs after
-          // commit, landing loading=false on the same render turns catches up.
-          liveEndPendingRef.current = true;
-          if (isSocketLoggingEnabled())
-            console.log("[claude-adapter] live batch end, processed", batch.length, "messages");
-          return;
-        }
+      };
 
-        if (msg.type === "pong") {
-          lastPongRef.current = Date.now();
+      // A compressed batch decompresses asynchronously. While a blob is in flight,
+      // route subsequent frames through a serial promise chain so completion order
+      // matches arrival order — otherwise a coalesced history_end would drain the
+      // buffer before the blob's rows land, or a fast live blob could overtake a
+      // slow history blob. When no blob is pending (the common case, and every
+      // text-only path), frames are handled synchronously with no microtask hop.
+      let blobInFlight = false;
+      let chain: Promise<void> = Promise.resolve();
+      socket.onmessage = (event) => {
+        if (cancelled) return;
+        if (event.data instanceof ArrayBuffer) {
+          blobInFlight = true;
+          chain = chain
+            .then(() => handleBinaryBatch(event.data))
+            .catch((e) => console.error("[claude-adapter] binary batch error", e))
+            .finally(() => {
+              blobInFlight = false;
+            });
           return;
         }
-
-        // In batch collection — buffer, don't process yet
-        if (historyBatchRef.current) {
-          historyBatchRef.current.push(msg);
-          pushReplayLine(raw);
-          if (trackArrival) tickArrival(arriveMs, performance.now() - arriveMs);
+        if (blobInFlight) {
+          chain = chain
+            .then(() => handleTextFrame(event))
+            .catch((e) => console.error("[claude-adapter] handleFrame error", e));
           return;
         }
-        if (liveBatchRef.current) {
-          liveBatchRef.current.push(msg);
-          pushReplayLine(raw);
+        handleTextFrame(event);
+      };
+
+      socket.onclose = () => {
+        clearWatchdog();
+        // modeConflict 关闭同样清理连接态（review P3-7）：面板即将被撤下，但残留 connected/
+        // loading 会让其它消费面读到假连接态；只跳过重连（重连注定再撞守卫）。
+        if (modeConflict) {
+          if (socketRef.current === socket) socketRef.current = null;
+          setConnected(false);
+          setLoading(false);
           return;
         }
-
-        // ── Per-message dispatch (live, after batches) ───────────────
-        const liveUuid = getMessageUuid(msg);
-        if (liveUuid) {
-          messageMapRef.current.set(liveUuid, msg);
-          cursorRef.current = liveUuid;
+        if (!cancelled) {
+          socketRef.current = null;
+          setConnected(false);
+          setLoading(true);
+          scheduleReconnect();
         }
-        pushReplayLine(raw);
-        scheduleReplayFlush();
-        appendRawMessages([msg]);
-        applyMessageScalarState(msg);
-        setLoading(false);
-      } catch {
-        // skip
-      }
-    };
+      };
 
-    // A compressed batch decompresses asynchronously. While a blob is in flight,
-    // route subsequent frames through a serial promise chain so completion order
-    // matches arrival order — otherwise a coalesced history_end would drain the
-    // buffer before the blob's rows land, or a fast live blob could overtake a
-    // slow history blob. When no blob is pending (the common case, and every
-    // text-only path), frames are handled synchronously with no microtask hop.
-    let blobInFlight = false;
-    let chain: Promise<void> = Promise.resolve();
-    socket.onmessage = (event) => {
-      if (cancelled) return;
-      if (event.data instanceof ArrayBuffer) {
-        blobInFlight = true;
-        chain = chain
-          .then(() => handleBinaryBatch(event.data))
-          .catch((e) => console.error("[claude-adapter] binary batch error", e))
-          .finally(() => {
-            blobInFlight = false;
-          });
-        return;
-      }
-      if (blobInFlight) {
-        chain = chain
-          .then(() => handleTextFrame(event))
-          .catch((e) => console.error("[claude-adapter] handleFrame error", e));
-        return;
-      }
-      handleTextFrame(event);
-    };
-
-    socket.onclose = () => {
-      clearWatchdog();
-      // modeConflict 关闭同样清理连接态（review P3-7）：面板即将被撤下，但残留 connected/
-      // loading 会让其它消费面读到假连接态；只跳过重连（重连注定再撞守卫）。
-      if (modeConflict) {
-        if (socketRef.current === socket) socketRef.current = null;
-        setConnected(false);
-        setLoading(false);
-        return;
-      }
-      if (!cancelled) {
-        socketRef.current = null;
-        setConnected(false);
-        setLoading(true);
-        scheduleReconnect();
-      }
-    };
-
-    socket.onerror = (e) => {
-      console.log("[claude-adapter] ws error", e);
-    };
+      socket.onerror = (e) => {
+        console.log("[claude-adapter] ws error", e);
+      };
+    }
 
     return () => {
       cancelled = true;
@@ -5453,10 +5491,12 @@ export function useClaudeSession(
         clearInterval(heartbeatTimer);
         heartbeatTimer = null;
       }
-      if (socketRef.current === socket) {
-        socketRef.current = null;
-      }
-      socket.close();
+      // socket 可能尚未创建（异步恢复窗口内卸载/切换）：socketRef 是唯一事实，?.
+      // close() no-op 安全。cleanup 先于下一次 effect body（React 保证），此刻
+      // socketRef.current 必属本 effect 的 socket——?.close + 置 null 语义等价旧
+      // 「ref 比对后 close」且覆盖「未开连」态。
+      socketRef.current?.close();
+      socketRef.current = null;
     };
   }, [
     projectName,

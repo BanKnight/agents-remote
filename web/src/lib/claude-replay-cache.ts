@@ -1,36 +1,42 @@
-// Claude 会话回放缓存（2026-10-26）：跨 remount 的增量回放恢复——d565ba4 的重连增量
+// Claude 会话回放缓存（逻辑层）：跨 remount 的增量回放恢复——d565ba4 的重连增量
 // 回放锚（claude-adapter cursorRef）活在组件内存里，切走会话再切回 / PWA 被回收重载 /
 // 刷新后锚随 rawMessages 一起丢失，只能全量回放（用户观察：「每次重连都从旧的地方加载
-// 到最新」）。本层把「窗口尾锚 + 其原始 JSON 行窗口 + resume 语义」持久化到
-// localStorage，remount 时恢复窗口即刻呈现 + WS 带 since 锚，服务端 delta 只补离开
-// 期间的增量。
+// 到最新」）。本层把「窗口尾锚 + 其原始 JSON 行窗口 + resume 语义」持久化到底层存储，
+// remount 时恢复窗口即刻呈现 + WS 带 since 锚，服务端 delta 只补离开期间的增量。
 //
-// 照 composer-draft.ts 惯例：localStorage 直读直写 + try/catch 静默降级——缓存是增强
-// 能力，任何失败（配额满 / 隐私模式 / 序列化异常）都退回现有全量回放路径，绝不影响
-// 主流程。raw 以 JSONL 单串存储（join("\n")）：外层 JSON.parse 只需 token 化一次，
-// 避免「数组 of 字符串」在 load 时二次反转义。
+// 存储层 = replay-cache-store.ts 的 ReplayCacheStore 接口（生产 IndexedDB，2026-10-26
+// 自 localStorage 迁入）：localStorage ~5M/origin 放不下真实会话窗口（实测三窗口合计
+// 4.44M），全局 cap 2.5M 下快速轮切三个大会话稳态互驱逐全 miss（「瞬出时有时无」的
+// 根因，参数与数据规模不匹配而非 LRU 代码 bug）；且旧单 entry 字符 cap 1.5M 在偷偷截
+// 断两个大会话的窗口。本层签名全异步、永 reject（内部全 catch），调用方 fire-and-forget
+// 零负担——缓存是增强能力，任何失败（无 IDB / 隐私模式 / 配额满 / 损坏）都退回全量
+// 回放路径，绝不影响主流程。raw 仍以 JSONL 单串存储：meta.chars 口径直取 raw.length，
+// 探针断言的落盘形状不变。
 //
-// 容量治理：单 entry 双 cap（行数 + 字符数，超限截头保尾）；全局字符 cap + savedAt
-// LRU 淘汰；QuotaExceededError 淘汰最旧后重试一次，仍失败静默放弃。空窗口 / 窗口内
-// 无可推导锚 → removeItem（对齐 composer-draft 空串清档），不生成垃圾 entry。
-// 生命周期：项目/会话删除时显式清扫（clearProjectReplayCache / clearReplayCache，
-// 消费点见 useProjectRowActions / useCloseSession）；跨设备残留由全局 cap + LRU 兜底。
-//
-// 字符 cap 用 string.length 而非 TextEncoder 字节数：localStorage 配额按 UTF-16 code
-// units 计，length 是同量纲（1 个 code unit = 2 字节），且免去每次 flush 全窗口 encode。
+// 容量治理：单 entry 行数 cap（截头保尾，窗口语义）；内存窗口字符 cap + 单行毒化阈值
+// （见 REPLAY_WINDOW_MAX_CHARS）；全局字符 cap + savedAt LRU 淘汰（meta 小记录扫描，
+// 绝不反序列化大 entry）；配额失败淘汰后重试一次。空窗口 / 窗口内无可推导锚 → 硬删
+// （不生成垃圾 entry）。生命周期：项目/会话删除时显式清扫（墓碑语义），跨设备残留由
+// 全局 cap + LRU 兜底。
 
-const REPLAY_CACHE_PREFIX = "claudeReplayCache:";
+import { createIdbReplayStore, REPLAY_CACHE_PREFIX } from "./replay-cache-store";
+import type { ReplayCacheStore, StoredEntry } from "./replay-cache-store";
 
 /** 单 entry 行数上限：截头保尾（窗口语义 = 最近历史，锚在尾部天然保留）。 */
 export const REPLAY_CACHE_MAX_LINES = 600;
-/** 单 entry 字符上限：tool_result 大行防单 entry 独占全局配额。 */
-export const REPLAY_CACHE_MAX_ENTRY_CHARS = 1_500_000;
 /**
- * 全局字符上限：按 UTF-16 code units 口径估算——浏览器 localStorage 配额约 5M
- * code units/origin（Chrome/Safari），留一半给其它键（workbench 大量
- * atomWithLocalOnlyStorage）。超限按 savedAt LRU 淘汰最旧会话。
+ * 内存窗口字符上限（旧 REPLAY_CACHE_MAX_ENTRY_CHARS 一常量三用途拆分后的内存用途）：
+ * ① pushReplayLine 内存窗口摊还裁剪上限；② 单行毒化阈值（超限病态单行放弃整窗缓存）。
+ * localStorage 时代的落盘字符截断已废除——IDB 配额下落盘不截断（恢复语义完整性），
+ * 真实数据里 2.89M 的窗口旧版被偷偷丢头，现在原样缓存。
  */
-export const REPLAY_CACHE_MAX_TOTAL_CHARS = 2_500_000;
+export const REPLAY_WINDOW_MAX_CHARS = 8_000_000;
+/**
+ * 全局字符上限（LRU 预算，meta.chars 软口径）：50M code units ≈ 容纳 ~17 个实测
+ * 大会话窗口；iOS 动态配额（数百 MB 级）下余量充足，仍是跨设备残留 / 病态增长的
+ * 兜底（超限按 savedAt LRU 淘汰最旧会话）。
+ */
+export const REPLAY_CACHE_MAX_TOTAL_CHARS = 50_000_000;
 
 /** 对外形态：raw 是行数组（调用方逐行 parse 走 processBatch）。 */
 export type ReplayCacheEntry = {
@@ -43,54 +49,62 @@ export type ReplayCacheEntry = {
   raw: string[];
 };
 
-/** 落盘形态：raw 为 JSONL 单串（外层 parse 只 token 化一次）。 */
-type StoredEntry = Omit<ReplayCacheEntry, "raw"> & { raw: string };
-
 export function replayCacheKey(projectName: string, sessionId: string): string {
   // 项目名可含 `/`（目录型项目），与 claudeStreamUrl 同款编码防 key 歧义。
   return `${REPLAY_CACHE_PREFIX}${encodeURIComponent(projectName)}/${encodeURIComponent(sessionId)}`;
 }
 
-/** 读取并校验：v / cursorUuid / raw 任一不满足按 miss（缓存损坏不传播，走全量回退）。 */
-export function loadReplayCache(key: string): ReplayCacheEntry | null {
-  if (typeof localStorage === "undefined") return null;
+// 存储注入 seam：生产懒创建（每页面加载一次；无 indexedDB 的环境工厂返回 null =
+// 全降级）；测试注入内存实现（bun/jsdom 无 IDB，伪造结构化克隆不现实）。
+let activeStore: ReplayCacheStore | null | undefined;
+
+function getStore(): ReplayCacheStore | null {
+  if (activeStore === undefined) activeStore = createIdbReplayStore();
+  return activeStore;
+}
+
+/** @internal 测试注入（bun/jsdom 无 indexedDB）；传 null 还原生产懒创建路径。 */
+export function setReplayCacheStoreForTests(store: ReplayCacheStore | null): void {
+  activeStore = store ?? undefined;
+}
+
+/** 读取并校验：墓碑 / v / cursorUuid / raw 任一不满足按 miss（损坏不传播，走全量回退）。 */
+export async function loadReplayCache(key: string): Promise<ReplayCacheEntry | null> {
   try {
-    const stored = localStorage.getItem(key);
-    if (!stored) return null;
-    const entry = JSON.parse(stored) as StoredEntry;
-    if (entry.v !== 1 || !entry.cursorUuid || typeof entry.raw !== "string") return null;
-    const raw = entry.raw.length > 0 ? entry.raw.split("\n") : [];
+    const record = await getStore()?.load(key);
+    if (!record || "removed" in record) return null;
+    if (record.v !== 1 || !record.cursorUuid || typeof record.raw !== "string") return null;
+    const raw = record.raw.length > 0 ? record.raw.split("\n") : [];
     if (raw.length === 0) return null;
-    return { ...entry, raw };
+    return {
+      v: 1,
+      cursorUuid: record.cursorUuid,
+      resume: record.resume,
+      savedAt: record.savedAt,
+      raw,
+    };
   } catch {
     return null;
   }
 }
 
-export function saveReplayCache(key: string, resume: boolean, raw: string[]): void {
-  if (typeof localStorage === "undefined") return;
+export async function saveReplayCache(key: string, resume: boolean, raw: string[]): Promise<void> {
   try {
-    // 墓碑：会话/项目删除后（clearReplayCache），卸载 cleanup 等迟到的 flush 不得复活
-    // 缓存——写者只有本层，墓碑是删除语义对 save 的单向闸。墓碑随 LRU 淘汰后自然重试。
-    const existing = localStorage.getItem(key);
-    if (existing) {
-      try {
-        if ((JSON.parse(existing) as { removed?: unknown }).removed === true) return;
-      } catch {
-        // 损坏 entry：允许覆盖。
-      }
-    }
-    const lines = trimLines(raw);
+    const store = getStore();
+    if (!store) return;
+    // ── 同步段：pushReplayLine 会原地 push raw 数组——所有对它的读取（行 cap、
+    // 锚推导、join）必须在首个 await 前完成，快照出不可变串；await 之后的操作只碰
+    // 快照，调用方零拷贝。
+    const lines = capByLines(raw);
     // 锚由窗口自身推导（单一真相）：调用方持有的「最后一条已处理 uuid」可能落后于
     // 采集窗口（history 批次先采集、history_end 才 processBatch），也可能被截头丢出
     // ——锚与窗口一旦分叉，恢复端从行内推导的锚就与 entry 不一致。逆序推导与恢复端
     // processBatch 的行内推导同源，且锚必然存活于窗口。
     const cursorUuid = deriveAnchor(lines);
     if (!cursorUuid) {
-      localStorage.removeItem(key);
+      await store.remove(key);
       return;
     }
-    // ⚠️ 属性顺序是 readSavedAt 的契约：savedAt 须落在序列化串头部 64 字节内。
     const entry: StoredEntry = {
       savedAt: Date.now(),
       v: 1,
@@ -98,70 +112,54 @@ export function saveReplayCache(key: string, resume: boolean, raw: string[]): vo
       resume,
       raw: lines.join("\n"),
     };
-    const stored = JSON.stringify(entry);
-    evictForCapacity(key, stored.length);
+    // ── 异步段：putUnlessTombstone 在单 tx 内做墓碑检查（删除语义对 save 的单向
+    // 闸）并维护 meta；墓碑挡下（false）即静默放弃，行为对齐旧「墓碑不复活」。
     try {
-      localStorage.setItem(key, stored);
+      await store.putUnlessTombstone(key, entry);
     } catch {
-      // 配额满：淘汰后重试一次；仍失败静默放弃（增强能力降级为全量回放）。
-      evictForCapacity(key, stored.length);
-      localStorage.setItem(key, stored);
+      // 配额等存储失败：淘汰后重试一次；仍失败被外层 catch 静默放弃。
+      await evictForCapacity(store, key);
+      await store.putUnlessTombstone(key, entry);
     }
+    // 例行全局 cap 收口（listMeta 只读小记录；正常路径淘汰是零 victims 的空扫）。
+    await evictForCapacity(store, key);
   } catch {
-    // 隐私模式 / 序列化异常：静默降级。
+    // 隐私模式 / 配额 / 序列化异常：静默降级（增强能力退回全量回放）。
   }
 }
 
 /**
- * 清档并立墓碑：写一条 removed 标记 entry（loadReplayCache 的既有校验天然拒收——墓碑
- * 无 cursorUuid/raw）。直接 removeItem 挡不住「清完 → 面板卸载 cleanup flush 重写」的
- * 竞态（flush 是迟到的最后写者），墓碑让删除语义对 save 单向生效。
+ * 清档并立墓碑：写一条 removed 标记（loadReplayCache 的既有校验天然拒收——墓碑无
+ * cursorUuid/raw）。墓碑让删除语义对 save 单向生效：「清完 → 面板卸载 cleanup flush
+ * 重写」的迟到写者被 putUnlessTombstone 的 tx 内检查挡住。随 LRU 淘汰后自然重试。
  */
-export function clearReplayCache(key: string): void {
-  if (typeof localStorage === "undefined") return;
+export async function clearReplayCache(key: string): Promise<void> {
   try {
-    localStorage.setItem(
-      key,
-      JSON.stringify({ savedAt: Date.now(), v: 1, removed: true } satisfies
-        | StoredEntry
-        | { removed: true }),
-    );
+    await getStore()?.tombstone(key);
   } catch {
     // ignore
   }
 }
 
 /**
- * 项目级清扫：删除/重命名项目后调用——旧前缀的 key 永远不会再被命中（loadReplayCache
- * 按新 project 名构造 key），残留纯属占用。每个 key 立墓碑（同 clearReplayCache）。
- * 跨设备清不掉（localStorage 是 per-device），那部分由全局 cap + savedAt LRU 兜底
- * （总占用硬上界 REPLAY_CACHE_MAX_TOTAL_CHARS）。
+ * 项目级清扫：删除/重命名项目后调用——旧前缀的 key 永远不会再被命中，残留纯属占用。
+ * 每个 key 立墓碑（同 clearReplayCache；硬删挡不住迟到 flush 重写）。跨设备清不掉
+ * （存储是 per-device），那部分由全局 cap + savedAt LRU 兜底。
  */
-export function clearProjectReplayCache(projectName: string): void {
-  if (typeof localStorage === "undefined") return;
+export async function clearProjectReplayCache(projectName: string): Promise<void> {
   try {
+    const store = getStore();
+    if (!store) return;
     const prefix = `${REPLAY_CACHE_PREFIX}${encodeURIComponent(projectName)}/`;
-    const keys: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith(prefix)) keys.push(k);
-    }
-    for (const k of keys) clearReplayCache(k);
+    for (const key of await store.listKeys(prefix)) await store.tombstone(key);
   } catch {
     // ignore
   }
 }
 
-/** 截头保尾：先行数 cap，再按字符上限从头部丢行（至少保留一行）。 */
-function trimLines(raw: string[]): string[] {
-  const capByLines = raw.length > REPLAY_CACHE_MAX_LINES ? raw.slice(-REPLAY_CACHE_MAX_LINES) : raw;
-  let total = capByLines.reduce((sum, line) => sum + line.length + 1, 0);
-  let start = 0;
-  while (total > REPLAY_CACHE_MAX_ENTRY_CHARS && start < capByLines.length - 1) {
-    total -= capByLines[start]!.length + 1;
-    start += 1;
-  }
-  return start === 0 ? capByLines : capByLines.slice(start);
+/** 截头保尾：只行数 cap（字符截断已废除——落盘不截断，见 REPLAY_WINDOW_MAX_CHARS）。 */
+function capByLines(raw: string[]): string[] {
+  return raw.length > REPLAY_CACHE_MAX_LINES ? raw.slice(-REPLAY_CACHE_MAX_LINES) : raw;
 }
 
 /**
@@ -180,32 +178,18 @@ function deriveAnchor(lines: string[]): string | null {
   return null;
 }
 
-/** 全局配额：写前淘汰其他 entry（savedAt 最旧优先，坏 entry 直接删）到放得下为止。 */
-function evictForCapacity(selfKey: string, selfChars: number): void {
-  const rows: Array<{ key: string; savedAt: number; chars: number }> = [];
-  let total = selfChars;
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i);
-    if (!k || !k.startsWith(REPLAY_CACHE_PREFIX) || k === selfKey) continue;
-    const value = localStorage.getItem(k);
-    if (!value) continue;
-    total += value.length;
-    rows.push({ key: k, savedAt: readSavedAt(value), chars: value.length });
-  }
+/** 全局配额：meta 小记录汇总，超限按 savedAt 最旧优先淘汰他人（不含 selfKey）。 */
+async function evictForCapacity(store: ReplayCacheStore, selfKey: string): Promise<void> {
+  const rows = await store.listMeta();
+  let total = 0;
+  for (const row of rows) total += row.chars;
   if (total <= REPLAY_CACHE_MAX_TOTAL_CHARS) return;
-  rows.sort((a, b) => a.savedAt - b.savedAt);
-  for (const row of rows) {
-    localStorage.removeItem(row.key);
+  const victims = rows.filter((row) => row.key !== selfKey).sort((a, b) => a.savedAt - b.savedAt);
+  const doomed: string[] = [];
+  for (const row of victims) {
+    doomed.push(row.key);
     total -= row.chars;
-    if (total <= REPLAY_CACHE_MAX_TOTAL_CHARS) return;
+    if (total <= REPLAY_CACHE_MAX_TOTAL_CHARS) break;
   }
-}
-
-/**
- * 从 entry 字符串头部读 savedAt——不 JSON.parse 整个 entry（其 raw 可达 MB 级，
- * 淘汰扫描 parse 每个 entry 会把一次 flush 拖到数十 ms）。读不到 = 坏 entry = 最旧。
- */
-function readSavedAt(value: string): number {
-  const match = /"savedAt":(\d+)/.exec(value.slice(0, 64));
-  return match ? Number(match[1]) : 0;
+  if (doomed.length > 0) await store.deleteMany(doomed);
 }

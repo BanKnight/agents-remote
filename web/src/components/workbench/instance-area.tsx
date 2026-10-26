@@ -1849,7 +1849,7 @@ export function useCloseSession() {
     // 会话没了，跨 remount 回放缓存（claude-replay-cache）也不再有意义——本地即时清扫，
     // 不等 LRU。terminal 会话没有回放缓存，不扫。跨设备残留由全局 cap + LRU 兜底。
     if (type === "agent") {
-      clearReplayCache(replayCacheKey(ref.projectName, ref.sessionId));
+      void clearReplayCache(replayCacheKey(ref.projectName, ref.sessionId));
     }
     queryClient.removeQueries({
       exact: true,

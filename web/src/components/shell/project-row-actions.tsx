@@ -338,7 +338,7 @@ export function useProjectRowActions() {
     mutationFn: ({ from, to }: { from: string; to: string }) => renameProject(from, to),
     // 旧项目名的回放缓存 key 不会再被命中（load 按新名构造 key），改名即清扫残留。
     onSettled: (_data, _error, { from }) => {
-      clearProjectReplayCache(from);
+      void clearProjectReplayCache(from);
       invalidate();
     },
   });
@@ -346,7 +346,7 @@ export function useProjectRowActions() {
     mutationFn: ({ deleteFiles, name }: { deleteFiles: boolean; name: string }) =>
       deleteProject(name, { deleteFiles }),
     onSettled: (_data, _error, { name }) => {
-      clearProjectReplayCache(name);
+      void clearProjectReplayCache(name);
       invalidate();
     },
   });

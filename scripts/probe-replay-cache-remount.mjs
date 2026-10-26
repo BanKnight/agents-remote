@@ -1,9 +1,13 @@
 // 探针：跨 remount 增量回放恢复（claude-replay-cache，2026-10-26）。验证真实链路
-// （真实 relay + 真实 localStorage，零 mock）：
+// （真实 relay + 真实 IndexedDB，零 mock）：
 //   首连全量 → 落盘缓存 → 切走（unmount flush）→ 切回 = 恢复窗口即刻呈现 +
 //   WS URL 带 ?since=<窗口尾锚> → 服务端 relay 日志 replay=delta（只补增量）。
 // 对照 probe-claude-reconnect-delta.mjs（连接级重连，mock WS）；本探针补「跨 remount
 // （整页 reload）+ 真实服务端」证据。会话只读复用 test 项目既有会话，零副作用。
+//
+// IDB 迁移批（2026-10-26）：缓存落盘从 localStorage 迁 IndexedDB——断言改 evaluate
+// 内联 async IDB 读。DB 名/store 名与 web/src/lib/replay-cache-store.ts 的
+// REPLAY_CACHE_DB_NAME / REPLAY_CACHE_ENTRY_STORE 互指（改一处必改两处）。
 //
 // 密码由脚本自读，不进 agent 上下文。用法：bun scripts/probe-replay-cache-remount.mjs
 import { execSync } from "node:child_process";
@@ -14,8 +18,35 @@ const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const projectName = process.env.PROBE_PROJECT ?? "test";
 const sessionId = process.env.PROBE_SESSION ?? "agent_8edb4fb6fca3497d";
 
+const IDB_NAME = "agents-remote-replay-cache";
+const IDB_ENTRY_STORE = "entries";
+
 const cacheKey = `claudeReplayCache:${encodeURIComponent(projectName)}/${encodeURIComponent(sessionId)}`;
 const pageUrl = `${WEB_ORIGIN}/projects/${projectName}/session/${sessionId}`;
+
+/** 页内内联 async IDB 读单条记录（探针只读；open→tx→get→close）。 */
+async function readIdbRecord(page, key) {
+  return await page.evaluate(
+    async ([dbName, storeName, k]) => {
+      const db = await new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      try {
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(storeName, "readonly");
+          const req = tx.objectStore(storeName).get(k);
+          req.onsuccess = () => resolve(req.result ?? null);
+          req.onerror = () => reject(req.error);
+        });
+      } finally {
+        db.close();
+      }
+    },
+    [IDB_NAME, IDB_ENTRY_STORE, key],
+  );
+}
 
 let pass = 0;
 let fail = 0;
@@ -49,11 +80,7 @@ try {
   const firstCount = await page.locator("[data-turn-message-ids]").count();
   check("① 首连渲染非空", firstCount > 0, `turns=${firstCount}`);
 
-  const entryRaw = await page.evaluate((k) => localStorage.getItem(k), cacheKey);
-  let entry = null;
-  try {
-    entry = JSON.parse(entryRaw ?? "null");
-  } catch {}
+  const entry = await readIdbRecord(page, cacheKey);
   const entryOk =
     entry !== null &&
     typeof entry.cursorUuid === "string" &&
@@ -61,7 +88,7 @@ try {
     typeof entry.raw === "string" &&
     entry.raw.length > 0;
   check(
-    "② localStorage 回放缓存已落盘（cursorUuid + raw 非空）",
+    "② IndexedDB 回放缓存已落盘（cursorUuid + raw 非空）",
     entryOk,
     entry
       ? `cursor=${entry.cursorUuid} rawChars=${entry.raw?.length} lines=${entry.raw?.split("\n").length}`

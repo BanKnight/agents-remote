@@ -7,14 +7,17 @@ import { JSDOM } from "jsdom";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import {
   useClaudeSession,
+  RESTORE_TIMEOUT_MS,
   SESSION_INIT_WATCHDOG_MS,
   WS_CONNECT_TIMEOUT_MS,
 } from "./claude-adapter";
 import {
   replayCacheKey,
   saveReplayCache,
-  REPLAY_CACHE_MAX_ENTRY_CHARS,
+  setReplayCacheStoreForTests,
+  REPLAY_WINDOW_MAX_CHARS,
 } from "../lib/claude-replay-cache";
+import { createMemReplayStore } from "../lib/replay-cache-store";
 import { queryClient } from "../lib/query-client";
 import { setSocketLoggingEnabled } from "../lib/debug-flags";
 import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
@@ -24,7 +27,10 @@ import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
 // 定时器泄漏进后续测试（500ms scheduleReconnect 触发泄漏组件 effect 重跑 → 新
 // socket 污染 MockSocket.instances → waitFor(length 1) 偶发失败）。手动补注册：
 // 每测试结束卸载全部渲染结果，WS effect cleanup 关闭 socket、detach fiber。
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  setReplayCacheStoreForTests(null); // 还原生产懒创建路径
+});
 
 class MockSocket {
   static instances: MockSocket[] = [];
@@ -90,14 +96,19 @@ const setFetch = () => {
   ) as unknown as typeof fetch;
 };
 
+// 回放缓存恢复用例的存储注入：bun/jsdom 无 IndexedDB，用 replay-cache-store 的内存
+// 实现替代（生产 IDB 路径靠浏览器探针验证）。
+let memStore: ReturnType<typeof createMemReplayStore>;
+
 beforeEach(() => {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost" });
   globalThis.window = dom.window as unknown as Window & typeof globalThis;
   globalThis.document = dom.window.document as unknown as Document;
   globalThis.navigator = dom.window.navigator as unknown as Navigator;
-  // 回放缓存恢复用例需要真实可用的 localStorage（裸 bun 环境没有）；每测试新 JSDOM =
-  // 隔离存储，串档不可能。
+  // JSDOM localStorage 保留（composer-draft 等其它消费方仍用）；回放缓存不再走它。
   globalThis.localStorage = dom.window.localStorage;
+  memStore = createMemReplayStore();
+  setReplayCacheStoreForTests(memStore);
   Object.defineProperty(globalThis, "location", {
     configurable: true,
     value: dom.window.location,
@@ -1881,16 +1892,17 @@ describe("useClaudeSession 跨 remount 回放缓存恢复", () => {
     });
     expect(first.result.current.storeAdapter.messages).toHaveLength(1);
 
-    // unmount → cleanup replayFlush 同步落盘。
+    // unmount → cleanup replayFlush（save 已是异步 fire-and-forget，waitFor 落盘）。
     first.unmount();
-    const stored = localStorage.getItem("claudeReplayCache:proj/sess");
-    expect(stored).not.toBeNull();
-    const entry = JSON.parse(stored!);
-    expect(entry.cursorUuid).toBe("uuid-1");
+    await waitFor(() =>
+      expect(memStore.load("claudeReplayCache:proj/sess")).resolves.toMatchObject({
+        cursorUuid: "uuid-1",
+      }),
+    );
 
-    // 二次 mount：恢复是 reset 分支内的同步动作——未连 WS 即已渲染。
+    // 二次 mount：恢复现为异步 IDB 读（waitFor），完成后未连 WS 即已渲染。
     const second = renderHook(() => useClaudeSession("proj", "sess"));
-    expect(second.result.current.rawMessagesRef.current).toHaveLength(1);
+    await waitFor(() => expect(second.result.current.rawMessagesRef.current).toHaveLength(1));
     expect(second.result.current.loading).toBe(false);
     await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
     expect(MockSocket.instances[1]!.url).toContain("since=uuid-1");
@@ -1910,6 +1922,8 @@ describe("useClaudeSession 跨 remount 回放缓存恢复", () => {
     first.unmount();
 
     const second = renderHook(() => useClaudeSession("proj", "sess"));
+    // 恢复现为异步：先等恢复落地（rawMessages 有内容）再看二次连接。
+    await waitFor(() => expect(second.result.current.rawMessagesRef.current).toHaveLength(1));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
     const reconnectSocket = MockSocket.instances[1];
     expect(reconnectSocket.url).toContain("since=uuid-1");
@@ -1942,7 +1956,8 @@ describe("useClaudeSession 跨 remount 回放缓存恢复", () => {
     first.unmount();
 
     const second = renderHook(() => useClaudeSession("proj", "sess"));
-    expect(second.result.current.rawMessagesRef.current).toHaveLength(1); // 恢复在
+    // 恢复现为异步（waitFor 落地后再断言 + 等二次连接）。
+    await waitFor(() => expect(second.result.current.rawMessagesRef.current).toHaveLength(1));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
     const reconnectSocket = MockSocket.instances[1];
     act(() => reconnectSocket.open());
@@ -1972,23 +1987,33 @@ describe("useClaudeSession 跨 remount 回放缓存恢复", () => {
       socket.emit(assistantMsg("uuid-1", "a1", "first"));
     });
     first.unmount();
+    await waitFor(() =>
+      expect(memStore.load("claudeReplayCache:proj/sess")).resolves.toMatchObject({
+        cursorUuid: "uuid-1",
+      }),
+    );
 
     // .ts 文件无 JSX——StrictMode 本身就是接受 children 的组件，直接作 wrapper。
     // StrictMode double-effect 的两次 setup 都真实执行（模拟卸载重挂）→ 恢复分支
-    // 跑两遍 → 首轮 socket + 两个 since 连接 = 3 个；第二次恢复前 resetSessionState
-    // 清掉第一次的窗口 → 不翻倍。
+    // 跑两遍。异步恢复版：首轮 setup 的 IIFE 被 StrictMode cleanup 的 cancelled
+    // 拦下（bail 不开连，恢复版不再有同步「首轮 socket」）；第二轮恢复命中窗口
+    // → 唯一连接带锚。幂等语义 = 不翻倍。
     const second = renderHook(() => useClaudeSession("proj", "sess"), { wrapper: StrictMode });
-    expect(MockSocket.instances).toHaveLength(3);
-    expect(second.result.current.rawMessagesRef.current).toHaveLength(1);
+    // 恢复现为异步：首轮 setup 的 IIFE 被 StrictMode cleanup 的 cancelled 拦下
+    //（diag 实证 gen=1/2 cancelled=true bail）；第二轮恢复命中窗口 → 唯一的新连接
+    // 带锚。instances 含 first 的首连 socket（数组跨本轮累计）→ 期望 2 = first + second。
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    // rawMessagesRef 是 commit 后的 effect 派生（socket 建立是同步的，先于 commit）
+    // ——断言同样等 waitFor。
+    await waitFor(() => expect(second.result.current.rawMessagesRef.current).toHaveLength(1));
     expect(second.result.current.storeAdapter.messages).toHaveLength(1);
     expect(MockSocket.instances[1]!.url).toContain("since=uuid-1");
-    expect(MockSocket.instances[2]!.url).toContain("since=uuid-1");
     second.unmount();
   });
 
   test("恢复窗口起点在回合中间（首行 assistant 无前置 user）渲染不崩", async () => {
     // 尾窗语义下任意起点都可能成为窗口头——直接预写缓存（首行 assistant 开头）。
-    saveReplayCache(
+    await saveReplayCache(
       replayCacheKey("proj", "sess"),
       false,
       [assistantMsg("uuid-1", "a1", "first"), assistantMsg("uuid-2", "a2", "second")].map((m) =>
@@ -1996,7 +2021,8 @@ describe("useClaudeSession 跨 remount 回放缓存恢复", () => {
       ),
     );
     const { result, unmount: um } = renderHook(() => useClaudeSession("proj", "sess"));
-    expect(result.current.rawMessagesRef.current).toHaveLength(2);
+    // 恢复现为异步 IDB 读：先等恢复落地再断言。
+    await waitFor(() => expect(result.current.rawMessagesRef.current).toHaveLength(2));
     expect(result.current.storeAdapter.messages.length).toBeGreaterThan(0);
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     // 锚 = 行内推导的窗口尾（uuid-2），entry.cursorUuid 只是落盘时的对账快照——
@@ -2011,9 +2037,9 @@ describe("useClaudeSession 跨 remount 回放缓存恢复", () => {
     const socket = MockSocket.instances[0];
     act(() => socket.open());
     act(() => {
-      // 单行超 REPLAY_CACHE_MAX_ENTRY_CHARS 的真实形态 = MB 级 tool_result（本机
+      // 单行超 REPLAY_WINDOW_MAX_CHARS 的真实形态 = MB 级 tool_result（本机
       // JSONL 实测 2.5MB 行存在）；这里用大 text 造同尺寸行。
-      socket.emit(assistantMsg("uuid-big", "big", "x".repeat(REPLAY_CACHE_MAX_ENTRY_CHARS)));
+      socket.emit(assistantMsg("uuid-big", "big", "x".repeat(REPLAY_WINDOW_MAX_CHARS)));
     });
     act(() => {
       socket.emit(assistantMsg("uuid-1", "a1", "first"));
@@ -2021,7 +2047,11 @@ describe("useClaudeSession 跨 remount 回放缓存恢复", () => {
     // 渲染面不受毒化影响（两条都在）；unmount flush 被毒化短路 → 无可用缓存（墓碑）。
     expect(first.result.current.storeAdapter.messages).toHaveLength(2);
     first.unmount();
-    expect(JSON.parse(localStorage.getItem("claudeReplayCache:proj/sess")!).removed).toBe(true);
+    await waitFor(() =>
+      expect(memStore.load("claudeReplayCache:proj/sess")).resolves.toMatchObject({
+        removed: true,
+      }),
+    );
 
     // 重挂载：load 读到墓碑 → 无恢复（URL 无 since）；save 同被墓碑挡——大行在 JSONL 里
     // 永久存在，重挂载 full 重放还会再遇到它，永久挡掉避免每次进入重试失败循环；LRU
@@ -2035,6 +2065,73 @@ describe("useClaudeSession 跨 remount 回放缓存恢复", () => {
       reconnect.emit(assistantMsg("uuid-2", "a2", "again"));
     });
     second.unmount();
-    expect(JSON.parse(localStorage.getItem("claudeReplayCache:proj/sess")!).removed).toBe(true);
+    await waitFor(() =>
+      expect(memStore.load("claudeReplayCache:proj/sess")).resolves.toMatchObject({
+        removed: true,
+      }),
+    );
+  });
+
+  test("竞态：恢复窗口内切换 sessionId → 迟到恢复被双守卫拦下（不串窗口、不为旧会话开连）", async () => {
+    await saveReplayCache(
+      replayCacheKey("proj", "sess"),
+      false,
+      [assistantMsg("uuid-1", "a1", "first")].map((m) => JSON.stringify(m)),
+    );
+    // 慢 load 拉开恢复窗口：IIFE 挂在 await 上时切换会话。
+    memStore.loadDelayMs = 50;
+    const { rerender, result } = renderHook(({ id }) => useClaudeSession("proj", id), {
+      initialProps: { id: "sess" },
+    });
+    rerender({ id: "sess2" });
+
+    // 新会话 miss（无预写）→ 唯一 socket = sess2 首连（无 since）。
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    expect(MockSocket.instances[0]!.url).toContain("sess2");
+    expect(MockSocket.instances[0]!.url).not.toContain("since=");
+    // 旧 IIFE 醒来（loadDelayMs 后）双守卫 bail：无第二个 socket、旧窗口不串入新会话。
+    await new Promise((r) => setTimeout(r, 80));
+    expect(MockSocket.instances).toHaveLength(1);
+    expect(result.current.rawMessagesRef.current).toHaveLength(0);
+    // 切换点 replayFlush 被干净检查短路（本实例未采集，clean=true）→ 盘上旧窗口
+    // 原样保留（有采集的切换 flush 的是内容，见「毒化」用例的墓碑路径）。
+    await waitFor(() =>
+      expect(memStore.load("claudeReplayCache:proj/sess")).resolves.toMatchObject({
+        cursorUuid: "uuid-1",
+      }),
+    );
+  });
+
+  test("恢复超时降级：IDB 读挂起超 RESTORE_TIMEOUT_MS → 竞速 miss 全量（URL 无 since、连接建立）", async () => {
+    await saveReplayCache(
+      replayCacheKey("proj", "sess"),
+      false,
+      [assistantMsg("uuid-1", "a1", "first")].map((m) => JSON.stringify(m)),
+    );
+    // load 被人为拖过竞速上限：race 由超时臂赢 → 恢复按 miss 处理（全量回放路径），
+    // 迟到的缓存结果被 race 丢弃（此后无人消费）。
+    memStore.loadDelayMs = RESTORE_TIMEOUT_MS + 5_000;
+    vi.useFakeTimers();
+    try {
+      renderHook(() => useClaudeSession("proj", "sess"));
+      // 未到超时点：不建 socket（还在等 load）。
+      act(() => {
+        vi.advanceTimersByTime(RESTORE_TIMEOUT_MS - 1);
+      });
+      expect(MockSocket.instances).toHaveLength(0);
+
+      // 超时臂 resolve → IIFE 续体经 microtask → openConnection。
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(MockSocket.instances).toHaveLength(1);
+      expect(MockSocket.instances[0]!.url).not.toContain("since=");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

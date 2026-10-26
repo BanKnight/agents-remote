@@ -1,8 +1,12 @@
 // 探针：回放缓存的生命周期清理（claude-replay-cache，2026-10-26）。真链路（真实 UI 删除
 // 流程，零 mock）：自建 agent session → 预写缓存 entry → 打开会话页（entry 仍在，打开=
 // 恢复不清理）→ 顶栏 ⋯「关闭会话…」confirm（useCloseSession 统一流程）→ 断言 entry 被
-// 即时清扫（key 消失或只剩墓碑——卸载 flush 的迟到重写被墓碑挡住，不复活）。
+// 即时清扫（记录消失或只剩墓碑——卸载 flush 的迟到重写被墓碑挡住，不复活）。
 // 会话由本探针自建自删（displayName 标记前缀），零残留。
+//
+// IDB 迁移批（2026-10-26）：预写改「登录后先 evaluate 直写 IDB 再导航」——不用
+// addInitScript（IDB 写是异步的，init script 的写与应用首个恢复读竞态，预写可能落
+// 在读之后 → 假 FAIL）。DB/store 名与 web/src/lib/replay-cache-store.ts 互指。
 //
 // 密码由脚本自读，不进 agent 上下文。用法：bun scripts/probe-replay-cache-cleanup.mjs
 import { chromium } from "@playwright/test";
@@ -11,6 +15,36 @@ import { readAppPassword } from "./lib/deploy-config.mjs";
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const projectName = process.env.PROBE_PROJECT ?? "test";
 const mark = `probe-rc-cleanup-${Date.now().toString(36)}`;
+
+const IDB_NAME = "agents-remote-replay-cache";
+const IDB_ENTRY_STORE = "entries";
+// meta store 在 store 层是私有常量（replay-cache-store.ts），探针只在其 upgrade 建库
+// 时需要同名——与实现互指，改一处必改两处。
+const IDB_META_STORE = "meta";
+
+/** 页内内联 async IDB 读单条记录（探针只读；open→tx→get→close）。 */
+async function readIdbRecord(page, key) {
+  return await page.evaluate(
+    async ([dbName, storeName, k]) => {
+      const db = await new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      try {
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(storeName, "readonly");
+          const req = tx.objectStore(storeName).get(k);
+          req.onsuccess = () => resolve(req.result ?? null);
+          req.onerror = () => reject(req.error);
+        });
+      } finally {
+        db.close();
+      }
+    },
+    [IDB_NAME, IDB_ENTRY_STORE, key],
+  );
+}
 
 let pass = 0;
 let fail = 0;
@@ -51,33 +85,62 @@ try {
   const cacheKey = `claudeReplayCache:${encodeURIComponent(projectName)}/${encodeURIComponent(sessionId)}`;
 
   // 预写缓存 entry（模拟「之前访问过」；行是合法 JSON 且带 uuid → loadReplayCache 可命中）。
-  // 在导航前注入，进页时已就位。
+  // IDB 版：登录后先在当前页 evaluate 直写 IDB，再导航到会话页——写先于应用的首次
+  // 恢复读，无竞态。两个坑（首批实测）：① 值必须是**对象**（存字符串会被 loadReplayCache
+  // 的形状校验拒收）；② upgrade 必须把 entries+meta 两个 store 建全——残缺 DB（缺 meta）
+  // 会让应用所有写 tx（scope 含 meta）失败静默，tombstone 写不进去 → ④ 假 FAIL。
   const line = JSON.stringify({
     type: "assistant",
     uuid: "probe-anchor-uuid",
     message: { id: "probe-1", role: "assistant", content: [{ type: "text", text: "probe" }] },
   });
-  await page.addInitScript(
-    ([k, v]) => {
-      localStorage.setItem(k, v);
+  await page.evaluate(
+    async ([dbName, storeName, metaStore, k, v]) => {
+      const db = await new Promise((resolve, reject) => {
+        const req = indexedDB.open(dbName, 1);
+        req.onupgradeneeded = () => {
+          const _db = req.result;
+          if (!_db.objectStoreNames.contains(storeName)) _db.createObjectStore(storeName);
+          if (!_db.objectStoreNames.contains(metaStore)) _db.createObjectStore(metaStore);
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(storeName, "readwrite");
+          tx.objectStore(storeName).put(v, k);
+          tx.oncomplete = () => resolve(undefined);
+          tx.onerror = () => reject(tx.error);
+        });
+      } finally {
+        db.close();
+      }
     },
     [
+      IDB_NAME,
+      IDB_ENTRY_STORE,
+      IDB_META_STORE,
       cacheKey,
-      JSON.stringify({
+      {
         savedAt: Date.now(),
         v: 1,
         cursorUuid: "probe-anchor-uuid",
         resume: false,
         raw: line,
-      }),
+      },
     ],
   );
 
   // 打开会话页：entry 不应被打开动作清掉（load 恢复语义）。
   await page.goto(`${WEB_ORIGIN}/projects/${projectName}/session/${sessionId}`);
   await page.waitForTimeout(2500);
-  const keyAfterOpen = await page.evaluate((k) => localStorage.getItem(k), cacheKey);
-  check("③ 打开会话页后 entry 仍在（打开=恢复，不清理）", keyAfterOpen !== null);
+  const keyAfterOpen = await readIdbRecord(page, cacheKey);
+  check(
+    "③ 打开会话页后 entry 仍在（打开=恢复，不清理）",
+    keyAfterOpen !== null && keyAfterOpen.removed !== true,
+    keyAfterOpen === null ? "entry=null" : `cursor=${keyAfterOpen.cursorUuid}`,
+  );
 
   // UI 删除（useCloseSession 统一流程）：顶栏 ⋯（「更多操作」）→「关闭会话…」→ confirm「关闭」。
   await page.getByRole("button", { name: "更多操作" }).click();
@@ -90,10 +153,14 @@ try {
   await dialog.getByRole("button", { name: "关闭", exact: true }).click();
   await page.waitForTimeout(1500);
 
-  const keyAfterClose = await page.evaluate((k) => localStorage.getItem(k), cacheKey);
-  // 清扫语义 = 无可用缓存：key 消失或只剩墓碑（removed:true——卸载 flush 不复活）。
-  const swept = keyAfterClose === null || JSON.parse(keyAfterClose).removed === true;
-  check("④ UI 关闭会话后 entry 被即时清扫（墓碑）", swept, keyAfterClose?.slice(0, 60));
+  const keyAfterClose = await readIdbRecord(page, cacheKey);
+  // 清扫语义 = 无可用缓存：记录消失或只剩墓碑（removed:true——卸载 flush 不复活）。
+  const swept = keyAfterClose === null || keyAfterClose.removed === true;
+  check(
+    "④ UI 关闭会话后 entry 被即时清扫（墓碑）",
+    swept,
+    keyAfterClose === null ? "record=null" : JSON.stringify(keyAfterClose).slice(0, 60),
+  );
 
   console.log("");
   console.log(`共 ${pass + fail} 项：${pass} pass / ${fail} fail`);
