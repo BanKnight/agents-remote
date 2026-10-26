@@ -2067,3 +2067,9 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 **② 03h 空态「从历史恢复」tinted 次按钮**：`EmptyProjectState` 主 CTA 下加 tinted 次按钮（h-10 w-[200px] rounded-full `bg-primary/15` + `clock.arrow.circlepath` 图标）→ 打开 03n 历史浮层——iOS filled → tinted → 文字链三级动作层级；`onOpenHistory` prop 注入（mobile-workbench 装配 `setHistorySheetOpen`）。
 
 **③ 设置行 iOS grouped list 对齐**（四轮真机迭代收口）：root/detail 全部值行的「›」字符（12px）换 **RowChevron** 共享件（`file-tree-rows.tsx` 既有件，16 网格 strokeWidth 2 → 14px 时线宽 1.75px；Lucide 24 网格同尺寸仅 1.17px，比字符还弱）；**chevron 列提出 `.v` 贴行右缘**（`.setrow .ar` = flex 尾部子元素，全行 x 对齐——iOS grouped 铁律；旧结构箭头在值列内跟值走，位置随值长短漂移）；**值列防 flex 压缩**（`.v { flex-shrink: 0; max-width: 60% }` + 6 处 label 列 `flex-1`——detail 两行 cell 的 label basis = hint max-content 曾把值压到 17px）。⚠️ 机制沉淀：行尾 chevron **勿用 ShellIcon/LucideIcon**——其 svg 挂 utilities 层 `.size-full`，`.ar svg` 定尺寸规则（components 层）被 cascade layers 压过（曾致 chevron 撑成 194px 巨图挤爆值列）；RowChevron 裸 svg 无 class，消费方尺寸规则独占生效。probe-v2-m7-settings-auth 加 chevron 列对齐（6 行 right 极差 <0.5px）+ 垂直居中 + 值列无截断断言，77 断言全绿。
+
+### §6.15 离线提示条形态定稿：流内分隔 → 悬浮胶囊 → 全宽实底状态条（2026-10-26）
+
+**两代演进**：① `bd5ac6e` 悬浮化（用户报「重连后提示消失引发布局跳动」）——03i `.cap` 从流内分隔（占真实高度）改 absolute overlay 悬浮胶囊（回底浮球同层，出现/消失零布局跳动；capLeaving 淡出状态机 + `--duration-exit` 单源）。② 本批返工（用户报胶囊「太不明显、不自然」）——**全宽实底状态条**（微信「网络不可用」范式）：`.cap` 排版（11px 居中）+ `bg-surface` 实底 + 上下 `neutral-line` 边框 + `text-on-surface-muted`（review 消化：ink-3 对白底 ≈1.7:1 未达 WCAG，与空会话分支同墨阶）；文案去两侧 `——` 装饰（流内分隔时代产物）。位置仍贴 composer 上缘（`--composer-float-inset` + 0.375rem / `lg:bottom-4`），overlay 零跳动语义不变；**回底浮球让位**：横幅在场时浮球上移一个横幅高（`transition-all` 既有，退场平滑回落）。spec §4.7 断线条目同步。
+
+**探针**：`probe-offline-cap-banner.mjs`（真链路 routeWebSocket 路由级断连=飞行模式语义，非 mock 帧；移动 390 + 桌面 1280 直开两轮 17 断言：全宽/实底/边框/贴 composer/让位不相交/重连卸载/浮球回落）。⚠️ 探针踩出**既有产品 bug（待单独立批修）**：390 进页后 `setViewportSize` 切 1280 跨 lg 断点 → React error #310（hooks 数量两次渲染间漂移）渲染树崩、main 卸载——桌面浏览器小窗拉大是真实场景；基线（stash 本批改动）可复现，非本批引入；探针桌面轮改直开 1280 避开。

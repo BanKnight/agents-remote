@@ -708,7 +708,7 @@ export const en = {
   "claude.autoRetryPending.title": "Send failed · auto-retry scheduled",
   "claude.autoRetryPending.retryNow": "Retry now",
   "claude.retry.countSchedule": "Auto-resend in {{time}} · attempt {{attempt}}/{{max}}",
-  "claude.offlineCap": "—— Offline · new content will backfill after reconnect ——",
+  "claude.offlineCap": "Offline · new content will backfill after reconnect",
 
   // ── Workbench（三栏工作台外壳）──────────────────────────────
   "workbench.collapseLeft": "Collapse left panel",

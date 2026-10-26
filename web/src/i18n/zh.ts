@@ -703,7 +703,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude.autoRetryPending.title": "发送失败 · 自动重试已排程",
   "claude.autoRetryPending.retryNow": "立即重试",
   "claude.retry.countSchedule": "{{time}} 后自动重发 · 第 {{attempt}}/{{max}} 次",
-  "claude.offlineCap": "—— 离线中 · 此后内容将在重连后补齐 ——",
+  "claude.offlineCap": "离线中 · 此后内容将在重连后补齐",
 
   // ── Workbench（三栏工作台外壳）──────────────────────────────
   "workbench.collapseLeft": "收起左栏",

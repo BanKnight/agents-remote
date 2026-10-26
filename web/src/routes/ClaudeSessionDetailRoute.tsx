@@ -3327,6 +3327,10 @@ export function VirtualizedThreadContent({
     return () => clearTimeout(timer);
   }, [offlineCap]);
 
+  // 横幅可见性单源：悬浮条本体与回底浮球的让位条件共用——全宽横幅与浮球同锚点，同时
+  // 在场会重叠，浮球上移横幅高度让位（transition-all 已有，退场自动平滑回落）。
+  const offlineCapBarVisible = (offlineCap || capLeaving) && turns.length > 0;
+
   // ── Sticky-to-bottom ──────────────────────────────────────────────
   // stickyRef = "auto-follow new content". Our programmatic auto-scrolls
   // only ever increase scrollTop (toward bottom), so unpinning purely on a
@@ -3521,23 +3525,24 @@ export function VirtualizedThreadContent({
         </div>
         <div aria-hidden style={{ height: "var(--composer-float-inset, 1rem)" }} />
       </div>
-      {(offlineCap || capLeaving) && turns.length > 0 ? (
-        // 离线提示悬浮胶囊（回底浮球同层）。wrapper inset-x-10 给浮球留右下安全区——
-        // zh 胶囊 241px 实测互不叠，en 文案 306px 会撞浮球，max-w-full 限宽后自动换行。
-        // 整链 pointer-events-none：纯指示条（role=status 无交互），不挡下方滚动触摸。
-        // 淡出必须 fill-mode-forwards（frontend-notes §9）：tw-animate-css 默认 fill-mode:none
-        // 会播完闪回原位一帧才被卸载；时长显式消费 --duration-exit（§16 变量注入惯例）。
-        <div className="pointer-events-none absolute inset-x-10 bottom-[calc(var(--composer-float-inset,1rem)+0.375rem)] z-10 flex justify-center lg:inset-x-12 lg:bottom-4">
-          <div
-            role="status"
-            className={`cap max-w-full rounded-full bg-surface/95 px-3.5 py-1.5 shadow-lg backdrop-blur-sm ${
-              capLeaving
-                ? "animate-out fill-mode-forwards fade-out [--tw-animation-duration:var(--duration-exit)]"
-                : "animate-in fade-in slide-in-from-bottom-1"
-            }`}
-          >
-            {t("claude.offlineCap")}
-          </div>
+      {offlineCapBarVisible ? (
+        // 离线提示条 = 全宽实底状态条（2026-10-26 用户反馈「胶囊太不明显、不自然」返工，
+        // design-reviewer 消化：字色升 text-on-surface-muted、边框升全量 neutral-line——
+        // /60 发丝线在浅色下与流底仅差 ~7 灰阶，「不明显」原样保留）。系统状态条语义
+        // （微信「网络不可用」范式）——absolute overlay 零跳动语义不变，位置仍贴
+        // composer 上缘（浮球同层同锚点，在场时浮球让位）。整链 pointer-events-none：
+        // 纯指示条（role=status 无交互），不挡下方滚动触摸。淡出必须 fill-mode-forwards
+        // （frontend-notes §9）：tw-animate-css 默认 fill-mode:none 会播完闪回原位一帧
+        // 才被卸载；时长显式消费 --duration-exit（§16 变量注入惯例）。
+        <div
+          role="status"
+          className={`cap pointer-events-none absolute inset-x-0 bottom-[calc(var(--composer-float-inset,1rem)+0.375rem)] z-10 border-y border-neutral-line bg-surface py-1.5 text-on-surface-muted lg:bottom-4 ${
+            capLeaving
+              ? "animate-out fill-mode-forwards fade-out [--tw-animation-duration:var(--duration-exit)]"
+              : "animate-in fade-in slide-in-from-bottom-1"
+          }`}
+        >
+          {t("claude.offlineCap")}
         </div>
       ) : null}
       {showScrollButton && (
@@ -3545,7 +3550,12 @@ export function VirtualizedThreadContent({
           type="button"
           onClick={jumpToBottom}
           aria-label="Scroll to bottom"
-          className="pointer-events-auto absolute bottom-[calc(var(--composer-float-inset,1rem)+0.375rem)] right-3 z-10 rounded-full bg-neutral-line/90 p-2 text-on-surface-soft shadow-lg transition-all duration-300 ease-out hover:bg-neutral-line/90 hover:scale-110 lg:bottom-4 cursor-pointer"
+          className={`pointer-events-auto absolute right-3 z-10 rounded-full bg-neutral-line/90 p-2 text-on-surface-soft shadow-lg transition-all duration-300 ease-out hover:bg-neutral-line/90 hover:scale-110 cursor-pointer ${
+            // 离线横幅在场时上移一个横幅高（~1.875rem）让位，退场平滑回落。
+            offlineCapBarVisible
+              ? "bottom-[calc(var(--composer-float-inset,1rem)+2.25rem)] lg:bottom-[2.875rem]"
+              : "bottom-[calc(var(--composer-float-inset,1rem)+0.375rem)] lg:bottom-4"
+          }`}
         >
           <svg className="h-4 w-4" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path
