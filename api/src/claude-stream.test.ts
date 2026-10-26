@@ -191,6 +191,12 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     resolveControlModel?: (model: string | undefined) => Promise<string | undefined>;
     /** override getAgentMetadata 返回值（部分字段，如 provider）——injectUserPrompt 校验路径用。 */
     metadataOverride?: Record<string, unknown>;
+    /** getAgentMetadata 直接 reject——open() 失败路径（2026-10-26 骨架永驻批）用。 */
+    metadataError?: Error;
+    /** ensureRunning 直接 reject——open() 失败路径（respawn 抛错场景）用。 */
+    ensureRunningError?: Error;
+    /** claudeRuntime.stream 直接 reject——startStream 失败路径（订阅前抛错）用。 */
+    streamError?: Error;
   }) => {
     const writes: string[] = [];
     const injections: Array<{ key: string; line: string }> = [];
@@ -213,21 +219,33 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       close: async (key: string) => {
         closedKeys.push(key);
       },
-      ensureRunning: async () => {},
-      stream: async () => ({ close: () => {} }),
+      ensureRunning: opts?.ensureRunningError
+        ? async () => {
+            throw opts.ensureRunningError;
+          }
+        : async () => {},
+      stream: opts?.streamError
+        ? async () => {
+            throw opts.streamError;
+          }
+        : async () => ({ close: () => {} }),
     };
     const sessionRegistry = {
-      getAgentMetadata: async () => ({
-        projectPath: "/proj/demo",
-        claudeSessionId: "claude-1",
-        model: "sonnet",
-        permissionMode: "default",
-        effort: "high",
-        // injectUserPrompt 校验/寻址用（M4 D13）；WS message 路径不读。
-        provider: "claude",
-        runtimeKey: "ar-claude-claude-demo-sess-1",
-        ...opts?.metadataOverride,
-      }),
+      getAgentMetadata: opts?.metadataError
+        ? async () => {
+            throw opts.metadataError;
+          }
+        : async () => ({
+            projectPath: "/proj/demo",
+            claudeSessionId: "claude-1",
+            model: "sonnet",
+            permissionMode: "default",
+            effort: "high",
+            // injectUserPrompt 校验/寻址用（M4 D13）；WS message 路径不读。
+            provider: "claude",
+            runtimeKey: "ar-claude-claude-demo-sess-1",
+            ...opts?.metadataOverride,
+          }),
       setEffort: async (sessionId: string, effort: string) => {
         effortUpdates.push({ sessionId, effort });
       },
@@ -499,5 +517,53 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     controller.closeSessionSockets("ar-claude-claude-demo-sess-1");
     expect(a.closeCalls).toBe(1);
     expect(b.closeCalls).toBe(1);
+  });
+
+  // 2026-10-26 骨架永驻批：metadata 探活 / ensureRunning（respawn）曾落在 try/catch 之外，
+  // 抛错 → unhandled rejection → socket 保持 open 但从未订阅（无回放帧、无错误帧），而
+  // 心跳 pong 照常回复——客户端「已连接 + 骨架永驻」且永不自愈。钉：失败必达客户端
+  //（SESSION_RUNTIME_ERROR + close），任何失败路径都不留「open 但哑」的 socket。
+  test("open() metadata failure sends SESSION_RUNTIME_ERROR and closes (no silent zombie)", async () => {
+    const { controller } = makeController({ metadataError: new Error("registry boom") });
+    const socket = makeSocket();
+    await controller.open(socket);
+    expect(socket.closeCalls).toBe(1);
+    expect(socket.sends).toHaveLength(1);
+    const err = JSON.parse(socket.sends[0]!) as { type: string; code: string };
+    expect(err.type).toBe("error");
+    expect(err.code).toBe("SESSION_RUNTIME_ERROR");
+  });
+
+  test("open() ensureRunning failure sends SESSION_RUNTIME_ERROR and closes (respawn throw)", async () => {
+    const { controller } = makeController({ ensureRunningError: new Error("spawn boom") });
+    const socket = makeSocket();
+    await controller.open(socket);
+    expect(socket.closeCalls).toBe(1);
+    expect(socket.sends).toHaveLength(1);
+    const err = JSON.parse(socket.sends[0]!) as { type: string; code: string };
+    expect(err.type).toBe("error");
+    expect(err.code).toBe("SESSION_RUNTIME_ERROR");
+  });
+
+  test("open() startStream failure sends SESSION_RUNTIME_ERROR and closes (subscribe-less zombie)", async () => {
+    // stream() 抛错点在 addSubscriber 之前（proc 消失 "Session not registered" 等）——
+    // catch 必须与上方 open 失败 catch 对称 close：不 close 则 socket open 但从未订阅、
+    // pong 照常回复，客户端要等 15s 看门狗才自愈。
+    const { controller } = makeController({ streamError: new Error("Session not registered") });
+    const socket = makeSocket();
+    await controller.open(socket);
+    expect(socket.closeCalls).toBe(1);
+    expect(socket.sends).toHaveLength(1);
+    const err = JSON.parse(socket.sends[0]!) as { type: string; code: string };
+    expect(err.type).toBe("error");
+    expect(err.code).toBe("SESSION_RUNTIME_ERROR");
+  });
+
+  test("open() success path emits no error frames and keeps the socket open (regression guard)", async () => {
+    const { controller } = makeController();
+    const socket = makeSocket();
+    await controller.open(socket);
+    expect(socket.closeCalls).toBe(0);
+    expect(socket.sends).toEqual([]);
   });
 });

@@ -84,6 +84,16 @@ export class ClaudeSessionRelay {
     this.claudeSessionId = claudeSessionId;
   }
 
+  /** 订阅不得早于激活落定（不变量守卫）。doActivate 目前全同步——activate() 同一
+   *  tick 内 activatePromise 即落定，「pending」态不可观测，正常路径的 await 只是
+   *  一个已 resolve 的微任务；此守卫在 doActivate 未来引入 await（如 JSONL 读异步化）
+   *  时自动生效：否则 phase=init 期间 addSubscriber 会发出「full 回放但缓冲全空」，
+   *  且激活完成后不向既有 subscriber 补发。（activatePromise 为 null = activate 尚未
+   *  被调用，不阻塞。） */
+  ensureActive(): Promise<void> {
+    return this.activatePromise ?? Promise.resolve();
+  }
+
   addSubscriber(
     onData: (line: string) => void,
     onError: (err: Error) => void,

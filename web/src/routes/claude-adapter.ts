@@ -364,6 +364,21 @@ const claudeBridgeRegistry = new Map<string, ClaudeBridge>();
 const REPLAY_FLUSH_DEBOUNCE_MS = 2_000;
 const REPLAY_FLUSH_MAX_WAIT_MS = 10_000;
 
+// session_init 看门狗：onopen 后服务端必发 session_init（订阅建立的第一帧）。超时未到 =
+// socket open 但从未被订阅/静默掉订阅（服务端 open 失败、relay 竞态等半死形态），而心跳
+// pong 照常回复会永久掩盖——必须主动 close 触发重连自愈。放宽到 15s：合法慢路径 =
+// 服务端 respawn CLI + relay activate 同步读大 JSONL（可能数秒）；误报代价只是一次重连，
+// 且重连命中已 warm 的 relay。warn 同时是诊断通道：修复后若仍触发，说明还有未覆盖的
+// 静默路径（2026-10-26 骨架永驻批）。
+export const SESSION_INIT_WATCHDOG_MS = 15_000;
+
+// 重连退避：onclose → scheduleReconnect 按 500ms×2ⁿ（cap 30s）递增，session_init 到达
+// 或会话切换归零。基线 500ms 是既有节奏（正常瞬时断连一次即愈，不走退避增长面）；上限
+// 防持久失败（服务端 open 失败 error+close）退化成 ~2 次/秒的无界重连风暴（每次都可能
+// 带 CLI fork + 离线状态条闪烁）（2026-10-26 骨架永驻批 perf review）。
+export const RECONNECT_BASE_MS = 500;
+export const RECONNECT_MAX_MS = 30_000;
+
 export function claudeBridgeKey(projectName: string, sessionId: string): string {
   return `${projectName}/${sessionId}`;
 }
@@ -4483,6 +4498,8 @@ export function useClaudeSession(
   );
 
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 连续重连次数（scheduleReconnect 递增；session_init 到达 / 会话切换归零）——驱动退避。
+  const reconnectAttemptRef = useRef(0);
   // Index of the last confirmed interrupt control_response, or undefined. When
   // set, computeRunningCount treats that message position as a turn-close
   // boundary (the CLI replies control_response — not result — to an interrupt).
@@ -4769,10 +4786,12 @@ export function useClaudeSession(
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
     }
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** reconnectAttemptRef.current, RECONNECT_MAX_MS);
+    reconnectAttemptRef.current += 1;
     reconnectTimerRef.current = setTimeout(() => {
       reconnectTimerRef.current = null;
       setConnectionVersion((version) => version + 1);
-    }, 500);
+    }, delay);
   }, []);
 
   // KEPT: 后续需要去重时启用
@@ -4956,6 +4975,9 @@ export function useClaudeSession(
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
+    // 会话切换归零退避计数：退避语义是「同一会话的连续失败序列」，新会话不应继承
+    // 旧会话攒出的延迟（依赖数组只有 projectName/sessionId——重连重跑不经过这里）。
+    reconnectAttemptRef.current = 0;
   }, [projectName, sessionId]);
 
   // 回前台立即重连:移动端切后台一段时间后 WS 被中间层超时断开,回前台时不应
@@ -4999,6 +5021,13 @@ export function useClaudeSession(
 
     let cancelled = false;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+    let watchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearWatchdog = () => {
+      if (watchdogTimer) {
+        clearTimeout(watchdogTimer);
+        watchdogTimer = null;
+      }
+    };
     // 多端跟随（2026-10-16）：重连撞 terminal 守卫（SESSION_STATE_CONFLICT）= 会话已被
     // 其它端切成 terminal 形态——停止重连（ChatPanel 马上被 AgentPanelRouter 撤下），
     // onclose 据此跳过 scheduleReconnect。
@@ -5069,6 +5098,16 @@ export function useClaudeSession(
       console.log("[claude-adapter] ws open");
       lastPongRef.current = Date.now();
       setConnected(true);
+      // session_init 看门狗（SESSION_INIT_WATCHDOG_MS）：open 后服务端必先发 session_init。
+      // 超时未到 = open 但从未订阅的半死连接（pong 照常，心跳/浏览器都发现不了），主动
+      // close → onclose → 重连自愈；warn 留取证（见常量注释）。
+      watchdogTimer = setTimeout(() => {
+        watchdogTimer = null;
+        console.warn(
+          `[claude-adapter] session_init watchdog fired after ${SESSION_INIT_WATCHDOG_MS}ms — closing silent socket to reconnect (${projectName}/${sessionId})`,
+        );
+        socket.close();
+      }, SESSION_INIT_WATCHDOG_MS);
       // 应用层心跳:每 HEARTBEAT_INTERVAL_MS 发 ping,重置 cloudflare/NAT/Bun 三层
       // idle 超时,防前台空闲被中间层静默断开(浏览器无法发协议层 ping,只能 JSON)。
       heartbeatTimer = setInterval(() => {
@@ -5159,6 +5198,10 @@ export function useClaudeSession(
         // End markers render as a horizontal divider only when the
         // batch contained at least one visible content bubble.
         if (msg.type === "session_init") {
+          // 订阅建立的第一帧——看门狗完成使命（delta/full 都算，见常量注释）；
+          // 重连成功归零退避计数。
+          clearWatchdog();
+          reconnectAttemptRef.current = 0;
           if (msg.replay === "delta" && cursorRef.current != null) {
             // delta 重连：服务端确认了 since 锚，接下来只补锚后的行——保留全部 state
             //（rawMessages/scalars/tasks/UI 都不动），不 reset、不置 isResume（没有
@@ -5359,6 +5402,7 @@ export function useClaudeSession(
     };
 
     socket.onclose = () => {
+      clearWatchdog();
       // modeConflict 关闭同样清理连接态（review P3-7）：面板即将被撤下，但残留 connected/
       // loading 会让其它消费面读到假连接态；只跳过重连（重连注定再撞守卫）。
       if (modeConflict) {
@@ -5381,6 +5425,7 @@ export function useClaudeSession(
 
     return () => {
       cancelled = true;
+      clearWatchdog();
       if (heartbeatTimer) {
         clearInterval(heartbeatTimer);
         heartbeatTimer = null;

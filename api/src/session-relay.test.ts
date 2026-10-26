@@ -1090,3 +1090,47 @@ test("ClaudeSessionRelay ignores a nested uuid match and pins the top-level line
 
   relay.destroy();
 });
+
+test("ClaudeSessionRelay.ensureActive waits for in-flight activation (invariant pin)", async () => {
+  // 2026-10-26 骨架永驻批：订阅不得早于激活落定——phase=init 期间 addSubscriber 会发
+  // 「full 回放但缓冲全空」且激活完成后不补发。doActivate 目前全同步（pending 态不可
+  // 观测），实例覆写 gate 出可观察的慢激活来钉契约：若实现退化为 Promise.resolve()，
+  // ensureSettled 在激活 gated 期间即翻 true = fail。
+  const relay = new ClaudeSessionRelay();
+  const protoDoActivate = (
+    ClaudeSessionRelay.prototype as unknown as { doActivate: () => Promise<void> }
+  ).doActivate;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  (relay as unknown as { doActivate: () => Promise<void> }).doActivate = async () => {
+    await gate;
+    await protoDoActivate.call(relay);
+  };
+
+  const activating = relay.activate("", undefined);
+  let ensureSettled = false;
+  const ensuring = relay.ensureActive().then(() => {
+    ensureSettled = true;
+  });
+  // 排空宏任务：激活被 gate 挂起——若 ensureActive 没等 activatePromise，此刻已 settle。
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(ensureSettled).toBe(false);
+  release();
+  await Promise.all([activating, ensuring]);
+  expect(ensureSettled).toBe(true);
+
+  // 落定后订阅 = 正常 full 回放（激活结果可见，而非空窗口）。
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  expect(JSON.parse(received[0]!)).toMatchObject({ type: "session_init", replay: "full" });
+
+  // 从未 activate 的 relay：ensureActive 立即 resolve（悬挂会让本测试超时失败）。
+  await new ClaudeSessionRelay().ensureActive();
+});

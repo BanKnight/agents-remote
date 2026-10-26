@@ -5,7 +5,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { JSDOM } from "jsdom";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
-import { useClaudeSession } from "./claude-adapter";
+import { useClaudeSession, SESSION_INIT_WATCHDOG_MS } from "./claude-adapter";
 import {
   replayCacheKey,
   saveReplayCache,
@@ -195,6 +195,101 @@ describe("useClaudeSession websocket lifecycle", () => {
         vi.advanceTimersByTime(500); // scheduleReconnect 的 500ms 退避
       });
       await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("session_init watchdog closes a silent-but-open socket and reconnects", async () => {
+    // 2026-10-26 骨架永驻批：socket open 但从未被订阅时（服务端 open 失败等半死形态），
+    // pong 照常回复——心跳/浏览器都发现不了，骨架永驻。open 后 SESSION_INIT_WATCHDOG_MS
+    // 内没等到 session_init → 主动 close → onclose → 500ms 重连自愈。
+    vi.useFakeTimers();
+    try {
+      renderHook(() => useClaudeSession("proj", "sess"));
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+      const socket = MockSocket.instances[0];
+      act(() => socket.open());
+
+      // 容差内不误杀：差 1ms 到期仍是 OPEN。
+      act(() => {
+        vi.advanceTimersByTime(SESSION_INIT_WATCHDOG_MS - 1);
+      });
+      expect(socket.readyState).toBe(MockSocket.OPEN);
+
+      // 到期：看门狗关掉半死连接。
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(socket.readyState).toBe(MockSocket.CLOSED);
+
+      act(() => {
+        vi.advanceTimersByTime(500); // scheduleReconnect 的 500ms 退避
+      });
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("session_init arrival disarms the watchdog (no false kill on slow replay)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useClaudeSession("proj", "sess"));
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+      const socket = MockSocket.instances[0];
+      act(() => socket.open());
+      act(() => {
+        socket.emit({ type: "session_init", resume: false, replay: "full" } as never);
+      });
+
+      // 订阅建立的第一帧已到——远超看门狗时长也不误杀（合法慢路径：respawn + 大 JSONL
+      // 读期间连接保活）。loading 仍 true（full 回放尚未开始），但 socket 必须活着。
+      act(() => {
+        vi.advanceTimersByTime(SESSION_INIT_WATCHDOG_MS * 2);
+      });
+      expect(socket.readyState).toBe(MockSocket.OPEN);
+      expect(result.current.loading).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("persistent reconnect failure backs off exponentially (500ms then 1s)", async () => {
+    // perf review（2026-10-26 骨架永驻批）：服务端 open 失败 error+close 成受控重连循环后，
+    // 固定 500ms = ~2 次/秒无界风暴（CLI fork + 状态条闪烁）。钉退避：连续 onclose 下
+    // 重连延迟 500ms → 1s 指数增长（cap 30s 不在此测——只钉增长方向）。
+    vi.useFakeTimers();
+    try {
+      renderHook(() => useClaudeSession("proj", "sess"));
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+      const failSocket = (socket: MockSocket) => {
+        act(() => socket.open());
+        // 模拟服务端 open 失败快速失败：直接 close（onclose → scheduleReconnect 退避）。
+        act(() => socket.close());
+      };
+
+      failSocket(MockSocket.instances[0]!);
+      // 第 1 次重连：500ms（2⁰）。差 1ms 不连、到点连上。
+      act(() => {
+        vi.advanceTimersByTime(499);
+      });
+      expect(MockSocket.instances).toHaveLength(1);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+
+      failSocket(MockSocket.instances[1]!);
+      // 第 2 次重连：1s（2¹）——若退避没生效仍会 500ms 就连上，此断言 fail。
+      act(() => {
+        vi.advanceTimersByTime(999);
+      });
+      expect(MockSocket.instances).toHaveLength(2);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(3));
     } finally {
       vi.useRealTimers();
     }

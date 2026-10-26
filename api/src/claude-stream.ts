@@ -309,37 +309,54 @@ export class ClaudeStreamController {
     console.log(`[claude-stream] open: sessionId=${data.sessionId} tmux=${data.runtimeKey}`);
     this.registerSocket(data.runtimeKey, socket);
 
-    // Resolve metadata for projectPath and claudeSessionId
-    const metadata = await this.sessionRegistry.getAgentMetadata(data.projectName, data.sessionId);
-    console.log(
-      `[claude-stream] metadata found=${!!metadata} claudeSessionId=${metadata?.claudeSessionId ?? "none"}`,
-    );
+    // metadata 探活 + ensureRunning（可能 respawn CLI）必须在 try 内：这里任何抛错若不接住，
+    // socket 会保持 open 但从未订阅（无回放帧、无错误帧），而心跳 pong 照常回复——客户端
+    // 「已连接 + 骨架永驻」且永不自愈（pong 掩盖半死连接）。
+    try {
+      // Resolve metadata for projectPath and claudeSessionId
+      const metadata = await this.sessionRegistry.getAgentMetadata(
+        data.projectName,
+        data.sessionId,
+      );
+      console.log(
+        `[claude-stream] metadata found=${!!metadata} claudeSessionId=${metadata?.claudeSessionId ?? "none"}`,
+      );
 
-    // 双模式守卫（agent-tui）：terminal 形态的 claude 会话没有 headless 进程可拉——拉起会与
-    // tmux pane 里的 CLI 同 claudeSessionId 双写 JSONL。前端 terminal 形态渲染
-    // AgentTerminalPanel（session-stream），不应连 claude-stream；误连时回明确错误。
-    if (metadata?.mode === "terminal") {
+      // 双模式守卫（agent-tui）：terminal 形态的 claude 会话没有 headless 进程可拉——拉起会与
+      // tmux pane 里的 CLI 同 claudeSessionId 双写 JSONL。前端 terminal 形态渲染
+      // AgentTerminalPanel（session-stream），不应连 claude-stream；误连时回明确错误。
+      if (metadata?.mode === "terminal") {
+        send(socket, {
+          type: "error",
+          code: "SESSION_STATE_CONFLICT",
+          message: "Session is in terminal mode",
+        });
+        return;
+      }
+
+      // Ensure the Claude process is running (respawn with --resume if needed)
+      await this.claudeRuntime.ensureRunning(
+        data.runtimeKey,
+        metadata?.projectPath ?? "",
+        data.projectName,
+        data.sessionId,
+        metadata?.claudeSessionId,
+        metadata?.modelAlias ?? metadata?.model,
+        metadata?.permissionMode,
+        metadata?.effort,
+        // respawn 恢复:落盘 done/error 存活到被替换(spawnInitialStatus 归一)。
+        metadata?.status ? spawnInitialStatus(metadata.status) : undefined,
+      );
+    } catch (e) {
+      console.error(`[claude-stream] open failed ${data.sessionId}`, e);
       send(socket, {
         type: "error",
-        code: "SESSION_STATE_CONFLICT",
-        message: "Session is in terminal mode",
+        code: "SESSION_RUNTIME_ERROR",
+        message: "Failed to open Claude session",
       });
+      socket.close();
       return;
     }
-
-    // Ensure the Claude process is running (respawn with --resume if needed)
-    await this.claudeRuntime.ensureRunning(
-      data.runtimeKey,
-      metadata?.projectPath ?? "",
-      data.projectName,
-      data.sessionId,
-      metadata?.claudeSessionId,
-      metadata?.modelAlias ?? metadata?.model,
-      metadata?.permissionMode,
-      metadata?.effort,
-      // respawn 恢复:落盘 done/error 存活到被替换(spawnInitialStatus 归一)。
-      metadata?.status ? spawnInitialStatus(metadata.status) : undefined,
-    );
 
     // History and live cache are replayed from the relay on connect.
     // The relay sends history_start/end and live_start/end batch markers.
@@ -353,6 +370,11 @@ export class ClaudeStreamController {
         code: "SESSION_RUNTIME_ERROR",
         message: "Failed to start Claude stream",
       });
+      // 此处抛错点在 addSubscriber 之前（stream() 找不到 proc / ensureActive 拿到
+      // rejected activatePromise）= socket open、已注册、从未订阅的半死形态——与上方
+      // open 失败 catch 对称快速失败，靠 close 触发客户端重连；不 close 则心跳 pong
+      // 照常回复，客户端永不自愈。
+      socket.close();
     }
   }
 

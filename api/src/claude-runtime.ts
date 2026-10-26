@@ -776,6 +776,12 @@ export class ClaudeRuntime implements RuntimeResources {
       await relay.activate(proc.projectPath, proc.claudeSessionId).catch(() => {
         this.relays.delete(sessionName);
       });
+    } else {
+      // 订阅不得早于激活落定（不变量守卫）：doActivate 目前全同步，这里的 await 只是
+      // 一个已 resolve 的微任务；若 doActivate 未来异步化，这里保证不订阅进「full 回放
+      // 但缓冲全空」且激活后不补发的 init 期 relay。doActivate 若真 reject，await 会
+      // 先于 addSubscriber 抛出、经 startStream 的 catch（error 帧 + close）呈现。
+      await relay.ensureActive();
     }
 
     // Resume 恢复（两段）：① JSONL 同步先行——seed 立即带上最后一条有效 assistant
