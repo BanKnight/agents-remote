@@ -15,6 +15,13 @@ import { isCompactBoundarySubtype, isOneClickApprovable } from "@agents-remote/s
 import { claudeStreamUrl } from "../api/client";
 import type { PendingAttachments } from "@/components/ui/composer-attach";
 import {
+  loadReplayCache,
+  replayCacheKey,
+  saveReplayCache,
+  REPLAY_CACHE_MAX_ENTRY_CHARS,
+  REPLAY_CACHE_MAX_LINES,
+} from "../lib/claude-replay-cache";
+import {
   formatCanvasSelectionContext,
   type CanvasSelectionContext,
 } from "../lib/canvas-context-model";
@@ -351,6 +358,10 @@ export const ClaudeBridgeContext = createContext<ClaudeBridge | null>(null);
 // 注销；选择面打开时同步取用（ℹ sheet 必然晚于 chat 主体挂载，bridge 必已注册）。非响应式：
 // 取用方是打开瞬间的闭包，不需要订阅注册变化。
 const claudeBridgeRegistry = new Map<string, ClaudeBridge>();
+
+// 回放缓存落盘节奏：trailing debounce + maxWait（注释见 scheduleReplayFlush）。
+const REPLAY_FLUSH_DEBOUNCE_MS = 2_000;
+const REPLAY_FLUSH_MAX_WAIT_MS = 10_000;
 
 export function claudeBridgeKey(projectName: string, sessionId: string): string {
   return `${projectName}/${sessionId}`;
@@ -4047,6 +4058,11 @@ export function useClaudeSession(
   useEffect(() => {
     rawMessagesRef.current = rawMessages;
   }, [rawMessages]);
+  // rendered 空间的镜像（commit 后由 effect 写入）：WS effect 闭包捕获 mount 渲染的
+  // 空数组，session_init delta 分支的 deltaEnter.from 必须读镜像——恢复场景 effect
+  // 不重跑、闭包不重建，读闭包变量会把整个恢复窗口套上淡入动画（连接级重连碰巧正确，
+  // 因为重连 effect 重跑时闭包恰好是断线前最新渲染值）。
+  const renderedMessagesRef = useRef<ThreadMessageLike[]>([]);
   const messageMapRef = useRef<Map<string, SessionStreamServerMessage>>(new Map());
   const historyBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
   const liveBatchRef = useRef<SessionStreamServerMessage[] | null>(null);
@@ -4539,6 +4555,86 @@ export function useClaudeSession(
   }, [initialPermissionMode, permissionMode]);
 
   const cursorRef = useRef<string | null>(null);
+  // ── 跨 remount 回放缓存（claude-replay-cache.ts）──
+  // 锚 + raw 窗口持久化到 localStorage，remount 恢复后 WS 带 since → 服务端 delta 只补
+  // 离开期间的增量（连接级 delta 的锚活在内存，页面级重建后必全量——用户观察的「每次
+  // 重连都从旧的地方加载到最新」缺口）。行采集在 ingestion 侧（原始 JSON 行，不含
+  // batch_boundary 合成 divider），恢复 = 逐行 parse 走现有 processBatch，零新处理路径。
+  // 本会话累计的原始行窗口：flush 时整体落盘（截头/字节 cap/LRU 在 cache 层做）。
+  const replayLinesRef = useRef<string[]>([]);
+  const replayKeyRef = useRef<string | null>(null);
+  // 会话代数：切会话/重挂载 ++，旧会话的已排队 flush 回调执行时发现 gen 漂移即丢弃
+  //（数据已由切会话分支的同步 flush 落盘）——flush 总读当前 ref，gen 是唯一的串档防线。
+  const replayGenRef = useRef(0);
+  // 自上次落盘以来行窗口是否有变化：恢复置 true（内容就是盘上的），采集置 false——
+  // 恢复后的到点 flush 不重写同一份数据。
+  const replayCleanRef = useRef(true);
+  // 内存窗口的字符总量（与落盘同一口径）：采集侧按「行数 + 字符」双 cap 裁剪，防大
+  // tool_result 让常驻 ref 无界增长（此前字符 cap 只作用于落盘副本，从不回写）。
+  const replayCharsRef = useRef(0);
+  const replayDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replayMaxWaitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replayFlush = useCallback(() => {
+    if (replayDebounceRef.current) {
+      clearTimeout(replayDebounceRef.current);
+      replayDebounceRef.current = null;
+    }
+    if (replayMaxWaitRef.current) {
+      clearTimeout(replayMaxWaitRef.current);
+      replayMaxWaitRef.current = null;
+    }
+    if (replayCleanRef.current || !replayKeyRef.current) return;
+    // 锚不传：cache 层从窗口尾逆序推导（与恢复端 processBatch 的行内推导同源）——
+    // cursorRef 可能落后于采集窗口（history 批次先采集、history_end 才 processBatch）。
+    saveReplayCache(replayKeyRef.current, isResumeRef.current, replayLinesRef.current);
+    replayCleanRef.current = true;
+  }, []);
+  // trailing debounce + maxWait：纯 debounce 在连续流式期间被每条 append 无限重置
+  //（thinking_tokens/assistant 逐条到达），长回合期间永不落盘、PWA 被杀丢整个回合——
+  // maxWait 强制周期性落盘。gen 漂移检查见 replayGenRef 注释。
+  const scheduleReplayFlush = useCallback(() => {
+    replayCleanRef.current = false;
+    const gen = replayGenRef.current;
+    if (replayDebounceRef.current) clearTimeout(replayDebounceRef.current);
+    replayDebounceRef.current = setTimeout(() => {
+      replayDebounceRef.current = null;
+      if (gen === replayGenRef.current) replayFlush();
+    }, REPLAY_FLUSH_DEBOUNCE_MS);
+    if (!replayMaxWaitRef.current) {
+      replayMaxWaitRef.current = setTimeout(() => {
+        replayMaxWaitRef.current = null;
+        if (gen === replayGenRef.current) replayFlush();
+      }, REPLAY_FLUSH_MAX_WAIT_MS);
+    }
+  }, [replayFlush]);
+  /**
+   * 采集一行原始 JSON（ingestion 侧）——**只入窗 + 裁剪，不调度**。调度由调用方在
+   * 批结束（history_end/live_end）或整帧处理完（per-message 单行）时调一次
+   * `touchReplayFlush`：回放 burst 可上万行，批内逐行 clearTimeout+setTimeout 纯属浪费
+   * （同宏任务里只有最后一次生效）。
+   */
+  const pushReplayLine = useCallback((line: string) => {
+    replayLinesRef.current.push(line);
+    replayCharsRef.current += line.length + 1;
+    const lines = replayLinesRef.current;
+    // 行数粗剪：每 600 次 push 触发一次，摊还 O(1)。
+    if (lines.length > REPLAY_CACHE_MAX_LINES * 2) {
+      const kept = lines.slice(-REPLAY_CACHE_MAX_LINES);
+      replayLinesRef.current = kept;
+      replayCharsRef.current = kept.reduce((sum, l) => sum + l.length + 1, 0);
+      return;
+    }
+    // 字符 cap 与落盘同口径：超限从头部丢行（锚在尾部天然保留；窗口首行落在回合
+    // 中间已由恢复路径容忍，见「回合中间起点」单测）。摊还 O(1)：每行只被丢一次。
+    if (replayCharsRef.current > REPLAY_CACHE_MAX_ENTRY_CHARS) {
+      let start = 0;
+      while (replayCharsRef.current > REPLAY_CACHE_MAX_ENTRY_CHARS && start < lines.length - 1) {
+        replayCharsRef.current -= lines[start]!.length + 1;
+        start += 1;
+      }
+      if (start > 0) replayLinesRef.current = lines.slice(start);
+    }
+  }, []);
   // ── delta 重连（增量回放）──
   // deltaReplayRef：本连接的回放是增量（session_init.replay==="delta" 且本地有锚）。
   // gate 三件事：processBatch 防御去重、divider 抑制、liveStart 基准修正。
@@ -4855,6 +4951,22 @@ export function useClaudeSession(
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, []);
 
+  // 回放缓存落盘三点（use-attach-debug 同款惯例）：PWA 切后台（hidden）/ 页面卸载
+  //（pagehide，iOS 回收前最后时机）/ 组件卸载（离开会话页）——pending 行窗口立即
+  // flush，不等 debounce。
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") replayFlush();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", replayFlush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", replayFlush);
+      replayFlush();
+    };
+  }, [replayFlush]);
+
   useEffect(() => {
     const sessionKey = `${projectName}/${sessionId}`;
     const isSessionChange =
@@ -4870,13 +4982,49 @@ export function useClaudeSession(
 
     // Reset on session change or initial mount; reconnect otherwise.
     if (isSessionChange || connectionVersion === 0) {
+      // 先落旧会话的 pending 行窗口（replayKeyRef 还是旧的），再换代作废已排队的
+      // debounce/maxWait 回调（gen 漂移检查）——顺序反了会把新会话数据写进旧 key。
+      replayFlush();
+      replayGenRef.current += 1;
       resetSessionState();
+      replayLinesRef.current = [];
+      replayCharsRef.current = 0;
+      replayKeyRef.current = replayCacheKey(projectName, sessionId);
       // Connection state belongs to the socket lifecycle (onopen/onclose), not to
       // resetSessionState — which is ALSO invoked from the onmessage session_init
       // branch on every (re)connect, after onopen already set connected=true.
       // Resetting it there would leave connected=false forever while messages
       // replay. Here (pre-open) it's the correct pre-open baseline.
       setConnected(false);
+      // 跨 remount 恢复（claude-replay-cache）：命中即恢复尾部窗口——先于 URL 构造，
+      // cursorRef 由 processBatch 从行内 uuid 推导，连接自动带上 since 锚。恢复行
+      // 全部是已归档内容 → liveStartRef=行数（整窗视作 history，防 delta 补齐前的
+      // 假 running/假 Thinking 指示；服务端对 delta 也恒发四个 batch 标记，随后按
+      // 公式修正）；isResumeRef 写回窗口快照（孤儿 tool_use 的 interrupted 语义）。
+      // ⚠️ 恢复路径不得注入 batch_boundary divider——「恢复行数 = raw 增量 1:1」是
+      // liveStart 公式与 delta 回合 liveStart 基准的共同前提。
+      const cached = loadReplayCache(replayKeyRef.current);
+      if (cached) {
+        const parsed: SessionStreamServerMessage[] = [];
+        for (const line of cached.raw) {
+          try {
+            parsed.push(JSON.parse(line) as SessionStreamServerMessage);
+          } catch {
+            // skip malformed cached line
+          }
+        }
+        if (parsed.length > 0) {
+          // messageMapRef 重建 + scalar 折叠 + cursorRef 推导全在 processBatch 内；
+          // 恢复行里已有 batch 内容，无 divider（缓存行不含合成行），1:1 成立。
+          processBatch(parsed);
+          liveStartRef.current = parsed.length;
+          isResumeRef.current = cached.resume;
+          setLoading(false);
+          replayLinesRef.current = [...cached.raw];
+          replayCharsRef.current = cached.raw.reduce((sum, line) => sum + line.length + 1, 0);
+          replayCleanRef.current = true;
+        }
+      }
     } else {
       setLoading(true);
     }
@@ -4936,6 +5084,7 @@ export function useClaudeSession(
           try {
             const parsed = JSON.parse(line) as SessionStreamServerMessage;
             target.push(parsed);
+            pushReplayLine(line);
             // Mirror handleTextFrame's ws recv log so the (compressed) history
             // and live batches are also visible row-by-row when socket logging
             // is on — otherwise only the text-frame batch markers show up.
@@ -4945,6 +5094,8 @@ export function useClaudeSession(
             // skip malformed batch line
           }
         }
+        // 整批只调度一次（批内逐行调度只有最后一次生效，纯浪费）。
+        scheduleReplayFlush();
       }
       // historyDecompress = client CPU added by compression (DecompressionStream +
       // per-line parse). historyBlobBytes = compressed wire size. Together with
@@ -4987,16 +5138,21 @@ export function useClaudeSession(
             //（rawMessages/scalars/tasks/UI 都不动），不 reset、不置 isResume（没有
             // turn 被打断；增量段若悬空，补齐的 result 会正常闭合它）。
             deltaReplayRef.current = true;
-            replayCursorRef.current = rawMessages.length;
+            // 镜像而非闭包：恢复场景 effect 重跑不重建闭包，闭包里 rawMessages/rendered
+            // 是 mount 渲染的空数组——读闭包 = liveStart 落进恢复窗口内部（假 running）
+            // + 淡入动画覆盖整个恢复窗口。
+            replayCursorRef.current = rawMessagesRef.current.length;
             // from 取 rendered 空间：turn.startIndex 是 renderChatStream 投影的索引，
             // rawMessages.length（raw 空间）在有 HiddenDropped/合并的会话里普遍偏大，
-            // 混用 = 没有任何 turn 命中范围。重连闭包的 renderedMessages = 断线前
-            // 最新投影（与 rawMessages 同样的时序论证：重连期间无并发追加）。
-            setDeltaEnter({ from: renderedMessages.length, to: Number.POSITIVE_INFINITY });
+            // 混用 = 没有任何 turn 命中范围。
+            setDeltaEnter({
+              from: renderedMessagesRef.current.length,
+              to: Number.POSITIVE_INFINITY,
+            });
             if (isSocketLoggingEnabled())
               console.log(
                 "[claude-adapter] session_init delta replay from=",
-                renderedMessages.length,
+                renderedMessagesRef.current.length,
               );
           } else {
             // Full replay (or pre-delta server) — discard all state from the prior
@@ -5057,6 +5213,8 @@ export function useClaudeSession(
             liveStartRef.current = batch.length;
           }
           processBatch(batch);
+          // 缓存落盘调度（批末一次，批内只入窗）。
+          scheduleReplayFlush();
           if (deltaReplayRef.current) {
             replayCursorRef.current += batch.length;
           }
@@ -5088,6 +5246,8 @@ export function useClaudeSession(
           const batch = liveBatchRef.current ?? [];
           liveBatchRef.current = null;
           processBatch(batch);
+          // 缓存落盘调度（批末一次，批内只入窗）。
+          scheduleReplayFlush();
           // delta 回合封口：to 不能在此处取值——renderedMessages 是 rawMessages 的
           // memo，同宏任务内增量还没投影。置 pending，由下方 effect 在投影落地后
           // 用最新 renderedMessages.length 收口并延迟摘除动画 class。
@@ -5117,11 +5277,13 @@ export function useClaudeSession(
         // In batch collection — buffer, don't process yet
         if (historyBatchRef.current) {
           historyBatchRef.current.push(msg);
+          pushReplayLine(raw);
           if (trackArrival) tickArrival(arriveMs, performance.now() - arriveMs);
           return;
         }
         if (liveBatchRef.current) {
           liveBatchRef.current.push(msg);
+          pushReplayLine(raw);
           return;
         }
 
@@ -5131,6 +5293,8 @@ export function useClaudeSession(
           messageMapRef.current.set(liveUuid, msg);
           cursorRef.current = liveUuid;
         }
+        pushReplayLine(raw);
+        scheduleReplayFlush();
         appendRawMessages([msg]);
         applyMessageScalarState(msg);
         setLoading(false);
@@ -5231,6 +5395,13 @@ export function useClaudeSession(
         : renderChatStream(chatStream, { isResume: isResumeRef.current }),
     [chatStream],
   );
+  // commit 后镜像 rendered 长度（deltaEnter.from 的唯一读取方是 WS 事件回调，必然晚于
+  // 本次 commit——effect 时序足够，且避免 render-phase 写 ref 的并发渲染理论风险）。
+  // 不能读 JSX 闭包：恢复场景 WS effect 不因 setState 重跑，闭包里的 rendered 是
+  // mount 渲染的空数组。
+  useEffect(() => {
+    renderedMessagesRef.current = renderedMessages;
+  }, [renderedMessages]);
 
   // delta 回合封口：增量段已投影（renderedMessages 落地），用最新 rendered 长度收口
   // 淡入范围，再延迟清 null——动画 class 摘除后虚拟列表滚出/滚回重挂不再重播淡入

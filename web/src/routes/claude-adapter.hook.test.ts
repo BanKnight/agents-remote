@@ -2,9 +2,11 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { JSDOM } from "jsdom";
 import type { SessionStreamServerMessage } from "@agents-remote/shared";
 import { useClaudeSession } from "./claude-adapter";
+import { replayCacheKey, saveReplayCache } from "../lib/claude-replay-cache";
 import { queryClient } from "../lib/query-client";
 import { setSocketLoggingEnabled } from "../lib/debug-flags";
 import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
@@ -85,6 +87,9 @@ beforeEach(() => {
   globalThis.window = dom.window as unknown as Window & typeof globalThis;
   globalThis.document = dom.window.document as unknown as Document;
   globalThis.navigator = dom.window.navigator as unknown as Navigator;
+  // 回放缓存恢复用例需要真实可用的 localStorage（裸 bun 环境没有）；每测试新 JSDOM =
+  // 隔离存储，串档不可能。
+  globalThis.localStorage = dom.window.localStorage;
   Object.defineProperty(globalThis, "location", {
     configurable: true,
     value: dom.window.location,
@@ -1682,3 +1687,152 @@ describe("useClaudeSession cost-state 标量（CLI 2.1.299+）", () => {
 // session_status 标量（原 describe「useClaudeSession sessionStatus 标量」）已随壳/内容
 // 分离拆除（2026-10-19）：壳状态走 sessions-stream（use-session-shells），chat 流不再
 // 承载 turn 状态——消费面读 REST detail（sessions-stream invalidate 保鲜）。
+
+// ── 跨 remount 回放缓存恢复（claude-replay-cache）────────────────────────────
+// 锚 + raw 尾窗持久化，remount 恢复后 WS 带 since → delta 只补离开期间的增量。
+// remount = renderHook → unmount → 二次 renderHook（composer-draft.test.tsx 同款模式）。
+describe("useClaudeSession 跨 remount 回放缓存恢复", () => {
+  const assistantMsg = (uuid: string, id: string, text: string) =>
+    ({
+      type: "assistant",
+      uuid,
+      message: { id, role: "assistant", content: [{ type: "text", text }] },
+      session_id: "s1",
+    }) as never;
+
+  test("remount 恢复：窗口未连 WS 即刻呈现 + 二次连接 URL 带 since 锚", async () => {
+    const first = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+    // 首连无缓存 → URL 不带 since。
+    expect(socket.url).not.toContain("since=");
+    act(() => {
+      socket.emit(assistantMsg("uuid-1", "a1", "first"));
+    });
+    expect(first.result.current.storeAdapter.messages).toHaveLength(1);
+
+    // unmount → cleanup replayFlush 同步落盘。
+    first.unmount();
+    const stored = localStorage.getItem("claudeReplayCache:proj/sess");
+    expect(stored).not.toBeNull();
+    const entry = JSON.parse(stored!);
+    expect(entry.cursorUuid).toBe("uuid-1");
+
+    // 二次 mount：恢复是 reset 分支内的同步动作——未连 WS 即已渲染。
+    const second = renderHook(() => useClaudeSession("proj", "sess"));
+    expect(second.result.current.rawMessagesRef.current).toHaveLength(1);
+    expect(second.result.current.loading).toBe(false);
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    expect(MockSocket.instances[1]!.url).toContain("since=uuid-1");
+    // 恢复渲染面与首连一致（1 条）。
+    expect(second.result.current.storeAdapter.messages).toHaveLength(1);
+    second.unmount();
+  });
+
+  test("恢复 + delta：保留状态补增量，deltaEnter.from = 恢复后 rendered 长度", async () => {
+    const first = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+    act(() => {
+      socket.emit(assistantMsg("uuid-1", "a1", "first"));
+    });
+    first.unmount();
+
+    const second = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    const reconnectSocket = MockSocket.instances[1];
+    expect(reconnectSocket.url).toContain("since=uuid-1");
+    act(() => reconnectSocket.open());
+    act(() => {
+      reconnectSocket.emit({ type: "session_init", resume: true, replay: "delta" } as never);
+      reconnectSocket.emit({ type: "history_start", count: 0 } as never);
+      reconnectSocket.emit({ type: "history_end" } as never);
+      reconnectSocket.emit({ type: "live_start", count: 1 } as never);
+      reconnectSocket.emit(assistantMsg("uuid-2", "a2", "second"));
+      reconnectSocket.emit({ type: "live_end" } as never);
+    });
+
+    // delta 路径不 reset：恢复窗口（a1）保留 + 增量（a2）补上 = 2 条,无 divider。
+    expect(second.result.current.storeAdapter.messages).toHaveLength(2);
+    // from = 恢复后 rendered 长度（1）——闭包过期会把 from 写成 0（整个恢复窗口
+    // 套上淡入动画）,此断言即 P0 前置修复的回归闸。
+    await waitFor(() => expect(second.result.current.deltaEnter).toEqual({ from: 1, to: 2 }));
+    second.unmount();
+  });
+
+  test("恢复后 session_init full → reset 重放（缓存窗口被服务端数据替换）", async () => {
+    const first = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+    act(() => {
+      socket.emit(assistantMsg("uuid-1", "a1", "first"));
+    });
+    first.unmount();
+
+    const second = renderHook(() => useClaudeSession("proj", "sess"));
+    expect(second.result.current.rawMessagesRef.current).toHaveLength(1); // 恢复在
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+    const reconnectSocket = MockSocket.instances[1];
+    act(() => reconnectSocket.open());
+    act(() => {
+      // 无 replay 字段 = full（锚 miss 场景）。
+      reconnectSocket.emit({ type: "session_init", resume: true } as never);
+      reconnectSocket.emit({ type: "history_start", count: 2 } as never);
+      reconnectSocket.emit(assistantMsg("uuid-1", "a1", "first"));
+      reconnectSocket.emit(assistantMsg("uuid-2", "a2", "second"));
+      reconnectSocket.emit({ type: "history_end" } as never);
+      reconnectSocket.emit({ type: "live_start", count: 0 } as never);
+      reconnectSocket.emit({ type: "live_end" } as never);
+    });
+
+    // full reset 清恢复窗口后按服务端数据重建：a1+a2 合并同 id a1（normalizeChatStream
+    // 按 message.id 分组）= 2 条 + divider。
+    expect(second.result.current.storeAdapter.messages).toHaveLength(3);
+    second.unmount();
+  });
+
+  test("StrictMode 双挂载恢复幂等（不翻倍、二次连接仍带锚）", async () => {
+    const first = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+    act(() => {
+      socket.emit(assistantMsg("uuid-1", "a1", "first"));
+    });
+    first.unmount();
+
+    // .ts 文件无 JSX——StrictMode 本身就是接受 children 的组件，直接作 wrapper。
+    // StrictMode double-effect 的两次 setup 都真实执行（模拟卸载重挂）→ 恢复分支
+    // 跑两遍 → 首轮 socket + 两个 since 连接 = 3 个；第二次恢复前 resetSessionState
+    // 清掉第一次的窗口 → 不翻倍。
+    const second = renderHook(() => useClaudeSession("proj", "sess"), { wrapper: StrictMode });
+    expect(MockSocket.instances).toHaveLength(3);
+    expect(second.result.current.rawMessagesRef.current).toHaveLength(1);
+    expect(second.result.current.storeAdapter.messages).toHaveLength(1);
+    expect(MockSocket.instances[1]!.url).toContain("since=uuid-1");
+    expect(MockSocket.instances[2]!.url).toContain("since=uuid-1");
+    second.unmount();
+  });
+
+  test("恢复窗口起点在回合中间（首行 assistant 无前置 user）渲染不崩", async () => {
+    // 尾窗语义下任意起点都可能成为窗口头——直接预写缓存（首行 assistant 开头）。
+    saveReplayCache(
+      replayCacheKey("proj", "sess"),
+      false,
+      [assistantMsg("uuid-1", "a1", "first"), assistantMsg("uuid-2", "a2", "second")].map((m) =>
+        JSON.stringify(m),
+      ),
+    );
+    const { result, unmount: um } = renderHook(() => useClaudeSession("proj", "sess"));
+    expect(result.current.rawMessagesRef.current).toHaveLength(2);
+    expect(result.current.storeAdapter.messages.length).toBeGreaterThan(0);
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    // 锚 = 行内推导的窗口尾（uuid-2），entry.cursorUuid 只是落盘时的对账快照——
+    // 实现不读它（缓存损坏不传播），断言「行内推导优先」。
+    expect(MockSocket.instances[0]!.url).toContain("since=uuid-2");
+    um();
+  });
+});
