@@ -1,54 +1,51 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-25(composer 抬高卡死修复提交 551b724:焦点不变式门闩;真机 8 样本实锤,待用户真机复测)
+> 最后更新:2026-10-26(增量回放跨 remount 恢复提交 081b51b;待用户真机复测)
 
 ## 一句话状态
 
-**composer 抬高卡死已修复(551b724):焦点不变式门闩**——真机 8 样本(用户截图)实锤卡死态全部 `focus=BODY`(iOS 键盘不可能在场)+ `var 334-351px` + src 全是 settle 源;根因 = 加载/回前台时 vv 过渡态被 settle 采样写入、终态 vv 事件永远不来。修复 = `measure()` 单点收口:无 editable 聚焦强制 `{0,false}`。探针 11/11、单测 910 pass、全门禁过。**待用户真机复测**(键盘开→切 app→回 / 正常切 app / 切会话)。
+**聊天记录同步量优化补全已落地并提交(081b51b)**:`d565ba4` 的增量回放锚活在组件内存,切走会话再切回 / PWA 被回收重载 / 刷新 = remount = 锚随 rawMessages 丢失 → 每次全量回放(用户观察「每次重连都从旧的地方加载到最新」)。修复 = 把「窗口尾锚 + 原始 JSON 行窗口 + resume 语义」持久化到 localStorage,remount 时恢复窗口即刻呈现 + WS 带 `?since=` → 服务端 `replay=delta` 只补增量。单测(12+5)全绿、全门禁过、真链路探针 7/7 绿。**待用户真机复测**(iPhone PWA 切走会话再切回 / 杀 PWA 重开进会话 → 直接看到最新,无「从旧加载」过程)。
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
-- **composer 抬高卡死修复(551b724,2026-10-25)**:真机 8 样本(badge 格式 `vv {vvH}/{innerH} t{top} off {off} var {varOff} src {src} {vis} {focus} age {age}ms {nav} fb {floatBottom}`)解码铁证——`focus=BODY` + `var 334-351px` + src 全 settle 源 = iOS 不变式级不可能状态。修复 = measure() 焦点门闩(无 INPUT/TEXTAREA/contenteditable 聚焦强制归零),单点收口全部写入路径;卡死态任何焦点变化/bg-fg 自愈。附带修 pinch-zoom 误抬 + `--kb-active` 误激活。残余记档不修:editable 聚焦期间 vv 冻结(8 样本无此形态,自愈路径在)。**既有测试语义被证伪**:原用例全在 BODY 焦点下期望非零 offset——随门闩一起改成 editable 预置。探针 Part 5 = 真实 blur + shrunk 回归闸。
-- **多图挂死真凶(2026-10-25 实锤)**:addFiles 循环 `attachmentsRef.current.length >= COMPOSER_MAX_ATTACHMENTS` 判定在 pick 已 commit 本批后执行——满额 4 张第一圈 break,零张处理。**修复 = `baseCount = length - entries.length` 按入册序号放行**(pick 的 usable slice 仍保证总量;循环判定只防处理中途追加新批超总量)。验证:真实链路 4 张 12MP 全 ready(角标 `at2 ready 4/4`)/ 探针 37 绿 / 服务端 `[attach-debug]` 收到 batch 4 真实样本。
-- **测试纪律(用户拍板强化)**:mock 探针验证逻辑,**交付前必须真实链路测试**(test 项目真实会话页 + 真实数据,零 mock)+ e2e;部署类改动(新 API 路由/埋点上报)验收 = 带鉴权直打真实端点看状态码。mock 探针的拦截式自证会把服务端断点挡在被测路径外(本次 attach-report 404 即此)。
-- **今晚 dev 进程假死两起**:①web vite build --watch 假死(6 天进程,touch 无效)→ respawn 全量重建;②api bun --watch 不热重载新路由(attach-report 404,带鉴权验证抓到)→ respawn 后 200。**「写了路由」≠「进程里有路由」;watch 假死第一动作 = respawn-pane,别 touch+轮询。**
-- **取证三件套已随 cc8534d 入库**(定案后拆):`web/src/lib/use-attach-debug.ts`(at2 角标+上报)+ composer-attach 打点 + api `/api/debug/attach-report` + `scripts/probe-attach-debug.mjs`。
-- **多图挂死根因(2026-10-25,§22 证据纪律成功案例)**:「一直转圈」与 138bf39「20s 必变处理失败」矛盾 → 第一疑点验部署:43012 产物 grep `timeout after` 零命中 → touch main.tsx 180s 无反应(watch 彻底假死,6 天进程)→ `tmux respawn-pane -k -t ar-dev:web 'scripts/ar-dev-web.sh'` 全量重建 → 懒加载 chunk `ChatSessionDetailRoute-D_LHWrrT.js` 含特征串 + CSS 硬闸绿。**教训:验证产物特征串别只扫 index.html 引用的 entry——懒加载 chunk 不在 index.html 里;直接 `rg` dist 目录最可靠。**
-- **UI 准则(用户两次表述,永久遵守)**:「避免没必要的次要标签和描述,让布局 do the explaining」→ memory `ui-layout-explains-not-text`;落地:处理中 = 变暗遮罩(`bg-black/45`)+ 右下角 spinner,无文字;可见文字只留数据(百分比/+N)与错误(「处理失败」);aria/title 不受限。
-- **图片归一化串行链**(138bf39):`imageChain = imageChain.then(...)` 逐张——iPhone 4 张 12MP 并发 createImageBitmap+canvas 数分钟不完成(WebKit 解码/内存压力);`IMAGE_NORMALIZE_TIMEOUT_MS = 20_000` + `withTimeout`(不取消底层,仅放弃等待);text 并行、file 串行,三组互不等待。
-- **失败重试**(43fb3b4,用户拍板「状态操作槽」):`ComposerAttachment.file?` 持原始 File;retry = 重建 objectURL 回 uploading + 重跑归一化;灰底 chip 整块可点(§31 命中区⊇视觉)+ 右下角 ↻。
-- **COMPOSER_MAX_ATTACHMENTS = 8**(cc8534d 用户拍板提到 8 张,前提不冲 CF 限制):CF tunnel 代理层对 WS 帧无硬限,真闸是 Bun WS 默认 `maxPayloadLength` 16MB(超限断连 1009)→ api 侧显式 48MB(8 × 5MB ≈ 40MB 最坏 + 包壳余量),两处注释互相指向须联动。超出静默截断 → 行尾「+N」overflow chip(完整说明进 aria/title,chip 只放数字——布局自解释范式)。
-- **加号一键直达**(cc8534d,用户 AskUserQuestion 拍板):点 + 不再弹自有 ActionMenu,直接 `input.click()` 触发系统面板。iOS 对 `<input type=file>` 本就强制弹拍照/图库/文件三分支,自有菜单纯重复;input 不设 accept,选中文件统一交 onFiles 分流。
-- **lightbox ✕ safe-area**(c47d11b):`top-[calc(env(safe-area-inset-top,0px)+0.75rem)]`——standalone PWA viewport-fit=cover 下裸 top-3 落状态栏被系统吃 =「关不掉」根因(§1 家族);`ImageViewer showDownload` 开关(composer 预览传 false 隐藏「另存」)。
-- **× 移除钮命中区分离**(3090bba):触屏默认 36px wrapper,`hover-capable:` 收 20px,盘中心两态重合;zoom 按钮与键盘删除键 `handleDeleteKey`。
-- 周期一/前批决策仍有效:objectURL 五出口生命周期、file 上传串行(keepBoth 竞态)、XHR 进度两重收敛、进度条 absolute 防高度塌、「+N」计数任何 remove/clear 清零。
+- **非 bug 的诊断结论**:增量回放(reconnect delta)本身工作正常——服务端日志实证同页面断线重连大量 `replay=delta`。缺口纯粹是**锚的持久化范围**:设计只覆盖「连接级重连」,不覆盖「组件级 remount」。修复属 `state-sync-principles.md` 的「上下文不足」难题:客户端要保住自己的上下文(锚 + 锚点处数据)才能按需同步。
+- **无损论证**:当前 full replay 的数据源本就只有 relay 内存缓冲(`historyLines` = last compact block ≤8MB + `liveLines` ≤10k 行)。持久化窗口 ≥ 该量级即**不牺牲任何现状可得的消息**——这是选「持久化原始行窗口」而不是「只存锚 + 重新拉历史」的核心理由(后者需要新 API 且会引入新的上下文不足)。
+- **单一真相:锚由窗口自身推导**(`deriveAnchor` 逆序 parse 找最后一条带顶层 `uuid` 的行)——不用调用方 `cursorRef`。原因:history 批次**先采集、`history_end` 才 processBatch**,采集窗口领先于 cursor;粗剪/字符 cap 又可能把旧锚丢出窗口。两者一旦分叉就清空缓存(早期缺陷)。
+- **锚必须 parse 而非字符串匹配**:`includes('"uuid":"…"')` 会被 `tool_result` 大行内嵌的同形文本误命中。
+- **P0 过期闭包**:WS effect 闭包捕获 mount 渲染的空数组。恢复场景 effect 不重跑、闭包永不更新 → `replayCursorRef` 必须读 `rawMessagesRef.current.length`,`deltaEnter.from` 必须读 `renderedMessagesRef.current.length`(新增镜像,commit 后 effect 写入),否则恢复窗口整体被套上淡入动画。
+- **恢复不注入 batch_boundary divider**:恢复窗口按 1:1 行数映射(anchor/liveStart 公式的前提);divider 是纯合成行,注入即破公式。
+- **恢复语义三件套**:`processBatch(parsed)` 一站式(rawMessages + messageMapRef + scalar 折叠 + cursor 行内推导);`liveStartRef = parsed.length`(整窗视作 history,否则渲染→delta 完成期间假 running);`isResumeRef = cached.resume`(孤儿 tool_use 需 interrupted 语义,否则渲染成永久 running)。
+- **容量治理口径**:字符 cap 用 `string.length`(UTF-16 code units)= localStorage 配额同量纲,免每次 flush 全窗口 encode。单 entry 600 行 / 1.5M chars,全局 2.5M chars(配额 ~5M/origin,留一半给 workbench 的 `atomWithLocalOnlyStorage`)+ savedAt LRU。`evictForCapacity` 用头部 64 字节正则读 `savedAt`,不 parse MB 级 entry —— **`savedAt` 必须是 entry 首属性(序列化串头部 64 字节内),这是 `readSavedAt` 的契约**。
+- **落盘调度**:trailing debounce 2s + maxWait 10s(纯 debounce 在流式期间被无限重置 → PWA 被杀丢整回合);gen 代数防切会话串档(flush 回调执行时 gen 漂移即丢弃,切会话分支先同步 flush 旧会话再 gen++);`visibilitychange/hidden` + `pagehide` + unmount cleanup 三点兜底。ingestion 侧**批内只入窗,批末调度一次**(回放 burst 上万行不逐行建 timer)。
+- **JSDOM Storage 坑**:成员是 `[LegacyUnforgeable]`(实例 own non-configurable),`Object.defineProperty` 静默无效 → stub 必须整体替换 `globalThis.localStorage` + 手动代理原型方法(spread 不拷原型)。
+- **StrictMode double-effect 两次 setup 都真实执行**(模拟卸载重挂):两个 socket、恢复跑两遍但第二次 `resetSessionState` 清第一次窗口 → 不翻倍。hook 用例按 3 个 socket 断言。
+- **v2 路由**:`/projects/$projectName/agent-sessions/$sessionId/claude` 是重定向页 → `/projects/$key/session/$id`;agent session id 形如 `agent_8edb4fb6fca3497d`(≠ 底层 claudeSessionId)。
+- 前批决策仍有效:composer 抬高焦点门闩(551b724)、多图挂死 `baseCount` 修复、COMPOSER_MAX_ATTACHMENTS=8 + WS 48MB、加号一键直达、UI 准则「布局 do the explaining」。
 
 ### 进度
 
-- ✅ composer 附件 8 commit 全链(主批+3 review 消化+4 真机反馈批);探针 36/36 全绿;redesign-v2.md §6.13 记档
-- ✅ cc8534d:composer 附件三改(cap bug 修复 + 上限 8 + WS 48MB + 一键直达 + 取证三件套);全门禁(api/shared/web 全绿)+ CSS 硬闸 + 探针全绿;**用户真机复测通过**(8 张全亮、点 + 直达系统面板)
-- ✅ 551b724:composer 抬高卡死修复(焦点门闩)+ inset-debug badge 二次埋点入库;探针 11/11、单测 910、全门禁过
+- ✅ 081b51b:增量回放跨 remount 恢复(新 `web/src/lib/claude-replay-cache.ts` + adapter 采集/恢复/落盘 + cache 单测 12 + hook 用例 5 + 真链路探针)。perf-reviewer P1 四条(P1-1 落盘热路径全窗重写、P1-2 逐行调度、P1-3 内存窗无字符 cap、P2 savedAt parse)全部消化进返工。
+- ✅ 全门禁:format/lint/typecheck 0,api 1106 / shared 11 / web 927 全 0 fail;`node scripts/ar-verify-css.mjs` 过。
+- ✅ 真链路探针 `scripts/probe-replay-cache-remount.mjs` 7/7(test 项目零 mock:localStorage entry `cursor=065e8084… rawChars=957741 lines=8`,切回后 URL 带 `?since=065e8084…`,服务端 `[relay] addSubscriber … replay=delta(history+0/live+8)`)。
 
 ### 待办
 
-- **立即:用户真机复测抬高修复**(杀 PWA 重开等 10s 自动刷新):①键盘开着切 app → 回来 composer 应落底;②正常态切 app 回来不抬高;③切会话不抬高。角标仍常开,若再现卡死读 badge 尾部字段继续取证
-- inset-debug 取证件(551b724 入库:`use-composer-inset-debug-badge.ts` + api `/api/debug/inset-report`)在抬高定案后拆;attach 取证三件套(`use-attach-debug.ts` + composer-attach 打点 + `/api/debug/attach-report` + `probe-attach-debug.mjs`)在多图稳定后拆
-- i18n 孤儿键记档不删:`claude.attach.ready`(「已上传」,更早遗留,非本批产物)
-- e2e 基线:32 直接绿 + mcp-app-card 1 个 flaky(重跑绿,与本批无关)
-- 既有真机清单(统一最后验):composer 附件四条(文件百分比/lightbox 手势)/ 插件域五条 / M3 选区引用 / M2 画布 / 键盘 inset 等
-- 记档不修:失败态 `text-error` 对比度低于 AA(dangerText token 另批);文件 chip w-36 卡片 vs 原型横向 pill 另批对齐
+- **立即:用户真机复测**(iPhone PWA):①切走会话再切回 → 直接看到最新内容,无「从旧加载」过程;②杀 PWA 重开进会话 → 同上;③新会话(无缓存)/ relay 重建场景仍正常全量。
+- composer 抬高修复(551b724)用户仍在观察。
+- 取证件待拆(定案后):`use-composer-inset-debug-badge.ts` + `/api/debug/inset-report`;`use-attach-debug.ts` + composer-attach 打点 + `/api/debug/attach-report` + `probe-attach-debug.mjs`。
+- 记档不修:队列恢复陈旧性(queue-operation 是 broadcast-only,恢复可能重建已派发排队项——仍优于现状);会话删除残留 cache(LRU 兜底);pi/acp 无增量通道;full 回放视觉过程(仅剩低频谱场景);delta 防御去重场景下缓存窗可能含被去重行(渲染层按 message.id 合并,视觉无害);i18n 孤儿键 `claude.attach.ready`。
+- e2e 基线:32 直接绿 + mcp-app-card 1 flaky(重跑绿)。
+- 既有真机清单(统一最后验):composer 附件四条 / 插件域五条 / M3 选区引用 / M2 画布 / 键盘 inset。
 
 ### 易丢的关键上下文
 
-- **验证产物别只扫 index.html 引用**——懒加载 chunk 不在其中;`rg "特征串" web/dist/assets/` 直查最可靠。
-- 探针 lang 坑(addInitScript localStorage lang=zh)、点击后 waitForTimeout(50ms 异步入队)、§18 动画期几何先等 700ms。
-- 跑测试限内存 `systemd-run --scope --user -p MemoryMax=2G`;探针用 bun 不用 node。
-- tmux `ar-dev:api` / `ar-dev:web`;标准重启 `respawn-pane -k -t ar-dev:<name>`(用 window name 不用 index);绝不 kill server;重启前读 `docs/runbooks/dev-services.md`。
-- commit 纪律:标准 `git add && git commit`;尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`。
-- 改 web 包必跑 `node scripts/ar-verify-css.mjs`;build --watch 漏 emit/假死 → touch main.tsx,再不行 respawn-pane。
-- design-reviewer 网络中断重试即可;收敛 prompt(单文件+限定审查点)成功率高。
+- **改 cache 层必看**:`savedAt` 属性顺序契约(首属性)+ 锚由窗口推导(不要重新引入 cursorUuid 入参)。
+- 探针跑法:`bun scripts/probe-replay-cache-remount.mjs`(bun 不用 node;`PROBE_PROJECT`/`PROBE_SESSION`/`WEB_ORIGIN` 可覆盖)。
+- 跑测试限内存 `systemd-run --scope --user -p MemoryMax=2G`;编辑文件一律内置 Read/Edit/Write(两次写失败就停)。
+- 产物验证:懒加载 chunk 不在 index.html 里,`rg "特征串" web/dist/assets/` 直查;watch 假死第一动作 = `respawn-pane -k -t ar-dev:<web|api>`。
+- commit:标准 `git add && git commit`,尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`;禁 `git commit <paths>` / `--git-dir`。
 
 ---
-最后更新:2026-10-25(触发原因:composer 抬高卡死修复提交 551b724,待真机复测)
+最后更新:2026-10-26(触发原因:增量回放跨 remount 恢复提交 081b51b,阶段收尾,待真机复测)
