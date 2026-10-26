@@ -87,6 +87,8 @@ docker compose up -d
 
 镜像由 CI 发布（`git tag v<semver>` 触发 GitHub Actions → GHCR）；升级 `docker compose pull && docker compose up -d`。会话记录（Claude 历史、Codex 会话、应用设置、项目文件）全部落在 `./data/` 目录，备份 = 备份该目录——详见 [Deployment Runbook](./docs/runbooks/deployment.md) 的落点表。
 
+> 国内网络拉 ghcr.io 慢时，可用代理前缀替换拉取后 tag 回标准名（`registry-mirrors` 对 GHCR 不生效），见 [Deployment Runbook 国内网络补充](./docs/runbooks/deployment.md#国内网络补充)。
+
 ### systemd（裸机自托管）
 
 ```bash

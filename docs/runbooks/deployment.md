@@ -64,9 +64,21 @@ systemctl status agents-remote
 - 自动重启：`Restart=always` + `RestartSec=3`。
 - 与本机 ar-dev dev 服务并存时改 `config.yaml` 的 `api_port` 错开（dev 43011/43012）。
 
-## 国内网络补充（本机验证经验）
+## 国内网络补充
 
-Docker Hub 直连可能被重置；本机既有惯例是 mirror 前缀拉取后 tag 回标准名（Dockerfile 保持标准名，不进 git 污染）：
+### 部署侧：拉取 GHCR 镜像慢/失败
+
+ghcr.io 国内直连通常可用但可能偏慢。镜像仓库（GHCR）不走 Docker Hub，daemon 的 `registry-mirrors` 配置对它**不生效**——用公开代理前缀替换拉取后 tag 回标准名（以代理实际可用性为准，如 `ghcr.nju.edu.cn`）：
+
+```bash
+docker pull ghcr.nju.edu.cn/banknight/agents-remote:latest \
+  && docker tag ghcr.nju.edu.cn/banknight/agents-remote:latest ghcr.io/banknight/agents-remote:latest
+docker compose up -d
+```
+
+### 构建侧：本机验证 build 拉基础镜像
+
+Docker Hub 直连可能被重置；本机既有惯例是 mirror 前缀拉取后 tag 回标准名（Dockerfile 保持标准名，不进 git 污染）。CI（GitHub Actions 海外 runner）构建不受此影响：
 
 ```bash
 docker pull docker.1ms.run/library/node:22-slim && docker tag docker.1ms.run/library/node:22-slim node:22-slim
