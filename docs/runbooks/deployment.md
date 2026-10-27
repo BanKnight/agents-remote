@@ -30,6 +30,39 @@ docker compose up -d      # 拉取 ghcr.io 镜像并启动
 | `./data/run` | `/data/run` | `token-secret`（登录 token 签名密钥）+ `sessions/*.json`（实例/会话元数据，跨重启恢复的权威）+ stderr 日志 |
 | `./data/projects` | `/data/projects` | 项目工作区（`PROJECTS_ROOT`，agent 操作的真实文件） |
 
+### 镜像体积构成（~1.05GB）
+
+镜像只含 runtime 真正需要的东西；web/api 的构建期依赖（vite/tailwind/mermaid/lucide 等）只存在于 builder 阶段，不进产物镜像。
+
+| 构件 | 体积 | 为什么在 |
+|---|---|---|
+| node:24-slim 基座（debian bookworm + node v24.x） | ~190MB | skills CLI 以 `node` spawn（engines ≥22.20.0）；基座跟随官方安全补丁（2026-10-20 全线安全发布） |
+| bun | 107MB | api 运行时 + healthcheck |
+| claude 原生二进制 | 254MB | Agent 进程本体（自包含 ELF，不依赖 node） |
+| codex CLI（npm 官方 vendor 形态） | ~411MB | Agent 进程本体（codex + code-mode-host + voice 官方分发件） |
+| apt：tmux / git / gosu | ~96MB | terminal 实例 / 项目 git 操作 / root→agent 降权 |
+| api/dist + web/dist | ~59MB | 构建产物（api 为全 bundle） |
+| skills CLI 树（含 tar/yaml） | ~20MB | skills 工具链 |
+
+体积大头是 codex 的官方 vendor（411MB）与 claude 二进制（254MB），两者都是功能本体，不裁。
+
+### 迁移到新机器（换宿主）
+
+会话记录全在 `./data/`，迁移三步：
+
+```bash
+docker compose down                            # ① 旧机：停容器后打包
+tar czf agents-remote-data.tgz data/
+
+# ② 新机：clone 仓库 → cp .env.example .env（填 APP_PASSWORD）→ 解包到仓库根
+tar xzf agents-remote-data.tgz
+
+# ③ 起服务
+docker compose up -d
+```
+
+bind mount 目录的属主须为容器内 agent（uid/gid 1000）——打包/解包常丢或改变属主，必要时 `sudo chown -R 1000:1000 data/`。
+
 ### 已知取舍
 
 - **容器重启丢容器内 tmux 会话**：运行中的 agent/terminal 实例进程随容器消亡（与「API 重启丢进行中 turn」同语义，Gen 3 刻意取舍）。元数据已持久（`data/run/sessions/`），重启后在 UI 重新拉起即可。
@@ -82,9 +115,15 @@ docker compose up -d
 Docker Hub 直连可能被重置；本机既有惯例是 mirror 前缀拉取后 tag 回标准名（Dockerfile 保持标准名，不进 git 污染）。CI（GitHub Actions 海外 runner）构建不受此影响：
 
 ```bash
-docker pull docker.1ms.run/library/node:22-slim && docker tag docker.1ms.run/library/node:22-slim node:22-slim
+docker pull docker.1ms.run/library/node:24-slim && docker tag docker.1ms.run/library/node:24-slim node:24-slim
 docker pull docker.1ms.run/oven/bun:1 && docker tag docker.1ms.run/oven/bun:1 oven/bun:1
 docker build -t agents-remote:local .
+```
+
+构建时镜像内 `npm install`（装 codex）走 npmjs 官方源，国内慢/卡可传镜像源（同源镜像，产物一致）：
+
+```bash
+docker build --build-arg NPM_REGISTRY=https://registry.npmmirror.com -t agents-remote:local .
 ```
 
 ## CI 镜像发布流程
