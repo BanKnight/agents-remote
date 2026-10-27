@@ -24,4 +24,7 @@ test-results/
 tmp/
 # docker compose 部署的会话数据卷（./data/ 映射，见 docker-compose.yml 落点表）
 data/
+# codex app-server 协议生成绑定（`codex app-server generate-ts`，747 文件 ~3MB，仅对照用、
+# 无 import；生成命令见 api/src/codex-runtime.ts 头注释）
+api/src/codex-generated/
 

@@ -18,9 +18,17 @@ import type {
 } from "@agents-remote/shared";
 import type { TerminalSessionStatus } from "@agents-remote/shared";
 import type { UploadConflictPolicy } from "@agents-remote/shared";
+import { EFFORT_LEVELS } from "@agents-remote/shared";
+import type { EffortLevel } from "@agents-remote/shared";
 import { AgentRuntime } from "./agent-runtime";
 import { AcpRuntime, resolveAcpCredentials } from "./acp-runtime";
 import { AcpStreamController, handleAcpStreamUpgrade } from "./acp-stream";
+import { CodexRuntime } from "./codex-runtime";
+import {
+  CodexStreamController,
+  handleCodexStreamUpgrade,
+  parseControlRequestId,
+} from "./codex-stream";
 import { AuthService } from "./auth";
 import { ApprovalCenter } from "./approval-center";
 import { ClaudeRuntime } from "./claude-runtime";
@@ -109,6 +117,7 @@ type FetchHandlerOptions = {
   sessionShellHub?: SessionShellHub;
   agentTui?: AgentTuiController;
   acpStreamController?: AcpStreamController;
+  codexStreamController?: CodexStreamController;
   piStreamController?: PiStreamController;
   projectFilesService?: ProjectFilesService;
   projectPagesService?: ProjectPagesService;
@@ -165,6 +174,17 @@ type WebSocketData =
       runtimeKey: string;
       projectPath: string;
       acpSessionId?: string;
+    }
+  | {
+      kind: "codex-stream";
+      sessionId: string;
+      projectName: string;
+      runtimeKey: string;
+      projectPath: string;
+      codexThreadId?: string;
+      permissionMode?: string;
+      model?: string;
+      effort?: string;
     };
 
 const echoWebSocketData: WebSocketData = { kind: "echo" };
@@ -532,6 +552,20 @@ export const createFetchHandler =
 
         if (acpUpgrade.matched) {
           return withRefresh(acpUpgrade.response);
+        }
+      }
+
+      if (options.codexStreamController) {
+        const codexUpgrade = await handleCodexStreamUpgrade(
+          request,
+          url,
+          options.projectsRoot,
+          options.sessionRegistry,
+          server,
+        );
+
+        if (codexUpgrade.matched) {
+          return withRefresh(codexUpgrade.response);
         }
       }
 
@@ -2044,6 +2078,10 @@ const isClaudeSessionName = (sessionName: string) =>
 // 存量兼容无需旧前缀。
 const isAcpSessionName = (sessionName: string) =>
   sessionName.startsWith(`${sessionNamePrefix}-agent-acp-`);
+// codex 会话 runtimeKey 段（provider 段 = "codex"）。**前缀只判 provider 家族**——
+// app-server 直连与存量 tmux 透传共用同段；分流按 codexThreadId 有无（见 runtime.exists）。
+const isCodexSessionName = (sessionName: string) =>
+  sessionName.startsWith(`${sessionNamePrefix}-agent-codex-`);
 
 export const startApi = async () => {
   const config = await loadConfig();
@@ -2078,6 +2116,10 @@ export const startApi = async () => {
     resolveCredentials: async (provider) =>
       resolveAcpCredentials(await settingsStore.read(), provider),
   });
+  // codex app-server 直连运行时（codex 一等 provider 批）：每会话一个 `codex app-server`
+  // 进程，JSON-RPC over stdio（协议绑定在 codex-generated/，帧族 codex_*）。stderr 日志在
+  // runDir/codex-stderr/。存量 tmux codex 会话不经此 runtime（codexThreadId 判据分流）。
+  const codexRuntime = new CodexRuntime(runtimePaths.runDir);
   const projectWikiService = new ProjectWikiService(config.projectsRoot);
   // 画布四工具数据源（hub MCP 面 + web 卡片 tools/call 面共用同一 service 实例）。
   const projectCanvasService = new ProjectCanvasService(config.projectsRoot);
@@ -2097,6 +2139,14 @@ export const startApi = async () => {
         return claudeRuntime.exists(sessionName);
       }
       if (isAcpSessionName(sessionName)) return acpRuntime.exists(sessionName);
+      if (isCodexSessionName(sessionName)) {
+        // codex 双形态：带 codexThreadId = app-server 直连（进程内存活）；无 = 存量 tmux
+        // 透传（pane 探活，直至自然消亡）。
+        if (await sessionRegistry.getCodexThreadIdByRuntimeKey(sessionName)) {
+          return codexRuntime.exists(sessionName);
+        }
+        return tmuxRuntime.exists(sessionName);
+      }
       return tmuxRuntime.exists(sessionName);
     },
     close: async (sessionName) => {
@@ -2113,11 +2163,31 @@ export const startApi = async () => {
       if (isAcpSessionName(sessionName)) {
         return acpRuntime.close(sessionName);
       }
+      if (isCodexSessionName(sessionName)) {
+        // 分流判据同 exists：直连态杀 app-server 进程；存量 tmux 关 pane。直连态也可能
+        // 有残留 tmux pane（存量会话经 codex-stream 连接升级成直连后 threadId 回写，
+        // 原 pane 未随之关闭）——codexRuntime.close 后对 tmux 侧兜底再关，防孤儿 pane
+        //（code review P2-8；close 低频，多一次 exists 探测可接受）。
+        if (await sessionRegistry.getCodexThreadIdByRuntimeKey(sessionName)) {
+          await codexRuntime.close(sessionName);
+          if (await tmuxRuntime.exists(sessionName)) {
+            await tmuxRuntime.close(sessionName);
+          }
+          return;
+        }
+        return tmuxRuntime.close(sessionName);
+      }
       return tmuxRuntime.close(sessionName);
     },
     startAgent: (metadata) => {
       if (metadata.provider === "claude") {
         return claudeRuntime.startAgent(metadata);
+      }
+      // codex app-server 直连：无 threadId = thread/start（新建），有 = thread/resume
+      //（恢复）。ensureRunning 内分流；存量 tmux codex 不会再经 createAgentSession，此
+      // 分支的 thread/start 仅新建路径可达。
+      if (metadata.provider === "codex") {
+        return codexRuntime.startAgent(metadata);
       }
       // 按 transport 家族分流（provider 是 CLI 名，omp/claude/codex；ACP 类 CLI 共享此分支）。
       if (metadata.provider && getAgentProviderProfile(metadata.provider)?.transport === "acp") {
@@ -2135,15 +2205,16 @@ export const startApi = async () => {
     capture: (sessionName) => tmuxRuntime.capture(sessionName),
     attach: (sessionName, onData, onError, opts) =>
       tmuxRuntime.attach(sessionName, onData, onError, opts),
-    // 批量探活：合并 tmux list-sessions（terminal + 非 claude agent）与 claude/acp 进程内存活集合。
-    // 1 次 list-sessions + 2 次进程内遍历，替代 M 次 has-session。供 SessionRegistry.getAliveKeys。
+    // 批量探活：合并 tmux list-sessions（terminal + 非 claude agent）与 claude/acp/codex 进程内存活集合。
+    // 1 次 list-sessions + 3 次进程内遍历，替代 M 次 has-session。供 SessionRegistry.getAliveKeys。
     listAliveRuntimeKeys: async () => {
-      const [tmuxKeys, claudeKeys, acpKeys] = await Promise.all([
+      const [tmuxKeys, claudeKeys, acpKeys, codexKeys] = await Promise.all([
         tmuxRuntime.listAliveRuntimeKeys(),
         claudeRuntime.listAliveRuntimeKeys(),
         acpRuntime.listAliveRuntimeKeys(),
+        codexRuntime.listAliveRuntimeKeys(),
       ]);
-      return new Set([...tmuxKeys, ...claudeKeys, ...acpKeys]);
+      return new Set([...tmuxKeys, ...claudeKeys, ...acpKeys, ...codexKeys]);
     },
   };
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
@@ -2312,6 +2383,71 @@ export const startApi = async () => {
   });
   approvalCenter.onRuntimeApprovalsSettled = (runtimeKey) =>
     claudeRuntime.reportApprovalSettled(runtimeKey);
+  // codex 装配（一等 provider 批）：threadId backfill / 活动 / 状态机落盘 / config 持久 /
+  // 审批登记 + transport 钩子（镜像 claude 装配；closed 不落盘同款理由——close 路径紧随
+  // removeMetadata，异步写会竞态复活刚删的 metadata）。
+  codexRuntime.setOnCodexThreadId((sessionId, threadId) => {
+    void sessionRegistry.setCodexThreadId(sessionId, threadId);
+  });
+  codexRuntime.setOnActivity((sessionId) => {
+    void sessionRegistry.recordActivity(sessionId);
+  });
+  codexRuntime.setOnStatusChange((sessionId, status) => {
+    if (status === "closed") return;
+    void sessionRegistry.setAgentSessionStatus(sessionId, status);
+    if (status === "done" || status === "error") notifyPushStatus(sessionId, status);
+  });
+  codexRuntime.setOnConfigPersist((sessionId, config) => {
+    void (async () => {
+      if (config.model) await sessionRegistry.setModel(sessionId, config.model);
+      // effort 值域由 model/list 的 supportedReasoningEfforts 约束（探针实证可能含
+      // "minimal" 等 EffortLevel 之外的值）：集合内才落盘（展示档尽力而为，恢复不经
+      // metadata——thread/resume 响应自带 reasoningEffort）。
+      if (config.effort && (EFFORT_LEVELS as readonly string[]).includes(config.effort)) {
+        await sessionRegistry.setEffort(sessionId, config.effort as EffortLevel);
+      }
+      // approvalPolicy 即 CodexPermissionMode 四值（CODEX_PERMISSION_PRESETS 映射
+      // approvalPolicy+sandbox 组合）；单独的 sandbox 覆盖不落盘（UI 不单发）。
+      if (config.approvalPolicy) {
+        await sessionRegistry.setPermissionMode(sessionId, config.approvalPolicy);
+      }
+    })();
+  });
+  codexRuntime.setOnApprovalRequest((info) => {
+    approvalCenter.registerFromTransport({
+      runtimeKey: info.runtimeKey,
+      projectName: info.projectName,
+      sessionId: info.sessionId,
+      controlRequestId: `codex:${info.rpcId}`,
+      toolName: info.toolName,
+      input: info.params,
+      inputSummary: info.inputSummary,
+      createdAt: new Date().toISOString(),
+      provider: "codex",
+    });
+  });
+  codexRuntime.approvalRuntimeSettled = (runtimeKey) => approvalCenter.clearRuntime(runtimeKey);
+  // 会话内托盘应答路径：respond 后清全局中心转发卡（P1-6；ApprovalCenter.respond 全局
+  // 路径自清 + 此钩子幂等 no-op，与 claude 的 unregisterForwarded 接线同构）。
+  codexRuntime.setOnApprovalResponded((runtimeKey, rpcId) => {
+    approvalCenter.unregisterForwarded(runtimeKey, `codex:${rpcId}`);
+  });
+  // 全局审批中心 codex transport：探活 + 应答投递（allow/deny → accept/decline 映射）。
+  approvalCenter.registerTransport("codex", {
+    listAliveRuntimeKeys: () => codexRuntime.listAliveRuntimeKeys(),
+    deliverResponse: async (record, decision) => {
+      const rpcId = parseControlRequestId(record.controlRequestId);
+      if (rpcId === undefined) {
+        throw new Error(`invalid codex controlRequestId: ${record.controlRequestId}`);
+      }
+      codexRuntime.respondApproval(
+        record.runtimeKey,
+        rpcId,
+        decision === "allow" ? "accept" : "decline",
+      );
+    },
+  });
+  const codexStreamController = new CodexStreamController(codexRuntime);
   // 自动重试注入配置源：调度时刻从 metadata fresh 读 config（缺省/enabled:false=不调度）。
   claudeRuntime.setAutoRetryConfigProvider((sessionId) =>
     sessionRegistry.getAgentAutoRetryConfig(sessionId),
@@ -2399,6 +2535,7 @@ export const startApi = async () => {
       claudeRuntime,
       claudeStreamController,
       acpStreamController,
+      codexStreamController,
       piStreamController,
       projectFilesService,
       projectPagesService,
@@ -2441,6 +2578,11 @@ export const startApi = async () => {
             console.error("[acp-stream] open handler error", err);
           });
         }
+        if (ws.data?.kind === "codex-stream") {
+          codexStreamController.open(ws).catch((err) => {
+            console.error("[codex-stream] open handler error", err);
+          });
+        }
         if (ws.data?.kind === "pi-stream") {
           piStreamController.open(ws).catch((err) => {
             console.error("[pi-stream] open handler error", err);
@@ -2460,6 +2602,10 @@ export const startApi = async () => {
         }
         if (ws.data?.kind === "acp-stream") {
           void acpStreamController.message(ws, message);
+          return;
+        }
+        if (ws.data?.kind === "codex-stream") {
+          void codexStreamController.message(ws, message);
           return;
         }
         if (ws.data?.kind === "pi-stream") {
@@ -2484,6 +2630,9 @@ export const startApi = async () => {
         }
         if (ws.data?.kind === "acp-stream") {
           acpStreamController.close(ws);
+        }
+        if (ws.data?.kind === "codex-stream") {
+          codexStreamController.close(ws);
         }
         if (ws.data?.kind === "pi-stream") {
           piStreamController.close(ws);

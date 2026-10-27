@@ -21,6 +21,7 @@ test("getAgentProviderProfile returns internal Claude and Codex profiles", () =>
     command: "codex",
     displayNamePrefix: "Codex Agent",
     capabilities: {
+      // 会话内回放已通，历史列表待 P1；MCP 注入待 probe 验证。
       history: "unsupported",
       mcpInject: "unsupported",
     },

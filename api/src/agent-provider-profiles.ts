@@ -111,8 +111,10 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
     command: "codex",
     displayNamePrefix: "Codex Agent",
     capabilities: {
+      // 会话内历史回放（thread/resume）已通，但历史**列表**（rollout JSONL 扫描，P1）
+      // 未接——能力位描述的是列表，故仍 unsupported，P1 落地时翻转。
       history: "unsupported",
-      mcpInject: "unsupported", // Codex 走 tmux 非直拉，无 argv 注入抽象（见 mcp-injector.ts）。
+      mcpInject: "unsupported", // thread/start config 注入通道见 codex-runtime（P1 验证后翻转）。
     },
   },
   // omp（Oh My Pi CLI）：走 ACP 协议对接（transport "acp"，`omp acp` 子命令）。ACP 是协议

@@ -37,6 +37,9 @@ export type SessionMetadata = {
   claudeSessionId?: string;
   /** ACP session id（acp provider）：agent 侧生成，spawn+loadSession 恢复用（setAcpSessionId 回写）。 */
   acpSessionId?: string;
+  /** codex thread id（codex provider）：app-server thread UUID，spawn+thread/resume 恢复用。
+   *  也是「app-server 直连会话 vs 存量 tmux codex 会话」的判据（有 id = 直连）。 */
+  codexThreadId?: string;
   model?: string;
   modelAlias?: string;
   permissionMode?: string;
@@ -107,6 +110,8 @@ type CreateAgentSessionInput = {
   claudeSessionId?: string;
   /** omp（ACP）历史恢复：agent 侧 session id，spawn 时经 session/load 全量回放。 */
   acpSessionId?: string;
+  /** codex 历史恢复：thread id，spawn 时 thread/resume 回放（shared CreateAgentSessionRequest 同款）。 */
+  codexThreadId?: string;
   model?: string;
   permissionMode?: string;
   effort?: EffortLevel;
@@ -276,6 +281,29 @@ export class SessionRegistry {
       acpSessionId,
       updatedAt: this.now().toISOString(),
     }));
+  }
+
+  // codex thread id backfill：startAgent 内 thread/start 返回后回调写入（镜像
+  // setAcpSessionId；API 重启后 spawn+thread/resume 恢复会话靠它）。
+  async setCodexThreadId(sessionId: string, codexThreadId: string): Promise<void> {
+    await this.ensureLoaded();
+    await this.patchMetadata(sessionId, (metadata) => ({
+      ...metadata,
+      codexThreadId,
+      updatedAt: this.now().toISOString(),
+    }));
+  }
+
+  /** codex 会话分流判据（index.ts exists/close）：按 runtimeKey 反查 codexThreadId——
+   *  有 id = app-server 直连（codexRuntime），无 = 存量 tmux 透传（tmuxRuntime）。 */
+  async getCodexThreadIdByRuntimeKey(runtimeKey: string): Promise<string | undefined> {
+    await this.ensureLoaded();
+    for (const metadata of this.index.values()) {
+      if (metadata.type === "agent" && metadata.runtimeKey === runtimeKey) {
+        return metadata.codexThreadId;
+      }
+    }
+    return undefined;
   }
 
   // Persist a mid-session model switch to metadata.model, so API restart /
@@ -483,19 +511,17 @@ export class SessionRegistry {
     }
     const shells: SessionShell[] = [];
     for (const metadata of entries) {
-      if (alive && !alive.has(metadata.runtimeKey)) {
-        const hasRecovery =
-          metadata.type === "agent" &&
-          ((metadata.provider === "claude" && metadata.claudeSessionId) ||
-            (metadata.provider === "omp" && metadata.acpSessionId));
-        if (!hasRecovery) {
-          try {
-            if (this.runtime.exists && !(await this.runtime.exists(metadata.runtimeKey))) {
-              continue; // 快照判死 + 新鲜确认：只从快照排除，不删 registry。
-            }
-          } catch {
-            // 探测不可信：保守保留。
+      if (
+        alive &&
+        !alive.has(metadata.runtimeKey) &&
+        !SessionRegistry.hasRecoveryHandle(metadata)
+      ) {
+        try {
+          if (this.runtime.exists && !(await this.runtime.exists(metadata.runtimeKey))) {
+            continue; // 快照判死 + 新鲜确认：只从快照排除，不删 registry。
           }
+        } catch {
+          // 探测不可信：保守保留。
         }
       }
       shells.push(metadataToCandidate(metadata));
@@ -621,7 +647,7 @@ export class SessionRegistry {
     // 恢复历史（传入了已有 session id）：该会话至少完整跑过一轮（历史条目来自已落盘
     // JSONL），初始态展示「最近一轮完成」而非 idle——idle 会让「切形态/重开会话」看起来
     // 像一轮都没跑过（2026-10-19 用户真机反馈）。真实结果由下一次 turn 覆盖。
-    const resumed = Boolean(input.claudeSessionId || input.acpSessionId);
+    const resumed = Boolean(input.claudeSessionId || input.acpSessionId || input.codexThreadId);
     const metadata = await this.createMetadata({
       project: input.project,
       type: "agent",
@@ -629,6 +655,7 @@ export class SessionRegistry {
       displayName: input.displayName,
       claudeSessionId,
       acpSessionId: input.acpSessionId,
+      codexThreadId: input.codexThreadId,
       model: input.model,
       permissionMode: input.permissionMode,
       effort: input.effort,
@@ -637,7 +664,14 @@ export class SessionRegistry {
 
     try {
       await this.runtime.startAgent?.(metadata);
-      return agentSessionFromMetadata(metadata);
+      // startAgent 期间 runtime 可能 backfill 了 thread/session id（codex threadId 回调
+      // 是 fire-and-forget 异步写，probe-codex-ws 实锤 create 响应缺 codexThreadId）
+      // ——读回权威态投影响应。只读内存索引（patchMetadata 先同步 index.set 再落盘），
+      // 不走 getAgentMetadata：后者带 keepIfRuntimeExists 探活，会把「此刻 index 里的条目」
+      // 写进存活快照 TTL 缓存，之后创建的会话在该窗口内被 alive 过滤误判为死
+      //（listCandidateSubtitles/listAllShells 都读这个快照）。
+      await this.ensureLoaded();
+      return agentSessionFromMetadata(this.index.get(metadata.id) ?? metadata);
     } catch (error) {
       await this.removeMetadata(metadata.id);
 
@@ -795,6 +829,7 @@ export class SessionRegistry {
     displayName?: string;
     claudeSessionId?: string;
     acpSessionId?: string;
+    codexThreadId?: string;
     model?: string;
     permissionMode?: string;
     effort?: EffortLevel;
@@ -820,6 +855,7 @@ export class SessionRegistry {
       updatedAt: timestamp,
       claudeSessionId: input.claudeSessionId,
       acpSessionId: input.acpSessionId,
+      codexThreadId: input.codexThreadId,
       // model 与 modelAlias 同源同归一（model 供 --resume 传给 CLI、modelAlias 供前端显示）。
       model: sanitizePersistedModel(input.model),
       modelAlias: sanitizePersistedModel(input.model),
@@ -843,6 +879,24 @@ export class SessionRegistry {
     await this.removeMetadata(metadata.id);
   }
 
+  /**
+   * 有恢复抓手 = runtime 判死后仍能凭已落盘的会话 id 重新拉起，故应保留（不 hide 不删）。
+   * 各 provider 的 runtime 语义不同，但判定口径必须一致——listAllShells（纯读壳快照）与
+   * keepIfRuntimeExists（探活 + 清理）共用这一份，避免两处列举分支漂移。
+   * - claude：非 tmux 直连进程，claudeSessionId 可 --resume。
+   * - omp（ACP）：进程内对象，acpSessionId 可 loadSession（Phase 1 存量 provider "acp" 已由
+   *   parseMetadata 归一化为 "omp"，同一分支接住）。缺 id（spawn 未完成）无恢复抓手 → 不保留。
+   * - codex（app-server 直连）：进程内对象，codexThreadId 可 thread/resume。无 threadId 的
+   *   存量 tmux codex 会话不走此分支（继续按 tmux 存活语义判）。
+   */
+  private static hasRecoveryHandle(metadata: SessionMetadata): boolean {
+    if (metadata.type !== "agent") return false;
+    if (metadata.provider === "claude") return Boolean(metadata.claudeSessionId);
+    if (metadata.provider === "omp") return Boolean(metadata.acpSessionId);
+    if (metadata.provider === "codex") return Boolean(metadata.codexThreadId);
+    return false;
+  }
+
   private async keepIfRuntimeExists(metadata: SessionMetadata) {
     // 存活集合是 TTL 快照（可能陈旧 / 探测失败），不得直接作破坏性 removeMetadata 的依据。
     let alive: Set<string>;
@@ -856,14 +910,7 @@ export class SessionRegistry {
       return metadata;
     }
 
-    if (metadata.provider === "claude" && metadata.claudeSessionId) {
-      return metadata;
-    }
-    // omp（ACP）同 claude：runtime 是进程内对象（非 tmux），API 重启后 alive/exists 均不命中，
-    // 但 acpSessionId 可 loadSession 恢复 → 保留（Phase 1 存量 provider "acp" 已由 parseMetadata
-    // 归一化为 "omp"，此分支同样接住）。缺 acpSessionId 的 omp 会话（spawn 未完成）不保留——
-    // 与 claude 无 claudeSessionId 时同语义，无恢复抓手。
-    if (metadata.provider === "omp" && metadata.acpSessionId) {
+    if (SessionRegistry.hasRecoveryHandle(metadata)) {
       return metadata;
     }
 
@@ -1154,6 +1201,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   effort: metadata.effort,
   claudeSessionId: metadata.claudeSessionId,
   acpSessionId: metadata.acpSessionId,
+  codexThreadId: metadata.codexThreadId,
   autoRetry: metadata.autoRetry,
   mode: metadata.mode,
   updatedAt: metadata.updatedAt,

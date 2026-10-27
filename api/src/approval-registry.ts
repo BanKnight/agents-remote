@@ -1,4 +1,4 @@
-import type { ApprovalSummary } from "@agents-remote/shared";
+import type { AgentProvider, ApprovalSummary } from "@agents-remote/shared";
 
 /**
  * M5-b 审批中心登记表（docs/design/redesign-v2.md §6.4）。
@@ -9,7 +9,7 @@ import type { ApprovalSummary } from "@agents-remote/shared";
  * 不进任何序列化协议、不落盘。
  */
 
-/** 审批中心单条登记。inputSummary 登记时定格（快照零计算）。 */
+/** 审批中心单条登记。inputSummary 登记时定格（快照零计算）。provider 缺省 claude（存量兼容）。 */
 export type ApprovalRecord = {
   runtimeKey: string;
   projectName: string;
@@ -20,6 +20,8 @@ export type ApprovalRecord = {
   /** input 一行摘要（原型 11 acard .cmd）。 */
   inputSummary: string;
   createdAt: string;
+  /** 审批来源 provider（claude=control_request；codex=requestApproval）；缺省 claude。 */
+  provider?: AgentProvider;
 };
 
 /** 摘要截断上限：一行 mono 摘要的 payload 上界（超出以 … 收尾）。 */
@@ -125,6 +127,7 @@ export class ApprovalRegistry {
         inputSummary: record.inputSummary,
         createdAt: record.createdAt,
         runtimeAlive: aliveKeys.has(record.runtimeKey),
+        ...(record.provider ? { provider: record.provider } : {}),
       }));
   }
 }

@@ -136,3 +136,144 @@ test("registerFromRuntime: 排除不误伤——混合批次只登记应登记�
   expect(cards[0]?.controlRequestId).toBe("req-bash");
   expect(cards[0]?.toolName).toBe("Bash");
 });
+
+// ── codex 批 provider 化：registerTransport / registerFromTransport / respond 派发 ──
+
+type CodexHarness = {
+  center: ApprovalCenter;
+  claudeKeys: Set<string>;
+  claudeWrites: string[];
+  codexKeys: Set<string>;
+  codexDeliveries: { runtimeKey: string; controlRequestId: string; decision: string }[];
+};
+
+/** claude stub（探活 + write 收集）+ codex transport 钩子（探活 + 投递收集）。 */
+function makeDualCenter(): CodexHarness {
+  const claudeKeys = new Set<string>();
+  const claudeWrites: string[] = [];
+  const codexKeys = new Set<string>();
+  const codexDeliveries: { runtimeKey: string; controlRequestId: string; decision: string }[] = [];
+  const center = new ApprovalCenter(
+    {
+      listAliveRuntimeKeys: async () => claudeKeys,
+      write: async (_key: string, text: string) => {
+        claudeWrites.push(text);
+      },
+    } as never,
+    {
+      getAgentSession: async () => undefined,
+      recordActivity: async () => {},
+    } as never,
+  );
+  center.registerTransport("codex", {
+    listAliveRuntimeKeys: async () => codexKeys,
+    deliverResponse: async (record, decision) => {
+      codexDeliveries.push({
+        runtimeKey: record.runtimeKey,
+        controlRequestId: record.controlRequestId,
+        decision,
+      });
+    },
+  });
+  return { center, claudeKeys, claudeWrites, codexKeys, codexDeliveries };
+}
+
+const registerCodex = (center: ApprovalCenter, runtimeKey: string, requestId: string) =>
+  center.registerFromTransport({
+    runtimeKey,
+    projectName: "demo",
+    sessionId: "codex_1",
+    controlRequestId: requestId,
+    toolName: "commandExecution",
+    input: { command: ["ls", "-la"] },
+    inputSummary: "ls -la",
+    createdAt: new Date().toISOString(),
+    provider: "codex",
+  });
+
+test("registerFromTransport: codex record 登记且 provider 字段保留（含 onApprovalRegistered）", () => {
+  const { center } = makeDualCenter();
+  const registered: ApprovalRecord[] = [];
+  center.onApprovalRegistered = (record) => registered.push({ ...record });
+
+  registerCodex(center, "cx-key", "codex:3");
+
+  expect(registered).toHaveLength(1);
+  expect(registered[0]?.provider).toBe("codex");
+  expect(registered[0]?.toolName).toBe("commandExecution");
+  expect(center.registry.list()).toHaveLength(1);
+});
+
+test("respond: 按 record.provider 派发——codex 走 codex 钩子、claude 走 claude write", async () => {
+  const { center, claudeKeys, codexKeys, claudeWrites, codexDeliveries } = makeDualCenter();
+  registerCodex(center, "cx-key", "codex:3");
+  center.registerFromRuntime(
+    { runtimeKey: "cl-key", projectName: "demo", sessionId: "agent_1" },
+    { request_id: "req-a", request: { tool_name: "Bash", input: { command: "ls" } } },
+  );
+  claudeKeys.add("cl-key");
+  codexKeys.add("cx-key");
+
+  const codexResult = await center.respond({
+    projectName: "demo",
+    sessionId: "codex_1",
+    controlRequestId: "codex:3",
+    decision: "allow",
+  });
+  const claudeResult = await center.respond({
+    projectName: "demo",
+    sessionId: "agent_1",
+    controlRequestId: "req-a",
+    decision: "deny",
+  });
+
+  expect(codexResult).toEqual({ delivered: true });
+  expect(codexDeliveries).toEqual([
+    { runtimeKey: "cx-key", controlRequestId: "codex:3", decision: "allow" },
+  ]);
+  // claude 不被误派发到 codex 钩子；control_response 仍走 claude write。
+  expect(claudeWrites).toHaveLength(1);
+  expect(claudeWrites[0]).toContain('"control_response"');
+  expect(claudeWrites[0]).toContain('"behavior":"deny"');
+  expect(claudeResult).toEqual({ delivered: true });
+  expect(center.registry.list()).toHaveLength(0);
+});
+
+test("respond: codex 进程已死 → runtime_dead + 残留卡片清掉", async () => {
+  const { center, codexKeys, codexDeliveries } = makeDualCenter();
+  registerCodex(center, "cx-key", "codex:5");
+  codexKeys.add("other-key"); // cx-key 不在探活集
+
+  const result = await center.respond({
+    projectName: "demo",
+    sessionId: "codex_1",
+    controlRequestId: "codex:5",
+    decision: "deny",
+  });
+
+  expect(result).toEqual({ delivered: false, reason: "runtime_dead" });
+  expect(codexDeliveries).toHaveLength(0);
+  expect(center.registry.list()).toHaveLength(0);
+});
+
+test("snapshot: aliveKeys 是多 transport 并集（claude + codex 各自判活，dead 打冻结标记不丢弃）", async () => {
+  const { center, claudeKeys, codexKeys } = makeDualCenter();
+  registerCodex(center, "cx-alive", "codex:1");
+  registerCodex(center, "cx-dead", "codex:2");
+  register(center, "cl-alive", "req-a");
+  register(center, "cl-dead", "req-b");
+  claudeKeys.add("cl-alive");
+  codexKeys.add("cx-alive");
+
+  const approvals = await center.snapshot();
+
+  // 死进程卡片保留在快照（runtimeAlive=false 冻结展示），活卡按并集判活。
+  const byKey = new Map(approvals.map((a) => [a.runtimeKey, a]));
+  expect(byKey.get("cx-alive")?.runtimeAlive).toBe(true);
+  expect(byKey.get("cx-dead")?.runtimeAlive).toBe(false);
+  expect(byKey.get("cl-alive")?.runtimeAlive).toBe(true);
+  expect(byKey.get("cl-dead")?.runtimeAlive).toBe(false);
+  expect(byKey.get("cx-alive")?.provider).toBe("codex");
+  // claude 存量卡无 provider 字段 → 快照投影也不添（缺省 claude 兼容）。
+  expect("provider" in byKey.get("cl-alive")!).toBe(false);
+});

@@ -148,6 +148,18 @@ const handleAgentSessionRoute = async (
       return jsonError("SESSION_PROVIDER_UNAVAILABLE", "Agent provider is required", 400);
     }
 
+    // codexThreadId 形状校验（security review P2-3）：外部输入直通 metadata 与
+    // thread/resume params，非 UUID 形状一律拒绝（codex thread id 是 UUID——fixtures
+    // 实证 v7，不锁版本位）。
+    if (
+      body.codexThreadId !== undefined &&
+      !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+        body.codexThreadId,
+      )
+    ) {
+      return jsonError("SESSION_PROVIDER_UNAVAILABLE", "Invalid codexThreadId", 400);
+    }
+
     const profile = getAgentProviderProfile(body.provider);
 
     // claude: settings 是 model/effort 权威来源。model 默认 tier alias "sonnet"（不读
@@ -194,6 +206,7 @@ const handleAgentSessionRoute = async (
           displayName: normalizeDisplayName(body.displayName),
           claudeSessionId: body.claudeSessionId,
           acpSessionId: body.acpSessionId,
+          codexThreadId: body.codexThreadId,
           model,
           permissionMode,
           effort,

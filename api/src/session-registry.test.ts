@@ -1140,3 +1140,68 @@ test("onMetadataChanged: create/patch/remove 触发；recordActivity 同分钟�
   await registry.closeTerminalSession(project.name, "terminal_evt123456");
   expect(events.length).toBe(5); // removeMetadata → 触发
 });
+
+// ── codex 批：keepIfRuntimeExists 的 codex 保留分支 ──
+
+test("SessionRegistry keeps codex app-server session after restart via codexThreadId (resume anchor)", async () => {
+  // codex 直连会话同 claude/omp：进程内 runtime，API 重启后 alive/exists 均不命中，但
+  // codexThreadId 可 thread/resume 恢复 → 保留。缺 threadId 的存量 tmux codex 不受此分支
+  // 影响（走 tmux 存活语义，探活全空 → 删除）。
+  const codexWithThread = {
+    schemaVersion: 1,
+    id: "agent_codexlive001",
+    projectName: project.name,
+    projectPath: project.path,
+    type: "agent",
+    provider: "codex",
+    displayName: "Codex Agent codexli",
+    status: "running",
+    runtimeKey: "ar-agent-codex-hello-world-8f3a2b1c-agent_codexlive001",
+    createdAt: "2026-10-25T00:00:00.000Z",
+    updatedAt: "2026-10-25T00:00:00.000Z",
+    codexThreadId: "th-resume-abc",
+  };
+  const codexTmuxLegacy = {
+    ...codexWithThread,
+    id: "agent_codextmux001",
+    displayName: "Codex Agent codextm",
+    runtimeKey: "ar-agent-codex-hello-world-8f3a2b1c-agent_codextmux001",
+    codexThreadId: undefined,
+  };
+  await mkdir(join(runDir, "sessions"), { recursive: true });
+  await writeFile(
+    join(runDir, "sessions", "agent_codexlive001.json"),
+    JSON.stringify(codexWithThread, null, 2),
+  );
+  // 存量 tmux 形态：codexThreadId undefined 的键不应出现在 JSON 里（JSON.stringify 丢 undefined）。
+  await writeFile(
+    join(runDir, "sessions", "agent_codextmux001.json"),
+    JSON.stringify(codexTmuxLegacy, null, 2),
+  );
+
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    runtime: {
+      async exists() {
+        return false;
+      },
+      async close() {},
+      async listAliveRuntimeKeys() {
+        return new Set<string>();
+      },
+    },
+  });
+
+  const sessions = await registry.listAgentSessions(project.name);
+
+  // 带 threadId → resume 锚点保留；无 threadId → tmux 判死删除。
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0].id).toBe("agent_codexlive001");
+  expect(sessions[0].codexThreadId).toBe("th-resume-abc");
+
+  // 壳快照（/api/sessions/stream）与列表口径必须一致——两处共用 hasRecoveryHandle，
+  // 曾因各写一份遗漏 codex 分支导致 API 重启后 codex 会话从壳流消失。
+  const shells = await registry.listAllShells();
+  expect(shells.map((shell) => shell.sessionId)).toEqual(["agent_codexlive001"]);
+});

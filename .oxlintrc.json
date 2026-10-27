@@ -3,6 +3,7 @@
   "ignorePatterns": [
     "**/dist/**",
     "**/*.tsbuildinfo",
-    "node_modules/**"
+    "node_modules/**",
+    "api/src/codex-generated/**"
   ]
 }

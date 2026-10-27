@@ -562,6 +562,18 @@ export type AgentProvider = "claude" | "codex" | "omp";
 // 原定义在 api/src/agent-provider-profiles.ts，因 web 消费 agent-providers 枚举投影下沉 shared。
 export type AgentProviderTransport = "claude" | "codex" | "acp";
 
+// codex 权限模式（API/前端单值，服务端映射 approvalPolicy+sandbox 组合，见
+// api/src/codex-runtime.ts 的 CODEX_PERMISSION_PRESETS）：
+//   readonly → never + read-only           default → untrusted + workspace-write
+//   auto     → on-request + workspace-write  full → never + danger-full-access
+export type CodexPermissionMode = "readonly" | "default" | "auto" | "full";
+export const CODEX_PERMISSION_MODES: readonly CodexPermissionMode[] = [
+  "readonly",
+  "default",
+  "auto",
+  "full",
+];
+
 // ── Settings: claude presets + runtime defaults ──────────────────────
 //
 // ClaudePreset = 一套端点凭证（apiKey + baseUrl）+ 该端点的模型映射（modelMapping），
@@ -1303,6 +1315,8 @@ export type AgentSession = {
   claudeSessionId?: string;
   /** ACP session id（acp provider）：agent 侧生成的不透明 sess_xxx 标识，spawn+loadSession 恢复用。 */
   acpSessionId?: string;
+  /** codex thread id（codex provider）：app-server thread UUID，spawn+thread/resume 恢复用。 */
+  codexThreadId?: string;
   /** 自动重试注入配置（claude）；缺省 = 默认关。 */
   autoRetry?: ClaudeAutoRetryConfig;
   /** 运行形态（双模式）；缺省 chat。仅 claude provider 支持 terminal。 */
@@ -1334,6 +1348,8 @@ export type CreateAgentSessionRequest = {
   claudeSessionId?: string;
   /** Resume an existing omp (ACP) session — 经 session/load 全量回放历史。 */
   acpSessionId?: string;
+  /** Resume an existing codex thread — 经 thread/resume + thread/read 回放历史。 */
+  codexThreadId?: string;
 };
 
 export type CreateAgentSessionResponse = {
@@ -1771,6 +1787,136 @@ export type AcpStreamClientMessage =
       type: "set_config";
       configId: string;
       value: string;
+    }
+  | {
+      type: "ping";
+    };
+
+// -- Codex Stream Messages（/api/projects/:p/agent-sessions/:id/codex-stream）--
+// 传输层与 acp/claude 字节级一致（复用 session_init/history_*/live_*/ended 批处理 markers）；
+// payload 发 codex_event（app-server 通知透传帧）。Route A 同 acp：不翻译成 claude 帧族，
+// 独立帧族 + 前端 codex-adapter 局部解码。app-server 通知的具体形状只在 api 端存在
+// （`codex app-server generate-ts` 0.163.0 生成绑定，仅本机对照不入库），shared 只声明外层帧协议。
+
+/** app-server 通知透传帧的宽进形状：method+params 原样透传（shape 由生成绑定定义，
+ *  前端按需局部解码 + 字段漂移宽进防御，同 acp_event 约定）。 */
+export type CodexNativeEventShape = {
+  method: string;
+  params: Record<string, unknown>;
+};
+
+export type CodexEventFrame = {
+  type: "codex_event";
+  event: CodexNativeEventShape;
+};
+
+export type CodexUserEchoFrame = {
+  type: "codex_user_echo";
+  /** 用户发送且被 runtime 接受的 prompt 原文。acp_user_echo 同语义。 */
+  text: string;
+  /** 客户端生成、原样带回的本地 uuid，用于把 echo 对齐到已发送消息。 */
+  uuid: string;
+};
+
+/** 会话配置快照：model/list + thread 响应归一（服务端合成）。effort 取自模型支持列表。 */
+export type CodexConfigFrame = {
+  type: "codex_config";
+  /** model/list 归一后的菜单（id/displayName/supportedReasoningEfforts/defaultReasoningEffort）。 */
+  models: {
+    id: string;
+    displayName: string;
+    supportedReasoningEfforts: string[];
+    defaultReasoningEffort: string;
+  }[];
+  /** 当前 thread 的生效值（thread/start|resume 响应回读）。 */
+  current: {
+    model: string;
+    effort: string | null;
+    approvalPolicy: string;
+    sandbox: string;
+  };
+};
+
+/** 审批请求帧：**broadcastOnly 不进 live 缓冲**（重连后由 ApprovalCenter 快照兜底，
+ *  与 claude control_request 同语义）。item 形状宽进（requestApproval params 原样）。 */
+export type CodexApprovalRequestFrame = {
+  type: "codex_approval_request";
+  /** `"codex:<rpcId>"` 前缀隔离（ApprovalCenter controlRequestId 命名空间）。 */
+  controlRequestId: string;
+  /** 审批语义键：command | fileChange | permissions（requestApproval 三族）。 */
+  toolName: string;
+  /** 人读摘要（summarizeControlInput 同风格：command 原文 / 变更路径）。 */
+  inputSummary: string;
+  /** requestApproval params 原样（web 端局部解码展示）。 */
+  item: Record<string, unknown>;
+};
+
+export type CodexStreamServerMessage =
+  | CodexEventFrame
+  | CodexUserEchoFrame
+  | CodexConfigFrame
+  | CodexApprovalRequestFrame
+  | {
+      type: "error";
+      code: ApiErrorCode;
+      message: string;
+    }
+  | {
+      type: "session_init";
+      resume: boolean;
+    }
+  | {
+      type: "history_start";
+      count: number;
+    }
+  | {
+      type: "history_end";
+    }
+  | {
+      // live 缓冲回放条数：resume 重连时 relay live 段非空（count: 0 字面量是编码期
+      // 假设，code review P2-13——订阅先于任何 live 行时才恒 0）。
+      type: "live_start";
+      count: number;
+    }
+  | {
+      type: "live_end";
+    }
+  | {
+      // turn 边界（turn/completed 到达）：与 claude result→ended / acp stopReason→ended
+      // 同语义。interrupted/failed 也发 ended（stopReason 携带状态），瞬态帧不进 live 缓冲。
+      type: "ended";
+      stopReason?: string;
+    }
+  | {
+      type: "pong";
+    };
+
+export type CodexStreamClientMessage =
+  | {
+      type: "user";
+      text: string;
+      /** 客户端生成的本地 uuid（crypto.randomUUID()）：server 原样注入 codex_user_echo。 */
+      uuid?: string;
+    }
+  | {
+      type: "interrupt";
+    }
+  | {
+      // 配置热切换（model/effort/approvalPolicy/sandbox）：写 metadata + 下一个 turn/start
+      // 应用（app-server 的 turn/start 覆盖语义 = 本轮及后续轮；thread/start 只在创建时
+      // 生效）。无即时回读帧——诚实标注「下轮生效」，UI 不伪装即时切换。
+      type: "set_config";
+      model?: string;
+      effort?: string;
+      approvalPolicy?: string;
+      sandbox?: string;
+    }
+  | {
+      // 审批应答（ApprovalCenter / 会话内托盘）：controlRequestId = "codex:<rpcId>"，
+      // decision 白名单见 codex-runtime（accept/decline/cancel…，按 requestApproval 族分派）。
+      type: "respond";
+      controlRequestId: string;
+      decision: string;
     }
   | {
       type: "ping";
@@ -2616,6 +2762,8 @@ export type ApprovalSummary = {
   createdAt: string;
   /** runtime 存活；false = 断线冻结（卡片置灰禁响应）。 */
   runtimeAlive: boolean;
+  /** 审批来源 provider（托盘 icon 分流用）；缺省 claude（存量兼容）。 */
+  provider?: AgentProvider;
 };
 
 export type ApprovalsSnapshotResponse = {

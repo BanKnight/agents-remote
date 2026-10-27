@@ -129,7 +129,9 @@ export class PiSessionRelay {
 
   private capLive(): void {
     if (this.liveLines.length > LIVE_BUFFER_CAP) {
-      this.liveLines = this.liveLines.slice(-LIVE_BUFFER_CAP);
+      // 批量裁剪：codex 是 token 级 delta 流，cap 触顶后是稳态热路径——逐条 slice(-CAP)
+      // 每条 delta 全量重建数组（perf review P1-1），一次裁 1/16 摊薄均摊成本。
+      this.liveLines = this.liveLines.slice(-Math.floor((LIVE_BUFFER_CAP * 15) / 16));
     }
   }
 

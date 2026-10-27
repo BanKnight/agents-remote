@@ -1,49 +1,51 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-27(镜像瘦身批完成:体积 2.19GB→1.19GB + 基镜像升 node:24 安全版 + 冒烟全绿)
+> 最后更新:2026-10-27(Codex 一等 provider 批次 1——服务端闭环完成:四门禁全绿 + WS 探针
+> 14 PASS/1 SKIP + reviewer 清单消化;批次 2 前端未开始)
 
 ## 一句话状态
 
-**「部署形态」批之后紧接「镜像瘦身」批全部完成:builder 只组装 runtime 真实需要的四样(替代 1.27GB node_modules),基镜像升 node:24-slim(v24.22.1,含 2026-10-20 全线安全发布),镜像 2.19GB→1.19GB(-46%);compose 冒烟 15 项全绿(CLI 链/解析链/站点面/登录/自愈/约束);commit 15c84d8。推 tag 仍待用户发布时单独确认。**
+**Codex 走 `codex app-server`(JSON-RPC over stdio JSONL)直连,批次 1 服务端闭环已落地:协议事实探针 + 生成绑定对照 + `codex-runtime`/`codex-stream` + shared 帧族 + 注册表/审批/路由接线;四门禁全绿(api 1162 + shared 11 + web 951),WS 级探针 14 PASS + 1 SKIP(账号 429 限流);reviewer(security/code/perf)清单已消化。批次 2 前端(adapter/面板/新建入口)与 P1 parity 未开始。**
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
-- **生产形态(用户拍板,上一批)**:web 静态由 **api 内置静态 serve**(`WEB_DIST_DIR` env 启用);单进程单端口承载 web 静态 + `/api`(HTTP+WS) + `/p/`。核心交付 = GitHub CI 打容器镜像给别人用;本机 ar-dev 不迁移。
-- **镜像瘦身方案(本批,plan approved)**:砍「整棵 node_modules」→ builder 组装最小 runtime 树(`cp -rL` 解 bun symlink 布局),runtime 精确 COPY 三处:
-  - `/runtime/claude-code-linux-x64`(claude 254MB ELF 自包含,裸名 PATH spawn)
-  - `/app/api/node_modules`(skills+tar+yaml,api bundle 唯一运行时解析点:`createRequire` 从 `/app/api/dist` 向上解析,skill-process.ts 以 `["node", <绝对路径>]` spawn)
-  - `/app/{api,web}/dist`(api 是 @bun 全 bundle 零第三方依赖)
-  - 证据:web 的构建工具在 **dependencies** 分组,`bun install --production` 裁不掉(vite/tailwind/mermaid/lucide/typescript ~1.27GB);api/dist 无 `--external`、pi SDK 全内联(211 处模块引用、0 external require)——**pi 是进程内 SDK 导入,不是 spawn 的 CLI**。
-- **基镜像升 node:24-slim(用户安全提醒拍板)**:近期 node 安全问题 = **2026-10-20 全线安全发布**(v24.22.1 / v22.23.4,`security:true`);node:24 = Active LTS(bookworm 基,与旧 22 线同 glibc 环境);skills engines ≥22.20.0 兼容。**floating tag 不钉 digest**——CI 重建持续吃安全补丁。
-- **npm/corepack/yarn 裁剪:不做**——实测仅 19MB(npm+corepack;yarn 7MB 在独立层),且**后层 `rm` 不省镜像体积(层不可变,只 mask)**;为此加 stage 重建 + debian 版本耦合不值。计划里「~45MB」估算已按实测修正。
-- **NPM_REGISTRY build-arg**:codex `npm install -g` 国内直连 npmjs 会长时间卡死(实测 25min 0.6% CPU);加 ARG 默认官方源(CI 零改动),本地传 `--build-arg NPM_REGISTRY=https://registry.npmmirror.com`。deployment.md 构建侧已补。
-- **供应链钉版不变**:CODEX_VERSION=0.163.0;workflow 五 action 钉 commit SHA;密码不落盘(APP_PASSWORD env-only);restart policy 语义(`docker kill/stop` 不触发重启,崩溃自愈验证 = 宿主侧杀容器内 bun)。
+- **一等 provider 形态**:每会话一个 `codex app-server` 进程(argv 数组直拉、非 tmux),「进程内存活 = 会话存活」与 AcpRuntime 不变量同构;不做共享 daemon。**零新依赖**。
+- **Route A 沿用**:独立 `codex_*` 帧族不翻译成 claude 帧族;前端不接触 raw app-server method;client message 白名单封闭。
+- **`api/src/codex-generated/` 不入库**(747 文件 ~3.1MB、全仓零 import,仅对照用)→ `.gitignore` + oxlint/oxfmt ignorePatterns 保留(本机跑门禁用);生成命令记在 `codex-runtime.ts` 头注释,升级 codex 时重跑。协议**真证据**是 `scripts/fixtures/codex-appserver/*.jsonl`(0.163.0 真机帧,入库)。
+- **`history` 能力位对 codex 仍 `unsupported`**:会话内 `thread/resume` 回放已通,但历史**列表**(rollout JSONL 扫描)属 P1——能力位描述列表,不提前翻转(诚实形态标记)。
+- **create 响应带 codexThreadId**:`setCodexThreadId` 是 fire-and-forget(runtime 回调 `void`),create 返回前读回**内存索引**权威态(patchMetadata 先同步 index.set 再落盘)。**不能用 `getAgentMetadata`**——它带 keepIfRuntimeExists 探活,会把「此刻 index 条目」写进存活快照 TTL 缓存,之后创建的会话在该窗口被 alive 过滤误判为死(本次两个单测失败的真根因;测试用固定时钟使缓存永不过期才暴露)。
+- **恢复抓手判定单源**:`SessionRegistry.hasRecoveryHandle()`(claude+claudeSessionId / omp+acpSessionId / codex+codexThreadId)由 `listAllShells` 与 `keepIfRuntimeExists` 共用——此前两处各写一份,codex 分支漏了壳流那份(API 重启后 codex 会话会从 /api/sessions/stream 消失),已收口 + 补测试断言。
+- **权限值域三层**:权限模式词(readonly/default/auto/full)↔ AskForApproval(untrusted/on-request/never)↔ sandbox;`CODEX_PERMISSION_PRESETS` 正向单源,`policyPairToPermissionMode` 反向。配置热切换 = 存 pending、下一个 turn/start 应用(UI 标「下轮生效」)。
+- **单飞 turn**:server 不拒绝并发 turn/start → 本层单飞 + 队列 cap 32 + `startingTurn` 同步置位 + `turnGeneration` 代际守卫(RPC 往返窗口)。
 
 ### 进度
 
-- ✅ 镜像瘦身实现(Dockerfile 重构):builder `/runtime` 组装(确定性路径,glob 仅命中锁文件版本);runtime node:24-slim + 三处 COPY;`PATH=/runtime:${PATH}`;体积 **1.19GB**(层账:debian 75+node 155+apt 96+bun 107+codex 431+claude 265+dist 59+skills 3.5)。
-- ✅ 两坑修复:①BuildKit **COPY 单文件 symlink 会解引用**——`COPY /runtime/claude` 重复拷 265MB,改 final 层内 `ln -s`;②磁盘 40G 满(ENOSPC)——`docker builder prune -af` 回收 6.98GB + 删旧镜像,构建命令勿用 `| tail`(吞退出码)。
-- ✅ 冒烟(原 compose 文件 + 本地 tag 指向新镜像):healthy 9s;node **v24.22.1**/bun 1.4.4/claude 2.1.299/codex 0.163.0/tmux 3.3a/git 2.39.5;skills 1.5.22 解析链(`bun`+`node` 双路 createRequire → `/app/api/node_modules/skills/package.json`)与 CLI 实跑;`/app/node_modules` 缺席、全盘无 vite/mermaid/typescript/lucide;站点面(壳 no-cache/assets immutable/text-javascript/health 200/未鉴权 401);登录 200→projects 200;密码不落盘(config.yaml 无 app_password);崩溃自愈 restarts=1;mem 4G/pids 512/no-new-privileges。
-- ✅ 文档:deployment.md 补「镜像体积构成表」「迁移到新机器(三步)」+ mirror 示例 node:24 + NPM_REGISTRY 说明。
-- ✅ 门禁:format/lint/typecheck 全绿;commit `15c84d8`(hook 判 docs-only 快通道)。
-- ⏸ 推 tag:用户拍板先不推;发布时 `git tag v<semver> && git push origin v<semver>`(需单独确认,版本号待定)。
+- ✅ 协议事实:`scripts/probe-codex-appserver.mjs`(直连 app-server 录 9 类场景 fixtures:initialize/thread/start→turn 全周期/requestApproval 往返/resume+read/model/list/并发 turn/配置热切换)。
+- ✅ `api/src/codex-runtime.ts`:ensureRunning 单飞 + resume 覆盖参数透传 + readLoop 分片累积 + 审批分族回复(permissions/requestUserInput/elicitation/legacy/未知)+ env 白名单 + 错误路径回滚 + 队列 echo 序。
+- ✅ `api/src/codex-stream.ts` + `index.ts` 接线 + `session-registry`(codexThreadId/setCodexThreadId/getCodexThreadIdByRuntimeKey/keep 分支/resumed 判定)+ `session-routes` codexThreadId UUID 形状校验 + `approval-center`/`approval-registry` provider 化。
+- ✅ 单测:`codex-runtime.test.ts`(fake app-server NDJSON 全生命周期/审批/resume 透传/排队/权限翻译)、`codex-stream.test.ts`、approval 双 provider、keep/hasRecoveryHandle。
+- ✅ `scripts/probe-codex-ws.mjs`(WS 级):create→threadId 回填→open 帧序→user→echo/turn/ended→interrupt→杀 app-server→重开 thread/resume history 回放→close。**14 PASS + 1 SKIP**(429 限流,内容断言降级)。
+- ⏸ 批次 2(前端)未开始;P1 parity 未开始(历史列表/MCP 注入验证/凭据/图片/usage/requestUserInput 选项卡/增量回放锚)。
 
 ### 待办
 
-- **发布时**(用户发起):定版本号 → 推 tag → GH Actions 绿(CI 用官方 npm 源,零改动)→ `docker pull ghcr.io/banknight/agents-remote:<tag>` 冒烟 → GHCR 包公开化。
-- **真机/人工清单(本批遗留)**:①UI 发起一次 pi chat(需 API key,验证内联 SDK 运行面——静态证据:pi 全内联+启动无 import 错误,仅深度路径未实测);②`/p/` 公开 pages 根管线本批未跑(代码零改动,47 单测+上一批冒烟已覆盖)。
-- **既有待办不变**:IDB 批剩余真机清单 5 项;React #310 跨 lg 断点崩溃立批;批 16/17/18 真机复验;取证件待拆;e2e 基线;M2.0 多卡焦点互抢。
+- **批次 1 交付报告给用户**(含真机清单)后开工批次 2:`web/src/routes/codex-adapter.ts` + `CodexSessionDetailRoute.tsx` + 面板路由/新建菜单(桌面 + mobile sheet)/i18n + e2e(`codex-session.spec.ts`)+ UI 探针 + CSS 硬闸 + tokens 机检。
+- **不修项(已在 reviewer 消化时判定)**:security P2-2(respond 不校验登记——会话内主路径 + runtimeKey 绑定已防跨会话)、code P2-15(getCodexThreadIdByRuntimeKey O(n),调用量低)、perf P1-2/P2-2(增量回放锚 / history 无上限——既有设计,留 P1)、claude/acp spawn env 同病(影响面大需单独批)、codex-stream WS 无鉴权(全家族既有形态,acp-stream 同款,交用户裁决)。
+- **既有待办不变**:镜像瘦身批真机遗留(pi chat 运行面、/p/ 管线);推 tag 待用户发布时单独确认;IDB 批真机 5 项;React #310;批 16/17/18 真机复验;e2e 基线;M2.0 多卡焦点互抢。
 
 ### 易丢的关键上下文
 
-- **本地构建必须**:基础镜像经 mirror 拉取 tag 回标准名(node:24-slim/oven/bun:1 本机已就位)+ `--build-arg NPM_REGISTRY=https://registry.npmmirror.com`;全量构建 ~10min(bun install 1.27GB 网络 + web 构建 + codex 411MB)。
-- **Docker 层语义**:后层 `rm -rf` 不减小镜像(基座层不可变);COPY 单文件 symlink 解引用成实体;多源 glob 双命中 cp 显式报错(fail loud 是有意设计)。
-- **磁盘 40G 紧张**:构建前后用 `docker system df` 看;只清 builder cache/dangling image,不碰同机他项目运行容器(9router/axonhub)。
-- **冒烟残留清理**:compose bind mount 首启由 docker daemon root 建目录 → `docker run --rm --entrypoint sh -v $PWD/data:/data agents-remote:local -c 'rm -rf /data/...'`。
-- **本机镜像 agents-remote:local = 1.19GB 已验证可用**;旧 2.19GB 镜像与中间产物已删(可从 git b805244 重建);ghcr.io 本地 alias 已移除(防 compose 用到陈旧本地 tag)。
-- commit 尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`,标准 `git add && git commit`。
+- **codex 账号当前 429 限流**:真实 LLM 内容断言走 SKIP 分支(`probe-codex-ws.mjs` 的 `skip()`),链路断言照常;限流解除后重跑一次可补内容级断言。
+- **WS 探针两个坑(已在脚本内注释)**:① gzip 批解压异步 → `onmessage` 必须挂 promise 链串行,否则 history_end marker 先于批解压到达、行被丢;② WS close 只断订阅(进程存活期重连 = relay live 回放 resume:false),要验 thread/resume 必须先杀 app-server 进程(用 /proc cwd+cmdline 校验归属,**不用 POST /close**——closeMetadata 会连 metadata 一起删)。
+- **测试内存**:`systemd-run --scope --user -p MemoryMax=2G bun test …`(cgroup);**不要用 `ulimit -v`**(伤 bun JIT,本机 CPU 无 AVX 会 SIGILL 随机崩、fail 面漂移)。
+- **探针一律 bun 跑**,别用 node。
+- commit 尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`,标准 `git add && git commit`;编辑文件一律内置 Read/Edit/Write。
 
 ---
-最后更新:2026-10-27(触发原因:镜像瘦身批收尾:实现+冒烟+门禁+commit 完成,handoff save)
+最后更新:2026-10-27(触发原因:codex 批次 1 收尾——门禁全绿 + 探针通过 + handoff save)
+
+## 提醒
+- 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
+- 到达里程碑或感知将 compact 时，主动 /handoff save。

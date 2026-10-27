@@ -4,6 +4,7 @@
     "**/dist/**",
     "**/*.tsbuildinfo",
     "node_modules/**",
-    "bun.lock"
+    "bun.lock",
+    "api/src/codex-generated/**"
   ]
 }
