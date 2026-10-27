@@ -1,50 +1,49 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-27(部署形态批:实现+commit 落地+compose 冒烟全绿,双 reviewer 审查中)
+> 最后更新:2026-10-27(镜像瘦身批完成:体积 2.19GB→1.19GB + 基镜像升 node:24 安全版 + 冒烟全绿)
 
 ## 一句话状态
 
-**「Docker/compose/systemd 部署」批实现完成:commit `66bc12e` 落地(api 内置静态 serve + /p/ rewrite + Dockerfile/entrypoint/compose/CI/unit/文档),docker build 成功,compose 冒烟 15 项断言全绿(崩溃自愈/落点树/CLI 链/mem limit),全门禁 951 pass 0 fail——双 reviewer(code+security)后台审查中,消化后待用户确认推 tag 触发 CI(外发动作)。**
+**「部署形态」批之后紧接「镜像瘦身」批全部完成:builder 只组装 runtime 真实需要的四样(替代 1.27GB node_modules),基镜像升 node:24-slim(v24.22.1,含 2026-10-20 全线安全发布),镜像 2.19GB→1.19GB(-46%);compose 冒烟 15 项全绿(CLI 链/解析链/站点面/登录/自愈/约束);commit 15c84d8。推 tag 仍待用户发布时单独确认。**
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
-- **生产形态(用户拍板)**:web 静态由 **api 内置静态 serve**(`WEB_DIST_DIR` env 启用,未设=关闭 dev 零影响)——单进程单端口承载 web 静态 + `/api`(HTTP+WS) + `/p/`,tunnel 语义不变。**本批核心交付 = GitHub CI 打容器镜像给别人用**;本机 ar-dev 不迁移(用户「暂时不着急」);systemd 提供系统级模板。
-- **会话记录指定目录(用户要求,容器场景)**:零应用改动,compose 三卷收口 `./data/`——`data/home`→`/home/agent`(.claude 登录态+JSONL/.codex/.agents-remote)、`data/run`→`/data/run`(AGENTS_REMOTE_RUN_DIR:token-secret+sessions/*.json)、`data/projects`→`/data/projects`(PROJECTS_ROOT)。备份=备份 `data/`。
-- **CONFIG_REQUIRED 硬阻塞不改 api 代码**:entrypoint 首启引导——config.yaml 不存在且 APP_PASSWORD 有值 → umask 077 写最小 yaml(app_password/projects_root/api_port 4311/web_port 4311/web_api_base_url /api)。
-- **镜像策略**:多阶段 builder(oven/bun:1 全量装+build+`--production` 裁剪)→ runtime(node:22-slim 自带 node 供 skills CLI;apt tmux/git/gosu;claude CLI 随 node_modules/.bin;codex npm -g 内置;omp 非 npm 不内置)。agent uid/gid 1000 对齐宿主(bind mount 属主一致)。单架构 amd64,workflow 注释留多架构扩展位。
-- **ENTRYPOINT/CMD 分离**:entrypoint 做初始化(root chown→gosu 降权→config 引导)后 `exec "$@"`,CMD 缺省 `bun /app/api/dist/index.js`——`docker run image sh` 可透传调试。
-- **restart policy 语义**:「崩溃自愈」验证用容器内杀 bun(kill -9)→ restarts=1 ✓;`docker kill`/`stop` 不触发重启是 Docker 语义(手动停止),非配置问题。
+- **生产形态(用户拍板,上一批)**:web 静态由 **api 内置静态 serve**(`WEB_DIST_DIR` env 启用);单进程单端口承载 web 静态 + `/api`(HTTP+WS) + `/p/`。核心交付 = GitHub CI 打容器镜像给别人用;本机 ar-dev 不迁移。
+- **镜像瘦身方案(本批,plan approved)**:砍「整棵 node_modules」→ builder 组装最小 runtime 树(`cp -rL` 解 bun symlink 布局),runtime 精确 COPY 三处:
+  - `/runtime/claude-code-linux-x64`(claude 254MB ELF 自包含,裸名 PATH spawn)
+  - `/app/api/node_modules`(skills+tar+yaml,api bundle 唯一运行时解析点:`createRequire` 从 `/app/api/dist` 向上解析,skill-process.ts 以 `["node", <绝对路径>]` spawn)
+  - `/app/{api,web}/dist`(api 是 @bun 全 bundle 零第三方依赖)
+  - 证据:web 的构建工具在 **dependencies** 分组,`bun install --production` 裁不掉(vite/tailwind/mermaid/lucide/typescript ~1.27GB);api/dist 无 `--external`、pi SDK 全内联(211 处模块引用、0 external require)——**pi 是进程内 SDK 导入,不是 spawn 的 CLI**。
+- **基镜像升 node:24-slim(用户安全提醒拍板)**:近期 node 安全问题 = **2026-10-20 全线安全发布**(v24.22.1 / v22.23.4,`security:true`);node:24 = Active LTS(bookworm 基,与旧 22 线同 glibc 环境);skills engines ≥22.20.0 兼容。**floating tag 不钉 digest**——CI 重建持续吃安全补丁。
+- **npm/corepack/yarn 裁剪:不做**——实测仅 19MB(npm+corepack;yarn 7MB 在独立层),且**后层 `rm` 不省镜像体积(层不可变,只 mask)**;为此加 stage 重建 + debian 版本耦合不值。计划里「~45MB」估算已按实测修正。
+- **NPM_REGISTRY build-arg**:codex `npm install -g` 国内直连 npmjs 会长时间卡死(实测 25min 0.6% CPU);加 ARG 默认官方源(CI 零改动),本地传 `--build-arg NPM_REGISTRY=https://registry.npmmirror.com`。deployment.md 构建侧已补。
+- **供应链钉版不变**:CODEX_VERSION=0.163.0;workflow 五 action 钉 commit SHA;密码不落盘(APP_PASSWORD env-only);restart policy 语义(`docker kill/stop` 不触发重启,崩溃自愈验证 = 宿主侧杀容器内 bun)。
 
 ### 进度
 
-- ✅ Step 1:api 内置静态 serve(`static-web.ts` ~125 行:decode 拒绝/null byte/`..`段 404/realpath 前缀校验拦 symlink 逃逸/SPA fallback 三态/assets immutable+入口 no-cache)+ index.ts `/p/` rewrite(handler 顶部正则规范化,复用 pages serve 管道:公开根豁免/per-root token 鉴权/ETag)+ 13 用例 + /p/ 集成用例。
-- ✅ Step 2:裸跑冒烟 8 项(临时端口 43199+临时 HOME,不碰 ar-dev)。
-- ✅ Step 3:全部部署文件落盘+docker build 成功+compose 冒烟 15 项全绿:
-  - build 三坑修复:①国内网络 Docker Hub 直连重置→宿主惯例 `docker.1ms.run` mirror 前缀 pull 后 tag 回标准名(Dockerfile 保持标准名);②oven/bun 无 git→builder apt 装 git+`git init -q .`(根 package.json prepare 需要);③`.dockerignore` 的 `**/dist` 误伤 git 入库的 `api/src/assets/canvas/dist/`(excalidraw bundle,api 源码 import 依赖)→加 `!` 例外链;④node:22-slim 自带 node 用户占 uid 1000→先 userdel 再建 agent。
-  - 冒烟断言:/ 200 SPA 壳(与容器 dist 一致)/api/health ok/assets JS+CSS immutable/sw no-cache/未知无扩展名 fallback 200/未知有扩展名 404//api 未鉴权 401 JSON//p/ 未知项目 PROJECT_NOT_FOUND JSON 404/data 落点树+0600+宿主属主/CLI 全链(claude 2.1.299/codex 0.164.0/tmux 3.3a/git 2.39.5/node 22.23.4/bun 1.4.4)/进程链 docker-init→gosu→bun uid1000/崩溃自愈 restarts=1→healthy/mem limit 4G。
-- ✅ Step 4 部分:全门禁绿;commit `66bc12e`(pre-commit 全门禁过)+ 前置 `fefdc10`(IDB 批 handoff 补交);双 reviewer 后台审查中。
-- ⏳ Step 5:推 tag `v*` 触发 CI → GHCR(外发动作,**执行前单独向用户确认**)。
+- ✅ 镜像瘦身实现(Dockerfile 重构):builder `/runtime` 组装(确定性路径,glob 仅命中锁文件版本);runtime node:24-slim + 三处 COPY;`PATH=/runtime:${PATH}`;体积 **1.19GB**(层账:debian 75+node 155+apt 96+bun 107+codex 431+claude 265+dist 59+skills 3.5)。
+- ✅ 两坑修复:①BuildKit **COPY 单文件 symlink 会解引用**——`COPY /runtime/claude` 重复拷 265MB,改 final 层内 `ln -s`;②磁盘 40G 满(ENOSPC)——`docker builder prune -af` 回收 6.98GB + 删旧镜像,构建命令勿用 `| tail`(吞退出码)。
+- ✅ 冒烟(原 compose 文件 + 本地 tag 指向新镜像):healthy 9s;node **v24.22.1**/bun 1.4.4/claude 2.1.299/codex 0.163.0/tmux 3.3a/git 2.39.5;skills 1.5.22 解析链(`bun`+`node` 双路 createRequire → `/app/api/node_modules/skills/package.json`)与 CLI 实跑;`/app/node_modules` 缺席、全盘无 vite/mermaid/typescript/lucide;站点面(壳 no-cache/assets immutable/text-javascript/health 200/未鉴权 401);登录 200→projects 200;密码不落盘(config.yaml 无 app_password);崩溃自愈 restarts=1;mem 4G/pids 512/no-new-privileges。
+- ✅ 文档:deployment.md 补「镜像体积构成表」「迁移到新机器(三步)」+ mirror 示例 node:24 + NPM_REGISTRY 说明。
+- ✅ 门禁:format/lint/typecheck 全绿;commit `15c84d8`(hook 判 docs-only 快通道)。
+- ⏸ 推 tag:用户拍板先不推;发布时 `git tag v<semver> && git push origin v<semver>`(需单独确认,版本号待定)。
 
 ### 待办
 
-- 双 reviewer 报告回来 → 消化(必要时修复补 commit)。
-- 推 tag 前向用户确认 → GH Actions 绿 + `docker pull` 冒烟。
-- 交用户真机/使用清单。
+- **发布时**(用户发起):定版本号 → 推 tag → GH Actions 绿(CI 用官方 npm 源,零改动)→ `docker pull ghcr.io/banknight/agents-remote:<tag>` 冒烟 → GHCR 包公开化。
+- **真机/人工清单(本批遗留)**:①UI 发起一次 pi chat(需 API key,验证内联 SDK 运行面——静态证据:pi 全内联+启动无 import 错误,仅深度路径未实测);②`/p/` 公开 pages 根管线本批未跑(代码零改动,47 单测+上一批冒烟已覆盖)。
 - **既有待办不变**:IDB 批剩余真机清单 5 项;React #310 跨 lg 断点崩溃立批;批 16/17/18 真机复验;取证件待拆;e2e 基线;M2.0 多卡焦点互抢。
 
 ### 易丢的关键上下文
 
-- **冒烟环境残留清理坑**:compose bind mount 首启由 docker daemon 以 root 建目录——宿主 deploy 删不掉,清理用 `docker run --rm --entrypoint sh -v $PWD/data:/data agents-remote:local -c 'rm -rf /data/...'`(镜像内 root);`docker run` 传参已被 ENTRYPOINT 透传修复,但覆盖入口仍需 `--entrypoint`。
-- **index.html 里有字面 `assets/index-XXXX.js`**(vite 内嵌注释文本),grep 提取 asset 名会误抓——用 `docker exec ls /app/web/dist/assets/` 取真实 chunk 名;宿主与镜像构建批次 hash 不同,验证以容器内为准。
-- **数据落点权威表**在 docker-compose.yml 顶部注释 + docs/runbooks/deployment.md。
-- web 包零改动(静态产物已可移植);dev 链路零改动(ar-dev + vite preview + HMR 照旧);`/api/*` 语义零变化。
+- **本地构建必须**:基础镜像经 mirror 拉取 tag 回标准名(node:24-slim/oven/bun:1 本机已就位)+ `--build-arg NPM_REGISTRY=https://registry.npmmirror.com`;全量构建 ~10min(bun install 1.27GB 网络 + web 构建 + codex 411MB)。
+- **Docker 层语义**:后层 `rm -rf` 不减小镜像(基座层不可变);COPY 单文件 symlink 解引用成实体;多源 glob 双命中 cp 显式报错(fail loud 是有意设计)。
+- **磁盘 40G 紧张**:构建前后用 `docker system df` 看;只清 builder cache/dangling image,不碰同机他项目运行容器(9router/axonhub)。
+- **冒烟残留清理**:compose bind mount 首启由 docker daemon root 建目录 → `docker run --rm --entrypoint sh -v $PWD/data:/data agents-remote:local -c 'rm -rf /data/...'`。
+- **本机镜像 agents-remote:local = 1.19GB 已验证可用**;旧 2.19GB 镜像与中间产物已删(可从 git b805244 重建);ghcr.io 本地 alias 已移除(防 compose 用到陈旧本地 tag)。
 - commit 尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`,标准 `git add && git commit`。
 
 ---
-最后更新:2026-10-27(触发原因:部署批 Step 1-4 主体完成,双 reviewer 审查中,handoff save 防丢失)
-
-## 提醒
-- 开干前读 .claude/gtd/next-actions.md;守 .claude/constitution.md 底线。
-- 到达里程碑或感知将 compact 时,主动 /handoff save。
+最后更新:2026-10-27(触发原因:镜像瘦身批收尾:实现+冒烟+门禁+commit 完成,handoff save)
