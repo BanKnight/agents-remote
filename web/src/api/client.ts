@@ -760,6 +760,8 @@ export async function createAgentSession(
     claudeSessionId?: string;
     /** omp (ACP) session id——resume 经 session/load 全量回放历史。 */
     acpSessionId?: string;
+    /** codex thread id——resume 经 thread/resume + thread/read 回放历史。 */
+    codexThreadId?: string;
     displayName?: string;
     model?: string;
     permissionMode?: string;
@@ -772,6 +774,7 @@ export async function createAgentSession(
       provider,
       claudeSessionId: opts?.claudeSessionId,
       acpSessionId: opts?.acpSessionId,
+      codexThreadId: opts?.codexThreadId,
       displayName: opts?.displayName,
       model: opts?.model,
       permissionMode: opts?.permissionMode,
@@ -1045,6 +1048,11 @@ export function claudeStreamUrl(projectName: string, sessionId: string, since?: 
 export function acpStreamUrl(projectName: string, sessionId: string) {
   const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/acp-stream`;
+}
+
+export function codexStreamUrl(projectName: string, sessionId: string) {
+  const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/codex-stream`;
 }
 
 export function piChatStreamUrl(chatId: string) {

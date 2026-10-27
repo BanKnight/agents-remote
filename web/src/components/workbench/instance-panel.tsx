@@ -1,5 +1,6 @@
 import { ClaudeChat } from "../../routes/ClaudeSessionDetailRoute";
 import { AcpChatPanel } from "../../routes/AcpSessionDetailRoute";
+import { CodexChatPanel } from "../../routes/CodexSessionDetailRoute";
 import { SessionDetail } from "../../routes/SessionDetailRoute";
 
 type PanelProps = {
@@ -41,6 +42,15 @@ export function AgentTerminalPanel({ projectName, sessionId }: PanelProps) {
  */
 export function AcpPanel({ projectName, sessionId }: PanelProps) {
   return <AcpChatPanel projectName={projectName} sessionId={sessionId} />;
+}
+
+/**
+ * codex 实例面板（app-server 直连一等 provider）：embedded 聊天形态（与 AcpPanel 同构，
+ * 配置选择器固定 model/effort/审批策略三件套）。无 threadId 的存量 tmux codex 会话仍走
+ * AgentTerminalPanel（路由层判定，见 AgentPanelRouterInner）。
+ */
+export function CodexPanel({ projectName, sessionId }: PanelProps) {
+  return <CodexChatPanel projectName={projectName} sessionId={sessionId} />;
 }
 
 /**

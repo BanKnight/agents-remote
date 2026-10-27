@@ -94,7 +94,13 @@ import {
   toggleSwitchKnobClasses,
   toggleSwitchTrackClasses,
 } from "../shell/shell-primitives";
-import { AgentTerminalPanel, AcpPanel, ChatPanel, TerminalPanel } from "./instance-panel";
+import {
+  AgentTerminalPanel,
+  AcpPanel,
+  ChatPanel,
+  CodexPanel,
+  TerminalPanel,
+} from "./instance-panel";
 import { ChatSessionDetailBody } from "../../routes/ChatSessionDetailRoute";
 import { TerminalStatusOverlay } from "../../routes/SessionDetailRoute";
 import { FileTabPreview, FileTabStripActions } from "../files/file-preview-panel";
@@ -744,6 +750,12 @@ function AgentPanelRouterInner({ panelRef }: { panelRef: SessionPanelRef }) {
   // 只需注册表加 profile，此处跟随（当前用显式 provider 名，多 ACP CLI 时改查 profile.transport）。
   if (detail.data?.session.provider === "omp") {
     return <AcpPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
+  }
+  // codex 一等 provider（app-server 直连）：有 codexThreadId 才进 CodexPanel（聊天管道）；
+  // 无 threadId 的存量 tmux codex 会话继续走 AgentTerminalPanel 直至自然消亡（诚实形态
+  // 标记，不做迁移手术）。
+  if (detail.data?.session.provider === "codex" && detail.data.session.codexThreadId) {
+    return <CodexPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
   if (detail.data?.session) {
     return <AgentTerminalPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
@@ -1975,7 +1987,7 @@ type CreateSessionBarProps = {
 
 /**
  * 创建实例菜单 items 单源（§6.12j）：CreateSessionBar 与 GroupHeader tabstrip「＋」共用同一
- * 菜单数据源（Claude/OMP/终端三行）。presentational——分派走 CreateSessionApi。
+ * 菜单数据源（Claude/OMP/Codex/终端四行，行序对齐新建实例原型）。presentational——分派走 CreateSessionApi。
  */
 export function createSessionMenuItems(create: CreateSessionApi, t: TranslateFn): ActionMenuItem[] {
   return [
@@ -1988,6 +2000,11 @@ export function createSessionMenuItems(create: CreateSessionApi, t: TranslateFn)
       label: t("workbench.createOmp"),
       icon: <ShellIcon name="agent-nav" />,
       onSelect: () => create.createAgent("omp"),
+    },
+    {
+      label: t("workbench.createCodex"),
+      icon: <ShellIcon name="openai" />,
+      onSelect: () => create.createAgent("codex"),
     },
     {
       label: t("workbench.createTerminal"),

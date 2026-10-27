@@ -509,9 +509,10 @@ export function MobileSessionHistorySheet({
 
 /**
  * 03j 新建实例 sheet（row2 ＋ 与 03h 空态卡 CTA 共用入口，编号②）：srow/tile 富行取代
- * ActionMenu 菜单形态。按现状能力诚实呈现 3 行（Claude/OMP/终端）——原型 Codex/Chat（Pi）
- * 行无接入能力不画（M3 同拍板）。行点击 = onOpenChange(false) + create（命名 prompt 弹窗
- * 由 workbench 顶层 holder 承载，sheet 卸载后可见）。
+ * ActionMenu 菜单形态。按现状能力诚实呈现 4 行（Claude/Codex/OMP/终端）——Codex 批次 2
+ * 起为一等 provider（app-server 直连聊天管道）；原型 Chat（Pi）行仍无接入能力不画。
+ * 行点击 = onOpenChange(false) + create（命名 prompt 弹窗由 workbench 顶层 holder 承载，
+ * sheet 卸载后可见）。
  */
 export function MobileCreateInstanceSheet({
   create,
@@ -564,6 +565,21 @@ export function MobileCreateInstanceSheet({
         <span className="tx">
           <span className="n">＋ {t("workbench.createOmp")}</span>
           <span className="d">{t("workbench.createOmpDesc")}</span>
+        </span>
+        <span className="ar">›</span>
+      </button>
+      <button
+        className="srow w-full cursor-pointer text-left"
+        disabled={create.isCreating}
+        onClick={() => dismiss(() => create.createAgent("codex"))}
+        type="button"
+      >
+        <span className="tile bg-ink-2/10 text-ink-2">
+          <ShellIcon className="size-[19px]" name="openai" />
+        </span>
+        <span className="tx">
+          <span className="n">＋ {t("workbench.createCodex")}</span>
+          <span className="d">{t("workbench.createCodexDesc")}</span>
         </span>
         <span className="ar">›</span>
       </button>
