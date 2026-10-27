@@ -1,50 +1,60 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-27(Codex 一等 provider 批次 1——服务端闭环完成:四门禁全绿 + WS 探针
-> 14 PASS/1 SKIP + reviewer 清单消化;批次 2 前端未开始)
+> 最后更新:2026-10-27(Codex 一等 provider 批次 2 前端完成:adapter/面板/新建入口落地,
+> commit `ed3278d`,四门禁 + e2e 2/2 + 四 reviewer 报告消化;待交真机清单)
 
 ## 一句话状态
 
-**Codex 走 `codex app-server`(JSON-RPC over stdio JSONL)直连,批次 1 服务端闭环已落地:协议事实探针 + 生成绑定对照 + `codex-runtime`/`codex-stream` + shared 帧族 + 注册表/审批/路由接线;四门禁全绿(api 1162 + shared 11 + web 951),WS 级探针 14 PASS + 1 SKIP(账号 429 限流);reviewer(security/code/perf)清单已消化。批次 2 前端(adapter/面板/新建入口)与 P1 parity 未开始。**
+**Codex 一等 provider 批次 2(前端)已完成并提交(`ed3278d`):`codex-adapter.ts`(applyCodexFrame 单帧 + applyCodexFrames 批量折加 O(N) + Pass 2 投影 + useCodexSession)+ CodexSessionDetailRoute(面板 + Model/Reasoning/Permission 三选择器 + configPending 圆点 cue + 审批金框复用 claude 渲染层)+ 新建入口接线(桌面菜单 + 移动 sheet,行序/中性档 tile 对齐原型)+ e2e codex-session 2/2 + 单测 968 pass(含 17 个 adapter 测试);四 reviewer(perf/design/code/security)报告全部消化。批次剩余:真机清单交用户验收;P1 parity(历史列表等)另立计划。**
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
-- **一等 provider 形态**:每会话一个 `codex app-server` 进程(argv 数组直拉、非 tmux),「进程内存活 = 会话存活」与 AcpRuntime 不变量同构;不做共享 daemon。**零新依赖**。
-- **Route A 沿用**:独立 `codex_*` 帧族不翻译成 claude 帧族;前端不接触 raw app-server method;client message 白名单封闭。
-- **`api/src/codex-generated/` 不入库**(747 文件 ~3.1MB、全仓零 import,仅对照用)→ `.gitignore` + oxlint/oxfmt ignorePatterns 保留(本机跑门禁用);生成命令记在 `codex-runtime.ts` 头注释,升级 codex 时重跑。协议**真证据**是 `scripts/fixtures/codex-appserver/*.jsonl`(0.163.0 真机帧,入库)。
-- **`history` 能力位对 codex 仍 `unsupported`**:会话内 `thread/resume` 回放已通,但历史**列表**(rollout JSONL 扫描)属 P1——能力位描述列表,不提前翻转(诚实形态标记)。
-- **create 响应带 codexThreadId**:`setCodexThreadId` 是 fire-and-forget(runtime 回调 `void`),create 返回前读回**内存索引**权威态(patchMetadata 先同步 index.set 再落盘)。**不能用 `getAgentMetadata`**——它带 keepIfRuntimeExists 探活,会把「此刻 index 条目」写进存活快照 TTL 缓存,之后创建的会话在该窗口被 alive 过滤误判为死(本次两个单测失败的真根因;测试用固定时钟使缓存永不过期才暴露)。
-- **恢复抓手判定单源**:`SessionRegistry.hasRecoveryHandle()`(claude+claudeSessionId / omp+acpSessionId / codex+codexThreadId)由 `listAllShells` 与 `keepIfRuntimeExists` 共用——此前两处各写一份,codex 分支漏了壳流那份(API 重启后 codex 会话会从 /api/sessions/stream 消失),已收口 + 补测试断言。
-- **权限值域三层**:权限模式词(readonly/default/auto/full)↔ AskForApproval(untrusted/on-request/never)↔ sandbox;`CODEX_PERMISSION_PRESETS` 正向单源,`policyPairToPermissionMode` 反向。配置热切换 = 存 pending、下一个 turn/start 应用(UI 标「下轮生效」)。
-- **单飞 turn**:server 不拒绝并发 turn/start → 本层单飞 + 队列 cap 32 + `startingTurn` 同步置位 + `turnGeneration` 代际守卫(RPC 往返窗口)。
+批次 1 决策(仍有效,详见 snapshots/20261027-1821.md):一等 provider 形态(app-server 进程/会话,零新依赖)、Route A 独立 codex_* 帧族、codex-generated 不入库(fixtures 是真证据)、history 能力位仍 unsupported、恢复抓手 hasRecoveryHandle 单源、权限值域三层、单飞 turn。
+
+批次 2 新决策:
+
+- **审批 UX = tool card 金框复用 claude 渲染层**:codex_approval_request 的 itemId → tool stub 写 controlRequestId → Pass 2 透传 metadata.custom → makeToolRenderer needsPermission 金框 + Allow/Deny → bridge respondToControlRequest 发 `{type:"respond",decision:"accept"|"decline"}`。不做 composer 托盘;全局 ApprovalCenter 兜底(batch 1 已接)。
+- **reasoning 只渲染 summary**(content 可能加密);assistant 文本与思考是不同 item id 各自独立气泡;ended 帧负责定格(final + interrupted + 清残留金框);serverRequest/resolved 按 `codex:<requestId>` 清金框。
+- **Pass 1 性能形态(review 后定型)**:可变内核 `applyCodexFrameInPlace`(就地 mutate 工作副本、返回 boolean)+ 单帧 `applyCodexFrame`(复制一次进内核、无变化返回原引用保 React bail-out)+ 批量 `applyCodexFrames`(一次复制逐帧折加);hook 拆 `handleFrameScalars`(标量逐帧)+ `processBatch`(raw 整批一次 setState)——history 回放 N 帧从 O(N²) 复制降为 O(N)。deep-freeze 单测钉死 prev 不可变契约。
+- **面板路由诚实形态**:`provider==="codex" && codexThreadId` 才进 CodexPanel;存量 tmux codex(无 threadId)走 AgentTerminalPanel。
+- **configPending 呈现 = trigger 上 warning 圆点 + title**(布局 cue),不用行内文字标签(ui-layout-explains-not-text);turn/started 清除。
+- **行序/用色对齐新建实例原型**:Claude→OMP→Codex→终端(Codex 行 tile 用中性档 `bg-ink-2/10 text-ink-2`,不吃 Pi 行 tint-purple 专色、不借 Claude 品牌 amber);en 权限 label 与 claude 对齐用 "Permission"。
+- **空 resultText 也转发 result**(`...(done ? {result} : {})`):共享投影层按 `result != null` 推 status,条件丢弃空 result 会让 imageView/静默命令完成后永久 spinner。
 
 ### 进度
 
-- ✅ 协议事实:`scripts/probe-codex-appserver.mjs`(直连 app-server 录 9 类场景 fixtures:initialize/thread/start→turn 全周期/requestApproval 往返/resume+read/model/list/并发 turn/配置热切换)。
-- ✅ `api/src/codex-runtime.ts`:ensureRunning 单飞 + resume 覆盖参数透传 + readLoop 分片累积 + 审批分族回复(permissions/requestUserInput/elicitation/legacy/未知)+ env 白名单 + 错误路径回滚 + 队列 echo 序。
-- ✅ `api/src/codex-stream.ts` + `index.ts` 接线 + `session-registry`(codexThreadId/setCodexThreadId/getCodexThreadIdByRuntimeKey/keep 分支/resumed 判定)+ `session-routes` codexThreadId UUID 形状校验 + `approval-center`/`approval-registry` provider 化。
-- ✅ 单测:`codex-runtime.test.ts`(fake app-server NDJSON 全生命周期/审批/resume 透传/排队/权限翻译)、`codex-stream.test.ts`、approval 双 provider、keep/hasRecoveryHandle。
-- ✅ `scripts/probe-codex-ws.mjs`(WS 级):create→threadId 回填→open 帧序→user→echo/turn/ended→interrupt→杀 app-server→重开 thread/resume history 回放→close。**14 PASS + 1 SKIP**(429 限流,内容断言降级)。
-- ⏸ 批次 2(前端)未开始;P1 parity 未开始(历史列表/MCP 注入验证/凭据/图片/usage/requestUserInput 选项卡/增量回放锚)。
+- ✅ 批次 1(服务端,`f5c8878`):探针 + codex-runtime/codex-stream + shared 帧族 + 注册表/审批/路由接线,WS 探针 14 PASS + 1 SKIP。
+- ✅ 批次 2(前端,`ed3278d`):codex-adapter.ts(帧状态机 + hook,~1100 行)+ CodexSessionDetailRoute.tsx(面板 + 三选择器 + 最小 bridge)+ client/i18n/instance-panel/instance-area/mobile-sheets 接线 + 17 个 adapter 单测 + e2e `codex-session.spec.ts` 2/2(桌面渲染+审批+发送闭环 / 移动创建入口)。
+- ✅ 四 reviewer 消化:perf P1(O(N²) 批量折加)+P2(倒序扫)已修,composer memo 不修(ACP 同构继承);design P1(tile 用色)+P2(行序/pending 圆点/en 用词)已修,触发器双语言不修(继承债);code P1(空 result spinner)+P2(append final 守卫/重复注释/不可变契约测试)已修,ended spinner 并存不修(共享管道既有面);security 零发现。
+- ⏸ **待办:批次 2 真机清单交用户验收**(见下)。
+- ⏸ P1 parity 未开始(另立计划):历史列表(`codex-history.ts` 扫 rollout JSONL,镜像 omp-history.ts)、MCP 注入验证、凭据设置、图片输入、usage 透传、requestUserInput 会话内选项卡、增量回放锚。
 
-### 待办
+### 待办:批次 2 真机清单(交用户,test 项目)
 
-- **批次 1 交付报告给用户**(含真机清单)后开工批次 2:`web/src/routes/codex-adapter.ts` + `CodexSessionDetailRoute.tsx` + 面板路由/新建菜单(桌面 + mobile sheet)/i18n + e2e(`codex-session.spec.ts`)+ UI 探针 + CSS 硬闸 + tokens 机检。
-- **不修项(已在 reviewer 消化时判定)**:security P2-2(respond 不校验登记——会话内主路径 + runtimeKey 绑定已防跨会话)、code P2-15(getCodexThreadIdByRuntimeKey O(n),调用量低)、perf P1-2/P2-2(增量回放锚 / history 无上限——既有设计,留 P1)、claude/acp spawn env 同病(影响面大需单独批)、codex-stream WS 无鉴权(全家族既有形态,acp-stream 同款,交用户裁决)。
-- **既有待办不变**:镜像瘦身批真机遗留(pi chat 运行面、/p/ 管线);推 tag 待用户发布时单独确认;IDB 批真机 5 项;React #310;批 16/17/18 真机复验;e2e 基线;M2.0 多卡焦点互抢。
+1. 新建 Codex 会话(桌面 ⋯ 菜单 + 移动 sheet 各一次)→ 流式输出(含 reasoning 折叠)。
+2. 工具卡:Bash/fileChange/mcp 卡形态;中断(STOP)后卡片标 interrupted。
+3. 审批:readonly/default 档触发命令审批 → 会话内金框 Allow/Deny + 全局中心双路应答。
+4. 切模型/effort/权限档 → trigger 圆点(下轮生效)→ 下一轮 turn 应用后圆点消失。
+5. API 重启 → thread/resume 历史恢复(resume:false live 回放 + isRunning 恢复)。
+6. 移动端 composer(键盘避让/Enter 发送/草稿)。
+
+### 不修项(reviewer 已裁决)
+
+security P2-2(respond 不校验登记,batch 1 裁决沿用)、code P2(ended 中断卡 spinner 与提示并存——共享投影层既有面,统一治理时再收)、design P2(composer 触发器双语言——与 ACP 一起收敛到 03a SelectorTrigger 单源)、perf P2(composer 未 memo——ACP 同构,批次化处理)、batch 1 不修项照旧。
 
 ### 易丢的关键上下文
 
-- **codex 账号当前 429 限流**:真实 LLM 内容断言走 SKIP 分支(`probe-codex-ws.mjs` 的 `skip()`),链路断言照常;限流解除后重跑一次可补内容级断言。
-- **WS 探针两个坑(已在脚本内注释)**:① gzip 批解压异步 → `onmessage` 必须挂 promise 链串行,否则 history_end marker 先于批解压到达、行被丢;② WS close 只断订阅(进程存活期重连 = relay live 回放 resume:false),要验 thread/resume 必须先杀 app-server 进程(用 /proc cwd+cmdline 校验归属,**不用 POST /close**——closeMetadata 会连 metadata 一起删)。
-- **测试内存**:`systemd-run --scope --user -p MemoryMax=2G bun test …`(cgroup);**不要用 `ulimit -v`**(伤 bun JIT,本机 CPU 无 AVX 会 SIGILL 随机崩、fail 面漂移)。
-- **探针一律 bun 跑**,别用 node。
-- commit 尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`,标准 `git add && git commit`;编辑文件一律内置 Read/Edit/Write。
+- **codex 账号 429 限流**:真机验收时若仍限流,真实 LLM 响应出不来(链路本身正常);`probe-codex-ws.mjs` 内容断言的 SKIP 分支待限流解除后重跑。
+- **e2e mock 面**:overview 缺 mock 会被 stale-tab prune 删 focus tab(三路 REST mock:detail/list/overview,缺一不可);agent session id 须带 "agent_" 前缀;e2e 默认 locale en。
+- **Write 工具大 payload 损坏病理(本环境)**:Write 大内容会被截断/插占位符(本批 e2e spec 连续 4 次)——对策 = 短 Write 骨架 + 中等 payload Edit 分块追加;Edit 也偶发 typo(new_string 写错字符),写入后靠 typecheck/test 兜底。
+- **测试内存**:`systemd-run --scope --user -p MemoryMax=2G bun test …`(cgroup);**不要用 `ulimit -v`**。
+- **探针一律 bun 跑**;commit 尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`,标准 `git add && git commit`;编辑文件一律内置 Read/Edit/Write。
+- **既有待办不变**:镜像瘦身批真机遗留(pi chat 运行面、/p/ 管线);推 tag 待用户发布时单独确认;IDB 批真机 5 项;React #310;批 16/17/18 真机复验;e2e 基线;M2.0 多卡焦点互抢。
 
 ---
-最后更新:2026-10-27(触发原因:codex 批次 1 收尾——门禁全绿 + 探针通过 + handoff save)
+最后更新:2026-10-27(触发原因:codex 批次 2 收尾——commit ed3278d + 四 reviewer 消化 + handoff save)
 
 ## 提醒
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
