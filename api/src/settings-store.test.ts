@@ -101,6 +101,7 @@ test("SettingsStore.write then read round-trips and keeps 0o600 file mode + sche
       },
       pi: { presets: [], activePresetId: "" },
       acp: {},
+      codex: {},
     },
     skills: { sources: [] },
     notifications: { blocked: true, done: true, error: true },
@@ -286,6 +287,41 @@ test("normalizeSettings: pi.firecrawlApiKey 非空保留；空/缺省不写入",
   );
   const blank = await new SettingsStore({ path }).read();
   expect(blank.runtimes.pi).not.toHaveProperty("firecrawlApiKey");
+});
+
+test("normalizeSettings: runtimes.codex 宽松规整（非空字符串保留；空切片落 {}）", async () => {
+  const dir = await makeTempDir();
+  const path = join(dir, "settings.yaml");
+  await writeFile(
+    path,
+    stringifyYaml({
+      runtimes: {
+        claude: { presets: [] },
+        codex: { apiKey: "sk-codex-1", baseUrl: "https://gw.example.com/v1" },
+      },
+    }),
+    { mode: 0o600 },
+  );
+  const state = await new SettingsStore({ path }).read();
+  expect(state.runtimes.codex).toEqual({
+    apiKey: "sk-codex-1",
+    baseUrl: "https://gw.example.com/v1",
+  });
+
+  // 非字符串/空串/多余键丢弃；全空 → 空切片 {}（恒存在，{} = 未配置）。
+  // （空白串规整不在 store 层——API 层 PUT 已 trim，手工 yaml 直写按 ACP 同语义保留。）
+  await writeFile(
+    path,
+    stringifyYaml({
+      runtimes: {
+        claude: { presets: [] },
+        codex: { apiKey: 42, baseUrl: "", junk: "x" },
+      },
+    }),
+    { mode: 0o600 },
+  );
+  const junk = await new SettingsStore({ path }).read();
+  expect(junk.runtimes.codex).toEqual({});
 });
 
 test("normalizeSettings: api 无 baseUrl → 丢弃（线协议只对自定义端点有效）", async () => {
@@ -682,6 +718,7 @@ test("migrateV1ToV2: 非 object 输入 → 返回默认结构（不抛错）", (
       claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
       pi: { presets: [], activePresetId: "" },
       acp: {},
+      codex: {},
     },
     skills: { sources: [] },
     notifications: { blocked: true, done: true, error: true },
@@ -691,6 +728,7 @@ test("migrateV1ToV2: 非 object 输入 → 返回默认结构（不抛错）", (
       claude: { presets: [], activePresetId: "", enable1mContext: false, effort: "high" },
       pi: { presets: [], activePresetId: "" },
       acp: {},
+      codex: {},
     },
     skills: { sources: [] },
     notifications: { blocked: true, done: true, error: true },

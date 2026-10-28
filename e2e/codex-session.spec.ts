@@ -33,6 +33,7 @@ type ClientMsg = { type?: string; text?: string; decision?: string; controlReque
 function routeCodexStream(
   page: import("@playwright/test").Page,
   onClientMessage?: (msg: ClientMsg) => void,
+  configFrame?: typeof DEFAULT_CODEX_CONFIG,
 ) {
   return page.routeWebSocket(
     new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/codex-stream`),
@@ -44,7 +45,7 @@ function routeCodexStream(
           /* non-JSON frames ignored */
         }
       });
-      sendInitialFrames(ws);
+      sendInitialFrames(ws, configFrame);
     },
   );
 }
@@ -52,7 +53,28 @@ function routeCodexStream(
 // 初始流（函数提出去避免回调嵌套过深）：session_init → 空 history → live 批窗口
 //（与 pi/claude/acp 同构批处理）。帧序模拟真实 turn：echo → userMessage 对齐 → config
 // → reasoning delta → 文本 delta → commandExecution started → outputDelta → 审批请求（金框）。
-function sendInitialFrames(ws: { send: (data: string) => void }): void {
+/** codex_config 帧默认载荷：目录含当前模型（真实 model/list 常见形态）。 */
+const DEFAULT_CODEX_CONFIG = {
+  models: [
+    {
+      id: "gpt-5.4",
+      displayName: "GPT-5.4",
+      supportedReasoningEfforts: ["low", "medium", "high"],
+      defaultReasoningEffort: "medium",
+    },
+  ],
+  current: {
+    model: "gpt-5.4",
+    effort: "high",
+    approvalPolicy: "default",
+    sandbox: "workspace-write",
+  },
+};
+
+function sendInitialFrames(
+  ws: { send: (data: string) => void },
+  configFrame?: typeof DEFAULT_CODEX_CONFIG,
+): void {
   const frames = [
     { type: "session_init", resume: false },
     { type: "history_start", count: 0 },
@@ -72,23 +94,7 @@ function sendInitialFrames(ws: { send: (data: string) => void }): void {
         },
       },
     },
-    {
-      type: "codex_config",
-      models: [
-        {
-          id: "gpt-5.4",
-          displayName: "GPT-5.4",
-          supportedReasoningEfforts: ["low", "medium", "high"],
-          defaultReasoningEffort: "medium",
-        },
-      ],
-      current: {
-        model: "gpt-5.4",
-        effort: "high",
-        approvalPolicy: "default",
-        sandbox: "workspace-write",
-      },
-    },
+    { type: "codex_config", ...(configFrame ?? DEFAULT_CODEX_CONFIG) },
     {
       type: "codex_event",
       event: {
@@ -118,6 +124,37 @@ function sendInitialFrames(ws: { send: (data: string) => void }): void {
       event: {
         method: "item/commandExecution/outputDelta",
         params: { itemId: "c1", delta: "hi\n" },
+      },
+    },
+    {
+      // 形状按 api/src/codex-generated/v2/ThreadTokenUsageUpdatedNotification 绑定：
+      // params = {threadId, turnId, tokenUsage: {total, last, modelContextWindow}}。
+      type: "codex_event",
+      event: {
+        method: "thread/tokenUsage/updated",
+        params: {
+          threadId: "thread-e2e-1",
+          turnId: "turn-e2e-1",
+          tokenUsage: {
+            total: {
+              totalTokens: 20000,
+              inputTokens: 19000,
+              cachedInputTokens: 8000,
+              cacheWriteInputTokens: 0,
+              outputTokens: 900,
+              reasoningOutputTokens: 100,
+            },
+            last: {
+              totalTokens: 20000,
+              inputTokens: 19000,
+              cachedInputTokens: 8000,
+              cacheWriteInputTokens: 0,
+              outputTokens: 900,
+              reasoningOutputTokens: 100,
+            },
+            modelContextWindow: 258400,
+          },
+        },
       },
     },
     {
@@ -208,10 +245,23 @@ test("Codex: session detail renders stream (echo, reasoning, text, Bash card, ap
   await expect(page.getByText("好的，我来看看。")).toBeVisible();
   await expect(page.getByRole("button", { name: /echo hi/ })).toBeVisible();
 
-  // 配置选择器（model/effort/审批策略）跟随 codex_config 帧：trigger = `{label}·{当前项}`。
-  await expect(page.getByRole("button", { name: "Model·GPT-5.4" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Reasoning·high" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Permission·Default" })).toBeVisible();
+  // 配置选择器（model/effort/审批策略）跟随 codex_config 帧：SelectorTrigger 双形态，
+  // pill 文本 = 当前项裸值、accessible name = aria-label（label）。count=1 防多按钮歧义。
+  await expect(page.getByRole("button", { name: "Permission" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Permission" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Model" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Model" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reasoning" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Reasoning" })).toBeVisible();
+  // pill 当前值文本（P3-1）：跟随 codex_config.current 渲染——Default/GPT-5.4/high。
+  await expect(page.getByRole("button", { name: "Permission" })).toContainText("Default");
+  await expect(page.getByRole("button", { name: "Model" })).toContainText("GPT-5.4");
+  await expect(page.getByRole("button", { name: "Reasoning" })).toContainText("high");
+
+  // usage 环渲染（真实通知形状覆盖）：thread/tokenUsage/updated → 环形仪表 + 百分比。
+  // 百分比口径 = last.inputTokens / modelContextWindow（19000/258400 ≈ 7.35% → 7%）。
+  await expect(page.getByRole("button", { name: /Context usage/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Context usage/ })).toContainText("7%");
 
   // 审批金框（needsPermission = controlRequestId + in_progress）：文案 + Allow/Deny 按钮。
   await expect(page.getByText("Awaiting confirmation")).toBeVisible();
@@ -244,6 +294,42 @@ test("Codex: session detail renders stream (echo, reasoning, text, Bash card, ap
     .toBeTruthy();
 
   assertNoConsoleErrors();
+});
+
+// 真机反馈 2026-10-28「缺推理深度设置」的根因回归：thread 回读的模型不在 model/list
+// 目录（旧 thread 的账号默认模型，如 gpt-5.4 不在 0.163 目录）——efforts 档位词表跨
+// 模型通用，选择器必须按目录首个非空词表兜底渲染，不能整个卸载。
+test("Codex: 当前模型不在 model/list 目录时推理深度选择器仍渲染（词表兜底）", async ({ page }) => {
+  await mockSessionRest(page);
+  routeCodexStream(page, undefined, {
+    models: [
+      {
+        id: "gpt-5.1-codex",
+        displayName: "GPT-5.1 Codex",
+        supportedReasoningEfforts: ["minimal", "low", "medium", "high"],
+        defaultReasoningEffort: "medium",
+      },
+    ],
+    current: {
+      model: "gpt-5.4",
+      effort: "high",
+      approvalPolicy: "default",
+      sandbox: "workspace-write",
+    },
+  });
+
+  await page.goto("/");
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.goto(`/projects/${projectName}/session/${fakeSessionId}`);
+
+  const reasoning = page.getByRole("button", { name: "Reasoning" });
+  await expect(reasoning).toHaveCount(1, { timeout: 15_000 });
+  await expect(reasoning).toBeVisible();
+  await expect(reasoning).toContainText("high");
 });
 
 // 移动端创建入口（多端同构，容器不同）：空态卡 CTA → 新建实例 sheet 的 Codex 富行。

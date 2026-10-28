@@ -701,6 +701,20 @@ export type AcpRuntimeConfig = Partial<Record<AgentProvider, AcpCredentials>>;
 
 export type AcpRuntimeConfigMasked = Partial<Record<AgentProvider, AcpCredentialsMasked>>;
 
+// codex 凭据切片（codex app-server 直连）：与 AcpCredentials 同构（{apiKey, baseUrl}）但
+// 类型域独立——codex 非 ACP transport，注入面是 OPENAI_API_KEY / OPENAI_BASE_URL env。
+// apiKey 空 = 未配置，spawn 回退 codex 自身凭证链（auth.json / 父 env 白名单）。
+export type CodexCredentials = {
+  apiKey?: string;
+  baseUrl?: string;
+};
+
+export type CodexCredentialsMasked = {
+  apiKeyMasked: string;
+  hasApiKey: boolean;
+  baseUrl?: string;
+};
+
 // ── Skills marketplace ──────────────────────────────────────
 // Skill 包管理：wrap `npx skills` CLI（vercel-labs/skills）做执行，skills.sh /api/search 做发现。
 // 先 Claude，架构支持多 runtime（Codex 后续）——所有 wrap 命令透传 --agent，目录映射交给 CLI。
@@ -1029,6 +1043,8 @@ export type SettingsState = {
     pi: PiRuntimeConfig;
     // Phase 1 凭据最小切片（恒存在；apiKey 缺省 = 未配置，回退父 env）。
     acp: AcpRuntimeConfig;
+    // codex 凭据切片（恒存在；{} = 未配置，回退 codex 自身凭证链）。
+    codex: CodexCredentials;
   };
   // 自定义 skill 源列表（optional；settings-store normalizeSettings 补默认 { sources: [] }）。
   skills?: {
@@ -1113,6 +1129,7 @@ export type GetSettingsResponse = {
       // v5 起 pi 键恒存在；presets 空 = 未启用。firecrawlApiKey 只露 masked（同 apiKey 语义）。
       pi: { presets: PiPresetMasked[]; activePresetId: string; firecrawlApiKeyMasked: string };
       acp: AcpRuntimeConfigMasked;
+      codex: CodexCredentialsMasked;
     };
     // 源是公开 GitHub repo，不 mask。
     skills: {
@@ -1195,6 +1212,18 @@ export type UpdateAcpRuntimeRequest = {
 export type UpdateAcpRuntimeResponse = {
   provider: AgentProvider;
   runtime: AcpCredentialsMasked;
+};
+
+// ── codex runtime 请求响应（凭据切片，单套无 provider 维度）────────────
+// 三态语义同 UpdateAcpRuntimeRequest：apiKey 空/缺省 = 不改；baseUrl 显式空串 = 删除、
+// 非空 = 设置。响应只回 masked 切片（原始 key 不出 api 进程）。
+export type UpdateCodexRuntimeRequest = {
+  apiKey?: string;
+  baseUrl?: string;
+};
+
+export type UpdateCodexRuntimeResponse = {
+  runtime: CodexCredentialsMasked;
 };
 
 // GET /api/agent-providers —— profile 注册表只读投影（settings UI 的 per-provider 驱动源；
@@ -1816,6 +1845,9 @@ export type CodexUserEchoFrame = {
   text: string;
   /** 客户端生成、原样带回的本地 uuid，用于把 echo 对齐到已发送消息。 */
   uuid: string;
+  /** 图片附件（base64 裸数据，pi_user_echo 同形）：live 回显渲染。thread/resume 历史
+   *  回放的 user item content 是加密形态，无图片（协议事实，同 reasoning summary）。 */
+  images?: { data: string; mimeType: string }[];
 };
 
 /** 会话配置快照：model/list + thread 响应归一（服务端合成）。effort 取自模型支持列表。 */
@@ -1864,6 +1896,9 @@ export type CodexStreamServerMessage =
   | {
       type: "session_init";
       resume: boolean;
+      /** 回放模式（claude 同款，2026-10-28 codex 接入增量回放）：delta = 服务端命中客户端
+       *  since 锚、只下发锚后行（客户端保留 state 只 append）；full/缺省 = 全量。 */
+      replay?: "delta" | "full";
     }
   | {
       type: "history_start";
@@ -1897,6 +1932,8 @@ export type CodexStreamClientMessage =
       text: string;
       /** 客户端生成的本地 uuid（crypto.randomUUID()）：server 原样注入 codex_user_echo。 */
       uuid?: string;
+      /** 图片附件（base64 data 不含 data: 前缀，pi 同形）：turn/start input 组 input_image 项。 */
+      images?: { data: string; mimeType: string }[];
     }
   | {
       type: "interrupt";

@@ -305,8 +305,10 @@ const handleAgentSessionRoute = async (
     return Response.json(response);
   }
 
-  // 双模式切换（2026-10-15）：chat ↔ terminal（headless stream-json ↔ tmux 交互式 CLI）。
-  // 守卫全表：非 claude → 404（对消费面隐藏能力）；无钉死 claudeSessionId → 400；
+  // 双模式切换（2026-10-15 claude；批次 C 起 codex 同语义）：chat ↔ terminal（headless
+  // stream-json / app-server ↔ tmux 交互式 CLI）。守卫全表：非 claude/codex → 404（对
+  // 消费面隐藏能力）；claude 无钉死 claudeSessionId → 400、codex 无 threadId → 400
+  //（chat 面板准入判据同源——存量 tmux 形态本就恒在 terminal，切换无意义）；
   // working/blocked → 409（严格 idle-only，绝不丢 turn）；同 mode 幂等直返。
   if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/mode")) {
     if (!agentTui) {
@@ -318,11 +320,15 @@ const handleAgentSessionRoute = async (
     }
 
     const metadata = await registry.getAgentMetadata(project.name, sessionId);
-    if (!metadata || metadata.provider !== "claude") {
+    const transport = metadata ? getAgentProviderProfile(metadata.provider)?.transport : undefined;
+    if (!metadata || (transport !== "claude" && transport !== "codex")) {
       return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
     }
-    if (!metadata.claudeSessionId) {
+    if (transport === "claude" && !metadata.claudeSessionId) {
       return jsonError("SESSION_NOT_CONFIGURED", "Session has no pinned claude session id", 400);
+    }
+    if (transport === "codex" && !metadata.codexThreadId) {
+      return jsonError("SESSION_NOT_CONFIGURED", "Session has no codex thread id", 400);
     }
     if (metadata.status === "working" || metadata.status === "blocked") {
       return jsonError(

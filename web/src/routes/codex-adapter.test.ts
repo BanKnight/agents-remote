@@ -3,7 +3,9 @@ import type { CodexStreamServerMessage } from "@agents-remote/shared";
 import {
   applyCodexFrame,
   applyCodexFrames,
+  codexAnchorId,
   codexFramesToThreadMessages,
+  codexTokenUsageToContextUsage,
   type CodexRawItem,
 } from "./codex-adapter";
 
@@ -403,5 +405,201 @@ describe("codexFramesToThreadMessages", () => {
   test("空 assistant 条目（无文本）不投影", () => {
     const raw = reduce([itemEvent("item/started", { type: "agentMessage", id: "a2", text: "" })]);
     expect(codexFramesToThreadMessages(raw)).toHaveLength(0);
+  });
+
+  test("item/started 重推重置流式累积（增量回放形态 A：delta 不双倍）", () => {
+    // 断线前已收 started + delta("Hel")；重连重推 started + 全部 delta。
+    let raw = reduce([
+      itemEvent("item/started", { type: "agentMessage", id: "a1", text: "" }),
+      event("item/agentMessage/delta", { itemId: "a1", delta: "Hel" }),
+    ]);
+    expect(raw[0]).toMatchObject({ sections: [{ type: "text", text: "Hel" }] });
+
+    // 重推 started（同 id）→ 流式累积清空；重推 delta 从零累加 → "Hello" 而非 "HelHel"。
+    for (const f of [
+      itemEvent("item/started", { type: "agentMessage", id: "a1", text: "" }),
+      event("item/agentMessage/delta", { itemId: "a1", delta: "Hel" }),
+      event("item/agentMessage/delta", { itemId: "a1", delta: "lo" }),
+    ]) {
+      raw = applyCodexFrame(raw, f);
+    }
+    expect(raw[0]).toMatchObject({ sections: [{ type: "text", text: "Hello" }] });
+  });
+
+  test("item/started 重推重置 tool 流式 output（同款幂等）", () => {
+    let raw = reduce([
+      itemEvent("item/started", {
+        type: "commandExecution",
+        id: "c1",
+        command: "make",
+        status: "inProgress",
+      }),
+      event("item/commandExecution/outputDelta", { itemId: "c1", delta: "ok\n" }),
+    ]);
+    expect(raw[0]).toMatchObject({ call: { resultText: "ok\n" } });
+
+    // 重推 started → resultText 清空；重推 outputDelta 从零累加。
+    for (const f of [
+      itemEvent("item/started", {
+        type: "commandExecution",
+        id: "c1",
+        command: "make",
+        status: "inProgress",
+      }),
+      event("item/commandExecution/outputDelta", { itemId: "c1", delta: "ok\n" }),
+    ]) {
+      raw = applyCodexFrame(raw, f);
+    }
+    expect(raw[0]).toMatchObject({ call: { resultText: "ok\n" } });
+  });
+});
+
+// ── 增量回放锚 + 上下文占用映射（真机反馈 2026-10-28：增量回放 + 查看上下文）────────
+
+describe("codexAnchorId", () => {
+  test("只锚定格态条目：echo 任意；message 须 final；tool 须 completed|failed（流式中跳过前溯）", () => {
+    // 尾 = echo → uuid（echo 无终态概念，任意可锚——其后重推由 started 重置兜底幂等）。
+    expect(codexAnchorId([{ kind: "echo", text: "q", uuid: "uuid-1", confirmed: true }])).toBe(
+      "uuid-1",
+    );
+    // 尾 = message 定格（final + messageId）→ messageId（锚行 = 已持有的 item/completed）。
+    expect(
+      codexAnchorId([
+        { kind: "echo", text: "q", uuid: "uuid-1", confirmed: true },
+        { kind: "message", role: "assistant", messageId: "a1", sections: [], final: true },
+      ]),
+    ).toBe("a1");
+    // 尾 = message 流式中（final:false，code review P1 形态 A/B）→ 跳过前溯到 echo。
+    expect(
+      codexAnchorId([
+        { kind: "echo", text: "q", uuid: "uuid-1", confirmed: true },
+        { kind: "message", role: "assistant", messageId: "a1", sections: [], final: false },
+      ]),
+    ).toBe("uuid-1");
+    // 尾 = message 流式中且 messageId null（delta 先于 item/started 的瞬态）→ 前溯。
+    expect(
+      codexAnchorId([
+        { kind: "echo", text: "q", uuid: "uuid-1", confirmed: true },
+        { kind: "message", role: "assistant", messageId: null, sections: [], final: false },
+      ]),
+    ).toBe("uuid-1");
+    // 尾 = tool 终态 → toolCallId。
+    expect(
+      codexAnchorId([
+        { kind: "echo", text: "q", uuid: "uuid-1", confirmed: true },
+        {
+          kind: "tool_call",
+          call: {
+            toolCallId: "c1",
+            toolName: "commandExecution",
+            title: "commandExecution",
+            status: "completed",
+            resultText: "ok",
+          },
+        },
+      ]),
+    ).toBe("c1");
+    // 尾 = tool 流式中（in_progress）→ 跳过前溯到 echo。
+    expect(
+      codexAnchorId([
+        { kind: "echo", text: "q", uuid: "uuid-1", confirmed: true },
+        {
+          kind: "tool_call",
+          call: {
+            toolCallId: "c1",
+            toolName: "commandExecution",
+            title: "commandExecution",
+            status: "in_progress",
+            resultText: "",
+          },
+        },
+      ]),
+    ).toBe("uuid-1");
+  });
+
+  test("空日志 / 仅流式中条目 → null = 全量回放兜底", () => {
+    expect(codexAnchorId([])).toBe(null);
+    expect(
+      codexAnchorId([
+        { kind: "message", role: "assistant", messageId: null, sections: [], final: false },
+      ]),
+    ).toBe(null);
+    expect(
+      codexAnchorId([
+        {
+          kind: "tool_call",
+          call: {
+            toolCallId: "c1",
+            toolName: "commandExecution",
+            title: "commandExecution",
+            status: "in_progress",
+            resultText: "",
+          },
+        },
+      ]),
+    ).toBe(null);
+  });
+});
+
+describe("codexTokenUsageToContextUsage", () => {
+  test("last 四项映射 ClaudeContextUsage；裸 input = inputTokens − cachedInputTokens", () => {
+    const usage = codexTokenUsageToContextUsage({
+      last: {
+        totalTokens: 22791,
+        inputTokens: 12236,
+        cachedInputTokens: 8104,
+        cacheWriteInputTokens: 0,
+        outputTokens: 640,
+      },
+      modelContextWindow: 258400,
+    });
+    expect(usage).toEqual({
+      contextTokens: 12236,
+      inputTokens: 12236 - 8104,
+      cacheReadTokens: 8104,
+      cacheCreationTokens: 0,
+      outputTokens: 640,
+      contextWindow: 258400,
+    });
+    // 明细可加总 = contextTokens（展示契约）。
+    expect(usage!.inputTokens + usage!.cacheReadTokens + usage!.cacheCreationTokens).toBe(
+      usage!.contextTokens,
+    );
+  });
+
+  test("cacheWrite ⊆ input（OpenAI 语义）→ cacheCreationTokens 恒 0（design review P1-2：单列与裸 input 双计）", () => {
+    const usage = codexTokenUsageToContextUsage({
+      last: {
+        totalTokens: 30000,
+        inputTokens: 20000,
+        cachedInputTokens: 5000,
+        cacheWriteInputTokens: 3000,
+        outputTokens: 1000,
+      },
+      modelContextWindow: 258400,
+    });
+    expect(usage!.cacheCreationTokens).toBe(0);
+    expect(usage!.cacheReadTokens).toBe(5000);
+    expect(usage!.inputTokens).toBe(15000);
+    // 加总恒等（cacheWrite 已含在裸 input 内，不再参与明细构成）。
+    expect(usage!.inputTokens + usage!.cacheReadTokens + usage!.cacheCreationTokens).toBe(
+      usage!.contextTokens,
+    );
+  });
+
+  test("无数据/缺 last/窗口 ≤0 → undefined（组件侧不渲染，不伪造）", () => {
+    expect(codexTokenUsageToContextUsage(undefined)).toBeUndefined();
+    expect(
+      codexTokenUsageToContextUsage({
+        last: {
+          totalTokens: 1,
+          inputTokens: 1,
+          cachedInputTokens: 0,
+          cacheWriteInputTokens: 0,
+          outputTokens: 1,
+        },
+        modelContextWindow: 0,
+      }),
+    ).toBeUndefined();
   });
 });

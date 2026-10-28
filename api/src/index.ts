@@ -2119,7 +2119,13 @@ export const startApi = async () => {
   // codex app-server 直连运行时（codex 一等 provider 批）：每会话一个 `codex app-server`
   // 进程，JSON-RPC over stdio（协议绑定在 codex-generated/，帧族 codex_*）。stderr 日志在
   // runDir/codex-stderr/。存量 tmux codex 会话不经此 runtime（codexThreadId 判据分流）。
-  const codexRuntime = new CodexRuntime(runtimePaths.runDir);
+  // 凭据走 settings codex 切片（每次 spawn 前读、热更新即时生效；apiKey 只进 spawn env，
+  // 不进日志）。
+  const codexRuntime = new CodexRuntime(
+    runtimePaths.runDir,
+    ["codex", "app-server"],
+    async () => (await settingsStore.read()).runtimes.codex,
+  );
   const projectWikiService = new ProjectWikiService(config.projectsRoot);
   // 画布四工具数据源（hub MCP 面 + web 卡片 tools/call 面共用同一 service 实例）。
   const projectCanvasService = new ProjectCanvasService(config.projectsRoot);
@@ -2345,10 +2351,18 @@ export const startApi = async () => {
     registry: sessionRegistry,
     claudeRuntime,
     tmuxRuntime,
+    // codex 会话双模式(codex 一等 provider 批):terminal = codex resume TUI pane,
+    // chat = app-server 复位;缺省时 codex 会话切模式报错(claude-only 测试可省)。
+    codexRuntime,
     approvalCenter,
     // 多端跟随（2026-10-16）：切换完成后关该会话全部 claude-stream WS——未切换端重连被
     // terminal 守卫拒（SESSION_STATE_CONFLICT），客户端失效 detail 自动换渲染形态。
-    onModeSwitched: (runtimeKey) => claudeStreamController.closeSessionSockets(runtimeKey),
+    onModeSwitched: (runtimeKey) => {
+      // 双控制器(codex 一等 provider 批):关该会话全部 stream WS——未切换端重连被
+      // terminal 守卫拒(SESSION_STATE_CONFLICT),客户端失效 detail 自动换渲染形态。
+      claudeStreamController.closeSessionSockets(runtimeKey);
+      codexStreamController.closeSessionSockets(runtimeKey);
+    },
     // terminal 形态状态迁移（hooks 状态文件 watcher）→ push 通知（与 GUI 同出口）。
     onStatusChanged: (sessionId, status, context) => notifyPushStatus(sessionId, status, context),
   });
@@ -2447,7 +2461,7 @@ export const startApi = async () => {
       );
     },
   });
-  const codexStreamController = new CodexStreamController(codexRuntime);
+  const codexStreamController = new CodexStreamController(codexRuntime, sessionRegistry);
   // 自动重试注入配置源：调度时刻从 metadata fresh 读 config（缺省/enabled:false=不调度）。
   claudeRuntime.setAutoRetryConfigProvider((sessionId) =>
     sessionRegistry.getAgentAutoRetryConfig(sessionId),

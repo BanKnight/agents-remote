@@ -35,8 +35,10 @@ import { OptionMenu } from "./option-menu";
  * collision 翻转推到视口顶（探针 anchored 断言实锤）。**forwardRef + {...rest} 透传是
  * Radix `asChild` 硬契约**（frontend-notes §5）：DropdownMenuTrigger 的 toggle/
  * aria-haspopup/aria-expanded 都经 Slot merge 进 rest——组件不透传则 trigger 永不挂
- * （探针 H4/anchored 断言会归零）。label 走 rest（children 展示用）。 */
-const SelectorTrigger = forwardRef<
+ * （探针 H4/anchored 断言会归零）。label 走 rest（children 展示用）。
+ * 导出供 codex composer 复用（真机反馈 2026-10-28：codex 三选择器从裸文字 pill 收敛到
+ * 同款双形态——claude 与 codex 同一 composer 设计语言，收敛到 03a 单源）。 */
+export const SelectorTrigger = forwardRef<
   HTMLButtonElement,
   React.ComponentPropsWithoutRef<"button"> & {
     /** .iicn/.ipill 的语义色变体（perm/model/eff/usage）。 */
@@ -50,13 +52,16 @@ const SelectorTrigger = forwardRef<
     badge?: React.ReactNode;
     /** 三档变色 class 后缀（lvl-ok/lvl-warn/lvl-danger；CSS 按档映射语义 token）。 */
     level?: "ok" | "warn" | "danger";
+    /** 形态无关尾缀插槽：渲染在两形态 span 之外、button 直接子级（inline-flex 尾随，
+     * 形态切换不吞）——codex 配置选择器的「下轮生效」warning 圆点等连接级 cue。 */
+    trailing?: React.ReactNode;
   }
->(function SelectorTrigger({ accent, icon, pillIcon, badge, level, ...rest }, ref) {
+>(function SelectorTrigger({ accent, icon, pillIcon, badge, level, trailing, ...rest }, ref) {
   const lvl = level ? ` lvl-${level}` : "";
   return (
     <button
       ref={ref}
-      className="inline-flex min-w-0 cursor-pointer disabled:cursor-default disabled:opacity-40"
+      className="inline-flex min-w-0 items-center gap-1 cursor-pointer disabled:cursor-default disabled:opacity-40"
       type="button"
       {...rest}
     >
@@ -71,6 +76,7 @@ const SelectorTrigger = forwardRef<
           ▾
         </span>
       </span>
+      {trailing}
     </button>
   );
 });
@@ -85,8 +91,9 @@ function SwitchingHint({ label }: { label: string }) {
   );
 }
 
-/** anchored 菜单头（03a `.mh`：mini tint 图标 .mi + 标题；`menuHeader` 组装件）。 */
-function MenuHeader({
+/** anchored 菜单头（03a `.mh`：mini tint 图标 .mi + 标题；`menuHeader` 组装件）。导出供
+ *  codex composer 复用（SelectorTrigger 同批收敛到 03a 单源）。 */
+export function MenuHeader({
   accent,
   icon,
   label,

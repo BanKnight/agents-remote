@@ -113,14 +113,14 @@ async function probe(browser, label, contextOptions) {
 
   // 卡片内底行 selectors 计数：selectors 恒留卡片内底行（不再移出到外部工具栏）。
   // 统计卡片边框 div 内（含 textarea）的 Model/Perm/Effort selector + 附件菜单 trigger 数
-  // （批 8 附件双路径 565868e 在卡片内加了第 4 个 aria-haspopup，2026-10-14 校准口径 3→4）。
+  // （cc8534d 附件并入加号后附件菜单不占卡片内 trigger 位，2026-10-28 重校准 4→3）。
   const floatRoot = page.locator("[data-composer-float]");
   const cardBorder = floatRoot.locator("div.rounded-xl, .rounded-xl").first();
   const cardSelectorCount = await cardBorder
     .locator("button[aria-haspopup]")
     .count()
     .catch(() => 0);
-  console.log(`[${label}] 获焦后 卡片内 selector trigger 数 = ${cardSelectorCount}（4=留卡片内）`);
+  console.log(`[${label}] 获焦后 卡片内 selector trigger 数 = ${cardSelectorCount}（3=留卡片内）`);
 
   // .send2 几何在「输入态」测（send 可见时）；点 send 后输入清空 .send2 即 unmount，
   // v14 段（点击后）只能拿到 null。按钮两端统一（2026-10-14）后桌面输入态也有 .send2
@@ -313,9 +313,10 @@ async function probe(browser, label, contextOptions) {
     console.log(
       `H1b 发送按钮出现不导致textarea跳变: ${h1b ? "PASS" : "FAIL"} (跳变=${mobile.jump.toFixed(1)}px)`,
     );
-    // H4: selectors 恒留卡片内底行（不再移出到外部工具栏）——3 selector + 附件菜单 = 4 个
-    // trigger 在卡片边框内（批 8 附件双路径后校准，2026-10-14）。
-    const h4 = mobile.cardSelectorCount === 4;
+    // H4: selectors 恒留卡片内底行（不再移出到外部工具栏）——3 个 selector trigger 在
+    // 卡片边框内（cc8534d 附件并入加号一键直达后，附件菜单不再占卡片内 trigger 位，
+    // 2026-10-28 重校准 4→3；usage badge 无数据不渲染不计）。
+    const h4 = mobile.cardSelectorCount === 3;
     console.log(
       `H4 selectors 留卡片内: ${h4 ? "PASS" : "FAIL"} (卡片内selector=${mobile.cardSelectorCount})`,
     );

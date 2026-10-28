@@ -9,6 +9,31 @@ type Subscriber = {
   onError(err: Error): void;
 };
 
+// codex 回放行的锚 id（增量回放，claude 的 sinceUuid 同款机制对 codex 行形状的镜像）：
+// echo 行取顶层 uuid；codex_event 行仅 item/started|completed（有 params.item.id）可锚。
+// 其余行（codex_config / turn/* / delta 类通知）不可锚 → null。解析失败 → null。
+function codexLineAnchorId(line: string): string | null {
+  try {
+    const msg = JSON.parse(line) as {
+      type?: unknown;
+      uuid?: unknown;
+      event?: { method?: unknown; params?: { item?: { id?: unknown } } };
+    };
+    if (msg.type === "codex_user_echo" && typeof msg.uuid === "string") return msg.uuid;
+    if (
+      msg.type === "codex_event" &&
+      typeof msg.event?.method === "string" &&
+      (msg.event.method === "item/started" || msg.event.method === "item/completed") &&
+      typeof msg.event.params?.item?.id === "string"
+    ) {
+      return msg.event.params.item.id;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * PiSessionRelay —— pi 会话的 relay（设计 docs/design-v1/workbench-views.md §3.1）。
  *
@@ -44,20 +69,43 @@ export class PiSessionRelay {
     this.historyLines = lines;
   }
 
-  addSubscriber(onData: (line: string) => void, onError: (err: Error) => void): RuntimeStream {
+  addSubscriber(
+    onData: (line: string) => void,
+    onError: (err: Error) => void,
+    opts?: { sinceId?: string },
+  ): RuntimeStream {
+    // 增量回放（claude locateReplayAnchor 同款结构）：客户端锚仍命中缓冲 → 只发锚后行；
+    // miss（缓冲裁剪/进程重启后历史变化）→ 全量回放，客户端按 session_init.replay 复位。
+    const anchor = opts?.sinceId ? this.locateReplayAnchor(opts.sinceId) : null;
+    const historyFrom = anchor
+      ? anchor.buffer === "history"
+        ? anchor.index + 1
+        : this.historyLines.length
+      : 0;
+    const liveFrom = anchor && anchor.buffer === "live" ? anchor.index + 1 : 0;
+    const historySlice = this.historyLines.slice(historyFrom);
+    const liveSlice = this.liveLines.slice(liveFrom);
+
     const sub: Subscriber = { onData, onError };
     this.subscribers.add(sub);
 
     try {
-      onData(JSON.stringify({ type: "session_init", resume: this.resume }));
+      onData(
+        JSON.stringify({
+          type: "session_init",
+          resume: this.resume,
+          ...(anchor ? { replay: "delta" } : {}),
+        }),
+      );
     } catch {
       /* subscriber error shouldn't block replay */
     }
 
-    // 历史（JSONL 定格行，空目录 → count 0，markers 照发让客户端状态机与 claude 共用）。
+    // 历史（JSONL 定格行，空目录 → count 0，markers 照发让客户端状态机与 claude 共用）；
+    // live 锚定时 history 段为空 slice（count 0，客户端零跳变）。
     try {
-      onData(JSON.stringify({ type: "history_start", count: this.historyLines.length }));
-      for (const line of this.historyLines) {
+      onData(JSON.stringify({ type: "history_start", count: historySlice.length }));
+      for (const line of historySlice) {
         onData(line);
       }
       onData(JSON.stringify({ type: "history_end" }));
@@ -66,8 +114,8 @@ export class PiSessionRelay {
     }
 
     try {
-      onData(JSON.stringify({ type: "live_start", count: this.liveLines.length }));
-      for (const line of this.liveLines) {
+      onData(JSON.stringify({ type: "live_start", count: liveSlice.length }));
+      for (const line of liveSlice) {
         onData(line);
       }
       onData(JSON.stringify({ type: "live_end" }));
@@ -80,6 +128,40 @@ export class PiSessionRelay {
         this.subscribers.delete(sub);
       },
     };
+  }
+
+  // Locate the client's anchor id in the replay buffers — mirror of
+  // ClaudeSessionRelay.locateReplayAnchor for codex row shapes. Live buffer is
+  // scanned FIRST so a row present in both (history/live 边界重叠) pins to the
+  // live position and nothing gets sent twice. 键钉死 needle prescreen（security
+  // review 2026-10-28：裸值 needle 会与行内自然存在的结构化字符串值碰撞——如
+  // item 普遍带 status:"completed"，since=completed 即 prescreen 每行误命中 → 逐行
+  // 整行 parse，反复连接可放大成 CPU 消耗面；键钉死后误报归零，与 claude 的
+  // `"uuid":"…"` 同款前提）。prescreen 只是快筛，正确性仍由 codexLineAnchorId
+  // parse 确认兜底；锚行被 live cap 裁掉 / thread 重启后历史变化 → miss → 全量。
+  // 锚 id 来自 URL query param：先验字符集（同 claude 的 UUID 正则校验），非法/
+  // 缺失 = 干净的全量回放兜底。
+  private locateReplayAnchor(
+    sinceId: string,
+  ): { buffer: "history" | "live"; index: number } | null {
+    if (sinceId.length === 0 || sinceId.length > 128 || !/^[A-Za-z0-9_-]+$/.test(sinceId)) {
+      return null;
+    }
+    // 两类锚行各一 needle：codex_user_echo 顶层 uuid / item params.item.id。
+    const needleUuid = `"uuid":"${sinceId}"`;
+    const needleId = `"id":"${sinceId}"`;
+    const prescreen = (line: string) => line.includes(needleUuid) || line.includes(needleId);
+    for (let i = this.liveLines.length - 1; i >= 0; i--) {
+      if (prescreen(this.liveLines[i]) && codexLineAnchorId(this.liveLines[i]) === sinceId) {
+        return { buffer: "live", index: i };
+      }
+    }
+    for (let i = this.historyLines.length - 1; i >= 0; i--) {
+      if (prescreen(this.historyLines[i]) && codexLineAnchorId(this.historyLines[i]) === sinceId) {
+        return { buffer: "history", index: i };
+      }
+    }
+    return null;
   }
 
   /**

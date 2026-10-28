@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useExternalStoreRuntime } from "@assistant-ui/react";
 import type { AppendMessage, ExternalStoreAdapter, ThreadMessageLike } from "@assistant-ui/react";
-import type { CodexStreamServerMessage } from "@agents-remote/shared";
+import type { ClaudeContextUsage, CodexStreamServerMessage } from "@agents-remote/shared";
+import type { PendingAttachments } from "../components/ui/composer-attach";
 import { codexStreamUrl } from "../api/client";
 import { isConnectionFresh } from "./console-model";
 import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
+import {
+  codexReplayCacheKey,
+  loadCodexReplayCache,
+  saveCodexReplayCache,
+} from "../lib/codex-replay-cache";
 
 // ── Codex app-server 消息形状（局部类型解码；生成绑定只在 api 端对照、不入库，shared
 // 只声明外层帧协议）── 对齐 `codex app-server generate-ts` 0.163.0 的 ThreadItem 联合与
@@ -45,6 +51,74 @@ export type CodexConfigPatch = {
   sandbox?: string;
 };
 
+/** `thread/tokenUsage/updated` 通知的 tokenUsage 局部解码（0.163.0 fixtures 形状，宽进）：
+ *  `last` = 最后一次 API 请求用量；`total` = 本 thread 累计消耗（比窗口无意义，不采集）。 */
+export type CodexTokenUsageLast = {
+  totalTokens: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteInputTokens: number;
+  outputTokens: number;
+};
+
+export type CodexTokenUsage = {
+  last: CodexTokenUsageLast;
+  modelContextWindow: number;
+};
+
+/**
+ * 上下文占用口径：`last`（最后一次请求的 prompt 规模）≈ 当前上下文占用，比
+ * modelContextWindow 得百分比（fixtures 实证：last 随轮次微增 10827→11964→…，
+ * total 精确累加是累计消耗语义）。OpenAI 语义（codex-rs protocol.rs 实证）：
+ * inputTokens **已含** cachedInputTokens（non_cached_input = input − cached），
+ * cacheWriteInputTokens（写入 prompt cache 部分）**也是 input 的子集**——不参与
+ * 明细构成（单列会与裸 input 双计、加总超出 contextTokens），恒填 0。
+ * 裸 input = input − cached，明细可加总 = contextTokens。
+ * 无数据/形状缺失返回 undefined（组件侧不渲染，不伪造）。
+ */
+export function codexTokenUsageToContextUsage(
+  usage: CodexTokenUsage | undefined,
+): ClaudeContextUsage | undefined {
+  const last = usage?.last;
+  if (!last || usage.modelContextWindow <= 0) return undefined;
+  return {
+    contextTokens: last.inputTokens,
+    inputTokens: Math.max(0, last.inputTokens - last.cachedInputTokens),
+    cacheReadTokens: last.cachedInputTokens,
+    cacheCreationTokens: 0,
+    outputTokens: last.outputTokens,
+    contextWindow: usage.modelContextWindow,
+  };
+}
+
+/**
+ * 增量回放锚（镜像 claude cursorRef 语义）：raw 日志最后一条**可锚**条目的 id——服务端在
+ * history/live 回放缓冲里定位它、只下发其后的行。可锚 = 客户端必已持有该条目的**终态行**：
+ * echo 任意（锚其行，其后重推由 started 重置语义兜底幂等）；message 须 final（锚行 =
+ * 已收到的 item/completed）；tool 须 completed|failed。流式中的条目**跳过前溯**——若锚
+ * 流式条目，服务端尾扫会命中其 item/started 行（delta 行键是 itemId 不命中 prescreen），
+ * 重推其后全部 delta 与断线前已收的累积双倍（形态 A），或锚在客户端未收到过的 completed
+ * 行导致重推不含终态行、条目永不定格（形态 B）——code review 2026-10-28 P1。
+ * 全部条目不可锚（空日志/仅流式中条目）返回 null = 全量回放兜底。
+ */
+export function codexAnchorId(raw: CodexRawItem[]): string | null {
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const item = raw[i];
+    if (item.kind === "echo") return item.uuid;
+    if (item.kind === "message") {
+      if (item.final && item.messageId) return item.messageId;
+      continue;
+    }
+    // tool_call 及未知 kind：call 缺失/形状漂移的行跳过不炸（恢复端数据来自盘上，
+    // 不具备 live 端「内核自建数组」的形状保证——review 2026-10-28 P3-3）。
+    if (item.kind !== "tool_call" || !item.call) continue;
+    if (item.call.status === "completed" || item.call.status === "failed") {
+      return item.call.toolCallId;
+    }
+  }
+  return null;
+}
+
 // ── state 模型（raw 日志 + 派生渲染，State/Render 分离——CLAUDE.md 数据流原则）──────
 //
 // Pass 1（applyCodexFrame）：帧进唯一 state 有序日志 CodexRawItem[]，标量 state（isRunning/
@@ -79,6 +153,8 @@ export type CodexRawItem =
       confirmed: boolean;
       /** 确认后绑定 codex item id：item/completed 的 userMessage 同 id 不重复建条目。 */
       messageId?: string;
+      /** 图片附件（base64 裸数据）：live echo 携带，渲染图前文后 user content。 */
+      images?: { data: string; mimeType: string }[];
     }
   | {
       kind: "message";
@@ -205,6 +281,49 @@ function finalizeAssistant(raw: CodexRawItem[], messageId: string): boolean {
       !item.final
     ) {
       raw[i] = { ...item, final: true };
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * started 重置（增量回放幂等性的一半，code review 2026-10-28 P1 形态 A）：item/started
+ * 到达时清空同 id 条目的流式累积——正常流 started 先于全部 delta，重置是 no-op；重连
+ * 重推路径则让重放的 delta 从零累加（锚前条目已收的 delta 不再双倍拼进 sections）。
+ * 只作用于未定格条目：定格条目必在锚行之前，其 started 不会出现在重推范围。
+ */
+function resetAssistantEntry(raw: CodexRawItem[], messageId: string | null): boolean {
+  if (!messageId) return false;
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const item = raw[i];
+    if (
+      item.kind === "message" &&
+      item.role === "assistant" &&
+      item.messageId === messageId &&
+      !item.final &&
+      item.sections.length > 0
+    ) {
+      raw[i] = { ...item, sections: [] };
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 同上，tool 版：清流式 output 累积（resultText）——completed 权威 result 由
+ *  upsertToolCall 的 patch 语义另行覆盖。 */
+function resetToolEntry(raw: CodexRawItem[], toolCallId: string): boolean {
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const item = raw[i];
+    if (
+      item.kind === "tool_call" &&
+      item.call.toolCallId === toolCallId &&
+      item.call.status !== "completed" &&
+      item.call.status !== "failed" &&
+      item.call.resultText !== ""
+    ) {
+      raw[i] = { kind: "tool_call", call: { ...item.call, resultText: "" } };
       return true;
     }
   }
@@ -477,6 +596,7 @@ function applyCodexFrameInPlace(raw: CodexRawItem[], msg: CodexStreamServerMessa
       text: msg.text,
       uuid: msg.uuid,
       confirmed: false,
+      ...(msg.images && msg.images.length > 0 ? { images: msg.images } : {}),
     });
     return true;
   }
@@ -496,16 +616,17 @@ function applyCodexFrameInPlace(raw: CodexRawItem[], msg: CodexStreamServerMessa
       }
       if (type === "agentMessage") {
         // started 的 text 为空（流式未开始），completed 带权威全文（覆盖 delta 累积）。
+        // started 先重置流式累积（增量回放重推幂等，见 resetAssistantEntry）。
+        let changed = method === "item/started" ? resetAssistantEntry(raw, id) : false;
         const text = typeof item.text === "string" ? item.text : "";
-        let changed = false;
-        if (text) changed = upsertAssistantSection(raw, id, "text", text, "replace");
+        if (text) changed = upsertAssistantSection(raw, id, "text", text, "replace") || changed;
         if (method === "item/completed" && id) {
           changed = finalizeAssistant(raw, id) || changed;
         }
         return changed;
       }
       if (type === "reasoning") {
-        if (method !== "item/completed") return false; // started 的 summary/content 为空，等 delta
+        if (method !== "item/completed") return resetAssistantEntry(raw, id); // started 等 delta
         // 只渲染 summary（content 可能加密）；completed 的 summary 是权威全文。
         const summary = Array.isArray(item.summary)
           ? item.summary.filter((s): s is string => typeof s === "string" && s.length > 0)
@@ -518,8 +639,10 @@ function applyCodexFrameInPlace(raw: CodexRawItem[], msg: CodexStreamServerMessa
       }
       const patch = toolPatchFromItem(item);
       if (!patch) return false;
-      // completed 的权威 result 若为空（如 commandExecution 无输出），保留流式累积。
-      return upsertToolCall(raw, patch);
+      // started 先重置流式 output 累积（增量回放重推幂等）；completed 的权威 result 若为
+      // 空（如 commandExecution 无输出），保留流式累积（不 reset）。
+      const changed = method === "item/started" ? resetToolEntry(raw, patch.toolCallId) : false;
+      return upsertToolCall(raw, patch) || changed;
     }
     if (method === "item/agentMessage/delta") {
       const p = params as CodexDeltaParams;
@@ -658,7 +781,22 @@ export function codexFramesToThreadMessages(raw: CodexRawItem[]): ThreadMessageL
   const messages: ThreadMessageLike[] = [];
   for (const item of raw) {
     if (item.kind === "echo") {
-      messages.push({ role: "user", content: item.text, id: `echo-${item.uuid}` });
+      // 有图 → image parts 在前 + 可选文本块（claude user-prompt 同款 user content 数组，
+      // UserImageView 消费）；无图维持字符串 content（现状零变化）。
+      const hasImages = (item.images?.length ?? 0) > 0;
+      messages.push({
+        role: "user",
+        id: `echo-${item.uuid}`,
+        content: hasImages
+          ? [
+              ...item.images!.map((img) => ({
+                type: "image" as const,
+                image: `data:${img.mimeType};base64,${img.data}`,
+              })),
+              ...(item.text ? [{ type: "text" as const, text: item.text }] : []),
+            ]
+          : item.text,
+      });
       continue;
     }
     if (item.kind === "message") {
@@ -709,12 +847,43 @@ export function codexFramesToThreadMessages(raw: CodexRawItem[]): ThreadMessageL
 
 // ── useCodexSession：WS 生命周期（镜像 useAcpSession）+ codex 数据层 ──────────────
 
-export function useCodexSession(projectName: string, sessionId: string) {
+// 回放缓存落盘节奏（claude-adapter 同值同理由）：纯 debounce 在 delta 流期间被每帧
+// 重置 → 长回合永不落盘；maxWait 强制周期性落盘防 PWA 被杀丢整回合。
+const REPLAY_FLUSH_DEBOUNCE_MS = 2_000;
+const REPLAY_FLUSH_MAX_WAIT_MS = 10_000;
+// 跨 remount 恢复的 IDB 读超时竞速（claude RESTORE_TIMEOUT_MS 同值）：IDB 挂起的最坏
+// 面是一次全量回放而非骨架永驻。
+const CODEX_RESTORE_TIMEOUT_MS = 3_000;
+
+export function useCodexSession(
+  projectName: string,
+  sessionId: string,
+  // composer 附件接线（claude useClaudeSession 同款）：ref 持有（onNew 依赖稳定），发送
+  // 瞬间取快照组帧、成功后清 chips。
+  options?: {
+    takePendingAttachments?: () => PendingAttachments | null;
+    clearPendingAttachments?: () => void;
+    // 双模式多端跟随(claude useClaudeSession 同款):另一端把会话切成 terminal 形态后,
+    // 本端重连撞 open 守卫(SESSION_STATE_CONFLICT)→ 停止重连 + 通知外层失效 detail。
+    onModeConflict?: () => void;
+  },
+) {
+  const pendingAttachmentsRef = useRef(options);
+  pendingAttachmentsRef.current = options;
+  // onModeConflict 经 ref 进 WS effect 闭包(回调身份不稳定,不能进依赖)。
+  const onModeConflictRef = useRef(options?.onModeConflict);
+  onModeConflictRef.current = options?.onModeConflict;
+  // 双模式守卫命中标记(claude effect 内局部 let 的 ref 变体:codex 的 error 分支在
+  // useCallback 作用域,拿不到 per-connection 局部)。WS effect 每轮开头清零。
+  const modeConflictRef = useRef(false);
   const [rawMessages, setRawMessages] = useState<CodexRawItem[]>([]);
   // 会话配置快照（latest-wins 标量，不进 raw 消息日志——同 ACP configOptions）。
   const [config, setConfigState] = useState<CodexConfig | null>(null);
   // 配置已提交但下一个 turn/start 才应用：UI 标「下轮生效」不伪装即时切换。
   const [configPending, setConfigPending] = useState(false);
+  // 上下文占用标量（thread/tokenUsage/updated 透传帧，last 比窗口——真机反馈 2026-10-28
+  // 「缺乏查看上下文的功能」）：composer 右组 ContextUsageIndicator 消费。
+  const [tokenUsage, setTokenUsage] = useState<CodexTokenUsage | undefined>();
   const [isRunning, setIsRunning] = useState(false);
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -723,6 +892,57 @@ export function useCodexSession(projectName: string, sessionId: string) {
   const lastPongRef = useRef(0);
   const [connectionVersion, setConnectionVersion] = useState(0);
   const connectionVersionRef = useRef(0);
+  // ── 增量回放（镜像 claude cursorRef/重连锚）──
+  // anchorRef：本地最后一条可锚条目的 id（effect 从 rawMessages 提交态同步，见下）；
+  // WS 重连时拼进 URL `?since=`，服务端命中 → session_init.replay="delta" 只补锚后行。
+  const anchorRef = useRef<string | null>(null);
+  // 会话代际判定：effect 重跑可能是重连（connectionVersion bump，保留 state 走 delta）
+  // 也可能是切会话（projectName/sessionId 变，必须清空防串屏）——只有后者 pre-open 清空。
+  const sessionKeyRef = useRef<string | null>(null);
+  // ── 跨 remount 回放缓存（codex-replay-cache，镜像 claude replayFlush 家族）──
+  // raw 提交态镜像（flush 序列化窗口用）：锚同步 effect 在 commit 后写（debounce 到点
+  // 时必已就位，与 anchorRef 同款时序论证）。
+  const replayRawRef = useRef<CodexRawItem[]>([]);
+  const replayKeyRef = useRef<string | null>(null);
+  // 会话代数：切会话/重挂载 ++，旧会话已排队 flush 醒来发现 gen 漂移即丢弃（claude 同款）。
+  const replayGenRef = useRef(0);
+  // 恢复置 true（内容就是盘上的）、采集置 false——恢复后的到点 flush 不重写同一份数据。
+  const replayCleanRef = useRef(true);
+  const replayDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replayMaxWaitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replayFlush = useCallback(() => {
+    if (replayDebounceRef.current) {
+      clearTimeout(replayDebounceRef.current);
+      replayDebounceRef.current = null;
+    }
+    if (replayMaxWaitRef.current) {
+      clearTimeout(replayMaxWaitRef.current);
+      replayMaxWaitRef.current = null;
+    }
+    if (replayCleanRef.current || !replayKeyRef.current) return;
+    // 锚在 flush 时刻从窗口推导（codexAnchorId 单一真相；raw 提交态已就位）。
+    const anchorId = codexAnchorId(replayRawRef.current);
+    const lines = replayRawRef.current.map((item) => JSON.stringify(item));
+    void saveCodexReplayCache(replayKeyRef.current, lines, anchorId);
+    replayCleanRef.current = true;
+  }, []);
+  // trailing debounce + maxWait（claude 同款节奏）：纯 debounce 在 delta 流期间被每帧
+  // 重置 → 长回合永不落盘、PWA 被杀丢整回合；maxWait 强制周期性落盘。
+  const scheduleReplayFlush = useCallback(() => {
+    replayCleanRef.current = false;
+    const gen = replayGenRef.current;
+    if (replayDebounceRef.current) clearTimeout(replayDebounceRef.current);
+    replayDebounceRef.current = setTimeout(() => {
+      replayDebounceRef.current = null;
+      if (gen === replayGenRef.current) replayFlush();
+    }, REPLAY_FLUSH_DEBOUNCE_MS);
+    if (!replayMaxWaitRef.current) {
+      replayMaxWaitRef.current = setTimeout(() => {
+        replayMaxWaitRef.current = null;
+        if (gen === replayGenRef.current) replayFlush();
+      }, REPLAY_FLUSH_MAX_WAIT_MS);
+    }
+  }, [replayFlush]);
 
   const scheduleReconnect = useCallback(() => {
     setConnectionVersion((v) => v + 1);
@@ -787,9 +1007,20 @@ export function useCodexSession(projectName: string, sessionId: string) {
   // 共用（批内 React 自动批处理合并多次 set 的 render）。
   const handleFrameScalars = useCallback((msg: CodexStreamServerMessage) => {
     if (msg.type === "session_init") {
-      setConfigState(null);
-      setConfigPending(false);
-      setLoading(true);
+      // 增量回放分支（镜像 claude session_init.replay）：delta = 服务端命中 since 锚、
+      // 只补锚后行——保留全部 state（raw/config/tokenUsage/isRunning 都不动），不 reset
+      //（断线前已渲染的内容继续在屏，loading 不重置）；full/缺省 = 全量回放（或老服务端
+      // 无 replay 字段），重置重建。onclose 不再置 loading=true——重连期间的面板形态由
+      // 本分支裁决（delta 保持内容、full 骨架），重连成功前不闪骨架。
+      if (!(msg.replay === "delta" && anchorRef.current != null)) {
+        setRawMessages([]);
+        anchorRef.current = null;
+        setConfigState(null);
+        setConfigPending(false);
+        setTokenUsage(undefined);
+        setIsRunning(false);
+        setLoading(true);
+      }
       setStreamError(null);
       return;
     }
@@ -808,6 +1039,15 @@ export function useCodexSession(projectName: string, sessionId: string) {
       return;
     }
     if (msg.type === "error") {
+      // 双模式守卫拒绝(多端跟随):会话已被其它端切成 terminal 形态。关 socket + 停止
+      // 重连(onclose 读 modeConflictRef 跳过),onModeConflict 通知外层失效 detail →
+      // AgentPanelRouter 重读 mode 换渲染 terminal 面板(claude-adapter 同款)。
+      if ((msg as { code?: string }).code === "SESSION_STATE_CONFLICT") {
+        modeConflictRef.current = true;
+        onModeConflictRef.current?.();
+        socketRef.current?.close();
+        return;
+      }
       setStreamError((msg as { message?: string }).message ?? "codex stream error");
       setIsRunning(false);
       return;
@@ -832,8 +1072,33 @@ export function useCodexSession(projectName: string, sessionId: string) {
       if (method === "turn/started") {
         setIsRunning(true);
         setConfigPending(false);
-      } else if (method === "turn/completed") {
+        return;
+      }
+      if (method === "turn/completed") {
         setIsRunning(false);
+        return;
+      }
+      // 上下文占用标量（latest-wins）：params.tokenUsage.last ≈ 当前上下文规模、
+      // params.tokenUsage.modelContextWindow = 窗口（形状按 codex-generated 绑定
+      // v2/ThreadTokenUsageUpdatedNotification：params = {threadId, turnId,
+      // tokenUsage: {total, last, modelContextWindow}}；缺形状不更新不伪造）。
+      if (method === "thread/tokenUsage/updated") {
+        const usage = (msg.event?.params as { tokenUsage?: Record<string, unknown> } | undefined)
+          ?.tokenUsage;
+        const last = usage?.last as Record<string, unknown> | undefined;
+        const window = typeof usage?.modelContextWindow === "number" ? usage.modelContextWindow : 0;
+        if (!last || window <= 0) return;
+        const num = (v: unknown) => (typeof v === "number" ? v : 0);
+        setTokenUsage({
+          last: {
+            totalTokens: num(last.totalTokens),
+            inputTokens: num(last.inputTokens),
+            cachedInputTokens: num(last.cachedInputTokens),
+            cacheWriteInputTokens: num(last.cacheWriteInputTokens),
+            outputTokens: num(last.outputTokens),
+          },
+          modelContextWindow: window,
+        });
       }
     }
   }, []);
@@ -851,170 +1116,292 @@ export function useCodexSession(projectName: string, sessionId: string) {
         msg.type === "ended"
       ) {
         setRawMessages((prev) => applyCodexFrame(prev, msg));
+        scheduleReplayFlush();
       }
     },
     [handleFrameScalars],
   );
 
+  // 锚同步（镜像 claude cursorRef 的 processBatch 内推进）：commit 后从 raw 提交态提取
+  // 最后可锚条目 id。onclose → 500ms 退避重连的 URL 构造读它——500ms 足够 effect 跑完。
+  // 切会话清空 effect 与本 effect 都在 commit 后执行，顺序 = 声明序，锚跟随清空归 null。
+  useEffect(() => {
+    anchorRef.current = codexAnchorId(rawMessages);
+    // flush 镜像：replayFlush 读这里（不是 setRawMessages 闭包态）——锚与 flush 窗口同源。
+    replayRawRef.current = rawMessages;
+  }, [rawMessages]);
+
+  // 回放缓存落盘三点（claude-adapter 同款惯例）：PWA 切后台（hidden）/ 页面卸载
+  //（pagehide，iOS 回收前最后时机）/ 组件卸载——pending 窗口立即 flush，不等 debounce。
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") replayFlush();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", replayFlush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", replayFlush);
+      replayFlush();
+    };
+  }, [replayFlush]);
+
   useEffect(() => {
     let cancelled = false;
     let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-    // 每次连接重置（session_init 分支也会清，这里是 pre-open 基线）。
-    setRawMessages([]);
-    setConfigState(null);
-    setConfigPending(false);
-    setConnected(false);
-    setLoading(true);
+    // 每轮连接周期重置双模式守卫标记(error 置位 → onclose 读取 → 下轮 effect 清零)。
+    modeConflictRef.current = false;
+    // 会话代际判定：切会话（projectName/sessionId 变）pre-open 清空防旧会话内容串屏；
+    // 重连（connectionVersion bump）保留 state——reset 职责在 session_init full 分支
+    //（delta 重连不清空、保留已渲染内容，全量兜底由服务端锚 miss 自动降级）。
+    const sessionKey = `${projectName}\u0000${sessionId}`;
+    // 首挂/切会话 = 异步恢复后开连（缓存命中即刻呈现 + URL 带 since 锚）；重连 = 同步
+    // 开连（锚取现有 anchorRef，零新增延迟）。函数声明提升：else 分支提前引用合法
+    //（claude-adapter 同款结构）。
+    let connect: () => void;
+    // 首挂（connectionVersion === 0）也走恢复分支：StrictMode dev 双跑的第二跑 ref 已
+    // 命中 sessionKey，不带此条件恢复永不生效；prod 同理覆盖「恢复挂起窗口内重连撞
+    // 击 bump」的误判（review 2026-10-28 P2-2，claude-adapter 同款）。
+    if (sessionKeyRef.current !== sessionKey || connectionVersion === 0) {
+      sessionKeyRef.current = sessionKey;
+      // 切会话：同步 flush 旧会话窗口（rawRef/keyRef 此刻仍是旧会话）+ gen++ 使旧会话
+      // 已排队 flush 失效 + 换 key。旧会话毒化不传染的对应面：codex 无毒化机制，无需复位。
+      replayFlush();
+      replayGenRef.current += 1;
+      replayCleanRef.current = true;
+      replayKeyRef.current = codexReplayCacheKey(projectName, sessionId);
+      const replayKey = replayKeyRef.current;
+      setRawMessages([]);
+      replayRawRef.current = [];
+      anchorRef.current = null;
+      setConfigState(null);
+      setConfigPending(false);
+      setTokenUsage(undefined);
+      // isRunning 一并清：running 会话切走后，新会话 onopen → session_init full 到达前的
+      // 一 RTT 窗口不得残留 Stop 钮（code review 2026-10-28 P3-2）。
+      setIsRunning(false);
+      setConnected(false);
+      setLoading(true);
 
-    const socket = new WebSocket(codexStreamUrl(projectName, sessionId));
-    socket.binaryType = "arraybuffer";
-    socketRef.current = socket;
+      // 跨 remount 恢复（claude 同款）：命中即恢复窗口——raw/anchorRef 同步写（开连前
+      // 必须就位，URL since 依赖它）+ loading false；不 schedule（恢复内容就是盘上的，
+      // clean=true 到点 flush 不重写）。恢复行不含 config/tokenUsage 标量（独立 state）：
+      // codex_config 在服务端 live 缓冲回放段重放，照常到达。超时竞速 = IDB 挂起的最坏
+      // 面是一次全量回放；gen/cancelled 双守卫挡「恢复窗口内切换/卸载」的迟到应用。
+      const gen = replayGenRef.current;
+      connect = () => {
+        void (async () => {
+          const cached = await Promise.race([
+            loadCodexReplayCache(replayKey),
+            new Promise<null>((r) => setTimeout(() => r(null), CODEX_RESTORE_TIMEOUT_MS)),
+          ]);
+          if (cancelled || gen !== replayGenRef.current) return;
+          if (cached) {
+            const parsed: CodexRawItem[] = [];
+            for (const line of cached.raw) {
+              try {
+                const item = JSON.parse(line) as CodexRawItem;
+                // 盘上数据可能损坏：缺 kind / kind 非串的行 skip（codexAnchorId 对错
+                // 形状会炸——盘上数据不做 live 端「内核自建数组」的形状保证）。
+                if (!item || typeof item.kind !== "string") continue;
+                parsed.push(item);
+              } catch {
+                // skip malformed cached line
+              }
+            }
+            if (parsed.length > 0) {
+              replayRawRef.current = parsed;
+              anchorRef.current = codexAnchorId(parsed);
+              setRawMessages(parsed);
+              setLoading(false);
+            }
+          }
+          openConnection();
+        })();
+      };
+    } else {
+      setConnected(false);
+      connect = () => openConnection();
+    }
 
-    socket.onopen = () => {
-      lastPongRef.current = Date.now();
-      setConnected(true);
-      heartbeatTimer = setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: "ping" }));
-          if (Date.now() - lastPongRef.current > PONG_TIMEOUT_MS) {
-            socket.close();
+    function openConnection() {
+      const socket = new WebSocket(
+        codexStreamUrl(
+          projectName,
+          sessionId,
+          // 重连锚（镜像 claude openConnection）：本地已持有的最后可锚条目 id。首连/切会
+          // 话刚恢复/清空完 = 恢复端推导锚或 null（全量）。URL 构造必须在恢复/清空之后
+          //（同 claude 的「构造必须在 reset 之后」——否则会把上一会话的锚带进新会话 URL）。
+          anchorRef.current ?? undefined,
+        ),
+      );
+      socket.binaryType = "arraybuffer";
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        lastPongRef.current = Date.now();
+        setConnected(true);
+        heartbeatTimer = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "ping" }));
+            if (Date.now() - lastPongRef.current > PONG_TIMEOUT_MS) {
+              socket.close();
+            }
+          }
+        }, HEARTBEAT_INTERVAL_MS);
+      };
+
+      const decompressGzip = async (buf: ArrayBuffer): Promise<string> => {
+        const stream = new Response(buf).body!.pipeThrough(new DecompressionStream("gzip"));
+        return await new Response(stream).text();
+      };
+
+      // 与 pi/claude/acp-adapter 同构的批处理状态机：history/live 两个窗口内帧缓冲、end
+      // marker 时批量 process（真实分帧到达时批量落 state，减少 render 风暴）。
+      let historyBatch: CodexStreamServerMessage[] | null = null;
+      let liveBatch: CodexStreamServerMessage[] | null = null;
+
+      // 批量提交：标量逐帧（React 自动批处理合并 render），raw 日志整批一次折加——
+      // history 回放 N 帧从逐帧 functional setState（每帧复制全数组，O(N²)）降为单次
+      // O(N)（perf review codex 批次 2 P1-1）。
+      const processBatch = (batch: CodexStreamServerMessage[]) => {
+        for (const msg of batch) handleFrameScalars(msg);
+        setRawMessages((prev) => applyCodexFrames(prev, batch));
+        scheduleReplayFlush();
+      };
+      const processOne = (msg: CodexStreamServerMessage) => handleFrame(msg);
+
+      const handleBinaryBatch = async (buf: ArrayBuffer) => {
+        const text = await decompressGzip(buf);
+        const target = historyBatch ?? liveBatch;
+        if (!target) return;
+        if (text.length > 0) {
+          for (const line of text.split("\n")) {
+            try {
+              target.push(JSON.parse(line) as CodexStreamServerMessage);
+            } catch {
+              // skip malformed line
+            }
           }
         }
-      }, HEARTBEAT_INTERVAL_MS);
-    };
+      };
 
-    const decompressGzip = async (buf: ArrayBuffer): Promise<string> => {
-      const stream = new Response(buf).body!.pipeThrough(new DecompressionStream("gzip"));
-      return await new Response(stream).text();
-    };
-
-    // 与 pi/claude/acp-adapter 同构的批处理状态机：history/live 两个窗口内帧缓冲、end
-    // marker 时批量 process（真实分帧到达时批量落 state，减少 render 风暴）。
-    let historyBatch: CodexStreamServerMessage[] | null = null;
-    let liveBatch: CodexStreamServerMessage[] | null = null;
-
-    // 批量提交：标量逐帧（React 自动批处理合并 render），raw 日志整批一次折加——
-    // history 回放 N 帧从逐帧 functional setState（每帧复制全数组，O(N²)）降为单次
-    // O(N)（perf review codex 批次 2 P1-1）。
-    const processBatch = (batch: CodexStreamServerMessage[]) => {
-      for (const msg of batch) handleFrameScalars(msg);
-      setRawMessages((prev) => applyCodexFrames(prev, batch));
-    };
-    const processOne = (msg: CodexStreamServerMessage) => handleFrame(msg);
-
-    const handleBinaryBatch = async (buf: ArrayBuffer) => {
-      const text = await decompressGzip(buf);
-      const target = historyBatch ?? liveBatch;
-      if (!target) return;
-      if (text.length > 0) {
-        for (const line of text.split("\n")) {
-          try {
-            target.push(JSON.parse(line) as CodexStreamServerMessage);
-          } catch {
-            // skip malformed line
+      const handleTextFrame = (event: MessageEvent) => {
+        if (cancelled) return;
+        try {
+          const msg = JSON.parse(event.data as string) as CodexStreamServerMessage;
+          if (msg.type === "history_start") {
+            historyBatch = [];
+            return;
           }
-        }
-      }
-    };
-
-    const handleTextFrame = (event: MessageEvent) => {
-      if (cancelled) return;
-      try {
-        const msg = JSON.parse(event.data as string) as CodexStreamServerMessage;
-        if (msg.type === "history_start") {
-          historyBatch = [];
-          return;
-        }
-        if (msg.type === "history_end") {
-          const batch = historyBatch ?? [];
-          historyBatch = null;
-          processBatch(batch);
-          processOne({ type: "history_end" });
-          return;
-        }
-        if (msg.type === "live_start") {
-          liveBatch = [];
-          return;
-        }
-        if (msg.type === "live_end") {
-          const batch = liveBatch ?? [];
-          liveBatch = null;
-          processBatch(batch);
-          processOne({ type: "live_end" });
-          return;
-        }
-        if (historyBatch) {
-          historyBatch.push(msg);
-          return;
-        }
-        if (liveBatch) {
-          liveBatch.push(msg);
-          return;
-        }
-        handleFrame(msg);
-      } catch {
-        // skip
-      }
-    };
-
-    // 二进制批（gzip）异步解压——串行 promise chain 保序（镜像 pi-adapter）。
-    let blobInFlight = false;
-    let chain: Promise<void> = Promise.resolve();
-    socket.onmessage = (event) => {
-      if (cancelled) return;
-      if (event.data instanceof ArrayBuffer) {
-        blobInFlight = true;
-        chain = chain
-          .then(() => handleBinaryBatch(event.data))
-          .catch((e) => console.error("[codex-adapter] binary batch error", e))
-          .finally(() => {
-            blobInFlight = false;
-          });
-        return;
-      }
-      if (blobInFlight) {
-        chain = chain
-          .then(() => handleTextFrame(event))
-          .catch((e) => console.error("[codex-adapter] handleFrame error", e));
-        return;
-      }
-      handleTextFrame(event);
-    };
-
-    socket.onclose = () => {
-      if (!cancelled) {
-        socketRef.current = null;
-        setConnected(false);
-        setLoading(true);
-        // 退避重连（pi/acp 用 500ms 固定；这里同值）。
-        setTimeout(() => {
-          if (!cancelled) {
-            connectionVersionRef.current += 1;
-            setConnectionVersion(connectionVersionRef.current);
+          if (msg.type === "history_end") {
+            const batch = historyBatch ?? [];
+            historyBatch = null;
+            processBatch(batch);
+            processOne({ type: "history_end" });
+            return;
           }
-        }, 500);
-      }
-    };
+          if (msg.type === "live_start") {
+            liveBatch = [];
+            return;
+          }
+          if (msg.type === "live_end") {
+            const batch = liveBatch ?? [];
+            liveBatch = null;
+            processBatch(batch);
+            processOne({ type: "live_end" });
+            return;
+          }
+          if (historyBatch) {
+            historyBatch.push(msg);
+            return;
+          }
+          if (liveBatch) {
+            liveBatch.push(msg);
+            return;
+          }
+          handleFrame(msg);
+        } catch {
+          // skip
+        }
+      };
 
-    socket.onerror = (e) => {
-      console.log("[codex-adapter] ws error", e);
-    };
+      // 二进制批（gzip）异步解压——串行 promise chain 保序（镜像 pi-adapter）。
+      let blobInFlight = false;
+      let chain: Promise<void> = Promise.resolve();
+      socket.onmessage = (event) => {
+        if (cancelled) return;
+        if (event.data instanceof ArrayBuffer) {
+          blobInFlight = true;
+          chain = chain
+            .then(() => handleBinaryBatch(event.data))
+            .catch((e) => console.error("[codex-adapter] binary batch error", e))
+            .finally(() => {
+              blobInFlight = false;
+            });
+          return;
+        }
+        if (blobInFlight) {
+          chain = chain
+            .then(() => handleTextFrame(event))
+            .catch((e) => console.error("[codex-adapter] handleFrame error", e));
+          return;
+        }
+        handleTextFrame(event);
+      };
 
+      socket.onclose = () => {
+        // 双模式守卫关闭(claude review P3-7 同款):面板即将被撤下,残留 connected/loading
+        // 会让其它消费面读到假连接态;只跳过重连(重连注定再撞守卫)。
+        if (modeConflictRef.current) {
+          if (socketRef.current === socket) socketRef.current = null;
+          setConnected(false);
+          setLoading(false);
+          return;
+        }
+        if (!cancelled) {
+          socketRef.current = null;
+          setConnected(false);
+          // loading 不动：重连期间的面板形态由下一连接的 session_init 分支裁决
+          //（delta = 保留已渲染内容；full = reset 置 loading=true 走骨架）。
+          // 退避重连（pi/acp 用 500ms 固定；这里同值）。
+          setTimeout(() => {
+            if (!cancelled) {
+              connectionVersionRef.current += 1;
+              setConnectionVersion(connectionVersionRef.current);
+            }
+          }, 500);
+        }
+      };
+
+      socket.onerror = (e) => {
+        console.log("[codex-adapter] ws error", e);
+      };
+    }
+
+    connect();
     return () => {
       cancelled = true;
       if (heartbeatTimer) {
         clearInterval(heartbeatTimer);
         heartbeatTimer = null;
       }
-      if (socketRef.current === socket) {
+      const s = socketRef.current;
+      if (s) {
         socketRef.current = null;
+        s.close();
       }
-      socket.close();
+      // 卸载收口：flush 当前会话窗口（切会话分支已先同步 flush 过，clean=true 时为 no-op）。
+      replayFlush();
     };
   }, [projectName, sessionId, connectionVersion, handleFrame]);
 
   // Pass 2：渲染列表派生。
   const renderedMessages = useMemo(() => codexFramesToThreadMessages(rawMessages), [rawMessages]);
+
+  // 上下文占用投影（ClaudeContextUsage 形状）：ContextUsageIndicator 零改动复用（真机反馈
+  // 2026-10-28「缺乏查看上下文的功能」）。
+  const contextUsage = useMemo(() => codexTokenUsageToContextUsage(tokenUsage), [tokenUsage]);
 
   const onNew = useCallback(
     async (message: AppendMessage) => {
@@ -1022,11 +1409,35 @@ export function useCodexSession(projectName: string, sessionId: string) {
         .filter((p) => p.type === "text")
         .map((p) => (p as { text: string }).text)
         .join("\n");
-      if (textContent.trim()) {
-        // codex 有 turn/started 通知，仍先本地置 running（发送到 turn/started 之间留白）。
-        setIsRunning(true);
-        sendToSocket({ type: "user", text: textContent, uuid: crypto.randomUUID() });
-      }
+
+      // 附件快照（claude onNew 同款）：图片 → user 帧 images（服务端组 turn/start input
+      // 的 image 项）；uploads 文件提及行与内联文本块并入文本（codex 侧纯文本语义，无
+      // 独立通道）。纯图片（无文本）也发——UserInput 接受纯 image 项数组。
+      const pending = pendingAttachmentsRef.current?.takePendingAttachments?.() ?? null;
+      // 附件管线产出 {mediaType,data}（claude 语义），codex 线协议是 {mimeType,data}
+      //（shared CodexStreamClientMessage / 服务端 codexSpawnEnv→turn/start input 同域）
+      // ——在此一处收口改名（code review P1-1：原样透传 = data:undefined;base64）。
+      const images = (pending?.images ?? []).map(({ mediaType, data }) => ({
+        mimeType: mediaType,
+        data,
+      }));
+      const text = [
+        textContent.trim(),
+        ...(pending?.mentionLines ?? []),
+        ...(pending?.inlineTexts ?? []),
+      ]
+        .filter(Boolean)
+        .join("\n");
+      if (!text && images.length === 0) return;
+      // codex 有 turn/started 通知，仍先本地置 running（发送到 turn/started 之间留白）。
+      setIsRunning(true);
+      sendToSocket({
+        type: "user",
+        text,
+        uuid: crypto.randomUUID(),
+        ...(images.length > 0 ? { images } : {}),
+      });
+      pendingAttachmentsRef.current?.clearPendingAttachments?.();
     },
     [sendToSocket],
   );
@@ -1083,6 +1494,7 @@ export function useCodexSession(projectName: string, sessionId: string) {
     streamError,
     config,
     configPending,
+    contextUsage,
     setConfig,
     respondToControlRequest,
     cancelControlRequest,

@@ -23,6 +23,8 @@ import {
   type SettingsState,
   type TestClaudePresetRequest,
   type UpdateAcpRuntimeRequest,
+  type UpdateCodexRuntimeRequest,
+  type UpdateCodexRuntimeResponse,
   type UpdateAcpRuntimeResponse,
   type UpdateClaudePresetRequest,
   type UpdateClaudeRuntimeRequest,
@@ -43,6 +45,7 @@ import {
   maskApiKey,
   toMaskedAcpCredentials,
   toMaskedAcpRuntime,
+  toMaskedCodexCredentials,
   toMaskedPiPreset,
   toMaskedPreset,
 } from "./settings-store";
@@ -77,6 +80,7 @@ export const handleSettingsRoutes = async (
             firecrawlApiKeyMasked: maskApiKey(state.runtimes.pi.firecrawlApiKey ?? ""),
           },
           acp: toMaskedAcpRuntime(state.runtimes.acp),
+          codex: toMaskedCodexCredentials(state.runtimes.codex ?? {}),
         },
         skills: { sources: state.skills?.sources ?? [] },
         notifications: state.notifications ?? { ...DEFAULT_NOTIFICATIONS },
@@ -485,6 +489,44 @@ export const handleSettingsRoutes = async (
     const response: UpdateAcpRuntimeResponse = {
       provider: body.provider,
       runtime: toMaskedAcpCredentials(updated.runtimes.acp[body.provider] ?? {}),
+    };
+    return Response.json(response);
+  }
+
+  // PUT /api/settings/runtimes/codex —— codex 凭据切片（单套，无 provider 维度）。三态
+  // 语义同 acp PUT：apiKey 空/缺省 = 不改（编辑态留空保留原 key）；baseUrl 显式空串 =
+  // 删除（回退 codex 自身凭证链）、非空 = 设置；切片全空 = 归 {}（与 normalize 默认一致）。
+  // 响应只回 masked 切片（原始 key 永不出 api 进程）。改动对新建 codex 会话生效（每次
+  // spawn 前读）。
+  if (url.pathname === "/api/settings/runtimes/codex" && request.method === "PUT") {
+    const body = await readJson<UpdateCodexRuntimeRequest>(request);
+    const updated = await store.update((s) => {
+      const current = s.runtimes.codex ?? {};
+      // apiKey 三态：undefined/空串 = 保留原值（可能无原值 = 未配置）；非空 = 覆盖。
+      const apiKey =
+        typeof body.apiKey === "string" && body.apiKey.length > 0
+          ? { apiKey: body.apiKey }
+          : current.apiKey
+            ? { apiKey: current.apiKey }
+            : {};
+      // baseUrl 三态：undefined = 不改；显式空串（trim 后） = 删除；非空 = 设置。
+      // typeof 守卫（security review L1）：非字符串（null/数字）同删除路径，不 500。
+      const baseUrl =
+        body.baseUrl === undefined
+          ? current.baseUrl
+            ? { baseUrl: current.baseUrl }
+            : {}
+          : typeof body.baseUrl === "string" && body.baseUrl.trim()
+            ? { baseUrl: body.baseUrl.trim() }
+            : {};
+      const merged = { ...apiKey, ...baseUrl };
+      return {
+        ...s,
+        runtimes: { ...s.runtimes, codex: merged.apiKey || merged.baseUrl ? merged : {} },
+      };
+    });
+    const response: UpdateCodexRuntimeResponse = {
+      runtime: toMaskedCodexCredentials(updated.runtimes.codex ?? {}),
     };
     return Response.json(response);
   }

@@ -558,6 +558,111 @@ test("PUT acp runtime: apiKey 空/缺省 = 保留原值；baseUrl 显式空串 =
   expect((await store.read()).runtimes.acp.omp?.apiKey).toBe("sk-acp-keep");
 });
 
+// ── PUT /api/settings/runtimes/codex（单套凭据，无 provider 维度）──
+
+test("PUT codex runtime: 设置 apiKey/baseUrl → masked 回显；GET 回读原 key 不出进程", async () => {
+  const store = await makeStore();
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/codex", {
+      apiKey: "sk-codex-abc123456",
+      baseUrl: "https://codex-gw.example.com/v1",
+    }),
+    makeUrl("/api/settings/runtimes/codex"),
+    store,
+  );
+  expect(res?.status).toBe(200);
+  const body = (await res!.json()) as {
+    runtime: { hasApiKey: boolean; apiKeyMasked: string; baseUrl?: string };
+  };
+  expect(body.runtime.hasApiKey).toBe(true);
+  expect(body.runtime.apiKeyMasked).not.toContain("abc123456");
+  expect(body.runtime.baseUrl).toBe("https://codex-gw.example.com/v1");
+
+  const get = await handleSettingsRoutes(
+    makeRequest("GET", "/api/settings"),
+    makeUrl("/api/settings"),
+    store,
+  );
+  const getBody = (await get!.json()) as {
+    settings: { runtimes: { codex: unknown } };
+  };
+  expect(getBody.settings.runtimes.codex).toEqual({
+    hasApiKey: true,
+    apiKeyMasked: body.runtime.apiKeyMasked,
+    baseUrl: "https://codex-gw.example.com/v1",
+  });
+  expect(JSON.stringify(getBody)).not.toContain("abc123456");
+});
+
+test("PUT codex runtime: apiKey 空/缺省 = 保留原值；baseUrl 显式空串 = 删除；空请求 = 全不改", async () => {
+  const store = await makeStore();
+  await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/codex", {
+      apiKey: "sk-codex-keep",
+      baseUrl: "https://codex-gw.example.com/v1",
+    }),
+    makeUrl("/api/settings/runtimes/codex"),
+    store,
+  );
+
+  // 只改 baseUrl（apiKey 缺省 = 保留）。
+  const res = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/codex", {
+      baseUrl: "https://codex-gw2.example.com/v1",
+    }),
+    makeUrl("/api/settings/runtimes/codex"),
+    store,
+  );
+  const body = (await res!.json()) as { runtime: { hasApiKey: boolean; baseUrl?: string } };
+  expect(body.runtime.hasApiKey).toBe(true);
+  expect(body.runtime.baseUrl).toBe("https://codex-gw2.example.com/v1");
+  expect((await store.read()).runtimes.codex.apiKey).toBe("sk-codex-keep");
+
+  // baseUrl 显式空串 = 删除；apiKey 仍保留。
+  const del = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/codex", { baseUrl: "" }),
+    makeUrl("/api/settings/runtimes/codex"),
+    store,
+  );
+  const delBody = (await del!.json()) as { runtime: Record<string, unknown> };
+  expect(delBody.runtime.hasApiKey).toBe(true);
+  expect(delBody.runtime).not.toHaveProperty("baseUrl");
+
+  // 空请求 = 全不改。
+  const noop = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/codex", {}),
+    makeUrl("/api/settings/runtimes/codex"),
+    store,
+  );
+  const noopBody = (await noop!.json()) as { runtime: Record<string, unknown> };
+  expect(noopBody.runtime.hasApiKey).toBe(true);
+  expect(noopBody.runtime).not.toHaveProperty("baseUrl");
+  expect((await store.read()).runtimes.codex.apiKey).toBe("sk-codex-keep");
+});
+
+test("PUT codex runtime: apiKey 空串清空后无剩余字段 → 切片回落 {}", async () => {
+  const store = await makeStore();
+  // apiKey 空串 = 保留（与 ACP 同语义，不是清除），先 seed 一个 baseUrl 走「删光」路径。
+  await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/codex", { baseUrl: "https://codex-gw.example.com" }),
+    makeUrl("/api/settings/runtimes/codex"),
+    store,
+  );
+  expect((await store.read()).runtimes.codex).toEqual({
+    baseUrl: "https://codex-gw.example.com",
+  });
+  const del = await handleSettingsRoutes(
+    makeRequest("PUT", "/api/settings/runtimes/codex", { baseUrl: "" }),
+    makeUrl("/api/settings/runtimes/codex"),
+    store,
+  );
+  expect(await del!.json()).toEqual({
+    runtime: { apiKeyMasked: "", hasApiKey: false },
+  });
+  // 未配置 = 空切片（不残留 baseUrl/apiKey 键），回退 codex 自身凭证链。
+  expect((await store.read()).runtimes.codex).toEqual({});
+});
+
 test("PUT runtimes/claude 保留 pi presets + skills（applyClaudeRuntimePatch 展开合并回归）", async () => {
   const store = await makeStore();
   // 先 seed claude preset + pi preset + skill source。

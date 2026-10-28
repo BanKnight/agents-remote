@@ -6,6 +6,7 @@ import {
   PI_PROVIDER_APIS,
   type AcpCredentialsMasked,
   type AcpRuntimeConfigMasked,
+  type CodexCredentialsMasked,
   type AgentProviderInfo,
   type ClaudeModelMapping,
   type ClaudeModelTier,
@@ -19,6 +20,7 @@ import {
   type PiProviderApi,
   type PiProviderAuthType,
   type UpdateAcpRuntimeRequest,
+  type UpdateCodexRuntimeRequest,
   type UpdateClaudePresetRequest,
   type UpdatePiPresetRequest,
   type UpdatePiRuntimeRequest,
@@ -65,6 +67,7 @@ import {
   listPresetModels,
   testPresetModels,
   updateAcpRuntime,
+  updateCodexRuntime,
   updateClaudePreset,
   updateClaudeRuntime,
   updateNotificationSettings,
@@ -110,7 +113,14 @@ const TIER_LABEL: Record<ClaudeModelTier, TranslationKey> = {
 };
 
 /** 设置页两层结构的 section 标识（决策 48，Apple 设置范式）。外壳持有、SettingsContent 接 props。 */
-export type SettingsSection = "root" | "claude" | "pi" | "acp" | "general" | "notifications";
+export type SettingsSection =
+  | "root"
+  | "claude"
+  | "pi"
+  | "acp"
+  | "codex"
+  | "general"
+  | "notifications";
 
 /** 各 section 的 header 标题（桌面弹窗 header / 移动 MobilePageHeader 共用）。 */
 export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT>["t"]): string => {
@@ -121,6 +131,8 @@ export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT
       return t("settings.section.pi");
     case "acp":
       return t("settings.section.acp");
+    case "codex":
+      return t("settings.section.codex");
     case "general":
       return t("settings.section.general");
     case "notifications":
@@ -191,6 +203,17 @@ export function SettingsContent({
       break;
     case "acp":
       body = <AcpRuntimeSection acp={settings?.runtimes.acp} loading={loading} />;
+      break;
+    case "codex":
+      body = (
+        <CodexRuntimeSection
+          // key 随加载完成态/保存结果变（remount 回填 baseUrl 初值；hasApiKey/baseUrl 未变
+          // 则不 remount，不清用户输入）——AcpRuntimeSection key 同款口径。
+          key={`${Boolean(settings?.runtimes.codex?.hasApiKey)}|${settings?.runtimes.codex?.baseUrl ?? ""}`}
+          credentials={settings?.runtimes.codex}
+          loading={loading}
+        />
+      );
       break;
     case "general":
       body = <GeneralSection />;
@@ -278,6 +301,8 @@ function SettingsRootView({
   const acpConfiguredCount = Object.values(settings?.runtimes.acp ?? {}).filter(
     (c) => c?.hasApiKey,
   ).length;
+  // Codex 凭据卡入口值（masked 配置的 hasApiKey，firecrawl 行同款口径）。
+  const codexConfigured = Boolean(settings?.runtimes.codex?.hasApiKey);
 
   const themeLabel =
     theme === "system" ? t("theme.system") : theme === "light" ? t("theme.light") : t("theme.dark");
@@ -339,6 +364,13 @@ function SettingsRootView({
           ),
           () => onNavigate("acp"),
           loading ? undefined : acpConfiguredCount > 0 ? "ok" : undefined,
+        )}
+        {/* Codex 段入口（app-server 直连凭据卡）。值 = keySet/keyUnset（凭据语义单值）。 */}
+        {row(
+          t("settings.section.codex"),
+          loading ? pendingValue : codexConfigured ? t("settings.keySet") : t("settings.keyUnset"),
+          () => onNavigate("codex"),
+          loading ? undefined : codexConfigured ? "ok" : undefined,
         )}
       </div>
 
@@ -1019,6 +1051,117 @@ function AcpRuntimeContent({
           {t("settings.acpEnvHint")} <span className="font-mono">{envNames}</span>
         </p>
       ) : null}
+      {error && <p className="mx-4 mt-2 text-[13px] text-error">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Codex 凭据卡（app-server 直连）：apiKey + baseUrl 保存（单卡，无 provider 维度）。三态
+ * 语义同 ACP 卡：apiKey 留空 = 不改（masked 占位提示现有 key）；baseUrl 明文回填，清空
+ * 保存 = 删除（回退 codex 自身凭证链）。保存走 updateCodexRuntime，成功 invalidate
+ * settings 刷 masked 值。凭据未配置 = 走 codex 自身凭证链（auth.json / ChatGPT 登录）；
+ * 改动对新建会话生效（每次 spawn 前读）。
+ */
+function CodexRuntimeSection({
+  credentials,
+  loading = false,
+}: {
+  credentials: CodexCredentialsMasked | undefined;
+  loading?: boolean;
+}) {
+  const { t } = useT();
+  const queryClient = useQueryClient();
+
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(credentials?.baseUrl ?? "");
+  const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const hasApiKey = Boolean(credentials?.hasApiKey);
+  const baseUrlDirty = baseUrl.trim() !== (credentials?.baseUrl ?? "");
+  const dirty = !loading && (apiKey.trim() !== "" || baseUrlDirty);
+
+  const handleSave = async () => {
+    if (loading) return;
+    setError(null);
+    setSaving(true);
+    try {
+      const input: UpdateCodexRuntimeRequest = {};
+      // apiKey：非空 = 覆盖；空 = 不改（编辑态留空保留原 key）。
+      if (apiKey.trim()) input.apiKey = apiKey.trim();
+      // baseUrl：显式传值（含空串 = 删除）；未改 = 不传。
+      if (baseUrlDirty) input.baseUrl = baseUrl.trim();
+      await updateCodexRuntime(input);
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+      setApiKey("");
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="sect">{t("settings.section.codex")}</div>
+      <div className="sgroup">
+        {/* apiKey 输入行（v2 输入形态：elevated2 内嵌 + sep-strong 描边 + r10）。 */}
+        <div className="setrow h-auto flex-col items-stretch gap-1.5 py-2.5">
+          <span className="text-[13px] text-ink-2">{t("settings.apiKey")}</span>
+          <p className="text-xs leading-5 text-ink-2">{t("settings.codexApiKeyHint")}</p>
+          <input
+            aria-label={t("settings.apiKey")}
+            autoComplete="off"
+            className={settingsInputClasses}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={hasApiKey ? credentials?.apiKeyMasked : t("settings.codexApiKeyBlank")}
+            type="text"
+            value={apiKey}
+          />
+        </div>
+
+        {/* baseUrl 输入行 */}
+        <div className="setrow h-auto flex-col items-stretch gap-1.5 py-2.5">
+          <span className="text-[13px] text-ink-2">{t("settings.baseUrl")}</span>
+          <p className="text-xs leading-5 text-ink-2">{t("settings.codexBaseUrlHint")}</p>
+          <input
+            aria-label={t("settings.baseUrl")}
+            autoComplete="off"
+            className={settingsInputClasses}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://api.openai.com/v1"
+            type="text"
+            value={baseUrl}
+          />
+        </div>
+
+        {/* 保存行（组末行）：显式保存语义不变。 */}
+        <div className="setrow">
+          <span
+            className={`text-[13px] ${justSaved ? "font-medium text-success-text" : "text-ink-2"}`}
+          >
+            {justSaved ? `✓ ${t("settings.saved")}` : dirty ? t("settings.unsavedChanges") : ""}
+          </span>
+          <button
+            className={`ml-auto ${settingsPrimaryButtonClasses}`}
+            disabled={loading || !dirty || saving}
+            onClick={handleSave}
+            type="button"
+          >
+            {saving ? t("settings.saving") : t("settings.save")}
+          </button>
+        </div>
+      </div>
+
+      <p className="kfoot mx-4">{t("settings.codexHint")}</p>
+      <p className="kfoot mx-4">
+        {t("settings.codexEnvHint")}{" "}
+        <span className="font-mono">OPENAI_API_KEY / OPENAI_BASE_URL</span>
+      </p>
       {error && <p className="mx-4 mt-2 text-[13px] text-error">{error}</p>}
     </div>
   );

@@ -81,6 +81,8 @@ import type {
   TestClaudePresetRequest,
   UpdateAcpRuntimeRequest,
   UpdateAcpRuntimeResponse,
+  UpdateCodexRuntimeRequest,
+  UpdateCodexRuntimeResponse,
   UpdateClaudePresetRequest,
   UpdateClaudeRuntimeRequest,
   UpdateClaudeRuntimeResponse,
@@ -1050,9 +1052,11 @@ export function acpStreamUrl(projectName: string, sessionId: string) {
   return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/acp-stream`;
 }
 
-export function codexStreamUrl(projectName: string, sessionId: string) {
+export function codexStreamUrl(projectName: string, sessionId: string, since?: string) {
   const protocol = globalThis.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/codex-stream`;
+  const base = `${protocol}//${globalThis.location.host}/api/projects/${encodeURIComponent(projectName)}/agent-sessions/${encodeURIComponent(sessionId)}/codex-stream`;
+  // 增量回放锚（镜像 claudeStreamUrl）：最后可锚条目 id，服务端命中只下发锚后行。
+  return since ? `${base}?since=${encodeURIComponent(since)}` : base;
 }
 
 export function piChatStreamUrl(chatId: string) {
@@ -1221,6 +1225,19 @@ export async function updateAcpRuntime(
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input satisfies UpdateAcpRuntimeRequest),
+  });
+}
+
+// codex runtime（凭据切片，单套无 provider 维度）：PUT 更新 apiKey/baseUrl。三态语义同
+// ACP：apiKey 空/缺省 = 不改；baseUrl 显式空串 = 删除（回退 codex 自身凭证链）。响应只带
+// masked 切片。
+export async function updateCodexRuntime(
+  input: UpdateCodexRuntimeRequest,
+): Promise<UpdateCodexRuntimeResponse> {
+  return fetchJson("/api/settings/runtimes/codex", "api.codexRuntimeUpdateFailed", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input satisfies UpdateCodexRuntimeRequest),
   });
 }
 

@@ -189,3 +189,129 @@ describe("PiSessionRelay", () => {
     expect(relay.hasSubscribers).toBe(false);
   });
 });
+
+// ── 增量回放锚（2026-10-28 codex 接入增量回放批）──
+// 行形状 = codex（PiSessionRelay 是 codex 与 pi 共享 relay）：codex_user_echo /
+// codex_event item/started|completed 可锚；不可锚行（turn/* 等）靠 needle 命中后的
+// parse 确认跳过。
+const codexEchoLine = (text: string, uuid: string) =>
+  JSON.stringify({ type: "codex_user_echo", text, uuid });
+const codexItemStartedLine = (id: string) =>
+  JSON.stringify({
+    type: "codex_event",
+    event: { method: "item/started", params: { item: { id } } },
+  });
+
+describe("PiSessionRelay sinceId 增量回放（codex 行形状）", () => {
+  test("锚在 history → replay=delta、history 只推锚后行、live 全推", () => {
+    const relay = new PiSessionRelay();
+    const h1 = codexEchoLine("q1", "h-echo-1");
+    const h2 = codexItemStartedLine("h-item-1");
+    relay.loadHistory([h1, h2]);
+    relay.appendAndBroadcast(codexEchoLine("q2", "l-echo-1"));
+
+    const received: string[] = [];
+    relay.addSubscriber(
+      (line) => received.push(line),
+      (err) => {
+        throw err;
+      },
+      { sinceId: "h-echo-1" },
+    );
+    const messages = received.map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+    expect(messages[1]).toMatchObject({ type: "history_start", count: 1 });
+    expect(messages[2]).toEqual(JSON.parse(h2));
+    expect(messages[3]).toMatchObject({ type: "history_end" });
+    // 锚在 history → live 段全推（客户端无 live 内容）。
+    expect(messages[4]).toMatchObject({ type: "live_start", count: 1 });
+    expect(messages[5]).toEqual(JSON.parse(codexEchoLine("q2", "l-echo-1")));
+    expect(messages[6]).toMatchObject({ type: "live_end" });
+
+    relay.destroy();
+  });
+
+  test("锚在 live → history 空、live 只推锚后行", () => {
+    const relay = new PiSessionRelay();
+    relay.loadHistory([codexEchoLine("q1", "h-echo-1")]);
+    relay.appendAndBroadcast(codexEchoLine("q2", "l-echo-1"));
+    relay.appendAndBroadcast(codexItemStartedLine("l-item-1"));
+
+    const received: string[] = [];
+    relay.addSubscriber(
+      (line) => received.push(line),
+      (err) => {
+        throw err;
+      },
+      { sinceId: "l-echo-1" },
+    );
+    const messages = received.map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+    // 锚在 live → history 段空 slice（客户端已持有全量 history）。
+    expect(messages[1]).toMatchObject({ type: "history_start", count: 0 });
+    expect(messages[2]).toMatchObject({ type: "history_end" });
+    expect(messages[3]).toMatchObject({ type: "live_start", count: 1 });
+    expect(messages[4]).toEqual(JSON.parse(codexItemStartedLine("l-item-1")));
+    expect(messages[5]).toMatchObject({ type: "live_end" });
+
+    relay.destroy();
+  });
+
+  test("needle 命中但 parse 确认失败（白名单外 method 带同值 id 键）→ 跳过、锚定真锚行", () => {
+    const relay = new PiSessionRelay();
+    // 不可锚行排在真锚行**之后**（尾扫先经过它）：锚白名单外 method 的行恰带
+    // `"id":"<sinceId>"` 结构化键值对——needle 命中但 method 不在 item/started|
+    // completed 白名单 → parse 确认拒绝、继续前扫 → 锚定真锚行。若去掉确认逻辑
+    //（needle 命中即锚），锚会误落白名单外行。
+    relay.appendAndBroadcast(codexItemStartedLine("l-item-9"));
+    relay.appendAndBroadcast(
+      JSON.stringify({
+        type: "codex_event",
+        event: { method: "turn/aborted", params: { id: "l-item-9" } },
+      }),
+    );
+
+    const received: string[] = [];
+    relay.addSubscriber(
+      (line) => received.push(line),
+      (err) => {
+        throw err;
+      },
+      { sinceId: "l-item-9" },
+    );
+    const messages = received.map((l) => JSON.parse(l) as Record<string, unknown>);
+    // 锚落 item 行（live 第 1 行）→ 其后剩 turn/aborted 行（锚后的 live 内容，照推）。
+    expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+    expect(messages[3]).toMatchObject({ type: "live_start", count: 1 });
+    expect(messages[4]).toMatchObject({
+      type: "codex_event",
+      event: { method: "turn/aborted" },
+    });
+
+    relay.destroy();
+  });
+
+  test("miss / 非法字符集 / 超长 sinceId → 全量回放（session_init 无 replay）", () => {
+    const relay = new PiSessionRelay();
+    relay.appendAndBroadcast(codexEchoLine("q1", "l-echo-1"));
+    const fullReplay = (sinceId: string) => {
+      const received: string[] = [];
+      relay.addSubscriber(
+        (line) => received.push(line),
+        (err) => {
+          throw err;
+        },
+        { sinceId },
+      );
+      const messages = received.map((l) => JSON.parse(l) as Record<string, unknown>);
+      expect(messages[0]).not.toMatchObject({ replay: expect.anything() });
+      expect(messages[1]).toMatchObject({ type: "history_start", count: 0 });
+      // live 全量推（含锚前行）。
+      expect(messages[3]).toMatchObject({ type: "live_start", count: 1 });
+    };
+    fullReplay("no-such-id"); // miss
+    fullReplay("bad id with spaces"); // 非法字符集
+    fullReplay("a".repeat(129)); // 超长
+    relay.destroy();
+  });
+});

@@ -12,6 +12,7 @@ import {
   TUI_STATUS_SIGNAL_BY_TOKEN,
 } from "./agent-tui";
 import type { ClaudeRuntime } from "./claude-runtime";
+import type { CodexRuntime } from "./codex-runtime";
 import { SessionRegistry } from "./session-registry";
 import type { TmuxRuntime } from "./tmux-runtime";
 
@@ -115,6 +116,64 @@ async function seed() {
     cleared,
     modeSwitched,
     statusEvents,
+    tmuxClosed: () => tmuxClosed,
+  };
+}
+
+/** codex 编排器 fake（app-server runtime 用 stub：记录 close/ensureRunning 参数）。 */
+async function seedCodex() {
+  const session = await registry.createAgentSession({
+    project,
+    provider: "codex",
+    codexThreadId: "th-1",
+  });
+  const metadata = (await registry.getAgentMetadata(project.name, session.id))!;
+  const codexClosed: string[] = [];
+  const ensureCalls: Record<string, unknown>[] = [];
+  const tmuxCommands: string[] = [];
+  let tmuxClosed = 0;
+  const cleared: string[] = [];
+  const modeSwitched: string[] = [];
+  const codexRuntime = {
+    async close(key: string) {
+      codexClosed.push(key);
+    },
+    async ensureRunning(args: Record<string, unknown>) {
+      ensureCalls.push(args);
+    },
+  } as unknown as CodexRuntime;
+  const tmuxRuntime = {
+    async startCommand(_metadata: unknown, command: string) {
+      tmuxCommands.push(command);
+    },
+    async close() {
+      tmuxClosed += 1;
+    },
+  } as unknown as TmuxRuntime;
+  const approvalCenter = {
+    clearRuntime(key: string) {
+      cleared.push(key);
+    },
+  } as unknown as ApprovalCenter;
+  const controller = new AgentTuiController({
+    runDir,
+    registry,
+    claudeRuntime: {} as unknown as ClaudeRuntime,
+    tmuxRuntime,
+    codexRuntime,
+    approvalCenter,
+    onModeSwitched: (key) => modeSwitched.push(key),
+  });
+  return {
+    controller,
+    sessionId: session.id,
+    metadata,
+    runtimeKey: metadata.runtimeKey,
+    codexClosed,
+    ensureCalls,
+    tmuxCommands,
+    cleared,
+    modeSwitched,
     tmuxClosed: () => tmuxClosed,
   };
 }
@@ -529,4 +588,81 @@ test("teardownTerminal 幂等（切回 chat / 会话关闭共用，重复调不�
   await h.controller.switchMode(h.metadata, "terminal");
   h.controller.teardownTerminal(h.runtimeKey);
   expect(() => h.controller.teardownTerminal(h.runtimeKey)).not.toThrow();
+});
+
+// ── codex 双模式（app-server ↔ `codex resume` pane）────────────────────────
+
+test("codex switchToTerminal：mode 落盘 → 关 app-server → tmux 起 `codex resume <threadId>`", async () => {
+  const h = await seedCodex();
+  await h.controller.switchMode(h.metadata, "terminal");
+
+  expect(h.codexClosed).toEqual([h.runtimeKey]);
+  expect(h.tmuxCommands).toEqual([`'codex' 'resume' 'th-1'`]);
+  expect((await registry.getAgentSession(project.name, h.sessionId))?.mode).toBe("terminal");
+  expect(h.cleared).toEqual([h.runtimeKey]);
+  expect(h.modeSwitched).toEqual([h.runtimeKey]);
+  // codex 无 hooks 文件面：不写 settings/状态文件。
+  await expect(readFile(settingsPath(h.runtimeKey), "utf8")).rejects.toThrow();
+  await expect(readFile(statusPath(h.runtimeKey), "utf8")).rejects.toThrow();
+});
+
+test("codex switchToTerminal 起 pane 失败：mode 退回 chat + 重拉 app-server（不留全堵半态）", async () => {
+  const h = await seedCodex();
+  const failing = new AgentTuiController({
+    runDir,
+    registry,
+    claudeRuntime: {} as unknown as ClaudeRuntime,
+    tmuxRuntime: {
+      async startCommand() {
+        throw new Error("tmux down");
+      },
+      async close() {},
+    } as unknown as TmuxRuntime,
+    codexRuntime: {
+      async close() {},
+      async ensureRunning(args: Record<string, unknown>) {
+        h.ensureCalls.push(args);
+      },
+    } as unknown as CodexRuntime,
+  });
+
+  await expect(failing.switchMode(h.metadata, "terminal")).rejects.toThrow("tmux down");
+  expect((await registry.getAgentSession(project.name, h.sessionId))?.mode).toBe("chat");
+  expect(h.ensureCalls).toHaveLength(1);
+  expect(h.ensureCalls[0]).toMatchObject({
+    runtimeKey: h.runtimeKey,
+    codexThreadId: "th-1",
+  });
+});
+
+test("codex switchToChat：关 pane → mode 落盘 → thread/resume 重拉 app-server", async () => {
+  const h = await seedCodex();
+  await h.controller.switchMode(h.metadata, "terminal");
+  await h.controller.switchMode(
+    (await registry.getAgentMetadata(project.name, h.sessionId))!,
+    "chat",
+  );
+
+  expect(h.tmuxClosed()).toBe(1);
+  expect((await registry.getAgentSession(project.name, h.sessionId))?.mode).toBe("chat");
+  expect(h.ensureCalls).toHaveLength(1);
+  expect(h.ensureCalls[0]).toMatchObject({
+    sessionId: h.sessionId,
+    runtimeKey: h.runtimeKey,
+    codexThreadId: "th-1",
+  });
+  expect(h.modeSwitched).toEqual([h.runtimeKey, h.runtimeKey]);
+});
+
+test("codex 切换但未装配 codexRuntime → 明确报错（不静默降级到 claude 路径）", async () => {
+  const h = await seedCodex();
+  const bare = new AgentTuiController({
+    runDir,
+    registry,
+    claudeRuntime: {} as unknown as ClaudeRuntime,
+    tmuxRuntime: {} as unknown as TmuxRuntime,
+  });
+  await expect(bare.switchMode(h.metadata, "terminal")).rejects.toThrow(
+    "codex runtime not configured",
+  );
 });

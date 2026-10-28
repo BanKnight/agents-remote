@@ -6,6 +6,7 @@ import type {
 import { CODEX_PERMISSION_MODES } from "@agents-remote/shared";
 import type { SessionMetadata, SessionRegistry } from "./session-registry";
 import { createBatchEmitter, type BatchEmit } from "./claude-stream";
+
 import { jsonError } from "./http-auth";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { getAgentProviderProfile } from "./agent-provider-profiles";
@@ -41,6 +42,8 @@ export type CodexWebSocketData = {
   permissionMode?: string;
   model?: string;
   effort?: string;
+  /** 增量回放锚（URL ?since=，claude 同款）：客户端最后可锚条目 id；relay 命中只发锚后行。 */
+  sinceId?: string;
 };
 
 type StreamSocket = {
@@ -55,8 +58,14 @@ const isCodexPermissionMode = (value: string): value is CodexPermissionMode =>
 
 export class CodexStreamController {
   private readonly streams = new WeakMap<StreamSocket, { close(): Promise<void> | void }>();
+  /** 多端跟随索引(runtimeKey → sockets,claude-stream 同款):agent-tui 切模式后关全部 WS。 */
+  private readonly socketsByRuntimeKey = new Map<string, Set<StreamSocket>>();
 
-  constructor(private readonly codexRuntime: CodexRuntime) {}
+  constructor(
+    private readonly codexRuntime: CodexRuntime,
+    /** registry:open 守卫读 metadata.mode(terminal 形态拒绝)。 */
+    private readonly registry: SessionRegistry,
+  ) {}
 
   async open(socket: StreamSocket): Promise<void> {
     const data = sessionData(socket);
@@ -65,6 +74,22 @@ export class CodexStreamController {
       return;
     }
     console.log(`[codex-stream] open: sessionId=${data.sessionId}`);
+
+    // 双模式守卫(agent-tui):terminal 形态的 codex 会话没有 headless 进程可拉——拉起会
+    // 与 tmux pane 里的 codex TUI 同 threadId 双写。前端 terminal 形态渲染
+    // AgentTerminalPanel(session-stream),不应连 codex-stream;误连时回明确错误
+    // (claude-stream open 守卫同款,客户端 modeConflict 分支跟随换渲染形态)。
+    const metadata = await this.registry
+      .getAgentMetadata(data.projectName, data.sessionId)
+      .catch(() => undefined);
+    if (metadata?.mode === "terminal") {
+      send(socket, {
+        type: "error",
+        code: "SESSION_STATE_CONFLICT",
+        message: "Session is in terminal mode",
+      });
+      return;
+    }
 
     try {
       await this.codexRuntime.ensureRunning({
@@ -132,7 +157,12 @@ export class CodexStreamController {
       // user 文本 → runtime.write（codex_user_echo + 单飞 turn/start/排队）；interrupt →
       // turn/interrupt；set_config → 存 pending 下轮生效；respond → 审批 JSON-RPC response。
       if (parsed.type === "user") {
-        this.codexRuntime.write(data.runtimeKey, parsed.text, parsed.uuid);
+        this.codexRuntime.write(
+          data.runtimeKey,
+          parsed.text,
+          parsed.uuid,
+          sanitizeCodexImages(parsed.images),
+        );
         return;
       }
       if (parsed.type === "interrupt") {
@@ -185,6 +215,14 @@ export class CodexStreamController {
       this.streams.delete(socket);
       void stream.close();
     }
+    const data = sessionData(socket);
+    if (data) {
+      const set = this.socketsByRuntimeKey.get(data.runtimeKey);
+      if (set) {
+        set.delete(socket);
+        if (set.size === 0) this.socketsByRuntimeKey.delete(data.runtimeKey);
+      }
+    }
   }
 
   private startStream(socket: StreamSocket, data: CodexWebSocketData): void {
@@ -198,16 +236,34 @@ export class CodexStreamController {
         emit(line);
       },
     });
-    const stream = this.codexRuntime.stream(data.runtimeKey, onData, (error: Error) => {
-      emit(
-        JSON.stringify({
-          type: "error",
-          code: "SESSION_RUNTIME_ERROR",
-          message: error.message,
-        }),
-      );
-    });
+    const stream = this.codexRuntime.stream(
+      data.runtimeKey,
+      onData,
+      (error: Error) => {
+        emit(
+          JSON.stringify({
+            type: "error",
+            code: "SESSION_RUNTIME_ERROR",
+            message: error.message,
+          }),
+        );
+      },
+      data.sinceId,
+    );
     this.streams.set(socket, stream);
+    // 多端跟随索引登记(claude-stream 同款)。
+    let set = this.socketsByRuntimeKey.get(data.runtimeKey);
+    if (!set) {
+      set = new Set();
+      this.socketsByRuntimeKey.set(data.runtimeKey, set);
+    }
+    set.add(socket);
+  }
+
+  /** agent-tui onModeSwitched:关该会话全部 codex-stream WS(未切换端重连被守卫拒)。 */
+  closeSessionSockets(runtimeKey: string): void {
+    const sockets = [...(this.socketsByRuntimeKey.get(runtimeKey) ?? [])];
+    for (const socket of sockets) socket.close();
   }
 }
 
@@ -218,6 +274,28 @@ export function parseControlRequestId(controlRequestId: string): number | string
   if (raw === "") return undefined;
   const numeric = Number(raw);
   return Number.isSafeInteger(numeric) && String(numeric) === raw ? numeric : raw;
+}
+
+/**
+ * 客户端 images 附件的最小形状守卫（security review L3）：非数组/项形状不对的项丢弃、
+ * base64 裸数据超上限的项丢弃（不伪造部分发送——整组合法项仍发出）。pi 透传同病
+ * （pi-stream 直传），统一收紧另批处理。
+ */
+export const CODEX_IMAGE_MAX_BASE64_LENGTH = 10 * 1024 * 1024;
+
+export function sanitizeCodexImages(
+  images: { data: string; mimeType: string }[] | undefined,
+): { data: string; mimeType: string }[] | undefined {
+  if (!Array.isArray(images)) return undefined;
+  const clean = images.filter(
+    (img): img is { data: string; mimeType: string } =>
+      typeof img?.data === "string" &&
+      img.data.length > 0 &&
+      img.data.length <= CODEX_IMAGE_MAX_BASE64_LENGTH &&
+      typeof img?.mimeType === "string" &&
+      img.mimeType.length > 0,
+  );
+  return clean.length > 0 ? clean : undefined;
 }
 
 /** `/api/projects/:name/agent-sessions/:id/codex-stream` → {projectName, sessionId}。 */
@@ -275,6 +353,11 @@ export const handleCodexStreamUpgrade = async (
       };
     }
 
+    // Incremental-replay anchor (?since=<id>): the last anchorable row id the client
+    // already holds（claude-stream 同款口径——长度 ≤128；字符集由 relay 侧正则校验兜）。
+    const since = url.searchParams.get("since");
+    const sinceId = since && since.length <= 128 ? since : undefined;
+
     if (
       server.upgrade(request, {
         data: {
@@ -287,6 +370,7 @@ export const handleCodexStreamUpgrade = async (
           permissionMode: metadata.permissionMode,
           model: metadata.model,
           effort: metadata.effort,
+          ...(sinceId ? { sinceId } : {}),
         } satisfies CodexWebSocketData,
       })
     ) {

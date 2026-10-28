@@ -467,6 +467,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.runtimeUpdateFailed": "更新 Claude runtime 失败",
   "api.piRuntimeUpdateFailed": "更新 Pi 运行时失败",
   "api.acpRuntimeUpdateFailed": "更新 ACP 运行时失败",
+  "api.codexRuntimeUpdateFailed": "更新 codex 运行时失败",
   "api.agentProvidersFailed": "Agent provider 列表加载失败",
   "api.piPresetCreateFailed": "新增 Pi 预设失败",
   "api.piPresetUpdateFailed": "更新 Pi 预设失败",
@@ -934,6 +935,15 @@ export const zh: Record<TranslationKey, string> = {
   "settings.acpEnvHint": "注入 env:",
   "settings.acpConfiguredCount": "已配置 {{n}} 个",
   "settings.acpNotConfigured": "未配置",
+  // ── Settings: codex runtime（凭据切片，app-server 直连） ────────
+  "settings.section.codex": "Codex",
+  "settings.codexHint":
+    "Codex（app-server 直连）凭据。凭据在 agent 进程启动时注入，改动对新建会话生效；未配置 = 走 codex 自身凭证链。",
+  "settings.codexApiKeyHint":
+    "可选。留空保存 = 保持现有 key 不变；未配置时留空 = 走 codex 自身凭证链。",
+  "settings.codexApiKeyBlank": "未配置",
+  "settings.codexBaseUrlHint": "可选。自定义 OpenAI 兼容端点；清空保存 = 回退官方端点。",
+  "settings.codexEnvHint": "注入 env:",
   "settings.saving": "保存中…",
   "settings.saved": "已保存",
   "settings.unsavedChanges": "有未保存的改动",

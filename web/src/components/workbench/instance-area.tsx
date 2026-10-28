@@ -17,6 +17,7 @@ import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tansta
 import type {
   AgentProvider,
   AgentSession,
+  AgentSessionDetailResponse,
   AgentSessionMode,
   ClaudeAutoRetryConfig,
   ListAgentSessionsResponse,
@@ -77,7 +78,13 @@ import {
   formatRetryDelay,
   stepRetryCount,
 } from "../../lib/retry-config";
+import { clearCodexReplayCache, codexReplayCacheKey } from "../../lib/codex-replay-cache";
 import { clearReplayCache, replayCacheKey } from "../../lib/claude-replay-cache";
+import {
+  readCachedAgentDetail,
+  removeCachedAgentDetail,
+  writeCachedAgentDetail,
+} from "../../lib/cached-agent-detail";
 import { claudeBridgeKey, getClaudeBridge } from "../../routes/claude-adapter";
 import { RuntimeConfigDialog, type RuntimeConfigField } from "./runtime-config-dialog";
 import type { TranslateFn, TranslationKey } from "../../i18n/types";
@@ -754,7 +761,11 @@ function AgentPanelRouterInner({ panelRef }: { panelRef: SessionPanelRef }) {
   // codex 一等 provider（app-server 直连）：有 codexThreadId 才进 CodexPanel（聊天管道）；
   // 无 threadId 的存量 tmux codex 会话继续走 AgentTerminalPanel 直至自然消亡（诚实形态
   // 标记，不做迁移手术）。
-  if (detail.data?.session.provider === "codex" && detail.data.session.codexThreadId) {
+  if (
+    detail.data?.session.provider === "codex" &&
+    detail.data.session.mode !== "terminal" &&
+    detail.data.session.codexThreadId
+  ) {
     return <CodexPanel projectName={panelRef.projectName} sessionId={panelRef.sessionId} />;
   }
   if (detail.data?.session) {
@@ -786,13 +797,43 @@ function TerminalPanelRouter({ panelRef }: { panelRef: SessionPanelRef }) {
 
 // ── 详情查询（拆为小 hook，保持 PanelRouter 干净）─────────────────────────────
 
+/** 详情 placeholder 的 localStorage 兜底（key/读写/清理单源在 lib/cached-agent-detail）。 */
 export function useAgentDetail(panelRef: SessionPanelRef, enabled = true) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: ["projects", panelRef.projectName, "agent-sessions", panelRef.sessionId],
-    queryFn: () => getAgentSession(panelRef.projectName, panelRef.sessionId),
+    queryFn: async () => {
+      const detail = await getAgentSession(panelRef.projectName, panelRef.sessionId);
+      // 成功即落本地（真机反馈 2026-10-28 二轮）：PWA 冷启动恢复 URL 直接落会话页时
+      // 列表缓存为空，仅列表派生的 placeholder 必为 undefined → ChatSkeleton 每次冷
+      // 启动必闪。隐私模式/配额抛错静默（骨架兜底 = 无缓存同态）。
+      writeCachedAgentDetail(panelRef.projectName, panelRef.sessionId, detail);
+      return detail;
+    },
     enabled,
     retry: false,
     staleTime: 60_000,
+    // 首载投影（真机反馈 2026-10-28）：从同 project 列表缓存派生 detail 形状——列表行与
+    // detail 的 session 同形状同源（agentSessionFromMetadata），provider/mode/codexThreadId
+    // 面板分流判据全齐。缺它时首次进会话（detail 无缓存）必然先闪通用 ChatSkeleton、
+    // 二次进入（缓存命中）才显正确面板。placeholder 期间 isLoading=false → 直接按真实
+    // 形态挂载，面板内部各自的 WS loading 接棒。深链冷启动（无列表缓存）走 localStorage
+    // 兜底（见 queryFn 注释）——都 miss 才回骨架（真机反馈二轮：仅列表派生时每次冷启动
+    // 必闪 ChatSkeleton）。
+    placeholderData: () => {
+      const list = queryClient.getQueryData<ListAgentSessionsResponse>([
+        "projects",
+        panelRef.projectName,
+        "agent-sessions",
+      ]);
+      const session = list?.sessions.find((s) => s.id === panelRef.sessionId);
+      if (session) return { session };
+      // localStorage 兜底（readCachedAgentDetail 内置最小形状校验：旧值/残缺值不当投影）。
+      return readCachedAgentDetail<AgentSessionDetailResponse>(
+        panelRef.projectName,
+        panelRef.sessionId,
+      );
+    },
   });
 }
 
@@ -1858,11 +1899,15 @@ export function useCloseSession() {
     } catch {
       // 会话已结束 / 不存在（404）—— close 幂等，仍失效缓存让卡片/面板消失。
     }
-    // 会话没了，跨 remount 回放缓存（claude-replay-cache）也不再有意义——本地即时清扫，
-    // 不等 LRU。terminal 会话没有回放缓存，不扫。跨设备残留由全局 cap + LRU 兜底。
+    // 会话没了，跨 remount 回放缓存（claude/codex replay-cache）也不再有意义——本地即时
+    // 清扫，不等 LRU。terminal 会话没有回放缓存，不扫。跨设备残留由全局 cap + LRU 兜底
+    // （双清安全：claude/codex key 前缀不同，各自 provider 会话只写自己的 key 空间）。
     if (type === "agent") {
       void clearReplayCache(replayCacheKey(ref.projectName, ref.sessionId));
+      void clearCodexReplayCache(codexReplayCacheKey(ref.projectName, ref.sessionId));
+      removeCachedAgentDetail(ref.projectName, ref.sessionId);
     }
+
     queryClient.removeQueries({
       exact: true,
       queryKey: ["projects", ref.projectName, `${type}-sessions`, ref.sessionId],
@@ -2385,18 +2430,29 @@ function SessionTabStripActions({
   const autoRetry = useAutoRetryToggle(panelRef.projectName, panelRef.sessionId, sessionType);
   const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
   const isClaude = sessionType === "agent" && agentDetail.data?.session.provider === "claude";
+  // codex 双模式(codex 一等 provider 批):有 threadId 的 codex 会话可切 terminal
+  //(tmux 起 `codex resume <threadId>`,探针实证历史完整恢复);存量 tmux codex(无
+  // threadId)不可切——legacy 判据,菜单项不展开。
+  const isCodex =
+    sessionType === "agent" &&
+    agentDetail.data?.session.provider === "codex" &&
+    Boolean(agentDetail.data?.session.codexThreadId);
   // 双模式（2026-10-15）：mode=terminal = CLI 原生 TUI 形态（无 stdin 控制通道 → 自动重试
   // 注入/模型切换让位）；切换门槛严格 idle-only（working/blocked 禁用，绝不丢 turn）；
   // 存量会话无钉 claudeSessionId 无法 --resume（review P3-8：禁用 + 原因文案，防必败弹窗循环）。
   const sessionMode = agentDetail.data?.session.mode ?? "chat";
-  const terminalMode = isClaude && sessionMode === "terminal";
-  const modeSwitchBlockedReason = !agentDetail.data?.session.claudeSessionId
-    ? t("session.modeSwitch.legacy")
-    : agentDetail.data?.session.status === "working" ||
-        agentDetail.data?.session.status === "blocked"
+  const terminalMode = (isClaude || isCodex) && sessionMode === "terminal";
+  // busy 判定双 provider 共用(turn 进行中切模式绝不丢 turn,claude P3-8 同门槛)。
+  const busyBlocked =
+    agentDetail.data?.session.status === "working" || agentDetail.data?.session.status === "blocked"
       ? t("session.modeSwitch.busy")
       : undefined;
-  const modeSwitchable = isClaude && modeSwitchBlockedReason === undefined;
+  const modeSwitchBlockedReason = isCodex
+    ? busyBlocked
+    : !agentDetail.data?.session.claudeSessionId
+      ? t("session.modeSwitch.legacy")
+      : busyBlocked;
+  const modeSwitchable = (isClaude || isCodex) && modeSwitchBlockedReason === undefined;
   const { modeSwitch, holder: modeSwitchHolder } = useSessionModeSwitch();
   const items: ActionMenuItem[] = [
     {
@@ -2427,7 +2483,7 @@ function SessionTabStripActions({
       icon: <ShellIcon className="size-[17px]" name="edit" />,
       onSelect: () => a.rename.run(meta?.label ?? panelRef.sessionId),
     },
-    ...(isClaude
+    ...(isClaude || isCodex
       ? [
           {
             label:

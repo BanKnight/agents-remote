@@ -1,5 +1,9 @@
 import { join } from "node:path";
-import type { CodexPermissionMode, CodexStreamServerMessage } from "@agents-remote/shared";
+import type {
+  CodexCredentials,
+  CodexPermissionMode,
+  CodexStreamServerMessage,
+} from "@agents-remote/shared";
 import type { RuntimeStream } from "./session-registry";
 import { PiSessionRelay } from "./pi-relay";
 
@@ -42,12 +46,17 @@ const CODEX_ENV_KEYS = [
   "CODEX_HOME",
 ] as const;
 
-function codexSpawnEnv(): Record<string, string> {
+export function codexSpawnEnv(credentials?: CodexCredentials): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of CODEX_ENV_KEYS) {
     const value = process.env[key];
     if (value !== undefined) env[key] = value;
   }
+  // settings codex 凭据切片（acp resolveCredentials 同款时序：每次 spawn 前读、热更新
+  // 即时生效）。两键不在 CODEX_ENV_KEYS 白名单——settings 是唯一来源，不继承父 env；
+  // 未配置 = 不注键，走 codex 自身凭证链（auth.json / ChatGPT 登录）。
+  if (credentials?.apiKey) env.OPENAI_API_KEY = credentials.apiKey;
+  if (credentials?.baseUrl) env.OPENAI_BASE_URL = credentials.baseUrl;
   return env;
 }
 
@@ -336,7 +345,10 @@ export type CodexApprovalDecision = "accept" | "decline";
 
 export class CodexRuntime {
   private readonly sessions = new Map<string, CodexSessionEntry>();
-  private readonly pendingQueues = new Map<string, { text: string; uuid?: string }[]>();
+  private readonly pendingQueues = new Map<
+    string,
+    { text: string; uuid?: string; images?: { data: string; mimeType: string }[] }[]
+  >();
   private onCodexThreadId?: (sessionId: string, threadId: string) => void;
   private onActivity?: (sessionId: string) => void;
   private onStatusChange?: (
@@ -353,6 +365,8 @@ export class CodexRuntime {
     private readonly runDir: string,
     /** agent 启动命令（argv 数组）：测试 seam（fake app-server NDJSON 脚本替换真实 codex）。 */
     private readonly command: string[] = ["codex", "app-server"],
+    /** settings codex 凭据切片读取（每次 spawn 前调用；acp 同款注入 seam，测试可注入假值）。 */
+    private readonly resolveCredentials?: () => Promise<CodexCredentials | undefined>,
   ) {}
 
   setOnCodexThreadId(callback: (sessionId: string, threadId: string) => void): void {
@@ -433,9 +447,15 @@ export class CodexRuntime {
   private async doEnsureRunning(target: CodexSpawnTarget): Promise<void> {
     if (this.sessions.has(target.runtimeKey)) return;
 
+    // settings codex 凭据切片（读失败回退 undefined = 不注入，走 agent 自身凭证链；
+    // acp resolveCredentials 同款兜底时序）。
+    const credentials = await this.resolveCredentials?.().catch((err) => {
+      console.warn("[codex] settings read failed, falling back to agent credentials:", err);
+      return undefined;
+    });
     const proc = Bun.spawn(this.command, {
       cwd: target.projectPath,
-      env: codexSpawnEnv(),
+      env: codexSpawnEnv(credentials),
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
@@ -589,8 +609,15 @@ export class CodexRuntime {
     }
   }
 
-  /** 发送 user 消息：入队 → 注入 codex_user_echo → 单飞 turn/start / 排队。 */
-  write(runtimeKey: string, text: string, uuid?: string): void {
+  /** 发送 user 消息：入队 → 注入 codex_user_echo → 单飞 turn/start / 排队。
+   *  images = 图片附件（base64 裸数据，composer 附件管线产出，pi 同形）：flushQueue
+   *  组 turn/start input 的 image 项（data URL——UserInput.image.url 接受 data URL）。 */
+  write(
+    runtimeKey: string,
+    text: string,
+    uuid?: string,
+    images?: { data: string; mimeType: string }[],
+  ): void {
     const entry = this.sessions.get(runtimeKey);
     if (!entry) throw new Error("codex session not running");
     const queue = this.pendingQueues.get(runtimeKey) ?? [];
@@ -598,12 +625,15 @@ export class CodexRuntime {
       entry.relay.reportError(new Error("codex turn queue is full"));
       return;
     }
-    queue.push({ text, uuid });
+    const imgs = images && images.length > 0 ? images : undefined;
+    queue.push({ text, uuid, images: imgs });
     this.pendingQueues.set(runtimeKey, queue);
     // echo/working 在入队成功后注入（code review P2-9）：队满丢弃路径不发 echo、不翻
     // 状态——客户端看到的 echo 必然对应已被接收排队的消息。
     if (uuid) {
-      entry.relay.appendAndBroadcast(JSON.stringify({ type: "codex_user_echo", text, uuid }));
+      entry.relay.appendAndBroadcast(
+        JSON.stringify({ type: "codex_user_echo", text, uuid, ...(imgs ? { images: imgs } : {}) }),
+      );
     }
     this.applyStatusSignal(entry, { kind: "user_input" });
     this.flushQueue(runtimeKey);
@@ -665,18 +695,27 @@ export class CodexRuntime {
 
   private onApprovalResponded?: (runtimeKey: string, rpcId: number | string) => void;
 
-  /** 订阅 relay 流（codex-stream 的 startStream 入口；open 先 ensureRunning，entry 必在）。 */
+  /** 订阅 relay 流（codex-stream 的 startStream 入口；open 先 ensureRunning，entry 必在）。
+   *  sinceId = 增量回放锚（URL ?since=，客户端最后可锚条目 id），透传给 relay 定位。 */
   stream(
     runtimeKey: string,
     onData: (line: string) => void,
     onError: (err: Error) => void,
+    sinceId?: string,
   ): RuntimeStream {
     const entry = this.sessions.get(runtimeKey);
     if (!entry) {
       queueMicrotask(() => onError(new Error("codex session not running")));
       return { close: () => {} };
     }
-    return entry.relay.addSubscriber(onData, onError);
+    const sub = entry.relay.addSubscriber(onData, onError, sinceId ? { sinceId } : undefined);
+    // config 快照恒发（当前态标量语义，与审批快照同族——不进回放缓冲、直发该订阅者）。
+    // delta 回放锚在 live 缓冲的 config 行之前（config 在 ensureRunning 时入库）会被
+    // 截掉 → 客户端 config=null → 三选择器 + usage 环整个消失（真机反馈 2026-10-28：
+    // IDB 缓存批引入的回归）。full 模式重复一帧幂等（客户端 latest-wins set）。
+    const frame = this.buildConfigFrame(entry);
+    if (frame) onData(frame);
+    return sub;
   }
 
   hasSubscribers(runtimeKey: string): boolean {
@@ -864,9 +903,16 @@ export class CodexRuntime {
 
     const overrides = entry.pendingConfig;
     entry.pendingConfig = {};
+    // input 组装（UserInput 绑定形状）：图片 image 项在前（data URL），文本项殿后——
+    // claude user content 图前文后同序。text_elements 绑定必填（宽进引擎不校验，守形状）。
+    const input: Array<Record<string, unknown>> = (next.images ?? []).map((img) => ({
+      type: "image",
+      url: `data:${img.mimeType};base64,${img.data}`,
+    }));
+    input.push({ type: "text", text: next.text, text_elements: [] });
     const params: Record<string, unknown> = {
       threadId: entry.threadId,
-      input: [{ type: "text", text: next.text }],
+      input,
     };
     if (overrides.model) params.model = overrides.model;
     if (overrides.effort) params.effort = overrides.effort;
@@ -984,19 +1030,23 @@ export class CodexRuntime {
   }
 
   private injectConfigFrame(runtimeKey: string, entry: CodexSessionEntry): void {
-    if (entry.models.length === 0) return; // 空目录 → 无帧 → 前端无选择器（acp 同约定）
-    entry.relay.appendAndBroadcast(
-      JSON.stringify({
-        type: "codex_config",
-        models: entry.models,
-        current: {
-          model: entry.config.model ?? "",
-          effort: entry.config.effort ?? null,
-          approvalPolicy: entry.config.approvalPolicy,
-          sandbox: entry.config.sandbox,
-        },
-      } satisfies CodexConfigSnapshot),
-    );
+    const frame = this.buildConfigFrame(entry);
+    if (frame) entry.relay.appendAndBroadcast(frame);
+  }
+
+  /** config 快照帧序列化；空目录 → null（无帧 → 前端无选择器，acp 同约定）。 */
+  private buildConfigFrame(entry: CodexSessionEntry): string | null {
+    if (entry.models.length === 0) return null;
+    return JSON.stringify({
+      type: "codex_config",
+      models: entry.models,
+      current: {
+        model: entry.config.model ?? "",
+        effort: entry.config.effort ?? null,
+        approvalPolicy: entry.config.approvalPolicy,
+        sandbox: entry.config.sandbox,
+      },
+    } satisfies CodexConfigSnapshot);
   }
 
   private configSnapshot(entry: CodexSessionEntry): CodexConfigSnapshot {

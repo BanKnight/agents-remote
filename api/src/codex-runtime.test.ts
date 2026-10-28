@@ -1,8 +1,10 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import type { CodexCredentials } from "@agents-remote/shared";
 import {
   CodexRuntime,
+  codexSpawnEnv,
   policyPairToPermissionMode,
   summarizeCodexApproval,
   synthesizeHistoryLines,
@@ -32,7 +34,9 @@ const notify = (method, params) => send({ method, params });
 
 async function handleTurnStart(msg) {
   const turnId = "turn-" + nextTurnId++;
-  const text = msg.params.input[0].text;
+  // input 是 UserInput 联合数组：图片项（type:"image"）在前、文本项殿后 → 不能按下标取文本。
+  const text = msg.params.input.find((p) => p.type === "text")?.text ?? "";
+  const imgs = msg.params.input.filter((p) => p.type === "image");
   send({ id: msg.id, result: { turn: { id: turnId, status: "inProgress" } } });
   notify("turn/started", { threadId: "th-fake-1", turn: { id: turnId, status: "inProgress" } });
   if (text.startsWith("@perm")) {
@@ -52,7 +56,9 @@ async function handleTurnStart(msg) {
   }
   const cov = " model=" + (msg.params.model ?? "-") + " effort=" + (msg.params.effort ?? "-")
     + " approval=" + (msg.params.approvalPolicy ?? "-")
-    + " sandbox=" + (msg.params.sandboxPolicy?.type ?? "-");
+    + " sandbox=" + (msg.params.sandboxPolicy?.type ?? "-")
+    + " imgs=" + imgs.map((i) => i.url).join("|")
+    + " env=" + (process.env.OPENAI_API_KEY ?? "-") + "@" + (process.env.OPENAI_BASE_URL ?? "-");
   notify("item/agentMessage/delta", { threadId: "th-fake-1", turnId, delta: "echo: " + text });
   notify("item/completed", { threadId: "th-fake-1", turnId,
     item: { type: "agentMessage", id: "msg_" + turnId, text: "echo: " + text + cov } });
@@ -159,8 +165,8 @@ afterAll(async () => {
 
 const fakeCodexCommand = () => [process.execPath, join(fixtureDir, "fake-codex.ts")];
 
-const makeRuntime = () => {
-  const runtime = new CodexRuntime(runDir, fakeCodexCommand());
+const makeRuntime = (resolveCredentials?: () => Promise<CodexCredentials | undefined>) => {
+  const runtime = new CodexRuntime(runDir, fakeCodexCommand(), resolveCredentials);
   const threadIds: { sessionId: string; threadId: string }[] = [];
   const activities: string[] = [];
   const statuses: { sessionId: string; status: string }[] = [];
@@ -467,6 +473,82 @@ describe("CodexRuntime（fake app-server 集成）", () => {
     await runtime.close("k5");
   });
 
+  test("write 带图片：turn/start input = image 项在前（data URL）+ text 项殿后", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.startAgent({
+      id: "s7",
+      projectName: "p1",
+      runtimeKey: "k7",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k7");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_config"), "initial config");
+
+    // 客户端恒带 uuid（echo 帧只在其存在时注入——echo 必须对应已入队的消息）。
+    runtime.write("k7", "看图", "u-img", [{ data: "QUJD", mimeType: "image/png" }]);
+    await waitFor(() => parse(lines).some((m) => m.type === "ended"), "image turn ended");
+
+    // fake 回显 turn/start 收到的 input（UserInput 绑定形状）：image 项 url 必须是
+    // data URL，且文本项仍在（不能因图片项占位而丢文本）。
+    const echo = parse(lines).find(
+      (m) =>
+        m.type === "codex_event" &&
+        (m.event as Record<string, unknown>).method === "item/completed" &&
+        JSON.stringify(m).includes("echo: 看图"),
+    );
+    expect(echo).toBeDefined();
+    expect(JSON.stringify(echo)).toContain("imgs=data:image/png;base64,QUJD");
+    // 用户回显帧同样带 images（多端同形：另一端看到同一组缩略图）。
+    const userEcho = parse(lines).find((m) => m.type === "codex_user_echo") as
+      | { images?: { data: string; mimeType: string }[] }
+      | undefined;
+    expect(userEcho?.images).toEqual([{ data: "QUJD", mimeType: "image/png" }]);
+    await runtime.close("k7");
+  });
+
+  test("凭据注入：resolveCredentials 切片进 spawn env（fake 回显）；未配置不注键", async () => {
+    // 纯函数三态：白名单不继承 OPENAI_*（settings 唯一来源）；有切片才注键。
+    const savedKey = process.env.OPENAI_API_KEY;
+    const savedUrl = process.env.OPENAI_BASE_URL;
+    process.env.OPENAI_API_KEY = "parent-leak";
+    try {
+      expect(codexSpawnEnv(undefined).OPENAI_API_KEY).toBeUndefined();
+      expect(codexSpawnEnv({}).OPENAI_API_KEY).toBeUndefined();
+      expect(codexSpawnEnv({ apiKey: "sk-x", baseUrl: "https://gw.test/v1" })).toMatchObject({
+        OPENAI_API_KEY: "sk-x",
+        OPENAI_BASE_URL: "https://gw.test/v1",
+      });
+    } finally {
+      if (savedKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = savedKey;
+      if (savedUrl === undefined) delete process.env.OPENAI_BASE_URL;
+      else process.env.OPENAI_BASE_URL = savedUrl;
+    }
+
+    // 集成：resolveCredentials 提供切片 → fake 进程 process.env 真实收到（spawn env 注入）。
+    const { runtime } = makeRuntime(async () => ({
+      apiKey: "sk-inject-test",
+      baseUrl: "https://gw.test/v1",
+    }));
+    await runtime.startAgent({
+      id: "s8",
+      projectName: "p1",
+      runtimeKey: "k8",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k8");
+    // fake 把 process.env 的 OPENAI_* 回显进 cov（item/completed 文本尾段）。
+    runtime.write("k8", "check env", "u-env");
+    await waitFor(() => parse(lines).some((m) => m.type === "ended"), "credential turn ended");
+    const completed = parse(lines).find(
+      (m) =>
+        m.type === "codex_event" &&
+        (m.event as Record<string, unknown>).method === "item/completed",
+    );
+    expect(JSON.stringify(completed)).toContain("env=sk-inject-test@https://gw.test/v1");
+    await runtime.close("k8");
+  });
+
   test("setThreadConfig：config 帧重注入 + onConfigPersist 回调；下一个 turn/start 带覆盖参数", async () => {
     const { runtime, configPersists } = makeRuntime();
     await runtime.startAgent({
@@ -540,6 +622,46 @@ describe("CodexRuntime（fake app-server 集成）", () => {
     expect(completed()?.event.params.item.text).toContain("approval=never sandbox=readOnly");
 
     await runtime.close("k6p");
+  });
+
+  test("delta 订阅也收 config 快照（锚命中 → live 截断，config 由快照直发补上）", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.startAgent({ id: "s7", projectName: "p1", runtimeKey: "k7", projectPath });
+    const lines = collectStream(runtime, "k7");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_config"), "initial config");
+    runtime.write("k7", "produce rows", "u-1");
+    await waitFor(
+      () => parse(lines).some((m) => m.type === "ended" && m.stopReason === "completed"),
+      "turn ended",
+    );
+
+    // 锚 = 已收行里最后 item/completed 的 item.id（命中 live 缓冲）。
+    const anchor = [...parse(lines)].reverse().find((m) => {
+      const ev = m as { type: string; event?: { method?: string } };
+      return ev.type === "codex_event" && ev.event?.method === "item/completed";
+    }) as unknown as { event: { params: { item: { id: string } } } } | undefined;
+    expect(typeof anchor?.event.params.item.id).toBe("string");
+
+    // delta 订阅：session_init 带 replay="delta"，config 由快照直发补上（live 缓冲的
+    // config 行在锚前被截掉——无快照机制时本用例 config 断言 fail，A/B 区分度）。
+    const deltaLines: string[] = [];
+    runtime.stream(
+      "k7",
+      (l) => deltaLines.push(l),
+      () => {},
+      anchor!.event.params.item.id,
+    );
+    await waitFor(() => parse(deltaLines).some((m) => m.type === "codex_config"), "snap config");
+    const init = parse(deltaLines).find((m) => m.type === "session_init") as {
+      replay?: string;
+    };
+    expect(init.replay).toBe("delta");
+    const snap = parse(deltaLines).find((m) => m.type === "codex_config") as {
+      current: { model: string };
+    };
+    expect(typeof snap.current.model).toBe("string");
+
+    await runtime.close("k7");
   });
 
   test("进程退出：error 帧 + 状态 error + approvalRuntimeSettled 触发", async () => {

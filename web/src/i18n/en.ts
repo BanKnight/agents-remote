@@ -472,6 +472,7 @@ export const en = {
   "api.runtimeUpdateFailed": "Failed to update Claude runtime",
   "api.piRuntimeUpdateFailed": "Failed to update Pi runtime",
   "api.acpRuntimeUpdateFailed": "Failed to update ACP runtime",
+  "api.codexRuntimeUpdateFailed": "Failed to update codex runtime",
   "api.agentProvidersFailed": "Failed to load agent providers",
   "api.piPresetCreateFailed": "Failed to add Pi preset",
   "api.piPresetUpdateFailed": "Failed to update Pi preset",
@@ -950,6 +951,17 @@ export const en = {
   "settings.acpEnvHint": "Injected env:",
   "settings.acpConfiguredCount": "{{n}} configured",
   "settings.acpNotConfigured": "Not configured",
+
+  // ── Settings: codex runtime（凭据切片，app-server 直连） ────────
+  "settings.section.codex": "Codex",
+  "settings.codexHint":
+    "Codex (app-server direct) credentials. Credentials are injected into the agent process at spawn; changes apply to newly started sessions; unset = codex's own credential chain.",
+  "settings.codexApiKeyHint":
+    "Optional. Save empty to keep the current key; when unset, codex uses its own credential chain.",
+  "settings.codexApiKeyBlank": "Not configured",
+  "settings.codexBaseUrlHint":
+    "Optional. A custom OpenAI-compatible endpoint. Clear and save to fall back to the official endpoint.",
+  "settings.codexEnvHint": "Injected env:",
 
   // ── Settings: protocol & model discovery ──────────────────────
   "settings.testConnection": "Test connection",

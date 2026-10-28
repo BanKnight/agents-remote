@@ -22,6 +22,8 @@ import {
 import type { ApprovalCenter } from "./approval-center";
 import { summarizeControlInput } from "./approval-registry";
 import type { ClaudeRuntime } from "./claude-runtime";
+import type { CodexRuntime } from "./codex-runtime";
+import { getAgentProviderProfile } from "./agent-provider-profiles";
 import type { SessionMetadata, SessionRegistry } from "./session-registry";
 import type { TmuxRuntime } from "./tmux-runtime";
 
@@ -150,6 +152,8 @@ export class AgentTuiController {
       registry: SessionRegistry;
       claudeRuntime: ClaudeRuntime;
       tmuxRuntime: TmuxRuntime;
+      /** codex app-server 运行时（codex 会话双模式切换用；claude-only 测试可省）。 */
+      codexRuntime?: CodexRuntime;
       approvalCenter?: ApprovalCenter;
       /** 切换完成回调（两个方向都发）：index.ts 接 claude-stream 关该会话全部 WS——
        *  多端打开同一会话时，未切换端靠「重连被守卫拒 / 面板 ended」跟随新形态。 */
@@ -207,7 +211,13 @@ export class AgentTuiController {
     }
   }
 
+  /** codex 会话判据(provider profile transport,与 codex-stream upgrade 同判据)。 */
+  private isCodexSession(metadata: SessionMetadata): boolean {
+    return getAgentProviderProfile(metadata.provider)?.transport === "codex";
+  }
+
   private async switchToTerminal(metadata: SessionMetadata): Promise<void> {
+    if (this.isCodexSession(metadata)) return this.switchCodexToTerminal(metadata);
     const { claudeRuntime, tmuxRuntime, registry, approvalCenter } = this.deps;
     const runtimeKey = metadata.runtimeKey;
     // 1) hooks settings（0600，随会话生命周期清理）+ 状态文件（先建空文件，fs.watch 才有 inode 可挂）。
@@ -255,6 +265,7 @@ export class AgentTuiController {
   }
 
   private async switchToChat(metadata: SessionMetadata): Promise<void> {
+    if (this.isCodexSession(metadata)) return this.switchCodexToChat(metadata);
     const { claudeRuntime, tmuxRuntime, registry } = this.deps;
     const runtimeKey = metadata.runtimeKey;
     this.teardownTerminal(runtimeKey);
@@ -278,6 +289,77 @@ export class AgentTuiController {
     );
     // 多端跟随：terminal→chat 方向未切换端经「pane 被 kill → 面板收 ended → 失效 detail」
     // 跟随；此处关 claude-stream WS 是防御性 no-op（terminal 期本就没有 chat WS）。
+    this.deps.onModeSwitched?.(runtimeKey);
+  }
+
+  /**
+   * codex terminal 形态:tmux 起 `codex resume <threadId>`(探针实证历史完整恢复)。codex
+   * CLI 无 claude hooks 机制 → 无状态文件/watcher 面(TUI 期状态点停更,以 pane 内 TUI 为
+   * 准);teardownTerminal 的文件拆除无对应物。close 已广播 closed——index.ts 的 codex 状态
+   * 回调对 closed 不落盘不推送,无需 silent 变体。
+   */
+  private async switchCodexToTerminal(metadata: SessionMetadata): Promise<void> {
+    const { codexRuntime, tmuxRuntime, registry, approvalCenter } = this.deps;
+    if (!codexRuntime) throw new Error("codex runtime not configured");
+    const runtimeKey = metadata.runtimeKey;
+    // 形态先落盘(fail-closed 同 claude 路径):mode=terminal 后 codex-stream 一律拒绝,
+    // 此后才关 headless app-server。
+    await registry.setAgentSessionMode(metadata.id, "terminal");
+    await codexRuntime.close(runtimeKey);
+    try {
+      // threadId 是 codex chat 面板的准入判据(gate 已保证非空);缺失 = 半启动会话,
+      // 防御性 throw 走回滚。
+      if (!metadata.codexThreadId) throw new Error("codex threadId missing");
+      await tmuxRuntime.startCommand(
+        metadata,
+        ["codex", "resume", metadata.codexThreadId].map(shellQuote).join(" "),
+      );
+    } catch (error) {
+      // 起 pane 失败(tmux server 不可达等):形态退回 chat + 重拉 app-server——不留
+      // 「档案说 terminal 却无 pane 且进程已死」的全堵半态(镜像 claude 路径回滚方向)。
+      await registry.setAgentSessionMode(metadata.id, "chat");
+      await codexRuntime.ensureRunning({
+        sessionId: metadata.id,
+        projectName: metadata.projectName,
+        runtimeKey,
+        projectPath: metadata.projectPath,
+        codexThreadId: metadata.codexThreadId,
+        permissionMode: metadata.permissionMode,
+        model: metadata.model,
+        effort: metadata.effort,
+      });
+      throw error;
+    }
+    approvalCenter?.clearRuntime(runtimeKey);
+    this.deps.onModeSwitched?.(runtimeKey);
+  }
+
+  /**
+   * codex 回对话:pane 关闭 → mode 落盘 → app-server 复位(thread/resume + read 回放,
+   * 「进程内存活 = 会话存活」恢复语义与 ws open ensureRunning 同参)。mode 先于
+   * ensureRunning 落盘(claude 路径 review P2-3 同款纪律):失败态 = 档案 chat + 无进程,
+   * 半态自愈(下次打开会话时 codex-stream ensureRunning 正常拉起)。
+   */
+  private async switchCodexToChat(metadata: SessionMetadata): Promise<void> {
+    const { codexRuntime, tmuxRuntime, registry } = this.deps;
+    if (!codexRuntime) throw new Error("codex runtime not configured");
+    const runtimeKey = metadata.runtimeKey;
+    // codex 无文件面,teardownTerminal 对 codex = 幂等 no-op(Map delete + rm force)。
+    this.teardownTerminal(runtimeKey);
+    await tmuxRuntime.close(runtimeKey);
+    await registry.setAgentSessionMode(metadata.id, "chat");
+    await codexRuntime.ensureRunning({
+      sessionId: metadata.id,
+      projectName: metadata.projectName,
+      runtimeKey,
+      projectPath: metadata.projectPath,
+      codexThreadId: metadata.codexThreadId,
+      permissionMode: metadata.permissionMode,
+      model: metadata.model,
+      effort: metadata.effort,
+    });
+    // 多端跟随:terminal→chat 方向未切换端经「pane 被 kill → 面板收 ended → 失效 detail」
+    // 跟随;此处关 codex-stream WS 是防御性 no-op(terminal 期本就没有 chat WS)。
     this.deps.onModeSwitched?.(runtimeKey);
   }
 

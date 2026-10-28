@@ -237,3 +237,36 @@ test("POST mode：非 claude provider → 404；非法 mode → 400；未装配�
   const noTui = modeRequest(claudeId, "terminal");
   expect(await handleSessionRoutes(noTui.req, noTui.url, projectsRoot, registry)).toBeUndefined();
 });
+
+test("POST mode：codex 会话同路由切换（threadId 准入）；无 threadId 存量形态 → 400", async () => {
+  const calls: string[] = [];
+  const agentTui = stubTui(calls);
+
+  const codex = await registry.createAgentSession({
+    project: { name: "mergeproj", path: "" },
+    provider: "codex",
+    codexThreadId: "th-1",
+  });
+  const { req, url } = modeRequest(codex.id, "terminal");
+  const res = await handleSessionRoutes(req, url, projectsRoot, registry, undefined, agentTui);
+  expect(res?.status).toBe(200);
+  expect(calls).toEqual([`${codex.id}:terminal`]);
+
+  // 无 threadId 的存量 tmux 形态：探活判死（keepIfRuntimeExists 对无 threadId 的 codex
+  // 返回 false）→ getAgentMetadata undefined → 404。路由内 400 分支是防御性保留。
+  const legacy = await registry.createAgentSession({
+    project: { name: "mergeproj", path: "" },
+    provider: "codex",
+  });
+  const legacyReq = modeRequest(legacy.id, "terminal");
+  const legacyRes = await handleSessionRoutes(
+    legacyReq.req,
+    legacyReq.url,
+    projectsRoot,
+    registry,
+    undefined,
+    agentTui,
+  );
+  expect(legacyRes?.status).toBe(404);
+  expect(calls).toHaveLength(1);
+});

@@ -11,6 +11,8 @@ import {
   type AcpCredentialsMasked,
   type AcpRuntimeConfig,
   type AcpRuntimeConfigMasked,
+  type CodexCredentials,
+  type CodexCredentialsMasked,
   type AgentProvider,
   type ClaudeModelMapping,
   type ClaudeModelTier,
@@ -270,8 +272,13 @@ export function toMaskedAcpRuntime(config: AcpRuntimeConfig): AcpRuntimeConfigMa
   );
 }
 
+// codex 凭据 mask（{apiKey,baseUrl} 形状与 acp 同构，复用同一 mask 实现；类型域独立）。
+export function toMaskedCodexCredentials(credentials: CodexCredentials): CodexCredentialsMasked {
+  return toMaskedAcpCredentials(credentials);
+}
+
 // 单切片宽松规整：apiKey/baseUrl 非空字符串才保留（其余输入丢弃，结构恒合法）。
-function normalizeAcpCredentials(input: unknown): AcpCredentials {
+function normalizeCredentialsPair(input: unknown): AcpCredentials {
   if (!input || typeof input !== "object") return {};
   const p = input as Record<string, unknown>;
   const apiKey = nonEmptyString(p.apiKey);
@@ -291,13 +298,13 @@ export function normalizeAcp(input: unknown): AcpRuntimeConfig {
   if (!input || typeof input !== "object") return {};
   const p = input as Record<string, unknown>;
   if (nonEmptyString(p.apiKey) || nonEmptyString(p.baseUrl)) {
-    const legacy = normalizeAcpCredentials(p);
+    const legacy = normalizeCredentialsPair(p);
     return legacy.apiKey || legacy.baseUrl ? { omp: legacy } : {};
   }
   const out: AcpRuntimeConfig = {};
   for (const [key, value] of Object.entries(p)) {
     if (getAgentProviderProfile(key as AgentProvider)?.transport !== "acp") continue;
-    const credentials = normalizeAcpCredentials(value);
+    const credentials = normalizeCredentialsPair(value);
     if (credentials.apiKey || credentials.baseUrl) out[key as AgentProvider] = credentials;
   }
   return out;
@@ -467,6 +474,7 @@ export function migrateV1ToV2(parsed: unknown): SettingsState {
       // v1 无 pi 概念 → 未启用默认；acp 凭据切片同步补缺。
       pi: { ...DEFAULT_PI_RUNTIME },
       acp: {},
+      codex: {},
     },
     skills: { sources: [] },
     // v1 迁移目标态：通知开关默认全开（与 normalizeSettings 默认一致）。
@@ -504,6 +512,8 @@ export function normalizeSettings(parsed: unknown): SettingsState {
       pi: normalizePi(root.runtimes?.pi),
       // Phase 1 凭据切片恒存在；{} = 未配置。
       acp: normalizeAcp(root.runtimes?.acp),
+      // codex 凭据切片（{apiKey,baseUrl} 对规整器与 acp 同构复用）；{} = 未配置。
+      codex: normalizeCredentialsPair(root.runtimes?.codex),
     },
     skills: { sources: normalizeSkillSources(root.skills?.sources) },
     notifications: normalizeNotificationSettings(root.notifications),
@@ -551,6 +561,7 @@ function cloneDefaultSettings(): SettingsState {
       },
       pi: { ...DEFAULT_PI_RUNTIME },
       acp: {},
+      codex: {},
     },
     skills: { sources: [] },
     notifications: { ...DEFAULT_NOTIFICATIONS },

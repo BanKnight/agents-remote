@@ -3,10 +3,12 @@ import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { RuntimeStream, SessionMetadata, SessionRegistry } from "./session-registry";
 import {
+  CODEX_IMAGE_MAX_BASE64_LENGTH,
   CodexStreamController,
   handleCodexStreamUpgrade,
   matchCodexStreamRoute,
   parseControlRequestId,
+  sanitizeCodexImages,
   type CodexWebSocketData,
 } from "./codex-stream";
 import type { CodexRuntime } from "./codex-runtime";
@@ -189,6 +191,26 @@ describe("parseControlRequestId", () => {
   });
 });
 
+describe("sanitizeCodexImages", () => {
+  test("非数组/空组 → undefined；非法项与超上限项丢弃（合法项保留）", () => {
+    expect(sanitizeCodexImages(undefined)).toBeUndefined();
+    expect(sanitizeCodexImages("x" as never)).toBeUndefined();
+    expect(
+      sanitizeCodexImages([
+        { data: "", mimeType: "image/png" },
+        { data: "QUJD", mimeType: 42 as never },
+        null as never,
+        { data: "QUJD", mimeType: "image/png" },
+      ]),
+    ).toEqual([{ data: "QUJD", mimeType: "image/png" }]);
+    expect(
+      sanitizeCodexImages([
+        { data: "x".repeat(CODEX_IMAGE_MAX_BASE64_LENGTH + 1), mimeType: "image/png" },
+      ]),
+    ).toBeUndefined();
+  });
+});
+
 // ── upgrade 校验 ───────────────────────────────────────────────────────────────
 
 describe("handleCodexStreamUpgrade", () => {
@@ -304,7 +326,7 @@ describe("CodexStreamController.open", () => {
     stub.setEnsureRunningImpl(async () => {
       throw Object.assign(new Error("spawn codex ENOENT"), { code: "ENOENT" });
     });
-    const controller = new CodexStreamController(stub.runtime);
+    const controller = new CodexStreamController(stub.runtime, makeRegistry({}));
     const { socket, sent } = makeSocket(codexData);
     await controller.open(socket);
 
@@ -321,16 +343,33 @@ describe("CodexStreamController.open", () => {
     stub.setEnsureRunningImpl(async () => {
       throw new Error("boom");
     });
-    const controller = new CodexStreamController(stub.runtime);
+    const controller = new CodexStreamController(stub.runtime, makeRegistry({}));
     const { socket, sent } = makeSocket(codexData);
     await controller.open(socket);
 
     expect(sent[0]).toContain('"SESSION_RUNTIME_ERROR"');
   });
 
+  test("会话在 terminal 模式 → SESSION_STATE_CONFLICT，不 ensureRunning 不订阅", async () => {
+    const stub = makeStubRuntime();
+    const controller = new CodexStreamController(
+      stub.runtime,
+      makeRegistry(codexMetadata({ mode: "terminal" })),
+    );
+    const { socket, sent } = makeSocket(codexData);
+    await controller.open(socket);
+
+    expect(stub.calls.ensureRunning).toBe(0);
+    expect(stub.calls.stream).toBe(0);
+    expect(JSON.parse(sent[0] ?? "{}")).toMatchObject({
+      type: "error",
+      code: "SESSION_STATE_CONFLICT",
+    });
+  });
+
   test("成功 → 订阅 stream，codex_event 实时行经 batch emitter 转发", async () => {
     const stub = makeStubRuntime();
-    const controller = new CodexStreamController(stub.runtime);
+    const controller = new CodexStreamController(stub.runtime, makeRegistry({}));
     const { socket, sent } = makeSocket(codexData);
     await controller.open(socket);
 
@@ -357,7 +396,7 @@ describe("CodexStreamController.open", () => {
 describe("CodexStreamController.message", () => {
   const openController = async () => {
     const stub = makeStubRuntime();
-    const controller = new CodexStreamController(stub.runtime);
+    const controller = new CodexStreamController(stub.runtime, makeRegistry({}));
     const { socket, sent } = makeSocket(codexData);
     await controller.open(socket);
     sent.length = 0;
@@ -437,7 +476,7 @@ describe("CodexStreamController.message", () => {
 describe("CodexStreamController.close", () => {
   test("close 只断流订阅，不杀 app-server 进程", async () => {
     const stub = makeStubRuntime();
-    const controller = new CodexStreamController(stub.runtime);
+    const controller = new CodexStreamController(stub.runtime, makeRegistry({}));
     const { socket } = makeSocket(codexData);
     await controller.open(socket);
     expect(stub.streamHandles[0]?.closed).toBe(false);
