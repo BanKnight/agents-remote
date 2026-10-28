@@ -1,61 +1,108 @@
 # 当前状态(current.md — 滚动更新)
 
-> 最后更新:2026-10-27(Codex 一等 provider 批次 2 前端完成:adapter/面板/新建入口落地,
-> commit `ed3278d`,四门禁 + e2e 2/2 + 四 reviewer 报告消化;待交真机清单)
+> 最后更新:2026-10-28 14:20(批次 A/B/C 已 commit da5c9ba;用户新指令三件:
+> ①凭证 terminal 支持要竞品调研 ②自动重试缺失 ③全面 parity 检查——调研中)
 
 ## 一句话状态
 
-**Codex 一等 provider 批次 2(前端)已完成并提交(`ed3278d`):`codex-adapter.ts`(applyCodexFrame 单帧 + applyCodexFrames 批量折加 O(N) + Pass 2 投影 + useCodexSession)+ CodexSessionDetailRoute(面板 + Model/Reasoning/Permission 三选择器 + configPending 圆点 cue + 审批金框复用 claude 渲染层)+ 新建入口接线(桌面菜单 + 移动 sheet,行序/中性档 tile 对齐原型)+ e2e codex-session 2/2 + 单测 968 pass(含 17 个 adapter 测试);四 reviewer(perf/design/code/security)报告全部消化。批次剩余:真机清单交用户验收;P1 parity(历史列表等)另立计划。**
+**codex 批次 C(用户三轮真机反馈清单)全部实现并过全门禁:C1 Effort 选择器兜底(模
+型不在 model/list 目录时按词表兜底渲染)、C2 加号附件(图片/文件,claude 单源复用)、
+C3 切换会话「离线中…」提示(everConnectedRef 防伪门)、C4 对话↔终端双模式(`codex
+resume <threadId>` TUI 接力 + SESSION_STATE_CONFLICT WS 守卫 + 多端跟随)、C5
+Settings codex 凭据卡全链路(shared 类型→store→PUT 三态→codexSpawnEnv env 注入→UI
+卡+i18n)。三 reviewer 并行审查后消化:code P1 图片字段名错位(mediaType vs
+mimeType,发图必坏——adapter 一处收口改名+wire 形状 hook 测试钉住)、security
+P0-级 mode 路由硬守卫 provider!=="claude"→codex 双模式经 HTTP 不可达(已放开双
+provider 准入)、design L1-L3(菜单 accent 语义色/uploading 发送键形态/aria 全角括
+号)、P2-1 项目级 codex 缓存清扫漏接线、P3-1 localStorage 兜底只写不删(抽
+lib/cached-agent-detail 单源+清理面)、P3-4 凭据注入零测试(补 codexSpawnEnv 纯函
+数三态+fake env 回显集成用例)。全门禁绿:format/lint(0)/typecheck/api 1180+
+shared 11+web 993/e2e codex 3/3/CSS 硬闸;api+web 已 respawn,content-type text/css,
+P1-1 修复特征串进产物。不 commit,等用户确认(批次 A tokenUsage+IDB 缓存、批次 B
+config 快照+冷启动骨架、批次 C 本批一起)。**
 
 ## 本 session 焦点
 
 ### 关键决策(不可丢)
 
-批次 1 决策(仍有效,详见 snapshots/20261027-1821.md):一等 provider 形态(app-server 进程/会话,零新依赖)、Route A 独立 codex_* 帧族、codex-generated 不入库(fixtures 是真证据)、history 能力位仍 unsupported、恢复抓手 hasRecoveryHandle 单源、权限值域三层、单飞 turn。
+- **C4 服务端入口(security reviewer 附注抓出)**:session-routes mode 路由原本
+  硬守卫 `metadata.provider !== "claude"` → 404,agent-tui 的 codex 分支是死代码。
+  已改为 profile transport 驱动准入(claude 看 claudeSessionId、codex 看
+  codexThreadId→400 SESSION_NOT_CONFIGURED;无 threadId 的存量 tmux 形态被
+  keepIfRuntimeExists 判死 → 404 探活自然产生)。
+- **C4 codex TUI 形态诚实退化**:codex CLI 无 claude hooks 机制 → 无状态文件/
+  watcher 面,TUI 期状态点停更(以 pane 内 TUI 为准);close 广播 closed 被 index
+  回调跳过(claude silent 变体不需要)。
+- **C5 env 注入**:codexSpawnEnv 白名单 13 键基础上 apiKey→OPENAI_API_KEY、
+  baseUrl→OPENAI_BASE_URL(两键刻意不在白名单=settings 唯一来源不继承父 env);每
+  次 spawn 前读(热更新,acp resolveCredentials 同时序);读失败 catch 回退。
+- **P1-1 教训(再证「mock 按真实协议」)**:composer-attach 产出 `{mediaType,data}`
+  (claude 语义),codex 线协议 `{mimeType,data}`——原样透传类型层拦不住(sendToSocket
+  参数 unknown);单测以正确形状直调 runtime.write 绕过 wire 边界=盲区。修复=adapter
+  一处收口改名,hook 测试经 storeAdapter.onNew→MockSocket 断言真实上行帧形状。
+- **shell→workbench 反向依赖**:project-row-actions(shell)需清理 localStorage
+  兜底键,helper 必须放 lib(cached-agent-detail.ts),不能 import workbench。
 
-批次 2 新决策:
+### 进度(批次 C 五项+review 修复全落地)
 
-- **审批 UX = tool card 金框复用 claude 渲染层**:codex_approval_request 的 itemId → tool stub 写 controlRequestId → Pass 2 透传 metadata.custom → makeToolRenderer needsPermission 金框 + Allow/Deny → bridge respondToControlRequest 发 `{type:"respond",decision:"accept"|"decline"}`。不做 composer 托盘;全局 ApprovalCenter 兜底(batch 1 已接)。
-- **reasoning 只渲染 summary**(content 可能加密);assistant 文本与思考是不同 item id 各自独立气泡;ended 帧负责定格(final + interrupted + 清残留金框);serverRequest/resolved 按 `codex:<requestId>` 清金框。
-- **Pass 1 性能形态(review 后定型)**:可变内核 `applyCodexFrameInPlace`(就地 mutate 工作副本、返回 boolean)+ 单帧 `applyCodexFrame`(复制一次进内核、无变化返回原引用保 React bail-out)+ 批量 `applyCodexFrames`(一次复制逐帧折加);hook 拆 `handleFrameScalars`(标量逐帧)+ `processBatch`(raw 整批一次 setState)——history 回放 N 帧从 O(N²) 复制降为 O(N)。deep-freeze 单测钉死 prev 不可变契约。
-- **面板路由诚实形态**:`provider==="codex" && codexThreadId` 才进 CodexPanel;存量 tmux codex(无 threadId)走 AgentTerminalPanel。
-- **configPending 呈现 = trigger 上 warning 圆点 + title**(布局 cue),不用行内文字标签(ui-layout-explains-not-text);turn/started 清除。
-- **行序/用色对齐新建实例原型**:Claude→OMP→Codex→终端(Codex 行 tile 用中性档 `bg-ink-2/10 text-ink-2`,不吃 Pi 行 tint-purple 专色、不借 Claude 品牌 amber);en 权限 label 与 claude 对齐用 "Permission"。
-- **空 resultText 也转发 result**(`...(done ? {result} : {})`):共享投影层按 `result != null` 推 status,条件丢弃空 result 会让 imageView/静默命令完成后永久 spinner。
+- ✅ C1:efforts 词表兜底(CodexSessionDetailRoute)+e2e 回归锚(当前模型不在目录)。
+- ✅ C2:ComposerAttachMenu/AttachmentChipRow 接入 composer;服务端 sanitizeCodex
+  Images(security L3:非数组/坏形状/超 10M base64 项丢弃)。
+- ✅ C3:everConnectedRef→offlineCap(VirtualizedThreadContent 离线条防伪门)。
+- ✅ C4:agent-tui switchCodexToTerminal/ToChat(mode 先落盘 fail-closed+失败回滚重
+  拉)+codex-stream terminal 守卫+socketsByRuntimeKey+closeSessionSockets+前端
+  modeConflictRef(不重连+invalidate detail)+双端 gate(instance-area/mobile-
+  workbench)+PanelRouter 面板路由(mode!==terminal)。
+- ✅ C5:shared CodexCredentials/Masked 类型+store normalize/mask+PUT 三态路由+code
+  xSpawnEnv+index 装配(resolveCredentials)+client updateCodexRuntime+设置卡
+  CodexRuntimeSection+设置行+i18n 7 键。smoke PASS(masked 形状合法,密码脚本自读)。
+- ✅ 三 reviewer 消化:P1-1(媒体字段收口)、mode 路由准入、L1(accent 三色语义:
+  model=user/eff=assistant/perm=permission)、L2(showSend 摘 uploading gate 对齐
+  claude)、L3(aria-label 恒 label)、P2-1(clearProjectCodexReplayCache 接线
+  rename/delete)、P3-1(lib/cached-agent-detail 读校验+写/删单源)、P3-4(凭据注入
+  测试)、security L1(baseUrl typeof 守卫防 500)。
 
-### 进度
+### 阻塞 / 风险
 
-- ✅ 批次 1(服务端,`f5c8878`):探针 + codex-runtime/codex-stream + shared 帧族 + 注册表/审批/路由接线,WS 探针 14 PASS + 1 SKIP。
-- ✅ 批次 2(前端,`ed3278d`):codex-adapter.ts(帧状态机 + hook,~1100 行)+ CodexSessionDetailRoute.tsx(面板 + 三选择器 + 最小 bridge)+ client/i18n/instance-panel/instance-area/mobile-sheets 接线 + 17 个 adapter 单测 + e2e `codex-session.spec.ts` 2/2(桌面渲染+审批+发送闭环 / 移动创建入口)。
-- ✅ 四 reviewer 消化:perf P1(O(N²) 批量折加)+P2(倒序扫)已修,composer memo 不修(ACP 同构继承);design P1(tile 用色)+P2(行序/pending 圆点/en 用词)已修,触发器双语言不修(继承债);code P1(空 result spinner)+P2(append final 守卫/重复注释/不可变契约测试)已修,ended spinner 并存不修(共享管道既有面);security 零发现。
-- ⏸ **待办:批次 2 真机清单交用户验收**(见下)。
-- ⏸ P1 parity 未开始(另立计划):历史列表(`codex-history.ts` 扫 rollout JSONL,镜像 omp-history.ts)、MCP 注入验证、凭据设置、图片输入、usage 透传、requestUserInput 会话内选项卡、增量回放锚。
-
-### 待办:批次 2 真机清单(交用户,test 项目)
-
-1. 新建 Codex 会话(桌面 ⋯ 菜单 + 移动 sheet 各一次)→ 流式输出(含 reasoning 折叠)。
-2. 工具卡:Bash/fileChange/mcp 卡形态;中断(STOP)后卡片标 interrupted。
-3. 审批:readonly/default 档触发命令审批 → 会话内金框 Allow/Deny + 全局中心双路应答。
-4. 切模型/effort/权限档 → trigger 圆点(下轮生效)→ 下一轮 turn 应用后圆点消失。
-5. API 重启 → thread/resume 历史恢复(resume:false live 回放 + isRunning 恢复)。
-6. 移动端 composer(键盘避让/Enter 发送/草稿)。
-
-### 不修项(reviewer 已裁决)
-
-security P2-2(respond 不校验登记,batch 1 裁决沿用)、code P2(ended 中断卡 spinner 与提示并存——共享投影层既有面,统一治理时再收)、design P2(composer 触发器双语言——与 ACP 一起收敛到 03a SelectorTrigger 单源)、perf P2(composer 未 memo——ACP 同构,批次化处理)、batch 1 不修项照旧。
+- 无阻塞。**留观/待办(记入下批)**:①security L2 terminal TOCTOU 窗口(claude 同
+  基线记档);②pi-stream images 同病未校验(统一收紧另批);③settings update() 无
+  串行化 last-writer-wins(全部路由同病,加 promise 队列另批);④apiKey/baseUrl 长
+  度上限(acp 同病);⑤CredentialsCardSection 抽取(ACP/Codex 卡 ~100 行复制,第三
+  张卡出现时抽);⑥design P2-2 pending 圆点对比度真机留观。
 
 ### 易丢的关键上下文
 
-- **codex 账号 429 限流**:真机验收时若仍限流,真实 LLM 响应出不来(链路本身正常);`probe-codex-ws.mjs` 内容断言的 SKIP 分支待限流解除后重跑。
-- **e2e mock 面**:overview 缺 mock 会被 stale-tab prune 删 focus tab(三路 REST mock:detail/list/overview,缺一不可);agent session id 须带 "agent_" 前缀;e2e 默认 locale en。
-- **Write 工具大 payload 损坏病理(本环境)**:Write 大内容会被截断/插占位符(本批 e2e spec 连续 4 次)——对策 = 短 Write 骨架 + 中等 payload Edit 分块追加;Edit 也偶发 typo(new_string 写错字符),写入后靠 typecheck/test 兜底。
-- **测试内存**:`systemd-run --scope --user -p MemoryMax=2G bun test …`(cgroup);**不要用 `ulimit -v`**。
-- **探针一律 bun 跑**;commit 尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`,标准 `git add && git commit`;编辑文件一律内置 Read/Edit/Write。
-- **既有待办不变**:镜像瘦身批真机遗留(pi chat 运行面、/p/ 管线);推 tag 待用户发布时单独确认;IDB 批真机 5 项;React #310;批 16/17/18 真机复验;e2e 基线;M2.0 多卡焦点互抢。
+- **已 commit da5c9ba**(批次 A/B/C 一个 feat commit,handoff 单独 docs commit 跟随)。
+- **用户三条新指令(本 window 主任务)**:①terminal 形态凭证支持要竞品调研后实现
+  (约束:key 不暴露进 ps——tmux -e 未采纳原因);②自动重试缺失(codex 无,claude 有
+  ClaudeApiRetry/autoRetry destroySession 机制);③系统性检查 codex vs claude 功能
+  缺失全清单。
+- **terminal 形态凭证链差异(交付说明必写)**:tmux 内 `codex resume` TUI 不继承
+  settings 注入的 OPENAI_API_KEY(env 注入只覆盖 app-server spawn);仅配置 settings
+  凭据时 terminal 形态走 codex 自身凭证链(auth.json)。
+- **测试内存**:systemd-run --scope --user -p MemoryMax=2G;探针 bun 跑;编辑内置
+  工具;e2e 入口 bun run e2e。
+- **本 window Edit payload 损坏仍有**:中文标点全/半角差异致 old_string 不匹配(锚
+  用纯代码行);多次 found 2 matches(codex/acp 同构代码)要加 codex 特有锚。
+
+### 真机验收清单(批次 C,交用户)
+
+1. **C1**:旧 thread(账号默认模型如 gpt-5.4)打开 → composer 三个选择器都在,推理
+   深度可选可切换(pending 圆点=下轮生效)。
+2. **C2**:加号发图片(选图/拍照/粘贴)→ 缩略图 chip → 发送 → 消息带图;纯图无文本
+   也可发;上传中发送键不抖动(点击被暂缓,形态保持)。
+3. **C3**:切换会话 → 恢复窗口显「离线中…」条,连接后消失;首连(无历史)显骨架。
+4. **C4**:⋯ 菜单「切到终端」→ tmux 起 `codex resume`(历史完整);终端菜单「回到
+   对话」→ app-server 复位+回放;另一端打开同会话跟随换形态;TUI 期状态点停更是
+   诚实退化非 bug。
+5. **C5**:Settings → Codex 卡 → 填 apiKey(可选 baseUrl)保存 → 新建 codex 会话
+   走自定义端点(key 掩码回显,原始 key 不出 api);清空 baseUrl=删除回退官方。
+6. 回归面:claude 会话选择器/缓存/模式切换不受影响。
 
 ---
-最后更新:2026-10-27(触发原因:codex 批次 2 收尾——commit ed3278d + 四 reviewer 消化 + handoff save)
+最后更新:2026-10-28 13:49(触发原因:批次 C 收尾——三 reviewer 消化完成全门禁绿+
+handoff save;待用户确认 commit)
 
 ## 提醒
-- 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
-- 到达里程碑或感知将 compact 时，主动 /handoff save。
+- 开干前读 .claude/gtd/next-actions.md;守 .claude/constitution.md 底线。
+- 到达里程碑或感知将 compact 时,主动 /handoff save。
