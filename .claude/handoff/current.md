@@ -1,6 +1,6 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-28 19:27（批次 D「terminal 形态凭证 + codex 自动重试」全门禁绿，待 commit）
+> 最后更新：2026-10-28 19:27（批次 D「terminal 形态凭证 + codex 自动重试」已 commit 8823bf5）
 
 ## 一句话状态
 
@@ -57,7 +57,7 @@ CSS 硬闸 / codex e2e 3/3。**
 
 - **批 D 交付形态**：chat（app-server）与 terminal（tmux TUI）**同源**读 settings 凭据 ——
   两者都通过 `CODEX_HOME`；此前 handoff 记的「terminal 不继承 settings 注入」已修复。
-- **已 commit**：`d3e5c6b`（handoff docs）、`da5c9ba`（批次 A/B/C feat）。
+- **已 commit**：`d3e5c6b`（handoff docs）、`da5c9ba`（批次 A/B/C feat）、`8823bf5`（批次 D）。
 - **用户三条指令剩余部分**：③「系统性检查 codex vs claude 功能缺失全清单」的补齐范围已
   拍板（compact UI / MCP 注入 / 历史列表 / P2 小项打包）→ 批 E、批 F。
 - **测试内存**：systemd-run --scope --user -p MemoryMax=2G；探针 bun 跑；编辑内置工具；
@@ -80,4 +80,4 @@ CSS 硬闸 / codex e2e 3/3。**
    → 到点自动注入「请继续」并继续跑；claude 会话同一套条回归不受影响。
 
 ---
-最后更新：2026-10-28 19:27（触发原因：批次 D 收尾——全门禁绿 + handoff save；待 commit）
+最后更新：2026-10-28 19:32（触发原因：批次 D 已 commit 8823bf5）
