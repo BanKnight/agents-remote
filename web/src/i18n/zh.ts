@@ -537,6 +537,12 @@ export const zh: Record<TranslationKey, string> = {
   "claude.composer.contextUsageCatMessages": "对话消息",
   "claude.composer.contextUsageCatAutocompact": "自动压缩预留",
   "claude.composer.contextUsageCatFreeSpace": "剩余空间",
+  "claude.composer.accountPlan": "套餐",
+  "claude.composer.accountWindowDays": "{{count}} 天窗口",
+  "claude.composer.accountWindowHours": "{{count}} 小时窗口",
+  "claude.composer.accountWindowMinutes": "{{count}} 分钟窗口",
+  "claude.composer.accountResets": "{{time}} 重置",
+  "claude.composer.accountLifetime": "累计用量",
   "claude.blockedByPendingAction": "请先确认上方操作",
   "claude.disconnected": "正在建立连接中…",
   "claude.plan.title": "计划",
@@ -681,7 +687,16 @@ export const zh: Record<TranslationKey, string> = {
   "claude.compact.progressBadge": "压缩中",
   "claude.compact.progressRunning": "处理上下文…",
   "claude.compact.progressSummarizing": "生成摘要…",
+  "claude.compact.action": "压缩上下文",
   "claude.hook.title": "钩子",
+
+  // ── Codex 通知（批 E parity：错误/重连/模型切换/认证恢复）──
+  "codex.notice.reconnecting": "重连中（{{attempt}}/{{max}}）…",
+  "codex.notice.reconnectingRaw": "重连中：{{message}}",
+  "codex.notice.error": "错误：{{message}}",
+  "codex.notice.modelRerouted": "模型已切换：{{from}} → {{to}}",
+  "codex.notice.modelUnknown": "未知模型",
+  "codex.notice.authRecoveryStarted": "账号认证恢复中…",
 
   // ── Permission confirmation / sub-agent footer / retry 状态 ──
   "claude.permission.awaiting": "等待确认",

@@ -542,6 +542,12 @@ export const en = {
   "claude.composer.contextUsageCatMessages": "Messages",
   "claude.composer.contextUsageCatAutocompact": "Autocompact buffer",
   "claude.composer.contextUsageCatFreeSpace": "Free space",
+  "claude.composer.accountPlan": "Plan",
+  "claude.composer.accountWindowDays": "{{count}}-day window",
+  "claude.composer.accountWindowHours": "{{count}}-hour window",
+  "claude.composer.accountWindowMinutes": "{{count}}-minute window",
+  "claude.composer.accountResets": "resets {{time}}",
+  "claude.composer.accountLifetime": "Lifetime tokens",
   "claude.blockedByPendingAction": "Please confirm the action above first",
   "claude.disconnected": "Establishing connection…",
   "claude.plan.title": "Plan",
@@ -686,7 +692,16 @@ export const en = {
   "claude.compact.progressBadge": "Compacting",
   "claude.compact.progressRunning": "Processing context…",
   "claude.compact.progressSummarizing": "Generating summary…",
+  "claude.compact.action": "Compact context",
   "claude.hook.title": "Hook",
+
+  // ── Codex notices (batch E parity: error/reconnect/reroute/auth recovery) ──
+  "codex.notice.reconnecting": "Reconnecting ({{attempt}}/{{max}})…",
+  "codex.notice.reconnectingRaw": "Reconnecting: {{message}}",
+  "codex.notice.error": "Error: {{message}}",
+  "codex.notice.modelRerouted": "Model switched: {{from}} → {{to}}",
+  "codex.notice.modelUnknown": "unknown model",
+  "codex.notice.authRecoveryStarted": "Account authentication recovering…",
 
   // ── Permission confirmation / sub-agent footer / retry 状态 ──
   "claude.permission.awaiting": "Awaiting confirmation",

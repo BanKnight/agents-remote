@@ -17,6 +17,7 @@ export function CompactBlock({ custom }: { custom?: Record<string, unknown> }) {
   const { t } = useT();
 
   const trigger = (custom?.trigger ?? "auto") as "manual" | "auto" | "micro";
+  const running = custom?.running === true;
   const preTokens = custom?.preTokens as number | undefined;
   const postTokens = custom?.postTokens as number | undefined;
   const durationMs = custom?.durationMs as number | undefined;
@@ -44,6 +45,25 @@ export function CompactBlock({ custom }: { custom?: Record<string, unknown> }) {
     detailParts.push(t("claude.compact.summarized", { count: messagesSummarized }));
   if (attachments.length > 0)
     detailParts.push(t("claude.compact.restored", { count: attachments.length }));
+
+  // Running 态（codex 压缩以 turn 跑，批 E）：CompactProgress 同款 assistant 色 inline
+  // pill（无折叠体——压缩尚无摘要可看）；completed 落地后同 id 条目定格为下方常态块。
+  if (running) {
+    return (
+      <div className="inline-flex items-center gap-1.5 rounded-lg bg-assistant/10 px-2.5 py-1">
+        <ToolHead
+          icon="compact"
+          status="running"
+          iconClassName="text-assistant"
+          badge={t("claude.compact.progressBadge")}
+          badgeClassName="bg-assistant/15 text-assistant"
+          // codex 无 stage 概念：给 claude 侧首段明细，形态与 CompactProgress 同源
+          // （否则 pill 只剩徽标，比相邻工具卡明显更瘦）。
+          detail={t("claude.compact.progressRunning")}
+        />
+      </div>
+    );
+  }
 
   const header = (
     <div className="flex items-center gap-1.5 text-xs min-w-0">

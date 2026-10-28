@@ -603,3 +603,145 @@ describe("codexTokenUsageToContextUsage", () => {
     ).toBeUndefined();
   });
 });
+
+// ── 批 E：压缩事实块 / error 与 reroute 通知 ─────────────────────────────────
+
+const compactStarted = (id = "cmp1") =>
+  itemEvent("item/started", { type: "contextCompaction", id });
+const compactCompleted = (id = "cmp1") =>
+  itemEvent("item/completed", { type: "contextCompaction", id });
+
+describe("compact 条目（thread/compact/start 的 contextCompaction item）", () => {
+  test("started → running 条目；completed 同 id 就地定格（不新增条目）", () => {
+    let raw = applyCodexFrame([], compactStarted(), { manualCompact: true });
+    expect(raw).toHaveLength(1);
+    expect(raw[0]).toMatchObject({ kind: "compact", compactId: "cmp1", status: "running" });
+    expect(raw[0]).toMatchObject({ manual: true });
+
+    raw = applyCodexFrame(raw, compactCompleted());
+    expect(raw).toHaveLength(1);
+    expect(raw[0]).toMatchObject({ kind: "compact", status: "completed", manual: true });
+  });
+
+  test("无 opts（回放路径）→ manual=false 诚实降级为自动压缩", () => {
+    const raw = reduce([compactStarted(), compactCompleted()]);
+    expect(raw[0]).toMatchObject({ kind: "compact", manual: false });
+  });
+
+  test("投影 → system 消息 + compact-block（running 才带 running:true）", () => {
+    const running = codexFramesToThreadMessages(reduce([compactStarted()]));
+    expect(running).toHaveLength(1);
+    expect(running[0]).toMatchObject({ role: "system", id: "compact-cmp1" });
+    expect(toolCardCustom(running[0]!)).toMatchObject({
+      systemMessageType: "compact-block",
+      trigger: "auto",
+      running: true,
+    });
+
+    const done = codexFramesToThreadMessages(reduce([compactStarted(), compactCompleted()]));
+    expect(toolCardCustom(done[0]!)).toEqual({
+      systemMessageType: "compact-block",
+      trigger: "auto",
+      sourceUuids: [],
+    });
+  });
+
+  test("不再落 tool 卡（toolPatchFromItem 兜底不接 contextCompaction）", () => {
+    const raw = reduce([compactStarted(), compactCompleted()]);
+    expect(raw.some((item) => item.kind === "tool_call")).toBe(false);
+  });
+
+  test("锚：completed 的 compact 可锚（断线增量回放不重放整段历史）", () => {
+    const done = reduce([compactStarted(), compactCompleted()]);
+    expect(codexAnchorId(done)).toBe("cmp1");
+  });
+});
+
+describe("notice 条目（error / reroute / authRecovery 通知）", () => {
+  const errorFrame = (message: string, willRetry: boolean) =>
+    event("error", { error: { message }, willRetry });
+
+  test("willRetry:true 单条覆盖演进（Reconnecting n/5 不刷屏）；恢复流量清掉", () => {
+    let raw = reduce([errorFrame("Reconnecting 1/5", true)]);
+    raw = applyCodexFrame(raw, errorFrame("Reconnecting 2/5", true));
+    expect(raw).toHaveLength(1);
+    expect(raw[0]).toMatchObject({
+      kind: "notice",
+      noticeId: "retry",
+      notice: { type: "error", message: "Reconnecting 2/5", willRetry: true },
+    });
+
+    // agentMessage delta = 流恢复 → 撤「重连中」。
+    raw = applyCodexFrame(raw, event("item/agentMessage/delta", { itemId: "a1", delta: "answer" }));
+    expect(raw.some((item) => item.kind === "notice")).toBe(false);
+  });
+
+  test("ended 收口也撤「重连中」（短暂恢复流量不再有）", () => {
+    let raw = reduce([errorFrame("Reconnecting 3/5", true)]);
+    raw = applyCodexFrame(raw, ended());
+    expect(raw.some((item) => item.kind === "notice")).toBe(false);
+  });
+
+  test("willRetry:false 最终错误留存 + 撤掉残留「重连中」", () => {
+    let raw = reduce([errorFrame("Reconnecting 1/5", true)]);
+    raw = applyCodexFrame(raw, errorFrame("exceeded retry limit", false));
+    expect(raw.filter((item) => item.kind === "notice")).toHaveLength(1);
+    expect(raw[0]).toMatchObject({
+      kind: "notice",
+      noticeId: "error-final",
+      notice: { type: "error", message: "exceeded retry limit", willRetry: false },
+    });
+    // 后续 ended 不误删最终错误（只撤 retry id）。
+    raw = applyCodexFrame(raw, ended());
+    expect(raw.filter((item) => item.kind === "notice")).toHaveLength(1);
+  });
+
+  test("model/rerouted 宽进提取（toModel/to/model 任一）+ 无 to 不渲染", () => {
+    const rerouted = reduce([
+      event("model/rerouted", { fromModel: "gpt-5.4", toModel: "gpt-5.4-mini", turnId: "t1" }),
+    ]);
+    expect(rerouted[0]).toMatchObject({
+      kind: "notice",
+      noticeId: "reroute-t1",
+      notice: { type: "modelRerouted", fromModel: "gpt-5.4", toModel: "gpt-5.4-mini" },
+    });
+
+    const alt = reduce([event("model/rerouted", { model: "gpt-5.4-mini" })]);
+    expect(alt[0]).toMatchObject({ noticeId: "reroute-t" });
+
+    // 无目标模型 = 信息不足，不渲染（不伪造）。
+    const noTarget = reduce([event("model/rerouted", { fromModel: "gpt-5.4" })]);
+    expect(noTarget).toHaveLength(0);
+  });
+
+  test("authRecovery started 出提示；completed = 瞬态结束移除（不留永久回放内容）", () => {
+    let raw = reduce([event("modelProvider/authRecoveryStarted")]);
+    expect(raw[0]).toMatchObject({
+      kind: "notice",
+      noticeId: "auth-recovery",
+      notice: { type: "authRecovery" },
+    });
+    raw = applyCodexFrame(raw, event("modelProvider/authRecoveryCompleted"));
+    expect(raw.some((item) => item.kind === "notice")).toBe(false);
+  });
+
+  test("投影 → system 消息 + codex-notice（语义对象进 custom，i18n 在渲染层）", () => {
+    const messages = codexFramesToThreadMessages(
+      reduce([event("error", { error: { message: "boom" }, willRetry: false })]),
+    );
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({ role: "system", id: "notice-error-final" });
+    expect(toolCardCustom(messages[0]!)).toMatchObject({
+      systemMessageType: "codex-notice",
+      notice: { type: "error", message: "boom", willRetry: false },
+    });
+  });
+
+  test("notice 不锚（服务端通知不进历史缓冲，重推只会全量兜底）", () => {
+    const raw = reduce([
+      echo("q", "u1"),
+      event("error", { error: { message: "boom" }, willRetry: false }),
+    ]);
+    expect(codexAnchorId(raw)).toBe("u1");
+  });
+});

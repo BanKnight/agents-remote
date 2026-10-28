@@ -3,6 +3,8 @@ import { forwardRef, useContext, useEffect, useRef, useState } from "react";
 import {
   EFFORT_LEVELS,
   type ClaudeContextUsage,
+  type CodexAccountUsage,
+  type CodexRateLimitWindow,
   type ContextUsageCategory,
   type EffortLevel,
 } from "@agents-remote/shared";
@@ -312,32 +314,88 @@ export function ContextUsageRing({ pct }: { pct: number }) {
   );
 }
 
+/** 额度窗口名按 windowDurationMins 派生（窗口长度随 plan 变，不写死「5 小时/周」）。 */
+function windowLabelKey(windowDurationMins: number): { key: TranslationKey; count: number } {
+  if (windowDurationMins % 1440 === 0 && windowDurationMins >= 1440) {
+    return { key: "claude.composer.accountWindowDays", count: windowDurationMins / 1440 };
+  }
+  if (windowDurationMins % 60 === 0) {
+    return { key: "claude.composer.accountWindowHours", count: windowDurationMins / 60 };
+  }
+  return { key: "claude.composer.accountWindowMinutes", count: windowDurationMins };
+}
+
+/** resetsAt → 本地时间文案：日窗口以上带日期（周窗口只给时刻判断不出是哪天）；固定
+ *  24h 制（toLocaleTimeString 默认跟随浏览器 locale，与全站 i18n 不一致）；畸形串 → ""。 */
+function formatResetTime(iso: string, windowDurationMins: number): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return windowDurationMins <= 1440
+    ? `${hh}:${mm}`
+    : `${d.getMonth() + 1}-${d.getDate()} ${hh}:${mm}`;
+}
+
+/** 单个额度窗口行（窗口名 + 用量 + 重置时刻）；primary/secondary 同构不重复 JSX。 */
+function AccountWindowRow({ limit }: { limit: CodexRateLimitWindow }) {
+  const { t } = useT();
+  const name = windowLabelKey(limit.windowDurationMins);
+  const resets = limit.resetsAt ? formatResetTime(limit.resetsAt, limit.windowDurationMins) : "";
+  return (
+    <div className="u-row">
+      <span>{t(name.key, { count: name.count })}</span>
+      <span className="u-row-val">
+        {Math.round(limit.usedPercent)}%
+        {resets ? ` · ${t("claude.composer.accountResets", { time: resets })}` : ""}
+      </span>
+    </div>
+  );
+}
+
 /** 上下文占用指示（统一会话标量管道第一个标量的显示端）。环形仪表 trigger + 族A
- * 锚定浮层（进度条 + 已用/窗口上限 + 明细区）。明细区**替换式**：有 categories
- * （get_context_usage 权威分类）显示分段堆叠条 + 分类图例；无（JSONL seed 刚恢复/
- * stdout 折算帧）回退 usage 四行。无 usage 数据（未有 assistant 消息）不渲染。
+ * 锚定浮层（进度条 + 已用/窗口上限 + 明细区 + 账号额度段 + 压缩动作行）。明细区
+ * **替换式**：有 categories（get_context_usage 权威分类）显示分段堆叠条 + 分类图例；
+ * 无（JSONL seed 刚恢复/stdout 折算帧）回退 usage 四行。**无 usage 但带 account /
+ * onCompact 时仍渲染环**——codex 首轮前没有 tokenUsage，额度与压缩入口不该因此被藏。
  * **布局交调用方**：本组件不带 ml-auto——.send2 也是 margin-left:auto，两个
  * auto margin 会均分剩余空间把本组件推到正中；「右组」由调用方把本组件与 Stop/Send
  * 同包一个 ml-auto 容器实现（容器内无剩余空间，.send2 的 auto 归零）。 */
-export function ContextUsageIndicator({ contextUsage }: { contextUsage?: ClaudeContextUsage }) {
+export function ContextUsageIndicator({
+  contextUsage,
+  account,
+  onCompact,
+  compactDisabled,
+}: {
+  contextUsage?: ClaudeContextUsage;
+  /** 账号额度段（批 E parity）：缺省 = 不渲染（apiKey/网关登录下服务端采集不到 → 恒隐藏）。 */
+  account?: CodexAccountUsage;
+  /** 压缩动作行（批 E parity）：缺省 = 不渲染（其余调用点零改动）。claude 发 `/compact`、
+   *  codex 发 compact 帧。 */
+  onCompact?: () => void;
+  compactDisabled?: boolean;
+}) {
   const { t } = useT();
-  if (!contextUsage || contextUsage.contextWindow <= 0) return null;
-  const pct = (contextUsage.contextTokens / contextUsage.contextWindow) * 100;
+  const usage = contextUsage && contextUsage.contextWindow > 0 ? contextUsage : null;
+  if (!usage && !account && !onCompact) return null;
+  const pct = usage ? (usage.contextTokens / usage.contextWindow) * 100 : 0;
   const level = contextUsageLevel(pct);
-  const pctLabel = `${Math.round(pct)}%`;
-  const rows: Array<[string, number]> = [
-    [t("claude.composer.contextUsageInput"), contextUsage.inputTokens],
-    [t("claude.composer.contextUsageCacheRead"), contextUsage.cacheReadTokens],
-    [t("claude.composer.contextUsageCacheWrite"), contextUsage.cacheCreationTokens],
-    [t("claude.composer.contextUsageOutput"), contextUsage.outputTokens],
-  ];
+  const pctLabel = usage ? `${Math.round(pct)}%` : "";
+  const rows: Array<[string, number]> = usage
+    ? [
+        [t("claude.composer.contextUsageInput"), usage.inputTokens],
+        [t("claude.composer.contextUsageCacheRead"), usage.cacheReadTokens],
+        [t("claude.composer.contextUsageCacheWrite"), usage.cacheCreationTokens],
+        [t("claude.composer.contextUsageOutput"), usage.outputTokens],
+      ]
+    : [];
   return (
     <>
       <Popover>
         <PopoverTrigger asChild>
           <SelectorTrigger
             accent="usage"
-            aria-label={`${t("claude.composer.contextUsageLabel")} ${pctLabel}`}
+            aria-label={[t("claude.composer.contextUsageLabel"), pctLabel].join(" ").trim()}
             badge={<ContextUsageRing pct={pct} />}
             level={level}
           >
@@ -353,56 +411,91 @@ export function ContextUsageIndicator({ contextUsage }: { contextUsage?: ClaudeC
           onCloseAutoFocus={(e) => e.preventDefault()}
           side="top"
         >
-          <div className="flex items-center gap-2">
-            <ContextUsageRing pct={pct} />
-            <span className="text-sm font-semibold tabular-nums text-ink-1">{pctLabel}</span>
-            <span className="ml-auto text-xs tabular-nums text-ink-2">
-              {formatContextTokens(contextUsage.contextTokens)} /{" "}
-              {formatContextTokens(contextUsage.contextWindow)}
-            </span>
-          </div>
-          {contextUsage.categories?.length ? (
+          {usage ? (
             <>
-              {/* 分段堆叠条：used+buffer 各占 tokens/window 宽，free 段不渲染（track 即
-                  free）；宽度取窗口而非 totalTokens——分段总览覆盖整个窗口刻度。 */}
-              <div className="u-bar">
-                {contextUsage.categories
-                  .filter((c) => c.kind !== "free" && c.tokens > 0)
-                  .map((c) => (
-                    <span
-                      className={`u-bar-seg ${categoryDotClass(c)}`}
-                      key={c.name}
-                      style={{ width: `${(c.tokens / contextUsage.contextWindow) * 100}%` }}
-                    />
-                  ))}
+              <div className="flex items-center gap-2">
+                <ContextUsageRing pct={pct} />
+                <span className="text-sm font-semibold tabular-nums text-ink-1">{pctLabel}</span>
+                <span className="ml-auto text-xs tabular-nums text-ink-2">
+                  {formatContextTokens(usage.contextTokens)} /{" "}
+                  {formatContextTokens(usage.contextWindow)}
+                </span>
               </div>
-              <div className="u-rows">
-                {contextUsage.categories.map((c) => (
-                  <div className="u-row u-row-cat" key={c.name}>
-                    <span className="u-row-name">
-                      <span aria-hidden="true" className={`u-dot ${categoryDotClass(c)}`} />
-                      {categoryLabel(c, t)}
-                    </span>
-                    <span className="u-row-val">{formatContextTokens(c.tokens)}</span>
+              {usage.categories?.length ? (
+                <>
+                  {/* 分段堆叠条：used+buffer 各占 tokens/window 宽，free 段不渲染（track 即
+                      free）；宽度取窗口而非 totalTokens——分段总览覆盖整个窗口刻度。 */}
+                  <div className="u-bar">
+                    {usage.categories
+                      .filter((c) => c.kind !== "free" && c.tokens > 0)
+                      .map((c) => (
+                        <span
+                          className={`u-bar-seg ${categoryDotClass(c)}`}
+                          key={c.name}
+                          style={{ width: `${(c.tokens / usage.contextWindow) * 100}%` }}
+                        />
+                      ))}
                   </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="u-bar">
-                <div className="u-bar-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
-              </div>
-              <div className="u-rows">
-                {rows.map(([label, value]) => (
-                  <div className="u-row" key={label}>
-                    <span>{label}</span>
-                    <span className="u-row-val">{formatContextTokens(value)}</span>
+                  <div className="u-rows">
+                    {usage.categories.map((c) => (
+                      <div className="u-row u-row-cat" key={c.name}>
+                        <span className="u-row-name">
+                          <span aria-hidden="true" className={`u-dot ${categoryDotClass(c)}`} />
+                          {categoryLabel(c, t)}
+                        </span>
+                        <span className="u-row-val">{formatContextTokens(c.tokens)}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              ) : (
+                <>
+                  <div className="u-bar">
+                    <div className="u-bar-fill" style={{ width: `${Math.min(pct, 100)}%` }} />
+                  </div>
+                  <div className="u-rows">
+                    {rows.map(([label, value]) => (
+                      <div className="u-row" key={label}>
+                        <span>{label}</span>
+                        <span className="u-row-val">{formatContextTokens(value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </>
-          )}
+          ) : null}
+          {account ? (
+            // 分区靠强分隔线（中性发丝线在双主题下对比 1.1:1，读不出分区）。
+            <div className={`border-t border-sep-strong pt-2 ${usage ? "mt-1" : ""}`}>
+              <div className="u-rows">
+                {account.planType ? (
+                  <div className="u-row">
+                    <span>{t("claude.composer.accountPlan")}</span>
+                    <span className="u-row-val">{account.planType}</span>
+                  </div>
+                ) : null}
+                {account.primary ? <AccountWindowRow limit={account.primary} /> : null}
+                {account.secondary ? <AccountWindowRow limit={account.secondary} /> : null}
+                {account.lifetimeTokens != null ? (
+                  <div className="u-row">
+                    <span>{t("claude.composer.accountLifetime")}</span>
+                    <span className="u-row-val">{formatContextTokens(account.lifetimeTokens)}</span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          {onCompact ? (
+            <button
+              className="btn ghost mt-2 w-full disabled:cursor-default disabled:opacity-50"
+              disabled={compactDisabled}
+              onClick={onCompact}
+              type="button"
+            >
+              {t("claude.compact.action")}
+            </button>
+          ) : null}
         </PopoverContent>
       </Popover>
     </>

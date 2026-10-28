@@ -29,11 +29,14 @@ function collectConsoleErrors(page: import("@playwright/test").Page) {
 
 type ClientMsg = { type?: string; text?: string; decision?: string; controlRequestId?: string };
 
+/** codex_config 帧载荷（批 E：可选 account 额度段——服务端 ChatGPT 登录下才采集到）。 */
+type CodexConfigFrame = typeof DEFAULT_CODEX_CONFIG & { account?: Record<string, unknown> };
+
 /** codex-stream WS mock：回 pong 心跳；记录客户端上行，供发送/审批应答断言。 */
 function routeCodexStream(
   page: import("@playwright/test").Page,
   onClientMessage?: (msg: ClientMsg) => void,
-  configFrame?: typeof DEFAULT_CODEX_CONFIG,
+  configFrame?: CodexConfigFrame,
 ) {
   return page.routeWebSocket(
     new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/codex-stream`),
@@ -73,7 +76,7 @@ const DEFAULT_CODEX_CONFIG = {
 
 function sendInitialFrames(
   ws: { send: (data: string) => void },
-  configFrame?: typeof DEFAULT_CODEX_CONFIG,
+  configFrame?: CodexConfigFrame,
 ): void {
   const frames = [
     { type: "session_init", resume: false },
@@ -330,6 +333,87 @@ test("Codex: 当前模型不在 model/list 目录时推理深度选择器仍渲�
   await expect(reasoning).toHaveCount(1, { timeout: 15_000 });
   await expect(reasoning).toBeVisible();
   await expect(reasoning).toContainText("high");
+});
+
+// 批 E parity：上下文占用浮层的额度段（account 存在才渲染）+ 压缩动作行——点「Compact
+// context」上行 `{type:"compact"}`，服务端把压缩以 turn 形态跑（contextCompaction item
+// started → completed），流内先出「Compacting」进度 pill、完成后定格为压缩事实块
+// （manual 标记来自本端按钮，回放降级为 auto——单测覆盖，e2e 只验按钮路径）。
+test("Codex: context usage popover shows account quota + compact action drives stream", async ({
+  page,
+}) => {
+  await mockSessionRest(page);
+  const sent: ClientMsg[] = [];
+  const sockets: { send: (data: string) => void }[] = [];
+  await page.routeWebSocket(
+    new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/codex-stream`),
+    (ws) => {
+      sockets.push(ws);
+      ws.onMessage((data) => {
+        try {
+          sent.push(JSON.parse(String(data)) as ClientMsg);
+        } catch {
+          /* non-JSON frames ignored */
+        }
+      });
+      sendInitialFrames(ws, {
+        ...DEFAULT_CODEX_CONFIG,
+        // 服务端 codexAccountFromResponses 的宽进子集（planType/window/lifetime）。
+        account: {
+          planType: "pro",
+          primary: { usedPercent: 42.6, windowDurationMins: 300 },
+          lifetimeTokens: 1234567,
+        },
+      });
+    },
+  );
+
+  await page.goto("/");
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.goto(`/projects/${projectName}/session/${fakeSessionId}`);
+
+  const trigger = page.getByRole("button", { name: /Context usage/ });
+  await expect(trigger).toBeVisible({ timeout: 15_000 });
+  await trigger.click();
+  const pop = page.getByRole("dialog");
+  await expect(pop).toBeVisible();
+  // 额度段：套餐 + 主窗口百分比（42.6 → 43%）+ 累计消耗；缺字段行不渲染由单测覆盖。
+  await expect(pop.getByText("Plan")).toBeVisible();
+  await expect(pop.getByText("pro", { exact: true })).toBeVisible();
+  await expect(pop.getByText("5-hour window")).toBeVisible();
+  await expect(pop.getByText("43%")).toBeVisible();
+  await expect(pop.getByText("Lifetime tokens")).toBeVisible();
+
+  // 动作行在浮层最底（明细 → 额度 → 压缩）。锚定浮层里的点击用 dispatchEvent 跳过
+  // playwright 的 CDP quads 视口判定（frontend-notes §26：动画期 quads 中间态会误判
+  // outside of the viewport）；语义等价于真实点击（React onClick 照常触发）。
+  const compactButton = pop.getByRole("button", { name: "Compact context" });
+  await expect(compactButton).toBeVisible();
+  await compactButton.dispatchEvent("click");
+  await expect.poll(() => sent.find((m) => m.type === "compact"), { timeout: 10_000 }).toBeTruthy();
+
+  // 服务端回上下文压缩 turn（探针 E2 帧序）：started → 流内「Compacting」进度 pill，
+  // completed → 「Context compacted」事实块（manual 来源）。
+  const compactItem = (method: "item/started" | "item/completed") => ({
+    type: "codex_event",
+    event: {
+      method,
+      params: {
+        item: { type: "contextCompaction", id: "cmp-e2e" },
+        threadId: "thread-e2e-1",
+        turnId: "turn-e2e-cmp",
+      },
+    },
+  });
+  sockets[0]!.send(JSON.stringify(compactItem("item/started")));
+  await expect(page.getByText("Compacting")).toBeVisible({ timeout: 10_000 });
+  sockets[0]!.send(JSON.stringify(compactItem("item/completed")));
+  await expect(page.getByText("Context compacted")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("manual", { exact: true })).toBeVisible();
 });
 
 // 移动端创建入口（多端同构，容器不同）：空态卡 CTA → 新建实例 sheet 的 Codex 富行。

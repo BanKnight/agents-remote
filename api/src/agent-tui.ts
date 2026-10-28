@@ -320,6 +320,9 @@ export class AgentTuiController {
         [
           "codex",
           ...codexConfigOverrideArgs(prepared.configOverrides),
+          // ar-hub MCP 注入（批 E）：与 chat 形态同源（批 D 凭据同款原则）。`-c` 值含
+          // 引号与空格，由下方整体 shellQuote 原样保真。
+          ...codexRuntime.mcpArgs(metadata.projectName),
           "resume",
           metadata.codexThreadId,
         ]

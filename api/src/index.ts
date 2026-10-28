@@ -2134,6 +2134,7 @@ export const startApi = async () => {
     runtimePaths.runDir,
     ["codex", "app-server"],
     async () => (await settingsStore.read()).runtimes.codex,
+    config.mcpPort,
   );
   const projectWikiService = new ProjectWikiService(config.projectsRoot);
   // 画布四工具数据源（hub MCP 面 + web 卡片 tools/call 面共用同一 service 实例）。

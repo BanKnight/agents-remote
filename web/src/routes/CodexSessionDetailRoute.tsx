@@ -10,6 +10,7 @@ import {
 import {
   CODEX_PERMISSION_MODES,
   type ClaudeContextUsage,
+  type CodexAccountUsage,
   type CodexPermissionMode,
 } from "@agents-remote/shared";
 import { useT, type TranslationKey } from "../i18n";
@@ -70,6 +71,7 @@ export function CodexChatPanel({
     configPending,
     contextUsage,
     setConfig,
+    compact,
     respondToControlRequest,
     cancelControlRequest,
     onCancel,
@@ -147,6 +149,8 @@ export function CodexChatPanel({
                     configPending={configPending}
                     connected={connected}
                     contextUsage={contextUsage}
+                    account={config?.account}
+                    onCompact={compact}
                     onCancel={onCancel}
                     onSetConfig={setConfig}
                     sessionId={sessionId}
@@ -183,6 +187,8 @@ function ComposerWithInterruptCodex({
   configPending,
   connected,
   contextUsage,
+  account,
+  onCompact,
   onSetConfig,
   onCancel,
   sessionId,
@@ -192,6 +198,10 @@ function ComposerWithInterruptCodex({
   configPending: boolean;
   connected: boolean;
   contextUsage?: ClaudeContextUsage;
+  /** 账号额度（批 E parity）：透传给上下文浮层额度段；非 ChatGPT 登录恒 undefined。 */
+  account?: CodexAccountUsage;
+  /** 压缩动作（批 E parity）：透传给上下文浮层动作行。 */
+  onCompact: () => void;
   onSetConfig: (patch: CodexConfigPatch) => void;
   onCancel?: () => void;
   sessionId: string;
@@ -300,7 +310,12 @@ function ComposerWithInterruptCodex({
             两个 auto margin 会均分剩余空间把 Stop/Send 推到正中；容器内无剩余空间，.send2
             的 auto 归零。 */}
         <div className="ml-auto flex items-center gap-2">
-          <ContextUsageIndicator contextUsage={contextUsage} />
+          <ContextUsageIndicator
+            account={account}
+            compactDisabled={running || disconnected}
+            contextUsage={contextUsage}
+            onCompact={onCompact}
+          />
           <ComposerStopSend
             onCancel={onCancel}
             send={sendComposer}

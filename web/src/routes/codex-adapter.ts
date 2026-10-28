@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useExternalStoreRuntime } from "@assistant-ui/react";
 import type { AppendMessage, ExternalStoreAdapter, ThreadMessageLike } from "@assistant-ui/react";
-import type { ClaudeContextUsage, CodexStreamServerMessage } from "@agents-remote/shared";
+import type {
+  ClaudeContextUsage,
+  CodexAccountUsage,
+  CodexStreamServerMessage,
+} from "@agents-remote/shared";
 import type { PendingAttachments } from "../components/ui/composer-attach";
 import { codexStreamUrl } from "../api/client";
 import { isConnectionFresh } from "./console-model";
@@ -41,6 +45,8 @@ export type CodexModelOption = {
 export type CodexConfig = {
   models: CodexModelOption[];
   current: { model: string; effort: string | null; approvalPolicy: string; sandbox: string };
+  /** 账号额度快照（批 E 防御式）：非 ChatGPT 登录恒缺省 → 浮层不渲染额度段。 */
+  account?: CodexAccountUsage;
 };
 
 /** 配置热切换补丁（字段词表同 client message set_config）。 */
@@ -109,8 +115,14 @@ export function codexAnchorId(raw: CodexRawItem[]): string | null {
       if (item.final && item.messageId) return item.messageId;
       continue;
     }
-    // tool_call 及未知 kind：call 缺失/形状漂移的行跳过不炸（恢复端数据来自盘上，
-    // 不具备 live 端「内核自建数组」的形状保证——review 2026-10-28 P3-3）。
+    if (item.kind === "compact") {
+      // completed 的 item/completed 行在服务端 live 缓冲内可锚；running 不锚（终态行未落）。
+      if (item.status === "completed") return item.compactId;
+      continue;
+    }
+    // notice 不锚（服务端通知不进 history/live 缓冲，重推只会全量兜底）；tool_call 及
+    // 未知 kind：call 缺失/形状漂移的行跳过不炸（恢复端数据来自盘上，不具备 live 端
+    // 「内核自建数组」的形状保证——review 2026-10-28 P3-3）。
     if (item.kind !== "tool_call" || !item.call) continue;
     if (item.call.status === "completed" || item.call.status === "failed") {
       return item.call.toolCallId;
@@ -164,7 +176,27 @@ export type CodexRawItem =
       sections: { type: "text" | "thinking"; text: string }[];
       final: boolean;
     }
-  | { kind: "tool_call"; call: CodexToolCall };
+  | { kind: "tool_call"; call: CodexToolCall }
+  | {
+      // 压缩条目（批 E）：thread/compact/start 产生 contextCompaction item（探针 E2：
+      // started → completed，弃用通知 thread/compacted 不再发）。manual = 本端用户按钮
+      // 触发（item/started 到达时消费 manualCompactRef；回放无该 ref → false 诚实降级）。
+      kind: "compact";
+      compactId: string;
+      status: "running" | "completed";
+      manual: boolean;
+    }
+  | {
+      // 一次性运行提示（批 E P2）：error 通知（重连中/最终错误）、model/rerouted、
+      // modelProvider/authRecovery*。不进服务端历史（纯通知），锚跳过。retry 条目
+      // （固定 id）在恢复流量到达时被移除；其余留存。
+      kind: "notice";
+      noticeId: string;
+      notice:
+        | { type: "error"; message: string; willRetry: boolean }
+        | { type: "modelRerouted"; fromModel: string; toModel: string }
+        | { type: "authRecovery" };
+    };
 
 /** userMessage item content[] → 纯文本（只消费 text 形态；image 等 Phase 1 忽略）。 */
 function userMessageText(item: CodexItem): string {
@@ -528,16 +560,61 @@ function toolPatchFromItem(item: CodexItem): ToolPatch | null {
       ...(text ? { resultText: text } : {}),
     };
   }
-  if (
-    type === "contextCompaction" ||
-    type === "enteredReviewMode" ||
-    type === "exitedReviewMode" ||
-    type === "imageGeneration"
-  ) {
+  if (type === "enteredReviewMode" || type === "exitedReviewMode" || type === "imageGeneration") {
     return { toolCallId: id, toolName: type, title: type, status: "completed" };
   }
   return null;
 }
+
+// contextCompaction 不走 tool 卡（批 E）：独立 compact 条目 → CompactBlock 复用渲染。
+
+/** compact 条目 upsert（同 item id：started 置 running、completed 定格）。 */
+function upsertCompact(
+  raw: CodexRawItem[],
+  compactId: string,
+  status: "running" | "completed",
+  manual: boolean,
+): boolean {
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const item = raw[i];
+    if (item.kind !== "compact" || item.compactId !== compactId) continue;
+    // manual 标记只在 started 帧带（ref 在那一帧被消费）；completed 帧的 opts 恒
+    // false，不可覆盖已记录的手动来源（否则完成即退化显示为「自动」）。
+    raw[i] = { kind: "compact", compactId, status, manual: item.manual || manual };
+    return true;
+  }
+  raw.push({ kind: "compact", compactId, status, manual });
+  return true;
+}
+
+/** 按 id 移除 notice 条目（恢复流量到达时清「重连中」）。 */
+function removeNotice(raw: CodexRawItem[], noticeId: string): boolean {
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const item = raw[i];
+    if (item.kind !== "notice" || item.noticeId !== noticeId) continue;
+    raw.splice(i, 1);
+    return true;
+  }
+  return false;
+}
+
+/** notice 载荷（错误/重连/reroute/authRecovery 的语义形状，渲染层做 i18n 组装）。 */
+export type CodexNotice = Extract<CodexRawItem, { kind: "notice" }>["notice"];
+
+/** notice 条目 upsert（同 id 就地覆盖——「Reconnecting n/5」单条演进，不刷屏）。 */
+function upsertNotice(raw: CodexRawItem[], noticeId: string, notice: CodexNotice): boolean {
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const item = raw[i];
+    if (item.kind !== "notice" || item.noticeId !== noticeId) continue;
+    raw[i] = { kind: "notice", noticeId, notice };
+    return true;
+  }
+  raw.push({ kind: "notice", noticeId, notice });
+  return true;
+}
+
+/** 「重连中」notice 的固定 id（恢复流量：agentMessage delta / turn 收口时移除）。 */
+const RETRY_NOTICE_ID = "retry";
 
 /** 审批帧 → tool 条目（itemId 关联金框）。审批参数自带 command/changes，stub 也能成形。 */
 function applyApprovalFrame(
@@ -588,8 +665,18 @@ function resolveApproval(raw: CodexRawItem[], controlRequestId: string): boolean
  * （turn/started|completed、thread/status/changed、thread/tokenUsage/updated、
  * item/plan/delta、item/reasoning/textDelta（content 可能加密，只渲染 summary）、
  * account/*、mcpServer/* 等——渲染投影不需要；usage 透传留 P1）直接返回 false。
+ *
+ * opts.manualCompact：本帧若开跑 contextCompaction item，entry.manual 取此值（用户按钮
+ * 路径置 true；回放路径无 opts → false 诚实降级为「自动」）。调用方（hook 的
+ * consumeManualCompact）负责在帧真正含 compact 开跑帧时消费 ref。
  */
-function applyCodexFrameInPlace(raw: CodexRawItem[], msg: CodexStreamServerMessage): boolean {
+type CodexFrameOpts = { manualCompact?: boolean };
+
+function applyCodexFrameInPlace(
+  raw: CodexRawItem[],
+  msg: CodexStreamServerMessage,
+  opts?: CodexFrameOpts,
+): boolean {
   if (msg.type === "codex_user_echo") {
     raw.push({
       kind: "echo",
@@ -613,6 +700,15 @@ function applyCodexFrameInPlace(raw: CodexRawItem[], msg: CodexStreamServerMessa
       const type = typeof item.type === "string" ? item.type : "";
       if (type === "userMessage") {
         return upsertUserMessage(raw, id, userMessageText(item));
+      }
+      if (type === "contextCompaction") {
+        // 压缩条目（批 E）：started 置 running（manual 取调用方消费的 ref）、completed
+        // 定格。toolPatchFromItem 的通用兜底不再接它（独立事实块渲染）。
+        if (!id) return false;
+        if (method === "item/started") {
+          return upsertCompact(raw, id, "running", opts?.manualCompact ?? false);
+        }
+        return upsertCompact(raw, id, "completed", opts?.manualCompact ?? false);
       }
       if (type === "agentMessage") {
         // started 的 text 为空（流式未开始），completed 带权威全文（覆盖 delta 累积）。
@@ -648,6 +744,7 @@ function applyCodexFrameInPlace(raw: CodexRawItem[], msg: CodexStreamServerMessa
       const p = params as CodexDeltaParams;
       const delta = typeof p.delta === "string" ? p.delta : "";
       if (!delta) return false;
+      removeNotice(raw, RETRY_NOTICE_ID); // 流恢复：撤「重连中」
       return upsertAssistantSection(
         raw,
         typeof p.itemId === "string" ? p.itemId : null,
@@ -660,6 +757,7 @@ function applyCodexFrameInPlace(raw: CodexRawItem[], msg: CodexStreamServerMessa
       const p = params as CodexDeltaParams;
       const delta = typeof p.delta === "string" ? p.delta : "";
       if (!delta) return false;
+      removeNotice(raw, RETRY_NOTICE_ID);
       return upsertAssistantSection(
         raw,
         typeof p.itemId === "string" ? p.itemId : null,
@@ -705,12 +803,50 @@ function applyCodexFrameInPlace(raw: CodexRawItem[], msg: CodexStreamServerMessa
       if (typeof requestId !== "number" && typeof requestId !== "string") return false;
       return resolveApproval(raw, `codex:${String(requestId)}`);
     }
+    if (method === "error") {
+      // 错误/重连通知（批 E，fixture 实锤 params 形状）：willRetry=true「Reconnecting
+      // n/5」→ 固定 id 单条覆盖演进；willRetry=false → 最终错误 notice（事实保留）。
+      const errorObj = params.error as { message?: unknown } | undefined;
+      const message = typeof errorObj?.message === "string" ? errorObj.message : "";
+      if (!message) return false;
+      if (params.willRetry === true) {
+        return upsertNotice(raw, RETRY_NOTICE_ID, { type: "error", message, willRetry: true });
+      }
+      removeNotice(raw, RETRY_NOTICE_ID);
+      return upsertNotice(raw, "error-final", { type: "error", message, willRetry: false });
+    }
+    if (method === "model/rerouted") {
+      // 模型被上游重路由（探针无样本，字段名宽进提取；无 to 则不渲染）。
+      const rawFrom = params.fromModel ?? params.from ?? params.previousModel;
+      const rawTo = params.toModel ?? params.to ?? params.model;
+      if (typeof rawTo !== "string" || !rawTo) return false;
+      const scope =
+        typeof params.turnId === "string" && params.turnId
+          ? params.turnId
+          : typeof params.threadId === "string" && params.threadId
+            ? params.threadId
+            : "t";
+      return upsertNotice(raw, `reroute-${scope}`, {
+        type: "modelRerouted",
+        fromModel: typeof rawFrom === "string" ? rawFrom : "",
+        toModel: rawTo,
+      });
+    }
+    if (method === "modelProvider/authRecoveryStarted") {
+      return upsertNotice(raw, "auth-recovery", { type: "authRecovery" });
+    }
+    if (method === "modelProvider/authRecoveryCompleted") {
+      // 恢复完成 = 瞬态状态结束：移除提示而非改写为「已恢复」——纯瞬态状态不该成为
+      // 永久回放内容（design review L3-11；started 期间有提示即可）。
+      return removeNotice(raw, "auth-recovery");
+    }
     return false;
   }
   if (msg.type === "ended") {
     // turn 边界：未终态 assistant 条目定格（下个 turn 的 delta 不得并入上一 turn 气泡）；
-    // 未终态 tool 标 interrupted（否则卡片永久 spinner）；残留审批金框一并清除。
-    let changed = false;
+    // 未终态 tool 标 interrupted（否则卡片永久 spinner）；残留审批金框一并清除；
+    // 「重连中」notice 一并撤（轮已收口，短暂恢复流量不再有）。
+    let changed = removeNotice(raw, RETRY_NOTICE_ID);
     for (let i = 0; i < raw.length; i++) {
       const item = raw[i];
       if (item.kind === "message" && item.role === "assistant" && !item.final) {
@@ -747,9 +883,10 @@ function applyCodexFrameInPlace(raw: CodexRawItem[], msg: CodexStreamServerMessa
 export function applyCodexFrame(
   raw: CodexRawItem[],
   msg: CodexStreamServerMessage,
+  opts?: CodexFrameOpts,
 ): CodexRawItem[] {
   const next = [...raw];
-  return applyCodexFrameInPlace(next, msg) ? next : raw;
+  return applyCodexFrameInPlace(next, msg, opts) ? next : raw;
 }
 
 /**
@@ -760,12 +897,13 @@ export function applyCodexFrame(
 export function applyCodexFrames(
   raw: CodexRawItem[],
   msgs: CodexStreamServerMessage[],
+  opts?: CodexFrameOpts,
 ): CodexRawItem[] {
   if (msgs.length === 0) return raw;
   const work = [...raw];
   let changed = false;
   for (const msg of msgs) {
-    if (applyCodexFrameInPlace(work, msg)) changed = true;
+    if (applyCodexFrameInPlace(work, msg, opts)) changed = true;
   }
   return changed ? work : raw;
 }
@@ -813,6 +951,41 @@ export function codexFramesToThreadMessages(raw: CodexRawItem[]): ThreadMessageL
           | string
           | ThreadMessageLike["content"],
         ...(item.messageId ? { id: item.messageId } : {}),
+      });
+      continue;
+    }
+    if (item.kind === "compact") {
+      // 压缩事实块（批 E）：走 SystemChatBubble 的 compact-block 分支复用 claude 渲染；
+      // running 态 CompactBlock 内部切成进度 pill。
+      messages.push({
+        role: "system",
+        content: "",
+        id: `compact-${item.compactId}`,
+        metadata: {
+          custom: {
+            systemMessageType: "compact-block",
+            trigger: item.manual ? "manual" : "auto",
+            ...(item.status === "running" ? { running: true } : {}),
+            sourceUuids: [],
+          },
+        },
+      });
+      continue;
+    }
+    if (item.kind === "notice") {
+      // 错误/重连/reroute/authRecovery 通知（批 E）：语义对象进 custom，文案由
+      // SystemChatBubble 的 codex-notice 分支 i18n 组装（通知原文是服务端英文串）。
+      messages.push({
+        role: "system",
+        content: "",
+        id: `notice-${item.noticeId}`,
+        metadata: {
+          custom: {
+            systemMessageType: "codex-notice",
+            notice: item.notice,
+            sourceUuids: [],
+          },
+        },
       });
       continue;
     }
@@ -1003,6 +1176,39 @@ export function useCodexSession(
     [scheduleReconnect],
   );
 
+  // ── 手动压缩标记（批 E）──：compact() 置位；批内真有 contextCompaction 的 item/started
+  // 帧时消费为 `{manualCompact: true}`（Pass 1 据此标 manual）。消费必须在 setRawMessages
+  // 的 updater **外**（updater 须纯，StrictMode 双跑会重复消费副作用）；15s 自愈过期覆盖
+  //「app-server 无回执」的失败面——超时未消费 = 压缩没开跑（busy 拒绝/断线），标记作废，
+  // 不污染后续自动压缩。
+  const COMPACT_MANUAL_TTL_MS = 15_000;
+  const manualCompactRef = useRef(false);
+  const manualCompactTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const consumeManualCompact = useCallback((msgs: CodexStreamServerMessage[]) => {
+    if (!manualCompactRef.current) return undefined;
+    let started = false;
+    for (const msg of msgs) {
+      if (msg.type !== "codex_event") continue;
+      const item = (msg.event?.params as { item?: { type?: unknown } } | undefined)?.item;
+      if (msg.event?.method === "item/started" && item?.type === "contextCompaction") {
+        started = true;
+        break;
+      }
+    }
+    if (!started) return undefined;
+    manualCompactRef.current = false;
+    if (manualCompactTimerRef.current) {
+      clearTimeout(manualCompactTimerRef.current);
+      manualCompactTimerRef.current = null;
+    }
+    return { manualCompact: true };
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (manualCompactTimerRef.current) clearTimeout(manualCompactTimerRef.current);
+    };
+  }, []);
+
   // 标量效果（连接态/config/turn 边界）就地 set；raw 日志之外的 state。单帧路径与批路径
   // 共用（批内 React 自动批处理合并多次 set 的 render）。
   const handleFrameScalars = useCallback((msg: CodexStreamServerMessage) => {
@@ -1062,6 +1268,7 @@ export function useCodexSession(
             typeof msg.current?.approvalPolicy === "string" ? msg.current.approvalPolicy : "",
           sandbox: typeof msg.current?.sandbox === "string" ? msg.current.sandbox : "",
         },
+        ...(msg.account ? { account: msg.account } : {}),
       });
       return;
     }
@@ -1115,11 +1322,12 @@ export function useCodexSession(
         msg.type === "codex_event" ||
         msg.type === "ended"
       ) {
-        setRawMessages((prev) => applyCodexFrame(prev, msg));
+        const opts = consumeManualCompact([msg]);
+        setRawMessages((prev) => applyCodexFrame(prev, msg, opts));
         scheduleReplayFlush();
       }
     },
-    [handleFrameScalars],
+    [handleFrameScalars, consumeManualCompact],
   );
 
   // 锚同步（镜像 claude cursorRef 的 processBatch 内推进）：commit 后从 raw 提交态提取
@@ -1171,6 +1379,12 @@ export function useCodexSession(
       replayCleanRef.current = true;
       replayKeyRef.current = codexReplayCacheKey(projectName, sessionId);
       const replayKey = replayKeyRef.current;
+      // 手动压缩标记跨会话清（遗留 true 会把下一会话的自动压缩误标 manual）。
+      manualCompactRef.current = false;
+      if (manualCompactTimerRef.current) {
+        clearTimeout(manualCompactTimerRef.current);
+        manualCompactTimerRef.current = null;
+      }
       setRawMessages([]);
       replayRawRef.current = [];
       anchorRef.current = null;
@@ -1266,7 +1480,8 @@ export function useCodexSession(
       // O(N)（perf review codex 批次 2 P1-1）。
       const processBatch = (batch: CodexStreamServerMessage[]) => {
         for (const msg of batch) handleFrameScalars(msg);
-        setRawMessages((prev) => applyCodexFrames(prev, batch));
+        const opts = consumeManualCompact(batch);
+        setRawMessages((prev) => applyCodexFrames(prev, batch, opts));
         scheduleReplayFlush();
       };
       const processOne = (msg: CodexStreamServerMessage) => handleFrame(msg);
@@ -1394,7 +1609,7 @@ export function useCodexSession(
       // 卸载收口：flush 当前会话窗口（切会话分支已先同步 flush 过，clean=true 时为 no-op）。
       replayFlush();
     };
-  }, [projectName, sessionId, connectionVersion, handleFrame]);
+  }, [projectName, sessionId, connectionVersion, handleFrame, consumeManualCompact]);
 
   // Pass 2：渲染列表派生。
   const renderedMessages = useMemo(() => codexFramesToThreadMessages(rawMessages), [rawMessages]);
@@ -1444,6 +1659,18 @@ export function useCodexSession(
 
   const onCancel = useCallback(async () => {
     sendToSocket({ type: "interrupt" });
+  }, [sendToSocket]);
+
+  // 压缩上下文（批 E parity）：置手动标记（消费见 consumeManualCompact）+ 上行 compact 帧。
+  // busy 时服务端回 error 帧 → streamError toast；标记由 15s TTL 自愈作废。
+  const compact = useCallback(() => {
+    manualCompactRef.current = true;
+    if (manualCompactTimerRef.current) clearTimeout(manualCompactTimerRef.current);
+    manualCompactTimerRef.current = setTimeout(() => {
+      manualCompactTimerRef.current = null;
+      manualCompactRef.current = false;
+    }, COMPACT_MANUAL_TTL_MS);
+    sendToSocket({ type: "compact" });
   }, [sendToSocket]);
 
   // 配置热切换（model/effort/审批策略）：服务端写 metadata + 下一个 turn/start 应用，
@@ -1496,6 +1723,7 @@ export function useCodexSession(
     configPending,
     contextUsage,
     setConfig,
+    compact,
     respondToControlRequest,
     cancelControlRequest,
     onCancel,

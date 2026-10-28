@@ -114,7 +114,8 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
       // 会话内历史回放（thread/resume）已通，但历史**列表**（rollout JSONL 扫描，P1）
       // 未接——能力位描述的是列表，故仍 unsupported，P1 落地时翻转。
       history: "unsupported",
-      mcpInject: "unsupported", // thread/start config 注入通道见 codex-runtime（P1 验证后翻转）。
+      // `-c mcp_servers.ar-hub.url=` TOML 覆盖（批 E，探针 E1 实证 0.163 真连上）。
+      mcpInject: "native",
     },
   },
   // omp（Oh My Pi CLI）：走 ACP 协议对接（transport "acp"，`omp acp` 子命令）。ACP 是协议

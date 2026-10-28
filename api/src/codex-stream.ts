@@ -169,6 +169,23 @@ export class CodexStreamController {
         await this.codexRuntime.interrupt(data.runtimeKey);
         return;
       }
+      if (parsed.type === "compact") {
+        // 压缩上下文（批 E parity）：busy/missing/failed 回 error 帧让前端 toast 提示。
+        const result = await this.codexRuntime.compact(data.runtimeKey);
+        if (result !== "ok") {
+          const detail = {
+            busy: "A turn is already running; stop it before compacting",
+            missing: "Codex session is not running",
+            failed: "Compaction failed to start",
+          } as const;
+          send(socket, {
+            type: "error",
+            code: "SESSION_RUNTIME_ERROR",
+            message: `Compact rejected: ${detail[result]}`,
+          });
+        }
+        return;
+      }
       if (parsed.type === "set_config") {
         const patch: {
           model?: string;

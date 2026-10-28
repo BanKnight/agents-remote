@@ -149,6 +149,10 @@ async function seedCodex() {
         configOverrides: ["openai_base_url=https://gw.test/v1"],
       };
     },
+    // ar-hub MCP 注入（批 E）：chat 直拉与 terminal 同源——terminal 断言看命令串。
+    mcpArgs(projectName: string) {
+      return ["-c", `mcp_servers.ar-hub.url="http://127.0.0.1:43013/mcp/${projectName}"`];
+    },
   } as unknown as CodexRuntime;
   const tmuxStartCalls: { command: string; env?: Record<string, string> }[] = [];
   const tmuxRuntime = {
@@ -615,7 +619,9 @@ test("codex switchToTerminal：mode 落盘 → 关 app-server → tmux 起 `code
   // baseUrl → -c 覆盖进 argv（值非机密）；CODEX_HOME 只经 tmux -e 传目录路径
   // （auth.json 0600 在 home 内，机密不进 argv/ps）。
   expect(h.tmuxCommands).toEqual([
-    `'codex' '-c' 'openai_base_url=https://gw.test/v1' 'resume' 'th-1'`,
+    // ar-hub MCP 注入与 chat 形态同源：`-c mcp_servers.ar-hub.url=…`（值含引号，整体
+    // shellQuote 原样保真）。
+    `'codex' '-c' 'openai_base_url=https://gw.test/v1' '-c' 'mcp_servers.ar-hub.url="http://127.0.0.1:43013/mcp/demo"' 'resume' 'th-1'`,
   ]);
   expect(h.tmuxStartCalls[0]?.env).toEqual({ CODEX_HOME: join(runDir, "codex-home") });
   expect((await registry.getAgentSession(project.name, h.sessionId))?.mode).toBe("terminal");
@@ -645,6 +651,9 @@ test("codex switchToTerminal 起 pane 失败：mode 退回 chat + 重拉 app-ser
       },
       async prepareSpawnContext() {
         return { codexHome: null, configOverrides: [] };
+      },
+      mcpArgs() {
+        return [];
       },
     } as unknown as CodexRuntime,
   });

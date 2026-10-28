@@ -88,6 +88,7 @@ import { GenUiWidgetMessage } from "../components/assistant-ui/gen-ui-widget-car
 import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
 import { CompactBlock } from "../components/assistant-ui/compact-block";
+import type { CodexNotice } from "./codex-adapter";
 import { HookCard } from "../components/assistant-ui/hook-card";
 import { CollapsibleSection } from "../components/assistant-ui/collapsible-section";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -1494,6 +1495,52 @@ function SystemChatBubble() {
     return (
       <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
         <CompactBlock custom={custom} />
+        <RawDebugTooltip custom={custom} className="absolute -top-1 right-0.5" />
+      </MessagePrimitive.Root>
+    );
+  }
+
+  // Codex 通知（批 E parity）：重连/最终错误/模型切换/认证恢复的单行系统提示。语义对象
+  // （codex-adapter CodexNotice）在此 i18n 组装——通知原文是服务端英文串，不直接上屏；
+  // 三档色调 = 最终错误 error / 重连中 warning / reroute·authRecovery 中性。
+  if (systemMessageType === "codex-notice") {
+    const notice = custom?.notice as CodexNotice | undefined;
+    if (!notice) return null;
+    // 「Reconnecting... n/m」解析成次数（design review L2-2）：不把服务端英文原文拼进
+    // 中文句子；解析失败才落原文。
+    const retryMatch =
+      notice.type === "error" && notice.willRetry
+        ? /(\d+)\s*\/\s*(\d+)/.exec(notice.message)
+        : null;
+    const text =
+      notice.type === "error"
+        ? notice.willRetry
+          ? retryMatch
+            ? t("codex.notice.reconnecting", { attempt: retryMatch[1]!, max: retryMatch[2]! })
+            : t("codex.notice.reconnectingRaw", { message: notice.message })
+          : t("codex.notice.error", { message: notice.message })
+        : notice.type === "modelRerouted"
+          ? t("codex.notice.modelRerouted", {
+              from: notice.fromModel || t("codex.notice.modelUnknown"),
+              to: notice.toModel,
+            })
+          : t("codex.notice.authRecoveryStarted");
+    const tone =
+      notice.type === "error" && !notice.willRetry
+        ? "bg-error/10 text-error"
+        : notice.type === "error"
+          ? // warningText 语义 token（浅底警示文字；裸 text-warning 在浅色 1.91:1）
+            "bg-warning/10 text-warning-text"
+          : "bg-on-surface/5 text-on-surface-soft";
+    return (
+      <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
+        <div
+          // 重连提示就地演进（反复改写文本）：live region 让读屏播报（auto-retry-banner 同款）。
+          role={notice.type === "error" && notice.willRetry ? "status" : undefined}
+          className={`inline-flex max-w-full items-center gap-1.5 rounded-lg px-2.5 py-1 ${tone}`}
+        >
+          <span className="min-w-0 whitespace-pre-wrap text-xs break-words">{text}</span>
+        </div>
         <RawDebugTooltip custom={custom} className="absolute -top-1 right-0.5" />
       </MessagePrimitive.Root>
     );
@@ -3901,7 +3948,12 @@ function ComposerWithInterrupt({
               ml-auto 容器——.send2 自身也是 margin-left:auto，若 usage 单独 ml-auto 会与它
               均分剩余空间（usage 落正中）；容器内无剩余空间，.send2 的 auto 归零。 */}
           <div className="ml-auto flex items-center gap-2">
-            <ContextUsageIndicator contextUsage={contextUsage} />
+            {/* 压缩入口（批 E parity）：claude 发 `/compact`（slash 菜单同路径）；运行中禁用。 */}
+            <ContextUsageIndicator
+              compactDisabled={running}
+              contextUsage={contextUsage}
+              onCompact={() => api.thread.append("/compact")}
+            />
             <ComposerStopSend
               onCancel={onCancel}
               send={sendComposer}

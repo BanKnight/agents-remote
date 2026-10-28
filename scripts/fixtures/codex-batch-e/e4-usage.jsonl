@@ -1,0 +1,8 @@
+{"dir":"req","frame":{"id":1,"method":"initialize","params":{"clientInfo":{"name":"agents-remote-probe","title":null,"version":"0.0.1"},"capabilities":null}}}
+{"dir":"res","frame":{"id":1,"result":{"userAgent":"agents-remote-probe/0.163.0 (Debian 13.0.0; x86_64) tmux-256color (agents-remote-probe; 0.0.1)","codexHome":"/home/deploy/.codex","platformFamily":"unix","platformOs":"linux"}}}
+{"dir":"req","frame":{"method":"initialized","params":{}}}
+{"dir":"req","frame":{"id":2,"method":"account/rateLimits/read","params":{}}}
+{"dir":"notif","frame":{"method":"configWarning","params":{"summary":"Codex is ignoring 2 unrecognized configuration settings. Check for typos or deprecated settings.\n  user (/home/deploy/.codex/config.toml): `disable_response_storage` is ignored.\n  user (/home/deploy/.codex/config.toml): `mcp_servers.context7.type` is ignored.","details":null},"emittedAtMs":1793189793096}}
+{"dir":"notif","frame":{"method":"configWarning","params":{"summary":"Codex could not find bubblewrap on PATH. Install bubblewrap with your OS package manager. See the sandbox prerequisites: https://developers.openai.com/codex/concepts/sandboxing#prerequisites. Codex will use the bundled bubblewrap in the meantime.","details":null},"emittedAtMs":1793189793096}}
+{"dir":"notif","frame":{"method":"remoteControl/status/changed","params":{"status":"disabled","serverName":"tutu-ai","installationId":"332ca6ed-651c-4726-a8ef-679816ec087d","environmentId":null},"emittedAtMs":1793189793096}}
+{"dir":"res","frame":{"error":{"code":-32600,"message":"chatgpt authentication required to read rate limits"},"id":2}}

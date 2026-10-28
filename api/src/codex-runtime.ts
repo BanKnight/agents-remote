@@ -1,8 +1,10 @@
 import { join } from "node:path";
 import type {
   ClaudeAutoRetryConfig,
+  CodexAccountUsage,
   CodexCredentials,
   CodexPermissionMode,
+  CodexRateLimitWindow,
   CodexStreamServerMessage,
 } from "@agents-remote/shared";
 import type { RuntimeStream } from "./session-registry";
@@ -13,6 +15,8 @@ import {
   prepareCodexRuntimeHome,
   type PreparedCodexHome,
 } from "./codex-home";
+import { getAgentProviderProfile } from "./agent-provider-profiles";
+import { buildMcpInjectorForProvider } from "./mcp-injector";
 
 // ── codex runtime（codex app-server 直连，docs/plans codex 一等 provider 批）────────
 //
@@ -70,6 +74,9 @@ export function codexSpawnEnv(prepared?: PreparedCodexHome): Record<string, stri
 
 /** prompt 外 RPC 超时（initialize、thread 系、model/list；turn/start 响应快也护住）。 */
 const CODEX_RPC_TIMEOUT_MS = 60_000;
+
+/** 压缩接管闸兜底超时（compact RPC 已回但线程始终不发 turn/started 时复位单飞闸）。 */
+const COMPACT_GATE_TIMEOUT_MS = 30_000;
 
 /** turn 进行中再来的 user 消息排队上限（防内存无限增长；ACP 同值）。 */
 const CODEX_PENDING_QUEUE_CAP = 32;
@@ -305,6 +312,10 @@ type CodexSessionEntry = {
   config: CodexThreadConfig;
   /** codex_config 帧的 models 菜单（ensureRunning 时 model/list 归一；空 = 未登录/无目录）。 */
   models: CodexConfigSnapshot["models"];
+  /** 账号额度快照（批 E 防御式）：仅 ChatGPT 登录形态可得，随 codex_config 帧下发。 */
+  account?: CodexAccountUsage;
+  /** 额度刷新在飞闸（perf P2-2）：成簇的 rateLimits/updated 只跑一轮 RPC + 一帧 config。 */
+  accountRefreshing?: boolean;
   /** 用户下轮生效的配置覆盖（flushQueue 组装 turn/start 时消费并清空）。 */
   pendingConfig: Partial<CodexThreadConfig>;
   /** 单飞 turn id（null = 空闲）；turn/completed 通知是唯一关闭信号。 */
@@ -314,6 +325,9 @@ type CodexSessionEntry = {
   /** turn 代际（P1-4 时序防御）：completed 与 turn/start 响应到达序不保证，迟到的
    * 响应回调按代际失效（不复活已完成 turnId 卡死单飞）。 */
   turnGeneration: number;
+  /** 压缩 turn id（thread/compact/start 产生的 turn，探针 E2）：turn/completed 时豁免
+   * 自动重试（压缩失败 ≠ agent 轮失败）。 */
+  compactingTurnId: string | null;
 };
 
 export type CodexSpawnTarget = {
@@ -348,15 +362,19 @@ export type CodexApprovalRequestInfo = {
 
 export type CodexConfigSnapshot = Extract<CodexStreamServerMessage, { type: "codex_config" }>;
 
+/** 排队中的用户消息（write 入队 / steer 回退共用形状）。 */
+type CodexPendingMessage = {
+  text: string;
+  uuid?: string;
+  images?: { data: string; mimeType: string }[];
+};
+
 /** 审批应答决策（ApprovalCenter 的 allow/deny → 各 requestApproval 族的 response）。 */
 export type CodexApprovalDecision = "accept" | "decline";
 
 export class CodexRuntime {
   private readonly sessions = new Map<string, CodexSessionEntry>();
-  private readonly pendingQueues = new Map<
-    string,
-    { text: string; uuid?: string; images?: { data: string; mimeType: string }[] }[]
-  >();
+  private readonly pendingQueues = new Map<string, CodexPendingMessage[]>();
   private onCodexThreadId?: (sessionId: string, threadId: string) => void;
   private onActivity?: (sessionId: string) => void;
   private onStatusChange?: (
@@ -382,6 +400,8 @@ export class CodexRuntime {
     private readonly command: string[] = ["codex", "app-server"],
     /** settings codex 凭据切片读取（每次 spawn 前调用；acp 同款注入 seam，测试可注入假值）。 */
     private readonly resolveCredentials?: () => Promise<CodexCredentials | undefined>,
+    /** hub MCP 端口（绑 127.0.0.1；undefined = 不注入 ar-hub 工具）。 */
+    private readonly mcpPort?: number,
   ) {
     this.autoRetry = new AutoRetryWatch({
       getConfig: (_runtimeKey, sessionId) => this.autoRetryConfigProvider?.(sessionId),
@@ -517,10 +537,14 @@ export class CodexRuntime {
     if (this.sessions.has(target.runtimeKey)) return;
 
     // 专属 CODEX_HOME（auth.json 0600 + sessions 软链 + baseUrl 经 -c 覆盖）——每次 spawn
-    // 前重建（settings 热更新生效）。
+    // 前重建（settings 热更新生效）。ar-hub MCP 注入（批 E）同走 `-c` 通道。
     const prepared = await this.prepareSpawnContext();
     const proc = Bun.spawn(
-      [...this.command, ...codexConfigOverrideArgs(prepared.configOverrides)],
+      [
+        ...this.command,
+        ...codexConfigOverrideArgs(prepared.configOverrides),
+        ...this.mcpArgs(target.projectName),
+      ],
       {
         cwd: target.projectPath,
         env: codexSpawnEnv(prepared),
@@ -545,6 +569,7 @@ export class CodexRuntime {
       inFlightTurnId: null,
       startingTurn: false,
       turnGeneration: 0,
+      compactingTurnId: null,
     };
     const conn = new CodexConn(proc);
     entry.conn = conn;
@@ -669,6 +694,8 @@ export class CodexRuntime {
       // models 菜单 + codex_config 帧（回放序 = history → config，acp 同构）。
       await this.refreshModels(entry);
       this.injectConfigFrame(target.runtimeKey, entry);
+      // 账号额度（批 E 防御式）：不阻塞主链路，拉到后回灌一帧 config（客户端 latest-wins）。
+      void this.refreshAccount(target.runtimeKey, entry);
     } catch (error) {
       // 启动失败：出表（立即入表的回滚）+ 断订阅者 + 杀进程。
       this.sessions.delete(target.runtimeKey);
@@ -678,9 +705,10 @@ export class CodexRuntime {
     }
   }
 
-  /** 发送 user 消息：入队 → 注入 codex_user_echo → 单飞 turn/start / 排队。
-   *  images = 图片附件（base64 裸数据，composer 附件管线产出，pi 同形）：flushQueue
-   *  组 turn/start input 的 image 项（data URL——UserInput.image.url 接受 data URL）。 */
+  /** 发送 user 消息：在飞 turn 走 turn/steer 并入当前轮（批 E，探针 E3 实证同 turnId
+   *  合流），RPC 失败（轮恰好收口的竞态）回退排队；空闲走单飞 turn/start / 排队。
+   *  images = 图片附件（base64 裸数据，composer 附件管线产出，pi 同形）：组 input 的
+   *  image 项（data URL——UserInput.image.url 接受 data URL）。 */
   write(
     runtimeKey: string,
     text: string,
@@ -692,23 +720,156 @@ export class CodexRuntime {
     // 用户手动介入（write 被外部调用）：取消待发的自动重试注入，不与用户输入叠加
     //（注入自身也走 write——彼时定时器已 fire 清空，无自我取消）。
     this.autoRetry.cancelPending(runtimeKey);
-    const queue = this.pendingQueues.get(runtimeKey) ?? [];
-    if (queue.length >= CODEX_PENDING_QUEUE_CAP) {
-      entry.relay.reportError(new Error("codex turn queue is full"));
-      return;
-    }
     const imgs = images && images.length > 0 ? images : undefined;
-    queue.push({ text, uuid, images: imgs });
-    this.pendingQueues.set(runtimeKey, queue);
-    // echo/working 在入队成功后注入（code review P2-9）：队满丢弃路径不发 echo、不翻
-    // 状态——客户端看到的 echo 必然对应已被接收排队的消息。
-    if (uuid) {
+    const message: CodexPendingMessage = { text, uuid, images: imgs };
+    // echo/working 在「消息确定被接收」后注入（code review P2-9）：队满丢弃路径不发
+    // echo、不翻状态。steer 路径的落地（steer 成功 / 回退排队）都算接收 → echo 先行；
+    // steerOrQueue 失败兜底入队，最坏情形是「echo 了但两条路径都丢」= 队满边界（写入
+    // 前查过 cap，回退路径重复查，不越过上限）。
+    const emitEcho = () => {
+      if (!uuid) return;
       entry.relay.appendAndBroadcast(
         JSON.stringify({ type: "codex_user_echo", text, uuid, ...(imgs ? { images: imgs } : {}) }),
       );
+    };
+    if (entry.inFlightTurnId && !entry.startingTurn) {
+      emitEcho();
+      this.applyStatusSignal(entry, { kind: "user_input" });
+      void this.steerOrQueue(runtimeKey, entry, message);
+      return;
     }
+    if (!this.enqueueMessage(runtimeKey, entry, message)) return;
+    emitEcho();
     this.applyStatusSignal(entry, { kind: "user_input" });
     this.flushQueue(runtimeKey);
+  }
+
+  /** 队列入队（cap 检查）；满 → reportError 且返回 false（不发 echo 不翻状态）。 */
+  private enqueueMessage(
+    runtimeKey: string,
+    entry: CodexSessionEntry,
+    message: CodexPendingMessage,
+  ): boolean {
+    const queue = this.pendingQueues.get(runtimeKey) ?? [];
+    if (queue.length >= CODEX_PENDING_QUEUE_CAP) {
+      entry.relay.reportError(new Error("codex turn queue is full"));
+      return false;
+    }
+    queue.push(message);
+    this.pendingQueues.set(runtimeKey, queue);
+    return true;
+  }
+
+  /** turn/steer 并入在飞轮；失败（轮已收口 / 连接断）回退排队——此刻 completed 已清
+   *  inFlightTurnId，flushQueue 单飞闸自然放行；进程已死则 enqueue 落在出表后的
+   *  Map 上，flushQueue no-op，错误由进程退出路径上报（不悬空 rejection）。 */
+  private async steerOrQueue(
+    runtimeKey: string,
+    entry: CodexSessionEntry,
+    message: CodexPendingMessage,
+  ): Promise<void> {
+    const turnId = entry.inFlightTurnId;
+    if (!turnId) {
+      if (this.enqueueMessage(runtimeKey, entry, message)) this.flushQueue(runtimeKey);
+      return;
+    }
+    try {
+      await this.rpcWithTimeout(
+        entry.conn,
+        "turn/steer",
+        {
+          threadId: entry.threadId,
+          expectedTurnId: turnId,
+          input: buildCodexUserInput(message.text, message.images),
+        },
+        "codex turn/steer",
+      );
+    } catch {
+      if (this.enqueueMessage(runtimeKey, entry, message)) this.flushQueue(runtimeKey);
+    }
+  }
+
+  /** 压缩上下文（批 E parity）：thread/compact/start——压缩以 turn 形态跑（探针 E2：
+   *  turn/started → contextCompaction item → turn/completed），弃用通知
+   *  thread/compacted 不再发。busy 拒绝：压缩与进行中 turn 并发未验证，先拒。 */
+  async compact(runtimeKey: string): Promise<"ok" | "busy" | "missing" | "failed"> {
+    const entry = this.sessions.get(runtimeKey);
+    if (!entry || !entry.threadId) return "missing";
+    if (entry.inFlightTurnId || entry.startingTurn) return "busy";
+    // 占住单飞闸直到 turn/started 接管（压缩 RPC 回得快、turn/started 紧随；窗口内
+    // 二次 write 不得并发开轮）。兜底：RPC 回 ok 但线程始终不发 turn/started 时闸不得
+    // 永久占死（排队消息会一直悬停）——超时复位并放行队列。
+    entry.startingTurn = true;
+    const gateGuard = setTimeout(() => {
+      if (this.sessions.get(runtimeKey) !== entry) return;
+      if (!entry.startingTurn || entry.inFlightTurnId) return;
+      entry.startingTurn = false;
+      console.warn("[codex] compact turn never started; single-flight gate released");
+      this.flushQueue(runtimeKey);
+    }, COMPACT_GATE_TIMEOUT_MS);
+    gateGuard.unref?.();
+    try {
+      await this.rpcWithTimeout(
+        entry.conn,
+        "thread/compact/start",
+        { threadId: entry.threadId },
+        "codex thread/compact/start",
+      );
+      return "ok";
+    } catch (error) {
+      entry.startingTurn = false;
+      console.warn("[codex] compact start failed:", error);
+      return "failed";
+    } finally {
+      clearTimeout(gateGuard);
+    }
+  }
+
+  /** MCP 注入 argv（批 E）：`-c mcp_servers.ar-hub.url=…`。chat 直拉与 terminal（tmux
+   *  TUI）两形态共用；mcpPort 未配置 = []（agent 仍能跑，能力降级不失败）。 */
+  mcpArgs(projectName: string): string[] {
+    if (!this.mcpPort) return [];
+    const profile = getAgentProviderProfile("codex");
+    if (!profile) return [];
+    const injector = buildMcpInjectorForProvider(profile);
+    if (!injector || !injector.canInject(profile)) return [];
+    return injector.buildMcpConfig({ project: projectName, mcpPort: this.mcpPort })?.args ?? [];
+  }
+
+  /** 拉账号额度并回灌 config 帧（批 E 防御式）。端点仅 ChatGPT 登录可用（apiKey/网关
+   *  登录报 chatgpt authentication required，探针 E4 实证）→ 失败静默，恒 undefined。
+   *  perf P2-2：①成簇的 rateLimits/updated 通知合并（在飞即丢弃，快照恒 latest-wins）；
+   *  ②通知 params 自带完整快照时不再多打一趟 read RPC；③lifetime 累计滚动不变，已采到
+   *  就不再重复拉最重的 usage/read。 */
+  private async refreshAccount(
+    runtimeKey: string,
+    entry: CodexSessionEntry,
+    limitsFromNotification?: unknown,
+  ): Promise<void> {
+    if (entry.accountRefreshing) return;
+    entry.accountRefreshing = true;
+    try {
+      const [limits, usage] = await Promise.all([
+        limitsFromNotification !== undefined
+          ? Promise.resolve(limitsFromNotification)
+          : entry.conn.request("account/rateLimits/read", {}).catch(() => null),
+        entry.account?.lifetimeTokens != null
+          ? Promise.resolve(null)
+          : entry.conn.request("account/usage/read", {}).catch(() => null),
+      ]);
+      const next = codexAccountFromResponses(limits, usage);
+      if (!next) return;
+      // 通知路径缺 usage 时保留已采到的 lifetime（不被 sparse 快照冲掉）。
+      if (next.lifetimeTokens == null && entry.account?.lifetimeTokens != null) {
+        next.lifetimeTokens = entry.account.lifetimeTokens;
+      }
+      entry.account = next;
+      // RPC 窗口内会话可能已被 close（entry 出表）：不向已销毁 relay 注帧。
+      if (this.sessions.get(runtimeKey) !== entry) return;
+      this.injectConfigFrame(runtimeKey, entry);
+    } finally {
+      entry.accountRefreshing = false;
+    }
   }
 
   /** 中断当前 turn：turn/interrupt；排队项丢弃（用户中止意图）。 */
@@ -860,6 +1021,9 @@ export class CodexRuntime {
     // 客户端投影先看到 turn 终态事件、再收 ended 定格，顺序与 claude result→ended 同构。
     let endedFrame: string | undefined;
     if (method === "turn/started") {
+      // 压缩路径的 startingTurn 闸由 turn/started 接管（compact RPC 已回、turn 开跑）。
+      // 同步清闸 + 置 inFlightTurnId 之间无 interleaving，不会重开 P1-4 的并发窗口。
+      entry.startingTurn = false;
       if (!entry.inFlightTurnId) {
         entry.inFlightTurnId = typeof turn?.id === "string" ? turn.id : null;
       }
@@ -869,9 +1033,28 @@ export class CodexRuntime {
       // 早已被 fire 清空 → 此处对注入无害。
       this.autoRetry.cancelPending(runtimeKey);
       this.applyStatusSignal(entry, { kind: "turn_activity" });
+    } else if (method === "item/started") {
+      // 压缩 turn 标记（批 E）：contextCompaction item 的 turnId → turn/completed 时
+      // 豁免自动重试（压缩失败不是 agent 轮失败，注入「请继续」只会开无意义新轮）。
+      const item = params.item as { type?: unknown } | undefined;
+      if (item?.type === "contextCompaction" && typeof params.turnId === "string") {
+        entry.compactingTurnId = params.turnId;
+      }
+    } else if (method === "account/rateLimits/updated") {
+      // 额度窗口推送（ChatGPT 登录形态）：params 自带完整 RateLimitSnapshot（perf P2-2：
+      // 宽进直取，不再多打一趟 read RPC）；快照缺形状时回退 read 兜底。失败静默。
+      const carried = (params as { rateLimits?: unknown }).rateLimits;
+      void this.refreshAccount(
+        runtimeKey,
+        entry,
+        carried && typeof carried === "object" ? { rateLimits: carried } : undefined,
+      );
     } else if (method === "turn/completed") {
       const status = turn?.status;
       const isError = status === "failed";
+      const turnId = typeof turn?.id === "string" ? turn.id : null;
+      const compacting = turnId !== null && entry.compactingTurnId === turnId;
+      entry.compactingTurnId = null;
       entry.inFlightTurnId = null;
       // 代际 bump + 闸释放（code review P1-4）：completed 与 turn/start 响应到达序不
       // 保证——completed 先到时使在飞响应回调失效，flushQueue 不被 startingTurn 卡住。
@@ -879,8 +1062,8 @@ export class CodexRuntime {
       entry.startingTurn = false;
       this.applyStatusSignal(entry, { kind: "turn_result", isError });
       // 自动重试（与 claude result is_error 同语义）：failed = 报错停下 → 调度注入；
-      // 正常完成 = 确认上次注入成功/作废待发调度。
-      if (isError) {
+      // 正常完成 = 确认上次注入成功/作废待发调度。压缩 turn 豁免（见上）。
+      if (isError && !compacting) {
         this.autoRetry.notifyError(runtimeKey, entry.sessionId);
       } else {
         this.autoRetry.notifyNormal(runtimeKey);
@@ -992,13 +1175,7 @@ export class CodexRuntime {
 
     const overrides = entry.pendingConfig;
     entry.pendingConfig = {};
-    // input 组装（UserInput 绑定形状）：图片 image 项在前（data URL），文本项殿后——
-    // claude user content 图前文后同序。text_elements 绑定必填（宽进引擎不校验，守形状）。
-    const input: Array<Record<string, unknown>> = (next.images ?? []).map((img) => ({
-      type: "image",
-      url: `data:${img.mimeType};base64,${img.data}`,
-    }));
-    input.push({ type: "text", text: next.text, text_elements: [] });
+    const input = buildCodexUserInput(next.text, next.images);
     const params: Record<string, unknown> = {
       threadId: entry.threadId,
       input,
@@ -1135,6 +1312,7 @@ export class CodexRuntime {
         approvalPolicy: entry.config.approvalPolicy,
         sandbox: entry.config.sandbox,
       },
+      ...(entry.account ? { account: entry.account } : {}),
     } satisfies CodexConfigSnapshot);
   }
 
@@ -1179,7 +1357,64 @@ export class CodexRuntime {
   }
 }
 
+/** 用户消息 → UserInput 绑定形状（turn/start 与 turn/steer 共用）：图片 image 项在前
+ *  （data URL），文本项殿后——claude user content 图前文后同序。text_elements 绑定必填
+ *  （宽进引擎不校验，守形状）。 */
+function buildCodexUserInput(
+  text: string,
+  images?: { data: string; mimeType: string }[],
+): Array<Record<string, unknown>> {
+  const input: Array<Record<string, unknown>> = (images ?? []).map((img) => ({
+    type: "image",
+    url: `data:${img.mimeType};base64,${img.data}`,
+  }));
+  input.push({ type: "text", text, text_elements: [] });
+  return input;
+}
+
 // ── 历史合成与摘要（纯函数，导出供测试）─────────────────────────────────────
+
+/** account/rateLimits/read + account/usage/read 响应 → 额度快照（批 E 防御式，宽进）。
+ *  字段全缺（非 ChatGPT 登录的 error 响应被 catch 成 null）→ undefined = 前端不渲染额度段。 */
+export function codexAccountFromResponses(
+  limits: unknown,
+  usage: unknown,
+): CodexAccountUsage | undefined {
+  const rateLimits = (
+    limits as {
+      rateLimits?: { planType?: unknown; primary?: unknown; secondary?: unknown } | null;
+    } | null
+  )?.rateLimits;
+  const lifetimeTokens = (
+    usage as {
+      summary?: { lifetimeTokens?: unknown } | null;
+    } | null
+  )?.summary?.lifetimeTokens;
+  const account: CodexAccountUsage = {};
+  if (typeof rateLimits?.planType === "string") account.planType = rateLimits.planType;
+  const primary = codexRateLimitWindow(rateLimits?.primary);
+  if (primary) account.primary = primary;
+  const secondary = codexRateLimitWindow(rateLimits?.secondary);
+  if (secondary) account.secondary = secondary;
+  if (typeof lifetimeTokens === "number") account.lifetimeTokens = lifetimeTokens;
+  return Object.keys(account).length > 0 ? account : undefined;
+}
+
+/** app-server RateLimitWindow → CodexRateLimitWindow（字段窄提取；形状漂移 → undefined）。 */
+function codexRateLimitWindow(value: unknown): CodexRateLimitWindow | undefined {
+  const w = value as
+    | { usedPercent?: unknown; windowDurationMins?: unknown; resetsAt?: unknown }
+    | null
+    | undefined;
+  if (typeof w?.usedPercent !== "number" || typeof w?.windowDurationMins !== "number") {
+    return undefined;
+  }
+  return {
+    usedPercent: w.usedPercent,
+    windowDurationMins: w.windowDurationMins,
+    ...(typeof w.resetsAt === "string" ? { resetsAt: w.resetsAt } : {}),
+  };
+}
 
 /** thread/resume 响应的 turns 形状（窄提取，宽进防御：缺字段跳过该 turn）。 */
 type CodexHistoryTurn = {

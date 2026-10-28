@@ -29,9 +29,28 @@ const pending = new Map();
 const serverPending = new Map();
 let nextServerId = 0;
 let nextTurnId = 1;
+let failNextCompact = false;
+// 账号额度形态（批 E）：进程级开关（--account-allowed argv）——allowed 回 ChatGPT 登录
+// 形状的额度；缺省 denied（apiKey/网关登录，真实 app-server 报 authentication required）。
+const accountAllowed = process.argv.includes("--account-allowed");
 const interrupted = new Map();
 const send = (msg) => console.log(JSON.stringify(msg));
 const notify = (method, params) => send({ method, params });
+
+// 压缩（批 E）：以 turn 形态跑（turn/started → item/started|completed contextCompaction →
+// turn/completed）；@compactfail 置位后下一次压缩 turn 以 failed 收口（自动重试豁免用例）。
+async function handleCompactStart(msg) {
+  const turnId = "turn-compact-" + nextTurnId++;
+  send({ id: msg.id, result: {} });
+  notify("turn/started", { threadId: "th-fake-1", turn: { id: turnId, status: "inProgress" } });
+  notify("item/started", { threadId: "th-fake-1", turnId,
+    item: { type: "contextCompaction", id: "cp_" + turnId } });
+  notify("item/completed", { threadId: "th-fake-1", turnId,
+    item: { type: "contextCompaction", id: "cp_" + turnId } });
+  const status = failNextCompact ? "failed" : "completed";
+  failNextCompact = false;
+  notify("turn/completed", { threadId: "th-fake-1", turn: { id: turnId, status } });
+}
 
 async function handleTurnStart(msg) {
   const turnId = "turn-" + nextTurnId++;
@@ -40,6 +59,13 @@ async function handleTurnStart(msg) {
   const imgs = msg.params.input.filter((p) => p.type === "image");
   send({ id: msg.id, result: { turn: { id: turnId, status: "inProgress" } } });
   notify("turn/started", { threadId: "th-fake-1", turn: { id: turnId, status: "inProgress" } });
+  if (text === "@compactfail") failNextCompact = true;
+  if (text === "@notifylimits") {
+    // 额度窗口推送：params 自带完整 RateLimitSnapshot（perf P2-2：客户端侧直取，不再
+    // 多打一趟 account/rateLimits/read）。
+    notify("account/rateLimits/updated", { rateLimits: { planType: "plus",
+      primary: { usedPercent: 77, windowDurationMins: 300 } } });
+  }
   if (text.startsWith("@perm")) {
     const reqId = nextServerId++;
     // server 请求帧：带 server 空间的 id（CodexConn 判「有 id 有 method」进审批路径）。
@@ -128,6 +154,40 @@ function handleLine(line) {
     case "turn/start":
       void handleTurnStart(msg);
       break;
+    case "turn/steer":
+      // steer（批 E）：回执同一 turnId（探针实证）；@steerfail 前缀回 error（回退排队
+      // 用例）；成功时以 delta 回显 steer 文本（服务端并入在飞轮的直接证据）。
+      {
+        const text = msg.params.input.find((p) => p.type === "text")?.text ?? "";
+        if (text.startsWith("@steerfail")) {
+          send({ id: msg.id, error: { code: -32001, message: "no such turn" } });
+        } else {
+          notify("item/agentMessage/delta", {
+            threadId: "th-fake-1", turnId: msg.params.expectedTurnId, delta: "steered:" + text,
+          });
+          send({ id: msg.id, result: { turn: { id: msg.params.expectedTurnId } } });
+        }
+      }
+      break;
+    case "thread/compact/start":
+      void handleCompactStart(msg);
+      break;
+    case "account/rateLimits/read":
+      if (!accountAllowed) {
+        send({ id: msg.id, error: { code: -32000, message: "chatgpt authentication required" } });
+      } else {
+        send({ id: msg.id, result: { rateLimits: { planType: "pro",
+          primary: { usedPercent: 42.6, windowDurationMins: 300, resetsAt: "2026-10-29T12:00:00Z" },
+          secondary: { usedPercent: 3.2, windowDurationMins: 10080 } } } });
+      }
+      break;
+    case "account/usage/read":
+      if (!accountAllowed) {
+        send({ id: msg.id, error: { code: -32000, message: "chatgpt authentication required" } });
+      } else {
+        send({ id: msg.id, result: { summary: { lifetimeTokens: 1234567 } } });
+      }
+      break;
     case "turn/interrupt":
       interrupted.set(msg.params.turnId, true);
       send({ id: msg.id, result: {} });
@@ -188,8 +248,15 @@ const fakeCodexCommand = () => [process.execPath, join(fixtureDir, "fake-codex.t
 const makeRuntime = (
   resolveCredentials?: () => Promise<CodexCredentials | undefined>,
   autoRetryConfig?: ClaudeAutoRetryConfig,
+  mcpPort?: number,
+  fakeArgs?: string[],
 ) => {
-  const runtime = new CodexRuntime(runDir, fakeCodexCommand(), resolveCredentials);
+  const runtime = new CodexRuntime(
+    runDir,
+    [...fakeCodexCommand(), ...(fakeArgs ?? [])],
+    resolveCredentials,
+    mcpPort,
+  );
   if (autoRetryConfig) {
     runtime.setAutoRetryConfigProvider(async () => autoRetryConfig);
   }
@@ -937,6 +1004,207 @@ describe("synthesizeHistoryLines", () => {
     expect(first.event.params.item).toMatchObject({ type: "userMessage" });
     // undefined turns → 空数组（resume 响应缺 turns 字段的宽进防御）。
     expect(synthesizeHistoryLines(undefined, "th-1")).toEqual([]);
+  });
+});
+
+describe("CodexRuntime 批 E（compact / steer / MCP 注入 / 账号额度）", () => {
+  test("compact：在飞轮时 busy 拒绝；压缩 turn failed 豁免自动重试（不注入「请继续」）", async () => {
+    const { runtime } = makeRuntime(undefined, {
+      enabled: true,
+      message: "请继续",
+      delayMs: 50,
+      maxPerWindow: 3,
+      windowMs: 60_000,
+    });
+    await runtime.startAgent({
+      id: "s-e1",
+      projectName: "p1",
+      runtimeKey: "k-e1",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k-e1");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_config"), "initial config");
+
+    // 在飞轮：compact 必 busy（压缩以 turn 跑，与进行中轮并发未验证先拒）。
+    // 在飞信号 = turn/started 透传帧（@slow 的 delta 在挂起循环之后才发，不能当在飞信号）。
+    runtime.write("k-e1", "@slow 8000", "u-e1");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_event"), "slow turn in flight");
+    expect(await runtime.compact("k-e1")).toBe("busy");
+    await runtime.interrupt("k-e1");
+    await waitFor(() => parse(lines).some((m) => m.type === "ended"), "first ended");
+
+    // @compactfail echo 轮置位 → 压缩 RPC ok、压缩 turn 以 failed 收口。
+    runtime.write("k-e1", "@compactfail", "u-e1b");
+    await waitFor(() => parse(lines).filter((m) => m.type === "ended").length >= 2, "second ended");
+    expect(await runtime.compact("k-e1")).toBe("ok");
+    await waitFor(
+      () => parse(lines).filter((m) => m.type === "ended").length >= 3,
+      "compact ended",
+    );
+    // 豁免断言：等几个 delay 周期仍无注入轮（压缩失败 ≠ agent 轮失败）。
+    await Bun.sleep(300);
+    expect(
+      parse(lines).some(
+        (m) => m.type === "codex_user_echo" && (m as { text?: string }).text === "请继续",
+      ),
+    ).toBe(false);
+    await runtime.close("k-e1");
+  });
+
+  test("steer：在飞轮时 write 走 turn/steer 并入当前轮（不开新轮）", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.startAgent({
+      id: "s-e2",
+      projectName: "p1",
+      runtimeKey: "k-e2",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k-e2");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_config"), "initial config");
+
+    runtime.write("k-e2", "@slow 6000", "u-e2a");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_event"), "in flight");
+    runtime.write("k-e2", "steer-me", "u-e2b");
+    // steer 文本以 delta 回显（fake 仅在 turn/steer 成功路径发）= 并入当前轮的直接证据。
+    await waitFor(
+      () => parse(lines).some((m) => JSON.stringify(m).includes('"steered:steer-me"')),
+      "steered delta",
+    );
+    await runtime.interrupt("k-e2");
+    await waitFor(() => parse(lines).some((m) => m.type === "ended"), "ended");
+    // 不开新轮：无 "echo: steer-me"（steer 文本不走 turn/start 的 echo 轮）。
+    expect(parse(lines).some((m) => JSON.stringify(m).includes("echo: steer-me"))).toBe(false);
+    await runtime.close("k-e2");
+  });
+
+  test("steer 失败：RPC error → 回退排队，turn 收口后 flushQueue 开新轮", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.startAgent({
+      id: "s-e3",
+      projectName: "p1",
+      runtimeKey: "k-e3",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k-e3");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_config"), "initial config");
+
+    runtime.write("k-e3", "@slow 1200", "u-e3a");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_event"), "in flight");
+    runtime.write("k-e3", "@steerfail-more", "u-e3b");
+    // @slow 自然收口后队列 flush 开新轮 → 排队文本经 turn/start 跑掉。
+    await waitFor(
+      () => parse(lines).some((m) => JSON.stringify(m).includes("echo: @steerfail-more")),
+      "queued message ran after turn end",
+    );
+    // 未走 steer 路径（fake 仅 steer 成功才回显 steered）。
+    expect(parse(lines).some((m) => JSON.stringify(m).includes('"steered:'))).toBe(false);
+    await runtime.close("k-e3");
+  });
+
+  test("MCP 注入：spawn argv 带 -c mcp_servers.ar-hub.url=（chat 形态）", async () => {
+    const { runtime } = makeRuntime(undefined, undefined, 43011);
+    await runtime.startAgent({
+      id: "s-e4",
+      projectName: "p1",
+      runtimeKey: "k-e4",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k-e4");
+    runtime.write("k-e4", "hi", "u-e4");
+    await waitFor(
+      () =>
+        parse(lines).some(
+          (m) =>
+            m.type === "codex_event" &&
+            (m.event as Record<string, unknown>).method === "item/completed",
+        ),
+      "turn completed",
+    );
+    const completed = parse(lines).find(
+      (m) =>
+        m.type === "codex_event" &&
+        (m.event as Record<string, unknown>).method === "item/completed",
+    ) as { event: { params: { item: { text?: string } } } };
+    // fake 回显 process.argv：注入串（TOML 值带引号，探针 E1 实证形状）必须在。
+    expect(completed.event.params.item.text).toContain(
+      '-c mcp_servers.ar-hub.url="http://127.0.0.1:43011/mcp/p1"',
+    );
+    await runtime.close("k-e4");
+  });
+
+  test("账号额度：apiKey 形态（denied）config 帧无 account；ChatGPT 形态带 account", async () => {
+    // denied（默认，真实 app-server 报 authentication required → catch 成 null）：
+    // codexAccountFromResponses 全缺 → 无 account 字段。
+    const denied = makeRuntime();
+    await denied.runtime.startAgent({
+      id: "s-e5a",
+      projectName: "p1",
+      runtimeKey: "k-e5a",
+      projectPath,
+    });
+    const deniedLines = collectStream(denied.runtime, "k-e5a");
+    denied.runtime.write("k-e5a", "hi", "u-e5a");
+    await waitFor(() => parse(deniedLines).some((m) => m.type === "ended"), "denied ended");
+    for (const m of parse(deniedLines)) {
+      if (m.type === "codex_config") expect(m.account).toBeUndefined();
+    }
+    await denied.runtime.close("k-e5a");
+
+    // allowed（fake --account-allowed）：额度快照随 config 帧透传（宽进提取后形状）。
+    const allowed = makeRuntime(undefined, undefined, undefined, ["--account-allowed"]);
+    await allowed.runtime.startAgent({
+      id: "s-e5b",
+      projectName: "p1",
+      runtimeKey: "k-e5b",
+      projectPath,
+    });
+    const allowedLines = collectStream(allowed.runtime, "k-e5b");
+    await waitFor(
+      () => parse(allowedLines).some((m) => m.type === "codex_config" && m.account),
+      "config with account",
+    );
+    const cfg = parse(allowedLines).find((m) => m.type === "codex_config" && m.account) as {
+      account: Record<string, unknown>;
+    };
+    expect(cfg.account).toEqual({
+      planType: "pro",
+      primary: {
+        usedPercent: 42.6,
+        windowDurationMins: 300,
+        resetsAt: "2026-10-29T12:00:00Z",
+      },
+      secondary: { usedPercent: 3.2, windowDurationMins: 10080 },
+      lifetimeTokens: 1234567,
+    });
+    await allowed.runtime.close("k-e5b");
+  });
+
+  test("额度通知直取快照（denied 环境下也不打 read RPC）：params.rateLimits → 新 config 帧", async () => {
+    // perf P2-2：account/rateLimits/updated 的 params 自带完整快照——denied（read 报
+    // authentication required）时仍能从通知拿到额度，证明未依赖 read RPC。
+    const { runtime } = makeRuntime();
+    await runtime.startAgent({
+      id: "s-e6a",
+      projectName: "p1",
+      runtimeKey: "k-e6a",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k-e6a");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_config"), "initial config");
+
+    runtime.write("k-e6a", "@notifylimits", "u-e6a");
+    await waitFor(
+      () => parse(lines).some((m) => m.type === "codex_config" && m.account?.planType === "plus"),
+      "config with carried account",
+    );
+    const cfg = parse(lines).find(
+      (m) => m.type === "codex_config" && m.account?.planType === "plus",
+    ) as { account: Record<string, unknown> };
+    expect(cfg.account).toEqual({
+      planType: "plus",
+      primary: { usedPercent: 77, windowDurationMins: 300 },
+    });
+    await runtime.close("k-e6a");
   });
 });
 

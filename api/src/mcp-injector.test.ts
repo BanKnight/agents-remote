@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { ClaudeMcpInjector, buildMcpInjectorForProvider } from "./mcp-injector";
+import { ClaudeMcpInjector, CodexMcpInjector, buildMcpInjectorForProvider } from "./mcp-injector";
 import { getAgentProviderProfile } from "./agent-provider-profiles";
 
 describe("ClaudeMcpInjector", () => {
@@ -40,14 +40,45 @@ describe("ClaudeMcpInjector", () => {
   });
 });
 
+describe("CodexMcpInjector", () => {
+  const injector = new CodexMcpInjector();
+
+  it("canInject returns true only for codex profile", () => {
+    const codex = getAgentProviderProfile("codex")!;
+    expect(injector.canInject(codex)).toBe(true);
+
+    const claude = getAgentProviderProfile("claude")!;
+    expect(injector.canInject(claude)).toBe(false);
+  });
+
+  it("buildMcpConfig produces -c TOML override with quoted loopback url (0.163 probe shape)", () => {
+    const config = injector.buildMcpConfig({ project: "demo", mcpPort: 43013 });
+    expect(config).not.toBeNull();
+    expect(config!.args).toEqual([
+      "-c",
+      'mcp_servers.ar-hub.url="http://127.0.0.1:43013/mcp/demo"',
+    ]);
+  });
+
+  it("encodes project name in the hub url", () => {
+    const config = injector.buildMcpConfig({ project: "my proj", mcpPort: 43013 });
+    expect(config!.args[1]).toBe('mcp_servers.ar-hub.url="http://127.0.0.1:43013/mcp/my%20proj"');
+  });
+});
+
 describe("buildMcpInjectorForProvider", () => {
   it("returns ClaudeMcpInjector for claude", () => {
     const injector = buildMcpInjectorForProvider(getAgentProviderProfile("claude")!);
     expect(injector).toBeInstanceOf(ClaudeMcpInjector);
   });
 
-  it("returns null for codex (unsupported in base phase)", () => {
+  it("returns CodexMcpInjector for codex", () => {
     const injector = buildMcpInjectorForProvider(getAgentProviderProfile("codex")!);
+    expect(injector).toBeInstanceOf(CodexMcpInjector);
+  });
+
+  it("returns null for omp (ACP transport has no spawn argv injection channel)", () => {
+    const injector = buildMcpInjectorForProvider(getAgentProviderProfile("omp")!);
     expect(injector).toBeNull();
   });
 });

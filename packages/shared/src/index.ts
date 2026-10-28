@@ -1867,6 +1867,27 @@ export type CodexConfigFrame = {
     approvalPolicy: string;
     sandbox: string;
   };
+  /** 账号额度快照（防御式，2026-10-28 批 E）：account/rateLimits/read + usage/read 的
+   *  可得子集。仅 ChatGPT 登录形态可得（apiKey/网关登录下 app-server 报
+   *  "chatgpt authentication required"，探针 E4 实证）→ 缺省 = 前端不渲染额度段。 */
+  account?: CodexAccountUsage;
+};
+
+/** codex 账号额度（宽进）：窗口用量百分比 + 累计 token。字段缺失即前端隐藏对应行。 */
+export type CodexAccountUsage = {
+  planType?: string;
+  /** 主窗口（如 5h）与次窗口（如 weekly）用量；app-server RateLimitWindow 形状子集。 */
+  primary?: CodexRateLimitWindow;
+  secondary?: CodexRateLimitWindow;
+  /** account/usage/read 的 lifetime 累计（可选）。 */
+  lifetimeTokens?: number;
+};
+
+export type CodexRateLimitWindow = {
+  usedPercent: number;
+  windowDurationMins: number;
+  /** RFC3339 重置时刻。 */
+  resetsAt?: string;
 };
 
 /** 审批请求帧：**broadcastOnly 不进 live 缓冲**（重连后由 ApprovalCenter 快照兜底，
@@ -1954,6 +1975,11 @@ export type CodexStreamClientMessage =
       type: "respond";
       controlRequestId: string;
       decision: string;
+    }
+  | {
+      // 压缩上下文（批 E parity）：thread/compact/start（压缩以 turn 形态跑，产出
+      // contextCompaction item）。busy（turn 在飞）时服务端回 error 帧，前端 toast 提示。
+      type: "compact";
     }
   | {
       type: "ping";
