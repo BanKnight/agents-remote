@@ -12,7 +12,7 @@
 // 配置完全不调度。调度前 fresh 读 config（错误到注入的间隔内用户可能刚改配置）；fire 用
 // 调度时捕获的 config（等待中改配置下一轮生效）。
 //
-// 纯函数可单测；ClaudeAutoRetryWatch 持有 per-session 状态机与注入定时器，由
+// 纯函数可单测；AutoRetryWatch 持有 per-session 状态机与注入定时器，由
 // ClaudeRuntime 在 processStdoutLine 喂行、在 close/ensureRunning respawn/proc.exited
 // 三个生命周期点 destroySession 清理（含 pending 定时器）。
 
@@ -21,6 +21,8 @@ import { type ClaudeAutoRetryConfig } from "@agents-remote/shared";
 export const AUTO_RETRY_DELAY_MS = 60_000;
 export const AUTO_RETRY_WINDOW_MS = 30 * 60_000;
 export const AUTO_RETRY_MAX_PER_WINDOW = 3;
+/** 注入文案长度上限：配置随每次 spawn/列表投影传递，超长值会放大元数据与模型输入。 */
+export const AUTO_RETRY_MESSAGE_MAX_LENGTH = 4096;
 
 // normalizeAutoRetryConfig 的 clamp 边界（防手输/恶意 payload 出格值拖垮定时器或窗口语义）。
 export const AUTO_RETRY_DELAY_MS_MIN = 5_000;
@@ -68,7 +70,8 @@ export function normalizeAutoRetryConfig(raw: unknown): ClaudeAutoRetryConfig {
   const r = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
   return {
     enabled: r.enabled === true,
-    message: typeof r.message === "string" ? r.message.trim() : "",
+    message:
+      typeof r.message === "string" ? r.message.trim().slice(0, AUTO_RETRY_MESSAGE_MAX_LENGTH) : "",
     delayMs: clamp(
       typeof r.delayMs === "number" && Number.isFinite(r.delayMs)
         ? Math.round(r.delayMs)
@@ -112,8 +115,6 @@ export function buildAutoRetryEchoLine(userLine: string): string {
 }
 
 type AutoRetryState = {
-  /** 所属 session 的 metadata id（读配置用）。 */
-  sessionId: string;
   injectionTimestamps: number[];
   pendingTimer: ReturnType<typeof setTimeout> | null;
   /** 调度时捕获的 config（fireNow / pendingStatus 用——setTimeout 闭包外的权威副本）。 */
@@ -128,65 +129,80 @@ type AutoRetryState = {
   awaitingSuccess: boolean;
 };
 
-export type ClaudeAutoRetryWatchOptions = {
+export type AutoRetryWatchOptions = {
   /** 调度时刻读取配置（fresh 读）。缺省/enabled:false → 完全不调度（默认关）。 */
   getConfig: (
     sessionName: string,
     sessionId: string,
   ) => ClaudeAutoRetryConfig | undefined | Promise<ClaudeAutoRetryConfig | undefined>;
-  /** 执行注入：写 stdin + relay live echo。实现方自行吞掉进程已死的错误。 */
-  inject: (sessionName: string, stdinLine: string, echoLine: string) => void | Promise<void>;
+  /** 执行注入：message = 配置原文，实现方自行组装协议帧（claude = stdin user 行 +
+   *  live echo；codex = runtime.write）。实现方自行吞掉进程已死的错误。 */
+  inject: (sessionName: string, message: string) => void | Promise<void>;
   now?: () => number;
 };
 
-export class ClaudeAutoRetryWatch {
+export class AutoRetryWatch {
   private readonly states = new Map<string, AutoRetryState>();
-  private readonly getConfig: ClaudeAutoRetryWatchOptions["getConfig"];
-  private readonly inject: ClaudeAutoRetryWatchOptions["inject"];
+  private readonly getConfig: AutoRetryWatchOptions["getConfig"];
+  private readonly inject: AutoRetryWatchOptions["inject"];
   private readonly now: () => number;
 
-  constructor(options: ClaudeAutoRetryWatchOptions) {
+  constructor(options: AutoRetryWatchOptions) {
     this.getConfig = options.getConfig;
     this.inject = options.inject;
     this.now = options.now ?? Date.now;
   }
 
-  // 每条真实新 stdout 行喂入（processStdoutLine 的第 5 个 capture）。回放不经此。
-  handleStdoutLine(sessionName: string, sessionId: string, parsed: ParsedLine): void {
-    if (isNormalAssistantLine(parsed)) {
-      const state = this.states.get(sessionName);
-      if (!state) return;
-      // 正常 assistant 到达：待发的注入定时器作废（agent 已在响应，无需注入）——
-      // gen 递增同时作废 in-flight 的 async schedule；awaitingSuccess（注入后首条
-      // 正常回复）→ 成功，计数归零。
-      state.gen += 1;
-      if (state.pendingTimer) {
-        clearTimeout(state.pendingTimer);
-        state.pendingTimer = null;
-        state.pendingConfig = null;
-        state.pendingFireAt = null;
-      }
-      if (state.awaitingSuccess) {
-        state.injectionTimestamps = [];
-        state.awaitingSuccess = false;
-      }
-      return;
+  // ── provider 无关语义入口 ────────────────────────────────────────────────
+
+  /** 正常响应到达：待发的注入定时器作废（agent 已在响应，无需注入）——gen 递增同时
+   *  作废 in-flight 的 async schedule；awaitingSuccess（注入后首条正常回复）→ 成功，
+   *  计数归零。 */
+  notifyNormal(sessionName: string): void {
+    const state = this.states.get(sessionName);
+    if (!state) return;
+    state.gen += 1;
+    if (state.pendingTimer) {
+      clearTimeout(state.pendingTimer);
+      state.pendingTimer = null;
+      state.pendingConfig = null;
+      state.pendingFireAt = null;
     }
+    if (state.awaitingSuccess) {
+      state.injectionTimestamps = [];
+      state.awaitingSuccess = false;
+    }
+  }
 
-    if (!isErrorResultLine(parsed)) return;
-
-    // turn 以 error 终止 = 报错 + 停下来。fresh 读 config（可能 async）后决定是否调度；
-    // scheduling 标志在 await 间隙挡住重复 error 的叠加调度。
-    const state = this.ensureState(sessionName, sessionId);
+  /** turn/轮次以错误终止 = 报错 + 停下来。fresh 读 config（可能 async）后决定是否调度；
+   *  scheduling 标志在 await 间隙挡住重复 error 的叠加调度。 */
+  notifyError(sessionName: string, sessionId: string): void {
+    const state = this.ensureState(sessionName);
     if (state.pendingTimer || state.scheduling) return;
     state.scheduling = true;
-    void this.schedule(sessionName, sessionId, state);
+    // getConfig 可能抛错（metadata 读失败）：吞掉，下一条 error 重新调度。
+    void this.schedule(sessionName, sessionId, state).catch(() => {});
+  }
+
+  // claude 便捷入口：每条真实新 stdout 行喂入（processStdoutLine 的第 5 个 capture）。
+  // 回放不经此。codex 不经此（直接调 notifyNormal/notifyError）。
+  handleStdoutLine(sessionName: string, sessionId: string, parsed: ParsedLine): void {
+    if (isNormalAssistantLine(parsed)) {
+      this.notifyNormal(sessionName);
+      return;
+    }
+    if (!isErrorResultLine(parsed)) return;
+    this.notifyError(sessionName, sessionId);
   }
 
   // 用户手动介入（runtime.write 被外部调用）：取消待发的注入，不与用户输入叠加。
   cancelPending(sessionName: string): void {
     const state = this.states.get(sessionName);
-    if (state?.pendingTimer) {
+    if (!state) return;
+    // gen 递增作废 in-flight schedule——否则 await getConfig 窗口内取消，调度恢复后
+    // 会给「已取消」的状态重新装上定时器（P2：取消形同虚设）。
+    state.gen += 1;
+    if (state.pendingTimer) {
       clearTimeout(state.pendingTimer);
       state.pendingTimer = null;
       state.pendingConfig = null;
@@ -240,6 +256,8 @@ export class ClaudeAutoRetryWatch {
   destroySession(sessionName: string): void {
     const state = this.states.get(sessionName);
     if (!state) return;
+    // 同 cancelPending：作废 in-flight schedule（防止销毁后旧调度给已亡会话装定时器）。
+    state.gen += 1;
     if (state.pendingTimer) clearTimeout(state.pendingTimer);
     this.states.delete(sessionName);
   }
@@ -252,8 +270,9 @@ export class ClaudeAutoRetryWatch {
     const gen = state.gen;
     try {
       const config = await this.getConfig(sessionName, sessionId);
-      // 调度间隙发生重置事件（正常 assistant 到达）→ 本次调度作废。
-      if (gen !== state.gen) return;
+      // 调度间隙发生重置事件（正常 assistant 到达 / 用户介入 / 销毁）→ 本次调度作废。
+      // 身份校验兜底：destroy 后同 key 重建了新 state，旧 schedule 绝不能给它装定时器。
+      if (gen !== state.gen || this.states.get(sessionName) !== state) return;
       // 默认关：未配置 / enabled:false / 文案为空 → 不调度。
       if (!config || !config.enabled || !config.message.trim()) return;
 
@@ -264,7 +283,7 @@ export class ClaudeAutoRetryWatch {
         return;
       }
       state.pendingTimer = setTimeout(() => {
-        void this.fire(sessionName, state, config);
+        void this.fire(sessionName, state, config).catch(() => {});
       }, config.delayMs);
       state.pendingConfig = config;
       state.pendingFireAt = this.now() + config.delayMs;
@@ -286,18 +305,25 @@ export class ClaudeAutoRetryWatch {
 
     // 时间戳记在注入时刻（真实发生的注入才进滚动窗口）。
     const nowMs = this.now();
+    const before = state.injectionTimestamps;
     state.injectionTimestamps = [...state.injectionTimestamps, nowMs];
     state.awaitingSuccess = true;
 
-    const userLine = buildAutoRetryUserLine(config.message);
-    await this.inject(sessionName, `${userLine}\n`, buildAutoRetryEchoLine(userLine));
+    try {
+      await this.inject(sessionName, config.message);
+    } catch {
+      // 注入失败（进程已死等）→ 回滚记账：未发生的注入不得占用滚动窗口名额，
+      // 也不得置成功标记（否则下一条正常消息会误判为「注入生效」）。实现方仍应自行
+      // 吞掉可预期的进程死亡错误；这里是最后一道防线（P2：定时器路径曾悬空拒绝）。
+      state.injectionTimestamps = before;
+      state.awaitingSuccess = false;
+    }
   }
 
-  private ensureState(sessionName: string, sessionId: string): AutoRetryState {
+  private ensureState(sessionName: string): AutoRetryState {
     let state = this.states.get(sessionName);
     if (!state) {
       state = {
-        sessionId,
         injectionTimestamps: [],
         pendingTimer: null,
         pendingConfig: null,

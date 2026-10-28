@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   Fragment,
@@ -33,13 +33,8 @@ import {
 } from "@assistant-ui/react";
 import { MarkdownString } from "../components/markdown/MarkdownString";
 import { MarkdownText } from "../components/markdown/MarkdownText";
-import {
-  cancelAutoRetry,
-  fetchAutoRetryStatus,
-  fireAutoRetryNow,
-  getAgentSession,
-  getSkillSlashCatalog,
-} from "../api/client";
+import { AutoRetryBanner } from "../components/workbench/auto-retry-banner";
+import { getAgentSession, getSkillSlashCatalog } from "../api/client";
 import { useT, type TranslationKey } from "../i18n";
 import { formatDuration, formatTokenCount } from "../lib/utils";
 import { isDebugButtonEnabled, isPerfTraceEnabled } from "../lib/debug-flags";
@@ -3247,7 +3242,8 @@ export function VirtualizedThreadContent({
   everConnected = false,
   deltaEnter,
 }: {
-  /** 服务端 auto-retry pending 轮询开关：仅 claude 会话（有 runtimeKey）开启，ACP/Chat 恒 false。 */
+  /** 服务端 auto-retry pending 轮询开关（provider 无关：claude/codex chat 形态会话开启，
+   *  ACP/Chat/terminal 形态恒 false——服务端无对应 watch，轮询只会 404）。 */
   autoRetryEnabled?: boolean;
   loading: boolean;
   /** auto-retry 状态轮询目标（仅 autoRetryEnabled 时需要）。 */
@@ -3957,100 +3953,8 @@ function ComposerWithInterrupt({
 // 控制端点；本组件只负责错误转注入中的只读倒计时（CLI 内部 api_retry，服务端无控制面）。
 // 挂载位置由调用方决定——移动在流上方、桌面同位（共享组件流顶）。
 // ── AutoRetryBanner（M8 03d `.count` 取消/立即重试）──────────────────────────
-// 服务端 ClaudeAutoRetryWatch 的待发注入快照（GET auto-retry/status）。pending 是
-// 纯内存态且无 WS 广播（redesign-v2 §6.9 裁决）：连接期间 5s 轮询，scheduled=false
-// 不渲染；注入发生时流内本就有 isUserInput echo 可见，状态条随 refetch 消失。
-// attempt/max 与设置页 ClaudeAutoRetryConfig 同源（03d pin②「次数/间隔/文案在 ℹ 配置」）。
-
-const AUTO_RETRY_POLL_MS = 5000;
-
-function AutoRetryBanner({
-  enabled,
-  projectName,
-  sessionId,
-}: {
-  enabled: boolean;
-  projectName: string;
-  sessionId: string;
-}) {
-  const { t } = useT();
-  const queryClient = useQueryClient();
-  const status = useQuery({
-    enabled,
-    queryFn: () => fetchAutoRetryStatus(projectName, sessionId),
-    queryKey: ["projects", projectName, "agent-sessions", sessionId, "auto-retry-status"],
-    refetchInterval: AUTO_RETRY_POLL_MS,
-  });
-  const invalidate = () => {
-    void queryClient.invalidateQueries({
-      queryKey: ["projects", projectName, "agent-sessions", sessionId, "auto-retry-status"],
-    });
-  };
-  const cancel = useMutation({
-    mutationFn: () => cancelAutoRetry(projectName, sessionId),
-    onSuccess: invalidate,
-  });
-  const fire = useMutation({
-    mutationFn: () => fireAutoRetryNow(projectName, sessionId),
-    onSuccess: invalidate,
-  });
-
-  const pending = status.data?.scheduled === true ? status.data : null;
-  const fireAt = pending?.fireAt;
-  const [remainMs, setRemainMs] = useState(0);
-  useEffect(() => {
-    if (fireAt === undefined) {
-      setRemainMs(0);
-      return;
-    }
-    const tick = () => setRemainMs(Math.max(0, fireAt - Date.now()));
-    tick();
-    const timer = setInterval(tick, 250);
-    return () => clearInterval(timer);
-  }, [fireAt]);
-
-  if (pending === null || fireAt === undefined) return null;
-
-  const totalSeconds = Math.ceil(remainMs / 1000);
-  const mmss = `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}`;
-  return (
-    <div className="shrink-0 px-3 pt-1.5 sm:px-5">
-      <div className="count" role="status">
-        <div className="r1">
-          <ShellIcon className="h-[15px] w-[14px] shrink-0" name="warning-triangle" />
-          <span className="min-w-0 flex-1 truncate">{t("claude.autoRetryPending.title")}</span>
-          <span className="btns">
-            <button
-              className="btn ghost"
-              disabled={cancel.isPending}
-              onClick={() => cancel.mutate()}
-              type="button"
-            >
-              {t("cancel")}
-            </button>
-            <button
-              className="btn blue"
-              disabled={fire.isPending}
-              onClick={() => fire.mutate()}
-              type="button"
-            >
-              {t("claude.autoRetryPending.retryNow")}
-            </button>
-          </span>
-        </div>
-        <div className="r2">
-          <span className="tm">
-            {t("claude.retry.countSchedule", {
-              attempt: pending.attempt ?? 1,
-              max: pending.max ?? 1,
-              time: mmss,
-            })}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
+// 自动重试待发注入条（AutoRetryBanner）已抽到 components/workbench/auto-retry-banner.tsx
+// ——claude / codex 详情页共用（provider 无关）。
 
 function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
   const { t } = useT();
@@ -4088,7 +3992,7 @@ function RetryIndicator({ retryInfo }: { retryInfo: RetryInfo | null }) {
         </div>
         <div className="r2">
           <span className="tm">
-            {t("claude.retry.countSchedule", {
+            {t("session.autoRetry.countSchedule", {
               time: mmss,
               attempt: retryInfo.attempt,
               max: retryInfo.maxRetries,

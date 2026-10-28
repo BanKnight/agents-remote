@@ -2,7 +2,7 @@ import type { ClaudeAutoRetryConfig } from "@agents-remote/shared";
 
 /**
  * 自动重试配置编辑器的 UI 纯函数层（v1.6 workspace-retry-config 控件化）。边界与档位
- * 与服务端 clamp（api/src/claude-auto-retry.ts AUTO_RETRY_*_MIN/MAX）对齐——UI 先防呆，
+ * 与服务端 clamp（api/src/agent-auto-retry.ts AUTO_RETRY_*_MIN/MAX）对齐——UI 先防呆，
  * 服务端仍是最终守门。
  */
 

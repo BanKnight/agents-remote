@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import type { CodexCredentials } from "@agents-remote/shared";
+import type { ClaudeAutoRetryConfig, CodexCredentials } from "@agents-remote/shared";
 import {
   CodexRuntime,
   codexSpawnEnv,
@@ -24,6 +24,7 @@ import {
 //   等 response 拿 decision，再 item/completed(commandExecution) 收口
 // - `@slow` 挂起至 turn/interrupt（回 status:"interrupted"）或超时自然 completed
 const FAKE_CODEX_SCRIPT = `
+import { readFileSync } from "node:fs";
 const pending = new Map();
 const serverPending = new Map();
 let nextServerId = 0;
@@ -49,16 +50,35 @@ async function handleTurnStart(msg) {
     const decided = await new Promise((resolve) => serverPending.set(reqId, resolve));
     notify("item/completed", { threadId: "th-fake-1", turnId,
       item: { type: "commandExecution", id: "call_" + turnId, exitCode: 0, status: decided.decision } });
+  } else if (text.startsWith("@fail")) {
+    // failed 终态（上游错误形态）：只回 turn/completed failed，无 agentMessage——
+    // 自动重试 watch 的信号源（notifyError）。
+    notify("turn/completed", { threadId: "th-fake-1", turn: { id: turnId, status: "failed" } });
+    return;
   } else if (text.startsWith("@slow")) {
     const ms = parseInt(text.split(" ")[1], 10) || 8000;
     const start = Date.now();
     while (!interrupted.get(turnId) && Date.now() - start < ms) await Bun.sleep(20);
   }
+  // 凭据通道回显：settings → 专属 CODEX_HOME（auth.json 0600）+ -c openai_base_url argv；
+  // env OPENAI_* 恒 "-"（codex 运行期不读，2026-10-28 调研结论）。
+  let authCov = "-";
+  if (process.env.CODEX_HOME) {
+    try {
+      const auth = JSON.parse(readFileSync(process.env.CODEX_HOME + "/auth.json", "utf8"));
+      authCov = (auth.auth_mode ?? "-") + "@" + (auth.OPENAI_API_KEY ?? "-");
+    } catch (e) {
+      authCov = "ERR";
+    }
+  }
   const cov = " model=" + (msg.params.model ?? "-") + " effort=" + (msg.params.effort ?? "-")
     + " approval=" + (msg.params.approvalPolicy ?? "-")
     + " sandbox=" + (msg.params.sandboxPolicy?.type ?? "-")
     + " imgs=" + imgs.map((i) => i.url).join("|")
-    + " env=" + (process.env.OPENAI_API_KEY ?? "-") + "@" + (process.env.OPENAI_BASE_URL ?? "-");
+    + " env=" + (process.env.OPENAI_API_KEY ?? "-") + "@" + (process.env.OPENAI_BASE_URL ?? "-")
+    + " home=" + (process.env.CODEX_HOME ?? "-")
+    + " auth=" + authCov
+    + " argv=" + process.argv.slice(2).join(" ");
   notify("item/agentMessage/delta", { threadId: "th-fake-1", turnId, delta: "echo: " + text });
   notify("item/completed", { threadId: "th-fake-1", turnId,
     item: { type: "agentMessage", id: "msg_" + turnId, text: "echo: " + text + cov } });
@@ -165,8 +185,14 @@ afterAll(async () => {
 
 const fakeCodexCommand = () => [process.execPath, join(fixtureDir, "fake-codex.ts")];
 
-const makeRuntime = (resolveCredentials?: () => Promise<CodexCredentials | undefined>) => {
+const makeRuntime = (
+  resolveCredentials?: () => Promise<CodexCredentials | undefined>,
+  autoRetryConfig?: ClaudeAutoRetryConfig,
+) => {
   const runtime = new CodexRuntime(runDir, fakeCodexCommand(), resolveCredentials);
+  if (autoRetryConfig) {
+    runtime.setAutoRetryConfigProvider(async () => autoRetryConfig);
+  }
   const threadIds: { sessionId: string; threadId: string }[] = [];
   const activities: string[] = [];
   const statuses: { sessionId: string; status: string }[] = [];
@@ -506,26 +532,28 @@ describe("CodexRuntime（fake app-server 集成）", () => {
     await runtime.close("k7");
   });
 
-  test("凭据注入：resolveCredentials 切片进 spawn env（fake 回显）；未配置不注键", async () => {
-    // 纯函数三态：白名单不继承 OPENAI_*（settings 唯一来源）；有切片才注键。
+  test("凭据注入：resolveCredentials → 专属 CODEX_HOME + auth.json + `-c openai_base_url`（fake 回读）", async () => {
+    // 纯函数：OPENAI_* 恒不进 spawn env（codex 0.163 运行期不读，且不继承父 env 泄漏）；
+    // CODEX_HOME 只在 prepared 有值时注入（未配置 apiKey → 不重定向）。
     const savedKey = process.env.OPENAI_API_KEY;
-    const savedUrl = process.env.OPENAI_BASE_URL;
+    const savedHome = process.env.CODEX_HOME;
     process.env.OPENAI_API_KEY = "parent-leak";
+    delete process.env.CODEX_HOME;
     try {
       expect(codexSpawnEnv(undefined).OPENAI_API_KEY).toBeUndefined();
-      expect(codexSpawnEnv({}).OPENAI_API_KEY).toBeUndefined();
-      expect(codexSpawnEnv({ apiKey: "sk-x", baseUrl: "https://gw.test/v1" })).toMatchObject({
-        OPENAI_API_KEY: "sk-x",
-        OPENAI_BASE_URL: "https://gw.test/v1",
-      });
+      expect(codexSpawnEnv({ codexHome: null, configOverrides: [] }).CODEX_HOME).toBeUndefined();
+      expect(
+        codexSpawnEnv({ codexHome: "/tmp/codex-home-x", configOverrides: [] }).CODEX_HOME,
+      ).toBe("/tmp/codex-home-x");
     } finally {
       if (savedKey === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = savedKey;
-      if (savedUrl === undefined) delete process.env.OPENAI_BASE_URL;
-      else process.env.OPENAI_BASE_URL = savedUrl;
+      if (savedHome === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = savedHome;
     }
 
-    // 集成：resolveCredentials 提供切片 → fake 进程 process.env 真实收到（spawn env 注入）。
+    // 集成：resolveCredentials 切片 → spawn 前准备专属 home，进程真实收到 CODEX_HOME +
+    // argv 覆盖。fake 回读 auth.json 与 argv（唯一可靠证据链：文件内容 + 命令行）。
     const { runtime } = makeRuntime(async () => ({
       apiKey: "sk-inject-test",
       baseUrl: "https://gw.test/v1",
@@ -537,7 +565,6 @@ describe("CodexRuntime（fake app-server 集成）", () => {
       projectPath,
     });
     const lines = collectStream(runtime, "k8");
-    // fake 把 process.env 的 OPENAI_* 回显进 cov（item/completed 文本尾段）。
     runtime.write("k8", "check env", "u-env");
     await waitFor(() => parse(lines).some((m) => m.type === "ended"), "credential turn ended");
     const completed = parse(lines).find(
@@ -545,8 +572,158 @@ describe("CodexRuntime（fake app-server 集成）", () => {
         m.type === "codex_event" &&
         (m.event as Record<string, unknown>).method === "item/completed",
     );
-    expect(JSON.stringify(completed)).toContain("env=sk-inject-test@https://gw.test/v1");
+    const cov = JSON.stringify(completed);
+    expect(cov).toContain(`home=${join(runDir, "codex-home")}`);
+    expect(cov).toContain("auth=apikey@sk-inject-test");
+    expect(cov).toContain("argv=-c openai_base_url=https://gw.test/v1");
+    // 父 env 的 OPENAI_API_KEY 未被继承（白名单封闭）。
+    expect(cov).not.toContain("parent-leak");
     await runtime.close("k8");
+  });
+
+  test("未配置凭据：不重定向 CODEX_HOME（回退用户自身凭证链），无 -c 覆盖", async () => {
+    const { runtime } = makeRuntime(async () => undefined);
+    await runtime.startAgent({
+      id: "s9",
+      projectName: "p1",
+      runtimeKey: "k9",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k9");
+    runtime.write("k9", "no creds", "u-nocreds");
+    await waitFor(() => parse(lines).some((m) => m.type === "ended"), "no-creds turn ended");
+    const completed = JSON.stringify(
+      parse(lines).find(
+        (m) =>
+          m.type === "codex_event" &&
+          (m.event as Record<string, unknown>).method === "item/completed",
+      ),
+    );
+    expect(completed).toContain("home=-");
+    expect(completed).toContain("auth=-");
+    expect(completed).toContain("argv=");
+    expect(completed).not.toContain("openai_base_url");
+    await runtime.close("k9");
+  });
+
+  // ── 自动重试（agent-auto-retry 泛化后的 codex 信号源）──────────────────────
+
+  test("自动重试：turn/completed failed → 延迟注入下一轮（write 全链路 + 状态机迁移）", async () => {
+    const { runtime, statuses } = makeRuntime(undefined, {
+      enabled: true,
+      message: "请继续",
+      delayMs: 50,
+      maxPerWindow: 3,
+      windowMs: 60_000,
+    });
+    await runtime.startAgent({
+      id: "s10",
+      projectName: "p1",
+      runtimeKey: "k10",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k10");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_config"), "initial config");
+
+    runtime.write("k10", "@fail 第一轮", "u-fail");
+    await waitFor(
+      () =>
+        parse(lines).some(
+          (m) =>
+            m.type === "codex_event" &&
+            (m.event as Record<string, unknown>).method === "turn/completed" &&
+            JSON.stringify(m).includes('"failed"'),
+        ),
+      "failed turn completed",
+    );
+
+    // 注入 = 自动替用户发一条消息（走 write）：echo 帧 + 第二轮 turn/start 真跑了。
+    await waitFor(
+      () =>
+        parse(lines).some(
+          (m) => m.type === "codex_user_echo" && (m as { text?: string }).text === "请继续",
+        ),
+      "auto-retry injected echo",
+    );
+    const injectedEcho = parse(lines).find(
+      (m) => m.type === "codex_user_echo" && (m as { text?: string }).text === "请继续",
+    ) as { uuid?: string };
+    expect(injectedEcho.uuid).toMatch(/^injected-/);
+    await waitFor(
+      () => parse(lines).some((m) => JSON.stringify(m).includes("echo: 请继续")),
+      "injected turn ran",
+    );
+    // 与用户手输同状态路径（user_input → working）。
+    expect(statuses.some((s) => s.status === "working")).toBe(true);
+    await runtime.close("k10");
+  });
+
+  test("自动重试：滚动窗口上限——注入轮也 failed 时，达到 maxPerWindow 后停止注入", async () => {
+    // 注入文案本身也 @fail：注入的 turn 同样失败 → 每轮消耗一个名额，直到窗口满。
+    const { runtime } = makeRuntime(undefined, {
+      enabled: true,
+      message: "@fail 继续",
+      delayMs: 50,
+      maxPerWindow: 2,
+      windowMs: 60_000,
+    });
+    await runtime.startAgent({
+      id: "s12",
+      projectName: "p1",
+      runtimeKey: "k12",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k12");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_config"), "initial config");
+
+    runtime.write("k12", "@fail 第一轮", "u-fail");
+    const injectedCount = () =>
+      parse(lines).filter(
+        (m) => m.type === "codex_user_echo" && (m as { text?: string }).text === "@fail 继续",
+      ).length;
+    await waitFor(() => injectedCount() === 2, "two injections");
+    // 窗口满后不再调度：等几个 delay 周期仍停在 2 次。
+    await Bun.sleep(400);
+    expect(injectedCount()).toBe(2);
+    await runtime.close("k12");
+  });
+
+  test("自动重试：failed 后用户手动介入（write）取消待发注入", async () => {
+    const { runtime } = makeRuntime(undefined, {
+      enabled: true,
+      message: "请继续",
+      delayMs: 200,
+      maxPerWindow: 3,
+      windowMs: 60_000,
+    });
+    await runtime.startAgent({
+      id: "s11",
+      projectName: "p1",
+      runtimeKey: "k11",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k11");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_config"), "initial config");
+
+    runtime.write("k11", "@fail 第一轮", "u-fail");
+    await waitFor(
+      () =>
+        parse(lines).some(
+          (m) =>
+            m.type === "codex_event" &&
+            (m.event as Record<string, unknown>).method === "turn/completed",
+        ),
+      "failed turn completed",
+    );
+    // 用户在定时器到点前手动发消息 → cancelPending，不再注入。
+    runtime.write("k11", "我来了", "u-manual");
+    await Bun.sleep(400);
+    expect(
+      parse(lines).some(
+        (m) => m.type === "codex_user_echo" && (m as { text?: string }).text === "请继续",
+      ),
+    ).toBe(false);
+    await runtime.close("k11");
   });
 
   test("setThreadConfig：config 帧重注入 + onConfigPersist 回调；下一个 turn/start 带覆盖参数", async () => {

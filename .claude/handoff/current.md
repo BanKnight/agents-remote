@@ -1,108 +1,83 @@
-# 当前状态(current.md — 滚动更新)
+# 当前状态（current.md — 滚动更新）
 
-> 最后更新:2026-10-28 14:20(批次 A/B/C 已 commit da5c9ba;用户新指令三件:
-> ①凭证 terminal 支持要竞品调研 ②自动重试缺失 ③全面 parity 检查——调研中)
+> 最后更新：2026-10-28 19:27（批次 D「terminal 形态凭证 + codex 自动重试」全门禁绿，待 commit）
 
 ## 一句话状态
 
-**codex 批次 C(用户三轮真机反馈清单)全部实现并过全门禁:C1 Effort 选择器兜底(模
-型不在 model/list 目录时按词表兜底渲染)、C2 加号附件(图片/文件,claude 单源复用)、
-C3 切换会话「离线中…」提示(everConnectedRef 防伪门)、C4 对话↔终端双模式(`codex
-resume <threadId>` TUI 接力 + SESSION_STATE_CONFLICT WS 守卫 + 多端跟随)、C5
-Settings codex 凭据卡全链路(shared 类型→store→PUT 三态→codexSpawnEnv env 注入→UI
-卡+i18n)。三 reviewer 并行审查后消化:code P1 图片字段名错位(mediaType vs
-mimeType,发图必坏——adapter 一处收口改名+wire 形状 hook 测试钉住)、security
-P0-级 mode 路由硬守卫 provider!=="claude"→codex 双模式经 HTTP 不可达(已放开双
-provider 准入)、design L1-L3(菜单 accent 语义色/uploading 发送键形态/aria 全角括
-号)、P2-1 项目级 codex 缓存清扫漏接线、P3-1 localStorage 兜底只写不删(抽
-lib/cached-agent-detail 单源+清理面)、P3-4 凭据注入零测试(补 codexSpawnEnv 纯函
-数三态+fake env 回显集成用例)。全门禁绿:format/lint(0)/typecheck/api 1180+
-shared 11+web 993/e2e codex 3/3/CSS 硬闸;api+web 已 respawn,content-type text/css,
-P1-1 修复特征串进产物。不 commit,等用户确认(批次 A tokenUsage+IDB 缓存、批次 B
-config 快照+冷启动骨架、批次 C 本批一起)。**
+**批次 D 完成：①codex 凭据走「托管 CODEX_HOME」方案（chat 与 terminal 双形态同源）——
+竞品调研（hapi/orca）共识 + 源码实证（codex 0.163 运行期不读 OPENAI_API_KEY、
+OPENAI_BASE_URL 无效）→ `api/src/codex-home.ts` 单源生成 `runDir/codex-home/`
+（auth.json 0600 原子写 + config.toml/sessions 软链 + `-c openai_base_url` 非机密 argv）；
+②自动重试从 claude 专属泛化为 provider 无关的 `AutoRetryWatch`（`agent-auto-retry.ts`，
+git mv），codex 接 `turn/completed status:"failed"` 信号源，前端 `AutoRetryBanner` 抽成
+共享组件两端复用。三 reviewer（security 无 P0 / code 无 P1 / design 无 L1）报告已消化。
+全门禁绿：format / lint(0 warning) / typecheck / api 1193 pass / web 993 pass /
+CSS 硬闸 / codex e2e 3/3。**
 
 ## 本 session 焦点
 
-### 关键决策(不可丢)
+### 关键决策（不可丢）
 
-- **C4 服务端入口(security reviewer 附注抓出)**:session-routes mode 路由原本
-  硬守卫 `metadata.provider !== "claude"` → 404,agent-tui 的 codex 分支是死代码。
-  已改为 profile transport 驱动准入(claude 看 claudeSessionId、codex 看
-  codexThreadId→400 SESSION_NOT_CONFIGURED;无 threadId 的存量 tmux 形态被
-  keepIfRuntimeExists 判死 → 404 探活自然产生)。
-- **C4 codex TUI 形态诚实退化**:codex CLI 无 claude hooks 机制 → 无状态文件/
-  watcher 面,TUI 期状态点停更(以 pane 内 TUI 为准);close 广播 closed 被 index
-  回调跳过(claude silent 变体不需要)。
-- **C5 env 注入**:codexSpawnEnv 白名单 13 键基础上 apiKey→OPENAI_API_KEY、
-  baseUrl→OPENAI_BASE_URL(两键刻意不在白名单=settings 唯一来源不继承父 env);每
-  次 spawn 前读(热更新,acp resolveCredentials 同时序);读失败 catch 回退。
-- **P1-1 教训(再证「mock 按真实协议」)**:composer-attach 产出 `{mediaType,data}`
-  (claude 语义),codex 线协议 `{mimeType,data}`——原样透传类型层拦不住(sendToSocket
-  参数 unknown);单测以正确形状直调 runtime.write 绕过 wire 边界=盲区。修复=adapter
-  一处收口改名,hook 测试经 storeAdapter.onNew→MockSocket 断言真实上行帧形状。
-- **shell→workbench 反向依赖**:project-row-actions(shell)需清理 localStorage
-  兜底键,helper 必须放 lib(cached-agent-detail.ts),不能 import workbench。
+- **凭证方案 = CODEX_HOME 重定向**（用户 AskUserQuestion 拍板）：codex 真实凭据链是
+  `CODEX_API_KEY` env（门控）→ `CODEX_ACCESS_TOKEN` → 持久化 store（auth.json/keyring），
+  **运行期不读 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 无效**（源码+实测双证）。因此 terminal
+  形态（tmux 内 `codex resume` TUI）唯一可行通道 = 让 tmux 进程继承 `CODEX_HOME`
+  （非机密路径可进 argv，key 永不出现在 ps）。
+- **baseUrl 依附 apiKey**（security P2-2）：只填 baseUrl 不填 key 时整体忽略 —— 否则
+  codex 会把全局 login token 发往手填端点。清空 apiKey → 删除自建 auth.json（吊销后
+  旧 key 不留盘）。
+- **AutoRetryWatch 泛化**：`handleStdoutLine`（claude 协议行）保留为 claude 便捷入口；
+  codex 直接调 `notifyNormal/notifyError`。`gen` 代数 + 身份校验作废 in-flight 调度
+  （cancelPending/destroySession 都递增 gen，否则 await getConfig 窗口内的取消形同虚设）；
+  `fire` 失败回滚记账。
+- **HTTP 面按 metadata 派发**：`sessionRegistry.getAutoRetryTarget()` 返回
+  `{runtimeKey, provider}`，claude 恒可、codex 需 `codexThreadId && mode!=="terminal"`。
 
-### 进度(批次 C 五项+review 修复全落地)
+### 进度（批次 D 全落地）
 
-- ✅ C1:efforts 词表兜底(CodexSessionDetailRoute)+e2e 回归锚(当前模型不在目录)。
-- ✅ C2:ComposerAttachMenu/AttachmentChipRow 接入 composer;服务端 sanitizeCodex
-  Images(security L3:非数组/坏形状/超 10M base64 项丢弃)。
-- ✅ C3:everConnectedRef→offlineCap(VirtualizedThreadContent 离线条防伪门)。
-- ✅ C4:agent-tui switchCodexToTerminal/ToChat(mode 先落盘 fail-closed+失败回滚重
-  拉)+codex-stream terminal 守卫+socketsByRuntimeKey+closeSessionSockets+前端
-  modeConflictRef(不重连+invalidate detail)+双端 gate(instance-area/mobile-
-  workbench)+PanelRouter 面板路由(mode!==terminal)。
-- ✅ C5:shared CodexCredentials/Masked 类型+store normalize/mask+PUT 三态路由+code
-  xSpawnEnv+index 装配(resolveCredentials)+client updateCodexRuntime+设置卡
-  CodexRuntimeSection+设置行+i18n 7 键。smoke PASS(masked 形状合法,密码脚本自读)。
-- ✅ 三 reviewer 消化:P1-1(媒体字段收口)、mode 路由准入、L1(accent 三色语义:
-  model=user/eff=assistant/perm=permission)、L2(showSend 摘 uploading gate 对齐
-  claude)、L3(aria-label 恒 label)、P2-1(clearProjectCodexReplayCache 接线
-  rename/delete)、P3-1(lib/cached-agent-detail 读校验+写/删单源)、P3-4(凭据注入
-  测试)、security L1(baseUrl typeof 守卫防 500)。
+- ✅ 竞品调研：hapi / orca 均「托管 CODEX_HOME + auth.json 文件」；tmux `-e` 传 key 会
+  短暂进 client argv（ps 可见）→ 否决。
+- ✅ 服务端：`codex-home.ts`（新）+ `codex-runtime.ts` 接线（`CODEX_ENV_KEYS` 含
+  CODEX_HOME）+ `agent-tui.ts` terminal 形态注入 env + `tmux-runtime.ts` `startCommand`
+  支持 `env`（仅供非机密路径）。
+- ✅ 自动重试：`agent-auto-retry.ts`（git mv 自 claude-auto-retry）+ codex 信号源 +
+  index 路由派发 + 前端 `components/workbench/auto-retry-banner.tsx`（共享）+ i18n
+  `session.autoRetry.*`。
+- ✅ 测试：`codex-home.test.ts`（6 例）、`agent-auto-retry.test.ts` 新增「in-flight 取消/
+  销毁作废调度」「inject 抛错回滚记账」「message 超长截断」、`codex-runtime.test.ts`
+  新增「窗口上限」「用户介入取消」、`session-registry.test.ts` terminal 负例。
 
 ### 阻塞 / 风险
 
-- 无阻塞。**留观/待办(记入下批)**:①security L2 terminal TOCTOU 窗口(claude 同
-  基线记档);②pi-stream images 同病未校验(统一收紧另批);③settings update() 无
-  串行化 last-writer-wins(全部路由同病,加 promise 队列另批);④apiKey/baseUrl 长
-  度上限(acp 同病);⑤CredentialsCardSection 抽取(ACP/Codex 卡 ~100 行复制,第三
-  张卡出现时抽);⑥design P2-2 pending 圆点对比度真机留观。
+- 无阻塞。**留观/待办（后续批次）**：①terminal TOCTOU 窗口（claude 同基线）；②pi-stream
+  images 校验；③settings update() 串行化；④apiKey/baseUrl 长度上限；⑤CredentialsCardSection
+  抽取；⑥design L2-1（`.count .btns .btn` padding 漂移，设计包单源缺口）。
 
 ### 易丢的关键上下文
 
-- **已 commit da5c9ba**(批次 A/B/C 一个 feat commit,handoff 单独 docs commit 跟随)。
-- **用户三条新指令(本 window 主任务)**:①terminal 形态凭证支持要竞品调研后实现
-  (约束:key 不暴露进 ps——tmux -e 未采纳原因);②自动重试缺失(codex 无,claude 有
-  ClaudeApiRetry/autoRetry destroySession 机制);③系统性检查 codex vs claude 功能
-  缺失全清单。
-- **terminal 形态凭证链差异(交付说明必写)**:tmux 内 `codex resume` TUI 不继承
-  settings 注入的 OPENAI_API_KEY(env 注入只覆盖 app-server spawn);仅配置 settings
-  凭据时 terminal 形态走 codex 自身凭证链(auth.json)。
-- **测试内存**:systemd-run --scope --user -p MemoryMax=2G;探针 bun 跑;编辑内置
-  工具;e2e 入口 bun run e2e。
-- **本 window Edit payload 损坏仍有**:中文标点全/半角差异致 old_string 不匹配(锚
-  用纯代码行);多次 found 2 matches(codex/acp 同构代码)要加 codex 特有锚。
+- **批 D 交付形态**：chat（app-server）与 terminal（tmux TUI）**同源**读 settings 凭据 ——
+  两者都通过 `CODEX_HOME`；此前 handoff 记的「terminal 不继承 settings 注入」已修复。
+- **已 commit**：`d3e5c6b`（handoff docs）、`da5c9ba`（批次 A/B/C feat）。
+- **用户三条指令剩余部分**：③「系统性检查 codex vs claude 功能缺失全清单」的补齐范围已
+  拍板（compact UI / MCP 注入 / 历史列表 / P2 小项打包）→ 批 E、批 F。
+- **测试内存**：systemd-run --scope --user -p MemoryMax=2G；探针 bun 跑；编辑内置工具；
+  e2e 入口 `bun scripts/run-e2e.ts <spec>`（只接受 argv[2]）。
 
-### 真机验收清单(批次 C,交用户)
+## 下一步
 
-1. **C1**:旧 thread(账号默认模型如 gpt-5.4)打开 → composer 三个选择器都在,推理
-   深度可选可切换(pending 圆点=下轮生效)。
-2. **C2**:加号发图片(选图/拍照/粘贴)→ 缩略图 chip → 发送 → 消息带图;纯图无文本
-   也可发;上传中发送键不抖动(点击被暂缓,形态保持)。
-3. **C3**:切换会话 → 恢复窗口显「离线中…」条,连接后消失;首连(无历史)显骨架。
-4. **C4**:⋯ 菜单「切到终端」→ tmux 起 `codex resume`(历史完整);终端菜单「回到
-   对话」→ app-server 复位+回放;另一端打开同会话跟随换形态;TUI 期状态点停更是
-   诚实退化非 bug。
-5. **C5**:Settings → Codex 卡 → 填 apiKey(可选 baseUrl)保存 → 新建 codex 会话
-   走自定义端点(key 掩码回显,原始 key 不出 api);清空 baseUrl=删除回退官方。
-6. 回归面:claude 会话选择器/缓存/模式切换不受影响。
+1. commit 批 D（标准 `git add && git commit`，尾行 Co-Authored-By）。
+2. **批 E**：compact UI、MCP 注入（先探针验证 `thread/start` config 通道）、P2 小项
+   （turn/steer、rateLimits/usage、model reroute/authRecovery 通知）。
+3. **批 F**：codex 历史列表（扫 `~/.codex/sessions/**/rollout-*.jsonl` + resume 分流）。
+
+## 真机验收清单（批 D，交用户）
+
+1. Settings → Codex 卡填 apiKey（可加 baseUrl）→ 新建 codex 会话能正常对话（自定义端点生效）。
+2. ⋯ 菜单「切到终端」→ tmux 内 `codex resume` **同样能跑**（凭据走 CODEX_HOME，不再掉凭据）。
+3. `ps aux | grep codex` 期间确认 **key 不出现在任何进程 argv**（只看得到 `codex-home` 路径）。
+4. 清空 apiKey 保存 → 新建会话回退官方登录态（auth.json 已删）。
+5. codex 会话触发上游失败（断网/坏 key）→「将在 xx:xx 后重试」条出现 → 取消 / 立即重试两键可用
+   → 到点自动注入「请继续」并继续跑；claude 会话同一套条回归不受影响。
 
 ---
-最后更新:2026-10-28 13:49(触发原因:批次 C 收尾——三 reviewer 消化完成全门禁绿+
-handoff save;待用户确认 commit)
-
-## 提醒
-- 开干前读 .claude/gtd/next-actions.md;守 .claude/constitution.md 底线。
-- 到达里程碑或感知将 compact 时,主动 /handoff save。
+最后更新：2026-10-28 19:27（触发原因：批次 D 收尾——全门禁绿 + handoff save；待 commit）

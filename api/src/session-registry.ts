@@ -592,13 +592,25 @@ export class SessionRegistry {
   }
 
   /**
-   * agent session 的 runtimeKey（M8 auto-retry 控制端点用：claude pending 态挂在
-   * ClaudeRuntime.autoRetry watch 的 runtimeKey 上）。非 claude provider / session
-   * 不存在 → undefined（调用方 404）。
+   * 自动重试控制端点的目标（status/cancel/fire）：pending 态挂在各 provider runtime 自己
+   * 的 AutoRetryWatch 上，按 runtimeKey 索引。返回 provider 供调用方派发到对应 runtime。
+   * 不支持自动重试的 provider / session 不存在 → undefined（调用方 404）。
    */
-  async getAgentRuntimeKey(projectName: string, sessionId: string): Promise<string | undefined> {
+  async getAutoRetryTarget(
+    projectName: string,
+    sessionId: string,
+  ): Promise<{ runtimeKey: string; provider: AgentProvider } | undefined> {
     const metadata = await this.getLiveMetadata(projectName, "agent", sessionId);
-    return metadata?.provider === "claude" ? metadata.runtimeKey : undefined;
+    if (!metadata) return undefined;
+    if (metadata.provider === "claude")
+      return { runtimeKey: metadata.runtimeKey, provider: "claude" };
+    // codex 只有 chat 形态（app-server 进程内）才有 watch。判据必须用 mode——terminal
+    // 形态同样持有 codexThreadId（`codex resume` 用），按 threadId 判会把 tmux 会话也
+    // 放进来，而 CodexRuntime 里没有它的 entry（status 恒空、fire 报假 pending）。
+    if (metadata.provider === "codex" && metadata.codexThreadId && metadata.mode !== "terminal") {
+      return { runtimeKey: metadata.runtimeKey, provider: "codex" };
+    }
+    return undefined;
   }
 
   /** 双模式形态分发（index.ts runtime.exists/close 的 claude 名分支用）：terminal 形态的

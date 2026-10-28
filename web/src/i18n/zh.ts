@@ -701,9 +701,10 @@ export const zh: Record<TranslationKey, string> = {
   "claude.retry.attempt": "重试 {{attempt}}/{{max}}",
   "claude.retry.attemptSeconds": "重试 {{attempt}}/{{max}}，{{seconds}}s 后",
   "claude.retry.countTitle": "API 错误 · {{error}}",
-  "claude.autoRetryPending.title": "发送失败 · 自动重试已排程",
-  "claude.autoRetryPending.retryNow": "立即重试",
-  "claude.retry.countSchedule": "{{time}} 后自动重发 · 第 {{attempt}}/{{max}} 次",
+  // 共享自动重试条（auto-retry-banner.tsx，claude/codex 共用）——provider 中性命名。
+  "session.autoRetry.title": "发送失败 · 自动重试已排程",
+  "session.autoRetry.retryNow": "立即重试",
+  "session.autoRetry.countSchedule": "{{time}} 后自动重发 · 第 {{attempt}}/{{max}} 次",
   "claude.offlineCap": "离线中 · 此后内容将在重连后补齐",
 
   // ── Workbench（三栏工作台外壳）──────────────────────────────

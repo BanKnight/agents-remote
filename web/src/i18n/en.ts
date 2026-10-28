@@ -706,9 +706,10 @@ export const en = {
   "claude.retry.attempt": "Retry {{attempt}}/{{max}}",
   "claude.retry.attemptSeconds": "Retry {{attempt}}/{{max}}, in {{seconds}}s",
   "claude.retry.countTitle": "API error · {{error}}",
-  "claude.autoRetryPending.title": "Send failed · auto-retry scheduled",
-  "claude.autoRetryPending.retryNow": "Retry now",
-  "claude.retry.countSchedule": "Auto-resend in {{time}} · attempt {{attempt}}/{{max}}",
+  // 共享自动重试条（auto-retry-banner.tsx，claude/codex 共用）——provider 中性命名。
+  "session.autoRetry.title": "Send failed · auto-retry scheduled",
+  "session.autoRetry.retryNow": "Retry now",
+  "session.autoRetry.countSchedule": "Auto-resend in {{time}} · attempt {{attempt}}/{{max}}",
   "claude.offlineCap": "Offline · new content will backfill after reconnect",
 
   // ── Workbench（三栏工作台外壳）──────────────────────────────

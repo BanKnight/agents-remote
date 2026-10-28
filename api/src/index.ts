@@ -112,6 +112,7 @@ type UpgradeServer = {
 
 type FetchHandlerOptions = {
   claudeRuntime?: ClaudeRuntime;
+  codexRuntime?: CodexRuntime;
   claudeStreamController?: ClaudeStreamController;
   approvalCenter?: ApprovalCenter;
   sessionShellHub?: SessionShellHub;
@@ -606,49 +607,57 @@ export const createFetchHandler =
       }
 
       // 自动重试待发注入控制（M8 03d `.count` 取消/立即重试）。Direct match，不走
-      // session-routes 白名单——需要 claudeRuntime（registry 不持 runtime）。terminal/omp
-      // session 无 claude runtimeKey → 404，与 close/rename 的白名单语义一致。
+      // session-routes 白名单——需要 provider runtime（registry 不持 runtime）。pending
+      // 态挂在各 provider 自己的 AutoRetryWatch 上，按 metadata.provider 派发；无 watch
+      // 的会话（terminal/omp/存量 tmux codex）→ 404，与 close/rename 的白名单语义一致。
       const autoRetryControlMatch = url.pathname.match(
         /^\/api\/projects\/(.+)\/agent-sessions\/(.+)\/auto-retry\/(status|cancel|fire)$/,
       );
       if (
         autoRetryControlMatch &&
         options.sessionRegistry &&
-        options.claudeRuntime &&
+        (options.claudeRuntime || options.codexRuntime) &&
         (request.method === "GET" || request.method === "POST")
       ) {
         const projectName = decodeURIComponent(autoRetryControlMatch[1]);
         const sessionId = decodeURIComponent(autoRetryControlMatch[2]);
         const action = autoRetryControlMatch[3];
-        const runtimeKey = await options.sessionRegistry.getAgentRuntimeKey(projectName, sessionId);
+        const target = await options.sessionRegistry.getAutoRetryTarget(projectName, sessionId);
 
-        if (!runtimeKey) {
+        if (!target) {
           return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
         }
 
-        const runtime = options.claudeRuntime;
-        if (action === "status") {
+        const runtime = target.provider === "codex" ? options.codexRuntime : options.claudeRuntime;
+        if (!runtime) {
+          return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+        }
+        const runtimeKey = target.runtimeKey;
+        // status 与 fire 共用同一回读：fire 返回 false 的原因可能是「本就没 pending」
+        // 「等待中配置被关」「窗口耗尽」——统一回读真实待发态，避免 banner 显示不存在
+        // 的倒计时（旧实现 `{scheduled: !fired}` 在 false 时反而报 true）。
+        const currentStatus = (): AutoRetryStatusResponse => {
           const pending = runtime.autoRetryPending(runtimeKey);
-          const response: AutoRetryStatusResponse =
-            pending === null
-              ? { scheduled: false }
-              : {
-                  scheduled: true,
-                  fireAt: pending.fireAt,
-                  delayMs: pending.delayMs,
-                  attempt: pending.attempt,
-                  max: pending.max,
-                };
-          return withRefresh(Response.json(response));
+          return pending === null
+            ? { scheduled: false }
+            : {
+                scheduled: true,
+                fireAt: pending.fireAt,
+                delayMs: pending.delayMs,
+                attempt: pending.attempt,
+                max: pending.max,
+              };
+        };
+        if (action === "status") {
+          return withRefresh(Response.json(currentStatus()));
         }
         if (request.method === "POST" && action === "cancel") {
           runtime.cancelAutoRetry(runtimeKey);
           return withRefresh(Response.json({ scheduled: false } satisfies AutoRetryStatusResponse));
         }
         if (request.method === "POST" && action === "fire") {
-          const fired = await runtime.fireAutoRetryNow(runtimeKey);
-          const response: AutoRetryStatusResponse = { scheduled: !fired };
-          return withRefresh(Response.json(response));
+          await runtime.fireAutoRetryNow(runtimeKey);
+          return withRefresh(Response.json(currentStatus()));
         }
       }
 
@@ -2463,9 +2472,12 @@ export const startApi = async () => {
   });
   const codexStreamController = new CodexStreamController(codexRuntime, sessionRegistry);
   // 自动重试注入配置源：调度时刻从 metadata fresh 读 config（缺省/enabled:false=不调度）。
-  claudeRuntime.setAutoRetryConfigProvider((sessionId) =>
-    sessionRegistry.getAgentAutoRetryConfig(sessionId),
-  );
+  // 两 provider 共用同一份 metadata 配置（provider 无关），信号源各自不同（claude =
+  // result is_error / codex = turn/completed failed）。
+  const autoRetryConfigSource = (sessionId: string) =>
+    sessionRegistry.getAgentAutoRetryConfig(sessionId);
+  claudeRuntime.setAutoRetryConfigProvider(autoRetryConfigSource);
+  codexRuntime.setAutoRetryConfigProvider(autoRetryConfigSource);
   // pi 事件流 → 元数据同步：piSessionId backfill（幂等只写一次）+ 活动 bump updatedAt（分钟截断）。
   piRuntime.setOnPiSessionId((chatId, piSessionId) => {
     chatSessionRegistry.setPiSessionId(chatId, piSessionId);
@@ -2547,6 +2559,7 @@ export const startApi = async () => {
       sessionShellHub,
       agentTui,
       claudeRuntime,
+      codexRuntime,
       claudeStreamController,
       acpStreamController,
       codexStreamController,

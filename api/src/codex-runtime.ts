@@ -1,11 +1,18 @@
 import { join } from "node:path";
 import type {
+  ClaudeAutoRetryConfig,
   CodexCredentials,
   CodexPermissionMode,
   CodexStreamServerMessage,
 } from "@agents-remote/shared";
 import type { RuntimeStream } from "./session-registry";
 import { PiSessionRelay } from "./pi-relay";
+import { AutoRetryWatch } from "./agent-auto-retry";
+import {
+  codexConfigOverrideArgs,
+  prepareCodexRuntimeHome,
+  type PreparedCodexHome,
+} from "./codex-home";
 
 // ── codex runtime（codex app-server 直连，docs/plans codex 一等 provider 批）────────
 //
@@ -27,7 +34,7 @@ import { PiSessionRelay } from "./pi-relay";
 const CODEX_STDERR_DIR = "codex-stderr";
 
 /** app-server 子进程的最小环境白名单（security review P1-1）：API 进程的其余 env
- *（密钥/内部配置）不经环境泄漏给 agent 进程。HOME 供 ~/.codex 凭据链、PATH 供
+ *（密钥/内部配置）不经环境泄漏给 agent 进程。HOME 供 ~/.codex 兜底凭据链、PATH 供
  * 代理二进制、代理/locale/TMPDIR 是基础运行面、CODEX_HOME 支持自定义状态目录。
  * claude/acp 的 spawn 同病影响面大，另批处理。 */
 const CODEX_ENV_KEYS = [
@@ -46,17 +53,18 @@ const CODEX_ENV_KEYS = [
   "CODEX_HOME",
 ] as const;
 
-export function codexSpawnEnv(credentials?: CodexCredentials): Record<string, string> {
+export function codexSpawnEnv(prepared?: PreparedCodexHome): Record<string, string> {
   const env: Record<string, string> = {};
   for (const key of CODEX_ENV_KEYS) {
     const value = process.env[key];
     if (value !== undefined) env[key] = value;
   }
-  // settings codex 凭据切片（acp resolveCredentials 同款时序：每次 spawn 前读、热更新
-  // 即时生效）。两键不在 CODEX_ENV_KEYS 白名单——settings 是唯一来源，不继承父 env；
-  // 未配置 = 不注键，走 codex 自身凭证链（auth.json / ChatGPT 登录）。
-  if (credentials?.apiKey) env.OPENAI_API_KEY = credentials.apiKey;
-  if (credentials?.baseUrl) env.OPENAI_BASE_URL = credentials.baseUrl;
+  // codex 0.163 运行期不读 OPENAI_API_KEY / OPENAI_BASE_URL（2026-10-28 源码+实测：无
+  // auth.json 时请求不带 Authorization，base_url 恒打官方端点）。settings 凭据唯一可靠
+  // 通道 = 专属 CODEX_HOME（auth.json 0600 + `-c openai_base_url` 覆盖，codex-home.ts）。
+  // 此处只钉非机密目录路径；未配置 apiKey 时 prepared.codexHome 为 null，不覆盖父 env
+  // 的 CODEX_HOME（回退用户自身凭证链）。
+  if (prepared?.codexHome) env.CODEX_HOME = prepared.codexHome;
   return env;
 }
 
@@ -360,14 +368,57 @@ export class CodexRuntime {
     sessionId: string,
     config: { model?: string; effort?: string; approvalPolicy?: string; sandbox?: string },
   ) => void;
+  // 自动重试注入配置源（index.ts 从 SessionRegistry metadata 读 autoRetry config）——
+  // 与 ClaudeRuntime 同款 provider 无关状态机（agent-auto-retry.ts）。
+  private autoRetryConfigProvider?: (
+    sessionId: string,
+  ) => ClaudeAutoRetryConfig | undefined | Promise<ClaudeAutoRetryConfig | undefined>;
+  // 自动重试状态机：turn/completed failed → 延迟注入配置消息。
+  private readonly autoRetry: AutoRetryWatch;
 
   constructor(
     private readonly runDir: string,
-    /** agent 启动命令（argv 数组）：测试 seam（fake app-server NDJSON 脚本替换真实 codex）。 */
+    /** agent 启动命令（argv 数组）：测试 seam（fake NDJSON 脚本替换真实 codex）。 */
     private readonly command: string[] = ["codex", "app-server"],
     /** settings codex 凭据切片读取（每次 spawn 前调用；acp 同款注入 seam，测试可注入假值）。 */
     private readonly resolveCredentials?: () => Promise<CodexCredentials | undefined>,
-  ) {}
+  ) {
+    this.autoRetry = new AutoRetryWatch({
+      getConfig: (_runtimeKey, sessionId) => this.autoRetryConfigProvider?.(sessionId),
+      inject: (runtimeKey, message) => {
+        // 注入 = 自动替用户发一条消息：走 write（自带 codex_user_echo + user_input 状态
+        // 迁移 + turn/start 排队）。uuid 前缀与 claude 注入同款，前端可识别合成输入。
+        // 会话在 delayMs 内被 close/进程退出 → write throw，丢弃本次注入（AutoRetryWatch
+        // 契约要求实现方吞掉该错误，否则 fire 的 void 调用会悬空 rejection）。
+        try {
+          this.write(runtimeKey, message, `injected-${crypto.randomUUID()}`);
+        } catch (err) {
+          console.warn("[codex] auto-retry injection dropped:", err);
+        }
+      },
+    });
+  }
+
+  setAutoRetryConfigProvider(
+    cb: (
+      sessionId: string,
+    ) => ClaudeAutoRetryConfig | undefined | Promise<ClaudeAutoRetryConfig | undefined>,
+  ): void {
+    this.autoRetryConfigProvider = cb;
+  }
+
+  // ── 自动重试待发注入的控制桥（与 ClaudeRuntime 同名接口，index.ts 路由统一派发）──
+  autoRetryPending(runtimeKey: string) {
+    return this.autoRetry.pendingStatus(runtimeKey);
+  }
+
+  cancelAutoRetry(runtimeKey: string): void {
+    this.autoRetry.cancelPending(runtimeKey);
+  }
+
+  fireAutoRetryNow(runtimeKey: string): Promise<boolean> {
+    return this.autoRetry.fireNow(runtimeKey);
+  }
 
   setOnCodexThreadId(callback: (sessionId: string, threadId: string) => void): void {
     this.onCodexThreadId = callback;
@@ -440,6 +491,24 @@ export class CodexRuntime {
   private readonly ensureInFlight = new Map<string, Promise<void>>();
 
   /**
+   * spawn 前凭据/配置准备（chat 与 terminal 两形态同源）：fresh 读 settings → 专属
+   * CODEX_HOME（codex-home.ts）。两处失败都回退「不注入」（走 codex 自身凭证链），
+   * 不阻断会话启动——与 acp resolveCredentials 同款尽力而为时序。
+   */
+  async prepareSpawnContext(): Promise<PreparedCodexHome> {
+    const credentials = await this.resolveCredentials?.().catch((err) => {
+      console.warn("[codex] settings read failed, falling back to agent credentials:", err);
+      return undefined;
+    });
+    return prepareCodexRuntimeHome({ runDir: this.runDir, credentials }).catch(
+      (err): PreparedCodexHome => {
+        console.warn("[codex] runtime home unavailable, falling back to global credentials:", err);
+        return { codexHome: null, configOverrides: [] };
+      },
+    );
+  }
+
+  /**
    * 启动本体：spawn + initialize → 有 threadId 走 thread/resume（turns → history 行
    * 定格），否则 thread/start → backfill threadId。随后 model/list + codex_config 帧入
    * live 缓冲（未登录/空目录 → 不注 config 帧，前端无选择器 = 能力信号，acp 同约定）。
@@ -447,19 +516,19 @@ export class CodexRuntime {
   private async doEnsureRunning(target: CodexSpawnTarget): Promise<void> {
     if (this.sessions.has(target.runtimeKey)) return;
 
-    // settings codex 凭据切片（读失败回退 undefined = 不注入，走 agent 自身凭证链；
-    // acp resolveCredentials 同款兜底时序）。
-    const credentials = await this.resolveCredentials?.().catch((err) => {
-      console.warn("[codex] settings read failed, falling back to agent credentials:", err);
-      return undefined;
-    });
-    const proc = Bun.spawn(this.command, {
-      cwd: target.projectPath,
-      env: codexSpawnEnv(credentials),
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    // 专属 CODEX_HOME（auth.json 0600 + sessions 软链 + baseUrl 经 -c 覆盖）——每次 spawn
+    // 前重建（settings 热更新生效）。
+    const prepared = await this.prepareSpawnContext();
+    const proc = Bun.spawn(
+      [...this.command, ...codexConfigOverrideArgs(prepared.configOverrides)],
+      {
+        cwd: target.projectPath,
+        env: codexSpawnEnv(prepared),
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     void this.pumpStderr(target.runtimeKey, proc.stderr);
 
     const entry: CodexSessionEntry = {
@@ -620,6 +689,9 @@ export class CodexRuntime {
   ): void {
     const entry = this.sessions.get(runtimeKey);
     if (!entry) throw new Error("codex session not running");
+    // 用户手动介入（write 被外部调用）：取消待发的自动重试注入，不与用户输入叠加
+    //（注入自身也走 write——彼时定时器已 fire 清空，无自我取消）。
+    this.autoRetry.cancelPending(runtimeKey);
     const queue = this.pendingQueues.get(runtimeKey) ?? [];
     if (queue.length >= CODEX_PENDING_QUEUE_CAP) {
       entry.relay.reportError(new Error("codex turn queue is full"));
@@ -644,6 +716,9 @@ export class CodexRuntime {
     const entry = this.sessions.get(runtimeKey);
     if (!entry) return;
     this.pendingQueues.set(runtimeKey, []);
+    // 用户主动中断 = 介入：待发自动重试一并作废（不依赖 turn/completed interrupted
+    // 通知兜底——RPC 失败/无完成通知时定时器会存活到 60s 后）。
+    this.autoRetry.cancelPending(runtimeKey);
     if (!entry.inFlightTurnId) return;
     try {
       await this.rpcWithTimeout(
@@ -728,6 +803,7 @@ export class CodexRuntime {
     if (!entry) return;
     this.sessions.delete(runtimeKey);
     this.pendingQueues.delete(runtimeKey);
+    this.autoRetry.destroySession(runtimeKey);
     this.killProc(entry.proc);
     entry.relay.destroy();
     this.applyStatusSignal(entry, { kind: "close" });
@@ -787,6 +863,11 @@ export class CodexRuntime {
       if (!entry.inFlightTurnId) {
         entry.inFlightTurnId = typeof turn?.id === "string" ? turn.id : null;
       }
+      // agent 已在干活 = 不需要注入（claude 侧「正常 assistant 行」的等价信号）：作废
+      // 待发重试。覆盖「failed 后排队消息被 flushQueue 开跑」「新 turn 超过 delayMs」
+      // 两种情形，否则会在 agent 工作中多注一条 turn。注入自身那条 turn 的 pending
+      // 早已被 fire 清空 → 此处对注入无害。
+      this.autoRetry.cancelPending(runtimeKey);
       this.applyStatusSignal(entry, { kind: "turn_activity" });
     } else if (method === "turn/completed") {
       const status = turn?.status;
@@ -797,6 +878,13 @@ export class CodexRuntime {
       entry.turnGeneration++;
       entry.startingTurn = false;
       this.applyStatusSignal(entry, { kind: "turn_result", isError });
+      // 自动重试（与 claude result is_error 同语义）：failed = 报错停下 → 调度注入；
+      // 正常完成 = 确认上次注入成功/作废待发调度。
+      if (isError) {
+        this.autoRetry.notifyError(runtimeKey, entry.sessionId);
+      } else {
+        this.autoRetry.notifyNormal(runtimeKey);
+      }
       // turn 已结束：该 runtime 的残留审批卡兜底清掉（server 不再等 response，P1-6）。
       this.onApprovalSettled(runtimeKey);
       endedFrame = JSON.stringify({
@@ -882,6 +970,7 @@ export class CodexRuntime {
     if (!this.sessions.has(runtimeKey)) return; // close() 主动关闭已清 entry
     this.sessions.delete(runtimeKey);
     this.pendingQueues.delete(runtimeKey);
+    this.autoRetry.destroySession(runtimeKey);
     entry.relay.reportError(new Error("codex app-server process exited"));
     entry.relay.destroy();
     this.applyStatusSignal(entry, { kind: "turn_result", isError: true });

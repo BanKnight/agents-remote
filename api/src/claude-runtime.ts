@@ -30,10 +30,12 @@ import { sanitizePersistedModel } from "./model-id";
 import { claudeJsonlPath } from "./session-routes";
 import { ensureGenUiSkill } from "./project-gen-ui";
 import {
-  ClaudeAutoRetryWatch,
-  isNormalAssistantLine,
+  AutoRetryWatch,
+  buildAutoRetryEchoLine,
+  buildAutoRetryUserLine,
   isErrorResultLine,
-} from "./claude-auto-retry";
+  isNormalAssistantLine,
+} from "./agent-auto-retry";
 
 type BunSubprocess = ReturnType<typeof Bun.spawn>;
 
@@ -477,21 +479,23 @@ export class ClaudeRuntime implements RuntimeResources {
         sessionId: string,
       ) => ClaudeAutoRetryConfig | undefined | Promise<ClaudeAutoRetryConfig | undefined>)
     | null = null;
-  // 自动重试状态机：报错停下 → 延迟注入自定义消息（claude-auto-retry.ts）。
-  private readonly autoRetry: ClaudeAutoRetryWatch;
+  // 自动重试状态机：报错停下 → 延迟注入自定义消息（agent-auto-retry.ts）。
+  private readonly autoRetry: AutoRetryWatch;
 
   constructor(runDir: string, settingsStore?: SettingsStore, mcpPort?: number) {
     this.runDir = runDir;
     this.settingsStore = settingsStore;
     this.mcpPort = mcpPort;
-    this.autoRetry = new ClaudeAutoRetryWatch({
+    this.autoRetry = new AutoRetryWatch({
       getConfig: (_sessionName, sessionId) => this.autoRetryConfigProvider?.(sessionId),
-      inject: (sessionName, stdinLine, echoLine) => {
-        void this.write(sessionName, stdinLine).catch(() => {
-          // 进程已死/已销毁——注入尽力而为，定时器随 destroySession 清理。
-        });
-        this.injectLiveLine(sessionName, echoLine);
-        // retry 注入本质 = 自动替用户发了一条消息 → user_input 迁移(working)。
+      inject: async (sessionName, message) => {
+        // 注入 = 自动替用户发了一条消息：stdin user 行 + live echo（CLI 从不回显用户
+        // 输入，echo 供当前与重连后的订阅者看到注入）。
+        const userLine = buildAutoRetryUserLine(message);
+        // 先写后 echo：进程已死时 write 失败 → 不产生幽灵 isUserInput 回显（P3：旧实现
+        // 无条件 echo，重生后的同 key relay 会缓冲一条从未发生的输入）。
+        await this.write(sessionName, `${userLine}\n`);
+        this.injectLiveLine(sessionName, buildAutoRetryEchoLine(userLine));
         this.applyStatusSignal(sessionName, { kind: "user_input" });
       },
     });

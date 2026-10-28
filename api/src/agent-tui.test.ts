@@ -141,10 +141,24 @@ async function seedCodex() {
     async ensureRunning(args: Record<string, unknown>) {
       ensureCalls.push(args);
     },
+    // chat/terminal 凭证同源（settings → 专属 CODEX_HOME）：terminal 形态只传非机密
+    // 目录路径（tmux -e）+ -c 覆盖。
+    async prepareSpawnContext() {
+      return {
+        codexHome: join(runDir, "codex-home"),
+        configOverrides: ["openai_base_url=https://gw.test/v1"],
+      };
+    },
   } as unknown as CodexRuntime;
+  const tmuxStartCalls: { command: string; env?: Record<string, string> }[] = [];
   const tmuxRuntime = {
-    async startCommand(_metadata: unknown, command: string) {
+    async startCommand(
+      _metadata: unknown,
+      command: string,
+      opts?: { env?: Record<string, string> },
+    ) {
       tmuxCommands.push(command);
+      tmuxStartCalls.push({ command, env: opts?.env });
     },
     async close() {
       tmuxClosed += 1;
@@ -172,6 +186,7 @@ async function seedCodex() {
     codexClosed,
     ensureCalls,
     tmuxCommands,
+    tmuxStartCalls,
     cleared,
     modeSwitched,
     tmuxClosed: () => tmuxClosed,
@@ -597,7 +612,12 @@ test("codex switchToTerminal：mode 落盘 → 关 app-server → tmux 起 `code
   await h.controller.switchMode(h.metadata, "terminal");
 
   expect(h.codexClosed).toEqual([h.runtimeKey]);
-  expect(h.tmuxCommands).toEqual([`'codex' 'resume' 'th-1'`]);
+  // baseUrl → -c 覆盖进 argv（值非机密）；CODEX_HOME 只经 tmux -e 传目录路径
+  // （auth.json 0600 在 home 内，机密不进 argv/ps）。
+  expect(h.tmuxCommands).toEqual([
+    `'codex' '-c' 'openai_base_url=https://gw.test/v1' 'resume' 'th-1'`,
+  ]);
+  expect(h.tmuxStartCalls[0]?.env).toEqual({ CODEX_HOME: join(runDir, "codex-home") });
   expect((await registry.getAgentSession(project.name, h.sessionId))?.mode).toBe("terminal");
   expect(h.cleared).toEqual([h.runtimeKey]);
   expect(h.modeSwitched).toEqual([h.runtimeKey]);
@@ -622,6 +642,9 @@ test("codex switchToTerminal 起 pane 失败：mode 退回 chat + 重拉 app-ser
       async close() {},
       async ensureRunning(args: Record<string, unknown>) {
         h.ensureCalls.push(args);
+      },
+      async prepareSpawnContext() {
+        return { codexHome: null, configOverrides: [] };
       },
     } as unknown as CodexRuntime,
   });

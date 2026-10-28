@@ -22,6 +22,7 @@ import {
 import type { ApprovalCenter } from "./approval-center";
 import { summarizeControlInput } from "./approval-registry";
 import type { ClaudeRuntime } from "./claude-runtime";
+import { codexConfigOverrideArgs } from "./codex-home";
 import type { CodexRuntime } from "./codex-runtime";
 import { getAgentProviderProfile } from "./agent-provider-profiles";
 import type { SessionMetadata, SessionRegistry } from "./session-registry";
@@ -310,9 +311,21 @@ export class AgentTuiController {
       // threadId 是 codex chat 面板的准入判据(gate 已保证非空);缺失 = 半启动会话,
       // 防御性 throw 走回滚。
       if (!metadata.codexThreadId) throw new Error("codex threadId missing");
+      // 凭证与 chat 形态同源:专属 CODEX_HOME(tmux -e 只传非机密目录路径;auth.json 0600
+      // 在 home 内),baseUrl 经 -c 覆盖(值非机密)。未配置 apiKey = 不传 -e,回退用户
+      // 自身 ~/.codex 登录态。
+      const prepared = await codexRuntime.prepareSpawnContext();
       await tmuxRuntime.startCommand(
         metadata,
-        ["codex", "resume", metadata.codexThreadId].map(shellQuote).join(" "),
+        [
+          "codex",
+          ...codexConfigOverrideArgs(prepared.configOverrides),
+          "resume",
+          metadata.codexThreadId,
+        ]
+          .map(shellQuote)
+          .join(" "),
+        prepared.codexHome ? { env: { CODEX_HOME: prepared.codexHome } } : undefined,
       );
     } catch (error) {
       // 起 pane 失败(tmux server 不可达等):形态退回 chat + 重拉 app-server——不留

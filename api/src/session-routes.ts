@@ -35,7 +35,7 @@ import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
 import { SessionRegistry, SessionRegistryError } from "./session-registry";
 import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
-import { normalizeAutoRetryConfig } from "./claude-auto-retry";
+import { normalizeAutoRetryConfig } from "./agent-auto-retry";
 import { activePresetView, buildAvailableAliases, type SettingsStore } from "./settings-store";
 
 type SessionResource = "agent-sessions" | "terminal-sessions";

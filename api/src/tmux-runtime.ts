@@ -85,7 +85,18 @@ export class TmuxRuntime implements RuntimeResources {
     await this.startCommand(metadata, shellCommand());
   }
 
-  async startCommand(metadata: SessionMetadata, command: string) {
+  /** `opts.env`：pane 进程的额外环境变量（tmux -e）。只放**非机密**值（如 CODEX_HOME
+   *  目录路径）——-e 的键值会短暂出现在 tmux client argv（ps 可见），机密必须走文件
+   *  （codex 的 auth.json 方案）。 */
+  async startCommand(
+    metadata: SessionMetadata,
+    command: string,
+    opts?: { env?: Record<string, string> },
+  ) {
+    const envArgs = Object.entries(opts?.env ?? {}).flatMap(([key, value]) => [
+      "-e",
+      `${key}=${value}`,
+    ]);
     const result = await runTmux([
       "new-session",
       "-d",
@@ -97,6 +108,7 @@ export class TmuxRuntime implements RuntimeResources {
       "50",
       "-c",
       metadata.projectPath,
+      ...envArgs,
       command,
     ]);
 

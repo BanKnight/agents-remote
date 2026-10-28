@@ -7,18 +7,19 @@ import {
   AUTO_RETRY_MAX_PER_WINDOW,
   AUTO_RETRY_MAX_PER_WINDOW_MAX,
   AUTO_RETRY_MAX_PER_WINDOW_MIN,
+  AUTO_RETRY_MESSAGE_MAX_LENGTH,
   AUTO_RETRY_WINDOW_MS,
   AUTO_RETRY_WINDOW_MS_MAX,
   AUTO_RETRY_WINDOW_MS_MIN,
   buildAutoRetryEchoLine,
   buildAutoRetryUserLine,
   canInject,
-  ClaudeAutoRetryWatch,
+  AutoRetryWatch,
   isErrorResultLine,
   isNormalAssistantLine,
   normalizeAutoRetryConfig,
   pruneWindow,
-} from "./claude-auto-retry";
+} from "./agent-auto-retry";
 
 const config = (overrides?: Partial<ClaudeAutoRetryConfig>): ClaudeAutoRetryConfig => ({
   enabled: true,
@@ -169,6 +170,11 @@ test("normalizeAutoRetryConfig：合法值原样、出格值 clamp、非法形�
   expect(fallback.maxPerWindow).toBe(AUTO_RETRY_MAX_PER_WINDOW);
   expect(fallback.windowMs).toBe(AUTO_RETRY_WINDOW_MS);
 
+  // 超长文案截断（配置随 metadata 与每次 spawn 传递，避免放大面）。
+  expect(normalizeAutoRetryConfig({ ...now, message: "x".repeat(10_000) }).message).toHaveLength(
+    AUTO_RETRY_MESSAGE_MAX_LENGTH,
+  );
+
   // 完全非 object 的 payload 兜底为默认关。
   expect(normalizeAutoRetryConfig(undefined)).toEqual({
     enabled: false,
@@ -185,7 +191,7 @@ test("normalizeAutoRetryConfig：合法值原样、出格值 clamp、非法形�
 const TICK_MS = 10;
 
 type Harness = {
-  watch: ClaudeAutoRetryWatch;
+  watch: AutoRetryWatch;
   clock: { now: number };
   injections: string[];
 };
@@ -196,14 +202,14 @@ const harness = (
 ): Harness => {
   const clock = { now: 1_000_000 };
   const injections: string[] = [];
-  const watch = new ClaudeAutoRetryWatch({
+  const watch = new AutoRetryWatch({
     getConfig: () => {
       const c = configOrUndefined;
       if (!c) return undefined;
       return { ...c, ...overrides };
     },
-    inject: (_sessionName, stdinLine) => {
-      injections.push(stdinLine);
+    inject: (_sessionName, message) => {
+      injections.push(message);
     },
     now: () => clock.now,
   });
@@ -216,11 +222,8 @@ test("error result 后未到延迟不注入；到达后注入配置文案", asyn
   expect(h.injections).toHaveLength(0); // 未到延迟
 
   await Bun.sleep(TICK_MS * 3);
-  expect(h.injections).toHaveLength(1);
-  expect(JSON.parse(h.injections[0]!) as Record<string, unknown>).toMatchObject({
-    type: "user",
-    message: { role: "user", content: [{ type: "text", text: "请继续" }] },
-  });
+  // inject 收的是配置原文（provider 无关）——协议帧组装归各 provider runtime。
+  expect(h.injections).toEqual(["请继续"]);
 });
 
 test("error result 后正常 assistant 先到 → 待发定时器作废（不注入）", async () => {
@@ -293,7 +296,7 @@ test("async getConfig 的 await 间隙内重复 error 不叠加调度（scheduli
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const watch = new ClaudeAutoRetryWatch({
+  const watch = new AutoRetryWatch({
     getConfig: () => gate.then(() => config({ delayMs: TICK_MS })),
     inject: (_s, line) => {
       injections.push(line);
@@ -312,7 +315,7 @@ test("async getConfig 的 await 间隙内重复 error 不叠加调度（scheduli
 test("窗口满后新 error 不调度；窗口滑过恢复资格", async () => {
   const clock = { now: 1_000_000 };
   const injections: string[] = [];
-  const watch = new ClaudeAutoRetryWatch({
+  const watch = new AutoRetryWatch({
     // 大 delay：断言窗口语义时定时器不触发，排除 fire 干扰。
     getConfig: () => config({ delayMs: 100_000, maxPerWindow: 2 }),
     inject: (_s, line) => {
@@ -335,6 +338,55 @@ test("窗口满后新 error 不调度；窗口滑过恢复资格", async () => {
 
   // 窗口滑过 → 恢复资格。
   clock.now += AUTO_RETRY_WINDOW_MS + 1;
+  watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  await Bun.sleep(1);
+  expect(state.pendingTimer).not.toBeNull();
+  watch.destroySession("s1");
+});
+
+// 竞态：await getConfig 窗口（首次 ensureLoaded 走磁盘时真实打开）内取消/销毁 →
+// 调度恢复后不得给已取消/已销毁的状态装定时器（P2：gen 不递增曾让取消形同虚设）。
+test("cancelPending / destroySession 落在 in-flight schedule 窗口内 → 作废调度", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const injections: string[] = [];
+  const watch = new AutoRetryWatch({
+    getConfig: () => gate.then(() => config({ delayMs: TICK_MS })),
+    inject: (_s, message) => {
+      injections.push(message);
+    },
+    now: () => 1_000_000,
+  });
+
+  // ① 取消：schedule 尚在 await getConfig，cancelPending 同步执行。
+  watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  watch.cancelPending("s1");
+  watch.handleStdoutLine("s2", "sess2", ERROR_RESULT);
+  watch.destroySession("s2");
+  release();
+  await Bun.sleep(TICK_MS * 4);
+
+  expect(watch["states"].get("s1")?.pendingTimer ?? null).toBeNull();
+  expect(watch["states"].has("s2")).toBe(false);
+  expect(injections).toHaveLength(0);
+});
+
+test("inject 抛错（进程已死）→ 记账回滚：名额不被未发生的注入占用", async () => {
+  const watch = new AutoRetryWatch({
+    getConfig: () => config({ delayMs: TICK_MS }),
+    inject: () => {
+      throw new Error("session gone");
+    },
+    now: () => 1_000_000,
+  });
+  watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
+  await Bun.sleep(TICK_MS * 4);
+  const state = watch["states"].get("s1")!;
+  expect(state.injectionTimestamps).toEqual([]);
+  expect(state.awaitingSuccess).toBe(false);
+  // 回滚后下一轮 error 仍可重新调度（名额没被吃掉）。
   watch.handleStdoutLine("s1", "sess1", ERROR_RESULT);
   await Bun.sleep(1);
   expect(state.pendingTimer).not.toBeNull();

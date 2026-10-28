@@ -282,7 +282,7 @@ test("SessionRegistry.getAgentModeByRuntimeKey maps runtimeKey → mode", async 
     createId: () => "agent_modemap1234",
   });
   const agent = await registry.createAgentSession({ project, provider: "claude" });
-  const runtimeKey = await registry.getAgentRuntimeKey(project.name, agent.id);
+  const runtimeKey = (await registry.getAutoRetryTarget(project.name, agent.id))?.runtimeKey;
   expect(runtimeKey).toBeTruthy();
 
   // chat 形态：mode 未写 → undefined（index.ts 落 headless 分支）。
@@ -291,6 +291,33 @@ test("SessionRegistry.getAgentModeByRuntimeKey maps runtimeKey → mode", async 
   expect(await registry.getAgentModeByRuntimeKey(runtimeKey!)).toBe("terminal");
   // 未知 runtimeKey → undefined。
   expect(await registry.getAgentModeByRuntimeKey("ar-agent-claude-nope")).toBeUndefined();
+});
+
+test("getAutoRetryTarget：claude 恒可、codex 需 threadId、未知 session → undefined", async () => {
+  let seq = 0;
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => `agent_autoretry${seq++}`,
+  });
+  const claude = await registry.createAgentSession({ project, provider: "claude" });
+  expect(await registry.getAutoRetryTarget(project.name, claude.id)).toMatchObject({
+    provider: "claude",
+  });
+
+  // codex 无 threadId（存量 tmux 形态）→ 无进程内 watch 可查。
+  const codex = await registry.createAgentSession({ project, provider: "codex" });
+  expect(await registry.getAutoRetryTarget(project.name, codex.id)).toBeUndefined();
+  await registry.setCodexThreadId(codex.id, "th-autoretry");
+  const target = await registry.getAutoRetryTarget(project.name, codex.id);
+  expect(target?.provider).toBe("codex");
+  expect(target?.runtimeKey).toBeTruthy();
+
+  // terminal 形态（tmux 里的 codex TUI）没有进程内 watch，自动重试不可用。
+  await registry.setAgentSessionMode(codex.id, "terminal");
+  expect(await registry.getAutoRetryTarget(project.name, codex.id)).toBeUndefined();
+
+  expect(await registry.getAutoRetryTarget(project.name, "agent_nope")).toBeUndefined();
 });
 
 test("createAgentSession pins a fresh claudeSessionId for claude (双模式可切前提)", async () => {
