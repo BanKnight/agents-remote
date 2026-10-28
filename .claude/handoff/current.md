@@ -1,10 +1,10 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-29 02:35（批次 E「codex parity 补齐」实现完毕 + reviewer 消化，待 commit）
+> 最后更新：2026-10-29 02:55（批次 E 已 commit `91d3531`，待真机验收）
 
 ## 一句话状态
 
-**批次 E 完成（待 commit）：①压缩 UI 两端同构（入口 = 上下文占用浮层底部动作行；claude 发
+**批次 E 完成（已 commit `91d3531`）：①压缩 UI 两端同构（入口 = 上下文占用浮层底部动作行；claude 发
 `/compact` 文本、codex 发 `{type:"compact"}` 帧 → `thread/compact/start`，压缩以 turn 形态跑 →
 流内 CompactBlock running/完成块）；②MCP 注入（`-c mcp_servers.ar-hub.url=…`，chat 直拉与
 terminal tmux 双形态同源）；③P2 四项（turn/steer 并入在飞轮 + 失败回退排队、错误/重连 notice、
@@ -46,7 +46,7 @@ model reroute / authRecovery 提示、account/rateLimits 防御式额度段）�
   `windowDurationMins` 派生（不写死 5h/周）；resetsAt 24h 制 + 周窗口带日期；额度分区用
   `border-sep-strong`；压缩按钮 `disabled:opacity-50 disabled:cursor-default`。
 
-### 进度（批次 E 全落地，待 commit）
+### 进度（批次 E 全落地，已 commit `91d3531`）
 
 - ✅ 服务端：`codex-runtime.ts`（compact/mcpArgs/steerOrQueue/refreshAccount/豁免/直取快照/
   闸兜底）、`codex-stream.ts`（compact 帧 → error 回执）、`mcp-injector.ts`
@@ -72,16 +72,16 @@ model reroute / authRecovery 提示、account/rateLimits 防御式额度段）�
 
 ### 易丢的关键上下文
 
-- **本批未 commit**：20 个修改文件 + `scripts/probe-codex-batch-e.mjs` 与
-  `scripts/fixtures/codex-batch-e/`（四场景脱敏帧，已核无敏感串，入库）。
+- **本批已 commit `91d3531`**（26 文件；含 `scripts/probe-codex-batch-e.mjs` 与
+  `scripts/fixtures/codex-batch-e/` 四场景脱敏帧）。
 - 批 D 之前已 commit：`0168f0a` / `8823bf5`。
 - 测试内存 ≤2G（systemd-run）；探针用 bun；编辑内置工具；e2e `bun scripts/run-e2e.ts <spec>`。
 
 ## 下一步
 
-1. **commit 批 E**（标准 `git add && git commit`，尾行 Co-Authored-By）。
-2. **批 F**：codex 历史列表（扫 `~/.codex/sessions/**/rollout-*.jsonl` + resume 分流）。
-3. 真机验收（批 D+E 一起交）：见下。
+1. ~~commit 批 E~~ → ✅ `91d3531`。
+2. **真机验收（批 D+E 一起交）**：见下清单。
+3. **批 F**：codex 历史列表（扫 `~/.codex/sessions/**/rollout-*.jsonl` + resume 分流）。
 
 ## 真机验收清单（批 D + 批 E）
 
