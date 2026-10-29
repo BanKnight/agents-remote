@@ -116,6 +116,25 @@ test("config.toml 存在才链；sessions 恒链且目标目录自动建（0700�
   expect(await readlink(configLink)).toBe(join(globalHome, "config.toml"));
 });
 
+test("skills 存在才链（user 级 skills 跨 home 可见）；缺省不造空目录", async () => {
+  // 全局 skills 缺省 → 不链（不造空目录/链接，config.toml 同款形态）。
+  const first = await prepareCodexRuntimeHome({
+    runDir,
+    globalHome,
+    env: {},
+    credentials: { apiKey: "sk-x" },
+  });
+  const home = first.codexHome!;
+  const skillsLink = join(home, "skills");
+  expect(await lstat(skillsLink).catch(() => null)).toBeNull();
+
+  // 全局 skills 目录出现后 → 再准备即链上（幂等增量）。
+  await mkdir(join(globalHome, "skills"), { recursive: true });
+  await prepareCodexRuntimeHome({ runDir, globalHome, env: {}, credentials: { apiKey: "sk-x" } });
+  expect((await lstat(skillsLink)).isSymbolicLink()).toBe(true);
+  expect(await readlink(skillsLink)).toBe(join(globalHome, "skills"));
+});
+
 test("幂等：内容未变不重写；链接占位被占用（实文件/异目标）时覆盖重建", async () => {
   const prepared = await prepareCodexRuntimeHome({
     runDir,

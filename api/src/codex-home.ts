@@ -152,6 +152,14 @@ export async function prepareCodexRuntimeHome(options: {
     await ensureSymlink(join(home, "config.toml"), globalConfig);
   }
 
+  // skills：用户级 skills（CODEX_HOME/skills）跨 home 共享——app-server 的 skills/list
+  // 从专属 home 发现 user scope 条目，不链则托管 apiKey 会话看不见用户 skills（批 G
+  // 批 5 遗留修复）。同 config.toml：存在才链，缺省不造。
+  const globalSkills = join(globalHome, "skills");
+  if (await pathExists(globalSkills)) {
+    await ensureSymlink(join(home, "skills"), globalSkills);
+  }
+
   // sessions：thread 存储跨 home 共享（实测 symlink 后可 resume 另一 home 建的线程）。
   const globalSessions = join(globalHome, "sessions");
   await mkdir(globalSessions, { recursive: true, mode: 0o700 });
