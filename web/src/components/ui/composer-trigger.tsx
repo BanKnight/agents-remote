@@ -24,6 +24,16 @@ export const plainTextFormatter: Unstable_DirectiveFormatter = {
 };
 
 /**
+ * 弹层面板容器 className（design review 批 G：单源缺口 + 空面板 artifact）。
+ * `[&:not(:has([role='option']))]:hidden` = 零命中/首查防抖窗口的空面板隐藏——
+ * TriggerPopover 的 open 与 items 数量无关（空结果仍渲染容器），空圆角边框盒浮在
+ * composer 上方是明显 artifact；:has() 条件让位是仓内既有范式（frontend-notes §12）。
+ * 隐藏不改变行为：空面板态下 Enter 本就被 popover 键盘处理器吞掉。
+ */
+export const triggerPopoverPanelClasses =
+  "absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-on-surface/10 bg-surface-inset/95 p-1 shadow-2xl backdrop-blur [&:not(:has([role='option']))]:hidden";
+
+/**
  * VS Code-style：键盘高亮项保持滚入视野。assistant-ui 的 trigger popover 没有
  * scrollIntoView，从 scope context 读 highlightedIndex，对高亮项做 block:"nearest"
  * 滚动（仅在出视野时滚，无抖动）。

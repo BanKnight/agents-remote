@@ -29,6 +29,7 @@ import {
 } from "@assistant-ui/react";
 import {
   plainTextFormatter,
+  triggerPopoverPanelClasses,
   TriggerPopoverItemRow,
   useTriggerPopoverActiveRef,
 } from "../components/ui/composer-trigger";
@@ -3880,7 +3881,7 @@ function ComposerWithInterrupt({
           <ComposerPrimitive.TriggerPopover
             char="/"
             adapter={slash.adapter}
-            className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-on-surface/10 bg-surface-inset/95 p-1 shadow-2xl backdrop-blur"
+            className={triggerPopoverPanelClasses}
           >
             <ComposerPrimitive.TriggerPopover.Action
               formatter={plainTextFormatter}
