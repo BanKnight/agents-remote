@@ -53,6 +53,7 @@ import { ProjectWikiError, ProjectWikiService } from "./project-wiki";
 import { ProjectService, ProjectServiceError } from "./projects";
 import type { ProjectStateManager } from "./projects";
 import { listAgentHistory, paginateAgentHistory, parseHistoryFilter } from "./agent-history";
+import { listCodexHistory } from "./codex-history";
 import { listOmpHistory } from "./omp-history";
 import { resolveProjectPath } from "./project-paths";
 import { readFile, writeFile } from "node:fs/promises";
@@ -806,8 +807,10 @@ const handleOverview = async (
 };
 
 // GET /api/agent-history（v1.5 批5 全局作用域，iPad/Mac「全部」段）：跨项目历史统一列表——
-// 枚举全部项目逐个 claude+omp 两路合流（预填 projectName 作行限定符），再统一分页。
-// 单项目 fs 错误跳过（resolve/list 抛错 → 空条目），不拖垮全局列表。
+// 枚举全部项目逐个 claude+omp+codex 三路合流（预填 projectName 作行限定符），再统一分页。
+// 单项目 fs 错误跳过（resolve/list 抛错 → 空条目），不拖垮全局列表。codex rollout 是全局
+// 日期桶（无 per-project 目录），per-project 调用 = 每项目一次全树扫描（mtime+size 缓存
+// 摊薄 parse 成本，扫描树规模可控）。
 const handleGlobalAgentHistory = async (
   request: Request,
   url: URL,
@@ -823,15 +826,20 @@ const handleGlobalAgentHistory = async (
     projectNames.map(async (name) => {
       try {
         const project = await resolveProjectPath(projectsRoot, name);
-        const [claudeActiveMap, acpActiveMap] = await Promise.all([
+        const [claudeActiveMap, acpActiveMap, codexActiveMap] = await Promise.all([
           sessionRegistry.getActiveClaudeSessionMap(name),
           sessionRegistry.getActiveAcpSessionMap(name),
+          sessionRegistry.getActiveCodexThreadMap(name),
         ]);
-        const [claudeEntries, ompEntries] = await Promise.all([
+        const [claudeEntries, ompEntries, codexEntries] = await Promise.all([
           listAgentHistory(project.path, claudeActiveMap, "all"),
           listOmpHistory(project.path, acpActiveMap, "all"),
+          listCodexHistory(project.path, codexActiveMap),
         ]);
-        return [...claudeEntries, ...ompEntries].map((e) => ({ ...e, projectName: name }));
+        return [...claudeEntries, ...ompEntries, ...codexEntries].map((e) => ({
+          ...e,
+          projectName: name,
+        }));
       } catch {
         return [];
       }

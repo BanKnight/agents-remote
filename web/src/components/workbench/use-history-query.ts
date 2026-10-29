@@ -111,7 +111,7 @@ export function useHistoryQuery(opts: {
       // 全局作用域行带 projectName 限定符（04g pin②），删除走其归属项目端点。
       deleteAgentHistory(
         entry.projectName ?? opts.projectName ?? "",
-        entry.claudeSessionId ?? entry.acpSessionId ?? "",
+        entry.claudeSessionId ?? entry.acpSessionId ?? entry.codexThreadId ?? "",
         entry.provider ?? "claude",
       ),
     onSuccess: () => {

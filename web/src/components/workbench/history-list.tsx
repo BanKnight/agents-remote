@@ -49,12 +49,13 @@ function HistoryListSkeleton() {
  * 历史条目的 provider 归一（缺省 claude，兼容存量响应）。条目归属由 provider 决定：
  * 同一类型（历史 session）的渲染/恢复只有这一条管道，provider 只作为条目自身属性参与分流。
  */
-function entryProvider(entry: AgentHistoryEntry): "claude" | "omp" {
+function entryProvider(entry: AgentHistoryEntry): "claude" | "omp" | "codex" {
   return entry.provider ?? "claude";
 }
 
 /** 条目在其 provider 下的原生 session id（React key / 无标题时的兜底显示名）。 */
 function entryNativeId(entry: AgentHistoryEntry): string {
+  if (entryProvider(entry) === "codex") return entry.codexThreadId ?? "";
   return (entryProvider(entry) === "omp" ? entry.acpSessionId : entry.claudeSessionId) ?? "";
 }
 
@@ -70,9 +71,10 @@ export function rowKey(entry: AgentHistoryEntry): string {
 
 /** resume「这条会话」的语义单元（provider + 原生 session id + 可选显示名 + 归属项目）。 */
 export type ResumeAgentSessionInput = {
-  provider?: "claude" | "omp";
+  provider?: "claude" | "omp" | "codex";
   claudeSessionId?: string;
   acpSessionId?: string;
+  codexThreadId?: string;
   displayName?: string;
   /** 全局作用域行自带归属项目（04g「全部」段服务端恒填）；缺省回退 hook 级 projectName。 */
   projectName?: string;
@@ -90,6 +92,7 @@ export function buildResumeInput(
   return {
     acpSessionId: entry.acpSessionId,
     claudeSessionId: entry.claudeSessionId,
+    codexThreadId: entry.codexThreadId,
     projectName: entry.projectName ?? projectName ?? undefined,
     provider: entry.provider ?? "claude",
   };
@@ -110,6 +113,7 @@ export function useResumeAgentSession(projectName: string | null) {
       createAgentSession(input.projectName ?? projectName ?? "", input.provider ?? "claude", {
         claudeSessionId: input.claudeSessionId,
         acpSessionId: input.acpSessionId,
+        codexThreadId: input.codexThreadId,
         displayName: input.displayName,
       }),
     onSuccess: async (data, input) => {

@@ -557,7 +557,7 @@ export const HISTORY_PAGE_SIZE = 20;
 const historySortKey = (e: AgentHistoryEntry): string => e.lastActivityAt ?? e.startedAt ?? "";
 
 const historySessionId = (e: AgentHistoryEntry): string =>
-  e.claudeSessionId ?? e.acpSessionId ?? "";
+  e.claudeSessionId ?? e.acpSessionId ?? e.codexThreadId ?? "";
 
 const historyTiebreak = (e: AgentHistoryEntry): string =>
   `${e.provider ?? "claude"}|${historySessionId(e)}`;

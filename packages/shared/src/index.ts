@@ -1411,11 +1411,13 @@ export type AgentHistoryRange = "week" | "biweekly" | "all";
 export type AgentHistoryEntry = {
   /** 该历史条目归属的 provider（决定 resume 时新建哪种实例、列表 marker 图标）。
    *  缺省视为 "claude"（存量响应兼容）。 */
-  provider?: "claude" | "omp";
+  provider?: "claude" | "omp" | "codex";
   /** Claude CLI session UUID (JSONL filename without extension)；claude 条目专用。 */
   claudeSessionId?: string;
   /** omp session id（= omp JSONL 文件名 uuid 段，loadSession 恢复用）；omp 条目专用。 */
   acpSessionId?: string;
+  /** codex thread id（rollout session_meta payload.id，thread/resume 恢复用）；codex 条目专用。 */
+  codexThreadId?: string;
   /** AI-generated title (last ai-title entry), or null */
   title: string | null;
   /** First user message text, truncated */

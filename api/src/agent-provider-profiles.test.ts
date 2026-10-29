@@ -21,9 +21,9 @@ test("getAgentProviderProfile returns internal Claude and Codex profiles", () =>
     command: "codex",
     displayNamePrefix: "Codex Agent",
     capabilities: {
-      // 会话内回放已通，历史列表待 P1；MCP 注入已通（批 E 探针：`-c mcp_servers.*.url=…`
-      // 被 0.163 收下并真连上 stub）。
-      history: "unsupported",
+      // 历史列表 = rollout 扫描（批 F）+ thread/resume 回放；MCP 注入已通（批 E 探针：
+      // `-c mcp_servers.*.url=…` 被 0.163 收下并真连上 stub）。
+      history: "native",
       mcpInject: "native",
     },
   });

@@ -59,6 +59,46 @@ const main = async () => {
   await writeFile(join(projectPath, "notes.txt"), "git-diff-e2e-untracked-ok\n");
   await mkdir(runtimeDir, { recursive: true });
 
+  // codex 历史列表 e2e 面（批 F）：CODEX_HOME seam 指向 fixture home，api 扫描永不碰
+  // 真实 ~/.codex。两份 rollout（demo + other 项目各一）= 项目作用域 cwd 过滤 + 全局段
+  // projectName 限定符 + resume 分流断言的数据源。
+  const codexHome = join(tempRoot, "codex-home");
+  const codexBucket = join(codexHome, "sessions", "2026", "10", "29");
+  await mkdir(codexBucket, { recursive: true });
+  const otherProjectPath = join(projectsRoot, "other");
+  await mkdir(otherProjectPath, { recursive: true });
+  await writeFile(
+    join(otherProjectPath, "README.md"),
+    "# Other\n\ncodex-history-e2e-second-project\n",
+  );
+  const rollout = (threadId: string, cwd: string, firstMessage: string) =>
+    [
+      {
+        timestamp: "2026-10-29T11:00:00.000Z",
+        ordinal: 0,
+        type: "session_meta",
+        payload: { id: threadId, timestamp: "2026-10-29T11:00:00.000Z", cwd },
+      },
+      {
+        timestamp: "2026-10-29T11:00:01.000Z",
+        ordinal: 1,
+        type: "event_msg",
+        payload: { type: "user_message", message: firstMessage },
+      },
+    ]
+      .map((l) => JSON.stringify(l))
+      .join("\n");
+  const CODEX_THREAD_DEMO = "eeeeeeee-1111-4111-8111-111111111111";
+  const CODEX_THREAD_OTHER = "eeeeeeee-2222-4222-8222-222222222222";
+  await writeFile(
+    join(codexBucket, `rollout-2026-10-29T11-00-00-${CODEX_THREAD_DEMO}.jsonl`),
+    rollout(CODEX_THREAD_DEMO, projectPath, "codex-e2e-history-demo"),
+  );
+  await writeFile(
+    join(codexBucket, `rollout-2026-10-29T11-00-00-${CODEX_THREAD_OTHER}.jsonl`),
+    rollout(CODEX_THREAD_OTHER, otherProjectPath, "codex-e2e-history-other"),
+  );
+
   const apiPort = await freePort();
   const webPort = await freePort();
   // MCP hub 默认固定 43013，本地常驻 ar-dev api 时 E2E 第二实例必撞（EADDRINUSE）——
@@ -78,6 +118,7 @@ const main = async () => {
     AGENTS_REMOTE_RUN_DIR: runtimeDir,
     AGENTS_REMOTE_SESSION_PREFIX: "e2e-ar",
     MCP_PORT: String(mcpPort),
+    CODEX_HOME: codexHome,
   });
   const web = spawnLogged(
     ["bun", "run", "dev", "--", "--host", "127.0.0.1", "--port", String(webPort)],

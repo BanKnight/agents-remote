@@ -30,6 +30,7 @@ import {
   parseHistoryFilter,
   projectToSlug,
 } from "./agent-history";
+import { deleteCodexHistoryEntry, listCodexHistory } from "./codex-history";
 import { listOmpHistory } from "./omp-history";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
@@ -62,17 +63,19 @@ export const handleSessionRoutes = async (
     try {
       const filter = parseHistoryFilter(url.searchParams.get("filter"));
       const project = await resolveProjectPath(projectsRoot, historyMatch.projectName);
-      // 两路历史（claude JSONL + omp JSONL）合流，按 lastActivityAt 统一降序——前端历史 tab
-      // 是单一列表，provider 只影响 marker 图标与 resume 分流（不分组、不分区）。
-      const [claudeActiveMap, acpActiveMap] = await Promise.all([
+      // 三路历史（claude JSONL + omp JSONL + codex rollout）合流，按 lastActivityAt 统一降序
+      // ——前端历史 tab 是单一列表，provider 只影响 resume 分流（不分组、不分区）。
+      const [claudeActiveMap, acpActiveMap, codexActiveMap] = await Promise.all([
         registry.getActiveClaudeSessionMap(project.name),
         registry.getActiveAcpSessionMap(project.name),
+        registry.getActiveCodexThreadMap(project.name),
       ]);
-      const [claudeEntries, ompEntries] = await Promise.all([
+      const [claudeEntries, ompEntries, codexEntries] = await Promise.all([
         listAgentHistory(project.path, claudeActiveMap, "all"),
         listOmpHistory(project.path, acpActiveMap, "all"),
+        listCodexHistory(project.path, codexActiveMap),
       ]);
-      const entries = [...claudeEntries, ...ompEntries];
+      const entries = [...claudeEntries, ...ompEntries, ...codexEntries];
       const response = paginateAgentHistory(entries, {
         filter,
         search: url.searchParams.get("search") ?? "",
@@ -441,7 +444,7 @@ const matchAgentHistoryRoute = (pathname: string) => {
 
 /**
  * v1.5 批5 删除历史会话。hasActiveSession 的服务端拒绝：活跃实例挂载的会话不可删（UI 隐藏入口，
- * 服务端仍守边界——防竞态/直连）。判据 = 该 sessionId 在 claude/omp activeMap 中。
+ * 服务端仍守边界——防竞态/直连）。判据 = 该 sessionId 在 claude/omp/codex activeMap 中。
  */
 const handleDeleteAgentHistory = async (
   project: { name: string; path: string },
@@ -449,17 +452,25 @@ const handleDeleteAgentHistory = async (
   sessionId: string,
   providerParam: string | null,
 ) => {
-  const provider = providerParam === "omp" ? "omp" : "claude";
-  const [claudeActive, ompActive] = await Promise.all([
+  const provider = providerParam === "omp" ? "omp" : providerParam === "codex" ? "codex" : "claude";
+  const [claudeActive, ompActive, codexActive] = await Promise.all([
     registry.getActiveClaudeSessionMap(project.name),
     registry.getActiveAcpSessionMap(project.name),
+    registry.getActiveCodexThreadMap(project.name),
   ]);
-  const activeMap = provider === "claude" ? claudeActive : ompActive;
+  const activeMap =
+    provider === "claude" ? claudeActive : provider === "omp" ? ompActive : codexActive;
   if (activeMap.has(sessionId)) {
     return jsonError("SESSION_HISTORY_ACTIVE", "Active session history cannot be deleted", 409);
   }
   try {
-    await deleteAgentHistoryEntry(project.path, sessionId, provider);
+    if (provider === "codex") {
+      // codex rollout 是全局日期桶（无 per-project 目录），删除按 threadId 全局匹配，
+      // 文件内 cwd 归属本项目才真删（跨项目 threadId 保守不删，对齐列表侧 cwd 过滤）。
+      await deleteCodexHistoryEntry(sessionId, project.path);
+    } else {
+      await deleteAgentHistoryEntry(project.path, sessionId, provider);
+    }
   } catch (error) {
     return jsonError(
       "SESSION_HISTORY_INVALID_ID",

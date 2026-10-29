@@ -746,7 +746,7 @@ export async function listGlobalAgentHistory(
 export async function deleteAgentHistory(
   projectName: string,
   sessionId: string,
-  provider: "claude" | "omp",
+  provider: "claude" | "omp" | "codex",
 ): Promise<DeleteAgentHistoryResponse> {
   return fetchJson(
     `/api/projects/${encodeURIComponent(projectName)}/agent-history/${encodeURIComponent(sessionId)}?provider=${provider}`,

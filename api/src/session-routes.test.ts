@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { listCodexHistory } from "./codex-history";
 import { projectToSlug } from "./agent-history";
 import type { AgentTuiController } from "./agent-tui";
 import { ompSessionSlug } from "./omp-history";
@@ -16,11 +17,15 @@ let runDir: string;
 let registry: SessionRegistry;
 let claudeSlugDir: string;
 let ompSlugDir: string;
+let codexHome: string;
 
 beforeEach(async () => {
   // projectsRoot 必须在 home 内：omp 历史只扫 home 内路径（ompSessionSlug home 外 → null）。
   projectsRoot = await mkdtemp(join(homedir(), ".ar-test-session-routes-projects-"));
   runDir = await mkdtemp(join(tmpdir(), "ar-session-routes-run-"));
+  // codex 扫描根走 CODEX_HOME seam：全文件统一指空 temp home（不碰真实 ~/.codex）。
+  codexHome = await mkdtemp(join(tmpdir(), "ar-session-routes-codexhome-"));
+  process.env.CODEX_HOME = codexHome;
   registry = new SessionRegistry({
     runDir,
     runtime: {
@@ -48,6 +53,8 @@ afterEach(async () => {
   await rm(runDir, { recursive: true, force: true });
   await rm(claudeSlugDir, { recursive: true, force: true });
   await rm(ompSlugDir, { recursive: true, force: true });
+  await rm(codexHome, { recursive: true, force: true });
+  delete process.env.CODEX_HOME;
 });
 
 const historyRequest = (projectName = "mergeproj", query = "filter=all") => {
@@ -269,4 +276,106 @@ test("POST mode：codex 会话同路由切换（threadId 准入）；无 threadI
   );
   expect(legacyRes?.status).toBe(404);
   expect(calls).toHaveLength(1);
+});
+
+// ── codex 历史第三路（批 F）─────────────────────────────────────────────────
+
+const CODEX_THREAD_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const CODEX_THREAD_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+const writeRollout = async (threadId: string, opts: { cwd?: string; mtime?: Date } = {}) => {
+  const dir = join(codexHome, "sessions", "2026", "10", "29");
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, `rollout-2026-10-29T11-00-00-${threadId}.jsonl`);
+  await writeFile(
+    path,
+    [
+      {
+        timestamp: "2026-10-29T03:00:00.000Z",
+        ordinal: 0,
+        type: "session_meta",
+        payload: {
+          id: threadId,
+          timestamp: "2026-10-29T03:00:00.000Z",
+          cwd: opts.cwd ?? join(projectsRoot, "mergeproj"),
+        },
+      },
+      {
+        timestamp: "2026-10-29T03:00:01.000Z",
+        ordinal: 1,
+        type: "event_msg",
+        payload: { type: "user_message", message: `codex 首条消息 ${threadId.slice(0, 4)}` },
+      },
+    ]
+      .map((l) => JSON.stringify(l))
+      .join("\n"),
+  );
+  if (opts.mtime) await utimes(path, opts.mtime, opts.mtime);
+};
+
+const deleteHistoryRequest = (sessionId: string, provider: string) => {
+  const req = new Request(
+    `http://localhost/api/projects/mergeproj/agent-history/${sessionId}?provider=${provider}`,
+    { method: "DELETE" },
+  );
+  return handleSessionRoutes(req, new URL(req.url), projectsRoot, registry);
+};
+
+test("GET agent-history 三路合流（claude+omp+codex），codex 按 cwd 过滤 + mtime 排序", async () => {
+  const now = Date.now();
+  await writeRollout(CODEX_THREAD_A, { mtime: new Date(now - 500) });
+  // 其它项目的 codex 会话：cwd 不匹配 → 不出现在本项目响应里。
+  await writeRollout(CODEX_THREAD_B, { cwd: "/elsewhere", mtime: new Date(now - 400) });
+  await writeFile(
+    join(claudeSlugDir, "claude-1.jsonl"),
+    JSON.stringify({ type: "ai-title", aiTitle: "c1" }),
+  );
+  await utimes(join(claudeSlugDir, "claude-1.jsonl"), new Date(now - 2000), new Date(now - 2000));
+
+  const res = await historyRequest();
+  expect(res?.status).toBe(200);
+  const body = (await res!.json()) as {
+    entries: { provider?: string; codexThreadId?: string; firstMessage: string | null }[];
+    counts: { all: number };
+  };
+  expect(body.entries.map((e) => e.provider)).toEqual(["codex", "claude"]);
+  expect(body.entries[0].codexThreadId).toBe(CODEX_THREAD_A);
+  expect(body.entries[0].firstMessage).toBe("codex 首条消息 aaaa");
+  expect(body.counts.all).toBe(2);
+  expect(body.nextCursor).toBeNull();
+});
+
+test("DELETE codex 历史条目：活跃（metadata.codexThreadId 挂载）409；非活跃删除成功", async () => {
+  await writeRollout(CODEX_THREAD_A);
+  await writeRollout(CODEX_THREAD_B);
+
+  // 活跃：registry 里有 agent session 挂着该 threadId → 服务端拒绝。
+  await registry.createAgentSession({
+    project: { name: "mergeproj", path: "" },
+    provider: "codex",
+    codexThreadId: CODEX_THREAD_A,
+  });
+  const activeRes = await deleteHistoryRequest(CODEX_THREAD_A, "codex");
+  expect(activeRes?.status).toBe(409);
+  const activeBody = (await activeRes!.json()) as { error: { code: string } };
+  expect(activeBody.error.code).toBe("SESSION_HISTORY_ACTIVE");
+
+  // 非活跃：文件在 → 删除成功且文件消失（活跃的 A 条目不受影响）。
+  const okRes = await deleteHistoryRequest(CODEX_THREAD_B, "codex");
+  expect(okRes?.status).toBe(200);
+  const okBody = (await okRes!.json()) as { ok: boolean };
+  expect(okBody.ok).toBe(true);
+  const remaining = await listCodexHistory(join(projectsRoot, "mergeproj"), new Map());
+  expect(remaining.map((e) => e.codexThreadId)).toEqual([CODEX_THREAD_A]);
+});
+
+test("DELETE codex：非法 threadId → 400（encodeURIComponent 保住 ../ 形态过 URL 规范化）", async () => {
+  const req = new Request(
+    `http://localhost/api/projects/mergeproj/agent-history/${encodeURIComponent("../escape")}?provider=codex`,
+    { method: "DELETE" },
+  );
+  const badRes = await handleSessionRoutes(req, new URL(req.url), projectsRoot, registry);
+  expect(badRes?.status).toBe(400);
+  const badBody = (await badRes!.json()) as { error: { code: string } };
+  expect(badBody.error.code).toBe("SESSION_HISTORY_INVALID_ID");
 });

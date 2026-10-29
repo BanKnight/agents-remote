@@ -111,9 +111,8 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
     command: "codex",
     displayNamePrefix: "Codex Agent",
     capabilities: {
-      // 会话内历史回放（thread/resume）已通，但历史**列表**（rollout JSONL 扫描，P1）
-      // 未接——能力位描述的是列表，故仍 unsupported，P1 落地时翻转。
-      history: "unsupported",
+      // 历史 = rollout JSONL 扫描列表（codex-history.ts）+ thread/resume 回放（批 F）。
+      history: "native",
       // `-c mcp_servers.ar-hub.url=` TOML 覆盖（批 E，探针 E1 实证 0.163 真连上）。
       mcpInject: "native",
     },

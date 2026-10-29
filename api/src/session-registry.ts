@@ -451,6 +451,18 @@ export class SessionRegistry {
     return map;
   }
 
+  /** codex 历史判活：codexThreadId → 活跃 agent session id（与 getActiveAcpSessionMap 同型）。 */
+  async getActiveCodexThreadMap(projectName: string): Promise<Map<string, string>> {
+    const metadata = await this.listMetadata("agent", projectName);
+    const map = new Map<string, string>();
+    for (const m of metadata) {
+      if (m.provider === "codex" && m.codexThreadId) {
+        map.set(m.codexThreadId, m.id);
+      }
+    }
+    return map;
+  }
+
   async listAgentSessions(projectName: string): Promise<AgentSession[]> {
     const metadata = await this.listMetadata("agent", projectName);
     return metadata.map(agentSessionFromMetadata);
