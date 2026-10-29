@@ -37,6 +37,10 @@ export const triggerPopoverPanelClasses =
  * VS Code-style：键盘高亮项保持滚入视野。assistant-ui 的 trigger popover 没有
  * scrollIntoView，从 scope context 读 highlightedIndex，对高亮项做 block:"nearest"
  * 滚动（仅在出视野时滚，无抖动）。
+ *
+ * 触达尺寸（design review 批 G P3，用户拍板治理）：`touch:min-h-11` = 触屏设备行高
+ * 保底 44px（HIG 最小点击目标；内容驱动的 32px 触屏难点准），桌面/未知环境保持紧凑
+ * 基线视觉零变化——点击区分流走 touch variant（frontend-notes §7 边界表）。
  */
 export function TriggerPopoverItemRow({
   item,
@@ -81,7 +85,7 @@ export function TriggerPopoverItemRow({
       ref={ref}
       item={item}
       index={index}
-      className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-on-surface-soft transition-colors duration-150 hover:bg-surface-raised/80 hover:text-on-surface data-[highlighted]:bg-surface-raised/80 data-[highlighted]:text-on-surface"
+      className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-on-surface-soft transition-colors duration-150 hover:bg-surface-raised/80 hover:text-on-surface data-[highlighted]:bg-surface-raised/80 data-[highlighted]:text-on-surface touch:min-h-11"
     >
       <ToolIcon name={iconName} className={iconClassName} />
       <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0">
