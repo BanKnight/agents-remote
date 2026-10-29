@@ -52,12 +52,13 @@ shared 11，e2e codex-session 6/6），ar-dev 已 respawn 交付。codex 接入�
 
 - 无阻塞。**留观（不计 fail）**：
   - design P3 继承项：弹层行 description 浅色主题对比度 ~2.9:1（inkSecondary on
-    bg-elevated2，修在 token 层，successText 先例）；弹层行触达 ~32px < 44px（改 py 动
-    claude 既有视觉，交用户拍板是否治理）。
+    bg-elevated2）——用户拍板**保持现状**（token 层改动影响面广）。
+  - ~~弹层行触达 ~32px~~ → **已治理**（`72cc019`：`touch:min-h-11` 触屏保底 44px，
+    桌面零变化）；真机验收时确认触屏弹层行好点准。
   - code 备注：`atRequestIdRef` 计数器与 waiter Map 生命周期不同步（当前无触发路径，
     加固可提 hook 层或随机前缀）。
-  - pre-commit 全门禁 test 阶段偶发 flaky（chat-idle-recycler 60ms 真实 sleep 时序敏感，
-    单跑必绿；重试即过，非本批引入）。
+  - pre-commit 全门禁 test 阶段偶发 flaky（chat-idle-recycler / agent-tui 等真实 sleep
+    时序敏感，单跑必绿；重试即过，非本批引入）。
 
 ## 下一步
 
