@@ -62,8 +62,15 @@ shared 11，e2e codex-session 6/6），ar-dev 已 respawn 交付。codex 接入�
 
 ## 下一步
 
-1. **真机验收（批 D + E + F + G 一起交）**：见下方清单。
+1. **真机验收（批 D + E + F + G + 真机反馈修复一起交）**：见下方清单。
 2. codex 接入开发任务全部完成（批 1/2/A–G）；后续按真机反馈修问题。
+
+### 真机反馈修复（2026-10-30）
+
+- **`0435ef6` 自动重试开关入口泛化到 codex**（用户实测「codex 缺乏自动重试」）：
+  诊断 = api 侧批 D 已全泛化、banner 链已通，缺口是 4 个开关 UI 入口 claude-only 门
+  （头部 rotate 按钮 / 桌面 ⋯ 菜单 / 移动 ⋯ 菜单 / ℹ 信息面）；已全部放宽到 codex
+  chat 形态（terminal 排除保留，claude 行为零变化）。
 
 ## 真机验收清单（批 D + E + F + G）
 
@@ -86,6 +93,11 @@ shared 11，e2e codex-session 6/6），ar-dev 已 respawn 交付。codex 接入�
 8. 上下文占用浮层 → 「压缩上下文」→ 「Compacting」pill → 「Context compacted」块。
 9. 运行中发消息并入当前轮（steer）；错误重连 pill；ChatGPT 登录显示额度段。
 10. codex 切终端形态带 ar-hub MCP；claude 会话同浮层压缩走 `/compact`。
+
+**真机反馈修复（0435ef6）**：
+11. codex chat 会话三处可见自动重试开关（头部 rotate 按钮 / ⋯ 菜单「自动重试」✓ 行 /
+    ℹ 信息面行）；打开后 turn 失败自动注入重试消息，面板上方出现待发倒计时条
+    （取消 / 立即重试）；终端形态 codex 无开关（预期）。
 
 ## 提醒
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
