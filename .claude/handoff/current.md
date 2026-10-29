@@ -1,82 +1,87 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-29 08:20（批次 F 已 commit `41b0dde`，codex 接入开发任务全部完成）
+> 最后更新：2026-10-29 20:50（批 G 全部完成 + 三路 review 消化，ar-dev 已交付）
 
 ## 一句话状态
 
-**批次 F 完成（已 commit `41b0dde`）：codex 会话历史列表——新模块 `api/src/codex-history.ts`
-扫 `CODEX_HOME/sessions/**/rollout-*.jsonl`（流式按行解析 meta+首条用户消息、cwd 项目过滤、
-mtime 倒序、mtime+size 缓存），api 项目级/全局端点三路合流（claude+omp+codex），web 分流
-resume 透传 `codexThreadId`（移动端零改动即生效），e2e 列表面走真实 api。codex 接入的最
-后一个开发任务完成。**
+**批 G「codex composer 智能感应」完成：`/` skills slash 补全 + `@` 文件补全全链落地
+（9 commit：`8a3a447` 批0+1 / `42885d4` 批2 / `71d9ace` 批3 / `5c9e908` flaky 根治 /
+`08e2c4f` 批4 / `bf3ea0f` 批5 / `521c256` security L1 / `814f845` code P2+P3 /
+`6dd9535` design P2+P3），三路 reviewer 报告全部消化，门禁全绿（api 1228 / web 1009 /
+shared 11，e2e codex-session 6/6），ar-dev 已 respawn 交付。codex 接入（批 1/2/A–G）
+开发任务全部完成，待真机验收。**
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **rollout 解析走流式按行（readline）+ 早停**：session_meta 首行含 base_instructions
-  全文十几 KB → 固定 HEAD_BYTES 读头部会截断（omp-history 的模式不可照抄）；threadId =
-  `payload.id`（旧版 0.135 无 session_id 字段）；环境注入以 `<` 开头标签形态出现，跳过。
-- **删除归属复核（security review P1 修复）**：rollout 是全局日期桶（无 per-project 目录），
-  `deleteCodexHistoryEntry(threadId, projectPath)` 删除前用 `cwdBelongsToProject(partial.cwd,
-  projectPath)` 复核——否则跨项目 threadId 传到本项目端点可绕过本项目 activeMap 的活跃
-  保护（409 只查端点所属项目）删掉别家正在运行的会话文件。归属不符保守不删仍返回 true
-  （omp 同契约：文件名候选命中即 true）。
-- **keyset 游标 tiebreak（code review P1 修复）**：`agent-history.ts` 的 `historySessionId`
-  补 `?? e.codexThreadId ?? ""`——codex 条目 tiebreak 恒 `"codex|"` 时同毫秒条目 (key,
-  tiebreak) 全同，跨页边界 findIndex 严格小于会整行跳失。
-- **startedAt 版本漂移兜底**：`payload.timestamp` 缺失时兜底行级 `entry.timestamp`（每行
-  顶层恒有）。
-- **e2e 列表面走真实 api**：`run-e2e.ts` 以 `CODEX_HOME` seam 种 fixture rollout（demo +
-  other 两项目各一条），扫描/cwd 过滤/三路合流真实执行；resume POST 走 page 级 mock 捕获
-  body（真实 POST 会拉起 codex CLI）。第二项目 "other" 对既有 spec 纯增量（断言全带过滤）。
-- **已知限制记档**：项目改名后 codex 历史失联（rollout cwd 由 CLI 持有，不做迁移，
-  `migrateAgentHistoryProject` 不适用）。
+- **触发补全走 assistant-ui 原生 TriggerPopover 体系**（0.15.27）：`TriggerPopoverRoot`
+  下挂 `char="/"` + `char="@"` 双 popover；共享三件套抽到 `web/src/components/ui/composer-trigger.tsx`
+  （plainTextFormatter / TriggerPopoverItemRow / useTriggerPopoverActiveRef，后补
+  triggerPopoverPanelClasses 面板单源）；claude 路由 move-only 改 import。
+- **@ 补全自写 hook 被库能力替代**：`unstable_useLiveCompletionAdapter` 内置防抖(180ms)/
+  stale token/缓存，只保留 fetcher 桥（`fileSearch` waiter + 3s 超时兜底 + 空 query/超长
+  截断边界）。
+- **@ 与 / 插入语义分流**：slash Enter 直发 `/name`（IDE 式）；@ 任何触发方式只插入
+  `@path` 不发送（文件引用是消息文本一部分，`atFileFormatter` + onExecute noop）。
+- **file_search 通道**：上行 `{type:"file_search", query≤128, requestId≤128}` → per-socket
+  `file_search_result` 应答（不进 relay 缓冲）；服务端 roots 固定 entry.projectPath。
+- **api flaky 根治（计划外）**：额度通知单飞闸「在飞即丢」→ 快照记 `pendingNotificationLimits`
+  latest-wins 单槽 + finally 收口补发；`--slow-account` 确定性复现 + A/B 验证。全量测试
+  45s→22s，连续 3 次全绿。
+- **批 5 home skills symlink**：托管 apiKey home 补 `skills` 存在才链（config.toml 同款
+  ensureSymlink），user 级 skills 跨 home 可见。
+- **review 消化三连**：security L1 requestId ≤128 上限（回声放大）；code P2 skills 空帧
+  清空（全量快照 latest-wins，重拉删光不发帧则前端 stale；「无帧=能力缺失」保留给 catch
+  路径）+ P3 fileSearch race 5s 短超时（不再白占 conn pending 60s）；design P2 空面板
+  隐藏 `[&:not(:has([role='option']))]:hidden`（open 与 items 数量无关）+ P3 面板串收
+  `triggerPopoverPanelClasses` 单源。
 
-### 进度（批次 F 全落地，已 commit `41b0dde`）
+### 进度
 
-- ✅ api：`codex-history.ts` 新模块（14 单测）+ 四处接线（registry 判活 map / 项目级三路
-  合流 / 全局合流 / profile 翻转 `history: "native"`）+ `agent-history` tiebreak 兜底。
-- ✅ web：`history-list.tsx`（entryNativeId/buildResumeInput/useResumeAgentSession codex
-  分支）+ `use-history-query.ts` delete id 链 + `client.ts` provider 参数；mobile-sheets
-  零改动（design review 确认同构成立）。
-- ✅ e2e：`codex-history.spec.ts` 2/2（项目历史态 cwd 过滤 + resume POST body 断言 + 全局
-  段项目限定符）；回归 desktop-side 6/6 + codex-session 4/4。
-- ✅ 门禁：format / lint(0 warning) / typecheck / api 1220 + web 1005 + shared 11 全 pass /
-  CSS 硬闸 / tokens 机检（仅 2 处既有 debug HEX 留观）。
-- ✅ reviewer 三路：design 无发现；security 1 P1（删除归属，已修）+ 附注全局端点 N 次扫描
-  留观；code 1 P1（tiebreak，已修）+ 2 P2（startedAt 兜底已修；`<` 启发式误跳以 `<` 开头
-  的真用户消息留观——与 claude SKIP_FIRST_PROMPT_PATTERN 同类家族局限）。
-- ✅ 交付：ar-dev api/web respawn、api health ok、CSS content-type text/css、产物含新代码
-  （WorkbenchRoute chunk 有 codexThreadId）。
+- ✅ 批 0 探针（R1–R5 实证：RPC 直返型、`/name` 引用文本、skills/list 形态）
+- ✅ 批 1 api 通道（shared 帧类型 + codex-runtime skills/fileSearch + codex-stream 分发）
+- ✅ 批 2 共享抽取（composer-trigger 三件套，claude move-only）
+- ✅ 批 3 skills slash 补全 + 批 4 @ 文件补全（adapter + waiter 桥 + e2e）
+- ✅ 批 5 home symlink + 全门禁 + e2e 6/6
+- ✅ 三路 reviewer：security（L1 修/L2 备查）、code（P2/P3 修、requestId 计数器备注不改）、
+  design（P2/P3 修、对比度 2.9:1 与行触达 32px 留观见下）
+- ✅ dev 交付：api/web respawn、health ok、CSS text/css、产物含新代码与空面板隐藏 utility
 
 ### 阻塞 / 风险
 
-- 无阻塞。**留观**：①全局 `/api/agent-history` 现为 N 项目 × 全树扫描/请求（parse 有缓存
-  摊薄、readdir×N 仍在；rollout 上万再考虑一次扫描按 cwd 分桶）；②`<` 启发式会误跳以 `<`
-  开头的真用户消息（家族既有局限）；③真实 `~/.codex` 数据 / 外部 codex-tui 会话 resume
-  全链未真机验（e2e 是 fixture + mock resume）。
+- 无阻塞。**留观（不计 fail）**：
+  - design P3 继承项：弹层行 description 浅色主题对比度 ~2.9:1（inkSecondary on
+    bg-elevated2，修在 token 层，successText 先例）；弹层行触达 ~32px < 44px（改 py 动
+    claude 既有视觉，交用户拍板是否治理）。
+  - code 备注：`atRequestIdRef` 计数器与 waiter Map 生命周期不同步（当前无触发路径，
+    加固可提 hook 层或随机前缀）。
+  - pre-commit 全门禁 test 阶段偶发 flaky（chat-idle-recycler 60ms 真实 sleep 时序敏感，
+    单跑必绿；重试即过，非本批引入）。
 
 ## 下一步
 
-1. **真机验收（批 D + E + F 一起交）**：见下方清单。
-2. codex 接入开发任务**全部完成**（批 1/2/A–F）；后续按真机反馈修问题。
+1. **真机验收（批 D + E + F + G 一起交）**：见下方清单。
+2. codex 接入开发任务全部完成（批 1/2/A–G）；后续按真机反馈修问题。
 
-## 真机验收清单（批 D + E + F）
+## 真机验收清单（批 D + E + F + G）
+
+**批 G（composer 智能感应）**：
+1. codex 会话 composer 输 `/` → 弹 skills 目录（名称+描述），Enter 直发 `/name`；
+   无 skills 时无弹层；skills 文件增删后 `skills/changed` 自动刷新；删光后弹层清空。
+2. composer 输 `@` + 片段 → 弹项目内文件路径（fuzzy、file/directory 图标一致），Enter
+   只插入 `@path`（尾随空格）不发送；无命中不弹空面板。
+3. 托管 apiKey（settings 填 key）会话能看到用户级 skills（home skills symlink 生效）。
 
 **批 F（历史列表）**：
-1. 打开项目 → 左栏时钟「View session history」→ 真实 `~/.codex` 的会话出现在列表
-   （首条用户消息做标题、今天/昨天等分组、文件大小副标题）。
-2. 其它项目的 codex 会话不出现在本项目列表；「全部」段两项目行同列且带项目限定符。
-3. 点结束的 codex 历史行 → 命名框 → Create → 新实例挂载且回放历史（thread/resume 全链，
-   外部 codex-tui 创建的会话也要能 resume）。
-4. 活跃中的 codex 会话历史行带脉动点，点击直接聚焦不新建。
-5. 右键/长按 codex 历史行 → 删除（二次确认）→ 文件真删（`~/.codex/sessions/` 里 rollout
-   消失）；活跃行删除被服务端 409 拒绝。
-6. 已知限制确认：项目改名后旧 codex 会话在新项目名下不可见（预期行为）。
+4. 项目左栏「View session history」→ 真实 `~/.codex` 会话在列（首条用户消息做标题、
+   时间分组、大小副标题）；其它项目会话不串；「全部」段带项目限定符。
+5. 点历史行 → 命名框 → Create → 回放历史（外部 codex-tui 会话也能 resume）；活跃行
+   点击直接聚焦；删除（二次确认）文件真删；活跃行删除被 409 拒。
+6. 已知限制：项目改名后旧 codex 会话在新项目名下不可见（预期）。
 
-**批 D + E**（同前）：
-7. codex 托管 CODEX_HOME 凭据在 chat/terminal 双形态同源；自动重试 provider 泛化。
+**批 D + E（同前）**：
+7. codex 托管 CODEX_HOME 凭据 chat/terminal 双形态同源；自动重试 provider 泛化。
 8. 上下文占用浮层 → 「压缩上下文」→ 「Compacting」pill → 「Context compacted」块。
 9. 运行中发消息并入当前轮（steer）；错误重连 pill；ChatGPT 登录显示额度段。
 10. codex 切终端形态带 ar-hub MCP；claude 会话同浮层压缩走 `/compact`。
