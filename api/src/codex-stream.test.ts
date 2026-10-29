@@ -510,7 +510,7 @@ describe("CodexStreamController.message", () => {
     ]);
   });
 
-  test("file_search：载荷白名单外（空/超长 query、缺 requestId）→ 不调 runtime 无应答", async () => {
+  test("file_search：载荷白名单外（空/超长 query、缺/空/超长 requestId）→ 不调 runtime 无应答", async () => {
     const { stub, controller, socket, sent } = await openController();
     stub.setFileSearchImpl(async () => [
       { path: "src/beta.md", matchType: "file", fileName: "beta.md" },
@@ -527,6 +527,11 @@ describe("CodexStreamController.message", () => {
     await controller.message(
       socket,
       JSON.stringify({ type: "file_search", query: "q", requestId: "" }),
+    );
+    // 超长 requestId 静默丢弃（应答 1:1 回显该字段，无上限 = 放大回声；security review L1）。
+    await controller.message(
+      socket,
+      JSON.stringify({ type: "file_search", query: "q", requestId: "r".repeat(129) }),
     );
     expect(stub.calls.fileSearch).toBe(0);
     expect(sent).toEqual([]);

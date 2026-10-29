@@ -219,7 +219,8 @@ export class CodexStreamController {
         return;
       }
       if (parsed.type === "file_search") {
-        // @ 补全（批 G）：载荷白名单校验（query 非空且 ≤128、requestId 非空字符串），
+        // @ 补全（批 G）：载荷白名单校验（query 非空且 ≤128、requestId 非空且 ≤128——
+        // 应答原样回显该字段，无上限 = 1:1 放大回声，security review 批 G L1），
         // 不合格静默丢弃；roots 服务端固定 entry.projectPath（客户端不可指定，白名单封闭）。
         // 应答走 per-socket send（请求-应答型，不进 relay 缓冲，error/pong 同层）。
         if (
@@ -227,7 +228,8 @@ export class CodexStreamController {
           parsed.query.length === 0 ||
           parsed.query.length > FILE_SEARCH_QUERY_MAX_LEN ||
           typeof parsed.requestId !== "string" ||
-          parsed.requestId.length === 0
+          parsed.requestId.length === 0 ||
+          parsed.requestId.length > FILE_SEARCH_QUERY_MAX_LEN
         ) {
           return;
         }
