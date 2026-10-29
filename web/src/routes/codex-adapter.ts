@@ -4,6 +4,7 @@ import type { AppendMessage, ExternalStoreAdapter, ThreadMessageLike } from "@as
 import type {
   ClaudeContextUsage,
   CodexAccountUsage,
+  CodexSkillInfo,
   CodexStreamServerMessage,
 } from "@agents-remote/shared";
 import type { PendingAttachments } from "../components/ui/composer-attach";
@@ -56,6 +57,13 @@ export type CodexConfigPatch = {
   approvalPolicy?: string;
   sandbox?: string;
 };
+
+/**
+ * skills 补全（批 G）：slash 弹层项执行时写入 composer 的引用文本形态。批 0 R1 实证
+ * `/name` 是权威形态（userMessage 原样保留、模型端加载 skill 内容），`$name` 发入会被
+ * app-server 规范化为 `/name`（殊途同归，不走 $ 中转）。
+ */
+export const SKILL_REF_FORM = (name: string) => `/${name}`;
 
 /** `thread/tokenUsage/updated` 通知的 tokenUsage 局部解码（0.163.0 fixtures 形状，宽进）：
  *  `last` = 最后一次 API 请求用量；`total` = 本 thread 累计消耗（比窗口无意义，不采集）。 */
@@ -1052,6 +1060,9 @@ export function useCodexSession(
   const [rawMessages, setRawMessages] = useState<CodexRawItem[]>([]);
   // 会话配置快照（latest-wins 标量，不进 raw 消息日志——同 ACP configOptions）。
   const [config, setConfigState] = useState<CodexConfig | null>(null);
+  // skills 目录（批 G）：codex_skills 推送帧（latest-wins 标量，不进 raw 日志）。空数组
+  // = 无帧状态（服务端空目录不发帧）→ composer 无 slash 补全（能力降级不失败）。
+  const [skills, setSkills] = useState<CodexSkillInfo[]>([]);
   // 配置已提交但下一个 turn/start 才应用：UI 标「下轮生效」不伪装即时切换。
   const [configPending, setConfigPending] = useState(false);
   // 上下文占用标量（thread/tokenUsage/updated 透传帧，last 比窗口——真机反馈 2026-10-28
@@ -1222,6 +1233,7 @@ export function useCodexSession(
         setRawMessages([]);
         anchorRef.current = null;
         setConfigState(null);
+        setSkills([]);
         setConfigPending(false);
         setTokenUsage(undefined);
         setIsRunning(false);
@@ -1270,6 +1282,11 @@ export function useCodexSession(
         },
         ...(msg.account ? { account: msg.account } : {}),
       });
+      return;
+    }
+    if (msg.type === "codex_skills") {
+      // skills 目录快照（latest-wins；重连 delta 不清、full 重置走上方 session_init 分支）。
+      setSkills(Array.isArray(msg.skills) ? msg.skills : []);
       return;
     }
     if (msg.type === "codex_event") {
@@ -1389,6 +1406,7 @@ export function useCodexSession(
       replayRawRef.current = [];
       anchorRef.current = null;
       setConfigState(null);
+      setSkills([]);
       setConfigPending(false);
       setTokenUsage(undefined);
       // isRunning 一并清：running 会话切走后，新会话 onopen → session_init full 到达前的
@@ -1721,6 +1739,7 @@ export function useCodexSession(
     streamError,
     config,
     configPending,
+    skills,
     contextUsage,
     setConfig,
     compact,

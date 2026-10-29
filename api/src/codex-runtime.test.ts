@@ -1221,6 +1221,8 @@ describe("CodexRuntime 批 E（compact / steer / MCP 注入 / 账号额度）", 
     await allowed.runtime.close("k-e5b");
   });
 
+  // per-test timeout 20s：全量跑（commit 门禁）负载下 fake turn 链路 >5s 偶发 flaky
+  //（单文件跑恒绿），test 级与 waitFor 级一起放宽。
   test("额度通知直取快照（denied 环境下也不打 read RPC）：params.rateLimits → 新 config 帧", async () => {
     // perf P2-2：account/rateLimits/updated 的 params 自带完整快照——denied（read 报
     // authentication required）时仍能从通知拿到额度，证明未依赖 read RPC。
@@ -1238,6 +1240,8 @@ describe("CodexRuntime 批 E（compact / steer / MCP 注入 / 账号额度）", 
     await waitFor(
       () => parse(lines).some((m) => m.type === "codex_config" && m.account?.planType === "plus"),
       "config with carried account",
+      // 全量跑（commit 门禁）负载下 fake turn 链路 >5s 偶发（实测 flaky），放宽到 15s。
+      15_000,
     );
     const cfg = parse(lines).find(
       (m) => m.type === "codex_config" && m.account?.planType === "plus",
@@ -1247,7 +1251,7 @@ describe("CodexRuntime 批 E（compact / steer / MCP 注入 / 账号额度）", 
       primary: { usedPercent: 77, windowDurationMins: 300 },
     });
     await runtime.close("k-e6a");
-  });
+  }, 20_000);
 });
 
 describe("CodexRuntime 批 G（skills 目录 / @ 文件补全）", () => {

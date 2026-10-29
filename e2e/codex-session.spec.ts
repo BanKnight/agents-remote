@@ -37,6 +37,7 @@ function routeCodexStream(
   page: import("@playwright/test").Page,
   onClientMessage?: (msg: ClientMsg) => void,
   configFrame?: CodexConfigFrame,
+  skills?: { name: string; description: string; scope: string }[],
 ) {
   return page.routeWebSocket(
     new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/codex-stream`),
@@ -48,7 +49,7 @@ function routeCodexStream(
           /* non-JSON frames ignored */
         }
       });
-      sendInitialFrames(ws, configFrame);
+      sendInitialFrames(ws, configFrame, skills);
     },
   );
 }
@@ -77,6 +78,7 @@ const DEFAULT_CODEX_CONFIG = {
 function sendInitialFrames(
   ws: { send: (data: string) => void },
   configFrame?: CodexConfigFrame,
+  skills?: { name: string; description: string; scope: string }[],
 ): void {
   const frames = [
     { type: "session_init", resume: false },
@@ -98,6 +100,8 @@ function sendInitialFrames(
       },
     },
     { type: "codex_config", ...(configFrame ?? DEFAULT_CODEX_CONFIG) },
+    // skills 帧（批 G）：可选注入（slash 弹层数据源；服务端空目录不发帧 → 未传即无帧）。
+    ...(skills ? [{ type: "codex_skills", skills }] : []),
     {
       type: "codex_event",
       event: {
@@ -295,6 +299,56 @@ test("Codex: session detail renders stream (echo, reasoning, text, Bash card, ap
       timeout: 10_000,
     })
     .toBeTruthy();
+
+  // 批 G 反向：无 skills 帧时输入 / 不出弹层（服务端空目录不发帧 = 无补全能力，降级不失败）。
+  await chatInput.focus();
+  await chatInput.pressSequentially("/");
+  await expect(page.getByRole("listbox")).toHaveCount(0);
+
+  assertNoConsoleErrors();
+});
+
+// 批 G：skills slash 弹层（composer 智能感应）。codex_skills 帧 → 输入 / 弹层列出目录；
+// Enter 提交高亮项 = 上行 `/name`（SKILL_REF_FORM，批 0 R1 权威形态）并清空 composer。
+test("Codex: skills slash popover lists directory and Enter submits /name", async ({ page }) => {
+  const assertNoConsoleErrors = collectConsoleErrors(page);
+  const sentMessages: ClientMsg[] = [];
+
+  await mockSessionRest(page);
+  routeCodexStream(page, (msg) => sentMessages.push(msg), undefined, [
+    { name: "deploy", description: "Deploy the project to production", scope: "user" },
+    { name: "review", description: "Review recent changes", scope: "repo" },
+  ]);
+
+  await page.goto("/");
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible({
+    timeout: 15_000,
+  });
+
+  await page.goto(`/projects/${projectName}/session/${fakeSessionId}`);
+
+  const chatInput = page.getByPlaceholder("Ask Claude...");
+  await expect(chatInput).toBeVisible({ timeout: 15_000 });
+
+  // 输入 / → 弹层列出 skills 目录（label = /name + description，共享 TriggerPopoverItemRow 行）。
+  await chatInput.focus();
+  await chatInput.pressSequentially("/");
+  const deployOption = page.getByRole("option", {
+    name: "/deploy Deploy the project to production",
+  });
+  await expect(deployOption).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole("option", { name: "/review Review recent changes" })).toBeVisible();
+
+  // Enter（默认高亮首项）→ 直接发送 `/deploy`（IDE 式提交）+ composer 清空。
+  await chatInput.press("Enter");
+  await expect
+    .poll(() => sentMessages.find((m) => m.type === "user" && m.text === "/deploy"), {
+      timeout: 10_000,
+    })
+    .toBeTruthy();
+  await expect(chatInput).toHaveValue("");
 
   assertNoConsoleErrors();
 });

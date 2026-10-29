@@ -4,15 +4,23 @@ import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
   ThreadPrimitive,
+  unstable_useSlashCommandAdapter,
   useAui,
   useAuiState,
+  type Unstable_SlashCommand,
 } from "@assistant-ui/react";
 import {
   CODEX_PERMISSION_MODES,
   type ClaudeContextUsage,
   type CodexAccountUsage,
   type CodexPermissionMode,
+  type CodexSkillInfo,
 } from "@agents-remote/shared";
+import {
+  plainTextFormatter,
+  TriggerPopoverItemRow,
+  useTriggerPopoverActiveRef,
+} from "../components/ui/composer-trigger";
 import { useT, type TranslationKey } from "../i18n";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
 import { useComposerInsetDebugBadge } from "../lib/use-composer-inset-debug-badge";
@@ -35,7 +43,12 @@ import {
   SelectorTrigger,
 } from "../components/ui/composer-controls";
 import type { LucideIconName } from "../components/shell/lucide-icon";
-import { useCodexSession, type CodexConfig, type CodexConfigPatch } from "./codex-adapter";
+import {
+  useCodexSession,
+  SKILL_REF_FORM,
+  type CodexConfig,
+  type CodexConfigPatch,
+} from "./codex-adapter";
 import { VirtualizedThreadContent } from "./ClaudeSessionDetailRoute";
 import { ClaudeBridgeContext, type RetryInfo } from "./claude-adapter";
 import { shellSurfaceClasses } from "../components/shell/shell-primitives";
@@ -69,6 +82,7 @@ export function CodexChatPanel({
     loading,
     config,
     configPending,
+    skills,
     contextUsage,
     setConfig,
     compact,
@@ -143,20 +157,25 @@ export function CodexChatPanel({
                 className="pointer-events-auto mx-auto w-full max-w-2xl transition-transform duration-200 ease-out lg:transition-none"
                 style={{ transform: "translateY(calc(-1 * var(--composer-keyboard-offset, 0px)))" }}
               >
-                <ComposerPrimitive.Root>
-                  <ComposerWithInterruptCodex
-                    config={config}
-                    configPending={configPending}
-                    connected={connected}
-                    contextUsage={contextUsage}
-                    account={config?.account}
-                    onCompact={compact}
-                    onCancel={onCancel}
-                    onSetConfig={setConfig}
-                    sessionId={sessionId}
-                    attachments={composerAttachments}
-                  />
-                </ComposerPrimitive.Root>
+                {/* TriggerPopoverRoot：slash（skills）/@（文件）补全弹层的根上下文（批 G，
+                    claude composer 同款包裹层级）。 */}
+                <ComposerPrimitive.TriggerPopoverRoot>
+                  <ComposerPrimitive.Root>
+                    <ComposerWithInterruptCodex
+                      config={config}
+                      configPending={configPending}
+                      connected={connected}
+                      contextUsage={contextUsage}
+                      account={config?.account}
+                      onCompact={compact}
+                      onCancel={onCancel}
+                      onSetConfig={setConfig}
+                      sessionId={sessionId}
+                      attachments={composerAttachments}
+                      skills={skills}
+                    />
+                  </ComposerPrimitive.Root>
+                </ComposerPrimitive.TriggerPopoverRoot>
               </div>
             </div>
           </ThreadPrimitive.Root>
@@ -193,6 +212,7 @@ function ComposerWithInterruptCodex({
   onCancel,
   sessionId,
   attachments,
+  skills,
 }: {
   config: CodexConfig | null;
   configPending: boolean;
@@ -207,6 +227,8 @@ function ComposerWithInterruptCodex({
   sessionId: string;
   /** 附件管线（claude 同款单源，发图批镜像）。 */
   attachments: ReturnType<typeof useComposerAttachments>;
+  /** skills 目录（批 G）：codex_skills 帧快照，slash 弹层唯一数据源；空数组不渲染弹层。 */
+  skills: CodexSkillInfo[];
 }) {
   const { t } = useT();
   const isRunning = useAuiState((s) => s.thread.isRunning);
@@ -214,6 +236,24 @@ function ComposerWithInterruptCodex({
   const aui = useAui();
   const composer = aui.composer;
   const { isMac, isMobileComposer } = useComposerEnterPolicy();
+
+  // skills 目录 → slash 补全目录（批 G，claude slashItems 同构）：id=name、description=
+  // 服务端投影链产物、execute no-op（提交走 Action.onExecute 回填 SKILL_REF_FORM）。
+  const slashItems = useMemo<readonly Unstable_SlashCommand[]>(
+    () =>
+      skills.map((s) => ({
+        id: s.name,
+        description: s.description,
+        execute: () => undefined,
+      })),
+    [skills],
+  );
+  // Enter on a highlighted skill item sends it immediately（claude 同款 IDE 式：Tab 补全、
+  // Enter 提交）。append 直驱 onNew，与 composer 文本态无关。
+  const lastKeyRef = useRef<string>("");
+  const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
+  // 弹层激活时 Enter 让位 popover（提交高亮项），不触发 composer 发送。
+  const slashOpenRef = useTriggerPopoverActiveRef();
 
   // 草稿持久化（同 claude/ACP composer，key 按 runtime 类型 + 会话隔离）。
   useComposerDraft(`codex:${sessionId}`);
@@ -260,8 +300,11 @@ function ComposerWithInterruptCodex({
         className="block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-on-surface placeholder:text-on-surface-muted outline-none"
         rows={1}
         onKeyDown={(e) => {
+          // Record key for slash popover's Enter-submit (see Action.onExecute).
+          lastKeyRef.current = e.key;
           if (e.key !== "Enter") return;
           if (e.nativeEvent.isComposing) return;
+          if (slashOpenRef.current) return; // slash 菜单打开 → popover 提交高亮项
           if (inputDisabled) return;
           if (isMobileComposer) return;
           if (
@@ -323,6 +366,41 @@ function ComposerWithInterruptCodex({
             showStop={showStop}
           />
         </div>
+        {/* skills slash 弹层（批 G，claude composer 同款结构与样式）：skills 帧在场才渲染
+            （空数组 = 无补全能力，降级不失败）。项执行 = 回填 `/name` 引用文本；Enter 提交
+            时直接发送（IDE 式），非 Enter（点击/Tab）只回填不发送。 */}
+        {slashItems.length > 0 ? (
+          <ComposerPrimitive.TriggerPopover
+            char="/"
+            adapter={slash.adapter}
+            className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-on-surface/10 bg-surface-inset/95 p-1 shadow-2xl backdrop-blur"
+          >
+            <ComposerPrimitive.TriggerPopover.Action
+              formatter={plainTextFormatter}
+              onExecute={(item) => {
+                slash.action.onExecute?.(item);
+                if (lastKeyRef.current === "Enter") {
+                  aui.thread.append(SKILL_REF_FORM(item.id));
+                  composer.setText("");
+                }
+                lastKeyRef.current = "";
+              }}
+            />
+            <ComposerPrimitive.TriggerPopoverItems>
+              {(items) =>
+                items.map((item, index) => (
+                  <TriggerPopoverItemRow
+                    key={item.id}
+                    item={item}
+                    index={index}
+                    iconName="skill"
+                    iconClassName="text-assistant/70"
+                  />
+                ))
+              }
+            </ComposerPrimitive.TriggerPopoverItems>
+          </ComposerPrimitive.TriggerPopover>
+        ) : null}
       </div>
     </div>
   );
