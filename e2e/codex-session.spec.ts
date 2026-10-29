@@ -27,7 +27,15 @@ function collectConsoleErrors(page: import("@playwright/test").Page) {
   };
 }
 
-type ClientMsg = { type?: string; text?: string; decision?: string; controlRequestId?: string };
+type ClientMsg = {
+  type?: string;
+  text?: string;
+  decision?: string;
+  controlRequestId?: string;
+  /** @ 文件补全上行（file_search：query + requestId 配对应答）。 */
+  query?: string;
+  requestId?: string;
+};
 
 /** codex_config 帧载荷（批 E：可选 account 额度段——服务端 ChatGPT 登录下才采集到）。 */
 type CodexConfigFrame = typeof DEFAULT_CODEX_CONFIG & { account?: Record<string, unknown> };
@@ -349,6 +357,73 @@ test("Codex: skills slash popover lists directory and Enter submits /name", asyn
     })
     .toBeTruthy();
   await expect(chatInput).toHaveValue("");
+
+  assertNoConsoleErrors();
+});
+
+// 批 G：@ 文件补全弹层。输入 @sr → 180ms 防抖后上行 file_search → mock 回
+// file_search_result → 弹层列路径；Enter 插入 `@src/app.ts `（尾随空格由库补），
+// 任何触发方式都不发送（文件引用只是消息文本的一部分，与 slash 的 Enter 直发不同）。
+test("Codex: @ file popover searches via WS and Enter inserts @path without sending", async ({
+  page,
+}) => {
+  const assertNoConsoleErrors = collectConsoleErrors(page);
+  await mockSessionRest(page);
+  const sent: ClientMsg[] = [];
+  await page.routeWebSocket(
+    new RegExp(`/api/projects/${projectName}/agent-sessions/${fakeSessionId}/codex-stream`),
+    (ws) => {
+      ws.onMessage((data) => {
+        let msg: ClientMsg;
+        try {
+          msg = JSON.parse(String(data)) as ClientMsg;
+        } catch {
+          return;
+        }
+        sent.push(msg);
+        // 服务端角色：file_search → per-socket 应答（requestId 配对）。
+        if (msg.type === "file_search") {
+          ws.send(
+            JSON.stringify({
+              type: "file_search_result",
+              requestId: msg.requestId,
+              files: [
+                { path: "src/app.ts", matchType: "file", fileName: "app.ts" },
+                { path: "src/nested", matchType: "directory", fileName: "nested" },
+              ],
+            }),
+          );
+        }
+      });
+      sendInitialFrames(ws);
+    },
+  );
+
+  await page.goto("/");
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator(`nav.side .srow2[title="${projectName}"]`)).toBeVisible({
+    timeout: 15_000,
+  });
+  await page.goto(`/projects/${projectName}/session/${fakeSessionId}`);
+
+  const chatInput = page.getByPlaceholder("Ask Claude...");
+  await expect(chatInput).toBeVisible({ timeout: 15_000 });
+
+  // 输入 @sr → 防抖 + WS 往返 → 弹层列出相对路径。
+  await chatInput.focus();
+  await chatInput.pressSequentially("@sr");
+  await expect(page.getByRole("option", { name: "src/app.ts" })).toBeVisible({
+    timeout: 5_000,
+  });
+  await expect(page.getByRole("option", { name: "src/nested" })).toBeVisible();
+
+  // Enter（默认高亮首项）→ 插入 `@src/app.ts `，不发送。
+  await chatInput.press("Enter");
+  await expect(chatInput).toHaveValue("@src/app.ts ");
+  // 负向确认：给发送路径留出足够时间（Enter 让位失效会立刻上行 user 帧）。
+  await page.waitForTimeout(500);
+  expect(sent.find((m) => m.type === "user")).toBeUndefined();
 
   assertNoConsoleErrors();
 });

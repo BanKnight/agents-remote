@@ -4,6 +4,7 @@ import type { AppendMessage, ExternalStoreAdapter, ThreadMessageLike } from "@as
 import type {
   ClaudeContextUsage,
   CodexAccountUsage,
+  CodexFileSearchHit,
   CodexSkillInfo,
   CodexStreamServerMessage,
 } from "@agents-remote/shared";
@@ -64,6 +65,11 @@ export type CodexConfigPatch = {
  * app-server 规范化为 `/name`（殊途同归，不走 $ 中转）。
  */
 export const SKILL_REF_FORM = (name: string) => `/${name}`;
+
+/** @ 文件补全（批 G）客户端参数：query 截断上限（服务端白名单同值，超限静默丢弃）与
+ *  无应答兜底超时（服务端异常回 error 帧不回 result 时收口 waiter，不挂死 isLoading）。 */
+const FILE_SEARCH_QUERY_MAX_LEN = 128;
+const FILE_SEARCH_TIMEOUT_MS = 3_000;
 
 /** `thread/tokenUsage/updated` 通知的 tokenUsage 局部解码（0.163.0 fixtures 形状，宽进）：
  *  `last` = 最后一次 API 请求用量；`total` = 本 thread 累计消耗（比窗口无意义，不采集）。 */
@@ -1063,6 +1069,9 @@ export function useCodexSession(
   // skills 目录（批 G）：codex_skills 推送帧（latest-wins 标量，不进 raw 日志）。空数组
   // = 无帧状态（服务端空目录不发帧）→ composer 无 slash 补全（能力降级不失败）。
   const [skills, setSkills] = useState<CodexSkillInfo[]>([]);
+  // @ 文件补全（批 G）应答 waiter：requestId → resolve。file_search_result 是 per-socket
+  // 瞬态帧（不进 relay 缓冲），按 requestId 配对回填；超时兜底统一收口（见 fileSearch）。
+  const fileSearchWaiters = useRef(new Map<string, (files: CodexFileSearchHit[]) => void>());
   // 配置已提交但下一个 turn/start 才应用：UI 标「下轮生效」不伪装即时切换。
   const [configPending, setConfigPending] = useState(false);
   // 上下文占用标量（thread/tokenUsage/updated 透传帧，last 比窗口——真机反馈 2026-10-28
@@ -1287,6 +1296,13 @@ export function useCodexSession(
     if (msg.type === "codex_skills") {
       // skills 目录快照（latest-wins；重连 delta 不清、full 重置走上方 session_init 分支）。
       setSkills(Array.isArray(msg.skills) ? msg.skills : []);
+      return;
+    }
+    if (msg.type === "file_search_result") {
+      // @ 补全应答（per-socket 瞬态）：按 requestId 配对 waiter 一次性 resolve。
+      const waiter = fileSearchWaiters.current.get(msg.requestId);
+      fileSearchWaiters.current.delete(msg.requestId);
+      waiter?.(Array.isArray(msg.files) ? msg.files : []);
       return;
     }
     if (msg.type === "codex_event") {
@@ -1691,6 +1707,28 @@ export function useCodexSession(
     sendToSocket({ type: "compact" });
   }, [sendToSocket]);
 
+  // @ 文件补全（批 G）查询：上行 file_search，requestId 配对 per-socket 应答。空 query
+  // 直接返回空（服务端白名单静默丢弃，不发起）；超长截断到服务端同值上限；超时兜底
+  // resolve 空并摘 waiter（服务端异常回 error 帧不回 result 时收口，不挂死 isLoading）。
+  const fileSearch = useCallback(
+    (query: string, requestId: string): Promise<CodexFileSearchHit[]> => {
+      const trimmed = query.slice(0, FILE_SEARCH_QUERY_MAX_LEN);
+      if (trimmed.length === 0) return Promise.resolve([]);
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          fileSearchWaiters.current.delete(requestId);
+          resolve([]);
+        }, FILE_SEARCH_TIMEOUT_MS);
+        fileSearchWaiters.current.set(requestId, (files) => {
+          clearTimeout(timer);
+          resolve(files);
+        });
+        sendToSocket({ type: "file_search", query: trimmed, requestId });
+      });
+    },
+    [sendToSocket],
+  );
+
   // 配置热切换（model/effort/审批策略）：服务端写 metadata + 下一个 turn/start 应用，
   // 立即广播新的 codex_config（current 已变）但真实生效在下轮——UI 用 configPending 诚实标注。
   // 审批策略是「权限模式词」，approvalPolicy 与 sandbox 同时提交（服务端从两者任一取模式，
@@ -1743,6 +1781,7 @@ export function useCodexSession(
     contextUsage,
     setConfig,
     compact,
+    fileSearch,
     respondToControlRequest,
     cancelControlRequest,
     onCancel,

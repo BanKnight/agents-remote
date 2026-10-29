@@ -1,18 +1,22 @@
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
   ThreadPrimitive,
+  unstable_useLiveCompletionAdapter,
   unstable_useSlashCommandAdapter,
   useAui,
   useAuiState,
+  type Unstable_DirectiveFormatter,
   type Unstable_SlashCommand,
+  type Unstable_TriggerItem,
 } from "@assistant-ui/react";
 import {
   CODEX_PERMISSION_MODES,
   type ClaudeContextUsage,
   type CodexAccountUsage,
+  type CodexFileSearchHit,
   type CodexPermissionMode,
   type CodexSkillInfo,
 } from "@agents-remote/shared";
@@ -86,6 +90,7 @@ export function CodexChatPanel({
     contextUsage,
     setConfig,
     compact,
+    fileSearch,
     respondToControlRequest,
     cancelControlRequest,
     onCancel,
@@ -173,6 +178,7 @@ export function CodexChatPanel({
                       sessionId={sessionId}
                       attachments={composerAttachments}
                       skills={skills}
+                      fileSearch={fileSearch}
                     />
                   </ComposerPrimitive.Root>
                 </ComposerPrimitive.TriggerPopoverRoot>
@@ -184,6 +190,15 @@ export function CodexChatPanel({
     </ClaudeBridgeContext.Provider>
   );
 }
+
+/**
+ * @ 文件补全 formatter（批 G）：插入 `@相对路径`（plainTextFormatter 硬编码 `/` 前缀，
+ * 不复用）。库在插入后自动补尾随空格，光标落到路径后。
+ */
+const atFileFormatter: Unstable_DirectiveFormatter = {
+  serialize: (item) => `@${item.id}`,
+  parse: (text) => [{ kind: "text", text }],
+};
 
 /** 审批策略词 → i18n key（codex 权限模式四档，标签是产品词非 agent 数据）。 */
 const PERMISSION_LABEL_KEYS: Record<CodexPermissionMode, TranslationKey> = {
@@ -213,6 +228,7 @@ function ComposerWithInterruptCodex({
   sessionId,
   attachments,
   skills,
+  fileSearch,
 }: {
   config: CodexConfig | null;
   configPending: boolean;
@@ -229,6 +245,8 @@ function ComposerWithInterruptCodex({
   attachments: ReturnType<typeof useComposerAttachments>;
   /** skills 目录（批 G）：codex_skills 帧快照，slash 弹层唯一数据源；空数组不渲染弹层。 */
   skills: CodexSkillInfo[];
+  /** @ 文件补全（批 G）查询：useCodexSession 的 waiter 桥（query + requestId → 应答）。 */
+  fileSearch: (query: string, requestId: string) => Promise<CodexFileSearchHit[]>;
 }) {
   const { t } = useT();
   const isRunning = useAuiState((s) => s.thread.isRunning);
@@ -254,6 +272,20 @@ function ComposerWithInterruptCodex({
   const slash = unstable_useSlashCommandAdapter({ commands: slashItems });
   // 弹层激活时 Enter 让位 popover（提交高亮项），不触发 composer 发送。
   const slashOpenRef = useTriggerPopoverActiveRef();
+
+  // @ 文件补全（批 G）：异步 search adapter——库内置 180ms 防抖、stale token 丢弃、
+  // isLoading（自写防抖/单飞/丢弃是重复造轮子）。fetcher 桥 useCodexSession 的
+  // fileSearch waiter；每 query 递增 requestId（应答按 requestId 配对，库的 token 另
+  // 挡 stale 结果）。label = 相对路径（插入文本与显示同源，用户所见即所插）。
+  const atRequestIdRef = useRef(0);
+  const fileFetch = useCallback(
+    async (query: string): Promise<readonly Unstable_TriggerItem[]> => {
+      const files = await fileSearch(query, `at-${++atRequestIdRef.current}`);
+      return files.map((f) => ({ id: f.path, type: f.matchType, label: f.path }));
+    },
+    [fileSearch],
+  );
+  const at = unstable_useLiveCompletionAdapter({ fetcher: fileFetch, debounceMs: 180 });
 
   // 草稿持久化（同 claude/ACP composer，key 按 runtime 类型 + 会话隔离）。
   useComposerDraft(`codex:${sessionId}`);
@@ -401,6 +433,33 @@ function ComposerWithInterruptCodex({
             </ComposerPrimitive.TriggerPopoverItems>
           </ComposerPrimitive.TriggerPopover>
         ) : null}
+        {/* @ 文件补全弹层（批 G）：live completion adapter（异步 + 防抖 + isLoading）。
+            项执行 = formatter 插入 `@path`（onExecute 无业务动作——文件引用是消息文本的
+            一部分，任何触发方式都不发送，与 slash 的 Enter 直发语义不同）。 */}
+        <ComposerPrimitive.TriggerPopover
+          char="@"
+          adapter={at.adapter}
+          isLoading={at.isLoading}
+          className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-on-surface/10 bg-surface-inset/95 p-1 shadow-2xl backdrop-blur"
+        >
+          <ComposerPrimitive.TriggerPopover.Action
+            formatter={atFileFormatter}
+            onExecute={() => undefined}
+          />
+          <ComposerPrimitive.TriggerPopoverItems>
+            {(items) =>
+              items.map((item, index) => (
+                <TriggerPopoverItemRow
+                  key={item.id}
+                  item={item}
+                  index={index}
+                  iconName="file"
+                  iconClassName="text-on-surface-muted"
+                />
+              ))
+            }
+          </ComposerPrimitive.TriggerPopoverItems>
+        </ComposerPrimitive.TriggerPopover>
       </div>
     </div>
   );

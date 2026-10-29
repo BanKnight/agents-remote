@@ -347,3 +347,55 @@ describe("useCodexSession 跨 remount 恢复", () => {
     expect(result.current.storeAdapter.messages).toHaveLength(1);
   });
 });
+
+describe("useCodexSession @ 文件补全（fileSearch waiter）", () => {
+  test("上行 file_search → 应答按 requestId 配对 resolve", async () => {
+    const { result, socket } = await openSession();
+    const promise = result.current.fileSearch("beta", "req-1");
+    expect(JSON.parse(socket.sent[socket.sent.length - 1]!)).toEqual({
+      type: "file_search",
+      query: "beta",
+      requestId: "req-1",
+    });
+    act(() => {
+      socket.emit({
+        type: "file_search_result",
+        requestId: "req-1",
+        files: [{ path: "src/beta.md", matchType: "file", fileName: "beta.md" }],
+      });
+    });
+    await expect(promise).resolves.toEqual([
+      { path: "src/beta.md", matchType: "file", fileName: "beta.md" },
+    ]);
+  });
+
+  test("空 query 不上行直接空结果（服务端白名单静默丢弃空串）", async () => {
+    const { result, socket } = await openSession();
+    const before = socket.sent.length;
+    await expect(result.current.fileSearch("", "req-2")).resolves.toEqual([]);
+    expect(socket.sent.length).toBe(before);
+  });
+
+  test("超长 query 截断到服务端上限 128", async () => {
+    const { result, socket } = await openSession();
+    void result.current.fileSearch("a".repeat(200), "req-3");
+    const sent = JSON.parse(socket.sent[socket.sent.length - 1]!) as {
+      type: string;
+      query: string;
+    };
+    expect(sent.type).toBe("file_search");
+    expect(sent.query).toHaveLength(128);
+  });
+
+  test("无应答超时兜底：3s 后 resolve 空并摘 waiter", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = await openSession();
+      const promise = result.current.fileSearch("slow", "req-4");
+      act(() => vi.advanceTimersByTime(3_000));
+      await expect(promise).resolves.toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
