@@ -56,6 +56,9 @@ type StreamSocket = {
 const isCodexPermissionMode = (value: string): value is CodexPermissionMode =>
   (CODEX_PERMISSION_MODES as readonly string[]).includes(value);
 
+/** @ 补全查询长度上限（client message 白名单封闭的一部分；fuzzy 查询过长无意义）。 */
+const FILE_SEARCH_QUERY_MAX_LEN = 128;
+
 export class CodexStreamController {
   private readonly streams = new WeakMap<StreamSocket, { close(): Promise<void> | void }>();
   /** 多端跟随索引(runtimeKey → sockets,claude-stream 同款):agent-tui 切模式后关全部 WS。 */
@@ -213,6 +216,23 @@ export class CodexStreamController {
         if (rpcId === undefined) return; // 非 codex: 前缀：白名单外静默丢弃
         if (parsed.decision !== "accept" && parsed.decision !== "decline") return;
         this.codexRuntime.respondApproval(data.runtimeKey, rpcId, parsed.decision);
+        return;
+      }
+      if (parsed.type === "file_search") {
+        // @ 补全（批 G）：载荷白名单校验（query 非空且 ≤128、requestId 非空字符串），
+        // 不合格静默丢弃；roots 服务端固定 entry.projectPath（客户端不可指定，白名单封闭）。
+        // 应答走 per-socket send（请求-应答型，不进 relay 缓冲，error/pong 同层）。
+        if (
+          typeof parsed.query !== "string" ||
+          parsed.query.length === 0 ||
+          parsed.query.length > FILE_SEARCH_QUERY_MAX_LEN ||
+          typeof parsed.requestId !== "string" ||
+          parsed.requestId.length === 0
+        ) {
+          return;
+        }
+        const files = await this.codexRuntime.fileSearch(data.runtimeKey, parsed.query);
+        send(socket, { type: "file_search_result", requestId: parsed.requestId, files });
         return;
       }
     } catch (error) {

@@ -33,6 +33,10 @@ let failNextCompact = false;
 // 账号额度形态（批 E）：进程级开关（--account-allowed argv）——allowed 回 ChatGPT 登录
 // 形状的额度；缺省 denied（apiKey/网关登录，真实 app-server 报 authentication required）。
 const accountAllowed = process.argv.includes("--account-allowed");
+// skills 目录（批 G）：--no-skills 回空数组（能力信号缺失用例）；calls 计数进 description
+// 供 debounce 重拉断言（第二帧 description 带 calls=2）。
+const noSkills = process.argv.includes("--no-skills");
+let skillsListCalls = 0;
 const interrupted = new Map();
 const send = (msg) => console.log(JSON.stringify(msg));
 const notify = (method, params) => send({ method, params });
@@ -65,6 +69,10 @@ async function handleTurnStart(msg) {
     // 多打一趟 account/rateLimits/read）。
     notify("account/rateLimits/updated", { rateLimits: { planType: "plus",
       primary: { usedPercent: 77, windowDurationMins: 300 } } });
+  }
+  if (text === "@skillschanged") {
+    // skills 失效信号（批 G）：客户端通知流 skills/changed → 500ms debounce 重拉。
+    notify("skills/changed", {});
   }
   if (text.startsWith("@perm")) {
     const reqId = nextServerId++;
@@ -201,6 +209,40 @@ function handleLine(line) {
             { reasoningEffort: "high", description: null },
           ], defaultReasoningEffort: "medium" },
       ] } });
+      break;
+    case "skills/list":
+      {
+        skillsListCalls++;
+        if (noSkills) {
+          send({ id: msg.id, result: { data: [{ cwd: msg.params.cwds[0], skills: [], errors: [] }] } });
+          break;
+        }
+        const call = "#call" + skillsListCalls;
+        const interfaceSkill = { name: "refresh-workflow", interface: { shortDescription: "short-wins" + call }, shortDescription: "mid-wins", description: "long-desc", scope: "repo", enabled: true };
+        send({ id: msg.id, result: { data: [{ cwd: msg.params.cwds[0], skills: [
+          { name: "commit-helper", description: "fallback-desc" + call, scope: "user", enabled: true },
+          interfaceSkill,
+          { name: "disabled-skill", description: "x", scope: "user", enabled: false },
+          { name: "plugin-skill", description: "plugin desc", scope: "user", pluginId: "plg_1", enabled: true },
+        ], errors: [] }] } });
+      }
+      break;
+    case "fuzzyFileSearch":
+      {
+        if (msg.params.query === "@cap") {
+          const many = [];
+          for (let i = 0; i < 25; i++) {
+            many.push({ root: "/p", path: "f" + i + ".ts", match_type: "file", file_name: "f" + i + ".ts", score: 100 - i, indices: [] });
+          }
+          send({ id: msg.id, result: { files: many } });
+        } else {
+          send({ id: msg.id, result: { files: [
+            { root: "/p", path: "src/beta.md", match_type: "file", file_name: "beta.md", score: 109, indices: [4,5,6,7] },
+            { root: "/p", path: "src/nested", match_type: "directory", file_name: "nested", score: 90, indices: [] },
+            { root: "/p", path: "gamma.ts", match_type: "file", file_name: "gamma.ts", score: 70 },
+          ] } });
+        }
+      }
       break;
   }
 }
@@ -1205,6 +1247,113 @@ describe("CodexRuntime 批 E（compact / steer / MCP 注入 / 账号额度）", 
       primary: { usedPercent: 77, windowDurationMins: 300 },
     });
     await runtime.close("k-e6a");
+  });
+});
+
+describe("CodexRuntime 批 G（skills 目录 / @ 文件补全）", () => {
+  test("skills 帧注入：启动期 skills/list → codex_skills（enabled 滤 / interface 优先 / pluginId 透传）", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.startAgent({
+      id: "s-g1",
+      projectName: "p1",
+      runtimeKey: "k-g1",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k-g1");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_skills"), "skills frame");
+
+    const ms = parse(lines);
+    const skillsFrame = ms.find((m) => m.type === "codex_skills") as {
+      skills: { name: string; description: string; scope: string; pluginId?: string }[];
+    };
+    // 精确锁全量：disabled-skill 被滤（恰好 3 条）、投影链 interface.shortDescription 优先、
+    // pluginId 仅在有值时透传（toEqual 同时断无多余字段）。#call1 由 fake 注入供 debounce
+    // 重拉断言区分帧次。
+    expect(skillsFrame.skills).toEqual([
+      { name: "commit-helper", description: "fallback-desc#call1", scope: "user" },
+      { name: "refresh-workflow", description: "short-wins#call1", scope: "repo" },
+      { name: "plugin-skill", description: "plugin desc", scope: "user", pluginId: "plg_1" },
+    ]);
+    // 帧序：skills 在 config 之后（doEnsureRunning 注入顺序 config → skills）。
+    const configIdx = ms.findIndex((m) => m.type === "codex_config");
+    const skillsIdx = ms.findIndex((m) => m.type === "codex_skills");
+    expect(configIdx).toBeGreaterThanOrEqual(0);
+    expect(skillsIdx).toBeGreaterThan(configIdx);
+
+    await runtime.close("k-g1");
+  });
+
+  test("--no-skills：skills/list 回空数组 → 无 codex_skills 帧（空目录不发帧 = 能力信号）", async () => {
+    const { runtime } = makeRuntime(undefined, undefined, undefined, ["--no-skills"]);
+    await runtime.startAgent({
+      id: "s-g2",
+      projectName: "p1",
+      runtimeKey: "k-g2",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k-g2");
+    runtime.write("k-g2", "hello", "u1");
+    await waitFor(
+      () => parse(lines).some((m) => m.type === "ended" && m.stopReason === "completed"),
+      "ended frame",
+    );
+    await Bun.sleep(30); // refreshSkills 是 void promise：给竞态余量再断言
+    expect(parse(lines).some((m) => m.type === "codex_skills")).toBe(false);
+
+    await runtime.close("k-g2");
+  });
+
+  test("skills/changed 通知 → 500ms debounce 重拉 → 第二帧（fake #call2 计数证重拉）", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.startAgent({
+      id: "s-g3",
+      projectName: "p1",
+      runtimeKey: "k-g3",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k-g3");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_skills"), "first skills frame");
+    expect(parse(lines).filter((m) => m.type === "codex_skills")).toHaveLength(1);
+
+    runtime.write("k-g3", "@skillschanged", "u1");
+    await waitFor(
+      () => parse(lines).filter((m) => m.type === "codex_skills").length >= 2,
+      "second skills frame (debounce + re-fetch)",
+    );
+    const frames = parse(lines).filter((m) => m.type === "codex_skills") as {
+      skills: { name: string; description: string }[];
+    }[];
+    // fake 的 description 带 #call<N> 计数：第二帧 = 重拉后的新数据（非旧帧回放）。
+    expect(frames[1]?.skills.find((s) => s.name === "refresh-workflow")?.description).toBe(
+      "short-wins#call2",
+    );
+
+    await runtime.close("k-g3");
+  });
+
+  test("fileSearch：投影（directory 分型）+ cap 20 + 未启动 key 空数组", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.startAgent({
+      id: "s-g4",
+      projectName: "p1",
+      runtimeKey: "k-g4",
+      projectPath,
+    });
+
+    // fake 小样本：file / directory / file 三条，投影 match_type → matchType 驼峰。
+    await expect(runtime.fileSearch("k-g4", "beta")).resolves.toEqual([
+      { path: "src/beta.md", matchType: "file", fileName: "beta.md" },
+      { path: "src/nested", matchType: "directory", fileName: "nested" },
+      { path: "gamma.ts", matchType: "file", fileName: "gamma.ts" },
+    ]);
+    // fake 回 25 条 → 服务端 FILE_SEARCH_RESULT_CAP 截到 20。
+    const capped = await runtime.fileSearch("k-g4", "@cap");
+    expect(capped).toHaveLength(20);
+    expect(capped[0]).toEqual({ path: "f0.ts", matchType: "file", fileName: "f0.ts" });
+    // 会话未启动（entry 不在）→ 空数组不抛错。
+    await expect(runtime.fileSearch("k-none", "beta")).resolves.toEqual([]);
+
+    await runtime.close("k-g4");
   });
 });
 

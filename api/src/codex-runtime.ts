@@ -3,6 +3,7 @@ import type {
   ClaudeAutoRetryConfig,
   CodexAccountUsage,
   CodexCredentials,
+  CodexFileSearchHit,
   CodexPermissionMode,
   CodexRateLimitWindow,
   CodexStreamServerMessage,
@@ -80,6 +81,14 @@ const COMPACT_GATE_TIMEOUT_MS = 30_000;
 
 /** turn 进行中再来的 user 消息排队上限（防内存无限增长；ACP 同值）。 */
 const CODEX_PENDING_QUEUE_CAP = 32;
+
+/** skills/changed 通知的重拉 debounce（批 G）：批量改 skill 文件的通知风暴只跑一轮
+ *  skills/list + 一帧 codex_skills。 */
+const SKILLS_CHANGED_DEBOUNCE_MS = 500;
+
+/** @ 文件补全结果上限（服务端一处 cap：fuzzyFileSearch 按 score 排序取前 N，防
+ *  WS 帧膨胀；客户端渲染层不再截）。 */
+const FILE_SEARCH_RESULT_CAP = 20;
 
 /** 权限模式 → (approvalPolicy, sandbox) 组合（shared CodexPermissionMode 注释的单源实现）。 */
 const CODEX_PERMISSION_PRESETS: Record<
@@ -375,6 +384,8 @@ export type CodexApprovalDecision = "accept" | "decline";
 export class CodexRuntime {
   private readonly sessions = new Map<string, CodexSessionEntry>();
   private readonly pendingQueues = new Map<string, CodexPendingMessage[]>();
+  /** skills/changed 重拉的 per-session debounce timer（批 G；close/handleExit 清理）。 */
+  private readonly skillsChangedTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private onCodexThreadId?: (sessionId: string, threadId: string) => void;
   private onActivity?: (sessionId: string) => void;
   private onStatusChange?: (
@@ -691,9 +702,12 @@ export class CodexRuntime {
         this.onCodexThreadId?.(target.sessionId, entry.threadId);
       }
 
-      // models 菜单 + codex_config 帧（回放序 = history → config，acp 同构）。
+      // models 菜单 + codex_config 帧（回放序 = history → config → skills，acp 同构）。
       await this.refreshModels(entry);
       this.injectConfigFrame(target.runtimeKey, entry);
+      // skills 目录（批 G 防御式）：skills/list 快照一帧 codex_skills（不阻塞主链路；
+      // 失败/空目录无帧 = 前端无补全，能力信号）。skills/changed 通知走 debounce 重拉。
+      void this.refreshSkills(entry);
       // 账号额度（批 E 防御式）：不阻塞主链路，拉到后回灌一帧 config（客户端 latest-wins）。
       void this.refreshAccount(target.runtimeKey, entry);
     } catch (error) {
@@ -822,6 +836,47 @@ export class CodexRuntime {
       return "failed";
     } finally {
       clearTimeout(gateGuard);
+    }
+  }
+
+  /**
+   * composer @ 文件补全（批 G）：fuzzyFileSearch 透传（探针 R2：RPC 直返 {files[]}，
+   * 无通知流——直接 await 无需 waiter）。结果按 score 排序截前 FILE_SEARCH_RESULT_CAP；
+   * entry 不在（会话已关）或 RPC 失败 → []（弹层空态，不 error 帧——搜索失败不是
+   * 会话故障）。
+   */
+  async fileSearch(runtimeKey: string, query: string): Promise<CodexFileSearchHit[]> {
+    const entry = this.sessions.get(runtimeKey);
+    if (!entry) return [];
+    try {
+      const res = (await this.rpcWithTimeout(
+        entry.conn,
+        "fuzzyFileSearch",
+        { query, roots: [entry.projectPath] },
+        "codex fuzzyFileSearch",
+      )) as {
+        files?: {
+          root?: unknown;
+          path?: unknown;
+          match_type?: unknown;
+          file_name?: unknown;
+        }[];
+      } | null;
+      return (Array.isArray(res?.files) ? res.files : [])
+        .filter(
+          (f): f is { root?: unknown; path: string; match_type: string; file_name: string } =>
+            typeof f.path === "string" &&
+            typeof f.match_type === "string" &&
+            typeof f.file_name === "string",
+        )
+        .slice(0, FILE_SEARCH_RESULT_CAP)
+        .map((f) => ({
+          path: f.path,
+          matchType: f.match_type === "directory" ? "directory" : "file",
+          fileName: f.file_name,
+        }));
+    } catch {
+      return [];
     }
   }
 
@@ -964,6 +1019,7 @@ export class CodexRuntime {
     if (!entry) return;
     this.sessions.delete(runtimeKey);
     this.pendingQueues.delete(runtimeKey);
+    this.clearSkillsChangedTimer(runtimeKey);
     this.autoRetry.destroySession(runtimeKey);
     this.killProc(entry.proc);
     entry.relay.destroy();
@@ -1049,6 +1105,18 @@ export class CodexRuntime {
         entry,
         carried && typeof carried === "object" ? { rateLimits: carried } : undefined,
       );
+    } else if (method === "skills/changed") {
+      // skills 目录失效信号（批 G）：debounce 重拉重播 codex_skills 帧（批量改文件的
+      // 通知风暴收敛为一轮 RPC）。会话关闭时 timer 随 Map 清理（close/handleExit）。
+      const existing = this.skillsChangedTimers.get(runtimeKey);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        this.skillsChangedTimers.delete(runtimeKey);
+        if (this.sessions.get(runtimeKey) !== entry) return; // 会话已换/关
+        void this.refreshSkills(entry);
+      }, SKILLS_CHANGED_DEBOUNCE_MS);
+      timer.unref?.();
+      this.skillsChangedTimers.set(runtimeKey, timer);
     } else if (method === "turn/completed") {
       const status = turn?.status;
       const isError = status === "failed";
@@ -1153,6 +1221,7 @@ export class CodexRuntime {
     if (!this.sessions.has(runtimeKey)) return; // close() 主动关闭已清 entry
     this.sessions.delete(runtimeKey);
     this.pendingQueues.delete(runtimeKey);
+    this.clearSkillsChangedTimer(runtimeKey);
     this.autoRetry.destroySession(runtimeKey);
     entry.relay.reportError(new Error("codex app-server process exited"));
     entry.relay.destroy();
@@ -1327,6 +1396,77 @@ export class CodexRuntime {
         sandbox: entry.config.sandbox,
       },
     };
+  }
+
+  /**
+   * 拉取 skills 目录并注入 codex_skills 帧（批 G）：skills/list {cwds:[projectPath]}，
+   * 取本项目 cwd 桶、滤 enabled=false、投影 CodexSkillInfo（探针 R5 宽进链）。失败静默
+   * （能力降级不失败，codex_config 同约定）；空目录不发帧（无帧 = 前端无补全）。
+   */
+  private async refreshSkills(entry: CodexSessionEntry): Promise<void> {
+    try {
+      const res = (await this.rpcWithTimeout(
+        entry.conn,
+        "skills/list",
+        { cwds: [entry.projectPath] },
+        "codex skills/list",
+      )) as {
+        data?: {
+          cwd?: unknown;
+          skills?: {
+            name?: unknown;
+            description?: unknown;
+            shortDescription?: unknown;
+            interface?: { shortDescription?: unknown } | null;
+            scope?: unknown;
+            enabled?: unknown;
+            pluginId?: unknown;
+          }[];
+          errors?: unknown;
+        }[];
+      } | null;
+      const bucket = Array.isArray(res?.data)
+        ? res.data.find((b) => b?.cwd === entry.projectPath)
+        : undefined;
+      const skills = (Array.isArray(bucket?.skills) ? bucket.skills : [])
+        .filter((s) => typeof s?.name === "string" && s.name && s?.enabled !== false)
+        .map((s) => ({
+          name: s.name as string,
+          description:
+            (typeof s.interface?.shortDescription === "string" && s.interface.shortDescription) ||
+            (typeof s.shortDescription === "string" && s.shortDescription) ||
+            (typeof s.description === "string" ? s.description : "") ||
+            "",
+          scope: typeof s.scope === "string" ? s.scope : "",
+          ...(typeof s.pluginId === "string" && s.pluginId ? { pluginId: s.pluginId } : {}),
+        }));
+      this.injectSkillsFrame(entry, skills);
+    } catch {
+      // skills/list 失败（旧版 app-server 无此方法/扫描错误）→ 无帧 = 能力信号。
+    }
+  }
+
+  /** skills 快照帧注入；空数组不发帧（= 无能力信号，codex_config 同约定）。 */
+  private injectSkillsFrame(
+    entry: CodexSessionEntry,
+    skills: Extract<CodexStreamServerMessage, { type: "codex_skills" }>["skills"],
+  ): void {
+    if (skills.length === 0) return;
+    entry.relay.appendAndBroadcast(
+      JSON.stringify({ type: "codex_skills", skills } satisfies Extract<
+        CodexStreamServerMessage,
+        { type: "codex_skills" }
+      >),
+    );
+  }
+
+  /** skills/changed debounce timer 清理（close/handleExit 共用）。 */
+  private clearSkillsChangedTimer(runtimeKey: string): void {
+    const timer = this.skillsChangedTimers.get(runtimeKey);
+    if (timer) {
+      clearTimeout(timer);
+      this.skillsChangedTimers.delete(runtimeKey);
+    }
   }
 
   private async pumpStderr(runtimeKey: string, stderr: ReadableStream<Uint8Array>): Promise<void> {

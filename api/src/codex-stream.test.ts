@@ -23,13 +23,19 @@ type StreamSocket = {
 
 /** stub CodexRuntime：记录调用、可编程 ensureRunning 实现、捕获 stream 的 onData/onError。 */
 function makeStubRuntime() {
-  const calls = { ensureRunning: 0, stream: 0, write: 0, interrupt: 0, close: 0 };
+  const calls = { ensureRunning: 0, stream: 0, write: 0, interrupt: 0, fileSearch: 0, close: 0 };
   const writeCalls: { runtimeKey: string; text: string; uuid?: string }[] = [];
   const setConfigCalls: {
     runtimeKey: string;
     patch: { model?: string; effort?: string; approvalPolicy?: string; sandbox?: string };
   }[] = [];
   const respondCalls: { runtimeKey: string; rpcId: number | string; decision: string }[] = [];
+  const fileSearchCalls: { runtimeKey: string; query: string }[] = [];
+  let fileSearchImpl: (
+    query: string,
+  ) => Promise<
+    { path: string; matchType: "file" | "directory"; fileName: string }[]
+  > = async () => [];
   const streamCalls: {
     runtimeKey: string;
     onData: (line: string) => void;
@@ -71,6 +77,11 @@ function makeStubRuntime() {
     respondApproval: (runtimeKey: string, rpcId: number | string, decision: string) => {
       respondCalls.push({ runtimeKey, rpcId, decision });
     },
+    fileSearch: async (runtimeKey: string, query: string) => {
+      calls.fileSearch = (calls.fileSearch ?? 0) + 1;
+      fileSearchCalls.push({ runtimeKey, query });
+      return fileSearchImpl(query);
+    },
     close: async () => {
       calls.close++;
     },
@@ -84,6 +95,14 @@ function makeStubRuntime() {
     respondCalls,
     streamCalls,
     streamHandles,
+    fileSearchCalls,
+    setFileSearchImpl(
+      fn: (
+        query: string,
+      ) => Promise<{ path: string; matchType: "file" | "directory"; fileName: string }[]>,
+    ) {
+      fileSearchImpl = fn;
+    },
     setEnsureRunningImpl(fn: () => Promise<void>) {
       ensureRunningImpl = fn;
     },
@@ -470,6 +489,47 @@ describe("CodexStreamController.message", () => {
     const { controller, socket, sent } = await openController();
     await controller.message(socket, "{not json");
     expect(sent[0]).toContain('"SESSION_RUNTIME_ERROR"');
+  });
+
+  test("file_search：合法载荷 → runtime.fileSearch + per-socket file_search_result 应答", async () => {
+    const { stub, controller, socket, sent } = await openController();
+    stub.setFileSearchImpl(async () => [
+      { path: "src/beta.md", matchType: "file", fileName: "beta.md" },
+    ]);
+    await controller.message(
+      socket,
+      JSON.stringify({ type: "file_search", query: "beta", requestId: "req-1" }),
+    );
+    expect(stub.fileSearchCalls[0]).toEqual({ runtimeKey: "k1", query: "beta" });
+    expect(sent).toEqual([
+      JSON.stringify({
+        type: "file_search_result",
+        requestId: "req-1",
+        files: [{ path: "src/beta.md", matchType: "file", fileName: "beta.md" }],
+      }),
+    ]);
+  });
+
+  test("file_search：载荷白名单外（空/超长 query、缺 requestId）→ 不调 runtime 无应答", async () => {
+    const { stub, controller, socket, sent } = await openController();
+    stub.setFileSearchImpl(async () => [
+      { path: "src/beta.md", matchType: "file", fileName: "beta.md" },
+    ]);
+    await controller.message(
+      socket,
+      JSON.stringify({ type: "file_search", query: "", requestId: "r" }),
+    );
+    await controller.message(
+      socket,
+      JSON.stringify({ type: "file_search", query: "x".repeat(129), requestId: "r" }),
+    );
+    await controller.message(socket, JSON.stringify({ type: "file_search", query: "q" }));
+    await controller.message(
+      socket,
+      JSON.stringify({ type: "file_search", query: "q", requestId: "" }),
+    );
+    expect(stub.calls.fileSearch).toBe(0);
+    expect(sent).toEqual([]);
   });
 });
 

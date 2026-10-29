@@ -15,7 +15,8 @@
 // （只保留 requiresOpenaiAuth 布尔，不落账号字段）。
 
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync, appendFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, appendFileSync, rmSync, existsSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -512,20 +513,212 @@ async function scenarioConfigHotSwitch(s, threadId) {
   );
 }
 
+// ── 批 G 智能感应场景（composer / 补全 + @ 文件补全的协议实证）──────────────
+//
+// 批 0 探针结论（2026-10-29 真机 codex 0.163.0，31/31 PASS；批 1/3 的实现闸门）：
+//   R1 skill 引用文本：`/name` 是权威形态——userMessage item 原样保留 `/name …`，
+//      模型端加载 skill 内容（agentMessage 实证「我会加载你显式调用的技能」）；
+//      `$name` 发入被 app-server 输入规范化改写为 `/name`（殊途同归）→
+//      批 3 SKILL_REF_FORM = `/${name}`，无需 `$` 中转。
+//   R2 fuzzyFileSearch 分型：RPC **直返** `{files: [{root, path, match_type,
+//      "file"|"directory", file_name, score, indices}]}`，无通知流（1.5s 采样零
+//      通知帧）→ 批 1 fileSearch() 直接 await RPC，无需 waiter Map/超时收口。
+//   R3 wire 方法名：`skills/list`（params `{cwds: [...]}`）与 `fuzzyFileSearch`
+//      （params `{query, roots, cancellationToken}`）拼写正确（S10/S11 PASS）。
+//   R4 path 相对 root（`src/beta.md`）；目录项 `match_type:"directory"`；.gitignore
+//      与 node_modules 在**非 git 目录**不生效（secret/vendor 均被搜出）——真实项目
+//      root（git repo）行为留观，客户端渲染 cap 20 兜底。
+//   R5 SkillMetadata 实测 `{name, description, scope, enabled, pluginId, path}`；
+//      本机样本无 shortDescription/interface 字段（undefined）——批 1 投影链
+//      `interface?.shortDescription ?? shortDescription ?? description` 宽进安全。
+//   附赠：busy 时 turn/start **不新建 turn 而并入当前 turn**（响应复用 inFlight
+//      turn id）= 服务端 steer 语义（S6「并发被接受」之谜同解；客户端 steerOrQueue
+//      批 E 已对齐）。
+
+// S12 需要一个真实存在的 skill 才能验证「引用文本是否被 app-server 解析」。随机后缀
+// 使与用户已有 skill 撞名概率≈0；finally 只删自己建的这个目录（probe-only-delete-own-data）。
+const PROBE_SKILL_NAME = `probe-g-skill-${Math.random().toString(36).slice(2, 6)}`;
+
+async function setupProbeSkill() {
+  const dir = path.join(homedir(), ".codex", "skills", PROBE_SKILL_NAME);
+  if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, "SKILL.md"),
+    `---\nname: ${PROBE_SKILL_NAME}\ndescription: agents-remote batch G probe skill for composer intellisense\n---\n\nProbe skill body. Reply with the word ok only.\n`,
+  );
+  return dir;
+}
+
+/** S10：skills/list 形状 + 自建 user 级 skill 可见性（批 G catalog 数据源）。 */
+async function scenarioSkillsList(s) {
+  const res = await s.request("skills/list", { cwds: [CWD] });
+  const bucket = res.data?.[0];
+  record(
+    "S10 skills/list data[] 按 cwd 分桶",
+    Array.isArray(res.data) && bucket?.cwd === CWD,
+    `buckets=${res.data?.length} cwd=${bucket?.cwd}`,
+  );
+  const skills = bucket?.skills ?? [];
+  const probe = skills.find((k) => k.name === PROBE_SKILL_NAME);
+  record(
+    "S10 自建 user 级 skill 在列表且形状完整",
+    !!probe &&
+      probe.scope === "user" &&
+      typeof probe.name === "string" &&
+      typeof probe.path === "string" &&
+      typeof probe.enabled === "boolean",
+    probe
+      ? JSON.stringify({
+          name: probe.name,
+          description: probe.description,
+          shortDescription: probe.shortDescription,
+          interface: probe.interface,
+          scope: probe.scope,
+          enabled: probe.enabled,
+          pluginId: probe.pluginId,
+        }).slice(0, 300)
+      : `skills=${skills.map((k) => k.name).join(",")}`,
+  );
+  record(
+    "S10 errors[] 形态",
+    Array.isArray(bucket?.errors),
+    `errors=${JSON.stringify(bucket?.errors).slice(0, 120)}`,
+  );
+  return skills;
+}
+
+/** S11：fuzzyFileSearch 响应分型（RPC 直返 vs 通知流）+ path 相对性 + 目录项 + gitignore 观察。 */
+async function scenarioFileSearch(s) {
+  const root = path.join(tmpdir(), `codex-probe-files-${Math.random().toString(36).slice(2, 8)}`);
+  mkdirSync(path.join(root, "src", "nested"), { recursive: true });
+  mkdirSync(path.join(root, "node_modules"), { recursive: true });
+  writeFileSync(path.join(root, "alpha.txt"), "x\n");
+  writeFileSync(path.join(root, "src", "beta.md"), "y\n");
+  writeFileSync(path.join(root, "src", "nested", "gamma.ts"), "z\n");
+  writeFileSync(path.join(root, "node_modules", "vendor.js"), "w\n");
+  writeFileSync(path.join(root, "ignored-secret.txt"), "v\n");
+  writeFileSync(path.join(root, ".gitignore"), "ignored-secret.txt\nnode_modules\n");
+  try {
+    const res = await s.request("fuzzyFileSearch", {
+      query: "beta",
+      roots: [root],
+      cancellationToken: null,
+    });
+    const files = res?.files;
+    record(
+      "S11 RPC 响应含 files[]（直返分型）",
+      Array.isArray(files),
+      `keys=${Object.keys(res ?? {}).join(",")} files=${JSON.stringify(files)?.slice(0, 240)}`,
+    );
+    const beta = files?.find((f) => f.file_name === "beta.md");
+    record(
+      "S11 path 相对性（相对 root vs 绝对）",
+      typeof beta?.path === "string",
+      `path=${beta?.path} root=${root} matchType=${beta?.match_type} score=${beta?.score} indices=${JSON.stringify(beta?.indices)}`,
+    );
+    // 目录项形态
+    const dirRes = await s.request("fuzzyFileSearch", {
+      query: "nested",
+      roots: [root],
+      cancellationToken: null,
+    });
+    record(
+      "S11 目录项 match_type=directory",
+      true,
+      `files=${JSON.stringify(dirRes?.files?.map((f) => `${f.match_type}:${f.path}`))?.slice(0, 200)}`,
+    );
+    // gitignore / node_modules 观察（结论记 detail，不硬断言——引擎行为留观项）
+    const ignRes = await s.request("fuzzyFileSearch", {
+      query: "secret",
+      roots: [root],
+      cancellationToken: null,
+    });
+    const vendRes = await s.request("fuzzyFileSearch", {
+      query: "vendor",
+      roots: [root],
+      cancellationToken: null,
+    });
+    record(
+      "S11 gitignore/node_modules 尊重观察",
+      true,
+      `secret=${JSON.stringify(ignRes?.files?.map((f) => f.path))} vendor=${JSON.stringify(vendRes?.files?.map((f) => f.path))}`,
+    );
+    // 通知流形态：直返分型下不应有 session/updated|completed；等一小段采样确认
+    await new Promise((r) => setTimeout(r, 1500));
+    const sessionNotifs = s.notifications.filter((n) => n.method?.startsWith("fuzzyFileSearch"));
+    record(
+      "S11 fuzzyFileSearch 通知流观察",
+      true,
+      sessionNotifs.length === 0
+        ? "无通知（直返分型成立）"
+        : sessionNotifs.map((n) => n.method).join(","),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/** S12：skill 引用文本形态——`/name` 与 `$name` 发 turn 后 thread/read 看首条 userMessage 是否被改写。 */
+async function scenarioSkillRef(s, threadId) {
+  for (const [tag, text] of [
+    ["slash", `/${PROBE_SKILL_NAME} 请只回复 ok`],
+    ["dollar", `$${PROBE_SKILL_NAME} 请只回复 ok`],
+  ]) {
+    const t = await s.request("turn/start", {
+      threadId,
+      input: [{ type: "text", text }],
+    });
+    const turnId = t.turn?.id;
+    const life = await s.collectTurnLife(turnId).catch(() => null);
+    const read = await s.request("thread/read", { threadId, includeTurns: true });
+    const userItems = (read.thread?.turns ?? [])
+      .flatMap((turn) => turn.items ?? [])
+      .filter((i) => i.type === "userMessage");
+    const last = userItems.at(-1);
+    const lastText = last?.content?.map((c) => c.text ?? "").join("");
+    record(
+      `S12 ${tag} 引用文本 userMessage 形态`,
+      typeof lastText === "string",
+      `sent=${JSON.stringify(text).slice(0, 80)} readBack=${JSON.stringify(lastText).slice(0, 160)} itemKeys=${Object.keys(last ?? {}).join(",")} turnStatus=${life?.turnCompleted?.params?.turn?.status}`,
+    );
+  }
+}
+
 // ── 主流程 ─────────────────────────────────────────────────────────────────
 console.log(`# codex app-server 探针  cwd=${CWD}  fixtures=${FIXTURES_DIR}`);
 let mainServer = null;
+let probeSkillDir = null;
 try {
+  // fixture skill 必须在 app-server spawn 前建好（skills/list 启动期扫描可见性）。
+  probeSkillDir = await setupProbeSkill();
   const { server } = await scenarioInitialize();
   mainServer = server;
   const model = await scenarioModelList(server);
   void model;
+  // 批 G 新场景单独兜底：wire 方法名不存在（R3）时记 FAIL 但不炸主流程，
+  // S3–S9 既有断言照常跑。
+  try {
+    await scenarioSkillsList(server);
+  } catch (err) {
+    record("S10 skills/list", false, String(err).slice(0, 240));
+  }
+  try {
+    await scenarioFileSearch(server);
+  } catch (err) {
+    record("S11 fuzzyFileSearch", false, String(err).slice(0, 240));
+  }
   const { threadId } = await scenarioThreadStart(server);
   await scenarioTurnLifecycle(server, threadId);
   await scenarioThreadRead(server, threadId);
   await scenarioConcurrentTurn(server, threadId);
   await scenarioInterrupt(server, threadId);
   await scenarioConfigHotSwitch(server, threadId);
+  try {
+    await scenarioSkillRef(server, threadId);
+  } catch (err) {
+    record("S12 skill 引用文本", false, String(err).slice(0, 240));
+  }
   mainServer.close();
   mainServer = null;
   await scenarioResume();
@@ -533,6 +726,10 @@ try {
   record("主流程异常中断", false, String(err).slice(0, 300));
 } finally {
   mainServer?.close();
+  // 只删自己建的 fixture skill（名字带随机后缀，撞名概率≈0；删除前核对目录名）。
+  if (probeSkillDir && probeSkillDir.includes(PROBE_SKILL_NAME)) {
+    rmSync(probeSkillDir, { recursive: true, force: true });
+  }
 }
 
 const failed = results.filter((r) => !r.ok);

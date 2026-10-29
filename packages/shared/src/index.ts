@@ -1892,6 +1892,42 @@ export type CodexRateLimitWindow = {
   resetsAt?: string;
 };
 
+/** codex skill 条目（skills/list 服务端投影；enabled=false 已滤）。 */
+export type CodexSkillInfo = {
+  name: string;
+  /** 弹层副标题：interface?.shortDescription ?? shortDescription ?? description
+   *  （探针 R5 宽进链，本机样本只有 description；缺省空串）。 */
+  description: string;
+  /** user | repo | system | admin（宽进字符串）。 */
+  scope: string;
+  /** 插件 skill 的宿主 id（app-server 原样，非插件缺省）。 */
+  pluginId?: string;
+};
+
+/** skills 目录快照：skills/list 归一（服务端合成）。进 relay live 缓冲 = 断线重连
+ *  自动回放（claude skill-slash-catalog staleTime:Infinity 的推送通道对应物）；
+ *  空目录不发帧 = 前端无补全（能力信号，codex_config 同约定）。 */
+export type CodexSkillsFrame = {
+  type: "codex_skills";
+  skills: CodexSkillInfo[];
+};
+
+/** composer @ 文件补全单条结果（path 相对项目根，探针 R4）。 */
+export type CodexFileSearchHit = {
+  path: string;
+  matchType: "file" | "directory";
+  fileName: string;
+};
+
+/** @ 补全应答：**per-socket 不进 relay 缓冲**（请求-应答型瞬态，探针 R2 直返分型——
+ *  服务端 fuzzyFileSearch RPC 直返 {files[]}，无通知流）。requestId 供客户端丢弃
+ *  stale 应答（连打时旧查询后到）。 */
+export type CodexFileSearchResultFrame = {
+  type: "file_search_result";
+  requestId: string;
+  files: CodexFileSearchHit[];
+};
+
 /** 审批请求帧：**broadcastOnly 不进 live 缓冲**（重连后由 ApprovalCenter 快照兜底，
  *  与 claude control_request 同语义）。item 形状宽进（requestApproval params 原样）。 */
 export type CodexApprovalRequestFrame = {
@@ -1910,6 +1946,8 @@ export type CodexStreamServerMessage =
   | CodexEventFrame
   | CodexUserEchoFrame
   | CodexConfigFrame
+  | CodexSkillsFrame
+  | CodexFileSearchResultFrame
   | CodexApprovalRequestFrame
   | {
       type: "error";
@@ -1982,6 +2020,15 @@ export type CodexStreamClientMessage =
       // 压缩上下文（批 E parity）：thread/compact/start（压缩以 turn 形态跑，产出
       // contextCompaction item）。busy（turn 在飞）时服务端回 error 帧，前端 toast 提示。
       type: "compact";
+    }
+  | {
+      // composer @ 文件路径补全（批 G）：fuzzyFileSearch 透传（roots 服务端固定
+      // projectPath，白名单封闭）。per-socket 应答 file_search_result（探针 R2 直返
+      // 分型，非会话状态不进 relay 缓冲）。
+      type: "file_search";
+      query: string;
+      /** 客户端生成的请求 id（crypto.randomUUID()），stale 应答丢弃键。 */
+      requestId: string;
     }
   | {
       type: "ping";
