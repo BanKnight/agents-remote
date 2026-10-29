@@ -20,17 +20,18 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   unstable_useSlashCommandAdapter,
-  unstable_useTriggerPopoverRootContextOptional,
-  unstable_useTriggerPopoverScopeContext,
-  type Unstable_DirectiveFormatter,
   type Unstable_SlashCommand,
-  type Unstable_TriggerItem,
   useAui,
   useAuiState,
   useExternalStoreRuntime,
   groupPartByType,
   type ThreadMessageLike,
 } from "@assistant-ui/react";
+import {
+  plainTextFormatter,
+  TriggerPopoverItemRow,
+  useTriggerPopoverActiveRef,
+} from "../components/ui/composer-trigger";
 import { MarkdownString } from "../components/markdown/MarkdownString";
 import { MarkdownText } from "../components/markdown/MarkdownText";
 import { AutoRetryBanner } from "../components/workbench/auto-retry-banner";
@@ -85,7 +86,7 @@ import {
   getToolRenderer,
 } from "../components/assistant-ui/tool-ui-registry";
 import { GenUiWidgetMessage } from "../components/assistant-ui/gen-ui-widget-card";
-import { ToolHead, ToolIcon } from "../components/assistant-ui/tool-head";
+import { ToolHead } from "../components/assistant-ui/tool-head";
 import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
 import { CompactBlock } from "../components/assistant-ui/compact-block";
 import type { CodexNotice } from "./codex-adapter";
@@ -3615,81 +3616,6 @@ export function VirtualizedThreadContent({
   );
 }
 
-// assistant-ui's default directive formatter writes `:command[/x]{name=x}` into the
-// composer, which is meant for an LLM runtime to parse back into a tool call. Our
-// composer text is piped straight to the Claude CLI stdin, which only understands a
-// plain `/x`. Serialize every slash item (builtin command / plugin command / skill) to
-// its CLI slash form instead — see primitives/references/mentions.md (custom formatter).
-const cliSlashFormatter: Unstable_DirectiveFormatter = {
-  serialize: (item) => item.label ?? `/${item.id}`,
-  parse: (text) => [{ kind: "text", text }],
-};
-
-// VS Code-style: keep the keyboard-highlighted slash item scrolled into view.
-// assistant-ui's trigger popover has no scrollIntoView, so we read
-// highlightedIndex from the scope context and scroll the active item with
-// block:"nearest" (only scrolls when out of view, no jitter).
-function SlashCommandPopoverItem({
-  item,
-  index,
-  kind,
-}: {
-  item: Unstable_TriggerItem;
-  index: number;
-  kind?: "command" | "skill";
-}) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const scope = unstable_useTriggerPopoverScopeContext();
-  const isHighlighted = scope.highlightedIndex === index;
-  useEffect(() => {
-    if (!isHighlighted || !ref.current) return;
-    const listbox = ref.current.closest('[role="listbox"]');
-    if (!(listbox instanceof HTMLElement)) return;
-    const item = ref.current;
-    const paddingTop = Number.parseFloat(getComputedStyle(listbox).paddingTop);
-    const itemTop = item.offsetTop - paddingTop;
-    const itemBottom = itemTop + item.clientHeight;
-    const listTop = listbox.scrollTop;
-    const listBottom =
-      listTop +
-      listbox.clientHeight -
-      paddingTop -
-      Number.parseFloat(getComputedStyle(listbox).paddingBottom);
-    if (itemTop < listTop) {
-      listbox.scrollTop = itemTop;
-    } else if (itemBottom > listBottom) {
-      listbox.scrollTop =
-        itemBottom -
-        (listbox.clientHeight -
-          paddingTop -
-          Number.parseFloat(getComputedStyle(listbox).paddingBottom));
-    }
-  }, [isHighlighted]);
-  return (
-    <ComposerPrimitive.TriggerPopoverItem
-      ref={ref}
-      item={item}
-      index={index}
-      className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-on-surface-soft transition-colors duration-150 hover:bg-surface-raised/80 hover:text-on-surface data-[highlighted]:bg-surface-raised/80 data-[highlighted]:text-on-surface"
-    >
-      <ToolIcon
-        name={kind === "skill" ? "skill" : "command"}
-        className={kind === "skill" ? "text-assistant/70" : "text-user/70"}
-      />
-      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0">
-        <span className="min-w-0 break-all text-xs font-medium text-on-surface-soft">
-          {item.label}
-        </span>
-        {item.description ? (
-          <span className="min-w-0 break-words text-xs text-on-surface-muted">
-            {item.description}
-          </span>
-        ) : null}
-      </span>
-    </ComposerPrimitive.TriggerPopoverItem>
-  );
-}
-
 function ComposerWithInterrupt({
   opusplanActive,
   currentModel,
@@ -3785,19 +3711,7 @@ function ComposerWithInterrupt({
 
   // When a trigger popover (the slash menu) is active, Enter must reach the
   // popover to submit the highlighted command — not the composer.
-  const triggerCtx = unstable_useTriggerPopoverRootContextOptional();
-  const slashOpenRef = useRef(false);
-  useEffect(() => {
-    if (!triggerCtx) {
-      slashOpenRef.current = false;
-      return;
-    }
-    const update = () => {
-      slashOpenRef.current = triggerCtx.getActiveAria() !== null;
-    };
-    update();
-    return triggerCtx.subscribeAria(update);
-  }, [triggerCtx]);
+  const slashOpenRef = useTriggerPopoverActiveRef();
 
   // Composer 状态优先级：blocked（等待用户动作）> disconnected（断开）> running > idle。
   // disconnected 由 onopen/onclose 直接驱动（不猜 lastPong）：断开时禁用输入 + 提示「重连中」，
@@ -3969,7 +3883,7 @@ function ComposerWithInterrupt({
             className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-56 overflow-auto rounded-xl border border-on-surface/10 bg-surface-inset/95 p-1 shadow-2xl backdrop-blur"
           >
             <ComposerPrimitive.TriggerPopover.Action
-              formatter={cliSlashFormatter}
+              formatter={plainTextFormatter}
               onExecute={(item) => {
                 slash.action.onExecute?.(item);
                 if (lastKeyRef.current === "Enter") {
@@ -3981,14 +3895,18 @@ function ComposerWithInterrupt({
             />
             <ComposerPrimitive.TriggerPopoverItems>
               {(items) =>
-                items.map((item, index) => (
-                  <SlashCommandPopoverItem
-                    key={item.id}
-                    item={item}
-                    index={index}
-                    kind={kindById.get(item.id)}
-                  />
-                ))
+                items.map((item, index) => {
+                  const kind = kindById.get(item.id);
+                  return (
+                    <TriggerPopoverItemRow
+                      key={item.id}
+                      item={item}
+                      index={index}
+                      iconName={kind === "skill" ? "skill" : "command"}
+                      iconClassName={kind === "skill" ? "text-assistant/70" : "text-user/70"}
+                    />
+                  );
+                })
               }
             </ComposerPrimitive.TriggerPopoverItems>
           </ComposerPrimitive.TriggerPopover>
