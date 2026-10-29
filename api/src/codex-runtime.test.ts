@@ -37,6 +37,11 @@ const accountAllowed = process.argv.includes("--account-allowed");
 // 供 debounce 重拉断言（第二帧 description 带 calls=2）。
 const noSkills = process.argv.includes("--no-skills");
 let skillsListCalls = 0;
+// 额度 read 慢应答（单飞竞态用例）：--slow-account 让 account/rateLimits/read 延迟
+// 500ms 才回 denied error——模拟「启动期 refreshAccount 在飞」窗口，验证在飞期间到达
+// 的通知快照不被丢弃（收口后补一帧 config）。
+const slowAccount = process.argv.includes("--slow-account");
+const SLOW_ACCOUNT_MS = 500;
 const interrupted = new Map();
 const send = (msg) => console.log(JSON.stringify(msg));
 const notify = (method, params) => send({ method, params });
@@ -181,7 +186,13 @@ function handleLine(line) {
       void handleCompactStart(msg);
       break;
     case "account/rateLimits/read":
-      if (!accountAllowed) {
+      if (slowAccount) {
+        // 慢应答不阻塞主读循环（真实 app-server 的 RPC 也并发处理）：延迟后回 denied。
+        void (async () => {
+          await Bun.sleep(SLOW_ACCOUNT_MS);
+          send({ id: msg.id, error: { code: -32000, message: "chatgpt authentication required" } });
+        })();
+      } else if (!accountAllowed) {
         send({ id: msg.id, error: { code: -32000, message: "chatgpt authentication required" } });
       } else {
         send({ id: msg.id, result: { rateLimits: { planType: "pro",
@@ -1240,7 +1251,9 @@ describe("CodexRuntime 批 E（compact / steer / MCP 注入 / 账号额度）", 
     await waitFor(
       () => parse(lines).some((m) => m.type === "codex_config" && m.account?.planType === "plus"),
       "config with carried account",
-      // 全量跑（commit 门禁）负载下 fake turn 链路 >5s 偶发（实测 flaky），放宽到 15s。
+      // 原 15s flaky 的真根因（2026-10-29）：启动期 refreshAccount（void 不 await）在飞
+      // 时，本通知被单飞闸「在飞即丢弃」→ 快照永久丢失。已改为 pending 收口补发（见
+      // 「单飞在飞期间…」用例）——此超时现只防进程调度抖动，不再兜竞态。
       15_000,
     );
     const cfg = parse(lines).find(
@@ -1252,6 +1265,29 @@ describe("CodexRuntime 批 E（compact / steer / MCP 注入 / 账号额度）", 
     });
     await runtime.close("k-e6a");
   }, 20_000);
+
+  test("单飞在飞期间到达的额度通知不丢：read 慢应答时快照记 pending、收口后补一帧 config", async () => {
+    // --slow-account：启动期 account/rateLimits/read 延迟 500ms 才回 denied。启动后立即
+    // 写 @notifylimits，通知在 read 在飞期间到达 → 单飞闸命中。修复前该通知被直接丢弃
+    //（本轮 read 结果是 denied 空快照），第二个 config 永不来；修复后记 pending、
+    // 收口补一轮 → 通知携带的 plus 快照落地。
+    const { runtime } = makeRuntime(undefined, undefined, undefined, ["--slow-account"]);
+    await runtime.startAgent({
+      id: "s-e6b",
+      projectName: "p1",
+      runtimeKey: "k-e6b",
+      projectPath,
+    });
+    const lines = collectStream(runtime, "k-e6b");
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_config"), "initial config");
+    runtime.write("k-e6b", "@notifylimits", "u-e6b");
+    await waitFor(
+      () => parse(lines).some((m) => m.type === "codex_config" && m.account?.planType === "plus"),
+      "pending notification applied after inflight read",
+      5_000,
+    );
+    await runtime.close("k-e6b");
+  });
 });
 
 describe("CodexRuntime 批 G（skills 目录 / @ 文件补全）", () => {

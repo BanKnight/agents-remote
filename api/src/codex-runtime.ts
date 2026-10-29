@@ -325,6 +325,10 @@ type CodexSessionEntry = {
   account?: CodexAccountUsage;
   /** 额度刷新在飞闸（perf P2-2）：成簇的 rateLimits/updated 只跑一轮 RPC + 一帧 config。 */
   accountRefreshing?: boolean;
+  /** 在飞期间到达的 rateLimits/updated 通知快照（latest-wins 单槽）：收口后补一轮。
+   *  启动期 read 路径在飞时本轮结果可能是 denied 空快照——原「在飞即丢弃」会让通知
+   *  携带的额度永久丢失（用户侧表现为额度浮层一直不出现）。 */
+  pendingNotificationLimits?: unknown;
   /** 用户下轮生效的配置覆盖（flushQueue 组装 turn/start 时消费并清空）。 */
   pendingConfig: Partial<CodexThreadConfig>;
   /** 单飞 turn id（null = 空闲）；turn/completed 通知是唯一关闭信号。 */
@@ -901,12 +905,26 @@ export class CodexRuntime {
     entry: CodexSessionEntry,
     limitsFromNotification?: unknown,
   ): Promise<void> {
-    if (entry.accountRefreshing) return;
+    if (entry.accountRefreshing) {
+      // 单飞在飞：通知快照记 pending（latest-wins 单槽），收口后补一轮——不能在飞即
+      // 丢弃：启动期 read 路径在飞时本轮结果可能是 denied 空快照，丢弃 = 通知携带
+      // 的额度永久丢失（额度浮层永不出现；2026-10-29 全量 flaky 实锤）。
+      if (limitsFromNotification !== undefined) {
+        entry.pendingNotificationLimits = limitsFromNotification;
+      }
+      return;
+    }
     entry.accountRefreshing = true;
     try {
-      const [limits, usage] = await Promise.all([
+      // 本轮自身带通知（通知路径进入）优先于 pending 旧快照：更新的快照覆盖旧的。
+      const carried =
         limitsFromNotification !== undefined
-          ? Promise.resolve(limitsFromNotification)
+          ? limitsFromNotification
+          : entry.pendingNotificationLimits;
+      entry.pendingNotificationLimits = undefined;
+      const [limits, usage] = await Promise.all([
+        carried !== undefined
+          ? Promise.resolve(carried)
           : entry.conn.request("account/rateLimits/read", {}).catch(() => null),
         entry.account?.lifetimeTokens != null
           ? Promise.resolve(null)
@@ -924,6 +942,13 @@ export class CodexRuntime {
       this.injectConfigFrame(runtimeKey, entry);
     } finally {
       entry.accountRefreshing = false;
+      // 在飞期间到达的通知补一轮（每轮消费一次 pending，await 窗口内再来才继续补）。
+      if (
+        entry.pendingNotificationLimits !== undefined &&
+        this.sessions.get(runtimeKey) === entry
+      ) {
+        void this.refreshAccount(runtimeKey, entry);
+      }
     }
   }
 
