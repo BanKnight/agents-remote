@@ -1323,7 +1323,7 @@ describe("CodexRuntime 批 G（skills 目录 / @ 文件补全）", () => {
     await runtime.close("k-g1");
   });
 
-  test("--no-skills：skills/list 回空数组 → 无 codex_skills 帧（空目录不发帧 = 能力信号）", async () => {
+  test("--no-skills：skills/list 回空数组 → 空帧 codex_skills（全量快照清空，前端不留 stale）", async () => {
     const { runtime } = makeRuntime(undefined, undefined, undefined, ["--no-skills"]);
     await runtime.startAgent({
       id: "s-g2",
@@ -1337,8 +1337,11 @@ describe("CodexRuntime 批 G（skills 目录 / @ 文件补全）", () => {
       () => parse(lines).some((m) => m.type === "ended" && m.stopReason === "completed"),
       "ended frame",
     );
-    await Bun.sleep(30); // refreshSkills 是 void promise：给竞态余量再断言
-    expect(parse(lines).some((m) => m.type === "codex_skills")).toBe(false);
+    // 空目录也发帧（code review P2）：skills/changed 重拉删光后靠空帧清空前端旧目录；
+    // 「无帧 = 能力缺失」信号保留给 RPC 失败路径（catch 不发帧）。
+    await waitFor(() => parse(lines).some((m) => m.type === "codex_skills"), "empty skills frame");
+    const frame = parse(lines).find((m) => m.type === "codex_skills") as { skills: unknown[] };
+    expect(frame.skills).toEqual([]);
 
     await runtime.close("k-g2");
   });

@@ -90,6 +90,12 @@ const SKILLS_CHANGED_DEBOUNCE_MS = 500;
  *  WS 帧膨胀；客户端渲染层不再截）。 */
 const FILE_SEARCH_RESULT_CAP = 20;
 
+/** @ 文件补全 RPC 短超时（code review P3）：客户端 waiter 3s 已放弃，等到 60s
+ *  （CODEX_RPC_TIMEOUT_MS）只是白占 conn pending 表——race 到期返回 []，底层 request
+ *  稍后自行 reject（已 catch 吞，无 unhandled rejection）。180ms 防抖下大 repo 连续
+ *  输入的并发白跑搜索占用因此有界。 */
+const FILE_SEARCH_RPC_TIMEOUT_MS = 5_000;
+
 /** 权限模式 → (approvalPolicy, sandbox) 组合（shared CodexPermissionMode 注释的单源实现）。 */
 const CODEX_PERMISSION_PRESETS: Record<
   CodexPermissionMode,
@@ -846,19 +852,23 @@ export class CodexRuntime {
   /**
    * composer @ 文件补全（批 G）：fuzzyFileSearch 透传（探针 R2：RPC 直返 {files[]}，
    * 无通知流——直接 await 无需 waiter）。结果按 score 排序截前 FILE_SEARCH_RESULT_CAP；
-   * entry 不在（会话已关）或 RPC 失败 → []（弹层空态，不 error 帧——搜索失败不是
-   * 会话故障）。
+   * entry 不在（会话已关）、RPC 失败或超 FILE_SEARCH_RPC_TIMEOUT_MS → []（弹层空态，
+   * 不 error 帧——搜索失败不是会话故障）。catch 贴在 request 上（race 败者已消化，
+   * 超时后底层 reject 无 unhandled rejection）。
    */
   async fileSearch(runtimeKey: string, query: string): Promise<CodexFileSearchHit[]> {
     const entry = this.sessions.get(runtimeKey);
     if (!entry) return [];
     try {
-      const res = (await this.rpcWithTimeout(
-        entry.conn,
-        "fuzzyFileSearch",
-        { query, roots: [entry.projectPath] },
-        "codex fuzzyFileSearch",
-      )) as {
+      const res = (await Promise.race([
+        this.rpcWithTimeout(
+          entry.conn,
+          "fuzzyFileSearch",
+          { query, roots: [entry.projectPath] },
+          "codex fuzzyFileSearch",
+        ).catch(() => null),
+        Bun.sleep(FILE_SEARCH_RPC_TIMEOUT_MS).then(() => null),
+      ])) as {
         files?: {
           root?: unknown;
           path?: unknown;
@@ -1426,7 +1436,9 @@ export class CodexRuntime {
   /**
    * 拉取 skills 目录并注入 codex_skills 帧（批 G）：skills/list {cwds:[projectPath]}，
    * 取本项目 cwd 桶、滤 enabled=false、投影 CodexSkillInfo（探针 R5 宽进链）。失败静默
-   * （能力降级不失败，codex_config 同约定）；空目录不发帧（无帧 = 前端无补全）。
+   * （能力降级不失败，codex_config 同约定）。空目录也发帧（code review P2）：skills 帧
+   * 是全量快照（latest-wins），空帧 = 清空——skills/changed 重拉发现 skills 删光时前端
+   * 才不留 stale 旧目录；「无帧 = 能力缺失」信号保留给 catch 失败路径。
    */
   private async refreshSkills(entry: CodexSessionEntry): Promise<void> {
     try {
@@ -1471,12 +1483,11 @@ export class CodexRuntime {
     }
   }
 
-  /** skills 快照帧注入；空数组不发帧（= 无能力信号，codex_config 同约定）。 */
+  /** skills 快照帧注入；空数组也发帧（全量快照 latest-wins，空帧 = 清空前端 stale）。 */
   private injectSkillsFrame(
     entry: CodexSessionEntry,
     skills: Extract<CodexStreamServerMessage, { type: "codex_skills" }>["skills"],
   ): void {
-    if (skills.length === 0) return;
     entry.relay.appendAndBroadcast(
       JSON.stringify({ type: "codex_skills", skills } satisfies Extract<
         CodexStreamServerMessage,
