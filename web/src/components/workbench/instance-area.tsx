@@ -1246,12 +1246,16 @@ export function useInstanceInfoActions(
           ...configOnSelect("effort"),
         });
       }
-      // 自动重试（claude 专用）：行内开关 + 编辑按钮（2026-09-09 用户反馈：原纯文本行
+      // 自动重试（claude/codex chat 通用：api 侧两 runtime 各有信号源与注入桥，配置
+      // metadata provider 无关）：行内开关 + 编辑按钮（2026-09-09 用户反馈：原纯文本行
       // 改操作面直出——开关即切即存，编辑进参数面板）。组件自订阅 query，
       // 快照 fields 不影响其响应数据变化。v1.6 原型行序 = effort 之后、创建时间之前。
       // terminal 形态让位（三处统一，spec §4.7；design review P2-1）——注入走 headless
-      // stdin，TUI 无控制通道。
-      if (agentSession.provider === "claude" && agentSession.mode !== "terminal") {
+      // stdin，TUI 无控制通道（存量 tmux codex 恒 terminal，随之排除）。
+      if (
+        (agentSession.provider === "claude" || agentSession.provider === "codex") &&
+        agentSession.mode !== "terminal"
+      ) {
         fields.push({
           label: t("session.autoRetry.label"),
           value: "",
@@ -1496,7 +1500,7 @@ export function useAutoRetryToggle(
  * 会话头部 icon-only 自动重试开关（高频操作前置，2026-09-09：用户反馈 ℹ sheet 路径太深、
  * 面板操作麻烦）。rotate 图标 = 重试语义；enabled 常显高亮 primary（用户主动开启的功能
  * 要一直可见），off 态样式同 ℹ✕（非 active hover 才显）。点击即切即存，pending 置灰。
- * 仅 claude agent session 渲染（provider 未加载前不渲染，避免闪现）。
+ * claude/codex chat 形态 agent session 渲染（provider 未加载前不渲染，避免闪现）。
  */
 export function AutoRetryHeaderButton({
   projectName,
@@ -1514,7 +1518,13 @@ export function AutoRetryHeaderButton({
   const session = useAgentDetail({ kind: "session", projectName, sessionId }).data?.session;
   // terminal 形态让位（三处统一，spec §4.7）：自动重试注入走 headless stdin——TUI 无控制
   // 通道，开关存了也只在切回 chat 后生效；与 ⋯ 菜单项、ℹ 信息面同口径（design review P2-1）。
-  if (session?.provider !== "claude" || session.mode === "terminal") return null;
+  // claude/codex chat 通用（api 侧注入桥/信号源两 runtime 各有，配置 provider 无关）。
+  if (
+    (session?.provider !== "claude" && session?.provider !== "codex") ||
+    session.mode === "terminal"
+  ) {
+    return null;
+  }
   const on = enabled === true;
   const className = `flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-on-surface/5 active:bg-on-surface/10 ${
     on ? "text-primary" : "text-on-surface-soft hover:text-on-surface"
@@ -2441,7 +2451,11 @@ function SessionTabStripActions({
   // 注入/模型切换让位）；切换门槛严格 idle-only（working/blocked 禁用，绝不丢 turn）；
   // 存量会话无钉 claudeSessionId 无法 --resume（review P3-8：禁用 + 原因文案，防必败弹窗循环）。
   const sessionMode = agentDetail.data?.session.mode ?? "chat";
-  const terminalMode = (isClaude || isCodex) && sessionMode === "terminal";
+  // 自动重试开关可用面（claude/codex chat 通用；terminal 排除不看 isCodex——存量 tmux
+  // codex 无 threadId 但 mode 恒 terminal，靠 mode 单独兜住）。
+  const autoRetryCapable =
+    (isClaude || agentDetail.data?.session.provider === "codex") &&
+    agentDetail.data?.session.mode !== "terminal";
   // busy 判定双 provider 共用(turn 进行中切模式绝不丢 turn,claude P3-8 同门槛)。
   const busyBlocked =
     agentDetail.data?.session.status === "working" || agentDetail.data?.session.status === "blocked"
@@ -2509,8 +2523,9 @@ function SessionTabStripActions({
         ]
       : []),
     // 自动重试注入走 headless stdin——terminal 形态无控制通道（服务端 injectUserPrompt
-    // 拒绝），菜单项随之让位。
-    ...(isClaude && !terminalMode
+    // 拒绝），菜单项随之让位。claude/codex chat 通用：provider 全集判定，不带
+    // codexThreadId 条件（那是 mode 切换判据；存量 tmux codex 恒 terminal 已被排除）。
+    ...(autoRetryCapable
       ? [
           {
             label: t("session.autoRetry.label"),

@@ -1218,7 +1218,12 @@ function MobileProjectWorkbench({
   // 双模式（2026-10-15，与桌面 SessionTabStripActions 同构）：terminal 形态 = CLI 原生 TUI
   //（无 stdin 控制通道 → 自动重试让位）；切换门槛严格 idle-only。
   const focusSessionMode = focusAgentDetail.data?.session.mode ?? "chat";
-  const focusTerminalMode = (focusIsClaude || focusIsCodex) && focusSessionMode === "terminal";
+  // 自动重试开关可用面（桌面 SessionTabStripActions 同构）：claude/codex chat 通用；
+  // terminal 排除不看 focusIsCodex——存量 tmux codex 无 threadId 但 mode 恒 terminal，
+  // 靠 mode 单独兜住。
+  const focusAutoRetryCapable =
+    (focusIsClaude || focusAgentDetail.data?.session.provider === "codex") &&
+    focusSessionMode !== "terminal";
   // 存量会话无钉 claudeSessionId 无法 --resume（review P3-8：禁用 + 原因文案，防必败弹窗循环）。
   // busy 判定双 provider 共用;存量会话无钉 claudeSessionId 无法 --resume(review P3-8:
   // 禁用 + 原因文案,防必败弹窗循环)。
@@ -1509,7 +1514,7 @@ function MobileProjectWorkbench({
                             },
                           ]
                         : []),
-                      ...(focusIsClaude && !focusTerminalMode
+                      ...(focusAutoRetryCapable
                         ? [
                             {
                               label: t("session.autoRetry.label"),
