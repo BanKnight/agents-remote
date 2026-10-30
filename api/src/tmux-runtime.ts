@@ -187,6 +187,12 @@ export class TmuxRuntime implements RuntimeResources {
       "-y",
       String(rows - 1),
     ]).catch(() => undefined);
+    // resize-window 会把 session 的 window-size 覆写成 manual（探针实证，2026-10-30 用户反馈
+    // 「terminal 内容没填满，缺口 = 折叠 composer 高度」：首帧按展开态矮容器预设后，用户折叠
+    // composer → 容器变高 → resize 上行时 window 被锁死在预设尺寸不跟随 → 输出只占预设行数、
+    // 底部留白恰为折叠差值）。预设后立即恢复 latest：首开零 reflow 收益保留（attach client
+    // 同值覆盖），后续 client resize 恢复自动跟随。
+    await runTmux(["set-option", "-t", runtimeKey, "window-size", "latest"]).catch(() => undefined);
 
     let exited = false;
     const exitCbs = new Set<(code: number | null) => void>();
