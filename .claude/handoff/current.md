@@ -45,8 +45,14 @@ resize-window 预设 + 撤 600ms churn 层）。门禁全绿（web 1009 / api / 
   - code 备注：`atRequestIdRef` 计数器与 waiter Map 生命周期不同步（当前无触发路径）。
   - pre-commit test 阶段偶发 flaky（chat-idle-recycler / agent-tui 真实 sleep 时序敏感，
     单跑必绿；重试即过）。
-  - 探针 DELETE 自建 terminal 会话返回 500（两次，未查根因——会话被清理了但状态码异常；
-    遗留了一个 tmux 会话可能没杀干净，下批顺手查）。
+  - 探针 DELETE 自建 terminal 会话返回 500——根因已查：`DELETE /api/projects/:name/terminal-sessions/:id`
+    在 handleSessionRoutes 无处理器，穿透到 index.ts:1190「DELETE /api/projects/ 前缀 = 删项目」
+    兜底 → deleteProject("test/terminal-sessions/xx") → validateProjectName 500。web 产品路径
+    不受影响（走 `POST .../close`）；仅 RESTful DELETE 直调（第三方/探针）踩中。修复选项 =
+    兜底分支收窄（encodedName 含 `/` 时 404）或补 DELETE session 分支，待用户拍板。
+  - test 项目残留 tmux 会话 `ar-terminal-test-9f86d081-terminal_bf9`（创建于 2026-10-30
+    11:40，与 4 次探针自建 id 均不匹配、时间窗口与用户真机测试吻合）——归属不明未删，
+    待用户确认后清理。
 
 ## 下一步
 
