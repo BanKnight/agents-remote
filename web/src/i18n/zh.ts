@@ -697,6 +697,7 @@ export const zh: Record<TranslationKey, string> = {
   "codex.notice.modelRerouted": "模型已切换：{{from}} → {{to}}",
   "codex.notice.modelUnknown": "未知模型",
   "codex.notice.authRecoveryStarted": "账号认证恢复中…",
+  "codex.inputPlaceholder": "向 Codex 提问...",
 
   // ── Permission confirmation / sub-agent footer / retry 状态 ──
   "claude.permission.awaiting": "等待确认",
@@ -1207,6 +1208,7 @@ export const zh: Record<TranslationKey, string> = {
   "chat.archiveSelected": "归档",
   "chat.deleteSelected": "删除",
   "chat.cancelSelect": "取消",
+  "pi.inputPlaceholder": "向 pi 提问...",
   "pi.attach": "添加图片",
   "pi.attachAria": "添加图片",
   "pi.attachRemove": "移除附件",
@@ -1216,4 +1218,7 @@ export const zh: Record<TranslationKey, string> = {
   "pi.tool.find": "查找",
   "pi.tool.firecrawlSearch": "Firecrawl 搜索",
   "pi.tool.firecrawlScrape": "Firecrawl 抓取",
+
+  // ── ACP（通用协议 PoC，无具名 agent，文案中性）──
+  "acp.inputPlaceholder": "向 Agent 提问...",
 };

@@ -702,6 +702,7 @@ export const en = {
   "codex.notice.modelRerouted": "Model switched: {{from}} → {{to}}",
   "codex.notice.modelUnknown": "unknown model",
   "codex.notice.authRecoveryStarted": "Account authentication recovering…",
+  "codex.inputPlaceholder": "Ask Codex...",
 
   // ── Permission confirmation / sub-agent footer / retry 状态 ──
   "claude.permission.awaiting": "Awaiting confirmation",
@@ -1241,6 +1242,7 @@ export const en = {
   "chat.archiveSelected": "Archive",
   "chat.deleteSelected": "Delete",
   "chat.cancelSelect": "Cancel",
+  "pi.inputPlaceholder": "Ask pi...",
   "pi.attach": "Attach image",
   "pi.attachAria": "Attach image",
   "pi.attachRemove": "Remove attachment",
@@ -1250,4 +1252,7 @@ export const en = {
   "pi.tool.find": "Find",
   "pi.tool.firecrawlSearch": "Firecrawl Search",
   "pi.tool.firecrawlScrape": "Firecrawl Scrape",
+
+  // ── ACP (generic protocol PoC, no named agent, neutral copy) ──
+  "acp.inputPlaceholder": "Ask Agent...",
 } as const;

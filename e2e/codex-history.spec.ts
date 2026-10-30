@@ -197,7 +197,7 @@ test("项目历史态列出 codex 行（cwd 过滤），点行 resume 上行 pro
   await expect(page).toHaveURL(new RegExp(`/projects/${projectName}/session/${resumedSessionId}`), {
     timeout: 15_000,
   });
-  await expect(page.getByPlaceholder("Ask Claude...")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByPlaceholder("Ask Codex...")).toBeVisible({ timeout: 15_000 });
 
   assertNoConsoleErrors();
 });

@@ -240,7 +240,7 @@ function ComposerWithInterruptPi({
         </div>
       ) : null}
       <ComposerPrimitive.Input
-        placeholder={disconnected ? t("claude.disconnected") : t("claude.inputPlaceholder")}
+        placeholder={disconnected ? t("claude.disconnected") : t("pi.inputPlaceholder")}
         disabled={inputDisabled}
         unstable_insertNewlineOnTouchEnter
         className="block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-on-surface placeholder:text-on-surface-muted outline-none"

@@ -185,7 +185,7 @@ test("ACP: session detail renders omp stream (echo bubble, chunk text, tool call
   await expect(page.getByRole("button", { name: /list files 14 chars/ })).toBeVisible();
 
   // 发送路径：composer → user 帧上行 → mock 回声 turn → 新气泡渲染（第二 echo 直接可见）。
-  const chatInput = page.getByPlaceholder("Ask Claude...");
+  const chatInput = page.getByPlaceholder("Ask Agent...");
   await expect(chatInput).toBeVisible({ timeout: 15_000 });
   await chatInput.fill("ping acp");
   await chatInput.press("Enter");

@@ -13,10 +13,6 @@ import type {
  */
 export const TMUX_CMD_TIMEOUT_MS = 5_000;
 
-/** attach 后强制 client 全重绘的延时：须晚于「PTY 80x24 → 浏览器首连 resize」的 churn 窗口，
- *  又要在 TUI 启动输出流早期生效。 */
-export const ATTACH_REFRESH_DELAY_MS = 600;
-
 export const runTmux = (args: string[]) =>
   new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn("tmux", args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -175,6 +171,23 @@ export class TmuxRuntime implements RuntimeResources {
 
     const cols = opts.cols > 0 ? opts.cols : 80;
     const rows = opts.rows > 0 ? opts.rows : 24;
+
+    // attach 前预设 window 尺寸（首开重排根因修复，2026-10-30 探针取证）：tmux window 以
+    // new-session 的固定起步尺寸（-x 200 -y 50，见 startCommand）排版旧屏，attach（window-size
+    // =latest）瞬间才跳到 client 尺寸 → reflow 前按旧尺寸排版的帧先到客户端，造成首开可见的
+    // 一次重排。预设到目标尺寸后 attach 覆盖同值 → 零 reflow，首屏即正确。-y 减 1 = status
+    // line 占 client 底行（实测 client rows 37 → window 36 实证；ar 会话恒 status on）。
+    // 失败（会话刚被杀等）忽略——退化到原 attach 行为，PTY 尺寸仍由 latest 兜底。
+    await runTmux([
+      "resize-window",
+      "-t",
+      `${runtimeKey}:`,
+      "-x",
+      String(cols),
+      "-y",
+      String(rows - 1),
+    ]).catch(() => undefined);
+
     let exited = false;
     const exitCbs = new Set<(code: number | null) => void>();
 
@@ -199,42 +212,18 @@ export class TmuxRuntime implements RuntimeResources {
       },
     });
 
-    // proc.exited 与顶层 onExit 双挂去重（Bun 历史有 onExit 不触发 issue）；refresh 定时器
-    // 清理在此单点执行（then 回调是微任务，执行时下方 const 已初始化；重复 clear 无害）。
+    // proc.exited 与顶层 onExit 双挂去重（Bun 历史有 onExit 不触发 issue）。
     void proc.exited.then((code) => {
-      clearTimeout(refreshTimer);
       if (exited) return;
       exited = true;
       for (const cb of exitCbs) cb(code ?? null);
     });
 
-    // attach churn 全重绘：spawn 后 600ms 强制 client 全重绘一次——PTY 以 80x24 起（见上方
-    // cols/rows 默认值）而浏览器首连随即上报真实尺寸，churn 窗口内先发的帧按旧几何排版，
-    // 全重绘收尾一次消除残留。用 list-clients 枚举该会话全部 client（多 tab 多 client 一并
-    // 补发），client 已退出则失败忽略。close/onExit 时取消定时器（下方）。
-    //
-    // 注：2026-10-18 曾另加「周期 refresh-client 自愈 client-diff 失同步」层（turn 期间每 ≤5s
-    // 全重绘）——当日 A/B 取证推翻该诊断：行首残留真根因是 app 侧 xterm `convertEol: true`
-    // 误解析 tmux 的裸 LF（cud1），字节流本身正确、无失同步，已在 SessionDetailRoute 修掉。
-    // 故周期刷新层随之撤除（它是按错误根因加的，且每次全屏重绘有带宽代价）。
-    const refreshClients = () => {
-      void runTmux(["list-clients", "-t", runtimeKey, "-F", "#{client_name}"])
-        .then((result) =>
-          Promise.all(
-            result.stdout
-              .split("\n")
-              .map((line) => line.trim())
-              .filter(Boolean)
-              .map((client) => runTmux(["refresh-client", "-t", client])),
-          ),
-        )
-        .catch(() => undefined);
-    };
-    const refreshTimer = setTimeout(() => {
-      if (exited) return;
-      refreshClients();
-    }, ATTACH_REFRESH_DELAY_MS);
-
+    // 注：2026-10-18 曾有「attach 后 600ms refresh-client 全重绘」层（应对「PTY 80x24 起 vs
+    // 浏览器真实尺寸」旧时代的 churn 帧残留）与「周期 refresh-client 自愈失同步」层——前者被
+    // 2026-10-30 的 attach 前预设尺寸根治后撤除（它是其补救层，且每次 attach 一次无谓全屏
+    // 重绘），后者同日 A/B 取证推翻（行首残留真根因是 convertEol，见 SessionDetailRoute 注释）
+    // 后撤除。勿再按旧根因加回。
     return {
       write(data) {
         if (exited) return;
@@ -253,7 +242,6 @@ export class TmuxRuntime implements RuntimeResources {
         }
       },
       close() {
-        clearTimeout(refreshTimer);
         if (exited) return;
         try {
           proc.kill("SIGTERM");

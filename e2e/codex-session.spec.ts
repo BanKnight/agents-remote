@@ -298,7 +298,7 @@ test("Codex: session detail renders stream (echo, reasoning, text, Bash card, ap
     .toBeTruthy();
 
   // 发送路径：composer → user 帧上行（echo/turn 回放由 mock 服务端角色承担，不在本 spec）。
-  const chatInput = page.getByPlaceholder("Ask Claude...");
+  const chatInput = page.getByPlaceholder("Ask Codex...");
   await expect(chatInput).toBeVisible({ timeout: 15_000 });
   await chatInput.fill("ping codex");
   await chatInput.press("Enter");
@@ -337,7 +337,7 @@ test("Codex: skills slash popover lists directory and Enter submits /name", asyn
 
   await page.goto(`/projects/${projectName}/session/${fakeSessionId}`);
 
-  const chatInput = page.getByPlaceholder("Ask Claude...");
+  const chatInput = page.getByPlaceholder("Ask Codex...");
   await expect(chatInput).toBeVisible({ timeout: 15_000 });
 
   // 输入 / → 弹层列出 skills 目录（label = /name + description，共享 TriggerPopoverItemRow 行）。
@@ -407,7 +407,7 @@ test("Codex: @ file popover searches via WS and Enter inserts @path without send
   });
   await page.goto(`/projects/${projectName}/session/${fakeSessionId}`);
 
-  const chatInput = page.getByPlaceholder("Ask Claude...");
+  const chatInput = page.getByPlaceholder("Ask Codex...");
   await expect(chatInput).toBeVisible({ timeout: 15_000 });
 
   // 输入 @sr → 防抖 + WS 往返 → 弹层列出相对路径。

@@ -120,7 +120,7 @@ function ComposerWithInterruptAcp({
   return (
     <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
       <ComposerPrimitive.Input
-        placeholder={disconnected ? t("claude.disconnected") : t("claude.inputPlaceholder")}
+        placeholder={disconnected ? t("claude.disconnected") : t("acp.inputPlaceholder")}
         disabled={inputDisabled}
         unstable_insertNewlineOnTouchEnter
         className="block min-h-[2.5rem] max-h-32 sm:min-h-[4.5rem] w-full resize-none bg-transparent px-3.5 pt-2.5 pb-1 text-sm text-on-surface placeholder:text-on-surface-muted outline-none"
