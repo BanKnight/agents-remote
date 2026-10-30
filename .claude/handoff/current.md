@@ -1,18 +1,37 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-30 13:10（两项优化落地：placeholder 按 provider + terminal 首开尺寸根因修复）
+> 最后更新：2026-10-30 14:10（cbe0b72：resize-window 预设的 manual 副作用修复——折叠 composer 后终端不跟随 resize）
 
 ## 一句话状态
 
-**用户报的两个体验问题已修（`ad5ec43`）：① composer placeholder 按 provider 区分
-（codex/pi/acp 不再借用「向 Claude 提问」）；② terminal 首开尺寸重排根因修复（attach 前
-resize-window 预设 + 撤 600ms churn 层）。门禁全绿（web 1009 / api / shared，受影响 e2e
-10/10：codex-session 6 + acp 2 + codex-history 2），ar-dev 已 respawn 交付。批 G 及此前
-批次保持完成态，待真机验收（清单见下，新增 12/13 两条）。**
+**用户真机反馈「terminal 内容没填满，缺口 = 折叠 composer 空间」已修（`cbe0b72`）：
+根因 = `ad5ec43` 的 attach 前 resize-window 预设把 tmux session 的 window-size 覆写成
+manual（探针实证），window 锁死在首帧预设尺寸、后续 resize 上行全部不跟随。修复 = 预设
+后立即 set-option window-size latest 恢复自动跟随（探针实证展开/折叠全程跟随 + 首开零
+reflow 收益保留）。门禁全绿（api 1228 / shared 11 / web 1009），ar-dev 已 respawn 交付。**
+此前 `ad5ec43` 两项（placeholder 按 provider + 首开尺寸）保持完成态，待真机验收（清单 13 条）。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
+
+- **resize-window 的 manual 副作用（勿再犯，2026-10-30 真机反馈取证）**：`tmux resize-window
+  -x/-y` 会把 session 级 `window-size` option 从 latest 覆写成 **manual**（display-message
+  `#{window_size}` 可验）——window 尺寸从此固定，latest 的「跟随 client resize」自动行为整个
+  失效。任何用 resize-window 预设尺寸的地方，**预设后必须紧跟 set-option window-size latest
+  恢复**（attach 预设场景：无 client 时 latest 不改尺寸，预设值保持到 attach 同值覆盖）。
+- **诊断方法论**：第一轮探针（静态点折叠/展开，Chromium）全绿没复现——因为探针的 localStorage
+  无持久化态、首帧折叠 = 预设 = 后续同值，锁死不可见。用户场景（localStorage 存了展开态 →
+  首帧矮容器预设 → 折叠变高）才触发。**tmux window 真值必须量**（runtimeKey 不在 DTO，用
+  `tmux list-sessions` create 前后快照差找新会话名；before 快照必须在 create 之前取）。
+- **terminal 首开重排根因（`ad5ec43`，仍有效）**：tmux window 以 new-session 固定起步尺寸
+  （-x 200 -y 50）排版旧屏，attach（window-size=latest）瞬间才跳 client 尺寸 → reflow 前旧
+  尺寸帧先到。修复 = attach 前 resize-window 预设（-y-1 = status line 占 client 底行），
+  cbe0b72 补上恢复 latest。600ms churn refresh 层已撤，勿按旧根因加回（代码注释有锚）。
+- **placeholder 拆分原则**：每个 provider 一把 key（`claude/codex/pi/acp.inputPlaceholder`），
+  `claude.disconnected`（"正在建立连接中…"）中性复用保留。ACP 是通用协议无具名 agent →
+  "Ask Agent..." 中性文案。
+- **i18n 类型单源是 en.ts**（`TranslationKey = keyof typeof en`）：加 key 两文件都要加。
 
 - **terminal 首开重排根因（探针取证，勿再误诊）**：`terminalSizeRef` 机制一直正常（首连
   URL 实测带 147x37）。真根因 = tmux window 以 `new-session -d -x 200 -y 50` 固定起步尺寸
@@ -28,12 +47,14 @@ resize-window 预设 + 撤 600ms churn 层）。门禁全绿（web 1009 / api / 
 
 ### 进度
 
-- ✅ 真实链路诊断探针（自建 test terminal 会话 + WS hook + tmux 窗口采样）：URL 尺寸 ✓ /
-  resize 上行 1 次同值 ✓ / window 轨迹 200x50→147x36 实锤 / 首帧 ≥ resize 上行 ✓
-- ✅ `ad5ec43` 两项修复 + 受影响 e2e 同步（codex「Ask Codex...」4 处、acp「Ask Agent...」1 处）
-- ✅ 门禁：format/lint/typecheck 全绿；test web 1009 / api / shared 全过；CSS 硬闸过；
-  tokens 机检 report-only（既有豁免项）
-- ✅ ar-dev respawn（api+web）；产物 rg 实证含三个新 i18n 值且 chunk 200
+- ✅ 诊断探针三轮（`scripts/_diag-terminal-collapse.mjs`，工作区留存未入库）：① 静态折叠/
+  展开 Chromium 全绿（复现不了）；②③ 补量 tmux window 真值（修 before 快照时序）→ 实锤
+  window-size 被覆写 manual、展开 147x35 上行后 window 锁死 41 行不跟随
+- ✅ `cbe0b72` 修复（预设后 set-option latest 恢复）：探针复验展开 147x35 → window 147x34、
+  折叠回 147x42 → 147x41、reload 同值，全程跟随；首开零 reflow 收益保留
+- ✅ 门禁全绿：format/lint/typecheck；api 1228 / shared 11 / web 1009 全过
+- ✅ ar-dev api 已 respawn（web 无改动）
+- ✅（前批）`ad5ec43` 两项修复 + 受影响 e2e 同步 + 产物实证
 
 ### 阻塞 / 风险
 
@@ -95,9 +116,10 @@ resize-window 预设 + 撤 600ms churn 层）。门禁全绿（web 1009 / api / 
     ℹ 信息面行）；打开后 turn 失败自动注入重试消息，面板上方出现待发倒计时条
     （取消 / 立即重试）；终端形态 codex 无开关（预期）。
 
-**两项优化（ad5ec43，新增）**：
-12. terminal 会话首开：首屏内容一次成形、无「先错乱后重排」的跳变（桌面 + 真机各验一次；
-    若仍有重排，可能是预设失败的容错分支，回报现象即可）。
+**两项优化（ad5ec43 + cbe0b72 修订，新增）**：
+12. terminal 会话首开：首屏内容一次成形、无「先错乱后重排」的跳变；**且首帧为展开态时
+    折叠 composer → 终端内容跟着长高填满、无底部留白**（cbe0b72 修的场景；验证前可在
+    会话里展开一次输入框再刷新页面，让 localStorage 存住展开态，再折叠观察）。
 13. composer placeholder 按 provider 区分：codex「向 Codex 提问...」/ pi（chat 会话）
     「向 pi 提问...」/ ACP「向 Agent 提问...」/ claude 不变「向 Claude 提问...」。
 
