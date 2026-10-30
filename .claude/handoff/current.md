@@ -117,9 +117,8 @@ reflow 收益保留）。门禁全绿（api 1228 / shared 11 / web 1009），ar-
     （取消 / 立即重试）；终端形态 codex 无开关（预期）。
 
 **两项优化（ad5ec43 + cbe0b72 修订，新增）**：
-12. terminal 会话首开：首屏内容一次成形、无「先错乱后重排」的跳变；**且首帧为展开态时
-    折叠 composer → 终端内容跟着长高填满、无底部留白**（cbe0b72 修的场景；验证前可在
-    会话里展开一次输入框再刷新页面，让 localStorage 存住展开态，再折叠观察）。
+12. ✅ 已真机验收（2026-10-30 用户确认）：terminal 会话首开一次成形无重排；展开态首帧
+    折叠 composer → 终端跟着长高填满无留白。
 13. composer placeholder 按 provider 区分：codex「向 Codex 提问...」/ pi（chat 会话）
     「向 pi 提问...」/ ACP「向 Agent 提问...」/ claude 不变「向 Claude 提问...」。
 
