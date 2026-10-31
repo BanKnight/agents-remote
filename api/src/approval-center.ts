@@ -5,7 +5,7 @@ import type {
   ApprovalsStreamServerMessage,
   ClaudeControlResponse,
 } from "@agents-remote/shared";
-import type { AgentProvider } from "@agents-remote/shared";
+import type { ApprovalSource } from "@agents-remote/shared";
 import { isOneClickApprovable } from "@agents-remote/shared";
 import { ApprovalRegistry, summarizeControlInput, type ApprovalRecord } from "./approval-registry";
 import type { AuthService } from "./auth";
@@ -27,7 +27,7 @@ type UpgradeServer = {
 };
 
 /** provider 化 transport 钩子（codex 批）：审批应答的探活 + 投递按 provider 派发。 */
-type ApprovalTransportHooks = {
+export type ApprovalTransportHooks = {
   listAliveRuntimeKeys(): Promise<Set<string>>;
   /** 投递应答（claude 写 control_response JSON 行；codex 回 JSON-RPC response）。 */
   deliverResponse(record: ApprovalRecord, decision: "allow" | "deny"): Promise<void>;
@@ -49,7 +49,7 @@ type ApprovalTransportHooks = {
 export class ApprovalCenter {
   readonly registry = new ApprovalRegistry();
   private readonly sockets = new Set<ApprovalSocket>();
-  private readonly transports = new Map<AgentProvider, ApprovalTransportHooks>();
+  private readonly transports = new Map<ApprovalSource, ApprovalTransportHooks>();
   private broadcasting = false;
   private dirty = false;
 
@@ -85,8 +85,8 @@ export class ApprovalCenter {
     });
   }
 
-  /** codex 批：挂非 claude transport 钩子（provider 作 key）。 */
-  registerTransport(provider: AgentProvider, hooks: ApprovalTransportHooks): void {
+  /** codex 批：挂非 claude transport 钩子（provider 作 key；admin 服务同样挂这里）。 */
+  registerTransport(provider: ApprovalSource, hooks: ApprovalTransportHooks): void {
     this.transports.set(provider, hooks);
   }
 

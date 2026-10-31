@@ -564,7 +564,7 @@ export class CodexRuntime {
       [
         ...this.command,
         ...codexConfigOverrideArgs(prepared.configOverrides),
-        ...this.mcpArgs(target.projectName),
+        ...this.mcpArgs(target.projectName, target.sessionId),
       ],
       {
         cwd: target.projectPath,
@@ -896,13 +896,16 @@ export class CodexRuntime {
 
   /** MCP 注入 argv（批 E）：`-c mcp_servers.ar-hub.url=…`。chat 直拉与 terminal（tmux
    *  TUI）两形态共用；mcpPort 未配置 = []（agent 仍能跑，能力降级不失败）。 */
-  mcpArgs(projectName: string): string[] {
+  mcpArgs(projectName: string, sessionId?: string): string[] {
     if (!this.mcpPort) return [];
     const profile = getAgentProviderProfile("codex");
     if (!profile) return [];
     const injector = buildMcpInjectorForProvider(profile);
     if (!injector || !injector.canInject(profile)) return [];
-    return injector.buildMcpConfig({ project: projectName, mcpPort: this.mcpPort })?.args ?? [];
+    return (
+      injector.buildMcpConfig({ project: projectName, mcpPort: this.mcpPort, sessionId })?.args ??
+      []
+    );
   }
 
   /** 拉账号额度并回灌 config 帧（批 E 防御式）。端点仅 ChatGPT 登录可用（apiKey/网关

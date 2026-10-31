@@ -62,7 +62,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { handleSessionRoutes } from "./session-routes";
-import { SessionRegistry, type RuntimeResources } from "./session-registry";
+import { SessionRegistry, type RuntimeResources, type SessionMetadata } from "./session-registry";
 import { SessionShellHub } from "./session-shell-hub";
 import { ChatSessionRegistry, DEFAULT_CHAT_TITLE } from "./chat-session-registry";
 import { handleChatSessionRoutes } from "./chat-session-routes";
@@ -102,6 +102,7 @@ import {
   startMcpHubServer,
   wikiPageStructuredContent,
 } from "./mcp-hub-server";
+import { McpAdminApprovalService } from "./mcp-admin-approval";
 import { readProjectMcpConfig } from "./mcp-config";
 import { canUpgradeWebSocket } from "./ws-auth";
 
@@ -2510,6 +2511,70 @@ export const startApi = async () => {
   });
   const projectGitDiffService = new ProjectGitDiffService(config.projectsRoot);
   const projectGitWriteService = new ProjectGitWriteService(config.projectsRoot);
+  // admin 管理面的审批挂起服务：attach 到审批中心（provider "mcp-admin" transport），
+  // 探活复用 runtime 聚合（审批卡落发起会话名下，respond 探活探发起会话）。
+  const mcpAdminApprovalService = new McpAdminApprovalService(approvalCenter);
+  mcpAdminApprovalService.attach(
+    async () => (await runtime.listAliveRuntimeKeys?.()) ?? new Set<string>(),
+  );
+  // admin 向活 agent 会话投递文本（session_send 执行段）：按 provider 分流到各发送通道，
+  // 全部仅活会话语义（与 REST 注入先例 index.ts D13 同款）；错误统一带 code（admin 面
+  // adminErrorResponse 映射 [CODE] message）。terminal 无无状态注入口 → 明确不支持。
+  const adminSendToAgent = async (metadata: SessionMetadata, text: string): Promise<void> => {
+    if (metadata.type !== "agent") {
+      throw Object.assign(new Error("Terminal sessions are not sendable"), {
+        code: "SESSION_TYPE_INVALID",
+      });
+    }
+    if (metadata.provider === "claude") {
+      const result = await claudeStreamController.injectUserPrompt(
+        metadata.projectName,
+        metadata.id,
+        text,
+      );
+      if (!result.delivered) {
+        const message =
+          result.reason === "session_not_found"
+            ? "Claude session is not live"
+            : result.reason === "terminal_mode"
+              ? "Session is in terminal mode"
+              : "Prompt text is empty";
+        const code =
+          result.reason === "session_not_found"
+            ? "SESSION_NOT_FOUND"
+            : result.reason === "terminal_mode"
+              ? "SESSION_STATE_CONFLICT"
+              : "SESSION_TYPE_INVALID";
+        throw Object.assign(new Error(message), { code });
+      }
+      return;
+    }
+    if (metadata.provider === "codex") {
+      try {
+        codexRuntime.write(metadata.runtimeKey, text);
+      } catch {
+        throw Object.assign(new Error("Codex session is not running"), {
+          code: "SESSION_STATE_CONFLICT",
+        });
+      }
+      return;
+    }
+    // ACP 家族按 transport 分流（与 startAgent 同谓词；omp 现役）。
+    const provider = metadata.provider;
+    if (provider && getAgentProviderProfile(provider)?.transport === "acp") {
+      try {
+        acpRuntime.write(metadata.runtimeKey, text);
+      } catch {
+        throw Object.assign(new Error("Session is not running"), {
+          code: "SESSION_STATE_CONFLICT",
+        });
+      }
+      return;
+    }
+    throw Object.assign(new Error(`Provider ${metadata.provider ?? "unknown"} is not sendable`), {
+      code: "SESSION_TYPE_INVALID",
+    });
+  };
   // admin capture 快照源：窄化不跨函数体，先存方法引用再判空。
   const tmuxCapture = runtime.capture;
   const adminCaptureRuntime = tmuxCapture
@@ -2532,11 +2597,14 @@ export const startApi = async () => {
     // 画布四工具(create_diagram/read_scene/apply_operations/export_diagram)数据源。
     // service 无状态(构造只存 root),与 HTTP 面实例并存。
     canvasService: projectCanvasService,
-    // admin capability(跨项目观察/管理)依赖。captureRuntime 供 terminal 会话读快照。
+    // admin capability(跨项目观察/管理)依赖。captureRuntime 供 terminal 会话读快照;
+    // approvalService 承载管理面审批闸;sendToAgent 是 session_send 的执行通道。
     adminDeps: {
       projectService,
       sessionRegistry,
       captureRuntime: adminCaptureRuntime,
+      approvalService: mcpAdminApprovalService,
+      sendToAgent: adminSendToAgent,
     },
   });
   // 全局 idleTimeout：MCP 同步 spawn（mcp-management runCliTool 默认 60s）静默期需覆盖，

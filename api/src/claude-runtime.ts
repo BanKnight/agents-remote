@@ -851,7 +851,7 @@ export class ClaudeRuntime implements RuntimeResources {
 
     // MCP hub 注入:按 provider 取注入器构造 --mcp-config args。
     // mcpPort 未配置或 runtime 不支持 → mcpArgs 空,agent 不连 hub(降级,不阻塞 spawn)。
-    const mcpArgs = this.buildMcpArgs(projectName);
+    const mcpArgs = this.buildMcpArgs(projectName, claudeSessionId);
 
     // gen-ui skill 交付(capability 开启时幂等写 .claude/skills/gen-ui/SKILL.md;
     // 内部吞错只记日志——skill 缺失降级为 agent 不知道 gen-ui,绝不阻塞 spawn)。
@@ -942,13 +942,17 @@ export class ClaudeRuntime implements RuntimeResources {
    * mcpPort 未配置(0/undefined)或 injector 不可用 → 返回 [],agent 不连 hub(降级,不阻塞 spawn)。
    * ClaudeRuntime 是 claude 专用,provider 恒为 claude;injector 注册表供未来 CodexRuntime 复用。
    */
-  private buildMcpArgs(projectName: string): string[] {
+  private buildMcpArgs(projectName: string, sessionId?: string): string[] {
     if (!this.mcpPort || projectName.length === 0) return [];
     const profile = getAgentProviderProfile("claude");
     if (!profile) return [];
     const injector = buildMcpInjectorForProvider(profile);
     if (!injector) return [];
-    const config = injector.buildMcpConfig({ project: projectName, mcpPort: this.mcpPort });
+    const config = injector.buildMcpConfig({
+      project: projectName,
+      mcpPort: this.mcpPort,
+      sessionId,
+    });
     return config?.args ?? [];
   }
 
@@ -1009,6 +1013,8 @@ export class ClaudeRuntime implements RuntimeResources {
    *  模型别名查表出规范名（与 headless spawn 同源映射，消 CLI 自身别名表的网关 422 面）；
    *  effort 缺省回落 settings 默认（resolveSpawnInputs 同源）。 */
   async resolveTuiSpawn(metadata: {
+    /** ar 会话 id（admin 审批卡 origin 身份）；缺省 URL 不带 ?origin=。 */
+    id?: string;
     projectName: string;
     projectPath: string;
     claudeSessionId?: string;
@@ -1036,7 +1042,7 @@ export class ClaudeRuntime implements RuntimeResources {
       permissionMode: metadata.permissionMode,
       effort: resolvedEffort,
       settingsPath: metadata.settingsPath,
-      mcpArgs: this.buildMcpArgs(metadata.projectName),
+      mcpArgs: this.buildMcpArgs(metadata.projectName, metadata.id),
     });
   }
 

@@ -8,6 +8,7 @@ import type {
   ApprovalSummary,
   ApprovalsStreamServerMessage,
 } from "@agents-remote/shared";
+import { MCP_ADMIN_MANAGE_TOOLS } from "@agents-remote/shared";
 
 import { approvalsStreamUrl, fetchApprovals, respondApproval } from "../api/client";
 
@@ -105,13 +106,16 @@ export function useRespondApproval() {
   });
 }
 
-/** 审批卡片 hot 高亮判定（11 原型 cmd.hot 强写红）：写文件族工具恒红；Bash 按内容启发
+/** 审批卡片 hot 高亮判定（11 原型 CLI 卡的 cmd.hot 强写红）：写文件族工具恒红；Bash 按内容启发
  * rm / git push（原型仅 git push 卡明确红，机械规则记档）。桌面 ApprovalPopover 与移动
- * MobileApprovalSheet 共用单源。 */
+ * MobileApprovalSheet 共用单源。admin 管理卡恒红（project_delete 销毁性最强，管理面
+ * 一律按破坏面提示）。 */
 const HOT_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 const HOT_COMMAND_RE = /\b(rm|git push)\b/;
+const ADMIN_HOT_TOOLS = new Set(MCP_ADMIN_MANAGE_TOOLS);
 
 export function isHotTool(item: ApprovalSummary): boolean {
+  if (ADMIN_HOT_TOOLS.has(item.toolName)) return true;
   if (HOT_TOOLS.has(item.toolName)) return true;
   if (item.toolName === "Bash") return HOT_COMMAND_RE.test(item.inputSummary);
   return false;

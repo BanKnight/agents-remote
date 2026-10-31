@@ -24,7 +24,20 @@ export type BuildMcpConfigOptions = {
   project: string;
   /** hub server 端口(绑 127.0.0.1)。 */
   mcpPort: number;
+  /**
+   * 发起会话 id（admin 管理面的审批卡身份）。存在时 hub URL 加 `?origin=<sessionId>`；
+   * 缺省（兼容面：E2E/测试/旧调用方）URL 与旧版逐字节一致。
+   */
+  sessionId?: string;
 };
+
+/**
+ * hub 工具超时（admin 审批挂起窗最长 120s，client 超时必须盖过它——否则 CLI 先掐
+ * tools/call 请求，审批卡还在用户面前工具调用已失败）。覆盖 120s 审批窗 + 应答/执行余量。
+ */
+export const MCP_HUB_TOOL_TIMEOUT_MS = 180_000;
+/** codex `-c` 覆盖用秒数（0.163 的 tool_timeout_sec 单位是秒）。 */
+const MCP_HUB_TOOL_TIMEOUT_SECONDS = 180;
 
 export interface McpInjector {
   /** 该 runtime 是否支持 MCP 注入(不支持则 spawn 不带 --mcp-config,agent 仍能跑)。 */
@@ -39,6 +52,7 @@ type ClaudeMcpConfigJson = {
     "ar-hub": {
       type: "http";
       url: string;
+      toolTimeoutMs: number;
       headers?: Record<string, string>;
     };
   };
@@ -50,12 +64,17 @@ export class ClaudeMcpInjector implements McpInjector {
     return profile.provider === "claude";
   }
 
-  buildMcpConfig({ project, mcpPort }: BuildMcpConfigOptions): McpSpawnConfig | null {
+  buildMcpConfig({ project, mcpPort, sessionId }: BuildMcpConfigOptions): McpSpawnConfig | null {
+    // `?origin=` 传发起会话身份（admin 管理面审批卡落发起会话名下）；无 sessionId 时 URL 与旧版一致。
+    const url = `http://127.0.0.1:${mcpPort}/mcp/${encodeURIComponent(project)}${
+      sessionId ? `?origin=${encodeURIComponent(sessionId)}` : ""
+    }`;
     const config: ClaudeMcpConfigJson = {
       mcpServers: {
         "ar-hub": {
           type: "http",
-          url: `http://127.0.0.1:${mcpPort}/mcp/${encodeURIComponent(project)}`,
+          url,
+          toolTimeoutMs: MCP_HUB_TOOL_TIMEOUT_MS,
         },
       },
     };
@@ -77,11 +96,16 @@ export class CodexMcpInjector implements McpInjector {
     return profile.provider === "codex";
   }
 
-  buildMcpConfig({ project, mcpPort }: BuildMcpConfigOptions): McpSpawnConfig | null {
+  buildMcpConfig({ project, mcpPort, sessionId }: BuildMcpConfigOptions): McpSpawnConfig | null {
+    const url = `http://127.0.0.1:${mcpPort}/mcp/${encodeURIComponent(project)}${
+      sessionId ? `?origin=${encodeURIComponent(sessionId)}` : ""
+    }`;
     return {
       args: [
         "-c",
-        `mcp_servers.ar-hub.url="http://127.0.0.1:${mcpPort}/mcp/${encodeURIComponent(project)}"`,
+        `mcp_servers.ar-hub.url="${url}"`,
+        "-c",
+        `mcp_servers.ar-hub.tool_timeout_sec=${MCP_HUB_TOOL_TIMEOUT_SECONDS}`,
       ],
     };
   }

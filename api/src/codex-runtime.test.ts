@@ -1178,9 +1178,10 @@ describe("CodexRuntime 批 E（compact / steer / MCP 注入 / 账号额度）", 
         m.type === "codex_event" &&
         (m.event as Record<string, unknown>).method === "item/completed",
     ) as { event: { params: { item: { text?: string } } } };
-    // fake 回显 process.argv：注入串（TOML 值带引号，探针 E1 实证形状）必须在。
+    // fake 回显 process.argv：注入串（TOML 值带引号，探针 E1 实证形状）必须在；
+    // admin origin 穿线后 spawn argv 带 ?origin=<sessionId>（批次 2）。
     expect(completed.event.params.item.text).toContain(
-      '-c mcp_servers.ar-hub.url="http://127.0.0.1:43011/mcp/p1"',
+      '-c mcp_servers.ar-hub.url="http://127.0.0.1:43011/mcp/p1?origin=s-e4"',
     );
     await runtime.close("k-e4");
   });

@@ -1,4 +1,4 @@
-import type { AgentProvider, ApprovalSummary } from "@agents-remote/shared";
+import type { ApprovalSource, ApprovalSummary } from "@agents-remote/shared";
 
 /**
  * M5-b 审批中心登记表（docs/design/redesign-v2.md §6.4）。
@@ -20,8 +20,8 @@ export type ApprovalRecord = {
   /** input 一行摘要（原型 11 acard .cmd）。 */
   inputSummary: string;
   createdAt: string;
-  /** 审批来源 provider（claude=control_request；codex=requestApproval）；缺省 claude。 */
-  provider?: AgentProvider;
+  /** 审批来源 provider（claude=control_request；codex=requestApproval；admin=hub 管理工具）；缺省 claude。 */
+  provider?: ApprovalSource;
 };
 
 /** 摘要截断上限：一行 mono 摘要的 payload 上界（超出以 … 收尾）。 */

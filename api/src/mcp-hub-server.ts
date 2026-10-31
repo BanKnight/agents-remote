@@ -880,6 +880,7 @@ const buildRequestServer = (
   home: string,
   adminEnabled: boolean,
   adminDeps: McpAdminDeps | undefined,
+  originSessionId: string | undefined,
 ): McpServer => {
   const server = new McpServer(
     { name: "ar-hub", version: "0.0.0" },
@@ -929,7 +930,7 @@ const buildRequestServer = (
     registerCanvasTools(server, project, canvasService);
   }
   if (adminEnabled && sessionRegistry && adminDeps) {
-    registerAdminTools(server, adminDeps);
+    registerAdminTools(server, adminDeps, { originProject: project, originSessionId });
   }
   return server;
 };
@@ -996,6 +997,9 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
 
       // 4. 无状态:每请求新建 transport + McpServer,不缓存、不返 session id。
       try {
+        // admin 工具面的发起者身份：URL `?origin=<sessionId>`（旧 URL 无 query = 无身份,
+        // 管理面拒绝、观察面不受影响）。parseProjectFromUrl 零改动。
+        const originSessionId = url.searchParams.get("origin") ?? undefined;
         const transport = new WebStandardStreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
         });
@@ -1013,6 +1017,7 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
           home,
           adminEnabled,
           adminDeps,
+          originSessionId,
         );
         await mcp.connect(transport);
         return await transport.handleRequest(req);

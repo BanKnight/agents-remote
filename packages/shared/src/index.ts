@@ -558,6 +558,21 @@ export type SaveFileResponse = {
 // 归一化为 "omp"（见 api/src/session-registry.ts）。
 export type AgentProvider = "claude" | "codex" | "omp";
 
+// admin 工具面的审批来源（ar-hub MCP 管理工具的审批卡）：不是 CLI provider，是 hub
+// 工具面身份——复用审批中心的卡片/快照/应答管道，provider 字段只作 transport 派发 key
+// （审批中心 transports 的 Map key 与 respond 派发同键），不进 AgentProvider 穷举。
+export const MCP_ADMIN_PROVIDER = "mcp-admin";
+export type ApprovalSource = AgentProvider | typeof MCP_ADMIN_PROVIDER;
+
+/** admin 管理面 5 工具名（全部走审批；web isHotTool 破坏面判定与 api 注册面单源）。 */
+export const MCP_ADMIN_MANAGE_TOOLS = [
+  "project_create",
+  "project_delete",
+  "session_create",
+  "session_close",
+  "session_send",
+];
+
 // provider 的协议/传输家族——provider 粒度 = CLI，transport 才是「用什么协议对接」。
 // 原定义在 api/src/agent-provider-profiles.ts，因 web 消费 agent-providers 枚举投影下沉 shared。
 export type AgentProviderTransport = "claude" | "codex" | "acp";
@@ -2877,8 +2892,8 @@ export type ApprovalSummary = {
   createdAt: string;
   /** runtime 存活；false = 断线冻结（卡片置灰禁响应）。 */
   runtimeAlive: boolean;
-  /** 审批来源 provider（托盘 icon 分流用）；缺省 claude（存量兼容）。 */
-  provider?: AgentProvider;
+  /** 审批来源 provider（托盘 icon 分流用）；缺省 claude（存量兼容）。admin 工具卡 = "mcp-admin"。 */
+  provider?: ApprovalSource;
 };
 
 export type ApprovalsSnapshotResponse = {
