@@ -17,6 +17,7 @@
 - [pwa-console-shell](./pwa-console-shell/spec.md) — 定义 PWA 控制台外壳的安装能力、service worker 静态资源缓存边界、深色移动端优先体验、响应式可用性和通知延后边界。
 - [git-diff-viewer](./git-diff-viewer/spec.md) — 定义 Project console Git diff viewer 的只读边界、非 Git 状态、worktree/staged 变更列表、basic status、单文件 unified diff、移动端直接二级页/deep diff detail 和 Project-scoped 安全要求。
 - [mobile-session-interaction](./mobile-session-interaction/spec.md) — 定义手机竖屏 Session detail 的紧凑返回 header、终端输出、非遮挡输入区、多行显式发送、默认快捷键和恢复状态要求。
+- [mcp-hub-admin](./mcp-hub-admin/spec.md) — 定义 ar-hub admin capability 的跨项目观察/管理工具面、管理操作审批闸、origin 会话身份注入、审批超时链和 session_read/send 的 provider 行为契约。
 - [service-access-boundary](./service-access-boundary/spec.md) — 定义 `web`/`api` 服务拆分、统一同域入口、`/api` HTTP/WebSocket 路径和部署层职责边界。
 - [session-runtime](./session-runtime/spec.md) — 定义 Agent/Terminal Session 的身份分层、runtime metadata、tmux resource、reconnect、close、Terminal workspace instances list 和 Project-scoped shell/provider 会话行为契约。
 - [workspace-foundation](./workspace-foundation/spec.md) — 定义第一轮 monorepo 工作区、Bun 命令面、前端基础、共享类型边界和基础质量入口。
