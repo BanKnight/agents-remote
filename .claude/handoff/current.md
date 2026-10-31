@@ -54,7 +54,7 @@
 ### 阻塞 / 风险
 
 - 无阻塞。**待用户拍板**：
-  - 本地领先 origin 8 commits（a6dfe23…d939f33）未推——push 是外发动作，等用户确认。
+  - ~~push~~：✅ 已推（2026-11-01 用户确认，`283b52f..aba98a7` 9 commits 上远端）。
   - `?? wiki/` 目录 git 归属（入库 vs gitignore）——非本批产物，未 add。
   - 留观旧项（from 前批）：真机验收清单 13（placeholder 文案）；探针 DELETE 自建
     terminal 会话 500（兜底分支穿透，修复选项待拍板）；test 项目残留 tmux 会话
@@ -64,7 +64,7 @@
 
 ## 下一步
 
-1. 用户拍板：push 8 commits / wiki/ 归属 / 旧留观三项。
+1. 用户拍板：wiki/ 归属 / 旧留观三项。
 2. （可选）真机体验 admin 全链：test 项目 mcp.json 加 `admin:true` → 起 claude 会话
    让它调 project_create → 浏览器审批中心点允许。
 3. OPC 多 agent 编排下一阶段（跨项目维护能力已具备工具面基座）。
