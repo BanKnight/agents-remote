@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "re
 
 import { useT } from "../../i18n";
 import { uploadFileWithProgress } from "@/api/client";
-import { attachDebug } from "@/lib/use-attach-debug";
 import { useHScroll } from "@/hooks/use-h-scroll";
 import { LucideIcon } from "@/components/shell/lucide-icon";
 import { cn } from "@/lib/utils";
@@ -161,24 +160,12 @@ export async function normalizeImageFile(file: File): Promise<{
   data: string;
   dataUrl: string;
 }> {
-  const t0 = performance.now();
-  attachDebug({ stage: "start", name: file.name, size: file.size });
   let bitmap: ImageBitmap | null = null;
   try {
     bitmap = await createImageBitmap(file);
   } catch {
     bitmap = null;
   }
-  attachDebug(
-    bitmap
-      ? { stage: "bitmap", name: file.name, ms: Math.round(performance.now() - t0) }
-      : {
-          stage: "bitmap",
-          name: file.name,
-          err: "decode-fail",
-          ms: Math.round(performance.now() - t0),
-        },
-  );
   if (!bitmap) {
     if (PASSTHROUGH_IMAGE_TYPES.has(file.type)) {
       const data = await blobToBase64(file);
@@ -186,11 +173,6 @@ export async function normalizeImageFile(file: File): Promise<{
       if (base64Bytes(data) > IMAGE_MAX_BYTES) {
         throw new Error(`image exceeds ${IMAGE_MAX_BYTES} bytes: ${file.name}`);
       }
-      attachDebug({
-        stage: "passthrough",
-        name: file.name,
-        ms: Math.round(performance.now() - t0),
-      });
       return { mediaType: file.type, data, dataUrl: `data:${file.type};base64,${data}` };
     }
     throw new Error(`unsupported image type: ${file.type || "unknown"}`);
@@ -200,11 +182,6 @@ export async function normalizeImageFile(file: File): Promise<{
       const data = await blobToBase64(file);
       // 尺寸达标 ≠ 体积达标（tEXt 块/噪声 PNG）：超限不透传，落重编码（可解码必有 bitmap）。
       if (base64Bytes(data) <= IMAGE_MAX_BYTES) {
-        attachDebug({
-          stage: "passthrough",
-          name: file.name,
-          ms: Math.round(performance.now() - t0),
-        });
         return { mediaType: file.type, data, dataUrl: `data:${file.type};base64,${data}` };
       }
     }
@@ -217,7 +194,6 @@ export async function normalizeImageFile(file: File): Promise<{
     canvas.getContext("2d")?.drawImage(bitmap, 0, 0, w, h);
     const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
     const data = dataUrl.slice(dataUrl.indexOf(",") + 1);
-    attachDebug({ stage: "encode", name: file.name, ms: Math.round(performance.now() - t0) });
     // 重编码产物兜底闸（1568px q0.8 常规远小于上限；此处防极端构造）。
     if (base64Bytes(data) > IMAGE_MAX_BYTES) {
       throw new Error(`image exceeds ${IMAGE_MAX_BYTES} bytes after re-encode: ${file.name}`);
@@ -285,12 +261,6 @@ export function useComposerAttachments({ projectName }: { projectName: string })
       // 文件上传保持串行（服务端 keepBoth 同名派生是 stat→write 窗口，并行同名会相撞）。
       const local: Promise<void>[] = [];
       let imageChain: Promise<void> = Promise.resolve();
-      // 取证打点(§22):batch 入队张数 + 链内序号,真机日志一眼分「挂死 vs 超时兜底」。
-      const imageEntries = entries.filter((e) => classifyAttachment(e.file) === "image");
-      if (imageEntries.length > 0) {
-        attachDebug({ stage: "batch", n: imageEntries.length });
-      }
-      let imageIndex = 0;
       // cap 判定基于「本批入册前」的存量:pick 已把本批 commit 进 ref,循环里直接读
       // length 会把本批算进占用——恰好满额的一批(4 张)第一圈就 break,一张都不处理
       // (2026-10-25 真实链路实锤:4 张永卡 uploading,2/3 张没事)。按入册序号放行本批,
@@ -300,19 +270,9 @@ export function useComposerAttachments({ projectName }: { projectName: string })
         if (baseCount + entryIdx >= COMPOSER_MAX_ATTACHMENTS) break;
         const kind = classifyAttachment(file);
         if (kind === "image") {
-          imageIndex += 1;
-          const seq = imageIndex;
           imageChain = imageChain.then(async () => {
-            const t0 = performance.now();
             try {
               const norm = await withTimeout(normalizeImageFile(file), `normalize ${file.name}`);
-              attachDebug({
-                stage: "ready",
-                i: seq,
-                n: imageEntries.length,
-                ms: Math.round(performance.now() - t0),
-                name: file.name,
-              });
               replace(id, {
                 status: "ready",
                 name: file.name,
@@ -321,15 +281,7 @@ export function useComposerAttachments({ projectName }: { projectName: string })
                 dataUrl: norm.dataUrl,
               });
             } catch (e) {
-              // console 留阶段线索(Safari 连 iPhone 的 Web Inspector 可查):超时/解码失败。
-              attachDebug({
-                stage: "failed",
-                i: seq,
-                n: imageEntries.length,
-                ms: Math.round(performance.now() - t0),
-                name: file.name,
-                err: String((e as Error)?.message ?? e).slice(0, 96),
-              });
+              // console 留线索(Safari 连 iPhone 的 Web Inspector 可查):超时/解码失败。
               console.error("[composer-attach] image normalize failed:", file.name, e);
               failAttachment(id);
             }
@@ -375,14 +327,8 @@ export function useComposerAttachments({ projectName }: { projectName: string })
       const target = attachmentsRef.current.find((a) => a.id === id);
       if (!target?.file || target.status !== "error") return;
       replace(id, { status: "uploading", previewUrl: URL.createObjectURL(target.file) });
-      const t0 = performance.now();
       void withTimeout(normalizeImageFile(target.file), `retry ${target.file.name}`)
         .then((norm) => {
-          attachDebug({
-            stage: "ready",
-            ms: Math.round(performance.now() - t0),
-            name: target.file?.name,
-          });
           replace(id, {
             status: "ready",
             mediaType: norm.mediaType,
@@ -391,12 +337,6 @@ export function useComposerAttachments({ projectName }: { projectName: string })
           });
         })
         .catch((e) => {
-          attachDebug({
-            stage: "failed",
-            ms: Math.round(performance.now() - t0),
-            name: target.file?.name,
-            err: String((e as Error)?.message ?? e).slice(0, 96),
-          });
           console.error("[composer-attach] image normalize retry failed:", target.file?.name, e);
           failAttachment(id);
         });

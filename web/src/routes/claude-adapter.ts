@@ -5018,7 +5018,7 @@ export function useClaudeSession(
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, []);
 
-  // 回放缓存落盘三点（use-attach-debug 同款惯例）：PWA 切后台（hidden）/ 页面卸载
+  // 回放缓存落盘三点：PWA 切后台（hidden）/ 页面卸载
   //（pagehide，iOS 回收前最后时机）/ 组件卸载（离开会话页）——pending 行窗口立即
   // flush，不等 debounce。
   useEffect(() => {
