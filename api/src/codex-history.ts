@@ -67,8 +67,9 @@ export function clearCodexHistoryCache(): void {
  * 递归收集 rollout 文件（`rollout-*.jsonl`），深度 ≤ MAX_SCAN_DEPTH。
  * 目录项只认真实目录（withFileTypes 的 symlink 不算 isDirectory → 不入递归，防环）；
  * 任一层 readdir 失败（不存在/权限）按空处理，不拖垮整体。
+ * 导出：session-reader（admin session_read 工具）按 threadId 定位单会话 rollout 复用。
  */
-async function scanRolloutFiles(dir: string, depth: number, out: string[]): Promise<void> {
+export async function scanRolloutFiles(dir: string, depth: number, out: string[]): Promise<void> {
   if (depth > MAX_SCAN_DEPTH) return;
   let entries: import("node:fs").Dirent[];
   try {

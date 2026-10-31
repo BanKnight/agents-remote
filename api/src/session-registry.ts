@@ -250,6 +250,18 @@ export class SessionRegistry {
     return this.getLiveMetadata(projectName, "agent", sessionId);
   }
 
+  /**
+   * 非探活纯读：按 (projectName, sessionId) 取 metadata，agent/terminal 均匹配。
+   * admin 工具面（session_read 等）专用——已死可恢复会话的 JSONL/rollout 仍在，
+   * 观察不应触发探活清理副作用（getLiveMetadata 的 keepIfRuntimeExists 会清死 terminal）。
+   */
+  async peekMetadata(projectName: string, sessionId: string): Promise<SessionMetadata | undefined> {
+    await this.ensureLoaded();
+    const metadata = this.index.get(sessionId);
+    if (!metadata || metadata.projectName !== projectName) return undefined;
+    return metadata;
+  }
+
   async setClaudeSessionId(
     sessionId: string,
     claudeSessionId: string,

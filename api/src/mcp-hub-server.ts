@@ -35,6 +35,7 @@ import { ProjectGitDiffService } from "./project-git-diff.js";
 import { ProjectFilesService } from "./project-files.js";
 import { ProjectWikiService } from "./project-wiki.js";
 import { listProjectMcpServers } from "./mcp-management.js";
+import { registerAdminTools, type McpAdminDeps } from "./mcp-admin-tools.js";
 import type { SessionRegistry } from "./session-registry.js";
 
 /**
@@ -79,6 +80,9 @@ export type StartMcpHubServerOptions = {
   canvasService?: ProjectCanvasService;
   // skills 全局 scope 的 home 定位(~/.claude/skills),测试注入临时目录;缺省 homedir()。
   home?: string;
+  // admin capability（跨项目观察/管理）依赖。可选:不注入则 admin 开了也不注册工具
+  // (测试可只测既有面)。
+  adminDeps?: McpAdminDeps;
 };
 
 const MCP_PATH_PREFIX = "/mcp/";
@@ -88,6 +92,12 @@ const MCP_APPS_EXTENSION = "io.modelcontextprotocol/ui";
 const MCP_APP_MIME_TYPE = "text/html;profile=mcp-app";
 /** Skills over MCP（SEP-2640）扩展标识。不声明 directoryRead(可选方法 resources/directory/read 不做)。 */
 const MCP_SKILLS_EXTENSION = "io.modelcontextprotocol/skills";
+/**
+ * hub Bun.serve 的 idleTimeout。审批挂起期间 tools/call 的 HTTP 连接无字节流动，
+ * Bun 默认 10s 会掐断挂起中的请求——提到上限 255s（主 server 先例
+ * index.ts SKILL_REQUEST_IDLE_TIMEOUT_SECONDS），覆盖 120s 审批窗 + 应答/执行余量。
+ */
+const MCP_HUB_IDLE_TIMEOUT_SECONDS = 255;
 /** SEP-2549 CacheableResult REQUIRED 字段(skills/list-get 响应;与 tools/list 同语义)。 */
 const SKILLS_TTL_MS = 300_000;
 // 模板与 HUB_UI_RESOURCES 单源已迁至 ./mcp-app-templates.ts（铺卡批,2026-10-21）:
@@ -853,7 +863,8 @@ const registerSkillResources = (
  * ui:// 资源(Host 经 resources/read 取 HTML 渲染;CLI 2.1.281 起不把 UI 资源列进
  * resources/list,故未开 ui 时无需藏资源——资源本身只在 ui 开时注册)。
  * skillsEnabled 时声明 SEP-2640 扩展(声明即 MUST 同时声明 resources capability,
- * 并实现 skills/list-get)。
+ * 并实现 skills/list-get)。adminEnabled 且 adminDeps 注入时注册跨项目观察/管理
+ * 工具面(registerAdminTools)。
  */
 const buildRequestServer = (
   project: string,
@@ -867,6 +878,8 @@ const buildRequestServer = (
   skillsEnabled: boolean,
   projectsRoot: string,
   home: string,
+  adminEnabled: boolean,
+  adminDeps: McpAdminDeps | undefined,
 ): McpServer => {
   const server = new McpServer(
     { name: "ar-hub", version: "0.0.0" },
@@ -915,6 +928,9 @@ const buildRequestServer = (
   if (canvasService && uiEnabled) {
     registerCanvasTools(server, project, canvasService);
   }
+  if (adminEnabled && sessionRegistry && adminDeps) {
+    registerAdminTools(server, adminDeps);
+  }
   return server;
 };
 
@@ -928,11 +944,13 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
     filesService,
     canvasService,
     home = homedir(),
+    adminDeps,
   } = options;
 
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port,
+    idleTimeout: MCP_HUB_IDLE_TIMEOUT_SECONDS,
     fetch: async (req) => {
       // 实际监听端口(port=0 时由 OS 分配),用于 loopback 校验 + 日志。
       const actualPort = server.port ?? port;
@@ -963,11 +981,13 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
       let wikiEnabled = false;
       let uiEnabled = false;
       let skillsEnabled = false;
+      let adminEnabled = false;
       try {
         const config = await readProjectMcpConfig(projectsRoot, project);
         wikiEnabled = config?.capabilities?.wiki === true;
         uiEnabled = config?.capabilities?.ui === true;
         skillsEnabled = config?.capabilities?.skills === true;
+        adminEnabled = config?.capabilities?.admin === true;
       } catch (error) {
         console.warn(
           `[mcp-hub] mcp.json invalid project=${project}: ${error instanceof Error ? error.message : String(error)}`,
@@ -991,6 +1011,8 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
           skillsEnabled,
           projectsRoot,
           home,
+          adminEnabled,
+          adminDeps,
         );
         await mcp.connect(transport);
         return await transport.handleRequest(req);

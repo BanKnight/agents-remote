@@ -2219,23 +2219,6 @@ export const startApi = async () => {
     },
   };
   const sessionRegistry = new SessionRegistry({ runDir: runtimePaths.runDir, runtime });
-  // MCP hub:无状态 Streamable HTTP server,绑 127.0.0.1,只给本机 agent 用。
-  // 起 hub 后,spawn agent 时 --mcp-config 注入 http://127.0.0.1:{mcpPort}/mcp/{project}。
-  // 位置在 sessionRegistry 之后(session_overview 卡数据源;返回值只在启动日志消费)。
-  const mcpHub = startMcpHubServer({
-    port: config.mcpPort,
-    projectsRoot: config.projectsRoot,
-    wikiService: projectWikiService,
-    // git display tool(git_status/git_log)数据源。service 无状态(构造只存 root),
-    // 与 HTTP 路由面的 ProjectGitDiffService 实例并存,无共享可变状态。
-    gitDiffService: new ProjectGitDiffService(config.projectsRoot),
-    sessionRegistry,
-    // read_file display tool 数据源。同上:无状态 service,与 HTTP 面实例并存。
-    filesService: new ProjectFilesService(config.projectsRoot),
-    // 画布四工具(create_diagram/read_scene/apply_operations/export_diagram)数据源。
-    // service 无状态(构造只存 root),与 HTTP 面实例并存。
-    canvasService: projectCanvasService,
-  });
   // chat 会话元数据持久目录：~/.agents-remote/chat-sessions/（跨重启保留，非 tmpfs runDir；
   // 与 pi SessionManager JSONL 历史同持久语义，设计 docs/design-v1/workbench-views.md §3.1）。
   const chatSessionsDir = resolve(homedir(), ".agents-remote/chat-sessions");
@@ -2527,6 +2510,35 @@ export const startApi = async () => {
   });
   const projectGitDiffService = new ProjectGitDiffService(config.projectsRoot);
   const projectGitWriteService = new ProjectGitWriteService(config.projectsRoot);
+  // admin capture 快照源：窄化不跨函数体，先存方法引用再判空。
+  const tmuxCapture = runtime.capture;
+  const adminCaptureRuntime = tmuxCapture
+    ? (runtimeKey: string) => tmuxCapture(runtimeKey)
+    : undefined;
+  // MCP hub:无状态 Streamable HTTP server,绑 127.0.0.1,只给本机 agent 用。
+  // 起 hub 后,spawn agent 时 --mcp-config 注入 http://127.0.0.1:{mcpPort}/mcp/{project}。
+  // 位置在 projectService 之后(admin capability 依赖它;sessionRegistry/approvalCenter
+  // 等其余数据源也均已就绪;返回值只在启动日志消费)。
+  const mcpHub = startMcpHubServer({
+    port: config.mcpPort,
+    projectsRoot: config.projectsRoot,
+    wikiService: projectWikiService,
+    // git display tool(git_status/git_log)数据源。service 无状态(构造只存 root),
+    // 与 HTTP 路由面的 ProjectGitDiffService 实例并存,无共享可变状态。
+    gitDiffService: new ProjectGitDiffService(config.projectsRoot),
+    sessionRegistry,
+    // read_file display tool 数据源。同上:无状态 service,与 HTTP 面实例并存。
+    filesService: new ProjectFilesService(config.projectsRoot),
+    // 画布四工具(create_diagram/read_scene/apply_operations/export_diagram)数据源。
+    // service 无状态(构造只存 root),与 HTTP 面实例并存。
+    canvasService: projectCanvasService,
+    // admin capability(跨项目观察/管理)依赖。captureRuntime 供 terminal 会话读快照。
+    adminDeps: {
+      projectService,
+      sessionRegistry,
+      captureRuntime: adminCaptureRuntime,
+    },
+  });
   // 全局 idleTimeout：MCP 同步 spawn（mcp-management runCliTool 默认 60s）静默期需覆盖，
   // 默认 10s 会在中途关闭连接（Empty reply）。调到 Bun.serve 上限 255s。
   // skill install/update 已异步化（POST 立即返 202 + 后台 spawn），其 SSE 进度流用

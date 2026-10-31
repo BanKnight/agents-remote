@@ -920,8 +920,11 @@ export type SkillTaskFrame = {
  *  `ui://ar-hub/*` 资源供给 + wiki 工具 UI 关联）；skills = Skills over MCP
  *  （SEP-2640 `io.modelcontextprotocol/skills` 扩展 + skills/list/get + skill:// 资源）；
  *  gen-ui = 生成式 UI（agent 生成 HTML 到 `.agents-remote/gen-ui/` + `::gen-ui` 标记 +
- *  widgetState 持久/回流，契约 docs/research/mcp-apps-hosting.md §12.4）。 */
-export type McpCapability = "wiki" | "ui" | "skills" | "gen-ui";
+ *  widgetState 持久/回流，契约 docs/research/mcp-apps-hosting.md §12.4）；
+ *  admin = 跨项目观察/管理（project_list / session_list / session_read 免审批 +
+ *  project_create / project_delete / session_create / session_close / session_send
+ *  管理类——每个管理操作登记审批中心，用户在 web 批准后才执行）。 */
+export type McpCapability = "wiki" | "ui" | "skills" | "gen-ui" | "admin";
 
 // per-project MCP 配置(PROJECTS_ROOT/{project}/.agents-remote/mcp.json)。
 // 只管能力域开关,不描述 server(hub 是单数,server 描述由基座代码 own)。
