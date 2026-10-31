@@ -1,13 +1,14 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-31（拆除 composer 抬高 bug 临时诊断件：右上角 inset 角标 + inset-report 端点）
+> 最后更新：2026-10-31（右上角调试角标全部清空：inset 件 + at2 armed attach 件均已拆除）
 
 ## 一句话状态
 
-**composer 抬高 bug 临时诊断件已拆除（右上角 inset 角标 + `/api/debug/inset-report`
-端点 + 4 route 挂载点，243 行删）；`cbe0b72` 折叠跟随修复已真机验收通过并推送
-（`283b52f`）。真机验收清单 13 条中 12 已确认，13（placeholder 文案）待确认。
-use-attach-debug（多图归一化取证，另一 bug）仍在场。**
+**右上角调试角标全部清空：composer 抬高 bug 的 inset 角标件 + 多图挂死取证的
+「at2 armed」attach 件（含 composer-attach 11 处打点、api 两个 debug 端点、
+probe-attach-debug 探针）均已按「定案整拆」处置拆除；console.error 失败线索保留。
+`cbe0b72` 折叠跟随修复已真机验收并推送。真机验收清单 13 条中 12 已确认，
+13（placeholder 文案）待确认。**
 
 ## 本 session 焦点
 
