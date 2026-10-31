@@ -48,3 +48,7 @@
 - **批 2 选区引用循环**：协议新方法 updateModelContext（页面→宿主选区上下文）+ composer「插件上下文」chip（可见可删）+ 发送时序列化进 CLI stdin prompt 的格式设计（我们上游 Claude CLI 非自控 loop，须 prompt 注入）。
 - 架构决策：MVP 流内卡片形态（每次 apply 新版本刷新），侧栏常驻面板（工作台右栏）留升级路径；**明确绕开 registerTool**（模型反调页面工具，反向调用链高成本；迂回 = agent 直调 ar-hub 工具 + 页面随工具结果刷新，ZCode 官方流程 agent 本就只调服务端工具）。
 - 一手材料：`docs/research/mcp-apps-hosting.md` §12.2 工具表全录 + §12.5 决策记录。
+
+## 2026-10-31 跨项目维护能力（agent 侧项目管理/会话管理 + 审批闸）立项讨论
+
+用户提出缺一类功能：**项目管理、会话管理（管理类，需审批）+ 查看会话输出/输入（观察类，读）**，两部分结合 = 跨项目维护（一个 agent 会话管理/观察其它项目与会话，OPC 多 agent 编排的基石）。现状盘点：审批基建已有（M5-b ApprovalRegistry 审批中心 + approvals-stream 推送 + push 通知三类触发含「等待审批」）；数据源已有（ProjectService 项目 CRUD/会话列表/关闭、agent-history JSONL 读取、GET /api/overview 聚合）；缺的是 ar-hub 工具面（现在只有 session_overview/project_settings 单项目只读）+ hub 工具调用挂起等审批的机制。待拍板：读类是否免审批、「会话输入」语义（查看 vs 发送）、跨项目范围（全部可管 vs 白名单）、capability 开关命名。
