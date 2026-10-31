@@ -1,15 +1,13 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-10-30 14:10（cbe0b72：resize-window 预设的 manual 副作用修复——折叠 composer 后终端不跟随 resize）
+> 最后更新：2026-10-31（拆除 composer 抬高 bug 临时诊断件：右上角 inset 角标 + inset-report 端点）
 
 ## 一句话状态
 
-**用户真机反馈「terminal 内容没填满，缺口 = 折叠 composer 空间」已修（`cbe0b72`）：
-根因 = `ad5ec43` 的 attach 前 resize-window 预设把 tmux session 的 window-size 覆写成
-manual（探针实证），window 锁死在首帧预设尺寸、后续 resize 上行全部不跟随。修复 = 预设
-后立即 set-option window-size latest 恢复自动跟随（探针实证展开/折叠全程跟随 + 首开零
-reflow 收益保留）。门禁全绿（api 1228 / shared 11 / web 1009），ar-dev 已 respawn 交付。**
-此前 `ad5ec43` 两项（placeholder 按 provider + 首开尺寸）保持完成态，待真机验收（清单 13 条）。
+**composer 抬高 bug 临时诊断件已拆除（右上角 inset 角标 + `/api/debug/inset-report`
+端点 + 4 route 挂载点，243 行删）；`cbe0b72` 折叠跟随修复已真机验收通过并推送
+（`283b52f`）。真机验收清单 13 条中 12 已确认，13（placeholder 文案）待确认。
+use-attach-debug（多图归一化取证，另一 bug）仍在场。**
 
 ## 本 session 焦点
 
