@@ -11,7 +11,6 @@ import { useEffect, useRef } from "react";
 import { getChatSession } from "../api/client";
 import { useT } from "../i18n";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
-import { useComposerInsetDebugBadge } from "../lib/use-composer-inset-debug-badge";
 import { useComposerDraft } from "../lib/composer-draft";
 import {
   decideDesktopEnterAction,
@@ -79,7 +78,6 @@ export function ChatSessionDetailBody({
   } = usePiSession(id);
 
   useComposerKeyboardAvoidance();
-  useComposerInsetDebugBadge();
 
   // LLM 标题已落盘 registry 元数据——失效列表 + detail query，列表页 displayName 同步刷新。
   useEffect(() => {

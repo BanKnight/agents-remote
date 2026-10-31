@@ -28,7 +28,6 @@ import {
 } from "../components/ui/composer-trigger";
 import { useT, type TranslationKey } from "../i18n";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
-import { useComposerInsetDebugBadge } from "../lib/use-composer-inset-debug-badge";
 import { useComposerDraft } from "../lib/composer-draft";
 import {
   decideDesktopEnterAction,
@@ -109,7 +108,6 @@ export function CodexChatPanel({
   });
 
   useComposerKeyboardAvoidance();
-  useComposerInsetDebugBadge();
 
   // 本次挂载后曾连上过（VirtualizedThreadContent 离线条的防伪状态门）：区分首连（turns=0
   // 显骨架）与断线重连/切换会话恢复窗口（显「离线中」条）——真机反馈 2026-10-28：切换

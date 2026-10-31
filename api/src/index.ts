@@ -303,18 +303,6 @@ export const createFetchHandler =
       return response;
     };
 
-    // 【临时诊断端点——composer 抬高 bug 取证用（2026-10-19 复发后重新启用），定案后
-    // 随前端角标（use-composer-inset-debug-badge.ts）一起拆。收 PWA 端哨兵样本，
-    // 仅打服务端日志不落盘。】
-    if (url.pathname === "/api/debug/inset-report" && request.method === "POST") {
-      const body: unknown = await request.json().catch(() => null);
-      if (!Array.isArray(body)) {
-        return new Response("expected JSON array", { status: 400 });
-      }
-      console.warn("[inset-debug]", JSON.stringify(body).slice(0, 8192));
-      return withRefresh(Response.json({ ok: true }));
-    }
-
     // 【临时诊断端点——composer 多图归一化挂死取证用(2026-10-25),定案后随前端
     // use-attach-debug.ts + composer-attach 打点一起拆。收 attach-debug 样本,仅打日志。】
     if (url.pathname === "/api/debug/attach-report" && request.method === "POST") {
