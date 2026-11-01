@@ -31,7 +31,9 @@ import { OptionMenu } from "./option-menu";
  * PermissionModeSelector/EffortSelector 的 switching spinner 语义保留）。
  */
 
-/** 双形态触发钮：.iicn（窄）/.ipill（宽）由 CSS media 互斥显隐，任一时刻仅一个可见，
+/** 双形态触发钮：.iicn（窄）/.ipill（宽）由 CSS 容器查询互斥显隐（composer 卡宽 ≥ 断点
+ * 显 .ipill，< 断点显 .iicn——分屏压窄面板自动收起；COMPOSER_DESKTOP_MIN_WIDTH_PX 只管
+ * Enter 键分族，与本切换无关），任一时刻仅一个可见，
  * button 本身做 inline-flex 正常盒（几何 = 唯一可见子）。**不能用 display:contents**——
  * 无盒元素 getBoundingClientRect() 为全零，Radix popper anchor 塌到 (0,0)，菜单被
  * collision 翻转推到视口顶（探针 anchored 断言实锤）。**forwardRef + {...rest} 透传是

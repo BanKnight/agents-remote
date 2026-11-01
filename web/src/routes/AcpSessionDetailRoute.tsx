@@ -116,7 +116,7 @@ function ComposerWithInterruptAcp({
   const showStop = running && !disconnected && !showSend && !!onCancel;
 
   return (
-    <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
+    <div className="composer-card relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
       <ComposerPrimitive.Input
         placeholder={disconnected ? t("claude.disconnected") : t("acp.inputPlaceholder")}
         disabled={inputDisabled}

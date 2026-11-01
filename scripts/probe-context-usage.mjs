@@ -206,11 +206,21 @@ try {
     `button[aria-label^="上下文占用"], button[aria-label^="Context usage"]`,
   );
 
-  // ── 1 未有标量时不渲染 ──
-  check("1 未有 context_usage 帧时不渲染指示", (await usage.count()) === 0);
+  // ── 1 未有标量时不渲染指示（批次 E 后压缩入口 trigger 恒在场，「指示」= 百分比文本；
+  //    帧前的恒在场 trigger 文本无 %）──
+  check("1 未有 context_usage 帧时不渲染指示", !((await usage.textContent()) ?? "").includes("%"));
 
-  // ── 2 首帧 31324/200k → "16%" ok 档(无 warn/danger class)──
-  await usage.waitFor({ state: "visible", timeout: 5000 });
+  // ── 2 首帧 31324/200k → "16%" ok 档(无 warn/danger class)；显式等帧到（trigger 恒
+  //    在场后 waitFor visible 不再是「帧到达」同步点）──
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector(
+        `button[aria-label^="上下文占用"], button[aria-label^="Context usage"]`,
+      );
+      return (el?.textContent ?? "").includes("16%");
+    },
+    { timeout: 5000 },
+  );
   const v1 = (await usage.textContent()) ?? "";
   const cls1 = await usage.evaluate((el) => el.innerHTML);
   check(

@@ -314,7 +314,7 @@ function ComposerWithInterruptCodex({
   };
 
   return (
-    <div className="relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
+    <div className="composer-card relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
       {/* 附件 chip 行（claude 同款）：图片缩略图 / 文件名+路径，× 移除；任一上传中暂缓发送。 */}
       {attachmentCount > 0 ? (
         <AttachmentChipRow

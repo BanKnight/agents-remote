@@ -194,8 +194,9 @@
 
   /* ---- composer 控制行小件（v1.4 03a/04/04f：窄端彩色图标 .iicn / 宽端 pill .ipill；
      发送·停止同位互斥 .send2/.send2.stopstate；几何与色语义 = design components.css
-     单源 1:1。窄端 <1024 显 .iicn、宽端 ≥1024 显 .ipill，与 COMPOSER_DESKTOP_MIN_WIDTH_PX
-     同口径的纯宽度切换，零 JS） ---- */
+     单源 1:1。显隐切换 = CSS 容器查询：composer 卡（.composer-card）宽 < 断点显 .iicn、
+     ≥ 断点显 .ipill——2026-11-01 从视口 @media ≥1024 改定（分屏压窄面板自动收起，零 JS）；
+     COMPOSER_DESKTOP_MIN_WIDTH_PX 只管 Enter 键分族（composer-enter.ts），与本切换无关） ---- */
   .iicn {
     flex: none;
     display: flex;
@@ -458,7 +459,16 @@
     border: 1.5px solid var(--sep-strong);
   }
 
-  @media (min-width: 1024px) {
+  /* 控制行显隐容器（四个 agent composer 卡片根挂 .composer-card；终端卡无切换组不挂）。
+     container-type: inline-size 要求容器自身宽度不由内容决定——卡宽由父布局给定，安全。 */
+  .composer-card {
+    container: composer-card / inline-size;
+  }
+
+  /* 宽端 pill 判定 = composer 卡自身宽。断点 512px = pill 全组自然需求宽 346px（探针
+     实测底行 max-content，2026-11-01）+ textarea 最小可用输入宽 ~165px；@container 条件
+     不能用 var()，字面量 + 此注释为定值依据。 */
+  @container composer-card (min-width: 512px) {
     .iicn {
       display: none;
     }
@@ -470,7 +480,7 @@
 
   /* 终端 composer ⚙ 键位自定义入口（2026-10-11 第三轮反馈③）：几何 = .iicn（28×28 r12）
      但**不参与宽窄端显隐切换**——恒显中性入口（无衬底 ink-2 灰），非 iicn/ipill 彩色 pill
-     家族。specificity 0,2,0 胜 media 内 .iicn{display:none} 的 0,1,0。 */
+     家族。specificity 0,2,0 胜容器查询内 .iicn{display:none} 的 0,1,0。 */
   .iicn.gear {
     display: flex;
     color: var(--ink-2);

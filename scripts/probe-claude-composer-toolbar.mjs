@@ -112,15 +112,21 @@ async function probe(browser, label, contextOptions) {
   console.log(`[${label}] focus+输入"hi"后 sendButton count = ${sendCount}`);
 
   // 卡片内底行 selectors 计数：selectors 恒留卡片内底行（不再移出到外部工具栏）。
-  // 统计卡片边框 div 内（含 textarea）的 Model/Perm/Effort selector + 附件菜单 trigger 数
-  // （cc8534d 附件并入加号后附件菜单不占卡片内 trigger 位，2026-10-28 重校准 4→3）。
+  // 卡内 trigger = 附件＋ + 权限 + 模型 + 深度 = 4（2026-11-01 校准：cc8534d 曾重校准
+  // 4→3，其后 effort/attach 演进回到 4；usage 无数据时 trigger 不渲染不计数）。
   const floatRoot = page.locator("[data-composer-float]");
   const cardBorder = floatRoot.locator("div.rounded-xl, .rounded-xl").first();
   const cardSelectorCount = await cardBorder
     .locator("button[aria-haspopup]")
     .count()
     .catch(() => 0);
-  console.log(`[${label}] 获焦后 卡片内 selector trigger 数 = ${cardSelectorCount}（3=留卡片内）`);
+  const triggerLabels = await cardBorder
+    .locator("button[aria-haspopup]")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label") ?? "?"))
+    .catch(() => []);
+  console.log(
+    `[${label}] 获焦后 卡片内 selector trigger 数 = ${cardSelectorCount}（4=留卡片内：${triggerLabels.join(" / ")}）`,
+  );
 
   // .send2 几何在「输入态」测（send 可见时）；点 send 后输入清空 .send2 即 unmount，
   // v14 段（点击后）只能拿到 null。按钮两端统一（2026-10-14）后桌面输入态也有 .send2
@@ -159,8 +165,10 @@ async function probe(browser, label, contextOptions) {
     );
   }
 
-  // ── v1.4 控制行形态断言（03a/04）：窄端 .iicn 三彩图标 / 宽端 .ipill 三 pill / anchored
-  // 菜单原位上方 / .send2 28×28 r12。窄宽断言按 viewport 分派（CSS @media 1024 切换）。
+  // ── v1.4 控制行形态断言（03a/04）：窄端 .iicn 彩图标 / 宽端 .ipill pill / anchored
+  // 菜单原位上方 / .send2 28×28 r12。窄宽断言按 composer 卡宽分派（2026-11-01 CSS
+  // 容器查询切换；单 pane 下卡宽随视口，desktop=展开 / mobile=收起两分支不变）。
+  // count=4：附件＋ + 权限 + 模型 + 深度（usage 无数据时 trigger 不渲染）。
   const v14 = {};
   const permBtn = page.locator(
     'button[aria-label="权限模式"], button[aria-label="Permission mode"]',
@@ -187,22 +195,22 @@ async function probe(browser, label, contextOptions) {
   v14.ipillCount = ipillCount;
   v14.narrowFormOk =
     !wide &&
-    iicnCount === 3 &&
+    iicnCount === 4 &&
     ipillDisplay === "none" &&
     !!iicnVisible &&
     Math.abs(iicnVisible.w - 28) < 0.6 &&
     Math.abs(iicnVisible.h - 28) < 0.6 &&
     Math.abs(parseFloat(iicnVisible.radius) - 12) < 0.6;
   v14.wideFormOk =
-    wide && ipillCount === 3 && ipillDisplay !== "none" && iicnVisible?.display === "none";
+    wide && ipillCount === 4 && ipillDisplay !== "none" && iicnVisible?.display === "none";
   console.log(
     `[${label}] v1.4 控制行: wide=${wide} iicn=${iicnCount}(${iicnVisible ? `${iicnVisible.w.toFixed(0)}x${iicnVisible.h.toFixed(0)} r${iicnVisible.radius}` : "n/a"}) ipill=${ipillCount}(${ipillDisplay})`,
   );
 
-  // iicn 三色语义（perm 紫 / model 蓝 / eff 橙 tint）
-  if (!wide && iicnCount === 3) {
+  // iicn 三色语义（perm 紫 / model 蓝 / eff 橙 tint；排除 .usage / .gear 非彩家族）
+  if (!wide && iicnCount === 4) {
     const tints = await page.evaluate(() =>
-      [...document.querySelectorAll(".iicn")].map((el) => {
+      [...document.querySelectorAll(".iicn:not(.usage):not(.gear)")].map((el) => {
         const cs = getComputedStyle(el);
         return { color: cs.color, bg: cs.backgroundColor };
       }),
@@ -313,10 +321,10 @@ async function probe(browser, label, contextOptions) {
     console.log(
       `H1b 发送按钮出现不导致textarea跳变: ${h1b ? "PASS" : "FAIL"} (跳变=${mobile.jump.toFixed(1)}px)`,
     );
-    // H4: selectors 恒留卡片内底行（不再移出到外部工具栏）——3 个 selector trigger 在
-    // 卡片边框内（cc8534d 附件并入加号一键直达后，附件菜单不再占卡片内 trigger 位，
-    // 2026-10-28 重校准 4→3；usage badge 无数据不渲染不计）。
-    const h4 = mobile.cardSelectorCount === 3;
+    // H4: selectors 恒留卡片内底行（不再移出到外部工具栏）——附件＋ + 权限 + 模型 + 深度
+    // = 4 个 selector trigger 在卡片边框内（2026-11-01 校准：cc8534d 曾记 3，其后控件
+    // 组合演进出 4；usage badge 无数据时 trigger 不渲染不计）。
+    const h4 = mobile.cardSelectorCount === 4;
     console.log(
       `H4 selectors 留卡片内: ${h4 ? "PASS" : "FAIL"} (卡片内selector=${mobile.cardSelectorCount})`,
     );
@@ -326,8 +334,8 @@ async function probe(browser, label, contextOptions) {
       );
     }
 
-    // v1.4 控制行换代断言（03a/04）：窄端 iicn 三彩图标 + 三色语义 + anchored 菜单原位上方；
-    // 宽端 ipill 三 pill；send2 28×28 r12。
+    // v1.4 控制行换代断言（03a/04）：窄端 iicn 彩图标（perm/model/eff 三色语义）+ anchored
+    // 菜单原位上方；宽端 ipill pill 常驻；send2 28×28 r12。
     const v14n = mobile.v14;
     const v14d = desktop.v14;
     const h5 =
