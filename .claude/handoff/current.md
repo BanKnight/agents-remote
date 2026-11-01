@@ -56,15 +56,17 @@
 - 无阻塞。**待用户拍板**：
   - ~~push~~：✅ 已推（2026-11-01 用户确认，`283b52f..aba98a7` 9 commits 上远端）。
   - `?? wiki/` 目录 git 归属（入库 vs gitignore）——非本批产物，未 add。
-  - 留观旧项（from 前批）：真机验收清单 13（placeholder 文案）；探针 DELETE 自建
-    terminal 会话 500（兜底分支穿透，修复选项待拍板）；test 项目残留 tmux 会话
-    `ar-terminal-test-9f86d081-terminal_bf9` 归属不明。
+  - 留观三项已全部处置（2026-11-01 用户拍板）：①真机清单 13（placeholder 文案）
+    ✅ 用户确认没问题销项；②探针 DELETE 500 → 用户选 B：补 DELETE session 路由
+    （agent + terminal 双实体，已实现 + 单测 + api respawn）；③残留 tmux 会话
+    `ar-terminal-test-9f86d081-terminal_bf9`（tsize-probe）用户确认自建并授权
+    删除——已用新 DELETE 路由真删（200 closed + tmux 会话消失，真实链路验收）。
 - admin capability 真机端到端（真实浏览器点卡 + PWA push）未验——探针走 REST 应答，
   web 卡渲染/应答形状由 e2e mock 覆盖；真实「浏览器点允许」交用户真机清单。
 
 ## 下一步
 
-1. 用户拍板：wiki/ 归属 / 旧留观三项。
+1. 用户拍板：wiki/ 归属。
 2. （可选）真机体验 admin 全链：test 项目 mcp.json 加 `admin:true` → 起 claude 会话
    让它调 project_create → 浏览器审批中心点允许。
 3. OPC 多 agent 编排下一阶段（跨项目维护能力已具备工具面基座）。

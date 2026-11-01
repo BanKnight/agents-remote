@@ -275,6 +275,19 @@ const handleAgentSessionRoute = async (
     return Response.json(response);
   }
 
+  // RESTful DELETE 对等（web 走 POST /close；此处供第三方/探针直调——此前穿透到
+  // 「DELETE /api/projects/<名> = 删项目」兜底，encodedName 含 / 必 500）。
+  if (sessionId && request.method === "DELETE") {
+    const session = await registry.closeAgentSession(project.name, sessionId);
+
+    if (!session) {
+      return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+    }
+
+    const response: CloseAgentSessionResponse = { session };
+    return Response.json(response);
+  }
+
   if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/rename")) {
     const body = await readJson<RenameSessionRequest>(request);
     const displayName = normalizeDisplayName(body.displayName);
@@ -393,6 +406,18 @@ const handleTerminalSessionRoute = async (
   }
 
   if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/close")) {
+    const session = await registry.closeTerminalSession(project.name, sessionId);
+
+    if (!session) {
+      return jsonError("SESSION_NOT_FOUND", "Terminal session not found", 404);
+    }
+
+    const response: CloseTerminalSessionResponse = { session };
+    return Response.json(response);
+  }
+
+  // RESTful DELETE 对等（同 agent 侧；此前穿透删项目兜底必 500）。
+  if (sessionId && request.method === "DELETE") {
     const session = await registry.closeTerminalSession(project.name, sessionId);
 
     if (!session) {

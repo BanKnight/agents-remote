@@ -379,3 +379,46 @@ test("DELETE codex：非法 threadId → 400（encodeURIComponent 保住 ../ 形
   const badBody = (await badRes!.json()) as { error: { code: string } };
   expect(badBody.error.code).toBe("SESSION_HISTORY_INVALID_ID");
 });
+
+// RESTful DELETE 会话实体（对等 POST /close）：此前无路由穿透「删项目」兜底必 500。
+const deleteSessionRequest = (path: string) => {
+  const req = new Request(`http://localhost${path}`, { method: "DELETE" });
+  return handleSessionRoutes(req, new URL(req.url), projectsRoot, registry);
+};
+
+test("DELETE terminal-sessions/:id → 200 closed（再删 404，不穿透删项目兜底）", async () => {
+  const created = await registry.createTerminalSession({
+    project: { name: "mergeproj", path: join(projectsRoot, "mergeproj") },
+  });
+  const okRes = await deleteSessionRequest(
+    `/api/projects/mergeproj/terminal-sessions/${created.id}`,
+  );
+  expect(okRes?.status).toBe(200);
+  const okBody = (await okRes!.json()) as { session: { id: string; status: string } };
+  expect(okBody.session.id).toBe(created.id);
+  expect(okBody.session.status).toBe("closed");
+
+  const repeatRes = await deleteSessionRequest(
+    `/api/projects/mergeproj/terminal-sessions/${created.id}`,
+  );
+  expect(repeatRes?.status).toBe(404);
+  const repeatBody = (await repeatRes!.json()) as { error: { code: string } };
+  expect(repeatBody.error.code).toBe("SESSION_NOT_FOUND");
+});
+
+test("DELETE agent-sessions/:id → 200 closed（再删 404）", async () => {
+  const created = await registry.createAgentSession({
+    project: { name: "mergeproj", path: join(projectsRoot, "mergeproj") },
+    provider: "claude",
+  });
+  const okRes = await deleteSessionRequest(`/api/projects/mergeproj/agent-sessions/${created.id}`);
+  expect(okRes?.status).toBe(200);
+  const okBody = (await okRes!.json()) as { session: { id: string; status: string } };
+  expect(okBody.session.id).toBe(created.id);
+  expect(okBody.session.status).toBe("closed");
+
+  const repeatRes = await deleteSessionRequest(
+    `/api/projects/mergeproj/agent-sessions/${created.id}`,
+  );
+  expect(repeatRes?.status).toBe(404);
+});
