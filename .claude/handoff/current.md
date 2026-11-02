@@ -1,80 +1,73 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-02（Provider 品牌图标全面接入批收尾）
+> 最后更新：2026-11-02 21:15（v1.7 行形批 + 用户 5 点反馈全部落地，全门禁 + 5 探针绿，待 commit）
 
 ## 一句话状态
 
-**Provider 品牌图标全面接入完成**：claude/codex/omp 的通用图标（sparkles/bolt/bot）全部换成
-品牌件（lobehub 静态 SVG 管线 + `<ProviderIcon>` 单源），彩色 logo 免疫容器 CSS（属性转
-inline style + `stroke:none`）；手绘 anthropic/openai 退役。全门禁绿（web 1012 pass）+ 4 探针
-全绿（provider-icons 11/11、mobile-project-header 56/56、batch7 46/46、m5-sheets 92/92）。
-**待用户确认 push。**
+**v1.7 统一行形批 + 用户真机 5 点反馈全部实现完毕**：7 行面统一行形（品牌标→名→状态点→时间，
+状态文字退出、置顶 pin 退出列表行）；桌面左栏会话行（SideInstanceRow + 05g）接入右键/长按菜单
+（SessionRowMenu 单源，对齐项目区）；置顶组行去项目名 chip、去 pin。全门禁绿（format/lint/
+typecheck/test 1012 pass）+ CSS 硬闸 + tokens 机检 + 5 探针全绿（m5-sheets 94、mobile-project-header
+56、batch7 46、provider-icons 11、新 probe-session-row-menu 14）。**待 commit → 用户 push 确认。**
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **技术路线**：`@lobehub/icons-static-svg@1.101.0`（devDep，MIT，发布 ≥7 天）→
-  `scripts/build-icons.mjs` 品牌白名单（claude=claude-color / codex=codex-color / omp=pi）→
-  生成 `web/src/assets/brand-icons.ts`（进 git、可复现、过 oxfmt）→ `<ProviderIcon>` 消费。
-  不引 React 组件包（peer 拖入）。
-- **容器免疫机制**：容器层 `.dicon svg`/`.tile svg`/`.tticn svg` 是 Lucide stroke 规格
-  （fill:none + stroke:currentColor），CSS 胜 presentation attribute → 生成器把 KEEP_ATTRS
-  （fill/fill-rule/clip-rule/stroke 系）转 inline style（inline 永胜 CSS），消费端 svg 再补
-  `stroke:none` 断继承。探针硬证据：omp computed fill = rgb(255,159,10)。
-- **设计取舍**：omp = pi 单色件染 `text-warning`（延续 omp 品牌橙）；带容器 marker（sm/lg）
-  品牌态 tone 降 `default` 中性底（彩色不撞 accent）；移动新建 sheet agent 三行 tile 统一
-  `bg-ink-2/10`（终端行保留 tint-green，已在组件注释记档）；菜单行品牌件显式
-  `size-[17px]`（对齐 ActionMenu 17px 标准档，不依赖 `[data-shell-icon]` 兜底）。
-- **sessionMarker 三参**：`sessionMarker(type, size, provider?)`——agent+provider → ProviderIcon；
-  provider 缺省退 sparkles（冷启动 memo 兜底）；terminal 恒 terminal。v1.5 §6.2 去品牌化决策
-  2026-11-02 用户拍板推翻（spec + frontend-notes §15 已记）。
-- **TS 收窄根因修法**：`cachedSessionFromLists` 缓存形状补 `provider` 字段（数据本就在手），
-  不用 `in` 收窄强转；SideInstanceRow 用 `"provider" in entry.session` 守卫。
-- **探针基线漂移归因（§29 法）**：`useSessionShells` 订阅 `/api/sessions/stream`，真实全量壳
-  快照会**直写 `["overview"]` 缓存**覆盖 REST mock——探针必须静默该 WS
-  （`routeWebSocket(/\/api\/sessions\/stream/, () => {})`），否则真实项目实例漏进候选集，
-  组头/实例行断言出现「真实项目泄漏」假象。本批已给 2 个探针补上。
+- **§4.8 统一行形契约**（spec 已落）：行 = ①品牌件/类型标 ②名字 flex-1 truncate ③状态圆点
+  ④时间。**置顶标识退出列表行**（行尾 pin + ▾ 菜单行 pin 退役）；置顶语义 = 05g 置顶分组头 +
+  移动置顶条 + 项目 Tab 活动行 pin（保留）+ ⋯ 菜单 ✓。
+- **置顶组行不显示项目名 chip**（用户拍板：置顶即用户关心的，项目名冗余）。
+- **桌面左栏会话行交互**（用户拍板平板触屏对齐项目区）：右键 + 触屏长按 → SessionRowMenu
+  （族A 锚定浮卡 176px），动作 = useInstanceRowActions 单源（置顶 ✓ keepOpen / 重命名预填 /
+  关闭红）；触发行 dashed ring（PROJECT_ROW_TRIGGER_RING）。
+- **时间口径（API 管线门控）**：terminal 不发 createdAt（metadataToCandidate），agent=
+  updatedAt ?? createdAt；历史行= lastActivityAt ?? startedAt。
+- **instanceDot2 单源归位 shell-primitives**（消 history-list ↔ instance-area 循环 import）。
+- **本 session 教训（Edit 编造连环损坏，复发 5+ 次）**：长 new_string 凭记忆写必坏——先 Read
+  精确字节 → old_string verbatim → 小步单目的编辑 → 大段替换后 Read 回读。连续失败即停恢复。
 
 ### 进度
 
-- ✅ 生成器两段（lucide 白名单 -bot/-zap 收口 + 品牌段 union 单行化=可复现过 format）
-- ✅ ProviderIcon（unknown provider 运行期防御 return null）+ 单测 3 tests
-- ✅ 6 个消费面：workbench-side dicon / instance-area tab+新建菜单 / mobile-project-header
-  tticn+切换行 / mobile-sheets tile / mobile-l3 菜单 / history-list；focusProvider 冷启动
-  回落实例列表防闪变
-- ✅ 手绘 anthropic/openai SVG + BRAND_SVG 退役；tokens 机检加生成物白名单
-- ✅ 文档：design_spec §6.2（品牌化推翻 + marker tone default 记录）/§10.3、frontend-notes
-  §15、.claude/rules/frontend.md
-- ✅ 探针过期修正（同批顺手，commit message 点名）：mobile-project-header 5 处（runct→聚焦
-  `.dot`、⋯ 菜单补双模式行、sessions-stream mock）、batch7 5 处（品牌锚点/.complete/codex
-  composer）、m5-sheets srow 3→4
-- ✅ 全门禁 + CSS 硬闸 + tokens 0 违例；review（design+code）已消化
+- ✅ 设计文档先行：design_spec §4.8（行槽位/置顶退出/会话行交互段/时间口径管线门控）+ §4.2
+- ✅ #1 桌面左栏「全部」行靠右对齐（flex-1 名字 + trail 右推）
+- ✅ #2 置顶组行删项目名 chip + #3 桌面行尾 pin 退役（SideInstanceRow + 05g）
+- ✅ #4 移动 ▾ 浮层列表 pinnedIds 链全撤（mobile-project-header + mobile-workbench）
+- ✅ #5 会话行右键/长按菜单：SessionRowMenu 新组件（workbench-side + 05g 两消费点 + 单实例 +
+  renameHolder）；useRowContextMenu/useLongPressActions 接线；closeInstance 透传 WorkbenchRoute
+- ✅ reviewer 修复：P1 flex-1、P2 管线根修（session-registry）、P2-1 历史行 dot2 档、P3-3 骨架
+  action="meta"、P3-6 mobile-sheets 名兜底改 displayTitleOf 单源消费
+- ✅ instanceDot2 挪 shell-primitives 单源
+- ✅ 新探针 probe-session-row-menu.mjs（14 断言：右键/三项/ring/Esc/keepOpen+✓/terminal 行/
+  05g 置顶组无 chip 无 pin/05g 右键）
+- ✅ 全门禁 + CSS 硬闸 + tokens 机检全绿；真实环境 pinned 污染已清理（agent_srm-1）
 
 ### 阻塞 / 风险
 
-- 无阻塞。待用户：
-  - **push 确认**（外发）。
-  - 真机清单：彩色 logo 小尺寸辨识度（15–20px）；codex 白底方块深色主题观感；omp π 橙色
-    对比度（浅色下 ~2.1:1，若刺眼可换 warning-text 档）；移动 sheet tile 中性底观感。
-- 已知未处理（低优先，review 记录）：codex 渐变 `<linearGradient id>` 固定 id，同页多实例
-  DOM id 重复（同定义，渲染等价）；omp 品牌橙复用 warning 语义色（对比度面）。
-- `?? wiki/` 目录 git 归属（遗留，多次未拍板）。
+- 未 commit（全绿即 commit）；**未 push（外发，须用户逐次确认）**。
+- commit 尾行：`Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`。
+- 长按（pointerType=touch）路径 Playwright 触发不了（mouse 被显式排除，frontend-notes §29），
+  已交真机清单。
+- 遗留（未拍板）：`?? wiki/` 目录 git 归属。
 
 ## 下一步
 
-1. 用户确认 push。
-2. 真机验证（见上清单）。
-3. 后续可选：provider 品牌色角色 token 化；codex 渐变 id 去重。
+1. commit（`git add && git commit`，禁 --only/--git-dir）→ 交用户真机清单 + push 确认。
+2. 真机清单：桌面行靠右对齐观感 / 置顶组无 chip 无 pin / ▾ 行无 pin / 会话行右键菜单三项 /
+   **平板触屏长按菜单**（探针盲区）/ 移动 ▾ 列表行形。
+3. 遗留：wiki/ 目录归属待用户拍板。
 
 ## 易丢的关键上下文
 
-- 改品牌白名单后重跑 `bun scripts/build-icons.mjs`：生成物必须 `bunx oxfmt --check` 干净且两次
-  重跑 md5 一致（union 单行化 + 注册表模板已对齐 oxfmt 形状）。
-- 探针跑法：`bun scripts/probe-provider-icons.mjs` / `probe-mobile-project-header.mjs`
-  （需 dev web 43012；均含 verifyCssFlushed/mock/登录）。
-- 任何 mock `/api/overview` 的探针都必须同时静默 `/api/sessions/stream` WS。
-- 生成物 brand-icons.ts 在 tokens 机检白名单（品牌原色是品牌资产非 UI token）。
+- 探针 mock 铁律新增：**pinned-sessions route 正则不可带 `$` 锚**——POST/DELETE 是
+  `/pinned-sessions/<id>` 子路径，带 `$` 会穿透 mock 打真实 api 污染 state.yaml（本 session
+  实锤 + 已清理 + 探针注释记录）。
+- 探针跑法 `bun scripts/probe-X.mjs`（dev web 43012 tmux ar-dev）；单测限内存
+  `systemd-run --scope --user -p MemoryMax=2G bun run test`。
+- 05g/SideInstanceRow 菜单接线模式：`useRowContextMenu` + `useLongPressActions(openAt)` +
+  `menuId` state + 列表尾 SessionRowMenu 单实例（id 回查 candidates 取 panelRef/displayName）+
+  onClick 首行 `guardClick()` 抑制长按合成 click。
+- batch7 探针 anchors 排序 comparator：`a.compareDocumentPosition(b) & FOLLOWING ? -1 : 1`。
 
 ## 提醒
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。

@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { AgentProvider } from "@agents-remote/shared";
 import { useT } from "../../i18n";
-import { sessionStatusLabel } from "../../routes/console-model";
 import type { GlobalInstanceCandidate } from "../../routes/workbench-model";
 import { LucideIcon } from "../shell/lucide-icon";
 import { ShellIcon } from "../shell/icons";
 import { ProviderIcon } from "../shell/icons/provider-icon";
-import { statusToV2DotClass } from "../shell/shell-primitives";
+import { statusToV2DotClass, InstanceRowTrail } from "../shell/shell-primitives";
+import { relativeTime } from "./history-list";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -171,7 +171,8 @@ type InstanceSwitchMenuProps = {
 
 /**
  * 标题 ▾ 实例切换菜单（v1.6 workspace-instance-switch，族A 锚定浮卡点按型）：组头「切换实例」
- * + 跨项目分组活跃实例列表（**项目组头 .mh.g** + 类型图标 + 名 + 状态点文案；当前行 =
+ * + 跨项目分组活跃实例列表（**项目组头 .mh.g** + 行形 = §4.8 统一槽位：类型图标 + 名 +
+ * 状态点 + 时间，无状态文字、无置顶标识（2026-11-02 补拍板）；当前行 =
  * 背景高亮 fill-selected，✓ 记号退役）+ 钉底「＋ 新建实例… · 当前项目」「⟲ 恢复历史会话…
  * · 当前项目」（与列表间分隔线，永不挤压）。活跃实例与历史互斥（已关闭会话不在列表，走
  * 恢复）；空态（无实例）= 列表区空提示 + 仅新建（spec §4.1-1）。切换零销毁（保活层语义，
@@ -237,6 +238,8 @@ function InstanceSwitchMenu({
                 status: entry.session.status,
                 type: entry.type,
                 provider: "provider" in entry.session ? entry.session.provider : undefined,
+                updatedAt: entry.session.updatedAt,
+                createdAt: "createdAt" in entry.session ? entry.session.createdAt : undefined,
                 onSelect: () => onSelectInstance(projectName, entry.session.id),
               })),
             },
@@ -251,6 +254,8 @@ function InstanceSwitchMenu({
           status: candidate.status,
           type: candidate.type,
           provider: candidate.provider,
+          updatedAt: candidate.updatedAt,
+          createdAt: candidate.createdAt,
           onSelect: () => onSelectInstance(foreignProject, candidate.ref.sessionId),
         })),
       })),
@@ -324,6 +329,7 @@ function InstanceSwitchMenu({
                 </div>
                 {group.rows.map((row) => (
                   <InstanceSwitchRow
+                    createdAt={row.createdAt}
                     current={row.current}
                     key={row.key}
                     name={row.name}
@@ -331,6 +337,7 @@ function InstanceSwitchMenu({
                     provider={row.provider}
                     status={row.status}
                     type={row.type}
+                    updatedAt={row.updatedAt}
                   />
                 ))}
               </div>
@@ -370,13 +377,17 @@ type InstanceSwitchRowProps = {
   current: boolean;
   /** agent 行品牌件分支（缺省退 sparkles 主色——无 provider 数据路径）。 */
   provider?: AgentProvider;
+  /** 相对时间源（agent = updatedAt ?? createdAt；terminal 仅 updatedAt）。 */
+  updatedAt?: string;
+  createdAt?: string;
   onSelect: () => void;
 };
 
 /**
  * ▾ 菜单实例行（v1.6 .irow：项目分组已上收组头，行内不再标注项目名——badge 退役）：类型
  * 图标（agent = 品牌件（provider 有）/ sparkles 主色 / terminal = square-terminal 绿；
- * 2026-11-02 品牌件批）+ 名 + 状态列。当前行 = 背景高亮（fill-selected，与 Sidebar selrow
+ * 2026-11-02 品牌件批）+ 名 + 行尾簇（InstanceRowTrail 单源：状态点 + 时间，v1.7 §4.8——
+ * 状态文字退出列表行、置顶标识退出列表行）。当前行 = 背景高亮（fill-selected，与 Sidebar selrow
  * 同款；✓ 记号退役，v1.6 图例②），名字 600 不变。
  */
 function InstanceSwitchRow({
@@ -385,6 +396,8 @@ function InstanceSwitchRow({
   status,
   current,
   provider,
+  updatedAt,
+  createdAt,
   onSelect,
 }: InstanceSwitchRowProps) {
   const { t } = useT();
@@ -404,14 +417,11 @@ function InstanceSwitchRow({
         <ShellIcon className="size-[15px] shrink-0 text-success" name="terminal" />
       )}
       <span className={`min-w-0 truncate ${current ? "font-semibold" : ""}`}>{name}</span>
-      {/* 状态列（原型 .st.run = success-text 600 / .st.idle = ink-2）；文字色只强调 working,
-          blocked/error 语义由 dot 色承载,文字 ink-2 降噪。 */}
-      <span
-        className={`ml-auto flex shrink-0 items-center gap-1 text-[11px] ${status === "working" ? "font-semibold text-success-text" : "text-ink-2"}`}
-      >
-        <span className={statusToV2DotClass(status)} />
-        {t(sessionStatusLabel(status))}
-      </span>
+      <InstanceRowTrail
+        className="ml-auto"
+        dotClassName={statusToV2DotClass(status)}
+        time={relativeTime(updatedAt ?? createdAt ?? "", t)}
+      />
     </DropdownMenuItem>
   );
 }

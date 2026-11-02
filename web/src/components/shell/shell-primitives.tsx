@@ -271,6 +271,54 @@ export function statusToV2DotClass(
   return "dot idle";
 }
 
+/** 实例行 dot2 状态点 class 单源（桌面侧栏 .dot2 密度档，与 statusToV2DotClass（移动 .dot）
+ *  并排——InstanceRowTrail 的两个 dot 档都归此文件，防 workbench 层反向 import 成环）：
+ *  turn 活跃与结果态着色实心（working 绿 / blocked 橙 / error 红 / done 绿——与移动端
+ *  .dot.done 同为绿实心，spec §3.2「状态点语义全局统一」，防桌面空心/移动实心分叉），
+ *  静息态（idle/closed）1.4px 空心。 */
+export const instanceDot2 = (status: AgentSession["status"] | TerminalSession["status"]): string =>
+  status === "working" || status === "running"
+    ? "bg-success"
+    : status === "blocked"
+      ? "bg-warning"
+      : status === "error"
+        ? "bg-error"
+        : status === "done"
+          ? "bg-success"
+          : "border-[1.4px] border-ink-2 bg-transparent";
+
+/**
+ * 实例 / 会话行行尾簇（v1.7 §4.8 统一行形，2026-11-02 用户拍板）：置顶 pin 标 →
+ * 状态圆点 → 相对时间。行首品牌件 + 名字由消费方渲染（各容器类不同：srow2 / irow /
+ * hrow / ListRow），行尾三槽在此单源收敛，防六处列表行各写一套。dotClassName 由消费方
+ * 按密度传（statusToV2DotClass = 移动 .dot / instanceDot2 = 桌面侧栏 .dot2），二者都是
+ * 状态色单源，不在此另立映射；time 为空串时整槽不渲染（terminal 无时间戳的老数据）。
+ */
+export function InstanceRowTrail({
+  pinned = false,
+  dotClassName,
+  time,
+  className,
+  timeClassName = "text-[11px] text-ink-2",
+}: {
+  /** 置顶行：紫色 pin 图标（取代紫底「置顶」文字徽章）。 */
+  pinned?: boolean;
+  /** 状态圆点 class（含 dot 尺寸原语）；不传不渲染圆点。 */
+  dotClassName?: string;
+  /** relativeTime 文案；空串不渲染时间槽。 */
+  time?: string;
+  className?: string;
+  timeClassName?: string;
+}) {
+  return (
+    <span className={cn("flex shrink-0 items-center gap-1.5", className)}>
+      {pinned ? <ShellIcon className="size-3 text-pin" name="pin" /> : null}
+      {dotClassName ? <span aria-hidden="true" className={dotClassName} /> : null}
+      {time ? <span className={timeClassName}>{time}</span> : null}
+    </span>
+  );
+}
+
 const STATUS_DOT_SIZE_CLASS = "h-2 w-2";
 
 type StatusDotProps = {

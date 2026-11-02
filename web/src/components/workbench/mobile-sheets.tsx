@@ -9,6 +9,7 @@ import {
   HISTORY_GROUP_LABEL_KEYS,
   buildResumeInput,
   displayTitleOf,
+  entryProvider,
   relativeTime,
   rowKey,
   useResumeAgentSession,
@@ -23,7 +24,13 @@ import { ShellIcon } from "../shell/icons";
 import { ProviderIcon } from "../shell/icons/provider-icon";
 import { useGlobalInstanceCandidates } from "./instance-area";
 import type { CreateSessionApi } from "./instance-area";
-import { countsAsRunning, ListRowSkeleton, statusToV2DotClass } from "../shell/shell-primitives";
+import {
+  countsAsRunning,
+  InstanceRowTrail,
+  ListRowSkeleton,
+  sessionMarker,
+  statusToV2DotClass,
+} from "../shell/shell-primitives";
 import { useHistoryQuery } from "./use-history-query";
 
 /**
@@ -121,8 +128,12 @@ export function MobileProjectSwitchSheet({
                 }}
                 type="button"
               >
-                <span className={statusToV2DotClass(candidate.status)} />
-                {candidate.displayName}
+                {sessionMarker(candidate.type, "xs", candidate.provider)}
+                <span className="min-w-0 flex-1 truncate">{candidate.displayName}</span>
+                <InstanceRowTrail
+                  dotClassName={statusToV2DotClass(candidate.status)}
+                  time={relativeTime(candidate.updatedAt ?? candidate.createdAt ?? "", t)}
+                />
               </button>
             ))
           ) : null}
@@ -436,16 +447,14 @@ export function MobileSessionHistorySheet({
                     const key = entryKey(entry);
                     const r1 = (
                       <span className="r1">
-                        {/* 已结束行无 dot（原型 03n end 行只有文字，reviewer P2-6）。 */}
-                        {running ? <span className={statusToV2DotClass("working")} /> : null}
-                        <span className="min-w-0 flex-1 truncate">
-                          {entry.title ?? entry.firstMessage ?? time}
-                        </span>
-                        <span className={`st${running ? " run" : ""}`}>
-                          {running
-                            ? t("workbench.historyRunning", { time })
-                            : t("workbench.historyClosed", { time })}
-                        </span>
+                        {/* §4.8 统一行形：品牌件 + 名 + 行尾簇（状态点 + 时间）——「运行中 /
+                            已结束 · N 分钟前」状态文字退出列表行（closed = 灰点 idle）。 */}
+                        {sessionMarker("agent", "xs", entryProvider(entry))}
+                        <span className="min-w-0 flex-1 truncate">{displayTitleOf(entry)}</span>
+                        <InstanceRowTrail
+                          dotClassName={statusToV2DotClass(running ? "working" : "closed")}
+                          time={time}
+                        />
                       </span>
                     );
                     return running ? (

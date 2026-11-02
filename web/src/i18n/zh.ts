@@ -814,8 +814,6 @@ export const zh: Record<TranslationKey, string> = {
   "workbench.historyFilterAll": "全部",
   "workbench.historyFilterRunning": "进行中",
   "workbench.historyFilterClosed": "已结束",
-  "workbench.historyRunning": "运行中 · {{time}}",
-  "workbench.historyClosed": "已结束 · {{time}}",
   "workbench.historyEmpty": "暂无会话",
   "workbench.historyLoading": "加载中…",
   "workbench.sessionLoading": "加载会话…",

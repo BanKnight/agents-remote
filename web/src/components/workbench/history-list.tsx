@@ -10,7 +10,14 @@ import { createAgentSession } from "../../api/client";
 import { useT } from "../../i18n";
 import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { formatBytes } from "@/lib/format";
-import { ListGroup, ListRow, ListRowSkeleton, sessionMarker } from "../shell/shell-primitives";
+import {
+  InstanceRowTrail,
+  ListGroup,
+  ListRow,
+  ListRowSkeleton,
+  instanceDot2,
+  sessionMarker,
+} from "../shell/shell-primitives";
 import { useConfirm } from "../shell/confirm-dialog";
 import { usePromptDialog } from "../shell/prompt-dialog";
 import {
@@ -21,14 +28,6 @@ import {
 } from "../ui/action-menu";
 import { ShellIcon } from "../shell/icons";
 import { useHistoryQuery } from "./use-history-query";
-
-/**
- * 历史 session「活跃中」脉动点。hasActiveSession 的历史（已 resume 为活跃实例）共用
- * left-rail 活跃实例的同一语义——marker tone 颜色变化太微妙，正向脉动点作主要活跃标志。
- */
-const ActiveDot = (
-  <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-success" />
-);
 
 /** 历史 session 加载骨架行数（与左栏 CardGridSkeleton 同款 UI 常量档：骨架行 3 / 卡片网格 6）。 */
 const HISTORY_SKELETON_ROW_COUNT = 3;
@@ -49,7 +48,7 @@ function HistoryListSkeleton() {
  * 历史条目的 provider 归一（缺省 claude，兼容存量响应）。条目归属由 provider 决定：
  * 同一类型（历史 session）的渲染/恢复只有这一条管道，provider 只作为条目自身属性参与分流。
  */
-function entryProvider(entry: AgentHistoryEntry): "claude" | "omp" | "codex" {
+export function entryProvider(entry: AgentHistoryEntry): "claude" | "omp" | "codex" {
   return entry.provider ?? "claude";
 }
 
@@ -434,15 +433,22 @@ function HistorySessionNode({
   const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
   // 全局作用域行带项目限定符（04g pin②「全部 = 跨项目列表，行带项目限定符」）：
   // subtitle 前缀归属项目；项目作用域响应无 projectName 字段，自然退化为原形态。
+  // v1.7 §4.8：时间从 subtitle 退出，移到行尾 trail。
   const description = isResuming
     ? t("project.historyResuming")
-    : [entry.projectName, time, entry.fileSize > 0 ? formatBytes(entry.fileSize) : null]
+    : [entry.projectName, entry.fileSize > 0 ? formatBytes(entry.fileSize) : null]
         .filter(Boolean)
         .join(" · ");
   return (
     <ListRow
       marker={sessionMarker("agent", "sm", entryProvider(entry))}
-      meta={entry.hasActiveSession ? ActiveDot : undefined}
+      meta={
+        <InstanceRowTrail
+          dotClassName={`dot2 ${instanceDot2(entry.hasActiveSession ? "working" : "closed")}`}
+          time={time}
+          timeClassName="text-micro text-ink-2"
+        />
+      }
       onClick={() => {
         if (!isResuming) onActivate();
       }}

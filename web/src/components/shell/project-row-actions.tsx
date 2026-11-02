@@ -39,7 +39,8 @@ const ROW_MENU_RADIUS_CLASS = "rounded-[14px]";
 export const PROJECT_ROW_TRIGGER_RING =
   "[outline:1.8px_dashed_var(--color-primary)] [outline-offset:-4px]";
 
-function rowMenuButtonClasses(danger: boolean, divided: boolean): string {
+/** 菜单行样式（项目行 / 会话行两类锚定浮卡共用，2026-11-02 会话行菜单同构接入）。 */
+export function rowMenuButtonClasses(danger: boolean, divided: boolean): string {
   return [
     "flex h-[45px] w-full items-center gap-3 px-[18px] text-sm outline-none transition-colors",
     "active:bg-on-surface/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50",

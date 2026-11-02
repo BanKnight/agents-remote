@@ -821,8 +821,6 @@ export const en = {
   "workbench.historyFilterAll": "All",
   "workbench.historyFilterRunning": "In progress",
   "workbench.historyFilterClosed": "Ended",
-  "workbench.historyRunning": "Running · {{time}}",
-  "workbench.historyClosed": "Ended · {{time}}",
   "workbench.historyEmpty": "No sessions",
   "workbench.historyLoading": "Loading…",
   "workbench.sessionLoading": "Loading session…",

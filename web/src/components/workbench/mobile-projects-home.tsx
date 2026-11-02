@@ -13,7 +13,13 @@ import {
   useProjectRowFlow,
 } from "../shell/project-row-actions";
 import { ShellIcon } from "../shell/icons";
-import { countsAsRunning, LargeTitleRow, statusToV2DotClass } from "../shell/shell-primitives";
+import {
+  countsAsRunning,
+  InstanceRowTrail,
+  LargeTitleRow,
+  sessionMarker,
+  statusToV2DotClass,
+} from "../shell/shell-primitives";
 import { useCreateProjectDialog } from "../shell/project-setup";
 import { useLongPressActions, useRowContextMenu } from "../ui/action-menu";
 import { relativeTime } from "./history-list";
@@ -208,7 +214,7 @@ export function MobileProjectsHome() {
         ) : null}
         {!isLoaded && !isError ? (
           // 首载骨架（§6.12o 容器壳 + 真机反馈 2026-10-10 消化）：mirror 真实两段逐行垫壳
-          // （活动卡 dot+名+时间 / 项目卡 30×30 徽章+名副+右徽章）——原 ListRowSkeleton 双条
+          // （活动卡 品牌件+名+行尾簇 / 项目卡 30×30 徽章+名副+右徽章）——原 ListRowSkeleton 双条
           // + 行 px-3 与卡壳 px-3 叠加双重内缩 + 行形不符（右 square 方块 vs 真实徽章条），
           // 加载完跳变大。
           <div aria-hidden="true">
@@ -217,7 +223,8 @@ export function MobileProjectsHome() {
                 <div key={i}>
                   {i > 0 ? <div className="mx-3 border-t border-sep-row" /> : null}
                   <div className="flex items-center gap-2 py-2">
-                    <span className="skeleton-shimmer h-[7px] w-[7px] shrink-0 rounded-full" />
+                    {/* §4.8 行形垫壳：行首品牌件 16px + 名 + 右尾（点+时间）条 */}
+                    <span className="skeleton-shimmer h-4 w-4 shrink-0 rounded" />
                     <span className="skeleton-shimmer h-4 w-28 rounded" />
                     <span className="ml-auto skeleton-shimmer h-3 w-10 shrink-0 rounded" />
                   </div>
@@ -297,28 +304,27 @@ export function MobileProjectsHome() {
                       type="button"
                     >
                       <span className="flex items-center gap-2 py-2">
-                        {/* v2 .dot 原语（批9）：5 态映射（working 绿脉 / blocked 橙 / error 红 /
-                            done 绿静止 / idle 灰）——待审批橙已服务端化（blocked），删前端覆盖。 */}
-                        <span className={statusToV2DotClass(row.candidate.status)} />
+                        {/* 行形 = §4.8 统一槽位：品牌件/类型标 + 名 + 行尾簇（置顶 pin + 状态
+                            圆点 + 时间）——行首裸状态点退役，紫底「置顶」文字徽章退役（pin
+                            图标单源 InstanceRowTrail）。 */}
+                        {sessionMarker(row.candidate.type, "xs", row.candidate.provider)}
                         <span className="min-w-0 flex-1 truncate text-subhead font-semibold text-ink-1">
                           {row.candidate.displayName}
                         </span>
-                        {row.pinned ? (
-                          <span className="flex-none rounded-[9px] bg-tint-purple px-2 py-0.5 text-micro font-semibold text-pin">
-                            {t("workbench.pin")}
-                          </span>
-                        ) : null}
-                        <span className="flex-none text-caption text-ink-2">
-                          {relativeTime(
+                        <InstanceRowTrail
+                          dotClassName={statusToV2DotClass(row.candidate.status)}
+                          pinned={row.pinned}
+                          time={relativeTime(
                             row.candidate.updatedAt ?? row.candidate.createdAt ?? "",
                             t,
                           )}
-                        </span>
+                          timeClassName="flex-none text-caption text-ink-2"
+                        />
                       </span>
                       {/* 副行（D14：现有 subtitle=lastCommand/lastAssistantMessage + 项目 chip；
-                          原型 .act-row 下方 11.5px 行，缩进 25px 对齐 dot 后文字） */}
+                          缩进 24px = 行首品牌件 16px + gap 8，对齐名字起点） */}
                       {row.candidate.subtitle ? (
-                        <span className="mb-2 -mt-1 flex items-center gap-1.5 pl-[25px] pr-1 text-caption text-ink-2">
+                        <span className="mb-2 -mt-1 flex items-center gap-1.5 pl-[24px] pr-1 text-caption text-ink-2">
                           <span className="min-w-0 flex-1 truncate">{row.candidate.subtitle}</span>
                           <span className="flex-none rounded-[9px] bg-elevated2 px-2 py-0.5 text-micro font-semibold text-ink-2">
                             {row.candidate.ref.projectName}

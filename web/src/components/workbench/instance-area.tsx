@@ -94,6 +94,8 @@ import {
   chatScrollPaddingClasses,
   ChatSkeleton,
   countsAsRunning,
+  InstanceRowTrail,
+  instanceDot2,
   LoadingBlock,
   sessionMarker,
   shellSurfaceClasses,
@@ -123,7 +125,13 @@ import {
   useInstanceRowActions,
   useSessionModeSwitch,
 } from "./instance-actions";
-import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
+import {
+  ActionMenu,
+  type ActionMenuItem,
+  useLongPressActions,
+  useRowContextMenu,
+} from "../ui/action-menu";
+import { PROJECT_ROW_TRIGGER_RING, SessionRowMenu } from "./session-row-menu";
 
 import { Dialog, DialogContent } from "../ui/dialog";
 import { MobileSheet } from "../shell/mobile-sheet";
@@ -395,21 +403,26 @@ export function InstanceArea({
  * 目标（DropZoneOverlay）。onCardDragStart 单一实例由 WorkbenchContent 创建，卡片源 + tab 源共享。
  */
 /**
- * 05g「全部会话」分组列表（§6.12j 批次 5）：microlabel 按项目分组 + 置顶段最前 + 行带项目限定
- * 符（pin②③）。行 = srow2.inst（dot2 状态点：running 实心 c-success、其余 1.4px 空心 ink-2）；
- * 置顶行 = pin 图标 + live off 徽章显项目名（防重名限定符）；空项目组 = 「暂无活跃会话」引导行
- *（05g「DOCS-WIKI · 0」段）。点行 = 中栏开 tab 并激活（pin⑤，组件内导航——行自身 candidate.ref
- * 构造 URL，project scope 下不被 scope.key 捷径覆盖，WorkbenchRoute focusInstance 的
- * resolveProjectName 对跨项目行会生成错乱 URL）；当前
- * focusId 命中行 selrow 高亮。行不可拖（05g 无拖放语义）：拖源仍由项目树卡片 + 中栏 tab 承担。
+ * 05g「全部会话」分组列表（§6.12j 批次 5）：microlabel 按项目分组 + 置顶段最前。行 =
+ * srow2.inst（dot2 状态点：running 实心 c-success、其余 1.4px 空心 ink-2）＋ §4.8 统一行形
+ * （品牌标 + 名 + 行尾簇：状态点 + 时间，text-micro）。置顶组行**不显示项目名 chip、不显示
+ * pin**（2026-11-02 用户拍板：置顶即用户关心的，项目名冗余；置顶语义由分组头表达）；空项目组
+ * = 「暂无活跃会话」引导行（05g「DOCS-WIKI · 0」段）。点行 = 中栏开 tab 并激活（pin⑤，组件内
+ * 导航——行自身 candidate.ref 构造 URL，project scope 下不被 scope.key 捷径覆盖，
+ * WorkbenchRoute focusInstance 的 resolveProjectName 对跨项目行会生成错乱 URL）；当前
+ * focusId 命中行 selrow 高亮。右键/触屏长按菜单（§4.8 桌面会话行交互，2026-11-02 拍板平板
+ * 触屏对齐项目区）＝ SessionRowMenu 单源（置顶/重命名/关闭），触发行 dashed ring。行不可拖
+ * （05g 无拖放语义）：拖源仍由项目树卡片 + 中栏 tab 承担。
  * 组头大写 = uppercase utility（原型 AGENTS-WEB · 2 手写大写，实现交给 CSS）。
  */
 export function AllSessionsGroupedList({
   candidates,
+  closeInstance,
   pinned,
   projectNames,
 }: {
   candidates: GlobalInstanceCandidate[];
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
   pinned: Set<string>;
   projectNames: string[];
 }) {
@@ -426,6 +439,20 @@ export function AllSessionsGroupedList({
       mode,
     });
   };
+  // 右键/长按菜单（§4.8 桌面会话行交互，同 SideInstanceRow）：键域 = sessionId；菜单
+  // 单实例挂列表尾，openAt 只带键，panelRef/displayName 由 id 回查。
+  const rowCtx = useRowContextMenu();
+  const longPress = useLongPressActions(rowCtx.openAt);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const openRowMenu = (sessionId: string, e: Parameters<typeof rowCtx.openAt>[1]) => {
+    setMenuId(sessionId);
+    rowCtx.openAt(sessionId, e);
+  };
+  const closeRowMenu = () => {
+    setMenuId(null);
+    rowCtx.close();
+  };
+  const menuCandidate = candidates.find((c) => c.ref.sessionId === menuId);
   const groups = useMemo(
     () => mergeProjectsWithCandidates(projectNames, candidates),
     [projectNames, candidates],
@@ -436,8 +463,8 @@ export function AllSessionsGroupedList({
   );
   const rowClasses = (c: GlobalInstanceCandidate) =>
     `srow2 inst w-full cursor-pointer text-left ${c.ref.sessionId === focusId ? "selrow" : ""} ${
-      c.status === "working" ? "font-semibold" : "text-ink-2"
-    }`;
+      rowCtx.pointFor(c.ref.sessionId) ? PROJECT_ROW_TRIGGER_RING : ""
+    } ${c.status === "working" ? "font-semibold" : "text-ink-2"}`;
   return (
     <div className="pb-2">
       {pinnedCandidates.length > 0 ? (
@@ -449,12 +476,21 @@ export function AllSessionsGroupedList({
             <button
               className={rowClasses(c)}
               key={c.ref.sessionId}
-              onClick={() => focusRow(c)}
+              onClick={() => {
+                if (longPress.guardClick()) return;
+                focusRow(c);
+              }}
+              onContextMenu={(e) => openRowMenu(c.ref.sessionId, e)}
               type="button"
+              {...longPress.bind(c.ref.sessionId)}
             >
-              <ShellIcon aria-hidden="true" className="size-3 flex-none text-ink-2" name="pin" />
-              <span className="min-w-0 truncate">{c.displayName}</span>
-              <span className="live off">{c.ref.projectName}</span>
+              {sessionMarker(c.type, "xs", c.provider)}
+              <span className="min-w-0 flex-1 truncate">{c.displayName}</span>
+              <InstanceRowTrail
+                dotClassName={`dot2 ${instanceDot2(c.status)}`}
+                time={relativeTime(c.updatedAt ?? c.createdAt ?? "", t)}
+                timeClassName="text-micro text-ink-2"
+              />
             </button>
           ))}
         </>
@@ -476,16 +512,38 @@ export function AllSessionsGroupedList({
               <button
                 className={rowClasses(c)}
                 key={c.ref.sessionId}
-                onClick={() => focusRow(c)}
+                onClick={() => {
+                  if (longPress.guardClick()) return;
+                  focusRow(c);
+                }}
+                onContextMenu={(e) => openRowMenu(c.ref.sessionId, e)}
                 type="button"
+                {...longPress.bind(c.ref.sessionId)}
               >
-                <span aria-hidden="true" className={`dot2 ${instanceDot2(c.status)}`} />
-                <span className="min-w-0 truncate">{c.displayName}</span>
+                {/* §4.8 统一行形：品牌件 + 名 + 行尾簇（状态点 + 时间）；置顶标识退出列表行。 */}
+                {sessionMarker(c.type, "xs", c.provider)}
+                <span className="min-w-0 flex-1 truncate">{c.displayName}</span>
+                <InstanceRowTrail
+                  dotClassName={`dot2 ${instanceDot2(c.status)}`}
+                  time={relativeTime(c.updatedAt ?? c.createdAt ?? "", t)}
+                  timeClassName="text-micro text-ink-2"
+                />
               </button>
             ))
           )}
         </div>
       ))}
+      {/* 会话行右键/长按菜单单实例（§4.8：置顶/重命名/关闭，⋯ 菜单动作单源）。 */}
+      {menuCandidate ? (
+        <SessionRowMenu
+          anchor={rowCtx.pointFor(menuCandidate.ref.sessionId)}
+          closeInstance={closeInstance}
+          displayName={menuCandidate.displayName}
+          onClose={closeRowMenu}
+          panelRef={menuCandidate.ref}
+          sessionType={menuCandidate.type}
+        />
+      ) : null}
     </div>
   );
 }
@@ -889,21 +947,6 @@ function panelTabLabel(
               : panelRef.path)
   );
 }
-
-/** 实例行 dot2 状态点 class 单源（实例切换列表与 workbench-side 侧栏 agent 行同消费——
- *  批 C 收敛此前逐字双份）：turn 活跃与结果态着色实心（working 绿 / blocked 橙 /
- *  error 红 / done 绿——与移动端 .dot.done 同为绿实心，spec §3.2「状态点语义全局统一」，
- *  防桌面空心/移动实心分叉），静息态（idle/closed）1.4px 空心。 */
-export const instanceDot2 = (status: AgentSession["status"] | TerminalSession["status"]): string =>
-  status === "working" || status === "running"
-    ? "bg-success"
-    : status === "blocked"
-      ? "bg-warning"
-      : status === "error"
-        ? "bg-error"
-        : status === "done"
-          ? "bg-success"
-          : "border-[1.4px] border-ink-2 bg-transparent";
 
 export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined {
   const { t } = useT();

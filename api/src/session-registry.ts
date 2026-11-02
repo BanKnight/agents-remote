@@ -1220,7 +1220,10 @@ const metadataToCandidate = (metadata: SessionMetadata, subtitle?: string): Over
   provider: metadata.provider,
   mode: metadata.mode,
   updatedAt: metadata.updatedAt,
-  createdAt: metadata.createdAt,
+  // createdAt 仅 agent 携带（OverviewCandidate 契约「AgentSession 有，terminal 无」）：
+  // 消费面 `updatedAt ?? createdAt` 回退链对 terminal 只落 updatedAt，缺失时整槽不渲染，
+  // 不回退创建时间（§4.8 时间口径，2026-11-02 统一行形批 review 定案）。
+  createdAt: metadata.type === "agent" ? metadata.createdAt : undefined,
   subtitle,
 });
 

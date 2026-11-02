@@ -29,14 +29,14 @@ import {
   AllSessionsGroupedList,
   buildProjectRows,
   createSessionMenuItems,
-  instanceDot2,
   useCreateSession,
   useGlobalInstanceCandidates,
   useProjectInstances,
   type ProjectInstanceEntry,
 } from "./instance-area";
-import { ListRowSkeleton } from "../shell/shell-primitives";
-import { HistoryList } from "./history-list";
+import { InstanceRowTrail, instanceDot2, ListRowSkeleton } from "../shell/shell-primitives";
+import { HistoryList, relativeTime } from "./history-list";
+import { SessionRowMenu } from "./session-row-menu";
 import { SessionModeTabs } from "./mobile-workbench";
 
 /**
@@ -66,7 +66,13 @@ import { SessionModeTabs } from "./mobile-workbench";
  *
  * 挂点：WorkbenchShell `sidebar` prop（grid 第 0 列 aside，仅 ≥lg 渲染）。移动端不消费本组件。
  */
-export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }) {
+export function WorkbenchSide({
+  closeInstance,
+  onCollapseLeft,
+}: {
+  closeInstance: (sessionId: string, type: "agent" | "terminal") => void;
+  onCollapseLeft: () => void;
+}) {
   const { t } = useT();
   // leftMode 默认 "auto"（URL 省略 = auto 语义；WorkbenchRoute 解构默认同口径——focus 路由
   // derive 继承透传不写键，side 直读 context 需自带默认）。
@@ -142,6 +148,23 @@ export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }
   // 行级 contextMenuPoint 同法）。
   const rowCtx = useRowContextMenu();
   const longPress = useLongPressActions(rowCtx.openAt);
+  // 会话行右键/长按菜单（§4.8 桌面会话行交互，2026-11-02 用户拍板平板触屏对齐项目区）：
+  // 键域 = sessionId，与项目行（键 = 项目名）分实例互不串扰；菜单单实例挂列表尾部，
+  // 行只挂事件绑定 + ring。
+  const sessionRowCtx = useRowContextMenu();
+  const sessionLongPress = useLongPressActions(sessionRowCtx.openAt);
+  // 当前菜单锚定的会话行 id（openAt 只带键；panelRef/displayName 渲染时按 id 回查——
+  // 派生放 body 分支内，agentEntries/terminalEntries 在更后方定义，此处引用会 TDZ）。
+  const [menuEntryId, setMenuEntryId] = useState<string | null>(null);
+  const openSessionRowMenu = (sessionId: string, e: Parameters<typeof sessionRowCtx.openAt>[1]) => {
+    e.preventDefault();
+    setMenuEntryId(sessionId);
+    sessionRowCtx.openAt(sessionId, e);
+  };
+  const closeSessionRowMenu = () => {
+    setMenuEntryId(null);
+    sessionRowCtx.close();
+  };
 
   // 切项目：sticky search 全维透传（GroupedProjectsList enterProject 同口径——navigate 整体
   // 替换 search，漏带即丢状态）。
@@ -228,8 +251,8 @@ export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }
       projectInstances.isLoading && projectInstances.instances.length === 0 ? (
         // 首载骨架（§6.12o 形状换代）：真实结构是 microlabel 组头 + srow2 单行行（34px，
         // dot + 名），卡形骨架（CardGridSkeleton ≈76px 行）加载完整体塌缩 → 单行行骨架。
-        // dot2 太小不值骨架位、行无右尾元素 → marker=false + action="none"。
-        <ListRowSkeleton count={4} lines={1} marker={false} action="none" />
+        // dot2 太小不值骨架位；行尾 trail（dot2+时间）以 meta 位呈现 → action="meta"。
+        <ListRowSkeleton count={4} lines={1} marker={false} action="meta" />
       ) : projectInstances.instances.length === 0 ? (
         <div className="px-2 py-1 text-caption text-ink-3">{t("workbench.noActiveSessions")}</div>
       ) : (
@@ -246,6 +269,9 @@ export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }
                   active={entry.session.id === focusId}
                   entry={entry}
                   key={entry.session.id}
+                  longPressBind={sessionLongPress.bind(entry.session.id)}
+                  menuRingOn={sessionRowCtx.pointFor(entry.session.id) !== null}
+                  onContextMenu={(e) => openSessionRowMenu(entry.session.id, e)}
                   onSelect={focusRow}
                 />
               ))}
@@ -262,22 +288,55 @@ export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }
                   active={entry.session.id === focusId}
                   entry={entry}
                   key={entry.session.id}
+                  longPressBind={sessionLongPress.bind(entry.session.id)}
+                  menuRingOn={sessionRowCtx.pointFor(entry.session.id) !== null}
+                  onContextMenu={(e) => openSessionRowMenu(entry.session.id, e)}
                   onSelect={focusRow}
                 />
               ))}
             </>
           ) : null}
+          {/* 会话行右键/长按菜单单实例（§4.8：置顶/重命名/关闭，⋯ 菜单动作单源）；
+              panelRef/displayName 按 menuEntryId 回查（id 在 openAt 键域）。 */}
+          {menuEntryId !== null
+            ? (() => {
+                const menuEntry = [...agentEntries, ...terminalEntries].find(
+                  (entry) => entry.session.id === menuEntryId,
+                );
+                if (!menuEntry) return null;
+                return (
+                  <SessionRowMenu
+                    anchor={sessionRowCtx.pointFor(menuEntry.session.id)}
+                    closeInstance={closeInstance}
+                    displayName={menuEntry.session.displayName}
+                    onClose={closeSessionRowMenu}
+                    panelRef={{
+                      kind: "session",
+                      projectName: menuEntry.session.projectName,
+                      sessionId: menuEntry.session.id,
+                    }}
+                    sessionType={menuEntry.type}
+                  />
+                );
+              })()
+            : null}
         </>
       );
   } else {
     // 「全部」/ global：05g 分组列表（settled gate 防置顶组后到跳变）。
     body = !allSettled ? (
-      // 同上（§6.12o 形状换代）：AllSessionsGroupedList = 置顶组 + 项目 microlabel + srow2 行。
-      <ListRowSkeleton count={5} lines={1} marker={false} action="none" />
+      // 同上（§6.12o 形状换代）：AllSessionsGroupedList = 置顶组 + 项目 microlabel + srow2 行
+      // （action="meta" 对齐真实行的行尾簇槽位）。
+      <ListRowSkeleton count={5} lines={1} marker={false} action="meta" />
     ) : candidates.length === 0 && projectNames.length === 0 ? (
       <div className="px-2 py-1 text-caption text-ink-3">{t("workbench.globalOverviewEmpty")}</div>
     ) : (
-      <AllSessionsGroupedList candidates={candidates} pinned={pinned} projectNames={projectNames} />
+      <AllSessionsGroupedList
+        candidates={candidates}
+        closeInstance={closeInstance}
+        pinned={pinned}
+        projectNames={projectNames}
+      />
     );
   }
 
@@ -576,30 +635,43 @@ export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }
 /**
  * 实例试点行（srow2 inst）。行首类型标识 = dicon 图标（v1.5 批 7 spec §6.2 曾统一 registry
  * sparkles/terminal——2026-11-02 用户拍板推翻去品牌化，agent 行品牌化 ProviderIcon，provider
- * 缺省退 sparkles；terminal 恒 terminal）；agent 行名称后随 dot2 状态点（running 实心
- * c-success + 600，其余空心 ink-2，05 inst 行形制，「状态点随名称后」——
- * AllSessionsGroupedList rowClasses 同款）；terminal 行无状态点（05:42——dot 状态语言属
- * agent 会话状态机，review P3⑦）。
+ * 缺省退 sparkles；terminal 恒 terminal）；行尾簇（v1.7 §4.8 统一行形，InstanceRowTrail
+ * 单源）：dot2 状态点（agent 5 态 + terminal 3 态一律显示，此前 terminal 行无状态点——spec
+ * §4.8 拍板统一）+ 相对时间。置顶标识退出列表行（2026-11-02 补拍板，分组承载置顶语义）。
+ * 右键 / 触屏长按 = 会话行菜单（§4.8 桌面会话行交互，SessionRowMenu 单实例挂列表层）。
  */
 function SideInstanceRow({
   active,
   entry,
   onSelect,
+  longPressBind,
+  menuRingOn,
+  onContextMenu,
 }: {
   active: boolean;
   entry: ProjectInstanceEntry;
   onSelect: (sessionId: string) => void;
+  /** useLongPressActions().bind(key) 的 pointer 绑定包（触屏长按 500ms → 菜单）。 */
+  longPressBind: Record<string, unknown>;
+  /** 右键/长按菜单 open 期间触发行 dashed ring 高亮（PROJECT_ROW_TRIGGER_RING）。 */
+  menuRingOn?: boolean;
+  onContextMenu: (e: React.MouseEvent) => void;
 }) {
+  const { t } = useT();
   const working = entry.session.status === "working";
   const isTerminal = entry.type === "terminal";
   return (
     <button
       aria-current={active ? "true" : undefined}
       className={`srow2 inst w-full cursor-pointer text-left ${active ? "selrow" : ""} ${
+        menuRingOn ? PROJECT_ROW_TRIGGER_RING : ""
+      } ${
         isTerminal ? "font-mono text-caption text-ink-2" : working ? "font-semibold" : "text-ink-2"
       }`}
       onClick={() => onSelect(entry.session.id)}
+      onContextMenu={onContextMenu}
       type="button"
+      {...longPressBind}
     >
       <span className="dicon">
         {"provider" in entry.session ? (
@@ -609,9 +681,17 @@ function SideInstanceRow({
         )}
       </span>
       <span className="min-w-0 truncate">{entry.session.displayName}</span>
-      {isTerminal ? null : (
-        <span aria-hidden="true" className={`dot2 ${instanceDot2(entry.session.status)}`} />
-      )}
+      <InstanceRowTrail
+        className="ml-auto"
+        dotClassName={`dot2 ${instanceDot2(entry.session.status)}`}
+        time={relativeTime(
+          entry.session.updatedAt ??
+            ("createdAt" in entry.session ? entry.session.createdAt : undefined) ??
+            "",
+          t,
+        )}
+        timeClassName="text-micro text-ink-2"
+      />
     </button>
   );
 }

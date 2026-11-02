@@ -403,8 +403,18 @@ function seedTwoAgents(socket) {
         const describe = (row) => {
           if (!row) return null;
           const dicon = row.querySelector(".dicon svg");
-          const dot = row.querySelector(".dot2");
           const kids = [...row.children];
+          // §4.8 统一行形：dot2 收进 InstanceRowTrail（row 的孙辈），直接子序拿不到——
+          // order 改按「行内关键槽位锚点」的文档序序列化（dicon → 名字 → dot2）。
+          const anchors = [
+            row.querySelector(".dicon"),
+            row.querySelector(".min-w-0"),
+            row.querySelector(".dot2"),
+          ]
+            .filter((el) => el !== null)
+            .sort((a, b) =>
+              a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+            );
           return {
             // 2026-11-02 品牌件批：agent 行 dicon = ProviderIcon（data-provider-icon 锚点）。
             diconProvider: row
@@ -417,13 +427,7 @@ function seedTwoAgents(socket) {
                   .slice(0, 200)
               : null,
             diconFirst: kids[0]?.classList.contains("dicon") ?? false,
-            dotLast: dot
-              ? kids.indexOf(dot) >
-                kids.findIndex(
-                  (k) => k.querySelector(":scope > .min-w-0") || k.classList.contains("min-w-0"),
-                )
-              : null,
-            order: kids.map((k) => k.className.split(" ")[0] || k.tagName).join("|"),
+            order: anchors.map((el) => el.classList[0] ?? el.tagName).join("|"),
           };
         };
         return {

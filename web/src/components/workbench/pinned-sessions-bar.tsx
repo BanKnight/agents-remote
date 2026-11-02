@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useT } from "../../i18n";
-import { sessionStatusLabel } from "../../routes/console-model";
 import { type GlobalInstanceCandidate } from "../../routes/workbench-model";
 import { useGlobalInstanceCandidates } from "./instance-area";
+import { relativeTime } from "./history-list";
 import { usePinnedSessions } from "../../hooks/pinned-sessions";
-import { statusToV2DotClass } from "../shell/shell-primitives";
+import { InstanceRowTrail, sessionMarker, statusToV2DotClass } from "../shell/shell-primitives";
 
 /**
  * 置顶会话条（v1.6 workspace.html 行1 之下 / workspace-pinned-bubble，spec 变更④）：
@@ -168,16 +168,14 @@ export function PinnedSessionsBar({
                   maxWidth: `calc(100vw - ${PINNED_BUBBLE_RIGHT_BASE + PINNED_DOT_PITCH * index}px)`,
                 }}
               >
+                {/* 气泡行形 = §4.8 统一槽位：品牌件/类型标 + 名 + 行尾簇（点 + 时间）——
+                    长按气泡是置顶条的「行内展示」面，跟随统一行形。 */}
+                {sessionMarker(candidate.type, "xs", candidate.provider)}
                 <span className="min-w-0 truncate font-semibold">{candidate.displayName}</span>
-                <span
-                  className={`flex flex-none items-center gap-1 text-[11px] font-normal ${
-                    // 文字色只强调 working;blocked/error 语义由 dot 色承载,文字保持 ink-2 降噪。
-                    candidate.status === "working" ? "text-success-text" : "text-ink-2"
-                  }`}
-                >
-                  <span className={statusToV2DotClass(candidate.status)} />
-                  {t(sessionStatusLabel(candidate.status))}
-                </span>
+                <InstanceRowTrail
+                  dotClassName={statusToV2DotClass(candidate.status)}
+                  time={relativeTime(candidate.updatedAt ?? candidate.createdAt ?? "", t)}
+                />
               </span>
             ) : null}
           </span>

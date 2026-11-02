@@ -241,7 +241,7 @@ ok((await page.locator(".nav .dot.run").count()) === 1, "聚焦会话状态点 =
 await page.locator(".nav h1 button").click();
 await page.getByRole("menuitem").first().waitFor({ timeout: 5000 });
 ok((await page.locator(".msheet").count()) === 0, "▾ 开浮卡非 sheet（03l sheet 已退役）");
-// 组头「切换实例」+ 实例行（图标 + 名 + 状态文案 + 当前行 ✓）。
+// 组头「切换实例」+ 实例行（§4.8 统一行形：图标 + 名 + 状态点 + 时间，状态文字退出）。
 const grpText = await page.evaluate(() => {
   const menu = [...document.querySelectorAll('[role="menu"]')].at(-1);
   return menu?.querySelector("div")?.textContent ?? "";
@@ -266,7 +266,9 @@ ok(
 ok((await page.getByRole("menuitem", { name: /Probe Agent A/ }).count()) === 1, "实例行 A 在");
 ok((await page.getByRole("menuitem", { name: /Probe Agent B/ }).count()) === 1, "实例行 B 在");
 const rowA = page.getByRole("menuitem", { name: /Probe Agent A/ });
-ok((await rowA.textContent())?.includes("运行中") === true, "实例行含状态文案（运行中）");
+ok((await rowA.textContent())?.includes("运行中") === false, "实例行状态文字退出（§4.8）");
+ok((await rowA.locator(".dot").count()) === 1, "实例行 trail 状态点在（§4.8）");
+ok(/2026/.test((await rowA.textContent()) ?? ""), "实例行 trail 时间在场（§4.8）");
 ok((await rowA.locator("svg").count()) >= 1, "实例行类型图标在");
 // v1.6 图例②：当前行 = 背景高亮 + aria-current（✓ 记号退役）。
 const currentCount = await page.evaluate(() => {
@@ -348,7 +350,7 @@ await page.locator('.nav button[aria-label="更多操作"]').click();
 await page.waitForTimeout(300);
 await page.getByRole("menuitem", { name: "会话历史" }).click();
 await page.waitForSelector('.msheet .shd h2:has-text("会话历史")', { timeout: 5000 });
-// P2-5/6 状态层级：running 行 r1 字重 600、无 end 变体；closed 行 400 且无 dot。
+// P2-5 状态层级：running 行 r1 字重 600、无 end 变体；closed 行 400。§4.8：dot 一律显示。
 // 「最近」组与时间组各含一份（附加展示），断言取首次出现。
 const runningRow = page.locator(".msheet .hrow").filter({ hasText: "Probe Agent A" }).first();
 const closedRow = page.locator(".msheet .hrow").filter({ hasText: "Probe Agent B" }).first();
@@ -369,7 +371,7 @@ const closedWeight = await closedRow
 ok(runningWeight === "600", `running 行 r1 字重 600（实测 ${runningWeight}）`);
 ok(closedWeight === "400", `closed 行 r1 字重 400（实测 ${closedWeight}，P2-5 生效）`);
 ok((await runningRow.locator(".r1 .dot").count()) === 1, "running 行有 dot");
-ok((await closedRow.locator(".r1 .dot").count()) === 0, "closed 行无 dot（P2-6）");
+ok((await closedRow.locator(".r1 .dot").count()) === 1, "closed 行有 dot（§4.8 一律显示）");
 // 游标分页：滚动到底自动追加（03n 编号④；mock 页大小 12，第二页 5 条）。
 await page.evaluate(() => {
   const el = document.querySelector(".msheet");

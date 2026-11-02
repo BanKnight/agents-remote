@@ -1079,7 +1079,9 @@ function WorkbenchContent({
       onLeftExpand={() => setLeftOpen(true)}
       rightOpen={panelOpen}
       onRightExpand={openDesktopPanel}
-      sidebar={<WorkbenchSide onCollapseLeft={() => setLeftOpen(false)} />}
+      sidebar={
+        <WorkbenchSide closeInstance={closeInstance} onCollapseLeft={() => setLeftOpen(false)} />
+      }
       rightPanel={desktopMainPage ? null : rightPanel}
       rightPanelCollapsible={!desktopMainPage}
       statusBar={<StatusBar />}
