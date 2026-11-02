@@ -14,6 +14,7 @@ import {
 import { RenameDialog } from "../files/rename-dialog";
 import { LucideIcon } from "../shell/lucide-icon";
 import { ShellIcon } from "../shell/icons";
+import { ProviderIcon } from "../shell/icons/provider-icon";
 import {
   ProjectDeleteDialog,
   ProjectRenameImpactDialog,
@@ -573,8 +574,9 @@ export function WorkbenchSide({ onCollapseLeft }: { onCollapseLeft: () => void }
 }
 
 /**
- * 实例试点行（srow2 inst）。行首类型标识 = dicon 图标（v1.5 批 7 spec §6.2 统一 registry：
- * agent 行 sparkles、terminal 行 terminal）；agent 行名称后随 dot2 状态点（running 实心
+ * 实例试点行（srow2 inst）。行首类型标识 = dicon 图标（v1.5 批 7 spec §6.2 曾统一 registry
+ * sparkles/terminal——2026-11-02 用户拍板推翻去品牌化，agent 行品牌化 ProviderIcon，provider
+ * 缺省退 sparkles；terminal 恒 terminal）；agent 行名称后随 dot2 状态点（running 实心
  * c-success + 600，其余空心 ink-2，05 inst 行形制，「状态点随名称后」——
  * AllSessionsGroupedList rowClasses 同款）；terminal 行无状态点（05:42——dot 状态语言属
  * agent 会话状态机，review P3⑦）。
@@ -600,7 +602,11 @@ function SideInstanceRow({
       type="button"
     >
       <span className="dicon">
-        <ShellIcon className="size-full" name={isTerminal ? "terminal" : "sparkles"} />
+        {"provider" in entry.session ? (
+          <ProviderIcon className="size-full" provider={entry.session.provider} />
+        ) : (
+          <ShellIcon className="size-full" name={isTerminal ? "terminal" : "sparkles"} />
+        )}
       </span>
       <span className="min-w-0 truncate">{entry.session.displayName}</span>
       {isTerminal ? null : (

@@ -241,7 +241,7 @@ L3 深层详情（移动端顶部返回式；桌面 = 右栏对应分段）
 - 审批托盘、子 agent 卡、工具卡在 03/03e/04/05 逐字节同组件。
 - 菜单项跨端一致（置顶/重命名/关闭；文件：预览/重命名/移动/上传/删除）。
 - 深浅主题值不同、名相同（tokens.json）。
-- 会话类型图标 = 行首固定标识：Agent 会话 = sparkles、终端 = terminal、Chat = message（同一 registry）；状态点随名称后。侧栏行 / tabstrip 标签 / 历史行统一。**文件标签 = doc.text（iPhone 面板标签 / iPad·Mac 中栏标签）、wiki 标签 = book（中栏）**（同一行首类型图标语义延伸；文件/wiki 标签无状态点）。
+- 会话类型图标 = 行首固定标识：Agent 会话 = **品牌件（ProviderIcon，2026-11-02 用户拍板推翻 v1.5 批 7 去品牌化——v1.5 曾统一 sparkles 以「provider 抽象留 Phase 4」，接入 provider 扩容后身份辨识价值反超抽象纯度）**、provider 数据缺省退 sparkles、终端 = terminal、Chat = message（同一 registry）；状态点随名称后。侧栏行 / tabstrip 标签 / 历史行统一。**带容器形态（sm/lg 方框）的品牌 marker 容器 tone 降 `default`（中性描边框）**——彩色 logo 不与 accent 底撞色；非品牌缺省/终端沿用 accent/muted；xs 裸标无容器无 tone。**文件标签 = doc.text（iPhone 面板标签 / iPad·Mac 中栏标签）、wiki 标签 = book（中栏）**（同一行首类型图标语义延伸；文件/wiki 标签无状态点）。
 - **检视器 ptabs 全端 = 文件树/Git/Wiki 三结构标签**（04b/04b2/05/05h–05h4/05i 逐页一致；预览标签已退役）；中栏文件标签容器（04b·05h 系）逐页同构：tabstrip 文件标签 .on + 元信息行 + 类型主体。
 - 行级菜单 = 一份菜单、唤起随设备：触屏（iPhone/iPad）长按、指针（Mac）右键；历史行删除另含 iPhone 左滑；新菜单页图例必须写全三种唤起。
 
@@ -386,6 +386,7 @@ Skill      { id, scope, name, desc, source, version, installed }
 - **卡片**：统一 radius 16（pcard/mcard/fcard/scard）；文件行统一 17px 图标 + mono 名 + 时间/Git 徽（03o 与 10 同规格）。
 - 页面本地 CSS 只允许：margin 等上下文差异、本页独有组件。
 - **图标系统(统一管理)**：图标源 = Lucide(ISC 协议)。scripts/build-icons.mjs 从 lucide-static 生成 src/assets/icons.js(注册表+水合器),页面经 data-symbol(存量)/data-icon(新增)引用,加载即水合;笔画统一 2(24 网格);**禁止手绘 SVG 图标与 CSS 伪元素图标**;状态栏设备图形(信号/Wi-Fi/电池)为设备 chrome 例外。增删图标 → 改 ALIAS → node build-icons.mjs。
+- **品牌件（provider 身份图标，2026-11-02 批）**：源 = `@lobehub/icons-static-svg`（MIT devDep，构建期抽取 runtime 零依赖）——build-icons.mjs 品牌白名单（claude=claude-color / codex=codex-color / omp=pi 单色染 warning）生成 `src/assets/brand-icons.ts`（生成物进 git）；消费统一 `<ProviderIcon>`（shell/icons/provider-icon.tsx，provider→品牌件映射单源），**彩色 fill 落 path attr、单色 fill:currentColor 走 inline style + svg `stroke:none`**（压过容器层 `.dicon svg`/`.tile svg` 等 Lucide stroke 型规格——CSS 胜 presentation attribute，inline 永胜 CSS）；替代手绘 BRAND_SVG（anthropic/openai 2026-11-02 退役）。增删品牌件 → 改 BRAND_ICONS 白名单重跑脚本。
 - **审批卡（跨端同构）**：elevated3 底 / r12 / 结构 = r1(dot+会话+项目 pill) → cmd(mono 11.5,危险命令红) → 底部右对齐〔拒绝 ghost + 允许 ok〕；iPhone 11 / Mac 05f / 工作台托盘展开态同一规格。
 
 ## 11. 图集规范（index.html 布局与维护法规）

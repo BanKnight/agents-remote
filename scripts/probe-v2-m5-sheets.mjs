@@ -565,7 +565,10 @@ ok(
   (await page.locator(".msheet .shd h2").textContent())?.includes("新建实例") === true,
   "标题「新建实例」",
 );
-ok((await page.locator(".msheet .srow").count()) === 3, "srow = 3（Claude/OMP/终端，诚实呈现）");
+ok(
+  (await page.locator(".msheet .srow").count()) === 4,
+  "srow = 4（Claude/Codex/OMP/终端——Codex 批次 2 起一等 provider）",
+);
 ok((await page.locator(".msheet .slabel").count()) === 2, "slabel 分组 = 2（AGENT/TERMINAL）");
 const tileBox = await page.locator(".msheet .tile").first().boundingBox();
 ok(

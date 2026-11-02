@@ -1,85 +1,80 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-01（ar-hub admin capability 三批次全部交付）
+> 最后更新：2026-11-02（Provider 品牌图标全面接入批收尾）
 
 ## 一句话状态
 
-**ar-hub admin capability（跨项目观察/管理 + 审批闸）三批次全部完成并 commit：
-批次 1 观察三工具 + hub 基座（`6667d8f`）、批次 2 审批基建 + 管理 5 工具 + origin
-身份注入 + CLI 超时（`2f93a58`）、批次 3 真实链路探针 10/10 + web 卡 e2e + spec
-记档 + origin bug 修复（`d939f33`）。全门禁绿（api 1264 / shared 11 / web 1009）。**
+**Provider 品牌图标全面接入完成**：claude/codex/omp 的通用图标（sparkles/bolt/bot）全部换成
+品牌件（lobehub 静态 SVG 管线 + `<ProviderIcon>` 单源），彩色 logo 免疫容器 CSS（属性转
+inline style + `stroke:none`）；手绘 anthropic/openai 退役。全门禁绿（web 1012 pass）+ 4 探针
+全绿（provider-icons 11/11、mobile-project-header 56/56、batch7 46/46、m5-sheets 92/92）。
+**待用户确认 push。**
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **审批中心复用（admin 卡 = 第三种 transport）**：`ApprovalCenter.transports` 按
-  provider 派发；admin 卡 `provider="mcp-admin"`、`controlRequestId` 前缀
-  `mcp-admin:`、卡 sessionId/runtimeKey = 发起会话（origin 穿线）。web
-  isHotTool 对 `MCP_ADMIN_MANAGE_TOOLS`（shared 单源 5 工具名）恒红。
-- **origin 身份注入 = hub URL query**：`?origin=<ar 会话 id>`（parseProjectFromUrl
-  零改动、旧 URL 兼容）。⚠️ 必须传 **ar 会话 id**（`sessionId`/`metadata.id`），
-  不是 claudeSessionId——hub 端按 ar 会话 id 查 peekMetadata；批次 2 曾传错
-  （claude-runtime spawnAndStart），批次 3 探针首轮实锤修复（`d939f33`）。
-  codex/claude 穿线点共 4 处（claude spawnAndStart + resolveTuiSpread；
-  codex doEnsureRunning + agent-tui terminal 形态）。
-- **超时链（client > 审批窗）**：审批挂起 120s（MCP_ADMIN_APPROVAL_TIMEOUT_MS）<
-  client 180s（claude inline JSON `toolTimeoutMs` / codex `-c tool_timeout_sec=180`）
-  < hub Bun.serve idleTimeout 255s。改任何一个都要保序。
-- **session_create 参数非法不弹卡**：provider 白名单校验前置到 requestManageApproval
-  之前（审批卡是真实操作的授权闸，无效参数直接拒）。
-- **管理面审批卡错误面**：`[ADMIN_ORIGIN_MISSING]` / `[ADMIN_APPROVAL_UNAVAILABLE]` /
-  `[ADMIN_APPROVAL_DENIED]` / `[ADMIN_APPROVAL_TIMEOUT]` / `[SESSION_NOT_FOUND]`
-  （`[CODE] message` isError 文本）。
-- **sendToAgent 仅活会话**（与 REST 注入 D13 同语义）：claude injectUserPrompt /
-  codex write / ACP write（按 transport 分流）/ terminal 明确错误；不复活已停会话。
-- **能力开关**：项目 `.agents-remote/mcp.json` `capabilities.admin: true` 才注册
-  8 工具（观察 3 免审批 + 管理 5 走审批）；无开关零变化。
+- **技术路线**：`@lobehub/icons-static-svg@1.101.0`（devDep，MIT，发布 ≥7 天）→
+  `scripts/build-icons.mjs` 品牌白名单（claude=claude-color / codex=codex-color / omp=pi）→
+  生成 `web/src/assets/brand-icons.ts`（进 git、可复现、过 oxfmt）→ `<ProviderIcon>` 消费。
+  不引 React 组件包（peer 拖入）。
+- **容器免疫机制**：容器层 `.dicon svg`/`.tile svg`/`.tticn svg` 是 Lucide stroke 规格
+  （fill:none + stroke:currentColor），CSS 胜 presentation attribute → 生成器把 KEEP_ATTRS
+  （fill/fill-rule/clip-rule/stroke 系）转 inline style（inline 永胜 CSS），消费端 svg 再补
+  `stroke:none` 断继承。探针硬证据：omp computed fill = rgb(255,159,10)。
+- **设计取舍**：omp = pi 单色件染 `text-warning`（延续 omp 品牌橙）；带容器 marker（sm/lg）
+  品牌态 tone 降 `default` 中性底（彩色不撞 accent）；移动新建 sheet agent 三行 tile 统一
+  `bg-ink-2/10`（终端行保留 tint-green，已在组件注释记档）；菜单行品牌件显式
+  `size-[17px]`（对齐 ActionMenu 17px 标准档，不依赖 `[data-shell-icon]` 兜底）。
+- **sessionMarker 三参**：`sessionMarker(type, size, provider?)`——agent+provider → ProviderIcon；
+  provider 缺省退 sparkles（冷启动 memo 兜底）；terminal 恒 terminal。v1.5 §6.2 去品牌化决策
+  2026-11-02 用户拍板推翻（spec + frontend-notes §15 已记）。
+- **TS 收窄根因修法**：`cachedSessionFromLists` 缓存形状补 `provider` 字段（数据本就在手），
+  不用 `in` 收窄强转；SideInstanceRow 用 `"provider" in entry.session` 守卫。
+- **探针基线漂移归因（§29 法）**：`useSessionShells` 订阅 `/api/sessions/stream`，真实全量壳
+  快照会**直写 `["overview"]` 缓存**覆盖 REST mock——探针必须静默该 WS
+  （`routeWebSocket(/\/api\/sessions\/stream/, () => {})`），否则真实项目实例漏进候选集，
+  组头/实例行断言出现「真实项目泄漏」假象。本批已给 2 个探针补上。
 
 ### 进度
 
-- ✅ 批次 1 `6667d8f`：McpCapability "admin" + session-reader（四 provider 读法 +
-  14 测试）+ 观察 3 工具 + hub adminEnabled/idleTimeout/hub 下移
-- ✅ 批次 2 `2f93a58`：shared MCP_ADMIN_PROVIDER/ApprovalSource/MCP_ADMIN_MANAGE_TOOLS
-  + McpAdminApprovalService（挂起/应答/超时/dispose，7 测试）+ 管理 5 工具（14 测试，
-  真实 hub 集成五分支）+ injector origin/超时（12 测试）+ sessionId 穿线 + web isHotTool
-- ✅ 批次 3 `d939f33`：探针 probe-admin-approval.mjs 10/10（P1 claude allow 全链含
-  origin 穿线实证 + P2 deny + P3 codex 双 -c 接受性）+ e2e admin-approval.spec.ts
-  （web 卡渲染/恒红/应答形状）+ docs/specs/mcp-hub-admin/spec.md + specs 索引行 +
-  claude-runtime origin bug 修复
-- ✅ 全门禁绿：format/lint 0 warning/typecheck 三包/test 1264+11+1009 全 pass
-  （pre-commit 首跑遇 1 例已知时序 flaky，复跑全绿）
-- ✅ dev api 已 respawn 新代码（fork 探针期间验证 health 200）
+- ✅ 生成器两段（lucide 白名单 -bot/-zap 收口 + 品牌段 union 单行化=可复现过 format）
+- ✅ ProviderIcon（unknown provider 运行期防御 return null）+ 单测 3 tests
+- ✅ 6 个消费面：workbench-side dicon / instance-area tab+新建菜单 / mobile-project-header
+  tticn+切换行 / mobile-sheets tile / mobile-l3 菜单 / history-list；focusProvider 冷启动
+  回落实例列表防闪变
+- ✅ 手绘 anthropic/openai SVG + BRAND_SVG 退役；tokens 机检加生成物白名单
+- ✅ 文档：design_spec §6.2（品牌化推翻 + marker tone default 记录）/§10.3、frontend-notes
+  §15、.claude/rules/frontend.md
+- ✅ 探针过期修正（同批顺手，commit message 点名）：mobile-project-header 5 处（runct→聚焦
+  `.dot`、⋯ 菜单补双模式行、sessions-stream mock）、batch7 5 处（品牌锚点/.complete/codex
+  composer）、m5-sheets srow 3→4
+- ✅ 全门禁 + CSS 硬闸 + tokens 0 违例；review（design+code）已消化
 
 ### 阻塞 / 风险
 
-- 无阻塞。**待用户拍板**：
-  - ~~push~~：✅ 已推（2026-11-01 用户确认，`283b52f..aba98a7` 9 commits 上远端）。
-  - `?? wiki/` 目录 git 归属（入库 vs gitignore）——非本批产物，未 add。
-  - 留观三项已全部处置（2026-11-01 用户拍板）：①真机清单 13（placeholder 文案）
-    ✅ 用户确认没问题销项；②探针 DELETE 500 → 用户选 B：补 DELETE session 路由
-    （agent + terminal 双实体，已实现 + 单测 + api respawn）；③残留 tmux 会话
-    `ar-terminal-test-9f86d081-terminal_bf9`（tsize-probe）用户确认自建并授权
-    删除——已用新 DELETE 路由真删（200 closed + tmux 会话消失，真实链路验收）。
-- admin capability 真机端到端（真实浏览器点卡 + PWA push）未验——探针走 REST 应答，
-  web 卡渲染/应答形状由 e2e mock 覆盖；真实「浏览器点允许」交用户真机清单。
+- 无阻塞。待用户：
+  - **push 确认**（外发）。
+  - 真机清单：彩色 logo 小尺寸辨识度（15–20px）；codex 白底方块深色主题观感；omp π 橙色
+    对比度（浅色下 ~2.1:1，若刺眼可换 warning-text 档）；移动 sheet tile 中性底观感。
+- 已知未处理（低优先，review 记录）：codex 渐变 `<linearGradient id>` 固定 id，同页多实例
+  DOM id 重复（同定义，渲染等价）；omp 品牌橙复用 warning 语义色（对比度面）。
+- `?? wiki/` 目录 git 归属（遗留，多次未拍板）。
 
 ## 下一步
 
-1. 用户拍板：wiki/ 归属。
-2. （可选）真机体验 admin 全链：test 项目 mcp.json 加 `admin:true` → 起 claude 会话
-   让它调 project_create → 浏览器审批中心点允许。
-3. OPC 多 agent 编排下一阶段（跨项目维护能力已具备工具面基座）。
+1. 用户确认 push。
+2. 真机验证（见上清单）。
+3. 后续可选：provider 品牌色角色 token 化；codex 渐变 id 去重。
 
 ## 易丢的关键上下文
 
-- admin 工具面代码落点：`api/src/mcp-admin-tools.ts`（注册）、`mcp-admin-approval.ts`
-  （挂起服务）、`mcp-hub-server.ts`（origin 解析 + adminDeps 接线）、
-  `index.ts:~2512`（服务装配）、`mcp-injector.ts`（origin/超时注入）、
-  `session-reader.ts`（四读法）；web 只有 `use-approvals.ts` isHotTool 一处。
-- spec 单源：`docs/specs/mcp-hub-admin/spec.md`（行为契约 + 来源 commit 锚）。
-- 探针跑法：`bun scripts/probe-admin-approval.mjs`（需 dev api 43011 + hub 43013；
-  自管 test 项目 mcp.json 备份恢复、只删自建数据）。
+- 改品牌白名单后重跑 `bun scripts/build-icons.mjs`：生成物必须 `bunx oxfmt --check` 干净且两次
+  重跑 md5 一致（union 单行化 + 注册表模板已对齐 oxfmt 形状）。
+- 探针跑法：`bun scripts/probe-provider-icons.mjs` / `probe-mobile-project-header.mjs`
+  （需 dev web 43012；均含 verifyCssFlushed/mock/登录）。
+- 任何 mock `/api/overview` 的探针都必须同时静默 `/api/sessions/stream` WS。
+- 生成物 brand-icons.ts 在 tokens 机检白名单（品牌原色是品牌资产非 UI token）。
 
 ## 提醒
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。

@@ -370,11 +370,13 @@ function seedTwoAgents(socket) {
     await p1.goto(`${ORIGIN}/projects/proj1/session/agent_b7-2`);
     await p1.waitForTimeout(1500);
     const agentDrawer = await p1.evaluate(() => ({
-      textarea: document.querySelectorAll("textarea#session-input").length,
+      // codex 拆独立路由组件（CodexSessionDetailRoute）后主输入无 #session-input id——
+      // 改断 composer 浮卡锚（probe-composer-container 同款）。
+      textarea: document.querySelectorAll("[data-composer-float] textarea").length,
     }));
     ok(
       agentDrawer.textarea === 1,
-      `P1-13 codex 会话输入抽屉默认展开（textarea count ${agentDrawer.textarea}）`,
+      `P1-13 codex 会话输入抽屉默认展开（composer textarea count ${agentDrawer.textarea}）`,
     );
     await ctx1.close();
 
@@ -404,6 +406,10 @@ function seedTwoAgents(socket) {
           const dot = row.querySelector(".dot2");
           const kids = [...row.children];
           return {
+            // 2026-11-02 品牌件批：agent 行 dicon = ProviderIcon（data-provider-icon 锚点）。
+            diconProvider: row
+              .querySelector(".dicon [data-provider-icon]")
+              ?.getAttribute("data-provider-icon"),
             diconSign: dicon
               ? [...dicon.querySelectorAll("path, rect")]
                   .map((p) => p.getAttribute("d") ?? "")
@@ -430,8 +436,8 @@ function seedTwoAgents(socket) {
     );
     ok(rowGeom.agent !== null, "P2-1 侧栏 agent 行在场");
     ok(
-      rowGeom.agent?.diconSign?.includes(ICON_SIGNS.sparkles) ?? false,
-      "P2-2 agent 行 .dicon = sparkles（lucide body 特征片段命中）",
+      rowGeom.agent?.diconProvider === "claude",
+      "P2-2 agent 行 .dicon = 品牌件 claude（2026-11-02 品牌化，data-provider-icon 锚点）",
     );
     ok(rowGeom.agent?.diconFirst ?? false, "P2-3 agent 行 .dicon 行首（图标在名称前）");
     ok(
@@ -470,6 +476,7 @@ function seedTwoAgents(socket) {
           ? (svg.getAttribute("d") ?? "") +
             [...svg.querySelectorAll("path")].map((p) => p.getAttribute("d") ?? "").join(" ")
           : "",
+        svgProvider: chip.querySelector("[data-provider-icon]")?.getAttribute("data-provider-icon"),
         order: { svg: rel(svg), btn: rel(btn), dot: rel(dot) },
       };
     });
@@ -478,8 +485,8 @@ function seedTwoAgents(socket) {
       "P2-9 TabChip 行首 marker svg 在（§6.2 marker 回归）",
     );
     ok(
-      (chipOrder?.svgSign ?? "").includes(ICON_SIGNS.sparkles),
-      "P2-10 TabChip marker = sparkles（agent 会话）",
+      chipOrder?.svgProvider === "claude",
+      "P2-10 TabChip marker = 品牌件 claude（agent 会话，2026-11-02 品牌化）",
     );
     ok(
       chipOrder !== null &&
@@ -599,16 +606,17 @@ function seedTwoAgents(socket) {
     await p3.waitForTimeout(300);
     const doneRows = await p3.evaluate(() => {
       const rows = [...document.querySelectorAll(".subrow")];
-      const doneRow = rows.find((r) => r.classList.contains("done"));
+      // 完成行类名 = .complete（03c 完成横幅 .done 改名 .complete，§34 批次）。
+      const doneRow = rows.find((r) => r.classList.contains("complete"));
       return {
-        done: rows.filter((r) => r.classList.contains("done")).length,
+        done: rows.filter((r) => r.classList.contains("complete")).length,
         first: rows[0]?.textContent ?? "",
         // done 行状态字色 = --ink-3（原型 .srow.done 状态字无显式 color 继承行色；防回退成 ink-2）
         doneStColor: doneRow ? getComputedStyle(doneRow.querySelector(".st")).color : null,
         ink3: getComputedStyle(document.documentElement).getPropertyValue("--ink-3").trim(),
       };
     });
-    ok(doneRows.done === 2, `P3-12 完成行 .done 置灰（${doneRows.done}/2）`);
+    ok(doneRows.done === 2, `P3-12 完成行 .complete 置灰（${doneRows.done}/2）`);
     ok(
       doneRows.first.includes("完成 ✓"),
       `P3-13 行状态文案「完成 ✓」（实际 ${doneRows.first.slice(0, 50)}）`,

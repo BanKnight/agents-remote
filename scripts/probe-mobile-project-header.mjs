@@ -209,6 +209,9 @@ async function setupMocks(page, { sessionIds, foreignCandidates = [], terminalSe
   });
   // 聚焦 session 面板连真实 WS（fake session 不存在 → error，但 panel 容器仍渲染）。
   await page.routeWebSocket(/claude-stream/, (ws) => ws.connectToServer());
+  // 会话壳全量快照通道（useSessionShells → 直写 ["overview"] 缓存，2026-10-19 起）：静默
+  // 不转发——连真实服务会把本机真实项目实例灌进候选，盖掉 REST mock 的候选集。
+  await page.routeWebSocket(/\/api\/sessions\/stream/, () => {});
 }
 
 /** 预置 V4 layout：proj1 的 session tab 列表 + active（模拟持久化恢复）。同时清 middle tab
@@ -292,15 +295,17 @@ async function run() {
       (await page.locator('[data-tab-id="agent_probe-2"]').count()) === 0,
       "B 未聚焦过 → 不在 DOM（不预挂载）",
     );
-    // 标题 = 实例名；probe-1 是 running → runct ●1；非项目名。
+    // 标题 = 实例名；probe-1 是 running → 聚焦会话状态点 .dot.run（2026-10-19 拍板：标题
+    // 圆点跟聚焦对象类型走，会话聚焦 = 会话状态点，runct 项目指示让位）；非项目名。
     const navBtn = page.locator(".nav h1 button");
     const navText = await navBtn.textContent();
     ok(navText?.includes("Probe Agent A") === true, `标题 = 实例名（「${navText?.trim()}」）`);
     ok(navText?.includes("proj1") === false, "标题非项目名");
-    const runctText = await page.locator(".nav .runct").textContent();
+    const focusDotCount = await page.locator(".nav h1 .dot.run").count();
+    const runctCount = await page.locator(".nav .runct").count();
     ok(
-      (runctText ?? "").includes("●") && (runctText ?? "").includes("1"),
-      `runct ●1（running 实例数；实际「${runctText}」）`,
+      focusDotCount === 1 && runctCount === 0,
+      `聚焦 running 会话 → 状态点 .dot.run（count ${focusDotCount}）+ runct 让位（count ${runctCount}）`,
     );
     // 退役元素恒不渲染（v1.5 批1：row2/pills/chips/mini）。
     ok((await page.locator(".row2").count()) === 0, "row2 恒不渲染（行2 已退役）");
@@ -478,6 +483,8 @@ async function run() {
       const titleBtn = document.querySelector(".nav .nv-t button");
       const panelTicon = document.querySelector('.nav button[aria-label="检视面板"]');
       const moreBtn = document.querySelector('.nav button[aria-label="更多操作"]');
+      // 聚焦会话 → 标题状态点 .dot（2026-10-19 拍板：runct 只服务非会话聚焦）。
+      const focusDot = document.querySelector(".nav h1 .dot");
       const runct = document.querySelector(".nav .runct");
       const rootStyle = getComputedStyle(document.documentElement);
       const svgRect = (el) => {
@@ -495,11 +502,10 @@ async function run() {
           : null,
         titleBtnText: titleBtn?.textContent.trim(),
         runctFont: runct ? getComputedStyle(runct).fontSize : null,
-        runctColor: runct ? rgbStr(runct) : null,
+        focusDotClass: focusDot?.className ?? null,
         panelSvg: svgRect(panelTicon),
         morePresent: moreBtn !== null,
         primary: rootStyle.getPropertyValue("--c-primary").trim(),
-        success: rootStyle.getPropertyValue("--c-success-text").trim(),
       };
     });
     ok(
@@ -515,8 +521,8 @@ async function run() {
       `标题 = 聚焦实例名（「${geo.titleBtnText}」）`,
     );
     ok(
-      geo.runctFont === "9px" && geo.runctColor === hexToRgb(geo.success),
-      `.runct 9px 绿（实际 ${geo.runctFont}）`,
+      geo.focusDotClass === "dot idle" && geo.runctFont === null,
+      `聚焦 idle 会话 → 状态点 .dot.idle（实际 ${geo.focusDotClass}）+ runct 让位（${geo.runctFont}）`,
     );
     // 真机复验反馈②（2026-10-06）：面板钮与 ⋯ 同 .ic 26×26 形制（原型 nav 右端两钮恒 .ic，
     // svg 20px）——此前 .ticon 19px 与工具页 [pencil][⋯] 中心距不一致。
@@ -686,16 +692,19 @@ async function run() {
       }));
     });
     const labels = zones.map((z) => z.label);
-    // 末项「取消」是 sheet 容器项（非三区内容），断言只看前 6 项。
+    // 末项「取消」是 sheet 容器项（非三区内容），断言只看三区 7 项（双模式行 2026-10-15
+    // 入列：claude 会话在「重命名」与「自动重试」之间，mock 无 claudeSessionId → 禁用 +
+    // 原因文案「该会话未绑定 CLI 会话，无法切换」）。
     ok(
-      labels.length >= 6 &&
+      labels.length >= 7 &&
         labels[0].includes("会话历史") &&
         labels[1].includes("实例信息") &&
         labels[2].includes("置顶") &&
         labels[3].includes("重命名") &&
-        labels[4].includes("自动重试") &&
-        labels[5].includes("关闭会话"),
-      `三区 6 项按原型序（实际 ${JSON.stringify(labels)}）`,
+        labels[4].includes("该会话未绑定 CLI 会话") &&
+        labels[5].includes("自动重试") &&
+        labels[6].includes("关闭会话"),
+      `三区 7 项按原型序（实际 ${JSON.stringify(labels)}）`,
     );
     ok(zones[0]?.hasArrow === true && zones[1]?.hasArrow === true, "导航区两行带 › 导航标注");
     ok(zones[2]?.hasCheck === false, "置顶行未置顶 → 无 ✓");

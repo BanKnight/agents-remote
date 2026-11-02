@@ -1,19 +1,15 @@
-import anthropic from "./anthropic.svg?raw";
-import openai from "./openai.svg?raw";
 import { type LucideIconName, LUCIDE_ICONS } from "../../../assets/icons";
 
 /**
  * 手绘 SF 名 → Lucide 名映射（2026-09-29 真机反馈②「图标理应都采用 lucide 的标准和规范」：
  * 存量 39 个手绘 20 网格 SVG 全量换代，形状统一 Lucide 24 网格 stroke-2 圆头规格，
- * 唯一源头 = build-icons.mjs 管线生成物）。调用点保持 SF 名契约零改动；
- * anthropic/openai 为 provider 品牌 fill 型 logo，Lucide 无对应物（政策不加品牌件），保留手绘。
- * menu / skills-nav 手绘件零消费，随换代删除未入映射。
+ * 唯一源头 = build-icons.mjs 管线生成物）。调用点保持 SF 名契约零改动；品牌件
+ * anthropic/openai 手绘 2026-11-02 退役（build-icons.mjs 品牌白名单 + <ProviderIcon>
+ * 单源接管，源 @lobehub/icons-static-svg）。menu / skills-nav 手绘件零消费，随换代删除未入映射。
  */
 const TO_LUCIDE = {
-  "agent-nav": "bot",
   archive: "archive",
   bag: "shopping-bag",
-  bolt: "zap",
   book: "book-open",
   chat: "message-square",
   canvas: "shapes", // 画布卡（M2.2 canvas-doc 四工具 ToolHead/全屏头，几何形状组）
@@ -57,10 +53,7 @@ const TO_LUCIDE = {
   "warning-triangle": "triangle-alert",
 } as const satisfies Record<string, LucideIconName>;
 
-/** 品牌 fill 型 logo（非 Lucide 描边规格，走手绘 raw 注入路径）。 */
-const BRAND_SVG: Record<"anthropic" | "openai", string> = { anthropic, openai };
-
-export type ShellIconName = keyof typeof TO_LUCIDE | keyof typeof BRAND_SVG;
+export type ShellIconName = keyof typeof TO_LUCIDE;
 
 export function ShellIcon({
   className = "size-4",
@@ -76,10 +69,8 @@ export function ShellIcon({
   // data-shell-icon = 菜单 icon 兜底锚点（DropdownMenuItem / mobileSheetItemClasses 的
   // `[&_[data-shell-icon]]:size-[17px]`）：内嵌 svg 的 size-full class 会绕过 svg 兜底，
   // 裸传（默认 size-4=16px）在菜单里需靠 span 锚点被提升到 17px 标准档（批 14）。
-  const lucideName = TO_LUCIDE[name as keyof typeof TO_LUCIDE];
-  const html = lucideName
-    ? `<svg viewBox="${LUCIDE_ICONS[lucideName].viewBox}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="size-full">${LUCIDE_ICONS[lucideName].body}</svg>`
-    : BRAND_SVG[name as keyof typeof BRAND_SVG].replace(/^<svg\b/, `<svg class="size-full"`);
+  const lucideName = TO_LUCIDE[name];
+  const html = `<svg viewBox="${LUCIDE_ICONS[lucideName].viewBox}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="size-full">${LUCIDE_ICONS[lucideName].body}</svg>`;
   return (
     <span
       className={"inline-flex items-center justify-center " + className}

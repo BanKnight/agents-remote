@@ -11,4 +11,4 @@
 - UI 样式细节以 `docs/design/tokens.json` 语义 token 为唯一权威：改动前对照其 token 与 components.css 组件，禁止散写绕过 token 的裸 Tailwind 值（`bg-cyan-300/10`、`text-slate-400`、`rounded-[1.5rem]` 等）；散落 HEX/裸色阶由机检脚本把关（见 `verification.md`）。
 - 抽象只服务于还原原型和保持真实能力边界；不得伪造数据、日志、历史、文件/Git 能力或运行态输出让 UI 看起来更完整。
 - 移动端/CSS/PWA 经验沉淀见根目录 `frontend-notes.md`（§N 编号是外部引用锚点，永不删除/重排）。
-- 聊天界面使用 assistant-ui（文档：https://www.assistant-ui.com/llms-full.txt ）；图标统一 Lucide 管线（`web/src/components/shell/icons/` 的 `<ShellIcon name>` 保持 SF 名契约，源 = `scripts/build-icons.mjs` 白名单生成的 `web/src/assets/icons.ts`；新增图标 = 白名单加名重跑生成 + `TO_LUCIDE` 加映射，不新增 `.svg`；仅 provider 品牌件例外走 `BRAND_SVG` 手绘，见 frontend-notes §15）。
+- 聊天界面使用 assistant-ui（文档：https://www.assistant-ui.com/llms-full.txt ）；图标统一 Lucide 管线（`web/src/components/shell/icons/` 的 `<ShellIcon name>` 保持 SF 名契约，源 = `scripts/build-icons.mjs` 白名单生成的 `web/src/assets/icons.ts`；新增图标 = 白名单加名重跑生成 + `TO_LUCIDE` 加映射，不新增 `.svg`）。Provider 品牌件 = build-icons.mjs 品牌白名单生成 `web/src/assets/brand-icons.ts`（源 `@lobehub/icons-static-svg` devDep）+ `<ProviderIcon>`（shell/icons/provider-icon.tsx）单源消费，2026-11-02 起 provider 身份图标一律品牌件（Sparkles 等通用标只作 provider 数据缺省兜底），见 frontend-notes §15。

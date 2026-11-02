@@ -128,6 +128,7 @@ import { ActionMenu, type ActionMenuItem } from "../ui/action-menu";
 import { Dialog, DialogContent } from "../ui/dialog";
 import { MobileSheet } from "../shell/mobile-sheet";
 import { ShellIcon } from "../shell/icons";
+import { ProviderIcon } from "../shell/icons/provider-icon";
 import { LucideIcon } from "../shell/lucide-icon";
 import { usePromptDialog } from "../shell/prompt-dialog";
 
@@ -1043,7 +1044,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
     if (session) {
       return {
         label: session.displayName,
-        marker: sessionMarker("agent", "xs"),
+        marker: sessionMarker("agent", "xs", session.provider),
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
           // 点色单源 instanceDot2（与左栏/实例切换行同管道，spec「状态点语义全局统一」）——
@@ -1135,6 +1136,8 @@ function cachedSessionFromLists(
       displayName: string;
       status: AgentSession["status"] | TerminalSession["status"];
       mode?: AgentSessionMode;
+      /** provider 身份（品牌件行标分支）；TerminalSession/旧 overview 响应缺省 undefined。 */
+      provider?: AgentProvider;
     }
   | undefined {
   const inProjectList =
@@ -1144,8 +1147,9 @@ function cachedSessionFromLists(
     return {
       displayName: inProjectList.displayName,
       status: inProjectList.status,
-      // TerminalSession 无 mode（terminal 原生会话无运行形态）——in 收窄。
+      // TerminalSession 无 mode/provider（terminal 原生会话无运行形态与 provider 身份）——in 收窄。
       mode: "mode" in inProjectList ? inProjectList.mode : undefined,
+      provider: "provider" in inProjectList ? inProjectList.provider : undefined,
     };
   }
   const candidate = overviewCache.data?.candidates.find(
@@ -1156,6 +1160,7 @@ function cachedSessionFromLists(
     displayName: candidate.displayName,
     mode: candidate.mode,
     status: candidate.status,
+    provider: candidate.provider,
   };
 }
 
@@ -2048,17 +2053,17 @@ export function createSessionMenuItems(create: CreateSessionApi, t: TranslateFn)
   return [
     {
       label: t("workbench.createClaude"),
-      icon: <ShellIcon name="anthropic" />,
+      icon: <ProviderIcon className="size-[17px]" provider="claude" />,
       onSelect: () => create.createAgent("claude"),
     },
     {
       label: t("workbench.createOmp"),
-      icon: <ShellIcon name="agent-nav" />,
+      icon: <ProviderIcon className="size-[17px]" provider="omp" />,
       onSelect: () => create.createAgent("omp"),
     },
     {
       label: t("workbench.createCodex"),
-      icon: <ShellIcon name="openai" />,
+      icon: <ProviderIcon className="size-[17px]" provider="codex" />,
       onSelect: () => create.createAgent("codex"),
     },
     {

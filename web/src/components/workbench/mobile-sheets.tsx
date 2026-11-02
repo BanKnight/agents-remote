@@ -20,6 +20,7 @@ import { isHotTool, useApprovalCenter } from "../../hooks/use-approvals";
 import { useT } from "../../i18n";
 import { MobileSheet } from "../shell/mobile-sheet";
 import { ShellIcon } from "../shell/icons";
+import { ProviderIcon } from "../shell/icons/provider-icon";
 import { useGlobalInstanceCandidates } from "./instance-area";
 import type { CreateSessionApi } from "./instance-area";
 import { countsAsRunning, ListRowSkeleton, statusToV2DotClass } from "../shell/shell-primitives";
@@ -511,8 +512,9 @@ export function MobileSessionHistorySheet({
  * 03j 新建实例 sheet（row2 ＋ 与 03h 空态卡 CTA 共用入口，编号②）：srow/tile 富行取代
  * ActionMenu 菜单形态。按现状能力诚实呈现 4 行（Claude/Codex/OMP/终端）——Codex 批次 2
  * 起为一等 provider（app-server 直连聊天管道）；原型 Chat（Pi）行仍无接入能力不画。
- * 行点击 = onOpenChange(false) + create（命名 prompt 弹窗由 workbench 顶层 holder 承载，
- * sheet 卸载后可见）。
+ * agent 三行 tile 统一中性底 bg-ink-2/10（2026-11-02 品牌件批：彩色 logo 不与 tint 底撞色，
+ * ProviderIcon 单源；终端行保留 tint-green）。行点击 = onOpenChange(false) + create（命名
+ * prompt 弹窗由 workbench 顶层 holder 承载，sheet 卸载后可见）。
  */
 export function MobileCreateInstanceSheet({
   create,
@@ -544,8 +546,8 @@ export function MobileCreateInstanceSheet({
         onClick={() => dismiss(() => create.createAgent("claude"))}
         type="button"
       >
-        <span className="tile bg-tint-blue text-pin">
-          <ShellIcon className="size-[19px]" name="sparkles" />
+        <span className="tile bg-ink-2/10">
+          <ProviderIcon className="size-[19px]" provider="claude" />
         </span>
         <span className="tx">
           <span className="n">＋ {t("workbench.createClaude")}</span>
@@ -559,8 +561,8 @@ export function MobileCreateInstanceSheet({
         onClick={() => dismiss(() => create.createAgent("omp"))}
         type="button"
       >
-        <span className="tile bg-tint-orange text-warning">
-          <ShellIcon className="size-[19px]" name="bolt" />
+        <span className="tile bg-ink-2/10">
+          <ProviderIcon className="size-[19px]" provider="omp" />
         </span>
         <span className="tx">
           <span className="n">＋ {t("workbench.createOmp")}</span>
@@ -574,8 +576,8 @@ export function MobileCreateInstanceSheet({
         onClick={() => dismiss(() => create.createAgent("codex"))}
         type="button"
       >
-        <span className="tile bg-ink-2/10 text-ink-2">
-          <ShellIcon className="size-[19px]" name="openai" />
+        <span className="tile bg-ink-2/10">
+          <ProviderIcon className="size-[19px]" provider="codex" />
         </span>
         <span className="tx">
           <span className="n">＋ {t("workbench.createCodex")}</span>

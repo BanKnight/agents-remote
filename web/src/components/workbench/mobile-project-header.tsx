@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import type { AgentProvider } from "@agents-remote/shared";
 import { useT } from "../../i18n";
 import { sessionStatusLabel } from "../../routes/console-model";
 import type { GlobalInstanceCandidate } from "../../routes/workbench-model";
 import { LucideIcon } from "../shell/lucide-icon";
 import { ShellIcon } from "../shell/icons";
+import { ProviderIcon } from "../shell/icons/provider-icon";
 import { statusToV2DotClass } from "../shell/shell-primitives";
 import {
   DropdownMenu,
@@ -30,9 +32,12 @@ type MobileProjectHeaderProps = {
   foreignCandidates: GlobalInstanceCandidate[];
   /** 当前聚焦实例 id（菜单行高亮判定；skill/file 等非实例聚焦时菜单无高亮行）。 */
   focusId?: string;
-  /** 行1 标题行首类型标（v1.6 workspace.html .tticn：agent=sparkles / terminal=terminal；
-   *  空态/插件 tab 等非实例聚焦 = project folder——标题即项目名，与实例类型标区分）。 */
+  /** 行1 标题行首类型标（v1.6 workspace.html .tticn：agent=品牌件（focusProvider）/ sparkles
+   *  / terminal=terminal；空态/插件 tab 等非实例聚焦 = project folder——标题即项目名，与实例
+   *  类型标区分）。 */
   focusType?: "agent" | "terminal";
+  /** 聚焦 agent 会话的 provider（品牌件分支；focusType="agent" 时消费，缺省退 sparkles）。 */
+  focusProvider?: AgentProvider;
   /** 当前聚焦对象类别（design-review DR-P2-6）：skill tab 聚焦时标题 = skill 名，folder
    *  「项目」语义错位 → tticn 整体不渲染；session/空态按 focusType 派生。 */
   focusKind?: "session" | "skill";
@@ -76,6 +81,7 @@ export function MobileProjectHeader({
   foreignCandidates,
   focusId,
   focusType,
+  focusProvider,
   focusKind,
   onSelectInstance,
   onCreateInstance,
@@ -106,6 +112,7 @@ export function MobileProjectHeader({
               focusId={focusId}
               focusKind={focusKind}
               focusType={focusType}
+              focusProvider={focusProvider}
               foreignCandidates={foreignCandidates}
               instances={instances}
               onCreateInstance={onCreateInstance}
@@ -153,6 +160,8 @@ type InstanceSwitchMenuProps = {
   focusId?: string;
   /** 行1 标题行首类型标（同 MobileProjectHeader.focusType）。 */
   focusType?: "agent" | "terminal";
+  /** 聚焦 agent 会话 provider（同 MobileProjectHeader.focusProvider）。 */
+  focusProvider?: AgentProvider;
   /** 聚焦对象类别（skill 态 tticn 不渲染，见 MobileProjectHeader.focusKind）。 */
   focusKind?: "session" | "skill";
   onSelectInstance: (projectName: string, sessionId: string) => void;
@@ -180,6 +189,7 @@ function InstanceSwitchMenu({
   foreignCandidates,
   focusId,
   focusType,
+  focusProvider,
   focusKind,
   onSelectInstance,
   onCreateInstance,
@@ -226,6 +236,7 @@ function InstanceSwitchMenu({
                 name: entry.session.displayName,
                 status: entry.session.status,
                 type: entry.type,
+                provider: "provider" in entry.session ? entry.session.provider : undefined,
                 onSelect: () => onSelectInstance(projectName, entry.session.id),
               })),
             },
@@ -239,6 +250,7 @@ function InstanceSwitchMenu({
           name: candidate.displayName,
           status: candidate.status,
           type: candidate.type,
+          provider: candidate.provider,
           onSelect: () => onSelectInstance(foreignProject, candidate.ref.sessionId),
         })),
       })),
@@ -253,20 +265,18 @@ function InstanceSwitchMenu({
           className="group flex h-full w-full cursor-pointer items-center justify-center gap-1.5"
           type="button"
         >
-          {/* 行1 类型标（v1.6 workspace.html h1 .tticn：行首 sparkles = Agent 会话类型标，
+          {/* 行1 类型标（v1.6 workspace.html h1 .tticn：行首品牌件/sparkles = Agent 会话类型标
+            （2026-11-02 品牌件批：provider 有 → ProviderIcon，缺省退 sparkles），
             区别于项目 folder；terminal = terminal；空态/插件 tab = folder。skill tab 聚焦
             标题 = skill 名，folder「项目」语义错位 → 整体不渲染（DR-P2-6）） */}
-          {focusKind === "skill" ? null : (
-            <ShellIcon
-              className="tticn"
-              name={
-                focusType === "agent"
-                  ? "sparkles"
-                  : focusType === "terminal"
-                    ? "terminal"
-                    : "project"
-              }
-            />
+          {focusKind === "skill" ? null : focusType === "agent" ? (
+            focusProvider ? (
+              <ProviderIcon className="tticn" provider={focusProvider} />
+            ) : (
+              <ShellIcon className="tticn" name="sparkles" />
+            )
+          ) : (
+            <ShellIcon className="tticn" name={focusType === "terminal" ? "terminal" : "project"} />
           )}
           <span className="block truncate">{title}</span>
           {/* 聚焦会话 → 会话状态点（.dot 原语 7×7，单源 statusToV2DotClass）；非会话聚焦
@@ -318,6 +328,7 @@ function InstanceSwitchMenu({
                     key={row.key}
                     name={row.name}
                     onSelect={row.onSelect}
+                    provider={row.provider}
                     status={row.status}
                     type={row.type}
                   />
@@ -357,17 +368,25 @@ type InstanceSwitchRowProps = {
   name: string;
   status: GlobalInstanceCandidate["status"];
   current: boolean;
+  /** agent 行品牌件分支（缺省退 sparkles 主色——无 provider 数据路径）。 */
+  provider?: AgentProvider;
   onSelect: () => void;
 };
 
 /**
  * ▾ 菜单实例行（v1.6 .irow：项目分组已上收组头，行内不再标注项目名——badge 退役）：类型
- * 图标（agent = sparkles 主色 / terminal = square-terminal 绿；ShellIcon SF 名经菜单 17px
- * 标准档统一渲染——批 B 由 LucideIcon 15px 换轨，视觉差 15→17px 交真机确认）+ 名 + 状态列。
- * 当前行 = 背景高亮（fill-selected，与 Sidebar selrow 同款；✓ 记号退役，v1.6 图例②），
- * 名字 600 不变。
+ * 图标（agent = 品牌件（provider 有）/ sparkles 主色 / terminal = square-terminal 绿；
+ * 2026-11-02 品牌件批）+ 名 + 状态列。当前行 = 背景高亮（fill-selected，与 Sidebar selrow
+ * 同款；✓ 记号退役，v1.6 图例②），名字 600 不变。
  */
-function InstanceSwitchRow({ type, name, status, current, onSelect }: InstanceSwitchRowProps) {
+function InstanceSwitchRow({
+  type,
+  name,
+  status,
+  current,
+  provider,
+  onSelect,
+}: InstanceSwitchRowProps) {
   const { t } = useT();
   return (
     <DropdownMenuItem
@@ -375,10 +394,15 @@ function InstanceSwitchRow({ type, name, status, current, onSelect }: InstanceSw
       className={`h-[40px] min-h-[40px] justify-start gap-[9px] rounded-none px-3.5 text-[13.5px] font-normal focus:bg-on-surface/5${current ? " bg-fill-selected" : ""}`}
       onSelect={onSelect}
     >
-      <ShellIcon
-        className={`size-[15px] shrink-0 ${type === "agent" ? "text-primary" : "text-success"}`}
-        name={type === "agent" ? "sparkles" : "terminal"}
-      />
+      {type === "agent" ? (
+        provider ? (
+          <ProviderIcon className="size-[15px] shrink-0" provider={provider} />
+        ) : (
+          <ShellIcon className="size-[15px] shrink-0 text-primary" name="sparkles" />
+        )
+      ) : (
+        <ShellIcon className="size-[15px] shrink-0 text-success" name="terminal" />
+      )}
       <span className={`min-w-0 truncate ${current ? "font-semibold" : ""}`}>{name}</span>
       {/* 状态列（原型 .st.run = success-text 600 / .st.idle = ink-2）；文字色只强调 working,
           blocked/error 语义由 dot 色承载,文字 ink-2 降噪。 */}

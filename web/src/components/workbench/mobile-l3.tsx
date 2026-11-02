@@ -44,6 +44,7 @@ import { GitCommitRow } from "./project-tool-panels";
 import { WIKI_QUERY_SCOPE, useWikiIndex, useWikiPage } from "../../hooks/wiki";
 import { relativeTime } from "./history-list";
 import { ShellIcon } from "../shell/icons";
+import { ProviderIcon } from "../shell/icons/provider-icon";
 import { LucideIcon } from "../shell/lucide-icon";
 import {
   WORKBENCH_GIT_TAB_QUERY_SCOPE,
@@ -1553,7 +1554,7 @@ export function L3WikiReader({
               sessions.data?.sessions.length
                 ? sessions.data.sessions.map((s) => ({
                     label: s.displayName,
-                    icon: <ShellIcon name="agent-nav" />,
+                    icon: <ProviderIcon className="size-[17px]" provider={s.provider} />,
                     onSelect: () => inject.mutate(s.id),
                   }))
                 : [

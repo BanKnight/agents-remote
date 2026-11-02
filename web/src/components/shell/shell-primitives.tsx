@@ -1,4 +1,4 @@
-import type { AgentSession, TerminalSession } from "@agents-remote/shared";
+import type { AgentProvider, AgentSession, TerminalSession } from "@agents-remote/shared";
 import {
   type ButtonHTMLAttributes,
   type ComponentProps,
@@ -13,6 +13,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { ShellIcon } from "./icons";
+import { ProviderIcon } from "./icons/provider-icon";
 
 /**
  * Shell surface/tone role layer. Values reference DESIGN tokens
@@ -892,24 +893,28 @@ export function LargeTitleRow({ actions, title }: LargeTitleRowProps) {
 }
 
 /**
- * 会话类型 marker（v1.5 批 7 spec §6.2 统一为类型标识：agent→sparkles/accent、
- * terminal→terminal/muted，同一 registry；provider 品牌件退役出会话行标——品牌 logo 仍用于
- * 创建菜单 provider 选择入口等非会话行标场景）。size 三档：`"xs"`（h-4 w-4=16px 裸 icon，
- * 无 IconMarker 方框，tone 用文字色——workbench group tab 用，与 tab label 14px 同高比例
- * 1:1）；`"sm"`（h-7 w-7=28px 带方框，默认）；`"lg"`（h-9 w-9=36px 头像式独立左列，icon
- * h-4 w-4，card 用）。消化移动卡片总览两处（ProjectInstances card variant +
- * GlobalInstanceCard）的重复 marker 构造。桌面 list（AgentNavItem）用 ShellNavigationButton
- * 包 IconMarker，不复用此 helper。
+ * 会话 marker（v1.5 批 7 spec §6.2 曾统一为类型标识 sparkles/terminal——2026-11-02 用户
+ * 拍板推翻去品牌化决策：agent 会话行标品牌化，provider 缺省时退 sparkles 类型标（无
+ * provider 数据的兜底路径，如刷新冷启动的 nameMemo）。terminal 恒 terminal。size 三档：
+ * `"xs"`（h-4 w-4=16px 裸 icon，无 IconMarker 方框——workbench group tab 用，与 tab label
+ * 14px 同高比例 1:1）；`"sm"`（h-7 w-7=28px 带方框，默认）；`"lg"`（h-9 w-9=36px 头像式
+ * 独立左列，icon h-4 w-4，card 用）。品牌形态容器 tone 降中性 default（彩色 logo 不与
+ * accent 底撞色）。
  */
 export function sessionMarker(
   type: "agent" | "terminal",
   size: "xs" | "sm" | "lg" = "sm",
+  provider?: AgentProvider,
 ): ReactNode {
-  const iconName = type === "terminal" ? "terminal" : "sparkles";
-  const tone = type === "terminal" ? "muted" : "accent";
+  const isBrand = type === "agent" && !!provider;
   if (size === "xs") {
+    if (isBrand) {
+      // 品牌裸标：彩色 logo 直接放（无容器无 tone），16px 下形状自明。
+      return <ProviderIcon className="h-4 w-4 shrink-0" provider={provider} />;
+    }
     // 裸 icon：tone 用文字色，无 IconMarker 方框（tab 场景与 label 同高，视觉平衡）。
-    const toneText = tone === "muted" ? "text-on-surface-muted" : "text-primary";
+    const iconName = type === "terminal" ? "terminal" : "sparkles";
+    const toneText = type === "terminal" ? "text-on-surface-muted" : "text-primary";
     return (
       <span aria-hidden="true" className={`inline-flex shrink-0 items-center ${toneText}`}>
         <ShellIcon className="h-4 w-4" name={iconName} />
@@ -918,8 +923,12 @@ export function sessionMarker(
   }
   const iconClass = size === "lg" ? "h-4 w-4" : "h-3.5 w-3.5";
   return (
-    <IconMarker size={size} tone={tone}>
-      <ShellIcon className={iconClass} name={iconName} />
+    <IconMarker size={size} tone={isBrand ? "default" : type === "terminal" ? "muted" : "accent"}>
+      {isBrand ? (
+        <ProviderIcon className={iconClass} provider={provider} />
+      ) : (
+        <ShellIcon className={iconClass} name={type === "terminal" ? "terminal" : "sparkles"} />
+      )}
     </IconMarker>
   );
 }

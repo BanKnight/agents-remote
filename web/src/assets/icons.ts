@@ -16,7 +16,6 @@ export type LucideIconName =
   | "panel-right"
   | "archive"
   | "book-open"
-  | "bot"
   | "check"
   | "chevron-left"
   | "chevron-right"
@@ -49,7 +48,6 @@ export type LucideIconName =
   | "triangle-alert"
   | "upload"
   | "x"
-  | "zap"
   | "image"
   | "camera"
   | "paperclip"
@@ -102,10 +100,6 @@ export const LUCIDE_ICONS = {
   "book-open": {
     viewBox: "0 0 24 24",
     body: '<path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/>',
-  },
-  bot: {
-    viewBox: "0 0 24 24",
-    body: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
   },
   check: {
     viewBox: "0 0 24 24",
@@ -234,10 +228,6 @@ export const LUCIDE_ICONS = {
   x: {
     viewBox: "0 0 24 24",
     body: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
-  },
-  zap: {
-    viewBox: "0 0 24 24",
-    body: '<path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"/>',
   },
   image: {
     viewBox: "0 0 24 24",

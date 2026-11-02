@@ -6,13 +6,38 @@
  * 用法：bun scripts/build-icons.mjs
  * 新增图标：把 lucide 图标名（kebab-case，icons/ 目录文件名）加入 ICONS 后重跑；
  * 升级 lucide-static 后同步 LUCIDE_VERSION（走 /check-deps，发布 ≥7 天）。
+ *
+ * 同脚本第二段：Provider 品牌件白名单 → web/src/assets/brand-icons.ts（2026-11-02 起
+ * 品牌件单源，替代手绘 BRAND_SVG；源 @lobehub/icons-static-svg devDep，消费端
+ * <ProviderIcon>）。同哲学：生成物进 git、运行时零依赖、bundle 只含白名单件。
  */
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const LUCIDE_VERSION = "1.47.0"; // 与 web/package.json 一致
 const ICONS_DIR = new URL("../node_modules/lucide-static/icons", import.meta.url);
 const OUT_FILE = new URL("../web/src/assets/icons.ts", import.meta.url);
+
+// ── Provider 品牌件白名单（2026-11-02，用户拍板彩色 + 全面接入）──
+const LOBE_ICONS_VERSION = "1.101.0"; // 与 web/package.json 一致
+// bun workspace hoist 不确定（本机落在 web/node_modules；lucide-static 在根）——双位置探测。
+const BRAND_ICONS_DIR = ["../node_modules", "../web/node_modules"]
+  .map((base) => new URL(`${base}/@lobehub/icons-static-svg/icons`, import.meta.url))
+  .find((url) => existsSync(url.pathname));
+if (!BRAND_ICONS_DIR) {
+  console.error("build-icons: 找不到 @lobehub/icons-static-svg（根与 web/node_modules 均无）");
+  process.exit(1);
+}
+const BRAND_OUT_FILE = new URL("../web/src/assets/brand-icons.ts", import.meta.url);
+/** provider → 品牌件：file = @lobehub/icons-static-svg icons/ 下文件名（去 .svg）。
+ *  claude/codex 用彩色变体（品牌 fill 在 path 上）；omp 用 pi 单色（fill=currentColor
+ *  在 svg 开标签上，提取进 attrs，消费端染 warning——lobe 无 omp 专属件，π 贴 Oh My Pi）。 */
+const BRAND_ICONS = [
+  { name: "claude", file: "claude-color" }, // Claude 主品牌星芒彩色
+  { name: "codex", file: "codex-color" }, // Codex CLI 渐变前景彩色（自带白底方块）
+  { name: "omp", file: "pi" }, // π 单色件（消费端 ProviderIcon 染色）
+];
 
 /** 消费白名单：name = lucide-static icons/ 下的文件名（去 .svg）。注释 = 引入批次与消费点。 */
 const ICONS = [
@@ -28,7 +53,6 @@ const ICONS = [
   //    SF 名 → 此名的映射在 icons/index.tsx TO_LUCIDE；品牌件 anthropic/openai 保留手绘 ──
   "archive", // ShellIcon archive（chat-overview 归档）
   "book-open", // ShellIcon book（wiki 标签；打开双页书）
-  "bot", // ShellIcon agent-nav（agent 导航/行标）
   "check", // ShellIcon check
   "chevron-left", // RailButton 左栏唤出（M13c reviewer D-P2-4：手写 16 网格退役）
   "chevron-right", // RailButton 右栏唤出（M13c，同上）
@@ -64,7 +88,6 @@ const ICONS = [
   "triangle-alert", // ShellIcon warning-triangle（警示）
   "upload", // ShellIcon upload
   "x", // ShellIcon close（关闭）
-  "zap", // ShellIcon bolt（执行/闪电）
   // ── composer 发图批（2026-10-04）：+ 菜单三项（LucideIcon 直消费）──
   "image", // composer 附件菜单「图片」
   "camera", // composer 附件菜单「相机」（仅触屏项）
@@ -162,4 +185,76 @@ export function hydrateIcons(root: ParentNode): void {
 await writeFile(OUT_FILE, out, "utf8");
 console.log(
   `build-icons: 生成 ${OUT_FILE.pathname}（${entries.length} 图标：${entries.map((e) => e.name).join(", ")}）`,
+);
+
+// ── 第二段：Provider 品牌件（@lobehub/icons-static-svg → web/src/assets/brand-icons.ts）──
+// svg 开标签上需保留的呈现属性 → 转 inline style（消费端注入 style 属性）。为什么 inline：
+// 容器层 `.dicon svg` / `.tile svg` / `.tticn svg` / `.tb svg` 等规则按 Lucide stroke 型定制
+// （fill:none + stroke 系列）——CSS 规则胜 presentation attribute，会把单色件的
+// fill="currentColor" 抹成 none、给彩色 path 继承描边；inline style 永胜 CSS 规则，
+// 品牌件在任何容器免疫。height/width/style/xmlns 不搬（消费端重建 svg 标签定尺寸）。
+const KEEP_ATTRS = [
+  "fill",
+  "fill-rule",
+  "clip-rule",
+  "stroke",
+  "stroke-width",
+  "stroke-linecap",
+  "stroke-linejoin",
+];
+
+const brandEntries = [];
+for (const { name, file } of BRAND_ICONS) {
+  const raw = await readFile(join(BRAND_ICONS_DIR.pathname, `${file}.svg`), "utf8");
+  const openTag = raw.match(/<svg([^>]*)>/)?.[1] ?? "";
+  const viewBox = openTag.match(/viewBox="([^"]+)"/)?.[1];
+  const inner = raw.match(/<svg[^>]*>([\s\S]*?)<\/svg>/)?.[1];
+  if (!viewBox || !inner) {
+    console.error(`build-icons: 无法解析品牌件 ${file}.svg（viewBox 或 inner 缺失）`);
+    process.exit(1);
+  }
+  const style = KEEP_ATTRS.map((a) => {
+    const m = openTag.match(new RegExp(`\\s${a}="([^"]*)"`));
+    return m ? `${a}:${m[1]}` : "";
+  })
+    .filter(Boolean)
+    .join(";");
+  const body = inner
+    .trim()
+    .split("\n")
+    .map((line) => line.trim().replace(/\s+\/>$/, "/>"))
+    .join("");
+  brandEntries.push({ name, viewBox, style, body });
+}
+
+// 单行 union：oxfmt 会把多行 `| "a"\n| "b"` 折成单行——生成器直出格式化后形状，重跑与
+// 提交物字节一致（否则「改白名单→重跑」必破 pre-commit 的 format:check）。
+const brandTypeUnion = brandEntries.map((e) => JSON.stringify(e.name)).join(" | ");
+const brandRegistry = brandEntries
+  .map(
+    (e) =>
+      `  ${keyOf(e.name)}: {\n    viewBox: ${quote(e.viewBox)},\n    style: ${quote(e.style)},\n    body: ${quote(e.body)},\n  },`,
+  )
+  .join("\n");
+
+const brandOut = `/* 由 scripts/build-icons.mjs 生成 — 勿手改（改脚本内 BRAND_ICONS 白名单后重跑生成）。
+ * 品牌件源 @lobehub/icons-static-svg@${LOBE_ICONS_VERSION}（MIT，https://github.com/lobehub/lobe-icons）。
+ * React 消费用 <ProviderIcon>（components/shell/icons/provider-icon.tsx）——provider →
+ * 品牌件映射单源。style = svg 开标签呈现属性转 inline style（压过容器层 X svg 规则，
+ * 见脚本第二段注释）；彩色件 fill 在 body path 上；单色件 fill:currentColor 由消费端染色。
+ */
+
+export const LOBE_ICONS_VERSION = "${LOBE_ICONS_VERSION}" as const;
+
+export type ProviderIconName = ${brandTypeUnion};
+
+/** 品牌 svg 数据：style = 开标签呈现属性的 inline style 串；body = inner 内容。 */
+export const BRAND_ICONS_SVG = {
+${brandRegistry}
+} as const satisfies Record<ProviderIconName, { viewBox: string; style: string; body: string }>;
+`;
+
+await writeFile(BRAND_OUT_FILE, brandOut, "utf8");
+console.log(
+  `build-icons: 生成 ${BRAND_OUT_FILE.pathname}（${brandEntries.length} 品牌件：${brandEntries.map((e) => e.name).join(", ")}）`,
 );

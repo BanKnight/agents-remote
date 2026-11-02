@@ -1259,6 +1259,14 @@ function MobileProjectWorkbench({
           effectiveFocusId ||
           scope.key
         : scope.key;
+  // 标题行 tticn 品牌件 provider：detail 优先，冷启动 detail 未热时回落当前项目实例列表
+  //（与上面 headerTitle 的 detail→memo 兜底同源）——防 sparkles → 品牌件身份标闪变。
+  const focusProvider = useMemo(() => {
+    const fromDetail = focusAgentDetail.data?.session.provider;
+    if (fromDetail) return fromDetail;
+    const entry = instances.find((e) => e.session.id === effectiveFocusId);
+    return entry && "provider" in entry.session ? entry.session.provider : undefined;
+  }, [focusAgentDetail.data?.session.provider, instances, effectiveFocusId]);
   // v1.5 批3 l3Transient file 编辑态（nav [放弃][完成] handle 模式）：focus 变化重置。
   const [l3FileEditing, setL3FileEditing] = useState(false);
   const l3FilePaneRef = useRef<FilePreviewPaneHandle | null>(null);
@@ -1438,6 +1446,7 @@ function MobileProjectWorkbench({
         <MobileProjectHeader
           focusId={focusRef?.kind === "session" ? effectiveFocusId : undefined}
           focusType={focusRef?.kind === "session" ? focusSessionType : undefined}
+          focusProvider={focusProvider}
           focusKind={
             focusRef?.kind === "session" || focusRef?.kind === "skill" ? focusRef.kind : undefined
           }

@@ -10,7 +10,8 @@
 //   2. 裸 Tailwind 色阶：{bg,text,border,...}-{色名}-{档位}（含 /透明度 后缀）。
 //
 // 白名单：web/src/styles/（token 物化层，HEX 的唯一合法驻地）、*.test.*（测试断言
-// getComputedStyle 对比 token HEX 是合法用途）、行级 `token-ok` 后缀注释（合法字面色：
+// getComputedStyle 对比 token HEX 是合法用途）、brand-icons.ts（生成物：品牌件原色是品牌
+// 资产非 UI token，2026-11-02 品牌件批）、行级 `token-ok` 后缀注释（合法字面色：
 // PWA theme-color meta、terminal 256 色调色板映射等「数据非 UI 样式」场景，v1.4 批2 起）。
 //
 // 模式（默认 report，M1 换底完成后收紧）：
@@ -24,6 +25,8 @@ import { join, relative, sep } from "node:path";
 const REPO_ROOT = join(import.meta.dir, "..");
 const WEB_SRC = join(REPO_ROOT, "web", "src");
 const WHITELIST_DIRS = [join(WEB_SRC, "styles")];
+/** 生成物文件级白名单：品牌件原色（lobehub SVG 的 fill 值）是品牌资产非 UI token。 */
+const WHITELIST_FILES = [join(WEB_SRC, "assets", "brand-icons.ts")];
 
 // #RRGGBB / #RRGGBBAA / #RGB / #RGBA（\b 防止吃进更长的标识符）。
 const HEX_RE = /#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{8}\b|#[0-9a-fA-F]{3,4}\b/g;
@@ -53,6 +56,7 @@ function* walkFiles(dir) {
 }
 
 function isWhitelisted(file) {
+  if (WHITELIST_FILES.includes(file)) return true; // 生成物品牌原色豁免（文件级）。
   return WHITELIST_DIRS.some((d) => file.startsWith(d + sep)); // sep 防前缀误伤（styles2 ≠ styles）。
 }
 
@@ -105,7 +109,7 @@ const scaleCount = violations.length - hexCount;
 console.log(
   `${strict && violations.length ? "✗" : "✓"} 散落 token 机检（mode: ${strict ? "strict" : "report"}）`,
 );
-console.log(`  扫描: web/src ${scanned} 文件（白名单: web/src/styles/、*.test.*）`);
+console.log(`  扫描: web/src ${scanned} 文件（白名单: web/src/styles/、*.test.*、brand-icons.ts）`);
 console.log(`  违例: HEX ${hexCount} 处 / 裸色阶 ${scaleCount} 处`);
 const byFile = new Map();
 for (const v of violations) {
