@@ -33,8 +33,11 @@ export const urlBase64ToUint8Array = (base64: string): Uint8Array<ArrayBuffer> =
 };
 
 /**
- * 开启推送（手势内）：请求系统权限 → 取 VAPID 公钥 → SW pushManager 订阅 → 上报服务端。
+ * 开启推送：请求系统权限 → 取 VAPID 公钥 → SW pushManager 订阅 → 上报服务端。
  * 已有订阅直接复用（重开开关幂等）。失败抛错由调用方展示行内提示。
+ * 两语境共用：①设置页开关（用户手势内——首次授权需手势弹窗）②静默对账
+ * （reconcilePushSubscription；权限已 granted 时 requestPermission 同步返回 granted，
+ * 不弹窗、无手势要求）。
  */
 export const enablePush = async (): Promise<PushSubscription> => {
   const permission = await Notification.requestPermission();
@@ -70,5 +73,39 @@ export const disablePush = async (): Promise<void> => {
     const endpoint = subscription.endpoint;
     await subscription.unsubscribe();
     await unsubscribePush({ endpoint });
+  }
+};
+
+// ── 订阅死亡静默对账（2026-11-03 通知排障拍板）────────────────────
+// 背景：iOS 对主屏 PWA 的 push 订阅会在 SW 更新/系统更新/长期未激活后静默撤销
+// （设备端 getSubscription() → null），而 APNs 对死 endpoint 仍报 201——服务端
+// 零失败日志、设备永收不到，唯一线索是设置页开关变回关闭（2026-11-02 真机排障实锤）。
+// 对账 = 前台激活时检查三 gate，全过即静默重订阅自愈，不再依赖用户偶然进设置页发现。
+
+let reconcileInFlight = false;
+
+/**
+ * 订阅死亡对账（幂等、静默）：仅在「支持 push + 权限已 granted + 订阅确实没了」时
+ * 复用 enablePush 重新订阅上报；其余情况（非 standalone / 权限未授权 / 订阅健在）
+ * 直接跳过——首次授权必须用户手势，不属于对账职责（那是设置页开关的事）。
+ * 返回是否触发了重新订阅（测试/调试用；失败内部吞掉只告警——自愈机制不允许打扰）。
+ */
+export const reconcilePushSubscription = async (): Promise<boolean> => {
+  if (!canUsePush() || pushPermission() !== "granted") return false;
+  // visibility 抖动并发防护：iOS 切 app 快速往返会连发多次 visible。
+  if (reconcileInFlight) return false;
+  reconcileInFlight = true;
+  try {
+    const existing = await getPushSubscription();
+    if (existing) return false;
+    await enablePush();
+    return true;
+  } catch (error) {
+    // 吞错面覆盖全 async 段：SW/pushManager 边缘态 reject 与 enablePush 失败同样
+    // 只告警（调用点都是 void，rejection 逃出即 unhandled）——自愈机制不允许打扰。
+    console.warn("[push] reconcile resubscribe failed:", error);
+    return false;
+  } finally {
+    reconcileInFlight = false;
   }
 };

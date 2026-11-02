@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { I18nProvider } from "./i18n";
 import { queryClient } from "./lib/query-client";
 import { useKeyboardInsetGlobal } from "./lib/use-keyboard-inset";
+import { usePushReconcile } from "./lib/use-push-reconcile";
 import { restoreLastPath, saveCurrentPath } from "./navigation-persistence";
 import { router } from "./routes/router";
 import { ThemeSync } from "./theme";
@@ -21,6 +22,12 @@ router.subscribe("onResolved", () => {
 /** 键盘 inset 全局同步（批 17）：visualViewport → :root 的 --kb-offset/--kb-active。 */
 function KeyboardInsetSync() {
   useKeyboardInsetGlobal();
+  return null;
+}
+
+/** Web Push 订阅死亡静默对账（2026-11-03 排障批）：冷启动 + 回前台时自愈重订阅。 */
+function PushReconcileSync() {
+  usePushReconcile();
   return null;
 }
 
@@ -40,6 +47,7 @@ createRoot(root).render(
         <JotaiProvider store={getDefaultStore()}>
           <ThemeSync />
           <KeyboardInsetSync />
+          <PushReconcileSync />
           <RouterProvider router={router} />
         </JotaiProvider>
       </QueryClientProvider>
