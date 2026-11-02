@@ -1108,6 +1108,9 @@ export type PushSubscribeRequest = {
     endpoint: string;
     keys: { p256dh: string; auth: string };
   };
+  /** 设备随机 ID（localStorage 持久化）：服务端 upsert 时替换同 ID 旧记录（一设备一记录），
+   *  订阅死亡重订阅后旧死 endpoint 不残留；旧客户端可缺省（缺省即不替换）。 */
+  deviceId?: string;
 };
 
 export type PushUnsubscribeRequest = { endpoint: string };

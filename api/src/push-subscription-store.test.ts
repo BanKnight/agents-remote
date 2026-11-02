@@ -124,3 +124,104 @@ test("损坏 JSON 容错：list 返回空表不抛错；后续 upsert 正常重�
 test("defaultSubscriptionsPath 指向 ~/.agents-remote/push-subscriptions.json（纯函数，不落盘）", () => {
   expect(defaultSubscriptionsPath()).toMatch(/\.agents-remote[/\\]push-subscriptions\.json$/);
 });
+
+test("upsert 带 deviceId：同设备重订阅替换旧 endpoint（一设备一记录）", async () => {
+  const { store } = await makeStore();
+
+  await store.upsert({ ...sub("https://push.example/ep-1"), deviceId: "dev-1" });
+  await store.upsert({ ...sub("https://push.example/ep-2"), deviceId: "dev-1" });
+  const all = await store.list();
+  expect(all).toHaveLength(1);
+  expect(all[0].endpoint).toBe("https://push.example/ep-2");
+  expect(all[0].deviceId).toBe("dev-1");
+});
+
+test("upsert 不同 deviceId 并存互不影响", async () => {
+  const { store } = await makeStore();
+
+  await store.upsert({ ...sub("https://push.example/ep-1"), deviceId: "dev-1" });
+  await store.upsert({ ...sub("https://push.example/ep-2"), deviceId: "dev-2" });
+  const all = await store.list();
+  expect(all).toHaveLength(2);
+  expect(all.map((s) => s.endpoint).sort()).toEqual([
+    "https://push.example/ep-1",
+    "https://push.example/ep-2",
+  ]);
+});
+
+test("upsert 缺省 deviceId：不动任何他人记录（旧客户端兼容）", async () => {
+  const { store } = await makeStore();
+
+  await store.upsert({ ...sub("https://push.example/ep-1"), deviceId: "dev-1" });
+  await store.upsert(sub("https://push.example/ep-2"));
+  const all = await store.list();
+  expect(all).toHaveLength(2);
+  const dev1Record = all.find((s) => s.deviceId === "dev-1");
+  expect(dev1Record?.endpoint).toBe("https://push.example/ep-1");
+});
+
+test("旧格式文件（无 deviceId 字段）照常读，且不被新上报误删（保守替换语义）", async () => {
+  const { store, path } = await makeStore();
+  await writeFile(
+    path,
+    JSON.stringify({
+      subscriptions: [
+        {
+          endpoint: "https://push.example/ep-legacy",
+          p256dh: "legacy-p256dh",
+          auth: "legacy-auth",
+          createdAt: "2026-10-01T00:00:00.000Z",
+        },
+        {
+          endpoint: "https://push.example/ep-current",
+          p256dh: "cur-p256dh",
+          auth: "cur-auth",
+          createdAt: "2026-11-01T00:00:00.000Z",
+          deviceId: "dev-1",
+        },
+      ],
+    }),
+    { mode: 0o600 },
+  );
+
+  // 旧格式记录照常读（deviceId 缺省 = undefined）。
+  const all = await store.list();
+  expect(all).toHaveLength(2);
+  expect(
+    all.find((s) => s.endpoint === "https://push.example/ep-legacy")?.deviceId,
+  ).toBeUndefined();
+
+  // 新上报（dev-1）替换同 deviceId 的 ep-current；无 deviceId 的 legacy 记录不被误删。
+  await store.upsert({
+    ...sub("https://push.example/ep-new", "p256dh", "auth"),
+    deviceId: "dev-1",
+  });
+  const after = await store.list();
+  expect(after).toHaveLength(2);
+  expect(after.map((s) => s.endpoint).sort()).toEqual([
+    "https://push.example/ep-legacy",
+    "https://push.example/ep-new",
+  ]);
+});
+
+test("同 endpoint 存量无 deviceId + 上报带 deviceId：挂接归属（升级设备订阅健在路径）", async () => {
+  const { store } = await makeStore();
+
+  await store.upsert(sub("https://push.example/ep-1"));
+  expect((await store.list())[0].deviceId).toBeUndefined();
+
+  await store.upsert({ ...sub("https://push.example/ep-1"), deviceId: "dev-1" });
+  const all = await store.list();
+  expect(all).toHaveLength(1);
+  expect(all[0].deviceId).toBe("dev-1");
+});
+
+test("同 endpoint 无 deviceId 上报：不抹既有 deviceId（一设备一记录不变量）", async () => {
+  const { store } = await makeStore();
+
+  await store.upsert({ ...sub("https://push.example/ep-1"), deviceId: "dev-1" });
+  await store.upsert(sub("https://push.example/ep-1"));
+  const all = await store.list();
+  expect(all).toHaveLength(1);
+  expect(all[0].deviceId).toBe("dev-1");
+});

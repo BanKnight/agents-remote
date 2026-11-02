@@ -32,6 +32,28 @@ export const urlBase64ToUint8Array = (base64: string): Uint8Array<ArrayBuffer> =
   return output;
 };
 
+// ── 设备随机 ID（死订阅清理批，2026-11-03）────────────────────────
+// iOS 订阅死亡重订阅后 APNs 生成新 endpoint，服务端按 endpoint 去重的 upsert 会留下
+// 永远 201 的死记录。上报时带 localStorage 持久化的随机 ID，服务端 upsert 即替换
+// 同 ID 旧记录（一设备一记录）——对账自愈/手动重开走 enablePush 天然完成替换。
+
+const PUSH_DEVICE_ID_KEY = "agents-remote.pushDeviceId";
+
+/** 设备随机 ID（惰性生成并持久化；同设备跨会话稳定）。 */
+export const pushDeviceId = (): string => {
+  try {
+    const existing = localStorage.getItem(PUSH_DEVICE_ID_KEY);
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    localStorage.setItem(PUSH_DEVICE_ID_KEY, id);
+    return id;
+  } catch {
+    // 存储故障（Safari 禁用存储 / 配额满）：降级一次性 ID——订阅上报照常，仅失去
+    // 跨会话替换语义（deviceId optional 兼容面），不阻断订阅本身。
+    return crypto.randomUUID();
+  }
+};
+
 /**
  * 开启推送：请求系统权限 → 取 VAPID 公钥 → SW pushManager 订阅 → 上报服务端。
  * 已有订阅直接复用（重开开关幂等）。失败抛错由调用方展示行内提示。
@@ -61,6 +83,7 @@ export const enablePush = async (): Promise<PushSubscription> => {
   }
   await subscribePush({
     subscription: { endpoint: json.endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } },
+    deviceId: pushDeviceId(),
   });
   return subscription;
 };

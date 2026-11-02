@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   canUsePush,
   getPushSubscription,
+  pushDeviceId,
   reconcilePushSubscription,
   urlBase64ToUint8Array,
 } from "./push";
@@ -167,6 +168,8 @@ describe("订阅死亡静默对账", () => {
       configurable: true,
       value: dom.window.navigator,
     });
+    // 同款裸标识符：push.ts 的 pushDeviceId 读裸 localStorage（bun 全局无此属性）。
+    globalThis.localStorage = dom.window.localStorage;
   });
 
   afterEach(() => {
@@ -183,12 +186,14 @@ describe("订阅死亡静默对账", () => {
     // navigator 注入同步还原：泄漏会破坏前段「支持性 gate」用例的前提（干净 jsdom 无 SW）。
     delete (dom.window.navigator as { standalone?: unknown }).standalone;
     delete (dom.window.navigator as { serviceWorker?: unknown }).serviceWorker;
+    delete (globalThis as { localStorage?: unknown }).localStorage;
   });
 
   /** 挂 mock SW 面 + fetch 拦截（vapid 公钥 / 订阅上报两路），返回 registration 供细调。 */
   function installPushEnv(existingEndpoint: string | null): {
     registration: MockRegistration;
     reportedEndpoints: string[];
+    reportedDeviceIds: string[];
   } {
     const registration = makeMockRegistration(existingEndpoint);
     Object.defineProperty(dom.window.navigator, "serviceWorker", {
@@ -196,33 +201,46 @@ describe("订阅死亡静默对账", () => {
       value: { getRegistration: async () => registration },
     });
     const reportedEndpoints: string[] = [];
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const reportedDeviceIds: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/push/vapid-public-key")) {
         return new Response(JSON.stringify({ publicKey: MOCK_VAPID_KEY }), { status: 200 });
       }
       if (url.includes("/api/push/subscriptions")) {
         reportedEndpoints.push(url);
+        const body = JSON.parse((init?.body as string) ?? "{}") as { deviceId?: string };
+        reportedDeviceIds.push(body.deviceId ?? "");
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       }
       return new Response(JSON.stringify({}), { status: 200 });
     }) as typeof globalThis.fetch;
-    return { registration, reportedEndpoints };
+    return { registration, reportedEndpoints, reportedDeviceIds };
   }
 
   test("订阅死了 + 权限在 → 静默重订阅并上报（自愈主路径）", async () => {
     standaloneOn = true;
-    const { registration, reportedEndpoints } = installPushEnv(null);
+    const { registration, reportedEndpoints, reportedDeviceIds } = installPushEnv(null);
     let subscribed = false;
     registration.pushManager.subscribe = async () => {
       subscribed = true;
       return makeMockSubscription("https://push.example/new-ep");
     };
+    // pushDeviceId 惰性生成走真实 localStorage（jsdom）；清 key 保断言确定性。
+    localStorage.removeItem("agents-remote.pushDeviceId");
     const result = await reconcilePushSubscription();
     expect(result).toBe(true);
     expect(subscribed).toBe(true);
     expect(reportedEndpoints.length).toBe(1);
     expect(reportedEndpoints[0]).toContain("/api/push/subscriptions");
+    // 上报带设备随机 ID（死订阅清理：服务端按它替换同设备旧记录）。
+    expect(reportedDeviceIds).toHaveLength(1);
+    expect(reportedDeviceIds[0]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    // 持久化稳定：连调两次同值，且与上报值一致（同设备跨会话替换语义的根基）。
+    expect(pushDeviceId()).toBe(pushDeviceId());
+    expect(pushDeviceId()).toBe(reportedDeviceIds[0]);
   });
 
   test("订阅健在 → 跳过（不重新 subscribe 不重复上报）", async () => {

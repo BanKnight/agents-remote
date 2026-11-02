@@ -32,6 +32,7 @@ export const handlePushRoutes = async (
       endpoint: body.subscription.endpoint,
       p256dh: body.subscription.keys.p256dh,
       auth: body.subscription.keys.auth,
+      deviceId: body.deviceId,
     });
     return new Response(JSON.stringify({ ok: true }), { headers: JSON_HEADERS });
   }
@@ -55,6 +56,7 @@ export const handlePushRoutes = async (
 // 认证后缓慢撑盘（每次 upsert 全量重写订阅文件）。
 const ENDPOINT_MAX_LENGTH = 2048;
 const KEY_MAX_LENGTH = 512;
+const DEVICE_ID_MAX_LENGTH = 128;
 
 const isSubscriptionShape = (body: PushSubscribeRequest): boolean => {
   const sub = body.subscription;
@@ -68,6 +70,15 @@ const isSubscriptionShape = (body: PushSubscribeRequest): boolean => {
     typeof sub.keys?.auth !== "string" ||
     !sub.keys.auth ||
     sub.keys.auth.length > KEY_MAX_LENGTH
+  ) {
+    return false;
+  }
+  // deviceId optional（旧客户端缺省即不替换）：存在时必须非空且限长（随机 UUID，富余即可）。
+  if (
+    body.deviceId !== undefined &&
+    (typeof body.deviceId !== "string" ||
+      !body.deviceId ||
+      body.deviceId.length > DEVICE_ID_MAX_LENGTH)
   ) {
     return false;
   }
