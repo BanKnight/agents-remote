@@ -2150,6 +2150,7 @@ Claude CLI 有两套输出管道：**CLI stdout**（`--output-format stream-json
 | `permission-mode` | 权限模式变更独立事件 | 中 — 恢复 permission mode 显示（仅 7 条样本） |
 | `mode` | CLI 运行时心跳（永远 `"normal"`） | **无** — 永远是 `"normal"`，不承载任何状态信息 |
 | `queue-operation` | CLI 输入队列操作（含 `content` 入队内容） | 低 — 用于 debug |
+| `system/informational` | 运营公告（auto-mode 计费政策变更等） | 低 — 公告文本，正投影 InformationalNotice（见 `system/informational` 段） |
 
 ---
 
@@ -3239,11 +3240,11 @@ content 本身**不带** source 字段。
 
 ---
 
-#### `system/informational` — 信息性通知
+#### `system/informational` — 运营公告（CLI 2.1.299+）
 
-**含义**：CLI 内部信息性通知（如 hook 阻塞警告）。
+**含义**：CLI 运营性公告（真机实证：auto-mode 计费政策变更通知；早期观察为 hook 阻塞警告）。JSONL 落盘 + 历史回放可见。前端正投影为 warning 色轻量提示块（InformationalNotice），不落 fallback 杂音气泡。
 
-**关键字段**：`subtype: "informational"`, `content` (string), `level` (string)
+**关键字段**：`subtype: "informational"`, `content` (string，CLI 原文公告), `level` (string，开放枚举，实测 `"warning"`), `isMeta` (false), `uuid`/`session_id`/`timestamp`
 
 ---
 

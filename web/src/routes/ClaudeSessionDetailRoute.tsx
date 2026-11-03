@@ -3087,6 +3087,38 @@ function VcsChangeNotice({ headIndex }: { headIndex: number }) {
   );
 }
 
+type InformationalCustom = {
+  systemMessageType: "informational";
+  text?: string;
+  level?: string;
+};
+
+// system{informational}: CLI 运营公告（CLI 2.1.299+，JSONL 落盘，如 auto-mode
+// 计费政策变更通知）。level 开放枚举：warning → warning 色，其余中性。文本为
+// CLI 原文（动态公告不翻译，同 command-output 展示 stdout 的口径）。
+function InformationalNotice({ headIndex }: { headIndex: number }) {
+  const custom = useAuiState(
+    (s) => (s.thread.messages[headIndex]?.metadata?.custom ?? {}) as InformationalCustom,
+  );
+  if (!custom.text) return null;
+  const isWarning = custom.level === "warning";
+  return (
+    <div className="flex justify-start px-3 py-1.5 sm:px-5">
+      <div
+        className={`inline-flex max-w-full items-start gap-1.5 rounded-lg px-2.5 py-1 ${
+          // warningText 语义 token（浅底警示文字；裸 text-warning 在浅色 1.91:1）
+          isWarning ? "bg-warning/10 text-warning-text" : "bg-on-surface/5 text-on-surface-soft"
+        }`}
+      >
+        <span className="mt-0.5 shrink-0 [&_svg]:size-3.5">
+          <ShellIcon name={isWarning ? "warning-triangle" : "info"} />
+        </span>
+        <span className="min-w-0 whitespace-pre-wrap text-xs break-words">{custom.text}</span>
+      </div>
+    </div>
+  );
+}
+
 type CommandOutputCustom = {
   systemMessageType: "command-output";
   commandName?: string;
@@ -3256,6 +3288,8 @@ function MessageRouter({
     return <CommandOutputCard headIndex={index} />;
   if (custom?.systemMessageType === "model-change") return <ModelChangeNotice headIndex={index} />;
   if (custom?.systemMessageType === "vcs-change") return <VcsChangeNotice headIndex={index} />;
+  if (custom?.systemMessageType === "informational")
+    return <InformationalNotice headIndex={index} />;
   if (custom?.systemMessageType === "compact-progress") return <CompactProgress />;
   if (custom?.systemMessageType === "compact-abort")
     return (

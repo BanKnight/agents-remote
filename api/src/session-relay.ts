@@ -268,6 +268,8 @@ export class ClaudeSessionRelay {
         "vcs_state_changed",
         // CLI 2.1.299+：权限检查状态（纯内部信号；客户端投影跳过，服务端仅收录免 unknown 日志）
         "permission_check_status",
+        // CLI 2.1.299+：运营公告帧（JSONL 落盘；客户端正投影为 InformationalNotice 轻量提示）
+        "informational",
       ]);
       if (subtype && !knownSubtypes.has(subtype)) {
         console.log(

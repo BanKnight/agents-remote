@@ -2023,6 +2023,16 @@ export type ChatStreamItem =
       _rawSnapshots: SessionStreamServerMessage[];
     }
   | {
+      // system{informational}: CLI 运营公告（CLI 2.1.299+，JSONL 落盘，如 auto-mode
+      // 计费政策变更通知）。渲染为 warning 色轻量提示块（InformationalNotice）；
+      // 未收录前落 fallback 杂音原始气泡（真机用户可见的「原始气泡」即此帧）。
+      kind: "informational";
+      text: string;
+      level?: string;
+      sourceUuids: string[];
+      _rawSnapshots: SessionStreamServerMessage[];
+    }
+  | {
       // Gen UI 生成页（M1.b）：assistant 文本行的 `::gen-ui{...}` 标记投影出的卡片。
       // 标记行从文本中剥离（完整才投影；流式中不完整 → 行文本不显示、暂不投影，
       // 下一轮全量重算自然收敛）；解析失败（完整但非法 JSON）→ 保留原行文本不静默吞。
@@ -3133,6 +3143,23 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
         continue;
       }
 
+      // system{informational}: CLI 运营公告（CLI 2.1.299+，level 开放枚举如
+      // "warning"）。正投影成轻量提示项；无文本的畸形帧继续落 fallback（观察面）。
+      if (subtype === "informational") {
+        const info = msg as unknown as { content?: unknown; level?: unknown };
+        const text = typeof info.content === "string" ? info.content : "";
+        if (text) {
+          items.push({
+            kind: "informational",
+            text,
+            ...(typeof info.level === "string" && info.level ? { level: info.level } : {}),
+            sourceUuids: getMsgUuid(msg) ? [getMsgUuid(msg)!] : [],
+            _rawSnapshots: [msg],
+          });
+          continue;
+        }
+      }
+
       // CLI slash-command / bash output messages emitted as system subtype
       // local_command on JSONL replay. Convert them to command-output items so
       // the merge pass can combine them with the preceding command-input echo.
@@ -3918,6 +3945,22 @@ export function renderChatStream(
               systemMessageType: "vcs-change",
               vcsKind: item.vcsKind,
               branch: item.branch,
+            },
+          },
+        });
+        break;
+      }
+      case "informational": {
+        messages.push({
+          role: "system",
+          content: [{ type: "text", text: "" }],
+          metadata: {
+            custom: {
+              sourceUuids: [...item.sourceUuids],
+              _rawMessages: item._rawSnapshots,
+              systemMessageType: "informational",
+              text: item.text,
+              ...(item.level ? { level: item.level } : {}),
             },
           },
         });

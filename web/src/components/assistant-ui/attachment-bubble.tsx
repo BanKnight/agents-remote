@@ -58,12 +58,19 @@ function fileBody(raw: Record<string, unknown>): ReactNode | null {
 }
 
 function editedTextBody(raw: Record<string, unknown>): ReactNode | null {
-  const content = raw.attachment as Record<string, unknown> | undefined;
-  const snippet = content?.snippet as string | undefined;
-  if (!snippet) return null;
-  return (
-    <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-48">{snippet}</pre>
-  );
+  const content = (raw.attachment as Record<string, unknown> | undefined)?.snippet as
+    | string
+    | undefined;
+  if (content) {
+    return (
+      <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-48">
+        {content}
+      </pre>
+    );
+  }
+  // CLI 2.1.299+ 新形态：snippet 为空（无差异内容），语义信息移到顶层 rendered
+  // 注入块（「文件在磁盘上被外部修改」提示）→ 降级消费 rendered。
+  return renderedBody(raw);
 }
 
 function planFileBody(raw: Record<string, unknown>): ReactNode | null {

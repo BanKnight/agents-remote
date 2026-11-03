@@ -3346,6 +3346,19 @@ describe("handleAttachment", () => {
     expect(att?.snippet).toBe("const x = 1;\nconst y = 2;");
   });
 
+  // CLI 2.1.299+ 新形态：snippet 为空（无差异内容），语义信息移到顶层 rendered
+  // 注入块（「文件在磁盘上被外部修改」提示）→ body 降级消费 rendered（不再 null 单行）。
+  test("edited_text_file empty snippet falls back to rendered as body", () => {
+    const raw = {
+      attachment: { type: "edited_text_file", filename: "/p/f.md", snippet: "" },
+      rendered: [
+        { content: "<system-reminder>Note: /p/f.md changed on disk...</system-reminder>" },
+      ],
+    };
+    const body = ATTACHMENT_CONFIG.edited_text_file?.body?.(raw as Record<string, unknown>);
+    expect(body).not.toBeNull();
+  });
+
   test("compact_file_reference returns bubble without body (single-line)", () => {
     const result = handleAttachment(
       attachment("compact_file_reference", {
@@ -4951,6 +4964,66 @@ describe("system:vcs_state_changed (CLI 2.1.268 live-only git 通知)", () => {
   });
 });
 
+describe("system:informational (CLI 2.1.299 运营公告)", () => {
+  const informational = (content: string, level?: string): SessionStreamServerMessage =>
+    ({
+      type: "system",
+      subtype: "informational",
+      content,
+      ...(level !== undefined ? { level } : {}),
+      isMeta: false,
+      uuid: "info-1",
+      session_id: "s1",
+    }) as unknown as SessionStreamServerMessage;
+
+  test("产 informational 项（text + level），不进 fallback debug 气泡", () => {
+    const items = normalizeChatStream([
+      informational(
+        "We're changing auto mode to no longer charge for classifier requests in Claude Code",
+        "warning",
+      ),
+    ]);
+    expect(items.filter((i) => i.kind === "fallback")).toHaveLength(0);
+    const info = items.find((i) => i.kind === "informational") as
+      | Extract<ChatStreamItem, { kind: "informational" }>
+      | undefined;
+    expect(info).toBeDefined();
+    expect(info?.text).toContain("auto mode");
+    expect(info?.level).toBe("warning");
+  });
+
+  test("无 level 正常投影；无文本畸形帧仍落 fallback（观察面）", () => {
+    const items = normalizeChatStream([informational("plain notice")]);
+    const info = items.find((i) => i.kind === "informational") as
+      | Extract<ChatStreamItem, { kind: "informational" }>
+      | undefined;
+    expect(info).toBeDefined();
+    expect(info?.level).toBeUndefined();
+
+    const malformed = normalizeChatStream([
+      {
+        type: "system",
+        subtype: "informational",
+        uuid: "info-bad",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(malformed.filter((i) => i.kind === "informational")).toHaveLength(0);
+    expect(malformed.filter((i) => i.kind === "fallback")).toHaveLength(1);
+  });
+
+  test("renderChatStream 投影为 systemMessageType=informational 的 system 行", () => {
+    const messages = renderChatStream(normalizeChatStream([informational("notice", "warning")]));
+    const row = messages.find(
+      (m) =>
+        (m.metadata?.custom as Record<string, unknown> | undefined)?.systemMessageType ===
+        "informational",
+    );
+    expect(row).toBeDefined();
+    const custom = row?.metadata?.custom as Record<string, unknown>;
+    expect(custom.text).toBe("notice");
+    expect(custom.level).toBe("warning");
+  });
+});
 describe("atis-latch / total_tokens_reminder (CLI 2.1.268 JSONL 噪音静默)", () => {
   test("atis-latch 顶层帧不产任何 item（CLI resume 自消费的内部锁存）", () => {
     const items = normalizeChatStream([

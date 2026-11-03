@@ -866,6 +866,32 @@ test("ClaudeSessionRelay treats vcs_state_changed as a known subtype and replays
   relay.destroy();
 });
 
+// informational 是已知 subtype（CLI 2.1.299+ 运营公告，JSONL 落盘），同款日志噪音治理。
+test("ClaudeSessionRelay treats informational as a known subtype and replays it", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  const infoLine = JSON.stringify({
+    type: "system",
+    subtype: "informational",
+    content: "notice",
+    level: "warning",
+    uuid: "info-1",
+  });
+  await relay.handleStdoutLine(infoLine);
+
+  const replay: string[] = [];
+  relay.addSubscriber(
+    (line) => replay.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  expect(replay).toContain(infoLine);
+
+  relay.destroy();
+});
+
 // ── 增量回放（?since= 锚定）────────────────────────────────────────────
 
 test("ClaudeSessionRelay anchors on a live-buffer uuid and resends only the tail", async () => {

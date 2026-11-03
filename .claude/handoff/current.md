@@ -1,17 +1,17 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-03（幽灵 blocked 二次根治：架构从服务端快照门禁转向聊天流自洽作废机制，实现完成、门禁全绿，reviewer 审查中）
+> 最后更新：2026-11-03（幽灵 blocked 二次根治：anchor 作废机制已 commit `1b9ffbf`，review 消化完毕，待 push）
 
 ## 一句话状态
 
-**幽灵 blocked bug 按用户架构指引二次根治**：pending 只看聊天流——session_init 帧新增
-`anchor` 锚落点字段，delta 回放 + anchor="history"（实时段重启）→ 客户端把旧实时段全部
-未决 control_request 帧标 stale → 投影层补 isInterrupted → shared 谓词自动解除，composer/
-托盘/金框/计划提问卡零 gate 全部正确。快照门禁链（aliveControlRequestIds /
-isLivePendingControlRequest / route useApprovals 接线 / loaded）已整体撤除，审批快照退回
-审批中心本职。门禁全绿（typecheck 三包 / api 1272 + shared 12 + web 1023 / CSS 硬闸 /
-tokens），api/web 已 respawn，产物验证含新代码零旧残留。**待 commit（含未 push 的
-483e66c 基础上叠加）；code-reviewer 审查中，消化报告后再 commit。**
+**幽灵 blocked bug 按用户架构指引二次根治完成并已 commit**（`1b9ffbf`，在未 push 的
+`483e66c` 之上叠加）：pending 只看聊天流——session_init 帧新增 `anchor` 锚落点字段，
+delta 回放 + anchor="history"（实时段重启）→ 客户端把旧实时段全部未决 control_request
+帧标 stale → 投影层补 isInterrupted → shared 谓词自动解除，composer/托盘/金框/计划提问
+卡零 gate 全部正确。快照门禁链已整体撤除，审批快照退回审批中心本职。reviewer 审查已
+消化：P1 作废写入改 updater 形式（一行，消除理论竞态）；P2 注释补全论证链 + WS 不断
+端不解除边界记档。pre-commit 全门禁绿，api/web 已 respawn 产物验证通过。**待 push（需
+用户确认外发）。**
 
 ## 本 session 焦点
 
@@ -54,22 +54,25 @@ tokens），api/web 已 respawn，产物验证含新代码零旧残留。**待 c
   CSS 硬闸 + tokens 机检；api/web respawn；产物 rg 验证（markStaleControlRequests 在、
   aliveControlRequestIds/isLivePendingControlRequest 零残留）+ CSS content-type text/css
 - ✅ 协议文档：claude-cli-stream-protocol.md 增量回放段补锚落点 anchor 说明
-- ⏳ code-reviewer 审查中（重点：作废时序竞态 / 误杀面 / 撤除链完整性 / full 回放路径）
+- ✅ code-reviewer 审查消化：P1 作废写入改 updater 形式
+  （`setRawMessages((prev) => markStaleControlRequests(prev))`，ref 镜像 read-modify-write
+  有丢失已入队 append 的理论竞态）；P2-3 注释补「historyLines 为 activate 时一次性快照」
+  前提；P2-2（CLI 崩溃而 WS 不断的端 composer 保持 blocked 到重连/刷新；session_status
+  广播挂同款 stale 化是后续加固方向）已记档进 markStaleControlRequests 注释
+- ✅ commit `1b9ffbf`（11 文件 +315/−216，pre-commit 全门禁绿）
 
 ### 阻塞 / 风险
 
 - 无阻塞。全量测试曾出现一次 web 1 fail（expect toBe），单跑与复跑均绿——偶发测试间
   干扰，与本次改动无关（此前 session 已有同类顺序依赖修复记录），真复现再治。
-- 已知边界（继承自方案 H 分析）：replay cache 冷启动恢复窗口的幽灵存活到 session_init
-  到达（毫秒级）后清除，可接受。
+- 已知边界（reviewer 核实）：①WS 不断的端在 CLI 死亡后 composer 保持 blocked 直到该端
+  重连/刷新（多端同挂场景罕见）；②replay cache 冷启动恢复窗口的幽灵存活到 session_init
+  到达（毫秒级）后清除——均可接受。
 
 ## 下一步
 
-1. 消化 code-reviewer 报告 → 修复发现项 → commit（标准 `git add && git commit`，含
-   483e66c 之上叠加；尾行 Co-Authored-By: Claude Opus 4.8 (1M context)）。
-2. push 需用户确认（外发）。
-3. 真机验证清单交用户：22router 幽灵会话页刷新后 composer 应不再 blocked（该会话
-   current.pending 已被服务端 clearRuntime 清掉；若 CLI 已死，重连后走 full/作废路径）。
+1. ✅ 已 push（`bd7fa06..1b9ffbf`，用户确认外发 2026-11-03）。
+2. 遗留：v1.7 真机验证清单反馈；wiki/ 目录 git 归属；swap 扩容 2G（仅建议）+ 构成复查。
 
 ## 易丢的关键上下文
 

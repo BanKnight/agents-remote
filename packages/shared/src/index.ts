@@ -2216,6 +2216,18 @@ export type ClaudeStatusMessage = {
   uuid: string;
 };
 
+// CLI 2.1.299+ 运营公告帧（JSONL 落盘，如 auto-mode 计费政策变更通知）。
+// level 开放枚举（实测见 "warning"）；content 为 CLI 原文公告文本。
+export type ClaudeSystemInformational = {
+  type: "system";
+  subtype: "informational";
+  content: string;
+  level?: string;
+  isMeta?: boolean;
+  session_id: string;
+  uuid: string;
+};
+
 export type ClaudeThinkingTokens = {
   type: "system";
   subtype: "thinking_tokens";
@@ -3059,6 +3071,7 @@ export type SessionStreamServerMessage =
   | ClaudeContextUsageChanged
   | ClaudeCompactBoundary
   | ClaudeStatusMessage
+  | ClaudeSystemInformational
   | ClaudeApiRetry
   | ClaudeMode
   | ClaudeAttachment
