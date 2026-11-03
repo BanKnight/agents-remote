@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
 const password = process.env.E2E_PASSWORD ?? "secret";
@@ -280,6 +282,19 @@ const GIT_STALE_SC = {
 test("MCP Apps git status card: stale mock → real listDiff refresh round-trip", async ({
   page,
 }) => {
+  // git 现场自建（顺序依赖实证 2026-11-03）：demo 仓库是全套测试共享的文件系统
+  // 单例——前面的 git-diff「提交」用例会把构造态（worktree README + staged
+  // index.ts）commit 掉，本用例曾隐含「跑到自己时仓库仍有 3 个变更」的执行序
+  // 假设，连跑必挂（实测两轮全套挂、单跑绿）。此处清残迹后重建同一形态：
+  // README worktree + index.ts staged + 构造态遗留的 notes.txt untracked = 3 个，
+  // 断言与执行序解耦。
+  const demoRepo = `${process.env.E2E_PROJECTS_ROOT ?? ""}/demo`;
+  execFileSync("git", ["-C", demoRepo, "checkout", "--", "."]);
+  execFileSync("git", ["-C", demoRepo, "reset", "-q", "HEAD", "--", "."]);
+  appendFileSync(`${demoRepo}/README.md`, "\nworktree-e2e-line\n");
+  appendFileSync(`${demoRepo}/src/index.ts`, "\nexport const mcpGitE2eStaged = true;\n");
+  execFileSync("git", ["-C", demoRepo, "add", "src/index.ts"]);
+
   const assertNoConsoleErrors = collectConsoleErrors(page);
   await page.addInitScript(() => {
     localStorage.setItem("lang", "zh");

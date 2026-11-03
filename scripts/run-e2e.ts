@@ -141,6 +141,9 @@ const main = async () => {
         E2E_BASE_URL: webUrl,
         E2E_PASSWORD: password,
         E2E_PROJECT_NAME: "demo",
+        // demo 仓库真实路径（mcp-app-card git 卡测试自建 git 现场用——测试间共享
+        // 一个文件系统仓库，谁先跑谁改状态，断言前提必须自建而非依赖初始构造）。
+        E2E_PROJECTS_ROOT: projectsRoot,
         E2E_ARTIFACTS_DIR: artifactsDir,
       },
       stderr: "inherit",
