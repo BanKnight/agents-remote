@@ -125,7 +125,8 @@ export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
 
 /**
  * 终端 composer 快捷键条隐藏集（键位自定义 ⚙，原型 workspace-terminal-input ③ 落地）：
- * 存被隐藏的 quickKey id 列表（sessionQuickKeys 全集子集），localStorage 持久化。
+ * 存被隐藏的 quickKey id 列表（sessionQuickKeys 全集子集），localStorage 持久化，
+ * 全局作用域（所有 TUI 形态会话共享——终端 + agent TUI 模式，2026-11-03 gate 放开同域）。
  */
 export const terminalQuickKeysHiddenAtom = atomWithLocalOnlyStorage<string[]>(
   "workbench.terminalQuickKeysHidden",
@@ -136,7 +137,8 @@ export const terminalQuickKeysHiddenAtom = atomWithLocalOnlyStorage<string[]>(
  * 终端 composer 快捷键条顺序（键位编辑面板拖拽排序，2026-10-11 真机反馈⑤「内容 + 顺序
  * 编排」）：存 id 全序。未存/新增 id 由消费方归一化（applyQuickKeyOrder：已知键按存储序
  * 排前，缺失键按默认序尾补，稳定排序）——快捷键条渲染与编辑面板共用同一归一化管道。
- * localStorage 持久化。与 hidden 集正交：顺序含被隐藏的键。
+ * localStorage 持久化，全局作用域（所有 TUI 形态会话共享——终端 + agent TUI 模式，
+ * 2026-11-03 gate 放开同域）。与 hidden 集正交：顺序含被隐藏的键。
  */
 export const terminalQuickKeysOrderAtom = atomWithLocalOnlyStorage<string[]>(
   "workbench.terminalQuickKeysOrder",
@@ -155,8 +157,9 @@ export const terminalQuickKeysCustomAtom = atomWithLocalOnlyStorage<CustomQuickK
 /**
  * 预置终端键启用集（两域分离 2026-10-11 拍板「预置序列清单」）：勾选启用的
  * presetTerminalKeys id 列表，启用键进快捷键条（排序走 terminalQuickKeysOrderAtom
- * 归一化）。localStorage 持久化。与 hidden 集正交：hidden 只管内置键显隐，preset 键
- * 的「条上与否」由本集管理（开关语义在面板内同构）。
+ * 归一化）。localStorage 持久化，全局作用域（所有 TUI 形态会话共享——终端 + agent
+ * TUI 模式，2026-11-03 gate 放开同域）。与 hidden 集正交：hidden 只管内置键显隐，
+ * preset 键的「条上与否」由本集管理（开关语义在面板内同构）。
  */
 export const terminalPresetKeysEnabledAtom = atomWithLocalOnlyStorage<string[]>(
   "workbench.terminalPresetKeysEnabled",
@@ -166,7 +169,8 @@ export const terminalPresetKeysEnabledAtom = atomWithLocalOnlyStorage<string[]>(
 /**
  * 快捷命令库（两域分离 2026-10-11 拍板，Termius snippets 对标）：命令文本域，与按键域
  * 分离——不占快捷键条，从 ⚙ 面板命令 tab 执行。group = 自由分组标签（空 = 默认组）。
- * localStorage 持久化，全局作用域（所有终端会话共享）。存量 terminalQuickKeysCustomAtom
+ * localStorage 持久化，全局作用域（所有 TUI 形态会话共享——终端 + agent TUI 模式，
+ * 2026-11-03 gate 放开后同域）。存量 terminalQuickKeysCustomAtom
  * 由消费方一次性迁移进本库（migrateCustomKeysToCommands）。
  */
 export const terminalQuickCommandsAtom = atomWithLocalOnlyStorage<QuickCommand[]>(

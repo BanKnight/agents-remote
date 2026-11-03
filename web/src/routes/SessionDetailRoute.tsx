@@ -362,12 +362,11 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
     setCustomQuickKeys([]);
   }, [customQuickKeys, setCustomQuickKeys, setQuickCommands]);
   // 快捷键条只放「按键」（内置 8 键 + 已启用预置键；命令退出按键条——两域分离，
-  // 命令从 ⚙ 面板命令 tab 执行）。预置键启用集是终端 composer 域（atom 注释口径）：
-  // 与 ⚙ 入口同 gate——agent 会话不泄漏（无 ⚙ 可管理）。
-  const enabledPresetKeys =
-    sessionType === "terminal"
-      ? presetTerminalKeys.filter((p) => presetEnabledIds.includes(p.id))
-      : [];
+  // 命令从 ⚙ 面板命令 tab 执行）。预置键启用集与 ⚙ 入口同 gate：SessionDetail 两个
+  // 消费者（TerminalPanel / AgentTerminalPanel = claude TUI 模式）全是 TUI 形态——
+  // 2026-11-03 放开 agent+TUI（原 gate 漏放，真机反馈「composer 少了配置按钮」）；
+  // TUI 操作习惯（ESC/⌃ 系键）两端一致，共享同一份配置。
+  const enabledPresetKeys = presetTerminalKeys.filter((p) => presetEnabledIds.includes(p.id));
   const allQuickKeys = [...sessionQuickKeys(sessionType), ...enabledPresetKeys];
   const quickKeys = applyQuickKeyOrder(allQuickKeys, quickKeyOrder).filter(
     (k) => !hiddenQuickKeyIds.includes(k.id),
@@ -402,39 +401,40 @@ export function SessionDetail({ projectName, sessionId, sessionType }: SessionDe
       setQuickKeysEditorOpen(false);
     }
   };
-  // ⚙ 键位自定义入口（仅终端 composer，原型 workspace-terminal-input ③「控制行仅键位
-  // 自定义」）：开键位自定义面板（QuickKeysEditor 双 tab：键盘域显隐/排序/预置键启用 +
-  // 命令域 CRUD/执行，两域分离 2026-10-11）。
-  const quickKeysCustomize =
-    sessionType === "terminal" ? (
-      <>
-        <button
-          aria-label={t("session.quickKeysCustomize")}
-          className="iicn gear cursor-pointer"
-          onClick={() => setQuickKeysEditorOpen(true)}
-          title={t("session.quickKeysCustomize")}
-          type="button"
-        >
-          <ShellIcon className="h-4 w-4" name="settings" />
-        </button>
-        <QuickKeysEditor
-          canSend={canSend}
-          commands={quickCommands}
-          hiddenIds={hiddenQuickKeyIds}
-          keys={allQuickKeys}
-          onDeleteCommand={deleteQuickCommand}
-          onOpenChange={setQuickKeysEditorOpen}
-          onReorder={setQuickKeyOrder}
-          onRunCommand={runQuickCommand}
-          onSaveCommand={saveQuickCommand}
-          onToggleHidden={toggleQuickKeyHidden}
-          onTogglePresetKey={togglePresetKey}
-          open={quickKeysEditorOpen}
-          order={quickKeyOrder}
-          presetEnabledIds={presetEnabledIds}
-        />
-      </>
-    ) : undefined;
+  // ⚙ 键位自定义入口（原型 workspace-terminal-input ③「控制行仅键位自定义」）：开键位
+  // 自定义面板（QuickKeysEditor 双 tab：键盘域显隐/排序/预置键启用 + 命令域 CRUD/执行，
+  // 两域分离 2026-10-11）。恒渲染——SessionDetail 两消费者（TerminalPanel /
+  // AgentTerminalPanel）全是 TUI 形态；原 `sessionType === "terminal"` gate 是 ⚙ 落地
+  // （10-11）早于 agent 双模式（10-15）的历史漏放，agent+TUI 成盲区（2026-11-03 放开）。
+  const quickKeysCustomize = (
+    <>
+      <button
+        aria-label={t("session.quickKeysCustomize")}
+        className="iicn gear cursor-pointer"
+        onClick={() => setQuickKeysEditorOpen(true)}
+        title={t("session.quickKeysCustomize")}
+        type="button"
+      >
+        <ShellIcon className="h-4 w-4" name="settings" />
+      </button>
+      <QuickKeysEditor
+        canSend={canSend}
+        commands={quickCommands}
+        hiddenIds={hiddenQuickKeyIds}
+        keys={allQuickKeys}
+        onDeleteCommand={deleteQuickCommand}
+        onOpenChange={setQuickKeysEditorOpen}
+        onReorder={setQuickKeyOrder}
+        onRunCommand={runQuickCommand}
+        onSaveCommand={saveQuickCommand}
+        onToggleHidden={toggleQuickKeyHidden}
+        onTogglePresetKey={togglePresetKey}
+        open={quickKeysEditorOpen}
+        order={quickKeyOrder}
+        presetEnabledIds={presetEnabledIds}
+      />
+    </>
+  );
 
   // Stable callback for xterm to send raw input bytes over WebSocket
   const sendTerminalInput = useCallback(
@@ -1212,8 +1212,9 @@ type SessionInputDrawerProps = {
   input: string;
   isDesktop: boolean;
   quickKeys: SessionQuickKey[];
-  /** 控制行左端入口 slot（终端 = 键位自定义 ⚙；agent/其它 undefined）。undefined 时控制行仅发送钮。 */
-  quickKeysCustomize?: ReactNode;
+  /** 控制行左端入口 slot（键位自定义 ⚙）。两消费者全 TUI 形态，调用方恒传（2026-11-03
+   * 起 agent+TUI 同渲染，原「agent undefined」gate 随双模式盲区放开而退役）。 */
+  quickKeysCustomize: ReactNode;
   sessionType: SessionType;
   onCollapsedChange: (collapsed: boolean) => void;
   onInputChange: (value: string) => void;
@@ -1320,13 +1321,13 @@ function SessionInputDrawer({
                   onKeyDown={handleKeyDown}
                 />
               </div>
-              {/* 控制行（原型 irow）：终端 composer 无三彩/无附件——左端 = ⚙ 键位自定义入口
-                 （原型 workspace-terminal-input ③，调用方构造 slot；undefined 时空占位保发送钮
-                  靠右），右端 = .send2 28×28 r12 主色发送钮（与会话版 composer-actions 同源形态）。
+              {/* 控制行（原型 irow）：TUI composer 无三彩/无附件——左端 = ⚙ 键位自定义入口
+                 （原型 workspace-terminal-input ③，调用方构造 slot），右端 = .send2 28×28 r12
+                 主色发送钮（与会话版 composer-actions 同源形态）。
                   onMouseDown preventDefault 保焦 = 移动端发送后键盘不收。h-9 + pt-0.5/pb-2 +
                   px-2.5 = agent 底行逐字同款（卡无 padding 后水平空隙也移交各行，见上）。 */}
               <div className="flex h-9 items-center justify-between px-2.5 pb-2 pt-0.5">
-                {quickKeysCustomize ?? <span aria-hidden="true" />}
+                {quickKeysCustomize}
                 <button
                   className="send2 disabled:opacity-40 disabled:cursor-default"
                   disabled={!canSend || input.trim().length === 0}
