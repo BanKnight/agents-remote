@@ -1,69 +1,72 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-03（TanStack 三库升级 `e3bfc65` + e2e 顺序依赖修复 `98675ef`，已 push）
+> 最后更新：2026-11-03（幽灵 blocked bug 修复完成，review 消化完毕，待 commit/push）
 
 ## 一句话状态
 
-**TanStack 三库维护升级完成并推送**：调研定案不迁 TanStack Start 1.0（全栈框架，
-与本项目 SPA + 独立 Bun API 架构不匹配，优势全部吃不到）——只升 Router/Query/Virtual
-stable 线（全部 ≥7 天发布版本）。升级后全套验证踩出并根治一个 e2e 顺序依赖缺陷
-（mcp git 卡测试，与升级无关），42/42 绿。ar-dev-web 已 respawn 吃到新依赖。
+**「请先确认上方操作但上方无卡」幽灵 blocked bug 根治**：pending 事实源从客户端投影
+（part.controlRequestId + result/isInterrupted）换成**服务端 ApprovalRegistry 快照**
+（`/api/approvals` + approvals-stream WS）。客户端谓词收束为 shared
+`isUnresolvedControlRequest` + adapter `isLivePendingControlRequest` 单源；服务端
+登记入口放开到全部 can_use_tool（复杂工具也登记，过滤上移到中心投影层）。真机确认
+22router 会话已恢复正常。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **不迁 TanStack Start 的论据**：Start = Vite+Nitro 全栈框架（SSR/server functions），
-  本项目 = 纯 SPA（vite prod build+preview :43012）+ 独立 Bun API（:43011）。优势对照
-  逐条不成立（无 SEO 诉求、server functions 的痛点已被 shared 类型契约解决、部署现状
-  更简、PWA/SW 策略与验证基建都要重做）。我们恰是 Start 官方尊重的 SPA 形态。
-- **供应链判定**（今天 2026-11-03）：router 1.170.46（10-22 ✓ 直接升）；query latest
-  5.105.3 昨天发布 <7 天 → 取 5.105.0（10-26 ✓）；virtual latest 3.14.25 <7 天 → 取
-  3.14.23（10-26 ✓）且**精确版本钉死**——`^3.14.23` 会被 bun 解析到 <7 天的 3.14.25。
-- **e2e 顺序依赖缺陷（升级无关，实证归因）**：mcp-app-card「stale → real refresh」
-  两轮全套连跑挂、单跑绿。失败值「1 个文件变更」是**另一个真实值**而非 stale 值——
-  git-diff「提交」用例（#27）把 demo 仓库构造态 commit 掉，真实 listDiff 只剩
-  notes.txt untracked。刷新链路全程正常。修复 = 测试开头清残迹（checkout/reset）+
-  重建 3 文件形态（README worktree + index.ts staged + 遗留 notes.txt untracked），
-  断言与执行序解耦；run-e2e.ts 加 `E2E_PROJECTS_ROOT` seam。
-- **e2e 内存上限 2G → 4G**（dev-environment.md 已更新）：42 测试规模下 2G 被顶爆，
-  journal `2G memory peak` → OOM kill → systemd 停 scope 给余下进程发 SIGTERM
-  （bun 报「Polite quit request」）——**e2e 中途集体 SIGTERM 先查 OOM journal，
-  不是 timeout**。9-20 的 2G 经验值随测试规模过期。
+- **根因链**：control_request 仅存 stdout 不落 JSONL → CLI 死亡后 part 的 result
+  永不到达；`applyToolLifecycle` 对 controlRequestId part **永久豁免 interrupt** →
+  纯客户端谓词把幽灵 part 当待确认 → composer 永久 blocked。服务端 registry 实测
+  空（approvals count: 0）= 权威事实「无人在等」。
+- **方案 H（服务端快照 gate）**：route 层 `useApprovals(true)` → `aliveControlRequestIds`
+  传入 `useClaudeSession` options；`aliveIds === null`（快照未就绪）回退纯谓词不误杀
+  活请求。曾否决 v1（isRunning gate）：live 段重放 assistant 行会恒 true、delta 空重放
+  活请求会误解除，不可靠。
+- **review P0（快照内容不完备）**：registry 登记入口原过滤 ExitPlanMode/AskUserQuestion
+  （不进中心）→ 快照永不含其 id → 活请求被误判幽灵。修在服务端：**全部登记** +
+  过滤上移投影层（`snapshot()` 只投影一键可答卡；PWA push 回调同样只对一键卡发）。
+  会话内计划/提问卡应答走 WS 转发路径（`unregisterForwarded` 现在能真正注销它们）。
+- **用户指示（收束原则）**：多处使用的状态判断必须收束单源——落成 shared
+  `isUnresolvedControlRequest`（四处散写→单源）+ adapter `isLivePendingControlRequest`
+  （composer blocked 与审批托盘共用）+ 计划/提问卡 `awaiting` 同谓词（本地补充态
+  isOrphaned/isError 归入 isInterrupted）。
 
 ### 进度
 
-- ✅ TanStack 调研 + 三库升级 `e3bfc65`（web/package.json + bun.lock；全门禁绿）
-- ✅ e2e 顺序依赖修复 `98675ef`（run-e2e.ts + mcp-app-card.spec.ts + dev-environment.md；
-  修复后全套 42/42 绿）
-- ✅ ar-dev-web respawn（新依赖进产物；CSS 硬闸 + 43012 text/css 验证通过）
-- ✅ 两 commit 已 push（`6ff4eb2..98675ef`）
-- ✅ /handoff save（本次）
+- ✅ 根因定位（JSONL 零孤儿 + registry 空 + 探针不复现 = 幽灵投影实锤）
+- ✅ 客户端：shared 谓词 + adapter 单源谓词 + route 接线 + use-approvals `loaded`
+  + 金框两处口径统一（tool-ui-registry / SystemChatBubble）
+- ✅ 服务端：登记入口放开 + snapshot/push 投影过滤（approval-center）
+- ✅ review 消化：P0 服务端完备性 / P1 两处卡片散写收敛 / P2 loaded 测试补齐；
+  P2（WS 断线 ~15s 快照陈旧窗口）评估为可接受（15s REST 兜底），暂不做连接态回退
+- ✅ 门禁：typecheck 三包 + api 1272 / web 1023 / shared 12 全绿；format/lint/
+  tokens/CSS 硬闸全过；web 产物完整重建（18:12）+ ar-dev-web respawn
+- ✅ ar-dev api respawn（新登记逻辑已加载，health ok）；真机确认 22router 恢复
+- ⏳ 待办：commit（改动 9 文件）+ push（需用户确认外发）
 
 ### 阻塞 / 风险
 
-- 无阻塞。升级后 bundle 由 e2e 全链覆盖；Router 5 个月 patch 跨度，用户日常使用中
-  如遇路由异常优先怀疑此处（探针/e2e 已全绿，非待验证项）。
-- swap 又近满（511Mi/512Mi）——上次治理后 208MB，当日又满；未再深查构成（本批
-  e2e 连跑数轮 chromium 压力是主要嫌疑），下次治理批次处理。
+- 无阻塞。已知边界：WS 断线期间快照最长陈旧 ~15s（活请求 blocked 有延迟窗口）；
+  幽灵 tool 卡的金框/等待横幅（tool-ui-registry）未叠快照门禁（纯视觉，无 composer
+  级危害），如真机反馈再治理。
 
 ## 下一步
 
-1. 遗留：v1.7 真机验证清单反馈（含平板长按探针盲区）；wiki/ 目录 git 归属；
-   swap 扩容 2G（仅建议，未拍板）+ swap 构成复查。
-2. 真机验证状态：⚙（agent TUI 模式 composer 配置按钮）与通知自愈两批
-   （`d3eb1d4` + `630db9b`）**用户均已确认通过**，无待验证项。
+1. commit + push（用户确认外发后）。
+2. 遗留：v1.7 真机验证清单反馈；wiki/ 目录 git 归属；swap 扩容 2G（仅建议）+ 构成复查。
 
 ## 易丢的关键上下文
 
-- **e2e 内存跑法**：`systemd-run --scope --user -p MemoryMax=4G bun run e2e`
-  （勿 ulimit -v，rolldown WASM 会 OOM；前台跑会撞 Bash 工具 600s 超时——
-  42 测试 ~6.5 分钟临界，用后台跑）。
-- **测试间共享 demo 仓库**：demo 是全套 e2e 共享的文件系统单例，凡依赖 git 状态
-  的断言必须自建现场，不依赖初始构造态（mcp-app-card git 卡是先例）。
-- **探针/依赖升级验证路径**：typecheck 三包 → 全量 test（2G cgroup）→ e2e
-  （4G cgroup 后台）→ respawn ar-dev-web → ar-verify-css + curl content-type。
-- 单测限内存 2G（峰值 ~500M）继续有效；pre-commit hook 内已自带。
+- **pendingInteraction 单源链**：shared `isUnresolvedControlRequest`（谓词本体）→
+  adapter `isLivePendingControlRequest`（+快照门禁）→ pendingInteraction /
+  collectPendingApprovals；测试在 claude-adapter(.hook).test.ts「服务端审批快照」段。
+- **快照门禁三分支语义**：空 Set = 否决幽灵；null = 未就绪回退纯谓词；含 id = blocked。
+  `useApprovals.loaded`（query.data !== undefined）是空/未就绪的区分开关。
+- **服务端登记口径**：registry 保留全部 can_use_tool 事实；只有中心投影
+  （snapshot + onApprovalRegistered push）过滤复杂工具——别把过滤挪回入口。
+- api/web 标准重启 = `respawn-pane -k -t ar-dev:api|web`（runbook）；重启 api 会杀
+  挂着的 CLI（--resume 找回，用户已知情）。
 
 ## 提醒
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。

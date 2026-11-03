@@ -108,13 +108,10 @@ export class ApprovalCenter {
     info: ClaudeApprovalRequestInfo,
     request: { request_id: string; request: { tool_name: string; input: Record<string, unknown> } },
   ): void {
-    // §6.5 补强批：ExitPlanMode / AskUserQuestion 不进中心——respond 的通用 allow
-    //（回填原 input）对两者语义错误（前者缺 permission_updates 不切模式、后者缺
-    // answers），与客户端托盘 collectPendingApprovals 同谓词单源（shared
-    // isOneClickApprovable）。排除在入口 → onApprovalRegistered（PWA push）一并
-    // 消失；blocked 状态信号在 runtime 采集层（captureApprovalRequestFromLine 的
-    // applyStatusSignal）先行发出，不受影响。
-    if (!isOneClickApprovable(request.request.tool_name)) return;
+    // 全部 can_use_tool 都登记（2026-11-03）：registry 是「CLI 在等什么」的权威事实源，
+    // 会话 composer 的 blocked 门禁消费快照——ExitPlanMode / AskUserQuestion 若在入口
+    // 被排除，活请求反被客户端判成幽灵（composer 不再置灰）。它们仍不进审批中心 UI：
+    // 排除上移到投影层（snapshot 过滤 + push 回调过滤），registry 保留全部事实。
     const record: ApprovalRecord = {
       runtimeKey: info.runtimeKey,
       projectName: info.projectName,
@@ -126,10 +123,13 @@ export class ApprovalCenter {
       createdAt: new Date().toISOString(),
     };
     this.registry.register(record);
-    this.onApprovalRegistered?.(record);
+    // push 只面向中心卡（respond 的通用 allow 对复杂工具语义错误，快照也已过滤）。
+    if (isOneClickApprovable(record.toolName)) this.onApprovalRegistered?.(record);
   }
 
-  /** §6.4 快照：判活（多 transport 并集）+ 显示名回填。 */
+  /** §6.4 快照：判活（多 transport 并集）+ 显示名回填。中心投影只含一键可答卡
+   *  （ExitPlanMode / AskUserQuestion 已登记供会话 blocked 门禁消费，但 respond 的
+   *  通用 allow 对其语义错误——不进中心快照，会话内专用 UI 应答）。 */
   async snapshot(): Promise<ApprovalSummary[]> {
     const transports = [...this.transports.values()];
     const aliveLists = await Promise.all(
@@ -140,10 +140,11 @@ export class ApprovalCenter {
       for (const key of keys) aliveKeys.add(key);
     }
     const names = await this.resolveSessionNames();
-    return this.registry.snapshot(
+    const all = await this.registry.snapshot(
       aliveKeys,
       (record) => names.get(record.sessionId) ?? record.sessionId,
     );
+    return all.filter((summary) => isOneClickApprovable(summary.toolName));
   }
 
   /**

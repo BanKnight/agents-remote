@@ -5,6 +5,7 @@ import {
   applyTaskSystemMessage,
   buildAllowAllControlResponse,
   collectPendingApprovals,
+  isLivePendingControlRequest,
   isSyntheticAssistantMessage,
   computeRunningCount,
   convertContentToBubble,
@@ -4759,6 +4760,47 @@ describe("collectPendingApprovals", () => {
   test("空输入 / 无 pending → 空数组（托盘不渲染）", () => {
     expect(collectPendingApprovals([])).toEqual([]);
     expect(collectPendingApprovals([assistantItem([toolPart({})])])).toEqual([]);
+  });
+
+  test("isLivePendingControlRequest：谓词 + 快照门禁的单一定义", () => {
+    const live = { type: "tool-call", controlRequestId: "req-1" };
+    // 非 tool-call part 不参与
+    expect(isLivePendingControlRequest({ type: "text", controlRequestId: "req-1" }, null)).toBe(
+      false,
+    );
+    // 未注入 / 已解决 / 已中断 → 恒 false（不论快照）
+    expect(isLivePendingControlRequest({ type: "tool-call" }, new Set(["req-1"]))).toBe(false);
+    expect(
+      isLivePendingControlRequest(
+        { type: "tool-call", controlRequestId: "req-1", result: "" },
+        new Set(["req-1"]),
+      ),
+    ).toBe(false);
+    // 快照就绪：在快照里才为真
+    expect(isLivePendingControlRequest(live, new Set(["req-1"]))).toBe(true);
+    expect(isLivePendingControlRequest(live, new Set())).toBe(false);
+    // 快照未就绪（null）→ 回退纯谓词
+    expect(isLivePendingControlRequest(live, null)).toBe(true);
+  });
+
+  test("aliveIds 快照门禁：不在服务端 registry 的幽灵 part 不收集", () => {
+    const items = [
+      assistantItem([
+        toolPart({ toolCallId: "tu-ghost", controlRequestId: "req-ghost" }),
+        toolPart({ toolCallId: "tu-live", controlRequestId: "req-live" }),
+      ]),
+    ];
+    // 快照就绪且只含活请求 → 幽灵被否决
+    expect(collectPendingApprovals(items, new Set(["req-live"])).map((a) => a.toolCallId)).toEqual([
+      "tu-live",
+    ]);
+    // 快照就绪但为空（无任何待确认）→ 全部为幽灵
+    expect(collectPendingApprovals(items, new Set())).toEqual([]);
+    // null = 快照未就绪 → 回退纯谓词（不误杀活请求，也不额外否决）
+    expect(collectPendingApprovals(items, null).map((a) => a.toolCallId)).toEqual([
+      "tu-ghost",
+      "tu-live",
+    ]);
   });
 
   test("集成：normalizeChatStream 配对 control_request 后能收集到 pending", () => {

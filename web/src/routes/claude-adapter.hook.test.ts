@@ -1548,6 +1548,66 @@ describe("useClaudeSession tool_result matching (external path)", () => {
   });
 });
 
+// ── pendingInteraction × 服务端审批快照门禁（2026-11-03 幽灵 blocked 修复）──
+// control_request 仅存 stdout 不落 JSONL：CLI 死亡 / 回放裁剪后 part 的 result 永不
+// 到达，且 applyToolLifecycle 对 controlRequestId part 豁免 interrupt —— 纯客户端
+// 谓词会把这类幽灵 part 当成待确认 → composer 永久「请先确认上方操作」。事实源 =
+// 服务端 ApprovalRegistry 快照（aliveControlRequestIds），不在其中即为幽灵。
+describe("useClaudeSession pendingInteraction × 服务端审批快照", () => {
+  const toolUseAssistant = (): SessionStreamServerMessage =>
+    ({
+      type: "assistant",
+      userType: "external",
+      message: {
+        id: "a1",
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tu-1", name: "Bash", input: { command: "ls" } }],
+      },
+    }) as unknown as SessionStreamServerMessage;
+
+  const controlRequest = (requestId: string): SessionStreamServerMessage =>
+    ({
+      type: "control_request",
+      request_id: requestId,
+      request: { subtype: "can_use_tool", tool_name: "Bash", tool_use_id: "tu-1" },
+    }) as unknown as SessionStreamServerMessage;
+
+  test("快照无此 id（幽灵）不 blocked；含此 id blocked；未就绪回退纯谓词", async () => {
+    let aliveIds: ReadonlySet<string> | null = new Set();
+    const { result, rerender } = renderHook(() =>
+      useClaudeSession("proj", "sess", undefined, undefined, {
+        aliveControlRequestIds: aliveIds,
+      }),
+    );
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+
+    act(() => {
+      socket.emit(toolUseAssistant());
+      socket.emit(controlRequest("req-1"));
+    });
+
+    // 快照已就绪但为空：服务端 registry 无此请求 = 幽灵 → composer 不 blocked
+    expect(result.current.pendingInteraction).toBe(false);
+
+    // 快照含该 id（CLI 真在等确认）→ blocked
+    aliveIds = new Set(["req-1"]);
+    rerender();
+    expect(result.current.pendingInteraction).toBe(true);
+
+    // 快照未就绪（loaded=false → null）：回退纯谓词，不误杀活请求
+    aliveIds = null;
+    rerender();
+    expect(result.current.pendingInteraction).toBe(true);
+
+    // 快照只含别的请求 → 本请求仍是幽灵
+    aliveIds = new Set(["req-other"]);
+    rerender();
+    expect(result.current.pendingInteraction).toBe(false);
+  });
+});
+
 describe("useClaudeSession resume-gated orphan marking", () => {
   const getMessages = (result: { current: ReturnType<typeof useClaudeSession> }) =>
     result.current.storeAdapter.messages;

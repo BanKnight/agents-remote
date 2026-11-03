@@ -96,7 +96,10 @@ export function useApprovals(enabled: boolean) {
     return () => disconnectApprovalsStream();
   }, [enabled, queryClient]);
 
-  return { approvals: query.data?.approvals ?? [] };
+  // loaded = 已有服务端快照（REST 初值或 WS 首帧任一到达）。消费方据此区分「快照为空」
+  // 与「快照未就绪」：后者不能当作「无 pending」用（会话 composer 的 pending gate
+  // 用 approvals 快照做事实源，未就绪时须回退，否则活请求会被误判为幽灵）。
+  return { approvals: query.data?.approvals ?? [], loaded: query.data !== undefined };
 }
 
 /** 单卡应答（allow/deny）。成功后服务端广播新快照 → WS 帧已更新卡片，无需本地乐观删。 */

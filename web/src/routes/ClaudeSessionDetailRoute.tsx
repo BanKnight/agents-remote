@@ -113,12 +113,14 @@ import {
   type TurnStats,
   type TurnStatusTone,
 } from "./claude-adapter";
+import { useApprovals } from "../hooks/use-approvals";
 import { SubagentOverviewBar, agentCardExpandSignalAtom } from "./claude-subagent-overview";
 import type {
   ClaudeContextUsage,
   ClaudeFileHistorySnapshot,
   EffortLevel,
 } from "@agents-remote/shared";
+import { isUnresolvedControlRequest } from "@agents-remote/shared";
 
 // ── Compact UI: TWO surfaces, NON-OVERLAPPING jobs ──────────────────
 //
@@ -356,6 +358,15 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     queryFn: () => getAgentSession(projectName, sessionId),
   });
 
+  // 服务端审批快照（ApprovalRegistry 权威 pending 事实源）：传给 useClaudeSession 做
+  // composer blocked / 审批托盘的门禁——客户端 part 的 controlRequestId 只是投影，
+  // 幽灵 part（CLI 死亡等）靠它否决。loaded=false（快照未就绪）传 null 回退纯谓词。
+  const { approvals: serverApprovals, loaded: approvalsLoaded } = useApprovals(true);
+  const aliveControlRequestIds = useMemo(
+    () => (approvalsLoaded ? new Set(serverApprovals.map((item) => item.controlRequestId)) : null),
+    [serverApprovals, approvalsLoaded],
+  );
+
   const session = detail.data?.session;
   const availableModels = detail.data?.availableModels ?? [];
   const availableModelResolved = detail.data?.availableModelResolved;
@@ -424,6 +435,7 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
           queryKey: ["projects", projectName, "agent-sessions", sessionId],
         });
       },
+      aliveControlRequestIds,
     },
   );
 
@@ -1382,14 +1394,14 @@ function SystemChatBubble() {
     const ToolUIAny = ToolUI as React.ComponentType<any>;
     const groupPos = (custom?.toolGroupPosition as string) ?? "solo";
     const indent = custom?.toolIndent !== false;
-    // 权限金色边框只在「待批准」期显：controlRequestId 存在 且 tool 未解决（无 result）且
-    // 未中断。批准后 tool 收 result、拒绝经 cancelControlRequest 触发 interrupted —— 两者都
-    // 清边框。镜像 claude-adapter.ts pendingInteraction（controlRequestId && !result && !isInterrupted）。
-    const needsPermission =
-      typeof controlRequestId === "string" &&
-      controlRequestId.length > 0 &&
-      custom?.result == null &&
-      !(custom?.isInterrupted === true);
+    // 权限金色边框只在「待批准」期显：shared isUnresolvedControlRequest 单源谓词
+    // （controlRequestId 注入且未解决：无 result、未中断）。批准后 tool 收 result、
+    // 拒绝经 cancelControlRequest 触发 interrupted —— 两者都清边框。
+    const needsPermission = isUnresolvedControlRequest({
+      controlRequestId: typeof controlRequestId === "string" ? controlRequestId : "",
+      result: custom?.result,
+      isInterrupted: custom?.isInterrupted === true,
+    });
     const cardBorder: Record<string, string> = {
       solo: "rounded-lg border border-neutral-line/60",
       first: "rounded-t-lg border-l border-r border-t border-neutral-line/60",
@@ -2163,8 +2175,14 @@ function ExitPlanModeCard({ headIndex }: { headIndex: number }) {
   const isOrphaned = custom.isOrphaned === true;
   const error = custom.isError === true;
   const complete = custom.result != null && !error;
-  // Awaiting only while a control_request is open and no response landed yet.
-  const awaiting = !!controlRequestId && custom.result == null && !isOrphaned && !error;
+  // Awaiting only while a control_request is open and no response landed yet
+  //（shared isUnresolvedControlRequest 单源；卡片本地补充态 isOrphaned/isError 归入
+  // isInterrupted 的「不再等待」语义）。
+  const awaiting = isUnresolvedControlRequest({
+    controlRequestId: typeof controlRequestId === "string" ? controlRequestId : "",
+    result: custom.result,
+    isInterrupted: isOrphaned || error,
+  });
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [resultOpen, setResultOpen] = useState(false);
@@ -2399,7 +2417,12 @@ function AskUserQuestionCard({ headIndex }: { headIndex: number }) {
   const isOrphaned = custom.isOrphaned === true;
   const error = custom.isError === true;
   const complete = custom.result != null && !error;
-  const awaiting = !!controlRequestId && custom.result == null && !isOrphaned && !error;
+  // 同 ExitPlanModeCard：shared 单源谓词 + 本地补充态归入 isInterrupted。
+  const awaiting = isUnresolvedControlRequest({
+    controlRequestId: typeof controlRequestId === "string" ? controlRequestId : "",
+    result: custom.result,
+    isInterrupted: isOrphaned || error,
+  });
   const questions = (custom.questions as Question[]) ?? [];
   // User can answer while the question is running AND no result has landed yet.
   const hasQuestionResult = !!custom.result;

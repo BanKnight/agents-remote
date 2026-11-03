@@ -92,14 +92,34 @@ test("onApprovalRegistered: 多卡逐张触发；回调未挂（null）不炸", 
   expect(bare.registry.list()).toHaveLength(1);
 });
 
-// ── §6.5 补强批：复杂审批两类不进中心（与客户端托盘 collectPendingApprovals 同口径）──
+// ── 复杂审批两类（2026-11-03 起）：登记进 registry（registry 是「CLI 在等什么」的
+// 权威事实源，会话 composer blocked 门禁消费快照——入口排除会把活请求误判成幽灵），
+// 但不进中心投影（snapshot 过滤）且不触发 push：respond 的通用 allow 对其语义错误。──
 
-test("registerFromRuntime: ExitPlanMode / AskUserQuestion 不登记且不触发 onApprovalRegistered", () => {
+test("registerFromRuntime: ExitPlanMode / AskUserQuestion 登记但不触发 onApprovalRegistered", () => {
   const center = makeCenter();
   const registered: string[] = [];
   center.onApprovalRegistered = (record) => registered.push(record.controlRequestId);
 
-  // respond 的通用 allow（回填原 input）对这两类语义错误 → 登记入口排除。
+  const info = { runtimeKey: "rt-key", projectName: "demo", sessionId: "agent_1" };
+  center.registerFromRuntime(info, {
+    request_id: "req-plan",
+    request: { tool_name: "ExitPlanMode", input: { plan: "..." } },
+  });
+  center.registerFromRuntime(info, {
+    request_id: "req-ask",
+    request: { tool_name: "AskUserQuestion", input: { questions: [] } },
+  });
+
+  // registry 保留全部事实（blocked 门禁的事实源；会话内专用 UI 应答走 WS 转发注销）。
+  expect(center.registry.list().map((r) => r.controlRequestId)).toEqual(["req-plan", "req-ask"]);
+  // push 只面向中心卡。
+  expect(registered).toEqual([]);
+});
+
+test("snapshot: 复杂审批卡过滤——中心只投影一键可答卡，registry 事实不受影响", async () => {
+  const center = makeCenter();
+  register(center, "rt-key", "req-bash");
   center.registerFromRuntime(
     { runtimeKey: "rt-key", projectName: "demo", sessionId: "agent_1" },
     {
@@ -107,34 +127,10 @@ test("registerFromRuntime: ExitPlanMode / AskUserQuestion 不登记且不触发 
       request: { tool_name: "ExitPlanMode", input: { plan: "..." } },
     },
   );
-  center.registerFromRuntime(
-    { runtimeKey: "rt-key", projectName: "demo", sessionId: "agent_1" },
-    {
-      request_id: "req-ask",
-      request: { tool_name: "AskUserQuestion", input: { questions: [] } },
-    },
-  );
 
-  expect(center.registry.list()).toHaveLength(0);
-  expect(registered).toEqual([]);
-});
-
-test("registerFromRuntime: 排除不误伤——混合批次只登记应登记的", () => {
-  const center = makeCenter();
-
-  register(center, "rt-key", "req-bash");
-  center.registerFromRuntime(
-    { runtimeKey: "rt-key", projectName: "demo", sessionId: "agent_1" },
-    {
-      request_id: "req-ask",
-      request: { tool_name: "AskUserQuestion", input: { questions: [] } },
-    },
-  );
-
-  const cards = center.registry.list();
-  expect(cards).toHaveLength(1);
-  expect(cards[0]?.controlRequestId).toBe("req-bash");
-  expect(cards[0]?.toolName).toBe("Bash");
+  const approvals = await center.snapshot();
+  expect(approvals.map((a) => a.controlRequestId)).toEqual(["req-bash"]);
+  expect(center.registry.list()).toHaveLength(2);
 });
 
 // ── codex 批 provider 化：registerTransport / registerFromTransport / respond 派发 ──

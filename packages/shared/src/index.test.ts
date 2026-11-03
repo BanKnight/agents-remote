@@ -7,6 +7,7 @@ import {
   EFFORT_LEVELS,
   isCompactBoundarySubtype,
   isOneClickApprovable,
+  isUnresolvedControlRequest,
 } from "./index";
 import type {
   AgentSession,
@@ -332,4 +333,26 @@ test("isOneClickApprovable excludes the two complex-approval tools", () => {
   expect(isOneClickApprovable("Bash")).toBe(true);
   expect(isOneClickApprovable("Write")).toBe(true);
   expect(isOneClickApprovable("Task")).toBe(true);
+});
+
+test("isUnresolvedControlRequest: 注入且未解决才为真", () => {
+  // 注入且未解决（无 result、未中断）→ 待确认
+  expect(isUnresolvedControlRequest({ controlRequestId: "req-1" })).toBe(true);
+  // result 到达 → 已解决
+  expect(isUnresolvedControlRequest({ controlRequestId: "req-1", result: { ok: true } })).toBe(
+    false,
+  );
+  // 空串 result 同样视为已解决（truthy 语义，与 claude-adapter 原三处散写一致）
+  expect(isUnresolvedControlRequest({ controlRequestId: "req-1", result: "" })).toBe(false);
+  // 中断 → 不再待确认（applyToolLifecycle 标记或 cancelControlRequest 路径）
+  expect(isUnresolvedControlRequest({ controlRequestId: "req-1", isInterrupted: true })).toBe(
+    false,
+  );
+  // 未注入（含空串注入，三处原散写都是 truthy 检查）→ 非 pending
+  expect(isUnresolvedControlRequest({ controlRequestId: "" })).toBe(false);
+  expect(isUnresolvedControlRequest({})).toBe(false);
+  // isInterrupted 显式 false 不影响判定
+  expect(isUnresolvedControlRequest({ controlRequestId: "req-1", isInterrupted: false })).toBe(
+    true,
+  );
 });

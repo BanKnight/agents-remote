@@ -1,5 +1,6 @@
 import { useContext, useState, type ReactNode } from "react";
 import { type ToolCallMessagePartComponent } from "@assistant-ui/react";
+import { isUnresolvedControlRequest } from "@agents-remote/shared";
 import { ClaudeBridgeContext, type ExtractedImage } from "../../routes/claude-adapter";
 import { useT, type TranslateFn, type TranslationKey } from "../../i18n";
 import { ImageThumb } from "../ui/image-lightbox";
@@ -59,7 +60,12 @@ function makeToolRenderer(config: {
       | Record<string, unknown>
       | undefined;
     const controlRequestId = (metadata?.controlRequestId as string) ?? "";
-    const needsPermission = controlRequestId !== "" && isRunning && !isInterrupted;
+    // 待批准金框态 = 未解决 control_request（shared isUnresolvedControlRequest 单源：
+    // 曾漏 result 检查——result 到达后 isRunning 翻转前的窗口金框误显）+ part 级
+    // status running。isRunning 此处是 part 数据派生（status.type），与会话级
+    // computeRunningCount 是两个维度。
+    const needsPermission =
+      isRunning && isUnresolvedControlRequest({ controlRequestId, result, isInterrupted });
     const args = safeParseArgs(argsText);
     const detailText = detail ? detail(args, toolName) : null;
     // A dynamic badge (when defined) wins, but a null result must not erase the

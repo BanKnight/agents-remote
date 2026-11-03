@@ -2934,6 +2934,30 @@ export function isOneClickApprovable(toolName: string): boolean {
   return !(NON_ONE_CLICK_APPROVAL_TOOLS as readonly string[]).includes(toolName);
 }
 
+// ── control_request 待确认谓词（2026-11-03 收束：此前四处散写曾漂移）──
+// 「control_request 已注入 tool-call 且未解决」的单一真相。消费点（各自叠加自己的
+// 附加 gate，谓词本身不管 type/运行态——调用方守卫）：
+// ① claude-adapter pendingInteraction（composer gate；再叠服务端审批快照
+//    aliveControlRequestIds —— anti-hang 保证，见该处注释）
+// ② claude-adapter collectPendingApprovals（托盘行数据；同样叠 aliveControlRequestIds
+//    与 isOneClickApprovable）
+// ③ tool-ui-registry needsPermission（assistant 气泡内工具卡金框；叠加 part 级
+//    status.type === "running"——数据派生，与会话级 isRunning 是两个维度）
+// ④ ClaudeSessionDetailRoute SystemChatBubble tool-card 金框。
+// 散写漂移史：registry 处漏 result 检查、composer 处漏事实源 gate——后者即
+// 「请先确认上方操作但上方无卡」悬挂 bug 的根因（control_request 仅存 stdout 不落
+// JSONL，CLI 死亡/重放裁剪后 result 永不到达；applyToolLifecycle 对 controlRequestId
+// part 的 interrupt 豁免让它永不被标 interrupted → 谓词恒真 → composer 永久 blocked）。
+// 事实源 = 服务端 ApprovalRegistry 快照（control_request 生命周期唯一权威），
+// 客户端 part 只是投影，不在快照中即为幽灵。
+export function isUnresolvedControlRequest<
+  T extends { controlRequestId?: string; result?: unknown; isInterrupted?: boolean },
+>(part: T): part is T & { controlRequestId: string } {
+  // 「已解决」的契约是 result 字段被回填过（字段缺席 = 未解决），不是值非空——
+  // 用 truthy 会把空输出工具的 result（""/0）误当未解决而永久 pending。
+  return !!part.controlRequestId && part.result === undefined && part.isInterrupted !== true;
+}
+
 export type SessionStreamClientMessage =
   | {
       type: "input";

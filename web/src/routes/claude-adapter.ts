@@ -11,7 +11,11 @@ import type {
   EffortLevel,
   SessionStreamServerMessage,
 } from "@agents-remote/shared";
-import { isCompactBoundarySubtype, isOneClickApprovable } from "@agents-remote/shared";
+import {
+  isCompactBoundarySubtype,
+  isOneClickApprovable,
+  isUnresolvedControlRequest,
+} from "@agents-remote/shared";
 import { claudeStreamUrl } from "../api/client";
 import type { PendingAttachments } from "@/components/ui/composer-attach";
 import {
@@ -712,6 +716,13 @@ export function deriveStatus(input: {
 // their approval UIs carry extra decisions (mode selection / answer
 // submission) that a one-click tray row can't express; their composer-blocked
 // semantics remain covered by pendingInteraction.
+//
+// aliveIds（会话级 pending 事实源）：服务端 ApprovalRegistry 快照的 controlRequestId
+// 集合（null = 快照未就绪，退回纯谓词）。客户端 part 只带 controlRequestId 投影，
+// 而 control_request 仅存 stdout 不落 JSONL —— CLI 死亡 / 回放裁剪后这类 part 的
+// result 永不到达且不会被标 interrupted（applyToolLifecycle 豁免），纯谓词会把它
+// 当成待确认（幽灵行）。registry 是权威事实（register=can_use_tool 到达，
+// clearRuntime=result 帧/进程退出/应答），不在其中即幽灵。
 export type PendingApproval = {
   controlRequestId: string;
   toolCallId: string;
@@ -721,7 +732,24 @@ export type PendingApproval = {
   owner?: { subagentType?: string; description?: string };
 };
 
-export function collectPendingApprovals(chatStream: ChatStreamItem[]): PendingApproval[] {
+/**
+ * 会话内「待用户确认」的单一定义：control_request 已注入且未解决（shared
+ * isUnresolvedControlRequest）+ 服务端审批快照仍持有该请求。pendingInteraction
+ * （composer blocked）与 collectPendingApprovals（审批托盘行）共用此一处，禁止各自
+ * 重写组合条件（2026-11-03：散写曾让 composer 永久 blocked）。
+ */
+export function isLivePendingControlRequest<
+  T extends { type: string; controlRequestId?: string; result?: unknown; isInterrupted?: boolean },
+>(part: T, aliveIds: ReadonlySet<string> | null): part is T & { controlRequestId: string } {
+  if (part.type !== "tool-call") return false;
+  if (!isUnresolvedControlRequest(part)) return false;
+  return aliveIds === null || aliveIds.has(part.controlRequestId);
+}
+
+export function collectPendingApprovals(
+  chatStream: ChatStreamItem[],
+  aliveIds: ReadonlySet<string> | null = null,
+): PendingApproval[] {
   // Pass 1: agent part meta (toolCallId → subagent_type/description) so body
   // tools can be attributed to their owning subagent.
   const agentMeta = new Map<string, { subagentType?: string; description?: string }>();
@@ -750,7 +778,7 @@ export function collectPendingApprovals(chatStream: ChatStreamItem[]): PendingAp
     if (item.kind !== "assistant") continue;
     for (const part of item.parts) {
       if (part.type !== "tool-call") continue;
-      if (!part.controlRequestId || part.result || part.isInterrupted) continue;
+      if (!isLivePendingControlRequest(part, aliveIds)) continue;
       if (!isOneClickApprovable(part.toolName)) continue;
       const ownerMeta = item.bodyParentToolUseId
         ? agentMeta.get(item.bodyParentToolUseId)
@@ -4079,6 +4107,10 @@ export function useClaudeSession(
     clearPendingModelContext?: () => void;
     clearPendingAttachments?: () => void;
     onModeConflict?: () => void;
+    // 服务端审批快照的 controlRequestId 集合（use-approvals 的 approvals）：composer
+    // blocked 与审批托盘的事实源。null / 未传 = 快照未就绪 → 退回纯客户端谓词
+    // （见 collectPendingApprovals 注释的幽灵 part 说明）。
+    aliveControlRequestIds?: ReadonlySet<string> | null;
   },
 ) {
   const [connectionVersion, setConnectionVersion] = useState(0);
@@ -5557,32 +5589,41 @@ export function useClaudeSession(
   );
 
   // A control_request is pending when some tool-call part carries an injected
-  // controlRequestId that is still unresolved (no result, not interrupted). This
-  // is the session-level "agent is waiting on the user" signal shared by
+  // controlRequestId that is still unresolved（shared isUnresolvedControlRequest
+  // 单源）AND the server approval registry still holds that request — the
+  // combined definition is isLivePendingControlRequest (same helper as the
+  // approval tray). This is the session-level "agent is waiting on the user" signal shared by
   // AskUserQuestion / ExitPlanMode / permission prompts; it gates the composer
-  // into its blocked state. control_request is stdout-only (never in JSONL), so
-  // replayed history has no controlRequestId and cannot false-positive here.
-  const pendingInteraction = useMemo(() => {
-    for (const item of chatStream) {
-      if (item.kind !== "assistant") continue;
-      for (const part of item.parts) {
-        if (
-          part.type === "tool-call" &&
-          part.controlRequestId &&
-          !part.result &&
-          !part.isInterrupted
-        ) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }, [chatStream]);
+  // into its blocked state.
+  //
+  // The registry gate is the anti-hang guarantee: control_request is
+  // stdout-only (never in JSONL), so when the CLI process dies mid-prompt
+  // (API restart / crash) its result never arrives — and applyToolLifecycle
+  // deliberately never marks a controlRequestId part interrupted (a live
+  // permission prompt must survive turn boundaries). Without the gate such an
+  // orphaned part wedges the composer forever ("请先确认上方操作" with nothing
+  // left to confirm — 2026-11-03 真机 bug). The server side is authoritative:
+  // ApprovalRegistry registers on can_use_tool and clears on control_response
+  // 转发 / result 帧 / 进程退出，so a ghost part is simply not in the snapshot.
+  // aliveControlRequestIds === null（快照未就绪）回退到纯谓词，不误杀活请求。
+  const aliveControlRequestIds = options?.aliveControlRequestIds ?? null;
+  const pendingInteraction = useMemo(
+    () =>
+      chatStream.some(
+        (item) =>
+          item.kind === "assistant" &&
+          item.parts.some((part) => isLivePendingControlRequest(part, aliveControlRequestIds)),
+      ),
+    [chatStream, aliveControlRequestIds],
+  );
 
   // Aggregated permission tray data (same predicate family as
   // pendingInteraction but enumerable + permission-tools-only; see
   // collectPendingApprovals).
-  const pendingApprovals = useMemo(() => collectPendingApprovals(chatStream), [chatStream]);
+  const pendingApprovals = useMemo(
+    () => collectPendingApprovals(chatStream, aliveControlRequestIds),
+    [chatStream, aliveControlRequestIds],
+  );
 
   const onNew = useCallback(
     async (message: AppendMessage) => {
