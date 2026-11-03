@@ -61,6 +61,13 @@ bun scripts/ar-verify-tokens.mjs
 - 消息/协议类问题把客户端日志、服务端日志、原始 JSONL 作为验收材料的一部分（见 `claude-debugging.md`）。
 - 仅实时流出现的行为（需 mock WS 帧）不写浏览器探针，交付说明列手动验证 checklist 交用户。
 
+## agent-browser 收尾纪律（2026-11-03 残留实证）
+
+- **触发**：每次用 agent-browser 做浏览器验证结束时（含会话收尾）。
+- **动作**：收尾必跑 `agent-browser close`（多 session 用 `close --all`）。CLI 是 daemon 架构——命令跑完 daemon 与 Chrome 常驻后台，**不会随会话/终端退出而关闭**（官方设计「browser stays running across commands」）；曾实证 10-16 一次调用残留 Chrome 全家 17.8 天、212MB swap。
+- **机制边界**：`AGENT_BROWSER_IDLE_TIMEOUT_MS`（空闲自动退出 daemon，默认禁用）**只回收 daemon 不杀 Chrome**——daemon 退后 Chrome 变孤儿（ppid=1）。孤儿判定：Chrome 主进程（cmdline 不含 `--type=`）ppid=1 且 etime 分钟级以上；发现即杀主进程（子进程随之退出）。清理时 pkill -f 模式用 `chrome[-]151` 转义防自匹配。
+- **临时 dev 进程同理**：tmux 外手动拉的验证进程（如 `bun run dev --port <临时端口>`）shell 退出即孤儿，用完必须显式杀；常驻服务一律走 tmux `ar-*`（见 dev-environment.md）。
+
 ## 文件编辑一律用内置工具（2026-09-24 用户拍板，取代旧「python 锚点」纪律）
 
 - **规则**：编辑文件一律用内置 Read/Edit/Write 工具；不用 python/shell 脚本做文件写入或整段替换。
