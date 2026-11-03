@@ -5,7 +5,7 @@
 ## 一句话状态
 
 **本 session 三批工作全部闭环**：
-① ⚙ gate 放开（`8c1ddf2`，agent TUI 模式 composer 恒渲染 ⚙）——已 push，等 iPhone PWA 真机验证；
+① ⚙ gate 放开（`8c1ddf2`，agent TUI 模式 composer 恒渲染 ⚙）——已 push，真机验证用户已确认；
 ② pre-commit test 限内存（`bf8af55`，systemd-run 2G cgroup 包裹）——已 push，commit 假挂根治；
 ③ agent-browser 残留治理（rules `47e2770` + bashrc `AGENT_BROWSER_IDLE_TIMEOUT_MS`）——
 daemon 架构根因实证后三层落地，**systemd timer 全局清扫方案被用户否决（多项目机器有误伤面）**。
@@ -61,11 +61,11 @@ swap 治理完成（462MB → 208.6MB）。
 
 ## 下一步
 
-1. iPhone PWA 真机验证 ⚙：agent 会话切 terminal 模式，展开输入抽屉 → 控制行左端 ⚙，
-   点开见键盘/命令双 tab 面板。
-2. 通知自愈两批（`d3eb1d4` + `630db9b`）仍在等真机被动观察验证。
-3. 遗留：v1.7 真机验证清单反馈（含平板长按探针盲区）；wiki/ 目录 git 归属；
+1. 遗留：v1.7 真机验证清单反馈（含平板长按探针盲区）；wiki/ 目录 git 归属；
    swap 扩容 2G（仅建议，未拍板）。
+2. 真机验证状态：⚙（agent TUI 模式 composer 配置按钮）与通知自愈两批
+   （`d3eb1d4` + `630db9b`）**用户均已确认通过**（2026-11-03「12 都确认了」），
+   无待验证项。
 
 ## 易丢的关键上下文
 
