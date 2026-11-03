@@ -1,85 +1,69 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-03（⚙ gate 放开 + hook 限内存 + agent-browser 残留治理，均已完成）
+> 最后更新：2026-11-03（TanStack 三库升级 `e3bfc65` + e2e 顺序依赖修复 `98675ef`，已 push）
 
 ## 一句话状态
 
-**本 session 三批工作全部闭环**：
-① ⚙ gate 放开（`8c1ddf2`，agent TUI 模式 composer 恒渲染 ⚙）——已 push，真机验证用户已确认；
-② pre-commit test 限内存（`bf8af55`，systemd-run 2G cgroup 包裹）——已 push，commit 假挂根治；
-③ agent-browser 残留治理（rules `47e2770` + bashrc `AGENT_BROWSER_IDLE_TIMEOUT_MS`）——
-daemon 架构根因实证后三层落地，**systemd timer 全局清扫方案被用户否决（多项目机器有误伤面）**。
-swap 治理完成（462MB → 208.6MB）。
+**TanStack 三库维护升级完成并推送**：调研定案不迁 TanStack Start 1.0（全栈框架，
+与本项目 SPA + 独立 Bun API 架构不匹配，优势全部吃不到）——只升 Router/Query/Virtual
+stable 线（全部 ≥7 天发布版本）。升级后全套验证踩出并根治一个 e2e 顺序依赖缺陷
+（mcp git 卡测试，与升级无关），42/42 绿。ar-dev-web 已 respawn 吃到新依赖。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- **gate 恒渲染安全的论据**：`SessionDetail` 全仓仅 2 消费者（`TerminalPanel` 真终端 /
-  `AgentTerminalPanel` = claude TUI 模式 + 老 tmux codex），全是 TUI 形态——无需按
-  sessionType 分支。
-- **sessionId 前缀是稳定类型标识**：`inferSessionTypeFromId` 只认 `agent_` / `terminal_`
-  前缀（workbench-model.ts）——mock/测试造 id 必须带对前缀，否则 focus 面板类型推断
-  undefined、面板不渲染（本批探针首跑挂 1 场景的真根因，非产品回归）。
-- **agent-browser 是 daemon 架构**：CLI 命令跑完即退，daemon（PPID=1）+ Chrome 常驻，
-  `close` 是唯一正规清理；`AGENT_BROWSER_IDLE_TIMEOUT_MS` 只回收 daemon **不杀 Chrome**
-  （daemon 退后 Chrome 变孤儿 ppid=1）——已实证（idle timeout 10s 实验：daemon 退、
-  Chrome 孤儿存活）。Chrome 收尾只能靠收尾纪律 `agent-browser close`（rules `47e2770`）。
-- **残留治理三层定案（用户拍板）**：① rules 收尾纪律（`agent-browser close` 必跑）；
-  ② bashrc `AGENT_BROWSER_IDLE_TIMEOUT_MS=1200000`（20 分钟空闲 daemon 自退兜底）；
-  ③ systemd timer 全局定时清扫孤儿——**用户否决：「这种做法不可以，毕竟我们是多项目的」**
-  （定时清扫在同机多项目环境有误伤面）。已验证 bash -ic 读到 1200000；对之后新拉起的
-  shell/daemon 生效。
-- **swap 构成与处置**：462MB = agent-browser Chrome 212MB（17.8 天）+ codegraph 94MB
-  + novels 58MB（用户指示不动）+ vite 残留 40MB 等；清理后 208.6MB。驻留进程冷内存
-  换出是内核正常回收非泄漏；512Mi swap 偏小是顶满放大器（扩容 2G 仅建议过，未拍板）。
-- **pre-commit 限内存**：hook 内 systemd-run 2G cgroup + 探测 fallback；勿用 ulimit -v
-  （rolldown WASM 虚拟地址预留会 OOM）。
+- **不迁 TanStack Start 的论据**：Start = Vite+Nitro 全栈框架（SSR/server functions），
+  本项目 = 纯 SPA（vite prod build+preview :43012）+ 独立 Bun API（:43011）。优势对照
+  逐条不成立（无 SEO 诉求、server functions 的痛点已被 shared 类型契约解决、部署现状
+  更简、PWA/SW 策略与验证基建都要重做）。我们恰是 Start 官方尊重的 SPA 形态。
+- **供应链判定**（今天 2026-11-03）：router 1.170.46（10-22 ✓ 直接升）；query latest
+  5.105.3 昨天发布 <7 天 → 取 5.105.0（10-26 ✓）；virtual latest 3.14.25 <7 天 → 取
+  3.14.23（10-26 ✓）且**精确版本钉死**——`^3.14.23` 会被 bun 解析到 <7 天的 3.14.25。
+- **e2e 顺序依赖缺陷（升级无关，实证归因）**：mcp-app-card「stale → real refresh」
+  两轮全套连跑挂、单跑绿。失败值「1 个文件变更」是**另一个真实值**而非 stale 值——
+  git-diff「提交」用例（#27）把 demo 仓库构造态 commit 掉，真实 listDiff 只剩
+  notes.txt untracked。刷新链路全程正常。修复 = 测试开头清残迹（checkout/reset）+
+  重建 3 文件形态（README worktree + index.ts staged + 遗留 notes.txt untracked），
+  断言与执行序解耦；run-e2e.ts 加 `E2E_PROJECTS_ROOT` seam。
+- **e2e 内存上限 2G → 4G**（dev-environment.md 已更新）：42 测试规模下 2G 被顶爆，
+  journal `2G memory peak` → OOM kill → systemd 停 scope 给余下进程发 SIGTERM
+  （bun 报「Polite quit request」）——**e2e 中途集体 SIGTERM 先查 OOM journal，
+  不是 timeout**。9-20 的 2G 经验值随测试规模过期。
 
 ### 进度
 
-- ✅ ⚙ gate 放开批 `8c1ddf2`（SessionDetailRoute.tsx 三处 + workbench-model.ts 注释
-  4 处 + 新探针 probe-session-gear-gate.mjs 5/5 绿 + code-reviewer 消化 + 全门禁）已 push
-- ✅ pre-commit 限内存 `bf8af55`（hook + 快速通道判定不变）已 push
-- ✅ agent-browser 收尾纪律 rules `47e2770`（verification.md 新节：close 必跑 + daemon
-  机制边界 + 孤儿判定 + pkill 转义防自匹配 + 临时 dev 进程同理）已 push
-- ✅ swap 清理：杀 agent-browser Chrome 孤儿 / codegraph / vite 残留（novels 未动），
-  释放 ~253MB
-- ✅ bashrc 写入 `AGENT_BROWSER_IDLE_TIMEOUT_MS=1200000`（内置 Edit，含根因注释）+
-  生效验证（bash -ic → 1200000）
-- ✅ memory 落盘 `agent-browser-close-after-use.md`（feedback 类）
+- ✅ TanStack 调研 + 三库升级 `e3bfc65`（web/package.json + bun.lock；全门禁绿）
+- ✅ e2e 顺序依赖修复 `98675ef`（run-e2e.ts + mcp-app-card.spec.ts + dev-environment.md；
+  修复后全套 42/42 绿）
+- ✅ ar-dev-web respawn（新依赖进产物；CSS 硬闸 + 43012 text/css 验证通过）
+- ✅ 两 commit 已 push（`6ff4eb2..98675ef`）
 - ✅ /handoff save（本次）
 
 ### 阻塞 / 风险
 
-- 工作区剩 handoff/current.md 滚动态（本文件）。
-- **pre-commit test 已自带限内存**（`bf8af55`）：首次 commit 假挂根因 = api test 进程
-  SIGKILL（swap 全满 + chromium 探针残留高压瞬时叠加；OOM killer 是最合理假设非实锤，
-  kernel 日志 deploy 无权限读）。现在无限制重跑也全绿 = 瞬时压力非确定性。
-- agent-browser idle timeout 只防 daemon 永生，Chrome 孤儿防不住——防线是 rules 收尾
-  纪律（用完 `agent-browser close`），已在 verification.md 落地。
+- 无阻塞。升级后 bundle 由 e2e 全链覆盖；Router 5 个月 patch 跨度，用户日常使用中
+  如遇路由异常优先怀疑此处（探针/e2e 已全绿，非待验证项）。
+- swap 又近满（511Mi/512Mi）——上次治理后 208MB，当日又满；未再深查构成（本批
+  e2e 连跑数轮 chromium 压力是主要嫌疑），下次治理批次处理。
 
 ## 下一步
 
 1. 遗留：v1.7 真机验证清单反馈（含平板长按探针盲区）；wiki/ 目录 git 归属；
-   swap 扩容 2G（仅建议，未拍板）。
+   swap 扩容 2G（仅建议，未拍板）+ swap 构成复查。
 2. 真机验证状态：⚙（agent TUI 模式 composer 配置按钮）与通知自愈两批
-   （`d3eb1d4` + `630db9b`）**用户均已确认通过**（2026-11-03「12 都确认了」），
-   无待验证项。
+   （`d3eb1d4` + `630db9b`）**用户均已确认通过**，无待验证项。
 
 ## 易丢的关键上下文
 
-- **workbench session detail 路由统一**：agent/terminal 同走 `/projects/$key/session/$id`
-  （旧薄壳路由已删成 redirect）；面板类型由 id 前缀推断。
-- **进程清理防自匹配**：`pkill -f` 模式含目标字符串会杀到自己 shell——用 `chrome[-]151`
-  方括号转义；`pgrep -f` 同理误匹配，用 `pgrep -x agent-browser-l`（进程名 15 字符截断）。
-- **孤儿判定**：Chrome 主进程（cmdline 不含 `--type=`）ppid=1 且 etime 分钟级以上；
-  发现即杀主进程（子进程随之退出）。
-- **探针等待纪律**：lazy 挂载一律 `waitFor visible` 替代固定 sleep；`.qkey` 断言用
-  `textContent === "Tab"`（hasText "Tab" 撞内置键 "Shift+Tab"）。
-- 单测限内存：`systemd-run --scope --user -p MemoryMax=2G bun run test`（含 git commit
-  整体套壳跑 pre-commit）。
-- 排障方法：探针挂 ≠ 产品回归——先给探针加失败 dump + HTTP ≥400 监听定位探针自身问题。
+- **e2e 内存跑法**：`systemd-run --scope --user -p MemoryMax=4G bun run e2e`
+  （勿 ulimit -v，rolldown WASM 会 OOM；前台跑会撞 Bash 工具 600s 超时——
+  42 测试 ~6.5 分钟临界，用后台跑）。
+- **测试间共享 demo 仓库**：demo 是全套 e2e 共享的文件系统单例，凡依赖 git 状态
+  的断言必须自建现场，不依赖初始构造态（mcp-app-card git 卡是先例）。
+- **探针/依赖升级验证路径**：typecheck 三包 → 全量 test（2G cgroup）→ e2e
+  （4G cgroup 后台）→ respawn ar-dev-web → ar-verify-css + curl content-type。
+- 单测限内存 2G（峰值 ~500M）继续有效；pre-commit hook 内已自带。
 
 ## 提醒
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
