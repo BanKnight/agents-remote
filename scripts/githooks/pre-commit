@@ -43,7 +43,16 @@ bun run typecheck
 
 echo ""
 echo "▶ test"
-bun run test
+# 全量 bun test 关进 2G cgroup（2026-11-03）：无限内存时与系统瞬时高压叠加（swap 耗尽 +
+# chromium 探针残留），api test 进程中途被杀致 commit 假挂；限内存后稳定全绿。测试实测
+# 峰值 ~500M，2G 上限余量充足，同时防测试挤穿机器。systemd-run --user 不可用（无 user
+# session 的环境）时退回直接跑，不挡门禁。勿用 ulimit -v（虚拟地址限制对 rolldown WASM
+# 会 OOM，见 dev-environment.md e2e 教训）。
+if command -v systemd-run >/dev/null 2>&1 && systemd-run --scope --user -p MemoryMax=2G true 2>/dev/null; then
+  systemd-run --scope --user -p MemoryMax=2G bun run test
+else
+  bun run test
+fi
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
