@@ -357,6 +357,111 @@ export const ATTACHMENT_CONFIG: Record<string, AttachmentBubbleConfig> = {
     },
     body: renderedBody,
   },
+
+  // 注入类（CLI 2.1.299+ 真实会话高频帧，2026-11-04 逐个收编——此前落裸 ToolHead
+  // 「未处理」形态，把默认气泡的区分信号淹没）
+  agent_listing_delta: {
+    icon: "task",
+    labelKey: "claude.attachment.agent_listing_delta",
+    badge: (raw) => {
+      const types = (raw.attachment as { addedTypes?: string[] })?.addedTypes;
+      return Array.isArray(types) && types.length ? `${types.length} types` : null;
+    },
+    body: (raw) => {
+      const lines = (raw.attachment as { addedLines?: string[] })?.addedLines;
+      if (!Array.isArray(lines) || lines.length === 0) return null;
+      return (
+        <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-48">
+          {lines.join("\n")}
+        </pre>
+      );
+    },
+  },
+  read_truncation_notice: {
+    icon: "search",
+    labelKey: "claude.attachment.read_truncation_notice",
+    body: (raw) => {
+      const banner = (raw.attachment as { banner?: string })?.banner;
+      return banner ? (
+        <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-48">
+          {banner}
+        </pre>
+      ) : null;
+    },
+  },
+  model: {
+    icon: "sparkles",
+    labelKey: "claude.attachment.model",
+    badge: (raw) => {
+      const a = raw.attachment as {
+        identity?: { marketingName?: string; modelId?: string };
+      };
+      return a?.identity?.marketingName ?? a?.identity?.modelId ?? null;
+    },
+    body: (raw) => {
+      const text = (raw.attachment as { text?: string })?.text;
+      return text ? (
+        <pre className="text-xs whitespace-pre-wrap break-all overflow-x-auto max-h-48">{text}</pre>
+      ) : null;
+    },
+  },
+  language: {
+    icon: "message-square",
+    labelKey: "claude.attachment.language",
+    badge: (raw) => (raw.attachment as { language?: string })?.language ?? null,
+  },
+  instructions: {
+    icon: "book-open",
+    labelKey: "claude.attachment.instructions",
+    badge: (raw) => {
+      const files = (raw.attachment as { files?: unknown[] })?.files;
+      return Array.isArray(files) && files.length ? `${files.length} files` : null;
+    },
+    body: (raw) => {
+      const files = (
+        raw.attachment as {
+          files?: Array<{ path: string; type?: string }>;
+        }
+      )?.files;
+      if (!Array.isArray(files) || files.length === 0) return null;
+      return (
+        <div className="space-y-0.5">
+          {files.map((f, i) => (
+            <div
+              key={`${f.path}-${i}`}
+              className="text-[0.6rem] text-assistant-soft/50 font-mono truncate"
+            >
+              {f.type ? `[${f.type}] ` : ""}
+              {f.path}
+            </div>
+          ))}
+        </div>
+      );
+    },
+  },
+  session_context: {
+    icon: "info",
+    labelKey: "claude.attachment.session_context",
+    badge: (raw) => {
+      const ctx = (raw.attachment as { context?: Record<string, unknown> })?.context;
+      return ctx ? Object.keys(ctx).join(" · ") : null;
+    },
+    body: renderedBody,
+  },
+  date: {
+    icon: "calendar",
+    labelKey: "claude.attachment.date",
+    badge: (raw) => (raw.attachment as { date?: string })?.date ?? null,
+  },
+  prompt_snapshot: {
+    icon: "file-text",
+    labelKey: "claude.attachment.prompt_snapshot",
+    badge: (raw) => {
+      const segs = (raw.attachment as { systemPrompt?: string[] })?.systemPrompt;
+      return Array.isArray(segs) && segs.length ? `${segs.length} segments` : null;
+    },
+    // systemPrompt 是完整系统提示词（数万字符）——无阅读价值不进 body，badge 报段数
+  },
 };
 
 // ── Component ───────────────────────────────────────────────────────────

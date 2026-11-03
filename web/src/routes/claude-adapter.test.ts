@@ -3359,6 +3359,73 @@ describe("handleAttachment", () => {
     expect(body).not.toBeNull();
   });
 
+  // 注入类收编（2026-11-04）：此前 8 个 subtype 落裸 ToolHead「未处理」形态
+  // （真实会话 prompt_snapshot×97 / agent_listing_delta×284），逐个补 config 条目。
+  test("注入类 8 subtype 均有 config 条目", () => {
+    for (const st of [
+      "agent_listing_delta",
+      "read_truncation_notice",
+      "model",
+      "language",
+      "instructions",
+      "session_context",
+      "date",
+      "prompt_snapshot",
+    ]) {
+      expect(ATTACHMENT_CONFIG[st]).toBeDefined();
+    }
+  });
+
+  test("注入类 badge/body 契约（真实样本形态）", () => {
+    const asRaw = (a: Record<string, unknown>) => ({ attachment: a }) as Record<string, unknown>;
+    expect(
+      ATTACHMENT_CONFIG.agent_listing_delta?.badge?.(
+        asRaw({ addedTypes: ["a", "b"], addedLines: ["- a: x", "- b: y"] }),
+      ),
+    ).toBe("2 types");
+    expect(
+      ATTACHMENT_CONFIG.agent_listing_delta?.body?.(
+        asRaw({ addedTypes: ["a"], addedLines: ["- a: x", "- b: y"] }),
+      ),
+    ).not.toBeNull();
+    expect(
+      ATTACHMENT_CONFIG.read_truncation_notice?.body?.(
+        asRaw({ banner: "[Truncated: showing 1-37 of 49]", toolUseID: "call_1" }),
+      ),
+    ).not.toBeNull();
+    expect(
+      ATTACHMENT_CONFIG.model?.badge?.(
+        asRaw({ identity: { modelId: "m", marketingName: "Opus 4.8" }, text: "You are..." }),
+      ),
+    ).toBe("Opus 4.8");
+    expect(ATTACHMENT_CONFIG.language?.badge?.(asRaw({ language: "Chinese" }))).toBe("Chinese");
+    expect(
+      ATTACHMENT_CONFIG.instructions?.badge?.(
+        asRaw({ files: [{ path: "/a/CLAUDE.md", type: "User" }] }),
+      ),
+    ).toBe("1 files");
+    expect(
+      ATTACHMENT_CONFIG.instructions?.body?.(
+        asRaw({ files: [{ path: "/a/CLAUDE.md", type: "User" }] }),
+      ),
+    ).not.toBeNull();
+    expect(
+      ATTACHMENT_CONFIG.session_context?.badge?.(asRaw({ context: { gitStatus: "clean" } })),
+    ).toBe("gitStatus");
+    expect(
+      ATTACHMENT_CONFIG.session_context?.body?.({
+        attachment: { type: "session_context", context: { gitStatus: "clean" } },
+        rendered: [{ content: "context text" }],
+      } as Record<string, unknown>),
+    ).not.toBeNull();
+    expect(ATTACHMENT_CONFIG.date?.badge?.(asRaw({ date: "2026-09-12" }))).toBe("2026-09-12");
+    expect(
+      ATTACHMENT_CONFIG.prompt_snapshot?.badge?.(asRaw({ systemPrompt: ["seg1", "seg2", "seg3"] })),
+    ).toBe("3 segments");
+    // prompt_snapshot 的 systemPrompt 数万字符不进 body（无阅读价值）
+    expect(ATTACHMENT_CONFIG.prompt_snapshot?.body).toBeUndefined();
+  });
+
   test("compact_file_reference returns bubble without body (single-line)", () => {
     const result = handleAttachment(
       attachment("compact_file_reference", {

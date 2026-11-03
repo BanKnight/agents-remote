@@ -675,6 +675,14 @@ export const zh: Record<TranslationKey, string> = {
   "claude.attachment.goal_status": "目标状态",
   "claude.attachment.remote_session_change": "远程会话变更",
   "claude.attachment.environment": "环境信息",
+  "claude.attachment.agent_listing_delta": "Agent 清单",
+  "claude.attachment.read_truncation_notice": "读取截断",
+  "claude.attachment.model": "模型",
+  "claude.attachment.language": "语言",
+  "claude.attachment.instructions": "指令文件",
+  "claude.attachment.session_context": "会话上下文",
+  "claude.attachment.date": "日期",
+  "claude.attachment.prompt_snapshot": "系统提示词",
 
   // ── Context compaction block ─────────────────────────────────────
   "claude.compact.title": "上下文已压缩",

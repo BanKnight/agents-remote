@@ -680,6 +680,14 @@ export const en = {
   "claude.attachment.goal_status": "Goal status",
   "claude.attachment.remote_session_change": "Remote session change",
   "claude.attachment.environment": "Environment",
+  "claude.attachment.agent_listing_delta": "Agent listing",
+  "claude.attachment.read_truncation_notice": "Truncated read",
+  "claude.attachment.model": "Model",
+  "claude.attachment.language": "Language",
+  "claude.attachment.instructions": "Instructions",
+  "claude.attachment.session_context": "Session context",
+  "claude.attachment.date": "Date",
+  "claude.attachment.prompt_snapshot": "System prompt",
 
   // ── Context compaction block ─────────────────────────────────────
   "claude.compact.title": "Context compacted",

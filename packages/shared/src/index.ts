@@ -2576,6 +2576,79 @@ export type AttachmentEnvironment = {
   };
 };
 
+// 可用 agent 类型清单增量（CLI 2.1.299+）：addedTypes 为类型名，addedLines 为
+// 「- name: 描述 (Tools)」渲染行（subagents 配置变更时注入）。
+export type AttachmentAgentListingDelta = {
+  attachment: {
+    type: "agent_listing_delta";
+    addedTypes: string[];
+    addedLines: string[];
+  };
+};
+
+// Read 截断提示（CLI 2.1.299+）：读取超 token cap 时的分页提示（banner 为完整
+// 提示文本，含下一页 offset 指引）。
+export type AttachmentReadTruncationNotice = {
+  attachment: {
+    type: "read_truncation_notice";
+    banner: string;
+    toolUseID?: string;
+  };
+};
+
+// 模型身份注入：identity 三元组 + text（注入模型的完整说明文本）。
+export type AttachmentModel = {
+  attachment: {
+    type: "model";
+    identity: {
+      modelId: string;
+      marketingName: string;
+      knowledgeCutoff?: string;
+    };
+    text: string;
+  };
+};
+
+// 语言设定：单值（如 "Chinese"）。
+export type AttachmentLanguage = {
+  attachment: {
+    type: "language";
+    language: string;
+  };
+};
+
+// 指令文件注入：CLAUDE.md 等 files（path + 来源类型 + content 全文）。
+export type AttachmentInstructions = {
+  attachment: {
+    type: "instructions";
+    files: Array<{ path: string; type?: string; content?: string }>;
+  };
+};
+
+// 会话上下文注入：context 键值（实测 gitStatus；rendered 为注入全文）。
+export type AttachmentSessionContext = {
+  attachment: {
+    type: "session_context";
+    context: Record<string, string>;
+  };
+};
+
+// 当天日期（会话启动/跨天注入）：单值 ISO 日期。与 date_change（变更事件）不同族。
+export type AttachmentDate = {
+  attachment: {
+    type: "date";
+    date: string;
+  };
+};
+
+// 系统 prompt 快照：systemPrompt 为完整分段（数万字符，UI 只报段数不进 body）。
+export type AttachmentPromptSnapshot = {
+  attachment: {
+    type: "prompt_snapshot";
+    systemPrompt: string[];
+  };
+};
+
 export type AttachmentContent =
   | AttachmentMcpInstructionsDelta["attachment"]
   | AttachmentSkillListing["attachment"]
@@ -2603,7 +2676,15 @@ export type AttachmentContent =
   | AttachmentGoalStatus["attachment"]
   | AttachmentTotalTokensReminder["attachment"]
   | AttachmentRemoteSessionChange["attachment"]
-  | AttachmentEnvironment["attachment"];
+  | AttachmentEnvironment["attachment"]
+  | AttachmentAgentListingDelta["attachment"]
+  | AttachmentReadTruncationNotice["attachment"]
+  | AttachmentModel["attachment"]
+  | AttachmentLanguage["attachment"]
+  | AttachmentInstructions["attachment"]
+  | AttachmentSessionContext["attachment"]
+  | AttachmentDate["attachment"]
+  | AttachmentPromptSnapshot["attachment"];
 
 // 完整 attachment 消息（信封 + 子类型）
 export type ClaudeAttachment = ClaudeAttachmentEnvelope & {
