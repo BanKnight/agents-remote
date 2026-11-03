@@ -2093,6 +2093,7 @@ session_init → seed_init（如有）→ history_start → history 行 → hist
 - **`session_init`**：连接级元数据，`resume` 标记本次是 resume（history 可能含孤儿 tool_use）。
 - **`seed_init`**：标量 seed（system.init 不在 JSONL/tail 里，客户端标量 fold 需要种子），必须在 history_start 之前（否则被 gzip 进 batch）。
 - **增量回放（2026-10-02）**：客户端在 WS URL 携带 `?since=<uuid>`（本地最后一条带 uuid 消息）。relay 在 live/history 双缓冲倒序定位锚：命中 → `session_init` 加 **`replay:"delta"`**，只发锚后行（锚在 history → history 后缀 + live 全部；锚在 live → 空 history batch + live 后缀）；未命中（API 重启 / compact 清缓冲 / cap 截断 / 未传 since）→ `replay:"full"` 全量。老客户端不带 since 行为不变；老服务端缺省 replay 字段，客户端按 full 处理。
+- **锚落点 `anchor`（2026-11-03）**：delta 时 `session_init` 附 `anchor:"live"|"history"`（full 时 null）——客户端锚命中的缓冲。语义：**锚落 history = 实时段重启**（进程死亡，旧 live 行凝固为 JSONL 历史）→ 客户端把重连前 state 里全部未决 `control_request` 帧标 stale、投影层补 `isInterrupted`（control_request 仅存 stdout 户籍在实时段，进程死后永无 result——这是「请先确认上方操作但无卡」幽灵 blocked 的聊天流内自洽解除，取代服务端审批快照门禁）；锚落 live = 纯网络重连，未决请求原样保留。delta 分支内 anchor=history ⟺ 进程重启（compact 清缓冲与 cap trim 都使锚 miss 走 full，不经 delta）。
 - `isRunning` 由消息流中的三态消息生命周期驱动；客户端 delta 分流、liveStart 修正（防假 running）见 `web/src/routes/claude-adapter.ts` 与 redesign-v2.md §6.13。
 
 **当前状态**：claude 先行 delta + 全量回退（fail-safe）；pi/acp 事件帧无稳定 uuid，维持全量。超大会话的分页优化待后续讨论后实现。

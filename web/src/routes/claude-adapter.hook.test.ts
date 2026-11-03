@@ -1548,15 +1548,19 @@ describe("useClaudeSession tool_result matching (external path)", () => {
   });
 });
 
-// ── pendingInteraction × 服务端审批快照门禁（2026-11-03 幽灵 blocked 修复）──
-// control_request 仅存 stdout 不落 JSONL：CLI 死亡 / 回放裁剪后 part 的 result 永不
-// 到达，且 applyToolLifecycle 对 controlRequestId part 豁免 interrupt —— 纯客户端
-// 谓词会把这类幽灵 part 当成待确认 → composer 永久「请先确认上方操作」。事实源 =
-// 服务端 ApprovalRegistry 快照（aliveControlRequestIds），不在其中即为幽灵。
-describe("useClaudeSession pendingInteraction × 服务端审批快照", () => {
+// ── session_init.anchor 实时段重启作废（2026-11-03 幽灵 blocked 二次根治）──
+// control_request 仅存 stdout 不落 JSONL，户籍在实时段：CLI 死亡 / 回放裁剪后 part
+// 的 result 永不到达，且 applyToolLifecycle 对 controlRequestId part 豁免 interrupt
+// —— 纯客户端谓词会把这类幽灵 part 当成待确认 → composer 永久「请先确认上方操作」。
+// 判定收进聊天流：重连 delta 回放的锚落点（session_init.anchor）= history 即实时段
+// 重启 → 旧实时段全部未决请求标 stale → 投影层补 isInterrupted → 谓词自动解除。
+// anchor="live"（纯网络重连，进程没死）→ 原样保留。取代服务端审批快照门禁
+//（composer 状态只看聊天流——两权威各取一半的补丁方案已整体撤除）。
+describe("useClaudeSession session_init.anchor 实时段重启作废", () => {
   const toolUseAssistant = (): SessionStreamServerMessage =>
     ({
       type: "assistant",
+      uuid: "uuid-1",
       userType: "external",
       message: {
         id: "a1",
@@ -1572,39 +1576,61 @@ describe("useClaudeSession pendingInteraction × 服务端审批快照", () => {
       request: { subtype: "can_use_tool", tool_name: "Bash", tool_use_id: "tu-1" },
     }) as unknown as SessionStreamServerMessage;
 
-  test("快照无此 id（幽灵）不 blocked；含此 id blocked；未就绪回退纯谓词", async () => {
-    let aliveIds: ReadonlySet<string> | null = new Set();
-    const { result, rerender } = renderHook(() =>
-      useClaudeSession("proj", "sess", undefined, undefined, {
-        aliveControlRequestIds: aliveIds,
-      }),
-    );
-    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
-    const socket = MockSocket.instances[0];
-    act(() => socket.open());
+  test("delta 重连 anchor=history → 旧未决请求作废解除 blocked；anchor=live → 保留", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useClaudeSession("proj", "sess"));
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+      const socket1 = MockSocket.instances[0];
+      act(() => socket1.open());
 
-    act(() => {
-      socket.emit(toolUseAssistant());
-      socket.emit(controlRequest("req-1"));
-    });
+      // 首连 live 段：CLI 发出工具调用 + can_use_tool 请求 → composer blocked。
+      act(() => {
+        socket1.emit(toolUseAssistant());
+        socket1.emit(controlRequest("req-1"));
+      });
+      expect(result.current.pendingInteraction).toBe(true);
 
-    // 快照已就绪但为空：服务端 registry 无此请求 = 幽灵 → composer 不 blocked
-    expect(result.current.pendingInteraction).toBe(false);
+      // 断线（500ms 固定退避）重连：锚落 live = 纯网络重连，进程没死 → 请求保留。
+      act(() => socket1.close());
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(2));
+      const socket2 = MockSocket.instances[1];
+      expect(socket2.url).toContain("since=uuid-1");
+      act(() => socket2.open());
+      act(() => {
+        socket2.emit({
+          type: "session_init",
+          resume: true,
+          replay: "delta",
+          anchor: "live",
+        } as SessionStreamServerMessage);
+      });
+      expect(result.current.pendingInteraction).toBe(true);
 
-    // 快照含该 id（CLI 真在等确认）→ blocked
-    aliveIds = new Set(["req-1"]);
-    rerender();
-    expect(result.current.pendingInteraction).toBe(true);
-
-    // 快照未就绪（loaded=false → null）：回退纯谓词，不误杀活请求
-    aliveIds = null;
-    rerender();
-    expect(result.current.pendingInteraction).toBe(true);
-
-    // 快照只含别的请求 → 本请求仍是幽灵
-    aliveIds = new Set(["req-other"]);
-    rerender();
-    expect(result.current.pendingInteraction).toBe(false);
+      // 再断线重连：锚落 history = 实时段重启（旧进程死）→ 旧实时段未决请求作废，
+      // blocked 解除。这是 CLI 死亡后 result 永不到达场景的聊天流内自洽解除路径。
+      act(() => socket2.close());
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      await waitFor(() => expect(MockSocket.instances).toHaveLength(3));
+      const socket3 = MockSocket.instances[2];
+      act(() => socket3.open());
+      act(() => {
+        socket3.emit({
+          type: "session_init",
+          resume: true,
+          replay: "delta",
+          anchor: "history",
+        } as SessionStreamServerMessage);
+      });
+      expect(result.current.pendingInteraction).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

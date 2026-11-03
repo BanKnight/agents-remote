@@ -733,23 +733,12 @@ export type PendingApproval = {
 };
 
 /**
- * 会话内「待用户确认」的单一定义：control_request 已注入且未解决（shared
- * isUnresolvedControlRequest）+ 服务端审批快照仍持有该请求。pendingInteraction
- * （composer blocked）与 collectPendingApprovals（审批托盘行）共用此一处，禁止各自
- * 重写组合条件（2026-11-03：散写曾让 composer 永久 blocked）。
+ * 会话内「待用户确认」的判定 = shared isUnresolvedControlRequest（单源谓词）。
+ * composer blocked（pendingInteraction）与审批托盘共用此一处；幽灵（进程死亡后
+ * result 永不到达的未决请求）由 session_init.anchor 作废机制在 state 层解除——
+ * 旧实时段请求被标 interrupted 后谓词自动 false（见 markStaleControlRequests）。
  */
-export function isLivePendingControlRequest<
-  T extends { type: string; controlRequestId?: string; result?: unknown; isInterrupted?: boolean },
->(part: T, aliveIds: ReadonlySet<string> | null): part is T & { controlRequestId: string } {
-  if (part.type !== "tool-call") return false;
-  if (!isUnresolvedControlRequest(part)) return false;
-  return aliveIds === null || aliveIds.has(part.controlRequestId);
-}
-
-export function collectPendingApprovals(
-  chatStream: ChatStreamItem[],
-  aliveIds: ReadonlySet<string> | null = null,
-): PendingApproval[] {
+export function collectPendingApprovals(chatStream: ChatStreamItem[]): PendingApproval[] {
   // Pass 1: agent part meta (toolCallId → subagent_type/description) so body
   // tools can be attributed to their owning subagent.
   const agentMeta = new Map<string, { subagentType?: string; description?: string }>();
@@ -778,7 +767,7 @@ export function collectPendingApprovals(
     if (item.kind !== "assistant") continue;
     for (const part of item.parts) {
       if (part.type !== "tool-call") continue;
-      if (!isLivePendingControlRequest(part, aliveIds)) continue;
+      if (!isUnresolvedControlRequest(part)) continue;
       if (!isOneClickApprovable(part.toolName)) continue;
       const ownerMeta = item.bodyParentToolUseId
         ? agentMeta.get(item.bodyParentToolUseId)
@@ -793,6 +782,34 @@ export function collectPendingApprovals(
     }
   }
   return approvals;
+}
+
+/**
+ * 实时段重启作废（2026-11-03 幽灵 blocked 根治，取代服务端审批快照门禁）：
+ * control_request 仅存 stdout 不落 JSONL，户籍在实时段——进程死亡后它在任何缓冲
+ * 都不会重现，result 永不到达。重连时 session_init.anchor = "history"（锚命中
+ * JSONL 历史缓冲 = 当前 live 缓冲是重启后新进程的，旧实时段已凝固）→ 把重连前
+ * state 里全部 control_request 帧标 stale；投影层（renderChatStream 盖章处）对
+ * 尚未解决的 part 补标 isInterrupted——保留「曾有一个未答请求」的痕迹，且
+ * isUnresolvedControlRequest 及其全部消费点（composer/托盘/金框/计划提问卡）
+ * 零 gate 自动解除。纯函数，hook 单测共用。
+ *
+ * delta 分支内 anchor=history ⟺ 进程重启的论证：compact 清空双缓冲 → 锚 miss → full；
+ * LIVE_BUFFER_CAP trim 只裁 live 缓冲，但 historyLines 是 relay activate 时的一次性
+ * 快照（不含本生命周期内 CLI 新写盘的行）→ trim 后锚在 history 缓冲也 miss → full。
+ * 两个条件缺一不可，故「进程活着 + 锚命中 history」不存在，无误杀活请求面。
+ * anchor="live"（纯网络重连/刷新）→ 保留原样。
+ *
+ * 已知边界（2026-11-03 review 记档）：作废只挂重连路径——CLI 崩溃而本端 WS 仍连着时
+ * composer 保持 blocked 直到该端重连/刷新（服务端 session_status 广播可挂同款 stale
+ * 化作后续加固方向）；多端同挂同一会话时未断线的另一端同理。
+ */
+export function markStaleControlRequests(
+  messages: SessionStreamServerMessage[],
+): SessionStreamServerMessage[] {
+  return messages.map((m) =>
+    m.type === "control_request" && !m.stale ? { ...m, stale: true } : m,
+  );
 }
 
 // ── Agent container tail envelope ────────────────────────────────────
@@ -3312,8 +3329,15 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
 
     // control_request: attach request_id as controlRequestId to the matching
     // tool-call part. Same pattern as tool_result and task_progress above.
+    // stale（markStaleControlRequests 的作废标记）→ 尚未解决的 part 补标
+    // isInterrupted：请求已随旧进程死亡永无 result，谓词自动解除（composer/
+    // 托盘/金框零 gate）；已回填 result 的 part 不动（完成态优先于中断态）。
     if (msg.type === "control_request") {
-      const cr = msg as { request_id: string; request?: { tool_use_id?: string } };
+      const cr = msg as {
+        request_id: string;
+        request?: { tool_use_id?: string };
+        stale?: boolean;
+      };
       const toolUseId = cr.request?.tool_use_id;
       if (toolUseId) {
         for (let i = items.length - 1; i >= 0; i--) {
@@ -3325,7 +3349,11 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
           if (partIdx >= 0) {
             item.parts = item.parts.map((p, j) =>
               j === partIdx && p.type === "tool-call"
-                ? { ...p, controlRequestId: cr.request_id }
+                ? {
+                    ...p,
+                    controlRequestId: cr.request_id,
+                    ...(cr.stale && p.result === undefined ? { isInterrupted: true } : {}),
+                  }
                 : p,
             );
             pushPartRaw(toolUseId, msg);
@@ -4107,10 +4135,6 @@ export function useClaudeSession(
     clearPendingModelContext?: () => void;
     clearPendingAttachments?: () => void;
     onModeConflict?: () => void;
-    // 服务端审批快照的 controlRequestId 集合（use-approvals 的 approvals）：composer
-    // blocked 与审批托盘的事实源。null / 未传 = 快照未就绪 → 退回纯客户端谓词
-    // （见 collectPendingApprovals 注释的幽灵 part 说明）。
-    aliveControlRequestIds?: ReadonlySet<string> | null;
   },
 ) {
   const [connectionVersion, setConnectionVersion] = useState(0);
@@ -5295,6 +5319,19 @@ export function useClaudeSession(
               // delta 重连：服务端确认了 since 锚，接下来只补锚后的行——保留全部 state
               //（rawMessages/scalars/tasks/UI 都不动），不 reset、不置 isResume（没有
               // turn 被打断；增量段若悬空，补齐的 result 会正常闭合它）。
+              // 锚落点 = history（进程重启，control_request 户籍在实时段）→ 旧实时段
+              // 全部未决请求作废（标 stale；投影层对未解决 part 补 isInterrupted）。
+              // anchor="live"（纯网络重连/刷新，进程没死）→ 原样保留。updater 形式：
+              // 恒基于最新 state（ref 镜像只在 commit 后 effect 更新，直接写入有丢失
+              // 已入队 append 帧的理论竞态）；纯函数保长度 + 幂等，updater 安全。
+              if (msg.anchor === "history") {
+                setRawMessages((prev) => markStaleControlRequests(prev));
+                if (isSocketLoggingEnabled())
+                  console.log(
+                    "[claude-adapter] session_init delta anchor=history — voiding stale controlRequests:",
+                    rawMessagesRef.current.filter((m) => m.type === "control_request").length,
+                  );
+              }
               deltaReplayRef.current = true;
               // 镜像而非闭包：恢复场景 effect 重跑不重建闭包，闭包里 rawMessages/rendered
               // 是 mount 渲染的空数组——读闭包 = liveStart 落进恢复窗口内部（假 running）
@@ -5590,40 +5627,32 @@ export function useClaudeSession(
 
   // A control_request is pending when some tool-call part carries an injected
   // controlRequestId that is still unresolved（shared isUnresolvedControlRequest
-  // 单源）AND the server approval registry still holds that request — the
-  // combined definition is isLivePendingControlRequest (same helper as the
-  // approval tray). This is the session-level "agent is waiting on the user" signal shared by
-  // AskUserQuestion / ExitPlanMode / permission prompts; it gates the composer
+  // 单源）. This is the session-level "agent is waiting on the user" signal shared
+  // by AskUserQuestion / ExitPlanMode / permission prompts; it gates the composer
   // into its blocked state.
   //
-  // The registry gate is the anti-hang guarantee: control_request is
-  // stdout-only (never in JSONL), so when the CLI process dies mid-prompt
-  // (API restart / crash) its result never arrives — and applyToolLifecycle
-  // deliberately never marks a controlRequestId part interrupted (a live
-  // permission prompt must survive turn boundaries). Without the gate such an
-  // orphaned part wedges the composer forever ("请先确认上方操作" with nothing
-  // left to confirm — 2026-11-03 真机 bug). The server side is authoritative:
-  // ApprovalRegistry registers on can_use_tool and clears on control_response
-  // 转发 / result 帧 / 进程退出，so a ghost part is simply not in the snapshot.
-  // aliveControlRequestIds === null（快照未就绪）回退到纯谓词，不误杀活请求。
-  const aliveControlRequestIds = options?.aliveControlRequestIds ?? null;
+  // Anti-hang guarantee（2026-11-03 二次根治）= 聊天流自洽的作废机制，不再依赖
+  // 服务端审批快照：control_request 仅存 stdout（不落 JSONL），户籍在实时段——
+  // CLI 进程死亡（API 重启/崩溃/TUI 切换）后 result 永不到达，而 applyToolLifecycle
+  // 对 controlRequestId part 永不标 interrupted（活着的 permission prompt 必须能
+  // 跨 turn 边界存活）。作废路径：重连时 session_init.anchor = "history"（锚命中
+  // JSONL 历史缓冲 = 实时段重启）→ markStaleControlRequests 把旧实时段未决请求
+  // 标 stale → 投影层补标 part.isInterrupted → 本谓词自动 false。没有这条路径的
+  // 幽灵 part 曾把 composer 永久卡死（"请先确认上方操作"但上方无卡——真机 bug）。
   const pendingInteraction = useMemo(
     () =>
       chatStream.some(
         (item) =>
           item.kind === "assistant" &&
-          item.parts.some((part) => isLivePendingControlRequest(part, aliveControlRequestIds)),
+          item.parts.some((part) => part.type === "tool-call" && isUnresolvedControlRequest(part)),
       ),
-    [chatStream, aliveControlRequestIds],
+    [chatStream],
   );
 
   // Aggregated permission tray data (same predicate family as
   // pendingInteraction but enumerable + permission-tools-only; see
   // collectPendingApprovals).
-  const pendingApprovals = useMemo(
-    () => collectPendingApprovals(chatStream, aliveControlRequestIds),
-    [chatStream, aliveControlRequestIds],
-  );
+  const pendingApprovals = useMemo(() => collectPendingApprovals(chatStream), [chatStream]);
 
   const onNew = useCallback(
     async (message: AppendMessage) => {

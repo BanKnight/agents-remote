@@ -113,7 +113,6 @@ import {
   type TurnStats,
   type TurnStatusTone,
 } from "./claude-adapter";
-import { useApprovals } from "../hooks/use-approvals";
 import { SubagentOverviewBar, agentCardExpandSignalAtom } from "./claude-subagent-overview";
 import type {
   ClaudeContextUsage,
@@ -358,15 +357,6 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     queryFn: () => getAgentSession(projectName, sessionId),
   });
 
-  // 服务端审批快照（ApprovalRegistry 权威 pending 事实源）：传给 useClaudeSession 做
-  // composer blocked / 审批托盘的门禁——客户端 part 的 controlRequestId 只是投影，
-  // 幽灵 part（CLI 死亡等）靠它否决。loaded=false（快照未就绪）传 null 回退纯谓词。
-  const { approvals: serverApprovals, loaded: approvalsLoaded } = useApprovals(true);
-  const aliveControlRequestIds = useMemo(
-    () => (approvalsLoaded ? new Set(serverApprovals.map((item) => item.controlRequestId)) : null),
-    [serverApprovals, approvalsLoaded],
-  );
-
   const session = detail.data?.session;
   const availableModels = detail.data?.availableModels ?? [];
   const availableModelResolved = detail.data?.availableModelResolved;
@@ -435,7 +425,6 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
           queryKey: ["projects", projectName, "agent-sessions", sessionId],
         });
       },
-      aliveControlRequestIds,
     },
   );
 

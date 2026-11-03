@@ -47,7 +47,11 @@ test("ClaudeSessionRelay sends history and output batches for a new session", as
   // session_init always comes first
   const sessionInit = messages.findIndex((msg) => msg.type === "session_init");
   expect(sessionInit).toBe(0);
-  expect(messages[sessionInit]).toMatchObject({ type: "session_init", resume: false });
+  expect(messages[sessionInit]).toMatchObject({
+    type: "session_init",
+    resume: false,
+    anchor: null,
+  });
 
   // History batch
   const historyStart = messages.findIndex((msg) => msg.type === "history_start");
@@ -114,7 +118,11 @@ test("ClaudeSessionRelay sends history batch before output batch for resume", as
   // session_init always comes first
   const sessionInit = messages.findIndex((msg) => msg.type === "session_init");
   expect(sessionInit).toBe(0);
-  expect(messages[sessionInit]).toMatchObject({ type: "session_init", resume: true });
+  expect(messages[sessionInit]).toMatchObject({
+    type: "session_init",
+    resume: true,
+    anchor: null,
+  });
 
   // History batch comes next
   const historyStart = messages.findIndex((msg) => msg.type === "history_start");
@@ -884,7 +892,7 @@ test("ClaudeSessionRelay anchors on a live-buffer uuid and resends only the tail
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta", anchor: "live" });
 
   const historyStart = messages.findIndex((msg) => msg.type === "history_start");
   const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
@@ -940,7 +948,7 @@ test("ClaudeSessionRelay anchors on a history uuid and resends the history tail 
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta", anchor: "history" });
 
   const historyStart = messages.findIndex((msg) => msg.type === "history_start");
   const historyEnd = messages.findIndex((msg) => msg.type === "history_end");
@@ -979,7 +987,7 @@ test("ClaudeSessionRelay sends empty batches when the anchor is the last line", 
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta", anchor: "live" });
   const historyStart = messages.findIndex((msg) => msg.type === "history_start");
   expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0 });
   const liveStart = messages.findIndex((msg) => msg.type === "live_start");
@@ -1013,7 +1021,12 @@ test("ClaudeSessionRelay falls back to full replay when the anchor is unknown", 
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages[0]).toMatchObject({ type: "session_init", resume: false, replay: "full" });
+  expect(messages[0]).toMatchObject({
+    type: "session_init",
+    resume: false,
+    replay: "full",
+    anchor: null,
+  });
   const liveStart = messages.findIndex((msg) => msg.type === "live_start");
   expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 1 });
 
@@ -1043,7 +1056,7 @@ test("ClaudeSessionRelay falls back to full replay on a malformed anchor", async
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages[0]).toMatchObject({ type: "session_init", replay: "full" });
+  expect(messages[0]).toMatchObject({ type: "session_init", replay: "full", anchor: null });
 
   relay.destroy();
 });
@@ -1081,7 +1094,7 @@ test("ClaudeSessionRelay ignores a nested uuid match and pins the top-level line
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta" });
+  expect(messages[0]).toMatchObject({ type: "session_init", replay: "delta", anchor: "live" });
   const liveStart = messages.findIndex((msg) => msg.type === "live_start");
   const liveEnd = messages.findIndex((msg) => msg.type === "live_end");
   // 正确锚点 = 顶层 uuid-anchor 那行 → 只补后一行（uuid-later），不是空批。

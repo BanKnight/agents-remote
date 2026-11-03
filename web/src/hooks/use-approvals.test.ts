@@ -171,21 +171,4 @@ describe("useApprovals websocket 断线重连", () => {
     });
     expect(MockSocket.instances).toHaveLength(1);
   });
-
-  test("loaded：初值 false，REST 初值或 WS 首帧任一到达后 true（pending 门禁回退开关）", () => {
-    const { result } = renderUseApprovals();
-    // 未就绪：消费方（composer pending 门禁）必须回退纯谓词，不能当「无 pending」。
-    expect(result.current.loaded).toBe(false);
-
-    act(() => {
-      MockSocket.instances[0]?.emit({
-        type: "approvals",
-        approvals: [],
-      });
-      vi.advanceTimersByTime(1);
-    });
-    // 空快照 ≠ 未就绪：loaded 翻 true 后空数组才可作「无 pending」否决幽灵。
-    expect(result.current.loaded).toBe(true);
-    expect(result.current.approvals).toEqual([]);
-  });
 });

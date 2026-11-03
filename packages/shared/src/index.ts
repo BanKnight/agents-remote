@@ -2848,6 +2848,13 @@ export type ClaudeControlRequest = {
     display_name: string;
     input: Record<string, unknown>;
   };
+  /**
+   * 实时段重启作废标记（客户端本地语义，CLI stdout 无此字段、不落 JSONL）。
+   * 重连时 session_init.anchor = "history"（进程重启）→ 客户端把旧实时段全部
+   * 未决 controlRequest 帧标 stale；投影层据此给 part 标 isInterrupted——
+   * 请求已随进程死亡永无 result，保留「曾有一个未答请求」的痕迹。
+   */
+  stale?: boolean;
 };
 
 // The control_response format matches Claude SDK's CanUseToolControlResponse:
@@ -2937,19 +2944,19 @@ export function isOneClickApprovable(toolName: string): boolean {
 // ── control_request 待确认谓词（2026-11-03 收束：此前四处散写曾漂移）──
 // 「control_request 已注入 tool-call 且未解决」的单一真相。消费点（各自叠加自己的
 // 附加 gate，谓词本身不管 type/运行态——调用方守卫）：
-// ① claude-adapter pendingInteraction（composer gate；再叠服务端审批快照
-//    aliveControlRequestIds —— anti-hang 保证，见该处注释）
-// ② claude-adapter collectPendingApprovals（托盘行数据；同样叠 aliveControlRequestIds
-//    与 isOneClickApprovable）
+// ① claude-adapter pendingInteraction（composer gate）
+// ② claude-adapter collectPendingApprovals（托盘行数据；叠加 isOneClickApprovable）
 // ③ tool-ui-registry needsPermission（assistant 气泡内工具卡金框；叠加 part 级
 //    status.type === "running"——数据派生，与会话级 isRunning 是两个维度）
 // ④ ClaudeSessionDetailRoute SystemChatBubble tool-card 金框。
-// 散写漂移史：registry 处漏 result 检查、composer 处漏事实源 gate——后者即
-// 「请先确认上方操作但上方无卡」悬挂 bug 的根因（control_request 仅存 stdout 不落
-// JSONL，CLI 死亡/重放裁剪后 result 永不到达；applyToolLifecycle 对 controlRequestId
-// part 的 interrupt 豁免让它永不被标 interrupted → 谓词恒真 → composer 永久 blocked）。
-// 事实源 = 服务端 ApprovalRegistry 快照（control_request 生命周期唯一权威），
-// 客户端 part 只是投影，不在快照中即为幽灵。
+// 幽灵防护（2026-11-03 二次根治）= 聊天流自洽：control_request 仅存 stdout 不落
+// JSONL，户籍在实时段；重连时 session_init.anchor = "history"（进程重启）→ 客户端
+// 把旧实时段全部未决请求帧标 stale → 投影层标 part.isInterrupted → 本谓词自动
+// false——composer/托盘/金框全部消费点零 gate 自动解除（快照门禁方案已整体撤除）。
+// 散写漂移史：registry 处漏 result 检查、composer 处漏「请求已死」判定——后者即
+// 「请先确认上方操作但上方无卡」悬挂 bug 的根因（CLI 死亡后 result 永不到达；
+// applyToolLifecycle 对 controlRequestId part 的 interrupt 豁免让它永不被标
+// interrupted → 谓词恒真 → composer 永久 blocked）。
 export function isUnresolvedControlRequest<
   T extends { controlRequestId?: string; result?: unknown; isInterrupted?: boolean },
 >(part: T): part is T & { controlRequestId: string } {
@@ -3085,6 +3092,14 @@ export type SessionStreamServerMessage =
       resume: boolean;
       /** 回放模式：delta = 服务端命中客户端 since 锚、只下发锚后行；full/缺省 = 全量（老服务端缺省）。 */
       replay?: "delta" | "full";
+      /**
+       * 锚落点（仅 delta 有意义）：命中哪个回放缓冲。live = 实时段连续（进程没死，
+       * 纯网络重连/刷新——旧未决 controlRequest 保留）；history = 实时段重启（旧进程
+       * 已死，旧 live 行凝固为 JSONL 历史——客户端作废旧实时段全部未决请求）。
+       * control_request 仅存 stdout 不落 JSONL，它的「户籍」是实时段，进程重启后
+       * 不可能在任何缓冲重现——这是客户端在聊天流内自洽判定幽灵的唯一依据。
+       */
+      anchor?: "live" | "history" | null;
     }
   | {
       type: "history_end";

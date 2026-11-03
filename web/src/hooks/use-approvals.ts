@@ -76,10 +76,13 @@ function disconnectApprovalsStream(): void {
 }
 
 /**
- * 全局待审批快照。enabled 期间持有 WS 订阅（模块级引用计数单订阅）：连接即推全量
+ * 全局待审批快照（审批中心本职：桌面 ApprovalPopover / 移动 MobileApprovalSheet /
+ * 状态栏审批段）。enabled 期间持有 WS 订阅（模块级引用计数单订阅）：连接即推全量
  *（open 时服务端先发一帧），之后任何 registry 变更推全量 → setQueryData 整体替换。
  * WS 断线自愈：仍有订阅者时 500ms 固定间隔重连（§6.5 补强批）；REST fallback 兜底
  *（refetchOnWindowFocus 全局关 → 显式 refetchInterval 兜底 15s，仅 enabled 期）。
+ * 会话 composer blocked 不消费快照（2026-11-03 起走 session_init.anchor 作废机制，
+ * pending 只看聊天流）。
  */
 export function useApprovals(enabled: boolean) {
   const queryClient = useQueryClient();
@@ -96,10 +99,7 @@ export function useApprovals(enabled: boolean) {
     return () => disconnectApprovalsStream();
   }, [enabled, queryClient]);
 
-  // loaded = 已有服务端快照（REST 初值或 WS 首帧任一到达）。消费方据此区分「快照为空」
-  // 与「快照未就绪」：后者不能当作「无 pending」用（会话 composer 的 pending gate
-  // 用 approvals 快照做事实源，未就绪时须回退，否则活请求会被误判为幽灵）。
-  return { approvals: query.data?.approvals ?? [], loaded: query.data !== undefined };
+  return { approvals: query.data?.approvals ?? [] };
 }
 
 /** 单卡应答（allow/deny）。成功后服务端广播新快照 → WS 帧已更新卡片，无需本地乐观删。 */

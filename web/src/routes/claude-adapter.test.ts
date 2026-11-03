@@ -5,7 +5,7 @@ import {
   applyTaskSystemMessage,
   buildAllowAllControlResponse,
   collectPendingApprovals,
-  isLivePendingControlRequest,
+  markStaleControlRequests,
   isSyntheticAssistantMessage,
   computeRunningCount,
   convertContentToBubble,
@@ -4762,45 +4762,66 @@ describe("collectPendingApprovals", () => {
     expect(collectPendingApprovals([assistantItem([toolPart({})])])).toEqual([]);
   });
 
-  test("isLivePendingControlRequest：谓词 + 快照门禁的单一定义", () => {
-    const live = { type: "tool-call", controlRequestId: "req-1" };
-    // 非 tool-call part 不参与
-    expect(isLivePendingControlRequest({ type: "text", controlRequestId: "req-1" }, null)).toBe(
-      false,
-    );
-    // 未注入 / 已解决 / 已中断 → 恒 false（不论快照）
-    expect(isLivePendingControlRequest({ type: "tool-call" }, new Set(["req-1"]))).toBe(false);
-    expect(
-      isLivePendingControlRequest(
-        { type: "tool-call", controlRequestId: "req-1", result: "" },
-        new Set(["req-1"]),
-      ),
-    ).toBe(false);
-    // 快照就绪：在快照里才为真
-    expect(isLivePendingControlRequest(live, new Set(["req-1"]))).toBe(true);
-    expect(isLivePendingControlRequest(live, new Set())).toBe(false);
-    // 快照未就绪（null）→ 回退纯谓词
-    expect(isLivePendingControlRequest(live, null)).toBe(true);
+  test("markStaleControlRequests：control_request 帧标 stale（其余帧结构共享，幂等）", () => {
+    const msgs = [
+      assistant("a1", [{ type: "tool_use", id: "tu-1", name: "Bash", input: {} }]),
+      controlRequest("req-1", "Bash", "tu-1"),
+      controlRequest("req-2", "Bash", "tu-2"),
+    ];
+    const marked = markStaleControlRequests(msgs);
+    expect(marked).toHaveLength(3);
+    expect((marked[1] as { stale?: boolean }).stale).toBe(true);
+    expect((marked[2] as { stale?: boolean }).stale).toBe(true);
+    // 非 control_request 帧引用不变（结构共享，不深拷贝整个 state）
+    expect(marked[0]).toBe(msgs[0]);
+    // 幂等：已 stale 的帧不重复展开
+    expect(markStaleControlRequests(marked)[1]).toBe(marked[1]);
   });
 
-  test("aliveIds 快照门禁：不在服务端 registry 的幽灵 part 不收集", () => {
-    const items = [
-      assistantItem([
-        toolPart({ toolCallId: "tu-ghost", controlRequestId: "req-ghost" }),
-        toolPart({ toolCallId: "tu-live", controlRequestId: "req-live" }),
-      ]),
-    ];
-    // 快照就绪且只含活请求 → 幽灵被否决
-    expect(collectPendingApprovals(items, new Set(["req-live"])).map((a) => a.toolCallId)).toEqual([
-      "tu-live",
+  test("集成：stale control_request（实时段重启作废）→ 未解决 part 标 interrupted 退出 pending", () => {
+    const toolUse = [{ type: "tool_use", id: "tu-x", name: "Bash", input: { command: "rm -rf" } }];
+    // 作废前：pending 可收集（composer blocked）
+    const live = normalizeChatStream([
+      assistant("a1", toolUse),
+      controlRequest("req-x", "Bash", "tu-x", { command: "rm -rf" }),
     ]);
-    // 快照就绪但为空（无任何待确认）→ 全部为幽灵
-    expect(collectPendingApprovals(items, new Set())).toEqual([]);
-    // null = 快照未就绪 → 回退纯谓词（不误杀活请求，也不额外否决）
-    expect(collectPendingApprovals(items, null).map((a) => a.toolCallId)).toEqual([
-      "tu-ghost",
-      "tu-live",
+    expect(collectPendingApprovals(live)).toHaveLength(1);
+    // 锚落 history 作废后：stale 帧重投影 → part.isInterrupted → 谓词自动 false
+    const staleReq = {
+      ...controlRequest("req-x", "Bash", "tu-x", { command: "rm -rf" }),
+      stale: true,
+    } as unknown as SessionStreamServerMessage;
+    const voided = normalizeChatStream([assistant("a1", toolUse), staleReq]);
+    expect(collectPendingApprovals(voided)).toEqual([]);
+    const asst = voided.find((i) => i.kind === "assistant") as Extract<
+      ChatStreamItem,
+      { kind: "assistant" }
+    >;
+    const part = asst.parts.find((p) => p.type === "tool-call");
+    expect(part && "isInterrupted" in part ? part.isInterrupted : undefined).toBe(true);
+    // controlRequestId 痕迹保留（「曾有一个未答请求」仍可寻址）
+    expect(part && "controlRequestId" in part ? part.controlRequestId : undefined).toBe("req-x");
+  });
+
+  test("集成：stale 不改写已解决 part（result 已回填时完成态优先）", () => {
+    const items = normalizeChatStream([
+      assistant("a1", [{ type: "tool_use", id: "tu-r", name: "Bash", input: {} }]),
+      controlRequest("req-r", "Bash", "tu-r"),
+      user([{ type: "tool_result", tool_use_id: "tu-r", content: "done" }]),
+      {
+        ...controlRequest("req-r", "Bash", "tu-r"),
+        stale: true,
+      } as unknown as SessionStreamServerMessage,
     ]);
+    const approvals = collectPendingApprovals(items);
+    expect(approvals).toHaveLength(0);
+    const asst = items.find((i) => i.kind === "assistant") as Extract<
+      ChatStreamItem,
+      { kind: "assistant" }
+    >;
+    const part = asst.parts.find((p) => p.type === "tool-call");
+    expect(part && "result" in part ? part.result !== undefined : false).toBe(true);
+    expect(part && "isInterrupted" in part ? part.isInterrupted : undefined).toBeUndefined();
   });
 
   test("集成：normalizeChatStream 配对 control_request 后能收集到 pending", () => {

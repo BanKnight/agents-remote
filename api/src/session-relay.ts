@@ -129,13 +129,18 @@ export class ClaudeSessionRelay {
     // Connection-level metadata — sent before any batch so the client knows
     // whether this is a resume (history may contain orphaned tool_use) and
     // whether the batches that follow are a delta (it must keep its state and
-    // append) or a full replay (it resets). Older clients ignore the field.
+    // append) or a full replay (it resets). anchor tells the client which
+    // buffer its anchor landed in: delta + history = the live segment restarted
+    // (process died — old live lines froze into JSONL), so the client voids
+    // unresolved controlRequests from its pre-reconnect state. Older clients
+    // ignore the field.
     try {
       onData(
         JSON.stringify({
           type: "session_init",
           resume: this.startedAsResume,
           replay: anchor ? "delta" : "full",
+          anchor: anchor?.buffer ?? null,
         }),
       );
     } catch {
