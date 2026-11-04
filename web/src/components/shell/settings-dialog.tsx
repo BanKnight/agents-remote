@@ -343,7 +343,7 @@ function SettingsRootView({
 
   return (
     <div className="flex flex-col">
-      {/* 通用（07 第一组）：外观 / 语言 —— 值行 + › 进 general detail */}
+      {/* 通用（07 第一组）：外观 / 语言 / 诊断日志 —— 值行 + › 进各自专属 detail */}
       <div className="sect">{t("settings.section.general")}</div>
       <div className="sgroup">
         {row(t("theme.label"), <>{themeLabel}</>, () => onNavigate("appearance"))}
@@ -456,30 +456,34 @@ function SettingsRootView({
 }
 
 /**
- * 外观 detail（07 原型「外观」行专属 UI）：三态分段（跟随系统/明亮/暗黑，
- * `themeAtom` 持久化）。root 值行点入、只承载外观一项（值行 → 专属 detail 规则）。
- * `.segc` 三态分段（fill-segmented 底 + segmented-thumb 活动块），hint 作 kfoot 脚注。
+ * 分段选择 detail 单源（review 后抽取，锁定「全局默认三态」同构）：.sgroup 卡内一枚
+ * `.segc` 三态分段 + kfoot 脚注。AppearanceSection / LanguageSection 消费——状态源
+ * 不同（themeAtom / i18n 偏好），结构单源防漂移。
  */
-function AppearanceSection() {
-  const { t } = useT();
-  const { theme, setTheme } = useTheme();
+function SegmentedDetail<T extends string>({
+  ariaLabel,
+  options,
+  selected,
+  onSelect,
+  hint,
+}: {
+  ariaLabel: string;
+  options: readonly { value: T; label: string }[];
+  selected: T;
+  onSelect: (value: T) => void;
+  hint: string;
+}) {
   return (
     <div className="flex flex-col">
       <div className="sgroup">
         <div className="py-3">
-          <div aria-label={t("theme.label")} className="segc w-full" role="tablist">
-            {(
-              [
-                { value: "system", label: t("theme.system") },
-                { value: "light", label: t("theme.light") },
-                { value: "dark", label: t("theme.dark") },
-              ] as const
-            ).map((opt) => (
+          <div aria-label={ariaLabel} className="segc w-full" role="tablist">
+            {options.map((opt) => (
               <button
-                aria-selected={theme === opt.value}
-                className={theme === opt.value ? "on" : ""}
+                aria-selected={selected === opt.value}
+                className={selected === opt.value ? "on" : ""}
                 key={opt.value}
-                onClick={() => setTheme(opt.value)}
+                onClick={() => onSelect(opt.value)}
                 role="tab"
                 type="button"
               >
@@ -489,8 +493,30 @@ function AppearanceSection() {
           </div>
         </div>
       </div>
-      <p className="kfoot mx-4">{t("theme.hint")}</p>
+      <p className="kfoot mx-4">{hint}</p>
     </div>
+  );
+}
+
+/**
+ * 外观 detail（07 原型「外观」行专属 UI）：三态分段（跟随系统/明亮/暗黑，
+ * `themeAtom` 持久化）。root 值行点入、只承载外观一项（值行 → 专属 detail 规则）。
+ */
+function AppearanceSection() {
+  const { t } = useT();
+  const { theme, setTheme } = useTheme();
+  return (
+    <SegmentedDetail
+      ariaLabel={t("theme.label")}
+      hint={t("theme.hint")}
+      onSelect={setTheme}
+      options={[
+        { value: "system", label: t("theme.system") },
+        { value: "light", label: t("theme.light") },
+        { value: "dark", label: t("theme.dark") },
+      ]}
+      selected={theme}
+    />
   );
 }
 
@@ -501,33 +527,17 @@ function AppearanceSection() {
 function LanguageSection() {
   const { t, pref: langPref, setLang } = useT();
   return (
-    <div className="flex flex-col">
-      <div className="sgroup">
-        <div className="py-3">
-          <div aria-label={t("settings.lang")} className="segc w-full" role="tablist">
-            {(
-              [
-                { value: "system", label: t("theme.system") },
-                { value: "zh", label: t("settings.langZh") },
-                { value: "en", label: t("settings.langEn") },
-              ] as const
-            ).map((opt) => (
-              <button
-                aria-selected={langPref === opt.value}
-                className={langPref === opt.value ? "on" : ""}
-                key={opt.value}
-                onClick={() => setLang(opt.value)}
-                role="tab"
-                type="button"
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <p className="kfoot mx-4">{t("settings.langHint")}</p>
-    </div>
+    <SegmentedDetail
+      ariaLabel={t("settings.lang")}
+      hint={t("settings.langHint")}
+      onSelect={setLang}
+      options={[
+        { value: "system", label: t("theme.system") },
+        { value: "zh", label: t("settings.langZh") },
+        { value: "en", label: t("settings.langEn") },
+      ]}
+      selected={langPref}
+    />
   );
 }
 
@@ -773,11 +783,13 @@ export function SettingsMainPage() {
       </header>
       {/* 560px 居中限宽列（07m `.col{width:560px;margin:0 auto}`；2026-10-12 真机反馈①恢复
           mx-auto——边距统筹 2026-10-11 去居中的决策被否决，设置页居中列与文件/插件页全宽
-          贴左的差异是原型本意）。px-1 4px + .sect/.sgroup 自带 16px margin = 20px 内容线；
-          -mt-0.5 补偿首组 .sect margin-top 14px → 内容顶 = header 底 + 12px 对齐 lg:pt-3，
-          root/detail 两态统一。 */}
+          贴左的差异是原型本意）。px-1 4px + .sect/.sgroup 自带 16px margin = 20px 内容线。
+          顶部节奏按态分施（同移动 SettingsRoute isRoot 分支，design review P2）：root 态
+          首组 .sect margin-top 14px → -mt-0.5 补偿为 header 底 + 12px；detail 态 pt-3
+          直接给 12px（detail 首组有无 .sect 两种形态都成立——无 .sgroup margin-top 0，
+          曾被 -mt-0.5 拉进 header 下裁掉顶边框；带 .sect 的叠 14px 与移动端同节奏）。 */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="-mt-0.5 mx-auto w-full max-w-[560px] px-1 pb-6">
+        <div className={`mx-auto w-full max-w-[560px] px-1 pb-6 ${isRoot ? "-mt-0.5" : "pt-3"}`}>
           <SettingsContent activeSection={activeSection} onNavigate={setActiveSection} />
         </div>
       </div>

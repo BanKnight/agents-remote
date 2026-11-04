@@ -318,7 +318,7 @@ M7 = 设置页重构 + 登录页完整态（原型 07/06；spec §3.1/§3.6）�
 6. **语言三态（LanguagePref）**：i18n 现状 zh/en 二态 + `detectLanguage`（未存储时按 `navigator.language`）——「跟随系统」语义已存在但不可回选。引入 `LanguagePref = "system" | "zh" | "en"`：context 存 pref、`lang` = resolve 结果（system → navigator.language）；localStorage 已存 zh/en 视为显式选择（无缝迁移），无存储 = system；GeneralSection 增语言 SegmentedControl（跟随系统/中文/English）；AuthGate 底部快捷切换行为不变（写显式语言）。
 7. **登录页完整态（spec §3.1 两缺口）**：① 密码错误 = 输入框描红（`loginMutation.error` → border-error）+ 行内提示（已有）；② 断网 = 按钮变「重试连接」——`auth.error`（网络层，getAuthStatus 401 返 false 不抛）时登录帧按钮变「重试连接」点击 refetch（现状是整页换错误帧无出口）。
 8. **MobilePageHeader back 升级 `.back` 设计语言**（‹ + 可见文字，M6 P2-2 定稿延续）：当前全仓只有 SettingsRoute 传 back（零波及）；root 态新增 back=「项目」→ `/projects`（07 原型 ①），detail 态 back=「设置」。
-9. **通用组交互记档**：原型外观/语言为纯值行；实现 = root 行值展示 + 点入 general detail 用 SegmentedControl（与现有实现一致，交互增强记档）。Firecrawl 行点入 pi detail（key 在 pi 段内，独立 detail 不新增）；行值 = 已设置/未设置（`firecrawlApiKeyMasked` 推导）。
+9. **通用组交互记档**：原型外观/语言为纯值行；实现 = root 行值展示 + 点入 general detail 用 SegmentedControl（与现有实现一致，交互增强记档）。Firecrawl 行点入 pi detail（key 在 pi 段内，独立 detail 不新增）；行值 = 已设置/未设置（`firecrawlApiKeyMasked` 推导）。⚠️ 2026-11-05 IA 重构（§6.16）后 general detail 已拆分为 appearance/language/diagnostics 三个专属 detail，本条「点入 general detail」部分过时，以 §6.16 为准。
 
 ## §6.8b M7 收口补记（2026-09-21）
 
@@ -2073,3 +2073,14 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 **两代演进**：① `bd5ac6e` 悬浮化（用户报「重连后提示消失引发布局跳动」）——03i `.cap` 从流内分隔（占真实高度）改 absolute overlay 悬浮胶囊（回底浮球同层，出现/消失零布局跳动；capLeaving 淡出状态机 + `--duration-exit` 单源）。② 本批返工（用户报胶囊「太不明显、不自然」）——**全宽实底状态条**（微信「网络不可用」范式）：`.cap` 排版（11px 居中）+ `bg-surface` 实底 + 上下 `neutral-line` 边框 + `text-on-surface-muted`（review 消化：ink-3 对白底 ≈1.7:1 未达 WCAG，与空会话分支同墨阶）；文案去两侧 `——` 装饰（流内分隔时代产物）。位置仍贴 composer 上缘（`--composer-float-inset` + 0.375rem / `lg:bottom-4`），overlay 零跳动语义不变；**回底浮球让位**：横幅在场时浮球上移一个横幅高（`transition-all` 既有，退场平滑回落）。spec §4.7 断线条目同步。
 
 **探针**：`probe-offline-cap-banner.mjs`（真链路 routeWebSocket 路由级断连=飞行模式语义，非 mock 帧；移动 390 + 桌面 1280 直开两轮 17 断言：全宽/实底/边框/贴 composer/让位不相交/重连卸载/浮球回落）。⚠️ 探针踩出**既有产品 bug（待单独立批修）**：390 进页后 `setViewportSize` 切 1280 跨 lg 断点 → React error #310（hooks 数量两次渲染间漂移）渲染树崩、main 卸载——桌面浏览器小窗拉大是真实场景；基线（stash 本批改动）可复现，非本批引入；探针桌面轮改直开 1280 避开。
+
+### §6.16 设置页 IA 重构：root 值行 → 专属 detail（2026-11-05，commit `32e5703` + review 修复批）
+
+**用户反馈**：「通用的每一项目前是展开在第一层的，但是点进去却都是同一个 ui，很明显不合理，理应是看到各自的 ui 才对，与此同时，我们的诊断日志也需要按照这个规则来设计」——拍板「root 值行 → 专属 detail」统一规则，诊断日志按同规则设计。
+
+**IA 拆分**：`SettingsSection` 删 `"general"` 增 `"appearance" | "language" | "diagnostics"`；GeneralSection 拆 `AppearanceSection`（主题三态）/ `LanguageSection`（语言三态）/ `DiagnosticsSection`（开关行 + sectionHint）。root 通用组三行 = title-only 值行（外观/语言显当前值、诊断日志显 已开启/已关闭 + ok 绿标）+ › chevron 进各自 detail（Apple 设置两层范式补全；`SegmentedDetail` helper 抽取锁定外观/语言两 detail 的「全局默认三态」同构，`DiagnosticsSection` 开关行形态独立）。
+
+**review 修复（design P2 + P3×2，code 低×2 同批消化）**：
+1. **桌面 detail 容器顶部节奏按态分施**（同移动 SettingsRoute `isRoot` 分支形态）：`SettingsMainPage` 容器原两态统一 `-mt-0.5`（补偿 root 首组 `.sect` margin-top 14px），detail 态首组无 `.sect`（`.sgroup` margin-top 0）被拉进 header 下裁掉顶边框（首组 top 42.0 < header 底 44.0；既有 claude/pi detail 同病，本批扩到 5 个实例后暴露）→ `isRoot ? "-mt-0.5" : "pt-3"`：无 sect detail 首组 = header 底 + 12px（与 root 同节奏），带 sect detail（acp/codex/notifications）叠 `.sect` 14px 与移动端同节奏。
+2. 注释漂移：组头注释仍引用已删除的 general detail → 更新为三专属 detail。
+3. 决策日志：本条记档 + §6.8-9 过时注记（上溯标尺防走失）。
