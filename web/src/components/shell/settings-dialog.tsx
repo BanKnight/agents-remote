@@ -37,6 +37,7 @@ import {
 } from "./settings-form-classes";
 import type { TranslationKey } from "../../i18n/types";
 import { clearAuthOk } from "../../lib/auth-storage";
+import { isDiagEnabled, setDiagEnabled } from "../../lib/diag-log";
 import { isStandaloneDisplay } from "../../lib/display-mode";
 import {
   canUsePush,
@@ -443,6 +444,7 @@ function SettingsRootView({
 function GeneralSection() {
   const { t, pref: langPref, setLang } = useT();
   const { theme, setTheme } = useTheme();
+  const [diagOn, setDiagOn] = useState(isDiagEnabled());
   return (
     <div className="flex flex-col">
       <div className="sect">{t("theme.label")}</div>
@@ -498,6 +500,35 @@ function GeneralSection() {
         </div>
       </div>
       <p className="kfoot mx-4">{t("settings.langHint")}</p>
+
+      <div className="sect">{t("settings.diag.section")}</div>
+      <div className="sgroup">
+        <button
+          aria-checked={diagOn}
+          className="setrow h-auto cursor-pointer gap-3 py-2.5"
+          onClick={() => {
+            const next = !diagOn;
+            setDiagEnabled(next);
+            setDiagOn(next);
+          }}
+          role="switch"
+          type="button"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block">{t("settings.diag.log")}</span>
+            <span className={settingsHintClasses}>{t("settings.diag.hint")}</span>
+          </span>
+          <span
+            aria-hidden="true"
+            className={`ml-auto shrink-0 ${toggleSwitchTrackClasses(diagOn)}`}
+          >
+            <span
+              className={`${toggleSwitchKnobClasses} ${diagOn ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
+            />
+          </span>
+        </button>
+      </div>
+      <p className="kfoot mx-4">{t("settings.diag.sectionHint")}</p>
     </div>
   );
 }

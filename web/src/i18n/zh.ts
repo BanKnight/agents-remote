@@ -398,6 +398,7 @@ export const zh: Record<TranslationKey, string> = {
   "api.authCheckFailed": "认证检查失败",
   "api.loginFailed": "登录失败",
   "api.logoutFailed": "退出登录失败",
+  "api.diagUploadFailed": "诊断日志上传失败",
   "projects.menuOpen": "打开",
   "projects.menuRename": "重命名…",
   "projects.menuDelete": "删除…",
@@ -1003,6 +1004,11 @@ export const zh: Record<TranslationKey, string> = {
   // v2 07 设置页（五组：通用 / RUNTIME 预设 / 自动重试默认 / 服务器 / 退出登录）
   "settings.lang": "语言",
   "settings.langHint": "覆盖系统语言偏好；跟随系统 = 使用设备语言。",
+  "settings.diag.section": "诊断",
+  "settings.diag.log": "诊断日志",
+  "settings.diag.hint": "记录回放等关键诊断行；屏顶横幅可查看、复制或上传到服务器",
+  "settings.diag.sectionHint":
+    "排障用途，默认关闭；开启后横幅常驻屏顶，关闭后横幅消失（已记录内容保留）。",
   "settings.langZh": "中文",
   "settings.langEn": "English",
   "settings.runtimePresets": "RUNTIME 预设（新建实例时可选）",

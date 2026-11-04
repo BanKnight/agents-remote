@@ -402,6 +402,7 @@ export const en = {
   "api.authCheckFailed": "Auth check failed",
   "api.loginFailed": "Login failed",
   "api.logoutFailed": "Logout failed",
+  "api.diagUploadFailed": "Failed to upload diagnostic log",
   "projects.menuOpen": "Open",
   "projects.menuRename": "Rename…",
   "projects.menuDelete": "Delete…",
@@ -1020,6 +1021,12 @@ export const en = {
   "settings.lang": "Language",
   "settings.langHint":
     "Overrides the system language preference; Follow system uses the device language.",
+  "settings.diag.section": "Diagnostics",
+  "settings.diag.log": "Diagnostic log",
+  "settings.diag.hint":
+    "Record key diagnostic lines (e.g. replay); view, copy or upload them from the banner on top of the screen",
+  "settings.diag.sectionHint":
+    "For troubleshooting, off by default; the banner shows on top of the screen while on, disappears when off (recorded content is kept).",
   "settings.langZh": "中文",
   "settings.langEn": "English",
   "settings.runtimePresets": "RUNTIME PRESETS (selectable for new instances)",

@@ -139,6 +139,7 @@ import type {
   UpdateNotificationSettingsResponse,
 } from "@agents-remote/shared";
 import type { TranslationKey } from "../i18n/types";
+import type { DiagEntry } from "../lib/diag-log";
 import { resolveTranslation } from "../i18n/translate";
 
 const fail = (key: TranslationKey, status: number) =>
@@ -1798,3 +1799,14 @@ const fetchJson = async <T>(
 
   return response.json();
 };
+
+// ── 客户端诊断日志上传（通用诊断基建） ──────────────────────────────
+
+/** POST /api/diag：把诊断环形缓冲整包上传（服务端落盘供建议排查）。 */
+export async function uploadDiagLog(input: { entries: DiagEntry[] }): Promise<{ ok: true }> {
+  return fetchJson("/api/diag", "api.diagUploadFailed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}

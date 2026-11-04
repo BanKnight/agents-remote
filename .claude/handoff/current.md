@@ -1,82 +1,106 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-04（取证通道升级为**入屏横幅**——手机 PWA 无 console，
-> 三行日志关键行进 localStorage 环形缓冲 + 流内 banner；全门禁绿待 commit/重建）
+> 最后更新：2026-11-04 21:56（**通用诊断基建落地**：取证通道泛化为 diag-log
+> 项目级基建 + 全局 DiagBanner + 设置开关，web 侧全部完成并 commit；api
+> /api/diag 端点为第二批——等用户 CLI 空闲窗口）
 
 ## 一句话状态
 
-**22router「全部已中断/已失效」回放缺陷调查**：桌面四路径 + 真实数据臂式模拟
-全绿无法复现；用户设备唯一分叉 = 回放路径第一手。用户手机看不了 console →
-取证通道升级为入屏横幅（ReplayDebugBanner）：adapter 三行日志关键行同步写
-localStorage（24 条环形）+ CustomEvent，ClaudeChat 流内横幅显示最近 audit 行
-（unpaired>0 标红）。**等 commit + web 重建 + 用户设备横幅数据判读。**
+22router 回放缺陷已修复（`a0750b4`，真机确认生效）。用户提出把取证调试手段
+做成**通用方案 + 开关**，并指明「不要局限于会话，而是整个项目的」——本批把
+replay-debug 取证通道泛化为**项目级通用诊断基建**（web 侧全量落地）：
+
+- `web/src/lib/diag-log.ts`：`recordDiag(scope, text)` 分域环形缓冲（24 条，
+  localStorage 持久化 + CustomEvent 广播）+ `isDiagEnabled`/`setDiagEnabled`
+  开关（**默认关**，关 = record no-op + 审计计算一并 gate，稳态零开销）。
+- `<DiagBanner />`（`components/shell/diag-banner.tsx`）挂 App shell
+  （main.tsx，RouterProvider 同级）：开关开时常驻屏顶胶囊（fixed top，
+  safe-area 避让），点开面板 = 缓冲全文 + copy all / upload / clear；
+  诊断件不进 i18n（英文短字段）。upload 走 `POST /api/diag`（api 未落地前
+  点击会失败提示——过渡态可接受，api 第二批落地后即通）。
+- claude-adapter 回放 4 处接线迁移 `recordDiag("replay", ...)` 保留；live_end
+  两套审计 + v3 rendered effect 加 `isDiagEnabled()` 门控（注释同步改写）。
+- 会话页 ReplayDebugBanner 删除（全局横幅接管）；设置 → 通用 → 诊断日志
+  开关行（role="switch" + toggle 形态，hint 说明行为）。
 
 ## 本 session 焦点
 
 ### 关键决策 / 发现（不可丢）
 
-- **22router 调查取证结论（桌面全部证伪，勿重走）**：①JSONL 配对完整
-  （38990/38993）；②四路径臂式模拟全绿（`/tmp/merge-arm-sim.mjs`：D full 45/45、
-  B 缓存+delta 38/38、E 半turn+delta 自愈、X 缓存单独 38/38）；③锚 miss→full 时
-  客户端 `resetSessionState()` 整体重建 =「旧段消失」而非「中断卡」——**「整批中断」
-  只能来自合并窗口真缺一批 result**；④客户端 full/delta 分支：`session_init.replay`
-  delta+cursor 命中→保留 state，否则 reset。
-- **22router resume 边界结构（CLI 2.1.299 实测）**：gap 后 `queue-operation`（无
-  uuid 带 ts）→ user 消息；resume 后 5min compact_boundary → "This session is being
-  continued" summary user 行；`last-prompt`/`mode`/`atis-latch`/`cost-state` 无 uuid
-  state 行对客户端管道无害。服务端窗口=最后 compact block（现 11-02 16:53→EOF），
-  客户端缓存可含窗口外老段（窗口错位是结构现实）。
-- **取证通道两批**：console 三行日志（`6a835b0`，session_init replay/anchor/cursor、
-  cache restored/miss、live_end audit）→ **入屏横幅批（本批未 commit）**：
-  `web/src/lib/replay-debug.ts`（localStorage 环形 24 条 + CustomEvent +
-  resetReplayDebugForTests）、adapter 4 处 recordReplayDebug 接线、
-  ClaudeSessionDetailRoute 的 `<ReplayDebugBanner />`（折叠摘要=最近 audit 行，
-  unpaired>0 红底；点开 pre 显示全部带 HH:MM:SS 行）。+5 单测全绿。
-  判读：**unpaired 大批>0 = 数据层实锤；恒 0 仍见中断 = 渲染层**。
-- **bun test jsdom 跨 realm 坑**：Bun 全局 `new CustomEvent()` 不是 jsdom Event
-  实例 → jsdom dispatchEvent 拒绝（"not of type 'Event'"）——dispatch 用
-  `window.CustomEvent`（从目标 realm 取构造器，浏览器语义不变）。
-  bun:test 无内置 DOM：手动 JSDOM 挂 globalThis（pinned-sessions.test.ts 范式）。
-- **审计数据源陷阱**：live_end 时点 `rawMessagesRef` 滞后（commit 后 effect 才镜像），
-  必须用 `messageMapRef`（processBatch Phase 1 同步维护，带 uuid 行全覆盖）。
-- 用户否决「配对审计自愈弃缓存」方案 1（打补丁）；取证日志（不改行为）获准。
+- **范围拍板**（用户）：开关**全部默认关**（稳态零开销）+ **同时做服务端接收**
+  （/api/diag）+ **项目级**（不局限会话页）。项目级落地 = 挂 App shell 的全局
+  横幅 + scope 分域 + 上传端点全局归属。
+- **api 改动窗口约束**：api dev 是 bun --watch——改 api（或 shared）源码即热
+  重载，会杀掉它 spawn 的 CLI 子进程。22router（6d09c971，etime 13.5h idle
+  但进程活着）与 novels CLI 仍存活 → 本批零 api 改动；/api/diag 端点设计已
+  定稿放本文件，等 CLI 空闲窗口落地。
+- **live_end audit 块整体 gate**：审计跑容器完整投影链（renderChatStream ∘
+  normalizeChatStream）有成本，默认关；v3 effect 关闭时清签名并跳过（开关
+  切换清签名 + DIAG_ENABLED_EVENT listener，重开后首个 rendered 变化必
+  record 最新状态）。
+- **写入可靠性**：本批 Write/Edit 多次出现输出损坏（残片/占位符混入），靠
+  「读回验证 + 立即修复」救回；连续两次失败必须停手换小步策略（按
+  verification.md 纪律执行）。
 
 ### 进度
 
-- ✅ `6a835b0` console 三行日志 commit + web 已重建（含该批产物）
-- ✅ 入屏横幅批：replay-debug.ts + adapter 接线 + banner + 5 单测 +
-  format/lint/typecheck/全 test（web 1039）/CSS 硬闸/tokens 机检 全绿
-- ⏳ 待办：commit → `tmux respawn-pane -k -t ar-dev:1` 重建 web（**不碰 api**）→
-  产物特征串验证（`rg "ar-replay-debug" web/dist/assets/`，chunk=
-  ChatSessionDetailRoute-*.js）+ curl CSS content-type → 交用户
-- ✅ agent-browser 已 close
+- ✅ diag-log.ts + 9 单测（默认关/环形/持久化/双事件/多 scope/clear/容错）
+- ✅ DiagBanner 全局浮层（摘要胶囊 + 面板 copy/upload/clear + 失败态）
+- ✅ adapter 4 处接线迁移 + 2 处审计 gate（rg 零残留）
+- ✅ 会话页 ReplayDebugBanner 删除；设置开关行 + i18n（zh/en 5 key）
+- ✅ 全门禁绿：format/lint/typecheck/1048 tests（+4 净增）/CSS 硬闸/tokens 机检
+- ⏳ respawn web + 产物验证（下一步）
+- ⏳ handoff current.md 已更新（本文件）
 
 ### 阻塞 / 风险
 
-- 用户 CLI（22router 会话）还在跑——**api 绝不能 respawn**；22router 会话本身
-  绝不能建 resume 实验（会和活 CLI 并发写 JSONL）。
-- push `6a835b0` + 本批需用户确认外发。
-- 定位后**整批摘除**取证通道（§22 纪律：replay-debug.ts 两文件 + adapter 4 处
-  record + banner 组件）。
+- 用户 CLI（22router etime 13.5h、novels）仍存活（idle 但进程在）——**api
+  绝不能动**；/api/diag 端点等 CLI 紧急窗口落地（设计见下）。
+- upload 按钮在 api 端点落地前是 404 失败态——过渡态可接受（用户知情）。
+- push 待用户确认外发：`6a835b0` `c340f25` `257a5ce` `b37ee5c` `a0750b4`
+  + 本批。
+
+## /api/diag 端点设计（第二批，等 CLI 空闲窗口）
+
+- **路由**：api/src/index.ts 全局段（settings 同级，非项目 scope）。
+  `POST /api/diag`，鉴权同其它全局端点（cookie session，走现有 auth 中间件）。
+- **body**：`{ entries: [{ t: number, scope: string, text: string }] }`；
+  校验 entries 数组 + 单条字段类型；**大小上限 64KB**（24 条 × 千字节级行，
+  绰绰有余；防滥用）。
+- **落盘**：`api/diag-uploads/<ISO 时间戳>-<rand4>.json`（.gitignore 加入）；
+  不进 PROJECTS_ROOT（诊断数据非项目数据）。写入前不打印 entries 内容（密钥
+  不回显原则——诊断行可能含会话 uuid 等，落盘不回显到日志）。
+- **响应**：`{ ok: true }`；失败 4xx/5xx 结构化错误。
+- **落地动作**：api/src/index.ts 加路由 + `api/.gitignore` 加 diag-uploads/；
+  pre-commit 全门禁 + `respawn-pane -k -t ar-dev:0` 重启 api（**仅在用户
+  CLI 全部空闲/退出后**；respawn 会杀 CLI 子进程，必须先确认）。
+- **落地后验证**：真机开开关 → 复现 → upload → 服务端文件出现 → 读文件
+  确认 entries 完整。
 
 ## 下一步
 
-1. commit 本批 → respawn web → 产物验证 → 用户重开 PWA 拉新 bundle。
-2. 用户打开 22router 会话 → 聊天流顶部横幅直接可读 → 拍屏/转述判读：
-   init 行 replay=full|delta 切分路径；audit 行 unpaired>0 数据层 / =0 渲染层。
-3. 遗留：真机验证 checklist 反馈（脱壳批）；v1.7 清单；wiki/ git 归属；swap 扩容。
+1. respawn web（`tmux respawn-pane -k -t ar-dev:1`）+ 产物验证
+   （`rg "recordDiag" web/dist/assets/*.map` + CSS content-type）。
+2. 交用户验收：设置 → 通用 → 诊断日志开关 → 横幅出现 → copy/upload/clear。
+3. api /api/diag 第二批（等 CLI 空闲窗口；设计见上）。
+4. push 六批待用户确认。
+5. 遗留：脱壳批真机验证 checklist 反馈；v1.7 真机清单；wiki/ git 归属；
+   swap 扩容（建议级）。
 
 ## 易丢的关键上下文
 
-- **web chunk 布局**：claude-adapter 打进 `ChatSessionDetailRoute-*.js`（文件名
-  与内容不符——claude+chat 共享）；`rg "特征串" web/dist/assets/` 直查。
-- **22router JSONL**：`~/.claude/projects/-home-deploy-workspace-22router/`
-  `6d09c971-....jsonl`（1.2GB 单文件无 fork，今天还在写=用户 CLI 活着）。
-- **臂式模拟行索引基准**：扫描窗口 2321=boundary(11-01 20:17)、2543=最后 11-01 行、
-  2544=queue-operation、2555=boundary(15:27)、2824=boundary(16:53)。
-- api/web 标准重启 = `respawn-pane -k -t ar-dev:0|1`；**不能在用户「优化 remote」
-  CLI 运行时重启 api**。
-- **大文件扫描工具链**：2G ulimit -v 会挂 bun——用 systemd-run cgroup MemoryMax；
+- **web chunk 布局**：claude-adapter 打进 `ChatSessionDetailRoute-*.js`；
+  产物验证 `rg "recordDiag" web/dist/assets/*.map` 直查（符号名查 .map）。
+- **diag-log localStorage keys**：`ar-diag-log`（缓冲）/ `ar-diag-enabled`
+  （开关，"1"/"0"）；旧 `ar-replay-debug` key 不迁移（临时取证数据，重开
+  开关重新积累即可）。
+- **DiagBanner 不走 Radix**：fixed 浮层无需 modal 语义（无 scrim/Esc 需求，
+  §4 约定 modal 语义才走 Dialog）；点击胶囊外不关闭是可接受行为（诊断件）。
+- **桌面复刻脚本**（历史调查，留档）：`/tmp/proj-fix-verify.mjs`（K2 臂）、
+  `/tmp/proj-hypo.mjs`、`/tmp/noouuid-stress.mjs`。
+- api/web 标准重启 = `respawn-pane -k -t ar-dev:0|1`；**不能在用户 CLI 运行
+  时重启 api**。
+- 大文件扫描：2G ulimit -v 会挂 bun——systemd-run cgroup MemoryMax；
   1.2GB JSONL 用「流式 + 尾 8MB 切片」。
 
 ## 提醒

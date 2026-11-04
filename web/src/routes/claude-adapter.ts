@@ -32,7 +32,7 @@ import {
 } from "../lib/canvas-context-model";
 import { isConnectionFresh } from "./console-model";
 import { isPerfTraceEnabled, isSocketLoggingEnabled } from "../lib/debug-flags";
-import { recordReplayDebug } from "../lib/replay-debug";
+import { DIAG_ENABLED_EVENT, isDiagEnabled, recordDiag } from "../lib/diag-log";
 import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
 import {
   count,
@@ -5306,17 +5306,17 @@ export function useClaudeSession(
             // replay audit 行拼起来即「缓存+增量=全量」等式的两侧完整数据。
             const restoredLine = `cache restored lines=${parsed.length} resume=${cached.resume} anchor=${cached.cursorUuid.slice(0, 8)} savedAt=${Math.round((Date.now() - cached.savedAt) / 60000)}min`;
             console.log(`[claude-adapter] replay ${restoredLine} ago`);
-            recordReplayDebug(restoredLine);
+            recordDiag("replay", restoredLine);
             replayLinesRef.current = [...cached.raw];
             replayCharsRef.current = cached.raw.reduce((sum, line) => sum + line.length + 1, 0);
             replayCleanRef.current = true;
           } else {
             console.log("[claude-adapter] replay cache: hit but no parseable line — full replay");
-            recordReplayDebug("cache hit no-parseable-line → full");
+            recordDiag("replay", "cache hit no-parseable-line → full");
           }
         } else {
           console.log("[claude-adapter] replay cache: miss — full replay");
-          recordReplayDebug("cache miss → full");
+          recordDiag("replay", "cache miss → full");
         }
         openConnection();
       })();
@@ -5482,7 +5482,8 @@ export function useClaudeSession(
             console.log(
               `[claude-adapter] session_init replay=${msg.replay ?? "full"} anchor=${msg.anchor ?? "-"} resume=${msg.resume ?? false} local_cursor=${cursorRef.current != null ? cursorRef.current.slice(0, 8) : "no"}`,
             );
-            recordReplayDebug(
+            recordDiag(
+              "replay",
               `init replay=${msg.replay ?? "full"} anchor=${msg.anchor ?? "-"} resume=${msg.resume ?? false} cursor=${cursorRef.current != null ? cursorRef.current.slice(0, 8) : "no"}`,
             );
             if (msg.replay === "delta" && cursorRef.current != null) {
@@ -5621,34 +5622,41 @@ export function useClaudeSession(
             const batch = liveBatchRef.current ?? [];
             liveBatchRef.current = null;
             processBatch(batch);
-            // 配对审计（常开一行，§22 取证通道）：messageMapRef 是 processBatch
+            // 配对审计（§22 取证通道，进通用诊断日志）：messageMapRef 是 processBatch
             // Phase 1 同步维护的合并窗口（缓存恢复 + 本次回放增量的全部带 uuid 行；
             // rawMessagesRef 要等 commit 后 effect 才镜像，此处读它会滞后一批），
             // 此刻已含全部到行——unpaired 大批 > 0 = 「已中断」卡的数据层实锤；
-            // 恒 0 = 渲染层问题。
-            const audit = auditReplayPairing([...messageMapRef.current.values()]);
-            console.log(
-              `[claude-adapter] replay audit: raw=${messageMapRef.current.size} tool_use=${audit.toolUse} unpaired=${audit.unpaired} resume=${isResumeRef.current}`,
-            );
-            recordReplayDebug(
-              `audit raw=${messageMapRef.current.size} tool_use=${audit.toolUse} unpaired=${audit.unpaired} resume=${isResumeRef.current}`,
-            );
-            // 渲染层审计（v2 取证）：raw 配对完好但 UI 全中断的设备现象 → 同点跑
-            // 容器完整投影链（与渲染管线同函数），数 isInterrupted 卡 + 失效 Ask 卡。
-            // render interrupted>0 且 raw unpaired=0 → 断层锁定投影在设备上的实际
-            // 输入（缓存窗口内容）；两者恒 0 仍见中断 → renderer 组件层。
-            const renderAudit = auditRenderedToolCards(
-              renderChatStream(normalizeChatStream([...messageMapRef.current.values()]), {
-                isResume: isResumeRef.current,
-              }),
-            );
-            console.log(
-              `[claude-adapter] render audit: tool=${renderAudit.tool} withResult=${renderAudit.withResult} interrupted=${renderAudit.interrupted} askOrphaned=${renderAudit.askOrphaned} sample=[${renderAudit.samples.join(",")}]`,
-            );
-            recordReplayDebug(
-              `render audit tool=${renderAudit.tool} withResult=${renderAudit.withResult} interrupted=${renderAudit.interrupted} askOrphaned=${renderAudit.askOrphaned}` +
-                (renderAudit.samples.length > 0 ? ` sample=${renderAudit.samples.join(",")}` : ""),
-            );
+            // 恒 0 = 渲染层问题。开关门控：审计跑容器完整投影链有成本，默认关
+            //（稳态零开销），诊断开关打开后才计算 + 记录。
+            if (isDiagEnabled()) {
+              const audit = auditReplayPairing([...messageMapRef.current.values()]);
+              console.log(
+                `[claude-adapter] replay audit: raw=${messageMapRef.current.size} tool_use=${audit.toolUse} unpaired=${audit.unpaired} resume=${isResumeRef.current}`,
+              );
+              recordDiag(
+                "replay",
+                `audit raw=${messageMapRef.current.size} tool_use=${audit.toolUse} unpaired=${audit.unpaired} resume=${isResumeRef.current}`,
+              );
+              // 渲染层审计（v2 取证）：raw 配对完好但 UI 全中断的设备现象 → 同点跑
+              // 容器完整投影链（与渲染管线同函数），数 isInterrupted 卡 + 失效 Ask 卡。
+              // render interrupted>0 且 raw unpaired=0 → 断层锁定投影在设备上的实际
+              // 输入（缓存窗口内容）；两者恒 0 仍见中断 → renderer 组件层。
+              const renderAudit = auditRenderedToolCards(
+                renderChatStream(normalizeChatStream([...messageMapRef.current.values()]), {
+                  isResume: isResumeRef.current,
+                }),
+              );
+              console.log(
+                `[claude-adapter] render audit: tool=${renderAudit.tool} withResult=${renderAudit.withResult} interrupted=${renderAudit.interrupted} askOrphaned=${renderAudit.askOrphaned} sample=[${renderAudit.samples.join(",")}]`,
+              );
+              recordDiag(
+                "replay",
+                `render audit tool=${renderAudit.tool} withResult=${renderAudit.withResult} interrupted=${renderAudit.interrupted} askOrphaned=${renderAudit.askOrphaned}` +
+                  (renderAudit.samples.length > 0
+                    ? ` sample=${renderAudit.samples.join(",")}`
+                    : ""),
+              );
+            }
             // 缓存落盘调度（批末一次，批内只入窗）。
             scheduleReplayFlush();
             // delta 回合封口：to 不能在此处取值——renderedMessages 是 rawMessages 的
@@ -5811,20 +5819,34 @@ export function useClaudeSession(
     renderedMessagesRef.current = renderedMessages;
   }, [renderedMessages]);
 
-  // v3 取证（诊断期）：对**真实渲染输出**统计——输入是 rawMessages 全行（含无 uuid
+  // v3 取证（进通用诊断日志）：对**真实渲染输出**统计——输入是 rawMessages 全行（含无 uuid
   // 行），与 live_end 审计（messageMapRef 带 uuid 行）可能不同；这是屏幕内容的唯一
   // 真相，不重跑投影。仅统计签名变化时 record（流式期间不刷屏；中断出现/消失的
-  // 瞬间必留证据行）。
+  // 瞬间必留证据行）。开关门控：关闭时清签名并跳过审计计算（稳态零开销）。
   const renderAuditSigRef = useRef("");
   useEffect(() => {
+    if (!isDiagEnabled()) {
+      renderAuditSigRef.current = "";
+      return;
+    }
     const audit = auditRenderedToolCards(renderedMessages);
     const sig = `${audit.tool}/${audit.withResult}/${audit.interrupted}/${audit.askOrphaned}`;
     if (sig === renderAuditSigRef.current) return;
     renderAuditSigRef.current = sig;
-    recordReplayDebug(
+    recordDiag(
+      "replay",
       `rendered raw=${rawMessages.length} tool=${audit.tool} withResult=${audit.withResult} interrupted=${audit.interrupted} askOrphaned=${audit.askOrphaned}${audit.samples.length > 0 ? ` sample=${audit.samples.join(",")}` : ""}`,
     );
   }, [renderedMessages, rawMessages.length]);
+
+  // 开关切换清签名：关→开后首个 rendered 变化必 record 最新状态（v3 行不滞后旧签名）。
+  useEffect(() => {
+    const clearSig = () => {
+      renderAuditSigRef.current = "";
+    };
+    window.addEventListener(DIAG_ENABLED_EVENT, clearSig);
+    return () => window.removeEventListener(DIAG_ENABLED_EVENT, clearSig);
+  }, []);
 
   // delta 回合封口：增量段已投影（renderedMessages 落地），用最新 rendered 长度收口
   // 淡入范围，再延迟清 null——动画 class 摘除后虚拟列表滚出/滚回重挂不再重播淡入

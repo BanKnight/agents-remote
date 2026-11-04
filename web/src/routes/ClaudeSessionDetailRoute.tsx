@@ -40,7 +40,6 @@ import { getAgentSession, getSkillSlashCatalog } from "../api/client";
 import { useT, type TranslationKey } from "../i18n";
 import { formatDuration, formatTokenCount } from "../lib/utils";
 import { isDebugButtonEnabled, isPerfTraceEnabled } from "../lib/debug-flags";
-import { readReplayDebugLines, REPLAY_DEBUG_EVENT } from "../lib/replay-debug";
 import { ComposerStopSend } from "../components/ui/composer-actions";
 import { useComposerKeyboardAvoidance } from "../lib/use-composer-keyboard-avoidance";
 import {
@@ -563,7 +562,6 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                         </p>
                       </div>
                     ) : null}
-                    <ReplayDebugBanner />
 
                     <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                       <VirtualizedThreadContent
@@ -1225,63 +1223,9 @@ function extractRetryInfo(
 }
 
 /**
- * 回放取证入屏横幅（诊断期交付，定位后整批摘除——§22 sheet-debug 同款纪律）：
- * 手机 PWA 无 console，三行回放日志的关键行经 recordReplayDebug 进 localStorage
- * 环形缓冲（跨刷新可读）+ CustomEvent 同页实时刷新；横幅摘要 = 最近一条 audit
- * 別读行，点开看缓冲全文（时间戳区分上次/本次连接）。诊断件不进 i18n（英文短字段）。
+ * 诊断横幅已迁全局通用通道（components/shell/diag-banner.tsx）：设置 → 通用 →
+ * 诊断日志开关控制，挂 App shell 不限会话页。
  */
-function ReplayDebugBanner() {
-  const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [lines, setLines] = useState<string[]>([]);
-  useEffect(() => {
-    const refresh = () => setLines(readReplayDebugLines());
-    refresh();
-    window.addEventListener(REPLAY_DEBUG_EVENT, refresh);
-    return () => window.removeEventListener(REPLAY_DEBUG_EVENT, refresh);
-  }, []);
-  if (lines.length === 0) return null;
-  const lastAudit = [...lines].reverse().find((l) => l.includes("unpaired="));
-  const unpaired = lastAudit ? Number(/unpaired=(\d+)/.exec(lastAudit)?.[1] ?? 0) : null;
-  const summary = (lastAudit ?? lines.at(-1) ?? "").replace(/^\d\d:\d\d:\d\d /, "");
-  return (
-    <div className="shrink-0 px-3 pt-1.5">
-      <button
-        className={`w-full cursor-pointer rounded-lg px-2.5 py-1.5 text-left text-caption ${
-          unpaired ? "bg-error/10 text-error" : "bg-surface text-on-surface-muted"
-        }`}
-        onClick={() => setOpen((v) => !v)}
-        type="button"
-      >
-        {summary}
-      </button>
-      {open ? (
-        <>
-          <pre className="mt-1 max-h-40 overflow-y-auto rounded-lg bg-surface px-2.5 py-1.5 text-caption text-on-surface-muted">
-            {lines.join("\n")}
-          </pre>
-          <button
-            className="mt-1 w-full cursor-pointer rounded-lg bg-surface px-2.5 py-1.5 text-caption text-on-surface-muted"
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(lines.join("\n"))
-                .then(() => {
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                })
-                .catch(() => {
-                  // 剪贴板失败（非 https/权限）：静默，用户仍可拍屏
-                });
-            }}
-            type="button"
-          >
-            {copied ? "copied ✓" : "copy all"}
-          </button>
-        </>
-      ) : null}
-    </div>
-  );
-}
 
 function RawDebugTooltip({
   custom,
