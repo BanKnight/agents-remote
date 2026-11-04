@@ -86,7 +86,7 @@ import {
 } from "../components/assistant-ui/tool-ui-registry";
 import { GenUiWidgetMessage } from "../components/assistant-ui/gen-ui-widget-card";
 import { ToolHead } from "../components/assistant-ui/tool-head";
-import { AttachmentBubble } from "../components/assistant-ui/attachment-bubble";
+import { AttachmentBubble, ATTACHMENT_CONFIG } from "../components/assistant-ui/attachment-bubble";
 import { CompactBlock } from "../components/assistant-ui/compact-block";
 import type { CodexNotice } from "./codex-adapter";
 import { HookCard } from "../components/assistant-ui/hook-card";
@@ -1562,6 +1562,19 @@ function SystemChatBubble() {
     rawData && (rawData as { type?: string }).type === "file-history-snapshot"
       ? (rawData as ClaudeFileHistorySnapshot)
       : null;
+
+  // 已收编 attachment（ATTACHMENT_CONFIG 有条目）→ 无容器轻量行，与
+  // compact-block / hook-card / vcs-change 的「已处理 system 帧」语言一致；
+  // 未收编 subtype 无 config 条目 → 落下方琥珀容器 =「未处理」观察面信号
+  //（2026-11-04 用户拍板：默认气泡区分语义恢复）。
+  if (attachmentType && rawData && ATTACHMENT_CONFIG[attachmentType]) {
+    return (
+      <MessagePrimitive.Root className="flex justify-start px-3 py-1.5 sm:px-5 group relative">
+        <AttachmentBubble subtype={attachmentType} raw={rawData} />
+        <RawDebugTooltip custom={custom} className="absolute -top-1 right-0.5" />
+      </MessagePrimitive.Root>
+    );
+  }
 
   const renderBody = () => (
     <>
