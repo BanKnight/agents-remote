@@ -884,7 +884,21 @@ export function auditRenderedToolCards(messages: ThreadMessageLike[]): {
         if (samples.length < 4) samples.push(String(custom.toolName ?? custom.subtype ?? "?"));
       }
     }
-    if (custom?.systemMessageType === "ask-user-question" && custom.isOrphaned === true)
+    if (msg.role === "system" && custom?.systemMessageType === "agent-container") {
+      tool++;
+      if (custom.tailResult != null || custom.tailIsError === true) withResult++;
+      if (custom.isInterrupted === true) {
+        interrupted++;
+        if (samples.length < 4) samples.push(String(custom.toolName ?? "agent"));
+      }
+    }
+    // AskUserQuestion / ExitPlanMode 卡的「失效」判据 = part.isInterrupted 透传到
+    // isOrphaned（renderChatStream 的专用卡分支），与 tool-card 的 isInterrupted 分列。
+    if (
+      (custom?.systemMessageType === "ask-user-question" ||
+        custom?.systemMessageType === "exit-plan-mode") &&
+      custom.isOrphaned === true
+    )
       askOrphaned++;
   }
   return { tool, withResult, interrupted, askOrphaned, samples };
@@ -5773,6 +5787,21 @@ export function useClaudeSession(
   useEffect(() => {
     renderedMessagesRef.current = renderedMessages;
   }, [renderedMessages]);
+
+  // v3 取证（诊断期）：对**真实渲染输出**统计——输入是 rawMessages 全行（含无 uuid
+  // 行），与 live_end 审计（messageMapRef 带 uuid 行）可能不同；这是屏幕内容的唯一
+  // 真相，不重跑投影。仅统计签名变化时 record（流式期间不刷屏；中断出现/消失的
+  // 瞬间必留证据行）。
+  const renderAuditSigRef = useRef("");
+  useEffect(() => {
+    const audit = auditRenderedToolCards(renderedMessages);
+    const sig = `${audit.tool}/${audit.withResult}/${audit.interrupted}/${audit.askOrphaned}`;
+    if (sig === renderAuditSigRef.current) return;
+    renderAuditSigRef.current = sig;
+    recordReplayDebug(
+      `rendered raw=${rawMessages.length} tool=${audit.tool} withResult=${audit.withResult} interrupted=${audit.interrupted} askOrphaned=${audit.askOrphaned}${audit.samples.length > 0 ? ` sample=${audit.samples.join(",")}` : ""}`,
+    );
+  }, [renderedMessages, rawMessages.length]);
 
   // delta 回合封口：增量段已投影（renderedMessages 落地），用最新 rendered 长度收口
   // 淡入范围，再延迟清 null——动画 class 摘除后虚拟列表滚出/滚回重挂不再重播淡入
