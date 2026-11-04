@@ -95,7 +95,7 @@ export function DiagBanner() {
             </button>
             <button
               className="cursor-pointer rounded-lg border border-sep bg-surface px-2.5 py-1 text-caption text-on-surface-muted transition hover:bg-elevated2"
-              disabled={uploadState === "busy"}
+              disabled={uploadState === "busy" || lines.length === 0}
               onClick={handleUpload}
               type="button"
             >

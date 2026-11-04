@@ -83,6 +83,7 @@ import { PushKeyManager } from "./push-keys";
 import { PushSubscriptionStore } from "./push-subscription-store";
 import { PushNotifier } from "./push-notifier";
 import { handlePushRoutes } from "./push-routes";
+import { handleDiagRoutes } from "./diag-routes";
 import { handleSkillRoutes } from "./skill-market";
 import { handleSkillDisableRoutes } from "./skill-disable";
 import { handleSkillUpdateRoutes } from "./skill-update";
@@ -353,6 +354,11 @@ export const createFetchHandler =
     const mcpMarketResponse = await handleMcpMarketRoutes(request, url);
     if (mcpMarketResponse) {
       return withRefresh(mcpMarketResponse);
+    }
+
+    const diagResponse = await handleDiagRoutes(request, url);
+    if (diagResponse) {
+      return withRefresh(diagResponse);
     }
 
     const mcpResponse = await handleMcpRoutes(request, url, { projectsRoot: options.projectsRoot });
