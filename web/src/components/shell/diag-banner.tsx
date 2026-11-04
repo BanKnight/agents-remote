@@ -14,6 +14,9 @@ import {
  * 点开看诊断环形缓冲全文 + copy all / 上传 / 清空。任何功能的 recordDiag(scope, ...)
  * 输出都汇到这里——不限会话页，挂 App shell（main.tsx，RouterProvider 同级）。
  * 开关关闭即整条消失；诊断件不进 i18n（英文短字段，对齐 ReplayDebugBanner 先例）。
+ * 胶囊收窄居中（真机反馈 2026-11-05：宽胶囊挡住左上返回钮与右上设置 ⚙）——
+ * max-w 60vw/320px，两侧各留 ≥ 角钮带（移动 390px 时 78px > 52px 钮带），
+ * 摘要长则 truncate（全文在面板）。
  */
 export function DiagBanner() {
   const [enabled, setEnabled] = useState(isDiagEnabled);
@@ -74,7 +77,7 @@ export function DiagBanner() {
   return (
     <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center gap-1 px-3 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)]">
       <button
-        className="pointer-events-auto max-w-full cursor-pointer truncate rounded-full border border-sep bg-elevated px-3 py-1.5 text-caption text-on-surface-muted shadow-sm"
+        className="pointer-events-auto max-w-[min(60vw,320px)] cursor-pointer truncate rounded-full border border-sep bg-elevated px-3 py-1.5 text-caption text-on-surface-muted shadow-sm"
         onClick={() => setOpen((v) => !v)}
         type="button"
       >
