@@ -32,6 +32,7 @@ import {
 } from "../lib/canvas-context-model";
 import { isConnectionFresh } from "./console-model";
 import { isPerfTraceEnabled, isSocketLoggingEnabled } from "../lib/debug-flags";
+import { recordReplayDebug } from "../lib/replay-debug";
 import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
 import {
   count,
@@ -5239,18 +5240,20 @@ export function useClaudeSession(
             isResumeRef.current = cached.resume;
             setLoading(false);
             // 取证通道（§22，常开一行）：恢复窗口规模/快照新旧——与 live_end 的
-            // replay audit 拼起来即「缓存+增量=全量」等式的两侧完整数据。
-            console.log(
-              `[claude-adapter] replay cache restored: lines=${parsed.length} resume=${cached.resume} anchor=${cached.cursorUuid.slice(0, 8)} savedAt=${Math.round((Date.now() - cached.savedAt) / 60000)}min ago`,
-            );
+            // replay audit 行拼起来即「缓存+增量=全量」等式的两侧完整数据。
+            const restoredLine = `cache restored lines=${parsed.length} resume=${cached.resume} anchor=${cached.cursorUuid.slice(0, 8)} savedAt=${Math.round((Date.now() - cached.savedAt) / 60000)}min`;
+            console.log(`[claude-adapter] replay ${restoredLine} ago`);
+            recordReplayDebug(restoredLine);
             replayLinesRef.current = [...cached.raw];
             replayCharsRef.current = cached.raw.reduce((sum, line) => sum + line.length + 1, 0);
             replayCleanRef.current = true;
           } else {
             console.log("[claude-adapter] replay cache: hit but no parseable line — full replay");
+            recordReplayDebug("cache hit no-parseable-line → full");
           }
         } else {
           console.log("[claude-adapter] replay cache: miss — full replay");
+          recordReplayDebug("cache miss → full");
         }
         openConnection();
       })();
@@ -5403,7 +5406,10 @@ export function useClaudeSession(
             // 状态——「走了哪条路」的第一手，与服务端 [relay] addSubscriber 日志
             // 对端印证；live_end 的 replay audit 补「合并窗口是否残缺」。
             console.log(
-              `[claude-adapter] session_init replay=${msg.replay ?? "full"} anchor=${msg.anchor ?? "-"} resume=${msg.resume ?? false} local_cursor=${cursorRef.current != null ? cursorRef.current.slice(0, 8) : "none"}`,
+              `[claude-adapter] session_init replay=${msg.replay ?? "full"} anchor=${msg.anchor ?? "-"} resume=${msg.resume ?? false} local_cursor=${cursorRef.current != null ? cursorRef.current.slice(0, 8) : "no"}`,
+            );
+            recordReplayDebug(
+              `init replay=${msg.replay ?? "full"} anchor=${msg.anchor ?? "-"} resume=${msg.resume ?? false} cursor=${cursorRef.current != null ? cursorRef.current.slice(0, 8) : "no"}`,
             );
             if (msg.replay === "delta" && cursorRef.current != null) {
               // delta 重连：服务端确认了 since 锚，接下来只补锚后的行——保留全部 state
@@ -5541,6 +5547,9 @@ export function useClaudeSession(
             const audit = auditReplayPairing([...messageMapRef.current.values()]);
             console.log(
               `[claude-adapter] replay audit: raw=${messageMapRef.current.size} tool_use=${audit.toolUse} unpaired=${audit.unpaired} resume=${isResumeRef.current}`,
+            );
+            recordReplayDebug(
+              `audit raw=${messageMapRef.current.size} tool_use=${audit.toolUse} unpaired=${audit.unpaired} resume=${isResumeRef.current}`,
             );
             // 缓存落盘调度（批末一次，批内只入窗）。
             scheduleReplayFlush();

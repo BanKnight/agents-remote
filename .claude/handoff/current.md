@@ -1,78 +1,79 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-04（脱壳批 `ce0aee3` 已 commit + DOM 验证闭环；informational +
-> 注入类收编两批 `4d56fc9`/`614b72e`；三批均待 push）
+> 最后更新：2026-11-04（取证通道升级为**入屏横幅**——手机 PWA 无 console，
+> 三行日志关键行进 localStorage 环形缓冲 + 流内 banner；全门禁绿待 commit/重建）
 
 ## 一句话状态
 
-**CLI 2.1.299 协议支持三批完成**：`4d56fc9`（informational 正投影）→ `614b72e`
-（注入类 8 子类型收编）→ `ce0aee3`（已收编 attachment 脱壳——琥珀容器只留给未处理
-subtype）。脱壳已经 resume 回放真实会话 DOM 验证闭环（9 类卡片 0 容器、全页琥珀
-气泡 0）。全门禁绿。**三批均待 push（需用户确认外发）。**
+**22router「全部已中断/已失效」回放缺陷调查**：桌面四路径 + 真实数据臂式模拟
+全绿无法复现；用户设备唯一分叉 = 回放路径第一手。用户手机看不了 console →
+取证通道升级为入屏横幅（ReplayDebugBanner）：adapter 三行日志关键行同步写
+localStorage（24 条环形）+ CustomEvent，ClaudeChat 流内横幅显示最近 audit 行
+（unpaired>0 标红）。**等 commit + web 重建 + 用户设备横幅数据判读。**
 
 ## 本 session 焦点
 
 ### 关键决策 / 发现（不可丢）
 
-- **脱壳设计（用户拍板「默认气泡 = 未处理」语义恢复）**：SystemChatBubble 通用分支
-  判定 `ATTACHMENT_CONFIG[attachmentType]` 有条目 → 无容器轻量行（与 compact-block/
-  hook-card 语言一致）；无条目 → 继续落琥珀容器 =「未处理」观察面信号。容器分支
-  本身零改动。
-- **DOM 验证的达成路径（relay 机制三层墙全部绕过，路径可复用）**：attachment 帧只在
-  JSONL、relay 仅 `startedAsResume && claudeSessionId` 才读 JSONL、桌面 stopped
-  agent 实例不渲染聊天流、api 不可重启（会杀用户 CLI）。**最终路径 = `POST
-  /api/projects/<p>/agent-sessions` body 传 `claudeSessionId` 直接创建 resume 实例**
-  → spawn `--resume` → relay 读 JSONL 全量回放 → attachment 帧进 UI。test 项目
-  历史会话 e871e63c（14 帧）验证通过，实例用完已关。
-- **无 bubble 帧不是漏渲染**：skill_listing → skills stateOps；mcp_instructions_delta
-  → mcpServersAdd stateOps；total_tokens_reminder → `{}` 刻意忽略（model-facing）。
-  claude-adapter.ts case 表是语义决策单源。
-- **桌面历史列表（View session history）行点击不导航**——历史会话在桌面没有只读
-  查看器；resume 是唯一回放路径（API 或移动端）。
+- **22router 调查取证结论（桌面全部证伪，勿重走）**：①JSONL 配对完整
+  （38990/38993）；②四路径臂式模拟全绿（`/tmp/merge-arm-sim.mjs`：D full 45/45、
+  B 缓存+delta 38/38、E 半turn+delta 自愈、X 缓存单独 38/38）；③锚 miss→full 时
+  客户端 `resetSessionState()` 整体重建 =「旧段消失」而非「中断卡」——**「整批中断」
+  只能来自合并窗口真缺一批 result**；④客户端 full/delta 分支：`session_init.replay`
+  delta+cursor 命中→保留 state，否则 reset。
+- **22router resume 边界结构（CLI 2.1.299 实测）**：gap 后 `queue-operation`（无
+  uuid 带 ts）→ user 消息；resume 后 5min compact_boundary → "This session is being
+  continued" summary user 行；`last-prompt`/`mode`/`atis-latch`/`cost-state` 无 uuid
+  state 行对客户端管道无害。服务端窗口=最后 compact block（现 11-02 16:53→EOF），
+  客户端缓存可含窗口外老段（窗口错位是结构现实）。
+- **取证通道两批**：console 三行日志（`6a835b0`，session_init replay/anchor/cursor、
+  cache restored/miss、live_end audit）→ **入屏横幅批（本批未 commit）**：
+  `web/src/lib/replay-debug.ts`（localStorage 环形 24 条 + CustomEvent +
+  resetReplayDebugForTests）、adapter 4 处 recordReplayDebug 接线、
+  ClaudeSessionDetailRoute 的 `<ReplayDebugBanner />`（折叠摘要=最近 audit 行，
+  unpaired>0 红底；点开 pre 显示全部带 HH:MM:SS 行）。+5 单测全绿。
+  判读：**unpaired 大批>0 = 数据层实锤；恒 0 仍见中断 = 渲染层**。
+- **bun test jsdom 跨 realm 坑**：Bun 全局 `new CustomEvent()` 不是 jsdom Event
+  实例 → jsdom dispatchEvent 拒绝（"not of type 'Event'"）——dispatch 用
+  `window.CustomEvent`（从目标 realm 取构造器，浏览器语义不变）。
+  bun:test 无内置 DOM：手动 JSDOM 挂 globalThis（pinned-sessions.test.ts 范式）。
+- **审计数据源陷阱**：live_end 时点 `rawMessagesRef` 滞后（commit 后 effect 才镜像），
+  必须用 `messageMapRef`（processBatch Phase 1 同步维护，带 uuid 行全覆盖）。
+- 用户否决「配对审计自愈弃缓存」方案 1（打补丁）；取证日志（不改行为）获准。
 
 ### 进度
 
-- ✅ `ce0aee3`：脱壳分支（ClaudeSessionDetailRoute.tsx +14/-1）+ resume 回放 DOM
-  验证（9 类收编卡片父链 0 容器、amberBubbles=0、卡片可见 67×16）+ 全门禁绿
-- ✅ 验证数据清理：unshell-probe 实例、unshell-resume 实例均已 close（test 项目）
+- ✅ `6a835b0` console 三行日志 commit + web 已重建（含该批产物）
+- ✅ 入屏横幅批：replay-debug.ts + adapter 接线 + banner + 5 单测 +
+  format/lint/typecheck/全 test（web 1039）/CSS 硬闸/tokens 机检 全绿
+- ⏳ 待办：commit → `tmux respawn-pane -k -t ar-dev:1` 重建 web（**不碰 api**）→
+  产物特征串验证（`rg "ar-replay-debug" web/dist/assets/`，chunk=
+  ChatSessionDetailRoute-*.js）+ curl CSS content-type → 交用户
 - ✅ agent-browser 已 close
-- ✅ handoff 归档（snapshots/20261104-unshell-verify.md）
 
 ### 阻塞 / 风险
 
-- 无阻塞。工作区剩 `.claude/handoff/current.md` 未提交（随下次收尾一起提）。
+- 用户 CLI（22router 会话）还在跑——**api 绝不能 respawn**；22router 会话本身
+  绝不能建 resume 实验（会和活 CLI 并发写 JSONL）。
+- push `6a835b0` + 本批需用户确认外发。
+- 定位后**整批摘除**取证通道（§22 纪律：replay-debug.ts 两文件 + adapter 4 处
+  record + banner 组件）。
 
 ## 下一步
 
-1. **push 需用户确认外发**（`1b9ffbf..ce0aee3` 共 4 个 commit：幽灵 blocked 根治 +
-   informational 批 + 注入类收编批 + 脱壳批）。
-2. 真机验证 checklist 交用户（**重开 PWA 拉新 bundle 后**，用户手机看的就是 resume
-   回放路径——「环境信息」等卡片应为**无容器轻量行**，不再是褐色气泡）：
-   ①informational 公告 = warning 色提示块；②edited_text_file「磁盘变更」卡含
-   rendered 正文；③注入帧 = 可读卡片（icon + badge 摘要 + 折叠正文）；④**已收编
-   attachment 卡片无琥珀底容器**（本批核心变化）；⑤未知 subtype 仍是琥珀容器
-   （未处理信号，符合预期）。
-3. 遗留：v1.7 真机验证清单反馈；wiki/ 目录 git 归属；swap 扩容 2G（仅建议）。
-4. 可选优化（已提过等指示）：SW 更新接管后自动 reload 一次。
+1. commit 本批 → respawn web → 产物验证 → 用户重开 PWA 拉新 bundle。
+2. 用户打开 22router 会话 → 聊天流顶部横幅直接可读 → 拍屏/转述判读：
+   init 行 replay=full|delta 切分路径；audit 行 unpaired>0 数据层 / =0 渲染层。
+3. 遗留：真机验证 checklist 反馈（脱壳批）；v1.7 清单；wiki/ git 归属；swap 扩容。
 
 ## 易丢的关键上下文
 
-- **脱壳分支**：ClaudeSessionDetailRoute.tsx SystemChatBubble 内（:1566 区），条件
-  `attachmentType && rawData && ATTACHMENT_CONFIG[attachmentType]` → 无容器 return；
-  RawDebugTooltip 用 `absolute -top-1 right-0.5`（与 compact-block 一致，勿回退
-  right-0.4）。
-- **ATTACHMENT_CONFIG 实际键集 28 条**（attachment-bubble.tsx :212-465）：含
-  date（非 date_change）、auto_mode、remote_session_change、session_context、
-  prompt_snapshot；JSONL 帧 subtype 字段是 `attachment.type`（不是顶层
-  attachmentType）。
-- **resume 实例创建**：`POST /api/projects/test/agent-sessions` body
-  `{provider:"claude", displayName, claudeSessionId}` → resumed 初始态 done；session
-  registry 落盘在 `~/.local/share/agents-remote/run/sessions/`（runDir），PROJECTS_ROOT
-  = /home/deploy/workspace。
-- **informational 投影单链**：shared ClaudeSystemInformational → relay knownSubtypes
-  → normalize kind:"informational" → renderChatStream systemMessageType=informational
-  → InformationalNotice。
-- **ShellIcon SF 名契约**：warning-triangle（lucide triangle-alert 仅生成物 key）。
+- **web chunk 布局**：claude-adapter 打进 `ChatSessionDetailRoute-*.js`（文件名
+  与内容不符——claude+chat 共享）；`rg "特征串" web/dist/assets/` 直查。
+- **22router JSONL**：`~/.claude/projects/-home-deploy-workspace-22router/`
+  `6d09c971-....jsonl`（1.2GB 单文件无 fork，今天还在写=用户 CLI 活着）。
+- **臂式模拟行索引基准**：扫描窗口 2321=boundary(11-01 20:17)、2543=最后 11-01 行、
+  2544=queue-operation、2555=boundary(15:27)、2824=boundary(16:53)。
 - api/web 标准重启 = `respawn-pane -k -t ar-dev:0|1`；**不能在用户「优化 remote」
   CLI 运行时重启 api**。
 - **大文件扫描工具链**：2G ulimit -v 会挂 bun——用 systemd-run cgroup MemoryMax；
