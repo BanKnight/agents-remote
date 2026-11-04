@@ -30,6 +30,7 @@ import {
   attachErrorToBubble,
   attachApiErrorToMessages,
   auditReplayPairing,
+  auditRenderedToolCards,
   drainPendingErrors,
   makeBoundaryDivider,
   extractToolResults,
@@ -5416,5 +5417,46 @@ describe("auditReplayPairing (回放取证通道)", () => {
     ]);
     expect(audit.toolUse).toBe(1);
     expect(audit.unpaired).toBe(0);
+  });
+});
+
+describe("auditRenderedToolCards (v2 渲染层取证)", () => {
+  test("全配对窗口投影 → interrupted=0、withResult=tool", () => {
+    const messages = renderChatStream(
+      normalizeChatStream([
+        assistant("a1", [{ type: "tool_use", id: "tu1", name: "Bash", input: {} }]),
+        user([{ type: "tool_result", tool_use_id: "tu1", content: "ok" }]),
+      ]),
+      { isResume: true },
+    );
+    const audit = auditRenderedToolCards(messages);
+    expect(audit.tool).toBe(1);
+    expect(audit.withResult).toBe(1);
+    expect(audit.interrupted).toBe(0);
+    expect(audit.askOrphaned).toBe(0);
+  });
+
+  test("悬空 use + isResume → interrupted=1（捕捉 lifecycle 标记）", () => {
+    const messages = renderChatStream(
+      normalizeChatStream([
+        assistant("a1", [{ type: "tool_use", id: "tu1", name: "Bash", input: {} }]),
+      ]),
+      { isResume: true },
+    );
+    const audit = auditRenderedToolCards(messages);
+    expect(audit.interrupted).toBe(1);
+    expect(audit.samples).toEqual(["Bash"]);
+  });
+
+  test("非 isResume + 无 boundary → 不标中断（lifecycle 不早退的对照）", () => {
+    const messages = renderChatStream(
+      normalizeChatStream([
+        assistant("a1", [{ type: "tool_use", id: "tu1", name: "Read", input: {} }]),
+        user([{ type: "tool_result", tool_use_id: "tu1", content: "ok" }]),
+      ]),
+      { isResume: false },
+    );
+    const audit = auditRenderedToolCards(messages);
+    expect(audit.interrupted).toBe(0);
   });
 });

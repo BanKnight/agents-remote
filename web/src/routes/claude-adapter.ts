@@ -845,6 +845,51 @@ export function auditReplayPairing(messages: SessionStreamServerMessage[]): {
   return { toolUse: useIds.size, unpaired };
 }
 
+/**
+ * 渲染层审计（v2 取证通道）：数渲染消息里的中断卡（tool-card / assistant tool-call
+ * part）与失效 Ask 卡，与 raw 配对审计并排上报。raw unpaired=0 且 render
+ * interrupted>0 = 断层锁定在投影/渲染管线在设备上的实际输入（缓存窗口内容）；
+ * 两者恒 0 仍见中断 = renderer 组件层。samples 只留前 4 个中断工具名（横幅容量）。
+ */
+export function auditRenderedToolCards(messages: ThreadMessageLike[]): {
+  tool: number;
+  withResult: number;
+  interrupted: number;
+  askOrphaned: number;
+  samples: string[];
+} {
+  let tool = 0;
+  let withResult = 0;
+  let interrupted = 0;
+  let askOrphaned = 0;
+  const samples: string[] = [];
+  for (const msg of messages) {
+    const custom = msg.metadata?.custom as Record<string, unknown> | undefined;
+    if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      for (const p of msg.content as Array<Record<string, unknown>>) {
+        if (p.type !== "tool-call") continue;
+        tool++;
+        if ("result" in p && p.result != null) withResult++;
+        if (p.isInterrupted === true) {
+          interrupted++;
+          if (samples.length < 4) samples.push(String(p.toolName));
+        }
+      }
+    }
+    if (msg.role === "system" && custom?.systemMessageType === "tool-card") {
+      tool++;
+      if (custom.result != null || custom.isError === true) withResult++;
+      if (custom.isInterrupted === true) {
+        interrupted++;
+        if (samples.length < 4) samples.push(String(custom.toolName ?? custom.subtype ?? "?"));
+      }
+    }
+    if (custom?.systemMessageType === "ask-user-question" && custom.isOrphaned === true)
+      askOrphaned++;
+  }
+  return { tool, withResult, interrupted, askOrphaned, samples };
+}
+
 // ── Agent container tail envelope ────────────────────────────────────
 // The Agent tool_result's tool_use_result envelope carries final stats +
 // full content. Pure projection parsed once in Pass 2: stats (everything
@@ -5550,6 +5595,22 @@ export function useClaudeSession(
             );
             recordReplayDebug(
               `audit raw=${messageMapRef.current.size} tool_use=${audit.toolUse} unpaired=${audit.unpaired} resume=${isResumeRef.current}`,
+            );
+            // 渲染层审计（v2 取证）：raw 配对完好但 UI 全中断的设备现象 → 同点跑
+            // 容器完整投影链（与渲染管线同函数），数 isInterrupted 卡 + 失效 Ask 卡。
+            // render interrupted>0 且 raw unpaired=0 → 断层锁定投影在设备上的实际
+            // 输入（缓存窗口内容）；两者恒 0 仍见中断 → renderer 组件层。
+            const renderAudit = auditRenderedToolCards(
+              renderChatStream(normalizeChatStream([...messageMapRef.current.values()]), {
+                isResume: isResumeRef.current,
+              }),
+            );
+            console.log(
+              `[claude-adapter] render audit: tool=${renderAudit.tool} withResult=${renderAudit.withResult} interrupted=${renderAudit.interrupted} askOrphaned=${renderAudit.askOrphaned} sample=[${renderAudit.samples.join(",")}]`,
+            );
+            recordReplayDebug(
+              `render audit tool=${renderAudit.tool} withResult=${renderAudit.withResult} interrupted=${renderAudit.interrupted} askOrphaned=${renderAudit.askOrphaned}` +
+                (renderAudit.samples.length > 0 ? ` sample=${renderAudit.samples.join(",")}` : ""),
             );
             // 缓存落盘调度（批末一次，批内只入窗）。
             scheduleReplayFlush();

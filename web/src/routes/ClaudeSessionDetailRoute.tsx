@@ -1232,6 +1232,7 @@ function extractRetryInfo(
  */
 function ReplayDebugBanner() {
   const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [lines, setLines] = useState<string[]>([]);
   useEffect(() => {
     const refresh = () => setLines(readReplayDebugLines());
@@ -1255,9 +1256,28 @@ function ReplayDebugBanner() {
         {summary}
       </button>
       {open ? (
-        <pre className="mt-1 max-h-40 overflow-y-auto rounded-lg bg-surface px-2.5 py-1.5 text-caption text-on-surface-muted">
-          {lines.join("\n")}
-        </pre>
+        <>
+          <pre className="mt-1 max-h-40 overflow-y-auto rounded-lg bg-surface px-2.5 py-1.5 text-caption text-on-surface-muted">
+            {lines.join("\n")}
+          </pre>
+          <button
+            className="mt-1 w-full cursor-pointer rounded-lg bg-surface px-2.5 py-1.5 text-caption text-on-surface-muted"
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(lines.join("\n"))
+                .then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                })
+                .catch(() => {
+                  // 剪贴板失败（非 https/权限）：静默，用户仍可拍屏
+                });
+            }}
+            type="button"
+          >
+            {copied ? "copied ✓" : "copy all"}
+          </button>
+        </>
       ) : null}
     </div>
   );
