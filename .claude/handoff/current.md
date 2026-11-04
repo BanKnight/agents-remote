@@ -1,92 +1,82 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-03（幽灵 blocked 二次根治：anchor 作废机制已 commit `1b9ffbf`，review 消化完毕，待 push）
+> 最后更新：2026-11-04（脱壳批 `ce0aee3` 已 commit + DOM 验证闭环；informational +
+> 注入类收编两批 `4d56fc9`/`614b72e`；三批均待 push）
 
 ## 一句话状态
 
-**幽灵 blocked bug 按用户架构指引二次根治完成并已 commit**（`1b9ffbf`，在未 push 的
-`483e66c` 之上叠加）：pending 只看聊天流——session_init 帧新增 `anchor` 锚落点字段，
-delta 回放 + anchor="history"（实时段重启）→ 客户端把旧实时段全部未决 control_request
-帧标 stale → 投影层补 isInterrupted → shared 谓词自动解除，composer/托盘/金框/计划提问
-卡零 gate 全部正确。快照门禁链已整体撤除，审批快照退回审批中心本职。reviewer 审查已
-消化：P1 作废写入改 updater 形式（一行，消除理论竞态）；P2 注释补全论证链 + WS 不断
-端不解除边界记档。pre-commit 全门禁绿，api/web 已 respawn 产物验证通过。**待 push（需
-用户确认外发）。**
+**CLI 2.1.299 协议支持三批完成**：`4d56fc9`（informational 正投影）→ `614b72e`
+（注入类 8 子类型收编）→ `ce0aee3`（已收编 attachment 脱壳——琥珀容器只留给未处理
+subtype）。脱壳已经 resume 回放真实会话 DOM 验证闭环（9 类卡片 0 容器、全页琥珀
+气泡 0）。全门禁绿。**三批均待 push（需用户确认外发）。**
 
 ## 本 session 焦点
 
-### 关键决策（不可丢）
+### 关键决策 / 发现（不可丢）
 
-- **用户架构否定（核心）**：方案 H（服务端审批快照 gate）是错的——「composer 的状态
-  不应该两边各取一半，而是只看聊天流」；「为什么你需要在轮询那里获取数据打补丁，这是
-  不是说明聊天流缺乏下发某些数据」。解法指引：「聊天记录有分组标签（实时/历史），cli
-  重启后信息只能在历史里看到不会在实时出现——你是有足够信息做判断的」「服务端在切到
-  tui 模式也等于 cli 重启，对应的数据也要清理」（TUI 清理服务端已有 clearRuntime）。
-- **新方案（用户已赞同「我赞同你的方案，很合理」）**：control_request 仅存 stdout 不落
-  JSONL，户籍在实时段。session_init 加锚落点 `anchor:"live"|"history"|null`（服务端
-  locateReplayAnchor 返回 buffer 的一行显式化）；delta 回放 + anchor="history" = 实时段
-  重启 → markStaleControlRequests 把旧实时段全部 control_request 帧标 stale →
-  renderChatStream 盖章处对未解决（result === undefined）part 补 isInterrupted →
-  isUnresolvedControlRequest 自动 false。
-- **安全性论证**：delta 分支内 anchor=history ⟺ 进程重启（compact 清空双缓冲与
-  LIVE_BUFFER_CAP trim 都使锚 miss → full，不经 delta 分支）；「进程活着 + 锚落 history」
-  不存在，无误杀活请求面。批次形状 (0,0)/(0,N) 歧义论证了必须由 session_init 显式带锚落
-  点（纯客户端推断不可靠）。
-- **作废语义**：标 isInterrupted（保留「曾有一个未答请求」痕迹）——写进 state 一条路径，
-  全部消费点自动正确；已回填 result 的 part 不改写（完成态优先）。
-- **保留自方案 H**：服务端 ApprovalRegistry 全量登记 + 中心投影过滤（approval-center），
-  这是审批中心本职，与 composer pending 无关。
+- **脱壳设计（用户拍板「默认气泡 = 未处理」语义恢复）**：SystemChatBubble 通用分支
+  判定 `ATTACHMENT_CONFIG[attachmentType]` 有条目 → 无容器轻量行（与 compact-block/
+  hook-card 语言一致）；无条目 → 继续落琥珀容器 =「未处理」观察面信号。容器分支
+  本身零改动。
+- **DOM 验证的达成路径（relay 机制三层墙全部绕过，路径可复用）**：attachment 帧只在
+  JSONL、relay 仅 `startedAsResume && claudeSessionId` 才读 JSONL、桌面 stopped
+  agent 实例不渲染聊天流、api 不可重启（会杀用户 CLI）。**最终路径 = `POST
+  /api/projects/<p>/agent-sessions` body 传 `claudeSessionId` 直接创建 resume 实例**
+  → spawn `--resume` → relay 读 JSONL 全量回放 → attachment 帧进 UI。test 项目
+  历史会话 e871e63c（14 帧）验证通过，实例用完已关。
+- **无 bubble 帧不是漏渲染**：skill_listing → skills stateOps；mcp_instructions_delta
+  → mcpServersAdd stateOps；total_tokens_reminder → `{}` 刻意忽略（model-facing）。
+  claude-adapter.ts case 表是语义决策单源。
+- **桌面历史列表（View session history）行点击不导航**——历史会话在桌面没有只读
+  查看器；resume 是唯一回放路径（API 或移动端）。
 
 ### 进度
 
-- ✅ shared：session_init 类型加 anchor?；ClaudeControlRequest 加 stale?（客户端本地语义
-  注释）；isUnresolvedControlRequest 消费点注释更新（作废机制取代快照门禁）
-- ✅ api/session-relay.ts：addSubscriber 的 session_init 帧加 `anchor: anchor?.buffer ?? null`
-- ✅ web/claude-adapter.ts：markStaleControlRequests 纯函数（结构共享 + 幂等）；session_init
-  delta 分支 anchor==="history" → setRawMessages 作废；盖章处 stale + result undefined →
-  isInterrupted；撤 isLivePendingControlRequest / aliveControlRequestIds options；
-  pendingInteraction 回归纯谓词（type 守卫 + shared 谓词）
-- ✅ route 撤 useApprovals 接线；use-approvals 撤 loaded（审批中心本职保留）
-- ✅ 测试：hook 测试换锚落点作废（重连三分支：首连 blocked → anchor=live 保留 →
-  anchor=history 解除）；纯函数测试（stale 标记幂等 + stale→interrupted 集成 + 已解决
-  不改写）；relay 测试 8 处 session_init 断言补 anchor；删 loaded/aliveIds 测试
-- ✅ 门禁：typecheck 三包 + format + lint + 测试 api 1272 / shared 12 / web 1023 全绿 +
-  CSS 硬闸 + tokens 机检；api/web respawn；产物 rg 验证（markStaleControlRequests 在、
-  aliveControlRequestIds/isLivePendingControlRequest 零残留）+ CSS content-type text/css
-- ✅ 协议文档：claude-cli-stream-protocol.md 增量回放段补锚落点 anchor 说明
-- ✅ code-reviewer 审查消化：P1 作废写入改 updater 形式
-  （`setRawMessages((prev) => markStaleControlRequests(prev))`，ref 镜像 read-modify-write
-  有丢失已入队 append 的理论竞态）；P2-3 注释补「historyLines 为 activate 时一次性快照」
-  前提；P2-2（CLI 崩溃而 WS 不断的端 composer 保持 blocked 到重连/刷新；session_status
-  广播挂同款 stale 化是后续加固方向）已记档进 markStaleControlRequests 注释
-- ✅ commit `1b9ffbf`（11 文件 +315/−216，pre-commit 全门禁绿）
+- ✅ `ce0aee3`：脱壳分支（ClaudeSessionDetailRoute.tsx +14/-1）+ resume 回放 DOM
+  验证（9 类收编卡片父链 0 容器、amberBubbles=0、卡片可见 67×16）+ 全门禁绿
+- ✅ 验证数据清理：unshell-probe 实例、unshell-resume 实例均已 close（test 项目）
+- ✅ agent-browser 已 close
+- ✅ handoff 归档（snapshots/20261104-unshell-verify.md）
 
 ### 阻塞 / 风险
 
-- 无阻塞。全量测试曾出现一次 web 1 fail（expect toBe），单跑与复跑均绿——偶发测试间
-  干扰，与本次改动无关（此前 session 已有同类顺序依赖修复记录），真复现再治。
-- 已知边界（reviewer 核实）：①WS 不断的端在 CLI 死亡后 composer 保持 blocked 直到该端
-  重连/刷新（多端同挂场景罕见）；②replay cache 冷启动恢复窗口的幽灵存活到 session_init
-  到达（毫秒级）后清除——均可接受。
+- 无阻塞。工作区剩 `.claude/handoff/current.md` 未提交（随下次收尾一起提）。
 
 ## 下一步
 
-1. ✅ 已 push（`bd7fa06..1b9ffbf`，用户确认外发 2026-11-03）。
-2. 遗留：v1.7 真机验证清单反馈；wiki/ 目录 git 归属；swap 扩容 2G（仅建议）+ 构成复查。
+1. **push 需用户确认外发**（`1b9ffbf..ce0aee3` 共 4 个 commit：幽灵 blocked 根治 +
+   informational 批 + 注入类收编批 + 脱壳批）。
+2. 真机验证 checklist 交用户（**重开 PWA 拉新 bundle 后**，用户手机看的就是 resume
+   回放路径——「环境信息」等卡片应为**无容器轻量行**，不再是褐色气泡）：
+   ①informational 公告 = warning 色提示块；②edited_text_file「磁盘变更」卡含
+   rendered 正文；③注入帧 = 可读卡片（icon + badge 摘要 + 折叠正文）；④**已收编
+   attachment 卡片无琥珀底容器**（本批核心变化）；⑤未知 subtype 仍是琥珀容器
+   （未处理信号，符合预期）。
+3. 遗留：v1.7 真机验证清单反馈；wiki/ 目录 git 归属；swap 扩容 2G（仅建议）。
+4. 可选优化（已提过等指示）：SW 更新接管后自动 reload 一次。
 
 ## 易丢的关键上下文
 
-- **作废机制单链**：session_init.anchor（服务端 relay）→ claude-adapter delta 分支
-  （anchor==="history" → markStaleControlRequests）→ renderChatStream 盖章处
-  （stale + result===undefined → isInterrupted）→ shared isUnresolvedControlRequest 自动
-  false。测试：claude-adapter.hook.test.ts「session_init.anchor 实时段重启作废」段。
-- **快照门禁已死**：aliveControlRequestIds / isLivePendingControlRequest /
-  useApprovals.loaded 已全删——别再按 current.md 旧版本（snapshots/20261103-2149.md）
-  恢复那套接线。
-- **registry 登记口径不变**：全部 can_use_tool 登记、中心投影（snapshot + push）过滤
-  复杂工具——composer 不再消费快照，勿把过滤挪回入口。
-- api/web 标准重启 = `respawn-pane -k -t ar-dev:api|web`（runbook）；重启 api 会杀挂着的
-  CLI（--resume 找回，用户已知情）。
+- **脱壳分支**：ClaudeSessionDetailRoute.tsx SystemChatBubble 内（:1566 区），条件
+  `attachmentType && rawData && ATTACHMENT_CONFIG[attachmentType]` → 无容器 return；
+  RawDebugTooltip 用 `absolute -top-1 right-0.5`（与 compact-block 一致，勿回退
+  right-0.4）。
+- **ATTACHMENT_CONFIG 实际键集 28 条**（attachment-bubble.tsx :212-465）：含
+  date（非 date_change）、auto_mode、remote_session_change、session_context、
+  prompt_snapshot；JSONL 帧 subtype 字段是 `attachment.type`（不是顶层
+  attachmentType）。
+- **resume 实例创建**：`POST /api/projects/test/agent-sessions` body
+  `{provider:"claude", displayName, claudeSessionId}` → resumed 初始态 done；session
+  registry 落盘在 `~/.local/share/agents-remote/run/sessions/`（runDir），PROJECTS_ROOT
+  = /home/deploy/workspace。
+- **informational 投影单链**：shared ClaudeSystemInformational → relay knownSubtypes
+  → normalize kind:"informational" → renderChatStream systemMessageType=informational
+  → InformationalNotice。
+- **ShellIcon SF 名契约**：warning-triangle（lucide triangle-alert 仅生成物 key）。
+- api/web 标准重启 = `respawn-pane -k -t ar-dev:0|1`；**不能在用户「优化 remote」
+  CLI 运行时重启 api**。
+- **大文件扫描工具链**：2G ulimit -v 会挂 bun——用 systemd-run cgroup MemoryMax；
+  1.2GB JSONL 用「流式 + 尾 8MB 切片」。
 
 ## 提醒
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
