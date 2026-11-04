@@ -2829,26 +2829,30 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       if (toolResults.length > 0) {
         lastToolUseId = toolResults[toolResults.length - 1].toolUseId;
         for (const tr of toolResults) {
-          // Search emitted assistant items.
+          // Search emitted assistant items. 补齐**所有**未配对的同 id part（防御纵深）：
+          // 重复行（full replay 残留的重复段 / delta overlap）会让同一 tool_use 投影出
+          // 多份 part，result 被首份消费后其余副本永远悬空 → isResume 下整屏假中断卡
+          // （22router 取证实锤）。result 属于这个 id——凡持有此 id 且尚无 result 的
+          // part 都补上；正常数据（无重复）行为与「首份 break」完全一致。
           for (const item of items) {
             if (item.kind !== "assistant") continue;
-            const partIdx = item.parts.findIndex(
-              (p) => p.type === "tool-call" && p.toolCallId === tr.toolUseId,
+            if (
+              !item.parts.some(
+                (p) => p.type === "tool-call" && p.toolCallId === tr.toolUseId && p.result == null,
+              )
+            )
+              continue;
+            item.parts = item.parts.map((p) =>
+              p.type === "tool-call" && p.toolCallId === tr.toolUseId && p.result == null
+                ? {
+                    ...p,
+                    result: tr.content,
+                    ...(tr.isError ? { isError: true } : {}),
+                    ...(tr.images.length > 0 ? { resultImages: tr.images } : {}),
+                  }
+                : p,
             );
-            if (partIdx >= 0) {
-              item.parts = item.parts.map((p, j) =>
-                j === partIdx && p.type === "tool-call"
-                  ? {
-                      ...p,
-                      result: tr.content,
-                      ...(tr.isError ? { isError: true } : {}),
-                      ...(tr.images.length > 0 ? { resultImages: tr.images } : {}),
-                    }
-                  : p,
-              );
-              pushPartRaw(tr.toolUseId, msg);
-              break;
-            }
+            pushPartRaw(tr.toolUseId, msg);
           }
         }
         // Do NOT continue — the user message may also carry text blocks.
@@ -5379,6 +5383,17 @@ export function useClaudeSession(
         }, HEARTBEAT_INTERVAL_MS);
       };
 
+      // delta 重连期间的缓存行去重：与 processBatch 的防御 filter 同谓词——已持有的
+      // uuid 行进 rawMessages 会被过滤，缓存窗口（replayLinesRef）却曾无条件 push，
+      // 服务端增量与缓存重叠时缓存塞进重复行（与 full replay 残留同族，见 session_init
+      // full 分支注释）。收集期 messageMapRef 尚未纳入本 batch，与 processBatch 过滤期
+      // 看到的是同一状态，判定一致。
+      const shouldCacheReplayLine = (msg: SessionStreamServerMessage): boolean => {
+        if (!deltaReplayRef.current) return true;
+        const uuid = getMessageUuid(msg);
+        return !(uuid && messageMapRef.current.has(uuid));
+      };
+
       const decompressGzip = async (buf: ArrayBuffer): Promise<string> => {
         const stream = new Response(buf).body!.pipeThrough(new DecompressionStream("gzip"));
         return await new Response(stream).text();
@@ -5405,7 +5420,7 @@ export function useClaudeSession(
             try {
               const parsed = JSON.parse(line) as SessionStreamServerMessage;
               target.push(parsed);
-              pushReplayLine(line);
+              if (shouldCacheReplayLine(parsed)) pushReplayLine(line);
               // Mirror handleTextFrame's ws recv log so the (compressed) history
               // and live batches are also visible row-by-row when socket logging
               // is on — otherwise only the text-frame batch markers show up.
@@ -5508,6 +5523,14 @@ export function useClaudeSession(
               // Full replay (or pre-delta server) — discard all state from the prior
               // connection before replaying history/output batches.
               resetSessionState();
+              // replayLinesRef 与 rawMessages 同步清空（恢复「缓存窗口 = 渲染 state」
+              // 不变量）：full 重连的 history 段从服务端窗口头部重放（含更早的行），
+              // append 在旧缓存行之后 = 行序倒置 + 重复段——normalize 的 result 配对
+              // 是一次性消费（首份 break），重复段的 use 副本永远悬空，isResume 下
+              // 整屏假中断卡（22router 取证实锤：缓存 600 行投影 45/0/45 而
+              // messageMapRef 去重后 39/39/0）。本连接的 [history, live] 就是新窗口。
+              replayLinesRef.current = [];
+              replayCharsRef.current = 0;
               isResumeRef.current = msg.resume ?? false;
             }
             return;
@@ -5657,13 +5680,13 @@ export function useClaudeSession(
           // In batch collection — buffer, don't process yet
           if (historyBatchRef.current) {
             historyBatchRef.current.push(msg);
-            pushReplayLine(raw);
+            if (shouldCacheReplayLine(msg)) pushReplayLine(raw);
             if (trackArrival) tickArrival(arriveMs, performance.now() - arriveMs);
             return;
           }
           if (liveBatchRef.current) {
             liveBatchRef.current.push(msg);
-            pushReplayLine(raw);
+            if (shouldCacheReplayLine(msg)) pushReplayLine(raw);
             return;
           }
 

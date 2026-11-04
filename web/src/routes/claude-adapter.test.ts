@@ -3844,6 +3844,31 @@ describe("normalizeChatStream", () => {
     expect(toolCall.result).toBe("delayed output");
   });
 
+  test("duplicate tool_use rows (full-replay residue) all receive the result", () => {
+    // 22router 取证回归：缓存跨连接累积出重复 history 段后，同一 tool_use 投影出
+    // 多份 part，result 被首份消费后其余副本悬空 → isResume 下整屏假中断卡。
+    // result 属于这个 id——所有未配对的同 id part 都必须补上。
+    const useRow = makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "Bash", input: {} }]);
+    const resultRow = makeUser([{ type: "tool_result", tool_use_id: "tu-1", content: "done" }]);
+    const items = normalizeChatStream([useRow, resultRow, useRow, resultRow]);
+    const toolCalls = assistantItems(items).flatMap((i) =>
+      i.parts.filter((p) => p.type === "tool-call"),
+    ) as Array<Extract<NormalizedPart, { type: "tool-call" }>>;
+    expect(toolCalls).toHaveLength(2);
+    expect(toolCalls.map((p) => p.result)).toEqual(["done", "done"]);
+  });
+
+  test("duplicate tool_use residue renders zero interrupted cards under isResume", () => {
+    const useRow = makeAssistant("a1", [{ type: "tool_use", id: "tu-1", name: "Bash", input: {} }]);
+    const resultRow = makeUser([{ type: "tool_result", tool_use_id: "tu-1", content: "done" }]);
+    const rendered = renderChatStream(normalizeChatStream([useRow, resultRow, useRow, resultRow]), {
+      isResume: true,
+    });
+    const audit = auditRenderedToolCards(rendered);
+    expect(audit.interrupted).toBe(0);
+    expect(audit.withResult).toBe(audit.tool);
+  });
+
   // ── Skill body folding (live isSynthetic + JSONL isMeta paths) ──────
   test("synthetic skill body (isSynthetic + sourceToolUseID) folds into the tool-call", () => {
     const items = normalizeChatStream([
