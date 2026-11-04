@@ -812,6 +812,38 @@ export function markStaleControlRequests(
   );
 }
 
+/**
+ * 回放窗口配对审计（raw 层、同步）：扫合并窗口统计 tool_use / tool_result 配对。
+ * unpaired tool_use = 「已中断」/「已失效」卡的直接原料（applyToolLifecycle 在
+ * isResume 下对它们盖章）——这个数字是切分「缓存+增量 ≠ 全量」类回放缺陷的
+ * 第一手：unpaired 恒 0 而用户仍见中断 → 渲染层；unpaired 大批 > 0 → 数据层
+ * （缓存残缺/增量缺口）。每连接 live_end 后随一行常开日志输出（§22 取证通道，
+ * 服务端 [relay] addSubscriber 日志为对端印证）。纯函数，hook 单测共用。
+ */
+export function auditReplayPairing(messages: SessionStreamServerMessage[]): {
+  toolUse: number;
+  unpaired: number;
+} {
+  const useIds = new Set<string>();
+  const resultIds = new Set<string>();
+  for (const m of messages) {
+    const content = (m as { message?: { content?: unknown } }).message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const b of content as Array<{
+      type?: unknown;
+      id?: unknown;
+      tool_use_id?: unknown;
+    }>) {
+      if (b?.type === "tool_use" && typeof b.id === "string") useIds.add(b.id);
+      if (b?.type === "tool_result" && typeof b.tool_use_id === "string")
+        resultIds.add(b.tool_use_id);
+    }
+  }
+  let unpaired = 0;
+  for (const id of useIds) if (!resultIds.has(id)) unpaired++;
+  return { toolUse: useIds.size, unpaired };
+}
+
 // ── Agent container tail envelope ────────────────────────────────────
 // The Agent tool_result's tool_use_result envelope carries final stats +
 // full content. Pure projection parsed once in Pass 2: stats (everything
@@ -5206,10 +5238,19 @@ export function useClaudeSession(
             liveStartRef.current = parsed.length;
             isResumeRef.current = cached.resume;
             setLoading(false);
+            // 取证通道（§22，常开一行）：恢复窗口规模/快照新旧——与 live_end 的
+            // replay audit 拼起来即「缓存+增量=全量」等式的两侧完整数据。
+            console.log(
+              `[claude-adapter] replay cache restored: lines=${parsed.length} resume=${cached.resume} anchor=${cached.cursorUuid.slice(0, 8)} savedAt=${Math.round((Date.now() - cached.savedAt) / 60000)}min ago`,
+            );
             replayLinesRef.current = [...cached.raw];
             replayCharsRef.current = cached.raw.reduce((sum, line) => sum + line.length + 1, 0);
             replayCleanRef.current = true;
+          } else {
+            console.log("[claude-adapter] replay cache: hit but no parseable line — full replay");
           }
+        } else {
+          console.log("[claude-adapter] replay cache: miss — full replay");
         }
         openConnection();
       })();
@@ -5358,6 +5399,12 @@ export function useClaudeSession(
             // 重连成功归零退避计数。
             clearWatchdog();
             reconnectAttemptRef.current = 0;
+            // 连接级决策日志（常开一行，§22 取证通道）：回放模式 / 锚落点 / 本地锚
+            // 状态——「走了哪条路」的第一手，与服务端 [relay] addSubscriber 日志
+            // 对端印证；live_end 的 replay audit 补「合并窗口是否残缺」。
+            console.log(
+              `[claude-adapter] session_init replay=${msg.replay ?? "full"} anchor=${msg.anchor ?? "-"} resume=${msg.resume ?? false} local_cursor=${cursorRef.current != null ? cursorRef.current.slice(0, 8) : "none"}`,
+            );
             if (msg.replay === "delta" && cursorRef.current != null) {
               // delta 重连：服务端确认了 since 锚，接下来只补锚后的行——保留全部 state
               //（rawMessages/scalars/tasks/UI 都不动），不 reset、不置 isResume（没有
@@ -5397,8 +5444,6 @@ export function useClaudeSession(
               // connection before replaying history/output batches.
               resetSessionState();
               isResumeRef.current = msg.resume ?? false;
-              if (isSocketLoggingEnabled())
-                console.log("[claude-adapter] session_init resume=", isResumeRef.current);
             }
             return;
           }
@@ -5488,6 +5533,15 @@ export function useClaudeSession(
             const batch = liveBatchRef.current ?? [];
             liveBatchRef.current = null;
             processBatch(batch);
+            // 配对审计（常开一行，§22 取证通道）：messageMapRef 是 processBatch
+            // Phase 1 同步维护的合并窗口（缓存恢复 + 本次回放增量的全部带 uuid 行；
+            // rawMessagesRef 要等 commit 后 effect 才镜像，此处读它会滞后一批），
+            // 此刻已含全部到行——unpaired 大批 > 0 = 「已中断」卡的数据层实锤；
+            // 恒 0 = 渲染层问题。
+            const audit = auditReplayPairing([...messageMapRef.current.values()]);
+            console.log(
+              `[claude-adapter] replay audit: raw=${messageMapRef.current.size} tool_use=${audit.toolUse} unpaired=${audit.unpaired} resume=${isResumeRef.current}`,
+            );
             // 缓存落盘调度（批末一次，批内只入窗）。
             scheduleReplayFlush();
             // delta 回合封口：to 不能在此处取值——renderedMessages 是 rawMessages 的

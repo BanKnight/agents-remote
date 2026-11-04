@@ -29,6 +29,7 @@ import {
   enrichBubbleMetadata,
   attachErrorToBubble,
   attachApiErrorToMessages,
+  auditReplayPairing,
   drainPendingErrors,
   makeBoundaryDivider,
   extractToolResults,
@@ -5359,5 +5360,61 @@ describe("gen-ui render mapping (M1.b)", () => {
     expect(card).toBeDefined();
     const custom = card?.metadata?.custom as Record<string, unknown>;
     expect(custom.genUiPath).toBe(".agents-remote/gen-ui/demo.html");
+  });
+});
+
+describe("auditReplayPairing (回放取证通道)", () => {
+  test("全配对窗口 → unpaired=0", () => {
+    const audit = auditReplayPairing([
+      assistant("a1", [{ type: "tool_use", id: "tu1", name: "Bash", input: {} }]),
+      user([{ type: "tool_result", tool_use_id: "tu1", content: "ok" }]),
+      assistant("a2", [{ type: "tool_use", id: "tu2", name: "Read", input: {} }]),
+      user([{ type: "tool_result", tool_use_id: "tu2", content: "ok" }]),
+    ]);
+    expect(audit.toolUse).toBe(2);
+    expect(audit.unpaired).toBe(0);
+  });
+
+  test("悬空 tool_use（无 result）计 unpaired——「已中断」卡的原料", () => {
+    const audit = auditReplayPairing([
+      assistant("a1", [{ type: "tool_use", id: "tu1", name: "Bash", input: {} }]),
+      assistant("a2", [{ type: "tool_use", id: "tu2", name: "Bash", input: {} }]),
+      user([{ type: "tool_result", tool_use_id: "tu2", content: "ok" }]),
+    ]);
+    expect(audit.toolUse).toBe(2);
+    expect(audit.unpaired).toBe(1);
+  });
+
+  test("悬空 tool_result（use 被窗口截头裁掉）不计 unpaired——无害方向", () => {
+    const audit = auditReplayPairing([
+      user([{ type: "tool_result", tool_use_id: "tuGone", content: "orphan" }]),
+    ]);
+    expect(audit.toolUse).toBe(0);
+    expect(audit.unpaired).toBe(0);
+  });
+
+  test("content 非 array（string 正文）与畸形 block 跳过不炸", () => {
+    const audit = auditReplayPairing([
+      {
+        type: "user",
+        message: { role: "user", content: "plain text turn" },
+      } as unknown as SessionStreamServerMessage,
+      {
+        type: "assistant",
+        message: { role: "assistant", content: [{ type: "tool_use" }, { type: "text" }] },
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(audit.toolUse).toBe(0);
+    expect(audit.unpaired).toBe(0);
+  });
+
+  test("同 id 重复行按 uniq 计（Set 语义，跨 delta 重发不虚增）", () => {
+    const audit = auditReplayPairing([
+      assistant("a1", [{ type: "tool_use", id: "tu1", name: "Bash", input: {} }]),
+      assistant("a2", [{ type: "tool_use", id: "tu1", name: "Bash", input: {} }]),
+      user([{ type: "tool_result", tool_use_id: "tu1", content: "ok" }]),
+    ]);
+    expect(audit.toolUse).toBe(1);
+    expect(audit.unpaired).toBe(0);
   });
 });
