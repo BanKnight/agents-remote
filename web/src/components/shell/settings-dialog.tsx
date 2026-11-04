@@ -120,7 +120,9 @@ export type SettingsSection =
   | "pi"
   | "acp"
   | "codex"
-  | "general"
+  | "appearance"
+  | "language"
+  | "diagnostics"
   | "notifications";
 
 /** 各 section 的 header 标题（桌面弹窗 header / 移动 MobilePageHeader 共用）。 */
@@ -134,8 +136,12 @@ export const sectionTitle = (section: SettingsSection, t: ReturnType<typeof useT
       return t("settings.section.acp");
     case "codex":
       return t("settings.section.codex");
-    case "general":
-      return t("settings.section.general");
+    case "appearance":
+      return t("theme.label");
+    case "language":
+      return t("settings.lang");
+    case "diagnostics":
+      return t("settings.diag.section");
     case "notifications":
       return t("settings.section.notifications");
     default:
@@ -216,8 +222,14 @@ export function SettingsContent({
         />
       );
       break;
-    case "general":
-      body = <GeneralSection />;
+    case "appearance":
+      body = <AppearanceSection />;
+      break;
+    case "language":
+      body = <LanguageSection />;
+      break;
+    case "diagnostics":
+      body = <DiagnosticsSection />;
       break;
     case "notifications":
       body = <NotificationsSection />;
@@ -246,6 +258,9 @@ function SettingsRootView({
   const { t, pref: langPref } = useT();
   const { theme } = useTheme();
   const [standalone] = useState(() => isStandaloneDisplay());
+  // 诊断开关态（入口行值位）：RootView 在切 detail 回 root 时重挂，useState 初值
+  // 即最新（DiagnosticsSection 内切换后返回自然刷新）。
+  const [diagOn] = useState(isDiagEnabled);
   // push 订阅态（入口行值位；NotificationsSection 里变更后 invalidate/refetch 这里不动，
   // 简单 local refetch：focus 时读 getPushSubscription——subscription 是 SW 持久态，读它即可。
   const [pushOn, setPushOn] = useState(false);
@@ -331,8 +346,14 @@ function SettingsRootView({
       {/* 通用（07 第一组）：外观 / 语言 —— 值行 + › 进 general detail */}
       <div className="sect">{t("settings.section.general")}</div>
       <div className="sgroup">
-        {row(t("theme.label"), <>{themeLabel}</>, () => onNavigate("general"))}
-        {row(t("settings.lang"), <>{langLabel}</>, () => onNavigate("general"))}
+        {row(t("theme.label"), <>{themeLabel}</>, () => onNavigate("appearance"))}
+        {row(t("settings.lang"), <>{langLabel}</>, () => onNavigate("language"))}
+        {row(
+          t("settings.diag.log"),
+          <>{diagOn ? t("settings.diag.valueOn") : t("settings.diag.valueOff")}</>,
+          () => onNavigate("diagnostics"),
+          diagOn ? "ok" : undefined,
+        )}
       </div>
 
       {/* RUNTIME 预设（07 第二组）：新建实例时可选；全局默认，会话 ℹ 可覆盖 */}
@@ -435,19 +456,15 @@ function SettingsRootView({
 }
 
 /**
- * 通用段 detail（决策 48 + 07 原型「外观 / 语言」两行）：外观三态（跟随系统/明亮/暗黑，
- * `themeAtom` 持久化）+ 语言三态（跟随系统/中文/English，偏好写 i18n localStorage）。
- * 两者同构：都是「全局默认、覆盖系统偏好」的三态选择。
- * v2 二级换代：sect + sgroup 分组（一级同构）+ `.segc` 三态分段（fill-segmented 底 +
- * segmented-thumb 活动块），hint 作 kfoot 脚注（原型未覆盖二级，按 Apple 语言补位）。
+ * 外观 detail（07 原型「外观」行专属 UI）：三态分段（跟随系统/明亮/暗黑，
+ * `themeAtom` 持久化）。root 值行点入、只承载外观一项（值行 → 专属 detail 规则）。
+ * `.segc` 三态分段（fill-segmented 底 + segmented-thumb 活动块），hint 作 kfoot 脚注。
  */
-function GeneralSection() {
-  const { t, pref: langPref, setLang } = useT();
+function AppearanceSection() {
+  const { t } = useT();
   const { theme, setTheme } = useTheme();
-  const [diagOn, setDiagOn] = useState(isDiagEnabled());
   return (
     <div className="flex flex-col">
-      <div className="sect">{t("theme.label")}</div>
       <div className="sgroup">
         <div className="py-3">
           <div aria-label={t("theme.label")} className="segc w-full" role="tablist">
@@ -473,8 +490,18 @@ function GeneralSection() {
         </div>
       </div>
       <p className="kfoot mx-4">{t("theme.hint")}</p>
+    </div>
+  );
+}
 
-      <div className="sect">{t("settings.lang")}</div>
+/**
+ * 语言 detail（07 原型「语言」行专属 UI）：三态分段（跟随系统/中文/English，
+ * 偏好写 i18n localStorage）。与外观同构：「全局默认、覆盖系统偏好」三态选择。
+ */
+function LanguageSection() {
+  const { t, pref: langPref, setLang } = useT();
+  return (
+    <div className="flex flex-col">
       <div className="sgroup">
         <div className="py-3">
           <div aria-label={t("settings.lang")} className="segc w-full" role="tablist">
@@ -500,8 +527,19 @@ function GeneralSection() {
         </div>
       </div>
       <p className="kfoot mx-4">{t("settings.langHint")}</p>
+    </div>
+  );
+}
 
-      <div className="sect">{t("settings.diag.section")}</div>
+/**
+ * 诊断日志 detail（通用诊断基建批）：开关行 + 行为说明 kfoot。root 值行
+ *（已开启/已关闭）点入；切换即时生效（写 diag-log 开关 + 广播，横幅随事件显隐）。
+ */
+function DiagnosticsSection() {
+  const { t } = useT();
+  const [diagOn, setDiagOn] = useState(isDiagEnabled());
+  return (
+    <div className="flex flex-col">
       <div className="sgroup">
         <button
           aria-checked={diagOn}

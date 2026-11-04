@@ -1009,6 +1009,8 @@ export const zh: Record<TranslationKey, string> = {
   "settings.diag.hint": "记录回放等关键诊断行；屏顶横幅可查看、复制或上传到服务器",
   "settings.diag.sectionHint":
     "排障用途，默认关闭；开启后横幅常驻屏顶，关闭后横幅消失（已记录内容保留）。",
+  "settings.diag.valueOn": "已开启",
+  "settings.diag.valueOff": "已关闭",
   "settings.langZh": "中文",
   "settings.langEn": "English",
   "settings.runtimePresets": "RUNTIME 预设（新建实例时可选）",

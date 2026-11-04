@@ -1027,6 +1027,8 @@ export const en = {
     "Record key diagnostic lines (e.g. replay); view, copy or upload them from the banner on top of the screen",
   "settings.diag.sectionHint":
     "For troubleshooting, off by default; the banner shows on top of the screen while on, disappears when off (recorded content is kept).",
+  "settings.diag.valueOn": "On",
+  "settings.diag.valueOff": "Off",
   "settings.langZh": "中文",
   "settings.langEn": "English",
   "settings.runtimePresets": "RUNTIME PRESETS (selectable for new instances)",
