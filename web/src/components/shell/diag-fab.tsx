@@ -23,9 +23,11 @@ import { MobileSheet } from "./mobile-sheet";
  * 开关关闭即整条消失；诊断件不进 i18n（英文短字段，对齐 ReplayDebugBanner 先例）。
  *
  * 手势（frontend-notes §14/§21-25 家族纪律）：pointer events 驱动 + non-passive
- * touchmove preventDefault 防滚动抢占；pending 未 capture 时指针离开放弃（§23）；
- * tap 与拖动以 6px 位移阈值判定（tap 走 pointerup 的 pending 分支，不用 click——
- * capture 后拖拽松手的 click 合成不可控）；DOM 就绪信号走 state ref callback（§14）。
+ * touchmove preventDefault 防滚动抢占；down 即 setPointerCapture——拖动第一步常
+ * 一步跨出 44px 球界，pending（未捕获）阶段收不到界外 move、永远到不了接管阈值
+ *（探针实抓：慢步进偶发接管、快速拖必死）；tap 与拖动以 6px 位移阈值判定（tap
+ * 走 pointerup 的 pending 分支，不用 click——capture 后拖拽松手的 click 合成
+ * 不可控）；DOM 就绪信号走 state ref callback（§14）。
  */
 
 type FabPos = { side: "left" | "right"; top: number };
@@ -117,6 +119,15 @@ export function DiagFab() {
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    // down 即 capture：拖动第一步常常一步跨出 44px 球界，pending（未捕获）阶段
+    // 球收不到界外 pointermove → 永远到不了接管阈值（探针实抓：慢步进能偶然接管、
+    // 快速拖必死）。tap 判定走 pointerup 的 pending 分支、不依赖 click 合成，
+    // 提前 capture 无副作用；capture 后 leave 被 API 抑制，无 §23 残留窗口。
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // capture 失败（指针已失效）：手势照常建立，仅界外跟踪降级
+    }
     dragRef.current = {
       phase: "pending",
       pointerId: e.pointerId,
@@ -131,13 +142,16 @@ export function DiagFab() {
     if (d.phase === "idle" || e.pointerId !== d.pointerId) return;
     const dx = e.clientX - d.startX;
     const dy = e.clientY - d.startY;
-    if (d.phase === "pending") {
-      if (Math.hypot(dx, dy) < FAB_DRAG_START_PX) return;
-      fabNode?.setPointerCapture(e.pointerId);
+    if (d.phase === "pending" && Math.hypot(dx, dy) >= FAB_DRAG_START_PX) {
       d.phase = "dragging";
       setDragging(true);
     }
-    fabNode?.style.setProperty("transform", `translate(${d.baseX + dx}px, ${d.baseY + dy}px)`);
+    if (d.phase === "dragging") {
+      e.currentTarget.style.setProperty(
+        "transform",
+        `translate(${d.baseX + dx}px, ${d.baseY + dy}px)`,
+      );
+    }
   };
   const handlePointerUp = (e: ReactPointerEvent<HTMLButtonElement>) => {
     const d = dragRef.current;
@@ -173,11 +187,6 @@ export function DiagFab() {
       setPos((p) => ({ ...p }));
     }
   };
-  // §23：capture 前的 pending 手势，指针离开元素边界即放弃（dragging 期 capture 抑制 leave）。
-  const handlePointerLeave = () => {
-    if (dragRef.current.phase === "pending") setDragIdle();
-  };
-
   if (!enabled) return null;
 
   const count = lines.length;
@@ -192,7 +201,6 @@ export function DiagFab() {
       //（§18 同族），松手恢复以播放吸附动画；scale 是独立属性（§19）不进列表。
       onPointerCancel={handlePointerCancel}
       onPointerDown={handlePointerDown}
-      onPointerLeave={handlePointerLeave}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       ref={setFabNode}
