@@ -86,6 +86,10 @@ export type RuntimeResources = {
   listAliveRuntimeKeys?(): Promise<Set<string>>;
 };
 
+/** 历史判活 map：原生会话 id（claudeSessionId/acpSessionId/codexThreadId）→ 活跃实例 ref
+ *  （sessionId + 实时活动时间）。agent-history 三路组装消费（活跃条目 lastActivityAt 覆盖）。 */
+export type ActiveAgentSessionRefMap = Map<string, { sessionId: string; updatedAt?: string }>;
+
 export class SessionRegistryError extends Error {
   constructor(
     readonly code: Extract<ApiErrorCode, "SESSION_PROVIDER_UNAVAILABLE" | "SESSION_RUNTIME_ERROR">,
@@ -440,36 +444,39 @@ export class SessionRegistry {
     };
   }
 
-  async getActiveClaudeSessionMap(projectName: string): Promise<Map<string, string>> {
+  /** 历史判活 map 值：活跃实例 id + 实时活动时间（metadata.updatedAt，recordActivity 维护）。
+   *  时间供历史条目覆盖 lastActivityAt——resume fork 语义下原 JSONL mtime 停更（CLI 写新
+   *  fork 文件），mtime 不再代表活跃会话的真实活动时间。 */
+  async getActiveClaudeSessionMap(projectName: string): Promise<ActiveAgentSessionRefMap> {
     const metadata = await this.listMetadata("agent", projectName);
-    const map = new Map<string, string>();
+    const map: ActiveAgentSessionRefMap = new Map();
     for (const m of metadata) {
       if (m.provider === "claude" && m.claudeSessionId) {
-        map.set(m.claudeSessionId, m.id);
+        map.set(m.claudeSessionId, { sessionId: m.id, updatedAt: m.updatedAt });
       }
     }
     return map;
   }
 
-  /** omp 历史判活：acpSessionId → 活跃 agent session id（与 getActiveClaudeSessionMap 同型）。 */
-  async getActiveAcpSessionMap(projectName: string): Promise<Map<string, string>> {
+  /** omp 历史判活：acpSessionId → 活跃 agent session ref（与 getActiveClaudeSessionMap 同型）。 */
+  async getActiveAcpSessionMap(projectName: string): Promise<ActiveAgentSessionRefMap> {
     const metadata = await this.listMetadata("agent", projectName);
-    const map = new Map<string, string>();
+    const map: ActiveAgentSessionRefMap = new Map();
     for (const m of metadata) {
       if (m.provider === "omp" && m.acpSessionId) {
-        map.set(m.acpSessionId, m.id);
+        map.set(m.acpSessionId, { sessionId: m.id, updatedAt: m.updatedAt });
       }
     }
     return map;
   }
 
-  /** codex 历史判活：codexThreadId → 活跃 agent session id（与 getActiveAcpSessionMap 同型）。 */
-  async getActiveCodexThreadMap(projectName: string): Promise<Map<string, string>> {
+  /** codex 历史判活：codexThreadId → 活跃 agent session ref（与 getActiveAcpSessionMap 同型）。 */
+  async getActiveCodexThreadMap(projectName: string): Promise<ActiveAgentSessionRefMap> {
     const metadata = await this.listMetadata("agent", projectName);
-    const map = new Map<string, string>();
+    const map: ActiveAgentSessionRefMap = new Map();
     for (const m of metadata) {
       if (m.provider === "codex" && m.codexThreadId) {
-        map.set(m.codexThreadId, m.id);
+        map.set(m.codexThreadId, { sessionId: m.id, updatedAt: m.updatedAt });
       }
     }
     return map;

@@ -1445,7 +1445,9 @@ export type AgentHistoryEntry = {
   firstMessage: string | null;
   /** ISO timestamp of the first user message */
   startedAt: string | null;
-  /** ISO timestamp from file mtime */
+  /** ISO timestamp from file mtime；活跃条目 = 活跃实例实时活动时间（registry updatedAt
+   *  覆盖——resume fork 语义下 CLI 写新 JSONL、原文件 mtime 停更，mtime 不再代表活跃
+   *  会话的真实活动时间，2026-11-05 根修）。 */
   lastActivityAt: string | null;
   /** JSONL session file size in bytes */
   fileSize: number;

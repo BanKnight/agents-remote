@@ -2,6 +2,7 @@ import { readdir, stat, open as openFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative, isAbsolute } from "node:path";
 import type { AgentHistoryEntry, AgentHistoryRange } from "@agents-remote/shared";
+import type { ActiveAgentSessionRefMap } from "./session-registry";
 
 // ── omp（Oh My Pi）会话历史扫描 ────────────────────────────────────────────────
 //
@@ -139,11 +140,12 @@ const extractOmpEntry = async (
 
 /**
  * 列出项目历史 omp session（与 listAgentHistory 同签名同返回形状，供 session-routes 合流）。
- * activeAcpSessionMap：acpSessionId → 活跃 agent session id，用于 hasActiveSession/activeSessionId。
+ * activeAcpSessionMap：acpSessionId → 活跃 agent session ref，用于 hasActiveSession /
+ * activeSessionId / lastActivityAt 覆盖（活跃条目时间 = 实例实时活动时间，非 file mtime）。
  */
 export async function listOmpHistory(
   projectPath: string,
-  activeAcpSessionMap: Map<string, string>,
+  activeAcpSessionMap: ActiveAgentSessionRefMap,
   range: AgentHistoryRange = "week",
 ): Promise<AgentHistoryEntry[]> {
   const slug = ompSessionSlug(projectPath);
@@ -181,17 +183,17 @@ export async function listOmpHistory(
     .map((p, i) => {
       if (!p) return null;
       const c = candidates[i];
-      const activeSessionId = activeAcpSessionMap.get(p.acpSessionId);
+      const activeRef = activeAcpSessionMap.get(p.acpSessionId);
       const entry: AgentHistoryEntry = {
         provider: "omp",
         acpSessionId: p.acpSessionId,
         title: p.title,
         firstMessage: p.firstMessage,
         startedAt: p.startedAt,
-        lastActivityAt: new Date(c.mtimeMs).toISOString(),
+        lastActivityAt: activeRef?.updatedAt ?? new Date(c.mtimeMs).toISOString(),
         fileSize: c.size,
-        hasActiveSession: activeSessionId !== undefined,
-        activeSessionId,
+        hasActiveSession: activeRef !== undefined,
+        activeSessionId: activeRef?.sessionId,
       };
       return entry;
     })

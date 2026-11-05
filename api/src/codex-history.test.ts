@@ -136,13 +136,19 @@ test("损坏文件（坏 JSON / 无 meta / 空文件）跳过不拖垮", async (
   expect(entries.map((e) => e.codexThreadId)).toEqual([THREAD_A]);
 });
 
-test("判活：activeMap 命中 → hasActiveSession + activeSessionId", async () => {
+test("判活：activeMap 命中 → hasActiveSession + activeSessionId + lastActivityAt 覆盖", async () => {
   await writeRollout("2026/10/29", `rollout-a-${THREAD_A}.jsonl`, [meta(THREAD_A, PROJECT)]);
   await writeRollout("2026/10/29", `rollout-b-${THREAD_B}.jsonl`, [meta(THREAD_B, PROJECT)]);
-  const entries = await listCodexHistory(PROJECT, new Map([[THREAD_A, "sess-active-1"]]));
+  const entries = await listCodexHistory(
+    PROJECT,
+    new Map([[THREAD_A, { sessionId: "sess-active-1", updatedAt: "2026-10-30T09:00:00Z" }]]),
+  );
   const byId = new Map(entries.map((e) => [e.codexThreadId, e]));
   expect(byId.get(THREAD_A)?.hasActiveSession).toBe(true);
   expect(byId.get(THREAD_A)?.activeSessionId).toBe("sess-active-1");
+  // 活跃条目时间 = 实例实时活动时间（registry updatedAt），非 file mtime（resume fork
+  // 语义下原 JSONL mtime 停更，2026-11-05 用户真机反馈根因）。
+  expect(byId.get(THREAD_A)?.lastActivityAt).toBe("2026-10-30T09:00:00Z");
   expect(byId.get(THREAD_B)?.hasActiveSession).toBe(false);
 });
 

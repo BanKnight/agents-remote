@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { link, readdir, rename, rm, stat, unlink } from "node:fs/promises";
 import { open, read, close } from "node:fs";
 import type { AgentHistoryEntry, AgentHistoryRange } from "@agents-remote/shared";
+import type { ActiveAgentSessionRefMap } from "./session-registry";
 import { ompSessionSlug } from "./omp-history";
 
 /**
@@ -129,7 +130,7 @@ const EXTRACT_CONCURRENCY = 32;
  */
 export async function listAgentHistory(
   projectPath: string,
-  activeClaudeSessionMap: Map<string, string>,
+  activeClaudeSessionMap: ActiveAgentSessionRefMap,
   range: AgentHistoryRange = "week",
 ): Promise<AgentHistoryEntry[]> {
   const slug = projectToSlug(projectPath);
@@ -178,22 +179,25 @@ export async function listAgentHistory(
     extractEntryCached(slug, c.path, c.id, c.mtimeMs, c.size),
   );
 
-  // 组装 entry（activeSessionId 用当前 activeMap，不进缓存）+ 排序。
+  // 组装 entry（activeSessionId 用当前 activeMap，不进缓存）+ 排序。活跃条目的
+  // lastActivityAt 用实例实时活动时间（registry updatedAt）覆盖 file mtime——resume fork
+  // 语义下 CLI 写新 JSONL、原文件 mtime 停更，mtime 不再代表活跃会话的真实活动时间
+  // （2026-11-05 用户真机反馈「最近组时间明显不对」根因）。
   const entries = partials
     .filter((p): p is HistoryPartial => p !== null)
     .map((p) => {
       // claude 条目的 claudeSessionId 由文件名派生、恒有值（shared 类型因 omp 条目改 optional）。
-      const activeSessionId = activeClaudeSessionMap.get(p.claudeSessionId ?? "");
+      const activeRef = activeClaudeSessionMap.get(p.claudeSessionId ?? "");
       return {
         provider: "claude" as const,
         claudeSessionId: p.claudeSessionId,
         title: p.title,
         firstMessage: p.firstMessage,
         startedAt: p.startedAt,
-        lastActivityAt: p.lastActivityAt,
+        lastActivityAt: activeRef?.updatedAt ?? p.lastActivityAt,
         fileSize: p.fileSize,
-        hasActiveSession: activeSessionId !== undefined,
-        activeSessionId,
+        hasActiveSession: activeRef !== undefined,
+        activeSessionId: activeRef?.sessionId,
       };
     })
     .sort((a, b) => {

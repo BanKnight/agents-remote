@@ -156,10 +156,15 @@ test("marks active sessions from the map", async () => {
     ].join("\n"),
   );
 
-  const activeMap = new Map([["ddd-444", "agent_abc123"]]);
+  const activeMap = new Map([
+    ["ddd-444", { sessionId: "agent_abc123", updatedAt: "2026-06-03T12:00:00Z" }],
+  ]);
   const entries = await listAgentHistory(TEST_PROJECT, activeMap, "all");
   expect(entries[0]!.hasActiveSession).toBe(true);
   expect(entries[0]!.activeSessionId).toBe("agent_abc123");
+  // 活跃条目时间 = 实例实时活动时间（registry updatedAt），非 file mtime（resume fork
+  // 语义下原 JSONL mtime 停更，2026-11-05 用户真机反馈根因）。
+  expect(entries[0]!.lastActivityAt).toBe("2026-06-03T12:00:00Z");
 
   await rm(realDir, { recursive: true, force: true });
 });

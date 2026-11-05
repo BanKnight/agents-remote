@@ -119,12 +119,18 @@ test("listOmpHistory：session header id 缺失 → 文件名末段兜底；bloc
   expect(entries[0].firstMessage).toBe("line one\nline two");
 });
 
-test("listOmpHistory：activeAcpSessionMap 匹配 → hasActiveSession + activeSessionId", async () => {
+test("listOmpHistory：activeAcpSessionMap 匹配 → hasActiveSession + activeSessionId + lastActivityAt 覆盖", async () => {
   await writeSession("20260916T03_ghi-3.jsonl", { sessionId: "ghi-3" });
-  const entries = await listOmpHistory(TEST_PROJECT, new Map([["ghi-3", "agent_1"]]), "all");
+  const entries = await listOmpHistory(
+    TEST_PROJECT,
+    new Map([["ghi-3", { sessionId: "agent_1", updatedAt: "2026-09-17T09:00:00Z" }]]),
+    "all",
+  );
   expect(entries).toHaveLength(1);
   expect(entries[0].hasActiveSession).toBe(true);
   expect(entries[0].activeSessionId).toBe("agent_1");
+  // 活跃条目时间 = 实例实时活动时间（registry updatedAt），非 file mtime。
+  expect(entries[0].lastActivityAt).toBe("2026-09-17T09:00:00Z");
 });
 
 test("listOmpHistory：range 过滤（week 窗口外的旧 mtime 滤除）", async () => {

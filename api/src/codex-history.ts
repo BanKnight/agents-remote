@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { AgentHistoryEntry } from "@agents-remote/shared";
+import type { ActiveAgentSessionRefMap } from "./session-registry";
 
 // ── codex 会话历史扫描（rollout JSONL）────────────────────────────────────────
 //
@@ -177,12 +178,13 @@ const cwdBelongsToProject = (cwd: string, projectPath: string): boolean => {
 
 /**
  * 列出项目历史 codex session（与 listAgentHistory / listOmpHistory 同返回形状，供
- * session-routes 合流）。activeCodexThreadMap：threadId → 活跃 agent session id
- * （getActiveCodexThreadMap），用于 hasActiveSession/activeSessionId。
+ * session-routes 合流）。activeCodexThreadMap：threadId → 活跃 agent session ref
+ * （getActiveCodexThreadMap），用于 hasActiveSession / activeSessionId / lastActivityAt
+ * 覆盖（活跃条目时间 = 实例实时活动时间，非 file mtime）。
  */
 export async function listCodexHistory(
   projectPath: string,
-  activeCodexThreadMap: Map<string, string>,
+  activeCodexThreadMap: ActiveAgentSessionRefMap,
 ): Promise<AgentHistoryEntry[]> {
   const root = codexSessionsRoot();
   const files: string[] = [];
@@ -210,17 +212,17 @@ export async function listCodexHistory(
       if (!p) return null;
       if (!cwdBelongsToProject(p.cwd, projectPath)) return null;
       const c = candidates[i];
-      const activeSessionId = activeCodexThreadMap.get(p.codexThreadId);
+      const activeRef = activeCodexThreadMap.get(p.codexThreadId);
       const entry: AgentHistoryEntry = {
         provider: "codex",
         codexThreadId: p.codexThreadId,
         title: null, // codex rollout 无标题通道；UI displayTitleOf 回落 firstMessage
         firstMessage: p.firstMessage,
         startedAt: p.startedAt,
-        lastActivityAt: new Date(c.mtimeMs).toISOString(),
+        lastActivityAt: activeRef?.updatedAt ?? new Date(c.mtimeMs).toISOString(),
         fileSize: c.size,
-        hasActiveSession: activeSessionId !== undefined,
-        activeSessionId,
+        hasActiveSession: activeRef !== undefined,
+        activeSessionId: activeRef?.sessionId,
       };
       return entry;
     })
