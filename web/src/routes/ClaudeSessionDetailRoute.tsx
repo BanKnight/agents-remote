@@ -1223,7 +1223,7 @@ function extractRetryInfo(
 }
 
 /**
- * 诊断横幅已迁全局通用通道（components/shell/diag-banner.tsx）：设置 → 通用 →
+ * 诊断入口已迁全局通用通道（components/shell/diag-fab.tsx）：设置 → 通用 →
  * 诊断日志开关控制，挂 App shell 不限会话页。
  */
 

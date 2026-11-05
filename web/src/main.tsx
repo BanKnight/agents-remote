@@ -3,7 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { getDefaultStore, Provider as JotaiProvider } from "jotai";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { DiagBanner } from "./components/shell/diag-banner";
+import { DiagFab } from "./components/shell/diag-fab";
 import { I18nProvider } from "./i18n";
 import { queryClient } from "./lib/query-client";
 import { useKeyboardInsetGlobal } from "./lib/use-keyboard-inset";
@@ -49,7 +49,7 @@ createRoot(root).render(
           <ThemeSync />
           <KeyboardInsetSync />
           <PushReconcileSync />
-          <DiagBanner />
+          <DiagFab />
           <RouterProvider router={router} />
         </JotaiProvider>
       </QueryClientProvider>

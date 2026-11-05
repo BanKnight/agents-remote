@@ -111,6 +111,8 @@ const ICONS = [
   "grip-vertical", // 键位编辑面板行拖拽手柄（LucideIcon 直消费）
   // ── M2.2 画布卡（gen-ui-canvas）：canvas-doc 四工具的 ToolHead/全屏头图标 ──
   "shapes", // ShellIcon canvas（画布卡，几何形状组）
+  // ── 通用诊断基建（2026-11-05）：悬浮球入口 ──
+  "bug", // DiagFab 诊断悬浮球（可拖拽调试入口，点开诊断日志 sheet/dialog）
 ];
 
 const entries = [];

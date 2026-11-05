@@ -1,5 +1,5 @@
 // 通用客户端诊断日志（项目级基建）：任何功能经 recordDiag(scope, text) 把关键
-// 诊断行写入环形缓冲，全局「诊断横幅」（<DiagBanner />，挂 App shell）随时查看/
+// 诊断行写入环形缓冲，全局「诊断悬浮球」（<DiagFab />，挂 App shell）随时查看/
 // 复制/上传到服务端。背景：手机 PWA 无 console——诊断信息必须屏内可达（§22 教训：
 // flag/console 通道在 standalone 下不可靠）。
 // 三件套：
