@@ -53,6 +53,8 @@ export const zh: Record<TranslationKey, string> = {
   "home.nRunning": "{{active}}/{{total}} 进行中",
   "home.seeAllActivity": "查看全部活动",
   "home.collapseActivity": "收起活动",
+  "home.seeAllProjects": "查看全部项目",
+  "home.collapseProjects": "收起项目",
   "home.projectsTitle": "项目 · {{count}}",
   "home.instanceRecent": "{{count}} 实例 · 最近：{{name}}（{{time}}）",
   "home.idle": "空闲",

@@ -28,6 +28,8 @@ import { usePinnedSessions } from "../../hooks/pinned-sessions";
 import { useApprovals } from "../../hooks/use-approvals";
 import { MobileApprovalSheet } from "./mobile-sheets";
 import {
+  projectsHomeActivityExpandedAtom,
+  projectsHomeProjectsExpandedAtom,
   rankGlobalInstances,
   workbenchMobileFocusTabAtom,
   type GlobalInstanceCandidate,
@@ -35,6 +37,8 @@ import {
 
 /** 全局活动卡默认展示的活动行数（see-all 展开余量）。 */
 const ACTIVITY_PREVIEW_COUNT = 3;
+/** 项目列表默认展示的项目行数（see-all 形制与活动列表同款；两列表语义独立不共用常量）。 */
+const PROJECT_PREVIEW_COUNT = 3;
 
 type ActivityRow = {
   candidate: GlobalInstanceCandidate;
@@ -65,7 +69,9 @@ export function MobileProjectsHome() {
   });
   const { pinned } = usePinnedSessions();
   const [query, setQuery] = useState("");
-  const [showAllActivity, setShowAllActivity] = useState(false);
+  // see-all 展开态持久化（用户拍板 2026-11-05：会话/项目两列表都要收起 + 都要记忆）。
+  const [showAllActivity, setShowAllActivity] = useAtom(projectsHomeActivityExpandedAtom);
+  const [showAllProjects, setShowAllProjects] = useAtom(projectsHomeProjectsExpandedAtom);
   // M5-b 审批中心：ap-row 入口（原型 02 .ap-row，pending=0 隐藏）+ 11 sheet。?approvals=1
   //（tray 标题入口②）→ 挂载即开；关闭时清参避免返回键死循环。
   const { approvals } = useApprovals(true);
@@ -156,6 +162,9 @@ export function MobileProjectsHome() {
   const visibleActivity = showAllActivity
     ? activityRows
     : activityRows.slice(0, ACTIVITY_PREVIEW_COUNT);
+  const visibleProjects = showAllProjects
+    ? projectRows
+    : projectRows.slice(0, PROJECT_PREVIEW_COUNT);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -363,7 +372,7 @@ export function MobileProjectsHome() {
               </p>
             ) : null}
             <div className="mx-4 rounded-xl border border-sep bg-elevated px-3 py-0.5">
-              {projectRows.map((row, index) => (
+              {visibleProjects.map((row, index) => (
                 <div key={row.name}>
                   {index > 0 ? <div className="border-t border-sep-row" /> : null}
                   <button
@@ -436,6 +445,15 @@ export function MobileProjectsHome() {
                   />
                 </div>
               ))}
+              {projectRows.length > PROJECT_PREVIEW_COUNT ? (
+                <button
+                  className="w-full cursor-pointer py-2.5 text-center text-footnote text-primary"
+                  onClick={() => setShowAllProjects((prev) => !prev)}
+                  type="button"
+                >
+                  {showAllProjects ? t("home.collapseProjects") : `${t("home.seeAllProjects")} ›`}
+                </button>
+              ) : null}
             </div>
           </>
         ) : null}

@@ -51,6 +51,8 @@ export const en = {
   "home.nRunning": "{{active}}/{{total}} running",
   "home.seeAllActivity": "See all activity",
   "home.collapseActivity": "Collapse activity",
+  "home.seeAllProjects": "See all projects",
+  "home.collapseProjects": "Collapse projects",
   "home.projectsTitle": "Projects · {{count}}",
   "home.instanceRecent": "{{count}} instances · recent: {{name}} ({{time}})",
   "home.idle": "Idle",

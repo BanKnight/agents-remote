@@ -124,6 +124,24 @@ export const workbenchRightCollapsedAtom = atomWithLocalOnlyStorage(
 );
 
 /**
+ * [项目] Tab 活动列表（全局活动卡）「查看全部」展开态。localStorage 持久化（用户拍板
+ * 2026-11-05：收起要有记忆——刷新后保持，不再回预览 3 行）。
+ */
+export const projectsHomeActivityExpandedAtom = atomWithLocalOnlyStorage(
+  "projectsHome.activityExpanded",
+  false,
+);
+
+/**
+ * [项目] Tab 项目列表「查看全部」展开态（同款 see-all/收起形制 + 记忆；预览行数与
+ * 活动列表各自独立常量，语义不同不共用）。
+ */
+export const projectsHomeProjectsExpandedAtom = atomWithLocalOnlyStorage(
+  "projectsHome.projectsExpanded",
+  false,
+);
+
+/**
  * 终端 composer 快捷键条隐藏集（键位自定义 ⚙，原型 workspace-terminal-input ③ 落地）：
  * 存被隐藏的 quickKey id 列表（sessionQuickKeys 全集子集），localStorage 持久化，
  * 全局作用域（所有 TUI 形态会话共享——终端 + agent TUI 模式，2026-11-03 gate 放开同域）。
