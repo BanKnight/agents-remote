@@ -1,15 +1,15 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-05 13:20（**「最近」组行形修正** `b7f35a1`：行标题
-> 改用会话名 displayName + 去项目名 chip；探针 10 断言 ALL PASS；
-> **九批 commit 未 push**）
+> 最后更新：2026-11-05 13:50（**最近组时间根修** `3ba2b4d`：历史活跃条目
+> lastActivityAt 改用实例实时活动时间覆盖 file mtime；api 测试 1279 全绿；
+> **十批 commit 未 push；api 重启待用户确认**）
 
 ## 一句话状态
 
-批次二「最近」组对齐桌面同款交付（`722369f`）后又按用户真机反馈修正
-行形（`b7f35a1`）：行标题 = 会话名 displayName（活跃条目从全局候选按
-sessionId 匹配，回退历史 title）、去项目名 chip。探针 10/10、门禁全过，
-等用户真机验收后 push（共九批）。
+用户报「最近组时间明显不对」→ 三源对比定位根修（`3ba2b4d`）：resume
+fork 语义下原 JSONL mtime 停更（CLI 写新 fork 文件），活跃条目时间改用
+registry updatedAt（三 provider 统一）。代码已 commit，**生效需重启
+ar-dev api——会杀「优化 remote」正在跑的 CLI turn，等用户确认**。
 
 ## 本 session 焦点
 
@@ -48,14 +48,27 @@ sessionId 匹配，回退历史 title）、去项目名 chip。探针 10/10、�
 
 - ✅ 批次一 `106da79`：[项目] Tab 双列表收起+记忆（探针 15 断言）
 - ✅ 批次二 v2 `722369f` + 行形修正 `b7f35a1`：「最近」组对齐桌面（探针
-  10 断言 + 门禁全过 + CSS 硬闸 + tokens 0 违例）；v1 `782750a` 的稳定
-  排序部分仍有效保留
+  10 断言）；v1 `782750a` 的稳定排序部分仍有效保留
+- ✅ 最近组时间根修 `3ba2b4d`：三 provider 活跃条目 lastActivityAt =
+  registry updatedAt（api 测试 1279 全绿 + 全门禁）
 - ✅ handoff 快照归档（20261105-1257.md）
-- ❌ **九批 commit 未 push**（`32e5703`…`b7f35a1`，等用户真机验收后确认）
+- ⏳ **api 重启待用户确认**（会杀「优化 remote」working turn）
+- ❌ **十批 commit 未 push**（`32e5703`…`3ba2b4d`，等用户真机验收后确认）
 
 ### 阻塞 / 风险
 
-- 无阻塞。
+- api 不重启则 `3ba2b4d` 不生效（dev api 跑旧代码）。
+
+### 关键发现（本轮根因链，勿丢）
+
+- **resume fork 语义实证**：CLI `--resume <id>` 写**新 UUID JSONL**（fork），
+  registry capture 的 claudeSessionId 仍指原文件 → 原文件 mtime 停更。
+  连带症状：fork 新文件在历史列表以「已结束」条目出现（activeMap 无它）
+  且 mtime 恒最新（第一条 ended、title 空、mtime=今天 07:15 即 fork 副本）。
+- agent-history lastActivityAt = file mtime（shared 注释明示）；omp/codex
+  组装时实时算 mtime（无缓存旧值问题）；claude 路径缓存键含 mtime 自洽。
+- 诊断法（可复用）：GET /api/agent-history vs /api/overview 同会话时间
+  对比 + stat JSONL 真值——三层一比即定位漂移层。
 
 ## 下一步
 
