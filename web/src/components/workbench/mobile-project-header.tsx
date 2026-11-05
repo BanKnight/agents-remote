@@ -1,21 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import type { AgentHistoryEntry, AgentProvider } from "@agents-remote/shared";
+import type { AgentProvider } from "@agents-remote/shared";
 import { useT } from "../../i18n";
 import type { GlobalInstanceCandidate } from "../../routes/workbench-model";
 import { LucideIcon } from "../shell/lucide-icon";
 import { ShellIcon } from "../shell/icons";
 import { ProviderIcon } from "../shell/icons/provider-icon";
-import { usePromptDialog } from "../shell/prompt-dialog";
 import { statusToV2DotClass, InstanceRowTrail } from "../shell/shell-primitives";
-import {
-  buildResumeInput,
-  displayTitleOf,
-  entryProvider,
-  relativeTime,
-  rowKey,
-  useResumeAgentSession,
-} from "./history-list";
+import { relativeTime } from "./history-list";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,7 +15,6 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { type ProjectInstanceEntry } from "./instance-area";
-import { useHistoryQuery } from "./use-history-query";
 
 type MobileProjectHeaderProps = {
   projectName: string;
@@ -160,7 +151,7 @@ export function MobileProjectHeader({
   );
 }
 
-/** ▾ 菜单「最近」组条数（与移动历史浮层同值同语义——同一套 recent 组口径）。 */
+/** ▾ 菜单「最近」组条数上限（会话列表同源取最近 N 条活跃会话）。 */
 const RECENT_GROUP_SIZE = 7;
 
 /** ▾ 菜单组行（groups 投影统一形状）。 */
@@ -202,17 +193,16 @@ type InstanceSwitchMenuProps = {
  * · 当前项目」（与列表间分隔线，永不挤压）；空态（无活跃实例且无历史）= 列表区空提示 +
  * 仅新建（spec §4.1-1）。活跃实例切换零销毁（保活层语义，铁律 2）。
  *
- * 分组（v1.6 图例② + 2026-11-05 拍板）：「最近」组置顶 = **useHistoryQuery 全局作用域
- * recent 组**（agent-history 单源管道、服务端 lastActivityAt 倒序取前 RECENT_GROUP_SIZE
- * 条、含已结束会话——排序与展示内容和桌面 05c / iPad 04g / 移动历史浮层**同一套**，用户
- * 拍板「理应是同一套」；行点击 = 活跃聚焦 / 已结束 resume 命名框，桌面 activateEntry
- * 同款分流）→ 当前项目组（组头 = 项目名）→ 其余项目组按项目名 localeCompare（原「组内
- * 最新 updatedAt 降序」= 时间相关，会话一有更新组就跳位——排序稳定化；与服务端
- * listAllCandidates 项目序同口径）。「最近」组与所属项目组重复展示（不去重），行标题 =
- * **会话名优先**（活跃条目从全局候选按 sessionId 匹配 displayName——与项目组行同名呈现；
- * 取不到或已结束回退历史 title），行内不带项目名 chip（用户拍板 2026-11-05：项目归属
- * 不上行，同桌面历史浮层行形）。组内行间无线，组间分隔线落在第 2+ 组组头上方。
- * 跨项目行走 onSelectInstance(projectName, sessionId) 导航。
+ * 分组（v1.6 图例② + 2026-11-05 拍板）：「最近」组置顶 = **会话列表的最近视图**——唯一
+ * 数据源 = foreignCandidates 全集（/api/overview 单源管道，与项目组/foreign 组同源），
+ * updatedAt ?? createdAt 降序取前 RECENT_GROUP_SIZE 条活跃会话；**不含任何历史文件管道
+ * 条目**（agent-history 方向废弃：文件 mtime 驱动天然混入已结束历史与 resume fork 副本
+ * 幽灵行——「总共 5 个会话就 5 条」，用户拍板）。行点击 = 聚焦既有实例（无 resume 分流）
+ * → 当前项目组（组头 = 项目名）→ 其余项目组按项目名 localeCompare（原「组内最新
+ * updatedAt 降序」= 时间相关，会话一有更新组就跳位——排序稳定化；与服务端
+ * listAllCandidates 项目序同口径）。「最近」组与所属项目组重复展示（不去重），行内不带
+ * 项目名 chip（用户拍板 2026-11-05：项目归属不上行）。组内行间无线，组间分隔线落在
+ * 第 2+ 组组头上方。跨项目行走 onSelectInstance(projectName, sessionId) 导航。
  */
 function InstanceSwitchMenu({
   projectName,
@@ -246,72 +236,30 @@ function InstanceSwitchMenu({
     }
     return [...byProject.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [foreignCandidates, projectName]);
-  // 「最近」组数据源（用户拍板 2026-11-05：与桌面同一套）= useHistoryQuery 全局作用域
-  // recent 组——agent-history 单源管道（含已结束会话），排序 = 服务端 lastActivityAt 倒序
-  // 取前 N，与桌面 05c / iPad 04g / 移动历史浮层完全同构（此前从 overview 活跃实例取
-  // updatedAt 的做法废弃：数据源、排序字段、内容三面都不同）。菜单开才拉（enabled）。
-  const [menuOpen, setMenuOpen] = useState(false);
-  const { groups: historyGroups } = useHistoryQuery({
-    projectName: null,
-    enabled: menuOpen,
-    recentCount: RECENT_GROUP_SIZE,
-  });
-  const { resume } = useResumeAgentSession(projectName);
-  // 已结束历史行点击 = resume（命名框预填标题，同历史浮层 openClosedEntry）。holder 渲染
-  // 在 menu Content 外（Fragment 兄弟位，见 return）——menu 关闭卸载 Content 不连带卸载
-  // prompt（mobile-sheets 同因同解）。
-  const renameDialog = usePromptDialog();
-  const openHistoryEntry = (entry: AgentHistoryEntry) => {
-    void renameDialog
-      .prompt({
-        title: t("session.namePrompt.resumeTitle"),
-        placeholder: t("session.namePrompt.placeholder"),
-        initialValue: displayTitleOf(entry),
-        confirmLabel: t("session.namePrompt.confirm"),
-        cancelLabel: t("cancel"),
-        tone: "default",
-      })
-      .then((displayName) => {
-        if (displayName === null) return;
-        resume({
-          ...buildResumeInput(entry, projectName),
-          displayName: displayName.trim() || undefined,
-        });
-      });
-  };
-  // 「最近」组行投影：历史条目 → 统一行形。活跃（hasActiveSession）= working 状态点 +
-  // 聚焦既有实例；已结束 = 灰点 + resume 命名框（桌面 activateEntry 同款分流）。时间 =
-  // lastActivityAt ?? startedAt（InstanceSwitchRow 内 relativeTime 消费）。行标题 = 会话名
-  // 优先（用户拍板 2026-11-05）：活跃条目从全局候选按 sessionId 匹配 displayName（与项目
-  // 组行同名呈现），取不到回退历史 title；已结束条目无实例映射，用历史 title。
-  const recentGroup = historyGroups.find((group) => group.key === "recent");
-  const recentRows: SwitchMenuRow[] = (recentGroup?.entries ?? []).map((entry) => {
-    const entryProject = entry.projectName ?? projectName;
-    const activeId = entry.hasActiveSession ? entry.activeSessionId : undefined;
-    const candidate =
-      activeId !== undefined
-        ? foreignCandidates.find(
-            (c) => c.ref.projectName === entryProject && c.ref.sessionId === activeId,
-          )
-        : undefined;
-    return {
-      key: `recent:${rowKey(entry)}`,
-      current: activeId !== undefined && activeId === focusId,
-      name: candidate?.displayName ?? displayTitleOf(entry),
-      status: activeId !== undefined ? "working" : "closed",
-      type: "agent",
-      provider: entryProvider(entry),
-      updatedAt: entry.lastActivityAt ?? undefined,
-      createdAt: entry.startedAt ?? undefined,
-      onSelect: () => {
-        if (activeId !== undefined) {
-          onSelectInstance(entryProject, activeId);
-          return;
-        }
-        openHistoryEntry(entry);
-      },
-    };
-  });
+  // 「最近」组 = 会话列表的最近视图（用户拍板 2026-11-05「唯一数据源，不考虑文件」）：
+  // foreignCandidates 全集（与项目组/foreign 组同一 /api/overview 管道）按 updatedAt ??
+  // createdAt 降序取前 N 条活跃会话；不含任何 agent-history 文件管道条目（该方向已废弃：
+  // 文件 mtime 驱动天然混入已结束历史与 resume fork 副本幽灵行）。行形与项目组/foreign
+  // 组完全同构（displayName / status / 时间同源同值），与所属项目组重复展示（不去重）。
+  // 候选 ≤9 条排序开销可忽略，直接每次渲染投影。
+  const recentRows: SwitchMenuRow[] = [...foreignCandidates]
+    .sort(
+      (a, b) =>
+        new Date(b.updatedAt ?? b.createdAt ?? 0).getTime() -
+        new Date(a.updatedAt ?? a.createdAt ?? 0).getTime(),
+    )
+    .slice(0, RECENT_GROUP_SIZE)
+    .map((candidate) => ({
+      key: `recent:${candidate.ref.sessionId}`,
+      current: candidate.ref.sessionId === focusId,
+      name: candidate.displayName,
+      status: candidate.status,
+      type: candidate.type,
+      provider: candidate.provider,
+      updatedAt: candidate.updatedAt,
+      createdAt: candidate.createdAt,
+      onSelect: () => onSelectInstance(candidate.ref.projectName, candidate.ref.sessionId),
+    }));
   const empty = instances.length === 0 && foreignGroups.length === 0 && recentRows.length === 0;
   // 菜单打开时把当前行（背景高亮）滚入视野：实例多溢出定高时队尾当前行会视野外——autoFocus
   // 常落队尾，不滚则用户看不到自己所在实例。Content 是 portal 子树且仅开态挂载（§14）：
@@ -371,120 +319,110 @@ function InstanceSwitchMenu({
     [focusId, foreignGroups, instances, onSelectInstance, projectName, recentRows, t],
   );
   return (
-    <>
-      <DropdownMenu onOpenChange={setMenuOpen} open={menuOpen}>
-        <DropdownMenuTrigger asChild>
-          <button
-            aria-label={`${title} · ${t("workbench.switchInstance")}`}
-            className="group flex h-full w-full cursor-pointer items-center justify-center gap-1.5"
-            type="button"
-          >
-            {/* 行1 类型标（v1.6 workspace.html h1 .tticn：行首品牌件/sparkles = Agent 会话类型标
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          aria-label={`${title} · ${t("workbench.switchInstance")}`}
+          className="group flex h-full w-full cursor-pointer items-center justify-center gap-1.5"
+          type="button"
+        >
+          {/* 行1 类型标（v1.6 workspace.html h1 .tticn：行首品牌件/sparkles = Agent 会话类型标
             （2026-11-02 品牌件批：provider 有 → ProviderIcon，缺省退 sparkles），
             区别于项目 folder；terminal = terminal；空态/插件 tab = folder。skill tab 聚焦
             标题 = skill 名，folder「项目」语义错位 → 整体不渲染（DR-P2-6）） */}
-            {focusKind === "skill" ? null : focusType === "agent" ? (
-              focusProvider ? (
-                <ProviderIcon className="tticn" provider={focusProvider} />
-              ) : (
-                <ShellIcon className="tticn" name="sparkles" />
-              )
+          {focusKind === "skill" ? null : focusType === "agent" ? (
+            focusProvider ? (
+              <ProviderIcon className="tticn" provider={focusProvider} />
             ) : (
-              <ShellIcon
-                className="tticn"
-                name={focusType === "terminal" ? "terminal" : "project"}
-              />
-            )}
-            <span className="block truncate">{title}</span>
-            {/* 聚焦会话 → 会话状态点（.dot 原语 7×7，单源 statusToV2DotClass）；非会话聚焦
+              <ShellIcon className="tticn" name="sparkles" />
+            )
+          ) : (
+            <ShellIcon className="tticn" name={focusType === "terminal" ? "terminal" : "project"} />
+          )}
+          <span className="block truncate">{title}</span>
+          {/* 聚焦会话 → 会话状态点（.dot 原语 7×7，单源 statusToV2DotClass）；非会话聚焦
             → runct ●（项目有运行中实例，9px 绿，原型 .runct 去数字化——数字统计只属于
             项目页，2026-10-15 用户拍板） */}
-            {focusedStatus ? (
-              <span className={statusToV2DotClass(focusedStatus)} />
-            ) : runningCount ? (
-              <span className="runct">●</span>
-            ) : null}
-            {/* 实例切换菜单锚（批 12 反馈⑤：CSS 手绘 .sw 旋转盒退役 → Lucide 管线单轨；
+          {focusedStatus ? (
+            <span className={statusToV2DotClass(focusedStatus)} />
+          ) : runningCount ? (
+            <span className="runct">●</span>
+          ) : null}
+          {/* 实例切换菜单锚（批 12 反馈⑤：CSS 手绘 .sw 旋转盒退役 → Lucide 管线单轨；
             显式尺寸防 WebKit flex 收缩隐形，frontend-notes §15⑤。开态主色用 currentColor。 */}
-            <LucideIcon
-              className="size-3.5 shrink-0 text-ink-2 transition-colors group-data-[state=open]:text-primary"
-              name="chevron-down"
-            />
-          </button>
-        </DropdownMenuTrigger>
-        {/* 分区容器菜单（标题 / 滚动列表 / 钉底动作三分区），非行式菜单——不挂 .menu-sep
+          <LucideIcon
+            className="size-3.5 shrink-0 text-ink-2 transition-colors group-data-[state=open]:text-primary"
+            name="chevron-down"
+          />
+        </button>
+      </DropdownMenuTrigger>
+      {/* 分区容器菜单（标题 / 滚动列表 / 钉底动作三分区），非行式菜单——不挂 .menu-sep
         （行式菜单显式语义，v2-primitives）；组内行间无线（v1.6），组间线在组头上方。 */}
-        {/* 关闭不回焦 trigger（2026-10-14 真机反馈「关掉后标题行多出蓝色选中框」）：Radix
+      {/* 关闭不回焦 trigger（2026-10-14 真机反馈「关掉后标题行多出蓝色选中框」）：Radix
         关闭默认程序化 focus 回 trigger（键盘 a11y 默认），WebKit 对 tap 后的脚本 focus
         仍判 :focus-visible → 浏览器默认蓝环包住整行裸 button（h-full w-full，无 outline
         处理）；点空白焦点移走即消失 = 机制吻合。preventDefault 结构性免疫引擎分歧
         （frontend-notes §33）；取舍 = 键盘焦点落 body，本组件仅移动 header 点按场景消费，
         可接受（桌面 DropdownMenu 不拦，键盘焦点返还语义保留）。 */}
-        <DropdownMenuContent
-          align="center"
-          className="w-[250px] p-0"
-          onCloseAutoFocus={(e) => e.preventDefault()}
-        >
-          <div className="px-3.5 pb-1.5 pt-2.5 text-[10.5px] font-bold tracking-[0.5px] text-ink-2">
-            {t("workbench.switchInstance")}
-          </div>
-          <div ref={setListNode} className="max-h-[200px] overflow-y-auto">
-            {empty ? (
-              <div className="px-3.5 py-3 text-[13px] text-ink-3">{projectName}</div>
-            ) : (
-              groups.map((group, groupIndex) => (
-                <div key={group.name}>
-                  <div
-                    className={`px-3.5 pt-2 pb-[3px] text-[10px] font-bold tracking-[0.5px] text-ink-3${groupIndex > 0 ? " border-t border-sep" : ""}`}
-                  >
-                    {group.name}
-                  </div>
-                  {group.rows.map((row) => (
-                    <InstanceSwitchRow
-                      createdAt={row.createdAt}
-                      current={row.current}
-                      key={row.key}
-                      name={row.name}
-                      onSelect={row.onSelect}
-                      provider={row.provider}
-                      status={row.status}
-                      type={row.type}
-                      updatedAt={row.updatedAt}
-                    />
-                  ))}
+      <DropdownMenuContent
+        align="center"
+        className="w-[250px] p-0"
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
+        <div className="px-3.5 pb-1.5 pt-2.5 text-[10.5px] font-bold tracking-[0.5px] text-ink-2">
+          {t("workbench.switchInstance")}
+        </div>
+        <div ref={setListNode} className="max-h-[200px] overflow-y-auto">
+          {empty ? (
+            <div className="px-3.5 py-3 text-[13px] text-ink-3">{projectName}</div>
+          ) : (
+            groups.map((group, groupIndex) => (
+              <div key={group.name}>
+                <div
+                  className={`px-3.5 pt-2 pb-[3px] text-[10px] font-bold tracking-[0.5px] text-ink-3${groupIndex > 0 ? " border-t border-sep" : ""}`}
+                >
+                  {group.name}
                 </div>
-              ))
-            )}
-          </div>
-          {/* 钉底两行动作（主色 600，与列表间分隔线，永不挤压；空态仅新建。⟲ 恢复历史是本项目
+                {group.rows.map((row) => (
+                  <InstanceSwitchRow
+                    createdAt={row.createdAt}
+                    current={row.current}
+                    key={row.key}
+                    name={row.name}
+                    onSelect={row.onSelect}
+                    provider={row.provider}
+                    status={row.status}
+                    type={row.type}
+                    updatedAt={row.updatedAt}
+                  />
+                ))}
+              </div>
+            ))
+          )}
+        </div>
+        {/* 钉底两行动作（主色 600，与列表间分隔线，永不挤压；空态仅新建。⟲ 恢复历史是本项目
           动作——本项目无活跃实例时不渲染，保持「空态菜单仅新建」spec §4.1-1 语义。后缀
           「· 当前项目」= v1.6 原型 iact 逐字，标动作作用域） */}
-          <div className="border-t border-sep-row pb-1">
+        <div className="border-t border-sep-row pb-1">
+          <DropdownMenuItem
+            className="h-[42px] min-h-[42px] justify-start gap-[9px] rounded-none px-3.5 text-[13.5px] font-semibold text-primary focus:bg-on-surface/5"
+            onSelect={onCreateInstance}
+          >
+            <span className="w-4 shrink-0 text-center text-[15px] font-bold leading-none">＋</span>
+            {t("workbench.menuNewInstance")}
+          </DropdownMenuItem>
+          {instances.length === 0 ? null : (
             <DropdownMenuItem
               className="h-[42px] min-h-[42px] justify-start gap-[9px] rounded-none px-3.5 text-[13.5px] font-semibold text-primary focus:bg-on-surface/5"
-              onSelect={onCreateInstance}
+              onSelect={onOpenHistory}
             >
-              <span className="w-4 shrink-0 text-center text-[15px] font-bold leading-none">
-                ＋
-              </span>
-              {t("workbench.menuNewInstance")}
+              <span className="w-4 shrink-0 text-center text-[15px] font-bold leading-none">⟲</span>
+              {t("workbench.resumeHistory")}
             </DropdownMenuItem>
-            {instances.length === 0 ? null : (
-              <DropdownMenuItem
-                className="h-[42px] min-h-[42px] justify-start gap-[9px] rounded-none px-3.5 text-[13.5px] font-semibold text-primary focus:bg-on-surface/5"
-                onSelect={onOpenHistory}
-              >
-                <span className="w-4 shrink-0 text-center text-[15px] font-bold leading-none">
-                  ⟲
-                </span>
-                {t("workbench.resumeHistory")}
-              </DropdownMenuItem>
-            )}
-          </div>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      {renameDialog.holder}
-    </>
+          )}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
