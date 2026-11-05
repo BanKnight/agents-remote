@@ -256,6 +256,8 @@
 
 **标准做法**：**capture 前的 pending 手势，指针离开元素边界即放弃**（`onPointerLeave` 判 `phase === "pending"` 清回 idle）；dragging 期有 capture（leave 被抑制）不受影响。通用式：**手势状态机的每个非终态都必须有失活路径**——down 与 up/cancel 组不成对时（指针移出元素是最常见的失联），状态必须能自愈。
 
+**pending 丢失窗口的结构性消除（2026-11-05 DiagFab 补全）**：小尺寸拖拽目标（44px 悬浮球类）**capture 推迟到「越过阈值的 move」会造死锁**——快速拖动第一步就跨出元素边界，未捕获阶段收不到界外 pointermove → **永远到不了接管阈值**（探针实抓：慢步进每步恰好留在元素内才偶发接管，快速拖必死；`onPointerLeave` 放弃反而把慢速拖也掐死在第一步出界）。**判定**：tap 判定若走 `pointerup` 的 phase 分支（不依赖 click 合成），`pointerdown` 就该立即 `setPointerCapture`——capture 后 leave 被 API 抑制，无残留窗口；若 tap 依赖元素 click 合成（小位移热区按钮），才保留「阈值时刻 capture + leave 放弃」组合（§23 原式）。两种模式按「tap 是否依赖 click」二选一，不可混用。
+
 **来源**：commit `e1ae5a6`（起手面分档修复的伴生回归，探针 Part 1 实抓）；与 §14（绑定）、§22（取证纪律）同链。
 
 ## 24. 手势松手的速度继承：回弹用弹簧 rAF 积分，固定时长 ease-out 无速度信息必然假
