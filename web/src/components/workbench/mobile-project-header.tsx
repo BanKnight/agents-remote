@@ -163,13 +163,11 @@ export function MobileProjectHeader({
 /** ▾ 菜单「最近」组条数（与移动历史浮层同值同语义——同一套 recent 组口径）。 */
 const RECENT_GROUP_SIZE = 7;
 
-/** ▾ 菜单组行（groups 投影统一形状）：projectName 仅「最近」组行携带（全局历史条目跨
- *  项目混排且恒带归属项目，组头表达不了 → 行内 chip 标注，04g pin② 同款）。 */
+/** ▾ 菜单组行（groups 投影统一形状）。 */
 type SwitchMenuRow = {
   key: string;
   current: boolean;
   name: string;
-  projectName?: string;
   status: GlobalInstanceCandidate["status"];
   type: "agent" | "terminal";
   provider?: AgentProvider;
@@ -210,9 +208,11 @@ type InstanceSwitchMenuProps = {
  * 拍板「理应是同一套」；行点击 = 活跃聚焦 / 已结束 resume 命名框，桌面 activateEntry
  * 同款分流）→ 当前项目组（组头 = 项目名）→ 其余项目组按项目名 localeCompare（原「组内
  * 最新 updatedAt 降序」= 时间相关，会话一有更新组就跳位——排序稳定化；与服务端
- * listAllCandidates 项目序同口径）。「最近」组与所属项目组重复展示（不去重），行内带项目名
- * chip（全局历史行恒带归属项目，04g pin② 同款）。组内行间无线，组间分隔线落在第 2+ 组
- * 组头上方。跨项目行走 onSelectInstance(projectName, sessionId) 导航。
+ * listAllCandidates 项目序同口径）。「最近」组与所属项目组重复展示（不去重），行标题 =
+ * **会话名优先**（活跃条目从全局候选按 sessionId 匹配 displayName——与项目组行同名呈现；
+ * 取不到或已结束回退历史 title），行内不带项目名 chip（用户拍板 2026-11-05：项目归属
+ * 不上行，同桌面历史浮层行形）。组内行间无线，组间分隔线落在第 2+ 组组头上方。
+ * 跨项目行走 onSelectInstance(projectName, sessionId) 导航。
  */
 function InstanceSwitchMenu({
   projectName,
@@ -281,16 +281,23 @@ function InstanceSwitchMenu({
   };
   // 「最近」组行投影：历史条目 → 统一行形。活跃（hasActiveSession）= working 状态点 +
   // 聚焦既有实例；已结束 = 灰点 + resume 命名框（桌面 activateEntry 同款分流）。时间 =
-  // lastActivityAt ?? startedAt（InstanceSwitchRow 内 relativeTime 消费）。
+  // lastActivityAt ?? startedAt（InstanceSwitchRow 内 relativeTime 消费）。行标题 = 会话名
+  // 优先（用户拍板 2026-11-05）：活跃条目从全局候选按 sessionId 匹配 displayName（与项目
+  // 组行同名呈现），取不到回退历史 title；已结束条目无实例映射，用历史 title。
   const recentGroup = historyGroups.find((group) => group.key === "recent");
   const recentRows: SwitchMenuRow[] = (recentGroup?.entries ?? []).map((entry) => {
     const entryProject = entry.projectName ?? projectName;
     const activeId = entry.hasActiveSession ? entry.activeSessionId : undefined;
+    const candidate =
+      activeId !== undefined
+        ? foreignCandidates.find(
+            (c) => c.ref.projectName === entryProject && c.ref.sessionId === activeId,
+          )
+        : undefined;
     return {
       key: `recent:${rowKey(entry)}`,
       current: activeId !== undefined && activeId === focusId,
-      name: displayTitleOf(entry),
-      projectName: entryProject,
+      name: candidate?.displayName ?? displayTitleOf(entry),
       status: activeId !== undefined ? "working" : "closed",
       type: "agent",
       provider: entryProvider(entry),
@@ -438,7 +445,6 @@ function InstanceSwitchMenu({
                       current={row.current}
                       key={row.key}
                       name={row.name}
-                      projectName={row.projectName}
                       onSelect={row.onSelect}
                       provider={row.provider}
                       status={row.status}
@@ -485,8 +491,6 @@ function InstanceSwitchMenu({
 type InstanceSwitchRowProps = {
   type: "agent" | "terminal";
   name: string;
-  /** 仅「最近」组行携带：跨项目混排组头表达不了项目名 → 行内 chip 标注。 */
-  projectName?: string;
   status: GlobalInstanceCandidate["status"];
   current: boolean;
   /** agent 行品牌件分支（缺省退 sparkles 主色——无 provider 数据路径）。 */
@@ -501,14 +505,13 @@ type InstanceSwitchRowProps = {
  * ▾ 菜单实例行（v1.6 .irow）：类型图标（agent = 品牌件（provider 有）/ sparkles 主色 /
  * terminal = square-terminal 绿；2026-11-02 品牌件批）+ 名 + 行尾簇（InstanceRowTrail
  * 单源：状态点 + 时间，v1.7 §4.8——状态文字退出列表行、置顶标识退出列表行）。项目分组
- * 已上收组头，行内不再标注项目名；唯一例外 =「最近」组行（跨项目混排，projectName chip
- * 标注归属，形制同全局活动卡副行 chip）。当前行 = 背景高亮（fill-selected，与 Sidebar
- * selrow 同款；✓ 记号退役，v1.6 图例②），名字 600 不变。
+ * 已上收组头，行内不标注项目名（2026-11-05 拍板：「最近」组行同规则，项目归属不上行）。
+ * 当前行 = 背景高亮（fill-selected，与 Sidebar selrow 同款；✓ 记号退役，v1.6 图例②），
+ * 名字 600 不变。
  */
 function InstanceSwitchRow({
   type,
   name,
-  projectName,
   status,
   current,
   provider,
@@ -533,11 +536,6 @@ function InstanceSwitchRow({
         <ShellIcon className="size-[15px] shrink-0 text-success" name="terminal" />
       )}
       <span className={`min-w-0 truncate ${current ? "font-semibold" : ""}`}>{name}</span>
-      {projectName ? (
-        <span className="flex-none rounded-[9px] bg-elevated2 px-2 py-0.5 text-micro font-semibold text-ink-2">
-          {projectName}
-        </span>
-      ) : null}
       <InstanceRowTrail
         className="ml-auto"
         dotClassName={statusToV2DotClass(status)}

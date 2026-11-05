@@ -7,9 +7,10 @@
 //     fixture 故意让字母序≠时间序，能区分「时间排序回归」与「稳定序」）
 //  2. 最近组 = 服务端倒序前 7：第一行 = lastActivityAt 最大者；第 8/9 条截断不在场；含已结束
 //     会话（ended-task / ended-old 在场）
-//  3. 重复展示：活跃会话在「最近」组（历史形态 title 行）与项目组（实例形态 displayName 行）
-//     并存——fixture 让 history.title === candidate.displayName 同名可数
-//  4. chip：最近组行带项目名 chip、项目组行不带；chip 文本 = 归属项目名
+//  3. 活跃行标题 = 会话名 displayName（用户拍板 2026-11-05）：fixture 活跃条目 title =
+//     raw-*（与 candidate.displayName 故意不同），断言行名 = displayName 且 raw 不出现；
+//     同一活跃会话与项目组行同名并存（重复展示可数）；已结束行 = 历史 title
+//  4. 无 chip：最近组行不带项目名 chip（项目归属不上行）
 //  5. 行点击分流（桌面 activateEntry 同款）：活跃历史行 → 聚焦导航（URL 断言）；已结束行 →
 //     resume 命名框（预填标题），取消 = 零 POST 不创建
 // WS mock 必须带（page.route 拦不了 WebSocket：session-shells WS 首帧会 setQueryData 覆盖
@@ -118,13 +119,14 @@ const CANDIDATES = [
 ];
 
 // 全局历史 fixture（9 条，lastActivityAt 倒序 = 服务端口径；前 7 进「最近」组，后 2 截断）。
-// 活跃条目 title 与候选 displayName 同名（s-d1 等）→ 重复展示断言可数；ended-* = 已结束
-// 会话（hasActiveSession=false）——「含已结束」是桌面同款语义的核心差异点。
+// 活跃条目 title = raw-*（与候选 displayName 故意不同）→「标题用会话名而非历史 title」
+// 可断言；ended-* = 已结束会话（hasActiveSession=false，无 displayName 映射，行标题 =
+// 历史 title）——「含已结束」是桌面同款语义的核心差异点。
 const HISTORY = [
   {
     provider: "claude",
     claudeSessionId: "h-d1",
-    title: "s-d1",
+    title: "raw-d1",
     firstMessage: null,
     startedAt: "2026-11-01T14:00:00Z",
     lastActivityAt: "2026-11-05T14:00:00Z",
@@ -136,7 +138,7 @@ const HISTORY = [
   {
     provider: "claude",
     claudeSessionId: "h-a1",
-    title: "s-a1",
+    title: "raw-a1",
     firstMessage: null,
     startedAt: "2026-11-01T12:00:00Z",
     lastActivityAt: "2026-11-05T12:00:00Z",
@@ -148,7 +150,7 @@ const HISTORY = [
   {
     provider: "claude",
     claudeSessionId: "h-b1",
-    title: "s-b1",
+    title: "raw-b1",
     firstMessage: null,
     startedAt: "2026-11-01T10:00:00Z",
     lastActivityAt: "2026-11-05T10:00:00Z",
@@ -160,7 +162,7 @@ const HISTORY = [
   {
     provider: "claude",
     claudeSessionId: "h-c1",
-    title: "s-c1",
+    title: "raw-c1",
     firstMessage: null,
     startedAt: "2026-11-01T08:00:00Z",
     lastActivityAt: "2026-11-05T08:00:00Z",
@@ -183,7 +185,7 @@ const HISTORY = [
   {
     provider: "claude",
     claudeSessionId: "h-e1",
-    title: "s-e1",
+    title: "raw-e1",
     firstMessage: null,
     startedAt: "2026-10-30T06:00:00Z",
     lastActivityAt: "2026-11-05T06:00:00Z",
@@ -371,6 +373,11 @@ try {
       sb1Count: byName("s-b1").length,
       sc2Count: byName("s-c2").length,
       se2Count: byName("s-e2").length,
+      // 活跃条目历史 title = raw-*：标题走 displayName 时这些字符串不应出现
+      rawCount: ["raw-d1", "raw-a1", "raw-b1", "raw-c1", "raw-e1"].reduce(
+        (n, raw) => n + byName(raw).length,
+        0,
+      ),
       endedTaskCount: byName("ended-task").length,
       endedOldCount: byName("ended-old").length,
       ended3Count: byName("ended-3").length,
@@ -393,14 +400,19 @@ try {
     `ended-task=${menuState.endedTaskCount} ended-old=${menuState.endedOldCount} ended-3=${menuState.ended3Count} ended-4=${menuState.ended4Count}`,
   );
   check(
-    "3a 重复展示：s-a1/s-b1 各 2 次（最近组 + 项目组）",
+    "3a 重复展示：s-a1/s-b1 各 2 次（最近组 displayName 行 + 项目组行）",
     menuState.sa1Count === 2 && menuState.sb1Count === 2,
     `s-a1=${menuState.sa1Count} s-b1=${menuState.sb1Count}`,
   );
   check(
-    "4a chip：最近组行带、项目组行不带",
+    "3b 活跃行标题 = 会话名 displayName（历史 title raw-* 不出现）",
+    menuState.rawCount === 0,
+    `rawCount=${menuState.rawCount}`,
+  );
+  check(
+    "4a 最近组行不带项目名 chip（项目归属不上行）",
     menuState.sd1Chips.length === 2 &&
-      menuState.sd1Chips[0] === "proj-d" &&
+      menuState.sd1Chips[0] === null &&
       menuState.sd1Chips[1] === null,
     JSON.stringify(menuState.sd1Chips),
   );
