@@ -1,12 +1,17 @@
-// 一次性探针：▾ 切换实例菜单稳定排序 + 「最近」组（用户拍板 2026-11-05 批次二）。
-// fixture 走 page.route 拦 /api/overview + proj-a 两个 sessions 端点（9 会话分属 5 项目，
-// updatedAt 错开且与字母序反向——能区分「时间排序回归」与「localeCompare 稳定序」）。
+// 一次性探针：▾ 切换实例菜单「最近」组（用户拍板 2026-11-05：与桌面同一套——agent-history
+// 管道、lastActivityAt 倒序、含已结束会话）+ foreign 组 localeCompare 稳定序。
+// fixture 走 page.route：/api/overview（活跃候选）+ /api/agent-history（全局历史 9 条，
+// lastActivityAt 倒序；前 7 进最近组、后 2 截断）+ proj-a 两 sessions 端点。
 // 断言：
-//  1. 组头序列 = [最近, proj-a, proj-b, proj-c, proj-d, proj-e]（最近组置顶 + foreign 组
-//     localeCompare 升序；若回归时间排序会是 proj-d 打头——fixture 故意让字母序≠时间序）
-//  2. 最近组第一行 = updatedAt 最大者（s-d1）；最近组恒 7 行（s-c2/s-e2 被截掉，只在各自项目组）
-//  3. 重复展示：s-a1 / s-b1 各出现 2 次（最近组 + 所属项目组）
-//  4. chip：最近组行带项目名 chip（rounded-[9px]），所属项目组行不带；chip 文本 = 项目名
+//  1. 组头序列 = [最近, proj-a, proj-b, proj-c, proj-d, proj-e]（最近置顶 + localeCompare 升序；
+//     fixture 故意让字母序≠时间序，能区分「时间排序回归」与「稳定序」）
+//  2. 最近组 = 服务端倒序前 7：第一行 = lastActivityAt 最大者；第 8/9 条截断不在场；含已结束
+//     会话（ended-task / ended-old 在场）
+//  3. 重复展示：活跃会话在「最近」组（历史形态 title 行）与项目组（实例形态 displayName 行）
+//     并存——fixture 让 history.title === candidate.displayName 同名可数
+//  4. chip：最近组行带项目名 chip、项目组行不带；chip 文本 = 归属项目名
+//  5. 行点击分流（桌面 activateEntry 同款）：活跃历史行 → 聚焦导航（URL 断言）；已结束行 →
+//     resume 命名框（预填标题），取消 = 零 POST 不创建
 // WS mock 必须带（page.route 拦不了 WebSocket：session-shells WS 首帧会 setQueryData 覆盖
 // overview fixture，见 use-session-shells.ts applyShellsFrame——批次一探针实证）。
 // 密码自读不打印。用法：bun scripts/probe-switch-menu-recent-group.mjs
@@ -112,6 +117,116 @@ const CANDIDATES = [
   },
 ];
 
+// 全局历史 fixture（9 条，lastActivityAt 倒序 = 服务端口径；前 7 进「最近」组，后 2 截断）。
+// 活跃条目 title 与候选 displayName 同名（s-d1 等）→ 重复展示断言可数；ended-* = 已结束
+// 会话（hasActiveSession=false）——「含已结束」是桌面同款语义的核心差异点。
+const HISTORY = [
+  {
+    provider: "claude",
+    claudeSessionId: "h-d1",
+    title: "s-d1",
+    firstMessage: null,
+    startedAt: "2026-11-01T14:00:00Z",
+    lastActivityAt: "2026-11-05T14:00:00Z",
+    fileSize: 1234,
+    hasActiveSession: true,
+    activeSessionId: "s-d1",
+    projectName: "proj-d",
+  },
+  {
+    provider: "claude",
+    claudeSessionId: "h-a1",
+    title: "s-a1",
+    firstMessage: null,
+    startedAt: "2026-11-01T12:00:00Z",
+    lastActivityAt: "2026-11-05T12:00:00Z",
+    fileSize: 1234,
+    hasActiveSession: true,
+    activeSessionId: "s-a1",
+    projectName: "proj-a",
+  },
+  {
+    provider: "claude",
+    claudeSessionId: "h-b1",
+    title: "s-b1",
+    firstMessage: null,
+    startedAt: "2026-11-01T10:00:00Z",
+    lastActivityAt: "2026-11-05T10:00:00Z",
+    fileSize: 1234,
+    hasActiveSession: true,
+    activeSessionId: "s-b1",
+    projectName: "proj-b",
+  },
+  {
+    provider: "claude",
+    claudeSessionId: "h-c1",
+    title: "s-c1",
+    firstMessage: null,
+    startedAt: "2026-11-01T08:00:00Z",
+    lastActivityAt: "2026-11-05T08:00:00Z",
+    fileSize: 1234,
+    hasActiveSession: true,
+    activeSessionId: "s-c1",
+    projectName: "proj-c",
+  },
+  {
+    provider: "claude",
+    claudeSessionId: "ended-1",
+    title: "ended-task",
+    firstMessage: null,
+    startedAt: "2026-11-01T07:00:00Z",
+    lastActivityAt: "2026-11-05T07:30:00Z",
+    fileSize: 1234,
+    hasActiveSession: false,
+    projectName: "proj-c",
+  },
+  {
+    provider: "claude",
+    claudeSessionId: "h-e1",
+    title: "s-e1",
+    firstMessage: null,
+    startedAt: "2026-10-30T06:00:00Z",
+    lastActivityAt: "2026-11-05T06:00:00Z",
+    fileSize: 1234,
+    hasActiveSession: true,
+    activeSessionId: "s-e1",
+    projectName: "proj-e",
+  },
+  {
+    provider: "claude",
+    claudeSessionId: "ended-2",
+    title: "ended-old",
+    firstMessage: null,
+    startedAt: "2026-10-29T06:00:00Z",
+    lastActivityAt: "2026-10-30T06:00:00Z",
+    fileSize: 1234,
+    hasActiveSession: false,
+    projectName: "proj-e",
+  },
+  {
+    provider: "claude",
+    claudeSessionId: "ended-3",
+    title: "ended-3",
+    firstMessage: null,
+    startedAt: "2026-10-28T06:00:00Z",
+    lastActivityAt: "2026-10-29T06:00:00Z",
+    fileSize: 1234,
+    hasActiveSession: false,
+    projectName: "proj-d",
+  },
+  {
+    provider: "claude",
+    claudeSessionId: "ended-4",
+    title: "ended-4",
+    firstMessage: null,
+    startedAt: "2026-10-27T06:00:00Z",
+    lastActivityAt: "2026-10-28T06:00:00Z",
+    fileSize: 1234,
+    hasActiveSession: false,
+    projectName: "proj-e",
+  },
+];
+
 const json = (body) => ({
   status: 200,
   contentType: "application/json",
@@ -134,6 +249,20 @@ try {
     ),
   );
   await page.route("**/api/overview/subtitles", (route) => route.fulfill(json({ subtitles: {} })));
+  await page.route("**/api/agent-history**", (route) =>
+    route.fulfill(
+      json({
+        entries: HISTORY,
+        counts: {
+          all: HISTORY.length,
+          active: HISTORY.filter((e) => e.hasActiveSession).length,
+          ended: HISTORY.filter((e) => !e.hasActiveSession).length,
+        },
+        nextCursor: null,
+        filter: "all",
+      }),
+    ),
+  );
   await page.route(`**/api/projects/${CURRENT_PROJECT}/agent-sessions`, (route) =>
     route.fulfill(
       json({
@@ -238,11 +367,14 @@ try {
     };
     return {
       first: (items[0]?.textContent ?? "").trim(),
-      sd1: byName("s-d1"),
       sa1Count: byName("s-a1").length,
       sb1Count: byName("s-b1").length,
       sc2Count: byName("s-c2").length,
       se2Count: byName("s-e2").length,
+      endedTaskCount: byName("ended-task").length,
+      endedOldCount: byName("ended-old").length,
+      ended3Count: byName("ended-3").length,
+      ended4Count: byName("ended-4").length,
       sd1Chips: byName("s-d1").map(chipOf),
       total: items.length,
     };
@@ -253,9 +385,12 @@ try {
     `first=${menuState.first}`,
   );
   check(
-    "2b 截断会话只在项目组（s-c2/s-e2 各 1 次）",
-    menuState.sc2Count === 1 && menuState.se2Count === 1,
-    `s-c2=${menuState.sc2Count} s-e2=${menuState.se2Count}`,
+    "2b 最近组含已结束会话（ended-task/ended-old 各 1）+ 第 8/9 条截断（ended-3/4 = 0）",
+    menuState.endedTaskCount === 1 &&
+      menuState.endedOldCount === 1 &&
+      menuState.ended3Count === 0 &&
+      menuState.ended4Count === 0,
+    `ended-task=${menuState.endedTaskCount} ended-old=${menuState.endedOldCount} ended-3=${menuState.ended3Count} ended-4=${menuState.ended4Count}`,
   );
   check(
     "3a 重复展示：s-a1/s-b1 各 2 次（最近组 + 项目组）",
@@ -269,6 +404,39 @@ try {
       menuState.sd1Chips[1] === null,
     JSON.stringify(menuState.sd1Chips),
   );
+  check(
+    "4b 总行数 = 7（最近组）+ 9（项目组全集）+ 2（菜单底部固定操作项）",
+    menuState.total === 18,
+    `total=${menuState.total}`,
+  );
+
+  // 5a 已结束历史行点击 = resume 命名框（桌面 openClosedEntry 同款）。锚定弹层菜单项点击
+  // 一律 dispatchEvent("click")（§26：playwright click 的视口判定在 fixed+transform 弹层
+  // 上不稳）。取消路径必须零 POST——探针绝不点「确认」（不向真实服务器创建会话）。
+  let postCount = 0;
+  page.on("request", (req) => {
+    if (req.method() === "POST") postCount += 1;
+  });
+  const postBefore = postCount;
+  await page.getByRole("menuitem").filter({ hasText: "ended-task" }).dispatchEvent("click");
+  const promptBox = page.getByRole("dialog").getByRole("textbox");
+  await promptBox.waitFor({ state: "visible", timeout: 5000 });
+  const prefilled = await promptBox.inputValue();
+  check("5a 已结束行点击弹命名框且预填标题", prefilled === "ended-task", `prefilled=${prefilled}`);
+  await page.getByRole("dialog").getByRole("button", { name: "取消" }).click();
+  await page.getByRole("dialog").waitFor({ state: "hidden", timeout: 5000 });
+  check(
+    "5a 取消后命名框关闭、停留当前页、零 POST（不创建会话）",
+    postCount === postBefore && page.url().includes("/projects/proj-a"),
+    `postDelta=${postCount - postBefore} url=${page.url()}`,
+  );
+
+  // 5b 活跃历史行点击 = 聚焦既有实例（桌面 activateEntry 分流）→ 导航 proj-d/s-d1。
+  await trigger.click();
+  await page.locator('[role="menu"]').waitFor({ state: "visible", timeout: 5000 });
+  await page.getByRole("menuitem").filter({ hasText: "s-d1" }).first().dispatchEvent("click");
+  await page.waitForURL("**/projects/proj-d/session/s-d1", { timeout: 5000 });
+  check("5b 活跃行点击聚焦既有实例（导航 proj-d/s-d1）", true, page.url());
 
   const pass = results.every(Boolean);
   console.log(
