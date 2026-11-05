@@ -1,16 +1,15 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-05 12:57（**「最近」组打回重做交付** `722369f`：
-> ▾菜单「最近」组对齐桌面同款——agent-history 单源管道（含已结束会话）+
-> 行点击分流；探针 9 断言 ALL PASS；**八批 commit 未 push**）
+> 最后更新：2026-11-05 13:20（**「最近」组行形修正** `b7f35a1`：行标题
+> 改用会话名 displayName + 去项目名 chip；探针 10 断言 ALL PASS；
+> **九批 commit 未 push**）
 
 ## 一句话状态
 
-批次二「最近」组被用户打回后按桌面同款重做并交付（`722369f`）：数据源
-改 useHistoryQuery 全局作用域 recent 组（agent-history 管道、
-lastActivityAt 倒序前 7、含已结束会话），行点击 = 活跃聚焦 / 已结束
-resume 命名框（桌面 activateEntry 同款分流）。探针 9/9、门禁全过，
-等用户真机验收后 push（共八批）。
+批次二「最近」组对齐桌面同款交付（`722369f`）后又按用户真机反馈修正
+行形（`b7f35a1`）：行标题 = 会话名 displayName（活跃条目从全局候选按
+sessionId 匹配，回退历史 title）、去项目名 chip。探针 10/10、门禁全过，
+等用户真机验收后 push（共九批）。
 
 ## 本 session 焦点
 
@@ -25,6 +24,13 @@ resume 命名框（桌面 activateEntry 同款分流）。探针 9/9、门禁全
 - **行点击分流（桌面 activateEntry 同款）**：hasActiveSession →
   onSelectInstance 聚焦既有实例；已结束 → usePromptDialog 命名框（预填
   displayTitleOf）→ resume(buildResumeInput)。
+- **行形修正（`b7f35a1`，用户真机反馈）**：①行标题 = 会话名 displayName
+  优先（活跃条目从 foreignCandidates 按 sessionId 匹配 displayName，取
+  不到或已结束回退 displayTitleOf）——用户问「为何用的不是会话名做标题」；
+  ②去项目名 chip（「不用出现项目名」，项目归属不上行，同桌面历史浮层
+  行形）——SwitchMenuRow/InstanceSwitchRow 的 projectName 字段与 chip
+  渲染块连带清理。探针 fixture 活跃条目 title 改 raw-*（与 displayName
+  故意分离）使标题语义可断言。
 - **holders 必须在 menu/sheet Content 外**：Radix 关闭卸载 Content 子树
   会连带卸载嵌套其中的 prompt/confirm（Portal→body）→ resolve 悬空。解法
   = holder 渲染在 Fragment 兄弟位（mobile-sheets 同因同解）。
@@ -41,10 +47,11 @@ resume 命名框（桌面 activateEntry 同款分流）。探针 9/9、门禁全
 ### 进度
 
 - ✅ 批次一 `106da79`：[项目] Tab 双列表收起+记忆（探针 15 断言）
-- ✅ 批次二 v2 `722369f`：「最近」组对齐桌面（探针 9 断言 + 门禁全过 +
-  CSS 硬闸 + tokens 0 违例）；v1 `782750a` 的稳定排序部分仍有效保留
+- ✅ 批次二 v2 `722369f` + 行形修正 `b7f35a1`：「最近」组对齐桌面（探针
+  10 断言 + 门禁全过 + CSS 硬闸 + tokens 0 违例）；v1 `782750a` 的稳定
+  排序部分仍有效保留
 - ✅ handoff 快照归档（20261105-1257.md）
-- ❌ **八批 commit 未 push**（`32e5703`…`722369f`，等用户真机验收后确认）
+- ❌ **九批 commit 未 push**（`32e5703`…`b7f35a1`，等用户真机验收后确认）
 
 ### 阻塞 / 风险
 
@@ -62,10 +69,10 @@ resume 命名框（桌面 activateEntry 同款分流）。探针 9/9、门禁全
 - **真机验证 checklist（两批）**：
   - 批次一：/projects 两列表收起态跨 PWA 刷新保持（展开→收起→刷新各自记忆）。
   - 批次二：工作台 ▾ 菜单①组序不随会话更新跳位（foreign 组按项目名字母序）
-    ②「最近」组在菜单最顶、含已结束会话（灰点），与桌面历史浮层「最近」组
-    同一套（最近活动的会话排最前，已结束的也在）③同一活跃会话在「最近」组
-    （带项目 chip）和项目组各出现一次 ④最近组行点击分流：活跃行→跳转聚焦
-    该实例；已结束行→弹命名框（预填标题）确认后恢复会话（取消不创建）。
+    ②「最近」组在菜单最顶、含已结束会话（灰点），排序与桌面历史浮层「最近」
+    组一致 ③行标题 = 会话名（活跃会话与项目组行同名；已结束显示历史 title）、
+    行内无项目名 chip ④最近组行点击分流：活跃行→跳转聚焦该实例；已结束行→
+    弹命名框（预填标题）确认后恢复会话（取消不创建）。
 - **批次二探针 fixture**：/api/agent-history mock 9 条（lastActivityAt
   倒序，前 7 进最近组：h-d1/h-a1/h-b1/h-c1/ended-task/h-e1/ended-old，
   第 8/9 条 ended-3/ended-4 截断）；/api/overview mock 9 候选 5 项目；
