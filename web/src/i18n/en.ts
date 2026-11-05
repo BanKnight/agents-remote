@@ -820,6 +820,7 @@ export const en = {
   "workbench.tabMinimize": "Minimize",
   "workbench.moreActions": "More actions",
   "workbench.switchInstance": "Switch instance",
+  "workbench.switchRecentGroup": "Recent",
   "workbench.pinnedSessions": "Pinned sessions",
   "workbench.menuNewInstance": "New instance… · Current project",
   "workbench.resumeHistory": "Resume from history… · Current project",

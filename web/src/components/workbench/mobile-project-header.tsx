@@ -151,6 +151,24 @@ export function MobileProjectHeader({
   );
 }
 
+/** ▾ 菜单「最近」组条数（与移动历史浮层 RECENT_GROUP_SIZE 同值，独立常量）。 */
+const RECENT_GROUP_SIZE = 7;
+
+/** ▾ 菜单组行（groups 投影统一形状）：projectName 仅「最近」组行携带（跨项目混排，组头
+ *  表达不了项目名 → 行内 chip 标注）。 */
+type SwitchMenuRow = {
+  key: string;
+  current: boolean;
+  name: string;
+  projectName?: string;
+  status: GlobalInstanceCandidate["status"];
+  type: "agent" | "terminal";
+  provider?: AgentProvider;
+  updatedAt?: string;
+  createdAt?: string;
+  onSelect: () => void;
+};
+
 type InstanceSwitchMenuProps = {
   projectName: string;
   title: string;
@@ -178,9 +196,13 @@ type InstanceSwitchMenuProps = {
  * 恢复）；空态（无实例）= 列表区空提示 + 仅新建（spec §4.1-1）。切换零销毁（保活层语义，
  * 铁律 2）。
  *
- * 分组（v1.6 图例②）：当前项目组置顶（组头 = 项目名），其余项目按最近活动（组内最新
- * updatedAt）排序；组内行间无线，组间分隔线落在第 2+ 组组头上方。跨项目行走
- * onSelectInstance(projectName, sessionId) 导航。
+ * 分组（v1.6 图例② + 2026-11-05 稳定化拍板）：「最近」组置顶（全局 updatedAt 降序前
+ * RECENT_GROUP_SIZE 条——时间序是该组语义、组位置恒定不跳位）→ 当前项目组（组头 =
+ * 项目名）→ 其余项目组按项目名 localeCompare（原「组内最新 updatedAt 降序」= 时间相关，
+ * 会话一有更新组就跳位——排序稳定化；与服务端 listAllCandidates 项目序同口径）。「最近」
+ * 组与所属项目组重复展示（不去重，历史浮层「最近」组同构），行内带项目名 chip。组内行间
+ * 无线，组间分隔线落在第 2+ 组组头上方。跨项目行走 onSelectInstance(projectName, sessionId)
+ * 导航。
  */
 function InstanceSwitchMenu({
   projectName,
@@ -201,7 +223,9 @@ function InstanceSwitchMenu({
   // （与 ▾ 浮层行同款 statusToV2DotClass，消「浮层黄点/标题恒绿」的观感冲突）；
   // 非会话聚焦（skill/空态）维持 runct 项目 running 指示。
   const focusedStatus = instances.find((entry) => entry.session.id === focusId)?.session.status;
-  // 跨项目分组（组内保持 candidates 序），组间按最近活动（组内最新 updatedAt）降序。
+  // 跨项目分组（组内保持 candidates 序），组间按项目名 localeCompare——排序稳定化
+  //（用户拍板 2026-11-05）：原「组内最新 updatedAt 降序」= 时间相关，会话一有更新组
+  // 就跳位；项目名序恒定，与服务端 listAllCandidates 的项目序同口径。
   const foreignGroups = useMemo(() => {
     const byProject = new Map<string, GlobalInstanceCandidate[]>();
     for (const candidate of foreignCandidates) {
@@ -210,9 +234,7 @@ function InstanceSwitchMenu({
       if (list) list.push(candidate);
       else byProject.set(candidate.ref.projectName, [candidate]);
     }
-    const latestActivity = (list: GlobalInstanceCandidate[]) =>
-      Math.max(...list.map((c) => Date.parse(c.updatedAt ?? c.createdAt ?? "")));
-    return [...byProject.entries()].sort(([, a], [, b]) => latestActivity(b) - latestActivity(a));
+    return [...byProject.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [foreignCandidates, projectName]);
   const empty = instances.length === 0 && foreignGroups.length === 0;
   // 菜单打开时把当前行（背景高亮）滚入视野：实例多溢出定高时队尾当前行会视野外——autoFocus
@@ -221,46 +243,79 @@ function InstanceSwitchMenu({
   // 触发重跑。
   const [listNode, setListNode] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
-    listNode?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+    // 重复展示语义下当前行在「最近」组与所属项目组各一份——取最后一个 current（项目组
+    // 副本，对齐「用户此刻在哪」的组）滚入视野。
+    const currents = listNode?.querySelectorAll('[aria-current="true"]');
+    currents?.[currents.length - 1]?.scrollIntoView({ block: "nearest" });
   }, [listNode]);
-  // 列表组投影（当前项目组置顶 + foreign 组），组头样式共享（第 2+ 组组头上方分隔线，
-  // 原型 .irow + .mh.g）。
+  // 「最近」组行（用户拍板 2026-11-05）：全局候选（foreignCandidates = 未过滤全集，含
+  // 当前项目会话）按 updatedAt 降序取前 N，置顶。时间序是该组语义（最新在上），组位置
+  // 恒定不随更新跳位；与所属项目组重复展示（项目组保持完整清单语义，历史浮层「最近」
+  // 组同构），行内带项目名 chip（跨项目混排）。
+  const recentRows = useMemo<SwitchMenuRow[]>(() => {
+    const timeOf = (c: GlobalInstanceCandidate) => Date.parse(c.updatedAt ?? c.createdAt ?? "");
+    return [...foreignCandidates]
+      .filter((c) => Number.isFinite(timeOf(c)))
+      .sort((a, b) => timeOf(b) - timeOf(a))
+      .slice(0, RECENT_GROUP_SIZE)
+      .map((candidate) => ({
+        key: `recent:${candidate.ref.projectName}:${candidate.ref.sessionId}`,
+        current: candidate.ref.sessionId === focusId,
+        name: candidate.displayName,
+        projectName: candidate.ref.projectName,
+        status: candidate.status,
+        type: candidate.type,
+        provider: candidate.provider,
+        updatedAt: candidate.updatedAt,
+        createdAt: candidate.createdAt,
+        onSelect: () => onSelectInstance(candidate.ref.projectName, candidate.ref.sessionId),
+      }));
+  }, [foreignCandidates, focusId, onSelectInstance]);
+  // 列表组投影（最近组置顶 + 当前项目组 + foreign 组），组头样式共享（第 2+ 组组头上方
+  // 分隔线，原型 .irow + .mh.g）。
   const groups = useMemo(
     () => [
+      ...(recentRows.length > 0
+        ? [{ name: t("workbench.switchRecentGroup"), rows: recentRows }]
+        : []),
       ...(instances.length > 0
         ? [
             {
               name: projectName,
-              rows: instances.map((entry) => ({
-                key: entry.session.id,
-                current: entry.session.id === focusId,
-                name: entry.session.displayName,
-                status: entry.session.status,
-                type: entry.type,
-                provider: "provider" in entry.session ? entry.session.provider : undefined,
-                updatedAt: entry.session.updatedAt,
-                createdAt: "createdAt" in entry.session ? entry.session.createdAt : undefined,
-                onSelect: () => onSelectInstance(projectName, entry.session.id),
-              })),
+              rows: instances.map(
+                (entry): SwitchMenuRow => ({
+                  key: entry.session.id,
+                  current: entry.session.id === focusId,
+                  name: entry.session.displayName,
+                  status: entry.session.status,
+                  type: entry.type,
+                  provider: "provider" in entry.session ? entry.session.provider : undefined,
+                  updatedAt: entry.session.updatedAt,
+                  createdAt: "createdAt" in entry.session ? entry.session.createdAt : undefined,
+                  onSelect: () => onSelectInstance(projectName, entry.session.id),
+                }),
+              ),
             },
           ]
         : []),
       ...foreignGroups.map(([foreignProject, list]) => ({
         name: foreignProject,
-        rows: list.map((candidate) => ({
-          key: `${foreignProject}:${candidate.ref.sessionId}`,
-          current: false,
-          name: candidate.displayName,
-          status: candidate.status,
-          type: candidate.type,
-          provider: candidate.provider,
-          updatedAt: candidate.updatedAt,
-          createdAt: candidate.createdAt,
-          onSelect: () => onSelectInstance(foreignProject, candidate.ref.sessionId),
-        })),
+        rows: list.map(
+          (candidate): SwitchMenuRow => ({
+            key: `${foreignProject}:${candidate.ref.sessionId}`,
+            current: false,
+            name: candidate.displayName,
+            status: candidate.status,
+            type: candidate.type,
+            provider: candidate.provider,
+            updatedAt: candidate.updatedAt,
+            createdAt: candidate.createdAt,
+            onSelect: () => onSelectInstance(foreignProject, candidate.ref.sessionId),
+          }),
+        ),
       })),
     ],
-    [focusId, foreignGroups, instances, onSelectInstance, projectName],
+    [focusId, foreignGroups, instances, onSelectInstance, projectName, recentRows, t],
   );
   return (
     <DropdownMenu>
@@ -333,6 +388,7 @@ function InstanceSwitchMenu({
                     current={row.current}
                     key={row.key}
                     name={row.name}
+                    projectName={row.projectName}
                     onSelect={row.onSelect}
                     provider={row.provider}
                     status={row.status}
@@ -373,6 +429,8 @@ function InstanceSwitchMenu({
 type InstanceSwitchRowProps = {
   type: "agent" | "terminal";
   name: string;
+  /** 仅「最近」组行携带：跨项目混排组头表达不了项目名 → 行内 chip 标注。 */
+  projectName?: string;
   status: GlobalInstanceCandidate["status"];
   current: boolean;
   /** agent 行品牌件分支（缺省退 sparkles 主色——无 provider 数据路径）。 */
@@ -384,15 +442,17 @@ type InstanceSwitchRowProps = {
 };
 
 /**
- * ▾ 菜单实例行（v1.6 .irow：项目分组已上收组头，行内不再标注项目名——badge 退役）：类型
- * 图标（agent = 品牌件（provider 有）/ sparkles 主色 / terminal = square-terminal 绿；
- * 2026-11-02 品牌件批）+ 名 + 行尾簇（InstanceRowTrail 单源：状态点 + 时间，v1.7 §4.8——
- * 状态文字退出列表行、置顶标识退出列表行）。当前行 = 背景高亮（fill-selected，与 Sidebar selrow
- * 同款；✓ 记号退役，v1.6 图例②），名字 600 不变。
+ * ▾ 菜单实例行（v1.6 .irow）：类型图标（agent = 品牌件（provider 有）/ sparkles 主色 /
+ * terminal = square-terminal 绿；2026-11-02 品牌件批）+ 名 + 行尾簇（InstanceRowTrail
+ * 单源：状态点 + 时间，v1.7 §4.8——状态文字退出列表行、置顶标识退出列表行）。项目分组
+ * 已上收组头，行内不再标注项目名；唯一例外 =「最近」组行（跨项目混排，projectName chip
+ * 标注归属，形制同全局活动卡副行 chip）。当前行 = 背景高亮（fill-selected，与 Sidebar
+ * selrow 同款；✓ 记号退役，v1.6 图例②），名字 600 不变。
  */
 function InstanceSwitchRow({
   type,
   name,
+  projectName,
   status,
   current,
   provider,
@@ -417,6 +477,11 @@ function InstanceSwitchRow({
         <ShellIcon className="size-[15px] shrink-0 text-success" name="terminal" />
       )}
       <span className={`min-w-0 truncate ${current ? "font-semibold" : ""}`}>{name}</span>
+      {projectName ? (
+        <span className="flex-none rounded-[9px] bg-elevated2 px-2 py-0.5 text-micro font-semibold text-ink-2">
+          {projectName}
+        </span>
+      ) : null}
       <InstanceRowTrail
         className="ml-auto"
         dotClassName={statusToV2DotClass(status)}
