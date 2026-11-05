@@ -1,12 +1,14 @@
-import { useEffect, useRef, type MouseEvent, type UIEvent } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, type MouseEvent, type UIEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type {
   AgentHistoryEntry,
   AgentHistoryFilter,
   AgentHistoryGroup,
+  OverviewCandidate,
+  OverviewResponse,
 } from "@agents-remote/shared";
-import { createAgentSession } from "../../api/client";
+import { createAgentSession, fetchOverview } from "../../api/client";
 import { useT } from "../../i18n";
 import type { TranslateFn, TranslationKey } from "../../i18n/types";
 import { formatBytes } from "@/lib/format";
@@ -194,6 +196,21 @@ export function HistoryList({ focusId, projectName }: HistoryListProps) {
     deleteEntry,
   } = useHistoryQuery({ projectName, enabled: true });
   const { isResuming, resume } = useResumeAgentSession(projectName);
+  // 活跃会话的真实状态（overview = 会话元信息唯一权威，只读缓存不发请求）：历史条目只有
+  // hasActiveSession 布尔，直接映射成 working 会把「活跃但 idle」画成运行中绿点，与左栏
+  // /▾ 菜单的五态矛盾（用户 2026-11-05 反馈「状态在好多地方都有出现」）。
+  const overviewCache = useQuery<OverviewResponse>({
+    enabled: false,
+    queryFn: fetchOverview,
+    queryKey: ["overview"],
+  });
+  const activeStatusById = useMemo(() => {
+    const map = new Map<string, OverviewCandidate["status"]>();
+    for (const candidate of overviewCache.data?.candidates ?? []) {
+      map.set(candidate.sessionId, candidate.status);
+    }
+    return map;
+  }, [overviewCache.data?.candidates]);
   // 行右键（Mac）/长按（iPad）菜单 state + 触屏长按绑定（单一容器挂载，见 JSX 尾部）。
   const ctx = useRowContextMenu();
   const lp = useLongPressActions(ctx.openAt);
@@ -377,6 +394,7 @@ export function HistoryList({ focusId, projectName }: HistoryListProps) {
                   {group.entries.map((entry) => (
                     <HistorySessionNode
                       active={entry.hasActiveSession && entry.activeSessionId === focusId}
+                      activeStatusById={activeStatusById}
                       entry={entry}
                       isResuming={isResuming}
                       key={rowKey(entry)}
@@ -414,6 +432,8 @@ type HistoryLongPressBindings = ReturnType<ReturnType<typeof useLongPressActions
 
 type HistorySessionNodeProps = {
   active: boolean;
+  /** 活跃会话 id → overview 真实状态（缺省退 hasActiveSession 布尔语义）。 */
+  activeStatusById: Map<string, OverviewCandidate["status"]>;
   entry: AgentHistoryEntry;
   isResuming: boolean;
   longPress: HistoryLongPressBindings;
@@ -423,6 +443,7 @@ type HistorySessionNodeProps = {
 
 function HistorySessionNode({
   active,
+  activeStatusById,
   entry,
   isResuming,
   longPress,
@@ -431,6 +452,9 @@ function HistorySessionNode({
 }: HistorySessionNodeProps) {
   const { t } = useT();
   const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
+  const status =
+    (entry.activeSessionId ? activeStatusById.get(entry.activeSessionId) : undefined) ??
+    (entry.hasActiveSession ? "working" : "closed");
   // 全局作用域行带项目限定符（04g pin②「全部 = 跨项目列表，行带项目限定符」）：
   // subtitle 前缀归属项目；项目作用域响应无 projectName 字段，自然退化为原形态。
   // v1.7 §4.8：时间从 subtitle 退出，移到行尾 trail。
@@ -444,7 +468,7 @@ function HistorySessionNode({
       marker={sessionMarker("agent", "sm", entryProvider(entry))}
       meta={
         <InstanceRowTrail
-          dotClassName={`dot2 ${instanceDot2(entry.hasActiveSession ? "working" : "closed")}`}
+          dotClassName={`dot2 ${instanceDot2(status)}`}
           time={time}
           timeClassName="text-micro text-ink-2"
         />

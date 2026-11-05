@@ -1186,15 +1186,16 @@ function MobileProjectWorkbench({
   };
   const focusAgentDetail = useAgentDetail(focusPanelRef, focusSessionType === "agent");
   const focusTerminalDetail = useTerminalDetail(focusPanelRef, focusSessionType === "terminal");
-  // 标题/动作行当前名派生：detail（历史恢复会话不在活跃列表）→ 活跃列表（▾ 菜单同源，
-  // 深链/刷新 detail 未热时即刻有名）→ sidecar 记忆。
-  const focusListName =
-    instances.find((e) => e.session.id === effectiveFocusId)?.session.displayName ?? "";
+  // 标题/动作行当前名派生：detail（历史恢复会话不在活跃列表）→ overview 候选（会话
+  // 元信息唯一权威，▾ 菜单同源）→ 项目列表（壳变化后由 use-session-shells 写扩散同步，
+  // 这里只是冷缓存种子）→ sidecar 记忆。此前列表优先：远端改名后 header 会停在旧名，
+  // 与 ▾ 菜单/全部组不一致（用户 2026-11-05 反馈）。
+  const focusCandidate = globalCandidates.find((c) => c.ref.sessionId === effectiveFocusId);
   const focusDisplayName =
-    focusListName ||
-    (focusAgentDetail.data?.session.displayName ??
-      focusTerminalDetail.data?.session.displayName ??
-      "");
+    (focusAgentDetail.data?.session.displayName ?? focusTerminalDetail.data?.session.displayName) ||
+    focusCandidate?.displayName ||
+    instances.find((e) => e.session.id === effectiveFocusId)?.session.displayName ||
+    "";
   // 实例行动作（v1.6 变更①：动作上收 ⋯ 菜单动作区——原 03k info sheet .acts footer 退役，
   // 实例信息 = 纯信息面板）。a = 置顶/重命名/关闭单源动作（useInstanceRowActions 双端单源）。
   const a = rowActions.build(focusPanelRef, focusSessionType ?? "terminal");
@@ -1260,14 +1261,17 @@ function MobileProjectWorkbench({
           effectiveFocusId ||
           scope.key
         : scope.key;
-  // 标题行 tticn 品牌件 provider：detail 优先，冷启动 detail 未热时回落当前项目实例列表
-  //（与上面 headerTitle 的 detail→memo 兜底同源）——防 sparkles → 品牌件身份标闪变。
+  // 标题行 tticn 品牌件 provider：detail 优先 → overview 候选（与 headerTitle 同源）→
+  // 项目列表冷缓存兜底——防 sparkles → 品牌件身份标闪变，也避免远端切换 provider 后
+  // header 与 ▾ 菜单/左栏不一致。
   const focusProvider = useMemo(() => {
     const fromDetail = focusAgentDetail.data?.session.provider;
     if (fromDetail) return fromDetail;
+    const candidate = globalCandidates.find((c) => c.ref.sessionId === effectiveFocusId);
+    if (candidate?.provider) return candidate.provider;
     const entry = instances.find((e) => e.session.id === effectiveFocusId);
     return entry && "provider" in entry.session ? entry.session.provider : undefined;
-  }, [focusAgentDetail.data?.session.provider, instances, effectiveFocusId]);
+  }, [focusAgentDetail.data?.session.provider, globalCandidates, instances, effectiveFocusId]);
   // v1.5 批3 l3Transient file 编辑态（nav [放弃][完成] handle 模式）：focus 变化重置。
   const [l3FileEditing, setL3FileEditing] = useState(false);
   const l3FilePaneRef = useRef<FilePreviewPaneHandle | null>(null);

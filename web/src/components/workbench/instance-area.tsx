@@ -1160,11 +1160,11 @@ export function useInstanceNameMemoWriter(
 }
 
 /**
- * 从已拉热的列表缓存（项目 agent/terminal 列表 + overview 聚合）查 sessionId 对应的
+ * 从已拉热的缓存（overview 聚合 + 项目 agent/terminal 列表）查 sessionId 对应的
  * displayName/status，供 usePanelMeta 在 detail query 未回时预填（tab 首帧即显
- * 实例名）。三个缓存按序尝试：项目列表（同 project scope 打开 tab 的常态路径）→ overview
- *（跨项目/global 总览点开的 tab）。全部 miss（如刷新后直进聚焦态、缓存尚未拉热）返回
- * undefined，调用方维持原 fallback（sessionId 前 12 位）。
+ * 实例名）。**overview 优先**（会话元信息唯一权威：WS 直写 + 10s 轮询；项目列表只是
+ * 首屏种子，壳变化后由 use-session-shells 写扩散同步），miss 再查项目列表。全部 miss
+ *（刷新后直进聚焦态、缓存尚未拉热）返回 undefined，调用方维持原 fallback（id 前 12 位）。
  *
  * 类型注意：overview candidate 与项目列表 session 的 status 字段同名同语义
  *（OverviewCandidate 就是它们的聚合投影），共用同一查找类型。
@@ -1183,6 +1183,17 @@ function cachedSessionFromLists(
       provider?: AgentProvider;
     }
   | undefined {
+  const candidate = overviewCache.data?.candidates.find(
+    (c) => c.sessionId === panelRef.sessionId && c.projectName === panelRef.projectName,
+  );
+  if (candidate) {
+    return {
+      displayName: candidate.displayName,
+      mode: candidate.mode,
+      status: candidate.status,
+      provider: candidate.provider,
+    };
+  }
   const inProjectList =
     agentList.data?.sessions.find((s) => s.id === panelRef.sessionId) ??
     terminalList.data?.sessions.find((s) => s.id === panelRef.sessionId);
@@ -1195,16 +1206,7 @@ function cachedSessionFromLists(
       provider: "provider" in inProjectList ? inProjectList.provider : undefined,
     };
   }
-  const candidate = overviewCache.data?.candidates.find(
-    (c) => c.sessionId === panelRef.sessionId && c.projectName === panelRef.projectName,
-  );
-  if (!candidate) return undefined;
-  return {
-    displayName: candidate.displayName,
-    mode: candidate.mode,
-    status: candidate.status,
-    provider: candidate.provider,
-  };
+  return undefined;
 }
 
 /**

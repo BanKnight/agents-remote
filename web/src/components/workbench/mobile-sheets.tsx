@@ -3,7 +3,9 @@
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { ApprovalSummary } from "@agents-remote/shared";
+import type { ApprovalSummary, OverviewCandidate, OverviewResponse } from "@agents-remote/shared";
+import { useQuery } from "@tanstack/react-query";
+import { fetchOverview } from "../../api/client";
 
 import {
   HISTORY_GROUP_LABEL_KEYS,
@@ -329,6 +331,21 @@ export function MobileSessionHistorySheet({
     setSearch,
   } = useHistoryQuery({ projectName, enabled: open, recentCount: RECENT_GROUP_SIZE });
   const { resume } = useResumeAgentSession(projectName);
+  // 活跃会话真实状态（overview = 元信息唯一权威，只读缓存不发请求）：历史条目只有
+  // hasActiveSession 布尔，直接画 working 会让「活跃但 idle」显示成运行中绿点（与左栏/
+  // ▾ 菜单五态矛盾，用户 2026-11-05 反馈）。
+  const overviewCache = useQuery<OverviewResponse>({
+    enabled: false,
+    queryFn: fetchOverview,
+    queryKey: ["overview"],
+  });
+  const activeStatusById = useMemo(() => {
+    const map = new Map<string, OverviewCandidate["status"]>();
+    for (const candidate of overviewCache.data?.candidates ?? []) {
+      map.set(candidate.sessionId, candidate.status);
+    }
+    return map;
+  }, [overviewCache.data?.candidates]);
   const renameDialog = usePromptDialog();
   const confirmDialog = useConfirm();
   // 左滑开态行 id（同时至多一行开）；关 sheet 重置，重开不残留开行。
@@ -442,7 +459,13 @@ export function MobileSessionHistorySheet({
                 <div key={group.key}>
                   <div className="gh">{t(HISTORY_GROUP_LABEL_KEYS[group.key])}</div>
                   {group.entries.map((entry) => {
+                    // running 只决定点击语义（聚焦既有 vs resume）；状态点用 overview 真实
+                    // 五态，缺省才退布尔（working/closed）。
                     const running = entry.hasActiveSession;
+                    const status =
+                      (entry.activeSessionId
+                        ? activeStatusById.get(entry.activeSessionId)
+                        : undefined) ?? (running ? "working" : "closed");
                     const time = relativeTime(entry.lastActivityAt ?? entry.startedAt ?? "", t);
                     const key = entryKey(entry);
                     const r1 = (
@@ -451,10 +474,7 @@ export function MobileSessionHistorySheet({
                             已结束 · N 分钟前」状态文字退出列表行（closed = 灰点 idle）。 */}
                         {sessionMarker("agent", "xs", entryProvider(entry))}
                         <span className="min-w-0 flex-1 truncate">{displayTitleOf(entry)}</span>
-                        <InstanceRowTrail
-                          dotClassName={statusToV2DotClass(running ? "working" : "closed")}
-                          time={time}
-                        />
+                        <InstanceRowTrail dotClassName={statusToV2DotClass(status)} time={time} />
                       </span>
                     );
                     return running ? (
