@@ -1,15 +1,17 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-05 13:50（**最近组时间根修** `3ba2b4d`：历史活跃条目
-> lastActivityAt 改用实例实时活动时间覆盖 file mtime；api 测试 1279 全绿；
-> **十批 commit 未 push；api 重启待用户确认**）
+> 最后更新：2026-11-05 13:58（**最近组时间根修** `3ba2b4d` + api 已重启生效：
+> 「优化 remote」时间 11-02 → 实时、排位修正；十一批 commit 未 push；
+> 遗留 = fork 副本幽灵行待用户拍板）
 
 ## 一句话状态
 
-用户报「最近组时间明显不对」→ 三源对比定位根修（`3ba2b4d`）：resume
-fork 语义下原 JSONL mtime 停更（CLI 写新 fork 文件），活跃条目时间改用
-registry updatedAt（三 provider 统一）。代码已 commit，**生效需重启
-ar-dev api——会杀「优化 remote」正在跑的 CLI turn，等用户确认**。
+用户报「最近组时间明显不对」→ 三源对比定位根修（`3ba2b4d`）：活跃条目
+时间改用 registry updatedAt（三 provider 统一）。api 已按 runbook respawn
+（用户确认），线上验证生效：优化 remote lastActivityAt 11-02 → 今天
+07:57、最近组排位修正。遗留：fork 副本（活跃会话的新 JSONL）以「已结束
++ 无标题」条目混入历史列表且 mtime 恒最新（占最近组首位）——修它需动
+capture/对账机制，待用户拍板。
 
 ## 本 session 焦点
 
@@ -50,10 +52,10 @@ ar-dev api——会杀「优化 remote」正在跑的 CLI turn，等用户确认
 - ✅ 批次二 v2 `722369f` + 行形修正 `b7f35a1`：「最近」组对齐桌面（探针
   10 断言）；v1 `782750a` 的稳定排序部分仍有效保留
 - ✅ 最近组时间根修 `3ba2b4d`：三 provider 活跃条目 lastActivityAt =
-  registry updatedAt（api 测试 1279 全绿 + 全门禁）
+  registry updatedAt（api 测试 1279 全绿 + 全门禁）；api 已 respawn（用户
+  确认），线上验证生效
 - ✅ handoff 快照归档（20261105-1257.md）
-- ⏳ **api 重启待用户确认**（会杀「优化 remote」working turn）
-- ❌ **十批 commit 未 push**（`32e5703`…`3ba2b4d`，等用户真机验收后确认）
+- ❌ **十一批 commit 未 push**（`32e5703`…`906e013`，等用户真机验收后确认）
 
 ### 阻塞 / 风险
 
