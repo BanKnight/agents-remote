@@ -146,6 +146,9 @@ try {
     ),
   );
   await page.route("**/api/overview/subtitles", (route) => route.fulfill(json({ subtitles: {} })));
+  // 第二管道的 updatedAt 故意滞后（2026-01-01）：菜单若回退到 useProjectInstances 源，
+  // 「最近组 vs 项目组同一会话行文本相同」断言必挂（用户 2026-11-05 真机报「最近组时间
+  // 比项目组更实时」的单源回归锚点）。
   await page.route(`**/api/projects/${CURRENT_PROJECT}/agent-sessions`, (route) =>
     route.fulfill(
       json({
@@ -158,7 +161,7 @@ try {
           displayName: c.displayName,
           status: c.status,
           createdAt: c.createdAt,
-          updatedAt: c.updatedAt,
+          updatedAt: "2026-01-01T00:00:00Z",
         })),
       }),
     ),
@@ -290,6 +293,19 @@ try {
     "3a 重复展示：s-a1/s-b1 各 2 次（最近组 displayName 行 + 项目组行）",
     menuState.sa1Count === 2 && menuState.sb1Count === 2,
     `s-a1=${menuState.sa1Count} s-b1=${menuState.sb1Count}`,
+  );
+  // 单源契约（用户 2026-11-05 真机反馈直接回归）：同一会话在「最近」组与项目组的行文本
+  // 逐字相同（含相对时间）。fixture 第二管道 updatedAt 故意滞后 → 回退双源必挂。
+  const sa1RowTexts = await page.evaluate(() => {
+    const menu = document.querySelector('[role="menu"]');
+    return [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])]
+      .map((el) => (el.textContent ?? "").trim())
+      .filter((text) => text.includes("s-a1"));
+  });
+  check(
+    "3b 同一会话「最近组行 ≡ 项目组行」逐字相同（单源时间同步；双源回归必挂）",
+    sa1RowTexts.length === 2 && sa1RowTexts[0] === sa1RowTexts[1],
+    JSON.stringify(sa1RowTexts),
   );
   check(
     "4a 最近组行不带项目名 chip（项目归属不上行）",

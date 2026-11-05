@@ -760,9 +760,10 @@ function MobileProjectWorkbench({
   // layout 读写（单一 V4 atom，与 WorkbenchRoute 同源）：file/git 预览 ✕ 用 removeTabFromLeaf。
   const [layout, updateLayout] = useWorkbenchLayout();
   const { instances, isLoading } = useProjectInstances(scope.key);
-  // 真机复验反馈③：▾ 菜单跨项目——全局活跃实例候选（/api/overview 单管道，与桌面共享
-  // query 缓存零额外网络）。本项目行仍由 instances 承载（排序语义既有），candidates 只消费
-  // 其它项目部分（InstanceSwitchMenu 内 filter+分组）。
+  // ▾ 菜单**唯一数据源**（/api/overview 单管道，与桌面共享 query 缓存零额外网络）：
+  // InstanceSwitchMenu 内三组（最近 / 本项目 / 其它项目）全由此派生——本项目行不再用
+  // useProjectInstances（第二管道刷新不同步 → 同一会话最近组时间比项目组实时，用户
+  // 2026-11-05 真机反馈）。instances 仍服务本文件其它消费（自动聚焦/runningCount 等）。
   const { candidates: globalCandidates } = useGlobalInstanceCandidates({ kind: "global" });
 
   // tab 带（中栏投影）：projectTabStrip 过滤当前项目 tab（含 skill，均按项目过滤）。v2 起 pills 只装
@@ -1451,7 +1452,6 @@ function MobileProjectWorkbench({
             focusRef?.kind === "session" || focusRef?.kind === "skill" ? focusRef.kind : undefined
           }
           foreignCandidates={globalCandidates}
-          instances={instances}
           onCreateInstance={() => setCreateSheetOpen(true)}
           moreMenu={
             <ActionMenu

@@ -14,7 +14,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import { type ProjectInstanceEntry } from "./instance-area";
 
 type MobileProjectHeaderProps = {
   projectName: string;
@@ -25,10 +24,11 @@ type MobileProjectHeaderProps = {
   title: string;
   /** runct ● 指示点：项目有运行中实例（原型 workspace.html `.runct` 去数字化）；0 不渲染。 */
   runningCount?: number;
-  /** 项目活跃实例（▾ 实例切换菜单列表源 = useProjectInstances 单一数据管道）。 */
-  instances: ProjectInstanceEntry[];
-  /** 全局活跃实例候选（真机复验反馈③：▾ 菜单跨项目——本项目行由 instances 承载，这里只
-   *  消费其它项目部分；数据源 = useGlobalInstanceCandidates 单一 /api/overview 管道）。 */
+  /** 全局活跃实例候选（▾ 菜单**唯一数据源** = useGlobalInstanceCandidates 单一 /api/overview
+   *  管道）：三组（最近 / 当前项目 / 其它项目）全部由此派生——原「本项目行用
+   *  useProjectInstances」是第二条管道，刷新节奏不同步（overview 有 WS 实时投影 + 10s 轮询；
+   *  agent-sessions 列表无 updatedAt 失效通道）→ 同一会话最近组时间比项目组实时（用户
+   *  2026-11-05 真机反馈）。单源后三组时间同值。 */
   foreignCandidates: GlobalInstanceCandidate[];
   /** 当前聚焦实例 id（菜单行高亮判定；skill/file 等非实例聚焦时菜单无高亮行）。 */
   focusId?: string;
@@ -77,7 +77,6 @@ export function MobileProjectHeader({
   projectName,
   title,
   runningCount,
-  instances,
   foreignCandidates,
   focusId,
   focusType,
@@ -114,7 +113,6 @@ export function MobileProjectHeader({
               focusType={focusType}
               focusProvider={focusProvider}
               foreignCandidates={foreignCandidates}
-              instances={instances}
               onCreateInstance={onCreateInstance}
               onOpenHistory={onOpenHistory}
               onSelectInstance={onSelectInstance}
@@ -171,7 +169,6 @@ type InstanceSwitchMenuProps = {
   projectName: string;
   title: string;
   runningCount?: number;
-  instances: ProjectInstanceEntry[];
   foreignCandidates: GlobalInstanceCandidate[];
   focusId?: string;
   /** 行1 标题行首类型标（同 MobileProjectHeader.focusType）。 */
@@ -208,7 +205,6 @@ function InstanceSwitchMenu({
   projectName,
   title,
   runningCount,
-  instances,
   foreignCandidates,
   focusId,
   focusType,
@@ -222,7 +218,13 @@ function InstanceSwitchMenu({
   // 标题圆点跟聚焦对象类型走（2026-10-19 用户拍板）：聚焦会话 = 会话本身的状态点
   // （与 ▾ 浮层行同款 statusToV2DotClass，消「浮层黄点/标题恒绿」的观感冲突）；
   // 非会话聚焦（skill/空态）维持 runct 项目 running 指示。
-  const focusedStatus = instances.find((entry) => entry.session.id === focusId)?.session.status;
+  const focusedStatus = foreignCandidates.find((c) => c.ref.sessionId === focusId)?.status;
+  // 当前项目组 = 同一 candidates 单源按项目过滤（与最近组/foreign 组同值同步；原
+  // useProjectInstances 第二管道刷新节奏不同步，见 props.foreignCandidates 注释）。
+  const projectCandidates = useMemo(
+    () => foreignCandidates.filter((c) => c.ref.projectName === projectName),
+    [foreignCandidates, projectName],
+  );
   // 跨项目分组（组内保持 candidates 序），组间按项目名 localeCompare——排序稳定化
   //（用户拍板 2026-11-05）：原「组内最新 updatedAt 降序」= 时间相关，会话一有更新组
   // 就跳位；项目名序恒定，与服务端 listAllCandidates 的项目序同口径。
@@ -260,7 +262,8 @@ function InstanceSwitchMenu({
       createdAt: candidate.createdAt,
       onSelect: () => onSelectInstance(candidate.ref.projectName, candidate.ref.sessionId),
     }));
-  const empty = instances.length === 0 && foreignGroups.length === 0 && recentRows.length === 0;
+  // 空态 = 本项目与其它项目均无活跃候选（recentRows 是全集子集，随之空）。
+  const empty = projectCandidates.length === 0 && foreignGroups.length === 0;
   // 菜单打开时把当前行（背景高亮）滚入视野：实例多溢出定高时队尾当前行会视野外——autoFocus
   // 常落队尾，不滚则用户看不到自己所在实例。Content 是 portal 子树且仅开态挂载（§14）：
   // mount 跑的 effect 拿到 null、open 变化不重跑 [] effect——用 state ref callback，挂载即
@@ -279,21 +282,21 @@ function InstanceSwitchMenu({
       ...(recentRows.length > 0
         ? [{ name: t("workbench.switchRecentGroup"), rows: recentRows }]
         : []),
-      ...(instances.length > 0
+      ...(projectCandidates.length > 0
         ? [
             {
               name: projectName,
-              rows: instances.map(
-                (entry): SwitchMenuRow => ({
-                  key: entry.session.id,
-                  current: entry.session.id === focusId,
-                  name: entry.session.displayName,
-                  status: entry.session.status,
-                  type: entry.type,
-                  provider: "provider" in entry.session ? entry.session.provider : undefined,
-                  updatedAt: entry.session.updatedAt,
-                  createdAt: "createdAt" in entry.session ? entry.session.createdAt : undefined,
-                  onSelect: () => onSelectInstance(projectName, entry.session.id),
+              rows: projectCandidates.map(
+                (candidate): SwitchMenuRow => ({
+                  key: candidate.ref.sessionId,
+                  current: candidate.ref.sessionId === focusId,
+                  name: candidate.displayName,
+                  status: candidate.status,
+                  type: candidate.type,
+                  provider: candidate.provider,
+                  updatedAt: candidate.updatedAt,
+                  createdAt: candidate.createdAt,
+                  onSelect: () => onSelectInstance(projectName, candidate.ref.sessionId),
                 }),
               ),
             },
@@ -316,7 +319,7 @@ function InstanceSwitchMenu({
         ),
       })),
     ],
-    [focusId, foreignGroups, instances, onSelectInstance, projectName, recentRows, t],
+    [focusId, foreignGroups, onSelectInstance, projectCandidates, projectName, recentRows, t],
   );
   return (
     <DropdownMenu>
@@ -411,7 +414,7 @@ function InstanceSwitchMenu({
             <span className="w-4 shrink-0 text-center text-[15px] font-bold leading-none">＋</span>
             {t("workbench.menuNewInstance")}
           </DropdownMenuItem>
-          {instances.length === 0 ? null : (
+          {projectCandidates.length === 0 ? null : (
             <DropdownMenuItem
               className="h-[42px] min-h-[42px] justify-start gap-[9px] rounded-none px-3.5 text-[13.5px] font-semibold text-primary focus:bg-on-surface/5"
               onSelect={onOpenHistory}
