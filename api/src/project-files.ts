@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
 import type { Dirent } from "node:fs";
+import { UPLOAD_CHUNK_SIZE_BYTES } from "@agents-remote/shared";
 import type {
   ApiErrorCode,
   CreateFileResponse,
@@ -14,10 +15,12 @@ import type {
   ProjectUnsupportedFilePreviewReason,
   RenameFileResponse,
   SaveFileResponse,
+  UploadChunkResponse,
   UploadConflictPolicy,
   UploadFileResponse,
 } from "@agents-remote/shared";
 import { lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { ProjectPathError, resolveProjectRelativePath, resolveProjectsRoot } from "./project-paths";
 
@@ -51,6 +54,14 @@ export const UPLOAD_FILE_LIMIT_BYTES = 50 * 1024 * 1024;
  * 免掉整段 body 传输；窄缝（body ≤ limit+余量 而 file > limit）由 writeUpload 兜底。
  */
 export const UPLOAD_MULTIPART_OVERHEAD_ALLOWANCE = 64 * 1024;
+
+// ── 分块上传（真进度正式方案）常量 ─────────────────────────────────────
+/** 分块临时根：OS tmp 下独立目录；块阶段不触 PROJECTS_ROOT，complete 才合并落盘。 */
+const UPLOAD_CHUNK_DIR = join(tmpdir(), "agents-remote-upload-chunks");
+/** uploadId 白名单（客户端 crypto.randomUUID 生成）：匹配后才拼路径，防 `../` 注入。 */
+const UPLOAD_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/;
+/** 块数上限：50MiB 上限 ÷ 2MiB 块 = 25 块覆盖全部合法上传，64 留裕量。 */
+export const UPLOAD_MAX_CHUNKS = 64;
 
 /**
  * 文件 tab 列表黑名单：仅这些精确名字的一级条目被隐藏（list 不返回 + hidden 标记）。
@@ -377,6 +388,142 @@ export class ProjectFilesService {
   ): Promise<UploadFileResponse> {
     const rootPath = await resolveProjectsRoot(this.projectsRoot);
     return this.writeUpload(rootPath, "", fileName, content, conflict);
+  }
+
+  // ── 分块上传：单请求版在移动 tunnel 链路下进度是浏览器 send buffer 的猜测
+  //（upload.onload 早于服务端收完是常态），且字节全在途时无任何服务端确认点。
+  // 分块后每块 200 = 服务端已收下该块，进度真实可断；单块失败只重传该块。
+  // 客户端不保留单请求路径（同一数据一条管道）；小文件 = 1 块的特例。
+
+  private async chunkDirFor(uploadId: string): Promise<string> {
+    if (!UPLOAD_ID_PATTERN.test(uploadId)) {
+      throw new ProjectFilesError("PROJECT_NAME_INVALID", "Invalid upload id");
+    }
+    return join(UPLOAD_CHUNK_DIR, uploadId);
+  }
+
+  private validateChunkShape(totalChunks: number, index: number): void {
+    if (!Number.isInteger(totalChunks) || totalChunks < 1 || totalChunks > UPLOAD_MAX_CHUNKS) {
+      throw new ProjectFilesError("PROJECT_NAME_INVALID", "Invalid chunk count");
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= totalChunks) {
+      throw new ProjectFilesError("PROJECT_NAME_INVALID", "Invalid chunk index");
+    }
+  }
+
+  private async cleanupChunks(uploadId: string): Promise<void> {
+    await rm(await this.chunkDirFor(uploadId), { recursive: true, force: true });
+  }
+
+  private async uploadChunkTo(
+    uploadId: string,
+    index: number,
+    totalChunks: number,
+    content: Buffer,
+  ): Promise<UploadChunkResponse> {
+    this.validateChunkShape(totalChunks, index);
+    // 总大小上界提前拒绝（块阶段即 413，不必等 complete 拼接）；实际大小仍由
+    // writeUpload 在 complete 时复核——谎报 total 只会少报，超限照样拦。
+    if (totalChunks * UPLOAD_CHUNK_SIZE_BYTES > UPLOAD_FILE_LIMIT_BYTES) {
+      await this.cleanupChunks(uploadId);
+      throw new ProjectFilesError(
+        "PROJECT_FILE_UPLOAD_TOO_LARGE",
+        "File exceeds upload size limit",
+      );
+    }
+    const dir = await this.chunkDirFor(uploadId);
+    await mkdir(dir, { recursive: true });
+    // 同一块重传以新内容为准（覆盖写）。
+    await writeFile(join(dir, `${index}.part`), content);
+    return { index, bytes: content.length };
+  }
+
+  private async joinChunks(uploadId: string, totalChunks: number): Promise<Buffer> {
+    this.validateChunkShape(totalChunks, 0);
+    const dir = await this.chunkDirFor(uploadId);
+    const parts: Buffer[] = [];
+    for (let i = 0; i < totalChunks; i++) {
+      try {
+        parts.push(await readFile(join(dir, `${i}.part`)));
+      } catch {
+        throw new ProjectFilesError("PROJECT_TARGET_INVALID", `Missing chunk ${i}`);
+      }
+    }
+    return Buffer.concat(parts);
+  }
+
+  // complete 共用收尾：合并落盘成功 / 非冲突失败都清临时块；409（同名冲突待用户三选）
+  // 保留临时块——三选后客户端重发 complete 即可，不必重传全部字节。
+  private async finalizeChunked(
+    uploadId: string,
+    totalChunks: number,
+    fileName: string,
+    conflict: UploadConflictPolicy | undefined,
+    finalize: (content: Buffer) => Promise<UploadFileResponse>,
+  ): Promise<UploadFileResponse> {
+    const content = await this.joinChunks(uploadId, totalChunks);
+    try {
+      const response = await finalize(content);
+      await this.cleanupChunks(uploadId);
+      return response;
+    } catch (error) {
+      const conflictPending =
+        error instanceof ProjectFilesError && error.code === "PROJECT_FILE_TARGET_EXISTS";
+      if (!conflictPending) await this.cleanupChunks(uploadId);
+      throw error;
+    }
+  }
+
+  /** 分块上传单块（项目内）：目标目录合法性提前校验（早失败）；块落 OS tmp。 */
+  async uploadChunk(
+    projectName: string,
+    directoryPath: string,
+    uploadId: string,
+    index: number,
+    totalChunks: number,
+    content: Buffer,
+  ): Promise<UploadChunkResponse> {
+    // 与 uploadFile 同款带 ensureDirectory：composer uploads/ 首传目录不存在，块阶段
+    // 就建（complete 的 writeUpload 仍全套复核）；早失败语义（隐藏段/越界/symlink）保留。
+    await this.resolvePath(projectName, directoryPath, { ensureDirectory: true });
+    return this.uploadChunkTo(uploadId, index, totalChunks, content);
+  }
+
+  /** 分块上传单块（PROJECTS_ROOT 根层，10 pin④ 对称）。 */
+  async uploadRootChunk(
+    uploadId: string,
+    index: number,
+    totalChunks: number,
+    content: Buffer,
+  ): Promise<UploadChunkResponse> {
+    await resolveProjectsRoot(this.projectsRoot);
+    return this.uploadChunkTo(uploadId, index, totalChunks, content);
+  }
+
+  /** 分块合并落盘（项目内）：复用 uploadFile 全套校验与冲突三选（分块路径同等生效）。 */
+  async completeChunkedUpload(
+    projectName: string,
+    directoryPath: string,
+    uploadId: string,
+    totalChunks: number,
+    fileName: string,
+    conflict?: UploadConflictPolicy,
+  ): Promise<UploadFileResponse> {
+    return this.finalizeChunked(uploadId, totalChunks, fileName, conflict, (content) =>
+      this.uploadFile(projectName, directoryPath, fileName, content, conflict),
+    );
+  }
+
+  /** 分块合并落盘（根层）：复用 uploadRootFile 同款边界。 */
+  async completeRootChunkedUpload(
+    uploadId: string,
+    totalChunks: number,
+    fileName: string,
+    conflict?: UploadConflictPolicy,
+  ): Promise<UploadFileResponse> {
+    return this.finalizeChunked(uploadId, totalChunks, fileName, conflict, (content) =>
+      this.uploadRootFile(fileName, content, conflict),
+    );
   }
 
   // uploadFile / uploadRootFile 共用落盘段：入参校验（文件名 / 大小上限）→ 冲突处置 → 写入。

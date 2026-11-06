@@ -111,9 +111,15 @@ async function setupAgentMocks(page, uploadCountRef, sockets, frames) {
   await page.route(/\/api\/projects\/proj1\/agent-sessions\/agent_b8-1\/auto-retry\/status$/, (r) =>
     r.fulfill(json({ scheduled: false })),
   );
+  // 分块上传后（2026-11-06）计数按 complete 请求（每文件恰好一次）；chunk 请求回
+  // 确认形状 {index,bytes} 不计数。
   await page.route(new RegExp(`/api/projects/proj1/files/upload`), (r) => {
+    if (r.request().url().includes("/files/upload-chunk")) {
+      return r.fulfill(json({ index: 0, bytes: 1 }));
+    }
     uploadCountRef.count += 1;
-    const name = String(r.request().postData()?.length ?? 0);
+    const body = r.request().postData() ?? "";
+    const name = /name="name"\r?\n\r?\n([^\r\n]+)/.exec(body)?.[1] ?? "uploaded";
     r.fulfill(json({ entry: { path: `${UPLOAD_DIR}/${name}`, name, kind: "file" } }));
   });
   // sockets 收集（openAgentSession 手动 seed session_init）+ 可选上行帧捕获（发送组帧断言）。

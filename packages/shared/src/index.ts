@@ -58,6 +58,20 @@ export type ProjectFileSearchResponse = {
 /** 上传同名冲突处置（03z 三选）：缺省 = 维持 409 硬拒；overwrite = 覆盖；keepBoth = 派生 `name(1).ext`。 */
 export type UploadConflictPolicy = "overwrite" | "keepBoth";
 
+/**
+ * 分块上传块大小（2MiB）：客户端按此切片串行上传，每块 200 = 服务端确认收到——进度由
+ * 「已确认字节」驱动而非浏览器 send buffer 猜测（移动 tunnel 链路下 upload.onload 早于
+ * 服务端收完是常态，单请求版曾因此假进度 + 30s 窗口误判）。小文件 = 1 块的特例，同一
+ * 条管道（客户端不保留单请求路径）。
+ */
+export const UPLOAD_CHUNK_SIZE_BYTES = 2 * 1024 * 1024;
+
+/** 分块上传单块确认响应（chunk 端点 200 的 body）。 */
+export type UploadChunkResponse = {
+  index: number;
+  bytes: number;
+};
+
 export type ProjectFilePreviewMediaType =
   | "image/png"
   | "image/jpeg"

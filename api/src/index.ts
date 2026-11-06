@@ -18,7 +18,7 @@ import type {
 } from "@agents-remote/shared";
 import type { TerminalSessionStatus } from "@agents-remote/shared";
 import type { UploadConflictPolicy } from "@agents-remote/shared";
-import { EFFORT_LEVELS } from "@agents-remote/shared";
+import { EFFORT_LEVELS, UPLOAD_CHUNK_SIZE_BYTES } from "@agents-remote/shared";
 import type { EffortLevel } from "@agents-remote/shared";
 import { AgentRuntime } from "./agent-runtime";
 import { AcpRuntime, resolveAcpCredentials } from "./acp-runtime";
@@ -999,6 +999,9 @@ const handleProjects = async (
       const oversized = rejectOversizedUpload(request);
       if (oversized) return oversized;
 
+      const startedAt = performance.now();
+      const declaredLen = request.headers.get("content-length");
+      uploadLog("root enter", `declaredLen=${declaredLen}`);
       const formData = await request.formData();
       const file = formData.get("file");
 
@@ -1006,10 +1009,98 @@ const handleProjects = async (
         return jsonError("PROJECT_TARGET_INVALID", "File is required", 400);
       }
 
+      const bodyMs = Math.round(performance.now() - startedAt);
       const conflict = normalizeUploadConflict(formData.get("conflict"));
       const content = Buffer.from(await file.arrayBuffer());
       const response = await projectFilesService.uploadRootFile(file.name, content, conflict);
+      uploadLog(
+        "root ok",
+        `name=${file.name} bytes=${content.length} bodyMs=${bodyMs} totalMs=${Math.round(performance.now() - startedAt)}`,
+      );
       return Response.json(response);
+    }
+
+    // 根层分块上传·单块（POST /api/root/files/upload-chunk）：每块 200 = 服务端已收下
+    // 该块（真进度确认点）；块落 OS tmp，complete 才合并落盘。预检上限 = 单块 + 余量。
+    if (
+      url.pathname === "/api/root/files/upload-chunk" &&
+      request.method === "POST" &&
+      projectFilesService
+    ) {
+      const oversized = rejectOversizedUpload(request, UPLOAD_CHUNK_SIZE_BYTES);
+      if (oversized) return oversized;
+
+      const startedAt = performance.now();
+      const declaredLen = request.headers.get("content-length");
+      uploadLog("root-chunk enter", `declaredLen=${declaredLen}`);
+      const formData = await request.formData();
+      const file = formData.get("file");
+
+      if (!file || !(file instanceof File)) {
+        return jsonError("PROJECT_TARGET_INVALID", "File is required", 400);
+      }
+
+      const bodyMs = Math.round(performance.now() - startedAt);
+      const content = Buffer.from(await file.arrayBuffer());
+      const uploadId = String(formData.get("uploadId") ?? "");
+      const index = Number(formData.get("index"));
+      const totalChunks = Number(formData.get("total"));
+      try {
+        const response = await projectFilesService.uploadRootChunk(
+          uploadId,
+          index,
+          totalChunks,
+          content,
+        );
+        uploadLog(
+          "root-chunk ok",
+          `uploadId=${uploadId} index=${index} bytes=${content.length} bodyMs=${bodyMs} totalMs=${Math.round(performance.now() - startedAt)}`,
+        );
+        return Response.json(response);
+      } catch (error) {
+        uploadLog(
+          "root-chunk err",
+          `uploadId=${uploadId} index=${index} code=${error instanceof ProjectFilesError ? error.code : "unknown"} totalMs=${Math.round(performance.now() - startedAt)}`,
+        );
+        throw error;
+      }
+    }
+
+    // 根层分块上传·合并（POST /api/root/files/upload-complete）：按序拼接全部块 →
+    // uploadRootFile 全套校验/冲突三选。409 保留临时块（三选后客户端重发 complete），
+    // 其余失败（含 413）清块。
+    if (
+      url.pathname === "/api/root/files/upload-complete" &&
+      request.method === "POST" &&
+      projectFilesService
+    ) {
+      const startedAt = performance.now();
+      uploadLog("root-complete enter", `declaredLen=${request.headers.get("content-length")}`);
+      const formData = await request.formData();
+      const bodyMs = Math.round(performance.now() - startedAt);
+      const uploadId = String(formData.get("uploadId") ?? "");
+      const totalChunks = Number(formData.get("total"));
+      const fileName = String(formData.get("name") ?? "");
+      const conflict = normalizeUploadConflict(formData.get("conflict"));
+      try {
+        const response = await projectFilesService.completeRootChunkedUpload(
+          uploadId,
+          totalChunks,
+          fileName,
+          conflict,
+        );
+        uploadLog(
+          "root-complete ok",
+          `uploadId=${uploadId} name=${fileName} totalChunks=${totalChunks} bodyMs=${bodyMs} totalMs=${Math.round(performance.now() - startedAt)}`,
+        );
+        return Response.json(response);
+      } catch (error) {
+        uploadLog(
+          "root-complete err",
+          `uploadId=${uploadId} name=${fileName} code=${error instanceof ProjectFilesError ? error.code : "unknown"} totalMs=${Math.round(performance.now() - startedAt)}`,
+        );
+        throw error;
+      }
     }
 
     const projectFilesMatch = matchProjectFilesPath(url.pathname);
@@ -1133,11 +1224,17 @@ const handleProjects = async (
       projectFilesMatch.upload &&
       projectFilesService
     ) {
-      // 上传预检：content-length 超限在 formData() 全量接收前直接 413，免整段 body 传输
-      //（>50MiB 的文件此前要传完 100% 才被 500 拒——用户看到「停在 100% 后失败」）。
+      // 上传预检：content-length 超限每块/整传入口都在 formData() 全量接收前直接 413，
+      // 免整段 body 传输（>50MiB 的文件此前要传完 100% 才被 500 拒——用户看到「停在
+      // 100% 后失败」）。
       const oversized = rejectOversizedUpload(request);
       if (oversized) return oversized;
 
+      const startedAt = performance.now();
+      uploadLog(
+        "enter",
+        `project=${projectFilesMatch.projectName} declaredLen=${request.headers.get("content-length")}`,
+      );
       const formData = await request.formData();
       const file = formData.get("file");
 
@@ -1148,6 +1245,7 @@ const handleProjects = async (
       // 03z 同名冲突三选（M8）：缺省维持 409 硬拒；overwrite/keepBoth 由队列行选择后带上。
       const conflict = normalizeUploadConflict(formData.get("conflict"));
       const content = Buffer.from(await file.arrayBuffer());
+      const bodyMs = Math.round(performance.now() - startedAt);
       const response = await projectFilesService.uploadFile(
         projectFilesMatch.projectName,
         url.searchParams.get("path") ?? "",
@@ -1155,7 +1253,105 @@ const handleProjects = async (
         content,
         conflict,
       );
+      const okMs = Math.round(performance.now() - startedAt);
+      uploadLog(
+        "ok",
+        `project=${projectFilesMatch.projectName} name=${file.name} bytes=${content.length} bodyMs=${bodyMs} totalMs=${okMs}`,
+      );
       return Response.json(response);
+    }
+
+    // 分块上传·单块：每块 200 = 服务端已收下该块（真进度确认点）；块落 OS tmp，
+    // complete 才合并落盘。预检上限 = 单块 + 余量（rejectOversizedUpload 第二参）。
+    if (
+      projectFilesMatch &&
+      request.method === "POST" &&
+      projectFilesMatch.uploadChunk &&
+      projectFilesService
+    ) {
+      const oversized = rejectOversizedUpload(request, UPLOAD_CHUNK_SIZE_BYTES);
+      if (oversized) return oversized;
+
+      const startedAt = performance.now();
+      const declaredLen = request.headers.get("content-length");
+      uploadLog(
+        "chunk enter",
+        `project=${projectFilesMatch.projectName} declaredLen=${declaredLen}`,
+      );
+      const formData = await request.formData();
+      const file = formData.get("file");
+
+      if (!file || !(file instanceof File)) {
+        return jsonError("PROJECT_TARGET_INVALID", "File is required", 400);
+      }
+
+      const bodyMs = Math.round(performance.now() - startedAt);
+      const content = Buffer.from(await file.arrayBuffer());
+      const uploadId = String(formData.get("uploadId") ?? "");
+      const index = Number(formData.get("index"));
+      const totalChunks = Number(formData.get("total"));
+      try {
+        const response = await projectFilesService.uploadChunk(
+          projectFilesMatch.projectName,
+          url.searchParams.get("path") ?? "",
+          uploadId,
+          index,
+          totalChunks,
+          content,
+        );
+        const okMs = Math.round(performance.now() - startedAt);
+        uploadLog(
+          "chunk ok",
+          `project=${projectFilesMatch.projectName} uploadId=${uploadId} index=${index} bytes=${content.length} bodyMs=${bodyMs} totalMs=${okMs}`,
+        );
+        return Response.json(response);
+      } catch (error) {
+        uploadLog(
+          "chunk err",
+          `project=${projectFilesMatch.projectName} uploadId=${uploadId} index=${index} code=${error instanceof ProjectFilesError ? error.code : "unknown"} totalMs=${Math.round(performance.now() - startedAt)}`,
+        );
+        throw error;
+      }
+    }
+
+    // 分块上传·合并：按序拼接全部块 → uploadFile 全套校验/冲突三选。409 保留临时块
+    //（三选后客户端重发 complete），其余失败（含 413）清块。
+    if (
+      projectFilesMatch &&
+      request.method === "POST" &&
+      projectFilesMatch.uploadComplete &&
+      projectFilesService
+    ) {
+      const startedAt = performance.now();
+      uploadLog("complete enter", `declaredLen=${request.headers.get("content-length")}`);
+      const formData = await request.formData();
+      const bodyMs = Math.round(performance.now() - startedAt);
+      const uploadId = String(formData.get("uploadId") ?? "");
+      const totalChunks = Number(formData.get("total"));
+      const fileName = String(formData.get("name") ?? "");
+      const conflict = normalizeUploadConflict(formData.get("conflict"));
+      try {
+        const response = await projectFilesService.completeChunkedUpload(
+          projectFilesMatch.projectName,
+          url.searchParams.get("path") ?? "",
+          uploadId,
+          totalChunks,
+          fileName,
+          conflict,
+        );
+        const okMs = Math.round(performance.now() - startedAt);
+        uploadLog(
+          "complete ok",
+          `project=${projectFilesMatch.projectName} uploadId=${uploadId} name=${fileName} totalChunks=${totalChunks} bodyMs=${bodyMs} totalMs=${okMs}`,
+        );
+        return Response.json(response);
+      } catch (error) {
+        uploadLog(
+          "complete err",
+          `project=${projectFilesMatch.projectName} uploadId=${uploadId} name=${fileName} code=${error instanceof ProjectFilesError ? error.code : "unknown"} totalMs=${Math.round(performance.now() - startedAt)}`,
+        );
+        throw error;
+      }
     }
 
     // 03x 文件搜索（M8）：项目内文件名子串匹配。q 缺省 = 空结果（前端 enabled gate）。
@@ -1895,6 +2091,8 @@ type ProjectFilesPathMatch = {
   save: boolean;
   search: boolean;
   upload: boolean;
+  uploadChunk: boolean;
+  uploadComplete: boolean;
 };
 
 const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefined => {
@@ -1905,33 +2103,42 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
   }
 
   const suffix = pathname.slice(prefix.length);
+  // 分块端点（upload-chunk / upload-complete）先归一回 /files/upload 再走统一提取链：
+  // 三者互斥（`-chunk`/`-complete` 尾缀不满足 endsWith `/files/upload`），chunk 标志独立返回。
+  const isUploadChunk = suffix.endsWith("/files/upload-chunk");
+  const isUploadComplete = suffix.endsWith("/files/upload-complete");
+  const uploadSuffix = "/files/upload";
+  const pathForName = isUploadChunk
+    ? suffix.slice(0, -"/files/upload-chunk".length) + uploadSuffix
+    : isUploadComplete
+      ? suffix.slice(0, -"/files/upload-complete".length) + uploadSuffix
+      : suffix;
   const renameSuffix = "/files/rename";
   const deleteSuffix = "/files/delete";
   const mkdirSuffix = "/files/mkdir";
   const createSuffix = "/files/create";
-  const uploadSuffix = "/files/upload";
   const previewSuffix = "/files/preview";
   const saveSuffix = "/files/save";
   const searchSuffix = "/files/search";
   const filesSuffix = "/files";
-  const encodedName = suffix.endsWith(renameSuffix)
-    ? suffix.slice(0, -renameSuffix.length)
-    : suffix.endsWith(deleteSuffix)
-      ? suffix.slice(0, -deleteSuffix.length)
-      : suffix.endsWith(mkdirSuffix)
-        ? suffix.slice(0, -mkdirSuffix.length)
-        : suffix.endsWith(createSuffix)
-          ? suffix.slice(0, -createSuffix.length)
-          : suffix.endsWith(uploadSuffix)
-            ? suffix.slice(0, -uploadSuffix.length)
-            : suffix.endsWith(previewSuffix)
-              ? suffix.slice(0, -previewSuffix.length)
-              : suffix.endsWith(saveSuffix)
-                ? suffix.slice(0, -saveSuffix.length)
-                : suffix.endsWith(searchSuffix)
-                  ? suffix.slice(0, -searchSuffix.length)
-                  : suffix.endsWith(filesSuffix)
-                    ? suffix.slice(0, -filesSuffix.length)
+  const encodedName = pathForName.endsWith(renameSuffix)
+    ? pathForName.slice(0, -renameSuffix.length)
+    : pathForName.endsWith(deleteSuffix)
+      ? pathForName.slice(0, -deleteSuffix.length)
+      : pathForName.endsWith(mkdirSuffix)
+        ? pathForName.slice(0, -mkdirSuffix.length)
+        : pathForName.endsWith(createSuffix)
+          ? pathForName.slice(0, -createSuffix.length)
+          : pathForName.endsWith(uploadSuffix)
+            ? pathForName.slice(0, -uploadSuffix.length)
+            : pathForName.endsWith(previewSuffix)
+              ? pathForName.slice(0, -previewSuffix.length)
+              : pathForName.endsWith(saveSuffix)
+                ? pathForName.slice(0, -saveSuffix.length)
+                : pathForName.endsWith(searchSuffix)
+                  ? pathForName.slice(0, -searchSuffix.length)
+                  : pathForName.endsWith(filesSuffix)
+                    ? pathForName.slice(0, -filesSuffix.length)
                     : undefined;
 
   if (encodedName === undefined || encodedName.length === 0 || encodedName.includes("/")) {
@@ -1946,14 +2153,16 @@ const matchProjectFilesPath = (pathname: string): ProjectFilesPathMatch | undefi
 
   return {
     projectName,
-    delete: suffix.endsWith(deleteSuffix),
-    mkdir: suffix.endsWith(mkdirSuffix),
-    create: suffix.endsWith(createSuffix),
-    preview: suffix.endsWith(previewSuffix),
-    rename: suffix.endsWith(renameSuffix),
-    save: suffix.endsWith(saveSuffix),
-    search: suffix.endsWith(searchSuffix),
-    upload: suffix.endsWith(uploadSuffix),
+    delete: pathForName.endsWith(deleteSuffix),
+    mkdir: pathForName.endsWith(mkdirSuffix),
+    create: pathForName.endsWith(createSuffix),
+    preview: pathForName.endsWith(previewSuffix),
+    rename: pathForName.endsWith(renameSuffix),
+    save: pathForName.endsWith(saveSuffix),
+    search: pathForName.endsWith(searchSuffix),
+    upload: !isUploadChunk && !isUploadComplete && pathForName.endsWith(uploadSuffix),
+    uploadChunk: isUploadChunk,
+    uploadComplete: isUploadComplete,
   };
 };
 
@@ -2058,16 +2267,14 @@ const projectFilesErrorResponse = (error: ProjectFilesError) => {
 };
 
 /**
- * 上传预检（两处上传路由共用）：content-length 超过「上限 + multipart 开销余量」即在
+ * 上传预检（全部上传路由共用）：content-length 超过「上限 + multipart 开销余量」即在
  * formData() 全量接收前直接 413，免整段 body 传输。头缺失/非数字（chunked）跳过走原路径，
  * 由 writeUpload 的大小校验兜底；multipart body 恒 ≥ 文件本体，故不会漏判真超限。
+ * limit 可调（分块单块路由传 UPLOAD_CHUNK_SIZE_BYTES），缺省 = 整文件上限。
  */
-const rejectOversizedUpload = (request: Request) => {
+const rejectOversizedUpload = (request: Request, limit = UPLOAD_FILE_LIMIT_BYTES) => {
   const declared = Number(request.headers.get("content-length"));
-  if (
-    Number.isFinite(declared) &&
-    declared > UPLOAD_FILE_LIMIT_BYTES + UPLOAD_MULTIPART_OVERHEAD_ALLOWANCE
-  ) {
+  if (Number.isFinite(declared) && declared > limit + UPLOAD_MULTIPART_OVERHEAD_ALLOWANCE) {
     return jsonError(
       "PROJECT_FILE_UPLOAD_TOO_LARGE",
       `File exceeds upload size limit of ${UPLOAD_FILE_LIMIT_BYTES / (1024 * 1024)} MiB`,
@@ -2075,6 +2282,15 @@ const rejectOversizedUpload = (request: Request) => {
     );
   }
   return null;
+};
+
+/**
+ * 上传诊断日志（2026-11-06 真机「边缘已收齐 / 服务器未收完」定位）：每个上传入口记录
+ * 进入 + declaredLen、body 接收耗时（formData 完成点 = origin 实际收完 body 的时刻）、
+ * 处理总耗时。一次真机复现即可读出时间花在哪一层（边缘缓冲 vs origin 接收 vs 处理）。
+ */
+const uploadLog = (event: string, detail: string) => {
+  console.log(`[upload] ${event} ${detail}`);
 };
 
 const projectPagesErrorResponse = (error: ProjectPagesError) => {

@@ -79,8 +79,6 @@ let uploadConflictPosts = [];
 let createdProjects = [];
 let autoRetryFires = 0;
 let autoRetryCancels = 0;
-/** 该文件名的上传先回 409（冲突三选），带 conflict 后成功——按文件名计数。 */
-let uploadAttempts = new Map();
 
 // ── mock 基座 ────────────────────────────────────────────────────────────────
 async function setupMocks(page) {
@@ -90,7 +88,6 @@ async function setupMocks(page) {
   createdProjects = [];
   autoRetryFires = 0;
   autoRetryCancels = 0;
-  uploadAttempts = new Map();
 
   await page.route(/\/api\/overview$/, (r) =>
     r.fulfill(json({ projectNames: [projectName], candidates: [] })),
@@ -138,23 +135,30 @@ async function setupMocks(page) {
     const matches = all.filter((m) => m.path.toLowerCase().includes(q.toLowerCase()));
     return r.fulfill(json({ projectName, query: q, matches, truncated: false }));
   });
-  await page.route(new RegExp(`/api/projects/${projectName}/files/upload(?:\\?.*)?$`), (r) => {
-    const body = r.request().postData() ?? "";
-    const name = /filename="([^"]+)"/.exec(body)?.[1] ?? "";
-    const attempts = (uploadAttempts.get(name) ?? 0) + 1;
-    uploadAttempts.set(name, attempts);
-    if (/name="conflict"\r?\n\r?\n/.test(body)) {
-      uploadConflictPosts.push({ body: body.slice(0, 400), name });
+  // 分块上传后 mock（2026-11-06）：chunk 请求（服务端确认 {index,bytes}）无冲突语义
+  // 直接 200；冲突流发生在 complete（带 name/conflict 字段）——首发无 conflict 回 409，
+  // 三选后带 conflict=overwrite 回 {entry}。正则放行 -chunk/-complete 后缀（$ 锚定）。
+  await page.route(
+    new RegExp(`/api/projects/${projectName}/files/upload(?:-chunk|-complete)?(?:\\?.*)?$`),
+    (r) => {
+      if (r.request().url().includes("/files/upload-chunk")) {
+        return r.fulfill(json({ index: 0, bytes: 1 }));
+      }
+      const body = r.request().postData() ?? "";
+      const name = /name="name"\r?\n\r?\n([^\r\n]+)/.exec(body)?.[1] ?? "";
+      if (/name="conflict"\r?\n\r?\n/.test(body)) {
+        uploadConflictPosts.push({ body: body.slice(0, 400), name });
+        return r.fulfill(
+          json({ entry: { name, path: name, type: "file", size: null, hidden: false } }),
+        );
+      }
+      // complete 首发无 conflict → 服务端 409 PROJECT_FILE_TARGET_EXISTS。
+      uploadConflictPosts.push({ body, name });
       return r.fulfill(
-        json({ entry: { name, path: name, type: "file", size: null, hidden: false } }),
+        json({ error: { code: "PROJECT_FILE_TARGET_EXISTS", message: "同名文件已存在" } }, 409),
       );
-    }
-    // 首传无 conflict → 服务端 409 PROJECT_FILE_TARGET_EXISTS。
-    uploadConflictPosts.push({ body, name });
-    return r.fulfill(
-      json({ error: { code: "PROJECT_FILE_TARGET_EXISTS", message: "同名文件已存在" } }, 409),
-    );
-  });
+    },
+  );
   await page.route(new RegExp(`/api/projects/${projectName}/files/rename$`), (r) => {
     renamePosts.push(JSON.parse(r.request().postData() ?? "{}"));
     return r.fulfill(json({ ok: true }));

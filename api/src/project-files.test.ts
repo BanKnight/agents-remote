@@ -365,6 +365,115 @@ test("uploadFile rejects oversized content", async () => {
   });
 });
 
+test("chunked upload: two chunks then complete joins in order and cleans up", async () => {
+  const service = new ProjectFilesService(root);
+  const uploadId = crypto.randomUUID();
+  const first = Buffer.from("hello ");
+  const second = Buffer.from("chunked world");
+
+  await expect(service.uploadChunk("demo", "uploads", uploadId, 0, 2, first)).resolves.toEqual({
+    index: 0,
+    bytes: 6,
+  });
+  await expect(service.uploadChunk("demo", "uploads", uploadId, 1, 2, second)).resolves.toEqual({
+    index: 1,
+    bytes: 13,
+  });
+  const done = await service.completeChunkedUpload("demo", "uploads", uploadId, 2, "joined.txt");
+  expect(done.entry.path).toBe("uploads/joined.txt");
+  await expect(readFile(join(root, "demo", "uploads", "joined.txt"))).resolves.toEqual(
+    Buffer.from("hello chunked world"),
+  );
+  // 已 complete 的 uploadId 再次 complete = 缺块（临时块已清理的行为化断言）。
+  await expect(
+    service.completeChunkedUpload("demo", "uploads", uploadId, 2, "joined.txt"),
+  ).rejects.toMatchObject({ code: "PROJECT_TARGET_INVALID" });
+});
+
+test("chunked upload: single-chunk file is the same pipeline", async () => {
+  const service = new ProjectFilesService(root);
+  const uploadId = crypto.randomUUID();
+
+  await expect(
+    service.uploadChunk("demo", "", uploadId, 0, 1, Buffer.from("solo")),
+  ).resolves.toEqual({ index: 0, bytes: 4 });
+  const done = await service.completeChunkedUpload("demo", "", uploadId, 1, "solo.txt");
+  expect(done.entry.path).toBe("solo.txt");
+});
+
+test("chunked upload: 409 keeps temp chunks for conflict retry", async () => {
+  const service = new ProjectFilesService(root);
+  const uploadId = crypto.randomUUID();
+  await writeFile(join(root, "demo", "dupe.txt"), "existing");
+
+  await service.uploadChunk("demo", "", uploadId, 0, 1, Buffer.from("incoming"));
+  await expect(
+    service.completeChunkedUpload("demo", "", uploadId, 1, "dupe.txt"),
+  ).rejects.toMatchObject({ code: "PROJECT_FILE_TARGET_EXISTS" });
+  // 三选后重发 complete（overwrite）成功 = 409 时临时块确实被保留。
+  await expect(
+    service.completeChunkedUpload("demo", "", uploadId, 1, "dupe.txt", "overwrite"),
+  ).resolves.toMatchObject({ entry: { path: "dupe.txt" } });
+  await expect(readFile(join(root, "demo", "dupe.txt"))).resolves.toEqual(Buffer.from("incoming"));
+});
+
+test("chunked upload: missing chunk fails and cleans up", async () => {
+  const service = new ProjectFilesService(root);
+  const uploadId = crypto.randomUUID();
+
+  await service.uploadChunk("demo", "", uploadId, 0, 2, Buffer.from("a"));
+  await expect(
+    service.completeChunkedUpload("demo", "", uploadId, 2, "g.txt"),
+  ).rejects.toMatchObject({ code: "PROJECT_TARGET_INVALID" });
+  // 非冲突失败清临时块：清理后重发 complete 仍报缺块（若未清理，chunk 0 还在、只缺 1）。
+  await expect(
+    service.completeChunkedUpload("demo", "", uploadId, 2, "g.txt"),
+  ).rejects.toMatchObject({ code: "PROJECT_TARGET_INVALID" });
+});
+
+test("chunked upload: rejects invalid uploadId and chunk shape", async () => {
+  const service = new ProjectFilesService(root);
+
+  // uploadId 注入（`../`）在拼路径前拒绝。
+  await expect(
+    service.uploadChunk("demo", "", "../escape", 0, 1, Buffer.from("x")),
+  ).rejects.toMatchObject({ code: "PROJECT_NAME_INVALID" });
+  await expect(
+    service.uploadChunk("demo", "", crypto.randomUUID(), 0, 1, Buffer.from("x")),
+  ).resolves.toBeTruthy();
+});
+
+test("chunked upload: rejects oversized total via chunk-count bound", async () => {
+  const service = new ProjectFilesService(root);
+  const uploadId = crypto.randomUUID();
+
+  // 64 块 × 2MiB = 128MiB > 50MiB 上限：块阶段即 413。
+  await expect(
+    service.uploadChunk("demo", "", uploadId, 0, 64, Buffer.from("x")),
+  ).rejects.toMatchObject({ code: "PROJECT_FILE_UPLOAD_TOO_LARGE" });
+  // 失败清临时块：重发同 uploadId 的合法块成功（目录已被清掉、重新 mkdir）。
+  await expect(
+    service.uploadChunk("demo", "", uploadId, 0, 1, Buffer.from("x")),
+  ).resolves.toBeTruthy();
+});
+
+test("chunked upload: root scope mirrors project scope", async () => {
+  const service = new ProjectFilesService(root);
+  const uploadId = crypto.randomUUID();
+
+  await expect(service.uploadRootChunk(uploadId, 0, 1, Buffer.from("root-"))).resolves.toEqual({
+    index: 0,
+    bytes: 5,
+  });
+  await expect(service.uploadRootChunk(uploadId, 1, 2, Buffer.from("scope"))).resolves.toEqual({
+    index: 1,
+    bytes: 5,
+  });
+  const done = await service.completeRootChunkedUpload(uploadId, 2, "joined-root.txt");
+  expect(done.entry.path).toBe("joined-root.txt");
+  await expect(readFile(join(root, "joined-root.txt"))).resolves.toEqual(Buffer.from("root-scope"));
+});
+
 test("createFolder creates a directory and returns entry", async () => {
   const service = new ProjectFilesService(root);
 

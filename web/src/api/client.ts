@@ -141,6 +141,7 @@ import type {
 import type { TranslationKey } from "../i18n/types";
 import type { DiagEntry } from "../lib/diag-log";
 import { resolveTranslation } from "../i18n/translate";
+import { UPLOAD_CHUNK_SIZE_BYTES } from "@agents-remote/shared";
 
 const fail = (key: TranslationKey, status: number) =>
   new Error(`${resolveTranslation(key)}: ${status}`);
@@ -384,14 +385,14 @@ export class UploadConflictError extends Error {
 }
 
 /**
- * XHR 响应等待 watchdog：字节发完后等服务端处理 + 响应的超时上限——半开连接此前永卡
- *「上传中 100%」（报错优于永卡）。请求体发送阶段不设（真半开由 TCP 层触发 onerror）。
- */
-const UPLOAD_RESPONSE_TIMEOUT_MS = 30_000;
-
-/**
- * XHR 整请求总超时（含请求体发送段）：发送段若服务端「收下连接但不读」，既不触发 error
- * 也无 upload.onload，watchdog 起不来 → 同样永卡。10 分钟足够 50MiB 在 1Mbps 上行传完。
+ * XHR 整请求总超时（含请求体发送段）——**唯一的超时判据**。
+ *
+ * 2026-11-06 真机取证后修正：此前另有「`upload.onload` 之后 30s 响应 watchdog」，但
+ * `xhr.upload.onload` 只表示浏览器把请求体交给了内核，**不等于字节已抵达服务端**——
+ * 移动网络 / iOS PWA 上常见「进度瞬间 100%，再等 30s+」。从 upload.onload 起算 30s 会把
+ * 慢上行的大文件误判成服务器超时：客户端 abort 时服务端刚好收完落盘，于是出现
+ * 「提示失败，但文件其实已在」（实测：2.7MB PDF 完整落盘 + 客户端报失败）。
+ * 慢上行本身由本总超时兜底（50MiB / 10min ≈ 85KB/s 阈值），不会永卡。
  */
 const UPLOAD_TOTAL_TIMEOUT_MS = 10 * 60_000;
 
@@ -407,8 +408,8 @@ export const UPLOAD_RESPONSE_INVALID_CODE = "UPLOAD_RESPONSE_INVALID";
  *
  * - settled 单闸：abort → onabort/loadend、upload.onerror 与 xhr.onerror 双 fire 等
  *   引擎差异全部被闸吃掉，resolve/reject 恰好一次。
- * - 响应 watchdog：`xhr.upload.onload`（字节发完 = 进入服务端处理段）启动，到点
- *   reject 超时错误再 abort。
+ * - 超时只有一条：`xhr.timeout`（整请求总超时）。不再有 `upload.onload` 之后的短
+ *   watchdog——该信号早于服务端收完是移动链路常态，会误杀慢上行大文件。
  * - 401（status 或 UNAUTHENTICATED code）→ refreshAuth() 成功则整传重试一次（retried
  *   防环），失败派发 `auth:unauthenticated`——与 fetchJson 同口径。
  * - responseType="text" + 手动 JSON.parse：responseType="json" 时访问 responseText
@@ -418,7 +419,7 @@ export const UPLOAD_RESPONSE_INVALID_CODE = "UPLOAD_RESPONSE_INVALID";
  */
 const xhrUpload = (
   url: string,
-  file: File,
+  file: File | null,
   conflict: UploadConflictPolicy | undefined,
   opts: {
     onProgress?: (percent: number) => void;
@@ -426,18 +427,24 @@ const xhrUpload = (
     /** 401 刷新成功后整传重试前回调（消费方复位「处理中/100%」显示）。 */
     onRetryStart?: () => void;
     signal?: AbortSignal;
+    /** 分块 complete 请求的额外表单字段（uploadId/index/total/name）。 */
+    fields?: Record<string, string>;
+    /**
+     * 2xx 响应期望形状："entry"（默认，upload/complete 端点 = {entry}）；"object" =
+     * 任意 JSON 对象即可（chunk 端点 = {index, bytes}，无 entry）。防 2xx 坏 body
+     * （网关错误页/空体）被吞的校验对两种形状都生效（parse 失败 → null → reject）。
+     */
+    expect?: "entry" | "object";
   },
   retried = false,
 ): Promise<UploadFileResponse> =>
   new Promise((resolve, reject) => {
     let settled = false;
-    let watchdog: ReturnType<typeof setTimeout> | undefined;
     const onSignalAbort = () => xhr.abort();
 
     const settle = (finish: () => void) => {
       if (settled) return;
       settled = true;
-      if (watchdog !== undefined) clearTimeout(watchdog);
       opts.signal?.removeEventListener("abort", onSignalAbort);
       finish();
     };
@@ -460,7 +467,7 @@ const xhrUpload = (
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
     xhr.responseType = "text";
-    // 总超时覆盖整请求（含发送段；发送段半开无任何事件，watchdog 起不来）。
+    // 总超时覆盖整请求（含发送段；发送段半开时无任何事件，靠它兜底）。
     xhr.timeout = UPLOAD_TOTAL_TIMEOUT_MS;
     opts.signal?.addEventListener("abort", onSignalAbort);
 
@@ -469,19 +476,16 @@ const xhrUpload = (
         opts.onProgress((e.loaded / e.total) * 100);
       }
     };
+    // 字节发完 → 只切「处理中」显示，**不在此起任何短超时**（见 UPLOAD_TOTAL_TIMEOUT_MS
+    // 注释：upload.onload 早于服务端收完是移动链路常态，起短超时会误杀慢上行）。
     xhr.upload.onload = () => {
-      // 响应可能已先到（load 已 settle）：不再起 30s 空定时器。
       if (settled) return;
       opts.onUploadComplete?.();
-      watchdog = setTimeout(() => {
-        settle(() => reject(timeoutError()));
-        xhr.abort();
-      }, UPLOAD_RESPONSE_TIMEOUT_MS);
     };
     xhr.onerror = () => settle(() => reject(networkError()));
     // abort 只派发 abort + loadend，**不派发 error**——不接这个回调时 abort() 后 Promise
-    // 永不 settle（取消上传 → 队列 pump / 同批附件永久卡死）。主动取消与 watchdog 到点
-    // 的 abort 都走这里，settle 单闸保证只结算一次。
+    // 永不 settle（取消上传 → 队列 pump / 同批附件永久卡死）。主动取消与总超时都走这里，
+    // settle 单闸保证只结算一次。
     xhr.onabort = () => settle(() => reject(networkError()));
     xhr.ontimeout = () => settle(() => reject(timeoutError()));
 
@@ -540,7 +544,7 @@ const xhrUpload = (
           );
           return;
         }
-        if (!body || typeof body !== "object" || !("entry" in body)) {
+        if (!body || typeof body !== "object" || (opts.expect !== "object" && !("entry" in body))) {
           // 2xx 但响应体不是预期形状（网关错误页/空体）：明确报错，不让 res.entry.path
           // 的 TypeError 被吞；keepBoth 语义下提示重传无害（不覆盖既有文件）。
           reject(
@@ -556,14 +560,87 @@ const xhrUpload = (
     };
 
     const formData = new FormData();
-    formData.append("file", file);
+    if (file) formData.append("file", file);
     if (conflict) formData.append("conflict", conflict);
+    for (const [key, value] of Object.entries(opts.fields ?? {})) {
+      formData.append(key, value);
+    }
     xhr.send(formData);
   });
 
 /**
- * 项目内上传（XHR 真实字节百分比；onUploadComplete = 字节发完进入服务端处理段；
- * signal 支持 abort）。鉴权同 fetch：HttpOnly cookie 同源自动携带。
+ * 分块上传单管道：文件切成 UPLOAD_CHUNK_SIZE_BYTES 的块串行上传，每块 200 = 服务端
+ * 确认收到——onProgress 由「已确认字节 + 当前块已发字节」合成，单调可信（单请求版
+ * 的 upload.onload 早于服务端收完是移动链路常态，进度是 send buffer 猜测）。全部块
+ * 确认后调 complete 合并落盘（409 冲突语义与单请求同款：UploadConflictError）。
+ * 小文件 = 1 块的特例，同一条管道（客户端不保留单请求路径）。
+ */
+const uploadChunked = (
+  /** 端点前缀，不含 query（如 "/api/projects/x/files"）；query 经 pathQuery 单独传。 */
+  uploadBase: string,
+  file: File,
+  opts: {
+    conflict?: UploadConflictPolicy;
+    onProgress?: (percent: number) => void;
+    onUploadComplete?: () => void;
+    onRetryStart?: () => void;
+    signal?: AbortSignal;
+  },
+  /** 目标目录 query（"?path=..."，可空）——块与 complete 请求共用同一目标。 */
+  pathQuery = "",
+): Promise<UploadFileResponse> => {
+  const total = file.size;
+  const totalChunks = Math.max(1, Math.ceil(total / UPLOAD_CHUNK_SIZE_BYTES));
+  const uploadId = crypto.randomUUID();
+  let confirmed = 0;
+  // 0 字节文件（total=0）进度恒 100，避免 0/0 NaN 进 UI。
+  const progressOf = (bytes: number) => (total > 0 ? (bytes / total) * 100 : 100);
+
+  const sendChunk = (index: number): Promise<void> => {
+    const start = index * UPLOAD_CHUNK_SIZE_BYTES;
+    const end = Math.min(start + UPLOAD_CHUNK_SIZE_BYTES, total);
+    const base = confirmed;
+    return xhrUpload(
+      `${uploadBase}/upload-chunk${pathQuery}`,
+      new File([file.slice(start, end)], file.name, {
+        type: file.type || "application/octet-stream",
+      }),
+      undefined,
+      {
+        signal: opts.signal,
+        onRetryStart: opts.onRetryStart,
+        onProgress: (percent) => {
+          opts.onProgress?.(
+            Math.min(((base + (percent / 100) * (end - start)) / total) * 100, 100),
+          );
+        },
+        fields: { uploadId, index: String(index), total: String(totalChunks) },
+        expect: "object",
+      },
+    ).then(() => {
+      confirmed = end;
+      // 块确认 = 服务端已收下该块：进度至少推到该块右端（下块 progress 事件到来前不回退）。
+      opts.onProgress?.(progressOf(confirmed));
+    });
+  };
+
+  const run = async (): Promise<UploadFileResponse> => {
+    for (let index = 0; index < totalChunks; index++) {
+      await sendChunk(index);
+    }
+    // 全部块确认 → 进入合并段（「处理中…」窗口）。
+    opts.onUploadComplete?.();
+    return xhrUpload(`${uploadBase}/upload-complete${pathQuery}`, null, opts.conflict, {
+      signal: opts.signal,
+      fields: { uploadId, total: String(totalChunks), name: file.name },
+    });
+  };
+  return run();
+};
+
+/**
+ * 项目内上传（分块管道：每块 200 = 服务端确认，进度由已确认字节驱动；onUploadComplete
+ * = 全部块确认进入合并段；signal 支持 abort）。鉴权同 fetch：HttpOnly cookie 同源自动携带。
  */
 export function uploadFileWithProgress(
   projectName: string,
@@ -578,15 +655,21 @@ export function uploadFileWithProgress(
   },
 ): Promise<UploadFileResponse> {
   const { conflict, onProgress, onUploadComplete, onRetryStart, signal } = opts ?? {};
-  return xhrUpload(projectFileUploadPath(projectName, directoryPath), file, conflict, {
-    onProgress,
-    onUploadComplete,
-    onRetryStart,
-    signal,
-  });
+  return uploadChunked(
+    `/api/projects/${encodeURIComponent(projectName)}/files`,
+    file,
+    {
+      conflict,
+      onProgress,
+      onUploadComplete,
+      onRetryStart,
+      signal,
+    },
+    withPathQuery("", directoryPath),
+  );
 }
 
-/** 根层上传（POST /api/root/files/upload）的 XHR 变体——upload-queue 真进度用。 */
+/** 根层上传（分块管道，POST /api/root/files/upload-chunk + upload-complete）。 */
 export function rootUploadFileWithProgress(
   file: File,
   conflict?: UploadConflictPolicy,
@@ -598,7 +681,8 @@ export function rootUploadFileWithProgress(
   },
 ): Promise<UploadFileResponse> {
   const { onProgress, onUploadComplete, onRetryStart, signal } = opts ?? {};
-  return xhrUpload("/api/root/files/upload", file, conflict, {
+  return uploadChunked("/api/root/files", file, {
+    conflict,
     onProgress,
     onUploadComplete,
     onRetryStart,
@@ -1418,9 +1502,6 @@ export async function testPresetModels(
 
 const projectFilesPath = (projectName: string, path: string) =>
   withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files`, path);
-
-const projectFileUploadPath = (projectName: string, path: string) =>
-  withPathQuery(`/api/projects/${encodeURIComponent(projectName)}/files/upload`, path);
 
 // 搜索参数名与前缀同源的其它搜索端点一致（`?q=`，见 searchWiki / searchSkills）；服务端
 // 读 url.searchParams.get("q")（api/src/index.ts 03x 分支）。
