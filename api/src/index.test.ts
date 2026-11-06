@@ -88,6 +88,58 @@ test("POST /api/root/files/upload writes PROJECTS_ROOT top-level file with keepB
   expect(body.entry.path).toBe("loose(1).txt");
 });
 
+test("upload routes reject oversized content-length with 413 before reading body", async () => {
+  const { handler, auth } = createTestHandler();
+  await mkdir(join(root, "demo"));
+
+  const oversized = {
+    "content-length": String(50 * 1024 * 1024 + 64 * 1024 + 1),
+  };
+  const formData = new FormData();
+  formData.append("file", new File(["x"], "big.bin"));
+
+  const projectResponse = await handler(
+    new Request(`http://localhost/api/projects/demo/files/upload?path=uploads`, {
+      method: "POST",
+      headers: { ...authHeader(auth), ...oversized },
+      body: formData,
+    }),
+    { upgrade: () => false },
+  );
+  expect(projectResponse.status).toBe(413);
+  expect((await projectResponse.json()).error.code).toBe("PROJECT_FILE_UPLOAD_TOO_LARGE");
+
+  const rootResponse = await handler(
+    new Request("http://localhost/api/root/files/upload", {
+      method: "POST",
+      headers: { ...authHeader(auth), ...oversized },
+      body: formData,
+    }),
+    { upgrade: () => false },
+  );
+  expect(rootResponse.status).toBe(413);
+});
+
+test("upload routes skip precheck on non-numeric content-length", async () => {
+  const { handler, auth } = createTestHandler();
+  await mkdir(join(root, "demo"));
+
+  const formData = new FormData();
+  formData.append("file", new File(["ok"], "fine.txt"));
+  const response = await handler(
+    new Request(`http://localhost/api/projects/demo/files/upload?path=uploads`, {
+      method: "POST",
+      headers: { ...authHeader(auth), "content-length": "not-a-number" },
+      body: formData,
+    }),
+    { upgrade: () => false },
+  );
+
+  // 非数字（chunked 语义）跳过预检走原路径：小文件正常上传成功（自动建 uploads/）。
+  expect(response.status).toBe(200);
+  expect((await response.json()).entry.path).toBe("uploads/fine.txt");
+});
+
 test("GET files/search returns relative-path matches within a project", async () => {
   await mkdir(join(root, "demo", "src"), { recursive: true });
   await writeFile(join(root, "demo", "src", "passkey.ts"), "export {}");

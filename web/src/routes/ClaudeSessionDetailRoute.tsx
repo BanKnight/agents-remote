@@ -3932,6 +3932,8 @@ function ComposerWithInterrupt({
             <ComposerStopSend
               onCancel={onCancel}
               send={sendComposer}
+              sendDisabled={hasUploadingAttachment}
+              sendDisabledTitle={t("claude.composer.sendWaitingUpload")}
               showSend={showSend}
               showStop={showStop}
             />

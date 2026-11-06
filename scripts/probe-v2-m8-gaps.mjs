@@ -3,8 +3,8 @@
 // MobileSheet Description / 03n 单一管道）。
 //
 // 覆盖单测验不到的真实浏览器行为（DOM 几何硬数据，禁截图）：
-//   Part 1 03x 文件搜索：files 工具 magnifyingglass → .wsearch（面包屑两态切换，03x①「同
-//     Wiki」）→ 输入 query → 命中 /files/search?q=（记录 URL）→ .res 计数 + .xrow 相对路径 +
+//   Part 1 03x 文件搜索：files 工具 magnifyingglass → .psearch（CollapsibleSearchRow 单源，
+//     v1.6 同构收敛替代 .wsearch chip 内嵌）→ 输入 query → 命中 /files/search?q=（记录 URL）→
 //     点击进预览 + ✕ 清空回 .crumb；空结果走 .res「0 个结果」。
 //   Part 2 03y 移动到：目录行 ActionMenu「移动到…」→ prompt 预填当前父目录 → 改路径确认 →
 //     POST /files/rename 带 targetDir（能力在服务端 renameFile.targetDir）。
@@ -145,7 +145,9 @@ async function setupMocks(page) {
     uploadAttempts.set(name, attempts);
     if (/name="conflict"\r?\n\r?\n/.test(body)) {
       uploadConflictPosts.push({ body: body.slice(0, 400), name });
-      return r.fulfill(json({ file: { name, path: name, type: "file" } }));
+      return r.fulfill(
+        json({ entry: { name, path: name, type: "file", size: null, hidden: false } }),
+      );
     }
     // 首传无 conflict → 服务端 409 PROJECT_FILE_TARGET_EXISTS。
     uploadConflictPosts.push({ body, name });
@@ -251,24 +253,27 @@ await setupMocks(page);
 await login(page);
 
 // ── Part 1: 03x 文件搜索 ──────────────────────────────────────────────────────
-console.log("Part 1: 03x 文件搜索（.wsearch 两态 + .res 计数 + .xrow 结果）");
+console.log("Part 1: 03x 文件搜索（.psearch 两态 + .res 计数 + .xrow 结果）");
 await page.goto(`${ORIGIN}/projects/${projectName}?tab=files`);
 await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 10000 });
 ok((await page.locator(".crumb").count()) === 1, "默认态 = .crumb 面包屑");
 // magnifyingglass 按钮（03o 渐进披露：独立 .obtn.srch chip 在 .crumb 胶囊右侧——非胶囊内
 // 子元素，地址栏单源修复后为兄弟节点）。
 await page.locator('button.obtn.srch[aria-label="搜索文件"]').click();
-await page.waitForSelector(".wsearch", { timeout: 5000 });
-ok((await page.locator(".wsearch").count()) === 1, "点放大镜 → .wsearch 搜索框（03x ①同 Wiki）");
+await page.waitForSelector(".psearch", { timeout: 5000 });
+ok(
+  (await page.locator(".psearch").count()) === 1,
+  "点放大镜 → .psearch 搜索框（v1.6 同构收敛 CollapsibleSearchRow 单源）",
+);
 ok((await page.locator(".crumb").count()) === 0, "搜索态无 .crumb（两态互斥）");
-const fieldGeom = await page.locator(".wsearch").evaluate((el) => {
+const fieldGeom = await page.locator(".psearch").evaluate((el) => {
   const r = el.getBoundingClientRect();
   const cs = getComputedStyle(el);
   return { h: Math.round(r.height * 10) / 10, radius: cs.borderRadius, border: cs.borderColor };
 });
-ok(fieldGeom.h === 30, `.wsearch 高度 = 30（原型值；实测 ${fieldGeom.h}）`);
-ok(fieldGeom.radius === "15px", `.wsearch 圆角 = 15px（实测 ${fieldGeom.radius}）`);
-await page.locator(".wsearch input").fill("readme");
+ok(fieldGeom.h === 38, `.psearch 高度 = 38（单源 38px/r12；实测 ${fieldGeom.h}）`);
+ok(fieldGeom.radius === "12px", `.psearch 圆角 = 12px（实测 ${fieldGeom.radius}）`);
+await page.locator(".psearch input").fill("readme");
 await page.waitForTimeout(700);
 ok(searchUrls.length >= 1, `输入触发 /files/search（${searchUrls.length} 次）`);
 ok(
@@ -285,12 +290,12 @@ ok(xrowPath === "src/readme-helper.ts", `.xrow 显示项目内相对路径（${x
 const dirIconText = await page.locator(".xrow").nth(1).locator(".ic svg").count();
 ok(dirIconText === 1, "目录命中含 .ic 图标（project/file 分派）");
 // 空结果 → 0 个结果（诚实计数，不伪造）。
-await page.locator(".wsearch input").fill("zzz-nothing");
+await page.locator(".psearch input").fill("zzz-nothing");
 await page.waitForTimeout(600);
 const emptyRes = await page.locator(".res").textContent();
 ok(emptyRes?.includes("0 个结果") === true, `无命中 → 「0 个结果」（实际「${emptyRes?.trim()}」）`);
 // 点结果进预览（03x pin④）——预览是 L3 焦点层（nav back 回工具页）。
-await page.locator(".wsearch input").fill("readme");
+await page.locator(".psearch input").fill("readme");
 await page.waitForTimeout(600);
 await page.locator(".xrow").first().click();
 await page.waitForTimeout(900);
@@ -306,19 +311,20 @@ ok(
 await page.goto(`${ORIGIN}/projects/${projectName}?tab=files`);
 await page.waitForSelector('[data-mobile-tool="files"]', { timeout: 10000 });
 await page.locator('button.obtn.srch[aria-label="搜索文件"]').click();
-await page.waitForSelector(".wsearch", { timeout: 5000 });
-await page.locator(".wsearch input").fill("readme");
+await page.waitForSelector(".psearch", { timeout: 5000 });
+await page.locator(".psearch input").fill("readme");
 await page.waitForTimeout(500);
-await page.locator(".wsearch button").click();
+await page.locator('button.obtn.srch[aria-label="关闭搜索"]').click();
 await page.waitForTimeout(400);
 ok((await page.locator(".crumb").count()) === 1, "✕ 清空回 .crumb（03x pin③）");
-ok((await page.locator(".wsearch").count()) === 0, "清空后 .wsearch 卸载");
+ok((await page.locator(".psearch").count()) === 0, "清空后 .psearch 卸载");
 
 // ── Part 2: 03y 移动到… ───────────────────────────────────────────────────────
-console.log("Part 2: 03y 移动到（ActionMenu → prompt 预填父目录 → rename 带 targetDir）");
+console.log("Part 2: 03y 移动到（ActionMenu → MoveSheet 目录浏览 → rename 带 targetDir）");
 // 文件行 ActionMenu 走隐藏 trigger（触屏长按 / 桌面右键，03w 菜单）；此处 CDP 触屏长按
-// README.md 行（> LONG_PRESS_MS=500）。原型 03w 菜单 = 预览/重命名/移动到…/删除，故
-// 「移动到…」在文件行（目录行只有新建到此/上传到此，03z pin①）。
+// README.md 行（> LONG_PRESS_MS=500）。03w3/v1.4 批4 起「移动到…」= MoveSheet 目录浏览
+// sheet（Dialog/MobileSheet 双形态，mvrow 逐层浏览 + 「移动到此处」确认）——旧 prompt 预填
+// 形态已替换，断言随形态更新（2026-11-06）。
 const fileRow = page
   .locator('[data-mobile-tool="files"] .frow')
   .filter({ hasText: "README.md" })
@@ -336,19 +342,26 @@ await page.waitForTimeout(400);
 const moveItem = page.getByRole("menuitem", { name: "移动到…" });
 ok(await moveItem.isVisible(), "文件行长按菜单含「移动到…」（03w）");
 await moveItem.click();
-await page.waitForSelector("[data-prompt-input]", { timeout: 5000 });
+// MoveSheet 桌面形态 = Dialog：根层 mvrow（当前目录 + src 行 + ＋新建文件夹）+ 底部 kbtns。
+await page.waitForSelector(".mvrow", { timeout: 5000 });
 ok(
-  (await page.locator("[data-prompt-input]").inputValue()) === "",
-  "prompt 预填当前父目录（README.md 在根层 → 空）",
+  await page.getByRole("button", { name: "移动到此处" }).isVisible(),
+  "MoveSheet 打开（mvrow 目录行在场）",
 );
-await page.locator("[data-prompt-input]").fill("src/archive");
-await page.locator("[data-prompt-input]").press("Enter");
+// 根层「移动到此处」disabled（browsePath === originalDir ""——当前位即原位不动）。
+ok(
+  !(await page.getByRole("button", { name: "移动到此处" }).isEnabled()),
+  "根层「移动到此处」disabled（原位不动语义）",
+);
+// 进 src 子目录 → browsePath="src" ≠ 原位 → 按钮启用 → 提交 targetDir="src"。
+await page.locator(".mvrow", { hasText: "src" }).first().click();
+await page.waitForTimeout(500);
+const confirmMove = page.getByRole("button", { name: "移动到此处" });
+ok(await confirmMove.isEnabled(), "进子目录后「移动到此处」enabled");
+await confirmMove.click();
 await page.waitForTimeout(800);
 ok(renamePosts.length === 1, `移动到触发 rename POST（${renamePosts.length} 次）`);
-ok(
-  renamePosts[0]?.targetDir === "src/archive",
-  `POST 带 targetDir=src/archive（${renamePosts[0]?.targetDir}）`,
-);
+ok(renamePosts[0]?.targetDir === "src", `POST 带 targetDir=src（${renamePosts[0]?.targetDir}）`);
 ok(
   renamePosts[0]?.name === "README.md" && renamePosts[0]?.path === "README.md",
   "POST name/path 保持原名（移动 = rename 带路径，§6.9）",
@@ -356,11 +369,25 @@ ok(
 
 // ── Part 3: 03z 上传队列 + 冲突三选 ───────────────────────────────────────────
 console.log("Part 3: 03z 上传队列冲突三选（.upcard 三选 → 重传带 conflict）");
-// 底部 links「上传文件」→ hidden input 注入文件（setInputFiles 直接喂）。
-page.on("filechooser", () => {});
-await page.locator(".links button", { hasText: "上传文件" }).click();
-await page.waitForTimeout(200);
-await page.locator('.links input[type="file"]').setInputFiles([
+// 入队 = 文件行 ActionMenu「上传文件…」（openUploadPicker → hidden input click →
+// filechooser）。旧 .links 底部「上传文件」入口已删，入口断言随形态更新（2026-11-06）。
+const frb3 = await page
+  .locator('[data-mobile-tool="files"] .frow')
+  .filter({ hasText: "README.md" })
+  .first()
+  .boundingBox();
+await cdp.send("Input.dispatchTouchEvent", {
+  type: "touchStart",
+  touchPoints: [{ x: frb3.x + frb3.width / 2, y: frb3.y + frb3.height / 2, force: 1 }],
+});
+await page.waitForTimeout(700);
+await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+await page.waitForTimeout(400);
+const [chooser] = await Promise.all([
+  page.waitForEvent("filechooser", { timeout: 5000 }),
+  page.getByRole("menuitem", { name: "上传文件…" }).click(),
+]);
+await chooser.setFiles([
   { name: "dup-a.txt", mimeType: "text/plain", buffer: Buffer.from("aaa") },
   { name: "dup-b.txt", mimeType: "text/plain", buffer: Buffer.from("bbb") },
 ]);
@@ -404,11 +431,12 @@ ok((await page.locator(".upcard").count()) === 0, "清空队列后 .upcard 卸�
 
 // ── Part 4: 08 采用已有目录（segc 二段 + 差集候选）─────────────────────────────
 console.log("Part 4: 08 采用已有目录（.segc 二段 + 差集候选 + 逐个纳管）");
-await page.goto(ORIGIN);
-await page.waitForSelector(".nav", { timeout: 10000 });
-await page.locator(".nav button").filter({ hasText: projectName }).first().click();
-await page.waitForTimeout(400);
-await page.getByText("新建 / 采用项目").click();
+// 入口 = 移动项目首页 LargeTitleRow「+」aria「创建或采用项目」（显式 /projects 绕过
+// lastProjectKey 重定向）→ MobileSheet。旧「.nav → proj1 → 新建 / 采用项目」可见文本
+// 入口已退役（2026-11-06 更新）。
+await page.goto(`${ORIGIN}/projects`);
+await page.waitForTimeout(1500);
+await page.getByRole("button", { name: "创建或采用项目" }).click();
 await page.waitForSelector(".msheet", { timeout: 5000 });
 ok((await page.locator(".msheet .segc").count()) === 1, "08 sheet 含 .segc 二段");
 ok((await page.locator(".msheet .segc button").count()) === 2, ".segc = 2 段（新建/采用）");
@@ -442,7 +470,6 @@ ok(
   `采用按钮带计数（${(await adoptBtn.textContent())?.trim()}）`,
 );
 await adoptBtn.click();
-// [dbg] sheet 关闭时序采样
 // 逐个 POST（串行 await）+ invalidate refetch 后受控关闭 ~200ms 动画才卸载——等 detached。
 await page.waitForSelector(".msheet", { state: "detached", timeout: 5000 });
 ok(createdProjects.length === 2, `逐个纳管 POST 次数 = 2（实际 ${createdProjects.length}）`);

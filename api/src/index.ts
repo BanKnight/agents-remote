@@ -43,7 +43,12 @@ import {
   jsonError,
   requireHttpAuth,
 } from "./http-auth";
-import { ProjectFilesService, ProjectFilesError } from "./project-files";
+import {
+  ProjectFilesService,
+  ProjectFilesError,
+  UPLOAD_FILE_LIMIT_BYTES,
+  UPLOAD_MULTIPART_OVERHEAD_ALLOWANCE,
+} from "./project-files";
 import { ProjectPagesError, ProjectPagesService } from "./project-pages";
 import { buildGenUiContextBlock, ProjectGenUiError, ProjectGenUiService } from "./project-gen-ui";
 import { ProjectCanvasError, ProjectCanvasService } from "./project-canvas";
@@ -990,6 +995,10 @@ const handleProjects = async (
       request.method === "POST" &&
       projectFilesService
     ) {
+      // 上传预检：content-length 超限在 formData() 全量接收前直接 413，免整段 body 传输。
+      const oversized = rejectOversizedUpload(request);
+      if (oversized) return oversized;
+
       const formData = await request.formData();
       const file = formData.get("file");
 
@@ -1124,6 +1133,11 @@ const handleProjects = async (
       projectFilesMatch.upload &&
       projectFilesService
     ) {
+      // 上传预检：content-length 超限在 formData() 全量接收前直接 413，免整段 body 传输
+      //（>50MiB 的文件此前要传完 100% 才被 500 拒——用户看到「停在 100% 后失败」）。
+      const oversized = rejectOversizedUpload(request);
+      if (oversized) return oversized;
+
       const formData = await request.formData();
       const file = formData.get("file");
 
@@ -2021,10 +2035,14 @@ const projectFilesErrorResponse = (error: ProjectFilesError) => {
     return jsonError(error.code, error.message, 404);
   }
 
+  if (error.code === "PROJECT_FILE_UPLOAD_TOO_LARGE") {
+    // 413 Content Too Large：超限是客户端可修正的请求错误，500 误导（前端错误细分也靠它）。
+    return jsonError(error.code, error.message, 413);
+  }
+
   if (
     error.code === "PROJECT_FS_ERROR" ||
     error.code === "PROJECT_FILE_UPLOAD_FAILED" ||
-    error.code === "PROJECT_FILE_UPLOAD_TOO_LARGE" ||
     error.code === "PROJECT_FILE_RENAME_FAILED" ||
     error.code === "PROJECT_FILE_DELETE_FAILED" ||
     error.code === "PROJECT_FILE_SAVE_FAILED"
@@ -2037,6 +2055,26 @@ const projectFilesErrorResponse = (error: ProjectFilesError) => {
   }
 
   return jsonError(error.code, error.message, 400);
+};
+
+/**
+ * 上传预检（两处上传路由共用）：content-length 超过「上限 + multipart 开销余量」即在
+ * formData() 全量接收前直接 413，免整段 body 传输。头缺失/非数字（chunked）跳过走原路径，
+ * 由 writeUpload 的大小校验兜底；multipart body 恒 ≥ 文件本体，故不会漏判真超限。
+ */
+const rejectOversizedUpload = (request: Request) => {
+  const declared = Number(request.headers.get("content-length"));
+  if (
+    Number.isFinite(declared) &&
+    declared > UPLOAD_FILE_LIMIT_BYTES + UPLOAD_MULTIPART_OVERHEAD_ALLOWANCE
+  ) {
+    return jsonError(
+      "PROJECT_FILE_UPLOAD_TOO_LARGE",
+      `File exceeds upload size limit of ${UPLOAD_FILE_LIMIT_BYTES / (1024 * 1024)} MiB`,
+      413,
+    );
+  }
+  return null;
 };
 
 const projectPagesErrorResponse = (error: ProjectPagesError) => {

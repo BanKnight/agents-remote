@@ -1,6 +1,10 @@
 import { atom, getDefaultStore, useAtomValue } from "jotai";
 import { queryClient } from "../../lib/query-client";
-import { rootUploadFile, UploadConflictError, uploadFile } from "../../api/client";
+import {
+  rootUploadFileWithProgress,
+  UploadConflictError,
+  uploadFileWithProgress,
+} from "../../api/client";
 import type { UploadConflictPolicy } from "@agents-remote/shared";
 import { useT } from "../../i18n";
 import { ShellIcon } from "../shell/icons";
@@ -18,10 +22,12 @@ export type UploadQueueItem = {
   /** "" = PROJECTS_ROOT 根层（root upload，03o pin④）。 */
   projectName: string;
   directoryPath: string;
-  /** 冲突三选后的重传处置；undefined = 首传（409 → 行内三选）。 */
+  /** 冲突三选后的重传/首传共用的处置；undefined = 首传（409 → 行内三选）。 */
   conflict?: UploadConflictPolicy;
   status: UploadQueueStatus;
-  /** error 行的失败文案（fetch 抛出的本地化消息）。 */
+  /** uploading 期：XHR 真实字节进度 0–100（onprogress 整数百分点去重后回写）。 */
+  progress?: number;
+  /** error 行的失败文案（XHR 抛出的本地化消息）。 */
   message?: string;
 };
 
@@ -65,7 +71,9 @@ export const resolveUploadConflict = (id: string, conflict: UploadConflictPolicy
   setItems((state) => ({
     ...state,
     items: state.items.map((item) =>
-      item.id === id ? { ...item, conflict, status: "pending" } : item,
+      // 回到 pending 时清掉上一轮字节进度：再次 uploading 的第一个 progress 事件到来前，
+      // 进度条不会先跳到旧百分比。
+      item.id === id ? { ...item, conflict, status: "pending", progress: undefined } : item,
     ),
   }));
   void pump();
@@ -76,7 +84,9 @@ export const retryUpload = (id: string): void => {
   setItems((state) => ({
     ...state,
     items: state.items.map((item) =>
-      item.id === id ? { ...item, conflict: undefined, status: "pending" } : item,
+      item.id === id
+        ? { ...item, conflict: undefined, status: "pending", progress: undefined }
+        : item,
     ),
   }));
   void pump();
@@ -135,10 +145,31 @@ const pump = async (): Promise<void> => {
       }));
 
       try {
+        // 进度回写两重收敛（composer chip 同款）：整数百分点未变不重渲染；行已移除
+        //（map 找不到 id）写入自失效。XHR abort 后 reject 走下方 aborted 分支。
+        let lastPercent = -1;
+        const onProgress = (percent: number) => {
+          const pct = Math.round(percent);
+          if (pct === lastPercent) return;
+          lastPercent = pct;
+          setItems((state) => ({
+            ...state,
+            items: state.items.map((candidate) =>
+              candidate.id === item.id ? { ...candidate, progress: pct } : candidate,
+            ),
+          }));
+        };
         if (item.projectName === "") {
-          await rootUploadFile(item.file, item.conflict);
+          await rootUploadFileWithProgress(item.file, item.conflict, {
+            signal: controller.signal,
+            onProgress,
+          });
         } else {
-          await uploadFile(item.projectName, item.directoryPath, item.file, item.conflict);
+          await uploadFileWithProgress(item.projectName, item.directoryPath, item.file, {
+            conflict: item.conflict,
+            signal: controller.signal,
+            onProgress,
+          });
         }
         // abort = 单行 ✕（removeUploadItem 已移除该行）：跳过本行继续泵后续 pending；
         // 清空队列（clearUploadQueue）靠 items 清空自然退出，不停整条泵。
@@ -185,9 +216,14 @@ export function UploadQueueCard() {
 
   if (queue.items.length === 0) return null;
 
-  const total = queue.doneCount + queue.items.length;
-  const percent = total > 0 ? Math.round((queue.doneCount / total) * 100) : 0;
   const uploading = queue.items.find((item) => item.status === "uploading");
+  const total = queue.doneCount + queue.items.length;
+  // 总体进度 =（已完成 + 当前文件字节进度折算）/ 总数：串行队列下单调递增，不再每个文件
+  // 都从 0 重来（当前文件自己的百分比由 qlist 行的逐条状态承接）。
+  const percent =
+    total > 0
+      ? Math.round(((queue.doneCount + (uploading?.progress ?? 0) / 100) / total) * 100)
+      : 0;
   const current = uploading ?? queue.items[0]!;
   // en 单数「1 files queued」瑕疵（真机复验反馈⑨顺带）：translate.ts 简单插值无复数机制，
   // 单数走专用键（zh 同值无复数问题，键仍补齐保持两文件键集一致）。
@@ -205,9 +241,10 @@ export function UploadQueueCard() {
       className="upcard"
       role="status"
       aria-label={statusText}
-      // 真机复验反馈⑨：fetch 无进度回调 → uploading 态 CSS 扫动条表达「进行中」（v2-primitives
-      // .upcard[data-state] 消费 index.css 单源 upcard-sweep）；queued/error 挂起时保持
-      // width 静态（doneCount 阶梯仍生效）。
+      // uploading + 已收到字节进度 → data-progress="live"：v2-primitives 扫动条规则被
+      // :not([data-progress="live"]) 排除，转显 inline width 真进度；progress 尚未到达
+      //（小文件秒传）时回落扫动条语义。queued/error 挂起时保持 width 静态。
+      data-progress={uploading?.progress != null ? "live" : undefined}
       data-state={uploading ? "uploading" : "queued"}
     >
       <div className="r1">
@@ -218,7 +255,7 @@ export function UploadQueueCard() {
         </button>
       </div>
       <div className="prog" aria-hidden="true">
-        <i style={uploading ? undefined : { width: `${percent}%` }} />
+        <i style={{ width: `${percent}%` }} />
       </div>
       <div className="d">
         {current.file.name} · {formatBytes(current.file.size)}

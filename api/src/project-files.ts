@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { constants } from "node:fs";
 import type { Dirent } from "node:fs";
 import type {
   ApiErrorCode,
@@ -17,7 +17,7 @@ import type {
   UploadConflictPolicy,
   UploadFileResponse,
 } from "@agents-remote/shared";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { ProjectPathError, resolveProjectRelativePath, resolveProjectsRoot } from "./project-paths";
 
@@ -45,6 +45,12 @@ export type RawFileResult = {
 };
 
 export const UPLOAD_FILE_LIMIT_BYTES = 50 * 1024 * 1024;
+/**
+ * 上传预检的 multipart 开销余量：multipart body 恒 ≥ 文件本体（boundary/头 + 尾开销），
+ * content-length 超过「上限 + 余量」即必然超限，路由层在 formData() 全量接收前直接 413，
+ * 免掉整段 body 传输；窄缝（body ≤ limit+余量 而 file > limit）由 writeUpload 兜底。
+ */
+export const UPLOAD_MULTIPART_OVERHEAD_ALLOWANCE = 64 * 1024;
 
 /**
  * 文件 tab 列表黑名单：仅这些精确名字的一级条目被隐藏（list 不返回 + hidden 标记）。
@@ -334,6 +340,8 @@ export class ProjectFilesService {
   /**
    * 上传文件到项目内目录。同名冲突（03z 三选）按 `conflict` 处置：缺省维持 409 硬拒
    *（兼容旧调用方）；"overwrite" = 覆盖既有文件；"keepBoth" = 派生 `name(1).ext` 落盘。
+   * 目标目录不存在时自动创建（composer uploads/ 首传：全仓无任何 mkdir 调用方，此前
+   * 必 404；文件树场景目录必然已存在不受影响）——ensureDirectory 见 project-paths。
    */
   async uploadFile(
     projectName: string,
@@ -342,7 +350,9 @@ export class ProjectFilesService {
     content: Buffer,
     conflict?: UploadConflictPolicy,
   ): Promise<UploadFileResponse> {
-    const resolved = await this.resolvePath(projectName, directoryPath);
+    const resolved = await this.resolvePath(projectName, directoryPath, {
+      ensureDirectory: true,
+    });
     const dirStat = await this.statPath(resolved.path);
 
     if (!dirStat.isDirectory()) {
@@ -378,7 +388,13 @@ export class ProjectFilesService {
     content: Buffer,
     conflict?: UploadConflictPolicy,
   ): Promise<UploadFileResponse> {
-    if (fileName.includes("/") || fileName.includes("\\") || fileName.includes("\0")) {
+    // 控制字符一并拒绝：文件名会原样进入 composer 的「Attachment: path」提及行，含 \n
+    // 时可凭空多出一行指令。
+    const hasControlChar = Array.from(fileName).some((ch) => {
+      const code = ch.codePointAt(0) ?? 0;
+      return code < 0x20 || code === 0x7f;
+    });
+    if (fileName.includes("/") || fileName.includes("\\") || hasControlChar) {
       throw new ProjectFilesError("PROJECT_NAME_INVALID", "Invalid file name");
     }
 
@@ -392,29 +408,52 @@ export class ProjectFilesService {
     let finalName = fileName;
     const targetPath = join(dirPath, fileName);
 
+    // 末级 symlink 必须拒绝：stat/writeFile 都跟随 symlink，目录内一个指向界外的 symlink
+    // 就能让上传写入项目外（安全审查实测：dangling symlink 被 stat 的 ENOENT 吞掉后
+    // writeFile 直接在界外创建文件）。lstat 不跟随，dangling 也能识别。
+    let existingStat: Awaited<ReturnType<typeof lstat>> | undefined;
     try {
-      const existingStat = await stat(targetPath);
-
-      if (existingStat.isFile()) {
-        if (!conflict) {
-          throw new ProjectFilesError(
-            "PROJECT_FILE_TARGET_EXISTS",
-            "A file with this name already exists",
-          );
-        }
-        if (conflict === "keepBoth") {
-          finalName = this.deriveKeepBothName(dirPath, fileName);
-        }
-      }
+      existingStat = await lstat(targetPath);
     } catch (error) {
       if (!isNotFoundError(error)) {
         throw error;
       }
     }
+    if (existingStat?.isSymbolicLink()) {
+      throw new ProjectFilesError("PROJECT_TARGET_INVALID", "Upload target must not be a symlink");
+    }
+
+    if (existingStat?.isFile() && !conflict) {
+      throw new ProjectFilesError(
+        "PROJECT_FILE_TARGET_EXISTS",
+        "A file with this name already exists",
+      );
+    }
 
     try {
-      await writeFile(join(dirPath, finalName), content);
-    } catch {
+      if (existingStat?.isFile() && conflict === "overwrite") {
+        // O_NOFOLLOW：检查后被换成 symlink 时写入也拒绝，不越界。
+        await writeFile(targetPath, content, {
+          flag: constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW,
+        });
+      } else {
+        // 新文件（含 keepBoth）：wx = O_CREAT|O_EXCL，路径已存在（含 symlink）即 EEXIST
+        // 且不跟随——取代 existsSync 的检查-写入窗口。
+        try {
+          await writeFile(targetPath, content, { flag: "wx" });
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
+          if (conflict !== "keepBoth") {
+            throw new ProjectFilesError(
+              "PROJECT_FILE_TARGET_EXISTS",
+              "A file with this name already exists",
+            );
+          }
+          finalName = await this.writeWithUniqueName(dirPath, fileName, content);
+        }
+      }
+    } catch (error) {
+      if (error instanceof ProjectFilesError) throw error;
       throw new ProjectFilesError("PROJECT_FILE_UPLOAD_FAILED", "Unable to write uploaded file");
     }
 
@@ -431,14 +470,22 @@ export class ProjectFilesService {
     };
   }
 
-  // 03z「保留两者」：`name(1).ext` 起找第一个不冲突的候选（上限 999 防恶意塞满目录时死循环）。
-  private deriveKeepBothName(dirPath: string, fileName: string): string {
+  // 03z「保留两者」：`name(1).ext` 起写第一个成功创建的候选（wx 原子占用，EEXIST 换下一
+  // 个；上限 999 防恶意塞满目录时死循环）。
+  private async writeWithUniqueName(
+    dirPath: string,
+    fileName: string,
+    content: Buffer,
+  ): Promise<string> {
     const ext = extname(fileName);
     const stem = ext.length > 0 ? fileName.slice(0, fileName.length - ext.length) : fileName;
     for (let i = 1; i <= 999; i++) {
       const candidate = `${stem}(${i})${ext}`;
-      if (!existsSync(join(dirPath, candidate))) {
+      try {
+        await writeFile(join(dirPath, candidate), content, { flag: "wx" });
         return candidate;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException)?.code !== "EEXIST") throw error;
       }
     }
     throw new ProjectFilesError("PROJECT_FILE_UPLOAD_FAILED", "Unable to derive unique name");
@@ -704,9 +751,13 @@ export class ProjectFilesService {
     };
   }
 
-  private async resolvePath(projectName: string, relativePath: string) {
+  private async resolvePath(
+    projectName: string,
+    relativePath: string,
+    opts?: { ensureDirectory?: boolean },
+  ) {
     try {
-      return await resolveProjectRelativePath(this.projectsRoot, projectName, relativePath);
+      return await resolveProjectRelativePath(this.projectsRoot, projectName, relativePath, opts);
     } catch (error) {
       if (error instanceof ProjectPathError) {
         if (error.code === "PROJECT_FS_ERROR") {

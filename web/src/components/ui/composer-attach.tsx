@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { useT } from "../../i18n";
-import { uploadFileWithProgress } from "@/api/client";
+import type { TranslateFn } from "../../i18n/types";
+import {
+  ApiClientError,
+  UPLOAD_NETWORK_ERROR_CODE,
+  UPLOAD_RESPONSE_TIMEOUT_CODE,
+  isApiErrorCode,
+  uploadFileWithProgress,
+} from "@/api/client";
 import { useHScroll } from "@/hooks/use-h-scroll";
 import { LucideIcon } from "@/components/shell/lucide-icon";
-import { cn } from "@/lib/utils";
 import { ImageLightbox } from "./image-lightbox";
 
 /**
@@ -79,6 +85,10 @@ export type ComposerAttachment = {
   file?: File;
   /** file uploading 期：XHR 真实字节进度 0–100（onprogress 事件驱动）。 */
   progress?: number;
+  /** file 上传期：字节已发完（xhr.upload.onload），等待服务端处理+响应——文案切「处理中」、进度条定格满宽。 */
+  awaitingResponse?: boolean;
+  /** file error 态的细分失败文案（describeUploadError 产出；image 归一化失败不走此）。 */
+  errorMessage?: string;
   /** file 就绪后填：上传后的项目内相对路径（uploads/…），发送时拼提及行。 */
   path?: string;
   /** text 就绪后填：文件全文（消息级上下文，随消息发送、不落项目目录）。 */
@@ -108,6 +118,43 @@ export function needsImageReEncode(input: {
 /** 裸 base64 串换算回原始字节数（4 字符 = 3 字节；尾 padding 误差可忽略）。 */
 export function base64Bytes(data: string): number {
   return Math.floor((data.length * 3) / 4);
+}
+
+/**
+ * 文件上传失败的细分文案（纯函数，单测锁分支）：超限 → tooLarge（与服务端
+ * PROJECT_FILE_UPLOAD_TOO_LARGE 同码透传）；网络中断 / 响应超时 → 各自哨兵码文案；
+ * 其余（含服务端业务码、响应格式异常）统一 failed 兜底。
+ */
+export function describeUploadError(error: unknown, t: TranslateFn): string {
+  if (isApiErrorCode(error, "PROJECT_FILE_UPLOAD_TOO_LARGE")) return t("claude.attach.tooLarge");
+  if (error instanceof ApiClientError) {
+    if (error.code === UPLOAD_NETWORK_ERROR_CODE) return t("claude.attach.networkError");
+    if (error.code === UPLOAD_RESPONSE_TIMEOUT_CODE) return t("claude.attach.timeout");
+  }
+  return t("claude.attach.failed");
+}
+
+/**
+ * chip 状态行文案（纯函数，单测锁三态）：本地处理（image/text）语义「处理中」；文件网络
+ * 上传语义「上传中」（+真实字节百分比）→ 字节发完切「处理中…」（等响应窗口）；error 态
+ * file 显示细分文案（describeUploadError 产出），image 维持归一化专属文案。ready 返回
+ * null（调用方渲染 path 等就绪信息）。
+ */
+export function attachmentStatusLine(a: ComposerAttachment, t: TranslateFn): string | null {
+  if (a.status === "uploading") {
+    if (a.kind === "file") {
+      if (a.awaitingResponse) return t("claude.attach.processing");
+      return a.progress != null
+        ? t("claude.attach.uploadingPercent", { percent: Math.round(a.progress) })
+        : t("claude.attach.uploading");
+    }
+    return t("claude.attach.processing");
+  }
+  if (a.status === "error") {
+    if (a.kind === "file") return a.errorMessage ?? t("claude.attach.failed");
+    return t("claude.attach.processFailed");
+  }
+  return null;
 }
 
 /** Blob → 裸 base64（无 data: 前缀）。分块 fromCharCode 防 arg 上限。 */
@@ -218,6 +265,9 @@ export function useComposerAttachments({ projectName }: { projectName: string })
   // ref 镜像：异步上传/归一化回写时读最新值（cap 判定、按 id 替换），避免闭包旧态。
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const idRef = useRef(0);
+  // 在传 XHR 的 abort 句柄（id → controller）：chip × 移除 / clear / 卸载时中断上传，
+  // 不再白烧流量（此前 fetch 版无 signal，取消只停记账、文件仍完整落服务端）。
+  const controllersRef = useRef(new Map<string, AbortController>());
 
   const commit = useCallback((next: ComposerAttachment[]) => {
     attachmentsRef.current = next;
@@ -232,21 +282,84 @@ export function useComposerAttachments({ projectName }: { projectName: string })
   );
 
   // 归一化/上传失败的统一回写：revoke 占位原图 + error 终态（previewUrl 清空）。
+  // errorMessage 仅 file 消费（describeUploadError 细分文案）；image 归一化失败≠网络失败，
+  // 维持 processFailed 专属文案，不传 error。
   const failAttachment = useCallback(
-    (id: string) => {
+    (id: string, error?: unknown) => {
       const stale = attachmentsRef.current.find((a) => a.id === id);
       if (stale?.previewUrl) URL.revokeObjectURL(stale.previewUrl);
-      replace(id, { status: "error", previewUrl: undefined });
+      replace(id, {
+        status: "error",
+        previewUrl: undefined,
+        ...(stale?.kind === "file" && error !== undefined
+          ? { errorMessage: describeUploadError(error, t) }
+          : {}),
+      });
     },
-    [replace],
+    [replace, t],
   );
 
-  // objectURL 生命周期：remove/clear/卸载三个出口全量 revoke（image chip 的 previewUrl）。
+  // 文件上传单条（addFiles file 分支与 retry 共用）：signal 通道让 remove/clear/卸载能
+  // 真中断 XHR（此前 fetch 版取消是假取消——只停记账，文件仍完整落服务端）；服务端
+  // formData() 因断连抛错 = 访问日志一行噪音，无害。
+  const startFileUpload = useCallback(
+    (id: string, file: File) => {
+      const controller = new AbortController();
+      controllersRef.current.set(id, controller);
+      // 进度回写两重收敛：chip 已被 × 移除则停写；整数百分点未变不重渲染
+      //（setAttachments 挂在无 memo 边界的顶层，每个 XHR chunk 都触发全树 reconcile）。
+      let lastPercent = -1;
+      return uploadFileWithProgress(projectName, COMPOSER_UPLOAD_DIR, file, {
+        conflict: "keepBoth",
+        signal: controller.signal,
+        onProgress: (percent) => {
+          const pct = Math.round(percent);
+          if (pct === lastPercent) return;
+          if (!attachmentsRef.current.some((a) => a.id === id)) return;
+          lastPercent = pct;
+          replace(id, { progress: pct });
+        },
+        onUploadComplete: () => {
+          // 字节已发完（xhr.upload.onload）：切「处理中…」、进度条定格满宽；chip 已移除
+          // 时 abort 已触发，此回调不会再被 settle 后闸放行（settle 单闸保证）。
+          if (attachmentsRef.current.some((a) => a.id === id)) {
+            replace(id, { awaitingResponse: true, progress: 100 });
+          }
+        },
+        onRetryStart: () => {
+          // 401 刷新后整传重来：字节从 0 再发一遍，显示回到「上传中 0%」。
+          if (attachmentsRef.current.some((a) => a.id === id)) {
+            replace(id, { awaitingResponse: false, progress: 0 });
+          }
+        },
+      })
+        .then((res) => {
+          replace(id, { status: "ready", path: res.entry.path });
+        })
+        .catch((e: unknown) => {
+          // 主动移除/clear 的 abort：chip 已不在场，不写 error 终态。
+          if (controller.signal.aborted) return;
+          failAttachment(id, e);
+        })
+        .finally(() => {
+          // 按身份删：同 id 已换新 controller（防御性）时不能把新的删掉。
+          if (controllersRef.current.get(id) === controller) {
+            controllersRef.current.delete(id);
+          }
+        });
+    },
+    [failAttachment, projectName, replace],
+  );
+
+  // objectURL 生命周期：remove/clear/卸载三个出口全量 revoke（image chip 的 previewUrl）；
+  // 在传 XHR 同步 abort（真中断，不白烧流量）。
   const remove = useCallback(
     (id: string) => {
       for (const a of attachmentsRef.current) {
         if (a.id === id && a.previewUrl) URL.revokeObjectURL(a.previewUrl);
       }
+      controllersRef.current.get(id)?.abort();
+      controllersRef.current.delete(id);
       setOverflowCount(0);
       commit(attachmentsRef.current.filter((a) => a.id !== id));
     },
@@ -295,37 +408,33 @@ export function useComposerAttachments({ projectName }: { projectName: string })
               .catch(() => failAttachment(id)),
           );
         } else {
-          try {
-            // 进度回写两重收敛：chip 已被 × 移除则停写；整数百分点未变不重渲染
-            //（setAttachments 挂在无 memo 边界的顶层，每个 XHR chunk 都触发全树 reconcile）。
-            let lastPercent = -1;
-            const res = await uploadFileWithProgress(projectName, COMPOSER_UPLOAD_DIR, file, {
-              conflict: "keepBoth",
-              onProgress: (percent) => {
-                const pct = Math.round(percent);
-                if (pct === lastPercent) return;
-                if (!attachmentsRef.current.some((a) => a.id === id)) return;
-                lastPercent = pct;
-                replace(id, { progress: pct });
-              },
-            });
-            replace(id, { status: "ready", path: res.entry.path });
-          } catch {
-            failAttachment(id);
-          }
+          // await 保持串行（服务端 keepBoth 同名派生是 stat→write 窗口，并行同名会相撞）。
+          await startFileUpload(id, file);
         }
       }
       local.push(imageChain);
       await Promise.all(local);
     },
-    [failAttachment, projectName, replace],
+    [failAttachment, startFileUpload],
   );
 
-  /** 失败重试（image 专属）：置回 uploading + 重建原图 objectURL,重跑归一化(带超时)。 */
+  /** 失败重试：image 置回 uploading + 重建原图 objectURL 重跑归一化（带超时）；file 重置
+   *  上传态后重走 startFileUpload。retry 时同批后续条目可能并发第二个 XHR（与 image retry
+   *  现状一致，串行链只约束同一批 addFiles 的初始处理）。 */
   const retry = useCallback(
     (id: string) => {
       const target = attachmentsRef.current.find((a) => a.id === id);
       if (!target?.file || target.status !== "error") return;
+      if (target.kind === "file") {
+        replace(id, {
+          status: "uploading",
+          progress: undefined,
+          awaitingResponse: undefined,
+          errorMessage: undefined,
+        });
+        void startFileUpload(id, target.file);
+        return;
+      }
       replace(id, { status: "uploading", previewUrl: URL.createObjectURL(target.file) });
       void withTimeout(normalizeImageFile(target.file), `retry ${target.file.name}`)
         .then((norm) => {
@@ -341,7 +450,7 @@ export function useComposerAttachments({ projectName }: { projectName: string })
           failAttachment(id);
         });
     },
-    [failAttachment, replace],
+    [failAttachment, replace, startFileUpload],
   );
 
   // 每类先占位（uploading）再异步回写——图片 chip 选完即在场且带 previewUrl 原图缩略图
@@ -371,8 +480,13 @@ export function useComposerAttachments({ projectName }: { projectName: string })
             id,
             name: file.name,
             status: "uploading" as const,
-            // image 带 file 引用（失败重试的输入）+ objectURL 原图缩略图（同步零成本）。
-            ...(kind === "image" ? { file, previewUrl: URL.createObjectURL(file) } : {}),
+            // image 带 file 引用（失败重试的输入）+ objectURL 原图缩略图（同步零成本）；
+            // file 同样留引用（上传失败 ↻ 重试的输入）。
+            ...(kind === "image"
+              ? { file, previewUrl: URL.createObjectURL(file) }
+              : kind === "file"
+                ? { file }
+                : {}),
           };
         }),
       ]);
@@ -407,16 +521,19 @@ export function useComposerAttachments({ projectName }: { projectName: string })
     for (const a of attachmentsRef.current) {
       if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
     }
+    for (const controller of controllersRef.current.values()) controller.abort();
+    controllersRef.current.clear();
     setOverflowCount(0);
     commit([]);
   }, [commit]);
 
-  // 卸载兜底（切会话丢草稿时 objectURL 不泄漏）；ref 恒指最新，卸载时即全部在册。
+  // 卸载兜底（切会话丢草稿时 objectURL 不泄漏 + 在传 XHR 中断）；ref 恒指最新，卸载时即全部在册。
   useEffect(
     () => () => {
       for (const a of attachmentsRef.current) {
         if (a.previewUrl) URL.revokeObjectURL(a.previewUrl);
       }
+      for (const controller of controllersRef.current.values()) controller.abort();
     },
     [],
   );
@@ -480,7 +597,7 @@ export function AttachmentChipRow({
 }: {
   attachments: ComposerAttachment[];
   onRemove: (id: string) => void;
-  /** image 失败重试（灰底 chip 整块可点）。 */
+  /** 失败重试（image 灰底 chip 整块可点；file 右下角 ↻ 按钮）。 */
   onRetry: (id: string) => void;
   /** 超出上限被忽略的张数：>0 时行尾显示「+N」提示 chip（一次性，remove/clear 后消失）。 */
   overflowCount?: number;
@@ -502,22 +619,12 @@ export function AttachmentChipRow({
       {...hs.fadeProps}
     >
       {attachments.map((a) => {
-        // 本地处理（image/text）语义「处理中」；文件网络上传语义「上传中」（+真实字节百分比）。
-        const statusLine =
-          a.status === "uploading"
-            ? a.kind === "file"
-              ? a.progress != null
-                ? t("claude.attach.uploadingPercent", { percent: Math.round(a.progress) })
-                : t("claude.attach.uploading")
-              : t("claude.attach.processing")
-            : a.status === "error"
-              ? a.kind === "file"
-                ? t("claude.attach.failed")
-                : t("claude.attach.processFailed")
-              : null;
+        // 状态行文案单源 attachmentStatusLine（纯函数，单测锁三态分支）。
+        const statusLine = attachmentStatusLine(a, t);
         // ⌫/Delete 删除（spec §4.1 桌面差异：hover × / 选中 chip ⌫）。焦点目标分档：
-        // image chip 的可交互元素是 zoom 按钮（⌫ 挂钮上），外层不再产生额外 tab 停靠；
-        // file/text chip 无内嵌按钮，⌫ 留在外层 div。
+        // image chip 与 file error chip 的可交互元素是内嵌按钮（⌫ 挂钮上），外层不再
+        // 产生额外 tab 停靠；file/text 其它态无内嵌按钮，⌫ 留在外层 div。
+        const fileError = a.kind === "file" && a.status === "error";
         const handleDeleteKey = (e: KeyboardEvent) => {
           if (e.key === "Backspace" || e.key === "Delete") {
             e.preventDefault();
@@ -529,7 +636,7 @@ export function AttachmentChipRow({
             className="relative shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             data-attachment-chip={a.id}
             key={a.id}
-            tabIndex={a.kind === "image" ? undefined : 0}
+            tabIndex={a.kind === "image" || fileError ? undefined : 0}
             onKeyDown={(e) => {
               // 焦点在内部按钮时由按钮的 handler 处理，这里跳过防冒泡双触发。
               if (e.target !== e.currentTarget) return;
@@ -578,24 +685,46 @@ export function AttachmentChipRow({
                   />
                 </button>
               )
+            ) : a.status === "error" && a.kind === "file" ? (
+              // error 终态整块可点重试（命中区 ⊇ 视觉，§31）：失败文件唯一的重试入口，
+              // 右下角小 ↻ 钮（18×18）触屏几乎点不中；与 image error chip 的整块可点同构，
+              // ↻ 只作 affordance 暗示。
+              <button
+                aria-label={`${t("claude.attach.retryUpload")} ${a.name}`}
+                className="relative flex w-36 cursor-pointer flex-col gap-0.5 rounded-lg bg-surface-inset px-2 py-1.5 text-left transition active:bg-on-surface/5"
+                onClick={() => onRetry(a.id)}
+                onKeyDown={handleDeleteKey}
+                title={t("claude.attach.retryUpload")}
+                type="button"
+              >
+                <span className="truncate text-xs font-medium text-on-surface-soft">{a.name}</span>
+                <span className="truncate text-micro text-error-text">{statusLine ?? a.path}</span>
+                <LucideIcon
+                  className="pointer-events-none absolute bottom-1 right-1 size-3.5 text-on-surface-muted"
+                  name="rotate-cw"
+                />
+              </button>
             ) : (
               <div className="relative flex w-36 flex-col gap-0.5 rounded-lg bg-surface-inset px-2 py-1.5">
                 <span className="truncate text-xs font-medium text-on-surface-soft">{a.name}</span>
-                <span
-                  className={cn(
-                    "truncate text-micro",
-                    a.status === "error" ? "text-error" : "text-on-surface-muted",
-                  )}
-                >
+                <span className="truncate text-micro text-on-surface-muted">
                   {statusLine ?? a.path}
                 </span>
                 {/* 进度条绝对定位落在卡片 padding 区内：流内会多占一行（2px+gap），
-                    uploading→ready 瞬间 chip 高度塌 4px → composer 卡片跳动。 */}
+                    uploading→ready 瞬间 chip 高度塌 4px → composer 卡片跳动。
+                    awaitingResponse（字节发完等服务端处理）进度定格满宽。 */}
                 {a.status === "uploading" ? (
-                  <span className="absolute inset-x-2 bottom-1 h-0.5 overflow-hidden rounded-full bg-on-surface/10">
+                  <span
+                    aria-label={t("claude.attach.uploading")}
+                    aria-valuemax={100}
+                    aria-valuemin={0}
+                    aria-valuenow={Math.round(a.awaitingResponse ? 100 : (a.progress ?? 0))}
+                    className="absolute inset-x-2 bottom-1 h-0.5 overflow-hidden rounded-full bg-on-surface/10"
+                    role="progressbar"
+                  >
                     <span
-                      className="block h-full rounded-full bg-primary transition-[width]"
-                      style={{ width: `${a.progress ?? 0}%` }}
+                      className="block h-full rounded-full bg-primary transition-[width] duration-[var(--duration-base)] ease-[var(--ease-standard)]"
+                      style={{ width: `${a.awaitingResponse ? 100 : (a.progress ?? 0)}%` }}
                     />
                   </span>
                 ) : null}

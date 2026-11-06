@@ -510,6 +510,7 @@ export const zh: Record<TranslationKey, string> = {
   // ── Claude ────────────────────────────────────────────────────
   "claude.inputPlaceholder": "向 Claude 提问...",
   "claude.composer.send": "发送",
+  "claude.composer.sendWaitingUpload": "等待附件上传完成",
   // composer 附件（发图批）：+ 按钮 + chip 文案。zh 冒号半角无空格。
   "claude.attach.add": "添加附件",
   "claude.attach.uploading": "上传中…",
@@ -517,8 +518,13 @@ export const zh: Record<TranslationKey, string> = {
   "claude.attach.processing": "处理中…",
   "claude.attach.ready": "已上传",
   "claude.attach.failed": "上传失败",
+  "claude.attach.networkError": "网络连接中断",
+  "claude.attach.timeout": "服务器响应超时",
+  // 与 api/src/project-files.ts UPLOAD_FILE_LIMIT_BYTES（50 MiB）联动——改那边同步这里。
+  "claude.attach.tooLarge": "文件超过 50MB 上限",
   "claude.attach.processFailed": "处理失败",
   "claude.attach.retry": "重试处理",
+  "claude.attach.retryUpload": "重试上传",
   "claude.attach.overflow": "已达单条消息上限（{{max}} 张），另有 {{count}} 张未添加",
   "claude.attach.remove": "移除附件",
   "claude.attach.fileMention": "附件：{{path}}",

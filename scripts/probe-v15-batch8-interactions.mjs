@@ -1,11 +1,11 @@
-// v1.5 批 8 探针：微交互收尾（spec §5.0 / §7.2 / §4.1 附件双路径）。
+// v1.5 批 8 探针：微交互收尾（spec §7.2 / §4.1 附件双路径）。
 // 覆盖单测验不到的真实浏览器行为（DOM 几何硬数据，禁截图）：
 //   Part D（桌面 1280×800 agent 会话）：
-//     - 浮层两族对齐（§5.0 标准档 45px 行 / 17px 图标 / gap 14 / --menu+sep-strong+r14
-//       材质）——ActionMenu 桌面 popover（附件菜单）实测。
+//     - 一键直达（2026-10-25 收敛）：点「添加附件」直接弹系统 filechooser、无自有菜单。
+//       （原附件 ActionMenu 浮层已删，§5.0 浮层几何断言随之退役，见 P-D1 注释。）
 //     - 附件双路径（§4.1）：白名单小文本 ≤1MB → text chip（零上传请求）；超限/非白名单
 //       → uploads 上传；⌫ 删 chip；发送帧 = 前导行 + fence 全等断言。
-//   Part M（移动 390×844 agent 会话）：sheet item 45px + sheet 10px 侧距 + chips 横滚
+//   Part M（移动 390×844 agent 会话）：一键直达同款 + chips 横滚
 //     （3 文件 chip 溢出 → wheel deltaY→scrollLeft 映射 + Shift 不映射 + 渐隐方向翻转）。
 //   Part T（移动 280×568 终端会话）：qkeys 溢出同款 wheel/渐隐断言（§7.2 通用性）。
 //
@@ -199,57 +199,18 @@ async function setupTerminalMocks(page) {
       await setupAgentMocks(page, uploadCountRef, sockets, frames);
       await openAgentSession(page, sockets);
 
-      // P-D1 浮层规格（§5.0 标准档）
-      await page.getByRole("button", { name: "添加附件" }).click();
-      await page.getByRole("menuitem", { name: "文件" }).waitFor({ timeout: 6000 });
-      // 弹出 spring 动画（150ms）进行中 getBoundingClientRect 采到中间帧（0.995 级缩放），
-      // 行高/图标尺寸断言会亚像素假 fail——等动画播完再取几何。
-      await page.waitForTimeout(250);
-      const menu = await page.evaluate(() => {
-        const item = [...document.querySelectorAll('[role="menuitem"]')].find((n) =>
-          n.textContent?.includes("文件"),
-        );
-        const content = document.querySelector('[data-slot="dropdown-menu-content"]');
-        const cs = content ? getComputedStyle(content) : null;
-        // token 原文（#fff）与 computed（rgb(255,255,255)）格式不同：经探针元素走浏览器
-        // 序列化归一（两边都成 rgb()）后再对比。
-        const probe = document.createElement("span");
-        document.body.appendChild(probe);
-        const varColor = (name) => {
-          probe.style.color = `var(${name})`;
-          return getComputedStyle(probe).color;
-        };
-        const ics = item ? item.querySelector("svg") : null;
-        const out = {
-          itemH: item?.getBoundingClientRect().height ?? null,
-          gap: item ? getComputedStyle(item).gap : null,
-          iconW: ics?.getBoundingClientRect().width ?? null,
-          iconH: ics?.getBoundingClientRect().height ?? null,
-          bg: cs?.backgroundColor ?? null,
-          menuVar: varColor("--menu"),
-          border: cs?.borderTopColor ?? null,
-          sepVar: varColor("--sep-strong"),
-          radius: cs?.borderRadius ?? null,
-        };
-        probe.remove();
-        return out;
-      });
-      ok(menu.itemH === 45, `P-D1a 桌面菜单 item 行高 45（实际 ${menu.itemH}）`);
-      ok(menu.gap === "14px", `P-D1b item 行内 gap 14（实际 ${menu.gap}）`);
+      // P-D1 一键直达（2026-10-25 收敛，用户拍板）：点「添加附件」直接触发系统文件选择
+      // 面板，无自有菜单。原附件 ActionMenu 浮层已删——§5.0 浮层几何断言随对象退役
+      // （ActionMenu 规格现由 m8-gaps 等内容断言间接覆盖，2026-11-06 记档）。
+      const [attachChooser] = await Promise.all([
+        page.waitForEvent("filechooser", { timeout: 6000 }),
+        page.getByRole("button", { name: "添加附件" }).click(),
+      ]);
+      ok(attachChooser !== undefined, "P-D1a 点 + 一键直达系统文件选择器（filechooser）");
       ok(
-        menu.iconW === 17 && menu.iconH === 17,
-        `P-D1c item 图标 17×17（实际 ${menu.iconW}×${menu.iconH}）`,
+        (await page.locator('[role="menuitem"]').count()) === 0,
+        "P-D1b 无自有附件菜单（menuitem 零渲染）",
       );
-      ok(
-        menu.bg === menu.menuVar,
-        `P-D1d content 底 = --menu token 同源（${menu.bg} vs ${menu.menuVar}）`,
-      );
-      ok(
-        menu.border === menu.sepVar,
-        `P-D1e content 边框 = --sep-strong 同源（${menu.border} vs ${menu.sepVar}）`,
-      );
-      ok(menu.radius === "14px", `P-D1f content 圆角 14（实际 ${menu.radius}）`);
-      await page.keyboard.press("Escape");
 
       // P-D2 白名单小文本 → 内联（零上传请求）
       await page.locator("input[data-composer-file-input]").setInputFiles(TXT_FILE);
@@ -361,28 +322,19 @@ async function setupTerminalMocks(page) {
       await setupAgentMocks(page, uploadCountRef, sockets, null);
       await openAgentSession(page, sockets);
 
-      // P-M1 sheet item 45 + sheet 10px 侧距（.msheet fixed 容器，v2-primitives 单源）
-      await page.getByRole("button", { name: "添加附件" }).click();
-      await page.getByRole("menuitem", { name: "文件" }).waitFor({ timeout: 6000 });
-      const m = await page.evaluate(() => {
-        const item = [...document.querySelectorAll('[role="menuitem"]')].find((n) =>
-          n.textContent?.includes("文件"),
-        );
-        const sheet = document.querySelector(".msheet");
-        const scs = sheet ? getComputedStyle(sheet) : null;
-        return {
-          itemH: item?.getBoundingClientRect().height ?? null,
-          sheetLeft: scs?.left ?? null,
-          sheetRight: scs?.right ?? null,
-        };
-      });
-      ok(m.itemH === 45, `P-M1a 移动 sheet item 行高 45（实际 ${m.itemH}）`);
+      // P-M1 移动端同款一键直达：点 + 直接弹系统文件面板（iOS 本就强制系统分支面板，
+      // 这正是 2026-10-25 收敛的直接理由）。原附件 MobileSheet 已删——item 45px / sheet
+      // 10px 侧距断言随对象退役；MobileSheet 基座规格由 m8-gaps P4（.msheet 在场）等
+      // 其它菜单路径覆盖，2026-11-06 记档。
+      const [mChooser] = await Promise.all([
+        page.waitForEvent("filechooser", { timeout: 6000 }),
+        page.getByRole("button", { name: "添加附件" }).click(),
+      ]);
+      ok(mChooser !== undefined, "P-M1a 移动端点 + 一键直达系统文件选择器（filechooser）");
       ok(
-        m.sheetLeft === "10px" && m.sheetRight === "10px",
-        `P-M1b sheet 近贴边 10px 侧距（left=${m.sheetLeft} right=${m.sheetRight}）`,
+        (await page.locator('[role="menuitem"]').count()) === 0,
+        "P-M1b 移动端无自有附件 sheet（menuitem 零渲染）",
       );
-      await page.keyboard.press("Escape");
-      await page.waitForTimeout(400);
 
       // P-M2 chips 横滚：3 个上传 chip（各 w-36=144px）在 ~342px 容器必溢出
       await page

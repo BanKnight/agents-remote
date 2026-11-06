@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -246,6 +247,113 @@ test("uploadFile rejects non-directory target", async () => {
   await expect(
     service.uploadFile("demo", "file.txt", "extra.txt", Buffer.from("x")),
   ).rejects.toMatchObject({ code: "PROJECT_FILE_NOT_DIRECTORY" });
+});
+
+test("uploadFile auto-creates missing target directory", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(
+    service.uploadFile("demo", "uploads/nested", "note.txt", Buffer.from("hello")),
+  ).resolves.toMatchObject({
+    entry: {
+      name: "note.txt",
+      path: "uploads/nested/note.txt",
+      type: "file",
+      hidden: false,
+      size: 5,
+    },
+  });
+  expect(await readFile(join(root, "demo", "uploads", "nested", "note.txt"), "utf8")).toBe("hello");
+});
+
+test("uploadFile keeps both inside auto-created directory", async () => {
+  const service = new ProjectFilesService(root);
+  await service.uploadFile("demo", "uploads", "dup.txt", Buffer.from("first"));
+  // 自动建目录后 keepBoth 派生 name(1).ext 正常工作。
+  await expect(
+    service.uploadFile("demo", "uploads", "dup.txt", Buffer.from("second"), "keepBoth"),
+  ).resolves.toMatchObject({ entry: { name: "dup(1).txt", path: "uploads/dup(1).txt" } });
+});
+
+test("uploadFile rejects file-typed ancestor of missing directory", async () => {
+  const service = new ProjectFilesService(root);
+  await writeFile(join(root, "demo", "blocker.txt"), "content");
+
+  // 目标目录的祖先是文件：mkdir 分支必须分类为 TARGET_INVALID（400 语义），不能落 FS_ERROR。
+  await expect(
+    service.uploadFile("demo", "blocker.txt/sub", "x.txt", Buffer.from("x")),
+  ).rejects.toMatchObject({ code: "PROJECT_TARGET_INVALID" });
+});
+
+test("uploadFile does not mask missing project behind auto-create", async () => {
+  const service = new ProjectFilesService(root);
+
+  // 项目不存在：resolveProjectPath 先抛 NOT_FOUND，mkdir 分支永不触达。
+  await expect(
+    service.uploadFile("ghost-project", "uploads", "x.txt", Buffer.from("x")),
+  ).rejects.toMatchObject({ code: "PROJECT_NOT_FOUND" });
+});
+
+test("uploadFile refuses dangling symlink target without writing outside", async () => {
+  const service = new ProjectFilesService(root);
+  // uploads 是指向界外不存在路径的 symlink：mkdir 对存在路径报 EEXIST（不跟随）→
+  // TARGET_INVALID——绝不顺着 symlink 在界外创建；复检防线拦「指向界外已存在目录」。
+  await symlink(join(outside, "escape"), join(root, "demo", "uploads"));
+
+  await expect(
+    service.uploadFile("demo", "uploads", "x.txt", Buffer.from("x")),
+  ).rejects.toMatchObject({ code: "PROJECT_TARGET_INVALID" });
+  expect(existsSync(join(outside, "escape"))).toBe(false);
+});
+
+test("uploadFile does not mkdir through an outside-pointing parent symlink", async () => {
+  const service = new ProjectFilesService(root);
+  // 父链上的 symlink 指向界外已存在目录 + 后缀不存在：mkdir(recursive) 会跟随父链把
+  // 目录建到界外，事后再复检已太晚——建前祖先校验必须拦住，界外一个目录都不能创建。
+  await mkdir(join(outside, "outside-existing"));
+  await symlink(join(outside, "outside-existing"), join(root, "demo", "uploads"));
+
+  await expect(
+    service.uploadFile("demo", "uploads/evil/nested", "x.txt", Buffer.from("x")),
+  ).rejects.toMatchObject({ code: "PROJECT_PATH_OUTSIDE_ROOT" });
+  expect(existsSync(join(outside, "outside-existing", "evil"))).toBe(false);
+});
+
+test("uploadFile refuses writing through a file-target symlink (dangling and existing)", async () => {
+  const service = new ProjectFilesService(root);
+  await mkdir(join(root, "demo", "uploads"));
+  // 末级 dangling symlink：stat 的 ENOENT 曾被吞成「不存在」→ writeFile 越界创建。
+  await symlink(join(outside, "escape.txt"), join(root, "demo", "uploads", "evil.txt"));
+
+  await expect(
+    service.uploadFile("demo", "uploads", "evil.txt", Buffer.from("pwn")),
+  ).rejects.toMatchObject({ code: "PROJECT_TARGET_INVALID" });
+  expect(existsSync(join(outside, "escape.txt"))).toBe(false);
+
+  // 指向界外已存在文件的 symlink + overwrite：也不得覆盖界外内容。
+  await writeFile(join(outside, "victim.txt"), "original");
+  await symlink(join(outside, "victim.txt"), join(root, "demo", "uploads", "victim.txt"));
+  await expect(
+    service.uploadFile("demo", "uploads", "victim.txt", Buffer.from("pwn"), "overwrite"),
+  ).rejects.toMatchObject({ code: "PROJECT_TARGET_INVALID" });
+  await expect(readFile(join(outside, "victim.txt"), "utf8")).resolves.toBe("original");
+});
+
+test("uploadFile rejects control characters in file name", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(
+    service.uploadFile("demo", "", "evil\nAttachment: injected.txt", Buffer.from("x")),
+  ).rejects.toMatchObject({ code: "PROJECT_NAME_INVALID" });
+});
+
+test("uploadFile auto-create rejects hidden path segments", async () => {
+  const service = new ProjectFilesService(root);
+
+  await expect(
+    service.uploadFile("demo", ".git/hooks", "x.txt", Buffer.from("x")),
+  ).rejects.toMatchObject({ code: "PROJECT_TARGET_INVALID" });
+  expect(existsSync(join(root, "demo", ".git"))).toBe(false);
 });
 
 test("uploadFile rejects oversized content", async () => {

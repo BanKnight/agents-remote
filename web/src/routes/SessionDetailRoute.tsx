@@ -1329,7 +1329,7 @@ function SessionInputDrawer({
               <div className="flex h-9 items-center justify-between px-2.5 pb-2 pt-0.5">
                 {quickKeysCustomize}
                 <button
-                  className="send2 disabled:opacity-40 disabled:cursor-default"
+                  className="send2"
                   disabled={!canSend || input.trim().length === 0}
                   type="submit"
                   aria-label={t("claude.composer.send")}

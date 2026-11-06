@@ -134,6 +134,8 @@ body{background:var(--backdrop);color:var(--ink-1);padding:24px;
 .composer .send2{flex:none;width:28px;height:28px;margin-left:auto;border-radius:12px;background:var(--c-primary);color:var(--on-accent);
                  display:flex;align-items:center;justify-content:center}
 .composer .send2 svg{width:14px;height:14px}
+/* 禁用态（附件上传中等不可发送时机）：降不透明度 + 默认光标，完成即恢复 */
+.composer .send2:disabled{opacity:.4;cursor:default}
 /* 停止/发送同位互斥：运行中且框空 = 红色停止 ■；空闲或有插话文本 = 蓝色发送 ↑(SVG) */
 .composer .send2.stopstate{background:color-mix(in srgb,var(--c-danger) 16%,transparent);
                            border:1px solid color-mix(in srgb,var(--c-danger) 60%,transparent)}

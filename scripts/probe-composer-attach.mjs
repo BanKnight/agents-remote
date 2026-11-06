@@ -172,9 +172,10 @@ async function waitForFrame(page, frames, cursor, pred, label) {
 }
 
 (async () => {
-  // web DOM 探针强制前置：CSS 落盘三道闸（hover-capable:hidden 为本批新 utility 锚）。
+  // web DOM 探针强制前置：CSS 落盘三道闸（hover-capable:size-5 为 chip × 按钮在用 variant 锚；
+  // 旧锚 hover-capable:hidden 的消费点已随后续批次删除——锚点须锚当前真实在用 utility）。
   const css = await verifyCssFlushed({
-    expectClasses: ["hover-capable:hidden", "bg-surface-inset"],
+    expectClasses: ["hover-capable:size-5", "bg-surface-inset"],
     origin: WEB_ORIGIN,
   });
   if (!css.pass) {

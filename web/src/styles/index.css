@@ -103,6 +103,7 @@
   --c-warning: #ff9f0a; /* 待审批/警示衬底 */
   --c-warning-text: #ff9f0a;
   --c-danger: #ff453a; /* 错误/删除/中断 */
+  --c-danger-text: #ff453a; /* 深底错误文字（深色档不降亮） */
   --c-pin: #bf5af2; /* 置顶/Agent 引用/思考标记 */
   --scrim: rgb(0 0 0 / 0.45); /* 浮层底压暗 */
 
@@ -239,6 +240,7 @@ html[data-theme="light"] {
   --c-warning: #ff9f0a;
   --c-warning-text: #e08600;
   --c-danger: #ff3b30;
+  --c-danger-text: #d70015; /* 浅底错误文字对比度修正（tokens.json dangerText） */
   --c-pin: #af52de;
   --scrim: rgb(0 0 0 / 0.4);
 
@@ -452,6 +454,7 @@ body {
      data-theme="light" 两段；原型 sec .r / ap-row .tx / tchip.live 消费）。 */
   --color-success-text: var(--c-success-text);
   --color-warning-text: var(--c-warning-text);
+  --color-error-text: var(--c-danger-text);
 
   /* ===== v1 过渡桥接（v1 语义 utility → v2 var；随 M2/M3 页面重写消亡，勿在新代码用）=====
      映射依据：docs/design/redesign-v2.md 附录「颜色映射」。*/

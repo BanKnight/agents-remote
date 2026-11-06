@@ -383,82 +383,227 @@ export class UploadConflictError extends Error {
   readonly code = "PROJECT_FILE_TARGET_EXISTS";
 }
 
-/** FormData 上传（fetch 无上传进度回调，进度展示走队列行状态而非字节级 .prog——记档）。 */
-const uploadFormData = async (
-  url: string,
-  file: File,
-  conflict?: UploadConflictPolicy,
-): Promise<UploadFileResponse> => {
-  const formData = new FormData();
-  formData.append("file", file);
-  if (conflict) formData.append("conflict", conflict);
-  const response = await fetch(url, { method: "POST", body: formData });
-
-  if (response.status === 409) {
-    throw new UploadConflictError(resolveTranslation("api.projectFileUploadFailed"));
-  }
-  if (!response.ok) {
-    throw new Error(`${resolveTranslation("api.projectFileUploadFailed")}: ${response.status}`);
-  }
-
-  return response.json();
-};
-
-export async function uploadFile(
-  projectName: string,
-  directoryPath: string,
-  file: File,
-  conflict?: UploadConflictPolicy,
-): Promise<UploadFileResponse> {
-  return uploadFormData(projectFileUploadPath(projectName, directoryPath), file, conflict);
-}
+/**
+ * XHR 响应等待 watchdog：字节发完后等服务端处理 + 响应的超时上限——半开连接此前永卡
+ *「上传中 100%」（报错优于永卡）。请求体发送阶段不设（真半开由 TCP 层触发 onerror）。
+ */
+const UPLOAD_RESPONSE_TIMEOUT_MS = 30_000;
 
 /**
- * XHR 上传变体（fetch 无上传进度回调——两处记档见 uploadFormData/upload-queue；composer
- * 附件文件 chip 需要真实字节百分比）。鉴权同 fetch：HttpOnly cookie 同源自动携带。
- * uploadFile 保持 fetch 版不动——upload-queue / rootUploadFile 等存量调用零影响。
+ * XHR 整请求总超时（含请求体发送段）：发送段若服务端「收下连接但不读」，既不触发 error
+ * 也无 upload.onload，watchdog 起不来 → 同样永卡。10 分钟足够 50MiB 在 1Mbps 上行传完。
  */
-export function uploadFileWithProgress(
-  projectName: string,
-  directoryPath: string,
+const UPLOAD_TOTAL_TIMEOUT_MS = 10 * 60_000;
+
+/** XHR 客户端哨兵错误码（与服务端 PROJECT_* 命名空间不撞；消费方按 isApiErrorCode 分流）。 */
+export const UPLOAD_NETWORK_ERROR_CODE = "UPLOAD_NETWORK_ERROR";
+export const UPLOAD_RESPONSE_TIMEOUT_CODE = "UPLOAD_RESPONSE_TIMEOUT";
+export const UPLOAD_RESPONSE_INVALID_CODE = "UPLOAD_RESPONSE_INVALID";
+
+/**
+ * XHR 上传单实现（fetch 无上传进度回调；composer 附件 chip 与文件树队列共用，旧 fetch
+ * 版 uploadFormData/uploadFile/rootUploadFile 已随迁移删除）。鉴权同 fetch：HttpOnly
+ * cookie 同源自动携带。
+ *
+ * - settled 单闸：abort → onabort/loadend、upload.onerror 与 xhr.onerror 双 fire 等
+ *   引擎差异全部被闸吃掉，resolve/reject 恰好一次。
+ * - 响应 watchdog：`xhr.upload.onload`（字节发完 = 进入服务端处理段）启动，到点
+ *   reject 超时错误再 abort。
+ * - 401（status 或 UNAUTHENTICATED code）→ refreshAuth() 成功则整传重试一次（retried
+ *   防环），失败派发 `auth:unauthenticated`——与 fetchJson 同口径。
+ * - responseType="text" + 手动 JSON.parse：responseType="json" 时访问 responseText
+ *   直接抛 InvalidStateError（规范），且 2xx 空响应的 xhr.response 为 null 会让
+ *   res.entry.path 的 TypeError 被吞成「上传失败」——统一解析路径，非 2xx 结构化
+ *   错误（{error:{code}}）与成功走同一条。
+ */
+const xhrUpload = (
+  url: string,
   file: File,
-  opts?: { conflict?: UploadConflictPolicy; onProgress?: (percent: number) => void },
-): Promise<UploadFileResponse> {
-  const { conflict, onProgress } = opts ?? {};
-  return new Promise((resolve, reject) => {
+  conflict: UploadConflictPolicy | undefined,
+  opts: {
+    onProgress?: (percent: number) => void;
+    onUploadComplete?: () => void;
+    /** 401 刷新成功后整传重试前回调（消费方复位「处理中/100%」显示）。 */
+    onRetryStart?: () => void;
+    signal?: AbortSignal;
+  },
+  retried = false,
+): Promise<UploadFileResponse> =>
+  new Promise((resolve, reject) => {
+    let settled = false;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    const onSignalAbort = () => xhr.abort();
+
+    const settle = (finish: () => void) => {
+      if (settled) return;
+      settled = true;
+      if (watchdog !== undefined) clearTimeout(watchdog);
+      opts.signal?.removeEventListener("abort", onSignalAbort);
+      finish();
+    };
+    const networkError = () =>
+      new ApiClientError(
+        resolveTranslation("api.projectFileUploadFailed"),
+        UPLOAD_NETWORK_ERROR_CODE,
+      );
+    const timeoutError = () =>
+      new ApiClientError(
+        resolveTranslation("api.projectFileUploadFailed"),
+        UPLOAD_RESPONSE_TIMEOUT_CODE,
+      );
+
+    if (opts.signal?.aborted) {
+      reject(networkError());
+      return;
+    }
+
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", projectFileUploadPath(projectName, directoryPath));
-    xhr.responseType = "json";
+    xhr.open("POST", url);
+    xhr.responseType = "text";
+    // 总超时覆盖整请求（含发送段；发送段半开无任何事件，watchdog 起不来）。
+    xhr.timeout = UPLOAD_TOTAL_TIMEOUT_MS;
+    opts.signal?.addEventListener("abort", onSignalAbort);
+
     xhr.upload.onprogress = (e) => {
-      if (onProgress && e.lengthComputable && e.total > 0) {
-        onProgress((e.loaded / e.total) * 100);
+      if (opts.onProgress && e.lengthComputable && e.total > 0) {
+        opts.onProgress((e.loaded / e.total) * 100);
       }
     };
-    xhr.onerror = () => reject(new Error(resolveTranslation("api.projectFileUploadFailed")));
+    xhr.upload.onload = () => {
+      // 响应可能已先到（load 已 settle）：不再起 30s 空定时器。
+      if (settled) return;
+      opts.onUploadComplete?.();
+      watchdog = setTimeout(() => {
+        settle(() => reject(timeoutError()));
+        xhr.abort();
+      }, UPLOAD_RESPONSE_TIMEOUT_MS);
+    };
+    xhr.onerror = () => settle(() => reject(networkError()));
+    // abort 只派发 abort + loadend，**不派发 error**——不接这个回调时 abort() 后 Promise
+    // 永不 settle（取消上传 → 队列 pump / 同批附件永久卡死）。主动取消与 watchdog 到点
+    // 的 abort 都走这里，settle 单闸保证只结算一次。
+    xhr.onabort = () => settle(() => reject(networkError()));
+    xhr.ontimeout = () => settle(() => reject(timeoutError()));
+
     xhr.onload = () => {
-      if (xhr.status === 409) {
-        reject(new UploadConflictError(resolveTranslation("api.projectFileUploadFailed")));
-        return;
-      }
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(`${resolveTranslation("api.projectFileUploadFailed")}: ${xhr.status}`));
-        return;
-      }
-      resolve(xhr.response as UploadFileResponse);
+      settle(() => {
+        let body: unknown = null;
+        try {
+          body = JSON.parse(xhr.responseText) as unknown;
+        } catch {
+          body = null;
+        }
+        const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
+
+        if (xhr.status === 401 || code === "UNAUTHENTICATED") {
+          refreshAuth()
+            .then((refreshed) => {
+              if (refreshed && !retried) {
+                if (opts.signal?.aborted) {
+                  reject(networkError());
+                  return;
+                }
+                // 整传重来：消费方把「处理中/100%」复位（字节要从 0 再发一遍）。
+                opts.onRetryStart?.();
+                resolve(xhrUpload(url, file, conflict, opts, true));
+                return;
+              }
+              if (!refreshed) {
+                window.dispatchEvent(new CustomEvent("auth:unauthenticated"));
+              }
+              reject(
+                new ApiClientError(
+                  `${resolveTranslation("api.projectFileUploadFailed")}: ${xhr.status}`,
+                  typeof code === "string" ? code : undefined,
+                ),
+              );
+            })
+            // refreshAuth 自身失败（auth 端点异常/网络断）：必须结算，否则 chip 永卡
+            //「处理中…」、队列 pump 永久 wedged。
+            .catch(() => {
+              window.dispatchEvent(new CustomEvent("auth:unauthenticated"));
+              reject(networkError());
+            });
+          return;
+        }
+
+        if (xhr.status === 409) {
+          reject(new UploadConflictError(resolveTranslation("api.projectFileUploadFailed")));
+          return;
+        }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          reject(
+            new ApiClientError(
+              `${resolveTranslation("api.projectFileUploadFailed")}: ${xhr.status}`,
+              typeof code === "string" ? code : undefined,
+            ),
+          );
+          return;
+        }
+        if (!body || typeof body !== "object" || !("entry" in body)) {
+          // 2xx 但响应体不是预期形状（网关错误页/空体）：明确报错，不让 res.entry.path
+          // 的 TypeError 被吞；keepBoth 语义下提示重传无害（不覆盖既有文件）。
+          reject(
+            new ApiClientError(
+              resolveTranslation("api.projectFileUploadFailed"),
+              UPLOAD_RESPONSE_INVALID_CODE,
+            ),
+          );
+          return;
+        }
+        resolve(body as UploadFileResponse);
+      });
     };
+
     const formData = new FormData();
     formData.append("file", file);
     if (conflict) formData.append("conflict", conflict);
     xhr.send(formData);
   });
+
+/**
+ * 项目内上传（XHR 真实字节百分比；onUploadComplete = 字节发完进入服务端处理段；
+ * signal 支持 abort）。鉴权同 fetch：HttpOnly cookie 同源自动携带。
+ */
+export function uploadFileWithProgress(
+  projectName: string,
+  directoryPath: string,
+  file: File,
+  opts?: {
+    conflict?: UploadConflictPolicy;
+    onProgress?: (percent: number) => void;
+    onUploadComplete?: () => void;
+    onRetryStart?: () => void;
+    signal?: AbortSignal;
+  },
+): Promise<UploadFileResponse> {
+  const { conflict, onProgress, onUploadComplete, onRetryStart, signal } = opts ?? {};
+  return xhrUpload(projectFileUploadPath(projectName, directoryPath), file, conflict, {
+    onProgress,
+    onUploadComplete,
+    onRetryStart,
+    signal,
+  });
 }
 
-/** 上传到 PROJECTS_ROOT 根层（03o pin④「增=新建/上传到当前作用域」，M8 全局文件写边界）。 */
-export async function rootUploadFile(
+/** 根层上传（POST /api/root/files/upload）的 XHR 变体——upload-queue 真进度用。 */
+export function rootUploadFileWithProgress(
   file: File,
   conflict?: UploadConflictPolicy,
+  opts?: {
+    onProgress?: (percent: number) => void;
+    onUploadComplete?: () => void;
+    onRetryStart?: () => void;
+    signal?: AbortSignal;
+  },
 ): Promise<UploadFileResponse> {
-  return uploadFormData("/api/root/files/upload", file, conflict);
+  const { onProgress, onUploadComplete, onRetryStart, signal } = opts ?? {};
+  return xhrUpload("/api/root/files/upload", file, conflict, {
+    onProgress,
+    onUploadComplete,
+    onRetryStart,
+    signal,
+  });
 }
 
 export async function previewProjectFile(

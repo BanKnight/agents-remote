@@ -515,6 +515,7 @@ export const en = {
   // ── Claude ────────────────────────────────────────────────────
   "claude.inputPlaceholder": "Ask Claude...",
   "claude.composer.send": "Send",
+  "claude.composer.sendWaitingUpload": "Waiting for attachments to finish uploading",
   // Composer attachments (image batch): + button + chip labels.
   "claude.attach.add": "Add attachment",
   "claude.attach.uploading": "Uploading…",
@@ -522,8 +523,13 @@ export const en = {
   "claude.attach.processing": "Processing…",
   "claude.attach.ready": "Uploaded",
   "claude.attach.failed": "Upload failed",
+  "claude.attach.networkError": "Connection lost",
+  "claude.attach.timeout": "Server response timed out",
+  // 与 api/src/project-files.ts UPLOAD_FILE_LIMIT_BYTES（50 MiB）联动——改那边同步这里。
+  "claude.attach.tooLarge": "File exceeds the 50 MB limit",
   "claude.attach.processFailed": "Processing failed",
   "claude.attach.retry": "Retry processing",
+  "claude.attach.retryUpload": "Retry upload",
   "claude.attach.overflow": "Attachment limit ({{max}}) reached, {{count}} more not added",
   "claude.attach.remove": "Remove attachment",
   "claude.attach.fileMention": "Attachment: {{path}}",
