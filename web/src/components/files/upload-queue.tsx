@@ -230,8 +230,8 @@ export function UploadQueueCard() {
   const count = queue.items.length;
   const statusText = uploading
     ? count === 1
-      ? t("files.uploadQueue.uploadingOne")
-      : t("files.uploadQueue.uploading", { count })
+      ? t("files.uploadQueue.uploadingOne", { percent })
+      : t("files.uploadQueue.uploading", { count, percent })
     : count === 1
       ? t("files.uploadQueue.queuedOne")
       : t("files.uploadQueue.queued", { count });
