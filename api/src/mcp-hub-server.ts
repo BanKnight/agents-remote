@@ -56,7 +56,7 @@ import type { SessionRegistry } from "./session-registry.js";
  * 未开启的 project 仍是空壳(agent 自带文件工具且 cwd=projectPath,基线文件读写不进 hub)。
  * 后续能力域(browser 等)按同一 capabilities 开关在此扩展。
  *
- * 定位见 docs/research/inbox/mcp-hub-positioning.md。
+ * 定位见 docs/research/mcp-hub-positioning.md。
  */
 
 export type McpHubServer = {

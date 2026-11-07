@@ -2,7 +2,7 @@
 
 > 调研日期 2026-08-08。目标：把 agents-remote 的扩展能力从「只有 skill、只有全局层」演进为统一的**插件（plugin）入口**——插件 = skill + mcp 两类扩展 × **全局 + 项目**两层作用域。agent 实例消费全局+项目合并结果（CLI 原生合并，不做管理）。
 >
-> 状态：**已实现并上线**。项目层 skill + MCP（项目工作台「插件」tab，D4/D7）= commit `2fbfcc3`；项目 skill 版本化管理（有源/手写区分，读 `<project>/skills-lock.json` 填 `manageable`）+ 文件 tab dot 项改黑名单让插件配置（`.claude/`、`.mcp.json`）可见 = commit `fd424ff`。下方「现状盘点」是 2026-08-08 调研时的快照（说明为什么需要这个蓝图），**实现进度以本状态行为准**。本文是决策 + 设计蓝图沉淀，承接 [skill-marketplace.md](./skill-marketplace.md)（skill 市场调研）与 [mcp-hub-positioning.md](./inbox/mcp-hub-positioning.md)（MCP hub 定位）。
+> 状态：**已实现并上线**。项目层 skill + MCP（项目工作台「插件」tab，D4/D7）= commit `2fbfcc3`；项目 skill 版本化管理（有源/手写区分，读 `<project>/skills-lock.json` 填 `manageable`）+ 文件 tab dot 项改黑名单让插件配置（`.claude/`、`.mcp.json`）可见 = commit `fd424ff`。下方「现状盘点」是 2026-08-08 调研时的快照（说明为什么需要这个蓝图），**实现进度以本状态行为准**。本文是决策 + 设计蓝图沉淀，承接 [skill-marketplace.md](./skill-marketplace.md)（skill 市场调研）与 [mcp-hub-positioning.md](./mcp-hub-positioning.md)（MCP hub 定位）。
 
 ## TL;DR（结论先行）
 
@@ -206,12 +206,12 @@ agent 实例 = 全局 + 项目合并生效（CLI 原生，不管理）
   - `api/src/claude-runtime.ts` `buildMcpArgs`/`resolveSpawnInputs`（spawn 时注入 MCP）。
   - `web/src/routes/SkillsRoute.tsx`（Skill 三 tab）+ `web/src/components/shell/activity-bar.tsx`（全局 nav）。
   - [skill-marketplace.md](./skill-marketplace.md) §3.4（npx skills 源类型 local/git）、§3.6（锁文件 + 更新）、§8（混合路线落地）、§7（安全边界）。
-  - [mcp-hub-positioning.md](./inbox/mcp-hub-positioning.md)（内部 hub 定位 + 外部 MCP = 配置管理者 + 不加 --strict-mcp-config）。
+  - [mcp-hub-positioning.md](./mcp-hub-positioning.md)（内部 hub 定位 + 外部 MCP = 配置管理者 + 不加 --strict-mcp-config）。
 - **实测**（2026-08-08，本机）：`claude mcp` 2.1.212 + `npx skills` 1.5.22，见 §实现前调研结论。
 - **待调研**（实现期）：执行信任模型 UI（§开放问题 2）、`/skills`→`/plugins` 路由迁移影响。（项目级 skill 更新机制已实现，见 commit `fd424ff`。）
 
 ## 承接
 
 - [skill-marketplace.md](./skill-marketplace.md)（skill 市场调研，本蓝图承接其更新/源扩展的未决部分）。
-- [mcp-hub-positioning.md](./inbox/mcp-hub-positioning.md)（MCP hub 定位，本蓝图是其「外部 MCP 对接」的落地实现）。
+- [mcp-hub-positioning.md](./mcp-hub-positioning.md)（MCP hub 定位，本蓝图是其「外部 MCP 对接」的落地实现）。
 - 与 [provider-config-comparison.md](./provider-config-comparison.md) 的关联：provider 体系（preset 耦合四层）与插件体系（skill/mcp 扩展）是正交维度——provider 管「连哪个端点」，插件管「agent 会做什么/怎么做」。
