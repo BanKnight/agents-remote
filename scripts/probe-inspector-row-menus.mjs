@@ -46,6 +46,10 @@ async function setupMocks(page) {
     }),
   );
   await page.route(/\/api\/approvals\/stream$/, (r) => r.abort());
+  // sessions-stream WS 同理隔离（服务端帧整体覆盖 ["overview"] 缓存，真实会话会顶掉 mock）。
+  await page.routeWebSocket(/\/api\/sessions\/stream/, (ws) => {
+    ws.send(JSON.stringify({ type: "sessions", sessions: [] }));
+  });
   await page.route(/\/api\/projects\/proj1\/agent-sessions\?.*$/, (r) =>
     r.fulfill({
       status: 200,
@@ -295,8 +299,8 @@ try {
     timeout: 8000,
   });
 
-  // ① 右栏 ptabs（v1.4 批3：seg4 分段退役，PanelTabBar 动态标签条 05:99）：默认 [文件]，
-  // ＋ 菜单含 Git/Wiki（三段语义由菜单覆盖），无「历史」。
+  // ① 右栏 ptabs（v1.4 批3：seg4 分段退役，PanelTabBar 动态标签条 05:99）：四基础常驻
+  //（pages 2026-11-07 平级接入），＋ 菜单同列四项，无「历史」。
   const readPanelTabs = () =>
     page.evaluate(() => {
       const aside = document.querySelectorAll("main > div > aside")[1];
@@ -306,11 +310,11 @@ try {
     });
   const seg = await readPanelTabs();
   ok(seg !== null, "S1 右栏 ptabs 渲染");
-  // 三基础标签常驻（2026-09-29 真机反馈②，a4e9e69）：默认 [文件,Git,Wiki]，＋ 菜单点基础
-  // 段 = 激活幂等（加签前后列表不变）。
+  // 四基础标签常驻（2026-09-29 真机反馈② wiki 补齐；pages 2026-11-07 平级接入）：默认
+  // [文件,Git,页面,Wiki]，＋ 菜单点基础段 = 激活幂等（加签前后列表不变）。
   ok(
-    seg?.join(",") === "文件,Git,Wiki",
-    `S2 右栏 ptabs 默认 = [文件,Git,Wiki]（三基础常驻；实际 ${JSON.stringify(seg)}）`,
+    seg?.join(",") === "文件,Git,页面,Wiki",
+    `S2 右栏 ptabs 默认 = [文件,Git,页面,Wiki]（四基础常驻；实际 ${JSON.stringify(seg)}）`,
   );
   ok(!seg?.includes("历史"), "S3 右栏无「历史」标签（与 iPhone 同构）");
   // ＋ 菜单可加 Git/Wiki（基础三段语义由 03ob2 菜单承载）——点「Git」加签供 G 段使用。
@@ -325,8 +329,8 @@ try {
   await page.waitForTimeout(400);
   const segAfterGit = await readPanelTabs();
   ok(
-    segAfterGit?.join(",") === "文件,Git,Wiki",
-    `S5 ＋ 菜单点 Git = 激活常驻 Git（仍 [文件,Git,Wiki]；实际 ${JSON.stringify(segAfterGit)}）`,
+    segAfterGit?.join(",") === "文件,Git,页面,Wiki",
+    `S5 ＋ 菜单点 Git = 激活常驻 Git（仍 [文件,Git,页面,Wiki]；实际 ${JSON.stringify(segAfterGit)}）`,
   );
 
   // ② Files 标签（点回文件标签）：文件行右键 → 5 项菜单（预览/重命名/移动/上传/删除）。

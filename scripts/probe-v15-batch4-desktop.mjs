@@ -1,9 +1,9 @@
 // v1.5 批 4 预览矩阵·桌面探针（spec §4.5/§4.6，DOM 几何硬数据禁截图）。
 //
 // 断言域：
-//   Part 1 检视器三结构标签投影（right-panel-tabs）：PanelTabBar 仅 files/git/wiki 三 chip
-//     （file/wikiread 不再进检视器）；files 树点文件 → 检视器无 file 标签、中栏 tabstrip 出现
-//     文件 tab（chip + body .fmeta）。
+//   Part 1 检视器结构标签投影（right-panel-tabs）：PanelTabBar 仅结构 chip
+//     （files/git/pages/wiki，pages 2026-11-07 平级接入；file/wikiread 不再进检视器）；
+//     files 树点文件 → 检视器无 file 标签、中栏 tabstrip 出现文件 tab（chip + body .fmeta）。
 //   Part 2 tabstrip 右端动作（05h4；v1.6 pencil 退役）：file tab 激活 = ⋯；⋯ 菜单三项（复制
 //     内容/复制路径/查看 diff）；「查看 diff」→ 中栏新增 git tab；点正文 → 编辑态（emeta/aux
 //     桌面档无「收起键盘」）+ 编辑态 tabstrip 只剩结构钮。
@@ -67,6 +67,31 @@ const TERMINAL = {
   status: "running",
   updatedAt: "2026-10-10T00:00:00.000Z",
 };
+
+// overview 候选：REST /api/overview 与 sessions-stream WS 帧**同源**（真实后端 overview 含
+// terminal 候选，见 session-registry）——两路数据不一致时，WS 帧会经 use-session-shells
+// applyShellsFrame 整体覆盖缓存，把 mock 会话顶掉导致 tab 被 prune。
+const CANDIDATES = [
+  ...AGENTS.map((a) => ({
+    sessionId: a.id,
+    projectName: a.projectName,
+    displayName: a.displayName,
+    status: a.status,
+    provider: a.provider,
+    type: "agent",
+    createdAt: a.createdAt,
+    updatedAt: a.createdAt,
+  })),
+  {
+    sessionId: TERMINAL.id,
+    projectName: TERMINAL.projectName,
+    displayName: TERMINAL.displayName,
+    status: TERMINAL.status,
+    type: "terminal",
+    createdAt: TERMINAL.updatedAt,
+    updatedAt: TERMINAL.updatedAt,
+  },
+];
 
 // 置顶集合（有态：POST/DELETE 回显，Part 4b 置顶 ✓ 断言数据源）。
 const PINNED_MOCK = [];
@@ -147,21 +172,7 @@ async function setupMocks(page) {
     return r.fulfill(json({ ok: true }));
   });
   await page.route(/\/api\/overview$/, (r) =>
-    r.fulfill(
-      json({
-        projectNames: ["proj1"],
-        candidates: AGENTS.map((a) => ({
-          sessionId: a.id,
-          projectName: a.projectName,
-          displayName: a.displayName,
-          status: a.status,
-          provider: a.provider,
-          type: "agent",
-          createdAt: a.createdAt,
-          updatedAt: a.createdAt,
-        })),
-      }),
-    ),
+    r.fulfill(json({ projectNames: ["proj1"], candidates: CANDIDATES })),
   );
   // 正则不锚 $（POST/DELETE 带 /{id} 后缀——Part 4b 置顶点击必须被拦，漏拦会落到真实
   // 后端吃 400；探针纪律：mock 漏路由不报错只静默穿透）。
@@ -249,6 +260,13 @@ async function setupMocks(page) {
   await page.route(/\/api\/skills\/installed\?.*$/, (r) => r.fulfill(json({ skills: [] })));
   await page.route(/\/api\/skills\/updates\?.*$/, (r) => r.fulfill(json({ updates: [] })));
   await page.routeWebSocket(/stream/, (ws) => ws.connectToServer());
+  // sessions-stream WS 不能透传真实后端：use-session-shells 的 applyShellsFrame 用服务端帧
+  // **整体覆盖** ["overview"] 缓存（真实会话列表顶掉探针 candidates）→ stale-tab prune 把
+  // mock 会话 tab 判 stale 摘除（Part 6 ⑦ 曾因此假 FAIL，pruneRefs 变真实 6 会话实锤）。
+  // 帧内容与 REST mock 同源；后注册者优先，覆盖上面的通用透传。
+  await page.routeWebSocket(/\/api\/sessions\/stream/, (ws) => {
+    ws.send(JSON.stringify({ type: "sessions", sessions: CANDIDATES }));
+  });
 }
 
 async function login(page) {
@@ -274,9 +292,9 @@ await page.goto(`${ORIGIN}/projects/proj1?rightTab=files`);
 await page.waitForTimeout(1200);
 const inspector = page.locator("[data-desktop-inspector]");
 ok((await inspector.count()) === 1, "① ?rightTab=files → 桌面检视器挂载");
-// PanelTabBar 仅三结构 chip（files/git/wiki）——file/wikiread 不进检视器。
+// PanelTabBar 仅结构 chip（files/git/pages/wiki）——file/wikiread 不进检视器。
 const chipIds = await inspector.locator(".ptab").allTextContents();
-ok(chipIds.length === 3, `② 检视器标签数 = 3（文件/Git/Wiki，实际 ${chipIds.length}）`);
+ok(chipIds.length === 4, `② 检视器标签数 = 4（文件/Git/页面/Wiki，实际 ${chipIds.length}）`);
 // files 树点文件 → 中栏 tabstrip 出现文件 tab（批 4 通路：不再进检视器）。
 const treeFile = inspector.getByText("index.ts", { exact: true }).first();
 await treeFile.click();

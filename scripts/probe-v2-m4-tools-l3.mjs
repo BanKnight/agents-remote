@@ -233,6 +233,11 @@ async function setupM4Mocks(page) {
   );
   // session 面板 WS（fake session → error，panel 容器仍渲染）。
   await page.routeWebSocket(/stream/, (ws) => ws.connectToServer());
+  // sessions-stream WS 不能透传真实后端：服务端帧经 use-session-shells 整体覆盖
+  // ["overview"] 缓存，真实会话会顶掉探针 candidates（REST mock 为空集）。
+  await page.routeWebSocket(/\/api\/sessions\/stream/, (ws) => {
+    ws.send(JSON.stringify({ type: "sessions", sessions: [] }));
+  });
 }
 
 /** goto 前清检视面板/文件树持久化（panelTabs/panelActive 跨刷新恢复——不清理会跨 Part 串态）。 */
@@ -332,8 +337,8 @@ const tabState = await page.evaluate(() => {
   return { count: tabs.length, onText: on?.textContent?.trim() ?? null };
 });
 ok(
-  tabState.count === 3,
-  `默认标签 3 个（03m/03p 三基础常驻 files/git/wiki；实际 ${tabState.count}）`,
+  tabState.count === 4,
+  `默认标签 4 个（四基础常驻 files/git/pages/wiki，pages 2026-11-07 平级接入；实际 ${tabState.count}）`,
 );
 ok(tabState.onText === "文件", `files 标签激活（实际 ${tabState.onText}）`);
 // FAB 几何（03ob：48×48 r24 right16 bottom50）。
@@ -375,9 +380,9 @@ const tabState2 = await page.evaluate(() => {
   const xCount = document.querySelectorAll(".ptabs .ptab .x").length;
   return { count: tabs.length, onText: on?.textContent?.trim() ?? null, xCount };
 });
-ok(tabState2.count === 3, `＋ 开 Git = 激活常驻 Git 标签（仍 3 个；实际 ${tabState2.count}）`);
+ok(tabState2.count === 4, `＋ 开 Git = 激活常驻 Git 标签（仍 4 个；实际 ${tabState2.count}）`);
 ok(tabState2.onText?.startsWith("Git"), `Git 标签激活（实际 ${tabState2.onText}）`);
-ok(tabState2.xCount === 0, "三基础标签无 ✕（plan 拍板：不可关）");
+ok(tabState2.xCount === 0, "四基础标签无 ✕（plan 拍板：不可关）");
 ok((await page.locator(".fab").count()) === 0, "Git 标签无 FAB（仅文件树标签）");
 ok(await page.locator(".gitchip").isVisible(), "git toolChip（gitchip）可见");
 
@@ -409,9 +414,11 @@ const crumb = await page.evaluate(() => {
     buttons: el.querySelectorAll("button").length,
   };
 });
-// 反馈⑧（批 10）：crumb 首段 = 项目图标（cico），任何层级不显项目名文字。
-ok(crumb?.firstIsIcon === true, `crumb 首段=项目图标（反馈⑧）；首段文本「${crumb?.firstText}」`);
-ok(!crumb?.text.startsWith("proj1"), "crumb 无项目名文字（反馈⑧）");
+// 反馈⑧（批 10）首段图标语义仍在；根名文字已随 v1.6 原型拍板反向（file-crumb.tsx 头注：
+// 2026-10-10 根态 = 图标 + <b>rootLabel</b>，批 11「纯图标根段」退役）——根态断言 =
+// 图标 + 根名文字在场。
+ok(crumb?.firstIsIcon === true, `crumb 首段=项目图标；首段文本「${crumb?.firstText}」`);
+ok(crumb?.text.includes("proj1"), "crumb 根态含根名文字 proj1（v1.6 原型拍板）");
 ok(
   (await page
     .locator('[data-inspection-panel="open"] [data-mobile-tool="files"] .frow')
@@ -572,7 +579,7 @@ const fileItemLeaks = await page.evaluate(
 ok(fileItemLeaks === 0, `保活层让位（file item 主体区 0 实例；实际 ${fileItemLeaks}）`);
 // toggle「源码」→ CodeMirror 只读画布（批 13 CodeMirror 三态，.code 手写行号形态已退役）；
 // 点正文（v1.6 pencil 退役）→ CodeEditor（renderMode 先切 source，canEdit 恢复）；
-// nav [完成] → 回渲染态（预览优先）。
+// [完成] → 留源码态原路返回（6cbf80d 2026-10-12 用户拍板：编辑从源码进来退出原路返回）。
 await segc.getByRole("button", { name: "源码" }).click();
 await page.waitForTimeout(300);
 ok((await previewBody.locator(".cm-editor").count()) > 0, "toggle 源码 → CodeMirror 只读画布在场");
@@ -626,9 +633,12 @@ ok(
 // 面板 file 标签 = editingActions="meta"：完成/放弃在 .emeta .fact（nav 只承载 ⋯）。
 await previewBody.locator(".emeta .fact button").last().click();
 await page.waitForTimeout(400);
+// 完成（此处非 dirty，原路返回分支）→ 编辑态退出（.emeta 消失）+ 留源码态（CodeMirror
+// 只读画布在场；渲染态 h1 不再是「完成」后的默认——6cbf80d 拍板）。
 ok(
-  await previewBody.locator("h1", { hasText: "probe title" }).isVisible(),
-  "完成 → 回渲染态（预览优先）",
+  (await previewBody.locator(".emeta").count()) === 0 &&
+    (await previewBody.locator(".cm-editor").count()) > 0,
+  "完成 → 留源码态原路返回（6cbf80d 拍板；.emeta 退出 + CodeMirror 在场）",
 );
 // v1.5 批3：nav 右端 ⋯（v1.6 pencil 退役）；「查看 diff」收进 ⋯ 菜单（不再行内文字钮）。
 const navDots = page.locator('[data-inspection-panel="open"] .nav [aria-label="更多操作"]');

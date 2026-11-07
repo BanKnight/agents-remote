@@ -144,6 +144,11 @@ async function setupMocks(page) {
   );
   // 铁律③：拒掉真实环境 approvals WS，防空快照竞速覆盖 REST mock。
   await page.route(/\/api\/approvals\/stream$/, (r) => r.abort());
+  // sessions-stream WS 同理隔离：use-session-shells 用服务端帧整体覆盖 ["overview"] 缓存，
+  // 真实会话会顶掉探针 candidates（prune activeIds / 左栏平铺断言偶发失败）。帧与 REST 同源。
+  await page.routeWebSocket(/\/api\/sessions\/stream/, (ws) => {
+    ws.send(JSON.stringify({ type: "sessions", sessions: [AGENT_A_OV, AGENT_B_OV, TERM_T_OV] }));
+  });
   await page.route(/\/api\/projects\/proj1\/agent-sessions(?:\?.*)?$/, (r) =>
     r.fulfill({
       status: 200,
@@ -533,7 +538,7 @@ async function sideOverviewVisible(page) {
     }
 
     // 右栏 Inspector（v1.4 批3）：glabel2「检视 · 只读」+ ptabs 动态标签条（.ptab 30px，
-    // 05:99；seg4 分段退役——默认 [文件]，Git/Wiki 由 ＋ 菜单加签）。
+    // 05:99；四基础常驻——pages 2026-11-07 平级接入）。
     await page.getByRole("button", { name: "展开右栏" }).click();
     await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
       timeout: 5000,
@@ -598,8 +603,8 @@ async function sideOverviewVisible(page) {
       );
       ok(insp.ptabH === 30, `F13 .ptab 高 30px（实际 ${insp.ptabH}）`);
       ok(
-        insp.tabs.join(",") === "文件,Git,Wiki",
-        `F14 ptabs 默认 = [文件,Git,Wiki]（03m/03p 三基础常驻，2026-09-29 反馈②；实际 ${JSON.stringify(insp.tabs)}）`,
+        insp.tabs.join(",") === "文件,Git,页面,Wiki",
+        `F14 ptabs 默认 = [文件,Git,页面,Wiki]（四基础常驻，pages 2026-11-07 平级接入；实际 ${JSON.stringify(insp.tabs)}）`,
       );
     }
 
@@ -609,7 +614,20 @@ async function sideOverviewVisible(page) {
     const leftSeg = side.locator(".seg4.mini");
     ok(await leftSeg.isVisible(), "G1 project side seg4 mini（项目/全部）在");
     await leftSeg.getByText("全部", { exact: true }).click();
-    await page.waitForTimeout(500);
+    // 目标态等待（替代固定 500ms）：「全部」视图 = overview candidates + pinned 两 query
+    // 渲染齐才有全部组头（置顶组最后到——等它在场 = 数据齐；负载时段固定 500ms 会 flaky，
+    // 实测两轮 4→1 fail 波动即数据未齐）。
+    await page
+      .waitForFunction(
+        () =>
+          [
+            ...(document
+              .querySelectorAll("main > div > aside")[0]
+              ?.querySelectorAll(".microlabel") ?? []),
+          ].some((el) => (el.textContent ?? "").includes("置顶")),
+        { timeout: 8000 },
+      )
+      .catch(() => {});
     const microLabels = await side.locator(".microlabel").allTextContents();
     ok(
       microLabels.some((s) => s.includes("置顶")),
@@ -627,11 +645,17 @@ async function sideOverviewVisible(page) {
       (await side.getByText("暂无活跃会话").count()) === 1,
       "G5 proj3 空组「暂无活跃会话」引导行在",
     );
-    const pinnedLive = await side
+    // G6 旧断言「置顶行含项目限定符 proj1」已随 23f3dbd（v1.7 统一行形）拍板退役——置顶
+    // 行与项目组行形统一（displayName + 行尾簇），项目限定符文本退出列表行。新语义：置顶组
+    // 首行 = mock 置顶会话（displayName 在场、无 proj1 文本）；跨项目行为由 G7 覆盖。
+    const pinnedRowText = await side
       .locator("button", { hasText: "Probe Agent A" })
       .first()
       .textContent();
-    ok((pinnedLive ?? "").includes("proj1"), "G6 置顶行 live off 项目限定符 = proj1（按钮文本含）");
+    ok(
+      (pinnedRowText ?? "").includes("Probe Agent A") && !(pinnedRowText ?? "").includes("proj1"),
+      "G6 置顶组行形统一（§4.8 统一行形 23f3dbd 拍板；displayName 在场、项目限定符已退出）",
+    );
     // pin⑤：点行 → 中栏开 tab 并激活（跨项目 proj2）。
     await side.getByText("Probe Agent B", { exact: true }).click();
     await page.waitForTimeout(800);
@@ -707,6 +731,16 @@ async function sideOverviewVisible(page) {
       (await sbarPad.boundingBox()) !== null,
       "G18 iPad 档（1100px）底部状态栏 .sbar 在场（iPad/Mac 同构，spec §9:327）",
     );
+    // 审批 chip 由 approvals query 异步填充：目标态等待（固定 sleep 在负载时段会 race）。
+    await page2
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll(".sbar button")].some((b) =>
+            (b.textContent ?? "").includes("待审批"),
+          ),
+        { timeout: 8000 },
+      )
+      .catch(() => {});
     ok(
       (await sbarPad.locator("button", { hasText: "待审批" }).count()) === 1,
       "G19 iPad 状态栏审批段按钮在场（与 Mac 同源 mock）",

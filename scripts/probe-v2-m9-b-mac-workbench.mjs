@@ -89,6 +89,12 @@ async function setupMocks(page) {
   );
   // approvals-stream WS 一并隔离（真环境空快照会整体覆盖 REST mock → chip 偶发消失）。
   await page.route(/\/api\/approvals\/stream$/, (r) => r.abort());
+  // sessions-stream WS 同理（use-session-shells applyShellsFrame 用服务端帧**整体覆盖**
+  // ["overview"] 缓存）：不 mock 则真实会话顶掉探针 candidates → sbar 实例数 / 「全部」平铺
+  // 断言偶发失败。帧与 REST mock 同源。
+  await page.routeWebSocket(/\/api\/sessions\/stream/, (ws) => {
+    ws.send(JSON.stringify({ type: "sessions", sessions: [AGENT_A_OV, AGENT_B_OV] }));
+  });
   await page.route(new RegExp(`/api/projects/proj1/agent-sessions(?:\\?.*)?$`), (r) =>
     r.fulfill({
       status: 200,
@@ -224,10 +230,10 @@ async function login(page) {
       });
     const rightTabs = await panelTabs();
     ok(
-      rightTabs !== null && rightTabs.join(",") === "文件,Git,Wiki",
-      `右栏 ptabs 默认 = [文件,Git,Wiki]（03m/03p 三基础常驻，2026-09-29 反馈②；实际 ${JSON.stringify(rightTabs)}）`,
+      rightTabs !== null && rightTabs.join(",") === "文件,Git,页面,Wiki",
+      `右栏 ptabs 默认 = [文件,Git,页面,Wiki]（四基础常驻，pages 2026-11-07 平级接入；实际 ${JSON.stringify(rightTabs)}）`,
     );
-    // ＋ 菜单三项（文件/Git/Wiki）→ 点「Git」新增并激活 → 两签并存。
+    // ＋ 菜单四项（文件/Git/页面/Wiki）→ 点「Git」新增并激活（已开 = 激活幂等）。
     await page
       .locator("main > div > aside")
       .nth(1)
@@ -238,15 +244,15 @@ async function login(page) {
       [...document.querySelectorAll('[role="menuitem"]')].map((m) => m.textContent.trim()),
     );
     ok(
-      newTabItems.join(",") === "文件,Git,Wiki",
-      `＋ 菜单三项 = 文件/Git/Wiki（实际 ${JSON.stringify(newTabItems)}）`,
+      newTabItems.join(",") === "文件,Git,页面,Wiki",
+      `＋ 菜单四项 = 文件/Git/页面/Wiki（实际 ${JSON.stringify(newTabItems)}）`,
     );
     await page.getByRole("menuitem", { name: "Git" }).click();
     await page.waitForTimeout(300);
     const tabsAfterGit = await panelTabs();
     ok(
-      tabsAfterGit !== null && tabsAfterGit.join(",") === "文件,Git,Wiki",
-      `开 Git = 激活常驻 Git（仍 [文件,Git,Wiki]；实际 ${JSON.stringify(tabsAfterGit)}）`,
+      tabsAfterGit !== null && tabsAfterGit.join(",") === "文件,Git,页面,Wiki",
+      `开 Git = 激活常驻 Git（仍 [文件,Git,页面,Wiki]；实际 ${JSON.stringify(tabsAfterGit)}）`,
     );
     ok(
       (await page
@@ -269,13 +275,18 @@ async function login(page) {
     });
     ok(true, "聚焦实例 → 单窗格（focus effect ensureTab）");
     ok((await leafCount()) === 1, "分屏前单窗格");
-    await page.getByRole("button", { name: "分屏并新建终端" }).click();
+    // 分屏按钮语义已变（批 13 反馈⑥ 用户拍板「分屏仅分屏」，WorkbenchRoute onSplitLeaf
+    // = splitLeafWithActiveTab 复制激活 tab 开右侧 split，不再新建终端）。
+    await page.getByRole("button", { name: "分屏" }).click();
     await page.waitForFunction(() => document.querySelectorAll("[data-drop-group]").length === 2, {
       timeout: 5000,
     });
-    ok(true, "分屏后双窗格（dropIntoLeaf right）");
+    ok(true, "分屏后双窗格（splitLeafWithActiveTab 复制激活 tab）");
     await page.waitForTimeout(600);
-    ok(page.url().includes(`/session/${TERM_T_S.id}`), `URL 聚焦新终端（实际 ${page.url()}）`);
+    ok(
+      page.url().includes(`/session/${AGENT_A_S.id}`),
+      `URL 保持聚焦原激活实例（无新终端；实际 ${page.url()}）`,
+    );
     // 两窗格几何：左右并排（horizontal split），各占约一半宽。
     const splitGeo = await page.evaluate(() => {
       const groups = [...document.querySelectorAll("[data-drop-group]")];
