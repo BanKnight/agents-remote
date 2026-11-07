@@ -282,6 +282,8 @@ async function main() {
       // 上传中轮询采样：upcard 在场 → data-progress="live" + .prog i inline width 真字节值。
       let sawLive = false;
       let sawWidth = "";
+      let sawPercentText = false;
+      let statusSample = "";
       const sampleDeadline = Date.now() + 15000;
       while (Date.now() < sampleDeadline) {
         const s = await page.evaluate(() => {
@@ -291,15 +293,20 @@ async function main() {
           return {
             progress: card.getAttribute("data-progress"),
             width: bar?.getAttribute("style") ?? "",
+            // 状态文本（2026-11-07 反馈：uploading 态须带「· N%」，与 composer 形态一致）。
+            status: card.querySelector(".r1 span")?.textContent ?? "",
           };
         });
         if (!s) break;
         if (s.progress === "live") sawLive = true;
         if (s.progress === "live" && /width:\s*[1-9]/.test(s.width)) sawWidth = s.width;
+        if (s.progress === "live" && /·\s*\d+\s*%/.test(s.status)) sawPercentText = true;
+        if (s.progress === "live" && !statusSample) statusSample = s.status;
         await page.waitForTimeout(120);
       }
       check("B3: uploading 期 data-progress=live", sawLive);
       check("B3: inline width 真字节推进（>0%）", sawWidth !== "", sawWidth || "未捕获");
+      check("B3: 状态文本带百分比（· N%）", sawPercentText, statusSample || "未捕获状态文本");
       // 完成态：upcard 消失 + 文件真落盘。超时先 dump qlist（第一手数据：卡的是哪个 item）。
       try {
         await page.locator(".upcard").waitFor({ state: "detached", timeout: 20000 });
