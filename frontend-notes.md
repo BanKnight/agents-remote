@@ -371,3 +371,13 @@
 **标准做法**：①**新增 CSS 变体类名落盘前先查撞名**：`rg "^\s*\.NAME\s*\{|[^-\w]\.NAME[ ,{:.]"` 扫 v2-primitives.css + components.css（含裸类、`.x .NAME` 后代选择器），无命中才用；②**几何断言是 class 断言的必备补集**——凡新增/改名字体类/圆点类/徽章类，探针必须量 `getBoundingClientRect`（7×7 正圆这类硬数值），只断 className 与背景色会放过盒模型污染；③**命名冲突改消费面小的那一方**（无论新旧）：首版改新变体名（`done→finished`）被用户否决——状态名（OSC 7501）是协议层单源，CSS 变体跟随它才命名统一，「done 成最奇怪的那个」是大忌；改存量方（横幅 `.done→.complete`，全仓仅 1 个消费点）才是正解，判定依据 = `rg` 数清两方消费点再裁决。
 
 **来源**：commit `443118f`（`.dot.finished` 改名 + 探针 2b 几何断言）；`scripts/_diag-dot-geometry.mjs` 一次性诊断实锤（done 26×22/flex、working 7×7/block）。
+
+## 35. dev preview 的 SPA fallback 会把 404 HTML 毒化进 SW precache（坏 asset 链接必须真 404）
+
+**现象**（2026-11-07 发版窗口真机）：用户端 PWA 完全打不开，`'text/html' is not a valid JavaScript MIME type`，懒加载 chunk 恒白屏，只能重装 PWA 恢复。
+
+**机制**：毒化链四环——① `vite preview`（`appType:"spa"`）对**一切** 404（含含扩展名的 asset 链接）SPA fallback 成 `index.html`（200 text/html）；② 用户设备上的旧 SW precache 持旧 hash 懒 chunk 引用，dist 重建清掉旧 hash → 动态 import 404 → 拿到 fallback HTML；③ **workbox `precacheAndRoute` install 逐条 fetch 时对 200 一律缓存、不校验 content-type** → HTML 毒化进 precache，此后新 SW 接管 → MIME 死锁；④ 唯一出路重装（清缓存）。生产形态 `api/src/static-web.ts` 早已做对（末段含扩展名 → 404 不 fallback），病只在 dev preview 形态。
+
+**标准做法**：① preview 中间件语义对齐 static-web：末段含扩展名且 dist 无此文件 → 真 404（`web/vite.config.ts` `previewBadAsset404` 挂 `configurePreviewServer`，先于 vite 内部中间件；`/api`、`/p/` 代理前缀放行；`relative` 判越界防 traversal）——**404 后 install 失败 → 旧 SW 保持 → dist 稳定后刷新自愈**，这是自愈语义的关键；② 验证矩阵：坏 asset 404 空 body / 真 asset 200 正确 content-type / SPA 路由 200 text/html / 代理前缀穿透；③ **Playwright 结构性盲区**：每次全新 context（无持久 SW、无旧 precache），测不出「发版窗口 + 旧 SW 客户端」路径——该路径只能靠语义对齐生产（static-web 先例）防御，不能靠探针兜底；④ 重装 PWA 后的冷启动黑屏变长是 install 后遗症（3.4MB precache 走 tunnel 从零下载，install 未完成期间页面无 SW 控制、全资源走网络），install 完成后恢复。
+
+**来源**：commit `476d7a0`（previewBadAsset404）；用户重装实证；api/src/static-web.ts L44/L124-126 参照。
