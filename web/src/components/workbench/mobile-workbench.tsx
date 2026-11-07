@@ -19,6 +19,7 @@ import { AddMenu } from "../files/add-menu";
 import { useDirectoryAddActions } from "../files/use-directory-add-actions";
 import { resolveRelativeFilePath } from "../files/relative-md-link";
 import { MarkdownLinkContext } from "../markdown/markdown-components";
+import { PagesPanel } from "../pages/pages-panel";
 import {
   countsAsRunning,
   LargeTitleRow,
@@ -678,7 +679,8 @@ function MobileProjectWorkbench({
   // v1.4 §6.13 批2：files/git/wiki 工具态退役为检视面板（InspectionPanel）。tool prop 不再
   // 驱动主体切换，仅作 URL 兼容入口——旧深链 ?tab= 渲染期映射为 panelOpen + 激活标签
   //（不写回 URL；面板开合真相 = workbenchPanelOpenAtom 内存态）。
-  const activeTool = tool === "files" || tool === "git" || tool === "wiki" ? tool : undefined;
+  const activeTool =
+    tool === "files" || tool === "git" || tool === "pages" || tool === "wiki" ? tool : undefined;
   // 检视面板状态（per-projectKey 标签集/激活项持久化，open 内存级——跨刷新恢复标签不恢复开合）。
   const [panelOpen, setPanelOpen] = useAtom(workbenchPanelOpenAtom);
   // 标签注册表 = usePanelTabRegistry 双端单源（全局同构 review 批：此前本地手写 ensure/
@@ -873,7 +875,7 @@ function MobileProjectWorkbench({
   // v1.4 批2：工具态退役为检视面板——「进工具」= 开面板+激活标签，「退工具」（点当前
   // focus 的 pill / focus 变化兜底）= 关面板回实例主体。签名与旧工具切换兼容，各消费点
   //（focusInstance / skill pill / 空态卡）零改动。
-  const handleToolChange = (next: "files" | "git" | "wiki" | null) => {
+  const handleToolChange = (next: "files" | "git" | "pages" | "wiki" | null) => {
     if (next) {
       ensurePanelTab({ id: next, kind: next } as PanelTab);
       activatePanelTab(next);
@@ -949,6 +951,10 @@ function MobileProjectWorkbench({
                 pollingEnabled={panelVisible && active}
                 projectName={scope.key}
               />
+            </div>
+          ) : tab.kind === "pages" ? (
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <PagesPanel projectName={scope.key} />
             </div>
           ) : tab.kind === "wiki" ? (
             <div className="min-h-0 flex-1 overflow-hidden">

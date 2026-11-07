@@ -2,24 +2,27 @@
 // probe-pages-default-root.mjs — pages 默认根兜底探针（2026-11-07 default-on 批次验收）
 //
 // 单测验不到的面：跨进程 /p/{project} 公开面全链（无凭据 → site/ 默认根 → 200）、
-// token 翻转后无凭据 401、恢复语义（fs 层恢复配置文件）。
+// token 翻转后无凭据 401、UI 入口全链（检视面板「页面」标签 → 默认根行）、恢复语义
+//（fs 层恢复配置文件）。
 // 断言：
 //   A. 无凭据 GET /p/test/ → 200 + text/html + 内容含探针标记（自建 site/index.html）。
 //   B. 带 auth GET pages/config → roots 恰为 [{/,site,public}]（生效视图）。
+//   C. UI：真登录桌面右栏 ptabs = [文件,Git,页面,Wiki]（pages 平级接入）→ 点「页面」→
+//      PagesPanel 默认根行（/ → site + 公开徽标）。
 //   D. PUT {/,site,token} → 无凭据 GET /p/test/ → 401（per-root 鉴权分流对默认根生效）。
-// 无 UI 断言：PagesPanel 已渲染默认根行（readConfig 生效视图驱动，逻辑零改动），但 pages
-// tab 目前全端无创建入口（newPanelTab kind 收窄 files/git/wiki，WORKBENCH_TAB_PLUGINS 里
-// 的 pages 注册是孤儿）——面板不可达，UI 断言待入口批次补。
 // 恢复纪律：pages.json 有备份写回、无则 fs unlink（绝不能 PUT roots:[] 恢复——那会把
 // test 项目永久置为显式关闭）；自建的 site/index.html 经 files/delete 删除（自建才删）。
-// 密码自读不打印。跑法：bun scripts/probe-pages-default-root.mjs（dev api 43011 需在跑）。
+// 密码自读不打印。跑法：bun scripts/probe-pages-default-root.mjs
+//（dev api 43011 + web 43012 需在跑；C 段走 web 真登录）。
 
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { chromium } from "@playwright/test";
 import { readAppPassword, readDeployConfig } from "./lib/deploy-config.mjs";
 
 const API_BASE = "http://127.0.0.1:43011";
+const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const TEST_PROJECT = "test";
 
 const deployConfig = await readDeployConfig();
@@ -167,6 +170,86 @@ async function assertTokenGate() {
   );
 }
 
+// ── 断言 C：UI 入口（桌面右栏「页面」标签 → PagesPanel 默认根行）─────────────
+// 真登录（无 mock，读 test 项目真实生效态——与 B 同前提：pages.json 不存在 = 默认根）。
+// 必须在 assertTokenGate 之前跑：D 段把根翻成 token 后徽标会变「需登录」。
+async function assertInspectorPagesTab() {
+  const browser = await chromium.launch();
+  try {
+    const context = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      locale: "zh-CN",
+    });
+    const page = await context.newPage();
+    // 右栏默认展开（收起态 atomWithLocalOnlyStorage 默认 true；注入展开态少一个交互依赖，
+    // probe-inspector-row-menus 同款）。
+    await page.addInitScript(() => localStorage.setItem("workbenchRightCollapsed", "false"));
+    await page.goto(`${WEB_ORIGIN}/`);
+    await page.locator("input[type='password']").fill(await readAppPassword());
+    await page.locator("button[type='submit']").click();
+    await page.waitForTimeout(600);
+    await page.goto(`${WEB_ORIGIN}/projects/${TEST_PROJECT}?v=1`);
+    await page.waitForSelector("nav.side", { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelectorAll("main > div > aside").length === 2, {
+      timeout: 8000,
+    });
+    const readPanelTabs = () =>
+      page.evaluate(() => {
+        const aside = document.querySelectorAll("main > div > aside")[1];
+        return aside
+          ? [...aside.querySelectorAll('[role="tab"]')].map((b) => b.getAttribute("aria-label"))
+          : null;
+      });
+    // C1 四基础常驻标签（pages 2026-11-07 平级接入，序随 WORKBENCH_TAB_PLUGINS）。
+    await page
+      .waitForFunction(
+        () => {
+          const aside = document.querySelectorAll("main > div > aside")[1];
+          return (aside?.querySelectorAll('[role="tab"]').length ?? 0) >= 4;
+        },
+        { timeout: 8000 },
+      )
+      .catch(() => {});
+    const tabs = await readPanelTabs();
+    record(
+      "C1 inspector ptabs = [文件,Git,页面,Wiki] (pages as 4th base tab)",
+      tabs?.join(",") === "文件,Git,页面,Wiki",
+      `tabs=${JSON.stringify(tabs)}`,
+    );
+    // C2 点「页面」→ PagesPanel 默认根行：urlPath "/" + subtitle "→ site" + 「公开」徽标，
+    // 且无「需登录」（token 徽标在场 = 读到了翻转后状态，时序错位）。
+    await page.locator("main > div > aside").nth(1).getByRole("tab", { name: "页面" }).click();
+    await page
+      .waitForFunction(
+        () => {
+          const aside = document.querySelectorAll("main > div > aside")[1];
+          return aside?.textContent?.includes("→ site") ?? false;
+        },
+        { timeout: 8000 },
+      )
+      .catch(() => {});
+    const row = await page.evaluate(() => {
+      const aside = document.querySelectorAll("main > div > aside")[1];
+      const group = aside?.querySelector('[aria-label="页面静态根"]');
+      const text = group?.textContent ?? "";
+      return {
+        groupFound: group !== null,
+        hasUrlPath: text.includes("/"),
+        hasFsDir: text.includes("→ site"),
+        hasPublicBadge: text.includes("公开"),
+        hasTokenBadge: text.includes("需登录"),
+      };
+    });
+    record(
+      "C2 pages panel renders default root row (public badge, → site)",
+      row.groupFound && row.hasUrlPath && row.hasFsDir && row.hasPublicBadge && !row.hasTokenBadge,
+      `group=${row.groupFound} url=${row.hasUrlPath} dir=${row.hasFsDir} public=${row.hasPublicBadge} token=${row.hasTokenBadge}`,
+    );
+  } finally {
+    await browser.close();
+  }
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 async function main() {
   const backup = await backupPagesConfig();
@@ -175,7 +258,7 @@ async function main() {
     await login();
     createdSiteIndex = await ensureSiteIndex();
 
-    // 默认态断言（A/B）在前，token 翻转（D）放最后，恢复前完成。
+    // 默认态断言（A/B/C）在前，token 翻转（D）放最后，恢复前完成。
     if (!createdSiteIndex) {
       // 用户已有 index.html：A 的内容断言放宽为 200 + text/html。
       const res = await fetch(`${API_BASE}/p/${TEST_PROJECT}/`);
@@ -189,6 +272,7 @@ async function main() {
       await assertPublicServe(PROBE_MARKER);
     }
     await assertConfigView();
+    await assertInspectorPagesTab();
     await assertTokenGate();
   } finally {
     if (createdSiteIndex) await deleteSiteIndex();

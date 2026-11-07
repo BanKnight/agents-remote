@@ -230,8 +230,8 @@ function WorkbenchContent({
   };
   // 深链兼容（?rightTab=）：渲染期一次性映射为面板 open+激活标签（不写回 URL）——与移动
   // ?tab= 批2 同模式。写入幂等（ensure/activate 同值 no-op），无 ref 守卫（StrictMode
-  // remount 重执行自愈，见上）。pages/history 非面板 kind（右栏注册表过滤），不映射
-  //（URL 键被旧版本页面/手工输入带出时静默忽略）。
+  // remount 重执行自愈，见上）。history 非面板 kind（旧持久化记忆兜底值），不映射
+  //（URL 键被旧版本页面/手工输入带出时静默忽略）；pages 已平级接入（2026-11-07）。
   // 依赖收敛为 [rightTab]（批3 review M1）：WorkbenchContent 是常驻 pathless layout，
   // rightTab 经 stickyWorkbenchSearch 永久透传——若依赖 scope，消费过一次深链后每次切项目
   // 都会复开已手动收起的右栏（开面板是显式动作，不请自来 = 批2 M2 同款 bug）。闭包读当轮
@@ -239,7 +239,9 @@ function WorkbenchContent({
   useEffect(() => {
     if (!rightTab || scope.kind !== "project") return;
     const kind =
-      rightTab === "git" || rightTab === "wiki" || rightTab === "files" ? rightTab : null;
+      rightTab === "git" || rightTab === "pages" || rightTab === "wiki" || rightTab === "files"
+        ? rightTab
+        : null;
     if (!kind) return;
     openDesktopPanel();
     const key = scope.key;

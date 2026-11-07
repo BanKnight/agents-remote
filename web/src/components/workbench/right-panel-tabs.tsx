@@ -3,6 +3,7 @@ import { useT } from "../../i18n";
 import { workbenchDesktopFilesPathAtom } from "../../routes/workbench-model";
 import { AddMenu } from "../files/add-menu";
 import { useDirectoryAddActions } from "../files/use-directory-add-actions";
+import { PagesPanel } from "../pages/pages-panel";
 import { LucideIcon } from "../shell/lucide-icon";
 import { FilesToolTab, GitToolTab, WikiToolTab } from "./workbench-tab-plugin";
 import { PanelTabBar } from "./inspection-panel";
@@ -78,9 +79,9 @@ export function RightPanelTabs({
     newPanelTab,
     closePanelTab,
   } = usePanelTabRegistry(projectKey);
-  // 桌面投影 = 三结构标签（files/git/wiki）；file/wikiread 留在存储（移动仍消费）不渲染。
+  // 桌面投影 = 结构标签（files/git/pages/wiki）；file/wikiread 留在存储（移动仍消费）不渲染。
   const inspectorTabs = panelTabs.filter(
-    (t0) => t0.kind === "files" || t0.kind === "git" || t0.kind === "wiki",
+    (t0) => t0.kind === "files" || t0.kind === "git" || t0.kind === "pages" || t0.kind === "wiki",
   );
   // 激活项指向被投影隐藏的标签（file/wikiread）→ 回退 files（body 全 invisible 死屏防线）。
   const activePanelTabId = inspectorTabs.some((t0) => t0.id === activePanelTabIdRaw)
@@ -187,6 +188,8 @@ export function RightPanelTabs({
                 />
               ) : tab.kind === "git" ? (
                 <GitToolTab projectKey={projectKey} />
+              ) : tab.kind === "pages" ? (
+                <PagesPanel projectName={projectKey} />
               ) : tab.kind === "wiki" ? (
                 <WikiToolTab
                   onOpenPage={onOpenWiki}

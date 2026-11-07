@@ -66,9 +66,10 @@ describe("usePanelTabRegistry", () => {
     const { result } = renderRegistry("proj");
     act(() => result.current.ensureTab({ id: "file:src/a.ts", kind: "file" } as never));
     expect(result.current.panelTabs.some((t0) => t0.id === "file:src/a.ts")).toBe(true);
-    expect(result.current.panelTabs.map((t0) => t0.id).slice(0, 3)).toEqual([
+    expect(result.current.panelTabs.map((t0) => t0.id).slice(0, 4)).toEqual([
       "files",
       "git",
+      "pages",
       "wiki",
     ]);
   });
@@ -82,6 +83,17 @@ describe("usePanelTabRegistry", () => {
     act(() => result.current.newPanelTab("git"));
     expect(result.current.panelTabs).toBe(tabsAfter);
     expect(result.current.activePanelTabId).toBe("git");
+  });
+
+  test("newPanelTab pages 同构（ensure + 激活幂等，平级接入验证）", () => {
+    const { result } = renderRegistry("proj");
+    act(() => result.current.newPanelTab("pages"));
+    expect(result.current.panelTabs.some((t0) => t0.id === "pages")).toBe(true);
+    expect(result.current.activePanelTabId).toBe("pages");
+    const tabsAfter = result.current.panelTabs;
+    act(() => result.current.newPanelTab("pages"));
+    expect(result.current.panelTabs).toBe(tabsAfter);
+    expect(result.current.activePanelTabId).toBe("pages");
   });
 
   test("activatePanelTab 幂等：激活已激活标签返回同一引用", () => {

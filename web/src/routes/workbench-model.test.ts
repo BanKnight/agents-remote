@@ -15,6 +15,7 @@ import {
   type WorkbenchLayoutV3,
   activeTabRefLeaf,
   addTabToLeaf,
+  BASE_PANEL_TABS,
   createLeaf,
   deriveGroupRows,
   deriveWorkbenchRouteContext,
@@ -44,6 +45,7 @@ import {
   tabIdOf,
   validateLayoutV3,
   validateWorkbenchSearch,
+  withBasePanelTabs,
   workbenchPath,
 } from "./workbench-model";
 
@@ -117,6 +119,8 @@ test("isSessionFocusId: session focus 正例 + 前缀/字面量排除族（与 f
 test("validateWorkbenchSearch whitelists rightTab, omits key otherwise", () => {
   expect(validateWorkbenchSearch({ rightTab: "files" })).toEqual({ rightTab: "files" });
   expect(validateWorkbenchSearch({ rightTab: "git" })).toEqual({ rightTab: "git" });
+  // pages 平级接入后为合法深链值（2026-11-07；history 保持白名单外）。
+  expect(validateWorkbenchSearch({ rightTab: "pages" })).toEqual({ rightTab: "pages" });
   expect(validateWorkbenchSearch({ rightTab: "nope" })).toEqual({});
   expect(validateWorkbenchSearch({})).toEqual({});
 });
@@ -1266,4 +1270,60 @@ test("deriveWorkbenchRouteContext: /files/file/$ 透传 view（推入态与中�
     leftMode: "files",
   });
   expect(isFilePushPreview(tabCtx)).toBe(false);
+});
+
+test("withBasePanelTabs: pages 平级接入（2026-11-07）四基础标签", () => {
+  // 空存储 → 全量四基础（序随 BASE_PANEL_TABS：files/git/pages/wiki）。
+  expect(withBasePanelTabs([]).map((t0) => t0.id)).toEqual(["files", "git", "pages", "wiki"]);
+  expect(withBasePanelTabs(BASE_PANEL_TABS)).toBe(BASE_PANEL_TABS);
+});
+
+test("withBasePanelTabs: 存量补齐 pages 插 wiki 前（老 localStorage 自动获得）", () => {
+  const legacy = [
+    { id: "files", kind: "files" },
+    { id: "git", kind: "git" },
+    { id: "wiki", kind: "wiki" },
+  ] as const;
+  expect(withBasePanelTabs([...legacy]).map((t0) => t0.id)).toEqual([
+    "files",
+    "git",
+    "pages",
+    "wiki",
+  ]);
+  // 单 files 时代存量 → 全量四基础。
+  const single = [{ id: "files", kind: "files" }] as const;
+  expect(withBasePanelTabs([...single]).map((t0) => t0.id)).toEqual([
+    "files",
+    "git",
+    "pages",
+    "wiki",
+  ]);
+});
+
+test("withBasePanelTabs: file/wikiread 标签保持相对序后置、幂等引用守卫", () => {
+  const tabs = [
+    { id: "files", kind: "files" },
+    { id: "file:p1/src/a.ts", kind: "file", path: "p1/src/a.ts" },
+    { id: "wiki", kind: "wiki" },
+    { id: "wikiread:home", kind: "wikiread", slug: "home" },
+  ];
+  const normalized = withBasePanelTabs(tabs);
+  // 基础前置 + 缺失 pages 补齐；file/wikiread 保持相对序后置。
+  expect(normalized.map((t0) => t0.id)).toEqual([
+    "files",
+    "git",
+    "pages",
+    "wiki",
+    "file:p1/src/a.ts",
+    "wikiread:home",
+  ]);
+  // 已齐返回原引用（幂等守卫，无多余 localStorage 同步写）。
+  const full = [
+    { id: "files", kind: "files" },
+    { id: "git", kind: "git" },
+    { id: "pages", kind: "pages" },
+    { id: "wiki", kind: "wiki" },
+    { id: "file:p1/x.ts", kind: "file", path: "p1/x.ts" },
+  ];
+  expect(withBasePanelTabs(full)).toBe(full);
 });

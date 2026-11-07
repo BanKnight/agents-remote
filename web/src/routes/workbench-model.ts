@@ -28,10 +28,10 @@ export type WorkbenchScope = { kind: "project"; key: string } | { kind: "global"
  * 工作台 inspection tab 标识。V1 两个第一方 tab（设计文档 §6）：
  * `files` / `git`；pages 为 per-project 静态托管根配置（与 files/git 同构 inspection）。
  * Stage 3 以 WorkbenchTabPlugin 契约落地注册表。M9 批次 b 起（redesign-v2 §6.10-6）
- * 值域加 `history`；§6.12k 第三批复验收口后右栏 = 三段（文件/Git/Wiki，history 段已删，
+ * 值域加 `history`；§6.12k 第三批复验收口后右栏 = 结构标签（history 段已删，
  * "history" 值仅存于类型与旧持久化记忆兜底）。history **不进** WORKBENCH_TAB_PLUGINS
- * 注册表——由 RightPanelTabs 局部消费逻辑 gate；pages 桌面右栏隐藏（RightPanelTabs
- * 过滤，per-project middle tab 语义）。
+ * 注册表——由 RightPanelTabs 局部消费逻辑 gate。pages 2026-11-07 拍板平级接入：进
+ * 注册表 + 检视面板第 4 基础标签（桌面右栏与移动检视面板同构可达）。
  */
 export type WorkbenchInspectionTab = "files" | "git" | "pages" | "wiki" | "history";
 
@@ -295,6 +295,7 @@ export const workbenchDesktopFilesPathAtom = atomWithLocalOnlyStorage<Record<str
 export type PanelTab =
   | { id: "files"; kind: "files" }
   | { id: "git"; kind: "git" }
+  | { id: "pages"; kind: "pages" }
   | { id: "wiki"; kind: "wiki" }
   | { id: string; kind: "file"; path: string }
   | { id: string; kind: "wikiread"; slug: string; title?: string };
@@ -319,11 +320,14 @@ export function ensurePanelTabOpen(tabs: PanelTab[], tab: PanelTab): PanelTab[] 
   return tabs.some((t0) => t0.id === tab.id) ? tabs : [...tabs, tab];
 }
 
-/** 三基础标签常驻集（03m/03p 原型 ptabs = 文件树/Git/Wiki 三标签全在；真机反馈 2026-09-29
- * 「检视面板缺 wiki」——旧默认单 files 标签需手动 ＋ 开 Git/Wiki，与原型不符）。 */
+/** 四基础标签常驻集（03m/03p 原型 ptabs = 文件树/Git/Wiki 三标签全在；真机反馈 2026-09-29
+ * 「检视面板缺 wiki」——旧默认单 files 标签需手动 ＋ 开 Git/Wiki，与原型不符）。pages
+ * 2026-11-07 用户拍板平级接入为第 4 基础标签（默认根生效后面板需可达；序随
+ * WORKBENCH_TAB_PLUGINS 注册表）。 */
 export const BASE_PANEL_TABS: PanelTab[] = [
   { id: "files", kind: "files" },
   { id: "git", kind: "git" },
+  { id: "pages", kind: "pages" },
   { id: "wiki", kind: "wiki" },
 ];
 

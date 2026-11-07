@@ -43,7 +43,7 @@ export function usePanelTabRegistry(projectKey: string | null) {
     });
   };
   // ＋ 新建标签（03ob2 菜单）：同目标已开 = 激活幂等（03ob 编号①）。
-  const newPanelTab = (kind: "files" | "git" | "wiki") => {
+  const newPanelTab = (kind: "files" | "git" | "pages" | "wiki") => {
     ensureTab({ id: kind, kind } as PanelTab);
     activatePanelTab(kind);
   };

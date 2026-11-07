@@ -26,7 +26,7 @@ export function PanelTabBar({
   onActivateTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   /** ＋ 新建标签（03ob2 菜单选中值；已开 = 激活幂等，调用方保证）。 */
-  onNewTab: (kind: "files" | "git" | "wiki") => void;
+  onNewTab: (kind: "files" | "git" | "pages" | "wiki") => void;
   /** 面板可见性：移动检视面板常驻挂载（closed = invisible translate-x-full），closed 态
    *  下首滚在 WebKit 可能不生效（不可见子树 scrollIntoView 行为差异，Chromium 复现不了），
    *  open 进 deps = 「打开工具区」瞬间显式重滚（批 12 反馈①）。桌面右栏条件挂载
@@ -46,9 +46,10 @@ export function PanelTabBar({
   }, [activeTabId, open, tabs.length, hs.ensureActive, hs.update]);
   const tabMeta = (
     tab: PanelTab,
-  ): { icon: "project" | "git-nav" | "book" | "file"; label: string } => {
+  ): { icon: "project" | "git-nav" | "pages-nav" | "book" | "file"; label: string } => {
     if (tab.kind === "files") return { icon: "project", label: t("workbench.tabFiles") };
     if (tab.kind === "git") return { icon: "git-nav", label: t("workbench.tabGit") };
+    if (tab.kind === "pages") return { icon: "pages-nav", label: t("workbench.tabPages") };
     if (tab.kind === "wiki") return { icon: "book", label: t("workbench.tabWiki") };
     if (tab.kind === "wikiread") {
       return { icon: "file", label: tab.title ?? tab.slug };
@@ -108,6 +109,7 @@ export function PanelTabBar({
           [
             { id: "files", icon: "project", label: t("workbench.tabFiles") },
             { id: "git", icon: "git-nav", label: t("workbench.tabGit") },
+            { id: "pages", icon: "pages-nav", label: t("workbench.tabPages") },
             { id: "wiki", icon: "book", label: t("workbench.tabWiki") },
           ] as const
         ).map((item) => ({
@@ -183,7 +185,7 @@ export function InspectionPanel({
   onClose: () => void;
   onCloseTab: (id: string) => void;
   /** ＋ 新建标签（03ob2 菜单选中值；已开 = 激活幂等，调用方保证）。 */
-  onNewTab: (kind: "files" | "git" | "wiki") => void;
+  onNewTab: (kind: "files" | "git" | "pages" | "wiki") => void;
   open: boolean;
   projectName: string;
   tabs: PanelTab[];
