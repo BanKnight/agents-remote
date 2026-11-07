@@ -17,6 +17,11 @@ const PAGES_CONFIG_RELATIVE = ".agents-remote/pages.json";
 const PAGES_SCHEMA_VERSION = 1;
 const PAGES_CONFIG_DIR_RELATIVE = ".agents-remote";
 
+// 无配置文件时的默认根（2026-11-07 用户拍板 default-on）：项目 site/ 目录以公开身份
+// serve 在 "/"。仅 readConfig 的 ENOENT 分支使用；writeConfig 不感知默认根——配置文件
+// 存在即完全按配置走（roots:[] = 显式关闭发布，不兜底）。
+export const DEFAULT_PAGES_ROOT: PagesRoot = { urlPath: "/", fsDir: "site", auth: "public" };
+
 export type ProjectPagesErrorCode = Extract<
   ApiErrorCode,
   | "PROJECT_NAME_INVALID"
@@ -159,10 +164,11 @@ export class ProjectPagesService {
   constructor(private readonly projectsRoot: string) {}
 
   /**
-   * 读 pages 配置：缺文件 → 空 roots（不抛错）；项目不存在 → PROJECT_NOT_FOUND；
+   * 读 pages 配置（返回"生效视图"）：缺文件 → 默认根兜底（DEFAULT_PAGES_ROOT，不抛错）；
+   * 文件存在（含 roots:[] 显式关闭）→ 完全按配置走；项目不存在 → PROJECT_NOT_FOUND；
    * 非法 JSON/结构 → CONFIG_INVALID。先用 resolveProjectPath 确认项目存在并拿到
    * project.path（不存在项目 → PROJECT_NOT_FOUND，清晰区分于"配置文件不存在"），
-   * 再自己读配置文件（ENOENT → 空配置）。
+   * 再自己读配置文件。
    */
   async readConfig(projectName: string): Promise<PagesConfig> {
     const project = await this.resolveProject(projectName);
@@ -171,7 +177,7 @@ export class ProjectPagesService {
       raw = await readFile(join(project.path, PAGES_CONFIG_RELATIVE), "utf8");
     } catch (error) {
       if (isNotFoundError(error)) {
-        return { schemaVersion: PAGES_SCHEMA_VERSION, roots: [] };
+        return { schemaVersion: PAGES_SCHEMA_VERSION, roots: [{ ...DEFAULT_PAGES_ROOT }] };
       }
       throw new ProjectPagesError("PROJECT_FS_ERROR", "Unable to read pages config");
     }
@@ -208,7 +214,7 @@ export class ProjectPagesService {
 
   /**
    * 核心：URL 路径 → 匹配根 → serve 文件。
-   * 1. readConfig → roots；无匹配根 → PROJECT_FILE_NOT_FOUND（路由层 404）。
+   * 1. readConfig → roots（缺文件时含默认根兜底）；无匹配根 → PROJECT_FILE_NOT_FOUND（路由层 404）。
    * 2. subPath = requestPath 去掉根前缀；relative = join(root.fsDir, subPath)。
    * 3. resolveProjectRelativePath 双校验 + stat：文件 → serve；目录 → 尝试
    *    {dir}/index.html 默认页(再校验),无 index.html / 不存在 → NOT_FOUND(目录列表关)。
@@ -258,7 +264,7 @@ export class ProjectPagesService {
 
   /**
    * 解析项目目录本身（不解析配置文件相对路径）。缺失项目 → PROJECT_NOT_FOUND，
-   * 与"配置文件缺失"（readConfig 内吞 ENOENT → 空 roots）语义分离。
+   * 与"配置文件缺失"（readConfig 内吞 ENOENT → 默认根兜底）语义分离。
    * ProjectPathError.code 全部落在 ProjectPagesErrorCode 内，直接透传。
    */
   private async resolveProject(projectName: string) {

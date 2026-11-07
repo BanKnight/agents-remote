@@ -1210,8 +1210,9 @@ export const en = {
   "mcp.addSheetNote":
     "MCP servers can access local resources and run commands; changes apply to new sessions",
   "pages.panelAria": "Pages roots",
-  "pages.emptyTitle": "No pages roots",
-  "pages.emptyDesc": "Map a project directory to a URL path to serve it as a static site.",
+  "pages.emptyTitle": "Pages publishing is off",
+  "pages.emptyDesc":
+    "No roots are served for this project. Add a root to publish again — without a config, the site/ directory is served at / (public).",
   "pages.addRoot": "Add root",
   "pages.edit": "Edit",
   "pages.delete": "Delete",

@@ -140,7 +140,7 @@ export type PagesRoot = {
   auth: PagesRootAuth;
 };
 
-/** 写盘结构。缺文件 → `{ schemaVersion: 1, roots: [] }`。 */
+/** 写盘结构。API 返回「生效视图」：缺文件 → 兜底默认根（site/→/ public）；文件存在含 roots:[] = 显式关闭（无兜底）。 */
 export type PagesConfig = {
   schemaVersion: 1;
   roots: PagesRoot[];
@@ -941,7 +941,7 @@ export type SkillTaskFrame = {
 // ── MCP hub ───────────────────────────────────────────────
 // MCP hub = 给 agent 装 tool/能力 的统一层（与 skill-market 装「知识/行为」互补）。
 // 基座阶段:无状态 Streamable HTTP server + spawn 时 --mcp-config 注入,不暴露业务工具(空壳)。
-// wiki/browser 是后续能力域。定位见 docs/research/inbox/mcp-hub-positioning.md。
+// wiki/browser 是后续能力域。定位见 docs/research/mcp-hub-positioning.md。
 
 // 能力域标识。首期 wiki 能力域;后续加 browser 等再扩 union。
 /** hub 能力域（per-project mcp.json capabilities 开关键）。
@@ -1016,7 +1016,7 @@ export type DisableMcpServerResponse = { ok: true; name: string };
 // wiki = agent 用 wiki_* MCP 工具逐页写的、结构化可浏览的 per-project 知识库（产物）。
 // producer = agent 经 MCP hub 的 wiki_* 工具写；consumer = web 渲染列表 + 页面正文。
 // 起步态：flat wiki/*.md + YAML frontmatter（title/tags/created/updated）。定位见
-// docs/research/inbox/llm-wiki-okf.md。
+// docs/research/llm-wiki-okf.md。
 // 后续打磨：edit/append/search/lint 工具、raw/SCHEMA/按类型子目录、[[wiki-link]] 图谱。
 
 /** 单页 YAML frontmatter（后端解析/序列化，前端只消费结构化字段）。 */

@@ -1365,13 +1365,16 @@ test("createFetchHandler protects pages config and validates writes", async () =
   });
   expect(blocked.status).toBe(401);
 
-  // 带 auth 读缺省配置 → 200 + empty roots。
+  // 带 auth 读缺省配置 → 200 + 默认根兜底（生效视图；2026-11-07 default-on）。
   const get = await handler(
     new Request("http://localhost/api/projects/demo/pages/config", { headers }),
     { upgrade: () => false },
   );
   expect(get.status).toBe(200);
-  expect((await get.json()).config).toEqual({ schemaVersion: 1, roots: [] });
+  expect((await get.json()).config).toEqual({
+    schemaVersion: 1,
+    roots: [{ urlPath: "/", fsDir: "site", auth: "public" }],
+  });
 
   // PUT 非 array roots → 400。
   const badBody = await handler(
@@ -1401,6 +1404,35 @@ test("createFetchHandler protects pages config and validates writes", async () =
   );
   expect(conflict.status).toBe(400);
   expect((await conflict.json()).error.code).toBe("PROJECT_PAGES_ROOT_CONFLICT");
+});
+
+test("createFetchHandler serves the default site/ root without config and honors explicit off", async () => {
+  // 无 pages.json：site/ 默认兜底 → 无 PUT 直接 200（零配置发布，2026-11-07 拍板）。
+  await mkdir(join(root, "demo", "site"), { recursive: true });
+  await writeFile(join(root, "demo", "site", "index.html"), "<h1>default</h1>");
+  const { auth, handler } = createTestHandler();
+  const headers = authHeader(auth);
+
+  const served = await handler(new Request("http://localhost/api/projects/demo/pages/"), {
+    upgrade: () => false,
+  });
+  expect(served.status).toBe(200);
+  expect(await served.text()).toBe("<h1>default</h1>");
+
+  // PUT roots:[] = 显式关闭发布 → 同请求 404（文件存在即完全按配置，不兜底）。
+  const off = await handler(
+    new Request("http://localhost/api/projects/demo/pages/config", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ roots: [] }),
+    }),
+    { upgrade: () => false },
+  );
+  expect(off.status).toBe(200);
+  const closed = await handler(new Request("http://localhost/api/projects/demo/pages/"), {
+    upgrade: () => false,
+  });
+  expect(closed.status).toBe(404);
 });
 
 test("createFetchHandler rejects pages path escape at HTTP layer", async () => {

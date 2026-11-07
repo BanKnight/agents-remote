@@ -72,11 +72,34 @@ test("computeWeakEtag is stable for same inputs and changes with any input", () 
 
 // ── readConfig ─────────────────────────────────────────────────────
 
-test("readConfig returns empty roots when config is missing", async () => {
+test("readConfig falls back to the default root when config is missing", async () => {
   const service = new ProjectPagesService(root);
   await expect(service.readConfig("demo")).resolves.toEqual({
     schemaVersion: 1,
-    roots: [],
+    roots: [{ urlPath: "/", fsDir: "site", auth: "public" }],
+  });
+});
+
+test("writeConfig with empty roots persists explicit off (no default fallback)", async () => {
+  const service = new ProjectPagesService(root);
+  await service.writeConfig("demo", []);
+  // 配置文件存在（roots:[]）= 显式关闭发布，不回退默认根
+  await expect(service.readConfig("demo")).resolves.toEqual({ schemaVersion: 1, roots: [] });
+});
+
+test("serve falls back to the default root without a config file", async () => {
+  // 无 pages.json：site/ → "/" 默认兜底（2026-11-07 default-on）
+  await mkdir(join(root, "demo", "site"), { recursive: true });
+  await writeFile(join(root, "demo", "site", "index.html"), "<h1>default</h1>");
+
+  const service = new ProjectPagesService(root);
+  const served = await service.serve("demo", "/");
+  expect(served.content.toString()).toBe("<h1>default</h1>");
+  expect(served.mimeType).toBe("text/html; charset=utf-8");
+  expect(served.root).toEqual({ urlPath: "/", fsDir: "site", auth: "public" });
+  // 默认根下缺失文件照常 404
+  await expect(service.serve("demo", "/missing.html")).rejects.toMatchObject({
+    code: "PROJECT_FILE_NOT_FOUND",
   });
 });
 

@@ -67,6 +67,7 @@ bind mount 目录的属主须为容器内 agent（uid/gid 1000）——打包/�
 
 - **容器重启丢容器内 tmux 会话**：运行中的 agent/terminal 实例进程随容器消亡（与「API 重启丢进行中 turn」同语义，Gen 3 刻意取舍）。元数据已持久（`data/run/sessions/`），重启后在 UI 重新拉起即可。
 - **公开 pages 根 = 同源任意 HTML/JS**（pre-existing 语义，本批随 `/p/` rewrite 与单端口部署被固化）：被配成公开根的目录内容同源可达，登录用户一访问即以本人身份可调任意 `/api/*`（`SameSite=Strict` 挡跨站不挡同源）。**只把可信内容配为公开根**；agent 写入的 HTML 未经审查不要配公开根。
+  **默认根 default-on（2026-11-07 拍板）**：无 pages 配置的项目，`site/` 目录自动以公开身份 serve 在 `/p/{project}/`；Pages 面板删除默认根即固化为显式关闭（`roots:[]`）。警告语义随之升级——不是「只把可信内容配为公开根」，而是「不配也有 `site/` 公开根」：**agent 写入的未审查 HTML 落在 `site/` 即对外可达**。
 - **token-secret 丢失 = 所有已登录设备掉线**（可接受，重新登录即可）。
 - 镜像内置 claude CLI（随 node_modules）与 codex CLI（npm 全局装）；**omp/ACP 未内置**——`docker exec -it agents-remote bash` 自装（装进 `data/home` 的部分随卷持久）。
 

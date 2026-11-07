@@ -1,6 +1,6 @@
 # pages 静态托管技术方案
 
-> 状态：技术方案已对齐（2026-07-30），待实现。三个新需求（wiki / pages / browser）统筹排序中，pages 排第一。wiki / browser 的基础要素见 `./inbox/llm-wiki-okf.md`、`./inbox/embedded-browser.md`。
+> 状态：技术方案已对齐（2026-07-30），待实现。三个新需求（wiki / pages / browser）统筹排序中，pages 排第一。wiki / browser 的基础要素见 `./llm-wiki-okf.md`、`./inbox/embedded-browser.md`。
 
 ## 定位
 
@@ -22,7 +22,7 @@ per-project 静态目录托管，类 nginx 的简化版。用户配置 project �
 | 2 | URL 路由 / auth | `/api/projects/{project}/pages{urlPath*}`；默认无 auth，per-静态根可选开启 |
 | 3 | 安全 | 锁定 project 目录（Project-safe resolver）、禁 symlink、MIME 映射、目录列表关、无 SPA fallback |
 | 4 | 缓存 | 不缓存文件内容、弱 ETag、不强缓存、无 build/watch |
-| 5 | 开关 | 配置即启用，不另设开关 |
+| 5 | 开关 | ~~配置即启用，不另设开关~~ **已反转（2026-11-07 用户拍板 default-on）**：无配置文件 = 默认根兜底（`site/` → `/` public）；配置文件存在（含 `roots:[]`）= 完全按配置，`roots:[]` 即显式关闭发布 |
 | 6 | 与 Files 的边界 | 复用 Files 的安全读取原语，不复用 UI |
 
 ### 决策点 1：作用域与配置位置
@@ -57,7 +57,8 @@ per-project 静态目录托管，类 nginx 的简化版。用户配置 project �
 
 ### 决策点 5：开关
 
-- 配置即启用：配置文件里声明了静态根就等于启用，没声明就等于关闭。不另设独立开关字段。
+- ~~配置即启用：配置文件里声明了静态根就等于启用，没声明就等于关闭。不另设独立开关字段。~~
+- **已反转（2026-11-07 用户拍板 default-on）**：无配置文件 = 默认根兜底——项目 `site/` 目录自动以公开身份 serve 在 `/p/{project}/`；配置文件存在（含 `roots:[]`）= 完全按配置走，`roots:[]` 即显式关闭发布（也是关闭默认发布的唯一通道）。实现：`readConfig` ENOENT 分支返回 `DEFAULT_PAGES_ROOT`（`api/src/project-pages.ts`），配置 GET 返回「生效视图」。
 
 ### 决策点 6：与 Files 的边界
 

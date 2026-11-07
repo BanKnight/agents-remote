@@ -1178,8 +1178,9 @@ export const zh: Record<TranslationKey, string> = {
   "mcp.removeNote": "移除后使用该服务器的会话将失去对应工具，新会话不再加载",
   "mcp.addSheetNote": "MCP 服务器可访问本机资源并执行命令；添加后新会话生效",
   "pages.panelAria": "页面静态根",
-  "pages.emptyTitle": "尚未配置页面根",
-  "pages.emptyDesc": "把项目内的目录映射到 URL 路径，即可作为静态站点对外提供访问。",
+  "pages.emptyTitle": "页面发布已关闭",
+  "pages.emptyDesc":
+    "本项目当前不对外提供任何页面根。添加根即可恢复发布；无配置时 site/ 目录默认以公开方式提供在 /。",
   "pages.addRoot": "添加根",
   "pages.edit": "编辑",
   "pages.delete": "删除",

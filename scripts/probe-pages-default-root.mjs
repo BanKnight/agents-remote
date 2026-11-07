@@ -1,0 +1,211 @@
+#!/usr/bin/env bun
+// probe-pages-default-root.mjs — pages 默认根兜底探针（2026-11-07 default-on 批次验收）
+//
+// 单测验不到的面：跨进程 /p/{project} 公开面全链（无凭据 → site/ 默认根 → 200）、
+// token 翻转后无凭据 401、恢复语义（fs 层恢复配置文件）。
+// 断言：
+//   A. 无凭据 GET /p/test/ → 200 + text/html + 内容含探针标记（自建 site/index.html）。
+//   B. 带 auth GET pages/config → roots 恰为 [{/,site,public}]（生效视图）。
+//   D. PUT {/,site,token} → 无凭据 GET /p/test/ → 401（per-root 鉴权分流对默认根生效）。
+// 无 UI 断言：PagesPanel 已渲染默认根行（readConfig 生效视图驱动，逻辑零改动），但 pages
+// tab 目前全端无创建入口（newPanelTab kind 收窄 files/git/wiki，WORKBENCH_TAB_PLUGINS 里
+// 的 pages 注册是孤儿）——面板不可达，UI 断言待入口批次补。
+// 恢复纪律：pages.json 有备份写回、无则 fs unlink（绝不能 PUT roots:[] 恢复——那会把
+// test 项目永久置为显式关闭）；自建的 site/index.html 经 files/delete 删除（自建才删）。
+// 密码自读不打印。跑法：bun scripts/probe-pages-default-root.mjs（dev api 43011 需在跑）。
+
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { readAppPassword, readDeployConfig } from "./lib/deploy-config.mjs";
+
+const API_BASE = "http://127.0.0.1:43011";
+const TEST_PROJECT = "test";
+
+const deployConfig = await readDeployConfig();
+const PROJECTS_ROOT = deployConfig?.projects_root ?? "/home/deploy/workspace";
+const PAGES_CONFIG_PATH = join(PROJECTS_ROOT, TEST_PROJECT, ".agents-remote", "pages.json");
+const SITE_INDEX_RELATIVE = "site/index.html";
+const PROBE_MARKER = `ar-pages-default-root-probe-${Date.now().toString(36)}`;
+
+const results = [];
+
+function record(name, ok, detail = "") {
+  results.push({ name, ok, detail });
+  console.log(`${ok ? "PASS" : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
+}
+
+// ── REST 客户端（login 拿 token → Bearer；公开面请求不带 auth）───────────────
+let authToken = "";
+
+async function login() {
+  const password = await readAppPassword();
+  const res = await fetch(`${API_BASE}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) throw new Error(`login failed: ${res.status}`);
+  authToken = ((await res.json()) ?? {}).token ?? "";
+  if (!authToken) throw new Error("login returned empty token");
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+      ...options.headers,
+    },
+  });
+  const body = await res.json().catch(() => null);
+  return { status: res.status, body };
+}
+
+// ── 原状备份与恢复（fs 层，见头部恢复纪律）───────────────────────────────────
+async function backupPagesConfig() {
+  if (!existsSync(PAGES_CONFIG_PATH)) return null;
+  return readFile(PAGES_CONFIG_PATH, "utf8");
+}
+
+async function restorePagesConfig(backup) {
+  if (backup === null) {
+    if (existsSync(PAGES_CONFIG_PATH)) await unlink(PAGES_CONFIG_PATH);
+    return;
+  }
+  await writeFile(PAGES_CONFIG_PATH, backup);
+}
+
+// site/index.html 已存在（用户数据）→ 不覆盖不删除，返回 false；自建 → true。
+async function ensureSiteIndex() {
+  // /files/preview 探测存在性：200 即已存在（用户数据，不覆盖不删除，内容断言放宽）。
+  const preview = await api(`/api/projects/${TEST_PROJECT}/files/preview`, {
+    method: "POST",
+    body: JSON.stringify({ path: SITE_INDEX_RELATIVE }),
+  });
+  if (preview.status === 200) {
+    record(
+      "site/index.html pre-existing (kept, content assertions relaxed)",
+      true,
+      "user data — not overwritten",
+    );
+    return false;
+  }
+  // save 只覆盖已存在文件（不自动 mkdir/建文件）：先 mkdir site/（best-effort，已存在
+  // 忽略），再 create index.html，最后 save 写入探针标记内容。
+  await api(`/api/projects/${TEST_PROJECT}/files/mkdir`, {
+    method: "POST",
+    body: JSON.stringify({ name: "site" }),
+  });
+  const created = await api(`/api/projects/${TEST_PROJECT}/files/create?path=site`, {
+    method: "POST",
+    body: JSON.stringify({ name: "index.html" }),
+  });
+  if (created.status !== 200 && created.status !== 201) {
+    throw new Error(
+      `create site/index.html failed: ${created.status} ${JSON.stringify(created.body)}`,
+    );
+  }
+  const save = await api(`/api/projects/${TEST_PROJECT}/files/save`, {
+    method: "POST",
+    body: JSON.stringify({
+      path: SITE_INDEX_RELATIVE,
+      content: `<!doctype html><html><body>${PROBE_MARKER}</body></html>`,
+    }),
+  });
+  if (save.status !== 200 && save.status !== 201) {
+    throw new Error(`save site/index.html failed: ${save.status} ${JSON.stringify(save.body)}`);
+  }
+  return true;
+}
+
+async function deleteSiteIndex() {
+  await api(`/api/projects/${TEST_PROJECT}/files/delete`, {
+    method: "POST",
+    body: JSON.stringify({ path: SITE_INDEX_RELATIVE }),
+  });
+}
+
+// ── 断言 A/B/D：HTTP 面 ──────────────────────────────────────────────────────
+async function assertPublicServe(expectedMarker) {
+  const res = await fetch(`${API_BASE}/p/${TEST_PROJECT}/`);
+  const text = await res.text();
+  const contentType = res.headers.get("content-type") ?? "";
+  record(
+    "A default root serves publicly without credentials",
+    res.status === 200 && contentType.includes("text/html") && text.includes(expectedMarker),
+    `status=${res.status} ct=${contentType} marker=${text.includes(expectedMarker)}`,
+  );
+}
+
+async function assertConfigView() {
+  const { status, body } = await api(`/api/projects/${TEST_PROJECT}/pages/config`);
+  const roots = body?.config?.roots ?? null;
+  record(
+    "B config GET returns effective view (default root)",
+    status === 200 &&
+      JSON.stringify(roots) === JSON.stringify([{ urlPath: "/", fsDir: "site", auth: "public" }]),
+    `status=${status} roots=${JSON.stringify(roots)}`,
+  );
+}
+
+async function assertTokenGate() {
+  const put = await api(`/api/projects/${TEST_PROJECT}/pages/config`, {
+    method: "PUT",
+    body: JSON.stringify({ roots: [{ urlPath: "/", fsDir: "site", auth: "token" }] }),
+  });
+  if (put.status !== 200) {
+    record("D token root PUT", false, `status=${put.status} ${JSON.stringify(put.body)}`);
+    return;
+  }
+  const res = await fetch(`${API_BASE}/p/${TEST_PROJECT}/`);
+  record(
+    "D token root requires auth (401 without credentials)",
+    res.status === 401,
+    `status=${res.status}`,
+  );
+}
+
+// ── main ─────────────────────────────────────────────────────────────────────
+async function main() {
+  const backup = await backupPagesConfig();
+  let createdSiteIndex = false;
+  try {
+    await login();
+    createdSiteIndex = await ensureSiteIndex();
+
+    // 默认态断言（A/B）在前，token 翻转（D）放最后，恢复前完成。
+    if (!createdSiteIndex) {
+      // 用户已有 index.html：A 的内容断言放宽为 200 + text/html。
+      const res = await fetch(`${API_BASE}/p/${TEST_PROJECT}/`);
+      const contentType = res.headers.get("content-type") ?? "";
+      record(
+        "A default root serves publicly without credentials",
+        res.status === 200 && contentType.includes("text/html"),
+        `status=${res.status} ct=${contentType} (pre-existing content)`,
+      );
+    } else {
+      await assertPublicServe(PROBE_MARKER);
+    }
+    await assertConfigView();
+    await assertTokenGate();
+  } finally {
+    if (createdSiteIndex) await deleteSiteIndex();
+    await restorePagesConfig(backup);
+  }
+
+  const failed = results.filter((r) => !r.ok);
+  console.log(
+    `\n${results.length - failed.length}/${results.length} passed` +
+      (failed.length > 0
+        ? `；FAIL 明细：\n${failed.map((f) => `- ${f.name}: ${f.detail}`).join("\n")}`
+        : ""),
+  );
+  process.exit(failed.length > 0 ? 1 : 0);
+}
+
+main().catch((error) => {
+  console.error(`probe crashed: ${error?.stack ?? error}`);
+  process.exit(1);
+});
