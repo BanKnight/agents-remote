@@ -36,6 +36,12 @@ bun run format:check && bun run lint && bun run typecheck && bun run test
 - **触发**：写/改 Playwright 探针涉及按钮点击或 lazy 挂载组件。
 - **动作**：① 按钮交互一律 `getByRole("button", { name: "…" })` 精确定位——禁 `locator(容器, { hasText })` 后 click：容器 click 落几何中心会误触同容器另一按钮（实证：m4 探针「编辑 + 查看 diff ›」容器，误触打开 diff 让位预览，返工一轮）。② lazy 挂载（CodeEditor/CodeMirror 等）用 `.waitFor()` 等在场，不用固定 sleep——固定延时短了挂、长了浪费。
 
+## 探针 mock 完备性：overview 与 sessions-stream WS 必须同源（2026-11-07）
+
+- **触发**：探针 mock 了 REST `/api/overview`（或依赖 mock 的实例列表/持久化 tab 存活）。
+- **动作**：必须同时 mock `/api/sessions/stream` WebSocket，帧内容与 REST mock **同源**（`{type:"sessions", sessions:[...]}`）。`use-session-shells.applyShellsFrame` 会用服务端帧**整体覆盖** `["overview"]` 缓存——探针把 `/stream/` 透传真实后端时，真实会话列表顶掉 mock candidates，stale-tab prune 把 mock 会话 tab 判 stale 摘除（v15-batch4 Part6 ⑦ 假 FAIL 实锤：pruneRefs 变真实 6 会话）。WS 帧与 REST mock 不一致同病。
+- **判定**：探针断言在「页面打开数秒后」从绿变红、且 mock 会话从列表消失 → 先查 sessions-stream 是否透传了真实后端。
+
 ## CSS 落盘硬闸（改 web 包内任何文件后必跑）
 
 ```bash
