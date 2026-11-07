@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { parse as parseYaml } from "yaml";
 
@@ -83,6 +83,41 @@ const apiProxy = {
     },
   },
 };
+
+// preview 插件：坏 asset 链接显式 404，不被 SPA fallback 吞成 index.html——语义对齐
+// api/src/static-web.ts（URL 末段含扩展名 → 404 不 fallback）。毒化链（2026-11-07 发版
+// 窗口实证，用户被迫重装 PWA 才恢复）：SW install 对 precache 逐条 fetch，404 被fallback
+// 成 text/html 后 workbox 对 200 一律缓存（不校验 content-type）→ 新 SW 接管但缓存被
+// HTML 毒化 → 懒 chunk 恒 MIME 报错白屏。404 后 install 失败 → 旧 SW 保持 → dist 稳定后
+// 刷新自愈。/api、/p/ 是代理前缀（目标在 api 侧）跳过；文件存在 → next() 交静态服务。
+// 只挂 preview（web 长期跑 prod preview 是常态）；dev 模式是逃生口不挂。
+function previewBadAsset404(): Plugin {
+  const distDir = resolve(import.meta.dirname, "dist");
+  return {
+    name: "preview-bad-asset-404",
+    configurePreviewServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = new URL(req.url ?? "/", "http://localhost");
+        let pathname = url.pathname;
+        try {
+          pathname = decodeURIComponent(pathname);
+        } catch {
+          // 坏编码按原样判（末段含 . 才可能 404，%2E 类极端形态交给 fallback）
+        }
+        const last = pathname.slice(pathname.lastIndexOf("/") + 1);
+        if (pathname.startsWith("/api/") || pathname.startsWith("/p/") || !last.includes(".")) {
+          return next();
+        }
+        const target = resolve(distDir, `.${pathname}`);
+        // relative 判越界（防 ../ 穿越逃出 dist）；存在 → 静态服务处理，不存在 → 真 404。
+        const escaped = relative(distDir, target).startsWith("..");
+        if (escaped || existsSync(target)) return next();
+        res.statusCode = 404;
+        res.end();
+      });
+    },
+  };
+}
 
 export default defineConfig({
   plugins: [
@@ -186,6 +221,7 @@ export default defineConfig({
         ],
       },
     }),
+    previewBadAsset404(),
   ],
   resolve: {
     alias: {
