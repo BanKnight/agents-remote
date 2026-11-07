@@ -1,71 +1,69 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-07 18:50（**pages 默认根批交付** `12d8e59..2aeaecf` 三个 commit 本地
-> 未 push；**发现 Pages 面板全端无入口**待用户决策；wiki 格式对齐批次排队）
+> 最后更新：2026-11-07 22:50（**Pages 入口批交付** `177dcfa..cfe8668` 三个 commit 本地
+> 未 push；6 探针 + 硬闸 + 全门禁全绿；wiki 格式对齐批排队）
 
 ## 一句话状态
 
-pages / memory / wiki 三线讨论收口落地：pages 默认根（site/ 零配置默认发布 public
-免登录）已实现并全链验证（探针 3/3 + 全门禁绿 + 3 commits）；memory 用户拍板先不做
-（调研留档）；inbox 清理完成。**实施中发现 PagesPanel 是孤儿注册**——tab 注册表里有
-pages 但 `newPanelTab` kind 收窄 files/git/wiki，全端无创建入口，默认根生效后用户在
-UI 里看不到/管不了页面根，入口方案待用户拍板。
+Pages 面板平级接入完成（检视面板第 4 个常驻基础标签，桌面右栏 + 移动检视面板 + 深链
+全链打通，`177dcfa`）；顺带排障实锤探针 flaky 根因（sessions-stream WS 透传真实后端
+覆盖 mock overview，`b1b1d92` 探针加固 + `cfe8668` 规则沉淀）。本地累计 6 commit 未
+push（含前批 pages 默认根 3 个）。
 
 ## 本 session 焦点
 
 ### 关键决策 / 发现（不可丢）
 
-- **默认根语义定案**（用户拍板「不需要配置，默认公开可访问 ＋ 不需要登录，仅仅是在
-  配置时才可以调整」）：无配置文件 → `DEFAULT_PAGES_ROOT = {urlPath:"/", fsDir:"site",
-  auth:"public"}` 兜底；文件存在含 `roots:[]` = **显式关闭发布**（删光根 = 唯一关闭
-  通道）；readConfig 返回「生效视图」→ serve/config/UI 三方零特殊逻辑。
-- **Pages 面板全端无入口（孤儿注册）**：`WORKBENCH_TAB_PLUGINS` 注册了 pages tab
-  （workbench-tab-plugin.tsx:328-333）但 `usePanelTabRegistry` 的 `newPanelTab` kind
-  参数收窄 `"files"|"git"|"wiki"`（use-panel-tab-registry.ts:46）——桌面右栏 filter
-  只投影三结构标签、移动「新建标签」菜单也只有三种。**修复点 = newPanelTab kind 加
-  "pages" + 两端 AddMenu 加项**；入口形态（工具条 ticon vs 新建标签菜单 vs 设置页）
-  是用户当初问过未拍板的问题（「侧边栏没入口，统一在设置中默认提供比较好呢？」）。
-- **探针恢复纪律（新实践）**：pages 探针备份 pages.json 到 fs 层恢复（有备份写回、
-  无则 unlink）——**绝不能 PUT roots:[] 恢复**（那会把 test 项目永久置为显式关闭）；
-  PUT `[]` 落盘 ≠ 删文件，删配置文件 = 回到默认发布。
-- **api watch 假死又一次实证**：改 project-pages.ts 后 bun --watch 未重载（touch 也
-  无效），respawn-pane -k 重启解决；respawn 杀了 api spawn 的 5 个活跃 agent 会话
-  （用户已确认）。测试项目 site/ 目录已清理，pages.json 恢复为不存在（默认发布态）。
-- **wiki 三项拍板回顾**（上游背景）：①inbox 清理 ✅；②Quartz 一步到位（跳过 docsify，
-  需过 /check-deps 供应链核查：发布 ≥7 天）；③memory 先不做。
+- **Pages 入口方案（用户拍板「工具条平级入口」）**：pages = 检视面板 ptabs 第 4 个常驻
+  基础标签，序与 WORKBENCH_TAB_PLUGINS 注册表一致（files/git/pages/wiki）。
+  `withBasePanelTabs` 读侧幂等补齐 → 存量 localStorage 自动获得第 4 标签。
+- **探针 flaky 根因（第一手证据链）**：`use-session-shells.applyShellsFrame` 用
+  sessions-stream WS 帧**整体覆盖** `["overview"]` 缓存；探针只 mock REST、把
+  `/stream/` 一律 `connectToServer()` 透传真实后端 → 真实 6 会话顶掉 mock candidates
+  → stale-tab prune 把 mock 会话 tab 判 stale 摘除（v15-batch4 Part6 ⑦ 假 FAIL；
+  TEMP-PRUNE 埋点实锤 pruneRefs 变真实会话）。修法 = 各探针按 REST mock 同源 mock
+  `/api/sessions/stream`（已沉淀进 `.claude/rules/verification.md`）。
+- **已知缺口（记档待用户拍板）**：移动端「添加根」无入口——PagesPanel 头部按钮
+  `hidden lg:flex`（仅桌面），移动检视面板能看/编辑/删除/预览根、不能新增。是否修
+  （头部按钮 touch 常显 / row2 ＋ 装配）交用户真机验收后拍板。
+- **＋菜单退化为纯切换器**（观察项记档）：4 项全为常驻基础标签，已开=激活幂等
+  （git/wiki 本就如此，pages 延伸，保留一致性）。
 
 ### 进度
 
-- ✅ pages 默认根批全链交付：api 兜底（`5f2da9c`）+ 测试反转/新增（api 1300 pass）+
-  i18n 空态文案 + deployment.md/pages-static-hosting.md 记档 + 探针
-  probe-pages-default-root.mjs（A 公开面 200 / B 生效视图 / D token 401，3/3）
-- ✅ inbox 清理批（`12d8e59`）：3 篇迁出 + 两层 index + 9 处引用修正 + wiki/memory
-  两份调研文档沉淀登记
-- ✅ 上传探针遗留断言（`2aeaecf`）
-- ⏸ 手动 golden path 真机清单未交（探针已覆盖 HTTP 全链；UI 面板行为等入口批次）
+- ✅ `177dcfa` feat(web): Pages 面板平级接入（PanelTab/BASE_PANEL_TABS/newPanelTab/
+  tabMeta/＋菜单/双端 body/深链白名单/单测）
+- ✅ `b1b1d92` test(probe): sessions-stream mock 补齐 + 过期断言同步（m4 crumb/完成、
+  m9-b 分屏、m9-d G 段等待+G6 置顶行）
+- ✅ `cfe8668` docs(rules): 探针 mock 同源纪律
+- ✅ 探针 6/6 全绿：pages-default-root 5/5（含新 UI 断言 C）、inspector-row-menus
+  ALL PASS、m4 75/75、m9-b 19/19、m9-d 68/68、v15-batch4 60/60
+- ✅ 硬闸（css + tokens）与全门禁（format/lint/typecheck/test web 1065 pass）全绿
 
 ## 下一步
 
-1. **Pages 入口决策（问用户）**：默认根生效但 UI 无入口——修复选项 a) `newPanelTab`
-   kind 放开 + 新建标签菜单加 Pages（两端一行级）；b) 工具条加 pages ticon；c) 设置页
-   统一承载。用户当初倾向问过「设置中统一提供」。
-2. **wiki 格式对齐批**（排队中）：Phase 0（description 透传 + MCP 工具描述写链接约定）
+1. **真机 golden path 清单交用户**（见交付 checklist，下方易丢上下文）。
+2. **push 等用户确认**：`5f2da9c..cfe8668` 共 6 commit（pages 默认根 3 + 入口批 3）。
+3. **wiki 格式对齐批**（排队）：Phase 0（description 透传 + MCP 工具描述写链接约定）
    → Phase 1（slug 放行空格/中文子目录、wikilink 渲染、backlinks）；方案见
    docs/research/wiki-solutions-survey.md §4。
-3. **wiki 发布管线 Quartz**（排队中）：先 /check-deps 供应链核查再立项。
-4. push 属外发动作，等用户确认后推 `12d8e59..2aeaecf`。
+4. **wiki 发布管线 Quartz**（排队）：先 /check-deps 供应链核查再立项。
 
 ## 易丢的关键上下文
 
-- pages 探针跑法：`bun scripts/probe-pages-default-root.mjs`（dev api 43011 需在跑）；
-  它备份/恢复 test 项目 pages.json + 自建 site/index.html（files/mkdir → files/create
-  → files/save 三步，注意 save 不自动建文件、query path 用相对形态禁前导 `/`）。
-- files API 语义坑（探针实战踩过）：`/files/save` 只覆盖已存在文件（新建走 create）；
-  `/files/create` 与 `/files/mkdir` 都是 query `?path=父目录` + body `{name}`；
-  `resolveProjectRelativePath` 拒绝对路径形态（前导 `/` → PROJECT_PATH_OUTSIDE_ROOT）。
-- DEFAULT_PAGES_ROOT 在 api/src/project-pages.ts 顶部导出；单测断言形状用字面量。
-- dev 服务：api/web 已在跑（api 18:38 respawn 过）；tmux `ar-dev:api|web`。
-- bun test / e2e 内存限制用 systemd-run cgroup（2G / 4G）；探针用 `bun scripts/X.mjs`。
+- **真机 golden path 清单（交付材料）**：① 桌面右栏见 [文件 Git 页面 Wiki] 四标签；
+  ② 点「页面」→ 默认根行 `/` → site + 公开徽标；③ 行点击新标签打开 `/p/{project}/`；
+  ④ 移动检视面板同构（四标签）；⑤ ＋ 菜单含「页面」（已开=激活）；⑥ 移动端「添加根」
+  无入口（缺口，待拍板）。
+- 探针跑法：`bun scripts/X.mjs`（repo 根跑，dev api 43011 / web 43012 在跑）；
+  pages 探针备份/恢复 test 项目 pages.json（fs 层恢复，绝不 PUT roots:[]）。
+- web=prod build + watch（tmux `ar-dev:web`）；改 web 源码后验证产物特征串用
+  `rg "特征串" web/dist/` 直查懒加载 chunk；埋点类临时改动跑完必须删干净并等 watch
+  重建（本轮 TEMP-PRUNE 已全清，产物 grep 无残留）。
+- 手势/状态同步类「探针全绿真机坏」的取证范式：localStorage.setItem 追踪器 +
+  window 埋点（本轮 `__layoutWrites` 逐写 dump + 源码内 TEMP console.log 双通道），
+  排查完即撤。
+- bun test / e2e 内存限制用 systemd-run cgroup（2G / 4G）。
 
 ## 提醒
 
