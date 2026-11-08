@@ -8,7 +8,7 @@
 //   A. 无凭据 GET /p/test/ → 200 + text/html + 内容含探针标记（自建 site/index.html）。
 //   B. 带 auth GET pages/config → roots 恰为 [{/,site,public}]（生效视图）。
 //   C. UI：真登录桌面右栏 ptabs = [文件,Git,页面,Wiki]（pages 平级接入）→ 点「页面」→
-//      PagesPanel 默认根行（/ → site + 公开徽标）。
+//      PagesPanel 默认根行（/ + 公开徽标紧跟，subtitle /p/test/ → site）。
 //   D. PUT {/,site,token} → 无凭据 GET /p/test/ → 401（per-root 鉴权分流对默认根生效）。
 // 恢复纪律：pages.json 有备份写回、无则 fs unlink（绝不能 PUT roots:[] 恢复——那会把
 // test 项目永久置为显式关闭）；自建的 site/index.html 经 files/delete 删除（自建才删）。
@@ -216,14 +216,15 @@ async function assertInspectorPagesTab() {
       tabs?.join(",") === "文件,Git,页面,Wiki",
       `tabs=${JSON.stringify(tabs)}`,
     );
-    // C2 点「页面」→ PagesPanel 默认根行：urlPath "/" + subtitle "→ site" + 「公开」徽标，
-    // 且无「需登录」（token 徽标在场 = 读到了翻转后状态，时序错位）。
+    // C2 点「页面」→ PagesPanel 默认根行（§6.17 布局）：title = "/" + 「公开」徽章紧跟，
+    // subtitle = 完整访问 URL "/p/test/ → site"；且无「需登录」（token 徽标在场 = 读到了
+    // 翻转后状态，时序错位）。
     await page.locator("main > div > aside").nth(1).getByRole("tab", { name: "页面" }).click();
     await page
       .waitForFunction(
         () => {
           const aside = document.querySelectorAll("main > div > aside")[1];
-          return aside?.textContent?.includes("→ site") ?? false;
+          return aside?.textContent?.includes("/p/test/ → site") ?? false;
         },
         { timeout: 8000 },
       )
@@ -231,19 +232,45 @@ async function assertInspectorPagesTab() {
     const row = await page.evaluate(() => {
       const aside = document.querySelectorAll("main > div > aside")[1];
       const group = aside?.querySelector('[aria-label="页面静态根"]');
-      const text = group?.textContent ?? "";
+      if (!group) {
+        return { groupFound: false };
+      }
+      const text = group.textContent ?? "";
+      // 几何断言（frontend-notes §34：文本断言对布局回归盲）：徽章须与 urlPath 同行
+      // 且紧跟（间距 <16px）、右缘不贴行尾（距行右缘 >100px，§6.17 布局契约）。
+      const firstRow = group.firstElementChild;
+      const rowRect = firstRow?.getBoundingClientRect();
+      const spans = firstRow ? [...firstRow.querySelectorAll("span")] : [];
+      const badge = spans.find(
+        (s) => s.textContent === "公开" && s.className.includes("rounded-full"),
+      );
+      const urlSpan = spans.find((s) => s.textContent === "/" && s.className.includes("font-mono"));
+      const badgeRect = badge?.getBoundingClientRect();
+      const urlRect = urlSpan?.getBoundingClientRect();
+      const gap = badgeRect && urlRect ? badgeRect.left - urlRect.right : null;
+      const gapOk = gap !== null && gap >= 0 && gap < 16;
+      const sameLine = badgeRect && urlRect ? Math.abs(badgeRect.top - urlRect.top) < 4 : false;
+      const notAtRowEnd = badgeRect && rowRect ? rowRect.right - badgeRect.right > 100 : false;
       return {
-        groupFound: group !== null,
+        groupFound: true,
         hasUrlPath: text.includes("/"),
+        hasServeUrl: text.includes("/p/test/ → site"),
         hasFsDir: text.includes("→ site"),
         hasPublicBadge: text.includes("公开"),
         hasTokenBadge: text.includes("需登录"),
+        badgeInline: gapOk && sameLine && notAtRowEnd,
       };
     });
     record(
-      "C2 pages panel renders default root row (public badge, → site)",
-      row.groupFound && row.hasUrlPath && row.hasFsDir && row.hasPublicBadge && !row.hasTokenBadge,
-      `group=${row.groupFound} url=${row.hasUrlPath} dir=${row.hasFsDir} public=${row.hasPublicBadge} token=${row.hasTokenBadge}`,
+      "C2 pages panel renders default root row (public badge, /p/test/ → site)",
+      row.groupFound &&
+        row.hasUrlPath &&
+        row.hasServeUrl &&
+        row.hasFsDir &&
+        row.hasPublicBadge &&
+        row.badgeInline &&
+        !row.hasTokenBadge,
+      `group=${row.groupFound} url=${row.hasUrlPath} serveUrl=${row.hasServeUrl} dir=${row.hasFsDir} public=${row.hasPublicBadge} badgeInline=${row.badgeInline} token=${row.hasTokenBadge}`,
     );
   } finally {
     await browser.close();

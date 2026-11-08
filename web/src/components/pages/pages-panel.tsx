@@ -177,16 +177,24 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
                     <ShellIcon className="h-4 w-4" name="pages-nav" />
                   </IconMarker>
                 }
-                meta={
-                  <span
-                    className={`rounded-full bg-on-surface/5 px-2 py-0.5 text-[0.68rem] font-semibold ${root.auth === "token" ? "text-warning" : "text-on-surface-muted"}`}
-                  >
-                    {root.auth === "token" ? t("pages.authToken") : t("pages.authPublic")}
+                onClick={() => openPreview(root)}
+                subtitle={
+                  <span className="font-mono text-[0.72rem]">
+                    {pagesServeUrl(projectName, root.urlPath)} → {root.fsDir}
                   </span>
                 }
-                onClick={() => openPreview(root)}
-                subtitle={<span className="font-mono text-[0.72rem]">→ {root.fsDir}</span>}
-                title={<span className="font-mono text-[0.82rem]">{root.urlPath}</span>}
+                title={
+                  <>
+                    <span className="font-mono">{root.urlPath}</span>
+                    {/* auth 徽章紧跟 urlPath（§6.17）：meta 行尾位在宽行里只剩小徽章、
+                        中间大片空白；收回 title 行内收紧，完整访问 URL 补进 subtitle。 */}
+                    <span
+                      className={`ml-1.5 rounded-full bg-on-surface/5 px-2 py-0.5 text-[0.68rem] font-semibold ${root.auth === "token" ? "text-warning" : "text-on-surface-muted"}`}
+                    >
+                      {root.auth === "token" ? t("pages.authToken") : t("pages.authPublic")}
+                    </span>
+                  </>
+                }
               />
             ))}
           </ListGroup>

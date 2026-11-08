@@ -2084,3 +2084,9 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 1. **桌面 detail 容器顶部节奏按态分施**（同移动 SettingsRoute `isRoot` 分支形态）：`SettingsMainPage` 容器原两态统一 `-mt-0.5`（补偿 root 首组 `.sect` margin-top 14px），detail 态首组无 `.sect`（`.sgroup` margin-top 0）被拉进 header 下裁掉顶边框（首组 top 42.0 < header 底 44.0；既有 claude/pi detail 同病，本批扩到 5 个实例后暴露）→ `isRoot ? "-mt-0.5" : "pt-3"`：无 sect detail 首组 = header 底 + 12px（与 root 同节奏），带 sect detail（acp/codex/notifications）叠 `.sect` 14px 与移动端同节奏。
 2. 注释漂移：组头注释仍引用已删除的 general detail → 更新为三专属 detail。
 3. 决策日志：本条记档 + §6.8-9 过时注记（上溯标尺防走失）。
+
+### §6.17 pages 根行布局：URL 上行 + 徽章收紧（2026-11-08）
+
+**用户反馈**：「pages 的配置项，每一条也可以优化一下，同时展示对应的 url，而目前中间那么宽阔的地方拿来放"公开"，很浪费」——meta 徽章位被 `justify-between` 推到行尾，urlPath 短（如 `/`）时中间大片空白只挂一个小徽章；完整访问 URL（`/p/{project}{urlPath}`）此前不在行上。
+
+**形态（三选一，用户选 A「URL+目录同行」）**：title 行 = urlPath（mono）+ auth 徽章紧跟（inline `ml-1.5`，不占行尾宽位）；subtitle 行 = 完整访问 URL `pagesServeUrl(project, urlPath)` + ` → fsDir`（mono muted）。ListRow 的 `meta` prop 停传（行尾只剩 actions）。长项目名/路径由 ListRow title/subtitle 既有 `truncate` 兜底。双端同构（PagesPanel 单份实现）。行点击行为不变（新标签打开预览）。
