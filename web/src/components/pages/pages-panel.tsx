@@ -178,16 +178,14 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
                   </IconMarker>
                 }
                 onClick={() => openPreview(root)}
-                subtitle={
-                  <span className="font-mono text-[0.72rem]">
-                    {pagesServeUrl(projectName, root.urlPath)} → {root.fsDir}
-                  </span>
-                }
+                subtitle={<span className="font-mono text-[0.72rem]">→ {root.fsDir}</span>}
                 title={
                   <>
-                    <span className="font-mono">{root.urlPath}</span>
-                    {/* auth 徽章紧跟 urlPath（§6.17）：meta 行尾位在宽行里只剩小徽章、
-                        中间大片空白；收回 title 行内收紧，完整访问 URL 补进 subtitle。 */}
+                    {/* 主标题 = 完整访问 URL（§6.17 二轮收敛）：urlPath 已内含在 URL 里，
+                        单独成字与 subtitle 的 URL 重复（用户真机反馈「有内容重复」）。 */}
+                    <span className="font-mono">{pagesServeUrl(projectName, root.urlPath)}</span>
+                    {/* auth 徽章紧跟主标题（§6.17）：meta 行尾位在宽行里只剩小徽章、
+                        中间大片空白；收回 title 行内收紧。 */}
                     <span
                       className={`ml-1.5 rounded-full bg-on-surface/5 px-2 py-0.5 text-[0.68rem] font-semibold ${root.auth === "token" ? "text-warning" : "text-on-surface-muted"}`}
                     >
