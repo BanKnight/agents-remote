@@ -1,15 +1,14 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-08（**preview 404 毒化链修复** `476d7a0` + 黑屏现象定位关闭；本地
-> 累计 8 commit 未 push；pages 入口批真机验收仍待用户）
+> 最后更新：2026-11-08（**pages 根行布局优化** `be004fc`；本地累计 9 commit 未 push；
+> preview 404 修复 + 黑屏定位已关闭）
 
 ## 一句话状态
 
-preview 坏 asset 链接改真 404（不 SPA fallback，防 SW precache 被 HTML 毒化，
-`476d7a0`）；教训沉淀 frontend-notes §35。本地 8 commit 未 push。**黑屏变长已定位关闭
-（用户实证）**：重装 PWA 的 install 后遗症——重装后几次冷启动恒 ~5 秒（3.4MB precache
-走 tunnel 从零下载，install 未完成期页面无 SW 控制全走网络），install 完成后自愈，
-非代码回归；结论已补进 §35。
+pages 根行布局优化交付（`be004fc`，§6.17：title = urlPath + 徽章紧跟、subtitle =
+完整访问 URL → fsDir、meta 行尾位停传，双端同构）；此前 preview 404 毒化链修复
+（`476d7a0`，frontend-notes §35）+ 黑屏定位关闭（重装 install 后遗症，用户实证自愈）。
+本地 9 commit 未 push。pages 入口批真机验收仍待用户。
 
 ## 本 session 焦点
 
@@ -37,8 +36,9 @@ preview 坏 asset 链接改真 404（不 SPA fallback，防 SW precache 被 HTML
 
 ## 下一步
 
-1. **push 等用户确认**：`5f2da9c..9d29cc1` 共 8 commit。
-2. **真机 golden path 清单（pages 入口批）**仍待用户验收（见下）。
+1. **push 等用户确认**：`5f2da9c..be004fc` 共 9 commit。
+2. **真机验收清单**（合并）：pages 入口批 golden path + 根行新布局（徽章紧跟
+   urlPath、subtitle 显 /p/{project}/ → site）。
 3. wiki 格式对齐批（排队）→ wiki Quartz（先 /check-deps）。
 
 ## 易丢的关键上下文
