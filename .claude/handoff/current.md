@@ -1,14 +1,14 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-08（**pages 根行布局优化** `be004fc`；本地累计 9 commit 未 push；
-> preview 404 修复 + 黑屏定位已关闭）
+> 最后更新：2026-11-08（**pages 根行二轮收敛** `0dabc24` + **serve 面错误页** `8f91b72`；
+> 本地累计 12 commit 未 push；api 已 respawn——修复生效）
 
 ## 一句话状态
 
-pages 根行布局优化交付（`be004fc`，§6.17：title = urlPath + 徽章紧跟、subtitle =
-完整访问 URL → fsDir、meta 行尾位停传，双端同构）；此前 preview 404 毒化链修复
-（`476d7a0`，frontend-notes §35）+ 黑屏定位关闭（重装 install 后遗症，用户实证自愈）。
-本地 9 commit 未 push。pages 入口批真机验收仍待用户。
+pages 根行两轮迭代交付（§6.17）：一轮 = 徽章收紧 + URL 上行（`be004fc`）；二轮 =
+title 即完整 URL 去 urlPath 重复（`0dabc24`，用户真机反馈重复）。伴生修复 `/p/` serve
+面错误 HTML 化（`8f91b72`，用户报障裸 JSON PROJECT_FILE_NOT_FOUND——默认根 site/ 未
+建时点击预览；访客现在见中文错误页，401 同样 HTML 化）。本地 12 commit 未 push。
 
 ## 本 session 焦点
 
