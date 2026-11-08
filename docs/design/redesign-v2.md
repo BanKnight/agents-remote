@@ -2090,3 +2090,7 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 **用户反馈**：「pages 的配置项，每一条也可以优化一下，同时展示对应的 url，而目前中间那么宽阔的地方拿来放"公开"，很浪费」——meta 徽章位被 `justify-between` 推到行尾，urlPath 短（如 `/`）时中间大片空白只挂一个小徽章；完整访问 URL（`/p/{project}{urlPath}`）此前不在行上。
 
 **形态（三选一，用户选 A「URL+目录同行」）**：title 行 = urlPath（mono）+ auth 徽章紧跟（inline `ml-1.5`，不占行尾宽位）；subtitle 行 = 完整访问 URL `pagesServeUrl(project, urlPath)` + ` → fsDir`（mono muted）。ListRow 的 `meta` prop 停传（行尾只剩 actions）。长项目名/路径由 ListRow title/subtitle 既有 `truncate` 兜底。双端同构（PagesPanel 单份实现）。行点击行为不变（新标签打开预览）。
+
+**二轮收敛（同日，用户真机反馈「上下两行有内容重复」）**：urlPath 已内含在完整 URL 里，单独成字与 subtitle 重复 → 收敛为 title = 完整 URL + 徽章、subtitle = `→ fsDir`（fsDir 不与 URL 重复，保留）。几何契约不变（徽章同行紧跟、不贴行尾），探针 C2 断言同步 + `badgeInline` 几何断言。
+
+**伴生修复：`/p/` serve 面错误 HTML 化**（用户真机报障「点击条目跳转报错 `PROJECT_FILE_NOT_FOUND` JSON」）：默认根指向的 site/ 未建时点击预览 → 裸 JSON 对浏览器访客不可读。serve 面（含 token 401）错误一律返回极简内联 CSS 中文错误页（404「页面不存在/还没有内容」等），不回显 error.message（PATH_OUTSIDE_ROOT 等含服务端路径细节，不泄露给公开面）；config 端点（UI 消费）保持 JSON。

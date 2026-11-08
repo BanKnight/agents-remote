@@ -259,7 +259,12 @@ export const createFetchHandler =
           if (served.root.auth === "token") {
             const authResult = requireHttpAuth(request, auth);
             if (authResult.status === "unauthenticated") {
-              return authResult.response;
+              // serve 面 401 同样 HTML 化（浏览器访客语义）；/api 面的共享 response
+              // （JSON）不动。
+              return new Response(
+                pagesServeErrorPage(401, "需要访问令牌", "该页面受访问令牌保护，请附带令牌后重试"),
+                { status: 401, headers: { "Content-Type": "text/html; charset=utf-8" } },
+              );
             }
           }
           if (request.headers.get("If-None-Match") === served.etag) {
@@ -275,7 +280,9 @@ export const createFetchHandler =
           });
         } catch (error) {
           if (error instanceof ProjectPagesError) {
-            return projectPagesErrorResponse(error);
+            // serve 面错误 HTML 化（浏览器访客）；config 端点（isConfig）走
+            // handlePagesConfig → projectPagesErrorResponse 保持 JSON。
+            return pagesServeErrorResponse(error);
           }
           throw error;
         }
@@ -2305,6 +2312,53 @@ const projectPagesErrorResponse = (error: ProjectPagesError) => {
   // PATH_OUTSIDE_ROOT（含 symlink 逃逸）、PAGES_CONFIG_INVALID、PAGES_ROOT_CONFLICT、
   // PROJECT_NAME_INVALID、PROJECT_TARGET_INVALID → 400。
   return jsonError(error.code, error.message, 400);
+};
+
+// /p/ serve 面错误页（2026-11-08 用户真机反馈）：公开面消费者是浏览器访客，错误一律
+// HTML 页而非裸 JSON（{"error":{...}} 对访客不可读——默认根指向的 site/ 未建时点击
+// 预览即触发）。config 端点（isConfig，UI 消费）保持 JSON。页面无外部资源（访客
+// 上下文没有 /assets）；不回显 error.message（PATH_OUTSIDE_ROOT 等的 message 含
+// 服务端路径细节，不泄露给公开面）。
+const pagesServeErrorPage = (status: number, heading: string, detail: string): string =>
+  `<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${status}</title>
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#020617;color:#e2e8f0;font-family:system-ui,-apple-system,"PingFang SC",sans-serif}
+main{text-align:center;padding:2rem}
+code{font-size:3rem;font-weight:600;color:#64748b;display:block;margin-bottom:.75rem}
+p{margin:.25rem 0;color:#94a3b8}
+</style>
+</head>
+<body><main><code>${status}</code><p>${heading}</p><p>${detail}</p></main></body>
+</html>`;
+
+const pagesServeErrorResponse = (error: ProjectPagesError): Response => {
+  if (error.code === "PROJECT_FILE_NOT_FOUND") {
+    return new Response(
+      pagesServeErrorPage(404, "页面不存在", "该路径还没有内容，或内容尚未发布"),
+      { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } },
+    );
+  }
+  if (error.code === "PROJECT_NOT_FOUND") {
+    return new Response(pagesServeErrorPage(404, "页面不存在", "项目不存在或已被移除"), {
+      status: 404,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  }
+  if (error.code === "PROJECT_FS_ERROR") {
+    return new Response(pagesServeErrorPage(500, "服务暂时不可用", "请稍后重试"), {
+      status: 500,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  }
+  return new Response(pagesServeErrorPage(400, "请求无效", "无法处理该请求"), {
+    status: 400,
+    headers: { "Content-Type": "text/html; charset=utf-8" },
+  });
 };
 
 const projectErrorResponse = (error: ProjectServiceError) => {

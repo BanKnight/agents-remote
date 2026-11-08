@@ -896,12 +896,22 @@ test("createFetchHandler serves pages public roots with ETag, index default page
   expect(dir.status).toBe(200);
   expect(await dir.text()).toBe("<h1>hello</h1>");
 
-  // 不存在的文件 → 404（无 SPA fallback）。
+  // 不存在的文件 → 404 HTML 错误页（无 SPA fallback；serve 面消费者是浏览器访客，
+  // 错误不回 JSON——2026-11-08 用户真机反馈默认根 site/ 未建时裸 JSON 不可读）。
   const missing = await handler(
     new Request("http://localhost/api/projects/demo/pages/missing.html"),
     { upgrade: () => false },
   );
   expect(missing.status).toBe(404);
+  expect(missing.headers.get("Content-Type")).toContain("text/html");
+  expect(await missing.text()).toContain("404");
+
+  // 项目不存在 → 404 HTML 错误页（非 JSON）。
+  const noProject = await handler(new Request("http://localhost/p/no-such-project/"), {
+    upgrade: () => false,
+  });
+  expect(noProject.status).toBe(404);
+  expect(noProject.headers.get("Content-Type")).toContain("text/html");
 });
 
 test("createFetchHandler rewrites /p/ short paths onto the pages serve pipeline", async () => {
@@ -949,9 +959,10 @@ test("createFetchHandler rewrites /p/ short paths onto the pages serve pipeline"
   const cjkPath = "http://localhost/p/hello%20world%20%E4%B8%AD%E6%96%87/docs/";
   const token = auth.login("secret").token;
 
-  // token 根经 /p/ 同样受 token 鉴权：未带 → 401；?token= → 200。
+  // token 根经 /p/ 同样受 token 鉴权：未带 → 401（HTML 错误页）；?token= → 200。
   const blocked = await handler(new Request(cjkPath), { upgrade: () => false });
   expect(blocked.status).toBe(401);
+  expect(blocked.headers.get("Content-Type")).toContain("text/html");
   const allowed = await handler(new Request(`${cjkPath}?token=${token}`), {
     upgrade: () => false,
   });
@@ -1452,12 +1463,15 @@ test("createFetchHandler rejects pages path escape at HTTP layer", async () => {
 
   // %2F 不被 URL parser 解码，matcher 解码后得 /../../secret.txt，
   // resolveProjectRelativePath 词法校验即拦（PROJECT_PATH_OUTSIDE_ROOT → 400）。
+  // serve 面错误 HTML 化后：400 错误页且**不回显 error.message**（含服务端路径细节，
+  // 不泄露给公开面访客——HTML 化的附带安全收益）。
   const escape = await handler(
     new Request("http://localhost/api/projects/demo/pages/..%2F..%2Fsecret.txt"),
     { upgrade: () => false },
   );
   expect(escape.status).toBe(400);
-  expect((await escape.json()).error.code).toBe("PROJECT_PATH_OUTSIDE_ROOT");
+  expect(escape.headers.get("Content-Type")).toContain("text/html");
+  expect(await escape.text()).not.toContain("PROJECT_PATH_OUTSIDE_ROOT");
 });
 
 const git = async (projectPath: string, args: string[]) => {
