@@ -1234,6 +1234,8 @@ export const en = {
   "pages.deleteConfirmMessage":
     'Stop serving the root at "{{urlPath}}"? Generated files stay on disk.',
   "pages.loadFailed": "Failed to load pages config",
+  "pages.openInNewWindow": "Open in new window",
+  "pages.previewTitle": "Page preview",
   "chat.title": "Chat",
   "chat.searchPlaceholder": "Search chats…",
   "chat.createAria": "New chat",

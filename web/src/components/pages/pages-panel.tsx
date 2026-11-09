@@ -14,6 +14,7 @@ import {
 import { ShellIcon } from "../shell/icons";
 import { ResourceStatePanel } from "../files/file-browser";
 import { useConfirm } from "../shell/confirm-dialog";
+import { PagesPreviewLayer } from "./pages-preview-layer";
 import { PagesRootDialog } from "./pages-root-dialog";
 
 type PagesPanelProps = {
@@ -30,9 +31,10 @@ type EditingRoot = { mode: "add" } | { mode: "edit"; root: PagesRoot };
 /**
  * pages 静态根配置面板（middle tab [pages]，与 files/git 同构 inspection）。自带 getPagesConfig
  * query（PAGES_QUERY_SCOPE 隔离缓存），列出当前项目的静态根：每行 urlPath → fsDir + 访问权限
- * 徽标，行点击直达 serve URL（新标签），actions 编辑/删除。header [添加根] 开 PagesRootDialog
- *（整体 PUT 覆盖）。删除走共享 useConfirm。UI=f(state)：roots 从 query 派生，写经 mutation
- * invalidate 回 query，单一数据管道。
+ * 徽标，行点击打开 app 内预览层（PagesPreviewLayer，iOS standalone PWA 同源链接开不了新
+ * 窗口的平台出路）；原生新标签走顶栏钮（非 standalone）/ 中键 / Cmd+click。actions 编辑/删除。
+ * header [添加根] 开 PagesRootDialog（整体 PUT 覆盖）。删除走共享 useConfirm。UI=f(state)：
+ * roots 从 query 派生，写经 mutation invalidate 回 query，单一数据管道。
  */
 export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
   const { t } = useT();
@@ -40,6 +42,8 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
   const update = useUpdatePagesConfig(projectName, PAGES_QUERY_SCOPE);
   const { confirm, holder: confirmHolder } = useConfirm();
   const [editing, setEditing] = useState<EditingRoot | null>(null);
+  // 预览层在位的 serve URL（存串不存 PagesRoot 对象——编辑后对象过期即脏引用）。
+  const [previewing, setPreviewing] = useState<string | null>(null);
 
   const roots: PagesRoot[] = config.data?.config.roots ?? [];
 
@@ -158,6 +162,15 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
             {roots.map((root) => (
               <ListRow
                 href={pagesServeUrl(projectName, root.urlPath)}
+                onClick={(e) => {
+                  // 修饰键组合交浏览器原生（新标签语义，href 仍保留）；无修饰键才进
+                  // 预览层——不守卫 = Cmd+click 被 preventDefault 拦下，原生新标签
+                  // 回归被打破。中键走 auxclick 天然不触发 onClick。行内编辑/删除
+                  // 按钮不受影响：actions 容器已 stopPropagation（ListRow 内建）。
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  e.preventDefault();
+                  setPreviewing(pagesServeUrl(projectName, root.urlPath));
+                }}
                 actions={
                   <>
                     <button
@@ -214,6 +227,9 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
           onSubmit={submitRoot}
           submitting={update.isPending}
         />
+      ) : null}
+      {previewing ? (
+        <PagesPreviewLayer onClose={() => setPreviewing(null)} serveUrl={previewing} />
       ) : null}
       {confirmHolder}
     </div>
