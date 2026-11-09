@@ -29,7 +29,7 @@ import { NewItemSheet } from "../files/new-item-sheet";
 import { RenameDialog } from "../files/rename-dialog";
 import { useConfirm } from "../shell/confirm-dialog";
 import { CollapsibleSearchRow } from "../shell/collapsible-search";
-import { ListRowSkeleton } from "../shell/shell-primitives";
+import { ActionButton, ListRowSkeleton } from "../shell/shell-primitives";
 import { useT } from "../../i18n";
 import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
 import { ShellIcon } from "../shell/icons";
@@ -888,11 +888,26 @@ export function WikiToolPanel({
         <ListRowSkeleton count={3} marker={false} lines={1} />
       ) : index.isError ? (
         // 错误态（批 2 收敛）：原落「Agent 通过 wiki MCP 工具写入的页面…」引导文案伪空态。
+        // 重试按钮（真机报障：signal timed out 后原无恢复动作），与 pages 面板错误态同构。
         <ResourceStatePanel
           message={index.error.message}
           title={t("wiki.loadFailed")}
           tone="danger"
-        />
+        >
+          <div className="mt-3">
+            <ActionButton
+              compact
+              disabled={index.isFetching}
+              onClick={() => void index.refetch()}
+              tone="accent"
+            >
+              <span className="inline-flex items-center gap-1">
+                <ShellIcon className="h-3.5 w-3.5" name="refresh" />
+                {t("retry")}
+              </span>
+            </ActionButton>
+          </div>
+        </ResourceStatePanel>
       ) : (
         <>
           {groups.map((group) => {

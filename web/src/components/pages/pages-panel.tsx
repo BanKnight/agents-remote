@@ -111,7 +111,23 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
             message={config.error.message}
             tone="danger"
             title={t("pages.loadFailed")}
-          />
+          >
+            {/* 重试（真机报障：错误态原无恢复动作，只能刷新整页）。children 槽直落，
+                refetch 复用同 query；isFetching 禁用防并发重复请求。 */}
+            <div className="mt-3">
+              <ActionButton
+                compact
+                disabled={config.isFetching}
+                onClick={() => void config.refetch()}
+                tone="accent"
+              >
+                <span className="inline-flex items-center gap-1">
+                  <ShellIcon className="h-3.5 w-3.5" name="refresh" />
+                  {t("retry")}
+                </span>
+              </ActionButton>
+            </div>
+          </ResourceStatePanel>
         </div>
       </div>
     );

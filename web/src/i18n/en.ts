@@ -1,6 +1,7 @@
 export const en = {
   // ── Shared ────────────────────────────────────────────────────
   cancel: "Cancel",
+  retry: "Retry",
 
   // ── Offline ──────────────────────────────────────────────────
   "offline.message": "You are offline. Check your network connection.",

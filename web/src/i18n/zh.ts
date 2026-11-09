@@ -3,6 +3,7 @@ import type { TranslationKey } from "./types";
 export const zh: Record<TranslationKey, string> = {
   // ── Shared ────────────────────────────────────────────────────
   cancel: "取消",
+  retry: "重试",
 
   // ── Offline ──────────────────────────────────────────────────
   "offline.message": "当前处于离线状态，请检查网络连接。",
