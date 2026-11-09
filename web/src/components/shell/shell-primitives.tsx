@@ -642,6 +642,8 @@ export function ListGroup({ ariaLabel, children, className }: ListGroupProps) {
 
 type ListRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "title"> & {
   actions?: ReactNode;
+  /** 传入 = 行根渲染为 `<a target="_blank" rel="noopener noreferrer">`（外链行）。 */
+  href?: string;
   marker?: ReactNode;
   meta?: ReactNode;
   selected?: boolean;
@@ -677,6 +679,7 @@ export function listRowClasses({
 export function ListRow({
   actions,
   className,
+  href,
   marker,
   meta,
   selected = false,
@@ -685,6 +688,70 @@ export function ListRow({
   title,
   ...props
 }: ListRowProps) {
+  // href 在场 = 行即真链接：新标签语义交浏览器原生 target=_blank——比 JS window.open 跨引擎
+  // 可靠（iOS standalone PWA 等形态会把 window.open 降级成当前窗口导航，2026-11-09 真机报障），
+  // 且白得中键/Cmd 点击、右键复制链接等原生能力。行根换 <a>（链接文本 = 行内文本，无需
+  // aria-label 补丁），键盘 Enter 激活走浏览器原生；div 模式（无 href）保持原 role="button" +
+  // 手制 Enter/Space 全不变。双分支而非动态 tag：联合 tag 的 JSX props 校验要求两元素属性
+  // 交集（anchor 特有属性过不了 div 校验），body 抽变量共享避免内容复制。
+  const rowBody = (
+    <span className="flex min-w-0 grow items-center justify-between gap-2">
+      <span className="flex min-w-0 items-center gap-3">
+        {marker}
+        <span className="min-w-0">
+          <span
+            className="block truncate font-semibold text-on-surface"
+            data-list-row-title
+            title={typeof title === "string" ? title : undefined}
+          >
+            {title}
+          </span>
+          {subtitle ? (
+            <span
+              className={`mt-0.5 block truncate text-on-surface-muted ${
+                size === "sm" ? "text-micro" : "text-xs"
+              }`}
+              title={typeof subtitle === "string" ? subtitle : undefined}
+            >
+              {subtitle}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      {meta ? <span className="flex shrink-0 items-center gap-1.5">{meta}</span> : null}
+      {/* actions 容器拦截 click 冒泡：行根响应 click（导航/打开详情），行内操作按钮（卸载/
+          更新/编辑）的 click 不应触发行级 onClick。此前各调用方各自手动 stopPropagation 补此
+          洞，根因修复收敛到此 primitive 层，所有 ListRow 自动受益。preventDefault 针对 href
+          模式（行根 = <a>）：click 的默认动作 = 激活最近祖先 <a> 触发导航，stopPropagation
+          拦不住默认行为；div 模式行内按钮（type="button"）无默认动作，此调用零影响。对
+          DraggableListRow 的 onSelect 激活路径无影响（onSelect 走 window pointerup +
+          inClose=closest("button")，与 click 是不同事件）。 */}
+      {actions ? (
+        <span
+          className="flex shrink-0 items-center"
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+        >
+          {actions}
+        </span>
+      ) : null}
+    </span>
+  );
+  if (href) {
+    return (
+      <a
+        {...(props as unknown as React.AnchorHTMLAttributes<HTMLAnchorElement>)}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={listRowClasses({ selected, size, className })}
+      >
+        {rowBody}
+      </a>
+    );
+  }
   return (
     <div
       {...(props as React.HTMLAttributes<HTMLDivElement>)}
@@ -698,41 +765,7 @@ export function ListRow({
       }}
       className={listRowClasses({ selected, size, className })}
     >
-      <span className="flex min-w-0 grow items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-3">
-          {marker}
-          <span className="min-w-0">
-            <span
-              className="block truncate font-semibold text-on-surface"
-              data-list-row-title
-              title={typeof title === "string" ? title : undefined}
-            >
-              {title}
-            </span>
-            {subtitle ? (
-              <span
-                className={`mt-0.5 block truncate text-on-surface-muted ${
-                  size === "sm" ? "text-micro" : "text-xs"
-                }`}
-                title={typeof subtitle === "string" ? subtitle : undefined}
-              >
-                {subtitle}
-              </span>
-            ) : null}
-          </span>
-        </span>
-        {meta ? <span className="flex shrink-0 items-center gap-1.5">{meta}</span> : null}
-        {/* actions 容器拦截 click 冒泡：行根是 role="button" 响应 onClick（导航/打开详情），行内
-            操作按钮（卸载/更新/编辑）的 click 不应触发行级 onClick。此前各调用方各自手动
-            stopPropagation 补此洞（file-browser/pages-panel/settings-dialog/git-branch），根因修复
-            收敛到此 primitive 层，所有 ListRow 自动受益。对 DraggableListRow 的 onSelect 激活路径
-            无影响（onSelect 走 window pointerup + inClose=closest("button")，与 click 是不同事件）。 */}
-        {actions ? (
-          <span className="flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
-            {actions}
-          </span>
-        ) : null}
-      </span>
+      {rowBody}
     </div>
   );
 }

@@ -56,10 +56,6 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createRequest]);
 
-  const openPreview = (root: PagesRoot) => {
-    window.open(pagesServeUrl(projectName, root.urlPath), "_blank", "noopener,noreferrer");
-  };
-
   const beginEdit = (next: EditingRoot) => {
     update.reset();
     setEditing(next);
@@ -161,15 +157,13 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
           <ListGroup ariaLabel={t("pages.panelAria")}>
             {roots.map((root) => (
               <ListRow
+                href={pagesServeUrl(projectName, root.urlPath)}
                 actions={
                   <>
                     <button
                       aria-label={t("pages.edit")}
                       className="flex h-7 w-7 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-primary/10 hover:text-primary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        beginEdit({ mode: "edit", root });
-                      }}
+                      onClick={() => beginEdit({ mode: "edit", root })}
                       type="button"
                     >
                       <ShellIcon className="h-4 w-4" name="edit" />
@@ -177,10 +171,7 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
                     <button
                       aria-label={t("pages.delete")}
                       className="flex h-7 w-7 items-center justify-center rounded-md text-on-surface-soft transition hover:bg-error/10 hover:text-error"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void deleteRoot(root);
-                      }}
+                      onClick={() => void deleteRoot(root)}
                       type="button"
                     >
                       <ShellIcon className="h-4 w-4" name="trash" />
@@ -193,7 +184,6 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
                     <ShellIcon className="h-4 w-4" name="pages-nav" />
                   </IconMarker>
                 }
-                onClick={() => openPreview(root)}
                 subtitle={<span className="font-mono text-[0.72rem]">→ {root.fsDir}</span>}
                 title={
                   <>
