@@ -6,7 +6,7 @@ import { ShellIcon } from "../shell/icons";
 import { SHEET_UNMOUNT_DELAY_MS } from "../shell/mobile-sheet";
 
 type PagesPreviewLayerProps = {
-  /** 站点 serve URL（/p/{project}/…），顶栏展示 + iframe 加载共用。 */
+  /** 站点 serve URL（/p/{project}/…），预览层入口地址（iframe 初始加载）。 */
   serveUrl: string;
   onClose: () => void;
 };
@@ -32,12 +32,45 @@ type PagesPreviewLayerProps = {
  * ③ modal focus trap 只管宿主 document：iframe 文档内 Tab 不可达（跨 document），指针/
  *   触摸可用（本层动机场景就是 iOS PWA 触摸）；焦点在 iframe 内时 Esc 落 iframe document
  *   不关层，需点关闭钮。换 modal=false 会丢 body pointer-lock ghost-click 防线，不值。
+ *
+ * 地址栏（2026-11-10 用户反馈「非 PWA 下可以自由输入地址」）：点击变输入框可改路径
+ * 导航（内置浏览器语义），iframe 内点站内链接时顶栏地址跟随（同源读
+ * contentWindow.location）；非 / 开头输入按站点根相对解析。
  */
-export function PagesPreviewLayer({ onClose, serveUrl }: PagesPreviewLayerProps) {
+export function PagesPreviewLayer({ onClose, serveUrl: entryUrl }: PagesPreviewLayerProps) {
   const { t } = useT();
+  // 预览层内导航地址（内部 state）：入口 = serveUrl prop，地址栏编辑 / iframe 内点链
+  // 接都在这里演进。关闭即弃——下次打开回入口页（对齐浏览器新开标签语义），不污染
+  // 父级 previewing（存入口串防脏引用的契约保持）。
+  const [currentUrl, setCurrentUrl] = useState(entryUrl);
+  // 地址栏编辑态：默认只读展示（点击变输入框，Enter 提交 / Esc·blur 取消）——常驻
+  // input 在窄顶栏里全是输入框形态，视觉噪音大于价值。
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
   // 顶栏展示完整地址（含域名，2026-11-10 用户反馈「地址没有域名部分，看起来很奇怪」）；
-  // iframe src 仍用相对 serveUrl（同源语义不变）。
-  const displayUrl = window.location.origin + serveUrl;
+  // iframe src 用相对 currentUrl（同源语义不变）。
+  const displayUrl = window.location.origin + currentUrl;
+
+  // 地址栏提交：非 / 开头按站点根相对解析（浏览器地址栏根相对直觉；./ ../ 相对解析
+  // 不做——magic 步骤多、404 自然呈现已够用）。不 clamp 路径：输什么加载什么，失败态
+  // 自然呈现（404 错误页 / app shell 被 frame-ancestors 'none' 拒——语义自洽护栏）。
+  const navigate = (raw: string) => {
+    const value = raw.trim();
+    if (!value) return;
+    setCurrentUrl(value.startsWith("/") ? value : `/${value}`);
+  };
+
+  // 地址跟随（同源红利）：iframe 内点站内链接 → onLoad 读 contentWindow.location 同步
+  // 顶栏。跨源（地址栏输外站 URL）读 location 抛 SecurityError → 保持当前显示，不炸。
+  const syncFromFrame = () => {
+    try {
+      const loc = frameRef.current?.contentWindow?.location;
+      if (loc) setCurrentUrl(loc.pathname + loc.search + loc.hash);
+    } catch {
+      // 跨源文档 location 不可读——顶栏保持原值。
+    }
+  };
 
   // 受控关闭桥（照抄 PagesRootDialog，**追加** clearTimeout 先行——原版没有，其双触发
   // 只是覆盖 timer 良性顺延；本层双触发同理防御，语义同 mobile-sheet close 桥）：先内部
@@ -79,12 +112,39 @@ export function PagesPreviewLayer({ onClose, serveUrl }: PagesPreviewLayerProps)
       >
         <DialogTitle className="sr-only">{t("pages.previewTitle")}</DialogTitle>
         <div className="flex items-center gap-2 rounded-t-lg border-b border-neutral-line/60 bg-surface-raised/60 px-3 py-2 sm:px-5">
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-xs text-on-surface-soft"
-            title={displayUrl}
-          >
-            {displayUrl}
-          </span>
+          {editing ? (
+            <input
+              aria-label={t("pages.addressBar")}
+              autoFocus
+              className="min-w-0 flex-1 rounded-md border border-neutral-line/60 bg-surface-raised/60 px-2 py-1 font-mono text-xs text-on-surface outline-none focus:border-primary/60"
+              onBlur={() => setEditing(false)}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  navigate(draft);
+                  setEditing(false);
+                } else if (e.key === "Escape") {
+                  setEditing(false);
+                }
+              }}
+              spellCheck={false}
+              value={draft}
+            />
+          ) : (
+            // 只读地址（cursor-text 提示可点进编辑）；title = 完整地址（truncate 后
+            // 悬停可读全文）。
+            <button
+              className="min-w-0 flex-1 cursor-text truncate text-left font-mono text-xs text-on-surface-soft transition hover:text-on-surface"
+              onClick={() => {
+                setDraft(currentUrl);
+                setEditing(true);
+              }}
+              title={displayUrl}
+              type="button"
+            >
+              {displayUrl}
+            </button>
+          )}
           <button
             aria-label={t("session.close")}
             className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-neutral-line/60 hover:text-on-surface"
@@ -97,7 +157,13 @@ export function PagesPreviewLayer({ onClose, serveUrl }: PagesPreviewLayerProps)
         <div className="min-h-0 flex-1">
           {/* bg-white = 站点渲染面缺省底色（iframe 承载用户 HTML 页，instance-area 先例
               同款），非 UI token 面——tokens 机检 strict 收紧时勿改这里。 */}
-          <iframe className="h-full w-full border-0 bg-white" src={serveUrl} title={displayUrl} />
+          <iframe
+            className="h-full w-full border-0 bg-white"
+            onLoad={syncFromFrame}
+            ref={frameRef}
+            src={currentUrl}
+            title={displayUrl}
+          />
         </div>
       </DialogContent>
     </Dialog>

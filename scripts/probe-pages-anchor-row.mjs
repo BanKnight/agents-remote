@@ -8,8 +8,9 @@
 //    预览层不出现）、FAB「添加根」开 PagesRootDialog（pages tab 的 ＋）、行内操作按钮
 //    点击不触发导航（actions 容器 preventDefault 防线）。
 //  standalone 段（mock navigator.standalone）：点行开 app 内预览层（iframe src 正确、
-//    不导航、不开新页）、关闭回工作台、Ctrl+click 交浏览器原生开新页（修饰键守卫在
-//    standalone 仍有意义：桌面安装的 Chrome PWA 同为 standalone 形态）。
+//    不导航、不开新页）、地址栏点击编辑 → 导航 404 页自然呈现 + 顶栏跟随、iframe 内
+//    点站内链接地址跟随、关闭后重开回入口页、Ctrl+click 交浏览器原生开新页（修饰键
+//    守卫在 standalone 仍有意义：桌面安装的 Chrome PWA 同为 standalone 形态）。
 // 跑法：bun scripts/probe-pages-anchor-row.mjs（dev api 43011 + web 43012 在跑）。
 // 注意：右栏各 tab 面板 DOM 常驻 + hidden 切换，凡「查面板内元素」的断言必须限定在
 // 具体面板容器内或按可见性过滤，否则会命中隐藏面板的残留 DOM；预览层关闭钮 aria-label
@@ -142,7 +143,7 @@ try {
   await frame.waitFor({ timeout: 8000 });
   const frameSrc = await frame.getAttribute("src");
   const topbarUrl = await page.evaluate(
-    () => document.querySelector("[data-pages-preview] span.font-mono")?.textContent ?? "",
+    () => document.querySelector("[data-pages-preview] button[title^='http']")?.textContent ?? "",
   );
   const origUrl = page.url();
   record(
@@ -154,6 +155,58 @@ try {
     `src=${frameSrc} topbar=${topbarUrl} url=${origUrl} pages=${context.pages().length}`,
   );
 
+  // 2f) 地址栏编辑（2026-11-10 用户反馈「非 PWA 下可以自由输入地址」）：点只读地址 →
+  //     input 在场 → 输入不存在路径回车 → iframe src 变 + 我们 serve 的 404 错误页
+  //     自然呈现（不 clamp 路径的诚实语义）+ 顶栏跟随新路径（onLoad 同步）。
+  await page.locator("[data-pages-preview] button[title^='http']").click();
+  const addressInput = page.locator("[data-pages-preview] input[aria-label='站点地址']");
+  await addressInput.waitFor({ timeout: 8000 });
+  await addressInput.fill("/p/agents-remote/no-such-page.html");
+  await addressInput.press("Enter");
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("[data-pages-preview] iframe")
+        ?.getAttribute("src")
+        ?.includes("no-such-page.html") === true,
+    { timeout: 8000 },
+  );
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector("[data-pages-preview] iframe")
+        ?.contentDocument?.body?.textContent.includes("页面不存在") === true,
+    { timeout: 8000 },
+  );
+  const topbar404 = await page.evaluate(
+    () => document.querySelector("[data-pages-preview] button[title^='http']")?.textContent ?? "",
+  );
+  record(
+    "address bar navigates and follows frame location",
+    topbar404.includes("no-such-page.html"),
+    `topbar=${topbar404}`,
+  );
+
+  // 2g) 地址跟随（iframe 内点站内链接 → 顶栏同步）：向 404 页注入相对链接并真点击
+  //     （frameLocator 走原生 hit-test 导航链路）。
+  await page.evaluate(() => {
+    const doc = document.querySelector("[data-pages-preview] iframe")?.contentDocument;
+    const a = doc?.createElement("a");
+    if (!a || !doc) return;
+    a.href = "deeper.html";
+    a.textContent = "go-deeper";
+    doc.body.appendChild(a);
+  });
+  await page.frameLocator("[data-pages-preview] iframe").locator("a").click();
+  await page.waitForFunction(
+    () =>
+      (
+        document.querySelector("[data-pages-preview] button[title^='http']")?.textContent ?? ""
+      ).includes("deeper.html"),
+    { timeout: 8000 },
+  );
+  record("address bar follows in-frame link navigation", true);
+
   // 2d) 关闭钮 → 预览层卸载（exit 动画 + 300ms 桥，detached 等待天然容忍时长）。
   await page.locator("[data-pages-preview] button[aria-label='关闭']").click();
   await page.waitForSelector("[data-pages-preview]", { state: "detached", timeout: 8000 });
@@ -162,6 +215,15 @@ try {
     page.url().includes("/projects/agents-remote"),
     `url=${page.url()}`,
   );
+
+  // 2d2) 关闭后重开 → 回入口页（导航地址是预览层内部 state，关闭即弃——「浏览器
+  //      新开标签」语义，不污染父级 previewing）。
+  await page.locator('[aria-label="页面静态根"] a').first().click();
+  await page.locator("[data-pages-preview] iframe").waitFor({ timeout: 8000 });
+  const reopenSrc = await page.locator("[data-pages-preview] iframe").getAttribute("src");
+  record("reopen returns to entry url", reopenSrc === "/p/agents-remote/", `src=${reopenSrc}`);
+  await page.locator("[data-pages-preview] button[aria-label='关闭']").click();
+  await page.waitForSelector("[data-pages-preview]", { state: "detached", timeout: 8000 });
 
   // 2e) Ctrl+click 行 → 修饰键守卫放行浏览器原生开新页，预览层不出现（桌面安装的
   //     Chrome PWA 同为 standalone 形态，守卫仍必要）。

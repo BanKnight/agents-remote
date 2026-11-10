@@ -1202,6 +1202,7 @@ export const zh: Record<TranslationKey, string> = {
   "pages.deleteConfirmMessage": "停止提供「{{urlPath}}」对应的页面根？已生成的文件仍保留在磁盘。",
   "pages.loadFailed": "加载页面配置失败",
   "pages.previewTitle": "页面预览",
+  "pages.addressBar": "站点地址",
   "chat.title": "对话",
   "chat.searchPlaceholder": "搜索对话…",
   "chat.createAria": "新建对话",

@@ -1235,6 +1235,7 @@ export const en = {
     'Stop serving the root at "{{urlPath}}"? Generated files stay on disk.',
   "pages.loadFailed": "Failed to load pages config",
   "pages.previewTitle": "Page preview",
+  "pages.addressBar": "Site address",
   "chat.title": "Chat",
   "chat.searchPlaceholder": "Search chats…",
   "chat.createAria": "New chat",
