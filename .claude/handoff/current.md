@@ -1,76 +1,79 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-10 00:20（**预览层批** `043acf3`；
-> push 待确认——`50f8e86..043acf3` 共 3 commit）
+> 最后更新：2026-11-10 09:59（**standalone gate 批** `e5e4839` + P2 消化 `bb4b2f6`；
+> push 待确认——`50f8e86..bb4b2f6` 共 6 commit）
 
 ## 一句话状态
 
-iOS standalone PWA「点 pages 行工作台被顶掉」三轮报障终案：**同源链接在 standalone
-PWA 里开不了新窗口是平台硬限制**（target=_blank / window.open 一律降级成当前视图导航），
-`9dca05c` 的真链接方案被真机否证后，用户拍板改 **app 内预览层**（iframe + 关闭钮，
-还原「内置浏览器可单独关掉」体验），`043acf3` 交付（探针 7/7 + 全门禁 + 双 reviewer
-无 P0，结论全部消化）。本地 3 commit 未 push。
+用户对预览层批（`043acf3`）三条真机反馈全部落地：①顶栏地址显示完整域名（origin +
+serveUrl）；②预览层只在 standalone PWA 打开（`isStandaloneDisplay` gate，非 standalone
+点行放行原生 `target=_blank` 新标签，顶栏「新窗口」钮删除）；③旧版 header「添加根」
+ActionButton 退役（v2 换底前残留），入口改右栏 FAB ＋（files/pages tab 双分支，双端
+同构，移动端无入口缺口一并补齐）。双 reviewer 无 P0/P1，P2 全部消化（`bb4b2f6`）。
 
 ## 本 session 焦点
 
 ### 关键决策 / 发现（不可丢）
 
-- **iOS standalone PWA 同源新窗口 = 平台硬限制**：跨源才有系统级模态视图（用户记忆的
-  「内置浏览器可关闭」形态）；同源无论 `<a target=_blank>` 还是 window.open 都当前
-  视图导航。前端写法绕不过 → 预览层是唯一出路。
-- **PagesPreviewLayer 结构**（`web/src/components/pages/pages-preview-layer.tsx`）：
-  全屏 Dialog 三件套（gen-ui 骨架：inset-0/translate-0/max-w-none）+ PagesRootDialog
-  同款 close 延迟卸载桥（**追加** clearTimeout 先行，原版没有）+ `data-pages-preview`
-  探针锚点。**不设 z-[100]**（AuthGate token 过期须靠 portal DOM 序压上）。
-  **onCloseAutoFocus preventDefault**（§33 动机平台蓝环预判——桌面 Dialog 政策在
-  iOS touch 主用层让位，桌面键盘焦点落 body 是已知取舍）。
-- **行 onClick 双通道契约**（pages-panel）：修饰键守卫（metaKey/ctrlKey/shiftKey/altKey
-  放行原生新标签）+ preventDefault + setPreviewing(serveUrl)。中键走 auxclick 天然不
-  触发。存 URL 串不存 PagesRoot 对象（防编辑后脏引用）。
-- **iframe 不加 sandbox（诚实威胁模型，security review 定稿）**：allow-same-origin
-  等于无隔离；opaque origin 丢 cookie → token 根 401。信任边界 = 项目目录内容可能被
-  Agent 工作流污染，同源 iframe 可骑 HttpOnly cookie 调 /api 全量 + parent DOM 可达
-  ——与顶层新开 /p/ 同为既有基线，单用户控制平面下接受。注释已记档。
-- **standalone 检测走 `isStandaloneDisplay()` 单源**（lib/display-mode.ts）；standalone
-  下顶栏「新窗口」钮不渲染（点了即当前视图导航陷阱）。
-- **待拍板（security review P2，未做）**：`/p/` serve 响应加 `CSP: frame-ancestors
-  'self'`（防外站嵌入滥用；预览层同源不受影响）+ 工作台 app shell 加 `frame-ancestors
-  'none'`（clickjacking 面，价值更高）。**改 api 会 bun --watch 热重启 → 杀 4 个活动
-  CLI 会话（含本会话 + 用户 3 个项目 agent）**，须用户确认时机后做。
+- **预览层 gate 双通道**：pages-panel 行 onClick 顺序 = 修饰键守卫在前（metaKey/
+  ctrlKey/shiftKey/altKey return）→ `isStandaloneDisplay()` 判定 → preventDefault +
+  setPreviewing。非 standalone 全放行原生（用户拍板「pwa 才是内嵌 iframe 方案，
+  其他平台跳转浏览器打开更合理」）；修饰键守卫在 standalone 仍有意义（桌面安装的
+  Chrome PWA 同为 standalone 形态，Cmd+click 存在）。
+- **顶栏「新窗口」钮删除的推理**：预览层只在 standalone 打开 → standalone 下同源
+  target=_blank 恒降级当前视图导航 → 该钮恒是陷阱。openInNewWindow i18n +
+  external-link 图标白名单一并回收（icons.ts 56 图标）。
+- **顶栏 displayUrl**：`window.location.origin + serveUrl` 纯展示（iframe src 保持
+  相对，语义不变）；iframe title 同步 displayUrl。
+- **FAB 扩展 pages（用户拍板）**：`activeKind === "files"` gate 扩为 files/pages
+  分流——pages 分支复用 `.fab` + `.plus` 同款（无菜单，单项动作直接 onClick 递增
+  `pagesAddRequest` 计数）→ PagesPanel `createRequest` 桥（既有 prop 首个真实消费
+  点，ref 初值守卫吃 mount 首跑）。双端：right-panel-tabs.tsx（桌面）+
+  mobile-workbench.tsx renderPanelFab（移动）。移动端此前无「添加根」入口（handoff
+  缺口记档）随本批补齐。
+- **probe-fab.mjs 5 处 FAIL = 过期探针（非本批回归）**：MobilePageHeader 结构、
+  files.createAria / pages.createAria drawer 入口在本批之前的 UI 演进中已删除/迁移，
+  探针没跟上（frontend-notes §29② 预置假设漂移）。本批 diff 与其断言面零交集。
+  待用户拍板是否重构跟进现 UI 形态。
+- **CSP frame-ancestors 仍待拍板**（security review P2，上批遗留）：`/p/` serve 加
+  `'self'` + app shell 加 `'none'`。改 api 会 bun --watch 热重启杀活动 CLI 会话
+  （含本会话），须用户确认时机。
 
 ### 进度
 
-- ✅ `043acf3` 预览层批：PagesPreviewLayer + pages-panel 接线 + icons/i18n + 探针改造
-- ✅ probe-pages-anchor-row 7/7（预览层在位/新窗口 popup/关闭回工作台/Ctrl+click/
-  编辑不导航/standalone 分支）；回归 probe-pages-default-root 5/5 / probe-pages-retry
-  3/3 / probe-inspector-row-menus ALL PASS
-- ✅ 全门禁（format/lint 0 warning/typecheck/test 1065 pass）+ CSS 硬闸 + tokens 机检
-  + content-type text/css；产物特征串（data-pages-preview）已进 WorkbenchRoute chunk
-- ✅ code-reviewer + security-reviewer 无 P0；已修：探针 2d waitForLoadState（P1）、
-  2e standalone 断言、威胁模型注释、close 桥注释、bg-white 意图注释、onCloseAutoFocus、
-  删 _diag-window-open-behavior.mjs（不入库）
+- ✅ `e5e4839` standalone gate 批：displayUrl + gate 双通道 + 删新窗口钮（i18n/icons
+  回收）+ 删 header「添加根」+ FAB 双端扩展 + 探针重排
+- ✅ probe-pages-anchor-row 重排 7/7（非 standalone 原生新页 / FAB 添加根 / standalone
+  预览层+完整域名+关闭+Ctrl+click）；回归 probe-pages-default-root 5/5 /
+  probe-pages-retry 3/3 / probe-inspector-row-menus ALL PASS
+- ✅ 全门禁（format/lint 0 warning/typecheck/test 1065 pass）+ CSS 硬闸 + tokens
+  机检 0 违例 + content-type text/css
+- ✅ 双 reviewer 无 P0/P1；P2 全部消化（`bb4b2f6`）：project-tool-panels 过期注释
+  同步、探针 WEB_ORIGIN 常量化 + 断言 2 popup race 兜底；P2-2（.plus inline 冗余）
+  与 P2-3（关闭钮圆角微差，既存）按自评不动
 
 ## 下一步
 
-1. **push 待确认**：`50f8e86..043acf3` 3 commit（ee179cc 重试按钮 + 9dca05c 外链行 +
-   043acf3 预览层）。
-2. **真机验收（更新版，交用户）**：
-   - iOS PWA 点 pages 行 → 预览层全屏在位（站点显示）、顶栏**无**「新窗口」钮、
-     关闭回工作台状态不丢；
-   - 桌面点行 → 预览层、顶栏钮开新标签、Cmd/Ctrl+click 原生新标签、中键同；
-   - 预览层关闭后行无浏览器蓝环（§33 预判拦截，真机复核）；
-   - token 根预览层正常显示。
-3. **CSP frame-ancestors 待拍板**（见关键决策末条）——用户方便重启 api 的窗口期做。
-4. wiki 格式对齐批（排队）→ wiki Quartz（先 /check-deps）。
-5. 移动端「添加根」无入口（缺口记档，待用户拍板）。
+1. **push 待确认**：`50f8e86..bb4b2f6` 6 commit（ee179cc 重试按钮 + 9dca05c 外链行 +
+   043acf3 预览层 + b7a7f37 handoff + e5e4839 gate 批 + bb4b2f6 P2 消化）。
+2. **真机验收（本批更新版，交用户）**：
+   - iOS PWA 点 pages 行 → 预览层全屏在位，顶栏地址**含完整域名**；
+   - 桌面/非 PWA 浏览器点行 → **原生新标签打开**（不再进预览层——新预期）；
+   - 预览层顶栏**无**「新窗口」钮（已删）；关闭回工作台状态不丢；
+   - 右栏 pages tab 有 FAB ＋ → 点开「添加根」dialog（桌面 + 移动双端；移动端首次
+     有添加根入口）；
+   - 旧版 header「添加根」不再出现（面板顶部直接列表）。
+3. **probe-fab.mjs 过期断言**（5 FAIL，历史遗留）：重构跟进现 UI 形态或退役，待拍板。
+4. **CSP frame-ancestors 待拍板**——用户方便重启 api 的窗口期做。
+5. wiki 格式对齐批（排队）→ wiki Quartz（先 /check-deps）。
 
 ## 易丢的关键上下文
 
-- 预览层行为链 golden path：行根 `<a href>`（保留）+ onClick（守卫→preventDefault→
-  setPreviewing）；层 = Dialog 受控 + close 桥 300ms；探锚 `data-pages-preview`。
-- 探针纪律沿用：右栏面板 DOM 常驻 hidden 切换须限定容器；关闭钮 aria-label=「关闭」
-  全 app 通用必须限定 `[data-pages-preview]` 作用域；中文断言须 locale:"zh-CN"。
-- **本会话 CLI（37627）由 api spawn**——api 热重启会杀掉本会话，改 api 前必须用户确认。
+- 探针纪律沿用：右栏面板 DOM 常驻 hidden 切换须限定容器（`[data-desktop-inspector]`）；
+  关闭钮 aria-label=「关闭」全 app 通用必须限定 `[data-pages-preview]` 作用域；
+  中文断言须 locale:"zh-CN"；standalone mock = addInitScript defineProperty
+  navigator.standalone（对后续导航生效）。
+- **本会话 CLI 由 api spawn**——api 热重启会杀掉本会话，改 api 前必须用户确认。
 - 探针跑法：`bun scripts/X.mjs`（repo 根，dev api 43011 / web 43012 在跑）。
 - web=prod build + watch（tmux `ar-dev:web`）；改 vite.config 必须 respawn。
 - bun test 2G / e2e 4G 用 systemd-run cgroup。
