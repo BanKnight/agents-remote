@@ -990,7 +990,8 @@ export function usePanelToolChip({
   /** files crumb 目录链（受控 cwd：桌面 = workbenchDesktopFilesPathAtom 经 right-panel-tabs
    *  受控传入（批 11）/ 移动 = filesPath）。 */
   currentPath?: string;
-  /** 激活标签种类（file 预览标签无 chip；pages 无 chip 槽——PagesPanel 自带 header）。 */
+  /** 激活标签种类（file 预览标签无 chip；pages 无 chip 槽——「添加根」入口 = 工作台
+   *  右栏 FAB ＋（right-panel-tabs / mobile-workbench，2026-11-10 起 header 已删）。 */
   kind: "git" | "files" | "pages" | "wiki" | "file";
   onPathChange?: (path: string) => void;
   projectKey: string;

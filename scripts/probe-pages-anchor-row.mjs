@@ -75,24 +75,30 @@ try {
 
   // 2) 左键点击行（普通浏览器 = 非 standalone）→ 放行原生 target=_blank 新标签；
   //    预览层不出现、页面自身不导航（2026-11-10 用户拍板「其他平台跳转浏览器打开」）。
+  //    race 5s 兜底（同 2e）：gate 回归成 preventDefault 时 popup 永不开 → 记 FAIL
+  //    而非裸 TimeoutError 死亡（诊断质量）。
   const before = context.pages().length;
   const rowPopupPromise = context.waitForEvent("page");
   await page.locator('[aria-label="页面静态根"] a').first().click();
-  const rowPopup = await rowPopupPromise;
-  await rowPopup.waitForLoadState();
+  const rowPopup = await Promise.race([
+    rowPopupPromise,
+    new Promise((resolve) => setTimeout(() => resolve(null), 5000)),
+  ]);
+  if (rowPopup) await rowPopup.waitForLoadState();
   await page.waitForTimeout(400); // 预览层若有也应挂出（exit 桥 300ms 量级，宽限观察）
   const previewAfterRow = await page.evaluate(
     () => document.querySelector("[data-pages-preview]") != null,
   );
   record(
     "row click opens native new tab without preview",
-    rowPopup.url().includes("/p/agents-remote/") &&
+    rowPopup != null &&
+      rowPopup.url().includes("/p/agents-remote/") &&
       !previewAfterRow &&
       page.url().includes("/projects/agents-remote") &&
       context.pages().length === before + 1,
-    `popup=${rowPopup.url()} preview=${previewAfterRow} pages=${context.pages().length}`,
+    `popup=${rowPopup ? rowPopup.url() : "none"} preview=${previewAfterRow} pages=${context.pages().length}`,
   );
-  await rowPopup.close();
+  if (rowPopup) await rowPopup.close();
 
   // 2b) FAB「添加根」（pages tab 的 ＋，2026-11-10 FAB 扩展批）→ PagesRootDialog 在场。
   await page.locator('[data-desktop-inspector] button[aria-label="添加根"]').click();
@@ -142,7 +148,7 @@ try {
   record(
     "standalone row click opens in-place preview layer",
     frameSrc === "/p/agents-remote/" &&
-      topbarUrl.startsWith("http://127.0.0.1:43012/p/agents-remote") &&
+      topbarUrl.startsWith(`${WEB_ORIGIN}/p/agents-remote`) &&
       origUrl.includes("/projects/agents-remote") &&
       context.pages().length === beforeStandalone,
     `src=${frameSrc} topbar=${topbarUrl} url=${origUrl} pages=${context.pages().length}`,
