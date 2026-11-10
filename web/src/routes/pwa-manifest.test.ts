@@ -39,4 +39,7 @@ test("PWA manifest includes Chromium installability icon sizes", () => {
 test("PWA service worker registration uses virtual:pwa-register", () => {
   expect(mainSource).toContain('import { registerSW } from "virtual:pwa-register"');
   expect(mainSource).toContain("registerSW(");
+  // autoUpdate 默认 activated(isUpdate) → 整页 reload（抹掉预览层/会话/终端状态，2026-11-10
+  // 真机报障）；空 onNeedReload 回调拦截 = 发版静默生效。删掉即回归。
+  expect(mainSource).toContain("onNeedReload");
 });

@@ -58,6 +58,16 @@ createRoot(root).render(
 );
 
 registerSW({
+  // autoUpdate 模式下 registerSW 的默认行为 = 新 SW activated(isUpdate) → 整页
+  // location.reload()——会抹掉一切进行中状态（预览层/会话输入草稿/终端）。2026-11-10
+  // 真机报障：桌面 PWA 测试 pages 预览层时撞上后台 SW 更新激活，页面被自动刷回工作台
+  // （main.tsx 每 30 分钟 + 每次 focus 主动 update()，连续发版期必撞）。传空 onNeedReload
+  // 拦截（1.3.0 register.js：有该回调则跳过 reload）。语义改为「发版静默生效」：新 SW
+  // 照常 skipWaiting+clientsClaim activate（precache 已更新），页面继续跑已加载代码，
+  // 用户下次刷新/重开自然用上新版——刷新走 precached index.html + 同版 chunk，原子性
+  // 不受影响（vite.config.ts「autoUpdate reloads once」注释的论证仍成立，只是 reload
+  // 时机交还给用户）。发版提示条（prompt 模式 UI）按需再加。
+  onNeedReload() {},
   onRegisteredSW(_swUrl, registration) {
     if (!registration) return;
     setInterval(
