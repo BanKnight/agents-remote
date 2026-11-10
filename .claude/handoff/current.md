@@ -1,7 +1,7 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-10 16:10（**地址栏批 `6cf6375` + SW reload 拦截 `6aabf38`**；
-> push 待确认——`50f8e86..6aabf38` 共 13 commit）
+> 最后更新：2026-11-10 16:10（**地址栏批 `6cf6375` + SW reload 拦截 `6aabf38` + 桌面
+> PWA 跳出 `a0cd822`**；14 commit 已 push 至 `5003fc8`，`a0cd822` 后待确认）
 
 ## 一句话状态
 
@@ -43,7 +43,7 @@ autoUpdate 默认 activated(isUpdate) → 整页 reload；main.tsx 传空 onNeed
 
 ## 下一步
 
-1. **push 待确认**：`50f8e86..6aabf38` 共 13 commit。
+1. **push 待确认**：`5003fc8..a0cd822` 共 1 commit（桌面 PWA 跳出批）。
 2. **真机验收（交用户）**：iOS PWA 点行 → 预览层（地址含域名、可点编辑导航、iframe
    内导航地址跟随、无「新窗口」钮、关闭回工作台回入口页）；桌面点行 → 原生新标签；
    FAB ＋ 添加根双端。
