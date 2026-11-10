@@ -72,6 +72,13 @@ export const createStaticWebHandler = (distDir: string): StaticWebHandler => {
     const headers: Record<string, string> = {
       "Cache-Control": isHashedAsset(pathname) ? CACHE_IMMUTABLE : CACHE_NO_CACHE,
     };
+    // app shell（唯一 HTML 面 = index.html / SPA fallback）禁任何 iframe 嵌入
+    //（clickjacking，security review 2026-11-10 P2）；pages serve（/p/）反向用
+    // 'self'（index.ts PAGES_SERVE_CSP_HEADERS——预览层同源嵌入要放行）。资产非
+    // 文档，frame-ancestors 无意义不加。
+    if (file.type.startsWith("text/html")) {
+      headers["Content-Security-Policy"] = "frame-ancestors 'none'";
+    }
     // HEAD 与 GET 头对称（缓存代理语义）：body 置 null，但保留 Content-Type/Length。
     if (request.method === "HEAD") {
       return new Response(null, {

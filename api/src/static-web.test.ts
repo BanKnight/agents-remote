@@ -25,12 +25,13 @@ const handler = () => createStaticWebHandler(dist);
 const get = (pathname: string, init?: RequestInit) =>
   new Request(`http://localhost${pathname}`, init);
 
-test("根路径 → SPA 壳 index.html（no-cache）", async () => {
+test("根路径 → SPA 壳 index.html（no-cache + frame-ancestors 'none'）", async () => {
   const res = await handler()("/", get("/"));
   expect(res).not.toBeUndefined();
   expect(res!.status).toBe(200);
   expect(await res!.text()).toContain("spa");
   expect(res!.headers.get("Cache-Control")).toBe("no-cache");
+  expect(res!.headers.get("Content-Security-Policy")).toBe("frame-ancestors 'none'");
 });
 
 test("/assets/*（hash 文件名）→ immutable 长缓存", async () => {
@@ -38,6 +39,8 @@ test("/assets/*（hash 文件名）→ immutable 长缓存", async () => {
   expect(res!.status).toBe(200);
   expect(await res!.text()).toBe("console.log('app')");
   expect(res!.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+  // 资产非文档，frame-ancestors 无意义（负向断言防扩散到全部响应）。
+  expect(res!.headers.get("Content-Security-Policy")).toBeNull();
 });
 
 test("/sw.js → 200 且 no-cache（PWA autoUpdate 依赖每次校验）", async () => {

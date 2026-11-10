@@ -119,6 +119,27 @@ function previewBadAsset404(): Plugin {
   };
 }
 
+// preview 面 HTML 响应禁 iframe 嵌入（clickjacking，security review 2026-11-10 P2；
+// 与 api/src/static-web.ts 生产形态对齐——dev/tunnel 面的 app shell 由 preview serve）。
+// /api、/p/ 代理前缀跳过（/p/ 的 CSP 由 api 出 'self'，预览层同源嵌入要放行）；
+// 无扩展名路径 = SPA fallback → index.html；前置 setHeader 经 Node setHeader 聚合，
+// sirv/fallback 响应保留预设头。只挂 preview（dev 逃生口不挂，对齐 previewBadAsset404）。
+function previewHtmlFrameAncestors(): Plugin {
+  return {
+    name: "preview-html-frame-ancestors",
+    configurePreviewServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+        if (pathname.startsWith("/api/") || pathname.startsWith("/p/")) return next();
+        const last = pathname.slice(pathname.lastIndexOf("/") + 1);
+        if (last.includes(".") && !last.endsWith(".html")) return next();
+        res.setHeader("Content-Security-Policy", "frame-ancestors 'none'");
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     react(),
@@ -222,6 +243,7 @@ export default defineConfig({
       },
     }),
     previewBadAsset404(),
+    previewHtmlFrameAncestors(),
   ],
   resolve: {
     alias: {

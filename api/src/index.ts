@@ -263,12 +263,21 @@ export const createFetchHandler =
               // （JSON）不动。
               return new Response(
                 pagesServeErrorPage(401, "需要访问令牌", "该页面受访问令牌保护，请附带令牌后重试"),
-                { status: 401, headers: { "Content-Type": "text/html; charset=utf-8" } },
+                {
+                  status: 401,
+                  headers: {
+                    "Content-Type": "text/html; charset=utf-8",
+                    ...PAGES_SERVE_CSP_HEADERS,
+                  },
+                },
               );
             }
           }
           if (request.headers.get("If-None-Match") === served.etag) {
-            return new Response(null, { status: 304, headers: { ETag: served.etag } });
+            return new Response(null, {
+              status: 304,
+              headers: { ETag: served.etag, ...PAGES_SERVE_CSP_HEADERS },
+            });
           }
           return new Response(new Uint8Array(served.content), {
             headers: {
@@ -276,6 +285,7 @@ export const createFetchHandler =
               ETag: served.etag,
               // 弱缓存：浏览器每次校验 ETag（决策点 4「不强缓存」）。
               "Cache-Control": "no-cache",
+              ...PAGES_SERVE_CSP_HEADERS,
             },
           });
         } catch (error) {
@@ -2315,6 +2325,13 @@ const projectPagesErrorResponse = (error: ProjectPagesError) => {
 };
 
 // /p/ serve 面错误页（2026-11-08 用户真机反馈）：公开面消费者是浏览器访客，错误一律
+// pages serve 面统一 CSP：允许同源嵌入（app 内预览层 iframe），拒外站滥用嵌入
+//（security review 2026-11-10 P2）。app shell 反向用 'none'（static-web.ts /
+// preview 中间件）——clickjacking 面价值更高。
+const PAGES_SERVE_CSP_HEADERS = {
+  "Content-Security-Policy": "frame-ancestors 'self'",
+} as const;
+
 // HTML 页而非裸 JSON（{"error":{...}} 对访客不可读——默认根指向的 site/ 未建时点击
 // 预览即触发）。config 端点（isConfig，UI 消费）保持 JSON。页面无外部资源（访客
 // 上下文没有 /assets）；不回显 error.message（PATH_OUTSIDE_ROOT 等的 message 含
@@ -2340,24 +2357,27 @@ const pagesServeErrorResponse = (error: ProjectPagesError): Response => {
   if (error.code === "PROJECT_FILE_NOT_FOUND") {
     return new Response(
       pagesServeErrorPage(404, "页面不存在", "该路径还没有内容，或内容尚未发布"),
-      { status: 404, headers: { "Content-Type": "text/html; charset=utf-8" } },
+      {
+        status: 404,
+        headers: { "Content-Type": "text/html; charset=utf-8", ...PAGES_SERVE_CSP_HEADERS },
+      },
     );
   }
   if (error.code === "PROJECT_NOT_FOUND") {
     return new Response(pagesServeErrorPage(404, "页面不存在", "项目不存在或已被移除"), {
       status: 404,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+      headers: { "Content-Type": "text/html; charset=utf-8", ...PAGES_SERVE_CSP_HEADERS },
     });
   }
   if (error.code === "PROJECT_FS_ERROR") {
     return new Response(pagesServeErrorPage(500, "服务暂时不可用", "请稍后重试"), {
       status: 500,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+      headers: { "Content-Type": "text/html; charset=utf-8", ...PAGES_SERVE_CSP_HEADERS },
     });
   }
   return new Response(pagesServeErrorPage(400, "请求无效", "无法处理该请求"), {
     status: 400,
-    headers: { "Content-Type": "text/html; charset=utf-8" },
+    headers: { "Content-Type": "text/html; charset=utf-8", ...PAGES_SERVE_CSP_HEADERS },
   });
 };
 

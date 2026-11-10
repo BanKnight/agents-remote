@@ -875,6 +875,8 @@ test("createFetchHandler serves pages public roots with ETag, index default page
   });
   expect(served.status).toBe(200);
   expect(served.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+  // 同源嵌入放行（预览层 iframe），外站拒（security review 2026-11-10 P2）。
+  expect(served.headers.get("Content-Security-Policy")).toBe("frame-ancestors 'self'");
   expect(await served.text()).toBe("<h1>hello</h1>");
   const etag = served.headers.get("ETag");
   expect(etag?.startsWith('W/"')).toBe(true);
