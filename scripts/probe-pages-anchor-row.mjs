@@ -220,6 +220,50 @@ try {
   );
   record("address bar follows in-frame link navigation", true);
 
+  // 2h) 同文档导航跟随——hash 锚点（不触发 iframe load，靠 load 时挂的 hashchange 监听）：
+  //     注入锚点链接并真点击 → 顶栏 hash 跟随（2026-11-10 用户提醒「页面间跳转地址栏也要更新」）。
+  await page.evaluate(() => {
+    const doc = document.querySelector("[data-pages-preview] iframe")?.contentDocument;
+    const a = doc?.createElement("a");
+    if (!a || !doc) return;
+    a.href = "#anchor-2h";
+    a.textContent = "go-hash";
+    doc.body.appendChild(a);
+  });
+  await page.frameLocator("[data-pages-preview] iframe").locator("a").last().click();
+  await page.waitForFunction(
+    () =>
+      (
+        document.querySelector("[data-pages-preview] button[title^='http']")?.textContent ?? ""
+      ).includes("#anchor-2h"),
+    { timeout: 8000 },
+  );
+  record("address bar follows in-frame hash navigation", true);
+
+  // 2i) 同文档导航跟随——SPA pushState（不触发 load，靠 currententrychange）：注入按钮
+  //     调 history.pushState → 顶栏路径跟随（Navigation API 单一事件源覆盖）。闭包里
+  //     history 必须显式取 doc.defaultView——evaluate 的函数对象携带宿主 realm，裸
+  //     history 会解析到宿主页（pushState 打错对象，iframe 顶栏自然不动）。
+  await page.evaluate(() => {
+    const doc = document.querySelector("[data-pages-preview] iframe")?.contentDocument;
+    const win = doc?.defaultView;
+    const b = doc?.createElement("button");
+    if (!b || !doc || !win) return;
+    b.id = "spa-push";
+    b.textContent = "push-state";
+    b.onclick = () => win.history.pushState(null, "", "/p/agents-remote/spa-view");
+    doc.body.appendChild(b);
+  });
+  await page.frameLocator("[data-pages-preview] iframe").locator("#spa-push").click();
+  await page.waitForFunction(
+    () =>
+      (
+        document.querySelector("[data-pages-preview] button[title^='http']")?.textContent ?? ""
+      ).includes("spa-view"),
+    { timeout: 8000 },
+  );
+  record("address bar follows in-frame pushState navigation", true);
+
   // 2d) 关闭钮 → 预览层卸载（exit 动画 + 300ms 桥，detached 等待天然容忍时长）。
   await page.locator("[data-pages-preview] button[aria-label='关闭']").click();
   await page.waitForSelector("[data-pages-preview]", { state: "detached", timeout: 8000 });

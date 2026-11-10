@@ -41,18 +41,24 @@ type PagesPreviewLayerProps = {
  */
 export function PagesPreviewLayer({ onClose, serveUrl: entryUrl }: PagesPreviewLayerProps) {
   const { t } = useT();
-  // 预览层内导航地址（内部 state）：入口 = serveUrl prop，地址栏编辑 / iframe 内点链
-  // 接都在这里演进。关闭即弃——下次打开回入口页（对齐浏览器新开标签语义），不污染
-  // 父级 previewing（存入口串防脏引用的契约保持）。
-  const [currentUrl, setCurrentUrl] = useState(entryUrl);
+  // 两个导航 state 单向分流（display state 不得回流驱动 state——回流曾致「双导航」：
+  // syncFromFrame 把 iframe 自主导航到的新地址写回 src prop，React diff 到 src 变化
+  // 再导航一次，页面加载两遍。2026-11-10 探针 2h 实抓）：
+  // - frameUrl：驱动 iframe src。**只在用户显式导航**（地址栏提交）时变；iframe 内
+  //   自主导航（点站内链接/SPA 路由）是 browsing context 自主行为，不回流写 src。
+  // - addressBarUrl：顶栏显示。随 frame 实际位置演进（onLoad/同文档事件同步）。
+  // 关闭即弃——下次打开回入口页（对齐浏览器新开标签语义），不污染父级 previewing
+  // （存入口串防脏引用的契约保持）。
+  const [frameUrl, setFrameUrl] = useState(entryUrl);
+  const [addressBarUrl, setAddressBarUrl] = useState(entryUrl);
   // 地址栏编辑态：默认只读展示（点击变输入框，Enter 提交 / Esc·blur 取消）——常驻
   // input 在窄顶栏里全是输入框形态，视觉噪音大于价值。
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   // 顶栏展示完整地址（含域名，2026-11-10 用户反馈「地址没有域名部分，看起来很奇怪」）；
-  // iframe src 用相对 currentUrl（同源语义不变）。
-  const displayUrl = window.location.origin + currentUrl;
+  // iframe src 用相对 frameUrl（同源语义不变）。
+  const displayUrl = window.location.origin + addressBarUrl;
 
   // 地址栏提交：非 / 开头按站点根相对解析（浏览器地址栏根相对直觉；./ ../ 相对解析
   // 不做——magic 步骤多、404 自然呈现已够用）。不 clamp 路径：输什么加载什么，失败态
@@ -60,17 +66,42 @@ export function PagesPreviewLayer({ onClose, serveUrl: entryUrl }: PagesPreviewL
   const navigate = (raw: string) => {
     const value = raw.trim();
     if (!value) return;
-    setCurrentUrl(value.startsWith("/") ? value : `/${value}`);
+    const next = value.startsWith("/") ? value : `/${value}`;
+    setFrameUrl(next);
+    setAddressBarUrl(next);
   };
 
-  // 地址跟随（同源红利）：iframe 内点站内链接 → onLoad 读 contentWindow.location 同步
-  // 顶栏。跨源（地址栏输外站 URL）读 location 抛 SecurityError → 保持当前显示，不炸。
+  // 地址跟随（同源红利）：iframe 内导航 → 同步顶栏。两条路径：
+  // ① 跨文档导航（点站内链接整页跳转 / 地址栏提交）→ iframe onLoad 触发 syncFromFrame；
+  // ② 同文档导航（hash 锚点 / SPA pushState/replaceState，2026-11-10 用户提醒「页面间
+  //    跳转地址栏也要更新」）→ **不触发 load**——load 时在 frame 的 window 上挂
+  //    currententrychange（Navigation API，覆盖 pushState/replaceState/hash 全部）+
+  //    hashchange/popstate 兜底引擎。同文档监听随旧文档销亡，新 load 重挂，无需手动
+  //    cleanup（listener 生命周期绑定其 window）。跨源（地址栏输外站）读 location 即抛
+  //    SecurityError → 保持当前显示，不炸（跨源 WindowProxy 连 addEventListener 都摸不到，
+  //    同落 catch）。
   const syncFromFrame = () => {
     try {
-      const loc = frameRef.current?.contentWindow?.location;
-      if (loc) setCurrentUrl(loc.pathname + loc.search + loc.hash);
+      const win = frameRef.current?.contentWindow;
+      const loc = win?.location;
+      if (!win || !loc) return;
+      const sync = () => {
+        try {
+          const l = frameRef.current?.contentWindow?.location;
+          if (l) setAddressBarUrl(l.pathname + l.search + l.hash);
+        } catch {
+          // 跨源——顶栏保持原值。
+        }
+      };
+      win.addEventListener("hashchange", sync);
+      win.addEventListener("popstate", sync);
+      // Navigation API（Chromium 102+ / WebKit 18.2+）：currententrychange 是同文档导航
+      // 的单一事件源（pushState/replaceState/hash 全覆盖），不再侵入 patch history。
+      const nav = (win as Window & { navigation?: EventTarget }).navigation;
+      nav?.addEventListener("currententrychange", sync);
+      setAddressBarUrl(loc.pathname + loc.search + loc.hash);
     } catch {
-      // 跨源文档 location 不可读——顶栏保持原值。
+      // 跨源文档 location/事件面不可触——顶栏保持原值。
     }
   };
 
@@ -138,7 +169,7 @@ export function PagesPreviewLayer({ onClose, serveUrl: entryUrl }: PagesPreviewL
             <button
               className="min-w-0 flex-1 cursor-text truncate text-left font-mono text-xs text-on-surface-soft transition hover:text-on-surface"
               onClick={() => {
-                setDraft(currentUrl);
+                setDraft(addressBarUrl);
                 setEditing(true);
               }}
               title={displayUrl}
@@ -163,7 +194,7 @@ export function PagesPreviewLayer({ onClose, serveUrl: entryUrl }: PagesPreviewL
             className="h-full w-full border-0 bg-white"
             onLoad={syncFromFrame}
             ref={frameRef}
-            src={currentUrl}
+            src={frameUrl}
             title={displayUrl}
           />
         </div>
