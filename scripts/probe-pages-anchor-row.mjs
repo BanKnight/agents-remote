@@ -1,16 +1,18 @@
 #!/usr/bin/env bun
 // probe-pages-anchor-row.mjs — pages 行交互探针（2026-11-09 预览层批；2026-11-10
-// standalone gate 批重排：预览层只在 standalone PWA 打开，非 standalone 点行放行原生
-// target=_blank 新标签）。
+// standalone gate 批重排：预览层只在移动安装的 PWA 打开——standalone + 触屏（
+// isMobileStandaloneDisplay），非移动 PWA 平台（桌面浏览器/桌面 Chrome PWA）点行放行
+// 原生 target=_blank 新标签跳出浏览器（2026-11-10 用户拍板「桌面端跳出浏览器更合适」）。
 //
 // 单测验不到的面：真浏览器内行点击行为链——
 //  普通浏览器段：行根是真链接（href/target/rel 正确）、左键点行 = 原生新标签（popup，
 //    预览层不出现）、FAB「添加根」开 PagesRootDialog（pages tab 的 ＋）、行内操作按钮
 //    点击不触发导航（actions 容器 preventDefault 防线）。
-//  standalone 段（mock navigator.standalone）：点行开 app 内预览层（iframe src 正确、
-//    不导航、不开新页）、地址栏点击编辑 → 导航 404 页自然呈现 + 顶栏跟随、iframe 内
-//    点站内链接地址跟随、关闭后重开回入口页、Ctrl+click 交浏览器原生开新页（修饰键
-//    守卫在 standalone 仍有意义：桌面安装的 Chrome PWA 同为 standalone 形态）。
+//  移动 PWA 段（mock navigator.standalone + 触屏 matchMedia）：点行开 app 内预览层（iframe
+//    src 正确、不导航、不开新页）、地址栏点击编辑 → 导航 404 自然呈现 + 顶栏跟随、
+//    iframe 内点站内链接地址跟随、关闭后重开回入口页、Ctrl+click 交浏览器原生开新页。
+//  桌面 PWA 段（mock navigator.standalone、无触屏 mock）：点行放行原生新标签跳出浏览器，
+//    预览层不出现——桌面 Chrome/Edge PWA 的 Chromium _blank 能正常开新标签。
 // 跑法：bun scripts/probe-pages-anchor-row.mjs（dev api 43011 + web 43012 在跑）。
 // 注意：右栏各 tab 面板 DOM 常驻 + hidden 切换，凡「查面板内元素」的断言必须限定在
 // 具体面板容器内或按可见性过滤，否则会命中隐藏面板的残留 DOM；预览层关闭钮 aria-label
@@ -126,10 +128,21 @@ try {
   await page.keyboard.press("Escape");
   await page.waitForSelector('[role="dialog"]', { state: "detached", timeout: 8000 });
 
-  // ── standalone 段：mock navigator.standalone（iOS PWA 语义，addInitScript 对后续
-  //    导航生效）→ 点行进 app 内预览层（唯一出路：同源链接开不了新窗口的平台硬限制）。
+  // ── 移动 PWA 段：mock navigator.standalone + 触屏 matchMedia（iPhone PWA 语义——
+  //    gate = isMobileStandaloneDisplay = standalone + (hover:none)+(pointer:coarse)，
+  //    addInitScript 对后续导航生效）→ 点行进 app 内预览层（唯一出路：同源链接开不了
+  //    新窗口的平台硬限制）。matchMedia mock 用 defineProperty 覆盖 MediaQueryList.matches
+  //    （getter 不可直接赋值）。
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "standalone", { value: true, configurable: true });
+    const orig = window.matchMedia.bind(window);
+    window.matchMedia = (query) => {
+      const mql = orig(query);
+      if (query === "(hover: none) and (pointer: coarse)") {
+        Object.defineProperty(mql, "matches", { value: true, configurable: true });
+      }
+      return mql;
+    };
   });
   await page.goto(`${WEB_ORIGIN}/projects/agents-remote?v=3`);
   await page.waitForSelector("nav.side", { timeout: 15000 });
@@ -246,6 +259,52 @@ try {
     `popup=${ctrlPopup ? ctrlPopup.url() : "none"} preview=${previewAfterCtrl}`,
   );
   if (ctrlPopup) await ctrlPopup.close();
+  await context.close();
+
+  // ── 段 3：桌面安装的 PWA（standalone 无触屏——Chromium context 默认 pointer:fine）
+  //    点行放行原生 target=_blank 跳浏览器开新标签，预览层不出现（2026-11-10 用户拍板
+  //    「桌面端跳出浏览器更合适」）。新 context：mock 集与移动 PWA 段互不污染。
+  const desktopCtx = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    locale: "zh-CN",
+  });
+  const dPage = await desktopCtx.newPage();
+  await dPage.addInitScript(() => localStorage.setItem("workbenchRightCollapsed", "false"));
+  await dPage.addInitScript(() => {
+    Object.defineProperty(navigator, "standalone", {
+      value: true,
+      configurable: true,
+    });
+  });
+  await dPage.goto(`${WEB_ORIGIN}/`);
+  await dPage.locator("input[type='password']").fill(await readAppPassword());
+  await dPage.locator("button[type='submit']").click();
+  await dPage.waitForTimeout(600);
+  await dPage.goto(`${WEB_ORIGIN}/projects/agents-remote?v=4`);
+  await dPage.waitForSelector("nav.side", { timeout: 15000 });
+  await dPage.locator("main > div > aside").nth(1).getByRole("tab", { name: "页面" }).click();
+  await dPage.locator('[aria-label="页面静态根"] a').first().waitFor({ timeout: 8000 });
+  const desktopBefore = desktopCtx.pages().length;
+  const desktopPopupPromise = desktopCtx.waitForEvent("page");
+  await dPage.locator('[aria-label="页面静态根"] a').first().click();
+  const desktopPopup = await Promise.race([
+    desktopPopupPromise,
+    new Promise((resolve) => setTimeout(() => resolve(null), 5000)),
+  ]);
+  if (desktopPopup) await desktopPopup.waitForLoadState();
+  const desktopPreview = await dPage.evaluate(
+    () => document.querySelector("[data-pages-preview]") != null,
+  );
+  record(
+    "desktop PWA row click opens native new tab (no preview)",
+    desktopPopup != null &&
+      desktopPopup.url().includes("/p/agents-remote/") &&
+      !desktopPreview &&
+      desktopCtx.pages().length === desktopBefore + 1,
+    `popup=${desktopPopup ? desktopPopup.url() : "none"} preview=${desktopPreview}`,
+  );
+  if (desktopPopup) await desktopPopup.close();
+  await desktopCtx.close();
 } finally {
   await browser.close();
 }

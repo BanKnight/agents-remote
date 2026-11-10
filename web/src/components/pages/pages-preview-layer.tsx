@@ -13,10 +13,12 @@ type PagesPreviewLayerProps = {
 
 /**
  * pages 站点 app 内预览层（全屏 Dialog + iframe，双端同构零分支——全屏形态在桌面/移动
- * 本就是同一容器，iframe 也不跨容器移动）。**只在 standalone PWA 打开**：行点击的
- * standalone gate 在 pages-panel——非 standalone 平台点行放行原生 target=_blank 新标签
- * （2026-11-10 用户拍板「pwa 才是内嵌 iframe 方案，其他平台跳转浏览器更合理」）；进层
- * 的动机是 iOS standalone PWA 同源链接开不了新窗口是平台硬限制（target=_blank /
+ * 本就是同一容器，iframe 也不跨容器移动）。**只在「移动安装的 PWA」打开**：行点击的
+ * gate 在 pages-panel（isMobileStandaloneDisplay = standalone + 触屏 primary pointer）
+ * ——其他一切平台（桌面/移动浏览器、桌面安装的 Chrome/Edge PWA）点行放行原生
+ * target=_blank 新标签（2026-11-10 用户拍板两段式：「pwa 才是内嵌 iframe 方案」→ 追加
+ * 「桌面端跳出浏览器更合适」——Chromium 的 _blank 正常开浏览器新标签）；进层的动机是
+ * iOS/Android WebKit standalone 同源链接开不了新窗口是平台硬限制（target=_blank /
  * window.open 都降级成当前视图导航，2026-11-09 真机报障三轮定案）。
  *
  * 三个刻意取舍（后续维护易误改，记档）：

@@ -4,7 +4,7 @@ import type { PagesRoot } from "@agents-remote/shared";
 import { useT } from "../../i18n";
 import { pagesServeUrl } from "../../api/client";
 import { PAGES_QUERY_SCOPE, usePagesConfig, useUpdatePagesConfig } from "../../hooks/pages";
-import { isStandaloneDisplay } from "../../lib/display-mode";
+import { isMobileStandaloneDisplay } from "../../lib/display-mode";
 import {
   ActionButton,
   IconMarker,
@@ -152,11 +152,13 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
                   // auxclick 天然不触发 onClick。行内编辑/删除按钮不受影响：actions
                   // 容器已 stopPropagation（ListRow 内建）。
                   if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                  // 预览层只在 standalone PWA 打开（2026-11-10 用户拍板「pwa 才是内嵌
-                  // iframe 方案，其他平台跳转浏览器更合理」）：非 standalone 放行原生
-                  // target=_blank 新标签；standalone 进 app 内预览层（同源链接开不了
-                  // 新窗口的平台硬限制出路）。
-                  if (!isStandaloneDisplay()) return;
+                  // 预览层只在「移动安装的 PWA」打开（2026-11-10 用户拍板两段式：「pwa 才
+                  // 是内嵌 iframe 方案，其他平台跳转浏览器更合理」→ 同日追加「桌面端跳出
+                  // 浏览器更合适」）：iOS/Android WebKit standalone 同源链接开不了新窗口
+                  // （平台硬限制）才需要 app 内预览层；桌面 Chrome/Edge PWA 的 _blank 正常
+                  // 开浏览器新标签，放行原生跳转。判定 = isMobileStandaloneDisplay
+                  // （standalone + 触屏 primary pointer，display-mode.ts 单源）。
+                  if (!isMobileStandaloneDisplay()) return;
                   e.preventDefault();
                   setPreviewing(pagesServeUrl(projectName, root.urlPath));
                 }}
