@@ -1,23 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useT } from "../../i18n";
-import { isStandaloneDisplay } from "../../lib/display-mode";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { ShellIcon } from "../shell/icons";
-import { LucideIcon } from "../shell/lucide-icon";
 import { SHEET_UNMOUNT_DELAY_MS } from "../shell/mobile-sheet";
 
 type PagesPreviewLayerProps = {
-  /** 站点 serve URL（/p/{project}/…），顶栏展示 + iframe 加载 + 新窗口钮共用。 */
+  /** 站点 serve URL（/p/{project}/…），顶栏展示 + iframe 加载共用。 */
   serveUrl: string;
   onClose: () => void;
 };
 
 /**
  * pages 站点 app 内预览层（全屏 Dialog + iframe，双端同构零分支——全屏形态在桌面/移动
- * 本就是同一容器，iframe 也不跨容器移动）。行点击进入此层是 iOS standalone PWA 的唯一
- * 出路：同源链接开不了新窗口是平台硬限制（target=_blank / window.open 都降级成当前
- * 视图导航，2026-11-09 真机报障三轮定案）。
+ * 本就是同一容器，iframe 也不跨容器移动）。**只在 standalone PWA 打开**：行点击的
+ * standalone gate 在 pages-panel——非 standalone 平台点行放行原生 target=_blank 新标签
+ * （2026-11-10 用户拍板「pwa 才是内嵌 iframe 方案，其他平台跳转浏览器更合理」）；进层
+ * 的动机是 iOS standalone PWA 同源链接开不了新窗口是平台硬限制（target=_blank /
+ * window.open 都降级成当前视图导航，2026-11-09 真机报障三轮定案）。
  *
  * 三个刻意取舍（后续维护易误改，记档）：
  * ① iframe 不加 sandbox——技术前提：allow-scripts+allow-same-origin 等价于无隔离；
@@ -35,8 +35,9 @@ type PagesPreviewLayerProps = {
  */
 export function PagesPreviewLayer({ onClose, serveUrl }: PagesPreviewLayerProps) {
   const { t } = useT();
-  // 组件按需挂载，单次读取即可（matchMedia 变化不需要响应——层生命周期内形态不变）。
-  const standalone = isStandaloneDisplay();
+  // 顶栏展示完整地址（含域名，2026-11-10 用户反馈「地址没有域名部分，看起来很奇怪」）；
+  // iframe src 仍用相对 serveUrl（同源语义不变）。
+  const displayUrl = window.location.origin + serveUrl;
 
   // 受控关闭桥（照抄 PagesRootDialog，**追加** clearTimeout 先行——原版没有，其双触发
   // 只是覆盖 timer 良性顺延；本层双触发同理防御，语义同 mobile-sheet close 桥）：先内部
@@ -80,24 +81,10 @@ export function PagesPreviewLayer({ onClose, serveUrl }: PagesPreviewLayerProps)
         <div className="flex items-center gap-2 rounded-t-lg border-b border-neutral-line/60 bg-surface-raised/60 px-3 py-2 sm:px-5">
           <span
             className="min-w-0 flex-1 truncate font-mono text-xs text-on-surface-soft"
-            title={serveUrl}
+            title={displayUrl}
           >
-            {serveUrl}
+            {displayUrl}
           </span>
-          {!standalone ? (
-            // standalone PWA 里同源 target=_blank 降级成当前视图导航 = 点了把工作台顶
-            // 掉（本层刚治好的老 bug）→ 整钮不渲染；桌面浏览器/iOS Safari 正常。
-            <a
-              aria-label={t("pages.openInNewWindow")}
-              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-neutral-line/60 hover:text-on-surface"
-              href={serveUrl}
-              rel="noopener noreferrer"
-              target="_blank"
-              title={t("pages.openInNewWindow")}
-            >
-              <LucideIcon className="h-4 w-4" name="external-link" />
-            </a>
-          ) : null}
           <button
             aria-label={t("session.close")}
             className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-on-surface-muted transition hover:bg-neutral-line/60 hover:text-on-surface"
@@ -110,7 +97,7 @@ export function PagesPreviewLayer({ onClose, serveUrl }: PagesPreviewLayerProps)
         <div className="min-h-0 flex-1">
           {/* bg-white = 站点渲染面缺省底色（iframe 承载用户 HTML 页，instance-area 先例
               同款），非 UI token 面——tokens 机检 strict 收紧时勿改这里。 */}
-          <iframe className="h-full w-full border-0 bg-white" src={serveUrl} title={serveUrl} />
+          <iframe className="h-full w-full border-0 bg-white" src={serveUrl} title={displayUrl} />
         </div>
       </DialogContent>
     </Dialog>

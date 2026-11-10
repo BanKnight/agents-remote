@@ -4,6 +4,7 @@ import type { PagesRoot } from "@agents-remote/shared";
 import { useT } from "../../i18n";
 import { pagesServeUrl } from "../../api/client";
 import { PAGES_QUERY_SCOPE, usePagesConfig, useUpdatePagesConfig } from "../../hooks/pages";
+import { isStandaloneDisplay } from "../../lib/display-mode";
 import {
   ActionButton,
   IconMarker,
@@ -20,8 +21,8 @@ import { PagesRootDialog } from "./pages-root-dialog";
 type PagesPanelProps = {
   projectName: string;
   /**
-   * 外部「新建根」触发信号（可选，移动 drawer 顶部按钮消费）。递增计数，每次变化打开
-   * PagesRootDialog 的 add 模式。桌面左栏不传 → 零影响。
+   * 外部「添加根」触发信号（可选，工作台右栏 FAB ＋ 在 pages tab 的分支消费，双端）。
+   * 递增计数，每次变化打开 PagesRootDialog 的 add 模式。不传 → 零影响。
    */
   createRequest?: number;
 };
@@ -31,10 +32,11 @@ type EditingRoot = { mode: "add" } | { mode: "edit"; root: PagesRoot };
 /**
  * pages 静态根配置面板（middle tab [pages]，与 files/git 同构 inspection）。自带 getPagesConfig
  * query（PAGES_QUERY_SCOPE 隔离缓存），列出当前项目的静态根：每行 urlPath → fsDir + 访问权限
- * 徽标，行点击打开 app 内预览层（PagesPreviewLayer，iOS standalone PWA 同源链接开不了新
- * 窗口的平台出路）；原生新标签走顶栏钮（非 standalone）/ 中键 / Cmd+click。actions 编辑/删除。
- * header [添加根] 开 PagesRootDialog（整体 PUT 覆盖）。删除走共享 useConfirm。UI=f(state)：
- * roots 从 query 派生，写经 mutation invalidate 回 query，单一数据管道。
+ * 徽标。行点击：standalone PWA 进 app 内预览层（PagesPreviewLayer，同源链接开不了新窗口的
+ * 平台出路）；非 standalone / 修饰键放行原生 target=_blank 新标签。actions 编辑/删除。
+ * 「添加根」入口 = 工作台右栏 FAB（createRequest 计数信号，见 props 注释）开 PagesRootDialog
+ * （整体 PUT 覆盖）。删除走共享 useConfirm。UI=f(state)：roots 从 query 派生，写经 mutation
+ * invalidate 回 query，单一数据管道。
  */
 export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
   const { t } = useT();
@@ -47,8 +49,8 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
 
   const roots: PagesRoot[] = config.data?.config.roots ?? [];
 
-  // 外部「新建根」信号（移动 drawer 顶部按钮）：createRequest 递增触发 add 模式。ref 初值吃掉
-  // mount 首跑——PagesPanel 在 drawer 内随段切换卸载重挂，若不加守卫，重挂时 effect 对着旧非零
+  // 外部「添加根」信号（FAB ＋ pages 分支）：createRequest 递增触发 add 模式。ref 初值吃掉
+  // mount 首跑——PagesPanel 随 tab 切换卸载重挂，若不加守卫，重挂时 effect 对着旧非零
   // 计数再跑，add dialog 无操作自动打开（对齐 claude-adapter activeSessionKeyRef 先例）。
   const lastCreateRequestRef = useRef(createRequest);
   useEffect(() => {
@@ -90,12 +92,6 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
   if (config.isLoading) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div
-          aria-hidden="true"
-          className="hidden shrink-0 items-center justify-start border-b border-neutral-line/40 px-3.5 py-2.5 lg:flex"
-        >
-          <span className="skeleton-shimmer h-8 w-24 rounded-xl" />
-        </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
           <ListRowSkeleton count={3} />
         </div>
@@ -135,21 +131,9 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="hidden shrink-0 items-center justify-start border-b border-neutral-line/40 px-3.5 py-2.5 lg:flex">
-        <ActionButton
-          className="hidden lg:inline-flex"
-          compact
-          onClick={() => beginEdit({ mode: "add" })}
-          tone="accent"
-        >
-          <span className="inline-flex items-center gap-1">
-            <ShellIcon className="h-3.5 w-3.5" name="plus" />
-            {t("pages.addRoot")}
-          </span>
-        </ActionButton>
-      </div>
-      {/* 移动新建入口统一在项目工作台 row2 ＋（v2 M3-b，mobile-project-header.tsx），
-          PagesPanel 不再内嵌移动 header 行。 */}
+      {/* 「添加根」入口 = 项目工作台右栏 FAB ＋（files/pages tab 共用，2026-11-10 用户
+          拍板「FAB 扩展 pages」）——旧版 header ActionButton（v2 换底前残留，不符合
+          设计 token）已删；移动端此前无入口的缺口随 FAB 扩展一并补齐。 */}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3 pt-3">
         {roots.length === 0 ? (
           <div className="flex flex-1 min-h-0 flex-col items-center justify-start pt-2 lg:justify-center lg:pt-0">
@@ -163,11 +147,16 @@ export function PagesPanel({ createRequest, projectName }: PagesPanelProps) {
               <ListRow
                 href={pagesServeUrl(projectName, root.urlPath)}
                 onClick={(e) => {
-                  // 修饰键组合交浏览器原生（新标签语义，href 仍保留）；无修饰键才进
-                  // 预览层——不守卫 = Cmd+click 被 preventDefault 拦下，原生新标签
-                  // 回归被打破。中键走 auxclick 天然不触发 onClick。行内编辑/删除
-                  // 按钮不受影响：actions 容器已 stopPropagation（ListRow 内建）。
+                  // 修饰键组合交浏览器原生（新标签语义，href 仍保留）——不守卫 =
+                  // Cmd+click 被 preventDefault 拦下，原生新标签回归被打破。中键走
+                  // auxclick 天然不触发 onClick。行内编辑/删除按钮不受影响：actions
+                  // 容器已 stopPropagation（ListRow 内建）。
                   if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  // 预览层只在 standalone PWA 打开（2026-11-10 用户拍板「pwa 才是内嵌
+                  // iframe 方案，其他平台跳转浏览器更合理」）：非 standalone 放行原生
+                  // target=_blank 新标签；standalone 进 app 内预览层（同源链接开不了
+                  // 新窗口的平台硬限制出路）。
+                  if (!isStandaloneDisplay()) return;
                   e.preventDefault();
                   setPreviewing(pagesServeUrl(projectName, root.urlPath));
                 }}

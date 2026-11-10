@@ -1,4 +1,5 @@
 import { useAtom } from "jotai";
+import { useState } from "react";
 import { useT } from "../../i18n";
 import { workbenchDesktopFilesPathAtom } from "../../routes/workbench-model";
 import { AddMenu } from "../files/add-menu";
@@ -120,6 +121,8 @@ export function RightPanelTabs({
     dir: cwd,
     projectName: projectKey ?? "",
   });
+  // pages tab 的 FAB ＋「添加根」信号（PagesPanel createRequest 桥，见下方 FAB 注释）。
+  const [pagesAddRequest, setPagesAddRequest] = useState(0);
 
   if (!projectKey) {
     return (
@@ -189,7 +192,7 @@ export function RightPanelTabs({
               ) : tab.kind === "git" ? (
                 <GitToolTab projectKey={projectKey} />
               ) : tab.kind === "pages" ? (
-                <PagesPanel projectName={projectKey} />
+                <PagesPanel createRequest={pagesAddRequest} projectName={projectKey} />
               ) : tab.kind === "wiki" ? (
                 <WikiToolTab
                   onOpenPage={onOpenWiki}
@@ -202,8 +205,11 @@ export function RightPanelTabs({
           );
         })}
         {/* 批 13 反馈②：新建/上传入口统一 FAB（与移动检视面板 renderPanelFab 同构，
-            多端同构原则）。放 tab body 之后渲染保证 z 序；activeKind 守卫 = 仅 files 标签
-            提供（git/wiki 无新建语义）。AddMenu 单源（03oa 两项）+ 目标目录 = cwd atom 单源。 */}
+            多端同构原则）。放 tab body 之后渲染保证 z 序；activeKind 守卫 = files 提供
+            AddMenu（git/wiki 无新建语义），pages 提供「添加根」（2026-11-10 用户拍板
+            「FAB 扩展 pages」，旧版面板 header ActionButton 退役）——单项动作无菜单，
+            直接递增 createRequest 计数桥接 PagesPanel。AddMenu 单源（03oa 两项）+
+            目标目录 = cwd atom 单源。 */}
         {activeKind === "files" ? (
           <AddMenu
             onNew={addProps.onNew}
@@ -214,6 +220,15 @@ export function RightPanelTabs({
               </button>
             }
           />
+        ) : activeKind === "pages" ? (
+          <button
+            aria-label={t("pages.addRoot")}
+            className="fab cursor-pointer"
+            onClick={() => setPagesAddRequest((c) => c + 1)}
+            type="button"
+          >
+            <span className="plus" style={{ width: 20, height: 20 }} />
+          </button>
         ) : null}
       </div>
       {/* 03y 新建 sheet + 03oa 上传 picker（useDirectoryAddActions 单源三件套，open = 内部

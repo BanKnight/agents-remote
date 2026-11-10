@@ -954,7 +954,7 @@ function MobileProjectWorkbench({
             </div>
           ) : tab.kind === "pages" ? (
             <div className="min-h-0 flex-1 overflow-hidden">
-              <PagesPanel projectName={scope.key} />
+              <PagesPanel createRequest={panelPagesAddRequest} projectName={scope.key} />
             </div>
           ) : tab.kind === "wiki" ? (
             <div className="min-h-0 flex-1 overflow-hidden">
@@ -1005,6 +1005,10 @@ function MobileProjectWorkbench({
   // 批2 曾是 disabled 空桩）。新建/上传装配 = useDirectoryAddActions 双端单源（全局同构
   // review 批；调用点在下方 filesPath 之后——TDZ 安全：renderPanelFab 闭包 JSX 调用时序）。
   // 目标目录 = 当前 cwd（filesPath，与 FilesToolPanel 受控记忆同源）；trigger 形态留本容器。
+  // pages 标签分支（2026-11-10 用户拍板「FAB 扩展 pages」）：「添加根」单项动作无菜单，
+  // 直接递增 createRequest 计数桥接 PagesPanel——与桌面 right-panel-tabs 同构，补齐移动端
+  // 此前无「添加根」入口的缺口。
+  const [panelPagesAddRequest, setPanelPagesAddRequest] = useState(0);
   const renderPanelFab = () =>
     activePanelTab?.kind === "files" ? (
       <AddMenu
@@ -1016,6 +1020,15 @@ function MobileProjectWorkbench({
           </button>
         }
       />
+    ) : activePanelTab?.kind === "pages" ? (
+      <button
+        aria-label={t("pages.addRoot")}
+        className="fab cursor-pointer"
+        onClick={() => setPanelPagesAddRequest((c) => c + 1)}
+        type="button"
+      >
+        <span className="plus" style={{ width: 20, height: 20 }} />
+      </button>
     ) : null;
   // H1 修复（design-reviewer 运行时实证）：focus 导航与面板互斥（脏 URL 兜底）。?tab 与
   // focusId 是独立存活的维度——脏 URL（?tab= 与 session focus 并存）时以 focusId 变化为信号

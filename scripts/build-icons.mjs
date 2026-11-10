@@ -113,8 +113,6 @@ const ICONS = [
   "shapes", // ShellIcon canvas（画布卡，几何形状组）
   // ── 通用诊断基建（2026-11-05）：悬浮球入口 ──
   "bug", // DiagFab 诊断悬浮球（可拖拽调试入口，点开诊断日志 sheet/dialog）
-  // ── pages 站点预览层（2026-11-09）：顶栏「新窗口打开」钮（LucideIcon 直消费）──
-  "external-link", // pages 预览层顶栏外链钮（standalone 下不渲染，同源 _blank 平台降级）
 ];
 
 const entries = [];
