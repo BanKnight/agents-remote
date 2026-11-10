@@ -118,20 +118,15 @@
     flex: none;
   }
   .dot.run {
+    /* working 绿点静止（spec §4.2；2026-11-11 用户拍板：dot-pulse 脉动退役，
+     * working 独占绿色——可辨性改由「working 独占绿 vs done 归灰」颜色差承担）。 */
     background: var(--c-success);
-    /* working 绿点脉动（spec §4.2）——与 done（同色静止）在列表无文字场景的可辨性靠它。 */
-    animation: dot-pulse 2s var(--ease-standard, ease-in-out) infinite;
   }
-  @keyframes dot-pulse {
-    50% {
-      opacity: 0.4;
-    }
-  }
-  /* done（OSC 7501「最近一轮完成」）：与 working 同 --c-success 但静止（无 dot-pulse）
-   * ——结果态静息；脉动差异是列表场景两态唯一可辨面。曾与 03c 完成横幅裸类 .done
-   * 撞名拉成椭圆，横幅已让位改名 .complete（2026-10-15）。 */
+  /* done（OSC 7501「最近一轮完成」）：灰点与 idle 同色（2026-11-11 用户拍板「idle 和
+   * done 相同为灰色」——working 独占绿）。曾与 03c 完成横幅裸类 .done 撞名拉成椭圆，
+   * 横幅已让位改名 .complete（2026-10-15）。 */
   .dot.done {
-    background: var(--c-success);
+    background: var(--ink-2);
   }
   .dot.idle {
     background: var(--ink-2);

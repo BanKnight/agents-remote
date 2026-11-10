@@ -1,7 +1,8 @@
-// 探针:agent 会话状态 5 态化(v1.6,2026-10-15,OSC 7501 对齐)。验证浏览器真实链路:
+// 探针:agent 会话状态 5 态化(v1.6,2026-10-15,OSC 7501 对齐;2026-11-11 用户拍板
+// 「working 独占绿色、脉动退役、done 归灰」——断言 2 随语义更新)。验证浏览器真实链路:
 // 1 全局活动卡 dot 5 态 class 映射(idle/working/blocked/done/error);
-// 2 .dot.done 落盘(computed 背景 = --c-success,与 .dot.run 同色——防 CSS
-//   未落盘 utility 缺失的假绿,frontend-notes §10);
+// 2 .dot.done 落盘(computed 背景 = --ink-2,与 .dot.idle 同灰、≠ .dot.run 的绿——
+//   防 CSS 未落盘 utility 缺失的假绿,frontend-notes §10);
 // 3 rankGlobalInstances 排序:blocked > error > working > idle/done > terminal;
 // 4 「运行中」计数只计 working(blocked/done 不计入,用户拍板);
 // 5 详情页 effort 门消费 session_status 帧(WS 标量)——blocked 帧后切 effort 弹打断确认。
@@ -95,11 +96,13 @@ try {
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.goto(`${WEB_ORIGIN}/projects`);
 
-  // 活动卡行 = dot + 名字(全局活动卡 statusToV2DotClass 消费点)。
+  // 活动卡行 = 名字 + 行尾簇(dot + 时间,v1.5「状态点移名称后」批——dot 不再是名字的
+  // preceding-sibling,而是行内 InstanceRowTrail 首个 span.dot;行首是 provider 图标容器)。
   const rowDot = (name) =>
     page
       .locator("span", { hasText: new RegExp(`^Probe ${name}$`) })
-      .locator("xpath=preceding-sibling::span[1]");
+      .locator("xpath=ancestor::button[1]")
+      .locator("span.dot");
 
   await page.getByText("Probe working").first().waitFor({ state: "visible", timeout: 15000 });
 
@@ -122,13 +125,15 @@ try {
     check(`1 dot class ${name} → "${cls}"`, got === cls, `got="${got}"`);
   }
 
-  // ── 2 .dot.done 落盘:computed 背景 = --c-success(与 .dot.run 相同)──
+  // ── 2 .dot.done 落盘:computed 背景 = --ink-2(与 .dot.idle 同灰、≠ .dot.run 的
+  //    success 绿——2026-11-11 拍板 done 归灰)──
   const doneBg = await rowDot("done").evaluate((el) => getComputedStyle(el).backgroundColor);
+  const idleBg = await rowDot("idle").evaluate((el) => getComputedStyle(el).backgroundColor);
   const runBg = await rowDot("working").evaluate((el) => getComputedStyle(el).backgroundColor);
   check(
-    "2 .dot.done 落盘(背景色与 .dot.run 同为 success)",
-    doneBg === runBg && doneBg !== "rgba(0, 0, 0, 0)",
-    `${doneBg} vs ${runBg}`,
+    "2 .dot.done 落盘(背景色与 .dot.idle 同灰、异于 .dot.run 绿)",
+    doneBg === idleBg && doneBg !== runBg && doneBg !== "rgba(0, 0, 0, 0)",
+    `done=${doneBg} idle=${idleBg} run=${runBg}`,
   );
 
   // ── 2b dot 几何:5 态全 7×7 正圆(防变体类名与原型裸类撞名——.dot.done 曾被 03c
@@ -142,12 +147,16 @@ try {
   }
 
   // ── 3 排序:活动卡行序 blocked > error > working > idle/done > terminal ──
-  // 行文本带活动时间缀("3m ago"),剥掉再比名字序。
+  // 行集合 = 含 span.dot 的 button(活动卡行;项目卡 recent 摘要行无 dot 天然排除——
+  // v1.5 起行首 provider 品牌文本前缀使 startsWith("Probe ") 锚定过期,改行内正则提取)。
   const order = await page.evaluate(() =>
     [...document.querySelectorAll("button")]
-      .map((b) => b.textContent ?? "")
-      .filter((t) => t.startsWith("Probe "))
-      .map((t) => t.replace(/\s*(just now|[0-9]+[smh][^0-9]*)$/i, "").trim()),
+      .filter((b) => b.querySelector("span.dot"))
+      .map((b) => {
+        const m = (b.textContent ?? "").match(/Probe (idle|working|blocked|done|error|term)/);
+        return m ? `Probe ${m[1]}` : null;
+      })
+      .filter(Boolean),
   );
   const expected = [
     "Probe blocked",
@@ -163,9 +172,10 @@ try {
     order.join(" | "),
   );
 
-  // ── 4 计数 x/y(working/总实例,用户拍板 2026-10-15):agent working + terminal running
-  //    各计 1 → 2/6(6 = 5 agent + 1 terminal);blocked/done/error/idle 只进分母。
-  //    文案 key home.nRunning:「{{active}}/{{total}} 进行中」。 ──
+  // ── 4 计数 x/y(turn 在飞/总实例;2026-10-15 拍板 x/y,8d2d98e 起 agent 分子 = turn
+  //    在飞 working+blocked——blocked 是 turn 内等审批的暂停而非结束):working + blocked
+  //    + terminal running 各计 1 → 3/6(6 = 5 agent + 1 terminal);done/error/idle 只进
+  //    分母。文案 key home.nRunning:「{{active}}/{{total}} 进行中」。 ──
   await page.waitForFunction(
     () =>
       document.body.textContent?.includes("进行中") ||
@@ -180,8 +190,8 @@ try {
     return el?.textContent ?? "";
   });
   check(
-    "4 计数 x/y = 2/6(working+terminal running 进分子,余者只进分母)",
-    /(^|[^0-9])2\/6\s*(进行中|running)/.test(countText),
+    "4 计数 x/y = 3/6(working+blocked+terminal running 进分子,余者只进分母)",
+    /(^|[^0-9])3\/6\s*(进行中|running)/.test(countText),
     countText.trim(),
   );
 

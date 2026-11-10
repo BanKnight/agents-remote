@@ -253,10 +253,10 @@ export const statusDotToneBg: Record<ShellTone, string> = {
 
 /**
  * status → v2 原语 dot class（v2-primitives.css 的 .dot run/idle/err/warn/done，OSC 7501
- * 对齐 5 态：绿脉=working 橙=blocked 红=error 绿静止=done 灰=idle/closed）。与 statusToTone
- * 的 done 分歧是刻意的：dot 保留成功语义色彩（与 idle 区分「最近一轮成功」），pill 是文字
- * 色、done 非活跃故降级 muted——勿当缺陷修成一致。v2 页面圆点状态一律消费本映射（.dot
- * 原语自带 7×7 圆），禁私设第二套 status→色。
+ * 对齐 5 态：绿静止=working/running 橙=blocked 红=error 灰=done/idle/closed——2026-11-11
+ * 用户拍板：脉动退役、working 独占绿色、done 归灰与 idle 同色；旧「dot 保留 done 成功
+ * 语义色彩」的取舍作废，与 statusToTone 的 done→muted 趋同）。v2 页面圆点状态一律消费
+ * 本映射（.dot 原语自带 7×7 圆），禁私设第二套 status→色。
  */
 export function statusToV2DotClass(
   status: AgentSession["status"] | TerminalSession["status"],
@@ -273,9 +273,9 @@ export function statusToV2DotClass(
 
 /** 实例行 dot2 状态点 class 单源（桌面侧栏 .dot2 密度档，与 statusToV2DotClass（移动 .dot）
  *  并排——InstanceRowTrail 的两个 dot 档都归此文件，防 workbench 层反向 import 成环）：
- *  turn 活跃与结果态着色实心（working 绿 / blocked 橙 / error 红 / done 绿——与移动端
- *  .dot.done 同为绿实心，spec §3.2「状态点语义全局统一」，防桌面空心/移动实心分叉），
- *  静息态（idle/closed）1.4px 空心。 */
+ *  活跃态着色实心（working/running 绿 / blocked 橙 / error 红），静息态（done/idle/closed）
+ *  1.4px 空心——2026-11-11 用户拍板「working 独占绿色，idle 和 done 相同为灰色」
+ *  （spec §4.2），done 的实心绿分支随之并入静息档。 */
 export const instanceDot2 = (status: AgentSession["status"] | TerminalSession["status"]): string =>
   status === "working" || status === "running"
     ? "bg-success"
@@ -283,9 +283,7 @@ export const instanceDot2 = (status: AgentSession["status"] | TerminalSession["s
       ? "bg-warning"
       : status === "error"
         ? "bg-error"
-        : status === "done"
-          ? "bg-success"
-          : "border-[1.4px] border-ink-2 bg-transparent";
+        : "border-[1.4px] border-ink-2 bg-transparent";
 
 /**
  * 实例 / 会话行行尾簇（v1.7 §4.8 统一行形，2026-11-02 用户拍板）：置顶 pin 标 →
