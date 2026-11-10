@@ -4,7 +4,8 @@
 // 2 .dot.done 落盘(computed 背景 = --ink-2,与 .dot.idle 同灰、≠ .dot.run 的绿——
 //   防 CSS 未落盘 utility 缺失的假绿,frontend-notes §10);
 // 3 rankGlobalInstances 排序:blocked > error > working > idle/done > terminal;
-// 4 「运行中」计数只计 working(blocked/done 不计入,用户拍板);
+// 4 「运行中」计数 x/y(turn 在飞:agent working+blocked + terminal running 进分子,
+//   8d2d98e 口径;done/error/idle 只进分母);
 // 5 详情页 effort 门消费 session_status 帧(WS 标量)——blocked 帧后切 effort 弹打断确认。
 // 密码由脚本自读,不进 agent 上下文。用法:bun scripts/probe-session-status.mjs
 import { chromium } from "@playwright/test";
@@ -135,6 +136,11 @@ try {
     doneBg === idleBg && doneBg !== runBg && doneBg !== "rgba(0, 0, 0, 0)",
     `done=${doneBg} idle=${idleBg} run=${runBg}`,
   );
+
+  // ── 2c 脉动退役(2026-11-11 拍板):.dot.run 无动画——防设计包 components.css 单源
+  //    残留 dot-pulse 被「对齐单源」回灌(frontend-notes §2 散写收敛同款防线)──
+  const runAnim = await rowDot("working").evaluate((el) => getComputedStyle(el).animationName);
+  check("2c .dot.run 脉动退役(animationName = none)", runAnim === "none", `got=${runAnim}`);
 
   // ── 2b dot 几何:5 态全 7×7 正圆(防变体类名与原型裸类撞名——.dot.done 曾被 03c
   //    完成横幅 .done{display:flex;padding;border} 拉成 26×22 椭圆,真机实锤)──

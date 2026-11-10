@@ -920,8 +920,8 @@ export type PanelMeta = {
   marker: ReactNode;
   /** 显示名（detail.displayName；detail 未回时从列表缓存预填，见 usePanelMeta）。 */
   label?: string;
-  /** 状态点（status → tone + i18n label；running 时 pulse）。detail/缓存均未就绪时 undefined。 */
-  statusDot?: { label: string; dotClass: string; pulse: boolean };
+  /** 状态点（点色单源 instanceDot2 + i18n label）。detail/缓存均未就绪时 undefined。 */
+  statusDot?: { label: string; dotClass: string };
 };
 
 /** tab 显示名兜底链单源（TabChip 与拖拽 DragGhost 同消费——批 C 收敛此前逐字双份）：
@@ -1091,9 +1091,9 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
           // 点色单源 instanceDot2（与左栏/实例切换行同管道，spec「状态点语义全局统一」）——
-          // 勿走 statusDotToneBg[statusToTone]：done 会降级 muted 灰，与绿实心分叉。
+          // 勿走 statusDotToneBg[statusToTone] 私设第二套映射（2026-11-11 拍板「working
+          // 独占绿、done 归灰」后两映射趋同，单源约束照旧）。
           dotClass: instanceDot2(session.status),
-          pulse: session.status === "working",
         },
       };
     }
@@ -1115,7 +1115,6 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
           dotClass: instanceDot2(session.status),
-          pulse: session.status === "working" || session.status === "running",
         },
       };
     }
@@ -2820,9 +2819,7 @@ function TabChip({
         {meta?.statusDot ? (
           <span
             aria-label={meta.statusDot.label}
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.statusDot.dotClass}${
-              meta.statusDot.pulse ? " animate-pulse" : ""
-            }`}
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${meta.statusDot.dotClass}`}
             role="img"
           />
         ) : null}

@@ -111,7 +111,9 @@ describe("usePanelMeta 列表缓存预填（detail 未回时 tab 首帧即显实
       qc,
     );
     expect(result.current?.label).toBe("Overview Name");
-    expect(result.current?.statusDot?.pulse).toBe(true);
+    // statusDot 预填验证载体：pulse 字段已随「脉动退役」批删除（2026-11-11），改断言
+    // 点色单源 instanceDot2 的输出（working → bg-success）。
+    expect(result.current?.statusDot?.dotClass).toBe("bg-success");
   });
 
   it("缓存全 miss（刷新后直进聚焦态）：meta 仍 undefined，调用方 fallback sessionId", async () => {

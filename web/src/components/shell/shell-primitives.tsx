@@ -263,7 +263,7 @@ export function statusToV2DotClass(
 ): string {
   if (status === "blocked") return "dot warn";
   if (status === "working") return "dot run";
-  // terminal 的 running（进程存活）：与 working 同绿脉（statusToTone 的 running→success
+  // terminal 的 running（进程存活）：与 working 同绿静止（statusToTone 的 running→success
   // 同口径；联合宽入时 agent 侧不会出现该值）。
   if (status === "running") return "dot run";
   if (status === "error") return "dot err";
