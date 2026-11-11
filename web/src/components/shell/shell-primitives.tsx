@@ -273,9 +273,9 @@ export function statusToV2DotClass(
 
 /** 实例行 dot2 状态点 class 单源（桌面侧栏 .dot2 密度档，与 statusToV2DotClass（移动 .dot）
  *  并排——InstanceRowTrail 的两个 dot 档都归此文件，防 workbench 层反向 import 成环）：
- *  活跃态着色实心（working/running 绿 / blocked 橙 / error 红），静息态（done/idle/closed）
- *  1.4px 空心——2026-11-11 用户拍板「working 独占绿色，idle 和 done 相同为灰色」
- *  （spec §4.2），done 的实心绿分支随之并入静息档。 */
+ *  全状态实心（working/running 绿 / blocked 橙 / error 红 / 其余灰）——2026-11-11 用户
+ *  两步拍板：「working 独占绿色，idle 和 done 相同为灰色」+ 同日二轮「统一实心」
+ *  （桌面档 05g 二态时代「静息 = 1.4px 空心」语言退役，与移动 .dot 档形态一致；spec §4.2）。 */
 export const instanceDot2 = (status: AgentSession["status"] | TerminalSession["status"]): string =>
   status === "working" || status === "running"
     ? "bg-success"
@@ -283,7 +283,7 @@ export const instanceDot2 = (status: AgentSession["status"] | TerminalSession["s
       ? "bg-warning"
       : status === "error"
         ? "bg-error"
-        : "border-[1.4px] border-ink-2 bg-transparent";
+        : "bg-ink-2";
 
 /**
  * 实例 / 会话行行尾簇（v1.7 §4.8 统一行形，2026-11-02 用户拍板）：置顶 pin 标 →

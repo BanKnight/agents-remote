@@ -5,8 +5,8 @@
 // fixture 走 page.route（/api/overview + 项目 agent 列表/详情 + agent-history），WS 用
 // addInitScript 可推送假 socket（page.route 拦不了 WebSocket）。
 // 断言：
-//  1. 初始：左栏「旧名」行状态点 = idle 空心
-//  2. 历史行：活跃但 idle 的会话显示 idle 空心点（旧实现会画 working 绿点）
+//  1. 初始：左栏「旧名」行状态点 = idle 实心灰（2026-11-11 二轮拍板统一实心，原空心）
+//  2. 历史行：活跃但 idle 的会话显示 idle 灰点（旧实现会画 working 绿点）
 //  3. 打开会话 tab（detail 从 fixture 拉到旧名）后再推壳帧（改名 + working + 新时间）：
 //     「旧名」消失、「新名」同时出现在左栏行与 TabChip；左栏行状态点变 working 绿
 // 密码自读不打印。用法：bun scripts/probe-session-meta-sync.mjs
@@ -189,19 +189,20 @@ try {
       return null;
     }, text);
 
+  const initialDot = String(await dotFor("旧名"));
   check(
-    "1a 初始：左栏「旧名」行状态点 = idle 空心（无 bg-success）",
-    !String(await dotFor("旧名")).includes("bg-success"),
-    String(await dotFor("旧名")),
+    "1a 初始：左栏「旧名」行状态点 = idle 实心灰（bg-ink-2，无 bg-success）",
+    initialDot.includes("bg-ink-2") && !initialDot.includes("bg-success"),
+    initialDot,
   );
 
-  // 历史浮层：活跃但 idle 的会话必须画 idle 空心点（旧实现 hasActiveSession → working 绿点）。
+  // 历史浮层：活跃但 idle 的会话必须画 idle 灰点（旧实现 hasActiveSession → working 绿点）。
   await page.getByRole("button", { name: "查看历史会话" }).click();
   await page.getByText("历史会话").first().waitFor({ state: "visible", timeout: 5000 });
   const historyDot = await dotFor("历史会话");
   check(
-    "2a 历史行：活跃但 idle 的会话 = idle 空心点（真实状态，非伪 working）",
-    Boolean(historyDot) && !historyDot.includes("bg-success"),
+    "2a 历史行：活跃但 idle 的会话 = idle 实心灰点（bg-ink-2，真实状态非伪 working）",
+    Boolean(historyDot) && historyDot.includes("bg-ink-2") && !historyDot.includes("bg-success"),
     String(historyDot),
   );
 
