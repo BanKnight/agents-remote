@@ -26,59 +26,75 @@ registerRoute(new NavigationRoute(createHandlerBoundToURL("index.html"), { denyl
 self.skipWaiting();
 clientsClaim();
 
-// ── Web Push 通知（PWA 通知批）──────────────────────────────────────────
-// payload 形状 = shared 的 PushMessagePayload（服务端 JSON.stringify 后经 aes128gcm 加密）；
-// 网络来料不可信，运行时手写形状守卫（SW bundle 里不引 shared 的类型层校验）。
+// ── Web Push 通知（PWA 通知批；2026-11-11 根治批 A 段）─────────────────
+// WebKit 静默推送惩罚契约：每条 push 必须以 showNotification() 收尾，3 次不出通知
+// 即撤销 origin 的推送权限（计数永不清零）。因此 push handler 无任何「不出通知就
+// return」路径：坏帧出兜底卡、showNotification 被拒出最小参数兜底重试（A 段）。
+// 「盯屏不打扰」上移服务端可见性抑制（B 段，sessions-stream visibility 帧），
+// SW 层不再吞通知。payload 形状守卫与通知构造在 lib/push-notification.ts（零依赖，
+// SW bundle 独立打包）。
 
-type PushPayload = {
-  kind: string;
-  title: string;
-  body: string;
-  url: string;
-  sessionId: string;
-};
+import { buildPushNotification, type PushPayload } from "./lib/push-notification";
 
-const isPushPayload = (value: unknown): value is PushPayload => {
-  if (!value || typeof value !== "object") return false;
-  const v = value as Record<string, unknown>;
-  return (
-    typeof v.kind === "string" &&
-    typeof v.title === "string" &&
-    typeof v.body === "string" &&
-    typeof v.url === "string" &&
-    typeof v.sessionId === "string"
-  );
-};
-
-self.addEventListener("push", (event) => {
-  const payload = parsePushPayload(event);
-  // 坏帧忽略（不 showNotification 会遭浏览器 user-visible-only 惩罚，忽略优于惩罚）。
-  if (!payload) return;
-  event.waitUntil(showPushNotification(payload));
-});
-
-const parsePushPayload = (event: PushEvent): PushPayload | undefined => {
+/** push 事件 → 未知负载：只做 json() 解析（code review P2-2——形状判定单源收敛到
+ *  buildPushNotification，这里不再重复 isPushPayload）。解析失败按坏帧出兜底卡。 */
+const parsePushPayload = (event: PushEvent): unknown => {
   try {
-    const parsed: unknown = event.data?.json();
-    return isPushPayload(parsed) ? parsed : undefined;
+    return event.data?.json();
   } catch {
     return undefined;
   }
 };
 
-const showPushNotification = async (payload: PushPayload): Promise<void> => {
-  // 前台抑制：任一窗口正盯着看（visible）→ 不打扰，会话页自己会渲染状态变化。
-  const windowClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-  if (windowClients.some((client) => client.visibilityState === "visible")) return;
-  await self.registration.showNotification(payload.title, {
-    body: payload.body,
-    icon: "/icons/icon-192.png",
-    // 同会话合并替换：tag 只含 sessionId，后到通知（如 done）顶掉旧卡（如 blocked），
-    // 不留过期卡片；kind 语义已在 title/body 表达（code review P2-1）。
-    tag: payload.sessionId,
-    data: payload,
-  });
+/** SW 侧异常/坏帧诊断中继：console + postMessage 回页面（SW 无 localStorage 落
+ *  diag-log、iOS standalone 无 console——经页面 recordDiag("push") 落悬浮球缓冲）。 */
+const reportPushDiag = async (text: string): Promise<void> => {
+  console.warn(`[push-sw] ${text}`);
+  try {
+    const windowClients = await self.clients.matchAll({
+      type: "window",
+      includeUncontrolled: true,
+    });
+    for (const client of windowClients) client.postMessage({ kind: "push-diag", text });
+  } catch {
+    // 无客户端（冷启 push）时 postMessage 面不可用——console 已留痕。
+  }
 };
+
+/** 任一窗口可见？（前台判定：后台 → 正常横幅；前台 → 桌面附 silent:true 静音增强。） */
+const isAnyClientVisible = async (): Promise<boolean> => {
+  try {
+    const windowClients = await self.clients.matchAll({
+      type: "window",
+      includeUncontrolled: true,
+    });
+    return windowClients.some((client) => client.visibilityState === "visible");
+  } catch {
+    return false;
+  }
+};
+
+const displayPush = async (event: PushEvent): Promise<void> => {
+  const payload = parsePushPayload(event);
+  const foregrounded = await isAnyClientVisible();
+  const { title, options } = buildPushNotification(payload, foregrounded);
+  try {
+    await self.registration.showNotification(title, options);
+  } catch (error) {
+    await reportPushDiag(`showNotification rejected: ${String(error)}; fallback retry`);
+    // 最小参数兜底重试（仅 title+body，排除一切可拒绝因素）；再拒绝只记录——
+    // 义务已尽到，不叠兜底（避免 hide-forever 式循环）。
+    try {
+      await self.registration.showNotification(title, { body: options.body });
+    } catch (retryError) {
+      await reportPushDiag(`fallback showNotification also rejected: ${String(retryError)}`);
+    }
+  }
+};
+
+self.addEventListener("push", (event) => {
+  event.waitUntil(displayPush(event));
+});
 
 self.addEventListener("notificationclick", (event) => {
   const data: unknown = event.notification.data;

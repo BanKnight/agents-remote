@@ -29,6 +29,7 @@ import type {
   ProjectFileListResponse,
   ProjectFilePreviewResponse,
   ProjectListResponse,
+  SessionShellsStreamClientMessage,
   SessionStreamClientMessage,
   SessionStreamServerMessage,
   TerminalSession,
@@ -222,6 +223,19 @@ test("Session stream envelopes describe transport messages", () => {
   expect(snapshot.data).toContain("pwd");
   expect(disconnected.status).toBe("disconnected");
   expect(error.code).toBe("SESSION_RUNTIME_MISSING");
+});
+
+test("Sessions stream client envelope reports device visibility", () => {
+  // push 通知根治批 B 段：客户端上行 visibility 帧（服务端按连接记账，断线即清）。
+  const frame: SessionShellsStreamClientMessage = {
+    type: "visibility",
+    deviceId: "device-1",
+    visible: true,
+  };
+
+  expect(frame.type).toBe("visibility");
+  expect(frame.deviceId).toBe("device-1");
+  expect(frame.visible).toBe(true);
 });
 
 test("isCompactBoundarySubtype matches the two boundary subtypes only", () => {

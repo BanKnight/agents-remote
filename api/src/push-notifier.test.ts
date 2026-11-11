@@ -61,12 +61,14 @@ const makeNotifier = (options: {
   subscriptions: PushSubscriptionStore;
   settings: SettingsStore;
   send: PushSendFn;
+  visibleDevices?: () => Set<string>;
 }) =>
   new PushNotifier({
     keys: { readOrCreate: async () => ({ publicKey: "k", privateKey: "k" }) },
     subscriptions: options.subscriptions,
     settings: options.settings,
     send: options.send,
+    visibleDevices: options.visibleDevices,
   });
 
 const INFO = {

@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { DiagFab } from "./components/shell/diag-fab";
 import { I18nProvider } from "./i18n";
 import { queryClient } from "./lib/query-client";
+import { installPushDiagRelay } from "./lib/push-diag";
 import { useKeyboardInsetGlobal } from "./lib/use-keyboard-inset";
 import { usePushReconcile } from "./lib/use-push-reconcile";
 import { restoreLastPath, saveCurrentPath } from "./navigation-persistence";
@@ -15,6 +16,9 @@ import "./styles/index.css";
 import { registerSW } from "virtual:pwa-register";
 
 restoreLastPath();
+
+// SW→页面 push 诊断中继（2026-11-11 根治批）：SW 侧异常经 postMessage 落悬浮球缓冲。
+installPushDiagRelay();
 
 router.subscribe("onResolved", () => {
   saveCurrentPath(window.location.pathname, window.location.search);

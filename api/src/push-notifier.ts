@@ -70,16 +70,20 @@ export class PushNotifier {
       subscriptions: PushSubscriptionStore;
       settings: SettingsStore;
       send?: PushSendFn;
+      /** 盯屏设备集合（B 段）：返回当前 visible deviceId 并集；缺省 = 不过滤（照发）。 */
+      visibleDevices?: () => Set<string>;
     },
   ) {
     this.subscriptions = deps.subscriptions;
     this.settings = deps.settings;
     this.send = deps.send ?? defaultSend(deps.keys);
+    this.visibleDevices = deps.visibleDevices;
   }
 
   private readonly subscriptions: PushSubscriptionStore;
   private readonly settings: SettingsStore;
   private readonly send: PushSendFn;
+  private readonly visibleDevices: (() => Set<string>) | undefined;
 
   /**
    * 触发点入口（fire-and-forget：调用方 `void pushNotifier.notify(...)`；本方法兜底
@@ -93,12 +97,37 @@ export class PushNotifier {
     }
   }
 
+  /** 盯屏设备集合读取（fail-open）：getter 缺省 → null；抛错 → null（照发不阻断发送面）。 */
+  private readVisibleDevices(): Set<string> | null {
+    if (!this.visibleDevices) return null;
+    try {
+      return this.visibleDevices();
+    } catch (error) {
+      console.warn("[push] visibleDevices getter failed (fail-open):", error);
+      return null;
+    }
+  }
+
   private async notifyInner(kind: PushNotificationKind, info: PushNotifyInfo): Promise<void> {
     const state = await this.settings.read();
     if (state.notifications?.[kind] === false) return;
 
     const subscriptions = await this.subscriptions.list();
     if (subscriptions.length === 0) return;
+
+    // 盯屏设备过滤（B 段 fail-open）：getter 缺省/抛错 = 不过滤照发；记录无 deviceId
+    // （存量记录兼容面）或不在 visible 集合 = 照发；只有「deviceId 命中当前可见集合」
+    // 才跳过。跳过 = 丢失而非延迟（方向安全：回前台必见实况，见 hub close 清条目）。
+    const visible = this.readVisibleDevices();
+    const targets = visible
+      ? subscriptions.filter((s) => s.deviceId === undefined || !visible.has(s.deviceId))
+      : subscriptions;
+    if (targets.length === 0) {
+      console.log(
+        `[push] ${kind}: all ${subscriptions.length} subscription(s) on visible device(s), skipped`,
+      );
+      return;
+    }
 
     const payload: PushMessagePayload = {
       kind,
@@ -114,11 +143,11 @@ export class PushNotifier {
     if (info.inputSummary) payload.inputSummary = info.inputSummary;
 
     const outcomes = await Promise.allSettled(
-      subscriptions.map((subscription) => this.send(subscription, payload)),
+      targets.map((subscription) => this.send(subscription, payload)),
     );
     const gone = outcomes.flatMap((outcome, i) =>
       outcome.status === "rejected" && SUBSCRIPTION_GONE_STATUS.has(goneStatus(outcome.reason))
-        ? [subscriptions[i].endpoint]
+        ? [targets[i].endpoint]
         : [],
     );
     if (gone.length > 0) {

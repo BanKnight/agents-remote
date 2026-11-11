@@ -1,62 +1,93 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-10 16:10（**地址栏批 `6cf6375` + SW reload 拦截 `6aabf38` + 桌面
-> PWA 跳出 `a0cd822` + 地址跟随补全 `5caa354`**；14 commit 已 push 至 `5003fc8`，其后
-> 2 commit（a0cd822/2f7eda7 已 push）+ 5caa354 待确认）
+> 最后更新：2026-11-11 23:05（**push 通知根治批 A+B+诊断 实现完成 + review 消化完成**，待 commit/push 确认）
 
 ## 一句话状态
 
-用户反馈「非 PWA 可以自由输地址，预览层地址栏为什么不能改」→ 地址栏批交付（`6cf6375`）：
-点地址变输入框（Enter 提交 / Esc·blur 取消，非 / 开头按站点根相对解析），iframe 内点
-站内链接顶栏地址跟随（同源读 contentWindow.location），导航地址是预览层内部 state
-（关闭即弃重开回入口）。不 clamp 路径——404 / app shell 被 frame-ancestors 'none'
-拒的失败态自然呈现，与 CSP 语义自洽。探针 10/10 + 全门禁绿。汇报页同步更新（⑤ 条目）。
-追加 `6aabf38`：桌面 PWA「什么都不做自动刷回工作台」报障根因 = vite-plugin-pwa
-autoUpdate 默认 activated(isUpdate) → 整页 reload；main.tsx 传空 onNeedReload 拦截，
-语义改「发版静默生效」（precache 照常更新、页面不打断、下次刷新用新版）。
+用户报障「通知很久没收到、开关自己变关（另一用户同样）」→ 根因锁定 WebKit 静默推送
+惩罚（sw.ts 前台抑制 + 坏帧 return，3 次不出通知 → Safari 撤权，计数永不清零）→
+用户拍板一步到位 A+B：A = SW 每推必显（buildPushNotification 纯函数 + 坏帧兜底卡 +
+showNotification 拒绝最小参数重试，删前台抑制）；B = 抑制上移服务端（sessions-stream
+visibility 帧 {deviceId, visible} → hub 连接级记账 → PushNotifier fail-open 过滤盯屏
+设备）；顺带 push 链路诊断（pushDiag 双层 + SW postMessage 中继回页面 + 设置页 mount
+探测 + reconcile denied smoking gun 行）。全部实现 + 两份 reviewer 报告消化完毕，
+五项修复（P1 断线自愈 + P2×3 + P3 尺寸闸）落地并全门禁绿，**待用户确认 commit/push**。
 
 ## 本 session 焦点
 
-### 关键发现（不可丢）
+### 关键决策（不可丢）
 
-- **respawn-pane -k（SIGKILL）不杀 api spawn 的 CLI 子进程**：api 瞬间死来不及清理，
-  CLI 变孤儿存活——本会话在 2026-11-10 重启中存活并直接完成验证闭环（此前「api 热重
-  启杀 4 个 CLI 会话」的代价模型只适用 watch 热重启/优雅退出路径；SIGKILL 路径 CLI
-  活，但不可依赖，改 api 前仍须 handoff save + 用户确认）。
-- **curl -sI（HEAD）不走 pages serve 分支**：serve 面 GET-only——验 CSP 头必须 GET
-  （`curl -s -D - -o /dev/null`）。
-- **dev api 不挂 WEB_DIST_DIR**：43011 `/` = 404 JSON 是预期，'none' 分支由单测保障。
-- **探针 record() 漏传 ok 参数 = 无条件 FAIL**（本批 2g 假挂实锤——waitForFunction
-  其实过了，record("name") 没 ok 值恒 falsy）；span.font-mono 选择器过时（地址栏已
-  改 button[title^='http']）。
-- **vite-plugin-pwa autoUpdate 的自动 reload**（`6aabf38` 治理）：registerSW 默认新 SW
-  activated(isUpdate) → 整页 reload；SW 排查链 = curl /p/ 无 redirect（排除 serve 层）
-  → sw.ts denylist `/^\/p\//` 在场（排除 navigateFallback 劫持）→ register.js 源码
-  实锤。onNeedReload 空回调拦截（1.3.0 register.js 原生回调）；防回归断言在
-  pwa-manifest.test.ts。SW 行为探针结构性测不出（Playwright 全新 context 无持久 SW）。
-- probe-fab.mjs 5 处过期 FAIL（drawer/header 新建入口早前 UI 演进已迁移）——待拍板
-  重构或退役。
+- **A 段**：通知构造单源 `web/src/lib/push-notification.ts`（零依赖，SW bundle 独立
+  打包）；title/body 非空才算合法帧（空显示字段按坏帧出兜底）；前台附 `silent:true`
+  仅桌面（iOS 不支持忽略无害）；sw.ts 无任何「不出通知就 return」路径。
+- **B 段**：协议 `SessionShellsStreamClientMessage`（shared）；hub `Map<socket, entry>`
+  连接级记账（close 即清无 TTL）；notifier 过滤 **fail-open**（无 deviceId / 不在集合 /
+  getter 缺省或抛错一律照发）；**gone-prune 必须用 targets[i]**（过滤后索引错位会误删
+  未发送订阅——已有回归测试锁）。
+- **visibility 帧三重职责**：①可见性状态 ②连接保活（该流原本无客户端帧，Bun
+  idleTimeout 255s 空闲断开）③新鲜度（iOS 冻结 → 帧停 → 连接死 → 服务端清 →
+  fail-open 恢复）。周期 25s（复用 HEARTBEAT_INTERVAL_MS）+ open 首发 + 翻面即发；
+  send 不排队（readyState!==OPEN 丢弃）。
+- **review 消化（五项全采纳）**：P1-1 sessions-stream 断线自愈（照 use-approvals：
+  模块级 reconnectTimer + 500ms + 防重入 + refCount>0 守卫 + 归零 clearTimeout——
+  可见性面无 REST 兜底，断线不自愈 = 抑制失效直到 remount）；P2-2 parsePushPayload
+  只留 json() 返回 unknown（形状判定单源 buildPushNotification）；P2-3
+  installPushDiagRelay 模块级 installed 守卫；P2-4 pushPermission() 存局部变量；
+  P3-1 hub.message parse 前尺寸闸 4096 字符（顺带消除 echo 回弹放大）。
 
 ### 进度
 
-- ✅ standalone gate 批（`e5e4839`+`bb4b2f6`）+ CSP 批（`009a3fc`）+ 地址栏批（`6cf6375`）
-- ✅ 汇报页 site/index.html → `/p/agents-remote/` 200（随开发滚动更新，⑤ 条目已加）
+- ✅ 计划批准后 A+B+诊断全部实现（shared/sw/push-notification/push-diag/push/
+  settings-dialog/hub/index/notifier/use-session-shells/main）
+- ✅ 三个 subagent 补全测试（hub 9 用例 / notifier visibility 6 用例 / shared client
+  信封 / use-session-shells 6 用例 FakeWebSocket + jsdom 双 realm）
+- ✅ security-reviewer（无 P0/P1/P2，1 P3 已修）+ code-reviewer（无 P0，1 P1 + 3 P2
+  已修）消化完成
+- ✅ 自查修掉：disconnect 无条件 detach 错杀（改 refCount===0 才 detach）+ index.ts
+  [ws] 日志刷屏（sessions-stream 分支移到日志之前）+ lint unused 变量
+- ✅ review 修复后自补 3 条测试：hub 尺寸闸（形状合法但 >4096 parse 前丢弃）+
+  use-session-shells 断线自愈两用例（500ms 重建+首发 / pending 期间 disconnect 取消）
+- ✅ 全门禁绿：format:check / lint 0 warning / typecheck 三包 / 测试 **api 1316 +
+  web 1081 + shared 13 全 pass** / CSS 硬闸 / tokens 机检；产物落盘验证（sw.js 含
+  fallback retry 特征、WorkbenchRoute chunk 含 "(flip)"，mtime 23:00）
 
-## 下一步
+### 易丢的关键上下文
 
-1. **push 待确认**：`2f7eda7..5caa354` 共 1 commit（地址跟随补全批）。
-2. **真机验收（交用户）**：iOS PWA 点行 → 预览层（地址含域名、可点编辑导航、iframe
-   内导航地址跟随、无「新窗口」钮、关闭回工作台回入口页）；桌面点行 → 原生新标签；
-   FAB ＋ 添加根双端。
-3. probe-fab.mjs 过期断言（5 FAIL）重构 / 退役待拍板。
-4. wiki 格式对齐批（排队）→ wiki Quartz（先 /check-deps）。
+- **bun test 全量在 `ulimit -v 2097152` 下 OOM 连锁 → bun JIT SIGILL 崩溃（
+  `RangeError: Out of memory`）**——本机 18G/available 10G 也复现；改用
+  `systemd-run --scope --user -p MemoryMax=2G bun run test`（cgroup 物理内存，JIT
+  虚拟地址保留不占额）稳定全绿。**dev-environment.md 的「systemd-run/ulimit」二选一
+  中，全量 test 应选 systemd-run**（ulimit -v 是虚拟地址空间限制，对 bun/JSC 过紧，
+  此前能过属侥幸）。
+- use-session-shells 的 Edit 曾出现 `export` 悬空挂到新插注释前的损坏（old_string
+  从 `function` 起匹配吞掉 `export ` 前缀）——修复后已验证；**大段替换时 old_string
+  必须从完整语句边界起**。
+- sessions-stream 上行帧进 hub.message（index.ts message handler 顶部 kind 分支，
+  在 [ws] 调试日志**之前** return——25s 帧不刷日志）。
+- site/（pages 根内容）untracked 不入库——commit 时勿顺手 add。
+- code-reviewer 提醒已核实：site/ 仅一个 index.html，与本批无关。
 
-## 易丢的关键上下文
+## 下一步（等用户确认）
 
-- 重启纪律：respawn-pane -k 目标 window（name=api/web），绝不 kill tmux server。
-- 探针跑法 `bun scripts/X.mjs`（repo 根，43011/43012）；bun test 2G / e2e 4G cgroup。
-- web=prod build + watch（tmux `ar-dev:web`）；改 vite.config 必须 respawn。
-- site/（pages 根内容）untracked 不入库——汇报页属运行时内容物，随开发滚动更新。
+1. **commit + push**（需用户确认；全门禁已绿，pre-commit 会再自动跑一遍）。
+   建议拆两段：① push 通知根治批主体（A+B+诊断+测试）② review 消化批（五项修复+
+   3 条新测试）——或一段全量（改动互相咬合，拆分意义不大，可一段）。
+2. **api respawn 确认**：index.ts/hub/notifier 改动需 `respawn-pane -k -t ar-dev:api`
+   生效——**会杀 api spawn 的 CLI 子进程，动手前必须征用户确认**（web 是 prod build
+   + watch，产物已落盘，只需硬刷新/等 SW 更新）。
+3. **真机验证清单（7 条，见 plans/dynamic-humming-bumblebee.md）**：重开通知权限前置 /
+   前台 done 连续>3 条开关仍开（核心验收）/ 后台 done / 两设备互不干扰 / 服务端 skip
+   日志 / 悬浮球诊断（visibility flip + settings probe）/ 壳推送回归。
+4. 交付说明里提醒：iOS 端被撤销过的权限需在 iOS 设置手动重开（代码只能自愈订阅，
+   撤销的系统权限救不了）。
+
+## 挂账（非本批）
+
+- probe-fab.mjs 过期断言（5 FAIL）待拍板重构/退役。
+- StatusDot/StatusMarker（shell-primitives）休眠死代码待拍板。
+- wiki 格式对齐批 → wiki Quartz（先 /check-deps）。
+- **规则库进化候选**：dev-environment.md 测试内存条目补「全量 bun test 用
+  systemd-run cgroup，ulimit -v 会 OOM-SIGILL」（本批实证）——下次 /evolve 一并。
 
 ## 提醒
 

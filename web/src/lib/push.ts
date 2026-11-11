@@ -1,5 +1,6 @@
 import { getVapidPublicKey, subscribePush, unsubscribePush } from "../api/client";
 import { isStandaloneDisplay } from "./display-mode";
+import { pushDiag } from "./push-diag";
 
 // Web Push 客户端（PWA 通知批）。订阅必须 HTTPS + standalone（iOS 16.4+ 只在主屏
 // PWA 暴露 push 权限）；enablePush 必须在用户手势内调用（Notification.requestPermission
@@ -100,10 +101,11 @@ export const disablePush = async (): Promise<void> => {
 };
 
 // ── 订阅死亡静默对账（2026-11-03 通知排障拍板）────────────────────
-// 背景：iOS 对主屏 PWA 的 push 订阅会在 SW 更新/系统更新/长期未激活后静默撤销
-// （设备端 getSubscription() → null），而 APNs 对死 endpoint 仍报 201——服务端
-// 零失败日志、设备永收不到，唯一线索是设置页开关变回关闭（2026-11-02 真机排障实锤）。
-// 对账 = 前台激活时检查三 gate，全过即静默重订阅自愈，不再依赖用户偶然进设置页发现。
+// 背景：iOS 对主屏 PWA 的 push 订阅会静默撤销（2026-11-11 根治批定位的真因：SW 前台
+// 抑制分支吞通知 → WebKit 静默推送惩罚 → 第 3 次撤销订阅与权限，见 sw.ts 注释），
+// 而 APNs 对死 endpoint 仍报 201——服务端零失败日志、设备永收不到，唯一线索是设置页
+// 开关变回关闭（2026-11-02 真机排障实锤）。对账 = 前台激活时检查三 gate，全过即静默
+// 重订阅自愈，不再依赖用户偶然进设置页发现。
 
 let reconcileInFlight = false;
 
@@ -114,7 +116,16 @@ let reconcileInFlight = false;
  * 返回是否触发了重新订阅（测试/调试用；失败内部吞掉只告警——自愈机制不允许打扰）。
  */
 export const reconcilePushSubscription = async (): Promise<boolean> => {
-  if (!canUsePush() || pushPermission() !== "granted") return false;
+  if (!canUsePush()) return false;
+  // 权限被撤（denied）单独落诊断：这是「通知开关自己变关」的 smoking gun——对账
+  // 自愈被 gate 挡住，用户必须手动重开权限，没有这行就只剩无声无息。
+  const permission = pushPermission();
+  if (permission !== "granted") {
+    if (permission === "denied") {
+      pushDiag("reconcile skip: permission denied（可能被系统撤销，需手动重开）");
+    }
+    return false;
+  }
   // visibility 抖动并发防护：iOS 切 app 快速往返会连发多次 visible。
   if (reconcileInFlight) return false;
   reconcileInFlight = true;
@@ -122,11 +133,14 @@ export const reconcilePushSubscription = async (): Promise<boolean> => {
     const existing = await getPushSubscription();
     if (existing) return false;
     await enablePush();
+    pushDiag("reconcile resubscribed（订阅死亡自愈重订阅成功）");
     return true;
-  } catch (error) {
     // 吞错面覆盖全 async 段：SW/pushManager 边缘态 reject 与 enablePush 失败同样
     // 只告警（调用点都是 void，rejection 逃出即 unhandled）——自愈机制不允许打扰。
-    console.warn("[push] reconcile resubscribe failed:", error);
+  } catch (error) {
+    pushDiag(
+      `reconcile resubscribe failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
     return false;
   } finally {
     reconcileInFlight = false;

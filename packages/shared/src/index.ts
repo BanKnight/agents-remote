@@ -507,6 +507,18 @@ export type SessionShellsStreamServerMessage = {
 };
 
 /**
+ * sessions-stream WS（客户端→服务端）：设备可见性上报（PWA 通知批，2026-11-11）。
+ * 服务端按连接记账（Map<socket, 帧>），断线即清；周期重发（25s）兼作连接保活
+ * （该流原本无任何客户端帧，空闲超时断开）。消费方 = push-notifier：deviceId 命中
+ * visible 集合的订阅跳过发送（fail-open——记录无 deviceId / 不在集合一律照发）。
+ */
+export type SessionShellsStreamClientMessage = {
+  type: "visibility";
+  deviceId: string;
+  visible: boolean;
+};
+
+/**
  * GET /api/overview/subtitles 响应：sessionId → 卡片第二行（terminal lastCommand / agent lastAssistantMessage）。
  * overview 第二阶段异步补全通道——核心列表（OverviewResponse）毫秒级返回后，前端再拉此 map 把
  * subtitle 补进对应卡片。缺失的 sessionId 表示无 subtitle（capture 失败/无 JSONL 消息），卡片不显第二行。

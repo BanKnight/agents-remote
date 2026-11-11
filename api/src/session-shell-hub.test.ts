@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import { SESSIONS_STREAM_PATH, SessionShellHub } from "./session-shell-hub";
 import type { SessionShell } from "@agents-remote/shared";
@@ -155,4 +155,108 @@ test("close: 注销 socket 后不再收到广播", async () => {
   await Promise.resolve();
 
   expect(socket.sent).toHaveLength(1);
+});
+
+// ── 设备可见性记账（push 通知根治批 B 段）──
+
+describe("设备可见性记账（push 通知根治批 B 段）", () => {
+  const visibilityFrame = (deviceId: string, visible: boolean) =>
+    JSON.stringify({ type: "visibility", deviceId, visible });
+
+  test("visible:true 帧记账 → visibleDeviceIds 收录该 deviceId", () => {
+    const { hub } = makeHub([]);
+    hub.message(makeSocket(), visibilityFrame("device-1", true));
+    expect(hub.visibleDeviceIds()).toEqual(new Set(["device-1"]));
+  });
+
+  test("visible:false 帧不收录", () => {
+    const { hub } = makeHub([]);
+    hub.message(makeSocket(), visibilityFrame("device-1", false));
+    expect(hub.visibleDeviceIds().size).toBe(0);
+  });
+
+  test("同 socket 新帧覆盖旧帧：true→false 移出集合，false→true 移回", () => {
+    const { hub } = makeHub([]);
+    const socket = makeSocket();
+    hub.message(socket, visibilityFrame("device-1", true));
+    hub.message(socket, visibilityFrame("device-1", false));
+    expect(hub.visibleDeviceIds().size).toBe(0);
+    hub.message(socket, visibilityFrame("device-1", true));
+    expect(hub.visibleDeviceIds()).toEqual(new Set(["device-1"]));
+  });
+
+  test("两个 socket 同 deviceId 各发 true → 并集只含一个该 deviceId（Set 归并）", () => {
+    const { hub } = makeHub([]);
+    hub.message(makeSocket(), visibilityFrame("device-1", true));
+    hub.message(makeSocket(), visibilityFrame("device-1", true));
+    const visible = hub.visibleDeviceIds();
+    expect(visible.size).toBe(1);
+    expect(visible.has("device-1")).toBe(true);
+  });
+
+  test("坏帧全部忽略（非 JSON / 缺 type / type 不对 / 空串 / 超限 / visible 非布尔）", () => {
+    const { hub } = makeHub([]);
+    const socket = makeSocket();
+    const longId = "d".repeat(129);
+    const badFrames = [
+      "not-json{{{", // 非 JSON 字符串
+      JSON.stringify({ deviceId: "device-1", visible: true }), // 缺 type
+      JSON.stringify({ type: "sessions", sessions: [] }), // type 不对（服务端下行帧方向）
+      JSON.stringify({ type: "visibility", deviceId: "", visible: true }), // deviceId 空串
+      JSON.stringify({ type: "visibility", deviceId: longId, visible: true }), // 超 128 字符
+      JSON.stringify({ type: "visibility", deviceId: "device-1", visible: "yes" }), // visible 非布尔
+    ];
+    for (const raw of badFrames) hub.message(socket, raw);
+    expect(hub.visibleDeviceIds().size).toBe(0);
+  });
+
+  test("坏帧忽略 = 不动既有记账（good 帧后接坏帧，条目仍在）", () => {
+    const { hub } = makeHub([]);
+    const socket = makeSocket();
+    hub.message(socket, visibilityFrame("device-1", true));
+    hub.message(socket, "not-json{{{");
+    expect(hub.visibleDeviceIds()).toEqual(new Set(["device-1"]));
+  });
+
+  test("deviceId 限长边界：129 字符拒绝、128 字符通过", () => {
+    const { hub } = makeHub([]);
+    const socket = makeSocket();
+    hub.message(socket, visibilityFrame("d".repeat(129), true));
+    expect(hub.visibleDeviceIds().size).toBe(0);
+    hub.message(socket, visibilityFrame("d".repeat(128), true));
+    expect(hub.visibleDeviceIds()).toEqual(new Set(["d".repeat(128)]));
+  });
+
+  test("尺寸闸（P3-1）：形状合法但总体积超 4096 的帧 parse 前丢弃（守卫本会放行，空集 = 闸生效实锤）", () => {
+    const { hub } = makeHub([]);
+    const socket = makeSocket();
+    // 多余字段不进守卫检查——若尺寸闸失效，此帧会被记账成功。
+    const oversized = JSON.stringify({
+      type: "visibility",
+      deviceId: "device-1",
+      visible: true,
+      pad: "x".repeat(5000),
+    });
+    expect(oversized.length).toBeGreaterThan(4096);
+    hub.message(socket, oversized);
+    expect(hub.visibleDeviceIds().size).toBe(0);
+  });
+
+  test("close 清记账：发 true 后 close，集合为空", () => {
+    const { hub } = makeHub([]);
+    const socket = makeSocket();
+    hub.message(socket, visibilityFrame("device-1", true));
+    expect(hub.visibleDeviceIds().size).toBe(1);
+    hub.close(socket);
+    expect(hub.visibleDeviceIds().size).toBe(0);
+  });
+
+  test("无帧老客户端（订阅但从未上行 visibility）不进集合", async () => {
+    const { hub } = makeHub([shell()]);
+    const socket = makeSocket();
+    hub.open(socket);
+    await Promise.resolve();
+    expect(socket.sent).toHaveLength(1); // 收到快照，从未上行帧
+    expect(hub.visibleDeviceIds().size).toBe(0);
+  });
 });

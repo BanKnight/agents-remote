@@ -46,6 +46,7 @@ import {
   getPushSubscription,
   pushPermission,
 } from "../../lib/push";
+import { pushDiag } from "../../lib/push-diag";
 import { useIsMobile } from "@/lib/use-is-mobile";
 import { useTheme } from "../../theme";
 import { toggleSwitchKnobClasses, toggleSwitchTrackClasses } from "./shell-primitives";
@@ -609,7 +610,12 @@ function NotificationsSection() {
 
   useEffect(() => {
     setDenied(pushPermission() === "denied");
-    void getPushSubscription().then((s) => setSubscribed(Boolean(s)));
+    void getPushSubscription().then((s) => {
+      pushDiag(
+        `settings probe: subscription=${s ? "alive" : "gone"} permission=${pushPermission()}`,
+      );
+      setSubscribed(Boolean(s));
+    });
   }, []);
 
   const settingsMutation = useMutation({

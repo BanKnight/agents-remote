@@ -1,11 +1,21 @@
-import type { SessionShell, SessionShellsStreamServerMessage } from "@agents-remote/shared";
+import type {
+  SessionShell,
+  SessionShellsStreamClientMessage,
+  SessionShellsStreamServerMessage,
+} from "@agents-remote/shared";
 import type { AuthService } from "./auth";
 import type { SessionRegistry } from "./session-registry";
 import { canUpgradeWebSocket } from "./ws-auth";
 
 /** 全局会话壳 WS 路径：壳元数据（status/mode/displayName/close）统一推送通道——
- *  变更推全量快照（同 approvals-stream 语义），不寄生任何内容流（chat 消息流/终端字节流）。 */
+ *  变更推全量快照（同 approvals-stream 连接语义），不寄生任何内容流（chat 消息流/终端字节流）。 */
 export const SESSIONS_STREAM_PATH = "/api/sessions/stream";
+
+/** 设备可见性记账行（push 通知根治批 B 段）：按连接记账，断线即清（close 删条目）。 */
+type VisibilityEntry = {
+  deviceId: string;
+  visible: boolean;
+};
 
 type ShellSocket = {
   data?: unknown;
@@ -30,6 +40,8 @@ export class SessionShellHub {
   private dirty = false;
   /** 上帧 JSON（同帧跳过的比对基准；首帧恒发送）。 */
   private lastFrame: string | null = null;
+  /** 设备可见性记账（B 段）：socket → 最新 visibility 帧。连接级状态：断线即清，无 TTL。 */
+  private readonly visibility = new Map<ShellSocket, VisibilityEntry>();
 
   constructor(private readonly registry: SessionRegistry) {}
 
@@ -64,6 +76,39 @@ export class SessionShellHub {
 
   close(socket: ShellSocket): void {
     this.sockets.delete(socket);
+    // 可见性记账同清理：断线即清（连接级状态，无 TTL）——stale visible 由连接死亡
+    // 天然兜底（iOS 冻结 → 帧停 → idleTimeout/NAT 断开 → fail-open 恢复照发）。
+    this.visibility.delete(socket);
+  }
+
+  // ── 客户端上行帧（push 通知根治批 B 段）──
+
+  /**
+   * 客户端 → 服务端消息：visibility 帧记账（同 socket 新帧覆盖旧帧）。
+   * 坏帧（非 JSON / 非守卫形状）忽略——上行帧是网络输入面，与 sw.ts isPushPayload
+   * 同款「来料不可信」纪律；超长帧 parse 前直接丢弃（security review P3-1：visibility
+   * 帧合法上限远小于此闸，parse 大体积输入徒耗 CPU，且顺带消除 echo 回弹放大路径）。
+   */
+  message(socket: ShellSocket, raw: unknown): void {
+    const text = String(raw);
+    if (text.length > CLIENT_FRAME_MAX_CHARS) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return;
+    }
+    if (!isVisibilityFrame(parsed)) return;
+    this.visibility.set(socket, { deviceId: parsed.deviceId, visible: parsed.visible });
+  }
+
+  /** 当前盯屏设备集合：visible:true 条目的 deviceId 并集（多标签同 deviceId 天然归并）。 */
+  visibleDeviceIds(): Set<string> {
+    const out = new Set<string>();
+    for (const entry of this.visibility.values()) {
+      if (entry.visible) out.add(entry.deviceId);
+    }
+    return out;
   }
 
   /** registry 变更入口（index.ts 装配：registry.onMetadataChanged = () => hub.scheduleBroadcast()）。 */
@@ -113,3 +158,22 @@ export class SessionShellHub {
     }
   }
 }
+
+/** visibility 上行帧守卫（网络输入面，手写形状校验）：deviceId 非空限长 + visible 布尔。 */
+const DEVICE_ID_MAX_CHARS = 128;
+
+/** 上行帧尺寸闸（security review P3-1）：parse 前预检，超长帧直接丢弃（visibility
+ *  帧实际合法体积极小，4KB 闸远宽于合法值、远窄于滥用面）。 */
+const CLIENT_FRAME_MAX_CHARS = 4096;
+
+const isVisibilityFrame = (value: unknown): value is SessionShellsStreamClientMessage => {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.type === "visibility" &&
+    typeof v.deviceId === "string" &&
+    v.deviceId.length > 0 &&
+    v.deviceId.length <= DEVICE_ID_MAX_CHARS &&
+    typeof v.visible === "boolean"
+  );
+};

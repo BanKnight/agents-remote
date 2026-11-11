@@ -12,7 +12,11 @@ import type {
 } from "@agents-remote/shared";
 
 import { sessionsStreamUrl } from "../api/client";
+import { pushDiag } from "../lib/push-diag";
 import { queryClient } from "../lib/query-client";
+import { pushDeviceId } from "../lib/push";
+import { HEARTBEAT_INTERVAL_MS } from "../lib/ws-heartbeat";
+import type { SessionShellsStreamClientMessage } from "@agents-remote/shared";
 
 /** 列表/detail query key 段（client.ts 同惯例）：写扩散与 invalidate 通道共用。 */
 function sessionListSegment(type: SessionShell["type"]): string {
@@ -148,9 +152,19 @@ export function applyShellDiff(diff: ShellDiff): void {
 let syncedCandidates: OverviewCandidate[] | undefined;
 
 // sessions-stream WS 单订阅（模块级引用计数，同 use-approvals）：Workbench 根常开一个
-// 实例即全应用生效；断线无重连（REST 轮询兜底），onclose 清引用防二次 close。
+// 实例即全应用生效；断线 500ms 自愈重连（见 openShellsSocket），onclose 清引用防二次 close。
 let shellsWsRefCount = 0;
 let shellsWsSocket: WebSocket | null = null;
+
+/**
+ * visibility 上行帧构造（纯函数，单测锚点，push 通知根治批 B 段）：deviceId 取
+ * pushDeviceId()（localStorage 持久化的设备随机 ID，与订阅上报同源——服务端按它
+ * 归并多标签并集）。导出仅供单测锚点。
+ */
+export function visibilityFrame(deviceId: string, visible: boolean): string {
+  const frame: SessionShellsStreamClientMessage = { type: "visibility", deviceId, visible };
+  return JSON.stringify(frame);
+}
 
 function applyShellsFrame(frame: unknown): void {
   let shells: SessionShell[];
@@ -174,7 +188,7 @@ function applyShellsFrame(frame: unknown): void {
 }
 
 /**
- * overview 数据变化 → 写扩散订阅：WS 断线不重连（靠 overview 10s 轮询兜底），轮询只更新
+ * overview 数据变化 → 写扩散订阅：WS 断线期间靠 overview 10s 轮询兜底，轮询只更新
  * overview；列表/详情副本若不跟着同步会永久陈旧。把同一条 diff/patch 通道接到 REST 来源，
  * WS 与轮询两条入口行为一致。
  */
@@ -191,11 +205,76 @@ function subscribeOverviewSync(): () => void {
   });
 }
 
-function connectShellsStream(): void {
-  shellsWsRefCount += 1;
-  if (shellsWsSocket) return;
+// ── 设备可见性上报（push 通知根治批 B 段）────────────────────────
+// 一帧三职：①可见性状态（服务端跳过盯屏设备的推送）②连接保活（本流原本无任何客户端
+// 帧，Bun idleTimeout 255s 空闲断开且客户端不重连）③新鲜度（iOS 冻结页面 → 定时器停
+// → 连接超时死 → 服务端 close 清记账 → fail-open 恢复照发）。
+const VISIBILITY_REPORT_INTERVAL_MS = HEARTBEAT_INTERVAL_MS;
+
+/** 上报单例（模块级，与 WS 单例同生命周期：refCount 0↔1 幂等挂/摘）。 */
+const visibilityReporting = {
+  timer: null as ReturnType<typeof setInterval> | null,
+  deviceId: "",
+  attached: false,
+  lastVisible: true,
+};
+
+/** 发送 visibility 帧：readyState !== OPEN 丢弃不排队（open 首发 / 25s tick / 翻面三
+ *  个断言点天然重发，无需排队语义）。 */
+function sendVisibilityFrame(visible: boolean): void {
+  if (!shellsWsSocket || shellsWsSocket.readyState !== WebSocket.OPEN) return;
+  shellsWsSocket.send(visibilityFrame(visibilityReporting.deviceId, visible));
+}
+
+/** 挂载可见性上报（幂等）：deviceId 连接内取一次（稳定是服务端多标签归并的前提）。 */
+function attachVisibilityReporting(): void {
+  if (visibilityReporting.attached) return;
+  visibilityReporting.attached = true;
+  visibilityReporting.deviceId = pushDeviceId();
+  visibilityReporting.lastVisible = document.visibilityState === "visible";
+  visibilityReporting.timer = setInterval(() => {
+    sendVisibilityFrame(document.visibilityState === "visible");
+    // tick 不落诊断（25s 一条会刷爆 24 行缓冲）。
+  }, VISIBILITY_REPORT_INTERVAL_MS);
+  document.addEventListener("visibilitychange", onVisibilityFlip);
+}
+
+function detachVisibilityReporting(): void {
+  if (!visibilityReporting.attached) return;
+  visibilityReporting.attached = false;
+  if (visibilityReporting.timer !== null) {
+    clearInterval(visibilityReporting.timer);
+    visibilityReporting.timer = null;
+  }
+  document.removeEventListener("visibilitychange", onVisibilityFlip);
+}
+
+/** visibilitychange 即发帧；只在真翻面（visible↔hidden）时记一条诊断（防刷缓冲）。 */
+function onVisibilityFlip(): void {
+  const visible = document.visibilityState === "visible";
+  sendVisibilityFrame(visible);
+  if (visible !== visibilityReporting.lastVisible) {
+    pushDiag(`visibility ${visible ? "visible" : "hidden"} (flip)`);
+    visibilityReporting.lastVisible = visible;
+  }
+}
+
+// 断线自愈（code review P1-1，同 use-approvals §6.5 补强批模式）：可见性面无 REST 兜底
+// （抑制状态只活在服务端 WS 记账里），断线不自愈 = 一次网络抖动 / iOS 冻结唤醒后该设备
+// 的通知抑制失效直到整页 remount；壳数据也顺带回到推送通道。500ms 固定间隔（同
+// claude-adapter scheduleReconnect 先例）。
+let shellsWsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const SHELLS_WS_RECONNECT_MS = 500;
+
+function openShellsSocket(): void {
+  // 防重入：已有连接或已排重连时不再开（onclose 双发、重连等待期新挂载均不叠连）。
+  if (shellsWsSocket || shellsWsReconnectTimer) return;
   const socket = new WebSocket(sessionsStreamUrl());
   shellsWsSocket = socket;
+  socket.onopen = () => {
+    // 连接建立即首发帧：不依赖下一个 25s tick（否则最长 25s 窗口内服务端不知可见性）。
+    sendVisibilityFrame(document.visibilityState === "visible");
+  };
   socket.onmessage = (event) => {
     try {
       applyShellsFrame(JSON.parse(String(event.data)));
@@ -204,15 +283,38 @@ function connectShellsStream(): void {
     }
   };
   socket.onclose = () => {
+    // 连接断开清引用：后续卸载时 refCount 已归零守卫，不再对已关闭 socket 二次 close。
     if (shellsWsSocket === socket) shellsWsSocket = null;
+    if (shellsWsRefCount > 0 && !shellsWsReconnectTimer) {
+      shellsWsReconnectTimer = setTimeout(() => {
+        shellsWsReconnectTimer = null;
+        openShellsSocket();
+      }, SHELLS_WS_RECONNECT_MS);
+    }
   };
 }
 
-function disconnectShellsStream(): void {
+/** 导出仅供单测锚点（生产消费方只有 useSessionShells effect）。 */
+export function connectShellsStream(): void {
+  shellsWsRefCount += 1;
+  attachVisibilityReporting();
+  openShellsSocket();
+}
+
+/** 导出仅供单测锚点（同 connectShellsStream）。 */
+export function disconnectShellsStream(): void {
   shellsWsRefCount -= 1;
-  if (shellsWsRefCount === 0 && shellsWsSocket) {
-    shellsWsSocket.close();
-    shellsWsSocket = null;
+  // 归零才 detach（与 attach 的幂等挂载对称）：多挂载场景 refCount 2→1 时上报必须存活。
+  if (shellsWsRefCount === 0) {
+    detachVisibilityReporting();
+    if (shellsWsReconnectTimer) {
+      clearTimeout(shellsWsReconnectTimer);
+      shellsWsReconnectTimer = null;
+    }
+    if (shellsWsSocket) {
+      shellsWsSocket.close();
+      shellsWsSocket = null;
+    }
   }
 }
 

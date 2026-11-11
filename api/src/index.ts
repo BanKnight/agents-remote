@@ -2622,6 +2622,9 @@ export const startApi = async () => {
     keys: pushKeys,
     subscriptions: pushSubscriptions,
     settings: settingsStore,
+    // 设备可见性集合（B 段 fail-open 过滤）：hub 装配在先（连接级记账，断线即清），
+    // getter 注入（顺序依赖不可反向）。缺省/抛错 = 不过滤（照发）。
+    visibleDevices: () => sessionShellHub.visibleDeviceIds(),
   });
   approvalCenter.onApprovalRegistered = async (record) => {
     // sessionName 异步回填（registry 内部才知道 displayName）。
@@ -3017,6 +3020,13 @@ export const startApi = async () => {
         }
       },
       message(ws, message) {
+        // sessions-stream 上行帧（visibility 上报）在 [ws] 调试日志之前分流：25s 保活
+        // 帧高频，逐条打日志会淹没真正的消息日志（根治批 B 段）。hub 记账，坏帧忽略；
+        // echo 兜底天然截住（旧客户端不发帧，零影响）。
+        if (ws.data?.kind === "sessions-stream") {
+          sessionShellHub.message(ws, message);
+          return;
+        }
         const raw = message.toString().slice(0, 120);
         console.log(`[ws] message kind=${ws.data?.kind ?? "none"} raw=${raw}`);
         if (ws.data?.kind === "session-stream") {
