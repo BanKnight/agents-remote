@@ -174,7 +174,8 @@ try {
   await page.waitForTimeout(600);
 
   const bodyText = () => page.evaluate(() => document.body.innerText);
-  /** 文本所在行（向上 ≤6 层）的状态点 class。 */
+  /** 文本所在行（向上 ≤6 层）的状态点 class + computed 背景（bg ≠ transparent =
+   * 「实心」的 computed 证明——className 断言对 CSS 落盘盲，frontend-notes §10）。 */
   const dotFor = (text) =>
     page.evaluate((target) => {
       const leaf = [...document.querySelectorAll("*")].find(
@@ -183,17 +184,20 @@ try {
       let node = leaf;
       for (let i = 0; node && i < 6; i += 1) {
         const dot = node.querySelector?.(".dot2");
-        if (dot) return dot.className;
+        if (dot) return { cls: dot.className, bg: getComputedStyle(dot).backgroundColor };
         node = node.parentElement;
       }
       return null;
     }, text);
 
-  const initialDot = String(await dotFor("旧名"));
+  const initialDot = await dotFor("旧名");
   check(
-    "1a 初始：左栏「旧名」行状态点 = idle 实心灰（bg-ink-2，无 bg-success）",
-    initialDot.includes("bg-ink-2") && !initialDot.includes("bg-success"),
-    initialDot,
+    "1a 初始：左栏「旧名」行状态点 = idle 实心灰（bg-ink-2 落盘非透明，无 bg-success）",
+    initialDot &&
+      initialDot.cls.includes("bg-ink-2") &&
+      !initialDot.cls.includes("bg-success") &&
+      initialDot.bg !== "rgba(0, 0, 0, 0)",
+    `${initialDot?.cls} bg=${initialDot?.bg}`,
   );
 
   // 历史浮层：活跃但 idle 的会话必须画 idle 灰点（旧实现 hasActiveSession → working 绿点）。
@@ -201,9 +205,12 @@ try {
   await page.getByText("历史会话").first().waitFor({ state: "visible", timeout: 5000 });
   const historyDot = await dotFor("历史会话");
   check(
-    "2a 历史行：活跃但 idle 的会话 = idle 实心灰点（bg-ink-2，真实状态非伪 working）",
-    Boolean(historyDot) && historyDot.includes("bg-ink-2") && !historyDot.includes("bg-success"),
-    String(historyDot),
+    "2a 历史行：活跃但 idle 的会话 = idle 实心灰点（bg-ink-2 落盘，真实状态非伪 working）",
+    Boolean(historyDot) &&
+      historyDot.cls.includes("bg-ink-2") &&
+      !historyDot.cls.includes("bg-success") &&
+      historyDot.bg !== "rgba(0, 0, 0, 0)",
+    `${historyDot?.cls} bg=${historyDot?.bg}`,
   );
 
   // 回到活跃列表，点开会话 tab（detail fixture 返回「旧名」，缓存由此拉热）。
@@ -265,8 +272,8 @@ try {
   const agent1Dot = await dotFor("新名");
   check(
     "4c agent_1 行状态点 = working 绿（status 写扩散生效）",
-    Boolean(agent1Dot?.includes("bg-success")),
-    String(agent1Dot),
+    Boolean(agent1Dot?.cls?.includes("bg-success")) && agent1Dot.bg !== "rgba(0, 0, 0, 0)",
+    `${agent1Dot?.cls} bg=${agent1Dot?.bg}`,
   );
 
   // 场景 B：WS 断线时的自愈通道——overview 10s 轮询拿到新值，订阅者（queryCache）必须

@@ -404,7 +404,8 @@ export function InstanceArea({
  */
 /**
  * 05g「全部会话」分组列表（§6.12j 批次 5）：microlabel 按项目分组 + 置顶段最前。行 =
- * srow2.inst（dot2 状态点：running 实心 c-success、其余 1.4px 空心 ink-2）＋ §4.8 统一行形
+ * srow2.inst（dot2 状态点：working/running 实心绿、blocked 橙、error 红、其余实心灰
+ * bg-ink-2——单源 instanceDot2，2026-11-11 起全状态实心）＋ §4.8 统一行形
  * （品牌标 + 名 + 行尾簇：状态点 + 时间，text-micro）。置顶组行**不显示项目名 chip、不显示
  * pin**（2026-11-02 用户拍板：置顶即用户关心的，项目名冗余；置顶语义由分组头表达）；空项目组
  * = 「暂无活跃会话」引导行（05g「DOCS-WIKI · 0」段）。点行 = 中栏开 tab 并激活（pin⑤，组件内
