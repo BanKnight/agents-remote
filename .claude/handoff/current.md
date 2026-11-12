@@ -86,8 +86,8 @@ visibility 帧 {deviceId, visible} → hub 连接级记账 → PushNotifier fail
 - probe-fab.mjs 过期断言（5 FAIL）待拍板重构/退役。
 - StatusDot/StatusMarker（shell-primitives）休眠死代码待拍板。
 - wiki 格式对齐批 → wiki Quartz（先 /check-deps）。
-- **规则库进化候选**：dev-environment.md 测试内存条目补「全量 bun test 用
-  systemd-run cgroup，ulimit -v 会 OOM-SIGILL」（本批实证）——下次 /evolve 一并。
+- ~~规则库进化候选~~ ✅ 已落地（2026-11-12）：dev-environment.md「测试内存上限」条目
+  改写为 cgroup 唯一推荐（ulimit -v 对 bun/JSC 过紧，OOM 假 fail 群 + SIGILL 判定口诀）。
 
 ## 提醒
 
