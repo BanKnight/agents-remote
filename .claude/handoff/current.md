@@ -1,7 +1,30 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-12（**push 通知根治批 `b130a41` 已 commit+push、api 已 respawn
-> 生效；用户拍板「真机验收转长期观察」——无阻塞待办**）
+> 最后更新：2026-11-12 10:15（**「已停仍显示执行中」排障定案 + 根级 overview 兜底
+> 轮询修复 `003ee20` 已推送**——待用户硬刷新拿新 SW 验证）
+
+## 排障定案（2026-11-12「切不了/执行中」，不可丢）
+
+- **服务端无罪（后台任务实锤）**：turn 结束 4 分钟后 `status=done` + 状态文件最后
+  事件 `Stop`——hooks/watcher/状态机全链健康。inotify watch 挂着（/proc fd 933→
+  状态文件 inode）、PostToolUse 实时写、`spawnInitialStatus`/`nextAgentSessionStatus`
+  纯函数正确。
+- **真根因 = 前端 status 冻结**：api respawn 断壳 WS → 旧前端无断线自愈（P1-1 未达
+  设备）→ **项目视图无任何 REST 兜底**——`useGlobalInstanceCandidates` 的 10s 轮询
+  `enabled:isGlobal` 只覆盖全局视图（M10 注释声称的兜底实际只挂那一处）+
+  `refetchOnWindowFocus:false` 全局关 → status 冻结成断线前旧值，模式切换菜单
+  `busyBlocked` 误报「执行中」（服务端 done 已 59 分钟——transcript END_TURN 08:40
+  vs 用户报障 09:39）。
+- **修复 `003ee20`**：WorkbenchRoute 根级常驻 overview observer（10s、无条件
+  enabled）——与 useSessionShells 并列作纵深闸；探针 `probe-overview-fallback-poll.mjs`
+  锁「项目视图 15s 内 ≥1 次 interval 请求」。
+- **取证方法论**：①后台任务 sleep 后读磁盘 = 「turn 结束后 Stop 链」决定性判据；
+  ②transcript END_TURN 时间戳重建 done 窗口；③`/proc/<pid>/fdinfo` inotify ino
+  反查 watch 目标；④登录探针必须 locale:zh-CN（headless 默认 en，中文 label 不命中）。
+- **未解支线**：09:39 的 recordActivity（updatedAt 整分钟戳）来源未定位——terminal
+  形态不该有 claude-stream/stdout 驱动链；不影响主判决，挂账观察。
+- **规则库进化候选（/evolve）**：「前端 status 类缓存必须有与 WS 主通道解耦的周期
+  兜底，且兜底 observer 的 enabled 条件不能随视图 scope 收窄」——M10 教训升级版。
 
 ## 一句话状态
 
