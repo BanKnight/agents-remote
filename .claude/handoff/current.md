@@ -1,6 +1,7 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-11 23:05（**push 通知根治批 A+B+诊断 实现完成 + review 消化完成**，待 commit/push 确认）
+> 最后更新：2026-11-12（**push 通知根治批 `b130a41` 已 commit+push、api 已 respawn
+> 生效；用户拍板「真机验收转长期观察」——无阻塞待办**）
 
 ## 一句话状态
 
@@ -67,19 +68,18 @@ visibility 帧 {deviceId, visible} → hub 连接级记账 → PushNotifier fail
 - site/（pages 根内容）untracked 不入库——commit 时勿顺手 add。
 - code-reviewer 提醒已核实：site/ 仅一个 index.html，与本批无关。
 
-## 下一步（等用户确认）
+## 下一步
 
-1. **commit + push**（需用户确认；全门禁已绿，pre-commit 会再自动跑一遍）。
-   建议拆两段：① push 通知根治批主体（A+B+诊断+测试）② review 消化批（五项修复+
-   3 条新测试）——或一段全量（改动互相咬合，拆分意义不大，可一段）。
-2. **api respawn 确认**：index.ts/hub/notifier 改动需 `respawn-pane -k -t ar-dev:api`
-   生效——**会杀 api spawn 的 CLI 子进程，动手前必须征用户确认**（web 是 prod build
-   + watch，产物已落盘，只需硬刷新/等 SW 更新）。
-3. **真机验证清单（7 条，见 plans/dynamic-humming-bumblebee.md）**：重开通知权限前置 /
-   前台 done 连续>3 条开关仍开（核心验收）/ 后台 done / 两设备互不干扰 / 服务端 skip
-   日志 / 悬浮球诊断（visibility flip + settings probe）/ 壳推送回归。
-4. 交付说明里提醒：iOS 端被撤销过的权限需在 iOS 设置手动重开（代码只能自愈订阅，
-   撤销的系统权限救不了）。
+1. **push 通知 = 长期观察期**（用户 2026-11-12 拍板）：修复已全部生效，核心验收
+   （前台连续 >3 条开关仍开 / 两设备互不干扰）靠日常使用自然验证。观察期内若再报
+   「收不到」：先开悬浮球诊断读 push 缓冲（visibility flip / settings probe /
+   reconcile denied 三类行），再查服务端 `[push] … skipped` 日志——三层一手数据
+   定位后再动手，勿凭推理开修（§22 纪律）。
+2. **前置提醒仍在**：iOS 端被 Safari 撤销过的权限需用户在系统设置手动重开（代码
+   只能自愈订阅，撤销的系统权限救不了）；手机端需硬刷新一次让新 SW 接管。
+3. 挂账推进（见下）。
+
+## 挂账（非本批）
 
 ## 挂账（非本批）
 
