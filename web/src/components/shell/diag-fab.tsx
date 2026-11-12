@@ -10,8 +10,10 @@ import {
   isDiagEnabled,
   readDiagEntries,
   readDiagLines,
+  setDiagEnabled,
 } from "../../lib/diag-log";
 import { Dialog, DialogContent } from "../ui/dialog";
+import { toggleSwitchKnobClasses, toggleSwitchTrackClasses } from "./shell-primitives";
 import { LucideIcon } from "./lucide-icon";
 import { MobileSheet } from "./mobile-sheet";
 
@@ -252,6 +254,10 @@ function DiagPanel({ lines }: { lines: string[] }) {
   const [copied, setCopied] = useState(false);
   const [uploadState, setUploadState] = useState<"idle" | "busy" | "done" | "failed">("idle");
   const [uploadError, setUploadError] = useState("");
+  // 开关行（2026-11-12 用户拍板）：面板内随时可关——关闭即广播 DIAG_ENABLED_EVENT，
+  // DiagFab 卸载时球与面板一起消失（组件头注释「开关关闭即整条消失」）；再开走设置页
+  // DiagnosticsSection。DiagSheet 每次打开时挂载，useState 初值即最新。
+  const [diagOn, setDiagOn] = useState(isDiagEnabled());
 
   const handleCopy = () => {
     void navigator.clipboard
@@ -283,6 +289,24 @@ function DiagPanel({ lines }: { lines: string[] }) {
     "cursor-pointer rounded-lg border border-sep bg-surface px-2.5 py-1 text-caption text-on-surface-muted transition hover:bg-elevated2 disabled:cursor-default disabled:opacity-60";
   return (
     <div className="flex min-h-0 flex-col">
+      <button
+        aria-checked={diagOn}
+        className="mb-2 flex w-full cursor-pointer items-center justify-between gap-3 py-1"
+        onClick={() => {
+          const next = !diagOn;
+          setDiagEnabled(next);
+          setDiagOn(next);
+        }}
+        role="switch"
+        type="button"
+      >
+        <span className="text-caption text-on-surface-muted">Diagnostic log</span>
+        <span aria-hidden="true" className={`shrink-0 ${toggleSwitchTrackClasses(diagOn)}`}>
+          <span
+            className={`${toggleSwitchKnobClasses} ${diagOn ? "translate-x-[1.375rem]" : "translate-x-0.5"}`}
+          />
+        </span>
+      </button>
       <pre className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap break-all rounded-lg bg-surface-inset p-2.5 text-caption text-on-surface-muted">
         {lines.length > 0 ? lines.join("\n") : "(empty)"}
       </pre>

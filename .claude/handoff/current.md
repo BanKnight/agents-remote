@@ -1,7 +1,25 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-12 10:15（**「已停仍显示执行中」排障定案 + 根级 overview 兜底
-> 轮询修复 `003ee20` 已推送**——待用户硬刷新拿新 SW 验证）
+> 最后更新：2026-11-12（**DiagFab 诊断面板开关行落地，待用户确认 commit/push**；
+> 前批：「已停仍显示执行中」排障定案 + 根级 overview 兜底轮询修复 `003ee20` 已推送
+> ——待用户硬刷新拿新 SW 验证）
+
+## DiagFab 诊断面板开关批（2026-11-12，待 commit/push）
+
+- **需求**（用户原话）：「诊断用的悬浮按钮，在诊断面板也加一个开关，随时关掉这个功能」。
+- **实现**（diag-fab.tsx 单文件 +21 行）：DiagPanel 顶部加开关行（role="switch"），
+  调既有 `setDiagEnabled`（diag-log.ts：内存 + localStorage `ar-diag-enabled` 持久化 +
+  DIAG_ENABLED_EVENT 广播）；视觉复用 shell-primitives `toggleSwitchTrackClasses/Knob`
+  （与设置页 DiagnosticsSection 同源同构）；label 英文硬编码（组件头既有决策「诊断件
+  不进 i18n」）。
+- **语义**：面板内点关 → 广播 → DiagFab return null → 球与面板一起消失（组件头注释
+  「开关关闭即整条消失」既定语义）；再开走设置页 DiagnosticsSection（既有入口）。
+- **门禁**：web typecheck / diag-log 9 pass / lint 0 warning / format / CSS 硬闸 /
+  tokens 机检全绿；产物落盘验证（entry chunk 含 "Diagnostic log"、CSS content-type
+  text/css、1.375rem utility 在盘）；**code-reviewer 通过零发现**（关闭链无竞态/泄漏、
+  双端一致、面板永不出 off 视觉帧——点击即整树卸载）。
+- **注意**：scripts/probe-fab.mjs 是旧「新建入口 FAB」探针，与 DiagFab 无关，挂账
+  互不影响。
 
 ## 排障定案（2026-11-12「切不了/执行中」，不可丢）
 
