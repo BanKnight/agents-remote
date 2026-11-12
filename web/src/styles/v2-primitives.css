@@ -3332,6 +3332,12 @@
     white-space: nowrap;
     text-overflow: ellipsis;
   }
+  /* 多 chip 同行（2026-11-12 用户反馈「有更新标签出现在中间」）：margin-left:auto 在
+     flex 里每个都参与剩余空间均分——「有更新 + 来源」两个 chip 被拉开、前者悬在卡中央。
+     相邻 chip 收拢成右端一簇，只有首个 chip 吃 auto（推右）。 */
+  .pcard .upd + .upd {
+    margin-left: 6px;
+  }
   /* 停用态 chip（design review 低13）：中性灰——语义是静止状态，不与「有更新」蓝 tint/
      「待更新」橙 tint 抢注意力。 */
   .pcard .upd.off {

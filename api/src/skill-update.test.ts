@@ -234,17 +234,77 @@ describe("executeUpdate", () => {
 });
 
 describe("handleSkillUpdateRoutes", () => {
-  it("dispatches GET updates", async () => {
+  it("dispatches POST updates → 202 任务链；后台完成 done 帧带 updates", async () => {
     await makeInstalledSkill("handmade");
-    setGithub();
+    // 写 lock + mock 远端 tree SHA 不同 → 后台真实走 GitHub 比对路径（无 lock 时
+    // checkSkillUpdates 对无锁条目 continue，setGithub 完全惰性、只测 no-lock 快路径）。
+    await writeLock({ handmade: lockEntry({ skillFolderHash: "oldhash111" }) });
+    setGithub({
+      trees: [{ path: "skills/react-best-practices", type: "tree", sha: "newhash222" }],
+    });
     const res = await handleSkillUpdateRoutes(
-      req("GET", "/api/skills/updates?agent=claude-code"),
-      new URL("http://x/api/skills/updates?agent=claude-code"),
+      req("POST", "/api/skills/updates", { agent: "claude-code" }),
+      new URL("http://x/api/skills/updates"),
       deps,
     );
-    expect(res?.status).toBe(200);
-    const body = (await res!.json()) as { updates: unknown[] };
-    expect(Array.isArray(body.updates)).toBe(true);
+    expect(res?.status).toBe(202);
+    const body = (await res!.json()) as { taskId: string; status: string };
+    expect(body.status).toBe("running");
+    const task = skillTaskRegistry.get(body.taskId);
+    for (let i = 0; i < 50 && task!.status === "running"; i++) {
+      await new Promise<void>((r) => setTimeout(r, 10));
+    }
+    expect(task!.status).toBe("done");
+    expect(task!.result?.updates).toEqual([
+      {
+        name: "handmade",
+        hasUpdate: true,
+        manageable: true,
+        sourceType: "github",
+        sourceUrl: "https://github.com/vercel-labs/agent-skills.git",
+      },
+    ]);
+    skillTaskRegistry.clear();
+  });
+
+  it("POST updates 同 agent 进行中 → joined 复用 taskId（去重）", async () => {
+    await makeInstalledSkill("handmade");
+    // lock + repo group 真实存在，GitHub fetch 挂起 → 后台任务钉在 running，joined 断言
+    // 不靠调度运气（无 lock 时任务会瞬间 finish，第二次 POST 拿到新 taskId）。
+    await writeLock({ handmade: lockEntry({}) });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof _input === "string" ? _input : String(_input);
+      if (url.includes("api.github.com")) return new Promise<Response>(() => {}); // 挂起
+      return originalFetch(_input as RequestInfo, init);
+    }) as typeof fetch;
+    try {
+      const r1 = await handleSkillUpdateRoutes(
+        req("POST", "/api/skills/updates", { agent: "claude-code" }),
+        new URL("http://x/api/skills/updates"),
+        deps,
+      );
+      const b1 = (await r1!.json()) as { taskId: string };
+      const r2 = await handleSkillUpdateRoutes(
+        req("POST", "/api/skills/updates", { agent: "claude-code" }),
+        new URL("http://x/api/skills/updates"),
+        deps,
+      );
+      const b2 = (await r2!.json()) as { taskId: string };
+      expect(b2.taskId).toBe(b1.taskId);
+    } finally {
+      globalThis.fetch = originalFetch;
+      skillTaskRegistry.clear();
+    }
+  });
+
+  it("POST updates 非法 agent → 400 不进后台", async () => {
+    const res = await handleSkillUpdateRoutes(
+      req("POST", "/api/skills/updates", { agent: "unknown" }),
+      new URL("http://x/api/skills/updates"),
+      deps,
+    );
+    expect(res?.status).toBe(400);
   });
 
   it("dispatches POST update → 202 + taskId；后台完成 registry 终态 done", async () => {

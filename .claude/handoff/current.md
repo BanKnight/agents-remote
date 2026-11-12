@@ -1,10 +1,94 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-12（**DiagFab 诊断面板开关行落地，待用户确认 commit/push**；
-> 前批：「已停仍显示执行中」排障定案 + 根级 overview 兜底轮询修复 `003ee20` 已推送
-> ——待用户硬刷新拿新 SW 验证）
+> 最后更新：2026-11-13（**插件页更新体验批完成待 commit/push**——chip 收拢 + Apple
+> Store 详情布局 + /plugins/updates 批量清单页 + 检查更新**任务化**（用户否决 60s 超时
+> 方案：长耗时服务端操作必须走任务/查询机制），探针 118 pass / 全门禁绿 / 真实链路冒烟
+> 通过；前批：DiagFab 开关批 `aff9a75` 已推送）
 
-## DiagFab 诊断面板开关批（2026-11-12，待 commit/push）
+## 桌面技能详情批（2026-11-12，两轮修复待 commit/push）
+
+- **用户报障**（桌面 /plugins/skill/$）：①搜索进已装技能详情，内容过长没法滚动；
+  ②没法返回；③无单独更新入口（体感「一更新就全更新」）。
+- **第一轮根因与修复**：桌面 mainPage 详情渲染 tab 时代组件 `SkillTabPreview`（只读
+  Markdown）——`section.flex-1` 在 MainPageShell children 容器（`min-h-0 flex-1`，非
+  flex container）下失效 → 内层 `overflow-y-auto` 无高度约束不滚（frontend-notes §8
+  家族）；且无 nav 返回/更新 CTA/停用/卸载入口。修复：桌面复用 `MobileSkillDetail`
+  （对齐「桌面 MCP 详情复用 MobileMcpDetail」先例，多端同构）；服务端 update 本就是
+  单技能 `skills update <name> --global --yes`（非全量）。
+- **第二轮（用户反馈「点更新→更新中→静默变回不知道结果；单个更新按钮也没看到」）**：
+  ①详情页自动检测（MobileSkillDetail autoChecked effect：缓存空**或 staleTime 60s 窗口外**
+  时自发 refetch，ref 守卫防失败重试死循环；限速纪律不变——手动/自动共享同一 queryKey）；
+  ②检测结论行（检查中 / 已是最新 / 检测失败 error 文案）；③更新终态反馈：成功
+  「✓ 已更新到最新版本」常驻（hook 乐观 hasUpdate:false 曾让 CTA 块整体消失零提示）、
+  失败保留按钮可重试 + error 行；④两个挂载点（WorkbenchRoute / mobile-workbench）加
+  `key={name:projectName}` 防 mutation 状态跨技能粘滞（同实例换参路径）。
+- **code-reviewer 四条全消化**（通道恢复）：P2-1 结论行让位更新流程态（成功后「已是
+  最新」与「✓ 已更新」不再同屏）；P2-2 自动检测触发条件补 `isStale`（防「已是最新」
+  基于陈旧比对结果，hooks/skills.ts 注释同步改写）；P3-3 mutation 粘滞 → key 根治；
+  P3-4 探针 json() 202 实参静默丢弃（helper 单参恒 200）→ 注释与实参修正。
+- **验证**：探针 probe-v2-m6-plugins.mjs **118 pass 全绿**（含第三批 C1-C3 chip 几何 /
+  D10-D11 固定头 / D12 更新后 chip 消失 / Part 9 U1-U7 清单页全流程）。format / lint
+  0 warning / typecheck / 全量单测 exit 0（api + web 1081 + shared）/ CSS 硬闸 /
+  tokens 机检全绿；产物落盘（rg plugins.updatesTitle 命中 WorkbenchRoute chunk）。
+- **第三轮（用户三条真机反馈，2026-11-12）**：
+  ①列表卡「有更新」chip 悬卡中间——根因 flex 多 `margin-left:auto` 均分剩余空间，
+  「有更新」与「来源」两 chip 被拉开；修复 `.pcard .upd + .upd { margin-left: 6px }`
+  相邻收拢成右端一簇（只有首 chip 吃 auto 推右）。
+  ②详情页更新/卸载钮沉底要滚动——按 Apple Store app 页布局重排 MobileSkillDetail：
+  固定头（dtitle chip + dmeta + 检测结论行 + 更新/卸载并排操作行，`flex-none`）+
+  滚动区（ddesc + 停用开关 + SKILL.md 正文，`min-h-0 flex-1 overflow-y-auto`）；
+  操作行 utility（`m-0 min-w-0 flex-1`）覆盖 components 层 .cta/.rm（CSS layer 序：
+  utilities 在 components 后）。
+  ③黄色「n 个更新 ›」点击原为再检测一遍不符合直觉 → 新增 `/plugins/updates` 清单
+  深度页（SkillUpdatesView 单源两端复用：路由三处注册 router.tsx /
+  workbench-model.ts pluginView:"updates" / WorkbenchRoute + mobile-workbench 分支）；
+  组头黄钮改导航。清单页支持逐项更新（卡内钮）+ 全部更新（组头钮，**顺序 await** 不
+  并发——避免同时 spawn 多个 git clone；单 mutation 实例驱动多项：reset +
+  setActiveName，error 行挂最后失败项卡下；成功项由 hook 乐观置 false 自动出列）。
+  自动检测 effect 与详情页同式（缓存空或 staleTime 窗口外自发一次，ref 守卫）。
+- **code-reviewer 第三批审查消化（无 P0/P1，1 P2 + 8 P3 全处理）**：
+  P2-1 updateAll 中间失败项提示被吞（共享 update.error + activeName 前移：A 失败 B/C
+  成功 → A 残留无说明）→ per-item `itemErrors: Record<string,string>`（失败 set、重试
+  开始 delete），activeName 只承担「更新中」指示；P3-2 终态文案条件改 `isSuccess &&
+  !hasUpdate`（自动补检又检出新版时按钮必须回来，updateNote 同步对齐）；P3-3 自动检测
+  effect 注释对齐实际语义（「挂载期内首次满足 stale 条件检测一次」——进页 fresh 不置
+  ref，停留超 staleTime 后 isStale 翻转补检一次）；P3-4 两钮底缘差 2px（.rm 显式 42 挡
+  stretch）→ `h-11 leading-[42px]` 显式 44 + border 补偿居中（h-auto + leading-44 实测
+  46——border 加进 auto 高，reviewer 建议方案不成立，探针补等高断言锁住）；P3-5
+  pluginView 三处类型副本 → workbench-model 导出 `PluginView` 单源；P3-6 全部更新钮
+  执行中换「更新中」+ opacity-60；P3-7 整页错误改 `error && !data` 才接管（data 在场
+  时列表保留 + 顶部小行，对齐详情页行为）；P3-8 两页重复自动检测 effect → 抽
+  `useAutoCheckSkillUpdates(agent, projectName?)` 进 hooks/skills.ts；P3-9 探针 U2
+  waitForTimeout → waitForURL。
+- **验证（消化后）**：探针 **118 pass 全绿**（含新等高断言）；format / lint 0 warning /
+  typecheck 三包 / 全量单测（api 1316 + web 1081 + shared 13）/ CSS 硬闸 / tokens 机检
+  全绿；产物落盘（leading-[42px] 在 WorkbenchRoute chunk、CSS content-type text/css）。
+- **第四轮（用户报「检查更新 → 检查中 → 又变回检查更新，过一会黄字才出现」，2026-11-12）**：
+  **实测根因（第一手 curl）**：`GET /api/skills/updates` 服务端逐 repo 串行拉 GitHub Trees，
+  首次 22.7s / 二次 6.2s；而 `fetchJson` 默认超时 **8s** → 首次必然 abort（「检查中」提前
+  归零 + 按钮复位、无结论），React Query `retry: 1`（query-client.ts）静默重发第二次才
+  成功 → 黄字迟到 = 用户看到「状态自己跳回去」。~~第一版修复（60s 超时）被用户否决~~
+  **（用户拍板：「长耗时服务端操作理应使用查询/任务机制，不是无脑延长时间」）→ 终版
+  修复 = 检测任务化，与 install/update 同链**：`POST /api/skills/updates` 立即返 202
+  `{taskId}`（startCheckTask，dedupKey=`check:<agent>`），后台跑
+  `checkSkillUpdates` → `skillTaskRegistry.finish(done,{updates})`，结果**随 SSE done 帧
+  带回**（免二次查询，late-join 立即收当前态帧）；客户端 `checkSkillUpdates` 改 POST +
+  `waitForSkillTask`（**签名不变** → hooks/UI/乐观更新全零改动），POST 用默认 8s（秒回）。
+  shared 加 `CheckSkillUpdatesStartResponse`；`SkillTaskFrame.kind` 加 `"check"` +
+  `updates` 字段。列表页 `updates.error` 可见行保留（检查失败不再静默）。**真实链路
+  冒烟**：POST 202 秒回 10.7ms → SSE running 帧 → done 帧带完整 updates 数组；真实
+  浏览器时序：按钮 t+0.3s 进「检查中…」**全程不复位**直到终态 chip/黄字出现，无跳变。
+  回归锁 = client.test.ts 两条任务链单测（POST+body / done 透传 / failed reject）+
+  skill-update.test.ts POST 用例（202/终态 updates/joined 去重/非法 agent 400）。
+- **探针排障沉淀（第三批）**：①断言顺序依赖状态时序——更新流程乐观置 hasUpdate:false
+  会改列表态，chip 断言必须排在更新流程之前（D7 返回挪前）；②同行断言比较两钮自身
+  top 而非容器 top（操作行带 pt-3）；③等宽断言放 ±2 容差——两钮 flex 声明相同 +
+  总宽精确吻合但 Chromium 分配 174/176（引擎内部行为，诊断实锤非代码 bug）；④一次性
+  诊断脚本三坑：/tmp 下 import "playwright" 解析到 bun cache 无浏览器二进制（须放
+  scripts/ 用项目 @playwright/test）、route 兜底 `/.*/` 后注册 LIFO 短路全部 mock、
+  密码读 deploy-config 的 readAppPassword()。
+
+## DiagFab 诊断面板开关批（2026-11-12，✅ 已推送 `aff9a75`，真机验收通过）
 
 - **需求**（用户原话）：「诊断用的悬浮按钮，在诊断面板也加一个开关，随时关掉这个功能」。
 - **实现**（diag-fab.tsx 单文件 +21 行）：DiagPanel 顶部加开关行（role="switch"），
@@ -125,6 +209,12 @@ visibility 帧 {deviceId, visible} → hub 连接级记账 → PushNotifier fail
 ## 挂账（非本批）
 
 - probe-fab.mjs 过期断言（5 FAIL）待拍板重构/退役。
+- **技能更新检测服务端慢**（第四轮实测：首次 22.7s / 二次 6.2s，大头 = 逐 repo 串行拉
+  GitHub Trees）：已任务化（前端无长 fetch、状态不跳变），但「检查中」仍会持续十几秒；
+  可考虑服务端并发 fetch 或结果短 TTL 缓存。非本批范围，待拍板。**边界（reviewer 提出）**：
+  服务端无总超时（仅每请求 20s abort），repo 很多时最坏可能超过客户端 320s guard——guard
+  先 reject、任务继续跑、重试 join 同一任务（自愈），体感是重复报错；届时一并治（服务端
+  总超时或并发拉取）。
 - StatusDot/StatusMarker（shell-primitives）休眠死代码待拍板。
 - wiki 格式对齐批 → wiki Quartz（先 /check-deps）。
 - ~~规则库进化候选~~ ✅ 已落地（2026-11-12）：dev-environment.md「测试内存上限」条目

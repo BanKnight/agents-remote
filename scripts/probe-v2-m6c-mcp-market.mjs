@@ -132,7 +132,26 @@ async function setupM6cMocks(page) {
   await page.route("**/api/skills/installed*", (r) =>
     r.fulfill(json({ skills: INSTALLED_SKILLS })),
   );
-  await page.route("**/api/skills/updates*", (r) => r.fulfill(json({ updates: [] })));
+  // 更新检测已任务化：POST 秒回 taskId，updates 结果随 SSE done 帧带回。
+  await page.route("**/api/skills/updates", (r) =>
+    r.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ taskId: "task-m6c-upd", status: "running" }),
+    }),
+  );
+  await page.route("**/api/skills/task/*/events", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: `data: ${JSON.stringify({
+        taskId: "task-m6c-upd",
+        status: "done",
+        kind: "check",
+        updates: [],
+      })}\n\n`,
+    }),
+  );
   await page.route("**/api/skills/search*", (r) =>
     r.fulfill(json({ query: "", skills: [], count: 0 })),
   );

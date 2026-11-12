@@ -92,6 +92,21 @@ describe("SkillTaskRegistry.subscribe + finish", () => {
     r.finish(taskId, { status: "failed", code: "X", message: "y" });
     expect(frames.length).toBe(2); // running + done only
   });
+
+  // check 任务（更新检测）：updates 结果随 done 帧透传（toFrame 接线锁）。
+  it("delivers updates payload on check done frame", () => {
+    const r = freshRegistry();
+    const { taskId } = r.startOrJoin("check", "check:claude-code", "");
+    const frames: SkillTaskFrame[] = [];
+    r.subscribe(taskId, (f) => frames.push(f));
+    r.finish(taskId, {
+      status: "done",
+      updates: [{ name: "s1", hasUpdate: true, manageable: true }],
+    });
+    expect(frames[0].status).toBe("running");
+    expect(frames[1].status).toBe("done");
+    expect(frames[1].updates).toEqual([{ name: "s1", hasUpdate: true, manageable: true }]);
+  });
 });
 
 // ── SSE handler ──

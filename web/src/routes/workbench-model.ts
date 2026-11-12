@@ -626,6 +626,12 @@ export function stickyWorkbenchSearch(input: {
  * URL 变（进出项目）时 ctx 新引用触发 WorkbenchContent 重渲染读新 scope，InstanceArea reconcile
  * 复用实例（同 key 同类型），WebSocket/relay 长连不重连——这是 Phase 1 的核心目标。
  */
+/**
+ * 插件 Tab 深度页视图（单源导出，reviewer P3：此前 WorkbenchRoute / mobile-workbench 各写一份
+ * 联合类型副本，新增深度页要三处同步——漂移温床）。语义见 WorkbenchRouteContext.pluginView。
+ */
+export type PluginView = "home" | "market" | "sources" | "skill" | "mcp" | "updates";
+
 export type WorkbenchRouteContext = {
   scope: WorkbenchScope;
   focusId: string | undefined;
@@ -641,10 +647,11 @@ export type WorkbenchRouteContext = {
   /**
    * 插件 Tab 深度页视图（v2 M6，§3.5）：home = 09 插件 Tab 主页；market = 18 技能市场；
    * sources = 15 市场源管理；skill / mcp = 12/13 详情深度页（第八轮迁移：/plugins/skill/$、
-   * /plugins/mcp/$ 从 focusId 开 tab 改 pluginView，不进保活 tab 体系）。非 home 值由对应
+   * /plugins/mcp/$ 从 focusId 开 tab 改 pluginView，不进保活 tab 体系）；updates = 可用更新
+   * 清单（2026-11-12：组头「n 个更新 ›」从「重检测」改为进清单页逐项/批量更新）。非 home 值由对应
    * URL 派生，MobileWorkbench / 桌面 mainPage 按此分流渲染。深度页配套 `pluginName`。
    */
-  pluginView?: "home" | "market" | "sources" | "skill" | "mcp";
+  pluginView?: PluginView;
   /**
    * 插件深度页条目名（第八轮）：pluginView="skill"/"mcp" 时为 skill/server 名（原 URL _splat），
    * 渲染层据此取详情数据；market/sources/home 为 undefined。
@@ -740,6 +747,17 @@ export function deriveWorkbenchRouteContext(leaf: AnyRouteMatch): WorkbenchRoute
         ...s,
         leftMode: "plugins",
         pluginView: "sources",
+      };
+    case "/plugins/updates":
+      // 可用更新清单（2026-11-12：组头「n 个更新 ›」点击改进清单页，逐项/批量更新——
+      // 原点击行为是再检测一遍，不符合提示语义，用户实报）。同 /plugins/market 范式，
+      // 无 focusId 不进保活 tab 体系。
+      return {
+        scope: { kind: "global" },
+        focusId: undefined,
+        ...s,
+        leftMode: "plugins",
+        pluginView: "updates",
       };
     case "/plugins/skill/$": {
       // skill 详情深度页（第八轮迁移，对齐 market/sources pluginView 范式）：_splat = skill

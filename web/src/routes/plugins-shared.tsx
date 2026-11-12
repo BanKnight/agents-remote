@@ -36,9 +36,10 @@ export function parseEnvLines(text: string): Record<string, string> | undefined 
  * projectName 非空 = 项目段技能（走项目 preview API）；只读渲染本地 SKILL.md
  *（useSkillPreview → MarkdownString）——无编辑无保存（区别于 FileTabPreview
  * 可编辑）。**不带 h4 标题栏**：SKILL.md 正文自带 `# H1` 标题，再加 h4 会重复（区别于 FilePreviewPanel
- * 保留 h4——文件正文不带 `# 标题` 不重复）；section 直接从 loading/error/内容态开始。桌面由
- * PanelRouter 渲染、移动由插件详情深度页（mobile-workbench pluginView 分流）渲染 body。顶层组件
- *（rerender-no-inline-components），不嵌套定义。
+ * 保留 h4——文件正文不带 `# 标题` 不重复）；section 直接从 loading/error/内容态开始。
+ * 消费面（2026-11-12 收窄）：仅剩桌面中栏历史 skill tab（PanelRouter 路径）；mainPage 详情
+ * 页两端已统一为 MobileSkillDetail（桌面 /plugins/skill/$ 与移动 pluginView 分流），本组件
+ * 不再承担详情深度页。顶层组件（rerender-no-inline-components），不嵌套定义。
  */
 export function SkillTabPreview({ name, projectName }: { name: string; projectName?: string }) {
   const { t } = useT();

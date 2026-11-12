@@ -94,6 +94,7 @@ import type {
   AddSkillSourceRequest,
   AddSkillSourceResponse,
   CheckSkillUpdatesResponse,
+  CheckSkillUpdatesStartResponse,
   DisableMcpServerRequest,
   DisableMcpServerResponse,
   InstallSkillRequest,
@@ -1662,11 +1663,22 @@ export async function removeSkillSource(id: string): Promise<RemoveSkillSourceRe
 
 // skill 更新检测/执行（第三方技能版本比对：读 .skill-lock.json hash vs GitHub Trees API）。
 // 用户手动触发（useCheckSkillUpdates 手动 refetch），不自动批量（避 GitHub API 限速）。
+// 检测任务化（2026-11-12 用户拍板「长耗时服务端操作走查询/任务机制，不拉长超时硬等」）：
+// 服务端逐 repo 串行拉 GitHub Trees 实测 6-23s，同步 GET 曾把 8s fetch 超时打爆 → isFetching
+// 提前归零 + retry 静默重发的状态跳变。现 POST 秒回 taskId（默认 8s 足够），进度走 SSE
+// waitForSkillTask（与 install/update 同一任务链），结果随 done 帧（updates）带回。
 export async function checkSkillUpdates(agent: SkillAgent): Promise<CheckSkillUpdatesResponse> {
-  return fetchJson(
-    `/api/skills/updates?agent=${encodeURIComponent(agent)}`,
+  const { taskId } = await fetchJson<CheckSkillUpdatesStartResponse>(
+    "/api/skills/updates",
     "api.skillUpdateCheckFailed",
+    {
+      method: "POST",
+      body: JSON.stringify({ agent }),
+      headers: { "content-type": "application/json" },
+    },
   );
+  const frame = await waitForSkillTask(taskId, "api.skillUpdateCheckFailed");
+  return { updates: frame.updates ?? [] };
 }
 
 export async function updateSkill(req: UpdateSkillRequest): Promise<UpdateSkillResponse> {

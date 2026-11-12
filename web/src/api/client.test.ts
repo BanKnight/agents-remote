@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import {
   ApiClientError,
+  checkSkillUpdates,
   closeAgentSession,
   closeTerminalSession,
   createAgentSession,
@@ -481,4 +482,91 @@ test("web api client calls Project-scoped skill routes with encoded paths", asyn
     name: "tdd",
     agent: "claude-code",
   });
+});
+
+// 任务链测试共用：EventSource stub（bun test 无真实 EventSource）。fetch mock 是 async，
+// EventSource 在下一轮事件循环才建立——emit 前必须轮询等实例出现。
+function installFakeEventSource() {
+  const original = globalThis.EventSource;
+  class FakeEventSource {
+    static all: FakeEventSource[] = [];
+    onmessage: ((ev: { data: string }) => void) | null = null;
+    closed = false;
+    constructor(public url: string) {
+      FakeEventSource.all.push(this);
+    }
+    emit(frame: unknown) {
+      this.onmessage?.({ data: JSON.stringify(frame) });
+    }
+    close() {
+      this.closed = true;
+    }
+  }
+  (globalThis as { EventSource: unknown }).EventSource = FakeEventSource;
+  return {
+    async waitInstance(): Promise<FakeEventSource> {
+      for (let i = 0; i < 50; i++) {
+        const es = FakeEventSource.all[0];
+        if (es) return es;
+        await new Promise((r) => setTimeout(r, 2));
+      }
+      throw new Error("FakeEventSource never created");
+    },
+    restore() {
+      globalThis.EventSource = original;
+    },
+  };
+}
+
+// 技能更新检测走任务链（2026-11-12 用户报状态跳变 → 拍板「长耗时服务端操作走查询/任务
+// 机制」）：POST 启动秒回 taskId（GitHub Trees 串行比对实测 6-23s，同步 GET 曾把 8s fetch
+// 超时打爆 → 按钮复位跳变），进度走 SSE waitForSkillTask，结果随 done 帧带回。锁三件事：
+// POST + body {agent}、done 帧 updates 透传成 CheckSkillUpdatesResponse、failed 帧 reject。
+test("web api client runs skill update check via task chain", async () => {
+  const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
+  globalThis.fetch = (async (input, init) => {
+    calls.push([input, init]);
+    return Response.json({ taskId: "task-1", status: "running" });
+  }) as typeof fetch;
+
+  const esStub = installFakeEventSource();
+  try {
+    const resultPromise = checkSkillUpdates("claude-code");
+    const es = await esStub.waitInstance();
+    es.emit({
+      taskId: "task-1",
+      status: "done",
+      updates: [{ name: "a", hasUpdate: true, manageable: true }],
+    });
+    const result = await resultPromise;
+
+    expect(calls[0][0]).toBe("/api/skills/updates");
+    expect(calls[0][1]?.method).toBe("POST");
+    expect(JSON.parse(calls[0][1]?.body?.toString() ?? "{}")).toEqual({ agent: "claude-code" });
+    expect(es.url).toBe("/api/skills/task/task-1/events");
+    expect(result.updates).toEqual([{ name: "a", hasUpdate: true, manageable: true }]);
+    expect(es.closed).toBe(true);
+  } finally {
+    esStub.restore();
+  }
+});
+
+test("web api client rejects skill update check on task failure frame", async () => {
+  globalThis.fetch = (async () =>
+    Response.json({ taskId: "task-2", status: "running" })) as typeof fetch;
+
+  const esStub = installFakeEventSource();
+  try {
+    const resultPromise = checkSkillUpdates("claude-code");
+    const es = await esStub.waitInstance();
+    es.emit({
+      taskId: "task-2",
+      status: "failed",
+      error: { code: "SKILL_UPDATE_CHECK_FAILED", message: "boom" },
+    });
+    await expect(resultPromise).rejects.toThrow();
+    expect(es.closed).toBe(true);
+  } finally {
+    esStub.restore();
+  }
 });

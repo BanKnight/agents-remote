@@ -34,6 +34,7 @@ import { GlobalFilesOverview } from "../files/global-files-overview";
 import { MobileProjectsHome } from "./mobile-projects-home";
 import { ChatOverview } from "./chat-overview";
 import { MobileMcpDetail, MobileSkillDetail } from "./mobile-plugins-detail";
+import { SkillUpdatesView } from "./mobile-plugins-updates";
 import { MobilePluginsOverview } from "./mobile-plugins-home";
 import { MobileMarket, MobileMarketSources } from "./mobile-plugins-market";
 import {
@@ -43,6 +44,7 @@ import {
   type WorkbenchScope,
   type WorkbenchMode,
   type WorkbenchMiddleTab,
+  type PluginView,
   inferSessionTypeFromId,
   instanceNameMemoAtom,
   isSessionFocusId,
@@ -123,7 +125,7 @@ type MobileWorkbenchProps = {
    */
   leftMode?: "auto" | "files" | "plugins" | "settings";
   /** 插件 Tab 深度页视图（v2 M6 §3.5，WorkbenchRoute 注入 ctx.pluginView；见 workbench-model）。 */
-  pluginView?: "home" | "market" | "sources" | "skill" | "mcp";
+  pluginView?: PluginView;
   /** 插件详情深度页条目名（第八轮）：pluginView="skill"/"mcp" 时为 skill/server 名。 */
   pluginName?: string;
   /** 项目作用域技能详情（?pluginProject）：非空 = 该项目的技能（数据走项目 API）。 */
@@ -242,10 +244,17 @@ export function MobileWorkbench({
             <MobileMarket />
           ) : pluginView === "sources" ? (
             <MobileMarketSources />
+          ) : pluginView === "updates" ? (
+            // 可用更新清单（2026-11-12）：组头「n 个更新 ›」深度页，逐项/批量更新单源。
+            <SkillUpdatesView />
           ) : pluginView === "skill" && pluginName ? (
             // 12 技能详情深度页（第八轮 pluginView 化：原 focusId=skill_ 直渲分支退役，
             // /plugins/skill/$ 不再写保活 tab 体系）。pluginProject 非空 = 项目段技能。
-            <MobileSkillDetail name={pluginName} projectName={pluginProject} />
+            <MobileSkillDetail
+              key={`${pluginName}:${pluginProject ?? ""}`}
+              name={pluginName}
+              projectName={pluginProject}
+            />
           ) : pluginView === "mcp" && pluginName ? (
             // 13 MCP 详情深度页（同上，原 focusId=pluginmcp_ 分支与 tab kind 一并退役）。
             <MobileMcpDetail name={pluginName} />

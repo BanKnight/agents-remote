@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { InstalledSkill, SkillTaskFrame } from "@agents-remote/shared";
+import type { InstalledSkill, SkillTaskFrame, SkillUpdateStatus } from "@agents-remote/shared";
 
-// skill install/update 异步任务 registry：POST /api/skills/install|update 立即返 taskId（202），
-// 后台 fire-and-forget 执行 skills CLI（git clone），完成时 finish() 广播终态给 SSE 订阅者。
-// 前端 GET /api/skills/task/:id/events 用 EventSource 订阅，只消费 status 转换（两态 UI）。
+// skill install/update/check 异步任务 registry：POST /api/skills/install|update|updates 立即返
+// taskId（202），后台 fire-and-forget 执行（git clone / GitHub Trees 比对），完成时 finish()
+// 广播终态给 SSE 订阅者。前端 GET /api/skills/task/:id/events 用 EventSource 订阅，只消费
+// status 转换（两态 UI）。
 //
 // 进程内单例——API 重启丢内存任务，前端重连收到 SKILL_TASK_NOT_FOUND failed 帧干净 reject。
 // 无 history 双缓冲（任务生命周期短，只保最近终态供中途连上的订阅者）；session-relay 的
@@ -13,7 +14,7 @@ const TERMINATED_TTL_MS = 60_000; // 终态任务保留 60s 供 late-join，之�
 const SSE_HEARTBEAT_INTERVAL_MS = 15_000; // SSE comment 心跳，防隧道/反代空闲断连
 
 type SkillTaskStatus = "running" | "done" | "failed";
-type SkillTaskKind = "install" | "update";
+type SkillTaskKind = "install" | "update" | "check";
 type Subscriber = (frame: SkillTaskFrame) => void;
 
 interface SkillTask {
@@ -21,7 +22,7 @@ interface SkillTask {
   kind: SkillTaskKind;
   skillName: string;
   status: SkillTaskStatus;
-  result?: { skill?: InstalledSkill; name?: string };
+  result?: { skill?: InstalledSkill; name?: string; updates?: SkillUpdateStatus[] };
   error?: { code: string; message: string };
   subscribers: Set<Subscriber>;
   evictTimer?: ReturnType<typeof setTimeout>;
@@ -34,6 +35,7 @@ function toFrame(task: SkillTask): SkillTaskFrame {
     status: task.status,
     skill: task.result?.skill,
     name: task.result?.name ?? task.skillName,
+    updates: task.result?.updates,
     error: task.error,
   };
 }
@@ -94,14 +96,14 @@ export class SkillTaskRegistry {
   finish(
     taskId: string,
     outcome:
-      | { status: "done"; skill?: InstalledSkill; name?: string }
+      | { status: "done"; skill?: InstalledSkill; name?: string; updates?: SkillUpdateStatus[] }
       | { status: "failed"; code: string; message: string },
   ): void {
     const task = this.tasks.get(taskId);
     if (!task || task.status !== "running") return;
     task.status = outcome.status;
     if (outcome.status === "done") {
-      task.result = { skill: outcome.skill, name: outcome.name };
+      task.result = { skill: outcome.skill, name: outcome.name, updates: outcome.updates };
     } else {
       task.error = { code: outcome.code, message: outcome.message };
     }

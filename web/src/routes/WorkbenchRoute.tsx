@@ -33,13 +33,13 @@ import { FilesScopeSeg, GlobalFilesOverview } from "../components/files/global-f
 import { fetchOverview } from "../api/client";
 import { AddMenu } from "../components/files/add-menu";
 import { useDirectoryAddActions } from "../components/files/use-directory-add-actions";
-import { MobileMcpDetail } from "../components/workbench/mobile-plugins-detail";
+import { MobileMcpDetail, MobileSkillDetail } from "../components/workbench/mobile-plugins-detail";
+import { SkillUpdatesView } from "../components/workbench/mobile-plugins-updates";
 import {
   MobilePluginsOverview,
   PluginsScopeSegmented,
 } from "../components/workbench/mobile-plugins-home";
 import { MobileMarket, MobileMarketSources } from "../components/workbench/mobile-plugins-market";
-import { SkillTabPreview } from "./plugins-shared";
 import { useT } from "../i18n";
 import {
   type DropZone,
@@ -60,6 +60,7 @@ import {
   parseFileTabId,
   parseGitTabId,
   parseSkillTabId,
+  type PluginView,
   removeTabFromLeaf,
   resizeSplitChildren,
   setActiveTabInLeaf,
@@ -144,7 +145,7 @@ function WorkbenchContent({
   // 插件深度页维度（v2 M6，redesign-v2.md §3.5）：/plugins/market、/plugins/sources、
   // /plugins/skill/$、/plugins/mcp/$ 派生非 home 值，移动端 MobileWorkbench 与桌面 mainPage
   // 分流渲染；无 focusId（不进保活 tab 体系）。skill/mcp 配套 pluginName（详情条目名）。
-  pluginView?: "home" | "market" | "sources" | "skill" | "mcp";
+  pluginView?: PluginView;
   // 插件深度页条目名（第八轮）：pluginView="skill"/"mcp" 时为 skill/server 名。
   pluginName?: string;
   // 项目作用域技能详情（?pluginProject=<项目名>）：非空 = 该项目的技能（数据走项目 API）。
@@ -987,8 +988,17 @@ function WorkbenchContent({
     //（复用 tab 时代同款组件；不写 layout、无 tabstrip chip），home = 插件管理整页。
     pluginView === "skill" && pluginName ? (
       <MainPageShell title={t("nav.plugins")}>
-        {/* 项目段技能详情同页（?pluginProject）：传 projectName 走项目 preview API。 */}
-        <SkillTabPreview name={pluginName} projectName={pluginProject} />
+        {/* 桌面 mainPage 复用移动详情单源（多端同构，对齐下行 MCP 详情复用 MobileMcpDetail
+            的先例）：SkillTabPreview 是 tab 时代只读 Markdown 组件——section.flex-1 在
+            MainPageShell children 容器（非 flex container）下失效 → 长文不滚，且无 nav
+            返回/更新 CTA/停用/卸载入口（2026-11-12 用户报「内容过长没法滚动、没法返回、
+            无单独更新方式」）。MobileSkillDetail 自带 h-full flex 链 + PluginNav 返回 +
+            单技能更新（服务端 `skills update <name>`）。项目段传 projectName 走项目 API。 */}
+        <MobileSkillDetail
+          key={`${pluginName}:${pluginProject ?? ""}`}
+          name={pluginName}
+          projectName={pluginProject}
+        />
       </MainPageShell>
     ) : pluginView === "mcp" && pluginName ? (
       <MainPageShell title={t("nav.plugins")}>
@@ -1003,6 +1013,10 @@ function WorkbenchContent({
     ) : pluginView === "sources" ? (
       <MainPageShell title={t("nav.plugins")}>
         <MobileMarketSources />
+      </MainPageShell>
+    ) : pluginView === "updates" ? (
+      <MainPageShell title={t("nav.plugins")}>
+        <SkillUpdatesView />
       </MainPageShell>
     ) : (
       // §6.12j 批次 4（09m 单页三段）：桌面插件 mainPage 复用移动 09 单页实现（作用域分段 +

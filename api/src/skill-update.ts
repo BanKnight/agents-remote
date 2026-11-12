@@ -1,6 +1,7 @@
 import {
   SKILL_AGENTS,
   type CheckSkillUpdatesResponse,
+  type CheckSkillUpdatesStartResponse,
   type SkillAgent,
   type SkillUpdateStatus,
   type UpdateSkillRequest,
@@ -14,7 +15,6 @@ import {
   disabledSkillsDir,
   listInstalledSkills,
   matchProjectSkillPath,
-  parseAgent,
   projectPathErrorStatus,
   readSkillLock,
   reloadAliveSessions,
@@ -294,6 +294,43 @@ async function runUpdateTask(
   }
 }
 
+/**
+ * 启动更新检测异步任务：GitHub Trees 逐 repo 串行比对是分钟内级长耗时操作（实测 6-23s），
+ * 与 install/update 同走任务链——POST 立即返 202 {taskId}，结果随 SSE done 帧（updates）
+ * 带回，前端不拉长 fetch 超时硬等。dedupKey = check:<agent>：同 agent 检测进行中复用 taskId。
+ */
+export async function startCheckTask(agent: SkillAgent, deps: SkillMarketDeps): Promise<Response> {
+  if (!(SKILL_AGENTS as readonly string[]).includes(agent)) {
+    return jsonError("SKILL_SOURCE_INVALID", `Unsupported agent: ${agent}`, 400);
+  }
+  const { taskId, joined } = skillTaskRegistry.startOrJoin("check", `check:${agent}`, "");
+  if (!joined) {
+    void runCheckTask(taskId, agent, deps);
+  }
+  return Response.json({ taskId, status: "running" } satisfies CheckSkillUpdatesStartResponse, {
+    status: 202,
+  });
+}
+
+/** 后台执行体：checkSkillUpdates → finish(done,{updates})；catch → finish(failed)。 */
+async function runCheckTask(
+  taskId: string,
+  agent: SkillAgent,
+  deps: SkillMarketDeps,
+): Promise<void> {
+  try {
+    const result = await checkSkillUpdates(agent, deps);
+    skillTaskRegistry.finish(taskId, { status: "done", updates: result.updates });
+  } catch (error) {
+    // 与 runUpdateTask 同口径：保留 SkillError 的具体 code，非 SkillError 才回退兜底码。
+    skillTaskRegistry.finish(taskId, {
+      status: "failed",
+      code: error instanceof SkillError ? error.code : "SKILL_UPDATE_CHECK_FAILED",
+      message: errMsg(error),
+    });
+  }
+}
+
 // ── 路由：/api/skills/updates + /api/skills/update（独立 handler，避免与 skill-market 循环 import） ──
 
 function skillUpdateErrorStatus(code: SkillErrorCode): number {
@@ -305,21 +342,10 @@ function skillUpdateErrorStatus(code: SkillErrorCode): number {
   }
 }
 
-async function runSkillUpdateHandler<T>(fn: () => Promise<T>, okStatus = 200): Promise<Response> {
-  try {
-    const data = await fn();
-    return Response.json(data, { status: okStatus });
-  } catch (error) {
-    if (error instanceof SkillError) {
-      return jsonError(error.code, error.message, skillUpdateErrorStatus(error.code));
-    }
-    throw error;
-  }
-}
-
 const readJson = async <T>(request: Request): Promise<T> => {
   try {
-    return (await request.json()) as T;
+    // 字面量 null 能通过 json() 解析（不 throw）→ 统一兜成 {}，防 body.agent 处 TypeError 500。
+    return ((await request.json()) as T | null) ?? ({} as T);
   } catch {
     return {} as T;
   }
@@ -330,9 +356,11 @@ export async function handleSkillUpdateRoutes(
   url: URL,
   deps: SkillMarketDeps,
 ): Promise<Response | undefined> {
-  if (url.pathname === "/api/skills/updates" && request.method === "GET") {
-    const agent = parseAgent(url.searchParams.get("agent"));
-    return runSkillUpdateHandler(() => checkSkillUpdates(agent, deps));
+  if (url.pathname === "/api/skills/updates" && request.method === "POST") {
+    // 与 install/update 同口径：agent 原样交给 startCheckTask 校验，非法立即 400（不用
+    // parseAgent 的「未知回落 claude-code」语义——POST 显式指定 agent，静默回落会检错对象）。
+    const body = await readJson<{ agent?: string }>(request);
+    return startCheckTask(body.agent as SkillAgent, deps);
   }
   if (url.pathname === "/api/skills/update" && request.method === "POST") {
     const body = await readJson<UpdateSkillRequest>(request);

@@ -927,6 +927,9 @@ export type SkillUpdateStatus = {
   sourceUrl?: string;
 };
 export type CheckSkillUpdatesResponse = { updates: SkillUpdateStatus[] };
+// POST /api/skills/updates 立即返 202（异步任务：逐 repo 串行拉 GitHub Trees 实测 6-23s，
+// 长耗时服务端操作走任务链而非拉长 fetch 超时）；完成态走 SSE SkillTaskFrame（updates 随帧带回）。
+export type CheckSkillUpdatesStartResponse = { taskId: string; status: "running" };
 export type UpdateSkillRequest = { name: string; agent: SkillAgent };
 // POST /api/skills/update 立即返 202（异步任务，git clone 在后台跑）；完成态走 SSE SkillTaskFrame。
 export type UpdateSkillResponse = { taskId: string; status: "running" };
@@ -944,9 +947,10 @@ export type SkillTaskFrame = {
   status: "running" | "done" | "failed";
   // 信息性字段：前端 waitForSkillTask 只看 status/error，kind 由调用方上下文已知。
   // 未知 taskId（失效/API 重启丢）的 failed 帧省略 kind。
-  kind?: "install" | "update";
+  kind?: "install" | "update" | "check";
   skill?: InstalledSkill; // done (install)：回读的已装条目
   name?: string; // done (update)：skill 名
+  updates?: SkillUpdateStatus[]; // done (check)：更新检测结果（随帧带回，免二次查询）
   error?: { code: string; message: string }; // failed
 };
 

@@ -53,8 +53,9 @@ import { pluginsMobileScopeAtom, ScopeSwitchPopover } from "./mobile-plugins-sco
  *
  * 能力边界（§6.6 摊牌）：MCP 卡不画「● 已连接 / N 个工具」（McpServerEntry 无运行时状态与工具
  * 清单，后端不 connect），d2 画有据字段（传输类型 + 命令/URL）；技能「有更新」chip 只在手动
- * 「检查更新」出结果后出现（避 GitHub 限速）；组头「n 个更新 ›」= 状态指示（更新逐个确认收敛
- * 在详情页，无独立清单页）。
+ * 「检查更新」/详情页自动检测出结果后出现（避 GitHub 限速）；组头「n 个更新 ›」点击 →
+ * /plugins/updates 清单页逐项/批量更新（2026-11-12 用户反馈：原点击行为是重检测，不符合
+ * 提示语义）。
  *
  * 长按/右键卡（09b）：查看详情 / 停用（停止注入）/ 卸载…（红，确认后走服务端 rename/rm）；
  * 停用 = 批6 服务端语义（目录 rename 进停用区，防复活四点配套）。
@@ -422,8 +423,9 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
               </>
             )}
 
-            {/* 已安装技能组（v1.4 批6 组头：n 个更新 ›（有结果时，点击重检测）+「＋ 添加」→ 18；
-                无更新时检测入口 = 「检查更新」钮（避 GitHub 限速手动触发纪律不变） */}
+            {/* 已安装技能组（v1.4 批6 组头：n 个更新 ›（有结果时，点击 → /plugins/updates
+                清单页）+「＋ 添加」→ 18；无更新时检测入口 = 「检查更新」钮（避 GitHub 限速
+                手动触发纪律不变） */}
             <div className="psect">
               {/* 组头计数 pending 传「…」（批 2 伪零收敛，同 MCP 组头）。 */}
               <span>
@@ -434,8 +436,7 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
                   {hasUpdateNames.size > 0 ? (
                     <button
                       className="r cursor-pointer"
-                      disabled={updates.isFetching}
-                      onClick={() => void updates.refetch()}
+                      onClick={() => void navigate({ to: "/plugins/updates" })}
                       type="button"
                       style={{ color: "var(--c-warning-text)" }}
                     >
@@ -465,6 +466,13 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
                 </span>
               )}
             </div>
+            {/* 检测失败可见（2026-11-12）：按钮复位但没有任何结论会让用户以为「检测没反应」
+                ——显式一行错误；「检查更新」钮保持可点即重试入口。 */}
+            {!projectName && updates.error ? (
+              <p className="mx-4 mb-1 break-all rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
+                {updates.error.message}
+              </p>
+            ) : null}
             {installed.isPending ? (
               // 同上（§6.12o 容器壳）：仅 isPending 显骨架，防 pending 闪「暂无技能」伪空态。
               Array.from({ length: 3 }, (_, i) => (

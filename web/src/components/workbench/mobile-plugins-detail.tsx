@@ -12,7 +12,7 @@ import {
   useSetMcpDisabled,
 } from "../../hooks/mcp";
 import {
-  useCheckSkillUpdates,
+  useAutoCheckSkillUpdates,
   useInstalledSkills,
   useSetSkillDisabled,
   useSkillPreview,
@@ -35,10 +35,12 @@ import { PluginNav } from "./mobile-plugins-market";
  * 能力」arow 无数据源（SkillUpdateStatus 只有 hasUpdate/manageable/sourceUrl；skill 无
  * capabilities 声明）不画；「已启用」toggle（v1.4 批6，09b）= 停用/启用（保留文件、停止注入，
  * 服务端 rename 进/出停用区 + reload 闭环）；版本号
- * 无数据源（npx skills 不回版本），dmeta/CTA 均不带版本。更新流 = 列表页手动「检查更新」→
- * hasUpdate 出 chip + CTA → update 202 + SSE waitForSkillTask（hook 内置乐观 hasUpdate:false，
- * 完成后 chip/CTA 消失）。SKILL.md 正文段是实现扩展（有据：useSkillPreview 读本地文件），保留
- * v1 起的只读预览能力。
+ * 无数据源（npx skills 不回版本），dmeta/CTA 均不带版本。更新流（2026-11-12 修订）：
+ * 进详情自动检测（缓存空时一次；失败可回列表手动「检查更新」）→ 有更新出 chip + CTA →
+ * update 202 + SSE waitForSkillTask → 成功 CTA 区转「✓ 已更新」常驻（hook 乐观
+ * hasUpdate:false 会让旧实现整块消失、零成功提示——用户实报「更新中→变回来→不知道结果」）、
+ * 失败保留按钮可重试 + error 行。SKILL.md 正文段是实现扩展（有据：useSkillPreview 读本地
+ * 文件），保留 v1 起的只读预览能力。
  *
  * 项目作用域（?pluginProject，2026-10-24）：同一页承载项目段技能——数据全走项目 API，
  * dmeta 作用域行显示「本项目 · <项目>」，无更新检测（项目无 updates 数据源）。
@@ -46,7 +48,7 @@ import { PluginNav } from "./mobile-plugins-market";
 export function MobileSkillDetail({ name, projectName }: { name: string; projectName?: string }) {
   const { t } = useT();
   const navigate = useNavigate();
-  const updates = useCheckSkillUpdates(DEFAULT_SKILL_AGENT);
+  const updates = useAutoCheckSkillUpdates(DEFAULT_SKILL_AGENT, projectName);
   // projectName 非空 = 项目段技能：preview/停用/卸载/更新全走项目 API（项目技能只在项目目录）。
   const preview = useSkillPreview(name, DEFAULT_SKILL_AGENT, projectName);
   const update = useUpdateSkill(projectName);
@@ -68,18 +70,25 @@ export function MobileSkillDetail({ name, projectName }: { name: string; project
       : t("plugins.skillLocal")
     : null;
 
-  // 「有更新」仅手动检测出结果后出现（updates.data undefined = 尚未检测），与 09 列表 chip 同源。
+  // 「有更新」仅检测出结果后出现（updates.data undefined = 尚未检测），与 09 列表 chip 同源。
   // 项目段无更新检测数据源（服务端无项目 updates 路由）：屏蔽全局检测缓存，防同名技能误报。
   const hasUpdate =
     !projectName && (updates.data?.updates ?? []).some((u) => u.name === name && u.hasUpdate);
+  // 详情页自足检测见 useAutoCheckSkillUpdates（hook 单源，两页共用）。
   // back pop 优先（导航栈同族，第十一轮复验）；深链直达无来路时 push /plugins 兜底。
   const backNav = useWorkbenchBack();
   const back = () => backNav(() => void navigate({ to: "/plugins" }));
 
+  const showUpdateCta =
+    !skillDisabled && (hasUpdate || update.isPending || update.isSuccess || update.error);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PluginNav backLabel={t("skills.installedTitle")} mono onBack={back} title={name} />
-      <div className="min-h-0 flex-1 overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
+      {/* 固定头区（2026-11-12 用户反馈「更新/卸载按钮在底部要拉滚动条才能看到」，对齐
+          Apple Store app 页范式）：状态（chip/元信息/检测结论）+ 动作（更新/卸载）不随
+          内容滚动；ddesc/停用/SKILL.md 在下方滚动区。 */}
+      <div className="flex-none pb-2">
         {/* name 已在 nav h1 单点展示（第七轮去重）；dtitle 仅在「有更新」时承载 chip。 */}
         {hasUpdate ? (
           <div className="dtitle">
@@ -98,6 +107,95 @@ export function MobileSkillDetail({ name, projectName }: { name: string; project
             .filter(Boolean)
             .join(" · ")}
         </div>
+        {/* 检测结论行（2026-11-12）：检查中 / 已是最新 / 检测失败——让用户知道「有没有
+            更新」，更新 CTA 才有可解释的出现原因（有更新时 dtitle chip 已承载结论）。
+            更新流程进行中/有结果时让位（code-review P2-1：成功后「已是最新」与
+            「✓ 已更新到最新版本」两条同义信息长期同屏）。自动检测失败后可返回列表点
+            「检查更新」重试，或重新进入详情（ref 守卫随挂载重置）。 */}
+        {!projectName && !hasUpdate && !update.isPending && !update.isSuccess && !update.error ? (
+          updates.isFetching ? (
+            <p className="px-4 pb-1 text-[11.5px] text-ink-2">{t("skills.checking")}</p>
+          ) : updates.error ? (
+            <p className="mx-4 mb-1 break-all rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
+              {updates.error.message}
+            </p>
+          ) : updates.data ? (
+            <p className="px-4 pb-1 text-[11.5px] text-ink-2">{t("skills.upToDate")}</p>
+          ) : null
+        ) : null}
+        {/* 操作行（更新主钮 + 卸载描边钮并排；m-0/flex-1 utility 覆盖 components 层的
+            全宽 margin——v2-primitives @layer components < utilities；rm 的 h-11+leading-42
+            对齐 .cta 外盒 44——.rm 原显式 42 挡住 items-stretch 会差 2px 底缘，且 h-auto +
+            leading-44 会把 border 加进 auto 高（实测 46），显式 44 + 行高 42 保持 .rm 的
+            border 补偿居中关系）。更新 CTA 终态反馈（2026-11-12 用户报「更新中→变回来→
+            不知道结果」）：isSuccess 常驻「✓ 已更新」直到离开本页；但 hasUpdate 再度变
+            true 时（自动补检出新版本，reviewer P3）按钮必须回来——成功文案让位。失败保留
+            按钮可重试 + error 行。停用中隐藏——服务端 update 守卫拒绝停用技能（防复活），
+            CTA 出来也必败。 */}
+        <div className="flex items-stretch gap-2 px-4 pt-3">
+          {showUpdateCta ? (
+            update.isSuccess && !hasUpdate ? (
+              <div className="ctanote m-0 flex min-w-0 flex-1 items-center justify-center">
+                {t("skills.updatedDone")}
+              </div>
+            ) : (
+              <button
+                className="cta m-0 min-w-0 flex-1 cursor-pointer"
+                disabled={update.isPending}
+                onClick={() => {
+                  void update.mutateAsync({ name, agent: DEFAULT_SKILL_AGENT }).catch(() => {
+                    // 失败保留 CTA 区（下方 error 行），可重试。
+                  });
+                }}
+                type="button"
+              >
+                {update.isPending ? t("skills.updating") : t("skills.update")}
+              </button>
+            )
+          ) : null}
+          <button
+            className="rm m-0 h-11 min-w-0 flex-1 cursor-pointer leading-[42px]"
+            disabled={uninstall.isPending}
+            onClick={() => {
+              void confirm({
+                cancelLabel: t("cancel"),
+                confirmLabel: t("skills.uninstall"),
+                message: t("skills.uninstallConfirmBody"),
+                title: t("skills.uninstallConfirmTitle"),
+                tone: "danger",
+              }).then((ok) => {
+                if (!ok) return;
+                void uninstall
+                  .mutateAsync({ name, agent: DEFAULT_SKILL_AGENT })
+                  .then(() => back())
+                  .catch(() => {
+                    // 失败:error 行显示在按钮行下方,可重试。
+                  });
+              });
+            }}
+            type="button"
+          >
+            {t("skills.uninstall")}…
+          </button>
+        </div>
+        {showUpdateCta ? (
+          update.error ? (
+            <p className="mx-4 mt-2 rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
+              {update.error.message}
+            </p>
+          ) : update.isSuccess && !hasUpdate ? null : (
+            <div className="ctanote">{t("skills.updateNote")}</div>
+          )
+        ) : null}
+        <div className="rmnote">{t("skills.uninstallNote")}</div>
+        {uninstall.error ? (
+          <p className="mx-4 mt-2 rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
+            {uninstall.error.message}
+          </p>
+        ) : null}
+      </div>
+      {/* 滚动区：描述 / 已启用 toggle / SKILL.md 正文。 */}
+      <div className="min-h-0 flex-1 overflow-y-auto pb-[max(16px,var(--shell-mobile-bottom-nav-space,0px))]">
         {preview.data?.description ? <div className="ddesc">{preview.data.description}</div> : null}
 
         {/* 已启用 toggle（v1.4 批6，09b）：停用 = 保留文件与配置、停止注入（目录 rename 进停用区）。
@@ -154,63 +252,6 @@ export function MobileSkillDetail({ name, projectName }: { name: string; project
               text={preview.data.content}
             />
           </div>
-        ) : null}
-
-        {/* 更新 CTA：仅手动检测出 hasUpdate 后出现（更新流见 JSDoc）；停用中隐藏——
-            服务端 update 守卫拒绝停用技能（防复活），CTA 出来也必败。 */}
-        {hasUpdate && !skillDisabled ? (
-          <>
-            <button
-              className="cta cursor-pointer"
-              disabled={update.isPending}
-              onClick={() => {
-                void update.mutateAsync({ name, agent: DEFAULT_SKILL_AGENT }).catch(() => {
-                  // 失败保留 CTA 区（下方 error 行），可重试。
-                });
-              }}
-              type="button"
-            >
-              {update.isPending ? t("skills.updating") : t("skills.update")}
-            </button>
-            {update.error ? (
-              <p className="mt-2 rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
-                {update.error.message}
-              </p>
-            ) : (
-              <div className="ctanote">{t("skills.updateNote")}</div>
-            )}
-          </>
-        ) : null}
-
-        <button
-          className="rm cursor-pointer"
-          disabled={uninstall.isPending}
-          onClick={() => {
-            void confirm({
-              cancelLabel: t("cancel"),
-              confirmLabel: t("skills.uninstall"),
-              message: t("skills.uninstallConfirmBody"),
-              title: t("skills.uninstallConfirmTitle"),
-              tone: "danger",
-            }).then((ok) => {
-              if (!ok) return;
-              void uninstall
-                .mutateAsync({ name, agent: DEFAULT_SKILL_AGENT })
-                .then(() => back())
-                .catch(() => {
-                  // 失败:error 行显示在 rmnote 下方,可重试。
-                });
-            });
-          }}
-          type="button"
-        >
-          {t("skills.uninstall")}…
-        </button>
-        <div className="rmnote">{t("skills.uninstallNote")}</div>
-        {uninstall.error ? (
-          <p className="mx-4 mt-2 rounded-lg bg-error/10 px-3 py-2 text-xs text-error">
-            {uninstall.error.message}
-          </p>
         ) : null}
       </div>
       {holder}

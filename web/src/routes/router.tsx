@@ -291,6 +291,14 @@ const pluginsSourcesRoute = createRoute({
   validateSearch: validateWorkbenchSearch,
 });
 
+// 可用更新清单深度页（2026-11-12）：/plugins/updates 派生 pluginView="updates"（同
+// market/sources 无 component 范式，layout 按 pluginView 分流渲染）。
+const pluginsUpdatesRoute = createRoute({
+  getParentRoute: () => workbenchLayoutRoute,
+  path: "/plugins/updates",
+  validateSearch: validateWorkbenchSearch,
+});
+
 // 全局文件总览入口（设计 §6 决策 24 / workbench-stable-refactor review 收口）：`/files` 作为
 // workbench layout 子路由（非 rootRoute 平级）——桌面渲染 global 工作台 leftMode="files"（左栏
 // GlobalFilesOverview），移动经 MobileWorkbench 渲染 MobileFilesOverview（GlobalFilesOverview 主体）。
@@ -424,6 +432,7 @@ const routeTree = rootRoute.addChildren([
     pluginsMcpFocusRoute,
     pluginsMarketRoute,
     pluginsSourcesRoute,
+    pluginsUpdatesRoute,
   ]),
   settingsRoute,
   chatSessionDetailRoute,

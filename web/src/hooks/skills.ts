@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SkillAgent, SkillDisableRequest, SkillUpdateStatus } from "@agents-remote/shared";
 import {
@@ -163,8 +164,10 @@ export function useRemoveSkillSource() {
   });
 }
 
-// 第三方技能更新检测：GitHub Trees API 比对锁文件 hash，逐 repo 限速 → 用户手动
-// 「检查更新」触发（enabled:false + refetch()），不自动批量（避 60 req/h 限速）。
+// 第三方技能更新检测：GitHub Trees API 比对锁文件 hash，逐 repo 限速。触发面（2026-11-12
+// 详情页自足检测后）：①列表「检查更新」手动按钮；②详情/清单页自动检测（缓存空或 staleTime
+// 60s 窗口外时一次，见 useAutoCheckSkillUpdates）。enabled:false + 手动 refetch
+// 驱动不变——60s 内的结果共享复用，不会放大 GitHub Trees 打点（60 req/h 限速纪律不变）。
 // 仅全局 scope 有检测（项目 update 直接拉取同步，无 checkUpdates 概念）。
 export function useCheckSkillUpdates(agent: SkillAgent) {
   return useQuery({
@@ -173,6 +176,28 @@ export function useCheckSkillUpdates(agent: SkillAgent) {
     enabled: false,
     staleTime: SKILLS_STALE_MS,
   });
+}
+
+/**
+ * 详情/清单页自足检测（reviewer 收拢：两页各写一份 effect 且已分叉一次——projectName gate
+ * 只在一侧）。进页时缓存空或 staleTime 60s 窗口外则自发 refetch 一次；ref 守卫防失败重试
+ * 死循环（refetch 失败 → isFetching false + stale → 无标记时 effect 会再次触发）。语义精确说
+ * 是「挂载期内首次满足 stale 条件时检测一次」：进页时缓存 fresh 则不触发且不置位，停留超
+ * staleTime 后 isStale 翻转、effect 重跑会静默补检一次（每挂载至多一次；限速纪律不变——
+ * 全局 queryKey 共享结果，60s 内不重复打 GitHub Trees）。projectName 非空 = 项目段无检测
+ * 数据源，永不触发。
+ */
+export function useAutoCheckSkillUpdates(agent: SkillAgent, projectName?: string) {
+  const updates = useCheckSkillUpdates(agent);
+  const autoChecked = useRef(false);
+  const updatesRefetch = updates.refetch;
+  useEffect(() => {
+    if (projectName || autoChecked.current) return;
+    if ((updates.data && !updates.isStale) || updates.isFetching) return;
+    autoChecked.current = true;
+    void updatesRefetch();
+  }, [projectName, updates.data, updates.isStale, updates.isFetching, updatesRefetch]);
+  return updates;
 }
 
 // update 服务端走 npx skills update + reloadAliveSessions（/reload-skills → skill_catalog_changed

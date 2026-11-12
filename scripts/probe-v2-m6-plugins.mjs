@@ -130,8 +130,14 @@ async function setupM6Mocks(page) {
       }),
     ),
   );
-  await page.route("**/api/skills/updates*", (r) =>
-    r.fulfill(json({ updates: [{ name: "code-review", hasUpdate: true, manageable: true }] })),
+  // 更新检测已任务化（与 install/update 同链）：POST 秒回 taskId，updates 结果随 SSE done 帧
+  // 带回（见下方 task/*/events mock 的 task-m6-upd 分支）。
+  await page.route("**/api/skills/updates", (r) =>
+    r.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ taskId: "task-m6-upd", status: "running" }),
+    }),
   );
   // 按 query 区分命中（服务端语义）：docs→docs-writer、style→code-style。
   // Part 5 会真装 docs-writer（mock handler push 进 INSTALLED_SKILLS），Part 7 搜索融合段
@@ -186,18 +192,27 @@ async function setupM6Mocks(page) {
     return r.fulfill(json({ taskId: "task-m6", status: "running" }));
   });
   // SSE 任务帧：fulfill 一次响应含 done 帧（EventSource onmessage 解析后 waitForSkillTask resolve）。
-  await page.route("**/api/skills/task/*/events", (r) =>
-    r.fulfill({
+  // 按 taskId 分流：task-m6-upd = 更新检测（updates 随帧带回）；其余 = install。
+  await page.route("**/api/skills/task/*/events", (r) => {
+    const taskId = r
+      .request()
+      .url()
+      .match(/\/api\/skills\/task\/([^/]+)\/events/)?.[1];
+    const frame =
+      taskId === "task-m6-upd"
+        ? {
+            taskId,
+            status: "done",
+            kind: "check",
+            updates: [{ name: "code-review", hasUpdate: true, manageable: true }],
+          }
+        : { taskId: "task-m6", status: "done", kind: "install", skill: INSTALLED_SKILLS[0] };
+    return r.fulfill({
       status: 200,
       contentType: "text/event-stream",
-      body: `data: ${JSON.stringify({
-        taskId: "task-m6",
-        status: "done",
-        kind: "install",
-        skill: INSTALLED_SKILLS[0],
-      })}\n\n`,
-    }),
-  );
+      body: `data: ${JSON.stringify(frame)}\n\n`,
+    });
+  });
   // session 面板 WS（shell 登录后可能连接）。
   await page.routeWebSocket(/stream/, (ws) => ws.connectToServer());
 }
@@ -379,18 +394,40 @@ ok(
   mdOverflow.docSw <= mdOverflow.vw && mdOverflow.wideCount === 0,
   `正文超长 URL 无横向溢出（doc ${mdOverflow.docSw} ≤ vw ${mdOverflow.vw}，宽滚动容器 ${mdOverflow.wideCount}）`,
 );
-// 第九轮：行动钮整宽（button 实例 width:auto = fit-content 塌宽——.cta/.rm width 三连修正，
-// 同 .pcard/.addsrc 先例；左右 margin 16×2，整宽 = vw-32）。
+// 行动钮并排（2026-11-12 Apple Store 式重排后）：更新 .cta + 卸载 .rm 各 flex-1 均分
+// 操作行（容器 px-4 = 左右 16×2 + gap 8 → 每钮 (vw-40)/2）。原「整宽 vw-32」断言随
+// 布局退役——两钮等宽且合计填满行宽才是现契约。
 const btnGeo = await page.evaluate(() => {
-  const w = (sel) => {
+  const geo = (sel) => {
     const el = document.querySelector(sel);
-    return el ? Math.round(el.getBoundingClientRect().width) : null;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height) };
   };
-  return { vw: window.innerWidth, cta: w(".cta"), rm: w(".rm") };
+  const cta = document.querySelector(".cta");
+  const row = cta?.parentElement;
+  const rm = document.querySelector(".rm");
+  const sameRow = row && rm && row.contains(rm);
+  return {
+    vw: window.innerWidth,
+    cta: geo(".cta"),
+    rm: geo(".rm"),
+    ctaTop: cta ? Math.round(cta.getBoundingClientRect().top) : null,
+    rmTop: rm ? Math.round(rm.getBoundingClientRect().top) : null,
+    sameRow,
+  };
 });
+// 两者 flex 声明相同（1 1 0%）+ gap 8 + 总宽 = vw-40 精确吻合，但 Chromium 分配为
+// 174/176（±2px 引擎内部行为）——断言锁「各自落在均分值 ±2 内」而非严格相等；
+// 同行比较用两钮自身 top（容器行带 pt-3，容器 top ≠ 按钮 top）；高度必须相等
+//（reviewer P3：.rm 显式 height:42 挡住 items-stretch → 底缘差 2px，h-auto 放行拉平）。
 ok(
-  btnGeo.cta === btnGeo.vw - 32 && btnGeo.rm === btnGeo.vw - 32,
-  `.cta/.rm 整宽 = vw-32（cta ${btnGeo.cta} / rm ${btnGeo.rm} / vw ${btnGeo.vw}）`,
+  btnGeo.sameRow === true &&
+    Math.abs(btnGeo.cta.w - (btnGeo.vw - 40) / 2) <= 2 &&
+    Math.abs(btnGeo.rm.w - (btnGeo.vw - 40) / 2) <= 2 &&
+    btnGeo.ctaTop === btnGeo.rmTop &&
+    btnGeo.cta.h === btnGeo.rm.h,
+  `.cta/.rm 并排均分等高 = (vw-40)/2±2（cta ${btnGeo.cta.w}×${btnGeo.cta.h} / rm ${btnGeo.rm.w}×${btnGeo.rm.h} / vw ${btnGeo.vw}）`,
 );
 // 卸载确认 Alert（spec §5：删除类确认走 useConfirm；移动形态 = iOS action sheet，即
 // ConfirmDialog 的 MobileSheet 分支——39a8aca 起移动收敛单源，桌面才是 Dialog）。
@@ -734,6 +771,265 @@ ok((await dpage.locator(".spop .row.on").count()) === 1, "当前作用域行 on"
 ok((await dpage.locator(".spop .ck").count()) === 1, "当前作用域行 ✓");
 ok((await dpage.locator(".spop .newp").count()) === 1, "「＋ 新建项目」行");
 await desktopCtx.close();
+
+// ── Part 8: 桌面技能详情 mainPage（2026-11-12 回归：复用 MobileSkillDetail）──────
+// 回归面：桌面 /plugins/skill/$ 原渲染 SkillTabPreview（tab 时代只读 Markdown）——长文不滚
+// （section.flex-1 在 MainPageShell 非 flex children 容器下失效）、无返回钮、无单技能更新/
+// 停用/卸载入口（用户真机报障）。现复用 MobileSkillDetail（与 MCP 详情复用 MobileMcpDetail
+// 同构）。断言：返回钮 / 主页面标题 / 可滚动性（scrollTop 读回）/ 更新 CTA / 停用开关。
+console.log("Part 8: 桌面 /plugins/skill/$ 详情（返回钮 + 滚动 + 更新 CTA + 停用开关）");
+const detailCtx = await browser.newContext({
+  viewport: { width: 1280, height: 800 },
+  locale: "zh-CN",
+});
+const dpage2 = await detailCtx.newPage();
+await setupM6Mocks(dpage2);
+// 长正文覆盖（后注册 route 优先）：滚动断言需要内容超出视口容器——基础 mock 正文仅一段。
+const longBody = `# Code Review\n\n${Array.from(
+  { length: 80 },
+  (_, i) => `正文段落 ${i}：提交前审查要点、潜在缺陷与测试覆盖建议示例。`,
+).join("\n\n")}`;
+await dpage2.route("**/api/skills/preview*", (r) =>
+  r.fulfill(
+    json({
+      name: "code-review",
+      description: "提交前自动审查代码变更",
+      content: longBody,
+      source: "/home/deploy/.claude/skills/code-review",
+    }),
+  ),
+);
+// 更新端点：POST 秒回 taskId（json helper 恒 200，fetchJson 只查 res.ok；SSE 终态走
+// setupM6Mocks 的 task/*/events mock，done 帧 resolve waitForSkillTask）。
+await dpage2.route("**/api/skills/update", (r) => r.fulfill(json({ taskId: "t-update-1" })));
+await login(dpage2);
+await dpage2.goto(`${ORIGIN}/plugins`);
+await dpage2.waitForSelector(".pcard", { timeout: 10000 });
+// 不点列表「检查更新」直接进详情——验证 2026-11-12 新增的详情页自动检测（此前 hasUpdate
+// 依赖手动检测，更新 CTA 看不到；用户实报「单个技能更新的按钮也没看到」）。
+await dpage2.locator(".pcard", { hasText: "code-review" }).click();
+await dpage2.waitForSelector(".dmeta", { timeout: 5000 });
+ok(dpage2.url().includes("/plugins/skill/code-review"), "D1 桌面 URL /plugins/skill/code-review");
+ok(
+  (await dpage2.locator("header button.back").count()) === 1,
+  "D2 返回钮在场（PluginNav back——SkillTabPreview 时代缺失）",
+);
+ok(
+  (await dpage2.getByRole("heading", { level: 1, name: "插件" }).count()) === 1,
+  "D3 mainPage 标题 h1「插件」",
+);
+// 可滚动性硬数据：从滚动区内锚点（.dsect）向上找真正的滚动祖先（详情内容容器）——
+// 布局重排（Apple Store 式）后 .rm 已移固定头区，不能再当滚动区锚点；且不能裸扫
+// .overflow-y-auto 取首个可滚元素（会命中左栏列表 306/303，非正文）。
+const scrollGeo = await dpage2.evaluate(() => {
+  const anchor = document.querySelector(".dsect");
+  if (!anchor) return { found: false, reason: "no .dsect" };
+  let el = anchor.parentElement;
+  while (el) {
+    const overflowY = getComputedStyle(el).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") break;
+    el = el.parentElement;
+  }
+  if (!el) return { found: false, reason: "no scroll ancestor" };
+  el.scrollTop = 240;
+  return {
+    found: true,
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+    scrollTopAfter: el.scrollTop,
+  };
+});
+ok(
+  scrollGeo.found && scrollGeo.scrollTopAfter >= 200,
+  `D4 长正文可滚动（scrollHeight ${scrollGeo.scrollHeight} > clientHeight ${scrollGeo.clientHeight}，scrollTop 读回 ${scrollGeo.scrollTopAfter}${scrollGeo.reason ? `；${scrollGeo.reason}` : ""}）`,
+);
+// Apple Store 式布局（2026-11-12 用户反馈「更新/卸载按钮在底部要拉滚动条才能看到」）：
+// 操作钮在滚动容器**外**的固定头区（结构性断言）+ 正文滚动时不随 scrollTop 位移（几何断言，
+// 滚动容器从滚动区锚点 .dsect 向上找——.rm 自身在固定头、向上找不到滚动容器）。
+const fixedHead = await dpage2.evaluate(() => {
+  const rm = document.querySelector(".rm");
+  const md = document.querySelector(".dsect");
+  if (!rm || !md) return { found: false };
+  let el = rm.parentElement;
+  let insideScroll = false;
+  while (el) {
+    const oy = getComputedStyle(el).overflowY;
+    if (oy === "auto" || oy === "scroll") {
+      insideScroll = true;
+      break;
+    }
+    el = el.parentElement;
+  }
+  let sc = md.parentElement;
+  while (sc && !["auto", "scroll"].includes(getComputedStyle(sc).overflowY)) {
+    sc = sc.parentElement;
+  }
+  if (!sc) return { found: true, insideScroll, scrolled: false, top0: -1, top240: -1 };
+  sc.scrollTop = 0;
+  const top0 = rm.getBoundingClientRect().top;
+  sc.scrollTop = 240;
+  const top240 = rm.getBoundingClientRect().top;
+  sc.scrollTop = 0;
+  return { found: true, insideScroll, scrolled: true, top0, top240 };
+});
+ok(
+  fixedHead.found && !fixedHead.insideScroll,
+  "D10 更新/卸载钮在固定头区（不在滚动容器内——Apple Store 式布局）",
+);
+ok(
+  fixedHead.scrolled && Math.abs(fixedHead.top0 - fixedHead.top240) < 1,
+  `D11 正文滚动时操作钮纹丝不动（top ${fixedHead.top0.toFixed(1)} → ${fixedHead.top240.toFixed(1)}）`,
+);
+// D5：自动检测（详情页 mount 自发 refetch updates）后 CTA 出现——列表「检查更新」按钮仍在
+//（Part 1 消费），本 Part 不点它，验证用户无需任何手动动作就能看到单技能更新入口。
+const ctaAutoAppeared = await dpage2
+  .locator(".cta")
+  .waitFor({ timeout: 8000 })
+  .then(() => true)
+  .catch(() => false);
+ok(ctaAutoAppeared, "D5 进详情自动检测 → 更新 CTA 自动出现（无需手动检查更新）");
+ok((await dpage2.locator('button[role="switch"]').count()) === 1, "D6 停用开关在场（role=switch）");
+// D7 先返回（更新流程放到最后——更新成功会乐观清掉 hasUpdate，列表 chip 断言依赖它在场）。
+await dpage2.locator("header button.back").click();
+await dpage2.waitForTimeout(500);
+ok(!dpage2.url().includes("/plugins/skill/"), `D7 返回钮回插件页（URL ${dpage2.url()}）`);
+// 列表卡 chip 几何（2026-11-12 用户反馈「有更新标签出现在中间」）：.upd 每个 margin-left:auto
+// 会均分剩余空间把「有更新」悬在卡中央；修复后相邻 chip 收拢（.upd + .upd margin-left:6px）
+// 靠右成一簇。放在 D7 之后测——详情页自动检测（D5）已填充 updates 缓存且更新流程尚未执行
+//（hasUpdate 仍 true），列表卡此刻才有「有更新」chip；Part 8 开头不点「检查更新」（那是 D5
+// 自动检测的前提）。
+const chipGeo = await dpage2.evaluate(() => {
+  // 桌面 /plugins 左栏与 mainPage 都可能渲染 code-review 卡——取「chips ≥2」的那张
+  //（mainPage 卡带「有更新」+「来源」两 chip；左栏卡结构不同）。
+  const cards = [...document.querySelectorAll(".pcard")].filter((el) =>
+    el.textContent?.includes("code-review"),
+  );
+  let card = null;
+  let chips = [];
+  for (const c of cards) {
+    const r1 = c.querySelector(".r1");
+    const found = r1 ? [...r1.querySelectorAll(".upd")] : [];
+    if (found.length >= 2) {
+      card = c;
+      chips = found;
+      break;
+    }
+  }
+  if (!card || chips.length < 2)
+    return { found: false, gap: -1, sameRow: false, updLeftOfSource: false, rightEdgeDelta: -1 };
+  const rects = chips.map((c) => c.getBoundingClientRect());
+  const cardRect = card.getBoundingClientRect();
+  return {
+    found: true,
+    gap: rects[1].left - rects[0].right,
+    sameRow: Math.abs(rects[0].top - rects[1].top) < 2,
+    updLeftOfSource: rects[0].left < rects[1].left,
+    rightEdgeDelta: cardRect.right - 16 - rects[rects.length - 1].right,
+  };
+});
+ok(chipGeo.found && chipGeo.sameRow, "C1 卡上「有更新/来源」chip 同行成簇");
+ok(
+  chipGeo.updLeftOfSource && chipGeo.gap >= 2 && chipGeo.gap <= 12,
+  `C2 相邻 chip 收拢（间距 ${chipGeo.gap}px，有更新在来源左侧——不再悬卡中央）`,
+);
+ok(
+  Math.abs(chipGeo.rightEdgeDelta) <= 4,
+  `C3 chip 簇右缘贴卡右 padding（偏差 ${chipGeo.rightEdgeDelta}px）`,
+);
+// D8/D9：更新终态反馈（用户实报「更新中→静默变回，什么结果都不知道」）。重进详情执行——
+// 点 CTA → POST → SSE done 帧 → 成功后 hasUpdate 乐观 false，但新增的终态文案必须
+// 常驻显示（「✓ 已更新到最新版本」），而不是 CTA 块整体消失留空白。
+if (ctaAutoAppeared) {
+  await dpage2.locator(".pcard", { hasText: "code-review" }).click();
+  await dpage2.waitForSelector(".dmeta", { timeout: 5000 });
+  await dpage2.locator(".cta").click();
+  const doneNote = dpage2.getByText("已更新到最新版本");
+  const doneShown = await doneNote
+    .waitFor({ timeout: 10000 })
+    .then(() => true)
+    .catch(() => false);
+  ok(doneShown, "D8 更新成功显示终态文案（「✓ 已更新到最新版本」）");
+  ok((await dpage2.locator(".cta").count()) === 0, "D9 更新成功后更新按钮退场（CTA 不残留）");
+  // D12：更新成功返回列表，「有更新」chip 随乐观置 false 同步消失（列表与详情同一份缓存）。
+  await dpage2.locator("header button.back").click();
+  await dpage2.waitForTimeout(500);
+  const updChipGone =
+    (await dpage2.evaluate(() =>
+      [...document.querySelectorAll(".pcard .upd")]
+        .filter((el) => !el.classList.contains("off"))
+        .every((el) => !el.closest(".pcard")?.textContent?.includes("code-review")),
+    )) || false;
+  ok(updChipGone, "D12 更新成功返回列表，「有更新」chip 已从卡上消失");
+} else {
+  ok(false, "D8 更新成功显示终态文案（前置 D5 未通过，跳过点击）");
+  ok(false, "D9 更新成功后更新按钮退场（前置 D5 未通过，跳过点击）");
+  ok(false, "D12 更新成功返回列表 chip 消失（前置 D5 未通过，跳过）");
+}
+await detailCtx.close();
+
+// ── Part 9: 可用更新清单页（2026-11-12：组头「n 个更新 ›」→ /plugins/updates 逐项/批量更新）──
+// 回归面：原黄色「n 个更新 ›」点击行为是再检测一遍（不符合提示语义，用户实报）；清单页支持
+// 单项「更新」与组头「全部更新」（顺序逐个 POST，成功项乐观出列）。
+console.log("Part 9: /plugins/updates 清单页（黄色提示进清单 + 单项/全部更新）");
+const updCtx = await browser.newContext({
+  viewport: { width: 1280, height: 800 },
+  locale: "zh-CN",
+});
+const p3 = await updCtx.newPage();
+await setupM6Mocks(p3);
+const updatePosts = [];
+await p3.route("**/api/skills/update", (r) => {
+  updatePosts.push(JSON.parse(r.request().postData() ?? "{}"));
+  return r.fulfill(json({ taskId: "task-m6", status: "running" }));
+});
+await login(p3);
+await p3.goto(`${ORIGIN}/plugins`);
+await p3.waitForSelector(".pcard", { timeout: 10000 });
+await p3.locator(".psect button.r", { hasText: "检查更新" }).click();
+const yellowChip = p3.getByRole("button", { name: "1 个更新 ›" });
+const yellowShown = await yellowChip
+  .waitFor({ timeout: 8000 })
+  .then(() => true)
+  .catch(() => false);
+ok(yellowShown, "U1 检测出更新后组头出现黄色「1 个更新 ›」提示");
+if (yellowShown) {
+  await yellowChip.click();
+  await p3.waitForURL(/\/plugins\/updates/, { timeout: 5000 });
+  ok(p3.url().includes("/plugins/updates"), `U2 点击黄色提示进清单页（URL ${p3.url()}）`);
+  ok(
+    (await p3.getByRole("heading", { level: 1, name: "可用更新" }).count()) === 1,
+    "U3 清单页标题「可用更新」",
+  );
+  const updCard = p3.locator(".pcard", { hasText: "code-review" });
+  await updCard.waitFor({ timeout: 5000 });
+  ok(
+    (await updCard.locator("button.upd", { hasText: "更新" }).count()) === 1,
+    "U4 卡内单项「更新」钮在场",
+  );
+  await p3.getByRole("button", { name: "全部更新" }).click();
+  const emptied = await p3
+    .getByText("没有待更新的技能")
+    .waitFor({ timeout: 10000 })
+    .then(() => true)
+    .catch(() => false);
+  ok(emptied, "U5 全部更新完成后成功项出列（清单转空态）");
+  ok(
+    updatePosts.length === 1 &&
+      updatePosts[0].name === "code-review" &&
+      updatePosts[0].agent === "claude-code",
+    `U6 单技能更新请求恰 1 次、payload 正确（实际 ${JSON.stringify(updatePosts)}）`,
+  );
+  const backShown = (await p3.locator("header button.back").count()) === 1;
+  ok(backShown, "U7 返回钮在场（PluginNav 单源）");
+} else {
+  ok(false, "U2 点击黄色提示进清单页（前置 U1 未通过，跳过）");
+  ok(false, "U3 清单页标题「可用更新」（前置 U1 未通过，跳过）");
+  ok(false, "U4 卡内单项「更新」钮在场（前置 U1 未通过，跳过）");
+  ok(false, "U5 全部更新完成后成功项出列（前置 U1 未通过，跳过）");
+  ok(false, "U6 单技能更新请求恰 1 次（前置 U1 未通过，跳过）");
+  ok(false, "U7 返回钮在场（前置 U1 未通过，跳过）");
+}
+await updCtx.close();
 
 // ── 汇总 ───────────────────────────────────────────────────────────────────
 console.log(`\n${passCount} pass, ${failCount} fail`);
