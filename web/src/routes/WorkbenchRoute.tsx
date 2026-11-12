@@ -1,4 +1,5 @@
 import type { GitDiffScope } from "@agents-remote/shared";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
@@ -29,6 +30,7 @@ import { ShellIcon } from "../components/shell/icons";
 import { WorkbenchSide } from "../components/workbench/workbench-side";
 import { WorkbenchShell } from "../components/shell/workbench-shell";
 import { FilesScopeSeg, GlobalFilesOverview } from "../components/files/global-files-overview";
+import { fetchOverview } from "../api/client";
 import { AddMenu } from "../components/files/add-menu";
 import { useDirectoryAddActions } from "../components/files/use-directory-add-actions";
 import { MobileMcpDetail } from "../components/workbench/mobile-plugins-detail";
@@ -159,6 +161,17 @@ function WorkbenchContent({
   // 会话壳统一推送（壳/内容分离）：根常开单订阅，壳变更（状态机/mode/rename/close，
   // 任意采集源）亚秒级投影进 ["overview"] 缓存 + 按需 invalidate 列表/detail。
   useSessionShells();
+  // 根级 overview 兜底轮询（WS 主通道的 REST 纵深闸）：壳帧是 status/mode 的主通道
+  // （亚秒级），但 WS 死亡窗口（api 重启 / 网络抖动）里项目视图无任何兜底——
+  // useGlobalInstanceCandidates 的 10s 轮询 enabled:isGlobal 只覆盖全局视图，
+  // refetchOnWindowFocus 又全局关 → status/mode 冻结成断线前旧值（实锤案例：模式切换
+  // 菜单误报「执行中」，服务端 done 已 1 小时）。端点毫秒级 + recordActivity 分钟截断
+  // （M10 已论证轮询不放大写盘），10s 与全局视图同节奏；同 key 多 observer 并发去重。
+  useQuery({
+    queryKey: ["overview"],
+    queryFn: fetchOverview,
+    refetchInterval: 10_000,
+  });
   // D4「直达上次位置」：进入 project scope 即记忆 key，`/` 跳板无会话记忆时据此恢复。
   const [, setLastProjectKey] = useAtom(workbenchLastProjectAtom);
   useEffect(() => {
