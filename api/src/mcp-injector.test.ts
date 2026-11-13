@@ -5,14 +5,6 @@ import { getAgentProviderProfile } from "./agent-provider-profiles";
 describe("ClaudeMcpInjector", () => {
   const injector = new ClaudeMcpInjector();
 
-  it("canInject returns true only for claude profile", () => {
-    const claude = getAgentProviderProfile("claude")!;
-    expect(injector.canInject(claude)).toBe(true);
-
-    const codex = getAgentProviderProfile("codex")!;
-    expect(injector.canInject(codex)).toBe(false);
-  });
-
   it("buildMcpConfig produces --mcp-config inline JSON with type http and loopback url", () => {
     const config = injector.buildMcpConfig({ project: "demo", mcpPort: 43013 });
     expect(config).not.toBeNull();
@@ -61,14 +53,6 @@ describe("ClaudeMcpInjector", () => {
 describe("CodexMcpInjector", () => {
   const injector = new CodexMcpInjector();
 
-  it("canInject returns true only for codex profile", () => {
-    const codex = getAgentProviderProfile("codex")!;
-    expect(injector.canInject(codex)).toBe(true);
-
-    const claude = getAgentProviderProfile("claude")!;
-    expect(injector.canInject(claude)).toBe(false);
-  });
-
   it("buildMcpConfig produces -c TOML overrides with quoted loopback url + tool timeout (0.163 probe shape)", () => {
     const config = injector.buildMcpConfig({ project: "demo", mcpPort: 43013 });
     expect(config).not.toBeNull();
@@ -113,5 +97,14 @@ describe("buildMcpInjectorForProvider", () => {
   it("returns null for omp (ACP transport has no spawn argv injection channel)", () => {
     const injector = buildMcpInjectorForProvider(getAgentProviderProfile("omp")!);
     expect(injector).toBeNull();
+  });
+
+  it("能力声明是门禁单源：mcpInject=unsupported 的 profile 即使 transport 有适配器也不注入", () => {
+    const claude = getAgentProviderProfile("claude")!;
+    const unsupported = {
+      ...claude,
+      capabilities: { ...claude.capabilities, mcpInject: "unsupported" as const },
+    };
+    expect(buildMcpInjectorForProvider(unsupported)).toBeNull();
   });
 });

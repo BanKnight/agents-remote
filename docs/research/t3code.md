@@ -113,6 +113,13 @@ apps/server（Effect 全栈，node:sqlite）
    - 是什么：每个 adapter 输出一组结构化能力（能否 rollback、能否 steering、审批是否有原生 id、checkpoint 谁负责……），orchestration 与 UI 只看能力不看 provider 名。
    - 为什么值得学：我们正在扩 provider（claude/codex/pi/ACP），目前差异散在调用点；一份能力表能让「这个 provider 没有 X 就隐藏/降级」从 if-else 变数据驱动，避免「假装所有 provider 一样」的烂抽象。T3 连「Auto-accept edits 在 Grok 不存在→静默回退 Supervised」这类边角都用它收口（providers.md）。
    - 成本：低。types + 各 provider 填表 + UI 消费点改造；无新依赖。
+   - **本仓落地（2026-11-13）**：未照搬 T3 的 60 字段大表（那是 10+ provider 收敛后的形态），按「每字段至少两个 provider 取值不同 + 至少一个消费点」裁到 4 组有消费 + 1 组前向声明：
+     - 类型单源 `packages/shared` `AgentProviderCapabilities`（history / mcpInject / modes{dualMode,terminalResumeId} / approvals{center,oneClick} / autoRetry / configSwitch）+ `WEAKEST_AGENT_CAPABILITIES` 最弱基线（新 provider spread 派生）；api `AgentProviderProfile.capabilities` 与投影 `AgentProviderInfo.capabilities` 引用同一类型（杜绝声明/投影二次漂移）。
+     - 判定纯函数放 shared、前后端共用：`resolveModeSwitch(caps, session)`（能力 → unsupported；会话缺 `terminalResumeId` → missingResumeId；working/blocked → busy）与 `resolveAutoRetryCapability(caps, session)`（能力 && mode≠terminal）——**provider 能力 vs 会话级前置条件分离**（缺 resume id ≠ 无能力）。取代改前 5 处手写 if-else。
+     - 通道选「全局一次拉取」`useAgentProviderInfos()`（`["agent-providers"]`，staleTime Infinity）而非塞进会话载荷：能力是 provider 静态属性，对所有同 provider 会话相同。
+     - 接管热点：MCP 注入双轨收口（删 `McpInjector.canInject`，`buildMcpInjectorForProvider` 首行查 `capabilities.mcpInject`——能力声明成门禁单源）/ auto-retry 可用面（api `getAutoRetryTarget` + web 头部按钮/⋯ 菜单/ℹ 信息面/移动 ⋯）/ 双模式门禁（api `/mode` 路由按 verdict 映射 404/400/409；桌面 `SessionTabStripActions` + 移动 ⋯ 菜单）/ 显示名 + 创建菜单注册表驱动（`CREATE_PROVIDER_COPY` i18n 覆盖表 + `createProviderEntries` 单源，桌面 dropdown 与移动 sheet 同数据源，注册表顺序即菜单序 claude→omp→codex）。
+     - 明确不做（挂后续批）：面板路由 `AgentPanelRouterInner`（按 provider 名分派三面板）、runtime 生命周期分发、配置切换 UI 消费（configSwitch 仅声明）、审批中心派发（approvals 仅声明）。
+     - 行为变更三点：存量 tmux codex 双模式项「隐藏 → 显示禁用 + legacy 原因」；claude terminal 形态的 auto-retry 控制端点 404（web 有 gate 无感）；`/api/agent-providers` 响应顺序 claude/omp/codex（唯一消费方 settings 无可见影响）。
 
 2. **Turn 级 checkpoint（隐藏 git refs）+ 协同 revert**【源码 vcs/GitVcsDriver.ts L1280-1370、checkpointing/CheckpointStore.ts】
    - 是什么：每 turn 用临时 index `write-tree` → `commit-tree`（parent=HEAD，使 HEAD 移动可追溯）→ `update-ref refs/t3/checkpoints/<...>`；不动用户分支与 index。回滚 = 恢复 checkpoint + 同步回滚 provider 会话态（provider 不能回会话的，如 Antigravity，直接拒绝回滚——能力表声明），且 turn 运行中禁止 revert。

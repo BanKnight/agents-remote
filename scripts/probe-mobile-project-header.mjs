@@ -17,6 +17,7 @@
 // 用法：bun scripts/probe-mobile-project-header.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
+import { mockAgentProviders } from "./lib/agent-provider-mock.mjs";
 
 const ORIGIN = process.env.AR_WEB_ORIGIN ?? "http://127.0.0.1:43012";
 
@@ -135,12 +136,30 @@ async function setupMocks(page, { sessionIds, foreignCandidates = [], terminalSe
   // refetch 拿的就是这里）。闭包可变列表；模块级 POST_ADDS 跨 context 复位。
   POST_ADDS.length = 0;
   PINNED_MOCK = [];
+  // ⋯ 菜单自动重试行由能力表驱动（注册表缺失 → 行消失 → 断言假 FAIL）。
+  mockAgentProviders(page);
   const known = sessionIds.map((id) => SESSIONS[id]);
+  // overview 候选 = 参数候选 + POST 新建会话的动态投影（真实管道：新建会话经 WS session-shells
+  // 帧自然进入 overview 单源；mock 静态会让「新建后入菜单」类断言结构性过期——351635d
+  // 单源化后 ▾ 菜单/标题点全读这里）。
   await page.route(/\/api\/overview$/, (r) =>
     r.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ projectNames: [projectName], candidates: foreignCandidates }),
+      body: JSON.stringify({
+        projectNames: [projectName],
+        candidates: [
+          ...foreignCandidates,
+          ...POST_ADDS.map((s) => ({
+            projectName: s.projectName,
+            sessionId: s.id,
+            status: s.status,
+            type: "agent",
+            displayName: s.displayName,
+            createdAt: s.createdAt,
+          })),
+        ],
+      }),
     }),
   );
   // list GET + 新建 POST 同 URL（agent-sessions），按 method 分派。
@@ -282,7 +301,30 @@ async function run() {
     // ── context 1：保活 + ▾ 菜单切换 + 钉底新建 ─────────────────────────────
     const ctx = await browser.newContext(MOBILE_CTX);
     const page = await ctx.newPage();
-    await setupMocks(page, { sessionIds: ["agent_probe-1", "agent_probe-2"] });
+    // foreignCandidates（overview 候选）自 351635d 起是 ▾ 菜单三组 + 标题状态点唯一数据源
+    // ——Part 1 此前不传（恒 []），3cb505a 时代基于 instances 的 .dot.run 断言过期假 FAIL
+    // （2026-11-13 基线对照实锤，与能力表批无关）。补与 mock 会话同源的候选（wire 扁平形）。
+    await setupMocks(page, {
+      sessionIds: ["agent_probe-1", "agent_probe-2"],
+      foreignCandidates: [
+        {
+          projectName: "proj1",
+          sessionId: "agent_probe-1",
+          status: "running",
+          type: "agent",
+          displayName: "Probe Agent A",
+          createdAt: "2026-07-26T00:00:00.000Z",
+        },
+        {
+          projectName: "proj1",
+          sessionId: "agent_probe-2",
+          status: "idle",
+          type: "agent",
+          displayName: "Probe Agent B",
+          createdAt: "2026-07-26T00:00:00.000Z",
+        },
+      ],
+    });
     await login(page);
     await seedLayout(page, ["agent_probe-1", "agent_probe-2"], "agent_probe-1");
 
@@ -319,7 +361,11 @@ async function run() {
 
     console.log("\n===== Part 2. ▾ 菜单切实例：A 保活 hidden + B 挂载 =====");
     await openSwitchMenu(page);
-    await page.getByRole("menuitem", { name: /Probe Agent B/ }).click();
+    // B 行在「最近」组与项目组重复展示（351635d 拍板不去重）→ strict 模式双命中，取首个。
+    await page
+      .getByRole("menuitem", { name: /Probe Agent B/ })
+      .first()
+      .click();
     await page.waitForURL(/\/projects\/proj1\/session\/agent_probe-2/, { timeout: 8000 });
     await waitPanelVisible(page, "agent_probe-2", true);
     const b1 = await panelState(page, "agent_probe-2");
@@ -333,7 +379,11 @@ async function run() {
 
     console.log("\n===== Part 3. 切回 A：未重挂（WS 不断）=====");
     await openSwitchMenu(page);
-    await page.getByRole("menuitem", { name: /Probe Agent A/ }).click();
+    // 「最近」组与项目组重复展示（351635d 拍板不去重）→ strict 双命中，取首个。
+    await page
+      .getByRole("menuitem", { name: /Probe Agent A/ })
+      .first()
+      .click();
     await page.waitForURL(/\/projects\/proj1\/session\/agent_probe-1/, { timeout: 8000 });
     await waitPanelVisible(page, "agent_probe-1", true);
     const marker2 = await page.evaluate(
@@ -373,8 +423,8 @@ async function run() {
     ok(newPanel !== null && newPanel.visible, "新实例面板挂载且 visible");
     await openSwitchMenu(page);
     ok(
-      (await page.getByRole("menuitem", { name: /Probe New Agent/ }).count()) === 1,
-      "新实例入 ▾ 菜单列表（instances query invalidate 后含新会话）",
+      (await page.getByRole("menuitem", { name: /Probe New Agent/ }).count()) === 2,
+      "新实例入 ▾ 菜单列表（overview 单源：新建会话入候选，最近组+项目组重复展示 = 2 条）",
     );
     await page.keyboard.press("Escape");
 
@@ -399,7 +449,10 @@ async function run() {
       timeout: 5000,
     });
     await openSwitchMenu(page);
-    await page.getByRole("menuitem", { name: /Probe Agent A/ }).click();
+    await page
+      .getByRole("menuitem", { name: /Probe Agent A/ })
+      .first()
+      .click();
     await page.waitForURL(/session\/agent_probe-1/, { timeout: 8000 });
     await page.waitForFunction(
       () => {
@@ -432,12 +485,26 @@ async function run() {
       "agent_probe-5",
       "agent_probe-6",
     ];
-    await setupMocks(page2, { sessionIds: ids6 });
+    await setupMocks(page2, {
+      sessionIds: ids6,
+      // 标题状态点/▾ 菜单行自 351635d 起读 overview 单源——候选 mock 与 sessionIds 同源。
+      foreignCandidates: ids6.map((id) => ({
+        projectName: "proj1",
+        sessionId: id,
+        status: SESSIONS[id].status,
+        type: "agent",
+        displayName: SESSIONS[id].displayName,
+        createdAt: SESSIONS[id].createdAt,
+      })),
+    });
     await login(page2);
     await seedLayout(page2, ids6, "agent_probe-5");
     await page2.goto(`${ORIGIN}/projects/proj1/session/agent_probe-5`);
     await page2.waitForSelector('[data-tab-id="agent_probe-5"]', { timeout: 8000 });
     await openSwitchMenu(page2);
+    // 等菜单 zoom enter 动画播完再量几何（§18：动画期 rect = 中间态，压线断言会被动画偏移
+    // 打成假 false；诊断实测稳态 lastCurrentTop 160 + 行高 40 = 200 恰好在 200px 视野内）。
+    await page2.waitForTimeout(600);
     // 列表区 max-h 200px：5 行（每行 40px = 200px 边界）——断言 scroller 可滚且当前行（E）
     // 滚入视野（autoFocus 在队尾）。
     const menuScroll = await page2.evaluate(() => {
@@ -450,26 +517,33 @@ async function run() {
       if (!list) return null;
       const items = [...menu.querySelectorAll('[role="menuitem"]')];
       // v1.6 当前行 = 背景高亮（✓ 记号退役），aria-current 定位。
-      const current = menu.querySelector('[aria-current="true"]');
+      const current = [...menu.querySelectorAll('[aria-current="true"]')].at(-1);
       return {
         maxH: getComputedStyle(list).maxHeight,
         itemsCount: items.filter(
           (it) => !it.textContent?.includes("新建") && !it.textContent?.includes("恢复"),
         ).length,
         listScrollable: list.scrollHeight > list.clientHeight,
+        // 「滚入视野」= 当前行与列表视野有交集（压线断言在 ±1px 渲染抖动下必翻——诊断实测
+        // 稳态 bottom = 200 恰压 200px 视野线，0px 余量不可作硬断言）。
         currentInRange:
           current != null &&
           (() => {
             const lr = list.getBoundingClientRect();
+            // 滚动目标 = 最后一个 current（项目组副本，scrollIntoView effect 取最后一个——
+            // 最近组副本会被滚出视野，量它必假 false）。
             const cr = current.getBoundingClientRect();
-            return cr.top >= lr.top - 1 && cr.bottom <= lr.bottom + 1;
+            return cr.bottom > lr.top && cr.top < lr.bottom;
           })(),
       };
     });
     ok(menuScroll !== null, "▾ 菜单列表滚动容器在");
     ok(menuScroll?.maxH === "200px", `列表 max-h 200px 定高（实际 ${menuScroll?.maxH}）`);
-    ok(menuScroll?.itemsCount === 6, `实例行 6 条（实际 ${menuScroll?.itemsCount}）`);
-    ok(menuScroll?.listScrollable === true, "6 实例溢出 max-h 200px → 列表可滚");
+    ok(
+      menuScroll?.itemsCount === 12,
+      `实例行 12 条（6 会话 × 最近组+项目组重复展示；实际 ${menuScroll?.itemsCount}）`,
+    );
+    ok(menuScroll?.listScrollable === true, "12 行溢出 max-h 200px → 列表可滚");
     ok(menuScroll?.currentInRange === true, "当前行（背景高亮）在列表视野内");
     await page2.keyboard.press("Escape");
     await page2.waitForTimeout(300);
@@ -568,7 +642,21 @@ async function run() {
     ];
     const ctx4 = await browser.newContext(MOBILE_CTX);
     const page4 = await ctx4.newPage();
-    await setupMocks(page4, { sessionIds: ["agent_probe-1"], foreignCandidates: FOREIGN });
+    await setupMocks(page4, {
+      sessionIds: ["agent_probe-1"],
+      // 本项目行也入候选（351635d 单源：▾ 菜单「当前行高亮」断言需要 proj1 候选在场）。
+      foreignCandidates: [
+        {
+          projectName: "proj1",
+          sessionId: "agent_probe-1",
+          status: "idle",
+          type: "agent",
+          displayName: "Probe Agent A",
+          createdAt: "2026-07-26T00:00:00.000Z",
+        },
+        ...FOREIGN,
+      ],
+    });
     // 外项目实例的 session detail mock（点击跨项目行导航后聚焦面挂载数据）。
     await page4.route(/\/api\/projects\/ops-project\/agent-sessions(?:\?.*)?$/, (r) =>
       r.fulfill({
@@ -645,13 +733,19 @@ async function run() {
         ownHasCheck: own?.textContent?.includes("✓") ?? false,
       };
     });
-    ok(cross.foreignCount === 2, `外项目实例行 2 条（实际 ${cross.foreignCount}）`);
+    ok(
+      cross.foreignCount === 4,
+      `外项目行 4 条（「最近」组与 foreign 组重复展示不去重，351635d 拍板；实际 ${cross.foreignCount}）`,
+    );
     ok(cross.badgeCount === 0, `外项目行内 badge 退役（0 条；实际 ${cross.badgeCount}）`);
     ok(
       cross.heads.includes("ops-project"),
       `外项目组头 = 项目名（组头序 ${JSON.stringify(cross.heads)}）`,
     );
-    ok(cross.heads[0] === "proj1", `当前项目组置顶（组头序 ${JSON.stringify(cross.heads)}）`);
+    ok(
+      cross.heads[0] === "最近",
+      `「最近」组置顶（v1.6 图例②；组头序 ${JSON.stringify(cross.heads)}）`,
+    );
     ok(
       cross.ownBg !== "no-own-row" && cross.ownBg !== "rgba(0, 0, 0, 0)" && cross.ownBg !== "",
       `本项目当前行 = 背景高亮（bg ${cross.ownBg}）`,
@@ -662,7 +756,8 @@ async function run() {
     page4.on("console", (m) => {
       if (m.type() === "error") page4Diag.errors.push(m.text().slice(0, 160));
     });
-    await page4.getByRole("menuitem").filter({ hasText: "Ops Agent B" }).click();
+    // 「最近」组与 ops-project 组重复展示 → strict 双命中，取首个。
+    await page4.getByRole("menuitem").filter({ hasText: "Ops Agent B" }).first().click();
     try {
       await page4.waitForURL(/\/projects\/ops-project\/session\/agent_ops-2/, { timeout: 8000 });
     } catch {

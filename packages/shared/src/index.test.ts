@@ -8,8 +8,12 @@ import {
   isCompactBoundarySubtype,
   isOneClickApprovable,
   isUnresolvedControlRequest,
+  resolveAutoRetryCapability,
+  resolveModeSwitch,
+  WEAKEST_AGENT_CAPABILITIES,
 } from "./index";
 import type {
+  AgentProviderCapabilities,
   AgentSession,
   ApiErrorResponse,
   CloseAgentSessionResponse,
@@ -369,4 +373,82 @@ test("isUnresolvedControlRequest: 注入且未解决才为真", () => {
   expect(isUnresolvedControlRequest({ controlRequestId: "req-1", isInterrupted: false })).toBe(
     true,
   );
+});
+
+// ── provider 能力声明表（2026-11-13 T3 学习点①）────────────────────────
+const claudeCaps: AgentProviderCapabilities = {
+  ...WEAKEST_AGENT_CAPABILITIES,
+  modes: { dualMode: "native", terminalResumeId: "claudeSessionId" },
+  autoRetry: "native",
+};
+const codexCaps: AgentProviderCapabilities = {
+  ...WEAKEST_AGENT_CAPABILITIES,
+  modes: { dualMode: "native", terminalResumeId: "codexThreadId" },
+  autoRetry: "native",
+};
+
+test("WEAKEST_AGENT_CAPABILITIES 是最弱基线（新 provider 不假装有能力）", () => {
+  expect(WEAKEST_AGENT_CAPABILITIES).toEqual({
+    history: "unsupported",
+    mcpInject: "unsupported",
+    modes: { dualMode: "unsupported" },
+    approvals: { center: "unsupported", oneClick: "partial" },
+    autoRetry: "unsupported",
+    configSwitch: "advertised",
+  });
+});
+
+test("resolveModeSwitch: 能力 × 会话前置条件矩阵", () => {
+  // 能力缺省 / provider 无双模式 → 不渲染（UI 隐藏菜单项 / 路由 404）
+  expect(resolveModeSwitch(undefined, {})).toEqual({ supported: false });
+  expect(resolveModeSwitch(WEAKEST_AGENT_CAPABILITIES, { claudeSessionId: "s" })).toEqual({
+    supported: false,
+  });
+  // claude：有 resume id + idle → 可切
+  expect(resolveModeSwitch(claudeCaps, { claudeSessionId: "s", status: "idle" })).toEqual({
+    supported: true,
+  });
+  // 缺 resume id（存量会话）→ 禁用 + 原因（resumeId 随 verdict 下发，供路由人话文案）
+  expect(resolveModeSwitch(claudeCaps, { status: "idle" })).toEqual({
+    supported: true,
+    blockedReason: "missingResumeId",
+    resumeId: "claudeSessionId",
+  });
+  // turn 进行中 → busy
+  expect(resolveModeSwitch(claudeCaps, { claudeSessionId: "s", status: "working" })).toEqual({
+    supported: true,
+    blockedReason: "busy",
+  });
+  expect(resolveModeSwitch(claudeCaps, { claudeSessionId: "s", status: "blocked" })).toEqual({
+    supported: true,
+    blockedReason: "busy",
+  });
+  // 缺 id 优先于 busy（与原实现判定顺序一致）
+  expect(resolveModeSwitch(claudeCaps, { status: "working" })).toEqual({
+    supported: true,
+    blockedReason: "missingResumeId",
+    resumeId: "claudeSessionId",
+  });
+  // codex 的前置 id 是 codexThreadId——claudeSessionId 不满足它
+  expect(resolveModeSwitch(codexCaps, { claudeSessionId: "claude-side" })).toEqual({
+    supported: true,
+    blockedReason: "missingResumeId",
+    resumeId: "codexThreadId",
+  });
+  expect(resolveModeSwitch(codexCaps, { codexThreadId: "t", status: "done" })).toEqual({
+    supported: true,
+  });
+});
+
+test("resolveAutoRetryCapability: 能力 && 非 terminal 形态", () => {
+  expect(resolveAutoRetryCapability(undefined, {})).toEqual({ supported: false });
+  expect(resolveAutoRetryCapability(WEAKEST_AGENT_CAPABILITIES, { mode: "chat" })).toEqual({
+    supported: false,
+  });
+  expect(resolveAutoRetryCapability(claudeCaps, { mode: "chat" })).toEqual({ supported: true });
+  expect(resolveAutoRetryCapability(claudeCaps, { mode: undefined })).toEqual({ supported: true });
+  // terminal 形态无 headless stdin 控制通道
+  expect(resolveAutoRetryCapability(claudeCaps, { mode: "terminal" })).toEqual({
+    supported: false,
+  });
 });

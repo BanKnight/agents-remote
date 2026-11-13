@@ -27,6 +27,7 @@
 
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
+import { mockAgentProviders } from "./lib/agent-provider-mock.mjs";
 
 const ORIGIN = process.env.AR_WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const projectName = "proj1";
@@ -88,6 +89,8 @@ async function setupMocks(page) {
   createdProjects = [];
   autoRetryFires = 0;
   autoRetryCancels = 0;
+  // auto-retry 行由能力表驱动（注册表缺失 → 行消失 → 断言假 FAIL）。
+  mockAgentProviders(page);
 
   await page.route(/\/api\/overview$/, (r) =>
     r.fulfill(json({ projectNames: [projectName], candidates: [] })),

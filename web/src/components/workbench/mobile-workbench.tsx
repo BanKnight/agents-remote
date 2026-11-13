@@ -12,9 +12,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useT } from "../../i18n";
 import type { TranslationKey } from "../../i18n/types";
-import type { GitDiffScope } from "@agents-remote/shared";
+import {
+  type GitDiffScope,
+  resolveAutoRetryCapability,
+  resolveModeSwitch,
+} from "@agents-remote/shared";
 import { listProjectGitBranches } from "../../api/client";
 import { WIKI_QUERY_SCOPE, useWikiIndex } from "../../hooks/wiki";
+import { providerCapabilities, useAgentProviderInfos } from "../../hooks/agent-providers";
 import { AddMenu } from "../files/add-menu";
 import { useDirectoryAddActions } from "../files/use-directory-add-actions";
 import { resolveRelativeFilePath } from "../files/relative-md-link";
@@ -1237,38 +1242,26 @@ function MobileProjectWorkbench({
     // skill tab 聚焦等非会话语境传 null 免发注定 404 的 detail 请求（code review v6.3）。
     focusRef?.kind === "session" ? focusSessionType : null,
   );
-  const focusIsClaude =
-    focusSessionType === "agent" && focusAgentDetail.data?.session.provider === "claude";
-  // codex 双模式(桌面 SessionTabStripActions 同构):有 threadId 的 codex 会话可切
-  // terminal(codex resume TUI);存量 tmux codex(无 threadId)不可切。
-  const focusIsCodex =
-    focusSessionType === "agent" &&
-    focusAgentDetail.data?.session.provider === "codex" &&
-    Boolean(focusAgentDetail.data?.session.codexThreadId);
-  // 双模式（2026-10-15，与桌面 SessionTabStripActions 同构）：terminal 形态 = CLI 原生 TUI
-  //（无 stdin 控制通道 → 自动重试让位）；切换门槛严格 idle-only。
-  const focusSessionMode = focusAgentDetail.data?.session.mode ?? "chat";
-  // 自动重试开关可用面（桌面 SessionTabStripActions 同构）：claude/codex chat 通用；
-  // terminal 排除不看 focusIsCodex——存量 tmux codex 无 threadId 但 mode 恒 terminal，
-  // 靠 mode 单独兜住。
-  const focusAutoRetryCapable =
-    (focusIsClaude || focusAgentDetail.data?.session.provider === "codex") &&
-    focusSessionMode !== "terminal";
-  // 存量会话无钉 claudeSessionId 无法 --resume（review P3-8：禁用 + 原因文案，防必败弹窗循环）。
-  // busy 判定双 provider 共用;存量会话无钉 claudeSessionId 无法 --resume(review P3-8:
-  // 禁用 + 原因文案,防必败弹窗循环)。
-  const focusBusyBlocked =
-    focusAgentDetail.data?.session.status === "working" ||
-    focusAgentDetail.data?.session.status === "blocked"
+  // 双模式（2026-10-15，与桌面 SessionTabStripActions 同构，判定收敛到 shared
+  // resolveModeSwitch 单一源）：能力表决定是否支持（provider 有 dualMode），会话字段决定
+  // 是否可切（缺原生 resume id → legacy 原因；working/blocked → busy 原因）；切换门槛严格
+  // idle-only。terminal 形态 = CLI 原生 TUI（无 stdin 控制通道 → 自动重试让位）。
+  const focusProviderInfos = useAgentProviderInfos();
+  const focusAgentSession = focusAgentDetail.data?.session;
+  const focusSessionMode = focusAgentSession?.mode ?? "chat";
+  const focusCaps = providerCapabilities(focusProviderInfos, focusAgentSession?.provider);
+  const focusModeSwitchVerdict = resolveModeSwitch(focusCaps, focusAgentSession);
+  const focusModeSwitchBlockedReason =
+    focusModeSwitchVerdict.supported && focusModeSwitchVerdict.blockedReason === "busy"
       ? t("session.modeSwitch.busy")
-      : undefined;
-  const focusModeSwitchBlockedReason = focusIsCodex
-    ? focusBusyBlocked
-    : !focusAgentDetail.data?.session.claudeSessionId
-      ? t("session.modeSwitch.legacy")
-      : focusBusyBlocked;
+      : focusModeSwitchVerdict.supported &&
+          focusModeSwitchVerdict.blockedReason === "missingResumeId"
+        ? t("session.modeSwitch.legacy")
+        : undefined;
   const focusModeSwitchable =
-    (focusIsClaude || focusIsCodex) && focusModeSwitchBlockedReason === undefined;
+    focusModeSwitchVerdict.supported && focusModeSwitchBlockedReason === undefined;
+  // 自动重试开关可用面（桌面同构）：能力表 autoRetry && 非 terminal 形态。
+  const focusAutoRetryCapable = resolveAutoRetryCapability(focusCaps, focusAgentSession).supported;
   const { modeSwitch: focusModeSwitch, holder: focusModeSwitchHolder } = useSessionModeSwitch();
   // 行1 标题与 runct 徽标（spec §4.1-1）：标题 = 当前聚焦对象名（skill tab 名 / 实例名；
   // detail 未热时 instanceNameMemo sidecar 兜底防 id 闪现——tab 首帧同款语义），无聚焦对象
@@ -1528,7 +1521,7 @@ function MobileProjectWorkbench({
                         icon: <ShellIcon name="edit" />,
                         onSelect: () => a.rename.run(focusDisplayName),
                       },
-                      ...(focusIsClaude || focusIsCodex
+                      ...(focusModeSwitchVerdict.supported
                         ? [
                             {
                               label:

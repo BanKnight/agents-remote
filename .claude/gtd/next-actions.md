@@ -4,7 +4,7 @@
 
 ## @t3code-study（调研：docs/research/t3code.md；源码：~/repos/t3code；2026-11-13 用户拍板采纳三条）
 
-- [ ] **Provider 能力声明表**（优先 ①，多 provider 扩容地基）：每 adapter 输出结构化 capabilities（能否 rollback/steering/原生审批 id…），orchestration 与 UI 只看能力不看 provider 名——「provider 没有 X 就隐藏/降级」从 if-else 变数据驱动。参考 t3code adapters 的 capabilities 输出与消费面（报告学习点 1）；适合与下一个 provider 接入批合并立项。
+- [x] **Provider 能力声明表**（2026-11-13 完成，多 provider 扩容地基）：shared `AgentProviderCapabilities` 类型单源 + `WEAKEST_AGENT_CAPABILITIES` 基线 + `resolveModeSwitch`/`resolveAutoRetryCapability` 判定纯函数（前后端同一份）；api 注册表按矩阵填值（claude/omp/codex × history/mcpInject/modes/approvals/autoRetry/configSwitch）→ `/api/agent-providers` 投影；web 全局一次拉取（`useAgentProviderInfos`，staleTime Infinity）。接管四个高价值热点：MCP 注入双轨收口（删 `canInject`，能力声明成门禁单源）/ auto-retry 可用面（api `getAutoRetryTarget` + web 4 处）/ 双模式门禁（api `/mode` 路由 + 桌面 ⋯ 菜单 + 移动 ⋯ 菜单）/ 显示名 + 创建菜单注册表驱动（桌面 dropdown + 移动 sheet 同一份 entries，注册表序 claude→omp→codex 即菜单序）。落地取舍见 `docs/research/t3code.md` 学习点 1「本仓落地」节。
 - [ ] **settle 注意力语义**（②，会话列表「完成的会话堆积」痛点）：「agent 说完 ≠ 事办完」——settle/snooze/pin 态 + server 侧规则自动 settle（如 PR merge）；先出交互设计稿再实现（报告学习点 3）。
 - [ ] **Turn 级 checkpoint = 隐藏 git refs**（③，git 工作区深化批前置）：临时 index `write-tree`→`commit-tree`(parent=HEAD)→`update-ref refs/ar/checkpoints/*`，不动用户分支——per-turn diff 与「回滚到这条消息」的根基，与 JSONL 权威不冲突（报告学习点 2）。
 

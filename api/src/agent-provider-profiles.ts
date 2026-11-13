@@ -1,5 +1,6 @@
 import type {
   AgentProvider,
+  AgentProviderCapabilities,
   AgentProviderInfo,
   AgentProviderTransport,
   ClaudePermissionMode,
@@ -20,13 +21,9 @@ export type AgentProviderProfile = {
   label: string;
   command: string;
   displayNamePrefix: string;
-  capabilities: {
-    history: "unsupported" | "native";
-    /** ar-hub 注入能力（mcp-injector 的 canInject 单源声明）。unsupported = spawn 不带
-     *  MCP 配置，会话照常可跑（静默降级非错误；MCP_INJECT_UNSUPPORTED 错误码留给未来
-     *  「显式要求注入但不支持」场景）。 */
-    mcpInject: "unsupported" | "native";
-  };
+  /** 能力声明（类型单源在 shared：api profile 填写 → /api/agent-providers 投影 → web 消费；
+   *  UI/orchestration 只看能力不看 provider 名）。 */
+  capabilities: AgentProviderCapabilities;
   credentials?: AgentProviderCredentialsSpec;
   availableModels?: string[];
   permissionModes?: ClaudePermissionMode[];
@@ -89,6 +86,8 @@ export async function parseClaudePermissionModes(): Promise<ClaudePermissionMode
 
 // 一代 claude（历史 tmux 直拉）已被二代实现取代（直拉 CLI + native history），协议层
 // AgentProvider 不再含一代；"claude" 统一指向二代 Claude runtime。
+// 顺序即 /api/agent-providers 投影序 = 创建菜单行序（web 注册表驱动消费）：claude → omp →
+// codex，对齐新建实例原型行序（§6.12j）。
 const profiles: Record<AgentProvider, AgentProviderProfile> = {
   claude: {
     provider: "claude",
@@ -99,23 +98,19 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
     capabilities: {
       history: "native",
       mcpInject: "native",
+      // 双模式（2026-10-15）：chat ↔ terminal 经 claudeSessionId --resume 接力。
+      modes: { dualMode: "native", terminalResumeId: "claudeSessionId" },
+      // 审批中心原生 request id 通道；ExitPlanMode/AskUserQuestion 两族复杂卡需完整语义
+      // （isOneClickApprovable 排除）→ partial。
+      approvals: { center: "native", oneClick: "partial" },
+      // 注入桥走 headless stdin（ClaudeRuntime AutoRetryWatch）。
+      autoRetry: "native",
+      // switchModel/switchPermissionMode 走 control 通道即时切换；effort 仅 claude 有。
+      configSwitch: "immediate",
     },
     // Claude Code standard model aliases — portable tier identifiers that the
     // CLI resolves to the latest model version at runtime.
     availableModels: ["sonnet", "opus", "haiku"],
-  },
-  codex: {
-    provider: "codex",
-    transport: "codex",
-    label: "Codex",
-    command: "codex",
-    displayNamePrefix: "Codex Agent",
-    capabilities: {
-      // 历史 = rollout JSONL 扫描列表（codex-history.ts）+ thread/resume 回放（批 F）。
-      history: "native",
-      // `-c mcp_servers.ar-hub.url=` TOML 覆盖（批 E，探针 E1 实证 0.163 真连上）。
-      mcpInject: "native",
-    },
   },
   // omp（Oh My Pi CLI）：走 ACP 协议对接（transport "acp"，`omp acp` 子命令）。ACP 是协议
   // 家族而非 provider——未来接其它 ACP CLI 各加一条 profile（transport 同为 "acp"），
@@ -133,9 +128,33 @@ const profiles: Record<AgentProvider, AgentProviderProfile> = {
     capabilities: {
       history: "native",
       mcpInject: "unsupported", // ACP transport 无 spawn argv 注入通道。
+      modes: { dualMode: "unsupported" }, // 仅 chat（ACP 会话无 tmux TUI 形态）。
+      approvals: { center: "unsupported", oneClick: "partial" }, // requestPermission 自动 allow，无审批面。
+      autoRetry: "unsupported", // 无 headless stdin 注入桥。
+      configSwitch: "advertised", // ACP configOptions 自述能力。
     },
     credentials: {
       env: { apiKey: "ANTHROPIC_API_KEY", baseUrl: "ANTHROPIC_BASE_URL" },
+    },
+  },
+  codex: {
+    provider: "codex",
+    transport: "codex",
+    label: "Codex",
+    command: "codex",
+    displayNamePrefix: "Codex Agent",
+    capabilities: {
+      // 历史 = rollout JSONL 扫描列表（codex-history.ts）+ thread/resume 回放（批 F）。
+      history: "native",
+      // `-c mcp_servers.ar-hub.url=` TOML 覆盖（批 E，探针 E1 实证 0.163 真连上）。
+      mcpInject: "native",
+      // 双模式（批次 C）：有 threadId 的会话可切 terminal（tmux `codex resume`）。
+      modes: { dualMode: "native", terminalResumeId: "codexThreadId" },
+      // app-server 原生 request id；两族审批均可一键（无 ExitPlanMode/AskUserQuestion）。
+      approvals: { center: "native", oneClick: "all" },
+      autoRetry: "native",
+      // switchModel 经 turn/start 覆盖——下一轮生效。
+      configSwitch: "nextTurn",
     },
   },
 };
@@ -156,10 +175,7 @@ export const listAgentProviderInfo = (): AgentProviderInfo[] =>
     label: p.label,
     transport: p.transport,
     displayNamePrefix: p.displayNamePrefix,
-    capabilities: {
-      history: p.capabilities.history,
-      mcpInject: p.capabilities.mcpInject,
-    },
+    capabilities: p.capabilities,
     ...(p.credentials
       ? {
           credentialsEnv: {

@@ -901,7 +901,7 @@ export class CodexRuntime {
     const profile = getAgentProviderProfile("codex");
     if (!profile) return [];
     const injector = buildMcpInjectorForProvider(profile);
-    if (!injector || !injector.canInject(profile)) return [];
+    if (!injector) return [];
     return (
       injector.buildMcpConfig({ project: projectName, mcpPort: this.mcpPort, sessionId })?.args ??
       []

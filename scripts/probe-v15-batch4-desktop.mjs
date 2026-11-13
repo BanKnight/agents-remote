@@ -24,6 +24,7 @@
 
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
+import { mockAgentProviders } from "./lib/agent-provider-mock.mjs";
 
 const ORIGIN = process.env.AR_WEB_ORIGIN ?? "http://127.0.0.1:43012";
 
@@ -165,6 +166,8 @@ const WIKI_PAGE = {
 };
 
 async function setupMocks(page) {
+  // auto-retry 行由能力表驱动；mock 保证「终端无该行」负向断言旁有真实的 claude chat 正向基线。
+  mockAgentProviders(page);
   await page.route("**/api/projects", (r) => {
     if (r.request().method() === "GET") {
       return r.fulfill(json([{ name: "proj1", path: "/srv/projects/proj1" }]));

@@ -293,7 +293,7 @@ test("SessionRegistry.getAgentModeByRuntimeKey maps runtimeKey → mode", async 
   expect(await registry.getAgentModeByRuntimeKey("ar-agent-claude-nope")).toBeUndefined();
 });
 
-test("getAutoRetryTarget：claude 恒可、codex 需 threadId、未知 session → undefined", async () => {
+test("getAutoRetryTarget：claude chat 可、claude/codex terminal 不可、codex 需 threadId、omp 无能力、未知 session → undefined", async () => {
   let seq = 0;
   const registry = new SessionRegistry({
     runDir,
@@ -316,6 +316,14 @@ test("getAutoRetryTarget：claude 恒可、codex 需 threadId、未知 session �
   // terminal 形态（tmux 里的 codex TUI）没有进程内 watch，自动重试不可用。
   await registry.setAgentSessionMode(codex.id, "terminal");
   expect(await registry.getAutoRetryTarget(project.name, codex.id)).toBeUndefined();
+
+  // claude terminal 形态同理（能力表 mode 门禁，review P1-1：TUI 无 stdin 控制通道）。
+  await registry.setAgentSessionMode(claude.id, "terminal");
+  expect(await registry.getAutoRetryTarget(project.name, claude.id)).toBeUndefined();
+
+  // 能力表门禁：omp 声明 autoRetry unsupported（无 headless stdin 注入桥）→ 恒无目标。
+  const omp = await registry.createAgentSession({ project, provider: "omp" });
+  expect(await registry.getAutoRetryTarget(project.name, omp.id)).toBeUndefined();
 
   expect(await registry.getAutoRetryTarget(project.name, "agent_nope")).toBeUndefined();
 });

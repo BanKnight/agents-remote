@@ -1,4 +1,4 @@
-import type { AgentProvider } from "@agents-remote/shared";
+import type { AgentProviderTransport } from "@agents-remote/shared";
 import type { AgentProviderProfile } from "./agent-provider-profiles.js";
 
 /**
@@ -40,9 +40,7 @@ export const MCP_HUB_TOOL_TIMEOUT_MS = 180_000;
 const MCP_HUB_TOOL_TIMEOUT_SECONDS = 180;
 
 export interface McpInjector {
-  /** 该 runtime 是否支持 MCP 注入(不支持则 spawn 不带 --mcp-config,agent 仍能跑)。 */
-  canInject(profile: AgentProviderProfile): boolean;
-  /** 构造 spawn 输入;返回 null 表示不注入(等价于 canInject false 时的显式 null)。 */
+  /** 构造 spawn 输入;返回 null 表示不注入(agent 仍能跑,只是连不上 hub)。 */
   buildMcpConfig(options: BuildMcpConfigOptions): McpSpawnConfig | null;
 }
 
@@ -60,10 +58,6 @@ type ClaudeMcpConfigJson = {
 
 /** Claude(Claude Code CLI)注入器:--mcp-config inline JSON,type:"http"。 */
 export class ClaudeMcpInjector implements McpInjector {
-  canInject(profile: AgentProviderProfile): boolean {
-    return profile.provider === "claude";
-  }
-
   buildMcpConfig({ project, mcpPort, sessionId }: BuildMcpConfigOptions): McpSpawnConfig | null {
     // `?origin=` 传发起会话身份（admin 管理面审批卡落发起会话名下）；无 sessionId 时 URL 与旧版一致。
     const url = `http://127.0.0.1:${mcpPort}/mcp/${encodeURIComponent(project)}${
@@ -92,10 +86,6 @@ export class ClaudeMcpInjector implements McpInjector {
  * 与 terminal(tmux TUI)两形态共用同一组 args(调用方各自拼接)。
  */
 export class CodexMcpInjector implements McpInjector {
-  canInject(profile: AgentProviderProfile): boolean {
-    return profile.provider === "codex";
-  }
-
   buildMcpConfig({ project, mcpPort, sessionId }: BuildMcpConfigOptions): McpSpawnConfig | null {
     const url = `http://127.0.0.1:${mcpPort}/mcp/${encodeURIComponent(project)}${
       sessionId ? `?origin=${encodeURIComponent(sessionId)}` : ""
@@ -111,12 +101,15 @@ export class CodexMcpInjector implements McpInjector {
   }
 }
 
-const injectors: Partial<Record<AgentProvider, McpInjector>> = {
+// 注入机制按协议家族（transport）注册：同一 transport 的 provider 共用同一种 spawn 拼法。
+// 「有没有注入」不看这里，看 profile.capabilities.mcpInject（声明单源，能力表驱动）。
+const injectors: Partial<Record<AgentProviderTransport, McpInjector>> = {
   claude: new ClaudeMcpInjector(),
   codex: new CodexMcpInjector(),
 };
 
-/** 按 provider 取注入器;无适配器返回 null(runtime 不支持 MCP 注入,spawn 不带 --mcp-config)。 */
+/** 按能力声明取注入器：mcpInject != native 或该 transport 无适配器 → null（不注入）。 */
 export const buildMcpInjectorForProvider = (profile: AgentProviderProfile): McpInjector | null => {
-  return injectors[profile.provider] ?? null;
+  if (profile.capabilities.mcpInject !== "native") return null;
+  return injectors[profile.transport] ?? null;
 };

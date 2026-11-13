@@ -3,6 +3,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useNavigate } from "@tanstack/react-router";
 
 import { usePinnedSessions } from "../../hooks/pinned-sessions";
+import { useAgentProviderInfos } from "../../hooks/agent-providers";
 import { useT } from "../../i18n";
 import {
   stickyWorkbenchSearch,
@@ -94,6 +95,7 @@ export function WorkbenchSide({
   const [lastProject] = useAtom(workbenchLastProjectAtom);
   const sideProjectName = isProject ? scope.key : mainPage ? lastProject : null;
   const create = useCreateSession(sideProjectName);
+  const providerInfos = useAgentProviderInfos();
   const projectInstances = useProjectInstances(sideProjectName);
 
   // seg4（仅 project scope）：项目=本项目实例分组（默认）/ 全部=05g 分组列表。
@@ -371,7 +373,7 @@ export function WorkbenchSide({
         <ActionMenu
           align="start"
           cancelLabel={t("cancel")}
-          items={createSessionMenuItems(create, t)}
+          items={createSessionMenuItems(create, t, providerInfos)}
           onOpenChange={setCreateMenuOpen}
           open={createMenuOpen}
           trigger={

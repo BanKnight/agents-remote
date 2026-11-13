@@ -21,6 +21,7 @@ import type {
   SwitchAgentSessionModeRequest,
   SwitchAgentSessionModeResponse,
 } from "@agents-remote/shared";
+import { resolveModeSwitch } from "@agents-remote/shared";
 import type { AgentTuiController } from "./agent-tui";
 import {
   deleteAgentHistoryEntry,
@@ -322,9 +323,9 @@ const handleAgentSessionRoute = async (
   }
 
   // 双模式切换（2026-10-15 claude；批次 C 起 codex 同语义）：chat ↔ terminal（headless
-  // stream-json / app-server ↔ tmux 交互式 CLI）。守卫全表：非 claude/codex → 404（对
-  // 消费面隐藏能力）；claude 无钉死 claudeSessionId → 400、codex 无 threadId → 400
-  //（chat 面板准入判据同源——存量 tmux 形态本就恒在 terminal，切换无意义）；
+  // stream-json / app-server ↔ tmux 交互式 CLI）。守卫走 shared resolveModeSwitch 单一源
+  //（与 web 菜单同一份判定）：能力未声明 → 404（对消费面隐藏）；会话缺原生 resume id
+  // → 400（chat 面板准入判据同源——存量 tmux 形态本就恒在 terminal，切换无意义）；
   // working/blocked → 409（严格 idle-only，绝不丢 turn）；同 mode 幂等直返。
   if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/mode")) {
     if (!agentTui) {
@@ -336,17 +337,25 @@ const handleAgentSessionRoute = async (
     }
 
     const metadata = await registry.getAgentMetadata(project.name, sessionId);
-    const transport = metadata ? getAgentProviderProfile(metadata.provider)?.transport : undefined;
-    if (!metadata || (transport !== "claude" && transport !== "codex")) {
+    const profile = metadata ? getAgentProviderProfile(metadata.provider) : undefined;
+    if (!metadata || !profile) {
       return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
     }
-    if (transport === "claude" && !metadata.claudeSessionId) {
-      return jsonError("SESSION_NOT_CONFIGURED", "Session has no pinned claude session id", 400);
+    const verdict = resolveModeSwitch(profile.capabilities, metadata);
+    if (!verdict.supported) {
+      return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
     }
-    if (transport === "codex" && !metadata.codexThreadId) {
-      return jsonError("SESSION_NOT_CONFIGURED", "Session has no codex thread id", 400);
+    if (verdict.blockedReason === "missingResumeId") {
+      // resumeId 随 verdict 下发（缺哪个 id 只有判定单源知道），文案给人类短语（review P2-2）。
+      const humanId =
+        verdict.resumeId === "claudeSessionId"
+          ? "pinned claude session id"
+          : verdict.resumeId === "codexThreadId"
+            ? "codex thread id"
+            : "ACP session id";
+      return jsonError("SESSION_NOT_CONFIGURED", `Session has no ${humanId}`, 400);
     }
-    if (metadata.status === "working" || metadata.status === "blocked") {
+    if (verdict.blockedReason === "busy") {
       return jsonError(
         "SESSION_STATE_CONFLICT",
         "Mode switch requires an idle session (working/blocked)",

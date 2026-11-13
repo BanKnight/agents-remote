@@ -16,6 +16,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AgentProvider,
+  AgentProviderInfo,
   AgentSession,
   AgentSessionDetailResponse,
   AgentSessionMode,
@@ -25,7 +26,11 @@ import type {
   OverviewResponse,
   TerminalSession,
 } from "@agents-remote/shared";
-import { AUTO_RETRY_DEFAULT } from "@agents-remote/shared";
+import {
+  AUTO_RETRY_DEFAULT,
+  resolveAutoRetryCapability,
+  resolveModeSwitch,
+} from "@agents-remote/shared";
 import {
   type DropZone,
   type GlobalInstanceCandidate,
@@ -52,6 +57,11 @@ import { type FlatGroup, type FlatRect, flattenLayout } from "./flatten-layout";
 import { L3WikiReader, WikiReadNavMenu } from "./mobile-l3";
 import { DragSourceCard } from "./drag-source";
 import { useHScroll } from "@/hooks/use-h-scroll";
+import {
+  providerCapabilities,
+  providerLabelOf,
+  useAgentProviderInfos,
+} from "../../hooks/agent-providers";
 import {
   closeAgentSession,
   closeTerminalSession,
@@ -1243,6 +1253,7 @@ export function useInstanceInfoActions(
   const terminalDetail = useTerminalDetail(panelRef, sessionType === "terminal");
   const agentSession = sessionType === "agent" ? agentDetail.data?.session : undefined;
   const terminalSession = sessionType === "terminal" ? terminalDetail.data?.session : undefined;
+  const providerInfos = useAgentProviderInfos();
   const openInfo = () => {
     const fields: InfoField[] = [];
     // 状态行（03k：「● 运行中 · 已 12 分钟」）——时间后缀语义分叉（design review 2026-09-22）：
@@ -1273,7 +1284,7 @@ export function useInstanceInfoActions(
     if (sessionType === "agent" && agentSession) {
       fields.push({
         label: t("session.instanceInfo.type"),
-        value: providerDisplayName(agentSession.provider),
+        value: providerLabelOf(providerInfos, agentSession.provider),
       });
       if (agentSession.model) {
         fields.push({
@@ -1296,15 +1307,16 @@ export function useInstanceInfoActions(
           ...configOnSelect("effort"),
         });
       }
-      // 自动重试（claude/codex chat 通用：api 侧两 runtime 各有信号源与注入桥，配置
-      // metadata provider 无关）：行内开关 + 编辑按钮（2026-09-09 用户反馈：原纯文本行
-      // 改操作面直出——开关即切即存，编辑进参数面板）。组件自订阅 query，
-      // 快照 fields 不影响其响应数据变化。v1.6 原型行序 = effort 之后、创建时间之前。
-      // terminal 形态让位（三处统一，spec §4.7；design review P2-1）——注入走 headless
-      // stdin，TUI 无控制通道（存量 tmux codex 恒 terminal，随之排除）。
+      // 自动重试（能力表驱动：provider 有注入桥且非 terminal 形态）：行内开关 + 编辑按钮
+      // （2026-09-09 用户反馈：原纯文本行改操作面直出——开关即切即存，编辑进参数面板）。
+      // 组件自订阅 query，快照 fields 不影响其响应数据变化。v1.6 原型行序 = effort 之后、
+      // 创建时间之前。terminal 形态让位（三处统一，spec §4.7；design review P2-1）——注入
+      // 走 headless stdin，TUI 无控制通道。
       if (
-        (agentSession.provider === "claude" || agentSession.provider === "codex") &&
-        agentSession.mode !== "terminal"
+        resolveAutoRetryCapability(
+          providerCapabilities(providerInfos, agentSession.provider),
+          agentSession,
+        ).supported
       ) {
         fields.push({
           label: t("session.autoRetry.label"),
@@ -1550,7 +1562,8 @@ export function useAutoRetryToggle(
  * 会话头部 icon-only 自动重试开关（高频操作前置，2026-09-09：用户反馈 ℹ sheet 路径太深、
  * 面板操作麻烦）。rotate 图标 = 重试语义；enabled 常显高亮 primary（用户主动开启的功能
  * 要一直可见），off 态样式同 ℹ✕（非 active hover 才显）。点击即切即存，pending 置灰。
- * claude/codex chat 形态 agent session 渲染（provider 未加载前不渲染，避免闪现）。
+ * 能力表声明 autoRetry 且非 terminal 形态的 agent session 渲染（provider 未加载前不渲染，
+ * 避免闪现）。
  */
 export function AutoRetryHeaderButton({
   projectName,
@@ -1566,12 +1579,12 @@ export function AutoRetryHeaderButton({
   const { t } = useT();
   const { enabled, toggle } = useAutoRetryToggle(projectName, sessionId);
   const session = useAgentDetail({ kind: "session", projectName, sessionId }).data?.session;
-  // terminal 形态让位（三处统一，spec §4.7）：自动重试注入走 headless stdin——TUI 无控制
-  // 通道，开关存了也只在切回 chat 后生效；与 ⋯ 菜单项、ℹ 信息面同口径（design review P2-1）。
-  // claude/codex chat 通用（api 侧注入桥/信号源两 runtime 各有，配置 provider 无关）。
+  // 可用面查能力表（三处统一，spec §4.7）：provider 无自动重试桥 / terminal 形态（TUI 无
+  // 控制通道，注入走 headless stdin）→ 不渲染；与 ⋯ 菜单项、ℹ 信息面同口径。
+  const providerInfos = useAgentProviderInfos();
   if (
-    (session?.provider !== "claude" && session?.provider !== "codex") ||
-    session.mode === "terminal"
+    !resolveAutoRetryCapability(providerCapabilities(providerInfos, session?.provider), session)
+      .supported
   ) {
     return null;
   }
@@ -1878,15 +1891,6 @@ function AutoRetryEditorDialog({
   );
 }
 
-/** Agent provider 全名（claude → "Claude"——二代实现已取代一代，对外统一正式名；未知值原样回退，不崩溃）。品牌名中英一致，不走 i18n。 */
-function providerDisplayName(provider: string | undefined): string {
-  if (!provider) return "—";
-  if (provider === "claude") return "Claude";
-  if (provider === "codex") return "Codex";
-  if (provider === "omp") return "omp";
-  return provider;
-}
-
 /** createdAt ISO → 本地可读格式（toLocaleString 跟随浏览器 locale，与 navigator.language 检测一致）。 */
 function formatCreatedAt(iso: string): string {
   const d = new Date(iso);
@@ -2090,27 +2094,56 @@ type CreateSessionBarProps = {
   onCreateTerminal: () => void;
 };
 
+/** 创建菜单 provider 行的 i18n 覆盖表：已有 provider 走本地化标题 + 描述；新注册 provider
+ *  未登记文案时回退注册表 label（无描述）——新增 provider 不改这里也自动出现在两端创建
+ *  菜单（文案可后补）。⚠️ icon 不在此列：新 provider 需同步 brand-icons 白名单 +
+ *  `PROVIDER_BRAND` 映射（缺映射 ProviderIcon 渲染 null，行会空 tile）。 */
+const CREATE_PROVIDER_COPY: Partial<
+  Record<AgentProvider, { label: TranslationKey; desc: TranslationKey }>
+> = {
+  claude: { label: "workbench.createClaude", desc: "workbench.createClaudeDesc" },
+  omp: { label: "workbench.createOmp", desc: "workbench.createOmpDesc" },
+  codex: { label: "workbench.createCodex", desc: "workbench.createCodexDesc" },
+};
+
+type CreateProviderEntry = {
+  provider: AgentProvider;
+  label: string;
+  desc?: string;
+};
+
+/** 创建菜单 provider 行单源（桌面 dropdown + 移动 sheet 共用；顺序 = 注册表投影序）。
+ *  注册表未就绪 → 空数组（菜单只剩终端行，绝不回退硬编码旧形态）。 */
+export function createProviderEntries(
+  infos: AgentProviderInfo[] | undefined,
+  t: TranslateFn,
+): CreateProviderEntry[] {
+  return (infos ?? []).map((info) => {
+    const copy = CREATE_PROVIDER_COPY[info.provider];
+    return {
+      provider: info.provider,
+      label: copy ? t(copy.label) : info.label,
+      ...(copy ? { desc: t(copy.desc) } : {}),
+    };
+  });
+}
+
 /**
  * 创建实例菜单 items 单源（§6.12j）：CreateSessionBar 与 GroupHeader tabstrip「＋」共用同一
- * 菜单数据源（Claude/OMP/Codex/终端四行，行序对齐新建实例原型）。presentational——分派走 CreateSessionApi。
+ * 菜单数据源。provider 行由注册表投影生成（顺序 = 注册表序，新增 provider 自动出现），末尾
+ * 保留终端行。presentational——分派走 CreateSessionApi。
  */
-export function createSessionMenuItems(create: CreateSessionApi, t: TranslateFn): ActionMenuItem[] {
+export function createSessionMenuItems(
+  create: CreateSessionApi,
+  t: TranslateFn,
+  providerInfos: AgentProviderInfo[] | undefined,
+): ActionMenuItem[] {
   return [
-    {
-      label: t("workbench.createClaude"),
-      icon: <ProviderIcon className="size-[17px]" provider="claude" />,
-      onSelect: () => create.createAgent("claude"),
-    },
-    {
-      label: t("workbench.createOmp"),
-      icon: <ProviderIcon className="size-[17px]" provider="omp" />,
-      onSelect: () => create.createAgent("omp"),
-    },
-    {
-      label: t("workbench.createCodex"),
-      icon: <ProviderIcon className="size-[17px]" provider="codex" />,
-      onSelect: () => create.createAgent("codex"),
-    },
+    ...createProviderEntries(providerInfos, t).map((entry) => ({
+      label: entry.label,
+      icon: <ProviderIcon className="size-[17px]" provider={entry.provider} />,
+      onSelect: () => create.createAgent(entry.provider),
+    })),
     {
       label: t("workbench.createTerminal"),
       icon: <ShellIcon name="terminal" />,
@@ -2131,6 +2164,7 @@ export function CreateSessionBar({
   onCreateTerminal,
 }: CreateSessionBarProps) {
   const { t } = useT();
+  const providerInfos = useAgentProviderInfos();
   return (
     <ActionMenu
       align="end"
@@ -2138,6 +2172,7 @@ export function CreateSessionBar({
       items={createSessionMenuItems(
         { createAgent: onCreateAgent, createTerminal: onCreateTerminal, isCreating },
         t,
+        providerInfos,
       )}
       trigger={
         <button
@@ -2484,39 +2519,28 @@ function SessionTabStripActions({
   } = useInstanceInfoActions(panelRef, sessionType, panelRef.projectName, "modal");
   const { renameHolder, build } = useInstanceRowActions(closeInstance);
   const a = build(panelRef, sessionType ?? "agent");
-  // 动作区数据源（同移动端 ⋯ 菜单）：置顶态（✓ 标注）+ 自动重试开关（即点即改；claude
-  // 会话门——provider 未加载前不渲染，避免闪现）。
+  // 动作区数据源（同移动端 ⋯ 菜单）：置顶态（✓ 标注）+ 自动重试开关（即点即改；能力表
+  // 门——provider 未加载前不渲染，避免闪现）。
   const { pinned: pinnedSet } = usePinnedSessions();
   const autoRetry = useAutoRetryToggle(panelRef.projectName, panelRef.sessionId, sessionType);
   const agentDetail = useAgentDetail(panelRef, sessionType === "agent");
-  const isClaude = sessionType === "agent" && agentDetail.data?.session.provider === "claude";
-  // codex 双模式(codex 一等 provider 批):有 threadId 的 codex 会话可切 terminal
-  //(tmux 起 `codex resume <threadId>`,探针实证历史完整恢复);存量 tmux codex(无
-  // threadId)不可切——legacy 判据,菜单项不展开。
-  const isCodex =
-    sessionType === "agent" &&
-    agentDetail.data?.session.provider === "codex" &&
-    Boolean(agentDetail.data?.session.codexThreadId);
-  // 双模式（2026-10-15）：mode=terminal = CLI 原生 TUI 形态（无 stdin 控制通道 → 自动重试
-  // 注入/模型切换让位）；切换门槛严格 idle-only（working/blocked 禁用，绝不丢 turn）；
-  // 存量会话无钉 claudeSessionId 无法 --resume（review P3-8：禁用 + 原因文案，防必败弹窗循环）。
-  const sessionMode = agentDetail.data?.session.mode ?? "chat";
-  // 自动重试开关可用面（claude/codex chat 通用；terminal 排除不看 isCodex——存量 tmux
-  // codex 无 threadId 但 mode 恒 terminal，靠 mode 单独兜住）。
-  const autoRetryCapable =
-    (isClaude || agentDetail.data?.session.provider === "codex") &&
-    agentDetail.data?.session.mode !== "terminal";
-  // busy 判定双 provider 共用(turn 进行中切模式绝不丢 turn,claude P3-8 同门槛)。
-  const busyBlocked =
-    agentDetail.data?.session.status === "working" || agentDetail.data?.session.status === "blocked"
+  const providerInfos = useAgentProviderInfos();
+  const agentSession = agentDetail.data?.session;
+  // 双模式（2026-10-15）：chat ↔ terminal 门禁走能力表（provider 能力 + 会话前置条件的
+  // 单一判定源，api 模式路由同源）——omp 无双模式 → 菜单项不出现；存量会话缺 resume id
+  // → 显示禁用 + legacy 原因（缺 id ≠ 无能力）；working/blocked → busy（绝不丢 turn）。
+  const caps = providerCapabilities(providerInfos, agentSession?.provider);
+  const modeSwitchVerdict = resolveModeSwitch(caps, agentSession);
+  const sessionMode = agentSession?.mode ?? "chat";
+  const modeSwitchBlockedReason =
+    modeSwitchVerdict.supported && modeSwitchVerdict.blockedReason === "busy"
       ? t("session.modeSwitch.busy")
-      : undefined;
-  const modeSwitchBlockedReason = isCodex
-    ? busyBlocked
-    : !agentDetail.data?.session.claudeSessionId
-      ? t("session.modeSwitch.legacy")
-      : busyBlocked;
-  const modeSwitchable = (isClaude || isCodex) && modeSwitchBlockedReason === undefined;
+      : modeSwitchVerdict.supported && modeSwitchVerdict.blockedReason === "missingResumeId"
+        ? t("session.modeSwitch.legacy")
+        : undefined;
+  const modeSwitchable = modeSwitchVerdict.supported && modeSwitchBlockedReason === undefined;
+  // 自动重试开关可用面（能力表驱动：provider 有注入桥且非 terminal 形态）。
+  const autoRetryCapable = resolveAutoRetryCapability(caps, agentSession).supported;
   const { modeSwitch, holder: modeSwitchHolder } = useSessionModeSwitch();
   const items: ActionMenuItem[] = [
     {
@@ -2547,7 +2571,7 @@ function SessionTabStripActions({
       icon: <ShellIcon className="size-[17px]" name="edit" />,
       onSelect: () => a.rename.run(meta?.label ?? panelRef.sessionId),
     },
-    ...(isClaude || isCodex
+    ...(modeSwitchVerdict.supported
       ? [
           {
             label:
@@ -2639,6 +2663,7 @@ function GroupHeader({
   onTabDragStart,
 }: GroupHeaderProps) {
   const { t } = useT();
+  const providerInfos = useAgentProviderInfos();
   // §7.2（批 8）：tabstrip 标签溢出时滚轮横滚 + 边缘 12px 渐隐（右端 ＋/分屏等尾部控件
   // 在滚动容器外，「尾部控件可达」天然成立）；标签数变化在内容 effect 里重算渐隐方向。
   // 批 11 反馈③：激活标签（.on 下划线类）变化时滚入视野——切 tab/开新 tab/分组头挂载
@@ -2684,7 +2709,7 @@ function GroupHeader({
       {create ? (
         <ActionMenu
           align="end"
-          items={createSessionMenuItems(create, t)}
+          items={createSessionMenuItems(create, t, providerInfos)}
           trigger={
             <button
               aria-label={t("workbench.createMenu")}

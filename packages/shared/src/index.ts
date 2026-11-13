@@ -1277,6 +1277,118 @@ export type UpdateCodexRuntimeResponse = {
   runtime: CodexCredentialsMasked;
 };
 
+// ── provider 能力声明表（单源：api profile 填写 + GET /api/agent-providers 投影 + web 消费）──
+// 原则：orchestration 与 UI 只看能力不看 provider 名——「provider 没有 X 就隐藏/降级」从
+// if-else 变数据驱动（T3 Code capability manifest 的裁剪版：T3 的 12 组 ~60 字段是 10+
+// provider 收敛后的形态，我方 3 provider 分三档：有消费（mcpInject / modes / autoRetry）、
+// 存量无消费（history，能力表雏形期遗留）、前向声明（approvals / configSwitch，本批只
+// 填值不消费——消费面在审批中心派发批 / 配置切换治理批；approvals.oneClick 勿作第二判据
+// 源，真实一键门禁仍是 isOneClickApprovable 工具名谓词）。
+// 收字段纪律：每字段至少两个 provider 取值不同才值得进表。
+
+/** 会话的原生 resume id 字段名（能力前置条件引用）。 */
+export type AgentProviderResumeId = "claudeSessionId" | "codexThreadId" | "acpSessionId";
+
+export type AgentProviderCapabilities = {
+  // ── 既有（名/位保持不变，2026-11-13 前已在表内）──
+  /** 历史列表能力：native = 可扫描原生会话记录并 resume。 */
+  history: "unsupported" | "native";
+  /** spawn 能否带 MCP 配置（ar-hub 注入）。unsupported = 会话照常可跑（静默降级非错误）。 */
+  mcpInject: "unsupported" | "native";
+
+  // ── 运行形态（判别联合：dualMode="native" 必带 terminalResumeId，编译器兜住不变式）──
+  modes:
+    | { dualMode: "unsupported" }
+    | {
+        dualMode: "native";
+        /** 切到 terminal 形态需要会话持有的原生 resume id。判定 = 能力 && 会话有该 id
+         *  ——provider 能力与「该会话是否具备前置条件」是两个维度，后者永远是会话级
+         *  事实，不下发进能力表。 */
+        terminalResumeId: AgentProviderResumeId;
+      };
+
+  // ── 审批（前向声明）──
+  approvals: {
+    /** 审批卡能否进全局审批中心并跨端精确应答（需原生 request id）。
+     *  unsupported = 该 provider 无审批面（自动放行），中心不登记。 */
+    center: "native" | "unsupported";
+    /** 一键 allow/deny 覆盖度：all = 全部可一键；partial = 存在需完整语义的复杂卡
+     *  （如 ExitPlanMode/AskUserQuestion），须排除出一键通道。 */
+    oneClick: "all" | "partial";
+  };
+
+  // ── 自动重试 ──
+  /** 是否有自动重试注入桥（走 headless stdin）。terminal 形态下不可用属会话级前置
+   *  条件（TUI 无控制通道），由 resolveAutoRetryCapability 组合判定。 */
+  autoRetry: "native" | "unsupported";
+
+  // ── 配置切换生效时机（前向声明：本批只填值不消费，留给配置切换治理批）──
+  /** model / permission / effort 切换何时生效：immediate = 即时通道下发；
+   *  nextTurn = 下一轮生效；advertised = CLI 广告式（ACP configOptions 自述）。 */
+  configSwitch: "immediate" | "nextTurn" | "advertised";
+};
+
+/** 最弱能力基线：新 provider / 未填字段的保守起点（不假装有能力）。新 profile 可
+ *  `{ ...WEAKEST_AGENT_CAPABILITIES, ...overrides }` spread 派生，也可显式全填
+ *  （TS 必填字段兜底）；现注册表三条全显式，spread 仅测试在用。 */
+export const WEAKEST_AGENT_CAPABILITIES: AgentProviderCapabilities = {
+  history: "unsupported",
+  mcpInject: "unsupported",
+  modes: { dualMode: "unsupported" },
+  approvals: { center: "unsupported", oneClick: "partial" },
+  autoRetry: "unsupported",
+  configSwitch: "advertised",
+};
+
+/** 能力判定的会话视图（AgentSession / session metadata 的子集，前后端均可传）。 */
+export type CapabilitySessionView = {
+  mode?: AgentSessionMode;
+  /** api 侧入参可能是 SessionMetadata（agent/terminal 共用，status 取并集），故两型都收。 */
+  status?: AgentSessionStatus | TerminalSessionStatus;
+  claudeSessionId?: string;
+  codexThreadId?: string;
+  acpSessionId?: string;
+};
+
+/** 双模式切换判定：unsupported = provider 无此能力（UI 不渲染菜单项 / 路由 404）；
+ *  missingResumeId = 会话缺 resume id（UI 禁用+原因 / 路由 400）；
+ *  busy = turn 进行中（UI 禁用+原因 / 路由 409）。缺 id 优先于 busy（与原实现判定顺序
+ *  一致：没有 id 时切过去必然失败，先诚实告知不可挽回的原因）。 */
+export type ModeSwitchVerdict =
+  | { supported: false }
+  | { supported: true; blockedReason?: undefined }
+  | { supported: true; blockedReason: "missingResumeId"; resumeId: AgentProviderResumeId }
+  | { supported: true; blockedReason: "busy" };
+
+/** 双模式切换单一判定源（取代 web 桌面/移动两处复制粘贴 + api 模式路由手写门禁）。
+ *  session=undefined 落 missingResumeId（理论不可达：caps 查表依赖 session.provider；
+ *  防御性保留）。missingResumeId 时 resumeId 随 verdict 下发——缺哪个 id 只有判定
+ *  知道，调用方（如路由的人话文案）不回查能力表。 */
+export function resolveModeSwitch(
+  caps: AgentProviderCapabilities | undefined,
+  session: CapabilitySessionView | undefined,
+): ModeSwitchVerdict {
+  if (!caps || caps.modes.dualMode !== "native") return { supported: false };
+  const resumeId = caps.modes.terminalResumeId;
+  if (!session || !session[resumeId]) {
+    return { supported: true, blockedReason: "missingResumeId", resumeId };
+  }
+  if (session.status === "working" || session.status === "blocked") {
+    return { supported: true, blockedReason: "busy" };
+  }
+  return { supported: true };
+}
+
+/** 自动重试可用面：能力 && 非 terminal 形态（注入走 headless stdin，TUI 无控制通道）。 */
+export function resolveAutoRetryCapability(
+  caps: AgentProviderCapabilities | undefined,
+  session: CapabilitySessionView | undefined,
+): { supported: boolean } {
+  if (!caps || caps.autoRetry !== "native") return { supported: false };
+  if (session?.mode === "terminal") return { supported: false };
+  return { supported: true };
+}
+
 // GET /api/agent-providers —— profile 注册表只读投影（settings UI 的 per-provider 驱动源；
 // 新 ACP CLI 注册后 UI 自动跟随）。不暴露 command。credentialsEnv 供凭据表单 hint
 // （env 名是技术标识不翻译）。
@@ -1285,12 +1397,8 @@ export type AgentProviderInfo = {
   label: string;
   transport: AgentProviderTransport;
   displayNamePrefix: string;
-  capabilities: {
-    history: "unsupported" | "native";
-    /** ar-hub 注入能力（spawn 能否带 MCP 配置）。unsupported = 会话照常可跑，只是连不上
-     *  hub（静默降级，非错误帧；能力判定单源于服务端 profile，前端不按 provider 硬编码）。 */
-    mcpInject: "unsupported" | "native";
-  };
+  /** 能力声明（与 api profile 引用同一 AgentProviderCapabilities 类型，杜绝二次漂移）。 */
+  capabilities: AgentProviderCapabilities;
   credentialsEnv?: { apiKeyEnv: string; baseUrlEnv?: string };
 };
 

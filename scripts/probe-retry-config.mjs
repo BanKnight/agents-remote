@@ -8,6 +8,7 @@
 // 用法：bun scripts/probe-retry-config.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
+import { mockAgentProviders } from "./lib/agent-provider-mock.mjs";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
 const EXEC =
@@ -116,6 +117,9 @@ async function setupMocks(page) {
     maxPerWindow: 3,
     windowMs: 1_800_000,
   };
+  // provider 注册表（能力声明表）：自动重试可用面/显示名都由它驱动，兜底 200 {} 会让
+  // caps undefined → 开关钮不渲染 → 后续断言假 FAIL。
+  mockAgentProviders(page);
   await page.route(/\/api\/overview$/, (r) =>
     r.fulfill({
       status: 200,

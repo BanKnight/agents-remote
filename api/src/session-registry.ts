@@ -12,6 +12,7 @@ import type {
   TerminalSession,
   TerminalSessionStatus,
 } from "@agents-remote/shared";
+import { resolveAutoRetryCapability } from "@agents-remote/shared";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -633,15 +634,25 @@ export class SessionRegistry {
   ): Promise<{ runtimeKey: string; provider: AgentProvider } | undefined> {
     const metadata = await this.getLiveMetadata(projectName, "agent", sessionId);
     if (!metadata) return undefined;
-    if (metadata.provider === "claude")
-      return { runtimeKey: metadata.runtimeKey, provider: "claude" };
-    // codex 只有 chat 形态（app-server 进程内）才有 watch。判据必须用 mode——terminal
-    // 形态同样持有 codexThreadId（`codex resume` 用），按 threadId 判会把 tmux 会话也
-    // 放进来，而 CodexRuntime 里没有它的 entry（status 恒空、fire 报假 pending）。
-    if (metadata.provider === "codex" && metadata.codexThreadId && metadata.mode !== "terminal") {
-      return { runtimeKey: metadata.runtimeKey, provider: "codex" };
+    // 能力表驱动（能力声明单源）：provider 无自动重试桥 / terminal 形态无 stdin 控制通道
+    // → 无目标。判据必须含 mode——terminal 形态同样持有 resume id（`codex resume` 用），
+    // 只看 id 会把 tmux 会话也放进来，而 runtime 里没有它的 watch entry（status 恒空、
+    // fire 报假 pending）。
+    const provider = metadata.provider;
+    const profile = provider ? getAgentProviderProfile(provider) : undefined;
+    if (
+      !provider ||
+      !profile ||
+      !resolveAutoRetryCapability(profile.capabilities, metadata).supported
+    ) {
+      return undefined;
     }
-    return undefined;
+    // codex chat 形态（app-server 进程内）必有 threadId：异常态（thread 未建立/丢失）没有
+    // watch entry，防御性拦截（属 runtime 事实，非能力语义）。claude terminal 形态在上方
+    // resolveAutoRetryCapability 已拒（TUI 无 stdin 控制通道）——控制端点随之 404；chat 期
+    // 已调度的 pending 注入计时器随形态切换的清理属 runtime 生命周期（#8 范畴），挂账。
+    if (profile.transport === "codex" && !metadata.codexThreadId) return undefined;
+    return { runtimeKey: metadata.runtimeKey, provider };
   }
 
   /** 双模式形态分发（index.ts runtime.exists/close 的 claude 名分支用）：terminal 形态的

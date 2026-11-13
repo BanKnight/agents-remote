@@ -24,7 +24,8 @@ import { useT } from "../../i18n";
 import { MobileSheet } from "../shell/mobile-sheet";
 import { ShellIcon } from "../shell/icons";
 import { ProviderIcon } from "../shell/icons/provider-icon";
-import { useGlobalInstanceCandidates } from "./instance-area";
+import { createProviderEntries, useGlobalInstanceCandidates } from "./instance-area";
+import { useAgentProviderInfos } from "../../hooks/agent-providers";
 import type { CreateSessionApi } from "./instance-area";
 import {
   countsAsRunning,
@@ -557,6 +558,8 @@ export function MobileCreateInstanceSheet({
   projectName: string;
 }) {
   const { t } = useT();
+  const providerInfos = useAgentProviderInfos();
+  const providerEntries = createProviderEntries(providerInfos, t);
   const dismiss = (action: () => void) => {
     onOpenChange(false);
     action();
@@ -568,52 +571,28 @@ export function MobileCreateInstanceSheet({
       open={open}
       title={t("workbench.createTitle")}
     >
-      <div className="slabel">{t("workbench.createGroupAgent")}</div>
-      <button
-        className="srow w-full cursor-pointer text-left"
-        disabled={create.isCreating}
-        onClick={() => dismiss(() => create.createAgent("claude"))}
-        type="button"
-      >
-        <span className="tile bg-ink-2/10">
-          <ProviderIcon className="size-[19px]" provider="claude" />
-        </span>
-        <span className="tx">
-          <span className="n">＋ {t("workbench.createClaude")}</span>
-          <span className="d">{t("workbench.createClaudeDesc")}</span>
-        </span>
-        <span className="ar">›</span>
-      </button>
-      <button
-        className="srow w-full cursor-pointer text-left"
-        disabled={create.isCreating}
-        onClick={() => dismiss(() => create.createAgent("omp"))}
-        type="button"
-      >
-        <span className="tile bg-ink-2/10">
-          <ProviderIcon className="size-[19px]" provider="omp" />
-        </span>
-        <span className="tx">
-          <span className="n">＋ {t("workbench.createOmp")}</span>
-          <span className="d">{t("workbench.createOmpDesc")}</span>
-        </span>
-        <span className="ar">›</span>
-      </button>
-      <button
-        className="srow w-full cursor-pointer text-left"
-        disabled={create.isCreating}
-        onClick={() => dismiss(() => create.createAgent("codex"))}
-        type="button"
-      >
-        <span className="tile bg-ink-2/10">
-          <ProviderIcon className="size-[19px]" provider="codex" />
-        </span>
-        <span className="tx">
-          <span className="n">＋ {t("workbench.createCodex")}</span>
-          <span className="d">{t("workbench.createCodexDesc")}</span>
-        </span>
-        <span className="ar">›</span>
-      </button>
+      {/* 组头与行同生同灭（注册表未就绪/失败 → 不渲染孤儿 slabel，review design P2-1）。 */}
+      {providerEntries.length > 0 ? (
+        <div className="slabel">{t("workbench.createGroupAgent")}</div>
+      ) : null}
+      {providerEntries.map((entry) => (
+        <button
+          className="srow w-full cursor-pointer text-left"
+          disabled={create.isCreating}
+          key={entry.provider}
+          onClick={() => dismiss(() => create.createAgent(entry.provider))}
+          type="button"
+        >
+          <span className="tile bg-ink-2/10">
+            <ProviderIcon className="size-[19px]" provider={entry.provider} />
+          </span>
+          <span className="tx">
+            <span className="n">＋ {entry.label}</span>
+            {entry.desc ? <span className="d">{entry.desc}</span> : null}
+          </span>
+          <span className="ar">›</span>
+        </button>
+      ))}
       <div className="slabel">{t("workbench.createGroupTerminal")}</div>
       <button
         className="srow w-full cursor-pointer text-left"

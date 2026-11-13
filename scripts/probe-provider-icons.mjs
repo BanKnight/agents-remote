@@ -7,6 +7,7 @@
 // 密码由脚本自读，不进 agent 上下文。用法：bun scripts/probe-provider-icons.mjs
 import { chromium } from "@playwright/test";
 import { readAppPassword } from "./lib/deploy-config.mjs";
+import { mockAgentProviders } from "./lib/agent-provider-mock.mjs";
 import { verifyCssFlushed } from "./ar-verify-css.mjs";
 
 const WEB_ORIGIN = process.env.WEB_ORIGIN ?? "http://127.0.0.1:43012";
@@ -47,6 +48,8 @@ const check = (label, ok, detail = "") => {
 };
 
 async function setupMocks(page) {
+  // 创建菜单 provider 行由注册表驱动（原硬编码行必出现；注册表缺失 → 整组消失假 FAIL）。
+  mockAgentProviders(page);
   await page.route(new RegExp(`/api/projects/${projectName}/agent-sessions$`), (r) =>
     r.fulfill({
       status: 200,
