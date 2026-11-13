@@ -1,7 +1,7 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-13（**settle 注意力语义批（T3 学习点②）实现 + reviewer 双报告消化
-> 完毕，全门禁 + 双探针 + e2e 全绿，待 commit / push（用户确认）+ 真机验收**）
+> 最后更新：2026-11-13（**settle 注意力语义批已 commit `16c9911`，全门禁 + 双探针 +
+> e2e 42 全绿，待 push（用户确认）+ 真机验收**）
 
 ## settle 注意力语义批（T3 Code 学习点②，2026-11-13）
 
@@ -50,8 +50,8 @@
 
 ## 一句话状态
 
-settle 注意力语义（学习点②）实现 + reviewer 双报告消化完毕，全门禁 + 双探针 + e2e 全绿，
-待 commit / push（用户确认）+ 真机验收。
+settle 注意力语义（学习点②）已 commit `16c9911`（pre-commit 全门禁过），待 push（用户
+确认）+ 真机验收。
 
 ## 本 session 焦点
 
@@ -67,8 +67,9 @@ settle 注意力语义（学习点②）实现 + reviewer 双报告消化完毕�
 
 - ✅ P1-P5 全实现（shared/api/web/文档/探针）
 - ✅ code-reviewer（7 发现：P1-P7）+ design-reviewer（2 发现：P2-1、P3-1）全消化
-- ✅ 全门禁 + 探针 17/17 + 56/0 + e2e 全量
-- ⏳ commit + push（用户确认）+ 真机验收清单交用户
+- ✅ 全门禁 + 探针 17/17 + 56/0 + e2e 42/42
+- ✅ commit `16c9911`（pre-commit 全门禁过）
+- ⏳ push（用户确认后）+ 真机验收清单交用户
 
 ### 易丢的关键上下文
 
@@ -81,11 +82,11 @@ settle 注意力语义（学习点②）实现 + reviewer 双报告消化完毕�
 
 ### 下一步
 
-1. e2e 全量结果确认（后台任务）→ commit（标准 `git add && git commit`，尾行
-   `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`）。
-2. 交用户：真机验收清单（桌面侧栏 settle → 行移入底部组 → 恢复关注回原位；移动 ▾ 同上；
-   settle 后发消息回活跃；7 天前 done 会话自动进组）+ push 确认。
-3. 挂账推进：学习点③ Turn 级 checkpoint（隐藏 git refs）。
+1. push（用户确认）；真机验收清单：①桌面侧栏 ⋯「标记已了结」→ 行移入底部「已了结 · 1」
+   折叠组（默认收起、降饱和、行尾「N 天前了结」）→ 展开点行回会话 → ⋯「恢复关注」回
+   活跃组 ②移动 ▾ 同链路（组头点按展开、重开复位）③settle 后给会话发消息 → 自动回
+   活跃组 ④已 settle 的会话菜单文案翻转 ⑤置顶会话 settle 后置顶同时消失。
+2. 挂账推进：学习点③ Turn 级 checkpoint（隐藏 git refs）。
 
 ## 挂账（非本批）
 
