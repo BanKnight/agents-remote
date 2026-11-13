@@ -967,31 +967,91 @@ if (ctaAutoAppeared) {
 }
 await detailCtx.close();
 
-// ── Part 9: 可用更新清单页（2026-11-12：组头「n 个更新 ›」→ /plugins/updates 逐项/批量更新）──
-// 回归面：原黄色「n 个更新 ›」点击行为是再检测一遍（不符合提示语义，用户实报）；清单页支持
-// 单项「更新」与组头「全部更新」（顺序逐个 POST，成功项乐观出列）。
-console.log("Part 9: /plugins/updates 清单页（黄色提示进清单 + 单项/全部更新）");
+// ── Part 9: 可用更新清单页（2026-11-12：组头「n 个更新 ›」→ /plugins/updates 逐项/批量更新；
+// 2026-11-13 §6.18 App Store 反馈范式：就地进度环 / 队列编排 / 完成出列过渡 / 检测 spinner）──
+console.log("Part 9: /plugins/updates 清单页（黄提示 + 就地环 + 排队 + 出列过渡 + 检测 spinner）");
 const updCtx = await browser.newContext({
   viewport: { width: 1280, height: 800 },
   locale: "zh-CN",
 });
+// §6.18 mock：双项 {code-review, tdd}（顺序 = 服务端数组顺序）；检测帧延迟 800ms /
+// 更新帧延迟 1200ms —— 给 spinner / 排队态 / 完成相位留观察窗（无延迟则一帧全绿、相位瞬逝，
+// 断言全靠运气）。每项更新独立 taskId（task-upd-N）= 独立 EventSource，模拟真实逐项推进。
+const M6_CHECK_DELAY_MS = 800;
+const M6_UPDATE_DELAY_MS = 1200;
+const M6_UPDATES_TWO = [
+  { name: "code-review", hasUpdate: true, manageable: true },
+  { name: "tdd", hasUpdate: true, manageable: true },
+];
+// setupM6Mocks 后注册（Playwright route LIFO 后注册优先）：检测帧延迟 + 双项；更新按
+// POST 序发 task-upd-N；install 帧保持立即（Part 9 不装东西，仅兜住分流完整性）。
+async function registerUpdMocksWith(page, updatePosts) {
+  await setupM6Mocks(page);
+  let updSeq = 0;
+  await page.route("**/api/skills/task/*/events", (r) => {
+    const taskId = r
+      .request()
+      .url()
+      .match(/\/api\/skills\/task\/([^/]+)\/events/)?.[1];
+    const fulfillFrame = (frame) =>
+      r.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: `data: ${JSON.stringify(frame)}\n\n`,
+      });
+    if (taskId === "task-m6-upd") {
+      return setTimeout(
+        () =>
+          fulfillFrame({
+            taskId,
+            status: "done",
+            kind: "check",
+            updates: M6_UPDATES_TWO,
+          }),
+        M6_CHECK_DELAY_MS,
+      );
+    }
+    if (taskId?.startsWith("task-upd-")) {
+      return setTimeout(
+        () => fulfillFrame({ taskId, status: "done", kind: "update" }),
+        M6_UPDATE_DELAY_MS,
+      );
+    }
+    return fulfillFrame({
+      taskId: "task-m6",
+      status: "done",
+      kind: "install",
+      skill: INSTALLED_SKILLS[0],
+    });
+  });
+  await page.route("**/api/skills/update", (r) => {
+    updSeq += 1;
+    updatePosts.push(JSON.parse(r.request().postData() ?? "{}"));
+    return r.fulfill(json({ taskId: `task-upd-${updSeq}`, status: "running" }));
+  });
+}
 const p3 = await updCtx.newPage();
-await setupM6Mocks(p3);
 const updatePosts = [];
-await p3.route("**/api/skills/update", (r) => {
-  updatePosts.push(JSON.parse(r.request().postData() ?? "{}"));
-  return r.fulfill(json({ taskId: "task-m6", status: "running" }));
-});
+await registerUpdMocksWith(p3, updatePosts);
 await login(p3);
 await p3.goto(`${ORIGIN}/plugins`);
 await p3.waitForSelector(".pcard", { timeout: 10000 });
+// U10 检测 spinner（§6.18④）：手动检测的 800ms 窗口内组头检查钮「检查中…」带旋转环
+//（border-current 跟随按钮文字色，这里只断接线：.animate-spin 在场）。
 await p3.locator(".psect button.r", { hasText: "检查更新" }).click();
-const yellowChip = p3.getByRole("button", { name: "1 个更新 ›" });
+const checkSpin = await p3
+  .locator(".psect button.r", { hasText: "检查中" })
+  .locator(".animate-spin")
+  .waitFor({ timeout: 3000 })
+  .then(() => true)
+  .catch(() => false);
+ok(checkSpin, "U10 检测中组头检查钮「检查中…」带 spinner");
+const yellowChip = p3.getByRole("button", { name: "2 个更新 ›" });
 const yellowShown = await yellowChip
   .waitFor({ timeout: 8000 })
   .then(() => true)
   .catch(() => false);
-ok(yellowShown, "U1 检测出更新后组头出现黄色「1 个更新 ›」提示");
+ok(yellowShown, "U1 检测出更新后组头出现黄色「2 个更新 ›」提示");
 if (yellowShown) {
   await yellowChip.click();
   await p3.waitForURL(/\/plugins\/updates/, { timeout: 5000 });
@@ -1000,13 +1060,101 @@ if (yellowShown) {
     (await p3.getByRole("heading", { level: 1, name: "可用更新" }).count()) === 1,
     "U3 清单页标题「可用更新」",
   );
-  const updCard = p3.locator(".pcard", { hasText: "code-review" });
-  await updCard.waitFor({ timeout: 5000 });
+  const crBtn = p3.locator(".pcard", { hasText: "code-review" }).locator("button.upd");
+  const tddBtn = p3.locator(".pcard", { hasText: "tdd" }).locator("button.upd");
+  await crBtn.waitFor({ timeout: 5000 });
+  // 可见面文字精确断言（textContent 含隐藏 sizer「更新中…」，子串 hasText 恒真不构成断言）：
+  // 读非 .upd-s 的 face span。
+  const faceOf = (btn) =>
+    btn.evaluate((el) =>
+      [...el.querySelectorAll("span:not(.upd-s)")].map((s) => s.textContent ?? "").join("|"),
+    );
   ok(
-    (await updCard.locator("button.upd", { hasText: "更新" }).count()) === 1,
-    "U4 卡内单项「更新」钮在场",
+    (await faceOf(crBtn)) === "更新" && (await tddBtn.count()) === 1,
+    "U4 双项卡内单项「更新」钮在场（初始面文字「更新」）",
   );
+  const backShown = (await p3.locator("header button.back").count()) === 1;
+  ok(backShown, "U7 返回钮在场（PluginNav 单源）");
+  // U8 就地进度环（§6.18①）：sizer 锁宽——点「全部更新」前后按钮宽度逐像素相等 +
+  // 环（.animate-spin）在按钮内。（单项/批量共用同一 mutateAsync→markDone 相位链，
+  // 环态就地性同源；单项点击路径由 U4 在场 + 真机验收覆盖。）
+  const widthBefore = (await crBtn.boundingBox())?.width;
   await p3.getByRole("button", { name: "全部更新" }).click();
+  await crBtn.locator(".animate-spin").waitFor({ timeout: 3000 });
+  const widthDuring = (await crBtn.boundingBox())?.width;
+  ok(
+    widthBefore !== undefined &&
+      widthDuring !== undefined &&
+      Math.abs(widthDuring - widthBefore) < 0.5,
+    `U8 进度环就地形变（点击前 ${widthBefore}px = 环态 ${widthDuring}px，逐像素相等）`,
+  );
+  // U9 队列编排（§6.18②）：批量中非当前项「排队中…」弱化（失败项排除语义由失败路径
+  // 单测覆盖，此处验证常规队列展示）——直接等目标态（.queued + 排队中文字）。
+  const queuedShown = await p3
+    .locator("button.upd.queued", { hasText: "排队中" })
+    .waitFor({ timeout: 3000 })
+    .then(() => true)
+    .catch(() => false);
+  ok(queuedShown, "U9 批量中非当前项「排队中…」+ .queued 弱化态");
+  // U11 完成交叠（§6.18③）：第一项 done 后绿 tint + ✓ 持留窗内，第二项已转环、第二次
+  // POST 已发（串行队列推进的交叠瞬间）。
+  const doneShown = await p3
+    .locator(".pcard.done", { hasText: "code-review" })
+    .waitFor({ timeout: 4000 })
+    .then(() => true)
+    .catch(() => false);
+  if (doneShown) {
+    // computed bg 与 --tint-green 数值硬比对：token 计算值可能序列化为 #hex8（Chromium 对
+    // 自定义属性的计算值序列化，#34c7591f = rgb(52 199 89 / 0.12)），与 computed rgba 写法
+    // 不同但数值一致——归一为 "r,g,b,α" 比对（α toFixed(2) 吸收 1/255 量化差）。
+    const parseColor = (s) => {
+      const t = s.trim();
+      const hex = t.match(/^#([0-9a-f]{6})([0-9a-f]{2})?$/i);
+      if (hex) {
+        const a = hex[2] ? parseInt(hex[2], 16) : 255;
+        const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex[1].slice(i, i + 2), 16));
+        return `${r},${g},${b},${(a / 255).toFixed(2)}`;
+      }
+      const n = t.match(/[\d.]+/g)?.map(Number) ?? [];
+      return `${n[0]},${n[1]},${n[2]},${(n[3] ?? 1).toFixed(2)}`;
+    };
+    // tint 过渡（--duration-fast ≈120ms）期间读值是插值色 ≠ token——有界重试到过渡收敛
+    //（相等即过，上限 ~300ms；exit 相位不动 bg，超 hold 窗仍成立）。
+    const doneRow = p3.locator(".pcard.done", { hasText: "code-review" });
+    const tintToken = await p3.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--tint-green"),
+    );
+    let doneBg = null;
+    for (let i = 0; i < 20; i++) {
+      doneBg = await doneRow.evaluate((el) => getComputedStyle(el).backgroundColor);
+      if (parseColor(doneBg) === parseColor(tintToken)) break;
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+    ok(
+      doneBg !== null && parseColor(doneBg) === parseColor(tintToken),
+      `U11a 完成行绿 tint computed 与 token 一致（${doneBg} vs ${tintToken.trim()}）`,
+    );
+    const doneBtn = p3.locator(".pcard.done", { hasText: "code-review" }).locator("button.upd");
+    ok(((await doneBtn.textContent()) ?? "").includes("✓"), "U11b 完成行按钮显 ✓（持留窗内）");
+    const tddSpinNow = (await tddBtn.locator(".animate-spin").count()) === 1;
+    ok(tddSpinNow, "U11c 完成交叠：第二项同帧已转环（队列推进）");
+    ok(
+      updatePosts.length === 2 && updatePosts[1].name === "tdd",
+      `U11d 完成交叠：第二次 POST 已发（实际 ${JSON.stringify(updatePosts.map((p) => p.name))}）`,
+    );
+  } else {
+    ok(false, "U11a 完成行绿 tint（前置 .pcard.done 未出现，跳过）");
+    ok(false, "U11b 完成行按钮显 ✓（前置未通过，跳过）");
+    ok(false, "U11c 完成交叠第二项转环（前置未通过，跳过）");
+    ok(false, "U11d 完成交叠第二次 POST（前置未通过，跳过）");
+  }
+  // U12 塌缩出列（§6.18③）：持留 400ms + 塌缩 150ms 后行 DOM 移除（硬闸）。
+  const crGone = await p3
+    .locator(".pcard", { hasText: "code-review" })
+    .waitFor({ state: "detached", timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+  ok(crGone, "U12 完成行持留后塌缩出列（DOM 移除硬闸）");
   const emptied = await p3
     .getByText("没有待更新的技能")
     .waitFor({ timeout: 10000 })
@@ -1014,21 +1162,47 @@ if (yellowShown) {
     .catch(() => false);
   ok(emptied, "U5 全部更新完成后成功项出列（清单转空态）");
   ok(
-    updatePosts.length === 1 &&
+    updatePosts.length === 2 &&
       updatePosts[0].name === "code-review" &&
-      updatePosts[0].agent === "claude-code",
-    `U6 单技能更新请求恰 1 次、payload 正确（实际 ${JSON.stringify(updatePosts)}）`,
+      updatePosts[0].agent === "claude-code" &&
+      updatePosts[1].name === "tdd" &&
+      updatePosts[1].agent === "claude-code",
+    `U6 批量更新请求恰 2 次、顺序 [code-review, tdd]、payload 正确（实际 ${JSON.stringify(updatePosts)}）`,
   );
-  const backShown = (await p3.locator("header button.back").count()) === 1;
-  ok(backShown, "U7 返回钮在场（PluginNav 单源）");
 } else {
   ok(false, "U2 点击黄色提示进清单页（前置 U1 未通过，跳过）");
   ok(false, "U3 清单页标题「可用更新」（前置 U1 未通过，跳过）");
-  ok(false, "U4 卡内单项「更新」钮在场（前置 U1 未通过，跳过）");
-  ok(false, "U5 全部更新完成后成功项出列（前置 U1 未通过，跳过）");
-  ok(false, "U6 单技能更新请求恰 1 次（前置 U1 未通过，跳过）");
+  ok(false, "U4 双项卡内单项「更新」钮在场（前置 U1 未通过，跳过）");
   ok(false, "U7 返回钮在场（前置 U1 未通过，跳过）");
+  ok(false, "U8 进度环就地形变（前置 U1 未通过，跳过）");
+  ok(false, "U9 批量排队弱化态（前置 U1 未通过，跳过）");
+  ok(false, "U11a 完成行绿 tint（前置 U1 未通过，跳过）");
+  ok(false, "U11b 完成行按钮显 ✓（前置 U1 未通过，跳过）");
+  ok(false, "U11c 完成交叠第二项转环（前置 U1 未通过，跳过）");
+  ok(false, "U11d 完成交叠第二次 POST（前置 U1 未通过，跳过）");
+  ok(false, "U12 完成行塌缩出列（前置 U1 未通过，跳过）");
+  ok(false, "U5 全部更新完成清单转空态（前置 U1 未通过，跳过）");
+  ok(false, "U6 批量更新请求恰 2 次顺序正确（前置 U1 未通过，跳过）");
 }
+// U13（§6.18④）深链：同 context 新 page（cookie 已共享，免 login）直达 /plugins/updates
+// ——缓存空触发自动检测（useAutoCheckSkillUpdates），整页「检查中」分支带 spinner；帧回后
+// 渲染双项清单（auto-check 链路完整闭合）。
+const p4 = await updCtx.newPage();
+await registerUpdMocksWith(p4, []);
+await p4.goto(`${ORIGIN}/plugins/updates`);
+const pageSpin = await p4
+  .locator("p", { hasText: "检查中" })
+  .locator(".animate-spin")
+  .waitFor({ timeout: 3000 })
+  .then(() => true)
+  .catch(() => false);
+ok(pageSpin, "U13 深链清单页自动检测时整页「检查中」带 spinner");
+const deepList = await p4
+  .locator(".pcard", { hasText: "tdd" })
+  .waitFor({ timeout: 5000 })
+  .then(() => true)
+  .catch(() => false);
+ok(deepList, "U13b 深链自动检测完成后渲染双项清单");
 await updCtx.close();
 
 // ── 汇总 ───────────────────────────────────────────────────────────────────

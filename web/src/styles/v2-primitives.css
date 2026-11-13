@@ -3344,6 +3344,71 @@
     color: var(--ink-2);
     background: var(--bg-elevated2);
   }
+  /* ── 16 更新清单行反馈（redesign-v2 §6.18，2026-11-13）：就地进度环 / 排队 / 完成出列 ──
+     作用域注意：button.upd 元素限定只命中清单页更新钮——主页 chips 全是 span.upd，不受
+     下面 sizer/queued 规则影响。 */
+  /* 就地进度环·尺寸锁定（§6.18①）：内容 grid 叠放，恒渲染的 sizer（.upd-s，「更新中…」
+     隐藏文本）定宽——文字↔环同格瞬时替换，按钮宽度恒定零跳版。sizer 取 updating 文案
+     （当前双语最长态；若未来某语言排队文案反超，改 sizer 取 max 语义）。 */
+  .pcard button.upd {
+    display: inline-grid;
+    place-items: center;
+  }
+  .pcard button.upd > span {
+    grid-area: 1 / 1;
+  }
+  .pcard .upd .upd-s {
+    visibility: hidden;
+  }
+  /* 排队弱化态（§6.18②）：批量进行中非当前项——暂态语义独立 class（不复用静止态 .off），
+     探针按 .queued 断言。ink-2 档（design-review P1：ink-3 是分隔线语义档，排队文案
+     1.27:1 近不可读）；排队是「等待中」信息态非「不可用」，opacity 豁免 disabled 弱化。 */
+  .pcard .upd.queued {
+    color: var(--ink-2);
+    background: var(--bg-elevated2);
+    opacity: 1;
+  }
+  /* 环态全强度（design-review P2）：disabled:opacity-60 无差别弱化会削弱当前项唯一活动
+     信号（apple-design §1 反馈贯穿全程）——环是进行中反馈主体，不降透明度。 */
+  .pcard .upd.updating {
+    opacity: 1;
+  }
+  /* 完成持留（§6.18③ 一段）：绿 tint + ✓——transition 写在目标态自身（CSS transition 读
+     目标态的 transition 属性，入场 tint 可动画且不污染全局 .pcard）；时长/曲线全走
+     index.css 动效 token。 */
+  .pcard.done {
+    background: var(--tint-green);
+    border-color: color-mix(in srgb, var(--c-success) 35%, transparent);
+    transition:
+      background-color var(--duration-fast) var(--ease-standard),
+      border-color var(--duration-fast) var(--ease-standard);
+  }
+  /* 持留窗按钮接管（design-review P2）：裸成功色 ✓（蓝 tint 药丸/蓝 ✓ 与绿 tint 同框
+     色相打架）；disabled 在此只是防重入，非「不可用」语义，不降透明度。 */
+  .pcard.done .upd {
+    color: var(--c-success);
+    background: transparent;
+    opacity: 1;
+  }
+  /* 出列塌缩（§6.18③ 二段）：grid 1fr→0fr 轨道 transition（frontend-notes §18 先例）——
+     transition 天然停在目标态，结构性绕开 keyframes fill-mode 回弹陷阱（§9）；overflow
+     内衬收住 .pcard 的 10px 下缘 margin，塌缩连间距一起收，下方行平滑上移。 */
+  .updrow {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows var(--duration-exit) var(--ease-exit);
+  }
+  .updrow > .updrow-in {
+    min-height: 0;
+    overflow: hidden;
+    transition: opacity var(--duration-exit) var(--ease-exit);
+  }
+  .updrow[data-exit] {
+    grid-template-rows: 0fr;
+  }
+  .updrow[data-exit] > .updrow-in {
+    opacity: 0;
+  }
   .pcard .d2 {
     font-size: 11.5px;
     /* tokens.json typography.line-height-ui（统一 UI 行高档，纠正 preflight 1.5 继承） */

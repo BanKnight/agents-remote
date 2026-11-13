@@ -435,23 +435,42 @@ export function MobilePluginsOverview({ hideTitle = false }: { hideTitle?: boole
                 <span className="ml-auto flex items-center gap-3">
                   {hasUpdateNames.size > 0 ? (
                     <button
-                      className="r cursor-pointer"
+                      className={`r cursor-pointer${updates.isFetching ? " inline-flex items-center gap-1.5" : ""}`}
                       onClick={() => void navigate({ to: "/plugins/updates" })}
                       type="button"
                       style={{ color: "var(--c-warning-text)" }}
                     >
-                      {updates.isFetching
-                        ? t("skills.checking")
-                        : t("plugins.updatesChip", { n: hasUpdateNames.size }) + " ›"}
+                      {updates.isFetching ? (
+                        <>
+                          {/* 检测中 spinner（§6.18④）：border-current 跟随按钮文字色。 */}
+                          <span
+                            aria-hidden="true"
+                            className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-current/30 border-t-current"
+                          />
+                          {t("skills.checking")}
+                        </>
+                      ) : (
+                        t("plugins.updatesChip", { n: hasUpdateNames.size }) + " ›"
+                      )}
                     </button>
                   ) : (
                     <button
-                      className="r cursor-pointer"
+                      className={`r cursor-pointer${updates.isFetching ? " inline-flex items-center gap-1.5" : ""}`}
                       disabled={updates.isFetching}
                       onClick={() => void updates.refetch()}
                       type="button"
                     >
-                      {updates.isFetching ? t("skills.checking") : t("skills.checkUpdates")}
+                      {updates.isFetching ? (
+                        <>
+                          <span
+                            aria-hidden="true"
+                            className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-current/30 border-t-current"
+                          />
+                          {t("skills.checking")}
+                        </>
+                      ) : (
+                        t("skills.checkUpdates")
+                      )}
                     </button>
                   )}
                   <button

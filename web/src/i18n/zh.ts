@@ -1081,6 +1081,7 @@ export const zh: Record<TranslationKey, string> = {
   "plugins.updatesChip": "{{n}} 个更新",
   "plugins.updatesTitle": "可用更新",
   "plugins.updateAll": "全部更新",
+  "plugins.updateQueued": "排队中…",
   "plugins.updatesEmpty": "没有待更新的技能",
   "plugins.menuView": "查看详情",
   "plugins.menuDisable": "停用（停止注入）",

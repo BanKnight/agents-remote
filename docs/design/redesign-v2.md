@@ -2094,3 +2094,17 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 **二轮收敛（同日，用户真机反馈「上下两行有内容重复」）**：urlPath 已内含在完整 URL 里，单独成字与 subtitle 重复 → 收敛为 title = 完整 URL + 徽章、subtitle = `→ fsDir`（fsDir 不与 URL 重复，保留）。几何契约不变（徽章同行紧跟、不贴行尾），探针 C2 断言同步 + `badgeInline` 几何断言。
 
 **伴生修复：`/p/` serve 面错误 HTML 化**（用户真机报障「点击条目跳转报错 `PROJECT_FILE_NOT_FOUND` JSON」）：默认根指向的 site/ 未建时点击预览 → 裸 JSON 对浏览器访客不可读。serve 面（含 token 401）错误一律返回极简内联 CSS 中文错误页（404「页面不存在/还没有内容」等），不回显 error.message（PATH_OUTSIDE_ROOT 等含服务端路径细节，不泄露给公开面）；config 端点（UI 消费）保持 JSON。
+
+### §6.18 更新清单页反馈对齐 App Store 范式：就地进度环 / 批量排队 / 完成出列过渡（2026-11-13）
+
+**用户反馈**：「你为什么不参考苹果商店的设计呢？他们的 ui ux 在这方面就很棒」——详情页固定头（§6.15 批）已参考 App Store，但清单页更新过程反馈没对齐：点「更新」文字替换「更新中…」布局跳动、无进行中动效信号（apple-design §1：反馈必须贯穿交互全程，只有终态反馈 = 「系统死了？」）、成功项瞬时消失无结果感、批量更新无队列感、检测无 spinner。四项全做（用户 AskUserQuestion 全选）。
+
+**形态**：①行内「更新」钮尺寸锁定——内容 grid 叠放 sizer（恒渲染「更新中…」隐藏文本定宽，i18n 全语种自适应零魔数），文字↔环同格瞬时替换无宽度跳变；②「全部更新」**保持串行**（服务端无批量端点 + lock 文件跨 skill 共享写竞态），加 `batchMode` 区分：当前项=进度环、其余项=「排队中…」弱化态（`.queued`），把执行队列可视化；③单项成功行 = tint-green +「✓」持留 400ms → grid 1fr→0fr 塌缩淡出 150ms（`--duration-exit`）后出列——transition 方案结构性绕开 keyframes fill-mode 陷阱（frontend-notes §9）；④组头/清单页「检查中…」旁小 spinner（instance-area 先例 span）。
+
+1. CSS 落点：`v2-primitives.css` `.pcard .upd` 后新增小节（sizer 锁宽 / `.queued` / `.pcard.done` tint / `.updrow` 塌缩四组）；`button.upd` 元素限定只命中清单页钮（主页 chips 全是 `span.upd` 不受影响）；index.css 零改动（无新 keyframes）。
+2. JS 状态机：`SkillUpdatesView` 加 `donePhase`/`exitPhase` 两集合（成功行靠 phase 续命——乐观更新只翻 `hasUpdate` 布尔、`sourceUrl` 无损，无需快照 map）+ per-name 定时器 `timersRef`（卸载清理）；`DONE_HOLD_MS=400` / `DONE_EXIT_MS=150` named const（与 `--duration-exit` 同值互指注释）。
+3. **约束记档**：持留窗口依赖 updates query `enabled:false + 60s staleTime`（hooks/skills.ts 在案 invalidate 不重拉）——未来给该 query 加 `refetchOnMount`/`refetchInterval` 会撕掉续命行，动前必读本条。
+4. **正确性边界**：排队态必须排除 `itemErrors[name]`——批量中已失败项显「排队中…」是谎言态（它已不在队列），显「更新」灰禁、批量结束可重试。
+5. 探针：Part 9 mock 改延迟 fulfill（检测帧 ~800ms 双项 / 更新帧 ~1200ms）制造观察窗，新增 U8-U13（环态就地宽度不变 / 排队态 / 检测 spinner / 完成交叠 / 塌缩出列 / 深链检查中 spinner）；U1 改「2 个更新 ›」、U6 改恰 2 次 + 顺序断言。
+6. i18n：新增 `plugins.updateQueued`（zh「排队中…」）；其余复用 `skills.updating`/`skills.updatedDone`/`skills.checking`。
+7. 双端单源：`SkillUpdatesView` 移动 pluginView 分流与桌面 mainPage 复用不变，四项改动两端自动生效；`MobileSkillDetail` 的 `.cta`/`.ctanote` 成功终态文案常驻**不变**（本批只动清单页 + 组头检测钮）。

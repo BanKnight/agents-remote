@@ -1101,6 +1101,7 @@ export const en = {
   "plugins.updatesChip": "{{n}} updates",
   "plugins.updatesTitle": "Available Updates",
   "plugins.updateAll": "Update All",
+  "plugins.updateQueued": "Queued…",
   "plugins.updatesEmpty": "No updates available",
   "plugins.menuView": "View details",
   "plugins.menuDisable": "Disable (stop injecting)",
