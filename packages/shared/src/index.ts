@@ -487,6 +487,9 @@ export type OverviewCandidate = {
   createdAt?: string;
   /** 卡片第二行（terminal=lastCommand / agent=lastAssistantMessage）；缺失则卡片不显第二行。 */
   subtitle?: string;
+  /** 人的「这件事办完了」时刻（settle，2026-11-13）；缺省 = 未了结。正交于 status：settled
+   *  会话不删除、可继续打开，有活动即自动清除（见 session-attention.md）。 */
+  settledAt?: string;
 };
 
 /** GET /api/overview 响应：全 project 名（含无实例 project，grouped 视图空状态用）+ 全候选。 */
@@ -1511,6 +1514,8 @@ export type AgentSession = {
   mode?: AgentSessionMode;
   lastAssistantMessage?: string;
   updatedAt?: string;
+  /** 人的「这件事办完了」时刻（settle）；缺省 = 未了结。有活动自动清除。 */
+  settledAt?: string;
 };
 
 export type TerminalSession = {
@@ -1521,6 +1526,8 @@ export type TerminalSession = {
   updatedAt?: string;
   /** 最近 pane 活动行（tmux capture 最后一行非空，含 prompt+命令，忠实显示，不去 ANSI 后的纯文本）。 */
   lastCommand?: string;
+  /** 人的「这件事办完了」时刻（settle）；缺省 = 未了结。有活动自动清除。 */
+  settledAt?: string;
 };
 
 export type ListAgentSessionsResponse = {
@@ -1756,6 +1763,19 @@ export type RenameAgentSessionResponse = {
 };
 
 export type RenameTerminalSessionResponse = {
+  session: TerminalSession;
+};
+
+/** POST {agent,terminal}-sessions/:id/settle 请求：settle（人的「办完了」）或恢复关注。 */
+export type SetSessionSettledRequest = {
+  settled: boolean;
+};
+
+export type SetAgentSessionSettledResponse = {
+  session: AgentSession;
+};
+
+export type SetTerminalSessionSettledResponse = {
   session: TerminalSession;
 };
 

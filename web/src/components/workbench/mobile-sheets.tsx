@@ -30,6 +30,7 @@ import type { CreateSessionApi } from "./instance-area";
 import {
   countsAsRunning,
   InstanceRowTrail,
+  isSettledView,
   ListRowSkeleton,
   sessionMarker,
   statusToV2DotClass,
@@ -72,9 +73,11 @@ export function MobileProjectSwitchSheet({
     return projectNames
       .map((name) => ({
         name,
+        // 已了结候选出列（settle，2026-11-13：恢复入口统一在 ⋯ 菜单，本 sheet 不设折叠组）。
         sessions: candidates.filter(
           (c) =>
             c.ref.projectName === name &&
+            !isSettledView(c) &&
             (!q ||
               name.toLowerCase().includes(q) ||
               (!projectOnly && c.displayName.toLowerCase().includes(q))),

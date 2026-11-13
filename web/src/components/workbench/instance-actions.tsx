@@ -10,6 +10,7 @@ import {
 } from "../../api/client";
 import { useT } from "../../i18n";
 import { usePinnedSessions, usePinSession, useUnpinSession } from "../../hooks/pinned-sessions";
+import { useSetSessionSettled } from "../../hooks/session-settle";
 import type { SessionPanelRef } from "../../routes/workbench-model";
 import { useConfirm } from "../shell/confirm-dialog";
 import { usePromptDialog } from "../shell/prompt-dialog";
@@ -128,13 +129,15 @@ export function useSessionModeSwitch() {
 }
 
 /**
- * 实例行「置顶/重命名/关闭」动作装配双端单源（桌面 tabstrip ⋯ SessionTabStripActions + 移动
+ * 实例行「置顶/了结/重命名/关闭」动作装配双端单源（桌面 tabstrip ⋯ SessionTabStripActions + 移动
  * 03k info sheet .acts footer 双消费；原 mobile-workbench 内「单端收敛」——桌面
  * SessionTabStripActions 仍手写同构装配，全局同构 review 批上移至此并接入桌面）。build(
- * panelRef, sessionType) 返回单行动作的 label+run（pin 无类型门——v1.6 真机反馈终端会话 ⋯
- * 菜单缺置顶；pinned 链路本就类型无关，v1.5「dot 语言归属 agent」旧口径随置顶条换代失效）；
+ * panelRef, sessionType, settled) 返回单行动作的 label+run（pin 无类型门——v1.6 真机反馈终端会话
+ * ⋯ 菜单缺置顶；pinned 链路本就类型无关，v1.5「dot 语言归属 agent」旧口径随置顶条换代失效）；
  * 渲染形态/排序/icon 注入留给消费方（菜单项 vs button 行，两端原型各自定）。
  * renameHolder 由调用方渲染（useRenameSession.holder 直通，消费方各自持 hook 实例）。
+ * settled（可选，缺省未了结）= 候选/detail 的 settledAt 是否成立——决定「标记已了结 / 恢复
+ * 关注」文案（settle 语义见 docs/design/session-attention.md §3.1）。
  */
 export function useInstanceRowActions(
   closeInstance: (sessionId: string, type: "agent" | "terminal") => void,
@@ -144,9 +147,10 @@ export function useInstanceRowActions(
   const pinIt = usePinSession();
   const unpinIt = useUnpinSession();
   const renameSession = useRenameSession();
+  const setSettled = useSetSessionSettled();
   return {
     renameHolder: renameSession.holder,
-    build: (panelRef: SessionPanelRef, sessionType: "agent" | "terminal") => {
+    build: (panelRef: SessionPanelRef, sessionType: "agent" | "terminal", settled = false) => {
       const id = panelRef.sessionId;
       const pinnedNow = pinned.has(id);
       return {
@@ -157,6 +161,16 @@ export function useInstanceRowActions(
         pin: {
           label: pinnedNow ? t("workbench.unpin") : t("workbench.pin"),
           run: () => (pinnedNow ? unpinIt : pinIt).mutate(id),
+        },
+        settle: {
+          label: settled ? t("workbench.unsettle") : t("workbench.settle"),
+          run: () =>
+            setSettled.mutate({
+              projectName: panelRef.projectName,
+              sessionId: id,
+              settled: !settled,
+              type: sessionType,
+            }),
         },
         rename: {
           label: t("session.rename"),

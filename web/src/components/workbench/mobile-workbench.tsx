@@ -1230,8 +1230,19 @@ function MobileProjectWorkbench({
     instances.find((e) => e.session.id === effectiveFocusId)?.session.displayName ||
     "";
   // 实例行动作（v1.6 变更①：动作上收 ⋯ 菜单动作区——原 03k info sheet .acts footer 退役，
-  // 实例信息 = 纯信息面板）。a = 置顶/重命名/关闭单源动作（useInstanceRowActions 双端单源）。
-  const a = rowActions.build(focusPanelRef, focusSessionType ?? "terminal");
+  // 实例信息 = 纯信息面板）。a = 置顶/了结/重命名/关闭单源动作（useInstanceRowActions 双端
+  // 单源）。settled 态：detail（权威）→ overview 候选（同源兜底，与标题名同链）。
+  // 先选定权威 session 再读字段——`?.settledAt ?? candidate.settledAt` 会把「detail 明确未
+  // settle（字段缺省）」误落回候选旧值，菜单错显「恢复关注」。
+  const focusDetailSession = focusAgentDetail.data?.session ?? focusTerminalDetail.data?.session;
+  const focusSettledAt = focusDetailSession
+    ? focusDetailSession.settledAt
+    : focusCandidate?.settledAt;
+  const a = rowActions.build(
+    focusPanelRef,
+    focusSessionType ?? "terminal",
+    Boolean(focusSettledAt),
+  );
   const focusInfo = useInstanceInfoActions(focusPanelRef, focusSessionType, scope.key, "sheet");
   // ⋯ 菜单动作区数据源（v1.6 workspace-more-menu）：置顶态（✓ 标注）+ 自动重试开关
   //（即点即改；空 sessionId gate 在 hook 内，非会话聚焦零请求）。
@@ -1516,6 +1527,13 @@ function MobileProjectWorkbench({
                             },
                           ]
                         : []),
+                      // 了结（settle，2026-11-13 T3 学习点②）：与置顶相邻的注意力动作
+                      //（置顶=前置，了结=后置）；已了结 → 「恢复关注」。点即关浮层。
+                      {
+                        label: a.settle.label,
+                        icon: <ShellIcon name={focusSettledAt ? "refresh" : "archive"} />,
+                        onSelect: () => a.settle.run(),
+                      },
                       {
                         label: t("session.rename"),
                         icon: <ShellIcon name="edit" />,

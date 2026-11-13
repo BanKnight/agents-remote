@@ -55,6 +55,9 @@ import type {
   RenameFileResponse,
   RenameSessionRequest,
   RenameTerminalSessionResponse,
+  SetAgentSessionSettledResponse,
+  SetSessionSettledRequest,
+  SetTerminalSessionSettledResponse,
   ClaudeAutoRetryConfig,
   UpdateAutoRetryRequest,
   UpdateAutoRetryResponse,
@@ -1082,6 +1085,25 @@ export async function renameAgentSession(
   );
 }
 
+/** 会话了结（settle，2026-11-13 T3 学习点②）：人的「这件事办完了」——移出活跃注意力集，
+ *  不删除、可恢复关注；任何会话活动（发消息/审批）自动清除。settle=true 同时取消置顶
+ *  （服务端单一位置裁决，见 docs/design/session-attention.md §2）。 */
+export async function setAgentSessionSettled(
+  projectName: string,
+  sessionId: string,
+  settled: boolean,
+): Promise<SetAgentSessionSettledResponse> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/settle`,
+    "api.agentSessionSettleFailed",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ settled } satisfies SetSessionSettledRequest),
+    },
+  );
+}
+
 export async function updateAutoRetryConfig(
   projectName: string,
   sessionId: string,
@@ -1250,6 +1272,23 @@ export async function renameTerminalSession(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ displayName } satisfies RenameSessionRequest),
+    },
+  );
+}
+
+/** terminal 会话了结（语义同 setAgentSessionSettled：终端的「事办完了」同样成立）。 */
+export async function setTerminalSessionSettled(
+  projectName: string,
+  sessionId: string,
+  settled: boolean,
+): Promise<SetTerminalSessionSettledResponse> {
+  return fetchJson(
+    `${terminalSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/settle`,
+    "api.terminalSessionSettleFailed",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ settled } satisfies SetSessionSettledRequest),
     },
   );
 }

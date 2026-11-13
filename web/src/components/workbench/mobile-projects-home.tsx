@@ -16,6 +16,7 @@ import { ShellIcon } from "../shell/icons";
 import {
   countsAsRunning,
   InstanceRowTrail,
+  isSettledView,
   LargeTitleRow,
   sessionMarker,
   statusToV2DotClass,
@@ -102,9 +103,10 @@ export function MobileProjectsHome() {
 
   // 活动行 = 全局候选按 needs-interaction > running > terminal 排序（与全局面板同序），置顶恒排
   // 最前，搜索时按实例名/副行过滤。时间戳（fallback updatedAt → createdAt）不进 memo，渲染时实时算。
+  // 已了结候选出列（settle，2026-11-13：恢复入口统一在 ⋯ 菜单；本页不设折叠组）。
   const activityRows = useMemo<ActivityRow[]>(() => {
     const q = query.trim().toLowerCase();
-    const ranked = rankGlobalInstances(candidates)
+    const ranked = rankGlobalInstances(candidates.filter((c) => !isSettledView(c)))
       .map((ref) => candidates.find((c) => c.ref.sessionId === ref.sessionId))
       .filter((c): c is GlobalInstanceCandidate => !!c)
       .filter((c) => {

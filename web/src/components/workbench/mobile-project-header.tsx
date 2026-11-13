@@ -6,7 +6,7 @@ import type { GlobalInstanceCandidate } from "../../routes/workbench-model";
 import { LucideIcon } from "../shell/lucide-icon";
 import { ShellIcon } from "../shell/icons";
 import { ProviderIcon } from "../shell/icons/provider-icon";
-import { statusToV2DotClass, InstanceRowTrail } from "../shell/shell-primitives";
+import { isSettledView, statusToV2DotClass, InstanceRowTrail } from "../shell/shell-primitives";
 import { relativeTime } from "./history-list";
 import {
   DropdownMenu,
@@ -162,6 +162,9 @@ type SwitchMenuRow = {
   provider?: AgentProvider;
   updatedAt?: string;
   createdAt?: string;
+  /** 已了结行（底部折叠组）：降饱和 + 无状态点，行尾时间 = 「N 天前了结」。 */
+  settled?: boolean;
+  settledAt?: string;
   onSelect: () => void;
 };
 
@@ -219,32 +222,46 @@ function InstanceSwitchMenu({
   // （与 ▾ 浮层行同款 statusToV2DotClass，消「浮层黄点/标题恒绿」的观感冲突）；
   // 非会话聚焦（skill/空态）维持 runct 项目 running 指示。
   const focusedStatus = foreignCandidates.find((c) => c.ref.sessionId === focusId)?.status;
+  // 活跃 / 已了结二分（settle，2026-11-13；谓词单源 isSettledView——settled 的在跑会话仍归
+  // 活跃）。三组只吃活跃集；已了结集进钉底动作行上方的「已了结」折叠组（默认收起）。
+  const activeCandidates = useMemo(
+    () => foreignCandidates.filter((c) => !isSettledView(c)),
+    [foreignCandidates],
+  );
+  const settledCandidates = useMemo(
+    () => foreignCandidates.filter((c) => isSettledView(c)),
+    [foreignCandidates],
+  );
+  // 折叠态不持久化（契约 §3.2）：菜单关闭即复位。（不用 <details>——Radix 菜单 roving
+  // focus 只遍历 menuitem，<summary> 键盘不可达且 disclosure 不是 role="menu" 的合法子树；
+  // 这里用可聚焦 menuitem 作组头，preventDefault 保持菜单开。）
+  const [settledExpanded, setSettledExpanded] = useState(false);
   // 当前项目组 = 同一 candidates 单源按项目过滤（与最近组/foreign 组同值同步；原
   // useProjectInstances 第二管道刷新节奏不同步，见 props.foreignCandidates 注释）。
   const projectCandidates = useMemo(
-    () => foreignCandidates.filter((c) => c.ref.projectName === projectName),
-    [foreignCandidates, projectName],
+    () => activeCandidates.filter((c) => c.ref.projectName === projectName),
+    [activeCandidates, projectName],
   );
   // 跨项目分组（组内保持 candidates 序），组间按项目名 localeCompare——排序稳定化
   //（用户拍板 2026-11-05）：原「组内最新 updatedAt 降序」= 时间相关，会话一有更新组
   // 就跳位；项目名序恒定，与服务端 listAllCandidates 的项目序同口径。
   const foreignGroups = useMemo(() => {
     const byProject = new Map<string, GlobalInstanceCandidate[]>();
-    for (const candidate of foreignCandidates) {
+    for (const candidate of activeCandidates) {
       if (candidate.ref.projectName === projectName) continue;
       const list = byProject.get(candidate.ref.projectName);
       if (list) list.push(candidate);
       else byProject.set(candidate.ref.projectName, [candidate]);
     }
     return [...byProject.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [foreignCandidates, projectName]);
+  }, [activeCandidates, projectName]);
   // 「最近」组 = 会话列表的最近视图（用户拍板 2026-11-05「唯一数据源，不考虑文件」）：
   // foreignCandidates 全集（与项目组/foreign 组同一 /api/overview 管道）按 updatedAt ??
   // createdAt 降序取前 N 条活跃会话；不含任何 agent-history 文件管道条目（该方向已废弃：
   // 文件 mtime 驱动天然混入已结束历史与 resume fork 副本幽灵行）。行形与项目组/foreign
   // 组完全同构（displayName / status / 时间同源同值），与所属项目组重复展示（不去重）。
   // 候选 ≤9 条排序开销可忽略，直接每次渲染投影。
-  const recentRows: SwitchMenuRow[] = [...foreignCandidates]
+  const recentRows: SwitchMenuRow[] = [...activeCandidates]
     .sort(
       (a, b) =>
         new Date(b.updatedAt ?? b.createdAt ?? 0).getTime() -
@@ -262,8 +279,9 @@ function InstanceSwitchMenu({
       createdAt: candidate.createdAt,
       onSelect: () => onSelectInstance(candidate.ref.projectName, candidate.ref.sessionId),
     }));
-  // 空态 = 本项目与其它项目均无活跃候选（recentRows 是全集子集，随之空）。
-  const empty = projectCandidates.length === 0 && foreignGroups.length === 0;
+  // 空态 = 无活跃候选且无已了结候选（只有已了结时仍渲染折叠组供恢复关注）。
+  const empty =
+    projectCandidates.length === 0 && foreignGroups.length === 0 && settledCandidates.length === 0;
   // 菜单打开时把当前行（背景高亮）滚入视野：实例多溢出定高时队尾当前行会视野外——autoFocus
   // 常落队尾，不滚则用户看不到自己所在实例。Content 是 portal 子树且仅开态挂载（§14）：
   // mount 跑的 effect 拿到 null、open 变化不重跑 [] effect——用 state ref callback，挂载即
@@ -318,11 +336,48 @@ function InstanceSwitchMenu({
           }),
         ),
       })),
+      // 已了结组（settle，2026-11-13）：钉底动作行上方、默认收起、折叠态不持久化。跨项目
+      // 混排（settle 是全局面，不分当前项目/foreign）。
+      ...(settledCandidates.length > 0
+        ? [
+            {
+              name: t("workbench.settledGroup", { count: settledCandidates.length }),
+              collapsible: true,
+              rows: settledCandidates.map(
+                (candidate): SwitchMenuRow => ({
+                  key: `settled:${candidate.ref.projectName}:${candidate.ref.sessionId}`,
+                  current: candidate.ref.sessionId === focusId,
+                  name: candidate.displayName,
+                  status: candidate.status,
+                  type: candidate.type,
+                  provider: candidate.provider,
+                  settled: true,
+                  settledAt: candidate.settledAt,
+                  onSelect: () =>
+                    onSelectInstance(candidate.ref.projectName, candidate.ref.sessionId),
+                }),
+              ),
+            },
+          ]
+        : []),
     ],
-    [focusId, foreignGroups, onSelectInstance, projectCandidates, projectName, recentRows, t],
+    [
+      focusId,
+      foreignGroups,
+      onSelectInstance,
+      projectCandidates,
+      projectName,
+      recentRows,
+      settledCandidates,
+      t,
+    ],
   );
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (!open) setSettledExpanded(false);
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <button
           aria-label={`${title} · ${t("workbench.switchInstance")}`}
@@ -379,28 +434,52 @@ function InstanceSwitchMenu({
           {empty ? (
             <div className="px-3.5 py-3 text-[13px] text-ink-3">{projectName}</div>
           ) : (
-            groups.map((group, groupIndex) => (
-              <div key={group.name}>
-                <div
-                  className={`px-3.5 pt-2 pb-[3px] text-[10px] font-bold tracking-[0.5px] text-ink-3${groupIndex > 0 ? " border-t border-sep" : ""}`}
-                >
-                  {group.name}
+            groups.map((group, groupIndex) => {
+              const rows = group.rows.map((row) => (
+                <InstanceSwitchRow
+                  createdAt={row.createdAt}
+                  current={row.current}
+                  key={row.key}
+                  name={row.name}
+                  onSelect={row.onSelect}
+                  provider={row.provider}
+                  settled={row.settled}
+                  settledAt={row.settledAt}
+                  status={row.status}
+                  type={row.type}
+                  updatedAt={row.updatedAt}
+                />
+              ));
+              // 「已了结」组可折叠（组头 = 可聚焦 menuitem，点按/Enter 切换；默认收起）。
+              if ("collapsible" in group && group.collapsible) {
+                return (
+                  <div key={group.name}>
+                    <DropdownMenuItem
+                      aria-expanded={settledExpanded}
+                      className={`min-h-0 rounded-none px-3.5 pt-2 pb-[3px] text-[10px] font-bold tracking-[0.5px] text-ink-3 hover:text-ink-2 focus:bg-transparent focus:text-ink-2${groupIndex > 0 ? " border-t border-sep" : ""}`}
+                      onSelect={(event) => {
+                        // 默认 onSelect 会关菜单；组头只切换展开态。
+                        event.preventDefault();
+                        setSettledExpanded((expanded) => !expanded);
+                      }}
+                    >
+                      {group.name}
+                    </DropdownMenuItem>
+                    {settledExpanded ? rows : null}
+                  </div>
+                );
+              }
+              return (
+                <div key={group.name}>
+                  <div
+                    className={`px-3.5 pt-2 pb-[3px] text-[10px] font-bold tracking-[0.5px] text-ink-3${groupIndex > 0 ? " border-t border-sep" : ""}`}
+                  >
+                    {group.name}
+                  </div>
+                  {rows}
                 </div>
-                {group.rows.map((row) => (
-                  <InstanceSwitchRow
-                    createdAt={row.createdAt}
-                    current={row.current}
-                    key={row.key}
-                    name={row.name}
-                    onSelect={row.onSelect}
-                    provider={row.provider}
-                    status={row.status}
-                    type={row.type}
-                    updatedAt={row.updatedAt}
-                  />
-                ))}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
         {/* 钉底两行动作（主色 600，与列表间分隔线，永不挤压；空态仅新建。⟲ 恢复历史是本项目
@@ -439,6 +518,9 @@ type InstanceSwitchRowProps = {
   /** 相对时间源（agent = updatedAt ?? createdAt；terminal 仅 updatedAt）。 */
   updatedAt?: string;
   createdAt?: string;
+  /** 已了结行（底部折叠组）：降饱和 + 无状态点，行尾时间 = 「N 天前了结」。 */
+  settled?: boolean;
+  settledAt?: string;
   onSelect: () => void;
 };
 
@@ -458,13 +540,15 @@ function InstanceSwitchRow({
   provider,
   updatedAt,
   createdAt,
+  settled = false,
+  settledAt,
   onSelect,
 }: InstanceSwitchRowProps) {
   const { t } = useT();
   return (
     <DropdownMenuItem
       aria-current={current ? "true" : undefined}
-      className={`h-[40px] min-h-[40px] justify-start gap-[9px] rounded-none px-3.5 text-[13.5px] font-normal focus:bg-on-surface/5${current ? " bg-fill-selected" : ""}`}
+      className={`h-[40px] min-h-[40px] justify-start gap-[9px] rounded-none px-3.5 text-[13.5px] font-normal focus:bg-on-surface/5${current ? " bg-fill-selected" : ""}${settled ? " text-ink-3" : ""}`}
       onSelect={onSelect}
     >
       {type === "agent" ? (
@@ -479,8 +563,12 @@ function InstanceSwitchRow({
       <span className={`min-w-0 truncate ${current ? "font-semibold" : ""}`}>{name}</span>
       <InstanceRowTrail
         className="ml-auto"
-        dotClassName={statusToV2DotClass(status)}
-        time={relativeTime(updatedAt ?? createdAt ?? "", t)}
+        dotClassName={settled ? undefined : statusToV2DotClass(status)}
+        time={
+          settled
+            ? t("workbench.settledAgo", { time: relativeTime(settledAt ?? "", t) })
+            : relativeTime(updatedAt ?? createdAt ?? "", t)
+        }
       />
     </DropdownMenuItem>
   );

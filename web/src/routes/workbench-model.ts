@@ -2121,6 +2121,9 @@ export type GlobalInstanceCandidate = {
   createdAt?: string;
   /** 卡片第二行（agent=lastAssistantMessage / terminal=lastCommand）；缺失则卡片不显第二行。 */
   subtitle?: string;
+  /** 人的「这件事办完了」时刻（settle，2026-11-13）；缺省 = 未了结。列表分流谓词见
+   *  shell-primitives 的 isSettledView（settledAt && !running 才归「已了结」组）。 */
+  settledAt?: string;
 };
 
 /**

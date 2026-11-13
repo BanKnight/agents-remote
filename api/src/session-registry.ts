@@ -49,6 +49,9 @@ export type SessionMetadata = {
   autoRetry?: ClaudeAutoRetryConfig;
   /** 运行形态（双模式）；缺省 chat。仅 claude agent 会话写 terminal（agent-tui 切换时落盘）。 */
   mode?: AgentSessionMode;
+  /** 人的「这件事办完了」时刻（settle，2026-11-13）；缺省 = 未了结。正交于 status：不删除、
+   *  可继续打开，任何会话活动（recordActivity）自动清除。 */
+  settledAt?: string;
 };
 
 export type RuntimeStream = {
@@ -822,6 +825,60 @@ export class SessionRegistry {
   }
 
   /**
+   * settle（人的「这件事办完了」）／恢复关注（settle=Boolean）——注意力生命周期，正交于
+   * status（settle 不改 status、不删会话，可继续打开）。幂等：状态未变短路不写盘不广播。
+   * 清除点不在这里：任何会话活动（recordActivity）自动清 settledAt（重新投入注意力）。
+   */
+  async settleAgentSession(
+    projectName: string,
+    sessionId: string,
+    settled: boolean,
+  ): Promise<AgentSession | undefined> {
+    const updated = await this.patchSettledAt(projectName, "agent", sessionId, settled);
+    return updated ? agentSessionFromMetadata(updated) : undefined;
+  }
+
+  async settleTerminalSession(
+    projectName: string,
+    sessionId: string,
+    settled: boolean,
+  ): Promise<TerminalSession | undefined> {
+    const updated = await this.patchSettledAt(projectName, "terminal", sessionId, settled);
+    return updated ? terminalSessionFromMetadata(updated) : undefined;
+  }
+
+  private async patchSettledAt(
+    projectName: string,
+    type: SessionType,
+    sessionId: string,
+    settled: boolean,
+  ): Promise<SessionMetadata | undefined> {
+    const metadata = await this.getMetadata(projectName, type, sessionId);
+
+    if (!metadata) {
+      return undefined;
+    }
+
+    // 幂等：目标态已成立 — 直接返回当前投影（不写盘不广播，也不回 undefined——路由幂等应 200）。
+    if (Boolean(metadata.settledAt) === settled) {
+      return metadata;
+    }
+
+    // 同 setAgentAutoRetryConfig：project 校验前置，patch 基于 index 新值合并（校验与写之间
+    // 并发关闭会话时 patch 返回 undefined）。
+    const updated = await this.patchMetadata(sessionId, (current) => {
+      if (Boolean(current.settledAt) === settled) return undefined;
+      const next: SessionMetadata = { ...current };
+      if (settled) next.settledAt = this.now().toISOString();
+      else delete next.settledAt;
+      return next;
+    });
+    // 并发同向 settle（多设备 / sweeper 恰与点击撞车）：回调命中目标态返回 undefined，但会话
+    // 仍在——回读当前投影，幂等请求仍应 200（只有真正被关闭才回 undefined → 404）。
+    return updated ?? (await this.getMetadata(projectName, type, sessionId));
+  }
+
+  /**
    * 记录 session 真实活动（agent 收发消息 / terminal input-output）。updatedAt 按整分钟截断
    * （分钟级平滑）：同分钟内截断值不变 → 短路，既不写内存也不写盘；跨分钟才更新内存 index +
    * 落盘一次。list/overview 从内存 index 读 → 内存更新即立即反映「刚刚活动」；落盘仅持久化
@@ -829,15 +886,28 @@ export class SessionRegistry {
    */
   async recordActivity(sessionId: string): Promise<void> {
     await this.ensureLoaded();
-    // 分钟截断短路挪进 patch fn（返回 undefined = 同分钟，跳过内存回写与落盘）。
+    // 分钟截断短路挪进 patch fn（返回 undefined = 同分钟且无 settle 待清，跳过内存回写与落盘）。
+    // settle 清除点收敛在此：任何会话活动（用户输入 / turn 活动 / 审批）都意味着重新投入注意力
+    //（settle 语义见 docs/design/session-attention.md §4.3）。
     await this.patchMetadata(sessionId, (metadata) => {
       const truncatedMs =
         Math.floor(this.now().getTime() / SessionRegistry.ACTIVITY_MINUTE_MS) *
         SessionRegistry.ACTIVITY_MINUTE_MS;
       const truncatedIso = new Date(truncatedMs).toISOString();
-      if (metadata.updatedAt === truncatedIso) return undefined;
-      return { ...metadata, updatedAt: truncatedIso };
+      if (metadata.updatedAt === truncatedIso && !metadata.settledAt) return undefined;
+      const next: SessionMetadata = { ...metadata, updatedAt: truncatedIso };
+      delete next.settledAt;
+      return next;
     });
+  }
+
+  /**
+   * 全量 metadata 纯读（无 project 过滤、无 runtime 探活）——settle sweeper 用：探活会
+   * removeMetadata 死 terminal，而自动 settle 只按业务判据（status/updatedAt）决策。
+   */
+  async listAllMetadata(): Promise<SessionMetadata[]> {
+    await this.ensureLoaded();
+    return Array.from(this.index.values());
   }
 
   private async listMetadata(type: SessionType, projectName: string) {
@@ -1243,6 +1313,7 @@ const metadataToCandidate = (metadata: SessionMetadata, subtitle?: string): Over
   // 不回退创建时间（§4.8 时间口径，2026-11-02 统一行形批 review 定案）。
   createdAt: metadata.type === "agent" ? metadata.createdAt : undefined,
   subtitle,
+  settledAt: metadata.settledAt,
 });
 
 const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
@@ -1262,6 +1333,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   autoRetry: metadata.autoRetry,
   mode: metadata.mode,
   updatedAt: metadata.updatedAt,
+  settledAt: metadata.settledAt,
 });
 
 const terminalSessionFromMetadata = (
@@ -1274,6 +1346,7 @@ const terminalSessionFromMetadata = (
   status: metadata.status as TerminalSessionStatus,
   updatedAt: metadata.updatedAt,
   lastCommand,
+  settledAt: metadata.settledAt,
 });
 
 const isNotFoundError = (error: unknown) =>

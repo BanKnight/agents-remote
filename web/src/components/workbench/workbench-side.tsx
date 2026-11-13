@@ -35,7 +35,12 @@ import {
   useProjectInstances,
   type ProjectInstanceEntry,
 } from "./instance-area";
-import { InstanceRowTrail, instanceDot2, ListRowSkeleton } from "../shell/shell-primitives";
+import {
+  InstanceRowTrail,
+  instanceDot2,
+  isSettledView,
+  ListRowSkeleton,
+} from "../shell/shell-primitives";
 import { HistoryList, relativeTime } from "./history-list";
 import { SessionRowMenu } from "./session-row-menu";
 import { SessionModeTabs } from "./mobile-workbench";
@@ -220,8 +225,18 @@ export function WorkbenchSide({
   const projectSegOn =
     sideProjectName !== null &&
     (historyOpen ? historyScope === "project" : scopeSegment === "project");
-  const agentEntries = projectInstances.instances.filter((entry) => entry.type === "agent");
-  const terminalEntries = projectInstances.instances.filter((entry) => entry.type === "terminal");
+  // 活跃 / 已了结二分（settle，2026-11-13；谓词单源 isSettledView——settled 的在跑会话仍归
+  // 活跃）。已了结行出列分组列表，进底部「已了结」折叠组（与全局 05g 视图同构）。
+  const isSettledEntry = (entry: ProjectInstanceEntry) =>
+    isSettledView({
+      settledAt: entry.session.settledAt,
+      status: entry.session.status,
+      type: entry.type,
+    });
+  const settledEntries = projectInstances.instances.filter(isSettledEntry);
+  const activeEntries = projectInstances.instances.filter((entry) => !isSettledEntry(entry));
+  const agentEntries = activeEntries.filter((entry) => entry.type === "agent");
+  const terminalEntries = activeEntries.filter((entry) => entry.type === "terminal");
   const allSettled = isLoaded && pinnedLoaded;
 
   // ── 实例区主体 ──────────────────────────────────────────────────────────────
@@ -255,10 +270,15 @@ export function WorkbenchSide({
         // dot + 名），卡形骨架（CardGridSkeleton ≈76px 行）加载完整体塌缩 → 单行行骨架。
         // dot2 太小不值骨架位；行尾 trail（dot2+时间）以 meta 位呈现 → action="meta"。
         <ListRowSkeleton count={4} lines={1} marker={false} action="meta" />
-      ) : projectInstances.instances.length === 0 ? (
+      ) : activeEntries.length === 0 && settledEntries.length === 0 ? (
         <div className="px-2 py-1 text-caption text-ink-3">{t("workbench.noActiveSessions")}</div>
       ) : (
         <>
+          {activeEntries.length === 0 ? (
+            <div className="px-2 py-1 text-caption text-ink-3">
+              {t("workbench.noActiveSessions")}
+            </div>
+          ) : null}
           {agentEntries.length > 0 ? (
             <>
               {/* AGENT 会话组 microlabel mt 6px（05c/05 页私值；原实现 mt-2.5 10px 多一档，
@@ -298,11 +318,33 @@ export function WorkbenchSide({
               ))}
             </>
           ) : null}
-          {/* 会话行右键/长按菜单单实例（§4.8：置顶/重命名/关闭，⋯ 菜单动作单源）；
-              panelRef/displayName 按 menuEntryId 回查（id 在 openAt 键域）。 */}
+          {/* 已了结折叠组（settle，2026-11-13：列表最底部、默认收起、不持久化）。行形态与
+              活跃行同构但降饱和（text-ink-3、无状态点），行尾「N 天前了结」。 */}
+          {settledEntries.length > 0 ? (
+            <details className="mt-2">
+              <summary className="microlabel mx-1.5 mb-0.5 mt-2 flex cursor-pointer select-none list-none items-center uppercase hover:text-on-surface">
+                {t("workbench.settledGroup", { count: settledEntries.length })}
+              </summary>
+              {settledEntries.map((entry) => (
+                <SideInstanceRow
+                  active={entry.session.id === focusId}
+                  entry={entry}
+                  key={entry.session.id}
+                  longPressBind={sessionLongPress.bind(entry.session.id)}
+                  menuRingOn={sessionRowCtx.pointFor(entry.session.id) !== null}
+                  onContextMenu={(e) => openSessionRowMenu(entry.session.id, e)}
+                  onSelect={focusRow}
+                  settled
+                />
+              ))}
+            </details>
+          ) : null}
+          {/* 会话行右键/长按菜单单实例（§4.8：置顶/了结/重命名/关闭，⋯ 菜单动作单源）；
+              panelRef/displayName 按 menuEntryId 回查（id 在 openAt 键域；含已了结行——恢复
+              关注入口在此）。 */}
           {menuEntryId !== null
             ? (() => {
-                const menuEntry = [...agentEntries, ...terminalEntries].find(
+                const menuEntry = projectInstances.instances.find(
                   (entry) => entry.session.id === menuEntryId,
                 );
                 if (!menuEntry) return null;
@@ -318,6 +360,7 @@ export function WorkbenchSide({
                       sessionId: menuEntry.session.id,
                     }}
                     sessionType={menuEntry.type}
+                    settled={Boolean(menuEntry.session.settledAt)}
                   />
                 );
               })()
@@ -649,6 +692,7 @@ function SideInstanceRow({
   longPressBind,
   menuRingOn,
   onContextMenu,
+  settled = false,
 }: {
   active: boolean;
   entry: ProjectInstanceEntry;
@@ -658,6 +702,8 @@ function SideInstanceRow({
   /** 右键/长按菜单 open 期间触发行 dashed ring 高亮（PROJECT_ROW_TRIGGER_RING）。 */
   menuRingOn?: boolean;
   onContextMenu: (e: React.MouseEvent) => void;
+  /** 已了结行（底部折叠组）：降饱和 + 无状态点，行尾时间 = 「N 天前了结」。 */
+  settled?: boolean;
 }) {
   const { t } = useT();
   const working = entry.session.status === "working";
@@ -668,7 +714,13 @@ function SideInstanceRow({
       className={`srow2 inst w-full cursor-pointer text-left ${active ? "selrow" : ""} ${
         menuRingOn ? PROJECT_ROW_TRIGGER_RING : ""
       } ${
-        isTerminal ? "font-mono text-caption text-ink-2" : working ? "font-semibold" : "text-ink-2"
+        settled
+          ? "text-ink-3"
+          : isTerminal
+            ? "font-mono text-caption text-ink-2"
+            : working
+              ? "font-semibold"
+              : "text-ink-2"
       }`}
       onClick={() => onSelect(entry.session.id)}
       onContextMenu={onContextMenu}
@@ -685,14 +737,20 @@ function SideInstanceRow({
       <span className="min-w-0 truncate">{entry.session.displayName}</span>
       <InstanceRowTrail
         className="ml-auto"
-        dotClassName={`dot2 ${instanceDot2(entry.session.status)}`}
-        time={relativeTime(
-          entry.session.updatedAt ??
-            ("createdAt" in entry.session ? entry.session.createdAt : undefined) ??
-            "",
-          t,
-        )}
-        timeClassName="text-micro text-ink-2"
+        dotClassName={settled ? undefined : `dot2 ${instanceDot2(entry.session.status)}`}
+        time={
+          settled
+            ? t("workbench.settledAgo", {
+                time: relativeTime(entry.session.settledAt ?? "", t),
+              })
+            : relativeTime(
+                entry.session.updatedAt ??
+                  ("createdAt" in entry.session ? entry.session.createdAt : undefined) ??
+                  "",
+                t,
+              )
+        }
+        timeClassName={settled ? "text-micro text-ink-3" : "text-micro text-ink-2"}
       />
     </button>
   );

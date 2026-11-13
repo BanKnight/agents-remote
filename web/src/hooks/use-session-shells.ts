@@ -56,6 +56,9 @@ const SHELL_META_FIELDS = [
   "provider",
   "mode",
   "createdAt",
+  // settle（2026-11-13）：settle/unsettle 与 recordActivity 自动清除都只经壳帧到达列表/详情
+  // 缓存——漏配此字段会让列表残留旧 settledAt（发过消息的会话 turn 结束后被弹回「已了结」组）。
+  "settledAt",
 ] as const;
 
 type ShellMetaField = (typeof SHELL_META_FIELDS)[number];

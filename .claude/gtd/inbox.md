@@ -54,3 +54,7 @@
 用户提出缺一类功能：**项目管理、会话管理（管理类，需审批）+ 查看会话输出/输入（观察类，读）**，两部分结合 = 跨项目维护（一个 agent 会话管理/观察其它项目与会话，OPC 多 agent 编排的基石）。现状盘点：审批基建已有（M5-b ApprovalRegistry 审批中心 + approvals-stream 推送 + push 通知三类触发含「等待审批」）；数据源已有（ProjectService 项目 CRUD/会话列表/关闭、agent-history JSONL 读取、GET /api/overview 聚合）；缺的是 ar-hub 工具面（现在只有 session_overview/project_settings 单项目只读）+ hub 工具调用挂起等审批的机制。待拍板：读类是否免审批、「会话输入」语义（查看 vs 发送）、跨项目范围（全部可管 vs 白名单）、capability 开关命名。
 
 **✅ 2026-11-01 已交付（三批次全部完成）**：拍板 = 查看+发送 / 全部项目审批即授权 / 读免审批；capability 开关命名 `admin`。批次 1 `6667d8f`（观察三工具 + hub 基座）→ 批次 2 `2f93a58`（审批基建 + 管理 5 工具 + origin 身份注入 + CLI 超时链）→ 批次 3 `d939f33`（真实链路探针 10/10 + web 卡 e2e + spec 记档 + origin 传参 bug 修复）。行为契约单源：`docs/specs/mcp-hub-admin/spec.md`。剩余：真机端到端（浏览器点卡 + PWA push）交用户清单；本地 8 commits 待 push（等用户确认）。
+
+## 2026-11-13 settle 搜索可达（v1 挂账）
+
+settle 批（学习点②）v1 的「已了结」会话在本地筛选（移动项目首页实例搜索 / 移动项目切换 sheet）里零命中：两处都在 query 匹配前先 `!isSettledView` 过滤，且没有行内「已了结」弱标。设计稿 §3.3 已标注为 v1 未实现。补齐形态（设计稿已写死方向）：**有 query 才纳入 settled + 行内弱标**，不要改成全局包含（避免活跃搜索结果被已了结淹没）。

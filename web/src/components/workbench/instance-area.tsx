@@ -106,6 +106,7 @@ import {
   countsAsRunning,
   InstanceRowTrail,
   instanceDot2,
+  isSettledView,
   LoadingBlock,
   sessionMarker,
   shellSurfaceClasses,
@@ -464,18 +465,26 @@ export function AllSessionsGroupedList({
     rowCtx.close();
   };
   const menuCandidate = candidates.find((c) => c.ref.sessionId === menuId);
+  // 活跃 / 已了结二分（settle，2026-11-13；谓词单源 isSettledView——settled 的在跑会话仍归
+  // 活跃，跑完才出列，无抖动）。活跃集喂分组与置顶组，已了结集进底部折叠组。
+  const split = useMemo(() => {
+    const active: GlobalInstanceCandidate[] = [];
+    const settled: GlobalInstanceCandidate[] = [];
+    for (const c of candidates) (isSettledView(c) ? settled : active).push(c);
+    return { active, settled };
+  }, [candidates]);
   const groups = useMemo(
-    () => mergeProjectsWithCandidates(projectNames, candidates),
-    [projectNames, candidates],
+    () => mergeProjectsWithCandidates(projectNames, split.active),
+    [projectNames, split.active],
   );
   const pinnedCandidates = useMemo(
-    () => candidates.filter((c) => pinned.has(c.ref.sessionId)),
-    [candidates, pinned],
+    () => split.active.filter((c) => pinned.has(c.ref.sessionId)),
+    [split.active, pinned],
   );
-  const rowClasses = (c: GlobalInstanceCandidate) =>
+  const rowClasses = (c: GlobalInstanceCandidate, dimmed = false) =>
     `srow2 inst w-full cursor-pointer text-left ${c.ref.sessionId === focusId ? "selrow" : ""} ${
       rowCtx.pointFor(c.ref.sessionId) ? PROJECT_ROW_TRIGGER_RING : ""
-    } ${c.status === "working" ? "font-semibold" : "text-ink-2"}`;
+    } ${dimmed ? "text-ink-3" : c.status === "working" ? "font-semibold" : "text-ink-2"}`;
   return (
     <div className="pb-2">
       {pinnedCandidates.length > 0 ? (
@@ -544,7 +553,41 @@ export function AllSessionsGroupedList({
           )}
         </div>
       ))}
-      {/* 会话行右键/长按菜单单实例（§4.8：置顶/重命名/关闭，⋯ 菜单动作单源）。 */}
+      {/* 已了结折叠组（settle，2026-11-13：列表最底部、默认收起、折叠态不持久化）。行形态与
+          普通行同构但降饱和（text-ink-3、无状态点），行尾「N 天前了结」；右键/长按菜单可恢复
+          关注（菜单单源，settled=true 时显示「恢复关注」）。 */}
+      {split.settled.length > 0 ? (
+        <details className="mt-2">
+          <summary className="microlabel mx-1.5 mb-0.5 mt-2.5 flex cursor-pointer select-none list-none items-center uppercase hover:text-on-surface">
+            {t("workbench.settledGroup", { count: split.settled.length })}
+          </summary>
+          {split.settled.map((c) => (
+            <button
+              className={rowClasses(c, true)}
+              key={c.ref.sessionId}
+              onClick={() => {
+                if (longPress.guardClick()) return;
+                focusRow(c);
+              }}
+              onContextMenu={(e) => openRowMenu(c.ref.sessionId, e)}
+              type="button"
+              {...longPress.bind(c.ref.sessionId)}
+            >
+              {sessionMarker(c.type, "xs", c.provider)}
+              <span className="min-w-0 flex-1 truncate">{c.displayName}</span>
+              <InstanceRowTrail
+                time={t("workbench.settledAgo", {
+                  time: relativeTime(c.settledAt ?? "", t),
+                })}
+                timeClassName="text-micro text-ink-3"
+              />
+            </button>
+          ))}
+        </details>
+      ) : null}
+      {/* 会话行右键/长按菜单单实例（§4.8：置顶/了结/重命名/关闭，⋯ 菜单动作单源）。 */}
+      {/* 动作态 = 原始 settledAt（不是分组谓词）：settled 但在跑的会话仍在活跃组，
+          行菜单须显示「恢复关注」而非再次「标记已了结」。 */}
       {menuCandidate ? (
         <SessionRowMenu
           anchor={rowCtx.pointFor(menuCandidate.ref.sessionId)}
@@ -553,6 +596,7 @@ export function AllSessionsGroupedList({
           onClose={closeRowMenu}
           panelRef={menuCandidate.ref}
           sessionType={menuCandidate.type}
+          settled={Boolean(menuCandidate.settledAt)}
         />
       ) : null}
     </div>
@@ -933,6 +977,8 @@ export type PanelMeta = {
   label?: string;
   /** 状态点（点色单源 instanceDot2 + i18n label）。detail/缓存均未就绪时 undefined。 */
   statusDot?: { label: string; dotClass: string };
+  /** 人的「这件事办完了」时刻（settle）；缺省 = 未了结——⋯ 菜单据此选「标记已了结/恢复关注」。 */
+  settledAt?: string;
 };
 
 /** tab 显示名兜底链单源（TabChip 与拖拽 DragGhost 同消费——批 C 收敛此前逐字双份）：
@@ -1099,6 +1145,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
       return {
         label: session.displayName,
         marker: sessionMarker("agent", "xs", session.provider),
+        settledAt: session.settledAt,
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
           // 点色单源 instanceDot2（与左栏/实例切换行同管道，spec「状态点语义全局统一」）——
@@ -1123,6 +1170,7 @@ export function usePanelMeta(panelRef: WorkbenchPanelRef): PanelMeta | undefined
       return {
         label: session.displayName,
         marker: sessionMarker("terminal", "xs"),
+        settledAt: session.settledAt,
         statusDot: {
           label: t(sessionStatusLabel(session.status)),
           dotClass: instanceDot2(session.status),
@@ -1191,6 +1239,8 @@ function cachedSessionFromLists(
       mode?: AgentSessionMode;
       /** provider 身份（品牌件行标分支）；TerminalSession/旧 overview 响应缺省 undefined。 */
       provider?: AgentProvider;
+      /** 人的「这件事办完了」时刻（settle，2026-11-13）；缺省未了结。 */
+      settledAt?: string;
     }
   | undefined {
   const candidate = overviewCache.data?.candidates.find(
@@ -1200,6 +1250,7 @@ function cachedSessionFromLists(
     return {
       displayName: candidate.displayName,
       mode: candidate.mode,
+      settledAt: candidate.settledAt,
       status: candidate.status,
       provider: candidate.provider,
     };
@@ -1214,6 +1265,7 @@ function cachedSessionFromLists(
       // TerminalSession 无 mode/provider（terminal 原生会话无运行形态与 provider 身份）——in 收窄。
       mode: "mode" in inProjectList ? inProjectList.mode : undefined,
       provider: "provider" in inProjectList ? inProjectList.provider : undefined,
+      settledAt: inProjectList.settledAt,
     };
   }
   return undefined;
@@ -2317,6 +2369,7 @@ export function useGlobalInstanceCandidates(scope: WorkbenchScope): {
       mode: c.mode,
       provider: c.provider,
       ref: { kind: "session", projectName: c.projectName, sessionId: c.sessionId },
+      settledAt: c.settledAt,
       status: c.status,
       subtitle: subtitleMap?.[c.sessionId],
       type: c.type,
@@ -2518,7 +2571,7 @@ function SessionTabStripActions({
     autoRetryEditorHolder,
   } = useInstanceInfoActions(panelRef, sessionType, panelRef.projectName, "modal");
   const { renameHolder, build } = useInstanceRowActions(closeInstance);
-  const a = build(panelRef, sessionType ?? "agent");
+  const a = build(panelRef, sessionType ?? "agent", Boolean(meta?.settledAt));
   // 动作区数据源（同移动端 ⋯ 菜单）：置顶态（✓ 标注）+ 自动重试开关（即点即改；能力表
   // 门——provider 未加载前不渲染，避免闪现）。
   const { pinned: pinnedSet } = usePinnedSessions();
@@ -2566,6 +2619,14 @@ function SessionTabStripActions({
           },
         ]
       : []),
+    // 了结（settle，2026-11-13 T3 学习点②）：与置顶相邻的注意力动作（置顶=前置，了结=后置）。
+    // 已了结 → 「恢复关注」（回活跃集）；未了结 → 「标记已了结」（入底部折叠组）。点即关浮层
+    // （结果由列表位移承接，同模式切换不 keepOpen 的观感理由）。
+    {
+      label: a.settle.label,
+      icon: <ShellIcon className="size-[17px]" name={meta?.settledAt ? "refresh" : "archive"} />,
+      onSelect: a.settle.run,
+    },
     {
       label: a.rename.label,
       icon: <ShellIcon className="size-[17px]" name="edit" />,

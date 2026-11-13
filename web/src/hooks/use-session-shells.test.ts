@@ -103,6 +103,21 @@ describe("diffShells", () => {
     expect(diff.changed[0]?.patch).toEqual({ updatedAt: "2026-11-05T10:05:00Z" });
   });
 
+  test("settledAt 变化 → patch（settle 单一真相：列表/详情只经壳帧同步）", () => {
+    const settled = diffShells(
+      [candidate({ sessionId: "agent_1", status: "done" })],
+      [shell({ sessionId: "agent_1", status: "done", settledAt: "2026-11-13T00:00:00Z" })],
+    );
+    expect(settled.changed[0]?.patch).toEqual({ settledAt: "2026-11-13T00:00:00Z" });
+    // 活动自动 unsettle → 壳帧缺省该字段；patch 必须带 undefined 把旧值清掉
+    //（toStrictEqual 保留 undefined 键，toEqual 会忽略）。
+    const cleared = diffShells(
+      [candidate({ sessionId: "agent_1", status: "done", settledAt: "2026-11-13T00:00:00Z" })],
+      [shell({ sessionId: "agent_1", status: "done" })],
+    );
+    expect(cleared.changed[0]?.patch).toStrictEqual({ settledAt: undefined });
+  });
+
   test("多字段同时变化 → patch 含全部变化字段", () => {
     const diff = diffShells(
       [candidate({ sessionId: "agent_1", displayName: "旧名", status: "idle" })],

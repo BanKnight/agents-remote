@@ -787,19 +787,20 @@ async function run() {
       }));
     });
     const labels = zones.map((z) => z.label);
-    // 末项「取消」是 sheet 容器项（非三区内容），断言只看三区 7 项（双模式行 2026-10-15
-    // 入列：claude 会话在「重命名」与「自动重试」之间，mock 无 claudeSessionId → 禁用 +
-    // 原因文案「该会话未绑定 CLI 会话，无法切换」）。
+    // 末项「取消」是 sheet 容器项（非三区内容），断言只看三区内容行（settle 2026-11-13
+    // 入列：动作区置顶之后「标记已了结」；双模式行 2026-10-15 入列：claude 会话在「重命名」
+    // 与「自动重试」之间，mock 无 claudeSessionId → 禁用 + 原因文案）。
     ok(
-      labels.length >= 7 &&
+      labels.length >= 8 &&
         labels[0].includes("会话历史") &&
         labels[1].includes("实例信息") &&
         labels[2].includes("置顶") &&
-        labels[3].includes("重命名") &&
-        labels[4].includes("该会话未绑定 CLI 会话") &&
-        labels[5].includes("自动重试") &&
-        labels[6].includes("关闭会话"),
-      `三区 7 项按原型序（实际 ${JSON.stringify(labels)}）`,
+        labels[3].includes("标记已了结") &&
+        labels[4].includes("重命名") &&
+        labels[5].includes("该会话未绑定 CLI 会话") &&
+        labels[6].includes("自动重试") &&
+        labels[7].includes("关闭会话"),
+      `三区 8 项按原型序（实际 ${JSON.stringify(labels)}）`,
     );
     ok(zones[0]?.hasArrow === true && zones[1]?.hasArrow === true, "导航区两行带 › 导航标注");
     ok(zones[2]?.hasCheck === false, "置顶行未置顶 → 无 ✓");
@@ -902,14 +903,15 @@ async function run() {
       );
     });
     ok(
-      termLabels.length >= 5 &&
+      termLabels.length >= 6 &&
         termLabels[0].includes("会话历史") &&
         termLabels[1].includes("实例信息") &&
         termLabels[2].includes("置顶") &&
-        termLabels[3].includes("重命名") &&
-        termLabels[4].includes("关闭会话") &&
+        termLabels[3].includes("标记已了结") &&
+        termLabels[4].includes("重命名") &&
+        termLabels[5].includes("关闭会话") &&
         !termLabels.some((l) => l.includes("自动重试")),
-      `终端菜单 = 历史/信息/置顶/重命名/关闭（无自动重试；实际 ${JSON.stringify(termLabels)}）`,
+      `终端菜单 = 历史/信息/置顶/标记已了结/重命名/关闭（无自动重试；实际 ${JSON.stringify(termLabels)}）`,
     );
     // 终端置顶即点即改（keepOpen + ✓）——v1.6 真机反馈核心断言。
     await page5.getByRole("menuitem").filter({ hasText: "置顶" }).click();

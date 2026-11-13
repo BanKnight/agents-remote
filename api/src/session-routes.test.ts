@@ -8,6 +8,7 @@ import type { AgentTuiController } from "./agent-tui";
 import { ompSessionSlug } from "./omp-history";
 import { SessionRegistry } from "./session-registry";
 import { handleSessionRoutes } from "./session-routes";
+import { StateStore } from "./state-store";
 
 // handler 级集成测试：真实 home 下的隔离 slug 目录（与 agent-history.test.ts / omp-history.test.ts
 // 同款策略）+ stub runtime（不 spawn tmux）。fixture 目录名来自临时 projectsRoot 派生的唯一 slug，
@@ -421,4 +422,71 @@ test("DELETE agent-sessions/:id → 200 closed（再删 404）", async () => {
     `/api/projects/mergeproj/agent-sessions/${created.id}`,
   );
   expect(repeatRes?.status).toBe(404);
+});
+
+// ── settle 注意力生命周期（2026-11-13 T3 学习点②）──────────────────────
+const settleRequest = (path: string, body: unknown, store?: StateStore) => {
+  const req = new Request(`http://localhost${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return handleSessionRoutes(
+    req,
+    new URL(req.url),
+    projectsRoot,
+    registry,
+    undefined,
+    undefined,
+    store,
+  );
+};
+
+test("POST agent-sessions/:id/settle → 200 带 settledAt；unsettle 清除；非法 body 400", async () => {
+  const store = new StateStore({ path: join(runDir, "state.yaml") });
+  const created = await registry.createAgentSession({
+    project: { name: "mergeproj", path: join(projectsRoot, "mergeproj") },
+    provider: "claude",
+  });
+  const path = `/api/projects/mergeproj/agent-sessions/${created.id}/settle`;
+
+  const settledRes = await settleRequest(path, { settled: true }, store);
+  expect(settledRes?.status).toBe(200);
+  const settledBody = (await settledRes!.json()) as { session: { id: string; settledAt?: string } };
+  expect(settledBody.session.settledAt).toBeString();
+
+  // 幂等：再 settle 仍 200（不报错）。
+  expect((await settleRequest(path, { settled: true }, store))?.status).toBe(200);
+
+  const unsettledRes = await settleRequest(path, { settled: false }, store);
+  const unsettledBody = (await unsettledRes!.json()) as { session: { settledAt?: string } };
+  expect(unsettledBody.session.settledAt).toBeUndefined();
+
+  const badRes = await settleRequest(path, { settled: "yes" }, store);
+  expect(badRes?.status).toBe(400);
+  const badBody = (await badRes!.json()) as { error: { code: string } };
+  expect(badBody.error.code).toBe("SESSION_METADATA_ERROR");
+
+  // 字面量 null body（JSON "null"）：readJson 原样返回 null，`body.settled` 会抛 TypeError →
+  // 500；必须走 400。
+  expect((await settleRequest(path, null, store))?.status).toBe(400);
+});
+
+test("settle=true 同时取消置顶（服务端单一位置裁决）；unsettle 不恢复置顶", async () => {
+  const store = new StateStore({ path: join(runDir, "state.yaml") });
+  const created = await registry.createTerminalSession({
+    project: { name: "mergeproj", path: join(projectsRoot, "mergeproj") },
+  });
+  await store.updateModule("overview", (cur) => ({
+    ...cur,
+    pinnedSessions: [created.id, "other-session"],
+  }));
+  const path = `/api/projects/mergeproj/terminal-sessions/${created.id}/settle`;
+
+  expect((await settleRequest(path, { settled: true }, store))?.status).toBe(200);
+  expect((await store.readModule("overview")).pinnedSessions).toEqual(["other-session"]);
+
+  // 恢复关注不把置顶还回来（用户重新决定）。
+  expect((await settleRequest(path, { settled: false }, store))?.status).toBe(200);
+  expect((await store.readModule("overview")).pinnedSessions).toEqual(["other-session"]);
 });

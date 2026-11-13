@@ -26,6 +26,7 @@ export function SessionRowMenu({
   panelRef,
   sessionType,
   displayName,
+  settled = false,
 }: {
   /** 触发点视口坐标（长按/右键）；null = 关闭（仅 renameHolder 继续挂着）。 */
   anchor: { x: number; y: number } | null;
@@ -34,11 +35,13 @@ export function SessionRowMenu({
   panelRef: SessionPanelRef;
   sessionType: "agent" | "terminal";
   displayName: string;
+  /** 已了结（settledAt 成立）→ 动作行显示「恢复关注」。 */
+  settled?: boolean;
 }) {
   const { t } = useT();
   const { pinned: pinnedSet } = usePinnedSessions();
   const { renameHolder, build } = useInstanceRowActions(closeInstance);
-  const a = build(panelRef, sessionType);
+  const a = build(panelRef, sessionType, settled);
   const pinnedNow = pinnedSet.has(panelRef.sessionId);
   return (
     <>
@@ -65,6 +68,19 @@ export function SessionRowMenu({
               <ShellIcon className={ROW_ICON_CLASS} name="pin" />
               {t("workbench.pin")}
               {pinnedNow ? <span className="text-[13px] font-bold text-primary">✓</span> : null}
+            </button>
+            {/* 了结（settle，2026-11-13）：与置顶相邻；已了结 → 「恢复关注」。 */}
+            <button
+              className={rowMenuButtonClasses(false, false)}
+              role="menuitem"
+              type="button"
+              onClick={() => {
+                onClose();
+                a.settle.run();
+              }}
+            >
+              <ShellIcon className={ROW_ICON_CLASS} name={settled ? "refresh" : "archive"} />
+              {a.settle.label}
             </button>
             <button
               className={rowMenuButtonClasses(false, true)}

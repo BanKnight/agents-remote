@@ -240,6 +240,18 @@ export function countsAsRunning(
   return type === "agent" ? isTurnActive(status) : status === "running";
 }
 
+/** 「已了结」视图谓词（settle，2026-11-13 T3 学习点②，docs/design/session-attention.md
+ *  §3.2）：settledAt 成立**且当前不在跑**——settle 的 working 会话在跑完前仍显活跃（移出
+ *  注意力不能遮蔽「它正在干活」，否则列表抖动）。双端列表（桌面侧栏 / 移动 ▾ 菜单 / 移动
+ *  首页）共用本单源，勿在各处手写条件。 */
+export function isSettledView(candidate: {
+  settledAt?: string;
+  type: "agent" | "terminal";
+  status: AgentSession["status"] | TerminalSession["status"];
+}): boolean {
+  return Boolean(candidate.settledAt) && !countsAsRunning(candidate.type, candidate.status);
+}
+
 /** status → dot 底色 utility（statusToTone 的渲染投影）。导出供 v2 页面直接消费
  * （如 MobileProjectsHome 活动行 dot），避免私设第二套 status→色映射。 */
 export const statusDotToneBg: Record<ShellTone, string> = {

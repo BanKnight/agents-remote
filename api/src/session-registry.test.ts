@@ -1240,3 +1240,68 @@ test("SessionRegistry keeps codex app-server session after restart via codexThre
   const shells = await registry.listAllShells();
   expect(shells.map((shell) => shell.sessionId)).toEqual(["agent_codexlive001"]);
 });
+
+// ── settle 注意力生命周期（2026-11-13 T3 学习点②）──────────────────────
+test("SessionRegistry.settleAgentSession 落盘 settledAt，unsettle 删字段，幂等短路不写盘", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_settle123456",
+  });
+  const agent = await registry.createAgentSession({ project, provider: "claude" });
+  const metadataPath = join(runDir, "sessions", "agent_settle123456.json");
+
+  const settled = await registry.settleAgentSession(project.name, agent.id, true);
+  expect(settled?.settledAt).toBe(fixedNow().toISOString());
+  expect(JSON.parse(await readFile(metadataPath, "utf8")).settledAt).toBe(fixedNow().toISOString());
+
+  // 幂等：已 settled 再 settle 不写盘（mtime 不变），返回投影仍带 settledAt。
+  const before = await stat(metadataPath);
+  const again = await registry.settleAgentSession(project.name, agent.id, true);
+  expect(again?.settledAt).toBe(fixedNow().toISOString());
+  expect((await stat(metadataPath)).mtimeMs).toBe(before.mtimeMs);
+
+  const unsettled = await registry.settleAgentSession(project.name, agent.id, false);
+  expect(unsettled?.settledAt).toBeUndefined();
+  expect(JSON.parse(await readFile(metadataPath, "utf8"))).not.toHaveProperty("settledAt");
+
+  // project 作用域守卫：错项目 → undefined（同 rename 语义）。
+  await expect(
+    registry.settleAgentSession("another project", agent.id, true),
+  ).resolves.toBeUndefined();
+});
+
+test("SessionRegistry.settleTerminalSession 与 agent 同语义；投影进 overview/shells", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "terminal_settle1234",
+  });
+  const terminal = await registry.createTerminalSession({ project });
+  const settled = await registry.settleTerminalSession(project.name, terminal.id, true);
+
+  expect(settled?.settledAt).toBe(fixedNow().toISOString());
+  const [candidate] = await registry.listAllCandidates();
+  expect(candidate.settledAt).toBe(fixedNow().toISOString());
+  const [shell] = await registry.listAllShells();
+  expect(shell.settledAt).toBe(fixedNow().toISOString());
+});
+
+test("recordActivity 清 settledAt（任何活动 = 重新投入注意力）", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: () => new Date("2026-05-25T00:00:30.000Z"),
+    createId: () => "agent_settleclear",
+  });
+  const agent = await registry.createAgentSession({ project, provider: "claude" });
+  await registry.settleAgentSession(project.name, agent.id, true);
+
+  await registry.recordActivity(agent.id);
+
+  const [candidate] = await registry.listAllCandidates();
+  expect(candidate.settledAt).toBeUndefined();
+  const metadata = JSON.parse(
+    await readFile(join(runDir, "sessions", "agent_settleclear.json"), "utf8"),
+  );
+  expect(metadata).not.toHaveProperty("settledAt");
+});

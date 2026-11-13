@@ -20,6 +20,9 @@ import type {
   UpdateAutoRetryResponse,
   SwitchAgentSessionModeRequest,
   SwitchAgentSessionModeResponse,
+  SetSessionSettledRequest,
+  SetAgentSessionSettledResponse,
+  SetTerminalSessionSettledResponse,
 } from "@agents-remote/shared";
 import { resolveModeSwitch } from "@agents-remote/shared";
 import type { AgentTuiController } from "./agent-tui";
@@ -39,6 +42,7 @@ import { SessionRegistry, SessionRegistryError } from "./session-registry";
 import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
 import { normalizeAutoRetryConfig } from "./agent-auto-retry";
 import { activePresetView, buildAvailableAliases, type SettingsStore } from "./settings-store";
+import type { StateStore } from "./state-store";
 
 type SessionResource = "agent-sessions" | "terminal-sessions";
 
@@ -49,6 +53,7 @@ export const handleSessionRoutes = async (
   registry: SessionRegistry,
   settingsStore?: SettingsStore,
   agentTui?: AgentTuiController,
+  stateStore?: StateStore,
 ) => {
   const historyMatch = matchAgentHistoryRoute(url.pathname);
   if (historyMatch && request.method === "DELETE" && historyMatch.sessionId) {
@@ -108,10 +113,11 @@ export const handleSessionRoutes = async (
         match.sessionId,
         settingsStore,
         agentTui,
+        stateStore,
       );
     }
 
-    return handleTerminalSessionRoute(request, registry, project, match.sessionId);
+    return handleTerminalSessionRoute(request, registry, project, match.sessionId, stateStore);
   } catch (error) {
     if (error instanceof ProjectPathError) {
       return projectPathErrorResponse(error);
@@ -128,6 +134,7 @@ const handleAgentSessionRoute = async (
   sessionId: string | undefined,
   settingsStore?: SettingsStore,
   agentTui?: AgentTuiController,
+  stateStore?: StateStore,
 ) => {
   if (!sessionId && request.method === "GET") {
     const sessions = await registry.listAgentSessions(project.name);
@@ -322,6 +329,26 @@ const handleAgentSessionRoute = async (
     return Response.json(response);
   }
 
+  // settle / 恢复关注（注意力生命周期，docs/design/session-attention.md）：正交于 status，
+  // 只改 metadata.settledAt；幂等。settle=true 时同时取消置顶（服务端单一位置裁决）。
+  if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/settle")) {
+    const body = await readJson<SetSessionSettledRequest>(request);
+
+    if (!body || typeof body.settled !== "boolean") {
+      return jsonError("SESSION_METADATA_ERROR", "settled must be a boolean", 400);
+    }
+
+    const session = await registry.settleAgentSession(project.name, sessionId, body.settled);
+
+    if (!session) {
+      return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+    }
+
+    await dropPinOnSettle(stateStore, sessionId, body.settled);
+    const response: SetAgentSessionSettledResponse = { session };
+    return Response.json(response);
+  }
+
   // 双模式切换（2026-10-15 claude；批次 C 起 codex 同语义）：chat ↔ terminal（headless
   // stream-json / app-server ↔ tmux 交互式 CLI）。守卫走 shared resolveModeSwitch 单一源
   //（与 web 菜单同一份判定）：能力未声明 → 404（对消费面隐藏）；会话缺原生 resume id
@@ -384,6 +411,7 @@ const handleTerminalSessionRoute = async (
   registry: SessionRegistry,
   project: { name: string; path: string },
   sessionId: string | undefined,
+  stateStore?: StateStore,
 ) => {
   if (!sessionId && request.method === "GET") {
     const response: ListTerminalSessionsResponse = {
@@ -452,6 +480,25 @@ const handleTerminalSessionRoute = async (
     }
 
     const response: RenameTerminalSessionResponse = { session };
+    return Response.json(response);
+  }
+
+  // settle / 恢复关注（与 agent 侧同语义；终端会话的「事办完了」同样成立）。
+  if (sessionId && request.method === "POST" && requestUrlEndsWith(request, "/settle")) {
+    const body = await readJson<SetSessionSettledRequest>(request);
+
+    if (!body || typeof body.settled !== "boolean") {
+      return jsonError("SESSION_METADATA_ERROR", "settled must be a boolean", 400);
+    }
+
+    const session = await registry.settleTerminalSession(project.name, sessionId, body.settled);
+
+    if (!session) {
+      return jsonError("SESSION_NOT_FOUND", "Terminal session not found", 404);
+    }
+
+    await dropPinOnSettle(stateStore, sessionId, body.settled);
+    const response: SetTerminalSessionSettledResponse = { session };
     return Response.json(response);
   }
 
@@ -543,6 +590,7 @@ const matchSessionRoute = (pathname: string) => {
     segments.length === 6 &&
     (segments[5] === "close" ||
       segments[5] === "rename" ||
+      segments[5] === "settle" ||
       segments[5] === "auto-retry" ||
       segments[5] === "mode")
   ) {
@@ -580,6 +628,27 @@ const normalizeDisplayName = (displayName: string | undefined) => {
 
 const requestUrlEndsWith = (request: Request, suffix: string) =>
   new URL(request.url).pathname.endsWith(suffix);
+
+/**
+ * settle 的置顶裁决：settle=true 时把会话移出全局置顶（「既置顶又了结」语义矛盾）。放在服务端
+ * 单一位置（而非前端串联两个请求）保证跨设备终态一致；unsettle 不恢复置顶——用户重新决定。
+ */
+const dropPinOnSettle = async (
+  stateStore: StateStore | undefined,
+  sessionId: string,
+  settled: boolean,
+): Promise<void> => {
+  if (!settled || !stateStore) return;
+  // 绝大多数被 settle 的会话本就没置顶：先只读判断，避免每次 settle 都整文件落盘
+  //（updateModule 无论内容是否变化都会 writeRaw）。读后被并发 pin 的窗口可接受——置顶与
+  // settle 撞车时保留置顶，不丢任何数据。
+  const cur = await stateStore.readModule("overview");
+  if (!cur.pinnedSessions.includes(sessionId)) return;
+  await stateStore.updateModule("overview", (latest) => ({
+    ...latest,
+    pinnedSessions: latest.pinnedSessions.filter((id) => id !== sessionId),
+  }));
+};
 
 export const isChatMessage = (msg: Record<string, unknown>): boolean => {
   const type = msg.type as string | undefined;

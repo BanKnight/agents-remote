@@ -72,6 +72,7 @@ import { SessionShellHub } from "./session-shell-hub";
 import { ChatSessionRegistry, DEFAULT_CHAT_TITLE } from "./chat-session-registry";
 import { handleChatSessionRoutes } from "./chat-session-routes";
 import { startChatIdleRecycler } from "./chat-idle-recycler";
+import { startSessionSettleSweeper } from "./session-settle-sweeper";
 import { PiRuntime } from "./pi-runtime";
 import { handlePiStreamUpgrade, PiStreamController } from "./pi-stream";
 import { handleSessionStreamUpgrade, SessionStreamController } from "./session-stream";
@@ -675,6 +676,7 @@ export const createFetchHandler =
         options.sessionRegistry,
         options.settingsStore,
         options.agentTui,
+        options.stateStore,
       );
 
       if (sessionResponse) {
@@ -2809,6 +2811,9 @@ export const startApi = async () => {
   // chat 会话空闲回收（设计 workbench-views §3.1.1）：空会话 3min 后清出列表 + idle 运行时
   // 10min 后 dispose（历史保留，重进 resume）。startApi 内启动——测试走 createFetchHandler 不经过。
   startChatIdleRecycler({ piRuntime, registry: chatSessionRegistry, chatSessionsDir });
+  // 会话自动 settle（docs/design/session-attention.md §4.2）：done/error 且 7 天不活跃 →
+  // 移出活跃注意力集（不删除、可恢复）。同 startApi 内启动——测试走 createFetchHandler 不经过。
+  startSessionSettleSweeper({ registry: sessionRegistry });
   // 项目状态窄接口（v1.5 §3.2 删除/重命名语义）：state.yaml projects 模块（detached 名单）+
   // overview 模块（置顶清理）。attach 在 createProject 内部调用，这里只组接口。
   const projectStateManager: ProjectStateManager = {

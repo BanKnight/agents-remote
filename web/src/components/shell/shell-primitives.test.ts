@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { countsAsRunning, listGroupClasses, listRowClasses } from "./shell-primitives";
+import {
+  countsAsRunning,
+  isSettledView,
+  listGroupClasses,
+  listRowClasses,
+} from "./shell-primitives";
 
 describe("countsAsRunning", () => {
   test("agent = turn 在飞(working/blocked;blocked 是 turn 内等审批的暂停)", () => {
@@ -15,6 +20,34 @@ describe("countsAsRunning", () => {
     expect(countsAsRunning("terminal", "running")).toBe(true);
     expect(countsAsRunning("terminal", "closed")).toBe(false);
     expect(countsAsRunning("terminal", "error")).toBe(false);
+  });
+});
+
+describe("isSettledView", () => {
+  test("settledAt 成立且不在跑 → 归已了结组", () => {
+    expect(
+      isSettledView({ settledAt: "2026-11-13T00:00:00Z", status: "done", type: "agent" }),
+    ).toBe(true);
+    expect(
+      isSettledView({ settledAt: "2026-11-13T00:00:00Z", status: "closed", type: "terminal" }),
+    ).toBe(true);
+  });
+
+  test("settled 但在跑 → 仍显活跃（跑完才出列，无抖动）", () => {
+    expect(
+      isSettledView({ settledAt: "2026-11-13T00:00:00Z", status: "working", type: "agent" }),
+    ).toBe(false);
+    expect(
+      isSettledView({ settledAt: "2026-11-13T00:00:00Z", status: "blocked", type: "agent" }),
+    ).toBe(false);
+    expect(
+      isSettledView({ settledAt: "2026-11-13T00:00:00Z", status: "running", type: "terminal" }),
+    ).toBe(false);
+  });
+
+  test("未 settle（settledAt 缺省）→ 恒活跃", () => {
+    expect(isSettledView({ status: "done", type: "agent" })).toBe(false);
+    expect(isSettledView({ status: "closed", type: "terminal" })).toBe(false);
   });
 });
 
