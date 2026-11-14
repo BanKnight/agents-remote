@@ -459,6 +459,9 @@ export const en = {
   "api.agentSessionAutoRetryFailed": "Failed to update auto-retry message",
   "api.agentSessionModeSwitchFailed": "Failed to switch session mode",
   "api.agentSessionSettleFailed": "Failed to update session settled state",
+  "api.checkpointListFailed": "Failed to load turn checkpoints",
+  "api.checkpointDiffFailed": "Failed to load turn changes",
+  "api.checkpointRollbackFailed": "Rollback failed",
   "api.terminalSessionListFailed": "Terminal session list failed",
   "api.terminalSessionCreationFailed": "Terminal session creation failed",
   "api.terminalSessionDetailFailed": "Terminal session detail failed",
@@ -749,6 +752,35 @@ export const en = {
   "claude.offlineCap": "Offline · new content will backfill after reconnect",
 
   // ── Workbench（三栏工作台外壳）──────────────────────────────
+  // Turn checkpoint（回滚到这条消息）——组件 web/src/components/claude/checkpoint-rollback.tsx。
+  "workbench.checkpoint.viewTurnChanges": "View turn changes",
+  "workbench.checkpoint.title": "Turn {{ordinal}} changes",
+  "workbench.checkpoint.statsLine": "{{files}} files · +{{insertions}} −{{deletions}}",
+  "workbench.checkpoint.noChanges": "No file changes in this turn",
+  "workbench.checkpoint.diffTruncated": "Too many changes — diffs for some files are omitted",
+  "workbench.checkpoint.diffLoadFailed": "Failed to load the diff",
+  "workbench.checkpoint.restoreFiles": "Restore files to before this turn",
+  "workbench.checkpoint.restoreConversation": "Rewind conversation to before this message",
+  "workbench.checkpoint.conversationUnavailable":
+    "No conversation snapshot is available for this session",
+  "workbench.checkpoint.otherSessionsRunning":
+    "{{count}} other session(s) in this project are running; their uncommitted work will be restored too",
+  "workbench.checkpoint.busySessionsAffected":
+    "{{count}} running session(s) were affected by this rollback — ask them to re-check their files",
+  "workbench.checkpoint.rollback": "Roll back",
+  "workbench.checkpoint.confirmRollback": "Confirm rollback",
+  "workbench.checkpoint.confirmTitle": "Roll back to before turn {{ordinal}}?",
+  "workbench.checkpoint.confirmMessage":
+    "This restores the workspace to before turn {{ordinal}} and truncates the conversation there. Later turns are discarded (a backup is kept).",
+  "workbench.checkpoint.confirmMessageFilesOnly":
+    "This restores the workspace to before turn {{ordinal}} (a backup is kept). The conversation is left unchanged.",
+  "workbench.checkpoint.busyWarning": "This session is still running — wait for the turn to finish",
+  "workbench.checkpoint.rollbackDone": "Rolled back to before turn {{ordinal}}",
+  "workbench.checkpoint.conversationRollbackFailed":
+    "Files were restored, but rewinding the conversation failed",
+  "workbench.checkpoint.backupNote": "A backup was taken before restoring",
+  "workbench.checkpoint.missing": "Checkpoint for this turn is no longer available",
+  "workbench.checkpoint.conflict": "The checkpoint changed — reopen and try again",
   "workbench.collapseLeft": "Collapse left panel",
   "workbench.collapseRight": "Collapse right panel",
   "workbench.expandLeft": "Expand left panel",

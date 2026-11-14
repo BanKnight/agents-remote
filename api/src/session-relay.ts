@@ -84,6 +84,19 @@ export class ClaudeSessionRelay {
     this.claudeSessionId = claudeSessionId;
   }
 
+  /**
+   * fork 回滚专用：CLI fork 完成（新 claudeSessionId 已知、新 JSONL 已写入截断后的对话）
+   * 后重读 history 段。fork spawn 时新 id 未知只能空激活；必须在订阅者接入前调用
+   *（回滚编排先关 WS 再 respawn，重连发生在 reload 之后）。startedAsResume 翻 true →
+   * 后续 session_init{resume:true} 语义正确。
+   */
+  reloadHistory(projectPath: string, claudeSessionId: string): void {
+    this.projectPath = projectPath;
+    this.claudeSessionId = claudeSessionId;
+    this.startedAsResume = true;
+    this.historyLines = this.readHistoryFromJsonl();
+  }
+
   /** 订阅不得早于激活落定（不变量守卫）。doActivate 目前全同步——activate() 同一
    *  tick 内 activatePromise 即落定，「pending」态不可观测，正常路径的 await 只是
    *  一个已 resolve 的微任务；此守卫在 doActivate 未来引入 await（如 JSONL 读异步化）

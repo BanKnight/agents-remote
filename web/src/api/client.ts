@@ -53,6 +53,8 @@ import type {
   UpdatePagesConfigResponse,
   RenameAgentSessionResponse,
   RenameFileResponse,
+  RollbackCheckpointRequest,
+  RollbackCheckpointResponse,
   RenameSessionRequest,
   RenameTerminalSessionResponse,
   SetAgentSessionSettledResponse,
@@ -67,6 +69,8 @@ import type {
   SaveFileResponse,
   SessionPromptInjectRequest,
   SessionPromptInjectResponse,
+  SessionCheckpointDiffResponse,
+  SessionCheckpointListResponse,
   SlashCommandDescriptionsResponse,
   TerminalSessionDetailResponse,
   UploadConflictPolicy,
@@ -1101,6 +1105,54 @@ export async function setAgentSessionSettled(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ settled } satisfies SetSessionSettledRequest),
     },
+  );
+}
+
+// ── Turn checkpoint（turn 级工作区快照 + 回滚，T3 学习点③）──
+
+/** 列出会话的 turn checkpoints（refs 即索引，服务端 for-each-ref 投影）。 */
+export async function listSessionCheckpoints(
+  projectName: string,
+  sessionId: string,
+): Promise<SessionCheckpointListResponse> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/checkpoints`,
+    "api.checkpointListFailed",
+  );
+}
+
+/** 某轮的 per-turn 文件改动（endpoint_n 对上一轮 endpoint / 本轮 baseline）。 */
+export async function getSessionCheckpointDiff(
+  projectName: string,
+  sessionId: string,
+  ordinal: number,
+): Promise<SessionCheckpointDiffResponse> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/checkpoints/${ordinal}/diff`,
+    "api.checkpointDiffFailed",
+  );
+}
+
+/** 回滚到某轮之前：文件恢复 +（claude 形态）对话 fork 截断。破坏性动作，UI 层必须强确认。 */
+/** 回滚是服务端同步长动作（restore 60s 预算 + 对话 fork 就绪 20s 等待），
+ *  默认 8s 兜底超时会先于服务端完成而误报失败。 */
+const ROLLBACK_REQUEST_TIMEOUT_MS = 120_000;
+
+export async function rollbackSessionCheckpoint(
+  projectName: string,
+  sessionId: string,
+  ordinal: number,
+  body: RollbackCheckpointRequest,
+): Promise<RollbackCheckpointResponse> {
+  return fetchJson(
+    `${agentSessionsPath(projectName)}/${encodeURIComponent(sessionId)}/checkpoints/${ordinal}/rollback`,
+    "api.checkpointRollbackFailed",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body satisfies RollbackCheckpointRequest),
+    },
+    ROLLBACK_REQUEST_TIMEOUT_MS,
   );
 }
 

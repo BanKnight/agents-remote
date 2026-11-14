@@ -1,103 +1,99 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-13（**settle 注意力语义批已 commit `16c9911`，全门禁 + 双探针 +
-> e2e 42 全绿，待 push（用户确认）+ 真机验收**）
-
-## settle 注意力语义批（T3 Code 学习点②，2026-11-13）
-
-- **缘起**：会话列表「完成的会话堆积」——「agent 说完 ≠ 事办完」。契约
-  `docs/design/session-attention.md`（v1.0 已拍板）：settle 正交于 status、可逆、
-  移出注意力≠隐身；底部「已了结 · N」折叠组默认收起；⋯ 菜单动作区入口与置顶相邻；
-  7 天 done/error 自动 settle；settle 自动取消 pin；任何活动自动 unsettle。
-- **数据落点**：`SessionMetadata.settledAt?: string`（跟会话走，close 即消）——
-  `patchMetadata → onMetadataChanged` 自动推 `/api/sessions/stream` 壳帧（跨设备实时）；
-  清除收敛到 `recordActivity` 单一入口（claude/codex/acp/terminal/approval 全路径）。
-- **api**：registry `setSessionSettled`（并发同向 settle 回读当前投影仍幂等 200）+
-  `recordActivity` 清标记 + sweeper `session-settle-sweeper.ts`（每 60 分钟扫 done/error
-  且 7 天不活跃）；`/settle` 路由（agent/terminal 两前缀同 handler，非法/null body 400，
-  settle=true 时先从 `state.yaml` `overview.pinnedSessions` 摘除，未置顶不写盘）。
-- **web**：`useSetSessionSettled()` mutation（无乐观更新，壳帧 + invalidate 兜底）；三处
-  菜单（桌面 ⋯/移动 ⋯/会话行菜单）动作项按 `Boolean(settledAt)` 翻转文案（**动作态 ≠
-  分组谓词**——settled 但在跑的会话仍在活跃组，菜单须显「恢复关注」）；桌面侧栏 +
-  移动 ▾ 菜单「已了结」折叠组；`isSettledView(c)` 谓词单源（settled && !countsAsRunning）。
-- **关键修复（reviewer 消化）**：
-  - **P1 `SHELL_META_FIELDS` 漏 `settledAt`** → settle/unsettle 与自动清除只经壳帧到达
-    列表/详情缓存，漏字段 = 第二真相（发过消息的会话跑完一轮被弹回「已了结」组）。已补 +
-    单测（含清空 `undefined` 的 `toStrictEqual`）。
-  - 移动 ▾ 组头 `<details>/<summary>` → 可聚焦 `DropdownMenuItem`（Radix `role="menu"`
-    roving focus 只遍历 menuitem，`<summary>` 键盘不可达/ARIA 非法）+ `useState` +
-    `onOpenChange` 关闭复位（折叠态不持久化）。
-  - `mobile-workbench` 聚焦会话 settle 态派生修正：先选定权威 session 再读字段
-    （`?.settledAt ?? candidate.settledAt` 会把「detail 明确未 settle」误落回候选旧值）。
-- **已知未做（v1 挂账，见 `docs/design/session-attention.md` §3.3 / inbox）**：本地筛选
-  不纳入 settled（有 query 时才纳入 + 弱标，需产品确认）；折叠组无显式 chevron。
-- **验证**：format/lint 0 warning/typecheck/全量单测（api 1326 + shared 16 + web 1087）/
-  CSS 硬闸/tokens 机检全绿；`probe-settle` **17/17**（桌面 13 生命周期 + 移动 4 折叠组）、
-  `probe-mobile-project-header` **56/0**；e2e 全量见下。
-
-### 本批踩坑（教训，别再走）
-
-- **`vite build --watch` 假死实锤**：dist 里的 `WorkbenchRoute-*.js` 停在旧实现（collapsible
-  分支仍渲染 `details`），而我用 `rg '"details"'`（双引号）判定「产物是新的」——rolldown
-  产物是**反引号字符串** `` `details` ``，双引号 grep 恒 0 命中 = 假阴性。判定产物新旧必须用
-  ASCII 标识符（`collapsible`、`aria-expanded`）或反引号形态，且**第一动作 = `respawn-pane -k`
-  全量重建**（dev-environment 规则），不要长轮询 touch。
-- 重启 web 后 build 真失败：`instance-area.tsx` 里我插入的注释写进了 JSX 属性列表
-  （`{/* */}` 落在 `<SessionRowMenu ... />` 内）→ rolldown 报 `` Expected `...` but found `}` ``；
-  **`bun run typecheck` 不报这个错**（tsc 侧放行/未覆盖），只有真 build 才挂——所以「typecheck
-  绿」不能替代「build 绿」，改 web 后必须看 dist 真的重建成功。
-- 探针移动段首次跑失败全部源于旧产物，代码本身是对的（证据纪律：先分辨「环境旧 vs 代码错」）。
+> 最后更新：2026-11-14（**Turn 级 checkpoint 批（T3 学习点③）：实现 + 三类 reviewer
+> 报告全部消化 + 全门禁复跑绿，待 commit（push 待用户确认）+ 真机验收**）
 
 ## 一句话状态
 
-settle 注意力语义（学习点②）已 commit `16c9911`（pre-commit 全门禁过），待 push（用户
-确认）+ 真机验收。
+Turn 级 checkpoint（隐藏 git refs）完整闭环已落地：每轮 turn 前后快照 → 用户消息动作条
+「查看本轮改动」（diff + 统计 + 双开关）→ 强确认回滚（文件 + 对话 fork）。全门禁 /
+单测（api 1357 + shared 16 + web 1087）/ e2e 42 / probe-checkpoint 17/17 全绿。
 
 ## 本 session 焦点
 
 ### 关键决策（不可丢）
 
-- settle 落 `SessionMetadata`（不是 `state.yaml`）：自动 WS 推送 + 清标记单入口。
-- 分组谓词 `isSettledView` 与动作态（`Boolean(settledAt)`）**必须分离**——否则 settled 但在跑
-  的会话行菜单无法恢复关注。
-- `SHELL_META_FIELDS` 是壳元信息单源：新增任何「列表/详情都要同步」的字段必须加进去。
-- Radix 菜单内不要放 `<details>/<summary>`：用可聚焦 menuitem 做 disclosure 组头。
+- **锚 uuid 贯通**：客户端 `crypto.randomUUID()` 作上行 user 帧 uuid；CLI 直接采用 →
+  同一 id = UI 消息 id / JSONL uuid / checkpoint 锚。`claude-adapter.ts` 两处上行已补
+  uuid；live echo 用 `parsed.uuid`。**端到端断点就在这里，探针测不出**。
+- **只有带文本的上行才起 turn**（`startsTurn`：content 含 text 块）——纯 tool_result
+  帧是轮中续跑，否则造 anchor=null 幻影轮。
+- **expectedCommit 比对的是 endpoint**（列表 summary 的 commit），不是恢复目标
+  baseline（服务端裁决出的另一棵树）——拿它跟 baseline 比会恒 409（P0 已修，
+  `resolveTurnEndpoint`）。
+- **对话能力前置闸必须早于文件恢复**（否则工作区已改却报 400）；claude 会话创建即钉
+  claudeSessionId，真实降级面是 terminal 形态。
+- refs 即索引（`refs/ar/checkpoints/<sha256(sessionId)[:16]>/<ordinal>/<phase>`，
+  元数据 JSON 在 commit message）；capture 走临时 GIT_INDEX_FILE 不动用户 index/工作区。
+- 回滚目标裁决：本轮 baseline → 降级上轮 endpoint → 双缺 404。
+- 对话 fork：`--resume <old> --resume-session-at <上一轮 endUuid> --fork-session`；
+  首轮无前驱 → 全新会话。
 
 ### 进度
 
-- ✅ P1-P5 全实现（shared/api/web/文档/探针）
-- ✅ code-reviewer（7 发现：P1-P7）+ design-reviewer（2 发现：P2-1、P3-1）全消化
-- ✅ 全门禁 + 探针 17/17 + 56/0 + e2e 42/42
-- ✅ commit `16c9911`（pre-commit 全门禁过）
-- ⏳ push（用户确认后）+ 真机验收清单交用户
+- ✅ 阶段 1-5 全实现（shared DTO / git-runner / checkpoint-service / turn-checkpointer /
+  路由 / 回滚执行 / web 入口浮层 / 文档 / 探针）
+- ✅ 两轮 design-reviewer 报告消化：P1-1 触屏入口可达（`hover-capable:` + `touch:`）、
+  P1-2 受控关闭桥（SHEET_UNMOUNT_DELAY_MS）、P1-3 双开关解耦 + `nothingSelected`
+  disabled、P1-4 `busy_session:*` warnings 消费 + 预回滚「其它会话运行中」警示、
+  P1-5 `text-warning-text`；P2 若干（逐文件路径+状态角标、错误码分流、确认文案随勾选、
+  禁用原因 caption、role=status/alert、`aria-describedby`、图标 history→undo-2）
+- ✅ code-reviewer 报告消化（2 P0 + 7 P1 + 若干 P2）：
+  - P0-1 `capture()` 每步校验 exitCode（`captureStep`）+ update-ref 后 `resolveRef` 复核
+  - P0-2 backup 捕获失败绝不进入不可逆 restore（capture 自校验即断点）
+  - P1-3 `beginTurn` 判重与占位同步完成（占位 ordinal=0，扫描期间被 resetSession 则放弃），
+    endTurn 见 ordinal<1 跳过 endpoint
+  - P1-4 新增 `CheckpointService.maxOrdinal()` 扫全部 phase 的 ref（含 baseline-only 半 turn）
+  - P1-5 `rollbackConversation` 等 fork 的 system.init 落地（`forkWaiters` +
+    20s 超时）后才返回；客户端回滚请求超时提到 120s（默认 8s 会误报）
+  - P1-6 `pendingFork` 无条件消费（id 相同也结算）+ 结算 waiter
+  - P1-7 截断锚解析前移到能力前置闸内：`ordinal>1 && anchor===null` → 400
+  - P1-8 restore 加 `--no-overlay`（目标里不存在的路径要删）
+  - P1-9 busy 闸加 `turnCheckpointer.hasInFlight`（metadata 落盘滞后）
+  - P2：`kill("SIGKILL")`、restore 链路独立 60s 超时、reset exitCode 检查、fs import
+    合并、metadata 缺失直接 return、list/diff 方法钉死（POST→405）、checkpoints 数组
+    进 context 单订阅（不再每消息一条 query）
+- ✅ 新增单测 8 条：并发 beginTurn 单 ordinal / 半 turn 续编 / capture 非零退出上抛 /
+  backup 写不进时不动工作区 / restore 失败保留 backup ref / in-flight busy /
+  上轮无 endUuid 前置闸 / verb 方法钉死
+- ✅ 全门禁：format:check / lint 0 warning / typecheck / 全量单测（systemd 2G）
+- ✅ web 重建（`respawn-pane -k`）+ CSS 落盘硬闸 + tokens 机检 0/0
+- ✅ `bun scripts/probe-checkpoint.mjs` **17/17**（桌面 11 + 降级 3 + busy 2 + 其它会话警示 1）
+- ✅ `systemd-run -p MemoryMax=4G bun run e2e` **42/42**
+- ⏳ commit（pre-commit 全门禁）→ push 待用户确认
 
 ### 易丢的关键上下文
 
-- **bun test 全量必须 `systemd-run --scope --user -p MemoryMax=2G`**；e2e 用 4G。
-- web 产物疑似旧码：先 `tmux list-windows -t ar-dev` 确认 pane 死活 → `respawn-pane -k
-  -t ar-dev:web 'scripts/ar-dev-web.sh'` → 等 preview 200 → 再验产物的 **ASCII** 特征串。
-- 探针 Playwright 用 `bun scripts/X.mjs`（node 会被分类器拒）；诊断脚本必须放 `scripts/` 内跑
-  （/tmp 下会解析到别的 playwright-core 缓存报 chrome-headless-shell 缺失），用完即删。
-- `site/`（pages 根内容）untracked 不入库——commit 勿顺手 add。
+- 探针取消按钮必须 scope 到确认框：`getByRole("dialog").filter({has: 确认回滚按钮})`
+  ——浮层自身也有「取消」，DOM 序在前，`.first()` 会误关浮层。
+- 改 web 后：`respawn-pane -k -t ar-dev:web 'scripts/ar-dev-web.sh'` → 等 25s → 再跑
+  `node scripts/ar-verify-css.mjs`；探针一律 `bun scripts/X.mjs`。
+- 全量单测 `systemd-run --scope --user -p MemoryMax=2G`；e2e 用 4G。
+- `site/` untracked 不入库；commit 用标准 `git add && git commit`（禁 `--only`/`--git-dir`）。
 
 ### 下一步
 
-1. push（用户确认）；真机验收清单：①桌面侧栏 ⋯「标记已了结」→ 行移入底部「已了结 · 1」
-   折叠组（默认收起、降饱和、行尾「N 天前了结」）→ 展开点行回会话 → ⋯「恢复关注」回
-   活跃组 ②移动 ▾ 同链路（组头点按展开、重开复位）③settle 后给会话发消息 → 自动回
-   活跃组 ④已 settle 的会话菜单文案翻转 ⑤置顶会话 settle 后置顶同时消失。
-2. 挂账推进：学习点③ Turn 级 checkpoint（隐藏 git refs）。
+1. commit（尾行 `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`）
+   → 请用户确认 push。
+2. 真机验收清单交用户：①发一轮让 agent 改文件 → 该消息「查看本轮改动」显示 diff
+   ②点回滚 → 文件恢复 + 对话截断到该轮之前 ③同项目其它会话 working 时出现波及警示
+   ④非 git 项目 / terminal 形态入口降级 ⑤触屏（iPhone/iPad）动作条常显可点。
 
 ## 挂账（非本批）
 
-- settle 搜索结果不含 settled（v1 挂账，`.claude/gtd/inbox.md` 2026-11-13 条目）。
+- settle 批（`16c9911`）待 push + 真机验收。
+- settle 搜索结果不含 settled（inbox 2026-11-13）。
 - probe-fab.mjs 过期断言（5 FAIL）待拍板重构/退役。
-- 技能更新检测服务端慢（逐 repo 串行拉 GitHub Trees）：可考虑并发 fetch 或短 TTL 缓存。
-- StatusDot/StatusMarker（shell-primitives）休眠死代码待拍板。
+- 技能更新检测服务端慢（逐 repo 串行拉 GitHub Trees）。
+- StatusDot/StatusMarker 休眠死代码待拍板。
 - wiki 格式对齐批 → wiki Quartz（先 /check-deps）。
-- 会话进行中调度 auto-retry pending 注入计时器，随形态切换的清理属 runtime 生命周期（#8 范畴）。
+- 会话进行中调度 auto-retry pending 注入计时器（runtime 生命周期遗留）。
+- checkpoint 批已知取舍：diff 面板单容器滚动（DiffContent 内 sticky hunk 条不吸顶，
+  逐文件导航仍可用）；只做 claude 对话回滚（其它 provider 留能力位）。
 
 ## 提醒
 
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
+
+最后更新：2026-11-14 / 触发原因：checkpoint 批 reviewer 报告消化完毕 + 全门禁复跑绿，准备 commit。

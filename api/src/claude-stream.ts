@@ -1,7 +1,8 @@
-import type {
-  ClaudeStreamClientMessage,
-  SessionPromptInjectResponse,
-  SessionStreamServerMessage,
+import {
+  MESSAGE_UUID_RE,
+  type ClaudeStreamClientMessage,
+  type SessionPromptInjectResponse,
+  type SessionStreamServerMessage,
 } from "@agents-remote/shared";
 import { ProjectPathError, resolveProjectPath } from "./project-paths";
 import { jsonError } from "./http-auth";
@@ -10,6 +11,7 @@ import { EFFORT_LEVELS, type AgentSessionStatus, type SessionType } from "@agent
 import { spawnInitialStatus } from "./agent-session-status";
 import { ProjectGenUiError } from "./project-gen-ui";
 import type { ClaudeRuntime } from "./claude-runtime";
+import type { TurnCheckpointer } from "./turn-checkpointer";
 
 type UpgradeServer = {
   upgrade(request: Request, options?: { data?: Record<string, unknown> }): boolean;
@@ -239,6 +241,8 @@ export class ClaudeStreamController {
     private readonly claudeRuntime: ClaudeRuntime,
     private readonly runtime: RuntimeResources,
     private readonly sessionRegistry: SessionRegistry,
+    // Turn 级 checkpoint（T3 学习点③）：可选注入，未装配 = 整个捕获通路缺席（旧行为）。
+    private readonly turnCheckpointer?: TurnCheckpointer,
   ) {}
 
   setOnControlResponseForwarded(cb: (runtimeKey: string, requestId: string) => void) {
@@ -280,6 +284,25 @@ export class ClaudeStreamController {
   ): Promise<string> {
     const block = await this.loadGenUiContext(projectName, sessionId);
     return block ? `${text}\n\n${block}` : text;
+  }
+
+  /** WS user 分支的 turn checkpoint 起点共享：projectPath 从 metadata 现查（缺 metadata
+   *  = 会话已删，静默跳过）。fire-and-forget 语义在调用点，这里只做 metadata 查询 + 委托。 */
+  private async beginTurnCheckpoint(
+    data: ClaudeWebSocketData,
+    anchorUuid: string | null,
+  ): Promise<void> {
+    if (!this.turnCheckpointer) return;
+    const metadata = await this.sessionRegistry.getAgentMetadata(data.projectName, data.sessionId);
+    // 缺 metadata 或路径 = 会话已删/数据不完整：不占 ordinal（空路径会在 git runner
+    // 入口抛错，且占位会让本轮后续帧被误判为排队消息）。
+    if (!metadata?.projectPath) return;
+    await this.turnCheckpointer.beginTurn({
+      runtimeKey: data.runtimeKey,
+      sessionId: data.sessionId,
+      projectPath: metadata.projectPath,
+      anchorUuid,
+    });
   }
 
   private registerSocket(runtimeKey: string, socket: StreamSocket): void {
@@ -506,13 +529,24 @@ export class ClaudeStreamController {
         // see user messages; we mirror by buffering the user message into the
         // relay's live cache (injectLiveLine) so current AND future subscribers
         // see it. control_response/control_request are permission/model actions,
-        // not chat content — not injected. The echo gets a synthetic uuid
-        // (client sends none; CLI generates one only in JSONL, never on stdout).
+        // not chat content — not injected. Echo uuid 优先用客户端上行锚 uuid（CLI 采用
+        // 同一 uuid 落 JSONL → 实时与回放同一 id）；缺省（旧客户端）回退 synthetic。
         if (parsed.type === "user") {
+          // 未信输入白名单：非法 uuid 丢弃（不阻塞上行转发，只是不拿它当锚）。
+          const anchorUuid =
+            typeof parsed.uuid === "string" && MESSAGE_UUID_RE.test(parsed.uuid)
+              ? parsed.uuid
+              : null;
+          // 只有带文本的上行才是 turn 起点（真 prompt）。纯 tool_result 帧是轮中续跑
+          //（客户端应答工具/审批选项），起 turn 会造 anchor=null 的幻影轮。
+          const startsTurn = parsed.message.content.some((block) => block.type === "text");
+          // turn checkpoint baseline（T3 学习点③）：fire-and-forget，排队消息（turn 进行中
+          // 的上行）由 TurnCheckpointer 归当前 turn，绝不阻塞 stdin 转发。
+          if (startsTurn) void this.beginTurnCheckpoint(data, anchorUuid).catch(() => undefined);
           const echo = JSON.stringify({
             ...parsed,
             isUserInput: true,
-            uuid: `injected-${crypto.randomUUID()}`,
+            ...(anchorUuid ? { uuid: anchorUuid } : { uuid: `injected-${crypto.randomUUID()}` }),
           });
           this.claudeRuntime.injectLiveLine(data.runtimeKey, echo);
           // 状态机 user_input 信号（idle/done/error/blocked → working）。
@@ -569,22 +603,35 @@ export class ClaudeStreamController {
       metadata.status ? spawnInitialStatus(metadata.status) : undefined,
     );
 
+    const anchorUuid = crypto.randomUUID();
     const frame: ClaudeStreamClientMessage = {
       type: "user",
       message: {
         role: "user",
         content: [{ type: "text", text: await this.composeUserText(projectName, sessionId, text) }],
       },
+      // 客户端生成的锚 id：CLI 对上行 user 消息自带的 uuid 直接采用 → 同一 id 同时是
+      // JSONL 消息 uuid、turn checkpoint 锚、live echo 的 id（实时/回放对齐）。
+      uuid: anchorUuid,
     };
     console.log(`[claude-stream] inject dialog: ${runtimeKey}`);
     await this.claudeRuntime.write(runtimeKey, JSON.stringify(frame) + "\n");
     // 与 WS message() user 分支同款：活动时间戳 + live echo（当前与未来订阅者都看得到这条
-    // 注入消息——JSONL 由 CLI 自己写，此处不伪造历史）。
+    // 注入消息——JSONL 由 CLI 自己写，此处不伪造历史；echo 复用 anchorUuid 不再造 synthetic）。
+    // turn checkpoint baseline 同款 fire-and-forget（projectPath 直接取 metadata，无需现查）。
+    void this.turnCheckpointer
+      ?.beginTurn({
+        runtimeKey,
+        sessionId,
+        projectPath: metadata.projectPath ?? "",
+        anchorUuid,
+      })
+      .catch(() => undefined);
     void this.sessionRegistry.recordActivity(sessionId);
     const echo = JSON.stringify({
       ...frame,
       isUserInput: true,
-      uuid: `injected-${crypto.randomUUID()}`,
+      uuid: anchorUuid,
     });
     this.claudeRuntime.injectLiveLine(runtimeKey, echo);
     // 状态机 user_input 信号（与 WS user 分支同一语义）。

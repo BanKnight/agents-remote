@@ -34,6 +34,9 @@ import { ApprovalCenter } from "./approval-center";
 import { ClaudeRuntime } from "./claude-runtime";
 import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
 import { ClaudeStreamController, handleClaudeStreamUpgrade } from "./claude-stream";
+import { CheckpointService } from "./checkpoint-service";
+import { TurnCheckpointer } from "./turn-checkpointer";
+import type { SessionCheckpointsDeps } from "./session-routes";
 import { AgentTuiController, type AgentTuiStatusContext } from "./agent-tui";
 import {
   applyAuthRefresh,
@@ -123,6 +126,7 @@ type FetchHandlerOptions = {
   claudeRuntime?: ClaudeRuntime;
   codexRuntime?: CodexRuntime;
   claudeStreamController?: ClaudeStreamController;
+  sessionCheckpoints?: SessionCheckpointsDeps;
   approvalCenter?: ApprovalCenter;
   sessionShellHub?: SessionShellHub;
   agentTui?: AgentTuiController;
@@ -677,6 +681,7 @@ export const createFetchHandler =
         options.settingsStore,
         options.agentTui,
         options.stateStore,
+        options.sessionCheckpoints,
       );
 
       if (sessionResponse) {
@@ -2561,10 +2566,16 @@ export const startApi = async () => {
   const chatSessionsDir = resolve(homedir(), ".agents-remote/chat-sessions");
   const chatSessionRegistry = new ChatSessionRegistry({ sessionsDir: chatSessionsDir });
   const streamController = new SessionStreamController(runtime, sessionRegistry);
+  // Turn 级 checkpoint 装配（T3 学习点③）：refs 单源捕获服务 + turn 编排，注入 runtime
+  //（stdout uuid 采集 / result 收口 / respawn 清理）与 stream controller（上行 user 帧）。
+  const checkpointService = new CheckpointService();
+  const turnCheckpointer = new TurnCheckpointer({ checkpoints: checkpointService });
+  claudeRuntime.setTurnCheckpointer(turnCheckpointer);
   const claudeStreamController = new ClaudeStreamController(
     claudeRuntime,
     runtime,
     sessionRegistry,
+    turnCheckpointer,
   );
   // pi chat 运行时：进程内 AgentSession，懒启动（首次 WS open）。cwd=PROJECTS_ROOT，
   // agentDir 隔离在 ~/.agents-remote/pi-agent（决策 7/9）。apiKey 内存覆盖不落盘。
@@ -2969,6 +2980,12 @@ export const startApi = async () => {
       claudeRuntime,
       codexRuntime,
       claudeStreamController,
+      sessionCheckpoints: {
+        checkpoints: checkpointService,
+        claudeRuntime,
+        claudeStream: claudeStreamController,
+        turnCheckpointer,
+      } satisfies SessionCheckpointsDeps,
       acpStreamController,
       codexStreamController,
       piStreamController,

@@ -5129,6 +5129,9 @@ export function useClaudeSession(
         sendToSocket({
           type: "user",
           message: { role: "user", content: [{ type: "text", text }] },
+          // 锚 uuid：CLI 对上行自带 uuid 直接采用 → 同一 id 贯穿 UI 消息 / JSONL / turn
+          // checkpoint 锚（docs/design/checkpoint-rollback.md §3.2）。
+          uuid: crypto.randomUUID(),
         });
       },
       switchModel(model) {
@@ -5932,6 +5935,8 @@ export function useClaudeSession(
       sendToSocket({
         type: "user",
         message: { role: "user", content },
+        // 同上：带附件的新消息同属 turn 起点，锚 uuid 让回滚入口可达。
+        uuid: crypto.randomUUID(),
       });
       pendingAttachmentsRef.current?.clearPendingAttachments?.();
       pendingModelContextRef.current?.clearPendingModelContext?.();

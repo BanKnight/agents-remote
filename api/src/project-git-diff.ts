@@ -20,6 +20,7 @@ import type {
 } from "@agents-remote/shared";
 import { join } from "node:path";
 import { ProjectPathError, resolveProjectRelativePath } from "./project-paths";
+import { runGit, type GitCommandResult } from "./git-runner";
 
 type ProjectGitDiffErrorCode = Extract<
   ApiErrorCode,
@@ -33,12 +34,6 @@ type ProjectGitDiffErrorCode = Extract<
   | "PROJECT_GIT_UNAVAILABLE"
   | "PROJECT_FS_ERROR"
 >;
-
-type GitCommandResult = {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-};
 
 export class ProjectGitDiffError extends Error {
   constructor(
@@ -586,18 +581,7 @@ export class ProjectGitDiffService {
 
   private async gitRaw(projectPath: string, args: string[]): Promise<GitCommandResult> {
     try {
-      const process = Bun.spawn({
-        cmd: ["git", "-C", projectPath, ...args],
-        stderr: "pipe",
-        stdout: "pipe",
-      });
-      const [stdout, stderr, exitCode] = await Promise.all([
-        new Response(process.stdout).text(),
-        new Response(process.stderr).text(),
-        process.exited,
-      ]);
-
-      return { stdout, stderr, exitCode };
+      return await runGit(projectPath, args);
     } catch {
       throw new ProjectGitDiffError("PROJECT_GIT_UNAVAILABLE", "Git is unavailable");
     }

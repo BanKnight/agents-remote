@@ -1779,6 +1779,68 @@ export type SetTerminalSessionSettledResponse = {
   session: TerminalSession;
 };
 
+// -- Turn checkpoint（工作区快照 + 回滚到这条消息）--
+// refs 即索引：`refs/ar/checkpoints/<sessionKey>/<ordinal>/<phase>`，元数据在 commit message，
+// 不建第二存储。决策记录见 docs/design/checkpoint-rollback.md；能力边界调研见
+// docs/research/native-checkpoints.md。
+
+export type SessionCheckpointStatus = "ready" | "missing" | "stale";
+
+export type SessionCheckpointSummary = {
+  /** turn 序数（从 1 起，按会话递增；API 重启后由现有 refs 最大值 +1 续编）。 */
+  ordinal: number;
+  /** 该 checkpoint commit 的 commit-tree sha（乐观并发 `expectedCommit` 的比对源）。 */
+  commit: string;
+  /** 本轮锚 = 用户消息 uuid（客户端生成、CLI 采用）。terminal 形态无上行锚 = null。 */
+  anchorUuid: string | null;
+  /** 本轮最后一条消息 uuid（下一轮对话回滚的 `--resume-session-at` 截断锚）。 */
+  endUuid?: string;
+  at: string;
+  filesChanged: number;
+  insertions: number;
+  deletions: number;
+  status: SessionCheckpointStatus;
+};
+
+export type SessionCheckpointListResponse =
+  | {
+      repository: true;
+      checkpoints: SessionCheckpointSummary[];
+    }
+  | {
+      repository: false;
+      projectName: string;
+      reason: "not_git_repository";
+    };
+
+export type SessionCheckpointDiffFile = {
+  path: string;
+  status: GitDiffFileStatus;
+  diff: string;
+};
+
+export type SessionCheckpointDiffResponse = {
+  repository: true;
+  ordinal: number;
+  files: SessionCheckpointDiffFile[];
+  /** 超过单响应体积上限被截断（剩余文件不内联 diff，只列 path）。 */
+  truncated: boolean;
+};
+
+export type RollbackCheckpointRequest = {
+  restoreFiles: boolean;
+  restoreConversation: boolean;
+  /** 乐观并发：请求方读到的 summary.commit；服务端不符 → CHECKPOINT_CONFLICT。 */
+  expectedCommit: string;
+};
+
+export type RollbackCheckpointResponse = {
+  session: AgentSession;
+  /** 恢复前工作区快照 ref（恢复出错时可用它手动还原）。 */
+  backupRef?: string;
+  warnings: string[];
+};
+
 // -- Chat Sessions（全局会话，不绑项目，pi SDK 嵌入运行时）--
 // 设计见 docs/design-v1/workbench-views.md §3.1。chat 全局、无 projectName，独立 ChatSessionRegistry
 //（不进现有 SessionRegistry，其按 projectName 分片）。Phase 1 仅元数据 CRUD，Phase 3 接 pi 运行时。
@@ -3262,6 +3324,13 @@ export type ClaudeStreamControlRequest = {
       };
 };
 
+/**
+ * 上行 user 帧 uuid 的允许形态。它来自客户端（未信输入），既是 CLI 跨重启去重键，
+ * 又会经 checkpoint 元数据流进 `--resume-session-at` 的 argv——只接受 UUID 字符集，
+ * 非法一律丢弃（api 入口与 checkpoint 读回处共用同一判据）。
+ */
+export const MESSAGE_UUID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
 export type ClaudeStreamClientMessage =
   | {
       type: "user";
@@ -3270,6 +3339,11 @@ export type ClaudeStreamClientMessage =
         role: "user";
         content: Array<{ type: "text"; text: string } | ClaudeUserImageBlock>;
       };
+      // 客户端生成的锚 id。CLI stream-json 输入对自带 uuid 直接采用（print.ts
+      // enqueue({uuid: message.uuid})，跨重启按它去重），于是同一个 id 同时是 JSONL
+      // 消息 uuid、turn checkpoint 锚、UI 消息 id——实时流与历史回放自动对齐，
+      // 全程不读 CLI 私有 JSONL。缺省 = CLI 自生成（旧行为，live echo 用 synthetic uuid）。
+      uuid?: string;
     }
   | ClaudeControlResponse
   | ClaudeStreamControlRequest
@@ -3448,6 +3522,13 @@ export type ApiErrorCode =
   | "MCP_ENABLE_FAILED"
   | "MCP_MARKET_FETCH_FAILED"
   | "WIKI_SLUG_INVALID"
+  | "CHECKPOINT_NOT_FOUND"
+  | "CHECKPOINT_NOT_GIT"
+  | "CHECKPOINT_BUSY"
+  | "CHECKPOINT_CONFLICT"
+  | "CHECKPOINT_CAPTURE_TIMEOUT"
+  | "CHECKPOINT_RESTORE_FAILED"
+  | "CONVERSATION_ROLLBACK_UNAVAILABLE"
   | "SESSION_NOT_CONFIGURED";
 
 export type ApiErrorResponse = {

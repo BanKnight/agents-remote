@@ -18,6 +18,7 @@ import {
   spawnInitialStatus,
 } from "./agent-session-status";
 import { ClaudeSessionRelay } from "./session-relay";
+import type { TurnCheckpointer } from "./turn-checkpointer";
 import {
   SettingsStore,
   activePresetView,
@@ -259,6 +260,11 @@ export function readLastContextUsageFromJsonlFile(
 // 控制请求等待超时：CLI 本地应答毫秒级；上限覆盖 turn 进行中排队等慢场景。
 const CONTEXT_USAGE_CONTROL_TIMEOUT_MS = 5000;
 
+// fork spawn 就绪等待：system.init 到达才算新 JSONL 写完（回滚编排要等它再关 WS，
+// 否则客户端重连会先拿到旧 relay 的完整旧历史）。与客户端 rollback 请求超时
+// （web/src/api/client.ts ROLLBACK_REQUEST_TIMEOUT_MS）留足余量。
+const FORK_READY_TIMEOUT_MS = 20_000;
+
 // 权威上下文占用（control_request{get_context_usage} 应答折算，CLI 2.1.299+）：
 // totalTokens = CLI 自身 /context 口径的已用量（system prompt/tools/memory/messages
 // 合计），maxTokens = autocompact 感知的真实窗口（settings 配置 buffer 时大于模型裸
@@ -344,6 +350,9 @@ type ClaudeProcess = {
   /** turn 状态（OSC 7501 对齐）: 统一会话标量管道第二个标量。spawn 初始 idle，
    *  经 applyStatusSignal 迁移；广播 session_status 帧 + 落盘 metadata（跨重启）。 */
   sessionStatus: AgentSessionStatus;
+  /** 对话回滚 fork spawn 的完成信号：system.init 带不同 session_id 到达 = CLI 已把截断后的
+   *  对话写入新 JSONL，消费时回填新 id + relay 重读 history。 */
+  pendingFork?: boolean;
 };
 
 /** 审批中心登记上下文：ClaudeProcess 已有字段，can_use_tool 登记时随行（registry 无需反查）。 */
@@ -449,6 +458,9 @@ export class ClaudeRuntime implements RuntimeResources {
       timer: ReturnType<typeof setTimeout>;
     }
   >();
+  // fork spawn 的就绪等待方（runtimeKey → resolve）：captureSystemInitFromLine 的 fork
+  // 分支回填新 id + reloadHistory 之后结算，rollbackConversation 才返回。
+  private readonly forkWaiters = new Map<string, () => void>();
   private readonly runDir: string;
   private readonly settingsStore?: SettingsStore;
   private readonly mcpPort?: number;
@@ -481,6 +493,15 @@ export class ClaudeRuntime implements RuntimeResources {
     | null = null;
   // 自动重试状态机：报错停下 → 延迟注入自定义消息（agent-auto-retry.ts）。
   private readonly autoRetry: AutoRetryWatch;
+
+  // Turn 级 checkpoint 编排（T3 学习点③）：beginTurn/noteOutputUuid/endTurn 由
+  // claude-stream（上行 user 帧）与 processStdoutLine（下行 uuid 采集/result 收口）
+  // 调用；setter 注入避免构造签名扩散。turn-checkpointer.ts 是编排单源。
+  private turnCheckpointer: TurnCheckpointer | null = null;
+
+  setTurnCheckpointer(checkpointer: TurnCheckpointer): void {
+    this.turnCheckpointer = checkpointer;
+  }
 
   constructor(runDir: string, settingsStore?: SettingsStore, mcpPort?: number) {
     this.runDir = runDir;
@@ -614,11 +635,84 @@ export class ClaudeRuntime implements RuntimeResources {
       }
     }
     this.autoRetry.destroySession(sessionName);
+    this.turnCheckpointer?.resetSession(sessionName);
 
     const relay = this.relays.get(sessionName);
     if (relay) {
       relay.destroy();
       this.relays.delete(sessionName);
+    }
+  }
+
+  /**
+   * 对话回滚（T3 学习点③）：destroy 当前 CLI → fork 重启。resumeAt 非空 =
+   * `--resume <old> --resume-session-at <resumeAt> --fork-session`（fork 出新 id，
+   * 旧 JSONL 留 orphan——CLI 自身 /rewind 同语义）；null = 截断全部对话（开全新会话，
+   * 不带 --resume/--session-id，CLI 自生成 id 经 system.init 回填）。fork 完成由
+   * captureSystemInitFromLine 消费（新 id 回填 state/registry + relay.reloadHistory）；
+   * 调用方（checkpoint 路由）随后 closeSessionSockets 让客户端重连拿截断后的历史。
+   */
+  async rollbackConversation(
+    sessionName: string,
+    projectPath: string,
+    projectName: string,
+    sessionId: string,
+    oldClaudeSessionId: string,
+    resumeAt: string | null,
+    model?: string,
+    permissionMode?: string,
+    effort?: EffortLevel,
+  ): Promise<void> {
+    await this.close(sessionName, { silent: true });
+    if (resumeAt) {
+      // 先挂等待再 spawn：system.init 可能在 spawnAndStart 的 await 内部就被消费。
+      const ready = new Promise<void>((resolve) => this.forkWaiters.set(sessionName, resolve));
+      try {
+        await this.spawnAndStart(
+          sessionName,
+          projectPath,
+          projectName,
+          sessionId,
+          oldClaudeSessionId,
+          model,
+          permissionMode,
+          effort,
+          undefined,
+          { resumeAt },
+        );
+        await this.awaitForkReady(sessionName, ready);
+      } finally {
+        this.forkWaiters.delete(sessionName);
+      }
+    } else {
+      await this.spawnAndStart(
+        sessionName,
+        projectPath,
+        projectName,
+        sessionId,
+        undefined,
+        model,
+        permissionMode,
+        effort,
+      );
+    }
+  }
+
+  /** 等 fork 的 system.init 落地（新 claudeSessionId 回填 + relay reloadHistory 完成）。 */
+  private async awaitForkReady(sessionName: string, ready: Promise<void>): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        ready,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("fork session did not become ready in time")),
+            FORK_READY_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
     }
   }
 
@@ -843,6 +937,9 @@ export class ClaudeRuntime implements RuntimeResources {
     effort?: EffortLevel,
     /** 重启恢复带入的初始状态(落盘 done/error 存活到被替换);缺省 idle。 */
     initialStatus?: AgentSessionStatus,
+    /** 对话回滚（T3 学习点③）：fork spawn 一次性 override——`--resume <old>
+     *  --resume-session-at <resumeAt> --fork-session`。仅本次 spawn 生效。 */
+    fork?: { resumeAt: string },
   ): Promise<void> {
     const { resolvedModel, resolvedEffort, providerCreds, view } = await this.resolveSpawnInputs(
       model,
@@ -878,6 +975,7 @@ export class ClaudeRuntime implements RuntimeResources {
       providerCreds,
       view,
       mcpArgs,
+      fork,
     );
 
     const generation = this.nextGeneration++;
@@ -900,6 +998,7 @@ export class ClaudeRuntime implements RuntimeResources {
       contextWindow: resolveContextWindow(spawnSafeModel, resolvedAliases),
       resolvedAliases,
       sessionStatus: initialStatus ?? "idle",
+      pendingFork: Boolean(fork),
     });
 
     // Create relay immediately (before stdout starts) so messages aren't lost
@@ -909,7 +1008,9 @@ export class ClaudeRuntime implements RuntimeResources {
     }
     relay = new ClaudeSessionRelay();
     this.relays.set(sessionName, relay);
-    await relay.activate(projectPath, claudeSessionId);
+    // fork spawn 时新 claudeSessionId 未知（system.init 才揭晓）——空激活，等
+    // captureSystemInitFromLine 的 fork 分支回填新 id + relay.reloadHistory。
+    await relay.activate(projectPath, fork ? undefined : claudeSessionId);
 
     // Start reading stdout into relay
     const stdout = proc.stdout;
@@ -969,6 +1070,7 @@ export class ClaudeRuntime implements RuntimeResources {
     provider?: { apiKey: string; baseUrl?: string },
     view?: ModelMappingView,
     mcpArgs: string[] = [],
+    fork?: { resumeAt: string },
   ): BunSubprocess {
     // --model 存量脏值闸：state.model 可能残留旧版 echo 解析进来的显示串（code span
     // 反引号 / (resolved) 注解），直接透传会让 CLI 拿它当模型名请求 → 网关 422。
@@ -987,10 +1089,15 @@ export class ClaudeRuntime implements RuntimeResources {
       ...(safeModel ? ["--model", safeModel] : []),
       // JSONL 存在 = --resume 接续;不存在 = --session-id 全新钉 id(双模式,spawnAndStart
       // 判定)。未钉 claudeSessionId 的存量路径两者都不带(CLI 自生成 id,system.init 捕获)。
+      // fork 回滚：--resume-session-at 语义 = messages.slice(0, index+1) 含锚消息 → 锚必须
+      // 是「上一条消息」（上一 turn endUuid）；--fork-session 保留新 id，旧 JSONL 留 orphan
+      //（CLI 自身 /rewind 同语义，print.ts/sessionRestore.ts 源码核实）。
       ...(claudeSessionId
-        ? resume
-          ? ["--resume", claudeSessionId]
-          : ["--session-id", claudeSessionId]
+        ? fork
+          ? ["--resume", claudeSessionId, "--resume-session-at", fork.resumeAt, "--fork-session"]
+          : resume
+            ? ["--resume", claudeSessionId]
+            : ["--session-id", claudeSessionId]
         : []),
       ...mcpArgs,
     ];
@@ -1147,6 +1254,11 @@ export class ClaudeRuntime implements RuntimeResources {
     this.captureApprovalRequestFromLine(sessionName, parsed);
     this.captureApprovalSettledFromLine(sessionName, parsed);
     this.captureTurnActivityFromLine(sessionName, parsed);
+    // checkpoint 截断锚采集：stdout 每条带 uuid 的真实消息（live echo 不经此处，无
+    // synthetic 污染）。result 帧无 uuid 不影响——锚取最后一个带 uuid 的。
+    if (typeof parsed?.uuid === "string" && parsed.uuid.length > 0) {
+      this.turnCheckpointer?.noteOutputUuid(sessionName, parsed.uuid);
+    }
     this.captureTurnResultFromLine(sessionName, parsed);
     this.autoRetry.handleStdoutLine(
       sessionName,
@@ -1177,8 +1289,20 @@ export class ClaudeRuntime implements RuntimeResources {
       typeof parsed.session_id === "string"
     ) {
       const state = this.processes.get(sessionName);
+      const relay = this.relays.get(sessionName);
       if (state) {
-        if (!state.claudeSessionId) state.claudeSessionId = parsed.session_id;
+        if (state.pendingFork) {
+          // fork 完成：CLI 已把截断后的对话写入新 JSONL（system.init 前完成写入）→
+          // 回填新 id + relay 重读 history 段（回滚编排等此信号后才关 WS，重连发生在
+          // reload 之后）。无条件消费 pendingFork——id 与旧值相同也不能让等待方空等超时。
+          state.pendingFork = false;
+          state.claudeSessionId = parsed.session_id;
+          relay?.reloadHistory(state.projectPath, parsed.session_id);
+          this.forkWaiters.get(sessionName)?.();
+          this.forkWaiters.delete(sessionName);
+        } else if (!state.claudeSessionId) {
+          state.claudeSessionId = parsed.session_id;
+        }
         if (typeof parsed.model === "string") state.model = parsed.model;
         if (typeof parsed.permissionMode === "string") state.permissionMode = parsed.permissionMode;
       }
@@ -1255,10 +1379,13 @@ export class ClaudeRuntime implements RuntimeResources {
     parsed: Record<string, unknown> | null,
   ): void {
     if (parsed?.type === "result") {
+      const isError = isErrorResultLine(parsed);
       this.applyStatusSignal(sessionName, {
         kind: "turn_result",
-        isError: isErrorResultLine(parsed),
+        isError,
       });
+      // endpoint 捕获 fire-and-forget：失败/超时只降级（本轮无快照），不影响状态机。
+      void this.turnCheckpointer?.endTurn(sessionName, isError).catch(() => undefined);
     }
   }
 

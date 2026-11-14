@@ -70,6 +70,13 @@ import {
 } from "../lib/canvas-context-model";
 import { Dialog, DialogContent } from "../components/ui/dialog";
 import {
+  CheckpointEntryButton,
+  CheckpointRollbackDialog,
+  CheckpointUIContext,
+  type CheckpointTarget,
+} from "../components/claude/checkpoint-rollback";
+import { useSessionCheckpoints } from "../hooks/session-checkpoints";
+import {
   ContextUsageIndicator,
   EffortSelector,
   ModelSelector,
@@ -544,6 +551,21 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
 
   const runtime = useExternalStoreRuntime(storeAdapterWithCompact);
 
+  // Turn checkpoint 浮层：会话级单例，目标存 state → 经 context 下发给消息级入口按钮
+  //（frontend-notes §3 结构关系收敛成 state）。快照列表也在会话级订阅一次，逐条消息的
+  // 入口按钮只读 context——每条各挂一个 query 会让订阅方数量随消息数增长。
+  const [checkpointTarget, setCheckpointTarget] = useState<CheckpointTarget | null>(null);
+  const checkpointList = useSessionCheckpoints(projectName, sessionId);
+  const checkpoints = useMemo(
+    () =>
+      checkpointList.data && checkpointList.data.repository ? checkpointList.data.checkpoints : [],
+    [checkpointList.data],
+  );
+  const checkpointUI = useMemo(
+    () => ({ projectName, sessionId, checkpoints, openCheckpoint: setCheckpointTarget }),
+    [projectName, sessionId, checkpoints],
+  );
+
   return (
     <>
       <AssistantRuntimeProvider runtime={runtime}>
@@ -552,112 +574,120 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
             <LiveThinkingTokensContext.Provider value={liveThinkingTokens}>
               <ClaudeCompactContext.Provider value={compactState}>
                 <HtmlRenderContext.Provider value={openRenderTab}>
-                  <div
-                    className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
-                  >
-                    {detail.error instanceof Error ? (
-                      <div className="shrink-0 px-3 py-2">
-                        <p className="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
-                          {detail.error.message}
-                        </p>
-                      </div>
-                    ) : null}
-
-                    <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                      <VirtualizedThreadContent
-                        autoRetryEnabled
-                        loading={loading}
-                        projectName={projectName}
-                        retryInfo={retryInfo}
-                        scrollerApi={scrollerApiRef}
-                        sessionId={sessionId}
-                        offlineCap={!connected}
-                        everConnected={everConnectedRef.current}
-                        deltaEnter={deltaEnter}
-                      />
-
-                      <CompactIndicator />
-                      <div
-                        data-composer-float
-                        // pb 恒含 env(safe-area-inset-bottom) 避让 home indicator——focus 前后 padding 不变，
-                        // 避免 textarea 获焦瞬间因 pb 骤减引发 layout shift。曾用 focus-within:pb- 在获焦时
-                        // 去掉 safe-area 给外部工具栏让位，工具栏回退后该变体成了纯 layout shift 源：iOS 26
-                        // 真机 env≈34px，获焦时 pb 从 42px→8px，absolute bottom-0 锚定使容器顶部+textarea 下移
-                        // 34px，iOS WebKit 据此 ~50% 取消键盘触发（边框亮=focus 成功，键盘不弹）。键盘弹起后
-                        // --composer-keyboard-offset 把浮动区抬到键盘上方，pb 自然成为卡片与键盘间距。桌面 lg:pb-2.5 收尾覆盖。
-                        className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
-                      >
-                        <div
-                          className="pointer-events-auto mx-auto w-full max-w-2xl transition-transform duration-200 ease-out lg:transition-none"
-                          style={{
-                            transform:
-                              "translateY(calc(-1 * var(--composer-keyboard-offset, 0px)))",
-                          }}
-                        >
-                          {tasks.length > 0 && (
-                            <TaskPanel
-                              collapsed={!tasksExpanded}
-                              t={t}
-                              tasks={tasks}
-                              onToggle={() => setTasksExpanded((v) => !v)}
-                            />
-                          )}
-                          {pendingApprovals.length > 0 ? (
-                            <ApprovalTray
-                              approvals={pendingApprovals}
-                              onLocate={(messageIndex) =>
-                                scrollerApiRef.current?.scrollToMessage(messageIndex)
-                              }
-                            />
-                          ) : null}
-                          <ComposerPrimitive.TriggerPopoverRoot>
-                            <ComposerPrimitive.Root>
-                              <ComposerWithInterrupt
-                                opusplanActive={opusplanActive}
-                                currentModel={currentModel}
-                                currentResolved={resolvedModel ?? session?.model}
-                                availableModels={availableModels}
-                                availableModelResolved={availableModelResolved}
-                                modelSwitchVersion={modelSwitchVersion}
-                                permissionMode={permissionMode}
-                                contextUsage={contextUsage}
-                                availablePermissionModes={availablePermissionModes}
-                                projectName={projectName}
-                                sessionId={sessionId}
-                                compactStatus={compactStatus}
-                                pendingInteraction={pendingInteraction}
-                                connected={connected}
-                                onCancel={storeAdapter.onCancel}
-                                currentEffort={session?.effort}
-                                onSelectEffort={onSelectEffort}
-                                attachments={composerAttachments}
-                                canvasContext={canvasCtx}
-                                onRemoveCanvasContext={clearCanvasContext}
-                              />
-                            </ComposerPrimitive.Root>
-                          </ComposerPrimitive.TriggerPopoverRoot>
-                          {aiTitle ? (
-                            <div className="mt-1 flex justify-end px-1">
-                              <span className="select-none max-w-[80%] truncate rounded-md bg-assistant-deep/40 px-2 py-0.5 text-[0.6rem] text-assistant whitespace-nowrap">
-                                {agentName ? (
-                                  <span className="mr-1.5 font-semibold text-assistant/60">
-                                    {agentName}
-                                  </span>
-                                ) : null}
-                                {aiTitle}
-                              </span>
-                            </div>
-                          ) : null}
+                  <CheckpointUIContext.Provider value={checkpointUI}>
+                    <div
+                      className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden ${shellSurfaceClasses.runtimeBody}`}
+                    >
+                      {detail.error instanceof Error ? (
+                        <div className="shrink-0 px-3 py-2">
+                          <p className="rounded-xl bg-error/10 px-3 py-2 text-xs text-error">
+                            {detail.error.message}
+                          </p>
                         </div>
-                      </div>
-                    </ThreadPrimitive.Root>
-                  </div>
+                      ) : null}
+
+                      <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                        <VirtualizedThreadContent
+                          autoRetryEnabled
+                          loading={loading}
+                          projectName={projectName}
+                          retryInfo={retryInfo}
+                          scrollerApi={scrollerApiRef}
+                          sessionId={sessionId}
+                          offlineCap={!connected}
+                          everConnected={everConnectedRef.current}
+                          deltaEnter={deltaEnter}
+                        />
+
+                        <CompactIndicator />
+                        <div
+                          data-composer-float
+                          // pb 恒含 env(safe-area-inset-bottom) 避让 home indicator——focus 前后 padding 不变，
+                          // 避免 textarea 获焦瞬间因 pb 骤减引发 layout shift。曾用 focus-within:pb- 在获焦时
+                          // 去掉 safe-area 给外部工具栏让位，工具栏回退后该变体成了纯 layout shift 源：iOS 26
+                          // 真机 env≈34px，获焦时 pb 从 42px→8px，absolute bottom-0 锚定使容器顶部+textarea 下移
+                          // 34px，iOS WebKit 据此 ~50% 取消键盘触发（边框亮=focus 成功，键盘不弹）。键盘弹起后
+                          // --composer-keyboard-offset 把浮动区抬到键盘上方，pb 自然成为卡片与键盘间距。桌面 lg:pb-2.5 收尾覆盖。
+                          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+var(--composer-gap,0.5rem))] lg:static lg:z-auto lg:px-4 lg:py-2.5 lg:pb-2.5"
+                        >
+                          <div
+                            className="pointer-events-auto mx-auto w-full max-w-2xl transition-transform duration-200 ease-out lg:transition-none"
+                            style={{
+                              transform:
+                                "translateY(calc(-1 * var(--composer-keyboard-offset, 0px)))",
+                            }}
+                          >
+                            {tasks.length > 0 && (
+                              <TaskPanel
+                                collapsed={!tasksExpanded}
+                                t={t}
+                                tasks={tasks}
+                                onToggle={() => setTasksExpanded((v) => !v)}
+                              />
+                            )}
+                            {pendingApprovals.length > 0 ? (
+                              <ApprovalTray
+                                approvals={pendingApprovals}
+                                onLocate={(messageIndex) =>
+                                  scrollerApiRef.current?.scrollToMessage(messageIndex)
+                                }
+                              />
+                            ) : null}
+                            <ComposerPrimitive.TriggerPopoverRoot>
+                              <ComposerPrimitive.Root>
+                                <ComposerWithInterrupt
+                                  opusplanActive={opusplanActive}
+                                  currentModel={currentModel}
+                                  currentResolved={resolvedModel ?? session?.model}
+                                  availableModels={availableModels}
+                                  availableModelResolved={availableModelResolved}
+                                  modelSwitchVersion={modelSwitchVersion}
+                                  permissionMode={permissionMode}
+                                  contextUsage={contextUsage}
+                                  availablePermissionModes={availablePermissionModes}
+                                  projectName={projectName}
+                                  sessionId={sessionId}
+                                  compactStatus={compactStatus}
+                                  pendingInteraction={pendingInteraction}
+                                  connected={connected}
+                                  onCancel={storeAdapter.onCancel}
+                                  currentEffort={session?.effort}
+                                  onSelectEffort={onSelectEffort}
+                                  attachments={composerAttachments}
+                                  canvasContext={canvasCtx}
+                                  onRemoveCanvasContext={clearCanvasContext}
+                                />
+                              </ComposerPrimitive.Root>
+                            </ComposerPrimitive.TriggerPopoverRoot>
+                            {aiTitle ? (
+                              <div className="mt-1 flex justify-end px-1">
+                                <span className="select-none max-w-[80%] truncate rounded-md bg-assistant-deep/40 px-2 py-0.5 text-[0.6rem] text-assistant whitespace-nowrap">
+                                  {agentName ? (
+                                    <span className="mr-1.5 font-semibold text-assistant/60">
+                                      {agentName}
+                                    </span>
+                                  ) : null}
+                                  {aiTitle}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </ThreadPrimitive.Root>
+                    </div>
+                  </CheckpointUIContext.Provider>
                 </HtmlRenderContext.Provider>
               </ClaudeCompactContext.Provider>
             </LiveThinkingTokensContext.Provider>
           </PermissionModesContext.Provider>
         </ClaudeBridgeContext.Provider>
       </AssistantRuntimeProvider>
+      <CheckpointRollbackDialog
+        target={checkpointTarget}
+        onClose={() => setCheckpointTarget(null)}
+        projectName={projectName}
+        sessionId={sessionId}
+      />
       {holder}
     </>
   );
@@ -799,16 +829,19 @@ function UserChatBubble() {
           </div>
         </FullscreenReader>
       ) : null}
-      <ActionBarPrimitive.Root className="absolute right-1 bottom-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* 触屏常显 + 大点击区（frontend-notes §7：opacity-0 基线不受 hover 守卫，
+          宽屏触屏会永久不可见；§31：命中区 ⊇ 视觉）。 */}
+      <ActionBarPrimitive.Root className="absolute right-1 bottom-0 flex items-center gap-0.5 transition-opacity hover-capable:opacity-0 hover-capable:group-hover:opacity-100 touch:opacity-100">
+        <CheckpointEntryButton />
         <button
           type="button"
           onClick={() => setFullscreen(true)}
-          className="cursor-pointer rounded p-1 text-on-surface-muted transition hover:text-on-surface-soft"
+          className="inline-flex cursor-pointer items-center justify-center rounded p-1 text-on-surface-muted transition hover:text-on-surface-soft touch:h-10 touch:w-10"
           aria-label={t("claude.message.expand")}
         >
           <ExpandGlyph />
         </button>
-        <ActionBarPrimitive.Copy className="rounded p-1 text-on-surface-muted hover:text-on-surface-soft transition">
+        <ActionBarPrimitive.Copy className="inline-flex items-center justify-center rounded p-1 text-on-surface-muted hover:text-on-surface-soft transition touch:h-10 touch:w-10">
           <svg className="h-3 w-3" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <rect
               x="5"

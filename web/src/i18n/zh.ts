@@ -454,6 +454,9 @@ export const zh: Record<TranslationKey, string> = {
   "api.agentSessionAutoRetryFailed": "自动重试消息更新失败",
   "api.agentSessionModeSwitchFailed": "会话形态切换失败",
   "api.agentSessionSettleFailed": "会话了结状态更新失败",
+  "api.checkpointListFailed": "本轮改动列表获取失败",
+  "api.checkpointDiffFailed": "本轮改动 diff 获取失败",
+  "api.checkpointRollbackFailed": "回滚执行失败",
   "api.terminalSessionListFailed": "Terminal 会话列表获取失败",
   "api.terminalSessionCreationFailed": "Terminal 会话创建失败",
   "api.terminalSessionDetailFailed": "Terminal 会话详情获取失败",
@@ -744,6 +747,33 @@ export const zh: Record<TranslationKey, string> = {
   "claude.offlineCap": "离线中 · 此后内容将在重连后补齐",
 
   // ── Workbench（三栏工作台外壳）──────────────────────────────
+  // Turn checkpoint（回滚到这条消息）——组件 web/src/components/claude/checkpoint-rollback.tsx。
+  "workbench.checkpoint.viewTurnChanges": "查看本轮改动",
+  "workbench.checkpoint.title": "第 {{ordinal}} 轮改动",
+  "workbench.checkpoint.statsLine": "{{files}} 个文件 · +{{insertions}} −{{deletions}}",
+  "workbench.checkpoint.noChanges": "这一轮没有文件改动",
+  "workbench.checkpoint.diffTruncated": "改动过大，部分文件 diff 未展示",
+  "workbench.checkpoint.diffLoadFailed": "diff 加载失败",
+  "workbench.checkpoint.restoreFiles": "恢复文件到此轮之前",
+  "workbench.checkpoint.restoreConversation": "对话回退到这条消息之前",
+  "workbench.checkpoint.conversationUnavailable": "此会话无可回退的对话快照",
+  "workbench.checkpoint.otherSessionsRunning":
+    "同项目还有 {{count}} 个会话在运行，它们的未提交成果也会被一并恢复",
+  "workbench.checkpoint.busySessionsAffected":
+    "回滚时有 {{count}} 个运行中的会话受影响，请通知对方重新确认文件状态",
+  "workbench.checkpoint.rollback": "执行回滚",
+  "workbench.checkpoint.confirmRollback": "确认回滚",
+  "workbench.checkpoint.confirmTitle": "回滚到第 {{ordinal}} 轮之前？",
+  "workbench.checkpoint.confirmMessage":
+    "将把工作区恢复到第 {{ordinal}} 轮之前，并把对话截断在那里；之后的轮次将被丢弃（自动保留备份）。",
+  "workbench.checkpoint.confirmMessageFilesOnly":
+    "将把工作区恢复到第 {{ordinal}} 轮之前（自动保留备份），对话保持不变。",
+  "workbench.checkpoint.busyWarning": "会话仍在运行，请等本轮结束后再试",
+  "workbench.checkpoint.rollbackDone": "已回滚到第 {{ordinal}} 轮之前",
+  "workbench.checkpoint.conversationRollbackFailed": "文件已恢复，但对话回退失败",
+  "workbench.checkpoint.backupNote": "恢复前已自动备份",
+  "workbench.checkpoint.missing": "该轮快照已不在保留窗口内",
+  "workbench.checkpoint.conflict": "快照已变化，请重新打开后再试",
   "workbench.collapseLeft": "收起左栏",
   "workbench.collapseRight": "收起右栏",
   "workbench.expandLeft": "展开左栏",

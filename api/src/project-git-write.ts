@@ -3,6 +3,7 @@ import { rm, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { ProjectGitDiffService } from "./project-git-diff";
 import { ProjectPathError, isInsideOrSelf, resolveProjectRelativePath } from "./project-paths";
+import { runGit, type GitCommandResult } from "./git-runner";
 
 type ProjectGitWriteErrorCode = Extract<
   ApiErrorCode,
@@ -33,12 +34,6 @@ export class ProjectGitWriteError extends Error {
 
 /** 提交信息长度上限（03m2 必填；防误触超长负载，非协议硬约束）。 */
 const COMMIT_MESSAGE_MAX_LENGTH = 2000;
-
-type GitCommandResult = {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-};
 
 /**
  * Git 写操作服务（v1.4 批5）：03m2 提交（勾选行 git add -- 收编 → git commit -m --
@@ -284,17 +279,7 @@ export class ProjectGitWriteService {
     // L3（security review）：git 缺失 / argv 超长（E2BIG）等裸异常统一转错误码契约
     //（对齐 project-git-diff.ts gitRaw 先例），不落 Bun 默认 opaque 500。
     try {
-      const process = Bun.spawn({
-        cmd: ["git", "-C", projectPath, ...args],
-        stderr: "pipe",
-        stdout: "pipe",
-      });
-      const [stdout, stderr, exitCode] = await Promise.all([
-        new Response(process.stdout).text(),
-        new Response(process.stderr).text(),
-        process.exited,
-      ]);
-      return { stdout, stderr, exitCode };
+      return await runGit(projectPath, args);
     } catch {
       throw new ProjectGitWriteError("PROJECT_GIT_UNAVAILABLE", "Git is unavailable");
     }

@@ -26,6 +26,11 @@ import type {
 } from "@agents-remote/shared";
 import { resolveModeSwitch } from "@agents-remote/shared";
 import type { AgentTuiController } from "./agent-tui";
+import type { ClaudeRuntime } from "./claude-runtime";
+import type { ClaudeStreamController } from "./claude-stream";
+import { CheckpointError, CheckpointService } from "./checkpoint-service";
+import type { TurnCheckpointer } from "./turn-checkpointer";
+import type { RollbackCheckpointRequest, RollbackCheckpointResponse } from "@agents-remote/shared";
 import {
   deleteAgentHistoryEntry,
   getLastAssistantMessage,
@@ -46,6 +51,22 @@ import type { StateStore } from "./state-store";
 
 type SessionResource = "agent-sessions" | "terminal-sessions";
 
+// Turn checkpoint（T3 学习点③）：路由匹配与依赖包类型（8 段路径 `.../checkpoints/:ordinal/diff|rollback`
+// 与 6 段列表路由共用同一 dispatch 入口）。
+export type SessionCheckpointRouteMatch = {
+  verb: "list" | "diff" | "rollback";
+  ordinal: number;
+};
+
+// Turn checkpoint（T3 学习点③）：路由层依赖包（CheckpointService 裁决 + 对话回滚执行器）。
+export type SessionCheckpointsDeps = {
+  checkpoints: CheckpointService;
+  claudeRuntime: ClaudeRuntime;
+  claudeStream: ClaudeStreamController;
+  /** in-flight turn 判据（registry metadata 落盘有延迟，status 可能滞后于真实 turn）。 */
+  turnCheckpointer?: TurnCheckpointer;
+};
+
 export const handleSessionRoutes = async (
   request: Request,
   url: URL,
@@ -54,6 +75,8 @@ export const handleSessionRoutes = async (
   settingsStore?: SettingsStore,
   agentTui?: AgentTuiController,
   stateStore?: StateStore,
+  /** Turn checkpoint（T3 学习点③）：未注入 = 整组 404（消费面对齐 auto-retry 控制端点先例）。 */
+  checkpoints?: SessionCheckpointsDeps,
 ) => {
   const historyMatch = matchAgentHistoryRoute(url.pathname);
   if (historyMatch && request.method === "DELETE" && historyMatch.sessionId) {
@@ -114,6 +137,8 @@ export const handleSessionRoutes = async (
         settingsStore,
         agentTui,
         stateStore,
+        checkpoints,
+        match.checkpoint,
       );
     }
 
@@ -135,7 +160,18 @@ const handleAgentSessionRoute = async (
   settingsStore?: SettingsStore,
   agentTui?: AgentTuiController,
   stateStore?: StateStore,
+  checkpoints?: SessionCheckpointsDeps,
+  checkpoint?: SessionCheckpointRouteMatch,
 ) => {
+  // Turn checkpoint（T3 学习点③）：checkpoints 依赖未装配 = 整组 fall-through 404，
+  //（消费面对齐 auto-retry 控制端点的白名单语义）。
+  if (checkpoint) {
+    if (!checkpoints) {
+      return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+    }
+    return handleCheckpointRoute(request, registry, project, sessionId, checkpoint, checkpoints);
+  }
+
   if (!sessionId && request.method === "GET") {
     const sessions = await registry.listAgentSessions(project.name);
     await Promise.all(
@@ -406,6 +442,213 @@ const handleAgentSessionRoute = async (
   return undefined;
 };
 
+// ── Turn checkpoint 路由（T3 学习点③）─────────────────────────────────
+// GET  .../agent-sessions/:id/checkpoints                        → SessionCheckpointListResponse
+// GET  .../agent-sessions/:id/checkpoints/:ordinal/diff          → SessionCheckpointDiffResponse
+// POST .../agent-sessions/:id/checkpoints/:ordinal/rollback      → RollbackCheckpointResponse
+const handleCheckpointRoute = async (
+  request: Request,
+  registry: SessionRegistry,
+  project: { name: string; path: string },
+  sessionId: string | undefined,
+  route: SessionCheckpointRouteMatch,
+  deps: SessionCheckpointsDeps,
+): Promise<Response> => {
+  if (!sessionId) {
+    return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+  }
+  const metadata = await registry.getAgentMetadata(project.name, sessionId);
+  if (!metadata) {
+    return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+  }
+  // 一律用路由层 Project-safe resolver 复检过的 `project.path`，不用持久化的
+  // `metadata.projectPath`（项目被移动/替换后两者可能漂移，而下游是 restore/clean 级
+  // 破坏性操作）。
+  const projectPath = project.path;
+
+  // 路径解析不看 method：三个 verb 各自钉死方法，否则 POST 到列表路径会当查询执行。
+  if (route.verb === "list") {
+    if (request.method !== "GET") {
+      return jsonError("SESSION_METADATA_ERROR", "checkpoints requires GET", 405);
+    }
+    return Response.json(await deps.checkpoints.listCheckpoints(projectPath, sessionId));
+  }
+
+  if (route.verb === "diff") {
+    if (request.method !== "GET") {
+      return jsonError("SESSION_METADATA_ERROR", "checkpoint diff requires GET", 405);
+    }
+    try {
+      return Response.json(await deps.checkpoints.turnDiff(projectPath, sessionId, route.ordinal));
+    } catch (error) {
+      return checkpointErrorResponse(error);
+    }
+  }
+
+  if (request.method !== "POST") {
+    return jsonError("SESSION_METADATA_ERROR", "rollback requires POST", 405);
+  }
+  const body = await readJson<RollbackCheckpointRequest>(request);
+  if (!body.restoreFiles && !body.restoreConversation) {
+    return jsonError(
+      "SESSION_METADATA_ERROR",
+      "rollback requires restoreFiles or restoreConversation",
+      400,
+    );
+  }
+  // busy 闸：working/blocked 绝不回滚（turn 在飞、CLI 上下文在变、文件正被 agent 触碰）。
+  // in-flight 作为第二判据：metadata 落盘滞后，刚起 turn 的会话 status 可能还是 idle。
+  if (
+    metadata.status === "working" ||
+    metadata.status === "blocked" ||
+    deps.turnCheckpointer?.hasInFlight(metadata.runtimeKey) === true
+  ) {
+    return jsonError(
+      "CHECKPOINT_BUSY",
+      "Session is working; rollback requires an idle session",
+      409,
+    );
+  }
+  // 目标裁决 + 乐观并发：请求方的 `expectedCommit` 是它读到的**本轮 endpoint**（列表
+  // summary 的 commit），不是恢复目标（baseline 是服务端裁决出来的另一棵树）——比对
+  // endpoint 才能发现 prune/外改；拿它跟 baseline 比会恒冲突。
+  const endpoint = await deps.checkpoints.resolveTurnEndpoint(
+    projectPath,
+    sessionId,
+    route.ordinal,
+  );
+  if (!endpoint) {
+    return jsonError("CHECKPOINT_NOT_FOUND", "No snapshot to restore for this turn", 404);
+  }
+  if (body.expectedCommit !== endpoint) {
+    return jsonError("CHECKPOINT_CONFLICT", "Checkpoint changed since it was read", 409);
+  }
+  const target = await deps.checkpoints.resolveRollbackTarget(
+    projectPath,
+    sessionId,
+    route.ordinal,
+  );
+  if (!target) {
+    return jsonError("CHECKPOINT_NOT_FOUND", "No snapshot to restore for this turn", 404);
+  }
+
+  const warnings: string[] = [];
+  let backupRef: string | undefined;
+
+  // 能力前置闸：必须在任何不可逆动作之前（文件恢复后才发现对话不可用 = 已改工作区
+  // 却报 400，客户端以为整体失败）。仅 claude chat 形态；terminal 无上行锚 uuid、
+  // 其它 provider 未接入——能力位 providerCanRollbackConversation 本批只 claude。
+  // 截断锚同在此处解析：ordinal>1 却无上轮 endUuid（上轮捕获降级）同样是「对话回滚
+  // 不可用」，与形态判定同一语义层，必须一起挡在文件恢复之前。
+  let conversationAnchor: string | null = null;
+  if (body.restoreConversation) {
+    if (
+      metadata.provider !== "claude" ||
+      metadata.mode === "terminal" ||
+      !metadata.claudeSessionId
+    ) {
+      return jsonError(
+        "CONVERSATION_ROLLBACK_UNAVAILABLE",
+        "Conversation rollback requires a claude chat session",
+        400,
+      );
+    }
+    conversationAnchor = await deps.checkpoints.resolveConversationAnchor(
+      projectPath,
+      sessionId,
+      route.ordinal,
+    );
+    if (route.ordinal > 1 && conversationAnchor === null) {
+      return jsonError(
+        "CONVERSATION_ROLLBACK_UNAVAILABLE",
+        "Previous turn has no conversation anchor",
+        400,
+      );
+    }
+  }
+
+  // 1. 文件恢复（先文件——对话 fork 失败时文件已就位、可对对话单独重试）。
+  if (body.restoreFiles) {
+    try {
+      const result = await deps.checkpoints.restoreTo(
+        projectPath,
+        sessionId,
+        target.ordinal,
+        target.phase,
+        new Date().toISOString(),
+      );
+      backupRef = result.backupRef;
+    } catch (error) {
+      return checkpointErrorResponse(error);
+    }
+  }
+
+  // 2. 对话回滚（能力与截断锚已在前置闸校验；局部 const 承接收窄，跨 if 块 TS 不再 narrow）。
+  const claudeSessionId = metadata.claudeSessionId;
+  if (body.restoreConversation && claudeSessionId) {
+    try {
+      await deps.claudeRuntime.rollbackConversation(
+        metadata.runtimeKey,
+        projectPath,
+        project.name,
+        sessionId,
+        claudeSessionId,
+        conversationAnchor,
+        metadata.modelAlias ?? metadata.model,
+        metadata.permissionMode,
+        metadata.effort,
+      );
+    } catch (error) {
+      // 文件已就位：对话失败以 warning 显式报告，不整体报错（文件恢复是独立有效成果）。
+      warnings.push("conversation_rollback_failed");
+      console.error("[checkpoint] conversation rollback failed", error);
+    }
+    // 关 WS → 各端自动重连：新 relay 以截断后的 JSONL 重放（switchEffort 先例）。
+    deps.claudeStream.closeSessionSockets(metadata.runtimeKey);
+  }
+
+  // 3. 同项目其它 working 会话警示（共享工作区，恢复会波及其未提交成果；不阻断——
+  //    用户已在确认框看到警示并强确认）。
+  const sessions = await registry.listAgentSessions(project.name);
+  for (const s of sessions) {
+    if (s.id !== sessionId && (s.status === "working" || s.status === "blocked")) {
+      warnings.push(`busy_session:${s.id}`);
+    }
+  }
+
+  const session = await registry.getAgentSession(project.name, sessionId);
+  if (!session) {
+    return jsonError("SESSION_NOT_FOUND", "Agent session not found", 404);
+  }
+  const response: RollbackCheckpointResponse = {
+    session,
+    ...(backupRef ? { backupRef } : {}),
+    warnings,
+  };
+  return Response.json(response);
+};
+
+// 对外文案白名单：git stderr / 服务器绝对路径只落服务端日志，不回显（project-boundary）。
+const CHECKPOINT_ERROR_MESSAGES: Record<string, string> = {
+  CHECKPOINT_NOT_FOUND: "No snapshot to restore for this turn",
+  CHECKPOINT_NOT_GIT: "Project is not a git worktree",
+  CHECKPOINT_CAPTURE_TIMEOUT: "Snapshot capture timed out",
+  CHECKPOINT_RESTORE_FAILED: "Restore failed; a backup was kept",
+};
+
+const checkpointErrorResponse = (error: unknown): Response => {
+  if (error instanceof CheckpointError) {
+    const status = error.code === "CHECKPOINT_NOT_FOUND" ? 404 : 500;
+    console.error(`[checkpoint] ${error.code}: ${error.message}`);
+    return jsonError(
+      error.code,
+      CHECKPOINT_ERROR_MESSAGES[error.code] ?? "Checkpoint operation failed",
+      status,
+    );
+  }
+  throw error;
+};
+
 const handleTerminalSessionRoute = async (
   request: Request,
   registry: SessionRegistry,
@@ -562,7 +805,14 @@ const handleDeleteAgentHistory = async (
   return Response.json({ ok: true } satisfies DeleteAgentHistoryResponse);
 };
 
-const matchSessionRoute = (pathname: string) => {
+type SessionRouteMatch = {
+  projectName: string;
+  resource: SessionResource;
+  sessionId?: string;
+  checkpoint?: SessionCheckpointRouteMatch;
+};
+
+const matchSessionRoute = (pathname: string): SessionRouteMatch | undefined => {
   const segments = pathname.split("/").filter(Boolean);
 
   if (segments[0] !== "api" || segments[1] !== "projects") {
@@ -585,6 +835,15 @@ const matchSessionRoute = (pathname: string) => {
     return sessionId ? { projectName, resource, sessionId } : undefined;
   }
 
+  // 6 段 = session/checkpoints（列表）或 session/{action}；terminal-sessions 的
+  // checkpoints 由 handler fall-through 404。
+  if (segments.length === 6 && segments[5] === "checkpoints") {
+    const sessionId = decodePathSegment(segments[4]);
+    return sessionId
+      ? { projectName, resource, sessionId, checkpoint: { verb: "list", ordinal: 0 } }
+      : undefined;
+  }
+
   // 6 段 = session/{action}；terminal-sessions 的 auto-retry 由 handler fall-through 404。
   if (
     segments.length === 6 &&
@@ -596,6 +855,20 @@ const matchSessionRoute = (pathname: string) => {
   ) {
     const sessionId = decodePathSegment(segments[4]);
     return sessionId ? { projectName, resource, sessionId } : undefined;
+  }
+
+  // 8 段 = session/checkpoints/:ordinal/{diff|rollback}。ordinal 白名单数字。
+  const verb = segments[7];
+  if (
+    segments.length === 8 &&
+    segments[5] === "checkpoints" &&
+    /^\d+$/.test(segments[6] ?? "") &&
+    (verb === "diff" || verb === "rollback")
+  ) {
+    const sessionId = decodePathSegment(segments[4]);
+    return sessionId
+      ? { projectName, resource, sessionId, checkpoint: { verb, ordinal: Number(segments[6]) } }
+      : undefined;
   }
 
   return undefined;
