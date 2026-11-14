@@ -618,15 +618,18 @@ export class ClaudeStreamController {
     await this.claudeRuntime.write(runtimeKey, JSON.stringify(frame) + "\n");
     // 与 WS message() user 分支同款：活动时间戳 + live echo（当前与未来订阅者都看得到这条
     // 注入消息——JSONL 由 CLI 自己写，此处不伪造历史；echo 复用 anchorUuid 不再造 synthetic）。
-    // turn checkpoint baseline 同款 fire-and-forget（projectPath 直接取 metadata，无需现查）。
-    void this.turnCheckpointer
-      ?.beginTurn({
-        runtimeKey,
-        sessionId,
-        projectPath: metadata.projectPath ?? "",
-        anchorUuid,
-      })
-      .catch(() => undefined);
+    // turn checkpoint baseline 同款 fire-and-forget；缺路径（数据不完整）与 beginTurnCheckpoint
+    // 同语义：不占 ordinal，静默跳过。
+    if (metadata.projectPath) {
+      void this.turnCheckpointer
+        ?.beginTurn({
+          runtimeKey,
+          sessionId,
+          projectPath: metadata.projectPath,
+          anchorUuid,
+        })
+        .catch(() => undefined);
+    }
     void this.sessionRegistry.recordActivity(sessionId);
     const echo = JSON.stringify({
       ...frame,

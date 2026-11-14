@@ -57,7 +57,14 @@ export class TurnCheckpointer {
 
     let base = this.lastOrdinal.get(input.runtimeKey);
     if (base === undefined) {
-      base = await this.deps.checkpoints.maxOrdinal(input.projectPath, input.sessionId);
+      try {
+        base = await this.deps.checkpoints.maxOrdinal(input.projectPath, input.sessionId);
+      } catch {
+        // 扫描失败（git 环境异常等）：放弃本轮捕获并清占位——占位残留会让后续上行帧
+        // 被误判为排队消息，直到下一次 result 收口才自愈。
+        this.inFlight.delete(input.runtimeKey);
+        return;
+      }
       this.lastOrdinal.set(input.runtimeKey, base);
     }
     // 扫描期间 CLI 可能被销毁/respawn（resetSession 清掉占位）——此时本 turn 已作废，

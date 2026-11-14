@@ -320,3 +320,36 @@ test("capture failure never propagates: beginTurn/endTurn both resolve", async (
   });
   await tc.endTurn(RUNTIME, false);
 });
+
+test("maxOrdinal failure releases the placeholder so later frames are not mistaken as queued", async () => {
+  const failing = {
+    capture: () => Promise.reject(new Error("boom")),
+    prune: () => Promise.reject(new Error("boom")),
+    maxOrdinal: () => Promise.reject(new Error("git exploded")),
+  } as unknown as CheckpointService;
+  const tc = new TurnCheckpointer({ checkpoints: failing, now });
+
+  await tc.beginTurn({
+    runtimeKey: RUNTIME,
+    sessionId: SESSION,
+    projectPath: join(root, "demo"),
+    anchorUuid: "a1",
+  });
+  // 占位必须已清：残留会让下一帧上行被当成排队消息、丢掉下一轮的 checkpoint。
+  expect(tc.hasInFlight(RUNTIME)).toBe(false);
+
+  // 清理后下一轮照常分配 ordinal（从缓存/扫描续编）。
+  const recovered = {
+    capture: async () => ({ commit: "c" }),
+    prune: async () => undefined,
+    maxOrdinal: async () => 0,
+  } as unknown as CheckpointService;
+  const tc2 = new TurnCheckpointer({ checkpoints: recovered, now });
+  await tc2.beginTurn({
+    runtimeKey: RUNTIME,
+    sessionId: SESSION,
+    projectPath: join(root, "demo"),
+    anchorUuid: "a2",
+  });
+  expect(tc2.hasInFlight(RUNTIME)).toBe(true);
+});
