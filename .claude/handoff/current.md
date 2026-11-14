@@ -81,7 +81,7 @@ Turn 级 checkpoint（隐藏 git refs）完整闭环已落地：每轮 turn 前�
 
 ## 挂账（非本批）
 
-- settle 批（`16c9911`）待 push + 真机验收。
+- settle 批（`16c9911`，已推送）待真机验收。
 - settle 搜索结果不含 settled（inbox 2026-11-13）。
 - probe-fab.mjs 过期断言（5 FAIL）待拍板重构/退役。
 - 技能更新检测服务端慢（逐 repo 串行拉 GitHub Trees）。
