@@ -5,6 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { AuthService } from "./auth";
 import { ClaudeRuntime } from "./claude-runtime";
 import { createFetchHandler } from "./index";
+import { McpCapabilitiesStore } from "./mcp-capabilities-store";
 import { ProjectCanvasService } from "./project-canvas";
 import { ProjectFilesService } from "./project-files";
 import { ProjectGitDiffService } from "./project-git-diff";
@@ -42,11 +43,17 @@ const createTestHandler = () => {
   const projectPagesService = new ProjectPagesService(root);
   const projectWikiService = new ProjectWikiService(root);
   const projectCanvasService = new ProjectCanvasService(root);
+  // 能力开关内部状态落 tmp；测试用 mcpCapabilitiesStore 直写（不再依赖项目 mcp.json）。
+  const mcpCapabilitiesStore = new McpCapabilitiesStore({
+    path: join(root, ".capabilities.json"),
+    projectsRoot: root,
+  });
 
   return {
     auth,
     sessionRegistry,
     projectWikiService,
+    mcpCapabilitiesStore,
     handler: createFetchHandler(auth, {
       projectFilesService,
       projectGitDiffService,
@@ -56,6 +63,7 @@ const createTestHandler = () => {
       projectService,
       projectsRoot: root,
       sessionRegistry,
+      mcpCapabilitiesStore,
     }),
   };
 };
@@ -1077,7 +1085,7 @@ test("createFetchHandler serves wiki index and single page (token-guarded, read-
 
 test("createFetchHandler serves MCP ui resource (token-guarded, ui-gated)", async () => {
   await mkdir(join(root, "demo"));
-  const { auth, handler } = createTestHandler();
+  const { auth, handler, mcpCapabilitiesStore } = createTestHandler();
   const headers = authHeader(auth);
 
   // 鉴权在前:无 token → 401。
@@ -1087,7 +1095,7 @@ test("createFetchHandler serves MCP ui resource (token-guarded, ui-gated)", asyn
   );
   expect(blocked.status).toBe(401);
 
-  // ui 未开(无 mcp.json)→ 404(不暴露原因)。
+  // ui 未开(内部状态无记录 → 惰性导入全关)→ 404(不暴露原因)。
   const disabled = await handler(
     new Request("http://localhost/api/projects/demo/mcp-ui-resource?uri=ui://ar-hub/wiki-page", {
       headers,
@@ -1097,11 +1105,7 @@ test("createFetchHandler serves MCP ui resource (token-guarded, ui-gated)", asyn
   expect(disabled.status).toBe(404);
 
   // 开 ui → 200 { mimeType, html }。
-  await mkdir(join(root, "demo", ".agents-remote"), { recursive: true });
-  await writeFile(
-    join(root, "demo", ".agents-remote", "mcp.json"),
-    JSON.stringify({ capabilities: { ui: true } }),
-  );
+  await mcpCapabilitiesStore.set("demo", "ui", true);
   const ok = await handler(
     new Request("http://localhost/api/projects/demo/mcp-ui-resource?uri=ui://ar-hub/wiki-page", {
       headers,
@@ -1169,7 +1173,7 @@ test("createFetchHandler serves MCP ui resource (token-guarded, ui-gated)", asyn
 
 test("createFetchHandler proxies MCP app tools/call (token-guarded, ui-gated, allowlisted)", async () => {
   await mkdir(join(root, "demo"));
-  const { auth, handler, projectWikiService } = createTestHandler();
+  const { auth, handler, projectWikiService, mcpCapabilitiesStore } = createTestHandler();
   await projectWikiService.writePage("demo", "intro", {
     title: "Introduction",
     content: "# Hello\n\nworld",
@@ -1193,16 +1197,12 @@ test("createFetchHandler proxies MCP app tools/call (token-guarded, ui-gated, al
   );
   expect(blocked.status).toBe(401);
 
-  // ui 未开(无 mcp.json)→ 404(不暴露原因)。
-  const disabled = await call({ name: "wiki_read_page", arguments: { slug: "intro" } });
+  // ui 未开(内部状态无记录 → 惰性导入全关)→ 404(不暴露原因)。
+  const disabled = await call({ name: "wiki_read", arguments: { slug: "intro" } });
   expect(disabled.status).toBe(404);
 
   // 开 ui。
-  await mkdir(join(root, "demo", ".agents-remote"), { recursive: true });
-  await writeFile(
-    join(root, "demo", ".agents-remote", "mcp.json"),
-    JSON.stringify({ capabilities: { ui: true } }),
-  );
+  await mcpCapabilitiesStore.set("demo", "ui", true);
 
   // 白名单外(即使页面存在)→ 404。
   const unknownTool = await call({ name: "fs_read", arguments: { path: "/etc" } });
@@ -1212,7 +1212,7 @@ test("createFetchHandler proxies MCP app tools/call (token-guarded, ui-gated, al
   expect(protoTool.status).toBe(404);
 
   // 白名单内 + 页面存在 → CallToolResult 形状(content + structuredContent,与 hub 工具同包装)。
-  const ok = await call({ name: "wiki_read_page", arguments: { slug: "intro" } });
+  const ok = await call({ name: "wiki_read", arguments: { slug: "intro" } });
   expect(ok.status).toBe(200);
   const okJson = await ok.json();
   expect(okJson.content).toEqual([{ type: "text", text: expect.any(String) }]);
@@ -1225,13 +1225,13 @@ test("createFetchHandler proxies MCP app tools/call (token-guarded, ui-gated, al
   });
 
   // 白名单内但页面不存在 → ProjectWikiError NOT_FOUND → 404。
-  const missingPage = await call({ name: "wiki_read_page", arguments: { slug: "nope" } });
+  const missingPage = await call({ name: "wiki_read", arguments: { slug: "nope" } });
   expect(missingPage.status).toBe(404);
   expect((await missingPage.json()).error.code).toBe("PROJECT_FILE_NOT_FOUND");
 
   // project 不存在 → 404。
   const missingProject = await call(
-    { name: "wiki_read_page", arguments: { slug: "intro" } },
+    { name: "wiki_read", arguments: { slug: "intro" } },
     "no-such-project",
   );
   expect(missingProject.status).toBe(404);
@@ -1246,7 +1246,7 @@ test("createFetchHandler proxies MCP app tools/call (token-guarded, ui-gated, al
 
 test("createFetchHandler proxies MCP app read_file and git_log tools", async () => {
   await mkdir(join(root, "demo"));
-  const { auth, handler } = createTestHandler();
+  const { auth, handler, mcpCapabilitiesStore } = createTestHandler();
   await writeFile(join(root, "demo", "notes.txt"), "# Hello\n\nworld");
   await writeFile(join(root, "demo", "pic.png"), "not-a-real-png");
   const headers = authHeader(auth);
@@ -1261,11 +1261,7 @@ test("createFetchHandler proxies MCP app read_file and git_log tools", async () 
     );
 
   // 开 ui(与 wiki 代理用例同款)。
-  await mkdir(join(root, "demo", ".agents-remote"), { recursive: true });
-  await writeFile(
-    join(root, "demo", ".agents-remote", "mcp.json"),
-    JSON.stringify({ capabilities: { ui: true } }),
-  );
+  await mcpCapabilitiesStore.set("demo", "ui", true);
 
   // read_file text 分支 → 200 CallToolResult(file-preview structuredContent)。
   const ok = await call({ name: "read_file", arguments: { path: "notes.txt" } });
@@ -1300,7 +1296,7 @@ test("createFetchHandler proxies MCP app read_file and git_log tools", async () 
 
 test("createFetchHandler proxies canvas tools (create/read/apply + revision conflict as 409)", async () => {
   await mkdir(join(root, "demo"));
-  const { auth, handler } = createTestHandler();
+  const { auth, handler, mcpCapabilitiesStore } = createTestHandler();
   const headers = authHeader(auth);
   const call = (body: unknown) =>
     handler(
@@ -1312,11 +1308,7 @@ test("createFetchHandler proxies canvas tools (create/read/apply + revision conf
       { upgrade: () => false },
     );
 
-  await mkdir(join(root, "demo", ".agents-remote"), { recursive: true });
-  await writeFile(
-    join(root, "demo", ".agents-remote", "mcp.json"),
-    JSON.stringify({ capabilities: { ui: true } }),
-  );
+  await mcpCapabilitiesStore.set("demo", "ui", true);
 
   // create → 200 CallToolResult(canvas-doc structuredContent)。
   const created = await call({

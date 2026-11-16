@@ -124,7 +124,7 @@ test("MCP Apps card: template host + handshake locale + tools/call refresh + ui/
   // Session detail / list / overview mocks（共用 helper）。
   await setupMcpSession(page, fakeSessionId, "Claude Agent (e2e-mcp-app)");
 
-  // WS mock：窗口帧 + wiki_read_page 流帧；收集客户端上行（ui/message 确认后的
+  // WS mock：窗口帧 + wiki_read 流帧；收集客户端上行（ui/message 确认后的
   // bridge.sendMessage 应在此出现为 {type:"user"} 帧）。
   const sentFrames: Array<Record<string, unknown>> = [];
   await page.routeWebSocket(
@@ -157,7 +157,7 @@ test("MCP Apps card: template host + handshake locale + tools/call refresh + ui/
               {
                 type: "tool_use",
                 id: "tu-e2e-1",
-                name: "mcp__ar-hub__wiki_read_page",
+                name: "mcp__ar-hub__wiki_read",
                 input: { slug: "intro" },
               },
             ],
@@ -457,7 +457,7 @@ test("MCP Apps card: in-flow height clamp + fullscreen enlarge", async ({ page }
               {
                 type: "tool_use",
                 id: "tu-e2e-tall",
-                name: "mcp__ar-hub__wiki_read_page",
+                name: "mcp__ar-hub__wiki_read",
                 input: { slug: "intro" },
               },
             ],

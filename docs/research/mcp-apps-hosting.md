@@ -5,7 +5,7 @@
 
 ## 1. 背景
 
-agents-remote 是网页控制平面，远程管理服务器上的 Agent 会话。hub（ar-hub，API 进程内 loopback MCP server）已供 wiki 能力域工具；本批把「Agent 会话在网页端的呈现」从纯文本流升级为**宿主 MCP Apps**：Agent 调用 display tool 时，网页端渲染结构化 UI 卡片（首个场景 = wiki_read_page 的 wiki 页视图），而非降级的 JSON 文本。
+agents-remote 是网页控制平面，远程管理服务器上的 Agent 会话。hub（ar-hub，API 进程内 loopback MCP server）已供 wiki 能力域工具；本批把「Agent 会话在网页端的呈现」从纯文本流升级为**宿主 MCP Apps**：Agent 调用 display tool 时，网页端渲染结构化 UI 卡片（首个场景 = wiki_read 的 wiki 页视图，时名 wiki_read_page），而非降级的 JSON 文本。
 
 两条协议线索：
 
@@ -53,12 +53,12 @@ skills（本地文件）与 MCP Apps（协议分发）是两条正交轨道：
 
 ## 6. UI 供给与数据通道（本批架构核心）
 
-CLI 不透传 `_meta`（S1 实测：tool_use block 无 _meta）→ 宿主无法从流内感知 UI 关联，必须走 **display tool 名单**：宿主按 tool 名（`mcp__ar-hub__wiki_read_page`）+ structuredContent.kind（`wiki-page`）双条件判定，未知形态回退通用 tool 卡。
+CLI 不透传 `_meta`（S1 实测：tool_use block 无 _meta）→ 宿主无法从流内感知 UI 关联，必须走 **display tool 名单**：宿主按 tool 名（现名 `mcp__ar-hub__wiki_read`，历史名 `mcp__ar-hub__wiki_read_page` 渲染注册表双键兼容——渐进式披露批改名，见 `docs/design/mcp-progressive-disclosure.md`）+ structuredContent.kind（`wiki-page`）双条件判定，未知形态回退通用 tool 卡。
 
 数据流全链（已实现）：
 
 ```
-hub wiki_read_page（ui 开时带 _meta + structuredContent）
+hub wiki_read（时名 wiki_read_page；ui 开时带 _meta + structuredContent）
   → CLI tool_use_result.structuredContent 原样透传（user 帧顶层 envelope，唯一通道）
   → normalizeChatStream：part.structuredResult（既有管道）
   → renderChatStream：envelope 带 structuredContent 键才投影进卡片 metadata

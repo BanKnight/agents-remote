@@ -499,7 +499,7 @@ const RICH_KIND_JS =
       if (lastData && lastData.kind === "file-preview") {
         return { name: "read_file", arguments: { path: filePath } };
       }
-      return { name: "wiki_read_page", arguments: { slug: slug } };
+      return { name: "wiki_read", arguments: { slug: slug } };
     };
     // 追问前缀同理:file-preview 用文件语境,wiki 回落基座默认(spec 常量)。
     var baseAskPrefix = getAskPrefix;

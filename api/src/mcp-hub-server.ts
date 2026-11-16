@@ -3,7 +3,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { homedir } from "node:os";
 import { z } from "zod";
-import type { CanvasElement } from "@agents-remote/shared";
+import type { CanvasElement, McpCapability } from "@agents-remote/shared";
 import {
   CANVAS_APP_URI,
   FILE_PREVIEW_UI_URI,
@@ -14,7 +14,8 @@ import {
   SETTINGS_PREVIEW_UI_URI,
   WIKI_PAGE_UI_URI,
 } from "./mcp-app-templates.js";
-import { readProjectMcpConfig } from "./mcp-config.js";
+import type { McpCapabilitiesStore } from "./mcp-capabilities-store.js";
+import { buildArHubInstructions, domainGuideUri, MCP_DOMAINS } from "./mcp-domains.js";
 import {
   collectProjectSkills,
   decodeSkillCursor,
@@ -35,7 +36,7 @@ import { ProjectGitDiffService } from "./project-git-diff.js";
 import { ProjectFilesService } from "./project-files.js";
 import { ProjectWikiService } from "./project-wiki.js";
 import { listProjectMcpServers } from "./mcp-management.js";
-import { registerAdminTools, type McpAdminDeps } from "./mcp-admin-tools.js";
+import { registerAdminTools, requestManageApproval, type McpAdminDeps } from "./mcp-admin-tools.js";
 import type { SessionRegistry } from "./session-registry.js";
 
 /**
@@ -49,12 +50,15 @@ import type { SessionRegistry } from "./session-registry.js";
  * - 安全世界:wiki_* 工具 handler 从闭包拿 project,再过 wikiService 内部 resolver(不信任快照)。
  * - Origin/Host 校验:防 DNS rebinding,只接受 loopback。
  *
- * 能力域工具按 per-project mcp.json 的 capabilities 开关注册(wiki:list/read/write;
- * ui:MCP Apps 扩展声明 + `ui://ar-hub/*` 资源供给 + wiki_read_page 的 UI 关联;
- * skills:SEP-2640 扩展声明 + skills/list-get + skill:// 资源读取,数据源 = 本地
- * skills 同一批磁盘文件,见 mcp-skills.ts);
+ * 渐进式披露四层(2026-11-16 起;状态源 = McpCapabilitiesStore,不再是项目 mcp.json):
+ * L0 `instructions` 常驻能力菜单(每请求按状态拼装) / L1 `guide://<domain>` 域指南资源
+ * (恒注册,按需读) / L2 `capability_list`+`capability_set` 状态工具(恒注册) /
+ * L3 操作工具(wiki 四工具恒注册+运行时门控;ui/skills/admin 按开关注册面门控)。
+ * ui = MCP Apps 扩展声明 + `ui://ar-hub/*` 资源供给 + wiki_read 的 display 升级;
+ * skills = SEP-2640 扩展声明 + skills/list-get + skill:// 资源读取(数据源 = 本地
+ * skills 同一批磁盘文件,见 mcp-skills.ts)。
  * 未开启的 project 仍是空壳(agent 自带文件工具且 cwd=projectPath,基线文件读写不进 hub)。
- * 后续能力域(browser 等)按同一 capabilities 开关在此扩展。
+ * 后续能力域(browser 等)在 mcp-domains.ts 表里加一行并按同一模式扩展。
  *
  * 定位见 docs/research/mcp-hub-positioning.md。
  */
@@ -83,6 +87,8 @@ export type StartMcpHubServerOptions = {
   // admin capability（跨项目观察/管理）依赖。可选:不注入则 admin 开了也不注册工具
   // (测试可只测既有面)。
   adminDeps?: McpAdminDeps;
+  // 能力域开关的 ar-hub 内部状态（渐进式披露批）：取代 mcp.json 真相源。
+  capabilitiesStore: McpCapabilitiesStore;
 };
 
 const MCP_PATH_PREFIX = "/mcp/";
@@ -317,17 +323,14 @@ export const canvasElementSummary = (element: CanvasElement): Record<string, unk
  */
 export const readSettingsPreviewData = async (
   projectsRoot: string,
+  capabilitiesStore: McpCapabilitiesStore,
   project: string,
 ): Promise<{
   capabilities: Partial<Record<string, boolean>> | undefined;
   servers: { name: string; type: string }[];
 }> => {
-  let capabilities: Partial<Record<string, boolean>> | undefined;
-  try {
-    capabilities = (await readProjectMcpConfig(projectsRoot, project))?.capabilities;
-  } catch {
-    capabilities = {};
-  }
+  // 数据源 = ar-hub 内部状态（渐进式披露批起 mcp.json 仅作惰性导入源）。
+  const capabilities = await capabilitiesStore.get(project);
   let servers: { name: string; type: string }[] = [];
   try {
     const listed = await listProjectMcpServers(projectsRoot, project);
@@ -384,11 +387,28 @@ const wikiErrorResponse = (error: unknown) => ({
 });
 
 /**
- * 注册 wiki 能力域三工具(list/read/write)。handler 闭包捕获 project + wikiService,
- * wikiService 每方法内部独立过 resolver(不信任闭包传入的 project 已校验,纵深防御)。
- * page 对象 JSON 序列化进 content text(agent 可直接消费)。
+ * 能力域关闭时的引导错误（运行时门控标准响应）：agent 照指引开启后重试，不把
+ * 「功能未开启」当失败。文案含 capability_set 调用示例与本域 guide 资源指引。
+ */
+const capabilityDisabledResponse = (capability: McpCapability) => ({
+  content: [
+    {
+      type: "text" as const,
+      text: `The ${capability} domain is disabled for this project. Call capability_set with {"capability":"${capability}","enabled":true} to enable it, then retry. Read the guide://${capability} resource for details.`,
+    },
+  ],
+  isError: true,
+});
+
+/**
+ * 注册 wiki 能力域四工具（list/search/read/write）。
  *
- * uiEnabled 时 wiki_read_page 升级为 display tool(SEP-1865):tool 定义带
+ * 渐进式披露批（2026-11-16）：工具**恒注册**（不再按 wiki 开关注册）——关闭态由
+ * handler 运行时门控返回引导错误。agent 因此能在功能关闭时发现能力、按引导开启、
+ * 并在同会话内立即使用（hub 每请求重读内部状态）。wikiService 每方法内部独立过
+ * resolver(不信任闭包传入的 project 已校验,纵深防御)。
+ *
+ * uiEnabled 时 wiki_read 升级为 display tool(SEP-1865):tool 定义带
  * `_meta.ui.resourceUri`(host 从 tools/list 即知该工具有 UI 关联),结果带
  * structuredContent(MCP tool result 标准字段;经 CLI 流 tool_use_result 原样透传,
  * 是 web 宿主卡片的唯一数据通道——实测 text content 侧会被文本化降级)。
@@ -397,72 +417,93 @@ const registerWikiTools = (
   server: McpServer,
   project: string,
   wikiService: ProjectWikiService,
-  wikiEnabled: boolean,
+  capabilitiesStore: McpCapabilitiesStore,
   uiEnabled: boolean,
 ): void => {
-  // list/write 仅 wiki 开关注册——display tool 只需 read;ui 单开时 agent 仍不应获得写/列能力。
-  if (wikiEnabled) {
-    server.registerTool(
-      "wiki_list_pages",
-      {
-        description:
-          "List all wiki pages in the current project. Returns { pages: [{ slug, title, tags, updated }] }.",
-      },
-      async () => {
-        const pages = await wikiService.listPages(project);
+  const isEnabled = async () => (await capabilitiesStore.get(project)).wiki === true;
+
+  server.registerTool(
+    "wiki_list",
+    {
+      description: "List all wiki entries in the current project.",
+    },
+    async () => {
+      if (!(await isEnabled())) return capabilityDisabledResponse("wiki");
+      const pages = await wikiService.listPages(project);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ pages }) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    "wiki_search",
+    {
+      description:
+        "Full-text search across wiki entry titles and bodies (case-insensitive). Returns { query, matches: [{ slug, title, updated, lines }] } — up to 3 matching lines per entry.",
+      inputSchema: { query: z.string() },
+    },
+    async ({ query }) => {
+      if (!(await isEnabled())) return capabilityDisabledResponse("wiki");
+      try {
+        const result = await wikiService.searchPages(project, query);
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({ pages }) }],
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
         };
-      },
-    );
+      } catch (error) {
+        return wikiErrorResponse(error);
+      }
+    },
+  );
 
-    server.registerTool(
-      "wiki_write_page",
-      {
-        description:
-          "Write a wiki page (markdown body; frontmatter title/tags/created/updated auto-injected). Set overwrite=true to replace an existing page; otherwise existing pages are rejected.",
-        inputSchema: {
-          slug: z.string(),
-          title: z.string(),
-          content: z.string(),
-          tags: z.array(z.string()).optional(),
-          overwrite: z.boolean().optional(),
-        },
+  server.registerTool(
+    "wiki_write",
+    {
+      description:
+        "Write a wiki entry (markdown body; frontmatter title/tags/created/updated auto-injected). Set overwrite=true to replace an existing entry; otherwise existing entries are rejected.",
+      inputSchema: {
+        slug: z.string(),
+        title: z.string(),
+        content: z.string(),
+        tags: z.array(z.string()).optional(),
+        overwrite: z.boolean().optional(),
       },
-      async ({ slug, title, content, tags, overwrite }) => {
-        try {
-          const result = await wikiService.writePage(project, slug, {
-            slug,
-            title,
-            content,
-            tags,
-            overwrite,
-          });
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify(result) }],
-          };
-        } catch (error) {
-          return wikiErrorResponse(error);
-        }
-      },
-    );
-  }
+    },
+    async ({ slug, title, content, tags, overwrite }) => {
+      if (!(await isEnabled())) return capabilityDisabledResponse("wiki");
+      try {
+        const result = await wikiService.writePage(project, slug, {
+          slug,
+          title,
+          content,
+          tags,
+          overwrite,
+        });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+        };
+      } catch (error) {
+        return wikiErrorResponse(error);
+      }
+    },
+  );
 
-  // read 恒注册(调用方保证 wiki||ui 至少一开)。uiEnabled 时升级 display tool(SEP-1865):
-  // tool 定义带 `_meta.ui.resourceUri`(host 从 tools/list 即知该工具有 UI 关联),结果带
+  // wiki_read 恒注册；uiEnabled 时升级 display tool(SEP-1865):tool 定义带
+  // `_meta.ui.resourceUri`(host 从 tools/list 即知该工具有 UI 关联),结果带
   // structuredContent(MCP tool result 标准字段;经 CLI 流 tool_use_result 原样透传,
   // 是 web 宿主卡片的唯一数据通道——实测 text content 侧会被文本化降级)。
   server.registerTool(
-    "wiki_read_page",
+    "wiki_read",
     {
       description:
-        "Read a single wiki page by slug. Returns { slug, frontmatter: { title, tags, created, updated }, body }.",
+        "Read a single wiki entry by slug. Returns { slug, frontmatter: { title, tags, created, updated }, body }.",
       inputSchema: { slug: z.string() },
       ...(uiEnabled
         ? { _meta: { ui: { resourceUri: WIKI_PAGE_UI_URI, visibility: ["model", "app"] } } }
         : {}),
     },
     async ({ slug }) => {
+      if (!(await isEnabled())) return capabilityDisabledResponse("wiki");
       try {
         const page = await wikiService.readPage(project, slug);
         return {
@@ -472,6 +513,103 @@ const registerWikiTools = (
       } catch (error) {
         return wikiErrorResponse(error);
       }
+    },
+  );
+};
+
+/**
+ * 注册域指南资源（渐进式披露 L1）：MCP_DOMAINS 五条 `guide://<domain>` 恒注册，不随
+ * 能力开关变化——agent 判断任务相关才 read，是「按需展开」而非常驻内容。
+ */
+const registerDomainGuides = (server: McpServer): void => {
+  for (const domain of MCP_DOMAINS) {
+    const uri = domainGuideUri(domain.name);
+    server.registerResource(uri, uri, { mimeType: "text/markdown" }, async () => ({
+      contents: [{ uri, mimeType: "text/markdown", text: domain.guide }],
+    }));
+  }
+};
+
+/**
+ * 注册能力域状态/设置工具（渐进式披露 L2，恒注册）：
+ * - capability_list：各域实时开关状态（读 ar-hub 内部状态）。
+ * - capability_set：wiki/ui/skills/gen-ui 直接生效；admin 域变更经审批中心挂起
+ *   （agent 无法自我提权），无审批服务/无发起者身份时返回引导错误。
+ */
+const registerCapabilityTools = (
+  server: McpServer,
+  project: string,
+  capabilitiesStore: McpCapabilitiesStore,
+  adminDeps: McpAdminDeps | undefined,
+  originSessionId: string | undefined,
+): void => {
+  const statusEntries = async () => {
+    const capabilities = await capabilitiesStore.get(project);
+    return MCP_DOMAINS.map((domain) => ({
+      capability: domain.name,
+      enabled: capabilities[domain.name] === true,
+      description: domain.oneLiner,
+    }));
+  };
+
+  server.registerTool(
+    "capability_list",
+    {
+      description:
+        "List every capability domain with its live enable/disable status and a one-line description of what it provides.",
+    },
+    async () => ({
+      content: [
+        { type: "text" as const, text: JSON.stringify({ capabilities: await statusEntries() }) },
+      ],
+    }),
+  );
+
+  server.registerTool(
+    "capability_set",
+    {
+      description:
+        "Enable or disable a capability domain for this project. wiki/ui/skills/gen-ui changes take effect immediately for subsequent calls; enabling or disabling admin requires user approval. Returns the full live status.",
+      inputSchema: {
+        capability: z.enum(["wiki", "ui", "skills", "gen-ui", "admin"]),
+        enabled: z.boolean(),
+      },
+    },
+    async ({ capability, enabled }) => {
+      if (capability === "admin") {
+        if (!adminDeps) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "[ADMIN_APPROVAL_UNAVAILABLE] Admin approval service is not wired for this hub.",
+              },
+            ],
+            isError: true,
+          };
+        }
+        const rejection = await requestManageApproval(
+          adminDeps,
+          { originProject: project, originSessionId },
+          "capability_set",
+          { capability, enabled },
+        );
+        if (rejection) return rejection;
+      }
+      await capabilitiesStore.set(project, capability, enabled);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              capability,
+              enabled,
+              capabilities: await statusEntries(),
+              note: `${capability} is now ${enabled ? "enabled" : "disabled"} for this project. Changes apply to subsequent tool calls immediately.`,
+            }),
+          },
+        ],
+      };
     },
   );
 };
@@ -563,7 +701,12 @@ const registerSessionTools = (
  * uiEnabled。config 非法/缺失降级空面(与 hub 3b 步同语义:预览卡不因 config 问题失败)。
  * structuredContent 安全红线见 settingsPreviewStructuredContent(只 name/type)。
  */
-const registerSettingsTools = (server: McpServer, project: string, projectsRoot: string): void => {
+const registerSettingsTools = (
+  server: McpServer,
+  project: string,
+  projectsRoot: string,
+  capabilitiesStore: McpCapabilitiesStore,
+): void => {
   server.registerTool(
     "project_settings",
     {
@@ -573,7 +716,11 @@ const registerSettingsTools = (server: McpServer, project: string, projectsRoot:
       _meta: { ui: { resourceUri: SETTINGS_PREVIEW_UI_URI, visibility: ["model", "app"] } },
     },
     async () => {
-      const { capabilities, servers } = await readSettingsPreviewData(projectsRoot, project);
+      const { capabilities, servers } = await readSettingsPreviewData(
+        projectsRoot,
+        capabilitiesStore,
+        project,
+      );
       const sc = settingsPreviewStructuredContent(project, capabilities, servers);
       return {
         content: [{ type: "text" as const, text: JSON.stringify(sc) }],
@@ -857,14 +1004,13 @@ const registerSkillResources = (
 };
 
 /**
- * 为单个请求构造 McpServer(无状态:每请求新建,不缓存)。按能力开关决定 capabilities 与
- * 注册面:全关时空 capabilities(基座空壳行为保留)。uiEnabled 时声明 MCP Apps 扩展
- * (initialize result 的 capabilities.extensions,client 侧据此判定宿主能力)并注册
- * ui:// 资源(Host 经 resources/read 取 HTML 渲染;CLI 2.1.281 起不把 UI 资源列进
- * resources/list,故未开 ui 时无需藏资源——资源本身只在 ui 开时注册)。
- * skillsEnabled 时声明 SEP-2640 扩展(声明即 MUST 同时声明 resources capability,
- * 并实现 skills/list-get)。adminEnabled 且 adminDeps 注入时注册跨项目观察/管理
- * 工具面(registerAdminTools)。
+ * 为单个请求构造 McpServer(无状态:每请求新建,不缓存)。渐进式披露批（2026-11-16）：
+ * - instructions = 常驻能力菜单（L0，按当前状态动态拼装）；
+ * - guide://<domain> 与 capability_list/set 恒注册（L1/L2）；
+ * - wiki 四工具恒注册 + 运行时门控（L3 示范域）；其余域保持注册面门控（开关决定注册）。
+ * ui 开时声明 MCP Apps 扩展（initialize result 的 capabilities.extensions）并注册
+ * ui:// 资源；skills 开时声明 SEP-2640 扩展（声明即 MUST 同时声明 resources capability）；
+ * admin 开且 adminDeps 注入时注册跨项目观察/管理工具面。
  */
 const buildRequestServer = (
   project: string,
@@ -873,21 +1019,24 @@ const buildRequestServer = (
   sessionRegistry: SessionRegistry | undefined,
   filesService: ProjectFilesService | undefined,
   canvasService: ProjectCanvasService | undefined,
-  wikiEnabled: boolean,
-  uiEnabled: boolean,
-  skillsEnabled: boolean,
+  capabilities: Partial<Record<McpCapability, boolean>>,
+  capabilitiesStore: McpCapabilitiesStore,
   projectsRoot: string,
   home: string,
-  adminEnabled: boolean,
   adminDeps: McpAdminDeps | undefined,
   originSessionId: string | undefined,
 ): McpServer => {
+  const uiEnabled = capabilities.ui === true;
+  const skillsEnabled = capabilities.skills === true;
+  const adminEnabled = capabilities.admin === true;
+
   const server = new McpServer(
     { name: "ar-hub", version: "0.0.0" },
     {
       capabilities: {
-        ...(wikiEnabled || uiEnabled ? { tools: { listChanged: false } } : {}),
-        ...(uiEnabled || skillsEnabled ? { resources: { subscribe: false } } : {}),
+        // wiki/capability 工具恒注册 → tools 恒声明；guide:// 恒注册 → resources 恒声明。
+        tools: { listChanged: false },
+        resources: { subscribe: false },
         ...(uiEnabled || skillsEnabled
           ? {
               extensions: {
@@ -897,18 +1046,21 @@ const buildRequestServer = (
             }
           : {}),
       },
+      instructions: buildArHubInstructions(capabilities),
     },
   );
-  if (wikiEnabled || uiEnabled) {
-    registerWikiTools(server, project, wikiService, wikiEnabled, uiEnabled);
-    if (uiEnabled) {
-      // resources/read 查 HUB_UI_RESOURCES 单源表——与 HTTP 路由同一份数据,
-      // 新增 UI 资源只改表,注册处不复制模板(防复制漂移,2026-10-20 review)。
-      for (const [uri, resource] of Object.entries(HUB_UI_RESOURCES)) {
-        server.registerResource(uri, uri, { mimeType: resource.mimeType }, async () => ({
-          contents: [{ uri, mimeType: resource.mimeType, text: resource.html }],
-        }));
-      }
+  // L2 状态/设置 + L1 域指南：恒注册，不随开关。
+  registerCapabilityTools(server, project, capabilitiesStore, adminDeps, originSessionId);
+  registerDomainGuides(server);
+  // L3 wiki 工具恒注册（handler 运行时门控）；uiEnabled 只决定 wiki_read 的 display 升级。
+  registerWikiTools(server, project, wikiService, capabilitiesStore, uiEnabled);
+  if (uiEnabled) {
+    // resources/read 查 HUB_UI_RESOURCES 单源表——与 HTTP 路由同一份数据,
+    // 新增 UI 资源只改表,注册处不复制模板(防复制漂移,2026-10-20 review)。
+    for (const [uri, resource] of Object.entries(HUB_UI_RESOURCES)) {
+      server.registerResource(uri, uri, { mimeType: resource.mimeType }, async () => ({
+        contents: [{ uri, mimeType: resource.mimeType, text: resource.html }],
+      }));
     }
   }
   if (skillsEnabled) {
@@ -921,7 +1073,7 @@ const buildRequestServer = (
     registerSessionTools(server, project, sessionRegistry);
   }
   if (uiEnabled) {
-    registerSettingsTools(server, project, projectsRoot);
+    registerSettingsTools(server, project, projectsRoot, capabilitiesStore);
   }
   if (filesService && uiEnabled) {
     registerFileTools(server, project, filesService);
@@ -946,6 +1098,7 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
     canvasService,
     home = homedir(),
     adminDeps,
+    capabilitiesStore,
   } = options;
 
   const server = Bun.serve({
@@ -977,21 +1130,14 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
         return new Response("Not found", { status: 404 });
       }
 
-      // 3b. 读 per-project mcp.json 决定注册哪些能力域工具。config 缺失(ENOENT)→ 默认全关;
-      //     config 非法(JSON/结构错)→ 降级全关(不阻塞 agent 连接),仅记 warn。
-      let wikiEnabled = false;
-      let uiEnabled = false;
-      let skillsEnabled = false;
-      let adminEnabled = false;
+      // 3b. 读 ar-hub 内部状态（惰性导入存量 mcp.json）决定注册面与 instructions 菜单。
+      //     读失败 → 降级全关（不阻塞 agent 连接），仅记 warn。
+      let capabilities: Partial<Record<McpCapability, boolean>> = {};
       try {
-        const config = await readProjectMcpConfig(projectsRoot, project);
-        wikiEnabled = config?.capabilities?.wiki === true;
-        uiEnabled = config?.capabilities?.ui === true;
-        skillsEnabled = config?.capabilities?.skills === true;
-        adminEnabled = config?.capabilities?.admin === true;
+        capabilities = await capabilitiesStore.get(project);
       } catch (error) {
         console.warn(
-          `[mcp-hub] mcp.json invalid project=${project}: ${error instanceof Error ? error.message : String(error)}`,
+          `[mcp-hub] capabilities read failed project=${project}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
 
@@ -1010,12 +1156,10 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
           sessionRegistry,
           filesService,
           canvasService,
-          wikiEnabled,
-          uiEnabled,
-          skillsEnabled,
+          capabilities,
+          capabilitiesStore,
           projectsRoot,
           home,
-          adminEnabled,
           adminDeps,
           originSessionId,
         );

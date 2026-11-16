@@ -63,7 +63,7 @@ const adminErrorResponse = (error: unknown) => {
  * 审批闸 helper：发起会话身份齐全 + 审批服务在场 + 挂起等批。任一前置不满足即返回
  * isError response（不抛）；"allow" 返回 null 进入执行段。
  */
-const requestManageApproval = async (
+export const requestManageApproval = async (
   deps: McpAdminDeps,
   ctx: McpAdminToolContext,
   toolName: string,

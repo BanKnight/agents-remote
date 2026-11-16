@@ -14,4 +14,5 @@ UI 设计权威层：v1.5 设计包（Apple HIG 风格，iPhone/iPad/Mac 三端 
 - [redesign-v2.md](./redesign-v2.md) — UI v2 重构总纲：权威源声明、决策日志、九铁律实现映射、现状能力盘点、关键代码锚点、里程碑计划与状态、待定项跟踪。
 - [session-attention.md](./session-attention.md) — 会话注意力生命周期（settle）交互契约单源：settle 与 status/close/pin 的语义划界、三条铁律、双端入口与「已了结」折叠组呈现、自动 settle 规则与活动清除点。
 - [checkpoint-rollback.md](./checkpoint-rollback.md) — Turn 级 checkpoint 与回滚契约单源：refs 即索引的捕获编排、uuid 锚贯通、回滚目标裁决与恢复语义、能力位解耦（对话回滚仅 claude）、双端入口与浮层交互、错误码。
+- [mcp-progressive-disclosure.md](./mcp-progressive-disclosure.md) — MCP 功能域渐进式披露契约单源：四层模型（instructions 菜单 / guide:// 指南 / capability 工具 / 门控操作面）、域注册表、运行时 vs 注册面两种门控、审批分档、内部状态与 mcp.json 惰性导入、wiki 工具改名兼容。
 - [index.html](./index.html) — 原型图集导航入口：116 页原型索引（语义名 + 分组）+ 浅/深主题联动开关。

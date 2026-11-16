@@ -68,7 +68,7 @@ export function sanitizeWikiSlug(input: string): string {
   return value;
 }
 
-/** 写入参数(MCP 工具 wiki_write_page 构造;HTTP consumer 只读不写)。 */
+/** 写入参数(MCP 工具 wiki_write 构造;HTTP consumer 只读不写)。 */
 export type WikiPageWriteInput = {
   slug: string;
   title: string;

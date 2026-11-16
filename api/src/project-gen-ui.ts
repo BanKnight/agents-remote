@@ -8,8 +8,7 @@ import { chmod, lstat, mkdir, readFile, rename, stat, unlink, writeFile } from "
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { realpath } from "node:fs/promises";
 import { isInsideOrSelf, ProjectPathError, resolveProjectPath } from "./project-paths";
-import { readProjectMcpConfig } from "./mcp-config";
-import { parseMcpProjectConfig } from "./mcp-validate";
+import type { McpCapabilitiesStore } from "./mcp-capabilities-store";
 
 // Gen UI（生成式界面）：agent 经 visualize 型 skill 生成单文件 HTML 到项目
 // `.agents-remote/gen-ui/`，assistant 文本以 `::gen-ui{...}` 标记引用；web 宿主卡片
@@ -186,7 +185,10 @@ export class ProjectGenUiService {
   /** state 写入串行化（persistQueue 式）：同 key 请求链式排队，防 temp→rename 竞态。 */
   private readonly writeQueues = new Map<string, Promise<unknown>>();
 
-  constructor(private readonly projectsRoot: string) {}
+  constructor(
+    private readonly projectsRoot: string,
+    private readonly capabilitiesStore: McpCapabilitiesStore,
+  ) {}
 
   /** 读取生成页 HTML（供给端点）。门控：project 存在 + capabilities.gen-ui 开启。 */
   async readGenUiFile(projectName: string, relPath: string): Promise<GenUiFileResponse> {
@@ -322,15 +324,16 @@ export class ProjectGenUiService {
     }
   }
 
-  /** 门控：project 存在 + mcp.json capabilities.gen-ui === true，否则一律 NOT_FOUND
+  /** 门控：project 存在 + 内部状态 gen-ui === true，否则一律 NOT_FOUND
    *  （不暴露具体原因，与 mcp-ui-resource 路由同原则——功能关 = 整体不可见）。 */
   private async ensureCapabilityEnabled(projectName: string) {
     let enabled = false;
     try {
-      const config = await readProjectMcpConfig(this.projectsRoot, projectName);
-      enabled = config?.capabilities?.["gen-ui"] === true;
+      // store 已有记录时不自校验项目存在性（惰性导入路径才过 readProjectMcpConfig）。
+      await resolveProjectPath(this.projectsRoot, projectName);
+      enabled = (await this.capabilitiesStore.get(projectName))["gen-ui"] === true;
     } catch {
-      // project 不存在 / 路径越界 / mcp.json 非法 → 统一 NOT_FOUND。
+      // project 不存在 / 路径越界 / 状态文件不可写 → 统一 NOT_FOUND。
       throw new ProjectGenUiError("PROJECT_NOT_FOUND", "Project not found");
     }
     if (!enabled) {
@@ -415,15 +418,15 @@ description: 生成式界面(HTML 小部件)。当用户需要交互式界面(�
  * spawn 前调用,Claude CLI 从项目根自动加载)。版本标记不一致即覆写升级;任何失败
  * 只记日志不抛——skill 缺失降级为「agent 不知道 gen-ui」,绝不阻塞 spawn。
  */
-export const ensureGenUiSkill = async (projectPath: string): Promise<void> => {
+export const ensureGenUiSkill = async (
+  projectPath: string,
+  capabilitiesStore: McpCapabilitiesStore,
+  projectName: string,
+): Promise<void> => {
   let enabled = false;
   try {
-    // spawn 路径拿到的已是 resolve 过的项目目录,直接读配置(不走 readProjectMcpConfig
-    // 的 projectsRoot+name 二次 resolve);mcp.json 缺失/非法 = 未开启。
-    const raw = await readFile(join(projectPath, ".agents-remote", "mcp.json"), "utf8").catch(
-      () => null,
-    );
-    enabled = raw != null && parseMcpProjectConfig(raw)?.capabilities?.["gen-ui"] === true;
+    // spawn 路径已持有 projectName（MCP hub 注入同源），直接读 ar-hub 内部状态。
+    enabled = (await capabilitiesStore.get(projectName))["gen-ui"] === true;
   } catch {
     return;
   }

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { McpCapabilitiesStore } from "./mcp-capabilities-store";
 import { startMcpHubServer, type McpHubServer } from "./mcp-hub-server";
 import { ProjectWikiService } from "./project-wiki";
 import type { ProjectService } from "./projects";
@@ -9,7 +10,7 @@ import type { SessionRegistry } from "./session-registry";
 
 // admin capability 观察面集成测：真实 hub + stub projectService/sessionRegistry，
 // 沿 mcp-hub-server.test.ts 的 SSE 基建。观察三工具注册条件 =
-// mcp.json capabilities.admin === true && sessionRegistry && adminDeps 注入。
+// 内部状态 capabilities.admin === true && sessionRegistry && adminDeps 注入。
 
 const MCP_HEADERS = {
   "Content-Type": "application/json",
@@ -69,11 +70,12 @@ describe("MCP admin tools (observation, capabilities.admin=true)", () => {
   beforeEach(async () => {
     projectsRoot = await mkdtemp(join(tmpdir(), "ar-mcp-admin-"));
     home = await mkdtemp(join(tmpdir(), "ar-mcp-admin-home-"));
-    await mkdir(join(projectsRoot, "test", ".agents-remote"), { recursive: true });
-    await writeFile(
-      join(projectsRoot, "test", ".agents-remote", "mcp.json"),
-      JSON.stringify({ capabilities: { admin: true } }),
-    );
+    await mkdir(join(projectsRoot, "test"), { recursive: true });
+    const capabilitiesStore = new McpCapabilitiesStore({
+      path: join(projectsRoot, ".capabilities.json"),
+      projectsRoot,
+    });
+    await capabilitiesStore.set("test", "admin", true);
     hub = startMcpHubServer({
       port: 0,
       projectsRoot,
@@ -84,6 +86,7 @@ describe("MCP admin tools (observation, capabilities.admin=true)", () => {
         projectService: stubProjectService,
         sessionRegistry: stubSessionRegistry,
       },
+      capabilitiesStore,
     });
     baseUrl = `http://127.0.0.1:${hub.port}`;
   });
@@ -102,7 +105,10 @@ describe("MCP admin tools (observation, capabilities.admin=true)", () => {
     });
     const { result } = await parseSseResult(res);
     const tools = (result as unknown as { tools?: { name: string }[] }).tools;
+    // admin 八工具 + 恒注册面（wiki 四工具运行时门控 + capability 两工具）。
     expect(tools?.map((t) => t.name).sort()).toEqual([
+      "capability_list",
+      "capability_set",
       "project_create",
       "project_delete",
       "project_list",
@@ -111,6 +117,10 @@ describe("MCP admin tools (observation, capabilities.admin=true)", () => {
       "session_list",
       "session_read",
       "session_send",
+      "wiki_list",
+      "wiki_read",
+      "wiki_search",
+      "wiki_write",
     ]);
   });
 
@@ -150,7 +160,7 @@ describe("MCP admin tools (observation, capabilities.admin=true)", () => {
   });
 });
 
-// admin 关（无 adminDeps 注入）→ 即使 mcp.json 写了 admin:true 也不注册工具
+// admin 关（无 adminDeps 注入）→ 即使内部状态开了 admin 也不注册工具
 // （注册条件三缺一不可：adminEnabled && sessionRegistry && adminDeps）。
 describe("MCP admin tools (adminDeps missing → no registration)", () => {
   let projectsRoot: string;
@@ -161,16 +171,18 @@ describe("MCP admin tools (adminDeps missing → no registration)", () => {
   beforeEach(async () => {
     projectsRoot = await mkdtemp(join(tmpdir(), "ar-mcp-admin-off-"));
     home = await mkdtemp(join(tmpdir(), "ar-mcp-admin-off-home-"));
-    await mkdir(join(projectsRoot, "test", ".agents-remote"), { recursive: true });
-    await writeFile(
-      join(projectsRoot, "test", ".agents-remote", "mcp.json"),
-      JSON.stringify({ capabilities: { admin: true } }),
-    );
+    await mkdir(join(projectsRoot, "test"), { recursive: true });
+    const capabilitiesStore = new McpCapabilitiesStore({
+      path: join(projectsRoot, ".capabilities.json"),
+      projectsRoot,
+    });
+    await capabilitiesStore.set("test", "admin", true);
     hub = startMcpHubServer({
       port: 0,
       projectsRoot,
       wikiService: new ProjectWikiService(projectsRoot),
       home,
+      capabilitiesStore,
     });
     baseUrl = `http://127.0.0.1:${hub.port}`;
   });
@@ -215,6 +227,7 @@ describe("MCP admin tools (manage gate)", () => {
   let home: string;
   let hub: McpHubServer;
   let baseUrl: string;
+  let capabilitiesStore: McpCapabilitiesStore;
   let approvalMock: ReturnType<typeof mock>;
   let sendToAgentMock: ReturnType<typeof mock>;
   /** gate 已知会话集合（origin 身份 + send 目标）；集合外 = 未知会话。 */
@@ -240,11 +253,12 @@ describe("MCP admin tools (manage gate)", () => {
   beforeEach(async () => {
     projectsRoot = await mkdtemp(join(tmpdir(), "ar-mcp-admin-mgmt-"));
     home = await mkdtemp(join(tmpdir(), "ar-mcp-admin-mgmt-home-"));
-    await mkdir(join(projectsRoot, "test", ".agents-remote"), { recursive: true });
-    await writeFile(
-      join(projectsRoot, "test", ".agents-remote", "mcp.json"),
-      JSON.stringify({ capabilities: { admin: true } }),
-    );
+    await mkdir(join(projectsRoot, "test"), { recursive: true });
+    capabilitiesStore = new McpCapabilitiesStore({
+      path: join(projectsRoot, ".capabilities.json"),
+      projectsRoot,
+    });
+    await capabilitiesStore.set("test", "admin", true);
     approvalMock = mock(
       async (_req: { origin: unknown; toolName: string; input: unknown }) => "deny",
     );
@@ -293,6 +307,7 @@ describe("MCP admin tools (manage gate)", () => {
         approvalService,
         sendToAgent: sendToAgentMock,
       },
+      capabilitiesStore,
     });
     baseUrl = `http://127.0.0.1:${hub.port}`;
   });
@@ -311,7 +326,10 @@ describe("MCP admin tools (manage gate)", () => {
     });
     const { result } = await parseSseResult(res);
     const tools = (result as unknown as { tools?: { name: string }[] }).tools;
+    // admin 八工具 + 恒注册面（wiki 四工具运行时门控 + capability 两工具）。
     expect(tools?.map((t) => t.name).sort()).toEqual([
+      "capability_list",
+      "capability_set",
       "project_create",
       "project_delete",
       "project_list",
@@ -320,6 +338,10 @@ describe("MCP admin tools (manage gate)", () => {
       "session_list",
       "session_read",
       "session_send",
+      "wiki_list",
+      "wiki_read",
+      "wiki_search",
+      "wiki_write",
     ]);
   });
 
@@ -353,6 +375,7 @@ describe("MCP admin tools (manage gate)", () => {
       home,
       sessionRegistry: registry,
       adminDeps: { projectService, sessionRegistry: registry },
+      capabilitiesStore,
     });
     baseUrl = `http://127.0.0.1:${hub.port}`;
     const { result } = await callWithOrigin(23, "project_create", { path: "/tmp/new" });

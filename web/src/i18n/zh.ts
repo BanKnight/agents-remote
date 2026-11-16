@@ -635,7 +635,7 @@ export const zh: Record<TranslationKey, string> = {
   "claude.tool.webSearch": "网络搜索",
   "claude.tool.webFetch": "网络请求",
   "claude.tool.mcp": "MCP",
-  "claude.tool.wikiReadPage": "Wiki 页面",
+  "claude.tool.wikiReadPage": "Wiki",
   "claude.tool.gitStatus": "Git 变更",
   "claude.tool.gitLog": "Git 提交",
   "claude.tool.sessionOverview": "会话概览",

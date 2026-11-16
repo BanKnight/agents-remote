@@ -349,10 +349,10 @@ describe("McpAppCard reverse channel", () => {
       jsonrpc: "2.0",
       id: 4,
       method: "tools/call",
-      params: { name: "wiki_read_page", arguments: { slug: "arch" } },
+      params: { name: "wiki_read", arguments: { slug: "arch" } },
     });
     await waitFor(() => expect(replyFor(postSpy, 4)).toBeDefined());
-    expect(toolCallMock).toHaveBeenCalledWith("test", "wiki_read_page", { slug: "arch" });
+    expect(toolCallMock).toHaveBeenCalledWith("test", "wiki_read", { slug: "arch" });
     expect(replyFor(postSpy, 4)?.result).toEqual(await toolCallMock.mock.results[0]!.value);
   });
 
@@ -495,7 +495,9 @@ async function waitForIframe(view: ReturnType<typeof render>) {
 const { buildToolCardToolProps, getToolRenderer } = await import("./tool-ui-registry");
 const { ClaudeBridgeContext } = await import("../../routes/claude-adapter");
 
-const WIKI_TOOL = "mcp__ar-hub__wiki_read_page";
+const WIKI_TOOL = "mcp__ar-hub__wiki_read";
+// 改名前的历史工具名（旧会话卡片）仍注册同一 renderer，不降级。
+const WIKI_TOOL_LEGACY = "mcp__ar-hub__wiki_read_page";
 const WIKI_CUSTOM = {
   argsText: JSON.stringify({ slug: "arch" }),
   result: "ok",
@@ -510,6 +512,10 @@ describe("MCP Apps tool-card integration", () => {
 
     const plain = buildToolCardToolProps({ result: "x" }, "Bash");
     expect((plain.metadata as Record<string, unknown>).structuredContent).toBeUndefined();
+  });
+
+  test("legacy wiki tool name resolves to the same renderer (rename compatibility)", () => {
+    expect(getToolRenderer(WIKI_TOOL_LEGACY)).toBe(getToolRenderer(WIKI_TOOL));
   });
 
   test("HubWikiPageToolUI renders sandboxed iframe from built props", async () => {

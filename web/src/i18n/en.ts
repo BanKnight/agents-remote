@@ -640,7 +640,7 @@ export const en = {
   "claude.tool.webSearch": "Web Search",
   "claude.tool.webFetch": "Web Fetch",
   "claude.tool.mcp": "MCP",
-  "claude.tool.wikiReadPage": "Wiki Page",
+  "claude.tool.wikiReadPage": "Wiki",
   "claude.tool.gitStatus": "Git Changes",
   "claude.tool.gitLog": "Git History",
   "claude.tool.sessionOverview": "Sessions",

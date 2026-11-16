@@ -19,6 +19,7 @@ import {
   migrateAgentHistoryProject,
   projectToSlug,
 } from "./agent-history";
+import type { McpCapabilitiesStore } from "./mcp-capabilities-store";
 
 type ProjectSessionCounts = {
   agentSessionCount: number;
@@ -75,6 +76,8 @@ export class ProjectService {
     private readonly projectsRoot: string,
     private readonly sessionManager?: ProjectSessionManager,
     private readonly stateManager?: ProjectStateManager,
+    // 能力域开关内部状态（渐进式披露批）：项目删除/重命名级联清理与迁移，缺省不接。
+    private readonly capabilitiesStore?: McpCapabilitiesStore,
   ) {}
 
   async listProjects(): Promise<Project[]> {
@@ -225,6 +228,9 @@ export class ProjectService {
       await this.stateManager?.detach(project.name);
     }
 
+    // 能力开关状态随项目删除清理（目录已消失，残留记录只会让未来同名项目继承旧开关）。
+    await this.capabilitiesStore?.removeProject(project.name);
+
     return { deleted: true, projectName: project.name, filesDeleted: deleteFiles };
   }
 
@@ -284,6 +290,9 @@ export class ProjectService {
 
     // 新名若撞 detached 残留记录（磁盘曾无目录的名单残留），重命名后目录已在新名下，必须移出。
     await this.stateManager?.attach(normalizedName);
+
+    // 能力开关状态按项目名（= 目录名）寻址，重命名后必须跟迁，否则新名下静默全关。
+    await this.capabilitiesStore?.renameProject(project.name, normalizedName);
 
     return this.projectFromName(normalizedName);
   }

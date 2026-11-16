@@ -27,7 +27,9 @@ import { McpError, type McpErrorCode } from "./mcp-validate.js";
  * 写：wrap `claude mcp add/remove -s <scope>`（argv 数组、非 TTY，只信 exit code + 事后回读文件）。
  *
  * 两套配置勿混：本文件管「外部第三方 server」（CLI 原生读写、agent 实例原生合并生效）；
- * `.agents-remote/mcp.json`（mcp-config.ts）是内部 ar-hub 能力开关，本文件不碰。
+ * ar-hub 能力开关已迁到 `~/.agents-remote/mcp-capabilities.json`
+ * （mcp-capabilities-store.ts，渐进式披露批；存量 `.agents-remote/mcp.json` 仅作惰性
+ * 导入源），本文件不碰。
  */
 
 const CLAUDE_BIN = "claude";

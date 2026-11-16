@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import type { McpCapability } from "@agents-remote/shared";
 import { startMcpHubServer, type McpHubServer } from "./mcp-hub-server";
+import { McpCapabilitiesStore } from "./mcp-capabilities-store";
 import { ProjectCanvasService } from "./project-canvas";
 import { ProjectFilesService } from "./project-files";
 import { ProjectGitDiffService } from "./project-git-diff";
@@ -58,12 +60,18 @@ describe("MCP hub server (stateless, loopback)", () => {
   let home: string;
   let hub: McpHubServer;
   let baseUrl: string;
+  let capabilitiesStore: McpCapabilitiesStore;
 
   beforeEach(async () => {
     projectsRoot = await mkdtemp(join(tmpdir(), "ar-mcp-"));
     await mkdir(join(projectsRoot, "test"), { recursive: true });
     // skills 全局 scope 的假 home(测试注入,不碰真实 ~/.claude/skills)。
     home = await mkdtemp(join(tmpdir(), "ar-mcp-home-"));
+    // 能力开关内部状态落 tmp（不碰真实 ~/.agents-remote/mcp-capabilities.json）。
+    capabilitiesStore = new McpCapabilitiesStore({
+      path: join(projectsRoot, ".capabilities.json"),
+      projectsRoot,
+    });
     // port 0:OS 分配空闲端口,避免与 dev 服务撞端口。
     hub = startMcpHubServer({
       port: 0,
@@ -73,6 +81,7 @@ describe("MCP hub server (stateless, loopback)", () => {
       sessionRegistry: new SessionRegistry({ runDir: join(projectsRoot, ".runtime") }),
       filesService: new ProjectFilesService(projectsRoot),
       home,
+      capabilitiesStore,
     });
     baseUrl = `http://127.0.0.1:${hub.port}`;
   });
@@ -146,17 +155,18 @@ describe("MCP hub server (stateless, loopback)", () => {
     expect(res.status).toBe(404);
   });
 
-  // ── wiki 能力域开关(按 per-project mcp.json capabilities 注册工具)──────────
+  // ── 能力域开关(ar-hub 内部状态;渐进式披露批后不再读项目 mcp.json)──────────
 
+  /** 逐域写入内部状态。空对象 = 该项目无记录 → 惰性导入(无 mcp.json → 全关)。 */
   const writeMcpConfig = async (project: string, capabilities: Record<string, boolean>) => {
-    await mkdir(join(projectsRoot, project, ".agents-remote"), { recursive: true });
-    await writeFile(
-      join(projectsRoot, project, ".agents-remote", "mcp.json"),
-      JSON.stringify({ capabilities }),
-    );
+    for (const [capability, enabled] of Object.entries(capabilities)) {
+      await capabilitiesStore.set(project, capability as McpCapability, enabled);
+    }
   };
 
-  it("exposes wiki tools when capabilities.wiki=true", async () => {
+  const WIKI_TOOLS = ["wiki_list", "wiki_search", "wiki_write", "wiki_read"];
+
+  it("exposes the four wiki tools when capabilities.wiki=true", async () => {
     await writeMcpConfig("test", { wiki: true });
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
@@ -165,13 +175,12 @@ describe("MCP hub server (stateless, loopback)", () => {
     });
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(text).toContain("wiki_list_pages");
-    expect(text).toContain("wiki_read_page");
-    expect(text).toContain("wiki_write_page");
+    for (const name of WIKI_TOOLS) expect(text).toContain(`"${name}"`);
   });
 
-  it("hides wiki tools when no mcp.json (capabilities default off)", async () => {
-    // 无 .agents-remote/mcp.json → readProjectMcpConfig 返回 null → wiki 全关(空壳)。
+  it("keeps wiki tools listed when the domain is disabled (runtime gating, not registration)", async () => {
+    // 渐进式披露：无记录(惰性导入 → 全关)时四工具仍在 tools/list——agent 才能
+    // 发现功能并引导开启；调用时由 handler 返回引导错误。
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
       headers: MCP_HEADERS,
@@ -179,28 +188,29 @@ describe("MCP hub server (stateless, loopback)", () => {
     });
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(text).not.toContain("wiki_");
+    for (const name of WIKI_TOOLS) expect(text).toContain(`"${name}"`);
   });
 
-  it("hides wiki tools when capabilities.wiki=false", async () => {
+  it("wiki disabled (explicit false) → calls return the guidance error", async () => {
     await writeMcpConfig("test", { wiki: false });
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
       headers: MCP_HEADERS,
-      body: listToolsBody(12),
+      body: callToolBody(12, "wiki_list", {}),
     });
     expect(res.status).toBe(200);
     const text = await res.text();
-    expect(text).not.toContain("wiki_");
+    expect(text).toContain('"isError":true');
+    expect(text).toContain("capability_set");
   });
 
-  it("wiki_write_page then wiki_read_page round-trips and lands on disk", async () => {
+  it("wiki_write then wiki_read round-trips and lands on disk", async () => {
     await writeMcpConfig("test", { wiki: true });
 
     const writeRes = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
       headers: MCP_HEADERS,
-      body: callToolBody(20, "wiki_write_page", {
+      body: callToolBody(20, "wiki_write", {
         slug: "round-trip",
         title: "Round Trip",
         content: "hello wiki",
@@ -216,7 +226,7 @@ describe("MCP hub server (stateless, loopback)", () => {
     const readRes = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
       headers: MCP_HEADERS,
-      body: callToolBody(21, "wiki_read_page", { slug: "round-trip" }),
+      body: callToolBody(21, "wiki_read", { slug: "round-trip" }),
     });
     expect(readRes.status).toBe(200);
     const readPage = JSON.parse((await parseSseResult(readRes)).result?.content?.[0]?.text ?? "{}");
@@ -229,12 +239,12 @@ describe("MCP hub server (stateless, loopback)", () => {
     expect(raw).toContain("hello wiki");
   });
 
-  it("wiki_read_page on missing page returns isError (MCP tool error, not HTTP 500)", async () => {
+  it("wiki_read on missing page returns isError (MCP tool error, not HTTP 500)", async () => {
     await writeMcpConfig("test", { wiki: true });
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
       headers: MCP_HEADERS,
-      body: callToolBody(30, "wiki_read_page", { slug: "no-such-page" }),
+      body: callToolBody(30, "wiki_read", { slug: "no-such-page" }),
     });
     expect(res.status).toBe(200); // MCP 工具错误是正常 200 返回,isError=true + message
     const text = await res.text();
@@ -242,10 +252,154 @@ describe("MCP hub server (stateless, loopback)", () => {
     expect(text).toContain("not found");
   });
 
-  // ── ui 能力域(SEP-1865 MCP Apps:扩展声明 + ui:// 资源 + wiki_read_page display tool)──
+  // ── ui 能力域(SEP-1865 MCP Apps:扩展声明 + ui:// 资源 + wiki_read display tool)──
 
   const readResourceBody = (id: number, uri: string) =>
     JSON.stringify({ jsonrpc: "2.0", id, method: "resources/read", params: { uri } });
+
+  const resourcesListBody = (id: number) =>
+    JSON.stringify({ jsonrpc: "2.0", id, method: "resources/list", params: {} });
+
+  // ── 渐进式披露四层(instructions 菜单 / guide:// 资源 / capability 工具)────────
+
+  it("initialize returns the L0 capability menu with live statuses", async () => {
+    await writeMcpConfig("test", { wiki: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: initBody(80),
+    });
+    const instructions =
+      ((await parseSseResult(res)).result as unknown as { instructions?: string })?.instructions ??
+      "";
+    for (const domain of ["wiki", "ui", "skills", "gen-ui", "admin"]) {
+      expect(instructions).toContain(domain);
+    }
+    expect(instructions).toContain("wiki (enabled)");
+    expect(instructions).toContain("ui (disabled)");
+    expect(instructions).toContain("capability_set");
+    expect(instructions).toContain("guide://");
+  });
+
+  it("resources/list exposes the five guide:// domains even with everything disabled", async () => {
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: resourcesListBody(81),
+    });
+    const { result } = await parseSseResult(res);
+    const resources =
+      (result as unknown as { resources?: { uri: string; mimeType?: string }[] }).resources ?? [];
+    expect(resources.map((r) => r.uri).sort()).toEqual([
+      "guide://admin",
+      "guide://gen-ui",
+      "guide://skills",
+      "guide://ui",
+      "guide://wiki",
+    ]);
+    expect(resources.every((r) => r.mimeType === "text/markdown")).toBe(true);
+  });
+
+  it("resources/read guide://wiki serves the domain guide markdown", async () => {
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: readResourceBody(82, "guide://wiki"),
+    });
+    const { result } = await parseSseResult(res);
+    const contents = (result as unknown as { contents?: { mimeType: string; text: string }[] })
+      .contents;
+    expect(contents?.[0]?.mimeType).toBe("text/markdown");
+    expect(contents?.[0]?.text).toContain("# wiki");
+    expect(contents?.[0]?.text).toContain("wiki_search");
+  });
+
+  it("capability_list reports live status for all five domains", async () => {
+    await writeMcpConfig("test", { wiki: true });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(83, "capability_list", {}),
+    });
+    const payload = JSON.parse((await parseSseResult(res)).result?.content?.[0]?.text ?? "{}") as {
+      capabilities?: { capability: string; enabled: boolean }[];
+    };
+    const entries = payload.capabilities ?? [];
+    expect(entries.map((e) => e.capability)).toEqual(["wiki", "ui", "skills", "gen-ui", "admin"]);
+    expect(entries.find((e) => e.capability === "wiki")?.enabled).toBe(true);
+    expect(entries.find((e) => e.capability === "ui")?.enabled).toBe(false);
+  });
+
+  it("capability_set enables wiki and the next call works in the same session", async () => {
+    // 关闭态：引导错误。
+    const denied = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(84, "wiki_list", {}),
+    });
+    const deniedText = await denied.text();
+    expect(deniedText).toContain('"isError":true');
+    expect(deniedText).toContain("capability_set");
+
+    // 设置后同一 project 的下一次请求立即生效（无状态 hub 每请求重读内部状态）。
+    const setRes = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(85, "capability_set", { capability: "wiki", enabled: true }),
+    });
+    const setPayload = JSON.parse(
+      (await parseSseResult(setRes)).result?.content?.[0]?.text ?? "{}",
+    ) as { capabilities?: { capability: string; enabled: boolean }[] };
+    expect(setPayload.capabilities?.find((e) => e.capability === "wiki")?.enabled).toBe(true);
+
+    const write = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(86, "wiki_write", {
+        slug: "after-enable",
+        title: "After Enable",
+        content: "created post-enable",
+      }),
+    });
+    const written = JSON.parse((await parseSseResult(write)).result?.content?.[0]?.text ?? "{}");
+    expect(written.created).toBe(true);
+  });
+
+  it("wiki_search returns up to three matching lines per entry", async () => {
+    await writeMcpConfig("test", { wiki: true });
+    await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(87, "wiki_write", {
+        slug: "search-a",
+        title: "Search A",
+        content: "alpha one\nbeta\nalpha two\ngamma\nalpha three\nalpha four",
+      }),
+    });
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(88, "wiki_search", { query: "alpha" }),
+    });
+    const payload = JSON.parse((await parseSseResult(res)).result?.content?.[0]?.text ?? "{}") as {
+      query?: string;
+      matches?: { slug: string; lines: unknown[] }[];
+    };
+    expect(payload.query).toBe("alpha");
+    expect(payload.matches?.[0]?.slug).toBe("search-a");
+    expect(payload.matches?.[0]?.lines.length).toBeLessThanOrEqual(3);
+  });
+
+  it("capability_set admin without approval wiring returns a guidance error", async () => {
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(89, "capability_set", { capability: "admin", enabled: true }),
+    });
+    const text = await res.text();
+    expect(text).toContain("ADMIN_APPROVAL_UNAVAILABLE");
+    expect((await capabilitiesStore.get("test")).admin).toBeUndefined();
+  });
 
   it("ui=true declares MCP Apps extension + resources capability in initialize result", async () => {
     await writeMcpConfig("test", { ui: true });
@@ -277,11 +431,11 @@ describe("MCP hub server (stateless, loopback)", () => {
       body: listToolsBody(42),
     });
     const text = await toolsRes.text();
-    expect(text).toContain("wiki_read_page");
+    expect(text).toContain("wiki_read");
     expect(text).not.toContain('"_meta"');
   });
 
-  it("ui=true attaches _meta.ui.resourceUri on wiki_read_page tool definition", async () => {
+  it("ui=true attaches _meta.ui.resourceUri on wiki_read tool definition", async () => {
     await writeMcpConfig("test", { ui: true });
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
@@ -290,20 +444,20 @@ describe("MCP hub server (stateless, loopback)", () => {
     });
     const { result } = await parseSseResult(res);
     const tools = (result as unknown as { tools?: { name: string; _meta?: unknown }[] }).tools;
-    const read = tools?.find((t) => t.name === "wiki_read_page");
+    const read = tools?.find((t) => t.name === "wiki_read");
     expect(read?._meta).toEqual({
       ui: { resourceUri: "ui://ar-hub/wiki-page", visibility: ["model", "app"] },
     });
   });
 
-  it("ui=true wiki_read_page returns structuredContent for the web host", async () => {
-    // 双开:ui 单开时 wiki_write_page 不注册(见上用例),准备数据用 write 需 wiki 同开。
+  it("ui=true wiki_read returns structuredContent for the web host", async () => {
+    // 双开:ui 单开时 wiki_write 不注册(见上用例),准备数据用 write 需 wiki 同开。
     await writeMcpConfig("test", { wiki: true, ui: true });
     // 准备一页 wiki。
     await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
       headers: MCP_HEADERS,
-      body: callToolBody(44, "wiki_write_page", {
+      body: callToolBody(44, "wiki_write", {
         slug: "ui-card",
         title: "UI Card",
         content: "# Head\n\n- item1\n- item2",
@@ -313,7 +467,7 @@ describe("MCP hub server (stateless, loopback)", () => {
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
       headers: MCP_HEADERS,
-      body: callToolBody(45, "wiki_read_page", { slug: "ui-card" }),
+      body: callToolBody(45, "wiki_read", { slug: "ui-card" }),
     });
     const sc = (await parseSseResult(res)).result?.structuredContent as Record<string, unknown>;
     expect(sc.kind).toBe("wiki-page");
@@ -362,7 +516,7 @@ describe("MCP hub server (stateless, loopback)", () => {
     expect(contents?.[0]?.text).toContain("<!doctype html>");
   });
 
-  it("ui 单开(wiki 关)只注册 wiki_read_page(list/write 不泄露)", async () => {
+  it("ui 单开(wiki 关)：ui 工具注册，wiki 四工具列出但运行时拒绝", async () => {
     await writeMcpConfig("test", { ui: true });
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
@@ -370,9 +524,20 @@ describe("MCP hub server (stateless, loopback)", () => {
       body: listToolsBody(47),
     });
     const text = await res.text();
-    expect(text).toContain("wiki_read_page");
-    expect(text).not.toContain("wiki_list_pages");
-    expect(text).not.toContain("wiki_write_page");
+    // 注册面门控（ui 域）：ui 工具在场。
+    expect(text).toContain('"git_status"');
+    // 运行时门控（wiki 域）：工具仍列出，调用返回引导错误。
+    for (const name of ["wiki_list", "wiki_search", "wiki_write", "wiki_read"]) {
+      expect(text).toContain(`"${name}"`);
+    }
+    const denied = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(470, "wiki_list", {}),
+    });
+    const deniedText = await denied.text();
+    expect(deniedText).toContain('"isError":true');
+    expect(deniedText).toContain("capability_set");
   });
 
   it("resources/read on unknown ui:// uri returns protocol error", async () => {
@@ -519,7 +684,7 @@ describe("MCP hub server (stateless, loopback)", () => {
       body: listToolsBody(64),
     });
     const text = await res.text();
-    expect(text).toContain("wiki_list_pages");
+    expect(text).toContain("wiki_list");
     expect(text).not.toContain("git_status");
   });
 
@@ -540,7 +705,7 @@ describe("MCP hub server (stateless, loopback)", () => {
       body: listToolsBody(65),
     });
     const text = await res.text();
-    expect(text).toContain("wiki_read_page");
+    expect(text).toContain("wiki_read");
     expect(text).not.toContain("git_status");
     expect(text).not.toContain("git_log");
   });
@@ -944,17 +1109,20 @@ describe("MCP hub server (canvas tools)", () => {
   beforeEach(async () => {
     projectsRoot = await mkdtemp(join(tmpdir(), "ar-mcp-canvas-"));
     home = await mkdtemp(join(tmpdir(), "ar-mcp-canvas-home-"));
-    await mkdir(join(projectsRoot, "test", ".agents-remote"), { recursive: true });
-    await writeFile(
-      join(projectsRoot, "test", ".agents-remote", "mcp.json"),
-      JSON.stringify({ capabilities: { ui: true } }),
-    );
+    await mkdir(join(projectsRoot, "test"), { recursive: true });
+    const capabilitiesStore = new McpCapabilitiesStore({
+      path: join(projectsRoot, ".capabilities.json"),
+      projectsRoot,
+    });
+    // 画布工具挂 ui 域（注册面门控）。
+    await capabilitiesStore.set("test", "ui", true);
     hub = startMcpHubServer({
       port: 0,
       projectsRoot,
       wikiService: new ProjectWikiService(projectsRoot),
       canvasService: new ProjectCanvasService(projectsRoot),
       home,
+      capabilitiesStore,
     });
     baseUrl = `http://127.0.0.1:${hub.port}`;
   });
@@ -1037,5 +1205,97 @@ describe("MCP hub server (canvas tools)", () => {
     expect(conflict.result?.isError).toBe(true);
     expect(conflict.result?.content?.[0]?.text).toContain("PROJECT_CANVAS_REVISION_CONFLICT");
     expect(conflict.result?.content?.[0]?.text).toContain("read_scene");
+  });
+});
+
+// ── capability_set 的 admin 审批分档（agent 无法自我提权）─────────────────────
+
+describe("MCP hub admin capability approval", () => {
+  let projectsRoot: string;
+  let home: string;
+  let hub: McpHubServer;
+  let baseUrl: string;
+  let capabilitiesStore: McpCapabilitiesStore;
+  let decision: "allow" | "deny";
+  const approvalRequests: { toolName: string; input: unknown }[] = [];
+
+  beforeEach(async () => {
+    decision = "allow";
+    approvalRequests.length = 0;
+    projectsRoot = await mkdtemp(join(tmpdir(), "ar-mcp-admin-cap-"));
+    home = await mkdtemp(join(tmpdir(), "ar-mcp-admin-cap-home-"));
+    await mkdir(join(projectsRoot, "test"), { recursive: true });
+    capabilitiesStore = new McpCapabilitiesStore({
+      path: join(projectsRoot, ".capabilities.json"),
+      projectsRoot,
+    });
+    hub = startMcpHubServer({
+      port: 0,
+      projectsRoot,
+      wikiService: new ProjectWikiService(projectsRoot),
+      home,
+      capabilitiesStore,
+      adminDeps: {
+        // 审批闸只触达 peepMetadata + requestApproval，其余依赖给桩即可。
+        projectService: {} as never,
+        sessionRegistry: {
+          peekMetadata: async (project: string, sessionId: string) =>
+            sessionId === "agent_origin"
+              ? { projectName: project, id: sessionId, runtimeKey: "run-1" }
+              : undefined,
+        } as never,
+        approvalService: {
+          requestApproval: async (req: { toolName: string; input: unknown }) => {
+            approvalRequests.push({ toolName: req.toolName, input: req.input });
+            return decision;
+          },
+        } as never,
+      },
+    });
+    baseUrl = `http://127.0.0.1:${hub.port}`;
+  });
+
+  afterEach(async () => {
+    hub.stop();
+    await rm(projectsRoot, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  });
+
+  const setAdmin = (id: number) =>
+    fetch(`${baseUrl}/mcp/test?origin=agent_origin`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(id, "capability_set", { capability: "admin", enabled: true }),
+    });
+
+  it("allow → approval received, then the admin switch is applied", async () => {
+    decision = "allow";
+    const res = await setAdmin(90);
+    const payload = JSON.parse((await parseSseResult(res)).result?.content?.[0]?.text ?? "{}") as {
+      capabilities?: { capability: string; enabled: boolean }[];
+    };
+    expect(payload.capabilities?.find((e) => e.capability === "admin")?.enabled).toBe(true);
+    expect(approvalRequests).toEqual([
+      { toolName: "capability_set", input: { capability: "admin", enabled: true } },
+    ]);
+  });
+
+  it("deny → error and no state change", async () => {
+    decision = "deny";
+    const res = await setAdmin(91);
+    const text = await res.text();
+    expect(text).toContain("ADMIN_APPROVAL_DENIED");
+    expect((await capabilitiesStore.get("test")).admin).toBeUndefined();
+  });
+
+  it("missing origin identity → admin switch denied", async () => {
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(92, "capability_set", { capability: "admin", enabled: true }),
+    });
+    const text = await res.text();
+    expect(text).toContain("ADMIN_ORIGIN_MISSING");
+    expect(approvalRequests).toHaveLength(0);
   });
 });

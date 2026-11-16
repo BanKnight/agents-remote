@@ -11,17 +11,21 @@
 //
 // 跑法：bun scripts/probe-admin-approval.mjs（dev api 43011 / hub 43013 需在跑）
 // 断言汇总在 stdout；任一 FAIL 退出码 1。探针只删自己创建的数据（displayName
-// 前缀识别会话、唯一 ts 后缀目录、mcp.json 备份恢复）。
+// 前缀识别会话、唯一 ts 后缀目录、内部状态文件备份恢复）。
 
 import { spawn } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { readAppPassword } from "./lib/deploy-config.mjs";
 
 const API_BASE = "http://127.0.0.1:43011";
 const HUB_PORT = 43013;
 const TEST_PROJECT = "test";
-const MCP_CONFIG_PATH = "/home/deploy/workspace/test/.agents-remote/mcp.json";
+// 能力开关真相源 = ar-hub 内部状态（渐进式披露批；项目 mcp.json 已退役为惰性导入源，
+// store 有记录后不再读文件——所以本探针必须直接改这份状态，改 mcp.json 不再生效）。
+const CAPABILITIES_PATH = join(homedir(), ".agents-remote", "mcp-capabilities.json");
 const PROJECTS_ROOT = "/home/deploy/workspace";
 
 const SESSION_READY_TIMEOUT_MS = 90_000;
@@ -127,17 +131,36 @@ async function cleanupProject(projectName) {
   await api(`/api/projects/${projectName}?deleteFiles=true`, { method: "DELETE" });
 }
 
-// ── mcp.json admin 开关（备份 → 写 admin:true → finally 恢复）─────────────────
+// ── 内部状态 admin 开关（备份原文 → 写 admin:true → finally 恢复/删除）────────
+// 保留 test 项目既有其它域开关；imported:true 防 store 惰性导入覆盖本次写入。
 async function enableAdminCapability() {
-  const backup = await readFile(MCP_CONFIG_PATH, "utf8");
-  const config = JSON.parse(backup);
-  config.capabilities = { ...config.capabilities, admin: true };
-  await writeFile(MCP_CONFIG_PATH, `${JSON.stringify(config)}\n`);
+  const backup = await readFile(CAPABILITIES_PATH, "utf8").catch(() => null);
+  let file = { projects: {} };
+  try {
+    file = JSON.parse(backup ?? "null") ?? { projects: {} };
+  } catch {
+    // 损坏按空表处理（与 store 读容错同语义：安全方向 = 全关后再显式开启）
+  }
+  const projects = { ...file.projects };
+  const state = projects[TEST_PROJECT] ?? { capabilities: {} };
+  projects[TEST_PROJECT] = {
+    ...state,
+    imported: true,
+    capabilities: { ...state.capabilities, admin: true },
+  };
+  await mkdir(dirname(CAPABILITIES_PATH), { recursive: true, mode: 0o700 });
+  await writeFile(CAPABILITIES_PATH, `${JSON.stringify({ projects }, null, 2)}\n`, {
+    mode: 0o600,
+  });
   return backup;
 }
 
-async function restoreMcpConfig(backup) {
-  await writeFile(MCP_CONFIG_PATH, backup);
+async function restoreCapabilities(backup) {
+  if (backup === null) {
+    await rm(CAPABILITIES_PATH, { force: true });
+    return;
+  }
+  await writeFile(CAPABILITIES_PATH, backup, { mode: 0o600 });
 }
 
 // ── Part 1: claude 全链 allow（核心）──────────────────────────────────────────
@@ -334,7 +357,7 @@ function part3CodexConfig() {
   });
 }
 
-// ── main：备份 mcp.json → 三部分 → finally 恢复 → 汇总 ────────────────────────
+// ── main：备份内部状态 → 三部分 → finally 恢复 → 汇总 ────────────────────────
 async function main() {
   const ts = Date.now().toString(36);
   const backup = await enableAdminCapability();
@@ -344,7 +367,7 @@ async function main() {
     await part2Deny(ts);
     await part3CodexConfig();
   } finally {
-    await restoreMcpConfig(backup);
+    await restoreCapabilities(backup);
   }
   const failed = results.filter((r) => !r.ok);
   console.log(

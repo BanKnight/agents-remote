@@ -238,7 +238,7 @@ export function McpAppCard({
   heightClassName = "h-[420px]",
   fillHeight = false,
   onSendPrompt,
-  allowedToolName = "wiki_read_page",
+  allowedToolName = "wiki_read",
   allowedToolNames,
   autoFocusFrame = false,
   sessionId,
@@ -259,7 +259,7 @@ export function McpAppCard({
   /**
    * tools/call 反向通道允许的 tool 名（host 侧 allowlist,与 api 侧 HUB_APP_TOOLS
    * 白名单双层防御）。卡片刷新钮调用的就是自己的 tool（git 卡刷 git_status）,
-   * 故每卡对应一个名字;缺省 wiki_read_page 保持既有调用方零改动。
+   * 故每卡对应一个名字。渲染注册表按工具名注入具体名字(见 tool-ui-registry)。
    */
   allowedToolName?: string;
   /**
@@ -580,7 +580,7 @@ export function McpAppCard({
   );
 }
 
-// wiki_read_page display tool renderer lives in tool-ui-registry.tsx
+// wiki_read display tool renderer lives in tool-ui-registry.tsx
 // (HubWikiPageToolUI) — keeping it there avoids an import cycle: this module
 // must not import tool-ui-registry, which registers the renderer and consumes
 // McpAppCard from here.

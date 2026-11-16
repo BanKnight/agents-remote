@@ -825,18 +825,19 @@ const makeMcpAppCardToolUI = (config: {
   };
 };
 
-toolRegistry.set(
-  "mcp__ar-hub__wiki_read_page",
-  makeMcpAppCardToolUI({
-    // 轻/重模板分流:无 mermaid 围栏的页走 markdown 轻变体(76KB,省 5.4MB)。
-    uri: (sc) => (contentNeedsMermaid(sc) ? WIKI_PAGE_APP_URI : MARKDOWN_LITE_APP_URI),
-    cardToolName: "wiki_read_page",
-    kindGuard: isWikiPageStructuredContent,
-    icon: "read",
-    badgeKey: "claude.tool.wikiReadPage",
-    detail: (_sc, args) => (typeof args.slug === "string" ? args.slug : null),
-  }),
-);
+const wikiReadToolUI = makeMcpAppCardToolUI({
+  // 轻/重模板分流:无 mermaid 围栏的页走 markdown 轻变体(76KB,省 5.4MB)。
+  uri: (sc) => (contentNeedsMermaid(sc) ? WIKI_PAGE_APP_URI : MARKDOWN_LITE_APP_URI),
+  cardToolName: "wiki_read",
+  kindGuard: isWikiPageStructuredContent,
+  icon: "read",
+  badgeKey: "claude.tool.wikiReadPage",
+  detail: (_sc, args) => (typeof args.slug === "string" ? args.slug : null),
+});
+// 渐进式披露批改名(去 pages):wiki_read 为现名。旧键保留同一 renderer——
+// 历史会话里的卡片工具名仍是 wiki_read_page,不降级。
+toolRegistry.set("mcp__ar-hub__wiki_read", wikiReadToolUI);
+toolRegistry.set("mcp__ar-hub__wiki_read_page", wikiReadToolUI);
 
 toolRegistry.set(
   "mcp__ar-hub__git_status",

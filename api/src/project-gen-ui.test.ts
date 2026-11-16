@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import { McpCapabilitiesStore } from "./mcp-capabilities-store";
 import {
   buildGenUiContextBlock,
   ensureGenUiSkill,
@@ -14,11 +15,15 @@ import {
 
 let root: string;
 let outside: string;
+let capabilitiesStore: McpCapabilitiesStore;
+let capabilitiesPath: string;
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "agents-remote-gen-ui-"));
   outside = await mkdtemp(join(tmpdir(), "agents-remote-gen-ui-outside-"));
   await mkdir(join(root, "demo"));
+  capabilitiesPath = join(root, ".capabilities.json");
+  capabilitiesStore = new McpCapabilitiesStore({ path: capabilitiesPath, projectsRoot: root });
 });
 
 afterEach(async () => {
@@ -26,15 +31,17 @@ afterEach(async () => {
   await rm(outside, { recursive: true, force: true });
 });
 
-// mcp.json 门控:demo 项目默认开启 gen-ui capability。
-const writeMcpConfig = async (config: object) => {
-  const dir = join(root, "demo", ".agents-remote");
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, "mcp.json"), JSON.stringify(config));
+// 门控数据源 = ar-hub 内部状态（渐进式披露批；项目 mcp.json 已退役为惰性导入源）。
+// 整体写入语义与原 mcp.json helper 一致：先前的键不残留。
+const writeCapabilityState = async (capabilities: Record<string, boolean>) => {
+  await writeFile(
+    capabilitiesPath,
+    JSON.stringify({ projects: { demo: { capabilities, imported: true } } }),
+  );
 };
 
 const enableGenUi = async () => {
-  await writeMcpConfig({ capabilities: { "gen-ui": true } });
+  await writeCapabilityState({ "gen-ui": true });
 };
 
 const writeHtml = async (rel: string, content: string) => {
@@ -43,7 +50,7 @@ const writeHtml = async (rel: string, content: string) => {
   await writeFile(target, content);
 };
 
-const service = () => new ProjectGenUiService(root);
+const service = () => new ProjectGenUiService(root, capabilitiesStore);
 
 // ── 纯函数:路径守卫 ──────────────────────────────────────────────────
 
@@ -84,7 +91,7 @@ test("readGenUiFile reads a generated page when capability is enabled", async ()
 });
 
 test("readGenUiFile rejects when capability is disabled", async () => {
-  await writeMcpConfig({ capabilities: { ui: true } });
+  await writeCapabilityState({ ui: true });
   await writeHtml("slider.html", "<p>x</p>");
   expect(service().readGenUiFile("demo", ".agents-remote/gen-ui/slider.html")).rejects.toThrow();
 });
@@ -343,7 +350,7 @@ test("buildGenUiContextBlock neutralizes forged boundary tokens in modelContent"
 
 test("ensureGenUiSkill writes the skill when gen-ui is enabled", async () => {
   await enableGenUi();
-  await ensureGenUiSkill(join(root, "demo"));
+  await ensureGenUiSkill(join(root, "demo"), capabilitiesStore, "demo");
   const skill = await readFile(
     join(root, "demo", ".claude", "skills", "gen-ui", "SKILL.md"),
     "utf8",
@@ -359,11 +366,11 @@ test("ensureGenUiSkill writes the skill when gen-ui is enabled", async () => {
 test("ensureGenUiSkill is idempotent for the same version", async () => {
   await enableGenUi();
   const skillPath = join(root, "demo", ".claude", "skills", "gen-ui", "SKILL.md");
-  await ensureGenUiSkill(join(root, "demo"));
+  await ensureGenUiSkill(join(root, "demo"), capabilitiesStore, "demo");
   const first = await readFile(skillPath, "utf8");
   // 手工改动后重跑:同版本标记在场 → 不覆写(用户的本地改动保留)。
   await writeFile(skillPath, `${first}LOCAL EDIT`);
-  await ensureGenUiSkill(join(root, "demo"));
+  await ensureGenUiSkill(join(root, "demo"), capabilitiesStore, "demo");
   expect(await readFile(skillPath, "utf8")).toBe(`${first}LOCAL EDIT`);
 });
 
@@ -372,13 +379,13 @@ test("ensureGenUiSkill overwrites stale versions and skips when disabled", async
   const skillPath = join(root, "demo", ".claude", "skills", "gen-ui", "SKILL.md");
   await mkdir(dirname(skillPath), { recursive: true });
   await writeFile(skillPath, "old content\ngen-ui-skill-version: 1\n");
-  await ensureGenUiSkill(join(root, "demo"));
+  await ensureGenUiSkill(join(root, "demo"), capabilitiesStore, "demo");
   expect(await readFile(skillPath, "utf8")).toContain("gen-ui-skill-version: 4");
 
   // capability 关闭:已有文件不动,未开启项目不写新文件。
-  await writeMcpConfig({ capabilities: {} });
+  await writeCapabilityState({});
   await writeFile(skillPath, "keep me\n");
-  await ensureGenUiSkill(join(root, "demo"));
+  await ensureGenUiSkill(join(root, "demo"), capabilitiesStore, "demo");
   expect(await readFile(skillPath, "utf8")).toBe("keep me\n");
   const missing = await readFile(
     join(root, "demo", ".claude", "skills", "gen-ui", "SKILL.md"),
@@ -392,7 +399,7 @@ test("ensureGenUiSkill leaves untagged hand-written skills untouched", async () 
   const skillPath = join(root, "demo", ".claude", "skills", "gen-ui", "SKILL.md");
   await mkdir(dirname(skillPath), { recursive: true });
   await writeFile(skillPath, "# my own gen-ui notes\n");
-  await ensureGenUiSkill(join(root, "demo"));
+  await ensureGenUiSkill(join(root, "demo"), capabilitiesStore, "demo");
   expect(await readFile(skillPath, "utf8")).toBe("# my own gen-ui notes\n");
 });
 
@@ -403,13 +410,13 @@ test("ensureGenUiSkill skips symlinked skill paths (no write amplification)", as
   const skillPath = join(root, "demo", ".claude", "skills", "gen-ui", "SKILL.md");
   await mkdir(dirname(skillPath), { recursive: true });
   await symlink(target, skillPath);
-  await ensureGenUiSkill(join(root, "demo"));
+  await ensureGenUiSkill(join(root, "demo"), capabilitiesStore, "demo");
   expect(await readFile(target, "utf8")).toBe("untouched\n");
 });
 
 test("ensureGenUiSkill no-ops on missing project config", async () => {
   // 无 mcp.json(enoent)→ 静默跳过,不创建任何文件,不抛错。
-  await ensureGenUiSkill(join(root, "demo"));
+  await ensureGenUiSkill(join(root, "demo"), capabilitiesStore, "demo");
   const exists = await stat(join(root, "demo", ".claude")).catch(() => null);
   expect(exists).toBeNull();
 });

@@ -13,13 +13,13 @@ const isNotFoundError = (error: unknown): boolean =>
 /**
  * 读 per-project `.agents-remote/mcp.json`。
  *
- * - 文件不存在(ENOENT) → null(调用方按「默认全关」处理:不注册任何能力域工具)。
- * - 存在但非法 JSON/结构 → 抛 McpError(MCP_CONFIG_INVALID)。
- * - project 不存在 → resolveProjectPath 抛 ProjectPathError 透传(hub handler 第 3 步
- *   已校验 project 存在,正常路径不会到这里)。
+ * ⚠️ 能力开关真相源已迁 `~/.agents-remote/mcp-capabilities.json`
+ * (mcp-capabilities-store.ts,渐进式披露批):本文件降级为「存量迁移的惰性导入源」,
+ * 仅 McpCapabilitiesStore.importFromLegacy 调用;此后 mcp.json 不再参与判定。
  *
- * hub handler 每请求调一次,拿 capabilities 决定注册哪些能力域工具。调用方应对抛出
- * 降级为空 capabilities(不因 config 问题阻塞 agent 连接)。
+ * - 文件不存在(ENOENT) → null(导入方按「默认全关」处理)。
+ * - 存在但非法 JSON/结构 → 抛 McpError(MCP_CONFIG_INVALID)(导入方捕获后按全关落盘)。
+ * - project 不存在 → resolveProjectPath 抛 ProjectPathError 透传。
  */
 export async function readProjectMcpConfig(
   projectsRoot: string,

@@ -5,34 +5,41 @@ tags:
   - ar-hub
   - 架构
 created: 2026-10-31
-updated: 2026-10-31
+updated: 2026-11-16
 ---
 
 agents-remote 的 MCP 能力全景：内部 hub（ar-hub）+ 注入管线 + MCP Apps 宿主 + 外部 server 管理。定位共识：**MCP Hub 是「给 agent 装能力（tool）」的统一层**，采纳 MCP 成熟抽象不重造协议。调研沉淀见 `docs/research/`（mcp-apps-hosting / plugin-extension-system / mcp-cli-ecosystem-notes 等）。
 
-## 一、ar-hub 内部 hub（能力域与工具面）
+## 一、ar-hub 内部 hub（渐进式披露四层）
 
-api 进程内 loopback Streamable HTTP MCP server（绑 `127.0.0.1:43013`，无状态，每请求新建实例，**每请求重读 `.agents-remote/mcp.json` → capabilities 改动即改即生效**）。工具注册分两类：
+api 进程内 loopback Streamable HTTP MCP server（绑 `127.0.0.1:43013`，无状态，每请求新建实例，**每请求重读内部状态 → `capability_set` 改动同会话下一条请求即生效**）。功能域按**渐进式披露四层**组织（契约单源：`docs/design/mcp-progressive-disclosure.md`）：
 
-**capabilities 开关控制**（项目 `.agents-remote/mcp.json` 的 `capabilities`，白名单 = wiki/ui/skills/gen-ui，未知键拒绝）：
+| 层 | 进上下文时机 | 内容 |
+| --- | --- | --- |
+| L0 功能菜单 | 常驻（MCP `instructions`，每请求动态拼装） | 5 域各一行：名称 + 一句话作用 + 当前开关状态 + Operating rules |
+| L1 域指南 | agent 按需读 | `guide://<domain>` 五条恒注册资源 |
+| L2 状态管理 | 工具恒注册 | `capability_list`（实时状态）/ `capability_set`（设置；admin 变更经审批中心，其余直接生效） |
+| L3 操作工具 | wiki 恒注册 + 运行时门控；其余域按开关注册 | 见下两表 |
 
-| 能力开关 | 注册面 |
-| --- | --- |
-| `wiki` | `wiki_list_pages` / `wiki_write_page`（`wiki_read_page` 恒注册，见下） |
-| `ui` | `wiki_read_page` 升级 display tool（`_meta.ui.resourceUri` → 卡片渲染门控） |
-| `skills` | SEP-2640 分发：`skills/list` / `skills/get` 方法 + `skill://` 资源模板 |
-| `gen-ui` | 生成式 UI 能力（见 §三） |
+**真相源**：`~/.agents-remote/mcp-capabilities.json`（ar-hub 内部状态，per-project；项目删除/重命名级联清理/迁移）。存量项目 `.agents-remote/mcp.json` 首次访问**惰性导入**一次（`imported` 标记），此后文件不再参与判定——改 mcp.json 不再生效，开关一律走 `capability_set`。
 
-**恒注册**（不受开关控制，所有项目可用）：
+**wiki 域 = 运行时门控示范**（四工具恒注册；关闭态调用返回引导错误，开启后重试即成功；agent 在功能关闭时也能介绍作用、报告状态、引导开启）：
 
 | 工具 | 说明 |
 | --- | --- |
-| `wiki_read_page` | 恒注册（调用方保证 wiki/ui 至少一开）；仅 `ui` 开时带 display `_meta` |
-| `git_status` / `git_log` | git-status 卡 / 提交历史 |
-| `session_overview` | session-overview 卡 |
-| `create_diagram` / `read_scene` / `apply_operations` / `export_diagram` | 画布卡 |
-| `read_file` | file-preview 卡 |
-| `project_settings` | 项目设置概览 |
+| `wiki_list` | 页面列表（原 `wiki_list_pages`） |
+| `wiki_read` | 读单页（原 `wiki_read_page`）；仅 `ui` 开时带 display `_meta`（卡片渲染门控） |
+| `wiki_search` | 全文搜索（新增，复用服务端 searchPages——agent 检索面） |
+| `wiki_write` | 写单页（原 `wiki_write_page`） |
+
+**其余域 = 注册面门控**（开关决定注册面）：
+
+| 能力开关 | 注册面 |
+| --- | --- |
+| `ui` | `wiki_read` 升级 display tool（`_meta.ui.resourceUri` → 卡片渲染门控）+ `git_status` / `git_log`、`session_overview`、画布四工具、`read_file`、`project_settings` |
+| `skills` | SEP-2640 分发：`skills/list` / `skills/get` 方法 + `skill://` 资源模板 |
+| `gen-ui` | 生成式 UI 能力（见 §三） |
+| `admin` | 管理面工具（project/session 管理；开关变更经审批中心） |
 
 全关时空壳 capabilities（基座行为保留）。本项目（agents-remote）当前开 `ui` + `wiki`（2026-10-31 起）；test 项目 wiki/ui/gen-ui 三开（wiki 示例页在其名下）。
 

@@ -113,7 +113,7 @@ import {
   wikiPageStructuredContent,
 } from "./mcp-hub-server";
 import { McpAdminApprovalService } from "./mcp-admin-approval";
-import { readProjectMcpConfig } from "./mcp-config";
+import { McpCapabilitiesStore } from "./mcp-capabilities-store";
 import { canUpgradeWebSocket } from "./ws-auth";
 
 type UpgradeServer = {
@@ -148,6 +148,8 @@ type FetchHandlerOptions = {
   stateStore?: StateStore;
   pushKeys?: PushKeyManager;
   pushSubscriptions?: PushSubscriptionStore;
+  /** 能力域开关内部状态（渐进式披露批）；缺省 → ui:// 与 app-tools 门控路由不挂载。 */
+  mcpCapabilitiesStore?: McpCapabilitiesStore;
   /** WEB_DIST_DIR 启用时的静态 web 产物兜底（部署形态批）；未启用时缺省 = 关闭。 */
   staticWeb?: StaticWebHandler;
 };
@@ -740,8 +742,13 @@ export const createFetchHandler =
       }
     }
 
-    if (options.projectsRoot) {
-      const uiResourceResponse = await handleMcpUiResourceRoute(request, url, options.projectsRoot);
+    if (options.projectsRoot && options.mcpCapabilitiesStore) {
+      const uiResourceResponse = await handleMcpUiResourceRoute(
+        request,
+        url,
+        options.projectsRoot,
+        options.mcpCapabilitiesStore,
+      );
       if (uiResourceResponse) {
         return withRefresh(uiResourceResponse);
       }
@@ -754,7 +761,7 @@ export const createFetchHandler =
       }
     }
 
-    if (options.projectWikiService && options.projectsRoot) {
+    if (options.projectWikiService && options.projectsRoot && options.mcpCapabilitiesStore) {
       const toolsCallResponse = await handleMcpHubToolsCallRoute(
         request,
         url,
@@ -766,7 +773,9 @@ export const createFetchHandler =
           files: options.projectFilesService,
           canvas: options.projectCanvasService,
           projectsRoot: options.projectsRoot,
+          capabilitiesStore: options.mcpCapabilitiesStore,
         },
+        options.mcpCapabilitiesStore,
       );
       if (toolsCallResponse) {
         return withRefresh(toolsCallResponse);
@@ -1670,6 +1679,7 @@ const handleMcpUiResourceRoute = async (
   request: Request,
   url: URL,
   projectsRoot: string,
+  capabilitiesStore: McpCapabilitiesStore,
 ): Promise<Response | undefined> => {
   if (request.method !== "GET") return undefined;
   const prefix = "/api/projects/";
@@ -1695,14 +1705,15 @@ const handleMcpUiResourceRoute = async (
     return jsonError("PROJECT_FILE_NOT_FOUND", `Unknown UI resource: ${uri}`, 404);
   }
   try {
-    // readProjectMcpConfig 内部已过 resolveProjectPath(project 不存在 → ProjectPathError
-    // 透传)——不再单独调用,每请求省一轮 fs resolver 往返(2026-10-20 code-review)。
-    const config = await readProjectMcpConfig(projectsRoot, projectName);
-    if (config?.capabilities?.ui !== true) {
+    // project 存在性由 hub 同款 resolver 在 store 读取前校验（惰性导入也要先确认
+    // 项目在 PROJECTS_ROOT 内，防路径越界把外部 mcp.json 读进来）。
+    await resolveProjectPath(projectsRoot, projectName);
+    const capabilities = await capabilitiesStore.get(projectName);
+    if (capabilities.ui !== true) {
       return jsonError("PROJECT_FILE_NOT_FOUND", "MCP ui capability is disabled", 404);
     }
   } catch {
-    // project 不存在 / 路径越界 / mcp.json 非法 → 404(不暴露具体原因,与 hub 同原则)。
+    // project 不存在 / 路径越界 / 状态文件不可写 → 404(不暴露具体原因,与 hub 同原则)。
     return jsonError("PROJECT_NOT_FOUND", "Project not found", 404);
   }
   let body = mcpUiResourceBodyCache.get(uri);
@@ -1817,20 +1828,30 @@ type HubAppToolDeps = {
   files: ProjectFilesService | undefined;
   canvas: ProjectCanvasService | undefined;
   projectsRoot: string;
+  capabilitiesStore: McpCapabilitiesStore;
+};
+
+const hubWikiReadTool = async (
+  deps: HubAppToolDeps,
+  project: string,
+  args: Record<string, unknown>,
+) => {
+  const slug = typeof args.slug === "string" ? args.slug : "";
+  const page = await deps.wiki.readPage(project, slug);
+  return {
+    content: [{ type: "text", text: JSON.stringify(page) }],
+    structuredContent: wikiPageStructuredContent(page),
+  };
 };
 
 const HUB_APP_TOOLS: Record<
   string,
   (deps: HubAppToolDeps, project: string, args: Record<string, unknown>) => Promise<unknown>
 > = {
-  wiki_read_page: async (deps, project, args) => {
-    const slug = typeof args.slug === "string" ? args.slug : "";
-    const page = await deps.wiki.readPage(project, slug);
-    return {
-      content: [{ type: "text", text: JSON.stringify(page) }],
-      structuredContent: wikiPageStructuredContent(page),
-    };
-  },
+  // 渐进式披露批改名(去 pages):wiki_read 为现名;旧键保留同一 handler——
+  // 历史会话卡片里烧进模板的刷新请求仍可能用旧名,不降级。
+  wiki_read: hubWikiReadTool,
+  wiki_read_page: hubWikiReadTool,
   git_status: async (deps, project) => {
     if (!deps.gitDiff) {
       throw new Error("Git service unavailable");
@@ -1875,7 +1896,11 @@ const HUB_APP_TOOLS: Record<
   },
   project_settings: async (deps, project) => {
     // 与 hub 侧 registerSettingsTools 同款降级语义(readSettingsPreviewData 共用)。
-    const { capabilities, servers } = await readSettingsPreviewData(deps.projectsRoot, project);
+    const { capabilities, servers } = await readSettingsPreviewData(
+      deps.projectsRoot,
+      deps.capabilitiesStore,
+      project,
+    );
     const sc = settingsPreviewStructuredContent(project, capabilities, servers);
     return {
       content: [{ type: "text", text: JSON.stringify(sc) }],
@@ -1986,6 +2011,7 @@ const handleMcpHubToolsCallRoute = async (
   url: URL,
   projectsRoot: string,
   deps: HubAppToolDeps,
+  capabilitiesStore: McpCapabilitiesStore,
 ): Promise<Response | undefined> => {
   if (request.method !== "POST") return undefined;
   const prefix = "/api/projects/";
@@ -2020,12 +2046,14 @@ const handleMcpHubToolsCallRoute = async (
     return jsonError("PROJECT_FILE_NOT_FOUND", `Unknown app tool: ${toolName}`, 404);
   }
   try {
-    const config = await readProjectMcpConfig(projectsRoot, projectName);
-    if (config?.capabilities?.ui !== true) {
+    // 与 ui-resource 同款：先过 project resolver 再读内部状态（已有记录时 store 不自校验）。
+    await resolveProjectPath(projectsRoot, projectName);
+    const capabilities = await capabilitiesStore.get(projectName);
+    if (capabilities.ui !== true) {
       return jsonError("PROJECT_FILE_NOT_FOUND", "MCP ui capability is disabled", 404);
     }
   } catch {
-    // project 不存在 / 路径越界 / mcp.json 非法 → 404(不暴露具体原因,与 hub 同原则)。
+    // project 不存在 / 路径越界 / 状态文件不可写 → 404(不暴露具体原因,与 hub 同原则)。
     return jsonError("PROJECT_NOT_FOUND", "Project not found", 404);
   }
   try {
@@ -2464,6 +2492,9 @@ export const startApi = async () => {
     config.mcpPort,
   );
   const projectWikiService = new ProjectWikiService(config.projectsRoot);
+  // 能力域开关的 ar-hub 内部状态（渐进式披露批）：hub 注册面、ui:// 与 app-tools HTTP
+  // 门控、gen-ui 服务、项目删除级联共用同一实例。
+  const mcpCapabilitiesStore = new McpCapabilitiesStore({ projectsRoot: config.projectsRoot });
   // 画布四工具数据源（hub MCP 面 + web 卡片 tools/call 面共用同一 service 实例）。
   const projectCanvasService = new ProjectCanvasService(config.projectsRoot);
   const claudePermissionModes = await parseClaudePermissionModes();
@@ -2571,6 +2602,8 @@ export const startApi = async () => {
   const checkpointService = new CheckpointService();
   const turnCheckpointer = new TurnCheckpointer({ checkpoints: checkpointService });
   claudeRuntime.setTurnCheckpointer(turnCheckpointer);
+  // gen-ui skill 交付的门控数据源（渐进式披露批）。
+  claudeRuntime.setCapabilitiesStore(mcpCapabilitiesStore);
   const claudeStreamController = new ClaudeStreamController(
     claudeRuntime,
     runtime,
@@ -2852,12 +2885,13 @@ export const startApi = async () => {
     config.projectsRoot,
     sessionRegistry,
     projectStateManager,
+    mcpCapabilitiesStore,
   );
   const projectFilesService = new ProjectFilesService(config.projectsRoot);
   const projectPagesService = new ProjectPagesService(config.projectsRoot);
   // Gen UI 供给面（M1.a）：HTML 供给 + widgetState 读写 + 回流块组装（经 loader 注入
   // claude-stream——控制器不反向依赖 project-gen-ui，同 setOnControlResponseForwarded 模式）。
-  const projectGenUiService = new ProjectGenUiService(config.projectsRoot);
+  const projectGenUiService = new ProjectGenUiService(config.projectsRoot, mcpCapabilitiesStore);
   claudeStreamController.setGenUiContextLoader(async (projectName, sessionId) => {
     const state = await projectGenUiService.readGenUiState(projectName, sessionId);
     return buildGenUiContextBlock(state);
@@ -2959,6 +2993,7 @@ export const startApi = async () => {
       approvalService: mcpAdminApprovalService,
       sendToAgent: adminSendToAgent,
     },
+    capabilitiesStore: mcpCapabilitiesStore,
   });
   // 全局 idleTimeout：MCP 同步 spawn（mcp-management runCliTool 默认 60s）静默期需覆盖，
   // 默认 10s 会在中途关闭连接（Empty reply）。调到 Bun.serve 上限 255s。
@@ -3004,6 +3039,7 @@ export const startApi = async () => {
       stateStore,
       pushKeys,
       pushSubscriptions,
+      mcpCapabilitiesStore,
     }),
     websocket: {
       // Bun 默认 16MB 超限即断连(1009)。附件 base64 走单条上行帧:8 张 × 单图 5MB

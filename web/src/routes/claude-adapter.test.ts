@@ -5172,7 +5172,7 @@ describe("MCP Apps display tool (structuredContent 透传)", () => {
         {
           type: "tool_use",
           id: "tu-wiki",
-          name: "mcp__ar-hub__wiki_read_page",
+          name: "mcp__ar-hub__wiki_read",
           input: { slug: "arch" },
         },
       ]),
@@ -5193,7 +5193,7 @@ describe("MCP Apps display tool (structuredContent 透传)", () => {
     const rendered = renderChatStream(items);
     const card = rendered.find((m) => {
       const c = m.metadata?.custom as Record<string, unknown> | undefined;
-      return c?.systemMessageType === "tool-card" && c?.toolName === "mcp__ar-hub__wiki_read_page";
+      return c?.systemMessageType === "tool-card" && c?.toolName === "mcp__ar-hub__wiki_read";
     });
     expect(card).toBeDefined();
     const custom = card?.metadata?.custom as Record<string, unknown>;

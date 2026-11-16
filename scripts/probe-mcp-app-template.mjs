@@ -257,8 +257,7 @@ try {
   const refreshReq = [...msgs].reverse().find((m) => m && m.method === "tools/call");
   assert(
     "refresh sends tools/call with current slug",
-    refreshReq?.params?.name === "wiki_read_page" &&
-      refreshReq?.params?.arguments?.slug === "probe",
+    refreshReq?.params?.name === "wiki_read" && refreshReq?.params?.arguments?.slug === "probe",
     JSON.stringify(refreshReq?.params ?? null),
   );
   await page.evaluate((id) => {
