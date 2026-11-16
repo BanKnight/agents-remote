@@ -1,15 +1,16 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-16（**MCP 渐进式披露 + 能力内部状态批：实现 + 全门禁绿，待 commit
-> （push 待用户确认）+ 真机验证清单交用户**）
+> 最后更新：2026-11-16（**MCP 渐进式披露批：实现 + 双 reviewer 收敛全部落地
+> （`9f998ae8` + `9d765ded`），全门禁复跑绿，待用户确认 push + 真机验证清单交用户**）
 
 ## 一句话状态
 
 ar-hub 功能域完成渐进式披露四层改造（L0 instructions 菜单 / L1 guide:// 指南 /
 L2 capability_list+set / L3 门控工具面），能力真相源从项目 mcp.json 迁 ar-hub 内部
 状态 `~/.agents-remote/mcp-capabilities.json`（惰性导入 + 级联），wiki 改名去 pages +
-新增 wiki_search。全门禁绿（api 1377 / shared 16 / web 1088 / e2e 42 / CSS 硬闸 /
-tokens 机检）。
+新增 wiki_search。security（0 P0/P1）+ code（1 P1 + 6 P2）报告全部消化：
+store 写串行化 / admin 导入不复活 / 域名单单源化 / 文案对齐 / 探针恢复语义。
+全门禁复跑绿（api 1380 / shared 16 / web 1088 / e2e 42 / lint 0 warning）。
 
 ## 本 session 焦点
 
@@ -37,28 +38,28 @@ tokens 机检）。
 
 ### 进度
 
-- ✅ 阶段 1-2（store + mcp-domains + hub 四层装配）、阶段 3（web 改名+模板+探针）、
-  阶段 4（projects 级联 + mcp-management/mcp-config 注释）、阶段 5（新设计文档 +
-  wiki/mcp-server-features.md 重写 §一 + hosting.md 三处现状锚点 + handoff/gtd 登记）
-- ✅ 测试：`mcp-capabilities-store.test.ts` 9 新增；`mcp-hub-server.test.ts` 51（含
-  instructions/guide://wiki/capability 闭环/admin 审批三态 7 新用例）；`index.test.ts`
-  36；`project-gen-ui` + `projects` 47；web 两文件 378（含 legacy 兼容断言）
-- ✅ 本轮收尾：`mcp-admin-tools.test.ts` 迁 store（三 describe 建 store 注入 + 项目
-  目录保留 + tools/list 断言更新 = admin 八工具 + 恒注册六工具 14 项）→ 14/14；
-  `probe-mcp-app-template.mjs` 刷新请求名 → `wiki_read`；`probe-admin-approval.mjs`
-  「备份→写 mcp.json→恢复」改为直写/清 `~/.agents-remote/mcp-capabilities.json`
-  （imported:true 防惰性导入覆盖；原文备份/无文件则 rm）
-- ✅ 全门禁：format:check / lint 0 warning / typecheck / 全量单测（systemd 2G：
-  api 1377 + shared 16 + web 1088）/ e2e 42/42（4G）/ CSS 落盘硬闸 / tokens 机检 0/0
-- ⏳ commit（pre-commit 全门禁）→ push 待用户确认
-- ⏳ 真机验证清单交用户（见 gtd next-actions @mcp-apps 组）
+- ✅ 阶段 1-5 全实现 + 本轮收尾（mcp-admin-tools.test.ts 迁 store、两探针迁移、文档、
+  handoff/gtd 登记）
+- ✅ 双 reviewer 审查 + 报告全部消化（`9d765ded`）：security 0 P0/P1 + 3 P2；code
+  1 P1（store 写竞态）+ 6 P2。修复：store 写路径 writeQueue 串行化 + temp 名
+  randomUUID 段；惰性导入 admin 强制剔除（迁移路径没有审批语义）；能力域名单单源化
+  （store 白名单 + hub z.enum 都从 MCP_DOMAINS 派生）；ADMIN_GUIDE/SKILLS_GUIDE 文案
+  对齐实现；hub 补 disable-admin 审批用例；index.ts 删 store 重复传参；探针恢复不整份
+  rm 状态文件。新增回归测试 3 条（store 2 + hub 1）
+- ✅ 全门禁复跑绿：format:check / lint 0 warning / typecheck / 全量单测（systemd 2G：
+  api 1380 + shared 16 + web 1088）/ e2e 42/42（4G）/ CSS 落盘硬闸 / tokens 机检 0/0
+- ✅ commit：`9f998ae8`（主批）+ `9d765ded`（reviewer 收敛），pre-commit 全门禁过
+- ⏳ push 待用户确认（连同 checkpoint 批 dad68fe/278289d2/d81b28d9 三个挂账 commit）
+- ⏳ 真机验证清单交用户（见 gtd next-actions @mcp-apps 组渐进披露条）
 
 ### 易丢的关键上下文
 
 - `startMcpHubServer` 的 `capabilitiesStore` 现为**必选**——任何新 hub 测试必须注入，
   否则 capabilities 全空（wiki 四工具仍恒注册但 capability_set 会炸）。
-- 探针 `probe-admin-approval.mjs` 改内部状态后：test 项目若无 store 记录会惰性导入
-  其 mcp.json——探针写入带 `imported: true` 就不会覆盖。
+- **store 写路径全部走 writeQueue 串行**（review P1 修复）；`importFromLegacy` 对
+  admin 强制剔除——存量 mcp.json 的 admin:true 不随导入复活（迁移路径无审批语义）。
+- 探针 `probe-admin-approval.mjs` 写入带 `imported: true` 防惰性导入覆盖；恢复时
+  backup===null 只删 test 记录写回（不整份 rm，防误删其它项目记录）。
 - `rtk proxy rg` 查工具名（rtk 输出压缩会把旧名显示成 "n"）。
 - run-e2e.ts 造 mcp.json `{ui:true}` **保持不变**——天然验证惰性导入路径。
 - commit 用标准 `git add && git commit`（禁 `--only`/`--git-dir`）；`site/` untracked
@@ -66,10 +67,11 @@ tokens 机检）。
 
 ### 下一步
 
-1. commit → 请用户确认 push（含此前 checkpoint 批 3 个 commit 挂账 push）。
+1. 请用户确认 push（本批 2 commit + checkpoint 批 3 个挂账）。
 2. 真机验证清单交用户（五条，见 gtd @mcp-apps 组渐进披露条）。
-3. reviewer 审查：本批涉及命令执行/审批/外部输入面 → 建议 security-reviewer +
-   code-reviewer 过一遍（MCP hub 改造面大，digest 见 mcp-hub-server.ts 四层装配）。
+3. security 附注（记档不修）：admin 闸本质是审批 UX 而非硬边界——有 shell 的 agent
+   可直写状态文件，这是平台既有信任模型的属性（agent 进程与用户同权限），后续不要把
+   硬边界建立在该 store 上。
 
 ## 挂账（非本批）
 
