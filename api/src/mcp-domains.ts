@@ -46,7 +46,7 @@ const SKILLS_GUIDE = `# skills
 Project and user skills exposed over MCP via the SEP-2640 skills extension. Skills are \`SKILL.md\` packages under \`<project>/.claude/skills/\` and \`~/.claude/skills/\` (project wins on name collisions).
 
 ## Interface
-- MCP methods (not tools): \`skills/list\` (paginated index with digests; cache ttl 300s) and \`skills/get\` (one skill's manifest).
+- MCP methods (not tools): \`skills/list\` (paginated index with digests; the server scans per request, no server-side cache) and \`skills/get\` (one skill's manifest).
 - Resources: \`skill://<name>/SKILL.md\` plus the skill's file list, read via standard \`resources/read\`.
 - Disabled skills live outside the scanned directories and never appear.
 
@@ -79,7 +79,7 @@ Cross-project administration.
 Each management call registers an approval card in the web UI / PWA notification; the call resumes only after the user allows it (deny or 120s timeout returns an error).
 
 ## Enablement
-Disabling is direct; **enabling the admin domain itself requires user approval** — an agent cannot grant itself administrative power. Use \`capability_set\` (\`{"capability":"admin","enabled":true}\`) and tell the user to approve the request.`;
+**Enabling or disabling the admin domain itself requires user approval** — an agent cannot grant itself (or revoke, unobserved) administrative power. Use \`capability_set\` (\`{"capability":"admin","enabled":true|false}\`) and tell the user to approve the request.`;
 
 export const MCP_DOMAINS: readonly McpDomain[] = [
   {
@@ -116,6 +116,13 @@ export const MCP_DOMAINS: readonly McpDomain[] = [
 export const domainGuideUri = (name: McpCapability) => `guide://${name}`;
 
 /**
+ * 能力域名单（capability 白名单单源）：从域注册表派生。store 的文件归一化白名单与
+ * hub `capability_set` 的 z.enum 都消费这份，新增域只改 MCP_DOMAINS（review 收敛：
+ * 三处重复清单漏改一处的面）。
+ */
+export const MCP_CAPABILITY_NAMES: readonly McpCapability[] = MCP_DOMAINS.map((d) => d.name);
+
+/**
  * L0 常驻菜单：域清单 + 实时状态 + 使用引导。每请求按当前 capabilities 拼装
  * （~15 行内）——渐进式披露只把菜单放进上下文，细节走 guide:// 资源与工具。
  */
@@ -132,7 +139,7 @@ export function buildArHubInstructions(
     "",
     "Operating rules:",
     "- Domain operation tools may still be listed while their domain is disabled — calling one returns a guidance error explaining how to enable it. That is expected, not a failure; follow the guidance.",
-    "- Use `capability_list` for live status, and `capability_set` to enable/disable a domain. Enabling `admin` itself requires user approval.",
+    "- Use `capability_list` for live status, and `capability_set` to enable/disable a domain. Changing `admin` (either direction) requires user approval.",
     "- Read the `guide://<domain>` resource for that domain's full guide (tools, scenarios, enablement) before first use or when unsure.",
   ].join("\n");
 }

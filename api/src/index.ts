@@ -775,7 +775,6 @@ export const createFetchHandler =
           projectsRoot: options.projectsRoot,
           capabilitiesStore: options.mcpCapabilitiesStore,
         },
-        options.mcpCapabilitiesStore,
       );
       if (toolsCallResponse) {
         return withRefresh(toolsCallResponse);
@@ -2011,7 +2010,6 @@ const handleMcpHubToolsCallRoute = async (
   url: URL,
   projectsRoot: string,
   deps: HubAppToolDeps,
-  capabilitiesStore: McpCapabilitiesStore,
 ): Promise<Response | undefined> => {
   if (request.method !== "POST") return undefined;
   const prefix = "/api/projects/";
@@ -2048,7 +2046,7 @@ const handleMcpHubToolsCallRoute = async (
   try {
     // 与 ui-resource 同款：先过 project resolver 再读内部状态（已有记录时 store 不自校验）。
     await resolveProjectPath(projectsRoot, projectName);
-    const capabilities = await capabilitiesStore.get(projectName);
+    const capabilities = await deps.capabilitiesStore.get(projectName);
     if (capabilities.ui !== true) {
       return jsonError("PROJECT_FILE_NOT_FOUND", "MCP ui capability is disabled", 404);
     }

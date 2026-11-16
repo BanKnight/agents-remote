@@ -1298,4 +1298,21 @@ describe("MCP hub admin capability approval", () => {
     expect(text).toContain("ADMIN_ORIGIN_MISSING");
     expect(approvalRequests).toHaveLength(0);
   });
+
+  it("disabling admin also goes through approval (both directions gated)", async () => {
+    await capabilitiesStore.set("test", "admin", true);
+    decision = "allow";
+    const res = await fetch(`${baseUrl}/mcp/test?origin=agent_origin`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(93, "capability_set", { capability: "admin", enabled: false }),
+    });
+    const payload = JSON.parse((await parseSseResult(res)).result?.content?.[0]?.text ?? "{}") as {
+      capabilities?: { capability: string; enabled: boolean }[];
+    };
+    expect(payload.capabilities?.find((e) => e.capability === "admin")?.enabled).toBe(false);
+    expect(approvalRequests).toEqual([
+      { toolName: "capability_set", input: { capability: "admin", enabled: false } },
+    ]);
+  });
 });

@@ -15,7 +15,12 @@ import {
   WIKI_PAGE_UI_URI,
 } from "./mcp-app-templates.js";
 import type { McpCapabilitiesStore } from "./mcp-capabilities-store.js";
-import { buildArHubInstructions, domainGuideUri, MCP_DOMAINS } from "./mcp-domains.js";
+import {
+  buildArHubInstructions,
+  domainGuideUri,
+  MCP_CAPABILITY_NAMES,
+  MCP_DOMAINS,
+} from "./mcp-domains.js";
 import {
   collectProjectSkills,
   decodeSkillCursor,
@@ -571,7 +576,8 @@ const registerCapabilityTools = (
       description:
         "Enable or disable a capability domain for this project. wiki/ui/skills/gen-ui changes take effect immediately for subsequent calls; enabling or disabling admin requires user approval. Returns the full live status.",
       inputSchema: {
-        capability: z.enum(["wiki", "ui", "skills", "gen-ui", "admin"]),
+        // 名单从域注册表派生（单源 MCP_DOMAINS；zod 需非空 tuple 形态故断言）。
+        capability: z.enum(MCP_CAPABILITY_NAMES as [McpCapability, ...McpCapability[]]),
         enabled: z.boolean(),
       },
     },

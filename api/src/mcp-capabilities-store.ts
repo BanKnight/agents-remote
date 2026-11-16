@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { McpCapability } from "@agents-remote/shared";
 import { readProjectMcpConfig } from "./mcp-config.js";
+import { MCP_CAPABILITY_NAMES } from "./mcp-domains.js";
 
 // per-project 能力域开关的 ar-hub 内部状态（渐进式披露批）：真相源从项目
 // `.agents-remote/mcp.json` 迁到 `~/.agents-remote/mcp-capabilities.json`（与
@@ -19,7 +21,8 @@ export type ProjectCapabilityState = {
 
 type CapabilitiesFile = { projects: Record<string, ProjectCapabilityState> };
 
-const MCP_CAPABILITIES: readonly McpCapability[] = ["wiki", "ui", "skills", "gen-ui", "admin"];
+// 白名单从域注册表派生（单源：MCP_DOMAINS）。
+const MCP_CAPABILITIES: readonly McpCapability[] = MCP_CAPABILITY_NAMES;
 
 const isCapability = (value: unknown): value is McpCapability =>
   typeof value === "string" && (MCP_CAPABILITIES as readonly string[]).includes(value);
@@ -54,23 +57,45 @@ export const defaultCapabilitiesPath = () =>
 export class McpCapabilitiesStore {
   private readonly path: string;
   private readonly projectsRoot: string;
+  /**
+   * 写路径互斥队列尾（review P1）：read-modify-write 无锁时，并发写各持陈旧快照整表
+   * 回写 → 后写者静默回滚先写者（如并发 capability_set / 删除级联撞惰性导入）。单进程
+   * 控制面，promise 链串行足够（范式 = state-store.updateModule）。
+   */
+  private writeQueue: Promise<unknown> = Promise.resolve();
 
   constructor(options: { path?: string; projectsRoot: string }) {
     this.path = options.path ?? defaultCapabilitiesPath();
     this.projectsRoot = options.projectsRoot;
   }
 
+  /** 写路径入队：串行执行 task，队列自身吞结果只作串行信号，错误由调用者感知。 */
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const result = this.writeQueue.then(task, task);
+    this.writeQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
   /**
    * 某项目的能力开关。
    * - 已有记录 → 直接返回（mcp.json 不再参与）。
    * - 无记录 → 惰性导入存量 `.agents-remote/mcp.json`（不存在/非法 → 全关），落盘
-   *   imported 标记后返回；此后不再读文件。
+   *   imported 标记后返回；此后不再读文件。导入本身是写路径，进队列与并发写互斥
+   *   （入队后重读一次：排队期间记录可能已被并发写建立）。
    */
   async get(projectName: string): Promise<Partial<Record<McpCapability, boolean>>> {
     const file = await this.read();
     const state = file.projects[projectName];
     if (state) return state.capabilities;
-    return (await this.importFromLegacy(projectName)).capabilities;
+    return this.enqueue(async () => {
+      const fresh = await this.read();
+      const existing = fresh.projects[projectName];
+      if (existing) return existing.capabilities;
+      return (await this.importFromLegacy(projectName, fresh)).capabilities;
+    });
   }
 
   /** 设置单域开关，返回该项目最新全量状态。 */
@@ -79,25 +104,28 @@ export class McpCapabilitiesStore {
     capability: McpCapability,
     enabled: boolean,
   ): Promise<Partial<Record<McpCapability, boolean>>> {
-    // 先确保存量已导入：否则本次写入会把「导入前的初始状态」覆盖成只剩这一个键。
-    await this.get(projectName);
-    const file = await this.read();
-    const state = file.projects[projectName] ?? { capabilities: {} };
-    const next: ProjectCapabilityState = {
-      ...state,
-      capabilities: { ...state.capabilities, [capability]: enabled },
-    };
-    await this.persist({ ...file, projects: { ...file.projects, [projectName]: next } });
-    return next.capabilities;
+    return this.enqueue(async () => {
+      const file = await this.read();
+      // 无记录先惰性导入（保证写入合并在导入后的全量状态上，而非覆盖成只剩一个键）。
+      const state = file.projects[projectName] ?? (await this.importFromLegacy(projectName, file));
+      const next: ProjectCapabilityState = {
+        ...state,
+        capabilities: { ...state.capabilities, [capability]: enabled },
+      };
+      await this.persist({ ...file, projects: { ...file.projects, [projectName]: next } });
+      return next.capabilities;
+    });
   }
 
   /** 项目删除级联：清理该项目的能力状态。 */
   async removeProject(projectName: string): Promise<void> {
-    const file = await this.read();
-    if (!(projectName in file.projects)) return;
-    const projects = { ...file.projects };
-    delete projects[projectName];
-    await this.persist({ ...file, projects });
+    return this.enqueue(async () => {
+      const file = await this.read();
+      if (!(projectName in file.projects)) return;
+      const projects = { ...file.projects };
+      delete projects[projectName];
+      await this.persist({ ...file, projects });
+    });
   }
 
   /**
@@ -106,16 +134,26 @@ export class McpCapabilitiesStore {
    */
   async renameProject(from: string, to: string): Promise<void> {
     if (from === to) return;
-    const file = await this.read();
-    const state = file.projects[from];
-    if (!state) return;
-    const projects = { ...file.projects };
-    delete projects[from];
-    projects[to] = state;
-    await this.persist({ ...file, projects });
+    return this.enqueue(async () => {
+      const file = await this.read();
+      const state = file.projects[from];
+      if (!state) return;
+      const projects = { ...file.projects };
+      delete projects[from];
+      projects[to] = state;
+      await this.persist({ ...file, projects });
+    });
   }
 
-  private async importFromLegacy(projectName: string): Promise<ProjectCapabilityState> {
+  /**
+   * 惰性导入（enqueue 内调用，调用方传入本轮已读快照）。mcp.json 不存在/非法 → 全关。
+   * admin 不随导入复活（review：迁移路径没有审批语义——无审批时代的存量 admin 开关
+   * 不得在状态文件丢失/损坏后免审批重新生效），需要时经 capability_set 审批重设。
+   */
+  private async importFromLegacy(
+    projectName: string,
+    file: CapabilitiesFile,
+  ): Promise<ProjectCapabilityState> {
     let capabilities: Partial<Record<McpCapability, boolean>> = {};
     try {
       const config = await readProjectMcpConfig(this.projectsRoot, projectName);
@@ -124,8 +162,8 @@ export class McpCapabilitiesStore {
       // mcp.json 非法/不可读：按全关导入并落盘（用户可经 capability_set 重设）——
       // 不让一次坏文件导致每次请求都重试报错。
     }
+    delete capabilities.admin;
     const state: ProjectCapabilityState = { capabilities: { ...capabilities }, imported: true };
-    const file = await this.read();
     await this.persist({ ...file, projects: { ...file.projects, [projectName]: state } });
     return state;
   }
@@ -142,7 +180,9 @@ export class McpCapabilitiesStore {
 
   private async persist(file: CapabilitiesFile): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    const tempPath = `${this.path}.${process.pid}.tmp`;
+    // 临时名加随机段（同 state-store 教训）：仅 pid 时并发 persist 打开同一 temp 文件
+    // 互相 O_TRUNC 截断 → rename 出损坏 JSON（读侧 fail-closed 全关 = 开关静默清零）。
+    const tempPath = `${this.path}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
     await writeFile(tempPath, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
     await chmod(tempPath, 0o600);
     await rename(tempPath, this.path);

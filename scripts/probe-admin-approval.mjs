@@ -14,7 +14,7 @@
 // 前缀识别会话、唯一 ts 后缀目录、内部状态文件备份恢复）。
 
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -156,11 +156,24 @@ async function enableAdminCapability() {
 }
 
 async function restoreCapabilities(backup) {
-  if (backup === null) {
-    await rm(CAPABILITIES_PATH, { force: true });
+  if (backup !== null) {
+    await writeFile(CAPABILITIES_PATH, backup, { mode: 0o600 });
     return;
   }
-  await writeFile(CAPABILITIES_PATH, backup, { mode: 0o600 });
+  // 原本无状态文件：不整份 rm——探针窗口内 dev api 可能已为其它项目落盘惰性导入
+  // 记录，rm 会误删；只移除 test 记录写回（空表也写，不 rm）。
+  let file = { projects: {} };
+  try {
+    file = JSON.parse(await readFile(CAPABILITIES_PATH, "utf8")) ?? file;
+  } catch {
+    // 损坏按空表处理（与 store 读容错同语义）
+  }
+  const projects = { ...file.projects };
+  delete projects[TEST_PROJECT];
+  await mkdir(dirname(CAPABILITIES_PATH), { recursive: true, mode: 0o700 });
+  await writeFile(CAPABILITIES_PATH, `${JSON.stringify({ projects }, null, 2)}\n`, {
+    mode: 0o600,
+  });
 }
 
 // ── Part 1: claude 全链 allow（核心）──────────────────────────────────────────

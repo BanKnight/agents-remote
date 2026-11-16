@@ -105,3 +105,22 @@ test("unknown capability keys in the file are ignored", async () => {
   );
   expect(await store().get("demo")).toEqual({ wiki: true });
 });
+
+// review 收敛（security P2）：迁移路径没有审批语义——存量 mcp.json 里的 admin 开关
+// 不得随导入复活（状态文件丢失/损坏后重新导入 = 免审批提权复活面）。
+test("legacy import never revives admin (migration has no approval semantics)", async () => {
+  await writeLegacyConfig({ admin: true, ui: true });
+  expect(await store().get("demo")).toEqual({ ui: true });
+});
+
+// review 收敛（code P1）：写路径串行化——并发 set 各持陈旧快照整表回写会静默回滚
+// 先写者（lost update）。
+test("concurrent sets serialize without lost update", async () => {
+  const s = store();
+  await Promise.all([
+    s.set("demo", "wiki", true),
+    s.set("demo", "ui", true),
+    s.set("demo", "skills", true),
+  ]);
+  expect(await s.get("demo")).toEqual({ wiki: true, ui: true, skills: true });
+});
