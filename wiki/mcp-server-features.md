@@ -16,10 +16,10 @@ api 进程内 loopback Streamable HTTP MCP server（绑 `127.0.0.1:43013`，无�
 
 | 层 | 进上下文时机 | 内容 |
 | --- | --- | --- |
-| L0 功能菜单 | 常驻（MCP `instructions`，每请求动态拼装） | 5 域各一行：名称 + 一句话作用 + 当前开关状态 + Operating rules |
-| L1 域指南 | agent 按需读 | `guide://<domain>` 五条恒注册资源 |
+| L0 功能菜单 | 常驻（MCP `instructions`，每请求动态拼装） | 6 域各一行：名称 + 一句话作用 + 当前开关状态 + Operating rules |
+| L1 域指南 | agent 按需读 | `guide://<domain>` 六条恒注册资源 |
 | L2 状态管理 | 工具恒注册 | `capability_list`（实时状态）/ `capability_set`（设置；admin 变更经审批中心，其余直接生效） |
-| L3 操作工具 | wiki 恒注册 + 运行时门控；其余域按开关注册 | 见下两表 |
+| L3 操作工具 | wiki / pages 恒注册 + 运行时门控；其余域按开关注册 | 见下三表 |
 
 **真相源**：`~/.agents-remote/mcp-capabilities.json`（ar-hub 内部状态，per-project；项目删除/重命名级联清理/迁移）。存量项目 `.agents-remote/mcp.json` 首次访问**惰性导入**一次（`imported` 标记），此后文件不再参与判定——改 mcp.json 不再生效，开关一律走 `capability_set`。
 
@@ -32,6 +32,13 @@ api 进程内 loopback Streamable HTTP MCP server（绑 `127.0.0.1:43013`，无�
 | `wiki_search` | 全文搜索（新增，复用服务端 searchPages——agent 检索面） |
 | `wiki_write` | 写单页（原 `wiki_write_page`） |
 
+**pages 域 = 运行时门控**（两工具恒注册；`pages_list` 只读，`pages_set_roots` 每次变更走审批中心——改发布配置 = 改外发面）：
+
+| 工具 | 说明 |
+| --- | --- |
+| `pages_list` | 读生效视图（roots + `servePrefix: /p/<project>`）；无配置文件 → 默认根 `site/ → /` public；`roots: []` = 关闭发布 |
+| `pages_set_roots` | 整体替换 roots（urlPath / fsDir / auth: public\|token）；fsDir 必须项目相对目录且无 `..`；审批 allow 后才原子写 `.agents-remote/pages.json` |
+
 **其余域 = 注册面门控**（开关决定注册面）：
 
 | 能力开关 | 注册面 |
@@ -39,7 +46,7 @@ api 进程内 loopback Streamable HTTP MCP server（绑 `127.0.0.1:43013`，无�
 | `ui` | `wiki_read` 升级 display tool（`_meta.ui.resourceUri` → 卡片渲染门控）+ `git_status` / `git_log`、`session_overview`、画布四工具、`read_file`、`project_settings` |
 | `skills` | SEP-2640 分发：`skills/list` / `skills/get` 方法 + `skill://` 资源模板 |
 | `gen-ui` | 生成式 UI 能力（见 §三） |
-| `admin` | 管理面工具（project/session 管理；开关变更经审批中心） |
+| `admin` | 观察 4（`project_list` / `session_list` / `session_read` / `mcp_list`）+ 管理 10（project/session 五 + 外部 MCP server 五：`mcp_add` / `mcp_remove` / `mcp_update` / `mcp_enable` / `mcp_disable`，每调用挂审批）；开关变更经审批中心 |
 
 全关时空壳 capabilities（基座行为保留）。本项目（agents-remote）当前开 `ui` + `wiki`（2026-10-31 起）；test 项目 wiki/ui/gen-ui 三开（wiki 示例页在其名下）。
 

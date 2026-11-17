@@ -66,15 +66,37 @@ When the user asks for a generated page/dashboard for the project, check this do
 ## Enablement
 \`capability_set\` (\`{"capability":"gen-ui","enabled":true}\`). The gen-ui skill is (re)installed on the next agent spawn.`;
 
+const PAGES_GUIDE = `# pages
+
+Static site publishing for this project. Pages roots map URL path prefixes to directories inside the project, served at \`/p/<project><urlPath>\`. Two tool-level operations:
+
+## Tools
+- \`pages_list\` — read the current roots config: \`{ urlPath, fsDir, auth }\` per root plus the serve path prefix.
+- \`pages_set_roots\` — replace the whole roots config (array of \`{ urlPath, fsDir, auth }\`). \`auth\` is \`public\` (anyone with the site URL) or \`token\` (requires auth). **Every call requires user approval** — changing what gets published is an outward-facing operation.
+
+## Defaults
+- No config file: one default root \`site/\` → \`/\` (\`public\`) is in effect.
+- Explicit empty roots array: publishing is turned off (no default fallback).
+- \`fsDir\` must be a project-relative directory (no \`..\`, not empty — to avoid exposing the whole disk); duplicate \`urlPath\` values are rejected.
+
+## Notes
+- The serve face (\`/p/<project>...\`) is independent of this capability switch — it follows the roots config regardless. This switch only gates the MCP tools.
+- Public roots are reachable without authentication by anyone who knows the project URL. Do not publish directories containing secrets.
+
+## Enablement
+If the domain is disabled, calls return a guidance error. Enable it with \`capability_set\` (\`{"capability":"pages","enabled":true}\`); changes take effect immediately for subsequent calls.`;
+
 const ADMIN_GUIDE = `# admin
 
 Cross-project administration.
 
 ## Observation tools (no approval needed)
 - \`project_list\` / \`session_list\` / \`session_read\` — inspect projects, sessions and their recent output.
+- \`mcp_list\` — list external MCP servers (user scope from \`~/.claude.json\` and this project's \`.mcp.json\`; pass \`scope\` to narrow).
 
 ## Management tools (every call is suspended for user approval)
 - \`project_create\` / \`project_delete\` / \`session_create\` / \`session_close\` / \`session_send\`.
+- \`mcp_add\` / \`mcp_remove\` / \`mcp_update\` / \`mcp_enable\` / \`mcp_disable\` — manage external MCP servers. \`scope\` is required: \`project\` writes this project's \`.mcp.json\`, \`user\` writes the global \`~/.claude.json\`. Names starting with \`ar-\` are reserved and rejected. \`mcp_disable\`/\`mcp_enable\` move a server's config to a disabled stash and back.
 
 Each management call registers an approval card in the web UI / PWA notification; the call resumes only after the user allows it (deny or 120s timeout returns an error).
 
@@ -104,6 +126,12 @@ export const MCP_DOMAINS: readonly McpDomain[] = [
     oneLiner:
       "Generative UI pages — author and serve project HTML pages rendered by the web shell.",
     guide: GEN_UI_GUIDE,
+  },
+  {
+    name: "pages",
+    oneLiner:
+      "Static site publishing — inspect and update the project's pages roots config; changes require user approval.",
+    guide: PAGES_GUIDE,
   },
   {
     name: "admin",

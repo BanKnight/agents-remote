@@ -8,6 +8,7 @@ import { McpCapabilitiesStore } from "./mcp-capabilities-store";
 import { ProjectCanvasService } from "./project-canvas";
 import { ProjectFilesService } from "./project-files";
 import { ProjectGitDiffService } from "./project-git-diff";
+import { ProjectPagesService } from "./project-pages";
 import { ProjectWikiService } from "./project-wiki";
 import { SessionRegistry } from "./session-registry";
 
@@ -272,7 +273,7 @@ describe("MCP hub server (stateless, loopback)", () => {
     const instructions =
       ((await parseSseResult(res)).result as unknown as { instructions?: string })?.instructions ??
       "";
-    for (const domain of ["wiki", "ui", "skills", "gen-ui", "admin"]) {
+    for (const domain of ["wiki", "ui", "skills", "gen-ui", "pages", "admin"]) {
       expect(instructions).toContain(domain);
     }
     expect(instructions).toContain("wiki (enabled)");
@@ -281,7 +282,7 @@ describe("MCP hub server (stateless, loopback)", () => {
     expect(instructions).toContain("guide://");
   });
 
-  it("resources/list exposes the five guide:// domains even with everything disabled", async () => {
+  it("resources/list exposes the six guide:// domains even with everything disabled", async () => {
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
       headers: MCP_HEADERS,
@@ -293,6 +294,7 @@ describe("MCP hub server (stateless, loopback)", () => {
     expect(resources.map((r) => r.uri).sort()).toEqual([
       "guide://admin",
       "guide://gen-ui",
+      "guide://pages",
       "guide://skills",
       "guide://ui",
       "guide://wiki",
@@ -314,7 +316,7 @@ describe("MCP hub server (stateless, loopback)", () => {
     expect(contents?.[0]?.text).toContain("wiki_search");
   });
 
-  it("capability_list reports live status for all five domains", async () => {
+  it("capability_list reports live status for all six domains", async () => {
     await writeMcpConfig("test", { wiki: true });
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
@@ -325,7 +327,14 @@ describe("MCP hub server (stateless, loopback)", () => {
       capabilities?: { capability: string; enabled: boolean }[];
     };
     const entries = payload.capabilities ?? [];
-    expect(entries.map((e) => e.capability)).toEqual(["wiki", "ui", "skills", "gen-ui", "admin"]);
+    expect(entries.map((e) => e.capability)).toEqual([
+      "wiki",
+      "ui",
+      "skills",
+      "gen-ui",
+      "pages",
+      "admin",
+    ]);
     expect(entries.find((e) => e.capability === "wiki")?.enabled).toBe(true);
     expect(entries.find((e) => e.capability === "ui")?.enabled).toBe(false);
   });
@@ -1314,5 +1323,129 @@ describe("MCP hub admin capability approval", () => {
     expect(approvalRequests).toEqual([
       { toolName: "capability_set", input: { capability: "admin", enabled: false } },
     ]);
+  });
+});
+
+// ── pages 域（静态站点发布：pages_list 只读 + pages_set_roots 挂审批）──────────
+
+describe("MCP hub pages capability", () => {
+  let projectsRoot: string;
+  let home: string;
+  let hub: McpHubServer;
+  let baseUrl: string;
+  let capabilitiesStore: McpCapabilitiesStore;
+  let decision: "allow" | "deny";
+  const approvalRequests: { toolName: string; input: unknown }[] = [];
+
+  beforeEach(async () => {
+    decision = "allow";
+    approvalRequests.length = 0;
+    projectsRoot = await mkdtemp(join(tmpdir(), "ar-mcp-pages-"));
+    home = await mkdtemp(join(tmpdir(), "ar-mcp-pages-home-"));
+    await mkdir(join(projectsRoot, "test"), { recursive: true });
+    capabilitiesStore = new McpCapabilitiesStore({
+      path: join(projectsRoot, ".capabilities.json"),
+      projectsRoot,
+    });
+    hub = startMcpHubServer({
+      port: 0,
+      projectsRoot,
+      wikiService: new ProjectWikiService(projectsRoot),
+      pagesService: new ProjectPagesService(projectsRoot),
+      home,
+      capabilitiesStore,
+      adminDeps: {
+        projectService: {} as never,
+        sessionRegistry: {
+          peekMetadata: async (project: string, sessionId: string) =>
+            sessionId === "agent_origin"
+              ? { projectName: project, id: sessionId, runtimeKey: "run-1" }
+              : undefined,
+        } as never,
+        approvalService: {
+          requestApproval: async (req: { toolName: string; input: unknown }) => {
+            approvalRequests.push({ toolName: req.toolName, input: req.input });
+            return decision;
+          },
+        } as never,
+      },
+    });
+    baseUrl = `http://127.0.0.1:${hub.port}`;
+  });
+
+  afterEach(async () => {
+    hub.stop();
+    await rm(projectsRoot, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  });
+
+  const configPath = () => join(projectsRoot, "test", ".agents-remote", "pages.json");
+
+  const callPages = (id: number, name: string, args: Record<string, unknown> = {}) =>
+    fetch(`${baseUrl}/mcp/test?origin=agent_origin`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: callToolBody(id, name, args),
+    });
+
+  it("tools/list includes the pages tools even when the domain is disabled", async () => {
+    const res = await fetch(`${baseUrl}/mcp/test`, {
+      method: "POST",
+      headers: MCP_HEADERS,
+      body: listToolsBody(94),
+    });
+    const { result } = await parseSseResult(res);
+    const tools = ((result as unknown as { tools?: { name: string }[] }).tools ?? []).map(
+      (t) => t.name,
+    );
+    expect(tools).toContain("pages_list");
+    expect(tools).toContain("pages_set_roots");
+  });
+
+  it("disabled domain → both tools return the capability_set guidance error", async () => {
+    for (const name of ["pages_list", "pages_set_roots"]) {
+      const res = await callPages(95, name, name === "pages_set_roots" ? { roots: [] } : {});
+      const text = await res.text();
+      expect(text).toContain('"isError":true');
+      expect(text).toContain("capability_set");
+    }
+    // 门控在审批之前：关闭态变更请求不应打扰用户。
+    expect(approvalRequests).toHaveLength(0);
+  });
+
+  it("pages_list returns the default site/ → / public root when no config file exists", async () => {
+    await capabilitiesStore.set("test", "pages", true);
+    const res = await callPages(96, "pages_list");
+    const payload = JSON.parse((await parseSseResult(res)).result?.content?.[0]?.text ?? "{}") as {
+      config?: { roots?: { urlPath: string; fsDir: string; auth: string }[] };
+      servePrefix?: string;
+    };
+    expect(payload.config?.roots).toEqual([{ urlPath: "/", fsDir: "site", auth: "public" }]);
+    expect(payload.servePrefix).toBe("/p/test");
+  });
+
+  it("pages_set_roots allow → approval card then config really written", async () => {
+    await capabilitiesStore.set("test", "pages", true);
+    const roots = [{ urlPath: "/", fsDir: "public", auth: "public" as const }];
+    const res = await callPages(97, "pages_set_roots", { roots });
+    const payload = JSON.parse((await parseSseResult(res)).result?.content?.[0]?.text ?? "{}") as {
+      config?: { roots?: unknown };
+    };
+    expect(payload.config?.roots).toEqual(roots);
+    expect(approvalRequests).toEqual([{ toolName: "pages_set_roots", input: { roots } }]);
+    const written = JSON.parse(await readFile(configPath(), "utf8")) as { roots: unknown };
+    expect(written.roots).toEqual(roots);
+  });
+
+  it("pages_set_roots deny → ADMIN_APPROVAL_DENIED and nothing written (fail closed)", async () => {
+    await capabilitiesStore.set("test", "pages", true);
+    decision = "deny";
+    const res = await callPages(98, "pages_set_roots", {
+      roots: [{ urlPath: "/", fsDir: "public", auth: "public" }],
+    });
+    const text = await res.text();
+    expect(text).toContain("ADMIN_APPROVAL_DENIED");
+    expect(approvalRequests).toHaveLength(1);
+    await expect(readFile(configPath(), "utf8")).rejects.toThrow();
   });
 });

@@ -39,6 +39,7 @@ import {
 } from "./project-canvas.js";
 import { ProjectGitDiffService } from "./project-git-diff.js";
 import { ProjectFilesService } from "./project-files.js";
+import { ProjectPagesError, ProjectPagesService } from "./project-pages.js";
 import { ProjectWikiService } from "./project-wiki.js";
 import { listProjectMcpServers } from "./mcp-management.js";
 import { registerAdminTools, requestManageApproval, type McpAdminDeps } from "./mcp-admin-tools.js";
@@ -87,6 +88,8 @@ export type StartMcpHubServerOptions = {
   filesService?: ProjectFilesService;
   // 画布四工具的数据源（M2.1）。可选:不注入则不注册(测试可只测 wiki 面)。
   canvasService?: ProjectCanvasService;
+  // pages 两工具（静态站点发布配置）的数据源。可选:不注入则不注册 pages 工具。
+  pagesService?: ProjectPagesService;
   // skills 全局 scope 的 home 定位(~/.claude/skills),测试注入临时目录;缺省 homedir()。
   home?: string;
   // admin capability（跨项目观察/管理）依赖。可选:不注入则 admin 开了也不注册工具
@@ -522,8 +525,118 @@ const registerWikiTools = (
   );
 };
 
+/** pages 错误面：ProjectPagesError 带 code（PROJECT_NOT_FOUND / PROJECT_PAGES_* 等），
+ *  映射 `[CODE] message` 文本；非已知错误原样抛崩连接（adminErrorResponse 同风格）。 */
+const pagesErrorResponse = (error: unknown) => {
+  if (error instanceof ProjectPagesError) {
+    return {
+      isError: true as const,
+      content: [{ type: "text" as const, text: `[${error.code}] ${error.message}` }],
+    };
+  }
+  throw error;
+};
+
 /**
- * 注册域指南资源（渐进式披露 L1）：MCP_DOMAINS 五条 `guide://<domain>` 恒注册，不随
+ * 注册 pages 能力域两工具（list/set_roots，恒注册 + 运行时门控）。pages_set_roots
+ * 每次变更都会改变「哪些项目目录被公开到 serve 面」= 外发操作 → 与 admin 管理面同档
+ * 走审批（列入 MCP_ADMIN_MANAGE_TOOLS，审批卡恒红）；pages_list 只读免审批。
+ */
+const registerPagesTools = (
+  server: McpServer,
+  project: string,
+  pagesService: ProjectPagesService,
+  capabilitiesStore: McpCapabilitiesStore,
+  adminDeps: McpAdminDeps | undefined,
+  originSessionId: string | undefined,
+): void => {
+  const isEnabled = async () => (await capabilitiesStore.get(project)).pages === true;
+
+  server.registerTool(
+    "pages_list",
+    {
+      description:
+        "Read the project's static-site roots config (urlPath → fsDir mappings with auth) plus the serve path prefix. No approval needed.",
+    },
+    async () => {
+      if (!(await isEnabled())) return capabilityDisabledResponse("pages");
+      try {
+        const config = await pagesService.readConfig(project);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                config,
+                servePrefix: `/p/${encodeURIComponent(project)}`,
+                note: "When no config file exists the default root site/ → / (public) is in effect; an explicit empty roots array turns publishing off. The serve face follows this config regardless of the capability switch.",
+              }),
+            },
+          ],
+        };
+      } catch (error) {
+        return pagesErrorResponse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "pages_set_roots",
+    {
+      description:
+        "Replace the project's static-site roots config. Every call requires user approval (changing what gets published is outward-facing). Empty array turns publishing off. Server-side validation: fsDir must be a project-relative directory without '..'; duplicate urlPath values are rejected.",
+      inputSchema: {
+        roots: z.array(
+          z.object({
+            urlPath: z.string(),
+            fsDir: z.string(),
+            auth: z.enum(["public", "token"]),
+          }),
+        ),
+      },
+    },
+    async ({ roots }) => {
+      if (!(await isEnabled())) return capabilityDisabledResponse("pages");
+      if (!adminDeps) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "[ADMIN_APPROVAL_UNAVAILABLE] Admin approval service is not wired for this hub.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const rejection = await requestManageApproval(
+        adminDeps,
+        { originProject: project, originSessionId },
+        "pages_set_roots",
+        { roots },
+      );
+      if (rejection) return rejection;
+      try {
+        const config = await pagesService.writeConfig(project, roots);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                config,
+                note: "Roots updated; the serve face reflects this immediately.",
+              }),
+            },
+          ],
+        };
+      } catch (error) {
+        return pagesErrorResponse(error);
+      }
+    },
+  );
+};
+
+/**
+ * 注册域指南资源（渐进式披露 L1）：MCP_DOMAINS 各域 `guide://<domain>` 恒注册，不随
  * 能力开关变化——agent 判断任务相关才 read，是「按需展开」而非常驻内容。
  */
 const registerDomainGuides = (server: McpServer): void => {
@@ -1025,6 +1138,7 @@ const buildRequestServer = (
   sessionRegistry: SessionRegistry | undefined,
   filesService: ProjectFilesService | undefined,
   canvasService: ProjectCanvasService | undefined,
+  pagesService: ProjectPagesService | undefined,
   capabilities: Partial<Record<McpCapability, boolean>>,
   capabilitiesStore: McpCapabilitiesStore,
   projectsRoot: string,
@@ -1060,6 +1174,17 @@ const buildRequestServer = (
   registerDomainGuides(server);
   // L3 wiki 工具恒注册（handler 运行时门控）；uiEnabled 只决定 wiki_read 的 display 升级。
   registerWikiTools(server, project, wikiService, capabilitiesStore, uiEnabled);
+  // L3 pages 工具恒注册（handler 运行时门控；set_roots 每次变更走审批）。
+  if (pagesService) {
+    registerPagesTools(
+      server,
+      project,
+      pagesService,
+      capabilitiesStore,
+      adminDeps,
+      originSessionId,
+    );
+  }
   if (uiEnabled) {
     // resources/read 查 HUB_UI_RESOURCES 单源表——与 HTTP 路由同一份数据,
     // 新增 UI 资源只改表,注册处不复制模板(防复制漂移,2026-10-20 review)。
@@ -1102,6 +1227,7 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
     sessionRegistry,
     filesService,
     canvasService,
+    pagesService,
     home = homedir(),
     adminDeps,
     capabilitiesStore,
@@ -1162,6 +1288,7 @@ export const startMcpHubServer = (options: StartMcpHubServerOptions): McpHubServ
           sessionRegistry,
           filesService,
           canvasService,
+          pagesService,
           capabilities,
           capabilitiesStore,
           projectsRoot,

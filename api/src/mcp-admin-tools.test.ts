@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { McpCapabilitiesStore } from "./mcp-capabilities-store";
@@ -85,6 +85,8 @@ describe("MCP admin tools (observation, capabilities.admin=true)", () => {
       adminDeps: {
         projectService: stubProjectService,
         sessionRegistry: stubSessionRegistry,
+        projectsRoot,
+        home,
       },
       capabilitiesStore,
     });
@@ -97,7 +99,7 @@ describe("MCP admin tools (observation, capabilities.admin=true)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("tools/list exposes all eight admin tools (3 observe + 5 manage)", async () => {
+  it("tools/list exposes all fourteen admin tools (4 observe + 10 manage)", async () => {
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
       headers: MCP_HEADERS,
@@ -105,10 +107,17 @@ describe("MCP admin tools (observation, capabilities.admin=true)", () => {
     });
     const { result } = await parseSseResult(res);
     const tools = (result as unknown as { tools?: { name: string }[] }).tools;
-    // admin 八工具 + 恒注册面（wiki 四工具运行时门控 + capability 两工具）。
+    // admin 十四工具 + 恒注册面（wiki 四工具运行时门控 + capability 两工具）。
+    // pages 两工具不在本断言内：该 describe 未注入 pagesService（不注册）。
     expect(tools?.map((t) => t.name).sort()).toEqual([
       "capability_list",
       "capability_set",
+      "mcp_add",
+      "mcp_disable",
+      "mcp_enable",
+      "mcp_list",
+      "mcp_remove",
+      "mcp_update",
       "project_create",
       "project_delete",
       "project_list",
@@ -306,6 +315,8 @@ describe("MCP admin tools (manage gate)", () => {
         sessionRegistry: registry,
         approvalService,
         sendToAgent: sendToAgentMock,
+        projectsRoot,
+        home,
       },
       capabilitiesStore,
     });
@@ -318,7 +329,7 @@ describe("MCP admin tools (manage gate)", () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it("tools/list exposes all eight admin tools (3 observe + 5 manage)", async () => {
+  it("tools/list exposes all fourteen admin tools (4 observe + 10 manage)", async () => {
     const res = await fetch(`${baseUrl}/mcp/test`, {
       method: "POST",
       headers: MCP_HEADERS,
@@ -326,10 +337,16 @@ describe("MCP admin tools (manage gate)", () => {
     });
     const { result } = await parseSseResult(res);
     const tools = (result as unknown as { tools?: { name: string }[] }).tools;
-    // admin 八工具 + 恒注册面（wiki 四工具运行时门控 + capability 两工具）。
+    // admin 十四工具 + 恒注册面（wiki 四工具运行时门控 + capability 两工具）。
     expect(tools?.map((t) => t.name).sort()).toEqual([
       "capability_list",
       "capability_set",
+      "mcp_add",
+      "mcp_disable",
+      "mcp_enable",
+      "mcp_list",
+      "mcp_remove",
+      "mcp_update",
       "project_create",
       "project_delete",
       "project_list",
@@ -374,7 +391,7 @@ describe("MCP admin tools (manage gate)", () => {
       wikiService: new ProjectWikiService(projectsRoot),
       home,
       sessionRegistry: registry,
-      adminDeps: { projectService, sessionRegistry: registry },
+      adminDeps: { projectService, sessionRegistry: registry, projectsRoot, home },
       capabilitiesStore,
     });
     baseUrl = `http://127.0.0.1:${hub.port}`;
@@ -433,5 +450,64 @@ describe("MCP admin tools (manage gate)", () => {
     expect(result?.isError).toBe(true);
     expect(result?.content?.[0]?.text).toContain("[SESSION_PROVIDER_UNAVAILABLE]");
     expect(approvalMock).not.toHaveBeenCalled();
+  });
+
+  // ── 外部 MCP server 管理（mcp_list 观察 + mcp_* 五管理工具）────────────────────
+
+  it("mcp_list merges user and project scopes with a scope field (no approval)", async () => {
+    await writeFile(
+      join(home, ".claude.json"),
+      JSON.stringify({ mcpServers: { "user-srv": { type: "stdio", command: "npx" } } }),
+    );
+    await writeFile(
+      join(projectsRoot, "test", ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { "proj-srv": { type: "http", url: "https://example.com/mcp" } },
+      }),
+    );
+    const { result } = await callWithOrigin(28, "mcp_list", {});
+    const payload = JSON.parse(result?.content?.[0]?.text ?? "{}") as {
+      servers?: { name: string; scope: string }[];
+    };
+    expect(payload.servers).toEqual([
+      expect.objectContaining({ name: "user-srv", scope: "user" }),
+      expect.objectContaining({ name: "proj-srv", scope: "project" }),
+    ]);
+    expect(approvalMock).not.toHaveBeenCalled();
+  });
+
+  it("mcp_add rejects a reserved ar- name before raising an approval card", async () => {
+    const { result } = await callWithOrigin(29, "mcp_add", {
+      scope: "project",
+      name: "ar-hub",
+      type: "stdio",
+      command: "npx",
+    });
+    expect(result?.isError).toBe(true);
+    expect(result?.content?.[0]?.text).toContain("reserved");
+    expect(approvalMock).not.toHaveBeenCalled();
+  });
+
+  it("mcp_add rejects an invalid name before raising an approval card", async () => {
+    const { result } = await callWithOrigin(30, "mcp_add", {
+      scope: "project",
+      name: "bad name",
+      type: "stdio",
+      command: "npx",
+    });
+    expect(result?.isError).toBe(true);
+    expect(result?.content?.[0]?.text).toContain("[MCP_CONFIG_INVALID]");
+    expect(approvalMock).not.toHaveBeenCalled();
+  });
+
+  it("mcp_remove accepts a reserved legacy name (cleanup must stay possible)", async () => {
+    approvalMock.mockImplementation(async () => "deny");
+    const { result } = await callWithOrigin(31, "mcp_remove", { scope: "user", name: "ar-hub" });
+    // 本地校验放行 → 到达审批闸（deny 路径），而非名字校验拒绝。
+    expect(result?.content?.[0]?.text).toContain("[ADMIN_APPROVAL_DENIED]");
+    expect(approvalMock).toHaveBeenCalledTimes(1);
+    const req = approvalMock.mock.calls[0]?.[0] as { toolName: string; input: unknown };
+    expect(req.toolName).toBe("mcp_remove");
+    expect(req.input).toEqual({ scope: "user", name: "ar-hub" });
   });
 });

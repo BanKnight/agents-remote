@@ -146,19 +146,23 @@ async function readMcpServersFile(filePath: string): Promise<McpServerEntry[]> {
   return parseMcpServers((parsed as { mcpServers?: unknown }).mcpServers);
 }
 
-export async function listUserMcpServers(): Promise<ListMcpServersResponse> {
-  const live = await readMcpServersFile(join(homedir(), USER_CONFIG_FILE));
-  const stash = await readMcpDisabledStash();
+/** home 参数 = 依赖注入（hub mcp_list 工具测试隔离 ~/.claude.json；生产缺省 homedir()）。 */
+export async function listUserMcpServers(
+  home: string = homedir(),
+): Promise<ListMcpServersResponse> {
+  const live = await readMcpServersFile(join(home, USER_CONFIG_FILE));
+  const stash = await readMcpDisabledStash(home);
   return { servers: mergeDisabledMcpServers(live, stash, "user") };
 }
 
 export async function listProjectMcpServers(
   projectsRoot: string,
   projectName: string,
+  home: string = homedir(),
 ): Promise<ListMcpServersResponse> {
   const project = await resolveProjectPath(projectsRoot, projectName);
   const live = await readMcpServersFile(join(project.path, PROJECT_MCP_FILE));
-  const stash = await readMcpDisabledStash();
+  const stash = await readMcpDisabledStash(home);
   return {
     servers: mergeDisabledMcpServers(live, stash, "project", projectName),
   };

@@ -1,20 +1,41 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-16（**MCP 渐进式披露批：实现 + 双 reviewer 收敛全部落地
-> （`9f998ae8` + `9d765ded`），全门禁复跑绿，待用户确认 push + 真机验证清单交用户**）
+> 最后更新：2026-11-17（**pages 域接入 MCP + admin 外部 MCP server 管理批：
+> 实现与测试全绿（api 1389 / shared 16 / web 1088），准备 commit；
+> 渐进披露批 push 仍待用户确认**）
 
 ## 一句话状态
 
-ar-hub 功能域完成渐进式披露四层改造（L0 instructions 菜单 / L1 guide:// 指南 /
-L2 capability_list+set / L3 门控工具面），能力真相源从项目 mcp.json 迁 ar-hub 内部
-状态 `~/.agents-remote/mcp-capabilities.json`（惰性导入 + 级联），wiki 改名去 pages +
-新增 wiki_search。security（0 P0/P1）+ code（1 P1 + 6 P2）报告全部消化：
-store 写串行化 / admin 导入不复活 / 域名单单源化 / 文案对齐 / 探针恢复语义。
-全门禁复跑绿（api 1380 / shared 16 / web 1088 / e2e 42 / lint 0 warning）。
+ar-hub 完成第二次域扩展：新增 `pages` 域（`pages_list` 免审批 / `pages_set_roots`
+每次变更走审批，运行时门控）与 admin 域外部 MCP server 管理（`mcp_list` 观察 +
+`mcp_add/remove/update/enable/disable` 五管理工具全审批，scope 必填）——全部表驱动，
+L0 菜单 / guide:// / capability_list+set / store 白名单六域自动传导。上一批渐进式披露
+四层改造（含真相源迁 `~/.agents-remote/mcp-capabilities.json`）已 commit 待 push。
 
 ## 本 session 焦点
 
-### 关键决策（不可丢）
+### 本批：pages 域 + 外部 MCP server 管理（2026-11-17）
+
+- **shared 单源**：`McpCapability` 加 `"pages"`；`MCP_ADMIN_MANAGE_TOOLS` 扩为全审批
+  工具名单（admin 管理五 + mcp 五 + `pages_set_roots`）——web `isHotTool` 红色高亮
+  零代码自动生效。
+- **pages 域**：`registerPagesTools` 恒注册 + 运行时门控；`pages_list` 只读（默认根
+  `site/ → /` public / `roots: []` 关发布）；`pages_set_roots` 先
+  `requestManageApproval` 再 `ProjectPagesService.writeConfig`（serve 面独立于开关，
+  改配置 = 改外发面，故必审批）。未注入 `pagesService` 的 hub 不注册。
+- **admin mcp_* 六工具**：`mcp_list` 合并 user+project 视图（条目带 scope）；五管理
+  工具 scope 必填，本地先 `sanitizeMcpName` + 保留名快速失败（不打审批卡），
+  remove/enable/disable **不拦保留名**（历史同名要能清理）。执行段全部复用
+  `mcp-management` 模块函数。
+- **测试隔离**：`listUserMcpServers(home)` + `listProjectMcpServers(..., home)` 注入
+  （stash 不碰真实 home）；hub 测试新增 pages describe（门控 / 默认根 / allow 真写 /
+  deny 不写），admin 测试新增 mcp_list 合并视图 + 名字校验 + 保留名清理路径。
+- **文档**：`docs/design/mcp-progressive-disclosure.md` 六域 + pages 节 + admin 工具表
+  + 审批分档表重写；`wiki/mcp-server-features.md` §一同步。
+
+### 上一批：渐进式披露四层改造（已 commit，push 待确认）
+
+- **四层结构**（契约单源 `docs/design/mcp-progressive-disclosure.md`）：L0
 
 - **四层结构**（契约单源 `docs/design/mcp-progressive-disclosure.md`）：L0
   instructions 每请求动态拼装（`buildArHubInstructions`，5 域一行+实时状态+Operating
@@ -38,7 +59,10 @@ store 写串行化 / admin 导入不复活 / 域名单单源化 / 文案对齐 /
 
 ### 进度
 
-- ✅ 阶段 1-5 全实现 + 本轮收尾（mcp-admin-tools.test.ts 迁 store、两探针迁移、文档、
+- ✅ 本批全实现 + 测试（pages 5 用例 + admin 4 用例）：format:check / lint 0 warning /
+  typecheck / 全量单测（api 1389 + shared 16 + web 1088）全绿
+- ⏳ commit + gtd/handoff 登记；真机验证清单交用户（五条，见 gtd @mcp-apps）
+- ✅ 上一批阶段 1-5 全实现 + 本轮收尾（mcp-admin-tools.test.ts 迁 store、两探针迁移、文档、
   handoff/gtd 登记）
 - ✅ 双 reviewer 审查 + 报告全部消化（`9d765ded`）：security 0 P0/P1 + 3 P2；code
   1 P1（store 写竞态）+ 6 P2。修复：store 写路径 writeQueue 串行化 + temp 名
@@ -54,6 +78,11 @@ store 写串行化 / admin 导入不复活 / 域名单单源化 / 文案对齐 /
 
 ### 易丢的关键上下文
 
+- `McpAdminDeps.projectsRoot` **必选**（mcp_* project scope 路径解析；缺了类型即报错）；
+  `home?` 注入 stash 路径。`listProjectMcpServers(projectsRoot, projectName, home?)`
+  第三参同款注入——否则 project scope list 会读真实 `~/.agents/mcp-disabled.json`。
+- 域名单四处已单源化：L0/guide:// /capability z.enum/store 白名单/mcp-validate 全部从
+  `MCP_DOMAINS`（`MCP_CAPABILITY_NAMES`）派生——新增域只改注册表。
 - `startMcpHubServer` 的 `capabilitiesStore` 现为**必选**——任何新 hub 测试必须注入，
   否则 capabilities 全空（wiki 四工具仍恒注册但 capability_set 会炸）。
 - **store 写路径全部走 writeQueue 串行**（review P1 修复）；`importFromLegacy` 对
@@ -67,9 +96,10 @@ store 写串行化 / admin 导入不复活 / 域名单单源化 / 文案对齐 /
 
 ### 下一步
 
-1. 请用户确认 push（本批 2 commit + checkpoint 批 3 个挂账）。
-2. 真机验证清单交用户（五条，见 gtd @mcp-apps 组渐进披露条）。
-3. security 附注（记档不修）：admin 闸本质是审批 UX 而非硬边界——有 shell 的 agent
+1. 本批 commit（标准 `git add && git commit`），pre-commit 自动全门禁。
+2. 请用户确认 push（本批 1 commit + 渐进披露批 2 + checkpoint 批 3 个挂账）。
+3. 真机验证清单交用户：pages 五条见 gtd @mcp-apps 新条。
+4. security 附注（记档不修）：admin 闸本质是审批 UX 而非硬边界——有 shell 的 agent
    可直写状态文件，这是平台既有信任模型的属性（agent 进程与用户同权限），后续不要把
    硬边界建立在该 store 上。
 
@@ -91,4 +121,4 @@ store 写串行化 / admin 导入不复活 / 域名单单源化 / 文案对齐 /
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
-最后更新：2026-11-16 / 触发原因：MCP 渐进披露批实现+全门禁绿，准备 commit。
+最后更新：2026-11-17 / 触发原因：pages 域 + 外部 MCP server 管理批实现与测试全绿，准备 commit。

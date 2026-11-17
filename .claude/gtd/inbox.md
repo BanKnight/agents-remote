@@ -58,3 +58,14 @@
 ## 2026-11-13 settle 搜索可达（v1 挂账）
 
 settle 批（学习点②）v1 的「已了结」会话在本地筛选（移动项目首页实例搜索 / 移动项目切换 sheet）里零命中：两处都在 query 匹配前先 `!isSettledView` 过滤，且没有行内「已了结」弱标。设计稿 §3.3 已标注为 v1 未实现。补齐形态（设计稿已写死方向）：**有 query 才纳入 settled + 行内弱标**，不要改成全局包含（避免活跃搜索结果被已了结淹没）。
+
+## 2026-11-16 Pages 域接入 MCP + 同类缺口盘点（用户拍板 Pages 全做）
+
+用户发现 Pages 发布功能（`project-pages.ts`：项目静态站点 serve，`.agents-remote/pages.json` roots 配置，默认 site/ → / 公开）完全不在 MCP 面——`McpCapability` 从未含 pages，agent 经 ar-hub 看不到它、查不了状态、帮不了配置。用户拍板：**Pages 域全做**（渐进披露四层同款：L0 菜单行 + `guide://pages` + 状态/配置工具 + auth 敏感面的审批档待定）。
+
+**同类缺口盘点（2026-11-16 扫 api 全服务面对照 hub 注册面）**，用户拍板：**#2 与本批同做（已完成，2026-11-17），#1/#3 挂账**：
+
+1. **git 写面**（`project-git-write`：commit/discard）——hub 只有 git_status/git_log 读；web git 面有提交/放弃。agent 有 shell git 但走 hub = 受 PROJECTS_ROOT resolver + argv 封装保护，且对无 shell 的 provider（omp/pi 类）是唯一通道。
+2. **外部 MCP server 管理**（`mcp-management`：list/add/remove/update/disable/enable，user/project 两 scope）——归 admin 域扩展；agent 帮用户装/管第三方 server 是真实场景，现在只能用户在插件页手动。变更敏感 → 全挂审批。
+3. **files 写/删**（`project-files`：saveFile/deleteFile；listFiles 也没进 hub，hub 只有 read_file）——对有 shell 的 provider 边际价值低，对无 shell provider 有价值。低优先候选。
+4. **明确不做**：checkpoint/settle/pin（会话生命周期 UI 语义）、审批卡 respond（审批是人的通道）、全局 settings/provider profiles（含密钥）、push（系统内部）。

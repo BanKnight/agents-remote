@@ -1,4 +1,5 @@
 import type { ApiErrorCode, McpCapability, McpProjectConfig } from "@agents-remote/shared";
+import { MCP_CAPABILITY_NAMES } from "./mcp-domains.js";
 
 /**
  * MCP 相关错误码子集（hub 能力开关 + 外部 server 管理）。
@@ -29,16 +30,11 @@ export class McpError extends Error {
 }
 
 /**
- * 能力域名（McpCapability）校验：只接受已知能力域（"wiki" / "ui" / "skills" / "gen-ui" / "admin"）。
+ * 能力域名（McpCapability）校验：只接受已知能力域。名单从域注册表派生（单源
+ * MCP_DOMAINS，经 MCP_CAPABILITY_NAMES）——新增域只改注册表，此处零改动。
  * 拒绝空、null byte、未知值——防注入/路径穿越，也防配置拼写错误静默失效。
  */
-const ALLOWED_CAPABILITIES: ReadonlySet<McpCapability> = new Set([
-  "wiki",
-  "ui",
-  "skills",
-  "gen-ui",
-  "admin",
-]);
+const ALLOWED_CAPABILITIES: ReadonlySet<McpCapability> = new Set(MCP_CAPABILITY_NAMES);
 
 export function sanitizeCapability(input: unknown): McpCapability {
   if (typeof input !== "string" || input.length === 0 || input.includes("\0")) {

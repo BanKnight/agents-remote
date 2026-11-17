@@ -593,13 +593,20 @@ export type AgentProvider = "claude" | "codex" | "omp";
 export const MCP_ADMIN_PROVIDER = "mcp-admin";
 export type ApprovalSource = AgentProvider | typeof MCP_ADMIN_PROVIDER;
 
-/** admin 管理面 5 工具名（全部走审批；web isHotTool 破坏面判定与 api 注册面单源）。 */
+/** hub 全审批工具名（admin 管理面 + pages_set_roots 发布面变更；web isHotTool 破坏面
+ *  判定与 api 注册面单源——名单内工具审批卡恒红）。 */
 export const MCP_ADMIN_MANAGE_TOOLS = [
   "project_create",
   "project_delete",
   "session_create",
   "session_close",
   "session_send",
+  "mcp_add",
+  "mcp_remove",
+  "mcp_update",
+  "mcp_enable",
+  "mcp_disable",
+  "pages_set_roots",
 ];
 
 // provider 的协议/传输家族——provider 粒度 = CLI，transport 才是「用什么协议对接」。
@@ -969,10 +976,12 @@ export type SkillTaskFrame = {
  *  （SEP-2640 `io.modelcontextprotocol/skills` 扩展 + skills/list/get + skill:// 资源）；
  *  gen-ui = 生成式 UI（agent 生成 HTML 到 `.agents-remote/gen-ui/` + `::gen-ui` 标记 +
  *  widgetState 持久/回流，契约 docs/research/mcp-apps-hosting.md §12.4）；
- *  admin = 跨项目观察/管理（project_list / session_list / session_read 免审批 +
- *  project_create / project_delete / session_create / session_close / session_send
- *  管理类——每个管理操作登记审批中心，用户在 web 批准后才执行）。 */
-export type McpCapability = "wiki" | "ui" | "skills" | "gen-ui" | "admin";
+ *  admin = 跨项目观察/管理（project_list / session_list / session_read / mcp_list 免审批 +
+ *  project_create / project_delete / session_create / session_close / session_send /
+ *  mcp_add / mcp_remove / mcp_update / mcp_enable / mcp_disable 管理类——每个管理操作
+ *  登记审批中心，用户在 web 批准后才执行）；
+ *  pages = 项目静态站点发布（pages_list 免审批 + pages_set_roots 走审批）。 */
+export type McpCapability = "wiki" | "ui" | "skills" | "gen-ui" | "pages" | "admin";
 
 // per-project MCP 配置(PROJECTS_ROOT/{project}/.agents-remote/mcp.json)。
 // 只管能力域开关,不描述 server(hub 是单数,server 描述由基座代码 own)。

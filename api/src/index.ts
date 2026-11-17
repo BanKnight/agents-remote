@@ -2982,11 +2982,15 @@ export const startApi = async () => {
     // 画布四工具(create_diagram/read_scene/apply_operations/export_diagram)数据源。
     // service 无状态(构造只存 root),与 HTTP 面实例并存。
     canvasService: projectCanvasService,
-    // admin capability(跨项目观察/管理)依赖。captureRuntime 供 terminal 会话读快照;
-    // approvalService 承载管理面审批闸;sendToAgent 是 session_send 的执行通道。
+    // pages 两工具(pages_list/pages_set_roots)数据源。无状态 service,与 HTTP 面实例并存。
+    pagesService: projectPagesService,
+    // admin capability(跨项目观察/管理 + 外部 MCP server 管理)依赖。captureRuntime 供
+    // terminal 会话读快照;approvalService 承载管理面审批闸;sendToAgent 是 session_send
+    // 的执行通道;projectsRoot/home 供 mcp_* 工具解析 project scope 与停用区路径。
     adminDeps: {
       projectService,
       sessionRegistry,
+      projectsRoot: config.projectsRoot,
       captureRuntime: adminCaptureRuntime,
       approvalService: mcpAdminApprovalService,
       sendToAgent: adminSendToAgent,

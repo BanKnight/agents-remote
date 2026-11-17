@@ -1,9 +1,20 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { AgentProvider } from "@agents-remote/shared";
+import type { AgentProvider, McpScope } from "@agents-remote/shared";
 import { MCP_ADMIN_MANAGE_TOOLS } from "@agents-remote/shared";
 import { getAgentProviderProfile } from "./agent-provider-profiles";
 import type { McpAdminApprovalService } from "./mcp-admin-approval";
+import {
+  addMcpServer,
+  disableMcpServer,
+  enableMcpServer,
+  isReservedMcpName,
+  listProjectMcpServers,
+  listUserMcpServers,
+  removeMcpServer,
+  sanitizeMcpName,
+  updateMcpServer,
+} from "./mcp-management";
 import type { ProjectService } from "./projects";
 import type { SessionMetadata, SessionRegistry } from "./session-registry";
 import { ADMIN_SESSION_READ_DEFAULT_LIMIT, readSessionTailMessages } from "./session-reader";
@@ -15,16 +26,21 @@ import { ADMIN_SESSION_READ_DEFAULT_LIMIT, readSessionTailMessages } from "./ses
 // 用户允许后才执行，拒绝/超时返回 isError。
 // 发起者身份经 hub URL `?origin=<sessionId>` 注入（无 origin = 旧客户端，管理面拒绝）。
 
-/** 观察三工具名（web isHotTool 与测试用名单）。 */
-export const MCP_ADMIN_READ_TOOLS = ["project_list", "session_list", "session_read"];
+/** 观察四工具名（web isHotTool 与测试用名单；mcp_list 读外部 server 配置免审批）。 */
+export const MCP_ADMIN_READ_TOOLS = ["project_list", "session_list", "session_read", "mcp_list"];
 
-/** 管理 5 工具名单单源在 shared（web isHotTool 与 api 注册面共用）；此处 re-export 供 api 内消费。 */
+/** 全审批工具名单单源在 shared（含 admin 管理面 + mcp_* 五管理工具 + pages_set_roots；
+ *  web isHotTool 与 api 注册面共用）；此处 re-export 供 api 内消费。 */
 export { MCP_ADMIN_MANAGE_TOOLS };
 
 /** admin 工具面的依赖注入（index.ts 组装；测试 stub）。 */
 export type McpAdminDeps = {
   projectService: ProjectService;
   sessionRegistry: SessionRegistry;
+  /** 项目 scope 外部 MCP server 操作（.mcp.json）与路径解析的根目录。 */
+  projectsRoot: string;
+  /** 停用区（~/.agents/mcp-disabled.json）所在 home；缺省 homedir()（测试注入临时目录）。 */
+  home?: string;
   /** terminal 会话的 capture 快照源（生产 = runtime.capture；缺省则 terminal 会话读不到）。 */
   captureRuntime?: (runtimeKey: string) => Promise<string>;
   /** 管理面的审批挂起服务（缺省 = 管理工具不可用，isError 提示未装配）。 */
@@ -396,6 +412,201 @@ export const registerAdminTools = (
         }
         await deps.sendToAgent(metadata, text);
         return jsonResult({ delivered: true });
+      } catch (error) {
+        return adminErrorResponse(error);
+      }
+    },
+  );
+
+  // ── 外部 MCP server 管理（mcp_list 观察档免审批；写操作全走审批闸）──────────
+  // 底层复用 mcp-management.ts：保留名守卫 / argv 数组 / remove+add 回滚 / stash 锁
+  // 均在 service 层实现，工具层不重复。user scope 写 ~/.claude.json（全局文件）——
+  // 审批 input 带 scope，用户在卡上能看到写到哪。
+
+  const mcpScopeContext = (scope: McpScope, toolCtx: McpAdminToolContext) =>
+    scope === "project"
+      ? {
+          projectsRoot: deps.projectsRoot,
+          projectName: toolCtx.originProject,
+          home: deps.home,
+        }
+      : { home: deps.home };
+
+  /** 审批前的本地快速校验（name 字符集 / 保留名）：坏参数不打审批卡打扰用户。
+   *  remove/enable 不拦保留名（历史同名条目要能清理，service 层同语义）。 */
+  const invalidMcpName = (rawName: string, checkReserved: boolean) => {
+    try {
+      sanitizeMcpName(rawName);
+    } catch (error) {
+      return adminErrorResponse(error);
+    }
+    if (checkReserved && isReservedMcpName(rawName)) {
+      return {
+        isError: true as const,
+        content: [
+          {
+            type: "text" as const,
+            text: `[MCP_CONFIG_INVALID] MCP server name "${rawName}" is reserved (names starting with "ar-" belong to agents-remote)`,
+          },
+        ],
+      };
+    }
+    return null;
+  };
+
+  server.registerTool(
+    "mcp_list",
+    {
+      description:
+        "List external MCP servers (no approval needed). scope=user reads ~/.claude.json, scope=project reads this project's .mcp.json; omit scope to get both merged (each entry carries a scope field). Disabled servers appear with disabled: true.",
+      inputSchema: { scope: z.enum(["user", "project"]).optional() },
+    },
+    async ({ scope }) => {
+      if (!ctx.originProject) {
+        return {
+          isError: true as const,
+          content: [
+            {
+              type: "text" as const,
+              text: "[ADMIN_ORIGIN_MISSING] Project scope requires the hub project context",
+            },
+          ],
+        };
+      }
+      try {
+        const [user, project] = await Promise.all([
+          scope !== "project" ? listUserMcpServers(deps.home) : null,
+          scope !== "user"
+            ? listProjectMcpServers(deps.projectsRoot, ctx.originProject, deps.home)
+            : null,
+        ]);
+        const servers = [
+          ...(user?.servers ?? []).map((entry) => ({ ...entry, scope: "user" as const })),
+          ...(project?.servers ?? []).map((entry) => ({ ...entry, scope: "project" as const })),
+        ];
+        return jsonResult({ servers });
+      } catch (error) {
+        return adminErrorResponse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "mcp_add",
+    {
+      description:
+        "Add an external MCP server (stdio/sse/http). Requires user approval. scope is required: project writes this project's .mcp.json, user writes the global ~/.claude.json. Names starting with 'ar-' are reserved. Returns { ok, server }.",
+      inputSchema: {
+        scope: z.enum(["user", "project"]),
+        name: z.string().min(1),
+        type: z.enum(["stdio", "sse", "http"]),
+        command: z.string().optional(),
+        args: z.array(z.string()).optional(),
+        env: z.record(z.string(), z.string()).optional(),
+        url: z.string().optional(),
+        headers: z.record(z.string(), z.string()).optional(),
+      },
+    },
+    async (input) => {
+      const invalid = invalidMcpName(input.name, true);
+      if (invalid) return invalid;
+      const gate = await requestManageApproval(deps, ctx, "mcp_add", input);
+      if (gate) return gate;
+      try {
+        return jsonResult(
+          await addMcpServer(input, input.scope, mcpScopeContext(input.scope, ctx)),
+        );
+      } catch (error) {
+        return adminErrorResponse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "mcp_remove",
+    {
+      description:
+        "Remove an external MCP server. Requires user approval. scope is required (project = this project's .mcp.json, user = global ~/.claude.json). Returns { ok, name }.",
+      inputSchema: { scope: z.enum(["user", "project"]), name: z.string().min(1) },
+    },
+    async ({ scope, name }) => {
+      const invalid = invalidMcpName(name, false);
+      if (invalid) return invalid;
+      const gate = await requestManageApproval(deps, ctx, "mcp_remove", { scope, name });
+      if (gate) return gate;
+      try {
+        return jsonResult(await removeMcpServer(name, scope, mcpScopeContext(scope, ctx)));
+      } catch (error) {
+        return adminErrorResponse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "mcp_update",
+    {
+      description:
+        "Replace an external MCP server's config (name stays the same; type/command/args/env/url/headers change). Requires user approval. scope is required. Implemented as remove+add with best-effort rollback. Returns { ok, server }.",
+      inputSchema: {
+        scope: z.enum(["user", "project"]),
+        name: z.string().min(1),
+        type: z.enum(["stdio", "sse", "http"]),
+        command: z.string().optional(),
+        args: z.array(z.string()).optional(),
+        env: z.record(z.string(), z.string()).optional(),
+        url: z.string().optional(),
+        headers: z.record(z.string(), z.string()).optional(),
+      },
+    },
+    async (input) => {
+      const invalid = invalidMcpName(input.name, true);
+      if (invalid) return invalid;
+      const gate = await requestManageApproval(deps, ctx, "mcp_update", input);
+      if (gate) return gate;
+      try {
+        return jsonResult(
+          await updateMcpServer(input, input.scope, mcpScopeContext(input.scope, ctx)),
+        );
+      } catch (error) {
+        return adminErrorResponse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "mcp_disable",
+    {
+      description:
+        "Disable an external MCP server: its config is moved out of ~/.claude.json / .mcp.json into a disabled stash (so it stops being injected). Requires user approval. scope is required. Returns { ok, name }.",
+      inputSchema: { scope: z.enum(["user", "project"]), name: z.string().min(1) },
+    },
+    async ({ scope, name }) => {
+      const invalid = invalidMcpName(name, false);
+      if (invalid) return invalid;
+      const gate = await requestManageApproval(deps, ctx, "mcp_disable", { scope, name });
+      if (gate) return gate;
+      try {
+        return jsonResult(await disableMcpServer(name, scope, mcpScopeContext(scope, ctx)));
+      } catch (error) {
+        return adminErrorResponse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "mcp_enable",
+    {
+      description:
+        "Re-enable a previously disabled external MCP server (restores its stashed config). Requires user approval. scope is required. Returns { ok, name }.",
+      inputSchema: { scope: z.enum(["user", "project"]), name: z.string().min(1) },
+    },
+    async ({ scope, name }) => {
+      const invalid = invalidMcpName(name, false);
+      if (invalid) return invalid;
+      const gate = await requestManageApproval(deps, ctx, "mcp_enable", { scope, name });
+      if (gate) return gate;
+      try {
+        return jsonResult(await enableMcpServer(name, scope, mcpScopeContext(scope, ctx)));
       } catch (error) {
         return adminErrorResponse(error);
       }
