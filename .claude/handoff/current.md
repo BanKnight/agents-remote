@@ -1,8 +1,8 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-17（**pages 域接入 MCP + admin 外部 MCP server 管理批：
-> 实现与测试全绿（api 1389 / shared 16 / web 1088），准备 commit；
-> 渐进披露批 push 仍待用户确认**）
+> 最后更新：2026-11-18（**pages 域接入 MCP + admin 外部 MCP server 管理批已 commit
+> （`0441a491`）并连同挂账 7 commit 全部推送（dc0f63ce..0441a491）；
+> 全门禁含 e2e 42/42 绿；真机验证清单交用户**）
 
 ## 一句话状态
 
@@ -10,7 +10,7 @@ ar-hub 完成第二次域扩展：新增 `pages` 域（`pages_list` 免审批 / 
 每次变更走审批，运行时门控）与 admin 域外部 MCP server 管理（`mcp_list` 观察 +
 `mcp_add/remove/update/enable/disable` 五管理工具全审批，scope 必填）——全部表驱动，
 L0 菜单 / guide:// / capability_list+set / store 白名单六域自动传导。上一批渐进式披露
-四层改造（含真相源迁 `~/.agents-remote/mcp-capabilities.json`）已 commit 待 push。
+四层改造（含真相源迁 `~/.agents-remote/mcp-capabilities.json`）同日一并推送。
 
 ## 本 session 焦点
 
@@ -33,9 +33,7 @@ L0 菜单 / guide:// / capability_list+set / store 白名单六域自动传导�
 - **文档**：`docs/design/mcp-progressive-disclosure.md` 六域 + pages 节 + admin 工具表
   + 审批分档表重写；`wiki/mcp-server-features.md` §一同步。
 
-### 上一批：渐进式披露四层改造（已 commit，push 待确认）
-
-- **四层结构**（契约单源 `docs/design/mcp-progressive-disclosure.md`）：L0
+### 上一批：渐进式披露四层改造（已推送）
 
 - **四层结构**（契约单源 `docs/design/mcp-progressive-disclosure.md`）：L0
   instructions 每请求动态拼装（`buildArHubInstructions`，5 域一行+实时状态+Operating
@@ -60,8 +58,10 @@ L0 菜单 / guide:// / capability_list+set / store 白名单六域自动传导�
 ### 进度
 
 - ✅ 本批全实现 + 测试（pages 5 用例 + admin 4 用例）：format:check / lint 0 warning /
-  typecheck / 全量单测（api 1389 + shared 16 + web 1088）全绿
-- ⏳ commit + gtd/handoff 登记；真机验证清单交用户（五条，见 gtd @mcp-apps）
+  typecheck / 全量单测（api 1389 + shared 16 + web 1088）+ e2e 42/42 全绿
+- ✅ commit `0441a491`（pre-commit 全门禁过）+ 用户确认后推送（`dc0f63ce..0441a491`，
+  含渐进披露批 2 + checkpoint 批 3 + 文档更正 1 共 7 commit）
+- ⏳ 真机验证清单交用户（五条，见 gtd @mcp-apps pages 批条 + 渐进披露条）
 - ✅ 上一批阶段 1-5 全实现 + 本轮收尾（mcp-admin-tools.test.ts 迁 store、两探针迁移、文档、
   handoff/gtd 登记）
 - ✅ 双 reviewer 审查 + 报告全部消化（`9d765ded`）：security 0 P0/P1 + 3 P2；code
@@ -73,8 +73,6 @@ L0 菜单 / guide:// / capability_list+set / store 白名单六域自动传导�
 - ✅ 全门禁复跑绿：format:check / lint 0 warning / typecheck / 全量单测（systemd 2G：
   api 1380 + shared 16 + web 1088）/ e2e 42/42（4G）/ CSS 落盘硬闸 / tokens 机检 0/0
 - ✅ commit：`9f998ae8`（主批）+ `9d765ded`（reviewer 收敛），pre-commit 全门禁过
-- ⏳ push 待用户确认（连同 checkpoint 批 dad68fe/278289d2/d81b28d9 三个挂账 commit）
-- ⏳ 真机验证清单交用户（见 gtd next-actions @mcp-apps 组渐进披露条）
 
 ### 易丢的关键上下文
 
@@ -96,16 +94,14 @@ L0 菜单 / guide:// / capability_list+set / store 白名单六域自动传导�
 
 ### 下一步
 
-1. 本批 commit（标准 `git add && git commit`），pre-commit 自动全门禁。
-2. 请用户确认 push（本批 1 commit + 渐进披露批 2 + checkpoint 批 3 个挂账）。
-3. 真机验证清单交用户：pages 五条见 gtd @mcp-apps 新条。
-4. security 附注（记档不修）：admin 闸本质是审批 UX 而非硬边界——有 shell 的 agent
+1. 真机验证清单交用户：pages 五条见 gtd @mcp-apps 新条；渐进披露五条同组。
+2. security 附注（记档不修）：admin 闸本质是审批 UX 而非硬边界——有 shell 的 agent
    可直写状态文件，这是平台既有信任模型的属性（agent 进程与用户同权限），后续不要把
    硬边界建立在该 store 上。
 
 ## 挂账（非本批）
 
-- checkpoint 批（dad68fe/278289d2/d81b28d9）push 待用户确认 + 真机验收清单已交。
+- checkpoint 批（dad68fe/278289d2/d81b28d9，已随 2026-11-18 推送）待真机验收。
 - settle 批（`16c9911`，已推送）待真机验收。
 - settle 搜索结果不含 settled（inbox 2026-11-13）。
 - probe-fab.mjs 过期断言（5 FAIL）待拍板重构/退役。
@@ -121,4 +117,4 @@ L0 菜单 / guide:// / capability_list+set / store 白名单六域自动传导�
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
-最后更新：2026-11-17 / 触发原因：pages 域 + 外部 MCP server 管理批实现与测试全绿，准备 commit。
+最后更新：2026-11-18 / 触发原因：pages 域 + 外部 MCP server 管理批 commit `0441a491` 并连同挂账 7 commit 推送。
