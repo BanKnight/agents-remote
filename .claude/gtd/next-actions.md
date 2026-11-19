@@ -56,5 +56,6 @@
 ## @harness
 
 
+- [x] **claude CLI 升级 2.1.325**（2026-11-20，commit `3e745749` 待 push）：供应链合规最高版（11-13 发布恰 7 天）；Code Mode 拍板不接入（官方硬约束排除 headless 形态：仅交互终端/仅直连 API/仅 native build——等上游支持 stream-json host 再评估）。回归全绿：单测 1389/16/1088 + golden path 7 断言（真实 spawn + ar-hub MCP 全链）+ e2e 42/42。顺带修 acp-session.spec 的 sessions-stream mock 缺口（全量 e2e flaky 真根因，mock 完备性规则的漏网之鱼）。升级验证配方与对照基线沉淀在 handoff「易丢的关键上下文」。
 - [x] **harness 改造收尾验证**（2026-09-19，完成）——三项实测全过：①重启会话，SessionStart 注入 KB 级 current.md（非旧版 589KB）；②`/handoff save` 实测通过（快照 20260919-0317 已归档）；③`/gtd inbox` 实测通过（追加捕获条目后自清理）。（hook 单测 + 四门禁已过，commit `db5b0fd`）
 - [x] **memory 清理**（2026-09-19，完成）——13 条 workflow 体系记忆（workflow_intents_* / workflow_skill_* / describe_project_* / first_roadmap_* 等）归档至 `memory/archived-20260919/`（可恢复；移出 MEMORY.md 索引即不再被加载），同步清理 3 处交叉引用；跨项目工程铁律类记忆（single-pipeline / no-screenshot / commit 纪律等）全部保留。
