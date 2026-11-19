@@ -23,7 +23,7 @@
     "test": "bun run --sequential --workspaces test"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "2.1.299",
+    "@anthropic-ai/claude-code": "2.1.325",
     "@assistant-ui/react-markdown": "0.14.20",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^16.1.1",

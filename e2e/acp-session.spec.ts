@@ -96,6 +96,32 @@ function routeAcpStream(
   );
 }
 
+/**
+ * sessions-stream WS mock（与 REST overview mock 同源；verification.md 探针 mock 完备性）：
+ * use-session-shells.applyShellsFrame 会用服务端帧整体覆盖 ["overview"] 缓存并触发
+ * stale-tab prune——缺这条 mock 时真实后端帧竞态覆盖 → mock 会话判 stale 被摘 →
+ * AcpPanel 永不挂载（2026-11-20 全量 e2e 实证 flaky：单跑恒绿，快照停 "Connecting"）。
+ * 帧语义对齐真实服务端：连接即推全量快照 {type:"sessions", sessions}。
+ */
+function routeSessionsStream(page: import("@playwright/test").Page, sessions: unknown[]) {
+  return page.routeWebSocket(/\/api\/sessions\/stream$/, (ws) => {
+    ws.send(JSON.stringify({ type: "sessions", sessions }));
+  });
+}
+
+/** overview mock 的 candidate 与 SessionShell（Omit<OverviewCandidate,"subtitle">）同源形状。 */
+function ompShell() {
+  return {
+    type: "agent",
+    projectName,
+    sessionId: fakeSessionId,
+    displayName,
+    status: "idle",
+    provider: "omp",
+    createdAt: new Date().toISOString(),
+  };
+}
+
 test("ACP: session detail renders omp stream (echo bubble, chunk text, tool call) and send loop", async ({
   page,
 }) => {
@@ -166,6 +192,7 @@ test("ACP: session detail renders omp stream (echo bubble, chunk text, tool call
   });
 
   routeAcpStream(page, (msg) => sentMessages.push(msg));
+  routeSessionsStream(page, [ompShell()]);
 
   await page.goto("/");
   await page.getByLabel("Password").fill(password);
@@ -221,6 +248,7 @@ test.describe("ACP mobile create entry", () => {
         body: JSON.stringify({ projectNames: [projectName], candidates: [] }),
       });
     });
+    routeSessionsStream(page, []);
     await page.route(
       new RegExp(`/api/projects/${projectName}$`),
       async (route) =>
