@@ -4096,6 +4096,29 @@ describe("normalizeChatStream", () => {
     expect(items).toHaveLength(0);
   });
 
+  test("command_lifecycle produces no item (live-only 命令队列遥测, no fallback)", () => {
+    // CLI 命令队列生命周期遥测（queued/started/completed/cancelled），live-only
+    // 不写 JSONL；turn 生命周期已由 result/ended 呈现——skip 不落 fallback
+    // （升级 2.1.325 后每轮对话一帧，落兜底即聊天流杂音气泡）。
+    const items = normalizeChatStream([
+      {
+        type: "command_lifecycle",
+        command_uuid: "aa5b24b8-93da-4b63-b68f-874d96020209",
+        state: "completed",
+        uuid: "0d88b6b5-6eb2-4b9e-850e-486ee9677b8a",
+        session_id: "6d09c971-06e8-4880-a3e2-951afac88d5e",
+      } as unknown as SessionStreamServerMessage,
+      {
+        type: "command_lifecycle",
+        command_uuid: "aa5b24b8-93da-4b63-b68f-874d96020209",
+        state: "cancelled",
+        uuid: "0d88b6b5-6eb2-4b9e-850e-486ee9677b8a",
+        session_id: "6d09c971-06e8-4880-a3e2-951afac88d5e",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(0);
+  });
+
   test("compact_boundary + summary + attachments merge into one compact-block", () => {
     const items = normalizeChatStream([
       compactBoundary(),

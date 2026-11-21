@@ -3539,6 +3539,15 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
       continue;
     }
 
+    // command_lifecycle: CLI 命令（用户 prompt）队列生命周期遥测，live-only 不写
+    // JSONL（6d09c971 会话 JSONL + subagents 零命中实证）。形状 {type,
+    // command_uuid(我们上行 user 帧的 uuid), state, uuid, session_id}，state =
+    // queued/started/completed/cancelled（turn 被 interrupt/抢占时）。CLI 自身把它
+    // 归入非内容消息（skip 表与 init/rate_limit_event/conversation_reset 同类）；
+    // turn 生命周期已由 result/ended + 状态点呈现，无 UI 价值——静默 skip 不落
+    // fallback（raw 仍收；未来接「排队可视/抢占提示」时 command_uuid 可对齐上行帧）。
+    if (msg.type === "command_lifecycle") continue;
+
     // ═══ Other (fallback) ═══
     const fallback = messageToThreadLike(msg);
     if (fallback) items.push({ kind: "fallback", ui: fallback });

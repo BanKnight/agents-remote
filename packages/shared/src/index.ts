@@ -3125,6 +3125,24 @@ export type ClaudeVcsStateChanged = {
   uuid?: string;
 };
 
+// Command-queue lifecycle telemetry for the user prompt that carried
+// command_uuid (our upstream user frame's uuid). Realtime-only (NOT written to
+// JSONL history): queued → started → completed, or cancelled when the turn is
+// interrupted/pre-empted. Pure status signal — the CLI itself files it with the
+// non-content family (init/rate_limit_event/…); the client skips it (no
+// fallback bubble). Optional wakeup_source/scheduled_for/ran_ahead appear on
+// queue-scheduling variants.
+export type ClaudeCommandLifecycle = {
+  type: "command_lifecycle";
+  command_uuid: string;
+  state: "queued" | "started" | "completed" | "cancelled" | (string & {});
+  session_id?: string;
+  uuid?: string;
+  wakeup_source?: string;
+  scheduled_for?: number;
+  ran_ahead?: boolean;
+};
+
 export type ClaudeResult = {
   type: "result";
   subtype: "success" | "error_max_turns" | "error" | "interrupted";
@@ -3416,6 +3434,7 @@ export type SessionStreamServerMessage =
   | ClaudePermissionDenied
   | ClaudeToolProgress
   | ClaudeVcsStateChanged
+  | ClaudeCommandLifecycle
   | ClaudeResult
   | ClaudeCostState
   | ClaudeControlRequest
