@@ -1,9 +1,9 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-23（**prompt 队列 v2（排队状态服务端化）已 commit
-> `0d16d5d9`（code-reviewer 1 P1 + 2 P3 全修后 amend），全门禁绿；含 v1 三
-> commit（`e1c1223c`/`1ae76c15`/`b6f5025d`）+ docs `005002d6`，共 5 commits
-> 未推送——push 待用户确认**）
+> 最后更新：2026-11-23（**prompt 队列 v2（排队状态服务端化）已推送——v2 commit
+> `0d16d5d9`（code-reviewer 1 P1 + 2 P3 全修后 amend）+ docs `58a1be3c`，与 v1
+> 批 commits 同批 push 完成（origin/main = 58a1be3c）；剩余待办 = 真机清单交
+> 用户验证**）
 
 ## 一句话状态
 
@@ -17,7 +17,7 @@ injectUserPrompt / auto-retry inject）经 `reportUserInput(runtimeKey, prompt?)
 
 ## 本 session 焦点
 
-### 本批：prompt 队列 v2 服务端化（2026-11-22/23，实现完成待 commit）
+### 本批：prompt 队列 v2 服务端化（2026-11-22/23，commit `0d16d5d9` 已推送）
 
 - **架构修正决策（用户 verbatim）**：「像这种 cli 自己没有返回的做法，状态也理应
   交给我们自己的服务端来做维持……这样才能够完全做到模式是统一的」——v1 的
@@ -75,7 +75,7 @@ injectUserPrompt / auto-retry inject）经 `reportUserInput(runtimeKey, prompt?)
 - 探针教训（v4）：ws.onmessage 收帧数组挂 window 上、断连后重连前要把收集器
   清空分段；鉴权 readAppPassword 脚本自读（密钥不进 agent 上下文）。
 
-### 上一批（本 session 未动，待 push）
+### 上一批（v1 三 commit 已随本批同批推送）
 
 - v1 排队可视 + 撤回/编辑（`b6f5025d`）；command_lifecycle 收编（`1ae76c15`）；
   CLI 2.1.325（`3e745749` **已推送**）；docs（`e1c1223c`/`005002d6`）。
@@ -85,8 +85,7 @@ injectUserPrompt / auto-retry inject）经 `reportUserInput(runtimeKey, prompt?)
 
 ## 下一步
 
-1. push 待用户确认（5 commits：v1 三 + docs + v2 `0d16d5d9`）。
-2. 真机清单（交用户，v1+v2 合并）：两设备同开会话——A 端 running 中排队 →
+1. 真机清单（交用户，v1+v2 合并）：两设备同开会话——A 端 running 中排队 →
    B 端立即见 chip；A 端撤回 → B 端 chip 消失；刷新 B 端 → chip 仍在；撤回
    编辑回填照旧；turn 结束 chip 清空。
 
@@ -124,5 +123,5 @@ injectUserPrompt / auto-retry inject）经 `reportUserInput(runtimeKey, prompt?)
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
-最后更新：2026-11-23 / 触发原因：prompt 队列 v2 服务端化实现完成（全门禁绿，
-commit/review 待做）。
+最后更新：2026-11-23 / 触发原因：prompt 队列 v2 reviewer 全修 + push 完成
+（origin/main = 58a1be3c），剩余待办 = 真机清单交用户。
