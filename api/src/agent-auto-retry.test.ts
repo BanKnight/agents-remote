@@ -121,13 +121,31 @@ test("buildAutoRetryUserLine 与 claude-stream 用户消息转发同构", () => 
     message: { role: "user", content: [{ type: "text", text: "请继续" }] },
   });
   expect(line.endsWith("\n")).toBe(false); // 调用方拼接 \n
+
+  // 传 uuid 时写入行内（CLI 采纳上行 uuid 为 command_uuid → lifecycle 帧可对齐）。
+  const withUuid = JSON.parse(buildAutoRetryUserLine("请继续", "fixed-uuid-1")) as Record<
+    string,
+    unknown
+  >;
+  expect(withUuid.uuid).toBe("fixed-uuid-1");
 });
 
-test("buildAutoRetryEchoLine 带 isUserInput + synthetic uuid（对齐用户消息 echo）", () => {
-  const echo = buildAutoRetryEchoLine(buildAutoRetryUserLine("请继续"));
+test("buildAutoRetryEchoLine 带 isUserInput；uuid 与 userLine 同源（lifecycle 对齐），无 uuid 才落 synthetic", () => {
+  // 同源 uuid：调用方同一 uuid 贯穿 stdin 行 / echo / 排队登记三方（CLI 采纳
+  // 上行 uuid 为 command_uuid；旧实现 echo 用独立 injected- uuid，对不上）。
+  const echo = buildAutoRetryEchoLine("请继续", "fixed-uuid-1");
   const parsed = JSON.parse(echo) as Record<string, unknown>;
   expect(parsed.isUserInput).toBe(true);
-  expect(String(parsed.uuid)).toMatch(/^injected-/);
+  expect(parsed.uuid).toBe("fixed-uuid-1");
+  // echo 内容与 userLine 同构（type:user + content text）。
+  expect(parsed.message).toEqual(
+    JSON.parse(buildAutoRetryUserLine("请继续", "fixed-uuid-1")).message,
+  );
+
+  // 旧形态兜底：无 uuid → synthetic fallback。
+  const legacy = buildAutoRetryEchoLine("请继续");
+  const legacyParsed = JSON.parse(legacy) as Record<string, unknown>;
+  expect(String(legacyParsed.uuid)).toMatch(/^injected-/);
 });
 
 test("normalizeAutoRetryConfig：合法值原样、出格值 clamp、非法形状补默认", () => {

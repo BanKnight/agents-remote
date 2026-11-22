@@ -1,5 +1,9 @@
 import { closeSync, fstatSync, openSync, readFileSync, readSync } from "node:fs";
-import { COMPACT_BOUNDARY_SUBTYPES, isCompactBoundarySubtype } from "@agents-remote/shared";
+import {
+  COMPACT_BOUNDARY_SUBTYPES,
+  isCompactBoundarySubtype,
+  type ClaudeQueuedCommand,
+} from "@agents-remote/shared";
 import { claudeJsonlPath } from "./session-routes";
 import type { RuntimeStream } from "./session-registry";
 
@@ -67,6 +71,14 @@ export class ClaudeSessionRelay {
   private projectPath = "";
   private claudeSessionId: string | undefined;
   private startedAsResume = false;
+  // Server-maintained prompt queue (queue-state serverization). The CLI emits
+  // queued/started lifecycle frames only at turn boundaries — during a running
+  // turn there is zero queue telemetry — so the write gate (reportUserInput)
+  // books prompts here while the turn is busy, and lifecycle frames drive
+  // removal. Mirrors injectLiveLine's "CLI has no telemetry → api keeps the
+  // state" pattern so every client (any device, any reconnect) sees the same
+  // queue via queue_state snapshots.
+  private queuedCommands: ClaudeQueuedCommand[] = [];
 
   async activate(projectPath: string, claudeSessionId: string | undefined): Promise<void> {
     if (this.phase !== "init") return;
@@ -195,6 +207,21 @@ export class ClaudeSessionRelay {
     }
     onData(JSON.stringify({ type: "live_end" }));
 
+    // Queue seed snapshot, after live_end: the client resets its state on
+    // session_init and folds replayed frames, so the snapshot must arrive last
+    // or the reset would wipe it. Unlike lifecycle telemetry these snapshots
+    // are not buffered anywhere — they exist only as broadcast moments, so a
+    // reconnecting client would otherwise see zero queue state (exactly the
+    // gap this feature closes). Sent unconditionally: on the delta replay path
+    // (live anchor still in buffer, no client reset) a queue drained during the
+    // disconnect has no other frame to clear stale chips — the empty snapshot
+    // IS the correction. ~40B on the common empty path.
+    try {
+      onData(this.queueStateLine());
+    } catch {
+      /* subscriber error shouldn't block replay */
+    }
+
     return {
       close: () => {
         this.subscribers.delete(sub);
@@ -253,6 +280,22 @@ export class ClaudeSessionRelay {
       msg = parsed;
     }
 
+    // Lifecycle frames drive queue-bookkeeping removal: queued only confirms
+    // the CLI accepted the command (keep the entry — during a running turn
+    // this frame arrives at the turn boundary, after seconds of queueing),
+    // while started/completed/cancelled mean the command left the pending
+    // queue (remove + rebroadcast). cancelled is what naturally empties the
+    // queue on cancel_queued (one frame per cleared command) — no need to
+    // parse control_response. Unknown uuids are a no-op: the idle-path gate
+    // never books (CLI executes immediately), so its frames find nothing.
+    if (msg?.type === "command_lifecycle") {
+      const state = msg.state as string | undefined;
+      const commandUuid = msg.command_uuid as string | undefined;
+      if (state && state !== "queued" && commandUuid) {
+        this.removeQueuedCommand(commandUuid);
+      }
+    }
+
     if (msg && msg.type === "system") {
       const subtype = msg.subtype as string | undefined;
       // 特殊时期缩容：compact 把之前的块压掉——清空旧 history/live 缓冲，
@@ -306,6 +349,34 @@ export class ClaudeSessionRelay {
     this.broadcast(line);
   }
 
+  // Book a prompt into the server-side queue (called from the write gate in
+  // claude-runtime.ts reportUserInput). Idempotent by uuid: concurrent/duplicated
+  // gates (gen-ui async continuation vs REST) must not double-book one prompt.
+  // Broadcasts only on a real insertion — no-ops stay silent.
+  enqueueQueuedCommand(entry: ClaudeQueuedCommand): void {
+    if (this.isDestroyed) return;
+    if (this.queuedCommands.some((c) => c.uuid === entry.uuid)) return;
+    this.queuedCommands.push(entry);
+    this.broadcast(this.queueStateLine());
+  }
+
+  // Remove a booked prompt (lifecycle-frame driven). Broadcasts only when the
+  // uuid actually removed an entry — started+completed arriving back-to-back
+  // (or cancelled+started interleaving at turn boundaries) must not storm
+  // clients with identical snapshots. An empty-queue removal STILL broadcasts:
+  // other clients holding stale chips must see the empty snapshot to clear.
+  removeQueuedCommand(uuid: string): void {
+    if (this.isDestroyed) return;
+    const next = this.queuedCommands.filter((c) => c.uuid !== uuid);
+    if (next.length === this.queuedCommands.length) return;
+    this.queuedCommands = next;
+    this.broadcast(this.queueStateLine());
+  }
+
+  private queueStateLine(): string {
+    return JSON.stringify({ type: "queue_state", entries: this.queuedCommands });
+  }
+
   // Inject a line into the live buffer AND broadcast it. Unlike injectLine
   // (broadcast-only), this also pushes into liveLines so subscribers that
   // connect LATER replay it from the live batch. Used to echo user input the
@@ -323,6 +394,7 @@ export class ClaudeSessionRelay {
     this.phase = "destroyed";
     this.historyLines = [];
     this.liveLines = [];
+    this.queuedCommands = [];
     this.subscribers.clear();
   }
 

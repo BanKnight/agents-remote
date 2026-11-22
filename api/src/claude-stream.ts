@@ -1,6 +1,7 @@
 import {
   MESSAGE_UUID_RE,
   type ClaudeStreamClientMessage,
+  type ClaudeUserImageBlock,
   type SessionPromptInjectResponse,
   type SessionStreamServerMessage,
 } from "@agents-remote/shared";
@@ -549,8 +550,17 @@ export class ClaudeStreamController {
             ...(anchorUuid ? { uuid: anchorUuid } : { uuid: `injected-${crypto.randomUUID()}` }),
           });
           this.claudeRuntime.injectLiveLine(data.runtimeKey, echo);
-          // 状态机 user_input 信号（idle/done/error/blocked → working）。
-          this.claudeRuntime.reportUserInput(data.runtimeKey);
+          // 状态机 user_input 信号 + turn 进行中的排队登记（queue-state serverization），
+          // 折叠在 reportUserInput 的同步 gate 里。登记前提：真 prompt（startsTurn；
+          // 纯 tool_result 续跑帧不登记）+ anchorUuid 过白名单（CLI 采纳它为
+          // command_uuid 是 lifecycle 清理的前提，非法 uuid 登记即泄漏——started 帧
+          // 永远对不上）；文本为空（纯图消息）不登记。idle 下发不登记（gate 判非
+          // working）：CLI 立即执行，其 queued/started 帧对空登记是 no-op。
+          const queueText = startsTurn ? extractQueueText(parsed.message.content) : null;
+          this.claudeRuntime.reportUserInput(
+            data.runtimeKey,
+            anchorUuid && queueText ? { uuid: anchorUuid, text: queueText } : undefined,
+          );
         }
       }
     } catch {
@@ -637,8 +647,11 @@ export class ClaudeStreamController {
       uuid: anchorUuid,
     });
     this.claudeRuntime.injectLiveLine(runtimeKey, echo);
-    // 状态机 user_input 信号（与 WS user 分支同一语义）。
-    this.claudeRuntime.reportUserInput(runtimeKey);
+    // 状态机 user_input 信号 + turn 进行中的排队登记（与 WS user 分支同一语义）。
+    // 登记文本用 composeUserText 之前的入参原文——compose 会拼 gen-ui XML 块，进
+    // chip 显示/撤回回填/重发载荷三处都是污染（人输入的是原文，不是注入上下文）。
+    // 入口已早退空文本（empty_text），此处必非空白。
+    this.claudeRuntime.reportUserInput(runtimeKey, { uuid: anchorUuid, text });
     return { delivered: true, projectName, sessionId };
   }
 
@@ -755,6 +768,19 @@ export const matchClaudeStreamRoute = (pathname: string): StreamRouteMatch | und
 
 const send = (socket: StreamSocket, message: SessionStreamServerMessage) => {
   socket.send(JSON.stringify(message));
+};
+
+// 上行 user 帧的排队登记文本（queue-state serverization）：text blocks join。
+// 纯图消息（无 text block 或全空白）返回 null → 不登记。chip 显示/撤回回填/
+// 重发载荷消费的都是这里登记的原文。
+const extractQueueText = (
+  content: Array<{ type: "text"; text: string } | ClaudeUserImageBlock>,
+): string | null => {
+  const joined = content
+    .filter((b): b is { type: "text"; text: string } => b.type === "text")
+    .map((b) => b.text)
+    .join("\n");
+  return joined.trim().length > 0 ? joined : null;
 };
 
 const sessionData = (socket: StreamSocket): ClaudeWebSocketData | undefined => {

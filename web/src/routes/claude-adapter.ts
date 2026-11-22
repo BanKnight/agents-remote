@@ -7,6 +7,7 @@ import type {
   ClaudeControlResponse,
   ClaudeCostState,
   ClaudeQueueOperation,
+  ClaudeQueuedCommand,
   ClaudeUserImageBlock,
   EffortLevel,
   SessionStreamServerMessage,
@@ -269,17 +270,11 @@ export const deriveQueueSource = (content: string | undefined): "user" | "assist
     : "user";
 };
 
-// 本地排队记录（排队可视的唯一数据源）：headless stream-json 下 CLI 不发
-// queue-operation 帧（两轮探针实锤），排队期间服务端零遥测；queued/started 帧
-// 延迟到 turn 边界才发。因此「排队中」由本地发送记录驱动——onNew 发送时登记
-// （running 中才可能入队），command_lifecycle 的 started/completed/cancelled
-// 到达时移除该 command_uuid（= 我们上行 user 帧的 uuid，精确对齐）。
-export type LocalQueuedCommand = {
-  /** 上行 user 帧 uuid；CLI command_lifecycle 帧的 command_uuid 与之精确相等 */
-  uuid: string;
-  /** 组装后的帧文本（modelCtx/提及行/内联文本已并入）——重发与回填共用 */
-  content: string;
-};
+// 本地排队记录（排队可视的数据源）：排队状态由 api relay 服务端维持（queue-state
+// serverization）——CLI 在 running turn 中对后续 prompt 零遥测，api 在写 gate 处
+// 记账并广播 queue_state 全量快照帧（整体替换语义）。web 只消费快照 + 保留撤回
+// 编排（帧语义所有端同构：cancel_queued 全清 + 剩余按序重发）。类型 = shared
+// ClaudeQueuedCommand 单源。
 
 /** 纯 reducer：按 operation 语义操作 FIFO+LIFO 混合队列 */
 export const applyQueueOperation = (
@@ -1935,6 +1930,7 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
     msg.type === "ai-title" ||
     msg.type === "agent-name" ||
     msg.type === "queue-operation" ||
+    msg.type === "queue_state" ||
     msg.type === "last-prompt" ||
     msg.type === "session_init" ||
     msg.type === "history_start" ||
@@ -3575,10 +3571,14 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // command_uuid(我们上行 user 帧的 uuid), state, uuid, session_id}，state =
     // queued/started/completed/cancelled（turn 被 interrupt/抢占时）。CLI 自身把它
     // 归入非内容消息（skip 表与 init/rate_limit_event/conversation_reset 同类）；
-    // turn 生命周期已由 result/ended + 状态点呈现，无气泡——标量副作用（本地排队
-    // 记录移除）在 applyMessageScalarState 的 command_lifecycle 分支处理，此处静默
-    // skip 不落 fallback。
+    // turn 生命周期已由 result/ended + 状态点呈现，无气泡——排队清理职责已上收
+    // api relay（v2），此处静默 skip 不落 fallback。
     if (msg.type === "command_lifecycle") continue;
+
+    // queue_state: api relay 维持的服务端排队快照（queue-state serverization），
+    // broadcast-only 不入 liveLines/JSONL。标量副作用（整体替换排队列表）在
+    // applyMessageScalarState 的 queue_state 分支处理，此处静默 skip 不落 fallback。
+    if (msg.type === "queue_state") continue;
 
     // ═══ Other (fallback) ═══
     const fallback = messageToThreadLike(msg);
@@ -4347,20 +4347,20 @@ export function useClaudeSession(
   // re-render), so it intentionally is not a useMemo dependency.
   const liveStartRef = useRef(0);
 
-  // ── Local queued-command record（排队可视数据源）─────────────────────
-  // 本地排队记录（LocalQueuedCommand 注释）：ref 是唯一真相，state 是渲染镜像——
-  // Pass 1 lifecycle 消费 / onNew 登记 / cancelQueuedEntry 乐观更新都经
-  // setQueuedCommandsSync 单点双写，避免 ref/state 漂移。定义在
-  // applyMessageScalarState 之前：Pass 1 的 useCallback deps 引用它时已初始化。
-  const queuedCommandsRef = useRef<LocalQueuedCommand[]>([]);
-  const [queuedCommands, setQueuedCommands] = useState<LocalQueuedCommand[]>([]);
+  // ── Queued-command state（服务端快照驱动）──────────────────────────
+  // 排队状态由 api relay 服务端维持（queue-state serverization），web 消费
+  // queue_state 全量快照帧整体替换。ref 是唯一真相，state 是渲染镜像——
+  // cancelQueuedEntry 的乐观移除与重发整体替换仍走本地路径（帧语义所有端同构），
+  // 二者共用 setQueuedCommandsSync 单点双写，避免 ref/state 漂移。
+  const queuedCommandsRef = useRef<ClaudeQueuedCommand[]>([]);
+  const [queuedCommands, setQueuedCommands] = useState<ClaudeQueuedCommand[]>([]);
   // 撤单条的重发闭包（cancel_queued 全清后按序重发剩余条目）——闭包由
   // cancelQueuedEntry 构造（可达 sendToSocket），Pass 1 cancel_queued case 消费。
   // 走 ref 桥接：sendToSocket 定义在 applyMessageScalarState 之后，后者若直接
   // 引用前者（useCallback deps 数组求值）会 TDZ。
   const queuedResendRef = useRef<(() => void) | null>(null);
   const setQueuedCommandsSync = useCallback(
-    (updater: (prev: LocalQueuedCommand[]) => LocalQueuedCommand[]) => {
+    (updater: (prev: ClaudeQueuedCommand[]) => ClaudeQueuedCommand[]) => {
       queuedCommandsRef.current = updater(queuedCommandsRef.current);
       setQueuedCommands(queuedCommandsRef.current);
     },
@@ -4629,16 +4629,17 @@ export function useClaudeSession(
         return;
       }
 
-      // command_lifecycle（本地排队记录的对齐信号；投影层 skip 不产气泡）：
-      // started/completed/cancelled → 移除该 command_uuid 的记录（queued 帧不
-      // 移除——它确认「仍在队列」，与排队可视语义一致；实测 queued 帧延迟到
-      // turn 边界才发，与 started 常连发）。completed 是 started 丢失的兜底，
-      // 四态幂等移除防泄漏。
+      // queue_state（排队状态服务端化的快照帧）：全量快照语义——整体替换本地
+      // 队列。来源 = api 写 gate 的入队/移除广播 + 重连种子快照（live_end 后）。
+      // 仅快照到达驱动状态；command_lifecycle 的清理职责已上收 api relay。
+      if (msg.type === "queue_state") {
+        setQueuedCommandsSync(() => msg.entries);
+        return;
+      }
+
+      // command_lifecycle（CLI 命令队列生命周期遥测；投影层 skip 不产气泡）：
+      // 清理职责已上收 api relay（v2），web 只 skip——回归 v1 前的纯 skip 族。
       if (msg.type === "command_lifecycle") {
-        const lc = msg as { command_uuid?: string; state?: string };
-        if (lc.command_uuid && lc.state && lc.state !== "queued") {
-          setQueuedCommandsSync((prev) => prev.filter((e) => e.uuid !== lc.command_uuid));
-        }
         return;
       }
 
@@ -4810,11 +4811,6 @@ export function useClaudeSession(
       }) > 0,
     [rawMessages, interruptAtIndex],
   );
-  // onNew 发送时刻的 running 判定用 ref（用户交互回调里 useMemo 闭包值可能过期；
-  // render 已完成的点击时刻 ref 即最新）。gate 本地排队记录：idle 发送 CLI 空队列
-  // 直接执行，不记（否则 chip 闪一下即被 started 移除，纯视觉噪音）。
-  const isRunningRef = useRef(false);
-  isRunningRef.current = isRunning;
   const liveThinkingTokens = useMemo(
     () => deriveLiveThinkingTokens(rawMessages, { liveStart: liveStartRef.current }),
     [rawMessages],
@@ -5032,8 +5028,8 @@ export function useClaudeSession(
     setTasks([]);
     setMcpServers([]);
     setInputQueue([]);
-    // 本地排队记录一并清空（安全方向）：重连/切换后 CLI 侧队列可能已被消费，
-    // 旧记录继续显示会呈错误「排队中」状态；lifecycle 帧对齐只在同一连接内有效。
+    // 排队列表一并清空：重连/切换后由服务端种子快照（live_end 后）重置为权威
+    // 状态——先清再等快照，防旧快照残留。
     queuedCommandsRef.current = [];
     setQueuedCommands([]);
     queuedResendRef.current = null;
@@ -5489,6 +5485,9 @@ export function useClaudeSession(
       // full 分支注释）。收集期 messageMapRef 尚未纳入本 batch，与 processBatch 过滤期
       // 看到的是同一状态，判定一致。
       const shouldCacheReplayLine = (msg: SessionStreamServerMessage): boolean => {
+        // queue_state 是 broadcast-only 快照（不入 liveLines/JSONL），重连由服务端
+        // live_end 后重新种子——缓存它只会留下陈旧快照（真实队列可能已推进）。
+        if (msg.type === "queue_state") return false;
         if (!deltaReplayRef.current) return true;
         const uuid = getMessageUuid(msg);
         return !(uuid && messageMapRef.current.has(uuid));
@@ -6029,13 +6028,9 @@ export function useClaudeSession(
       }
       if (text) content.push({ type: "text", text });
 
-      // running 中发送 = CLI 入队（turn 结束后依序执行）→ 登记本地排队记录（排队
-      // 可视 + 撤回/编辑的数据源）。idle 发送不记（isRunningRef 注释）。
+      // 排队登记已上收 api（queue-state serverization）：api 写 gate 判 working
+      // 入队并广播 queue_state，web 零本地记账。
       const uuid = crypto.randomUUID();
-      if (isRunningRef.current) {
-        setQueuedCommandsSync((prev) => [...prev, { uuid, content: text }]);
-      }
-
       sendToSocket({
         type: "user",
         message: { role: "user", content },
@@ -6045,7 +6040,7 @@ export function useClaudeSession(
       pendingAttachmentsRef.current?.clearPendingAttachments?.();
       pendingModelContextRef.current?.clearPendingModelContext?.();
     },
-    [sendToSocket, setQueuedCommandsSync],
+    [sendToSocket],
   );
 
   const onCancel = useCallback(async () => {
@@ -6099,22 +6094,23 @@ export function useClaudeSession(
       // cancel_queued 清空整个 CLI 队列：除被撤条目外的**全部**排队条目（含 idx
       // 之前的）都出队了，需一并重发（filter 保序 = 重发后原顺序保持）。
       const resend = queue.filter((e) => e.uuid !== uuid);
-      // 乐观只移除被撤条目，其余保留显示；回执到达后整体替换为重发登记的新
-      // uuid 条目（内容相同 → 视觉无闪变，仅 key 更替）。append 会留下旧 uuid
-      // 条目泄漏（永远等不到它的 lifecycle 帧）。
+      // 乐观只移除被撤条目（即时反馈）；随后 cancelled 帧驱动的服务端空快照到达，
+      // 整体替换语义自然收敛两端一致。
       setQueuedCommandsSync((prev) => prev.filter((e) => e.uuid !== uuid));
       queuedResendRef.current = () => {
         queuedResendRef.current = null;
-        const requeued = resend.map((entry) => {
-          const newUuid = crypto.randomUUID();
+        // 重发后不设本地登记——排队状态唯一驱动 = 服务端快照：turn 仍在跑时重发
+        // 帧经 api gate 入队、快照广播让 chip 重现；恰已 idle（race：success 回执
+        // 时 turn 刚结束）时 gate 不登记、CLI 立即执行，本就该无 chip。v1 在此
+        // 整体替换本地登记靠 lifecycle 帧自愈，v2 不再消费 lifecycle——留本地
+        // 登记会是无快照跟进的永久假 chip。
+        for (const entry of resend) {
           sendToSocket({
             type: "user",
             message: { role: "user", content: [{ type: "text", text: entry.content }] },
-            uuid: newUuid,
+            uuid: crypto.randomUUID(),
           });
-          return { uuid: newUuid, content: entry.content };
-        });
-        setQueuedCommandsSync(() => requeued);
+        }
       };
       sendCancelQueuedRequest();
     },
@@ -6123,6 +6119,7 @@ export function useClaudeSession(
 
   /** 撤回全部排队 prompt（全清，不重发）。 */
   const cancelAllQueued = useCallback(() => {
+    // 乐观清空（即时反馈）；cancelled 帧驱动的服务端空快照随后覆盖同值。
     setQueuedCommandsSync(() => []);
     queuedResendRef.current = null;
     sendCancelQueuedRequest();

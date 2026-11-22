@@ -238,13 +238,14 @@ test("ClaudeSessionRelay always sends history+output markers even when empty", a
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  // session_init + history_start + history_end + output_start + output_end = 5
-  expect(messages).toHaveLength(5);
+  // session_init + history_start + history_end + output_start + output_end + queue seed = 6
+  expect(messages).toHaveLength(6);
   expect(messages[0]).toMatchObject({ type: "session_init", resume: false });
   expect(messages[1]).toMatchObject({ type: "history_start", count: 0 });
   expect(messages[2]).toMatchObject({ type: "history_end" });
   expect(messages[3]).toMatchObject({ type: "live_start", count: 0 });
   expect(messages[4]).toMatchObject({ type: "live_end" });
+  expect(messages[5]).toEqual({ type: "queue_state", entries: [] });
 
   relay.destroy();
 });
@@ -300,12 +301,13 @@ test("ClaudeSessionRelay broadcasts live output after batch", async () => {
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
 
-  // output_start + batch message + output_end + live message
+  // output_start + batch message + output_end + queue seed + live message
   const outputEnd = messages.findIndex((msg) => msg.type === "live_end");
   const liveMessages = messages.slice(outputEnd + 1);
 
-  expect(liveMessages).toHaveLength(1);
-  expect(liveMessages[0]).toEqual(JSON.parse(live1));
+  expect(liveMessages).toHaveLength(2);
+  expect(liveMessages[0]).toEqual({ type: "queue_state", entries: [] }); // 无条件种子
+  expect(liveMessages[1]).toEqual(JSON.parse(live1));
 
   relay.destroy();
 });
@@ -724,12 +726,14 @@ test("ClaudeSessionRelay coalesces consecutive thinking_tokens in the live buffe
 
   // 1) Live broadcast still sends each of the 3 rows — the live
   //    "Thinking… (N tokens)" animation needs the incremental values.
+  //    （live_end 后先到无条件队列种子空快照，再是 3 行广播。）
   const liveEndIdx = live.findIndex((l) => l.includes('"live_end"'));
   const afterBatch = live
     .slice(liveEndIdx + 1)
     .map((l) => JSON.parse(l) as Record<string, unknown>);
-  expect(afterBatch).toHaveLength(3);
-  expect(afterBatch.map((m) => m.estimated_tokens)).toEqual([5, 20, 39]);
+  expect(afterBatch).toHaveLength(4);
+  expect(afterBatch[0]).toEqual({ type: "queue_state", entries: [] });
+  expect(afterBatch.slice(1).map((m) => m.estimated_tokens)).toEqual([5, 20, 39]);
 
   // 2) A subscriber joining LATER replays only the LAST coalesced row from the
   //    live batch — earlier cumulative values are superseded and dropped.
@@ -1018,8 +1022,10 @@ test("ClaudeSessionRelay sends empty batches when the anchor is the last line", 
   expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0 });
   const liveStart = messages.findIndex((msg) => msg.type === "live_start");
   expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 0 });
-  // markers + init only, no data rows
-  expect(messages).toHaveLength(5);
+  // markers + init + queue seed（delta 重连也收无条件种子——空快照即 stale chips
+  // 修正帧）, no data rows
+  expect(messages).toHaveLength(6);
+  expect(messages[5]).toEqual({ type: "queue_state", entries: [] });
 
   relay.destroy();
 });
@@ -1172,4 +1178,220 @@ test("ClaudeSessionRelay.ensureActive waits for in-flight activation (invariant 
 
   // 从未 activate 的 relay：ensureActive 立即 resolve（悬挂会让本测试超时失败）。
   await new ClaudeSessionRelay().ensureActive();
+});
+
+// ── queue-state serverization（排队状态服务端化）────────────────────────
+
+test("enqueueQueuedCommand books + broadcasts; uuid-idempotent (no double-book, no echo broadcast)", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  received.length = 0; // drop the replay frames
+
+  relay.enqueueQueuedCommand({ uuid: "u-1", content: "B" });
+  expect(received).toHaveLength(1);
+  expect(JSON.parse(received[0]!)).toEqual({
+    type: "queue_state",
+    entries: [{ uuid: "u-1", content: "B" }],
+  });
+
+  // 同 uuid 重复登记（双端并发/重发风暴）→ 幂等拒绝，零广播。
+  relay.enqueueQueuedCommand({ uuid: "u-1", content: "B" });
+  expect(received).toHaveLength(1);
+
+  // 不同 uuid → 真新增 + 广播，FIFO 保序。
+  relay.enqueueQueuedCommand({ uuid: "u-2", content: "C" });
+  expect(received).toHaveLength(2);
+  expect(JSON.parse(received[1]!)).toMatchObject({
+    type: "queue_state",
+    entries: [
+      { uuid: "u-1", content: "B" },
+      { uuid: "u-2", content: "C" },
+    ],
+  });
+
+  relay.destroy();
+});
+
+test("queue_state broadcasts are transient (never buffered into liveLines)", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  // 既有订阅者在线时 enqueue → 只广播给当前订阅者（transient）。
+  const subA: string[] = [];
+  relay.addSubscriber(
+    (line) => subA.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  subA.length = 0; // drop the replay frames
+  relay.enqueueQueuedCommand({ uuid: "u-1", content: "B" });
+  expect(subA.some((l) => (JSON.parse(l) as { type: string }).type === "queue_state")).toBe(true);
+
+  await relay.handleStdoutLine(
+    JSON.stringify({
+      type: "assistant",
+      uuid: "a-1",
+      message: { id: "m1", role: "assistant", content: [] },
+    }),
+  );
+
+  // 新订阅者重连：重放段（live batch 内）无 queue_state——快照是 broadcast-only
+  //（tool_progress「在线即见、错过不补」家族），重连由 live_end 后的种子快照承接。
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const liveStartIdx = messages.findIndex((m) => m.type === "live_start");
+  const liveEndIdx = messages.findIndex((m) => m.type === "live_end");
+  const inBatch = messages.slice(liveStartIdx + 1, liveEndIdx);
+  expect(inBatch.some((m) => m.type === "queue_state")).toBe(false);
+  // 种子快照在 live_end 后（队列非空——u-1 未被 lifecycle 移除）。
+  expect(messages[liveEndIdx + 1]).toMatchObject({
+    type: "queue_state",
+    entries: [{ uuid: "u-1", content: "B" }],
+  });
+
+  relay.destroy();
+});
+
+test("command_lifecycle frames drive removal: queued keeps, started/completed/cancelled remove", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  received.length = 0;
+
+  relay.enqueueQueuedCommand({ uuid: "u-1", content: "B" });
+  relay.enqueueQueuedCommand({ uuid: "u-2", content: "C" });
+  received.length = 0;
+
+  // queued 帧 = CLI 确认入队（延迟到 turn 边界补发），不移除——两条仍在队列。
+  //（lifecycle 帧自身也透传广播，断言只看 queue_state 帧。）
+  await relay.handleStdoutLine(
+    JSON.stringify({ type: "command_lifecycle", command_uuid: "u-1", state: "queued" }),
+  );
+  const qsAfterQueued = received.filter(
+    (l) => (JSON.parse(l) as { type: string }).type === "queue_state",
+  );
+  expect(qsAfterQueued).toHaveLength(0);
+
+  // started → 移除 u-1（u-2 保留）。
+  await relay.handleStdoutLine(
+    JSON.stringify({ type: "command_lifecycle", command_uuid: "u-1", state: "started" }),
+  );
+  const qsAfterStarted = received.filter(
+    (l) => (JSON.parse(l) as { type: string }).type === "queue_state",
+  );
+  expect(qsAfterStarted).toHaveLength(1);
+  expect(JSON.parse(qsAfterStarted[0]!)).toMatchObject({
+    type: "queue_state",
+    entries: [{ uuid: "u-2", content: "C" }],
+  });
+
+  received.length = 0;
+  // cancelled（cancel_queued 全清逐帧驱动）→ 移除 u-2 到空，空快照照发。
+  await relay.handleStdoutLine(
+    JSON.stringify({ type: "command_lifecycle", command_uuid: "u-2", state: "cancelled" }),
+  );
+  const qsAfterCancelled = received.filter(
+    (l) => (JSON.parse(l) as { type: string }).type === "queue_state",
+  );
+  expect(qsAfterCancelled).toHaveLength(1);
+  expect(JSON.parse(qsAfterCancelled[0]!)).toEqual({ type: "queue_state", entries: [] });
+
+  received.length = 0;
+  // 未知 uuid（idle 路径从未登记）→ no-op 零 queue_state 广播。
+  await relay.handleStdoutLine(
+    JSON.stringify({ type: "command_lifecycle", command_uuid: "u-x", state: "completed" }),
+  );
+  const qsAfterUnknown = received.filter(
+    (l) => (JSON.parse(l) as { type: string }).type === "queue_state",
+  );
+  expect(qsAfterUnknown).toHaveLength(0);
+
+  relay.destroy();
+});
+
+test("addSubscriber seeds queue snapshot after live_end; empty queue seeds an empty snapshot", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+
+  // 空队列也发空快照（无条件种子）：delta 重连路径（anchor 仍命中缓冲、客户端不
+  // reset）下，断连窗口内被 lifecycle 清空的队列没有任何其它帧能修正 stale chips
+  // ——空快照就是修正帧。full-replay 路径 resetSessionState 已清空本地队列，
+  // 空快照幂等无害。
+  const receivedEmpty: string[] = [];
+  relay.addSubscriber(
+    (line) => receivedEmpty.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  const emptyMessages = receivedEmpty.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const emptyLiveEndIdx = emptyMessages.findIndex((m) => m.type === "live_end");
+  expect(emptyLiveEndIdx).toBeGreaterThanOrEqual(0);
+  expect(emptyMessages[emptyLiveEndIdx + 1]).toEqual({ type: "queue_state", entries: [] });
+
+  // 排队后重连：种子快照在 live_end 之后（客户端 session_init reset → 回放 → 快照
+  // 收尾——先于 reset 到达会被 wipe）。
+  relay.enqueueQueuedCommand({ uuid: "u-1", content: "B" });
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const liveEndIdx = messages.findIndex((m) => m.type === "live_end");
+  expect(liveEndIdx).toBeGreaterThanOrEqual(0);
+  const seedIdx = messages.findIndex((m) => m.type === "queue_state");
+  expect(seedIdx).toBe(liveEndIdx + 1);
+  expect(messages[seedIdx]).toEqual({
+    type: "queue_state",
+    entries: [{ uuid: "u-1", content: "B" }],
+  });
+
+  relay.destroy();
+});
+
+test("destroy clears queued commands (respawn = fresh relay = empty queue)", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+  relay.enqueueQueuedCommand({ uuid: "u-1", content: "B" });
+  relay.destroy();
+
+  // destroy 后种子照发但为空快照（队列已清——CLI 死 = 队列没；无条件种子下
+  // 空快照同时起到「清空他端残留」的修正作用）。
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const liveEndIdx = messages.findIndex((m) => m.type === "live_end");
+  expect(messages[liveEndIdx + 1]).toEqual({ type: "queue_state", entries: [] });
+
+  relay.destroy();
 });

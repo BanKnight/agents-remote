@@ -3143,6 +3143,23 @@ export type ClaudeCommandLifecycle = {
   ran_ahead?: boolean;
 };
 
+// Server-maintained prompt queue snapshot (queue-state serverization). The CLI
+// emits queued/started lifecycle frames only at turn boundaries — during a
+// running turn there is zero queue telemetry (probe-verified), so the api
+// relay books prompts itself at the write gate and mirrors the state as a
+// full-snapshot frame. Semantics: client replaces its local list wholesale.
+// Broadcast-only (never buffered into liveLines, like tool_progress); on
+// reconnect the seed snapshot is sent after live_end.
+export type ClaudeQueuedCommand = {
+  uuid: string;
+  content: string;
+};
+
+export type ClaudeQueueState = {
+  type: "queue_state";
+  entries: ClaudeQueuedCommand[];
+};
+
 export type ClaudeResult = {
   type: "result";
   subtype: "success" | "error_max_turns" | "error" | "interrupted";
@@ -3435,6 +3452,7 @@ export type SessionStreamServerMessage =
   | ClaudeToolProgress
   | ClaudeVcsStateChanged
   | ClaudeCommandLifecycle
+  | ClaudeQueueState
   | ClaudeResult
   | ClaudeCostState
   | ClaudeControlRequest

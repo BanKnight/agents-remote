@@ -97,20 +97,26 @@ export function normalizeAutoRetryConfig(raw: unknown): ClaudeAutoRetryConfig {
 }
 
 // 注入消息 stdin 行（与 claude-stream.ts 用户消息转发同构：type:user + content text）。
-export function buildAutoRetryUserLine(message: string): string {
+// uuid 由调用方生成并贯穿（CLI 采纳上行 uuid 为 command_uuid → lifecycle 帧与
+// echo/排队登记可对齐；无 uuid 时 CLI 自生成，登记即泄漏——P1-4）。
+export function buildAutoRetryUserLine(message: string, uuid?: string): string {
   return JSON.stringify({
     type: "user",
     message: { role: "user", content: [{ type: "text", text: message }] },
+    ...(uuid ? { uuid } : {}),
   });
 }
 
-// 注入消息的 live echo（与 claude-stream.ts 用户消息 echo 同构：isUserInput + synthetic uuid，
+// 注入消息的 live echo（与 claude-stream.ts 用户消息 echo 同构：isUserInput + uuid，
 // CLI 从不在 stream-json stdout 回显用户输入，echo 供当前与重连后的订阅者看到注入）。
-export function buildAutoRetryEchoLine(userLine: string): string {
+// uuid 与 userLine 的同源（调用方同一 uuid 贯穿 = CLI 采纳的 command_uuid）；
+// 无 uuid 才落 synthetic。
+export function buildAutoRetryEchoLine(message: string, uuid?: string): string {
   return JSON.stringify({
-    ...JSON.parse(userLine),
+    type: "user",
+    message: { role: "user", content: [{ type: "text", text: message }] },
     isUserInput: true,
-    uuid: `injected-${crypto.randomUUID()}`,
+    uuid: uuid ?? `injected-${crypto.randomUUID()}`,
   });
 }
 

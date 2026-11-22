@@ -1174,7 +1174,7 @@ describe("useClaudeSession queue-operation", () => {
   });
 });
 
-describe("useClaudeSession queued commands（本地排队记录 + 撤回）", () => {
+describe("useClaudeSession queued commands（服务端快照 + 撤回）", () => {
   const openSocket = async () => {
     const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
@@ -1183,10 +1183,10 @@ describe("useClaudeSession queued commands（本地排队记录 + 撤回）", ()
     return { result, socket };
   };
 
-  test("running 中发送登记排队记录，queued 确认不移除、started 移除", async () => {
+  test("queue_state 快照整体替换驱动排队列表；发送零本地登记", async () => {
     const { result, socket } = await openSocket();
 
-    // 制造 running：live assistant 无 result 结算（computeRunningCount > 0）。
+    // running 中发送：web 零本地记账（登记职责上收 api 写 gate），快照未到前列表不变。
     act(() => {
       socket.emit({
         type: "assistant",
@@ -1194,81 +1194,45 @@ describe("useClaudeSession queued commands（本地排队记录 + 撤回）", ()
         session_id: "s1",
       } as never);
     });
-
     await act(async () => {
       await result.current.storeAdapter.onNew({
         content: [{ type: "text", text: "B-prompt" }],
       } as never);
     });
-
-    expect(result.current.queuedCommands).toHaveLength(1);
-    expect(result.current.queuedCommands[0].content).toBe("B-prompt");
-    const uuidB = result.current.queuedCommands[0].uuid;
-    // 上行 user 帧带同一 uuid（command_lifecycle 的 command_uuid 对齐锚）。
-    const sentUser = socket.sent
-      .map((s) => JSON.parse(s) as { type: string; uuid?: string })
-      .some((m) => m.type === "user" && m.uuid === uuidB);
-    expect(sentUser).toBe(true);
-
-    // queued 生命周期 = 确认入队，不移除（仍在排队可视中）。
-    act(() => {
-      socket.emit({
-        type: "command_lifecycle",
-        command_uuid: uuidB,
-        state: "queued",
-        uuid: uuidB,
-        session_id: "s1",
-      } as never);
-    });
-    expect(result.current.queuedCommands).toHaveLength(1);
-
-    // started = CLI 开始执行 → 从排队列表移除。
-    act(() => {
-      socket.emit({
-        type: "command_lifecycle",
-        command_uuid: uuidB,
-        state: "started",
-        uuid: uuidB,
-        session_id: "s1",
-      } as never);
-    });
     expect(result.current.queuedCommands).toHaveLength(0);
-  });
 
-  test("idle 发送不登记排队记录（空队列直接执行）", async () => {
-    const { result } = await openSocket();
-
-    await act(async () => {
-      await result.current.storeAdapter.onNew({
-        content: [{ type: "text", text: "idle-prompt" }],
+    // 服务端快照到达（api gate 入队广播）→ 整体替换。
+    act(() => {
+      socket.emit({
+        type: "queue_state",
+        entries: [{ uuid: "u-b", content: "B-prompt" }],
       } as never);
     });
+    expect(result.current.queuedCommands).toEqual([{ uuid: "u-b", content: "B-prompt" }]);
 
+    // 新快照 → 覆盖而非合并（空快照清空——他端 chip 残留防线）。
+    act(() => {
+      socket.emit({ type: "queue_state", entries: [] } as never);
+    });
     expect(result.current.queuedCommands).toHaveLength(0);
   });
 
   test("cancelQueuedEntry 发 cancel_queued，success 回执触发剩余按序重发", async () => {
     const { result, socket } = await openSocket();
 
+    // 排队列表来自服务端快照（v2 唯一状态驱动）。
     act(() => {
       socket.emit({
-        type: "assistant",
-        message: { id: "a1", role: "assistant", content: [{ type: "text", text: "working" }] },
-        session_id: "s1",
-      } as never);
-    });
-    await act(async () => {
-      await result.current.storeAdapter.onNew({
-        content: [{ type: "text", text: "B-prompt" }],
-      } as never);
-      await result.current.storeAdapter.onNew({
-        content: [{ type: "text", text: "C-prompt" }],
+        type: "queue_state",
+        entries: [
+          { uuid: "u-b", content: "B-prompt" },
+          { uuid: "u-c", content: "C-prompt" },
+        ],
       } as never);
     });
     expect(result.current.queuedCommands).toHaveLength(2);
-    const uuidB = result.current.queuedCommands[0].uuid;
 
-    act(() => result.current.cancelQueuedEntry(uuidB));
+    act(() => result.current.cancelQueuedEntry("u-b"));
 
     // 乐观移除 B，C 保留显示（待重发）。
     expect(result.current.queuedCommands).toHaveLength(1);
@@ -1280,7 +1244,7 @@ describe("useClaudeSession queued commands（本地排队记录 + 撤回）", ()
     expect(cancelReq).toBeTruthy();
     const requestId = (cancelReq as { request_id: string }).request_id;
 
-    // success 回执 → Pass 1 消费重发闭包：C 以新 uuid 重新入队。
+    // success 回执 → 重发闭包 fire：C 以新 uuid 重新入队。
     act(() => {
       socket.emit({
         type: "control_response",
@@ -1306,11 +1270,20 @@ describe("useClaudeSession queued commands（本地排队记录 + 撤回）", ()
           m.type === "user" &&
           m.message?.content?.some((c) => c.type === "text" && c.text === "C-prompt"),
       );
-    // 原上行 1 帧 + 重发 1 帧。
-    expect(resentUser).toHaveLength(2);
-    // 重新登记的 uuid = 重发帧的新 uuid（≠ 原 C uuid）。
+    // 快照驱动无原上行：恰 1 帧重发。
+    expect(resentUser).toHaveLength(1);
+    // 本地不重新登记（v2）：仍 = 乐观移除后的 C 旧条目，等快照收敛——否则 race
+    //（success 到达时 turn 已 idle）下是无快照跟进的永久假 chip。
     expect(result.current.queuedCommands).toHaveLength(1);
-    expect(result.current.queuedCommands[0].uuid).toBe(resentUser[1].uuid);
+    expect(result.current.queuedCommands[0].uuid).toBe("u-c");
+    // 服务端快照到达（重发经 api gate 入队广播）→ 收敛为新 uuid 条目。
+    act(() => {
+      socket.emit({
+        type: "queue_state",
+        entries: [{ uuid: resentUser[0].uuid ?? "", content: "C-prompt" }],
+      } as never);
+    });
+    expect(result.current.queuedCommands[0].uuid).toBe(resentUser[0].uuid);
   });
 
   test("cancelAllQueued 清空且不重发", async () => {
@@ -1318,19 +1291,14 @@ describe("useClaudeSession queued commands（本地排队记录 + 撤回）", ()
 
     act(() => {
       socket.emit({
-        type: "assistant",
-        message: { id: "a1", role: "assistant", content: [{ type: "text", text: "working" }] },
-        session_id: "s1",
+        type: "queue_state",
+        entries: [
+          { uuid: "u-b", content: "B-prompt" },
+          { uuid: "u-c", content: "C-prompt" },
+        ],
       } as never);
     });
-    await act(async () => {
-      await result.current.storeAdapter.onNew({
-        content: [{ type: "text", text: "B-prompt" }],
-      } as never);
-      await result.current.storeAdapter.onNew({
-        content: [{ type: "text", text: "C-prompt" }],
-      } as never);
-    });
+    expect(result.current.queuedCommands).toHaveLength(2);
 
     act(() => result.current.cancelAllQueued());
 

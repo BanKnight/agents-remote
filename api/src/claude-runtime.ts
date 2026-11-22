@@ -520,13 +520,15 @@ export class ClaudeRuntime implements RuntimeResources {
       getConfig: (_sessionName, sessionId) => this.autoRetryConfigProvider?.(sessionId),
       inject: async (sessionName, message) => {
         // 注入 = 自动替用户发了一条消息：stdin user 行 + live echo（CLI 从不回显用户
-        // 输入，echo 供当前与重连后的订阅者看到注入）。
-        const userLine = buildAutoRetryUserLine(message);
+        // 输入，echo 供当前与重连后的订阅者看到注入）。uuid 生成一次贯穿三方（stdin
+        // 行 / echo / 排队登记）——CLI 采纳它为 command_uuid，lifecycle 帧据此对齐。
+        const uuid = crypto.randomUUID();
+        const userLine = buildAutoRetryUserLine(message, uuid);
         // 先写后 echo：进程已死时 write 失败 → 不产生幽灵 isUserInput 回显（P3：旧实现
         // 无条件 echo，重生后的同 key relay 会缓冲一条从未发生的输入）。
         await this.write(sessionName, `${userLine}\n`);
-        this.injectLiveLine(sessionName, buildAutoRetryEchoLine(userLine));
-        this.applyStatusSignal(sessionName, { kind: "user_input" });
+        this.injectLiveLine(sessionName, buildAutoRetryEchoLine(message, uuid));
+        this.reportUserInput(sessionName, { uuid, text: message });
       },
     });
   }
@@ -828,9 +830,23 @@ export class ClaudeRuntime implements RuntimeResources {
     this.onSessionStatusChange?.(state.sessionId, next);
   }
 
-  /** 用户提交消息(STDIN 注入 echo 行)→ working。claude-stream message()/injectUserPrompt 调。 */
-  reportUserInput(runtimeKey: string): void {
+  /** 用户提交消息(STDIN 注入 echo 行)→ working；turn 进行中(working)时折叠登记进
+   *  服务端排队(queue-state serverization——CLI 在 running turn 中对后续 prompt 零
+   *  遥测，lifecycle 帧延迟到 turn 边界)。gate 读取与状态迁移在同一同步块内完成
+   *  (无 await 缝隙)——gen-ui loadGenUiContext / REST ensureRunning 的异步续体交错
+   *  不会漏登记。gate 只判 working:blocked 下 CLI 行为未实测,保守方向漏登记无害
+   *  (lifecycle 帧对未知 uuid 是 no-op 自愈),错登记才可能永久泄漏。
+   *  claude-stream message()/injectUserPrompt/auto-retry inject 调。 */
+  reportUserInput(runtimeKey: string, prompt?: { uuid: string; text: string }): void {
+    const state = this.processes.get(runtimeKey);
+    const busy = state?.sessionStatus === "working";
     this.applyStatusSignal(runtimeKey, { kind: "user_input" });
+    if (busy && prompt) {
+      this.relays.get(runtimeKey)?.enqueueQueuedCommand({
+        uuid: prompt.uuid,
+        content: prompt.text,
+      });
+    }
   }
 
   /** 审批收口(ApprovalCenter 回调)→ 回 working。 */

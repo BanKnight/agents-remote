@@ -1184,6 +1184,38 @@ test("turn 状态机: reportUserInput done→working;working 幂等无迁移", (
   expect(working.statusCalls).toEqual([]);
 });
 
+test("排队 gate 矩阵: working 入队 / idle·blocked 不入队（迁移照常）/ 无 uuid 不入队", () => {
+  const enqueueCalls: Array<{ uuid: string; content: string }> = [];
+  const h = seedStatusHarness("working");
+  (
+    h.internal.relays.get("rt-key") as unknown as {
+      enqueueQueuedCommand: (e: { uuid: string; content: string }) => void;
+    }
+  ).enqueueQueuedCommand = (e) => enqueueCalls.push(e);
+
+  // working + prompt → 入队（working 幂等无迁移回调）。
+  h.runtime.reportUserInput("rt-key", { uuid: "u-1", text: "B" });
+  expect(enqueueCalls).toEqual([{ uuid: "u-1", content: "B" }]);
+  expect(h.statusCalls).toEqual([]);
+
+  // idle → 不入队（CLI 立即执行），user_input 迁移 idle→working 照常。
+  const idle = seedStatusHarness("idle");
+  idle.runtime.reportUserInput("rt-key", { uuid: "u-2", text: "B" });
+  expect(idle.internal.processes.get("rt-key")?.sessionStatus).toBe("working");
+  expect(idle.statusCalls).toEqual([{ sessionId: "agent_1", status: "working" }]);
+
+  // blocked → 不入队（CLI 行为未实测，保守方向漏登记无害），状态机本就忽略
+  // blocked 的 user_input（blocked 优先，插话不能谎报审批已解决）——语义自洽。
+  const blocked = seedStatusHarness("blocked");
+  blocked.runtime.reportUserInput("rt-key", { uuid: "u-3", text: "B" });
+  expect(blocked.internal.processes.get("rt-key")?.sessionStatus).toBe("blocked");
+  expect(blocked.statusCalls).toEqual([]);
+
+  // working 但无 prompt（旧调用形状）→ 只迁移不登记。
+  h.runtime.reportUserInput("rt-key");
+  expect(enqueueCalls).toHaveLength(1);
+});
+
 test("turn 状态机: assistant 帧 → turn_activity(error/done 滞留翻回 working);synthetic/error assistant 不触发", () => {
   // CLI 自启 turn(task-notification 消费等)无 user_input 信号——assistant 帧即 turn 活跃。
   const errorCase = seedStatusHarness("error");

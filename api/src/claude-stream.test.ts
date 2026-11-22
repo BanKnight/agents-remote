@@ -200,6 +200,7 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
   }) => {
     const writes: string[] = [];
     const injections: Array<{ key: string; line: string }> = [];
+    const reportedInputs: Array<{ key: string; prompt?: { uuid: string; text: string } }> = [];
     const closedKeys: string[] = [];
     const effortUpdates: Array<{ sessionId: string; effort: string }> = [];
     const claudeRuntime = {
@@ -209,8 +210,11 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       injectLiveLine: (key: string, line: string) => {
         injections.push({ key, line });
       },
-      // turn 状态机 user_input 信号（状态迁移断言归 claude-runtime.test.ts）。
-      reportUserInput: (_key: string) => {},
+      // turn 状态机 user_input 信号 + 排队登记折叠（gate 矩阵断言归
+      // claude-runtime.test.ts）——这里只记录 WS 分支传了什么。
+      reportUserInput: (key: string, prompt?: { uuid: string; text: string }) => {
+        reportedInputs.push({ key, prompt });
+      },
       // Default passthrough = default config (alias mapping, 1m off): the
       // controller forwards the model unchanged. Tests inject a resolver to
       // simulate modelMapping/1m resolution.
@@ -256,7 +260,7 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       {} as RuntimeResources,
       sessionRegistry as unknown as SessionRegistry,
     );
-    return { controller, writes, injections, closedKeys, effortUpdates };
+    return { controller, writes, injections, reportedInputs, closedKeys, effortUpdates };
   };
 
   test("set_model control_request is forwarded to CLI stdin (in-process switch, no restart)", async () => {
@@ -426,6 +430,90 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     expect(injections).toEqual([]);
   });
 
+  test("queue booking: text prompt + valid uuid reports prompt; tool_result / no/bad uuid report none", async () => {
+    const { controller, reportedInputs } = makeController();
+    const key = "ar-claude-claude-demo-sess-1";
+
+    // 带 uuid 的 text prompt（startsTurn + 白名单通过）→ reportUserInput(prompt)。
+    await controller.message(
+      makeSocket(),
+      JSON.stringify({
+        type: "user",
+        message: { role: "user", content: [{ type: "text", text: "B-prompt" }] },
+        uuid: "u-1",
+      }),
+    );
+    expect(reportedInputs).toEqual([{ key, prompt: { uuid: "u-1", text: "B-prompt" } }]);
+
+    // 纯 tool_result 帧（轮中续跑，无 text block）→ 只迁移不登记。
+    await controller.message(
+      makeSocket(),
+      JSON.stringify({
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "t-1", content: "ok" }],
+        },
+        uuid: "u-2",
+      }),
+    );
+    expect(reportedInputs[1]).toEqual({ key, prompt: undefined });
+
+    // 无 uuid（旧客户端，CLI 自生成对不上 lifecycle）→ 不登记。
+    await controller.message(
+      makeSocket(),
+      JSON.stringify({
+        type: "user",
+        message: { role: "user", content: [{ type: "text", text: "no-uuid" }] },
+      }),
+    );
+    expect(reportedInputs[2]).toEqual({ key, prompt: undefined });
+
+    // 白名单外 uuid（空格等）→ 不登记。
+    await controller.message(
+      makeSocket(),
+      JSON.stringify({
+        type: "user",
+        message: { role: "user", content: [{ type: "text", text: "bad-uuid" }] },
+        uuid: "bad uuid!",
+      }),
+    );
+    expect(reportedInputs[3]).toEqual({ key, prompt: undefined });
+
+    // 多 text blocks join；纯图（无 text block）不登记。
+    await controller.message(
+      makeSocket(),
+      JSON.stringify({
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "line-1" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "" } },
+            { type: "text", text: "line-2" },
+          ],
+        },
+        uuid: "u-3",
+      }),
+    );
+    expect(reportedInputs[4]).toEqual({ key, prompt: { uuid: "u-3", text: "line-1\nline-2" } });
+
+    await controller.message(
+      makeSocket(),
+      JSON.stringify({
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "" } },
+          ],
+        },
+        uuid: "u-4",
+      }),
+    );
+    expect(reportedInputs[5]).toEqual({ key, prompt: undefined });
+  });
+
   describe("injectUserPrompt (D13 REST 注入)", () => {
     test("writes user frame to stdin + echoes into live cache (same pipe as WS user)", async () => {
       const { controller, writes, injections } = makeController();
@@ -456,6 +544,18 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       });
       const result = await controller.injectUserPrompt("demo", "sess-1", "hi");
       expect(result).toEqual({ delivered: false, reason: "session_not_found" });
+    });
+
+    test("queues the pre-compose original text (gen-ui XML 污染防线)", async () => {
+      const { controller, reportedInputs } = makeController();
+      const text = "please adjust the widget";
+      await controller.injectUserPrompt("demo", "sess-1", text);
+      // 登记文本 = composeUserText 之前的入参原文（chip 显示/撤回回填/重发载荷
+      // 消费的是人输入的原文，不是拼了 gen-ui XML 块的转发文本）；uuid = anchorUuid
+      //（stdin 行 / echo / 登记三方同 uuid，lifecycle 帧可对齐清理）。
+      expect(reportedInputs).toHaveLength(1);
+      expect(reportedInputs[0]?.prompt?.text).toBe(text);
+      expect(typeof reportedInputs[0]?.prompt?.uuid).toBe("string");
     });
   });
 

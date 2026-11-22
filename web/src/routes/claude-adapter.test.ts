@@ -4132,6 +4132,23 @@ describe("normalizeChatStream", () => {
     expect(items).toHaveLength(0);
   });
 
+  test("queue_state produces no item (broadcast-only 排队快照, no fallback)", () => {
+    // api relay 维持的服务端排队快照（queue-state serverization），broadcast-only
+    // 不入 liveLines/JSONL。标量副作用（整体替换排队列表）在 Pass 1 queue_state
+    // 分支；投影层 skip——旧 web（PWA 缓存）收未知帧落 fallback 气泡的同族防线。
+    const items = normalizeChatStream([
+      {
+        type: "queue_state",
+        entries: [
+          { uuid: "u-b", content: "B-prompt" },
+          { uuid: "u-c", content: "C-prompt" },
+        ],
+      } as unknown as SessionStreamServerMessage,
+      { type: "queue_state", entries: [] } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(0);
+  });
+
   test("control_response cancel_queued receipt (still_queued/turn) produces no item (no fallback)", () => {
     // 撤回排队回执的实测形状（2.1.325 探针）：inner = {still_queued, turn}——
     // 旧调研记载的 cancelled 清单形状一并防御（版本漂移）。标量副作用在 Pass 1

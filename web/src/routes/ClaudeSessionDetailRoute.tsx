@@ -114,7 +114,6 @@ import {
   type AgentTailStats,
   type ExtractedImage,
   type ApiErrorAttachment,
-  type LocalQueuedCommand,
   type PermissionUpdate,
   type RetryInfo,
   type TaskInfo,
@@ -125,6 +124,7 @@ import { SubagentOverviewBar, agentCardExpandSignalAtom } from "./claude-subagen
 import type {
   ClaudeContextUsage,
   ClaudeFileHistorySnapshot,
+  ClaudeQueuedCommand,
   EffortLevel,
 } from "@agents-remote/shared";
 import { isUnresolvedControlRequest } from "@agents-remote/shared";
@@ -3761,8 +3761,8 @@ function ComposerWithInterrupt({
   /** 待发画布选区（M3 引用循环;画布卡「引用到对话」写入）。 */
   canvasContext: CanvasSelectionContext | null;
   onRemoveCanvasContext: () => void;
-  /** 本地排队记录（running 中发送、CLI 尚未 started 的 prompt，按发送序）。 */
-  queuedCommands: LocalQueuedCommand[];
+  /** 服务端维持的排队列表（queue_state 快照驱动，按入队序）。 */
+  queuedCommands: ClaudeQueuedCommand[];
   /** 撤回单条排队 prompt（cancel_queued 全清 + 剩余按序重发，adapter 单源）。 */
   onCancelQueuedEntry: (uuid: string) => void;
 }) {
@@ -3856,7 +3856,7 @@ function ComposerWithInterrupt({
   // 排队条目编辑（路线 2）：撤回该条 + 内容回填输入框。「编辑排队 prompt」不是
   // 协议能力，是撤回后的本地回填；回填用组装后的帧文本（entry.content = CLI 将
   // 收到的真实文本，含提及行/画布上下文，用户可原样改）。
-  const editQueuedEntry = (entry: LocalQueuedCommand) => {
+  const editQueuedEntry = (entry: ClaudeQueuedCommand) => {
     composer.setText(entry.content);
     onCancelQueuedEntry(entry.uuid);
   };
