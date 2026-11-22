@@ -1,8 +1,9 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-23（**prompt 队列 v2（排队状态服务端化）实现 + 全门禁完成，
-> commit 待做；含 v1 三 commit（`e1c1223c`/`1ae76c15`/`b6f5025d`）+ docs
-> `005002d6`，共 5 commits 未推送——push 待用户确认**）
+> 最后更新：2026-11-23（**prompt 队列 v2（排队状态服务端化）已 commit
+> `0d16d5d9`（code-reviewer 1 P1 + 2 P3 全修后 amend），全门禁绿；含 v1 三
+> commit（`e1c1223c`/`1ae76c15`/`b6f5025d`）+ docs `005002d6`，共 5 commits
+> 未推送——push 待用户确认**）
 
 ## 一句话状态
 
@@ -84,12 +85,24 @@ injectUserPrompt / auto-retry inject）经 `reportUserInput(runtimeKey, prompt?)
 
 ## 下一步
 
-1. commit v2（标准 git add && git commit，pre-commit 全门禁自动跑）。
-2. code-reviewer 审查 + 消化报告（plan 验证节要求）。
-3. push 待用户确认（5 commits：v1 三 + docs + v2 本批）。
-4. 真机清单（交用户，v1+v2 合并）：两设备同开会话——A 端 running 中排队 →
+1. push 待用户确认（5 commits：v1 三 + docs + v2 `0d16d5d9`）。
+2. 真机清单（交用户，v1+v2 合并）：两设备同开会话——A 端 running 中排队 →
    B 端立即见 chip；A 端撤回 → B 端 chip 消失；刷新 B 端 → chip 仍在；撤回
    编辑回填照旧；turn 结束 chip 清空。
+
+### code-reviewer 消化（2026-11-23，已全修 amend）
+
+- **P1（种子空洞，已修）**：种子「非空才发」在 delta 重连路径留永久 stale
+  chips——断连窗口内 lifecycle 帧广播到零订阅者丢失，重连走 delta 分支不
+  reset、种子又因队列已空被跳过 → chips 残留且无自愈（v2 已删 lifecycle
+  消费）。放大链：stale chip 撤回 → cancel_queued 对空队列 no-op → resend
+  闭包把已执行过的条目当新 prompt 重发。修法 = 种子无条件发（空快照即修正
+  帧，~40B/连接）；5 处测试同步翻转（含既有回放协议测试钉「live_end 后无
+  帧」的 4 处连锁）。
+- **P3×2（已修）**：booking 双重守卫收敛（`startsTurn && anchorUuid` 与
+  `anchorUuid && queueText` 判两次 anchorUuid → `startsTurn` 单判）；echo
+  serialize→parse→re-serialize 往返消除（buildAutoRetryEchoLine 签名改
+  (message, uuid) 直接构造，同源 uuid 语义不变）。
 
 ## 挂账（非本批）
 
