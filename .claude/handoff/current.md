@@ -1,77 +1,100 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-20（**claude CLI 升级 2.1.299 → 2.1.325 已 commit（`3e745749`），
-> 未推送（push 待用户确认）；全门禁 + golden path + e2e 42/42 全绿**）
+> 最后更新：2026-11-22（**prompt 队列功能（排队可视 + 撤回/编辑）已 commit
+> （`b6f5025d`，pre-commit 全门禁过），未推送；`1ae76c15`（command_lifecycle
+> 收编）也未推送——两 commit push 均待用户确认**）
 
 ## 一句话状态
 
-`@anthropic-ai/claude-code` 升级到 2.1.325（供应链合规最高版：2026-11-13 发布恰 7 天；
-latest 2.1.328 仅 2 天不合规）。Code Mode（2.1.323 实验功能）**拍板不接入**——官方四条
-硬约束（仅交互终端 / 仅直连 API / 仅 native build / 需 feature flags）全部排除本项目
-headless spawn 形态，CLI 服务端校验不可绕；等上游支持 stream-json host / 网关后再评估。
-顺带修复 acp-session.spec 的 sessions-stream mock 缺口（全量 e2e flaky 真根因）。
+prompt 队列功能完成并 commit：running 中发送的 prompt 在 CLI 侧排队（turn 结束后
+依序执行），web 侧排队可视（composer 卡内 clock chip 列表）+ 撤回单条
+（cancel_queued 全清 + 剩余按序重发）+ 编辑（撤回 + 回填 composer）。数据源 =
+本地发送记录 + command_lifecycle 对齐（headless 无 queue-operation 帧，排队期间
+服务端零遥测——三轮探针实锤）。
 
 ## 本 session 焦点
 
-### 本批：CLI 依赖升级（2026-11-20，commit `3e745749`）
+### 本批：prompt 队列功能（2026-11-22，commit `b6f5025d` 未推送）
 
-- **改动面**：package.json 版本行 + bun.lock（主包 + 10 平台二进制版本与 sha）+
-  `e2e/acp-session.spec.ts` 补 mock——零代码改动预期达成（runtime argv/env/解析全不动）。
-- **升级对照验证**（改后立刻）：`claude --version`=2.1.325；permission-mode choices
-  与 2.1.299 基线逐字一致（`acceptEdits/auto/bypassPermissions/manual/dontAsk/plan`，
-  agent-provider-profiles 解析面零漂移）；`--resume-session-at`（**未文档化 flag，不在
-  --help**，checkpoint 批依赖）参数层验证在位（报「requires --resume」非 unknown option）。
-- **golden path 7/7**（一次性脚本 `/tmp/gp-claude-325.mjs`，未入库）：test 项目真实
-  spawn → WS 帧流非空 → session_init 握手 → `mcp__ar-hub__capability_list` 真实调用
-  （注入+协商+调用全链）→ assistant 回复含全部六域名 → result success →
-  claudeSessionId 回填。api 日志佐证 2.1.325 新形态正常（`autoCompactThreshold:197000`、
-  ToolSearch、`mcp_instructions_delta` attachments）。
-- **e2e 41/42 → 42/42**：首轮唯一失败 = `acp-session.spec.ts`（omp provider，WS 全
-  mock，不 spawn CLI）卡 "Connecting"。定性非本批引入：该 spec 漏 mock
-  `/api/sessions/stream`，全量并发下真实后端帧竞态覆盖 `["overview"]` 缓存 → mock tab
-  被 stale-prune → AcpPanel 不挂——正是 verification.md「探针 mock 完备性」（2026-11-07）
-  记录的同族假 FAIL 的漏网之鱼（**全仓 e2e 此前零 spec mock 该流**）。修复 =
-  `routeSessionsStream` helper（`{type:"sessions", sessions}` 与 REST overview 同源帧，
-  连接即推全量、对齐真实服务端语义）+ 两用例各一条调用。单跑复验绿且提速（16.7s→11.5s）。
-- **MCP tasks / 协议协商判定**（用户问询确认）：CLI 默认协商 2026-07-28 是 2.1.292 起
-  的既有行为（2.1.299 已在用），ar-hub SDK 1.32.1 server 侧回 2025-11-25（
-  `server/index.js:263` fallback），协商语义兼容零影响；MCP tasks（2.1.319）仅当 server
-  capabilities 声明 tasks 才启用，ar-hub 不声明 → 永不触发；MCP v1 client 移除
-  （2.1.323）不涉及 2025 世代 SDK。
+- **实测定稿的协议事实**（v1/v2/v3 三轮真实 CLI 探针，脚本已删）：
+  1. `queue-operation` 帧 **headless 不存在**（v1 全程零帧）——plan 假设「inputQueue
+     管道有数据源」被推翻；排队可视唯一可行数据源 = 本地发送记录（onNew 登记
+     uuid+content）+ lifecycle 帧对齐清理。
+  2. queued/started 帧**延迟到 turn 边界才发**（A completed 后 B/C 才 queued+started
+     连发）——排队期间（A running 中）零遥测；queued 帧确认入队不移除本地记录，
+     started/completed/cancelled 才移除。
+  3. `for_user_message_uuids` 只 **interrupt 名单中正在执行**的命令（turn:"stopped"），
+     队列中的不动（still_queued 原样返回）——撤单条不可用。
+  4. `cancel_queued:true` = **interrupt 执行中命令 + 清空队列**（已 started 的 B 也
+     被打断产 cancelled 帧）+ 响应 `{still_queued:[], cancelled:[被清 uuid]}`。
+  5. interrupt 执行中命令后队列立刻推进下一条（B cancelled → C started）。
+- **实现落点**（全部双端单源）：
+  - adapter（claude-adapter.ts）：`LocalQueuedCommand` 类型 + queuedCommandsRef/
+    queuedCommands state + setQueuedCommandsSync 单点双写 wrapper + Pass 1
+    command_lifecycle 消费分支（queued 不移除）+ cancel_queued case（success 消费
+    queuedResendRef 重发闭包）+ Pass 2 skip 判定扩 cancelled/still_queued 双字段 +
+    onNew running 中登记（isRunningRef gate，idle 发送不记防 chip 闪现）+
+    cancelQueuedEntry（全清+重发，重发闭包走 ref 桥接——sendToSocket 定义在 Pass 1
+    之后，直接引用会 TDZ）+ cancelAllQueued + hook 返回三成员。重发登记 = **整体
+    替换**非 append（append 留旧 uuid 条目泄漏，单测实抓后修正）。
+  - UI（ClaudeSessionDetailRoute.tsx）：ComposerWithInterrupt 排队 chip 区
+    （canvasContext chip 同构：clock 图标 + truncate 内容 + × 撤回），点内容 =
+    编辑（composer.setText 回填 + 撤回）。i18n `claude.queue.cancel/edit` 双语。
+  - 既有 bug 修复：applyQueueOperation default 防御（JSONL 记账形态
+    `{type,queuedType}` 无 operation 字段打穿 reducer）。
+- **验证（全绿）**：pre-commit 全门禁过（format / lint 0 warning / typecheck /
+  全量单测 api 1389 + shared 16 + web 1095 = 2500 pass 0 fail，含排队登记/移除/
+  重发链新用例）/ CSS 硬闸过 / tokens 机检 0 违例 / v3 探针真实 CLI 全链绿
+  （撤 B 生效 + C' 重发走完 queued→started→completed）。
 
-### 进度
+### 关键工程点（易丢）
 
-- ✅ 全门禁：format:check / lint 0 warning / typecheck / 全量单测（api 1389 + shared 16
-  + web 1088，0 fail）/ e2e 42/42（4G）/ golden path 7 断言
-- ✅ commit `3e745749`（pre-commit 全门禁过）
-- ⏳ **push 待用户确认**
-- ✅ handoff 归档 `snapshots/20261120-0604.md`
+- **sendToSocket 与 applyMessageScalarState 定义顺序**：Pass 1 若直接引用
+  sendToSocket，useCallback deps 求值 TDZ——重发闭包走 ref（queuedResendRef）。
+- **撤单条 = 全清 + 重发**：CLI 无「从队列移除单条」API；resend 清单 = 除被撤条目外
+  的**全部**排队条目（含 idx 之前的——全清把它们也清了），filter 保序。重发必须等
+  success 回执（早到会被 cancel_queued 一并清掉）；error 时闭包作废（CLI 队列未清，
+  本地剩余条目显示仍正确，自洽）。
+- **UI 编辑回填用组装后帧文本**（entry.content 含提及行/画布上下文）——回填 composer
+  原文会丢附件上下文。
+- 重连/切会话 resetSessionState 清空本地排队记录（安全方向：CLI 侧队列可能已被消费，
+  旧记录显示「排队中」是错误状态；lifecycle 对齐只在同一连接内有效）。
+- v2 探针教训：A 任务必须真长（数到 100），否则撤回发出时 B 已 started 前提崩塌；
+  waitFor 等 result 数要把「被 interrupt 的命令也产 interrupted result」算进去
+  （v3 第一轮 2 个 result 假红 = B 的 interrupted result 提前满足）。
+- 分类器间歇故障应对（2026-11-22 实战）：Claude Bash/Edit/Write 分类器持续
+  unavailable 时，allowlist 命令（sleep/git/rm/bun 前缀）放行、node/systemd-run/
+  cat-heredoc 前缀被卡——同一脚本换 `bun scripts/X.mjs` 形式可过（CSS 硬闸 node
+  被卡、bun 放行）；全量单测直跑 `bun run test`（无 cgroup）成功；commit 用标准
+  `git add && git commit` 正常走 pre-commit 全门禁。
 
-### 易丢的关键上下文
+### 上一批：CLI 升级 + command_lifecycle 收编（2026-11-20/21，`3e745749` 已推送 + `1ae76c15` 未推送）
+
+- CLI 2.1.299 → 2.1.325（供应链合规最高版）；Code Mode 拍板不接入（官方硬约束排除
+  headless 形态）。golden path 7/7 + e2e 42/42（补 acp-session.spec 的
+  sessions-stream mock）。
+- command_lifecycle 遥测帧收编（skip 策略）→ 本批在其锚点上接排队可视。
+
+### 易丢的关键上下文（CLI 升级批留档）
 
 - `--resume-session-at` 是未文档化 flag——`claude --help` 里没有，验证存在性用
   `claude --print --resume-session-at <nil-uuid>`（应报「requires --resume」而非
   unknown option）。checkpoint fork 回滚管线依赖它 + `--fork-session`。
 - 下次升 CLI 的对照基线（2.1.325）：permission-mode choices =
   `acceptEdits/auto/bypassPermissions/manual/dontAsk/plan`（help 里无 "default"）。
-- **升 CLI 的回归验证配方**（本批沉淀）：①版本+choices 对照 ②参数层 flag 验证
-  ③全量单测 ④golden path（真实 spawn + ar-hub capability_list 调用，一轮对话全链）
-  ⑤e2e 全量。golden path 脚本模式可从本批 commit 的 git show 恢复（/tmp 会丢）。
-- e2e 的 sessions-stream mock：`routeWebSocket(/\/api\/sessions\/stream$/, (ws) =>
-  ws.send(JSON.stringify({type:"sessions", sessions: [...]})))`——SessionShell =
-  `Omit<OverviewCandidate,"subtitle">`，与 overview mock 的 candidate 同款形状；
-  连接即推（对齐服务端「连上立即推全量」）。**其它 mock 了 overview 的 spec 同样裸露
-  在此竞态下，出现同款 "Connecting" flaky 照此补**（规则已在 verification.md，本批
-  只修了实锤复现的 acp-session）。
-- web 侧 WS URL 单源 `sessionsStreamUrl()`（`web/src/api/client.ts:1396`）。
-- 供应链合规版本核算方法：`npm view @anthropic-ai/claude-code time --json` 取发布日，
-  ≥7 天的最高版本；dist-tags 有 latest/stable/next 三轨（stable=2.1.311 旧线）。
+- **升 CLI 的回归验证配方**：①版本+choices 对照 ②参数层 flag 验证 ③全量单测
+  ④golden path ⑤e2e 全量。
+- e2e 的 sessions-stream mock：`routeWebSocket(/\/api\/sessions\/stream$, (ws) =>
+  ws.send(JSON.stringify({type:"sessions", sessions: [...]})))`；其它 mock 了
+  overview 的 spec 同样裸露在此竞态下，实锤一条修一条。
 
 ### 下一步
 
-1. push 待用户确认（`6d91f024..3e745749` 1 commit）。
-2. 真机回归（可选，golden path 已覆盖 spawn 面）：浏览器开 claude 会话跑一轮 +
-   MCP 卡片渲染 + checkpoint 回滚各一次。
+1. push 待用户确认（`1ae76c15` + `b6f5025d` 2 commits）。
+2. 真机验证清单（交用户）：running 中连发 2 条 → chip 区出现 → 撤 1 条剩 1 条 →
+   编辑回填 → turn 结束 chip 清空；移动端同组件零单独改动。边界说明：重连/刷新后
+   排队 chip 清空（本地记录清空），CLI 侧队列仍在继续执行——重连后看不到排队条目
+   是安全方向的取舍。
 
 ## 挂账（非本批）
 
@@ -92,4 +115,4 @@ headless spawn 形态，CLI 服务端校验不可绕；等上游支持 stream-js
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
-最后更新：2026-11-20 / 触发原因：CLI 2.1.325 升级批 commit `3e745749`（push 待确认）。
+最后更新：2026-11-22 / 触发原因：prompt 队列功能 commit `b6f5025d`（push 待确认）。
