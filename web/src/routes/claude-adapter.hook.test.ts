@@ -1174,6 +1174,190 @@ describe("useClaudeSession queue-operation", () => {
   });
 });
 
+describe("useClaudeSession queued commands（本地排队记录 + 撤回）", () => {
+  const openSocket = async () => {
+    const { result } = renderHook(() => useClaudeSession("proj", "sess"));
+    await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
+    const socket = MockSocket.instances[0];
+    act(() => socket.open());
+    return { result, socket };
+  };
+
+  test("running 中发送登记排队记录，queued 确认不移除、started 移除", async () => {
+    const { result, socket } = await openSocket();
+
+    // 制造 running：live assistant 无 result 结算（computeRunningCount > 0）。
+    act(() => {
+      socket.emit({
+        type: "assistant",
+        message: { id: "a1", role: "assistant", content: [{ type: "text", text: "working" }] },
+        session_id: "s1",
+      } as never);
+    });
+
+    await act(async () => {
+      await result.current.storeAdapter.onNew({
+        content: [{ type: "text", text: "B-prompt" }],
+      } as never);
+    });
+
+    expect(result.current.queuedCommands).toHaveLength(1);
+    expect(result.current.queuedCommands[0].content).toBe("B-prompt");
+    const uuidB = result.current.queuedCommands[0].uuid;
+    // 上行 user 帧带同一 uuid（command_lifecycle 的 command_uuid 对齐锚）。
+    const sentUser = socket.sent
+      .map((s) => JSON.parse(s) as { type: string; uuid?: string })
+      .some((m) => m.type === "user" && m.uuid === uuidB);
+    expect(sentUser).toBe(true);
+
+    // queued 生命周期 = 确认入队，不移除（仍在排队可视中）。
+    act(() => {
+      socket.emit({
+        type: "command_lifecycle",
+        command_uuid: uuidB,
+        state: "queued",
+        uuid: uuidB,
+        session_id: "s1",
+      } as never);
+    });
+    expect(result.current.queuedCommands).toHaveLength(1);
+
+    // started = CLI 开始执行 → 从排队列表移除。
+    act(() => {
+      socket.emit({
+        type: "command_lifecycle",
+        command_uuid: uuidB,
+        state: "started",
+        uuid: uuidB,
+        session_id: "s1",
+      } as never);
+    });
+    expect(result.current.queuedCommands).toHaveLength(0);
+  });
+
+  test("idle 发送不登记排队记录（空队列直接执行）", async () => {
+    const { result } = await openSocket();
+
+    await act(async () => {
+      await result.current.storeAdapter.onNew({
+        content: [{ type: "text", text: "idle-prompt" }],
+      } as never);
+    });
+
+    expect(result.current.queuedCommands).toHaveLength(0);
+  });
+
+  test("cancelQueuedEntry 发 cancel_queued，success 回执触发剩余按序重发", async () => {
+    const { result, socket } = await openSocket();
+
+    act(() => {
+      socket.emit({
+        type: "assistant",
+        message: { id: "a1", role: "assistant", content: [{ type: "text", text: "working" }] },
+        session_id: "s1",
+      } as never);
+    });
+    await act(async () => {
+      await result.current.storeAdapter.onNew({
+        content: [{ type: "text", text: "B-prompt" }],
+      } as never);
+      await result.current.storeAdapter.onNew({
+        content: [{ type: "text", text: "C-prompt" }],
+      } as never);
+    });
+    expect(result.current.queuedCommands).toHaveLength(2);
+    const uuidB = result.current.queuedCommands[0].uuid;
+
+    act(() => result.current.cancelQueuedEntry(uuidB));
+
+    // 乐观移除 B，C 保留显示（待重发）。
+    expect(result.current.queuedCommands).toHaveLength(1);
+    expect(result.current.queuedCommands[0].content).toBe("C-prompt");
+    // control_request = interrupt + cancel_queued:true（CLI 无单条移除 API）。
+    const cancelReq = socket.sent
+      .map((s) => JSON.parse(s) as { type: string; request?: Record<string, unknown> })
+      .find((m) => m.type === "control_request" && m.request?.cancel_queued === true);
+    expect(cancelReq).toBeTruthy();
+    const requestId = (cancelReq as { request_id: string }).request_id;
+
+    // success 回执 → Pass 1 消费重发闭包：C 以新 uuid 重新入队。
+    act(() => {
+      socket.emit({
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: requestId,
+          response: { still_queued: [], turn: "spared" },
+        },
+      } as never);
+    });
+
+    const resentUser = socket.sent
+      .map(
+        (s) =>
+          JSON.parse(s) as never as {
+            type: string;
+            uuid?: string;
+            message?: { content?: Array<{ type: string; text?: string }> };
+          },
+      )
+      .filter(
+        (m) =>
+          m.type === "user" &&
+          m.message?.content?.some((c) => c.type === "text" && c.text === "C-prompt"),
+      );
+    // 原上行 1 帧 + 重发 1 帧。
+    expect(resentUser).toHaveLength(2);
+    // 重新登记的 uuid = 重发帧的新 uuid（≠ 原 C uuid）。
+    expect(result.current.queuedCommands).toHaveLength(1);
+    expect(result.current.queuedCommands[0].uuid).toBe(resentUser[1].uuid);
+  });
+
+  test("cancelAllQueued 清空且不重发", async () => {
+    const { result, socket } = await openSocket();
+
+    act(() => {
+      socket.emit({
+        type: "assistant",
+        message: { id: "a1", role: "assistant", content: [{ type: "text", text: "working" }] },
+        session_id: "s1",
+      } as never);
+    });
+    await act(async () => {
+      await result.current.storeAdapter.onNew({
+        content: [{ type: "text", text: "B-prompt" }],
+      } as never);
+      await result.current.storeAdapter.onNew({
+        content: [{ type: "text", text: "C-prompt" }],
+      } as never);
+    });
+
+    act(() => result.current.cancelAllQueued());
+
+    expect(result.current.queuedCommands).toHaveLength(0);
+    // 捕获 cancelAllQueued 自己的 request_id，喂它的 success 回执——重发闭包已被
+    // cancelAllQueued 置 null，回执不触发任何重发。
+    const cancelReq = socket.sent
+      .map((s) => JSON.parse(s) as { type: string; request_id?: string })
+      .find((m) => m.type === "control_request");
+    expect(cancelReq?.request_id).toBeTruthy();
+    const beforeCount = socket.sent.length;
+    act(() => {
+      socket.emit({
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: cancelReq?.request_id,
+          response: { still_queued: [], turn: "stopped" },
+        },
+      } as never);
+    });
+    // 回执到达但闭包为 null：sent 无新增 user 帧。
+    expect(socket.sent.length).toBe(beforeCount);
+    expect(result.current.queuedCommands).toHaveLength(0);
+  });
+});
+
 describe("useClaudeSession API error handling", () => {
   const apiErrorMsg = (overrides: Record<string, unknown> = {}) =>
     ({

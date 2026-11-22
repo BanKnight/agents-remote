@@ -162,13 +162,17 @@ export function deriveRetryInfo(
 }
 
 // Tracks client-initiated control_request actions (set_model /
-// set_permission_mode / interrupt) awaiting the CLI's control_response. Keyed
-// by request_id so the response can be matched to the originating action and
-// rolled back on error.
+// set_permission_mode / interrupt / cancel_queued) awaiting the CLI's
+// control_response. Keyed by request_id so the response can be matched to the
+// originating action and rolled back on error.
 export type PendingControlAction =
   | { kind: "set_model"; priorModel: string | undefined }
   | { kind: "set_permission_mode"; priorMode: string | undefined }
-  | { kind: "interrupt" };
+  | { kind: "interrupt" }
+  // 撤回排队 prompt（interrupt + cancel_queued:true）：独立于 "interrupt" kind——
+  // 不设 interruptAtIndex turn-close 标记（撤回清的是队列，不打断当前 turn）；
+  // success 回执触发 queuedResendRef 重发（见 cancelQueuedEntry）。
+  | { kind: "cancel_queued" };
 
 export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage): TaskInfo[] => {
   // task_started: always creates. TaskCreate-originated ops use the tool_use_id
@@ -265,6 +269,18 @@ export const deriveQueueSource = (content: string | undefined): "user" | "assist
     : "user";
 };
 
+// 本地排队记录（排队可视的唯一数据源）：headless stream-json 下 CLI 不发
+// queue-operation 帧（两轮探针实锤），排队期间服务端零遥测；queued/started 帧
+// 延迟到 turn 边界才发。因此「排队中」由本地发送记录驱动——onNew 发送时登记
+// （running 中才可能入队），command_lifecycle 的 started/completed/cancelled
+// 到达时移除该 command_uuid（= 我们上行 user 帧的 uuid，精确对齐）。
+export type LocalQueuedCommand = {
+  /** 上行 user 帧 uuid；CLI command_lifecycle 帧的 command_uuid 与之精确相等 */
+  uuid: string;
+  /** 组装后的帧文本（modelCtx/提及行/内联文本已并入）——重发与回填共用 */
+  content: string;
+};
+
 /** 纯 reducer：按 operation 语义操作 FIFO+LIFO 混合队列 */
 export const applyQueueOperation = (
   state: QueueEntry[],
@@ -279,6 +295,11 @@ export const applyQueueOperation = (
       return state.slice(0, -1);
     case "popAll":
       return [];
+    // JSONL 回放存在无 operation 的记账形态 {type:"queue-operation",queuedType:"user"}
+    //（agent-history.test.ts fixture 实锤）——switch 落空会隐式返回 undefined 打穿
+    // inputQueue state，未知 operation 一律保原 state。
+    default:
+      return state;
   }
 };
 
@@ -3497,12 +3518,22 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // type skip) so an UNKNOWN future control_response with another payload
     // still falls through to the fallback debug bubble.
     //   set_permission_mode → inner {mode}; set_model → empty inner or {model};
-    //   interrupt → empty inner.
+    //   interrupt → empty inner; cancel_queued（撤回排队）→ inner {still_queued,
+    //   turn}（2.1.325 实测；still_queued = 撤回后仍在队列的 uuid 清单，turn =
+    //   "stopped"/"spared" 本次是否打断执行中命令）。
     if (msg.type === "control_response") {
       const inner = (msg as { response?: { response?: Record<string, unknown> } }).response
         ?.response;
       const isEmpty = !inner || Object.keys(inner).length === 0;
-      if (isEmpty || inner.mode !== undefined || inner.model !== undefined) continue;
+      if (
+        isEmpty ||
+        inner.mode !== undefined ||
+        inner.model !== undefined ||
+        // cancelled：旧调研记载的形状（版本防御）；still_queued/turn：2.1.325 实测形状。
+        inner.cancelled !== undefined ||
+        inner.still_queued !== undefined
+      )
+        continue;
     }
 
     // tool_progress: CLI 瞬态进度信号家族（CLI v2.1.268+，live-only 不写 JSONL）。
@@ -3544,8 +3575,9 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // command_uuid(我们上行 user 帧的 uuid), state, uuid, session_id}，state =
     // queued/started/completed/cancelled（turn 被 interrupt/抢占时）。CLI 自身把它
     // 归入非内容消息（skip 表与 init/rate_limit_event/conversation_reset 同类）；
-    // turn 生命周期已由 result/ended + 状态点呈现，无 UI 价值——静默 skip 不落
-    // fallback（raw 仍收；未来接「排队可视/抢占提示」时 command_uuid 可对齐上行帧）。
+    // turn 生命周期已由 result/ended + 状态点呈现，无气泡——标量副作用（本地排队
+    // 记录移除）在 applyMessageScalarState 的 command_lifecycle 分支处理，此处静默
+    // skip 不落 fallback。
     if (msg.type === "command_lifecycle") continue;
 
     // ═══ Other (fallback) ═══
@@ -4315,6 +4347,26 @@ export function useClaudeSession(
   // re-render), so it intentionally is not a useMemo dependency.
   const liveStartRef = useRef(0);
 
+  // ── Local queued-command record（排队可视数据源）─────────────────────
+  // 本地排队记录（LocalQueuedCommand 注释）：ref 是唯一真相，state 是渲染镜像——
+  // Pass 1 lifecycle 消费 / onNew 登记 / cancelQueuedEntry 乐观更新都经
+  // setQueuedCommandsSync 单点双写，避免 ref/state 漂移。定义在
+  // applyMessageScalarState 之前：Pass 1 的 useCallback deps 引用它时已初始化。
+  const queuedCommandsRef = useRef<LocalQueuedCommand[]>([]);
+  const [queuedCommands, setQueuedCommands] = useState<LocalQueuedCommand[]>([]);
+  // 撤单条的重发闭包（cancel_queued 全清后按序重发剩余条目）——闭包由
+  // cancelQueuedEntry 构造（可达 sendToSocket），Pass 1 cancel_queued case 消费。
+  // 走 ref 桥接：sendToSocket 定义在 applyMessageScalarState 之后，后者若直接
+  // 引用前者（useCallback deps 数组求值）会 TDZ。
+  const queuedResendRef = useRef<(() => void) | null>(null);
+  const setQueuedCommandsSync = useCallback(
+    (updater: (prev: LocalQueuedCommand[]) => LocalQueuedCommand[]) => {
+      queuedCommandsRef.current = updater(queuedCommandsRef.current);
+      setQueuedCommands(queuedCommandsRef.current);
+    },
+    [],
+  );
+
   // ── Shared helper: push a bubble + drain pending API errors ──
 
   // ── Content message handlers ──
@@ -4531,6 +4583,19 @@ export function useClaudeSession(
               setInterruptAtIndex(rawMessagesRef.current.length - 1);
             }
             break;
+          case "cancel_queued":
+            // 撤回回执（实测形状：cancel_queued:true → {still_queued:[],
+            // cancelled:[被清 uuid]}；for_user_message_uuids → {still_queued,
+            // turn}——双形态都不产气泡，skip 判定两字段同守）。success 时 CLI
+            // 队列已全清（cancel_queued:true = interrupt 执行中 + 清队列，v3 探
+            // 针实锤被 started 的命令也产生 cancelled），此处消费重发闭包按序重
+            // 发剩余条目——必须等响应再重发：早于 cancel_queued 到达 CLI 会被
+            // 它一并清掉。error 时闭包作废不重发（CLI 队列未清，剩余条目仍在
+            // 原队列；被撤条目保持乐观移除，started 后流里自然呈现——plan
+            // 「不做」节拍板静默）。
+            if (r.response.subtype === "success") queuedResendRef.current?.();
+            queuedResendRef.current = null;
+            break;
         }
         return;
       }
@@ -4561,6 +4626,19 @@ export function useClaudeSession(
       // queue-operation
       if (msg.type === "queue-operation") {
         setInputQueue((prev) => applyQueueOperation(prev, msg));
+        return;
+      }
+
+      // command_lifecycle（本地排队记录的对齐信号；投影层 skip 不产气泡）：
+      // started/completed/cancelled → 移除该 command_uuid 的记录（queued 帧不
+      // 移除——它确认「仍在队列」，与排队可视语义一致；实测 queued 帧延迟到
+      // turn 边界才发，与 started 常连发）。completed 是 started 丢失的兜底，
+      // 四态幂等移除防泄漏。
+      if (msg.type === "command_lifecycle") {
+        const lc = msg as { command_uuid?: string; state?: string };
+        if (lc.command_uuid && lc.state && lc.state !== "queued") {
+          setQueuedCommandsSync((prev) => prev.filter((e) => e.uuid !== lc.command_uuid));
+        }
         return;
       }
 
@@ -4675,7 +4753,7 @@ export function useClaudeSession(
       // them live entirely in renderChatStream. control_request attaches its
       // request_id to the matching tool-call part in normalizeChatStream.
     },
-    [projectName, sessionId],
+    [projectName, sessionId, setQueuedCommandsSync],
   );
 
   // rawMessages 的统一追加口：所有批量/单条/合成(divider)追加都走这里，让 rawCountRef
@@ -4732,6 +4810,11 @@ export function useClaudeSession(
       }) > 0,
     [rawMessages, interruptAtIndex],
   );
+  // onNew 发送时刻的 running 判定用 ref（用户交互回调里 useMemo 闭包值可能过期；
+  // render 已完成的点击时刻 ref 即最新）。gate 本地排队记录：idle 发送 CLI 空队列
+  // 直接执行，不记（否则 chip 闪一下即被 started 移除，纯视觉噪音）。
+  const isRunningRef = useRef(false);
+  isRunningRef.current = isRunning;
   const liveThinkingTokens = useMemo(
     () => deriveLiveThinkingTokens(rawMessages, { liveStart: liveStartRef.current }),
     [rawMessages],
@@ -4949,6 +5032,11 @@ export function useClaudeSession(
     setTasks([]);
     setMcpServers([]);
     setInputQueue([]);
+    // 本地排队记录一并清空（安全方向）：重连/切换后 CLI 侧队列可能已被消费，
+    // 旧记录继续显示会呈错误「排队中」状态；lifecycle 帧对齐只在同一连接内有效。
+    queuedCommandsRef.current = [];
+    setQueuedCommands([]);
+    queuedResendRef.current = null;
     setLastPrompt(null);
     setSessionLeafUuid(null);
     setRetryInfo(null);
@@ -5941,16 +6029,23 @@ export function useClaudeSession(
       }
       if (text) content.push({ type: "text", text });
 
+      // running 中发送 = CLI 入队（turn 结束后依序执行）→ 登记本地排队记录（排队
+      // 可视 + 撤回/编辑的数据源）。idle 发送不记（isRunningRef 注释）。
+      const uuid = crypto.randomUUID();
+      if (isRunningRef.current) {
+        setQueuedCommandsSync((prev) => [...prev, { uuid, content: text }]);
+      }
+
       sendToSocket({
         type: "user",
         message: { role: "user", content },
         // 同上：带附件的新消息同属 turn 起点，锚 uuid 让回滚入口可达。
-        uuid: crypto.randomUUID(),
+        uuid,
       });
       pendingAttachmentsRef.current?.clearPendingAttachments?.();
       pendingModelContextRef.current?.clearPendingModelContext?.();
     },
-    [sendToSocket],
+    [sendToSocket, setQueuedCommandsSync],
   );
 
   const onCancel = useCallback(async () => {
@@ -5970,6 +6065,68 @@ export function useClaudeSession(
       request: { subtype: "interrupt" },
     });
   }, [sendToSocket]);
+
+  // ── 撤回排队 prompt（cancel_queued:true 全清 + 剩余重发）─────────────
+  // 协议事实（2.1.325 两轮探针实测）：CLI 无「从队列移除单条」的 API——
+  // for_user_message_uuids 只 interrupt 名单中正在执行的命令（turn:"stopped"），
+  // 队列中的不动（still_queued 原样返回）；cancel_queued:true 才清队列但只能
+  // 全清。因此撤单条 = 全清 + 响应到达后按序重发剩余条目（新 uuid，CLI 视作
+  // 新命令入队，顺序保持）。重发必须等响应：早于 cancel_queued 到达 CLI 会
+  // 被它一并清掉（响应消费在 applyMessageScalarState 的 cancel_queued case，
+  // 经 queuedResendRef 桥接）。
+
+  // 构造 cancel_queued control_request 的公共段。
+  const sendCancelQueuedRequest = useCallback(() => {
+    const requestId = crypto.randomUUID();
+    setPendingControlRequests((prev) => {
+      const next = new Map(prev);
+      next.set(requestId, { kind: "cancel_queued" });
+      return next;
+    });
+    sendToSocket({
+      type: "control_request",
+      request_id: requestId,
+      request: { subtype: "interrupt", cancel_queued: true },
+    });
+  }, [sendToSocket]);
+
+  /** 撤回单条排队 prompt。其余条目在队列清空后按原顺序以新 uuid 重发。 */
+  const cancelQueuedEntry = useCallback(
+    (uuid: string) => {
+      const queue = queuedCommandsRef.current;
+      const idx = queue.findIndex((e) => e.uuid === uuid);
+      if (idx < 0) return;
+      // cancel_queued 清空整个 CLI 队列：除被撤条目外的**全部**排队条目（含 idx
+      // 之前的）都出队了，需一并重发（filter 保序 = 重发后原顺序保持）。
+      const resend = queue.filter((e) => e.uuid !== uuid);
+      // 乐观只移除被撤条目，其余保留显示；回执到达后整体替换为重发登记的新
+      // uuid 条目（内容相同 → 视觉无闪变，仅 key 更替）。append 会留下旧 uuid
+      // 条目泄漏（永远等不到它的 lifecycle 帧）。
+      setQueuedCommandsSync((prev) => prev.filter((e) => e.uuid !== uuid));
+      queuedResendRef.current = () => {
+        queuedResendRef.current = null;
+        const requeued = resend.map((entry) => {
+          const newUuid = crypto.randomUUID();
+          sendToSocket({
+            type: "user",
+            message: { role: "user", content: [{ type: "text", text: entry.content }] },
+            uuid: newUuid,
+          });
+          return { uuid: newUuid, content: entry.content };
+        });
+        setQueuedCommandsSync(() => requeued);
+      };
+      sendCancelQueuedRequest();
+    },
+    [sendCancelQueuedRequest, sendToSocket, setQueuedCommandsSync],
+  );
+
+  /** 撤回全部排队 prompt（全清，不重发）。 */
+  const cancelAllQueued = useCallback(() => {
+    setQueuedCommandsSync(() => []);
+    queuedResendRef.current = null;
+    sendCancelQueuedRequest();
+  }, [sendCancelQueuedRequest, setQueuedCommandsSync]);
 
   const storeAdapter = useMemo<ExternalStoreAdapter<ThreadMessageLike>>(
     () => ({
@@ -6012,6 +6169,12 @@ export function useClaudeSession(
     tasks,
     mcpServers,
     inputQueue,
+    /** 本地排队记录（running 中发送、CLI 尚未 started 的 prompt，按发送序） */
+    queuedCommands,
+    /** 撤回单条排队 prompt（cancel_queued 全清 + 剩余按序重发） */
+    cancelQueuedEntry,
+    /** 撤回全部排队 prompt（全清不重发） */
+    cancelAllQueued,
     lastPrompt,
     sessionLeafUuid,
     retryInfo,

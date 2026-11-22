@@ -541,6 +541,8 @@ export const en = {
   "claude.attach.fileMention": "Attachment: {{path}}",
   "claude.attach.textInline": "Contents of attachment {{name}}:",
   "claude.canvasCtx.remove": "Remove canvas selection",
+  "claude.queue.cancel": "Cancel queued message",
+  "claude.queue.edit": "Edit queued message",
   "claude.composer.permLabel": "Permission mode",
   "claude.composer.modelLabel": "Model",
   "claude.composer.effortLabel": "Reasoning effort",

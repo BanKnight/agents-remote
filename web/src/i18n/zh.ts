@@ -536,6 +536,8 @@ export const zh: Record<TranslationKey, string> = {
   "claude.attach.fileMention": "附件：{{path}}",
   "claude.attach.textInline": "附件 {{name}} 内容如下：",
   "claude.canvasCtx.remove": "移除画布选区",
+  "claude.queue.cancel": "撤回排队消息",
+  "claude.queue.edit": "编辑排队消息",
   "claude.composer.permLabel": "权限模式",
   "claude.composer.modelLabel": "模型",
   "claude.composer.effortLabel": "推理深度",

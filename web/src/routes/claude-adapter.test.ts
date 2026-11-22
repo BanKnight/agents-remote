@@ -2380,6 +2380,19 @@ describe("queue-operation helpers", () => {
       state = applyQueueOperation(state, { type: "queue-operation", operation: "remove" });
       expect(state).toEqual([]);
     });
+
+    test("JSONL 记账形态（无 operation 字段）→ 保原 state 不打穿", () => {
+      // agent-history.test.ts:288 fixture 实锤 JSONL 存在 {type:"queue-operation",
+      // queuedType:"user"} 回放行——reducer 修 default 防御前会隐式返回 undefined。
+      const state = [entry("A", "user")];
+      const jsonlShape = {
+        type: "queue-operation",
+        queuedType: "user",
+      } as unknown as Parameters<typeof applyQueueOperation>[1];
+      const r = applyQueueOperation(state, jsonlShape);
+      expect(r).toEqual(state);
+      expect(r).not.toBeUndefined();
+    });
   });
 });
 
@@ -4114,6 +4127,31 @@ describe("normalizeChatStream", () => {
         state: "cancelled",
         uuid: "0d88b6b5-6eb2-4b9e-850e-486ee9677b8a",
         session_id: "6d09c971-06e8-4880-a3e2-951afac88d5e",
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toHaveLength(0);
+  });
+
+  test("control_response cancel_queued receipt (still_queued/turn) produces no item (no fallback)", () => {
+    // 撤回排队回执的实测形状（2.1.325 探针）：inner = {still_queued, turn}——
+    // 旧调研记载的 cancelled 清单形状一并防御（版本漂移）。标量副作用在 Pass 1
+    // cancel_queued case（重发闭包消费），投影层 skip 不落 fallback 杂音气泡。
+    const items = normalizeChatStream([
+      {
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: "probe-cancel-1",
+          response: { still_queued: ["c-uuid"], turn: "spared" },
+        },
+      } as unknown as SessionStreamServerMessage,
+      {
+        type: "control_response",
+        response: {
+          subtype: "success",
+          request_id: "probe-cancel-2",
+          response: { cancelled: ["b-uuid"] },
+        },
       } as unknown as SessionStreamServerMessage,
     ]);
     expect(items).toHaveLength(0);

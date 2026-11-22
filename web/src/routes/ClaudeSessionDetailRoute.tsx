@@ -114,6 +114,7 @@ import {
   type AgentTailStats,
   type ExtractedImage,
   type ApiErrorAttachment,
+  type LocalQueuedCommand,
   type PermissionUpdate,
   type RetryInfo,
   type TaskInfo,
@@ -413,6 +414,8 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     pendingApprovals,
     opusplanActive,
     deltaEnter,
+    queuedCommands,
+    cancelQueuedEntry,
   } = useClaudeSession(
     projectName,
     sessionId,
@@ -656,6 +659,8 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                                   attachments={composerAttachments}
                                   canvasContext={canvasCtx}
                                   onRemoveCanvasContext={clearCanvasContext}
+                                  queuedCommands={queuedCommands}
+                                  onCancelQueuedEntry={cancelQueuedEntry}
                                 />
                               </ComposerPrimitive.Root>
                             </ComposerPrimitive.TriggerPopoverRoot>
@@ -3731,6 +3736,8 @@ function ComposerWithInterrupt({
   attachments,
   canvasContext,
   onRemoveCanvasContext,
+  queuedCommands,
+  onCancelQueuedEntry,
 }: {
   opusplanActive: boolean | undefined;
   currentModel?: string;
@@ -3754,6 +3761,10 @@ function ComposerWithInterrupt({
   /** 待发画布选区（M3 引用循环;画布卡「引用到对话」写入）。 */
   canvasContext: CanvasSelectionContext | null;
   onRemoveCanvasContext: () => void;
+  /** 本地排队记录（running 中发送、CLI 尚未 started 的 prompt，按发送序）。 */
+  queuedCommands: LocalQueuedCommand[];
+  /** 撤回单条排队 prompt（cancel_queued 全清 + 剩余按序重发，adapter 单源）。 */
+  onCancelQueuedEntry: (uuid: string) => void;
 }) {
   const { t } = useT();
   // thread.isRunning drives the stop overlay for assistant turns; compactStatus
@@ -3842,6 +3853,14 @@ function ComposerWithInterrupt({
     }
   };
 
+  // 排队条目编辑（路线 2）：撤回该条 + 内容回填输入框。「编辑排队 prompt」不是
+  // 协议能力，是撤回后的本地回填；回填用组装后的帧文本（entry.content = CLI 将
+  // 收到的真实文本，含提及行/画布上下文，用户可原样改）。
+  const editQueuedEntry = (entry: LocalQueuedCommand) => {
+    composer.setText(entry.content);
+    onCancelQueuedEntry(entry.uuid);
+  };
+
   return (
     <>
       <div className="composer-card relative flex flex-col rounded-xl border border-on-surface/10 bg-surface-raised/60 shadow-2xl shadow-black/40 backdrop-blur-xl backdrop-saturate-150 transition focus-within:border-user/50 focus-within:bg-surface-raised/80 lg:bg-surface-raised/80 lg:backdrop-blur-none lg:shadow-none">
@@ -3872,6 +3891,39 @@ function ComposerWithInterrupt({
                 <LucideIcon className="size-3.5" name="x" />
               </button>
             </div>
+          </div>
+        ) : null}
+        {/* 排队 prompt 区（路线 1 排队可视 + 路线 2 撤回/编辑）：running 中发送的
+            prompt 在 CLI 侧排队（turn 结束后依序执行），clock chip 列出待执行条目。
+            点内容 = 编辑（撤回 + 回填），× = 仅撤回。数据源 = 本地发送记录 +
+            command_lifecycle 对齐（headless 无 queue-operation 帧，adapter 注释）。 */}
+        {queuedCommands.length > 0 ? (
+          <div className="flex flex-col gap-1 px-3 pt-2.5">
+            {queuedCommands.map((entry) => (
+              <div
+                key={entry.uuid}
+                className="flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-inset px-2 py-1.5"
+              >
+                <LucideIcon className="size-3.5 shrink-0 text-on-surface-muted" name="clock" />
+                <button
+                  aria-label={t("claude.queue.edit")}
+                  className="min-w-0 flex-1 cursor-pointer truncate text-left text-xs font-medium text-on-surface-soft transition hover:text-on-surface"
+                  onClick={() => editQueuedEntry(entry)}
+                  title={entry.content}
+                  type="button"
+                >
+                  {entry.content}
+                </button>
+                <button
+                  aria-label={t("claude.queue.cancel")}
+                  className="inline-flex size-4 cursor-pointer items-center justify-center rounded-full text-on-surface-muted transition hover:bg-on-surface/10"
+                  onClick={() => onCancelQueuedEntry(entry.uuid)}
+                  type="button"
+                >
+                  <LucideIcon className="size-3.5" name="x" />
+                </button>
+              </div>
+            ))}
           </div>
         ) : null}
         <ComposerPrimitive.Input
