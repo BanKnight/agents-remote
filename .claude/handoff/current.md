@@ -1,16 +1,16 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-23（**t3code 深调研批完成待提交**——v2 主报告重写 + 四份
-> deep 分册落盘 + index.md 更新；prompt 队列 v1/v2 批已全部推送
-> （origin/main = `1c3f4900`），剩余待办 = 队列真机清单交用户验证）
+> 最后更新：2026-11-23 20:40（**t3code 深调研批全部推送完成**——v2 主报告 +
+> 五份 deep 分册（ui/server/community/evolution + 新增 spec）+ index 更新
+> （origin/main = `6bf41f84`）；剩余待办 = 队列 v1/v2 真机清单交用户验证）
 
 ## 一句话状态
 
-t3code 调研 v2 重做完成（用户反馈上轮「过于简陋」）：源码完整化（unshallow 至
-2026-11-22 HEAD）+ 四路 subagent 并行深挖（体验层/server 机制/社区反馈/演进叙事）
-→ 四份分册（`t3code-deep-{ui,server,community,evolution}.md`，全带行级/URL 级证据）
-→ 主报告 `t3code.md` 重写为整合版（社区定案 + 体验层三件工程 + 四个可移植原语 +
-可学习清单 A/B/C 三档 + 首版错误更正）。docs 面待 commit，push 待用户确认。
+t3code 调研 v2 重做完成并已全部推送（用户先反馈上轮「过于简陋」、再点名「都是
+用户评价，spec 呢」）：源码完整化（unshallow 至 2026-11-22 HEAD）+ 四路 subagent
+并行深挖 → 四份分册（ui/server/community/evolution）→ 主报告 `t3code.md` 整合版
+→ 用户追补要求后完成第五份分册 `t3code-deep-spec.md`（orchestration-v2 九篇
+3293 行逐节精读 + internals 七篇，670 行全带 `文件:行号`）。origin/main = `6bf41f84`。
 
 ## 本 session 焦点
 
@@ -52,6 +52,36 @@ t3code 调研 v2 重做完成（用户反馈上轮「过于简陋」）：源码
   = 真实结构性优势）。
 - `docs/research/index.md`：t3code.md 条目重写 + 四份 deep 分册新增条目（L41 起）。
 
+### 追补批：spec 体系深读（2026-11-23，已推送 `6bf41f84`）
+
+- **任务起源（用户 verbatim）**：「我们完全没用wiki，你怎么扯过去的。另外，我发现
+  进度中，你提到的都是用户评价，那spec呢？完全没有吗？」——① 已删 inbox 里
+  wiki 相关的瞎扯条目（教训：不做 speculative 建议）；② site 报告页补「⑤½ 他们
+  的 spec」节；③ 用户批准后逐篇精读 orchestration-v2 剩余 8 篇。
+- **产出**：`docs/research/t3code-deep-spec.md`（670 行）。结构：§1 体系总览
+  （README 宣言 / 8 Goals / 10 Invariants / 七层图 / 最小心智模型 / 六条
+  probe-derived requirements）§2 图模型（七类 durable 实体 + 三对分离 + sequence
+  游标 + Run/RunAttempt + root 独占完成权 + turnItems 双投影）§3 实体 ID（十家族 /
+  scoped correlation / IdentityBinding / 六 ordinal 轴）§4 生命周期（steer 四模式 /
+  fork 稳定源点 / Stop holdQueue / 恢复三义）§5 能力系统（11 组 + resume 是必备
+  primitive 非能力 + 八条降级映射）§6 上下文迁移三件套（五级策略阶梯 / staleness
+  七信号 / handoff include 9·do-not 4）§7 编排 MCP server（16 工具 / child 不复制
+  parent 历史 / 特权天花板 / clientRequestId 幂等 / 14 typed 失败码）§8 测试策略
+  （replay 边界 / 四层契约 / 首批十测试 / 测试基建先于生产重写）§9 internals 文档
+  形态 §10 对我方启示三档（A 直接可用 6 / B 结构性参考 6 / C 不适用）§11 索引。
+- **最直接接续点（下一步可用）**：① Stop 带 `holdQueue`（冻结队列、结束 watch、
+  丢弃 wake）——队列 v2 的「停止时队列怎么办」答案；② Run/RunAttempt——运行中
+  注入 = 打断 + 同 RunId 换 attempt，不依赖 provider 原生 steering；③
+  resume 为必备 adapter primitive（与我们 --resume 底线同构，三种触发统一路径）；
+  ④ child 只拿 task prompt（OPC 委派纪律）；⑤ completion barrier（先收敛投影
+  再发布终态）。
+- **诚实记录**：spec 内部两处字段名级不一致（ProviderThread 摘要字段 / Run 的
+  countsForConversation 引用）已标在分册 §2.12；不影响模型级结论。
+- **执行中教训**：该批两个 subagent 会话因「Auto mode safety check 不运行」的
+  环境故障无法自行写文件，全文经 handback 无损回收（tool-results 持久化文件），
+  主 agent 直接 Read 收回。subagent 两次请求「代为落盘 /tmp 切片」均按
+  permission-laundering 纪律拒绝（内容已够用，无需中间产物）。
+
 ### 上一批：prompt 队列 v1/v2（全部已推送，origin/main = `1c3f4900`）
 
 - v1 排队可视+撤回/编辑（`b6f5025d`）；lifecycle 收编（`1ae76c15`）；
@@ -64,9 +94,9 @@ t3code 调研 v2 重做完成（用户反馈上轮「过于简陋」）：源码
 
 ## 下一步
 
-1. **t3code 调研批收尾**：commit（docs 面，纯文档快速通道）→ push 待用户确认
-   → 向用户汇报核心发现（重点：可学习清单 A 组里与队列 v2 直接接续的
-   follow-up steer 语义 + 离队 watch 两条）。
+1. **t3code 调研批已完成并推送**（`6bf41f84`）。后续可选：主报告 `t3code.md`
+   的「四份分册」字样顺手改五份（纯文案）；spec 分册 §10 A 组前两条
+   （Stop holdQueue、interrupt ack≠终态）可作为队列 v2 后续批立项。
 2. 真机清单（交用户，队列 v1+v2 合并）：两设备同开会话——A 端 running 中排队 →
    B 端立即见 chip；A 端撤回 → B 端 chip 消失；刷新 B 端 → chip 仍在；撤回
    编辑回填照旧；turn 结束 chip 清空。
@@ -93,5 +123,5 @@ t3code 调研 v2 重做完成（用户反馈上轮「过于简陋」）：源码
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
-最后更新：2026-11-23 / 触发原因：t3code 深调研批完成（主报告 v2 + 四分册 +
-index 更新），docs 待 commit、push 待确认。
+最后更新：2026-11-23 20:40 / 触发原因：t3code spec 体系深读追补批完成并推送
+（第五分册 670 行 + index + 报告页 → `6bf41f84`）；阶段收尾 handoff。
