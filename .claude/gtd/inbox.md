@@ -6,6 +6,10 @@
 
 > 任何新需求 / 想法先进这里，不评估、不开干，只捕获。`/gtd process` 时再拆解。
 
+## 2026-11-23 pages 报告 feed（用户想法：「利用 pages 生成报告，首页就是 feed 的入口」）
+
+> ✅ 最小演示已落地（同日）：`agents-remote` 项目 `site/` 升级为报告 feed 站——首页 = feed 入口（两张报告卡），`reports/t3code-v2.html`（t3code 调研 v2 报告页）+ `reports/2026-11-10-progress.html`（旧进度页归档），经 `/p/agents-remote/` 公开 serve，GET 验证 200 全通。后续产品化方向待拍板：① agent 生成报告的工作流化（命令/技能：报告模板 + 落 `site/reports/` + 自动更新 feed 首页卡片）；② feed 元数据结构化（日期/标签/摘要的 machine-readable 源，便于 UI 内嵌 feed 视图而非仅 HTML）。
+
 ## 2026-10-13 桌面三栏反馈（用户口述三条，待 plan）
 
 > ✅ 已实施完成（三栏批，全套验证绿 + 双 reviewer 消化 + 记档）——三条全部落地；附加发现并修复 grid auto-placement 真 bug（双收态中栏塌缩，frontend-notes §30）。
