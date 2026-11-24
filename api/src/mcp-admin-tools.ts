@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AgentProvider, McpScope } from "@agents-remote/shared";
-import { MCP_ADMIN_MANAGE_TOOLS } from "@agents-remote/shared";
-import { getAgentProviderProfile } from "./agent-provider-profiles";
+import { MCP_ADMIN_MANAGE_TOOLS, resolvePermissionCeiling } from "@agents-remote/shared";
+import { getAgentProviderProfile, isSupportedPermissionMode } from "./agent-provider-profiles";
 import type { McpAdminApprovalService } from "./mcp-admin-approval";
 import {
   addMcpServer,
@@ -285,16 +285,17 @@ export const registerAdminTools = (
     "session_create",
     {
       description:
-        "Create a new agent session in a project. Requires user approval. Returns { session }.",
+        "Create a new agent session in a project. Requires user approval. Returns { session }. Pass permissionMode (provider-appropriate; default auto) to set the permission ceiling of the child — it may not exceed the origin session's own mode tier (T3 #10 privilege ceiling). The session records createdBy = the requesting session's identity.",
       inputSchema: {
         project: z.string().min(1),
         provider: z.string().min(1),
         displayName: z.string().optional(),
+        permissionMode: z.string().optional(),
       },
     },
-    async ({ project, provider, displayName }) => {
-      // 参数非法（未知 provider）不弹审批卡——审批卡是给「真实操作」的授权闸，
-      // 无效参数直接拒绝（与 REST 层白名单同语义）。
+    async ({ project, provider, displayName, permissionMode }) => {
+      // 参数非法（未知 provider / mode 白名单外 / 特权天花板越权）不弹审批卡——审批卡
+      // 是给「真实操作」的授权闸，无效参数直接拒绝（与 REST 层白名单同语义）。
       const providerKey = provider as AgentProvider;
       if (!getAgentProviderProfile(providerKey)) {
         return {
@@ -307,10 +308,45 @@ export const registerAdminTools = (
           ],
         };
       }
+      const requestedMode = permissionMode ?? "auto";
+      if (!isSupportedPermissionMode(providerKey, requestedMode)) {
+        return {
+          isError: true as const,
+          content: [
+            {
+              type: "text" as const,
+              text: `[SESSION_PROVIDER_UNAVAILABLE] Unsupported permission mode: ${requestedMode}`,
+            },
+          ],
+        };
+      }
+      // 特权天花板（T3 #10）：origin 身份在场才可比（hub URL ?origin= → ctx）。
+      // origin metadata 无 permissionMode（terminal/旧 metadata）→ 无天花板可比，放行。
+      if (ctx.originProject && ctx.originSessionId) {
+        const originMetadata = await deps.sessionRegistry.peekMetadata(
+          ctx.originProject,
+          ctx.originSessionId,
+        );
+        if (
+          originMetadata?.permissionMode &&
+          resolvePermissionCeiling(originMetadata.permissionMode, requestedMode) === "escalation"
+        ) {
+          return {
+            isError: true as const,
+            content: [
+              {
+                type: "text" as const,
+                text: `[MODE_ESCALATION_DENIED] requested ${requestedMode} exceeds origin ceiling ${originMetadata.permissionMode}`,
+              },
+            ],
+          };
+        }
+      }
       const gate = await requestManageApproval(deps, ctx, "session_create", {
         project,
         provider,
         ...(displayName !== undefined ? { displayName } : {}),
+        permissionMode: requestedMode,
       });
       if (gate) return gate;
       try {
@@ -319,7 +355,11 @@ export const registerAdminTools = (
           project: { name: resolved.name, path: resolved.path },
           provider: providerKey,
           displayName,
-          permissionMode: "auto",
+          permissionMode: requestedMode,
+          createdBy:
+            ctx.originProject && ctx.originSessionId
+              ? { projectName: ctx.originProject, sessionId: ctx.originSessionId }
+              : undefined,
         });
         return jsonResult({ session });
       } catch (error) {

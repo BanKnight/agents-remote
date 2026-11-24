@@ -8,8 +8,10 @@ import {
   isCompactBoundarySubtype,
   isOneClickApprovable,
   isUnresolvedControlRequest,
+  permissionModeTier,
   resolveAutoRetryCapability,
   resolveModeSwitch,
+  resolvePermissionCeiling,
   WEAKEST_AGENT_CAPABILITIES,
 } from "./index";
 import type {
@@ -451,4 +453,52 @@ test("resolveAutoRetryCapability: 能力 && 非 terminal 形态", () => {
   expect(resolveAutoRetryCapability(claudeCaps, { mode: "terminal" })).toEqual({
     supported: false,
   });
+});
+
+// ── M4 admin 特权天花板：mode 档位归一矩阵 ─────────────────────────────────────
+//
+// 跨 provider 词表（claude 7 值 / codex 4 值）映射统一档位 0-3 后才可比宽窄。
+// 归档依据：plan/readonly=观察档（0）；default/manual=问答档（1）；acceptEdits/
+// dontAsk/auto=受限自动档（2）；bypassPermissions/full=全权档（3）。
+
+test("permissionModeTier 归一 claude 7 值与 codex 4 值到统一档位", () => {
+  // tier 0 观察档
+  expect(permissionModeTier("plan")).toBe(0);
+  expect(permissionModeTier("readonly")).toBe(0);
+  // tier 1 问答档
+  expect(permissionModeTier("default")).toBe(1);
+  expect(permissionModeTier("manual")).toBe(1);
+  // tier 2 受限自动档
+  expect(permissionModeTier("acceptEdits")).toBe(2);
+  expect(permissionModeTier("dontAsk")).toBe(2);
+  expect(permissionModeTier("auto")).toBe(2);
+  // tier 3 全权档
+  expect(permissionModeTier("bypassPermissions")).toBe(3);
+  expect(permissionModeTier("full")).toBe(3);
+  // 词表外值（含 acp 家族自述 mode）无档位——天花板比较对未知值防御放行
+  expect(permissionModeTier("ask_every_time")).toBeUndefined();
+});
+
+test("resolvePermissionCeiling: 同档/跨名同档/降档 ok，升档 escalation，未知放行", () => {
+  // 同名同档
+  expect(resolvePermissionCeiling("auto", "auto")).toBe("ok");
+  // 跨 provider 名同档（readonly=plan=0）
+  expect(resolvePermissionCeiling("readonly", "plan")).toBe("ok");
+  expect(resolvePermissionCeiling("manual", "default")).toBe("ok");
+  // 降档 ok（origin 全权档，target 观察档）
+  expect(resolvePermissionCeiling("bypassPermissions", "plan")).toBe("ok");
+  expect(resolvePermissionCeiling("full", "auto")).toBe("ok");
+  // 升档 escalation（origin 观察档，target 全权档）
+  expect(resolvePermissionCeiling("plan", "bypassPermissions")).toBe("escalation");
+  expect(resolvePermissionCeiling("readonly", "auto")).toBe("escalation");
+  // manual(1) → acceptEdits(2) 是升档（跨名但档位上升仍拦）
+  expect(resolvePermissionCeiling("manual", "acceptEdits")).toBe("escalation");
+  // 等档相邻名跨名对照（default=manual=1）：同档非升级
+  expect(resolvePermissionCeiling("default", "manual")).toBe("ok");
+  // origin 无 permissionMode（terminal/旧 metadata）→ 无天花板可比，放行
+  expect(resolvePermissionCeiling(undefined, "bypassPermissions")).toBe("ok");
+  // origin 值不在归一表 → 防御放行（不阻塞正常流）
+  expect(resolvePermissionCeiling("mystery", "bypassPermissions")).toBe("ok");
+  // target 未知值 → 防御放行（白名单闸在 session_create 上游已拦截）
+  expect(resolvePermissionCeiling("plan", "mystery")).toBe("ok");
 });

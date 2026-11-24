@@ -481,6 +481,13 @@ export type RenameProjectResponse = {
  * session 语义；subtitle = terminal lastCommand / agent lastAssistantMessage（经第二阶段
  * /api/overview/subtitles 慢填充，与项目总览同款 JSONL 读取机制）。
  */
+/** 会话血缘（M4，T3 #9 前置）：admin session_create 创建的 child 会话记录发起会话身份。
+ *  可选字段零迁移（旧 metadata / 无 origin 场景缺省 undefined；前端暂不消费，调试可见）。 */
+export type SessionCreatedBy = {
+  projectName: string;
+  sessionId: string;
+};
+
 export type OverviewCandidate = {
   type: "agent" | "terminal";
   projectName: string;
@@ -497,6 +504,8 @@ export type OverviewCandidate = {
   /** 人的「这件事办完了」时刻（settle，2026-11-13）；缺省 = 未了结。正交于 status：settled
    *  会话不删除、可继续打开，有活动即自动清除（见 session-attention.md）。 */
   settledAt?: string;
+  /** 血缘（M4）：admin session_create 创建的 child 会话带发起会话身份。 */
+  createdBy?: SessionCreatedBy;
 };
 
 /** GET /api/overview 响应：全 project 名（含无实例 project，grouped 视图空状态用）+ 全候选。 */
@@ -1532,6 +1541,8 @@ export type AgentSession = {
   updatedAt?: string;
   /** 人的「这件事办完了」时刻（settle）；缺省 = 未了结。有活动自动清除。 */
   settledAt?: string;
+  /** 血缘（M4）：admin session_create 创建的 child 会话带发起会话身份。 */
+  createdBy?: SessionCreatedBy;
 };
 
 export type TerminalSession = {
@@ -3365,6 +3376,44 @@ export type ClaudePermissionMode =
   | "auto"
   | "dontAsk"
   | "manual";
+
+// ── 权限模式档位归一（M4 admin 特权天花板，T3 #10）────────────────────────
+// ClaudePermissionMode（7 值）与 CodexPermissionMode（4 值）词表不同名，跨 provider
+// 的「child mode 不得宽于 parent」比较靠统一档位。归档依据：
+//   0 观察（只读/计划，无写路径） < 1 问答（每步审批） < 2 受限自动（工作区写/跳过部分
+//   确认） < 3 全权（跳过全部审批）。
+// manual（claude 逐问语义）= 问答档；dontAsk（跳过权限问询、保留工作区边界）与
+// acceptEdits/auto 同属受限自动档；readonly 与 plan 同属观察档。
+
+/** provider mode → 统一档位（0-3）；未知值 undefined（调用方按「无天花板可比」处理）。 */
+const PERMISSION_MODE_TIERS: Record<string, number> = {
+  plan: 0,
+  readonly: 0,
+  default: 1,
+  manual: 1,
+  acceptEdits: 2,
+  dontAsk: 2,
+  auto: 2,
+  bypassPermissions: 3,
+  full: 3,
+};
+
+export function permissionModeTier(mode: string): number | undefined {
+  return PERMISSION_MODE_TIERS[mode];
+}
+
+/** 特权天花板判定：target 档位高于 origin → "escalation"（admin session_create 拒绝）。
+ *  origin 缺 mode（terminal 会话/旧 metadata）或任一值不在归一表 → "ok"（无天花板可比，
+ *  不因归一表缺项阻塞正常创建流；target 白名单校验由调用方先做）。 */
+export function resolvePermissionCeiling(
+  origin: string | undefined,
+  target: string,
+): "ok" | "escalation" {
+  const originTier = origin !== undefined ? PERMISSION_MODE_TIERS[origin] : undefined;
+  const targetTier = PERMISSION_MODE_TIERS[target];
+  if (originTier === undefined || targetTier === undefined) return "ok";
+  return targetTier > originTier ? "escalation" : "ok";
+}
 
 // Client → server control actions (model switch, permission mode switch, interrupt).
 // These become stdin control_request messages to the CLI; the CLI replies with

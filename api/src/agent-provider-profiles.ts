@@ -5,6 +5,7 @@ import type {
   AgentProviderTransport,
   ClaudePermissionMode,
 } from "@agents-remote/shared";
+import { CODEX_PERMISSION_MODES } from "@agents-remote/shared";
 
 /** transport=acp 的 provider：spawn env 凭据注入声明（CLI 固有属性，非用户配置）。
  *  env 变量名随 CLI 而异（omp 消费 ANTHROPIC_*；其它 ACP CLI 各有自家 env），是共性
@@ -166,6 +167,33 @@ export const getAgentProviderProfile = (provider: AgentProvider | undefined) => 
 
   return profiles[provider];
 };
+
+// claude 白名单缺省（profile.permissionModes 由启动时 `claude --help` 探测回填，缺失时
+// 回退）——与 session-routes 原内联表同值，抽取为共享函数消除 REST/admin 两层漂移。
+const CLAUDE_PERMISSION_MODE_FALLBACK: readonly string[] = [
+  "default",
+  "acceptEdits",
+  "bypassPermissions",
+  "plan",
+  "auto",
+  "dontAsk",
+];
+
+/** session_create 的 permissionMode 白名单（M4）：REST（session-routes）与 admin
+ *  session_create（mcp-admin-tools）共用单源。provider 词表感知：claude = profile
+ *  permissionModes（缺省回退表）；codex = CODEX_PERMISSION_MODES；acp 家族无 mode
+ *  词表 → 放行（与 REST 现状一致）。 */
+export function isSupportedPermissionMode(provider: AgentProvider, mode: string): boolean {
+  if (provider === "codex") {
+    return (CODEX_PERMISSION_MODES as readonly string[]).includes(mode);
+  }
+  if (provider === "claude") {
+    const modes =
+      getAgentProviderProfile("claude")?.permissionModes ?? CLAUDE_PERMISSION_MODE_FALLBACK;
+    return (modes as readonly string[]).includes(mode);
+  }
+  return true;
+}
 
 /** GET /api/agent-providers 投影：注册表 → 只读 UI 信息（不含 command；credentials 声明
  *  平铺成 credentialsEnv 供凭据表单 hint 与 per-provider 渲染）。 */

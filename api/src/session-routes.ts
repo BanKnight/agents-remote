@@ -25,6 +25,7 @@ import type {
   SetTerminalSessionSettledResponse,
 } from "@agents-remote/shared";
 import { resolveModeSwitch } from "@agents-remote/shared";
+import { isSupportedPermissionMode } from "./agent-provider-profiles";
 import type { AgentTuiController } from "./agent-tui";
 import type { ClaudeRuntime } from "./claude-runtime";
 import type { ClaudeStreamController } from "./claude-stream";
@@ -228,15 +229,7 @@ const handleAgentSessionRoute = async (
 
     let permissionMode = body.permissionMode ?? "auto";
     if (body.provider === "claude") {
-      const modes: readonly string[] = profile?.permissionModes ?? [
-        "default",
-        "acceptEdits",
-        "bypassPermissions",
-        "plan",
-        "auto",
-        "dontAsk",
-      ];
-      if (!modes.includes(permissionMode)) {
+      if (!isSupportedPermissionMode(body.provider, permissionMode)) {
         return jsonError(
           "SESSION_PROVIDER_UNAVAILABLE",
           `Unsupported permission mode: ${permissionMode}`,

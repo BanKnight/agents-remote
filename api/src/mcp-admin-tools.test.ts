@@ -452,6 +452,130 @@ describe("MCP admin tools (manage gate)", () => {
     expect(approvalMock).not.toHaveBeenCalled();
   });
 
+  // ── M4 session_create 特权天花板 + 血缘 ─────────────────────────────────────
+  // 局部 hub：origin metadata 可带 permissionMode（天花板可比的前提）。
+  // 返回 createSessionMock 供断言（未调用即证明 gate 在审批前拦截）。
+
+  const startHubWithCeilingRegistry = async (originMode: string | undefined) => {
+    hub.stop();
+    const createSessionMock = mock(async () => ({
+      id: "agent_child01",
+      projectName: "test",
+      displayName: "child",
+      status: "idle",
+    }));
+    const registry = {
+      peekMetadata: async (_project: string, sessionId: string) =>
+        sessionId === "s1"
+          ? {
+              schemaVersion: 1,
+              id: "s1",
+              projectName: "test",
+              projectPath: "/tmp/ar-test",
+              type: "agent",
+              provider: "claude",
+              displayName: "S1",
+              status: "idle",
+              runtimeKey: "rk-s1",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              ...(originMode !== undefined ? { permissionMode: originMode } : {}),
+            }
+          : undefined,
+      listAllCandidates: async () => [],
+      createAgentSession: createSessionMock,
+    } as unknown as SessionRegistry;
+    const projectService = {
+      listProjects: async () => [],
+      getProject: async (name: string) => ({ name, path: `/tmp/${name}` }),
+    } as unknown as ProjectService;
+    hub = startMcpHubServer({
+      port: 0,
+      projectsRoot,
+      wikiService: new ProjectWikiService(projectsRoot),
+      home,
+      sessionRegistry: registry,
+      adminDeps: {
+        projectService,
+        sessionRegistry: registry,
+        approvalService: {
+          requestApproval: approvalMock,
+        } as unknown as McpAdminApprovalService,
+        projectsRoot,
+        home,
+      },
+      capabilitiesStore,
+    });
+    baseUrl = `http://127.0.0.1:${hub.port}`;
+    return { createSessionMock };
+  };
+
+  it("session_create denies escalation above the origin ceiling before approval", async () => {
+    const { createSessionMock } = await startHubWithCeilingRegistry("plan");
+    const { result } = await callWithOrigin(50, "session_create", {
+      project: "test",
+      provider: "claude",
+      permissionMode: "bypassPermissions",
+    });
+    expect(result?.isError).toBe(true);
+    expect(result?.content?.[0]?.text).toContain("[MODE_ESCALATION_DENIED]");
+    expect(result?.content?.[0]?.text).toContain("plan");
+    expect(result?.content?.[0]?.text).toContain("bypassPermissions");
+    expect(approvalMock).not.toHaveBeenCalled();
+    expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("session_create allows equal/lower tiers and passes mode + createdBy through", async () => {
+    const { createSessionMock } = await startHubWithCeilingRegistry("bypassPermissions");
+    approvalMock.mockImplementation(async () => "allow");
+    const { result } = await callWithOrigin(51, "session_create", {
+      project: "test",
+      provider: "claude",
+      permissionMode: "plan",
+    });
+    const payload = JSON.parse(result?.content?.[0]?.text ?? "{}") as { session?: { id?: string } };
+    expect(payload.session?.id).toBe("agent_child01");
+    // 审批卡 input 携带生效 mode（用户批准的正是将要创建的形态）
+    expect(approvalMock.mock.calls[0]?.[0]).toMatchObject({
+      toolName: "session_create",
+      input: { project: "test", provider: "claude", permissionMode: "plan" },
+    });
+    // createdBy = 发起会话身份（血缘），mode 原样透传
+    expect(createSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        permissionMode: "plan",
+        createdBy: { projectName: "test", sessionId: "s1" },
+      }),
+    );
+  });
+
+  it("session_create default auto is equally bounded by a narrow origin ceiling", async () => {
+    const { createSessionMock } = await startHubWithCeilingRegistry("plan");
+    const { result } = await callWithOrigin(52, "session_create", {
+      project: "test",
+      provider: "claude",
+    });
+    expect(result?.isError).toBe(true);
+    expect(result?.content?.[0]?.text).toContain("[MODE_ESCALATION_DENIED]");
+    expect(result?.content?.[0]?.text).toContain("auto");
+    expect(approvalMock).not.toHaveBeenCalled();
+    expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("session_create rejects a mode outside the provider whitelist without approval", async () => {
+    const { createSessionMock } = await startHubWithCeilingRegistry("plan");
+    const { result } = await callWithOrigin(53, "session_create", {
+      project: "test",
+      provider: "claude",
+      permissionMode: "yolo",
+    });
+    expect(result?.isError).toBe(true);
+    expect(result?.content?.[0]?.text).toContain("[SESSION_PROVIDER_UNAVAILABLE]");
+    expect(result?.content?.[0]?.text).toContain("Unsupported permission mode");
+    expect(approvalMock).not.toHaveBeenCalled();
+    expect(createSessionMock).not.toHaveBeenCalled();
+  });
+
   // ── 外部 MCP server 管理（mcp_list 观察 + mcp_* 五管理工具）────────────────────
 
   it("mcp_list merges user and project scopes with a scope field (no approval)", async () => {

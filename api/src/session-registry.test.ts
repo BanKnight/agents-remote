@@ -1305,3 +1305,57 @@ test("recordActivity 清 settledAt（任何活动 = 重新投入注意力）", a
   );
   expect(metadata).not.toHaveProperty("settledAt");
 });
+
+// ── M4 血缘（createdBy）：可选字段零迁移，parseMetadata 读侧防御归一 ─────────────
+
+test("createAgentSession 注入 createdBy 并持久化 round-trip（含投影带出）", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_lineage001",
+  });
+
+  const agent = await registry.createAgentSession({
+    project,
+    provider: "claude",
+    createdBy: { projectName: "orchestrator", sessionId: "agent_parent42" },
+  });
+
+  // 磁盘 metadata 落 createdBy
+  const raw = JSON.parse(await readFile(join(runDir, "sessions", "agent_lineage001.json"), "utf8"));
+  expect(raw.createdBy).toEqual({ projectName: "orchestrator", sessionId: "agent_parent42" });
+  // 投影带出（AgentSession / OverviewCandidate 调试可见）
+  expect(agent.createdBy).toEqual({ projectName: "orchestrator", sessionId: "agent_parent42" });
+  const [candidate] = await registry.listAllCandidates();
+  const lineage = candidate.createdBy;
+  expect(lineage).toEqual({ projectName: "orchestrator", sessionId: "agent_parent42" });
+
+  // 新 registry 实例（模拟 API 重启）读回血缘仍在
+  const reread = new SessionRegistry({ runDir, now: fixedNow });
+  const session = await reread.getAgentSession(project.name, "agent_lineage001");
+  expect(session?.createdBy).toEqual({ projectName: "orchestrator", sessionId: "agent_parent42" });
+});
+
+test("parseMetadata 容忍旧 metadata 无 createdBy（undefined 存活）与畸形值（防御抹掉）", async () => {
+  // 旧 metadata：无 createdBy 字段 → 读取正常 undefined
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_lineageold",
+  });
+  await registry.createAgentSession({ project, provider: "claude" });
+  const file = join(runDir, "sessions", "agent_lineageold.json");
+  const raw = JSON.parse(await readFile(file, "utf8"));
+  expect(raw).not.toHaveProperty("createdBy");
+  const reread = new SessionRegistry({ runDir, now: fixedNow });
+  const legacy = await reread.getAgentSession(project.name, "agent_lineageold");
+  expect(legacy?.createdBy).toBeUndefined();
+
+  // 畸形 createdBy（形状不符）→ parseMetadata 防御归一化抹掉，不炸读取
+  const corrupt = JSON.parse(await readFile(file, "utf8"));
+  corrupt.createdBy = "agent_parent42";
+  await writeFile(file, JSON.stringify(corrupt));
+  const reread2 = new SessionRegistry({ runDir, now: fixedNow });
+  const sanitized = await reread2.getAgentSession(project.name, "agent_lineageold");
+  expect(sanitized?.createdBy).toBeUndefined();
+});

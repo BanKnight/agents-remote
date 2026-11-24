@@ -7,6 +7,7 @@ import type {
   ClaudeAutoRetryConfig,
   EffortLevel,
   OverviewCandidate,
+  SessionCreatedBy,
   SessionShell,
   SessionType,
   TerminalSession,
@@ -52,6 +53,8 @@ export type SessionMetadata = {
   /** 人的「这件事办完了」时刻（settle，2026-11-13）；缺省 = 未了结。正交于 status：不删除、
    *  可继续打开，任何会话活动（recordActivity）自动清除。 */
   settledAt?: string;
+  /** 血缘（M4）：admin session_create 创建的 child 会话带发起会话身份；其余入口缺省。 */
+  createdBy?: SessionCreatedBy;
 };
 
 export type RuntimeStream = {
@@ -123,6 +126,8 @@ type CreateAgentSessionInput = {
   model?: string;
   permissionMode?: string;
   effort?: EffortLevel;
+  /** 血缘（M4）：admin session_create 传 origin 身份；REST/其它入口缺省。 */
+  createdBy?: SessionCreatedBy;
 };
 
 type CreateTerminalSessionInput = {
@@ -716,6 +721,7 @@ export class SessionRegistry {
       model: input.model,
       permissionMode: input.permissionMode,
       effort: input.effort,
+      createdBy: input.createdBy,
       initialStatus: resumed ? "done" : "idle",
     });
 
@@ -957,6 +963,8 @@ export class SessionRegistry {
     model?: string;
     permissionMode?: string;
     effort?: EffortLevel;
+    /** 血缘（M4）：admin session_create 传 origin 身份；metadata 落盘随持久化。 */
+    createdBy?: SessionCreatedBy;
     /** agent 会话初始 turn 状态（createAgentSession 按新建/恢复区分注入）；缺省 idle。 */
     initialStatus?: AgentSessionStatus;
   }) {
@@ -985,6 +993,7 @@ export class SessionRegistry {
       modelAlias: sanitizePersistedModel(input.model),
       permissionMode: input.permissionMode,
       effort: input.effort,
+      createdBy: input.createdBy,
     };
 
     // 纯新建（无读改写）：先落盘成功再进内存 index——写盘失败时 create reject、list 不见
@@ -1264,6 +1273,20 @@ const parseMetadata = (raw: string): SessionMetadata | undefined => {
   parsed.model = sanitizePersistedModel(parsed.model);
   parsed.modelAlias = sanitizePersistedModel(parsed.modelAlias);
 
+  // 血缘字段归一（M4）：可选零迁移——旧 metadata 无此字段（undefined 存活）；畸形值
+  //（手改/旧版本写坏）抹掉而非 propagate，消费方拿到的要么是合法形状要么没有。
+  if (parsed.createdBy !== undefined) {
+    const cb = parsed.createdBy as { projectName?: unknown; sessionId?: unknown } | null;
+    if (
+      cb === null ||
+      typeof cb !== "object" ||
+      typeof cb.projectName !== "string" ||
+      typeof cb.sessionId !== "string"
+    ) {
+      delete parsed.createdBy;
+    }
+  }
+
   // turn 状态恢复归一(仅 agent;OSC 7501 对齐):①存量 metadata 恒 "running"(旧版从不
   // 更新)= 进程存活语义 → 按 idle 解释;②"working"/"blocked" 意味着 API 上次退出时 turn
   // 在飞——CLI 子进程随之已死、ApprovalRegistry 已清空,turn 不可能恢复,统一降级 idle
@@ -1314,6 +1337,7 @@ const metadataToCandidate = (metadata: SessionMetadata, subtitle?: string): Over
   createdAt: metadata.type === "agent" ? metadata.createdAt : undefined,
   subtitle,
   settledAt: metadata.settledAt,
+  createdBy: metadata.createdBy,
 });
 
 const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
@@ -1334,6 +1358,7 @@ const agentSessionFromMetadata = (metadata: SessionMetadata): AgentSession => ({
   mode: metadata.mode,
   updatedAt: metadata.updatedAt,
   settledAt: metadata.settledAt,
+  createdBy: metadata.createdBy,
 });
 
 const terminalSessionFromMetadata = (
