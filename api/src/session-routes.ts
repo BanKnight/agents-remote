@@ -228,14 +228,15 @@ const handleAgentSessionRoute = async (
     }
 
     let permissionMode = body.permissionMode ?? "auto";
-    if (body.provider === "claude") {
-      if (!isSupportedPermissionMode(body.provider, permissionMode)) {
-        return jsonError(
-          "SESSION_PROVIDER_UNAVAILABLE",
-          `Unsupported permission mode: ${permissionMode}`,
-          400,
-        );
-      }
+    // 白名单 provider 无关统一走单源函数（isSupportedPermissionMode 内部按 provider
+    // 分流：codex=CODEX_PERMISSION_MODES、claude=profile 词表、acp 放行）——security
+    // review 相邻观察：原仅 claude 分支校验，codex 传任意串直落 metadata 无闸。
+    if (!isSupportedPermissionMode(body.provider, permissionMode)) {
+      return jsonError(
+        "SESSION_PROVIDER_UNAVAILABLE",
+        `Unsupported permission mode: ${permissionMode}`,
+        400,
+      );
     }
 
     try {

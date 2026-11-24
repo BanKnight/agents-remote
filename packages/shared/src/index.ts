@@ -3380,10 +3380,12 @@ export type ClaudePermissionMode =
 // ── 权限模式档位归一（M4 admin 特权天花板，T3 #10）────────────────────────
 // ClaudePermissionMode（7 值）与 CodexPermissionMode（4 值）词表不同名，跨 provider
 // 的「child mode 不得宽于 parent」比较靠统一档位。归档依据：
-//   0 观察（只读/计划，无写路径） < 1 问答（每步审批） < 2 受限自动（工作区写/跳过部分
-//   确认） < 3 全权（跳过全部审批）。
-// manual（claude 逐问语义）= 问答档；dontAsk（跳过权限问询、保留工作区边界）与
-// acceptEdits/auto 同属受限自动档；readonly 与 plan 同属观察档。
+//   0 观察（只读/计划，无写路径） < 1 问答（每步审批 / 未预批即拒） < 2 受限自动
+//   （工作区写/跳过部分确认） < 3 全权（跳过全部审批）。
+// manual（claude 逐问语义）= 问答档；dontAsk = 不弹问询、未预批动作直接 deny
+//（deepwiki 核对 anthropics/claude-code，security-review P2-1）——比 default 更严
+// 而非更宽，归问答档（标 2 会让 dontAsk origin 铸造 acceptEdits/auto 子会话 =
+// 子比父真实能力宽）；readonly 与 plan 同属观察档。
 
 /** provider mode → 统一档位（0-3）；未知值 undefined（调用方按「无天花板可比」处理）。 */
 const PERMISSION_MODE_TIERS: Record<string, number> = {
@@ -3391,8 +3393,8 @@ const PERMISSION_MODE_TIERS: Record<string, number> = {
   readonly: 0,
   default: 1,
   manual: 1,
+  dontAsk: 1,
   acceptEdits: 2,
-  dontAsk: 2,
   auto: 2,
   bypassPermissions: 3,
   full: 3,
@@ -3432,6 +3434,9 @@ export type ClaudeStreamControlRequest = {
       }
     | {
         subtype: "interrupt";
+        /** 连带清空命令队列（M2 撤回单条/全部排队上行形态；探针实证 idle/running 均
+         *  回 ack {still_queued, cancelled} 且无 result——armed 按此 flavor 区分）。 */
+        cancel_queued?: boolean;
       };
 };
 

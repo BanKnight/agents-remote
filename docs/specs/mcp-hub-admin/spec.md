@@ -129,7 +129,7 @@
 
 ### Requirement: session_create applies the origin permission ceiling
 
-系统 SHALL 允许 `session_create` 携带可选 `permissionMode`（provider mode 词表白名单校验，校验函数与 REST 建会话层同一单源）创建子会话；缺省 `auto`。发起会话身份在场时，系统 SHALL 读取其 metadata 的 permissionMode 作为特权天花板：请求档位高于 origin 档位即拒绝（`[MODE_ESCALATION_DENIED]`，含 origin/target mode 值），不登记审批卡。档位归一表（跨 provider 名可比）：plan/readonly=0 < default/manual=1 < acceptEdits/dontAsk/auto=2 < bypassPermissions/full=3。origin 无 permissionMode（terminal/旧 metadata）或值不在归一表时无天花板可比，放行。
+系统 SHALL 允许 `session_create` 携带可选 `permissionMode`（provider mode 词表白名单校验，校验函数与 REST 建会话层同一单源）创建子会话；缺省 `auto`。发起会话身份在场时，系统 SHALL 读取其 metadata 的 permissionMode 作为特权天花板：请求档位高于 origin 档位即拒绝（`[MODE_ESCALATION_DENIED]`,含 origin/target mode 值），不登记审批卡。档位归一表（跨 provider 名可比）：plan/readonly=0 < default/manual/dontAsk=1 < acceptEdits/auto=2 < bypassPermissions/full=3（dontAsk=1 依据：不弹问询、未预批动作直接 deny，比 default 更严非更宽——security-review 经 deepwiki 核对上游语义后修正）。origin 无 permissionMode（terminal/旧 metadata）或值不在归一表时无天花板可比，放行；origin 档位有效但 target 档位未知（词表白名单放行的新词表项 tier 表未跟上）→ fail-closed 拒绝。
 
 #### Scenario: Escalation above the origin ceiling is denied
 

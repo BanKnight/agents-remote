@@ -32,8 +32,13 @@ import {
 import { AuthService } from "./auth";
 import { ApprovalCenter } from "./approval-center";
 import { ClaudeRuntime } from "./claude-runtime";
-import { getAgentProviderProfile, parseClaudePermissionModes } from "./agent-provider-profiles";
+import {
+  getAgentProviderProfile,
+  parseClaudePermissionModes,
+  setClaudePermissionModes,
+} from "./agent-provider-profiles";
 import { ClaudeStreamController, handleClaudeStreamUpgrade } from "./claude-stream";
+import type { AdminSendOutcome } from "./mcp-admin-tools";
 import { CheckpointService } from "./checkpoint-service";
 import { TurnCheckpointer } from "./turn-checkpointer";
 import type { SessionCheckpointsDeps } from "./session-routes";
@@ -2502,6 +2507,9 @@ export const startApi = async () => {
   // 画布四工具数据源（hub MCP 面 + web 卡片 tools/call 面共用同一 service 实例）。
   const projectCanvasService = new ProjectCanvasService(config.projectsRoot);
   const claudePermissionModes = await parseClaudePermissionModes();
+  // 回填 profile 白名单（security-review P2-2）：只打日志不赋值会让 REST/admin 的
+  // mode 白名单恒走 fallback 表、CLI 新词表项永远进不来。
+  setClaudePermissionModes(claudePermissionModes);
   console.log(`[startup] Claude permission modes: ${claudePermissionModes.join(", ")}`);
   // 双模式编排（agent-tui）：runtime 分发（exists/close）要按会话形态落 tmux/headless，
   // 而编排器自身依赖 approvalCenter（在其后装配）——先声明、后赋值，闭包内引用。
@@ -2909,8 +2917,8 @@ export const startApi = async () => {
     async () => (await runtime.listAliveRuntimeKeys?.()) ?? new Set<string>(),
   );
   // admin session_send 发送结果（M3 发送幂等）：claude dedup 时带 deduplicated/anchorUuid，
-  // 其余 provider 空（codex/acp 无 uuid 幂等概念）。
-  type AdminSendOutcome = { deduplicated?: true; anchorUuid?: string };
+  // 其余 provider 空（codex/acp 无 uuid 幂等概念）。类型单源在 mcp-admin-tools（review
+  // P2-4：与 sendToAgent 依赖类型同处声明，index 只消费）。
   // admin 向活 agent 会话投递文本（session_send 执行段）：按 provider 分流到各发送通道，
   // 全部仅活会话语义（与 REST 注入先例 index.ts D13 同款）；错误统一带 code（admin 面
   // adminErrorResponse 映射 [CODE] message）。terminal 无无状态注入口 → 明确不支持。

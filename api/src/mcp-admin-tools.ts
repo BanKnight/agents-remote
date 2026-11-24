@@ -1,7 +1,11 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AgentProvider, McpScope } from "@agents-remote/shared";
-import { MCP_ADMIN_MANAGE_TOOLS, resolvePermissionCeiling } from "@agents-remote/shared";
+import {
+  MCP_ADMIN_MANAGE_TOOLS,
+  permissionModeTier,
+  resolvePermissionCeiling,
+} from "@agents-remote/shared";
 import { getAgentProviderProfile, isSupportedPermissionMode } from "./agent-provider-profiles";
 import type { McpAdminApprovalService } from "./mcp-admin-approval";
 import {
@@ -322,24 +326,32 @@ export const registerAdminTools = (
       }
       // 特权天花板（T3 #10）：origin 身份在场才可比（hub URL ?origin= → ctx）。
       // origin metadata 无 permissionMode（terminal/旧 metadata）→ 无天花板可比，放行。
+      // origin 档位有效但 target 档位未知（provider 白名单放行的新词表项，tier 表未跟上）
+      // → fail-closed 拒绝（security-review P2-2：天花板机制激活时未知宽窄放行 = 可能
+      // 提权；REST 建会话无天花板语义，不受此防御影响）。
       if (ctx.originProject && ctx.originSessionId) {
         const originMetadata = await deps.sessionRegistry.peekMetadata(
           ctx.originProject,
           ctx.originSessionId,
         );
-        if (
-          originMetadata?.permissionMode &&
-          resolvePermissionCeiling(originMetadata.permissionMode, requestedMode) === "escalation"
-        ) {
-          return {
-            isError: true as const,
-            content: [
-              {
-                type: "text" as const,
-                text: `[MODE_ESCALATION_DENIED] requested ${requestedMode} exceeds origin ceiling ${originMetadata.permissionMode}`,
-              },
-            ],
-          };
+        if (originMetadata?.permissionMode) {
+          const denied =
+            permissionModeTier(originMetadata.permissionMode) === undefined
+              ? false
+              : permissionModeTier(requestedMode) === undefined ||
+                resolvePermissionCeiling(originMetadata.permissionMode, requestedMode) ===
+                  "escalation";
+          if (denied) {
+            return {
+              isError: true as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: `[MODE_ESCALATION_DENIED] requested ${requestedMode} exceeds origin ceiling ${originMetadata.permissionMode}`,
+                },
+              ],
+            };
+          }
         }
       }
       const gate = await requestManageApproval(deps, ctx, "session_create", {

@@ -45,6 +45,30 @@ test("summarizeControlInput 语义字段优先 + 截断", () => {
   );
 });
 
+test("summarizeControlInput: session_create 摘要 mode= 恒可见（review P1-2）", () => {
+  // 无 semantic 字段的 session_create：mode= 进摘要且整体短于截断界（人审兜底可见档位）。
+  expect(
+    summarizeControlInput("session_create", {
+      displayName: "probe",
+      project: "demo",
+      permissionMode: "auto",
+    }),
+  ).toBe("session_create demo mode=auto");
+  // 对比修复前：长 displayName 走 JSON 全文截断，mode= 被截掉（人审失明）——现在不受影响。
+  const longName = "x".repeat(120);
+  const withLongName = summarizeControlInput("session_create", {
+    displayName: longName,
+    project: "demo",
+    permissionMode: "acceptEdits",
+  });
+  expect(withLongName).toBe("session_create demo mode=acceptEdits");
+  expect(withLongName.length).toBeLessThanOrEqual(80);
+  // 无 mode 的 input 不受影响（JSON 分支原行为回归防护）。
+  expect(summarizeControlInput("session_create", { displayName: "x" })).toBe(
+    'session_create {"displayName":"x"}',
+  );
+});
+
 test("登记/注销/收口/查找全生命周期", () => {
   const reg = new ApprovalRegistry();
   reg.register(makeRecord());

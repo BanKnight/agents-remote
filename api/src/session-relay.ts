@@ -387,16 +387,14 @@ export class ClaudeSessionRelay {
   // 停止冻结（M2）：把排队快照整体挪入 held、清空 queued，广播空 queue_state +
   // queue_held 快照。无条目时也广播（停止动作本身需要一次全量对齐：清残留 chip +
   // 空 held 快照同时是客户端「停止已生效」的回执，见 claude-adapter onCancel）。
-  // 返回快照供调用方（claude-runtime）决定 CLI 侧编排；CLI 队列清理后迟到的
-  // cancelled 帧驱动 removeQueuedCommand 对空队列是 no-op（不广播）。
-  holdCommands(): ClaudeQueuedCommand[] {
-    if (this.isDestroyed) return [];
-    const snapshot = this.queuedCommands;
+  // 快照经 queue_held 广播帧出去（广播-only 家族）；CLI 队列清理后迟到的 cancelled
+  // 帧驱动 removeQueuedCommand 对空队列是 no-op（不广播）。
+  holdCommands(): void {
+    if (this.isDestroyed) return;
+    this.heldCommands = this.queuedCommands;
     this.queuedCommands = [];
-    this.heldCommands = snapshot;
     this.broadcast(this.queueStateLine());
     this.broadcast(this.queueHeldLine());
-    return snapshot;
   }
 
   // 恢复/放弃（M2）：清 held + 广播空 queue_held。两者 api 侧行为相同（条目已在

@@ -465,12 +465,12 @@ test("permissionModeTier 归一 claude 7 值与 codex 4 值到统一档位", () 
   // tier 0 观察档
   expect(permissionModeTier("plan")).toBe(0);
   expect(permissionModeTier("readonly")).toBe(0);
-  // tier 1 问答档
+  // tier 1 问答档（default=每步审批；manual=逐问；dontAsk=未预批直接 deny——比 default 更严）
   expect(permissionModeTier("default")).toBe(1);
   expect(permissionModeTier("manual")).toBe(1);
+  expect(permissionModeTier("dontAsk")).toBe(1);
   // tier 2 受限自动档
   expect(permissionModeTier("acceptEdits")).toBe(2);
-  expect(permissionModeTier("dontAsk")).toBe(2);
   expect(permissionModeTier("auto")).toBe(2);
   // tier 3 全权档
   expect(permissionModeTier("bypassPermissions")).toBe(3);
@@ -493,6 +493,8 @@ test("resolvePermissionCeiling: 同档/跨名同档/降档 ok，升档 escalatio
   expect(resolvePermissionCeiling("readonly", "auto")).toBe("escalation");
   // manual(1) → acceptEdits(2) 是升档（跨名但档位上升仍拦）
   expect(resolvePermissionCeiling("manual", "acceptEdits")).toBe("escalation");
+  // dontAsk(1，拒绝型) → auto(2) 同样升档（security-review P2-1 防回退）
+  expect(resolvePermissionCeiling("dontAsk", "auto")).toBe("escalation");
   // 等档相邻名跨名对照（default=manual=1）：同档非升级
   expect(resolvePermissionCeiling("default", "manual")).toBe("ok");
   // origin 无 permissionMode（terminal/旧 metadata）→ 无天花板可比，放行

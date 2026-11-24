@@ -42,10 +42,19 @@ export function summarizeControlInput(toolName: string, input: Record<string, un
   const semantic = SEMANTIC_INPUT_KEYS.map((key) => input[key]).find(
     (value) => typeof value === "string" && value.length > 0,
   );
+  // permissionMode 是天花板安全关键键（security-review P1-2）：session_create 审批卡
+  // 必须可见请求档位——JSON 全文截 80 必把 mode 截掉（displayName 稍长即溢出），人审
+  // 兜底失明。mode 恒进摘要且整体在截断界内；project 附带（空间充裕时）。
+  const mode = input.permissionMode;
+  const modeSuffix = typeof mode === "string" && mode.length > 0 ? ` mode=${mode}` : "";
+  const project = input.project;
+  const projectPrefix = typeof project === "string" && project.length > 0 ? `${project} ` : "";
   const raw =
     typeof semantic === "string"
-      ? `${toolName}: ${semantic}`
-      : `${toolName} ${JSON.stringify(input)}`;
+      ? `${toolName}: ${semantic}${modeSuffix}`
+      : modeSuffix
+        ? `${toolName} ${projectPrefix}mode=${mode}`
+        : `${toolName} ${JSON.stringify(input)}`;
   const oneLine = raw.replace(/\s+/g, " ").trim();
   return oneLine.length > INPUT_SUMMARY_MAX_CHARS
     ? `${oneLine.slice(0, INPUT_SUMMARY_MAX_CHARS)}…`

@@ -333,9 +333,10 @@ export function resolveContextWindow(
   return CONTEXT_WINDOW_DEFAULT;
 }
 
-/** interrupt ack 后 CLI result 的 armed 消费窗口。实测 ack → result 间隔 <100ms；窗口只防
- * 「armed 残留误吞很久之后的自然 result」（idle interrupt 只回 ack 无 result 的残留场景），
- * 取宽松量级即可。窗口过期后 armed 懒惰清除，result 走原 turn_result 逻辑。 */
+/** plain interrupt 的 armed 消费窗口：仅 plain flavor 且真实打断了 turn 才保留 armed
+ * （ack 时按 flavor/迁移判定，见 pendingInterrupts 字段注释），CLI 的迟到 result
+ *（error_during_execution）在此窗口内被短路（用户打断 ≠ error）。实测 ack → result
+ *  间隔 <100ms，取宽松量级即可。cancel_queued flavor 无 result，ack 即删 armed。 */
 const INTERRUPT_ARMED_WINDOW_MS = 30_000;
 
 /** 单 runtime 已消费 uuid 台账的 FIFO 上限。量级参照：CLI 自身进程内幂等窗口是 10k；
@@ -472,13 +473,19 @@ export class ClaudeRuntime implements RuntimeResources {
   // fork spawn 的就绪等待方（runtimeKey → resolve）：captureSystemInitFromLine 的 fork
   // 分支回填新 id + reloadHistory 之后结算，rollbackConversation 才返回。
   private readonly forkWaiters = new Map<string, () => void>();
-  // 用户打断的未决登记（runtimeKey → { requestId, at }）：claude-stream verbatim 转发
-  // interrupt control_request 时登记；ack success 即以 turn_interrupted 收口状态 +
-  // endTurn（checkpoint 同步释放），随后 CLI 的 result{error_during_execution} 被
-  // captureTurnResultFromLine 的 armed 窗口短路（不迁移 done→error）。
-  // turn 已结束时打断（idle interrupt）实测只回 ack 无 result → armed 残留由
-  // INTERRUPT_ARMED_WINDOW_MS 懒惰失效（后续自然 result 走原逻辑）。
-  private readonly pendingInterrupts = new Map<string, { requestId: string; at: number }>();
+  // 用户打断的未决登记（runtimeKey → { requestId, at, cancelQueued }）：claude-stream
+  // verbatim 转发 interrupt control_request 时登记；ack success 即以 turn_interrupted
+  // 收口状态 + endTurn（checkpoint 同步释放）。armed 短路只服务 plain interrupt——
+  // M2 探针实锤 cancel_queued:true 打断后 CLI 不发 result（ack 即全部），该 flavor
+  // 在 ack 时即删登记；plain interrupt 打断了 working/blocked turn 才保留 armed
+  //（短路迟到的 result{error_during_execution}，不迁移 done→error）。
+  // review P1-1：M2 后停止入口全走 cancel_queued，armed 悬挂会吞掉 30s 窗口内
+  // 后续自然 turn 的 result（status 卡 working / checkpoint 不收口——正是 M1 要修
+  // 的悬挂形态复发），必须按 flavor 区分。
+  private readonly pendingInterrupts = new Map<
+    string,
+    { requestId: string; at: number; cancelQueued: boolean }
+  >();
   // 上行 user uuid 的已消费台账（发送幂等，T3 #5 clientRequestId）：四个入口（WS user
   // 帧 / REST /message / admin session_send / auto-retry inject）写 stdin 前先
   // claimUserUuid 占坑，重复 uuid 短路——CLI 侧本就按 uuid 幂等（进程内 10k FIFO +
@@ -882,6 +889,19 @@ export class ClaudeRuntime implements RuntimeResources {
     return true;
   }
 
+  /** claim 失败路径回滚（review P1-2）：write/ensureRunning 抛错时释放占坑——幂等键
+   *  烧掉会让「首次根本没送达」的重试（clientRequestId 的服务场景）永远命中 dedup
+   *  谎报 delivered。同步无 await，与 claim 对称；未占坑（非法 uuid / 已被驱逐）
+   *  no-op。仅 claude-stream 两入口接线（auto-retry 注入 uuid 恒新生成，无重试语义）。 */
+  releaseUserUuid(runtimeKey: string, uuid: string): void {
+    if (!MESSAGE_UUID_RE.test(uuid)) return;
+    const entry = this.claimedUserUuids.get(runtimeKey);
+    if (!entry) return;
+    if (!entry.seen.delete(uuid)) return;
+    const idx = entry.fifo.indexOf(uuid);
+    if (idx !== -1) entry.fifo.splice(idx, 1);
+  }
+
   /** 用户提交消息(STDIN 注入 echo 行)→ working；turn 进行中(working)时折叠登记进
    *  服务端排队(queue-state serverization——CLI 在 running turn 中对后续 prompt 零
    *  遥测，lifecycle 帧延迟到 turn 边界)。gate 读取与状态迁移在同一同步块内完成
@@ -910,9 +930,9 @@ export class ClaudeRuntime implements RuntimeResources {
    *  同 runtime 重复点击停止 = 新 request_id 覆盖旧登记（CLI 对旧 id 的 ack 处理不受
    *  影响——capture 按 requestId 匹配，旧 id 的 ack 到达时对不上当前登记即走 waiter
    *  no-op 路径，无害）。进程销毁/respawn 时清理。 */
-  registerInterruptRequest(runtimeKey: string, requestId: string): void {
+  registerInterruptRequest(runtimeKey: string, requestId: string, cancelQueued = false): void {
     if (!this.processes.has(runtimeKey)) return;
-    this.pendingInterrupts.set(runtimeKey, { requestId, at: Date.now() });
+    this.pendingInterrupts.set(runtimeKey, { requestId, at: Date.now(), cancelQueued });
   }
 
   /** 停止 = 冻结队列（M2，用户拍板 T3 holdQueue 语义）编排入口（claude-stream
@@ -922,15 +942,17 @@ export class ClaudeRuntime implements RuntimeResources {
    *  ② 代发 CLI cancel_queued:true control_request（= interrupt + 清 CLI 队列；
    *     探针实证 idle 下同样安全回 ack {still_queued:[],cancelled:[]} 无 result，
    *     running + 排队时排队条目不再执行）。
-   *  ack 走 M1 interrupt 登记链：收口 turn 状态 + 释放 checkpoint；CLI 迟到的
-   *  result{error_during_execution} 由 armed 窗口短路（用户主动停止 ≠ error）。
-   *  write 失败（进程已死）时登记残留由 30s armed 窗口懒惰失效，无害。 */
+   *  ack 走 M1 interrupt 登记链：收口 turn 状态 + 释放 checkpoint。cancel_queued
+   *  flavor 下 CLI 不发 result（M2 探针实锤）→ ack 即删 armed（review P1-1：armed
+   *  悬挂会吞掉 30s 窗口内后续自然 turn 的 result）。
+   *  write 失败（进程已死）时登记残留由 ack 不达 + 后续 interrupt 覆盖或进程
+   *  close 清理，无 armed 悬挂。 */
   holdQueueAndStop(runtimeKey: string): void {
     const relay = this.relays.get(runtimeKey);
     if (!relay) return;
     relay.holdCommands();
     const requestId = crypto.randomUUID();
-    this.registerInterruptRequest(runtimeKey, requestId);
+    this.registerInterruptRequest(runtimeKey, requestId, true);
     const line = JSON.stringify({
       type: "control_request",
       request_id: requestId,
@@ -1657,13 +1679,23 @@ export class ClaudeRuntime implements RuntimeResources {
     if (typeof requestId !== "string") return;
     const interrupt = this.pendingInterrupts.get(sessionName);
     if (interrupt && interrupt.requestId === requestId && response?.subtype === "success") {
-      // 打断收口（T3 #2「interrupt ack ≠ 终态」的正向应用：ack 是权威信号本身——CLI
-      // 对执行中 turn 必发 result{error_during_execution}，但那会把用户打断标成 error；
-      // 在 ack 即收口状态（done）+ endTurn 释放 checkpoint，登记保留为 armed（时刻重置
-      // 为 ack），captureTurnResultFromLine 据此短路迟到的 result（不迁移 done→error）。
-      // idle interrupt（turn 已结束）无 result → armed 残留由窗口懒惰失效。
-      interrupt.at = Date.now();
+      // 打断收口（T3 #2「interrupt ack ≠ 终态」的正向应用：ack 是权威信号本身——ack 即
+      // 收口状态（done）+ endTurn 释放 checkpoint）。armed 去留按 flavor 与真实打断面：
+      // ① cancel_queued（M2 停止入口全走此 flavor）：探针实证 CLI 不发 result——无迟到
+      //   result 可短路，armed 立即摘除，否则 30s 窗口内后续自然 turn 的 result 被误吞
+      //  （review P1-1：status 卡 working / checkpoint 不收口的悬挂复发）。
+      // ② plain interrupt 打断了 working/blocked turn：CLI 必发 result{error_during_
+      //   execution}（M1 实锤），保留 armed（时刻重置为 ack）短路它——用户打断 ≠ error。
+      // ③ plain interrupt 但未打断任何 turn（idle）：无 result 将至，同理不留 armed。
+      const state = this.processes.get(sessionName);
+      const wasTurnActive =
+        state?.sessionStatus === "working" || state?.sessionStatus === "blocked";
       this.applyStatusSignal(sessionName, { kind: "turn_interrupted" });
+      if (interrupt.cancelQueued || !wasTurnActive) {
+        this.pendingInterrupts.delete(sessionName);
+      } else {
+        interrupt.at = Date.now();
+      }
       // endTurn 幂等（inFlight 无则 no-op）；isError=false = 用户打断是正常收尾。
       void this.turnCheckpointer?.endTurn(sessionName, false).catch(() => undefined);
       return;

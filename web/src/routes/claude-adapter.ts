@@ -171,8 +171,9 @@ export type PendingControlAction =
   | { kind: "set_permission_mode"; priorMode: string | undefined }
   | { kind: "interrupt" }
   // 撤回排队 prompt（interrupt + cancel_queued:true）：独立于 "interrupt" kind——
-  // 不设 interruptAtIndex turn-close 标记（撤回清的是队列，不打断当前 turn）；
-  // success 回执触发 queuedResendRef 重发（见 cancelQueuedEntry）。
+  // 探针实锤（v3/2.1.325）它是「interrupt 执行中 turn + 清队列」，api 侧 ack 即按
+  // turn_interrupted 收口；web 不设 interruptAtIndex turn-close 标记（running 收口
+  // 归 M2 queue_held 回执），success 回执触发 queuedResendRef 重发（见 cancelQueuedEntry）。
   | { kind: "cancel_queued" };
 
 export const applyTaskSystemMessage = (prev: TaskInfo[], msg: TaskSystemMessage): TaskInfo[] => {

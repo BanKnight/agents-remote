@@ -520,10 +520,15 @@ export class ClaudeStreamController {
         let forwarded: ClaudeStreamClientMessage = parsed;
         // 用户打断登记（M1 停止终态一致）：转发前登记 (runtimeKey, request_id)——
         // stdout 的 interrupt ack（control_response success）在 runtime capture 链收口
-        // turn 状态 + 释放 checkpoint；CLI 迟到的 result{error_during_execution} 由
-        // armed 窗口短路（不弹 error）。详见 claude-runtime capture 注释。
+        // turn 状态 + 释放 checkpoint。armed 去留按 cancel_queued flavor 区分（review
+        // P1-1）：cancel_queued 无 result → ack 即删；plain 且打断 working turn 才保留
+        // armed 短路迟到 result。详见 claude-runtime capture 注释。
         if (parsed.type === "control_request" && parsed.request.subtype === "interrupt") {
-          this.claudeRuntime.registerInterruptRequest(data.runtimeKey, parsed.request_id);
+          this.claudeRuntime.registerInterruptRequest(
+            data.runtimeKey,
+            parsed.request_id,
+            parsed.request.cancel_queued === true,
+          );
         }
         if (parsed.type === "control_request" && parsed.request.subtype === "set_model") {
           const resolved = await this.claudeRuntime.resolveControlModel(parsed.request.model);
@@ -553,7 +558,16 @@ export class ClaudeStreamController {
           }
         }
         console.log(`[claude-stream] message ${parsed.type}: ${data.runtimeKey}`);
-        await this.claudeRuntime.write(data.runtimeKey, JSON.stringify(forwarded) + "\n");
+        try {
+          await this.claudeRuntime.write(data.runtimeKey, JSON.stringify(forwarded) + "\n");
+        } catch (e) {
+          // 写失败回滚 claim（review P1-2）：占坑在 write 之前，失败不释放会让重试
+          // 同 uuid 永远命中 dedup（谎报已送达）。仅 user 帧参与 claim。
+          if (parsed.type === "user" && typeof parsed.uuid === "string") {
+            this.claudeRuntime.releaseUserUuid(data.runtimeKey, parsed.uuid);
+          }
+          throw e;
+        }
         // 用户消息 / 权限响应 / 控制请求都算 session 活动 → bump updatedAt（分钟截断，同分钟短路）。
         void this.sessionRegistry.recordActivity(data.sessionId);
         // 会话内托盘/快捷键应答路径：转发成功 → 审批中心该卡注销（§6.4 注销点之一）。
@@ -657,31 +671,43 @@ export class ClaudeStreamController {
       };
     }
     // 与 WS open() 同参——CLI 未运行时按 metadata 重拉（--resume），运行中则 no-op 补字段。
-    await this.claudeRuntime.ensureRunning(
-      runtimeKey,
-      metadata.projectPath ?? "",
-      projectName,
-      sessionId,
-      metadata.claudeSessionId,
-      metadata.modelAlias ?? metadata.model,
-      metadata.permissionMode,
-      metadata.effort,
-      metadata.status ? spawnInitialStatus(metadata.status) : undefined,
-    );
-
+    // ensureRunning/write 抛错时释放 claim（review P1-2，见 WS 分支同款注释）——幂等键
+    // 烧掉会让首次失败的重试永远 dedup 谎报。
     const anchorUuid = clientAnchor ?? crypto.randomUUID();
-    const frame: ClaudeStreamClientMessage = {
-      type: "user",
-      message: {
-        role: "user",
-        content: [{ type: "text", text: await this.composeUserText(projectName, sessionId, text) }],
-      },
-      // 客户端生成的锚 id：CLI 对上行 user 消息自带的 uuid 直接采用 → 同一 id 同时是
-      // JSONL 消息 uuid、turn checkpoint 锚、live echo 的 id（实时/回放对齐）。
-      uuid: anchorUuid,
-    };
-    console.log(`[claude-stream] inject dialog: ${runtimeKey}`);
-    await this.claudeRuntime.write(runtimeKey, JSON.stringify(frame) + "\n");
+    // frame 在 try 外声明（try 后的 live echo 引用）；构造留 try 内——composeUserText
+    // 抛错必须走 catch 的 release claim 路径。
+    let frame: ClaudeStreamClientMessage;
+    try {
+      await this.claudeRuntime.ensureRunning(
+        runtimeKey,
+        metadata.projectPath ?? "",
+        projectName,
+        sessionId,
+        metadata.claudeSessionId,
+        metadata.modelAlias ?? metadata.model,
+        metadata.permissionMode,
+        metadata.effort,
+        metadata.status ? spawnInitialStatus(metadata.status) : undefined,
+      );
+
+      frame = {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: await this.composeUserText(projectName, sessionId, text) },
+          ],
+        },
+        // 客户端生成的锚 id：CLI 对上行 user 消息自带的 uuid 直接采用 → 同一 id 同时是
+        // JSONL 消息 uuid、turn checkpoint 锚、live echo 的 id（实时/回放对齐）。
+        uuid: anchorUuid,
+      };
+      console.log(`[claude-stream] inject dialog: ${runtimeKey}`);
+      await this.claudeRuntime.write(runtimeKey, JSON.stringify(frame) + "\n");
+    } catch (e) {
+      if (clientAnchor) this.claudeRuntime.releaseUserUuid(runtimeKey, clientAnchor);
+      throw e;
+    }
     // 与 WS message() user 分支同款：活动时间戳 + live echo（当前与未来订阅者都看得到这条
     // 注入消息——JSONL 由 CLI 自己写，此处不伪造历史；echo 复用 anchorUuid 不再造 synthetic）。
     // turn checkpoint baseline 同款 fire-and-forget；缺路径（数据不完整）与 beginTurnCheckpoint

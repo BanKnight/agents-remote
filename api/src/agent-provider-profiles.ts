@@ -168,8 +168,9 @@ export const getAgentProviderProfile = (provider: AgentProvider | undefined) => 
   return profiles[provider];
 };
 
-// claude 白名单缺省（profile.permissionModes 由启动时 `claude --help` 探测回填，缺失时
-// 回退）——与 session-routes 原内联表同值，抽取为共享函数消除 REST/admin 两层漂移。
+// claude 白名单缺省（profile.permissionModes 由启动时 index.ts 探测回填，探测失败
+// 未回填时用此表）——与 session-routes 原内联表同域，抽取为共享函数消除 REST/admin
+// 两层漂移。manual 含在内（`claude --help` choices 实测含 manual，漏了会误拒合法值）。
 const CLAUDE_PERMISSION_MODE_FALLBACK: readonly string[] = [
   "default",
   "acceptEdits",
@@ -177,7 +178,14 @@ const CLAUDE_PERMISSION_MODE_FALLBACK: readonly string[] = [
   "plan",
   "auto",
   "dontAsk",
+  "manual",
 ];
+
+/** 启动探测回填（index.ts `claude --help` 结果，security-review P2-2：只打日志不回填
+ *  会让白名单恒走 fallback、CLI 新词表项永远进不来）。 */
+export function setClaudePermissionModes(modes: ClaudePermissionMode[]): void {
+  getAgentProviderProfile("claude")!.permissionModes = modes;
+}
 
 /** session_create 的 permissionMode 白名单（M4）：REST（session-routes）与 admin
  *  session_create（mcp-admin-tools）共用单源。provider 词表感知：claude = profile

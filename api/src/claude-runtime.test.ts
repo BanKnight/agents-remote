@@ -1295,7 +1295,8 @@ test("interrupt ack success → turn_interrupted 收口 done + endTurn(false)，
   await Bun.sleep(0);
   expect(endTurnCalls).toEqual([false]);
 
-  // 迟到的 CLI result{error_during_execution}（armed 已在 ack 时清掉）→ 短路，不弹 error。
+  // 迟到的 CLI result{error_during_execution}（plain interrupt 打断 working → armed 保留，
+  // 时刻已重置为 ack）→ 窗口内短路，不弹 error。
   h.internal.captureTurnResultFromLine("rt-key", {
     type: "result",
     subtype: "error_during_execution",
@@ -1320,7 +1321,7 @@ test("interrupt 登记后 request_id 不匹配的 ack → 无状态变化，登�
   const internal = h.internal as StatusHarness["internal"] & {
     registerInterruptRequest: (name: string, requestId: string) => void;
     captureControlResponseFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
-    pendingInterrupts: Map<string, { requestId: string; at: number }>;
+    pendingInterrupts: Map<string, { requestId: string; at: number; cancelQueued: boolean }>;
   };
   internal.registerInterruptRequest("rt-key", "stop-1");
   internal.captureControlResponseFromLine("rt-key", {
@@ -1336,22 +1337,93 @@ test("armed 超窗（>30s）→ 迟到 result 走原 turn_result 逻辑", async 
   const internal = h.internal as StatusHarness["internal"] & {
     registerInterruptRequest: (name: string, requestId: string) => void;
     captureControlResponseFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
-    pendingInterrupts: Map<string, { requestId: string; at: number }>;
+    pendingInterrupts: Map<string, { requestId: string; at: number; cancelQueued: boolean }>;
   };
   internal.registerInterruptRequest("rt-key", "stop-1");
-  // ack success 收口 + armed 清除。之后手工把 pendingInterrupts 放回一个过期 armed
-  //（模拟 idle interrupt 的 ack 无 result 残留，30s 窗口已过）→ 迟到 result 走原逻辑。
+  // ack success 收口 + armed 保留（plain interrupt 打断 working）。之后手工把 armed
+  // 时刻改到 31s 前（模拟 ack 后 CLI 迟迟不发 result、30s 窗口已过）→ 迟到 result 走原逻辑。
   internal.captureControlResponseFromLine("rt-key", {
     type: "control_response",
     response: { request_id: "stop-1", subtype: "success" },
   });
-  internal.pendingInterrupts.set("rt-key", { requestId: "stop-1", at: Date.now() - 31_000 });
+  internal.pendingInterrupts.set("rt-key", {
+    requestId: "stop-1",
+    at: Date.now() - 31_000,
+    cancelQueued: false,
+  });
   h.internal.captureTurnResultFromLine("rt-key", {
     type: "result",
     subtype: "error_during_execution",
     is_error: true,
   });
   expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("error");
+});
+
+test("plain interrupt 打断 working → armed 保留（ack 后仍在台账，短路 CLI 必发的 result）", () => {
+  const h = seedStatusHarness("working");
+  const internal = h.internal as StatusHarness["internal"] & {
+    registerInterruptRequest: (name: string, requestId: string, cancelQueued?: boolean) => void;
+    captureControlResponseFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+    pendingInterrupts: Map<string, { requestId: string; at: number; cancelQueued: boolean }>;
+  };
+  internal.registerInterruptRequest("rt-key", "stop-1");
+  internal.captureControlResponseFromLine("rt-key", {
+    type: "control_response",
+    response: { request_id: "stop-1", subtype: "success" },
+  });
+  // review P1-1：plain flavor 打断 working/blocked 时 CLI 必发 result{error_during_execution}
+  //（M1 实锤）——armed 必须保留短路它；状态已按 turn_interrupted 收口 done。
+  expect(internal.pendingInterrupts.get("rt-key")?.requestId).toBe("stop-1");
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("done");
+});
+
+test("idle 下 plain interrupt ack → armed 不留（无 result 将至，review P1-1）", () => {
+  const h = seedStatusHarness("done");
+  const internal = h.internal as StatusHarness["internal"] & {
+    registerInterruptRequest: (name: string, requestId: string, cancelQueued?: boolean) => void;
+    captureControlResponseFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+    pendingInterrupts: Map<string, { requestId: string; at: number; cancelQueued: boolean }>;
+  };
+  internal.registerInterruptRequest("rt-key", "stop-1");
+  internal.captureControlResponseFromLine("rt-key", {
+    type: "control_response",
+    response: { request_id: "stop-1", subtype: "success" },
+  });
+  // 未打断任何 turn（idle）→ 无迟到 result 可短路 → 30s 窗口只会误吞后续自然 turn。
+  expect(internal.pendingInterrupts.has("rt-key")).toBe(false);
+});
+
+test("cancel_queued ack → armed 即删，后续自然 turn 的 result 正常收口（M2 探针：无 result）", async () => {
+  const h = seedStatusHarness("working");
+  const endTurnCalls: boolean[] = [];
+  h.runtime.setTurnCheckpointer({
+    beginTurn: async () => undefined,
+    endTurn: async (_key: string, isError: boolean) => {
+      endTurnCalls.push(isError);
+    },
+    hasInFlight: () => false,
+    noteOutputUuid: () => undefined,
+    resetSession: () => undefined,
+  } as never);
+  const internal = h.internal as StatusHarness["internal"] & {
+    registerInterruptRequest: (name: string, requestId: string, cancelQueued?: boolean) => void;
+    captureControlResponseFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+    pendingInterrupts: Map<string, { requestId: string; at: number; cancelQueued: boolean }>;
+  };
+  internal.registerInterruptRequest("rt-key", "stop-1", true);
+  internal.captureControlResponseFromLine("rt-key", {
+    type: "control_response",
+    response: { request_id: "stop-1", subtype: "success" },
+  });
+  // cancel_queued flavor：探针实证 CLI 不发 result → armed 立即摘除（否则 30s 窗口内
+  // 后续自然 turn 的 result 被误吞——status 卡 working / checkpoint 不收口悬挂复发）。
+  expect(internal.pendingInterrupts.has("rt-key")).toBe(false);
+  // 用户停止后立刻发下一条 → 自然完成的 result 不被误吞，正常走 turn_result 收口。
+  h.internal.captureTurnResultFromLine("rt-key", { type: "result", is_error: false });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("done");
+  await Bun.sleep(0);
+  // 第一次 endTurn(false) 来自 ack 收口；第二次 endTurn(false) 来自自然 result。
+  expect(endTurnCalls).toEqual([false, false]);
 });
 
 // ── 停止 = 冻结队列（M2）─────────────────────────────────────────────────────
@@ -1369,7 +1441,7 @@ test("holdQueueAndStop: 冻结 relay 队列 + 代发 CLI cancel_queued:true（�
   const internal = runtime as unknown as {
     relays: Map<string, unknown>;
     processes: Map<string, unknown>;
-    pendingInterrupts: Map<string, { requestId: string; at: number }>;
+    pendingInterrupts: Map<string, { requestId: string; at: number; cancelQueued: boolean }>;
   };
   internal.processes.set("rt-key", { sessionId: "agent_1", sessionStatus: "working" });
   internal.relays.set("rt-key", {
@@ -1405,7 +1477,7 @@ test("holdQueueAndStop: relay 缺失 → no-op（不写 stdin、不登记）", (
     writes.push(d);
   };
   const internal = runtime as unknown as {
-    pendingInterrupts: Map<string, { requestId: string; at: number }>;
+    pendingInterrupts: Map<string, { requestId: string; at: number; cancelQueued: boolean }>;
   };
   expect(() => runtime.holdQueueAndStop("missing")).not.toThrow();
   expect(writes).toEqual([]);
@@ -1463,4 +1535,20 @@ test("claimUserUuid: close 清表（进程换代后同 uuid 可重新消费）",
   expect(runtime.claimUserUuid("rt", "u-1")).toBe(true);
   void runtime.close("rt");
   expect(runtime.claimUserUuid("rt", "u-1")).toBe(true);
+});
+
+test("releaseUserUuid: 失败回滚 claim → 同 uuid 重试可再次消费（review P1-2）", () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  expect(runtime.claimUserUuid("rt", "u-1")).toBe(true);
+  // 重复 release 幂等无害；release 不存在的 runtimeKey/uuid 同样无害。
+  runtime.releaseUserUuid("rt", "u-1");
+  runtime.releaseUserUuid("rt", "u-1");
+  runtime.releaseUserUuid("rt", "missing");
+  runtime.releaseUserUuid("other", "u-1");
+  // write 抛错回滚后重试：同 uuid 不再 dedup 谎报 delivered。
+  expect(runtime.claimUserUuid("rt", "u-1")).toBe(true);
+  // 重新占坑后互斥恢复（u-1 已回台账）；非法 uuid 不参与（release 直接 no-op）。
+  expect(runtime.claimUserUuid("rt", "u-1")).toBe(false);
+  expect(runtime.claimUserUuid("rt", "bad uuid!")).toBe(true);
+  runtime.releaseUserUuid("rt", "bad uuid!");
 });

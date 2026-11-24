@@ -1287,11 +1287,7 @@ test("holdCommands moves the queue into held (M2 stop-freeze), broadcasting empt
   relay.enqueueQueuedCommand({ uuid: "u-2", content: "C" });
   received.length = 0;
 
-  const snapshot = relay.holdCommands();
-  expect(snapshot).toEqual([
-    { uuid: "u-1", content: "B" },
-    { uuid: "u-2", content: "C" },
-  ]);
+  relay.holdCommands();
   const frames = received.map((line) => JSON.parse(line) as Record<string, unknown>);
   expect(frames).toEqual([
     { type: "queue_state", entries: [] },
@@ -1307,7 +1303,7 @@ test("holdCommands moves the queue into held (M2 stop-freeze), broadcasting empt
   // 空队列 hold：仍广播两帧——停止动作本身需要全量对齐（清残留 chip），空 queue_held
   // 同时是客户端「停止已生效」的回执。
   received.length = 0;
-  expect(relay.holdCommands()).toEqual([]);
+  relay.holdCommands();
   expect(received.map((line) => (JSON.parse(line) as { type: string }).type)).toEqual([
     "queue_state",
     "queue_held",

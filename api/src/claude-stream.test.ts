@@ -206,6 +206,7 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     const interruptRegistrations: Array<{ key: string; requestId: string }> = [];
     const holdStops: string[] = [];
     const clearHelds: string[] = [];
+    const claimedUuids = new Set<string>();
     const claudeRuntime = {
       write: async (_key: string, data: string) => {
         writes.push(data);
@@ -238,16 +239,17 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       clearHeldQueue: (key: string) => {
         clearHelds.push(key);
       },
-      // M3 发送幂等：有状态迷你实现（Set 互斥），WS 重复帧/injectUserPrompt 幂等
-      // 断言的行为源（真实实现的 FIFO/清理归 claude-runtime.test.ts）。
-      claimUserUuid: (() => {
-        const seen = new Set<string>();
-        return (_key: string, uuid: string) => {
-          if (seen.has(uuid)) return false;
-          seen.add(uuid);
-          return true;
-        };
-      })(),
+      // M3 发送幂等：有状态迷你实现（Set 互斥 + release 回滚，两法共享同一台账），
+      // WS 重复帧/injectUserPrompt 幂等断言的行为源（真实实现的 FIFO/清理归
+      // claude-runtime.test.ts）。
+      claimUserUuid: ((_seen: Set<string>) => (_key: string, uuid: string) => {
+        if (_seen.has(uuid)) return false;
+        _seen.add(uuid);
+        return true;
+      })(claimedUuids),
+      releaseUserUuid: ((_seen: Set<string>) => (_key: string, uuid: string) => {
+        _seen.delete(uuid);
+      })(claimedUuids),
       ensureRunning: opts?.ensureRunningError
         ? async () => {
             throw opts.ensureRunningError;
@@ -651,6 +653,35 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       expect(result.anchorUuid).toBeDefined();
       expect(result.anchorUuid).not.toBe("bad uuid!");
       expect(writes).toHaveLength(1);
+    });
+
+    test("write 失败 → claim 回滚抛错；同 clientRequestId 重试成功送达不 dedup（review P1-2）", async () => {
+      const { controller, writes, injections } = makeController();
+      // 首次 write 抛错（stdin 断裂场景）；releaseUserUuid 走 mock 共享台账回滚。
+      const runtime = (
+        controller as unknown as {
+          claudeRuntime: { write: (key: string, data: string) => Promise<void> };
+        }
+      ).claudeRuntime;
+      const originalWrite = runtime.write.bind(runtime);
+      let failNextWrite = true;
+      runtime.write = async (key: string, data: string) => {
+        if (failNextWrite) {
+          failNextWrite = false;
+          throw new Error("stdin broken");
+        }
+        return originalWrite(key, data);
+      };
+      await expect(
+        controller.injectUserPrompt("demo", "sess-1", "hello", "req-uuid-1"),
+      ).rejects.toThrow("stdin broken");
+      expect(writes).toHaveLength(0);
+      // claim 已回滚：重试同 clientRequestId 正常送达（不是 dedup 短路——dedup 时 writes=0）。
+      const retry = await controller.injectUserPrompt("demo", "sess-1", "hello", "req-uuid-1");
+      expect(retry).toMatchObject({ delivered: true, anchorUuid: "req-uuid-1" });
+      expect(retry.deduplicated).toBeUndefined();
+      expect(writes).toHaveLength(1);
+      expect(injections).toHaveLength(1);
     });
   });
 
