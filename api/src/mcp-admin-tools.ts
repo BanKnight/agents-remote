@@ -46,8 +46,16 @@ export type McpAdminDeps = {
   /** 管理面的审批挂起服务（缺省 = 管理工具不可用，isError 提示未装配）。 */
   approvalService?: McpAdminApprovalService;
   /** 向活 agent 会话投递文本（index.ts 装配，跨 provider 分发；错误带 code）。 */
-  sendToAgent?: (metadata: SessionMetadata, text: string) => Promise<void>;
+  sendToAgent?: (
+    metadata: SessionMetadata,
+    text: string,
+    clientRequestId?: string,
+  ) => Promise<AdminSendOutcome>;
 };
+
+/** admin session_send 的发送结果（M3 发送幂等）：claude dedup 时带 deduplicated/anchorUuid，
+ *  其余 provider 空（codex/acp 无 uuid 幂等概念）。 */
+export type AdminSendOutcome = { deduplicated?: true; anchorUuid?: string };
 
 /** 每请求工具上下文：发起会话身份（hub URL `?origin=` + path 的 project 段）。 */
 export type McpAdminToolContext = {
@@ -372,18 +380,20 @@ export const registerAdminTools = (
     "session_send",
     {
       description:
-        "Send a message (text) to a live agent session (claude/codex/omp). Requires user approval. Returns { delivered: true }. Terminal sessions are not sendable.",
+        "Send a message (text) to a live agent session (claude/codex/omp). Requires user approval. Returns { delivered: true }. Terminal sessions are not sendable. Pass clientRequestId (a uuid) to make the send idempotent: replaying the same clientRequestId will not send twice (deduplicated: true).",
       inputSchema: {
         project: z.string().min(1),
         sessionId: z.string().min(1),
         text: z.string().min(1),
+        clientRequestId: z.string().optional(),
       },
     },
-    async ({ project, sessionId, text }) => {
+    async ({ project, sessionId, text, clientRequestId }) => {
       const gate = await requestManageApproval(deps, ctx, "session_send", {
         project,
         sessionId,
         text,
+        clientRequestId,
       });
       if (gate) return gate;
       try {
@@ -410,8 +420,8 @@ export const registerAdminTools = (
             ],
           };
         }
-        await deps.sendToAgent(metadata, text);
-        return jsonResult({ delivered: true });
+        const outcome = await deps.sendToAgent(metadata, text, clientRequestId);
+        return jsonResult({ delivered: true, ...(outcome?.deduplicated ? outcome : {}) });
       } catch (error) {
         return adminErrorResponse(error);
       }

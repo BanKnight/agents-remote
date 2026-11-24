@@ -10,6 +10,7 @@ import {
   type ClaudePreset,
   type ContextUsageCategory,
   type EffortLevel,
+  MESSAGE_UUID_RE,
 } from "@agents-remote/shared";
 import type { RuntimeResources, RuntimeStream, SessionMetadata } from "./session-registry";
 import {
@@ -337,6 +338,10 @@ export function resolveContextWindow(
  * 取宽松量级即可。窗口过期后 armed 懒惰清除，result 走原 turn_result 逻辑。 */
 const INTERRUPT_ARMED_WINDOW_MS = 30_000;
 
+/** 单 runtime 已消费 uuid 台账的 FIFO 上限。量级参照：CLI 自身进程内幂等窗口是 10k；
+ *  我们只服务「重放/重试去重」，滚窗远小于 CLI 量级即可，防长驻会话无限增长。 */
+const CLAIMED_USER_UUIDS_LIMIT = 2000;
+
 type ClaudeProcess = {
   proc: BunSubprocess;
   generation: number;
@@ -474,6 +479,13 @@ export class ClaudeRuntime implements RuntimeResources {
   // turn 已结束时打断（idle interrupt）实测只回 ack 无 result → armed 残留由
   // INTERRUPT_ARMED_WINDOW_MS 懒惰失效（后续自然 result 走原逻辑）。
   private readonly pendingInterrupts = new Map<string, { requestId: string; at: number }>();
+  // 上行 user uuid 的已消费台账（发送幂等，T3 #5 clientRequestId）：四个入口（WS user
+  // 帧 / REST /message / admin session_send / auto-retry inject）写 stdin 前先
+  // claimUserUuid 占坑，重复 uuid 短路——CLI 侧本就按 uuid 幂等（进程内 10k FIFO +
+  // 跨重启查 JSONL），这里收口的是 api 侧副作用（stdin 双写、live echo、checkpoint
+  // 锚、排队登记）。仅 MESSAGE_UUID_RE 合法 uuid 参与；FIFO 限量防长驻泄漏，
+  // 进程 close/respawn 清空（同 pendingInterrupts 惯例）。
+  private readonly claimedUserUuids = new Map<string, { fifo: string[]; seen: Set<string> }>();
   private readonly runDir: string;
   private readonly settingsStore?: SettingsStore;
   private readonly mcpPort?: number;
@@ -535,6 +547,9 @@ export class ClaudeRuntime implements RuntimeResources {
         // 输入，echo 供当前与重连后的订阅者看到注入）。uuid 生成一次贯穿三方（stdin
         // 行 / echo / 排队登记）——CLI 采纳它为 command_uuid，lifecycle 帧据此对齐。
         const uuid = crypto.randomUUID();
+        // 发送幂等（M3）：注入 uuid 同样入已消费台账——与四入口同表互斥，重放场景
+        // 下不会二次注入（与滚窗限次正交，那是频率闸，这是幂等闸）。
+        if (!this.claimUserUuid(sessionName, uuid)) return;
         const userLine = buildAutoRetryUserLine(message, uuid);
         // 先写后 echo：进程已死时 write 失败 → 不产生幽灵 isUserInput 回显（P3：旧实现
         // 无条件 echo，重生后的同 key relay 会缓冲一条从未发生的输入）。
@@ -661,6 +676,8 @@ export class ClaudeRuntime implements RuntimeResources {
     this.turnCheckpointer?.resetSession(sessionName);
     // 进程销毁 = 一切未决控制请求作废（旧 request_id 的 ack 不会再有意义）。
     this.pendingInterrupts.delete(sessionName);
+    // 进程销毁 = uuid 台账清空（新进程新语境；CLI 跨重启去重查 JSONL，仍兜底）。
+    this.claimedUserUuids.delete(sessionName);
 
     const relay = this.relays.get(sessionName);
     if (relay) {
@@ -842,6 +859,27 @@ export class ClaudeRuntime implements RuntimeResources {
     if (!next) return;
     state.sessionStatus = next;
     this.onSessionStatusChange?.(state.sessionId, next);
+  }
+
+  /** 上行 user uuid 占坑（发送幂等，T3 #5）：首次 true 并入台账；重复 false（调用方
+   *  短路全部副作用）。仅 MESSAGE_UUID_RE 合法 uuid 参与——非法（旧客户端/垃圾帧）
+   *  恒 true 且不入表（现状直写语义不变）。同步无 await：两入口并发同 uuid 时第二
+   *  个必 false，无占位竞态。FIFO 限量 + 进程 close/respawn 清空（见字段注释）。 */
+  claimUserUuid(runtimeKey: string, uuid: string): boolean {
+    if (!MESSAGE_UUID_RE.test(uuid)) return true;
+    let entry = this.claimedUserUuids.get(runtimeKey);
+    if (!entry) {
+      entry = { fifo: [], seen: new Set() };
+      this.claimedUserUuids.set(runtimeKey, entry);
+    }
+    if (entry.seen.has(uuid)) return false;
+    entry.seen.add(uuid);
+    entry.fifo.push(uuid);
+    if (entry.fifo.length > CLAIMED_USER_UUIDS_LIMIT) {
+      const evicted = entry.fifo.shift();
+      if (evicted !== undefined) entry.seen.delete(evicted);
+    }
+    return true;
   }
 
   /** 用户提交消息(STDIN 注入 echo 行)→ working；turn 进行中(working)时折叠登记进
@@ -1061,6 +1099,8 @@ export class ClaudeRuntime implements RuntimeResources {
 
     // spawn 换代 = 旧进程的一切未决控制请求作废（requestId 随旧进程消亡）。
     this.pendingInterrupts.delete(sessionName);
+    // spawn 换代 = uuid 台账清空（同 close；CLI 跨重启去重查 JSONL 兜底）。
+    this.claimedUserUuids.delete(sessionName);
 
     const generation = this.nextGeneration++;
     // 窗口上限判定：与实际 --model 同源（sanitize 后值），alias 经 spawn 时记录的

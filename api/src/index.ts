@@ -508,8 +508,13 @@ export const createFetchHandler =
         if (injectMatch && request.method === "POST") {
           const body = (await request.json().catch(() => null)) as {
             text?: unknown;
+            clientRequestId?: unknown;
           } | null;
           const text = typeof body?.text === "string" ? body.text : "";
+          const clientRequestId =
+            typeof body?.clientRequestId === "string" && body.clientRequestId.length > 0
+              ? body.clientRequestId
+              : undefined;
           if (text.trim().length === 0) {
             return withRefresh(
               jsonError("SESSION_TYPE_INVALID", "Prompt text must not be empty", 400),
@@ -528,6 +533,7 @@ export const createFetchHandler =
             project.name,
             decodeURIComponent(injectMatch[2]!),
             text,
+            clientRequestId,
           );
           if (!result.delivered) {
             return withRefresh(
@@ -2902,10 +2908,19 @@ export const startApi = async () => {
   mcpAdminApprovalService.attach(
     async () => (await runtime.listAliveRuntimeKeys?.()) ?? new Set<string>(),
   );
+  // admin session_send 发送结果（M3 发送幂等）：claude dedup 时带 deduplicated/anchorUuid，
+  // 其余 provider 空（codex/acp 无 uuid 幂等概念）。
+  type AdminSendOutcome = { deduplicated?: true; anchorUuid?: string };
   // admin 向活 agent 会话投递文本（session_send 执行段）：按 provider 分流到各发送通道，
   // 全部仅活会话语义（与 REST 注入先例 index.ts D13 同款）；错误统一带 code（admin 面
   // adminErrorResponse 映射 [CODE] message）。terminal 无无状态注入口 → 明确不支持。
-  const adminSendToAgent = async (metadata: SessionMetadata, text: string): Promise<void> => {
+  // 发送幂等（M3）：claude 路径透传 clientRequestId 到 injectUserPrompt；dedup 以
+  // outcome 返回给工具层（jsonResult 带 deduplicated，幂等重放可区分）。
+  const adminSendToAgent = async (
+    metadata: SessionMetadata,
+    text: string,
+    clientRequestId?: string,
+  ): Promise<AdminSendOutcome> => {
     if (metadata.type !== "agent") {
       throw Object.assign(new Error("Terminal sessions are not sendable"), {
         code: "SESSION_TYPE_INVALID",
@@ -2916,6 +2931,7 @@ export const startApi = async () => {
         metadata.projectName,
         metadata.id,
         text,
+        clientRequestId,
       );
       if (!result.delivered) {
         const message =
@@ -2932,7 +2948,7 @@ export const startApi = async () => {
               : "SESSION_TYPE_INVALID";
         throw Object.assign(new Error(message), { code });
       }
-      return;
+      return result.deduplicated ? { deduplicated: true, anchorUuid: result.anchorUuid } : {};
     }
     if (metadata.provider === "codex") {
       try {
@@ -2942,7 +2958,7 @@ export const startApi = async () => {
           code: "SESSION_STATE_CONFLICT",
         });
       }
-      return;
+      return {};
     }
     // ACP 家族按 transport 分流（与 startAgent 同谓词；omp 现役）。
     const provider = metadata.provider;
@@ -2954,7 +2970,7 @@ export const startApi = async () => {
           code: "SESSION_STATE_CONFLICT",
         });
       }
-      return;
+      return {};
     }
     throw Object.assign(new Error(`Provider ${metadata.provider ?? "unknown"} is not sendable`), {
       code: "SESSION_TYPE_INVALID",

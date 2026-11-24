@@ -492,6 +492,18 @@ export class ClaudeStreamController {
         parsed.type === "control_response" ||
         parsed.type === "control_request"
       ) {
+        // 发送幂等（M3）：带合法 uuid 的 user 帧先占坑，重复帧整体短路（不 write/
+        // 不 echo/不起 checkpoint/不排队登记）——CLI 侧本就按 uuid 幂等，这里收口
+        // api 侧副作用。非法 uuid 不参与（现状直写语义不变）。
+        if (
+          parsed.type === "user" &&
+          typeof parsed.uuid === "string" &&
+          MESSAGE_UUID_RE.test(parsed.uuid) &&
+          !this.claudeRuntime.claimUserUuid(data.runtimeKey, parsed.uuid)
+        ) {
+          console.log(`[claude-stream] duplicate user uuid, dropped: ${data.runtimeKey}`);
+          return;
+        }
         // Client→CLI messages are forwarded to stdin: user text, permission
         // control_response (allow/deny), and control_request actions
         // (set_model / set_permission_mode / interrupt). The CLI switches
@@ -609,6 +621,7 @@ export class ClaudeStreamController {
     projectName: string,
     sessionId: string,
     text: string,
+    clientRequestId?: string,
   ): Promise<SessionPromptInjectResult> {
     const metadata = await this.sessionRegistry.getAgentMetadata(projectName, sessionId);
     if (!metadata || metadata.provider !== "claude") {
@@ -626,6 +639,23 @@ export class ClaudeStreamController {
     }
 
     const runtimeKey = metadata.runtimeKey;
+    // 发送幂等（M3）：客户端可选 clientRequestId（合法 uuid 才参与，非法视同缺省 =
+    // 服务端生成）。claim 前置于 ensureRunning——重复请求不触发 CLI spawn 副作用。
+    // 命中已消费台账 → 幂等重放语义：delivered:true + deduplicated（HTTP 200，调用方
+    // 可区分「本次注入」与「此前已注入」）。
+    const clientAnchor =
+      typeof clientRequestId === "string" && MESSAGE_UUID_RE.test(clientRequestId)
+        ? clientRequestId
+        : null;
+    if (clientAnchor && !this.claudeRuntime.claimUserUuid(runtimeKey, clientAnchor)) {
+      return {
+        delivered: true,
+        projectName,
+        sessionId,
+        deduplicated: true,
+        anchorUuid: clientAnchor,
+      };
+    }
     // 与 WS open() 同参——CLI 未运行时按 metadata 重拉（--resume），运行中则 no-op 补字段。
     await this.claudeRuntime.ensureRunning(
       runtimeKey,
@@ -639,7 +669,7 @@ export class ClaudeStreamController {
       metadata.status ? spawnInitialStatus(metadata.status) : undefined,
     );
 
-    const anchorUuid = crypto.randomUUID();
+    const anchorUuid = clientAnchor ?? crypto.randomUUID();
     const frame: ClaudeStreamClientMessage = {
       type: "user",
       message: {
@@ -678,7 +708,7 @@ export class ClaudeStreamController {
     // chip 显示/撤回回填/重发载荷三处都是污染（人输入的是原文，不是注入上下文）。
     // 入口已早退空文本（empty_text），此处必非空白。
     this.claudeRuntime.reportUserInput(runtimeKey, { uuid: anchorUuid, text });
-    return { delivered: true, projectName, sessionId };
+    return { delivered: true, projectName, sessionId, anchorUuid };
   }
 
   close(socket: StreamSocket) {

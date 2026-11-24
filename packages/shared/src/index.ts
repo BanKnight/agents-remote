@@ -424,12 +424,19 @@ export type GitCommitFileDiffResponse = {
  *  时后台注入。text 为最终 prompt 全文（客户端模板 wiki.injectPrompt + 页面正文拼装）。 */
 export type SessionPromptInjectRequest = {
   text: string;
+  /** 发送幂等（M3）：客户端生成的请求 id（合法 uuid 才参与；非法/缺省 = 服务端生成锚）。
+   *  同 id 重复提交命中已消费台账 → 幂等重放（deduplicated:true，不二次注入）。 */
+  clientRequestId?: string;
 };
 
 export type SessionPromptInjectResponse = {
   delivered: true;
   projectName: string;
   sessionId: string;
+  /** 幂等重放：clientRequestId 命中已消费台账 → 本次未注入（此前已注入过）。 */
+  deduplicated?: true;
+  /** 实际用作 CLI 锚的 uuid（客户端 clientRequestId 或服务端生成；stdin 行/echo/checkpoint 三方同 id）。 */
+  anchorUuid?: string;
 };
 
 export type ProjectListResponse = {

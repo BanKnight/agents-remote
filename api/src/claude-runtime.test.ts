@@ -1426,3 +1426,41 @@ test("clearHeldQueue: forwards to the relay (no relay → silent no-op)", () => 
   expect(cleared).toBe(1);
   expect(() => runtime.clearHeldQueue("missing")).not.toThrow();
 });
+
+// ══ M3 发送幂等：claimUserUuid（四入口同表互斥的幂等闸）══
+
+test("claimUserUuid: 首次 true 入台账，重复 false（跨调用同表互斥）", () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  expect(runtime.claimUserUuid("rt", "u-1")).toBe(true);
+  expect(runtime.claimUserUuid("rt", "u-1")).toBe(false);
+  // 第二条不互相影响（FIFO 台账非单槽）。
+  expect(runtime.claimUserUuid("rt", "u-2")).toBe(true);
+});
+
+test("claimUserUuid: 非法 uuid 不参与 claim（恒 true 且不入表）", () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  expect(runtime.claimUserUuid("rt", "bad uuid!")).toBe(true);
+  expect(runtime.claimUserUuid("rt", "bad uuid!")).toBe(true);
+  const internal = runtime as unknown as {
+    claimedUserUuids: Map<string, { seen: Set<string> }>;
+  };
+  expect(internal.claimedUserUuids.get("rt")).toBeUndefined();
+});
+
+test("claimUserUuid: FIFO 上限驱逐最旧条目（驱逐后同 uuid 可重新消费）", () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  const LIMIT = 2000; // = CLAIMED_USER_UUIDS_LIMIT（模块级私有常量）
+  for (let i = 0; i < LIMIT + 1; i++) {
+    expect(runtime.claimUserUuid("rt", `u-${i}`)).toBe(true);
+  }
+  // u-0 被驱逐：重新 claim 通过；u-LIMIT（最新）仍互斥。
+  expect(runtime.claimUserUuid("rt", "u-0")).toBe(true);
+  expect(runtime.claimUserUuid("rt", `u-${LIMIT}`)).toBe(false);
+});
+
+test("claimUserUuid: close 清表（进程换代后同 uuid 可重新消费）", () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  expect(runtime.claimUserUuid("rt", "u-1")).toBe(true);
+  void runtime.close("rt");
+  expect(runtime.claimUserUuid("rt", "u-1")).toBe(true);
+});

@@ -238,6 +238,16 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       clearHeldQueue: (key: string) => {
         clearHelds.push(key);
       },
+      // M3 发送幂等：有状态迷你实现（Set 互斥），WS 重复帧/injectUserPrompt 幂等
+      // 断言的行为源（真实实现的 FIFO/清理归 claude-runtime.test.ts）。
+      claimUserUuid: (() => {
+        const seen = new Set<string>();
+        return (_key: string, uuid: string) => {
+          if (seen.has(uuid)) return false;
+          seen.add(uuid);
+          return true;
+        };
+      })(),
       ensureRunning: opts?.ensureRunningError
         ? async () => {
             throw opts.ensureRunningError;
@@ -459,6 +469,21 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     expect((echoed.uuid as string).startsWith("injected-")).toBe(true);
   });
 
+  test("duplicate user uuid is dropped entirely (no second write, no second echo — M3 发送幂等)", async () => {
+    const { controller, writes, injections } = makeController();
+    const msg = {
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text: "hello" }] },
+      uuid: "u-dup",
+    };
+    await controller.message(makeSocket(), JSON.stringify(msg));
+    // 同 uuid 重放（网络重试/客户端 bug）：整体短路——CLI 已收到首份，重放不该
+    // 再写 stdin、不该再 echo、不该再登记。
+    await controller.message(makeSocket(), JSON.stringify(msg));
+    expect(writes).toHaveLength(1);
+    expect(injections).toHaveLength(1);
+  });
+
   test("control_request and control_response are forwarded but NOT echoed into the live cache", async () => {
     const { controller, writes, injections } = makeController();
     const cases = [
@@ -598,6 +623,34 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       expect(reportedInputs).toHaveLength(1);
       expect(reportedInputs[0]?.prompt?.text).toBe(text);
       expect(typeof reportedInputs[0]?.prompt?.uuid).toBe("string");
+    });
+
+    test("clientRequestId: 首次注入以它为锚；重放命中台账 → deduplicated 不二次注入", async () => {
+      const { controller, writes, injections } = makeController();
+      const first = await controller.injectUserPrompt("demo", "sess-1", "hello", "req-uuid-1");
+      expect(first).toMatchObject({ delivered: true, anchorUuid: "req-uuid-1" });
+      expect(first.deduplicated).toBeUndefined();
+      expect(writes).toHaveLength(1);
+
+      // 同 id 重放：幂等重放语义（delivered:true + deduplicated），无 write/echo。
+      const replay = await controller.injectUserPrompt("demo", "sess-1", "hello", "req-uuid-1");
+      expect(replay).toMatchObject({
+        delivered: true,
+        deduplicated: true,
+        anchorUuid: "req-uuid-1",
+      });
+      expect(writes).toHaveLength(1);
+      expect(injections).toHaveLength(1);
+    });
+
+    test("clientRequestId 非法 → 视同缺省（服务端生成锚，正常注入）", async () => {
+      const { controller, writes } = makeController();
+      const result = await controller.injectUserPrompt("demo", "sess-1", "hi", "bad uuid!");
+      expect(result.delivered).toBe(true);
+      expect(result.deduplicated).toBeUndefined();
+      expect(result.anchorUuid).toBeDefined();
+      expect(result.anchorUuid).not.toBe("bad uuid!");
+      expect(writes).toHaveLength(1);
     });
   });
 
