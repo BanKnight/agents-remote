@@ -2108,3 +2108,17 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 5. 探针：Part 9 mock 改延迟 fulfill（检测帧 ~800ms 双项 / 更新帧 ~1200ms）制造观察窗，新增 U8-U13（环态就地宽度不变 / 排队态 / 检测 spinner / 完成交叠 / 塌缩出列 / 深链检查中 spinner）；U1 改「2 个更新 ›」、U6 改恰 2 次 + 顺序断言。
 6. i18n：新增 `plugins.updateQueued`（zh「排队中…」）；其余复用 `skills.updating`/`skills.updatedDone`/`skills.checking`。
 7. 双端单源：`SkillUpdatesView` 移动 pluginView 分流与桌面 mainPage 复用不变，四项改动两端自动生效；`MobileSkillDetail` 的 `.cta`/`.ctanote` 成功终态文案常驻**不变**（本批只动清单页 + 组头检测钮）。
+
+### §6.19 停止终态一致 + Stop = 冻结队列（2026-11-24，commits `0f03ba46` + `399e0be5`，M1+M2）
+
+**背景**：t3code spec 深读分册 A 档前两条（Stop holdQueue / interrupt ack≠终态）立项；用户拍板停止语义 = **冻结队列**（撤下排队条目但冻结在服务端，可恢复/放弃，不再随 interrupt 一并丢失）。
+
+**M1 停止终态（api）**：CLI 2.1.325 探针实锤 interrupt 序列 = ack(success) → tool_result 中断帧 → `[Request interrupted by user]` → `result{subtype:"error_during_execution"}`——旧协议文档写 `"interrupted"` 是字段名漂移、旧生产注释「CLI 不发 result」是旧版观察。修复链：状态机加 `turn_interrupted`（working|blocked → done，用户打断 ≠ 错误）；interrupt 转发前登记 request_id，ack success 即收口 + endTurn；30s 窗口短路迟到 result（不弹 error）；停止后首条消息不再被 gate 误判排队（假 chip 闪现修复）。UI 语义（§4.2 状态机）：停止按钮后状态立即 done，不再悬挂 working。
+
+**M2 Stop = 冻结队列（shared+api+web 全链）**：
+- 协议：上行 `queue_hold`/`queue_resume`/`queue_discard`；下行 `queue_held` 帧（broadcast-only 快照，同 `queue_state` 家族五件套惯例：整体替换 / normalizeChatStream skip / 回放缓存排除 / resetSessionState 清理 / 重连种子在 live_end 后）
+- web：Stop 改发 `queue_hold`（不再发本地 interrupt control_request——running 收口归 queue_held 回执，`stopPendingRef` 防重连种子误收口）；chip 区「已冻结 N 条 · 恢复/放弃」；`resumeHeld` 空快照确认后按序重发（新 uuid，`queuedResendRef` 同款桥接）；`discardHeld` 乐观清空
+- CLI 协议事实（2.1.325 实测）：idle/running 下 `cancel_queued:true` 均回 ack `{still_queued, cancelled}`，排队 prompt 不再执行、无 result
+- 取舍记档：①api 代发 `cancel_queued:true` 而非等待 CLI 原生 holdQueue（CLI 无此原语，T3 语义由服务端 `heldCommands` 承载，api 侧队列是权威态）；②respawn/destroy 清空 held（同 queuedCommands 惯例——CLI 进程已换代，队列语义不跨代）；③hold 在无队列时 no-op 仍广播空快照（确认语义恒有回执）
+
+**测试教训**：`act(() => async onCancel())`——sync act 未 await thenable 毒化 React act 内部队列，后续 setState 排队永不 flush，失败形态「setter 跑了但零渲染」且跨测试级联残留（隔离跑通过是判别特征）；async 副作用一律 `await act(async () => { await ... })`。

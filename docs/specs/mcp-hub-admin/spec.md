@@ -127,15 +127,49 @@
 - **WHEN** 目标是 terminal 会话或会话已停止
 - **THEN** 返回明确的会话类型/状态错误，不投递
 
+### Requirement: session_create applies the origin permission ceiling
+
+系统 SHALL 允许 `session_create` 携带可选 `permissionMode`（provider mode 词表白名单校验，校验函数与 REST 建会话层同一单源）创建子会话；缺省 `auto`。发起会话身份在场时，系统 SHALL 读取其 metadata 的 permissionMode 作为特权天花板：请求档位高于 origin 档位即拒绝（`[MODE_ESCALATION_DENIED]`，含 origin/target mode 值），不登记审批卡。档位归一表（跨 provider 名可比）：plan/readonly=0 < default/manual=1 < acceptEdits/dontAsk/auto=2 < bypassPermissions/full=3。origin 无 permissionMode（terminal/旧 metadata）或值不在归一表时无天花板可比，放行。
+
+#### Scenario: Escalation above the origin ceiling is denied
+
+- **WHEN** plan 档的 agent 会话调用 `session_create` 请求 `bypassPermissions`（或缺省 auto，同样高于 plan 档）
+- **THEN** 系统返回 `[MODE_ESCALATION_DENIED]`，不登记审批卡，子会话不创建
+
+#### Scenario: Equal or lower tier passes
+
+- **WHEN** bypassPermissions 档的 origin 调用 `session_create` 请求 `plan`
+- **THEN** 天花板校验通过，审批卡正常弹出，允许后子会话以请求 mode 创建
+
+#### Scenario: Mode outside the provider whitelist
+
+- **WHEN** `permissionMode` 值不在目标 provider 的 mode 词表（如 claude 传未知值）
+- **THEN** 系统返回不支持的 permission mode 错误（`[SESSION_PROVIDER_UNAVAILABLE]`），不登记审批卡
+
+### Requirement: session_create records the origin lineage
+
+系统 SHALL 在 `session_create` 成功创建子会话时，把发起会话身份记入子会话 metadata 的可选 `createdBy`（`{ projectName, sessionId }`）；血缘随 AgentSession / OverviewCandidate 投影带出（调试可见，前端暂不消费）。存量 metadata 无该字段时读取与投影不受影响（可选字段零迁移）；畸形值（形状不符）读取时防御抹除。
+
+#### Scenario: Child session carries lineage
+
+- **WHEN** agent 会话 S（项目 P）经 `session_create` 创建子会话且用户允许
+- **THEN** 子会话 metadata 含 `createdBy = { projectName: P, sessionId: S }`，并在会话投影中可见
+
+#### Scenario: Legacy metadata without lineage
+
+- **WHEN** 读取本能力上线前创建的存量会话 metadata
+- **THEN** `createdBy` 为 undefined，读取与投影行为不变
+
 ## Notes
 
 - origin 信任级别与 hub 现有一致（loopback 本机信任），不做 origin 防伪造；远程暴露面已有统一鉴权层。
 - 管理审批卡与 CLI 审批卡在审批中心同管道并存（transports 按 provider 派发，互不误触发）。
 - v1 明确不做：terminal 会话的 `session_send`、发起会话 blocked 状态联动、`project_rename`、admin 工具的专用 UI 卡、mcp.json admin 开关的 web UI、origin 会话关闭时审批卡主动撤销（120 秒超时兜底）。
-- 错误面统一 `[CODE] message` 文本（如 `[ADMIN_ORIGIN_MISSING]`、`[ADMIN_APPROVAL_DENIED]`、`[ADMIN_APPROVAL_TIMEOUT]`、`[SESSION_NOT_FOUND]`）。
+- 错误面统一 `[CODE] message` 文本（如 `[ADMIN_ORIGIN_MISSING]`、`[ADMIN_APPROVAL_DENIED]`、`[ADMIN_APPROVAL_TIMEOUT]`、`[SESSION_NOT_FOUND]`、`[MODE_ESCALATION_DENIED]`）。
 
 ## 来源
 
 - 批次 1（观察面 + hub 基座）：commit `6667d8f`
 - 批次 2（审批闸 + 管理面 + origin 注入 + 超时链）：commit `2f93a58`
 - 批次 3（真实链路探针 + e2e + 本 spec）：探针 `scripts/probe-admin-approval.mjs`（claude allow/deny 全链 origin 穿线 + codex 配置接受性，10/10）+ e2e `e2e/admin-approval.spec.ts`（web 卡渲染/恒红/应答形状）
+- 批次 4（特权天花板 + 血缘，T3 spec 参考清单 M4）：commit `ce9fc424`

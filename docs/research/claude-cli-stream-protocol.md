@@ -1620,7 +1620,7 @@ UI 终态词应优先取 `terminal_reason`（→ tone），缺失时回退 `subt
 { "type": "control_request", "request_id": "uuid", "request": { "subtype": "interrupt" } }
 ```
 
-发送后 CLI 返回 `result` 消息（`subtype: "interrupted"`）。
+发送后 CLI 依次回：`control_response`（success ack）→ 若有工具在跑则 tool_result 中断帧 → 助手文本 `[Request interrupted by user]` → `result{subtype:"error_during_execution"}`（CLI 2.1.325 实测，2026-11-24；带 `cancel_queued:true` 时 ack payload 为 `{still_queued, cancelled}`，且排队 prompt 不再执行）。注意 `result.subtype` 的 `"interrupted"` 值在信封 schema 中合法但生产流未观测到（旧文档写 `"interrupted"` 是字段名漂移）；api 端以 ack 即收口 turn（`turn_interrupted` 信号 + 30s 窗口短路迟到的 `error_during_execution` result）。
 
 ---
 
@@ -1630,7 +1630,7 @@ UI 终态词应优先取 `terminal_reason`（→ tone），缺失时回退 `subt
 
 | subtype | 方向 | 用途 |
 |---|---|---|
-| `interrupt` | host→CLI | 中断当前正在运行的 turn |
+| `interrupt` | host→CLI | 中断当前正在运行的 turn；可带 `cancel_queued:true` 一并清空命令队列（每条被清命令产一个 cancelled 帧，ack payload `{still_queued, cancelled}`） |
 | `set_model` | host→CLI | 设置后续 turn 使用的模型 |
 | `set_permission_mode` | host→CLI | 设置工具权限模式 |
 | `set_max_thinking_tokens` | host→CLI | 设置 extended thinking token 上限 |
