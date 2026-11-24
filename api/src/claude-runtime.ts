@@ -400,6 +400,11 @@ export function buildSpawnEnv(
 ): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...parentEnv };
   if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort;
+  // 新版 CLI 的 auto mode 默认走 server-side classifier（safety check 调上游模型）且无
+  // 本地 fallback——上游网关不支持该请求时 auto mode 恒不可用（用户 2026-11-24 补充的
+  // 根因修正：此前归因「网关不路由 haiku」是同链表层现象）。host 侧缺省关（上游能力是
+  // 部署环境事实）；父 env 已显式设值时以父 env 为准（网关升级支持后可在部署层开）。
+  if (env.CLAUDE_CODE_AUTO_MODE_SERVER === undefined) env.CLAUDE_CODE_AUTO_MODE_SERVER = "0";
   if (provider?.apiKey) {
     env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
     env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST = "1";

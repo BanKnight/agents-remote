@@ -759,13 +759,23 @@ test("injectLiveLine is a no-op when the relay is missing or destroyed", () => {
 
 test("buildSpawnEnv inherits parent env without injecting when effort/provider absent", () => {
   const env = buildSpawnEnv(undefined, undefined, { PATH: "/usr/bin" });
-  expect(env).toEqual({ PATH: "/usr/bin" });
+  // 缺省注入 CLAUDE_CODE_AUTO_MODE_SERVER=0（上游网关不支持 server-side classifier，
+  // 见 buildSpawnEnv 注释）；其余保持恒等。
+  expect(env).toEqual({ PATH: "/usr/bin", CLAUDE_CODE_AUTO_MODE_SERVER: "0" });
   expect(env.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
   expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
   expect(env.ANTHROPIC_API_KEY).toBeUndefined();
   expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
   // 无 provider 不设 host-managed 标志——用户经 ~/.claude/settings.json 自管端点不受影响。
   expect(env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBeUndefined();
+});
+
+test("buildSpawnEnv respects explicit parent CLAUDE_CODE_AUTO_MODE_SERVER (网关升级后可开)", () => {
+  const env = buildSpawnEnv(undefined, undefined, {
+    PATH: "/usr/bin",
+    CLAUDE_CODE_AUTO_MODE_SERVER: "1",
+  });
+  expect(env.CLAUDE_CODE_AUTO_MODE_SERVER).toBe("1");
 });
 
 test("buildSpawnEnv injects CLAUDE_CODE_EFFORT_LEVEL from effort", () => {
