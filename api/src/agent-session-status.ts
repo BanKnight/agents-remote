@@ -14,6 +14,7 @@ export type AgentStatusSignal =
   // turn_activity 的 TUI 等价物,但 blocked 下有效(工具真执行了 = 审批真解决了)
   | { kind: "approval_requested" } // can_use_tool 登记;仅 working → blocked
   | { kind: "approval_settled" } // 该 runtime 最后一张审批卡注销,回 working
+  | { kind: "turn_interrupted" } // 用户主动打断(interrupt ack success 即收口,不等 CLI result)
   | { kind: "turn_result"; isError: boolean } // result 帧
   | { kind: "close" }; // 用户关闭会话
 
@@ -45,6 +46,17 @@ export function nextAgentSessionStatus(
     case "approval_settled":
       // deny/allow/撤卡后 CLI 继续本轮 turn → 回 working(仅 blocked 有意义)。
       return current === "blocked" ? "working" : undefined;
+    case "turn_interrupted":
+      // 用户主动打断 = 正常收尾,不是错误(≠ turn_result{isError:true} 的 error 态):
+      // working/blocked → done;idle/done/error 无 turn 可断(幂等短路),closed 吸收。
+      // 协议事实(2026-11-24 探针,CLI 2.1.325 无头 stream-json):interrupt 打断执行中
+      // turn 时 CLI 发 ack(success) → tool_result 中断帧 → [Request interrupted by user]
+      // → result{subtype:"error_during_execution",is_error:true}——不是协议文档
+      // claude-cli-stream-protocol.md 所写的 subtype:"interrupted"(字段名漂移),更不是
+      // 旧版生产注释的「CLI 不发 result」。error_during_execution 语义上是 CLI 对
+      // 「turn 非自然完成」的机械分类,用户主动打断不该被渲染成 error 红态,api 端在
+      // ack 时即以本信号收口(见 claude-runtime capture 链),后续 result 不再迁移。
+      return current === "working" || current === "blocked" ? "done" : undefined;
     case "turn_result":
       // turn 结束:正常 done / 出错 error(最近一轮结果态,存活到被替换);
       // closed 吸收(关闭后的 late stdout 不再翻状态)。

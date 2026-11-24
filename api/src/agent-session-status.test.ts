@@ -61,6 +61,18 @@ describe("nextAgentSessionStatus", () => {
     ).toBeUndefined();
   });
 
+  test("turn_interrupted:working/blocked → done(用户打断非 error);idle/done/error 幂等短路;closed 吸收", () => {
+    // 有 turn 可断：working/blocked → done。
+    expect(nextAgentSessionStatus("working", { kind: "turn_interrupted" })).toBe("done");
+    expect(nextAgentSessionStatus("blocked", { kind: "turn_interrupted" })).toBe("done");
+    // 无 turn 可断：终态/空闲不迁移（done/error 已是「最近一轮」结果态）。
+    expect(nextAgentSessionStatus("idle", { kind: "turn_interrupted" })).toBeUndefined();
+    expect(nextAgentSessionStatus("done", { kind: "turn_interrupted" })).toBeUndefined();
+    expect(nextAgentSessionStatus("error", { kind: "turn_interrupted" })).toBeUndefined();
+    // closed 吸收。
+    expect(nextAgentSessionStatus("closed", { kind: "turn_interrupted" })).toBeUndefined();
+  });
+
   test("close:非 closed → closed;closed 幂等", () => {
     expect(nextAgentSessionStatus("working", { kind: "close" })).toBe("closed");
     expect(nextAgentSessionStatus("idle", { kind: "close" })).toBe("closed");

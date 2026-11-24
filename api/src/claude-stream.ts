@@ -487,6 +487,13 @@ export class ClaudeStreamController {
         // control_response correlation holds. Default config (alias mapping,
         // 1m off) resolves to the same value → no-op.
         let forwarded: ClaudeStreamClientMessage = parsed;
+        // 用户打断登记（M1 停止终态一致）：转发前登记 (runtimeKey, request_id)——
+        // stdout 的 interrupt ack（control_response success）在 runtime capture 链收口
+        // turn 状态 + 释放 checkpoint；CLI 迟到的 result{error_during_execution} 由
+        // armed 窗口短路（不弹 error）。详见 claude-runtime capture 注释。
+        if (parsed.type === "control_request" && parsed.request.subtype === "interrupt") {
+          this.claudeRuntime.registerInterruptRequest(data.runtimeKey, parsed.request_id);
+        }
         if (parsed.type === "control_request" && parsed.request.subtype === "set_model") {
           const resolved = await this.claudeRuntime.resolveControlModel(parsed.request.model);
           if (resolved && resolved !== parsed.request.model) {

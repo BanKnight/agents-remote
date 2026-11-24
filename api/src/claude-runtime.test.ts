@@ -1262,3 +1262,94 @@ test("turn 状态机: closed 吸收后续信号;close 幂等", () => {
   h.internal.captureTurnResultFromLine("rt-key", { type: "result", is_error: false });
   expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("closed");
 });
+
+// ── M1 停止终态一致：interrupt ack 收口（turn_interrupted）──────────────────
+// 协议事实（2026-11-24 探针，CLI 2.1.325）：interrupt 打断执行中 turn → ack(success)
+// → tool_result 中断帧 → result{error_during_execution, is_error:true}；turn 已结束
+// 时打断 → 仅 ack 无 result。用户打断是正常收尾（done），不是 error。
+
+test("interrupt ack success → turn_interrupted 收口 done + endTurn(false)，迟到 result 不弹 error", async () => {
+  const h = seedStatusHarness("working");
+  const endTurnCalls: boolean[] = [];
+  h.runtime.setTurnCheckpointer({
+    beginTurn: async () => undefined,
+    endTurn: async (_key: string, isError: boolean) => {
+      endTurnCalls.push(isError);
+    },
+    hasInFlight: () => false,
+    noteOutputUuid: () => undefined,
+    resetSession: () => undefined,
+  } as never);
+
+  const internal = h.internal as StatusHarness["internal"] & {
+    registerInterruptRequest: (name: string, requestId: string) => void;
+    captureControlResponseFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+  };
+  internal.registerInterruptRequest("rt-key", "stop-1");
+  internal.captureControlResponseFromLine("rt-key", {
+    type: "control_response",
+    response: { request_id: "stop-1", subtype: "success" },
+  });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("done");
+  expect(h.statusCalls).toEqual([{ sessionId: "agent_1", status: "done" }]);
+  await Bun.sleep(0);
+  expect(endTurnCalls).toEqual([false]);
+
+  // 迟到的 CLI result{error_during_execution}（armed 已在 ack 时清掉）→ 短路，不弹 error。
+  h.internal.captureTurnResultFromLine("rt-key", {
+    type: "result",
+    subtype: "error_during_execution",
+    is_error: true,
+  });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("done");
+  expect(h.statusCalls).toEqual([{ sessionId: "agent_1", status: "done" }]);
+});
+
+test("无 interrupt 登记的 result → 原 turn_result 逻辑（error 不受影响）", () => {
+  const h = seedStatusHarness("working");
+  h.internal.captureTurnResultFromLine("rt-key", {
+    type: "result",
+    subtype: "error_during_execution",
+    is_error: true,
+  });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("error");
+});
+
+test("interrupt 登记后 request_id 不匹配的 ack → 无状态变化，登记保留", () => {
+  const h = seedStatusHarness("working");
+  const internal = h.internal as StatusHarness["internal"] & {
+    registerInterruptRequest: (name: string, requestId: string) => void;
+    captureControlResponseFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+    pendingInterrupts: Map<string, { requestId: string; at: number }>;
+  };
+  internal.registerInterruptRequest("rt-key", "stop-1");
+  internal.captureControlResponseFromLine("rt-key", {
+    type: "control_response",
+    response: { request_id: "other-id", subtype: "success" },
+  });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("working");
+  expect(internal.pendingInterrupts.get("rt-key")?.requestId).toBe("stop-1");
+});
+
+test("armed 超窗（>30s）→ 迟到 result 走原 turn_result 逻辑", async () => {
+  const h = seedStatusHarness("working");
+  const internal = h.internal as StatusHarness["internal"] & {
+    registerInterruptRequest: (name: string, requestId: string) => void;
+    captureControlResponseFromLine: (name: string, parsed: Record<string, unknown> | null) => void;
+    pendingInterrupts: Map<string, { requestId: string; at: number }>;
+  };
+  internal.registerInterruptRequest("rt-key", "stop-1");
+  // ack success 收口 + armed 清除。之后手工把 pendingInterrupts 放回一个过期 armed
+  //（模拟 idle interrupt 的 ack 无 result 残留，30s 窗口已过）→ 迟到 result 走原逻辑。
+  internal.captureControlResponseFromLine("rt-key", {
+    type: "control_response",
+    response: { request_id: "stop-1", subtype: "success" },
+  });
+  internal.pendingInterrupts.set("rt-key", { requestId: "stop-1", at: Date.now() - 31_000 });
+  h.internal.captureTurnResultFromLine("rt-key", {
+    type: "result",
+    subtype: "error_during_execution",
+    is_error: true,
+  });
+  expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("error");
+});

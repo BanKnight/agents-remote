@@ -332,6 +332,11 @@ export function resolveContextWindow(
   return CONTEXT_WINDOW_DEFAULT;
 }
 
+/** interrupt ack 后 CLI result 的 armed 消费窗口。实测 ack → result 间隔 <100ms；窗口只防
+ * 「armed 残留误吞很久之后的自然 result」（idle interrupt 只回 ack 无 result 的残留场景），
+ * 取宽松量级即可。窗口过期后 armed 懒惰清除，result 走原 turn_result 逻辑。 */
+const INTERRUPT_ARMED_WINDOW_MS = 30_000;
+
 type ClaudeProcess = {
   proc: BunSubprocess;
   generation: number;
@@ -462,6 +467,13 @@ export class ClaudeRuntime implements RuntimeResources {
   // fork spawn 的就绪等待方（runtimeKey → resolve）：captureSystemInitFromLine 的 fork
   // 分支回填新 id + reloadHistory 之后结算，rollbackConversation 才返回。
   private readonly forkWaiters = new Map<string, () => void>();
+  // 用户打断的未决登记（runtimeKey → { requestId, at }）：claude-stream verbatim 转发
+  // interrupt control_request 时登记；ack success 即以 turn_interrupted 收口状态 +
+  // endTurn（checkpoint 同步释放），随后 CLI 的 result{error_during_execution} 被
+  // captureTurnResultFromLine 的 armed 窗口短路（不迁移 done→error）。
+  // turn 已结束时打断（idle interrupt）实测只回 ack 无 result → armed 残留由
+  // INTERRUPT_ARMED_WINDOW_MS 懒惰失效（后续自然 result 走原逻辑）。
+  private readonly pendingInterrupts = new Map<string, { requestId: string; at: number }>();
   private readonly runDir: string;
   private readonly settingsStore?: SettingsStore;
   private readonly mcpPort?: number;
@@ -647,6 +659,8 @@ export class ClaudeRuntime implements RuntimeResources {
     }
     this.autoRetry.destroySession(sessionName);
     this.turnCheckpointer?.resetSession(sessionName);
+    // 进程销毁 = 一切未决控制请求作废（旧 request_id 的 ack 不会再有意义）。
+    this.pendingInterrupts.delete(sessionName);
 
     const relay = this.relays.get(sessionName);
     if (relay) {
@@ -854,6 +868,15 @@ export class ClaudeRuntime implements RuntimeResources {
     this.applyStatusSignal(runtimeKey, { kind: "approval_settled" });
   }
 
+  /** 用户打断登记（claude-stream verbatim 转发 interrupt control_request 时调）。
+   *  同 runtime 重复点击停止 = 新 request_id 覆盖旧登记（CLI 对旧 id 的 ack 处理不受
+   *  影响——capture 按 requestId 匹配，旧 id 的 ack 到达时对不上当前登记即走 waiter
+   *  no-op 路径，无害）。进程销毁/respawn 时清理。 */
+  registerInterruptRequest(runtimeKey: string, requestId: string): void {
+    if (!this.processes.has(runtimeKey)) return;
+    this.pendingInterrupts.set(runtimeKey, { requestId, at: Date.now() });
+  }
+
   // ── 自动重试待发注入的控制桥（M8 03d `.count` 取消/立即重试）──────────────
   // sessionName = metadata.runtimeKey（SessionRegistry 的 session.runtimeKey）。
 
@@ -1004,6 +1027,9 @@ export class ClaudeRuntime implements RuntimeResources {
       mcpArgs,
       fork,
     );
+
+    // spawn 换代 = 旧进程的一切未决控制请求作废（requestId 随旧进程消亡）。
+    this.pendingInterrupts.delete(sessionName);
 
     const generation = this.nextGeneration++;
     // 窗口上限判定：与实际 --model 同源（sanitize 后值），alias 经 spawn 时记录的
@@ -1399,21 +1425,29 @@ export class ClaudeRuntime implements RuntimeResources {
   }
 
   // result 帧 = turn 边界：迁移 done/error(状态机)。放 captureApprovalSettledFromLine
-  // 之后——同帧先 settled 回 working、再被 done/error 覆盖,最终态正确。复用
-  // isErrorResultLine(auto-retry 同源判定,单一代码路径)。
+  // 之后——同帧先 settled 回 working、再被 done-result 覆盖,最终态正确。
+  // interrupt armed 残留窗口内短路：ack 已以 turn_interrupted 收口（done），CLI 迟到的
+  // result{error_during_execution} 是机械分类不是用户可感知错误，不再迁移（done→error
+  // 弹红）。endTurn 已在 ack 时收口，这里无需重复（endTurn 幂等，重复也 no-op）。
+  // 窗口外 armed 懒惰清除后走原逻辑。复用 isErrorResultLine（auto-retry 同源判定，
+  // 单一代码路径）。
   private captureTurnResultFromLine(
     sessionName: string,
     parsed: Record<string, unknown> | null,
   ): void {
-    if (parsed?.type === "result") {
-      const isError = isErrorResultLine(parsed);
-      this.applyStatusSignal(sessionName, {
-        kind: "turn_result",
-        isError,
-      });
-      // endpoint 捕获 fire-and-forget：失败/超时只降级（本轮无快照），不影响状态机。
-      void this.turnCheckpointer?.endTurn(sessionName, isError).catch(() => undefined);
+    if (parsed?.type !== "result") return;
+    const armed = this.pendingInterrupts.get(sessionName);
+    if (armed) {
+      this.pendingInterrupts.delete(sessionName);
+      if (Date.now() - armed.at < INTERRUPT_ARMED_WINDOW_MS) return;
     }
+    const isError = isErrorResultLine(parsed);
+    this.applyStatusSignal(sessionName, {
+      kind: "turn_result",
+      isError,
+    });
+    // endpoint 捕获 fire-and-forget：失败/超时只降级（本轮无快照），不影响状态机。
+    void this.turnCheckpointer?.endTurn(sessionName, isError).catch(() => undefined);
   }
 
   // Fold current permissionMode from live stdout so the replay seed init carries
@@ -1538,15 +1572,31 @@ export class ClaudeRuntime implements RuntimeResources {
     return promise;
   }
 
-  // stdout 的 control_response 结算：只服务本类发起的 get_context_usage（waiter 匹配）；
-  // 客户端发起的控制请求应答无 waiter，安全 no-op。
+  // stdout 的 control_response 结算：两路——①本类发起的 get_context_usage（waiter 匹配）；
+  // ②用户打断的 interrupt ack（pendingInterrupts 匹配 + success）：即以 turn_interrupted
+  // 收口状态（done 非 error）+ endTurn 释放 checkpoint。客户端发起的其它控制请求
+  // （set_model 等）两路都不命中，安全 no-op。
   private captureControlResponseFromLine(
     sessionName: string,
     parsed: Record<string, unknown> | null,
   ): void {
     if (!parsed || parsed.type !== "control_response") return;
-    const requestId = (parsed.response as { request_id?: unknown } | undefined)?.request_id;
+    const response = parsed.response as { request_id?: unknown; subtype?: unknown } | undefined;
+    const requestId = response?.request_id;
     if (typeof requestId !== "string") return;
+    const interrupt = this.pendingInterrupts.get(sessionName);
+    if (interrupt && interrupt.requestId === requestId && response?.subtype === "success") {
+      // 打断收口（T3 #2「interrupt ack ≠ 终态」的正向应用：ack 是权威信号本身——CLI
+      // 对执行中 turn 必发 result{error_during_execution}，但那会把用户打断标成 error；
+      // 在 ack 即收口状态（done）+ endTurn 释放 checkpoint，登记保留为 armed（时刻重置
+      // 为 ack），captureTurnResultFromLine 据此短路迟到的 result（不迁移 done→error）。
+      // idle interrupt（turn 已结束）无 result → armed 残留由窗口懒惰失效。
+      interrupt.at = Date.now();
+      this.applyStatusSignal(sessionName, { kind: "turn_interrupted" });
+      // endTurn 幂等（inFlight 无则 no-op）；isError=false = 用户打断是正常收尾。
+      void this.turnCheckpointer?.endTurn(sessionName, false).catch(() => undefined);
+      return;
+    }
     const waiter = this.contextUsageWaiters.get(requestId);
     if (!waiter) return;
     this.contextUsageWaiters.delete(requestId);

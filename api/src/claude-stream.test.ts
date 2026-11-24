@@ -203,6 +203,7 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     const reportedInputs: Array<{ key: string; prompt?: { uuid: string; text: string } }> = [];
     const closedKeys: string[] = [];
     const effortUpdates: Array<{ sessionId: string; effort: string }> = [];
+    const interruptRegistrations: Array<{ key: string; requestId: string }> = [];
     const claudeRuntime = {
       write: async (_key: string, data: string) => {
         writes.push(data);
@@ -222,6 +223,11 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
         opts?.resolveControlModel ?? ((m: string | undefined) => Promise.resolve(m)),
       close: async (key: string) => {
         closedKeys.push(key);
+      },
+      // M1 停止终态一致：interrupt 转发前登记 (runtimeKey, request_id)，
+      // stdout ack 收口 turn 状态归 claude-runtime.test.ts；这里只记录 WS 层传了什么。
+      registerInterruptRequest: (key: string, requestId: string) => {
+        interruptRegistrations.push({ key, requestId });
       },
       ensureRunning: opts?.ensureRunningError
         ? async () => {
@@ -260,7 +266,15 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       {} as RuntimeResources,
       sessionRegistry as unknown as SessionRegistry,
     );
-    return { controller, writes, injections, reportedInputs, closedKeys, effortUpdates };
+    return {
+      controller,
+      writes,
+      injections,
+      reportedInputs,
+      closedKeys,
+      effortUpdates,
+      interruptRegistrations,
+    };
   };
 
   test("set_model control_request is forwarded to CLI stdin (in-process switch, no restart)", async () => {
@@ -316,7 +330,7 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
   });
 
   test("user / interrupt control_request / control_response are forwarded to CLI stdin", async () => {
-    const { controller, writes } = makeController();
+    const { controller, writes, interruptRegistrations } = makeController();
     const cases = [
       { type: "user", message: { role: "user", content: [{ type: "text", text: "hi" }] } },
       { type: "control_request", request_id: "r1", request: { subtype: "interrupt" } },
@@ -326,6 +340,10 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       await controller.message(makeSocket(), JSON.stringify(c));
     }
     expect(writes).toEqual(cases.map((c) => `${JSON.stringify(c)}\n`));
+    // M1：interrupt 转发前登记 request_id（ack 收口用）；其它帧不登记。
+    expect(interruptRegistrations).toEqual([
+      { key: "ar-claude-claude-demo-sess-1", requestId: "r1" },
+    ]);
   });
 
   test("gen-ui loader block is appended to WS user frame; live echo stays clean", async () => {
