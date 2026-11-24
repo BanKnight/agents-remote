@@ -816,7 +816,7 @@ describe("useClaudeSession websocket lifecycle", () => {
     expect(result.current.storeAdapter.messages.length).toBeGreaterThan(0);
   });
 
-  test("onCancel sends interrupt request", async () => {
+  test("onCancel sends queue_hold (stop = freeze queue, M2)", async () => {
     const { result } = renderHook(() => useClaudeSession("proj", "sess"));
     await waitFor(() => expect(MockSocket.instances).toHaveLength(1));
     const socket = MockSocket.instances[0];
@@ -826,7 +826,7 @@ describe("useClaudeSession websocket lifecycle", () => {
       await result.current.storeAdapter.onCancel();
     });
 
-    expect(socket.sent.some((s) => s.includes('"subtype":"interrupt"'))).toBe(true);
+    expect(socket.sent.some((s) => s.includes('"type":"queue_hold"'))).toBe(true);
   });
 
   test("live messages flow through pipeline to storeAdapter", async () => {
@@ -1323,6 +1323,94 @@ describe("useClaudeSession queued commands（服务端快照 + 撤回）", () =>
     // 回执到达但闭包为 null：sent 无新增 user 帧。
     expect(socket.sent.length).toBe(beforeCount);
     expect(result.current.queuedCommands).toHaveLength(0);
+  });
+
+  test("M2 冻结队列：onCancel 发 queue_hold（不再发本地 interrupt），queue_held 快照驱动冻结列表", async () => {
+    const { result, socket } = await openSocket();
+
+    await act(async () => {
+      await result.current.storeAdapter.onCancel();
+    });
+    // 停止 = 冻结：上行 queue_hold；本地不再登记 interrupt control_request
+    //（收口归 api 代发 CLI interrupt 的 queue_held 回执）。
+    const kinds = socket.sent.map((s) => (JSON.parse(s) as { type: string }).type);
+    expect(kinds).toContain("queue_hold");
+    expect(kinds).not.toContain("control_request");
+
+    // 服务端冻结快照到达 → 整体替换 heldCommands（多端同见）。
+    act(() => {
+      socket.emit({
+        type: "queue_held",
+        entries: [
+          { uuid: "u-b", content: "B-prompt" },
+          { uuid: "u-c", content: "C-prompt" },
+        ],
+      } as never);
+    });
+    expect(result.current.heldCommands).toHaveLength(2);
+
+    // 恢复/放弃后的空快照 → 清空。
+    act(() => {
+      socket.emit({ type: "queue_held", entries: [] } as never);
+    });
+    expect(result.current.heldCommands).toHaveLength(0);
+  });
+
+  test("resumeHeld 发 queue_resume，空 queue_held 确认后按序重发（新 uuid）", async () => {
+    const { result, socket } = await openSocket();
+
+    act(() => {
+      socket.emit({
+        type: "queue_held",
+        entries: [
+          { uuid: "u-b", content: "B-prompt" },
+          { uuid: "u-c", content: "C-prompt" },
+        ],
+      } as never);
+    });
+
+    const before = socket.sent.length;
+    act(() => result.current.resumeHeld());
+    // 确认前不重发（早发会被 api 未清的 hold 状态竞态）。
+    expect(socket.sent.length).toBe(before + 1);
+    expect(JSON.parse(socket.sent[socket.sent.length - 1]!)).toMatchObject({
+      type: "queue_resume",
+    });
+
+    // api 确认（空 queue_held）→ 按序重发 B、C（新 uuid，CLI 视作新命令）。
+    act(() => {
+      socket.emit({ type: "queue_held", entries: [] } as never);
+    });
+    const resentUser = socket.sent
+      .slice(before + 1)
+      .map((s) => JSON.parse(s) as { type: string; uuid?: string })
+      .filter((m) => m.type === "user");
+    expect(resentUser).toHaveLength(2);
+    expect(resentUser[0]!.uuid).not.toBe("u-b");
+    expect(resentUser[1]!.uuid).not.toBe("u-c");
+    // 重发后 held 已被空快照清空。
+    expect(result.current.heldCommands).toHaveLength(0);
+  });
+
+  test("discardHeld 乐观清空 + 发 queue_discard，不重发", async () => {
+    const { result, socket } = await openSocket();
+
+    act(() => {
+      socket.emit({
+        type: "queue_held",
+        entries: [{ uuid: "u-b", content: "B-prompt" }],
+      } as never);
+    });
+    expect(result.current.heldCommands).toHaveLength(1);
+
+    const before = socket.sent.length;
+    act(() => result.current.discardHeld());
+    // 乐观清空（即时反馈）+ 上行 discard；无 user 重发帧。
+    expect(result.current.heldCommands).toHaveLength(0);
+    expect(socket.sent.length).toBe(before + 1);
+    expect(JSON.parse(socket.sent[socket.sent.length - 1]!)).toMatchObject({
+      type: "queue_discard",
+    });
   });
 });
 

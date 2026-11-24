@@ -3160,6 +3160,17 @@ export type ClaudeQueueState = {
   entries: ClaudeQueuedCommand[];
 };
 
+// 停止冻结队列快照（M2，用户拍板 T3 holdQueue 语义）：web Stop → 上行 queue_hold →
+// api 把服务端排队快照整体挪入 held（清空 queuedCommands）并代发 CLI
+// cancel_queued:true（自带 interrupt 语义，探针实证 idle 下也安全回 ack），本帧 =
+// 冻结条目快照。broadcast-only，语义同 queue_state 家族：整体替换、不入 liveLines、
+// 重连种子在 live_end 后；恢复/放弃后广播空 entries。本帧同时是「停止已生效」的
+// 客户端回执（web 据此收口 running 指示，见 claude-adapter onCancel 注释）。
+export type ClaudeQueueHeldState = {
+  type: "queue_held";
+  entries: ClaudeQueuedCommand[];
+};
+
 export type ClaudeResult = {
   type: "result";
   subtype: "success" | "error_max_turns" | "error" | "interrupted";
@@ -3402,6 +3413,14 @@ export type ClaudeStreamClientMessage =
       effort: EffortLevel;
     }
   | {
+      // 停止 = 冻结队列（M2）与恢复/放弃：纯 api 侧编排，不转发 CLI stdin。
+      // hold: 排队快照挪入服务端 held + 代发 CLI cancel_queued:true（停止 turn +
+      // 清 CLI 队列，条目保存在 api 可恢复）；resume: 清 held，客户端收到空
+      // queue_held 后按序重发条目（新 uuid，沿用撤单条重发惯例）；discard: 清 held。
+      // 编排见 claude-runtime.holdQueueAndStop / clearHeldQueue。
+      type: "queue_hold" | "queue_resume" | "queue_discard";
+    }
+  | {
       // 应用层心跳(客户端发起,保活)。服务端 claude-stream message handler 早返回,
       // 不进业务处理。详见 web/src/lib/ws-heartbeat.ts。
       type: "ping";
@@ -3453,6 +3472,7 @@ export type SessionStreamServerMessage =
   | ClaudeVcsStateChanged
   | ClaudeCommandLifecycle
   | ClaudeQueueState
+  | ClaudeQueueHeldState
   | ClaudeResult
   | ClaudeCostState
   | ClaudeControlRequest

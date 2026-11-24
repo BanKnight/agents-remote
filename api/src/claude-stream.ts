@@ -434,6 +434,25 @@ export class ClaudeStreamController {
         return;
       }
 
+      // 停止 = 冻结队列（M2）与恢复/放弃：纯 api 侧编排，不转发 stdin。
+      // hold: 冻结排队快照 + 代发 CLI cancel_queued:true（编排见
+      // claude-runtime.holdQueueAndStop）；resume/discard: 清 held（重发由 web 收到
+      // 空 queue_held 后按序执行）。
+      if (
+        parsed.type === "queue_hold" ||
+        parsed.type === "queue_resume" ||
+        parsed.type === "queue_discard"
+      ) {
+        console.log(`[claude-stream] message ${parsed.type}: ${data.runtimeKey}`);
+        if (parsed.type === "queue_hold") {
+          this.claudeRuntime.holdQueueAndStop(data.runtimeKey);
+        } else {
+          this.claudeRuntime.clearHeldQueue(data.runtimeKey);
+        }
+        void this.sessionRegistry.recordActivity(data.sessionId);
+        return;
+      }
+
       // Per-session effort switch: the CLI has no runtime effort switch on a
       // direct-pull host, so persist metadata.effort + relaunch the CLI
       // (--resume + new CLAUDE_CODE_EFFORT_LEVEL) + close every WS for the

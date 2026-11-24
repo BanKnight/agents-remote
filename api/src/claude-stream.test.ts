@@ -204,6 +204,8 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     const closedKeys: string[] = [];
     const effortUpdates: Array<{ sessionId: string; effort: string }> = [];
     const interruptRegistrations: Array<{ key: string; requestId: string }> = [];
+    const holdStops: string[] = [];
+    const clearHelds: string[] = [];
     const claudeRuntime = {
       write: async (_key: string, data: string) => {
         writes.push(data);
@@ -228,6 +230,13 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       // stdout ack 收口 turn 状态归 claude-runtime.test.ts；这里只记录 WS 层传了什么。
       registerInterruptRequest: (key: string, requestId: string) => {
         interruptRegistrations.push({ key, requestId });
+      },
+      // M2 冻结队列：纯 api 侧编排（不转发 stdin），这里记录调用。
+      holdQueueAndStop: (key: string) => {
+        holdStops.push(key);
+      },
+      clearHeldQueue: (key: string) => {
+        clearHelds.push(key);
       },
       ensureRunning: opts?.ensureRunningError
         ? async () => {
@@ -274,6 +283,8 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
       closedKeys,
       effortUpdates,
       interruptRegistrations,
+      holdStops,
+      clearHelds,
     };
   };
 
@@ -327,6 +338,19 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
     };
     await controller.message(makeSocket(), JSON.stringify(msg));
     expect(writes).toEqual([`${JSON.stringify(msg)}\n`]);
+  });
+
+  test("queue_hold / queue_resume / queue_discard are api-side orchestration (never forwarded to CLI stdin)", async () => {
+    const { controller, writes, holdStops, clearHelds } = makeController();
+    const socket = makeSocket();
+    await controller.message(socket, JSON.stringify({ type: "queue_hold" }));
+    await controller.message(socket, JSON.stringify({ type: "queue_resume" }));
+    await controller.message(socket, JSON.stringify({ type: "queue_discard" }));
+    // 纯 api 侧编排：不转发 stdin、不回 error 帧。
+    expect(writes).toEqual([]);
+    expect(socket.sends).toEqual([]);
+    expect(holdStops).toEqual(["ar-claude-claude-demo-sess-1"]);
+    expect(clearHelds).toEqual(["ar-claude-claude-demo-sess-1", "ar-claude-claude-demo-sess-1"]);
   });
 
   test("user / interrupt control_request / control_response are forwarded to CLI stdin", async () => {

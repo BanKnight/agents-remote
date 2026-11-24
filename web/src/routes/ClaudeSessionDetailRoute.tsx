@@ -416,6 +416,9 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
     deltaEnter,
     queuedCommands,
     cancelQueuedEntry,
+    heldCommands,
+    resumeHeld,
+    discardHeld,
   } = useClaudeSession(
     projectName,
     sessionId,
@@ -661,6 +664,9 @@ export function ClaudeChat({ projectName, sessionId }: { projectName: string; se
                                   onRemoveCanvasContext={clearCanvasContext}
                                   queuedCommands={queuedCommands}
                                   onCancelQueuedEntry={cancelQueuedEntry}
+                                  heldCommands={heldCommands}
+                                  onResumeHeld={resumeHeld}
+                                  onDiscardHeld={discardHeld}
                                 />
                               </ComposerPrimitive.Root>
                             </ComposerPrimitive.TriggerPopoverRoot>
@@ -3738,6 +3744,9 @@ function ComposerWithInterrupt({
   onRemoveCanvasContext,
   queuedCommands,
   onCancelQueuedEntry,
+  heldCommands,
+  onResumeHeld,
+  onDiscardHeld,
 }: {
   opusplanActive: boolean | undefined;
   currentModel?: string;
@@ -3765,6 +3774,12 @@ function ComposerWithInterrupt({
   queuedCommands: ClaudeQueuedCommand[];
   /** 撤回单条排队 prompt（cancel_queued 全清 + 剩余按序重发，adapter 单源）。 */
   onCancelQueuedEntry: (uuid: string) => void;
+  /** 停止冻结的排队条目（queue_held 快照驱动，M2 停止 = 冻结）。 */
+  heldCommands: ClaudeQueuedCommand[];
+  /** 恢复冻结条目（adapter 确认后按序重发）。 */
+  onResumeHeld: () => void;
+  /** 放弃冻结条目。 */
+  onDiscardHeld: () => void;
 }) {
   const { t } = useT();
   // thread.isRunning drives the stop overlay for assistant turns; compactStatus
@@ -3924,6 +3939,37 @@ function ComposerWithInterrupt({
                 </button>
               </div>
             ))}
+          </div>
+        ) : null}
+        {/* 冻结队列区（M2 停止 = 冻结）：Stop 撤下的排队条目冻结在服务端（queue_held
+            快照驱动，多端同见），恢复 = api 确认后按序重发，放弃 = 丢弃。 */}
+        {heldCommands.length > 0 ? (
+          <div className="flex flex-col gap-1 px-3 pt-2.5">
+            <div className="flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-inset px-2 py-1.5">
+              <LucideIcon className="size-3.5 shrink-0 text-on-surface-muted" name="pause" />
+              <span
+                className="min-w-0 flex-1 truncate text-xs font-medium text-on-surface-soft"
+                title={heldCommands.map((entry) => entry.content).join("\n")}
+              >
+                {t("claude.queue.heldCount", { count: heldCommands.length })}
+              </span>
+              <button
+                aria-label={t("claude.queue.heldResume")}
+                className="cursor-pointer rounded px-1.5 py-0.5 text-xs font-medium text-on-surface-soft transition hover:bg-on-surface/10 hover:text-on-surface"
+                onClick={onResumeHeld}
+                type="button"
+              >
+                {t("claude.queue.heldResume")}
+              </button>
+              <button
+                aria-label={t("claude.queue.heldDiscard")}
+                className="cursor-pointer rounded px-1.5 py-0.5 text-xs font-medium text-on-surface-soft transition hover:bg-on-surface/10 hover:text-on-surface"
+                onClick={onDiscardHeld}
+                type="button"
+              >
+                {t("claude.queue.heldDiscard")}
+              </button>
+            </div>
           </div>
         ) : null}
         <ComposerPrimitive.Input

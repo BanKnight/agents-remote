@@ -877,6 +877,37 @@ export class ClaudeRuntime implements RuntimeResources {
     this.pendingInterrupts.set(runtimeKey, { requestId, at: Date.now() });
   }
 
+  /** 停止 = 冻结队列（M2，用户拍板 T3 holdQueue 语义）编排入口（claude-stream
+   *  queue_hold 分支调）：
+   *  ① relay 排队快照整体挪入 held（广播空 queue_state + queue_held 快照——后者同时
+   *     是客户端「停止已生效」的回执，web 据此收口 running 指示）；
+   *  ② 代发 CLI cancel_queued:true control_request（= interrupt + 清 CLI 队列；
+   *     探针实证 idle 下同样安全回 ack {still_queued:[],cancelled:[]} 无 result，
+   *     running + 排队时排队条目不再执行）。
+   *  ack 走 M1 interrupt 登记链：收口 turn 状态 + 释放 checkpoint；CLI 迟到的
+   *  result{error_during_execution} 由 armed 窗口短路（用户主动停止 ≠ error）。
+   *  write 失败（进程已死）时登记残留由 30s armed 窗口懒惰失效，无害。 */
+  holdQueueAndStop(runtimeKey: string): void {
+    const relay = this.relays.get(runtimeKey);
+    if (!relay) return;
+    relay.holdCommands();
+    const requestId = crypto.randomUUID();
+    this.registerInterruptRequest(runtimeKey, requestId);
+    const line = JSON.stringify({
+      type: "control_request",
+      request_id: requestId,
+      request: { subtype: "interrupt", cancel_queued: true },
+    });
+    void this.write(runtimeKey, `${line}\n`).catch(() => undefined);
+  }
+
+  /** 恢复/放弃冻结队列（queue_resume / queue_discard）：清 held + 广播空 queue_held。
+   *  恢复的重发由 web 收到空快照后按序执行（adapter resumeHeld，新 uuid 沿用撤单条
+   *  重发惯例）；api 侧两动作同实现。 */
+  clearHeldQueue(runtimeKey: string): void {
+    this.relays.get(runtimeKey)?.clearHeldCommands();
+  }
+
   // ── 自动重试待发注入的控制桥（M8 03d `.count` 取消/立即重试）──────────────
   // sessionName = metadata.runtimeKey（SessionRegistry 的 session.runtimeKey）。
 

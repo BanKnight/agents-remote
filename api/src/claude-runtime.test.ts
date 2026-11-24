@@ -1353,3 +1353,76 @@ test("armed 超窗（>30s）→ 迟到 result 走原 turn_result 逻辑", async 
   });
   expect(h.internal.processes.get("rt-key")?.sessionStatus).toBe("error");
 });
+
+// ── 停止 = 冻结队列（M2）─────────────────────────────────────────────────────
+
+test("holdQueueAndStop: 冻结 relay 队列 + 代发 CLI cancel_queued:true（登记为 interrupt）", () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  const writes: string[] = [];
+  (runtime as unknown as { write: (k: string, d: string) => Promise<void> }).write = async (
+    _k,
+    d,
+  ) => {
+    writes.push(d);
+  };
+  let holdCalls = 0;
+  const internal = runtime as unknown as {
+    relays: Map<string, unknown>;
+    processes: Map<string, unknown>;
+    pendingInterrupts: Map<string, { requestId: string; at: number }>;
+  };
+  internal.processes.set("rt-key", { sessionId: "agent_1", sessionStatus: "working" });
+  internal.relays.set("rt-key", {
+    isDestroyed: false,
+    holdCommands: () => {
+      holdCalls += 1;
+      return [{ uuid: "u-1", content: "B" }];
+    },
+    injectLiveLine: () => {},
+  });
+
+  runtime.holdQueueAndStop("rt-key");
+  expect(holdCalls).toBe(1);
+  expect(writes).toHaveLength(1);
+  const frame = JSON.parse(writes[0]!) as {
+    type: string;
+    request_id: string;
+    request: { subtype: string; cancel_queued?: boolean };
+  };
+  expect(frame.type).toBe("control_request");
+  expect(frame.request).toEqual({ subtype: "interrupt", cancel_queued: true });
+  // M1 登记：ack（control_response success）到达时按同一 request_id 收口 turn 状态。
+  expect(internal.pendingInterrupts.get("rt-key")?.requestId).toBe(frame.request_id);
+});
+
+test("holdQueueAndStop: relay 缺失 → no-op（不写 stdin、不登记）", () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  const writes: string[] = [];
+  (runtime as unknown as { write: (k: string, d: string) => Promise<void> }).write = async (
+    _k,
+    d,
+  ) => {
+    writes.push(d);
+  };
+  const internal = runtime as unknown as {
+    pendingInterrupts: Map<string, { requestId: string; at: number }>;
+  };
+  expect(() => runtime.holdQueueAndStop("missing")).not.toThrow();
+  expect(writes).toEqual([]);
+  expect(internal.pendingInterrupts.has("missing")).toBe(false);
+});
+
+test("clearHeldQueue: forwards to the relay (no relay → silent no-op)", () => {
+  const runtime = new ClaudeRuntime(tmpdir());
+  let cleared = 0;
+  const internal = runtime as unknown as { relays: Map<string, unknown> };
+  internal.relays.set("rt-key", {
+    isDestroyed: false,
+    clearHeldCommands: () => {
+      cleared += 1;
+    },
+  });
+  runtime.clearHeldQueue("rt-key");
+  expect(cleared).toBe(1);
+  expect(() => runtime.clearHeldQueue("missing")).not.toThrow();
+});

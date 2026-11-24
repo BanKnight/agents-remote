@@ -1931,6 +1931,7 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
     msg.type === "agent-name" ||
     msg.type === "queue-operation" ||
     msg.type === "queue_state" ||
+    msg.type === "queue_held" ||
     msg.type === "last-prompt" ||
     msg.type === "session_init" ||
     msg.type === "history_start" ||
@@ -3580,6 +3581,11 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // applyMessageScalarState 的 queue_state 分支处理，此处静默 skip 不落 fallback。
     if (msg.type === "queue_state") continue;
 
+    // queue_held: 停止冻结快照（M2），同 queue_state 家族——broadcast-only、标量
+    // 副作用（冻结列表替换 + 停止/恢复确认）在 applyMessageScalarState 处理，
+    // 此处静默 skip 不落 fallback。
+    if (msg.type === "queue_held") continue;
+
     // ═══ Other (fallback) ═══
     const fallback = messageToThreadLike(msg);
     if (fallback) items.push({ kind: "fallback", ui: fallback });
@@ -4359,6 +4365,15 @@ export function useClaudeSession(
   // 走 ref 桥接：sendToSocket 定义在 applyMessageScalarState 之后，后者若直接
   // 引用前者（useCallback deps 数组求值）会 TDZ。
   const queuedResendRef = useRef<(() => void) | null>(null);
+  // 冻结队列（M2 停止 = 冻结）：queue_held 快照整体替换（同 queue_state 家族）。
+  // 快照帧同时是「停止已生效」的客户端回执（stopPendingRef 见 onCancel 注释）。
+  const [heldCommands, setHeldCommands] = useState<ClaudeQueuedCommand[]>([]);
+  // 恢复重发闭包（resumeHeld 构造，queue_held 空快照到达后消费）——必须等 api
+  // 清 held 的空快照确认后再重发：早发会被 api 侧未清的 hold 状态竞态。
+  const heldResendRef = useRef<(() => void) | null>(null);
+  // 本地停止未确认标志：onCancel 置位，收到 queue_held 帧消费（设 interruptAtIndex
+  // 收口 running）。重连种子不误收口（resetSessionState 清 ref）。
+  const stopPendingRef = useRef(false);
   const setQueuedCommandsSync = useCallback(
     (updater: (prev: ClaudeQueuedCommand[]) => ClaudeQueuedCommand[]) => {
       queuedCommandsRef.current = updater(queuedCommandsRef.current);
@@ -4634,6 +4649,27 @@ export function useClaudeSession(
       // 仅快照到达驱动状态；command_lifecycle 的清理职责已上收 api relay。
       if (msg.type === "queue_state") {
         setQueuedCommandsSync(() => msg.entries);
+        return;
+      }
+
+      // queue_held（停止冻结快照，M2）：整体替换冻结列表（同 queue_state 快照语义）。
+      // 本帧同时承载两个确认语义：
+      // ① stopPendingRef 在场 = 本端发起的停止已生效 → 收口 running 指示
+      //    （interruptAtIndex = 当前 raw 末尾，与旧 interrupt ack 虚拟收口同款）；
+      // ② heldResendRef 在场 = 恢复请求已被 api 确认（held 已清）→ 按序重发冻结
+      //    条目（新 uuid，CLI 视作新命令；turn 已停时 gate 不登记、CLI 直接执行）。
+      // 重连种子也走本帧——ref 已被 resetSessionState 清空 → 只更新列表。
+      if (msg.type === "queue_held") {
+        setHeldCommands(msg.entries);
+        if (stopPendingRef.current) {
+          stopPendingRef.current = false;
+          setInterruptAtIndex(rawMessagesRef.current.length - 1);
+        }
+        if (heldResendRef.current) {
+          const resend = heldResendRef.current;
+          heldResendRef.current = null;
+          resend();
+        }
         return;
       }
 
@@ -5033,6 +5069,11 @@ export function useClaudeSession(
     queuedCommandsRef.current = [];
     setQueuedCommands([]);
     queuedResendRef.current = null;
+    // 冻结列表同款先清再等种子快照；停止未确认标志一并复位（重连种子 queue_held
+    // 不得被当作本端停止回执误收口 running）。
+    setHeldCommands([]);
+    heldResendRef.current = null;
+    stopPendingRef.current = false;
     setLastPrompt(null);
     setSessionLeafUuid(null);
     setRetryInfo(null);
@@ -5487,7 +5528,9 @@ export function useClaudeSession(
       const shouldCacheReplayLine = (msg: SessionStreamServerMessage): boolean => {
         // queue_state 是 broadcast-only 快照（不入 liveLines/JSONL），重连由服务端
         // live_end 后重新种子——缓存它只会留下陈旧快照（真实队列可能已推进）。
+        // queue_held（M2 冻结快照）同款。
         if (msg.type === "queue_state") return false;
+        if (msg.type === "queue_held") return false;
         if (!deltaReplayRef.current) return true;
         const uuid = getMessageUuid(msg);
         return !(uuid && messageMapRef.current.has(uuid));
@@ -6048,17 +6091,14 @@ export function useClaudeSession(
     // labeled "interrupted" rather than "failed". Harmless when no compaction
     // is active — a fresh status:compacting clears it before the next result.
     compactInterruptedRef.current = true;
-    const requestId = crypto.randomUUID();
-    setPendingControlRequests((prev) => {
-      const next = new Map(prev);
-      next.set(requestId, { kind: "interrupt" });
-      return next;
-    });
-    sendToSocket({
-      type: "control_request",
-      request_id: requestId,
-      request: { subtype: "interrupt" },
-    });
+    // 停止 = 冻结队列（M2）：上行 queue_hold → api 冻结排队快照 + 代发 CLI
+    // cancel_queued:true（= interrupt + 清 CLI 队列）。api 广播的 queue_held 快照
+    // 帧是「停止已生效」回执：queue_held 分支按 stopPendingRef 收口 running 指示
+    //（设 interruptAtIndex）——不再依赖本地 control_request/ack 虚拟收口（request_id
+    // 归 api 生成，web 无法匹配）。断线等异常面：resetSessionState 清 stopPendingRef，
+    // 重连后由 shell status 广播自愈。
+    stopPendingRef.current = true;
+    sendToSocket({ type: "queue_hold" });
   }, [sendToSocket]);
 
   // ── 撤回排队 prompt（cancel_queued:true 全清 + 剩余重发）─────────────
@@ -6125,6 +6165,34 @@ export function useClaudeSession(
     sendCancelQueuedRequest();
   }, [sendCancelQueuedRequest, setQueuedCommandsSync]);
 
+  // ── 冻结队列恢复/放弃（M2 停止 = 冻结）───────────────────────────────
+
+  /** 恢复冻结条目：api 清 held（广播空 queue_held 确认）后按序重发（新 uuid）。
+   *  重发闭包走 ref 桥接（sendToSocket 定义顺序同 queuedResendRef 模式）；不乐观
+   *  清本地 held——等空快照到达，失败时条目仍在可重试。turn 已停时重发帧直接执行
+   *  （gate 不登记），仍在跑时经 gate 入队回 chip。 */
+  const resumeHeld = useCallback(() => {
+    const entries = heldCommands;
+    if (entries.length === 0) return;
+    heldResendRef.current = () => {
+      for (const entry of entries) {
+        sendToSocket({
+          type: "user",
+          message: { role: "user", content: [{ type: "text", text: entry.content }] },
+          uuid: crypto.randomUUID(),
+        });
+      }
+    };
+    sendToSocket({ type: "queue_resume" });
+  }, [heldCommands, sendToSocket]);
+
+  /** 放弃冻结条目：api 清 held（广播空快照同值收敛）；本地乐观清空即时反馈。 */
+  const discardHeld = useCallback(() => {
+    setHeldCommands([]);
+    heldResendRef.current = null;
+    sendToSocket({ type: "queue_discard" });
+  }, [sendToSocket]);
+
   const storeAdapter = useMemo<ExternalStoreAdapter<ThreadMessageLike>>(
     () => ({
       messages: renderedMessages,
@@ -6172,6 +6240,12 @@ export function useClaudeSession(
     cancelQueuedEntry,
     /** 撤回全部排队 prompt（全清不重发） */
     cancelAllQueued,
+    /** 停止冻结的排队条目（queue_held 快照；空 = 无冻结态） */
+    heldCommands,
+    /** 恢复冻结条目（api 确认后按序重发） */
+    resumeHeld,
+    /** 放弃冻结条目 */
+    discardHeld,
     lastPrompt,
     sessionLeafUuid,
     retryInfo,

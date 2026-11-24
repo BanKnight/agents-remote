@@ -238,14 +238,16 @@ test("ClaudeSessionRelay always sends history+output markers even when empty", a
   );
 
   const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
-  // session_init + history_start + history_end + output_start + output_end + queue seed = 6
-  expect(messages).toHaveLength(6);
+  // session_init + history_start + history_end + output_start + output_end +
+  // queue seed + held seed = 7
+  expect(messages).toHaveLength(7);
   expect(messages[0]).toMatchObject({ type: "session_init", resume: false });
   expect(messages[1]).toMatchObject({ type: "history_start", count: 0 });
   expect(messages[2]).toMatchObject({ type: "history_end" });
   expect(messages[3]).toMatchObject({ type: "live_start", count: 0 });
   expect(messages[4]).toMatchObject({ type: "live_end" });
   expect(messages[5]).toEqual({ type: "queue_state", entries: [] });
+  expect(messages[6]).toEqual({ type: "queue_held", entries: [] });
 
   relay.destroy();
 });
@@ -305,9 +307,10 @@ test("ClaudeSessionRelay broadcasts live output after batch", async () => {
   const outputEnd = messages.findIndex((msg) => msg.type === "live_end");
   const liveMessages = messages.slice(outputEnd + 1);
 
-  expect(liveMessages).toHaveLength(2);
+  expect(liveMessages).toHaveLength(3);
   expect(liveMessages[0]).toEqual({ type: "queue_state", entries: [] }); // 无条件种子
-  expect(liveMessages[1]).toEqual(JSON.parse(live1));
+  expect(liveMessages[1]).toEqual({ type: "queue_held", entries: [] }); // 冻结种子
+  expect(liveMessages[2]).toEqual(JSON.parse(live1));
 
   relay.destroy();
 });
@@ -731,9 +734,10 @@ test("ClaudeSessionRelay coalesces consecutive thinking_tokens in the live buffe
   const afterBatch = live
     .slice(liveEndIdx + 1)
     .map((l) => JSON.parse(l) as Record<string, unknown>);
-  expect(afterBatch).toHaveLength(4);
+  expect(afterBatch).toHaveLength(5);
   expect(afterBatch[0]).toEqual({ type: "queue_state", entries: [] });
-  expect(afterBatch.slice(1).map((m) => m.estimated_tokens)).toEqual([5, 20, 39]);
+  expect(afterBatch[1]).toEqual({ type: "queue_held", entries: [] });
+  expect(afterBatch.slice(2).map((m) => m.estimated_tokens)).toEqual([5, 20, 39]);
 
   // 2) A subscriber joining LATER replays only the LAST coalesced row from the
   //    live batch — earlier cumulative values are superseded and dropped.
@@ -1022,10 +1026,11 @@ test("ClaudeSessionRelay sends empty batches when the anchor is the last line", 
   expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 0 });
   const liveStart = messages.findIndex((msg) => msg.type === "live_start");
   expect(messages[liveStart]).toMatchObject({ type: "live_start", count: 0 });
-  // markers + init + queue seed（delta 重连也收无条件种子——空快照即 stale chips
-  // 修正帧）, no data rows
-  expect(messages).toHaveLength(6);
+  // markers + init + queue seed + held seed（delta 重连也收无条件种子——空快照即
+  // stale chips 修正帧）, no data rows
+  expect(messages).toHaveLength(7);
   expect(messages[5]).toEqual({ type: "queue_state", entries: [] });
+  expect(messages[6]).toEqual({ type: "queue_held", entries: [] });
 
   relay.destroy();
 });
@@ -1263,6 +1268,83 @@ test("queue_state broadcasts are transient (never buffered into liveLines)", asy
     type: "queue_state",
     entries: [{ uuid: "u-1", content: "B" }],
   });
+
+  relay.destroy();
+});
+
+test("holdCommands moves the queue into held (M2 stop-freeze), broadcasting empty queue_state + full queue_held", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  received.length = 0;
+  relay.enqueueQueuedCommand({ uuid: "u-1", content: "B" });
+  relay.enqueueQueuedCommand({ uuid: "u-2", content: "C" });
+  received.length = 0;
+
+  const snapshot = relay.holdCommands();
+  expect(snapshot).toEqual([
+    { uuid: "u-1", content: "B" },
+    { uuid: "u-2", content: "C" },
+  ]);
+  const frames = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(frames).toEqual([
+    { type: "queue_state", entries: [] },
+    {
+      type: "queue_held",
+      entries: [
+        { uuid: "u-1", content: "B" },
+        { uuid: "u-2", content: "C" },
+      ],
+    },
+  ]);
+
+  // 空队列 hold：仍广播两帧——停止动作本身需要全量对齐（清残留 chip），空 queue_held
+  // 同时是客户端「停止已生效」的回执。
+  received.length = 0;
+  expect(relay.holdCommands()).toEqual([]);
+  expect(received.map((line) => (JSON.parse(line) as { type: string }).type)).toEqual([
+    "queue_state",
+    "queue_held",
+  ]);
+
+  relay.destroy();
+});
+
+test("held snapshot is the reconnect seed (after live_end) and clearHeldCommands empties it", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+  relay.enqueueQueuedCommand({ uuid: "u-1", content: "B" });
+  relay.holdCommands();
+
+  // 重连订阅者：held 快照在 live_end 后补发（broadcast-only 家族同 queue_state 种子）。
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const liveEndIdx = messages.findIndex((m) => m.type === "live_end");
+  expect(messages[liveEndIdx + 2]).toEqual({
+    type: "queue_held",
+    entries: [{ uuid: "u-1", content: "B" }],
+  });
+
+  // 空 held 时 clear 是 no-op（不广播）；有 held 时广播空快照。
+  received.length = 0;
+  relay.clearHeldCommands();
+  const frames = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(frames).toEqual([{ type: "queue_held", entries: [] }]);
+  received.length = 0;
+  relay.clearHeldCommands();
+  expect(received).toHaveLength(0);
 
   relay.destroy();
 });

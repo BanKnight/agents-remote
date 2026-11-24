@@ -79,6 +79,10 @@ export class ClaudeSessionRelay {
   // state" pattern so every client (any device, any reconnect) sees the same
   // queue via queue_state snapshots.
   private queuedCommands: ClaudeQueuedCommand[] = [];
+  // 停止冻结队列（M2）：queue_hold 把 queuedCommands 整体挪入这里（CLI 侧已清），
+  // 条目保存在服务端可恢复/放弃。销毁时随队列一起清空（同 queuedCommands 惯例：
+  // 进程换代 = 冻结态作废）。
+  private heldCommands: ClaudeQueuedCommand[] = [];
 
   async activate(projectPath: string, claudeSessionId: string | undefined): Promise<void> {
     if (this.phase !== "init") return;
@@ -218,6 +222,13 @@ export class ClaudeSessionRelay {
     // IS the correction. ~40B on the common empty path.
     try {
       onData(this.queueStateLine());
+    } catch {
+      /* subscriber error shouldn't block replay */
+    }
+    // 冻结快照同款种子语义（同 queue_state：broadcast-only、重连必须最后补发）。
+    // 客户端只在本地有未确认停止时把该帧当停止回执（防重连种子误收口 running）。
+    try {
+      onData(this.queueHeldLine());
     } catch {
       /* subscriber error shouldn't block replay */
     }
@@ -373,8 +384,37 @@ export class ClaudeSessionRelay {
     this.broadcast(this.queueStateLine());
   }
 
+  // 停止冻结（M2）：把排队快照整体挪入 held、清空 queued，广播空 queue_state +
+  // queue_held 快照。无条目时也广播（停止动作本身需要一次全量对齐：清残留 chip +
+  // 空 held 快照同时是客户端「停止已生效」的回执，见 claude-adapter onCancel）。
+  // 返回快照供调用方（claude-runtime）决定 CLI 侧编排；CLI 队列清理后迟到的
+  // cancelled 帧驱动 removeQueuedCommand 对空队列是 no-op（不广播）。
+  holdCommands(): ClaudeQueuedCommand[] {
+    if (this.isDestroyed) return [];
+    const snapshot = this.queuedCommands;
+    this.queuedCommands = [];
+    this.heldCommands = snapshot;
+    this.broadcast(this.queueStateLine());
+    this.broadcast(this.queueHeldLine());
+    return snapshot;
+  }
+
+  // 恢复/放弃（M2）：清 held + 广播空 queue_held。两者 api 侧行为相同（条目已在
+  // 快照帧交给客户端——恢复的重发由 web 在收到空快照后按序执行，见 adapter
+  // resumeHeld）；无 held 时 no-op 不广播（幂等）。
+  clearHeldCommands(): void {
+    if (this.isDestroyed) return;
+    if (this.heldCommands.length === 0) return;
+    this.heldCommands = [];
+    this.broadcast(this.queueHeldLine());
+  }
+
   private queueStateLine(): string {
     return JSON.stringify({ type: "queue_state", entries: this.queuedCommands });
+  }
+
+  private queueHeldLine(): string {
+    return JSON.stringify({ type: "queue_held", entries: this.heldCommands });
   }
 
   // Inject a line into the live buffer AND broadcast it. Unlike injectLine
@@ -395,6 +435,7 @@ export class ClaudeSessionRelay {
     this.historyLines = [];
     this.liveLines = [];
     this.queuedCommands = [];
+    this.heldCommands = [];
     this.subscribers.clear();
   }
 
