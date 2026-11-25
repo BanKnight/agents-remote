@@ -1,74 +1,74 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-25 21:20（**tmux -e 载体批 `5a5a462a` 落地并已推送**——臂2 实验
-> 全过、用户 TUI pane 实测吃到新载体；泄漏会话/pane 全清理）
+> 最后更新：2026-11-26 07:30（**#11 队列重物化全批落地**：M1 `0dec6e4c` + M2
+> `3aa1e43f` + review 修正 `24617ac4` 已 commit，待 push；文档记档 §6.20 +
+> handoff 已 save。dev 演练 1/2 实质 PASS）
 
 ## 一句话状态
 
-auto mode「TUI 恒弹审批」全案收官：真根因 = CLI env 消费视图建立在 spawn 时刻
-process.env **快照键集合**上（getPreSettingsEnvSnapshot，bundle 实锤）——settings
-文件 env 是后到叠加层、键不在集合里，分类器（兜底 Kj 读 OPUS env）对它恒不可见。
-**分层问题非时序问题**（用户纠正「两个时机/合并」框架后定案）。载体换 tmux `-e`
-（pane 真 environ）→ 臂2 破坏性任务（mkdir+rm -rf）自主执行零审批。已推送
-`5a5a462a`（连同 `9275b392` settings 载体版）。
+#11 重启恢复（队列重物化）三 commit 全部落地、两份 reviewer 消化完毕、dev
+演练通过、文档记档完成。下一步 = push + 交用户真机验证清单。
 
-## 本 session 焦点（auto mode 插批终章）
+## 本 session 焦点（#11 队列重物化批）
 
-- **臂1（证伪 9275b392）**：settings 载体 + 破坏性任务 → CLI 自证文案「the check
-  isn't getting through」恒弹审批。echo 类无害任务被静态规则放行不经分类器——
-  **echo 实验全是假绿**，真分类器任务需破坏性命令。
-- **臂2（验证 5a5a462a）**：/proc/environ 六件套齐全（token 只验长度）；mkdir+rm -rf
-  自主完成、turn done、零审批卡。唯一插曲 = CLI 一次性通知卡「网关不兼容新版
-  auto mode 计费协议（classifier-billing），Nothing breaks: auto mode keeps
-  working」——告知非审批，Enter 过一次即可；彻底消除需网关实现
-  https://code.claude.com/docs/en/auto-mode-classifier-billing（挂账）。
-- **CLI 凭证抹除行为**：CLI 起身后自行从 /proc/environ 抹掉 AUTH_TOKEN（读进内存
-  后清 env 块副本）——查 environ 验 TOKEN 要在 spawn 早期，晚查只看到「消失」；
-  不影响分类器（它要的 OPUS env 不被抹）。
-- **user 会话 pane 实测**：切 TUI 重建 pane（agent_96abec）→ 五件套注入齐全，与
-  buildAgentEnvOverrides 六键单源一致（GUI/TUI 同源无不等价）。
-- **清理**：test 泄漏会话 ×3（agent_3b2bbfc73d7d4159 / agent_d16f998f8d614a08 /
-  agent_6dcbd358c3b0489e）+ agents-remote 残留会话 agent_5c1d852521e44a10
-  「测试auto mode」全部 close，pane 归零（仅剩当前会话 agent_96abecbfccfe4d4c）。
+- **M1 落盘层**（`0dec6e4c`）：新 `api/src/queue-store.ts`（`runDir/queues/<sessionId>.json`
+  独立目录、temp→rename 原子写、损坏面拒读不删、上限常量、filterExecutedUuids
+  JSONL 对照、孤儿 GC、tmp 清扫）+ relay `onQueueChanged` 契约（5 真实变更点）
+- **M2 编排**（`3aa1e43f`）：spawnAndStart 尾钩 `recoverSessionQueue`（api 重启
+  懒 respawn 与 CLI 崩溃/effort respawn 共用）+ `flushRecoveredCommands` 逐条
+  claim→write→reportUserInput + holdQueueAndStop 恢复中停止转冻结 + 删除级联
+  （registry `onMetadataRemoved`）+ boot 孤儿 GC
+- **review 修正**（`24617ac4`）：code-reviewer P1×2（persist 合并丢条目 /
+  restoreHeld 覆盘面）+ security-reviewer P1（queues/ 独立目录防 brick
+  loadIndex）全修；P2 上限对称 + 撤单剔除链 + 孤儿 GC 二次确认；P3 compact
+  窗外补扫
+- **dev 演练**：#1 排队 2 条 respawn 恢复 = PASS（JSONL 实证 B/C 原 uuid 重发
+  执行）；#2 held 冻结恢复 = PASS（不自动执行 + discard 清盘）。脚本两个 FAIL
+  均为断言子串误报（queue_held 广播帧含条目 content「…H-DONE」命中谓词）。
+  S1/S2 测试会话已 DELETE 清理，queues/ 已空。
 
 ## 关键决策（本阶段不可丢）
 
-1. **分层机制**：CLI env 消费 = spawn 时刻快照键集合；settings env 叠加层键不在
-   集合 → 无论是否写回活 env 都不可见。与注入时机无关（用户拍板纠正框架）。
-2. **载体 = tmux -e**：pane 进程真 environ，spawn 前就位 → 快照层必然可见。
-   ps 暴露面权衡：键值短暂出现在 tmux client argv（~ms 级），换分类器可用性值得。
-   settings 文件回归纯 hooks（出生职责）；codex 侧仍只放非机密值。
-3. **echo 任务不能验 auto mode**：无害命令静态规则放行、不经 dangerous-tool-use
-   分类器；实验任务必须破坏性命令（mkdir+rm -rf）。
-4. **buildTuiAgentSettings 恢复纯 hooks 签名**：env 块从 settings 文件撤除，
-   测试断言固化「settings 无 env 键 + env 经 startCommand 走 tmux -e」。
+1. **恢复语义**（用户拍板）：自动继续执行；首条 idle 直注、后续 busy 入队
+   （走 #2 修复管道），客户端零改动。
+2. **恢复条目保留语义**：`write stdin 成功 ≠ 已执行`——条目全量留盘面与 rec
+   直到下次 spawn 的 JSONL 对照剪枝；flush 收口不清态不落盘。
+3. **persistQueueState 合并**：恢复条目原序在前 + relay 新消息 uuid 去重补后；
+   绝不 slice(next)。
+4. **撤单剔除链**：cancelled 帧 → onCommandSettled 先于 removeQueuedCommand
+   → rec.cancelled.add → persist 看到剔除后面。
+5. **held 恢复为冻结态**（机器不替用户恢复显式停止）；恢复中停止 = 未发尾部
+   转 held。
+6. **上限对称**：100 条 / 单条 512KB / 文件 4MB；超限条目不入队不挂起（echo
+   直注降级，会话内照常执行仅盘面不含）。
+7. **接受项**（§6.20 记档）：resume 清 held ~ms 窗口、compact 窗外 CLI uuid
+   幂等兜底、tmpfs 机器重启丢、OPC 多租户无隔离（届时统一治理）。
 
 ## 下一步
 
-1. **用户实测确认**：本会话（agents-remote TUI）发需工具的任务 → 恒弹审批应消失
-   （pane 已吃到新载体，无需再重启 api）。
-2. **真机验证清单（T3 五批）**仍待用户（停止收口/队列冻结恢复放弃/auto mode/
-   多端跟随）。
-3. **trust 询问问题挂账**（用户明确不算结案）：22router 会话 headless spawn 卡
-   trust folder 询问，回头立项排查。
-4. classifier-billing 网关适配（可选）：实现后可消掉 CLI 一次性通知卡。
+1. **push 三 commit**（`0dec6e4c` / `3aa1e43f` / `24617ac4`；push 在用户授权
+   语境「你现在可以继续往下做了（push之后）」）。
+2. **交用户真机验证清单**（§6.20 尾）：①排队 2 条重启恢复逐条执行；②冻结恢复
+   不自动执行 + 恢复/放弃；③恢复中停止转冻结；④删除无 queue 残留；⑤effort
+   切换 respawn 队列存活；⑥日常发版窗口自然验证。
+3. 用户盘点清单剩余挂账：#7 wiki（「待会再说」）、#4 trust、#10 回流编排、
+   #3 checkpoint/settle（用户自测）。
 
-## 挂账（非本批）
+## 阻塞 / 风险
 
-- checkpoint 批 / settle 批（已推送）待真机验收。
-- probe-fab.mjs 过期断言（5 FAIL）待拍板重构/退役。
-- StatusDot/StatusMarker 休眠死代码待拍板。
-- wiki 格式对齐批 → wiki Quartz（先 /check-deps）。
-- 会话进行中调度 auto-retry pending 注入计时器（runtime 生命周期遗留）。
-- mock 了 overview 的其它 e2e spec 未补 sessions-stream mock（实锤一条修一条）。
-- pages 域 + 外部 MCP server 管理批待真机验证。
-- t3code 调研 A 组可学习清单剩余项待拍板排期。
-- **#9 回流编排**（跨会话委派）：血缘字段已埋，编排随 OPC 立项。
-- **#3 重启恢复定案**：大批独立立项（systemd control-group 已隐式兜底）。
+- 无阻塞。dev api 已是含全部修正的最新代码（演练后未再动）。
+
+## 易丢的关键上下文
+
+- 演练脚本在 `/tmp/ar-queue-drill.mjs`（一次性，不入库）；清理脚本已删。
+- 演练会话 S1=`agent_8851a41299f84dfa`、S2 已删；S2 claudeSessionId=
+  `1a2f6a71-…`（JSONL 计 0 实锤未自动执行）。
+- review 修正细节全在 §6.20（redesign-v2.md 尾部新段）。
 
 ## 提醒
 
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
-最后更新：2026-11-25 21:20 / 触发原因：tmux -e 载体批推送收官 + 泄漏清理完成。
+最后更新：2026-11-26 07:30 / 触发原因：#11 全批收官（三 commit + 记档 + 演练），
+push 前存档。

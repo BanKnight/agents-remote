@@ -2122,3 +2122,27 @@ perf：P0-1 motion 摘除 / P1-2 blur 4px / P1-3 history-list 撤 stagger / P2-4
 - 取舍记档：①api 代发 `cancel_queued:true` 而非等待 CLI 原生 holdQueue（CLI 无此原语，T3 语义由服务端 `heldCommands` 承载，api 侧队列是权威态）；②respawn/destroy 清空 held（同 queuedCommands 惯例——CLI 进程已换代，队列语义不跨代）；③hold 在无队列时 no-op 仍广播空快照（确认语义恒有回执）
 
 **测试教训**：`act(() => async onCancel())`——sync act 未 await thenable 毒化 React act 内部队列，后续 setState 排队永不 flush，失败形态「setter 跑了但零渲染」且跨测试级联残留（隔离跑通过是判别特征）；async 副作用一律 `await act(async () => { await ... })`。
+
+### §6.20 队列重物化：api 重启恢复（2026-11-26，commits `0dec6e4c` M1 落盘层 + `3aa1e43f` M2 编排 + `24617ac4` review 修正）
+
+**背景**：api 进程重启（发版 / dev respawn / systemd restart）后排队中的用户消息彻底无痕消失——stdin 已送进将死的 CLI、未执行未落 JSONL、echo 挂起被丢弃；ensureRunning respawn（模型/effort 切换）走 relay destroy 重建同病。t3code spec #3 responseCapability 真增量项。**用户拍板恢复语义 = 自动继续执行**（打开会话 → CLI respawn → 逐条重发；首条 idle 直注、后续 busy 正常入队，走 #2 修复的队列管道，UI=f(state) 零新分支；客户端零改动——queue_state/queue_held 重连种子本就无条件补发）。
+
+**核心设计**：
+- **落盘**：独立目录 `runDir/queues/<sessionId>.json`（schemaVersion 1，queued+held 同文件；pendingEchoes 不落——echo 是原消息确定性变换，重发时重建）。每次变更同步写（temp→rename 0600，registry 落盘同款）；destroy 不清盘（respawn 与 api 重启正是盘面要救的状态）；双空 unlink；删除级联清（registry `onMetadataRemoved` 单点覆盖全部删除路径 + rollback fork 显式清 + boot 孤儿 GC[删盘面前 `hasSessionMetadata` 二次确认] + boot tmp 清扫）。
+- **恢复时机**：`spawnAndStart` 非 fork 尾钩 `recoverSessionQueue`（fire-and-forget，try/catch 壳不伤 spawn 本体）——api 重启懒 respawn 与 CLI 崩溃/effort 切换 respawn 共用同一钩子。
+- **恢复编排**：读文件 → JSONL 对照剔已执行（`filterExecutedUuids`：最后 compact block 尾窗 8MB + 顶层 uuid 判定防嵌套误杀 + 边界外全量补扫；「write stdin 与进度推进之间崩溃」的双发防线，CLI uuid 幂等是第二道网）→ pending 先落位 rec → held `restoreHeldCommands` 恢复冻结态（用户显式停止的产物，机器不替用户恢复）→ 逐条 claim → write stdin → `rec.next++` → `reportUserInput(uuid, text, echo)`。
+- **恢复条目保留语义（review 修正后定案）**：`write stdin 成功 ≠ 已执行落 JSONL`——恢复条目全量保留在盘面与 rec，直到**下次 spawn 的 JSONL 对照剪枝**才确证剔除；flush 收口不清态不重写盘面。persistQueueState 合并 = 恢复条目原序在前 + relay 新消息按 uuid 去重补后，绝不按 next 切片丢已 write 条目。
+- **撤单剔除链**：relay lifecycle cancelled 帧 → `onCommandSettled(uuid, "cancelled")` 在 `removeQueuedCommand` 之前触发 → rec.cancelled.add → persist 看到剔除后的合并面（防重发用户已撤单消息）。
+- **恢复中停止**：`holdQueueAndStop` 置 rec.abort → rec.delete → 未发尾部（slice(next) 过滤 cancelled）并入 relay heldCommands——用户停止意图优先，未发条目转冻结由 resume/discard 自决，不再「下次 respawn 又自动发」。
+- **write 失败** = release + 中止（条目留盘下次重试）；claim 失败 = 该条已发过 → `rec.next++` 跳过，绝不换新 uuid 重发。
+
+**review 消化（code + security 两份）**：
+- P1 全修：persist 合并 slice(next) 丢已 write 条目 → 全量保留语义；restoreHeld 先于 rec 落位覆盘面 → rec 先行；queue 文件迁独立 `queues/` 目录（原 `sessions/<id>.queue.json` 与 metadata 同命名空间，损坏 queue 文件会让注册表 loadIndex 整体失败）+ parseMetadata try/catch 跳过损坏文件。
+- security 上限对称（写读共用常量）：MAX_QUEUE_ENTRIES=100 / 单条 512KB / 文件 4MB；读侧 statSync size 先判后读；**超限条目不入队不挂起**（reportUserInput 入队 gate，echo 直注——CLI 已收 stdin 会话内照常执行，仅盘面不含）。
+- sessionId 字符白名单拒路径穿越（纵深防御）；write 崩清自己的 temp；sanitizeEntries 按 uuid 去重首见保留。
+
+**接受项（记档不修）**：①spawn 尾钩先 delete 旧 rec 再恢复——queue_resume 清 held 与恢复编排竞态窗口 ~ms（重排序反而造重复风险）；②已执行条目滚出 compact 窗外漏判 → CLI uuid 幂等静默兜底；③超限条目不落盘面（直注降级，无 error frame UI）；④目录权限仅创建时设置（0600 文件为主防线）；⑤runDir 为 tmpfs → 机器重启队列丢（与 metadata 同生命周期，设计内）；⑥OPC 多租户时 queues/ 无租户隔离（届时随 provider 隔离批次统一治理）。
+
+**dev 演练（test 项目，spawn 前冻结排队 + respawn api）**：#1 排队 2 条恢复 = **PASS**（JSONL 实证 B/C 以原 uuid 重发进 CLI 并完成回复，盘面保留待下次 spawn 剪枝）；#2 held 冻结恢复 = **PASS**（恢复为冻结态、JSONL 计 0 = 未自动执行、discard 清盘）。脚本两个「FAIL」均定性为断言子串误报（queue_held 广播帧内含条目 content「…只回复 H-DONE」命中检测谓词）——**JSONL 第一手数据为准**（§22 证据纪律）。#3 CLI kill / #4 effort 切换 respawn 与 #1 共用同一 spawn 尾钩，不单独演练，交真机清单。
+
+**真机验证清单（交用户）**：①working 中排队 2 条 → 重启 api → 打开会话 → chip 重现、逐条执行；②排队中停止（冻结）→ 重启 → 冻结条目重现（不自动执行）→ 恢复/放弃各验一次；③恢复重发进行中点停止 → 未发尾部转冻结；④会话删除无 queue 残留（`/run/user/1000/agents-remote/queues/`）；⑤模型/effort 切换 respawn 后队列存活；⑥日常发版窗口自然验证。
