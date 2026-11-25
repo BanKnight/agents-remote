@@ -88,6 +88,12 @@ export class ClaudeSessionRelay {
   // injectLiveLine 补入——与 JSONL 权威语义对齐（CLI 出队执行时才写 user 行，回放一致）。
   // cancelled/completed/hold 冻结 = 条目作废，挂起 echo 一并丢弃（气泡不出现）。
   private pendingEchoes = new Map<string, string>();
+  // 队列持久化回调（队列重物化，#11 重启恢复）：relay 只管内存镜像，落盘决策归持有
+  // 方（claude-runtime 经 wireQueueRelay 注入）。5 个真实变更点触发（enqueue/remove/
+  // hold/clearHeld/restoreHeld）；no-op 与 destroy 不触发——进程换代（respawn/api 重启）
+  // 正是盘面要救的状态，清了就没了。
+  onQueueChanged: ((queued: ClaudeQueuedCommand[], held: ClaudeQueuedCommand[]) => void) | null =
+    null;
 
   async activate(projectPath: string, claudeSessionId: string | undefined): Promise<void> {
     if (this.phase !== "init") return;
@@ -384,6 +390,7 @@ export class ClaudeSessionRelay {
     this.queuedCommands.push(entry);
     if (echoLine !== undefined) this.pendingEchoes.set(entry.uuid, echoLine);
     this.broadcast(this.queueStateLine());
+    this.onQueueChanged?.(this.queuedCommands, this.heldCommands);
   }
 
   // Remove a booked prompt (lifecycle-frame driven). Broadcasts only when the
@@ -397,6 +404,7 @@ export class ClaudeSessionRelay {
     if (next.length === this.queuedCommands.length) return;
     this.queuedCommands = next;
     this.broadcast(this.queueStateLine());
+    this.onQueueChanged?.(this.queuedCommands, this.heldCommands);
   }
 
   // 停止冻结（M2）：把排队快照整体挪入 held、清空 queued，广播空 queue_state +
@@ -412,6 +420,7 @@ export class ClaudeSessionRelay {
     this.pendingEchoes.clear();
     this.broadcast(this.queueStateLine());
     this.broadcast(this.queueHeldLine());
+    this.onQueueChanged?.(this.queuedCommands, this.heldCommands);
   }
 
   // 恢复/放弃（M2）：清 held + 广播空 queue_held。两者 api 侧行为相同（条目已在
@@ -422,6 +431,23 @@ export class ClaudeSessionRelay {
     if (this.heldCommands.length === 0) return;
     this.heldCommands = [];
     this.broadcast(this.queueHeldLine());
+    this.onQueueChanged?.(this.queuedCommands, this.heldCommands);
+  }
+
+  // 恢复 held（队列重物化）：api 重启/respawn 后把盘面冻结条目放回 relay（客户端
+  // 经 queue_held 种子/广播看到，resume/discard 走既有流）。空数组 no-op（幂等）。
+  // 对称 holdCommands 的写面：置位 + 广播 + 回调。
+  restoreHeldCommands(entries: ClaudeQueuedCommand[]): void {
+    if (this.isDestroyed) return;
+    if (entries.length === 0) return;
+    this.heldCommands = entries;
+    this.broadcast(this.queueHeldLine());
+    this.onQueueChanged?.(this.queuedCommands, this.heldCommands);
+  }
+
+  // 只读快照（flush 收口/abort 落盘用——按内存镜像末次写盘）。
+  getQueueSnapshot(): { queued: ClaudeQueuedCommand[]; held: ClaudeQueuedCommand[] } {
+    return { queued: this.queuedCommands, held: this.heldCommands };
   }
 
   private queueStateLine(): string {

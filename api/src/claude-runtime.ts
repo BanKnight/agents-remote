@@ -7,6 +7,7 @@ import {
   type ClaudeAutoRetryConfig,
   type ClaudeContextUsage,
   type ClaudeControlRequest,
+  type ClaudeQueuedCommand,
   type ClaudePreset,
   type ContextUsageCategory,
   type EffortLevel,
@@ -31,6 +32,7 @@ import { getAgentProviderProfile } from "./agent-provider-profiles";
 import { buildMcpInjectorForProvider } from "./mcp-injector";
 import { sanitizePersistedModel } from "./model-id";
 import { claudeJsonlPath } from "./session-routes";
+import { writeSessionQueue } from "./queue-store";
 import { ensureGenUiSkill } from "./project-gen-ui";
 import {
   AutoRetryWatch,
@@ -521,6 +523,15 @@ export class ClaudeRuntime implements RuntimeResources {
   // 锚、排队登记）。仅 MESSAGE_UUID_RE 合法 uuid 参与；FIFO 限量防长驻泄漏，
   // 进程 close/respawn 清空（同 pendingInterrupts 惯例）。
   private readonly claimedUserUuids = new Map<string, { fifo: string[]; seen: Set<string> }>();
+  // 队列恢复态（队列重物化，#11 重启恢复）：spawn 读盘后的待重发条目与进度。M1 只
+  // 接落盘（persistQueueState 合并规则），读写方在 M2 接编排。pendingRecovery =
+  // 待重发（含已 write 未 report——崩溃后 JSONL 对照收敛）；next = 已成功写 stdin 条
+  // 数（先推进再 report——persist 合并口径）；abort = 恢复中用户停止（holdQueueAndStop
+  // 置位，未发尾部转冻结）。flush 收口或 abort 后 delete。
+  private readonly queuePersist = new Map<
+    string,
+    { pendingRecovery: ClaudeQueuedCommand[]; next: number; abort: boolean }
+  >();
   private readonly runDir: string;
   private readonly settingsStore?: SettingsStore;
   private readonly mcpPort?: number;
@@ -934,6 +945,38 @@ export class ClaudeRuntime implements RuntimeResources {
     if (idx !== -1) entry.fifo.splice(idx, 1);
   }
 
+  // 队列镜像落盘（队列重物化 M1）：relay onQueueChanged → 合并恢复态后写盘。恢复态
+  // 未发尾部（pendingRecovery.slice(next)）不在 relay 镜像里（flush 已 write 的条目
+  // 要等 CLI started 出队才进 relay 镜像）——合并保住「flush 中途崩溃，未发条目仍
+  // 在盘面」的收敛性。写失败只 console.error（盘面可能是旧队列，下次变更覆盖）。
+  private persistQueueState(
+    sessionName: string,
+    sessionId: string,
+    queued: ClaudeQueuedCommand[],
+    held: ClaudeQueuedCommand[],
+  ): void {
+    const rec = this.queuePersist.get(sessionName);
+    const mergedQueued = rec
+      ? [
+          ...rec.pendingRecovery.slice(rec.next),
+          ...queued.filter((e) => !rec.pendingRecovery.some((r) => r.uuid === e.uuid)),
+        ]
+      : queued;
+    writeSessionQueue(this.runDir, sessionId, {
+      schemaVersion: 1,
+      savedAt: new Date().toISOString(),
+      queued: mergedQueued,
+      held,
+    });
+  }
+
+  // relay 创建统一接线（spawnAndStart / stream 惰性创建两处共用）：队列镜像变更 →
+  // 落盘。M1 只接镜像；M2 在此基础上接恢复读回与重发编排。
+  private wireQueueRelay(sessionName: string, sessionId: string, relay: ClaudeSessionRelay): void {
+    relay.onQueueChanged = (queued, held) =>
+      this.persistQueueState(sessionName, sessionId, queued, held);
+  }
+
   /** 用户提交消息(STDIN 注入 echo 行)→ working；turn 进行中(working)时折叠登记进
    *  服务端排队(queue-state serverization——CLI 在 running turn 中对后续 prompt 零
    *  遥测，lifecycle 帧延迟到 turn 边界)。gate 读取与状态迁移在同一同步块内完成
@@ -1056,6 +1099,7 @@ export class ClaudeRuntime implements RuntimeResources {
     if (!relay) {
       relay = new ClaudeSessionRelay();
       this.relays.set(sessionName, relay);
+      this.wireQueueRelay(sessionName, proc.sessionId, relay);
       await relay.activate(proc.projectPath, proc.claudeSessionId).catch(() => {
         this.relays.delete(sessionName);
       });
@@ -1200,6 +1244,7 @@ export class ClaudeRuntime implements RuntimeResources {
     }
     relay = new ClaudeSessionRelay();
     this.relays.set(sessionName, relay);
+    this.wireQueueRelay(sessionName, sessionId, relay);
     // fork spawn 时新 claudeSessionId 未知（system.init 才揭晓）——空激活，等
     // captureSystemInitFromLine 的 fork 分支回填新 id + relay.reloadHistory。
     await relay.activate(projectPath, fork ? undefined : claudeSessionId);

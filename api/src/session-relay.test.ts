@@ -1534,3 +1534,42 @@ test("pending echo: holdCommands 冻结清空挂起（不注入）;无挂起的 
 
   relay.destroy();
 });
+
+// 队列重物化（#11 重启恢复）M1：onQueueChanged 回调契约——5 个真实变更点触发、
+// no-op 不触发、destroy 不触发、restoreHeldCommands 置位+广播+回调。
+test("onQueueChanged fires on real queue-change points, not no-ops or destroy", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+  const calls: Array<{ queued: string[]; held: string[] }> = [];
+  relay.onQueueChanged = (queued, held) =>
+    calls.push({ queued: queued.map((e) => e.uuid), held: held.map((e) => e.uuid) });
+
+  relay.enqueueQueuedCommand({ uuid: "u1", content: "a" });
+  relay.enqueueQueuedCommand({ uuid: "u2", content: "b" });
+  relay.enqueueQueuedCommand({ uuid: "u1", content: "a" }); // no-op
+
+  relay.removeQueuedCommand("u2");
+  relay.removeQueuedCommand("u2"); // no-op
+  relay.holdCommands();
+  relay.clearHeldCommands();
+  relay.clearHeldCommands(); // no-op
+  relay.restoreHeldCommands([{ uuid: "h1", content: "frozen" }]);
+  relay.restoreHeldCommands([]); // no-op
+
+  expect(calls).toEqual([
+    { queued: ["u1"], held: [] },
+    { queued: ["u1", "u2"], held: [] },
+    { queued: ["u1"], held: [] },
+    { queued: [], held: ["u1"] },
+    { queued: [], held: [] },
+    { queued: [], held: ["h1"] },
+  ]);
+
+  // destroy 绝不触发（进程换代正是盘面要救的状态）
+  calls.length = 0;
+  relay.destroy();
+  relay.enqueueQueuedCommand({ uuid: "u9", content: "x" });
+  relay.holdCommands();
+  relay.restoreHeldCommands([{ uuid: "h9", content: "y" }]);
+  expect(calls.length).toBe(0);
+});
