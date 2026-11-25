@@ -115,18 +115,21 @@ export function parseTuiHookEvent(raw: string): TuiHookEvent | null {
  *  工具或 Stop 才收口）、PermissionRequest（真权限申请）；Notification 只收
  *  permission_prompt 类型（CLI 的 Notification 还含 idle_prompt 空闲提示等——无 matcher
  *  会把空闲当审批挂起，状态机 blocked 下忽略 user_input，整个 turn 钉死 blocked）。
- *  env 块（可选）：与 GUI headless spawn 同一套 env 值集（buildAgentEnvOverrides 单源）——
- *  CLI bundle 实锤消费 --settings 文件（flagSettings）的 env 键（合入自身环境）。凭证走
- *  0600 文件而非 tmux -e：-e 键值短暂出现在 tmux client argv（ps 可见），文件无此暴露面。
- *  状态文件路径单引号包裹——runDir 出自服务端配置（~/.agents-remote），不含单引号。 */
-export function buildTuiAgentSettings(statusFilePath: string, env?: Record<string, string>) {
+ *  状态文件路径单引号包裹——runDir 出自服务端配置（~/.agents-remote），不含单引号。
+ *
+ *  ⚠️ env 不走此文件（曾试过又撤，2026-11-25）：CLI 的 env 消费视图建立在 spawn 时刻的
+ *  process.env 快照键集合上（getPreSettingsEnvSnapshot，bundle 实锤），settings env 属
+ *  后到的叠加层、键不在快照集合里——分类器（auto mode 兜底 Kj）读快照层，settings env
+ *  对它不可见 → auto mode 恒退化人工审批（真机臂1 实锤「the check isn't getting
+ *  through」）。env 载体 = tmux -e（pane 进程真 environ，快照层必然可见），见
+ *  switchToTerminal。 */
+export function buildTuiAgentSettings(statusFilePath: string) {
   const hookCommand = `cat > '${statusFilePath}'`;
   const hookEntry = (matcher?: string) => ({
     ...(matcher ? { matcher } : {}),
     hooks: [{ type: "command" as const, command: hookCommand }],
   });
   return {
-    ...(env && Object.keys(env).length > 0 ? { env } : {}),
     hooks: {
       UserPromptSubmit: [hookEntry()],
       Stop: [hookEntry()],
@@ -231,15 +234,13 @@ export class AgentTuiController {
       ...metadata,
       settingsPath: this.settingsPath(runtimeKey),
     });
-    // 1) agent settings（0600，随会话生命周期清理）：hooks 状态采集 + env 块（与 GUI
-    //    headless spawn 同一套值集，buildAgentEnvOverrides 单源）——CLI 经 --settings
-    //    flagSettings 消费 env 键。凭证落 0600 文件而非 tmux -e（-e 键值短暂出现在 tmux
-    //    client argv，ps 可见；文件无此暴露面）。状态文件先建空，fs.watch 才有 inode 可挂。
+    // 1) agent settings（0600，随会话生命周期清理）：hooks 状态采集。状态文件先建空，
+    //    fs.watch 才有 inode 可挂。
     await mkdir(join(this.deps.runDir, "agent-settings"), { recursive: true });
     await mkdir(join(this.deps.runDir, "agent-status"), { recursive: true });
     await writeFile(
       this.settingsPath(runtimeKey),
-      `${JSON.stringify(buildTuiAgentSettings(this.statusPath(runtimeKey), env), null, 2)}\n`,
+      `${JSON.stringify(buildTuiAgentSettings(this.statusPath(runtimeKey)), null, 2)}\n`,
       { mode: 0o600 },
     );
     await writeFile(this.statusPath(runtimeKey), "", { mode: 0o600 });
@@ -253,10 +254,13 @@ export class AgentTuiController {
     // 3) headless 让位：silent 关（不广播 closed、不走审批 settled 回调；autoRetry
     //    destroySession / relay 清理照旧）。
     await claudeRuntime.close(runtimeKey, { silent: true });
-    // 4) tmux pane 起 CLI 原生形态（argv/env 见 resolveTuiSpawn；settingsPath 接通
-    //    hooks + env——CLI 真正加载七 hook 与 env 块，review P1-1 断链修复的同通道）。
+    // 4) tmux pane 起 CLI 原生形态（argv/env 见 resolveTuiSpawn；settingsPath 接通七
+    //    hook，review P1-1 断链修复的同通道）。env 走 tmux -e（pane 进程真 environ）：
+    //    CLI 的 env 消费视图建立在 spawn 时刻快照键集合上（getPreSettingsEnvSnapshot），
+    //    --settings 文件 env 属后到叠加层、分类器读不到（臂1 实锤 auto mode 恒退化）；
+    //    -e 键值短暂出现在 tmux client argv（ps 可见窗口 ~ms 级），换分类器可用性值得。
     try {
-      await tmuxRuntime.startCommand(metadata, args.map(shellQuote).join(" "));
+      await tmuxRuntime.startCommand(metadata, args.map(shellQuote).join(" "), { env });
     } catch (error) {
       // 起 pane 失败（tmux server 不可达等）：形态退回 chat + 清掉刚写的 settings/状态文件——
       // 不留「有 hooks 文件却无 pane 无 watcher」或「档案说 terminal 却无 pane」的半态。

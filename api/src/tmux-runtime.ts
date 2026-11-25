@@ -81,9 +81,11 @@ export class TmuxRuntime implements RuntimeResources {
     await this.startCommand(metadata, shellCommand());
   }
 
-  /** `opts.env`：pane 进程的额外环境变量（tmux -e）。只放**非机密**值（如 CODEX_HOME
-   *  目录路径）——-e 的键值会短暂出现在 tmux client argv（ps 可见），机密必须走文件
-   *  （codex 的 auth.json 方案）。 */
+  /** `opts.env`：pane 进程的额外环境变量（tmux -e）。键值会短暂出现在 tmux client argv
+   *  （ps 可见窗口 ~ms 级）；权衡（2026-11-25）：claude 的凭证/模型映射 env 必须走此处
+   *  ——CLI 的 env 消费视图建立在 spawn 时刻 process.env 快照键集合上，settings 文件
+   *  env（后到叠加层）对分类器不可见 → auto mode 恒退化人工审批（臂1 实锤）。codex
+   *  侧仍只放非机密值（CODEX_HOME 目录路径，凭证走其专属 CODEX_HOME 的 auth.json）。 */
   async startCommand(
     metadata: SessionMetadata,
     command: string,

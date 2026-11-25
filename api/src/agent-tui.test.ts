@@ -51,6 +51,7 @@ async function seed() {
   const closeCalls: Array<{ key: string; silent?: boolean }> = [];
   const ensureCalls: unknown[][] = [];
   const tmuxCommands: string[] = [];
+  const tmuxEnvs: Array<Record<string, string> | undefined> = [];
   let tmuxClosed = 0;
   const cleared: string[] = [];
   const modeSwitched: string[] = [];
@@ -65,7 +66,7 @@ async function seed() {
     },
     async resolveTuiSpawn(m?: { claudeSessionId?: string; settingsPath?: string }) {
       // 回显 settingsPath：断言「CLI 真的拿到 --settings」（P1-1 断链修复的控制器级锁定）；
-      // env 固定值：断言「env 块真的写进 settings 文件」（TUI env 注入的控制器级锁定）。
+      // env 固定值：断言「env 真的传给 tmux -e」（TUI env 注入的控制器级锁定）。
       return {
         args: [
           "claude",
@@ -87,8 +88,13 @@ async function seed() {
     },
   } as unknown as ClaudeRuntime;
   const tmuxRuntime = {
-    async startCommand(_metadata: unknown, command: string) {
+    async startCommand(
+      _metadata: unknown,
+      command: string,
+      opts?: { env?: Record<string, string> },
+    ) {
       tmuxCommands.push(command);
+      tmuxEnvs.push(opts?.env);
     },
     async close() {
       tmuxClosed += 1;
@@ -120,6 +126,7 @@ async function seed() {
     closeCalls,
     ensureCalls,
     tmuxCommands,
+    tmuxEnvs,
     cleared,
     modeSwitched,
     statusEvents,
@@ -247,22 +254,6 @@ test("buildTuiAgentSettings 七 hook 均为 cat 落盘完整 JSON；Notification
   expect(settings.hooks.Stop[0]?.matcher).toBeUndefined();
 });
 
-test("buildTuiAgentSettings env 块：传入则落顶层 env 键；空集/缺省不落键", () => {
-  // env 在场 → 顶层 env 键（CLI flagSettings 消费；与 hooks 键并存）。
-  const withEnv = buildTuiAgentSettings("/run/agent-status/key1", {
-    ANTHROPIC_AUTH_TOKEN: "sk-gw",
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
-  });
-  expect(withEnv.env).toEqual({
-    ANTHROPIC_AUTH_TOKEN: "sk-gw",
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
-  });
-  expect(Object.keys(withEnv.hooks)).toHaveLength(7);
-  // 空集 / 缺省 → 无 env 键（不写空块）。
-  expect(buildTuiAgentSettings("/run/agent-status/key1", {}).env).toBeUndefined();
-  expect(buildTuiAgentSettings("/run/agent-status/key1").env).toBeUndefined();
-});
-
 test("TUI_STATUS_SIGNAL_BY_TOKEN 五 token 映射状态机信号（存量 pane 兼容 fallback）", () => {
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.user_input).toEqual({ kind: "user_input" });
   expect(TUI_STATUS_SIGNAL_BY_TOKEN.turn_done).toEqual({ kind: "turn_result", isError: false });
@@ -335,13 +326,9 @@ test("switchToTerminal：落 settings/状态文件（0600）→ mode 落盘 → 
   expect(h.closeCalls).toEqual([{ key: h.runtimeKey, silent: true }]);
   expect(h.cleared).toEqual([h.runtimeKey]);
 
-  // settings 文件：0600 + 七 hook 内容 + env 块（resolveTuiSpawn 的 env 值集落顶层 env
-  // 键——CLI flagSettings 消费；凭证落 0600 文件而非 tmux -e argv，TUI env 注入闭环）。
+  // settings 文件：0600 + 七 hook 内容（env 不在 settings 文件——载体 = tmux -e）。
   const settings = JSON.parse(await readFile(settingsPath(h.runtimeKey), "utf8"));
-  expect(settings.env).toEqual({
-    ANTHROPIC_AUTH_TOKEN: "sk-test",
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
-  });
+  expect(settings.env).toBeUndefined();
   expect(Object.keys(settings.hooks).sort()).toEqual([
     "Notification",
     "PermissionRequest",
@@ -360,6 +347,14 @@ test("switchToTerminal：落 settings/状态文件（0600）→ mode 落盘 → 
   // 在列 = hooks 真被 CLI 加载（P1-1 断链修复，此前 argv 漏带 → 状态文件恒空）。
   expect(h.tmuxCommands).toEqual([
     `'claude' '--resume' '${h.metadata.claudeSessionId}' '--settings' '${join(runDir, "agent-settings", `${h.runtimeKey}.json`)}' '--mcp-config' '{"a":"b c"}'`,
+  ]);
+  // env 值集经 startCommand 的 opts.env 走 tmux -e（pane 真 environ，快照层可见——
+  // settings env 块载体对分类器不可见，臂1 实锤后撤）。
+  expect(h.tmuxEnvs).toEqual([
+    {
+      ANTHROPIC_AUTH_TOKEN: "sk-test",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
+    },
   ]);
 
   // 形态落盘（详情/列表透出）+ 多端跟随回调（关该会话全部 claude-stream WS）。

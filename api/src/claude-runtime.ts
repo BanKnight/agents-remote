@@ -407,10 +407,12 @@ export function buildSpawnEnv(
 // ── agent env 覆盖值集（GUI/TUI 单源共用）─────────────────────────────────────
 // 两形态唯一差异 = 无头（Bun.spawn stream-json）与有头（tmux pane TUI）的 spawn 机制
 // 本身；凭证/网关/模型映射的 env 值集必须一致（2026-11-25 用户拍板「env 极为一致」）。
-// GUI 走 buildSpawnEnv 继承后覆盖；TUI 经 --settings 文件（agent-tui 写的 0600
-// per-session 文件）的 env 块注入——CLI bundle 2.1.325 实锤消费 flagSettings env 键。
-// 凭证落文件而非 tmux -e：-e 键值短暂出现在 tmux client argv（ps 可见），文件无此
-// 暴露面（与 codex auth.json「机密走文件」纪律同构）。
+// GUI 走 buildSpawnEnv 继承后覆盖；TUI 经 tmux -e 注入 pane 进程真 environ。载体曾走
+// --settings 文件 env 块，当日撤——CLI 的 env 消费视图建立在 spawn 时刻 process.env
+// 快照键集合上（getPreSettingsEnvSnapshot，bundle 实锤），settings env 是后到叠加层、
+// 键不在快照集合里：分类器（auto mode 兜底 Kj）读快照层 → settings env 对它不可见 →
+// auto mode 恒退化人工审批（真机臂1 实锤「the check isn't getting through」）。tmux -e
+// 键值短暂出现在 tmux client argv（ps 可见窗口 ~ms 级），换分类器可用性值得。
 //
 // AUTO_MODE_SERVER 不注入（2026-11-25 撤 0a08b6c7 的 =0——修复核心）：=0 触发 CLI
 // own_switch_off，把 auto mode 直接关死（2.1.325 本地 classifier 非独立开关，删不得）。
@@ -1290,11 +1292,12 @@ export class ClaudeRuntime implements RuntimeResources {
   }
 
   /** TUI 形态 spawn 输入（双模式编排用，agent-tui 调）：argv 全来自会话 metadata + env
-   *  值集与 GUI headless spawn 单源一致（buildAgentEnvOverrides——TUI 曾零 env 注入致
-   *  分类器兜底落 gateway 缺省表、auto mode 每步退回人工审批，2026-11-25 修复）。审批
-   *  让位 = argv 不带 --permission-prompt-tool。模型别名查表出规范名（与 headless spawn
-   *  同源映射，消 CLI 自身别名表的网关 422 面）；effort 缺省回落 settings 默认
-   *  （resolveSpawnInputs 同源）。env 由调用方写进 --settings 文件（0600，非 tmux -e）。 */
+   *  值集与 GUI headless spawn 单源一致（buildAgentEnvOverrides）。env 由调用方经
+   *  tmux -e 注入 pane 真 environ——CLI env 消费视图建立在 spawn 时刻快照键集合上，
+   *  settings 文件 env 载体对分类器不可见（2026-11-25 臂1 实锤后撤，见
+   *  buildAgentEnvOverrides 注释）。审批让位 = argv 不带 --permission-prompt-tool。
+   *  模型别名查表出规范名（与 headless spawn 同源映射，消 CLI 自身别名表的网关 422 面）；
+   *  effort 缺省回落 settings 默认（resolveSpawnInputs 同源）。 */
   async resolveTuiSpawn(metadata: {
     /** ar 会话 id（admin 审批卡 origin 身份）；缺省 URL 不带 ?origin=。 */
     id?: string;
