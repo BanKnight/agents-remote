@@ -215,9 +215,16 @@ describe("ClaudeStreamController.message routes CLI stdin inputs", () => {
         injections.push({ key, line });
       },
       // turn 状态机 user_input 信号 + 排队登记折叠（gate 矩阵断言归
-      // claude-runtime.test.ts）——这里只记录 WS 分支传了什么。
-      reportUserInput: (key: string, prompt?: { uuid: string; text: string }) => {
+      // claude-runtime.test.ts）——这里只记录 WS 分支传了什么。echo 行随第三参
+      // 走 reportUserInput（单点呈现：busy 挂起/出队补注入归 relay 测试），mock
+      // 把它转记进 injections——断言「echo 已交付」语义与旧行为等价。
+      reportUserInput: (
+        key: string,
+        prompt?: { uuid: string; text: string },
+        echoLine?: string,
+      ) => {
         reportedInputs.push({ key, prompt });
+        if (echoLine !== undefined) injections.push({ key, line: echoLine });
       },
       // Default passthrough = default config (alias mapping, 1m off): the
       // controller forwards the model unchanged. Tests inject a resolver to

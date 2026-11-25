@@ -587,10 +587,14 @@ export class ClaudeRuntime implements RuntimeResources {
         if (!this.claimUserUuid(sessionName, uuid)) return;
         const userLine = buildAutoRetryUserLine(message, uuid);
         // 先写后 echo：进程已死时 write 失败 → 不产生幽灵 isUserInput 回显（P3：旧实现
-        // 无条件 echo，重生后的同 key relay 会缓冲一条从未发生的输入）。
+        // 无条件 echo，重生后的同 key relay 会缓冲一条从未发生的输入）。echo 时机决策
+        // 收口在 reportUserInput（busy 时挂起到出队，与三入口同语义）。
         await this.write(sessionName, `${userLine}\n`);
-        this.injectLiveLine(sessionName, buildAutoRetryEchoLine(message, uuid));
-        this.reportUserInput(sessionName, { uuid, text: message });
+        this.reportUserInput(
+          sessionName,
+          { uuid, text: message },
+          buildAutoRetryEchoLine(message, uuid),
+        );
       },
     });
   }
@@ -936,17 +940,31 @@ export class ClaudeRuntime implements RuntimeResources {
    *  (无 await 缝隙)——gen-ui loadGenUiContext / REST ensureRunning 的异步续体交错
    *  不会漏登记。gate 只判 working:blocked 下 CLI 行为未实测,保守方向漏登记无害
    *  (lifecycle 帧对未知 uuid 是 no-op 自愈),错登记才可能永久泄漏。
-   *  claude-stream message()/injectUserPrompt/auto-retry inject 调。 */
-  reportUserInput(runtimeKey: string, prompt?: { uuid: string; text: string }): void {
+   *  claude-stream message()/injectUserPrompt/auto-retry inject 调。
+   *  echoLine（可选举，三入口的 live echo 行）：echo 决策收口在此——本类是唯一知道
+   *  busy 的位置。非 busy 立即注入（idle 直执，现状语义）；busy && prompt 时随队列
+   *  条目挂起（排队期间聊天流与 queue chip 单点呈现，started 出队才补入，见 relay
+   *  pendingEchoes）；busy && 无 prompt（tool_result 续跑帧）不排队也不挂起，照旧
+   *  立即注入——审批应答必须即时可见。 */
+  reportUserInput(
+    runtimeKey: string,
+    prompt?: { uuid: string; text: string },
+    echoLine?: string,
+  ): void {
     const state = this.processes.get(runtimeKey);
     const busy = state?.sessionStatus === "working";
     this.applyStatusSignal(runtimeKey, { kind: "user_input" });
     if (busy && prompt) {
-      this.relays.get(runtimeKey)?.enqueueQueuedCommand({
-        uuid: prompt.uuid,
-        content: prompt.text,
-      });
+      this.relays.get(runtimeKey)?.enqueueQueuedCommand(
+        {
+          uuid: prompt.uuid,
+          content: prompt.text,
+        },
+        echoLine,
+      );
+      return;
     }
+    if (echoLine !== undefined) this.injectLiveLine(runtimeKey, echoLine);
   }
 
   /** 审批收口(ApprovalCenter 回调)→ 回 working。 */

@@ -1264,6 +1264,37 @@ test("排队 gate 矩阵: working 入队 / idle·blocked 不入队（迁移照�
   expect(enqueueCalls).toHaveLength(1);
 });
 
+test("echo 决策路由: busy+prompt 挂起（随队列入 relay）/ busy 续跑帧与 idle 直注入立即入流", () => {
+  // busy + prompt：echo 随 enqueueQueuedCommand 第二参进 relay 挂起（pendingEchoes），
+  // 不直接入流——排队期间单点呈现（queue chip），started 出队才补注入（relay 侧断言）。
+  const enqueued: Array<[unknown, string | undefined]> = [];
+  const busy = seedStatusHarness("working");
+  (
+    busy.internal.relays.get("rt-key") as unknown as {
+      enqueueQueuedCommand: (e: { uuid: string; content: string }, echo?: string) => void;
+    }
+  ).enqueueQueuedCommand = (e, echo) => enqueued.push([e, echo]);
+  busy.runtime.reportUserInput("rt-key", { uuid: "u-1", text: "B" }, '{"type":"user"}');
+  expect(enqueued).toEqual([[{ uuid: "u-1", content: "B" }, '{"type":"user"}']]);
+  expect(busy.injected).toEqual([]);
+
+  // busy 但无 prompt（tool_result 续跑帧/审批应答）：echo 不挂起，立即入流——
+  // 审批应答等轮中消息必须即时可见（无 uuid 排队条目可挂）。
+  const cont = seedStatusHarness("working");
+  cont.runtime.reportUserInput("rt-key", undefined, '{"type":"user"}');
+  expect(cont.injected).toEqual(['{"type":"user"}']);
+
+  // idle：CLI 立即执行，echo 立即入流（现状语义）。
+  const idle = seedStatusHarness("idle");
+  idle.runtime.reportUserInput("rt-key", { uuid: "u-2", text: "B" }, '{"type":"user"}');
+  expect(idle.injected).toEqual(['{"type":"user"}']);
+
+  // busy 无 prompt 且无 echo（旧调用形状）：不注入不排队。
+  const silent = seedStatusHarness("working");
+  silent.runtime.reportUserInput("rt-key");
+  expect(silent.injected).toEqual([]);
+});
+
 test("turn 状态机: assistant 帧 → turn_activity(error/done 滞留翻回 working);synthetic/error assistant 不触发", () => {
   // CLI 自启 turn(task-notification 消费等)无 user_input 信号——assistant 帧即 turn 活跃。
   const errorCase = seedStatusHarness("error");

@@ -1473,3 +1473,64 @@ test("destroy clears queued commands (respawn = fresh relay = empty queue)", asy
 
   relay.destroy();
 });
+
+// ── 挂起 echo（队列消息单点呈现）─────────────────────────────────────────────
+
+test("pending echo: 排队期间不注入;started 出队补注入;cancelled 丢弃", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+  const injected: string[] = [];
+  const origAdd = relay.injectLiveLine.bind(relay);
+  relay.injectLiveLine = (line: string) => {
+    injected.push(line);
+    origAdd(line);
+  };
+
+  // 排队 + 挂起 echo：此刻聊天流不出现该消息（单点呈现 = queue chip）。
+  relay.enqueueQueuedCommand({ uuid: "u-1", content: "B" }, '{"type":"user","uuid":"u-1"}');
+  expect(injected).toEqual([]);
+
+  // started = CLI 出队开始执行 → 挂起 echo 此刻入流（chip 消失、气泡出现同一时机）。
+  await relay.handleStdoutLine(
+    JSON.stringify({ type: "command_lifecycle", command_uuid: "u-1", state: "started" }),
+  );
+  expect(injected).toEqual(['{"type":"user","uuid":"u-1"}']);
+
+  // cancelled = 条目作废 → 挂起 echo 一并丢弃（取消的消息不进聊天流）。
+  relay.enqueueQueuedCommand({ uuid: "u-2", content: "C" }, '{"type":"user","uuid":"u-2"}');
+  await relay.handleStdoutLine(
+    JSON.stringify({ type: "command_lifecycle", command_uuid: "u-2", state: "cancelled" }),
+  );
+  expect(injected).toEqual(['{"type":"user","uuid":"u-1"}']);
+
+  relay.destroy();
+});
+
+test("pending echo: holdCommands 冻结清空挂起（不注入）;无挂起的 started 不注入", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+  const injected: string[] = [];
+  const origAdd = relay.injectLiveLine.bind(relay);
+  relay.injectLiveLine = (line: string) => {
+    injected.push(line);
+    origAdd(line);
+  };
+
+  // hold 冻结 = 条目作废：挂起 echo 随冻结清空，恢复时 web 新 uuid 重发走 write gate
+  // 重新决策——挂起的旧行永远不该再入流。
+  relay.enqueueQueuedCommand({ uuid: "u-1", content: "B" }, '{"type":"user","uuid":"u-1"}');
+  relay.holdCommands();
+  await relay.handleStdoutLine(
+    JSON.stringify({ type: "command_lifecycle", command_uuid: "u-1", state: "started" }),
+  );
+  expect(injected).toEqual([]);
+
+  // 登记时未带 echo（echoLine 缺省）→ started 只出队，无注入（幂等旧形状）。
+  relay.enqueueQueuedCommand({ uuid: "u-3", content: "D" });
+  await relay.handleStdoutLine(
+    JSON.stringify({ type: "command_lifecycle", command_uuid: "u-3", state: "started" }),
+  );
+  expect(injected).toEqual([]);
+
+  relay.destroy();
+});

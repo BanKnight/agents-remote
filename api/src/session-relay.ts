@@ -83,6 +83,11 @@ export class ClaudeSessionRelay {
   // 条目保存在服务端可恢复/放弃。销毁时随队列一起清空（同 queuedCommands 惯例：
   // 进程换代 = 冻结态作废）。
   private heldCommands: ClaudeQueuedCommand[] = [];
+  // 排队消息的挂起 live echo（uuid → echo 行）：排队期间聊天流不显示该消息（单点呈现
+  // = queue chip），echo 延迟到 command_lifecycle started（CLI 出队开始执行）时经
+  // injectLiveLine 补入——与 JSONL 权威语义对齐（CLI 出队执行时才写 user 行，回放一致）。
+  // cancelled/completed/hold 冻结 = 条目作废，挂起 echo 一并丢弃（气泡不出现）。
+  private pendingEchoes = new Map<string, string>();
 
   async activate(projectPath: string, claudeSessionId: string | undefined): Promise<void> {
     if (this.phase !== "init") return;
@@ -303,7 +308,15 @@ export class ClaudeSessionRelay {
       const state = msg.state as string | undefined;
       const commandUuid = msg.command_uuid as string | undefined;
       if (state && state !== "queued" && commandUuid) {
+        // 出队补 echo（单点呈现）：started = CLI 开始执行该命令——排队期间被 gate 的
+        // live echo 在此刻入流（chip 消失、气泡出现，同一时机切换）；completed/cancelled
+        // = 条目作废，挂起 echo 一并丢弃（取消的消息不进聊天流）。
+        const pendingEcho = this.pendingEchoes.get(commandUuid);
+        this.pendingEchoes.delete(commandUuid);
         this.removeQueuedCommand(commandUuid);
+        if (state === "started" && pendingEcho !== undefined) {
+          this.injectLiveLine(pendingEcho);
+        }
       }
     }
 
@@ -363,11 +376,13 @@ export class ClaudeSessionRelay {
   // Book a prompt into the server-side queue (called from the write gate in
   // claude-runtime.ts reportUserInput). Idempotent by uuid: concurrent/duplicated
   // gates (gen-ui async continuation vs REST) must not double-book one prompt.
-  // Broadcasts only on a real insertion — no-ops stay silent.
-  enqueueQueuedCommand(entry: ClaudeQueuedCommand): void {
+  // Broadcasts only on a real insertion — no-ops stay silent. `echoLine`（可选举）
+  // = 排队期间挂起的 live echo，由 lifecycle started 出队时补注入（见 pendingEchoes）。
+  enqueueQueuedCommand(entry: ClaudeQueuedCommand, echoLine?: string): void {
     if (this.isDestroyed) return;
     if (this.queuedCommands.some((c) => c.uuid === entry.uuid)) return;
     this.queuedCommands.push(entry);
+    if (echoLine !== undefined) this.pendingEchoes.set(entry.uuid, echoLine);
     this.broadcast(this.queueStateLine());
   }
 
@@ -388,11 +403,13 @@ export class ClaudeSessionRelay {
   // queue_held 快照。无条目时也广播（停止动作本身需要一次全量对齐：清残留 chip +
   // 空 held 快照同时是客户端「停止已生效」的回执，见 claude-adapter onCancel）。
   // 快照经 queue_held 广播帧出去（广播-only 家族）；CLI 队列清理后迟到的 cancelled
-  // 帧驱动 removeQueuedCommand 对空队列是 no-op（不广播）。
+  // 帧驱动 removeQueuedCommand 对空队列是 no-op（不广播）。挂起 echo 随冻结清空——
+  // 冻结条目不进聊天流；恢复时 web 新 uuid 重发，走 write gate 重新决策。
   holdCommands(): void {
     if (this.isDestroyed) return;
     this.heldCommands = this.queuedCommands;
     this.queuedCommands = [];
+    this.pendingEchoes.clear();
     this.broadcast(this.queueStateLine());
     this.broadcast(this.queueHeldLine());
   }
