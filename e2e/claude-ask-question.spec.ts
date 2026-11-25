@@ -80,6 +80,28 @@ test("Claude: session detail renders with mocked REST data", async ({ page }) =>
     });
   });
 
+  // sessions-stream WS mock（与 overview mock 同源；verification.md mock 完备性）：
+  // applyShellsFrame 用服务端帧整体覆盖 overview 缓存 + stale-tab prune——缺此 mock
+  // 时真实后端帧竞态覆盖 → mock 会话判 stale 被摘 → chatInput 永不挂载。
+  await page.routeWebSocket(/\/api\/sessions\/stream$/, (ws) => {
+    ws.send(
+      JSON.stringify({
+        type: "sessions",
+        sessions: [
+          {
+            type: "agent",
+            projectName,
+            sessionId: fakeSessionId,
+            displayName: "Claude Agent (e2e-test)",
+            status: "idle",
+            provider: "claude",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
+  });
+
   // Mock the WebSocket entirely (no connectToServer): the fake session doesn't
   // exist on the server (upgrade → 404), and since 7c2f975 the composer is
   // disabled with an "Establishing connection…" placeholder while disconnected

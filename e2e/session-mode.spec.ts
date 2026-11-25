@@ -89,6 +89,27 @@ async function mockModeApi(
       }),
     });
   });
+  // sessions-stream WS mock（与 overview mock 同源；verification.md mock 完备性）：
+  // applyShellsFrame 用服务端帧整体覆盖 overview 缓存 + stale-tab prune——缺此 mock
+  // 时真实后端帧竞态覆盖 → mock 会话判 stale 被摘 → 面板永不挂载。
+  await page.routeWebSocket(/\/api\/sessions\/stream$/, (ws) => {
+    ws.send(
+      JSON.stringify({
+        type: "sessions",
+        sessions: [
+          {
+            type: "agent",
+            projectName,
+            sessionId: fakeSessionId,
+            displayName: "Claude Agent (e2e-mode)",
+            status: "idle",
+            provider: "claude",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
+  });
   // 两条 WS 都 mock（假会话在服务端不存在，真 upgrade 会 404）：claude-stream（chat 面板）
   // 回 pong 维持半开自愈；session-stream（终端面板）只挂不断。onClaudeSocket 供「多端跟随」
   // 用例从 mock 服务端侧推帧/关连接（模拟另一端切换后服务端关 WS）。

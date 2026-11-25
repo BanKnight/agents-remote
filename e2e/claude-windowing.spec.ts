@@ -28,6 +28,17 @@ function collectConsoleErrors(page: import("@playwright/test").Page) {
   };
 }
 
+/**
+ * sessions-stream WS mock（与 REST overview mock 同源；verification.md mock 完备性）：
+ * applyShellsFrame 用服务端帧整体覆盖 overview 缓存并触发 stale-tab prune——缺此 mock
+ * 时真实后端帧竞态覆盖 → mock 会话判 stale 被摘（acp-session.spec.ts 同款先例）。
+ */
+function routeSessionsStream(page: import("@playwright/test").Page, sessions: unknown[]) {
+  return page.routeWebSocket(/\/api\/sessions\/stream$/, (ws) => {
+    ws.send(JSON.stringify({ type: "sessions", sessions }));
+  });
+}
+
 test("Claude: slash menu renders catalog entries including plugin namespaced commands", async ({
   page,
 }) => {
@@ -129,6 +140,17 @@ test("Claude: slash menu renders catalog entries including plugin namespaced com
       }),
     });
   });
+  routeSessionsStream(page, [
+    {
+      type: "agent",
+      projectName,
+      sessionId: fakeSessionId,
+      displayName: "Claude Agent (e2e-windowing)",
+      status: "idle",
+      provider: "claude",
+      createdAt: new Date().toISOString(),
+    },
+  ]);
 
   // Mock the WebSocket entirely (no connectToServer): the fake session doesn't
   // exist on the server (upgrade → 404), and since 7c2f975 the composer is
@@ -257,6 +279,17 @@ test("Claude: empty catalog does not crash the page or composer", async ({ page 
       }),
     });
   });
+  routeSessionsStream(page, [
+    {
+      type: "agent",
+      projectName,
+      sessionId: fakeSessionId,
+      displayName: "Claude Agent (e2e-empty-catalog)",
+      status: "idle",
+      provider: "claude",
+      createdAt: new Date().toISOString(),
+    },
+  ]);
 
   // Fully-mocked WS (same as above): connected composer for the empty-catalog
   // crash check; pong keeps the heartbeat half-open detector satisfied.

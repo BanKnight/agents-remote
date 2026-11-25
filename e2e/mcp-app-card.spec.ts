@@ -97,6 +97,27 @@ async function setupMcpSession(page: Page, sessionId: string, displayName: strin
       }),
     });
   });
+  // sessions-stream WS mock（与 overview mock 同源；verification.md mock 完备性）：
+  // applyShellsFrame 用服务端帧整体覆盖 overview 缓存 + stale-tab prune——缺此 mock
+  // 时真实后端帧竞态覆盖 → mock 会话判 stale 被摘 → 面板永不挂载。
+  await page.routeWebSocket(/\/api\/sessions\/stream$/, (ws) => {
+    ws.send(
+      JSON.stringify({
+        type: "sessions",
+        sessions: [
+          {
+            type: "agent",
+            projectName,
+            sessionId,
+            displayName,
+            status: "idle",
+            provider: "claude",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
+  });
 }
 
 test("MCP Apps card: template host + handshake locale + tools/call refresh + ui/message confirm gate", async ({

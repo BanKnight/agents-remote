@@ -63,6 +63,12 @@ test("Admin approval card renders hot and allow dispatches respond", async ({ pa
       body: JSON.stringify({ projectNames: [projectName], candidates: [] }),
     });
   });
+  // sessions-stream WS mock（与 overview 空快照同源；verification.md mock 完备性）：
+  // applyShellsFrame 用服务端帧整体覆盖 overview 缓存——缺此 mock 时真实后端帧
+  // 竞态覆盖（真实会话进缓存，与空 overview 不一致）。
+  await page.routeWebSocket(/\/api\/sessions\/stream$/, (ws) => {
+    ws.send(JSON.stringify({ type: "sessions", sessions: [] }));
+  });
 
   await page.goto("/");
   await page.getByLabel("Password").fill(password);

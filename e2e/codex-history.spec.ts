@@ -147,6 +147,27 @@ async function mockResumedSession(page: Page, onPost: (body: Record<string, unkn
       }),
     });
   });
+  // sessions-stream WS mock（与 overview mock 同源；verification.md mock 完备性）：
+  // applyShellsFrame 用服务端帧整体覆盖 overview 缓存 + stale-tab prune——缺此 mock
+  // 时真实后端帧竞态覆盖 → mock 会话判 stale 被摘 → 面板永不挂载（全量并发 flaky）。
+  await page.routeWebSocket(/\/api\/sessions\/stream$/, (ws) => {
+    ws.send(
+      JSON.stringify({
+        type: "sessions",
+        sessions: [
+          {
+            type: "agent",
+            projectName,
+            sessionId: resumedSessionId,
+            displayName: FIRST_DEMO,
+            status: "idle",
+            provider: "codex",
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
+  });
   await page.routeWebSocket(
     new RegExp(`/api/projects/${projectName}/agent-sessions/${resumedSessionId}/codex-stream`),
     (ws) => {

@@ -27,6 +27,17 @@ function collectConsoleErrors(page: import("@playwright/test").Page) {
   };
 }
 
+/**
+ * sessions-stream WS mock（与 REST overview mock 同源；verification.md mock 完备性）：
+ * applyShellsFrame 用服务端帧整体覆盖 overview 缓存并触发 stale-tab prune——缺此 mock
+ * 时真实后端帧竞态覆盖 → mock 会话判 stale 被摘（acp-session.spec.ts 同款先例）。
+ */
+function routeSessionsStream(page: import("@playwright/test").Page, sessions: unknown[]) {
+  return page.routeWebSocket(/\/api\/sessions\/stream$/, (ws) => {
+    ws.send(JSON.stringify({ type: "sessions", sessions }));
+  });
+}
+
 type ClientMsg = {
   type?: string;
   text?: string;
@@ -234,6 +245,17 @@ async function mockSessionRest(page: import("@playwright/test").Page) {
       }),
     });
   });
+  routeSessionsStream(page, [
+    {
+      type: "agent",
+      projectName,
+      sessionId: fakeSessionId,
+      displayName,
+      status: "idle",
+      provider: "codex",
+      createdAt: new Date().toISOString(),
+    },
+  ]);
 }
 
 test("Codex: session detail renders stream (echo, reasoning, text, Bash card, approval) and send loop", async ({
@@ -566,6 +588,7 @@ test.describe("Codex mobile create entry", () => {
         body: JSON.stringify({ projectNames: [projectName], candidates: [] }),
       });
     });
+    routeSessionsStream(page, []);
     await page.route(
       new RegExp(`/api/projects/${projectName}$`),
       async (route) =>
