@@ -1,16 +1,17 @@
 # 当前状态（current.md — 滚动更新）
 
-> 最后更新：2026-11-24 23:15（**T3 spec 参考清单五批里程碑全部完成**——M1-M4 功能批
-> + M5 docs/review/回归收尾 + auto mode 修复插批，HEAD = `0a08b6c7`，**push 待用户
-> 确认**；剩余待办 = 真机验证清单交用户）
+> 最后更新：2026-11-25 14:35（**TUI env 注入修复批落地 `9275b392`**——bundle 终审
+> 定案「本会话恒弹审批」真根因，env 值集 GUI/TUI 单源对齐；`506b1577` +
+> `9275b392` 两个 commit 本地未推，**push 待用户确认** + 真机验证清单交用户）
 
 ## 一句话状态
 
-T3 Code spec 参考清单（A 档）五批里程碑全部落地并本地 commit：M1 停止终态一致
-（`0f03ba46`）→ M2 Stop=冻结队列（`399e0be5`）→ M3 发送幂等（`2295efce`）→ M4
-admin 特权天花板+血缘（`ce9fc424`）→ M5 docs 批（`2201e6d5`）+ review 消化批
-（`d5e377e7`，7 项修复）+ auto mode 修复插批（`0a08b6c7`，用户插话需求）。全门禁
-+ CSS/tokens 硬闸 + 改动面 e2e 全绿。
+T3 五批里程碑已 push（`feb993b4`）。此后 auto mode 插批两轮方向修正：`0a08b6c7`
+（=0 注入，证伪）→ `506b1577`（撤 =0 + AUTO_MODE_MODEL「保险」）→ 本批
+`9275b392`（bundle 终审：AUTO_MODE_MODEL 撞 safeguard 黑名单从未生效，连
+「保险」一起撤；真根因 = **TUI spawn 零 env** → 分类器兜底落 gateway 缺省表
+opus-4-7 网关不路由 → 恒弹人工审批；修复 = `buildAgentEnvOverrides` 单源 +
+TUI 经 0600 `--settings` 文件 env 块注入）。**两个 commit 本地未推**。
 
 ## 本 session 焦点
 
@@ -59,27 +60,46 @@ admin 特权天花板+血缘（`ce9fc424`）→ M5 docs 批（`2201e6d5`）+ rev
 token = 独立立项）；acp mode 白名单放行（休眠面，AcpSpawnTarget 无
 permissionMode）。
 
-### auto mode 修复插批（`0a08b6c7`，用户插话需求）
+### auto mode 全案终审 + TUI env 注入修复批（`506b1577` → `9275b392`）
 
-- 根因（用户修正）：新版 CLI auto mode safety check 默认走 server-side
-  classifier 且无本地 fallback，上游网关不支持 → 恒 422。此前归因「网关不路由
-  haiku」是同链表层现象。
-- 修复：`buildSpawnEnv` 缺省注入 `CLAUDE_CODE_AUTO_MODE_SERVER=0`（父 env 显式
-  设值时尊重父 env）；范围 = headless spawn，TUI 零 env 注入纪律不动。
-- memory `gateway-no-haiku-automan-check-fails.md` 已更新为新根因。
+- **bundle 2.1.325 终审推翻单变量实验归因**：分类器选择链（bFn）不读
+  DEFAULT_HAIKU_MODEL——链 = 托管 → server-configured → env AUTO_MODE_MODEL →
+  external sonnet probe → 兜底 Kj（**读 DEFAULT_OPUS_MODEL**）。此前「haiku
+  映射即通」是 probe+兜底多分支接住的假归因（单变量实验只能证「注释后仍工作」，
+  证不了「工作的是哪个分支」）。
+- **AUTO_MODE_MODEL 从未生效**：safeguard 黑名单
+  `["claude-sonnet-5-5","claude-opus-5-5","claude-opus-5"]` 拒显式 pin（静默
+  忽略）——注入的 resolved.sonnet=5-5 恰撞名单。「显式保险」无效，已撤。
+- **「本会话恒弹审批 vs GUI 自动审批」真根因**：TUI（tmux pane）spawn 零 env
+  （`/proc` 实锤仅 BASE_URL）→ 兜底 Kj 读不到 OPUS env → 落 gateway per-provider
+  缺省表 opus→claude-opus-4-7 → 网关（5-5 代映射）不路由 → 分类器请求失败 →
+  每步人工审批。GUI env 全套 → 兜底=opus-5-5 → 自动审批。
+- **修复（`9275b392`）**：`buildAgentEnvOverrides` 单源（AUTH_TOKEN +
+  PROVIDER_MANAGED_BY_HOST + BASE_URL + 模型三件套，无 AUTO_MODE_*）；GUI 走
+  buildSpawnEnv 继承后覆盖；TUI 经 resolveTuiSpawn 返回 `{args, env}`，agent-tui
+  写进既有 0600 `--settings` 文件顶层 env 键（CLI flagSettings 消费，bundle
+  实锤合并链；凭证落文件而非 tmux -e——argv 有 ps 暴露面，用户拍板）。
+  buildTuiHooksSettings → buildTuiAgentSettings。全门禁绿（api 1431/shared 18/
+  web 1098），api 已 respawn。
+- memory `gateway-no-haiku-automan-check-fails.md` 已重写为 bundle 终审版。
 
 ## 下一步
 
-1. **push 待用户确认**（HEAD = `0a08b6c7`，7 个 commit 待推：0f03ba46 → 2201e6d5
-   → d5e377e7 → 0a08b6c7）。
+1. **push 待用户确认**（待推 = `506b1577` + `9275b392` 两个 commit）。
 2. **真机验证清单（交用户）**：
    - 停止：running 中点停止 → 状态立即收口（不再悬挂 working）+ 排队条目变
      「已冻结」chip；停止后立刻发新消息 → 正常执行不误吞。
    - 队列冻结/恢复/放弃：A 端 running 中排队多条 → 停止 → B 端见冻结 chip；
      恢复 → 按序重发；放弃 → 清空。
-   - auto mode：新会话（重启 ar-dev-api 后 spawn）auto mode 不再报
-     「safety check does not run」。
-3. 全量 e2e 查漏补缺（非必须——改动面 4 spec 已全绿；全套留到下个里程碑收尾）。
+   - auto mode：web UI 开新 auto mode 会话，让 agent 跑需要工具的任务 →
+     不弹审批自主执行、无「safety check does not run」。
+   - **TUI 恒弹审批**：现有 terminal 形态会话切「回到对话」再切 terminal
+     （pane 重建吃到新 env）→ 工具执行不再逐步要审批。**当前正在跑的旧 pane
+     不受影响（env 不热更）**。
+3. **trust 询问问题挂账（用户明确不算结案）**：22router 会话 headless spawn 后
+   卡在 trust folder 询问（GUI 不询问、TUI 询问；`hasTrustDialogAccepted:true`
+   却仍询问的矛盾未解释）——classifier 修复已收尾，回头立项排查。
+4. 全量 e2e 查漏补缺（非必须——改动面 4 spec 已全绿；全套留到下个里程碑收尾）。
 
 ## 挂账（非本批）
 
@@ -100,5 +120,5 @@ permissionMode）。
 - 开干前读 .claude/gtd/next-actions.md；守 .claude/constitution.md 底线。
 - 到达里程碑或感知将 compact 时，主动 /handoff save。
 
-最后更新：2026-11-24 23:15 / 触发原因：T3 五批里程碑 + review 消化 + auto mode
-插批全部完成，阶段收尾 handoff。
+最后更新：2026-11-25 14:35 / 触发原因：TUI env 注入修复批（9275b392）落地 +
+auto mode 全案 bundle 终审定案，阶段收尾 handoff。
