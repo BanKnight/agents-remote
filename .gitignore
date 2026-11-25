@@ -28,3 +28,5 @@ data/
 # 无 import；生成命令见 api/src/codex-runtime.ts 头注释）
 api/src/codex-generated/
 
+# 调研报告站（t3code 等 HTML 报告产物，本地查阅用、不入库）
+site/
