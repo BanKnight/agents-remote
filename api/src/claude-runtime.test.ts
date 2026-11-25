@@ -8,6 +8,7 @@ import {
   extractContextUsageFromStdoutLine,
   extractModelFromStdoutLine,
   extractSkillReloadFromStdoutLine,
+  buildAgentEnvOverrides,
   buildSpawnEnv,
   buildTuiSpawnArgs,
   readLastContextUsageFromJsonlFile,
@@ -875,8 +876,6 @@ test("buildSpawnEnv injects ANTHROPIC_DEFAULT_*_MODEL bare（env 恒裸，[1m] �
   expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-4-8");
   expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-4-6");
   expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-4-5");
-  // auto mode 本地分类器钉 sonnet 槽位（网关不路由 haiku 时 latch 分类请求会恒 422）。
-  expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe("claude-sonnet-4-6");
 });
 
 test("buildSpawnEnv omits [1m] from env when enable1mContext off", () => {
@@ -884,7 +883,6 @@ test("buildSpawnEnv omits [1m] from env when enable1mContext off", () => {
   expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-4-8");
   expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-4-6");
   expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-4-5");
-  expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe("claude-sonnet-4-6");
 });
 
 test("buildSpawnEnv injects alias-mapping view verbatim (alias 解析交给 CLI)", () => {
@@ -894,7 +892,6 @@ test("buildSpawnEnv injects alias-mapping view verbatim (alias 解析交给 CLI)
   expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("opus");
   expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("sonnet");
   expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("haiku");
-  expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe("sonnet");
 });
 
 test("buildSpawnEnv does not inject model env when view absent", () => {
@@ -902,7 +899,35 @@ test("buildSpawnEnv does not inject model env when view absent", () => {
   expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
   expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBeUndefined();
   expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBeUndefined();
+  // AUTO_MODE_MODEL 不注入：bundle 2.1.325 分类器 safeguard 黑名单
+  // ["claude-sonnet-5-5","claude-opus-5-5","claude-opus-5"] 拒显式 pin（5-5 值被静默
+  // 忽略，注入从未生效）；AUTO_MODE_SERVER 同不注入（=0 触发 own_switch_off 关死）。
   expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined();
+  expect(env.CLAUDE_CODE_AUTO_MODE_SERVER).toBeUndefined();
+});
+
+// ── buildAgentEnvOverrides: GUI/TUI 共用 env 值集（TUI 经 --settings 文件 env 块注入）──
+
+test("buildAgentEnvOverrides 注入凭证三件套 + 模型映射（GUI/TUI 单源）", () => {
+  const env = buildAgentEnvOverrides(
+    { apiKey: "sk-gw", baseUrl: "https://gw.example.com" },
+    { ...concreteView, enable1mContext: true },
+  );
+  expect(env.ANTHROPIC_AUTH_TOKEN).toBe("sk-gw");
+  expect(env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBe("1");
+  expect(env.ANTHROPIC_BASE_URL).toBe("https://gw.example.com");
+  expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-4-8");
+  expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-4-6");
+  expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-4-5");
+});
+
+test("buildAgentEnvOverrides 缺 provider/view 时输出空集（不误注继承面）", () => {
+  expect(buildAgentEnvOverrides(undefined)).toEqual({});
+  expect(buildAgentEnvOverrides({ apiKey: "" })).toEqual({});
+  expect(buildAgentEnvOverrides({ apiKey: "sk", baseUrl: "" })).toEqual({
+    ANTHROPIC_AUTH_TOKEN: "sk",
+    CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: "1",
+  });
 });
 
 // ── resolveControlModel: runtime set_model 透传 alias（CLI 经 env 解析） ──
@@ -1094,14 +1119,22 @@ test("resolveTuiSpawn 按 JSONL 存在性判定 resume/session-id（与 headless
   const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
   try {
     // 全新 id：JSONL 尚未落盘 → --session-id（CLI 实测该参数只接全新 id）。
-    expect(
-      await runtime.resolveTuiSpawn({
-        projectName: "demo",
-        projectPath,
-        claudeSessionId,
-        permissionMode: "auto",
-      }),
-    ).toEqual(["claude", "--session-id", claudeSessionId, "--permission-mode", "auto"]);
+    // env = buildAgentEnvOverrides 单源（无 provider/view 配置时为空集，agent-tui 写
+    // 进 --settings 文件）。
+    const fresh = await runtime.resolveTuiSpawn({
+      projectName: "demo",
+      projectPath,
+      claudeSessionId,
+      permissionMode: "auto",
+    });
+    expect(fresh.args).toEqual([
+      "claude",
+      "--session-id",
+      claudeSessionId,
+      "--permission-mode",
+      "auto",
+    ]);
+    expect(fresh.env).toEqual({});
     // 已有 JSONL（会话跑过）→ --resume 接续（--resume 对不存在 id 硬失败）。
     mkdirSync(dirname(jsonlPath), { recursive: true });
     writeFileSync(jsonlPath, "");
@@ -1110,7 +1143,7 @@ test("resolveTuiSpawn 按 JSONL 存在性判定 resume/session-id（与 headless
       projectPath,
       claudeSessionId,
     });
-    expect(resumed.slice(0, 3)).toEqual(["claude", "--resume", claudeSessionId]);
+    expect(resumed.args.slice(0, 3)).toEqual(["claude", "--resume", claudeSessionId]);
   } finally {
     rmSync(projectPath, { recursive: true, force: true });
     rmSync(dirname(jsonlPath), { recursive: true, force: true });

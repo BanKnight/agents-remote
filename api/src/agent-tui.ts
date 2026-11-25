@@ -105,8 +105,8 @@ export function parseTuiHookEvent(raw: string): TuiHookEvent | null {
   };
 }
 
-/** TUI hooks settings 文件内容（纯函数，单测锁定七 hook + 写文件命令）。每个 hook 都把
- *  stdin（CLI 传入的完整 hook JSON：hook_event_name/session_id/agent_id/tool_name 等）
+/** TUI agent settings 文件内容（纯函数，单测锁定七 hook + 写文件命令 + env 块）。每个 hook
+ *  都把 stdin（CLI 传入的完整 hook JSON：hook_event_name/session_id/agent_id/tool_name 等）
  *  原样落进状态文件（cat >）：UserPromptSubmit（turn 开始）、Stop（turn 正常结束）、
  *  StopFailure（turn 因 API 错误结束）、PostToolUse / PostToolUseFailure（工具执行完/
  *  失败 = turn 存活证据：blocked 审批已解决回 working + error 滞留自愈——StopFailure 后
@@ -115,14 +115,18 @@ export function parseTuiHookEvent(raw: string): TuiHookEvent | null {
  *  工具或 Stop 才收口）、PermissionRequest（真权限申请）；Notification 只收
  *  permission_prompt 类型（CLI 的 Notification 还含 idle_prompt 空闲提示等——无 matcher
  *  会把空闲当审批挂起，状态机 blocked 下忽略 user_input，整个 turn 钉死 blocked）。
+ *  env 块（可选）：与 GUI headless spawn 同一套 env 值集（buildAgentEnvOverrides 单源）——
+ *  CLI bundle 实锤消费 --settings 文件（flagSettings）的 env 键（合入自身环境）。凭证走
+ *  0600 文件而非 tmux -e：-e 键值短暂出现在 tmux client argv（ps 可见），文件无此暴露面。
  *  状态文件路径单引号包裹——runDir 出自服务端配置（~/.agents-remote），不含单引号。 */
-export function buildTuiHooksSettings(statusFilePath: string) {
+export function buildTuiAgentSettings(statusFilePath: string, env?: Record<string, string>) {
   const hookCommand = `cat > '${statusFilePath}'`;
   const hookEntry = (matcher?: string) => ({
     ...(matcher ? { matcher } : {}),
     hooks: [{ type: "command" as const, command: hookCommand }],
   });
   return {
+    ...(env && Object.keys(env).length > 0 ? { env } : {}),
     hooks: {
       UserPromptSubmit: [hookEntry()],
       Stop: [hookEntry()],
@@ -170,7 +174,7 @@ export class AgentTuiController {
       ) => void;
     },
   ) {
-    // hooks 命令把状态文件路径单引号包裹（buildTuiHooksSettings）——runDir 出自服务端
+    // hooks 命令把状态文件路径单引号包裹（buildTuiAgentSettings）——runDir 出自服务端
     // 配置（~/.agents-remote），构造时显式断言不含单引号，否则 hook 命令会被截断
     // （security review P3：把隐式前提显式化，fail-fast 在装配期而非静默断链）。
     if (deps.runDir.includes("'")) {
@@ -221,12 +225,21 @@ export class AgentTuiController {
     if (this.isCodexSession(metadata)) return this.switchCodexToTerminal(metadata);
     const { claudeRuntime, tmuxRuntime, registry, approvalCenter } = this.deps;
     const runtimeKey = metadata.runtimeKey;
-    // 1) hooks settings（0600，随会话生命周期清理）+ 状态文件（先建空文件，fs.watch 才有 inode 可挂）。
+    // 0) 先解析 spawn argv + env（纯解析，不触任何状态）：env 要在步骤 1 写进 settings
+    //    文件，且解析失败此刻零状态已动，无需回滚（比「解析放进 try 同走回滚」更干净）。
+    const { args, env } = await claudeRuntime.resolveTuiSpawn({
+      ...metadata,
+      settingsPath: this.settingsPath(runtimeKey),
+    });
+    // 1) agent settings（0600，随会话生命周期清理）：hooks 状态采集 + env 块（与 GUI
+    //    headless spawn 同一套值集，buildAgentEnvOverrides 单源）——CLI 经 --settings
+    //    flagSettings 消费 env 键。凭证落 0600 文件而非 tmux -e（-e 键值短暂出现在 tmux
+    //    client argv，ps 可见；文件无此暴露面）。状态文件先建空，fs.watch 才有 inode 可挂。
     await mkdir(join(this.deps.runDir, "agent-settings"), { recursive: true });
     await mkdir(join(this.deps.runDir, "agent-status"), { recursive: true });
     await writeFile(
       this.settingsPath(runtimeKey),
-      `${JSON.stringify(buildTuiHooksSettings(this.statusPath(runtimeKey)), null, 2)}\n`,
+      `${JSON.stringify(buildTuiAgentSettings(this.statusPath(runtimeKey), env), null, 2)}\n`,
       { mode: 0o600 },
     );
     await writeFile(this.statusPath(runtimeKey), "", { mode: 0o600 });
@@ -240,15 +253,9 @@ export class AgentTuiController {
     // 3) headless 让位：silent 关（不广播 closed、不走审批 settled 回调；autoRetry
     //    destroySession / relay 清理照旧）。
     await claudeRuntime.close(runtimeKey, { silent: true });
-    // 4) tmux pane 起 CLI 原生形态（argv 全来自会话 metadata，见 resolveTuiSpawn；
-    //    settingsPath 接通 hooks——CLI 真正加载三 hook，review P1-1 断链修复）。
-    //    resolveTuiSpawn 同在 try 内（code review P2：spawn 解析失败同走回滚，不留
-    //    「mode=terminal + 有 hooks 文件却无 pane」半态）。
+    // 4) tmux pane 起 CLI 原生形态（argv/env 见 resolveTuiSpawn；settingsPath 接通
+    //    hooks + env——CLI 真正加载七 hook 与 env 块，review P1-1 断链修复的同通道）。
     try {
-      const args = await claudeRuntime.resolveTuiSpawn({
-        ...metadata,
-        settingsPath: this.settingsPath(runtimeKey),
-      });
       await tmuxRuntime.startCommand(metadata, args.map(shellQuote).join(" "));
     } catch (error) {
       // 起 pane 失败（tmux server 不可达等）：形态退回 chat + 清掉刚写的 settings/状态文件——

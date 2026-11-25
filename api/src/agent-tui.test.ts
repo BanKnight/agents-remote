@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { ApprovalCenter } from "./approval-center";
 import {
   AgentTuiController,
-  buildTuiHooksSettings,
+  buildTuiAgentSettings,
   type AgentTuiStatusContext,
   parseTuiHookEvent,
   TUI_STATUS_SIGNAL_BY_TOKEN,
@@ -64,16 +64,23 @@ async function seed() {
       closeCalls.push({ key, silent: opts?.silent });
     },
     async resolveTuiSpawn(m?: { claudeSessionId?: string; settingsPath?: string }) {
-      // 回显 settingsPath：断言「CLI 真的拿到 --settings」（P1-1 断链修复的控制器级锁定）。
-      return [
-        "claude",
-        "--resume",
-        m?.claudeSessionId ?? "",
-        "--settings",
-        m?.settingsPath ?? "",
-        "--mcp-config",
-        '{"a":"b c"}',
-      ];
+      // 回显 settingsPath：断言「CLI 真的拿到 --settings」（P1-1 断链修复的控制器级锁定）；
+      // env 固定值：断言「env 块真的写进 settings 文件」（TUI env 注入的控制器级锁定）。
+      return {
+        args: [
+          "claude",
+          "--resume",
+          m?.claudeSessionId ?? "",
+          "--settings",
+          m?.settingsPath ?? "",
+          "--mcp-config",
+          '{"a":"b c"}',
+        ],
+        env: {
+          ANTHROPIC_AUTH_TOKEN: "sk-test",
+          ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
+        },
+      };
     },
     async ensureRunning(...args: unknown[]) {
       ensureCalls.push(args);
@@ -210,10 +217,10 @@ async function waitForStatus(sessionId: string, expected: string) {
   return (await registry.getAgentSession(project.name, sessionId))?.status;
 }
 
-// ── hooks settings 生成（纯函数）──────────────────────────────────────────
+// ── agent settings 生成（纯函数）──────────────────────────────────────────
 
-test("buildTuiHooksSettings 七 hook 均为 cat 落盘完整 JSON；Notification 带 permission_prompt matcher", () => {
-  const settings = buildTuiHooksSettings("/run/agent-status/key1");
+test("buildTuiAgentSettings 七 hook 均为 cat 落盘完整 JSON；Notification 带 permission_prompt matcher", () => {
+  const settings = buildTuiAgentSettings("/run/agent-status/key1");
   expect(Object.keys(settings.hooks).sort()).toEqual([
     "Notification",
     "PermissionRequest",
@@ -238,6 +245,22 @@ test("buildTuiHooksSettings 七 hook 均为 cat 落盘完整 JSON；Notification
   expect(settings.hooks.Notification[0]?.matcher).toBe("permission_prompt");
   // 其余 hook 无 matcher（匹配全部事件）。
   expect(settings.hooks.Stop[0]?.matcher).toBeUndefined();
+});
+
+test("buildTuiAgentSettings env 块：传入则落顶层 env 键；空集/缺省不落键", () => {
+  // env 在场 → 顶层 env 键（CLI flagSettings 消费；与 hooks 键并存）。
+  const withEnv = buildTuiAgentSettings("/run/agent-status/key1", {
+    ANTHROPIC_AUTH_TOKEN: "sk-gw",
+    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
+  });
+  expect(withEnv.env).toEqual({
+    ANTHROPIC_AUTH_TOKEN: "sk-gw",
+    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
+  });
+  expect(Object.keys(withEnv.hooks)).toHaveLength(7);
+  // 空集 / 缺省 → 无 env 键（不写空块）。
+  expect(buildTuiAgentSettings("/run/agent-status/key1", {}).env).toBeUndefined();
+  expect(buildTuiAgentSettings("/run/agent-status/key1").env).toBeUndefined();
 });
 
 test("TUI_STATUS_SIGNAL_BY_TOKEN 五 token 映射状态机信号（存量 pane 兼容 fallback）", () => {
@@ -312,8 +335,13 @@ test("switchToTerminal：落 settings/状态文件（0600）→ mode 落盘 → 
   expect(h.closeCalls).toEqual([{ key: h.runtimeKey, silent: true }]);
   expect(h.cleared).toEqual([h.runtimeKey]);
 
-  // settings 文件：0600 + 七 hook 内容。
+  // settings 文件：0600 + 七 hook 内容 + env 块（resolveTuiSpawn 的 env 值集落顶层 env
+  // 键——CLI flagSettings 消费；凭证落 0600 文件而非 tmux -e argv，TUI env 注入闭环）。
   const settings = JSON.parse(await readFile(settingsPath(h.runtimeKey), "utf8"));
+  expect(settings.env).toEqual({
+    ANTHROPIC_AUTH_TOKEN: "sk-test",
+    ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
+  });
   expect(Object.keys(settings.hooks).sort()).toEqual([
     "Notification",
     "PermissionRequest",

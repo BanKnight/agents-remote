@@ -400,14 +400,32 @@ export function buildSpawnEnv(
 ): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...parentEnv };
   if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort;
-  // AUTO_MODE_SERVER 不注入（2026-11-25 撤 0a08b6c7 的 =0——修复核心）：=0 触发 CLI
-  // own_switch_off，把 auto mode 直接关死（2.1.325 本地 classifier 非独立开关，删不得）。
-  // 不注入时网关（thirdParty）场景走 CLI 设计内降级：server check 响应缺 safeguard_results
-  // （网关 strip 或官方不跑）→ latch 成「部署答案 = 本地分类，rest of session」（bundle
-  // 实锤文案），本地分类模型消费 ANTHROPIC_DEFAULT_HAIKU_MODEL——单变量对照实验实锤
-  // （2026-11-25：api 层注释 AUTO_MODE_MODEL 后 Bash tool 照样自主执行）——用户 haiku
-  // 槽位映射（网关可路由模型）即可让分类器工作。AUTO_MODE_MODEL 注入（下方 view 块）
-  // 保留为显式保险：分类器模型不随 haiku 槽位配置漂移，显式钉 sonnet。
+  Object.assign(env, buildAgentEnvOverrides(provider, view));
+  return env;
+}
+
+// ── agent env 覆盖值集（GUI/TUI 单源共用）─────────────────────────────────────
+// 两形态唯一差异 = 无头（Bun.spawn stream-json）与有头（tmux pane TUI）的 spawn 机制
+// 本身；凭证/网关/模型映射的 env 值集必须一致（2026-11-25 用户拍板「env 极为一致」）。
+// GUI 走 buildSpawnEnv 继承后覆盖；TUI 经 --settings 文件（agent-tui 写的 0600
+// per-session 文件）的 env 块注入——CLI bundle 2.1.325 实锤消费 flagSettings env 键。
+// 凭证落文件而非 tmux -e：-e 键值短暂出现在 tmux client argv（ps 可见），文件无此
+// 暴露面（与 codex auth.json「机密走文件」纪律同构）。
+//
+// AUTO_MODE_SERVER 不注入（2026-11-25 撤 0a08b6c7 的 =0——修复核心）：=0 触发 CLI
+// own_switch_off，把 auto mode 直接关死（2.1.325 本地 classifier 非独立开关，删不得）。
+// CLAUDE_CODE_AUTO_MODE_MODEL 同日撤（曾注入 resolved.sonnet 作「显式保险」）：bundle
+// 2.1.325 实锤 CLI 分类器 safeguard 黑名单 ["claude-sonnet-5-5","claude-opus-5-5",
+// "claude-opus-5"] 拒显式 pin——5-5 映射值恰撞名单被静默忽略，注入从未生效。分类器实际
+// 生效路径 = env 缺席 → external sonnet probe（缺省 claude-sonnet-5）失败降级 → 兜底 Kj
+// 读 ANTHROPIC_DEFAULT_OPUS_MODEL（Kj 分支不查黑名单）；TUI 形态曾零 env 注入 → 兜底落
+// gateway per-provider 缺省表 claude-opus-4-7 → 网关（5-5 代配置）不路由 → auto mode
+// 每步退回人工审批——本函数三件套注入即修复。
+export function buildAgentEnvOverrides(
+  provider: { apiKey: string; baseUrl?: string } | undefined,
+  view?: ModelMappingView,
+): Record<string, string> {
+  const env: Record<string, string> = {};
   if (provider?.apiKey) {
     env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
     env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST = "1";
@@ -417,10 +435,6 @@ export function buildSpawnEnv(
     const { resolved } = buildAvailableAliases(view);
     if (resolved.opus) env.ANTHROPIC_DEFAULT_OPUS_MODEL = resolved.opus;
     if (resolved.sonnet) env.ANTHROPIC_DEFAULT_SONNET_MODEL = resolved.sonnet;
-    // auto mode 本地分类器显式钉 sonnet 槽位（v2.1.302 新增 env，只影响 client-side
-    // classifier）。实测 haiku 槽位映射同样能被分类器消费（见上方注释），此注入为
-    // 显式保险——分类器模型不随 haiku 槽位漂移。
-    if (resolved.sonnet) env.CLAUDE_CODE_AUTO_MODE_MODEL = resolved.sonnet;
     if (resolved.haiku) env.ANTHROPIC_DEFAULT_HAIKU_MODEL = resolved.haiku;
   }
   return env;
@@ -1275,10 +1289,12 @@ export class ClaudeRuntime implements RuntimeResources {
     return proc;
   }
 
-  /** TUI 形态 spawn 输入（双模式编排用，agent-tui 调）：纯 argv 零 env（用户拍板——凭证走
-   *  CLI 自身配置，参数全来自会话 metadata）。审批让位 = argv 不带 --permission-prompt-tool。
-   *  模型别名查表出规范名（与 headless spawn 同源映射，消 CLI 自身别名表的网关 422 面）；
-   *  effort 缺省回落 settings 默认（resolveSpawnInputs 同源）。 */
+  /** TUI 形态 spawn 输入（双模式编排用，agent-tui 调）：argv 全来自会话 metadata + env
+   *  值集与 GUI headless spawn 单源一致（buildAgentEnvOverrides——TUI 曾零 env 注入致
+   *  分类器兜底落 gateway 缺省表、auto mode 每步退回人工审批，2026-11-25 修复）。审批
+   *  让位 = argv 不带 --permission-prompt-tool。模型别名查表出规范名（与 headless spawn
+   *  同源映射，消 CLI 自身别名表的网关 422 面）；effort 缺省回落 settings 默认
+   *  （resolveSpawnInputs 同源）。env 由调用方写进 --settings 文件（0600，非 tmux -e）。 */
   async resolveTuiSpawn(metadata: {
     /** ar 会话 id（admin 审批卡 origin 身份）；缺省 URL 不带 ?origin=。 */
     id?: string;
@@ -1291,26 +1307,32 @@ export class ClaudeRuntime implements RuntimeResources {
     effort?: EffortLevel;
     /** hooks settings 文件路径（agent-tui 传入）；缺省不传 --settings。 */
     settingsPath?: string;
-  }): Promise<string[]> {
+  }): Promise<{ args: string[]; env: Record<string, string> }> {
     if (!metadata.claudeSessionId) {
       throw new Error("TUI mode requires a pinned claudeSessionId");
     }
-    const { resolvedEffort, view } = await this.resolveSpawnInputs(
+    const { resolvedEffort, view, providerCreds } = await this.resolveSpawnInputs(
       metadata.modelAlias ?? metadata.model,
       metadata.effort,
     );
     const resolvedAliases = view ? buildAvailableAliases(view).resolved : undefined;
     const rawModel = sanitizePersistedModel(metadata.modelAlias ?? metadata.model);
     const model = rawModel ? (resolvedAliases?.[rawModel] ?? rawModel) : undefined;
-    return buildTuiSpawnArgs({
-      claudeSessionId: metadata.claudeSessionId,
-      resume: existsSync(claudeJsonlPath(metadata.projectPath, metadata.claudeSessionId)),
-      model,
-      permissionMode: metadata.permissionMode,
-      effort: resolvedEffort,
-      settingsPath: metadata.settingsPath,
-      mcpArgs: this.buildMcpArgs(metadata.projectName, metadata.id),
-    });
+    return {
+      args: buildTuiSpawnArgs({
+        claudeSessionId: metadata.claudeSessionId,
+        resume: existsSync(claudeJsonlPath(metadata.projectPath, metadata.claudeSessionId)),
+        model,
+        permissionMode: metadata.permissionMode,
+        effort: resolvedEffort,
+        settingsPath: metadata.settingsPath,
+        mcpArgs: this.buildMcpArgs(metadata.projectName, metadata.id),
+      }),
+      // 与 GUI headless spawn 同一套 env 值集（buildAgentEnvOverrides 单源）——TUI 曾零
+      // env 注入，分类器兜底落 gateway 缺省表 opus-4-7 → 网关不路由 → auto mode 每步
+      // 退回人工审批（2026-11-25 bundle + /proc environ 双实锤）。
+      env: buildAgentEnvOverrides(providerCreds, view),
+    };
   }
 
   private async resolveSpawnInputs(
