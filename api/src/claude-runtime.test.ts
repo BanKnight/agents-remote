@@ -759,9 +759,9 @@ test("injectLiveLine is a no-op when the relay is missing or destroyed", () => {
 
 test("buildSpawnEnv inherits parent env without injecting when effort/provider absent", () => {
   const env = buildSpawnEnv(undefined, undefined, { PATH: "/usr/bin" });
-  // 缺省注入 CLAUDE_CODE_AUTO_MODE_SERVER=0（上游网关不支持 server-side classifier，
-  // 见 buildSpawnEnv 注释）；其余保持恒等。
-  expect(env).toEqual({ PATH: "/usr/bin", CLAUDE_CODE_AUTO_MODE_SERVER: "0" });
+  // 恒等继承：host 不注入 AUTO_MODE_SERVER（2026-11-25 方向再修正——=0 触发 CLI
+  // own_switch_off 把 auto mode 关死，撤 0a08b6c7，见 buildSpawnEnv 注释）。
+  expect(env).toEqual({ PATH: "/usr/bin" });
   expect(env.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined();
   expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
   expect(env.ANTHROPIC_API_KEY).toBeUndefined();
@@ -770,7 +770,7 @@ test("buildSpawnEnv inherits parent env without injecting when effort/provider a
   expect(env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST).toBeUndefined();
 });
 
-test("buildSpawnEnv respects explicit parent CLAUDE_CODE_AUTO_MODE_SERVER (网关升级后可开)", () => {
+test("buildSpawnEnv passes parent CLAUDE_CODE_AUTO_MODE_SERVER through verbatim", () => {
   const env = buildSpawnEnv(undefined, undefined, {
     PATH: "/usr/bin",
     CLAUDE_CODE_AUTO_MODE_SERVER: "1",
@@ -875,6 +875,8 @@ test("buildSpawnEnv injects ANTHROPIC_DEFAULT_*_MODEL bare（env 恒裸，[1m] �
   expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-4-8");
   expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-4-6");
   expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-4-5");
+  // auto mode 本地分类器钉 sonnet 槽位（网关不路由 haiku 时 latch 分类请求会恒 422）。
+  expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe("claude-sonnet-4-6");
 });
 
 test("buildSpawnEnv omits [1m] from env when enable1mContext off", () => {
@@ -882,6 +884,7 @@ test("buildSpawnEnv omits [1m] from env when enable1mContext off", () => {
   expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-4-8");
   expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-4-6");
   expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-4-5");
+  expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe("claude-sonnet-4-6");
 });
 
 test("buildSpawnEnv injects alias-mapping view verbatim (alias 解析交给 CLI)", () => {
@@ -891,6 +894,7 @@ test("buildSpawnEnv injects alias-mapping view verbatim (alias 解析交给 CLI)
   expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("opus");
   expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("sonnet");
   expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("haiku");
+  expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe("sonnet");
 });
 
 test("buildSpawnEnv does not inject model env when view absent", () => {
@@ -898,6 +902,7 @@ test("buildSpawnEnv does not inject model env when view absent", () => {
   expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
   expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBeUndefined();
   expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBeUndefined();
+  expect(env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined();
 });
 
 // ── resolveControlModel: runtime set_model 透传 alias（CLI 经 env 解析） ──

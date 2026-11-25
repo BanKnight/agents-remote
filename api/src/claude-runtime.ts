@@ -400,11 +400,14 @@ export function buildSpawnEnv(
 ): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = { ...parentEnv };
   if (effort) env.CLAUDE_CODE_EFFORT_LEVEL = effort;
-  // 新版 CLI 的 auto mode 默认走 server-side classifier（safety check 调上游模型）且无
-  // 本地 fallback——上游网关不支持该请求时 auto mode 恒不可用（用户 2026-11-24 补充的
-  // 根因修正：此前归因「网关不路由 haiku」是同链表层现象）。host 侧缺省关（上游能力是
-  // 部署环境事实）；父 env 已显式设值时以父 env 为准（网关升级支持后可在部署层开）。
-  if (env.CLAUDE_CODE_AUTO_MODE_SERVER === undefined) env.CLAUDE_CODE_AUTO_MODE_SERVER = "0";
+  // AUTO_MODE_SERVER 不注入（2026-11-25 撤 0a08b6c7 的 =0——修复核心）：=0 触发 CLI
+  // own_switch_off，把 auto mode 直接关死（2.1.325 本地 classifier 非独立开关，删不得）。
+  // 不注入时网关（thirdParty）场景走 CLI 设计内降级：server check 响应缺 safeguard_results
+  // （网关 strip 或官方不跑）→ latch 成「部署答案 = 本地分类，rest of session」（bundle
+  // 实锤文案），本地分类模型消费 ANTHROPIC_DEFAULT_HAIKU_MODEL——单变量对照实验实锤
+  // （2026-11-25：api 层注释 AUTO_MODE_MODEL 后 Bash tool 照样自主执行）——用户 haiku
+  // 槽位映射（网关可路由模型）即可让分类器工作。AUTO_MODE_MODEL 注入（下方 view 块）
+  // 保留为显式保险：分类器模型不随 haiku 槽位配置漂移，显式钉 sonnet。
   if (provider?.apiKey) {
     env.ANTHROPIC_AUTH_TOKEN = provider.apiKey;
     env.CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST = "1";
@@ -414,6 +417,10 @@ export function buildSpawnEnv(
     const { resolved } = buildAvailableAliases(view);
     if (resolved.opus) env.ANTHROPIC_DEFAULT_OPUS_MODEL = resolved.opus;
     if (resolved.sonnet) env.ANTHROPIC_DEFAULT_SONNET_MODEL = resolved.sonnet;
+    // auto mode 本地分类器显式钉 sonnet 槽位（v2.1.302 新增 env，只影响 client-side
+    // classifier）。实测 haiku 槽位映射同样能被分类器消费（见上方注释），此注入为
+    // 显式保险——分类器模型不随 haiku 槽位漂移。
+    if (resolved.sonnet) env.CLAUDE_CODE_AUTO_MODE_MODEL = resolved.sonnet;
     if (resolved.haiku) env.ANTHROPIC_DEFAULT_HAIKU_MODEL = resolved.haiku;
   }
   return env;
