@@ -208,6 +208,17 @@ const handleAgentSessionRoute = async (
       return jsonError("SESSION_PROVIDER_UNAVAILABLE", "Invalid codexThreadId", 400);
     }
 
+    // claudeSessionId 形状校验（security review P3-6，与 codexThreadId 同款）：外部
+    // 输入直通 metadata 与 claudeJsonlPath 路径构造，非 UUID 形状一律拒绝。
+    if (
+      body.claudeSessionId !== undefined &&
+      !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+        body.claudeSessionId,
+      )
+    ) {
+      return jsonError("SESSION_PROVIDER_UNAVAILABLE", "Invalid claudeSessionId", 400);
+    }
+
     const profile = getAgentProviderProfile(body.provider);
 
     // claude: settings 是 model/effort 权威来源。model 默认 tier alias "sonnet"（不读

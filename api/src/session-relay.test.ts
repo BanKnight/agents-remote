@@ -1573,3 +1573,42 @@ test("onQueueChanged fires on real queue-change points, not no-ops or destroy", 
   relay.restoreHeldCommands([{ uuid: "h9", content: "y" }]);
   expect(calls.length).toBe(0);
 });
+
+// 队列重物化（#11 review 修正）：onCommandSettled 回调契约——lifecycle 出队事件
+// （started/completed/cancelled）在 onQueueChanged 之前触发（cancelled 剔除恢复态
+// 后落盘才能看到剔除后的合并面）；queue_state 无变化时（removeQueuedCommand no-op）
+// settled 仍触发。
+test("onCommandSettled fires before onQueueChanged on lifecycle settle, even without queue change", async () => {
+  const relay = new ClaudeSessionRelay();
+  await relay.activate("", undefined);
+  const order: string[] = [];
+  relay.onCommandSettled = (uuid, state) => order.push(`settled:${uuid}:${state}`);
+  relay.onQueueChanged = () => order.push("changed");
+
+  relay.enqueueQueuedCommand({ uuid: "u1", content: "a" });
+  await relay.handleStdoutLine(
+    JSON.stringify({ type: "command_lifecycle", command_uuid: "u1", state: "cancelled" }),
+  );
+  expect(order).toEqual(["changed", "settled:u1:cancelled", "changed"]);
+
+  // 队列无该条目（removeQueuedCommand no-op）：settled 仍触发（恢复态剔除不依赖出队）
+  order.length = 0;
+  await relay.handleStdoutLine(
+    JSON.stringify({ type: "command_lifecycle", command_uuid: "u9", state: "cancelled" }),
+  );
+  expect(order).toEqual(["settled:u9:cancelled"]);
+
+  relay.destroy();
+});
+
+// security review P3-8：快照返回副本，调用方改动不得污染 relay 内部数组。
+test("getQueueSnapshot returns copies, not live internal arrays", () => {
+  const relay = new ClaudeSessionRelay();
+  relay.enqueueQueuedCommand({ uuid: "u1", content: "a" });
+  const snap = relay.getQueueSnapshot();
+  snap.queued.push({ uuid: "u2", content: "b" });
+  snap.held.push({ uuid: "h1", content: "h" });
+  expect(relay.getQueueSnapshot().queued.map((e) => e.uuid)).toEqual(["u1"]);
+  expect(relay.getQueueSnapshot().held).toEqual([]);
+  relay.destroy();
+});

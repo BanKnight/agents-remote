@@ -1167,6 +1167,14 @@ export class SessionRegistry {
     }
   }
 
+  /** 该 sessionId 是否仍有 metadata（index 复查）。boot 孤儿 GC 删盘面前的二次确认
+   *  （security review P2-3）：listAllCandidates 的 live 快照有探活 await 窗口，
+   *  期间新建的会话不在内。 */
+  async hasSessionMetadata(sessionId: string): Promise<boolean> {
+    await this.ensureLoaded();
+    return this.index.has(sessionId);
+  }
+
   private async removeMetadata(sessionId: string) {
     // 同步清 capture 缓存 entry，避免死/关闭 session 的 capture 文本残留（captureCache 无主动淘汰）。
     const metadata = this.index.get(sessionId);
@@ -1234,7 +1242,15 @@ const safeProjectKey = (projectName: string) => {
 };
 
 const parseMetadata = (raw: string): SessionMetadata | undefined => {
-  const rawParsed = JSON.parse(raw) as Record<string, unknown>;
+  // 损坏 metadata 不炸 loadIndex（security review P1 同族）：单个坏文件 = 该会话
+  // 暂时不可见，好过 Promise.all 整体 reject 让控制面起不来。
+  let rawParsed: Record<string, unknown>;
+  try {
+    rawParsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    console.error("[session-registry] corrupt metadata file, skipping");
+    return undefined;
+  }
   // Backward compat: old metadata files use "tmuxSessionName"
   if (typeof rawParsed.runtimeKey !== "string" && typeof rawParsed.tmuxSessionName === "string") {
     rawParsed.runtimeKey = rawParsed.tmuxSessionName;

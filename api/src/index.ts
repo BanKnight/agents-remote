@@ -76,7 +76,7 @@ import { join, resolve } from "node:path";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { handleSessionRoutes } from "./session-routes";
 import { SessionRegistry, type RuntimeResources, type SessionMetadata } from "./session-registry";
-import { listOrphanQueueSessionIds, removeSessionQueue } from "./queue-store";
+import { listOrphanQueueSessionIds, pruneQueueTmpFiles, removeSessionQueue } from "./queue-store";
 import { SessionShellHub } from "./session-shell-hub";
 import { ChatSessionRegistry, DEFAULT_CHAT_TITLE } from "./chat-session-registry";
 import { handleChatSessionRoutes } from "./chat-session-routes";
@@ -2680,9 +2680,13 @@ export const startApi = async () => {
     removeSessionQueue(runtimePaths.runDir, sessionId);
   void sessionRegistry
     .listAllCandidates()
-    .then((candidates) => {
+    .then(async (candidates) => {
+      pruneQueueTmpFiles(runtimePaths.runDir);
       const live = new Set(candidates.map((c) => c.sessionId));
       for (const orphan of listOrphanQueueSessionIds(runtimePaths.runDir, live)) {
+        // 二次确认（security review P2-3）：live 快照有探活 await 窗口，期间新建的
+        // 会话不在内——删盘面前以 index 为准复查，防误删刚创建会话的队列。
+        if (await sessionRegistry.hasSessionMetadata(orphan)) continue;
         removeSessionQueue(runtimePaths.runDir, orphan);
       }
     })

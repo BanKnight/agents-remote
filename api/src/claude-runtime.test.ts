@@ -1179,6 +1179,8 @@ function seedStatusHarness(initial: string): StatusHarness {
   internal.relays.set("rt-key", {
     isDestroyed: false,
     injectLiveLine: (line) => injected.push(line),
+    // reportUserInput 的入队 gate 读快照判上限（security review P2-2 对称上限）
+    getQueueSnapshot: () => ({ queued: [], held: [] }),
   });
   return { runtime, internal, injected, statusCalls };
 }
@@ -1645,8 +1647,14 @@ function seedFlushHarness(runDir?: string) {
     relays: Map<string, ClaudeSessionRelay>;
     queuePersist: Map<
       string,
-      { pendingRecovery: Array<{ uuid: string; content: string }>; next: number; abort: boolean }
+      {
+        pendingRecovery: Array<{ uuid: string; content: string }>;
+        next: number;
+        abort: boolean;
+        cancelled: Set<string>;
+      }
     >;
+    wireQueueRelay: (sessionName: string, sessionId: string, relay: ClaudeSessionRelay) => void;
     flushRecoveredCommands: (sessionName: string, sessionId: string) => Promise<void>;
     persistQueueState: (
       sessionName: string,
@@ -1666,11 +1674,13 @@ function seedFlushHarness(runDir?: string) {
   return { runtime, internal, writes, relay };
 }
 
-test("队列重物化 flush: 3 条按序重发 stdin，首条 idle echo 直注、后续 busy 入队挂起，收口清态+镜像末次落盘", async () => {
+test("队列重物化 flush: 3 条按序重发 stdin，首条 idle echo 直注、后续 busy 入队挂起；恢复态保留待 JSONL 确证", async () => {
   const runDir = mkdtempSync(join(tmpdir(), "ar-queue-flush-"));
   try {
     const h = seedFlushHarness(runDir);
     h.internal.relays.set("rt-key", h.relay);
+    // 生产流程恢复前 relay 已接线（onQueueChanged → persist 合并）
+    h.internal.wireQueueRelay("rt-key", "agent_1", h.relay);
     const seen: string[] = [];
     h.relay.addSubscriber(
       (l) => seen.push(l),
@@ -1684,6 +1694,7 @@ test("队列重物化 flush: 3 条按序重发 stdin，首条 idle echo 直注�
       ],
       next: 0,
       abort: false,
+      cancelled: new Set(),
     });
     await h.internal.flushRecoveredCommands("rt-key", "agent_1");
 
@@ -1703,10 +1714,11 @@ test("队列重物化 flush: 3 条按序重发 stdin，首条 idle echo 直注�
     expect(userEchoes).toHaveLength(1);
     expect(userEchoes[0]).toContain("u1");
     expect(h.relay.getQueueSnapshot().queued.map((e) => e.uuid)).toEqual(["u2", "u3"]);
-    // 收口：恢复态清掉 + 镜像末次落盘（未出队尾部仍在盘面）
-    expect(h.internal.queuePersist.has("rt-key")).toBe(false);
+    // 恢复态保留（write 成功 ≠ 已执行落 JSONL）：全部条目留盘面，
+    // 下次 spawn 的 JSONL 对照剪枝（review P1：写盘成功 ≠ 确证）
+    expect(h.internal.queuePersist.get("rt-key")?.next).toBe(3);
     const saved = readSessionQueue(runDir, "agent_1");
-    expect(saved?.queued.map((e) => e.uuid)).toEqual(["u2", "u3"]);
+    expect(saved?.queued.map((e) => e.uuid)).toEqual(["u1", "u2", "u3"]);
   } finally {
     rmSync(runDir, { recursive: true, force: true });
   }
@@ -1732,11 +1744,13 @@ test("队列重物化 flush: write 抛错 → release + 中止，未发条目留
     ],
     next: 0,
     abort: false,
+    cancelled: new Set(),
   });
   await h.internal.flushRecoveredCommands("rt-key", "agent_1");
   expect(writes2).toHaveLength(1);
   // 中止：恢复态保留（rec 未删、next 已推进过已发条目——下次 respawn 对照 JSONL 收敛）
   expect(h.internal.queuePersist.get("rt-key")?.next).toBe(1);
+  expect(h.internal.queuePersist.has("rt-key")).toBe(true);
   // A 首条 idle 直注（不 enqueue，见主测试）；B 留在 rec（盘面仍是 recover 时写面）
   expect(h.relay.getQueueSnapshot().queued.map((e) => e.uuid)).toEqual([]);
   expect(h.internal.queuePersist.get("rt-key")?.abort).toBe(false);
@@ -1754,6 +1768,7 @@ test("队列重物化 holdQueueAndStop: 未发尾部转冻结", () => {
     ],
     next: 0,
     abort: false,
+    cancelled: new Set<string>(),
   };
   h.internal.queuePersist.set("rt-key", rec);
   h.internal.holdQueueAndStop("rt-key");
@@ -1762,11 +1777,11 @@ test("队列重物化 holdQueueAndStop: 未发尾部转冻结", () => {
   expect(h.internal.queuePersist.has("rt-key")).toBe(false);
 });
 
-test("队列重物化 persist 合并: 已发未出队条目与未发尾部都在盘面（崩溃不丢）", () => {
+test("队列重物化 persist 合并: 恢复条目全量保留（含已 write），新消息去重补后（崩溃不丢）", () => {
   const runDir = mkdtempSync(join(tmpdir(), "ar-queue-merge-"));
   try {
     const h = seedFlushHarness(runDir);
-    // 恢复态：next=1（A 已 write），未发尾部 [B,C]
+    // 恢复态：next=1（A 已 write），未发尾部 [B,C]——write 成功不剔除，等 JSONL 确证
     h.internal.queuePersist.set("rt-key", {
       pendingRecovery: [
         { uuid: "u1", content: "A" },
@@ -1775,6 +1790,7 @@ test("队列重物化 persist 合并: 已发未出队条目与未发尾部都在
       ],
       next: 1,
       abort: false,
+      cancelled: new Set(),
     });
     // relay 镜像 = [A]（已发未出队）+ [X]（恢复期间用户新发）
     h.internal.persistQueueState(
@@ -1786,9 +1802,40 @@ test("队列重物化 persist 合并: 已发未出队条目与未发尾部都在
       ],
       [],
     );
-    // 盘面序 = relay 镜像（真实时序 A, X）+ 未发尾部 B, C——一个都不能丢
+    // 盘面序 = 恢复条目原序（A,B,C）+ 镜像新条目（X）去重补后——一个都不能丢
     const saved = readSessionQueue(runDir, "agent_1");
-    expect(saved?.queued.map((e) => e.uuid)).toEqual(["u1", "x9", "u2", "u3"]);
+    expect(saved?.queued.map((e) => e.uuid)).toEqual(["u1", "u2", "u3", "x9"]);
+  } finally {
+    rmSync(runDir, { recursive: true, force: true });
+  }
+});
+
+test("队列重物化 撤单: lifecycle cancelled 从恢复态剔除，盘面不再含该条", async () => {
+  const runDir = mkdtempSync(join(tmpdir(), "ar-queue-cancel-"));
+  try {
+    const h = seedFlushHarness(runDir);
+    h.internal.relays.set("rt-key", h.relay);
+    h.internal.wireQueueRelay("rt-key", "agent_1", h.relay);
+    // 恢复后两条都已 write（next=2），u2 在排队中（relay queued=[u2]）
+    h.relay.enqueueQueuedCommand({ uuid: "u2", content: "B" });
+    h.internal.queuePersist.set("rt-key", {
+      pendingRecovery: [
+        { uuid: "u1", content: "A" },
+        { uuid: "u2", content: "B" },
+      ],
+      next: 2,
+      abort: false,
+      cancelled: new Set(),
+    });
+    h.internal.persistQueueState("rt-key", "agent_1", [{ uuid: "u2", content: "B" }], []);
+    // CLI 对 u2 发 cancelled lifecycle 帧（用户撤单）→ 剔除恢复态 + 落盘
+    await h.relay.handleStdoutLine(
+      JSON.stringify({ type: "command_lifecycle", state: "cancelled", command_uuid: "u2" }),
+    );
+    expect(h.relay.getQueueSnapshot().queued.map((e) => e.uuid)).toEqual([]);
+    const saved = readSessionQueue(runDir, "agent_1");
+    expect(saved?.queued.map((e) => e.uuid)).toEqual(["u1"]);
+    expect(h.internal.queuePersist.get("rt-key")?.cancelled.has("u2")).toBe(true);
   } finally {
     rmSync(runDir, { recursive: true, force: true });
   }

@@ -26,7 +26,8 @@ type Subscriber = {
 };
 
 // 锚命中的顶层确认：行 JSON 的顶层 uuid 字段确为锚值（防 needle 命中嵌套字段）。
-function topLevelUuidIs(line: string, uuid: string): boolean {
+// queue-store 的 JSONL 对照同款判定，导出共用。
+export function topLevelUuidIs(line: string, uuid: string): boolean {
   try {
     return (JSON.parse(line) as { uuid?: unknown }).uuid === uuid;
   } catch {
@@ -93,6 +94,11 @@ export class ClaudeSessionRelay {
   // hold/clearHeld/restoreHeld）；no-op 与 destroy 不触发——进程换代（respawn/api 重启）
   // 正是盘面要救的状态，清了就没了。
   onQueueChanged: ((queued: ClaudeQueuedCommand[], held: ClaudeQueuedCommand[]) => void) | null =
+    null;
+  // lifecycle 出队事件（started/completed/cancelled）：恢复编排用 cancelled 剔除
+  // 用户撤单条目（claude-runtime wireQueueRelay）。在 removeQueuedCommand 之前调用，
+  // 使随后的 onQueueChanged 落盘能看到剔除后的恢复态。
+  onCommandSettled: ((uuid: string, state: "started" | "completed" | "cancelled") => void) | null =
     null;
 
   async activate(projectPath: string, claudeSessionId: string | undefined): Promise<void> {
@@ -319,6 +325,10 @@ export class ClaudeSessionRelay {
         // = 条目作废，挂起 echo 一并丢弃（取消的消息不进聊天流）。
         const pendingEcho = this.pendingEchoes.get(commandUuid);
         this.pendingEchoes.delete(commandUuid);
+        // 先通知 settled（cancelled 剔除恢复态），再出队触发落盘合并。
+        if (state === "started" || state === "completed" || state === "cancelled") {
+          this.onCommandSettled?.(commandUuid, state);
+        }
         this.removeQueuedCommand(commandUuid);
         if (state === "started" && pendingEcho !== undefined) {
           this.injectLiveLine(pendingEcho);
@@ -447,7 +457,8 @@ export class ClaudeSessionRelay {
 
   // 只读快照（flush 收口/abort 落盘用——按内存镜像末次写盘）。
   getQueueSnapshot(): { queued: ClaudeQueuedCommand[]; held: ClaudeQueuedCommand[] } {
-    return { queued: this.queuedCommands, held: this.heldCommands };
+    // 返回副本：调用方（hold 编排等）不应持有内部数组活引用。
+    return { queued: [...this.queuedCommands], held: [...this.heldCommands] };
   }
 
   private queueStateLine(): string {

@@ -1384,3 +1384,20 @@ test("removeMetadata 触发 onMetadataRemoved（#11 队列重物化删除级联�
   });
   expect(removed).toEqual(["agent_removed123456"]);
 });
+
+test("损坏 metadata 文件不炸 loadIndex（security review P1 同族）；hasSessionMetadata 复查", async () => {
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_metaok123456",
+  });
+  await registry.createAgentSession({ project, provider: "claude" });
+  // 混入一个损坏 metadata 文件：loadIndex 跳过该文件（会话暂时不可见），
+  // 不得让整体加载失败
+  await writeFile(join(runDir, "sessions", "agent_corrupt123456.json"), "{bad json");
+  const reread = new SessionRegistry({ runDir, now: fixedNow });
+  const candidates = await reread.listAllCandidates();
+  expect(candidates.map((c) => c.sessionId).sort()).toEqual(["agent_metaok123456"]);
+  expect(await reread.hasSessionMetadata("agent_metaok123456")).toBe(true);
+  expect(await reread.hasSessionMetadata("agent_missing999999")).toBe(false);
+});
