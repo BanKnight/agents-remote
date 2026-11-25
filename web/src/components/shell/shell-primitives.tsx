@@ -9,7 +9,6 @@ import {
 
 import { cn } from "@/lib/utils";
 
-import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { ShellIcon } from "./icons";
@@ -32,15 +31,6 @@ const markerToneClasses: Record<ShellTone, string> = {
   warning: "border-warning/30 bg-warning/10 text-warning",
   danger: "border-error/30 bg-error/10 text-error",
   muted: "border-neutral-line bg-surface-inset/80 text-on-surface-muted",
-};
-
-export const pillToneClasses: Record<ShellTone, string> = {
-  default: "border-neutral-line bg-surface-inset/80 text-on-surface",
-  accent: "border-primary/20 bg-primary/10 text-primary",
-  success: "border-success/20 bg-success/10 text-success",
-  warning: "border-warning/20 bg-warning/10 text-warning",
-  danger: "border-error/30 bg-error/10 text-error",
-  muted: "border-neutral-line bg-surface-inset/70 text-on-surface-soft",
 };
 
 const buttonToneClasses: Record<ShellTone, string> = {
@@ -185,34 +175,10 @@ export function ShellSectionLabel({ children, className }: ShellSectionLabelProp
   );
 }
 
-type StatusPillProps = {
-  label?: string;
-  tone?: ShellTone;
-  value: ReactNode;
-};
-
-export function StatusPill({ label, tone = "default", value }: StatusPillProps) {
-  return (
-    <Badge
-      className={`h-auto max-w-full flex-col rounded-full px-2.5 py-1.5 ${pillToneClasses[tone]}`}
-      variant="outline"
-    >
-      {label ? (
-        <span className="text-[0.6rem] uppercase tracking-[0.12em] text-on-surface-muted">
-          {label}
-        </span>
-      ) : null}
-      <span className="truncate text-xs font-semibold capitalize">{value}</span>
-    </Badge>
-  );
-}
-
-/**
- * 状态枚举 → StatusPill tone（5 态，OSC 7501 对齐）。working→success、blocked→warning、
- * error→danger、idle/done→muted（done 是「最近一轮完成」的结果态，非活跃）；terminal
- * "running"（进程存活语义，不走 turn 状态机）→success。label 由调用方用 sessionStatusLabel
- * + t 生成（i18n 不进本层）。
- */
+/** 状态枚举 → tone（5 态，OSC 7501 对齐）。working→success、blocked→warning、
+ *  error→danger、idle/done→muted（done 是「最近一轮完成」的结果态，非活跃）；terminal
+ *  "running"（进程存活语义，不走 turn 状态机）→success。色值由消费方从 tone 投影
+ *  （i18n 不进本层）。 */
 export function statusToTone(
   status: AgentSession["status"] | TerminalSession["status"],
 ): ShellTone {
@@ -251,17 +217,6 @@ export function isSettledView(candidate: {
 }): boolean {
   return Boolean(candidate.settledAt) && !countsAsRunning(candidate.type, candidate.status);
 }
-
-/** status → dot 底色 utility（statusToTone 的渲染投影）。导出供 v2 页面直接消费
- * （如 MobileProjectsHome 活动行 dot），避免私设第二套 status→色映射。 */
-export const statusDotToneBg: Record<ShellTone, string> = {
-  default: "bg-on-surface-muted",
-  accent: "bg-primary",
-  success: "bg-success",
-  warning: "bg-warning",
-  danger: "bg-error",
-  muted: "bg-on-surface-muted",
-};
 
 /**
  * status → v2 原语 dot class（v2-primitives.css 的 .dot run/idle/err/warn/done，OSC 7501
@@ -329,34 +284,6 @@ export function InstanceRowTrail({
   );
 }
 
-const STATUS_DOT_SIZE_CLASS = "h-2 w-2";
-
-type StatusDotProps = {
-  className?: string;
-  label: string;
-  pulse?: boolean;
-  tone: ShellTone;
-};
-
-/**
- * 状态小圆点 indicator（设计文档 §10）：纯色圆点 + aria-label 承载文字（不显示），
- * 替代 InstanceCard 等位置原带背景文字 badge（StatusPill）的「纯状态指示」用法——形态更轻。
- * tone 由 statusToTone 映射（running→success/idle→warning/error→danger/其余→muted）；
- * pulse 用于 running/活跃强调（脉动）。StatusPill 保留给需要可见文字 label 的场景。
- * `className` 由 StatusMarker 叠加到 marker 右上角时传入（absolute 定位 + ring 描边）。
- */
-export function StatusDot({ className, label, pulse = false, tone }: StatusDotProps) {
-  return (
-    <span
-      aria-label={label}
-      className={`inline-block shrink-0 rounded-full ${STATUS_DOT_SIZE_CLASS} ${statusDotToneBg[tone]}${
-        pulse ? " animate-pulse" : ""
-      }${className ? ` ${className}` : ""}`}
-      role="img"
-    />
-  );
-}
-
 /**
  * iOS toggle 开关形态（v1.6 components.css `.toggle` 单源，:27-30）：on = `--c-success` 绿轨、
  * off = `--bg-elevated3` 灰轨、knob 恒白（`--on-accent`）。三处消费：settings 1M 开关 /
@@ -372,33 +299,6 @@ export function toggleSwitchTrackClasses(on: boolean): string {
 
 export const toggleSwitchKnobClasses =
   "inline-block size-5 transform rounded-full bg-on-accent shadow transition";
-
-type StatusMarkerProps = {
-  marker: ReactNode;
-  status?: { label: string; tone: ShellTone; pulse?: boolean };
-};
-
-/**
- * marker + 状态圆点叠加层（设计文档 §10）：把 StatusDot 作为 badge 叠加到 marker（IconMarker）
- * 右上角（`-right-1 -top-1`），ring 描边与所在 surface 融合（视觉挖空）。跨位置统一 InstanceCard /
- * split header 的「marker + 状态」呈现——圆点不再独立占位，精简密度。`status` 缺省时
- * 仅渲染 marker（无圆点）。`pulse` 默认 `tone === "success"`（running 脉动），调用方显式覆盖。
- */
-export function StatusMarker({ marker, status }: StatusMarkerProps) {
-  return (
-    <span className="relative inline-flex shrink-0">
-      {marker}
-      {status ? (
-        <StatusDot
-          className="absolute -right-1 -top-1 ring-2 ring-surface-raised"
-          label={status.label}
-          pulse={status.pulse ?? status.tone === "success"}
-          tone={status.tone}
-        />
-      ) : null}
-    </span>
-  );
-}
 
 type ActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   tone?: ShellTone;
