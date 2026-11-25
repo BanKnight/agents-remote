@@ -76,6 +76,7 @@ import { join, resolve } from "node:path";
 import { ensureRuntimeDir, resolveRuntimePaths } from "./runtime-dir";
 import { handleSessionRoutes } from "./session-routes";
 import { SessionRegistry, type RuntimeResources, type SessionMetadata } from "./session-registry";
+import { listOrphanQueueSessionIds, removeSessionQueue } from "./queue-store";
 import { SessionShellHub } from "./session-shell-hub";
 import { ChatSessionRegistry, DEFAULT_CHAT_TITLE } from "./chat-session-registry";
 import { handleChatSessionRoutes } from "./chat-session-routes";
@@ -2672,6 +2673,20 @@ export const startApi = async () => {
   // patchMetadata/create/remove 单入口）→ hub 全量快照合并广播。runtime 层零感知。
   const sessionShellHub = new SessionShellHub(sessionRegistry);
   sessionRegistry.onMetadataChanged = () => sessionShellHub.scheduleBroadcast();
+  // 队列重物化（#11 重启恢复）：metadata 删除级联清队列盘面（会话没了盘面必须清）+
+  // boot 孤儿 GC（盘面残留但 metadata 已无——含钩子上线前的历史残留；listAllCandidates
+  // 先 ensureLoaded 再探活，dead metadata 的 removeMetadata 已先行级联清）。
+  sessionRegistry.onMetadataRemoved = (sessionId) =>
+    removeSessionQueue(runtimePaths.runDir, sessionId);
+  void sessionRegistry
+    .listAllCandidates()
+    .then((candidates) => {
+      const live = new Set(candidates.map((c) => c.sessionId));
+      for (const orphan of listOrphanQueueSessionIds(runtimePaths.runDir, live)) {
+        removeSessionQueue(runtimePaths.runDir, orphan);
+      }
+    })
+    .catch(() => undefined);
   // PWA Web Push 通知批：VAPID 密钥/订阅落盘 ~/.agents-remote/（0o600），fire-and-forget
   // 发送（内部自带 catch）；blocked 走审批登记回调，done/error 走会话状态机出口。
   const pushKeys = new PushKeyManager();

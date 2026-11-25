@@ -1631,3 +1631,193 @@ test("releaseUserUuid: 失败回滚 claim → 同 uuid 重试可再次消费（r
   expect(runtime.claimUserUuid("rt", "bad uuid!")).toBe(true);
   runtime.releaseUserUuid("rt", "bad uuid!");
 });
+
+// ── 队列重物化（#11 重启恢复）M2 ──────────────────────────────────────────
+
+import { ClaudeSessionRelay } from "./session-relay";
+import { readSessionQueue, writeSessionQueue } from "./queue-store";
+
+function seedFlushHarness(runDir?: string) {
+  const runtime = new ClaudeRuntime(runDir ?? tmpdir());
+  const writes: string[] = [];
+  const internal = runtime as unknown as {
+    processes: Map<string, Record<string, unknown>>;
+    relays: Map<string, ClaudeSessionRelay>;
+    queuePersist: Map<
+      string,
+      { pendingRecovery: Array<{ uuid: string; content: string }>; next: number; abort: boolean }
+    >;
+    flushRecoveredCommands: (sessionName: string, sessionId: string) => Promise<void>;
+    persistQueueState: (
+      sessionName: string,
+      sessionId: string,
+      queued: Array<{ uuid: string; content: string }>,
+      held: Array<{ uuid: string; content: string }>,
+    ) => void;
+    holdQueueAndStop: (runtimeKey: string) => void;
+  };
+  const relay = new ClaudeSessionRelay();
+  internal.processes.set("rt-key", {
+    proc: { exitCode: null, stdin: { write: (d: string) => writes.push(d) } },
+    projectPath: "/proj",
+    sessionId: "agent_1",
+    sessionStatus: "idle",
+  });
+  return { runtime, internal, writes, relay };
+}
+
+test("队列重物化 flush: 3 条按序重发 stdin，首条 idle echo 直注、后续 busy 入队挂起，收口清态+镜像末次落盘", async () => {
+  const runDir = mkdtempSync(join(tmpdir(), "ar-queue-flush-"));
+  try {
+    const h = seedFlushHarness(runDir);
+    h.internal.relays.set("rt-key", h.relay);
+    const seen: string[] = [];
+    h.relay.addSubscriber(
+      (l) => seen.push(l),
+      () => undefined,
+    );
+    h.internal.queuePersist.set("rt-key", {
+      pendingRecovery: [
+        { uuid: "u1", content: "A" },
+        { uuid: "u2", content: "B" },
+        { uuid: "u3", content: "C" },
+      ],
+      next: 0,
+      abort: false,
+    });
+    await h.internal.flushRecoveredCommands("rt-key", "agent_1");
+
+    expect(h.writes).toHaveLength(3);
+    expect(h.writes[0]).toContain("A");
+    expect(h.writes[0]).toContain("u1");
+    expect(h.writes[2]).toContain("C");
+    // 首条 idle：echo 直注入流；第 2/3 条 busy：随队列挂起（queue chip 呈现）。
+    // 按帧类型数——queue_state 广播帧内含 uuid，不能按子串数。
+    const userEchoes = seen.filter((l) => {
+      try {
+        return (JSON.parse(l) as { type?: string }).type === "user";
+      } catch {
+        return false;
+      }
+    });
+    expect(userEchoes).toHaveLength(1);
+    expect(userEchoes[0]).toContain("u1");
+    expect(h.relay.getQueueSnapshot().queued.map((e) => e.uuid)).toEqual(["u2", "u3"]);
+    // 收口：恢复态清掉 + 镜像末次落盘（未出队尾部仍在盘面）
+    expect(h.internal.queuePersist.has("rt-key")).toBe(false);
+    const saved = readSessionQueue(runDir, "agent_1");
+    expect(saved?.queued.map((e) => e.uuid)).toEqual(["u2", "u3"]);
+  } finally {
+    rmSync(runDir, { recursive: true, force: true });
+  }
+});
+
+test("队列重物化 flush: write 抛错 → release + 中止，未发条目留盘待下次 respawn 重试", async () => {
+  const h = seedFlushHarness();
+  h.internal.relays.set("rt-key", h.relay);
+  // stub write：第一条成功，之后全抛（进程死在 A 已发、B 未发之间）
+  const writes2: string[] = [];
+  (
+    h.internal.processes.get("rt-key") as {
+      proc: { stdin: { write: (d: string) => void } };
+    }
+  ).proc.stdin.write = (d) => {
+    if (writes2.length >= 1) throw new Error("EPIPE dead");
+    writes2.push(d);
+  };
+  h.internal.queuePersist.set("rt-key", {
+    pendingRecovery: [
+      { uuid: "u1", content: "A" },
+      { uuid: "u2", content: "B" },
+    ],
+    next: 0,
+    abort: false,
+  });
+  await h.internal.flushRecoveredCommands("rt-key", "agent_1");
+  expect(writes2).toHaveLength(1);
+  // 中止：恢复态保留（rec 未删、next 已推进过已发条目——下次 respawn 对照 JSONL 收敛）
+  expect(h.internal.queuePersist.get("rt-key")?.next).toBe(1);
+  // A 首条 idle 直注（不 enqueue，见主测试）；B 留在 rec（盘面仍是 recover 时写面）
+  expect(h.relay.getQueueSnapshot().queued.map((e) => e.uuid)).toEqual([]);
+  expect(h.internal.queuePersist.get("rt-key")?.abort).toBe(false);
+});
+
+test("队列重物化 holdQueueAndStop: 未发尾部转冻结", () => {
+  const h = seedFlushHarness();
+  h.internal.relays.set("rt-key", h.relay);
+  // 恢复中状态：A 已 write+report（busy enqueue → relay queued=[A]），未发尾部 [B,C]
+  h.relay.enqueueQueuedCommand({ uuid: "u1", content: "A" });
+  const rec = {
+    pendingRecovery: [
+      { uuid: "u2", content: "B" },
+      { uuid: "u3", content: "C" },
+    ],
+    next: 0,
+    abort: false,
+  };
+  h.internal.queuePersist.set("rt-key", rec);
+  h.internal.holdQueueAndStop("rt-key");
+  // 冻结序：已发未出队 A（holdCommands 挪入）在前、未发尾部 B,C 在后；恢复态清掉
+  expect(h.relay.getQueueSnapshot().held.map((e) => e.uuid)).toEqual(["u1", "u2", "u3"]);
+  expect(h.internal.queuePersist.has("rt-key")).toBe(false);
+});
+
+test("队列重物化 persist 合并: 已发未出队条目与未发尾部都在盘面（崩溃不丢）", () => {
+  const runDir = mkdtempSync(join(tmpdir(), "ar-queue-merge-"));
+  try {
+    const h = seedFlushHarness(runDir);
+    // 恢复态：next=1（A 已 write），未发尾部 [B,C]
+    h.internal.queuePersist.set("rt-key", {
+      pendingRecovery: [
+        { uuid: "u1", content: "A" },
+        { uuid: "u2", content: "B" },
+        { uuid: "u3", content: "C" },
+      ],
+      next: 1,
+      abort: false,
+    });
+    // relay 镜像 = [A]（已发未出队）+ [X]（恢复期间用户新发）
+    h.internal.persistQueueState(
+      "rt-key",
+      "agent_1",
+      [
+        { uuid: "u1", content: "A" },
+        { uuid: "x9", content: "X" },
+      ],
+      [],
+    );
+    // 盘面序 = relay 镜像（真实时序 A, X）+ 未发尾部 B, C——一个都不能丢
+    const saved = readSessionQueue(runDir, "agent_1");
+    expect(saved?.queued.map((e) => e.uuid)).toEqual(["u1", "x9", "u2", "u3"]);
+  } finally {
+    rmSync(runDir, { recursive: true, force: true });
+  }
+});
+
+test("队列重物化 recoverSessionQueue: held 恢复为冻结态、无盘面 no-op", () => {
+  const runDir = mkdtempSync(join(tmpdir(), "ar-queue-recover-"));
+  try {
+    const h = seedFlushHarness(runDir);
+    h.internal.relays.set("rt-key", h.relay);
+    // 盘面只有 held（queued 空）：恢复为冻结态（广播 queue_held），不碰恢复态/flush
+    writeSessionQueue(runDir, "agent_1", {
+      schemaVersion: 1,
+      savedAt: "x",
+      queued: [],
+      held: [{ uuid: "h1", content: "frozen" }],
+    });
+    const seen: string[] = [];
+    h.relay.addSubscriber(
+      (l) => seen.push(l),
+      () => undefined,
+    );
+    h.internal.recoverSessionQueue("rt-key", "agent_1", "/proj", undefined);
+    expect(h.relay.getQueueSnapshot().held.map((e) => e.uuid)).toEqual(["h1"]);
+    expect(seen.some((l) => l.includes("queue_held"))).toBe(true);
+    // 无 queued → 不建立恢复态（不 flush）
+    expect(h.internal.queuePersist.has("rt-key")).toBe(false);
+    expect(h.writes).toEqual([]);
+  } finally {
+    rmSync(runDir, { recursive: true, force: true });
+  }
+});

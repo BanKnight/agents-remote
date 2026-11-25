@@ -1359,3 +1359,28 @@ test("parseMetadata 容忍旧 metadata 无 createdBy（undefined 存活）与畸
   const sanitized = await reread2.getAgentSession(project.name, "agent_lineageold");
   expect(sanitized?.createdBy).toBeUndefined();
 });
+
+test("removeMetadata 触发 onMetadataRemoved（#11 队列重物化删除级联）", async () => {
+  const removed: string[] = [];
+  const registry = new SessionRegistry({
+    runDir,
+    now: fixedNow,
+    createId: () => "agent_removed123456",
+    runtime: {
+      async exists() {
+        return true;
+      },
+      async close() {},
+      async startAgent() {
+        throw new Error("boom");
+      },
+    },
+  });
+  registry.onMetadataRemoved = (sessionId) => removed.push(sessionId);
+
+  // startAgent 失败 → 回滚 removeMetadata（覆盖 createAgentSession:743 级联路径）
+  await expect(registry.createAgentSession({ project, provider: "claude" })).rejects.toMatchObject({
+    code: "SESSION_RUNTIME_ERROR",
+  });
+  expect(removed).toEqual(["agent_removed123456"]);
+});

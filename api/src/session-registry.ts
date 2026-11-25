@@ -169,6 +169,10 @@ export class SessionRegistry {
    *  经 registry 写入自动进同一推送通道，runtime 层零感知广播。 */
   onMetadataChanged: (() => void) | null = null;
 
+  /** metadata 删除级联钩子（队列重物化 #11，index.ts 接 removeSessionQueue）：单点
+   *  覆盖全部删除路径——队列盘面与 metadata 同生命周期，会话没了盘面必须清。 */
+  onMetadataRemoved: ((sessionId: string) => void) | null = null;
+
   constructor(options: SessionRegistryOptions) {
     this.sessionsDir = join(options.runDir, "sessions");
     this.now = options.now ?? (() => new Date());
@@ -1170,6 +1174,7 @@ export class SessionRegistry {
     await rm(this.metadataPath(sessionId), { force: true });
     this.index.delete(sessionId);
     this.onMetadataChanged?.();
+    this.onMetadataRemoved?.(sessionId);
   }
 
   private async ensureSessionsDir() {

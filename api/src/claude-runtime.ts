@@ -32,7 +32,12 @@ import { getAgentProviderProfile } from "./agent-provider-profiles";
 import { buildMcpInjectorForProvider } from "./mcp-injector";
 import { sanitizePersistedModel } from "./model-id";
 import { claudeJsonlPath } from "./session-routes";
-import { writeSessionQueue } from "./queue-store";
+import {
+  filterExecutedUuids,
+  readSessionQueue,
+  removeSessionQueue,
+  writeSessionQueue,
+} from "./queue-store";
 import { ensureGenUiSkill } from "./project-gen-ui";
 import {
   AutoRetryWatch,
@@ -756,6 +761,10 @@ export class ClaudeRuntime implements RuntimeResources {
     effort?: EffortLevel,
   ): Promise<void> {
     await this.close(sessionName, { silent: true });
+    // fork 换新对话面（新 claudeSessionId）：旧队列的 JSONL 对照面失效 → 显式清盘
+    // （队列重物化 #11）。fork 分支的 spawn 尾钩本就跳过恢复，这里防「fork 后
+    // 又走非 fork respawn」读到过期盘面。
+    removeSessionQueue(this.runDir, sessionId);
     if (resumeAt) {
       // 先挂等待再 spawn：system.init 可能在 spawnAndStart 的 await 内部就被消费。
       const ready = new Promise<void>((resolve) => this.forkWaiters.set(sessionName, resolve));
@@ -956,10 +965,16 @@ export class ClaudeRuntime implements RuntimeResources {
     held: ClaudeQueuedCommand[],
   ): void {
     const rec = this.queuePersist.get(sessionName);
+    // 合并规则：relay 镜像在前（真实时序——已 write 未出队的恢复条目 + 恢复期间用户
+    // 新发的消息，都已在 CLI FIFO 里）+ 未发尾部（slice(next)，还没 write stdin）去重
+    // 补后。已发未出队的条目绝不能丢：CLI 死前没执行它 → JSONL 无记录 → 对照不剔 →
+    // 唯一重发入口就是盘面（JSONL 对照是「剔除已执行」，不是「确认未执行」）。
     const mergedQueued = rec
       ? [
-          ...rec.pendingRecovery.slice(rec.next),
-          ...queued.filter((e) => !rec.pendingRecovery.some((r) => r.uuid === e.uuid)),
+          ...queued,
+          ...rec.pendingRecovery
+            .slice(rec.next)
+            .filter((e) => !queued.some((q) => q.uuid === e.uuid)),
         ]
       : queued;
     writeSessionQueue(this.runDir, sessionId, {
@@ -975,6 +990,97 @@ export class ClaudeRuntime implements RuntimeResources {
   private wireQueueRelay(sessionName: string, sessionId: string, relay: ClaudeSessionRelay): void {
     relay.onQueueChanged = (queued, held) =>
       this.persistQueueState(sessionName, sessionId, queued, held);
+  }
+
+  // ── 队列重物化（#11 重启恢复）M2：读回 + 自动重发编排 ──
+
+  // spawn 尾钩（非 fork）：api 重启/CLI 垮塌/effort·模型切换 respawn 后，盘面冻结的
+  // 排队消息自动重发（用户拍板「自动继续执行」）。读盘面 → JSONL 对照剔已执行 →
+  // held 恢复进 relay（冻结态，用户显式停止的产物——机器不替用户恢复，走既有
+  // resume/discard 流）→ 对照修正落盘 → 恢复态落位 → fire-and-forget flush。
+  private recoverSessionQueue(
+    sessionName: string,
+    sessionId: string,
+    projectPath: string,
+    claudeSessionId: string | undefined,
+  ): void {
+    const saved = readSessionQueue(this.runDir, sessionId);
+    if (!saved) return;
+    // JSONL 对照剔已执行（claimUserUuid 台账是进程内第二道网；CLI uuid 幂等是兜底）。
+    // claudeSessionId 未知 = 全新会话（无 JSONL 历史），无对照面 → 全部视为未执行。
+    const executed = claudeSessionId
+      ? filterExecutedUuids(
+          claudeJsonlPath(projectPath, claudeSessionId),
+          saved.queued.map((e) => e.uuid),
+        )
+      : new Set<string>();
+    const pending = saved.queued.filter((e) => !executed.has(e.uuid));
+    // held 恢复为冻结态（restoreHeldCommands 广播 queue_held + 落盘回调同步带出）
+    if (saved.held.length > 0) {
+      this.relays.get(sessionName)?.restoreHeldCommands(saved.held);
+    }
+    // 对照修正落盘（已执行条目剔除；双空时 writeSessionQueue 内部 unlink 收盘面）
+    if (executed.size > 0) {
+      writeSessionQueue(this.runDir, sessionId, {
+        schemaVersion: 1,
+        savedAt: new Date().toISOString(),
+        queued: pending,
+        held: saved.held,
+      });
+    }
+    if (pending.length === 0) return;
+    this.queuePersist.set(sessionName, { pendingRecovery: pending, next: 0, abort: false });
+    void this.flushRecoveredCommands(sessionName, sessionId);
+  }
+
+  // 恢复重发循环：与 autoRetry 注入同构（claim → write stdin → checkpoint →
+  // reportUserInput）。首条 idle 直注、后续 busy 正常入队 + echo 挂起（reportUserInput
+  // 的 user_input 信号让状态进 working，#2 修复管道，UI=f(state) 零新分支）。write
+  // 失败 = release + 中止（条目留盘下次 respawn 重试）；收口清恢复态 + 镜像末次落盘。
+  private async flushRecoveredCommands(sessionName: string, sessionId: string): Promise<void> {
+    const rec = this.queuePersist.get(sessionName);
+    if (!rec || rec.abort) return;
+    const state = this.processes.get(sessionName);
+    if (!state) {
+      this.queuePersist.delete(sessionName);
+      return;
+    }
+    for (const entry of rec.pendingRecovery.slice(rec.next)) {
+      if (rec.abort) return;
+      let uuid = MESSAGE_UUID_RE.test(entry.uuid) ? entry.uuid : crypto.randomUUID();
+      if (!this.claimUserUuid(sessionName, uuid)) {
+        uuid = crypto.randomUUID();
+        if (!this.claimUserUuid(sessionName, uuid)) return;
+      }
+      try {
+        await this.write(sessionName, `${buildAutoRetryUserLine(entry.content, uuid)}\n`);
+      } catch {
+        // 进程已死（写入前 exited）：release + 中止——条目仍在盘面，下次 respawn 重试
+        this.releaseUserUuid(sessionName, uuid);
+        return;
+      }
+      rec.next++;
+      void this.turnCheckpointer
+        ?.beginTurn({
+          runtimeKey: sessionName,
+          sessionId,
+          projectPath: state.projectPath,
+          anchorUuid: null,
+        })
+        .catch(() => undefined);
+      this.reportUserInput(
+        sessionName,
+        { uuid, text: entry.content },
+        buildAutoRetryEchoLine(entry.content, uuid),
+      );
+    }
+    // 收口：恢复态清掉（进程内不再有恢复语义），镜像末次落盘（relay 镜像此刻 =
+    // 未出队尾部 + held；persistQueueState 的 rec 合并分支不再生效——rec 已删）。
+    this.queuePersist.delete(sessionName);
+    const snap = this.relays.get(sessionName)?.getQueueSnapshot();
+    if (snap) {
+      this.persistQueueState(sessionName, sessionId, snap.queued, snap.held);
+    }
   }
 
   /** 用户提交消息(STDIN 注入 echo 行)→ working；turn 进行中(working)时折叠登记进
@@ -1039,7 +1145,22 @@ export class ClaudeRuntime implements RuntimeResources {
   holdQueueAndStop(runtimeKey: string): void {
     const relay = this.relays.get(runtimeKey);
     if (!relay) return;
+    // 恢复中用户停止（#11 review 修正）：置 abort 停 flush 循环 + 未发尾部
+    // （pendingRecovery.slice(next)）并入 relay 冻结——停止意图优先：这些条目还没
+    // write stdin，转冻结由 resume/discard 自决，不是「下次 respawn 又自动发」。
+    // 顺序：先 holdCommands（queued 挪 held），再 restoreHeldCommands（held ∪
+    // undelivered 置位）——反序会被 holdCommands 的 held=queued 覆盖丢条目。
+    const rec = this.queuePersist.get(runtimeKey);
+    const undelivered = rec ? rec.pendingRecovery.slice(rec.next) : [];
+    if (rec) {
+      rec.abort = true;
+      this.queuePersist.delete(runtimeKey);
+    }
     relay.holdCommands();
+    if (undelivered.length > 0) {
+      const snap = relay.getQueueSnapshot();
+      relay.restoreHeldCommands([...snap.held, ...undelivered]);
+    }
     const requestId = crypto.randomUUID();
     this.registerInterruptRequest(runtimeKey, requestId, true);
     const line = JSON.stringify({
@@ -1275,6 +1396,12 @@ export class ClaudeRuntime implements RuntimeResources {
         this.onApprovalRuntimeSettled?.(sessionName);
       }
     });
+
+    // 队列重物化尾钩（#11 重启恢复）：非 fork 才恢复（fork 换新对话面，旧队列的
+    // claudeSessionId 对照面失效；rollbackConversation 开头另有显式清盘）。
+    if (!fork) {
+      this.recoverSessionQueue(sessionName, sessionId, projectPath, claudeSessionId);
+    }
   }
 
   /**
