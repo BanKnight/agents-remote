@@ -766,11 +766,14 @@ function XtermOutput({
       logLevel: "warn",
     });
 
-    // WebGL 渲染器在非整数 DPR（桌面 1.5 缩放常见）下纹理采样模糊（续十）；整数 DPR
-    // （移动端 2/3）清晰且性能好，故仅整数 DPR 加载 WebGL，非整数 DPR 回退 xterm 内置
-    // DOM 渲染器（浏览器原生字体渲染，任意 DPR 清晰，零新依赖）。判据用 DPR 整数性而非
-    // isDesktop——iPad 横屏宽屏 DPR=2 仍享 WebGL。
-    if (Number.isInteger(window.devicePixelRatio)) {
+    // WebGL 渲染器在非整数 DPR 的低倍缩放（桌面 1.25/1.5 常见）下纹理采样模糊（续十）；
+    // 整数 DPR（移动端 2/3）清晰且性能好，故整数 DPR 加载 WebGL。DPR ≥ 2 的非整数
+    // （Android pad 2.125 等）2026-11-26 真机取证后也放宽进 WebGL：原判据把它们全推给
+    // DOM 渲染器（逐字形 span），高分屏大输出量下主线程被拖垮（平板「整体非常卡、
+    // TUI 回显慢」的头号嫌疑），而高分屏物理像素密度下 WebGL 纹理模糊基本不可见。
+    // 仅 <2 的非整数（桌面缩放）回退 DOM 渲染器。判据用 DPR 而非 isDesktop——
+    // iPad 横屏宽屏 DPR=2 仍享 WebGL。
+    if (Number.isInteger(window.devicePixelRatio) || window.devicePixelRatio >= 2) {
       try {
         term.loadAddon(new WebglAddon());
       } catch {

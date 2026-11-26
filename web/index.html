@@ -22,12 +22,15 @@
         } catch (_) {}
       })();
     </script>
-    <!-- interactive-widget=resizes-content：Android Chrome 108+ 键盘随 layout viewport 缩，
-         流内布局自动让位；iOS 忽略（WebKit 259770 未实现），走 visualViewport JS 路径
-         （web/src/lib/keyboard-inset.ts）。 -->
+    <!-- 默认 interactive-widget=resizes-visual：layout viewport 恒定不随键盘缩。
+         曾用 resizes-content（layout 随键盘缩、流内自动让位），2026-11-26 真机取证
+         回退：Android 外接键盘下 IME 焦点进出仍瞬时占位 ~59px（不可见），resizes-
+         content 让 100vh 基线跟着缩 → 整页布局收窄、底部露白数秒。回退后 Android 与
+         iOS 同走 visualViewport JS 路径（web/src/lib/keyboard-inset.ts，焦点门闩恰好
+         拦住 ae=body 的瞬时占位），双路径收敛为单路径。 -->
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <meta name="theme-color" content="#000000" />
     <meta name="mobile-web-app-capable" content="yes" />
