@@ -88,6 +88,9 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 | `queue-operation` | CLI 输入队列操作（入队/出队/移除/清空），`content` 为入队内容 | `operation`, `content?`, `timestamp`, `sessionId` | 低 — 调试输入管道 |
 | `custom-title` | 用户自定义标题 | `customTitle` | 低 — 会话重命名记录 |
 | `atis-latch` | CLI 内部会话状态锁存（CLI 2.1.268+，极简信封无 uuid/timestamp） | `atis`, `sessionId` | **无** — CLI resume 时自身 last-wins 消费，UI 零价值 |
+| `api-request` | **API 请求审计元数据**（CLI 2.1.325+）：每轮请求一行（id/timestamp/params/base/keep/tail 增量编码） | `id`, `params`, `base`, `keep`, `tail` | **无** — CLI 内部调试面，非对话内容 |
+| `api-request-shape` | 请求形状快照（`shapeHash` → {system, tools}，shape 变化才记，单行 ~64KB） | `shapeHash`, `shape` | **无** — 同上 |
+| `api-request-blob` | 请求消息池（内容 hash → 单条消息全文，去重） | `hash`, `message` | **无** — 同上 |
 
 ### 顶层辅助字段
 
@@ -421,6 +424,26 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 | 实时流 — 消息信号 | 实时流 — UI | 历史回放 — 消息信号 | 历史回放 — UI |
 |---|---|---|---|
 | 不出现在 CLI stdout（JSONL-only） | — | 顶层帧 → `normalizeChatStream` 静默 skip（仿 `last-prompt` / `permission-mode` 先例） | 无（不渲染） |
+
+---
+
+#### `api-request` 族（`api-request` / `-shape` / `-blob`）— API 请求审计日志（CLI 2.1.325+，非对话内容）
+
+**含义**：CLI 把每轮发给 Anthropic API 的请求完整审计落盘（22router 会话 2026-11-20 起实证，与 CLI 更新时间线吻合）。三种行协作实现**内容寻址增量编码**：
+
+- `api-request`（每轮请求一行）：`id`（请求 uuid）+ `timestamp` + `params`（model / betas / max_tokens / thinking / context_management / output_config.effort）+ 增量编码三件套——`base`（前一个请求的 id，首个请求无此字段）+ `keep`（与 base 共享的前缀消息数）+ `tail`（本轮新增消息的 blob hash 列表）
+- `api-request-shape`（shape 变化才记一行）：`shapeHash` → `{system, tools}` 全量快照（22router 会话 5003 请求仅 48 行；单行可达 ~64KB）
+- `api-request-blob`（新内容才记一行）：内容 `hash` → 单条消息全文（4207 行 / 5003 请求 = 平均每请求仅 0.84 条新 blob，大量复用）
+
+三者组合可精确重建每轮请求体；22router 会话（1.42GB）中该族合计 ~21.8MB，最后一个 compact block 内占回放字节 **24%**（63 行 0.42MB）。
+
+**关键事实**：**不进 stdout stream-json**（最小会话 probe 实测 stdout 仅 system/assistant/result 三 type）——纯 JSONL 落盘，仅影响回放管道。
+
+**处理语义**（agents-remote）：
+
+| 实时流 — 消息信号 | 客户端 — UI | 历史回放 — 消息信号 | 历史回放 — UI |
+|---|---|---|---|
+| 不出现在 CLI stdout（JSONL-only） | — | **api relay 整族过滤**（`isApiRequestAuditLine`，parseJsonlLines 入 historyLines 前 skip）；web 投影层 skip 为防御纵深（旧 replay cache 残留等旁路） | 无（不渲染） |
 
 ---
 

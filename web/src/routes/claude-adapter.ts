@@ -1939,7 +1939,11 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
     msg.type === "history_end" ||
     msg.type === "live_start" ||
     msg.type === "live_end" ||
-    msg.type === "ended"
+    msg.type === "ended" ||
+    // CLI 2.1.325+ 请求审计日志（回放已过滤；同上防御纵深不落 debug 气泡）。
+    msg.type === "api-request" ||
+    msg.type === "api-request-shape" ||
+    msg.type === "api-request-blob"
   ) {
     return null;
   }
@@ -3586,6 +3590,17 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     // 副作用（冻结列表替换 + 停止/恢复确认）在 applyMessageScalarState 处理，
     // 此处静默 skip 不落 fallback。
     if (msg.type === "queue_held") continue;
+
+    // api-request 族（api-request / -shape / -blob）：CLI 2.1.325+ 请求审计日志，
+    // JSONL-only 不进 stdout 实时流。api relay 回放路径已整族过滤（isApiRequestAuditLine），
+    // 正常路径收不到；此 skip 是防御纵深（旧 replay cache 残留等旁路），不落 fallback。
+    if (
+      msg.type === "api-request" ||
+      msg.type === "api-request-shape" ||
+      msg.type === "api-request-blob"
+    ) {
+      continue;
+    }
 
     // ═══ Other (fallback) ═══
     const fallback = messageToThreadLike(msg);

@@ -5563,3 +5563,35 @@ describe("auditRenderedToolCards (v2 渲染层取证)", () => {
     expect(audit.interrupted).toBe(0);
   });
 });
+
+// ── api-request audit family skip（CLI 2.1.325+ 请求审计日志，回放已过滤、投影防御纵深）──
+
+describe("api-request audit family skip", () => {
+  test("normalizeChatStream: 三类型零 item（静默 skip 不落 fallback）", () => {
+    const items = normalizeChatStream([
+      { type: "api-request", id: "req-1", tail: ["h1"] },
+      { type: "api-request-shape", shapeHash: "s1", shape: { system: ["big"] } },
+      {
+        type: "api-request-blob",
+        hash: "h1",
+        message: { role: "user", content: "audit blob" },
+      },
+    ] as unknown as SessionStreamServerMessage[]);
+    expect(items).toEqual([]);
+  });
+
+  test("messageToThreadLike: 三类型返回 null（不落 debug 气泡）", () => {
+    for (const type of ["api-request", "api-request-shape", "api-request-blob"]) {
+      expect(messageToThreadLike({ type } as unknown as SessionStreamServerMessage)).toBeNull();
+    }
+  });
+
+  test("审计行夹在对话流中不破坏相邻投影", () => {
+    const items = normalizeChatStream([
+      makeUser("hello"),
+      { type: "api-request", id: "r1" },
+      makeUser("world"),
+    ] as unknown as SessionStreamServerMessage[]);
+    expect(items.map((i) => i.kind)).toEqual(["user-prompt", "user-prompt"]);
+  });
+});

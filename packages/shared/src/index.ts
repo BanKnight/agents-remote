@@ -3161,6 +3161,43 @@ export type ClaudeCommandLifecycle = {
   ran_ahead?: boolean;
 };
 
+// CLI 2.1.325+ API 请求审计日志（JSONL-only：不进 stdout stream-json，probe 实测）。
+// 每轮请求落一行 api-request 元数据（id/timestamp/params + base/keep/tail 增量编码，
+// base 指向前一请求 id、keep = 与 base 共享的前缀消息数、tail = 新增消息的 blob
+// hash 列表）；api-request-shape 按 shapeHash 去重存 {system, tools} 全量快照（shape
+// 变化才记，单行可达 ~64KB）；api-request-blob 按内容 hash 去重存单条消息全文。
+// 三者组合可精确重建每轮请求体，属 CLI 内部调试/审计面——非对话内容：api relay
+// 回放路径整族过滤（session-relay parseJsonlLines），web 投影层 skip 为防御纵深。
+export type ClaudeApiRequestAudit = {
+  type: "api-request";
+  sessionId?: string;
+  id?: string;
+  timestamp?: string;
+  version?: string;
+  querySource?: string;
+  shapeHash?: string;
+  params?: Record<string, unknown>;
+  base?: string;
+  keep?: number;
+  tail?: string[];
+};
+
+export type ClaudeApiRequestShape = {
+  type: "api-request-shape";
+  sessionId?: string;
+  shapeHash?: string;
+  timestamp?: string;
+  version?: string;
+  shape?: Record<string, unknown>;
+};
+
+export type ClaudeApiRequestBlob = {
+  type: "api-request-blob";
+  sessionId?: string;
+  hash?: string;
+  message?: Record<string, unknown>;
+};
+
 // Server-maintained prompt queue snapshot (queue-state serverization). The CLI
 // emits queued/started lifecycle frames only at turn boundaries — during a
 // running turn there is zero queue telemetry (probe-verified), so the api
@@ -3532,6 +3569,9 @@ export type SessionStreamServerMessage =
   | ClaudeToolProgress
   | ClaudeVcsStateChanged
   | ClaudeCommandLifecycle
+  | ClaudeApiRequestAudit
+  | ClaudeApiRequestShape
+  | ClaudeApiRequestBlob
   | ClaudeQueueState
   | ClaudeQueueHeldState
   | ClaudeResult

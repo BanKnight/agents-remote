@@ -62,6 +62,18 @@ export function normalizeHistoryMcpLine(parsed: Record<string, unknown>, rawLine
   });
 }
 
+/**
+ * CLI 2.1.325+ API 请求审计行（api-request / api-request-shape / api-request-blob，
+ * shared ClaudeApiRequest* 三 variant）：CLI 内部调试面——不进 stdout 实时流（最小
+ * 会话 probe 实测），非对话内容；shape 行单行 ~64KB、blob 行含完整消息副本。回放
+ * 路径整族过滤不进 historyLines（22router 1.4GB 会话实测：最后 compact block 内占
+ * 回放字节 24%，且每轮请求一行持续增长）。
+ */
+export function isApiRequestAuditLine(parsed: Record<string, unknown>): boolean {
+  const type = parsed.type;
+  return typeof type === "string" && type.startsWith("api-request");
+}
+
 export class ClaudeSessionRelay {
   private historyLines: string[] = [];
   private liveLines: string[] = [];
@@ -594,6 +606,7 @@ export class ClaudeSessionRelay {
       try {
         const parsed = JSON.parse(trimmed);
         if (parsed && typeof parsed === "object") {
+          if (isApiRequestAuditLine(parsed as Record<string, unknown>)) continue;
           lines.push(normalizeHistoryMcpLine(parsed as Record<string, unknown>, trimmed));
         }
       } catch {

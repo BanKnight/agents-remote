@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import {
   ClaudeSessionRelay,
   HISTORY_TAIL_SCAN_BYTES,
+  isApiRequestAuditLine,
   normalizeHistoryMcpLine,
   sliceLastCompactBlock,
 } from "./session-relay";
@@ -452,6 +453,64 @@ test("ClaudeSessionRelay loads only the last compact block from JSONL", async ()
   ]);
 
   relay.destroy();
+});
+
+test("ClaudeSessionRelay filters CLI api-request audit lines out of history", async () => {
+  const projectPath = `/tmp/agents-remote-relay-${Date.now()}`;
+  const claudeSessionId = "relay-api-request-filter";
+  const jsonlPath = claudeJsonlPath(projectPath, claudeSessionId);
+  cleanupDirs.add(dirname(jsonlPath));
+  await mkdir(dirname(jsonlPath), { recursive: true });
+
+  // CLI 2.1.325+ 请求审计族（元数据 + shape 快照 + blob 消息池）与对话行交错落盘
+  const content = [
+    userLine("u1", "hello"),
+    JSON.stringify({ type: "api-request", id: "req-1", tail: ["h1"] }),
+    JSON.stringify({
+      type: "api-request-shape",
+      shapeHash: "s1",
+      shape: { system: ["big system prompt"], tools: [] },
+    }),
+    JSON.stringify({
+      type: "api-request-blob",
+      hash: "h1",
+      message: { role: "user", content: "audit blob" },
+    }),
+    userLine("u2", "world"),
+  ].join("\n");
+  await writeFile(jsonlPath, `${content}\n`);
+
+  const relay = new ClaudeSessionRelay();
+  await relay.activate(projectPath, claudeSessionId);
+
+  const received: string[] = [];
+  relay.addSubscriber(
+    (line) => received.push(line),
+    (error) => {
+      throw error;
+    },
+  );
+
+  const messages = received.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const historyStart = messages.findIndex((m) => m.type === "history_start");
+  const historyEnd = messages.findIndex((m) => m.type === "history_end");
+  // 审计行整族过滤：history 只剩两条对话行
+  expect(messages[historyStart]).toMatchObject({ type: "history_start", count: 2 });
+  const historyMessages = messages.slice(historyStart + 1, historyEnd);
+  expect(historyMessages.map((m) => m.uuid)).toEqual(["u1", "u2"]);
+  expect(historyMessages.some((m) => String(m.type).startsWith("api-request"))).toBe(false);
+
+  relay.destroy();
+});
+
+test("isApiRequestAuditLine: api-request 前缀命中整族，对话行与无 type 行不误杀", () => {
+  expect(isApiRequestAuditLine({ type: "api-request" })).toBe(true);
+  expect(isApiRequestAuditLine({ type: "api-request-shape" })).toBe(true);
+  expect(isApiRequestAuditLine({ type: "api-request-blob" })).toBe(true);
+  expect(isApiRequestAuditLine({ type: "user" })).toBe(false);
+  expect(isApiRequestAuditLine({ type: "attachment" })).toBe(false);
+  expect(isApiRequestAuditLine({})).toBe(false);
+  expect(isApiRequestAuditLine({ type: 42 })).toBe(false);
 });
 
 test("ClaudeSessionRelay tail-scan recognizes microcompact_boundary and picks the later of the two", async () => {
