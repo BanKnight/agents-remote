@@ -44,6 +44,8 @@ const PROJECT_PREVIEW_COUNT = 3;
 type ActivityRow = {
   candidate: GlobalInstanceCandidate;
   pinned: boolean;
+  /** 搜索命中的已了结行（§3.3 搜索可达）：降饱和 + 行尾「N 天前了结」弱标。 */
+  settled: boolean;
 };
 
 /**
@@ -103,27 +105,45 @@ export function MobileProjectsHome() {
 
   // 活动行 = 全局候选按 needs-interaction > running > terminal 排序（与全局面板同序），置顶恒排
   // 最前，搜索时按实例名/副行过滤。时间戳（fallback updatedAt → createdAt）不进 memo，渲染时实时算。
-  // 已了结候选出列（settle，2026-11-13：恢复入口统一在 ⋯ 菜单；本页不设折叠组）。
+  // 已了结候选默认出列（settle，2026-11-13：恢复入口统一在 ⋯ 菜单；本页不设折叠组）；
+  // 搜索可达（session-attention.md §3.3）：有 query 时并入已了结命中（排在活跃之后 + 弱标），
+  // 无 query 维持出列——避免活跃列表被已了结淹没。
   const activityRows = useMemo<ActivityRow[]>(() => {
     const q = query.trim().toLowerCase();
-    const ranked = rankGlobalInstances(candidates.filter((c) => !isSettledView(c)))
+    const matchesQuery = (c: GlobalInstanceCandidate) => {
+      if (!q) return true;
+      return (
+        c.displayName.toLowerCase().includes(q) ||
+        (c.subtitle ?? "").toLowerCase().includes(q) ||
+        c.ref.projectName.toLowerCase().includes(q)
+      );
+    };
+    const active = rankGlobalInstances(
+      candidates.filter((c) => !isSettledView(c) && matchesQuery(c)),
+    )
       .map((ref) => candidates.find((c) => c.ref.sessionId === ref.sessionId))
       .filter((c): c is GlobalInstanceCandidate => !!c)
-      .filter((c) => {
-        if (!q) return true;
-        return (
-          c.displayName.toLowerCase().includes(q) ||
-          (c.subtitle ?? "").toLowerCase().includes(q) ||
-          c.ref.projectName.toLowerCase().includes(q)
-        );
-      })
       .map((candidate) => ({
         candidate,
         pinned: pinned.has(candidate.ref.sessionId),
+        settled: false,
       }));
+    // 已了结命中只按会话自身名称/副行匹配——项目名命中不纳入（否则搜项目名会涌入整个项目的
+    // 已了结批量）。按 settledAt 倒序（最近了结在前），整体排在活跃命中之后。
+    const settledRows: ActivityRow[] = !q
+      ? []
+      : candidates
+          .filter(
+            (c) =>
+              isSettledView(c) &&
+              (c.displayName.toLowerCase().includes(q) ||
+                (c.subtitle ?? "").toLowerCase().includes(q)),
+          )
+          .sort((a, b) => (b.settledAt ?? "").localeCompare(a.settledAt ?? ""))
+          .map((candidate) => ({ candidate, pinned: false, settled: true }));
     // 置顶行恒排最前（M10 用户反馈①「真正置顶」）：紫标之外补排序语义；sort 稳定（ES2019+），
-    // 置顶组内保持 rank 序。
-    return ranked.sort((a, b) => Number(b.pinned) - Number(a.pinned));
+    // 置顶组内保持 rank 序，已了结行（pinned=false）稳定留在活跃命中之后。
+    return [...active, ...settledRows].sort((a, b) => Number(b.pinned) - Number(a.pinned));
   }, [candidates, pinned, query]);
 
   const runningCount = useMemo(
@@ -319,23 +339,43 @@ export function MobileProjectsHome() {
                             圆点 + 时间）——行首裸状态点退役，紫底「置顶」文字徽章退役（pin
                             图标单源 InstanceRowTrail）。 */}
                         {sessionMarker(row.candidate.type, "xs", row.candidate.provider)}
-                        <span className="min-w-0 flex-1 truncate text-subhead font-semibold text-ink-1">
+                        <span
+                          className={`min-w-0 flex-1 truncate text-subhead font-semibold ${
+                            row.settled ? "text-ink-3" : "text-ink-1"
+                          }`}
+                        >
                           {row.candidate.displayName}
                         </span>
+                        {/* 已了结命中：行形态同构降饱和 + 无状态点，行尾「N 天前了结」弱标
+                            （与桌面已了结折叠组同一单源形态，session-attention.md §3.3）。 */}
                         <InstanceRowTrail
-                          dotClassName={statusToV2DotClass(row.candidate.status)}
+                          dotClassName={
+                            row.settled ? undefined : statusToV2DotClass(row.candidate.status)
+                          }
                           pinned={row.pinned}
-                          time={relativeTime(
-                            row.candidate.updatedAt ?? row.candidate.createdAt ?? "",
-                            t,
-                          )}
-                          timeClassName="flex-none text-caption text-ink-2"
+                          time={
+                            row.settled
+                              ? t("workbench.settledAgo", {
+                                  time: relativeTime(row.candidate.settledAt ?? "", t),
+                                })
+                              : relativeTime(
+                                  row.candidate.updatedAt ?? row.candidate.createdAt ?? "",
+                                  t,
+                                )
+                          }
+                          timeClassName={`flex-none text-caption ${
+                            row.settled ? "text-ink-3" : "text-ink-2"
+                          }`}
                         />
                       </span>
                       {/* 副行（D14：现有 subtitle=lastCommand/lastAssistantMessage + 项目 chip；
                           缩进 24px = 行首品牌件 16px + gap 8，对齐名字起点） */}
                       {row.candidate.subtitle ? (
-                        <span className="mb-2 -mt-1 flex items-center gap-1.5 pl-[24px] pr-1 text-caption text-ink-2">
+                        <span
+                          className={`mb-2 -mt-1 flex items-center gap-1.5 pl-[24px] pr-1 text-caption ${
+                            row.settled ? "text-ink-3" : "text-ink-2"
+                          }`}
+                        >
                           <span className="min-w-0 flex-1 truncate">{row.candidate.subtitle}</span>
                           <span className="flex-none rounded-[9px] bg-elevated2 px-2 py-0.5 text-micro font-semibold text-ink-2">
                             {row.candidate.ref.projectName}

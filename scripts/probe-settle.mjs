@@ -1,6 +1,8 @@
 // settle 注意力语义探针（2026-11-13，T3 学习点②；契约 docs/design/session-attention.md）。
 // 验证：⋯ 菜单「标记已了结/恢复关注」→ POST /settle → 会话移出活跃组、进底部「已了结」
 // 折叠组（默认收起、降饱和、行尾「N 天前了结」）→ 恢复关注回活跃组。
+// 另验搜索可达（§3.3，2026-11-26）：移动首页搜索词命中已了结会话时并入结果（活跃之后 +
+// 弱标），无 query 出列，项目名命中不纳入。
 //
 // mock 纪律（.claude/rules/verification.md）：REST /api/overview 与 /api/sessions/stream 必须
 // **同源**——壳帧会用服务端帧整体覆盖 overview 缓存，不同源会互相顶掉造成假 FAIL。本探针用
@@ -346,6 +348,70 @@ try {
         .catch(() => false)),
     "",
   );
+
+  // ── 移动首页活动列表：搜索可达（§3.3，2026-11-26）────────────────────────────
+  // 无 query 时已了结出列；输入搜索词后并入命中（活跃之后 + 降饱和/无状态点/「…了结」弱标）；
+  // 已了结行只按会话自身名称/副行匹配（项目名命中不纳入）。
+  console.log("\n===== 移动首页搜索可达（已了结命中） =====");
+  await mobile.goto(`${WEB_ORIGIN}/projects`);
+  await mobile.getByText("进行中会话").first().waitFor({ state: "visible", timeout: 10_000 });
+  await mobile.waitForTimeout(600);
+
+  /** 活动卡行按钮（行形 class 前缀；项目行/其它按钮不命中）。 */
+  const homeRow = (name) =>
+    mobile.locator("button.flex.w-full.cursor-pointer.flex-col", { hasText: name });
+  const searchHome = mobile.getByLabel("搜索项目与会话");
+
+  check(
+    "18 无 query：已了结会话不出现在移动首页活动列表",
+    (await homeRow("待了结会话").count()) === 0,
+    "",
+  );
+
+  await searchHome.fill("待了结会话");
+  await mobile.waitForTimeout(250);
+  const settledHit = homeRow("待了结会话");
+  const settledHitCount = await settledHit.count();
+  const settledHitText = settledHitCount > 0 ? await settledHit.first().innerText() : "";
+  check(
+    "19 搜索会话名：已了结会话并入结果且带「了结」弱标",
+    settledHitCount === 1 && settledHitText.includes("了结"),
+    `count=${settledHitCount} text=${settledHitText.replace(/\n/g, " | ")}`,
+  );
+  const settledHitStyle = await settledHit.evaluate((el) => ({
+    color: getComputedStyle(el.querySelector("span.truncate") ?? el).color,
+    dots: el.querySelectorAll(".dot").length,
+  }));
+  check(
+    "20 已了结命中行降饱和（text-ink-3）且无状态点",
+    settledHitStyle.color === ink3Color && settledHitStyle.dots === 0,
+    `color=${settledHitStyle.color} ink3=${ink3Color} dots=${settledHitStyle.dots}`,
+  );
+
+  // 共同词「会话」同时命中活跃与已了结：活跃命中必须排在已了结之前。
+  await searchHome.fill("会话");
+  await mobile.waitForTimeout(250);
+  const hitBoxes = await Promise.all([
+    homeRow("进行中会话").first().boundingBox(),
+    homeRow("待了结会话").first().boundingBox(),
+  ]);
+  check(
+    "21 同时命中时活跃行排在已了结行之前",
+    Boolean(hitBoxes[0] && hitBoxes[1]) && hitBoxes[0].y < hitBoxes[1].y,
+    JSON.stringify(hitBoxes),
+  );
+
+  await searchHome.fill(PROJECT);
+  await mobile.waitForTimeout(250);
+  check(
+    "22 项目名命中不纳入已了结（活跃可命中，已了结不涌入）",
+    (await homeRow("进行中会话").count()) === 1 && (await homeRow("待了结会话").count()) === 0,
+    "",
+  );
+
+  await searchHome.fill("");
+  await mobile.waitForTimeout(250);
+  check("23 清空 query：已了结会话重新出列", (await homeRow("待了结会话").count()) === 0, "");
 } finally {
   await browser.close();
   const failed = results.filter((r) => !r).length;
