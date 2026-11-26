@@ -5595,3 +5595,33 @@ describe("api-request audit family skip", () => {
     expect(items.map((i) => i.kind)).toEqual(["user-prompt", "user-prompt"]);
   });
 });
+
+describe("tools-used skip（CLI 2.1.325+ 遥测行）", () => {
+  test("normalizeChatStream: 零 item（静默 skip 不落 fallback）", () => {
+    const items = normalizeChatStream([
+      {
+        type: "tools-used",
+        tools: ["Bash", "Edit", "Read"],
+      } as unknown as SessionStreamServerMessage,
+    ]);
+    expect(items).toEqual([]);
+  });
+
+  test("messageToThreadLike: 返回 null", () => {
+    expect(
+      messageToThreadLike({
+        type: "tools-used",
+        tools: ["Bash"],
+      } as unknown as SessionStreamServerMessage),
+    ).toBeNull();
+  });
+
+  test("夹在对话流中不破坏相邻投影", () => {
+    const items = normalizeChatStream([
+      makeUser("hello"),
+      { type: "tools-used", tools: ["Bash"] } as unknown as SessionStreamServerMessage,
+      makeUser("world"),
+    ]);
+    expect(items.map((i) => i.kind)).toEqual(["user-prompt", "user-prompt"]);
+  });
+});

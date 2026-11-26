@@ -91,6 +91,7 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 | `api-request` | **API 请求审计元数据**（CLI 2.1.325+）：每轮请求一行（id/timestamp/params/base/keep/tail 增量编码） | `id`, `params`, `base`, `keep`, `tail` | **无** — CLI 内部调试面，非对话内容 |
 | `api-request-shape` | 请求形状快照（`shapeHash` → {system, tools}，shape 变化才记，单行 ~64KB） | `shapeHash`, `shape` | **无** — 同上 |
 | `api-request-blob` | 请求消息池（内容 hash → 单条消息全文，去重） | `hash`, `message` | **无** — 同上 |
+| `tools-used` | 会话工具使用累计快照（CLI 2.1.325+，遥测行；出现新工具种类时落一行，集合递增） | `tools`, `sessionId` | **无** — atis-latch 同族，UI 零价值 |
 
 ### 顶层辅助字段
 
@@ -444,6 +445,18 @@ Claude CLI 通过 stdin/stdout 以 JSONL（每行一个 JSON）方式通信。�
 | 实时流 — 消息信号 | 客户端 — UI | 历史回放 — 消息信号 | 历史回放 — UI |
 |---|---|---|---|
 | 不出现在 CLI stdout（JSONL-only） | — | **api relay 整族过滤**（`isApiRequestAuditLine`，parseJsonlLines 入 historyLines 前 skip）；web 投影层 skip 为防御纵深（旧 replay cache 残留等旁路） | 无（不渲染） |
+
+---
+
+#### `tools-used` — 会话工具使用累计快照（CLI 2.1.325+，遥测行）
+
+**含义**：本会话至今出现过的工具名集合快照（`{type, tools: string[], sessionId}`，极简信封）。出现新工具种类时落一行、集合递增（22router 会话 26 行样本：首行 4 工具 → 末行 6+ 工具）。与 `atis-latch` 同族——无 `uuid`/`timestamp`、无对话内容、UI 零价值；行极小（~100B）。
+
+**处理语义**（agents-remote）：
+
+| 实时流 — 消息信号 | 实时流 — UI | 历史回放 — 消息信号 | 历史回放 — UI |
+|---|---|---|---|
+| 不出现在 CLI stdout（JSONL-only） | — | api relay **不过滤**（行极小保留 raw 面）→ 顶层帧 → `normalizeChatStream` 静默 skip（仿 `atis-latch` 先例） | 无（不渲染） |
 
 ---
 

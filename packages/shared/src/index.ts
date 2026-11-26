@@ -3198,6 +3198,16 @@ export type ClaudeApiRequestBlob = {
   message?: Record<string, unknown>;
 };
 
+// CLI 2.1.325+ 会话工具使用累计快照（JSONL-only 不进 stdout，遥测行）：tools =
+// 本会话至今出现过的工具名集合（出现新工具种类时落一行，集合递增）。与
+// atis-latch 同族——无 uuid/timestamp、无对话内容、UI 零价值；行极小（~100B），
+// api 回放不过滤（保留 raw 面），web 投影层 skip 不落 fallback 气泡。
+export type ClaudeToolsUsed = {
+  type: "tools-used";
+  tools: string[];
+  sessionId?: string;
+};
+
 // Server-maintained prompt queue snapshot (queue-state serverization). The CLI
 // emits queued/started lifecycle frames only at turn boundaries — during a
 // running turn there is zero queue telemetry (probe-verified), so the api
@@ -3572,6 +3582,7 @@ export type SessionStreamServerMessage =
   | ClaudeApiRequestAudit
   | ClaudeApiRequestShape
   | ClaudeApiRequestBlob
+  | ClaudeToolsUsed
   | ClaudeQueueState
   | ClaudeQueueHeldState
   | ClaudeResult

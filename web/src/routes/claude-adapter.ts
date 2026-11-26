@@ -1943,7 +1943,9 @@ export function messageToThreadLike(msg: SessionStreamServerMessage): ThreadMess
     // CLI 2.1.325+ 请求审计日志（回放已过滤；同上防御纵深不落 debug 气泡）。
     msg.type === "api-request" ||
     msg.type === "api-request-shape" ||
-    msg.type === "api-request-blob"
+    msg.type === "api-request-blob" ||
+    // 工具使用累计快照（遥测行，atis-latch 同族）。
+    msg.type === "tools-used"
   ) {
     return null;
   }
@@ -3601,6 +3603,10 @@ export function normalizeChatStream(rawMessages: SessionStreamServerMessage[]): 
     ) {
       continue;
     }
+
+    // tools-used：CLI 2.1.325+ 会话工具使用累计快照（遥测行，atis-latch 同族）——
+    // 无对话内容、UI 零价值，静默 skip 不落 fallback（raw 面保留，api 回放不过滤）。
+    if (msg.type === "tools-used") continue;
 
     // ═══ Other (fallback) ═══
     const fallback = messageToThreadLike(msg);
