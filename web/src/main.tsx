@@ -2,10 +2,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { getDefaultStore, Provider as JotaiProvider } from "jotai";
 import { StrictMode } from "react";
+import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { DiagFab } from "./components/shell/diag-fab";
 import { I18nProvider } from "./i18n";
 import { queryClient } from "./lib/query-client";
+import { installLayoutGeometryDiag } from "./lib/layout-geometry-diag";
 import { installPushDiagRelay } from "./lib/push-diag";
 import { useKeyboardInsetGlobal } from "./lib/use-keyboard-inset";
 import { usePushReconcile } from "./lib/use-push-reconcile";
@@ -27,6 +29,13 @@ router.subscribe("onResolved", () => {
 /** 键盘 inset 全局同步（批 17）：visualViewport → :root 的 --kb-offset/--kb-active。 */
 function KeyboardInsetSync() {
   useKeyboardInsetGlobal();
+  return null;
+}
+
+/** 布局几何诊断（Android pad 布局收窄取证）：vv/win/focus 事件 → scope="layout"
+ *  环形缓冲，DiagFab 查看。观察器自带 isDiagEnabled gate（关 = 零测量）。 */
+function LayoutGeometryDiagSync() {
+  useEffect(() => installLayoutGeometryDiag(), []);
   return null;
 }
 
@@ -52,6 +61,7 @@ createRoot(root).render(
         <JotaiProvider store={getDefaultStore()}>
           <ThemeSync />
           <KeyboardInsetSync />
+          <LayoutGeometryDiagSync />
           <PushReconcileSync />
           <DiagFab />
           <RouterProvider router={router} />

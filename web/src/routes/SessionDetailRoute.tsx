@@ -27,6 +27,7 @@ import { useT } from "../i18n";
 import type { TranslationKey } from "../i18n/types";
 import { useTheme, type ResolvedTheme } from "../theme";
 import { HEARTBEAT_INTERVAL_MS, PONG_TIMEOUT_MS } from "../lib/ws-heartbeat";
+import { recordDiag } from "../lib/diag-log";
 import {
   canSendToSession,
   inputDrawerCollapsedAtom,
@@ -966,6 +967,18 @@ function XtermOutput({
 
       if (previous?.cols === size.cols && previous.rows === size.rows) {
         return;
+      }
+
+      // 布局几何诊断（问题 1「TUI 右侧内容看不全」取证）：cols/rows 变化落一行，
+      // 与 tmux window 尺寸（ssh 跑 tmux list-sessions）对照即分流「xterm cols 窄于
+      // window（右侧裁切）」vs「window 窄但 CLI 溢出」。
+      const parent = term.element?.parentElement;
+      if (parent) {
+        const rect = parent.getBoundingClientRect();
+        recordDiag(
+          "layout",
+          `fit ${size.cols}x${size.rows} container=${Math.round(rect.width)}x${Math.round(rect.height)} dpr=${window.devicePixelRatio}`,
+        );
       }
 
       if (onResize(size.cols, size.rows)) {
