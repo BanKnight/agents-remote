@@ -8,6 +8,7 @@ import { DiagFab } from "./components/shell/diag-fab";
 import { I18nProvider } from "./i18n";
 import { queryClient } from "./lib/query-client";
 import { installLayoutGeometryDiag } from "./lib/layout-geometry-diag";
+import { installViewportShrinkSync } from "./lib/viewport-shrink";
 import { installPushDiagRelay } from "./lib/push-diag";
 import { useKeyboardInsetGlobal } from "./lib/use-keyboard-inset";
 import { usePushReconcile } from "./lib/use-push-reconcile";
@@ -39,6 +40,13 @@ function LayoutGeometryDiagSync() {
   return null;
 }
 
+/** viewport 收缩补偿（Android pad IME 瞬时占位 × 布局收窄）：常态零写入，仅
+ *  「同宽缩高」占位瞬态写 --viewport-shrink 补偿差值，iPhone 全程 CSS 原样。 */
+function ViewportShrinkSync() {
+  useEffect(() => installViewportShrinkSync(), []);
+  return null;
+}
+
 /** Web Push 订阅死亡静默对账（2026-11-03 排障批）：冷启动 + 回前台时自愈重订阅。 */
 function PushReconcileSync() {
   usePushReconcile();
@@ -61,6 +69,7 @@ createRoot(root).render(
         <JotaiProvider store={getDefaultStore()}>
           <ThemeSync />
           <KeyboardInsetSync />
+          <ViewportShrinkSync />
           <LayoutGeometryDiagSync />
           <PushReconcileSync />
           <DiagFab />
