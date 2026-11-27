@@ -11,6 +11,8 @@
  *   L4 --app-viewport-height computed 值——CSS 基线实况（vh vs dvh 解析）
  *   L5 st=documentElement.scrollTop / wt=window.screenY 与 html rect top——页面被滚与
  *      窗口被系统下压的判别（收缩补偿批残余现象「状态栏文字看不见」取证）
+ *   L6 sb=.sbar rect top/bottom/height——「已连接」状态栏（WorkbenchShell 底部 28px）
+ *      自身几何：占位期间被裁出视口（bottom > cvh）vs 悬空（top > 视口内）的直接判别
  * 事件签名（ih/cvh/vv/st/wt/main/ae 字段）同值跳过——环形缓冲仅 24 行，防刷屏冲掉
  * 复现序列。开关关闭时不做任何测量（diag-log「关 = 调用方审计计算一并 gate」契约）。
  * 取证收口后随本文件一起摘除（sheet-debug 先例）。
@@ -26,11 +28,12 @@ function activeElementTag(): string {
   return `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ""}`;
 }
 
-/** 一行几何快照（六字段，紧凑单行——环形缓冲 24 行约束）。 */
+/** 一行几何快照（紧凑单行——环形缓冲 24 行约束）。 */
 function snapshotLine(ev: string): string {
   const vv = window.visualViewport;
   const main = document.querySelector("main");
   const m = main?.getBoundingClientRect();
+  const sbar = document.querySelector(".sbar")?.getBoundingClientRect();
   const avh = getComputedStyle(document.documentElement)
     .getPropertyValue("--app-viewport-height")
     .trim();
@@ -42,6 +45,7 @@ function snapshotLine(ev: string): string {
     ` st=${document.documentElement.scrollTop}` +
     ` wt=${Math.round(window.screenY ?? 0)}/${Math.round(document.documentElement.getBoundingClientRect().top)}` +
     ` main=${m ? Math.round(m.height) : "none"}` +
+    ` sb=${sbar ? `${Math.round(sbar.top)}/${Math.round(sbar.bottom)}/${Math.round(sbar.height)}` : "none"}` +
     ` avh=${avh || "unset"}`
   );
 }
@@ -51,6 +55,7 @@ function signature(): string {
   const vv = window.visualViewport;
   const main = document.querySelector("main");
   const m = main?.getBoundingClientRect();
+  const sbar = document.querySelector(".sbar")?.getBoundingClientRect();
   return [
     Math.round(window.innerHeight),
     document.documentElement.clientHeight,
@@ -61,6 +66,8 @@ function signature(): string {
     Math.round(window.screenY ?? 0),
     Math.round(document.documentElement.getBoundingClientRect().top),
     m ? Math.round(m.height) : 0,
+    sbar ? Math.round(sbar.top) : 0,
+    sbar ? Math.round(sbar.bottom) : 0,
     document.activeElement?.tagName ?? "null",
   ].join("|");
 }
