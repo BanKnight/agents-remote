@@ -9,7 +9,9 @@
  *      同一套 vh 基线两平台语义不同）
  *   L3 visual viewport（height/offsetTop/scale）——zoom（scale≠1）或 resizes-visual 面
  *   L4 --app-viewport-height computed 值——CSS 基线实况（vh vs dvh 解析）
- * 事件签名（ih/cvh/vv/main/ae 六字段）同值跳过——环形缓冲仅 24 行，防刷屏冲掉
+ *   L5 st=documentElement.scrollTop / wt=window.screenY 与 html rect top——页面被滚与
+ *      窗口被系统下压的判别（收缩补偿批残余现象「状态栏文字看不见」取证）
+ * 事件签名（ih/cvh/vv/st/wt/main/ae 字段）同值跳过——环形缓冲仅 24 行，防刷屏冲掉
  * 复现序列。开关关闭时不做任何测量（diag-log「关 = 调用方审计计算一并 gate」契约）。
  * 取证收口后随本文件一起摘除（sheet-debug 先例）。
  */
@@ -38,6 +40,7 @@ function snapshotLine(ev: string): string {
     ` cvh=${document.documentElement.clientHeight}` +
     ` vv=${vv ? `${Math.round(vv.height)}/${Math.round(vv.offsetTop)}/${vv.scale.toFixed(2)}` : "none"}` +
     ` st=${document.documentElement.scrollTop}` +
+    ` wt=${Math.round(window.screenY ?? 0)}/${Math.round(document.documentElement.getBoundingClientRect().top)}` +
     ` main=${m ? Math.round(m.height) : "none"}` +
     ` avh=${avh || "unset"}`
   );
@@ -55,6 +58,8 @@ function signature(): string {
     vv ? Math.round(vv.offsetTop) : 0,
     vv ? Math.round(vv.scale * 100) : 0,
     document.documentElement.scrollTop,
+    Math.round(window.screenY ?? 0),
+    Math.round(document.documentElement.getBoundingClientRect().top),
     m ? Math.round(m.height) : 0,
     document.activeElement?.tagName ?? "null",
   ].join("|");
