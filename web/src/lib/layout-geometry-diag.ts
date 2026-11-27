@@ -37,6 +37,7 @@ function snapshotLine(ev: string): string {
     ` ih=${Math.round(window.innerHeight)}` +
     ` cvh=${document.documentElement.clientHeight}` +
     ` vv=${vv ? `${Math.round(vv.height)}/${Math.round(vv.offsetTop)}/${vv.scale.toFixed(2)}` : "none"}` +
+    ` st=${document.documentElement.scrollTop}` +
     ` main=${m ? Math.round(m.height) : "none"}` +
     ` avh=${avh || "unset"}`
   );
@@ -53,6 +54,7 @@ function signature(): string {
     vv ? Math.round(vv.height * 100) : 0,
     vv ? Math.round(vv.offsetTop) : 0,
     vv ? Math.round(vv.scale * 100) : 0,
+    document.documentElement.scrollTop,
     m ? Math.round(m.height) : 0,
     document.activeElement?.tagName ?? "null",
   ].join("|");
@@ -83,6 +85,8 @@ export function installLayoutGeometryDiag(): () => void {
   const onWinResize = () => schedule("win-resize");
   const onVvResize = () => schedule("vv-resize");
   const onVvScroll = () => schedule("vv-scroll");
+  // document 自身滚动（焦点 reveal / UA 滚动把页面滚出一条——占位溢出取证关键字段）。
+  const onDocScroll = () => schedule("doc-scroll");
   const onFocusIn = (event: FocusEvent) => {
     const el = event.target;
     schedule(`focusin:${el instanceof HTMLElement ? el.tagName.toLowerCase() : "?"}`);
@@ -98,6 +102,7 @@ export function installLayoutGeometryDiag(): () => void {
   window.addEventListener("resize", onWinResize);
   vv.addEventListener("resize", onVvResize);
   vv.addEventListener("scroll", onVvScroll);
+  window.addEventListener("scroll", onDocScroll);
   window.addEventListener("focusin", onFocusIn);
   window.addEventListener("focusout", onFocusOut);
   document.addEventListener("visibilitychange", onVisibilityChange);
@@ -113,6 +118,7 @@ export function installLayoutGeometryDiag(): () => void {
     window.removeEventListener("resize", onWinResize);
     vv.removeEventListener("resize", onVvResize);
     vv.removeEventListener("scroll", onVvScroll);
+    window.removeEventListener("scroll", onDocScroll);
     window.removeEventListener("focusin", onFocusIn);
     window.removeEventListener("focusout", onFocusOut);
     document.removeEventListener("visibilitychange", onVisibilityChange);
