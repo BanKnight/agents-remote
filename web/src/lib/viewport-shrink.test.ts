@@ -34,6 +34,9 @@ const innerWidth = (v: number) =>
 const shrinkValue = (): string | null =>
   dom.window.document.documentElement.style.getPropertyValue("--viewport-shrink");
 
+const shrinkActive = (): boolean =>
+  dom.window.document.documentElement.classList.contains("viewport-shrink-active");
+
 beforeEach(() => {
   dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost" });
   setGlobal("window", dom.window);
@@ -100,26 +103,30 @@ describe("viewport-shrink 状态机", () => {
     expect(shrinkValue()).toBe("");
   });
 
-  it("同宽缩高写补偿（IME 占位指纹）", () => {
+  it("同宽缩高写补偿（IME 占位指纹）+ 挂 active class", () => {
     installViewportShrinkSync({ settleWindowMs: 0 });
     flushRaf();
+    expect(shrinkActive()).toBe(false);
     cvh(746);
     dispatchVvResize();
     flushRaf();
     expect(shrinkValue()).toBe("59px");
+    expect(shrinkActive()).toBe(true);
   });
 
-  it("恢复清补偿", () => {
+  it("恢复清补偿并摘 active class", () => {
     installViewportShrinkSync({ settleWindowMs: 0 });
     flushRaf();
     cvh(746);
     dispatchVvResize();
     flushRaf();
     expect(shrinkValue()).toBe("59px");
+    expect(shrinkActive()).toBe(true);
     cvh(805);
     dispatchVvResize();
     flushRaf();
     expect(shrinkValue()).toBe("");
+    expect(shrinkActive()).toBe(false);
   });
 
   it("宽度变化（旋转/分屏）清补偿并重定基线", () => {
@@ -168,14 +175,16 @@ describe("viewport-shrink 状态机", () => {
     expect(shrinkValue()).toBe("");
   });
 
-  it("dispose 清补偿并移除监听", () => {
+  it("dispose 清补偿并移除监听（含摘 active class）", () => {
     const dispose = installViewportShrinkSync({ settleWindowMs: 0 });
     flushRaf();
     cvh(746);
     dispatchVvResize();
     flushRaf();
     expect(shrinkValue()).toBe("59px");
+    expect(shrinkActive()).toBe(true);
     dispose();
     expect(shrinkValue()).toBe("");
+    expect(shrinkActive()).toBe(false);
   });
 });

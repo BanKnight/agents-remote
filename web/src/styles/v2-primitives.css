@@ -1148,6 +1148,17 @@
     line-height: var(--line-height-ui);
     color: var(--ink-2);
   }
+  /* 占位窗口期（Android pad IME 瞬时占位，viewport-shrink.ts 写补偿时挂 root
+     viewport-shrink-active）：布局钉住让 .sbar 流内底落在视口外（sb=777/805 vs
+     cvh=746 真机实锤整条出视口，用户反馈「已连接」消失困扰）——fixed 贴视口底
+     救回可见性；代价 = composer 底部 28px 短暂被盖（发送钮可能需二次点击），自愈
+     摘 class 回流内底。iPad/iPhone 无占位永不命中。fixed 无 transform 祖先（main
+     是 grid/flex），bottom:0 即视口底；DOM 序在 grid 之后天然盖住 composer。 */
+  .viewport-shrink-active .sbar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+  }
   .tabstrip {
     height: 32px;
     background: var(--bg-tabstrip);

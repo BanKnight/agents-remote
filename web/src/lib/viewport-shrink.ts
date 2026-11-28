@@ -33,18 +33,25 @@
  * 真实软键盘（大幅持续缩高）同样被钉住——与 iOS 现状同构：键盘让位交 keyboard-inset
  * 的 JS 路径（--kb-offset / --composer-keyboard-offset），流内布局不承担让位职责。
  *
- * 已知取舍（2026-11-27 真机 sb 字段实锤后定案「接受」）：钉住的代价 = 占位期间
- * document 底部 shrink 高度在视口外——WorkbenchShell 底部 .sbar（「已连接」28px）+
- * composer 底部暂时不可见/不可点，操作（焦点/IME 变化）后随自愈弹回（sb=777/805
- * vs cvh=746 实锤整条出视口；wt=0/0 排除窗口下压、st=0 排除 reveal 滚动）。规避
- * 方案全部更糟：inputmode=none 无法区分外接键盘/触屏（禁软键盘输入）、sbar 改
- * fixed 盖发送钮、不钉 = 回到整页收窄原问题。
+ * 已知取舍（2026-11-27 真机 sb 字段实锤后定案）：钉住的代价 = 占位期间 document
+ * 底部 shrink 高度在视口外——WorkbenchShell 底部 .sbar（「已连接」28px）+ composer
+ * 底部暂时不可见/不可点，操作（焦点/IME 变化）后随自愈弹回（sb=777/805 vs cvh=746
+ * 实锤整条出视口；wt=0/0 排除窗口下压、st=0 排除 reveal 滚动）。
+ * .sbar 出视口用户反馈困扰度超预期（「还是一样出现」）→ 翻案实施占位窗口期
+ * .sbar fixed 贴视口底（SHRINK_ACTIVE_CLASS + v2-primitives.css 占位窗口段）：状态
+ * 栏全程可见，代价 = composer 底部 28px 短暂被盖（发送钮占位窗口期可能需二次
+ * 点击）。仍不可行的方案记档：inputmode=none 无法区分外接键盘/触屏（禁软键盘
+ * 输入）、不钉 = 回到整页收窄原问题（状态栏上提 + 底部露白，当初报丑）。
  * document 溢出的另一面：浏览器焦点 reveal 可能把 document 滚出一条——overflow:
  * clip 可锁但会同时锁掉 iOS scroll-to-reveal 兜底（TUI composer 唯一避让路径），
  * 牵连不做；启动 settle 窗口内恰逢占位会把占位值当基线（漏钉一次，退化原样，无害）。
  * 桌面（pointer: fine）不启用——鼠标拖矮窗口是正常缩高，必须跟随。
  */
 const SETTLE_WINDOW_MS = 800;
+
+/** 占位窗口期 root class：CSS 侧据此把 .sbar 贴视口底（保「已连接」可见），见
+ *  v2-primitives.css 占位窗口段与头注释「已知取舍」。 */
+export const SHRINK_ACTIVE_CLASS = "viewport-shrink-active";
 
 export function installViewportShrinkSync(opts: { settleWindowMs?: number } = {}): () => void {
   if (!window.matchMedia("(pointer: coarse)").matches) return () => {};
@@ -57,8 +64,13 @@ export function installViewportShrinkSync(opts: { settleWindowMs?: number } = {}
   let settleStartedAt = 0;
 
   const writeShrink = (px: number) => {
-    if (px > 0) root.style.setProperty("--viewport-shrink", `${px}px`);
-    else root.style.removeProperty("--viewport-shrink");
+    if (px > 0) {
+      root.style.setProperty("--viewport-shrink", `${px}px`);
+      root.classList.add(SHRINK_ACTIVE_CLASS);
+    } else {
+      root.style.removeProperty("--viewport-shrink");
+      root.classList.remove(SHRINK_ACTIVE_CLASS);
+    }
   };
 
   // settle 短窗：每帧只采样不定基线——窗口结束的值作基线（启动/回前台过渡态吸收）。
@@ -121,6 +133,6 @@ export function installViewportShrinkSync(opts: { settleWindowMs?: number } = {}
     window.removeEventListener("resize", onResize);
     vv?.removeEventListener("resize", onResize);
     document.removeEventListener("visibilitychange", onVisibility);
-    root.style.removeProperty("--viewport-shrink");
+    writeShrink(0);
   };
 }
