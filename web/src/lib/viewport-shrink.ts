@@ -33,11 +33,15 @@
  * 真实软键盘（大幅持续缩高）同样被钉住——与 iOS 现状同构：键盘让位交 keyboard-inset
  * 的 JS 路径（--kb-offset / --composer-keyboard-offset），流内布局不承担让位职责。
  *
- * 已知取舍（记档）：占位期间 document 高于可视区（差值 = shrink），浏览器焦点
- * reveal 可能把 document 滚出一条（顶部状态栏瞬态消失、自愈）——治它需 overflow:
- * clip 锁 document，但会同时锁掉 iOS scroll-to-reveal 兜底（TUI composer 唯一避让
- * 路径），牵连暂不做；启动 settle 窗口内恰逢占位会把占位值当基线（漏钉一次，退化
- * 原样，无害）。
+ * 已知取舍（2026-11-27 真机 sb 字段实锤后定案「接受」）：钉住的代价 = 占位期间
+ * document 底部 shrink 高度在视口外——WorkbenchShell 底部 .sbar（「已连接」28px）+
+ * composer 底部暂时不可见/不可点，操作（焦点/IME 变化）后随自愈弹回（sb=777/805
+ * vs cvh=746 实锤整条出视口；wt=0/0 排除窗口下压、st=0 排除 reveal 滚动）。规避
+ * 方案全部更糟：inputmode=none 无法区分外接键盘/触屏（禁软键盘输入）、sbar 改
+ * fixed 盖发送钮、不钉 = 回到整页收窄原问题。
+ * document 溢出的另一面：浏览器焦点 reveal 可能把 document 滚出一条——overflow:
+ * clip 可锁但会同时锁掉 iOS scroll-to-reveal 兜底（TUI composer 唯一避让路径），
+ * 牵连不做；启动 settle 窗口内恰逢占位会把占位值当基线（漏钉一次，退化原样，无害）。
  * 桌面（pointer: fine）不启用——鼠标拖矮窗口是正常缩高，必须跟随。
  */
 const SETTLE_WINDOW_MS = 800;
