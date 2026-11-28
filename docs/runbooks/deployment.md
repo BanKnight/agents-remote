@@ -98,6 +98,18 @@ systemctl status agents-remote
 - 资源约束：`MemoryMax=4G` + `TasksMax=512`（罩住整棵 agent 子进程树）。
 - 自动重启：`Restart=always` + `RestartSec=3`。
 - 与本机 ar-dev dev 服务并存时改 `config.yaml` 的 `api_port` 错开（dev 43011/43012）。
+- **环境项三件套（unit 模板已内置，2026-11-27 部署实测沉淀）**：
+  1. `WEB_DIST_DIR` → web/dist——缺它 api 不 serve 静态页（页面 404/白屏但 /api 正常）。
+  2. `PATH` 前置 workspace `node_modules/.bin` + `~/.bun/bin`——claude/tmux 是裸名 spawn
+     走 PATH，系统服务默认 PATH 只有 `/usr/bin` 族：不前置会 ENOENT 或落 `.npm-global`
+     旧版 claude（实测落到 2.1.212 旧版；修复后解析依赖版 ✓）。docker 形态无此坑
+     （镜像层 `ENV PATH=/runtime:...` 已解决）。
+  3. run dir 单源——默认 `AGENTS_REMOTE_RUN_DIR=/home/deploy/.local/share/agents-remote/run`
+     （持久、重启不丢 token、无 `/run/user/1000` 存在性前置条件）。若机器先以
+     dev/user-session 形态跑过、要衔接既有数据（token-secret/会话清单），改用
+     `XDG_RUNTIME_DIR=/run/user/1000` 与旧形态同源（取舍：tmpfs 重启掉线，且需该目录已存在）。
+     **不设任何一项**时系统服务无 `XDG_RUNTIME_DIR`，会静默 fallback 到 home——与
+     user-session 形态分裂成两处不同源（实测：5 个会话清单一度消失）。
 
 ## 国内网络补充
 

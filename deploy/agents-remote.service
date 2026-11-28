@@ -25,6 +25,19 @@ User=deploy
 Group=deploy
 WorkingDirectory=/home/deploy/workspace/agents-remote
 Environment=WEB_DIST_DIR=/home/deploy/workspace/agents-remote/web/dist
+# ① 依赖版 claude 可达（2026-11-27 其他机器部署实测）：claude/tmux 都是裸名 spawn
+#    （claude-runtime.ts / tmux-runtime.ts，走 PATH），系统服务默认 PATH 只有 /usr/bin
+#    族——不前置 workspace node_modules/.bin 会 ENOENT 或落 .npm-global 旧版 claude
+#    （实测落 2.1.212 旧版；修复后解析依赖版 ✓）。bun 同理（虽 ExecStart 绝对路径，
+#    子进程树内 bun 裸名调用仍依赖此段）。
+Environment=PATH=/home/deploy/workspace/agents-remote/node_modules/.bin:/home/deploy/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# ② run dir 单源（2026-11-27 其他机器部署实测）：不设时 defaultRunDir 因系统服务无
+#    XDG_RUNTIME_DIR 而 fallback 到 home——与 user-session 形态的 /run/user/1000 分裂，
+#    token-secret/会话元数据两处不同源（实测会话清单一度消失）。
+#    默认 = 持久路径（全新裸机推荐：无 /run/user/1000 存在性前置条件，重启不丢 token——
+#    /run/user/1000 是 tmpfs）；若本机先以 dev/user-session 形态跑过、要衔接既有数据，
+#    改用下行替换：Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=AGENTS_REMOTE_RUN_DIR=/home/deploy/.local/share/agents-remote/run
 ExecStart=/home/deploy/.bun/bin/bun /home/deploy/workspace/agents-remote/api/dist/index.js
 Restart=always
 RestartSec=3
